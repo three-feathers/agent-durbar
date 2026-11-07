@@ -190,6 +190,9 @@ function report(states, date) {
 const BEGIN = '<!-- build-cost:begin (written by `npm run usage:readme`; method in docs/build-cost.md) -->';
 const END = '<!-- build-cost:end -->';
 const LABEL = 'API list-price estimate, not billing';
+/** Model id (what the telemetry sends) -> display name: the one place. An id not listed shows as itself. */
+const MODEL_NAMES = { 'claude-opus-5-5': 'Opus 5.5', 'claude-sonnet-5-5': 'Sonnet 5.5' };
+const modelName = (id) => (own(MODEL_NAMES, id) ? MODEL_NAMES[id] : id);
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 ._:\[\]()+-]{0,79}$/; // a display name in the baseline
 
 /** The baseline file (committed, written by hand): what was spent before the receivers ran, or on machines and teams that are not tracked. */
@@ -221,9 +224,9 @@ function cumulative(states, date, baseline) {
   return { total, models, machines, since: baseline.since };
 }
 
-function split(map, total) {
+function split(map, total, labelOf = (k) => k) {
   return [...map.entries()].filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))
-    .map(([k, v]) => `${k} ${total > 0 ? Math.round((v / total) * 100) : 0}% (US$${group(v)})`).join(', ');
+    .map(([k, v]) => `${labelOf(k)} ${total > 0 ? Math.round((v / total) * 100) : 0}% (US$${group(v)})`).join(', ');
 }
 
 /** The README block, markers included. `release` is a tag such as `v0.1.12` (checked). Same inputs, same text. */
@@ -234,7 +237,7 @@ function readmeBlock(cum, date, release, note) {
     `**About US$${group(cum.total)}** at API list prices to build this app with AI agents, as of ${date} (release [\`${release}\`](https://github.com/three-feathers/agent-durbar/releases/tag/${release})), tracked since ${cum.since}. `
     + `This is an **${LABEL}**: Claude Code's own list-price figure, not what anyone was charged. Method and privacy: [docs/build-cost.md](docs/build-cost.md).`, '',
     '![Cumulative build cost by model over releases (API list-price estimate, not billing)](docs/build-cost.svg)', '',
-    `- By model: ${split(cum.models, cum.total) || 'none yet'}.`,
+    `- By model: ${split(cum.models, cum.total, modelName) || 'none yet'}.`,
     `- By machine or team: ${split(cum.machines, cum.total) || 'none yet'}.`,
     `- Not counted yet: ${note}`, END].join('\n');
 }
@@ -295,7 +298,9 @@ function badgeSvg(total) {
     + `<g fill="#fff" font-family="Verdana,DejaVu Sans,sans-serif" font-size="11" text-anchor="middle"><text x="${f1(lw / 2)}" y="14">${esc(left)}</text><text x="${f1(lw + rw / 2)}" y="14">${esc(right)}</text></g></svg>\n`;
 }
 
-const SERIES_COLORS = ['#0969da', '#bf8700', '#1a7f37', '#cf222e', '#8250df', '#6e7781'];
+const SERIES_COLORS = ['#0969da', '#bf8700', '#1a7f37', '#cf222e', '#8250df', '#6e7781']; // light pages
+const SERIES_DARK = ['#388bfd', '#d29922', '#3fb950', '#f85149', '#a371f7', '#8b949e']; // dark pages: lighter, 3:1 or more on #0d1117
+const seriesCss = () => SERIES_COLORS.map((c, i) => `.s${i}{fill:${c}}`).join('') + '@media (prefers-color-scheme:dark){' + SERIES_DARK.map((c, i) => `.s${i}{fill:${c}}`).join('') + '}';
 
 /** Cumulative spend by model, stacked areas over release dates (time-proportional x). Zero rows: a note. One row: stacked bars at one date. */
 function chartSvg(history) {
@@ -303,7 +308,7 @@ function chartSvg(history) {
   const rows = history.rows;
   const head = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img"`;
   const style = '<style>text{fill:#1f2328;font:11px Verdana,DejaVu Sans,sans-serif;font-variant-numeric:tabular-nums}.ax{stroke:#8c959f;stroke-width:1}.gr{stroke:#8c959f;stroke-opacity:.35;stroke-width:1}'
-    + '@media (prefers-color-scheme:dark){text{fill:#e6edf3}}</style>';
+    + '@media (prefers-color-scheme:dark){text{fill:#e6edf3}}' + seriesCss() + '</style>';
   if (!rows.length) {
     const t = `Build cost over time (${LABEL}): no releases recorded yet`;
     return `${head} aria-label="${esc(t)}"><title>${esc(t)}</title>${style}<text x="${W / 2}" y="${H / 2}" text-anchor="middle">${esc(t)}</text></svg>\n`;
@@ -313,8 +318,8 @@ function chartSvg(history) {
   for (const r of rows) for (const n of Object.keys(r.models)) if (!names.includes(n)) names.push(n);
   names.sort((a, b) => (last.models[b] || 0) - (last.models[a] || 0) || (a < b ? -1 : 1));
   const shown = names.slice(0, SERIES_COLORS.length - 1); const rest = names.slice(SERIES_COLORS.length - 1);
-  const series = shown.map((n, i) => ({ name: n, color: SERIES_COLORS[i], vals: rows.map((r) => r.models[n] || 0) }));
-  if (rest.length) series.push({ name: 'other', color: SERIES_COLORS[SERIES_COLORS.length - 1], vals: rows.map((r) => rest.reduce((a, n) => a + (r.models[n] || 0), 0)) });
+  const series = shown.map((n, i) => ({ name: n, vals: rows.map((r) => r.models[n] || 0), cls: `s${i}` }));
+  if (rest.length) series.push({ name: 'other', cls: `s${SERIES_COLORS.length - 1}`, vals: rows.map((r) => rest.reduce((a, n) => a + (r.models[n] || 0), 0)) });
   const top = Math.max(...rows.map(rowTotal), 1);
   const mag = Math.pow(10, Math.floor(Math.log10(top))); const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s * 4 >= top);
   const ymax = step * Math.ceil(top / step);
@@ -331,10 +336,10 @@ function chartSvg(history) {
   for (const s of series) {
     const lo = below.slice(); const hi = lo.map((b, i) => b + s.vals[i]);
     if (rows.length < 2) {
-      const bw = 44; out.push(`<rect x="${f1(x(rows[0]) - bw / 2)}" y="${f1(y(hi[0]))}" width="${bw}" height="${f1(y(lo[0]) - y(hi[0]))}" fill="${s.color}"/>`);
+      const bw = 44; out.push(`<rect x="${f1(x(rows[0]) - bw / 2)}" y="${f1(y(hi[0]))}" width="${bw}" height="${f1(y(lo[0]) - y(hi[0]))}" class="${s.cls}"/>`);
     } else {
       const up = rows.map((r, i) => `${f1(x(r))},${f1(y(hi[i]))}`); const dn = rows.map((r, i) => `${f1(x(r))},${f1(y(lo[i]))}`).reverse();
-      out.push(`<polygon points="${up.concat(dn).join(' ')}" fill="${s.color}" fill-opacity=".85"/>`);
+      out.push(`<polygon points="${up.concat(dn).join(' ')}" class="${s.cls}"/>`);
     }
     for (let i = 0; i < hi.length; i++) below[i] = hi[i];
   }
@@ -344,8 +349,8 @@ function chartSvg(history) {
   out.push(`<text x="${L + pw / 2}" y="${T + ph + 30}" text-anchor="middle">release date, UTC (cumulative US$, ${esc(LABEL)})</text>`);
   let lx = L;
   for (const s of series) {
-    const label = `${s.name} US$${group(s.vals[s.vals.length - 1])}`;
-    out.push(`<rect x="${lx}" y="${H - 20}" width="10" height="10" fill="${s.color}"/><text x="${lx + 14}" y="${H - 11}">${esc(label)}</text>`);
+    const label = `${modelName(s.name)} US$${group(s.vals[s.vals.length - 1])}`;
+    out.push(`<rect x="${lx}" y="${H - 20}" width="10" height="10" class="${s.cls}"/><text x="${lx + 14}" y="${H - 11}">${esc(label)}</text>`);
     lx += 14 + Math.round(label.length * 6.6) + 12;
   }
   out.push('</svg>\n');
@@ -354,5 +359,5 @@ function chartSvg(history) {
 
 module.exports = {
   TOKEN_METRIC, COST_METRIC, TYPES, SOURCES, MODEL_RE, MACHINE_RE, DATE_RE, MAX_FILE_BYTES, FILE_VERSION,
-  BEGIN, END, LABEL, validateHistory, upsertRow, badgeSvg, chartSvg, esc, validateBaseline, cumulative, readmeBlock, rewriteReadme, emptyState, checkMachine, dayOf, ingest, validateState, firstDay, report, group, usd,
+  modelName, MODEL_NAMES, BEGIN, END, LABEL, validateHistory, upsertRow, badgeSvg, chartSvg, esc, validateBaseline, cumulative, readmeBlock, rewriteReadme, emptyState, checkMachine, dayOf, ingest, validateState, firstDay, report, group, usd,
 };

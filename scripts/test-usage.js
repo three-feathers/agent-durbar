@@ -121,7 +121,7 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
 // ---- README block, history, badge and chart (FR-181 addition) ----
 {
   const R2 = require('./usage-readme');
-  const base = lib.validateBaseline({ version: 1, since: '2026-10-25', through: '2026-11-07', note: 'older work and other machines.', models: { 'Opus 5.5': 2856, 'Sonnet 5.5': 902 }, machines: { linux: 3758 } });
+  const base = lib.validateBaseline({ version: 1, since: '2026-10-25', through: '2026-11-07', note: 'older work and other machines.', models: { 'claude-opus-5-5': 2856, 'claude-sonnet-5-5': 902 }, machines: { linux: 3758 } });
   const mkst = (machine, iso, model, usdv) => { const s = lib.emptyState(machine); lib.ingest(s, body([], [cost(model, usdv, iso)]), NOW); return s; };
   const cum0 = lib.cumulative([], '2026-11-07', base);
   assert.strictEqual(cum0.total, 3758, 'cumulative: the baseline alone');
@@ -130,10 +130,14 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
   assert.strictEqual(lib.cumulative([later, early], '2026-11-10', base).total, 3858, 'cumulative: usage after the baseline day is added, the baseline day is not counted twice');
   assert.strictEqual(lib.cumulative([later], '2026-11-08', base).total, 3758, 'cumulative: days after --date are left out');
   const cum1 = lib.cumulative([later], '2026-11-10', base);
+  assert.deepStrictEqual([...cum1.models.keys()].sort(), ['claude-opus-5-5', 'claude-sonnet-5-5'], 'merge: a baseline and a usage file for one model are one row');
+  assert.strictEqual(cum1.models.get('claude-opus-5-5'), 2956, 'merge: their dollars are added in that row');
+  assert.strictEqual(lib.modelName('claude-sonnet-5-5'), 'Sonnet 5.5', 'names: ids map to display names in one place');
+  assert.strictEqual(lib.modelName('__proto__'), '__proto__', 'names: an unlisted id (or a prototype name) shows as itself');
   const block = lib.readmeBlock(cum1, '2026-11-10', 'v0.1.13', base.note);
   assert.ok(block.includes('**API list-price estimate, not billing**'), 'label: the estimate text is in the block');
   assert.ok(/About US\$3,858\*\*/.test(block) && block.includes('as of 2026-11-10') && block.includes('`v0.1.13`'), 'block: total, date and release');
-  assert.ok(block.includes('Opus 5.5 74% (US$2,856)') && block.includes('claude-opus-5-5 3% (US$100)') && block.includes('mac 3% (US$100)') && block.includes('linux 97%'), 'block: split by model and by machine');
+  assert.ok(block.includes('Opus 5.5 77% (US$2,956)') && !block.includes('claude-opus-5-5') && block.includes('mac 3% (US$100)') && block.includes('linux 97%'), 'block: split by model and by machine');
   assert.ok(block.includes('docs/build-cost.md') && block.includes('Not counted yet: older work'), 'block: method link and what is not counted');
   assert.throws(() => lib.readmeBlock(cum1, '2026-11-10', 'v1', 'x'), /--release/, 'block: a release must look like a tag');
   const readme = `# T\n\nintro\n\n${lib.BEGIN}\nold stuff\n${lib.END}\n\nrest\n`;
@@ -144,7 +148,7 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
     assert.throws(() => lib.rewriteReadme(text, block), /exactly one "<!-- build-cost:begin/, `rewrite: ${why} fails clearly`);
   }
   // history, golden files, escaping, small histories
-  const row = (date, version, o, s2) => ({ date, version, models: { 'Opus 5.5': o, 'Sonnet 5.5': s2 }, machines: { linux: o + s2 } });
+  const row = (date, version, o, s2) => ({ date, version, models: { 'claude-opus-5-5': o, 'claude-sonnet-5-5': s2 }, machines: { linux: o + s2 } });
   const hist = lib.validateHistory({ version: 1, rows: [row('2026-11-07', 'v0.1.12', 2856, 902), row('2026-11-10', 'v0.1.13', 3500, 1100), row('2026-11-14', 'v0.1.14', 6000, 1500)] });
   const golden = (name, text) => {
     const f = path.join(__dirname, 'fixtures', 'build-cost', name);
@@ -155,6 +159,7 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
   const chart = lib.chartSvg(hist);
   assert.ok(chart.includes('US$0') && chart.includes('US$8,000') && chart.includes('11-14 v0.1.14') && chart.includes('release date, UTC'), 'chart: labelled axes');
   assert.ok(chart.includes('API list-price estimate, not billing') && chart.includes('tabular-nums') && chart.includes('prefers-color-scheme:dark'), 'chart: label, tabular numbers, dark text');
+  assert.ok(chart.includes('prefers-color-scheme:dark){.s0{fill:#388bfd}') && chart.includes('class="s0"'), 'chart: series colours have a lighter dark-mode value');
   golden('chart-three-rows.svg', lib.chartSvg(hist));
   golden('badge.svg', lib.badgeSvg(3758));
   assert.ok((chart.match(/<polygon/g) || []).length === 2, 'chart: one stacked area per model');
@@ -177,7 +182,7 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
   // the command, end to end on temporary files
   const t2 = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-usage-readme-'));
   const P = (n) => path.join(t2, n);
-  fs.writeFileSync(P('README.md'), readme); fs.writeFileSync(P('base.json'), JSON.stringify({ version: 1, since: '2026-10-25', through: '2026-11-07', note: 'older work.', models: { 'Opus 5.5': 10 }, machines: { linux: 10 } }));
+  fs.writeFileSync(P('README.md'), readme); fs.writeFileSync(P('base.json'), JSON.stringify({ version: 1, since: '2026-10-25', through: '2026-11-07', note: 'older work.', models: { 'claude-opus-5-5': 10 }, machines: { linux: 10 } }));
   const args = ['--release', 'v0.1.12', '--date', '2026-11-07', '--baseline', P('base.json'), '--readme', P('README.md'), '--history', P('h.json'), '--badge', P('b.svg'), '--chart', P('c.svg'), '--files', P('none.json')];
   const mk2 = () => R2.build(R2.parseArgs(args.filter((a, i) => args[i - 1] !== '--files' && a !== '--files'), { DURBAR_USAGE_DIR: P('nodir') }, NOW));
   const r1 = mk2();

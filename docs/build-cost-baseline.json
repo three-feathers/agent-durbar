@@ -3,6 +3,6 @@
   "since": "2026-10-25",
   "through": "2026-11-07",
   "note": "work before 2026-10-25, and other machines and teams (a Mac, Copilot, Codex, the other two owners' setups).",
-  "models": { "Opus 5.5": 2856, "Sonnet 5.5": 902 },
+  "models": { "claude-opus-5-5": 2856, "claude-sonnet-5-5": 902 },
   "machines": { "linux": 3758 }
 }

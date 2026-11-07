@@ -90,7 +90,7 @@ Paste the printed table into the release notes next to the clip (`changelog.d/RE
 - rewrites the README block between `<!-- build-cost:begin ... -->` and `<!-- build-cost:end -->` (it fails, changing nothing, when either marker is missing, doubled or out of order);
 - adds the release's row (date, version, cumulative dollars per model and per machine) to `docs/build-cost-history.json` (the same version replaces its row);
 - regenerates `docs/build-cost-badge.svg` and `docs/build-cost.svg` (local plain SVG, no external service, a few KB; the chart stacks the models over release dates).
-`--check` prints the block and writes nothing. It runs in the doc-only fold PR after each release (`changelog.d/README.md`). A model id from the usage files (`claude-opus-5-5`) is a row of its own next to the baseline's display name (`Opus 5.5`); name the baseline's models by id when you next edit it to merge them. When a machine's usage starts, raise nothing by hand: its files are summed from the day after the baseline's `through`.
+`--check` prints the block and writes nothing. It runs in the doc-only fold PR after each release (`changelog.d/README.md`). The baseline is keyed by the model ids the telemetry sends (`claude-opus-5-5`), so a baseline and a usage file for one model are one row; `MODEL_NAMES` in `scripts/usage-lib.js` is the one place that maps ids to the display names shown in the README, the badge and the chart (an id not listed shows as itself). When a machine's usage starts, raise nothing by hand: its files are summed from the day after the baseline's `through`.
 
 ## What is kept, and what is not
 
