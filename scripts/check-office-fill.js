@@ -39,7 +39,7 @@
 const assert = require('assert');
 const path = require('path');
 const { pageCheck } = require('./check-office-overlap.js');
-const { helpers, jsLiteral } = require('./driver-helpers');
+const { helpers, jsLiteral, CHECK_DARK } = require('./driver-helpers');
 const q = jsLiteral; /* every value put into page code goes through jsLiteral (CodeQL js/bad-code-sanitization) */
 const OUT = process.env.OUT || '';
 const SECRET = 'sk-Fill0Secret0Value0123456789';
@@ -377,7 +377,8 @@ module.exports = async (ctx) => {
     /* (4) a theme switch through the real Settings path, and back */
     {
       const tag = 'theme switch, 2 parents, 3 helpers, 1440x900';
-      check(await hxLoad(2, 3, 1440, 900), `${tag}: no cards`);
+      /* spec 102 T226: the dark fixture user theme (saved in this run, so Settings lists it) took Retro Pixel's place */
+      check(await hxLoad(2, 3, 1440, 900, { usertheme: JSON.stringify(CHECK_DARK) }), `${tag}: no cards`);
       const base = await js(`window.THEME.current().id`);
       const pick = async (id) => {
         await js(`window.DurbarScreens.openSettings()`);
@@ -388,14 +389,14 @@ module.exports = async (ctx) => {
         check(await H.until(`!document.body.classList.contains('screen-open')&&document.querySelectorAll('#stage .helper.hx').length===6`, 8000), `${tag}: the office did not come back with its cards in ${id}`);
         await H.settle();
       };
-      await pick('retro');
+      await pick(CHECK_DARK.id);
       const r = await hxPage(); const pr = await page();
-      check(r.strips.length === 2 && r.strips.every((x) => x.hx === '1' || x.hx === '2'), `${tag}: Retro Pixel strips ${JSON.stringify(r.strips.map((x) => x.hx))}`);
-      check(!pr.length, `${tag}, Retro Pixel: ${pr.slice(0, 4).join('; ')}`);
+      check(r.strips.length === 2 && r.strips.every((x) => x.hx === '1' || x.hx === '2'), `${tag}: dark fixture strips ${JSON.stringify(r.strips.map((x) => x.hx))}`);
+      check(!pr.length, `${tag}, dark fixture: ${pr.slice(0, 4).join('; ')}`);
       await pick(base);
       const b = await hxPage(); const pr2 = await page();
       check(b.strips.every((x) => x.hx === '1' || x.hx === '2') && !pr2.length, `${tag}, back in ${base}: ${pr2.slice(0, 4).join('; ')}`);
-      rows.push(`${tag}: ${base} -> retro -> ${base}, rules hold`);
+      rows.push(`${tag}: ${base} -> ${CHECK_DARK.id} -> ${base}, rules hold`);
     }
     /* (5) a helper added after the first layout */
     {

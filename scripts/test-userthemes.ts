@@ -4,6 +4,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { checkUserManifest, USER_THEME_LIMITS, RESERVED_THEME_IDS } from '../src/shared/themes';
+import { luminance } from '../src/shared/themegen';
 import { UserThemeStore } from '../src/main/themes';
 import { tmpDir } from './test-tmp';
 
@@ -43,6 +44,24 @@ for (const k of ['corporate', 'court-indian', 'court-european', 'court-japanese'
   assert.deepStrictEqual(r.dropped, ['ui', 'scene'], k + ': both values are reported');
 }
 assert.deepStrictEqual(checkUserManifest('{"id":"x","ui":"retro","scene":"pixel"}').dropped, [], 'a kept style and kit report nothing');
+// spec 102 T226 (FR-267): the fixture user theme with a dark page, which takes Retro Pixel's place as the second theme of the layout checks
+{
+  const text = fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'fixtures', 'themes', 'check-dark.json'), 'utf8');
+  const r = checkUserManifest(text);
+  assert.strictEqual(r.ok, true, 'check-dark.json is a valid pack: ' + r.error);
+  assert.deepStrictEqual(r.dropped, [], 'it names no removed style or kit');
+  const m = JSON.parse(text);
+  assert.strictEqual(m.id, 'check-dark', 'the id the drivers look for');
+  assert.strictEqual(m.ui, 'clean', 'it needs no Retro style');
+  assert.ok(luminance(m.tokens['--bg']) < 0.05 && luminance(m.tokens['--surface']) < 0.05, 'the page and the surface are dark');
+  assert.ok(m.tokens['--ui-display'], 'it carries its own display font, the one thing Retro covered that Clean Office does not');
+  assert.ok(!RESERVED_THEME_IDS.includes(m.id), 'a user theme id, not a built-in one');
+  // no script names the built-in Retro as the second theme of a layout check: the fixture is that theme (a script that tests Retro itself is on the T230 list)
+  const SCRIPTS = path.join(__dirname, '..', '..', 'scripts');
+  for (const f of ['check-theme-geometry.js', 'shots-052-addleft.js', 'check-sched-top.js', 'check-chat-title.js', 'check-inbox-avatar.js', 'check-rail.js', 'check-status-filter.js', 'check-no-demo-badge.js', 'check-status-tooltip.js', 'check-composer-toolbar.js', 'check-office-fill.js', 'check-perf.js']) {
+    assert.ok(!/'retro'/.test(fs.readFileSync(path.join(SCRIPTS, f), 'utf8')), `${f} no longer names Retro as its second theme`);
+  }
+}
 assert.ok(checkUserManifest('{"id":"x","ui":"court-mars"}').error!.includes('ui must be one of: clean, retro'), 'only the removed names are tolerated');
 assert.ok(checkUserManifest('{"id":"x","ui":"neon"}').error!.includes('ui must be one of'), 'an unknown UI style is refused');
 assert.strictEqual(checkUserManifest('{"id":"x","scene":"pixel"}').ok, true, 'a listed scene kit is fine');

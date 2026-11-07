@@ -3,7 +3,7 @@
  * each in its own Electron (and its own xvfb display on Linux). Same checks as running them one by one.
  *
  *   node scripts/check-parallel.js            the default theme            (npm run check:office:fast)
- *   node scripts/check-parallel.js --themes   the 6 built-in themes and the user-theme fixture   (npm run check:themes)
+ *   node scripts/check-parallel.js --themes   Clean Office, the dark fixture theme (alone and with Cheeky) and the user-theme fixture   (npm run check:themes)
  *
  * The machine must stay usable while it runs (an earlier version started 4 Electrons on a 4-core laptop with 2 GB free
  * and froze it). So:
@@ -89,10 +89,13 @@ async function waitForMemory(avail, min, maxMs, { now = Date.now, wait = sleep, 
   return true;
 }
 
+const DARK_THEME = 'scripts/fixtures/themes/check-dark.json';
 const variants = themes
-  ? ['clean-office', 'retro'].map((t) => ({ name: t, env: { DURBAR_THEME: t, OFFICE_THEME: t } }))
-      // spec 077 FR-070: Cheeky is a Characters choice, not a theme: measured on top of Retro Pixel (the one built-in theme with a dark floor)
-      .concat(['retro'].map((t) => ({ name: t + ' + cheeky', env: { DURBAR_THEME: t, OFFICE_THEME: t, OFFICE_CHARACTERS: 'cheeky' } })))
+  ? [{ name: 'clean-office', env: { DURBAR_THEME: 'clean-office', OFFICE_THEME: 'clean-office' } }]
+      // spec 102 T226 (FR-267): the dark fixture user theme (dark page, its own display font) takes Retro Pixel's two places
+      // spec 077 FR-070: Cheeky is a Characters choice, not a theme: measured on top of the dark theme
+      .concat([{ name: 'dark theme', env: { OFFICE_USER_THEME: DARK_THEME } }])
+      .concat([{ name: 'dark theme + cheeky', env: { OFFICE_USER_THEME: DARK_THEME, OFFICE_CHARACTERS: 'cheeky' } }])
       .concat([{ name: 'user theme', env: { OFFICE_USER_THEME: 'scripts/fixtures/themes/check-user.json' } }])
   : [{ name: 'default', env: {} }, { name: 'real office', env: { OFFICE_VIEW: 'real' } }, { name: 'real office wide font', env: { OFFICE_VIEW: 'real', OFFICE_FONT: 'DejaVu Sans' } }]; // spec 097 FR-091: the Real office variant of check-office-overlap.js
 const jobs = [];

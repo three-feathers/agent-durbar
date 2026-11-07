@@ -18,7 +18,7 @@
  * review fixes of PR 621, the missing module) run once, with Cheeky.
  *
  *   npm run check:ui -- --only check-crew            (builds first)
- *   CREW_THEME=<theme id>         the theme under the crew (default clean-office)
+ *   CREW_THEME=<theme id>         the theme under the crew (default clean-office; check-dark is the dark fixture user theme, spec 102 T226, saved in each page load)
  *   CREW_CHARS=<cheeky|prehistoric|pirate|monster|royal|rebels>  run one crew only (default: both)
  *   SHOTS_OUT=<folder>            screenshots (default: crew-shots in the OS temp folder)
  */
@@ -26,7 +26,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const assert = require('assert');
-const { helpers, jsLiteral } = require('./driver-helpers');
+const { helpers, jsLiteral, CHECK_DARK } = require('./driver-helpers');
 
 /* spec 077 FR-064..FR-066: Cheeky is a Characters choice, picked on top of a theme */
 const THEME_ID = process.env.CREW_THEME || 'clean-office';
@@ -148,7 +148,9 @@ const naturals = (files) => `Promise.all(${jsLiteral(files)}.map(f=>new Promise(
 const hit = (a, b) => a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1];
 
 async function runCrew(ctx, full) {
-  const H = helpers(ctx);
+  const H0 = helpers(ctx);
+  /* a user theme under test (the dark fixture) is put in every page address, so Settings lists it and it can be picked */
+  const H = THEME_ID === CHECK_DARK.id ? { ...H0, load: (o) => H0.load({ ...o, query: { ...(o.query || {}), usertheme: JSON.stringify(CHECK_DARK) } }) } : H0;
   const out = process.env.SHOTS_OUT || path.join(os.tmpdir(), 'crew-shots');
   fs.mkdirSync(out, { recursive: true });
   const C = require('../src/renderer/crew.js');
