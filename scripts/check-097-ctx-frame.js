@@ -4,13 +4,13 @@
  * an until(), every page value goes through jsLiteral.
  *
  *   npm run check:ui -- --only check-097-ctx-frame      (builds first)
- *   CTX_MUTANT=colour|glass|node|unknown   the amber band drawn green / the line moved onto the glass / a node added by every context update / a line for an
+ *   CTX_MUTANT=colour|glass|node|unknown   a warn desk's line drawn amber / the line moved onto the glass / a node added by every context update / a line for an
  *                                          unknown context (each must fail)
  *   SHOTS_OUT=<dir>                        also saves ctx-<world>-<w>x<h>.png (15 agents, every band) and ctx-<world>-crop-<w>x<h>.png (the three desks, 2x)
  *
  * At 15 agents, 1440x900 and 1280x800, each world, with the context seeded across the bands (4 % .. 100 %) and two agents unknown, it fails (exit 1) when:
- *   - an agent with a context has no line, or its band (data-lv), dash (the share of the outline) or computed stroke is not the existing band's token
- *     (ok below 70 % green, warn 70..90 % amber, high above 90 % red); the line is not aria-hidden; the plate's name lacks ", context N %";
+ *   - an agent with a context has no line, or its band (data-lv), dash (the share of the outline) or computed stroke is not the band's token
+ *     (ok below 70 % and warn 70..90 % soft white --tint-ink, high above 90 % red; owner 2026-11-07 21:01 UTC); the line is not aria-hidden; the plate's name lacks ", context N %";
  *   - a line's ring crosses the glass or the screen's text box, or lies inside the glass element; the glass tint is not the state's (not drawn on);
  *   - an unknown context draws a line, or its plate's name carries context words;
  *   - the line animates or transitions; a context event adds or removes a node anywhere in the stage, or does not move the line and the name.
@@ -28,7 +28,7 @@ const WORLDS = [['photo', {}], ['cave', { worldflags: 'cave', world: 'cave' }], 
 /* one share per main agent, in order: every band, the steps' edges (69/70, 90/91) and a full window; null: unknown (the window waits for the next message) */
 const SHARES = [69, 94, 45, 70, null, 30, 90, 62, 97, 18, 91, null, 56, 78, 8];
 const BAND = (p) => (p > 90 ? 'high' : p >= 70 ? 'warn' : 'ok');
-const TOKEN = { ok: '--green', warn: '--amber', high: '--red' };
+const TOKEN = { ok: '--tint-ink', warn: '--tint-ink', high: '--red' }; /* owner 2026-11-07 21:01 UTC: soft white until 90 %, red only above */
 
 module.exports = async (ctx) => {
   const H = helpers(ctx);
@@ -45,7 +45,7 @@ module.exports = async (ctx) => {
     await must(PICS, `${tag}: the pictures`, 20000);
     await must(`document.querySelectorAll('#stage .ro-plate[data-id]').length>=10`, `${tag}: the plates`);
     if (MUTANT === 'unknown') await js(`(()=>{window.exports.ctxFrame=(p,l)=>({lv:l==='warn'||l==='high'?l:'ok',dash:(p||0)+' 100'});return 1})()`);
-    if (MUTANT === 'colour') await ctx.win.webContents.insertCSS('.ro-ctx[data-lv="warn"] rect{stroke:var(--green)!important}');
+    if (MUTANT === 'colour') await ctx.win.webContents.insertCSS('.ro-ctx[data-lv="warn"] rect:not(.ro-ck){stroke:var(--amber)!important}');
     if (MUTANT === 'glass') await ctx.win.webContents.insertCSS('.ro-ctx rect{x:8px!important;y:8px!important;width:calc(var(--ro-cw,20px) - 16px)!important;height:calc(var(--ro-ch,20px) - 16px)!important}');
     if (MUTANT === 'node') await js(`(()=>{const o=window.DurbarRealOffice.ctx;window.DurbarRealOffice.ctx=(id,c)=>{const r=o(id,c);document.querySelector('#stage .ro-art').appendChild(document.createElement('i'));return r};return 1})()`);
 
@@ -65,7 +65,7 @@ module.exports = async (ctx) => {
 
     /* one pass over every desk: what the page draws, as plain values */
     const rows = await js(`(()=>{const tok=n=>{const e=document.createElement('i');e.style.color='var('+n+')';document.body.appendChild(e);const c=getComputedStyle(e).color;e.remove();return c;};
-      const T={ok:tok('--green'),warn:tok('--amber'),high:tok('--red')},R=e=>{const r=e.getBoundingClientRect();return [r.left,r.top,r.right,r.bottom]};
+      const T={ok:tok('--tint-ink'),warn:tok('--tint-ink'),high:tok('--red')},R=e=>{const r=e.getBoundingClientRect();return [r.left,r.top,r.right,r.bottom]};
       return [...document.querySelectorAll('#stage .ro-screen[data-for]')].map(sc=>{const k=sc.dataset.for,sv=sc.querySelector(':scope > .ro-ctx'),r=sv&&sv.lastChild,kl=sv&&sv.firstChild,pl=document.querySelector('#stage .ro-plate[data-id='+JSON.stringify(k)+']'),
         gl=sc.querySelector('.ro-glass'),scb=R(sc),cab=(e=>e?R(e):null)(document.querySelector('#stage .ro-cab[data-for='+JSON.stringify(k)+']')),mq=(e=>e?R(e):null)(document.querySelector('#stage .ro-marquee[data-for='+JSON.stringify(k)+']')),inner=[...sc.querySelectorAll('.ro-glass, .ro-bezel')].map(e=>getComputedStyle(e).backgroundColor),txt=[...document.querySelectorAll('#stage .ro-stext[data-for='+JSON.stringify(k)+'] :is(.ro-sl,.ro-bars i)')].map(e=>getComputedStyle(e).color+'|'+getComputedStyle(e).backgroundColor),tx=document.querySelector('#stage .ro-stext[data-for='+JSON.stringify(k)+']'),cs=r&&getComputedStyle(r),shown=!!sv&&getComputedStyle(sv).display!=='none';
         let ring=null;if(shown){const x=parseFloat(cs.x),y=parseFloat(cs.y),W=parseFloat(cs.width),Hh=parseFloat(cs.height),s=parseFloat(cs.strokeWidth),b=sv.getBoundingClientRect();
@@ -116,9 +116,9 @@ module.exports = async (ctx) => {
       assert.ok(/^0s(, 0s)*$/.test(r.trans), `${tag}: ${id}: the line has no transition (${r.trans})`);
     });
     assert.ok(known >= 8, `${tag}: enough agents with a context were checked (${known})`);
-    /* every band is on show (a red desk, an amber one, a green one) */
+    /* every band is on show (a red desk, a warn one, an ok one) */
     const bands = new Set(desks.filter((r) => r.shown).map((r) => r.lv));
-    assert.deepStrictEqual([...bands].sort(), ['high', 'ok', 'warn'], `${tag}: green, amber and red desks are on show`);
+    assert.deepStrictEqual([...bands].sort(), ['high', 'ok', 'warn'], `${tag}: ok, warn and high desks are on show`);
     /* the glass keeps its own tint: it is the state's, never the band's (the line is not the tint) */
     assert.ok(await js(`[...document.querySelectorAll('#stage .ro-screen .ro-glass')].every(g=>!/ro-ctx/.test(g.innerHTML))`), `${tag}: nothing of the line in a glass`);
 
@@ -136,7 +136,7 @@ module.exports = async (ctx) => {
       await js(`window.__durbarSimEmit({type:'context',sessionId:${jsLiteral(pick)},timestamp:Date.now(),tokens:${jsLiteral(share(ids.indexOf(pick)) * 10)},limit:1000})`);
       await must(`window.__cx(${jsLiteral(pick)}).lastChild.getAttribute('stroke-dasharray')===${jsLiteral(share(ids.indexOf(pick)) + ' 100')}`, `${tag}: the seeded share back`);
       await H.shot(path.join(OUT, `ctx-${world}-${w}x${h}.png`), { prep: 'mouse', tag: 'ctx-frame' });
-      /* the 2x crop of three desks at a low, a mid and a high context (a green, an amber and a red line) */
+      /* the 2x crop of three desks at a low, a mid and a high context (a white, a white and a red line) */
       const want = [[18, 'low'], [78, 'mid'], [97, 'high']];
       const parts = [];
       for (const [p, name] of want) {
