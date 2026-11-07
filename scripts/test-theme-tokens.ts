@@ -268,6 +268,7 @@ for (const f of FILES) {
     // review of #1283: no pale Clean Office `-bg` fill is left under the arcade's light ink (`--bad-bg` was: the limit chip at 1.77:1). Every `-bg` token of the arcade that is a
     // plain colour is dark, bar and brand fills apart (own pairs); the drop overlay (`--drop-bg`, light `--drop-ink`) is a pair of its own. Not text fills: `--walker-bg` (an avatar disc), `--done-bg` (a tick disc)
     for (const k of Object.keys(r).filter((x) => /-bg$/.test(x) && !/^--(wb|wp)-|^--(brand|walker|done)-bg$/.test(x))) assert.ok(/^#[0-9a-f]{6}$/i.test(r[k]) && luminance(r[k]) < 0.05, `retro: ${k} is a dark fill (${r[k]})`);
+    assert.ok(contrast(r['--brand-bg'], r['--wb-bg-2']) >= 4.5, `retro: the marquee name (--brand-bg on --wb-bg-2) ${contrast(r['--brand-bg'], r['--wb-bg-2']).toFixed(2)}:1`);
     assert.ok(contrast(r['--drop-ink'], r['--drop-bg']) >= 4.5, `retro: --drop-ink on --drop-bg ${contrast(r['--drop-ink'], r['--drop-bg']).toFixed(2)}:1`);
     assert.ok(luminance(r['--surface']) < 0.05 && luminance(r['--bg']) < 0.05 && luminance(r['--card']) < 0.05 && luminance(r['--wb-bg']) < 0.05, 'retro: page, cards and bar are dark');
     assert.deepStrictEqual(rr.filter((x) => !(x.ratio >= x.min)).map((x) => `${x.fg} on ${x.bg} ${x.ratio.toFixed(2)}:1 < ${x.min}`), [], 'every pair of the arcade passes WCAG AA');
