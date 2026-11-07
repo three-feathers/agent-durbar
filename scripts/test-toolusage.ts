@@ -1,7 +1,7 @@
 /** All-time tool usage document (spec 020 FR-004..FR-006): `npm run test:toolusage`. */
 import * as assert from 'assert';
 import * as path from 'path';
-import { MAX_AGENTS, MAX_TOOLS, agentLabel, emptyDoc, recordEvent, sanitizeDoc, toolKey } from '../src/shared/toolusage';
+import { HIDDEN_SERVER, HIDDEN_TOOL, MAX_AGENTS, MAX_TOOLS, agentLabel, emptyDoc, recordEvent, sanitizeDoc, toolKey } from '../src/shared/toolusage';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const S = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'toolstats.js')) as { toolKey: (e: unknown) => unknown };
 
@@ -74,5 +74,69 @@ assert.strictEqual(agentLabel('Ada', '/home/v/work/command-center'), 'Ada · com
 assert.strictEqual(agentLabel('Ada', 'C:\\Users\\v\\proj\\'), 'Ada · proj');
 assert.strictEqual(agentLabel('Ada', ''), 'Ada');
 assert.ok(!agentLabel('Ada', '/home/v/secret-dir/app').includes('secret-dir'), 'no path, only the base name');
+
+// spec 020 FR-033 (issue #1291): a name that looks like a secret is never stored; it is counted under one fixed placeholder
+{
+  const TK = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4', AW = 'AKIA' + 'Z7Q2W9X4C6V8B1N3', SK = 'sk-' + 'proj-A1b2C3d4E5f6G7h8I9j0K1l2M3n4';
+  const split = (t: string, mid: string) => t.slice(0, 12) + mid + t.slice(12);
+  const PARTS = /ghp_|A1b2C3d4|E5f6G7h8|f6G7h8|K1l2M3n4|sk-proj|AKIAZ7|Z7Q2W9|X4C6V8|[\u0000-\u001f‪-‮]/;
+  const shapes: Record<string, string> = {
+    plain: TK, aws: AW, sk: SK, ansi: split(TK, '\u001b[0m'), osc: split(TK, '\u001b]0;t\u0007'), bidi: split(TK, '‮'), zwsp: split(TK, '​'),
+    md: split(TK, '`'), intro: 'gh' + '\u001b[' + TK.slice(2), awsAnsi: split(AW, '\u001b[31m'), skBidi: split(SK, '‮'), padded: 'x'.repeat(130) + ' ' + TK,
+  };
+  const doc = emptyDoc();
+  for (const [what, tok] of Object.entries(shapes)) {
+    assert.ok(recordEvent(doc, 'Ada · app', start(tok)), what + ': counted');
+    assert.ok(recordEvent(doc, 'Ada · app', start(tok, { phase: 'failed' })), what + ': failed counted');
+    assert.ok(recordEvent(doc, 'Ada · app', { type: 'toolCall', phase: 'start', tool: 'x', mcpServer: 'srv', mcpTool: tok }), what + ': MCP counted');
+    assert.ok(recordEvent(doc, 'Ada · app', { type: 'toolCall', phase: 'start', tool: 'x', mcpServer: tok, mcpTool: 'list' }), what + ': a secret-shaped server name');
+    assert.strictEqual(toolKey(start(tok)).key, 'builtin:' + HIDDEN_TOOL, what + ': one stable key');
+    assert.strictEqual(toolKey({ tool: 'x', mcpServer: 'srv', mcpTool: tok }).key, 'mcp:srv/' + HIDDEN_TOOL, what + ': one stable MCP key');
+  }
+  const text = JSON.stringify(doc);
+  assert.ok(!PARTS.test(text), 'the document holds no part of any name: ' + (text.match(PARTS) || [''])[0]);
+  const n = Object.keys(shapes).length;
+  assert.deepStrictEqual(doc.tools['builtin:' + HIDDEN_TOOL], { source: 'builtin', server: '', name: HIDDEN_TOOL, calls: n, failed: n }, 'counts add up under the placeholder');
+  assert.strictEqual(doc.tools['mcp:srv/' + HIDDEN_TOOL].calls, n, 'MCP counts add up');
+  assert.strictEqual(doc.servers[HIDDEN_SERVER].calls, n, 'server counts add up under the placeholder');
+  assert.strictEqual(doc.agents['Ada · app'].tools['builtin:' + HIDDEN_TOOL].calls, n, 'the agent counts too');
+  assert.deepStrictEqual(Object.keys(doc.tools).sort(), ['builtin:' + HIDDEN_TOOL, 'mcp:' + HIDDEN_SERVER + '/list', 'mcp:srv/' + HIDDEN_TOOL].sort(), 'a bounded set of keys, however many secret-shaped names');
+  // clean names are kept as before
+  for (const ok of ['bash', 'read_file', 'mcp__github__create_issue', 'search-issues', 'Ünïcode tool', 'git commit']) assert.strictEqual(toolKey(start(ok)).name, ok, 'a clean name stays: ' + ok);
+  assert.strictEqual(toolKey(start('bash\u001b[0m')).name, 'bash [0m', 'control codes are still spaces (as before)');
+  assert.strictEqual(toolKey(start(HIDDEN_TOOL)).name, HIDDEN_TOOL, 'the placeholder is itself clean: stored once, not changed again');
+
+  // an existing file: stored names that look like secrets are replaced on load; counts and the agents' counts move to the placeholder, none is lost
+  const old = {
+    version: 1, since: '2026-10-01T00:00:00.000Z',
+    tools: {
+      ['builtin:' + TK]: { source: 'builtin', server: '', name: TK, calls: 3, failed: 1 },
+      ['builtin:' + split(TK, '‮')]: { source: 'builtin', server: '', name: split(TK, '‮'), calls: 2, failed: 0 },
+      'builtin:bash': { source: 'builtin', server: '', name: 'bash', calls: 5, failed: 0 },
+      ['mcp:srv/' + AW]: { source: 'mcp', server: 'srv', name: AW, calls: 4, failed: 2 },
+      ['mcp:' + SK + '/t']: { source: 'mcp', server: SK, name: 't', calls: 1, failed: 0 },
+    },
+    servers: { srv: { calls: 4, failed: 2 }, [SK]: { calls: 1, failed: 0 } },
+    agents: { 'Ada · app': { calls: 15, failed: 3, tools: { ['builtin:' + TK]: { calls: 3, failed: 1 }, ['builtin:' + split(TK, '‮')]: { calls: 2, failed: 0 }, 'builtin:bash': { calls: 5, failed: 0 }, ['mcp:srv/' + AW]: { calls: 4, failed: 2 } } } },
+  };
+  const rep = { masked: 0 };
+  const m = sanitizeDoc(JSON.parse(JSON.stringify(old)), new Date(), rep);
+  assert.ok(!PARTS.test(JSON.stringify(m)), 'a migrated document holds no part of a name: ' + (JSON.stringify(m).match(PARTS) || [''])[0]);
+  assert.ok(rep.masked >= 5, 'the report counts what was replaced: ' + rep.masked);
+  assert.deepStrictEqual(m.tools['builtin:' + HIDDEN_TOOL], { source: 'builtin', server: '', name: HIDDEN_TOOL, calls: 5, failed: 1 }, 'two stored names merge, counts added');
+  assert.strictEqual(m.tools['builtin:bash'].calls, 5, 'a clean name is untouched');
+  assert.strictEqual(m.tools['mcp:srv/' + HIDDEN_TOOL].calls, 4);
+  assert.strictEqual(m.tools['mcp:' + HIDDEN_SERVER + '/t'].calls, 1);
+  assert.strictEqual(m.servers[HIDDEN_SERVER].calls, 1);
+  assert.deepStrictEqual(m.agents['Ada · app'].tools['builtin:' + HIDDEN_TOOL], { calls: 5, failed: 1 }, 'the agent counts follow their tool');
+  assert.strictEqual(m.agents['Ada · app'].tools['mcp:srv/' + HIDDEN_TOOL].calls, 4);
+  const again = { masked: 0 };
+  assert.deepStrictEqual(sanitizeDoc(JSON.parse(JSON.stringify(m)), new Date(), again).tools, m.tools, 'sanitising twice changes nothing');
+  assert.strictEqual(again.masked, 0, 'a clean file is not reported');
+  // a clean document: report stays 0
+  const clean = { masked: 0 };
+  sanitizeDoc(JSON.parse(JSON.stringify(d)), new Date(), clean);
+  assert.strictEqual(clean.masked, 0, 'no replacement in a clean file');
+}
 
 console.log('toolusage: all checks passed');

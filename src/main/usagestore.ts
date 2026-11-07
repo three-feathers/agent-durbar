@@ -40,7 +40,13 @@ export class UsageStore {
   load(): void {
     try {
       if (fs.statSync(this.file).size > MAX_FILE) return;
-      this.doc = sanitizeDoc(JSON.parse(fs.readFileSync(this.file, 'utf8')), this.now());
+      const report = { masked: 0 };
+      this.doc = sanitizeDoc(JSON.parse(fs.readFileSync(this.file, 'utf8')), this.now(), report);
+      // spec 020 FR-033 (#1291): a file written before the mask held a secret-shaped name; it is replaced on disk now, not at the next count
+      if (report.masked > 0) {
+        this.dirty = true;
+        this.flush();
+      }
     } catch {
       this.doc = emptyDoc(this.now());
     }
