@@ -1,0 +1,1 @@
+- **A tool named like a secret is hidden** (spec 097 FR-317, issue #1284): a tool name that looks like a token (an MCP server chooses the names) showed as it was on the desk line, the monitor and the chat's tool chips. It now shows as `tool` everywhere, with the chip keeping its icon and label. Checked in the simulator.
