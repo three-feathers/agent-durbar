@@ -67,11 +67,11 @@ module.exports = async (ctx) => {
     const rows = await js(`(()=>{const tok=n=>{const e=document.createElement('i');e.style.color='var('+n+')';document.body.appendChild(e);const c=getComputedStyle(e).color;e.remove();return c;};
       const T={ok:tok('--green'),warn:tok('--amber'),high:tok('--red')},R=e=>{const r=e.getBoundingClientRect();return [r.left,r.top,r.right,r.bottom]};
       return [...document.querySelectorAll('#stage .ro-screen[data-for]')].map(sc=>{const k=sc.dataset.for,sv=sc.querySelector(':scope > .ro-ctx'),r=sv&&sv.lastChild,kl=sv&&sv.firstChild,pl=document.querySelector('#stage .ro-plate[data-id='+JSON.stringify(k)+']'),
-        gl=sc.querySelector('.ro-glass'),scb=R(sc),inner=[...sc.querySelectorAll('.ro-glass, .ro-bezel')].map(e=>getComputedStyle(e).backgroundColor),txt=[...document.querySelectorAll('#stage .ro-stext[data-for='+JSON.stringify(k)+'] :is(.ro-sl,.ro-bars i)')].map(e=>getComputedStyle(e).color+'|'+getComputedStyle(e).backgroundColor),tx=document.querySelector('#stage .ro-stext[data-for='+JSON.stringify(k)+']'),cs=r&&getComputedStyle(r),shown=!!sv&&getComputedStyle(sv).display!=='none';
+        gl=sc.querySelector('.ro-glass'),scb=R(sc),cab=(e=>e?R(e):null)(document.querySelector('#stage .ro-cab[data-for='+JSON.stringify(k)+']')),mq=(e=>e?R(e):null)(document.querySelector('#stage .ro-marquee[data-for='+JSON.stringify(k)+']')),inner=[...sc.querySelectorAll('.ro-glass, .ro-bezel')].map(e=>getComputedStyle(e).backgroundColor),txt=[...document.querySelectorAll('#stage .ro-stext[data-for='+JSON.stringify(k)+'] :is(.ro-sl,.ro-bars i)')].map(e=>getComputedStyle(e).color+'|'+getComputedStyle(e).backgroundColor),tx=document.querySelector('#stage .ro-stext[data-for='+JSON.stringify(k)+']'),cs=r&&getComputedStyle(r),shown=!!sv&&getComputedStyle(sv).display!=='none';
         let ring=null;if(shown){const x=parseFloat(cs.x),y=parseFloat(cs.y),W=parseFloat(cs.width),Hh=parseFloat(cs.height),s=parseFloat(cs.strokeWidth),b=sv.getBoundingClientRect();
           ring={out:[b.left+x-s/2,b.top+y-s/2,b.left+x+W+s/2,b.top+y+Hh+s/2],inn:[b.left+x+s/2,b.top+y+s/2,b.left+x+W-s/2,b.top+y+Hh-s/2],sw:s,per:Math.round(2*(W+Hh)),len:r.getTotalLength?Math.round(r.getTotalLength()):0};}
         return {k,lounge:sc.classList.contains('ro-lmon'),has:!!sv,shown,lv:sv?sv.dataset.lv||'':'',dash:r?r.getAttribute('stroke-dasharray')||'':'',stroke:cs?cs.stroke:'',hidden:sv?sv.getAttribute('aria-hidden'):'',inGlass:!!(gl&&gl.querySelector('.ro-ctx')),
-          label:pl?pl.getAttribute('aria-label'):'',glass:R(gl),scb,inner,txt,text:tx?R(tx):null,ring,anim:r?r.getAnimations().length:0,ck:kl?{dash:kl.getAttribute('stroke-dasharray')||'',w:parseFloat(getComputedStyle(kl).strokeWidth),c:getComputedStyle(kl).stroke}:null,trans:cs?cs.transitionDuration:'',T};});})()`);
+          label:pl?pl.getAttribute('aria-label'):'',glass:R(gl),scb,cab,mq,inner,txt,text:tx?R(tx):null,ring,anim:r?r.getAnimations().length:0,ck:kl?{dash:kl.getAttribute('stroke-dasharray')||'',w:parseFloat(getComputedStyle(kl).strokeWidth),c:getComputedStyle(kl).stroke}:null,trans:cs?cs.transitionDuration:'',T};});})()`);
     const byId = new Map(rows.map((r) => [r.k, r]));
     const desks = rows.filter((r) => !r.lounge);
     assert.ok(desks.length >= 12, `${tag}: desks with a monitor (${desks.length})`);
@@ -101,8 +101,14 @@ module.exports = async (ctx) => {
       assert.ok(r.ring.sw >= 4, `${tag}: ${id}: the line is at least 4 px (${r.ring.sw})`);
       assert.ok(r.ck && r.ck.dash === r.dash && r.ck.w >= r.ring.sw + 2 && Math.max(...r.ck.c.match(/\d+/g).slice(0, 3).map(Number)) < 40, `${tag}: ${id}: a dark keyline at least 2 px wider lies under the line with the same dash (${JSON.stringify(r.ck)})`);
       if (world === 'arcade') {
-        /* the arcade's line lies on the cabinet's outer frame: the whole screen box (bezel, glass, text) is inside the line's inner edge, and no band colour is a colour used in the screen */
-        assert.ok(inside(r.scb, r.ring.inn), `${tag}: ${id}: the arcade line lies outside the whole screen (screen ${r.scb.map(Math.round)} ring inside ${r.ring.inn.map(Math.round)})`);
+        /* the arcade's line lies in the screen's frame band: its widest part (the keyline) is inside the screen box, which is inside the cabinet's body, clear of the marquee
+           (above) and of the control strip (below the screen box); the glass with its text is inside the line's inner edge; no band colour is a colour used inside the screen */
+        const rc = [(r.ring.out[0] + r.ring.inn[0]) / 2, (r.ring.out[1] + r.ring.inn[1]) / 2, (r.ring.out[2] + r.ring.inn[2]) / 2, (r.ring.out[3] + r.ring.inn[3]) / 2], kh = r.ck.w / 2;
+        const kout = [rc[0] - kh, rc[1] - kh, rc[2] + kh, rc[3] + kh], within = (b, a) => b[0] >= a[0] - 0.6 && b[1] >= a[1] - 0.6 && b[2] <= a[2] + 0.6 && b[3] <= a[3] + 0.6;
+        assert.ok(r.cab && within(kout, r.cab), `${tag}: ${id}: the arcade line is inside the cabinet's body (${kout.map(Math.round)} vs ${r.cab && r.cab.map(Math.round)})`);
+        assert.ok(within(kout, r.scb), `${tag}: ${id}: the arcade line is inside the screen's frame band, so above the control strip (${kout.map(Math.round)} vs screen ${r.scb.map(Math.round)})`);
+        assert.ok(!r.mq || kout[1] >= r.mq[3] - 0.6, `${tag}: ${id}: the arcade line is under the marquee (${kout[1]} vs ${r.mq && r.mq[3]})`);
+        assert.ok(inside(r.glass, r.ring.inn) && (!r.text || inside(r.text, r.ring.inn)), `${tag}: ${id}: the glass and its text are inside the arcade line's inner edge`);
         const used = new Set([...r.inner, ...r.txt.flatMap((x) => x.split('|'))]);
         assert.ok(!used.has(r.stroke), `${tag}: ${id}: the arcade band colour ${r.stroke} is not a colour used inside the screen`);
       }

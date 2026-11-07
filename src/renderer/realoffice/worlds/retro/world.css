@@ -81,6 +81,6 @@
 .ro[data-world="retro"] .ro-plate.lounge .ro-l1{display:block;flex:none;max-width:55%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ro[data-world="retro"] .ro-plate.lounge .ro-role{display:none}
 .ro[data-world="retro"] .ro-plate.lounge .ro-l2{display:block;flex:1 1 auto;min-width:0;-webkit-line-clamp:unset}
-/* spec 097 FR-324 (review of #1297): the context line lies on the cabinet's own outer frame, just outside the screen box (the lavender bezel and the glass with its text bars are all inside it), never inside the screen where a green fill read as a third text bar; the svg is the whole screen box, the rect grows by one grid pixel each side */
-.ro[data-world="retro"] .ro-ctx rect{x:calc(-1px*var(--ro-g));y:calc(-1px*var(--ro-g));width:calc(var(--ro-cw,0px) + 2px*var(--ro-g));height:calc(var(--ro-ch,0px) + 2px*var(--ro-g));stroke-width:max(4px,calc(2px*var(--ro-g)))}
+/* spec 097 FR-324 (review of #1299): the arcade's line lies in the screen's own frame band, the 4 grid-pixel border between the cabinet body and the glass (the svg is that whole screen box): the line is 2 grid pixels (4 px at g=2) in the band's outer half and its keyline one px wider each side, so every pixel of both stays inside the band: inside the cabinet's body, under the marquee, above the control strip, and clear of the glass and its text bars (the band's inner half stays bare) */
+.ro[data-world="retro"] .ro-ctx rect{x:calc(1.5px*var(--ro-g));y:calc(1.5px*var(--ro-g));width:calc(var(--ro-cw,0px) - 3px*var(--ro-g));height:calc(var(--ro-ch,0px) - 3px*var(--ro-g));stroke-width:max(4px,calc(2px*var(--ro-g)))}
 .ro[data-world="retro"] .ro-ctx .ro-ck{stroke-width:calc(max(4px,2px*var(--ro-g)) + 2px)}
