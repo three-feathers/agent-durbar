@@ -1,9 +1,10 @@
+import { createHash } from 'crypto';
 import { isObj } from './guards';
 import { stripAnsi } from './harnesssetup';
 import { maskNoteText } from './redact';
 /**
  * "All time" tool usage (spec 020): cumulative counts that are kept on disk across restarts.
- * Pure (no Node, no Electron) so the main process, the simulator and the tests share it.
+ * Pure (no Electron; `crypto` only for the verdict cache key) so the main process, the simulator and the tests share it.
  *
  * Privacy (FR-005): only tool names, MCP server names, agent labels and counts are stored. A recorded event's arguments, output,
  * call id and session id are never copied into the document.
@@ -61,26 +62,28 @@ const name = (v: unknown): string => (typeof v === 'string' ? v.replace(/[\u0000
 export const HIDDEN_TOOL = '[hidden tool]';
 export const HIDDEN_SERVER = '[hidden server]';
 const NAME_LOOK = 4096; // longer names are judged on their first 4096 characters, then cut to MAX_NAME as before
-/* Verdict cache (review of #1294): keyed by the judged slice (a flat copy, so the huge raw name is not kept alive), at most 500 entries. Only a
-   clean verdict is kept: a secret-shaped name is never held in memory, and a throw is never cached. */
+/* Verdict cache (review of #1294): keyed by the SHA-256 (hex) of the judged slice, so no name text, secret or not, stays in memory; at most 500
+   entries, each a boolean; a throw is never cached. A repeated hostile name is judged once, not once per event. */
 const hiddenCache = new Map<string, boolean>();
 const CACHE_MAX = 500;
-export const nameCacheStats = (): { size: number; maxKeyLength: number } => ({ size: hiddenCache.size, maxKeyLength: Math.max(0, ...[...hiddenCache.keys()].map((k) => k.length)) });
+export const nameCacheStats = (): { size: number; maxKeyLength: number; allHashes: boolean } => ({ size: hiddenCache.size, allHashes: [...hiddenCache.keys()].every((k) => /^[0-9a-f]{64}$/.test(k)), maxKeyLength: Math.max(0, ...[...hiddenCache.keys()].map((k) => k.length)) });
 const WHITE = /[\s\u0000-\u001f\u007f]/g;
 function looksSecret(raw: string): boolean {
   const text = raw.slice(0, NAME_LOOK);
-  const key = text.split('').join(''); // flat copy: a V8 slice would keep the whole raw string alive
-  if (hiddenCache.get(key) === false) return false;
+  const key = createHash('sha256').update(text).digest('hex');
+  const hit = hiddenCache.get(key);
+  if (hit !== undefined) return hit;
+  let r: boolean;
   try {
     const plain = stripAnsi(text);
     // the text as it is, with its escape sequences cut out, and with tabs, line breaks, other control codes and spaces cut out (a token split by one is a token)
-    if ([text, plain, plain.replace(WHITE, '')].some((v) => maskNoteText(v).changed)) return true;
+    r = [text, plain, plain.replace(WHITE, '')].some((v) => maskNoteText(v).changed);
   } catch {
     return true;
   }
   if (hiddenCache.size >= CACHE_MAX) hiddenCache.clear();
-  hiddenCache.set(key, false);
-  return false;
+  hiddenCache.set(key, r);
+  return r;
 }
 /** A tool or server name for the file: the plain `name`, or `placeholder` when it looks like a secret. `report.masked` counts the replaced ones. */
 function hideable(v: unknown, placeholder: string, report?: { masked: number }): string {

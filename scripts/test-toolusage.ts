@@ -215,11 +215,15 @@ assert.ok(!agentLabel('Ada', '/home/v/secret-dir/app').includes('secret-dir'), '
       toolKey(start(TK + '1'));
       const n3 = calls.n;
       toolKey(start(TK + '1'));
-      assert.ok(calls.n > n3, 'cache: a secret-shaped name is not kept (judged again)');
+      assert.strictEqual(calls.n, n3, 'cache: a repeated secret-shaped name is judged once');
+      const st0 = nameCacheStats();
+      assert.ok(st0.maxKeyLength === 64, 'cache: keys are SHA-256 hex, not name text, got length ' + st0.maxKeyLength);
+      assert.ok(st0.allHashes, 'cache: no key holds name text (every key is 64 hex characters)');
+      assert.strictEqual(toolKey(start(TK + '1')).name, HIDDEN_TOOL, 'cache: the cached secret verdict still hides the name');
       for (let i = 0; i < 700; i++) toolKey(start(`n${i}-` + 'q'.repeat(20000)));
       const st = nameCacheStats();
       assert.ok(st.size <= 500, 'cache: bounded at 500 entries, got ' + st.size);
-      assert.ok(st.maxKeyLength <= 4096, 'cache: no key longer than the judged slice, got ' + st.maxKeyLength);
+      assert.ok(st.allHashes && st.maxKeyLength <= 64, 'cache: every key is a 64-character hash, got ' + st.maxKeyLength);
     } finally { REDACT.maskNoteText = orig; }
   }
 
