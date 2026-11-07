@@ -93,6 +93,25 @@ module.exports = async (ctx) => {
       }
       await shot(world, 'firstrun', w, h);
     }
+    // ---- 102 RA7 (review of #1279): the arcade's first-run rule is scoped to the arcade. The photo and cave rules hide the counts too, so the check takes the world off the page (a Real office without a world draws them) and adds retro's world.css read from dist ----
+    if (run('scope') && world !== 'retro') {
+      if (world === 'cave') await H.load({ w, h, query: q(world), ready: REAL, settle: false });
+      else {
+        await H.load({ w, h, query: q(world), settle: false });
+        await js(`localStorage.setItem('durbar.officeview','real');localStorage.setItem('durbar.world',${jsLiteral(world)})`);
+        await H.load({ w, h, query: q(world, { sim: undefined, officeview: undefined }), ready: `!!document.querySelector('#stage .welcome')`, settle: false });
+      }
+      if (world === 'cave') { await js(`window.__durbarSimUi.agents().splice(0);window.__durbarSimUi.crew.renderAll()`); }
+      await must(`!!document.querySelector('#stage .welcome')`, 'the first-run card');
+      await must(`!!document.getElementById('roWorldCss-'+${jsLiteral(world)})&&document.documentElement.dataset.world===${jsLiteral(world)}`, `the ${world} stylesheet`);
+      assert.strictEqual(await js(`!!document.getElementById('roWorldCss-retro')`), false, `${tag}: the arcade's stylesheet is not loaded in ${world}`);
+      assert.strictEqual(await js(`getComputedStyle(document.getElementById('stats')).visibility`), 'hidden', `${tag}: ${world} hides its own counts on a first run`);
+      const css = fs.readFileSync(path.join(__dirname, '..', 'dist', 'renderer', 'realoffice', 'worlds', 'retro', 'world.css'), 'utf8');
+      assert.ok(/body:has\(#stage > \.welcome\) #stats\{visibility:hidden\}/.test(css), "the arcade's first-run rule is in its world.css (the check below would prove nothing without it)");
+      await js(`(()=>{document.documentElement.removeAttribute('data-world');const s=document.createElement('style');s.id='scopeProbe';s.textContent=${jsLiteral(css)};document.head.appendChild(s)})()`);
+      assert.strictEqual(await js(`getComputedStyle(document.getElementById('stats')).visibility`), 'visible', `${tag}: with the arcade's CSS present on a page that is not the arcade, the counts stay: the rule is scoped to html[data-world="retro"]`);
+      await js(`document.getElementById('scopeProbe').remove()`);
+    }
     // ---- FR-119 empty office ----
     if (run('empty-office')) {
       await H.load({ w, h, query: q(world, { simfloors: 'ground' }), ready: REAL, settle: false });
@@ -421,8 +440,12 @@ module.exports = async (ctx) => {
       await shot(world, 'cell-chat', w, h);
       await H.load({ w, h, query: q(world, { sim: '15', simfloors: '1' }), ready: REAL, settle: false });
       await must(PICS, 'the pictures');
-      await js(`(()=>{const b=document.querySelector('#lift .lift-all');if(b)b.click()})()`);
-      if (await H.until(`!!document.querySelector('#stage .ro-building,#stage .allfloors,#stage [data-d="all"]')`, 4000)) await shot(world, 'cell-allfloors', w, h);
+      await js(`document.querySelector('#lift [data-lift="*all"]').click()`);
+      /* review of #1279: no silent skip. The same condition shots-092-lift uses for the All floors view; if it never comes, the run fails, so no picture is ever quietly missing */
+      await must(`document.querySelector('#lift [data-lift="*all"]').getAttribute('aria-current')==='true'`, 'the All floors view (the lift says All)');
+      await must(PICS, 'the pictures');
+      await shot(world, 'cell-allfloors', w, h);
+      for (const f of ['cell-chat', 'cell-allfloors']) assert.ok(fs.existsSync(path.join(OUT, `${world}-${f}-${w}x${h}.png`)), `${tag}: the picture ${f} was written`);
       await js(`localStorage.removeItem('durbar.floor');localStorage.removeItem('durbar.floorView')`); /* the next size starts on one floor */
     }
   }
