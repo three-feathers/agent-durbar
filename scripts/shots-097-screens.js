@@ -259,7 +259,7 @@ module.exports = async (ctx) => {
       const sub = 'drv-helper-1', base = { sessionId: desk };
       await emit({ ...base, type: 'subagent', subagentId: sub, name: 'Driver helper', phase: 'started', task: 'Check the driver', agentName: 'explore' });
       await emit({ ...base, type: 'status', status: 'working', agentId: sub, intent: 'Check the driver' });
-      await must(`(window.__st()||{querySelectorAll:()=>[]}).querySelectorAll('.ro-ht').length===${h0.n + 1}`, 'the desk\'s helper strip one tile up (was ' + JSON.stringify(h0) + ')');
+      await must(`(window.__st()||{querySelectorAll:()=>[]}).querySelectorAll('.ro-ht').length===${jsLiteral(h0.n + 1)}`, 'the desk\'s helper strip one tile up (was ' + JSON.stringify(h0) + ')');
       const h1 = await help();
       assert.strictEqual(h1.n, h0.n + 1, 'a new helper adds one tile: ' + JSON.stringify([h0, h1]));
       assert.ok(await js(`!window.__pl().querySelector('.ro-help')`), 'the plate shows no "+N" while its helpers are drawn');

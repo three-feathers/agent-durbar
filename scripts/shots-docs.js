@@ -51,7 +51,6 @@ const DOC_SHOTS = [
   { name: 'shots-015-compact', files: ['015-compacting-office-1440x900.png', '015-compacting-office-1280x800.png', '015-compacting-chat-1440x900.png', '015-compacting-chat-1280x800.png'] },
   { name: 'shots-017', files: [{ to: '012-harness-picker-1440x900.png', from: '012-picker-1440x900.png' }] },
   { name: 'shots-024', files: ['024-lobby-1440x900.png'] },
-  { name: 'check-097-helpers', files: ['097-helpers-photo-1440x900.png', '097-helpers-photo-1280x800.png', '097-helpers-cave-1440x900.png', '097-helpers-cave-1280x800.png'] }, // spec 097 FR-306..FR-311 (#1139): a desk's helpers as a strip under its plate, 15 agents with 2 helpers each
   { name: 'shots-097-realoffice', files: ['097-office-layout-1440x900.png'] }, // spec 097 P1: Real office mode (its photo-heavy 15-agent pictures stay out of the site budget: linked from the spec only, retaken with SHOTS_OUT=docs/screenshots)
   { name: 'shots-030-handoff', files: ['handoff-review-1440x900.png'] },
   { name: 'shots-033', files: ['033-floors-on-1440x900.png'] },

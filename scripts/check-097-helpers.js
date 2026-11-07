@@ -40,7 +40,7 @@ module.exports = async (ctx) => {
     if (MUTANT === 'nostrip') await js(`(()=>{const f=()=>document.querySelectorAll('#stage .ro-hstrip').forEach(e=>e.remove());f();new MutationObserver(f).observe(document.getElementById('stage'),{childList:true,subtree:true});return 1})()`);
   };
   /* what the layout says and what the page drew, for each desk that has helpers */
-  const read = () => js(`(()=>{const L=${SIM}.realLayout(),A=${SIM}.agents(),R=e=>{const r=e.getBoundingClientRect(),o=document.querySelector('#stage .ro').getBoundingClientRect();return {x:Math.round((r.left-o.left)*10)/10,y:Math.round((r.top-o.top)*10)/10,w:Math.round(r.width*10)/10,h:Math.round(r.height*10)/10}};
+  const read = () => js(`(()=>{const L=window.__durbarSimUi.realLayout(),A=window.__durbarSimUi.agents(),R=e=>{const r=e.getBoundingClientRect(),o=document.querySelector('#stage .ro').getBoundingClientRect();return {x:Math.round((r.left-o.left)*10)/10,y:Math.round((r.top-o.top)*10)/10,w:Math.round(r.width*10)/10,h:Math.round(r.height*10)/10}};
     const desks=L.zones.flatMap(z=>z.desks.map(d=>({d,z})));
     return {scroll:L.scroll,face:L.faceH,level:L.helpLevel,
       desks:desks.map(({d,z})=>{const S=CSS.escape(d.id),a=A.find(x=>x.id===d.id),subs=A.filter(x=>x.parent===d.id),bx=document.querySelector('#stage .ro-hstrip[data-key], #stage .ro-chrome')&&null;
@@ -137,7 +137,7 @@ module.exports = async (ctx) => {
     const open = await read();
     assert.strictEqual(boxes0(open), boxes0(L4), `${tag}: opening a strip moves no desk box`);
     await js(`document.querySelector('#stage .ro-hmore[data-more="'+CSS.escape(${jsLiteral(more.id)})+'"]').click()`);
-    await must(`(()=>{const m=document.querySelector('#stage .ro-hmore[data-more="'+CSS.escape(${jsLiteral(more.id)})+'"]');return m&&m.getAttribute('aria-expanded')==='false'&&!m.parentElement.classList.contains('open')&&m.parentElement.querySelectorAll('.ro-ht').length===${more.tiles}})()`, `${tag}: "Show fewer" folds them`);
+    await must(`(()=>{const m=document.querySelector('#stage .ro-hmore[data-more="'+CSS.escape(${jsLiteral(more.id)})+'"]');return m&&m.getAttribute('aria-expanded')==='false'&&!m.parentElement.classList.contains('open')&&m.parentElement.querySelectorAll('.ro-ht').length===${jsLiteral(more.tiles)}})()`, `${tag}: "Show fewer" folds them`);
   }
   function boxes0(r) { return JSON.stringify(r.desks.map((d) => [d.id, d.box, d.plate])); }
 
