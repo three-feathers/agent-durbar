@@ -22,6 +22,14 @@ const path = require('path');
    CHECK_DARK is the manifest, CHECK_DARK_QUERY loads it in the simulator (`theme` + `usertheme`), and `window.THEME.setTheme(CHECK_DARK)` switches to it in a loaded page. */
 const CHECK_DARK = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'themes', 'check-dark.json'), 'utf8'));
 const CHECK_DARK_QUERY = { theme: CHECK_DARK.id, usertheme: JSON.stringify(CHECK_DARK) };
+/* spec 102 T226: a run that says "dark" must be on the dark fixture: the theme on screen is `check-dark` and the page (`--bg`) is dark (luminance under 0.2).
+   A renamed or swapped fixture file then fails the run instead of being measured under its own name. Returns the problem text, or '' when it is right. */
+async function darkFixtureProblem(ctx) {
+  const on = await ctx.js(`(()=>{const e=document.createElement('i');e.style.cssText='position:fixed;background:var(--bg)';document.body.appendChild(e);const c=getComputedStyle(e).backgroundColor;e.remove();const m=/\\d+(\\.\\d+)?/g,v=(c.match(m)||[]).slice(0,3).map(Number);const l=v.length===3?(0.2126*v[0]+0.7152*v[1]+0.0722*v[2])/255:1;return {id:window.THEME.current().id,bg:c,lum:l}})()`);
+  if (on.id !== CHECK_DARK.id) return `the dark run is on theme "${on.id}", not the fixture "${CHECK_DARK.id}"`;
+  if (!(on.lum < 0.2)) return `the dark run's page is not dark (--bg ${on.bg}, luminance ${on.lum.toFixed(2)})`;
+  return '';
+}
 const LIMIT = 8000;
 const INDEX = path.join(__dirname, '..', 'dist', 'renderer', 'index.html');
 
@@ -299,4 +307,4 @@ async function shotWithView(win, view, file) {
   fs.writeFileSync(file, nativeImage.createFromBitmap(base, { width: size.width, height: size.height }).toPNG());
 }
 
-module.exports = { waits, helpers, guardWindow, jsLiteral, shotWithView, LIMIT, INDEX, CHECK_DARK, CHECK_DARK_QUERY };
+module.exports = { waits, helpers, guardWindow, jsLiteral, shotWithView, LIMIT, INDEX, CHECK_DARK, CHECK_DARK_QUERY, darkFixtureProblem };

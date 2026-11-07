@@ -23,7 +23,7 @@
  */
 const fs = require('fs');
 const { pageCheck } = require('./check-office-overlap.js');
-const { helpers, jsLiteral } = require('./driver-helpers');
+const { helpers, jsLiteral, CHECK_DARK, darkFixtureProblem } = require('./driver-helpers');
 const os = require('os');
 const path = require('path');
 
@@ -76,6 +76,8 @@ async function driver(ctx) {
     await ctx.waitFor(`window.THEME&&window.THEME.current().id===${jsLiteral(want)}`, 5000);
     const on = await ctx.js(`window.THEME.current().id`);
     if (on !== want) throw new Error(`theme ${want} was not applied (on screen: ${on})`);
+    /* spec 102 T226 (Paco, PR #1276): "dark" is the dark fixture, not just whatever file the name points at */
+    if (theme === 'dark') { const bad = await darkFixtureProblem(ctx); if (bad) throw new Error(`${theme} sim${sim}-${w}x${h}: ${bad}`); }
     await ctx.js(`document.fonts.ready.then(()=>true)`);
     /* spec 008 FR-113: a steady simulator before every capture, the reference included. PR #535's CI once measured a Clean Office
        page whose agents were added but whose replayed events were never drawn (no animation frame for over 3 s): every theme then

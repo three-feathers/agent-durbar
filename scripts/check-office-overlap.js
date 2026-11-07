@@ -48,7 +48,7 @@ const INDEX = path.join(ROOT, 'dist', 'renderer', 'index.html');
 const SIZES = [[1440, 900], [1280, 800]];
 const SIMS = [12, 15];
 const TOL = 0.5;
-const { jsLiteral, helpers } = require('./driver-helpers'); /* jsLiteral lives there (CodeQL js/bad-code-sanitization) */
+const { jsLiteral, helpers, darkFixtureProblem } = require('./driver-helpers'); /* jsLiteral lives there (CodeQL js/bad-code-sanitization) */
 
 /* runs inside the page; returns {problems:[...], info:{...}} */
 function pageCheck(expanded, expectPlaces) {
@@ -391,6 +391,8 @@ async function driver(ctx) {
       try { await ctx.waitFor(`window.THEME&&window.THEME.current().id===${jsLiteral(wantTheme)}`, 5000); } catch (e) { /* reported below */ }
       const on = await ctx.js(`({id:window.THEME.current().id,ui:document.documentElement.dataset.ui||'clean',want:(window.THEME.current().manifest||{}).ui||'clean'})`);
       if (on.id !== wantTheme || on.ui !== on.want) throw new Error(`theme ${wantTheme} was not applied (on screen: ${on.id}, data-ui ${on.ui})`);
+      /* spec 102 T226: the check-parallel "dark theme" jobs and ci.yml's theme-shard `dark` load check-dark.json: it must be the dark fixture, on a dark page */
+      if (userTheme && path.basename(process.env.OFFICE_USER_THEME) === 'check-dark.json') { const bad = await darkFixtureProblem(ctx); if (bad) throw new Error(bad); }
     }
     if (wantChars) {
       try { await ctx.waitFor(`window.THEME.characters()===${jsLiteral(wantChars)}`, 5000); } catch (e) { /* reported below */ }
