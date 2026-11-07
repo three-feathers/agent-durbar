@@ -252,6 +252,7 @@ const simCleanQuery = (q: unknown): { ok: true; query: string; cut: boolean } | 
  * random `searchId`, one live search (a new start or a cancel ends the old one), events only for the live id. `simsearch=slow`: one
  * session every 400 ms, for the "Searching, N of M sessions" state; `simsearch=locked`: the end state says saved MCP values were locked;
  * `simsearch=older`: each open session also has a message its chat does not show, for "That message is older than the chat shows".
+ * `simsearch=delayed`: the start answers after 700 ms, for a query that changes while it is pending.
  */
 function simConvSearchApi(qs: URLSearchParams, scope: () => SimConvSession[]): Pick<DurbarApi, 'convSearchStart' | 'convSearchCancel' | 'convSearchClear' | 'onConvSearch'> {
   type Search = { fold(s: unknown): string; terms(q: string): string[]; locate(t: unknown, q: string): Array<{ start: number; end: number; term: number }>; anchorKey(t: unknown): string };
@@ -294,6 +295,7 @@ function simConvSearchApi(qs: URLSearchParams, scope: () => SimConvSession[]): P
   };
   return {
     convSearchStart: async (query) => {
+      if (qs.get('simsearch') === 'delayed') await new Promise((r) => setTimeout(r, 700)); // review of PR 1240 (R2): a start that answers late
       stop();
       const q = simCleanQuery(query);
       if (!q.ok) return q.code === 'short' ? { ok: false, code: 'short', error: 'Type at least 3 characters.' } : { ok: false, code: 'invalid', error: 'That is not a search.' };

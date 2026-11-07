@@ -16,7 +16,7 @@
   const longEnough=q=>[...String(q==null?'':q).replace(/\s+/g,'')].length>=3;
 
   /* the results of one search: hits by key, the arrival order per group (FR-015: rows already shown do not move while it scans) */
-  function create(){return {hits:new Map(),order:{office:[],earlier:[]},progress:{done:0,total:0},done:false,notes:null,stopped:false,failed:false,userStop:false};}
+  function create(){return {hits:new Map(),order:{office:[],earlier:[]},progress:{done:0,total:0},done:false,notes:null,stopped:false,failed:false,userStop:false,queryCut:false};}
   /* a batch (FR-020): new hits are appended in the order they came (per folder, newest first inside it); a hit seen again replaces its data in place */
   function addBatch(st,b){
     for(const h of (b&&Array.isArray(b.hits)?b.hits:[])){
@@ -55,8 +55,19 @@
   const count=st=>st.order.office.length+st.order.earlier.length;
 
   /* text with <mark> on [start, end) ranges (main's offsets, FR-011): every piece through esc(); overlapping or bad ranges are merged or dropped */
-  function markedHTML(text,marks,esc){
-    const s=String(text==null?'':text), r=(Array.isArray(marks)?marks:[]).map(m=>[Math.max(0,Math.min(s.length,+m[0]||0)),Math.max(0,Math.min(s.length,+m[1]||0))]).filter(m=>m[1]>m[0]).sort((a,b)=>a[0]-b[0]);
+  /* review of PR 1240 (Q1): bidi embedding, override and isolate controls (U+202A..U+202E, U+2066..U+2069) are dropped for display, so a
+     masked excerpt cannot reorder what is shown; the marks' offsets move with the text */
+  const BIDI=/[\u202A-\u202E\u2066-\u2069]/;
+  function dropBidi(text,marks){
+    const s=String(text==null?'':text); if(!BIDI.test(s))return {s,marks};
+    const map=[]; let out='';
+    for(let i=0;i<s.length;i++){map.push(out.length);if(!BIDI.test(s[i]))out+=s[i];}
+    map.push(out.length);
+    const at=i=>map[Math.max(0,Math.min(s.length,+i||0))];
+    return {s:out,marks:(Array.isArray(marks)?marks:[]).map(m=>[at(m[0]),at(m[1])])};
+  }
+  function markedHTML(text,marks0,esc){
+    const d=dropBidi(text,marks0), s=d.s, marks=d.marks, r=(Array.isArray(marks)?marks:[]).map(m=>[Math.max(0,Math.min(s.length,+m[0]||0)),Math.max(0,Math.min(s.length,+m[1]||0))]).filter(m=>m[1]>m[0]).sort((a,b)=>a[0]-b[0]);
     const merged=[]; for(const m of r){const l=merged[merged.length-1];if(l&&m[0]<=l[1])l[1]=Math.max(l[1],m[1]);else merged.push(m.slice());}
     let out='',at=0;
     for(const [a,b] of merged){out+=esc(s.slice(at,a))+'<mark>'+esc(s.slice(a,b))+'</mark>';at=b;}
@@ -85,13 +96,13 @@
     return plural(r,'result')+' in '+plural(n,'session');
   }
   /* FR-014 (and owner answers C, D; review N-R2): one line, only what applies */
-  const LOCKED='Some saved MCP values are locked; excerpts may show them.';
+  const LOCKED='Some saved MCP values are locked; excerpts may show them.', CUT='Your search was cut to 8 words and 200 characters.';
   function notesText(st){
     const n=st&&st.notes, out=[];
     if(st&&st.userStop)out.push('Stopped.');
     else if(st&&st.stopped)out.push('The search stopped when the window was closed or hidden. Search again to finish it.');
-    else if(st&&st.failed)out.push('The search could not finish.');
-    if(!n)return out.join(' ');
+    else if(st&&st.failed&&count(st)>0)out.push('The search could not finish.'); /* review of PR 1240 (R5): with no result the state line says it already */
+    if(!n){if(st&&st.queryCut)out.push(CUT);return out.join(' ');} /* R6: a window-side Stop has no notes from main; the window's own note of a cut query stays */
     out.push('Searched '+plural(+n.searched||0,'session')+' in '+plural(+n.folders||0,'folder')+'.');
     const not=[];
     for(const a of n.notInstalled||[])not.push(a+' (not installed or signed out)');
@@ -109,7 +120,7 @@
     if(n.capped&&n.capped.results)out.push('200 shown; narrow your search.');
     else if(n.capped&&(n.capped.sessions||n.capped.perFolder))out.push('Only the newest sessions were searched (at most 400, 200 earlier ones per folder).');
     if(n.timedOut)out.push('Stopped after 60 s; narrow your search.');
-    if(n.queryCut)out.push('Your search was cut to 8 words and 200 characters.');
+    if(n.queryCut||(st&&st.queryCut))out.push(CUT);
     if(n.mcpValuesLocked)out.push(LOCKED);
     return out.join(' ');
   }
@@ -128,5 +139,5 @@
     return best;
   }
 
-  return {keyOf,longEnough,create,addBatch,finish,resort,sorted,count,markedHTML,excerptHTML,accName,stateText,notesText,LOCKED,announceDue,pickAnchor};
+  return {dropBidi,keyOf,longEnough,create,addBatch,finish,resort,sorted,count,markedHTML,excerptHTML,accName,stateText,notesText,LOCKED,announceDue,pickAnchor};
 })());

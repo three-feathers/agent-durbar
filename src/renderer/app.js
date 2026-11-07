@@ -2062,7 +2062,9 @@ async function csRun(v){
   const st=CSU.create(); CS.st=st; CS.q=v; CS.id=null; CS.lastAnn=undefined;
   if(ui.view!=='list')setView('list'); else csPaint();
   const r=await bridge.convSearchStart(v).catch(()=>({ok:false,code:'invalid',error:'The search could not start.'}));
-  if(CS.st!==st)return; /* a newer query, or the box was cleared meanwhile */
+  if(CS.st!==st)return; /* a newer query (its start cancelled this one in main), or the box was cleared meanwhile (convSearchClear) */
+  /* review of PR 1240 (R2): the query went short (or Stop) while the start was answering: this scan is not wanted, so main's is cancelled */
+  if(st.done){if(r&&r.ok&&r.searchId)bridge.convSearchCancel(r.searchId).catch(()=>{});return;}
   if(!r||!r.ok){
     if(r&&r.code==='short'){csHint('Type at least 3 characters');}
     else if(r&&r.code==='none'){csHint(CS_NONE);}
@@ -2158,6 +2160,7 @@ function csEnd(o){
   if($('list').querySelector('.cs-wrap'))renderList(); /* the Office view does not repaint the hidden list: no result is left in the page */
   if(!opt.keepFocus&&back&&back.isConnected&&back.getClientRects().length)focusIn(back);
   CS.back=null;
+  const wrap=$('convSearchWrap'); if(wrap&&!wrap.classList.contains('open'))csCloseBox(); /* the magnifier drops its query mark */
 }
 function csStop(){
   const st=CS.st; if(!st||st.done||!CS.id)return;
@@ -2167,7 +2170,7 @@ function csStop(){
 }
 /* FR-001 (Q1): the field, or on a narrow top bar the magnifier that opens it */
 function csOpenBox(){const w=$('convSearchWrap');if(!w)return;w.classList.add('open');$('convSearchBtn').setAttribute('aria-expanded','true');}
-function csCloseBox(){const w=$('convSearchWrap');if(!w)return;w.classList.remove('open');$('convSearchBtn').setAttribute('aria-expanded','false');}
+function csCloseBox(){const w=$('convSearchWrap');if(!w)return;w.classList.remove('open');const b=$('convSearchBtn');b.setAttribute('aria-expanded','false');const q=$('convSearch').value.trim();b.setAttribute('aria-label',q?'Search conversations: '+q:'Search conversations');w.classList.toggle('has-q',!!q);}
 function csFocusBox(){
   if(!csAvailable())return;
   if(ui.selected)closePanel();
@@ -2189,8 +2192,10 @@ function csWire(){
     if(e.key==='Enter'&&!e.isComposing){e.preventDefault();clearTimeout(CS.timer);csRun(s.value);return;}
     if((e.key==='ArrowDown'||(e.key==='Tab'&&!e.shiftKey))&&CS.active&&!e.altKey&&!e.ctrlKey&&!e.metaKey){const f=$('list').querySelector('[data-csnav]');if(f){e.preventDefault();focusIn(f);}}
   });
-  s.addEventListener('blur',()=>{setTimeout(()=>{if(!s.value&&!CS.active&&document.activeElement!==s&&!w.contains(document.activeElement))csCloseBox();},0);});
-  b.addEventListener('click',()=>{if(w.classList.contains('open')&&!s.value){csCloseBox();return;}csFocusBox();});
+  /* review of PR 1240 (Q3): on a narrow bar the opened field lies over the bar's own controls, never over the banner below; it closes as
+     soon as the focus leaves it (the query and the results stay; the magnifier says the query) */
+  s.addEventListener('blur',()=>{setTimeout(()=>{if(document.activeElement!==s&&!w.contains(document.activeElement))csCloseBox();},0);});
+  b.addEventListener('click',()=>{if(w.classList.contains('open')){csCloseBox();return;}csFocusBox();});
   const L=$('list');
   L.addEventListener('click',e=>{
     if(!CS.active)return;
