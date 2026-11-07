@@ -42,7 +42,7 @@ description: "Tasks for spec 084: contacts, and sending the message box to a per
   - AC5: `CONTACTS_LIMITS` is the only place with caps (a static test finds no other cap number in the contacts modules); byte caps are derived; a store at every cap writes and reads back, one character more is refused before any write.
   - AC6: ids `p-`/`ch-`/`r-` come from an injected uniform random function (no modulo bias).
   - AC7: `scripts/test-contacts.ts` (new `test:contacts`, added to `npm test`) covers AC1..AC6.
-- [ ] T011 [P] Link builder `src/shared/contactlinks.ts`. [FR-040..FR-045, SC-003]
+- [x] T011 [P] Link builder `src/shared/contactlinks.ts`. [FR-040..FR-045, SC-003]
   - AC1: Teams gives exactly `https://teams.microsoft.com/l/chat/0/0?users=<enc upn>&message=<enc text>`; with `teamsApp` the `msteams:/l/chat/0/0?…` form.
   - AC2: email gives `mailto:<address>?subject=<enc first line ≤ 78, cut at a word>&body=<enc rest>` with line breaks `%0D%0A`; one line: empty subject, body = text.
   - AC3: Slack gives `slack://user?team=<T…>&id=<U…>` and `copyText` = the text, `prefill: false`.
@@ -50,6 +50,7 @@ description: "Tasks for spec 084: contacts, and sending the message box to a per
   - AC5: a URL over 2,000 characters gives `{error: 'too-long', encodedLength}`, and the `copyOnly` form drops `message`/`body`/`text`.
   - AC6: `CONTACT_LINK_ALLOWLIST` is the one constant with the five prefixes of FR-040 (a static test finds no other copy of them in `src/`); every result starts with one of its entries; 10,000 generated channels and texts (Unicode, emoji, RTL, `&`, `#`, `%`, CR/LF, NUL) and FR-004's hostile addresses (non-ASCII look-alikes included) never give another prefix or an extra query parameter (parse the result with `URL` and compare its parameter names; the test imports the constant) (SC-003).
   - AC7: `scripts/test-contactlinks.ts` (new `test:contactlinks`) covers AC1..AC6; it runs on all three CI OSes.
+  - AC8 (after T010 merges, review of T011): `contactlinks.ts` takes its caps (`CONTACTS_LIMITS.urlChars`, the 254 / 64 / 63 address caps, the Slack and Telegram lengths) and its address, Slack and Telegram rules from `src/shared/contacts.ts` instead of its own copies; a test pins `linkAddressOk` to `addressOk` on one corpus (T010's hostile list plus the 10,000 generated addresses) and `test-contactlinks` uses T010's hostile corpus.
 - [x] T012 [P] `maskOutgoing(text, values)` in `src/shared/redact.ts`. [FR-033, SC-002]
   - AC1: masks known values (≥ 4 characters, longest first), the token runs across Markdown marks and what `redact` finds as one union of spans, then `redact`; also on a copy without hidden characters (`HIDDEN_CHARS`), the union of both; returns the masked text and `changed`. (Reworded 2026-11-06, reviews of T012 and PR 1236.)
   - AC2: every token shape of `test-redact`'s corpus planted in a message, inside Markdown and split by `**` or a backtick, gives `changed: true`.

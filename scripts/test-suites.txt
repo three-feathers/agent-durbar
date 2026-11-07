@@ -9,6 +9,7 @@ test:vscode
 test:runtime-core
 test:runtime-redact
 test:maskoutgoing
+test:contactlinks
 test:runtime-mcp
 test:runtime-sandbox
 test:history
