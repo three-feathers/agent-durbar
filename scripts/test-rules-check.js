@@ -40,7 +40,7 @@ try {
     'AGENTS.md': 2000,
     'docs/rules/incident-triage.md': 240,
     'docs/rules/merge-mechanics.md': 290,
-    'docs/rules/review-rounds.md': 710,
+    'docs/rules/review-rounds.md': 680,
     'docs/rules/chat-and-decisions.md': 180,
     'docs/rules/docs-sync.md': 290,
     'CLAUDE.md': 150,
@@ -53,7 +53,7 @@ try {
   assert.deepStrictEqual(Object.keys(rc.BUDGETS).sort(), Object.keys(AGREED).sort(), 'the rule-file set changed: update spec 021 first');
   for (const [f, b] of Object.entries(AGREED)) assert.strictEqual(rc.BUDGETS[f], b, `${f}: budget ${rc.BUDGETS[f]}, agreed ${b}`);
   assert.ok(rc.BUDGETS['AGENTS.md'] <= 2000, 'AGENTS.md budget above its core hard max of 2000 words (FR-082)');
-  assert.strictEqual(rc.TOTAL_CAP, 3600, 'AGENTS.md + docs/rules cap changed: update spec 021 first');
+  assert.strictEqual(rc.TOTAL_CAP, 3525, 'AGENTS.md + docs/rules cap changed: update spec 021 first');
   assert.strictEqual(rc.RULES_DIR, 'docs/rules');
 
   const budgets = { 'A.md': 10, 'docs/b.md': 5 };
@@ -114,7 +114,7 @@ try {
     const big = { 'AGENTS.md': 3000, [R('a')]: 600, [R('b')]: 600 };
     const r = rc.check(rulesRepo({ 'AGENTS.md': core(['a', 'b'], 2900), [R('a')]: rule(550), [R('b')]: rule(550) }), big);
     assert.strictEqual(r.problems.length, 1, r.problems.join('; '));
-    assert.match(r.problems[0], /^AGENTS\.md \+ docs\/rules\/: \d+ words, cap 3600/);
+    assert.match(r.problems[0], /^AGENTS\.md \+ docs\/rules\/: \d+ words, cap 3525/);
   }
   { // the CLI on a planted over-budget AGENTS.md exits 1 and names it; within budget exits 0
     const names = Object.keys(rc.BUDGETS).filter((f) => f.startsWith('docs/rules/')).map((f) => f.slice('docs/rules/'.length, -3));
