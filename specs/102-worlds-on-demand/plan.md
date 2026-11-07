@@ -177,9 +177,9 @@ world.json  arrangement: "circle"
 | Rectangles | `realLayout`, `Layout`, `ZoneBox`, `DeskBox`, `signWidth`, `sortDesks`, `assignPeople`, `placeBox` | Through FR-228's one seam |
 | Status | `lightFor`, `lampWords` | No new status logic; FR-260 only draws |
 | UI style | `html[data-ui="retro"]`, `themes.css` (41 rules) | The rules the arcade's chrome needs stay; the rest go in T230 (FR-263) |
-| Day tokens | `registerBuiltIn({id:'retro'})`'s tokens | Moved to `WORLD_SETS.retro` |
-| Token check | `worldContrast`, `test:theme-tokens` | Takes the light |
-| Light group | #991's World radios, `focusIn` | Same radios |
+| Day tokens | `registerBuiltIn({id:'retro'})`'s tokens | Withdrawn (owner 2026-11-03): `WORLD_SETS.retro` is one dark set |
+| Token check | `worldContrast`, `test:theme-tokens` | One dark set, panels over black and white |
+| Light group | #991's World radios, `focusIn` | Withdrawn (owner 2026-11-03): no light choice |
 | Moments | #994's slips, plates, ride, tent; world CSS per world | Arcade's looks, same structure |
 | Chat | #1001: surface, column, portrait, tails | Arcade's looks |
 | Checks | `check-office-ops`, `check-perf --record`, `check:office`, `test:realoffice-assets`, `shots-097-cave`'s driver | World id parameter; new `shots-102-arcade` |
@@ -239,7 +239,7 @@ The other 17 cells are the same shared code, in tokens, or a `person`, `fixture`
 | RA2 | Frames, packs, asset tests; nothing draws them | RA0 | T206..T208 |
 | RA3 | Draw the hall: pixel scale, cabinet, marquee, CRT, signs, plates, fixtures | RA1, RA2, #979 | T209..T212 |
 | RA4 | Status, beat, flourish, dissolve | RA3 | T213..T216 |
-| RA5 | Light: night parts, tokens, the group | RA3 | T217..T219 |
+| RA5 | Light: night parts and tokens (the group withdrawn, 2026-11-03; T217, T219 closed 2026-11-07, T218 open) | RA3 | T217..T219 |
 | RA6 | UI style, chat, Settings | RA5, #1001 | T220, T221 |
 | RA7 | Nine moments and the registry | RA4, #994 | T222, T223 |
 | RA8 | Set contract and interoperation; `pixel` in Flat, closed | RA2, T111 | T224, T225, T122 |
