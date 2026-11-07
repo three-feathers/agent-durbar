@@ -42,6 +42,16 @@
 .ro-screen.tint-orange .ro-glass{background:#7a2e00}
 .ro-screen.tint-green .ro-glass{background:#0f4526}
 .ro-screen.off .ro-glass{background:#121314}
+/* spec 097 FR-322..FR-325 (owner, 2026-11-07 20:20 UTC, Q8: "Frame fill and it can go until red as well"): context as a line round the monitor frame, filling clockwise from the
+   top-left as the context fills. One svg and rect per desk (realoffice.js ctxPaint); the dash is the share (pathLength 100); no line until the context is known (no empty track).
+   It lies on the frame, outside the glass (the glass keeps its FR-236 tint), static. Colours: the chat header ring's tokens for the existing bands (ok, warn from 70 %, high above 90 %). */
+.ro-ctx{position:absolute;left:0;top:0;width:var(--ro-cw,100%);height:var(--ro-ch,100%);overflow:visible;pointer-events:none}
+.ro-ctx:not([data-lv]),.ro-screen.ro-lmon .ro-ctx{display:none}
+.ro-ctx rect{x:1.5px;y:1.5px;width:calc(var(--ro-cw,3px) - 3px);height:calc(var(--ro-ch,3px) - 3px);stroke-width:3px;stroke-linecap:butt}
+.ro-ctx[data-lv="ok"] rect{stroke:var(--green)}
+.ro-ctx[data-lv="warn"] rect{stroke:var(--amber)}
+.ro-ctx[data-lv="high"] rect{stroke:var(--red)}
+@media (forced-colors:active){.ro-ctx rect{stroke:Highlight!important}}
 /* FR-030..FR-033: the text of a monitor, in the chrome over the glass; newest at the bottom, the top scrolls away as in flat's side panel */
 .ro-stext{overflow:hidden;pointer-events:none;border-radius:2px;font:var(--ro-sf,11px)/var(--ro-sl,15px) ui-monospace,"Cascadia Mono",Menlo,Consolas,monospace;color:var(--ro-scr-plain)}
 .ro-chrome>.ro-stext{pointer-events:none}

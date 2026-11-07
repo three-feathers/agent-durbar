@@ -219,3 +219,10 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 - [x] T214 [US2] Docs: changelog fragment, `docs/features.md`, the two zoom pictures retaken
 - [x] T218 [US2] Review of PR #1272 [FR-314]: tool phrase from cleared input, home folder masked before the cut (`liveact.js` `phrase`, `onEvent`), one mask in `deskFacts`, empty facts dropped, UNC paths in `maskHomePaths`; Q8 and the inventory row recorded. Tests: `test-liveact`, `test-redact`, `shots-097-screens` (the five mutants: innerHTML, FR-315 re-place, panel height, whole-line facts, no-redact zoom)
 - [x] T219 [US2] A token-shaped tool name is masked on every surface [FR-317, #1284]: `DurbarLiveAct.toolName` (clear, `maskRaw(redact)`, else `tool`) called by `phrase`; the page's `shownTool` for chip name and tooltip, waiting line, card task line, the helper card, the Settings MCP tool list and tool-usage table; fails closed (exact-match, no mask: `tool`). Test: `test:liveact` (ghp_, sk-, AWS id, ANSI and bidi splits, five mutants) and a `shots-097-screens` step
+- [x] T222 [US2] Unit tests first: band mapping and dash from the share [FR-322, FR-323] (`test-realoffice-ctx.ts`, run by `test:realoffice-layout`)
+- [x] T223 [US2] The frame line: one svg and rect per desk in `realoffice.js`, world CSS in `realoffice.css`, the cave and arcade rules in their `world.css`; unknown draws none [FR-322..FR-324]
+- [x] T224 [US2] The share from `ctxChip` through `realModel`, the plate's name with `, context N %`, the cheap `DurbarRealOffice.ctx` update on a context event [FR-325, FR-326]
+- [x] T225 [US2] Driver `check-097-ctx-frame` in `ui-suite`, four mutants each shown failing; `check-office-overlap`, `check-office-ops`, `check-office-ops-real` green
+- [x] T226 [US2] Simulator pictures at both sizes in Photo office, cave and arcade, each looked at, and a 2x crop of three desks; kept in `docs/screenshots` (not linked from site pages)
+- [x] T227 [US2] Docs: changelog fragment, `docs/features.md`, `docs/feature-inventory.md`
+

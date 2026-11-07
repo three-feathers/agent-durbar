@@ -554,6 +554,19 @@ export function slipAvoid(lay: Layout): Rect[] {
 
 /** One line of a monitor: `n` stays with the line while it scrolls, `k` is its kind (FR-032's colours), `t` is masked text. */
 export interface ScreenLine { n: number; k: string; t: string }
+/** spec 097 FR-322, FR-323: the line round a monitor frame. `pct` is the context share (a whole number 0..100, or null when unknown), `level` the existing
+ *  band of `DurbarStats.ctxLevel` (ok below 70, warn from 70, high above 90). Null: no line at all (unknown, or nothing used yet). Else the band and the
+ *  stroke-dasharray for a rect with pathLength 100, which starts at the top-left corner and runs clockwise: the dash is the share. */
+export function ctxFrame(pct: number | null | undefined, level: string | null | undefined): { lv: 'ok' | 'warn' | 'high'; dash: string } | null {
+  if (typeof pct !== 'number' || !Number.isFinite(pct) || pct <= 0) return null;
+  if (level !== 'ok' && level !== 'warn' && level !== 'high') return null;
+  return { lv: level, dash: Math.min(100, pct) + ' 100' };
+}
+/** the context words of a plate's accessible name, the flat office's way: ", context 72 %" (empty when unknown) */
+export function ctxWords(pct: number | null | undefined): string {
+  return typeof pct === 'number' && Number.isFinite(pct) && pct >= 0 ? ', context ' + Math.min(100, Math.round(pct)) + ' %' : '';
+}
+
 /** FR-032: a screen under this size shows line bars and the newest line; larger ones real lines, 13 px when taller than 200 px. */
 export const SCREEN_SMALL = { w: 150, h: 60 };
 export const SCREEN_PAD = 4;
