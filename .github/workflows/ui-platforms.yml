@@ -83,11 +83,11 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y xvfb
       - run: npm ci
       - run: npm run build
-      # Theme geometry runs first on every OS: the first Electron on a fresh Linux runner failed its first frame capture when a
-      # driver was first (shots-001-welcome, UnknownVizError, PR #507); after geometry it passes
-      # FR-182: the three checks before the drivers run once per OS, in shard 1
+      # Theme geometry runs first in every job, macOS shards 2 and 3 included: the first Electron on a fresh Linux runner failed its
+      # first frame capture when a driver was first (shots-001-welcome, UnknownVizError, PR #507); after geometry it passes. Whether a
+      # fresh macOS runner has the same problem is unknown, so shards 2 and 3 do not risk it (geometry is fast).
+      # FR-182: the office layout and the Mac title bar run once per OS, in shard 1
       - name: Theme geometry
-        if: matrix.shard == 1
         run: node scripts/check-theme-geometry.js
       # the whole office layout, one Electron at a time (on Windows and macOS all windows share one desktop, and a covered test
       # window can stop drawing: spec 008 FR-103, PR #516)

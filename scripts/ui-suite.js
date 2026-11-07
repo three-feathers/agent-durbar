@@ -211,7 +211,7 @@ const TIMEOUT_MS = Number(process.env.UI_SUITE_TIMEOUT_MS || 600_000);
 
 function args(a = process.argv.slice(2)) {
   const i = a.indexOf('--only'), j = a.indexOf('--shard');
-  return { list: a.includes('--list'), only: i >= 0 ? new Set(String(a[i + 1] || '').split(',').filter(Boolean)) : undefined, shard: j >= 0 ? String(a[j + 1] || '') : undefined };
+  return { list: a.includes('--list'), only: i >= 0 ? new Set(String(a[i + 1] || '').split(',').filter(Boolean)) : undefined, shard: j >= 0 ? a[j + 1] : undefined, shardGiven: j >= 0 };
 }
 
 /** Spec 008 FR-182 (issue #839): shard `i/n` (1-based) takes every n-th driver of the suite's order, starting at the i-th, so n shards are
@@ -307,9 +307,13 @@ function runOne(d, outDir) {
 /** `ensure`, `run` and `argv` are for tests (scripts/test-ui-suite.ts); the defaults install Electron and start the real drivers. */
 async function main({ ensure = ensureElectron, run = runOne, argv } = {}) {
   const a = args(argv);
-  const sh = a.shard !== undefined ? a.shard : process.env.UI_SUITE_SHARD;
+  // a bare `--shard` (no value) is refused, never "every driver"; only an empty UI_SUITE_SHARD env value means the whole list (FR-182, review on #1257)
+  if (a.shardGiven && !a.shard) throw new Error('ui-suite: --shard wants a value i/n (1 <= i <= n), got none');
+  const sh = a.shardGiven ? a.shard : process.env.UI_SUITE_SHARD;
   const todo = shard(DRIVERS.filter((d) => !a.only || a.only.has(d.name) || a.only.has(d.label || '')), sh);
   if (a.list) { for (const d of DRIVERS) console.log(d.label || d.name); return; }
+  // a shard that selects no driver (more shards than drivers, or --only narrowing) must not pass green with "0/0"
+  if (sh && todo.length === 0) throw new Error(`ui-suite: shard ${sh} selects no driver${a.only ? ' (with --only)' : ''}; refusing to pass with nothing run`);
   for (const d of todo) if (!fs.existsSync(path.join(__dirname, d.name + '.js'))) throw new Error(`no such driver: ${d.name}`);
   // FR-112: fail at once on a syntax error instead of a silent Electron hang until the time limit
   const bad = syntaxErrors([...new Set(todo.map((d) => path.join(__dirname, d.name + '.js')).concat(path.join(__dirname, 'driver-helpers.js')))]);

@@ -350,6 +350,52 @@ process.on('exit', () => { if (!fr114Done) { console.error('FR-114 checks did no
   }
   fr114Done = true;
   // spec 008 FR-095, FR-138: one retry, alone; a repeated failure stays a failure, a pass on retry is FLAKY in the log and the job summary
+async function shardMain(): Promise<void> {
+  const { shard, DRIVERS } = require(SUITE) as { shard: (l: unknown[], s?: string) => unknown[]; DRIVERS: Array<{ name: string }> };
+  // review on #1257: main() must use shard(), from --shard and from UI_SUITE_SHARD; a bare --shard and an empty shard fail
+  {
+    const { main } = require(SUITE) as { main: (o: unknown) => Promise<void> };
+    const want = (shard(DRIVERS, '2/3') as Array<{ name: string }>).map((d) => d.name);
+    assert.ok(want.length > 0 && want.length < DRIVERS.length, 'shard 2/3 is a proper subset');
+    const prev = { shard: process.env.UI_SUITE_SHARD, out: process.env.UI_SUITE_OUT, retry: process.env.UI_SUITE_RETRY, code: process.exitCode };
+    const log = console.log;
+    const outDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ui-suite-shard-'));
+    const go = async (argv: string[], env?: string): Promise<{ ran: string[]; err?: Error; code: unknown }> => {
+      const ran: string[] = [];
+      if (env === undefined) delete process.env.UI_SUITE_SHARD; else process.env.UI_SUITE_SHARD = env;
+      process.env.UI_SUITE_OUT = outDir; process.env.UI_SUITE_RETRY = '0'; process.exitCode = 0;
+      console.log = () => undefined;
+      let err: Error | undefined;
+      let ensured = false;
+      try { await main({ ensure: () => { ensured = true; return true; }, argv, run: async (d: { name: string }) => { ran.push(d.name); return { ok: true, secs: 0, why: '', log: '' }; } }); } catch (e) { err = e as Error; } finally { console.log = log; }
+      if (err) assert.ok(!ensured && ran.length === 0, 'a refused shard starts nothing, not even the Electron install');
+      return { ran, err, code: process.exitCode };
+    };
+    try {
+      assert.deepStrictEqual((await go(['--shard', '2/3'])).ran, want, 'main --shard 2/3 runs exactly shard(DRIVERS, "2/3")');
+      assert.deepStrictEqual((await go([], '2/3')).ran, want, 'main with UI_SUITE_SHARD=2/3 runs exactly shard(DRIVERS, "2/3")');
+      assert.deepStrictEqual((await go(['--shard', '1/3'], '2/3')).ran, (shard(DRIVERS, '1/3') as Array<{ name: string }>).map((d) => d.name), 'the argument wins over the env');
+      assert.strictEqual((await go([], '')).ran.length, DRIVERS.length, 'an empty UI_SUITE_SHARD runs every driver');
+      assert.strictEqual((await go([])).ran.length, DRIVERS.length, 'no shard runs every driver');
+      for (const argv of [['--shard'], ['--shard', ''], ['--only', DRIVERS[0].name, '--shard']]) {
+        const r = await go(argv, '');
+        assert.ok(r.err && /--shard wants a value/.test(r.err.message), `bare --shard is refused (${argv.join(' ')})`);
+      }
+      const bare = await go(['--shard'], '2/3');
+      assert.ok(bare.err, 'bare --shard is refused even when the env is set');
+      const empty = await go(['--only', DRIVERS[0].name, '--shard', '2/3']);
+      assert.ok(empty.err && /selects no driver/.test(empty.err.message), 'an empty shard fails (--only narrowing)');
+      const many = await go([], `${DRIVERS.length + 1}/${DRIVERS.length + 1}`);
+      assert.ok(many.err && /selects no driver/.test(many.err.message), 'an empty shard fails (more shards than drivers)');
+      assert.deepStrictEqual((await go(['--list'], '9/9')).ran, [], '--list still works');
+    } finally {
+      console.log = log;
+      for (const [k, v] of [['UI_SUITE_SHARD', prev.shard], ['UI_SUITE_OUT', prev.out], ['UI_SUITE_RETRY', prev.retry]] as const) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+      process.exitCode = prev.code;
+      fs.rmSync(outDir, { recursive: true, force: true });
+    }
+  }
+}
 async function retries(): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { main, DRIVERS } = require(SUITE) as { main: (o: unknown) => Promise<void>; DRIVERS: Array<{ name: string; label?: string }> };
@@ -392,6 +438,7 @@ async function retries(): Promise<void> {
   assert.ok(/UI_SUITE_RETRY: \$\{\{ matrix\.os != 'ubuntu-latest' && '1' \|\| '0' \}\}/.test(yml), 'FR-138: macOS and Windows retry once, Linux does not');
 }
 await retries();
+await shardMain();
 console.log('ui-suite: check-parallel and ui-suite install Electron once before their parallel jobs (FR-114)');
 })().catch((e) => { console.error(e); process.exitCode = 1; });
 
@@ -407,5 +454,31 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
   }
   assert.deepStrictEqual(shard(DRIVERS, undefined), DRIVERS, 'no shard: the whole list');
   for (const bad of ['0/3', '4/3', '3', 'a/b', '1/0']) assert.throws(() => shard(DRIVERS, bad), /--shard wants i\/n/, `"${bad}" is refused`);
+  // review on #1257: the workflow's matrix, denominators and excludes agree (plain text; no YAML parser is a dependency)
+  {
+    const wf = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'ui-platforms.yml'), 'utf8');
+    const lines = wf.split(/\r?\n/).filter((l) => !/^\s*#/.test(l));
+    const text = lines.join('\n');
+    const m = text.match(/^\s+shard:\s*\[([^\]]*)\]\s*$/m);
+    assert.ok(m, 'the matrix has a shard list');
+    const list = m[1].split(',').map((x) => Number(x.trim()));
+    const n = list.length;
+    assert.ok(n >= 2, 'macOS is sharded');
+    assert.deepStrictEqual(list, Array.from({ length: n }, (_, i) => i + 1), 'the matrix shard list is exactly 1..n');
+    const env = text.match(/^\s+UI_SUITE_SHARD:.*format\('\{0\}\/(\d+)', matrix\.shard\)/m);
+    assert.ok(env, 'UI_SUITE_SHARD is format("{0}/N", matrix.shard)');
+    assert.strictEqual(Number(env[1]), n, 'the UI_SUITE_SHARD denominator equals the number of shards');
+    const nm = text.match(/^\s+name: UI checks \(.*format\(' \{0\}\/(\d+)', matrix\.shard\)/m);
+    assert.ok(nm, 'the job name shows i/N');
+    assert.strictEqual(Number(nm[1]), n, 'the job name denominator equals the number of shards');
+    const art = text.match(/name: ui-shots-.*format\('-\{0\}', matrix\.shard\)/);
+    assert.ok(art, 'artifacts are named per shard');
+    for (const os of ['ubuntu-latest', 'windows-latest']) {
+      const ex = [...text.matchAll(new RegExp(`-\\s*\\{\\s*os:\\s*${os},\\s*shard:\\s*(\\d+)\\s*\\}`, 'g'))].map((x) => Number(x[1]));
+      assert.deepStrictEqual(ex, Array.from({ length: n - 1 }, (_, i) => i + 2), `${os} excludes shards 2..${n}`);
+    }
+    assert.strictEqual([...text.matchAll(/-\s*\{\s*os:/g)].length, 2 * (n - 1), 'no other excludes');
+    assert.ok(!/^\s+if: matrix\.shard == 1\s*\n\s+run: node scripts\/check-theme-geometry/m.test(text), 'theme geometry runs in every shard');
+  }
   console.log('ui-suite shards: ok');
 }
