@@ -107,7 +107,7 @@ export function createMasker(libs: MaskLibs): Masker {
     const c = unhide(s);
     if (maskWork(s, c !== s, vals) > budget) throw new MaskBudgetError();
     // `maskNoteText` reads the copy without hidden characters itself and masks the union with the text as written (spec 084 FR-033,
-    // review of PR 1236): a copy alone missed a token that removing a hidden character glued to a word. `c` prices it (three passes).
+    // review of PR 1236): a copy alone missed a token that removing a hidden character glued to a word. `c` prices it (one pass, three when `hiddenCanHide`).
     return maskOnce(s, vals);
   };
   const maskedWindow = (raw: string, from: number, to: number, values: readonly string[], o: WindowOptions = {}): MaskedWindow => {

@@ -234,6 +234,8 @@ for (const t of texts) {
 // its masks and spaces) is a subsequence of what the reference shows, so nothing the reference hides can become readable; most are
 // identical (the reference may hide a space or a neighbour more, never less). Tokens are cut by hidden characters of every class, alone, next to emoji, after long text.
 {
+  const savedEnv = { ...process.env }; // the fuzz does not depend on the machine: no secret-like variable (a space in one changed the rule)
+  for (const k of Object.keys(process.env)) delete process.env[k];
   let seed = 0x1234b;
   const rnd = (): number => { seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
   const pick = <T>(a: readonly T[]): T => a[Math.floor(rnd() * a.length)];
@@ -317,6 +319,52 @@ for (const t of texts) {
   assert.strictEqual(hiddenCanHide('\u00e9\u200d\u200bx'), true, 'a run with an ASCII end: live');
   assert.strictEqual(hiddenCanHide('\u00e9\u200d\u00e9', ['caf\u00e9']), true, 'a non-ASCII known value: live');
   assert.strictEqual(hiddenCanHide('\ud83d\u200d\ude00'), true, 'a surrogate half beside it: live');
+  // the new guards (review of PR 1244): a long non-ASCII value after a secret name, and an env secret with a space
+  {
+    const long = 'password=' + '\u00e9'.repeat(64) + '\u200d' + '\u00e9'.repeat(64) + '1';
+    assert.strictEqual(maskKeepingMarkdownReference(long, []).changed, true, 'the reference masks the 129-character value');
+    assert.strictEqual(maskOutgoing(long, []).changed, true, 'maskOutgoing masks it too: a hidden character in a named value is live');
+    assert.strictEqual(hiddenCanHide(long, [], {}), true, 'a secret name with a separator makes every hidden character live');
+    assert.strictEqual(hiddenCanHide('\u00e9\u200d\u00e9', [], {}), false, 'no secret name: still inert');
+    // seeded long-value fuzz: names, separators, values over 128 characters of non-ASCII letters, emoji, the hidden character anywhere, the digit anywhere
+    const names = ['password', 'token', 'API_KEY', 'client_secret', 'Passwd', '"secret"', 'pass', 'auth_key'];
+    const seps = ['=', ': ', ':=', '=>', '%3D', ' = '];
+    const vbits = ['\u00e9', '\u0436', '\u65e5', '\u{1F600}', '\u03b1', 'a', 'Z'];
+    for (let n = 0; n < 4000; n++) {
+      let v = '';
+      const len = 100 + Math.floor(rnd() * 100);
+      const bit = pick(vbits);
+      for (let k = 0; k < len; k++) v += rnd() < 0.9 ? bit : pick(vbits);
+      const at = Math.floor(rnd() * v.length);
+      v = v.slice(0, at) + pick(hidden) + v.slice(at);
+      if (rnd() < 0.8) { const d = Math.floor(rnd() * v.length); v = v.slice(0, d) + String(Math.floor(rnd() * 10)) + v.slice(d); }
+      const t = (rnd() < 0.3 ? 'note: ' : '') + pick(names) + pick(seps) + v + pick(['', ' tail', '\n']);
+      const a = maskOutgoing(t, []);
+      const b = maskKeepingMarkdownReference(t, []);
+      assert.strictEqual(a.changed, b.changed, `long fuzz ${n}: changed as the reference for ${JSON.stringify(t)}`);
+      assert.ok(subseq(shown(a.text), shown(b.text)), `long fuzz ${n}: nothing the reference hides is shown: ${JSON.stringify(t)}`);
+    }
+    // an env secret with a space (VS Code sets GIT_ASKPASS to such a path on macOS and Windows) leaves the rule as with none
+    for (const e of [{ GIT_ASKPASS: '/a b/askpass.sh' }, { API_TOKEN: 'my secret value 12' }, { GIT_ASKPASS: '/Users/a b/Library/askpass.sh', VSCODE_GIT_ASKPASS_NODE: 'C:\\Program Files\\Code\\Code.exe' }]) {
+      for (const t of ['\u2764\ufe0f\u{1F600}', '\u00e9\u200d\u00e9', 'gh\u200dp', '\u00e9\u200d x']) {
+        assert.strictEqual(hiddenCanHide(t, [], e), hiddenCanHide(t, [], {}), `env ${Object.keys(e)[0]} with a space: same rule for ${JSON.stringify(t)}`);
+      }
+      const saved = { ...process.env };
+      for (const k of Object.keys(process.env)) delete process.env[k];
+      Object.assign(process.env, e);
+      try {
+        const t = '\u00e9\u200d\u00e9 ' + Object.values(e)[0] + ' \u{1F600}\u200d\u{1F600}';
+        const a = maskOutgoing(t, []);
+        const b = maskKeepingMarkdownReference(t, []);
+        assert.ok(a.changed && b.changed && subseq(shown(a.text), shown(b.text)) && !a.text.includes(Object.values(e)[0]), 'a space-valued env secret: masked, nothing the reference hides is shown');
+      } finally {
+        for (const k of Object.keys(process.env)) delete process.env[k];
+        Object.assign(process.env, saved);
+      }
+    }
+  }
+  for (const k of Object.keys(process.env)) delete process.env[k];
+  Object.assign(process.env, savedEnv);
   console.log(`mask outgoing fuzz: ${N} texts, none shows what the reference hides except ${gap} glued-token gaps the hidden-free text has too (${same} identical, inert ${inert}, live ${live}, masked ${masked})`);
 }
 

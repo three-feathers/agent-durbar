@@ -1644,7 +1644,9 @@ const HIDDEN_ALL = new RegExp(HIDDEN_CHARS.source, 'gu');
 export function unhide(t: unknown): string {
   return String(t == null ? '' : t).replace(HIDDEN_ALL, '');
 }
-const PLAIN_ASCII = /^[\x21-\x7e]*$/;
+const PLAIN_ASCII = /^[\x20-\x7e]*$/;
+/** A secret name and its separator, anywhere (`named` without the value): the value's digit lookahead counts every character, so a hidden character in it is not inert (review of PR 1244). */
+const NAMED_HEAD = new RegExp(String.raw`${SECRET_NAMES}\\{0,2}["'\`]?\s{0,8}(?::=|=>|[:=]|%3[DdAa])`);
 /** A character a token cannot be made of or sit next to: non-ASCII, not a space (U+0085 and the Unicode spaces included), not hidden, a whole code point. */
 function isInertSide(cp: number | undefined): boolean {
   if (cp === undefined || cp < 0x80 || (cp >= 0xd800 && cp <= 0xdfff)) return false;
@@ -1653,9 +1655,9 @@ function isInertSide(cp: number | undefined): boolean {
 }
 /**
  * Spec 095 *Changes* 2026-11-07 (issue 1234): whether `s` holds a hidden character (`HIDDEN_CHARS`) that can hide a token, so the masks
- * must also read the copy without hidden characters (`maskKeepingMarkdown`, three passes, and `convmask.maskWork`'s x3). A run of hidden
+ * must also read the copy without hidden characters (`maskKeepingMarkdown`, three passes when live, and `convmask.maskWork`'s x3). A run of hidden
  * characters is inert when the characters on both sides are non-ASCII, not spaces and not hidden (a ZWJ or VS16 inside an emoji sequence
- * or a script): every token shape is ASCII, so one split or glued by it has an ASCII neighbour and stays live. A run at either end, or next
+ * or a script): every token shape is ASCII, so one split or glued by it has an ASCII neighbour and stays live. That premise fails for `name=value` (a value may be non-ASCII, and the digit look-ahead counts up to 128 characters, hidden ones too), so a text with a secret name and a separator (`NAMED_HEAD`) is always live (review of PR 1244). A run at either end, or next
  * to a space or an ASCII character, is live. Known values (and the environment's secrets) with a non-ASCII or non-printable character are
  * matched literally, so a hidden character could split one between two non-ASCII characters: then every hidden character is live.
  * The one rule of `maskNoteText`, `maskOutgoing` and `maskWork`.
@@ -1665,6 +1667,7 @@ export function hiddenCanHide(s: string, values: readonly string[] = [], env?: E
   let m = HIDDEN_ALL.exec(s);
   if (!m) return false;
   if (!values.every((v) => PLAIN_ASCII.test(v))) return true;
+  if (NAMED_HEAD.test(s)) return true; // a named secret's value counts characters (128 for the digit), hidden ones too: always live
   const e = snapshot(env);
   for (const [, v] of SNAPSHOTS.get(e) ?? []) if (!PLAIN_ASCII.test(v)) return true;
   while (m) {
