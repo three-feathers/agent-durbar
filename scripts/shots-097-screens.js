@@ -136,6 +136,15 @@ module.exports = async (ctx) => {
     await emit({ type: 'output', sessionId: victim, delta: 'word '.repeat(220000) });
     await emit({ type: 'toolCall', sessionId: victim, callId: 'drv-h', tool: 'bash', phase: 'start', args: { command: 'curl -H "Authorization: Bearer ' + TOKEN + '" /home/alice/x' } });
     await must(`window.__scr(${jsLiteral(victim)}).textContent.includes('curl')`, 'the hostile command on the screen', 10000);
+    /* FR-317 (issue #1284): a token-shaped TOOL NAME (an MCP server chooses it), plain and split by an escape and U+202E, shows as `Using tool` on the screen and no
+       surface of the page (text, title, aria-label, any attribute) holds the token or a part of it */
+    const NAME = 'ghp_' + 'Zq9Xw8Vu7Ts6Rp5On4Ml3Kj2Ih1G';
+    for (const [n, tn] of [['plain', NAME], ['split', NAME.slice(0, 9) + '\u001b[0m' + NAME.slice(9, 15) + '\u202e' + NAME.slice(15)]]) {
+      await emit({ type: 'toolCall', sessionId: victim, callId: 'drv-n-' + n, tool: tn, phase: 'start', args: {} });
+      await must(`window.__scr(${jsLiteral(victim)}).textContent.includes('Using tool')`, 'the masked tool name (' + n + ') as a generic word on the screen', 10000);
+      const all = await js(`document.documentElement.outerHTML+' '+document.body.innerText`);
+      for (const bad of ['ghp_Z', 'Zq9Xw8', 'Ts6Rp5', 'Kj2Ih1']) assert.ok(!all.includes(bad), `${n} tool name: the page shows "${bad}"`);
+    }
     /* review of PR 1272, FR-314: a token split by an escape and by U+202E, in a tool label, must be masked on the screen, in the zoom and on the flat desk alike (the tool fact is
        built from the cleared input); markup in it stays text; then the agent thinks, so the zoom names it "Last tool" */
     await emit({ type: 'toolCall', sessionId: victim, callId: 'drv-h2', tool: 'read_file', phase: 'start', args: { path: '/tmp/' + TOKEN.slice(0, 14) + '\u001b[0m' + TOKEN.slice(14, 20) + '\u202e' + TOKEN.slice(20) + ' <img src=x onerror=window.__pwned=1> /Users/alice/x' } });
