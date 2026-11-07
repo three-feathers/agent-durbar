@@ -3,11 +3,12 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
-  CONTACTS_LIMITS, REASONS, graphemes, addressOk, applyChange, checkedSerialize, cleanChannel, cleanContact, emptyContactsDoc, guessInitials, newId, parseContactsDoc,
+  CONTACTS_LIMITS, REASONS, TELEGRAM_RESERVED, graphemes, addressOk, applyChange, checkedSerialize, cleanChannel, cleanContact, emptyContactsDoc, guessInitials, newId, parseContactsDoc,
   serializeContactsDoc, sortContacts,
 } from '../src/shared/contacts';
 import type { Contact, ContactsDoc, ContactChange } from '../src/shared/contacts';
 import { utf8Len } from '../src/shared/notes';
+import { HIDDEN_CHARS } from '../src/shared/redact';
 
 const L = CONTACTS_LIMITS;
 const T0 = new Date('2026-11-06T10:00:00.000Z');
@@ -115,7 +116,7 @@ assert.deepStrictEqual(must(cc({ aliases: ['sam', 'SAM', 'Sam2'] })).fields.alia
 assert.strictEqual(must(cc({})).fields.initials, 'SS');
 assert.strictEqual(guessInitials('alex'), 'A');
 assert.strictEqual(guessInitials('Alex B Example'), 'AB');
-assert.strictEqual(guessInitials('😀 Sam'), '😀S');
+assert.strictEqual(guessInitials('😀 Sam'), 'S', 'a word without a letter or digit is skipped');
 assert.strictEqual(must(cc({ initials: 'xy' })).fields.initials, 'xy');
 assert.ok(!cc({ initials: 'xyz' }).ok && !cc({ initials: 'a\n' }).ok, 'initials 1..2');
 assert.ok(cc({ notes: 'n'.repeat(L.notesChars) }).ok && !cc({ notes: 'n'.repeat(L.notesChars + 1) }).ok && !cc({ notes: 5 }).ok, 'notes cap');
@@ -148,10 +149,10 @@ assert.strictEqual(guessInitials('ßen ßa'), 'SS');
 }
 // finding 3: format, bidi, invisible, separator and lone-surrogate characters are refused in every text field
 {
-  const bad: number[] = []; // Cf, default-ignorables, the two separators and every C0 and C1 control
-  const re = /\p{Cf}|\p{Default_Ignorable_Code_Point}/u;
-  for (let cp = 0; cp <= 0x10ffff; cp++) { if (cp >= 0xd800 && cp <= 0xdfff) continue; if (re.test(String.fromCodePoint(cp)) || cp === 0x2028 || cp === 0x2029 || cp <= 0x1f || (cp >= 0x7f && cp <= 0x9f)) bad.push(cp); }
-  for (const must of [0x202e, 0x2066, 0x2069, 0x200b, 0x200f, 0x2028, 0x2029, 0x00ad, 0xfeff, 0x3164, 0xfe0f, 0xe0041]) assert.ok(bad.includes(must), `the walk covers U+${must.toString(16)}`);
+  const bad: number[] = []; // every code point of HIDDEN_CHARS (the one list), tab, CR and LF
+  const re = HIDDEN_CHARS;
+  for (let cp = 0; cp <= 0x10ffff; cp++) { if (cp >= 0xd800 && cp <= 0xdfff) continue; if (re.test(String.fromCodePoint(cp)) || cp === 0x09 || cp === 0x0a || cp === 0x0d) bad.push(cp); }
+  for (const must of [0x202e, 0x2066, 0x2069, 0x200b, 0x200f, 0x2028, 0x2029, 0x00ad, 0xfeff, 0x3164, 0xfe0f, 0xe0041, 0x2800, 0x13441, 0x13442, 0x16fe4, 0x1d159, 0x2009, 0x202f, 0x09, 0x0a, 0x0d, 0x85]) assert.ok(bad.includes(must), `the walk covers U+${must.toString(16)}`);
   assert.ok(bad.length > 400, `the walk covers ${bad.length} code points`);
   const lone = ['\ud800', '\udbff', '\udc00', '\udfff', '\ud83d', '\ude00'];
   const probes = [...bad.map((cp) => String.fromCodePoint(cp)), ...lone];
@@ -163,7 +164,8 @@ assert.strictEqual(guessInitials('ßen ßa'), 'SS');
     ['to', (x) => cleanChannel({ id: 'ch-aaaaaaaa', kind: 'email', address: 'a@example.invalid', to: `t${x}` }).ok],
     ['alias', (x) => cleanContact({ name: 'Paco', aliases: [`p${x}q`] }).ok],
   ];
-  for (const [f, ok] of fields) { const accepted = (['name', 'label', 'handle'].includes(f) ? probes.filter((x) => x !== '\u200c' && x !== '\u200d') : probes).filter(ok); assert.deepStrictEqual(accepted.map((x) => x.codePointAt(0)!.toString(16)), [], `${f}: nothing invisible or reversing is accepted`); }
+  assert.strictEqual(cleanContact({ name: 'Paco\u2800' }).ok, false, 'a blank braille glyph reads as nothing');
+  for (const [f, ok] of fields) { const accepted = probes.filter(ok); assert.deepStrictEqual(accepted.map((x) => x.codePointAt(0)!.toString(16)), [], `${f}: nothing invisible or reversing is accepted`); }
   assert.strictEqual(cleanContact({ name: 'Pa\u202eoc' }).ok, false);
   for (const [f, ok] of fields.filter(([f]) => f !== 'alias')) assert.ok(ok('é') && ok('😀') && ok('Ж'), `${f}: ordinary letters, accents, emoji and Cyrillic names still pass`);
 }
@@ -193,25 +195,131 @@ assert.strictEqual(guessInitials('ßen ßa'), 'SS');
       assert.strictEqual(cleanChannel({ id: 'ch-aaaaaaaa', kind: 'slack', team: 'T0123ABC', user: 'U0123ABC', handle: n }).ok, false, `handle: ${why}`);
     }
     assert.strictEqual(cleanChannel({ id: 'ch-aaaaaaaa', kind: 'email', address: 'a@example.invalid', to: `a${j}b` }).ok, false, '`to` never takes a joiner');
+    assert.strictEqual(cleanChannel({ id: 'ch-aaaaaaaa', kind: 'email', address: 'a@example.invalid', to: `\u0646${j}\u0645` }).ok, false, '`to` takes no joiner even between Persian letters');
+    assert.strictEqual(cleanContact({ name: 'Paco', initials: `a${j}b` }).ok, false, 'initials: Latin both sides');
+    assert.strictEqual(cleanContact({ name: 'Paco', initials: `\u0646${j}\u0645` }).ok, true, 'initials: Persian letters keep their joiner');
     assert.strictEqual(cleanContact({ name: 'Paco', aliases: [`pa${j}co`] }).ok, false, 'aliases are ASCII only');
+  }
+}
+// review 3, finding 2: a joiner between Latin, Greek or Cyrillic letters is refused (it makes `Paco` a look-alike); other scripts keep theirs
+{
+  const nm = (n: string): boolean => cleanContact({ name: n }).ok;
+  for (const j of ['\u200c', '\u200d']) {
+    for (const [why, n] of Object.entries({ latin: `Pa${j}co`, greek: `Πα${j}ρο`, cyrillic: `Па${j}ко`, 'latin + cyrillic': `a${j}а`, 'latin + greek': `a${j}ο`, 'accented latin both sides': `e\u0301${j}x`, 'latin, accent after the joiner': `a${j}e\u0301`, 'latin then mark then cyrillic': `a\u0301${j}б` })) {
+      assert.strictEqual(nm(n), false, `U+${j.charCodeAt(0).toString(16)} ${why} is refused`);
+      assert.strictEqual(cleanChannel({ id: 'ch-aaaaaaaa', kind: 'email', address: 'a@example.invalid', label: n }).ok, false, `label ${why}`);
+      assert.strictEqual(cleanChannel({ id: 'ch-aaaaaaaa', kind: 'slack', team: 'T0123ABC', user: 'U0123ABC', handle: n }).ok, false, `handle ${why}`);
+    }
+    // mixed with a script that needs joiners: refused only when BOTH sides are Latin, Greek or Cyrillic
+    assert.ok(nm(`Ali${j}\u0628`) && nm(`\u0628${j}Ali`), 'Latin next to Arabic is accepted (one side needs the joiner)');
+    assert.ok(nm(`\u0928${j}\u0928`) && nm(`\u0d15${j}\u0d2e`), 'Persian-script, Devanagari and Malayalam letters keep theirs');
+    assert.ok(nm(`\u0915\u094d${j}\u0937`), 'Devanagari consonant + virama + joiner + consonant');
+  }
+  assert.ok(nm('نرگس می\u200cخواهد'));
+  // scripts that never use joiners: refused between two letters of the same script, mixed with Latin, or with a mark between
+  const never: Record<string, [string, string]> = { Han: ['\u5c71', '\u7530'], Hangul: ['\uae40', '\ubbfc'], Katakana: ['\u30ab', '\u30ad'], Hiragana: ['\u3042', '\u3044'], Hebrew: ['\u05d0', '\u05d1'], Armenian: ['\u0531', '\u0532'], Georgian: ['\u10d0', '\u10d1'], Thai: ['\u0e01', '\u0e02'] };
+  const uses: Record<string, [string, string]> = {
+    Arabic: ['\u0628', '\u062a'], Persian: ['\u0645', '\u062e'], Syriac: ['\u0710', '\u0712'], Thaana: ['\u0780', '\u0781'], NKo: ['\u07ca', '\u07cb'], Mongolian: ['\u1820', '\u1821'],
+    Devanagari: ['\u0915', '\u0937'], Bengali: ['\u0995', '\u09b7'], Gurmukhi: ['\u0a15', '\u0a38'], Gujarati: ['\u0a95', '\u0ab7'], Oriya: ['\u0b15', '\u0b37'], Tamil: ['\u0b95', '\u0bb7'],
+    Telugu: ['\u0c15', '\u0c37'], Kannada: ['\u0c95', '\u0cb7'], Malayalam: ['\u0d15', '\u0d2e'], Sinhala: ['\u0d9a', '\u0dc2'], Khmer: ['\u1780', '\u179f'], Myanmar: ['\u1000', '\u1019'],
+  };
+  for (const j of ['\u200c', '\u200d']) {
+    for (const [sc, [x, y]] of Object.entries(never)) {
+      for (const [why, n] of Object.entries({ same: `${x}${j}${y}`, 'with a family name': `${x}${j}${y} ${x}${y}`, 'next to Latin': `a${j}${x}`, 'Latin after': `${x}${j}a`, 'past a mark': `${x}\u0301${j}${y}` })) {
+        assert.strictEqual(nm(n), false, `${sc} ${why}: U+${j.charCodeAt(0).toString(16)} is refused`);
+        assert.strictEqual(cleanChannel({ id: 'ch-aaaaaaaa', kind: 'email', address: 'a@example.invalid', label: n }).ok, false, `${sc} label ${why}`);
+      }
+      assert.ok(nm(`${x}${j}\u0628`) && nm(`\u0628${j}${x}`), `${sc} next to Arabic: one side needs the joiner, accepted`);
+    }
+    for (const [sc, [x, y]] of Object.entries(uses)) {
+      assert.ok(nm(`${x}${j}${y}`), `${sc}: U+${j.charCodeAt(0).toString(16)} accepted`);
+      assert.ok(nm(`Ali${j}${x}`) && nm(`${x}${j}Ali`), `${sc}: Latin on one side stays accepted`);
+    }
+    assert.strictEqual(nm('\u5c71\u200c\u7530 \u592a\u90ce'), false, 'the look-alike of 山田 太郎 is refused');
+    // the joiner script may sit past a combining mark on either side
+    assert.ok(nm(`\u0915\u093f${j}\u5c71`), 'Devanagari letter + vowel sign, joiner, Han: accepted (the letter is found past the mark)');
+    assert.ok(nm(`a${j}\u064e\u0628`), 'Latin, joiner, fatha + Arabic letter: accepted (the letter is found past the mark)');
+    // an Arabic letter on one side is not enough when the other side is not a letter or mark
+    const ar = '\u0628';
+    for (const [why, n] of Object.entries({ start: `${j}${ar}`, end: `${ar}${j}`, 'after a space': `${ar} ${j}${ar}`, 'before a space': `${ar}${j} ${ar}`, doubled: `${ar}${j}${j}${ar}`, 'digit before': `1${j}${ar}`, 'digit after': `${ar}${j}1`, 'emoji before': `😀${j}${ar}`, 'emoji after': `${ar}${j}😀`, 'dash': `${ar}${j}-${ar}`, 'full stop': `${ar}.${j}${ar}` })) {
+      assert.strictEqual(nm(n), false, `Arabic letter, U+${j.charCodeAt(0).toString(16)} ${why}: refused`);
+    }
+  }
+  assert.ok(nm('\u5c71\u7530 \u592a\u90ce') && nm('\ud55c\uae00 \uc774\ub984'), 'plain Han and Hangul names are fine');
+}
+// review 3, finding 3: a leading combining mark is refused, and so is a stack of marks on one cluster
+{
+  const M = '\u0301';
+  for (const n of [`${M}Paco`, ` ${M}Paco`, `${M}`, `\u0308a`]) {
+    assert.strictEqual(cleanContact({ name: n }).ok, false, `${JSON.stringify(n)}: a name cannot start with a combining mark`);
+    assert.strictEqual(cleanChannel({ id: 'ch-aaaaaaaa', kind: 'email', address: 'a@example.invalid', label: n }).ok, false, 'label');
+    assert.strictEqual(cleanChannel({ id: 'ch-aaaaaaaa', kind: 'slack', team: 'T0123ABC', user: 'U0123ABC', handle: n }).ok, false, 'handle');
+  }
+  assert.strictEqual(cleanContact({ name: 'x' + M.repeat(30) }).ok, false, 'x + 30 accents is refused');
+  assert.ok(cleanContact({ name: 'x' + M.repeat(L.marksPerCluster) }).ok, 'at the cap of marks per cluster');
+  assert.ok(!cleanContact({ name: 'x' + M.repeat(L.marksPerCluster + 1) }).ok, 'one more mark is refused');
+  assert.ok(!cleanContact({ name: 'ok ' + 'y' + M.repeat(L.marksPerCluster + 1) + ' ok' }).ok, 'in the middle of the name too');
+  assert.ok(cleanContact({ name: ('x' + M.repeat(L.marksPerCluster) + ' ').repeat(3) }).ok, 'the cap is per cluster, not per name');
+  assert.ok(!cleanChannel({ id: 'ch-aaaaaaaa', kind: 'email', address: 'a@example.invalid', label: 'x' + M.repeat(L.marksPerCluster + 1) }).ok, 'label');
+  assert.ok(!cleanChannel({ id: 'ch-aaaaaaaa', kind: 'slack', team: 'T0123ABC', user: 'U0123ABC', handle: 'x' + M.repeat(L.marksPerCluster + 1) }).ok, 'handle');
+  assert.ok(cleanContact({ name: 'e\u0301 é Ζ\u0301 क\u094d\u0937\u093f' }).ok, 'ordinary accents and Devanagari signs pass');
+}
+// review 3, finding 5: a favOrder out of range goes LAST among the favourites, in file order; the order is rebuilt dense
+{
+  const base = add(emptyContactsDoc(), 'Zoe Zero').contact;
+  const mkRaw = (i: number, name: string, fav: boolean, order: unknown): Record<string, unknown> => ({ ...JSON.parse(JSON.stringify(base)), id: 'p-' + String(i).padStart(L.personIdChars, '0'), name, favourite: fav, favOrder: order, initials: undefined });
+  const raws = [mkRaw(1, 'Late One', true, 999), mkRaw(2, 'Bea Bee', true, 7), mkRaw(3, 'Neg', true, -3), mkRaw(4, 'Fraction', true, 1.5), mkRaw(5, 'Ann Ay', true, 2), mkRaw(6, 'Text', true, 'x'), mkRaw(7, 'Plain', false, 5), mkRaw(8, 'Missing', true, undefined)];
+  const r = parseContactsDoc(JSON.stringify({ version: 1, contacts: raws }));
+  assert.ok(r.ok);
+  const favs = r.ok ? sortContacts(r.doc.contacts).filter((c) => c.favourite) : [];
+  assert.deepStrictEqual(favs.map((c) => c.name), ['Ann Ay', 'Bea Bee', 'Late One', 'Neg', 'Fraction', 'Text', 'Missing'], 'in-range first by number, the rest last in file order');
+  assert.deepStrictEqual(favs.map((c) => c.favOrder), [0, 1, 2, 3, 4, 5, 6], 'dense');
+  assert.strictEqual(r.ok && r.doc.contacts.find((c) => c.name === 'Plain')!.favOrder, 0, 'non-favourites carry 0');
+  const reversed = parseContactsDoc(JSON.stringify({ version: 1, contacts: [...raws].reverse() }));
+  assert.deepStrictEqual(reversed.ok && sortContacts(reversed.doc.contacts).filter((c) => c.favourite).map((c) => c.name), ['Ann Ay', 'Bea Bee', 'Missing', 'Text', 'Fraction', 'Neg', 'Late One'], 'the rest follow the file order');
+}
+// review 3, finding 6: Telegram page names are not chats
+{
+  const tg2 = (u: string) => cleanChannel({ id: 'ch-aaaaaaaa', kind: 'telegram', username: u });
+  for (const n of TELEGRAM_RESERVED) for (const u of [n, n.toUpperCase(), n[0].toUpperCase() + n.slice(1), n.split('').map((c, i) => (i % 2 ? c : c.toUpperCase())).join('')]) {
+    const r = tg2(u);
+    assert.ok(!r.ok && r.field === 'username', `${u} is refused`);
+    if (u.length >= 5 + 0 && /^[A-Za-z][A-Za-z0-9_]{4,31}$/.test(u)) assert.strictEqual(r.ok === false && r.error, REASONS.telegramReserved, `${u}: the reserved-name reason`);
+  }
+  assert.ok(TELEGRAM_RESERVED.length >= 20 && ['share', 'joinchat', 'addstickers', 'addemoji', 'addtheme', 'addlist', 'proxy', 'socks', 'login', 'setlanguage', 'confirmphone', 'invoice', 'giftcode', 'boost', 'contact', 'c', 's', 'm', 'iv', 'bg'].every((x) => TELEGRAM_RESERVED.includes(x)));
+  for (const ok of ['shares', 'share_bot', 'myshare', 'logins', 'proxy1', 'boosted', 'Contacts', 'joinchat2']) assert.ok(tg2(ok).ok, `${ok} is a normal name`);
+}
+// review 3, finding 7: equal names and equal favOrder: the id decides, whatever the input order
+{
+  const twin = (id: string, fav: boolean): Contact => ({ ...add(emptyContactsDoc(), 'Same Name').contact, id: 'p-' + id.repeat(L.personIdChars), favourite: fav, favOrder: fav ? 0 : 0 });
+  for (const fav of [true, false]) {
+    const three = [twin('c', fav), twin('a', fav), twin('b', fav)];
+    const perms = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
+    for (const pm of perms) assert.deepStrictEqual(sortContacts(pm.map((i) => three[i])).map((c) => c.id[2]), ['a', 'b', 'c'], `favourite=${fav}: the id decides, input order ${pm}`);
   }
 }
 // review 2, finding 2: initials are counted and cut in grapheme clusters
 {
-  assert.strictEqual(guessInitials('Sam 🇪🇸'), 'S🇪🇸', 'a flag is one character');
+  assert.strictEqual(guessInitials('🇪🇸'), '🇪🇸', 'a flag is one character when it is all there is');
+  assert.strictEqual(guessInitials('Sam 🇪🇸'), 'S', 'an emoji word is skipped');
+  assert.strictEqual(guessInitials('Paco (you)'), 'PY', 'the first letter of each word, not a bracket');
+  assert.strictEqual(guessInitials('(x) [y]'), 'XY');
+  assert.strictEqual(guessInitials('Alex 3rd'), 'A3', 'a digit counts');
+  assert.strictEqual(guessInitials('--- Sam'), 'S', 'a word with no letter or digit is skipped');
+  assert.strictEqual(guessInitials('(( ))'), '(', 'no letter or digit at all: the first character');
   assert.strictEqual(guessInitials('Sam 1\ufe0f\u20e3'), 'S1\ufe0f\u20e3', 'a keycap is one character');
-  assert.strictEqual(guessInitials('Sam 👍🏽'), 'S👍🏽', 'a skin-tone emoji is one character');
+  assert.strictEqual(guessInitials('👍🏽'), '👍🏽', 'a skin-tone emoji is one character');
   const greek = guessInitials('ΐ b');
   assert.strictEqual(graphemes(greek).length, 2, `accented Greek keeps its accent and the second word: ${JSON.stringify(greek)}`);
   assert.ok(greek.endsWith('B') && greek.length > 2, 'the accent is there');
   assert.strictEqual(guessInitials('éa b'), 'ÉB');
   assert.strictEqual(guessInitials('e\u0301a b'), 'E\u0301B', 'a letter with a combining accent is one character');
-  for (const n of ['Sam 🇪🇸', 'Sam 👍🏽', 'ΐ b', 'e\u0301a b', 'ßen ßa', 'ﬀoo bar', 'ŉa b', '🇪 🇸', '🇪🇸 🇫🇷 x']) {
+  for (const n of ['Sam 🇪🇸', '🇪🇸', '👍🏽', 'Sam 👍🏽', 'ΐ b', 'e\u0301a b', 'ßen ßa', 'ﬀoo bar', 'ŉa b', '🇪 🇸', '🇪🇸 🇫🇷 x', 'Paco (you)', '(( ))']) {
     const r = add(emptyContactsDoc(), n);
     const back = parseContactsDoc(serializeContactsDoc(r.doc));
     assert.ok(back.ok && back.dropped === 0 && back.doc.contacts[0].initials === r.contact.initials && graphemes(r.contact.initials).length <= L.initialsMax, `${JSON.stringify(n)}: ${JSON.stringify(r.contact.initials)} round-trips`);
   }
-  for (const n of ['a\u200cb', 'a\u200db', 'ن\u200cمی خ']) {
+  for (const n of ['ن\u200cمی', 'ക\u200dമ', 'ن\u200cمی خ']) {
     const g = guessInitials(n);
     assert.ok(!/[\u200c\u200d]$/.test(g) && cc({ initials: g }).ok, `${JSON.stringify(n)}: the guess ${JSON.stringify(g)} has no joiner left at its end and reads back`);
     const r = add(emptyContactsDoc(), n);
@@ -222,7 +330,7 @@ assert.strictEqual(guessInitials('ßen ßa'), 'SS');
   assert.ok(!cc({ initials: 'e' + '\u0301'.repeat(L.initialsChars) }).ok, 'a cluster with a mountain of marks is over the character cap');
   const long = guessInitials('x' + '\u0301'.repeat(30) + ' y');
   assert.strictEqual(long, 'X', 'a first cluster over the cap gives its first code point, not the next word\'s letter');
-  assert.ok(cc({ initials: long }).ok && parseContactsDoc(serializeContactsDoc(add(emptyContactsDoc(), 'x' + '\u0301'.repeat(30) + ' y').doc)).ok, 'and it reads back');
+  assert.ok(cc({ initials: long }).ok, 'and it reads back');
   const zalgo = guessInitials('e' + '\u0301'.repeat(100) + ' b');
   assert.ok(zalgo.length <= L.initialsChars, `a guess never exceeds the character cap (${zalgo.length})`);
   assert.ok(cc({ initials: zalgo }).ok, 'and it reads back');
@@ -491,7 +599,7 @@ assert.strictEqual(must(applyChange(emptyContactsDoc(), { op: 'add', fields: per
 // the model has no clock, random source or Node import of its own
 const own = fs.readFileSync(path.join(SRC, 'shared/contacts.ts'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
 assert.ok(!/Date\.now|new Date\(\)|Math\.random|crypto|from 'fs'|from 'path'|from 'electron'|require\(/.test(own), 'pure: no clock, random or Node import');
-assert.deepStrictEqual([...own.matchAll(/from '([^']+)'/g)].map((m) => m[1]), ['./notes'], 'imports only the notes helpers');
+assert.deepStrictEqual([...own.matchAll(/from '([^']+)'/g)].map((m) => m[1]), ['./notes', './redact'], 'imports only the notes helpers and the one hidden-character list');
 
 // speed on large input (loose limit)
 const t0 = Date.now();

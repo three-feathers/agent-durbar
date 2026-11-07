@@ -4,10 +4,11 @@
  * Node-only imports and no clock or random source of its own (callers pass them), so it is unit tested. Notes (*How to talk to them*)
  * are masked by the caller before they get here (`maskOutgoing`, T012): this module only enforces their character cap.
  *
- * Reused from spec 083's `notes.ts` (FR-031: no second copy): `utf8Len`, `fitsCap`, `stripControls`, `isoOk`, and the uniform id
+ * Reused (FR-031: no second copy): `HIDDEN_CHARS` from `redact.ts` (the one list of invisible characters, no imports of its own). From spec 083's `notes.ts`: `utf8Len`, `fitsCap`, `stripControls`, `isoOk`, and the uniform id
  * draw of `newNoteId` (the same `rand(n)` shape as `randomPlaceId` in main, which uses `crypto.randomInt`).
  */
 import { fitsCap, isoOk, stripControls, utf8Len } from './notes';
+import { HIDDEN_CHARS } from './redact';
 
 /**
  * FR-005: every cap lives here, none anywhere else in the contacts modules. The character caps are the numbers written down; every
@@ -40,6 +41,8 @@ export const CONTACTS_LIMITS = (() => {
   const slackIdMax = 20;
   const telegramMin = 4;
   const telegramMax = 31;
+  /** Combining marks one grapheme cluster of a name, label or Slack name may carry (a stack of accents makes a name unreadable or hides text). */
+  const marksPerCluster = 4;
   const personIdChars = 12;
   const channelIdChars = 8;
   const recipeIdChars = 8;
@@ -63,7 +66,7 @@ export const CONTACTS_LIMITS = (() => {
   const logBytes = logEntries * logEntryBytes + docExtraBytes;
   return {
     contactsMax, channelsMax, aliasesMax, recipesMax, logEntries, notesChars, textChars, urlChars, nameChars, aliasChars, initialsMax, initialsChars, labelChars, toChars,
-    addressChars, localChars, domainLabelChars, slackIdMin, slackIdMax, telegramMin, telegramMax, personIdChars, channelIdChars, recipeIdChars, revMax, idTries,
+    addressChars, localChars, domainLabelChars, slackIdMin, slackIdMax, telegramMin, telegramMax, marksPerCluster, personIdChars, channelIdChars, recipeIdChars, revMax, idTries,
     serverChars, toolChars, argsChars, channelExtraBytes, contactExtraBytes, recipeExtraBytes, logEntryExtraBytes, docExtraBytes,
     channelJsonBytes, contactJsonBytes, recipeJsonBytes, storeBytes, logEntryBytes, logBytes,
   } as const;
@@ -152,6 +155,7 @@ export const REASONS = {
   user: `The Slack user id looks like U0123ABC (a U or W and ${L.slackIdMin} to ${L.slackIdMax} capital letters or digits).`,
   handle: `The Slack name is longer than ${L.labelChars} characters or has control characters.`,
   username: `A Telegram username starts with a letter, then ${L.telegramMin} to ${L.telegramMax} letters, digits or _.`,
+  telegramReserved: 'That name is a Telegram page (a link or a sticker set), not a person\'s chat.',
   recipe: 'That send recipe id is not valid.',
   to: `The recipient value is longer than ${L.toChars} characters or has control characters.`,
   preferred: 'The preferred way is not one of the contact\'s ways.',
@@ -163,15 +167,25 @@ export const REASONS = {
 } as const;
 
 /**
- * What a name, alias, label, Slack name, `to` value or initials may NOT hold (review of T010, 2026-11-07): control characters, format
- * characters (`\p{Cf}`: bidi overrides and isolates, zero-width marks, soft hyphen), default-ignorable code points (invisible fillers,
- * variation selectors, tags), the line and paragraph separators, and lone surrogates. Any of them can make a name read as another
- * person's in the preview ("To: ...") or hide text in it. In `u` mode `[\ud800-\udfff]` matches only an unpaired surrogate.
+ * What a name, alias, label, Slack name, `to` value or initials may NOT hold (review of T010, 2026-11-07): everything in
+ * `HIDDEN_CHARS` (control characters, format characters such as bidi overrides, zero-width marks and the soft hyphen, default-ignorable
+ * code points, the blank glyphs U+2800 and the like, odd spaces, the line and paragraph separators), tab, CR and LF, and lone
+ * surrogates. Any of them can make a name read as another person's in the preview ("To: ...") or hide text in it. In `u` mode
+ * `[\ud800-\udfff]` matches only an unpaired surrogate.
  */
-const CTRL_RE = /[\u0000-\u001f\u007f-\u009f\u2028\u2029\ud800-\udfff]|\p{Cf}|\p{Default_Ignorable_Code_Point}/u;
+const CTRL_RE = new RegExp(`${HIDDEN_CHARS.source}|[\\t\\n\\r\\ud800-\\udfff]`, 'u');
 const ALIAS_RE = new RegExp(`^[A-Za-z0-9._-]{1,${L.aliasChars}}$`);
 const SLACK_TEAM_RE = new RegExp(`^T[A-Z0-9]{${L.slackIdMin},${L.slackIdMax}}$`);
 const SLACK_USER_RE = new RegExp(`^[UW][A-Z0-9]{${L.slackIdMin},${L.slackIdMax}}$`);
+/**
+ * Telegram `t.me/<name>` paths that are pages, not chats (invites, sticker sets, proxies, login and so on); each one passes the username
+ * pattern, so they are refused by name, case-insensitively. The link builder (`contactlinks.ts`, PR 1246) holds the same list; task
+ * T018 unifies the two into one constant.
+ */
+export const TELEGRAM_RESERVED: readonly string[] = [
+  'share', 'joinchat', 'addstickers', 'addemoji', 'addtheme', 'addlist', 'proxy', 'socks', 'login', 'setlanguage', 'confirmphone', 'invoice',
+  'giftcode', 'boost', 'contact', 'c', 's', 'm', 'iv', 'bg',
+];
 const TELEGRAM_RE = new RegExp(`^[A-Za-z][A-Za-z0-9_]{${L.telegramMin},${L.telegramMax}}$`);
 const LOCAL_RE = new RegExp(`^[A-Za-z0-9._+-]{1,${L.localChars}}$`);
 const LABEL_RE = new RegExp(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,${L.domainLabelChars - 2}}[A-Za-z0-9])?$`);
@@ -206,17 +220,46 @@ export function newId(prefix: 'p-' | 'ch-' | 'r-', rand: (n: number) => number):
 
 const intIn = (v: unknown, lo: number, hi: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= lo && v <= hi;
 /**
- * U+200C (ZWNJ) and U+200D (ZWJ) are format characters, yet real names need them (Persian `می‌خواهد`, Devanagari `क्‍ष`).
- * One is allowed only BETWEEN two letters or marks (`\p{L}`, `\p{M}`); at the start or end, doubled, next to a space or an emoji
- * (so a ZWJ emoji sequence) it stays refused. Limit: the legacy Malayalam chillu (consonant + virama + ZWJ at the end of a word or before a
- * space, `ന്‍`) is refused; a joiner inside a word and the atomic chillu letters U+0D7A..U+0D7F are accepted. Used for name, label, Slack name and initials; not for `to` or recipes.
+ * U+200C (ZWNJ) and U+200D (ZWJ) are format characters, yet real names need them (Persian `می‌خواهد`, Devanagari `क्‍ष`). Rule: one
+ * is allowed only BETWEEN two letters or marks (`\p{L}`, `\p{M}`) AND only when AT LEAST ONE neighbouring letter (found past combining
+ * marks) is in a script that uses joiners: Arabic (Persian, Urdu...), Syriac, Thaana, N'Ko, Mongolian, the Indic scripts (Devanagari,
+ * Bengali, Gurmukhi, Gujarati, Oriya, Tamil, Telugu, Kannada, Malayalam), Sinhala, Khmer, Myanmar (`JOINER_SCRIPT_RE`). Between letters
+ * of any other script (Latin, Greek, Cyrillic, Han, Hangul, Kana, Hebrew, Armenian, Georgian, Thai...) it is refused: `Pa‍co` or
+ * `山‌田` look like `Paco` or `山田` but are different strings, and NFKC keeps the joiner. Latin next to Arabic or an Indic letter is
+ * accepted (one side needs the joiner). At the start or end, doubled, next to a space, digit or emoji
+ * (so a ZWJ emoji sequence) it stays refused. Limit: the legacy Malayalam chillu (consonant + virama + ZWJ at the end of a word or
+ * before a space, `ന്‍`) is refused; a joiner inside a word and the atomic chillu letters U+0D7A..U+0D7F are accepted. Used for
+ * name, label, Slack name and initials; not for `to` or recipes.
  */
-const JOINER_BETWEEN_RE = /(?<=[\p{L}\p{M}])[\u200c\u200d](?=[\p{L}\p{M}])/gu;
 const STRAY_JOINER_RE = /(?<![\p{L}\p{M}])[\u200c\u200d]|[\u200c\u200d](?![\p{L}\p{M}])/gu;
-const withoutJoiners = (v: string): string => v.replace(JOINER_BETWEEN_RE, '');
-/** True when `v` holds nothing refused by CTRL_RE; with `joiners`, a joiner between two letters or marks is let through. */
+const JOINER_SCRIPT_RE = /^[\p{Script=Arabic}\p{Script=Syriac}\p{Script=Thaana}\p{Script=Nko}\p{Script=Mongolian}\p{Script=Devanagari}\p{Script=Bengali}\p{Script=Gurmukhi}\p{Script=Gujarati}\p{Script=Oriya}\p{Script=Tamil}\p{Script=Telugu}\p{Script=Kannada}\p{Script=Malayalam}\p{Script=Sinhala}\p{Script=Khmer}\p{Script=Myanmar}]$/u;
+/** The nearest letter before (`dir` -1) or after (+1) `at`, looking past marks; '' when there is none. */
+function letterBeside(cps: readonly string[], at: number, dir: 1 | -1): string {
+  for (let i = at + dir; i >= 0 && i < cps.length; i += dir) {
+    if (/^\p{L}$/u.test(cps[i])) return cps[i];
+    if (!/^\p{M}$/u.test(cps[i])) return '';
+  }
+  return '';
+}
+/** `v` without the joiners that sit legally between two letters or marks (see above). Linear in the length of `v`, which callers cap first. */
+function withoutJoiners(v: string): string {
+  const cps = Array.from(v);
+  let out = '';
+  cps.forEach((c, i) => {
+    if ((c === '\u200c' || c === '\u200d') && /^[\p{L}\p{M}]$/u.test(cps[i - 1] ?? '') && /^[\p{L}\p{M}]$/u.test(cps[i + 1] ?? '')
+      && (JOINER_SCRIPT_RE.test(letterBeside(cps, i, -1)) || JOINER_SCRIPT_RE.test(letterBeside(cps, i, 1)))) return;
+    out += c;
+  });
+  return out;
+}
+/** True when `v` holds nothing refused by CTRL_RE; with `joiners`, a legal joiner is let through. */
 const textClean = (v: string, joiners: boolean): boolean => !CTRL_RE.test(joiners ? withoutJoiners(v) : v);
-const plainText = (v: unknown, max: number, joiners = false): v is string => typeof v === 'string' && v.length <= max && textClean(v, joiners);
+/** A name-like text: clean (joiners as above), not starting with a combining mark, and at most `marksPerCluster` marks on any cluster. */
+function nameLike(v: string): boolean {
+  if (!textClean(v, true) || /^\p{M}/u.test(v.trimStart())) return false;
+  return graphemes(v).every((g) => (g.match(/\p{M}/gu)?.length ?? 0) <= L.marksPerCluster);
+}
+const plainText = (v: unknown, max: number, nameText = false): v is string => typeof v === 'string' && v.length <= max && (nameText ? nameLike(v) : textClean(v, false));
 
 /** Grapheme clusters (a flag, a keycap, a skin-tone emoji, a letter with its accents are one each); `Intl` is a built-in, so the module stays pure. */
 const SEGMENTER = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
@@ -225,7 +268,14 @@ export const graphemes = (s: string): string[] => Array.from(SEGMENTER.segment(s
 /** FR-002: up to two initials from the first letters of the first two words of the name counted and cut in grapheme clusters, so a flag, a keycap or an accented letter is never split. */
 export function guessInitials(name: string): string {
   const words = String(name ?? '').split(/\s+/).filter(Boolean);
-  const first = words.slice(0, L.initialsMax).map((w) => graphemes(w)[0] ?? '');
+  // the first LETTER or DIGIT of each word (a word with none, `(you)`'s brackets, an emoji, is skipped), two words at most
+  const first: string[] = [];
+  for (const w of words) {
+    if (first.length >= L.initialsMax) break;
+    const g = graphemes(w).find((x) => /^[\p{L}\p{N}]/u.test(x));
+    if (g) first.push(g);
+  }
+  if (!first.length) first.push(graphemes(words.join(' '))[0] ?? ''); // no letter or digit at all (an emoji name): the first character
   // upper-casing can lengthen a letter (`ß` is `SS`, a ligature is two or three letters): cap AFTER it, by graphemes
   // the same count as the validator (graphemes); a joiner the cut left at an edge, or doubled, is dropped so the value always reads back
   let out = '';
@@ -265,6 +315,7 @@ export function cleanChannel(v: unknown, newChannelId?: () => string): { ok: tru
     if (c.handle !== undefined && c.handle !== '') { if (!plainText(c.handle, L.labelChars, true)) return bad('handle', REASONS.handle); out.handle = c.handle.trim(); }
   } else {
     if (typeof c.username !== 'string' || !TELEGRAM_RE.test(c.username)) return bad('username', REASONS.username);
+    if (TELEGRAM_RESERVED.includes(c.username.toLowerCase())) return bad('username', REASONS.telegramReserved);
     out.username = c.username;
   }
   if (c.recipe !== undefined && c.recipe !== '') { if (typeof c.recipe !== 'string' || !RECIPE_ID_RE.test(c.recipe)) return bad('recipe', REASONS.recipe); out.recipe = c.recipe; }
@@ -281,9 +332,9 @@ export function cleanContact(v: unknown, newChannelId?: () => string): { ok: tru
   if (!v || typeof v !== 'object' || Array.isArray(v)) return bad('contact', REASONS.name);
   const c = v as Record<string, unknown>;
   if (typeof c.name !== 'string') return bad('name', REASONS.name);
-  if (!textClean(c.name, true)) return bad('name', REASONS.name);
+  if (c.name.length > L.nameChars || !nameLike(c.name)) return bad('name', REASONS.name);
   const name = c.name.replace(/\s+/g, ' ').trim();
-  if (!name || name.length > L.nameChars) return bad('name', REASONS.name);
+  if (!name) return bad('name', REASONS.name); // the raw length was capped above, so the collapsed one is too
   const rawAliases = c.aliases === undefined ? [] : c.aliases;
   if (!Array.isArray(rawAliases)) return bad('aliases', REASONS.aliases);
   // the length is checked BEFORE the loop: the duplicate check below grows with the list (a file can hold a million short aliases)
@@ -298,8 +349,9 @@ export function cleanContact(v: unknown, newChannelId?: () => string): { ok: tru
   else {
     if (typeof c.initials !== 'string') return bad('initials', REASONS.initials);
     initials = c.initials.trim();
+    if (c.initials.length > L.initialsChars) return bad('initials', REASONS.initials);
     const n = graphemes(initials).length;
-    if (n < 1 || n > L.initialsMax || initials.length > L.initialsChars || !textClean(c.initials, true)) return bad('initials', REASONS.initials);
+    if (n < 1 || n > L.initialsMax || !textClean(c.initials, true)) return bad('initials', REASONS.initials);
   }
   const notes = c.notes === undefined ? '' : typeof c.notes === 'string' ? stripControls(c.notes) : undefined;
   if (notes === undefined || notes.length > L.notesChars) return bad('notes', REASONS.notes);
@@ -332,7 +384,7 @@ function parseContact(v: unknown): Contact | undefined {
   if (!isoOk(c.createdAt) || !isoOk(c.updatedAt) || !intIn(c.rev, 1, L.revMax)) return undefined;
   if (c.source !== 'typed' && c.source !== 'teams-import') return undefined;
   const favourite = c.favourite === true;
-  return { id: c.id, ...r.fields, favourite, favOrder: favourite && intIn(c.favOrder, 0, L.contactsMax) ? c.favOrder : 0, source: c.source, createdAt: c.createdAt, updatedAt: c.updatedAt, rev: c.rev };
+  return { id: c.id, ...r.fields, favourite, favOrder: favourite ? (intIn(c.favOrder, 0, L.contactsMax) ? c.favOrder : -1) : 0, source: c.source, createdAt: c.createdAt, updatedAt: c.updatedAt, rev: c.rev };
 }
 
 function parseRecipe(v: unknown): Recipe | undefined {
@@ -371,6 +423,10 @@ export function parseContactsDoc(raw: string): ParseResult {
     // FR-008: more valid contacts than Durbar writes is a file it cannot read (never silently cut, never overwritten)
     if (contacts.length > L.contactsMax) return { ok: false, error: `the file holds more than ${L.contactsMax} contacts` };
   }
+  // favourites: a `favOrder` out of range (999, negative, not an integer) goes LAST, in file order; the order is rebuilt dense (0..n-1)
+  const inRange = contacts.filter((c) => c.favourite && c.favOrder >= 0);
+  const outOfRange = contacts.filter((c) => c.favourite && c.favOrder < 0);
+  [...sortContacts(inRange), ...outOfRange].forEach((c, i) => { c.favOrder = i; });
   const recipes: Recipe[] = [];
   const rids = new Set<string>();
   for (const x of Array.isArray(d.recipes) ? d.recipes : []) {
