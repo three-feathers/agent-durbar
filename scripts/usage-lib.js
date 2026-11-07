@@ -38,13 +38,20 @@ function checkMachine(label) {
   return label.toLowerCase();
 }
 
-/** UTC day `YYYY-MM-DD` of a data point's `timeUnixNano` (a string of digits per the OTLP JSON mapping); the receipt time when it is missing or absurd. */
+// A data point's time must be inside [now - 2 days, now + 5 minutes]: an exporter reports "now", so an older or later point is
+// made up or a broken clock, and is dropped (counted). Without this a local process could open one day after another.
+const PAST_WINDOW_MS = 2 * 86400000;
+const FUTURE_SLACK_MS = 5 * 60000;
+const MAX_DAYS_PER_REQUEST = 4; // the window spans at most four UTC dates
+const MAX_DAYS_PER_FILE = 1500; // about four years of days
+
+/** UTC day `YYYY-MM-DD` of a data point's `timeUnixNano` (a string of digits per the OTLP JSON mapping); the receipt time when it is missing or not a number; null when it is outside the window above. */
 function dayOf(timeUnixNano, nowMs) {
   let ms = nowMs;
   if ((typeof timeUnixNano === 'string' && /^\d{1,20}$/.test(timeUnixNano)) || (typeof timeUnixNano === 'number' && Number.isFinite(timeUnixNano))) {
     const t = Number(timeUnixNano) / 1e6;
-    // 2020-01-01 up to two days after now: a clock in the far past or future does not open a new day
-    if (Number.isFinite(t) && t >= 1577836800000 && t <= nowMs + 2 * 86400000) ms = t;
+    if (!Number.isFinite(t) || t < nowMs - PAST_WINDOW_MS || t > nowMs + FUTURE_SLACK_MS) return null;
+    ms = t;
   }
   return new Date(ms).toISOString().slice(0, 10);
 }
@@ -87,6 +94,7 @@ function modelSlot(state, day, model, capped = true) {
  */
 function ingest(state, body, nowMs = Date.now()) {
   const res = { tokens: 0, costs: 0, skipped: 0 };
+  const seenDays = new Set();
   if (!isObj(body) || !Array.isArray(body.resourceMetrics)) throw new Error('not an OTLP metrics body');
   for (const rm of body.resourceMetrics) {
     if (!isObj(rm) || !Array.isArray(rm.scopeMetrics)) continue;
@@ -105,7 +113,10 @@ function ingest(state, body, nowMs = Date.now()) {
           if (v === null || (isToken && !TYPES.includes(a.type))) { res.skipped++; continue; }
           const model = a.model !== null && MODEL_RE.test(a.model) ? a.model : 'other-model';
           const source = SOURCES.includes(a.source) ? a.source : 'other';
-          const slot = modelSlot(state, dayOf(dp.timeUnixNano, nowMs), model);
+          const day = dayOf(dp.timeUnixNano, nowMs);
+          if (day === null || (!seenDays.has(day) && (seenDays.size >= MAX_DAYS_PER_REQUEST || (!own(state.days, day) && Object.keys(state.days).length >= MAX_DAYS_PER_FILE)))) { res.skipped++; continue; }
+          seenDays.add(day);
+          const slot = modelSlot(state, day, model);
           if (isToken) { slot[a.type] += v; slot.bySource[source].tokens += v; res.tokens++; }
           else { slot.costUsd += v; slot.bySource[source].costUsd += v; res.costs++; }
         }
@@ -363,6 +374,6 @@ function chartSvg(history) {
 }
 
 module.exports = {
-  TOKEN_METRIC, COST_METRIC, TYPES, SOURCES, MODEL_RE, MACHINE_RE, DATE_RE, MAX_FILE_BYTES, MAX_MODELS_PER_DAY, FILE_VERSION,
+  TOKEN_METRIC, COST_METRIC, TYPES, SOURCES, MODEL_RE, MACHINE_RE, DATE_RE, MAX_FILE_BYTES, MAX_MODELS_PER_DAY, MAX_DAYS_PER_FILE, MAX_DAYS_PER_REQUEST, FILE_VERSION,
   modelName, MODEL_NAMES, BEGIN, END, LABEL, validateHistory, upsertRow, badgeSvg, chartSvg, esc, validateBaseline, cumulative, readmeBlock, rewriteReadme, emptyState, checkMachine, dayOf, ingest, validateState, firstDay, report, group, usd,
 };

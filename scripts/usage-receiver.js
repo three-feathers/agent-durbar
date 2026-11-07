@@ -67,25 +67,46 @@ function loadState(file, machine) {
   return st;
 }
 
-/** A lock file next to the usage file (`wx`, holds the process id only): a second receiver on one folder and label would lose the first one's sums. A lock of a process that is gone is replaced. */
-function acquireLock(lockFile) {
-  for (let tries = 0; tries < 2; tries++) {
-    try {
-      fs.writeFileSync(lockFile, String(process.pid) + '\n', { mode: 0o600, flag: 'wx' });
-      return () => { try { if (fs.readFileSync(lockFile, 'utf8').trim() === String(process.pid)) fs.unlinkSync(lockFile); } catch { /* gone */ } };
-    } catch (e) {
-      if (!e || e.code !== 'EEXIST') throw e;
-      const held = new Error(`another receiver holds ${path.basename(lockFile)} (stop it, or delete the file if no receiver runs)`);
-      let pid = NaN;
-      try { pid = Number(fs.readFileSync(lockFile, 'utf8').trim()); } catch { continue; } // raced away: try again
-      if (!Number.isInteger(pid) || pid <= 0 || tries === 1) throw held;
-      let alive = true;
-      try { process.kill(pid, 0); } catch (k) { alive = !!k && k.code === 'EPERM'; }
-      if (alive) throw held;
-      try { fs.unlinkSync(lockFile); } catch { /* raced */ } // a lock of a process that is gone
-    }
-  }
-  throw new Error(`another receiver holds ${path.basename(lockFile)}`);
+/** True when a lock file written at `mtimeMs` is older than the last boot (a process id may have been reused since). `uptimeSec` is `os.uptime()`; a minute of slack. */
+function predatesBoot(mtimeMs, nowMs, uptimeSec) { return mtimeMs < nowMs - uptimeSec * 1000 - 60000; }
+
+/**
+ * A lock file next to the usage file (holds the process id only): a second receiver on one folder and label would lose the first one's sums.
+ * Created with `wx`. A stale lock (its process is gone, or it was written before the last boot) is taken over atomically: a unique temporary
+ * file with our id is renamed over it, then the lock is read back and must hold our id; two takers at once cannot both pass that read, and
+ * `stillOurs()` is checked before every write as well. `o` (pid, kill, now, uptime, afterRename) is for tests.
+ * Returns `release` (removes the lock only while it holds our id) with `release.stillOurs`.
+ */
+function acquireLock(lockFile, o = {}) {
+  const pid = o.pid || process.pid; const kill = o.kill || process.kill.bind(process);
+  const mine = () => { try { return fs.readFileSync(lockFile, 'utf8').trim() === String(pid); } catch { return false; } };
+  const release = () => { if (mine()) { try { fs.unlinkSync(lockFile); } catch { /* gone */ } } };
+  release.stillOurs = mine;
+  const held = () => new Error(`another receiver holds ${path.basename(lockFile)} (stop it, or delete the file if no receiver runs)`);
+  try {
+    fs.writeFileSync(lockFile, String(pid) + '\n', { mode: 0o600, flag: 'wx' });
+    return release;
+  } catch (e) { if (!e || e.code !== 'EEXIST') throw e; }
+  let other; let mtime;
+  try { other = Number(fs.readFileSync(lockFile, 'utf8').trim()); mtime = fs.statSync(lockFile).mtimeMs; } catch { throw held(); }
+  if (!Number.isInteger(other) || other <= 0) throw held(); // not a process id: never replaced
+  let alive = true;
+  try { kill(other, 0); } catch (k) { alive = !!k && k.code === 'EPERM'; } // ESRCH: gone; EPERM: another user's live process
+  const old = predatesBoot(mtime, (o.now || Date.now)(), o.uptime === undefined ? os.uptime() : o.uptime);
+  if (alive && !old) throw held();
+  const tmp = `${lockFile}.${pid}.${Date.now()}.tmp`;
+  try {
+    fs.writeFileSync(tmp, String(pid) + '\n', { mode: 0o600, flag: 'wx' });
+    fs.renameSync(tmp, lockFile);
+  } catch (e) { try { fs.unlinkSync(tmp); } catch { /* none */ } throw e; }
+  if (o.afterRename) o.afterRename();
+  if (!mine()) throw held(); // another taker renamed after us
+  return release;
+}
+
+/** SIGTERM, SIGINT and SIGHUP release the lock and exit (`exit` events do not run for signals). `proc` is `process` or a stand-in. */
+function installSignalHandlers(release, proc = process) {
+  for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) proc.on(sig, () => { release(); proc.exit(0); });
 }
 
 /** `handle(rawBuffer, contentEncoding)` -> `{status, body}`; pure apart from the file write. `opts.write` and `opts.maxFileBytes` are for tests. */
@@ -94,7 +115,7 @@ function createService(opts) {
   fs.mkdirSync(opts.dir, { recursive: true, mode: 0o700 });
   if (created || path.basename(opts.dir) === '.durbar-usage') { try { fs.chmodSync(opts.dir, 0o700); } catch { /* no modes on this OS */ } }
   const file = path.join(opts.dir, `usage-${opts.machine}.json`);
-  const release = acquireLock(path.join(opts.dir, `usage-${opts.machine}.lock`));
+  const release = acquireLock(path.join(opts.dir, `usage-${opts.machine}.lock`), opts.lock);
   let state;
   try { state = loadState(file, opts.machine); } catch (e) { release(); throw e; }
   const now = opts.now || Date.now;
@@ -117,6 +138,7 @@ function createService(opts) {
       const text = JSON.stringify(trial) + '\n';
       // a write that would pass the file cap is refused, and the file and the sums in memory stay as they were
       if (Buffer.byteLength(text) > maxFile) return { status: 507, body: { error: 'usage file is full' } };
+      if (!release.stillOurs()) return { status: 503, body: { error: 'the lock file is no longer ours: another receiver took over' } };
       try { write(file, text); } catch { return { status: 500, body: { error: 'could not write the usage file' } }; }
       state.days = trial.days; state.skipped = trial.skipped;
     }
@@ -163,12 +185,12 @@ function main() {
   try { o = parseArgs(process.argv.slice(2)); } catch (e) { console.error(`usage-receiver: ${e.message}`); process.exit(2); }
   let made;
   try { made = createServer(o); } catch (e) { console.error(`usage-receiver: ${e.message}`); process.exit(1); }
-  process.once('exit', made.svc.release);
+  process.once('exit', made.svc.release); installSignalHandlers(made.svc.release);
   made.server.on('error', (e) => { console.error(`usage-receiver: ${e.code || e.message}`); process.exit(1); });
   listen(made.server, o.port, () => {
     console.log(`usage-receiver: machine "${o.machine}", listening on 127.0.0.1:${made.server.address().port}, writing ${made.svc.file}`);
   });
 }
 
-module.exports = { acquireLock, listen, parseArgs, createServer, createService, atomicWrite, loadState, defaultDir, MAX_BODY, DEFAULT_PORT };
+module.exports = { acquireLock, installSignalHandlers, predatesBoot, listen, parseArgs, createServer, createService, atomicWrite, loadState, defaultDir, MAX_BODY, DEFAULT_PORT };
 if (require.main === module) main();

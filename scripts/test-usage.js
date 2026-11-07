@@ -17,6 +17,7 @@ const D = require('./usage-day');
 process.exitCode = 1; // until the last line
 const FAKE = ['fake.user@example.invalid', 'fake-user-id-0001', 'fake-account-uuid-0002', 'fake-org-id-0003', 'fake-session-id-0004', 'fake-agent-name-0005'];
 const NOW = Date.UTC(2026, 10, 7, 12, 0, 0); // 2026-11-07 12:00 UTC
+const NOW2 = Date.UTC(2026, 10, 8, 0, 5, 0); // 2026-11-08 00:05 UTC
 const nano = (iso) => String(BigInt(Date.parse(iso)) * 1000000n);
 const attr = (key, v) => ({ key, value: { stringValue: v } });
 const ident = () => [attr('user.email', FAKE[0]), attr('user.id', FAKE[1]), attr('user.account_uuid', FAKE[2]), attr('organization.id', FAKE[3]), attr('session.id', FAKE[4]), attr('agent.name', FAKE[5])];
@@ -69,12 +70,16 @@ const sample = body([
 // day bucketing by the data point's UTC time
 {
   const st = lib.emptyState('linux');
-  lib.ingest(st, body([tok('input', OPUS, 1, '2026-11-06T23:59:59Z'), tok('input', OPUS, 2, '2026-11-07T00:00:00Z'), tok('input', OPUS, 4, '2026-11-07T23:59:59Z')], []), NOW);
+  lib.ingest(st, body([tok('input', OPUS, 1, '2026-11-06T23:59:59Z'), tok('input', OPUS, 2, '2026-11-07T00:00:00Z'), tok('input', OPUS, 4, '2026-11-07T23:59:59Z')], []), NOW2);
   assert.strictEqual(st.days['2026-11-06'].models[OPUS].input, 1, 'day: 23:59:59Z belongs to the earlier UTC day');
   assert.strictEqual(st.days['2026-11-07'].models[OPUS].input, 6, 'day: 00:00:00Z and 23:59:59Z share one UTC day');
   assert.strictEqual(lib.dayOf(undefined, NOW), '2026-11-07', 'day: a missing time uses the receipt time');
-  assert.strictEqual(lib.dayOf(nano('2019-01-01T00:00:00Z'), NOW), '2026-11-07', 'day: a time before 2020 uses the receipt time');
-  assert.strictEqual(lib.dayOf(nano('2030-01-01T00:00:00Z'), NOW), '2026-11-07', 'day: a time years ahead uses the receipt time');
+  assert.strictEqual(lib.dayOf(nano('2026-11-05T11:59:59Z'), NOW), null, 'day: a time just over two days back is dropped');
+  assert.strictEqual(lib.dayOf(nano('2019-01-01T00:00:00Z'), NOW), null, 'day: a time years back is dropped');
+  assert.strictEqual(lib.dayOf(nano('2026-11-05T12:00:00Z'), NOW), '2026-11-05', 'day: a time exactly two days back counts');
+  assert.strictEqual(lib.dayOf(nano('2026-11-07T12:05:01Z'), NOW), null, 'day: a time over five minutes ahead is dropped');
+  assert.strictEqual(lib.dayOf(nano('2026-11-07T12:05:00Z'), NOW), '2026-11-07', 'day: a time five minutes ahead counts');
+  assert.strictEqual(lib.dayOf(nano('2030-01-01T00:00:00Z'), NOW), null, 'day: a time years ahead is dropped');
   assert.strictEqual(lib.dayOf('12abc', NOW), '2026-11-07', 'day: a non-numeric time uses the receipt time');
 }
 // hostile values and names
@@ -122,10 +127,10 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
 {
   const R2 = require('./usage-readme');
   const base = lib.validateBaseline({ version: 1, since: '2026-10-25', through: '2026-11-07', note: 'older work and other machines.', models: { 'claude-opus-5-5': 2856, 'claude-sonnet-5-5': 902 }, machines: { linux: 3758 } });
-  const mkst = (machine, iso, model, usdv) => { const s = lib.emptyState(machine); lib.ingest(s, body([], [cost(model, usdv, iso)]), NOW); return s; };
+  const mkst = (machine, iso, model, usdv, now = NOW) => { const s = lib.emptyState(machine); lib.ingest(s, body([], [cost(model, usdv, iso)]), now); return s; };
   const cum0 = lib.cumulative([], '2026-11-07', base);
   assert.strictEqual(cum0.total, 3758, 'cumulative: the baseline alone');
-  const later = mkst('mac', '2026-11-09T10:00:00Z', 'claude-opus-5-5', 100);
+  const later = mkst('mac', '2026-11-09T10:00:00Z', 'claude-opus-5-5', 100, Date.UTC(2026, 10, 9, 12));
   const early = mkst('linux', '2026-11-07T10:00:00Z', 'claude-opus-5-5', 50); // the baseline's own day: already counted
   assert.strictEqual(lib.cumulative([later, early], '2026-11-10', base).total, 3858, 'cumulative: usage after the baseline day is added, the baseline day is not counted twice');
   assert.strictEqual(lib.cumulative([later], '2026-11-08', base).total, 3758, 'cumulative: days after --date are left out');
@@ -267,8 +272,8 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
     assert.strictEqual(models['other-model'].input, 80 - lib.MAX_MODELS_PER_DAY, 'models cap: the extra models are added to other-model');
     lib.ingest(st, body([tok('input', 'm-0', 5, day)], []), NOW);
     assert.strictEqual(models['m-0'].input, 6, 'models cap: a model already listed keeps adding to its own row');
-    lib.ingest(st, body([tok('input', 'm-0', 1, '2026-11-08T10:00:00Z')], []), NOW);
-    assert.ok(st.days['2026-11-08'].models['m-0'], 'models cap: the cap is per day');
+    lib.ingest(st, body([tok('input', 'm-0', 1, '2026-11-06T10:00:00Z')], []), NOW);
+    assert.ok(st.days['2026-11-06'].models['m-0'], 'models cap: the cap is per day');
     let touched = false;
     const spy = { key: 'user.email', get value() { touched = true; return { stringValue: 'x' }; } };
     lib.ingest(lib.emptyState('linux'), body([{ attributes: [spy, attr('type', 'input'), attr('model', OPUS)], asInt: '1', timeUnixNano: nano(day) }], []), NOW);
@@ -355,6 +360,105 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
     assert.ok(/Dropped data points: 2\*\*/.test(lib.report([st3], '2026-11-07')) && /TEMPORALITY_PREFERENCE=delta/.test(lib.report([st3], '2026-11-07')), 'dropped: the report prints the count and the fix');
     assert.ok(/Dropped data points: 0\./.test(lib.report([lib.emptyState('linux')], '2026-11-07')), 'dropped: the report says zero when none');
     assert.strictEqual(lib.validateState(JSON.parse(JSON.stringify(st3))).skipped, 2, 'dropped: the count survives a restart');
+  }
+
+  // ---- second review of #1251: days, lock races, signals, six more claims ----
+  {
+    const asBuf = (o) => Buffer.from(JSON.stringify(o));
+    const day = '2026-11-07T10:00:00Z';
+    // 4a. a body of only dropped points is still written (the silent-zero case)
+    const dB = path.join(tmp, 'dropped');
+    const sb = R.createService({ dir: dB, machine: 'linux', now: () => NOW });
+    assert.strictEqual(sb.handle(asBuf(body([tok('input', OPUS, 1, day)], [cost(OPUS, 1, day)], 2)), 'identity').status, 200, 'dropped only: accepted');
+    assert.ok(fs.existsSync(sb.file) && JSON.parse(fs.readFileSync(sb.file, 'utf8')).skipped === 2, 'dropped only: the count is written');
+    // 4b. before each write the lock must still be ours; a stolen lock refuses and writes nothing
+    const before = fs.readFileSync(sb.file, 'utf8');
+    fs.writeFileSync(path.join(dB, 'usage-linux.lock'), '2147483646\n');
+    assert.strictEqual(sb.handle(asBuf(sample), 'identity').status, 503, 'lock check: a write is refused when the lock is no longer ours');
+    assert.strictEqual(fs.readFileSync(sb.file, 'utf8'), before, 'lock check: nothing is written');
+    // 4d. a lock that is not ours is never released
+    sb.release();
+    assert.ok(fs.existsSync(path.join(dB, 'usage-linux.lock')), 'release: a lock that is not ours is left alone');
+    fs.unlinkSync(path.join(dB, 'usage-linux.lock'));
+
+    // 1. days: the attack of the review (60 days x 51 models per request, 7 requests) cannot fill the file, and real exports keep working
+    const dA = path.join(tmp, 'attack');
+    const svc = R.createService({ dir: dA, machine: 'linux', now: () => NOW });
+    for (let n = 0; n < 7; n++) {
+      const pts = []; for (let d = 0; d < 60; d++) for (let m = 0; m < 15; m++) pts.push(tok("input", `a-${m}`, 1, new Date(Date.UTC(2026, 0, 1 + n * 3 + (d % 3))).toISOString()));
+      svc.handle(asBuf(body(pts, [])), 'identity');
+    }
+    assert.strictEqual(Object.keys(svc.state.days).length, 0, 'days: points older than two days are all dropped');
+    assert.ok(svc.state.skipped >= 7 * 60 * 15, 'days: the dropped points are counted');
+    assert.ok(!fs.existsSync(svc.file) || fs.statSync(svc.file).size < 100000, 'days: the file stays small after the attack');
+    assert.strictEqual(svc.handle(asBuf(sample), 'identity').status, 200, 'days: a real export is still accepted after the attack');
+    assert.strictEqual(svc.state.days['2026-11-07'].models[OPUS].output, 50, 'days: a real export is counted after the attack');
+    // a request spanning more than four days, and a file at its day cap
+    const st = lib.emptyState('linux');
+    const spread = []; for (let h = 0; h < 6; h++) spread.push(tok('input', OPUS, 1, new Date(NOW - h * 86400000 / 3).toISOString()));
+    const wide = lib.ingest(st, body(spread, []), NOW);
+    assert.ok(Object.keys(st.days).length <= lib.MAX_DAYS_PER_REQUEST, 'days: at most four days per request');
+    assert.ok(wide.tokens === 6, 'days: points on the days inside the window all count');
+    const NOW3 = Date.UTC(2026, 10, 7, 23, 58, 0); const st4 = lib.emptyState('linux');
+    lib.ingest(st4, body(['2026-11-05T23:58:30Z', '2026-11-06T12:00:00Z', '2026-11-07T12:00:00Z', '2026-11-08T00:02:00Z'].map((t) => tok('input', OPUS, 1, t)), []), NOW3);
+    assert.strictEqual(Object.keys(st4.days).length, 4, 'days: the four dates of one window all count in one request');
+    const full = lib.emptyState('linux');
+    for (let i = 0; i < lib.MAX_DAYS_PER_FILE; i++) full.days[`d${i}`] = { models: {} };
+    const r3 = lib.ingest(full, body([tok('input', OPUS, 1, day)], []), NOW);
+    assert.deepStrictEqual([r3.tokens, r3.skipped], [0, 1], 'days: a new day past the file cap is dropped');
+    full.days['2026-11-07'] = { models: {} }; delete full.days.d0;
+    assert.strictEqual(lib.ingest(full, body([tok('input', OPUS, 1, day)], []), NOW).tokens, 1, 'days: a day already in the file still takes points at the cap');
+    svc.release();
+
+    // 2. the stale-lock race, deterministic: B takes over inside A's liveness check, then A takes over too; only the last one still holds it
+    const dC = path.join(tmp, 'race'); fs.mkdirSync(dC); const lf = path.join(dC, 'usage-linux.lock');
+    fs.writeFileSync(lf, '2147483646\n');
+    let relB = null;
+    const deadKill = () => { const e = new Error('gone'); e.code = 'ESRCH'; throw e; };
+    let relA;
+    try { relA = R.acquireLock(lf, { pid: 222222, kill: (p2) => { if (!relB) relB = R.acquireLock(lf, { pid: 111111, kill: deadKill }); return deadKill(p2); } }); } catch (e) { relA = null; }
+    assert.ok(relB && relB.stillOurs() === false && relA && relA.stillOurs() === true, 'lock race: of two takers only the last one still holds the lock (the first sees it is not its own before writing)');
+    assert.strictEqual(fs.readFileSync(lf, 'utf8').trim(), '222222', 'lock race: the lock holds the last taker');
+    relA(); assert.ok(!fs.existsSync(lf), 'lock race: released');
+    // a taker that is overwritten right after its rename fails when it reads the lock back
+    fs.writeFileSync(lf, '2147483646\n');
+    assert.throws(() => R.acquireLock(lf, { pid: 333333, kill: deadKill, afterRename: () => fs.writeFileSync(lf, '444444\n') }), /another receiver holds/, 'lock race: a taker overwritten after its rename reads the lock back and fails');
+    fs.unlinkSync(lf);
+    assert.deepStrictEqual(fs.readdirSync(dC), [], 'lock race: no temporary lock file is left');
+
+    // 4b'. EPERM is a live process of another user: its lock is not taken
+    fs.writeFileSync(lf, '555555\n');
+    const epermKill = () => { const e = new Error('no'); e.code = 'EPERM'; throw e; };
+    assert.throws(() => R.acquireLock(lf, { pid: 666666, kill: epermKill, uptime: 1e9 }), /another receiver holds/, 'lock: a live process of another user (EPERM) keeps its lock');
+    // 3. a lock written before the last boot is stale even when its process id is alive now
+    const liveKill = () => true;
+    assert.throws(() => R.acquireLock(lf, { pid: 666666, kill: liveKill, uptime: 1e9 }), /another receiver holds/, 'lock: a live process with a lock from this boot keeps it');
+    let rel; assert.doesNotThrow(() => { rel = R.acquireLock(lf, { pid: 666666, kill: liveKill, uptime: 1, now: () => Date.now() + 3600000 }); }, 'lock: a lock that predates the boot is replaced');
+    assert.strictEqual(fs.readFileSync(lf, 'utf8').trim(), '666666', 'lock: a lock that predates the boot is replaced');
+    assert.ok(R.predatesBoot(1000, 10 * 60000, 5 * 60) && !R.predatesBoot(9 * 60000, 10 * 60000, 5 * 60) && !R.predatesBoot(4.5 * 60000, 10 * 60000, 5 * 60), 'lock: predatesBoot compares with the boot time and a minute of slack');
+    rel();
+    // 4c. the lock file is owner-only
+    if (process.platform !== 'win32') {
+      const r4 = R.acquireLock(lf, { pid: 777777 });
+      assert.strictEqual(fs.statSync(lf).mode & 0o077, 0, 'lock mode: the lock file is owner-only');
+      r4();
+    }
+    // 3. signals release the lock and exit
+    const { EventEmitter } = require('events');
+    for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) {
+      const fake = new EventEmitter(); const calls = []; fake.exit = (c) => calls.push(['exit', c]);
+      R.installSignalHandlers(() => calls.push(['release']), fake);
+      fake.emit(sig);
+      assert.deepStrictEqual(calls, [['release'], ['exit', 0]], `signals: ${sig} releases the lock and then exits`);
+    }
+    // 4e. skipped is validated on load
+    for (const bad of ['x', -1, null, NaN]) {
+      assert.throws(() => lib.validateState({ version: 1, machine: 'linux', skipped: bad, days: {} }), /number is wrong/, `skipped: ${JSON.stringify(bad)} is refused on load`);
+    }
+    // 4f. the lock is released when the file cannot be loaded
+    const dD = path.join(tmp, 'loadfail'); fs.mkdirSync(dD); fs.writeFileSync(path.join(dD, 'usage-linux.json'), '{"oops":1}');
+    assert.throws(() => R.createService({ dir: dD, machine: 'linux' }), /not a usage file/, 'load failure: the receiver stops');
+    assert.ok(!fs.existsSync(path.join(dD, 'usage-linux.lock')), 'load failure: the lock is released');
   }
 
   // ---- the report ----
