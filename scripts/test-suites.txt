@@ -35,6 +35,7 @@ test:blogcheck
 test:compressshots
 test:changelog
 test:releasevideo
+test:usage
 test:specsindex
 test:stillhighlights
 test:orgwords
