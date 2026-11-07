@@ -1,0 +1,1 @@
+- Conversation search no longer drops a long message because it holds an emoji: an emoji joiner or variation selector between two non-ASCII characters is priced as plain text, and the secret mask reads one pass less for it. A hidden character next to a letter, digit, symbol or space is still checked as before.
