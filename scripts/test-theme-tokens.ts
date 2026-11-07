@@ -409,11 +409,14 @@ console.log(`theme tokens guard passed (${n} corpus checks, ${FILES.length} file
   { // 070 T024 (FR-051): tier 3 for the switch and the primary button; the chain ends in --sage-ink, so the on track follows the world
   const root = css.slice(css.indexOf(':root{'), css.indexOf('\n}', css.indexOf(':root{')));
   const decl = (n: string): string => { const m = root.match(new RegExp('(?:^|[\\s;])' + n + ':([^;]+);')); assert.ok(m, `${n} declared in :root`); return m![1]; };
-  assert.equal(decl('--accent'), 'var(--sage-ink)'); assert.equal(decl('--switch-on'), 'var(--accent)'); assert.equal(decl('--btn-primary-bg'), 'var(--accent)');
-  assert.equal(decl('--switch-off'), 'var(--tone-neutral-track)'); assert.equal(decl('--btn-primary-ink'), 'var(--surface)');
+  assert.equal(decl('--accent'), 'var(--sage-ink)');
   const scr2 = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.css'), 'utf8');
+  // the aliases sit on the consuming selectors (not :root), so each resolves per element and follows a scope that re-sets --surface or --ink
+  for (const n of ['--btn-primary-bg', '--btn-primary-ink', '--switch-on', '--switch-off']) assert.ok(!new RegExp('(?:^|[\\s;])' + n + ':').test(root), `${n} is not declared in :root (a :root alias resolves there and misses a scope's --surface or --ink)`);
+  assert.ok(/\.btn\.primary\{--btn-primary-bg:var\(--accent\);--btn-primary-ink:var\(--surface\);/.test(css), '.btn.primary sets its own aliases: bg from --accent, ink from --surface, resolved on the element');
+  assert.ok(/\.swt\{--switch-on:var\(--accent\);--switch-off:var\(--tone-neutral-track\);/.test(scr2), '.swt sets its own aliases, resolved on the element');
   assert.ok(/\.swt\{[^}]*background:var\(--switch-off\)/.test(scr2), '.swt off track reads --switch-off');
-  assert.ok(/\.btn\.primary\{background:var\(--btn-primary-bg\)[^}]*color:var\(--btn-primary-ink\)/.test(css), '.btn.primary reads the tier 3 names');
+  assert.ok(/\.btn\.primary\{[^}]*background:var\(--btn-primary-bg\)[^}]*color:var\(--btn-primary-ink\)/.test(css), '.btn.primary reads the tier 3 names');
   assert.ok(/\.att\.plan-chip\{border-color:var\(--accent\);background:color-mix\(in srgb,var\(--accent\) 12%,var\(--surface\)\);color:var\(--ink\)\}/.test(css), 'the plan chip reads the world: accent edge, tinted page colour, page ink (no fixed green, no info tone: 2.9:1 in the arcade)');
   assert.ok(!/\.swt\.on\{[^}]*sage-ink/.test(scr2) && !/\.btn\.primary[^{]*\{[^}]*sage-ink/.test(css), 'no direct --sage-ink in the switch or the primary button');
 }
