@@ -50,6 +50,10 @@ const ENV_ALLOW = ['PATH', 'HOME', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'TE
 /* ---------------------------------------------------------------- the scene catalogue (FR-173) ----------------------------------------------------------------
  * id -> { title, sub, play(S) }. `title` names the change (the caption, at least 22 px on a 1440 px frame), `sub` says where to find it.
  * `play` sets the scene up and calls S.film(seconds) for what is recorded; set-up time is never in the clip. */
+/* Values spliced into page code: only strict ids (letters, digits, `_ . : -`), written as a JSON literal that cannot close a script or a template. Free text (chat content) is never spliced: the page reads it itself. */
+const SAFE_ID_RE = /^[A-Za-z0-9_.:-]{1,80}$/;
+const safeId = (v) => { if (!SAFE_ID_RE.test(String(v))) throw new Error('an agent id from the page is not a plain id'); return String(v); };
+const idLit = (v) => JSON.stringify(safeId(v)).replace(/[<>/\u2028\u2029]/g, (c) => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));
 const SCENES = {
   intro: {
     title: 'Agent Durbar {version}', sub: 'What is new, in the simulator',
@@ -226,7 +230,7 @@ const SCENES = {
     title: 'Real office: a lounge row', sub: 'Finished agents whose reply you have read sit in a compact row under the desks',
     refs: [{ spec: '097', fr: [246, 249] }],
     async play(S) {
-      const H = S.H, SIM = 'window.__durbarSimUi', q = JSON.stringify;
+      const H = S.H, SIM = 'window.__durbarSimUi';
       const REAL = `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'&&[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`;
       await S.reset({ officeview: 'real', simfreeze: '1', romotion: '1' }, { ready: REAL });
       // two agents finish (in rooms where others keep working); their replies are unread, so they keep a full desk (the room rule, FR-246)
@@ -237,7 +241,7 @@ const SCENES = {
         for(const a of cand){if(out.length===2)break;const next=out.concat(a.id);if(next.every(id=>{const r=A.find(x=>x.id===id).room;return M.some(o=>o.room===r&&!next.includes(o.id)&&!fin(o))}))out.push(a.id);}
         return out})()`);
       if (pick.length !== 2) throw new Error('lounge: two agents to finish were not found');
-      await H.js(`(()=>{for(const id of ${q(pick)}){const a=${SIM}.agents().find(x=>x.id===id);a.state='done';a.lastOutput=a.lastOutput||'Finished the change and ran the tests.';a.lastEventAt=Date.now();${SIM}.unread.mark(id);}${SIM}.crew.renderAll();return 1})()`);
+      await H.js(`(()=>{for(const id of [${pick.map(idLit).join(',')}]){const a=${SIM}.agents().find(x=>x.id===id);a.state='done';a.lastOutput=a.lastOutput||'Finished the change and ran the tests.';a.lastEventAt=Date.now();${SIM}.unread.mark(id);}${SIM}.crew.renderAll();return 1})()`);
       if (!(await H.until(`document.querySelectorAll('#stage .ro-plate.st-done').length>=2`, 8000))) throw new Error('lounge: no finished desks');
       await H.settle();
       await S.caption('{step}. Finished, reply not read yet', 'The agent keeps its full desk and a green screen until you read it');
@@ -245,7 +249,7 @@ const SCENES = {
       await S.film(2.4);
       await S.zoomOut();
       // read: both move to the lounge row (the second one finished long ago, so it sleeps there)
-      await H.js(`(()=>{const s=${SIM}.agents().find(x=>x.id===${q(pick[1])});s.lastEventAt=Date.now()-34*60000;for(const id of ${q(pick)})${SIM}.unread.read(id);${SIM}.crew.renderAll();return 1})()`);
+      await H.js(`(()=>{const s=${SIM}.agents().find(x=>x.id===${idLit(pick[1])});s.lastEventAt=Date.now()-34*60000;for(const id of [${pick.map(idLit).join(',')}])${SIM}.unread.read(id);${SIM}.crew.renderAll();return 1})()`);
       if (!(await H.until(`document.querySelectorAll('#stage .ro-plate.lounge').length>=2&&[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`, 8000))) throw new Error('lounge: no lounge row');
       await H.settle();
       await S.caption('{step}. Read: they move to the lounge row', 'A seat, a small desk and a monitor; asleep agents have the lamp and screen off');
@@ -265,7 +269,7 @@ const SCENES = {
       await H.js(`localStorage.removeItem('durbar.railWidth');0`);
       const main = await H.js(`(()=>{const a=window.__durbarSimUi.agents().find(a=>!a.parent&&a.live&&document.querySelector('#stage .desk[data-id="'+CSS.escape(a.id)+'"]'));return a?a.id:null})()`);
       if (!main) throw new Error('railwidth: no desk to open');
-      await H.js(`document.querySelector('#stage .desk[data-id="'+CSS.escape(${JSON.stringify(main)})+'"]').click()`);
+      await H.js(`document.querySelector('#stage .desk[data-id="'+CSS.escape(${idLit(main)})+'"]').click()`);
       if (!(await H.until(`document.body.classList.contains('panel-open')&&!!document.getElementById('railGrip')`, 8000))) throw new Error('railwidth: the rail did not open');
       await H.calm({ blur: true });
       await H.settle();
@@ -305,18 +309,18 @@ const SCENES = {
     title: 'Sign in works from an idle chat', sub: 'An MCP server that needs a sign-in: the chat\'s Sign in... button starts it',
     refs: [{ spec: '058', fr: [229, 229] }],
     async play(S) {
-      const H = S.H, q = JSON.stringify;
+      const H = S.H, q = JSON.stringify; // q only for fixed data (the MCP server list, the report text); the agent id goes through idLit
       await S.reset({ simkinds: 'mixed', simsigninrefresh: '1', simsigninwait: '1500' });
       const id = await H.js(`((window.__durbarSimUi.agents().find(a=>!a.parent&&a.live&&(a.info&&a.info.adapterId)==='claude'&&(a.state==='idle'||a.state==='done')&&!(a.info.sandbox&&a.info.sandbox.covers.includes('mcp'))))||{}).id||''`);
       if (!id) throw new Error('signin: no idle Claude Code chat');
-      const emit = (e) => H.js(`window.__durbarSimEmit(Object.assign({timestamp:Date.now()},${q(e)}))`);
+      const emit = ({ sessionId, ...rest }) => H.js(`window.__durbarSimEmit(Object.assign({timestamp:Date.now(),sessionId:${idLit(sessionId)}},${q(rest)}))`); // rest is fixed data only
       const servers = [{ name: 'docs', status: 'connected', transport: 'http' }, { name: 'crm', status: 'connected', transport: 'http' }, { name: 'files', status: 'connected', transport: 'stdio' }];
       await emit({ type: 'mcp', sessionId: id, servers });
       await H.js(`window.__durbarSimSignIn.fate('docs','ok');window.__durbarSimSignIn.fate('crm','expired');window.__durbarSimSignIn.fate('files','ok');0`);
-      const o = await H.openSimAgent(`a=>a.id===${q(id)}`, '#msgInput');
+      const o = await H.openSimAgent(`a=>a.id===${idLit(id)}`, '#msgInput');
       if (!o.ok) throw new Error('signin: the chat did not open');
       await emit({ type: 'status', sessionId: id, status: 'idle' });
-      await H.until(`window.__durbarSimSignIn.lastResponse(${q(id)})!==undefined`, 4000);
+      await H.until(`window.__durbarSimSignIn.lastResponse(${idLit(id)})!==undefined`, 4000);
       await H.js(`window.__durbarSimSignIn.advance(${60 * 60 * 1000});0`);
       await H.js(`(()=>{const i=document.getElementById('msgInput');i.focus();i.value='Please continue with the report';i.dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('sendBtn').click();})()`);
       if (!(await H.until(`!!document.querySelector('#chat .note.mcpre-sign')`, 12000))) throw new Error('signin: no sign-in line');
@@ -340,13 +344,13 @@ const SCENES = {
     title: 'Notes: Open source', sub: 'A note\'s menu opens the chat it came from and outlines the message',
     refs: [{ spec: '083', fr: [46, 46] }],
     async play(S) {
-      const H = S.H, q = JSON.stringify;
+      const H = S.H;
       await S.reset();
       const openChat = async (name) => {
         const id = await H.idOf(name);
         if (!id) throw new Error(`notesource: ${name} is not on the floor`);
         if (await H.js(`document.body.classList.contains('panel-open')`)) { await H.js(`document.getElementById('backBtn').click()`); await H.until(`!document.body.classList.contains('panel-open')`, 4000); }
-        await H.js(`document.querySelector(${q(`#stage .desk[data-id="${id}"]`)}).click()`);
+        await H.js(`document.querySelector('#stage .desk[data-id="'+CSS.escape(${idLit(id)})+'"]').click()`);
         if (!(await H.until(`document.body.classList.contains('panel-open')&&!!document.getElementById('msgInput')`, 15000))) throw new Error(`notesource: ${name}'s chat did not open`);
         H.wc().sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
         await H.settle();
@@ -354,9 +358,8 @@ const SCENES = {
       };
       // set-up (not filmed as a step): a note is saved from Noor's first reply, then another chat of the folder opens the notes drawer
       const src = await openChat('Noor');
-      const reply = await H.js(`(()=>{const b=document.querySelector('#chat .chat-inner .msg.agent .bubble');return b&&b._raw?{ord:0,text:b._raw}:null})()`);
-      if (!reply) throw new Error('notesource: Noor has no reply to save');
-      const saved = await H.js(`window.__durbarSimUi.bridge().notesSave(${q(src)},{role:'agent',ord:0,text:${q(reply.text)},from:'agent',simSession:${q(src)},simApp:'copilot'}).then(r=>!!r.ok)`);
+      // the page saves its own reply text: chat content never goes through this script into code
+      const saved = await H.js(`(()=>{const b=document.querySelector('#chat .chat-inner .msg.agent .bubble');if(!b||!b._raw)return Promise.resolve(false);return window.__durbarSimUi.bridge().notesSave(${idLit(src)},{role:'agent',ord:0,text:b._raw,from:'agent',simSession:${idLit(src)},simApp:'copilot'}).then(r=>!!r.ok)})()`);
       if (!saved) throw new Error('notesource: the note was not saved');
       await openChat('Ada');
       await H.js(`window.__durbarSimUi.notes.open()`);
@@ -366,7 +369,7 @@ const SCENES = {
       await S.caption('{step}. A note, saved from another chat', 'Ada\'s chat, with the notes drawer open');
       await S.zoomTo(await S.rectOfJs(`document.getElementById('notesDrawer')`, { pad: 20 }));
       await S.film(1.8);
-      const more = await H.js(`(()=>{const n=window.__durbarSimUi.notes.all().find(x=>x.text.includes(${q(reply.text.slice(0, 20))}));const r=n&&document.querySelector('#notesDrawer .nt-row[data-id="'+n.id+'"]');const m=r&&r.querySelector('.nt-more');if(!m)return false;m.click();return true})()`);
+      const more = await H.js(`(()=>{const m=document.querySelector('#notesDrawer .nt-row .nt-more');if(!m)return false;m.click();return true})()`); // the drawer holds the one note saved above
       if (!more || !(await H.until(`!!document.querySelector('#modeMenu [data-nmact="source"]')`, 4000))) throw new Error('notesource: the note menu has no Open source');
       await S.caption('{step}. The note\'s menu: Open source', 'It opens the chat the note came from; nothing is sent');
       await S.zoomTo(await S.rectOfJs(`[document.getElementById('modeMenu'),document.querySelector('#notesDrawer .nt-row')]`, { pad: 40 }), 0.6);

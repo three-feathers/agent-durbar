@@ -132,15 +132,18 @@ const checkSources = (M) => {
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 };
 checkSources(RV);
+const pending = []; // promises the async block at the end awaits
 {
   // main() with no --scenes and no match: a clear error, no release-* file, no recording, and the command exits non-zero
   const out = fs.mkdtempSync(path.join(os.tmpdir(), 'rv-nomatch-'));
   try {
+    fs.rmSync(out, { recursive: true, force: true }); // the --out folder must not exist before, so its creation would show
     let started = false;
-    assert.rejects(RV.main(['--version', 'v9.9.9', '--out', out], { releaseSources: () => ({ bullets: ['- **Nothing** (spec 021 FR-063): x.'], sceneFields: [] }), hasFfmpeg: () => true, ensure: () => true, runOne: async () => { started = true; } }), /no scene shows this release.*--scenes/).then(() => {
+    const outFolderAbsent = () => assert.ok(!fs.existsSync(out), 'the --out folder is not created when no scene shows the release');
+    pending.push(assert.rejects(RV.main(['--version', 'v9.9.9', '--out', out], { releaseSources: () => ({ bullets: ['- **Nothing** (spec 021 FR-063): x.'], sceneFields: [] }), hasFfmpeg: () => true, ensure: () => true, runOne: async () => { started = true; } }), /no scene shows this release.*--scenes/).then(() => {
       assert.ok(!started, 'no recording starts without scenes');
-      assert.deepStrictEqual(fs.readdirSync(out).filter((f) => f.startsWith('release-')), [], 'no release-* file without scenes');
-    }).catch((e) => { console.error(e); process.exit(1); });
+      outFolderAbsent();
+    }));
     // the real command, in a copy of the scripts over an empty changelog: exit code 1 and the message on stderr
     const fake = fs.mkdtempSync(path.join(os.tmpdir(), 'rv-cmd-'));
     fs.mkdirSync(path.join(fake, 'scripts')); fs.mkdirSync(path.join(fake, 'changelog.d'));
@@ -149,7 +152,7 @@ checkSources(RV);
     const r = require('child_process').spawnSync(process.execPath, [path.join(fake, 'scripts', 'release-video.js'), '--version', 'v9.9.9', '--out', path.join(fake, 'out')], { encoding: 'utf8', timeout: 20000 });
     assert.strictEqual(r.status, 1, 'the command exits non-zero when no scene shows the release');
     assert.ok(/no scene shows this release.*--scenes/.test(r.stderr), 'and says so: ' + r.stderr);
-    assert.ok(!fs.existsSync(path.join(fake, 'out')) || fs.readdirSync(path.join(fake, 'out')).filter((f) => f.startsWith('release-')).length === 0, 'no release-* file from the command');
+    assert.ok(!fs.existsSync(path.join(fake, 'out')), 'the command creates no --out folder when no scene shows the release');
     fs.rmSync(fake, { recursive: true, force: true });
   } finally { setTimeout(() => fs.rmSync(out, { recursive: true, force: true }), 1000).unref(); }
 }
@@ -362,6 +365,7 @@ const { killTree } = require('./ui-suite');
 
 // ---- the command's failure paths (FR-175): no ffmpeg, a failed recording; nothing is left behind ----
 (async () => {
+  await Promise.all(pending); // the no-match main() case
   setTimeout(() => { console.error('release-video: the test hung (90 s)'); process.exit(1); }, 90000).unref(); // a stuck child fails instead of hanging
   const out = fs.mkdtempSync(path.join(os.tmpdir(), 'rv-test-'));
   try {
