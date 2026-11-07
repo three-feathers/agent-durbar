@@ -4,4 +4,4 @@
    Only redact.js may write to it (app.js and renderer.js export nothing). */
 self.exports={};
 /* spec 102 FR-228: the compiled realoffice-arrangements.js requires realoffice-layout.js; every pure module writes to the one object above */
-self.require=function(p){return p==='./realoffice-layout'?self.exports:null;}; /* and nothing else: page code that looks for a CommonJS module must keep finding none */
+self.require=function(p){return p==='./realoffice-layout'||p==='./brainstate'?self.exports:null;}; /* spec 106: brainsurface.js requires ./brainstate the same way; and nothing else: page code that looks for a CommonJS module must keep finding none */
