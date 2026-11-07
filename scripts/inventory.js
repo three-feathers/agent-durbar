@@ -14,7 +14,8 @@
  * Static detection: what the source names. Rules built from data at run time may be under-counted.
  * Counted: px, rem and em lengths; the `font` shorthand (size, weight, line-height); logical spacing (margin-inline, padding-block-start, inset-*) and radii.
  * [KNOWN GAP] not counted: inline styles written in JS (`style="..."`, `el.style.x`), rules on bare `html` or `:root` (the token defaults live there), and
- * `top`/`right`/`bottom`/`left` offsets; a literal added there is not caught.
+ * `top`/`right`/`bottom`/`left` offsets, font sizes in % or keywords, `line-height: calc()`, nested CSS (a rule inside a rule), CSS in JS template strings
+ * and in an HTML `<style>` block; a literal added there is not caught. Shadows are box-shadow, text-shadow and drop-shadow(); units are read in any case.
  */
 const fs = require('fs');
 const path = require('path');
@@ -23,7 +24,7 @@ const ROOT = path.join(__dirname, '..');
 const BASELINE = path.join(__dirname, 'fixtures', 'ui-inventory.json');
 const KINDS = ['font-size', 'line-height', 'font-weight', 'spacing', 'radius', 'shadow'];
 
-const PX = /(?<![\w.-])-?\d*\.?\d+(?:px|rem|em)\b/g; /* a length literal: px, rem or em */
+const PX = /(?<![\w.-])-?\d*\.?\d+(?:px|rem|em)\b/gi; /* a length literal: px, rem or em, any case */
 const stripVarFallback = (v) => { let s = v, prev; do { prev = s; s = s.replace(/var\(\s*--[\w-]+\s*,[^()]*\)/g, 'var()'); } while (s !== prev); return s; };
 const lineOf = (src, i) => src.slice(0, i).split('\n').length;
 
@@ -77,7 +78,8 @@ function countRules(rules) {
       else if (p === 'line-height') { if (/^[\d.]+(px|rem|em)?$/.test(v)) c['line-height']++; }
       else if (/^(padding|margin)(-(top|right|bottom|left|inline|block)(-(start|end))?)?$|^inset(-(inline|block)(-(start|end))?)?$|^(gap|row-gap|column-gap)$/.test(p)) c.spacing += px;
       else if (/^border(-(top|bottom)-(left|right)|-(start|end)-(start|end))?-radius$/.test(p)) { c.radius += (v.match(PX) || []).filter((x) => parseFloat(x) < 999).length; /* pill (999px) and 50% are the scale's own */ }
-      else if (p === 'box-shadow') { if (v !== 'none' && !/^var\(\)$/.test(v) && !/^var\(--[\w-]+\)$/.test(v)) c.shadow++; }
+      else if (p === 'filter' || p === 'backdrop-filter') c.shadow += (v.match(/drop-shadow\(/g) || []).length; /* a drop-shadow literal is a shadow */
+      else if (p === 'box-shadow' || p === 'text-shadow') { if (v !== 'none' && !/^var\(\)$/.test(v) && !/^var\(--[\w-]+\)$/.test(v)) c.shadow++; }
     }
   }
   return out;
