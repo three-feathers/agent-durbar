@@ -16,7 +16,12 @@
 const UNSAFE = { '<': '\\u003C', '>': '\\u003E', '/': '\\u002F', '\u2028': '\\u2028', '\u2029': '\\u2029' };
 const jsLiteral = (v) => JSON.stringify(v).replace(/[<>/\u2028\u2029]/g, (c) => UNSAFE[c]);
 
+const fs = require('fs');
 const path = require('path');
+/* spec 102 T226 (FR-267): the fixture user theme with a dark page and its own display font; it takes Retro Pixel's place as the second theme of the layout checks.
+   CHECK_DARK is the manifest, CHECK_DARK_QUERY loads it in the simulator (`theme` + `usertheme`), and `window.THEME.setTheme(CHECK_DARK)` switches to it in a loaded page. */
+const CHECK_DARK = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'themes', 'check-dark.json'), 'utf8'));
+const CHECK_DARK_QUERY = { theme: CHECK_DARK.id, usertheme: JSON.stringify(CHECK_DARK) };
 const LIMIT = 8000;
 const INDEX = path.join(__dirname, '..', 'dist', 'renderer', 'index.html');
 
@@ -294,4 +299,4 @@ async function shotWithView(win, view, file) {
   fs.writeFileSync(file, nativeImage.createFromBitmap(base, { width: size.width, height: size.height }).toPNG());
 }
 
-module.exports = { waits, helpers, guardWindow, jsLiteral, shotWithView, LIMIT, INDEX };
+module.exports = { waits, helpers, guardWindow, jsLiteral, shotWithView, LIMIT, INDEX, CHECK_DARK, CHECK_DARK_QUERY };
