@@ -56,13 +56,18 @@ for (const src of [
   '[^\\s]{8}(?![^\\s])', '\\S{8}(?!\\S)', '\\S{6}', '[^\\s]{8,}',
   '(?:[^x]|y){0,9}z', '(?:b|\\S+c){2}', '(?:x(?:y|.)z){1,4}', '(?:[a-z]|é){0,9}', '(a)\\1{3}', '(?<n>a)\\k<n>{3}',
   '(\\bpin [\\s\\S]{0,40} )[0-9]{4,}', // M17
+  // review of PR 1244, round 2: any quantifier over an atom that takes non-ASCII but not every hidden character, `?` and `{0,1}`, `[^]`, a literal
+  '(\\bpin [\u00e0-\u00ff]+)[0-9]{4,}', '[\u00e0-\u00ff]*', '\\p{L}+', '[^\\s\u200d]+', '(?:[\u00e0-\u00ff]|y)*', '[^\\s]?\u00e9', '(\\bpin:[^\\s]?\u00e9)[0-9]{4,}', '.?', '[^x]{0,1}', '[^x]?',
+  '[^]{0,5}', '[^]{0,5}x', 'a[^]{2}b', '[a-z]+\u00e9', '\u00e9',
 ]) assert.ok(flagged(src), `flagged: ${src}`);
 for (const src of [
   '[ab]{1,5}', '[a.]{0,9}', '\\w{0,9}', '\\s{1,8}', '\\d{4}', '\\.{1,2}', '[A-Za-z0-9]{8}', '[\\w.-]{1,128}', '\\x41{3}', '[\\x20-\\x7e]{0,9}',
-  '[^x]+', '[^x]*', '\\S+', '.?', '[^x]{1}', '[^x]{0,1}', '(?:[^x]|y)+', '(?:[a.]|\\w|\\s|\\.){0,9}(?:[^x]|y)', '\\(?:[^x]\\){0,9}[^y]',
+  '[^x]+', '[^x]*', '\\S+', '\\S*', '.+', '.*', '[^]+', '[^]*', '[^x]{1}', '[a-z]+', '[a-z]?', '(?:[^x]|y)+', '(?:[^x]|y)*', '(?:[a.]|\\w|\\s|\\.){0,9}(?:[^x]|y)', '\\(?:[^x]\\){0,9}[^y]',
   String.raw`[\w.-]{1,128}(?:[\\/][\w.-]{1,128}){1,16}\.[A-Za-z0-9]{1,8}`, // NOT_A_VALUE path groups: ASCII only
 ]) assert.ok(!flagged(src), `not flagged: ${src}`);
 assert.throws(() => assertCovered(['(?:[^x]|y){0,9}z']), /no LIVE_HEAD alternative/, 'a rule with a non-ASCII grouped window and no alternative fails the check');
 assert.throws(() => assertCovered(['(\\bpin [\\s\\S]{0,40} )[0-9]{4,}']), /no LIVE_HEAD alternative/, 'M17: a new rule with [\\s\\S]{0,40} fails the check');
+assert.throws(() => assertCovered(['(\\bpin [\u00e0-\u00ff]+)[0-9]{4,}']), /no LIVE_HEAD alternative/, 'N23: a new rule with [\u00e0-\u00ff]+ fails the check');
+assert.throws(() => assertCovered(['(\\bpin:[^\\s]?\u00e9)[0-9]{4,}']), /no LIVE_HEAD alternative/, 'N24: a new rule with [^\\s]?\u00e9 fails the check');
 assert.throws(() => assertCovered(['\\bkey \\S{6}']), /no LIVE_HEAD alternative/, 'M18: a new rule with \\S{6} fails the check');
 console.log(`livehead: ${found} rules with a non-ASCII count, all covered, each alternative checked alone`);

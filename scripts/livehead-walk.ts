@@ -1,11 +1,16 @@
 /**
- * Spec 095 T065 (FR-063): the walker of `scripts/test-livehead.ts`. Finds, in a regex source, every count that a hidden character could
- * inflate: a quantifier with a count that matters (`{n}` with n of 2 or more, `{a,b}`, `{a,}` with a of 2 or more) on an atom that admits a
- * non-ASCII character. An atom admits one when it is: `.`; a non-ASCII literal; a class that is negated, holds `\S`, `\D`, `\W`, `\p`, `\P`,
- * a non-ASCII literal or a `\u`/`\x` escape above U+007F (a range ends in one of those); `\S`, `\D`, `\W`, `\p`, `\P`, such an escape on its
- * own; a backreference (`\1`, `\k<n>`: what it repeats is unknown); or a group with any of these inside it (alternations included). A plain
- * class, `\w`, `\s`, `\d` and an escaped literal do not (no rule has the `u` flag, so `\w` is ASCII; `\s` is checked by `hiddenCanHide`
- * itself). `?`, `*` and `+` do not count characters: a hidden character in a run they repeat does not change what they match.
+ * Spec 095 T065 (FR-063): the walker of `scripts/test-livehead.ts`. Finds, in a regex source, what a hidden character could change. An atom
+ * is a class, an escape, `.`, a literal or a group. It admits non-ASCII when it is: `.`; a non-ASCII literal; a class that is negated
+ * (`[^]` too), holds `\S`, `\D`, `\W`, `\p`, `\P`, a non-ASCII literal or a `\u`/`\x` escape above U+007F (a range ends in one of those);
+ * `\S`, `\D`, `\W`, `\p`, `\P` or such an escape on its own; a backreference; or a group with any of these inside (alternations included).
+ * Flagged (review of PR 1244, rounds 1 and 2):
+ * (1) a count that matters on an atom that admits non-ASCII: `{n}` of 2 or more, `{a,b}`, `{a,}` of 2 or more, `?` and `{0,1}` (an inert
+ * hidden character takes one of the places);
+ * (2) any quantifier, `+` and `*` too, on an atom that admits non-ASCII but does not match every inert hidden character (ZWJ, ZWNJ, ZWSP,
+ * VS16, soft hyphen, word joiner, a lone surrogate): `[a-\u00ff]+` stops at a ZWJ where the copy without it goes on. An atom that matches
+ * them all (`[^x]+`, `.+`, `\S+`) absorbs them, so `+` and `*` over it do not change;
+ * (3) a non-ASCII literal outside a class: a hidden character beside it breaks the adjacency the copy has.
+ * Not flagged: plain classes, `\w`, `\s`, `\d`. No rule has the `u` flag (`\w` is ASCII).
  */
 export interface Token {
   type: 'esc' | 'class' | 'dot' | 'lit' | 'open' | 'close' | 'other';
@@ -42,7 +47,6 @@ export function tokens(src: string): Token[] {
       const neg = src[j] === '^';
       if (neg) j++;
       let admits = neg;
-      if (src[j] === ']') j++;
       while (j < src.length && src[j] !== ']') {
         if (src[j] === '\\') {
           const m = ESC.exec(src.slice(j))!;
@@ -79,16 +83,28 @@ export function tokens(src: string): Token[] {
   return out;
 }
 
-const QUANT = /^\{(\d+)(?:(,)(\d*))?\}/;
-/** Whether a quantifier's count matters to a hidden character: a fixed count of 2 or more, a bounded range, an open range from 2 or more. */
+const QUANT = /^(?:\{(\d+)(?:(,)(\d*))?\}|([?*+]))\??/;
+/** Whether a quantifier's count matters to a hidden character: `?`, a range with an upper bound of 1 or more, a fixed count or an open range from 2 or more. */
 function counts(q: RegExpExecArray): boolean {
+  if (q[4] === '?') return true;
+  if (q[4] !== undefined) return false;
   const a = Number(q[1]);
   if (q[2] === undefined) return a >= 2;
   if (q[3] === '') return a >= 2;
-  return Number(q[3]) >= 2;
+  return Number(q[3]) >= 1 && !(a === 1 && Number(q[3]) === 1);
+}
+const INERT_HIDDEN = ['\u200d', '\u200c', '\u200b', '\ufe0f', '\u00ad', '\u2060', '\ud83d'];
+/** Whether an atom matches every inert hidden character, so a `+` or `*` over it absorbs them. A source that does not compile as an atom alone (a backreference) does not. */
+function absorbsHidden(atom: string): boolean {
+  try {
+    const re = new RegExp(`^(?:${atom})$`);
+    return INERT_HIDDEN.every((c) => re.test(c));
+  } catch {
+    return false;
+  }
 }
 
-/** Every counted quantifier of `src` on an atom that admits non-ASCII, as the atom and its count. */
+/** Everything of `src` a hidden character could change, as the atom and its quantifier, or `literal x` (see the header). */
 export function windowsOf(src: string): string[] {
   const t = tokens(src);
   const out: string[] = [];
@@ -104,8 +120,11 @@ export function windowsOf(src: string): string[] {
       admits = t.slice(o + 1, k).some((x) => x.admits);
     } else if (t[k].type === 'open' || t[k].type === 'other') continue;
     if (!admits) continue;
+    if (t[k].type === 'lit') out.push(`literal ${src.slice(t[k].start, t[k].end)}`);
     const q = QUANT.exec(src.slice(t[k].end));
-    if (q && counts(q)) out.push(src.slice(from, t[k].end + q[0].length));
+    if (!q) continue;
+    const atom = src.slice(from, t[k].end);
+    if (counts(q) || !absorbsHidden(atom)) out.push(atom + q[0]);
   }
   return out;
 }
