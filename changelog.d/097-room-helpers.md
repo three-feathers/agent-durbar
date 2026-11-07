@@ -1,0 +1,1 @@
+- **Helpers in Real office, proposed** (spec 097 FR-306..FR-311, issue #1139): a spec proposal to show each sub-agent of a desk in the room as the flat office's helper tile or card, in a strip under the desk's name plate, instead of only a "+N" count. Spec only; nothing changes in the app until the owner answers where helpers sit (Q7).
