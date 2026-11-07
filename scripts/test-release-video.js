@@ -11,9 +11,8 @@ const RV = require('./release-video');
 
 // ---- arguments ----
 const ok = RV.parseArgs(['--version', 'v0.1.7', '--out', 'x']);
-assert.deepStrictEqual(ok.scenes, RV.DEFAULT_SCENES, 'the default scenes');
-assert.strictEqual(ok.scenes[0], 'intro');
-assert.strictEqual(ok.scenes[ok.scenes.length - 1], 'outro');
+assert.strictEqual(ok.scenes, null, 'no --scenes: main() picks the scenes from the release, there is no fixed default list');
+assert.strictEqual(RV.DEFAULT_SCENES, undefined, 'no fixed DEFAULT_SCENES list is left to go stale');
 assert.deepStrictEqual(RV.parseArgs(['--version', 'v1.2.3-rc.4', '--out', 'x', '--scenes', 'crews, mcp']).scenes, ['crews', 'mcp']);
 for (const bad of ['0.1.7', 'v0.1', 'v0.1.7-test.1', 'v0.1.7;rm', 'v0.1.7 ', '../v0.1.7', 'v0.1.7-mcptest.1']) {
   assert.throws(() => RV.parseArgs(['--version', bad, '--out', 'x']), /--version must be/, `refused version ${JSON.stringify(bad)}`);
@@ -44,7 +43,7 @@ assert.strictEqual(RV.fill('{count} in {version}', { version: 'v1.0.0', count: n
     return out;
   };
   const numbers = (caps) => caps.map((c) => /^(\d+)\. /.exec(c)).filter(Boolean).map((m) => Number(m[1]));
-  const caps = shown(RV.DEFAULT_SCENES);
+  const caps = shown(['intro', 'lounge', 'railwidth', 'signin', 'notesource', 'outro']);
   const got = numbers(caps);
   assert.ok(got.length >= 2, 'the default clip has numbered steps');
   assert.deepStrictEqual(got, got.map((_, i) => i + 1), `step numbers are 1..n in the order shown (got ${got.join(',')})`);
@@ -52,6 +51,105 @@ assert.strictEqual(RV.fill('{count} in {version}', { version: 'v1.0.0', count: n
   const reversed = shown(['needsyou', 'refresh']);
   assert.deepStrictEqual(numbers(reversed), numbers(reversed).map((_, i) => i + 1), 'another scene order is numbered 1..n too');
   for (const [sid, sc] of Object.entries(RV.SCENES)) assert.ok(!/caption\('\d+\. /.test(sc.play.toString()), `${sid}: a step caption uses {step}, not a typed number`);
+}
+
+// ---- spec 008 delta 2026-11-07: the default scenes follow the release; the v0.1.12 scenes ----
+/* v0.1.12's fragments, shortened to their spec and FR parts (the text a release names its changes with) */
+const V12 = [
+  "- **Drag the agent list's width** (spec 005 FR-236, issue #1223): the right edge of the rail beside a chat is a splitter.",
+  "- MCP: the chat's *Sign in...* button now starts the sign-in (spec 058 FR-229, issue #1229).",
+  "- **Notes: Open source** (spec 083 FR-046, [issue 699](https://example.org/699)): a note's menu opens the chat it came from.",
+  "- **Real office: finished agents sit in a lounge row** (spec 097 FR-246..FR-249, issue #1220): a compact row.",
+  "- **Agent rules shortened** (spec 021 FR-063): two sentences say the same thing in fewer words.",
+];
+const checkChoice = (M) => {
+  const pick = (bullets, sceneFields) => M.chooseScenes({ bullets, sceneFields: sceneFields || [] });
+  // the v0.1.12 release: its four scenes between the cards, the lounge (the headline) first
+  assert.deepStrictEqual(pick(V12), ['intro', 'lounge', 'railwidth', 'signin', 'notesource', 'outro'], 'the default clip of v0.1.12 shows its four scenes');
+  assert.strictEqual(pick(V12)[0], 'intro', 'the title card is first');
+  assert.strictEqual(pick(V12).slice(-1)[0], 'outro', 'the end card is last');
+  // a release that changes none of them gets none of them (v0.1.11's old list is not a default)
+  assert.deepStrictEqual(M.sceneIdsFor(['- **Cookie header hidden** (spec 012 FR-168, issue #1159): a token.', V12[4], '- **A thing** (spec 058 FR-300): not a scene.']), [], 'FR-300 of spec 058 and the other specs are no scene')
+  assert.throws(() => pick([V12[4]]), /no scene shows this release.*--scenes/, 'nothing to show is an error that asks for --scenes');
+  assert.throws(() => pick([]), /no scene shows this release/, 'an empty release is an error too');
+  // FR matching: ranges, either end, a single FR, the spec number
+  const lounge = (b) => M.sceneIdsFor([b]).includes('lounge');
+  assert.ok(lounge('- x (spec 097 FR-246..FR-249): a'), 'a range that covers the scene');
+  assert.ok(lounge('- x (spec 097 FR-249): a'), 'the last FR of the scene');
+  assert.ok(lounge('- x (spec 097 FR-246): a'), 'the first FR of the scene');
+  assert.ok(lounge('- x (spec 097 FR-240..250): a'), 'a range around the scene (second number without FR-)');
+  assert.ok(!lounge('- x (spec 097 FR-250): a'), 'the FR after the scene');
+  assert.ok(!lounge('- x (spec 097 FR-245): a'), 'the FR before the scene');
+  assert.ok(!lounge('- x (spec 005 FR-246): a'), 'the FR of another spec');
+  assert.ok(!lounge('- x (spec 097): a'), 'a spec named without FR numbers does not show an FR scene');
+  assert.ok(M.sceneIdsFor(['- x (spec 100): a']).includes('mcp'), 'a scene without `fr` takes any change to its spec');
+  // Scene: fields come first, then refs; unknown ids and the cards are ignored; at most AUTO_MAX feature scenes
+  assert.deepStrictEqual(pick(V12, ['notesource']).slice(1, 3), ['notesource', 'lounge'], 'a Scene: field comes first, once');
+  assert.deepStrictEqual(pick([], ['crews', 'crews']), ['intro', 'crews', 'outro'], 'a Scene: field alone picks its scene, once');
+  assert.throws(() => pick([], ['intro', 'nope', 'toString']), /no scene shows/, 'the cards and unknown ids are no scene');
+  const many = ['crews', 'mcp', 'org', 'floors', 'refresh', 'needsyou', 'mcpsettings', 'lounge'];
+  assert.strictEqual(pick([], many).length, M.AUTO_MAX + 2, 'a long release is cut to AUTO_MAX scenes between the cards');
+  assert.ok(M.AUTO_MAX >= 4 && M.AUTO_MAX <= 6, 'a clip of at most AUTO_MAX scenes stays inside its length bounds');
+};
+checkChoice(RV);
+for (const [sid, sc] of Object.entries(RV.SCENES)) {
+  for (const r of sc.refs || []) {
+    assert.ok(/^\d{3}$/.test(r.spec) && fs.readdirSync(path.join(__dirname, '..', 'specs')).some((d) => d.startsWith(r.spec + '-')), `${sid}: its ref names a spec that exists (${r.spec})`);
+    assert.ok(!r.fr || (r.fr.length === 2 && r.fr[0] <= r.fr[1]), `${sid}: fr is [first, last]`);
+  }
+  if (sid !== 'intro' && sid !== 'outro') assert.ok((sc.refs || []).length > 0 || ['office'].includes(sid), `${sid}: a scene says what it shows (refs), or the default can never pick it`);
+}
+{
+  // the four v0.1.12 scenes: ids, order of their captions, the step numbers in a clip made of all of them, and zoom + privacy check on each
+  for (const id of ['lounge', 'railwidth', 'signin', 'notesource']) assert.ok(RV.SCENES[id], `the catalogue has ${id}`);
+  const caps = (id) => [...RV.SCENES[id].play.toString().matchAll(/S\.caption\('((?:[^'\\]|\\.)*)'/g)].map((m) => m[1]);
+  assert.deepStrictEqual(caps('lounge').slice(0, 2), ['{step}. Finished, reply not read yet', '{step}. Read: they move to the lounge row'], 'lounge: unread first, then the lounge row');
+  assert.deepStrictEqual(caps('railwidth').filter((c) => /^\{step\}/.test(c)).map((c) => c.replace(/^\{step\}\. /, '')), ['The rail is 220 px wide', 'Drag it wider', 'Or narrower', 'Double-click: back to 220 px'], 'railwidth: the captions in the order of the actions');
+  assert.ok(caps('signin').length === 2 && /needs you/.test(caps('signin')[0]) && /starts the sign-in/.test(caps('signin')[1]), 'signin: the line first, then the click');
+  assert.ok(/Open source/.test(caps('notesource')[1]) && /at that message/.test(caps('notesource')[2]), 'notesource: the note, its menu, the opened chat');
+  const src4 = fs.readFileSync(path.join(__dirname, 'release-video.js'), 'utf8');
+  assert.ok(!/RV_SCENES \|\| DEFAULT/.test(src4) && /RV_SCENES is not set/.test(src4), 'the driver has no fixed fallback list either');
+}
+{
+  // mutants of release-video.js: each must fail checkChoice with the assert it is aimed at (a mutant that fails for another reason does not count)
+  const src5 = fs.readFileSync(path.join(__dirname, 'release-video.js'), 'utf8');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rv-mut-'));
+  const mutants = [
+    ['refs ignored: the default is empty of release scenes', "const byRef = sceneIdsFor(bullets, scenes).filter((id) => !named.includes(id));", "const byRef = [];", /no scene shows this release|v0\.1\.12/],
+    ['last FR of a scene not counted', 'lo <= ref.fr[1] && hi >= ref.fr[0]', 'lo < ref.fr[1] && hi > ref.fr[0]', /the default clip of v0\.1\.12|the last FR of the scene/],
+    ['range end beyond the scene ignored', 'lo <= ref.fr[1] && hi >= ref.fr[0]', 'lo >= ref.fr[0] && hi <= ref.fr[1]', /a range that covers the scene|a range around the scene/],
+    ['the spec number ignored', "if (m[1] !== spec) continue;", "", /the FR of another spec|the default clip of v0\.1\.12/],
+    ['no end card', "return ['intro', ...feature, 'outro'];", "return ['intro', ...feature];", /the default clip of v0\.1\.12/],
+    ['no title card', "return ['intro', ...feature, 'outro'];", "return [...feature, 'outro'];", /the default clip of v0\.1\.12/],
+    ['nothing to show falls back instead of an error', "if (!feature.length) throw new Error(", "if (false) throw new Error(", /nothing to show is an error/],
+    ['no cap on the number of scenes', ".slice(0, AUTO_MAX);", ";", /cut to AUTO_MAX/],
+    ['Scene: fields after refs', "const feature = [...named, ...byRef]", "const feature = [...byRef, ...named]", /a Scene: field comes first/],
+    ['spec without FR numbers shows an FR scene', "if (!ref.fr) return true;\n  return got.some", "if (!ref.fr || !got.length) return true;\n  return got.some", /named without FR numbers/],
+  ];
+  try {
+    mutants.forEach(([name, from, to, expect], i) => {
+      assert.ok(src5.includes(from), `mutant "${name}": its target text is still in release-video.js`);
+      const file = path.join(dir, `rv-mut-${i}.js`);
+      fs.writeFileSync(file, src5.replace(from, to));
+      const M = require(file);
+      assert.throws(() => checkChoice(M), (e) => e && e.message && expect.test(e.message), `mutant "${name}" is killed by its intended assert`);
+    });
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+}
+
+{
+  // releaseSources: the pending fragments (bullets and Scene: fields) and the version's own section of a folded CHANGELOG.md, not another version's
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rv-src-'));
+  try {
+    fs.mkdirSync(path.join(root, 'changelog.d'));
+    fs.writeFileSync(path.join(root, 'changelog.d', 'a.md'), '- **Crews** (spec 077 FR-075): more.\n  Scene: crews\n');
+    fs.writeFileSync(path.join(root, 'CHANGELOG.md'), '# Changelog\n\n## Unreleased\n\n## v0.9.0 (2026-01-01)\n\n- **Rail** (spec 005 FR-236): drag.\n\n## v0.8.0 (2025-12-01)\n\n- **Lounge** (spec 097 FR-246): old.\n');
+    const src = RV.releaseSources('v0.9.0', root);
+    assert.deepStrictEqual(src.sceneFields, ['crews'], 'the fragment\'s Scene: field');
+    assert.deepStrictEqual(RV.chooseScenes(src), ['intro', 'crews', 'railwidth', 'outro'], 'a fragment and the folded section of that version');
+    assert.ok(!RV.chooseScenes(src).includes('lounge'), 'another version\'s section is not read');
+    assert.deepStrictEqual(RV.releaseSources('v0.7.0', root).bullets.length, 1, 'a version with no section: the fragments alone');
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
 }
 
 // ---- the privacy check (FR-176) ----
@@ -129,7 +227,7 @@ else console.log('release-video: dist/shared/redact.js not built, real-redact ca
   assert.deepStrictEqual(RV.stillNames('b', { n: '01', id: 'intro', still: 'f1.png' }).map((x) => x[0]), ['b-scene-01-intro.png'], 'a scene without a zoom');
   // every feature scene of the default clip zooms (the owner: "not followable" without)
   const src3 = fs.readFileSync(path.join(__dirname, 'release-video.js'), 'utf8');
-  for (const id of RV.DEFAULT_SCENES.filter((s) => s !== 'intro' && s !== 'outro')) {
+  for (const id of ['refresh', 'needsyou', 'mcpsettings', 'lounge', 'railwidth', 'signin', 'notesource']) {
     const body = src3.slice(src3.indexOf(`  ${id}: {`), src3.indexOf('\n  },', src3.indexOf(`  ${id}: {`)));
     assert.ok(/S\.zoomTo\(/.test(body), `${id} zooms onto what changed`);
   }
@@ -230,13 +328,13 @@ const { killTree } = require('./ui-suite');
   try {
     fs.writeFileSync(path.join(out, 'release-v0.1.7.gif'), 'old');
     let started = false;
-    await assert.rejects(RV.main(['--version', 'v0.1.7', '--out', out], { hasFfmpeg: () => false, runOne: async () => { started = true; } }), /ffmpeg was not found/);
+    await assert.rejects(RV.main(['--version', 'v0.1.7', '--out', out], { chooseScenes: () => ['intro', 'outro'], hasFfmpeg: () => false, runOne: async () => { started = true; } }), /ffmpeg was not found/);
     assert.ok(!started, 'no Electron without ffmpeg');
     assert.ok(!fs.existsSync(path.join(out, 'release-v0.1.7.gif')), 'an old clip is removed first, so it never stands in for this run');
     fs.writeFileSync(path.join(out, 'release-v0.1.7.gif'), 'old');
     const distOk = fs.existsSync(path.join(__dirname, '..', 'dist', 'renderer', 'index.html'));
     if (distOk) {
-      await assert.rejects(RV.main(['--version', 'v0.1.7', '--out', out], { hasFfmpeg: () => true, ensure: () => true, runOne: async () => ({ ok: false, code: 1, why: 'DRIVER FAILED privacy check failed', log: 'x' }) }), /recording failed/);
+      await assert.rejects(RV.main(['--version', 'v0.1.7', '--out', out], { chooseScenes: () => ['intro', 'outro'], hasFfmpeg: () => true, ensure: () => true, runOne: async () => ({ ok: false, code: 1, why: 'DRIVER FAILED privacy check failed', log: 'x' }) }), /recording failed/);
       assert.ok(!fs.existsSync(path.join(out, 'release-v0.1.7.gif')), 'an old clip is removed when a new run fails');
       assert.deepStrictEqual(fs.readdirSync(out).filter((f) => f.startsWith('release-')), [], 'no release-* file after a failure');
     } else console.log('release-video: no build, failed-recording case skipped');
@@ -252,7 +350,7 @@ const { killTree } = require('./ui-suite');
         return { ok: true, code: 0, log: '' };
       };
       process.env.RV_TEST_SECRET_TOKEN = 'x';
-      const m2 = await RV.main(['--version', 'v0.1.7', '--out', out], { hasFfmpeg: () => true, ensure: () => true, runOne: rec, run: fakeRun });
+      const m2 = await RV.main(['--version', 'v0.1.7', '--out', out], { chooseScenes: () => ['intro', 'outro'], hasFfmpeg: () => true, ensure: () => true, runOne: rec, run: fakeRun });
       delete process.env.RV_TEST_SECRET_TOKEN;
       assert.ok(m2 && m2.gif.bytes === 1);
       assert.ok(seen.killTree === true && seen.timeoutMs === RV.RECORD_MS && seen.timeoutMs <= 10 * 60 * 1000, 'the recording has a limit and kills its tree');
