@@ -292,7 +292,6 @@ function readmeBlock(cum, date, release, note, spreadNote) {
   return [BEGIN, '## Build cost so far', '',
     `**About US$${group(cum.total)}** at API list prices to build this app with AI agents, as of ${date} (release [\`${release}\`](https://github.com/three-feathers/agent-durbar/releases/tag/${release})), tracked since ${cum.since}. `
     + `This is an **${LABEL}**: Claude Code's own list-price figure, not what anyone was charged. Method and privacy: [docs/build-cost.md](docs/build-cost.md).`, '',
-    '![Cumulative build cost by model over releases (API list-price estimate, not billing)](docs/build-cost.svg)', '',
     ...(spreadNote ? [spreadNote, '', '![Daily build cost by model: measured days solid, estimated (spread) days faded and dashed](docs/build-cost-days.svg)', ''] : []),
     `- By model: ${split(cum.models, cum.total, modelName) || 'none yet'}.`,
     `- By machine or team: ${split(cum.machines, cum.total) || 'none yet'}.`,
