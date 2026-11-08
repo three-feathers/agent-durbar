@@ -522,7 +522,7 @@
     }
     if (ZOOM) {
       const zd = CUR.desks.get(ZOOM.id);
-      if (!zd || zd.state === 'asleep' || hiddenNow()) closeZoom(); /* FR-035: an asleep screen is off, nothing to read */
+      if (!zd || hiddenNow()) closeZoom(); /* FR-328: an asleep agent's card stays (its glass is dark, the card has its reply) */
       else placeZoom();
     }
     settle(chrome, lay.width);
@@ -853,30 +853,33 @@
 
   /* ---- FR-034: the zoom ---- */
   const ZOOM_W = [380, 480], ZOOM_HEAD = 44, ZOOM_LH = 17, ZOOM_ROWS = 12, ZOOM_MIN_ROWS = 4;
-  const ZWIDE = new Set(['Model', 'Now', 'Last tool', 'Usage']);
+  const ZWIDE = new Set(['Model', 'Now', 'Last tool', 'Usage', 'Changed']);
   function wireZoom(ro) {
     let wait = 0;
+    /* spec 097 FR-327: the agent a pointer is over: its monitor, person, desk (or lounge table) or name plate, never a visitor, chip or lobby plate */
+    const hid = (n) => { const t = n && n.closest && n.closest('.ro-screen, .ro-person, .ro-person2, .ro-desk, .ro-ltable, .ro-plate'); return t ? (t.classList.contains('ro-plate') ? t.dataset.id : t.dataset.for) || '' : ''; };
+    const arm = (id) => { clearTimeout(wait); ARMED = true; wait = setTimeout(() => { ARMED = false; openZoom(id, 'hover'); }, 120); };
     ro.addEventListener('pointermove', (e) => {
       if (!QUIET_POINTER) return;
       const at = e.clientX + ',' + e.clientY;
       if (!QUIET_AT) QUIET_AT = at;
       if (QUIET_AT === at) return;
       QUIET_POINTER = false;
-      const sc = e.target.closest && e.target.closest('.ro-screen');
-      if (sc && sc.dataset.for && e.pointerType !== 'touch' && DISMISSED !== sc.dataset.for) { clearTimeout(wait); ARMED = true; wait = setTimeout(() => { ARMED = false; openZoom(sc.dataset.for, 'hover'); }, 120); }
+      const id = hid(e.target);
+      if (id && e.pointerType !== 'touch' && DISMISSED !== id) arm(id);
     });
     ro.addEventListener('pointerover', (e) => {
-      const sc = e.target.closest && e.target.closest('.ro-screen');
+      const id = hid(e.target);
       if (QUIET_POINTER && !QUIET_AT) QUIET_AT = e.clientX + ',' + e.clientY;
-      if (QUIET_POINTER || !sc || e.pointerType === 'touch' || !sc.dataset.for) return;
-      if ((ZOOM && ZOOM.hover && ZOOM.id === sc.dataset.for) || DISMISSED === sc.dataset.for) return; /* Esc holds until the pointer has left */
-      clearTimeout(wait); ARMED = true; wait = setTimeout(() => { ARMED = false; openZoom(sc.dataset.for, 'hover'); }, 120); /* crossing the room opens nothing */
+      if (QUIET_POINTER || !id || e.pointerType === 'touch') return;
+      if ((ZOOM && ZOOM.hover && ZOOM.id === id) || DISMISSED === id) return; /* Esc holds until the pointer has left */
+      arm(id); /* crossing the room opens nothing */
     });
     ro.addEventListener('pointerout', (e) => {
-      const sc = e.target.closest && e.target.closest('.ro-screen');
-      if (!sc || (e.relatedTarget && sc.contains(e.relatedTarget))) return;
+      const id = hid(e.target);
+      if (!id || hid(e.relatedTarget) === id) return; /* still on the same agent's desk */
       clearTimeout(wait); ARMED = false; DISMISSED = '';
-      if (ZOOM && ZOOM.id === sc.dataset.for) leaveZoom('hover');
+      if (ZOOM && ZOOM.id === id) leaveZoom('hover');
     });
     ro.addEventListener('focusin', (e) => { const p = e.target.closest && e.target.closest('.ro-plate'); if (p && !QUIET_FOCUS && p.matches(':focus-visible')) openZoom(p.dataset.id, 'focus'); });
     ro.addEventListener('focusout', (e) => { const p = e.target.closest && e.target.closest('.ro-plate'); if (p && ZOOM && ZOOM.id === p.dataset.id) leaveZoom('focus'); });
@@ -888,7 +891,6 @@
   }
   function openZoom(id, why) {
     if (!CUR || hiddenNow() || !CUR.desks.has(id) || !CUR.screenOf) return;
-    if (CUR.desks.get(id).state === 'asleep') return; /* FR-035: an asleep screen is off, nothing to read */
     if (!ZOOM || ZOOM.id !== id) {
       closeZoom();
       const p = document.createElement('div'); p.className = 'ro-zoom'; p.id = 'roZoom'; p.setAttribute('role', 'region');
@@ -921,15 +923,16 @@
     p.setAttribute('aria-label', 'Screen of ' + a.name);
     p.dataset.state = d.state; p.dataset.for = ZOOM.id;
     text(p.querySelector('.ro-zh b'), a.name); text(p.querySelector('.ro-zr'), a.role); text(p.querySelector('.ro-zs'), a.word); text(p.querySelector('.ro-zf'), a.folder);
-    const data = CUR.screenOf(ZOOM.id, d.state, a.word);
+    const data = CUR.screenOf(ZOOM.id, d.state, a.word, true); /* true: for the card (FR-328: an asleep agent's reply lines) */
     const host = p.querySelector('.ro-zl');
     fillRows(host, data.lines);
     /* spec 097 FR-312: the facts, label and text, two to a line; textContent only */
     const facts = (CUR.factsOf ? CUR.factsOf(ZOOM.id) : []).slice(0, 8), kb = p.querySelector('.ro-zk');
     kb.textContent = '';
-    for (const [k, v] of facts) { const l = document.createElement('span'); l.className = ZWIDE.has(k) ? 'ro-zi ro-zw' : 'ro-zi'; const kk = document.createElement('span'); kk.className = 'ro-zy'; text(kk, k); l.appendChild(kk); l.appendChild(document.createTextNode(' ')); const vv = document.createElement('span'); vv.className = 'ro-zv'; text(vv, v); l.appendChild(vv); kb.appendChild(l); }
+    for (const [k, v] of facts) { const l = document.createElement('span'); l.className = k === 'Changed' ? 'ro-zi ro-zw ro-zc' : ZWIDE.has(k) ? 'ro-zi ro-zw' : 'ro-zi'; const kk = document.createElement('span'); kk.className = 'ro-zy'; text(kk, k); l.appendChild(kk); l.appendChild(document.createTextNode(' ')); const vv = document.createElement('span'); vv.className = 'ro-zv'; text(vv, v); l.appendChild(vv); kb.appendChild(l); }
     const wide = facts.filter(([k]) => ZWIDE.has(k)).length; /* long ones take a whole line, cut with an ellipsis when too long (FR-313) */
-    ZOOM.kh = facts.length ? (wide + Math.ceil((facts.length - wide) / 2)) * ZOOM_LH + 9 : 0; /* .ro-zk: 4 px padding above and below, a 1 px rule */ kb.hidden = !facts.length;
+    const extra = facts.filter(([k, v]) => k === 'Changed' && Array.from(v).length + 8 > 54).length; /* FR-329: a Changed line wraps, so it takes a second row */
+    ZOOM.kh = facts.length ? (wide + extra + Math.ceil((facts.length - wide) / 2)) * ZOOM_LH + 9 : 0; /* .ro-zk: 4 px padding above and below, a 1 px rule */ kb.hidden = !facts.length;
     ZOOM.rows = data.lines.reduce((n, l) => n + Math.max(1, Math.ceil(Array.from(l.t).length / 52)), 0);
   }
   function placeZoom() {
