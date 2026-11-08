@@ -88,6 +88,10 @@ A pack with a script in an SVG, a font that is not on the allow-list, a 2px font
 
 ## Changes
 
+### 2026-11-08: review of #1271 (flat look behind the flag)
+
+Test-only and task-text changes, no behaviour change. `test:theme-tokens` now (a) resolves, with the flag off, the rules edited in place (`.inbox`, `.ib`, `.composer`, `.ptab`, `.btn`, `.btn.sm`, `.ph .btn`, `.notice-strip .btn`, `.ctoolbar`) through `:root` and pins radius, padding, sizes and weights to `main`'s values (a static resolve of the CSS, not a browser measure: `[KNOWN GAP]` the driver's off-run still probes only the top-bar button), and (b) asserts the flat section holds only rules that start with the full gate and no nested block. T036 and T044 are `[~]` with what is and is not built.
+
 ### 2026-11-03: FR-050 amended for dark worlds (owner's look at the arcade, decided by his coordinating agent)
 
 - **FR-050, amended for a dark world.** A world whose page is dark (`dark: true` in `WORLD_SETS`, today only the Retro arcade, spec 102) keeps every status hue (`--c-*`, `--pb-*`, `--pc-*`, `--halo-*`, `--red`, `--amber`, `--green`, `--blue`, `--desk-new`, `--desk-needs`) and lightens only the status ink shades `--red-ink`, `--amber-ink` and `--blue-ink`, in the same hue (within 12 degrees), so a status word or a danger or warn fill reads at AA on its dark surfaces. Contrast wins over the token rule. A light world changes none of them, as before. `test:` `test:theme-tokens` (the hue, the lightness, every pair AA).

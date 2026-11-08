@@ -547,6 +547,26 @@ console.log('toggle switch: on track, both knobs pass 3:1 in Clean Office and th
   assert.ok(block.length > 0 && css.split('data-flat-look').length > 1, 'the flat-look block exists');
   // the gate: every rule naming the flag also excludes another pack and a world (a mutant that drops either is caught here)
   for (const m of css.matchAll(/([^{}]*data-flat-look[^{}]*)\{/g)) assert.ok(/:not\(\[data-ui\]\):not\(\[data-world\]\)/.test(m[1]), `flag rule is gated to Flat: ${m[1].trim().slice(0, 60)}`);
+  // the flat section (from the first flag rule to the end of the file) holds nothing but gated rules: an unscoped `.btn{height:24px}` next to them would change every world
+  const sectRules = [...block.matchAll(/([^{}]+)\{[^{}]*\}/g)];
+  assert.ok(sectRules.length >= 2, 'the flat section has its rules');
+  for (const m of sectRules) assert.ok(m[1].trim().startsWith(GATE), `flat section: every selector starts with the gate, not "${m[1].trim().slice(0, 60)}"`);
+  assert.strictEqual(block.replace(/[^{}]/g, '').replace(/\{\}/g, '').length, 0, 'flat section: no nested or unbalanced blocks (an @media would hide an ungated rule)');
+  // flag off: the edited-in-place rules resolve (through :root) to main's values, so a token swap such as .inbox radius var(--r-md) fails
+  const screens = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const offCss = css.slice(0, css.indexOf(GATE + '{')) + '\n' + screens;
+  const rootDecl = (n: string): string => { const all = [...root.matchAll(new RegExp(`${n}:\\s*([^;}]+)`, 'g'))]; assert.ok(all.length > 0, `:root declares ${n}`); return all[all.length - 1][1].trim(); };
+  const resolve = (v: string): string => v.replace(/var\((--[\w-]+)\)/g, (_, n) => resolve(rootDecl(n)));
+  const offVal = (sel: string, prop: string): string => {
+    let found = ''; const esc = sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    for (const m of offCss.matchAll(new RegExp(`(?:^|})\\s*${esc}\\s*\\{([^{}]*)\\}`, 'g'))) { const d = m[1].match(new RegExp(`(?:^|;)\\s*${prop}:\\s*([^;]+)`)); if (d) found = d[1].trim(); }
+    return resolve(found);
+  };
+  for (const [sel, prop, want] of [
+    ['.inbox', 'border-radius', '14px'], ['.inbox', 'padding', '6px'], ['.ib', 'width', '34px'], ['.ib', 'height', '34px'], ['.ib', 'border-radius', '10px'],
+    ['.composer', 'padding', '8px max(16px,calc((100% - 880px)/2))'], ['.ptab', 'height', '30px'], ['.ptab', 'padding', '0 12px'], ['.btn', 'height', '32px'], ['.btn', 'padding', '0 14px'], ['.btn', 'border-radius', '10px'],
+    ['.btn', 'font-size', '13px'], ['.btn', 'font-weight', '550'], ['.btn.sm', 'height', '28px'], ['.ph .btn', 'height', '28px'], ['.notice-strip .btn', 'height', '28px'], ['.ctoolbar', '--h-chip', '28px'],
+  ] as Array<[string, string, string]>) assert.strictEqual(offVal(sel, prop), want, `flag off: ${sel} ${prop} is main's ${want}`);
   // off by default: the :root values, which every other world and pack read, are today's
   for (const [k, v] of [['--h-ctl', '32px'], ['--r-md', '10px'], ['--btn-pad', '14px'], ['--btn-fw', '550'], ['--ib-size', '34px'], ['--ptab-h', '30px'], ['--btn-sm-h', '28px'], ['--composer-pad', '8px']]) assert.ok(new RegExp(`${k}:\\s*${v}\\b`).test(root), `${k} keeps ${v} in :root`);
   // FR-075 sizes in the block: 24 px controls, 12 px text at weight 500, 8 px padding, radii 3/4/6/8; nothing under 24
