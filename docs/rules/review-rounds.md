@@ -25,7 +25,7 @@ This file is rule text, part of [AGENTS.md](../../AGENTS.md) (FR-082): read it b
 
 ## Pace and load
 
-- **Land before building** (FR-039): per side at most 8 open PRs and 5 features awaiting first review (spec-only PRs excluded); over that, only land. Security and owner-urgent items may exceed, saying so.
+- **Land before building** (FR-039): open PRs follow machine capacity (CPU, RAM, disk, one Electron), in FR-081 order, to cut the backlog; at most 5 features awaiting first review (spec-only PRs excluded); over that, only land. Security and owner-urgent items may exceed, saying so. Capacity as read in spec 021 *Changes 2026-11-08*. Masking hardening: one batched PR a day; a confirmed leak lands alone at once. Vikram's side: Codex and spec 103 pre-reviews, findings fixed, before teammate review.
 - **Sub-agents by size** (FR-038): small = one smaller-model agent; medium = implementer that mutation-checks; sensitive (secrets, user files, IPC, redaction, permissions, spending) = analyst, implementer, reviewer. Two heavy agents per machine at most.
 - **Weekly retro** (FR-063): each side posts its retro, blind first, on the week's "Weekly retro" issue the same day; whoever finishes first merges them; owner decisions: one batched message.
 - **Daily release** (FR-064): when `main` has new fragments, agents publish a daily stable release unasked.
