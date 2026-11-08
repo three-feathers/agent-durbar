@@ -336,7 +336,7 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 
 ### 2026-11-08: heavy, monster and siren trouble signs on a Real office desk (issue #1171, part of #1147; FR-360..FR-362, T280..T283)
 
-**Owner decision** (2026-11-04, #1147): every world has Open office's features. Open office draws a desk's mood (spec 034): the heavy look (70% to 90% of the context window), the monster face (above 90%) and the siren (the ambulance of an agent in Error, or a fainted agent at its limit). Real office drew none. Numbers checked 2026-11-08 against `main`, the remote branches and the open PRs: spec 097 ends at FR-318 and T224 on `main`; open branches use FR-322..FR-349 and T225..T264, so FR-360..FR-362 and T280..T283 are free.
+**Owner decision** (2026-11-04, #1147): every world has Open office's features. Open office draws a desk's mood (spec 034): the heavy look (70% to 90% of the context window), the monster face (above 90%) and the siren (the ambulance of an agent in Error, or a fainted agent at its limit). Real office drew none. Numbers checked 2026-11-08 against `main`, the remote branches and the open PRs: spec 097 ends at FR-318 and T224 on `main`; open branches and PRs use FR-322..FR-350 (#1319 takes FR-350) and T225..T276 (#1319: T265..T267), so FR-360..FR-362 and T280..T283 are free (renumbered 2026-11-08 from FR-350..FR-352 after #1319 took FR-350).
 
 **Existing capability reused (FR-031):** the flat office's own decision, `moodFor(a)` (`DurbarMood`: `bodyOf`, `troubleOf`, the ambulance pick, Serious mode, the coffee break's calm) and its words; the app's siren markup (`SIREN()`, passed like `alertIcon`). Nothing is decided again in the engine, so the two offices cannot disagree.
 
