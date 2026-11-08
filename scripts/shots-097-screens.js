@@ -356,8 +356,8 @@ module.exports = async (ctx) => {
     await hover(sl, s0);
     await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id===${jsLiteral(sl)});a.state='done';a.lastOutput=a.lastOutput||'done';a.unread=false;a.lastEventAt=Date.now()-30*864e5;window.__durbarSimUi.unread.read(a.id);window.__durbarSimUi.setLive(true);})();0`);
     await must(`(()=>{const L=window.__durbarSimUi.realLayout();return L.zones.flatMap(z=>z.desks).concat(L.lounge?L.lounge.desks:[]).find(x=>x.id===${jsLiteral(sl)}).state==='asleep'})()`, 'the agent asleep (in the lounge row, spec 097 FR-246)');
-    /* the pointer's desk moved away, so the zoom may close with it; if one is open it is this agent's asleep card, never a stale awake one (the asleep card itself: check-097-hover-card) */
-    assert.ok(await H.until(`(()=>{const z=document.getElementById('roZoom');return !z||(z.dataset.for===${jsLiteral(sl)}&&z.dataset.state==='asleep')})()`, 1500), 'an open zoom of a desk gone to sleep is the asleep card (FR-328)');
+    /* the card stays and is refilled as the asleep card, never a stale awake one (also check-097-hover-card) */
+    assert.ok(await H.until(`(()=>{const z=document.getElementById('roZoom');return !!z&&z.dataset.for===${jsLiteral(sl)}&&z.dataset.state==='asleep'&&/^Asleep/.test(z.querySelector('.ro-zs').textContent)})()`, 3000), 'the open zoom of a desk gone to sleep is the asleep card, refilled (not closed, not the awake one) - an open zoom of a desk gone to sleep is the asleep card (FR-328)');
     await moveTo(1, 1);
     await must(`!document.getElementById('roZoom')`, 'the asleep card closed when the pointer left');
   }

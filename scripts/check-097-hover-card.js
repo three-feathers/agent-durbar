@@ -14,6 +14,7 @@
  *   - a lounge agent whose numbers are known has no "Changed" line in the flat office's words ("6 files changed, +120 −35, 1 commit, 40 min · counted by
  *     Agent Durbar"), or an agent at a desk has one (FR-329);
  *   - the card is under 10.5 px anywhere, leaves the window, covers the hovered agent's own plate, or the office scrolls (FR-034, FR-313);
+ *   - a card open on a working desk keeps the awake view (status word, tool log) after its agent falls asleep instead of showing the asleep view (FR-328);
  *   - keyboard focus on an asleep agent's plate does not open the same card, or Esc does not close it (FR-328).
  */
 const os = require('os');
@@ -145,6 +146,17 @@ module.exports = async (ctx) => {
       await moveTo(1, 1);
       await must(NONE, `${tag} ${what}: closed on leaving`);
     }
+    /* each secret form alone, at the start of the reply, with a sentinel after it: a card that cut the reply before the secret, or showed any of it, fails */
+    const FORMS = [TOKEN, '/home/alice/work/x.ts', 'C:\\Users\\alice\\work\\x.ts', '/Users/alice/work/x.ts', '[click](https://evil.example/a)', '[' + TOKEN + '](https://evil.example/a)'];
+    for (const form of FORMS) {
+      await js(`(()=>{const a=${sim}.agents().find(x=>x.id===${jsLiteral(R)});a.lastOutput=${jsLiteral(form + ' Sentinel-end.')};${sim}.crew.renderAll();return 1})()`);
+      await js(`new Promise(r=>setTimeout(r,300))`);
+      assert.ok(await hoverAt('person', R, `${tag} form`), `${tag}: the card opens for the form ${form}`);
+      await must(`(document.querySelector('#roZoom .ro-zl')||{textContent:''}).textContent.includes('Sentinel-end.')`, `${tag}: the sentinel after ${form} is on the card (the reply is not cut before it)`, 8000);
+      noBad(`${tag} form ${form}`, await card());
+      await moveTo(1, 1);
+      await must(NONE, `${tag}: closed after the form`);
+    }
     /* keyboard: Tab to the asleep agent's plate opens the same card; Esc closes it and the focus stays */
     await js(`(()=>{document.activeElement&&document.activeElement.blur&&document.activeElement.blur();return 1})()`);
     await js(`(()=>{const p=document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(S)})+'"]');p.focus({focusVisible:true});return document.activeElement===p})()`);
@@ -153,6 +165,20 @@ module.exports = async (ctx) => {
     await must(NONE, `${tag}: Esc closes it`);
     assert.ok(await js(`document.activeElement&&document.activeElement.dataset&&document.activeElement.dataset.id===${jsLiteral(S)}`), `${tag}: the focus stays on the plate`);
     await js(`document.activeElement.blur();0`);
+    /* ---- FR-328 (2026-11-08): an agent falls asleep while its card is open: the open card switches to the asleep view (the masked last reply, no tool log) ---- */
+    const wk2 = await js(`(()=>{const L=${sim}.realLayout();const d=L.zones.flatMap(z=>z.desks).find(x=>['working','thinking'].includes(x.state)&&!x.away&&![${jsLiteral(R)},${jsLiteral(S)}].includes(x.id)&&document.querySelector('#stage .ro-person[data-for="'+CSS.escape(x.id)+'"]'));return d&&d.id;})()`);
+    assert.ok(wk2, `${tag}: a second working desk for the falls-asleep step`);
+    assert.ok(await hoverAt('person', wk2, `${tag} falls asleep`), `${tag}: the card opens on the working desk of ${wk2}`);
+    const before = await card();
+    assert.ok(!/^Asleep/.test(before.word), `${tag}: the card starts awake: ${before.word}`);
+    const SAID = 'Wrapped up the fallback and ran the checks. ' + TOKEN;
+    await js(`(()=>{const a=${sim}.agents().find(x=>x.id===${jsLiteral(wk2)});a.state='done';a.lastOutput=${jsLiteral(SAID)};a.lastEventAt=Date.now()-34*60000;${sim}.crew.renderAll();return 1})()`);
+    await must(`(()=>{const z=document.getElementById('roZoom');return !!z&&z.dataset.for===${jsLiteral(wk2)}&&/^Asleep/.test(z.querySelector('.ro-zs').textContent)&&z.dataset.state==='asleep'&&z.querySelector('.ro-zl').textContent.includes('Wrapped up the fallback and ran the checks.')})()`, `${tag}: the open card shows the asleep view after its agent fell asleep (FR-328)`, 8000);
+    const after = await card();
+    noBad(`${tag} fell asleep`, after);
+    assert.ok(after.node === before.node && after.facts.some(([k]) => k === 'Last activity') && after.inside && !after.small.length, `${tag}: the same panel, refilled: ${JSON.stringify(after.facts)}`);
+    await moveTo(1, 1);
+    await must(NONE, `${tag}: closed on leaving after the refill`);
     console.log(`[hover-card] ${tag}: ok; working ${wk}, resting ${R}, asleep ${S}`);
   }
   console.log('[hover-card] pictures:', shots.join(' '));

@@ -523,7 +523,7 @@
     if (ZOOM) {
       const zd = CUR.desks.get(ZOOM.id);
       if (!zd || hiddenNow()) closeZoom(); /* FR-328: an asleep agent's card stays (its glass is dark, the card has its reply) */
-      else placeZoom();
+      else { if (ZOOM.st !== zd.state) fillZoom(); placeZoom(); } /* FR-328 (2026-11-08): the card follows the agent's state as its facts do (FR-315): asleep or back, it is filled again, not left with the old tool log */
     }
     settle(chrome, lay.width);
     return lay;
@@ -857,7 +857,7 @@
   function wireZoom(ro) {
     let wait = 0;
     /* spec 097 FR-327: the agent a pointer is over: its monitor, person, desk (or lounge table) or name plate, never a visitor, chip or lobby plate */
-    const hid = (n) => { const t = n && n.closest && n.closest('.ro-screen, .ro-person, .ro-person2, .ro-desk, .ro-ltable, .ro-plate'); return t ? (t.classList.contains('ro-plate') ? t.dataset.id : t.dataset.for) || '' : ''; };
+    const hid = (n) => { const t = n && n.closest && n.closest('.ro-screen, .ro-person, .ro-person2, .ro-initials, .ro-marquee, .ro-desk, .ro-ltable, .ro-plate'); return t ? (t.classList.contains('ro-plate') ? t.dataset.id : t.dataset.for) || '' : ''; };
     const arm = (id) => { clearTimeout(wait); ARMED = true; wait = setTimeout(() => { ARMED = false; openZoom(id, 'hover'); }, 120); };
     ro.addEventListener('pointermove', (e) => {
       if (!QUIET_POINTER) return;
@@ -915,13 +915,14 @@
     removeEventListener('blur', closeZoom);
     if (z.floor) z.floor.removeEventListener('scroll', closeZoom);
     for (const id of z.under || []) { const s = SCR.get(id); if (!s || !s.away) setOff(id, false); }
+    if (CUR && CUR.ro) for (const e of CUR.ro.querySelectorAll('.ro-slip[inert]')) e.removeAttribute('inert');
   }
   /* name, role, status, folder and the last lines, textContent only (FR-031, FR-034); a described region, not a live one */
   function fillZoom() {
     const a = CUR.agents.get(ZOOM.id), d = CUR.desks.get(ZOOM.id), p = ZOOM.panel;
     if (!a || !d) return;
     p.setAttribute('aria-label', 'Screen of ' + a.name);
-    p.dataset.state = d.state; p.dataset.for = ZOOM.id;
+    p.dataset.state = d.state; p.dataset.for = ZOOM.id; ZOOM.st = d.state;
     text(p.querySelector('.ro-zh b'), a.name); text(p.querySelector('.ro-zr'), a.role); text(p.querySelector('.ro-zs'), a.word); text(p.querySelector('.ro-zf'), a.folder);
     const data = CUR.screenOf(ZOOM.id, d.state, a.word, true); /* true: for the card (FR-328: an asleep agent's reply lines) */
     const host = p.querySelector('.ro-zl');
@@ -951,6 +952,8 @@
     for (const [id, de] of CUR.desks) if (id !== ZOOM.id && de.person && de.person.x >= r.x && de.person.x + de.person.w <= r.x + r.w && de.person.y >= r.y && de.person.y + de.person.h <= r.y + r.h) { under.push(id); setOff(id, true); }
     for (const id of ZOOM.under || []) if (!under.includes(id)) { const s = SCR.get(id); if (!s || !s.away) setOff(id, false); }
     ZOOM.under = under;
+    /* FR-330: a slip the card still covers (no free place was left) takes no click or key while it is hidden under the card */
+    for (const e of ro.querySelectorAll('.ro-slip')) { const b = near(e), hit = !e.hidden && b.x < r.x + r.w && r.x < b.x + b.w && b.y < r.y + r.h && r.y < b.y + b.h; if (hit) e.setAttribute('inert', ''); else e.removeAttribute('inert'); }
   }
 
   /* Paco's review of #921 (art): a lobby place plate reads in full (never an ellipsis) when there is room: a plate wider than its
