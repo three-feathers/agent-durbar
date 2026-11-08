@@ -13,12 +13,14 @@ export interface SettingsIpcDeps {
   /** DURBAR_THEME (spec 040 FR-008): a theme for this run only, never saved; a pick in Settings replaces it. */
   getRunTheme(): string | undefined;
   clearRunTheme(): void;
+  /** Spec 096 FR-033: the character ids main lists now; pins to anything else are dropped on read. */
+  characterIds?(): string[];
 }
 
 export function register(deps: SettingsIpcDeps): void {
   const { getRunTheme, clearRunTheme } = deps;
   const settingsStore = deps.getSettingsStore;
-  ipcHandle('settings:get', () => ({ defaultMaxAiCredits: settingsStore()?.defaultMaxAiCredits, placeMap: settingsStore()?.placeMap ?? {}, customPlaces: settingsStore()?.customPlaces ?? [], seriousMode: settingsStore()?.seriousMode ?? false, motion: settingsStore()?.motion ?? true, stillHighlights: settingsStore()?.stillHighlights ?? false, autoFollowWork: settingsStore()?.autoFollowWork ?? false, notifyNeedsMe: settingsStore()?.notifyNeedsMe ?? true, breakResume: settingsStore()?.breakResume ?? 'auto', chatLinksIn: settingsStore()?.chatLinksIn ?? 'session', mcpSignInRefresh: settingsStore()?.mcpSignInRefresh ?? MCP_SIGNIN_REFRESH_DEFAULT, diagnostics: settingsStore()?.diagnostics ?? false, mcpWarnLevels: settingsStore()?.mcpWarnLevels, theme: getRunTheme() ?? settingsStore()?.theme ?? 'clean-office', characters: settingsStore()?.characters ?? 'theme', unsaved: settingsStore()?.unsavedKeys ?? [], about: aboutView(app.getVersion()) }));
+  ipcHandle('settings:get', () => ({ defaultMaxAiCredits: settingsStore()?.defaultMaxAiCredits, placeMap: settingsStore()?.placeMap ?? {}, customPlaces: settingsStore()?.customPlaces ?? [], seriousMode: settingsStore()?.seriousMode ?? false, motion: settingsStore()?.motion ?? true, stillHighlights: settingsStore()?.stillHighlights ?? false, autoFollowWork: settingsStore()?.autoFollowWork ?? false, notifyNeedsMe: settingsStore()?.notifyNeedsMe ?? true, breakResume: settingsStore()?.breakResume ?? 'auto', chatLinksIn: settingsStore()?.chatLinksIn ?? 'session', mcpSignInRefresh: settingsStore()?.mcpSignInRefresh ?? MCP_SIGNIN_REFRESH_DEFAULT, diagnostics: settingsStore()?.diagnostics ?? false, mcpWarnLevels: settingsStore()?.mcpWarnLevels, theme: getRunTheme() ?? settingsStore()?.theme ?? 'clean-office', characters: settingsStore()?.characters ?? 'theme', characterPins: settingsStore()?.characterPinsOf(deps.characterIds?.() ?? []) ?? {}, unsaved: settingsStore()?.unsavedKeys ?? [], about: aboutView(app.getVersion()) }));
   /* issues #1023, #1094: a setter answers `{ok, value}`, `ok` only when the write reached disk, so a failed write of a value already in force is not "Saved" */
   const setting = <K extends string, T>(key: K, fallback: T, set: (st: SettingsStore, v: unknown) => Saved<T>, want: (v: unknown) => unknown = (v) => v, unsavedKey?: string) => (_e: unknown, v: unknown) => {
     const st = settingsStore();
@@ -61,6 +63,7 @@ export function register(deps: SettingsIpcDeps): void {
     const store = settingsStore();
     return store ? store.setCharacters(v) : { ok: false, characters: 'theme' };
   });
+  /* spec 096 FR-060: Settings > Characters > Motion, a real boolean only */
   ipcHandle('settings:setPlace', (_e, server: unknown, place: unknown) => settingsStore()?.setPlace(server, place) ?? { ok: false });
   ipcHandle('settings:addPlace', (_e, name: unknown, icon: unknown) => settingsStore()?.addPlace(name, icon) ?? { ok: false, error: 'unknown', customPlaces: [], placeMap: {} });
   ipcHandle('settings:updatePlace', (_e, id: unknown, patch: unknown) => settingsStore()?.updatePlace(id, patch) ?? { ok: false, error: 'unknown', customPlaces: [], placeMap: {} });
