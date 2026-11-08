@@ -1158,7 +1158,7 @@ Found in the security review of #1286, on main, not caused by it. The words of a
 
 ## Changes 2026-11-08: five crew art sets land as art, pack-only (issue #1154; T240..T244 art part)
 
-The Pirate, Royal, Rebels, Monster and Cheeky Real office sets (`src/renderer/realoffice/sets/<crew>/`: 72, 72, 72, 72 and 156 WebP frames, each with a measured `set.json` and an `ASSETS.md`) are in the repository as art only. No world uses them yet: no `REAL_SETS` row and no wiring in this change (the Mac session wires them after #1308 merges).
+The Pirate, Royal, Rebels, Monster and Cheeky Real office sets (`src/renderer/realoffice/sets/<crew>/`: 72, 72, 72, 72 and 156 WebP frames, each with a measured `set.json` and an `ASSETS.md`) are in the repository as art only. No world uses them yet: no `REAL_SETS` row and no wiring in this change (the Mac session wires them after #1308 merges). Wiring a crew needs, in that same PR, a `REAL_SETS` row and a `check-097-crews` case flip (its expected set and note) `[KNOWN GAP]`.
 
 **Approval (FR-067, T238).** The asset rule says "Paco approves each picture". The owner Vikram Gorla took that role: on 2026-11-08 11:27 UTC he wrote "I can approve Paco's pictures if you want" (Telegram DM). He approved the Pirate set on 2026-11-08 08:48 UTC ("Ok, looks good") and Royal, Rebels, Monster and Cheeky on 2026-11-08 11:29 UTC ("They all look good"), all by Telegram DM. Each `ASSETS.md` records "approved by Vikram Gorla (owner) in Paco's place, Telegram DM, <date time>, <quote>" on every set section and every frame. That is the look approval only.
 

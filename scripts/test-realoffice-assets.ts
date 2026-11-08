@@ -214,8 +214,12 @@ for (const sid of packOnly) {
   assert.deepStrictEqual(bad, [], `${sid} passes: ` + bad.slice(0, 10).join('; '));
   assert.strictEqual(st.files.size, Object.keys(sj.seat).length * 12, `${sid}: 12 pictures per person`);
   assert.ok(!/pending|\[ \]/i.test(st.md), `${sid}: no pending approval and no empty approval box in ASSETS.md`);
-  const approval = /approved by Vikram Gorla \(owner\) in Paco's place, Telegram DM, \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC, "[^"]+"/;
+  const approval = /^approved by Vikram Gorla \(owner\) in Paco's place, Telegram DM, \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC, "[^"]+"$/;
   const frames = [...st.md.matchAll(/^- \[x\] (\S+\.webp): (.*)$/gm)];
+  const prefixed = `note: ${(frames[0] || [])[2]}`; // mutant: text before "approved by" must fail (the unanchored regex accepted it)
+  assert.ok(!approval.test(prefixed), `${sid}: approval line with text before "approved by" is rejected (anchored)`);
+  assert.ok(new RegExp(approval.source.slice(1, -1)).test(prefixed), `${sid}: the unanchored regex would accept the prefixed line (mutant is real)`);
+
   assert.deepStrictEqual(frames.map((m) => m[1]).sort(), [...st.files.keys()].sort(), `${sid}: one approval line for every picture`);
   for (const m of frames) assert.ok(approval.test(m[2]), `${sid} ${m[1]}: approval line names who, in whose place, channel, time and quote (FR-067)`);
   for (const [n, x] of sections(st.md)) assert.ok(/^(?:Paco|Vikram Gorla)\b/.test(x['approved by'] || '') && /^Vikram Gorla \(owner\), 2026-11-08 11:43 UTC, Telegram DM: "Yes, I looked at every art carefully and it does not resemble any person I know"$/.test(x['likeness-check'] || ''), `${sid} ${n}: approved by and likeness-check recorded`);
