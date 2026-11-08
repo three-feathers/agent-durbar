@@ -257,7 +257,10 @@ try {
     r = cli(hid, ['--no-fetch', '--head', sha]); assert.notStrictEqual(r.status, 2, r.stdout); }
 
   // the workflow keeps the token away from PR code (mutant: remove any of these and this fails)
-  const wf = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'spec-kit.yml'), 'utf8');
+  // a Windows checkout has CRLF line ends (core.autocrlf): the shape checks read the workflow with LF only, and a CRLF copy must give the same jobs
+  const wfRaw = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'spec-kit.yml'), 'utf8');
+  const wf = wfRaw.replace(/\r\n/g, '\n');
+  assert.strictEqual(wfRaw.replace(/\r?\n/g, '\r\n').replace(/\r\n/g, '\n'), wf, 'a CRLF checkout of the workflow reads the same as LF');
   const job = (name) => { const m = wf.match(new RegExp(`^  ${name}:\\n([\\s\\S]*?)(?=^  [A-Za-z0-9_-]+:\\n|(?![\\s\\S]))`, 'm')); assert.ok(m, `job ${name}`); return m[1]; };
   const code_ = (t) => t.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
   // the trigger: `pull_request_target` nowhere in the workflow (the `on:` block and any `if:` included), no workflow-level or job-level `env:`
