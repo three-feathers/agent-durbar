@@ -255,8 +255,10 @@ module.exports = async (ctx) => {
         await ensureOpen();
         assert.ok(await until(`!!document.querySelector('#needsPanel .inbox-row[data-id=${jsLiteral(X)}] [data-k="approve"]')`, 4000));
         await js(`window.__perm=[];window.__rq1=document.querySelector('#needsPanel .inbox-row[data-id=${jsLiteral(X)}]').dataset.rq;document.querySelector('#needsPanel .inbox-row[data-id=${jsLiteral(X)}] [data-k="approve"]').focus()`);
-        await emit({ type: 'permission', sessionId: X, permission: { requestId: 'rs1-' + w, state: 'denied', via: 'user' } }); // answered elsewhere: the second card is the row's request now
-        assert.ok(await until(`document.querySelector('#needsPanel .inbox-row[data-id=${jsLiteral(X)}]').dataset.rq!==window.__rq1`, 6000), `${at}: the row now holds the agent's next request`);
+        // answered elsewhere: the very same call that delivers the event reads the row, so only a look made by the settle itself can have changed it (no later render is waited for)
+        const sync = await js(`(()=>{window.__durbarSimUi.emit(${jsLiteral({ timestamp: Date.now(), type: 'permission', sessionId: X, permission: { requestId: 'rs1-' + w, state: 'denied', via: 'user' } })});return document.querySelector('#needsPanel .inbox-row[data-id=${jsLiteral(X)}]').dataset.rq!==window.__rq1;})()`);
+        assert.strictEqual(sync, true, `${at}: a request settled elsewhere makes the panel look again at once (the row holds the agent's next request before any other render)`);
+        assert.ok(await until(`document.querySelector('#needsPanel .inbox-row[data-id=${jsLiteral(X)}]').dataset.rq!==window.__rq1`, 1200), `${at}: a request settled elsewhere with no other change in the office: the row looks again within 1.2 s and holds the agent's next request`);
         const f = await aeInfo();
         assert.ok(f.head && f.tag !== 'BUTTON', `${at}: a request replaced in the same row puts focus on the heading, not on its Allow (FR-033) ${JSON.stringify(f)}`);
         await key('a', [], { char: 'always' }); await ctx.sleep(500);
@@ -392,6 +394,26 @@ module.exports = async (ctx) => {
         assert.ok(f.head && f.row === P, `${at}: with focus in an amount field, the row leaving puts focus on a heading, not on the page ${JSON.stringify(f)}`);
         await key('a', [], { char: 'always' }); await ctx.sleep(500);
         assert.deepStrictEqual(await js('window.__perm.slice()'), [], `${at}: A answers nothing after the amount field's row left`);
+        await clean();
+      }
+
+      // ---- FR-033: the amount field keeps what was typed and the focus when another row leaves (round 5) ----
+      {
+        const L2 = await live(2), P2 = await live(1);
+        await emit({ type: 'limit', sessionId: L2, phase: 'exhausted', requestId: 'lm2-' + w, maxAiCredits: 5, usedAiCredits: 5 });
+        await ctx.sleep(120); await perm(P2, 'lq-' + w, 'Run beside the second limit');
+        assert.ok(await until(`Number((document.querySelector('#inboxBtn b')||{}).textContent)===2`, 6000), `${at}: the limit and the request wait`);
+        await ensureOpen();
+        assert.ok(await until(`!!document.querySelector('#needsPanel .inbox-row[data-id=${jsLiteral(L2)}] .ib-amt')`, 4000), `${at}: the limit row shows its amount field`);
+        await js(`window.__perm=[];(()=>{const i=document.querySelector('#needsPanel .inbox-row[data-id=${jsLiteral(L2)}] .ib-amt');i.focus();i.select();})()`);
+        await key('7', [], { char: 'always' });
+        assert.ok(await until(`document.activeElement.classList.contains('ib-amt')&&document.activeElement.value==='7'`, 3000), `${at}: 7 is typed in the amount field`);
+        await idle(P2); // the other row leaves: a repaint
+        assert.ok(await until(`document.querySelectorAll('#needsPanel .inbox-row').length===1`, 6000), `${at}: the other row left`);
+        const st = await js(`(()=>{const a=document.activeElement;return {amt:a.classList.contains('ib-amt'),v:a.value,tag:a.tagName}})()`);
+        assert.ok(st.amt && st.v === '7', `${at}: the amount field is still focused and still says 7 ${JSON.stringify(st)}`);
+        await key('a', [], { char: 'always' }); await ctx.sleep(400);
+        assert.deepStrictEqual(await js('window.__perm.slice()'), [], `${at}: A in the amount field answers nothing`);
         await clean();
       }
     }

@@ -4236,6 +4236,7 @@ function announce(text){const el=$('srAnnounce');if(!el||!text)return;clearTimeo
    guards of FR-206..FR-213 are unchanged), needsMeOrder() for the order and NEED_SINCE for the waits. Non-modal: no backdrop, no aria-modal, a
    labelled region; fixed on top of the room, so it takes no layout space. Rows are repainted whole for now (keyed rows are T200). ---- */
 const DOOR_ARR=ATT.createArrivals(), DOOR_GATE=ATT.createDoorGate();
+let DOOR_RETRY=0;
 let DOOR_RETURN=false, DOOR_CLEAR=0;
 const leaveInbox=()=>{if(!(DOOR_ON&&$('needsPanel')))closeInbox();}; /* a row's Open: the panel steps aside in openPanel (and returns), the modal closes */
 function doorGeom(){
@@ -4274,6 +4275,7 @@ function doorSync(list){
   if(r.fresh.length)DOOR_GATE.arrive(r.fresh.length);
   if(r.startup)DOOR_GATE.startup();
   const d=DOOR_GATE.ruling({open,held:doorHeld()});
+  clearTimeout(DOOR_RETRY);DOOR_RETRY=0;{const w=DOOR_GATE.waitMs();if(w>0)DOOR_RETRY=setTimeout(()=>{DOOR_RETRY=0;doorSync(needsMeOrder());},w+60);} /* a throttled opening is kept: look again when the throttle ends */
   if(d==='open'||d==='startup'){openDoor(null,true,d==='startup',list.length);return;}
   const p=$('needsPanel'); if(p){doorPlace(p);if(p.dataset.sig!==doorSig(list))doorRepaint();}
 }
