@@ -316,9 +316,9 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
     const TOKEN = 'ghp_FAKEtoken0123456789';
     const SAME = ['https://github.com/three-feathers/agent-durbar', 'https://github.com/three-feathers/agent-durbar.git', 'https://github.com/three-feathers/agent-durbar/', 'https://github.com/three-feathers/agent-durbar.git/', 'HTTPS://GitHub.com/Three-Feathers/Agent-Durbar',
       'git@github.com:three-feathers/agent-durbar.git', 'git@github.com:three-feathers/agent-durbar', 'github.com:three-feathers/agent-durbar.git', 'ssh://git@github.com/three-feathers/agent-durbar.git', 'ssh://git@github.com:22/three-feathers/agent-durbar', 'git://github.com/three-feathers/agent-durbar.git',
-      `https://user:${TOKEN}@github.com/three-feathers/agent-durbar.git`, `https://${TOKEN}@github.com/three-feathers/agent-durbar`, '  https://github.com/three-feathers/agent-durbar  '];
+      `https://user:${TOKEN}@github.com/three-feathers/agent-durbar.git`, `https://${TOKEN}@github.com/three-feathers/agent-durbar`, 'https://evil.com%23@github.com/three-feathers/agent-durbar', '  https://github.com/three-feathers/agent-durbar  '];
     const OTHER = ['https://github.com/three-feathers/agent-durbar-evil', 'https://github.com/three-feathers-x/agent-durbar', 'https://gitlab.com/three-feathers/agent-durbar', 'https://github.com/three-feathers/agent-durbar/extra', 'git@github.com:three-feathers/agent-durbar/extra.git',
-      'https://github.com/thrеe-feathers/agent-durbar', 'https://github.com/three-feathers/agent-durbаr', 'https://github.com.evil.example/three-feathers/agent-durbar', 'https://evil.example/github.com/three-feathers/agent-durbar', 'https://github.com/three-feathers', 'http://github.com/three-feathers/agent-durbar', 'file:///three-feathers/agent-durbar', '', 'agent-durbar', 'https://github.com/three-feathers/agent-durbar%2fx'];
+      'https://github.com/thrеe-feathers/agent-durbar', 'https://github.com/three-feathers/agent-durbаr', 'https://github.com.evil.example/three-feathers/agent-durbar', 'https://evil.example/github.com/three-feathers/agent-durbar', 'https://github.com/three-feathers', 'http://github.com/three-feathers/agent-durbar', 'file:///three-feathers/agent-durbar', 'https://evil.com#@github.com/three-feathers/agent-durbar', 'https://evil.com?@github.com/three-feathers/agent-durbar', 'https://evil.com\\@github.com/three-feathers/agent-durbar', 'https://github.com@evil.com/three-feathers/agent-durbar', 'https://github.com/three-feathers/agent-durbar#frag', 'https://github.com/three-feathers/agent-durbar?x=1', 'https://github.com/three-feathers/agent-durbar\u0000', 'https://git hub.com/three-feathers/agent-durbar', 'ssh://evil.com#@github.com/three-feathers/agent-durbar', 'evil.com#@github.com:three-feathers/agent-durbar', '', 'agent-durbar', 'https://github.com/three-feathers/agent-durbar%2fx'];
     const checkNormalizer = (L) => {
       const bad = [];
       for (const u of SAME) if (L.normalizeRepo(u) !== CANON) bad.push(`accepted form not canonical: ${u.replace(TOKEN, '***')}`);
@@ -337,6 +337,13 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
       const mutantBad = checkNormalizer(require(mf));
       fs.unlinkSync(mf);
       assert.ok(mutantBad.length >= 5 && mutantBad.some((b) => b.startsWith('accepted form not canonical')), 'mutant: a lib without normalisation fails the remote-spelling checks');
+      // mutant 2: '#', '?' and '\\' allowed inside the userinfo, and no early rejection, must be caught by the look-alike checks
+      assert.ok(/const USERINFO = .*\n/.test(src) && /\/\*REJECT\*\/.*\n/.test(src), 'mutant: the userinfo and reject markers are in the source');
+      const mf2 = path.join(os.tmpdir(), `durbar-usage-lib-mutant2-${process.pid}.js`);
+      fs.writeFileSync(mf2, src.replace(/const USERINFO = .*\n/, "const USERINFO = '(?:[^\\\\/@\\\\s]*@)?';\n").replace(/\/\*REJECT\*\/.*\n/, '\n').replace(/\n  if \(isUrl\) \{.*\n/, '\n'));
+      const mutant2 = checkNormalizer(require(mf2));
+      fs.unlinkSync(mf2);
+      assert.ok(mutant2.some((b) => b.startsWith('look-alike accepted: https://evil.com#@github.com')), 'mutant: a userinfo that may hold "#" is caught (evil.com#@github.com must drop)');
     }
     for (const u of SAME.slice(0, 5).concat(`https://u:${TOKEN}@github.com/other/x`)) assert.ok(lib.parseRepos(u).length === 1, 'repo: DURBAR_USAGE_REPOS entries are normalised too');
     assert.deepStrictEqual(lib.parseRepos(`git@github.com:a/b.git,https://u:${TOKEN}@github.com/c/d/`), ['https://github.com/a/b', 'https://github.com/c/d'], 'repo: DURBAR_USAGE_REPOS accepts every spelling');

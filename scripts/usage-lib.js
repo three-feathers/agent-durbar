@@ -23,6 +23,7 @@ const REPO_ATTR = 'vcs.repository.url.full'; // Claude Code adds it with OTEL_ME
 const DEFAULT_REPOS = ['https://github.com/three-feathers/agent-durbar'];
 const SEG_RE = /^[a-z0-9._-]{1,100}$/i; // ASCII only: a homoglyph (Cyrillic "а" for "a") never matches
 const HOST_RE = /^[a-z0-9.-]{1,100}$/i;
+const USERINFO = "(?:[A-Za-z0-9._~%!$&'()*+,;=:-]*@)?"; // RFC 3986 userinfo: unreserved, sub-delims, pct-encoded, ':'; never '/', '#', '?', '\\' or '@'
 /**
  * One spelling for a repository: `https://<host>/<owner>/<repo>`, lowercase, from https://, ssh://, git:// and scp-style (`git@host:owner/repo`) remotes,
  * with any `user[:token]@`, port, `.git` and trailing slash removed. Exactly two path segments or null. The input is never kept or echoed (it may hold a token).
@@ -31,9 +32,12 @@ function normalizeRepo(text) {
   /*NORM*/
   if (typeof text !== 'string' || text.length > 300) return null;
   const s = text.trim();
-  let m = /^(?:https|ssh|git):\/\/(?:[^\/@\s]*@)?([^\/:@\s]+)(?::\d{1,5})?\/(.+)$/i.exec(s);
-  if (!m) m = /^(?:[^\/@\s:]+@)?([^\/:@\s]+):(?!\/)(.+)$/.exec(s);
+  /*REJECT*/ if (/[\s#?\\\u0000-\u001f\u007f-\u009f]/.test(s)) return null; // a '#', '?', '\\' or control character would let a URL parser read another host than this regex does
+  const isUrl = /^(?:https|ssh|git):\/\//i.test(s);
+  let m = new RegExp(`^(?:https|ssh|git):\\/\\/${USERINFO}([^\\/:@]+)(?::\\d{1,5})?\\/(.+)$`, 'i').exec(s);
+  if (!m) m = /^(?:[A-Za-z0-9._~%!$&'()*+,;=-]+@)?([^\/:@]+):(?!\/)(.+)$/.exec(s);
   if (!m) return null;
+  if (isUrl) { let h = null; try { h = new URL(s).hostname; } catch { return null; } if (h.toLowerCase() !== m[1].toLowerCase()) return null; } // a real URL parser must read the same host
   const parts = m[2].replace(/\/+$/, '').replace(/\.git$/i, '').replace(/\/+$/, '').split('/');
   if (parts.length !== 2 || !HOST_RE.test(m[1]) || !parts.every((x) => SEG_RE.test(x))) return null;
   return `https://${m[1]}/${parts[0]}/${parts[1]}`.toLowerCase();
