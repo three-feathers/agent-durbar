@@ -937,7 +937,7 @@ const PERM_WHY={secret:'A part of this request looks like a secret and is hidden
 const PERM_GRANT=' Allow for this session covers exactly what was asked, the hidden part included.';
 const permWhy=(...xs)=>{const w=xs.filter(x=>x&&x.hidden).map(x=>x.why||'secret');return w.includes('cut')?'cut':w.includes('unchecked')?'unchecked':w.includes('concealed')?'concealed':w.includes('secret')?'secret':w.length?'control':'';};
 const permBlind=w=>w==='unchecked'||w==='concealed'||w==='cut'; /* neutral words only: no Allow, Deny stays */
-/* spec 003 FR-118 (issue #1300): what a session grant covers, from its raw key, not the 28-character label: the exact command, the host as the network reads it, server/tool (the label when it says the same) */
+/* spec 003 FR-118 (issue 1300): what a session grant covers, from its raw key, not the 28-character label: the exact command, the host as the network reads it, server/tool (the label when it says the same) */
 const grantText=(key,label)=>{const k=String(key||''),l=String(label||'');let m;
   if((m=/^shell-exact:([\s\S]+)$/.exec(k)))return 'run '+m[1];
   if((m=/^url:([\s\S]+)$/.exec(k)))return 'fetch '+m[1];

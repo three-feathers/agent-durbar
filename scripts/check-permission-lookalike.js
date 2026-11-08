@@ -55,7 +55,9 @@ module.exports = async (ctx) => {
     assert.strictEqual((c1.buttons.find((b) => b.act === 'session') || {}).t, 'Allow \u201cfetch xn--exampl-8of.invalid\u201d for this session', `${w}: scenario 1: the session button names the key`);
     allEnabled(c1, 'scenario 1');
     legible(c1, 'scenario 1');
-    assert.ok(await until(`window.__ann.some(t=>t.includes(' needs your OK: Lookalike letters: "exampl\\u0435\\u27e6U+0435 Cyrillic\\u27e7"'))`, 3000), `${w}: scenario 1: the announcement carries the line: ${JSON.stringify(await js('window.__ann'))}`);
+    const said = await until(`window.__ann.some(t=>t.includes(' needs your OK: Lookalike letters: "exampl\\u0435\\u27e6U+0435 Cyrillic\\u27e7"'))`, 3000);
+    const ann = await js('window.__ann');
+    assert.ok(said, `${w}: scenario 1: the announcement carries the line: ${JSON.stringify(ann)}`);
     assert.ok((await js(`window.__durbarSimUi.requestText([...document.querySelectorAll('#chat .note.perm.pending')].pop().textContent)`)).includes('host is xn--exampl-8of.invalid'), `${w}: scenario 1: the card's text (answer bar, inbox, notifications) carries the line`);
     await H.shot(path.join(OUT, `003-lookalike-url-${w}x${h}.png`), { prep: 'mouse' });
     await deny();
@@ -107,7 +109,9 @@ module.exports = async (ctx) => {
     // the why-allowed sentence of a call this rule allowed
     await emit({ type: 'permission', permission: { requestId: 'look-w-' + w, kind: 'mcp', summary: 'mcp srv-demo \u203a re\u0430d_notes', state: 'approved', via: 'session', allowedBy: { kind: 'session-grant', key: 'mcp:srv-demo/re\u0430d_notes', label: 'srv-demo \u203a re\u0430d_notes' } } });
     await emit({ type: 'toolCall', callId: 'look-w-' + w, tool: 're\u0430d_notes', phase: 'start', args: {} });
-    assert.ok(await until(`[...document.querySelectorAll('#chat .chip > .why')].some(p=>/The rule has lookalike letters\\./.test(p.title))`, 8000), `${w}: the why-allowed sentence says the rule has lookalike letters: ${JSON.stringify(await js(`[...document.querySelectorAll('#chat .chip > .why')].map(p=>p.title)`))}`);
+    const whySaid = await until(`[...document.querySelectorAll('#chat .chip > .why')].some(p=>/The rule has lookalike letters\\./.test(p.title))`, 8000);
+    const whys = await js(`[...document.querySelectorAll('#chat .chip > .why')].map(p=>p.title)`);
+    assert.ok(whySaid, `${w}: the why-allowed sentence says the rule has lookalike letters: ${JSON.stringify(whys)}`);
     await emit({ type: 'grants', grants: [] });
 
     // scenario 10: lookalike.js did not load: the could-not-check line, every button kept (owner decision 4)
