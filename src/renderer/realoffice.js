@@ -902,10 +902,10 @@
       ZOOM = { id, hover: false, focus: false, panel: p, plate: CUR.ro.querySelector('.ro-plate[data-id="' + CSS.escape(id) + '"]') };
       if (ZOOM.plate) ZOOM.plate.setAttribute('aria-describedby', 'roZoom');
       document.addEventListener('keydown', zoomKey, true);
-      document.addEventListener('focusin', coverSlips, true); document.addEventListener('focusout', coverLater, true);
+      document.addEventListener('focusin', replaceZoom, true); document.addEventListener('focusout', replaceLater, true);
       addEventListener('blur', closeZoom);
       const fl = CUR.ro.closest('#floor'); if (fl) { ZOOM.floor = fl; fl.addEventListener('scroll', closeZoom, { passive: true }); }
-      fillZoom(); placeZoom();
+      fillZoom(); if (!placeZoom()) return; /* FR-330: no place that leaves the focused slip uncovered: no card */
     }
     ZOOM[why] = true;
   }
@@ -916,7 +916,7 @@
     z.panel.remove();
     if (z.plate) z.plate.removeAttribute('aria-describedby');
     document.removeEventListener('keydown', zoomKey, true);
-    document.removeEventListener('focusin', coverSlips, true); document.removeEventListener('focusout', coverLater, true);
+    document.removeEventListener('focusin', replaceZoom, true); document.removeEventListener('focusout', replaceLater, true);
     removeEventListener('blur', closeZoom);
     if (z.floor) z.floor.removeEventListener('scroll', closeZoom);
     for (const id of z.under || []) { const s = SCR.get(id); if (!s || !s.away) setOff(id, false); }
@@ -944,12 +944,23 @@
   function placeZoom() {
     const ro = CUR.ro, o = ro.getBoundingClientRect(), fl = ro.closest('#floor'), f = fl ? fl.getBoundingClientRect() : o, d = CUR.desks.get(ZOOM.id);
     const near = (e) => { const b = e.getBoundingClientRect(); return { x: b.left - o.left, y: b.top - o.top, w: b.width, h: b.height }; };
-    const avoid = [d.screen, ...[...ro.querySelectorAll('.ro-plate:is(.st-waiting,.st-limit), .ro-lplate.wait, .ro-chip.wait, .ro-slip:not([hidden])')].map(near)]; /* FR-330 (2026-11-08): a slip or bubble (FR-110) is avoided too; the card is painted above them (CSS) for when no free place is left */
+    const slipRects = [...ro.querySelectorAll('.ro-slip:not([hidden])')].map(near);
+    const avoid = [d.screen, ...[...ro.querySelectorAll('.ro-plate:is(.st-waiting,.st-limit), .ro-lplate.wait, .ro-chip.wait')].map(near), ...slipRects]; /* FR-330 (2026-11-08): a slip or bubble (FR-110) is avoided too; the card is painted above them (CSS) for when no free place is left */
     if (ZOOM.plate) avoid.push(near(ZOOM.plate));
     const view = { x: Math.max(0, f.left - o.left), y: Math.max(0, f.top - o.top), w: Math.min(f.right, o.right) - Math.max(f.left, o.left), h: Math.min(f.bottom, o.bottom) - Math.max(f.top, o.top) };
     const w = Math.max(ZOOM_W[0], Math.min(ZOOM_W[1], view.w * 0.34));
     const HEAD = ZOOM_HEAD + (ZOOM.kh || 0), rows = Math.max(ZOOM_MIN_ROWS, Math.min(ZOOM_ROWS, ZOOM.rows || 0));
-    const r = X().zoomRect(d.screen, avoid, view, { w, h: HEAD + rows * ZOOM_LH + 12, minH: HEAD + ZOOM_MIN_ROWS * ZOOM_LH + 12 });
+    const size = { w, h: HEAD + rows * ZOOM_LH + 12, minH: HEAD + ZOOM_MIN_ROWS * ZOOM_LH + 12 };
+    let r = X().zoomRect(d.screen, avoid, view, size);
+    /* FR-330 (2026-11-08, round 3 of #1313): the card is never over the slip that holds the keyboard focus (a click through the card, which takes no pointer events, would press a hidden button). That slip is the avoid list's first claim: when the place found covers it, the other slips are let go and the place is sought again; when none is left, no card */
+    const act = document.activeElement, fs = act && act.closest && act.closest('.ro-slip:not([hidden])');
+    if (fs && ro.contains(fs)) {
+      const fr = near(fs), hits = (q) => q.x < fr.x + fr.w && fr.x < q.x + q.w && q.y < fr.y + fr.h && fr.y < q.y + q.h;
+      if (hits(r)) {
+        r = X().zoomRect(d.screen, avoid.filter((a) => !slipRects.includes(a)).concat([fr]), view, size);
+        if (hits(r)) { closeZoom(); return false; }
+      }
+    }
     box(ZOOM.panel, r); ZOOM.panel.dataset.side = r.side;
     setVar(ZOOM.panel, '--ro-zh', Math.max(1, Math.floor((r.h - HEAD - 8) / ZOOM_LH)) * ZOOM_LH + 'px');
     /* what the panel covers whole stands still until it closes */
@@ -958,18 +969,20 @@
     for (const id of ZOOM.under || []) if (!under.includes(id)) { const s = SCR.get(id); if (!s || !s.away) setOff(id, false); }
     ZOOM.under = under;
     ZOOM.rect = r; coverSlips();
+    return true;
   }
-  /* FR-330: a slip the card still covers (no free place was left) takes no click or key while it is hidden under the card, except the one that holds the keyboard focus (a typed answer or limit is never cut off); done again when the focus moves */
+  /* FR-330: a slip the card still covers (no free place was left) takes no click or key while it is hidden under the card; the slip that holds the keyboard focus is never under it (placeZoom), so it needs no exception. The place is sought again when the focus moves */
   function coverSlips() {
     if (!ZOOM || !ZOOM.rect || !CUR || !CUR.ro) return;
-    const ro = CUR.ro, o = ro.getBoundingClientRect(), r = ZOOM.rect, act = document.activeElement;
+    const ro = CUR.ro, o = ro.getBoundingClientRect(), r = ZOOM.rect;
     for (const e of ro.querySelectorAll('.ro-slip')) {
       const q = e.getBoundingClientRect(), x = q.left - o.left, y = q.top - o.top;
-      const hit = !e.hidden && !(act && e.contains(act)) && x < r.x + r.w && r.x < x + q.width && y < r.y + r.h && r.y < y + q.height;
+      const hit = !e.hidden && x < r.x + r.w && r.x < x + q.width && y < r.y + r.h && r.y < y + q.height;
       if (hit) e.setAttribute('inert', ''); else e.removeAttribute('inert');
     }
   }
-  const coverLater = () => setTimeout(coverSlips, 0);
+  const replaceZoom = () => { if (ZOOM && CUR && CUR.desks.has(ZOOM.id)) placeZoom(); };
+  const replaceLater = () => setTimeout(replaceZoom, 0);
 
   /* Paco's review of #921 (art): a lobby place plate reads in full (never an ellipsis) when there is room: a plate wider than its
      slot grows to the right, then to the left, into free space only (up to the next plate on the same rows or the band's edge); no
