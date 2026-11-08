@@ -132,6 +132,7 @@ type Arrivals = { observe: (items: ArrItem[], f: { armed?: boolean; isPaused?: (
 type Gate = {
   arrive: (n: number) => void; startup: () => void; dismissed: () => void;
   ruling: (s: { open: boolean; held: boolean }) => 'open' | 'startup' | 'hold' | 'none';
+  waitMs: () => number;
 };
 const AA = A as unknown as {
   createArrivals: (o?: { now?: () => number; throttleMs?: number }) => Arrivals;
@@ -223,6 +224,15 @@ const AA = A as unknown as {
   assert.strictEqual(g.ruling({ open: false, held: false }), 'none');
   g.startup(); assert.strictEqual(g.ruling({ open: false, held: true }), 'hold', 'app start is held like any opening');
   assert.strictEqual(g.ruling({ open: false, held: false }), 'startup', 'and still says startup when it opens');
+  // a held opening is not lost to the throttle (FR-202, FR-194): it is kept and opens once, at the next look after the throttle ends, for everything held
+  t += A.THROTTLE_MS + 1; g.arrive(1); assert.strictEqual(g.ruling({ open: false, held: false }), 'open');
+  t += 100; g.arrive(1); assert.strictEqual(g.ruling({ open: false, held: true }), 'hold', 'held again right after an opening');
+  t += 100; g.arrive(2); assert.strictEqual(g.ruling({ open: false, held: false }), 'none', 'released inside THROTTLE_MS: not yet');
+  assert.ok(g.waitMs() > 0 && g.waitMs() <= A.THROTTLE_MS, 'and it says how long to wait');
+  t += A.THROTTLE_MS + 1; assert.strictEqual(g.waitMs(), 0, 'nothing to wait for once the throttle has run out');
+  assert.strictEqual(g.ruling({ open: false, held: false }), 'open', 'the held opening is kept through the throttle and opens at the next look');
+  assert.strictEqual(g.ruling({ open: false, held: false }), 'none', 'once, for everything held');
+  assert.strictEqual(g.waitMs(), 0, 'and nothing is left to wait for');
   // requests that arrive while the panel is open are seen there: a later close that is not a dismissal does not reopen it for them
   t += A.THROTTLE_MS + 1; g.arrive(2);
   assert.strictEqual(g.ruling({ open: true, held: false }), 'none', 'open: the arrivals are seen');

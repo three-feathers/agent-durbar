@@ -119,9 +119,13 @@
         if(st.held)return 'hold';
         const t=now();
         if(start){start=false;pending=0;lastOpen=t;return 'startup';}
-        pending=0;
-        if(t-lastDismiss<coalesce||t-lastOpen<throttle)return 'none';
-        lastOpen=t;return 'open';
+        if(t-lastDismiss<coalesce){pending=0;return 'none';} /* a request right after the person closed it does not snap it back */
+        if(t-lastOpen<throttle)return 'none'; /* FR-194: at most one opening per THROTTLE_MS; what is pending is kept and opens, once, at the next look after it (waitMs) */
+        pending=0;lastOpen=t;return 'open';
+      },
+      waitMs(){ /* how long until a pending opening may happen (0 when nothing is pending or the throttle has run out) */
+        if(!pending)return 0;
+        return Math.max(0,throttle-(now()-lastOpen));
       },
     };
   }

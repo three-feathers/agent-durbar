@@ -4239,6 +4239,7 @@ function announce(text){const el=$('srAnnounce');if(!el||!text)return;clearTimeo
    guards of FR-206..FR-213 are unchanged), needsMeOrder() for the order and NEED_SINCE for the waits. Non-modal: no backdrop, no aria-modal, a
    labelled region; fixed on top of the room, so it takes no layout space. Rows are repainted whole for now (keyed rows are T200). ---- */
 const DOOR_ARR=ATT.createArrivals(), DOOR_GATE=ATT.createDoorGate();
+let DOOR_RETRY=0;
 let DOOR_RETURN=false, DOOR_CLEAR=0, DOOR_OPEN_AT=0, DOOR_PTR=null;
 const RISE_GUARD_MS=ATT.RISE_GUARD_MS, DOOR_GUARD=ATT.createRiseGuard(); /* FR-198: no press before this long after the panel opened or a row moved under the pointer (attention.js; its memory is by agent and request) */
 document.addEventListener('pointermove',e=>{DOOR_PTR={x:e.clientX,y:e.clientY};},{passive:true});
@@ -4281,6 +4282,7 @@ function doorSync(list){
   if(r.fresh.length)DOOR_GATE.arrive(r.fresh.length);
   if(r.startup)DOOR_GATE.startup();
   const d=DOOR_GATE.ruling({open,held:doorHeld()});
+  clearTimeout(DOOR_RETRY);DOOR_RETRY=0;{const w=DOOR_GATE.waitMs();if(w>0)DOOR_RETRY=setTimeout(()=>{DOOR_RETRY=0;doorSync(needsMeOrder());},w+60);} /* a throttled opening is kept: look again when the throttle ends */
   if(d==='open'||d==='startup'){openDoor(null,true,d==='startup',list.length);return;}
   const p=$('needsPanel'); if(p){doorPlace(p);if(p.dataset.sig!==doorSig(list))doorRepaint();}
 }
@@ -4292,11 +4294,12 @@ function doorRepaint(){
   const idx=row?[...p.querySelectorAll('.inbox-row')].indexOf(row):-1;
   const rq0=row?row.dataset.rq||'':'', held=!!DOOR_NOACT&&ae===DOOR_NOACT; /* the focus was put there by an earlier repaint and the person has not moved */
   paintInbox(null);
-  if(row&&(head||k)){
+  if(row){ /* focus anywhere in a row: a heading, a button, the amount field, a "Show the change" summary */
     const rs=[...p.querySelectorAll('.inbox-row')], same=rs.find(x=>x.dataset.id===id&&(x.dataset.rq||'')===rq0);
     /* FR-033: the person's own row, still holding the same request, keeps what they had; anything else (the row left, or its request was replaced) lands on a
        heading, never a button, and the answer keys wait there until the person moves (DOOR_NOACT), so a repaint never lets A answer a request nobody read */
-    if(same){const t=(k&&same.querySelector('[data-k="'+k+'"]'))||same.querySelector('.ib-h');if(held&&t)DOOR_NOACT=t; /* set before the focus moves: the repaint's own focusin is not the person moving */focusIn(t||$('inboxClose'));}
+    if(same&&ae.classList.contains('ib-amt')){/* paintInbox put the amount field back, with its selection */}
+    else if(same){const t=(k&&(k==='opt'&&ae.textContent?[...same.querySelectorAll('[data-k="opt"]')].find(x=>x.textContent===ae.textContent):same.querySelector('[data-k="'+k+'"]')))||same.querySelector('.ib-h');if(held&&t)DOOR_NOACT=t; /* set before the focus moves: the repaint's own focusin is not the person moving */focusIn(t||$('inboxClose'));}
     else{const r=rs.find(x=>x.dataset.id===id)||rs[Math.min(idx,rs.length-1)], h=r&&r.querySelector('.ib-h');
       if(h){DOOR_NOACT=h;focusIn(h);announce('That request went away. Focus is on '+(r.dataset.name||'the next agent')+'. Move to a row before answering.');}else focusIn(p.querySelector('.inbox-empty')||$('inboxClose'));}
   }
@@ -4452,9 +4455,7 @@ function paintInbox(focusIndex){
         if(!row.isConnected){done();if(!door)paintInbox(i);return;} /* in the panel a row that is gone belongs to a list already rebuilt: never repaint the new one under an answer in flight */
         row.classList.add('settled');act.innerHTML='';const p=document.createElement('p');p.className='ib-done '+(!ok?'no':stale||k==='other'?'':k==='deny'?'no':'yes');p.textContent=!ok?'Could not answer':stale?(waiting?'Still waiting':'Already answered'):shown?'\u2713 '+shown:k==='deny'?'Denied':k==='other'?word:'\u2713 '+word;act.appendChild(p);
         if(!ok){setTimeout(()=>{if(!row.isConnected)return;if(!door){paintInbox(i);return;}
-          const ae0=document.activeElement,inRow=row.contains(ae0),held=inRow&&!!DOOR_NOACT&&ae0===DOOR_NOACT;paintInbox(null); /* FR-033: focus moves only if it was in this row, and only onto a heading; the carry-over rule of doorRepaint: DOOR_NOACT is set before focus moves, so the repaint's own focusin does not clear it */
-          if(inRow){const hs=[...($('inboxBody')||document.body).querySelectorAll('.ib-h')],h=hs[Math.min(i,hs.length-1)],r=h&&h.closest('.inbox-row'),same=!!r&&r.dataset.id===a.id&&(r.dataset.rq||'')===rq;
-            if(h){if(held||!same)DOOR_NOACT=h;focusIn(h);if(!same)announce('That request went away. Focus is on '+(r.dataset.name||'the next agent')+'. Move to a row before answering.');}else focusIn($('inboxBody')&&$('inboxBody').querySelector('.inbox-empty')||$('inboxClose'));}},3000);return;} /* FR-200: the card is not settled: the row stays with the words and Open, then offers its buttons again */
+          row.classList.remove('settled');delete row.dataset.answering;doorRepaint(); /* FR-033: the same repaint as every other: focus anywhere in a row stays on the same request or goes to a heading that takes no answer key (DOOR_NOACT), never a button */},3000);return;} /* FR-200: the card is not settled: the row stays with the words and Open, then offers its buttons again */
         setTimeout(()=>{if(!row.isConnected)return door?0:paintInbox(i);if(reducedMotion())return paintInbox(i);
           row.classList.add('gone');setTimeout(()=>flipInbox(()=>paintInbox(i)),180);},600);};
       if(door&&!stale)doorSettled(a,rq,after);else setTimeout(()=>after(true),250);
