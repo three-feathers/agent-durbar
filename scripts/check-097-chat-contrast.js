@@ -137,7 +137,7 @@ module.exports = async (ctx) => {
     for (const [who, a] of [['main', pair.main], ['helper', pair.helper]]) {
       await openChat(a.id, a.name);
       if (who === 'main') await must(`!!document.querySelector('#panel a[href*="example.com/registry"]')`, 'the reply with a link');
-      if (MUTANT && who === (MUTANT === 'ro' ? 'helper' : who)) assert.ok(await js(MUTATE[MUTANT]), 'the mutant applies');
+      if (MUTATE[MUTANT] && who === (MUTANT === 'ro' ? 'helper' : who)) assert.ok(await js(MUTATE[MUTANT]), 'the mutant applies');
       await H.settle();
       await H.shot(path.join(OUT, `chatcontrast-${who}-${tag}.png`), { settle: true, tag: 'chatcontrast', what: `${who} ${a.name} ${tag}` });
       const res = await measure(path.join(OUT, `chatcontrast-${who}-${tag}-bg.png`));
