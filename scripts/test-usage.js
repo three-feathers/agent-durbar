@@ -330,7 +330,7 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
     assert.deepStrictEqual(checkNormalizer(lib), [], 'repo: every remote spelling maps to the canonical URL and every look-alike drops');
     {
       // mutant: no normalisation (lower-case only) must be caught by the same checks
-      const src = fs.readFileSync(path.join(__dirname, 'usage-lib.js'), 'utf8');
+      const src = fs.readFileSync(path.join(__dirname, 'usage-lib.js'), 'utf8').replace(/\r\n/g, '\n'); // a Windows checkout has CRLF; '.' does not match '\r'
       assert.ok(src.includes('/*NORM*/'), 'mutant: the marker is in the source');
       const mf = path.join(os.tmpdir(), `durbar-usage-lib-mutant-${process.pid}.js`);
       fs.writeFileSync(mf, src.replace('/*NORM*/', "return typeof text === 'string' ? text.trim().toLowerCase() : null;"));
