@@ -240,6 +240,14 @@ module.exports = async (ctx) => {
       await js(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'a',bubbles:true,cancelable:true}))`);
       await ctx.sleep(400);
       assert.deepStrictEqual(await perms(), [], `${at}: A right after the retry repaint answers nothing (nobody read that request)`);
+      // 6e: the hold survives the next repaint (the carry-over rule): a new request arrives, the panel repaints again, the person has still not moved
+      const P2 = await ag(2);
+      await perm(P2, 'nr3-' + tag, 'Run the newest');
+      assert.ok(await until(`document.querySelectorAll('#needsPanel .inbox-row').length===2`, 6000), `${at}: a third row, a second repaint`);
+      assert.strictEqual((await js(`(()=>{const a=document.activeElement,r=a&&a.closest&&a.closest('.inbox-row');return a&&a.tagName!=='BUTTON'&&r?r.dataset.id:''})()`)), M2, `${at}: focus is still on the same heading, not a button`);
+      await js(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'a',bubbles:true,cancelable:true}))`);
+      await ctx.sleep(400);
+      assert.deepStrictEqual(await perms(), [], `${at}: A after the retry repaint and then another repaint answers nothing (6e)`);
     }
     await clear();
   };
@@ -366,6 +374,8 @@ module.exports = async (ctx) => {
       assert.ok(await until(`!!document.getElementById('needsPanel')`, 6000), `${at}: a new request opens the panel`);
       assert.strictEqual(await js(`document.getElementById('doorLater').hidden`), true, `${at}: Later is only for the app-start opening`);
       // keys typed after the opening go where they were going, and answer nothing
+      if (!(await js(`document.hasFocus()`))) await H.focusPage({ ms: 1500 }); // only when it is lost: key delivery needs the window's focus
+      assert.ok(await until(`document.hasFocus()&&document.activeElement===document.getElementById('drvTxt')&&document.getElementById('drvTxt').selectionStart===1&&document.getElementById('drvTxt').selectionEnd===3`, 4000), `${at}: the text field has focus and its selection before the keys`);
       for (const c of ['a', 's', 'd', 'o']) await key(c, [], { char: 'always' });
       const typed = await js(`(()=>{const i=document.getElementById('drvTxt');return {v:i.value,a:i.selectionStart,b:i.selectionEnd,ae:document.activeElement===i,perm:window.__perm.slice(),panelAe:document.getElementById('needsPanel').contains(document.activeElement)}})()`);
       assert.strictEqual(typed.ae, true, `${at}: focus stayed in the text field ${JSON.stringify(typed)}`);
@@ -433,7 +443,43 @@ module.exports = async (ctx) => {
         await clean();
       }
 
-            // ---- FR-206 and FR-208 in the panel (review finding 2) ----
+            // ---- FR-033, repainted twice in a row: the answer keys keep waiting until the person moves (review of #1273, round 2, finding 1) ----
+      {
+        const [X, Y, Z] = [await live(0), await live(1), await live(2)];
+        await perm(X, 'tr1-' + w, 'Run the first'); await ctx.sleep(120); await perm(Y, 'tr2-' + w, 'Run the second'); await ctx.sleep(120); await perm(Z, 'tr3-' + w, 'Run the third');
+        assert.ok(await until(`Number((document.querySelector('#inboxBtn b')||{}).textContent)===3`, 6000), `${at}: three wait`);
+        await ensureOpen();
+        assert.ok(await until(`document.querySelectorAll('#needsPanel .inbox-row').length===3`, 4000), `${at}: three rows`);
+        await js(`window.__perm=[];document.querySelector('#needsPanel .inbox-row[data-id=${jsLiteral(X)}] [data-k="approve"]').focus()`);
+        await idle(X);
+        assert.ok(await until(`document.querySelectorAll('#needsPanel .inbox-row').length===2&&document.activeElement.classList.contains('ib-h')`, 6000), `${at}: first repaint: focus on a heading`);
+        await idle(Z); // a second repaint, the person has not moved
+        assert.ok(await until(`document.querySelectorAll('#needsPanel .inbox-row').length===1`, 6000), `${at}: the third row left`);
+        const g = await aeInfo();
+        assert.ok(g.head && g.row === Y, `${at}: after the second repaint focus is still on the remaining row's heading ${JSON.stringify(g)}`);
+        await key('a', [], { char: 'always' }); await ctx.sleep(500);
+        assert.deepStrictEqual(await js('window.__perm.slice()'), [], `${at}: A after two repaints in a row still answers nothing (the person never moved)`);
+        await clean();
+      }
+
+      // ---- FR-033: the next card of the same agent rises into the same row while focus is on its Allow ----
+      {
+        const X = await live(0);
+        await perm(X, 'rs1-' + w, 'Run the first'); await ctx.sleep(120); await perm(X, 'rs2-' + w, 'Run the second');
+        assert.ok(await until(`Number((document.querySelector('#inboxBtn b')||{}).textContent)===1`, 6000), `${at}: one agent waits`);
+        await ensureOpen();
+        assert.ok(await until(`!!document.querySelector('#needsPanel .inbox-row[data-id=${jsLiteral(X)}] [data-k="approve"]')`, 4000));
+        await js(`window.__perm=[];window.__rq1=document.querySelector('#needsPanel .inbox-row[data-id=${jsLiteral(X)}]').dataset.rq;document.querySelector('#needsPanel .inbox-row[data-id=${jsLiteral(X)}] [data-k="approve"]').focus()`);
+        await emit({ type: 'permission', sessionId: X, permission: { requestId: 'rs1-' + w, state: 'denied', via: 'user' } }); // answered elsewhere: the second card is the row's request now
+        assert.ok(await until(`document.querySelector('#needsPanel .inbox-row[data-id=${jsLiteral(X)}]').dataset.rq!==window.__rq1`, 6000), `${at}: the row now holds the agent's next request`);
+        const f = await aeInfo();
+        assert.ok(f.head && f.tag !== 'BUTTON', `${at}: a request replaced in the same row puts focus on the heading, not on its Allow (FR-033) ${JSON.stringify(f)}`);
+        await key('a', [], { char: 'always' }); await ctx.sleep(500);
+        assert.deepStrictEqual(await js('window.__perm.slice()'), [], `${at}: A answers nothing for a request that rose under the person's focus`);
+        await clean();
+      }
+
+      // ---- FR-206 and FR-208 in the panel (review finding 2) ----
       {
         const W = await live(0);
         await perm(W, 'st1-' + w, 'Run the stale one');
@@ -470,7 +516,7 @@ module.exports = async (ctx) => {
         await js(`document.activeElement&&document.activeElement.blur&&document.activeElement.blur()`);
         await key('Escape', [], { char: 'never' });
         assert.ok(await until(`!document.body.classList.contains('panel-open')&&!!document.getElementById('needsPanel')`, 4000), `${at}: Back to the office returns the panel`);
-        await js(`document.getElementById('inboxClose').click()`); // dismissed: the next trip to a chat does not bring it back
+        assert.deepStrictEqual(await js(`(()=>{document.getElementById('inboxClose').click();const b=document.getElementById('inboxBtn');return [b.getAttribute('aria-controls'),b.getAttribute('aria-expanded')]})()`), [null, 'false'], `${at}: the moment the panel closes the amber button controls nothing (aria-controls is removed with the panel)`); // dismissed: the next trip to a chat does not bring it back
         assert.ok(await until(`!document.getElementById('needsPanel')`, 3000));
         await clean();
       }

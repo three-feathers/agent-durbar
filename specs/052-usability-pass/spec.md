@@ -1429,8 +1429,14 @@ Eight findings, each fixed in the PR. **(1) FR-033 in the panel.** `doorRepaint`
 
 **Not verified:** screen reader speech; Windows and macOS focus; a held opening with no later change in the office opens only at the next look (a repaint, any status change), the driver gives it one.
 
+## Changes 2026-11-08 (second round): the repaint guard survives later repaints (FR-033, review of #1273 at f18011d42)
+
+`DOOR_NOACT` is carried across repaints: when focus was on the heading a repaint chose and the person has not moved, the next repaint sets `DOOR_NOACT` to the new heading before it moves focus, so its own focusin is not read as the person moving; only a key, click or Tab to another element clears it. Driver steps: two repaints in a row (X, Y, Z; X then Z go away; A answers nothing) and the next card of one agent rising into the same row while focus is on its Allow (heading, A answers nothing). The aria-controls step now reads the button in the same call as the Close click, so it no longer depends on a later render; the typing step waits for window focus and the field's selection before its keys. Not verified: Windows and macOS focus, screen readers.
+
 ## Changes 2026-11-08: second slice merged onto the review fixes of #1273 (FR-033, FR-198, FR-200)
 
 **Found while merging, fixed:** the retry repaint of a row that said "Could not answer" (3 s later) put focus on the heading at the row's old place, and if that request had gone away meanwhile the heading was another agent's, with A, S, D, O and Enter live on it. It now behaves like `doorRepaint`: focus moves only if it was in that row, and a heading that is not the same request takes no answer key (`DOOR_NOACT`) until focus moves, with the same announcement. The FR-206 stale-press step now waits for the row to pass its rise guard first (a press inside the guard is ignored, FR-198, so it is a different case). The panel's option buttons carry no key and the desk-click handler already excludes `#needsPanel`, so the option buttons count as neither a key nor a desk click. `sim:` `check-needs-panel` step 6d (retry repaint, focus never on a button, A answers nothing) with a mutant that removes the `DOOR_NOACT` line and dies on "A right after the retry repaint answers nothing".
 
 **Not verified:** Windows and macOS focus; a screen reader's speech.
+
+**Retry repaint (second slice, 2026-11-08):** the 3 s retry repaint after "Could not answer" follows the same carry-over rule: `DOOR_NOACT` is set to the heading before focus moves (a heading already held stays held; a heading for another request is held), so its own `focusin` does not clear it. `sim:` step 6e: the retry repaint then another repaint, `a` sends nothing; a mutant that sets it after the focus move, or not on a carried heading, dies on that assert.

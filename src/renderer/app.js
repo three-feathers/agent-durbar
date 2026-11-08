@@ -4290,15 +4290,15 @@ function doorRepaint(){
   if(p.querySelector('.inbox-row.settled,.inbox-row[data-answering]'))return; /* an answer is folding away: its own timer repaints */
   const ae=document.activeElement, row=ae&&p.contains(ae)?ae.closest('.inbox-row'):null, id=row&&row.dataset.id, k=ae&&ae.dataset?ae.dataset.k:'', head=!!ae&&ae.classList&&ae.classList.contains('ib-h');
   const idx=row?[...p.querySelectorAll('.inbox-row')].indexOf(row):-1;
-  const rq0=row?row.dataset.rq||'':'';
+  const rq0=row?row.dataset.rq||'':'', held=!!DOOR_NOACT&&ae===DOOR_NOACT; /* the focus was put there by an earlier repaint and the person has not moved */
   paintInbox(null);
   if(row&&(head||k)){
     const rs=[...p.querySelectorAll('.inbox-row')], same=rs.find(x=>x.dataset.id===id&&(x.dataset.rq||'')===rq0);
     /* FR-033: the person's own row, still holding the same request, keeps what they had; anything else (the row left, or its request was replaced) lands on a
        heading, never a button, and the answer keys wait there until the person moves (DOOR_NOACT), so a repaint never lets A answer a request nobody read */
-    if(same){const t=(k&&same.querySelector('[data-k="'+k+'"]'))||same.querySelector('.ib-h');focusIn(t||$('inboxClose'));}
+    if(same){const t=(k&&same.querySelector('[data-k="'+k+'"]'))||same.querySelector('.ib-h');if(held&&t)DOOR_NOACT=t; /* set before the focus moves: the repaint's own focusin is not the person moving */focusIn(t||$('inboxClose'));}
     else{const r=rs.find(x=>x.dataset.id===id)||rs[Math.min(idx,rs.length-1)], h=r&&r.querySelector('.ib-h');
-      if(h){focusIn(h);DOOR_NOACT=h;announce('That request went away. Focus is on '+(r.dataset.name||'the next agent')+'. Move to a row before answering.');}else focusIn(p.querySelector('.inbox-empty')||$('inboxClose'));}
+      if(h){DOOR_NOACT=h;focusIn(h);announce('That request went away. Focus is on '+(r.dataset.name||'the next agent')+'. Move to a row before answering.');}else focusIn(p.querySelector('.inbox-empty')||$('inboxClose'));}
   }
 }
 function doorAfterPaint(list){
@@ -4450,8 +4450,9 @@ function paintInbox(focusIndex){
         if(!row.isConnected){done();if(!door)paintInbox(i);return;} /* in the panel a row that is gone belongs to a list already rebuilt: never repaint the new one under an answer in flight */
         row.classList.add('settled');act.innerHTML='';const p=document.createElement('p');p.className='ib-done '+(!ok?'no':stale||k==='other'?'':k==='deny'?'no':'yes');p.textContent=!ok?'Could not answer':stale?(waiting?'Still waiting':'Already answered'):shown?'\u2713 '+shown:k==='deny'?'Denied':k==='other'?word:'\u2713 '+word;act.appendChild(p);
         if(!ok){setTimeout(()=>{if(!row.isConnected)return;if(!door){paintInbox(i);return;}
-          const inRow=row.contains(document.activeElement);paintInbox(inRow?i:null); /* FR-033: a row the person did not leave keeps their place only if it still holds the same request; else the heading is not theirs to answer from */
-          if(inRow){const h=document.activeElement,r=h&&h.closest&&h.closest('.inbox-row');if(r&&!(r.dataset.id===a.id&&(r.dataset.rq||'')===rq)){DOOR_NOACT=h;announce('That request went away. Focus is on '+(r.dataset.name||'the next agent')+'. Move to a row before answering.');}}},3000);return;} /* FR-200: the card is not settled: the row stays with the words and Open, then offers its buttons again */
+          const ae0=document.activeElement,inRow=row.contains(ae0),held=inRow&&!!DOOR_NOACT&&ae0===DOOR_NOACT;paintInbox(null); /* FR-033: focus moves only if it was in this row, and only onto a heading; the carry-over rule of doorRepaint: DOOR_NOACT is set before focus moves, so the repaint's own focusin does not clear it */
+          if(inRow){const hs=[...($('inboxBody')||document.body).querySelectorAll('.ib-h')],h=hs[Math.min(i,hs.length-1)],r=h&&h.closest('.inbox-row'),same=!!r&&r.dataset.id===a.id&&(r.dataset.rq||'')===rq;
+            if(h){if(held||!same)DOOR_NOACT=h;focusIn(h);if(!same)announce('That request went away. Focus is on '+(r.dataset.name||'the next agent')+'. Move to a row before answering.');}else focusIn($('inboxBody')&&$('inboxBody').querySelector('.inbox-empty')||$('inboxClose'));}},3000);return;} /* FR-200: the card is not settled: the row stays with the words and Open, then offers its buttons again */
         setTimeout(()=>{if(!row.isConnected)return door?0:paintInbox(i);if(reducedMotion())return paintInbox(i);
           row.classList.add('gone');setTimeout(()=>flipInbox(()=>paintInbox(i)),180);},600);};
       if(door&&!stale)doorSettled(a,rq,after);else setTimeout(()=>after(true),250);
