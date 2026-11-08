@@ -1873,7 +1873,7 @@ h2,h3,h4{text-wrap:balance}
 /* spec 066: plan first. The proposed plan scrolls inside its card; the one-shot chip above the composer */
 .note.plan-card .plan-body{max-height:min(42vh,360px);overflow:auto;margin:6px 0 4px;padding:6px 10px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2)}
 .note.plan-card .plan-why{margin:4px 0 0;color:var(--ink-2);font-size:var(--t4-size)}
-.att.plan-chip{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--surface));color:var(--ink)} /* 070 T024: all three come from the world (accent edge, tinted page colour, page ink), so the chip reads in every world; the info tone gave 2.9:1 in the arcade, where --tone-info-soft is a mid grey */
+.att.plan-chip{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--surface));color:var(--ink)} /* 070 T024: all three come from the world (accent edge, tinted page colour, page ink), so the chip reads in every world; the derived info tone gave 2.9:1 in the arcade, so the arcade now sets its own dark --tone-* fills (spec 070 FR-081) */
 
 /* spec 001 FR-028..FR-030: live activity on the desks. The side panel has a fixed size and is reserved next to every main desk while the
    layout uses it (an empty one is invisible), so the office never moves when an agent starts or stops; text changes only. No animation. */
