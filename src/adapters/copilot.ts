@@ -321,7 +321,7 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   accountQuota: true, // spec 011 FR-081: account.getQuota (read: no session, no prompt, no spend; spec 068, spec 012 FR-156)
   deleteSession: true, // spec 006 FR-028: CopilotClient.deleteSession (read: SDK 1.0.22-1.0.26 client.d.ts; never run on a real session)
   oneShot: true, // spec 040 FR-015: a throw-away SDK session with no tools and no MCP, deleted after (real 2026-10-20: no tool ran, nothing left on disk)
-  autopilot: Object.freeze({ capUnit: 'aiu', attachments: true, planApproval: true, verified: false, capMin: 30 }), // spec 099 FR-001: fakes only until T094; nothing in main or the window reads it before T030, T033
+  autopilot: Object.freeze({ capUnit: 'aiu', attachments: true, planApproval: true, verified: false, capMin: MIN_CAP }), // spec 099 FR-001: fakes only until T094; nothing in main or the window reads it before T030, T033
 });
 
 /** Spec 059 FR-007: Copilot's own name rule is stricter than Durbar's: no double quotes, at most 100 UTF-16 units, no control characters (SDK `types.d.ts`, `SessionConfig.name`). */

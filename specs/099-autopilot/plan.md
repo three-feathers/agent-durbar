@@ -115,7 +115,7 @@ Written once in `src/adapters/autopilotHost.ts` (Phase 2): the settings and run 
 - The Autopilot cap goes straight to the adapter's `setCap`, never through `setCapOp`, and is restored from `a.maxAiCredits` when a run ends (FR-022). `setCapOp` changes `a.maxAiCredits` only, and the lower still wins during a run.
 - A stop or clear that is not confirmed in 10 seconds (proposed) ends the session (FR-054).
 - A Stop or End during the adapter's turn-on brings main's state down at once; the answer to the window waits up to `TOLD_WAIT_MS` (2 s) for the adapter's own refusal (FR-059: Copilot's queue says which came) before it says `CHANGED`. A back-off of a session that is gone is skipped, so an End shows no "not confirmed" line.
-- The router's one event guard is `eventShape(e) && autopilotOps.accepts(e)`: spec 010 FR-035's `eventGate`, then FR-082's Autopilot check (T095).
+- The router's one event guard is `bothGuards(eventShape, autopilotOps.accepts)` (both always run, no short-circuit; 2026-11-08): spec 010 FR-035's `eventGate`, then FR-082's Autopilot check (T095).
 - It is not added to `SIM_OPEN_CHANNELS` (the simulator fakes it in `sim.ts`), not to the MCP tools, and not to remote control. Only Stop may come from remote or phone controls (FR-009): a new path, T098.
 - `setModeOp` to `read-only` or `ask` calls `setAutopilot(null)` first (FR-051).
 - The folder store never gets `autopilot`: `setSessionMode` keeps `allow`.

@@ -59,7 +59,7 @@ export function maskedLine(v: unknown, max = 300): string {
   return plainLine(redact(plainLine(v, Number.MAX_SAFE_INTEGER)), max);
 }
 
-export const capWords = (unit: Unit, v: number): string => (unit === 'usd' ? `$${v} (Claude's estimate)` : unit === 'tokens' ? `${v} tokens` : `${v} AI credits`);
+export const capWords = (unit: Unit, v: number): string => (unit === 'usd' ? `$${v} (an estimate)` : unit === 'tokens' ? `${v} tokens` : `${v} AI credits`);
 
 /** The window's values, read here: only exact numbers in their bounds, never a string. Returns the settings or the refusal. */
 export function readSettings(raw: unknown, unit: Unit | null, capMin?: number): { ok: true; settings: AutopilotSettings; raised?: true } | { ok: false; error: string } {

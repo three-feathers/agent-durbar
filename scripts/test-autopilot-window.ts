@@ -106,6 +106,8 @@ const set = (f: { node: any }, sel: string, v: string) => { const i = f.node.que
   set(own, '#apCap', '1');
   assert.strictEqual(own.node.querySelector('#apRaised').hidden, false, 'the note follows main\'s capMin, in any unit');
   assert.match(own.node.querySelector('#apRaised').textContent, /^Other's smallest cap is \$2, so Autopilot uses 2\./, 'in the app name and unit it was given');
+  set(own, '#apCap', '5');
+  assert.strictEqual(own.node.querySelector('#apRaised').hidden, true, 'a cap above main\'s capMin (2) is not raised, whatever 30 is');
   own.node.remove();
   assert.ok(!/Copilot|Claude|Codex/.test(fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'autopilot.js'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')), 'finding 6: no app is named in the renderer\'s Autopilot words (adapters are plug-ins)');
   const none = open({ unit: null });

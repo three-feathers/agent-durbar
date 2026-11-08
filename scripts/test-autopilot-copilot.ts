@@ -91,7 +91,7 @@ async function main(): Promise<void> {
   // review of #982, finding 2: Autopilot off during a run, and Stop, act at once but hold a place in the queue until the run's stop is done, so a turn-on
   // right after them cannot race the old run's late abort (it would end run 2) or its cap restore
   for (const how of ['off', 'stop'] as const) {
-    const r = await rig();
+    const r = await rig({ tuning: { waitMs: 60_000 } }); // the abort is held by the test: the stop's own bounds must not run out under load (a failed-closed session would refuse the turn-on)
     await r.ad.setAutopilot!(r.sid, { limit: 5 });
     await r.ad.send(r.sid, { text: 'go' });
     let release: () => void = () => undefined;

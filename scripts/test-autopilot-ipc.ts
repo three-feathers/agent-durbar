@@ -208,7 +208,7 @@ async function main(): Promise<void> {
     assert.match(s({ settings: { limit: 5, cap: 40 }, ownCap: 35 }).detail, /This session's limit of 35 AI credits is lower/);
     assert.match(s({ settings: { limit: 5 }, ownCap: 35 }).detail, /This session's limit of 35 AI credits still applies/);
     assert.match(dialogText({ ...base, unit: 'tokens', settings: { limit: 5, cap: 9000 } }).detail, /9000 tokens for this run\. Codex finishes the turn/);
-    assert.match(dialogText({ ...base, unit: 'usd', settings: { limit: 5, cap: 2 } }).detail, /\$2 \(Claude's estimate\) for this session in total/);
+    assert.match(dialogText({ ...base, unit: 'usd', settings: { limit: 5, cap: 2 } }).detail, /\$2 \(an estimate\) for this session in total/);
     const hostile = dialogText({ ...base, name: 'x‮reversed\n\u0007<img src=x onerror=1>' , folder: '/a⁦b\nc', settings: { limit: 5 } });
     assert.ok(!/[‮⁦\u0007]/.test(hostile.message + hostile.detail));
     assert.ok(!hostile.message.includes('\n'), 'one line');
@@ -691,11 +691,24 @@ async function main(): Promise<void> {
     const timers = (): number => process.getActiveResourcesInfo().filter((n) => n === 'Timeout').length;
     // finding 3: the adapter's turn-on answers ok, the mode changes during the call, and the back-off never answers: the handler still answers
     const h1 = await office({ setupWaitMs: 30 });
+    const h1stops: string[] = [];
+    const h1stop = h1.fake.stop.bind(h1.fake);
+    h1.fake.stop = async (sid: string): Promise<void> => { h1stops.push(sid); return h1stop(sid); };
     h1.fake.setAutopilot = async (_s, c): Promise<void> => { if (c) { h1.a.permMode = 'ask'; return; } await hang<void>(); };
     const r1 = await Promise.race([turnOn(h1), sleep(3000).then(() => 'hung' as const)]);
     assert.notStrictEqual(r1, 'hung', 'finding 3: a back-off that never answers does not hang agents:setAutopilot');
     assert.strictEqual(h1.ops.engaged(h1.id), false, 'finding 3: and nothing is left turning on');
     assert.strictEqual(h1.a.autopilot, undefined, 'finding 3: and Autopilot is not on');
+    for (let i = 0; i < 200 && !h1.says.includes(LINE_UNCONFIRMED); i++) await sleep(5); // a labelled assert below, not a bare timeout
+    assert.ok(h1.says.includes(LINE_UNCONFIRMED), 'finding 3: a back-off that never answered is an unconfirmed stop, and the chat says so (FR-054)');
+    assert.ok(h1stops.length >= 1, 'finding 3: and the session\'s process was ended (the adapter\'s stop was called)');
+    // settleWithin leaves no timer behind when the back-off answers in time
+    const tBefore = timers();
+    const h5 = await office({ setupWaitMs: 40_000 });
+    h5.fake.setAutopilot = async (_s, c): Promise<void> => { if (c) { h5.a.permMode = 'ask'; } };
+    await turnOn(h5);
+    await tick();
+    assert.ok(timers() <= tBefore, `finding 3: no timer is left after a back-off that answers (${timers()} against ${tBefore})`);
     // finding 4: a Stop during the adapter's turn-on, which then answers ok: taken back once, not twice, whether it answers in the same tick as the Stop or while main still listens for its refusal
     for (const late of [false, true]) {
       const h2 = await office();
