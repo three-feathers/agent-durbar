@@ -217,4 +217,21 @@ const none = (t: string, k: string, m: string) => eq(L.check(t, k).findings, [],
     ok(r.findings.length === 0 && r.hosts.filter(L.hostOdd).length === 0, 'stays clean (no host line, no rule (d)): ' + t + ' ' + JSON.stringify(r));
   }
 }
+// fix round 3 (#1300 delta check): escaped quotes, wrappers with options, git -C, substitutions; the clean corpus stays clean
+{
+  const P = '\u0440\u0430\u0443\u0440\u0430\u04cf', H = ' ssh ' + P + '.invalid';
+  for (const t of ['run echo "a\\"b" ;' + H, "run echo 'a\\' ;" + H, 'run echo a\\"b ;' + H, "run echo a\\'b ;" + H, 'run echo "a\\\'b" ;' + H, 'run echo "\\\\" ;' + H, 'run echo "\\"";' + H, 'run echo \\\\"x" ;' + H,
+    'run sudo -u root' + H, 'run nice -n 10' + H, 'run timeout 5s' + H, 'run xargs -I x' + H, 'run watch -n 2' + H, 'run strace -e trace=x' + H, 'run kubectl exec x --' + H, 'run docker exec -it c --' + H,
+    'run ssh $(echo) ' + P + '.invalid', 'run echo $(' + H.slice(1) + ')', 'run echo `' + H.slice(1) + '`', 'run env A=1 sudo -E' + H])
+    ok(L.check(t, 'shell').hosts.some((h) => h.shown === P + '.invalid'), 'the host is found: ' + t);
+  eq(L.check('run git -C d clone ' + P + '.invalid:r', 'shell').hosts.map((h) => h.shown), [P + '.invalid'], 'git -C d clone');
+  eq(L.check('run git -c a=b --git-dir x fetch ' + P + '.invalid:r', 'shell').hosts.map((h) => h.shown), [P + '.invalid'], 'git -c a=b --git-dir x fetch');
+  for (const t of ['run echo ssh is great', 'run grep ssh file.txt:3', 'run grep ssh \u0444\u0430\u0439\u043b.txt:3', 'run man ssh', 'run cat ssh.conf/x', 'run git log --grep=clone a.b:c', 'run git log --grep=clone \u0444\u0430\u0439\u043b.b:c',
+    'run sshd -D ' + P + '.invalid', 'run my-ssh ' + P + '.invalid', 'run echo \\', 'run echo "\\\\"x', 'run echo "ssh ' + P + '.invalid"', 'run sudo cp ssh ' + P + '.invalid:/x']) {
+    const r = L.check(t, 'shell');
+    ok(r.findings.length === 0 && !r.hosts.some(L.hostOdd), 'stays clean: ' + t + ' ' + JSON.stringify(r.hosts));
+  }
+  assertLinearShape('nested substitutions', (x) => { L.check(x, 'shell'); }, (k) => 'run ' + '$('.repeat(Math.ceil(k / 2)).slice(0, k), 10000);
+  assertLinearShape('backslashes and quotes', (x) => { L.check(x, 'shell'); }, (k) => 'run ' + '\\"a\'\\\\ `$(x) ssh a.b:c ;'.repeat(Math.ceil(k / 24)).slice(0, k), 10000);
+}
 console.log(`lookalike: ${n} checks passed`);
