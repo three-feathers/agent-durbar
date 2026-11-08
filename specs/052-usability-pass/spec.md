@@ -1405,3 +1405,7 @@ Owner decision (Vikram, Telegram DM, 2026-11-07, 08:04 to 08:13 UTC): he answere
 - **Changed, Q-NY-16:** no switch; decide after use. FR-194's switch sentence removed, and the Settings switch leaves T197.
 - **Tasks:** T196 (tests for app-start opening), T197 (no switch; *Later* button), T199 (option buttons), T201 (slips visible), T202, T224, T225 follow; T195's note and the new T267 record this.
 - **Not verified:** nothing built or run; the `sim:` steps 9a and 9b are to build. Q-NY-9 (limit row) and Q-NY-12 buttons stay behind FR-197's request binding.
+
+## Changes 2026-11-08: the section list's own CSS stays inside the size ratchet (FR-226, T219)
+
+`test:theme-tokens` (spec 070 FR-054) failed on the merge with main: the list's CSS raised the line-height, font-weight and spacing counts and added a button class set. The list's buttons now take their style from `.scr-nav button` (no new class set), their spacing from the `--s-1` scale (same pixels), and the current entry is shown by its fill and edge alone, not by a heavier weight. The ratchet baseline is unchanged.

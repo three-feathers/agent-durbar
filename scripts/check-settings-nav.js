@@ -45,7 +45,7 @@ module.exports = async (ctx) => {
     await clickAt(r.x, r.y);
   };
   const state = () => js(`(()=>{const b=document.querySelector('#screen .scr-body'),n=document.getElementById('scrNav');
-    const cur=[...n.querySelectorAll('.scr-nav-b')].map((x,i)=>x.hasAttribute('aria-current')?i:-1).filter(i=>i>=0);
+    const cur=[...n.querySelectorAll('button')].map((x,i)=>x.hasAttribute('aria-current')?i:-1).filter(i=>i>=0);
     const a=document.activeElement;
     return {top:Math.round(b.scrollTop),max:b.scrollHeight-b.clientHeight,cur,focus:a?{tag:a.tagName,id:a.id,inNav:!!a.closest('#scrNav'),i:a.dataset&&a.dataset.i}:null,page:document.scrollingElement.scrollTop}})()`);
   /* an independent reading of the page: each section's top relative to the page's top */
@@ -55,7 +55,7 @@ module.exports = async (ctx) => {
     await H.load(Object.assign({ w, h, ready: 'fit', focus: true }, view ? { query: { officeview: view }, ready: `!!document.querySelector('#stage .ro .ro-plate')`, settle: false } : {}));
     if (theme) { await js(`window.THEME.setTheme(${jsLiteral(theme)})`); await H.settle(); }
     await mclick('#settingsBtn');
-    await ok(`!!document.querySelector('#screen .scr-body')&&!document.getElementById('scrNav').hidden&&document.querySelectorAll('#scrNav .scr-nav-b').length>5`, 'Settings opens with its section list');
+    await ok(`!!document.querySelector('#screen .scr-body')&&!document.getElementById('scrNav').hidden&&document.querySelectorAll('#scrNav button').length>5`, 'Settings opens with its section list');
     if (world) await js(`document.documentElement.dataset.world=${jsLiteral(world)}`); // by hand, as check-logo-family does: Real office offers only its first world today
     await ctx.sleep(150);
   };
@@ -69,8 +69,8 @@ module.exports = async (ctx) => {
       // ---- the list is built from the headings that are on the page ----
       const built = await js(`(()=>{const n=document.getElementById('scrNav');
         const hs=[...document.querySelectorAll(${jsLiteral(HEADS)})].map(h=>{const c=h.cloneNode(true);c.querySelectorAll('small').forEach(x=>x.remove());return c.textContent.replace(/\\s+/g,' ').trim();});
-        const bs=[...n.querySelectorAll('.scr-nav-b')].map(b=>b.textContent);
-        return {tag:n.tagName,label:n.getAttribute('aria-label'),hs,bs,sizes:[...n.querySelectorAll('.scr-nav-b')].map(b=>parseFloat(getComputedStyle(b).fontSize))}})()`);
+        const bs=[...n.querySelectorAll('button')].map(b=>b.textContent);
+        return {tag:n.tagName,label:n.getAttribute('aria-label'),hs,bs,sizes:[...n.querySelectorAll('button')].map(b=>parseFloat(getComputedStyle(b).fontSize))}})()`);
       assert.strictEqual(built.tag, 'NAV', `${tag}: a nav landmark`);
       assert.strictEqual(built.label, 'Settings sections', `${tag}: the landmark is named`);
       assert.deepStrictEqual(built.bs, built.hs.map((t) => (t.length > 40 ? t.slice(0, 39) + '…' : t)), `${tag}: one entry per heading on the page, in page order`);
@@ -90,7 +90,7 @@ module.exports = async (ctx) => {
 
       // ---- a real click jumps and focuses the heading ----
       const n = built.bs.length, k = Math.floor(n / 2);
-      await mclick(`#scrNav .scr-nav-b[data-i="${k}"]`);
+      await mclick(`#scrNav button[data-i="${k}"]`);
       await ok(`document.querySelector('#screen .scr-body').scrollTop>0`, `${tag}: the click scrolled the page`);
       s = await state();
       let ht = await headTop(k);
@@ -103,15 +103,15 @@ module.exports = async (ctx) => {
       for (const j of [3, n - 4, 1, n - 1, 0]) {
         const at = (await tops())[j];
         await js(`(()=>{const b=document.querySelector('#screen .scr-body');b.scrollTop=b.scrollTop+${jsLiteral(at)}-4;})()`);
-        await ok(`(()=>{const c=[...document.querySelectorAll('#scrNav .scr-nav-b')].findIndex(x=>x.hasAttribute('aria-current'));return c>=0})()`, `${tag}: a section is current`);
+        await ok(`(()=>{const c=[...document.querySelectorAll('#scrNav button')].findIndex(x=>x.hasAttribute('aria-current'));return c>=0})()`, `${tag}: a section is current`);
         const exp = await js(`(()=>{const b=document.querySelector('#screen .scr-body'),t=b.getBoundingClientRect().top,e=[...document.querySelectorAll(${jsLiteral(HEADS)})].map(h=>(h.closest('.scr-sec,.scr-adv')||h).getBoundingClientRect().top-t);
           if(b.scrollHeight-b.clientHeight-b.scrollTop<=1&&b.scrollTop>0)return e.length-1;let k=0;e.forEach((v,i)=>{if(v<=14)k=i;});return k;})()`);
-        await ok(`[...document.querySelectorAll('#scrNav .scr-nav-b')].map((x,i)=>x.hasAttribute('aria-current')?i:-1).filter(i=>i>=0).join()===${jsLiteral(String(exp))}`, `${tag}: scrolling to section ${j} makes ${exp} current (it was ${JSON.stringify((await state()).cur)})`);
+        await ok(`[...document.querySelectorAll('#scrNav button')].map((x,i)=>x.hasAttribute('aria-current')?i:-1).filter(i=>i>=0).join()===${jsLiteral(String(exp))}`, `${tag}: scrolling to section ${j} makes ${exp} current (it was ${JSON.stringify((await state()).cur)})`);
       }
 
       // ---- every entry, clicked in turn, shows its own heading ----
       for (let i = 0; i < n; i++) {
-        await mclick(`#scrNav .scr-nav-b[data-i="${i}"]`);
+        await mclick(`#scrNav button[data-i="${i}"]`);
         await ok(`document.querySelectorAll('#scrNav [aria-current]').length===1&&document.querySelector('#scrNav [aria-current]').dataset.i==='${i}'`, `${tag}: entry ${i} is current after its click`);
         ht = await headTop(i);
         assert.ok(ht.inView && ht.focused, `${tag}: entry ${i} (${built.bs[i]}) shows its heading, focused: ${JSON.stringify(ht)}`);
@@ -120,12 +120,12 @@ module.exports = async (ctx) => {
       }
 
       // ---- keyboard ----
-      await js(`(()=>{const b=document.querySelector('#screen .scr-body');b.scrollTop=0;document.querySelector('#scrNav .scr-nav-b[data-i="0"]').focus();})()`);
-      await ok(`document.querySelectorAll('#scrNav .scr-nav-b[tabindex="0"]').length===1`, `${tag}: one Tab stop in the list`);
+      await js(`(()=>{const b=document.querySelector('#screen .scr-body');b.scrollTop=0;document.querySelector('#scrNav button[data-i="0"]').focus();})()`);
+      await ok(`document.querySelectorAll('#scrNav button[tabindex="0"]').length===1`, `${tag}: one Tab stop in the list`);
       const prevented = (key) => js(`(()=>{const e=new KeyboardEvent('keydown',{key:${jsLiteral(key)},bubbles:true,cancelable:true});document.activeElement.dispatchEvent(e);return e.defaultPrevented})()`);
       assert.strictEqual(await prevented('ArrowDown'), true, `${tag}: an arrow key in the list does not also scroll anything (default prevented)`);
       assert.strictEqual(await prevented('Tab'), false, `${tag}: Tab is left alone`);
-      await js(`document.querySelector('#scrNav .scr-nav-b[data-i="0"]').focus()`);
+      await js(`document.querySelector('#scrNav button[data-i="0"]').focus()`);
       await H.key('Down'); await ok(`document.activeElement.dataset.i==='1'`, `${tag}: ArrowDown moves to the next entry`);
       await H.key('Down'); await ok(`document.activeElement.dataset.i==='2'`, `${tag}: ArrowDown again`);
       await H.key('Up'); await ok(`document.activeElement.dataset.i==='1'`, `${tag}: ArrowUp goes back`);
@@ -133,12 +133,12 @@ module.exports = async (ctx) => {
       await H.key('Down'); assert.strictEqual(await js(`document.activeElement.dataset.i`), String(n - 1), `${tag}: no wrap at the end`);
       await H.key('Home'); await ok(`document.activeElement.dataset.i==='0'`, `${tag}: Home goes to the first entry`);
       // in the column Left and Right are not ours: the focus stays and the keys are not prevented
-      await js(`document.querySelector('#scrNav .scr-nav-b[data-i="1"]').focus()`);
+      await js(`document.querySelector('#scrNav button[data-i="1"]').focus()`);
       assert.strictEqual(await prevented('ArrowRight'), false, `${tag}: column: ArrowRight is not prevented`);
       assert.strictEqual(await prevented('ArrowLeft'), false, `${tag}: column: ArrowLeft is not prevented`);
       await H.key('Right'); await H.key('Left');
       assert.strictEqual(await js(`document.activeElement.dataset.i`), '1', `${tag}: column: Left and Right leave the focus on the entry`);
-      await js(`document.querySelector('#scrNav .scr-nav-b[data-i="0"]').focus()`);
+      await js(`document.querySelector('#scrNav button[data-i="0"]').focus()`);
       await H.key('Down'); await H.key('Down'); await H.key('Down');
       await H.key('Return');
       await ok(`(()=>{const h=[...document.querySelectorAll(${jsLiteral(HEADS)})][3];return document.activeElement===h})()`, `${tag}: Enter jumps to the section and focuses its heading`);
@@ -154,16 +154,16 @@ module.exports = async (ctx) => {
 
       // ---- reduced motion: the jump is done in the same frame ----
       await emulate('reduce');
-      const instant = await js(`(()=>{const b=document.querySelector('#screen .scr-body');b.scrollTop=0;const btn=document.querySelector('#scrNav .scr-nav-b[data-i="6"]');btn.click();return {top:b.scrollTop,behavior:getComputedStyle(b).scrollBehavior,rm:matchMedia('(prefers-reduced-motion: reduce)').matches}})()`);
+      const instant = await js(`(()=>{const b=document.querySelector('#screen .scr-body');b.scrollTop=0;const btn=document.querySelector('#scrNav button[data-i="6"]');btn.click();return {top:b.scrollTop,behavior:getComputedStyle(b).scrollBehavior,rm:matchMedia('(prefers-reduced-motion: reduce)').matches}})()`);
       assert.ok(instant.rm, `${tag}: reduced motion is emulated`);
       assert.ok(instant.top > 0 && instant.behavior === 'auto', `${tag}: reduced motion: the jump is instant, no smooth scrolling: ${JSON.stringify(instant)}`);
       await emulate('no-preference');
-      const normal = await js(`(()=>{const b=document.querySelector('#screen .scr-body');b.scrollTop=0;document.querySelector('#scrNav .scr-nav-b[data-i="7"]').click();return {top:b.scrollTop,behavior:getComputedStyle(b).scrollBehavior}})()`);
+      const normal = await js(`(()=>{const b=document.querySelector('#screen .scr-body');b.scrollTop=0;document.querySelector('#scrNav button[data-i="7"]').click();return {top:b.scrollTop,behavior:getComputedStyle(b).scrollBehavior}})()`);
       assert.ok(normal.top > 0 && normal.behavior === 'auto', `${tag}: the jump is also instant with motion on: ${JSON.stringify(normal)}`);
 
       // ---- picture, at the top of the page, with a section current ----
       await js(`(()=>{const b=document.querySelector('#screen .scr-body');b.scrollTop=0;})()`);
-      await mclick(`#scrNav .scr-nav-b[data-i="4"]`);
+      await mclick(`#scrNav button[data-i="4"]`);
       await ctx.sleep(200);
       const file = wname === 'flat' ? `052-settings-nav-${w}x${h}.png` : `052-settings-nav-${wname}-${w}x${h}.png`;
       await H.shot(path.join(OUT, file), { prep: 'mouse', tag: '052' });
@@ -172,39 +172,39 @@ module.exports = async (ctx) => {
 
   // ---- narrow: a row above the page ----
   await open(640, 800, 'clean-office', null);
-  const built0 = await js(`document.querySelectorAll('#scrNav .scr-nav-b').length`);
+  const built0 = await js(`document.querySelectorAll('#scrNav button').length`);
   const row = await js(`(()=>{const n=document.getElementById('scrNav'),b=document.querySelector('#screen .scr-body'),nr=n.getBoundingClientRect(),br=b.getBoundingClientRect(),s=document.getElementById('screen').getBoundingClientRect(),ul=n.querySelector('ul');
-    return {dir:getComputedStyle(ul).flexDirection,above:nr.bottom<=br.top+1,inScreen:nr.left>=s.left-1&&nr.right<=s.right+1,scrollsX:n.scrollWidth>n.clientWidth,h:Math.round(nr.height),bodyX:b.scrollWidth-b.clientWidth,pageX:document.scrollingElement.scrollWidth-innerWidth,bodyH:Math.round(br.height),min:Math.min(...[...n.querySelectorAll('.scr-nav-b')].map(x=>parseFloat(getComputedStyle(x).fontSize)))}})()`);
+    return {dir:getComputedStyle(ul).flexDirection,above:nr.bottom<=br.top+1,inScreen:nr.left>=s.left-1&&nr.right<=s.right+1,scrollsX:n.scrollWidth>n.clientWidth,h:Math.round(nr.height),bodyX:b.scrollWidth-b.clientWidth,pageX:document.scrollingElement.scrollWidth-innerWidth,bodyH:Math.round(br.height),min:Math.min(...[...n.querySelectorAll('button')].map(x=>parseFloat(getComputedStyle(x).fontSize)))}})()`);
   assert.strictEqual(row.dir, 'row', `narrow: the list is a row: ${JSON.stringify(row)}`);
   assert.ok(row.above && row.inScreen, `narrow: the row is above the page and inside the screen: ${JSON.stringify(row)}`);
   assert.ok(row.scrollsX && row.bodyX <= 1 && row.pageX <= 0, `narrow: the row scrolls sideways, the page does not: ${JSON.stringify(row)}`);
   assert.ok(row.h < 80 && row.bodyH > 300 && row.min >= 10.5, `narrow: the row is slim and the page keeps its room: ${JSON.stringify(row)}`);
-  await js(`(()=>{const n=document.getElementById('scrNav'),b=n.querySelector('.scr-nav-b[data-i="9"]');n.scrollLeft+=b.getBoundingClientRect().left-n.getBoundingClientRect().left-40;})()`); // the row scrolls sideways: bring a far entry into reach, as a finger would
-  await mclick(`#scrNav .scr-nav-b[data-i="9"]`);
+  await js(`(()=>{const n=document.getElementById('scrNav'),b=n.querySelector('button[data-i="9"]');n.scrollLeft+=b.getBoundingClientRect().left-n.getBoundingClientRect().left-40;})()`); // the row scrolls sideways: bring a far entry into reach, as a finger would
+  await mclick(`#scrNav button[data-i="9"]`);
   await ok(`document.querySelector('#scrNav [aria-current]').dataset.i==='9'&&document.querySelector('#screen .scr-body').scrollTop>0`, 'narrow: a click jumps');
   assert.ok((await js(`(()=>{const n=document.getElementById('scrNav'),c=n.querySelector('[aria-current]').getBoundingClientRect(),r=n.getBoundingClientRect();return c.left>=r.left-1&&c.right<=r.right+1})()`)), 'narrow: the current entry is brought into view in the row');
   await H.shot(path.join(OUT, '052-settings-nav-narrow-640x800.png'), { prep: 'mouse', tag: '052' });
   // keys in the row: ArrowRight and ArrowLeft step (and are ours: default prevented), the column's Up and Down still do
-  await js(`document.querySelector('#scrNav .scr-nav-b[data-i="2"]').focus()`);
+  await js(`document.querySelector('#scrNav button[data-i="2"]').focus()`);
   const prevented = (key) => js(`(()=>{const e=new KeyboardEvent('keydown',{key:${jsLiteral(key)},bubbles:true,cancelable:true});document.activeElement.dispatchEvent(e);return e.defaultPrevented})()`);
   assert.strictEqual(await prevented('ArrowRight'), true, 'narrow: ArrowRight is ours in the row (default prevented)');
-  await js(`document.querySelector('#scrNav .scr-nav-b[data-i="2"]').focus()`);
+  await js(`document.querySelector('#scrNav button[data-i="2"]').focus()`);
   await H.key('Right'); await ok(`document.activeElement.dataset.i==='3'`, 'narrow: ArrowRight moves to the next entry');
   await H.key('Right'); await ok(`document.activeElement.dataset.i==='4'`, 'narrow: ArrowRight again');
   await H.key('Left'); await ok(`document.activeElement.dataset.i==='3'`, 'narrow: ArrowLeft goes back');
   await H.key('Down'); await ok(`document.activeElement.dataset.i==='4'`, 'narrow: ArrowDown still steps in the row');
   await H.key('Home'); await H.key('Left'); await ok(`document.activeElement.dataset.i==='0'`, 'narrow: no wrap before the first entry');
   // the list is rebuilt under the focus (a section goes): the focus stays on the same entry, never falls to the body
-  await js(`document.querySelector('#scrNav .scr-nav-b[data-i="5"]').focus()`);
+  await js(`document.querySelector('#scrNav button[data-i="5"]').focus()`);
   const before = await js(`document.activeElement.textContent`);
   await js(`document.querySelector('.scr-body>.scr-sec').remove()`); // the first section: every entry shifts by one
-  await ok(`document.querySelectorAll('#scrNav .scr-nav-b').length===${jsLiteral(built0 - 1)}`, 'narrow: the list is rebuilt without the removed section');
+  await ok(`document.querySelectorAll('#scrNav button').length===${jsLiteral(built0 - 1)}`, 'narrow: the list is rebuilt without the removed section');
   assert.deepStrictEqual(await js(`({inNav:!!document.activeElement.closest('#scrNav'),text:document.activeElement.textContent,tag:document.activeElement.tagName})`), { inNav: true, text: before, tag: 'BUTTON' }, 'narrow: the focus stays on the same entry when the list is rebuilt');
-  await js(`[...document.querySelectorAll('#scrNav .scr-nav-b')].pop().focus()`); // the LAST entry (every button is the only child of its li, so :last-child would match them all)
+  await js(`[...document.querySelectorAll('#scrNav button')].pop().focus()`); // the LAST entry (every button is the only child of its li, so :last-child would match them all)
   const lastText = await js(`document.activeElement.textContent`);
   assert.strictEqual(await js(`document.activeElement.dataset.i`), String(built0 - 2), 'narrow: the last entry has the focus before its section goes');
   await js(`[...document.querySelectorAll('.scr-body>.scr-sec,.scr-body>.scr-adv')].slice(-1)[0].remove()`); // the last section, under the focus on the last entry
-  await ok(`document.querySelectorAll('#scrNav .scr-nav-b').length===${jsLiteral(built0 - 2)}`, 'narrow: the list is rebuilt again');
+  await ok(`document.querySelectorAll('#scrNav button').length===${jsLiteral(built0 - 2)}`, 'narrow: the list is rebuilt again');
   assert.deepStrictEqual(await js(`({i:document.activeElement.dataset.i,inNav:!!document.activeElement.closest('#scrNav'),text:document.activeElement.textContent})`).then((r) => ({ i: r.i, inNav: r.inNav, changed: r.text !== lastText })), { i: String(built0 - 3), inNav: true, changed: true }, 'narrow: its entry is gone, so the focus moves to the new last entry');
   // fewer than two sections: no list at all (one entry is no navigation)
   await js(`[...document.querySelectorAll('.scr-body>.scr-sec,.scr-body>.scr-adv')].slice(1).forEach(e=>e.remove())`);

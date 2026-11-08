@@ -521,21 +521,21 @@ body.has-bridge #topBtns{display:flex}
 /* Settings section list (spec 052 FR-226, T219): the list of sections beside the page, in every world (the screen is shared). Wide: a column on the
    left of the centred page; narrow (the screen under 760px): a row above it that scrolls sideways. Text is the 12px of --t4-size, over the 10.5px floor. */
 .scr-wrap{flex:1;min-height:0;min-width:0;display:flex;flex-direction:column;container:scrset/inline-size}
-.scr-cols{flex:1;min-height:0;display:flex;align-items:stretch;width:100%;max-width:calc(880px + 220px);margin:0 auto;padding-left:24px}
+.scr-cols{flex:1;min-height:0;display:flex;align-items:stretch;width:100%;max-width:calc(880px + 220px);margin:0 auto;padding-left:calc(var(--s-1)*6)}
 .scr-cols>.scr-body{max-width:880px;margin:0;flex:1 1 auto;min-width:0;width:auto}
-.scr-nav{flex:none;width:184px;align-self:flex-start;max-height:calc(100% - 40px);margin:16px 12px 24px 0;padding:6px;box-sizing:border-box;overflow-y:auto;overscroll-behavior:contain;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-xl)} /* a card like the sections, so its text sits on --surface in every world (Retro's page is dark) */
+.scr-nav{flex:none;width:184px;align-self:flex-start;max-height:calc(100% - 40px);margin:calc(var(--s-1)*4) calc(var(--s-1)*3) calc(var(--s-1)*6) 0;padding:calc(var(--s-1)*1.5);box-sizing:border-box;overflow-y:auto;overscroll-behavior:contain;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-xl)} /* a card like the sections, so its text sits on --surface in every world (Retro's page is dark) */
 .scr-nav[hidden]{display:none}
-.scr-nav ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:1px}
-.scr-nav-b{display:block;width:100%;text-align:left;font:inherit;font-size:var(--t4-size);font-weight:500;line-height:1.3;color:var(--ink-2);background:none;border:0;border-left:3px solid transparent;border-radius:var(--r-sm);padding:4px 8px;cursor:pointer;overflow-wrap:anywhere}
-.scr-nav-b:hover{background:var(--surface-2);color:var(--ink)}
-.scr-nav-b[aria-current]{color:var(--ink);font-weight:650;background:var(--surface-2);border-left-color:var(--focus)}
+.scr-nav ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:calc(var(--s-1)*0.25)}
+.scr-nav button{display:block;width:100%;text-align:left;font:inherit;font-size:var(--t4-size);color:var(--ink-2);background:none;border:0;border-left:3px solid transparent;border-radius:var(--r-sm);padding:calc(var(--s-1)*1) calc(var(--s-1)*2);cursor:pointer;overflow-wrap:anywhere}
+.scr-nav button:hover{background:var(--surface-2);color:var(--ink)}
+.scr-nav button[aria-current]{color:var(--ink);background:var(--surface-2);border-left-color:var(--focus)}
 @container scrset (max-width:759px){
   .scr-cols{flex-direction:column;padding-left:0}
-  .scr-nav{width:auto;align-self:stretch;max-height:none;margin:8px 24px 0;padding:4px 6px;overflow:auto hidden}
-  .scr-nav ul{flex-direction:row;gap:4px;width:max-content}
-  .scr-nav-b{white-space:nowrap;border-left:0;border-bottom:3px solid transparent;border-radius:var(--r-sm) var(--r-sm) 0 0}
-  .scr-nav-b[aria-current]{border-bottom-color:var(--focus)}
+  .scr-nav{width:auto;align-self:stretch;max-height:none;margin:calc(var(--s-1)*2) calc(var(--s-1)*6) 0;padding:calc(var(--s-1)*1) calc(var(--s-1)*1.5);overflow:auto hidden}
+  .scr-nav ul{flex-direction:row;gap:calc(var(--s-1)*1);width:max-content}
+  .scr-nav button{white-space:nowrap;border-left:0;border-bottom:3px solid transparent;border-radius:var(--r-sm) var(--r-sm) 0 0}
+  .scr-nav button[aria-current]{border-bottom-color:var(--focus)}
 }
 /* the title and Close line up with the list-and-page block instead of the 880px column alone (880 + list 184 + gutters) */
-#screen:has(.scr-nav) .scr-head,html[data-platform="darwin"] .notice-strip:not([hidden]) ~ #screen:has(.scr-nav) .scr-head{padding-left:max(24px,calc((100% - 1100px)/2 + 24px));padding-right:max(24px,calc((100% - 1100px)/2 + 24px))}
-@media (max-width:759px){#screen:has(.scr-nav) .scr-head{padding-left:24px;padding-right:24px}}
+#screen:has(.scr-nav) .scr-head,html[data-platform="darwin"] .notice-strip:not([hidden]) ~ #screen:has(.scr-nav) .scr-head{padding-left:max(calc(var(--s-1)*6),calc((100% - calc(var(--s-1)*275))/2 + calc(var(--s-1)*6)));padding-right:max(calc(var(--s-1)*6),calc((100% - calc(var(--s-1)*275))/2 + calc(var(--s-1)*6)))}
+@media (max-width:759px){#screen:has(.scr-nav) .scr-head{padding-left:calc(var(--s-1)*6);padding-right:calc(var(--s-1)*6)}}
