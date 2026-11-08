@@ -192,3 +192,7 @@
 ## 2026-11-09: no duplicate typecheck step before build in CI
 
 - [x] T150 (FR-193) Removed `npm run typecheck` before `npm run build` in `ci.yml` and `macos-pr.yml`; `scripts/test-ci-typecheck.js` + suite `test:citypecheck` with three mutants; `release.yml` unchanged (no build before its tests)
+
+## 2026-11-08: faster UI drivers (FR-190)
+
+- [x] T143 (FR-190) Wave 1 of the faster UI drivers: `scripts/driver-helpers.js` (`load` steady wait, ready-timeout line, `fastVisits`), `src/renderer/app.js` (`simvisits=fast`) (simulator-only); drivers check-office-fill, check-crew, check-auto-follow, shots-017, check-sched-top, check-answer-safety. Each changed driver: a mutant that still fails on its own labelled assert, 5 local runs.

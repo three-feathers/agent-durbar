@@ -180,7 +180,7 @@ function helpers(ctx) {
   const clearToasts = () => js(`document.querySelectorAll('#toasts .toast').forEach(t=>t.remove())`);
   /**
    * Size the window, load the renderer with the simulator query and wait until it is ready (default: 15 desks) and has stopped changing.
-   * `query` is added to sim=15 and simfreeze=1 (an undefined value removes one); `ready` is a page expression ('fit': the stage has laid out); `settle: false` skips the
+   * `query` is added to sim=15 and simfreeze=1 (an undefined value removes one); `fastVisits: true` adds `simvisits=fast` (spec 008 FR-190: the lobby's own timers 10x shorter, simulator only; for a driver that never looks at lobby visits or walking and takes no picture of them); `ready` is a page expression ('fit': the stage has laid out); `settle: false` skips the
    * settling wait; `focus` focuses the page afterwards.
    */
   const load = async (o = {}) => {
@@ -188,12 +188,15 @@ function helpers(ctx) {
     // spec 001 FR-084: a pinned simulator clock (main's `simclock`, from DURBAR_SIM_CLOCK) stays pinned across the driver's reloads
     let clock = null;
     try { clock = new URL(wc().getURL()).searchParams.get('simclock'); } catch { clock = null; }
-    const query = { sim: '15', simfreeze: '1', ...(clock && /^\d{1,15}$/.test(clock) ? { simclock: clock } : {}), ...(o.query || {}) };
+    const query = { sim: '15', simfreeze: '1', ...(clock && /^\d{1,15}$/.test(clock) ? { simclock: clock } : {}), ...(o.fastVisits ? { simvisits: 'fast' } : {}), ...(o.query || {}) };
     for (const k of Object.keys(query)) if (query[k] === undefined) delete query[k];
     await ctx.win.loadFile(o.index || INDEX, { query });
     // spec 092: with `simfloors=1` (the 15 agents spread over three floors on) the office shows one floor, so the default "15 desks" would only be met by its timeout
     const ready = o.ready === 'fit' ? `document.getElementById('stage')&&document.getElementById('stage').dataset.fit` : o.ready || `document.querySelectorAll('#stage .desk[data-id]').length>=${query.simfloors === '1' ? 1 : 15}`;
-    await ctx.waitFor(ready, o.readyMs || 15000);
+    if (!(await ctx.waitFor(ready, o.readyMs || 15000))) console.log(`[waits] load: the ready expression never held in ${o.readyMs || 15000} ms (pass \`ready\` for this page): ${String(ready).replace(/\s+/g, ' ').slice(0, 120)}`); // spec 008 FR-190: a timeout here costs the whole wait
+    // spec 008 FR-190: a frozen simulator says when it is steady (every script replayed, no lobby visit waiting to start or end, the frame drawn): wait for that
+    // instead of letting `settle` find it by sampling 200 ms apart (a load used to spend 0.5-1 s there). `settle` still runs after it, so nothing is skipped.
+    if (query.simfreeze === '1' && !o.index && o.settle !== false) await w.until(`!!window.__durbarSimReplayed&&!!window.__durbarSimUi&&window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()&&!document.querySelector('.scene-out')`, 4000);
     if (o.settle !== false) await w.settle();
     if (o.focus) wc().focus();
   };

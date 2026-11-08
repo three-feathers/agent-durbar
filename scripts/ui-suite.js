@@ -364,6 +364,8 @@ async function main({ ensure = ensureElectron, run = runOne, argv } = {}) {
       const d = todo[next++];
       const r = await run(d, outDir);
       console.log(`  ${r.ok ? 'ok  ' : 'FAIL'} ${(d.label || d.name).padEnd(26)} ${String(r.secs).padStart(4)} s${r.ok ? '' : '  ' + r.why.trim().slice(0, 300)}`);
+      /* spec 008 FR-190: a wait that timed out (`[waits] ...` from driver-helpers) shows even when the driver passed: a wait that is always spent costs its whole limit every run */
+      if (r.ok) for (const l of [...new Set(String(r.log || '').split(/\r?\n/).filter((x) => x.startsWith('[waits]')).map((x) => x.slice(0, 200)))].slice(0, 4)) console.log('      ' + l);
       if (!r.ok) {
         failed.push(d.label || d.name);
         console.log(r.log.split(/\r?\n/).filter((l) => l.trim()).slice(-25).map((l) => '      | ' + l.slice(0, 240)).join('\n'));
