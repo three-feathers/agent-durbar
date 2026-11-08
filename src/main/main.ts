@@ -56,7 +56,7 @@ import { missingChecker } from './mcpcmdcheck';
 import { mergeLoginPath, nodeLoginPathDeps, readLoginShellPath } from './loginpath';
 import { renameOp, titleSyncOf } from './sessionnames';
 import { adapterForAdd, createRouter, previousSessionsOf } from '../adapters/router';
-import { endSessionOp, restorable, scheduledSendOp, sendWithSlash, startGuardOp, stopTurnOp, validMode } from './agentops';
+import { endSessionOp, mcpNudgeOp, restorable, scheduledSendOp, sendWithSlash, startGuardOp, stopTurnOp, validMode } from './agentops';
 import type { OpsDeps, StartGuardDeps } from './agentops';
 import { adapterOf } from './folders';
 import type { AgentAdapter, AgentEvent } from '../adapters/types';
@@ -204,6 +204,7 @@ const appIdOf = (id: string): string | undefined => router.adapterIdOf(id) ?? ag
 const mcp = registerMcpIpc({
   store: () => mcpStore as McpStore,
   agents,
+  ensureLive: (a) => ensureLive(a), // spec 058 FR-229
   router,
   dev,
   appOf: appIdOf,
@@ -225,6 +226,9 @@ const mcp = registerMcpIpc({
     platform: process.platform,
     busy: (id) => chatBusy(id),
     push: (p) => toRenderer('agents:mcpSignInRefresh', p),
+    limited: (id) => agentState.onBreak(id),
+    nudge: (id, name) => nudgeAgent(id, name),
+    diagnostics: () => settingsStore?.diagnostics === true, // spec 058 FR-227
   },
 });
 // spec 058 FR-198: each searched folder read once (async readdir, 10 s cache), names looked up in sets; network paths never read
@@ -718,6 +722,11 @@ const readyAdapterIds = async (): Promise<ReadonlySet<string>> => {
 };
 
 /** Spec 006 FR-020: the session a folder continues after a restart is the one that last got a message. */
+/** Spec 058 FR-218: the one automatic note to a chat after its MCP server was reconnected. */
+function nudgeAgent(id: string, name: string): Promise<void> {
+  const a = agents.get(id);
+  return mcpNudgeOp({ agent: a, adapter: a ? router.forAgent(a.id) : undefined, agentState, toWindow: toRenderer, noteLastSession, now: () => Date.now() }, name);
+}
 function noteLastSession(a: AgentInfo | undefined): void {
   if (!a) return;
   const rid = resumeIdFor(a.id); // Codex: its thread id
@@ -810,7 +819,7 @@ const browser = registerBrowserIpc({ agents, getWin: () => win, toRenderer, simu
 const browserGone = (id: string): void => void browser.destroy(id).catch(() => undefined);
 /** Spec 043 FR-041: which profile file changes each session has seen (shared by ipc/agents.ts and ipc/profiles.ts). */
 const profileFreshness = createProfileFreshness();
-registerAgentsIpc({ browserGone, autopilot: autopilotOps, agents, router, agentState, opsDeps, remoteOps, mcpGate: (id) => mcp.signInRefresh.beforeSend(id), mcpStopWait: (id) => mcp.signInRefresh.stopWait(id), mcpBusy: (id) => chatBusy(id), mcpForget: (id) => mcp.signInRefresh.forget(id), mcpSecrets: (id) => mcp.secretValuesFor(id), logMcp: (a, action) => logActivity(a, 'mcp-restart', action), getScheduler: () => scheduler, getCheckpointStore: () => checkpointStore, profileFreshness, vsChatRefs, continued, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, maskHistory, forgetSandboxNote: (id) => sandboxOps.forget(id), getSummaryDays: () => summaryDays }); // spec 087: sandboxOps is set below, before any IPC call
+registerAgentsIpc({ browserGone, autopilot: autopilotOps, agents, router, agentState, opsDeps, remoteOps, mcpGate: (id) => mcp.signInRefresh.beforeSend(id), mcpStopWait: (id) => mcp.signInRefresh.stopWait(id), mcpBusy: (id) => chatBusy(id), mcpForget: (id) => mcp.signInRefresh.forget(id), mcpStopped: (id) => mcp.signInRefresh.noteStop(id), mcpSecrets: (id) => mcp.secretValuesFor(id), logMcp: (a, action) => logActivity(a, 'mcp-restart', action), getScheduler: () => scheduler, getCheckpointStore: () => checkpointStore, profileFreshness, vsChatRefs, continued, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, maskHistory, forgetSandboxNote: (id) => sandboxOps.forget(id), getSummaryDays: () => summaryDays }); // spec 087: sandboxOps is set below, before any IPC call
 registerAttachmentsIpc({ dev, pickedFiles, getStageDir, sizeOf });
 registerPreviousIpc({ browserGone, renameSessionOpFor, dev, agents, router, registry, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, wsKey, resumeIdFor, forgetOpenSession, logActivity, addWorkspace, vsChatRefs, maskHistory });
 registerCheckpointsIpc({ agents, getCheckpointStore: () => checkpointStore, busyStatus });

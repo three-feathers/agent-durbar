@@ -147,6 +147,11 @@
     const same=d.getFullYear()===n.getFullYear()&&d.getMonth()===n.getMonth()&&d.getDate()===n.getDate();
     return same?'at '+hm:'on '+d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' at '+hm;
   }
+  /* Spec 058 FR-221: "Renewed 12:40" (local; with the date when not today) for a connected server Durbar renewed in the background; '' for no usable time. */
+  function renewedWord(at,now){
+    const w=whenText(at,now);
+    return w?'Renewed '+w.replace(/^at /,'').replace(/^on /,'').replace(' at ',' '):'';
+  }
   /* FR-093: the Copy diagnostics text, from the reply only (main masked the error, FR-005). Each value is masked by `redact` (the shared
      masking, the same code as main) BEFORE it is cut and flattened, so no head of a token survives a cut; then the whole text is masked
      again. The time is UTC only: with a local time next to it the text would give away the user's time zone. No folder, path, agent name
@@ -287,5 +292,20 @@
     }
     return {targets,failed,skipped};
   }
-  return {stateOf,offBy,iconSvg,hintFor,callWord,callHint,signInHint,plain,aggregate,reasonOf,whenText,diagnostics,fixFor,fileFindings,chatFinding,launchYoung,launchUpdate,restartTargets,LAUNCH_MS,RANK:RANK.slice(),ICON_NAMES:Object.keys(ICONS)};
+  /* spec 058 FR-229 (issue 1229): the one text for a chat's Sign in press that could not start a sign-in. Never empty: `row` is the dialog's row for the
+     server (or none), `err` an error text of the call (already masked by main). The wording is the dialog's own ("Could not start the sign-in: ..."). */
+  function signInPressNote(name,row,err,live){
+    const n=plain(name,64)||'this server';
+    let why=typeof err==='string'&&err.trim()?plain(err,160):'';
+    if(!why){
+      if(live===false)why='The chat\u2019s session is not running. Send a message to start it, then sign in.';
+      else if(!row)why=n+' is not in this chat\u2019s MCP list.';
+      else if(row.signIn)why='A sign-in is already open: press Open sign-in page on its row.';
+      else if(row.canSignInAgain===true)why='This row offers Sign in again\u2026 instead: press it on the row.';
+      else if(row.canSignIn!==true)why='This app cannot start the sign-in from here. Open the row for the steps.';
+      else why='Unknown error.';
+    }
+    return 'Could not start the sign-in for '+n+': '+why;
+  }
+  return {signInPressNote,stateOf,offBy,iconSvg,hintFor,callWord,callHint,signInHint,plain,aggregate,reasonOf,whenText,renewedWord,diagnostics,fixFor,fileFindings,chatFinding,launchYoung,launchUpdate,restartTargets,LAUNCH_MS,RANK:RANK.slice(),ICON_NAMES:Object.keys(ICONS)};
 })());

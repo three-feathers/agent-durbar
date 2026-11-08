@@ -15,7 +15,7 @@
   function halo(o) {
     const { st, c, T } = o;
     if (c) {
-      const hc = { working: T('--halo-working'), thinking: T('--halo-thinking'), waiting: T('--halo-waiting'), error: T('--halo-error') }[st];
+      const hc = { working: T('--halo-working'), thinking: T('--halo-thinking'), error: T('--halo-error') }[st]; /* spec 001 FR-230: no waiting halo; the screen's tint says it (FR-231) */
       return hc ? `<g class="halo halo-${st}"><rect x="101" y="22" width="86" height="66" rx="17" fill="${hc}" opacity=".13"/><rect x="107" y="28" width="74" height="54" rx="13" fill="${hc}" opacity=".16"/></g>` : '';
     }
     if (st === 'working' || st === 'thinking') return `<rect class="glow" x="106" y="28" width="76" height="54" rx="14" fill="${st === 'working' ? T('--halo-working') : T('--halo-thinking')}" filter="url(#soft)" opacity=".24"/>`;
@@ -119,8 +119,8 @@
     s += '</g></g>' + sweat(o) + '</g>';
     s += K.desk(o) + art.desk;
     s += K.monitor(o);
-    s += `<rect x="116" y="36" width="56" height="37"${K.crisp ? '' : ' rx="3"'} fill="${T(screenBg(o))}"/>` + art.monitor;
-    s += screenContent(o);
+    s += `<rect class="scr" x="116" y="36" width="56" height="37"${K.crisp ? '' : ' rx="3"'} fill="${T(screenBg(o))}"/>` + art.monitor; /* spec 001 FR-231: .scr takes the status tint */
+    s += '<g class="scr-c">' + screenContent(o) + '</g>';
     s += K.screenOver ? K.screenOver(o) : '';
     s += art.laptop || K.keyboard(o); /* spec 070 FR-011: a pack's own laptop and cup replace the kit's (the steam stays: it is a status cue) */
     if (st === 'idle' || (o.mood && o.mood.coffee)) s += art.cup ? art.cup + steam(o) : K.cup(o); // spec 068: a cup on the desk during a coffee break

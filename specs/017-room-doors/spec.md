@@ -147,3 +147,7 @@ Owner decision: no doors in any world or in flat, including the safety behaviour
 ### 2026-11-03: the Office layout setting goes too (pointer, spec 102 FR-304)
 
 FR-027's *Office layout* setting, this spec's last control, goes with spec 102 FR-304: worlds are chosen in Settings' World section, and a stored *open* or *cabins* becomes the world Plain (FR-305).
+
+## Changes 2026-11-05: Serious mode no longer stops motion (issue #1182)
+
+[spec 052](../052-usability-pass/spec.md) FR-069 (Changes 2026-11-05, issue #1182, owner decision of Vikram, 2026-11-04): Serious mode hides only the mood drawings and trouble signs and no longer stops motion; motion stops under the system's reduced motion or with Settings > **Motion** off (default on). FR-022's "stops under reduced motion and in Serious mode" now reads: under reduced motion or with Motion off. (This spec is deprecated; kept as a record.)

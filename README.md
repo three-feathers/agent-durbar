@@ -6,12 +6,14 @@
 
 <p align="center"><em>A calm command center for your AI agents</em></p>
 
+<p align="center"><a href="#build-cost-so-far"><img src="docs/build-cost-badge.svg" alt="Build cost, about US$3,758 at API list prices (estimate, not billing)"></a></p>
+
 Agent Durbar is an office-style desktop app to **see, chat with and coordinate AI agents across several agent apps (harnesses)**: GitHub Copilot, Claude Code and OpenAI Codex. It is for **anyone who works with agents**, not only developers. A room is any folder an agent works in: code, documents, research or notes.
 
 **Website:** <https://three-feathers.github.io/agent-durbar/>
 
 > **Status: first stable release.**
-> - The newest release is [`v0.1.9`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.9) (2026-11-04), after [`v0.1.8`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.8) (2026-11-03), [`v0.1.7`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.7) (2026-11-03), [`v0.1.6`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.6) (2026-11-02), [`v0.1.5`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.5) (2026-11-01), [`v0.1.4`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.4) (2026-10-31), [`v0.1.3`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.3) (2026-10-30), [`v0.1.2`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.2) (2026-10-29), [`v0.1.1`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.1) (2026-10-28) and [`v0.1.0`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0), the first stable one (2026-10-26). It is unsigned and not notarized, like every build so far; the known limits are in [docs/limits.md](docs/limits.md) and in the Settings.
+> - The newest release is [`v0.1.11`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.11) (2026-11-06), after [`v0.1.10`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.10) (2026-11-05), [`v0.1.9`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.9) (2026-11-04), [`v0.1.8`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.8) (2026-11-03), [`v0.1.7`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.7) (2026-11-03), [`v0.1.6`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.6) (2026-11-02), [`v0.1.5`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.5) (2026-11-01), [`v0.1.4`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.4) (2026-10-31), [`v0.1.3`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.3) (2026-10-30), [`v0.1.2`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.2) (2026-10-29), [`v0.1.1`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.1) (2026-10-28) and [`v0.1.0`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0), the first stable one (2026-10-26). It is unsigned and not notarized, like every build so far; the known limits are in [docs/limits.md](docs/limits.md) and in the Settings.
 > - What changed in each release is in the [CHANGELOG](CHANGELOG.md).
 > - **Where it has been run:** Linux by hand every day; macOS by hand on two Macs (macOS 26, Apple Silicon); Windows by hand on one real PC, once (2026-10-21), with findings filed. CI builds and starts the packaged app and runs the UI checks on Linux, macOS and Windows. The detail, with the real-account runs, is in [docs/limits.md](docs/limits.md#where-it-has-been-run).
 > - Built by [Three Feathers](https://github.com/three-feathers), tracked on the [project board](https://github.com/orgs/three-feathers/projects/1).
@@ -19,6 +21,18 @@ Agent Durbar is an office-style desktop app to **see, chat with and coordinate A
 ![15 simulated agents at 1440x900](docs/screenshots/m5-sim15-1440x900-closed.png)
 
 > **Disclaimer.** Agent Durbar is an independent community project. It is **not affiliated with, endorsed by or sponsored by GitHub, Microsoft, Anthropic or OpenAI**. "GitHub Copilot", "Visual Studio Code", "Claude" and "Codex" are trademarks of their owners. Durbar only drives the tools you installed yourself, on your own machine.
+
+<!-- build-cost:begin (written by `npm run usage:readme`; method in docs/build-cost.md) -->
+## Build cost so far
+
+**About US$3,758** at API list prices to build this app with AI agents, as of 2026-11-07 (release [`v0.1.12`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.12)), tracked since 2026-10-25. This is an **API list-price estimate, not billing**: Claude Code's own list-price figure, not what anyone was charged. Method and privacy: [docs/build-cost.md](docs/build-cost.md).
+
+![Cumulative build cost by model over releases (API list-price estimate, not billing)](docs/build-cost.svg)
+
+- By model: Opus 5.5 76% (US$2,856), Sonnet 5.5 24% (US$902).
+- By machine or team: linux 100% (US$3,758).
+- Not counted yet: work before 2026-10-25, and other machines and teams (a Mac, Copilot, Codex, the other two owners' setups).
+<!-- build-cost:end -->
 
 ## What it does
 
@@ -71,7 +85,7 @@ npm run typecheck && npm run build && npm test
 npm start                 # the app; DURBAR_SIM=15 npm start for 15 simulated agents, no AI credits
 ```
 
-All `npm run` commands, the repository layout and how we work (spec-driven with [GitHub Spec Kit](https://github.com/github/spec-kit): no code without a spec, a plan and tasks): [docs/development.md](docs/development.md), [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md).
+What the agents spend to build the app (tokens per model, list-price dollars; contributors can add their own machine): [docs/build-cost.md](docs/build-cost.md). All `npm run` commands, the repository layout and how we work (spec-driven with [GitHub Spec Kit](https://github.com/github/spec-kit): no code without a spec, a plan and tasks): [docs/development.md](docs/development.md), [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md).
 
 ## More documentation
 

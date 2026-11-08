@@ -8,6 +8,9 @@
  *     off; a calibration (a new element in a desk) must show at least one event, so a renamed thread or category cannot read as 0 and pass; the text change itself may recalculate 0);
  *   - one status event of one agent, 8 times, each a real change (every sample must draw, none may search; renders, style reads of the floor and layout reads are the median): renders and searches are the app's own counters (`__durbarSimUi.ops()`), reads are offset*, client*, scroll*, getBoundingClientRect and
  *     getClientRects calls. The first proxy for renders, `getComputedStyle(#floor)`, was read twice per render and showed two where there was one;
+ *   - one live paint (a thinking delta rewrites one desk's live line, no render; review of #1138), 8 times: the layout reads, the pencils' frame included (median of the samples without a render);
+ *   - the arcade (spec 102 T262): over 8 status events on one desk, no element is added or removed anywhere under the office;
+ *   - Real office (spec 097 FR-244, T190): over 8 status events that tint and clear one desk's screen (FR-236), no screen or New reply tag is added or removed;
  *   - after each of those status updates no `data-placed` mark sits on anything but a role or a pencil (a finished turn marks the desk unread and shifts keyless spans);
  *   - at 15 agents, 1280x800: after each status pill's filter and its clearing, after an agent starts or stops matching a status filter (a neighbour room's width changes while its HTML does not; its header is made tight by a spacer) and after a body class changes with no room changing (the fit key), the header and usage-line fit classes equal what a
  *     full fit gives (stale fits).
@@ -133,6 +136,11 @@ module.exports = async (ctx) => {
     await drawn(emit('working')); // so that every change below is a real change of one agent's status
     const per = { renders: [], searches: [], reads: [], gcsFloor: [] }, leaks = [];
     for (let i = 0; i < 8; i++) {
+      /* a settled window (#1195, 3 renders once in 8 on Linux CI, 3 of 10 runs under a CPU load): the previous update's visit (a desk walking to a place starts, or ends, on the
+         250 ms visit tick, which renders) lands inside this window on a slow machine. Start only when no visit waits to start or end and no render is queued (the lobby's own
+         settled signals, as check-office-ops-real does); the visit this update starts is the one timer's render the limit below allows */
+      assert.ok(await until(`window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()`, 15000), `${n} agents: the office settled before update ${i}`);
+      await js(TWO_FRAMES);
       await js(`window.__ops.start()`);
       await drawn(emit(i % 2 ? 'working' : 'idle'));
       const o = await js(`window.__ops.stop()`);
@@ -149,6 +157,27 @@ module.exports = async (ctx) => {
     rows[`searchesPerStatus@${n}`] = Math.max(...per.searches);
     rows[`floorStyleReadsPerStatus@${n}`] = med(per.gcsFloor);
     rows[`readsPerStatus@${n}`] = med(per.reads);
+
+    /* one live paint (spec 001 FR-028, review of #1138): a thinking delta rewrites one desk's live line without a render. Its layout reads, through the
+       pencils' frame (two frames waited), must not grow with the pencils of the room: the line's height is read, the names only when it changed */
+    const lid = await js(`(()=>{const e=document.querySelector('#stage .desk[data-id] [data-live]');return e&&e.dataset.live;})()`);
+    assert.ok(lid, `${n} agents: a desk has a live line`);
+    const liveLine = `document.querySelector('#stage [data-live=${jsLiteral(lid)}]')`;
+    await drawn(emit('working').split(id).join(lid)); // working, so that the deltas below change no status
+    const live = { reads: [], renders: [] };
+    for (let i = 0; i < 8; i++) {
+      const word = `Ops step ${i} checked`;
+      await js(`window.__ops.start()`);
+      await js(`window.__durbarSimEmit({type:'thinking',sessionId:${jsLiteral(lid)},reasoningId:'ops-r',timestamp:Date.now(),delta:${jsLiteral(word + '. ')}})`);
+      assert.ok(await until(`(${liveLine}||{}).textContent&&${liveLine}.textContent.includes(${jsLiteral(word)})`, 5000), `${n} agents: live paint ${i} shows`);
+      await js(TWO_FRAMES);
+      const o = await js(`window.__ops.stop()`);
+      live.reads.push(o.reads); live.renders.push(o.renders);
+    }
+    console.log('[ops]', n, 'agents, per live paint (8): reads', live.reads.join(','), 'renders', live.renders.join(','));
+    const quiet = live.reads.filter((_, i) => live.renders[i] === 0); // a sample with a render in it (a timer's) measures the render
+    assert.ok(quiet.length >= 4, `${n} agents: at least 4 live paints without a render (${live.renders})`);
+    rows[`readsPerLivePaint@${n}`] = med(quiet);
 
     if (n === 15) {
       /* stale fits (T156): what an incremental fit leaves must equal a full fit, after a status filter and its clearing, at 1280x800 */
@@ -219,6 +248,44 @@ module.exports = async (ctx) => {
     await H.load({ w: 1440, h: 900, index: process.env.OPS_INDEX || undefined, query: { sim: String(n), officeview: 'real', worldflags: 'retro', world: 'retro' }, ready: `!!document.querySelector('#stage .ro .ro-marquee')`, readyMs: 30000 });
     await js(`(()=>{const s=document.createElement('style');s.textContent='*,*::before,*::after{animation:none!important;transition:none!important}';document.head.appendChild(s);})();0`);
     await measure('#stage .ro-marquee', '#stage .ro-marquee', `elementsRecalculated@retro${n}`, `${n} agents, arcade`);
+    /* spec 102 T262 (FR-229, SC-024): in the arcade a status update adds or removes no element under the office: 8 status events alternating idle and
+       working on one desk (neither needs you, so the inbox count and its slip keep their words; an error would change them), every element added or
+       removed anywhere under #stage .ro counted (subtree), so a world that rebuilds a desk or a slip on a status change fails (`OPS_INDEX` with a build that
+       appends a node on each status update shows the row fails) */
+    const aid = await js(`(()=>{const p=document.querySelector('#stage .ro-plate.st-working');return p?p.dataset.id:'';})()`);
+    assert.ok(aid, `${n} agents, arcade: a working desk`);
+    /* settle first: the desk's first change of state may send a visitor away or clear an away mark once; the row counts what repeats, from a settled office */
+    for (const st of ['idle', 'working']) {
+      await js(`window.__durbarSimEmit({type:'status',sessionId:${jsLiteral(aid)},timestamp:Date.now(),status:${jsLiteral(st)}})`);
+      assert.ok(await until(`(document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(aid)})+'"]')||{classList:{contains:()=>false}}).classList.contains('st-working')===${jsLiteral(st === 'working')}`, 8000), `${n} agents, arcade: the desk settles (${st})`);
+    }
+    assert.ok(await until(`window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()`, 15000), `${n} agents, arcade: the office settled before the status updates`);
+    await js(`(()=>{window.__aN=0;window.__aO=new MutationObserver(ms=>{for(const m of ms)for(const x of [...m.addedNodes,...m.removedNodes])if(x.nodeType===1)window.__aN++;});window.__aO.observe(document.querySelector('#stage .ro'),{childList:true,subtree:true});})()`);
+    const aseen = [];
+    for (let i = 0; i < 8; i++) {
+      const st = i % 2 ? 'working' : 'idle';
+      await js(`window.__durbarSimEmit({type:'status',sessionId:${jsLiteral(aid)},timestamp:Date.now(),status:${jsLiteral(st)}})`);
+      aseen.push(await until(`(document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(aid)})+'"]')||{classList:{contains:()=>false}}).classList.contains('st-working')===${jsLiteral(st === 'working')}`, 8000));
+    }
+    assert.ok(aseen.every(Boolean), `${n} agents, arcade: every status event reached the desk's plate (${aseen})`);
+    rows[`statusNodes@retro${n}`] = await js(`(window.__aO.disconnect(),window.__aN)`);
+    console.log('[ops]', n, 'agents, arcade: elements added or removed under the office over 8 status updates', rows[`statusNodes@retro${n}`]);
+
+    /* spec 097 FR-244 (T190): a status change that tints or clears a desk's screen (FR-236) adds or removes no screen or New reply tag: the tint is a
+       class on the screen made once per desk. 8 status events alternating error (red) and working (the normal screen) on one desk. */
+    await H.load({ w: 1440, h: 900, index: process.env.OPS_INDEX || undefined, query: { sim: String(n), officeview: 'real' }, ready: `!!document.querySelector('#stage .ro .ro-screen')`, readyMs: 30000 });
+    const tid = await js(`(()=>{const p=[...document.querySelectorAll('#stage .ro-plate[data-state="working"]')][0];return p?p.dataset.id:'';})()`);
+    assert.ok(tid, `${n} agents: a working desk with the normal screen`);
+    await js(`(()=>{window.__tN=0;const f=ms=>{for(const m of ms)for(const x of [...m.addedNodes,...m.removedNodes])if(x.nodeType===1&&x.matches('.ro-screen,.ro-newtag'))window.__tN++;};window.__tO=new MutationObserver(f);for(const l of document.querySelectorAll('#stage .ro-art,#stage .ro-chrome'))window.__tO.observe(l,{childList:true});})()`);
+    const seen = [];
+    for (let i = 0; i < 8; i++) {
+      const st = i % 2 ? 'working' : 'error', red = !(i % 2);
+      await js(`window.__durbarSimEmit({type:'status',sessionId:${jsLiteral(tid)},timestamp:Date.now(),status:${jsLiteral(st)}})`);
+      seen.push(await until(`(document.querySelector('#stage .ro-screen[data-for="'+CSS.escape(${jsLiteral(tid)})+'"]')||{classList:{contains:()=>false}}).classList.contains('tint-red')===${jsLiteral(red)}`, 8000));
+    }
+    assert.ok(seen.every(Boolean), `${n} agents: every status event tinted or cleared the screen (${seen})`);
+    rows[`tintNodesPerStatus@${n}`] = await js(`(window.__tO.disconnect(),window.__tN)`);
+    console.log('[ops]', n, 'agents, Real office: screen and tag nodes added or removed over 8 tint changes', rows[`tintNodesPerStatus@${n}`]);
   }
   const { failed, notes } = judge(rows);
   for (const l of notes) console.log('[ops]', l);

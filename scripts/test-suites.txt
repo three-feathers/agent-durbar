@@ -8,6 +8,11 @@ test:attachments
 test:vscode
 test:runtime-core
 test:runtime-redact
+test:livehead
+test:maskoutgoing-fuzz
+test:maskoutgoing-fuzz-b
+test:maskoutgoing
+test:contactlinks
 test:runtime-mcp
 test:runtime-sandbox
 test:history
@@ -33,13 +38,18 @@ test:blogcheck
 test:compressshots
 test:changelog
 test:releasevideo
+test:usage
 test:specsindex
 test:stillhighlights
 test:orgwords
 test:handoff
+test:brainstate
+test:brainloop
+test:brainsurface
 test:toolusage
 test:usagestore
 test:about
+test:contacts
 test:usagetotals
 test:costtable
 test:dialog
@@ -140,6 +150,8 @@ test:mcpservertools
 test:navigator
 test:crew
 test:characters
+test:chargen
+test:imagecheck
 test:crew-assets
 test:realoffice-layout
 test:realoffice-assets
@@ -213,3 +225,6 @@ test:mcpcontextop
 test:mcpcontextipc
 test:quota
 test:featureinventory
+test:simversion
+test:picturebudget
+test:specnumbers

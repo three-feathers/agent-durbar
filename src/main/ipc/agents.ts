@@ -68,6 +68,8 @@ export interface AgentsIpcDeps {
   mcpBusy?(id: string): boolean;
   /** Spec 058 T179: the session ended (End session, Restart session, removed): its next message is a first message again. */
   mcpForget?(id: string): void;
+  /** Spec 058 FR-218: the person pressed Stop: a renewal's automatic note is not sent for a failure from before it. */
+  mcpStopped?(id: string): void;
 }
 
 export function register(deps: AgentsIpcDeps): void {
@@ -117,6 +119,7 @@ export function register(deps: AgentsIpcDeps): void {
   // #1080, item 2). A wait ended on an idle chat is not interrupted: an interrupt with no turn would leave the app expecting an abort
   // (Claude Code's abortExpected) and swallow the next real error (third review of PR #1080).
   ipcHandle('agents:stop', (_e, id: string) => {
+    if (typeof id === 'string') deps.mcpStopped?.(id); // spec 058 FR-218
     if (typeof id === 'string') scheduler()?.stopPassFor(id); // spec 072 FR-007: Stop during a loop pass ends the loop; between passes it stops only that turn
     const ended = typeof id === 'string' && deps.mcpStopWait?.(id) === true;
     if (ended && !(deps.mcpBusy?.(id) ?? false)) return undefined;

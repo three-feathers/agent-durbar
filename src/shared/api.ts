@@ -211,6 +211,8 @@ export interface AppSettingsView {
   customPlaces?: CustomPlaceView[];
   /** Serious mode (spec 034): the agent figures show no monster, ambulance or other mood drawing. */
   seriousMode?: boolean;
+  /** spec 052 FR-069: Settings > Motion; absent or true means on */
+  motion?: boolean;
   /** Spec 001 FR-192: desk highlights keep the glow and the New badge but no motion. */
   stillHighlights?: boolean;
   /** Auto-follow work (spec 052 FR-182): off by default. */
@@ -229,6 +231,8 @@ export interface AppSettingsView {
   chatLinksIn?: 'session' | 'system';
   /** Spec 058 FR-213: *Refresh MCP sign-ins automatically* (on unless turned off). */
   mcpSignInRefresh?: boolean;
+  /** Spec 058 FR-227 (issue #1205): *Diagnostics*, off by default: extra activity rows (a renewal that worked). */
+  diagnostics?: boolean;
 }
 
 /** Spec 058 FR-208, FR-211: main's sign-in refresh lines for one chat (names and fixed kinds only; no vendor text, no token). */
@@ -237,7 +241,14 @@ export type McpSignInRefreshNote =
   | { id: string; kind: 'late'; names: string[] }
   | { id: string; kind: 'done' }
   | { id: string; kind: 'not-sent' }
-  | { id: string; kind: 'needs-sign-in'; name: string };
+  | { id: string; kind: 'needs-sign-in'; name: string }
+  /** Spec 058 FR-218 (2026-11-05): the agent was sent one short automatic message after a server was reconnected (the message itself is a `user` event). */
+  | { id: string; kind: 'nudged'; name: string }
+  /** The automatic message could not be sent (the adapter refused it): the window marks it so. */
+  | { id: string; kind: 'nudge-failed'; name: string }
+  /** Spec 058 FR-226 (issue #1205): a reconnect started by the check before a message runs / has ended (the line "Reconnecting <name>…"). */
+  | { id: string; kind: 'reconnecting'; name: string }
+  | { id: string; kind: 'reconnect-end'; name: string };
 
 /** A profile file (spec 043 FR-010); `path` is for display only, the window sends `id` back. */
 export interface ProfileFileInfo {
@@ -690,6 +701,10 @@ export interface AgentMcpEntry {
   since?: number;
   /** Spec 058 FR-092: a failed or needs-sign-in state that came after the server was Running in this session. */
   afterRunning?: boolean;
+  /** Spec 058 FR-221 (2026-11-05): when Agent Durbar last renewed this server's sign-in in the background (epoch ms, display only); only for a connected server. */
+  renewedAt?: number;
+  /** Spec 058 FR-225 (issue #1205): the last check before a message got no answer in 30 s; the row says so until a call or check succeeds. */
+  checkUnknown?: true;
   /** Spec 058 FR-092: the transport the adapter reported (`stdio`, `http`, ...); missing = not reported. */
   transport?: string;
   /** The default from Settings: on for new sessions. */
@@ -708,6 +723,8 @@ export interface AgentMcpEntry {
   canRestart?: boolean;
   /** Spec 058 FR-065: **Sign in** is offered: the agent app can start its own sign-in, the session runs, and this server reads Needs sign-in. */
   canSignIn?: boolean;
+  /** Spec 058 FR-229 (issue #1229): Agent Durbar knows this server needs a new sign-in although the runtime list does not say so (a renewal that did not help, or a session that is not running). */
+  needsSignIn?: true;
   /** Spec 058 FR-164: **Sign in again** is offered: the agent app can redo the sign-in itself, the session runs, and this server is on and not waiting for a first sign-in. */
   canSignInAgain?: boolean;
   /** Spec 058 FR-065: a sign-in is open for this server. The host only, never the address; `expiresInMs` is what is left of the 10 minutes. */
@@ -940,6 +957,7 @@ export interface DurbarApi {
   /** Turn Serious mode on or off (spec 034). */
   setSeriousMode?(on: boolean): Promise<{ ok: boolean; seriousMode?: boolean }>;
   /** Turn Still highlights (no motion) on or off (spec 001 FR-192). */
+  setMotion?(on: boolean): Promise<{ ok: boolean; motion?: boolean }>;
   setStillHighlights?(on: boolean): Promise<{ ok: boolean; stillHighlights?: boolean }>;
   /** Turn Auto-follow work on or off (spec 052 FR-182). `ok: false` (nothing changed, the value in force is returned as `autoFollowWork`) for a value that is not a boolean or a save that failed; no `error` text. */
   setAutoFollowWork?(on: boolean): Promise<{ ok: boolean; autoFollowWork?: boolean; unsaved?: true }>;
@@ -973,6 +991,8 @@ export interface DurbarApi {
   setCheckUpdatesAtStart?(on: boolean): Promise<{ ok: boolean; checkUpdatesAtStart?: boolean }>;
   /** Spec 058 FR-213: *Refresh MCP sign-ins automatically*. */
   setMcpSignInRefresh?(on: boolean): Promise<{ ok: boolean; mcpSignInRefresh?: boolean }>;
+  /** Spec 058 FR-227: Settings > Diagnostics (off by default). */
+  setDiagnostics?(on: boolean): Promise<{ ok: boolean; diagnostics?: boolean }>;
   harnessPaste?(text: string): Promise<{ ok: boolean; error?: string }>;
   harnessCancel?(): Promise<boolean>;
   harnessOpenPage?(kind: string): Promise<{ ok: boolean }>;

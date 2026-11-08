@@ -143,6 +143,10 @@ Animations are subtle, CSS-only in compact densities and stop under reduced-moti
 
 ## Changes
 
+### 2026-11-07: the demo header case narrows in steps (issue #1285, FR-179)
+
+`sim:` The demo case of `check-office-overlap.js` narrowed every room header to 164 px once and required one to give way (`no-aiu`). The user-theme fixture's pixel font still holds at 164 px, so nothing gave way and the 2 user-theme jobs of `check-parallel --themes` failed on `main` (`narrowing the headers made none give way`), at 1440x900 and 1280x800. The headers were not wrong; the 164 px assumption was theme-specific. The driver now narrows in steps (164, 148, 132, 116, 100 px) and stops at the first width where a header gives way; it still fails when none does at 100 px. FR-179 and the app are unchanged. `[KNOWN GAP]` the demo has no cost chip (`roomAiu` is null while the demo is on), so `no-aiu` there marks "the header had to shed a part", not a visible chip going.
+
 ### 2026-11-03: `check-unread` waits for the announcement (spec 021 FR-048b)
 
 `sim:` The driver read the screen-reader announcement of *Mark as read* once, right after the marker cleared; `announce()` writes its text 60 ms later, so the read could come first (1 of 2 runs failed on a Mac on `main`). It now waits with `until()`, and still fails when nothing is announced. Nothing in the app changes.
@@ -749,3 +753,39 @@ Spec 017 FR-029 (owner decision, no doors) removed the Office with cabins layout
   - **Honest limits:** `[KNOWN GAP]` CPU measured on Linux under xvfb, software rendering, one machine, not on macOS or Windows; the blur measured by captured pixels on Linux only, not by eye on a Retina screen; the pulse on waiting desks is lost, so "Waiting" is told by its colour and its words only.
 
 **Tasks:** T190..T191 in `tasks.md`. Numbers taken here: FR-210, T190..T191 (checked against `main`, the remote branches and the open PRs on 2026-11-02).
+
+### 2026-11-05: the screen's tint in Open office; the card glow and waiting halo go (owner; FR-230..FR-232, T192..T196)
+
+**Owner decisions, in order** (Vikram, Telegram, relayed by the coordinator):
+- 08:37 and 08:40 UTC: the Open office waiting halo "looks funny"; Open office takes Real office's lights instead, and the halo goes.
+- **16:46 UTC, recorded on #1150, which replaces the lights:** "no separate status lights in any world. Instead each desk's monitor screen is tinted by status (dark tint behind readable text, at least 4.5:1): amber = needs you, red = error, orange = spending limit (a bit redder than the mock, so it differs from amber), green = done with an unread New reply; working, thinking, idle and asleep keep the normal screen. The light bars, pools, corner call dots and the old glows/halos (Flat card glow, waiting halo, Real office amber ring and red halo) are removed, since the screen is the cue. Status words and the New reply tag stay. Applies to Real office, the arcade and the Flat office."
+
+The rule is spec 097 FR-236 (#1202); this delta is Open office's half, so world parity holds (spec 021 FR-078).
+
+- **FR-230** **The card glow and the waiting halo go** (amends FR-178 and FR-210).
+  - No desk card draws a glow (`::after`) for needs you or for a New reply.
+  - No compact scene draws `halo-waiting` behind its monitor. The working, thinking and error glows behind a compact scene's monitor are not named in the decision and stay.
+  - The words stay: the status pill says Waiting, and FR-172's "New" badge says New.
+  - FR-178's person pulses (the entry jump and breathe on a needs-you or New desk) stay. Owner decision, Vikram, Telegram, 2026-11-05 18:04 UTC, asked whether they go with the glow: "flat office - keep it".
+- **FR-231** **The screen's tint, in every scene kit** (office, pixel, crew).
+  - The scene's screen (`.scr`) takes spec 097 FR-236's four tints, the same values: amber `#553a00`, red `#651414`, orange `#7a2e00` and green `#0f4526` (`--tint-*` in `styles.css`, fixed for meaning, never a theme's).
+  - Precedence as there: amber when the agent needs you, orange at its limit or on a coffee break, red on an error or failing, green for a done desk with an unread reply (helpers never have one), else the normal screen.
+  - `app.js` computes it from the state the desk already shows (`deskTint`), because Open office loads no Real office file (097 SC-004). It is the desk card's `data-tint`, and CSS colours the screen from it, so a new reply tints without a new scene.
+  - Open office's screens are light, and their glyphs were drawn for that. On a tint they take a light ink (`--tint-ink`): the wait card becomes an outline and the done disc gives way to its tick, so no mark is lost.
+  - **A shut card** (the nap bed or lounge of FR-051) has no monitor, and never needs green: an agent with an unread reply keeps its desk (FR-173; `shutters.js` refuses `unread`), so a shut agent's reply is always read. A shut card carries no `data-tint`.
+  - No motion: the tint changes at once. Forced colours: SVG keeps its colours, and the status word and the New badge carry the meaning, as they always did.
+- **FR-232** *Folded into FR-231 (2026-11-05): the corner call light went with the decision; the screen is the cue.*
+
+- `sim:` `scripts/check-001-lights.js` (in `check:ui`), at 1440x900 and 1280x800 in the office, pixel and crew kits. It fails when:
+  - a desk's `data-tint` is not what its state says;
+  - a tinted screen is not filled with its tint, or an untinted one is;
+  - a tinted screen's glyphs are not the light ink;
+  - a card glows, `halo-waiting` is drawn, or an old light part exists;
+  - the screen animates.
+- Mutants, each failing:
+  - the card glow back: `sim-3: the card glows (...), FR-230`;
+  - green over amber, in the page and in `deskTint`'s code: `sim-14 "Waiting": data-tint green, its state says amber`;
+  - the glyph-ink rules removed: `sim-3: 6 glyph colours on the amber screen are not the light ink`.
+- `check-unread`, `check-crew` and `test:unread` assert the tint where they asserted the glow.
+
+**Tasks:** T192..T196 in `tasks.md`. Numbers taken here: FR-230..FR-232 and T192..T196, checked on 2026-11-05 against `main` (FR-229, T191), the remote branches and the open PRs.

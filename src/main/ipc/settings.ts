@@ -18,7 +18,7 @@ export interface SettingsIpcDeps {
 export function register(deps: SettingsIpcDeps): void {
   const { getRunTheme, clearRunTheme } = deps;
   const settingsStore = deps.getSettingsStore;
-  ipcHandle('settings:get', () => ({ ...(settingsStore()?.autopilotLimit !== undefined ? { autopilotLimit: settingsStore()?.autopilotLimit } : {}), defaultMaxAiCredits: settingsStore()?.defaultMaxAiCredits, placeMap: settingsStore()?.placeMap ?? {}, customPlaces: settingsStore()?.customPlaces ?? [], seriousMode: settingsStore()?.seriousMode ?? false, stillHighlights: settingsStore()?.stillHighlights ?? false, autoFollowWork: settingsStore()?.autoFollowWork ?? false, notifyNeedsMe: settingsStore()?.notifyNeedsMe ?? true, breakResume: settingsStore()?.breakResume ?? 'auto', chatLinksIn: settingsStore()?.chatLinksIn ?? 'session', mcpSignInRefresh: settingsStore()?.mcpSignInRefresh ?? MCP_SIGNIN_REFRESH_DEFAULT, mcpWarnLevels: settingsStore()?.mcpWarnLevels, theme: getRunTheme() ?? settingsStore()?.theme ?? 'clean-office', characters: settingsStore()?.characters ?? 'theme', unsaved: settingsStore()?.unsavedKeys ?? [], about: aboutView(app.getVersion()) }));
+  ipcHandle('settings:get', () => ({ ...(settingsStore()?.autopilotLimit !== undefined ? { autopilotLimit: settingsStore()?.autopilotLimit } : {}), defaultMaxAiCredits: settingsStore()?.defaultMaxAiCredits, placeMap: settingsStore()?.placeMap ?? {}, customPlaces: settingsStore()?.customPlaces ?? [], seriousMode: settingsStore()?.seriousMode ?? false, motion: settingsStore()?.motion ?? true, stillHighlights: settingsStore()?.stillHighlights ?? false, autoFollowWork: settingsStore()?.autoFollowWork ?? false, notifyNeedsMe: settingsStore()?.notifyNeedsMe ?? true, breakResume: settingsStore()?.breakResume ?? 'auto', chatLinksIn: settingsStore()?.chatLinksIn ?? 'session', mcpSignInRefresh: settingsStore()?.mcpSignInRefresh ?? MCP_SIGNIN_REFRESH_DEFAULT, diagnostics: settingsStore()?.diagnostics ?? false, mcpWarnLevels: settingsStore()?.mcpWarnLevels, theme: getRunTheme() ?? settingsStore()?.theme ?? 'clean-office', characters: settingsStore()?.characters ?? 'theme', unsaved: settingsStore()?.unsavedKeys ?? [], about: aboutView(app.getVersion()) }));
   /* issues #1023, #1094: a setter answers `{ok, value}`, `ok` only when the write reached disk, so a failed write of a value already in force is not "Saved" */
   const setting = <K extends string, T>(key: K, fallback: T, set: (st: SettingsStore, v: unknown) => Saved<T>, want: (v: unknown) => unknown = (v) => v, unsavedKey?: string) => (_e: unknown, v: unknown) => {
     const st = settingsStore();
@@ -28,6 +28,8 @@ export function register(deps: SettingsIpcDeps): void {
     return { ok: r.ok && !kept, ...(kept ? { unsaved: true } : {}), [key]: r.value } as { ok: boolean; unsaved?: true } & Record<K, T>;
   };
   ipcHandle('settings:setSeriousMode', setting('seriousMode', false, (st, v) => st.setSeriousMode(v)));
+  /* spec 052 FR-069 (issue #1182): Motion, on unless turned off; only a boolean changes it */
+  ipcHandle('settings:setMotion', setting('motion', true, (st, v) => st.setMotion(v)));
   /* spec 001 FR-192: Still highlights (no motion); only a boolean changes it */
   ipcHandle('settings:setStillHighlights', setting('stillHighlights', false, (st, v) => st.setStillHighlights(v)));
   /* spec 052 FR-182 (issue 686): Auto-follow work, off by default; only a boolean is accepted (a real ok) */
@@ -36,6 +38,8 @@ export function register(deps: SettingsIpcDeps): void {
   ipcHandle('settings:setNotifyNeedsMe', setting('notifyNeedsMe', true, (st, v) => st.setNotifyNeedsMe(v)));
   /* spec 081 FR-022 (Q6 = A): the agent-app update check at start: on unless turned off */
   ipcHandle('settings:setCheckUpdatesAtStart', setting('checkUpdatesAtStart', true, (st, v) => st.setCheckUpdatesAtStart(v)));
+  /* spec 058 FR-227 (issue #1205): Diagnostics, off by default; only a boolean changes it */
+  ipcHandle('settings:setDiagnostics', setting('diagnostics', false, (st, v) => st.setDiagnostics(v)));
   /* spec 058 FR-213: Refresh MCP sign-ins automatically (on unless turned off); a non-boolean keeps the setting */
   ipcHandle('settings:setMcpSignInRefresh', setting('mcpSignInRefresh', MCP_SIGNIN_REFRESH_DEFAULT, (st, v) => st.setMcpSignInRefresh(v)));
   /* spec 068 FR-006: what happens when a coffee break ends ('auto' or 'ask'; anything else keeps the setting) */

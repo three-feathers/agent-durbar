@@ -301,3 +301,11 @@ full in the "/" list row and its tooltip, while every other surface masks token 
 *Corrected:*
 - **FR-066** An entry may carry a `source: 'note'` and an **`insertText`**: choosing it puts that text (per spec 083 FR-024's blank-line rule) in the message box in place of the `/word`, sends nothing, and the live region says what was inserted. Entries without `insertText` behave as before (spec 083 FR-030, FR-031).
 - **FR-067** The list opens in a chat whose agent app lists no commands when the folder has notes, and still does not open without commands or notes (FR-008's rules otherwise unchanged); its announcements count commands and notes apart. Note rows are masked and escaped like command rows (spec 083 FR-030).
+
+### 2026-11-06: an `@` list for contacts, next to the `/` list (spec 084 FR-021; decided by the coordinator under Ruben's delegation, spec 084)
+
+*Missing:* the `/` list inserts text or a command; a contact is a recipient, not text, so it does not belong in it (spec 083 keeps `/` for text that goes into the box). Spec 084 (contacts, issue 701) adds a second trigger.
+
+- **The `@` trigger.** In a main chat's message box, `@` followed by at least one character at a word start (start of the box, or after whitespace or `(`) opens a list when at least one contact's name or alias matches (`DurbarNav.rank`). `@src/file.ts` (no contact match) and `alex@example.invalid` (not at a word start) are left alone. FR-066's `source` and `insertText` do not apply: picking a contact sets a recipient chip and removes the typed `@word`; it inserts nothing.
+- **A separate list on the same element.** It reuses `#slashList`, its placement (`placeSlash`) and its keyboard (arrows, Tab and Enter pick, Esc closes) and the helpers of `slashsuggest.js`, as its own list: a `listbox` named *Contacts*, announcements counting contacts (*3 contacts*), favourites first in their order, then the rest, at most 8 rows. It is not a group inside the `/` list, and the `/` list and the `@` list never show at once. FR-008 and FR-067 are unchanged for `/`.
+- Contact rows are masked and escaped like command rows. The contacts themselves, the chip and the preview are owned by spec 084.

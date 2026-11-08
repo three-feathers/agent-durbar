@@ -12,7 +12,7 @@
  *   - a marquee, glow or cue is not FR-260's table for its state; an error's glow leaves its slot; a status update adds a node (FR-261);
  *   - flashes are not on one beat or not 1 change each 1.1 s, a person's bob is off its 4 phases or on someone not working, anything moves but transform and opacity (FR-261);
  *   - a move is not a dissolve of static masks, shows two bodies, or the coin plays more than once (FR-260, FR-262);
- *   - under reduced motion, Serious mode, forced colours or a hidden window anything runs, or a flash is not steady and different from lit (FR-260, FR-074).
+ *   - under reduced motion, Motion off, forced colours or a hidden window anything runs, or a flash is not steady and different from lit (FR-260, FR-074).
  * Screenshots: <SHOTS_OUT>/102-arcade-<n>-<w>x<h>.png
  */
 const path = require('path');
@@ -196,7 +196,10 @@ module.exports = async (ctx) => {
   };
 
   await media(MOTION('no-preference'));
+  /* every state at a cabinet: the lounge (spec 097 FR-246, its own driver check-097-lounge) is switched off for this page, as Settings does, so a done agent keeps its cabinet */
+  await js(`localStorage.setItem('durbar.shutters','off');1`);
   await loadArcade(1440, 900, 15, { romotion: '1', simfreeze: '1' });
+  await js(`localStorage.removeItem('durbar.shutters');1`);
   await setStates(STATES);
   await must(`[...document.querySelectorAll('#stage .ro-marquee.mq-flash,#stage .ro-marquee.mq-flash-red')].length>=2`, 'flashes');
   await must(`${ROOM}.filter(a=>!a.animationName).length===0`, 'a sort over');
@@ -266,7 +269,7 @@ module.exports = async (ctx) => {
   await must(`${ROOM}.filter(a=>/^ro-arc-/.test(a.animationName)).length===0`, 'reduced motion mid-session: no loop of this world, had ' + JSON.stringify(await running()), 4000);
   await media(MOTION('no-preference'));
 
-  /* FR-260: reduced motion, Serious mode, forced colours */
+  /* FR-260: reduced motion, Motion off, forced colours */
   await media(MOTION('reduce'));
   await loadArcade(1440, 900, 15, { romotion: '1', simfreeze: '1' });
   await stillChecks('reduced motion');
@@ -276,13 +279,13 @@ module.exports = async (ctx) => {
   await media(MOTION('no-preference'));
   await loadArcade(1440, 900, 15, { romotion: '1', simfreeze: '1' });
   await js(`window.DurbarScreens.openSettings();0`);
-  await must(`!!document.getElementById('seriousSw')`, 'the Serious mode switch');
-  await js(`document.getElementById('seriousSw').click();document.getElementById('scrClose').click();0`);
-  await must(`document.querySelector('#stage .ro').classList.contains('still')`, 'Serious mode on');
-  await stillChecks('Serious mode');
+  await must(`!!document.getElementById('motionSw')`, 'the Motion switch');
+  await js(`document.getElementById('motionSw').click();document.getElementById('scrClose').click();0`);
+  await must(`document.querySelector('#stage .ro').classList.contains('still')`, 'Motion off');
+  await stillChecks('Motion off');
   await js(`window.DurbarScreens.openSettings();0`);
-  await must(`!!document.getElementById('seriousSw')`, 'the Serious mode switch');
-  await js(`document.getElementById('seriousSw').click();document.getElementById('scrClose').click();0`);
+  await must(`!!document.getElementById('motionSw')`, 'the Motion switch');
+  await js(`document.getElementById('motionSw').click();document.getElementById('scrClose').click();0`);
 
   console.log('[102-arcade] PASS');
 };

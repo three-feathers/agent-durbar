@@ -12,12 +12,15 @@ const LIMITS = {
   searchesPerStatus: 0, // a status change of one agent runs no layout search
   floorStyleReadsPerStatus: 1, // T159: `getComputedStyle(#floor)` once per render (it was twice)
   readsPerStatus: 110, // T156, PROPOSED: measured 98 at 15 agents and 86 at 40 (650 and 998 before); the floor is the checks a status change needs
+  readsPerLivePaint: 1, // review of #1138: one live paint reads its line's height once (measured 1 at 15 and 40 agents); the pencils' names only when it changed
   searchesAtStart: 2, // T157: measured 2 at 15 agents, 1 to 2 at 40
   probesAtStart: 90, // T157: measured 30 at 15, 47 to 85 at 40
   rendersAtStart: 8,
   animationsRunning: 90, // T158: measured 78 at 15 agents
   'animationsRunning@40': 260, // measured 250
   animatedOtherProperties: 0, // FR-180: only transform and opacity animate
+  tintNodesPerStatus: 0, // spec 097 FR-244 (T190): tinting or clearing a screen (FR-236) adds or removes no screen or New reply tag
+  statusNodes: 0, // spec 102 T262 (FR-229): in a world (the arcade) a status update adds or removes no element under the office
   leakedPlaced: 0, // a `data-placed` mark on anything but a role or a pencil
   staleFits: 0, // header and usage-line classes that a full fit would change, after a status filter and a body-class change
 };

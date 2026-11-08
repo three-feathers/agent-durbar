@@ -174,11 +174,12 @@ module.exports = async (ctx) => {
     await closeInbox();
 
     // ---- FR-208 in the chat: a held Alt+A (the answer keys of an open chat) answers nothing, one press answers the oldest ----
+    // (on a Mac the answer keys are Option+Command, spec 052 FR-084: issue 839, the nightly sent Option alone)
     await fresh();
     await perm(A, 'k1-' + w, 'Run key one');
     await perm(A, 'k2-' + w, 'Run key two');
     assert.ok(await until(`document.querySelectorAll('#chat .note.perm.pending').length===2`, 8000), `${w}: two cards wait in the chat`);
-    const alt = (repeat) => js(`document.getElementById('msgInput').dispatchEvent(new KeyboardEvent('keydown',{key:'a',code:'KeyA',altKey:true,repeat:${jsLiteral(!!repeat)},bubbles:true,cancelable:true}))`);
+    const alt = (repeat) => js(`document.getElementById('msgInput').dispatchEvent(new KeyboardEvent('keydown',{key:'a',code:'KeyA',altKey:true,metaKey:${jsLiteral(process.platform === 'darwin')},repeat:${jsLiteral(!!repeat)},bubbles:true,cancelable:true}))`);
     for (let i = 0; i < 3; i++) await alt(true);
     await H.settle(800).catch(() => {});
     assert.deepStrictEqual(await perms(), [], `${w}: a held Alt+A answers nothing ${jsLiteral(await perms())}`);
@@ -186,7 +187,7 @@ module.exports = async (ctx) => {
     assert.ok(await until(`window.__perm.length===1`, 3000), `${w}: one Alt+A answers the oldest`);
     assert.strictEqual((await perms())[0], 'k1-' + w + ':true', `${w}: ... and it is the first card`);
     // held Alt+S and Alt+D answer nothing; one Alt+D denies the oldest (k2 carries a session grant so Alt+S has a button)
-    const altKey = (k, repeat) => js(`document.getElementById('msgInput').dispatchEvent(new KeyboardEvent('keydown',{key:${jsLiteral(k.toLowerCase())},code:${jsLiteral('Key' + k)},altKey:true,repeat:${jsLiteral(!!repeat)},bubbles:true,cancelable:true}))`);
+    const altKey = (k, repeat) => js(`document.getElementById('msgInput').dispatchEvent(new KeyboardEvent('keydown',{key:${jsLiteral(k.toLowerCase())},code:${jsLiteral('Key' + k)},altKey:true,metaKey:${jsLiteral(process.platform === 'darwin')},repeat:${jsLiteral(!!repeat)},bubbles:true,cancelable:true}))`);
     for (let i = 0; i < 3; i++) { await altKey('S', true); await altKey('D', true); }
     await H.settle(800).catch(() => {});
     assert.strictEqual((await perms()).length, 1, `${w}: a held Alt+S and Alt+D answer nothing ${jsLiteral(await perms())}`);

@@ -158,7 +158,7 @@ function simNotesApi(qs: URLSearchParams, folderOf: (id: string) => { key: strin
         if (DN) digest = await DN.digestOf(text, crypto.subtle);
       } catch { digest = ''; }
       if (!digest) { let h = 0; for (let i = 0; i < text.length; i++) h = (Math.imul(h, 31) + text.charCodeAt(i)) >>> 0; digest = ('0000000000000000' + h.toString(16) + text.length.toString(16)).slice(-16); }
-      return add(id, text, input.from ?? role, { ...src(f.session, input.ord, role), digest });
+      return add(id, text, input.from ?? role, { ...src((input as { simSession?: string }).simSession || f.session, input.ord, role), app: (input as { simApp?: string }).simApp || 'copilot', digest }); // simSession, simApp: a driver's note from another session or app (Open source, FR-046)
     },
     notesAdd: async (id, input) => add(id, input && input.text, 'typed'),
     notesUpdate: async (id, noteId, rev, patch) => {
@@ -313,6 +313,7 @@ interface SimAgent {
   /** Spec 058 FR-071 (simmcpauth): servers with a sign-in open (Sign in pressed); `opened` after Open sign-in page. Dropped by End session and Restart session. */
   mcpSign?: Map<string, { opened: boolean; at: number; again?: boolean }>;
   /** The last `mcp` event emitted for this session, like main's `live` list: the dialog's reply reads it (a driver can emit its own). */
+  mcpRenewed?: Map<string, number>; /* spec 058 FR-220: when a driver says Durbar renewed a server in the background (wall clock, display only) */
   mcpReported?: SimAgent['mcpLive']; /* the last list a driver reported through `__durbarSimEmit` (not the simulator's own): its names stay in the dialog */
   mcpAppOff?: Set<string>; /* servers a reported `mcp` list had as `disabled` that this agent's switch did not turn off (the agent app's own config) */
   mcpLive?: { name: string; status: string; error?: string; errorClass?: McpServerStatus['errorClass']; transport?: string }[];
@@ -508,6 +509,8 @@ interface SignInServerView { name: string; status: string; transport?: string; k
 interface SignInRecordView { at?: number; blocked?: 'sign-in' | 'policy' }
 interface SignInPlanInput { moment: 'send' | 'recheck'; now: number; lastResponseAt?: number; resumedAt?: number; on: boolean; allowReadOnly: boolean; readOnly: boolean; platform: string; takesPart: boolean; renews?: boolean; live: boolean; busy: boolean; servers: readonly SignInServerView[]; records: Readonly<Record<string, SignInRecordView>>; inFlight: readonly string[] }
 interface SignInPlan { why: 'off' | 'no-part' | 'not-live' | 'busy' | 'no-moment' | 'first' | 'gap' | 'recheck'; reconnect: { name: string; key: string }[]; join: { name: string; key: string }[]; signInOnly: string[] }
+/** Copy of `isRemoteTransport` in `src/shared/mcp.ts` (the simulator is plain browser code; the planner copy below uses it). */
+const isRemoteTransport = (t: unknown): boolean => typeof t === 'string' && /^(?:http|sse|streamable-?http)$/i.test(t);
 /* mcpsigninrefresh:begin */
 const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
   const GAP = 60 * 60_000;
@@ -532,7 +535,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     if (!s || typeof s.name !== 'string' || seen.has(s.name)) continue;
     seen.add(s.name);
     if (s.off === true || s.status === 'disabled') continue;
-    if (!/^(?:http|sse|streamable-?http)$/i.test(typeof s.transport === 'string' ? s.transport : '')) continue; // remote only: never a local (stdio) server
+    if (!isRemoteTransport(s.transport)) continue; // remote only: never a local (stdio) server
     if (s.signInOpen === true || s.restarting === true || s.policy === true) continue;
     const wants = s.status === 'needs-auth' || (why === 'gap' && s.status === 'connected' && i.platform !== 'darwin');
     if (!wants) continue;
@@ -852,6 +855,8 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       advance: (ms: number) => { simSignIn.offset += Math.max(0, Number(ms) || 0); },
       fate: (name: string, f: string) => { simSignIn.fates.set(String(name), String(f)); },
       lastResponse: (id: string) => simSignIn.last.get(id),
+      push: (p: { id: string; kind: string; name?: string }) => { simSignIn.push(p); },
+      renewed: (id: string, name: string, at: number) => { const q = sims.find((x) => x.info.id === id); if (q) (q.mcpRenewed ??= new Map()).set(String(name), Number(at)); },
     };
     const simSignInGate = async (s: SimAgent): Promise<'go' | 'stopped'> => {
       if (!simSignIn.flag) return 'go';
@@ -2041,6 +2046,8 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         for (const x of servers) { const ob = simOrgServer(s.info.adapterId, x.name); if (ob) Object.assign(x, { orgBlocked: ob }); } // spec 076 FR-205
         /* spec 058 FR-188: a Running (connected), switched-on server in a running session says how its last call failed (the class only) */
         for (const x of servers) { const c = s.mcpCalls?.get(x.name); if (live && c && !s.mcpOff?.has(x.name) && (x as { status?: string }).status === 'connected') Object.assign(x, { lastCall: c }); }
+        /* spec 058 FR-220: "Renewed 12:40" on a connected, switched-on server Durbar renewed in the background */
+        for (const x of servers) { const t = s.mcpRenewed?.get(x.name); if (live && typeof t === 'number' && !s.mcpOff?.has(x.name) && (x as { status?: string }).status === 'connected') Object.assign(x, { renewedAt: t }); }
         return { ok: true, servers, live, app: SIM_APP_NAME[s.info.adapterId ?? 'copilot'] ?? 'GitHub Copilot', ...(kc.mcpStart ? { start: kc.mcpStart } : {}), ...(kc.mcpToggleApplies ? { toggleApplies: kc.mcpToggleApplies } : {}), canRestartSession: live && kc.resume, canListTools: true, toolFilter: true, ...(live && simSignApp(s) ? { canRefresh: true } : {}) };
       },
       /* spec 058 FR-040: a canned Restart: Starting for a moment, then Running */
@@ -2164,6 +2171,8 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     /* spec 024: place mapping kept in memory (plain script: no imports, so the ids are listed here) */
     const placeMap: Record<string, string> = {};
     let seriousMode = false; /* spec 034 */
+    let motion = true; /* spec 052 FR-069 (issue #1182) */
+    let simDiagnostics = false; /* spec 058 FR-227: Settings > Diagnostics */
     let stillHighlights = typeof location !== 'undefined' && new URLSearchParams(location.search).get('simstillhl') === '1'; /* spec 001 FR-192; ?simstillhl=1 starts it saved on (the boot read) */
     let autoFollowWork = false; /* spec 052 FR-182: off by default; the simulator keeps it in memory and refuses a non-boolean like main */
     let notifyNeedsMe = false; /* spec 052 FR-059: off in the demo until you turn it on */
@@ -2270,16 +2279,18 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     } catch {
       /* no saved theme */
     }
-    const { forgetFolder: simNotesForget, ...simNotesCalls } = simNotesApi(simQuery, (id) => { const s = sims.find((x) => x.info.id === id); return s ? { key: s.info.workspaceFile || s.info.cwd, name: (s.info as AgentInfo & { roomName?: string }).roomName ?? s.info.name, session: s.info.id } : undefined; }); // spec 083 FR-060
+    const { forgetFolder: simNotesForget, ...simNotesCalls } = simNotesApi(simQuery, (id) => { const s = sims.find((x) => x.info.id === id); return s ? { key: s.info.workspaceFile || s.info.cwd, name: (s.info as AgentInfo & { roomName?: string }).roomName ?? s.info.name, session: simQuery.get('simresumeid') ? 'resume-' + s.info.id : s.info.id } : undefined; }); // spec 083 FR-060 (simresumeid=1: the saved session id is not the agent's id, as with a Codex thread id)
     const capApi: Partial<DurbarApi> = {
       usageTotals: async () => ({ ok: true, since: savedSince, office: saved.office, folders: saved.folders }),
       usageResetTotals: async () => { savedSince = new Date().toISOString(); saved = { office: zero, folders: [] }; return { ok: true, since: savedSince, office: zero, folders: [] }; },
-      getSettings: async () => ({ mcpSignInRefresh: simSignIn.on, mcpWarnLevels: simMcpLevels, defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, stillHighlights, autoFollowWork, notifyNeedsMe, breakResume, chatLinksIn, ...(simTheme ? { theme: simTheme } : {}), characters: simCharacters, about: { name: 'Agent Durbar', version: '0.1.9 (simulator)', owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
+      getSettings: async () => ({ mcpSignInRefresh: simSignIn.on, diagnostics: simDiagnostics, mcpWarnLevels: simMcpLevels, defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, motion, stillHighlights, autoFollowWork, notifyNeedsMe, breakResume, chatLinksIn, ...(simTheme ? { theme: simTheme } : {}), characters: simCharacters, about: { name: 'Agent Durbar', version: `${(globalThis as unknown as { DurbarAppVersion?: string }).DurbarAppVersion ?? 'dev'} (simulator)`, owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
       setDefaultCap: async (c) => { defaultCap = c !== null && c >= 30 ? Math.round(c * 100) / 100 : undefined; return { ok: true, defaultMaxAiCredits: defaultCap }; },
       setSeriousMode: async (on) => { if (typeof on === 'boolean') seriousMode = on; return { ok: true, seriousMode }; },
+      setMotion: async (on) => { if (typeof on !== 'boolean') return { ok: false, motion }; motion = on; return { ok: true, motion }; },
       setStillHighlights: async (on) => { if (typeof on !== 'boolean') return { ok: false, stillHighlights }; stillHighlights = on; return { ok: true, stillHighlights }; },
       setAutoFollowWork: async (on) => { if (typeof on !== 'boolean') return { ok: false, autoFollowWork }; autoFollowWork = on; return { ok: true, autoFollowWork }; },
       setNotifyNeedsMe: async (on) => { if (typeof on === 'boolean') notifyNeedsMe = on; return { ok: true, notifyNeedsMe }; },
+      setDiagnostics: async (on) => { if (typeof on !== 'boolean') return { ok: false, diagnostics: simDiagnostics }; simDiagnostics = on; return { ok: true, diagnostics: simDiagnostics }; }, // spec 058 FR-227
       setMcpSignInRefresh: async (on) => { if (typeof on === 'boolean') simSignIn.on = on; return { ok: true, mcpSignInRefresh: simSignIn.on }; }, // spec 058 FR-213
       setBreakResume: async (v) => { if (v === 'auto' || v === 'ask') breakResume = v; return { ok: true, breakResume }; },
       setChatLinksIn: async (v) => { if (v === 'session' || v === 'system') chatLinksIn = v; return { ok: true, chatLinksIn }; },
@@ -3626,7 +3637,8 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
           { id: 'prev-2', title: 'Why does the canton lookup return duplicates?', startTime: t - 30 * 3600e3, modifiedTime: t - 29 * 3600e3, branch: 'main' },
           { id: 'prev-3', title: 'Add a retry with backoff to the registry client', startTime: t - 50 * 3600e3, modifiedTime: t - 49 * 3600e3, branch: 'feature/retry' },
           { id: 'prev-4', title: 'Explain why the release workflow failed on the Windows runner and how to fix the path handling', startTime: t - 80 * 3600e3, modifiedTime: t - 79 * 3600e3, branch: 'fix/windows-paths' },
-        ].filter((x) => !prevDeleted.has(x.id));
+        ].map((x) => (simQuery.get('simprevkinds') && (src.info.adapterId ?? 'copilot') !== 'copilot' ? { ...x, id: (src.info.adapterId ?? 'copilot') + '-' + x.id } : x)) // simprevkinds=1: another app lists its own sessions (Open source from another app's chat, FR-046)
+          .filter((x) => !prevDeleted.has(x.id));
         return { ok: true, sessions: all, names: Object.fromEntries(simPrevNames), ...prevMarksOf(src.info.adapterId ?? 'copilot', all.map((x) => x.id)) };
       },
       // Spec 006 FR-026: pins and hides kept in memory for this run (the real ones are ids in durbar-folders.json), same exclusive rule and id shape as main.

@@ -351,15 +351,16 @@
 
 ## FR-191..FR-205: the Needs you panel (2026-11-01, owner). Not before the Retro world
 - [x] T195 Q-NY-1..Q-NY-16 recorded as agent decisions of 2026-11-01, told to the owner and reversible by him [FR-191..FR-204]
-- [ ] T196 Tests first: `createArrivals()` in `attention.js`, `test-attention` with its mutants [FR-193, FR-205]
-- [ ] T197 Panel in place of the modal: non-modal region, no layout effect, automatic opening with no focus change, dismiss and reopen, the Settings switch, keys; `scripts/check-needs-panel.js` steps 1, 2, 3, 8 [FR-191, FR-192, FR-194, FR-195]
+- [x] T267 Owner answers of 2026-11-07 recorded: Q-NY-2..Q-NY-16 are owner decisions; Q-NY-3, Q-NY-12, Q-NY-15 and Q-NY-16 changed; FR-193, FR-194, FR-199, FR-203, FR-205 and T196, T197, T199, T201, T202 updated; T224 and T225 unchanged by the answers (spec 052's 2026-11-07 delta)
+- [ ] T196 Tests first: `createArrivals()` in `attention.js`, `test-attention` with its mutants; an app-start case: what waits at arming opens the panel once, and *Later* closes it (Q-NY-3, owner 2026-11-07, changed) [FR-193, FR-205]
+- [ ] T197 Panel in place of the modal: non-modal region, no layout effect, automatic opening with no focus change, dismiss and reopen, app-start opening with the *Later* button (Q-NY-3), no Settings switch (Q-NY-16: removed from the plan, decide after use), keys; `scripts/check-needs-panel.js` steps 1, 2, 3, 8, 9a [FR-191, FR-192, FR-194, FR-195]
 - [ ] T198 Request binding and guards in rows, by the mechanism on `main` (#994, #1004): stale press, `RISE_GUARD_MS`, `e.repeat`, the word from the card's real outcome; driver steps 5, 6 and mutants [FR-197, FR-198, FR-200]
-- [ ] T199 What a row offers, per the agent decisions: limit, long request, question, form, error, usage window, Read-only; simulator hooks; driver step 7 [FR-196, FR-199]
+- [ ] T199 What a row offers, per the agent decisions: limit, long request, question, form, error, usage window, Read-only; simulator hooks; **option buttons in the row by request id (Q-NY-12, owner 2026-11-07, changed)**; driver steps 7, 9b [FR-196, FR-199]
 - [ ] T200 Announcements and the burst; keyed row updates; one slide, reduced motion, `check:perf`; driver step 4 [FR-201, FR-204]
-- [ ] T201 Chat, other views, sizes, Flat and Real office, tokens, slips; driver steps 9, 10 [FR-202, FR-203]
+- [ ] T201 Chat, other views, sizes, Flat and Real office, tokens; **slips stay visible while the panel is open (Q-NY-15, owner 2026-11-07, changed)**; driver steps 9, 10 [FR-202, FR-203]
 - [ ] T224 Your door: faces in a line, "N outside your door, oldest first", the control's name, below notices. Measure first the rows at 1280 with a notice. Test: `check-needs-panel` step 11 [FR-191, FR-196, FR-203]
 - [ ] T225 In a chat, on request, the panel pushes the chat; composer never covered; hint and chips at 700 px; `check:perf` with a long chat. Test: step 11; mutant: panel over the chat [FR-202, Q-NY-1]
-- [ ] T202 Existing drivers follow the panel; pictures retaken; docs, changelog fragment; older FRs updated in place (the delta's list), spec 003, 074, 092, 097 lines included; `/speckit.converge` [FR-205]
+- [ ] T202 Existing drivers follow the panel; pictures retaken; docs, changelog fragment; older FRs updated in place (the delta's list; the 2026-11-07 owner answers included), spec 003, 074, 092, 097 lines included; `/speckit.converge` [FR-205]
 
 ## FR-214..FR-227: design sweep (2026-11-01, owner). PRs, gates and line-count goals: spec 005 `plan.md`
 - [x] T220 [PR D1, first] `requestText()` puts a space between blocks. Test first: a pure-helper test and a driver that fail on `main` with the run-together words; mutant: old `textContent` [FR-214]
@@ -400,3 +401,10 @@
 
 ## 2026-11-02: activity export, atomic no-follow write (issue #973)
 - [x] T260 `activity:export` through `writeNotesExport` (new `what` and `maxBytes` options); `test-activity` cases for a link target, hard link, FIFO, folder, replace and mode [FR-071]
+- [x] T264 The inbox header's sizes move from `realoffice.css` to `styles.css`; driver `check-inbox-avatar` asserts every inbox avatar is at most 40 px and the first Allow button is hit by `elementFromPoint` [issue #1174]
+
+## 2026-11-05: Serious mode no longer stops motion (issue #1182)
+- [x] T265 Motion is its own Settings switch (default on, `motion:false` stored, `settings:setMotion`); Serious mode hides only the mood drawings and trouble signs; `scripts/check-serious-motion.js` (both sizes, mutation-checked) and `test-credits` round trip; `check-097-motion`, `check-office-ops-real` and `shots-097-realoffice` use the Motion switch [FR-069, FR-069a, FR-069b]
+
+## 2026-11-05: Windows UI drivers wait for the focus (issue #1179)
+- [x] T266 Windows flakes: `check-auto-follow` waits for arrivals with the real focus asked again at each look; `H.focusPage({emulate:'first'})` emulates from the start (`check-edit-popups`, `check-auto-follow`), `emulate:true` stays fallback-only (`check-list-columns`) [issue #1179, test driver only]

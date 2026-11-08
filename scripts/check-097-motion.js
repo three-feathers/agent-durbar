@@ -3,7 +3,7 @@
  * It fails (exit 1) when:
  *   - motion: a working person's two pictures do not alternate (computed opacity over time, and two pixel captures that differ); periods outside 1.15-1.5 s, or more than 2 changes a
  *     second a desk; anything but `transform` and `opacity` in an animation of the people or screens, or no stepped timing; a blur on the zoom (FR-070, FR-180, FR-181, FR-182);
- *   - under reduced motion (emulated, page loaded with it) or Serious mode (the real switch): a person moves, a second frame or a caret is there, or captures differ; the text still changes (FR-071, FR-033);
+ *   - under reduced motion (emulated, page loaded with it) or Settings > Motion off (the real switch; Serious mode no longer stops motion, check-serious-motion): a person moves, a second frame or a caret is there, or captures differ; the text still changes (FR-071, FR-033);
  *   - hidden: animations run or text repaints while hidden; a missed line does not show once on return (FR-074);
  *   - a pose change without its cross-fade, a desk-to-lobby move without its fade at both ends, a person drawn over the desk after coming back (FR-072, FR-073);
  *   - 40 agents: a desk scrolled out of view keeps moving, or paints (FR-181, spec 097 T030 pacing).
@@ -178,7 +178,7 @@ module.exports = async (ctx) => {
   await must(`!document.querySelector('#stage .ro').classList.contains('paused')`, 'running again');
 
   mark('still');
-  /* ---- FR-071, FR-047: reduced motion (emulated, page loaded with it) and Serious mode (the real switch): one still frame, text still updates ---- */
+  /* ---- FR-071, FR-047: reduced motion (emulated, page loaded with it) and Motion off (the real switch): one still frame, text still updates ---- */
   const stillChecks = async (tag) => {
     await must(`document.getElementById('stage').dataset.d==='real'&&document.querySelector('#stage .ro').classList.contains('still')`, tag + ': the scene still');
     await must(`document.querySelectorAll('#stage .ro-person2,#stage .ro-rig').length===0`, tag + ': no second frame and no rig');
@@ -216,16 +216,16 @@ module.exports = async (ctx) => {
   await loadReal(1440, 900);
   await must(`document.querySelectorAll('#stage .ro-rig,#stage .ro-person2,#stage .ro-visitor2').length>0`, 'the rig or second frames without reduced motion');
   await js(`document.getElementById('settingsBtn').click()`);
-  await must(`!!document.getElementById('seriousSw')`, 'the Serious mode switch');
-  await js(`document.getElementById('seriousSw').click()`);
-  await must(`document.getElementById('seriousSw').getAttribute('aria-checked')==='true'`, 'Serious mode on');
+  await must(`!!document.getElementById('motionSw')`, 'the Motion switch');
+  await js(`document.getElementById('motionSw').click()`);
+  await must(`document.getElementById('motionSw').getAttribute('aria-checked')==='false'`, 'Motion off');
   await js(`window.DurbarScreens.close();0`);
   await must(REAL + `&&!document.body.classList.contains('panel-open')`, 'back in the office');
-  await stillChecks('serious');
+  await stillChecks('motion off');
   await js(`document.getElementById('settingsBtn').click()`);
-  await must(`!!document.getElementById('seriousSw')`, 'the Serious mode switch');
-  await js(`document.getElementById('seriousSw').click()`);
-  await must(`document.getElementById('seriousSw').getAttribute('aria-checked')==='false'`, 'Serious mode off');
+  await must(`!!document.getElementById('motionSw')`, 'the Motion switch');
+  await js(`document.getElementById('motionSw').click()`);
+  await must(`document.getElementById('motionSw').getAttribute('aria-checked')==='true'`, 'Motion on again');
   await js(`window.DurbarScreens.close();0`);
   await must(REAL + `&&!document.body.classList.contains('panel-open')`, 'back in the office');
 

@@ -111,7 +111,7 @@ function helpers(ctx) {
   /**
    * Windows CI: the drivers run three at a time on one desktop and a hidden runner window loses the OS focus to a neighbour, so `document.hasFocus()`
    * turns false in the middle of a driver (seen as `pageFocus:false, active:true, focus:false` in check-list-columns). `focusPage()` asks for the real
-   * focus until the page has it and returns whether it does. Only with `{ emulate: true }` does it then fall back to Chromium's focus emulation (CDP
+   * focus until the page has it and returns whether it does. With `{ emulate: true }` it falls back to Chromium's focus emulation only when the real focus does not come; with `{ emulate: 'first' }` it turns the emulation on at once, from the call on, for a driver that tests no OS blur (CDP
    * `Emulation.setFocusEmulationEnabled`), which makes `hasFocus()` true whatever the OS does and so hides every real blur: the caller owns that
    * and ends it with `releaseFocus()` (try/finally) before any step that tests a focus loss. Nothing turns it on by itself, `H.key` included.
    * `loseFocus()` releases, blurs the window and returns whether the page reports no focus, for a driver that tests a blur (assert its result).
@@ -136,6 +136,11 @@ function helpers(ctx) {
   };
   const focusPage = async (o = {}) => {
     const end = Date.now() + (o.ms || 3000);
+    /* emulate:'first': the emulation is on from the start, not only after the real focus failed: a neighbour can take the OS focus later (check-edit-popups,
+       #1179: a focus() behind a dialog fires no focusin in an unfocused page), and releaseFocus() ends it as before. emulate:true keeps the
+       fallback only: a driver that tests a blur after releaseFocus() (check-list-columns) must not start with the emulation, because on Windows
+       the blur it then makes does not reach a page that never owned the OS focus (#1179) */
+    if (o.emulate === 'first') { await emulateFocus(); if (emulating.has(wc())) return w.until('document.hasFocus()', 1500); }
     for (;;) {
       try { if (ctx.win.show) ctx.win.show(); if (ctx.win.focus) ctx.win.focus(); wc().focus(); } catch { /* the window is going away: the guard reports it */ }
       if (await w.until('document.hasFocus()', 400)) return true;

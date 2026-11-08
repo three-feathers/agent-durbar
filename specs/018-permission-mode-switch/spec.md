@@ -53,3 +53,7 @@ spec 058's Restart session (same channel, `reason: 'sandbox'`). The Allow all co
 Since 2026-10-28 ([spec 087](../087-os-sandbox-floor/spec.md) FR-022c, K16 cleared in place on Linux, `real:` T066) the switch to Allow all lowers
 Copilot's floor in that session and its confirmation says "Copilot’s OS sandbox is also turned off for this session." instead; the chip then shows
 *Allow all* with no segment. The kept floor, its button and the menu item remain only when Copilot refuses or does not answer the lowering.
+
+### 2026-11-06: switching to Read-only drops live message-tool tickets (cross-reference to spec 003 and spec 084 FR-054; decided by the coordinator under Ruben's delegation, spec 084)
+
+The mode switch has one more effect. A single-use ticket that lets one message-tool call through the broker (spec 084 FR-052; the broker rule is spec 003's delta of the same date) is made only in Ask and Allow all, never in Read-only, and `setMode('read-only')` drops every live ticket of the session at once: a call that arrives afterwards is denied. Allow all does not approve a message tool without a matching ticket, and no mode gives a session grant for one. The chip, the menu and the confirmations of this spec are unchanged.
