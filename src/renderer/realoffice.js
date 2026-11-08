@@ -288,7 +288,7 @@
 
   /**
    * Draw the office into `stage`. `model`: {folders:[{id,name,path,cost,counts:[{state,n,word}],newSess,menu,agents:[{id,name,role,
-   * state,word,task,label,tip,selected,away,awayLabel,helpers:[state]}]}], places:[{id,label,custom,post,title,go,visitors:[{id,name,
+   * state,word,task,label,tip,selected,away,awayLabel,helpers:[state],helpWords}]}], places:[{id,label,custom,post,title,go,visitors:[{id,name,
    * needsYou,title}]}]}; `view`: {w,h}; `opts`: {still, world, set, rand, remember, onArt}. Returns the layout (for the app's checks).
    */
   function render(stage, model, view, opts) {
@@ -444,7 +444,9 @@
         /* FR-016, FR-090: the name plate is the desk's one focusable button; the app's click handler opens the chat ([data-id]) */
         const pl = el(chrome, 'n:' + k, 'button', 'ro-plate st-' + d.state + (a.selected ? ' sel' : '') + (d.narrow ? ' narrow' : '') + (a.asleep ? ' asleep' : '') + (d.lounge ? ' lounge' : '') + (a.ren ? ' has-ren' : '')); box(pl, d.plate);
         if (pl.type !== 'button') pl.type = 'button'; dset(pl, 'id', k); dset(pl, 'state', d.state); if (d.lounge) dset(pl, 'surface', 'lounge'); else if (pl.dataset.surface) delete pl.dataset.surface; /* spec 098 FR-010: the moment's marker (spec 097 FR-246: every lounge seat) */
-        attr(pl, 'aria-pressed', a.selected ? 'true' : 'false'); attr(pl, 'aria-label', a.label); attr(pl, 'title', a.tip);
+        /* spec 097 FR-308 (review of PR 1322): helpers with no strip (the fallback: the plate's +N and dots) are said in the plate's name and tooltip, in the flat desk's words (`helpWords`) */
+        const hw = !d.strip && a.helpWords && a.helpers && a.helpers.length ? a.helpWords : '';
+        attr(pl, 'aria-pressed', a.selected ? 'true' : 'false'); attr(pl, 'aria-label', hw ? (/\. Open chat panel\.$/.test(a.label) ? a.label.replace(/\. Open chat panel\.$/, hw + '. Open chat panel.') : a.label + hw) : a.label); attr(pl, 'title', hw ? a.tip + ' · ' + hw.slice(2) : a.tip);
         plateFill(pl, a, d.state, !!d.strip);
         /* spec 059 FR-170 (#1155): Open office's rename pencil (.ren[data-ren]: the app's own click and F2 handlers, the same in-place edit), right
            after its plate (a button cannot sit inside one) so the plate's hover and focus show it; CSS anchors it just after the name: no layout read */

@@ -5,7 +5,8 @@
  *   npm run check:ui -- --only check-097-helpers      (builds first)
  *   SHOTS_OUT=<dir>   where its pictures go (097-helpers-<world>-<w>x<h>.png; a temporary folder by default)
  *   HELPERS_WORLDS=photo,cave,retro   the worlds (default: all three; the arcade measured to fit one row of heads under each cabinet's plate, spec 097 FR-306 as built)
- *   HELPERS_MUTANT=nostrip|status|nametile|overlap   no strip is drawn / a status change rebuilds the head's node / a name tile is drawn / a strip lies over its plate (each must fail)
+ *   HELPERS_MUTANT=nostrip|status|nametile|overlap|hidefallback   no strip is drawn / a status change rebuilds the head's node / a name tile is drawn / a strip lies over its plate /
+ *     the fallback "+N and dots" is 0x0, as the arcade drew it before the review of PR #1322 (each must fail)
  *   Two mask mutants change the source (the masks are closures the page cannot reach): edit src/renderer/app.js, `npm run build`, run this driver, then undo the edit. Each must fail:
  *     unmask: `const roHelperMask=helperMask;` -> `const roHelperMask=t=>t;` (the strip's own mask removed). It fails on ESC_TOKEN, a token written `ghp\\_...` (two backslashes):
  *             intake's one unescape leaves `ghp\_...`, which no token shape matches, so only the strip's mask (a second unescape, then redact) hides it.
@@ -23,7 +24,10 @@
  *   - a helper's status change adds or removes any node under the office (statusNodes), replaces the head's node, repaints no dot, does not change the accessible name and tooltip, or moves any box;
  *   - a click on a head does not open that helper's Sub-agent activity view, or "+K" does not open all the helpers (and "Fewer" fold them);
  *   - a head whose picture fails to load shows no silhouette, or shows a letter;
- *   - the default simulator scene (5 folders, a lounge row) draws heads at 1440x900, or at 1280x800 does not fall back to "+N" and dots (no room: spec 097 FR-308).
+ *   - the default simulator scene (5 folders, a lounge row) draws heads at 1440x900, or at 1280x800 does not fall back to "+N" and dots (no room: spec 097 FR-308);
+ *   - in every world at both sizes (the default scene, and the arcade at 1280x800 with simhelpers=6), a fallback "+N and dots" is under 10x10 px, leaves its plate or the window, is covered
+ *     (the top bar), its plate's accessible name or tooltip does not say "<N> helper(s)" (the flat desk's words), or a real click on it does not open the parent's chat panel (the plate's
+ *     click, FR-308 as corrected 2026-11-08: with no strip there is nothing to unfold, so the helpers are found in the parent's chat).
  */
 const os = require('os');
 const fs = require('fs');
@@ -61,6 +65,29 @@ module.exports = async (ctx) => {
     if (MUTANT === 'nametile') await js(`(()=>{const f=()=>document.querySelectorAll('#stage .ro-hd').forEach(b=>{if(!b.querySelector('.ro-hn')){const n=document.createElement('span');n.className='ro-hn';n.style.cssText='position:absolute;left:34px;top:0;font-size:11px;white-space:nowrap';n.textContent=(b.getAttribute('title')||'').split(' · ')[0];b.appendChild(n);}});f();new MutationObserver(f).observe(document.getElementById('stage'),{childList:true,subtree:true});return 1})()`);
     if (MUTANT === 'overlap') await js(`(()=>{const f=()=>document.querySelectorAll('#stage .ro-hstrip').forEach(b=>{b.style.transform='translateY(-28px)'});f();new MutationObserver(f).observe(document.getElementById('stage'),{childList:true,subtree:true});return 1})()`);
   };
+  /* spec 097 FR-308 (review of PR #1322): every fallback "+N and dots" is seen, said and clickable; returns how many were checked */
+  const fallback = async (tag) => {
+    if (MUTANT === 'hidefallback') await js(`(()=>{if(!document.getElementById('mutFb')){const s=document.createElement('style');s.id='mutFb';s.textContent='#stage .ro-help{display:block!important;width:0!important;height:0!important;overflow:hidden!important;padding:0!important}';document.head.append(s)}return 1})()`);
+    const fb = await js(`(()=>{const vw=innerWidth,vh=innerHeight;return [...document.querySelectorAll('#stage .ro-plate .ro-help')].map(e=>{const p=e.closest('.ro-plate'),r=e.getBoundingClientRect(),q=p.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height/2,top=document.elementFromPoint(x,y);
+      return {id:p.dataset.id,n:Number((/\\+(\\d+)/.exec(e.textContent)||[])[1]),w:r.width,h:r.height,inPlate:r.left>=q.left-0.5&&r.right<=q.right+0.5&&r.top>=q.top-0.5&&r.bottom<=q.bottom+0.5,inView:r.left>=0&&r.top>=0&&r.right<=vw&&r.bottom<=vh,hit:!!top&&p.contains(top),slip:!!top&&!!top.closest('.ro-slip'),over:top?(top.className&&top.className.baseVal===undefined?top.tagName+'.'+top.className:top.tagName)+' '+JSON.stringify([top.getBoundingClientRect(),q,r].map(b=>[b.left,b.top,b.width,b.height].map(Math.round))):'',
+        label:p.getAttribute('aria-label')||'',title:p.getAttribute('title')||'',x,y}})})()`);
+    for (const f of fb) {
+      /* the arcade's one-line needs-you pill lies over its plate (owner 2026-11-03, a [KNOWN GAP] in spec 097's delta): only a slip may cover it, and the name still says it */
+      assert.ok(f.w >= 10 && f.h >= 10 && f.inPlate && f.inView && (f.hit || f.slip), `${tag}: ${f.id}'s "+N and dots" is not in view: ${JSON.stringify({ w: f.w, h: f.h, inPlate: f.inPlate, inView: f.inView, hit: f.hit, over: f.over })}`);
+      const words = f.n + ' helper' + (f.n > 1 ? 's' : '');
+      assert.ok(f.n > 0 && f.label.includes('. ' + words + '.') && f.title.includes(words), `${tag}: ${f.id}'s plate does not say "${words}": ${f.label} | ${f.title}`);
+    }
+    const open = fb.filter((f) => f.hit);
+    assert.ok(open.length >= Math.min(1, fb.length), `${tag}: no fallback "+N" is free to click (${fb.length} checked)`);
+    if (open.length) {
+      const f = open[0], name = await js(`(${SIM}.agents().find(a=>a.id===${jsLiteral(f.id)})||{}).name`);
+      for (const type of ['mouseDown', 'mouseUp']) ctx.win.webContents.sendInputEvent({ type, x: Math.round(f.x), y: Math.round(f.y), button: 'left', clickCount: 1 });
+      await must(`document.body.classList.contains('panel-open')&&(document.getElementById('panelTitle')||{}).textContent===${jsLiteral(name)}`, `${tag}: a click on ${f.id}'s "+N" opens its chat panel`);
+      await H.key('Escape');
+      await must(`!document.body.classList.contains('panel-open')`, `${tag}: the panel closes`, 5000);
+    }
+    return fb.length;
+  };
   /* what the layout says and what the page drew, for each desk */
   const read = () => js(`(()=>{const L=window.__durbarSimUi.realLayout(),A=window.__durbarSimUi.agents(),o=document.querySelector('#stage .ro').getBoundingClientRect();
     const R=e=>{const r=e.getBoundingClientRect();return {x:Math.round((r.left-o.left)*10)/10,y:Math.round((r.top-o.top)*10)/10,w:Math.round(r.width*10)/10,h:Math.round(r.height*10)/10}};
@@ -92,6 +119,7 @@ module.exports = async (ctx) => {
       assert.strictEqual(await js(`document.querySelectorAll('#stage .ro-hstrip').length`), 0, `${tag}: no strips in the arcade at this size`);
       assert.ok(await js(`document.querySelectorAll('#stage .ro-plate .ro-help').length>=10`), `${tag}: the plates keep their +N and dots`);
       assert.strictEqual((await read()).rows, 0, `${tag}: helpRows 0`);
+      assert.ok(await fallback(tag) >= 10, `${tag}: the fallbacks checked`);
       continue;
     }
     /* one desk gets more helpers than any strip holds (the event path, as an agent app reports a helper) */
@@ -232,9 +260,14 @@ module.exports = async (ctx) => {
 
   /* the default simulator scene (the linked 097-real-15 pictures: 15 agents in 5 folders, a lounge row, the simulator's own helpers): heads at 1440x900; at 1280x800 the strips' extra height would push the desks
      under the face floor, so the plates keep "+N" and dots (FR-308's last step, recorded in test:realoffice-layout) */
-  for (const [w, h] of SIZES) {
-    const tag = `default scene ${w}x${h}`;
-    await H.load({ w, h, query: q('photo', { sim: '15' }), ready: REAL, readyMs: 30000, settle: false });
+  for (const world of WORLDS) for (const [w, h] of SIZES) {
+    const tag = `default scene, ${world} ${w}x${h}`;
+    await H.load({ w, h, query: q(world, { sim: '15' }), ready: REAL, readyMs: 30000, settle: false });
+    await must(PICS, tag + ': the pictures');
+    const nf = await fallback(tag);
+    console.log('[097-helpers]', tag, 'fallback plates checked:', nf);
+    if (world === 'photo' && w < 1440) assert.ok(nf >= 3, `${tag}: the fallback plates (${nf})`);
+    if (world !== 'photo') continue;
     await must(PICS, tag + ': the pictures');
     const s = await read();
     assert.ok(!s.scroll && s.face >= FACE_FLOOR - 1e-9, `${tag}: no scroll, face ${s.face}`);

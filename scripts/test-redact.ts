@@ -1087,7 +1087,16 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   for (const n of [2, 3, 4, 5, 6, 8]) assert.strictEqual(h('x ' + '\\'.repeat(n) + 'fs01\\homes\\zed_q\\notes'), 'x ~\\notes', 'UNC with ' + n + ' backslashes');
   assert.strictEqual(h('see //fs01/homes/zed_q/notes now'), 'see ~/notes now', 'UNC with forward slashes');
   assert.strictEqual(h('"//fs01/Homes"'), '"~"', 'forward-slash UNC, only host and a home share');
-  assert.strictEqual(h('x //nas.example.invalid/users$/Zed Q/a and //fs1/PROFILES/zq'), 'x ~/a and ~', 'forward-slash UNC: users$, any case, a name with a space');
+  assert.strictEqual(h('x //nas/users$/Zed Q/a and //fs1/PROFILES/zq'), 'x ~/a and ~', 'forward-slash UNC: users$, any case, a name with a space');
+  assert.strictEqual(h('//fs01/homes/u/x and //fs01/Users/u/y and "//srv/home/bob" (see //srv/home/bob)'), '~/x and ~/y and "~" (see ~)', 'forward-slash UNC on a bare host; a closing paren stays');
+  assert.strictEqual(h('\\\\fs01.corp\\homes\\u\\x'), '~\\x', 'the backslash form keeps an FQDN host masked');
+  // third review of PR #1322: a web URL is not a UNC path (a dotted host, localhost, or after src=, href=, srcset=, url()
+  for (const t of ['src="//api.example.com/users/42/avatar.png"', '<img src="//gravatar.com/users/abc">', '//www.example.com/home', '//localhost/home/index.html',
+    'url(//fonts.example/home/x.woff)', 'url("//cdn/home/x.woff")', "href='//mysite/profiles/settings'", 'src=//cdn/profile/pic.png', 'srcset="//img/users/a.png 2x"',
+    '//fs01.corp.example/homes/u'])
+    assert.strictEqual(h(t), t, 'a web URL, not a home on a share: ' + t);
+  // a bare host outside those attributes cannot be told from a NetBIOS server: masked (the safe side, [KNOWN GAP] in spec 097); no `)` is eaten
+  assert.strictEqual(h('"//cdn/profile/pic.png" //mysite/profiles/settings //HOME/users (//cdn/home/x)'), '"~" ~ ~ (~)', 'bare hosts are masked as shares (host, share and the next folder)');
   // second review of PR #1322: `//` is not a UNC path unless the share is a home share
   for (const t of ['//cdn.example.com/lib/app.js', 'src="//cdn.example.com/x.js"', '//TODO/fix/this', 'a //b/c', '//fs01/zed_q/notes', '//fs01/homesick/zed_q', '//fs01/myusers/zed_q'])
     assert.strictEqual(h(t), t, 'not a home on a share: ' + t);
