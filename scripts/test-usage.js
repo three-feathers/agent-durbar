@@ -153,6 +153,8 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
   assert.ok(sc(cum0b, 3000).includes('mostly spread over earlier days rather than measured'), 'scope: "mostly spread" above 50% estimated (3000 of 3758)');
   assert.ok(sc(cum0b, 1000).includes('27% spread over earlier days') && !sc(cum0b, 1000).includes('mostly'), 'scope: at or below 50% the percentage is given, never "mostly"');
   assert.ok(sc(cum0b, 1879).includes('50% spread') && !sc(cum0b, 1879).includes('mostly'), 'scope: exactly half is not "mostly"');
+  const baseSep = lib.validateBaseline({ version: 1, since: '2026-09-01', through: '2026-11-07', note: 'x', models: { 'claude-opus-5-5': 10 }, machines: { linux: 10 } });
+  assert.ok(sc(lib.cumulative([], '2026-11-07', baseSep), 0).includes('work on one machine since 2026-09-01, all measured'), 'scope: the since date is the baseline\'s own (a typed date fails)');
   assert.ok(block.includes('The rest is not counted yet'), 'scope: the rest is said to be not counted');
   assert.ok(block.includes('(docs/build-cost.md)'), 'block: link to docs/build-cost.md');
   assert.ok(detail.includes('Opus 5.5 77% (US$2,956)') && !detail.includes('claude-opus-5-5') && detail.includes('mac 3% (US$100)') && detail.includes('linux 97%') && detail.includes('SPREADNOTE') && detail.includes('Not counted yet: older work') && detail.includes('(build-cost-days.svg)') && detail.includes('(build-cost.svg)'), 'detail: docs/build-cost.md gets both graphs, the spread note, the split and the not-counted line');
