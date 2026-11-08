@@ -159,7 +159,7 @@ module.exports = async (ctx) => {
       assert.ok(await focus(`#stage .ro-plate[data-id="${P[m0]}"]`), `${tag}: the first plate takes the focus`);
       await key('Left', ['alt'], { char: 'never' });
       const diag = async () => [tag, label, 'heard now: ' + await said(), 'plates ' + await plates(A), 'away ' + await js(awayExpr), 'saved ' + await js(savedExpr), 'focus ' + await js(focusExpr)].join('; ');
-      await must(alreadyFirst, async () => 'the first desk says it is already first (' + await diag() + ')');
+      await must(alreadyFirst, async () => { const d = await diag(); console.log('[097-order] ' + d); return d + ' | the first desk says it is already first'; });
       assert.deepStrictEqual(await plates(A), front, `${tag}: and nothing moved`);
       for (let i = 0; i < m0; i++) {
         await key('Right', ['alt'], { char: 'never' });
@@ -171,16 +171,16 @@ module.exports = async (ctx) => {
        or end, and the agents away then are pinned at their place (`crowd`: a pin is never ended by a tick or a tool event). The set cannot change during the walk. Released after it. */
     await must(`window.__durbarSimUi.visitsSettled()`, `${tag}: no visit is about to start or end`, 30000);
     {
-      const mainIds = await js(`window.__durbarSimUi.agents().filter(a=>!a.parent).map(a=>a.id)`);
-      const away1 = await js(`[...document.querySelectorAll('#stage .ro-plate.narrow[data-id]')].map(p=>p.dataset.id)`);
-      for (const id of away1) if (mainIds.includes(id)) await js(`window.__durbarSimUi.crowd('library',1,${jsLiteral(mainIds.indexOf(id))})`);
-      await must(`${jsLiteral(away1)}.every(id=>{const e=document.querySelector('#stage .ro-plate[data-id="'+id+'"]');return e&&e.classList.contains('narrow')})&&document.querySelectorAll('#stage .ro-plate.narrow[data-id]').length===${jsLiteral(away1.length)}`, `${tag}: the away set is pinned (${away1})`);
+      /* the visit record is the truth (a plate shows it a render later, which a loaded machine delays): read who is away from it, pin them by id, then wait for the plates to agree */
+      const away1 = await js(`window.__durbarSimUi.awayIds()`);
+      for (const id of away1) assert.ok(await js(`window.__durbarSimUi.pinAt(${jsLiteral(id)},'library')`), `${tag}: ${id} is pinned`);
+      await must(`${jsLiteral(away1.slice().sort().join())}===[...document.querySelectorAll('#stage .ro-plate.narrow[data-id]')].map(p=>p.dataset.id).sort().join()`, async () => `${tag}: the plates show the pinned away set (${away1.slice().sort()}; shown ${await js(`[...document.querySelectorAll('#stage .ro-plate.narrow[data-id]')].map(p=>p.dataset.id).sort()`)})`);
       await walk(await plates(A), 'the away set the simulator made, pinned');
     }
     /* the case the simulator only sometimes makes, made every time: the first two desks of the room stand away at a place, so the first desk that can move has an away desk before it (it swaps past them, and says already first only at the front of the whole room) */
     {
-      const agentsMain = await js(`window.__durbarSimUi.agents().filter(a=>!a.parent).map(a=>a.id)`), P1 = await plates(A);
-      for (const id of P1.slice(0, 2)) await js(`window.__durbarSimUi.crowd('library',1,${jsLiteral(agentsMain.indexOf(id))})`);
+      const P1 = await plates(A);
+      for (const id of P1.slice(0, 2)) assert.ok(await js(`window.__durbarSimUi.pinAt(${jsLiteral(id)},'library')`), `${tag}: ${id} is pinned`);
       await must(`${jsLiteral([P1[0], P1[1]])}.every(id=>{const e=document.querySelector('#stage .ro-plate[data-id="'+id+'"]');return e&&e.classList.contains('narrow')})`, `${tag}: the first two desks of the room are away (${P1})`);
       const P2 = await plates(A);
       assert.deepStrictEqual(P2.slice(0, 2), P1.slice(0, 2), `${tag}: they keep their places in the row (${P1} / ${P2})`);
