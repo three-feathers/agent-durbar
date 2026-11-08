@@ -82,6 +82,85 @@
           }
         }
       }
+    },
+    "2026-11-08": {
+      "models": {
+        "claude-opus-5-5": {
+          "input": 97772,
+          "output": 683734,
+          "cacheRead": 638736760,
+          "cacheCreation": 2418312,
+          "costUsd": 157.2597900000002,
+          "bySource": {
+            "main": {
+              "tokens": 482719646,
+              "costUsd": 113.75060320000003
+            },
+            "subagent": {
+              "tokens": 40784444,
+              "costUsd": 18.576024600000007
+            },
+            "auxiliary": {
+              "tokens": 118432488,
+              "costUsd": 24.93316220000001
+            },
+            "other": {
+              "tokens": 0,
+              "costUsd": 0
+            }
+          }
+        },
+        "claude-sonnet-5-5": {
+          "input": 7414,
+          "output": 1868731,
+          "cacheRead": 582364262,
+          "cacheCreation": 13227406,
+          "costUsd": 110.00707919999998,
+          "bySource": {
+            "main": {
+              "tokens": 0,
+              "costUsd": 0
+            },
+            "subagent": {
+              "tokens": 597467813,
+              "costUsd": 110.00707919999998
+            },
+            "auxiliary": {
+              "tokens": 0,
+              "costUsd": 0
+            },
+            "other": {
+              "tokens": 0,
+              "costUsd": 0
+            }
+          }
+        },
+        "claude-haiku-5-5": {
+          "input": 5105268,
+          "output": 365212,
+          "cacheRead": 0,
+          "cacheCreation": 0,
+          "costUsd": 0.8931327999999998,
+          "bySource": {
+            "main": {
+              "tokens": 0,
+              "costUsd": 0
+            },
+            "subagent": {
+              "tokens": 0,
+              "costUsd": 0
+            },
+            "auxiliary": {
+              "tokens": 5470480,
+              "costUsd": 0.8931327999999998
+            },
+            "other": {
+              "tokens": 0,
+              "costUsd": 0
+            }
+          }
+        }
+      }
     }
   }
 }

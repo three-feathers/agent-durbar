@@ -16,7 +16,7 @@ When you run many agent sessions across several windows, you end up watching you
 
 **Works with:** GitHub Copilot, Claude Code and OpenAI Codex ([agent apps](docs/harnesses.md)). **Not yet:** signed builds (your OS warns the first time), auto-update, and Windows tried by hand only once; the spending limit is soft ([known limits](docs/limits.md)).
 
-> **Status:** first stable release, latest [`v0.1.12`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.12), unsigned. What changed: [CHANGELOG](CHANGELOG.md).
+> **Status:** first stable release, latest [`v0.1.13`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.13), unsigned. What changed: [CHANGELOG](CHANGELOG.md).
 
 ## What it does
 
@@ -82,7 +82,7 @@ How we work (spec-driven, with [GitHub Spec Kit](https://github.com/github/spec-
 <!-- build-cost:begin (written by `npm run usage:readme`; method in docs/build-cost.md) -->
 ## Build cost so far
 
-**About US$3,758** at API list prices to build this app with AI agents, as of 2026-11-07 (release [`v0.1.12`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.12)), tracked since 2026-10-25. This is an **API list-price estimate, not billing**: Claude Code's own list-price figure, not what anyone was charged. Method and privacy: [docs/build-cost.md](docs/build-cost.md).
+**About US$4,026** at API list prices to build this app with AI agents, as of 2026-11-08 (release [`v0.1.13`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.13)), tracked since 2026-10-25. This is an **API list-price estimate, not billing**: Claude Code's own list-price figure, not what anyone was charged. Method and privacy: [docs/build-cost.md](docs/build-cost.md).
 
 ![Cumulative build cost by model over releases (API list-price estimate, not billing)](docs/build-cost.svg)
 
@@ -90,8 +90,8 @@ Estimated, not measured: US$3,666 of the total, spent before telemetry could cou
 
 ![Daily build cost by model: measured days solid, estimated (spread) days faded and dashed](docs/build-cost-days.svg)
 
-- By model: Opus 5.5 76% (US$2,856), Sonnet 5.5 24% (US$902).
-- By machine or team: linux 100% (US$3,758).
+- By model: Opus 5.5 75% (US$3,013), Sonnet 5.5 25% (US$1,012), Haiku 5.5 0% (US$1).
+- By machine or team: linux 100% (US$4,026).
 - Not counted yet: work before 2026-10-25, and other machines and teams (a Mac, Copilot, Codex, the other two owners' setups).
 <!-- build-cost:end -->
 
