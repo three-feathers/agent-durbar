@@ -67,7 +67,7 @@ function orderedModes(s: FakeSession): { asked: () => boolean; release: () => vo
 
 async function main(): Promise<void> {
   process.exitCode = 1;
-  assert.deepStrictEqual({ ...COPILOT_CAPABILITIES.autopilot }, { capUnit: 'aiu', attachments: true, planApproval: true, verified: false }, 'T022: capability, not verified');
+  assert.deepStrictEqual({ ...COPILOT_CAPABILITIES.autopilot }, { capUnit: 'aiu', attachments: true, planApproval: true, verified: false, capMin: 30 }, 'T022: capability, not verified; its smallest cap (D9) is the adapter\'s own');
 
   // FR-050: Stop acts before anything is awaited: a hung limit answer and a sign-in refresh hold nothing back (Phase 3)
   {
@@ -86,6 +86,31 @@ async function main(): Promise<void> {
     void q.ad.setAutopilot!(q.sid, null, 'stopped');
     assert.deepStrictEqual(reasons(q), ['stopped'], 'a refresh does not hold a stop back');
     (q.ad as unknown as { refreshing?: Promise<void> }).refreshing = undefined;
+  }
+
+  // review of #982, finding 2: Autopilot off during a run, and Stop, act at once but hold a place in the queue until the run's stop is done, so a turn-on
+  // right after them cannot race the old run's late abort (it would end run 2) or its cap restore
+  for (const how of ['off', 'stop'] as const) {
+    const r = await rig();
+    await r.ad.setAutopilot!(r.sid, { limit: 5 });
+    await r.ad.send(r.sid, { text: 'go' });
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((res) => { release = res; });
+    const real = r.s.abort;
+    r.s.abort = async (): Promise<void> => { await real(); await gate; }; // the old run's abort answers late
+    const stop = how === 'off' ? r.ad.setAutopilot!(r.sid, null, 'stopped') : r.ad.interrupt!(r.sid);
+    void stop.catch(() => undefined);
+    const before = r.order().filter((x) => x === 'mode:autopilot').length;
+    const again = r.ad.setAutopilot!(r.sid, { limit: 5 }); // the user turns Autopilot on again at once
+    void again.catch(() => undefined);
+    await until(() => r.order().includes('abort'), `${how}: the old run's abort started at once`);
+    await tick(20);
+    assert.strictEqual(r.order().filter((x) => x === 'mode:autopilot').length, before, `${how}: the turn-on waits for the old run's stop to finish (no race with its late abort)`);
+    release();
+    await settles(stop, `${how}: the stop finished`);
+    await settles(again, `${how}: the turn-on went through after it`);
+    assert.strictEqual(r.order().filter((x) => x === 'mode:autopilot').length, before + 1, `${how}: and then it happened`);
+    assert.ok(r.order().lastIndexOf('mode:autopilot') > r.order().indexOf('abort'), `${how}: after the abort, never before it`);
   }
 
   // only in Allow all
@@ -881,7 +906,7 @@ async function main(): Promise<void> {
     const stopping = r.ad.interrupt(r.sid);
     await until(() => asked, 'Stop is stopping Autopilot: its mode.set waits');
     const typed = r.ad.send(r.sid, { text: 'typed during the stop' });
-    await until(() => r.lines().includes(COPILOT_STOP_WAIT), `${running ? 'run' : 'no run'}: the send says it waits for the Stop`);
+    await tick(20); // review of #982 (finding 2): the send now queues behind the Stop's own place, so it says nothing yet; it simply does not go out
     assert.strictEqual(r.s.calls.filter((c) => c.name === 'send').length, before, `${running ? 'run' : 'no run'}: a send during a Stop that is still stopping Autopilot waits`);
     answer();
     await stopping;

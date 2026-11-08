@@ -321,7 +321,7 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   accountQuota: true, // spec 011 FR-081: account.getQuota (read: no session, no prompt, no spend; spec 068, spec 012 FR-156)
   deleteSession: true, // spec 006 FR-028: CopilotClient.deleteSession (read: SDK 1.0.22-1.0.26 client.d.ts; never run on a real session)
   oneShot: true, // spec 040 FR-015: a throw-away SDK session with no tools and no MCP, deleted after (real 2026-10-20: no tool ran, nothing left on disk)
-  autopilot: Object.freeze({ capUnit: 'aiu', attachments: true, planApproval: true, verified: false }), // spec 099 FR-001: fakes only until T094; nothing in main or the window reads it before T030, T033
+  autopilot: Object.freeze({ capUnit: 'aiu', attachments: true, planApproval: true, verified: false, capMin: 30 }), // spec 099 FR-001: fakes only until T094; nothing in main or the window reads it before T030, T033
 });
 
 /** Spec 059 FR-007: Copilot's own name rule is stricter than Durbar's: no double quotes, at most 100 UTF-16 units, no control characters (SDK `types.d.ts`, `SessionConfig.name`). */
@@ -1292,9 +1292,14 @@ export class CopilotAdapter implements AgentAdapter {
   async setAutopilot(sessionId: string, settings: AutopilotSettings | null, reason: AutopilotEnd = 'stopped'): Promise<void> {
     // FR-059: the place in the queue and the Stop count are taken when this is asked for, as `send` takes them
     const made = this.sessions.get(sessionId);
-    // FR-050: off during a run is the run's stop order, as Stop's is: it acts before anything is awaited and does not queue (a run is no queued
-    // step, and a sign-in refresh may hold the wait below for long)
-    if (settings === null && made?.auto?.running) return this.autopilotOff(sessionId, made, reason);
+    // FR-050: off during a run is the run's stop order, as Stop's is: it acts before anything is awaited and is not held by the queue (a run is no queued
+    // step, and a sign-in refresh may hold the wait below for long). It still TAKES a slot, freed once the stop has finished (`whenStopped`: mode, abort,
+    // cap restore), so a turn-on and a goal made right after it wait for the old run to be gone: its late abort cannot end the next run and its cap restore
+    // cannot overwrite the next run's cap (review of #982, finding 2)
+    if (settings === null && made?.auto?.running) {
+      const held = this.reserve(made);
+      return this.autopilotOff(sessionId, made, reason).finally(held.free);
+    }
     const madeStops = made?.interrupts;
     // FR-059: off reads off at once, for a send step in flight (it goes plain); the mode change waits its turn in the queue
     const offNow = (l: Live | undefined): boolean => {
@@ -1671,7 +1676,10 @@ export class CopilotAdapter implements AgentAdapter {
       // spec 099 FR-050: Stop on Autopilot is the run's own stop order, and it starts before the limit card's answer is awaited
       const running = !!live.auto?.running;
       // FR-059: with no run, `apWasOn` keeps the mode change going although the settings were cleared above
-      const off = running ? this.autopilotOff(sessionId, live, 'stopped') : apWasOn || live.auto?.on ? this.autopilotOff(sessionId, live, 'stopped', true) : undefined;
+      // FR-059 (review of #982, finding 2): it acts at once but holds a place in the queue until the stop is done, as `setAutopilot` off does, so a turn-on
+      // and goal after this Stop wait for the old run's late abort and cap restore
+      const held = running || apWasOn || live.auto?.on ? this.reserve(live) : undefined;
+      const off = held ? (running ? this.autopilotOff(sessionId, live, 'stopped') : this.autopilotOff(sessionId, live, 'stopped', true)).finally(held.free) : undefined;
       await this.cancelLimit(live);
       if (running) {
         await off;

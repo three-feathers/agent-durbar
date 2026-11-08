@@ -18,7 +18,8 @@ import type { AdapterDescriptor } from '../src/adapters/capabilities';
 import type { AgentInfo, PermMode } from '../src/shared/api';
 import { COPILOT_TURN_ON_STOPPED } from '../src/adapters/copilot';
 import { LINE_UNCONFIRMED } from '../src/adapters/autopilotHost';
-import { dialogText, plainLine, readSettings, windowAdapters, NOT_AVAILABLE, REMOTE_ON, CHANGED, ORG_UNREAD } from '../src/main/autopilotops';
+import { eventGate } from '../src/adapters/eventguard';
+import { bothGuards, dialogText, plainLine, readSettings, windowAdapters, NOT_AVAILABLE, REMOTE_ON, CHANGED, ORG_UNREAD } from '../src/main/autopilotops';
 import type { AutopilotOpsDeps } from '../src/main/autopilotops';
 import { OrgPolicyCache } from '../src/main/orgpolicy';
 import { emptyOrgPolicy, wholeOrgPolicy } from '../src/shared/orgpolicy';
@@ -28,7 +29,7 @@ import { folderFingerprint } from '../src/main/gitstatus';
 import { Scheduler } from '../src/main/schedules';
 
 type R = Record<string, unknown>;
-const AP = { capUnit: 'aiu' as const, attachments: true, planApproval: true, verified: false };
+const AP = { capUnit: 'aiu' as const, attachments: true, planApproval: true, verified: false, capMin: 30 };
 
 async function main(): Promise<void> {
   const electronPath = require.resolve('electron');
@@ -80,7 +81,7 @@ async function main(): Promise<void> {
     onAuto = (x) => ops.engaged(x);
     opsDeps.endAutopilot = (x) => ops.endForMode(x);
     opsDeps.autopilotStopSeen = (x) => ops.stopSeen(x);
-    router.setEventGuard((e) => ops.accepts(e));
+    router.setEventGuard(bothGuards(eventGate(() => undefined), ops.accepts)); // the production composition (main.ts), shape check included
     router.onEvent((e) => ops.onEvent(e));
     const seen: AgentEvent[] = [];
     router.onEvent((e) => void seen.push(e));
@@ -112,7 +113,7 @@ async function main(): Promise<void> {
     const x = await office();
     assert.throws(() => handlers.get('agents:setAutopilot')!(foreign, x.id, { limit: 5 }), /did not come from its own window/, 'FR-004: window only');
     assert.deepStrictEqual(x.asked, []);
-    for (const bad of [{ limit: 0 }, { limit: 1001 }, { limit: 1.5 }, { limit: '5' }, { limit: NaN }, { limit: 5, hours: 0.5 }, { limit: 5, hours: 169 }, { limit: 5, hours: '2' }, { limit: 5, cap: -1 }, { limit: 5, cap: 'x' }, { limit: 5, cap: Infinity }, [], 'x', 7]) {
+    for (const bad of [{ limit: 0 }, { limit: 1001 }, { limit: 1.5 }, { limit: '5' }, { limit: NaN }, { limit: 5, hours: 0.5 }, { limit: 5, hours: 169 }, { limit: 5, hours: '2' }, { limit: 5, cap: -1 }, { limit: 5, cap: 0 }, { limit: 5, cap: 'x' }, { limit: 5, cap: Infinity }, [], 'x', 7]) {
       const r = await turnOn(x, bad);
       assert.strictEqual(r.ok, false, JSON.stringify(bad));
     }
@@ -123,7 +124,8 @@ async function main(): Promise<void> {
     const none = await office({ caps: {} });
     assert.match(String((await turnOn(none)).error), /no Autopilot/);
   }
-  assert.deepStrictEqual(readSettings({ limit: 5, cap: 10 }, 'aiu'), { ok: true, settings: { limit: 5, hours: 2, cap: 30 }, raised: true }, 'D9');
+  assert.deepStrictEqual(readSettings({ limit: 5, cap: 10 }, 'aiu', 30), { ok: true, settings: { limit: 5, hours: 2, cap: 30 }, raised: true }, 'D9');
+  assert.deepStrictEqual(readSettings({ limit: 5, cap: 10 }, 'aiu'), { ok: true, settings: { limit: 5, hours: 2, cap: 10 } }, 'finding 6: main raises a cap only to the smallest one the adapter\'s capability gives');
   assert.strictEqual(readSettings({ limit: 5, cap: 0.001 }, 'usd').ok, false);
   assert.strictEqual(readSettings({ limit: 5, cap: 1.5 }, 'tokens').ok, false);
   assert.strictEqual(readSettings({ limit: 5, cap: 5 }, null).ok, false);
@@ -675,6 +677,63 @@ async function main(): Promise<void> {
     }
   }
 
+  // finding 6: each JSDoc sits on its own getter (the Autopilot limit was once put between `notifyNeedsMe`'s doc and its getter)
+  {
+    const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'settings.ts'), 'utf8');
+    assert.ok(/\/\*\* OS notifications when an agent needs you[^\n]*\*\/\n  get notifyNeedsMe\(\)/.test(src), 'finding 6: the notifyNeedsMe doc is on notifyNeedsMe');
+    assert.ok(/\/\*\* Spec 099 S1[^\n]*\*\/\n  get autopilotLimit\(\)/.test(src), 'finding 6: the Autopilot limit doc is on its getter');
+  }
+
+  // ---- review of #982 (Ruben, 2026-11-04): the back-off is bounded and runs once; the told wait waits; no timer is left ----
+  {
+    const hang = <T>(): Promise<T> => new Promise<T>(() => undefined);
+    const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+    const timers = (): number => process.getActiveResourcesInfo().filter((n) => n === 'Timeout').length;
+    // finding 3: the adapter's turn-on answers ok, the mode changes during the call, and the back-off never answers: the handler still answers
+    const h1 = await office({ setupWaitMs: 30 });
+    h1.fake.setAutopilot = async (_s, c): Promise<void> => { if (c) { h1.a.permMode = 'ask'; return; } await hang<void>(); };
+    const r1 = await Promise.race([turnOn(h1), sleep(3000).then(() => 'hung' as const)]);
+    assert.notStrictEqual(r1, 'hung', 'finding 3: a back-off that never answers does not hang agents:setAutopilot');
+    assert.strictEqual(h1.ops.engaged(h1.id), false, 'finding 3: and nothing is left turning on');
+    assert.strictEqual(h1.a.autopilot, undefined, 'finding 3: and Autopilot is not on');
+    // finding 4: a Stop during the adapter's turn-on, which then answers ok: taken back once, not twice, whether it answers in the same tick as the Stop or while main still listens for its refusal
+    for (const late of [false, true]) {
+      const h2 = await office();
+      const offs: number[] = [];
+      let go2: () => void = () => undefined;
+      h2.fake.setAutopilot = async (_s, c): Promise<void> => { if (c) { await new Promise<void>((res) => { go2 = res; }); return; } offs.push(1); };
+      const p2 = turnOn(h2);
+      await until(() => onHold(go2));
+      void h2.call('agents:stop', h2.id);
+      if (late) await tick();
+      go2();
+      await p2;
+      await tick();
+      assert.strictEqual(offs.length, 1, `finding 4 (${late ? 'answers while main listens' : 'answers in the Stop tick'}): a released turn-on that answers ok is taken back once`);
+    }
+    // finding 5a: main waits for a refusal that comes later than the call began, up to toldWaitMs (a wait of 0 ms would answer CHANGED)
+    const h3 = await office({ toldWaitMs: 400 });
+    let go3: () => void = () => undefined;
+    h3.fake.setAutopilot = async (_s, c): Promise<void> => { if (c) { await new Promise<void>((res) => { go3 = res; }); await sleep(40); throw new Error(COPILOT_TURN_ON_STOPPED); } };
+    const p3 = turnOn(h3);
+    await until(() => onHold(go3));
+    void h3.call('agents:stop', h3.id);
+    go3();
+    assert.strictEqual((await p3).error, COPILOT_TURN_ON_STOPPED, 'finding 5a: a refusal that arrives after a delay shorter than the told wait is still the answer');
+    // finding 5c: no timer is left behind by a released turn-on, whatever the bounds are
+    const before = timers();
+    const h4 = await office({ toldWaitMs: 50_000, setupWaitMs: 40_000 });
+    let go4: () => void = () => undefined;
+    h4.fake.setAutopilot = async (_s, c): Promise<void> => { if (c) { await new Promise<void>((res) => { go4 = res; }); throw new Error('The session is not running.'); } };
+    const p4 = turnOn(h4);
+    await until(() => onHold(go4));
+    void h4.call('agents:stop', h4.id);
+    go4();
+    await p4;
+    await tick();
+    assert.ok(timers() <= before, `finding 5c: no timer is left running after a turn-on settles (${timers()} against ${before})`);
+  }
+
   // ---- review: a setup that hangs is bounded; Stop and End always release; a late answer never re-engages ----
   {
     const hang = <T>(): Promise<T> => new Promise<T>(() => undefined);
@@ -902,7 +961,7 @@ async function main(): Promise<void> {
     "confirm: (o) => nativeConfirm(win, o),",
     "remoteOn: (id) => remoteOps.engaged(id),",
     "org: (a) => orgPolicies.autopilotRefusal(appIdOf(a.id)),",
-    "router.setEventGuard((e) => eventShape(e) && autopilotOps.accepts(e));", // with spec 010 FR-035's shape check: both pass
+    "router.setEventGuard(bothGuards(eventShape, autopilotOps.accepts));", // with spec 010 FR-035's shape check: both pass
     "autopilotOn: (id) => autopilotOps.engaged(id) });",
     "endAutopilot: (a) => autopilotOps.endForMode(a), autopilotStopSeen: (id) => autopilotOps.stopSeen(id)",
     "windowAdapters(infos, autopilotOn())",

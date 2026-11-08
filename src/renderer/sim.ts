@@ -428,8 +428,8 @@ const SIM_MODELS: ModelChoice[] = [
 /** Spec 099 FR-080: only when main says Autopilot is on (`simautopilot`, spec *Changes*, Phase 3 gate). `simhostile=1`: the scripted texts carry markup, for the driver. */
 const simApQs = typeof location !== 'undefined' ? new URLSearchParams(location.search) : null;
 const SIM_AUTOPILOT = simApQs?.get('simautopilot') === '1';
-const simApCap = (id: string): { capUnit: 'aiu' | 'usd' | 'tokens'; attachments: boolean; planApproval: boolean; verified: boolean } | undefined =>
-  id === 'copilot' ? { capUnit: 'aiu', attachments: true, planApproval: true, verified: false } : id === 'claude' ? { capUnit: 'usd', attachments: false, planApproval: true, verified: false } : id === 'codex' ? { capUnit: 'tokens', attachments: false, planApproval: false, verified: false } : undefined;
+const simApCap = (id: string): { capUnit: 'aiu' | 'usd' | 'tokens'; attachments: boolean; planApproval: boolean; verified: boolean; capMin?: number } | undefined =>
+  id === 'copilot' ? { capUnit: 'aiu', attachments: true, planApproval: true, verified: false, capMin: 30 } : id === 'claude' ? { capUnit: 'usd', attachments: false, planApproval: true, verified: false } : id === 'codex' ? { capUnit: 'tokens', attachments: false, planApproval: false, verified: false } : undefined;
 const SIM_ORG = typeof location !== 'undefined' && new URLSearchParams(location.search).get('simorgpolicy') === '1';
 /** Spec 087 FR-022c (review on PR #833): `?simsbxlower=refuse`: the app refuses to lower a Copilot floor at the switch to Allow all (the floor is kept, the window toasts). */
 const SIM_LOWER_REFUSE = typeof location !== 'undefined' && new URLSearchParams(location.search).get('simsbxlower') === 'refuse';
@@ -3532,7 +3532,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
           s.info.permMode = 'allow';
           if (s.info.sandbox) { delete s.info.sandbox; emit({ type: 'sandbox', sessionId: id, timestamp: now(), sandbox: null }); }
         }
-        const finalCap = c !== undefined && cap.capUnit === 'aiu' ? Math.max(c, 30) : c;
+        const finalCap = c !== undefined && cap.capMin !== undefined ? Math.max(c, cap.capMin) : c;
         s.info.autopilot = { limit: lim, hours: hrs, ...(finalCap !== undefined ? { cap: finalCap } : {}) };
         simLog(s, 'autopilot-on', `Autopilot on: up to ${lim} more turns`);
         return { ok: true, mode: 'allow', autopilot: s.info.autopilot };

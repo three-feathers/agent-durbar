@@ -19,6 +19,16 @@ import type { OpsDeps } from './agentops';
 type Unit = 'aiu' | 'usd' | 'tokens';
 export type AutopilotResult = { ok: boolean; error?: string; cancelled?: true; mode?: PermMode; autopilot?: AgentInfo['autopilot']; pending?: number; note?: string };
 
+/**
+ * Spec 099 FR-082 with spec 010 FR-035: main's one event guard, the shape check and Autopilot's check. BOTH always run (no short-circuit): the shape check drops
+ * a malformed `ended`, and Autopilot's check must still see it, or main's run would stand on an end nobody could read. main.ts and the tests use this one.
+ */
+export const bothGuards = (shape: (e: AgentEvent) => boolean, accepts: (e: AgentEvent) => boolean) => (e: AgentEvent): boolean => {
+  const shaped = shape(e);
+  const accepted = accepts(e);
+  return shaped && accepted;
+};
+
 export const NOT_AVAILABLE = 'Autopilot is not available yet.';
 export const REMOTE_ON = 'Stop remote control first: Autopilot and remote control from GitHub are never on together.';
 export const ORG_UNREAD = "Durbar could not read your organization's policy for this agent app, so it cannot start Autopilot. Try again in a moment.";
@@ -35,7 +45,6 @@ export const CHANGED = 'This session changed while you were deciding, so Autopil
 export const WARN_LIMIT = 'Above 20 extra turns, this run can spend much more before it stops.';
 export const WARN_HOURS = 'Above 2 hours, this run can spend much more before it stops.';
 export const NOT_VERIFIED = 'Not verified on a real session yet.';
-export const COPILOT_MIN_CAP = 30;
 /** FR-072 (proposed): the dialog warns when this many or more are already on Autopilot. */
 export const SESSIONS_WARN_FROM = 3;
 
@@ -53,7 +62,7 @@ export function maskedLine(v: unknown, max = 300): string {
 export const capWords = (unit: Unit, v: number): string => (unit === 'usd' ? `$${v} (Claude's estimate)` : unit === 'tokens' ? `${v} tokens` : `${v} AI credits`);
 
 /** The window's values, read here: only exact numbers in their bounds, never a string. Returns the settings or the refusal. */
-export function readSettings(raw: unknown, unit: Unit | null): { ok: true; settings: AutopilotSettings; raised?: true } | { ok: false; error: string } {
+export function readSettings(raw: unknown, unit: Unit | null, capMin?: number): { ok: true; settings: AutopilotSettings; raised?: true } | { ok: false; error: string } {
   const x = (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : undefined) as { limit?: unknown; hours?: unknown; cap?: unknown } | undefined;
   if (!x) return { ok: false, error: 'Invalid Autopilot settings.' };
   const limit = x.limit === undefined ? DEFAULT_LIMIT : x.limit;
@@ -67,7 +76,7 @@ export function readSettings(raw: unknown, unit: Unit | null): { ok: true; setti
   if (typeof c !== 'number' || !Number.isFinite(c) || c <= 0) return { ok: false, error: 'The spend cap must be a number above 0.' };
   if (unit === 'tokens' && !Number.isInteger(c)) return { ok: false, error: 'The spend cap must be a whole number of tokens.' };
   if (unit === 'usd' && c < 0.01) return { ok: false, error: 'The spend cap must be at least $0.01.' };
-  if (unit === 'aiu' && c < COPILOT_MIN_CAP) return { ok: true, settings: { ...settings, cap: COPILOT_MIN_CAP }, raised: true }; // D9
+  if (capMin !== undefined && c < capMin) return { ok: true, settings: { ...settings, cap: capMin }, raised: true }; // D9: the app's own smallest cap, from its capability
   return { ok: true, settings: { ...settings, cap: c } };
 }
 
@@ -194,6 +203,13 @@ export function createAutopilotOps(d: AutopilotOpsDeps) {
     return Promise.race([p, t.released, new Promise<never>((_r, rej) => { timer = setTimeout(() => rej(new Error(TOOK_TOO_LONG)), ms); })]).finally(() => clearTimeout(timer));
   };
 
+  /** A call that must answer within `ms`: rejects with TOOK_TOO_LONG after it, and leaves no timer behind. */
+  const settleWithin = <T>(p: Promise<T>, ms: number): Promise<T> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    p.catch(() => undefined);
+    return Promise.race([p, new Promise<never>((_r, rej) => { timer = setTimeout(() => rej(new Error(TOOK_TOO_LONG)), ms); })]).finally(() => clearTimeout(timer));
+  };
+
   /** FR-059: the adapter's refusal text of a call, if it settles within `ms`; undefined when it answered ok or not in time. */
   const toldText = (p: Promise<unknown>, ms: number): Promise<string | undefined> => {
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -242,7 +258,7 @@ export function createAutopilotOps(d: AutopilotOpsDeps) {
     if (a.autopilot) return refuse('This session is already on Autopilot.');
     if (turning.has(a.id)) return refuse('Autopilot is already being turned on for this session.');
     const unit = cap.capUnit;
-    const read = readSettings(raw, unit);
+    const read = readSettings(raw, unit, cap.capMin);
     if (!read.ok) return refuse(read.error);
     const settings = read.settings;
     const spent = spentOf(a.id, unit);
@@ -285,10 +301,15 @@ export function createAutopilotOps(d: AutopilotOpsDeps) {
       }
       // the adapter's answer may come after a limit or a Stop: an on it reports then is taken straight back.
       // An ended session has no Autopilot to take back (FR-059: End during a turn-on), and its "The session is not running." is no failed stop.
-      const backOff = (): Promise<void> => (ad.isLive(a.id) ? Promise.resolve().then(() => ad.setAutopilot?.(a.id, null, 'stopped')).then(() => undefined).catch(() => (ad.isLive(a.id) ? failClosed(a) : undefined)) : Promise.resolve());
+      // The adapter's answer is waited for no longer than `wait`: a back-off that never answers is an unconfirmed stop (FR-054), never a hung handler.
+      const backOff = (): Promise<void> => (ad.isLive(a.id) ? settleWithin(Promise.resolve().then(() => ad.setAutopilot?.(a.id, null, 'stopped')), wait).then(() => undefined).catch(() => (ad.isLive(a.id) ? failClosed(a) : undefined)) : Promise.resolve());
+      // An `on` that comes after the call was given up on is taken back when it comes. One that came before is taken back once: by this handler when the
+      // release was already known, else by the release below (`tookBack` keeps the two from both doing it: a second off that fails on a live session is a
+      // false failClosed). An `on` that comes after the release found the call still unanswered is taken back again here: that is a second, real `on`.
+      let tookBack = false;
       let abandoned = false;
       const call = (async () => ad.setAutopilot?.(a.id, settings))();
-      call.then(() => { if (abandoned) void backOff(); }, () => undefined);
+      call.then(() => { if (abandoned) { tookBack = true; void backOff(); } }, () => undefined);
       try {
         await limited(t, call, wait);
       } catch (err) {
@@ -296,7 +317,7 @@ export function createAutopilotOps(d: AutopilotOpsDeps) {
         if (err === RELEASED) {
           // FR-059: a Stop or an End during the adapter's turn-on: its own refusal says which, if it comes soon; main's state is already down
           const told = await toldText(call, Math.min(d.toldWaitMs ?? TOLD_WAIT_MS, wait));
-          if (told === undefined) void backOff();
+          if (told === undefined && !tookBack) void backOff();
           return { ...refuse(told ?? CHANGED), mode: a.permMode };
         }
         void backOff();
@@ -305,7 +326,7 @@ export function createAutopilotOps(d: AutopilotOpsDeps) {
       }
       // the truth after the last await: a Stop, an End, remote control, a mode change, or a run the guard stopped: Autopilot is not on, and the answer says so
       if (t.stopped || turning.get(a.id) !== t || d.remoteOn(a.id) || a.permMode !== 'allow' || d.agents.get(a.id) !== a || !ad.isLive(a.id)) {
-        await backOff();
+        await settleWithin(backOff(), 2 * wait).catch(() => undefined); // the handler never hangs on the back-off or on the stop that follows its failure
         return { ...refuse(d.remoteOn(a.id) ? REMOTE_ON : CHANGED), mode: a.permMode };
       }
       a.autopilot = { limit: settings.limit, hours: settings.hours ?? DEFAULT_HOURS, ...(settings.cap !== undefined ? { cap: settings.cap } : {}) };

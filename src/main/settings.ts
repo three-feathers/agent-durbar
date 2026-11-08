@@ -229,7 +229,6 @@ export class SettingsStore {
     return { ok, value: this.sandboxAlwaysContinue(app) };
   }
 
-  /** OS notifications when an agent needs you (spec 052 FR-059): on by default; only `false` is written. */
   /** Spec 099 S1: the turn limit last used for Autopilot, remembered only after the person confirmed it. */
   get autopilotLimit(): number | undefined {
     return this.s.autopilotLimit;
@@ -241,6 +240,7 @@ export class SettingsStore {
     this.save();
   }
 
+  /** OS notifications when an agent needs you (spec 052 FR-059): on by default; only `false` is written. */
   get notifyNeedsMe(): boolean {
     return this.s.notifyNeedsMe !== false;
   }

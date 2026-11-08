@@ -104,7 +104,7 @@ import { folderKeyOf, folderNameOf } from '../shared/usagedoc';
 import { agentLabel } from '../shared/toolusage';
 import { autopilotTestGate, devEnv, devWarning } from './devhooks';
 import { AUTOPILOT_WIRED } from '../adapters/autopilotHost';
-import { createAutopilotOps, windowAdapters } from './autopilotops';
+import { bothGuards, createAutopilotOps, windowAdapters } from './autopilotops';
 import { folderFingerprint } from './gitstatus';
 import { isSimBlocked, sealChildProcess, simDetectorFor, simGuardDescriptors, simulatorCount, simulatorOn } from './simguard';
 import childProcess = require('child_process');
@@ -292,7 +292,7 @@ const autopilotOps = createAutopilotOps({
   rememberLimit: (limit) => settingsStore?.setAutopilotLimit(limit),
   warn: (line) => console.warn(redact(line)), // T095: the masked log line (check-console-mask)
 });
-router.setEventGuard((e) => eventShape(e) && autopilotOps.accepts(e)); // spec 099 FR-082, T095 with spec 010 FR-035: both checks, the shape first, before any listener, so nothing uses or forwards a bad one
+router.setEventGuard(bothGuards(eventShape, autopilotOps.accepts)); // spec 099 FR-082, T095 with spec 010 FR-035: both checks, the shape first, before any listener, so nothing uses or forwards a bad one
 router.onEvent((e) => autopilotOps.onEvent(e));
 router.onEvent((e) => { if (!mcp.hidesEvent(e)) toRenderer('agent:event', toWindowEvent(e, outward)); }); // spec 087 (review rounds 7-8): the sandbox event cleaned too; spec 058 FR-215: an elicitation main declined is not shown
 // Spec 087 FR-011: the OS sandbox state is kept on the agent's info (cleaned: own known fields, reason masked and cut), so a reloaded

@@ -116,7 +116,7 @@ module.exports = async (ctx) => {
     assert.strictEqual(form.limit, '5');
     assert.strictEqual(form.hours, '2');
     assert.match(form.text, /No spend cap: Autopilot stops when the task is done/);
-    assert.match(form.text, /US dollars \(Claude's estimate\)/);
+    assert.match(form.text, /US dollars \(an estimate\)/);
     assert.match(form.text, /Not verified on a real session yet/);
     assert.strictEqual(form.warn, 0);
     assert.ok(form.folder, 'from Read-only the form says the folder changes');

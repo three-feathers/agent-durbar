@@ -7128,16 +7128,17 @@ async function restartWithoutSandbox(a0,anchor){
 }
 /* ---------------- spec 099: Autopilot in the window. Everything here follows main: the page alone grants nothing, and the words go through esc or textContent ---------------- */
 const APW=window.DurbarAutopilot||null;
+const AP_MODE='autopilot'; /* the class names are built from it as the other modes' are (one button class set each, spec 070 FR-054) */
 const apUnit=a=>{const c=capsFor(a).autopilot;return c&&c.capUnit?c.capUnit:null;};
 const apSpent=a=>{const u=apUnit(a),us=a.usage||{};return u==='usd'?us.usd||0:u==='aiu'?(us.nano||0)/1e9:undefined;};
 const apTip=a=>{const c=capsFor(a).autopilot;return APW.tooltip(a.info.autopilot,apUnit(a),apSpent(a),!!(c&&c.verified));};
 function apChipHTML(a){const c=a.info.autopilot,sw=sbxWord(a);
-  return `<button class="mode-chip mode-autopilot" id="modeChip" type="button" aria-haspopup="menu" aria-expanded="false" title="${esc(apTip(a))}" data-ap-run="${c.run?esc(String(c.run.continuation)):''}"><span class="mi">${MODE_IC.autopilot}</span><span>${esc(APW.chipLabel(c))}${sw?` · ${esc(sw)}`:''}</span>${ICON('chev')}</button>`;}
+  return `<button class="mode-chip mode-${AP_MODE}" id="modeChip" type="button" aria-haspopup="menu" aria-expanded="false" title="${esc(apTip(a))}" data-ap-run="${c.run?esc(String(c.run.continuation)):''}"><span class="mi">${MODE_IC.autopilot}</span><span>${esc(APW.chipLabel(c))}${sw?` · ${esc(sw)}`:''}</span>${ICON('chev')}</button>`;}
 function apModeIcon(a,text){const t=esc(apTip(a).replace(' Click to change.',''));
   return text?`<span class="modebadge ap-badge" title="${t}" aria-hidden="true">Autopilot</span>`:`<span class="modeic mode-autopilot" title="${t}" aria-hidden="true">${MODE_IC.autopilot}</span>`;}
 function apMenuItem(a){const c=capsFor(a).autopilot;if(!APW||!c||a.parent||!bridge.setAutopilot)return '';
   const o=orgMode(a.info.adapterId,'allow'),why=o?o.why:a.remote?APW.REMOTE:'',on=!!a.info.autopilot; /* FR-070: blocked wherever Allow all is, greyed with the reason; main decides again */
-  return `<button type="button" role="menuitemradio" aria-checked="${on}" data-act="autopilot" class="mm-autopilot${why?' mm-org':''}"${why?' aria-disabled="true"':''} title="${esc(why||APW.HELP)}"><span class="mi">${MODE_IC.autopilot}</span><span class="mt"><b>Autopilot…</b><small>${esc(why||APW.SHORT)}</small></span><span class="ck">${on?'✓':''}</span></button>`;}
+  return `<button type="button" role="menuitemradio" aria-checked="${on}" data-act="autopilot" class="mm-${AP_MODE}${why?' mm-org':''}"${why?' aria-disabled="true"':''} title="${esc(why||APW.HELP)}"><span class="mi">${MODE_IC.autopilot}</span><span class="mt"><b>Autopilot…</b><small>${esc(why||APW.SHORT)}</small></span><span class="ck">${on?'✓':''}</span></button>`;}
 /* the chip, the composer and the office say what main says */
 function apRepaint(a){
   a.role=roleFor(a.info);
@@ -7159,7 +7160,7 @@ function apComposer(a){
 /* FR-055: the settings form, then main's native dialog. Run again on Autopilot… asks the same */
 async function autopilotFlow(a,anchor){
   const c=capsFor(a).autopilot;if(!APW||!c||!bridge.setAutopilot||a.autopilotAsking)return;
-  const app=kindWord(a.info.adapterId),f=APW.form(document,{app,unit:c.capUnit,limit:APP_SETTINGS&&APP_SETTINGS.autopilotLimit,spent:apSpent(a),ownCap:a.info.maxAiCredits,mode:a.info.permMode,folder:roomOf(a).name,verified:!!c.verified});
+  const app=kindWord(a.info.adapterId),f=APW.form(document,{app,unit:c.capUnit,limit:APP_SETTINGS&&APP_SETTINGS.autopilotLimit,spent:apSpent(a),ownCap:a.info.maxAiCredits,mode:a.info.permMode,folder:roomOf(a).name,verified:!!c.verified,capMin:typeof c.capMin==='number'?c.capMin:undefined});
   const r=await askDialog({title:'Autopilot for '+a.name+'?',body:app+' keeps working on each message until it judges the task done, and decides its own questions. Set its limits here.',custom:f,size:'m',returnFocus:anchor,buttons:[{label:'Cancel',value:null},{label:'Continue…',value:'ok',cls:'primary'}]});
   if(!r)return;
   a.autopilotAsking=true;

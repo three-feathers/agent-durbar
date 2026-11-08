@@ -87,7 +87,7 @@ const set = (f: { node: any }, sel: string, v: string) => { const i = f.node.que
   set(tok, '#apCap', '1.5');
   assert.strictEqual(tok.valid(), false);
   tok.node.remove();
-  const co = open({ unit: 'aiu', app: 'Copilot', spent: 1.5, ownCap: 50, limit: 9 });
+  const co = open({ unit: 'aiu', app: 'Copilot', spent: 1.5, ownCap: 50, limit: 9, capMin: 30 });
   assert.deepStrictEqual(co.value(), { limit: 9, hours: 2 }, 'S1');
   assert.match(co.node.textContent, /This session's limit of 50 AI credits still applies/);
   co.node.querySelector('#apCapOn').click();
@@ -97,6 +97,17 @@ const set = (f: { node: any }, sel: string, v: string) => { const i = f.node.que
   set(co, '#apCap', '30');
   assert.strictEqual(co.node.querySelector('#apRaised').hidden, true);
   co.node.remove();
+  // review of #982 (finding 6): the smallest cap is the app's own fact, given by main from the capability; the window knows no app
+  const noMin = open({ unit: 'aiu', app: 'Other', limit: 9 });
+  assert.strictEqual(noMin.node.querySelector('#apRaised'), null, 'no capMin from main: no "smallest cap" note, whatever the unit is');
+  noMin.node.remove();
+  const own = open({ unit: 'usd', app: 'Other', capMin: 2 });
+  own.node.querySelector('#apCapOn').click();
+  set(own, '#apCap', '1');
+  assert.strictEqual(own.node.querySelector('#apRaised').hidden, false, 'the note follows main\'s capMin, in any unit');
+  assert.match(own.node.querySelector('#apRaised').textContent, /^Other's smallest cap is \$2, so Autopilot uses 2\./, 'in the app name and unit it was given');
+  own.node.remove();
+  assert.ok(!/Copilot|Claude|Codex/.test(fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'autopilot.js'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')), 'finding 6: no app is named in the renderer\'s Autopilot words (adapters are plug-ins)');
   const none = open({ unit: null });
   assert.strictEqual(none.node.querySelector('#apCapOn'), null, 'no cap possible');
   assert.deepStrictEqual(none.value(), { limit: 5, hours: 2 });

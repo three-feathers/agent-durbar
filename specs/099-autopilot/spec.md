@@ -804,3 +804,15 @@ Owner decision of Vikram, Telegram DM, 2026-11-03 22:50 UTC, option "A": drop th
 - **Replaces:** the 2026-11-03 safe-default `/word` rule (FR-011, `goalText` reason `command`, removed with `SLASH_COMMAND_RE`). `goalText` refuses `empty`, `reserved` and `too-long` only. The 4000-unit limit and the six reserved words stay: they match the CLI exactly.
 - **Evidence:** the facts are recorded in FR-011; the unverified items stay `[KNOWN GAP]` there. Test: `scripts/test-autopilot.ts` (multi-line `/cost`, a goal starting `/usr/bin` or `/word`, 4000/4001, 2001 emoji = 4002, six words in mixed case).
 - Phase 1: nothing starts a run yet, so no user-visible change.
+
+### 2026-11-08: review of #982 (rubenlupi, 2026-11-04), six findings fixed (FR-030)
+
+The owner lifted the hold on 2026-11-08. All six findings of the review at d90b6fecb are fixed in this PR, each with a test that fails without the fix.
+
+- **FR-082, one guard that cannot short-circuit**: `bothGuards(shape, accepts)` (`src/main/autopilotops.ts`) runs both checks every time. A malformed `ended` is dropped by the shape check and still reaches `accepts`, which ends main's run. `main.ts` and the test harness both use it; `test-router.ts` and the pin in `test-autopilot-ipc.ts` follow the new line. Test: `no run left standing` on the production guard.
+- **FR-050, FR-059, Copilot**: Autopilot off during a run and Stop still act at once (before any await, not held by a sign-in refresh) but now take a place in the session's queue, freed when the run's stop is done. A turn-on and goal after them wait for the old run's late `abort()` and cap restore, so neither can end or overwrite run 2. Test: `test-autopilot-copilot.ts` holds the old run's abort and checks the turn-on's `mode.set` comes after it, for off and for Stop. A message typed during a Stop now queues behind it and no longer says "Waiting for Copilot to stop the last turn" before the Stop is done; it still goes out plain after it.
+- **FR-054, FR-059, hung handler**: the back-off is waited for at most the setup bound, and the final wait at most twice that; a back-off that does not answer is an unconfirmed stop (the session ends), never a hung `agents:setAutopilot`.
+- **FR-059, double back-off**: a released turn-on that answers ok is taken back once (`tookBack`); an `on` that comes after the release found the call unanswered is still taken back when it comes.
+- **Tests added** in `test-autopilot-ipc.ts`: a told wait that must wait for a later refusal, `cap: 0` refused, no timer left after a released turn-on (`getActiveResourcesInfo`).
+- **Adapters are plug-ins**: the app's smallest spend cap is `capMin` of its `autopilot` capability (Copilot: 30). `readSettings` raises to it and the window's note reads it; main and the renderer name no app for it. The form's dollar unit reads "US dollars (an estimate)" (it said "Claude's estimate"). `settings.ts`: the `notifyNeedsMe` doc is back on its getter (test).
+

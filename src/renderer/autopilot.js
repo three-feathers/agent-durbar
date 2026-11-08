@@ -1,5 +1,5 @@
 /* Spec 099 Phase 3: the words of Autopilot in the window, and its settings form. Pure text and createElement/textContent only, so hostile names and numbers cannot become markup;
-   in Node (tests) `require` gives the same object. The form grants nothing (FR-055): the consent is main's native dialog. No vendor names: the app's name is passed in. */
+   in Node (tests) `require` gives the same object. The form grants nothing (FR-055): the consent is main's native dialog. No vendor names and no app's facts: the app's name and its smallest cap come from main (the adapter's capability). */
 (function(root,factory){const m=factory();if(typeof module==='object'&&module.exports)module.exports=m;else root.DurbarAutopilot=m;})(typeof self!=='undefined'?self:this,function(){
   'use strict';
   const DEFAULT_LIMIT=5,DEFAULT_HOURS=2,MAX_LIMIT=1000,MIN_HOURS=1,MAX_HOURS=168,LIMIT_WARN=20,HOURS_WARN=2;
@@ -13,9 +13,9 @@
   const SHORT='Keeps going until done; decides its own questions';
   /* FR-040: a word and an icon for each end, never colour alone. The icons are plain characters. */
   const ENDS={done:{icon:'✓',words:app=>(app||'The agent app')+' judged the task done'},cap:{icon:'■',words:()=>'the spend cap was reached'},limit:{icon:'■',words:()=>'the turn limit was reached'},'no-progress':{icon:'○',words:()=>'no progress in two turns'},blocked:{icon:'!',words:()=>'blocked, it could not go on'},stopped:{icon:'■',words:()=>'stopped by you'},error:{icon:'!',words:()=>'an error, or Durbar could not confirm its turns'}};
+  const unitWord={aiu:'AI credits',usd:'US dollars (an estimate)',tokens:'tokens'};
   const num=v=>typeof v==='number'&&isFinite(v);
   const short=v=>Math.round(v*1e4)/1e4;
-  const unitWord={aiu:'AI credits',usd:"US dollars (Claude's estimate)",tokens:'tokens'};
   function money(unit,v){if(!num(v))return '';v=short(v);return unit==='usd'?'$'+v:unit==='tokens'?v+' tokens':v+' AI credits';}
   const turns=n=>n+' more turn'+(n===1?'':'s');
   function capText(ap,unit){return ap&&num(ap.cap)&&unit?money(unit,ap.cap):'no spend cap';}
@@ -52,7 +52,7 @@
       const l=el('label','ap-row ap-capline');box=el('input');box.type='checkbox';box.id='apCapOn';l.appendChild(box);l.appendChild(el('span','ap-lbl','Stop at a spend cap of'));capI=el('input','ap-num');capI.type='number';capI.id='apCap';capI.min=unit==='usd'?'0.01':'1';capI.step=unit==='usd'?'0.01':'1';capI.disabled=true;l.appendChild(capI);l.appendChild(el('span','ap-lbl',unitWord[unit]||''));node.appendChild(l);
       const sp=num(o.spent)?money(unit,o.spent):'';
       counts=el('p','ap-hint',unit==='tokens'?'for this run. '+app+' finishes the turn it is in, so it can go a little over.':'for this session in total ('+(sp||'nothing')+' so far)');counts.id='apCounts';counts.hidden=true;node.appendChild(counts);
-      if(unit==='aiu'){raised=el('p','ap-hint',"Copilot's smallest cap is 30 AI credits, so Autopilot uses 30.");raised.id='apRaised';raised.hidden=true;node.appendChild(raised);}
+      if(num(o.capMin)){raised=el('p','ap-hint',app+"'s smallest cap is "+money(unit,o.capMin)+', so Autopilot uses '+short(o.capMin)+'.');raised.id='apRaised';raised.hidden=true;node.appendChild(raised);}
     }
     const none=el('p','ap-hint');none.id='apNoCap';node.appendChild(none);
     const own=num(o.ownCap)&&unit&&unit!=='tokens'?el('p','ap-hint',"This session's limit of "+money(unit,o.ownCap)+' still applies.'):null;if(own)node.appendChild(own);
@@ -64,7 +64,7 @@
     const paint=()=>{
       lim.w.hidden=!(limit()>LIMIT_WARN);lim.w.textContent=lim.w.hidden?'':WARN_LIMIT;
       hrs.w.hidden=!(hours()>HOURS_WARN);hrs.w.textContent=hrs.w.hidden?'':WARN_HOURS;
-      if(capI)capI.disabled=!capOn();if(counts)counts.hidden=!capOn();if(raised)raised.hidden=!(capOn()&&capI.value!==''&&cap()<30);
+      if(capI)capI.disabled=!capOn();if(counts)counts.hidden=!capOn();if(raised)raised.hidden=!(capOn()&&capI.value!==''&&cap()<o.capMin);
       none.hidden=capOn();none.textContent=capOn()?'':noCap(isFinite(hours())&&hours()>0?hours():DEFAULT_HOURS);
       if(api.onChange)api.onChange(valid());
     };
