@@ -160,3 +160,9 @@ One PR, spec first. Who moves is `shutPlan(r)` (spec 001 FR-051, `shutters.js` `
 - **Renderer** (`src/renderer/realoffice.js`, T201): the desk loop body becomes `deskOne(d)`, run for the zones' desks and then the lounge's; a seat draws the world's `desk.webp` small (`ld:` key) instead of the desk or cabinet, no screen text, a still person, the same plate, monitor, lamp and "z z"; seat plates are moved after the desks' plates for Tab. `sweep` fades a leaving desk picture; a new one fades in. The ease is `box()`'s.
 - **CSS**: `.ro-lseat` table, `.ro-lmon` monitor (photo and cave: the desk monitor scaled; arcade: a pixel frame in `worlds/retro/world.css`), `.ro-plate.lounge`.
 - **Checks**: `test:realoffice-layout` and `test-realoffice-aisles` (FR-246..FR-248, mutants), `scripts/check-097-lounge.js` (FR-246..FR-249), `shots-097-moments` asleep moment and `world-matrix.js` lounge scene updated.
+
+## 2026-11-08 delta: rearrange in Real office (FR-345..FR-349, T250..T254)
+
+- **Pure** (`src/shared/realoffice-layout.ts`, `realoffice-arrangements.ts`, T250): `RealFolder.keep?`; `splitLounge` carries it; `realLayout` and `aislesLayout` use `f.keep ? f.agents : sortDesks(f.agents)`.
+- **App** (`src/renderer/app.js`, T251): `reoMoveKey(kind, key, delta, roomId)` is the one model-based move (group from `officeModel()` and `lobbyPlaces()`, base from `reoFull`, write through `reoApply`, the flat `reoCommit`'s body); `reoStep` and the folder menu's `moveRoomStep` call it; the Alt+arrows handler also finds `.ro-plate[data-id]`, `.ro-sb` and `.ro-lplate[data-place]`; `realModel` sets `keep` from `ORDER.desks[path]`. No new store, channel or tab stop.
+- **Checks**: `test:realoffice-layout`, `test-realoffice-aisles`, `scripts/check-097-order.js` (in `ui-suite`), `shots-033-order` unchanged, `check-office-ops`, `OFFICE_VIEW=real` `check-office-overlap`.
