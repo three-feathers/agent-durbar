@@ -938,7 +938,7 @@
   function placeZoom() {
     const ro = CUR.ro, o = ro.getBoundingClientRect(), fl = ro.closest('#floor'), f = fl ? fl.getBoundingClientRect() : o, d = CUR.desks.get(ZOOM.id);
     const near = (e) => { const b = e.getBoundingClientRect(); return { x: b.left - o.left, y: b.top - o.top, w: b.width, h: b.height }; };
-    const avoid = [d.screen, ...[...ro.querySelectorAll('.ro-plate:is(.st-waiting,.st-limit), .ro-lplate.wait, .ro-chip.wait')].map(near)];
+    const avoid = [d.screen, ...[...ro.querySelectorAll('.ro-plate:is(.st-waiting,.st-limit), .ro-lplate.wait, .ro-chip.wait, .ro-slip:not([hidden])')].map(near)]; /* FR-330 (2026-11-08): a slip or bubble (FR-110) is avoided too; the card is painted above them (CSS) for when no free place is left */
     if (ZOOM.plate) avoid.push(near(ZOOM.plate));
     const view = { x: Math.max(0, f.left - o.left), y: Math.max(0, f.top - o.top), w: Math.min(f.right, o.right) - Math.max(f.left, o.left), h: Math.min(f.bottom, o.bottom) - Math.max(f.top, o.top) };
     const w = Math.max(ZOOM_W[0], Math.min(ZOOM_W[1], view.w * 0.34));

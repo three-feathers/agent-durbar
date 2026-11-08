@@ -68,6 +68,11 @@ module.exports = async (ctx) => {
       facts:[...z.querySelectorAll('.ro-zk .ro-zi')].map(e=>[e.querySelector('.ro-zy').textContent,e.querySelector('.ro-zv').textContent]),rows:[...z.querySelectorAll('.ro-zl .ro-sl')].map(e=>e.textContent),text:z.textContent,small,
       inside:b.left>=-0.5&&b.top>=-0.5&&b.right<=innerWidth+0.5&&b.bottom<=innerHeight+0.5,coversPlate:b.left<pl.right&&pl.left<b.right&&b.top<pl.bottom&&pl.top<b.bottom,
       w:b.width,aria:z.getAttribute('aria-label'),region:z.getAttribute('role'),live:z.getAttribute('aria-live'),node:z.dataset.node||(z.dataset.node=String(Math.random()))}})()`);
+  /* FR-330: nothing paints over the card. The panel takes no pointer events, so for this read it takes them for a moment: the topmost element at its corners and centre must be the panel */
+  const onTop = (what) => js(`(()=>{const z=document.getElementById('roZoom');z.style.pointerEvents='auto';const b=z.getBoundingClientRect(),bad=[];
+    for(const [fx,fy] of [[.5,.5],[.02,.04],[.98,.04],[.02,.96],[.98,.96],[.5,.04],[.5,.96]]){const x=b.left+(b.width-1)*fx,y=b.top+(b.height-1)*fy,e=document.elementFromPoint(x,y);if(!e||!z.contains(e))bad.push(Math.round(x)+','+Math.round(y)+' '+(e&&(e.className||e.tagName)));}
+    z.style.pointerEvents='';const slips=[...document.querySelectorAll('#stage .ro-slip:not([hidden])')].filter(e=>{const r=e.getBoundingClientRect();return r.left<b.right&&b.left<r.right&&r.top<b.bottom&&b.top<r.bottom}).length;
+    return {bad,slips}})()`).then((r) => { assert.deepStrictEqual(r.bad, [], `${what}: something paints over the card: ${JSON.stringify(r.bad)}`); assert.strictEqual(r.slips, 0, `${what}: a slip lies over the card`); });
   const noBad = (what, c) => { for (const b of BAD) assert.ok(!c.text.includes(b), `${what}: the card shows ${JSON.stringify(b)}: ${c.text}`); };
 
   const shots = [];
@@ -92,6 +97,7 @@ module.exports = async (ctx) => {
     const c1 = await card();
     assert.ok(c1 && c1.id === wk && c1.node === c0.node, `${tag}: moving over the parts of one desk keeps the same panel (${c0 && c0.node} then ${c1 && c1.node})`);
     assert.ok(!c1.small.length && c1.inside && !c1.coversPlate && c1.w >= 379 && c1.w <= 481, `${tag}: the card: no text under 10.5 px (${c1.small}), inside the window, not over its plate, 380-480 px wide (${c1.w})`);
+    await onTop(`${tag} desk`);
     assert.strictEqual(c1.live, null, `${tag}: not a live region`);
     assert.ok(c1.facts.every(([k]) => k !== 'Changed'), `${tag}: an agent at a desk has no Changed line (FR-329): ${JSON.stringify(c1.facts)}`);
     await moveTo(1, 1);
@@ -130,6 +136,7 @@ module.exports = async (ctx) => {
       const want = id === 'sim-4' ? /^6 files changed, \+120 −35, 1 commit, 40 min · counted by Agent Durbar$/ : /^2 files changed, \+8 −2, 12 min · counted by Agent Durbar$/;
       assert.ok(ch && want.test(ch[1]), `${tag} ${what}: the Changed line in the flat office's words: ${JSON.stringify(ch)}`);
       noBad(`${tag} ${what}`, c);
+      await onTop(`${tag} ${what}`);
       assert.ok(!c.small.length && c.inside && !c.coversPlate && c.w >= 379 && c.w <= 481, `${tag} ${what}: the card: no text under 10.5 px (${c.small}), inside the window, not over its plate, 380-480 px wide (${c.w})`);
       assert.strictEqual(await js(`(()=>{const f=document.getElementById('floor');return f.scrollHeight<=f.clientHeight+1})()`), true, `${tag} ${what}: the office does not scroll`);
       const file = path.join(OUT, `097-hover-${what}-${w}x${h}.png`);
