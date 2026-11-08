@@ -233,7 +233,7 @@ module.exports = async (ctx) => {
         await js(`window.__perm=[];window.__ann=[];window.__rq1=document.querySelector('#needsPanel .inbox-row[data-id=${jsLiteral(W)}]').dataset.rq;window.__stale=document.querySelector('#needsPanel .inbox-row[data-id=${jsLiteral(W)}] [data-k="approve"]')`);
         await emit({ type: 'permission', sessionId: W, permission: { requestId: 'st1-' + w, state: 'denied', via: 'user' } }); // answered elsewhere
         await perm(W, 'st2-' + w, 'Run the second one');
-        assert.ok(await until(`(document.querySelector('#needsPanel .inbox-row[data-id=${jsLiteral(W)}]')||{dataset:{}}).dataset.rq!==window.__rq1`, 6000), `${at}: the row now holds the second request ${await js(`JSON.stringify([...document.querySelectorAll('#needsPanel .inbox-row')].map(r=>[r.dataset.id,r.dataset.rq,r.textContent.slice(0,60)]))`)}`);
+        assert.ok(await until(`(document.querySelector('#needsPanel .inbox-row[data-id=${jsLiteral(W)}]')||{dataset:{}}).dataset.rq!==window.__rq1`, 6000), `${at}: the row now holds the second request`);
         await js(`window.__stale.click()`);
         assert.ok(await until(`window.__ann.some(t=>/^Already answered/.test(t))||window.__perm.length>0`, 3000), `${at}: the stale press ends`);
         assert.deepStrictEqual(await js('window.__perm.slice()'), [], `${at}: a stale button in the panel sends nothing (its request was answered, the card now holds another)`);
