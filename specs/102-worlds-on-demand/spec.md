@@ -773,6 +773,10 @@ Agent decisions stand until the owner changes them.
 
 ## Changes
 
+### 2026-11-08: one caret element per screen, hidden not removed (FR-229, pointer to spec 008 FR-184)
+
+The arcade screen's repaint is throttled (spec 097 FR-033, once per 2 s) and its caret was removed and re-created with the state, so a trailing repaint under load counted as a node a status update added or removed (`statusNodes@retro`, FR-229, SC-024). `paintScreen` now keeps one caret and hides it, on the desk's clock again when shown. Cause, fix and mutant: spec 008 FR-184.
+
 ### 2026-11-07: RA5 (Light) booked: night built, the light choice withdrawn, T218 stays open (T217..T219, no new numbers)
 
 No app change. Read against `main` at `da760cceb`; the owner's words are the 2026-11-03 entry below (Vikram, 04:34 UTC: "if you cannot find good colors for day mode, just keep night mode"), which withdrew FR-251's Day/Night choice and FR-252's two light sets. This entry only books what that left of RA5.
