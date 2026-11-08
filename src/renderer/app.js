@@ -1674,8 +1674,14 @@ function roFailed(){syncWorld();toast('The Real office could not be loaded, so t
 /* the Alert sign of a needs-you chip in Real office (spec 097 FR-026): a warning triangle in the text colour, built here from trusted markup (the sign set of the removed meeting-room doors, spec 017, kept only for this one) */
 const ALERT_ICON='<svg viewBox="0 0 12 12" aria-hidden="true" focusable="false" data-icon="alert"><path d="M6 1.6 11 10.4H1Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M6 4.8v2.6M6 8.9v.1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
 /* spec 097 FR-306, FR-307 (issue 1139): a desk's helpers for the Real office head figures, in orderedHelpers' order. The name is only in the accessible name and the tooltip (the flat tile's words: helperTileHTML), masked */
-/* a helper's name and task in Real office's accessible name and tooltip: the desk mask, then home folders become ~ (redact.ts maskHomePaths, as the screens do), a link keeps its text only */
-const roHelperMask=t=>{const m=deskMask(t),R=window.DurbarRedact;return R&&typeof R.maskHomePaths==='function'?R.maskHomePaths(m):m;};
+/* spec 097 FR-311 delta 2026-11-08 (review of PR 1322): a helper's words. Home folders become ~ (redact.ts maskHomePaths) on the RAW text
+   first, THEN the desk mask (DurbarSafeText), never the other way: the desk mask undoes Markdown escapes (`\\` -> `\`), so a UNC home
+   `\\server\share\user` would reach maskHomePaths as `\server\share\user`, which is no UNC path, and the user name would show. The one place
+   of this order: onSubagent and onTaskTool store a helper's name with it, a helper card's task lines get homeMask before their mask
+   (setState, safeExcerpt), and Real office's head figures (realSubs) mask the stored words again with it (a link keeps its text only). */
+const homeMask=t=>{const R=window.DurbarRedact;if(!R||typeof R.maskHomePaths!=='function')return t;const h=R.maskHomePaths(t);return typeof h==='string'?h:'';};
+const helperMask=t=>deskMask(homeMask(t));
+const roHelperMask=helperMask;
 function realSubs(a,stOf){
   return orderedHelpers(a).map(h=>{const w=helperWords(h,roHelperMask);
     return {id:h.id,name:w.name||'Helper',state:stOf(h,false),label:w.aria,title:w.tip,selected:ui.selected===h.id};});
@@ -5902,23 +5908,23 @@ function onSubEvent(a,e){
   subPaint(s);
   /* helper card: what it is doing right now */
   if(e.type==='thinking')setState(card,'thinking',null);
-  else if(e.type==='output')setState(card,'working',null,e.final?safeExcerpt(e.text,100):undefined);
+  else if(e.type==='output')setState(card,'working',null,e.final?safeExcerpt(homeMask(e.text),100):undefined);
   else if(e.type==='toolCall'&&e.phase==='start'){setState(card,'working',null,toolTask(e,s.parent&&s.parent.info&&s.parent.info.cwd,80));}
-  else if(e.type==='status'&&e.intent)setState(card,'working',null,safeExcerpt(e.intent,100));
+  else if(e.type==='status'&&e.intent)setState(card,'working',null,safeExcerpt(homeMask(e.intent),100));
   if(ui.selected===card.id)updatePanelHeader();
 }
 function onSubagent(a,e){
   const s=subRec(a,e.subagentId), card=s.card;
-  if(e.name)s.name=safeMask(e.name)||s.name; if(e.model)s.model=e.model; if(e.agentName)s.agentName=safeMask(e.agentName)||''; /* spec 041 FR-065 */
+  if(e.name)s.name=helperMask(e.name)||s.name; if(e.model)s.model=e.model; if(e.agentName)s.agentName=helperMask(e.agentName)||''; /* spec 041 FR-065; spec 097 FR-311 delta: home folders first, on the raw text */
   if(e.task&&e.phase==='started')s.task=e.task;
   if(e.phase==='started'&&e.background===true)s.background=true; /* spec 015 FR-018: the parent's call returns at once; only this helper's own end ends it */
   if(e.durationMs)s.durationMs=e.durationMs; if(e.totalTokens)s.tokens=e.totalTokens; if(e.totalToolCalls!=null)s.tools=Math.max(s.tools,e.totalToolCalls);
   card.name=s.name;card.role=s.agentName?'Helper · '+s.agentName:'Helper';
-  if(e.phase==='started'){s.status='running';setState(card,'working',null,s.task||'Working');}
+  if(e.phase==='started'){s.status='running';setState(card,'working',null,s.task?homeMask(s.task):'Working');}
   else{
     s.t1=Date.now();
-    if(e.phase==='failed'){s.status='failed';s.error=e.error||e.task||'Failed';setState(card,'error',null,safeExcerpt(s.error,100));}
-    else{s.status='done';setState(card,'done','Done',safeExcerpt(s.result||s.lastFinal||s.task,100));}
+    if(e.phase==='failed'){s.status='failed';s.error=e.error||e.task||'Failed';setState(card,'error',null,safeExcerpt(homeMask(s.error),100));}
+    else{s.status='done';setState(card,'done','Done',safeExcerpt(homeMask(s.result||s.lastFinal||s.task),100));}
     s.views.forEach(v=>{tEnd(v.T,{note:false});});
     subCollapse(s);
   }
@@ -5932,8 +5938,8 @@ function onTaskTool(a,e){
     const g=e.args||{};
     if(g.prompt&&!s.prompt)s.prompt=String(g.prompt);
     if(g.description&&!s.task)s.task=String(g.description);
-    if(g.agent_type&&!s.agentName)s.agentName=safeMask(String(g.agent_type))||''; /* spec 041 FR-065 */
-    if(s.name==='Sub-agent'&&s.task)s.name=SHORT(safeMask(s.task),40);
+    if(g.agent_type&&!s.agentName)s.agentName=helperMask(String(g.agent_type))||''; /* spec 041 FR-065 */
+    if(s.name==='Sub-agent'&&s.task)s.name=SHORT(helperMask(s.task),40);
   } else if(e.phase==='update')return; /* FR-095: an update changes no status, does not collapse the block and does not touch the card */
   else if(e.phase==='complete'&&s.background)return; /* spec 015 FR-018 (issue 1141): a background helper's call returns with a launch note, never its result or its end; only the helper's own end event (or its session stopping) ends it */
   else {
@@ -5941,7 +5947,7 @@ function onTaskTool(a,e){
     if(e.phase==='failed'){s.status='failed';s.error=String(e.output||'Failed');}
     else if(s.status==='running'){s.status='done';}
     s.views.forEach(v=>tEnd(v.T,{note:false}));
-    if(s.card)setState(s.card,s.status==='failed'?'error':'done',s.status==='failed'?null:'Done',safeExcerpt(s.result||s.error||s.task,100));
+    if(s.card)setState(s.card,s.status==='failed'?'error':'done',s.status==='failed'?null:'Done',safeExcerpt(homeMask(s.result||s.error||s.task),100));
     subCollapse(s);
   }
   subPaint(s);scheduleRender();

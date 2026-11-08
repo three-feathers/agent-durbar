@@ -1631,12 +1631,14 @@ const oauthParam = (name: string): boolean => {
 
 const UNC_SEG = String.raw`[^\\/\s"'<>|:;,*?]{1,128}`;
 const UNC_SEP = String.raw`(?:\\{1,2}|\/)`;
-const UNC_HOME = new RegExp(String.raw`(?<![A-Za-z0-9_.~:\\/-])(?:\\{4}|\\{2})${UNC_SEG}${UNC_SEP}${UNC_SEG}(?:${UNC_SEP}(?:[^\\/\r\n"'<>|:;,*?]{1,128}(?=[\\/])|${UNC_SEG}))?`, 'g');
+// spec 097 FR-311 delta 2026-11-08 (review of PR #1322): the lead is any run of two or more `\` (an odd count, `\\\server`, showed the name once
+// a Markdown unescape halved it) or `//` (`//server/share/user`, the forward-slash UNC form); never after a letter, digit, `:` (a URL's `://`) or another separator
+const UNC_HOME = new RegExp(String.raw`(?<![A-Za-z0-9_.~:\\/-])(?:\\{2,}|\/\/)${UNC_SEG}${UNC_SEP}${UNC_SEG}(?:${UNC_SEP}(?:[^\\/\r\n"'<>|:;,*?]{1,128}(?=[\\/])|${UNC_SEG}))?`, 'g');
 /**
  * Home folders in free text become `~` (review on PR #630: a copied error must not carry the user name): `/home/<user>`,
  * `/Users/<user>`, `<drive>:\Users\<user>` (also with `/` or doubled `\\` as in JSON), and the given home folders themselves
  * (`HOME`, `USERPROFILE` of this process by default). A user name with spaces is covered when a separator follows it. A UNC path
- * (`\\server\share\user`): its host, share and next folder. Bounded; never throws.
+ * (`\\server\share\user`, with any run of two or more `\` or with `//`): its host, share and next folder. Bounded; never throws.
  */
 export function maskHomePaths(text: unknown, homes?: readonly (string | undefined)[]): string {
   try {
