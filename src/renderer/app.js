@@ -6467,7 +6467,7 @@ function showPerm(a,p){
   const keyS=p.scopeKey?shownPerm(grantText(p.scopeKey,p.scopeLabel),String(p.scopeKey)):null; /* spec 003 FR-118: the session button names exactly what it grants */
   const hwhy=permWhy(sumS,scopeS,broadS,keyS), hgrant=hwhy&&!permBlind(hwhy)&&(p.scopeKey||p.broadScopeKey)?PERM_GRANT:'';
   if(p.state==='pending'&&hwhy){const hp=document.createElement('p');hp.className='pscope phid';hp.textContent=PERM_WHY[hwhy]+hgrant;n.appendChild(hp);} /* also a card with no grant (a bare tool name): the line says what is hidden */ /* spec 097 FR-318: what a grant covers stays truthful when a part is hidden */
-  const look=p.state==='pending'&&!permBlind(hwhy)?lookLine(sumS,scopeS,broadS,keyS):''; /* spec 003 FR-118: a blind card shows no text, so no lookalike line */
+  const look=p.state==='pending'&&!permBlind(hwhy)?lookLine(sumS,keyS||scopeS,broadS):''; /* spec 003 FR-118: a blind card shows no text, so no lookalike line; the whole key, not the cut label (a token cut in it is no longer a token the mask knows: fix round 2) */
   if(look){const lp=document.createElement('p');lp.className='pscope plook';lp.textContent=look;n.appendChild(lp);} /* warn, never block (owner decision 1): no button changes for it */
   const st=n.querySelector('.pstate');
   if(p.state==='denied'){ /* spec 003 FR-094: with the button the text no longer repeats the suggestion */
