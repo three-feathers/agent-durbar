@@ -44,7 +44,7 @@ module.exports = async (ctx) => {
       // a page that watches every panel that is added, and every answer that reaches the bridge
       const load = async (door) => {
         await H.load({ w, h, query: Object.assign(view === 'real' ? { officeview: 'real' } : {}, door ? { door: '1' } : {}), ready: READY[view], settle: false, focus: true });
-        await js(`(()=>{window.__adds=0;window.__perm=[];new MutationObserver(ms=>{for(const m of ms)for(const n of m.addedNodes)if(n.id==='needsPanel')window.__adds++;}).observe(document.body,{childList:true});
+        await js(`(()=>{window.__adds=0;window.__perm=[];new MutationObserver(ms=>{for(const m of ms)for(const n of m.addedNodes)if(n.id==='needsPanel'){window.__adds++;window.__addAt=Date.now();}for(const n of m.removedNodes)if(n.id==='needsPanel')window.__rmAt=Date.now();}).observe(document.body,{childList:true});
           const b=window.__durbarSimUi.bridge();if(!b.__w2){const p=b.resolvePermission;b.resolvePermission=function(id,rid,ok){window.__perm.push(rid+':'+ok);return p.apply(this,arguments)};b.__w2=1;}
           window.__ann=[];const sr=document.getElementById('srAnnounce');if(sr)new MutationObserver(()=>window.__ann.push(sr.textContent)).observe(sr,{childList:true,characterData:true,subtree:true});})()`);
       };
@@ -179,7 +179,6 @@ module.exports = async (ctx) => {
       const C = await js(`window.__durbarSimUi.agents().filter(a=>!a.parent&&a.live)[5].id`);
       await emit({ type: 'status', sessionId: C, status: 'needs-permission', intent: 'Waiting', permission: { requestId: 'np3-' + w, kind: 'shell', summary: 'Run the third', state: 'pending' } });
       assert.ok(await until(`!!document.getElementById('needsPanel')&&document.querySelectorAll('#needsPanel .inbox-row').length===3`, 6000), `${at}: a new request reopens it with all three`);
-      const tOpen3 = Date.now(); // the gate's throttle for the next automatic opening runs from here
       // opened by itself and emptied (Q-NY-13): All clear, then it goes, focus untouched
       await js(`document.getElementById('drvTxt').focus()`);
       await answerAll();
@@ -190,6 +189,8 @@ module.exports = async (ctx) => {
 
       // ---- the new steps below open the panel on purpose (the amber button); the gate is not involved except in the last two ----
       const ensureOpen = async () => { if (!(await panelOpen())) await js(`document.getElementById('inboxBtn').click()`); assert.ok(await until(`!!document.getElementById('needsPanel')`, 4000), `${at}: the panel is open`); };
+      // the gate's own state, seen from the page: the last time a panel was added (its throttle runs from an automatic opening) and removed (COALESCE_MS runs from a dismissal)
+      const gateRests = async () => { await ctx.sleep(await js(`Math.max(0,10800-(Date.now()-(window.__addAt||0)))`)); await ctx.sleep(await js(`Math.max(0,2200-(Date.now()-(window.__rmAt||0)))`)); };
       const pend = [[A, 'np1-' + w], [B, 'np2-' + w], [C, 'np3-' + w]]; // cards the steps above left in their chats
       const perm = (id, rid, summary) => (pend.push([id, rid]), emit({ type: 'status', sessionId: id, status: 'needs-permission', intent: 'Waiting', permission: { requestId: rid, kind: 'shell', summary, state: 'pending' } }));
       assert.ok(quietIds.length >= 3, `${at}: three agents with no request of their own ${JSON.stringify(quietIds)}`);
@@ -350,8 +351,7 @@ module.exports = async (ctx) => {
 
       // ---- FR-202, FR-203: it never opens over the key the person is on (review finding 4) ----
       {
-        await ctx.sleep(Math.max(0, 10800 - (Date.now() - tOpen3))); // past the throttle of the last automatic opening
-        await ctx.sleep(2200); // past COALESCE_MS of the dismissal that ended the step before
+        await gateRests(); // past the throttle of the last opening and COALESCE_MS of the last close, as the page saw them
         await js(`(()=>{const i=document.createElement('input');i.id='drvUnder';i.style.cssText='position:fixed;right:24px;top:140px;width:160px;z-index:50';document.body.appendChild(i);i.focus();})()`);
         const E1 = await live(0);
         await perm(E1, 'ov1-' + w, 'Run under the panel');
@@ -360,11 +360,10 @@ module.exports = async (ctx) => {
         await js(`document.getElementById('drvUnder').remove()`);
         await idle(await live(1)); // any later change in the office gives the held opening its next look
         assert.ok(await until(`!!document.getElementById('needsPanel')`, 8000), `${at}: once focus is elsewhere the held opening happens`);
-        const tOpenE = Date.now();
         await clean();
 
         // ---- the gate's dismissal rule, wired (review finding 3): a request within COALESCE_MS of Close does not snap the panel back ----
-        await ctx.sleep(Math.max(0, 10800 - (Date.now() - tOpenE)));
+        await gateRests();
         const D1 = await live(1), D2 = await live(2);
         await ensureOpen();
         await js(`document.getElementById('inboxClose').click()`); // dismissed by the person
@@ -374,6 +373,25 @@ module.exports = async (ctx) => {
         await ctx.sleep(1500); // past COALESCE_MS
         await perm(D2, 'di2-' + w, 'Run a while after Close');
         assert.ok(await until(`!!document.getElementById('needsPanel')`, 6000), `${at}: after the coalescing window a new request reopens it`);
+        await clean();
+      }
+
+      // ---- FR-033: focus in a limit row's amount field, the row leaves (round 4, finding 2) ----
+      {
+        const L = await live(0), P = await live(1);
+        await emit({ type: 'limit', sessionId: L, phase: 'exhausted', requestId: 'lm-' + w, maxAiCredits: 5, usedAiCredits: 5 });
+        await ctx.sleep(120); await perm(P, 'lp-' + w, 'Run beside the limit');
+        assert.ok(await until(`Number((document.querySelector('#inboxBtn b')||{}).textContent)===2`, 6000), `${at}: the limit and the request wait`);
+        await ensureOpen();
+        assert.ok(await until(`!!document.querySelector('#needsPanel .inbox-row[data-id=${jsLiteral(L)}] .ib-amt')`, 4000), `${at}: the limit row shows its amount field`);
+        await js(`window.__perm=[];document.querySelector('#needsPanel .inbox-row[data-id=${jsLiteral(L)}] .ib-amt').focus()`);
+        await js(`window.__durbarSimUi.agents().forEach(a=>{if(a.id===${jsLiteral(L)})a.limit=null;})`);
+        await idle(L); // the limit row leaves
+        assert.ok(await until(`document.querySelectorAll('#needsPanel .inbox-row').length===1`, 6000), `${at}: the limit row left`);
+        const f = await aeInfo();
+        assert.ok(f.head && f.row === P, `${at}: with focus in an amount field, the row leaving puts focus on a heading, not on the page ${JSON.stringify(f)}`);
+        await key('a', [], { char: 'always' }); await ctx.sleep(500);
+        assert.deepStrictEqual(await js('window.__perm.slice()'), [], `${at}: A answers nothing after the amount field's row left`);
         await clean();
       }
     }

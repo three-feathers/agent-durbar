@@ -220,6 +220,11 @@ const AA = A as unknown as {
   assert.strictEqual(g.ruling({ open: false, held: false }), 'none');
   g.startup(); assert.strictEqual(g.ruling({ open: false, held: true }), 'hold', 'app start is held like any opening');
   assert.strictEqual(g.ruling({ open: false, held: false }), 'startup', 'and still says startup when it opens');
+  // a held opening released inside the throttle is dropped like any throttled one: the asks stay on the amber button (decided in the round-4 delta)
+  t += A.THROTTLE_MS + 1; g.arrive(1); assert.strictEqual(g.ruling({ open: false, held: false }), 'open');
+  t += 100; g.arrive(1); assert.strictEqual(g.ruling({ open: false, held: true }), 'hold', 'held again right after an opening');
+  t += 100; assert.strictEqual(g.ruling({ open: false, held: false }), 'none', 'released inside THROTTLE_MS: no opening');
+  t += A.THROTTLE_MS + 1; assert.strictEqual(g.ruling({ open: false, held: false }), 'none', 'and nothing is kept for later (the count stays on the amber button)');
   // requests that arrive while the panel is open are seen there: a later close that is not a dismissal does not reopen it for them
   t += A.THROTTLE_MS + 1; g.arrive(2);
   assert.strictEqual(g.ruling({ open: true, held: false }), 'none', 'open: the arrivals are seen');
