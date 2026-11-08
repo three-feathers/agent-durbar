@@ -84,7 +84,7 @@ export interface GrantScope {
 
 /**
  * The label of an exact-command scope (spec 012 FR-176, issue #1296): the command is masked FIRST (`maskSecretCommand`: a token cut at 28 characters lost the prefix or length the mask
- * needs), then cut at a word, never inside a `[redacted]` marker. A first word longer than the cut is cut as it is: what is left of the masked text holds nothing the mask found.
+ * needs), then cut at a word, never inside a `[redacted]` marker. A first word longer than the cut is cut as it is, a marker in it shown whole or not at all (`MY_SERVICE_PASSWORD=[redacted]` gives `MY_SERVICE_PASSWORD=…`).
  */
 const shortCmd = (cmd: string, n = 28): string => {
   const m = maskSecretCommand(cmd);

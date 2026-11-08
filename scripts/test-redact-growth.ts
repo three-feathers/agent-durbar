@@ -140,6 +140,15 @@ if (part === 'adversarial' || part === 'adversarial2') {
     uRun: '%u003D'.repeat(MB / 6),
     uSk: '%u003Dsk-'.repeat(MB / 9),
     uSlack: '%u003Dxoxb-'.repeat(MB / 11),
+    // spec 012 FR-173/FR-174 (pre-review of PR 1317): the glued-rest scan (a literal mask in the text is enough to start it) and the quote runs inside a secret name
+    glueMasks: '[redacted]a-'.repeat(MB / 12),
+    glueRun: '[redacted]' + 'a'.repeat(MB),
+    glueDots: '[redacted]' + '.'.repeat(MB),
+    glueSlash: '[redacted]/'.repeat(MB / 11),
+    quotesRun: 'pa' + '"'.repeat(MB) + 'ssword=Hunter2Secret99',
+    quotesPairs: 'pa"'.repeat(MB / 3),
+    quotesNames: 'p"a"s"s"w"o"r"'.repeat(MB / 14),
+    quotesMixed: 'to' + "'\\".repeat(MB / 6) + 'ken=Hunter2Secret99',
   };
   // Each case runs in a worker thread that times redact() itself with the thread's own CPU time (`process.threadCpuUsage()`, Node 22
   // and later; wall time from `hrtime` only on Node 20.19, which has no per-thread CPU time), so a busy runner cannot fail the test;

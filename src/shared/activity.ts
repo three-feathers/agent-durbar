@@ -5,11 +5,13 @@
  * A row holds names and short summaries only: never a prompt, a reply, file contents, tool output or a full path. Every text
  * field is cut to a fixed length; the action goes through `redact()` first (the main process masks it with the permission-card mask before that, `src/main/activitymask.ts`).
  */
-import { redact } from './redact';
+import { cut, redact } from './redact';
 
 export const ACTIVITY_MAX_ROWS = 5000;
 export const ACTIVITY_ACTION_MAX = 160;
 const NAME_MAX = 80;
+/** The most of an action `sanitizeActivityRow` reads before it masks (pre-review of PR 1317: without a bound a stored row of 20 million characters cost seconds). `cut` ends it before the start of a token, never inside one. */
+export const ACTIVITY_ACTION_READ_MAX = 20_000;
 
 export const ACTIVITY_DECISIONS = ['allowed-once', 'allowed-session', 'denied', 'auto-allow-all', 'auto-session-grant', 'mode-change', 'limit-change', 'remote-on', 'remote-off', 'session-deleted', 'mcp-restart', 'loop-start', 'loop-pass', 'loop-skip', 'loop-hold', 'loop-end'] as const; // spec 072 FR-024: self-paced loops
 export type ActivityDecision = (typeof ACTIVITY_DECISIONS)[number];
@@ -62,7 +64,7 @@ export function sanitizeActivityRow(raw: unknown, env?: Record<string, string | 
     folder: oneLine(baseName(r.folder), NAME_MAX),
     app: oneLine(r.app, NAME_MAX),
     mode: oneLine(r.mode, 16),
-    action: oneLine(redact(oneLine(r.action, Infinity), env), ACTIVITY_ACTION_MAX), // mask, then cut: a cut first could leave the start of a token (spec 012 FR-175)
+    action: oneLine(redact(oneLine(cut(typeof r.action === 'string' ? r.action : r.action == null ? '' : String(r.action), ACTIVITY_ACTION_READ_MAX), Infinity), env), ACTIVITY_ACTION_MAX), // mask, then cut: a cut at 2,000 first could leave the start of a token (spec 012 FR-175); the read is bounded by `cut`, which ends before a token
     decision: r.decision as ActivityDecision,
   };
 }

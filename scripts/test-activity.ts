@@ -165,6 +165,35 @@ try {
       const row = sanitizeActivityRow({ ...base, t: new Date().toISOString(), action: 'sk-' + 'aB3dE6gH9jK2mN5pQ8sT1vW4yZ7'.repeat(80).slice(0, 1975) + ' ' + tok }, {})!;
       assert.strictEqual(row.action, '[redacted] [redacted]', `#1295: mask before cut: ${row.action}`);
     }
+    // pre-review of PR 1317: a row that is not a permission request (no kind: a loop note, a mode change) shows a line break or a tab as a space, as before; a permission summary shows the marker, as the chat does
+    {
+      assert.strictEqual(mask('Loop pass 1 of 3: line one\nline two\tend'), 'Loop pass 1 of 3: line one line two end', '#1295: a row without a kind shows line breaks and tabs as spaces');
+      assert.strictEqual(mask('run echo a\nb', 'shell'), 'run echo a⟦LF⟧b', '#1295: a permission summary keeps the visible marker');
+      assert.ok(!mask('Loop pass: ' + tok + '\nnext').includes(body(12)), '#1295: a token in a row without a kind is still hidden');
+      assert.ok(!mask('Loop pass: gh\x1b[0m' + 'p_' + body(36)).includes(body(12)), '#1295: an escape-split token in a row without a kind is still hidden');
+    }
+    // pre-review of PR 1317: the row's input is read to a bound before the mask (a stored row of 50 million characters cost seconds); the text is still masked
+    {
+      const big = 'run echo hello  world\n\t'.repeat(2_300_000);
+      const c0 = process.cpuUsage();
+      const row = sanitizeActivityRow({ ...base, t: new Date().toISOString(), action: big }, {})!;
+      const d = process.cpuUsage(c0);
+      const cpu = (d.user + d.system) / 1000;
+      assert.ok(row.action.startsWith('run echo hello world'), `#1295: a very long action is still cleaned: ${row.action.slice(0, 40)}`);
+      assert.ok(cpu < 1500, `#1295: the input of sanitizeActivityRow is bounded: ${cpu.toFixed(0)} ms CPU for 50 million characters`);
+    }
+    // pre-review of PR 1317: the BUILT tree (what the app runs: `<dist>/main/../renderer/liveact.js`, which finds `dist/shared/redact.js` itself; the tests above get the shared mask from the shim)
+    {
+      const root = path.join(__dirname, '..', '..');
+      const copy = fs.readFileSync(path.join(root, 'scripts', 'copy-assets.js'), 'utf8');
+      assert.ok(copy.includes("'liveact.js'") && copy.includes("'safetext.js'"), '#1295: the build copies liveact.js and safetext.js next to main');
+      const distMain = path.join(root, 'dist', 'main');
+      if (fs.existsSync(path.join(root, 'dist', 'renderer', 'liveact.js')) && fs.existsSync(path.join(root, 'dist', 'shared', 'redact.js'))) {
+        assert.strictEqual(maskActivityAction('run npm test', 'shell', distMain), 'run npm test', '#1295: the built tree runs the mask (a plain command is shown, not the neutral word)');
+        assert.ok(!maskActivityAction('run echo ' + tok, 'shell', distMain).includes(body(12)), '#1295: the built tree hides a token');
+        assert.strictEqual(maskActivityAction('mcp srv › ' + tok, 'mcp', distMain), 'mcp srv › tool', '#1295: the built tree shows a token-shaped tool name as `tool`');
+      } else console.log('activity: no dist build here, the built-tree mask not checked');
+    }
     // main's wiring: logActivity masks through maskActivityAction and the permission handler hands it the request's kind
     {
       const main = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8');

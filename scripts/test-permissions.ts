@@ -22,7 +22,7 @@ async function main(): Promise<void> {
   {
     const body = 'aB3dE6gH9jK2mN5pQ8sT1vW4yZ7aB3dE6gH9jK2';
     const tok = 'gh' + 'p_' + body.slice(0, 36);
-    // the token starts at character 20 of the command, so the old cut at 27 characters kept `ghp_` and 3 characters of it
+    // the token starts at character 21 of the command, so the old cut at 27 characters kept `ghp_` and 2 characters of it
     const cmd = 'curl -sS --data xxxx ' + tok + ' https://example.test/a';
     const g = grantScope({ kind: 'shell', fullCommandText: cmd });
     assert.ok(!g.label.includes('ghp_') && !g.label.includes(body.slice(0, 8)), `#1296: no part of a token straddling the cut is in the label: ${g.label}`);
@@ -36,6 +36,8 @@ async function main(): Promise<void> {
     // a marker is never cut in two; a first word longer than the cut is cut as it is (it holds nothing the mask found)
     const g3 = grantScope({ kind: 'shell', fullCommandText: 'echo pass' + 'word=' + body.slice(0, 12) + ' && echo done' });
     assert.ok(!/\[redac[^\]]*…/.test(g3.label), `#1296: no half marker: ${g3.label}`);
+    // pre-review of PR 1317: the marker guard has its own case: a marker that starts inside a first word longer than the cut (no space to cut at) is dropped whole, never `[redacte…`
+    assert.strictEqual(grantScope({ kind: 'shell', fullCommandText: 'MY_SERVICE_' + 'PASS' + 'WORD=' + body.slice(0, 12) }).label, 'run MY_SERVICE_' + 'PASS' + 'WORD=…', '#1296: a marker in a long first word is shown whole or not at all');
     assert.strictEqual(grantScope({ kind: 'shell', fullCommandText: 'x'.repeat(60) }).label, 'run ' + 'x'.repeat(27) + '…', '#1296: a long plain word is cut as before');
     assert.strictEqual(grantScope({ kind: 'shell', fullCommandText: 'npm test' }).label, 'run npm test', 'a short command is unchanged');
   }

@@ -246,10 +246,12 @@ export function openKeyBlockStart(text: string): number {
   return open;
 }
 /**
- * Spec 012 FR-174 (issue #1298): the shell removes the quotes of `'pass'"word"=x`, `pa"ss"word=x` and `"pass"word=x`, so each is the name `password`. Up to 6 quote or backslash characters
- * (the close of one span and the open of the next, a JSON-escaped quote, `pa\ss`) may sit between any two atoms of a name. An ASCII class with a bounded count: nothing for the hidden-character walker to add.
+ * Spec 012 FR-174 (issue #1298): the shell removes the quotes of `'pass'"word"=x`, `pa"ss"word=x` and `"pass"word=x`, so each is the name `password`. Any run of quote or backslash characters
+ * (the close of one span and the open of the next, a JSON-escaped quote, `pa\ss`, `pa""""""""ss`: a shell takes any number of empty quotes) may sit between any two atoms of a name. Not a count:
+ * a count (it was 6) is a bypass one quote longer (pre-review of PR 1317). An ASCII class that no atom of a name shares, so a run is taken once from each start: linear (`test-redact-growth.ts`,
+ * `quotes`), and nothing for the hidden-character walker to add.
  */
-const splitQuotes = (src: string): string => (src.match(/\[[^\]]*\]\??|\(\?:[^)]*\)\??|\\.\??|[^[(\\]\??/g) ?? [src]).join(String.raw`["'\\]{0,6}`);
+const splitQuotes = (src: string): string => (src.match(/\[[^\]]*\]\??|\(\?:[^)]*\)\??|\\.\??|[^[(\\]\??/g) ?? [src]).join(String.raw`["'\\]*`);
 /** A name that holds a secret, right before its separator (checked backwards from the separator, so `max_tokens` and `token_count` are not it). */
 const SECRET_NAMES = `(?:${['secret_?access_?key', 'session_?token', 'client_?secret', 'api_?secret', 'app_?secret', 'consumer_?secret', 'shared_?secret', 'secret_?key', 'api[_-]?key', 'access[_-]?key', 'auth[_-]?key', 'account_?key', 'sharedaccesskey', 'private[_-]?key', 'priv_?key', 'signing_?key', 'encryption_?key', 'master_?key', 'license_?key', 'service_?key', 'token', 'secret', 'password', 'passwd', 'passphrase', 'contrase(?:n|ñ)a', '_gitlab_session'].map((n) => splitQuotes(ci(n))).join('|')}|(?<![A-Za-z])(?:${['pwd', 'pass', 'auth'].map((n) => splitQuotes(ci(n))).join('|')}))`;
 /**
@@ -433,15 +435,21 @@ function maskBare(text: string, mask: string, guard: boolean): string {
   return maskList(maskList(text, mask, guard, HELD_SHAPES), mask, guard, TOKEN_SHAPES);
 }
 
-/** Characters a glued second token is made of, and the ones it may start with (`sk-` body swallowing `glpat` leaves `-<body>`; `glpat-` swallowing `sha256` leaves `~<body>`). */
+/** Characters a glued second token is made of, and the ones it may start with (`sk-` body swallowing `glpat` leaves `-<body>`; `glpat-` swallowing `sha256` leaves `~<body>`; a body swallowing the start of a base64 token such as `ABSK` stops at its first `/` or `+`: pre-review of PR 1317). */
 const GLUE_REST = /[A-Za-z0-9_\-.~+/=:%]/;
-const GLUE_START = /[A-Za-z0-9_\-.~:%]/;
+const GLUE_START = /[A-Za-z0-9_\-.~:%/+]/;
 /** The fewest letters and digits (all of them in the glued run, separators between segments allowed) that make what is glued to a mask a second token: 8, the measure of #1237's review (the rest of a body whose head the first token swallowed). */
 const GLUE_MIN = 8;
 /** After a `_` it is 16: an identifier suffix (`ghp_…_backup`) is not a token, and FR-169 keeps the 8-character rest of `ghp_…ghx_` + 8 readable. */
 const GLUE_MIN_UNDERSCORE = 16;
-/** Issue #1237 (spec 012 FR-173): what is glued to a mask and still holds 8 or more letters and digits (16 after a `_`) is the rest of a second token whose head the first one swallowed; it goes into the mask. A single scan. */
+/** After a `/` or `+` it is 32: `[redacted]/v1/chat/completions` is a path, the rest of a base64 token (`ABSK` + 100 or more characters) is long. */
+const GLUE_MIN_B64 = 32;
+/**
+ * Existing capability checked (FR-031, pre-review of PR 1317): `maskGluedTail` (spec 106 FR-021, the brain state's streamed pieces) also folds what is glued to a mask into it, but takes any one glued
+ * character, because there the next piece of a secret arrives raw after a mask. In a whole text that would hide `.git`, `:8080` and `_backup`, so this rule needs the count below; the two are not one.
+ * Issue #1237 (spec 012 FR-173): what is glued to a mask and still holds 8 or more letters and digits (16 after a `_`) is the rest of a second token whose head the first one swallowed; it goes into the mask. A single scan. */
 function maskGluedRest(s: string, mask: string): string {
+  if (!mask) return s; // an empty mask is found at every place, and the scan would not advance
   let at = s.indexOf(mask);
   if (at < 0) return s;
   let out = '';
@@ -457,7 +465,7 @@ function maskGluedRest(s: string, mask: string): string {
       }
     }
     while (end > start && (s[end - 1] === '.' || s[end - 1] === ':')) end--; // a full stop or a colon that ends the run is the sentence's (spec 106 FR-021: "[redacted]." keeps its full stop)
-    if (alnum >= (s[start] === '_' ? GLUE_MIN_UNDERSCORE : GLUE_MIN)) { out += s.slice(from, start); from = end; }
+    if (alnum >= (s[start] === '_' ? GLUE_MIN_UNDERSCORE : s[start] === '/' || s[start] === '+' ? GLUE_MIN_B64 : GLUE_MIN)) { out += s.slice(from, start); from = end; }
     at = s.indexOf(mask, Math.max(end, start));
   }
   return from === 0 ? s : out + s.slice(from);

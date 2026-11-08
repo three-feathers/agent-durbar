@@ -6,6 +6,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
+import { spawnSync } from 'child_process';
 import { finishEdit } from '../src/shared/edits';
 import { heldSamples, heldSurfaces, jwtFuzzTexts, JWT_HELD, longestSurvivor } from './redact-held-lib';
 import { REDACT_MAX_CHARS, _maskSourcesForTest, maskBareTokenShapes, maskNoteText, maskSecretArgs, maskSecretCommand, maskSecretUrl, maskTokenShapes, maskTokenShapesUnguarded, redact, redactMarkdown } from '../src/shared/redact';
@@ -458,6 +459,40 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
       n++;
     }
     assert.ok(n > 15000, `#1237: the pair loop ran: ${n}`);
+    // pre-review of PR 1317: a base64 token has `/` and `+` in its body, and the first token's body stops there, so the rest starts with one of them (the pair loop above has no such sample)
+    {
+      const abs = 'AB' + 'SK' + an(30) + '/' + an(30) + '+' + an(50) + '==';
+      for (const [la, a] of A) {
+        const out = redact(a + abs, {});
+        assert.ok(out.includes('[redacted]') && !readable(out), `#1237: ${la} then ABSK with / and +: a rest after the first / or + is readable in ${out.replace(/[A-Za-z0-9]{12,}/g, '<LEAK>')}`);
+      }
+      const gh2 = 'gh' + 'p_' + an(36);
+      assert.strictEqual(redact(gh2 + '/v1/chat/completions', {}), '[redacted]/v1/chat/completions', '#1237: a short path after a token stays (fewer than 32 letters and digits after a /)');
+      assert.strictEqual(redact(gh2 + '+' + an(31), {}), '[redacted]+' + an(31), '#1237: 31 letters and digits after a + stay');
+      assert.strictEqual(redact(gh2 + '+' + an(32), {}), '[redacted]', '#1237: 32 letters and digits after a + are the rest of a token');
+      // pre-review of PR 1317: the counts and the start characters are pinned from both sides, so a threshold moved by one or a start character added is caught
+      assert.strictEqual(redact(gh2 + '.' + an(8), {}), '[redacted]', '#1237: exactly 8 letters and digits after a . are the rest of a token (GLUE_MIN)');
+      assert.strictEqual(redact(gh2 + '_' + an(16), {}), '[redacted]', '#1237: exactly 16 letters and digits after a _ are the rest of a token (GLUE_MIN_UNDERSCORE)');
+      assert.strictEqual(redact(gh2 + '_' + an(15), {}), '[redacted]_' + an(15), '#1237: 15 after a _ stay (GLUE_MIN_UNDERSCORE)');
+      assert.strictEqual(redact(gh2 + '/repos/owner/project', {}), '[redacted]/repos/owner/project', '#1237: a repository path after a token stays (GLUE_START has no / below 32)');
+      assert.strictEqual(redact(gh2 + '/' + an(32), {}), '[redacted]', '#1237: 32 letters and digits after a / are the rest of a token (GLUE_MIN_B64)');
+      assert.strictEqual(redact(gh2 + '=' + an(40), {}), '[redacted]=' + an(40), '#1237: `=` does not start a glued rest (GLUE_START)');
+      assert.strictEqual(redact(gh2 + '?' + an(40), {}), '[redacted]?' + an(40), '#1237: `?` does not start a glued rest (GLUE_START)');
+    }
+    // pre-review of PR 1317: the GOOG1 rule has the base64 list's start and line-break rules (each asserted alone: remove one and its own line fails)
+    {
+      const g1 = 'GO' + 'OG1' + up(44);
+      assert.strictEqual(redact('ab/' + g1, {}), 'ab/' + g1, '#1237: GOOG1 after a / is base64 text, not a key (the start rule)');
+      assert.strictEqual(redact(an(76) + '\n' + g1 + '\n' + an(76), {}), an(76) + '\n' + g1 + '\n' + an(76), '#1237: GOOG1 as one line of a wrapped base64 block stays (the line-break rules)');
+      assert.strictEqual(redact(g1 + '\n' + an(76), {}), g1 + '\n' + an(76), '#1237: GOOG1 before a base64 line stays (the line-break lookahead)');
+      assert.strictEqual(redact(an(76) + '\n' + g1, {}), an(76) + '\n' + g1, '#1237: GOOG1 after a base64 line stays (the line-break lookbehind)');
+      assert.strictEqual(redact('key ' + g1, {}), 'key [redacted]', '#1237: a GOOG1 key after a space is a key');
+    }
+    // pre-review of PR 1317: an empty mask finds itself at every place; the scan must still end (a child with a timeout: a loop that does not end cannot be caught in this process)
+    {
+      const child = spawnSync(process.execPath, ['-e', `const r=require(${JSON.stringify(path.join(__dirname, '..', 'src', 'shared', 'redact'))});r.maskTokenShapes(' a ['+'x]b '+'c'.repeat(9)+' d','');process.stdout.write('ok')`], { timeout: 8000, encoding: 'utf8' });
+      assert.ok(!child.error && child.status === 0 && child.stdout === 'ok', `#1237: maskTokenShapes with an empty mask returns (no endless scan): ${child.error ? String(child.error.message) : `status ${child.status}`}`);
+    }
     // what stays: a separator keeps two masks, and a short rest (a port, `.git`, an encoded space, a short word) is not a second token
     const gh = 'gh' + 'p_' + an(36);
     assert.strictEqual(redact(gh + '.git', {}), '[redacted].git', '#1237: `.git` after a token stays');
@@ -503,6 +538,11 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
   assert.ok(!maskSecretCommand(`sh -c "echo 'pass'\\"word\\"=${V}"`, {}).includes(V), '#1298: inside sh -c with escaped quotes');
   assert.ok(!redact(`sh -c "echo 'pass'\\"word\\"=${V}"`, {}).includes(V), '#1298: redact: inside sh -c with escaped quotes');
   assert.ok(!maskSecretCommand(`run env X=1 'DB_'"PASS"'WORD'=${V} cmd`, {}).includes(V), '#1298: an upper-case name split in three');
+  // pre-review of PR 1317: the quote run between two atoms of a name has no limit (the shell takes any number of empty quotes); it was 6, so a seventh was a bypass
+  both(`echo pa${'""'.repeat(4)}ss${'""'.repeat(2)}word=${V}`, `echo pa${'""'.repeat(4)}ss${'""'.repeat(2)}word=[redacted]`, 'eight quote characters inside a name (more than 6 in one gap)');
+  both(`echo pa${'"'.repeat(200)}ss${P.slice(4)}=${V}`, `echo pa${'"'.repeat(200)}ss${P.slice(4)}=[redacted]`, '200 quote characters inside a name');
+  both(`echo to${"'\\".repeat(30)}ken=${V}`, `echo to${"'\\".repeat(30)}ken=[redacted]`, 'quotes and backslashes mixed, 60 in one gap');
+  assert.strictEqual(redact(`echo pa${'"'.repeat(200)}x=${V}`, {}), `echo pa${'"'.repeat(200)}x=${V}`, '#1298: a long quote run inside a word that is not a secret name stays');
   // what stays: a name that is not a secret, a short value, a split that is not a secret name, the plain forms
   assert.strictEqual(redact(`echo 'max_to'"kens"=${V}`, {}), `echo 'max_to'"kens"=${V}`, '#1298: max_tokens split stays');
   assert.strictEqual(redact(`echo "to"ken=short`, {}), `echo "to"ken=short`, '#1298: a short value stays');

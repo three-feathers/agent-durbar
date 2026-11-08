@@ -49,7 +49,7 @@ export interface SessionSearchApi {
 
 /**
  * T010: a pure window script, required by main from the built tree (`<dist>/main/..` + `/renderer/<name>`; packaged in `app.asar` with the
- * rest of `dist/**`). One source of truth: main runs the very file the window runs, so the fold cannot drift. Only these two names.
+ * rest of `dist/**`). One source of truth: main runs the very file the window runs, so the fold cannot drift. Only these three names (`liveact.js`: the activity log's mask, `src/main/activitymask.ts`).
  */
 export function rendererScript<T>(name: 'sessionsearch.js' | 'safetext.js' | 'liveact.js', baseDir: string = __dirname): T {
   if (name !== 'sessionsearch.js' && name !== 'safetext.js' && name !== 'liveact.js') throw new Error('not a shared window script');
