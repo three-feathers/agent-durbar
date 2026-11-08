@@ -21,6 +21,7 @@
   const scOf=c=>{let v=scMemo.get(c);if(v===undefined){const h=SC.find(x=>x[1].test(c));v=h?h[0]:(scxOf(c)[0]||'Common');scMemo.set(c,v);}return v;};
   /* UTS #39 resolved scripts: Han, Hiragana, Katakana, Bopomofo and Hangul also count as the writing systems they belong to */
   const aug=s=>{const o=new Set(s);if(o.has('Han')){o.add('Jpan');o.add('Kore');o.add('Hanb');}if(o.has('Hiragana')||o.has('Katakana'))o.add('Jpan');if(o.has('Bopomofo'))o.add('Hanb');if(o.has('Hangul'))o.add('Kore');return o;};
+  const augMemo=new Map(), augOf=(c,s)=>{let v=augMemo.get(c);if(!v){v=aug(s);if(augMemo.size>4096)augMemo.clear();augMemo.set(c,v);}return v;}; /* shared, never changed: inter() makes new sets */
   const inter=(a,b)=>{const o=new Set();for(const x of a)if(b.has(x))o.add(x);return o;};
   const NOT_WITH_LATIN=new Set(['Cyrillic','Greek','Cherokee']);
   /* FR-114 (d), name positions only: Latin letters that look like plain ones (dotless i and j, the click letters, IPA Extensions, Phonetic Extensions,
@@ -38,11 +39,18 @@
   /* the visible marker after a flagged character (spec 097 FR-318's shape): [[U+0435 Cyrillic]] in the white square brackets U+27E6 and U+27E7 */
   const marker=f=>'\u27e6'+hex(f.cp)+' '+sname(f.script)+'\u27e7';
   /* the zero of a decimal digit: Unicode keeps each system's ten digits in a row from its zero, and rows of ten follow each other */
-  const zeroOf=cp=>{let s=cp;while(s>0&&ND.test(String.fromCodePoint(s-1))&&cp-s<200)s--;return s+Math.floor((cp-s)/10)*10;};
+  /* what one character is, memoized (fix round 3: the Unicode property tests were most of the time): 1 token, 2 letter, 4 decimal digit, 8 FR-318 control, 16 whitespace control */
+  const kindMemo=new Map();
+  const kindOf=c=>{const cc=c.charCodeAt(0);
+    if(c.length===1&&cc>=0x20&&cc<0x7f)return (cc>=0x30&&cc<=0x39)?5:((cc|32)>=0x61&&(cc|32)<=0x7a)?3:0;
+    let v=kindMemo.get(c);if(v===undefined){v=(TOK.test(c)?1:0)|(LET.test(c)?2:0)|(ND.test(c)?4:0)|(PCTRL_T.test(c)?8:0)|(WS.test(c)?16:0);if(kindMemo.size>4096)kindMemo.clear();kindMemo.set(c,v);}return v;};
+  const zeroMemo=new Map();
+  const zeroOf=cp=>{const z=zeroMemo.get(cp);if(z!==undefined)return z;const r=zeroOf0(cp);if(zeroMemo.size>4096)zeroMemo.clear();zeroMemo.set(cp,r);return r;};
+  const zeroOf0=cp=>{let s=cp;while(s>0&&ND.test(String.fromCodePoint(s-1))&&cp-s<200)s--;return s+Math.floor((cp-s)/10)*10;};
   /* the text the rules read: controls out (whitespace ones as a line break), with where each character came from */
   function clean(text){
     const out=[],at=[];let i=0;
-    for(const c of text){if(PCTRL_T.test(c)){if(WS.test(c)){out.push('\n');at.push(i);}}else{out.push(c);at.push(i);}i+=c.length;}
+    for(const c of text){const kd=kindOf(c);if(kd&8){if(kd&16){out.push('\n');at.push(i);}}else{out.push(c);at.push(i);}i+=c.length;}
     return {chars:out,at};
   }
   /* FR-115: name positions as [start,end) character ranges of the cleaned text */
@@ -136,7 +144,7 @@
   function rules(tok,name){
     const out=new Map(), add=(i,rule)=>{if(!out.has(i))out.set(i,rule);};
     /* (a) mixed scripts, UTS #39 moderately restrictive */
-    const lets=[];tok.forEach((c,i)=>{if(LET.test(c)){const s=scxOf(c);if(s.length)lets.push({i,s:aug(s)});}});
+    const lets=[];tok.forEach((c,i)=>{if(kindOf(c)&2){const s=scxOf(c);if(s.length)lets.push({i,s:augOf(c,s)});}});
     if(lets.length>1){
       let all=new Set(lets[0].s);for(const l of lets)all=inter(all,l.s);
       if(!all.size){
@@ -156,16 +164,16 @@
     /* outside name positions a width variant (U+FF00..U+FFEF: fullwidth digits, halfwidth kana) or a super- or subscript is ordinary text (Paco, fix round 1) */
     if(t.normalize('NFKC')!==t.normalize('NFC')){let any=false;tok.forEach((c,i)=>{if(c.normalize('NFKC')!==c.normalize('NFC')){any=true;if(name||!WIDTH_SUP(c.codePointAt(0)))add(i,'nfkc');}});if(!any){const j=tok.findIndex(c=>NONASCII.test(c));add(j<0?0:j,'nfkc');}}
     /* (c) digits of two decimal systems */
-    const ds=[];tok.forEach((c,i)=>{if(ND.test(c))ds.push({i,z:zeroOf(c.codePointAt(0))});});
+    const ds=[];tok.forEach((c,i)=>{if(kindOf(c)&4)ds.push({i,z:zeroOf(c.codePointAt(0))});});
     if(ds.length>1){const cnt=new Map();for(const d of ds)cnt.set(d.z,(cnt.get(d.z)||0)+1);
       const arabicAscii=!name&&cnt.size===2&&cnt.has(0x30)&&(cnt.has(0x660)||cnt.has(0x6f0)); /* outside names: Arabic-Indic with ASCII digits is ordinary text (fix round 1) */
       if(cnt.size>1&&!arabicAscii){let main=0,best=-1;for(const [z,k] of cnt)if(k>best||(k===best&&z===0x30)){main=z;best=k;}for(const d of ds)if(d.z!==main)add(d.i,'digits');}}
     /* (d) lookalike letters in one script: name positions only (owner decision 2) */
     if(name){
-      tok.forEach((c,i)=>{if(LET.test(c)&&LATIN_LOOK(c.codePointAt(0)))add(i,'lookalike');});
-      const ls=tok.filter(c=>LET.test(c));
+      tok.forEach((c,i)=>{if((kindOf(c)&2)&&LATIN_LOOK(c.codePointAt(0)))add(i,'lookalike');});
+      const ls=tok.filter(c=>kindOf(c)&2);
       for(const [sc,list] of [['Cyrillic',CYRL_LOOK],['Greek',GREK_LOOK]])
-        if(ls.length&&ls.every(c=>{const s=scxOf(c);return s.length===1&&s[0]===sc&&list.has(c.codePointAt(0));}))tok.forEach((c,i)=>{if(LET.test(c))add(i,'lookalike');});
+        if(ls.length&&ls.every(c=>{const s=scxOf(c);return s.length===1&&s[0]===sc&&list.has(c.codePointAt(0));}))tok.forEach((c,i)=>{if(kindOf(c)&2)add(i,'lookalike');});
     }
     return [...out].map(([i,rule])=>({i,rule})).sort((a,b)=>a.i-b.i);
   }
@@ -181,8 +189,8 @@
     const findings=[];
     let i=0;
     while(i<n){
-      if(!TOK.test(chars[i])){i++;continue;}
-      const st=i;while(i<n&&TOK.test(chars[i]))i++;
+      if(!(kindOf(chars[i])&1)){i++;continue;}
+      const st=i;while(i<n&&(kindOf(chars[i])&1))i++;
       const tok=chars.slice(st,i), name=tok.some((_,j)=>isName[st+j]===1);
       if(!tok.some(c=>NONASCII.test(c)))continue; /* plain ASCII: nothing to find */
       const fs=rules(tok,name);if(!fs.length)continue;
