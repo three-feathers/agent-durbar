@@ -4,7 +4,7 @@
  *   npm run check:ui                      (builds first)
  *   node scripts/ui-suite.js --list       the drivers
  *   node scripts/ui-suite.js --only shots-017,shots-033
- *   node scripts/ui-suite.js --shard 2/3                  every third driver from the second (UI_SUITE_SHARD=2/3 too; spec 008 FR-182)
+ *   node scripts/ui-suite.js --shard 2/3                  shard 2 of 3, balanced by recorded duration (UI_SUITE_SHARD=2/3 too; spec 008 FR-182, FR-183)
  *   UI_SUITE_OUT=<folder>                 where every screenshot goes (default: a new temp folder, printed at the end)
  *   UI_SUITE_XVFB=1                       Linux: run under xvfb-run even when a display is set
  *   UI_SUITE_DPR=<1..4>                   force the device scale factor (2 = a Retina screen) for every driver
@@ -148,6 +148,7 @@ const DRIVERS = [
   { name: 'check-001-halo' }, // spec 001 FR-210: the waiting halo is a still glow, nothing animates it
   { name: 'check-office-ops-real' }, // spec 097 FR-186: operation counts of Real office, never times (renders, layout reads, nodes, attribute writes, elements recalculated, animations, picture area)
   { name: 'shots-097-realoffice' }, // spec 097 P1: Real office mode (the switch, the scene, the lights, flat loads none of it)
+  { name: 'shots-readme-real' }, // spec 008 delta 2026-11-08 (issue #1256): the README's lead pictures, Real office and its Needs you inbox
   { name: 'shots-070-flat-look' }, // spec 070 A14: Flat's modern look behind html[data-flat-look] (24 px controls on, today's off; Retro and Real office equal with it on)
   { name: 'shots-102-arcade' }, // spec 102 RA3: the Retro arcade behind its flag: only its files, cabinets, marquee, no overlap at 3, 4, 8 and 15 at both sizes
   { name: 'shots-097-moments' }, // spec 097 FR-118..FR-129: the nine world moments (first run, empty office, asleep at the desk, walk, inbox, limit, elicitation, coffee, jumps) in the Photo office and the cave
@@ -156,6 +157,7 @@ const DRIVERS = [
   { name: 'check-097-chat-look' }, // spec 097 (#1140, T195): every chat, main or helper, has the same world look and follows the Office layout setting while open
   { name: 'check-097-chat-contrast' }, // spec 097 (#1146, T197): chat text, links, code chips and header text against the real pixels behind them, both sizes; header text inside the window
   { name: 'check-097-plate-pencil' }, // spec 059 FR-170 (#1155): the rename pencil beside a Real office plate's name, F2 on a plate, both sizes
+  { name: 'check-097-desk-marks' }, // spec 097 FR-316 (#1149): the Draft tag above a Real office plate for an unsent draft, its words in the plate's name, shown by class, both sizes
   { name: 'check-097-lounge' }, // spec 097 FR-246..FR-249 (#1220): finished, read agents sit in the lounge row in the Photo office and the arcade, unread keeps the desk, the ease back, reduced motion, both sizes
   { name: 'shots-097-cave' }, // spec 097 phase 4: the Prehistoric cave behind its flag (World row, its set, any set in any world, no blend)
   { name: 'shots-001-lobby' }, // spec 001 FR-034..FR-040: Boss queue, Bank, Postbox and its letter, who is at a place (simsched in its own query)
@@ -215,14 +217,34 @@ function args(a = process.argv.slice(2)) {
   return { list: a.includes('--list'), only: i >= 0 ? new Set(String(a[i + 1] || '').split(',').filter(Boolean)) : undefined, shard: j >= 0 ? a[j + 1] : undefined, shardGiven: j >= 0 };
 }
 
-/** Spec 008 FR-182 (issue #839): shard `i/n` (1-based) takes every n-th driver of the suite's order, starting at the i-th, so n shards are
- *  disjoint and together hold every driver (the macOS nightly runs 3, each well under the job's time limit). No spec: the whole list. */
-function shard(list, spec) {
+/** Recorded seconds per driver (scripts/ui-suite-timings.json), only to balance shards; a driver with no entry counts as the median. */
+function timings() {
+  try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'ui-suite-timings.json'), 'utf8')); } catch { return {}; }
+}
+/** Seconds the office layout and the Mac title bar (run in shard 1 only, ui-platforms.yml) are assumed to cost, so shard 1 gets fewer drivers. */
+const SHARD1_HEAD_START_SECS = 240;
+
+/** Spec 008 FR-182 (issue #839), FR-183: shard `i/n` (1-based) is a greedy split by recorded duration: drivers from the slowest down, each to the
+ *  shard with the least time so far (ties: the lower shard, then the suite's order), shard 1 starting with SHARD1_HEAD_START_SECS. Each shard
+ *  runs its drivers in the suite's order. n shards are disjoint and together hold every driver of `list`; the result depends only on `list`
+ *  and the committed timing file. No spec: the whole list. */
+function shard(list, spec, times = timings()) {
   if (spec === undefined || spec === '') return list;
   const m = String(spec).match(/^(\d+)\/(\d+)$/);
   const i = m ? Number(m[1]) : 0, n = m ? Number(m[2]) : 0;
   if (!m || n < 1 || i < 1 || i > n) throw new Error(`ui-suite: --shard wants i/n with 1 <= i <= n, got "${spec}"`);
-  return list.filter((_, k) => k % n === i - 1);
+  const known = Object.entries(times).filter(([k, v]) => !k.startsWith('_') && Number.isFinite(v)).map(([, v]) => v).sort((x, y) => x - y);
+  const median = known.length ? known[Math.floor(known.length / 2)] : 1;
+  const w = (d) => { const v = times[d.name]; return Number.isFinite(v) ? v : median; };
+  const load = Array.from({ length: n }, (_, k) => (k === 0 && n > 1 ? SHARD1_HEAD_START_SECS : 0));
+  const mine = new Set();
+  list.map((d, k) => ({ d, k })).sort((x, y) => w(y.d) - w(x.d) || x.k - y.k).forEach(({ d }) => {
+    let best = 0;
+    for (let b = 1; b < n; b++) if (load[b] < load[best]) best = b;
+    load[best] += w(d);
+    if (best === i - 1) mine.add(d);
+  });
+  return list.filter((d) => mine.has(d));
 }
 
 /** Spec 008 FR-112: syntax errors in the given files, from `node --check` (no shell, nothing run). [] when all parse. */

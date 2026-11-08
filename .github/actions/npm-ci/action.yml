@@ -1,0 +1,44 @@
+name: npm ci with an Electron download cache
+description: >-
+  Spec 008 (2026-11-08): restores the Electron and electron-builder downloads from the Actions cache, then runs npm ci
+  (3 tries, 15 s and 45 s apart) so a GitHub release-download outage (504) does not fail a run. No secrets, no inputs.
+inputs:
+  args:
+    description: extra npm ci flags (a fixed string written in the workflow, never PR text)
+    default: ''
+runs:
+  using: composite
+  steps:
+    - id: versions
+      shell: bash
+      run: |
+        echo "electron=$(node -p "require('./package-lock.json').packages['node_modules/electron'].version")" >> "$GITHUB_OUTPUT"
+        echo "builder=$(node -p "require('./package-lock.json').packages['node_modules/electron-builder'].version")" >> "$GITHUB_OUTPUT"
+    - shell: bash
+      env:
+        CACHE_ROOT: ${{ runner.temp }}/electron-downloads
+      run: |
+        mkdir -p "$CACHE_ROOT/electron" "$CACHE_ROOT/builder"
+        {
+          echo "ELECTRON_CACHE=$CACHE_ROOT/electron"
+          echo "electron_config_cache=$CACHE_ROOT/electron"
+          echo "ELECTRON_BUILDER_CACHE=$CACHE_ROOT/builder"
+        } >> "$GITHUB_ENV"
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/electron-downloads
+        key: electron-${{ runner.os }}-${{ runner.arch }}-${{ steps.versions.outputs.electron }}-builder-${{ steps.versions.outputs.builder }}
+    - shell: bash
+      env:
+        NPM_CI_ARGS: ${{ inputs.args }}
+      run: |
+        for try in 1 2 3; do
+          # shellcheck disable=SC2086
+          if npm ci $NPM_CI_ARGS; then exit 0; fi
+          [ "$try" = 3 ] && break
+          if [ "$try" = 1 ]; then wait=15; else wait=45; fi
+          echo "::warning::npm ci failed (try $try of 3), retrying in ${wait}s"
+          sleep "$wait"
+        done
+        echo "::error::npm ci failed 3 times"
+        exit 1
