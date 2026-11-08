@@ -1,2 +1,3 @@
 # Pictures that may be over the picture budget (scripts/picture-budget.js). One line each: path | max KB | reason
 # A line needs a reason and a whole number of KB, and the file must exist. Empty on purpose: compress-shots fixes screenshots.
+docs/screenshots/readme-real-office-1440x900.png | 900 | README lead picture: a photographed scene; the 256-colour palette of compress-shots fails its quality guard (mean error 1.29 > 1), so it stays the PNG the driver wrote (spec 008 delta 2026-11-08, #1256)
