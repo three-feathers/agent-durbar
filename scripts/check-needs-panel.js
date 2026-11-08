@@ -281,7 +281,9 @@ module.exports = async (ctx) => {
         };
         const answered = async (what) => {
           await key('a', [], { char: 'always' });
-          assert.ok(await until(`window.__perm.length===1`, 3000), `${at}: ${what} ${JSON.stringify(await js('window.__perm.slice()'))}`);
+          const got = await until(`window.__perm.length===1`, 3000);
+          const seen = JSON.stringify(await js('window.__perm.slice()'));
+          assert.ok(got, at + ': ' + what + ' ' + seen);
           assert.deepStrictEqual(await js('window.__perm.slice()'), [`dm${n}y-` + w + ':true'], `${at}: and it is that row's own request (${n})`);
           await ctx.sleep(1000);
         };
