@@ -238,9 +238,9 @@ const none = (t: string, k: string, m: string) => eq(L.check(t, k).findings, [],
 {
   const C = 'раураӏ.invalid';
   for (const t of ['"ssh" ' + C, "'ssh' " + C, '"ss"h ' + C, 's\\sh ' + C, "$'ssh' " + C, "$'s\\sh' " + C, 'ss\\\nh ' + C, 'ssh \\\n' + C, '{ ssh ' + C + '; }', 'if true; then ssh ' + C + '; fi', '! ssh ' + C,
-    'while true; do ssh ' + C + '; done', 'ls #"\nssh ' + C, "ls #'\nssh " + C, 'echo # x\nssh ' + C, "echo '#' ; ssh " + C, 'ssh u@' + C + '#x'])
+    'while true; do ssh ' + C + '; done', '"sudo" -u root ssh ' + C, 'echo a#b ; ssh ' + C, 'ls #"\nssh ' + C, "ls #'\nssh " + C, 'echo # x\nssh ' + C, "echo '#' ; ssh " + C, 'ssh u@' + C + '#x'])
     ok(L.check('run ' + t, 'shell').hosts.some((h) => h.shown === C), 'the host is found: ' + JSON.stringify(t));
-  for (const t of ['echo "ssh" ' + C, '# ssh ' + C, 'echo if ssh ' + C, 'echo { ssh ' + C, 'ls # "\nls ' + C, "echo \"ssh $'x'\" " + C])
+  for (const t of ['echo "ssh" ' + C, '# ssh ' + C, 'echo if ssh ' + C, 'echo { ssh ' + C, 'ls # "\nls ' + C, 'echo "x ; ssh ' + C + ' y"', "echo 'x ; ssh " + C + " y'", "echo \"ssh $'x'\" " + C])
     ok(!L.check('run ' + t, 'shell').hosts.some(L.hostOdd) && L.check('run ' + t, 'shell').findings.length === 0, 'stays clean: ' + JSON.stringify(t));
   eq(L.check("run ssh $'" + C + "'", 'shell').hosts, [], 'a quoted host is not read (spec 003 known gap)');
   eq(L.check('run ssh "u"@' + C, 'shell').hosts, [], 'nor a host after a quoted user (spec 003 known gap)');
