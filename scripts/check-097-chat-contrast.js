@@ -61,8 +61,10 @@ const LINES = `(()=>{const out=[],p=document.getElementById('panel'),W=innerWidt
   }
   return out;})()`;
 const MARK = 4; // the marker's side in CSS px
-const HIDE_ON = `(()=>{const s=document.createElement('style');s.id='cc-hide';s.textContent=${MUTANT === 'nohide' ? "''" : "'#panel,#panel *{color:transparent!important;-webkit-text-fill-color:transparent!important;text-shadow:none!important;caret-color:transparent!important;text-decoration-color:transparent!important}'"};document.head.appendChild(s);
-  const m=document.createElement('div');m.id='cc-mark';m.style.cssText='position:fixed;top:0;right:0;width:${MARK}px;height:${MARK}px;background:#ff00ff;z-index:2147483647;pointer-events:none';document.body.appendChild(m);return true})()`;
+const HIDE_CSS = MUTANT === 'nohide' ? '' : '#panel,#panel *{color:transparent!important;-webkit-text-fill-color:transparent!important;text-shadow:none!important;caret-color:transparent!important;text-decoration-color:transparent!important}';
+const MARK_CSS = `position:fixed;top:0;right:0;width:${MARK}px;height:${MARK}px;background:#ff00ff;z-index:2147483647;pointer-events:none`;
+const HIDE_ON = `(()=>{const s=document.createElement('style');s.id='cc-hide';s.textContent=${jsLiteral(HIDE_CSS)};document.head.appendChild(s);
+  const m=document.createElement('div');m.id='cc-mark';m.style.cssText=${jsLiteral(MARK_CSS)};document.body.appendChild(m);return true})()`;
 const HIDE_OFF = `(()=>{for(const id of ['cc-hide','cc-mark']){const s=document.getElementById(id);if(s)s.remove();}return true})()`;
 /* the marker's colour, read from a capture: BGRA bitmap, a pixel well inside the marker */
 const hasMark = (img, s) => {

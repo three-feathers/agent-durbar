@@ -59,7 +59,7 @@ const TRACE_MUTANT = process.env.OPS_TRACE_MUTANT || '';
 const markerIn = (events) => events.some((e) => e.name === 'TimeStamp' && e.args && e.args.data && e.args.data.message === MARK);
 async function tracedWithMarker(code) {
   for (let attempt = 1; attempt <= TRACE_TRIES; attempt++) {
-    const events = await trace(() => code(TRACE_MUTANT === 'nomark' ? '' : `console.timeStamp(${jsLiteral(MARK)});`));
+    const events = await trace(() => code(TRACE_MUTANT !== 'nomark'));
     if (markerIn(events)) return { events, attempt };
   }
   return { events: null, attempt: TRACE_TRIES };
@@ -137,7 +137,7 @@ module.exports = async (ctx) => {
       await change(0);
       await H.settle();
       /* calibration (pre-review of #949): a new element always has its style computed, so a trace with no UpdateLayoutTree event at all means the thread or event name changed. A text change itself may recalculate 0 elements when no stylesheet rule watches it (the AI maker's \`body:has()\` rule used to), and that is a pass */
-      const sample = await tracedWithMarker((mark) => js(`(()=>{${mark}const d=document.querySelector(${jsLiteral(host)});const s=document.createElement('i');s.className='ops-probe';d.appendChild(s);const h=document.body.offsetHeight;s.remove();return h;})()`));
+      const sample = await tracedWithMarker((mark) => js(`(()=>{if(${jsLiteral(mark)})console.timeStamp(${jsLiteral(MARK)});const d=document.querySelector(${jsLiteral(host)});const s=document.createElement('i');s.className='ops-probe';d.appendChild(s);const h=document.body.offsetHeight;s.remove();return h;})()`));
       console.log(`[ops] ${label}: calibration trace recorded the page's marker on attempt ${sample.attempt}`);
       assert.ok(sample.events, `${label}: a trace holding the page's own marker: none of ${TRACE_TRIES} traces did, so the renderer was not recording while the page code ran`);
       const probe = elementsRecalculated(sample.events, TRACE_MUTANT === 'name' ? 'UpdateLayoutTreeX' : 'UpdateLayoutTree');
