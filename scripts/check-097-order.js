@@ -167,7 +167,16 @@ module.exports = async (ctx) => {
       }
       assert.deepStrictEqual(await plates(A), P, `${tag}: back where it was`);
     };
-    await walk(P, 'as the simulator has it');
+    /* the simulator sends agents away on its own clock (a visit shows after a 600 ms debounce and ends after a dwell), so the away set is read only once no visit is about to start
+       or end, and the agents away then are pinned at their place (`crowd`: a pin is never ended by a tick or a tool event). The set cannot change during the walk. Released after it. */
+    await must(`window.__durbarSimUi.visitsSettled()`, `${tag}: no visit is about to start or end`, 30000);
+    {
+      const mainIds = await js(`window.__durbarSimUi.agents().filter(a=>!a.parent).map(a=>a.id)`);
+      const away1 = await js(`[...document.querySelectorAll('#stage .ro-plate.narrow[data-id]')].map(p=>p.dataset.id)`);
+      for (const id of away1) if (mainIds.includes(id)) await js(`window.__durbarSimUi.crowd('library',1,${jsLiteral(mainIds.indexOf(id))})`);
+      await must(`${jsLiteral(away1)}.every(id=>{const e=document.querySelector('#stage .ro-plate[data-id="'+id+'"]');return e&&e.classList.contains('narrow')})&&document.querySelectorAll('#stage .ro-plate.narrow[data-id]').length===${jsLiteral(away1.length)}`, `${tag}: the away set is pinned (${away1})`);
+      await walk(await plates(A), 'the away set the simulator made, pinned');
+    }
     /* the case the simulator only sometimes makes, made every time: the first two desks of the room stand away at a place, so the first desk that can move has an away desk before it (it swaps past them, and says already first only at the front of the whole room) */
     {
       const agentsMain = await js(`window.__durbarSimUi.agents().filter(a=>!a.parent).map(a=>a.id)`), P1 = await plates(A);
@@ -176,7 +185,6 @@ module.exports = async (ctx) => {
       const P2 = await plates(A);
       assert.deepStrictEqual(P2.slice(0, 2), P1.slice(0, 2), `${tag}: they keep their places in the row (${P1} / ${P2})`);
       await walk(P2, 'the first two desks away');
-      await js(`window.__durbarSimUi.uncrowd()`);
     }
 
     /* ---- 2b. Alt+arrows inside a text field do nothing in Real office (review of PR 1315, finding 3). No text field of the office sits on a plate, so a plain <input> is put inside a movable plate (the guard ahead of the Real branch is what is tested) ---- */
@@ -199,6 +207,7 @@ module.exports = async (ctx) => {
       assert.deepStrictEqual(await plates(A), orderBefore, `${tag}: no desk moved`);
       assert.deepStrictEqual(await saved(), doc, `${tag}: and nothing was saved`);
       await js(`document.querySelectorAll('#tp-field,#tp-control').forEach(e=>e.remove())`);
+      await js(`window.__durbarSimUi.uncrowd()`); /* the pins end here: the away desks are the simulator's own again for the steps that do not depend on them */
     }
     await checks(`${tag} after the desk moves`);
 
