@@ -184,6 +184,12 @@ const AA = A as unknown as {
   // a plain wait is forgotten at once when the agent leaves that state
   r = mk(); r.observe([], on); r.observe([plain('w', 'w')], on); r.observe([], on);
   assert.strictEqual(keys(r.observe([plain('w', 'w')], on)), 'w|w', 'a plain wait that left and came back is new');
+  // a settled card is forgotten: the same key coming back is new (the map does not grow without limit)
+  r = mk(); r.observe([], on);
+  assert.strictEqual(keys(r.observe([cardOf('s', 'r-settle')], on)), 'r:r-settle');
+  assert.strictEqual(keys(r.observe([cardOf('s', 'r-settle')], on)), '', 'a card still waiting is not new again');
+  r.observe([], on);
+  assert.strictEqual(keys(r.observe([cardOf('s', 'r-settle')], on)), 'r:r-settle', 'a settled card that came back is new (settled cards are forgotten)');
   // a burst: all fresh keys in one look (the app opens once)
   r = mk(); r.observe([], on);
   assert.strictEqual(r.observe(Array.from({ length: 15 }, (_, i) => cardOf('a' + i, 'b' + i)), on).fresh.length, 15, 'a burst is one look with 15 fresh');
@@ -214,6 +220,12 @@ const AA = A as unknown as {
   assert.strictEqual(g.ruling({ open: false, held: false }), 'none');
   g.startup(); assert.strictEqual(g.ruling({ open: false, held: true }), 'hold', 'app start is held like any opening');
   assert.strictEqual(g.ruling({ open: false, held: false }), 'startup', 'and still says startup when it opens');
+  // requests that arrive while the panel is open are seen there: a later close that is not a dismissal does not reopen it for them
+  t += A.THROTTLE_MS + 1; g.arrive(2);
+  assert.strictEqual(g.ruling({ open: true, held: false }), 'none', 'open: the arrivals are seen');
+  assert.strictEqual(g.ruling({ open: false, held: false }), 'none', 'pending is cleared while the panel is open: a close that is not a dismissal does not reopen it');
+  g.startup(); assert.strictEqual(g.ruling({ open: true, held: false }), 'none', 'open: the app-start opening is seen too');
+  assert.strictEqual(g.ruling({ open: false, held: false }), 'none', 'the app-start flag is cleared while the panel is open');
 }
 
 // wiring: the page loads the helper and the build copies it
