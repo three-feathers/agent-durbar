@@ -60,7 +60,9 @@
       };
     });
   }
-  function focusTab(tab,doc){const el=(doc||document).getElementById(tab.elId);if(el)el.focus({preventScroll:true});}
+  /* A tab by its id, or undefined: the caller's `select()` may be given an id this chat has no tab for. */
+  function byId(tabs,id){return tabs.find(t=>t.id===id);}
+  function focusTab(tab,doc){const el=tab&&(doc||document).getElementById(tab.elId);if(el)el.focus({preventScroll:true});}
 
-  return {tabKey,tabsFor,listLabel,nextTab,tabsHTML,setSelected,wire,focusTab};
+  return {tabKey,tabsFor,listLabel,nextTab,tabsHTML,setSelected,wire,focusTab,byId};
 })());

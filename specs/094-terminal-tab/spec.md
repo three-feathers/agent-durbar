@@ -4,14 +4,14 @@
 group: 046
 title: Terminal tab (issue #807): a Terminal tab next to Chat and Browser in a chat; one terminal per folder, shared by the folder's chats, started in the folder with the user's login shell; it keeps running until its close button, folder removal or app quit (a quit with a running command warns); user-only, agents never see it; no output logged or saved
 status: draft
-note: spec, plan, research and tasks drafted; nothing built
+note: spec, plan, research and tasks drafted; T040 built (the tablist module, no behaviour change); the Terminal itself is not built
 -->
 
 **Feature Branch**: `094-terminal-tab` (spec); code branches `094-pN-slug`, one per phase
 
 **Created**: 2026-10-27
 
-**Status**: Draft. Nothing is built. The dependency facts in [research.md](research.md) were read from the npm registry and the package tarballs on 2026-10-27 (`read:`); nothing was installed or run.
+**Status**: Draft. Only T040 is built (2026-11-07: the chat tablist moved into `paneltabs.js`, no behaviour change); the Terminal itself is not. The dependency facts in [research.md](research.md) were read from the npm registry and the package tarballs on 2026-10-27 (`read:`); nothing was installed or run.
 
 **Input**: Issue #807 (owner idea, 2026-10-27): "Built-in terminal panel, VS Code style, opened in the room's folder." Owner decisions by Paco on the issue (2026-10-27), recorded under *Clarifications*.
 
@@ -19,7 +19,7 @@ note: spec, plan, research and tasks drafted; nothing built
 
 ## Context: what exists today
 
-- **The Browser tab (spec 080)**: a chat of a live top-level session shows a `Chat | Browser` tablist under the header. The tabs, the bar and the pane are `src/renderer/browserpane.js` (`tabsHTML`, `paneHTML`, `mount`, `select`, `hide`, `current`, the roving `tabKey`), mounted by `openPanel()` in `src/renderer/app.js`; the page is a native view owned by main (`src/main/browser/*`, IPC `browser:*` in `src/main/ipc/browser.ts`, preload `browser*` in `src/preload/preload.ts`). The browser is **per session** (agent id); this feature is **per folder**. The tablist is hard-coded for two tabs (`select(i?'browser':'chat')`).
+- **The Browser tab (spec 080)**: a chat of a live top-level session shows a `Chat | Browser` tablist under the header. The tabs, the bar and the pane are `src/renderer/browserpane.js` (`tabsHTML`, `paneHTML`, `mount`, `select`, `hide`, `current`, the roving `tabKey`), mounted by `openPanel()` in `src/renderer/app.js`; the page is a native view owned by main (`src/main/browser/*`, IPC `browser:*` in `src/main/ipc/browser.ts`, preload `browser*` in `src/preload/preload.ts`). The browser is **per session** (agent id); this feature is **per folder**. Written 2026-10-27: the tablist was hard-coded for two tabs (`select(i?'browser':'chat')`); since T040 (2026-11-07) `tabsHTML`, the roving `tabKey` and the selected state are `paneltabs.js`'s, and `browserpane.js` is one owner of it (see *Changes*).
 - **The chat panel is rebuilt on every `openPanel()`**; a chat's log survives because its element is kept per agent (`getChat(a)`, `chats[a.id]`) and re-appended. The office is hidden while the panel is open (`body.panel-open`).
 - **Folders**: a room is a folder or a `.code-workspace`. Main keys a folder by `workspaceFile ?? cwd` (`wsKey`, `src/main/main.ts`); a session's `cwd` is the folder, or the **first folder listed** in a workspace file (`resolveWorkspaceCwd`, `src/adapters/workspace.ts`). Removing a folder ends its sessions (`folders:remove`, `src/main/ipc/folders.ts`; confirm text in `removeFolder()`, `app.js`).
 - **Quit**: one `before-quit` handler asks *Quit / Cancel* while agents work (`confirmQuit()`, `workingCount()`, `quitMessage()` in `src/main/daily.ts`); on macOS closing the window only hides it (spec 052 FR-085).
@@ -289,7 +289,7 @@ Mia starts a dev server in the terminal of `shop-api`, goes back to the office, 
 
 ## Known gaps (honest limits)
 
-- `[KNOWN GAP]` Nothing is built or run. The dependency facts are `read:` only (registry and tarball listings, 2026-10-27; see research.md).
+- `[KNOWN GAP]` Only T040 (the tablist module) is built; the Terminal and the dependency are not built or run. The dependency facts are `read:` only (registry and tarball listings, 2026-10-27; see research.md).
 - `[KNOWN GAP]` Real shells, input methods (IME), copy and paste, and screen readers (VoiceOver, NVDA, Orca) can only be checked on real machines; the simulator checks the fake shell and the DOM.
 - `[KNOWN GAP]` Windows cannot tell a running command from an idle prompt (FR-031).
 - `[KNOWN GAP]` The Linux prebuilt PTY binary's minimum glibc and the AppImage on older distributions are not known.
@@ -325,7 +325,7 @@ Q1-Q8 are answered (all (a), *Clarifications*). From the review on #811 (answers
 
 ### 2026-11-07: T040 builds the tablist module as a refactor (no behaviour change)
 
-`src/renderer/paneltabs.js` holds the chat tablist: `tabsFor` (Chat, then each owner offered; today Browser), `tabsHTML`, the roving `tabKey`/`nextTab`, `setSelected`, `wire`, `focusTab`. `browserpane.js` is a tab owner and calls it (`BP.tabKey` and `BP.tabsHTML` keep their signatures). Ids, ARIA and keys are unchanged. The unit cases live in `scripts/test-paneltabs.ts` (`test:paneltabs`) because `scripts/test-termpane.ts` does not exist before T042; T052 and T043 still create that file. Previous sessions stays in the `openPanel` template: it is not a tab, and moving it is the one-row header step (spec 005 T117). Terminal (FR-001) is added by T044 through `tabsFor`.
+`src/renderer/paneltabs.js` holds the chat tablist: `tabsFor` (Chat, then each owner offered; today Browser), `tabsHTML`, the roving `tabKey`/`nextTab`, `setSelected`, `wire`, `focusTab`. `browserpane.js` is a tab owner and calls it (`BP.tabKey` and `BP.tabsHTML` keep their signatures). Ids, ARIA and keys are unchanged. The unit cases live in `scripts/test-paneltabs.ts` (`test:paneltabs`) because `scripts/test-termpane.ts` is created by T043 (the first task that names it; T042 has no pure helper to test), not before; T052 also adds cases to it. Previous sessions stays in the `openPanel` template: it is not a tab, and moving it is the one-row header step (spec 005 T117). What T040 left in `browserpane.js`, on purpose: the selected tab (`cur.tab`), the `on-browser` class on `.panel-in`, `startTab`/`wantTab`, `current()` and `select(tab)` (any id other than `chat` is treated as Browser), and the gate (`available(a)`) that decides whether the tablist is written at all; `tabsFor` is called once at load with `{browser:true}`, and `tabsHTML` stays `BP.tabsHTML()` in the panel template. **T044 moves those**: the selection and the `on-<tab>` class into `paneltabs.js` with owners that register, one `tabsFor(own)` call per chat, and `PT.tabsHTML` in the template; until then Terminal cannot be added by `tabsFor` alone (no tablist exists for a helper's chat or the page without the bridge). The plan's `tabsFor(a, caps)` is `tabsFor(own)` as built. T040 also did the `paneltabs.js` half of T041's copy-list and `index.html` lines (its tests need the file shipped); T041 keeps `termpane.js` and the vendor files. `paneltabs.js` must load before `browserpane.js` (`test:paneltabs` loads both in a fake page and checks the order and the copy list). `select()` with an id that has no tab no longer throws on focus (`byId` returns nothing); it still treats any non-`chat` id as Browser, which T044 replaces. `[KNOWN GAP]` the DOM half is tested on a fake document and the page path in a `vm` context; the real window is the Browser drivers (`check-browser-tab`, `-dialogs`, `-links` and the rest that read `#tabChat`, `#tabBrowser` or `#panelTabs`).
 
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 

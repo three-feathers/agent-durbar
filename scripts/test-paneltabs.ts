@@ -15,6 +15,10 @@ interface PT {
   listLabel(tabs: Tab[]): string;
   nextTab(tabs: Tab[], index: number, e: { key: string; altKey?: boolean; ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean }): Tab | null;
   tabsHTML(tabs: Tab[], selected: string): string;
+  setSelected(tabs: Tab[], selected: string, doc: unknown): void;
+  wire(tabs: Tab[], choose: (t: Tab, o?: { focus?: boolean }) => void, doc: unknown): void;
+  focusTab(tab: Tab | undefined, doc: unknown): void;
+  byId(tabs: Tab[], id: string): Tab | undefined;
 }
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const P: PT = require(path.join(ROOT, 'src', 'renderer', 'paneltabs.js'));
@@ -30,6 +34,7 @@ assert.strictEqual(P.tabKey('ArrowRight', 0, 0), -1);
 
 // tabsFor: Chat first, Browser only when offered
 assert.deepStrictEqual(P.tabsFor().map((t) => t.id), ['chat']);
+assert.deepStrictEqual(P.tabsFor({ browser: false }).map((t) => t.id), ['chat'], 'an owner that says false adds no tab (Terminal will go through this gate)');
 assert.deepStrictEqual(P.tabsFor({ browser: true }).map((t) => t.id), ['chat', 'browser']);
 assert.deepStrictEqual(P.tabsFor({ browser: true }).map((t) => t.elId), ['tabChat', 'tabBrowser'], 'element ids the drivers and styles use');
 assert.strictEqual(P.listLabel(P.tabsFor({ browser: true })), 'Chat or browser');
@@ -50,10 +55,65 @@ assert.ok(/id="tabBrowser" role="tab" type="button" aria-selected="false" aria-c
 assert.strictEqual((P.tabsHTML(two, 'browser').match(/tabindex="0"/g) ?? []).length, 1, 'exactly one tab stop');
 assert.ok(/id="tabBrowser"[^>]*aria-selected="true"[^>]*tabindex="0"/.test(P.tabsHTML(two, 'browser')));
 
+// the whole tablist is byte-identical to the one browserpane.js wrote before T040 (PR claim, now compared)
+assert.strictEqual(P.tabsHTML(two, 'chat'),
+  '<div class="ptabs" id="panelTabs" role="tablist" aria-label="Chat or browser">'
+  + '<button class="ptab" id="tabChat" role="tab" type="button" aria-selected="true" aria-controls="chat" tabindex="0">Chat</button>'
+  + '<button class="ptab" id="tabBrowser" role="tab" type="button" aria-selected="false" aria-controls="browserPane" tabindex="-1">Browser</button></div>', 'tablist markup, byte for byte');
+
+// byId: by id, never by position
+assert.strictEqual(P.byId(two, 'chat')?.elId, 'tabChat'); assert.strictEqual(P.byId(two, 'browser')?.elId, 'tabBrowser');
+assert.strictEqual(P.byId(two, 'terminal'), undefined, 'an id with no tab is undefined, not Browser');
+
+// the DOM half, on a fake document: selected state, click and key rules, focus
+{
+  interface FakeEl { id: string; attrs: Record<string, string>; tabIndex: number; focused: unknown[]; onclick?: () => void; onkeydown?: (e: unknown) => void; setAttribute(k: string, v: string): void; focus(o: unknown): void }
+  const mk = (ids: string[]) => {
+    const els: Record<string, FakeEl> = {};
+    for (const id of ids) els[id] = { id, attrs: {}, tabIndex: 99, focused: [], setAttribute(k, v) { this.attrs[k] = v; }, focus(o) { this.focused.push(o); } };
+    return { els, doc: { getElementById: (id: string) => els[id] || null } };
+  };
+  const f = mk(['tabChat', 'tabBrowser']);
+  P.setSelected(two, 'browser', f.doc);
+  assert.deepStrictEqual([f.els.tabChat.attrs['aria-selected'], f.els.tabBrowser.attrs['aria-selected']], ['false', 'true'], 'setSelected: aria-selected as strings');
+  assert.deepStrictEqual([f.els.tabChat.tabIndex, f.els.tabBrowser.tabIndex], [-1, 0], 'setSelected: the one tab stop moves with the selection');
+  P.setSelected(two, 'chat', mk(['tabChat']).doc); // a missing tab element is skipped, not a throw (the old code threw and aborted mount)
+
+  const chosen: { id: string; o?: { focus?: boolean } }[] = [];
+  const g = mk(['tabChat', 'tabBrowser']);
+  P.wire(two, (tab, o) => chosen.push({ id: tab.id, o }), g.doc);
+  g.els.tabBrowser.onclick?.();
+  assert.deepStrictEqual(chosen.pop(), { id: 'browser', o: undefined }, 'a click chooses its tab and asks for no focus move');
+  const ev = (key: string, extra: Record<string, boolean> = {}) => { const e = { key, ...extra, prevented: 0, stopped: 0, preventDefault() { this.prevented++; }, stopPropagation() { this.stopped++; } }; return e; };
+  const right = ev('ArrowRight'); g.els.tabChat.onkeydown?.(right);
+  assert.deepStrictEqual(chosen.pop(), { id: 'browser', o: { focus: true } }, 'ArrowRight chooses the next tab and moves focus');
+  assert.deepStrictEqual([right.prevented, right.stopped], [1, 1], 'and the key is neither scrolled nor seen by the page\'s other key listeners');
+  const left = ev('ArrowLeft'); g.els.tabChat.onkeydown?.(left); assert.strictEqual(chosen.pop()?.id, 'browser', 'ArrowLeft wraps');
+  for (const k of [ev('Enter'), ev('ArrowRight', { shiftKey: true }), ev('ArrowRight', { ctrlKey: true })]) { g.els.tabChat.onkeydown?.(k); assert.deepStrictEqual([chosen.length, k.prevented, k.stopped], [0, 0, 0], `${k.key} is left alone`); }
+  P.wire(two, () => undefined, mk(['tabChat']).doc); // a missing element: no throw
+
+  P.focusTab(P.byId(two, 'browser'), f.doc);
+  assert.deepStrictEqual([f.els.tabBrowser.focused, f.els.tabChat.focused], [[{ preventScroll: true }], []], 'focusTab focuses that tab without scrolling');
+  P.focusTab(P.byId(two, 'terminal'), f.doc); // no tab for the id: nothing happens (select() with an unknown id must not throw)
+}
+
+// the page path: paneltabs.js sets window.DurbarPanelTabs and browserpane.js, loaded after it, reads it (a rename of the global would leave no DurbarBrowserPane)
+{
+  const vm = require('vm') as typeof import('vm');
+  const ctx = vm.createContext({}) as Record<string, unknown>; ctx.self = ctx;
+  vm.runInContext(src('src/renderer/paneltabs.js'), ctx, { filename: 'paneltabs.js' });
+  assert.strictEqual(typeof (ctx.DurbarPanelTabs as PT | undefined)?.tabsHTML, 'function', 'paneltabs.js defines window.DurbarPanelTabs');
+  vm.runInContext(src('src/renderer/browserpane.js'), ctx, { filename: 'browserpane.js' });
+  const bp = ctx.DurbarBrowserPane as { tabsHTML(): string } | undefined;
+  assert.ok(bp && bp.tabsHTML() === P.tabsHTML(two, 'chat'), 'browserpane.js loads after it and draws the same tablist');
+}
+
 // wiring: the browser pane uses the module and no longer carries its own tablist code
 const bp = src('src/renderer/browserpane.js');
 assert.ok(/PT\.tabsHTML\(PANEL_TABS/.test(bp) && /PT\.wire\(PANEL_TABS/.test(bp) && /PT\.setSelected\(PANEL_TABS/.test(bp), 'browserpane.js draws, wires and selects through paneltabs.js');
 assert.ok(!/class="ptab"|role="tablist" aria-label="Chat or browser"/.test(bp), 'no tablist markup left in browserpane.js');
+assert.ok(/PT\.wire\(PANEL_TABS,\(t,o\)=>select\(t\.id,o\)\)/.test(bp) && /PT\.setSelected\(PANEL_TABS,tab\)/.test(bp) && /PT\.focusTab\(PT\.byId\(PANEL_TABS,tab\)\)/.test(bp), 'the choice, the selection and the focus pass the tab and its options through unchanged');
+assert.ok(!/'Browser'/.test(bp), 'the Browser tab\'s word is the tablist module\'s label, not a second literal in render()');
 const html5 = src('src/renderer/index.html');
 assert.ok(html5.indexOf('paneltabs.js') > 0 && html5.indexOf('paneltabs.js') < html5.indexOf('browserpane.js'), 'paneltabs.js loads before browserpane.js');
 assert.ok(/'paneltabs\.js'/.test(src('scripts/copy-assets.js')), 'paneltabs.js is copied to dist');

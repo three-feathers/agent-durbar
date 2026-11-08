@@ -13,7 +13,7 @@
   /* Spec 094 T040: the tablist (Chat | Browser) is src/renderer/paneltabs.js; Browser is one tab owner of it. */
   const PT=typeof module==='object'&&module.exports?require('./paneltabs.js'):self.DurbarPanelTabs;
   const tabKey=PT.tabKey;
-  const PANEL_TABS=PT.tabsFor({browser:true}), TAB_OF={chat:PANEL_TABS[0],browser:PANEL_TABS[1]};
+  const PANEL_TABS=PT.tabsFor({browser:true}), BROWSER_LABEL=PT.byId(PANEL_TABS,'browser').label;
   /* What the bar shows for a state: every word and flag in one place, so the DOM code only copies it. */
   function barModel(s){
     const open=!!(s&&s.open), loading=open&&!!s.loading, err=open&&!loading&&typeof s.error==='string'&&s.error?s.error:'';
@@ -203,7 +203,7 @@
     set('bTitle',e=>{e.textContent=m.title;e.title=m.title;});
     set('bSound',e=>{e.disabled=!m.open;e.innerHTML=(m.sound.on?SVG.soundOn:SVG.soundOff)+'<span></span>';e.querySelector('span').textContent=m.sound.word;e.title=m.sound.hint;e.dataset.on=String(m.sound.on);});
     set('bSys',e=>{e.disabled=!m.system;});
-    set('tabBrowser',e=>{e.textContent=m.dialogOpen?'Browser · Dialog open':'Browser';});
+    set('tabBrowser',e=>{e.textContent=m.dialogOpen?BROWSER_LABEL+' · Dialog open':BROWSER_LABEL;}); /* the word is the tablist module's */
   }
 
   /* FR-122: the strip of the mounted session; focus stays on the same tab button when the list is redrawn */
@@ -344,7 +344,7 @@
     const id=cur.id;
     cur.tab=tab;
     setSelected(tab);
-    if(o&&o.focus)PT.focusTab(TAB_OF[tab]);
+    if(o&&o.focus)PT.focusTab(PT.byId(PANEL_TABS,tab));
     if(tab==='chat'){
       unwatchSize();
       clearCover(cur);
