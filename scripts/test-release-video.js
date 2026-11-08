@@ -94,8 +94,10 @@ const checkChoice = (M) => {
   assert.deepStrictEqual(pick([], ['crews', 'crews']), ['intro', 'crews', 'outro'], 'a Scene: field alone picks its scene, once');
   assert.throws(() => pick([], ['intro', 'nope', 'toString']), /no scene shows/, 'the cards and unknown ids are no scene');
   const six = ['crews', 'mcp', 'org', 'floors', 'refresh', 'needsyou'];
-  assert.strictEqual(M.AUTO_MAX, 5, 'AUTO_MAX is pinned at 5 feature scenes (a clip of 6 would pass LEN_MAX)');
-  assert.deepStrictEqual(pick([], six), ['intro', 'crews', 'mcp', 'org', 'floors', 'refresh', 'outro'], 'six candidates are cut to AUTO_MAX (5) scenes between the cards');
+  assert.strictEqual(M.AUTO_MAX, 4, 'AUTO_MAX is pinned at 4 feature scenes (spec 008 FR-187, issue #1305: with two Real office photo scenes a clip of 5 was 6.2 MB at 640 px and 128 colours, over the 5 MiB cap)');
+  assert.deepStrictEqual(pick([], ['realoffice', 'crews', 'mcp']).slice(1, 3), ['realoffice', 'crews'], 'the realoffice scene is chosen by its Scene: field (spec 008 FR-187)');
+  assert.strictEqual(typeof M.SCENES.realoffice.play, 'function', 'the realoffice scene is in the catalogue');
+  assert.deepStrictEqual(pick([], six), ['intro', 'crews', 'mcp', 'org', 'floors', 'outro'], 'six candidates are cut to AUTO_MAX (4) scenes between the cards');
   assert.ok(!lounge('- x (respec 097 FR-246): a') && !lounge('- x (prespec 097 FR-246): a'), '"respec 097" is not "spec 097" (word boundary)');
 };
 checkChoice(RV);
@@ -185,7 +187,7 @@ assert.ok(5240561 <= RV.GIF_MAX, 'the v0.1.12 GIF is under the cap');
     ['CRLF not normalised', ".replace(/\\r\\n?/g, '\\n').split('\\n');\n    const at", ".split('\\n');\n    const at", /CRLF CHANGELOG/],
     ['an FR list runs to the closing parenthesis (two specs in one)', "((?:(?!\\bspec \\d{3}\\b)[^)])*)", "([^)]*)", /second owns the FR|frsNamed: the second spec/],
     ['spec without a word boundary', "/\\bspec (\\d{3})", "/spec (\\d{3})", /word boundary/],
-    ['AUTO_MAX raised', "const AUTO_MAX = 5;", "const AUTO_MAX = 6;", /AUTO_MAX is pinned|cut to AUTO_MAX/],
+    ['AUTO_MAX raised', "const AUTO_MAX = 4;", "const AUTO_MAX = 5;", /AUTO_MAX is pinned|cut to AUTO_MAX/],
     ['spec without FR numbers shows an FR scene', "if (!ref.fr) return true;\n  return got.some", "if (!ref.fr || !got.length) return true;\n  return got.some", /named without FR numbers/],
   ];
   try {
