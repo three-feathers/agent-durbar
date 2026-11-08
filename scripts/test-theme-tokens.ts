@@ -13,7 +13,7 @@ import * as assert from 'node:assert';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { BAR_TOKENS, FONT_ALLOW, HOSTILE_RE, TYPED_TOKENS, typedValue } from '../src/shared/themetokens';
-import { BAR_PAIRS, CONTRAST_PAIRS, UI_PAIRS, BRAND_UIS, WORLD_GLASS, contrast, glassOver, luminance, themeIssues } from '../src/shared/themegen';
+import { BAR_PAIRS, CONTRAST_PAIRS, NAMED_COLOURS, UI_PAIRS, BRAND_UIS, WORLD_GLASS, contrast, glassOver, luminance, parseColor, resolveColor, themeIssues } from '../src/shared/themegen';
 import { ART_SLOTS, checkUserManifest } from '../src/shared/themes';
 
 const ROOT = process.cwd();
@@ -193,7 +193,7 @@ for (const f of FILES) {
   assert.deepStrictEqual(T.contrastCheck(DARK), [], 'and none for a readable theme');
 
   // built-ins: no fallbacks reported, and applying one leaves every pair token exactly as designed (a fix on built-ins would change Retro's ink)
-  for (const t of T.list()) assert.deepStrictEqual(T.fallbacks(t.id), { dropped: [], contrast: [] }, `built-in ${t.id} uses all of its values`);
+  for (const t of T.list()) assert.deepStrictEqual(T.fallbacks(t.id), { dropped: [], contrast: [], unmeasured: [] }, `built-in ${t.id} uses all of its values`);
   const keys = [...new Set(CONTRAST_PAIRS.flatMap(([fg, bg]) => [fg, bg]))];
   for (const id of Object.keys(T._builtins())) {
     const own = { ...T._builtins()[T.CLEAN_ID].tokens, ...(T._builtins()[id].tokens || {}) };
@@ -577,4 +577,36 @@ console.log('toggle switch: on track, both knobs pass 3:1 in Clean Office and th
   const ink = '#2c3733', ink2 = '#56605b', muted = '#535a55';
   for (const [fg, bg, min, what] of [[ink, page, 4.5, 'ink on page'], [ink2, page, 4.5, 'ink-2 on page'], [muted, page, 4.5, 'muted on page'], [ink, page2, 4.5, 'ink on surface-2'], [ink2, page2, 4.5, 'ink-2 on surface-2'], [muted, page2, 4.5, 'muted on surface-2'], [page, acc, 4.5, 'primary text on accent'], [page, hov, 4.5, 'primary text on hover'], [ctl, page, 3, 'control edge on page'], [ctl, page2, 3, 'control edge on surface-2']] as Array<[string, string, number, string]>) assert.ok(contrast(fg, bg) >= min, `flat look: ${what} ${contrast(fg, bg).toFixed(2)} < ${min}`);
   console.log('flat look: gated to Flat, off values kept in :root, 24 px floor, FR-061 pairs pass');
+}
+
+// ---- spec 070 FR-080 (#1259): the renderer measures and repairs every colour form; it reports what it cannot measure ----
+{
+  // theme.js parses exactly as themegen.ts does, on every form and every name
+  const forms = ['#fff', '#f008', '#1b2230', '#ff000080', 'rgb(255, 0, 0)', 'rgb(233 241 248 / .93)', 'rgb(100% 0% 0% / 50%)', 'rgba(0,0,255,.5)', 'hsl(120deg 100% 25%)', 'hsla(240 100% 50% / .25)', 'white', 'RebeccaPurple', 'transparent',
+    'currentColor', 'inherit', 'none', 'hsl(1turn 50% 50%)', 'rgb(1 2)', '#12345', 'nope', '', ...Object.keys(T.NAMED_COLOURS)];
+  for (const f of forms) assert.deepStrictEqual(T.parseColor(f), parseColor(f), `theme.js and themegen.ts parse ${JSON.stringify(f)} alike`);
+  assert.deepStrictEqual(T.NAMED_COLOURS, NAMED_COLOURS, 'the same named colours');
+  for (const [over, f] of [['#ffffff', 'rgba(0,0,0,.5)'], ['#101010', 'rgb(255 255 255 / .2)'], ['#00ff00', '#ff000000'], ['#ffffff', 'currentColor']]) assert.strictEqual(T.colorHex(f, over), resolveColor(f, over), `colorHex ${f}`);
+
+  // a user pack that writes a failing pair as rgb() is repaired like its hex twin, and a passing one is left as written
+  const packs: Record<string, unknown> = {};
+  const mk = (id: string, ink: string): void => { packs[id] = { id, tokens: { '--ink': ink, '--bg': 'rgb(255 255 255)', '--surface': 'white', '--raised': 'hsl(0 0% 100%)' } }; T.registerUserThemes(packs); };
+  mk('rgb-low', 'rgb(204, 204, 204)'); mk('hex-low', '#cccccc'); mk('rgb-ok', 'rgb(20 20 20)');
+  const fixed = T.fallbacks('rgb-low').contrast as string[];
+  assert.ok(fixed.includes('--ink') && !fixed.includes('--bg'), `an rgb() ink that fails is repaired, the surface is not (${fixed})`);
+  assert.deepStrictEqual(T.fallbacks('rgb-low').contrast, T.fallbacks('hex-low').contrast, 'rgb() and hex give the same repair');
+  T.setTheme('rgb-low');
+  assert.ok(Math.min(...CONTRAST_PAIRS.filter(([fg]) => fg === '--ink').map(([, bg]) => contrast(T.token('--ink'), resolveColor(T.token(bg)) as string))) >= 4.5, 'the repaired rgb() ink reads at 4.5:1');
+  assert.deepStrictEqual(T.fallbacks('rgb-ok').contrast, [], 'a readable rgb() pair is not touched');
+  assert.deepStrictEqual(T.fallbacks('rgb-ok').unmeasured, [], 'and nothing is unmeasured');
+  // a translucent text colour is measured over its surface (black at 15% is far under 4.5:1)
+  mk('alpha-low', 'rgba(0,0,0,.15)');
+  assert.ok((T.fallbacks('alpha-low').contrast as string[]).includes('--ink'), 'translucent ink is repaired');
+  // what cannot be measured is listed, not skipped silently, and not "repaired"
+  mk('keyword', 'currentColor');
+  const fk = T.fallbacks('keyword');
+  assert.deepStrictEqual(fk.unmeasured, ['--ink'], 'currentColor in a pair is reported as unmeasured');
+  assert.ok(!fk.contrast.includes('--ink'), 'and left as written');
+  // built-ins report nothing (designed by hand)
+  console.log('theme colour forms: measured, repaired or reported');
 }
