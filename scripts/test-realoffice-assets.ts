@@ -64,7 +64,7 @@ export function problems(files: Map<string, Buffer>, peopleJson: string, md: str
     if (person) {
       if (!CLAUSE.test(s.fictional || '')) out.push(`ASSETS.md ${name}: no fictional-people clause (FR-067)`);
       const lc = s['likeness-check'] || '';
-      if (!/^(?:[A-Z][\w .'-]*[\w.], \d{4}-\d{2}-\d{2}(?: \d{2}:\d{2} UTC)?(?: \([^()]+\))?|pending \([A-Z][\w .'-]*\))$/.test(lc)) out.push(`ASSETS.md ${name}: likeness-check must be "<approver>, <YYYY-MM-DD>[ HH:MM UTC][ (note)]" or "pending (<approver>)", got "${lc}" (FR-068)`);
+      if (!/^(?:[A-Z][\w .'-]*[\w.](?: \(owner\))?, \d{4}-\d{2}-\d{2}(?: \d{2}:\d{2} UTC)?(?: \([^()]+\))?(?:, Telegram DM: "[^"\n]+")?|pending \([A-Z][\w .'-]*\))$/.test(lc)) out.push(`ASSETS.md ${name}: likeness-check must be "<approver>, <YYYY-MM-DD>[ HH:MM UTC][ (note)]" or "pending (<approver>)", got "${lc}" (FR-068)`);
       if (/\b(?:celebrity|famous|actor|actress|singer|politician) (?:named|called)\b/i.test(s.prompt || '')) out.push(`ASSETS.md ${name}: the prompt names a real person`);
     }
     for (const f of (s.files || '').split(/\s+/).filter(Boolean)) { if (listed.has(f)) out.push(`ASSETS.md: ${f} in ${listed.get(f)} and ${name}`); listed.set(f, name); }
@@ -218,7 +218,7 @@ for (const sid of packOnly) {
   const frames = [...st.md.matchAll(/^- \[x\] (\S+\.webp): (.*)$/gm)];
   assert.deepStrictEqual(frames.map((m) => m[1]).sort(), [...st.files.keys()].sort(), `${sid}: one approval line for every picture`);
   for (const m of frames) assert.ok(approval.test(m[2]), `${sid} ${m[1]}: approval line names who, in whose place, channel, time and quote (FR-067)`);
-  for (const [n, x] of sections(st.md)) assert.ok(/^(?:Paco|Vikram Gorla)\b/.test(x['approved by'] || '') && /^Vikram Gorla, \d{4}-\d{2}-\d{2}/.test(x['likeness-check'] || ''), `${sid} ${n}: approved by and likeness-check recorded`);
+  for (const [n, x] of sections(st.md)) assert.ok(/^(?:Paco|Vikram Gorla)\b/.test(x['approved by'] || '') && /^Vikram Gorla \(owner\), 2026-11-08 11:43 UTC, Telegram DM: "Yes, I looked at every art carefully and it does not resemble any person I know"$/.test(x['likeness-check'] || ''), `${sid} ${n}: approved by and likeness-check recorded`);
   packs++;
 }
 assert.strictEqual(Object.keys(META.seat).length, 15, '15 seated people (the Office people)');
