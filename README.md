@@ -67,6 +67,8 @@ Agents run **locally, on your machine, as you**, in the folders you add. Every a
 - **Ask first**: writes, shell commands, URLs and tools wait for *Allow once*, *Allow for this session* or *Deny*.
 - **Allow all**: no prompts. Use it only in folders you trust; it asks once to confirm.
 
+An approval card marks lookalike letters in a host, program or tool name (a Cyrillic letter in a Latin word, a fullwidth form) and names an address's host as the network reads it; it warns and never blocks, with small closed lists rather than the full confusables table ([docs/safety.md](docs/safety.md)).
+
 Durbar never sees, stores or sends your tokens (each agent app reads its own sign-in) and has no accounts, servers or telemetry. It may ask Copilot or Claude Code to reconnect a chat's remote MCP servers before a message after a quiet hour, so the app renews its own sign-in; in Copilot's sandboxed modes (Read-only, Ask first) it only says when you need to sign in again (switch: *Settings > MCP servers*). Usage bills against **your** plans; a per-session spending limit is a soft limit. Details and spending caps: [docs/safety.md](docs/safety.md). Report a problem: [SECURITY.md](SECURITY.md).
 
 ## Quick start
