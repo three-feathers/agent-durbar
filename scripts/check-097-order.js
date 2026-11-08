@@ -19,6 +19,7 @@
  *   - an away desk or a lounge seat moves, or does not say it does not;
  *   - 15 desks do not all show, a plate's text is under 10.5 px, plates overlap, or the office scrolls.
  *   SHOTS_OUT=docs/screenshots writes the two full pictures (097-order-<w>x<h>.png; the crops in docs are made from them).
+ *   source mutant (run by hand): the key path's away test back to `pl.classList.contains('narrow')` only: the arcade step fails
  *   ORDER_MUTANT=keys   Alt+arrows on a plate are swallowed before the app sees them (must fail)
  *   ORDER_MUTANT=menu   the menu's Move earlier / later is swallowed (must fail)
  */
@@ -40,6 +41,7 @@ module.exports = async (ctx) => {
   /** the plates of one folder, left to right, then top to bottom (a folder's desks stand in one row) */
   const plates = (room) => js(`(()=>{const ag=new Map(window.__durbarSimUi.agents().map(a=>[a.id,a.room]));return [...document.querySelectorAll('#stage .ro-plate[data-id]')].filter(p=>ag.get(p.dataset.id)===${jsLiteral(room)}&&p.dataset.surface!=='lounge').map(p=>{const r=p.getBoundingClientRect();return {id:p.dataset.id,x:r.left,y:r.top}}).sort((a,b)=>Math.round(a.y/10)-Math.round(b.y/10)||a.x-b.x).map(p=>p.id)})()`);
   const roomsOf = () => js(`[...document.querySelectorAll('#stage .room')].map(r=>({id:r.dataset.key.replace(/^room:/,''),desks:[...r.querySelectorAll('.unit > .desk[data-id]')].map(d=>d.dataset.id)}))`);
+  const roomOf = (id) => js(`window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(id)}).room`);
   const pathOf = (id) => js(`window.__durbarSimUi.order.path('room:'+${jsLiteral(id)})`);
   const focus = (sel) => js(`(()=>{const e=document.querySelector(${jsLiteral(sel)});if(!e)return false;e.focus({preventScroll:true});return document.activeElement===e})()`);
   const checks = async (tag) => {
@@ -195,6 +197,22 @@ module.exports = async (ctx) => {
     const rankOf = await js(`(()=>{const o={waiting:0,limit:0,error:1,working:2,thinking:2,done:3,idle:4,asleep:4};return Object.fromEntries([...document.querySelectorAll('#stage .ro-plate[data-id]')].map(p=>[p.dataset.id,o[p.dataset.state]]))})()`);
     assert.deepStrictEqual(auto.map((id) => rankOf[id]), auto.map((id) => rankOf[id]).sort((a, b) => a - b), `${tag}: with no saved order the room is sorted by status again (${auto.map((id) => rankOf[id])})`);
     await checks(`${tag} after Reset`);
+
+    /* ---- the arcade (spec 102, review of PR 1315): its plates are never narrow, so an away desk is known by its visit; Alt+arrow on it says so and moves nothing ---- */
+    await js(`try{sessionStorage.removeItem('durbar.simorder')}catch(e){}`);
+    await H.load({ w, h, query: { officeview: 'real', simrooms: '3', sim: '15', worldflags: 'retro', world: 'retro' }, ready: `document.querySelectorAll('#stage .ro-plate').length>=10`, readyMs: 30000, settle: false, focus: true });
+    assert.strictEqual(await js(`document.querySelector('#stage .ro').dataset.world`), 'retro', `${tag}: the arcade is shown`);
+    await js(`window.__durbarSimUi.crowd('library',1,${jsLiteral(0)})`);
+    await must(`window.__durbarSimUi.realLayout().zones.some(z=>z.desks.some(d=>d.away&&!d.lounge))`, `${tag}: an arcade agent is away`);
+    const arcAway = await js(`window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).find(d=>d.away&&!d.lounge).id`);
+    const arcRoom = await roomOf(arcAway), arcBefore = await plates(arcRoom), arcDoc = await saved();
+    await js(`document.getElementById('srAnnounce').textContent=''`);
+    assert.ok(await focus(`#stage .ro-plate[data-id="${arcAway}"]`), `${tag}: the away cabinet's plate takes the focus`);
+    await key('Right', ['alt'], { char: 'never' });
+    await must(`/is away from its desk and does not move/.test(document.getElementById('srAnnounce').textContent)`, `${tag}: an away arcade desk says it does not move (heard: ${await said()})`);
+    assert.deepStrictEqual(await plates(arcRoom), arcBefore, `${tag}: and nothing moved`);
+    assert.deepStrictEqual(await saved(), arcDoc, `${tag}: and nothing was saved`);
+    await js(`window.__durbarSimUi.uncrowd()`);
   }
   console.log('[097-order] ok');
 

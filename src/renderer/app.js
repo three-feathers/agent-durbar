@@ -3962,6 +3962,7 @@ function reoStep(kind,el,delta){
 }
 /* spec 097 FR-346..FR-348 (issue 1152): one step in Real office (and from its folder menu), from the model: the shown group is what the office draws
    (`officeModel`, `lobbyPlaces`), the base and the write are the flat office's (`reoApply`); the focus goes back to `refocus` (a selector under #stage). */
+const plateAway=pl=>pl.classList.contains('narrow')||!!VISITS.at(pl.dataset.id); /* away from its desk: the photo office narrows the plate, the arcade does not (it has the visit) */
 function realDeskKeys(roomId){return window.exports.deskOrder(realModel(officeModel()),roomId);} /* spec 097 FR-348: the desks of a room left to right, by the layout's own rule (keep, else status, lounge seats out) */
 function reoStepModel(kind,key,delta,roomId,refocus){
   const rm=ROOMS.find(x=>x.id===roomId);
@@ -4011,7 +4012,7 @@ function resetOrder(){
       }else if(main){
         stop();
         if(lounge)announce(ag.name+' is resting in the lounge and does not move.');
-        else if(pl.classList.contains('narrow'))announce(ag.name+' is away from its desk and does not move.');
+        else if(plateAway(pl))announce(ag.name+' is away from its desk and does not move.');
         else reoStepModel('desk',ag.id,d,ag.room,`.ro-plate[data-id="${CSS.escape(ag.id)}"]`);
       }else if(lp&&reorderablePlace(lp.dataset.place)){stop();reoStepModel('place',lp.dataset.place,d,'',`.ro-lplate[data-place="${CSS.escape(lp.dataset.place)}"]`);}
       return;
