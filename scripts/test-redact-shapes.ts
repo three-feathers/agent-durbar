@@ -761,6 +761,11 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
   // what stays: a name that is not a secret, a short value, a split that is not a secret name, the plain forms
   assert.strictEqual(redact(`echo 'max_to'"kens"=${V}`, {}), `echo 'max_to'"kens"=${V}`, '#1298: max_tokens split stays');
   assert.strictEqual(redact(`echo "to"ken=short`, {}), `echo "to"ken=short`, '#1298: a short value stays');
+  // merge of PR 1243 with PR 1317: a short value (4 to 7 characters with a letter and a digit, issue #1227) after a split name that is not a password name (`SHORT_NAMES` takes the quote runs too)
+  for (const [t, want] of [[`echo 'tok'"en"=ab12`, `echo 'tok'"en"=[redacted]`], [`echo "api_"'key'=Zx9Zx9`, `echo "api_"'key'=[redacted]`], [`{"cli""ent_secret": "Qw3rt"}`, `{"cli""ent_secret": "[redacted]"}`]]) {
+    assert.strictEqual(redact(t, {}), want, `#1227 with #1298: a short value after a split name is hidden: ${t}`);
+  }
+  for (const t of [`echo 'tok'"en"=4096`, `echo 'tok'"en"=FR-186`]) assert.strictEqual(redact(t, {}), t, `#1227 with #1298: a number or an id after a split name stays: ${t}`);
   assert.strictEqual(redact(`echo 'user'"name"=${V}`, {}), `echo 'user'"name"=${V}`, '#1298: a name that is not secret stays');
   assert.strictEqual(redact(`echo ${P}=${V}`, {}), `echo ${P}=[redacted]`, 'the plain form is still hidden');
   assert.strictEqual(redact(`{"${P}": "${V}"}`, {}), `{"${P}": "[redacted]"}`, 'the JSON form is still hidden');
