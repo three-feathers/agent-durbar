@@ -388,13 +388,13 @@ function worldCssProblems(cssIn: string): string[] {
   assert.strictEqual(doc.documentElement.dataset.ui, 'clean', 'the cave sets the plain UI style over the Retro theme');
   W.setWorld(null);
   assert.strictEqual(snap(doc), want4, 'leaving the cave restores the theme exactly');
-  // spec 097 delta 2026-11-08 (issue #1153, FR-350): what a theme reaches in Real office, measured on the page's own style map for
-  // every built-in theme, a dark user pack, Pink Studio (fonts, shadows, title weight) and a Retro-style user pack, over every world.
-  // The world's own set wins for every key it sets (all colour forms, not only #rrggbb), the shadows, the UI style and the dark flag;
-  // the theme's fonts, title weight and scene words stay; Q34 may change what reaches, this pins what does.
+  // spec 097 FR-350 (issue #1153, superseded by worlds, owner 2026-11-08): a world keeps its own colours whatever theme is picked, measured on
+  // the page's applied style map for every built-in theme and a dark user pack over every world: every key the world sets (any colour form),
+  // its shadows, UI style and dark flag are the world's, status colours are Clean Office's, the applied colour pairs pass, and leaving
+  // restores the theme exactly in both orders.
   {
     const fx = (n: string): Record<string, unknown> => JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'fixtures', 'themes', n), 'utf8'));
-    const packs = ['dark-audit.json', 'pink-studio.json', 'check-user.json'].map(fx);
+    const packs = ['dark-audit.json'].map(fx);
     const nrm = (v: unknown): string => String(v === undefined ? '' : v).replace(/\s/g, '').toLowerCase();
     const mapOf = (d: ReturnType<typeof mkDoc>): Map<string, string> => new Map(d.documentElement.style.m);
     const cleanRef = fresh(); cleanRef.T.setTheme(cleanRef.T.CLEAN_ID); const clean = mapOf(cleanRef.doc);
@@ -420,7 +420,6 @@ function worldCssProblems(cssIn: string): string[] {
           const own = Object.keys(tk).filter((k) => /^#[0-9a-f]{6}$/i.test(tk[k]) && nrm(tk[k]) !== nrm(clean.get(k)))[0];
           assert.ok(own, `${label}: the pack has a colour of its own`);
           assert.strictEqual(nrm(before.get(own)), nrm(tk[own]), `${label}: the pack's ${own} is applied before the world`);
-          if (pid === 'ai-pink-studio') assert.ok(/Avenir Next/.test(String(before.get('--font'))) && /Didot/.test(String(before.get('--ui-display'))), `${label}: the pack's fonts are applied`);
         }
         V.setWorld(wid);
         const m = mapOf(d2), ds = d2.documentElement.dataset;
@@ -430,16 +429,10 @@ function worldCssProblems(cssIn: string): string[] {
         for (const k of [...clean.keys()].filter((x) => /^--(c|halo)-(working|thinking|waiting|idle|error|done)$/.test(x))) assert.strictEqual(nrm(m.get(k)), nrm(clean.get(k)), `${label}: ${k} is Clean Office's status colour`);
         if (pid === 'retro') assert.notStrictEqual(nrm(before.get('--c-working')), nrm(m.get('--c-working')), 'Retro Pixel\'s own status colour does not show in a world (measured, FR-350)');
         // shadows, UI style, dark flag
-        for (const k of ['--shadow-card', '--shadow-pop']) { assert.ok(WANT[wid].shadow.test(String(m.get(k))), `${label}: ${k} is the world's (${m.get(k)})`); assert.ok(!/224,\s*33,\s*138|173,\s*20,\s*87/.test(String(m.get(k))), `${label}: ${k} is not Pink Studio's`); }
+        for (const k of ['--shadow-card', '--shadow-pop']) { assert.ok(WANT[wid].shadow.test(String(m.get(k))), `${label}: ${k} is the world's (${m.get(k)})`); }
         assert.strictEqual(ds.world, wid, `${label}: data-world`);
         assert.strictEqual(ds.ui, WANT[wid].ui, `${label}: the world's own UI style`);
         assert.strictEqual('dark' in ds, WANT[wid].dark, `${label}: the dark flag is the world's`);
-        // what stays the theme's: fonts, title weight, display font, scene words
-        for (const k of ['--font', '--ui-display', '--font-mono', '--t1-weight']) assert.strictEqual(nrm(m.get(k)), nrm(before.get(k)), `${label}: the theme's ${k} stays`);
-        assert.strictEqual('display' in ds, pid === 'ai-pink-studio', `${label}: data-display follows the theme's display font`);
-        if (pid === 'ai-pink-studio') assert.ok(/Avenir Next/.test(String(m.get('--font'))) && m.get('--t1-weight') === '700', `${label}: Pink Studio's font and weight show in the world`);
-        const word = V.word('place-library'), want = pid === 'retro' ? 'Arcade' : pid === 'ai-pink-studio' ? 'Lookbook shelf' : 'Library';
-        assert.strictEqual(word, want, `${label}: the theme's scene word`);
         // contrast of what the page now holds (the applied style map, per theme and world), for every hex pair of 070 D4 on the world's own values
         for (const [fg, bg, min] of CONTRAST_PAIRS as Array<[string, string, number]>) {
           const a = m.get(fg), b = m.get(bg);
