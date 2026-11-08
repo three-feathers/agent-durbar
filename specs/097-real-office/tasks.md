@@ -234,3 +234,21 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 - [x] ~~T266~~ [US2] A per-theme matrix pin in `test:theme-tokens`. Superseded: section 7 keeps only what guards a world's look (FR-350), see T268
 - [ ] ~~T267~~ [US2] Build Q34's answer. Superseded, not built: Q34 is withdrawn
 - [x] T268 [US2] `scripts/check-097-world-look.js` (in `ui-suite`): a world keeps its own colours under three themes in three worlds; FR-351 the arcade's drop overlay fill (`worlds/retro/world.css`). `test:theme-tokens` section 7 over every built-in theme and the dark fixture. Mutants: a theme token let through (three keys), a status colour, the world shadows, the dark flag, the UI style, a theme ink on a plate, the drop rule removed [FR-350, FR-351]
+
+## Phase 3b: every Characters crew in Real office (issue #1154, part of #1147; delta 2026-11-08)
+
+- [x] T235 [US5] Spec delta: what art each Characters value has, the fallback and why no crew portrait on the plate, the art list, Q12..Q14 [FR-335, FR-336, FR-337]
+- [x] T236 [US5] `crew.js` `levelFor` and the `closed` note; `test:realoffice-layout` per value (theme, minimalist, each crew, a future crew, a closed set), mutants: the old "has no poses" wording for a closed set, a crew with a row treated as heads, a note for the default [FR-335, FR-336]
+- [x] T237 [US5] Driver `check-097-crews`: Real office at 15 agents, 1440x900 and 1280x800, each Characters value shows the people set it should (Office people; Prehistoric with the cave flag on in the simulator), no `crew/art/` picture in the scene, only that set's and the Photo office's packs requested, the note text. Registered in `ui-suite.js`. Mutants: a crew picture drawn in the scene, a second set requested [FR-335]
+- [ ] T238 [US5] `[ART, not code, Paco approves each picture]` Real office frames (the 12 of FR-337) for Pirate, Monster, Royal, Rebels (6 people, 72 frames each) and Cheeky (13 people, 156); each then is one `REAL_SETS` row, `set.json` and `ASSETS.md` provenance, checked by `test:realoffice-assets`. By Codex image generation in the coordinator's art lane, Pirate first as the owner's quality sample, then Royal, Rebels, Monster, Cheeky, Minimalist (Q13, Q14 answered 2026-11-08): the six tasks below [FR-337]
+- [x] T239 [US5] Q12 built (owner 2026-11-08): the Prehistoric `REAL_SETS` row has no flag, the cave world keeps its own; Settings says "Real office draws the Prehistoric people.". Test: `test:realoffice-layout` (re-coupling to the cave fails), driver `check-097-crews` (Prehistoric in the Photo office with the cave closed: its frames, no Office people picture, the cave not offered; mutants) [FR-336]
+- [ ] T240 [US5] `[ART]` Pirate Real office set lands (sample for the owner's look first): `REAL_SETS` row, `set.json`, `ASSETS.md`; **its "until Pirate has Real office poses" note goes in this task**; `check-097-crews` case moves to the Pirate set [FR-336, FR-337]
+- [ ] T241 [US5] `[ART]` Royal set lands; its note goes in this task [FR-336, FR-337]
+- [ ] T242 [US5] `[ART]` Rebels set lands; its note goes in this task [FR-336, FR-337]
+- [ ] T243 [US5] `[ART]` Monster set lands; its note goes in this task [FR-336, FR-337]
+- [ ] T244 [US5] `[ART]` Cheeky set lands (13 people, 156 frames); its note goes in this task [FR-336, FR-337]
+- [ ] T245 [US5] `[ART]` Minimalist Real office set lands (new art, spec 102 T110); its note goes in this task, and `levelFor` has no `heads` value left [FR-336, FR-337]
+- [ ] T246 [US5] My characters as a Characters value in every world (spec 096 and spec 102 T112); the matrix cell in Flat, arcade, Photo office and cave [FR-081]
+- [ ] T247 [US5] Every landed set drawn and read in the Retro arcade at 15 agents, both sizes (a non-pixel set in a pixel-art world), with spec 102 T225 for Prehistoric; the arcade's default stays Retro pixel people. Test: `shots-102-arcade`, `check-097-crews` with `world=retro` [FR-335]
+- [ ] T248 [US5] Every landed set drawn and read in the Prehistoric cave at 15 agents, both sizes, when the cave opens. Test: `check-097-crews` with `world=cave` [FR-335]
+- [ ] T249 [US5] The matrix kept true: a test that fails when a Characters value or world is added without a cell (`test:realoffice-layout`) [FR-335]
