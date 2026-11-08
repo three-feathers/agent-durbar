@@ -40,6 +40,8 @@ module.exports = async (ctx) => {
   const saved = () => js(`window.__durbarSimUi.order.saved()`);
   /** the plates of one folder, left to right, then top to bottom (a folder's desks stand in one row) */
   const plates = (room) => js(`(()=>{const ag=new Map(window.__durbarSimUi.agents().map(a=>[a.id,a.room]));return [...document.querySelectorAll('#stage .ro-plate[data-id]')].filter(p=>ag.get(p.dataset.id)===${jsLiteral(room)}&&p.dataset.surface!=='lounge').map(p=>{const r=p.getBoundingClientRect();return {id:p.dataset.id,x:r.left,y:r.top}}).sort((a,b)=>Math.round(a.y/10)-Math.round(b.y/10)||a.x-b.x).map(p=>p.id)})()`);
+  /** an until() expression: the plate `id` of `room` stands at place n (left to right) */
+  const standsAt = (room, id, n) => `(()=>{const ag=new Map(window.__durbarSimUi.agents().map(a=>[a.id,a.room]));return [...document.querySelectorAll('#stage .ro-plate[data-id]')].filter(p=>ag.get(p.dataset.id)===${jsLiteral(room)}&&p.dataset.surface!=='lounge').map(p=>{const r=p.getBoundingClientRect();return {id:p.dataset.id,x:r.left,y:r.top}}).sort((a,b)=>Math.round(a.y/10)-Math.round(b.y/10)||a.x-b.x).map(p=>p.id).indexOf(${jsLiteral(id)})===${n}})()`;
   const roomsOf = () => js(`[...document.querySelectorAll('#stage .room')].map(r=>({id:r.dataset.key.replace(/^room:/,''),desks:[...r.querySelectorAll('.unit > .desk[data-id]')].map(d=>d.dataset.id)}))`);
   const roomOf = (id) => js(`window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(id)}).room`);
   const pathOf = (id) => js(`window.__durbarSimUi.order.path('room:'+${jsLiteral(id)})`);
@@ -124,20 +126,62 @@ module.exports = async (ctx) => {
 
     /* ---- 2. a key on a plate moves its desk one place, the focus stays, the words are the flat office's ---- */
     const P = await plates(A), pa = await pathOf(A);
+    /* who is away is the simulator's choice (an away desk is a narrow plate and does not move): every step picks from the plates that can move, never a fixed place in the row */
+    const awayA = await js(`[...document.querySelectorAll('#stage .ro-plate.narrow[data-id]')].map(p=>p.dataset.id)`);
+    const movable = P.map((id, i) => (awayA.includes(id) ? -1 : i)).filter((i) => i >= 0);
+    const k = movable.find((i) => i >= 1);
+    assert.ok(k !== undefined, `${tag}: a desk at its seat that is not first (${P}, away ${awayA})`);
+    const swapAt2 = (l, i) => { const c = l.slice(); [c[i], c[i + 1]] = [c[i + 1], c[i]]; return c; };
+    const savedDesks = (list) => `window.__durbarSimUi.order.get().desks[${jsLiteral(pa)}].filter(i=>${jsLiteral(P)}.includes(i)).join()===${jsLiteral(list.join())}`;
     if (MUTANT === 'keys') await js(`(()=>{window.addEventListener('keydown',e=>{if(e.altKey&&e.target.closest&&e.target.closest('.ro-plate'))e.stopImmediatePropagation()},true);return 1})()`);
-    await must(`!!document.querySelector(${jsLiteral('#stage .ro-plate[data-id="' + P[2] + '"]')})`, `${tag}: the plate`);
-    assert.ok(await focus(`#stage .ro-plate[data-id="${P[2]}"]`), `${tag}: the plate takes the focus`);
+    await must(`!!document.querySelector(${jsLiteral('#stage .ro-plate[data-id="' + P[k] + '"]')})`, `${tag}: the plate`);
+    assert.ok(await focus(`#stage .ro-plate[data-id="${P[k]}"]`), `${tag}: the plate takes the focus`);
     await key('Left', ['alt'], { char: 'never' });
-    await must(`window.__durbarSimUi.order.get().desks[${jsLiteral(pa)}].filter(i=>${jsLiteral(P)}.includes(i)).join()===${jsLiteral([P[0], P[2], P[1], ...P.slice(3)].join())}`, `${tag}: Alt+Left saved the desk one place earlier`);
-    await must(`document.activeElement&&document.activeElement.dataset.id===${jsLiteral(P[2])}`, `${tag}: the focus stays on the moved plate`);
-    assert.deepStrictEqual((await plates(A)).slice(0, 3), [P[0], P[2], P[1]], `${tag}: the plate stands one place earlier`);
-    await must(`new RegExp(${jsLiteral('moved to position 2 of ' + P.length + ' in its room')}).test(document.getElementById('srAnnounce').textContent)`, `${tag}: the flat office words (heard: ${await said()})`);
+    await must(savedDesks(swapAt2(P, k - 1)), `${tag}: Alt+Left saved the desk one place earlier (plates ${P}, away ${awayA}, desk ${P[k]})`);
+    await must(`document.activeElement&&document.activeElement.dataset.id===${jsLiteral(P[k])}`, `${tag}: the focus stays on the moved plate`);
+    assert.deepStrictEqual(await plates(A), swapAt2(P, k - 1), `${tag}: the plate stands one place earlier`);
+    await must(`new RegExp(${jsLiteral('moved to position ' + k + ' of ' + P.length + ' in its room')}).test(document.getElementById('srAnnounce').textContent)`, `${tag}: the flat office words (heard: ${await said()})`);
     await key('Right', ['alt'], { char: 'never' });
-    await must(`window.__durbarSimUi.order.get().desks[${jsLiteral(pa)}].filter(i=>${jsLiteral(P)}.includes(i)).join()===${jsLiteral(P.join())}`, `${tag}: Alt+Right moved it back`);
-    await focus(`#stage .ro-plate[data-id="${P[0]}"]`);
+    await must(savedDesks(P), `${tag}: Alt+Right moved it back`);
+    /* the first desk that can move walks to the front (each step is waited on), then one more key says it is already first; then it walks back */
+    const m0 = movable[0];
+    for (let i = m0; i > 0; i--) {
+      assert.ok(await focus(`#stage .ro-plate[data-id="${P[m0]}"]`), `${tag}: the plate takes the focus`);
+      await key('Left', ['alt'], { char: 'never' });
+      await must(standsAt(A, P[m0], i - 1), `${tag}: the first movable desk walks to the front (${i})`);
+    }
+    const front = await plates(A);
+    assert.strictEqual(front[0], P[m0], `${tag}: the first movable desk is first (${front}, away ${awayA})`);
+    await js(`document.getElementById('srAnnounce').textContent=''`);
+    assert.ok(await focus(`#stage .ro-plate[data-id="${P[m0]}"]`), `${tag}: the first plate takes the focus`);
     await key('Left', ['alt'], { char: 'never' });
-    await must(`/is already first/.test(document.getElementById('srAnnounce').textContent)`, `${tag}: the first desk says it is already first`);
-    assert.deepStrictEqual(await plates(A), P, `${tag}: and nothing moved`);
+    await must(`/is already first/.test(document.getElementById('srAnnounce').textContent)`, `${tag}: the first desk says it is already first (heard: ${await said()})`);
+    assert.deepStrictEqual(await plates(A), front, `${tag}: and nothing moved`);
+    for (let i = 0; i < m0; i++) {
+      await key('Right', ['alt'], { char: 'never' });
+      await must(standsAt(A, P[m0], i + 1), `${tag}: the desk walks back (${i + 1})`);
+    }
+    assert.deepStrictEqual(await plates(A), P, `${tag}: back where it was`);
+
+    /* ---- 2b. Alt+arrows inside a text field do nothing in Real office (review of PR 1315, finding 3). No text field of the office sits on a plate, so a plain <input> is put inside a movable plate (the guard ahead of the Real branch is what is tested) ---- */
+    {
+      const holder = P[movable[0]], doc = await saved(), orderBefore = await plates(A);
+      await js(`(()=>{const pl=document.querySelector(${jsLiteral('#stage .ro-plate[data-id="' + holder + '"]')});const i=document.createElement('input');i.id='tp-field';i.type='text';i.value='hello world';pl.appendChild(i);const c=document.createElement('input');c.id='tp-control';c.type='text';c.value='hello world';document.body.appendChild(c);for(const e of [i,c]){e.__n=0;e.__prevented=0;e.addEventListener('keydown',ev=>{e.__n++;if(ev.defaultPrevented)e.__prevented++})}return 1})()`);
+      await js(`document.getElementById('srAnnounce').textContent=''`);
+      for (const [name, mods] of [['Up', ['alt']], ['Down', ['alt']], ['Left', ['alt']], ['Right', ['alt']]]) {
+        /* the control sits outside the stage, so the app never handles it: whatever the platform's own editing does to the caret there is what the field in the plate must show too */
+        const caretOf = async (id) => { await js(`(()=>{const e=document.getElementById(${jsLiteral(id)});e.focus();e.setSelectionRange(5,5)})()`); await key(name, mods, { char: 'never' }); return js(`(()=>{const e=document.getElementById(${jsLiteral(id)});return [e.value,e.selectionStart,e.selectionEnd]})()`); };
+        const want = await caretOf('tp-control'), got = await caretOf('tp-field');
+        assert.deepStrictEqual(got, want, `${tag}: Alt+${name} in a text field in a plate leaves the text and caret as in any text field`);
+        assert.strictEqual(got[0], 'hello world', `${tag}: Alt+${name} left the text`);
+      }
+      await js(`new Promise(r=>requestAnimationFrame(()=>setTimeout(r,0)))`);
+      assert.strictEqual(await js(`(()=>{const e=document.getElementById('tp-field');return e.__n+'/'+e.__prevented})()`), '4/0', `${tag}: the keys reached the field and the app did not claim them`);
+      assert.strictEqual(await said(), '', `${tag}: no announcement was made (heard: ${await said()})`);
+      assert.deepStrictEqual(await plates(A), orderBefore, `${tag}: no desk moved`);
+      assert.deepStrictEqual(await saved(), doc, `${tag}: and nothing was saved`);
+      await js(`document.querySelectorAll('#tp-field,#tp-control').forEach(e=>e.remove())`);
+    }
     await checks(`${tag} after the desk moves`);
 
     /* ---- 3. a room: Alt+Shift on a plate and on a sign button, and the folder menu ---- */
@@ -174,11 +218,11 @@ module.exports = async (ctx) => {
     const p0 = await js(`window.__durbarSimUi.order.get().places.join()`);
     await focus('#tp-boss');
     await key('Right', ['alt'], { char: 'never' });
-    await ctx.sleep(200);
-    assert.strictEqual(await js(`window.__durbarSimUi.order.get().places.join()`), p0, `${tag}: the Boss keeps its spot`);
     await focus('#tp-library');
     await key('Right', ['alt'], { char: 'never' });
     await must(`window.__durbarSimUi.order.get().places.length>=2&&window.__durbarSimUi.order.get().places.indexOf('library')===1`, `${tag}: a movable place moves one later`);
+    /* the Boss key came first and the library move after it has been seen, so the Boss's key was handled by now: nothing is waited out */
+    assert.strictEqual(await js(`window.__durbarSimUi.order.get().places.indexOf('boss')`), p0.split(',').indexOf('boss'), `${tag}: the Boss keeps its spot`);
     await js(`document.querySelectorAll('#tp-library,#tp-boss').forEach(e=>e.remove())`);
     await shot(`${tag}`);
 
