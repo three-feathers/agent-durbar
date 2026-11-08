@@ -146,6 +146,12 @@ Retired spec numbers, never to be reused for a new spec (`specs:check` and `--ad
 
 ## Changes
 
+### 2026-11-08: the Electron download is cached and retried (bug: GitHub returned 504 for the Electron binary and took a ready PR out of the merge queue)
+
+*Why:* twice on 2026-11-08 the merge-queue CI failed because `github.com/electron/electron/releases/download/...` answered 504 while `npm ci` fetched Electron v44.9.1; every Electron suite failed and a ready PR fell out of the queue. No workflow had a download cache.
+
+- **FR-186** `[IMPLEMENTED]` (T138) **Electron downloads are cached and retried.** Every job that runs `npm ci` with install scripts uses the local composite action `.github/actions/npm-ci` instead of a bare `npm ci`. It sets `ELECTRON_CACHE` and `electron_config_cache` (Electron) and `ELECTRON_BUILDER_CACHE` (electron-builder) to one directory under `runner.temp`, restores it with `actions/cache` (pinned by commit sha like every action; key `electron-<os>-<arch>-<electron version>-builder-<builder version>`, both versions read from `package-lock.json`), then runs `npm ci` up to 3 times (15 s, then 45 s apart) and fails loudly after the third. A warm cache survives a release-download outage; a cold cache is retried. No secrets, no inputs from PR text (`args` is a fixed string in the workflow); a fork PR can read the cache but cannot write one the base branch reads (GitHub scopes caches per ref). `npm ci --ignore-scripts` jobs (pages, the prereview bot) download no Electron and are unchanged. A test in `test:supplychain` fails on a bare `npm ci` in a workflow and checks the cache step, the three cache variables, the version in the key and the retry. `[KNOWN GAP]` the cache and the retry only prove themselves on CI (a warm hit, and a real 504, were not reproduced locally).
+
 ### 2026-11-07: the clip's default scenes follow the release; four v0.1.12 scenes (owner, v0.1.12 clip)
 
 *Why:* the v0.1.12 clip showed v0.1.11's changes: `DEFAULT_SCENES` was a fixed list that had to be edited by hand every release, and nobody did. The catalogue had no scene for v0.1.12's changes either.
