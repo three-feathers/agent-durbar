@@ -330,7 +330,7 @@ console.log(`test-helpercard: repaint ratio ${ratio.toFixed(2)} (big ${big.toFix
   const make = (win: object) => new Function('window', 'deskMask', src + '\nreturn {homeMask,helperMask};')(win, (t: unknown) => S.mask(t)) as { homeMask(t: unknown): unknown; helperMask(t: unknown): string };
   const { helperMask } = make({ DurbarRedact: shared });
   const tok = 'ghp_' + 'Zq9Xw8Vu7Ts6Rq5Po4Nm3Lk2Ji1Hg0Fe9Dc8';
-  const bad = (out: string) => [tok, 'zed_q', 'zedq', 'fs01'].filter((w) => out.includes(w));
+  const bad = (out: string) => [tok, 'zed_q', 'zedq', 'fs01', 'Jürgen', 'Smith', 'Ölçü', 'zoë'].filter((w) => out.includes(w));
   const cases: [string, string][] = [
     ['a token', 'check ' + tok + ' now'],
     ['a macOS home', 'read /Users/zedq/proj/a.txt'],
@@ -342,6 +342,15 @@ console.log(`test-helpercard: repaint ratio ${ratio.toFixed(2)} (big ${big.toFix
     ['a JSON-doubled UNC home', JSON.stringify({ p: '\\\\fs01\\homes\\zedq\\notes' })],
     ['all of them', 'Review ' + tok + ' in /Users/zedq/a and \\\\fs01\\homes\\zedq\\b'],
   ];
+  // non-ASCII home names (they pass today; pinned): plain and JSON-doubled
+  for (const [what, t] of [
+    ['a Windows home with an umlaut', 'C:\\Users\\Jürgen\\proj'],
+    ['a Windows home with a space', 'C:\\Users\\Jürgen Smith\\proj'],
+    ['a UNC home with non-ASCII letters', '\\\\fs01\\homes\\Ölçü\\notes'],
+    ['a macOS home with a diaeresis', '/Users/zoë/a.txt'],
+    ['a Linux home with non-ASCII letters', '/home/Ölçü/x'],
+    ['a Windows home with forward slashes', 'C:/Users/Jürgen/x'],
+  ] as [string, string][]) { cases.push([what, 'read ' + t]); cases.push(['a JSON-doubled ' + what.slice(2), JSON.stringify({ p: t })]); }
   for (const [what, t] of cases) { const out = helperMask(t); eq(bad(out).join(), '', 'helperMask hides ' + what + ': ' + out); ok(out.length > 0, 'helperMask keeps the rest of ' + what); }
   eq(helperMask('/Users/zedq/proj/a.txt'), '~/proj/a.txt', 'a home folder becomes ~');
   eq(helperMask('\\\\fs01\\homes\\zedq\\notes'), '~\\notes', 'a UNC home becomes ~');
@@ -359,6 +368,7 @@ console.log(`test-helpercard: repaint ratio ${ratio.toFixed(2)} (big ${big.toFix
     [/'\.sub-full-task'\)\.textContent=helperMask\(s\.task\)/, 'the Sub-agent activity panel task line'],
     [/'Failed: '\+helperMask\(s\.error\)/, 'the panel error line'],
     [/n=helperMask\(h\.name\)\|\|'Helper', t=helperMask\(taskText\(h\)\)/, 'the flat helper tile, its tooltip and aria-label'],
+    [/n=helperMask\(h\.name\)\|\|'Helper', r=helperMask\(h\.role\)\|\|'Helper', t=helperMask\(taskText\(h\)\)/, 'the full-density helper (helperHTML)'],
     [/excerpt:\(t,n,fb\)=>safeExcerpt\(homeMask\(t\),n,fb\),mask:t=>helperMask\(t\)/, 'the expanded helper card'],
   ] as [RegExp, string][]) ok(re.test(app), what);
   ok(!/s\.name=safeMask\(/.test(app), 'no helper name is stored with the desk mask alone');

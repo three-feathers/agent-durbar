@@ -1058,10 +1058,10 @@ function moreHTML(a,hidden,d){
   return `<button class="more" data-more="${esc(a.id)}" aria-expanded="false" aria-label="Show ${hidden.length} more helpers of ${esc(a.name)}">+${hidden.length} more ${dots}</button>`;
 }
 function helperHTML(h){
-  const st=vis(h);
-  return `<button class="helper is-${st}" data-id="${esc(h.id)}" aria-pressed="${ui.selected===h.id}" aria-label="${esc(h.name)}, helper of ${esc(byId(h.parent).name)}, ${esc(h.role)}, folder ${esc(roomOf(h).path)}, ${label(h)}: ${esc(taskText(h))}" title="${esc(taskText(h))}">
+  const st=vis(h), n=helperMask(h.name)||'Helper', r=helperMask(h.role)||'Helper', t=helperMask(taskText(h)); /* spec 015 FR-021; the folder is the user's own (as on the room head) */
+  return `<button class="helper is-${st}" data-id="${esc(h.id)}" aria-pressed="${ui.selected===h.id}" aria-label="${esc(n)}, helper of ${esc(byId(h.parent).name)}, ${esc(r)}, folder ${esc(roomOf(h).path)}, ${label(h)}: ${esc(t)}" title="${esc(t)}">
     ${scene(h,true)}<span class="badge ${st}">${badgeSVG(st)}</span>
-    <div class="hinfo"><div class="hname">${esc(h.name)}</div><div class="hrole">${esc(h.role)}</div><div class="hst"><span class="dot ${st}"></span>${label(h)}</div></div></button>`;
+    <div class="hinfo"><div class="hname">${esc(n)}</div><div class="hrole">${esc(r)}</div><div class="hst"><span class="dot ${st}"></span>${label(h)}</div></div></button>`;
 }
 function helperTileHTML(h){
   const st=vis(h), n=helperMask(h.name)||'Helper', t=helperMask(taskText(h)); /* spec 015 FR-021: the one helper mask on every word it shows */
