@@ -443,7 +443,7 @@
         /* FR-120: a static "z z" over a sleeping person (carved in the cave); aria-hidden, the plate and the name carry the meaning */
         if (a.asleep && d.person) { const z = el(chrome, 'z:' + k, 'div', 'ro-zz'); box(z, { x: d.person.x + d.person.w * 0.62, y: Math.max(d.slot.y + 2, d.person.y + d.person.h * 0.04) }); attr(z, 'aria-hidden', 'true'); text(z, 'z z'); }
         /* FR-016, FR-090: the name plate is the desk's one focusable button; the app's click handler opens the chat ([data-id]) */
-        const pl = el(chrome, 'n:' + k, 'button', 'ro-plate st-' + d.state + (a.selected ? ' sel' : '') + (d.narrow ? ' narrow' : '') + (a.asleep ? ' asleep' : '') + (d.lounge ? ' lounge' : '') + (a.ren ? ' has-ren' : '')); box(pl, d.plate);
+        const pl = el(chrome, 'n:' + k, 'button', 'ro-plate st-' + d.state + (a.selected ? ' sel' : '') + (d.narrow ? ' narrow' : '') + (a.asleep ? ' asleep' : '') + (d.lounge ? ' lounge' : '') + (a.ren ? ' has-ren' : '') + (!d.strip && a.helpers && a.helpers.length ? ' has-help' : '')); box(pl, d.plate); /* has-help: the plate carries the +N (FR-308); a class, not :has(), so one text change does not re-match the arcade's whole tree */
         if (pl.type !== 'button') pl.type = 'button'; dset(pl, 'id', k); dset(pl, 'state', d.state); if (d.lounge) dset(pl, 'surface', 'lounge'); else if (pl.dataset.surface) delete pl.dataset.surface; /* spec 098 FR-010: the moment's marker (spec 097 FR-246: every lounge seat) */
         /* spec 097 FR-308 (review of PR 1322): helpers with no strip (the fallback: the plate's +N and dots) are said in the plate's name and tooltip, in the flat desk's words (`helpWords`) */
         const hw = !d.strip && a.helpWords && a.helpers && a.helpers.length ? a.helpWords : '';

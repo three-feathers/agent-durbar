@@ -68,10 +68,10 @@
 .ro[data-world="retro"] .ro-plate .ro-l1{display:none}
 .ro[data-world="retro"] .ro-plate .ro-l2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
 /* spec 097 FR-308 (review of PR 1322): with no strip, the helpers' "+N and dots" stay in view: on the one line, before the status (the name and role stay on the marquee) */
-.ro[data-world="retro"] .ro-plate:not(.lounge):has(.ro-help){flex-direction:row;align-items:center}
-.ro[data-world="retro"] .ro-plate:not(.lounge):has(.ro-help) .ro-l1{display:flex;flex:none}
-.ro[data-world="retro"] .ro-plate:not(.lounge):has(.ro-help) .ro-l1>:not(.ro-help){display:none}
-.ro[data-world="retro"] .ro-plate:not(.lounge):has(.ro-help) .ro-l2{flex:1 1 auto;min-width:0}
+.ro[data-world="retro"] .ro-plate.has-help:not(.lounge){flex-direction:row;align-items:center}
+.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l1{display:flex;flex:none}
+.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l1>:not(.ro-help){display:none}
+.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l2{flex:1 1 auto;min-width:0}
 /* a one-line pill is as tall as a sign, so it fits the free part of a sign row: in the arcade it never covers a screen or a person (owner, 2026-11-03) */
 .ro[data-world="retro"] .ro-slip[data-variant="pill"]{padding:0 10px;line-height:14px;border-radius:4px}
 /* the away note as an arcade ticket (owner, 2026-11-03): a dark card with a neon edge in the place's colour, the words in that colour, mono, no tilt */
