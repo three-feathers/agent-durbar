@@ -1475,6 +1475,6 @@ Eight findings, each fixed in the PR. **(1) FR-033 in the panel.** `doorRepaint`
 
 ## Changes 2026-11-08: review of #1287 at ddcc5440a (FR-197, FR-199, FR-200)
 
-- **FR-200 says what the build does:** a row that "Could not answer" shows that word with *Open* for 3 seconds, then offers its buttons again (the plan and tasks do not state the old wording, nothing else to change).
-- **FR-197:** the option button's press is checked against its own button (the option copied into the row), not the card's Answer button: driver step 9b replaces the live card's options and presses the old one, nothing is answered; `createRiseGuard` has a unit case for a 60 to 90 px one-row move.
-- **FR-199 / FR-060:** the 480-character limit is one named constant, `REQ_TEXT_MAX` in `app.js`, used by the answer bar, the card key handler and the panel row.
+- **FR-200 amended (2026-11-08)** what the build does: a row that "Could not answer" shows that word with *Open* for 3 seconds, then offers its buttons again (the plan and tasks do not state the old wording, nothing else to change).
+- **FR-197 amended (2026-11-08)** the option button's press is checked against its own button (the option copied into the row), not the card's Answer button: driver step 9b replaces the live card's options and presses the old one, nothing is answered; `createRiseGuard` has a unit case for a 60 to 90 px one-row move.
+- **FR-199 amended (2026-11-08)**, also FR-060: the 480-character limit is one named constant, `REQ_TEXT_MAX` in `app.js`, used by the answer bar, the card key handler and the panel row.
