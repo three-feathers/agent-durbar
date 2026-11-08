@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Spec 021 FR-063 (2026-11-08): tests of scripts/picture-budget.js on throwaway git repos (offline). PB_MODULE swaps the module (mutant runs).
+// Spec 021 FR-085 (2026-11-08): tests of scripts/picture-budget.js on throwaway git repos (offline). PB_MODULE swaps the module (mutant runs).
 'use strict';
 const assert = require('assert');
 const fs = require('fs');
@@ -95,6 +95,42 @@ try {
   fs.writeFileSync(path.join(d, pb.ALLOW_FILE), 'art/pack.png | 1000 |\ngone.png | 10 | was here\n'); commit(d, 'h');
   r = pb.check(d); assert.strictEqual(r.status, 'fail');
   assert.match(r.lines.join('\n'), /art\/pack\.png has no reason/); assert.match(r.lines.join('\n'), /gone\.png does not exist/);
+
+  // every picture or media extension counts (review of PR #1316: a 400 KB .apng passed)
+  for (const ext of ['png', 'apng', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'svg', 'ico', 'bmp', 'tif', 'tiff', 'mp4', 'webm', 'mov', 'APNG', 'icns', 'jxl']) {
+    d = repo(); markMain(d); put(d, `m/big.${ext}`, 400 * KB, 20); commit(d, 'f');
+    r = pb.check(d); assert.strictEqual(r.status, 'fail', `.${ext} over budget must fail`); assert.match(r.lines.join('\n'), new RegExp(`big\\.${ext}: 400 KB`));
+  }
+  // judged by content too: a PNG, MP4 or JPEG under another name, over the budget, fails; plain bytes of any other kind do not
+  const withBytes = (dir, p, magic, bytes) => { fs.mkdirSync(path.dirname(path.join(dir, p)), { recursive: true }); fs.writeFileSync(path.join(dir, p), Buffer.concat([magic, Buffer.alloc(bytes, 7)])); };
+  for (const [name, magic] of [['a.dat', Buffer.from('\x89PNG\r\n\x1a\n', 'latin1')], ['b.bin', Buffer.from('\0\0\0\x18ftypmp42', 'latin1')], ['c.data', Buffer.from([0xff, 0xd8, 0xff, 0xe0])]]) {
+    d = repo(); markMain(d); withBytes(d, `x/${name}`, magic, 400 * KB); commit(d, 'f');
+    r = pb.check(d); assert.strictEqual(r.status, 'fail', `${name} is a picture by content`);
+  }
+  d = repo(); markMain(d); withBytes(d, 'x/blob.dat', Buffer.from('plain'), 400 * KB); commit(d, 'f'); assert.strictEqual(pb.check(d).status, 'ok');
+
+  // history: a big picture committed and replaced by a small one in a later commit stays in history, and fails
+  d = repo(); markMain(d); put(d, 'docs/shot.png', 900 * KB, 21); commit(d, 'big'); put(d, 'docs/shot.png', 50 * KB, 22); commit(d, 'small');
+  r = pb.check(d); assert.strictEqual(r.status, 'fail'); assert.match(r.lines.join('\n'), /docs\/shot\.png: 900 KB \(a commit of this branch\)/); assert.match(r.lines.join('\n'), /fresh branch/);
+  // committed then deleted: also in history
+  d = repo(); markMain(d); put(d, 'docs/gone.png', 900 * KB, 23); commit(d, 'big'); G(d, 'rm', '-q', 'docs/gone.png'); G(d, 'commit', '-q', '-m', 'rm');
+  assert.strictEqual(pb.check(d).status, 'fail');
+  // a blob that main already holds, moved or reverted, is not new
+  d = repo(); markMain(d); G(d, 'mv', 'docs/old-big.png', 'docs/elsewhere.png'); G(d, 'commit', '-q', '-m', 'mv'); assert.strictEqual(pb.check(d).status, 'ok');
+
+  // a hostile file name (newline, ::error::) is never printed raw: no output line starts a workflow command (review of PR #1316)
+  d = repo(); markMain(d); const evil = 'docs/x\n::error::pwned\n::add-mask::y.png';
+  put(d, evil, 500 * KB, 24); commit(d, 'evil'); fs.mkdirSync(path.join(d, 'scripts'), { recursive: true }); fs.writeFileSync(path.join(d, pb.ALLOW_FILE), '::warning::bad\u2028::error::z.png | 10 |\n'); // allow-list line from the PR, a problem line
+  r = pb.check(d); assert.strictEqual(r.status, 'fail');
+  const cli = require('child_process').spawnSync(process.execPath, [path.join(__dirname, 'picture-budget.js'), '--root', d], { encoding: 'utf8' });
+  assert.strictEqual(cli.status, 1, cli.stdout + cli.stderr);
+  for (const line of cli.stdout.split('\n')) assert.ok(!/^\s*::/.test(line) && !line.includes('::'), `raw workflow command in output: ${JSON.stringify(line)}`);
+  assert.match(cli.stdout, /docs\/x\\n: :error: :pwned\\n: :add-mask: :y\.png/);
+
+  // a git failure is "could not check" (exit 2), not a pass
+  d = repo(); markMain(d); put(d, 'docs/p.png', 50 * KB, 30); commit(d, 'f');
+  const blob = G(d, 'rev-parse', 'HEAD:docs/p.png'); fs.rmSync(path.join(d, '.git/objects', blob.slice(0, 2), blob.slice(2)), { force: true });
+  assert.strictEqual(require('child_process').spawnSync(process.execPath, [path.join(__dirname, 'picture-budget.js'), '--root', d], { encoding: 'utf8' }).status, 2);
 
   // the real allow-list of this repository parses clean
   const real = pb.parseAllow(fs.readFileSync(path.join(__dirname, 'picture-budget-allow.txt'), 'utf8'));

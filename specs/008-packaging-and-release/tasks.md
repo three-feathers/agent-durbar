@@ -175,6 +175,6 @@
 
 - [x] T134 Issue #839 (FR-182, owner decision 2026-11-07): `ui-suite --shard i/n` / `UI_SUITE_SHARD`, bare `--shard` and an empty shard refused; tested in `test:uisuite` (incl. `main()` and the workflow matrix); `ui-platforms.yml` runs macOS as three shards (geometry in every shard, office layout and title bar in shard 1, artifacts per shard), 45 minutes for every job
 
-## 2026-11-08: the spec-numbers job (FR-184)
+## 2026-11-08: the spec-numbers job (FR-185)
 
-- [x] T136 (FR-184) `.github/workflows/spec-kit.yml` job `spec-numbers`: read-only permissions, default token only, no `pull_request_target`; runs `test:picturebudget`'s and `test:specnumbers`'s scripts, `picture-budget.js --strict` and `spec-numbers.js`. `[KNOWN GAP]` the job runs for the first time on the next PR.
+- [x] T137 (FR-185) `.github/workflows/spec-kit.yml` job `spec-numbers`: `spec-numbers-selftest` (the PR's scripts, no token) and `spec-numbers` (the BASE copy of `picture-budget.js --strict` and `spec-numbers.js` on the PR checkout as data, `persist-credentials: false` everywhere, token on one step), no `pull_request_target`; workflow-shape test in `test:specnumbers`. Mutants: a checkout without `persist-credentials: false`, a token in the self-test job, the PR's copy of the script in the token job each fail it. `[KNOWN GAP]` the jobs run for the first time on the next PR (the base has no scripts yet).

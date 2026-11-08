@@ -79,11 +79,36 @@ jobs:
           PR_LABELS_JSON: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: bash .github/scripts/docs-check.sh
 
-  # Spec 008 FR-184 / spec 021 FR-085: no number clash with main or another open PR (scripts/spec-numbers.js) and no picture over budget
+  # Spec 008 FR-185 / spec 021 FR-085: no number clash with main or another open PR (scripts/spec-numbers.js) and no picture over budget
   # (scripts/picture-budget.js, strict: a missing origin/main fails). Not a required check: it needs the network, and a blip must not block a merge.
-  # Safe for a fork PR: `pull_request` (never `pull_request_target`), read-only permissions, the default GITHUB_TOKEN only (passed as GH_TOKEN to
-  # `gh pr list`, read access to public PRs), no secret; nothing from the PR is put in a shell string. The scripts print no environment value.
   # Workflow files are CODEOWNERS.
+  #
+  # Threat model (review of PR #1316). `pull_request` (never `pull_request_target`), also for a fork PR, so the code in the PR's checkout is
+  # attacker-controlled: its scripts, tests and package.json run as whoever opened the PR. Two jobs keep that code away from the token:
+  #  - `spec-numbers-selftest` runs the PR's OWN scripts and self-tests. It holds no token: `persist-credentials: false` leaves no
+  #    credential in .git/config, no step has a token in its environment, and the job shares nothing with the next one (a step that runs
+  #    PR code could otherwise write GITHUB_ENV or GITHUB_PATH, or change files, for the steps after it).
+  #  - `spec-numbers` runs the BASE branch's copy of the scripts (`base/`, the sha the PR targets, reviewed on main), reading the PR checkout
+  #    (`pr/`) only as data, with `persist-credentials: false` on both checkouts. Only the one step that needs it gets the token:
+  #    GH_TOKEN is the default GITHUB_TOKEN (contents and pull-requests read, read-only for a fork PR), used by `gh pr list`. No other secret.
+  # Nothing from the PR is put in a shell string or `${{ }}` in `run:`; the scripts print no environment value, and every path from the PR is
+  # escaped before it is printed (a file name with a newline and `::error::` must not become a workflow command).
+  spec-numbers-selftest:
+    name: Number and picture checks, self-tests
+    if: github.event_name == 'pull_request' && !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Self-tests of the PR's scripts (throwaway repos, no network, no token)
+        run: |
+          node scripts/test-picture-budget.js
+          node scripts/test-spec-numbers.js
+
   spec-numbers:
     name: Spec numbers and picture budget
     if: github.event_name == 'pull_request' && !github.event.pull_request.draft
@@ -93,17 +118,34 @@ jobs:
       contents: read
       pull-requests: read
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: PR checkout (data only)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          path: pr
           fetch-depth: 0
           filter: blob:none # partial clone: the history is needed for the merge-base, file contents are fetched when read
-      - name: Self-tests (throwaway repos, no network)
+          persist-credentials: false
+      - name: Base checkout (the scripts that run)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+          persist-credentials: false
+      - name: No picture over the budget (base script, no token)
         run: |
-          node scripts/test-picture-budget.js
-          node scripts/test-spec-numbers.js
-      - name: No picture over the budget
-        run: node scripts/picture-budget.js --strict
-      - name: No spec number taken twice
+          if [ ! -f base/scripts/picture-budget.js ]; then
+            echo "scripts/picture-budget.js is not on the base branch yet (the PR that adds it): not run. It runs from the next PR on."
+            exit 0
+          fi
+          node base/scripts/picture-budget.js --strict --root pr
+      - name: No spec number taken twice (base script)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node scripts/spec-numbers.js
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ ! -f base/scripts/spec-numbers.js ]; then
+            echo "scripts/spec-numbers.js is not on the base branch yet (the PR that adds it): not run. It runs from the next PR on."
+            exit 0
+          fi
+          node base/scripts/spec-numbers.js --root pr

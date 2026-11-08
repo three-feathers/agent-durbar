@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Spec 021 FR-063 (2026-11-08): tests of scripts/spec-numbers.js. Offline: the parser on fixtures, the clash logic with fake heads, and
+// Spec 021 FR-085 (2026-11-08): tests of scripts/spec-numbers.js. Offline: the parser on fixtures, the clash logic with fake heads, and
 // throwaway git repos run with --no-fetch (refs made by hand). SN_MODULE swaps the module (mutant runs).
 'use strict';
 const assert = require('assert');
@@ -24,7 +24,15 @@ const spec = `# Spec
 - **FR-010..FR-012 status** (2026-10-28) a range
   - **FR-013.** nested: a delta of an old number
 - FR-014 stays \`[IMPLEMENTED]\` (a bullet, not bold)
-- **FR-015 Title (amends FR-004).** an amendment with a title
+- **FR-015 Title (amends FR-004).** a titled definition that mentions another number
+- **FR-021 Read/write access.** slash in the title
+- **FR-022 Status line only.** words that look like an amendment
+- **FR-023 Big, small and more.** comma in the title
+**FR-024** column-0 paragraph (specs 005, 012, 058)
+**FR-025, FR-026** a column-0 list
+  **FR-027** indented
+- **FR-028 and FR-029** a list
+- **FR-030 status** (2026-10-28) a tag
 Prose that says FR-016 and **FR-017** in a sentence.
 | FR-018 | a table row |
 \`\`\`
@@ -38,7 +46,7 @@ Prose that says FR-016 and **FR-017** in a sentence.
 Q6 prose at line start
 - see Q7 for details
 `;
-assert.deepStrictEqual(ids(spec, 'spec'), ['FR-001', 'FR-002', 'FR-003', 'FR-004a', 'FR-005', 'FR-006', 'Q1', 'Q2', 'Q3', 'Q4'].sort());
+assert.deepStrictEqual(ids(spec, 'spec'), ['FR-001', 'FR-002', 'FR-003', 'FR-004a', 'FR-005', 'FR-006', 'FR-015', 'FR-021', 'FR-022', 'FR-023', 'FR-024', 'Q1', 'Q2', 'Q3', 'Q4'].sort());
 
 // ---- parser: tasks.md (T)
 const tasks = `- [ ] T001 open
@@ -83,6 +91,14 @@ assert.deepStrictEqual(sn.findClashes({ branchAdds: new Map(), main: M({ [A]: ['
 // ---- scrub
 assert.strictEqual(sn.scrub('fatal: https://user:s3cr3tpass@github.com/x.git failed', {}), 'fatal: https://***@github.com/x.git failed');
 assert.strictEqual(sn.scrub('token ghp_abcdef123456 here', {}), 'token *** here');
+// glued tokens (review of PR #1316): snake_case word before, emphasis around, letters before, in a URL query, after a colon
+for (const t of ['my_ghp_ABCDEF1234567890', '_ghp_ABCDEF1234567890_', '__ghp_ABCDEF1234567890__', 'xghp_ABCDEF1234567890', 'a-ghp_ABCDEF1234567890', 'token=ghp_ABCDEF1234567890&x=1', 'pre_github_pat_11AAAAAA0abcdefgh', 'k_sk-ABCDEFGHIJKLMNOPQRST', 'xAKIAABCDEFGHIJKLMNOP']) {
+  for (const useBuilt of [false, true]) {
+    const out = sn.scrub(`E: ${t} end`, {}, { useBuilt });
+    assert.ok(!/ABCDEF1234567890|ABCDEFGHIJKLMNOPQRST|AAAAAA0abcdefgh|ABCDEFGHIJKLMNOP/.test(out), `token not masked (${t}, built=${useBuilt}): ${out}`);
+  }
+}
+assert.ok(!sn.scrub('x eyJhbGciOiJI.eyJzdWIiOiIx.abcdef end', {}).includes('eyJhbGci'));
 assert.strictEqual(sn.scrub('has MyValue99 inside', { MY_API_KEY: 'MyValue99', PLAIN: 'zzzzzzzz' }), 'has *** inside');
 
 // ---- git repos, --no-fetch
@@ -101,6 +117,7 @@ function repo() {
   commit(d, 'base');
   return d;
 }
+(async () => {
 try {
   // a clash with an open PR head (same file), none for the other spec; the moved line is not a clash with main
   let d = repo();
@@ -138,11 +155,86 @@ try {
   const env = { GH_TOKEN: 'ghp_CanaryTokenValue1234567', GITHUB_TOKEN: 'ghs_CanaryOther7654321', PLAIN_ENV: 'CanaryPlainEnv5555', NPM_TOKEN: 'CanaryNpm0000' };
   r = cli(f, [], env);
   const all = r.stdout + r.stderr;
-  assert.notStrictEqual(r.status, 0, 'cannot fetch: never a pass');
-  assert.match(all, /NOT CHECKED|WARN/);
+  assert.strictEqual(r.status, 2, 'cannot fetch: exit 2, never 0 or 1');
+  assert.match(all, /NOT CHECKED: could not fetch origin\/main/);
   for (const secret of ['CanaryUrlPass77', 'CanaryTokenValue1234567', 'CanaryOther7654321', 'CanaryPlainEnv5555', 'CanaryNpm0000']) assert.ok(!all.includes(secret), `output must not contain ${secret}`);
   // a clash found with the heads at hand never prints the environment either
   r = cli(d, ['--no-fetch'], env); assert.ok(!(r.stdout + r.stderr).includes('Canary'));
+
+  // a failed fetch is exit 2 even when refs for origin/main are already here (a stale main must not read as "ok")
+  const st = repo(); G(st, 'update-ref', 'refs/remotes/origin/main', 'HEAD'); G(st, 'remote', 'add', 'origin', 'http://127.0.0.1:9/x/y.git');
+  r = cli(st, []); assert.strictEqual(r.status, 2, r.stdout); assert.doesNotMatch(r.stdout, /no clash/);
+  { // in process, with a PR list that reads fine: only the failed fetch of main can make it 2
+    const out = []; const lg = console.log; console.log = (x) => out.push(String(x));
+    let code; try { code = await sn.main(['--root', st], {}, { openPrs: async () => [] }); } finally { console.log = lg; }
+    assert.strictEqual(code, 2, out.join('\n')); assert.ok(!out.some((l) => /no clash/.test(l)));
+  }
+  // the open PR list unreadable: exit 2 (it used to fetch every PR head ever opened and go on); readable and empty: goes on
+  const src = repo(); const bare = path.join(tmp, 'origin.git'); G(tmp, 'clone', '-q', '--bare', src, bare);
+  G(src, 'remote', 'add', 'origin', bare); G(src, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+  const lines = []; const log = console.log; console.log = (x) => lines.push(String(x));
+  let c1, c2;
+  try { c1 = await sn.main(['--root', src], {}, { openPrs: async () => null }); c2 = await sn.main(['--root', src], {}, { openPrs: async () => [] }); } finally { console.log = log; }
+  assert.strictEqual(c1, 2); assert.ok(lines.some((l) => /NOT CHECKED: the open PR list could not be read/.test(l)));
+  assert.strictEqual(c2, 0, lines.join('\n'));
+  // a file that cannot be read from the repository: show throws, never an empty answer
+  assert.throws(() => sn.show(src, 'f'.repeat(40), 'specs/001-a/tasks.md'));
+  assert.strictEqual(sn.show(src, 'HEAD', 'specs/009-none/tasks.md'), '');
+  assert.match(sn.show(src, 'HEAD', 'specs/001-a/tasks.md'), /T001/);
+
+  // a number that main took after the merge-base and that was merged into the branch cleanly: HEAD is a merge commit (CI), the PR head is --head
+  const hid = repo();
+  const tf = (x) => `# a\n- [ ] T001 x\n${x.mid || ''}${'filler\n'.repeat(8)}- [ ] T002 y\n${x.end || ''}`;
+  write(hid, 'specs/001-a/tasks.md', tf({})); commit(hid, 'layout');
+  G(hid, 'checkout', '-q', '-b', 'feat'); write(hid, 'specs/001-a/tasks.md', tf({ end: '- [ ] T010 mine\n' })); const featTip = commit(hid, 'mine');
+  G(hid, 'checkout', '-q', 'main'); write(hid, 'specs/001-a/tasks.md', tf({ mid: '- [ ] T010 main took it\n' })); commit(hid, 'main took T010');
+  G(hid, 'update-ref', 'refs/remotes/origin/main', 'HEAD'); G(hid, 'checkout', '-q', 'feat'); G(hid, 'merge', '-q', '--no-edit', 'main');
+  r = cli(hid, ['--no-fetch', '--head', featTip]); assert.strictEqual(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.stdout, /specs\/001-a\/tasks\.md: T010 is also in origin\/main/);
+  r = cli(hid, ['--no-fetch']); assert.strictEqual(r.status, 1, 'no --head: the second definition in the merged file is still a clash'); assert.match(r.stdout, /T010 is also in this branch itself/);
+  assert.strictEqual(cli(hid, ['--no-fetch', '--head', 'nothex']).status, 2);
+  assert.strictEqual(sn.definitionCounts('- [ ] T001 a\n- [ ] T001 again\n', 'tasks').get('T001'), 2);
+
+  // a hostile directory name (newline, ::error::) is never printed raw: both branch and main define T010 there
+  const ev = repo(); const evil = 'specs/009-x\n::error::pwned\n::set-output name=a::b/tasks.md';
+  write(ev, evil, T('001')); commit(ev, 'evil base');
+  G(ev, 'checkout', '-q', '-b', 'mine'); write(ev, evil, T('001', '010')); commit(ev, 'mine');
+  G(ev, 'checkout', '-q', 'main'); write(ev, evil, T('001', '010')); commit(ev, 'main'); G(ev, 'update-ref', 'refs/remotes/origin/main', 'HEAD'); G(ev, 'checkout', '-q', 'mine');
+  r = cli(ev); assert.strictEqual(r.status, 1, r.stdout + r.stderr);
+  for (const line of (r.stdout + r.stderr).split('\n')) assert.ok(!/^\s*::/.test(line) && !line.includes('::'), `raw workflow command in output: ${JSON.stringify(line)}`);
+  assert.match(r.stdout, /CLASH specs\/009-x\\n: :error: :pwned\\n: :set-output name=a: :b\/tasks\.md: T010/);
+
+  // the PR list: a 401 with the token is retried without it; no token, no retry; both fail: null
+  const calls = [];
+  const rows = [{ number: 5, head: { sha: 'a'.repeat(40) } }];
+  const expired = async (url, tok) => { calls.push(tok); if (tok) throw Object.assign(new Error('HTTP 401'), { status: 401 }); return rows; };
+  assert.deepStrictEqual(await sn.restOpenPrs('o/r', 'expiredtoken', expired), [{ number: 5, sha: 'a'.repeat(40) }]);
+  assert.deepStrictEqual(calls, ['expiredtoken', '']);
+  const dead = async () => { throw Object.assign(new Error('HTTP 500'), { status: 500 }); };
+  assert.strictEqual(await sn.restOpenPrs('o/r', 'tok', dead), null);
+  assert.strictEqual(await sn.restOpenPrs('o/r', '', async () => { throw Object.assign(new Error('HTTP 403'), { status: 403 }); }), null);
+
+  // the workflow keeps the token away from PR code (mutant: remove any of these and this fails)
+  const wf = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'spec-kit.yml'), 'utf8');
+  const job = (name) => { const m = wf.match(new RegExp(`^  ${name}:\\n([\\s\\S]*?)(?=^  [A-Za-z0-9_-]+:\\n|(?![\\s\\S]))`, 'm')); assert.ok(m, `job ${name}`); return m[1]; };
+  const code_ = (t) => t.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+  for (const name of ['spec-numbers', 'spec-numbers-selftest']) {
+    const j = code_(job(name));
+    const checkouts = j.split(/- (?:name: [^\n]*\n\s+)?uses: actions\/checkout@/).slice(1);
+    assert.ok(checkouts.length >= 1);
+    for (const c of checkouts) assert.match(c.split(/\n\s+- /)[0], /persist-credentials: false/, `${name}: every checkout has persist-credentials: false`);
+    assert.doesNotMatch(j, /pull_request_target/);
+  }
+  const selftest = code_(job('spec-numbers-selftest'));
+  assert.doesNotMatch(selftest, /secrets\.|GH_TOKEN|GITHUB_TOKEN|github\.token/, 'the job that runs the PR scripts has no token');
+  const nums = code_(job('spec-numbers'));
+  assert.match(nums, /ref: \$\{\{ github\.event\.pull_request\.base\.sha \}\}\n\s+path: base/, 'the base ref is checked out to base/');
+  assert.match(nums, /node base\/scripts\/spec-numbers\.js/); assert.match(nums, /node base\/scripts\/picture-budget\.js/);
+  assert.doesNotMatch(nums, /node (?!base\/)[^\n]*scripts\//, 'the token job runs only the base copy of the scripts');
+  assert.doesNotMatch(nums, /test-(spec-numbers|picture-budget)/, 'the PR self-tests do not run in the token job');
+  assert.match(nums, /PR_HEAD_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/);
+  assert.strictEqual((nums.match(/GH_TOKEN/g) || []).length, 1, 'the token is in the environment of one step only');
+  assert.doesNotMatch(nums, /\$\{\{ github\.event\.pull_request\.(body|title|head\.ref)/);
 
   // the real repository's own files parse to something sane (the patterns still match the specs)
   const root = path.join(__dirname, '..');
@@ -153,3 +245,4 @@ try {
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });
 }
+})().catch((e) => { console.error(e); process.exit(1); });
