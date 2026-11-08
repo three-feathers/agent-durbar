@@ -419,6 +419,56 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
       check(parts, `chain ${i}: ${parts.map(([p2]) => p2).join('')}`);
     }
   }
+  // Issue #1237 (spec 012 FR-173): tokens of DIFFERENT families written back to back. Every ordered pair of the bare-token samples of FAMILIES (a family added later is covered) is
+  // one run of masks with no run of 8 letters or digits left; then the issue's own pairs by name.
+  {
+    const left = (out: string): string => out.replace(/\[redacted\]/g, '');
+    const readable = (out: string): boolean => /[A-Za-z0-9]{8}/.test(left(out));
+    const flat: Array<[string, string]> = [];
+    for (const [family, samples] of Object.entries(FAMILIES)) {
+      if (CONTEXT.has(family)) continue;
+      for (const sample of samples) if (!GLUE_GAP.has(sample.slice(0, 8))) flat.push([family, sample]);
+    }
+    const sampleOf = (prefix: string): string => { const f = flat.find(([, x]) => x.startsWith(prefix)); assert.ok(f, `a sample starts with ${prefix}`); return f![1]; };
+    // the issue's repro: A = 'sk-' + 40, B = 'hf_' + 30; the same with glpat- + 20, xoxb- + 20, and B a PREFIXED family
+    const A: Array<[string, string]> = [['sk-', 'sk-' + an(40)], ['glpat-', 'glpat-' + an(20)], ['xoxb-', 'xoxb-' + an(20)], ['xapp-', 'xapp-1-' + an(20)], ['gh' + 'p_', 'gh' + 'p_' + an(36)], ['github' + '_pat_', 'github' + '_pat_' + an(22) + '_' + an(59)]];
+    const B: Array<[string, string]> = [['hf_', 'hf' + '_' + an(30)], ['vcc_', 'vc' + 'c_' + an(50)], ['lin_', sampleOf('lin_')], ['sbp_', sampleOf('sbp_')], ['AstraCS', sampleOf('AstraCS')], ['ya29.', sampleOf('ya29.')]];
+    for (const [la, a] of A) for (const [lb, b] of B) {
+      const out = redact(a + b, {});
+      assert.ok(out.includes('[redacted]') && !readable(out), `#1237: ${la} then ${lb}: a body is readable in ${out.replace(/[A-Za-z0-9]{12,}/g, '<LEAK>')}`);
+      assert.ok(!out.includes(b.slice(-12)), `#1237: ${la} then ${lb}: the end of the second token is readable in ${out.replace(/[A-Za-z0-9]{12,}/g, '<LEAK>')}`);
+    }
+    // a base64 shape first (AKLT, GOOG1, LTAI, AKCp, eyJrIjoi, an X bearer), then a token of another family
+    const B64: Array<[string, string]> = [['AKLT', sampleOf('AK' + 'LT')], ['GOOG1', sampleOf('GO' + 'OG1')], ['LTAI', sampleOf('LT' + 'AI')], ['AKCp', 'AK' + 'Cp' + an(60)], ['eyJrIjoi', 'ey' + 'JrIjoi' + an(70)], ['X bearer', sampleOf('AAAAAAAAAAAAAAAAAAAAAAB')]];
+    for (const [la, a] of B64) for (const [lb, b] of B) {
+      const out = redact(a + b, {});
+      assert.ok(out.includes('[redacted]') && !readable(out), `#1237: ${la} then ${lb}: a body is readable in ${out.replace(/[A-Za-z0-9]{12,}/g, '<LEAK>')}`);
+    }
+    // the eight prefixed pairs: `sk.eyJ` or `ops_eyJ` before `pat.` or `sc_`; `sc_` before `fm1r_`, `fm2_`, `ops_eyJ` or `xkeysib-`
+    const pairs: Array<[string, string]> = [['sk.eyJ', 'pat.'], ['sk.eyJ', 'sc_'], ['ops_eyJ', 'pat.'], ['ops_eyJ', 'sc_'], ['sc_', 'fm1r_'], ['sc_', 'fm2_'], ['sc_', 'ops_eyJ'], ['sc_', 'xkeysib-']];
+    for (const [pa, pb] of pairs) {
+      const out = redact(sampleOf(pa) + sampleOf(pb), {});
+      assert.ok(!readable(out), `#1237: ${pa} then ${pb}: a body is readable in ${out.replace(/[A-Za-z0-9]{12,}/g, '<LEAK>')}`);
+    }
+    // all of them, every order
+    let n = 0;
+    for (const [fa, a] of flat) for (const [fb, b] of flat) {
+      const out = redact(a + b, {});
+      if (readable(out) || !out.includes('[redacted]')) assert.fail(`#1237: pair ${fa} ${a.slice(0, 8)}… + ${fb} ${b.slice(0, 8)}…: a body is readable in ${out.replace(/[A-Za-z0-9]{12,}/g, '<LEAK>').slice(0, 80)}`);
+      n++;
+    }
+    assert.ok(n > 15000, `#1237: the pair loop ran: ${n}`);
+    // what stays: a separator keeps two masks, and a short rest (a port, `.git`, an encoded space, a short word) is not a second token
+    const gh = 'gh' + 'p_' + an(36);
+    assert.strictEqual(redact(gh + '.git', {}), '[redacted].git', '#1237: `.git` after a token stays');
+    assert.strictEqual(redact(gh + ':8080', {}), '[redacted]:8080', '#1237: a port after a token stays');
+    assert.strictEqual(redact(gh + '%20ok', {}), '[redacted]%20ok', '#1237: an encoded space and a short word stay');
+    assert.strictEqual(redact(gh + '_' + an(15), {}), '[redacted]_' + an(15), '#1237: a suffix of 15 characters after `_` stays, as in FR-169');
+    assert.strictEqual(redact(gh + '.' + an(7), {}), '[redacted].' + an(7), '#1237: 7 characters after a token stay');
+    assert.strictEqual(redact(gh + '/x', {}), '[redacted]/x', '#1237: a path after a token stays');
+    assert.strictEqual(redact(gh + ' hf_' + an(30), {}), '[redacted] [redacted]', '#1237: a space keeps two masks');
+    assert.strictEqual(redact('go' + 'og1 ' + 'GO' + 'OG1' + up(10), {}), 'go' + 'og1 ' + 'GO' + 'OG1' + up(10), '#1237: a short GOOG1 run is no key');
+  }
   // F1: a plain list of prefixes is no token (the `_` after a lead counts only after a full body of letters and digits)
   for (const t of ['the prefixes ' + 'gh' + 'p_gho_ghu_ghs_ghr_gh' + 'p_gho_ghu_', ('gh' + 'p_').repeat(40), ('np' + 'm_gh' + 'p_').repeat(20)]) assert.strictEqual(redact(t, {}), t, `a prefix list stays: ${t.slice(0, 30)}`);
   // The lookbehind is only for a lead the swallow list names: a body ending in `gh` and another letter, then `_`, is not glued
@@ -428,6 +478,35 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
   // A glued short rest after a token (no full body) is still taken, as before; a space or a word between keeps both masked
   assert.ok(!redact('gh' + 'p_' + an(36) + 'gh' + 'p_' + an(8), {}).includes('gh' + 'p_'), 'a short glued rest');
   assert.strictEqual(redact(['gh' + 'p_' + an(36), 'gh' + 'o_' + an(36)].join(' x '), {}), '[redacted] x [redacted]', 'separated tokens');
+}
+
+// Issue #1298 (spec 012 FR-174): a secret name split by quotes is the name the shell reads. Values are made up at run time.
+{
+  const V = an(12);
+  const P = 'pass' + 'word';
+  const both = (cmd: string, want: string, label: string): void => {
+    assert.strictEqual(maskSecretCommand(cmd, {}), want, `#1298: maskSecretCommand: ${label}`);
+    assert.strictEqual(redact(cmd, {}), want, `#1298: redact: ${label}`);
+  };
+  both(`run echo 'pass'"word"=${V}`, `run echo 'pass'"word"=[redacted]`, `the issue's example 'pass'"word"=<value>`);
+  both(`echo pa"ss"word=${V}`, `echo pa"ss"word=[redacted]`, 'a name split once inside');
+  both(`echo "pass"word=${V}`, `echo "pass"word=[redacted]`, 'a quoted head');
+  both(`echo pass'word'=${V}`, `echo pass'word'=[redacted]`, 'a quoted tail');
+  both(`echo "pass"'word'=${V}`, `echo "pass"'word'=[redacted]`, 'two quote kinds');
+  both(`echo pa''ss''word=${V}`, `echo pa''ss''word=[redacted]`, 'empty quotes inside');
+  both(`echo 'tok'"en"=${V}`, `echo 'tok'"en"=[redacted]`, 'token split');
+  both(`echo "api_"'key'=${V}`, `echo "api_"'key'=[redacted]`, 'api_key split');
+  both(`echo 'pass'"word"="${V}"`, `echo 'pass'"word"="[redacted]"`, 'a quoted value');
+  both(`echo pa\\ss${P.slice(4)}=${V}`, `echo pa\\ss${P.slice(4)}=[redacted]`, 'a backslash inside the name');
+  assert.ok(!maskSecretCommand(`sh -c "echo 'pass'\\"word\\"=${V}"`, {}).includes(V), '#1298: inside sh -c with escaped quotes');
+  assert.ok(!redact(`sh -c "echo 'pass'\\"word\\"=${V}"`, {}).includes(V), '#1298: redact: inside sh -c with escaped quotes');
+  assert.ok(!maskSecretCommand(`run env X=1 'DB_'"PASS"'WORD'=${V} cmd`, {}).includes(V), '#1298: an upper-case name split in three');
+  // what stays: a name that is not a secret, a short value, a split that is not a secret name, the plain forms
+  assert.strictEqual(redact(`echo 'max_to'"kens"=${V}`, {}), `echo 'max_to'"kens"=${V}`, '#1298: max_tokens split stays');
+  assert.strictEqual(redact(`echo "to"ken=short`, {}), `echo "to"ken=short`, '#1298: a short value stays');
+  assert.strictEqual(redact(`echo 'user'"name"=${V}`, {}), `echo 'user'"name"=${V}`, '#1298: a name that is not secret stays');
+  assert.strictEqual(redact(`echo ${P}=${V}`, {}), `echo ${P}=[redacted]`, 'the plain form is still hidden');
+  assert.strictEqual(redact(`{"${P}": "${V}"}`, {}), `{"${P}": "[redacted]"}`, 'the JSON form is still hidden');
 }
 
 // A real image, whole, stays (every repo image: test-redact-images.ts).

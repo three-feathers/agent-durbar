@@ -11,6 +11,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { AllowedBy, PermissionInfo, SessionGrant, StartOptions } from './types';
 import { ALLOWED_BY_KEYS_MAX } from './types';
+import { maskSecretCommand } from '../shared/redact';
 
 /** The subset of the SDK's PermissionRequest the broker reads (all optional strings besides kind). */
 export interface PermissionLike {
@@ -81,7 +82,19 @@ export interface GrantScope {
   broad?: { key: string; label: string };
 }
 
-const shortCmd = (cmd: string, n = 28): string => (cmd.length > n ? cmd.slice(0, n - 1) + '…' : cmd);
+/**
+ * The label of an exact-command scope (spec 012 FR-176, issue #1296): the command is masked FIRST (`maskSecretCommand`: a token cut at 28 characters lost the prefix or length the mask
+ * needs), then cut at a word, never inside a `[redacted]` marker. A first word longer than the cut is cut as it is: what is left of the masked text holds nothing the mask found.
+ */
+const shortCmd = (cmd: string, n = 28): string => {
+  const m = maskSecretCommand(cmd);
+  if (m.length <= n) return m;
+  let end = n - 1;
+  const marks = [...m.matchAll(/\[redacted[^\]]{0,70}\]/g)];
+  for (const k of marks) if (k.index! < end && k.index! + k[0].length > end) end = k.index!; // a marker is shown whole or not at all
+  if (m[end] !== ' ') { const sp = m.lastIndexOf(' ', end); if (sp > 0) end = sp; }
+  return m.slice(0, end).trimEnd() + '…';
+};
 
 /**
  * What "Approve for this session" remembers for a request: a key (what the grant matches) and a

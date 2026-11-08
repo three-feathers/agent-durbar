@@ -110,7 +110,7 @@ const NOT_B64_AFTER = String.raw`(?![A-Za-z0-9+/=])(?!${LINE_BREAK}[A-Za-z0-9+/=
 const B64_START = String.raw`(?:(?<![A-Za-z0-9+/_-])|${PCT_BOUNDED})(?<![A-Za-z0-9+/=]{40}${LINE_BREAK})`;
 const B64_PREFIXED = [
   String.raw`ABSK[A-Za-z0-9+/]{100,}={0,2}`, // Amazon Bedrock, long-lived
-  String.raw`AIza${W}{35}(?![_-])|GOOG1[A-Z0-9]{40,}`, // Google API key (Gemini too), storage HMAC
+  String.raw`AIza${W}{35}(?![_-])`, // Google API key (Gemini too)
   String.raw`LTAI[A-Za-z0-9]{12,}|4b1d[A-Za-z0-9]{38}|dapi[a-f0-9]{32}(?:-[0-9])?`, // Alibaba, ClickHouse, Databricks
   String.raw`AKCp[A-Za-z0-9]{60,}|cmVmd[A-Za-z0-9]{59}|SK[A-Fa-f0-9]{32}|eyJrIjoi[A-Za-z0-9]{70,}={0,3}`, // JFrog, Twilio, old Grafana keys
   String.raw`EAA[CM][A-Za-z0-9]{100,}|EAAA${W}{60,128}|A{20,24}(?=[A-Za-z0-9]{0,128}%)[B-Za-z0-9%][A-Za-z0-9%]{79,}`, // Facebook, Square, X (Twitter) bearer
@@ -220,6 +220,8 @@ function maskPrefixedGlued(s: string, mask: string): string {
 const TOKEN_SHAPES: Array<RegExp | Guarded | ((s: string, mask: string) => string)> = [
   maskPrefixedGlued,
   new RegExp(`(?=[A-Za-z0-9])${B64_START}(?:${B64_PREFIXED})${NOT_B64_AFTER}`, 'g'),
+  // Google storage HMAC: its body is upper case and digits only, so it ends at any other character, a letter included (a second token glued to it starts in lower case: issue #1237)
+  new RegExp(`(?=[A-Za-z0-9])${B64_START}GOOG1[A-Z0-9]{40,}(?![A-Z0-9+/=])(?!${LINE_BREAK}[A-Za-z0-9+/=]{40})`, 'g'),
   /sk-ant-[A-Za-z0-9_-]{8,}/g, // no start: a key glued to a letter (`xsk-ant-…`) is still a key (from spec 103's `maskAll`)
   guarded(shape(String.raw`xox[os]-[0-9]{1,20}-[0-9]{1,20}-[0-9]{1,20}-[A-Fa-f0-9]{8,}`), /xox[os]-[0-9]/), // the legacy four-part Slack form (a plain `xoxo-…` is a hug: stays)
   // Microsoft Teams incoming webhook: the host stays, the path is the secret.
@@ -243,8 +245,13 @@ export function openKeyBlockStart(text: string): number {
   }
   return open;
 }
+/**
+ * Spec 012 FR-174 (issue #1298): the shell removes the quotes of `'pass'"word"=x`, `pa"ss"word=x` and `"pass"word=x`, so each is the name `password`. Up to 6 quote or backslash characters
+ * (the close of one span and the open of the next, a JSON-escaped quote, `pa\ss`) may sit between any two atoms of a name. An ASCII class with a bounded count: nothing for the hidden-character walker to add.
+ */
+const splitQuotes = (src: string): string => (src.match(/\[[^\]]*\]\??|\(\?:[^)]*\)\??|\\.\??|[^[(\\]\??/g) ?? [src]).join(String.raw`["'\\]{0,6}`);
 /** A name that holds a secret, right before its separator (checked backwards from the separator, so `max_tokens` and `token_count` are not it). */
-const SECRET_NAMES = `(?:${['secret_?access_?key', 'session_?token', 'client_?secret', 'api_?secret', 'app_?secret', 'consumer_?secret', 'shared_?secret', 'secret_?key', 'api[_-]?key', 'access[_-]?key', 'auth[_-]?key', 'account_?key', 'sharedaccesskey', 'private[_-]?key', 'priv_?key', 'signing_?key', 'encryption_?key', 'master_?key', 'license_?key', 'service_?key', 'token', 'secret', 'password', 'passwd', 'passphrase', 'contrase(?:n|ñ)a', '_gitlab_session'].map(ci).join('|')}|(?<![A-Za-z])(?:${['pwd', 'pass', 'auth'].map(ci).join('|')}))`;
+const SECRET_NAMES = `(?:${['secret_?access_?key', 'session_?token', 'client_?secret', 'api_?secret', 'app_?secret', 'consumer_?secret', 'shared_?secret', 'secret_?key', 'api[_-]?key', 'access[_-]?key', 'auth[_-]?key', 'account_?key', 'sharedaccesskey', 'private[_-]?key', 'priv_?key', 'signing_?key', 'encryption_?key', 'master_?key', 'license_?key', 'service_?key', 'token', 'secret', 'password', 'passwd', 'passphrase', 'contrase(?:n|ñ)a', '_gitlab_session'].map((n) => splitQuotes(ci(n))).join('|')}|(?<![A-Za-z])(?:${['pwd', 'pass', 'auth'].map((n) => splitQuotes(ci(n))).join('|')}))`;
 /**
  * A value's simple stop rule, the same in free text and commands: a space, a quote, a backtick, `<`, `>`, `,`, `;`, `|`, `&`, `$(`, `${`, `**`, and (`closerAt`) a closing bracket of one opened
  * before the name. So `token=abc12345;curl${IFS}x|sh` shows the shell, a note's `{token:abc12345,name:bob}` keeps its name, and `password=Summer2024&Secure!9` leaves `&Secure!9`
@@ -426,6 +433,35 @@ function maskBare(text: string, mask: string, guard: boolean): string {
   return maskList(maskList(text, mask, guard, HELD_SHAPES), mask, guard, TOKEN_SHAPES);
 }
 
+/** Characters a glued second token is made of, and the ones it may start with (`sk-` body swallowing `glpat` leaves `-<body>`; `glpat-` swallowing `sha256` leaves `~<body>`). */
+const GLUE_REST = /[A-Za-z0-9_\-.~+/=:%]/;
+const GLUE_START = /[A-Za-z0-9_\-.~:%]/;
+/** The fewest letters and digits (all of them in the glued run, separators between segments allowed) that make what is glued to a mask a second token: 8, the measure of #1237's review (the rest of a body whose head the first token swallowed). */
+const GLUE_MIN = 8;
+/** After a `_` it is 16: an identifier suffix (`ghp_…_backup`) is not a token, and FR-169 keeps the 8-character rest of `ghp_…ghx_` + 8 readable. */
+const GLUE_MIN_UNDERSCORE = 16;
+/** Issue #1237 (spec 012 FR-173): what is glued to a mask and still holds 8 or more letters and digits (16 after a `_`) is the rest of a second token whose head the first one swallowed; it goes into the mask. A single scan. */
+function maskGluedRest(s: string, mask: string): string {
+  let at = s.indexOf(mask);
+  if (at < 0) return s;
+  let out = '';
+  let from = 0;
+  while (at >= 0) {
+    const start = at + mask.length;
+    let end = start;
+    let alnum = 0;
+    if (start < s.length && GLUE_START.test(s[start])) {
+      while (end < s.length && GLUE_REST.test(s[end])) {
+        if (/[A-Za-z0-9]/.test(s[end])) alnum++;
+        end++;
+      }
+    }
+    if (alnum >= (s[start] === '_' ? GLUE_MIN_UNDERSCORE : GLUE_MIN)) { out += s.slice(from, start); from = end; }
+    at = s.indexOf(mask, Math.max(end, start));
+  }
+  return from === 0 ? s : out + s.slice(from);
+}
+
 function maskShapes(text: string, mask: string, guard: boolean): string {
   let out = text;
   // A function, so `$&` or `$1` in the mask stays literal; group 1, when a pattern has one, is what names the secret and stays.
@@ -435,6 +471,7 @@ function maskShapes(text: string, mask: string, guard: boolean): string {
   replaced(PATTERNS);
   out = maskCookies(out, mask);
   out = maskList(out, mask, guard, TOKEN_SHAPES);
+  out = maskGluedRest(out, mask);
   // Last: a value with its own shape is gone whole by now (a named-secret value stops at `\`, which would leave the tail of `token=123456\u003A…`).
   const value = (m: string, keep: string): string => { const v = m.slice(keep.length); const i = closerAt(v); return keep + mask + (i < 0 ? '' : v.slice(i)); };
   return out.replace(NAMED_IN_QUERY, value).replace(NAMED_SECRET, value);

@@ -1,9 +1,11 @@
 /** Activity log (spec 052 FR-071): store cap, redaction, CSV escaping and formula-injection guard, only the listed fields. `npm run test:activity`. No credits spent. */
 import * as assert from 'assert';
+import './safetext-shared'; // hands the compiled shared mask to the window scripts (liveact.js) before they load
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { ActivityStore } from '../src/main/activitystore';
+import { activityKind, maskActivityAction } from '../src/main/activitymask';
 import { ACTIVITY_DECISIONS, ACTIVITY_FIELDS, ACTIVITY_MAX_ROWS, activityCsv, activityJson, csvCell, decisionOf, sanitizeActivityRow } from '../src/shared/activity';
 import type { ActivityRow } from '../src/shared/activity';
 import { setCapOp, setModeOp } from '../src/main/agentops';
@@ -122,6 +124,53 @@ try {
     assert.strictEqual(decisionOf({ state: 'approved', via: 'policy' }), 'auto-allow-all');
     assert.strictEqual(decisionOf({ state: 'denied', via: 'stopped' }), undefined, 'a stopped session is not a decision');
     assert.strictEqual(decisionOf({ state: 'denied' }), undefined, 'a Read-only denial is not logged');
+  }
+
+  // spec 012 FR-175 (issue #1295): the activity log masks an action the way the chat masks a permission request. Every value is made up at run time.
+  {
+    const body = (n: number): string => 'aB3dE6gH9jK2mN5pQ8sT1vW4yZ7aB3dE6gH9jK2'.slice(0, n);
+    const baseDir = path.join(__dirname, '..', '..', 'src', 'main'); // rendererScript reads <baseDir>/../renderer/liveact.js (the source tree, as the other window-script tests do)
+    const mask = (action: string, kind?: string): string => maskActivityAction(action, kind, baseDir);
+    const tok = 'gh' + 'p_' + body(36);
+    // a token-shaped tool name is not stored (the chat shows `tool`)
+    {
+      const out = mask('mcp srv › ' + tok, 'mcp');
+      assert.ok(!out.includes(body(12)), `#1295: a token-shaped tool name is hidden: ${out}`);
+      assert.strictEqual(out, 'mcp srv › tool', '#1295: the name is shown as the generic word `tool`');
+      assert.strictEqual(mask('custom-tool ' + tok, 'custom-tool'), 'custom-tool tool', '#1295: a custom tool name too');
+      assert.strictEqual(mask('mcp github › search', 'mcp'), 'mcp github › search', 'a plain tool name stays');
+    }
+    // a token split by an escape sequence (ANSI CSI, OSC) is hidden whole: the old redact-only path left its body readable
+    {
+      const csi = mask('run echo gh\x1b[0m' + 'p_' + body(36), 'shell');
+      assert.ok(!csi.includes(body(12)) && !csi.includes('p_'), `#1295: a token split by an ANSI escape is hidden: ${csi}`);
+      const osc = mask('run echo gh\x1b]0;title\x07' + 'p_' + body(36), 'shell');
+      assert.ok(!osc.includes(body(12)), `#1295: a token split by an OSC is hidden: ${osc}`);
+      const zw = mask('run echo gh​' + 'p_' + body(36), 'shell');
+      assert.ok(!zw.includes(body(12)), `#1295: a token split by a zero-width space is hidden: ${zw}`);
+    }
+    // the command mask, not redact alone: a secret flag's value goes
+    {
+      const out = mask('run mytool --pass' + 'word ' + body(12) + ' db', 'shell');
+      assert.strictEqual(out, 'run mytool --pass' + 'word [redacted] db', '#1295: the command mask hides a secret flag value');
+      assert.ok(!mask('run echo \'pass\'"word"=' + body(12), 'shell').includes(body(12)), '#1295: a quote-split name in a command (FR-174) is hidden in the log too');
+      assert.strictEqual(mask('run npm test', 'shell'), 'run npm test', 'a plain command stays');
+      assert.strictEqual(mask('Read-only to Ask first'), 'Read-only to Ask first', 'a fixed phrase stays');
+    }
+    // kinds as the page maps them, and a mask that cannot load stores the neutral word
+    assert.deepStrictEqual(['shell', 'shell-exact:ls', 'shell:git', 'mcp', 'custom-tool', 'mcp:a/b', 'write', undefined].map(activityKind), ['shell', 'shell', 'shell', 'tool', 'tool', 'tool', 'other', 'other'], '#1295: the kind words are the page\'s');
+    assert.strictEqual(maskActivityAction('run ' + tok, 'shell', path.join(dir, 'no-such-tree', 'main')), 'a command', '#1295: no script, no text');
+    // mask, then cut: a token that straddles the old 2,000-character cut is masked whole (a long token before it shrinks the text so the rest is within the 160 characters shown)
+    {
+      const row = sanitizeActivityRow({ ...base, t: new Date().toISOString(), action: 'sk-' + 'aB3dE6gH9jK2mN5pQ8sT1vW4yZ7'.repeat(80).slice(0, 1975) + ' ' + tok }, {})!;
+      assert.strictEqual(row.action, '[redacted] [redacted]', `#1295: mask before cut: ${row.action}`);
+    }
+    // main's wiring: logActivity masks through maskActivityAction and the permission handler hands it the request's kind
+    {
+      const main = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8');
+      assert.match(main, /const logActivity = [^\n]*kind\?: string[^\n]*\n(?:[^\n]*\n){0,3}?[^\n]*action: maskActivityAction\(action, kind\)/, '#1295: logActivity masks the action with maskActivityAction');
+      assert.match(main, /logActivity\(a, decision, e\.permission\.summary, undefined, e\.permission\.kind\)/, '#1295: the permission handler passes the kind');
+    }
   }
 
   // mode and limit changes are logged by main's own ops

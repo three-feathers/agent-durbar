@@ -3,7 +3,7 @@
  * changes. Pure: no Electron, no Node-only imports, so the main store and the tests share it.
  *
  * A row holds names and short summaries only: never a prompt, a reply, file contents, tool output or a full path. Every text
- * field is cut to a fixed length; the action goes through `redact()` first.
+ * field is cut to a fixed length; the action goes through `redact()` first (the main process masks it with the permission-card mask before that, `src/main/activitymask.ts`).
  */
 import { redact } from './redact';
 
@@ -62,7 +62,7 @@ export function sanitizeActivityRow(raw: unknown, env?: Record<string, string | 
     folder: oneLine(baseName(r.folder), NAME_MAX),
     app: oneLine(r.app, NAME_MAX),
     mode: oneLine(r.mode, 16),
-    action: oneLine(redact(oneLine(r.action, 2000), env), ACTIVITY_ACTION_MAX),
+    action: oneLine(redact(oneLine(r.action, Infinity), env), ACTIVITY_ACTION_MAX), // mask, then cut: a cut first could leave the start of a token (spec 012 FR-175)
     decision: r.decision as ActivityDecision,
   };
 }
