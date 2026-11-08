@@ -85,7 +85,7 @@
     if(k==='tool'){const j=s.split(/( › |\s+)/).map((w,i)=>i%2||!w?w:toolName(w,m)).join('');const x=ST.maskLabel(j,'other',m);return {s,out:x||null};}
     const x=ST.maskLabel(s,'other',m);return {s,out:x||null};
   }
-  function permText(raw,kind,mask){
+  function permBase(raw,kind,mask){
     const m=mask||{}, k=kind==='shell'||kind==='tool'?kind:'other', fb=why=>({text:PERM_FB[k],hidden:true,why});
     try{
       if(raw==null||raw==='')return {text:'',hidden:false};
@@ -103,6 +103,40 @@
       if(mcut)return {text:c.out+' \u27e6cut\u27e7',hidden:true,why:'cut'};
       return tail({text:c.out+suf,hidden:true,why:c.out!==c.s?'secret':'control'});
     }catch(e){return fb('unchecked');}
+  }
+  /* spec 003 FR-117, FR-119 (issue #1300): lookalike letters. The check reads the raw text (controls out, before the mask: so a letter the mask hid is still
+     counted, `inHidden`) and the shown text (FR-318 markers out); only what is shown gets a marker after each flagged letter, never a letter of a hidden part.
+     The text keeps every character: the markers only add. No lookalike.js, or a throw: `look.unchecked` when the text has a non-ASCII letter, digit or mark. */
+  const LK=()=>{try{return typeof module==='object'&&module.exports?require('./lookalike.js'):self.DurbarLookalike;}catch(e){return null;}}; /* read on each call: a page without it fails safe */
+  const FRMARK=/\u27e6(?:ESC|LF|CR|TAB|cut|U\+([0-9A-F]{4,6}))\u27e7/g;
+  /* the shown text without the FR-318 markers (a whitespace one as a line break, as the check reads a control), and where each character is in the shown text */
+  function unmark(t){
+    let out='';const at=[];let last=0,m;FRMARK.lastIndex=0;
+    const put=(s,from)=>{for(let i=0;i<s.length;i++){out+=s[i];at.push(from+i);}};
+    while((m=FRMARK.exec(t))){put(t.slice(last,m.index),last);
+      const w=m[1]?/\s/.test(String.fromCodePoint(parseInt(m[1],16))):m[0]!=='\u27e6cut\u27e7';if(w){out+='\n';at.push(m.index);}last=m.index+m[0].length;}
+    put(t.slice(last),last);at.push(t.length);return {s:out,at};
+  }
+  const NONASCII_W=/(?![\x00-\x7f])[\p{L}\p{M}\p{N}]/u;
+  function permLook(b,raw,k){
+    const L=LK();
+    const r0=String(raw).slice(0,PERM_CAP);
+    if(!L||typeof L.check!=='function')return NONASCII_W.test(r0)?Object.assign({},b,{look:{unchecked:true}}):b;
+    try{
+      const rf=L.check(r0,k).findings.length;
+      const u=unmark(b.text), sc=L.check(u.s,k), hosts=sc.hosts.filter(L.hostOdd);
+      const fs=sc.findings, inHidden=rf>fs.length;
+      if(!fs.length&&!hosts.length&&!inHidden)return b;
+      let text=b.text;const done=new Set();
+      for(const f of fs.slice().sort((x,y)=>y.index-x.index)){if(f.rule==='host'||done.has(f.index))continue;done.add(f.index); /* from the end, so earlier places stay put */
+        const p=u.at[f.index]+f.char.length;text=text.slice(0,p)+L.marker(f)+text.slice(p);}
+      return Object.assign({},b,{text,look:{n:fs.length,findings:fs,hosts,inHidden}});
+    }catch(e){return NONASCII_W.test(r0)?Object.assign({},b,{look:{unchecked:true}}):b;}
+  }
+  function permText(raw,kind,mask){
+    const b=permBase(raw,kind,mask), k=kind==='shell'||kind==='tool'?kind:'other';
+    if(!b||!b.text||raw==null||(b.hidden&&(b.why==='unchecked'||b.why==='concealed'||b.why==='cut')))return b; /* a blind card shows no text, so no lookalike line (FR-118) */
+    return permLook(b,raw,k);
   }
   /* A tool start as a verb phrase. kind: read | edit | run | search | tool (the chat's toolKind); label: the chat's toolLabel. */
   function phrase(o,mask){

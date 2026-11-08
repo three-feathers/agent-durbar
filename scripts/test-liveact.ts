@@ -251,7 +251,7 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
 // page wiring: the shim, the compiled redact module and liveact.js load in order before app.js; redact.ts stays import-free
 {
   const html = fs.readFileSync(path.join(R, 'index.html'), 'utf8');
-  ok(/<script src="exports-shim\.js"><\/script>\s*<script src="\.\.\/shared\/redact\.js"><\/script>\s*(?:<script src="\.\.\/shared\/answerlimits\.js"><\/script>(?:<!--[^>]*-->)?\s*)?<script src="safetext\.js"><\/script>\s*<script src="liveact\.js"><\/script>\s*<script src="app\.js">/.test(html), 'script order');
+  ok(/<script src="exports-shim\.js"><\/script>\s*<script src="\.\.\/shared\/redact\.js"><\/script>\s*(?:<script src="\.\.\/shared\/answerlimits\.js"><\/script>(?:<!--[^>]*-->)?\s*)?<script src="safetext\.js"><\/script>\s*<script src="lookalike\.js"><\/script>\s*<script src="liveact\.js"><\/script>\s*<script src="app\.js">/.test(html), 'script order (spec 003 FR-113: lookalike.js before liveact.js)');
   const red = fs.readFileSync(path.join(ROOT, 'src', 'shared', 'redact.ts'), 'utf8');
   ok(!/^\s*import\s/m.test(red) && !/\brequire\(/.test(red), 'redact.ts has no imports (it loads as a page script)');
   const copy = fs.readFileSync(path.join(ROOT, 'scripts', 'copy-assets.js'), 'utf8');
@@ -534,16 +534,16 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   ok(/const shownPerm=\(t,kind\)=>window\.DurbarLiveAct\?window\.DurbarLiveAct\.permText\(t,permKind\(kind\),LIVE_MASK\|\|\{\}\):\{text:'request',hidden:true,why:'unchecked'\}/.test(app), 'the page has one permission-text function, failing closed (unchecked)');
   const card = app.slice(app.indexOf('function showPerm('), app.indexOf('function roAskHint('));
   ok(/ps\.textContent=sumS\.text/.test(card) && !/ps\.textContent=p\.summary/.test(card), 'card text');
-  ok(/announce\(a\.name\+' needs your OK: '\+sumS\.text\+/.test(card), 'screen-reader announcement shows the masked summary');
-  ok(/expertScopeLabel\(scopeS\.text\)/.test(card) && /cutText\(scopeS\.text,30\)/.test(card), 'session button and its tooltip');
+  ok(/announce\(a\.name\+' needs your OK: '\+\(look\?look\+' The request: ':''\)\+sumS\.text\+/.test(card), 'screen-reader announcement shows the masked summary (after the lookalike line, spec 003 FR-118)');
+  ok(/const keyS=p\.scopeKey\?shownPerm\(grantText\(p\.scopeKey,p\.scopeLabel\),String\(p\.scopeKey\)\):null/.test(card) && /expertScopeLabel\(gt\)/.test(card) && /cutText\(gt,Math\.max\(240,gt\.lastIndexOf\('\\u27e7'\)\+2\)\)/.test(card), 'session button and its tooltip: the raw key through the one mask (spec 003 FR-118)');
   ok(/cutText\(broadS\.text,18\)/.test(card), 'any-arguments tooltip');
   ok(/scopeHint\(Object\.assign\(\{\},p,\{scopeLabel:p\.scopeLabel\?scopeS\.text:p\.scopeLabel,broadScopeLabel:p\.broadScopeLabel\?broadS\.text:p\.broadScopeLabel\}\)\)/.test(card), 'the scope hint');
-  ok(/const hwhy=permWhy\(sumS,scopeS,broadS\)/.test(card) && /if\(p\.state==='pending'&&hwhy\)\{const hp=/.test(card) && /PERM_WHY\[hwhy\]\+hgrant/.test(card), 'review 4: the hidden-part line shows on every pending card with a hidden part, with or without a scope key');
+  ok(/const hwhy=permWhy\(sumS,scopeS,broadS,keyS\)/.test(card) && /if\(p\.state==='pending'&&hwhy\)\{const hp=/.test(card) && /PERM_WHY\[hwhy\]\+hgrant/.test(card), 'review 4: the hidden-part line shows on every pending card with a hidden part, with or without a scope key');
   ok(/bridge\.resolvePermission\(a\.id,p\.requestId,approve,remember,!!broad\)/.test(card) && /a\.pend\.set\(p\.requestId,/.test(card), 'the answer still binds to the real request id');
   ok(/scopeLabel:broad\?p\.broadScopeLabel:p\.scopeLabel,summary:p\.summary/.test(card), 'the settled copy keeps the raw words (masked when drawn)');
   const grants = app.slice(app.indexOf('function grantChipX('), app.indexOf('function closeGrants('));
   ok(/const gLab=g=>shownPerm\(g\.label,String\(g\.key\|\|''\)\)/.test(app), 'a grant label is masked by its key kind');
-  ok(/aria-label="Revoke permission: \$\{esc\(gLab\(g\)\.text\)\}"/.test(grants) && /data-revoke="\$\{esc\(g\.key\)\}"/.test(grants), 'chip accessible name masked, revoke key raw');
+  ok(/aria-label="Revoke permission: \$\{esc\(gLab\(g\)\.text\)\}\$\{gLook\(g\)\?'\.'\+esc\(gLook\(g\)\):''\}"/.test(grants) && /data-revoke="\$\{esc\(g\.key\)\}"/.test(grants), 'chip accessible name masked, revoke key raw');
   ok(/shortGrantLabel\(gLab\(g\)\.text\)/.test(grants), 'chip and list text');
   ok((grants.match(/cutText\(gLab\(g\)\.text,240\)/g) || []).length === 2 && !/cutText\(g\.label/.test(grants), 'chip and list tooltips');
   const why = app.slice(app.indexOf('function whyPaint('), app.indexOf('function whyRefresh('));
@@ -599,7 +599,7 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   ok(/const PERM_LINE=[^\n]*\|mcp\|custom-tool\)/.test(app), 'item 2: PERM_LINE has the custom-tool verb');
   ok(/if\(p\)\{const rest=shownPerm\(p\[3\],p\[2\]==='run'\?'shell':p\[2\]==='mcp'\|\|p\[2\]==='custom-tool'\?'mcp':'other'\)\.text;/.test(app) && !/STX\.maskLabel\(p\[3\]/.test(app), 'item 2: taskMask goes through the permission mask');
   // item 3: the hidden-part warnings (mutants N3, N3b, N8, N9)
-  ok(/'\. Revoke from its chip\.'\+\(scopeS\.hidden\?' '\+PERM_WHY\[scopeS\.why\|\|'secret'\]\+PERM_GRANT:''\)/.test(card), 'N3: the session button tooltip carries the hidden-part warning');
+  ok(/'\. Revoke from its chip\.'\+\(keyS\.hidden\?' '\+PERM_WHY\[keyS\.why\|\|'secret'\]\+PERM_GRANT:''\)/.test(card), 'N3: the session button tooltip carries the hidden-part warning (of the key text, spec 003 FR-118)');
   ok(/until you end this session\.'\+\(broadS\.hidden\?' '\+PERM_WHY\[broadS\.why\|\|'secret'\]\+PERM_GRANT:''\)/.test(card), 'N3b: the any-arguments tooltip carries the hidden-part warning');
   const why = app.slice(app.indexOf('function whyPaint('), app.indexOf('function whyRefresh('));
   ok(/if\(wl\.hidden\)d\.sentence\+=' \(A part of the rule is hidden: '/.test(why) && /Durbar could not check its text/.test(why) && /control characters, shown as markers/.test(why), 'N8: the why-allowed sentence says a part of the rule is hidden, and why');
@@ -614,7 +614,7 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   for (const k of ['write', 'fetch', '', 'url:x']) eq(permKind(k), 'other', 'N15: permKind(' + k + ') is other');
   { const c = 'run tool --api-key abcdefgh12345678'; ok(L.permText(c, 'shell', hm).hidden === true && !/abcdefgh/.test(L.permText(c, 'shell', hm).text) && L.permText(c, 'other', hm).hidden === false, 'N15: the shell kind uses the command mask (redact alone leaves --api-key K)'); }
   // item 4: the announcement and a card with no scope
-  ok(/announce\(a\.name\+' needs your OK: '\+sumS\.text\+\(hwhy\?'\. '\+PERM_WHY\[hwhy\]\+hgrant:''\)\)/.test(card), 'item 4: the announcement carries the hidden-part warning');
+  ok(/announce\(a\.name\+' needs your OK: '\+\(look\?look\+' The request: ':''\)\+sumS\.text\+\(hwhy\?'\. '\+PERM_WHY\[hwhy\]\+hgrant:''\)\)/.test(card), 'item 4: the announcement carries the hidden-part warning');
   // item 5: a request whose text could not be checked: truthful copy, no Allow
   const pw = /const PERM_WHY=\{([^\n]*)\};/.exec(app);
   ok(!!pw && !/unchecked:'[^']*secret/.test(pw![1]) && /unchecked:'Durbar could not check this request/.test(pw![1]), 'item 5: the unchecked copy does not claim a secret');
@@ -711,5 +711,54 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
     const r = L.permText(t, 'shell', hm);
     ok(r.hidden && r.why === 'secret' && /\[redacted/.test(r.text) && /^run /.test(r.text), 'r3 item 2: an ordinary token value stays allowable with the mask: ' + JSON.stringify([r.why, r.text]));
   }
+}
+// spec 003 FR-117, FR-119 (T045, issue #1300): lookalike letters marked in the shown text, never a letter of a hidden part; fail safe without lookalike.js
+{
+  type Look = { n?: number; findings?: { cp: number; rule: string }[]; hosts?: { shown: string; ascii: string }[]; inHidden?: boolean; unchecked?: boolean };
+  const P = (t: string, k: string, m: Record<string, (s: string) => string> = mask) => L.permText(t, k, m) as { text: string; hidden: boolean; why?: string; look?: Look };
+  const LKM = /\u27e6U\+[0-9A-F]{4,6} [A-Za-z ]+\u27e7/g; // the lookalike marker (the FR-318 one has no script name)
+  const s1 = P('fetch https://exampl\u0435.invalid/x', 'other');
+  eq(s1.text, 'fetch https://exampl\u0435\u27e6U+0435 Cyrillic\u27e7.invalid/x', 'scenario 1: the letter stays and its marker follows it');
+  ok(s1.look && s1.look.n === 1 && s1.look.findings![0].cp === 0x435 && s1.look.hosts!.length === 1 && s1.look.hosts![0].ascii === 'xn--exampl-8of.invalid' && !s1.look.inHidden, 'scenario 1: look names the finding and the punycode host: ' + JSON.stringify(s1.look));
+  eq([s1.hidden, s1.why], [false, undefined], 'a lookalike alone hides nothing (warn, not block)');
+  const s8 = P('run exa\u200bmpl\u0435 --x', 'shell');
+  eq(s8.text, 'run exa\u27e6U+200B\u27e7mpl\u0435\u27e6U+0435 Cyrillic\u27e7 --x', 'scenario 8: the FR-318 marker and the lookalike marker both show');
+  eq([s8.hidden, s8.why, s8.look && s8.look.n], [true, 'control', 1], 'scenario 8: still the control why');
+  // markers only add: the shown text without them is what FR-318 shows
+  const corpus: [string, string][] = [['run durbtoo\u04cf --sync', 'shell'], ['mcp srv-demo \u203a re\u0430d_notes', 'tool'], ['fetch https://\uff45\uff58\uff41.invalid/', 'other'], ['run a\u200bb\u0430 | \u0441\u043e\u0440\u0435 x', 'shell'], ['read /x/a1\u0662', 'other']];
+  const real = require.cache[require.resolve(path.join(R, 'lookalike.js'))]!;
+  const realExports = real.exports;
+  for (const [t, k] of corpus) {
+    const r = P(t, k);
+    real.exports = { check: () => ({ findings: [], hosts: [] }), line: () => '', marker: () => '', hostOdd: () => false };
+    const base = P(t, k);
+    real.exports = realExports;
+    ok(r.look && r.look.n! > 0, 'a finding in ' + JSON.stringify(t));
+    eq(r.text.replace(LKM, ''), base.text, 'no character removed or replaced: ' + JSON.stringify(r.text));
+    eq([r.hidden, r.why], [base.hidden, base.why], 'FR-318 hidden and why unchanged: ' + t);
+  }
+  // clean text: FR-318's result exactly, no look field
+  for (const [t, k] of [['read /home/u/\u041e\u0442\u0447\u0451\u0442\u044b/notes.txt', 'other'], ['write C:\\Users\\u\\\u03b1\u03c1\u03c7\u03b5\u03af\u03bf.txt', 'other'], ['run durbtool --name caf\u00e9', 'shell'], ['run npm test', 'shell']] as const)
+    eq(P(t, k), { text: t, hidden: false }, 'scenario 7: clean text unchanged: ' + t);
+  // scenario 9: a lookalike letter inside a part the mask replaced is never named; the line says there is one
+  const sm = { ...mask, redact: (x: string) => redact(x, {}).replace(/SECRET\S*/g, '[redacted]'), cmd: (x: string) => maskSecretCommand(x, {}).replace(/SECRET\S*/g, '[redacted]') };
+  const h = P('run durbtool SECRETab\u0435c ok', 'shell', sm);
+  ok(/\[redacted/.test(h.text) && h.why === 'secret', 'scenario 9: the secret is replaced: ' + h.text);
+  ok(!/U\+0435|Cyrillic|\u0435/.test(h.text), 'scenario 9: no marker names the hidden letter: ' + h.text);
+  ok(h.look && h.look.inHidden === true && h.look.n === 0, 'scenario 9: inHidden: ' + JSON.stringify(h.look));
+  const h2 = P('run durb\u0251tool SECRETab\u0435c', 'shell', sm);
+  ok(h2.look && h2.look.n === 1 && h2.look.inHidden === true && /durb\u0251\u27e6U\+0251 Latin\u27e7tool/.test(h2.text), 'a shown finding and a hidden one: ' + JSON.stringify([h2.text, h2.look]));
+  // a blind card (unchecked, concealed, cut) shows no text and so no look
+  eq(P('run exampl\u0435', 'shell', {}), { text: 'a command', hidden: true, why: 'unchecked' }, 'no mask: no look');
+  ok(!('look' in P('run x ' + 'y'.repeat(10001) + ' exampl\u0435', 'shell')), 'a cut card: no look');
+  // FR-119: no lookalike.js, or a throwing check: unchecked when the text has a non-ASCII letter; the text is still FR-318's
+  for (const [what, ex] of [['missing', {}], ['throws', { check: () => { throw new Error('x'); } }], ['not loaded', undefined]] as const) {
+    real.exports = ex as unknown;
+    const u = P('fetch https://exampl\u0435.invalid/x', 'other'), a = P('run npm test', 'shell');
+    real.exports = realExports;
+    eq(u, { text: 'fetch https://exampl\u0435.invalid/x', hidden: false, look: { unchecked: true } }, what + ': could not check, said so, text kept');
+    eq(a, { text: 'run npm test', hidden: false }, what + ': plain ASCII needs no check');
+  }
+  ok(P('fetch https://exampl\u0435.invalid/x', 'other').look!.n === 1, 'the real module is back');
 }
 console.log(`liveact: ${n} checks passed`);

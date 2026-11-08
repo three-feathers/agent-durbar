@@ -937,6 +937,16 @@ const PERM_WHY={secret:'A part of this request looks like a secret and is hidden
 const PERM_GRANT=' Allow for this session covers exactly what was asked, the hidden part included.';
 const permWhy=(...xs)=>{const w=xs.filter(x=>x&&x.hidden).map(x=>x.why||'secret');return w.includes('cut')?'cut':w.includes('unchecked')?'unchecked':w.includes('concealed')?'concealed':w.includes('secret')?'secret':w.length?'control':'';};
 const permBlind=w=>w==='unchecked'||w==='concealed'||w==='cut'; /* neutral words only: no Allow, Deny stays */
+/* spec 003 FR-118 (issue #1300): what a session grant covers, from its raw key, not the 28-character label: the exact command, the host as the network reads it, server/tool (the label when it says the same) */
+const grantText=(key,label)=>{const k=String(key||''),l=String(label||'');let m;
+  if((m=/^shell-exact:([\s\S]+)$/.exec(k)))return 'run '+m[1];
+  if((m=/^url:([\s\S]+)$/.exec(k)))return 'fetch '+m[1];
+  if((m=/^mcp:([\s\S]+)$/.exec(k)))return l&&l.replace(' \u203a ','/')===m[1]?l:m[1];
+  return l;};
+/* spec 003 FR-117..FR-119: lookalike letters. hasLook: a shownPerm result with a finding (shown or in a hidden part); lookLine: the card's one plain line for some of them, or '' */
+const hasLook=x=>!!(x&&x.look&&(x.look.n>0||x.look.inHidden));
+const LOOK_UNCHECKED='Durbar could not check this request for lookalike letters.';
+const lookLine=(...xs)=>{const ls=xs.map(x=>x&&x.look).filter(Boolean);if(!ls.length)return '';const L=window.DurbarLookalike;try{if(L&&typeof L.line==='function')return L.line(ls);}catch(e){}return LOOK_UNCHECKED;}; /* no module: the could-not-check words (FR-119), never nothing */
 const liveOn=()=>!!LIVEACT&&LIVE_PREF;
 function setLiveOn(on){LIVE_PREF=!!on;try{localStorage.setItem('durbar.liveActivity',LIVE_PREF?'on':'off');}catch(e){}scheduleRender();}
 /* the readout to show now, or null: a live main agent that is Working or Thinking (Waiting, Error, Done and Idle keep their own text) */
@@ -5665,7 +5675,7 @@ function whyPaint(c){
   const d=WHY&&c.whyBy?WHY.describe(c.whyBy,whyLive(c.aid),whyOpts(c)):null;
   el._whyC=c;
   if(!d)return;
-  if(d.label){const wl=shownPerm(d.label,String(c.whyBy&&c.whyBy.key||''));d.label=wl.text;if(wl.hidden)d.sentence+=' (A part of the rule is hidden: '+(wl.why==='control'?'it holds control characters, shown as markers.':wl.why==='unchecked'?'Durbar could not check its text.':wl.why==='concealed'?'it hides a secret behind control characters.':wl.why==='cut'?'it is too long to show in full.':'it looks like a secret.')+')';} /* spec 097 FR-318: the session rule's label through the one mask; d is this call's copy */
+  if(d.label){const wl=shownPerm(d.label,String(c.whyBy&&c.whyBy.key||'')),wk=String(c.whyBy&&c.whyBy.key||''),wlook=hasLook(wl)||(wk&&hasLook(shownPerm(grantText(wk,d.label),wk)));d.label=wl.text;if(wl.hidden)d.sentence+=' (A part of the rule is hidden: '+(wl.why==='control'?'it holds control characters, shown as markers.':wl.why==='unchecked'?'Durbar could not check its text.':wl.why==='concealed'?'it hides a secret behind control characters.':wl.why==='cut'?'it is too long to show in full.':'it looks like a secret.')+')';if(wlook)d.sentence+=' (The rule has lookalike letters.)';} /* spec 097 FR-318: the session rule's label through the one mask; d is this call's copy */ /* spec 003 FR-118 */
   const pill=document.createElement('span');pill.className='why';pill.dataset.why=d.kind;if(d.gone)pill.dataset.gone='1';pill.textContent=d.pill;
   pill.title=d.sentence+(d.label||'');
   const body=document.createElement('span');body.className='xbody whybody';
@@ -6454,8 +6464,11 @@ function showPerm(a,p){
   if(p.state==='pending'&&typeof p.diff==='string'&&p.diff)n.appendChild(diffBlock(p.diff)); /* spec 052 FR-063 */
   if(p.state==='pending'&&typeof p.sandboxNote==='string'&&p.sandboxNote){const sn=document.createElement('p');sn.className='psbx';sn.textContent=safeMask(p.sandboxNote.slice(0,300));n.appendChild(sn);} /* spec 087 FR-021: its own line, never cut */
   if(p.state==='pending'){const sh=typeof DurbarGrantLabel!=='undefined'?DurbarGrantLabel.scopeHint(Object.assign({},p,{scopeLabel:p.scopeLabel?scopeS.text:p.scopeLabel,broadScopeLabel:p.broadScopeLabel?broadS.text:p.broadScopeLabel})):'';if(sh){const sp=document.createElement('p');sp.className='pscope';sp.textContent=safeMask(sh);n.appendChild(sp);}} /* spec 003 FR-108: how far "for this session" reaches, in words */
-  const hwhy=permWhy(sumS,scopeS,broadS), hgrant=hwhy&&!permBlind(hwhy)&&(p.scopeKey||p.broadScopeKey)?PERM_GRANT:'';
+  const keyS=p.scopeKey?shownPerm(grantText(p.scopeKey,p.scopeLabel),String(p.scopeKey)):null; /* spec 003 FR-118: the session button names exactly what it grants */
+  const hwhy=permWhy(sumS,scopeS,broadS,keyS), hgrant=hwhy&&!permBlind(hwhy)&&(p.scopeKey||p.broadScopeKey)?PERM_GRANT:'';
   if(p.state==='pending'&&hwhy){const hp=document.createElement('p');hp.className='pscope phid';hp.textContent=PERM_WHY[hwhy]+hgrant;n.appendChild(hp);} /* also a card with no grant (a bare tool name): the line says what is hidden */ /* spec 097 FR-318: what a grant covers stays truthful when a part is hidden */
+  const look=p.state==='pending'&&!permBlind(hwhy)?lookLine(sumS,scopeS,broadS,keyS):''; /* spec 003 FR-118: a blind card shows no text, so no lookalike line */
+  if(look){const lp=document.createElement('p');lp.className='pscope plook';lp.textContent=look;n.appendChild(lp);} /* warn, never block (owner decision 1): no button changes for it */
   const st=n.querySelector('.pstate');
   if(p.state==='denied'){ /* spec 003 FR-094: with the button the text no longer repeats the suggestion */
     st.innerHTML=roAskHint(a,n)?' <i>(denied: this agent is in Read-only)</i>':' <i>(denied: this agent is in Read-only. Switch it to Ask first to be asked instead)</i>';
@@ -6465,7 +6478,8 @@ function showPerm(a,p){
     const mk=(l,cls,title,fn)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=l;if(title)b.title=title;b.onclick=fn;row.appendChild(b);};
     const answer=(approve,remember,broad)=>{bridge.resolvePermission(a.id,p.requestId,approve,remember,!!broad);settlePerm(a,{requestId:p.requestId,state:approve?'approved':'denied',via:'user',remembered:approve&&remember,scopeLabel:broad?p.broadScopeLabel:p.scopeLabel,summary:p.summary});};
     mk('Allow once','primary','Allow this one request',()=>answer(true,false)); /* spec 052 FR-037/FR-051 */
-    if(p.scopeKey){mk('Allow “'+expertScopeLabel(scopeS.text)+'” for this session','session','Allow "'+DurbarCutText.cutText(scopeS.text,30)+'" until you end this session'+(p.kind==='shell'?' (this exact command)':'')+'. Revoke from its chip.'+(scopeS.hidden?' '+PERM_WHY[scopeS.why||'secret']+PERM_GRANT:''),()=>answer(true,true));const sb=row.lastElementChild;sb.dataset.act='session';}
+    if(p.scopeKey){const gt=keyS.text,exact=/^shell-exact:/.test(p.scopeKey),tip=DurbarCutText.cutText(gt,Math.max(240,gt.lastIndexOf('\u27e7')+2)); /* spec 003 FR-118: from the raw key; the tooltip never cut before the last marker */
+      mk(exact?(Array.from(gt).length<=32?'Allow “'+gt+'” for this session':'Allow this exact command for this session'):'Allow “'+expertScopeLabel(gt)+'” for this session','session','Allow "'+tip+'" until you end this session'+(p.kind==='shell'?' (this exact command)':'')+'. Revoke from its chip.'+(keyS.hidden?' '+PERM_WHY[keyS.why||'secret']+PERM_GRANT:''),()=>answer(true,true));const sb=row.lastElementChild;sb.dataset.act='session';}
     if(p.broadScopeKey){mk('Allow for this session: any arguments','session','Allow every simple "'+DurbarCutText.cutText(broadS.text,18)+'" command (no pipes, redirects or substitutions) until you end this session.'+(broadS.hidden?' '+PERM_WHY[broadS.why||'secret']+PERM_GRANT:''),()=>answer(true,true,true));row.lastElementChild.dataset.broad='1';}
     mk('Deny','danger','Deny this request',()=>answer(false,false));
     if(permBlind(hwhy))row.querySelectorAll('button:not(.danger)').forEach(b=>{b.disabled=true;b.dataset.blind='1';b.title=PERM_WHY[hwhy]+' Deny it.';}); /* spec 097 FR-318: no Allow on a request whose text could not be checked */
@@ -6475,7 +6489,7 @@ function showPerm(a,p){
   }
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
   if(t.T.typing)typingPaint(t.T.typing);
-  if(p.state==='pending')announce(a.name+' needs your OK: '+sumS.text+(hwhy?'. '+PERM_WHY[hwhy]+hgrant:''));
+  if(p.state==='pending')announce(a.name+' needs your OK: '+(look?look+' The request: ':'')+sumS.text+(hwhy?'. '+PERM_WHY[hwhy]+hgrant:'')); /* spec 003 FR-118: the lookalike line first, so the 300-character announcement keeps it */
   renderInboxBtn();
 }
 /* spec 003 FR-094..FR-096 (owner 2026-10-23, supersedes spec 052 FR-074's button): under a request denied by Read-only, one button
@@ -6541,7 +6555,8 @@ let grantsAllBusy=''; /* the agent id while its Revoke all is under way (the rev
 let grantsAgent='';
 let grantsOpen=false, grantsFocus=null; /* grantsFocus: where the focus goes after the next draw (a revoke button index, or 'chip') */
 const gLab=g=>shownPerm(g.label,String(g.key||'')); /* spec 097 FR-318: a chip, its tooltip and the list show the masked label; data-revoke keeps the raw key */
-function grantChipX(g){return `<button type="button" data-revoke="${esc(g.key)}" aria-label="Revoke permission: ${esc(gLab(g).text)}">${ICON('x')}</button>`;}
+const gLook=g=>hasLook(gLab(g))||hasLook(shownPerm(grantText(g.key,g.label),String(g.key||''))) ? ' Has lookalike letters.' : ''; /* spec 003 FR-118: the label and the whole key (a cut label can hide the letter) */
+function grantChipX(g){return `<button type="button" data-revoke="${esc(g.key)}" aria-label="Revoke permission: ${esc(gLab(g).text)}${gLook(g)?'.'+esc(gLook(g)):''}">${ICON('x')}</button>`;}
 function renderGrants(){
   const box=$('grants'),a0=byId(ui.selected);if(!box||!a0)return;const a=liveRoot(a0),gs=a.grants||[];
   if(grantsAgent!==a.id){grantsAgent=a.id;grantsFocus=null;} /* a focus target left over from another agent */
@@ -6550,10 +6565,10 @@ function renderGrants(){
   const hadFocus=box.contains(document.activeElement)||grantsFocus!==null||grantsAllBusy!==''; /* the user is working in the grants: do not let the focus fall to <body> when they all go */
   if(gs.length<=2){
     grantsOpen=false;
-    box.innerHTML=gs.map(g=>`<span class="gchip" title="Allowed for this session: ${esc(DurbarCutText.cutText(gLab(g).text,240))}.${gLab(g).hidden?' '+PERM_WHY[gLab(g).why||'secret']:''} Revoke to be asked again."><span>Allowed: ${esc(short(g))}</span>${grantChipX(g)}</span>`).join('');
+    box.innerHTML=gs.map(g=>`<span class="gchip" title="Allowed for this session: ${esc(DurbarCutText.cutText(gLab(g).text,240))}.${gLab(g).hidden?' '+PERM_WHY[gLab(g).why||'secret']:''} Revoke to be asked again.${esc(gLook(g))}"><span>Allowed: ${esc(short(g))}</span>${grantChipX(g)}</span>`).join('');
   }else{
     box.innerHTML=`<button type="button" class="gchip gchip-btn" id="grantsBtn" aria-expanded="${grantsOpen}" aria-controls="grantsPop" title="${gs.length} permissions allowed for this session. Open the list to revoke them."><span>Allowed (${gs.length})</span><svg class="chev" width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button>
-      <div class="grants-pop" id="grantsPop" role="group" aria-label="Allowed for this session"${grantsOpen?'':' hidden'}><ul role="list" class="gp-list">${gs.map(g=>`<li class="gp-row" title="Allowed for this session: ${esc(DurbarCutText.cutText(gLab(g).text,240))}.${gLab(g).hidden?' '+PERM_WHY[gLab(g).why||'secret']:''} Revoke to be asked again."><span class="gp-t">${esc(short(g))}</span>${grantChipX(g)}</li>`).join('')}</ul><button type="button" class="btn sm gp-all" id="grantsAll">Revoke all</button></div>`;
+      <div class="grants-pop" id="grantsPop" role="group" aria-label="Allowed for this session"${grantsOpen?'':' hidden'}><ul role="list" class="gp-list">${gs.map(g=>`<li class="gp-row" title="Allowed for this session: ${esc(DurbarCutText.cutText(gLab(g).text,240))}.${gLab(g).hidden?' '+PERM_WHY[gLab(g).why||'secret']:''} Revoke to be asked again.${esc(gLook(g))}"><span class="gp-t">${esc(short(g))}</span>${grantChipX(g)}</li>`).join('')}</ul><button type="button" class="btn sm gp-all" id="grantsAll">Revoke all</button></div>`;
   }
   box.hidden=!gs.length;
   if(grantsFocus!==null){
