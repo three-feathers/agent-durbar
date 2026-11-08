@@ -1064,9 +1064,14 @@ function helperHTML(h){
     ${scene(h,true)}<span class="badge ${st}">${badgeSVG(st)}</span>
     <div class="hinfo"><div class="hname">${esc(h.name)}</div><div class="hrole">${esc(h.role)}</div><div class="hst"><span class="dot ${st}"></span>${label(h)}</div></div></button>`;
 }
+/* the one set of words for a helper's accessible name and tooltip: the flat tile (helperTileHTML) and Real office's head figure (realSubs, spec 097 FR-307) both read it; `m` maps every agent-written text (the flat tile escapes it later, Real office masks it) */
+function helperWords(h,m=x=>x){
+  const p=byId(h.parent), n=m(h.name), t=m(taskText(h));
+  return {name:n,aria:n+', helper of '+m(p?p.name:'')+', '+label(h)+(t?': '+t:''),tip:n+' · '+label(h)+(t?': '+t:'')};
+}
 function helperTileHTML(h){
-  const st=vis(h);
-  return `<button class="helper hc is-${st}" data-id="${esc(h.id)}" aria-pressed="${ui.selected===h.id}" aria-label="${esc(h.name)}, helper of ${esc(byId(h.parent).name)}, ${label(h)}: ${esc(taskText(h))}" title="${esc(h.name)} · ${label(h)}: ${esc(taskText(h))}">
+  const st=vis(h), w=helperWords(h);
+  return `<button class="helper hc is-${st}" data-id="${esc(h.id)}" aria-pressed="${ui.selected===h.id}" aria-label="${esc(w.aria)}" title="${esc(w.tip)}">
     <span class="sc">${sceneC(h)}</span><span class="hi"><span class="hname">${esc(h.name)}</span><span class="hs st-${st}">${label(h,true)}</span></span></button>`;
 }
 /* spec 001 FR-089..FR-093 (issue 697): the expanded helper card, level 1 or 2. Same button, data-id and selectors as the tile; its lines come from
@@ -1669,10 +1674,11 @@ function roFailed(){syncWorld();toast('The Real office could not be loaded, so t
 /* the Alert sign of a needs-you chip in Real office (spec 097 FR-026): a warning triangle in the text colour, built here from trusted markup (the sign set of the removed meeting-room doors, spec 017, kept only for this one) */
 const ALERT_ICON='<svg viewBox="0 0 12 12" aria-hidden="true" focusable="false" data-icon="alert"><path d="M6 1.6 11 10.4H1Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M6 4.8v2.6M6 8.9v.1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
 /* spec 097 FR-306, FR-307 (issue 1139): a desk's helpers for the Real office head figures, in orderedHelpers' order. The name is only in the accessible name and the tooltip (the flat tile's words: helperTileHTML), masked */
+/* a helper's name and task in Real office's accessible name and tooltip: the desk mask, then home folders become ~ (redact.ts maskHomePaths, as the screens do), a link keeps its text only */
+const roHelperMask=t=>{const m=deskMask(t),R=window.DurbarRedact;return R&&typeof R.maskHomePaths==='function'?R.maskHomePaths(m):m;};
 function realSubs(a,stOf){
-  const p=a.name;
-  return orderedHelpers(a).map(h=>{const t=deskMask(taskText(h)),n=deskMask(h.name)||'Helper';
-    return {id:h.id,name:n,state:stOf(h,false),label:n+', helper of '+p+', '+label(h)+(t?': '+t:''),title:n+' · '+label(h)+(t?': '+t:''),selected:ui.selected===h.id};});
+  return orderedHelpers(a).map(h=>{const w=helperWords(h,roHelperMask);
+    return {id:h.id,name:w.name||'Helper',state:stOf(h,false),label:w.aria,title:w.tip,selected:ui.selected===h.id};});
 }
 function realModel(model){
   const D=window.DurbarPlaces, E=window.exports;

@@ -457,7 +457,7 @@
           if (rb.style.getPropertyValue('position-anchor') !== anc) rb.style.setProperty('position-anchor', anc);
           if (!rb.firstChild && model.renIcon) rb.innerHTML = model.renIcon; /* the app's own icon markup (trusted, as alertIcon) */
         }
-        /* spec 097 FR-306..FR-309 (issue #1139): the helpers' head figures under the plate, right after it and its pencil in the Tab order; a lounge seat, the fallback and the arcade have no strip box, so no strip */
+        /* spec 097 FR-306..FR-309 (issue #1139): the helpers' head figures under the plate, right after it and its pencil in the Tab order; a lounge seat and the fallback (no room: the plate keeps +N; the arcade at 1280x800) have no strip box, so no strip */
         if (d.strip && a.subs && a.subs.length) helperStrip(chrome, d, a, k, who, ids, meta);
         else if (chrome._k.get('h:' + k)) { chrome._k.get('h:' + k).remove(); chrome._k.delete('h:' + k); }
     }
@@ -601,7 +601,7 @@
         img(im, file, true, sm.w * f);
       } else {
         if (b._img) { b._img = null; b._pic.textContent = ''; }
-        text(b._pic, Array.from(String(h.name || '?'))[0].toUpperCase()); /* FR-065: no picture, the initial (the name itself is never drawn) */
+        if (!b._pic.firstChild || b._pic.firstChild.className !== 'ro-hg') { b._pic.textContent = ''; const g = document.createElement('span'); g.className = 'ro-hg'; b._pic.appendChild(g); } /* FR-065: no picture, a neutral silhouette (CSS), never a letter of the name: the name is drawn nowhere */
       }
       dset(b, 'id', h.id); attr(b, 'aria-pressed', h.selected ? 'true' : 'false'); attr(b, 'aria-label', h.label); attr(b, 'title', h.title);
       want.push(b);

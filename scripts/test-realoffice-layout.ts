@@ -863,6 +863,17 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
     return m;
   };
   const helpersOf = (m: RealModel, id: string): number => m.folders.flatMap((x) => x.agents).find((a) => a.id === id)!.helpers || 0;
+  /** an independent count of the places (not `helpShown`): heads laid one after another, 30 px and a 4 px gap, left to right, row by row, inside the strip's width; the last place is the +K button when more helpers exist than places */
+  const placesFor = (w: number, rows: number, k: number): number => {
+    let places = 0;
+    for (let r = 0; r < rows; r++) for (let x = 0; x + 30 <= w + 1e-9; x += 34) places++;
+    return k <= places ? k : Math.max(0, places - 1);
+  };
+  // the function under test agrees with the independent count, and the edges are literal: 4 across x 2 rows = 8 places; 8 helpers all show, 9 helpers show 7 and +K
+  for (const [w, rows, k, shown] of [[155, 2, 8, 8], [155, 2, 9, 7], [155, 2, 3, 3], [155, 1, 4, 4], [155, 1, 5, 3], [29, 1, 1, 0], [30, 1, 1, 1], [64, 1, 3, 1], [64, 1, 2, 2]] as [number, number, number, number][]) {
+    assert.strictEqual(helpShown(w, rows, k), shown, `helpShown(${w}, ${rows}, ${k})`);
+    assert.strictEqual(placesFor(w, rows, k), shown, `placesFor(${w}, ${rows}, ${k})`);
+  }
   /** FR-307, FR-310, FR-311: every rule of the strip, as sentences */
   const stripProblems = (L: Layout, label: string, m?: RealModel): string[] => {
     const out: string[] = [];
@@ -884,7 +895,8 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
         if (HEAD * HEAD_FACE < HELP_FACE_MIN - 1e-9) out.push(`${label}: a head's face is ${HEAD * HEAD_FACE}px, under ${HELP_FACE_MIN}`);
         if (m) {
           const k = helpersOf(m, d.id);
-          if (t.shown !== helpShown(t.w, t.rows, k)) out.push(`${label}: shown ${t.shown} of ${d.id} is not ${helpShown(t.w, t.rows, k)}`);
+          const want = placesFor(t.w, t.rows, k);
+          if (t.shown !== want) out.push(`${label}: shown ${t.shown} of ${d.id} is not ${want} (${k} helpers in a ${t.w}px strip of ${t.rows} rows)`);
           const overflow = k - t.shown;
           if (t.shown > t.cols * t.rows || t.shown > k) out.push(`${label}: ${t.shown} heads shown of ${k} helpers in ${t.cols}x${t.rows}`);
           if (overflow > 0 && t.shown + 1 !== Math.min(k, t.cols * t.rows) && t.shown !== Math.max(0, t.cols * t.rows - 1)) out.push(`${label}: overflow ${overflow} of ${d.id} does not take the last place`);
@@ -899,7 +911,7 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
     return out;
   };
   let sc = 0, withStrip = 0, twoRows = 0;
-  for (const [W, H] of SIZES) for (const n of [1, 2, 3, 4, 5, 8, 12, 15, 20, 30]) for (const f of [1, 2, 4, 6]) for (const hc of [0, 1, 2, 6, 10]) {
+  for (const [W, H] of SIZES) for (const n of [1, 2, 3, 4, 5, 8, 12, 15, 20, 30, 40]) for (const f of [1, 2, 4, 6]) for (const hc of [0, 1, 2, 6, 10]) {
     if (f > n || (W < 1000 && n > 15)) continue;
     const m = withHelpers(n, f, (i) => (i % 3 === 0 ? hc : i % 3 === 1 ? Math.min(hc, 1) : 0));
     const L = realLayout(m, { w: W, h: H }, META), base = realLayout(withHelpers(n, f, () => 0), { w: W, h: H }, META);
@@ -933,7 +945,7 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
     for (const d of ds) {
       const k = helpersOf(m, d.id);
       assert.ok(d.strip!.cols >= 4, `15@${W}: ${d.strip!.cols} heads across`);
-      assert.strictEqual(d.strip!.shown, Math.min(k, d.strip!.cols * 2 - (k > d.strip!.cols * 2 ? 1 : 0)), `15@${W}: shown of ${k}`);
+      assert.strictEqual(d.strip!.shown, placesFor(d.strip!.w, 2, k), `15@${W}: shown of ${k}`);
       if (k === 10 && d.strip!.cols === 4) assert.ok(d.strip!.shown === 7, `15@${W}: the narrowest slot (4 across) shows 7 heads and +3 (${d.strip!.shown} of ${k})`);
       if (k <= 3) assert.strictEqual(d.strip!.shown, k, `15@${W}: ${k} helpers all show`);
     }
@@ -948,6 +960,49 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
     assert.ok(L.zones.every((z) => z.desks.every((d) => !d.strip)), 'no strip box in the fallback');
     const narrow = realLayout(withHelpers(15, 4, () => 2), { w: 1440 - 470, h: 848 }, META);
     assert.ok(narrow.zones.every((z) => z.desks.every((d) => !d.strip)) || stripProblems(narrow, 'narrow').length === 0, 'chat open: strips or the fallback, never an overlap');
+  }
+
+  // the fallback at 15 agents (FR-308's last step), recorded: in 5 folders at 1280x748 the desks keep a 32.8 px face without strips, and the strips' 34 px a row would push them under the 28 px floor, so the
+  // plates keep +N and dots (the default simulator scene at 1280x800: pictures `097-real-15-1280x800`); the same agents in 4 folders, or at 1440x848, draw heads
+  {
+    const five = withHelpers(15, 5, (i) => 1 + (i % 3)), four = withHelpers(15, 4, (i) => 1 + (i % 3));
+    const L5 = realLayout(five, { w: 1280, h: 748 }, META), L4 = realLayout(four, { w: 1280, h: 748 }, META), L5w = realLayout(five, { w: 1440, h: 848 }, META);
+    assert.strictEqual(L5.helpRows, 0, '15 agents in 5 folders at 1280x748: no room for strips, the plates keep +N');
+    assert.ok(!L5.scroll && L5.faceH >= FACE_FLOOR - 1e-9 && L5.zones.every((z) => z.desks.every((d) => !d.strip)), 'the fallback keeps the office whole: no scroll, faces over the ratchet, no strip box');
+    assert.ok((L4.helpRows || 0) >= 1 && (L5w.helpRows || 0) >= 1, 'the same agents in 4 folders, or at 1440x848, draw heads');
+  }
+
+  // FR-308's guards, pinned (each has a mutant: the guard removed makes the case fail)
+  {
+    // `room`: a slot narrower than one head + the plate's margins (4 agents in one row of a 200 px floor: a 28 px plate) draws no strip
+    const m = withHelpers(4, 1, () => 2), L = realLayout(m, { w: 200, h: 848 }, META);
+    assert.ok(!L.scroll && L.zones[0].desks[0].plate.w < HEAD, 'the case has a slot under one head wide');
+    assert.strictEqual(L.helpRows, 0, 'a slot under one head wide: no strip, the plate keeps +N');
+    assert.ok(L.zones.every((z) => z.desks.every((d) => !d.strip)), 'no strip box in a slot under one head wide');
+    // `HELP_KEEP`: 15 agents in 3 folders at 1440x848 keep one row, because two rows would cost the desks more than 5 % of u (and the face would go under the ratchet)
+    const three = realLayout(withHelpers(15, 3, () => 3), { w: 1440, h: 848 }, META);
+    assert.strictEqual(three.helpRows, 1, '15 agents in 3 folders: one row (two would cost over 5 % of u)');
+    assert.ok(three.faceH >= 28 - 1e-9 && three.faceH < 31.5, `one row keeps the face (${three.faceH}) at 31: two rows would put it under 28`);
+    // 4 folders: two rows cost nothing like that (the width binds), so two rows are kept
+    assert.strictEqual(realLayout(withHelpers(15, 4, () => 3), { w: 1440, h: 848 }, META).helpRows, 2, '15 agents in 4 folders: two rows');
+    // the chat open at 15 (the office is 470 px narrower): the office scrolls even without helpers, so no strip is drawn
+    const chat = realLayout(withHelpers(15, 4, () => 3), { w: 970, h: 848 }, META);
+    assert.ok(chat.scroll && chat.helpRows === 0, 'chat open at 15 agents: the office scrolls, no strip (the plate keeps +N)');
+  }
+
+  // the measured numbers of the spec (FR-308), pinned: 15 agents in 4 folders, helpers on every desk, one pass of the scratch run kept as a test
+  for (const [W, H, face, slot] of [[1440, 848, 36.0, 159], [1280, 748, 31.8, 139]] as [number, number, number, number][]) {
+    const L = realLayout(withHelpers(15, 4, () => 3), { w: W, h: H }, META);
+    const narrow = Math.min(...L.zones.flatMap((z) => z.desks.map((d) => d.strip!.w)));
+    assert.ok(Math.abs(L.faceH - face) < 0.1, `15 agents, ${W}: face ${L.faceH} is the measured ${face}`);
+    assert.ok(Math.abs(narrow - slot) < 1, `15 agents, ${W}: narrowest strip ${narrow} px is the measured ${slot}`);
+    assert.strictEqual(Math.floor((narrow + 4) / 34), 4, `15 agents, ${W}: 4 heads across in the narrowest strip`);
+  }
+  // face floor (FR-307) with a mutant: a crop that is too wide for its face fails the same predicate
+  {
+    const faceOk = (crop: (s: { w: number; h: number; headTop: number; bodyH: number }) => { x: number; y: number; s: number }): boolean => Object.values(META.seat).every((seat) => (seat.bodyH * FACE_U / crop(seat).s) * HEAD >= HELP_FACE_MIN - 0.01);
+    assert.ok(faceOk(headCrop), 'headCrop keeps every face at the floor');
+    assert.ok(!faceOk((seat) => ({ ...headCrop(seat), s: Math.min(seat.w, seat.h) })), 'mutant: a crop of the whole picture puts the face under the floor (caught)');
   }
 
   // a status change moves no box (FR-015): the same helpers with other states give the same strips

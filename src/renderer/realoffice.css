@@ -301,6 +301,7 @@ body.ro-chat .ph .avatar{display:none}
 .ro-hd,.ro-hmore{margin:0;padding:0;font:inherit;cursor:pointer;color:var(--ink);background:var(--surface);border:1.5px solid var(--line)}
 .ro-hd{--ro-ring:var(--line);position:relative;display:block;box-sizing:border-box;width:var(--ro-head);height:var(--ro-head);border-radius:50%;border:0;outline:1.5px solid var(--ro-ring)} /* the ring is an outline (selected and focus replace it), so the picture fills the whole figure: the face is HEAD * 0.8 px */
 .ro-hd .ro-hp{position:absolute;inset:0;border-radius:50%;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:var(--t4-size);font-weight:var(--t1-weight,600)}
+.ro-hd .ro-hg{position:absolute;inset:0;background:radial-gradient(circle at 50% 36%,var(--muted) 0 22%,transparent 23%),radial-gradient(ellipse at 50% 100%,var(--muted) 0 42%,transparent 43%),var(--surface-2,var(--surface))} /* no picture: a neutral head and shoulders, no letter (the name is drawn nowhere) */
 .ro-hd .ro-hp img{position:absolute;display:block;max-width:none;height:auto;pointer-events:none}
 .ro-hd>.dot{position:absolute;right:-3px;bottom:-3px;outline:2px solid var(--surface)} /* as the chat header's portrait: the same dot, the same ring */
 .ro-hd:is(.st-waiting,.st-limit){--ro-ring:var(--c-waiting)}

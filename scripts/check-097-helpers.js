@@ -7,13 +7,18 @@
  *   HELPERS_WORLDS=photo,cave,retro   the worlds (default: all three; the arcade measured to fit one row of heads under each cabinet's plate, spec 097 FR-306 as built)
  *   HELPERS_MUTANT=nostrip|status|nametile|overlap   no strip is drawn / a status change rebuilds the head's node / a name tile is drawn / a strip lies over its plate (each must fail)
  *
- * In the Photo office, the cave (both sizes) and the Retro arcade (1440x900; at 1280x800 it keeps "+N", see above) at 1440x900 and 1280x800 (15 agents, simhelpers=6, and 5 more helpers on one desk through the event path, so it overflows) it fails (exit 1) when:
+ * In the Photo office, the cave and the Retro arcade (15 agents, simhelpers=6, plus 5 more helpers on the first desk through the event path, one of them hostile, so it overflows)
+ * at 1440x900 and 1280x800 (the arcade draws heads at 1440x900 only and keeps "+N" at 1280x800) it fails (exit 1) when:
  *   - the layout scrolls or its desk face is under the SC-002 ratchet (31 px);
- *   - a desk with helpers has no strip, or a shown helper is not a button (data-id) with a picture, a status dot, and its name and "helper of <parent>" in its accessible name;
- *   - a head's face is under 24 px, the dot's colour is not the status token's, or a visible name tile is drawn anywhere (the name is only in the accessible name and tooltip);
- *   - the strip is not right after its plate and pencil in the Tab order, a text is under 10.5 px, a strip or a head overlaps a plate, screen, sign, another strip or leaves its slot;
- *   - a helper's status change adds or removes any node under the office (statusNodes), replaces the head's node, repaints no dot, or moves any box;
+ *   - a desk with helpers has no strip, or a shown helper is not a button (data-id) with its picture loaded (naturalWidth), the person helperPerson gives (never the parent's) cropped as headCrop says,
+ *     a status dot, and its name and "helper of <parent>" in its accessible name and tooltip;
+ *   - a head's face is under 24 px, the dot's colour is not the status token's, a visible name tile or a letter is drawn, or a token, a home path or a link planted in a helper's name and task
+ *     reaches an accessible name, a tooltip or the "+K" tooltip;
+ *   - the strip is not right after its plate and pencil in the Tab order, the "+K" text is under 10.5 px, a strip or a head overlaps a plate, screen, sign, another strip or leaves its slot;
+ *   - a helper's status change adds or removes any node under the office (statusNodes), replaces the head's node, repaints no dot, does not change the accessible name and tooltip, or moves any box;
  *   - a click on a head does not open that helper's Sub-agent activity view, or "+K" does not open all the helpers (and "Fewer" fold them);
+ *   - a head whose picture fails to load shows no silhouette, or shows a letter;
+ *   - the default simulator scene (5 folders, a lounge row) draws heads at 1440x900, or at 1280x800 does not fall back to "+N" and dots (no room: spec 097 FR-308).
  */
 const os = require('os');
 const fs = require('fs');
@@ -26,7 +31,10 @@ const SIZES = [[1440, 900], [1280, 800]];
 const WORLDS = (process.env.HELPERS_WORLDS || 'photo,cave,retro').split(',');
 const FACE_FLOOR = 31; /* SC-002's ratchet, desk face */
 const HEAD_FACE_MIN = 24; /* a helper's face, FR-307 */
-const EXTRA = 5; /* helpers added to the first desk through the event path: 6 + 5 = 11, more than any strip holds */
+const EXTRA = 4; /* helpers added to the first desk through the event path, and one hostile one: 6 + 4 + 1 = 11, more than any strip holds */
+const TOKEN = 'ghp_' + 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8';
+const HOSTILE = `Hx ${TOKEN} /Users/alice/.ssh/id_rsa [click](https://evil.example/x)`;
+const RAW = [TOKEN, '/Users/alice', 'evil.example'];
 
 module.exports = async (ctx) => {
   const OUT = process.env.SHOTS_OUT || fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-097-helpers-'));
@@ -50,14 +58,19 @@ module.exports = async (ctx) => {
     return {scroll:L.scroll,face:L.faceH,rows:L.helpRows,
       desks:desks.map(d=>{const a=A.find(x=>x.id===d.id),subs=A.filter(x=>x.parent===d.id);
         const plate=document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(d.id)+'"]');let e=plate&&plate.nextElementSibling;if(e&&e.matches('.ren'))e=e.nextElementSibling;const strip=e&&e.matches('.ro-hstrip')?e:null;
-        const heads=strip?[...strip.querySelectorAll('.ro-hd')].map(t=>{const dot=t.querySelector('.dot'),im=t.querySelector('img'),cs=getComputedStyle(dot);return {id:t.dataset.id,label:t.getAttribute('aria-label'),title:t.getAttribute('title'),cls:t.className,dotCls:dot.className,dotBg:cs.backgroundColor,dotBorder:cs.borderTopColor,pic:!!im&&im.complete&&im.naturalWidth>0,text:t.textContent.trim(),box:R(t),pbox:R(t.querySelector('.ro-hp'))}}):[];
+        const heads=strip?[...strip.querySelectorAll('.ro-hd')].map(t=>{const dot=t.querySelector('.dot'),im=t.querySelector('img'),cs=getComputedStyle(dot);return {id:t.dataset.id,label:t.getAttribute('aria-label'),title:t.getAttribute('title'),cls:t.className,dotCls:dot.className,dotBg:cs.backgroundColor,dotBorder:cs.borderTopColor,pic:!!im&&im.complete&&im.naturalWidth>0,img:im?{src:im.getAttribute('src'),nat:im.naturalWidth,w:im.style.width,left:im.style.left,top:im.style.top}:null,glyph:!!t.querySelector('.ro-hg'),text:t.textContent.trim(),box:R(t),pbox:R(t.querySelector('.ro-hp'))}}):[];
         const more=strip&&strip.querySelector('.ro-hmore');
-        return {id:d.id,name:a&&a.name,helpers:subs.length,subNames:subs.map(s=>s.name),layoutStrip:d.strip||null,slot:d.slot,plate:R(plate),box:strip?R(strip):null,heads,
+        return {id:d.id,name:a&&a.name,helpers:subs.length,subNames:subs.map(s=>s.name).filter(n=>!n.startsWith('Hx ')),layoutStrip:d.strip||null,slot:d.slot,plate:R(plate),box:strip?R(strip):null,heads,
           more:more?{text:more.textContent.trim(),fs:parseFloat(getComputedStyle(more).fontSize),label:more.getAttribute('aria-label'),exp:more.getAttribute('aria-expanded'),box:R(more)}:null,
           plateHelp:!!(plate&&plate.querySelector('.ro-help')),tiles:strip?strip.querySelectorAll('.ro-ht,.ro-hn,.ro-hs').length:0};}),
       signs:[...document.querySelectorAll('#stage .ro-sign')].map(R),plates:[...document.querySelectorAll('#stage .ro-plate')].map(R),screens:[...document.querySelectorAll('#stage .ro-screen')].map(R)};})()`);
   /* the status tokens a dot must show: a probe element in the page takes the colour from the token itself */
   const tokens = () => js(`(()=>{const probe=(v)=>{const s=document.createElement('span');s.style.cssText='position:absolute;visibility:hidden;background:var('+v+');border-color:var('+v+');border-style:solid;border-width:1px';document.body.appendChild(s);const c=getComputedStyle(s).backgroundColor;s.remove();return c};return {working:probe('--c-working'),thinking:probe('--c-thinking'),waiting:probe('--c-waiting'),error:probe('--c-error'),done:probe('--c-done'),idle:probe('--c-idle')}})()`);
+  /* what a head's picture must be: the person helperPerson gives (never the parent's), cropped by headCrop: asked of the page's own pure module, compared with what the page drew */
+  const picture = (headId, parentId) => js(`(()=>{try{const E=window.exports,ro=document.querySelector('#stage .ro'),seat=window.DurbarRealOfficeSets[ro.dataset.set].seat,ids=Object.keys(seat).sort(),parent=window.DurbarRealOffice.personOf(${jsLiteral(parentId)}),want=E.helperPerson(${jsLiteral(headId)},parent,ids);
+    const b=document.querySelector('#stage .ro-hd[data-id="'+CSS.escape(${jsLiteral(headId)})+'"]'),im=b&&b.querySelector('img');if(!im)return {want,parent,none:true};
+    const m=/\\/([a-z0-9-]+)-rest\\.webp$/.exec(im.getAttribute('src')||''),c=E.headCrop(seat[want]),f=E.HEAD/c.s;
+    return {want,parent,got:m&&m[1],nat:im.naturalWidth,w:parseFloat(im.style.width),left:parseFloat(im.style.left),top:parseFloat(im.style.top),ew:seat[want].w*f,el:-c.x*f,et:-c.y*f}}catch(e){return {err:String(e&&e.message)}}})()`);
   const hit = (a, b, t = 0.5) => a.x + t < b.x + b.w && b.x + t < a.x + a.w && a.y + t < b.y + b.h && b.y + t < a.y + a.h;
   const shots = [];
 
@@ -74,9 +87,13 @@ module.exports = async (ctx) => {
     /* one desk gets more helpers than any strip holds (the event path, as an agent app reports a helper) */
     const first = await js(`window.__durbarSimUi.realLayout().zones[0].desks[0].id`);
     for (let i = 0; i < EXTRA; i++) await emit({ sessionId: first, type: 'subagent', subagentId: 'drv-h-' + i, name: 'Extra helper ' + (i + 1), phase: 'started', task: 'Check ' + (i + 1), agentName: 'explore' });
-    await must(`${SIM}.agents().filter(x=>x.parent===${jsLiteral(first)}).length>=${jsLiteral(6 + EXTRA)}`, tag + ': the extra helpers on the first desk');
+    await emit({ sessionId: first, type: 'subagent', subagentId: 'drv-h-hostile', name: HOSTILE, phase: 'started', task: HOSTILE, agentName: 'explore' });
+    const second = await js(`window.__durbarSimUi.realLayout().zones[0].desks[1].id`);
+    await emit({ sessionId: second, type: 'subagent', subagentId: 'drv-h-hostile2', name: HOSTILE, phase: 'started', task: HOSTILE, agentName: 'explore' });
+    await must(`${SIM}.agents().filter(x=>x.parent===${jsLiteral(first)}).length>=${jsLiteral(6 + EXTRA + 1)}&&${SIM}.agents().some(x=>x.parent===${jsLiteral(second)}&&x.id.includes('hostile2'))`, tag + ': the extra helpers on the first desk');
     await must(`document.querySelectorAll('#stage .ro-hstrip').length>=10`, `${tag}: the helper strips`);
-    await must(`(()=>{const m=document.querySelector('#stage .ro-hstrip .ro-hmore[data-more="'+CSS.escape(${jsLiteral(first)})+'"]');return !!m&&m.parentElement.querySelectorAll('.ro-hd').length+Number(m.textContent.slice(1))===${jsLiteral(6 + EXTRA)}})()`, tag + ': the first desks +K after the extra helpers');
+    await must(`(()=>{const m=document.querySelector('#stage .ro-hstrip .ro-hmore[data-more="'+CSS.escape(${jsLiteral(first)})+'"]');return !!m&&m.parentElement.querySelectorAll('.ro-hd').length+Number(m.textContent.slice(1))===${jsLiteral(6 + EXTRA + 1)}})()`, tag + ': the first desks +K after the extra helpers');
+    await must(`(()=>{const p=document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(second)})+'"]');let e=p&&p.nextElementSibling;if(e&&e.matches('.ren'))e=e.nextElementSibling;if(!e||!e.matches('.ro-hstrip'))return false;const m=e.querySelector('.ro-hmore');return e.querySelectorAll('.ro-hd').length+(m?Number(m.textContent.slice(1)):0)===7})()`, tag + ': the second desk shows its 7 helpers (heads and +K)');
     await must(PICS, `${tag}: the head pictures`);
     await mutate();
     if (MUTANT) console.log('[helpers] mutant:', MUTANT);
@@ -87,19 +104,30 @@ module.exports = async (ctx) => {
     assert.ok(s.rows === 1 || s.rows === 2, `${tag}: strips drawn at 15 agents (rows ${s.rows})`);
     const withHelpers = s.desks.filter((d) => d.helpers > 0);
     assert.ok(withHelpers.length >= 10, `${tag}: 15 agents with helpers (${withHelpers.length})`);
-    let overflowSeen = 0, dotsChecked = 0;
+    let overflowSeen = 0, dotsChecked = 0, hostileSeen = 0, pictures = 0;
     for (const d of withHelpers) {
       assert.ok(d.layoutStrip && d.box, `${tag}: ${d.id} has a strip (layout and page)`);
       assert.ok(!d.plateHelp, `${tag}: ${d.id}'s plate keeps no +N while its helpers are drawn`);
       assert.strictEqual(d.heads.length, Math.min(d.helpers, d.layoutStrip.shown), `${tag}: ${d.id}: ${d.helpers} helpers, ${d.layoutStrip.shown} shown`);
       assert.strictEqual(d.tiles, 0, `${tag}: ${d.id}: no name tile drawn in the strip`);
       for (const t of d.heads) {
-        assert.ok(t.pic || /^[A-Z0-9]$/.test(t.text), `${tag}: ${t.id} shows a picture (or its initial)`);
-        assert.ok(t.pic, `${tag}: ${t.id}: the head's picture loaded`);
-        assert.ok(d.subNames.some((n) => t.label.includes(n)) && t.label.includes('helper of ' + d.name), `${tag}: ${t.id}'s accessible name has its name and its parent: ${t.label}`);
-        assert.ok(d.subNames.some((n) => t.title.includes(n)), `${tag}: ${t.id}'s tooltip has its name: ${t.title}`);
-        /* no visible name: the button's text is empty or its one initial (when a picture is missing) */
-        assert.ok(t.text.length <= 1, `${tag}: ${t.id} draws text "${t.text}" (the name is never drawn)`);
+        assert.ok(t.pic && t.img && t.img.nat > 0, `${tag}: ${t.id}: the head's picture loaded (naturalWidth ${t.img && t.img.nat})`);
+        const raw = RAW.filter((x) => t.label.includes(x) || t.title.includes(x));
+        assert.deepStrictEqual(raw, [], `${tag}: ${t.id}: a token, a home path or a link reached the accessible name or the tooltip: ${t.label} | ${t.title}`);
+        if (t.id.includes('hostile')) { hostileSeen++; assert.ok(/Hx/.test(t.label) && /helper of /.test(t.label), `${tag}: the hostile helper's masked name is in its accessible name: ${t.label}`); }
+        else {
+          assert.ok(d.subNames.some((n) => t.label.includes(n)) && t.label.includes('helper of ' + d.name), `${tag}: ${t.id}'s accessible name has its name and its parent: ${t.label}`);
+          assert.ok(d.subNames.some((n) => t.title.includes(n)), `${tag}: ${t.id}'s tooltip has its name: ${t.title}`);
+        }
+        /* the picture is the right person's, cropped as headCrop says (not the parent's) */
+        const pic = await picture(t.id, d.id);
+        assert.ok(!pic.err, `${tag}: picture facts: ${pic.err}`);
+        assert.ok(pic.got && pic.got === pic.want && pic.got !== pic.parent, `${tag}: ${t.id}'s picture is ${pic.got}, helperPerson says ${pic.want}, the parent is ${pic.parent}`);
+        assert.ok(Math.abs(pic.w - pic.ew) < 0.2 && Math.abs(pic.left - pic.el) < 0.2 && Math.abs(pic.top - pic.et) < 0.2 && pic.nat > 0, `${tag}: ${t.id}'s crop ${JSON.stringify([pic.w, pic.left, pic.top])} is headCrop's ${JSON.stringify([pic.ew, pic.el, pic.et])}`);
+        pictures++;
+        assert.strictEqual(t.glyph, false, `${tag}: ${t.id} has its picture, no placeholder`);
+        /* no visible name and no letter: the button draws no text at all */
+        assert.ok(t.text.length === 0, `${tag}: ${t.id} draws text "${t.text}" (the name is never drawn)`);
         assert.ok(t.pbox.w * 0.8 >= HEAD_FACE_MIN - 1e-9, `${tag}: ${t.id}'s face is ${t.pbox.w * 0.8} px, at least ${HEAD_FACE_MIN}`);
         const state = (/st-(\w+)/.exec(t.cls) || [])[1], cls = (t.dotCls.match(/dot (\w+)/) || [])[1];
         assert.ok(cls, `${tag}: ${t.id} has a status dot (${t.dotCls})`);
@@ -111,7 +139,10 @@ module.exports = async (ctx) => {
       if (d.helpers > d.layoutStrip.shown) { overflowSeen++; assert.ok(d.more && /^\+\d+$/.test(d.more.text) && Number(d.more.text) === d.helpers - d.layoutStrip.shown && d.more.fs >= 10.5 && /more helpers of/.test(d.more.label), `${tag}: ${d.id}: the rest is "+K" (${JSON.stringify([d.more, d.helpers, d.layoutStrip, d.heads.length])})`); }
       else assert.ok(!d.more, `${tag}: ${d.id}: no "+K" when all fit`);
     }
+    assert.ok((hostileSeen >= 1 || world === 'retro') && pictures >= 20, `${tag}: the hostile helper was seen (${hostileSeen}) and ${pictures} pictures were checked`);
     assert.ok(overflowSeen >= 1 && dotsChecked >= 20, `${tag}: an overflow "+K" was seen (${overflowSeen}) and ${dotsChecked} dots were checked`);
+    const moreTitles = await js(`[...document.querySelectorAll('#stage .ro-hmore')].map(m=>(m.getAttribute('title')||'')+'|'+(m.getAttribute('aria-label')||''))`);
+    assert.ok(moreTitles.length >= 1 && moreTitles.every((t) => !RAW.some((x) => t.includes(x))), `${tag}: the +K tooltips carry no token, path or link: ${JSON.stringify(moreTitles).slice(0, 200)}`);
     /* the name is drawn nowhere in the strips: no element of the office shows a helper's name as visible text */
     const names = await js(`(()=>[...new Set(${SIM}.agents().filter(x=>x.parent).map(x=>x.name))])()`);
     const drawn = await js(`(()=>{const ns=${jsLiteral(names)},out=[];for(const e of document.querySelectorAll('#stage .ro-hstrip *')){const t=[...e.childNodes].filter(n=>n.nodeType===3).map(n=>n.textContent).join('').trim();if(t&&ns.some(n=>t.includes(n)))out.push(t)}return out})()`);
@@ -153,6 +184,7 @@ module.exports = async (ctx) => {
       assert.ok(await js(`(()=>{try{const a=${SIM}.agents().find(x=>x.id===${jsLiteral(target.id)});a.state=${jsLiteral(st)};${SIM}.render();return true}catch(e){return false}})()`), `${tag}: the state change ${st}`);
       if (MUTANT === 'status') await js(`(()=>{const n=document.querySelector('#stage .ro-hd[data-id="'+CSS.escape(${jsLiteral(target.id)})+'"]');if(n)n.replaceWith(n.cloneNode(true));return 1})()`);
       await must(`(()=>{const d=document.querySelector('#stage .ro-hd[data-id="'+CSS.escape(${jsLiteral(target.id)})+'"] .dot');return !!d&&d.className.split(' ').includes(${jsLiteral(st)})})()`, tag + ': the head dot shows ' + st);
+      await must(`(()=>{const b=document.querySelector('#stage .ro-hd[data-id="'+CSS.escape(${jsLiteral(target.id)})+'"]');const w=${jsLiteral(st)};return !!b&&b.getAttribute('aria-label').toLowerCase().includes(w)&&b.getAttribute('title').toLowerCase().includes(w)})()`, tag + ': the head\'s accessible name and tooltip say ' + st);
     }
     const after = await read();
     const nodes = await js(`(window.__aO.disconnect(),window.__aN)`);
@@ -172,7 +204,7 @@ module.exports = async (ctx) => {
     /* "+K": a click shows all the helpers in one scrolling row, at the same height, no desk moves; "Fewer" folds them again */
     const mid = firstD.id, mb = (await read());
     await js(`document.querySelector('#stage .ro-hmore[data-more="'+CSS.escape(${jsLiteral(mid)})+'"]').click()`);
-    await must(`(()=>{const m=document.querySelector('#stage .ro-hmore[data-more="'+CSS.escape(${jsLiteral(mid)})+'"]');return m&&m.getAttribute('aria-expanded')==='true'&&m.parentElement.classList.contains('open')&&m.parentElement.querySelectorAll('.ro-hd').length===${jsLiteral(6 + EXTRA)}})()`, `${tag}: "+K" opens all ${jsLiteral(6 + EXTRA)} helpers`);
+    await must(`(()=>{const m=document.querySelector('#stage .ro-hmore[data-more="'+CSS.escape(${jsLiteral(mid)})+'"]');return m&&m.getAttribute('aria-expanded')==='true'&&m.parentElement.classList.contains('open')&&m.parentElement.querySelectorAll('.ro-hd').length===${jsLiteral(6 + EXTRA + 1)}})()`, `${tag}: "+K" opens all ${jsLiteral(6 + EXTRA + 1)} helpers`);
     const open = await read();
     const b0 = (r) => JSON.stringify(r.desks.map((d) => [d.id, d.box, d.plate]));
     assert.strictEqual(b0(open), b0(mb), `${tag}: opening a strip moves no desk box`);
@@ -181,8 +213,30 @@ module.exports = async (ctx) => {
     await js(`document.activeElement&&document.activeElement.blur();0`);
     await H.shot(path.join(OUT, `097-helpers-${world}-${w}x${h}.png`), { prep: 'calm', tag: 'helpers', what: tag });
     shots.push(`097-helpers-${world}-${w}x${h}.png`);
+    /* a picture that fails to load: the head keeps its button and its accessible name and shows a neutral silhouette, never a letter of the name */
+    const gone = firstD.heads[0].id, nameBefore = await js(`document.querySelector('#stage .ro-hd[data-id="'+CSS.escape(${jsLiteral(gone)})+'"]').getAttribute('aria-label')`);
+    await js(`(()=>{const im=document.querySelector('#stage .ro-hd[data-id="'+CSS.escape(${jsLiteral(gone)})+'"] img');im.dispatchEvent(new Event('error'));return 1})()`);
+    await must(`(()=>{const b=document.querySelector('#stage .ro-hd[data-id="'+CSS.escape(${jsLiteral(gone)})+'"]');return !!b&&!!b.querySelector('.ro-hg')&&!b.querySelector('img')&&b.textContent.trim()===''})()`, tag + ': a failed picture shows the silhouette and no letter');
+    assert.strictEqual(await js(`document.querySelector('#stage .ro-hd[data-id="'+CSS.escape(${jsLiteral(gone)})+'"]').getAttribute('aria-label')`), nameBefore, `${tag}: the accessible name is unchanged without the picture`);
   }
 
+  /* the default simulator scene (the linked 097-real-15 pictures: 15 agents in 5 folders, a lounge row, the simulator's own helpers): heads at 1440x900; at 1280x800 the strips' extra height would push the desks
+     under the face floor, so the plates keep "+N" and dots (FR-308's last step, recorded in test:realoffice-layout) */
+  for (const [w, h] of SIZES) {
+    const tag = `default scene ${w}x${h}`;
+    await H.load({ w, h, query: q('photo', { sim: '15' }), ready: REAL, readyMs: 30000, settle: false });
+    await must(PICS, tag + ': the pictures');
+    const s = await read();
+    assert.ok(!s.scroll && s.face >= FACE_FLOOR - 1e-9, `${tag}: no scroll, face ${s.face}`);
+    const hd = s.desks.filter((d) => d.helpers > 0);
+    assert.ok(hd.length >= 3, `${tag}: desks with helpers (${hd.length})`);
+    if (w >= 1440) {
+      assert.ok(s.rows >= 1 && hd.every((d) => d.heads.length > 0 && !d.plateHelp), `${tag}: every desk with helpers shows heads`);
+    } else {
+      assert.strictEqual(s.rows, 0, `${tag}: no strips (rows ${s.rows})`);
+      assert.ok(hd.every((d) => d.heads.length === 0 && d.plateHelp), `${tag}: the plates keep +N and dots`);
+    }
+  }
   console.log('[097-helpers] ok', shots.join(' '));
   process.exitCode = 0;
 };

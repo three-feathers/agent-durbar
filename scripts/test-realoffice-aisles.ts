@@ -375,6 +375,7 @@ console.log(`floor covered with 4 or fewer: ${covs.join('; ')}`);
   assert.ok(strips > 50 && fell >= 1, `arcade strips ran (${strips} strips, ${fell} layouts fell back to +N)`);
   const at15 = aislesLayout(withH(15, 4, 10), { w: 1440, h: 848 }, META, SIGNS(4));
   assert.ok(at15.helpRows === 1 && !at15.scroll && at15.faceH >= FACE_FLOOR, 'arcade, 15 agents at 1440x848: one row of heads, no scroll, face over the ratchet');
+  assert.strictEqual(at15.g, aislesLayout(withH(15, 4, 0), { w: 1440, h: 848 }, META, SIGNS(4)).g, 'arcade, 15 agents at 1440x848: the strips keep the hall\'s scale (g)');
   const at15s = aislesLayout(withH(15, 4, 10), { w: 1280, h: 748 }, META, SIGNS(4));
   assert.strictEqual(at15s.helpRows, 0, 'arcade, 15 agents at 1280x748: no room, the plates keep +N (a recorded limit)');
   console.log(`arcade helper heads: ${strips} strips, ${fell} fallbacks`);
