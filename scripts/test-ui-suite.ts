@@ -116,11 +116,18 @@ const jobsOf = (y: string): Record<string, string> => {
 const ciJobs = jobsOf(ci);
 // FR-104: no separate "What changed" job, and no job waits for another one in a pull request
 assert.ok(!ciJobs.changes && !/needs:/.test(ci), 'ci.yml: no changes job and no needs (each job decides what to run itself)');
-for (const j of ['build-test', 'package-smoke', 'office-check']) assert.ok(ciJobs[j] && ciJobs[j].includes('bash .github/scripts/ci-changes.sh') && ciJobs[j].includes('fetch-depth: 2'), `ci.yml ${j} works out what changed inline`);
+for (const j of ['build-test', 'office-check']) assert.ok(ciJobs[j] && ciJobs[j].includes('bash .github/scripts/ci-changes.sh') && ciJobs[j].includes('fetch-depth: 2'), `ci.yml ${j} works out what changed inline`);
 const changes = fs.readFileSync(path.join(ROOT, '.github', 'scripts', 'ci-changes.sh'), 'utf8');
 assert.ok(changes.includes('git diff --name-only HEAD^1 HEAD') && /"\$\{EVENT_NAME:-\}" != "pull_request"/.test(changes), 'ci-changes.sh: diff of the test merge commit on PRs, everything on other events');
 // the required check names of the main ruleset still report on every pull request
-for (const name of ['name: Build and test (${{ matrix.os }})', 'name: Package smoke (unpacked Linux app)', 'name: Office layout check (xvfb)']) assert.ok(ci.includes(name), `ci.yml keeps the required check ${name}`);
+for (const name of ['name: Build and test (${{ matrix.os }})', 'name: Office layout check (xvfb)']) assert.ok(ci.includes(name), `ci.yml keeps the required check ${name}`);
+// FR-194: packaging is a step of the office job (the old required check "Package smoke (unpacked Linux app)" is gone), runs even when
+// the layout steps failed, and the job fails when either part failed and says which
+assert.ok(!ciJobs['package-smoke'] && ci.split('name: Package smoke (unpacked Linux app)').length === 2, 'ci.yml: no separate Package smoke job, one step of that name');
+const officeJob = ciJobs['office-check'];
+assert.ok(/- name: Package smoke \(unpacked Linux app\)\r?\n\s+if: steps\.changes\.outputs\.code == 'true' && always\(\)\r?\n\s+id: package\r?\n\s+run: npm run pack:dir:prebuilt/.test(officeJob), 'FR-194: the office job packs the app with always(), after the layout steps');
+assert.ok(officeJob.indexOf('npm run pack:dir:prebuilt') > officeJob.indexOf('node scripts/check-parallel.js') && officeJob.split('npm run build').length === 2, 'FR-194: one build, then layout, then packaging');
+assert.ok(/steps\.package\.outcome/.test(officeJob) && /steps\.layout\.outcome/.test(officeJob) && /steps\.geometry\.outcome/.test(officeJob) && officeJob.includes('GITHUB_STEP_SUMMARY') && /if: always\(\)\r?\n\s+shell: bash/.test(officeJob), 'FR-194: the last step fails the job and names the failed part from the step outcomes');
 const bt = ciJobs['build-test'];
 for (const os of ['ubuntu-latest', 'windows-latest', 'macos-latest']) assert.ok(bt.includes(`- os: ${os}`), `Build and test reports for ${os}`);
 // FR-106: macOS is a report-only Linux job on pull requests and merge queue entries, the real build and test on every other event
