@@ -52,14 +52,14 @@ function elementsRecalculated(events, eventName = 'UpdateLayoutTree') {
    The page puts its own marker (`console.timeStamp`, a `TimeStamp` event of `devtools.timeline`) just before the code; a trace without the marker proves nothing and is taken
    again (at most TRACE_TRIES, each counted and printed). A trace that has the marker and no UpdateLayoutTree still fails the calibration: a renamed thread or event is not waited out.
    OPS_TRACE_MUTANT=name looks for an event with another name (the calibration must fail: "a new element must recalculate some element"); =nomark never emits the marker
-   (must fail: "a trace holding the page's own marker"). */
+   (must fail: "a trace holding the page's own marker"); =nomarkcount never emits it in the four counting traces (must fail the same assert, naming a text change). */
 const TRACE_TRIES = 10;
 const MARK = 'ops-trace-start';
 const TRACE_MUTANT = process.env.OPS_TRACE_MUTANT || '';
 const markerIn = (events) => events.some((e) => e.name === 'TimeStamp' && e.args && e.args.data && e.args.data.message === MARK);
-async function tracedWithMarker(code) {
+async function tracedWithMarker(code, mutant = 'nomark') {
   for (let attempt = 1; attempt <= TRACE_TRIES; attempt++) {
-    const events = await trace(() => code(TRACE_MUTANT !== 'nomark'));
+    const events = await trace(() => code(TRACE_MUTANT !== mutant));
     if (markerIn(events)) return { events, attempt };
   }
   return { events: null, attempt: TRACE_TRIES };
@@ -143,7 +143,12 @@ module.exports = async (ctx) => {
       const probe = elementsRecalculated(sample.events, TRACE_MUTANT === 'name' ? 'UpdateLayoutTreeX' : 'UpdateLayoutTree');
       assert.ok(probe > 0, `${label}: a new element must recalculate some element; a trace with none means the trace's thread or event name changed (${probe})`);
       const counts = [];
-      for (let i = 1; i <= 4; i++) counts.push(elementsRecalculated(await trace(() => change(i))));
+      /* each counting trace holds the page's marker too: a trace that lost its events would count 0 and, as the least of 4, pass a `:has()` regression silently (review of #1318) */
+      for (let i = 1; i <= 4; i++) {
+        const t = await tracedWithMarker((mark) => js(`(()=>{if(${jsLiteral(mark)})console.timeStamp(${jsLiteral(MARK)});document.querySelector(${jsLiteral(text)}).textContent=${jsLiteral('Op ')}+${i};return document.body.offsetHeight;})()`), 'nomarkcount');
+        assert.ok(t.events, `${label}: a trace holding the page's own marker: none of ${TRACE_TRIES} traces of text change ${i} did, so the renderer was not recording while the page code ran`);
+        counts.push(elementsRecalculated(t.events));
+      }
       rows[key] = Math.min(...counts); // the least of 4: a render that lands inside one trace by itself (a timer) only adds, and the `:has()` cost shows in all 4
       console.log(`[ops] ${label}: elements recalculated by one text change`, counts.join(' '));
     };
@@ -177,6 +182,11 @@ module.exports = async (ctx) => {
     /* #1302: the second and third render of a sample were the mood tick (5 s) and the "ago" tick (30 s) drawing, after an update, what the update's own draw had shown: a tick that
        compared with the signature of its last tick, not of the last draw (traced under load: renderAll < setState, then the ticks at app.js 295 and 298, and coffeeTick's minute).
        A draw now records what it showed, so after an update's draw no tick is due: asserted on every sample, not by hoping no tick lands inside one */
+    /* an error moves the ambulance, which the mood reads: the draw's signature must be taken after it (review of #1318), so no tick is due after this draw either */
+    await drawn(emit('error'));
+    due.push(await js(`window.__durbarSimUi.timerDraw()`));
+    await drawn(emit('working'));
+    due.push(await js(`window.__durbarSimUi.timerDraw()`));
     assert.deepStrictEqual(due, due.map(() => false), `${n} agents: after a status update's draw no mood or "ago" tick is due to draw it again (${due})`);
     assert.ok(per.renders.every((r) => r >= 1 && r <= 2), `${n} agents: every status update is one render, two at most with a timer's (${per.renders})`);
     rows[`rendersPerStatus@${n}`] = med(per.renders);

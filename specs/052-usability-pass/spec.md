@@ -108,6 +108,10 @@ Four reviewers worked from 17 simulator screenshots: the office at 1440x900 and 
 
 ## Changes
 
+### 2026-11-08: the "ago" and mood ticks draw only a change no draw showed (FR-062, pointer to spec 008 FR-184)
+
+A draw records the signatures it showed, so the 30 s "ago" tick (FR-062) and the 5 s mood tick redraw only for a change no draw has shown, not again for a status update the last draw already showed. Checked by `check-office-ops` (`timerDraw`); the cause, fix and mutants are in spec 008 FR-184 (issues #1302, #1301, #1208).
+
 ### 2026-11-01: opt-in auto-follow for active work and an attention queue (FR-182..FR-190, issue #686)
 
 *Need* (issue #686): after sending work the user wants to return to the office, keep that agent's desk in view, and be taken back to the right chat when it needs them or finishes; with several agents ready, Previous and Next to visit them without losing their place. *Checked before building (2026-11-01)*: `git grep -in "auto-follow\|autoFollow"` finds nothing in `src/`, `scripts/` or `specs/` (only the issue); nothing of this exists. *Reused, not duplicated (FR-031)*: `needsMe()` and `needsMeOrder()` (FR-014, FR-061: waiting, error or limit, oldest first) are the one "needs you" model and are not changed; the unread marker (spec 001 FR-170..FR-177, `DurbarUnread`) and `chatShownNow()` decide what is "seen"; `openPanel(id,'title')` (spec 074 FR-019) opens a chat; `closePanel()` goes back to the office; `goToFloor()` (spec 092) changes floor; `announce()`, `ipcHandle('settings:...')` + `settingsStore()` (the Serious mode path) store the setting; a `notice-strip` under the top bar (the restore strip's way) takes its own room so nothing is covered. Not used: doors and cabins (#954), the old themes (#948).
