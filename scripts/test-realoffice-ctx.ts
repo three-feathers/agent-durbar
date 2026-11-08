@@ -1,4 +1,4 @@
-/** Spec 097 FR-322, FR-323, FR-325 (T222): the line round a monitor frame: the band the existing context level gives, the dash for the share, the words of
+/** Spec 097 FR-322, FR-323, FR-325 (T250): the line round a monitor frame: the band the existing context level gives, the dash for the share, the words of
  *  the plate's name. Pure functions, plain Node, no DOM, no credits. Run by `npm run test:realoffice-layout`. */
 import * as assert from 'assert';
 import * as path from 'path';

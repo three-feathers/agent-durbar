@@ -1,5 +1,5 @@
 /*
- * Spec 097 FR-322..FR-326 (T225; owner decision Q8, Vikram 2026-11-07 20:20 UTC: "Frame fill and it can go until red as well"): the context line round
+ * Spec 097 FR-322..FR-326 (T253; owner decision Q8, Vikram 2026-11-07 20:20 UTC: "Frame fill and it can go until red as well"): the context line round
  * each desk's monitor frame, in the Photo office, the cave and the arcade. Simulator only (DURBAR_SIM=15 DURBAR_SIM_FREEZE=1), no AI credits; every wait is
  * an until(), every page value goes through jsLiteral.
  *
