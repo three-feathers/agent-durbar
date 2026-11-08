@@ -292,3 +292,22 @@ body.ro-chat .ph .avatar{display:none}
 .ro-chrome>.ro-plate:is(:hover,:focus-visible)+.ren.ro-ren{opacity:1}
 .ro-chrome>.ren.ro-ren:is(:hover,:focus-visible){opacity:1} /* on the pencil itself the plate is no longer :hover (a sibling, review of #1200): it stays shown under the pointer */
 
+
+/* spec 097 FR-306..FR-310 (issue #1139, owner "1265 1", 2026-11-08): the helper strip under a desk's plate: small round head figures (HEAD px, set by --ro-head) with the status dot on the corner, in the
+   plate's own surface, ink and line, so every world's plate look carries over. The name is never drawn (accessible name and tooltip only); the strip's height is the layout's (a fixed place, FR-015). */
+.ro-hstrip{--ro-head:30px;display:grid;grid-template-columns:repeat(var(--ro-hc,1),var(--ro-head));grid-auto-rows:var(--ro-head);gap:var(--s-1);justify-content:start;align-content:start;pointer-events:auto}
+.ro-hstrip.open{display:flex;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;padding:0 var(--s-1) 0 0}
+.ro-hstrip.open>*{flex:none}
+.ro-hd,.ro-hmore{margin:0;padding:0;font:inherit;cursor:pointer;color:var(--ink);background:var(--surface);border:1.5px solid var(--line)}
+.ro-hd{--ro-ring:var(--line);position:relative;display:block;box-sizing:border-box;width:var(--ro-head);height:var(--ro-head);border-radius:50%;border:0;outline:1.5px solid var(--ro-ring)} /* the ring is an outline (selected and focus replace it), so the picture fills the whole figure: the face is HEAD * 0.8 px */
+.ro-hd .ro-hp{position:absolute;inset:0;border-radius:50%;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:var(--t4-size);font-weight:var(--t1-weight,600)}
+.ro-hd .ro-hp img{position:absolute;display:block;max-width:none;height:auto;pointer-events:none}
+.ro-hd>.dot{position:absolute;right:-3px;bottom:-3px;outline:2px solid var(--surface)} /* as the chat header's portrait: the same dot, the same ring */
+.ro-hd:is(.st-waiting,.st-limit){--ro-ring:var(--c-waiting)}
+.ro-hd.st-error{--ro-ring:var(--c-error)}
+.ro-hd.sel{outline:2px solid var(--sel-border,var(--focus));outline-offset:1px}
+.ro-hmore{box-sizing:border-box;min-width:var(--ro-head);height:var(--ro-head);padding:0 var(--s-1);border-radius:calc(var(--ro-head) / 2);font-size:var(--t5-size);font-weight:var(--t1-weight,600);white-space:nowrap;color:var(--muted)}
+.ro-hd:focus-visible,.ro-hmore:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.ro-hd:hover{--ro-ring:var(--line-2,var(--line))}
+.ro-hmore:hover{border-color:var(--line-2,var(--line))}
+@media (forced-colors:active){.ro-hd,.ro-hmore{border:1px solid CanvasText;background:Canvas;color:CanvasText}}

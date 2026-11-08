@@ -304,7 +304,7 @@
     const who = people(model, ids, opts.rand, !!opts.remember);
     const seatOk = (p) => !!p && !['typeA', 'think', 'waveA', 'rest'].some((f) => BAD.has(SD + p + '-' + f + '.webp'));
     const engine = {
-      folders: model.folders.map((f) => ({ id: f.id, agents: f.agents.map((a) => ({ id: a.id, state: a.state, away: a.away || null, person: seatOk(who[a.id]) ? who[a.id] : null, lounge: !!a.lounge })) })), /* spec 097 FR-246: the app's room rule (shutPlan) seats it in the lounge row */
+      folders: model.folders.map((f) => ({ id: f.id, agents: f.agents.map((a) => ({ id: a.id, state: a.state, away: a.away || null, person: seatOk(who[a.id]) ? who[a.id] : null, lounge: !!a.lounge, helpers: a.lounge || !a.subs ? 0 : a.subs.length })) })), /* spec 097 FR-246: the app's room rule (shutPlan) seats it in the lounge row; FR-306: the strip's helpers (none in the lounge; none without their list: the plate keeps its +N) */
       places: model.places.map((p) => ({ id: p.id, custom: !!p.custom, visitors: p.visitors.map((v) => ({ id: v.id, needsYou: !!v.needsYou, person: who[v.id] || null })) })),
     };
     const signs = {};
@@ -360,7 +360,7 @@
       for (const d of lay.lounge.desks) deskOne(d); /* spec 097 FR-247: after the desks */
       /* FR-249: keyboard order is the desks', then the seats': a plate that was a desk's keeps its element, so it is moved after the last desk's plate (and its pencil), unless it has the focus */
       const last = lay.zones.length ? lay.zones[lay.zones.length - 1].desks.slice(-1)[0] : null;
-      let at = last ? chrome._k.get('rn:' + last.id) || chrome._k.get('n:' + last.id) : null;
+      let at = last ? chrome._k.get('h:' + last.id) || chrome._k.get('rn:' + last.id) || chrome._k.get('n:' + last.id) : null;
       for (const d of lay.lounge.desks) {
         const pl = chrome._k.get('n:' + d.id), rb = chrome._k.get('rn:' + d.id);
         if (!pl || pl.contains(document.activeElement) || (rb && rb.contains(document.activeElement))) { at = rb || pl || at; continue; }
@@ -445,7 +445,7 @@
         const pl = el(chrome, 'n:' + k, 'button', 'ro-plate st-' + d.state + (a.selected ? ' sel' : '') + (d.narrow ? ' narrow' : '') + (a.asleep ? ' asleep' : '') + (d.lounge ? ' lounge' : '') + (a.ren ? ' has-ren' : '')); box(pl, d.plate);
         if (pl.type !== 'button') pl.type = 'button'; dset(pl, 'id', k); dset(pl, 'state', d.state); if (d.lounge) dset(pl, 'surface', 'lounge'); else if (pl.dataset.surface) delete pl.dataset.surface; /* spec 098 FR-010: the moment's marker (spec 097 FR-246: every lounge seat) */
         attr(pl, 'aria-pressed', a.selected ? 'true' : 'false'); attr(pl, 'aria-label', a.label); attr(pl, 'title', a.tip);
-        plateFill(pl, a, d.state);
+        plateFill(pl, a, d.state, !!d.strip);
         /* spec 059 FR-170 (#1155): Open office's rename pencil (.ren[data-ren]: the app's own click and F2 handlers, the same in-place edit), right
            after its plate (a button cannot sit inside one) so the plate's hover and focus show it; CSS anchors it just after the name: no layout read */
         if (a.ren) {
@@ -457,6 +457,9 @@
           if (rb.style.getPropertyValue('position-anchor') !== anc) rb.style.setProperty('position-anchor', anc);
           if (!rb.firstChild && model.renIcon) rb.innerHTML = model.renIcon; /* the app's own icon markup (trusted, as alertIcon) */
         }
+        /* spec 097 FR-306..FR-309 (issue #1139): the helpers' head figures under the plate, right after it and its pencil in the Tab order; a lounge seat, the fallback and the arcade have no strip box, so no strip */
+        if (d.strip && a.subs && a.subs.length) helperStrip(chrome, d, a, k, who, ids, meta);
+        else if (chrome._k.get('h:' + k)) { chrome._k.get('h:' + k).remove(); chrome._k.delete('h:' + k); }
     }
     /* the lobby band: fixtures, their lights, visitors and chips, place plates (FR-023..FR-027, FR-045) */
     const byPlace = new Map(model.places.map((p) => [p.id, p]));
@@ -561,8 +564,64 @@
     }
   }
 
+  /* spec 097 FR-306..FR-309, FR-184 (issue #1139): one desk's helper strip of head figures. The container (key h:<id>) sits in the layout's strip box; each helper is one button (data-id: the app's own click opens its
+     Sub-agent activity view) kept by id, so a status change writes only the dot's class, the edge and the labels, never a node; the name is only in the accessible name and the tooltip (no tile). `+K` and
+     `Show fewer` are the one button the app's [data-more] handler folds. `a.subs`: the helpers in `orderedHelpers` order ({id,name,state,label,title,selected}); the picture is a person of the set, never the parent's
+     (`helperPerson`), cropped on the head by `headCrop`, from the seated rest picture (`SD + person-rest.webp`, the half-size file by `img`'s own rule). Opened, all helpers show in one scrolling row (a fixed height, FR-015). */
+  function helperStrip(chrome, d, a, k, who, ids, meta) {
+    const L = X(), st = d.strip, subs = a.subs, open = !!a.subsOpen && subs.length > st.shown;
+    const bx = el(chrome, 'h:' + k, 'div', 'ro-hstrip' + (open ? ' open' : ''));
+    box(bx, { x: st.x, y: st.y, w: st.w, h: st.h });
+    attr(bx, 'role', 'group'); attr(bx, 'aria-label', 'Helpers of ' + a.name);
+    setVar(bx, '--ro-hc', String(Math.max(1, st.cols)));
+    setVar(bx, '--ro-head', L.HEAD + 'px');
+    const anchor = chrome._k.get('rn:' + k) || chrome._k.get('n:' + k);
+    if (anchor && anchor.nextElementSibling !== bx && !bx.contains(document.activeElement)) anchor.after(bx);
+    if (!bx._b) bx._b = new Map();
+    const shown = open ? subs : subs.slice(0, st.shown), hidden = open ? [] : subs.slice(st.shown);
+    const want = [];
+    const seat = meta.seat || {};
+    for (const h of shown) {
+      let b = bx._b.get(h.id);
+      if (!b) {
+        b = document.createElement('button'); b.type = 'button'; bx._b.set(h.id, b);
+        b._pic = document.createElement('span'); b._pic.className = 'ro-hp'; b._pic.setAttribute('aria-hidden', 'true');
+        b._dot = document.createElement('span'); b._dot.setAttribute('aria-hidden', 'true');
+        b.append(b._pic, b._dot);
+      }
+      const cls = 'ro-hd st-' + h.state + (h.selected ? ' sel' : '');
+      if (b.className !== cls) b.className = cls;
+      const dc = dotClass(h.state); if (b._dot.className !== dc) b._dot.className = dc;
+      const person = L.helperPerson ? L.helperPerson(h.id, who[a.id], ids) : null, sm = person && has(seat, person) ? seat[person] : null, file = person ? person + '-rest.webp' : '';
+      if (sm && !BAD.has(SD + file) && L.headCrop) {
+        const c = L.headCrop(sm), f = L.HEAD / c.s;
+        let im = b._img;
+        if (!im) { im = b._img = document.createElement('img'); b._pic.textContent = ''; b._pic.appendChild(im); }
+        sty(im, 'width', px(sm.w * f)); sty(im, 'left', px(-c.x * f)); sty(im, 'top', px(-c.y * f));
+        img(im, file, true, sm.w * f);
+      } else {
+        if (b._img) { b._img = null; b._pic.textContent = ''; }
+        text(b._pic, Array.from(String(h.name || '?'))[0].toUpperCase()); /* FR-065: no picture, the initial (the name itself is never drawn) */
+      }
+      dset(b, 'id', h.id); attr(b, 'aria-pressed', h.selected ? 'true' : 'false'); attr(b, 'aria-label', h.label); attr(b, 'title', h.title);
+      want.push(b);
+    }
+    for (const [id, b] of bx._b) if (!shown.some((h) => h.id === id)) { b.remove(); bx._b.delete(id); }
+    if (hidden.length || open) {
+      let m = bx._more;
+      if (!m) { m = bx._more = document.createElement('button'); m.type = 'button'; m.className = 'ro-hmore'; }
+      dset(m, 'more', a.id);
+      text(m, open ? 'Fewer' : '+' + hidden.length);
+      attr(m, 'aria-expanded', open ? 'true' : 'false'); attr(m, 'aria-label', open ? 'Show fewer helpers of ' + a.name : 'Show ' + hidden.length + ' more helpers of ' + a.name); attr(m, 'title', open ? 'Show fewer helpers' : hidden.map((h) => h.name).slice(0, 8).join(', ') + (hidden.length > 8 ? ', ...' : ''));
+      want.push(m);
+    } else if (bx._more) { bx._more.remove(); bx._more = null; }
+    let next = bx.firstChild;
+    for (const e of want) { if (e === next) next = next.nextSibling; else bx.insertBefore(e, next); }
+  }
+
   /* FR-016, FR-184: the plate keeps its nodes on a status change: only the text and the dot that changed are written (a helper's list is rebuilt when it changes) */
-  function plateFill(pl, a, state) {
+  /* `strip`: the desk's helpers are drawn as head figures (spec 097 FR-306), so the plate keeps no +N and dots; they stay when the strip cannot be drawn (FR-308's last step, the arcade) */
+  function plateFill(pl, a, state, strip) {
     let P = pl._parts;
     if (!P) {
       P = pl._parts = { l1: document.createElement('span'), nm: document.createElement('b'), rl: document.createElement('span'), l2: document.createElement('span'), dot: document.createElement('span'), tn: document.createTextNode(''), h: null, hs: '' };
@@ -571,10 +630,10 @@
       pl.textContent = ''; pl.append(P.l1, P.l2);
     }
     text(P.nm, a.name); text(P.rl, a.role);
-    const hs = a.helpers.join();
+    const hs = strip ? '' : a.helpers.join();
     if (P.hs !== hs) {
       P.hs = hs; if (P.h) { P.h.remove(); P.h = null; }
-      if (a.helpers.length) { P.h = document.createElement('span'); P.h.className = 'ro-help'; P.h.textContent = '+' + a.helpers.length + ' '; a.helpers.slice(0, 3).forEach((s) => P.h.insertAdjacentHTML('beforeend', dotHTML(s))); P.l1.appendChild(P.h); }
+      if (hs) { P.h = document.createElement('span'); P.h.className = 'ro-help'; P.h.textContent = '+' + a.helpers.length + ' '; a.helpers.slice(0, 3).forEach((s) => P.h.insertAdjacentHTML('beforeend', dotHTML(s))); P.l1.appendChild(P.h); }
     }
     const dc = dotClass(state), line = ' ' + [a.word, a.task].filter(Boolean).join(' · ');
     if (P.dot.className !== dc) P.dot.className = dc;
