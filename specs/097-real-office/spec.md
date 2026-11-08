@@ -1155,3 +1155,13 @@ Found in the security review of #1286, on main, not caused by it. The words of a
 **Delta 2026-11-08 (fourth review of PR #1292, Ruben; FR-318 changed, T224):** PowerShell parity: a parenthesised, `@(...)` or script-block argument runs as a command (`-Password (Remove-Item -Recurse ./data)` showed `-Password [redacted] -Recurse ./data)`), so `(` and `{` join `$(`, a backtick, `;`, `|`, `&`, `<`, `>` and a line break in the spans that make a masked shell command `concealed` (Deny only); plain token values in PowerShell form stay `secret`. The tests that read `app.js` normalise CRLF (Windows checkouts); every source regex of this PR was run against a CRLF copy of the sources. A stub mask that changes the text before the first `[redacted]` is `concealed`.
 
 - `[KNOWN GAP]` Homoglyphs and mixed-script lookalikes (a Cyrillic letter in a host or program name) are not marked: #1300.
+
+## Changes 2026-11-08: five crew art sets land as art, pack-only (issue #1154; T240..T244 art part)
+
+The Pirate, Royal, Rebels, Monster and Cheeky Real office sets (`src/renderer/realoffice/sets/<crew>/`: 72, 72, 72, 72 and 156 WebP frames, each with a measured `set.json` and an `ASSETS.md`) are in the repository as art only. No world uses them yet: no `REAL_SETS` row and no wiring in this change (the Mac session wires them after #1308 merges).
+
+**Approval (FR-067, T238).** The asset rule says "Paco approves each picture". The owner Vikram Gorla took that role: on 2026-11-08 11:27 UTC he wrote "I can approve Paco's pictures if you want" (Telegram DM). He approved the Pirate set on 2026-11-08 08:48 UTC ("Ok, looks good") and Royal, Rebels, Monster and Cheeky on 2026-11-08 11:29 UTC ("They all look good"), all by Telegram DM. Each `ASSETS.md` records "approved by Vikram Gorla (owner) in Paco's place, Telegram DM, <date time>, <quote>" on every set section and every frame, and the `likeness-check` of every person.
+
+**Check (`test:realoffice-assets`).** A set that no world names as its default is a pack-only set; the test now validates every such folder: files listed equal files present, WebP with alpha and no metadata chunk, size caps, `set.json` keys and the six standing poses per person, 12 pictures per person, and the `ASSETS.md` approval and fictional-people lines (no `pending`, no empty box). Only the five names above may be pack-only; any other unused set is still refused. The picture-kind pattern accepts a hyphenated person id (`bob-glasses`).
+
+- `[KNOWN GAP]` Not wired: the crews are not selectable in any world until the Mac session adds the `REAL_SETS` rows and the picker wiring; no screenshot of them in the app was taken here.
