@@ -420,6 +420,21 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
     assert.strictEqual(C.levelFor('retro', { cave: false, retro: true }), 'full'); assert.strictEqual(C.levelFor('retro', { cave: false, retro: false }), 'closed');
     for (const c of Object.keys(C.CREWS)) assert.ok(!/crew\/art|portrait/i.test(JSON.stringify(C.peopleFor('photo', c, OPEN))), `${c}: Real office names no crew picture`);
   }
+  { // FR-337 (issue #1154): the art list's numbers come from the code, so a count in the spec cannot drift (Cheeky has 13 ids, not 15)
+    const FRAMES = 12; // FR-337: book, coffee, knock, letter, rest, runA, runB, think, typeA, typeB, waveA, waveB
+    const todo = Object.entries(C.CREWS).filter(([c]) => !C.REAL_SETS.some((x) => x.choice === c)) as [string, string[]][];
+    assert.deepStrictEqual(todo.map(([c]) => c).sort(), ['cheeky', 'monster', 'pirate', 'rebels', 'royal'], 'the crews still without a set are the ones FR-337 lists');
+    const per = Object.fromEntries(todo.map(([c, ids]) => [c, ids.length * FRAMES])), total = Object.values(per).reduce((a, b) => a + b, 0);
+    assert.strictEqual(per.cheeky, 156, 'Cheeky: 13 people x 12 frames'); assert.strictEqual(total, 444, 'all five crews: 156 + 4 x 72');
+    const specText = fs.readFileSync(path.join(ROOT, 'specs', '097-real-office', 'spec.md'), 'utf8'), tasksText = fs.readFileSync(path.join(ROOT, 'specs', '097-real-office', 'tasks.md'), 'utf8');
+    const n = (c: string): number => (C.CREWS[c] as string[]).length;
+    for (const [what, text, want] of [
+      ['spec FR-337', specText, `**Cheeky ${n('cheeky')} people = ${per.cheeky} frames, Pirate`], ['spec FR-337 total', specText, `${total} frames (`],
+      ['spec matrix', specText, `Cheeky (${n('cheeky')} people), Pirate`], ['spec Q13', specText, `${total} frames in all`],
+      ['tasks T238', tasksText, `Cheeky (${n('cheeky')} people, ${per.cheeky})`], ['tasks T244', tasksText, `Cheeky set lands (${n('cheeky')} people, ${per.cheeky} frames)`],
+    ] as [string, string, string][]) assert.ok(text.includes(want), `${what}: the document must say "${want}" (derived from crew.js)`);
+    assert.ok(!/\b468\b|\b180 frames/.test(specText + tasksText), 'the old, wrong counts (15 Cheeky people, 468 frames) are gone');
+  }
   C.CREWS.futurecrew = []; // a future crew (mutant check: a hand list of names would miss it)
   try { assert.strictEqual(note('futurecrew'), 'Real office shows Office people until Futurecrew has Real office poses.', 'a new crew gets its note by construction'); } finally { delete C.CREWS.futurecrew; }
   assert.strictEqual(note('pirate'), 'Real office shows Office people until Pirate has Real office poses.', 'spec 077 FR-074: the Pirate crew has its Real office note');
