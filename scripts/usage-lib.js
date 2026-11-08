@@ -233,7 +233,8 @@ function cumulative(states, date, baseline) {
   for (const [k, v] of Object.entries(baseline.models)) add(models, k, v);
   for (const [k, v] of Object.entries(baseline.machines)) add(machines, k, v);
   for (const st of states) for (const day of Object.keys(st.days)) {
-    if (day <= baseline.through || day > date) continue;
+    // a machine with its own baseline entry is counted after the baseline's day; one without (a teammate's machine) from its first day
+    if ((own(baseline.machines, st.machine) && day <= baseline.through) || day > date) continue;
     for (const model of Object.keys(st.days[day].models)) { const c = st.days[day].models[model].costUsd; add(models, model, c); add(machines, st.machine, c); }
   }
   let total = 0; for (const v of models.values()) total += v;
@@ -246,13 +247,14 @@ function split(map, total, labelOf = (k) => k) {
 }
 
 /** The README block, markers included. `release` is a tag such as `v0.1.12` (checked). Same inputs, same text. */
-function readmeBlock(cum, date, release, note) {
+function readmeBlock(cum, date, release, note, spreadNote) {
   if (!DATE_RE.test(date)) throw new Error('--date must be YYYY-MM-DD');
   if (!/^v\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(release)) throw new Error('--release must look like v0.1.12');
   return [BEGIN, '## Build cost so far', '',
     `**About US$${group(cum.total)}** at API list prices to build this app with AI agents, as of ${date} (release [\`${release}\`](https://github.com/three-feathers/agent-durbar/releases/tag/${release})), tracked since ${cum.since}. `
     + `This is an **${LABEL}**: Claude Code's own list-price figure, not what anyone was charged. Method and privacy: [docs/build-cost.md](docs/build-cost.md).`, '',
     '![Cumulative build cost by model over releases (API list-price estimate, not billing)](docs/build-cost.svg)', '',
+    ...(spreadNote ? [spreadNote, '', '![Daily build cost by model: measured days solid, estimated (spread) days faded and dashed](docs/build-cost-days.svg)', ''] : []),
     `- By model: ${split(cum.models, cum.total, modelName) || 'none yet'}.`,
     `- By machine or team: ${split(cum.machines, cum.total) || 'none yet'}.`,
     `- Not counted yet: ${note}`, END].join('\n');
@@ -374,7 +376,66 @@ function chartSvg(history) {
   return out.join('');
 }
 
+const DAY_SPREAD_LINE = (est, n, since, through) => `Estimated, not measured: US$${group(est)} of the total, spent before telemetry could count it per day, is spread over ${n} days (${since} to ${through}) by 50% lines changed and 50% merged PRs of each day (git history); the faded, dashed bars are those estimates, the solid bars are measured. Per-model split of an estimated day: the same mix as the original lump (an assumption).`;
+
+/** Daily spend, stacked by model: measured part solid, estimated (spread) part faded with a dashed outline. `rows` from usage-spread.dailyRows. */
+function chartDaysSvg(rows) {
+  const W = 720; const H = 300; const L = 62; const R = 16; const T = 14; const B = 108; const pw = W - L - R; const ph = H - T - B;
+  const head = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img"`;
+  const style = '<style>text{fill:#1f2328;font:11px Verdana,DejaVu Sans,sans-serif;font-variant-numeric:tabular-nums}.ax{stroke:#8c959f;stroke-width:1}.gr{stroke:#8c959f;stroke-opacity:.35;stroke-width:1}'
+    + '.est{fill-opacity:.4;stroke:#8c959f;stroke-width:1;stroke-dasharray:3 2}.key{fill:#8c959f;fill-opacity:.4;stroke:#8c959f;stroke-dasharray:3 2}.keym{fill:#8c959f}'
+    + '@media (prefers-color-scheme:dark){text{fill:#e6edf3}}' + seriesCss() + '</style>';
+  if (!rows.length) {
+    const t = `Daily build cost (${LABEL}): no days recorded yet`;
+    return `${head} aria-label="${esc(t)}"><title>${esc(t)}</title>${style}<text x="${W / 2}" y="${H / 2}" text-anchor="middle">${esc(t)}</text></svg>\n`;
+  }
+  const names = [];
+  const tot = (r, n) => (r.est[n] || 0) + (r.meas[n] || 0);
+  for (const r of rows) for (const n of [...Object.keys(r.est), ...Object.keys(r.meas)]) if (!names.includes(n)) names.push(n);
+  const sumOf = (n) => rows.reduce((a, r) => a + tot(r, n), 0);
+  names.sort((a, b) => sumOf(b) - sumOf(a) || (a < b ? -1 : 1));
+  const cls = (n) => `s${Math.min(names.indexOf(n), SERIES_COLORS.length - 1)}`;
+  const dayTotal = (r) => names.reduce((a, n) => a + tot(r, n), 0);
+  const top = Math.max(...rows.map(dayTotal), 1);
+  const mag = Math.pow(10, Math.floor(Math.log10(top))); const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s * 4 >= top);
+  const ymax = step * Math.ceil(top / step);
+  const y = (v) => T + ph - (v / ymax) * ph;
+  const slot = pw / rows.length; const bw = Math.min(40, slot * 0.7);
+  const estTotal = rows.reduce((a, r) => a + r.estCents, 0) / 100; const estDays = rows.filter((r) => r.estCents > 0).length;
+  const estFrom = rows.find((r) => r.estCents > 0); const estTo = [...rows].reverse().find((r) => r.estCents > 0);
+  const kind = (r) => (r.estCents > 0 && r.measCents === 0 ? ' estimated' : r.estCents > 0 ? ' part estimated' : ' measured');
+  const desc = `Daily build cost, ${LABEL}: ${rows.map((r) => `${r.date} US$${group(dayTotal(r))}${kind(r)}`).join('; ')}`;
+  const out = [`${head} aria-label="${esc(desc)}"><title>${esc('Daily build cost (' + LABEL + ')')}</title><desc>${esc(desc)}</desc>${style}`];
+  for (let v = 0; v <= ymax + 1e-9; v += step) out.push(`<line class="gr" x1="${L}" y1="${f1(y(v))}" x2="${W - R}" y2="${f1(y(v))}"/><text x="${L - 6}" y="${f1(y(v) + 4)}" text-anchor="end">US$${group(v)}</text>`);
+  const every = Math.ceil(rows.length / Math.max(1, Math.floor(pw / 40)));
+  rows.forEach((r, i) => {
+    const cx = L + slot * (i + 0.5); let acc = 0;
+    for (const part of ['meas', 'est']) for (const n of names) {
+      const v = r[part][n] || 0; if (v <= 0) continue;
+      out.push(`<rect x="${f1(cx - bw / 2)}" y="${f1(y(acc + v))}" width="${f1(bw)}" height="${f1(y(acc) - y(acc + v))}" class="${cls(n)}${part === 'est' ? ' est' : ''}"/>`);
+      acc += v;
+    }
+    if (i % every === 0 || i === rows.length - 1) out.push(`<text x="${f1(cx)}" y="${T + ph + 14}" text-anchor="middle">${esc(r.date.slice(5))}</text>`);
+  });
+  out.push(`<line class="ax" x1="${L}" y1="${T}" x2="${L}" y2="${T + ph}"/><line class="ax" x1="${L}" y1="${T + ph}" x2="${W - R}" y2="${T + ph}"/>`);
+  out.push(`<text x="${L + pw / 2}" y="${T + ph + 30}" text-anchor="middle">day, UTC (US$ per day, ${esc(LABEL)})</text>`);
+  let lx = L;
+  for (const n of names.slice(0, SERIES_COLORS.length)) {
+    const label = modelName(n);
+    out.push(`<rect x="${lx}" y="${H - 54}" width="10" height="10" class="${cls(n)}"/><text x="${lx + 14}" y="${H - 45}">${esc(label)}</text>`);
+    lx += 14 + Math.round(label.length * 6.6) + 14;
+  }
+  out.push(`<rect x="${lx}" y="${H - 54}" width="10" height="10" class="keym"/><text x="${lx + 14}" y="${H - 45}">solid = measured</text>`);
+  out.push(`<rect x="${lx + 120}" y="${H - 54}" width="10" height="10" class="key"/><text x="${lx + 134}" y="${H - 45}">faded, dashed = estimated (spread)</text>`);
+  if (estDays) {
+    out.push(`<text x="${L}" y="${H - 28}">Estimate: US$${group(estTotal)} over ${estDays} days (${esc(estFrom.date)} to ${esc(estTo.date)}), weighted 50% by lines changed</text>`);
+    out.push(`<text x="${L}" y="${H - 14}">and 50% by merged PRs per day (git history); model mix of the original lump. See docs/build-cost.md.</text>`);
+  }
+  out.push('</svg>\n');
+  return out.join('');
+}
+
 module.exports = {
-  TOKEN_METRIC, COST_METRIC, TYPES, SOURCES, MODEL_RE, MACHINE_RE, DATE_RE, MAX_FILE_BYTES, MAX_MODELS_PER_DAY, MAX_DAYS_PER_FILE, MAX_DAYS_PER_REQUEST, FILE_VERSION,
+  DAY_SPREAD_LINE, chartDaysSvg, TOKEN_METRIC, COST_METRIC, TYPES, SOURCES, MODEL_RE, MACHINE_RE, DATE_RE, MAX_FILE_BYTES, MAX_MODELS_PER_DAY, MAX_DAYS_PER_FILE, MAX_DAYS_PER_REQUEST, FILE_VERSION,
   modelName, MODEL_NAMES, BEGIN, END, LABEL, validateHistory, upsertRow, badgeSvg, chartSvg, esc, validateBaseline, cumulative, readmeBlock, rewriteReadme, emptyState, checkMachine, dayOf, ingest, validateState, firstDay, report, group, usd,
 };

@@ -8,7 +8,11 @@ A reference for contributors (spec 008 FR-181; owner request 2026-11-07): how ma
 
 ![Cumulative build cost by model over releases (API list-price estimate, not billing)](build-cost.svg)
 
-(The picture and the README's *Build cost so far* block are generated: section 4.)
+![Daily build cost by model: measured days solid, estimated (spread) days faded and dashed](build-cost-days.svg)
+
+**Estimated days.** Telemetry only began on 2026-11-07, so the earlier spend (the baseline's lump, 2026-10-25 to 2026-11-06) was one number. It is **spread, not measured**: each day's weight is 50% its share of the lines changed (added plus deleted, `git log --numstat` on `main`, without lockfiles, pictures and other binaries, generated and build-cost files) and 50% its share of the merged PRs (merge commits and `(#N)` squash commits). The per-model split of an estimated day uses the same mix as the lump (an assumption). Estimated days are the faded, dashed bars and say so in the chart's legend; measured days keep their real numbers and the total is unchanged to the cent. See section 4.
+
+(The pictures and the README's *Build cost so far* block are generated: section 4.)
 
 ## 1. Point Claude Code at the receiver
 
@@ -90,7 +94,9 @@ Paste the printed table into the release notes next to the clip (`changelog.d/RE
 `npm run usage:readme -- --release vX.Y.Z [--date YYYY-MM-DD] [--files a.json,b.json]` (pure text, no network) adds up `docs/build-cost-baseline.json` (what was spent before the receivers ran: `since`, `through`, per-model and per-machine dollars, and a note on what is not counted) and every usage-file day after the baseline's `through` day, then:
 - rewrites the README block between `<!-- build-cost:begin ... -->` and `<!-- build-cost:end -->` (it fails, changing nothing, when either marker is missing, doubled or out of order);
 - adds the release's row (date, version, cumulative dollars per model and per machine) to `docs/build-cost-history.json` (the same version replaces its row);
-- regenerates `docs/build-cost-badge.svg` and `docs/build-cost.svg` (local plain SVG, no external service, a few KB; the chart stacks the models over release dates).
+- regenerates `docs/build-cost-badge.svg`, `docs/build-cost.svg` (local plain SVG, no external service, a few KB; the chart stacks the models over release dates) and `docs/build-cost-days.svg` (US$ per day by model: measured solid, estimated faded and dashed).
+- **Every machine publishes its own file at each release.** Every team machine runs the same receiver and, at each daily release, runs `npm run usage:readme -- --release vX.Y.Z --publish` (copies its `usage-<machine>.json` into `docs/build-cost/data/` through the same validation and merges days into what is committed) or commits its file there by hand. The release step reads **all** `docs/build-cost/data/usage-*.json` plus the local folder, so the README block, chart and badge come from every machine's committed file. A file whose machine label is not in the baseline's `machines` counts in full from its first day (it adds to the total); `test:usage` fails on a malformed committed file, so another side's PR cannot break the release.
+- **The spread** (`npm run usage:spread -- --write`, `scripts/usage-spread.js`) reads the git history on `origin/main` (pinned to the commit recorded in `docs/build-cost-spread.json`, so a later merge cannot change it) and writes the per-day weights and cents. It spreads only the baseline's remainder: the lump minus what telemetry measured per day on the baseline's machines (a measured day is not spread over; a model measured but not listed in the lump is taken from the largest model so the total holds). Whole cents by largest remainder; `test:usage` checks that the weights sum to 1, the total is kept to the cent, measured days are unchanged, the result is deterministic and the committed file equals what the pinned history gives (skipped in a shallow clone). Another machine's measured days are its own: they never remove a day from the spread.
 `--check` prints the block and writes nothing. It runs in the doc-only fold PR after each release (`changelog.d/README.md`). The baseline is keyed by the model ids the telemetry sends (`claude-opus-5-5`), so a baseline and a usage file for one model are one row; `MODEL_NAMES` in `scripts/usage-lib.js` is the one place that maps ids to the display names shown in the README, the badge and the chart (an id not listed shows as itself). When a machine's usage starts, raise nothing by hand: its files are summed from the day after the baseline's `through`.
 
 ## What is kept, and what is not

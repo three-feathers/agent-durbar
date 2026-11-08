@@ -201,7 +201,7 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
   const t2 = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-usage-readme-'));
   const P = (n) => path.join(t2, n);
   fs.writeFileSync(P('README.md'), readme); fs.writeFileSync(P('base.json'), JSON.stringify({ version: 1, since: '2026-10-25', through: '2026-11-07', note: 'older work.', models: { 'claude-opus-5-5': 10 }, machines: { linux: 10 } }));
-  const args = ['--release', 'v0.1.12', '--date', '2026-11-07', '--baseline', P('base.json'), '--readme', P('README.md'), '--history', P('h.json'), '--badge', P('b.svg'), '--chart', P('c.svg'), '--files', P('none.json')];
+  const args = ['--release', 'v0.1.12', '--date', '2026-11-07', '--baseline', P('base.json'), '--readme', P('README.md'), '--history', P('h.json'), '--badge', P('b.svg'), '--chart', P('c.svg'), '--days', P('d.svg'), '--data', P('nodata'), '--spread', P('nospread.json'), '--files', P('none.json')];
   const mk2 = () => R2.build(R2.parseArgs(args.filter((a, i) => args[i - 1] !== '--files' && a !== '--files'), { DURBAR_USAGE_DIR: P('nodir') }, NOW));
   const r1 = mk2();
   assert.ok(r1.text.includes('About US$10**') && r1.history.rows.length === 1 && r1.badge.includes('US$10 ') && r1.chart.includes('<svg'), 'command: block, history, badge and chart from the baseline alone');
@@ -209,6 +209,102 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
   fs.writeFileSync(P('README.md'), '# no markers\n');
   assert.throws(() => mk2(), /exactly one/, 'command: a README without markers fails');
   fs.rmSync(t2, { recursive: true, force: true });
+}
+
+// ---- spread of the unmeasured lump over the days it covers (FR-181 delta 2026-11-08) ----
+{
+  const S = require('./usage-spread');
+  const R2 = require('./usage-readme');
+  const { execFileSync } = require('child_process');
+  const base = lib.validateBaseline({ version: 1, since: '2026-10-25', through: '2026-10-30', note: 'older work.', models: { 'claude-opus-5-5': 700.01, 'claude-sonnet-5-5': 300.02 }, machines: { linux: 1000.03 } });
+  const stats = new Map([['2026-10-25', { lines: 100, prs: 1 }], ['2026-10-26', { lines: 300, prs: 3 }], ['2026-10-27', { lines: 0, prs: 0 }], ['2026-10-28', { lines: 600, prs: 6 }], ['2026-10-29', { lines: 7, prs: 0 }], ['2026-10-30', { lines: 1, prs: 1 }], ['2026-11-30', { lines: 5000, prs: 50 }]]);
+  const meas = lib.emptyState('linux'); lib.ingest(meas, body([], [cost('claude-opus-5-5', 12.34, '2026-10-30T10:00:00Z'), cost('claude-sonnet-5-5', 5.67, '2026-10-30T10:00:00Z')]), Date.UTC(2026, 9, 30, 12));
+  const sp = S.computeSpread(base, [meas], stats);
+  const again = S.computeSpread(base, [meas], stats);
+  assert.deepStrictEqual(sp, again, 'spread: deterministic (same input, same output)');
+  assert.deepStrictEqual(sp.days.map((d) => d.date), ['2026-10-25', '2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29'], 'spread: only days without measured data; a day outside the range is not used');
+  assert.ok(Math.abs(sp.days.reduce((a, d) => a + d.weight, 0) - 1) < 1e-8, 'spread: the weights sum to 1');
+  const w = (d) => sp.days.find((x) => x.date === d).weight;
+  assert.ok(w('2026-10-27') === 0 && w('2026-10-26') > w('2026-10-25'), 'spread: a day with no lines and no PRs gets weight 0, more work more weight');
+  assert.ok(Math.abs(w('2026-10-26') - (0.5 * 300 / 1007 + 0.5 * 3 / 10)) < 1e-8, 'spread: weight = 50% share of lines + 50% share of PRs');
+  for (const m of ['claude-opus-5-5', 'claude-sonnet-5-5']) {
+    const got = sp.days.reduce((a, d) => a + d.cents[m], 0);
+    assert.strictEqual(got, Math.round(base.models[m] * 100) - Math.round((m.includes('opus') ? 12.34 : 5.67) * 100), `spread: ${m} is preserved to the cent (lump minus what was measured)`);
+  }
+  const rows = S.dailyRows(sp, [meas], base, '2026-10-30');
+  assert.strictEqual(rows.reduce((a, r) => a + r.estCents + r.measCents, 0), Math.round(lib.cumulative([meas], '2026-10-30', base).total * 100), 'spread: estimated plus measured is exactly the README total');
+  const mrow = rows.find((r) => r.date === '2026-10-30');
+  assert.deepStrictEqual([mrow.estCents, mrow.meas['claude-opus-5-5']], [0, 12.34], 'spread: a measured day keeps its real numbers and gets no estimate');
+  assert.strictEqual(S.dailyRows(sp, [], base, '2026-10-30').length, 5, 'spread: without the measured data the days are the spread days');
+  // another machine's measured days are its own: they add to the total, do not remove a spread day, and are not estimates
+  const pv = lib.emptyState('paco-vps'); lib.ingest(pv, body([], [cost('claude-opus-5-5', 9, '2026-10-26T10:00:00Z')]), Date.UTC(2026, 9, 26, 12));
+  assert.strictEqual(S.computeSpread(base, [meas, pv], stats).days.length, 5, 'machines: a teammate machine does not remove a spread day');
+  assert.strictEqual(lib.cumulative([meas, pv], '2026-10-30', base).total, 1009.03, 'machines: its dollars are added from its first day');
+  const rp = S.dailyRows(sp, [meas, pv], base, '2026-10-30');
+  assert.strictEqual(rp.reduce((a, r) => a + r.estCents + r.measCents, 0), 100903, 'machines: the chart still equals the total');
+  // an unlisted model measured inside the lump is deducted, so the total is kept
+  const odd = lib.emptyState('linux'); lib.ingest(odd, body([], [cost('claude-haiku-9', 1.5, '2026-10-30T10:00:00Z')]), Date.UTC(2026, 9, 30, 12));
+  assert.strictEqual(S.dailyRows(S.computeSpread(base, [odd], stats), [odd], base, '2026-10-30').reduce((a, r) => a + r.estCents + r.measCents, 0), 100003, 'spread: a model the lump does not list keeps the total');
+  // all days measured: nothing to spread
+  const full = lib.emptyState('linux'); for (const d of S.daysBetween('2026-10-25', '2026-10-30')) full.days[d] = { models: {} };
+  assert.throws(() => S.computeSpread(base, [full], stats), /nothing to spread/, 'spread: no day left is an error');
+  const none = S.computeSpread(base, [], new Map());
+  assert.ok(none.days.every((d) => Math.abs(d.weight - 1 / 6) < 1e-8), 'spread: no history at all gives equal weights');
+  // git history parsing
+  const ns = '@2026-10-25\n10\t5\tsrc/a.ts\n-\t-\tdocs/p.png\n3\t4\tpackage-lock.json\n8\t0\tdocs/x.PNG\n2\t2\tdocs/build-cost-spread.json\n1\t1\tdist/x.js\n@2026-10-26\n7\t0\tREADME.md\n';
+  assert.deepStrictEqual([...S.parseNumstat(ns)], [['2026-10-25', 15], ['2026-10-26', 7]], 'git: lines = added + deleted; lockfiles, binaries, pictures, generated and build-cost files are left out');
+  const pr = '2026-10-25\tMerge pull request #5 from a/b\n2026-10-25\tFix a thing (#6)\n2026-10-25\tplain commit\n2026-10-26\tMerge branch main into x\n';
+  assert.deepStrictEqual([...S.parsePrs(pr)], [['2026-10-25', 2]], 'git: merged PRs are merge commits and squash commits with (#N)');
+  // the chart
+  const svg = lib.chartDaysSvg(rows);
+  assert.strictEqual(svg, lib.chartDaysSvg(rows), 'chart: deterministic');
+  assert.ok(svg.includes('class="s0 est"') && svg.includes('class="s0"') && svg.includes('estimated (spread)') && svg.includes('solid = measured') && svg.includes('weighted 50% by lines changed') && svg.includes('prefers-color-scheme:dark'), 'chart: estimated bars are styled apart, with a legend and the weighting line');
+  assert.ok(svg.includes('estimated') && !svg.includes('NaN'), 'chart: the text alternative names estimated days');
+  assert.ok(!lib.chartDaysSvg(rows.filter((r) => r.estCents === 0)).includes('Estimate:'), 'chart: no estimate line when no day is estimated');
+  assert.ok(lib.chartDaysSvg([]).includes('no days recorded yet'), 'chart: empty renders');
+  // the command: a spread file makes the README note, the daily chart and an unchanged total; a spread that does not add up is refused
+  const t3 = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-usage-spread-'));
+  const Q = (...n) => path.join(t3, ...n);
+  fs.writeFileSync(Q('README.md'), `${lib.BEGIN}\nold\n${lib.END}\n`); fs.writeFileSync(Q('base.json'), JSON.stringify({ version: 1, since: '2026-10-25', through: '2026-10-30', note: 'older work.', models: { 'claude-opus-5-5': 700.01, 'claude-sonnet-5-5': 300.02 }, machines: { linux: 1000.03 } }));
+  fs.writeFileSync(Q('spread.json'), JSON.stringify(sp)); fs.mkdirSync(Q('data'));
+  fs.writeFileSync(Q('data', 'usage-linux.json'), JSON.stringify(meas));
+  const args3 = ['--release', 'v0.1.12', '--date', '2026-10-30', '--baseline', Q('base.json'), '--readme', Q('README.md'), '--history', Q('h.json'), '--badge', Q('b.svg'), '--chart', Q('c.svg'), '--days', Q('d.svg'), '--data', Q('data'), '--spread', Q('spread.json')];
+  const r3 = R2.build(R2.parseArgs(args3, { DURBAR_USAGE_DIR: Q('nodir') }, NOW));
+  assert.ok(r3.text.includes('About US$1,000**') && r3.text.includes('Estimated, not measured: US$') && r3.text.includes('docs/build-cost-days.svg') && r3.text.includes('an assumption') && r3.days.includes('<svg'), 'command: the README names the estimate, links the daily chart and states the model-mix assumption; the total is the baseline');
+  fs.writeFileSync(Q('bad.json'), JSON.stringify({ ...sp, days: sp.days.map((d, i) => (i ? d : { ...d, cents: { 'claude-opus-5-5': d.cents['claude-opus-5-5'] + 500, 'claude-sonnet-5-5': d.cents['claude-sonnet-5-5'] } })) }));
+  assert.throws(() => R2.build(R2.parseArgs(args3.map((a) => (a === Q('spread.json') ? Q('bad.json') : a)), { DURBAR_USAGE_DIR: Q('nodir') }, NOW)), /usage:spread/, 'command: a spread that does not add up to the total is refused');
+  // publish: the receiver folder's file is copied (validated fields only) next to a teammate's committed file
+  fs.mkdirSync(Q('home')); fs.writeFileSync(Q('home', 'usage-mac.json'), JSON.stringify({ ...pv, machine: 'mac', secretExtra: FAKE[0] }));
+  const o4 = R2.parseArgs([...args3.filter((a, i) => args3[i - 1] !== '--data' && a !== '--data'), '--data', Q('data'), '--publish'], { DURBAR_USAGE_DIR: Q('home') }, NOW);
+  R2.publish(o4);
+  assert.deepStrictEqual(fs.readdirSync(Q('data')).sort(), ['usage-linux.json', 'usage-mac.json'], 'publish: one file per machine, committed files kept');
+  assert.ok(!fs.readFileSync(Q('data', 'usage-mac.json'), 'utf8').includes(FAKE[0]), 'publish: unknown keys are not copied');
+  fs.writeFileSync(Q('data', 'usage-bad.json'), JSON.stringify({ version: 1, machine: 'bad', days: { '2026-10-26': { models: { x: { input: -1 } } } } }));
+  assert.throws(() => R2.build(R2.parseArgs(args3, { DURBAR_USAGE_DIR: Q('nodir') }, NOW)), /number is wrong/, 'data: a malformed committed usage file fails the build');
+  fs.rmSync(t3, { recursive: true, force: true });
+
+  // the committed files of THIS repo: every usage file is valid (another side's PR cannot break the release) and the spread adds up
+  const repo = path.join(__dirname, '..');
+  const dataDir = path.join(repo, 'docs', 'build-cost', 'data');
+  const committed = fs.existsSync(dataDir) ? fs.readdirSync(dataDir) : [];
+  for (const n of committed) {
+    assert.ok(/^usage-[A-Za-z0-9_-]+\.json$/.test(n), `repo data: ${n} must be named usage-<machine>.json`);
+    const st = D.readState(path.join(dataDir, n)); // validateState: refuses a bad number, model or machine label
+    assert.strictEqual(`usage-${st.machine}.json`, n, `repo data: ${n} holds its own machine label`);
+  }
+  const realBase = R2.readBaseline(path.join(repo, 'docs', 'build-cost-baseline.json'));
+  const realSpread = R2.readSpread(path.join(repo, 'docs', 'build-cost-spread.json'));
+  const realStates = S.readCommitted(dataDir, D.readState);
+  const spreadSum = realSpread.days.reduce((a, d) => a + Object.values(d.cents).reduce((x, y) => x + y, 0), 0);
+  const measSum = [...S.measuredOfBaseline(realStates, realBase).values()].reduce((a, slot) => a + Object.values(slot).reduce((x, y) => x + y, 0), 0);
+  assert.strictEqual(spreadSum + measSum, Math.round(Object.values(realBase.models).reduce((a, b) => a + b, 0) * 100), 'repo data: the committed spread plus the measured days is the baseline to the cent (run "npm run usage:spread -- --write")');
+  assert.ok(Math.abs(realSpread.days.reduce((a, d) => a + d.weight, 0) - 1) < 1e-8, 'repo data: the committed weights sum to 1');
+  const committedSpread = JSON.parse(fs.readFileSync(path.join(repo, 'docs', 'build-cost-spread.json'), 'utf8'));
+  let haveCommit = false; try { execFileSync('git', ['cat-file', '-e', `${committedSpread.commit}^{commit}`], { cwd: repo, stdio: 'ignore' }); haveCommit = /^[0-9a-f]{40}$/.test(committedSpread.commit); } catch { /* shallow clone: the pinned commit is not here, skipped */ }
+  if (haveCommit) {
+    const again2 = S.computeSpread(realBase, realStates, S.gitStats(committedSpread.commit, realBase.through), committedSpread.ref, committedSpread.commit);
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(again2)), committedSpread, 'repo data: the committed spread is exactly what the pinned git history gives');
+  }
 }
 
 (async () => {
