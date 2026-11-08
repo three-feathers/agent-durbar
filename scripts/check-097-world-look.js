@@ -51,8 +51,9 @@ module.exports = async (ctx) => {
       await H.load({ w: 1440, h: 900, query: { officeview: 'real', ...q }, ready: `!!document.querySelector('#stage .ro .ro-plate')`, settle: false });
       await js(`window.THEME.setTheme(${jsLiteral(lit)})`);
       assert.ok(await H.until(`window.THEME.current().id===${jsLiteral(tid)}&&!!document.querySelector('#stage .ro .ro-plate')`, 15000), `${wid}/${tid}: the theme was applied`);
-      // settled: the plate's computed ink is the same on two reads 100 ms apart
-      assert.ok(await H.until(`(()=>{const e=document.querySelector('.ro-plate');const c=e?getComputedStyle(e).color+'|'+getComputedStyle(document.documentElement).getPropertyValue('--ink'):'';const same=window.__wl===c&&c!=='';window.__wl=c;return same;})()`, 15000), `${wid}/${tid}: the page settled`);
+      // settled: every measured element has the same computed colours, fill, shadow and border on three reads in a row (a theme's button
+      // fades its colours for a moment after the theme is picked)
+      assert.ok(await H.until(`(()=>{const k=['.topbar','.ro-plate','.ro-lplate','.ro-sign','.topbar .btn'].map(s=>{const e=document.querySelector(s);if(!e)return s;const c=getComputedStyle(e);return [c.backgroundColor,c.color,c.boxShadow,c.borderTopColor].join('/');}).join('|');const w=window.__wl||{k:'',n:0};w.n=w.k===k&&k.indexOf('/')>0?w.n+1:0;w.k=k;window.__wl=w;return w.n>=3;})()`, 15000), `${wid}/${tid}: the page settled`);
       out[`${wid}/${tid}`] = await js(PROBE);
       if (tid === 'clean-office') out[`${wid}/leak`] = await leak(out[`${wid}/${tid}`].drop);
     }
