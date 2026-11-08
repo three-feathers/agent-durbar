@@ -125,9 +125,14 @@ for (const name of ['name: Build and test (${{ matrix.os }})', 'name: Office lay
 // the layout steps failed, and the job fails when either part failed and says which
 assert.ok(!ciJobs['package-smoke'] && ci.split('name: Package smoke (unpacked Linux app)').length === 2, 'ci.yml: no separate Package smoke job, one step of that name');
 const officeJob = ciJobs['office-check'];
-assert.ok(/- name: Package smoke \(unpacked Linux app\)\r?\n\s+if: steps\.changes\.outputs\.code == 'true' && always\(\)\r?\n\s+id: package\r?\n\s+run: npm run pack:dir:prebuilt/.test(officeJob), 'FR-194: the office job packs the app with always(), after the layout steps');
+const B = `steps\.build\.outcome == 'success'`;
+assert.ok(new RegExp(`- name: Package smoke \\(unpacked Linux app\\)\\r?\\n\\s+if: !cancelled\\(\\) && steps\\.changes\\.outputs\\.code == 'true' && ${B}\\r?\\n\\s+id: package\\r?\\n\\s+run: npm run pack:dir:prebuilt`).test(officeJob), 'FR-194: the office job packs the app after the layout steps with !cancelled() (not always(): a cancel stops the run), only on a successful build');
+assert.ok(new RegExp(`if: !cancelled\\(\\) && steps\\.changes\\.outputs\\.code == 'true' && ${B}\\r?\\n\\s+id: layout`).test(officeJob), 'FR-194: the layout runs after a failed geometry step (!cancelled()), only on a successful build');
+assert.ok(new RegExp(`id: geometry\\r?\\n\\s+if: [^\\r\\n]*&& ${B}\\r?\\n`).test(officeJob), 'FR-194: geometry runs only on a successful build');
+assert.ok(/id: build\r?\n\s+if: steps\.changes\.outputs\.code == 'true'\r?\n\s+run: npm run build/.test(officeJob) && /id: install\r?\n\s+if: steps\.changes\.outputs\.code == 'true'\r?\n\s+uses: \.\/\.github\/actions\/npm-ci/.test(officeJob), 'FR-194: install and build have ids so the summary can name them');
+assert.strictEqual((officeJob.match(/if: .*always\(\)/g) || []).length, 1, 'FR-194: always() only on the summary step');
 assert.ok(officeJob.indexOf('npm run pack:dir:prebuilt') > officeJob.indexOf('node scripts/check-parallel.js') && officeJob.split('npm run build').length === 2, 'FR-194: one build, then layout, then packaging');
-assert.ok(/steps\.package\.outcome/.test(officeJob) && /steps\.layout\.outcome/.test(officeJob) && /steps\.geometry\.outcome/.test(officeJob) && officeJob.includes('GITHUB_STEP_SUMMARY') && /if: always\(\)\r?\n\s+shell: bash/.test(officeJob), 'FR-194: the last step fails the job and names the failed part from the step outcomes');
+assert.ok(/for part in INSTALL BUILD GEOMETRY LAYOUT PACKAGE/.test(officeJob) && ['install', 'build', 'geometry', 'layout', 'package'].every((x) => officeJob.includes(`steps.${x}.outcome`)) && officeJob.includes('GITHUB_STEP_SUMMARY') && /if: always\(\)\r?\n\s+shell: bash/.test(officeJob), 'FR-194: the last step fails the job and names the failed part (install, build, geometry, layout, package) from the step outcomes');
 const bt = ciJobs['build-test'];
 for (const os of ['ubuntu-latest', 'windows-latest', 'macos-latest']) assert.ok(bt.includes(`- os: ${os}`), `Build and test reports for ${os}`);
 // FR-106: macOS is a report-only Linux job on pull requests and merge queue entries, the real build and test on every other event

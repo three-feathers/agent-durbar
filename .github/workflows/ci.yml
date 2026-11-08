@@ -133,22 +133,25 @@ jobs:
           cache: npm
       - if: steps.changes.outputs.code == 'true'
         run: sudo apt-get update && sudo apt-get install -y xvfb
-      - if: steps.changes.outputs.code == 'true'
+      - id: install
+        if: steps.changes.outputs.code == 'true'
         uses: ./.github/actions/npm-ci
-      - if: steps.changes.outputs.code == 'true'
+      - id: build
+        if: steps.changes.outputs.code == 'true'
         run: npm run build
       - name: Theme geometry
         id: geometry
-        if: steps.changes.outputs.code == 'true' && steps.changes.outputs.themes == 'true'
+        if: steps.changes.outputs.code == 'true' && steps.changes.outputs.themes == 'true' && steps.build.outcome == 'success'
         run: node scripts/check-theme-geometry.js
       - name: Office layout (15 agents, 1440x900 and 1280x800), parts in parallel
-        if: steps.changes.outputs.code == 'true' && (success() || failure())
+        if: !cancelled() && steps.changes.outputs.code == 'true' && steps.build.outcome == 'success'
         id: layout
         run: node scripts/check-parallel.js
-      # FR-194: packaging runs whatever the layout steps did (always()), on the build above. Builds the app with electron-builder and
+      # FR-194: packaging runs whatever the layout steps did (!cancelled(), so a cancelled run stops at once), but only on a build that
+      # succeeded (a failed install or build is reported as that, not as the parts that had nothing to run on). Builds the app with electron-builder and
       # fails if the Copilot runtime is not unpacked (scripts/after-pack.js), then the fuse, signature and name checks.
       - name: Package smoke (unpacked Linux app)
-        if: steps.changes.outputs.code == 'true' && always()
+        if: !cancelled() && steps.changes.outputs.code == 'true' && steps.build.outcome == 'success'
         id: package
         run: npm run pack:dir:prebuilt
       # FR-194: the job fails if either part failed, and the summary says which (outcomes only, no PR text in the shell)
@@ -156,12 +159,14 @@ jobs:
         if: always()
         shell: bash
         env:
+          INSTALL: ${{ steps.install.outcome }}
+          BUILD: ${{ steps.build.outcome }}
           GEOMETRY: ${{ steps.geometry.outcome }}
           LAYOUT: ${{ steps.layout.outcome }}
           PACKAGE: ${{ steps.package.outcome }}
         run: |
           failed=0
-          for part in GEOMETRY LAYOUT PACKAGE; do
+          for part in INSTALL BUILD GEOMETRY LAYOUT PACKAGE; do
             outcome="${!part}"
             echo "$part: ${outcome:-skipped}" | tee -a "$GITHUB_STEP_SUMMARY"
             if [ "$outcome" = failure ] || [ "$outcome" = cancelled ]; then failed=1; echo "FAILED PART: $part" | tee -a "$GITHUB_STEP_SUMMARY"; fi
