@@ -1131,7 +1131,7 @@ app.whenReady().then(() => {
   if (open.length && SIMULATOR) console.warn('[simguard] DURBAR_SIM: DURBAR_OPEN is ignored (it would start real sessions)'); // spec 010 FR-025
   else if (open.length) void addMany(open, validMode(dev.DURBAR_PERM));
   // Dev/test: DURBAR_DRIVER=/path/driver.js runs a UI-driving script against the real window + adapter.
-  // The module exports async (ctx) => void with ctx = { win, addMany, shot(file), js(code), sleep(ms), waitFor(expr, ms) }.
+  // The module exports async (ctx) => void with ctx = { win, addMany, shot(file, { quality }?), js(code), sleep(ms), waitFor(expr, ms) }.
   if (dev.DURBAR_DRIVER) {
     const ctx = {
       get win() {
@@ -1151,7 +1151,8 @@ app.whenReady().then(() => {
       browserTabs: (id: string) => browser.tabsOf(id),
       js: <T>(code: string): Promise<T> => (win as BrowserWindow).webContents.executeJavaScript(code, true) as Promise<T>,
       sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, ms)),
-      shot: (file: string) => captureWithoutRoom((code) => (win as BrowserWindow).webContents.executeJavaScript(code, true), async () => fs.writeFileSync(file, (await (win as BrowserWindow).webContents.capturePage()).toPNG()), dev.DURBAR_DOC_SHOTS === '1'),
+      /** One capture path for every picture (spec 101: the macOS room is closed under `shots:docs`): a `.jpg` file is written as a JPEG, `quality` 1..100 (default 60), anything else as a PNG. */
+      shot: (file: string, o?: { quality?: number }) => captureWithoutRoom((code) => (win as BrowserWindow).webContents.executeJavaScript(code, true), async () => { const img = await (win as BrowserWindow).webContents.capturePage(); fs.writeFileSync(file, /\.jpe?g$/i.test(file) ? img.toJPEG(Math.min(100, Math.max(1, Math.round(o?.quality || 60)))) : img.toPNG()); }, dev.DURBAR_DOC_SHOTS === '1'),
       waitFor: async (expr: string, ms = 120000) => {
         const end = Date.now() + ms;
         while (Date.now() < end) {
