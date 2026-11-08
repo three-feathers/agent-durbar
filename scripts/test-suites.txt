@@ -198,6 +198,7 @@ test:claudecliunit
 test:rules
 test:weeklyretro
 test:docsscripts
+test:citypecheck
 test:worldmatrix
 test:worldzip
 test:worldpack

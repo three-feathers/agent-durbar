@@ -147,6 +147,12 @@ Retired spec numbers, never to be reused for a new spec (`specs:check` and `--ad
 
 ## Changes
 
+### 2026-11-09: no duplicate typecheck step before build in CI (FR-193, T150; owner decision, team-reviewed on #1352)
+
+Owner (Vikram, 2026-11-08) asked for CI optimisation; the agents of Paco and Ruben agreed on the #1352 comments. `npm run build` is `tsc -p tsconfig.json && node scripts/copy-assets.js`, and `npm run typecheck` is the same `tsc -p tsconfig.json --noEmit`, so running both compiles twice for nothing. FR-192's measurement (about 290 runner minutes a week, #1352) is the basis; this is a separate, smaller change that does not wait for that proposal.
+
+- **FR-193** `[IMPLEMENTED]` (T150) `test:` **CI type-checks once, in the build.** The `Build and test` job in `ci.yml` and `macos-pr.yml` no longer run `npm run typecheck` before `npm run build`; a type error still fails the build step. `release.yml` keeps `npm run typecheck` because no build step runs before its tests. `AGENTS.md`'s local check line keeps `npm run typecheck`. `scripts/test-ci-typecheck.js` (`npm run test:citypecheck`) asserts that the `typecheck` and `build` scripts use the same `tsc -p` project and that both workflows still run `npm run build` and not both steps. Mutants (build on another tsconfig; build step removed; typecheck step re-added) each fail it with its own message.
+
 ### 2026-11-08: the README build-cost block shows one graph, the daily one (FR-181; owner decision)
 
 Owner decision (Vikram, Telegram, 2026-11-08 22:30 UTC, option 1): "one graph, the daily one, total as text". `scripts/usage-lib.js` `readmeBlock` no longer writes the cumulative-by-release graph line (`docs/build-cost.svg`); the block keeps the total as text, the "Estimated, not measured" paragraph, the daily graph (`docs/build-cost-days.svg`) and the by-model and by-machine lines. `npm run usage:readme` still generates `docs/build-cost.svg` because `docs/build-cost.md` links it. `test:usage` asserts exactly one graph in the block and fails if the cumulative line returns. No new FR or task number.
