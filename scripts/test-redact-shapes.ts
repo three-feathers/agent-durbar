@@ -357,6 +357,24 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
   const sources = _maskSourcesForTest();
   assert.ok(sources.length > 15, 'the sources are listed');
   for (const src of sources) assert.strictEqual(nested(src), undefined, `nested quantifier in ${src.slice(0, 60)}`);
+  // review of PR 1317, round 2: a lookbehind holds no unbounded quantifier (`*`, `+`, `{n,}`): it is retried at every position and walks back over the whole run, quadratic on some V8 versions
+  // (the unbounded quote run in the lookbehind of `named` took 3.5 s at 8,000 quotes on the reviewer's machine and not on Node 24, so the check is on the source, not on a clock)
+  const lookbehindUnbounded = (src: string): string | undefined => {
+    const flat = src.replace(/\\./g, '__').replace(/\[(?:[^\]\\]|\\.)*\]/g, '_');
+    for (let i = flat.indexOf('(?<'); i >= 0; i = flat.indexOf('(?<', i + 1)) {
+      if (flat[i + 3] !== '=' && flat[i + 3] !== '!') continue;
+      let depth = 0;
+      let j = i;
+      for (; j < flat.length; j++) { if (flat[j] === '(') depth++; else if (flat[j] === ')' && --depth === 0) break; }
+      const inside = flat.slice(i, j + 1);
+      if (/[*+]|\{[0-9]+,\}/.test(inside.replace(/^\(\?<[=!]/, ''))) return src.slice(i, i + 60);
+    }
+    return undefined;
+  };
+  assert.ok(lookbehindUnbounded('a(?<=x*)b'), 'the walker sees an unbounded lookbehind');
+  assert.ok(lookbehindUnbounded('a(?<!(?:x|y)+)b'), 'the walker sees an unbounded repeat of a group in a lookbehind');
+  assert.strictEqual(lookbehindUnbounded('a(?<=[a-z]{1,3}\\*?)b(?<![A-Za-z])'), undefined, 'a bounded lookbehind is fine');
+  for (const src of sources) assert.strictEqual(lookbehindUnbounded(src), undefined, `#1317 round 2: an unbounded quantifier in a lookbehind: ${src.slice(0, 60)}`);
 }
 
 // Linear, part 2 (adversarial runs): the `shapes` part of test-redact-growth.ts.
@@ -586,6 +604,15 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
   hidden(`--password\`\`=${V}`, '#1317 item 2: an empty backtick pair after a name', true);
   hidden(`pa$'ss'word=${V}`, '#1317 item 2: the $ of $\'…\' inside a name', true);
   hidden(`--pa$()$()\`\`ss=${V}`, '#1317 item 2: empty splits mixed', true);
+  // round 2 of the review: a line continuation (backslash and line break) is removed by the shell too; `$( )` and a backtick pair with spaces are empty
+  hidden(`--pass\\\nword=${V}`, '#1317 round 2: a backslash and a line break inside a name', true);
+  hidden(`--pass\\\r\nword=${V}`, '#1317 round 2: a backslash and CRLF inside a name', true);
+  hidden(`--password\\\n=${V}`, '#1317 round 2: a line continuation after a name', true);
+  hidden(`--pa$( )ss=${V}`, '#1317 round 2: $( ) with a space inside a name', true);
+  hidden(`--pa\` \`ss=${V}`, '#1317 round 2: a backtick pair with a space inside a name', true);
+  hidden(`--password$( )=${V}`, '#1317 round 2: $( ) with a space after a name', true);
+  hidden(`--password=$( )${V}`, '#1317 round 2: $( ) with a space before the value', true);
+  assert.strictEqual(redact(`echo --pa$(x)ss=${V}`, {}), `echo --pa$(x)ss=${V}`, '#1317 round 2: a non-empty substitution is a listed gap, not a name');
   // a hidden character in the text makes `maskOutgoing` take its slow path: the head list (`LIVE_HEADS`) must see the same names
   hidden(`--pass'word'''=${V}​`, '#1317 item 2: a zero-width character after the value, quote run before the separator');
   // what stays

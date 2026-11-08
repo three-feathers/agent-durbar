@@ -44,7 +44,7 @@ if (part === 'tokens') {
 }
 }
 
-if (part === 'adversarial' || part === 'adversarial2') {
+if (part === 'adversarial' || part === 'adversarial2' || part === 'masks') {
 // 9. adversarial 1 MB inputs: every pattern stays linear (growth against a same-shape quarter-size input, no fixed time limit)
 {
   const MB = 1_000_000;
@@ -140,6 +140,20 @@ if (part === 'adversarial' || part === 'adversarial2') {
     uRun: '%u003D'.repeat(MB / 6),
     uSk: '%u003Dsk-'.repeat(MB / 9),
     uSlack: '%u003Dxoxb-'.repeat(MB / 11),
+  };
+  // Each case runs in a worker thread that times redact() itself with the thread's own CPU time (`process.threadCpuUsage()`, Node 22
+  // and later; wall time from `hrtime` only on Node 20.19, which has no per-thread CPU time), so a busy runner cannot fail the test;
+  // the growth ratio against a quarter-size input of the same shape is the real ReDoS check (`assertLinearGrowth`, #684), and wall time has a loose backstop (spec 041 `## Changes` 2026-10-22,
+  // review of PR #527). Workers, not child processes: a child fed 1 MB on stdin hung for 30 s twice on a busy macOS runner (#303).
+  // The test stays synchronous: the worker writes the time into shared memory and wakes this thread (Atomics), with a 30 s hang
+  // guard; a worker that does not answer in time is stopped and the case retried once.
+  const mod = require.resolve('../src/shared/redact');
+  const code = `const {workerData:w}=require('worker_threads');const flag=new Int32Array(w.sab,0,1),out=new Float64Array(w.sab,8,2);` +
+    `try{const {redact}=require(w.mod);const tc=typeof process.threadCpuUsage==='function';const w0=process.hrtime.bigint(),c0=tc?process.threadCpuUsage():null;redact(w.input,{});const wall=Number(process.hrtime.bigint()-w0)/1e6;let cpu=wall;if(tc){const d=process.threadCpuUsage(c0);cpu=(d.user+d.system)/1000}out[0]=cpu;out[1]=wall;Atomics.store(flag,0,1)}` +
+    `catch(e){Atomics.store(flag,0,2)}Atomics.notify(flag,0)`;
+  // two suites, each case in one (over 30 s on Windows as one)
+  // the cases of the masking batch of 2026-11-08 (spec 012 FR-173/FR-174, PR 1317) are their own suite, so the two above stay under 30 s
+  const maskCases: Record<string, string> = {
     // spec 012 FR-173/FR-174 (pre-review of PR 1317): the glued-rest scan (a literal mask in the text is enough to start it) and the quote runs inside a secret name
     glueMasks: '[redacted]a-'.repeat(MB / 12),
     glueRun: '[redacted]' + 'a'.repeat(MB),
@@ -157,19 +171,16 @@ if (part === 'adversarial' || part === 'adversarial2') {
     emptySubst: 'pa$()'.repeat(MB / 5),
     emptyBackticks: 'pa``'.repeat(MB / 4),
     glueNames: '[redacted]-dbpassword: "'.repeat(MB / 24),
+    // review of PR 1317, round 2: a bare run with no name (a lookbehind over it was retried at every position), with a separator in it, and line continuations
+    bareQuotes: "'".repeat(MB),
+    bareBackslashes: '\\'.repeat(MB),
+    bareBackticks: '`'.repeat(MB),
+    bareMixedSep: '"\'`\\='.repeat(MB / 5),
+    bareQuotesColon: "':".repeat(MB / 2),
+    lineContinuations: 'pa\\\n'.repeat(MB / 4),
+    spacedSubst: 'pa$(  )'.repeat(MB / 7),
   };
-  // Each case runs in a worker thread that times redact() itself with the thread's own CPU time (`process.threadCpuUsage()`, Node 22
-  // and later; wall time from `hrtime` only on Node 20.19, which has no per-thread CPU time), so a busy runner cannot fail the test;
-  // the growth ratio against a quarter-size input of the same shape is the real ReDoS check (`assertLinearGrowth`, #684), and wall time has a loose backstop (spec 041 `## Changes` 2026-10-22,
-  // review of PR #527). Workers, not child processes: a child fed 1 MB on stdin hung for 30 s twice on a busy macOS runner (#303).
-  // The test stays synchronous: the worker writes the time into shared memory and wakes this thread (Atomics), with a 30 s hang
-  // guard; a worker that does not answer in time is stopped and the case retried once.
-  const mod = require.resolve('../src/shared/redact');
-  const code = `const {workerData:w}=require('worker_threads');const flag=new Int32Array(w.sab,0,1),out=new Float64Array(w.sab,8,2);` +
-    `try{const {redact}=require(w.mod);const tc=typeof process.threadCpuUsage==='function';const w0=process.hrtime.bigint(),c0=tc?process.threadCpuUsage():null;redact(w.input,{});const wall=Number(process.hrtime.bigint()-w0)/1e6;let cpu=wall;if(tc){const d=process.threadCpuUsage(c0);cpu=(d.user+d.system)/1000}out[0]=cpu;out[1]=wall;Atomics.store(flag,0,1)}` +
-    `catch(e){Atomics.store(flag,0,2)}Atomics.notify(flag,0)`;
-  // two suites, each case in one (over 30 s on Windows as one)
-  for (const [k, v] of Object.entries(adversarial).filter((_e, i) => i % 2 === (part === 'adversarial' ? 0 : 1))) assertLinearGrowth(`adversarial ${k}`, (input) => workerRun(`adversarial ${k}`, code, { mod, input }, 30000), v);
+  for (const [k, v] of part === 'masks' ? Object.entries(maskCases) : Object.entries(adversarial).filter((_e, i) => i % 2 === (part === 'adversarial' ? 0 : 1))) assertLinearGrowth(`adversarial ${k}`, (input) => workerRun(`adversarial ${k}`, code, { mod, input }, 30000), v);
 }
 
 }
