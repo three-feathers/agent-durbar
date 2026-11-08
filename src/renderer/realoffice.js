@@ -870,8 +870,17 @@
     const added = fillRows(s.rows, shown);
     /* FR-033: the new line slides in, three steps, transform only; the text is already right, so a dropped frame costs nothing */
     if (added && s.painted && moving() && !s.away) s.lines.animate([{ transform: 'translateY(' + Math.min(added, 2) * f.lh + 'px)' }, { transform: 'none' }], { duration: 180, easing: 'steps(3, end)' });
-    if (data.caret && !s.caret) { s.caret = document.createElement('i'); s.caret.className = 'ro-caret'; s.box.appendChild(s.caret); const m = L.personMotion(id, 'typeA', d.state); setVar(s.caret, '--ro-per', '1.2s'); s.caretMs = m.offset; if (moving()) { clock(s.caret, m.offset); if (CUR && !CUR.pixelArt) onGrid(s.caret); }; }
-    else if (!data.caret && s.caret) { s.caret.remove(); s.caret = null; }
+    /* spec 008 FR-184: one caret element per screen, shown or hidden: a repaint after the throttle (FR-033) changes no node, so a status update adds or removes none (spec 102 FR-229);
+       shown again it is a new animation, so it takes its desk's clock again */
+    if (data.caret) {
+      const fresh = !s.caret;
+      if (fresh) { s.caret = document.createElement('i'); s.caret.className = 'ro-caret'; s.box.appendChild(s.caret); setVar(s.caret, '--ro-per', '1.2s'); }
+      if (fresh || s.caret.hidden) {
+        s.caret.hidden = false;
+        s.caretMs = L.personMotion(id, 'typeA', d.state).offset;
+        if (moving()) { clock(s.caret, s.caretMs); if (CUR && !CUR.pixelArt) onGrid(s.caret); }
+      }
+    } else if (s.caret && !s.caret.hidden) s.caret.hidden = true;
     s.painted = true;
     if (ZOOM && ZOOM.id === id) { const k = ZOOM.kh; fillZoom(); if (k !== ZOOM.kh) placeZoom(); }
   }
