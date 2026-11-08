@@ -611,9 +611,40 @@ module.exports = async (ctx) => {
         await perm(D1, 'di1-' + w, 'Run right after Close');
         await ctx.sleep(1200);
         assert.strictEqual(await panelOpen(), false, `${at}: a new request within COALESCE_MS of a dismissal does not snap it back`);
+        await gateRests(); await ctx.sleep(1500); // past COALESCE_MS and THROTTLE_MS, no new request: the one dropped at the dismissal does not come back
+        await idle(await live(2)); await ctx.sleep(900); // any later change in the office is a look: a kept ask would open it now
+        assert.strictEqual(await panelOpen(), false, `${at}: a request dropped within COALESCE_MS of a dismissal does not reopen the panel later, past both windows`);
         await ctx.sleep(1500); // past COALESCE_MS
         await perm(D2, 'di2-' + w, 'Run a while after Close');
         assert.ok(await until(`!!document.getElementById('needsPanel')`, 6000), `${at}: after the coalescing window a new request reopens it`);
+        await clean();
+      }
+
+      // ---- FR-194, FR-202: a throttled opening is kept and opens by itself when the throttle ends; if its ask was answered elsewhere it opens nothing (round 6) ----
+      {
+        const R1 = await live(0), R2 = await live(1);
+        const openAndClose = async (tag) => { // an automatic opening starts the throttle; Close ends it; then COALESCE_MS passes
+          await gateRests();
+          await perm(R1, `th${tag}a-` + w, 'Run to open it');
+          assert.ok(await until(`!!document.getElementById('needsPanel')`, 6000), `${at}: a new ask opens it (${tag})`);
+          await js(`document.getElementById('inboxClose').click()`);
+          assert.ok(await until(`!document.getElementById('needsPanel')`, 3000), `${at}: closed (${tag})`);
+          await ctx.sleep(2400);
+        };
+        const untilThrottleEnds = async () => ctx.sleep(await js(`Math.max(0,10800-(Date.now()-(window.__addAt||0)))`) + 1500);
+        await openAndClose('A');
+        await perm(R2, 'thAb-' + w, 'Run, then answered elsewhere');
+        await ctx.sleep(800);
+        assert.strictEqual(await panelOpen(), false, `${at}: a second ask inside the throttle does not open it yet`);
+        await idle(R2); // answered elsewhere before the throttle ends
+        await untilThrottleEnds();
+        assert.strictEqual(await panelOpen(), false, `${at}: the throttled ask was answered elsewhere: the end of the throttle opens no empty panel`);
+        await clean();
+        await openAndClose('B');
+        await perm(R2, 'thBb-' + w, 'Run, kept for later');
+        await ctx.sleep(800);
+        assert.strictEqual(await panelOpen(), false, `${at}: a second ask inside the throttle does not open it yet (B)`);
+        assert.ok(await until(`!!document.getElementById('needsPanel')`, 11000), `${at}: nothing else changed: the kept ask opens the panel by itself when the throttle ends`);
         await clean();
       }
 

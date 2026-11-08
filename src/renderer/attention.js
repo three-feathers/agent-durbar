@@ -7,6 +7,7 @@
   'use strict';
   const CUT=typeof module==='object'&&module.exports?require('./cuttext.js'):self.DurbarCutText;
   const APP='Agent Durbar';
+  const MONO=()=>(typeof performance!=='undefined'&&performance&&typeof performance.now==='function')?performance.now():Date.now(); /* a clock that never goes back: a wall-clock change must not stop openings (review of #1273) */
   const COALESCE_MS=2000;   /* items that arrive within this long share one notification */
   const THROTTLE_MS=10000;  /* at most one notification this often */
   const BODY_MAX=80;
@@ -42,7 +43,7 @@
        new; before `armed` (startup) every key is only remembered. An item that leaves the list leaves the pending batch too; focus drops it.
      dueAt(): when the batch may be shown (null = nothing pending). take(): the notification {title, body, id} when due, else null. */
   function createNotifier(o){
-    const now=(o&&o.now)||(()=>Date.now()), coalesce=(o&&o.coalesceMs)||COALESCE_MS, throttle=(o&&o.throttleMs)||THROTTLE_MS;
+    const now=(o&&o.now)||MONO, coalesce=(o&&o.coalesceMs)||COALESCE_MS, throttle=(o&&o.throttleMs)||THROTTLE_MS;
     let known=new Set(), batch=[], batchAt=0, last=-Infinity;
     return {
       observe(items,f){
@@ -73,7 +74,7 @@
      card-less key whose agent left that state, is forgotten; an error is forgotten only after a full THROTTLE_MS out of error (a retry loop opens once).
      Before `armed` everything is only remembered. observe() returns {fresh, startup}: startup is true once, on the first armed look with anything waiting. */
   function createArrivals(o){
-    const now=(o&&o.now)||(()=>Date.now()), throttle=(o&&o.throttleMs)||THROTTLE_MS;
+    const now=(o&&o.now)||MONO, throttle=(o&&o.throttleMs)||THROTTLE_MS;
     const known=new Map(); let wasArmed=false;
     return {
       observe(items,f){
@@ -106,7 +107,7 @@
      opens once when the guard clears; a request within COALESCE_MS of a dismissal does not snap it back, and it opens at most once per THROTTLE_MS.
      App start is not throttled or coalesced (the owner wants the list) but is held like any opening. */
   function createDoorGate(o){
-    const now=(o&&o.now)||(()=>Date.now()), coalesce=(o&&o.coalesceMs)||COALESCE_MS, throttle=(o&&o.throttleMs)||THROTTLE_MS;
+    const now=(o&&o.now)||MONO, coalesce=(o&&o.coalesceMs)||COALESCE_MS, throttle=(o&&o.throttleMs)||THROTTLE_MS;
     let pending=0, start=false, lastDismiss=-Infinity, lastOpen=-Infinity;
     return {
       arrive(n){if(n>0)pending+=n;},
@@ -115,6 +116,9 @@
       ruling(s){
         const st=s||{};
         if(st.open){pending=0;start=false;return 'none';}
+        /* what arrived but no longer waits (answered elsewhere) opens nothing: an empty panel that says All clear is not worth opening */
+        if(pending&&typeof st.waiting==='number'&&st.waiting<=0)pending=0;
+        if(start&&typeof st.any==='number'&&st.any<=0)start=false;
         if(!pending&&!start)return 'none';
         if(st.held)return 'hold';
         const t=now();
@@ -123,6 +127,7 @@
         if(t-lastOpen<throttle)return 'none'; /* FR-194: at most one opening per THROTTLE_MS; what is pending is kept and opens, once, at the next look after it (waitMs) */
         pending=0;lastOpen=t;return 'open';
       },
+      isPending(){return pending>0||start;},
       waitMs(){ /* how long until a pending opening may happen (0 when nothing is pending or the throttle has run out) */
         if(!pending)return 0;
         return Math.max(0,throttle-(now()-lastOpen));

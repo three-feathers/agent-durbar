@@ -4240,6 +4240,7 @@ function announce(text){const el=$('srAnnounce');if(!el||!text)return;clearTimeo
    labelled region; fixed on top of the room, so it takes no layout space. Rows are repainted whole for now (keyed rows are T200). ---- */
 const DOOR_ARR=ATT.createArrivals(), DOOR_GATE=ATT.createDoorGate();
 let DOOR_RETRY=0;
+const DOOR_PENDK=new Set(); /* request keys that arrived and have not been shown yet */
 let DOOR_RETURN=false, DOOR_CLEAR=0, DOOR_OPEN_AT=0, DOOR_PTR=null;
 const RISE_GUARD_MS=ATT.RISE_GUARD_MS, DOOR_GUARD=ATT.createRiseGuard(); /* FR-198: no press before this long after the panel opened or a row moved under the pointer (attention.js; its memory is by agent and request) */
 document.addEventListener('pointermove',e=>{DOOR_PTR={x:e.clientX,y:e.clientY};},{passive:true});
@@ -4278,10 +4279,12 @@ function doorItems(list){
 const doorSig=list=>list.map(a=>{const c=(a.live||chats[a.id])?pendingCardOf(a):null;return a.id+'/'+(c?reqOf(c):'')+'/'+vis(a);}).join('|');
 function doorSync(list){
   const open=!!$('needsPanel');
-  const r=DOOR_ARR.observe(doorItems(list),{armed:ATT_ARMED,isPaused:id=>{const a=byId(id);return !!a&&!!a.paused;}});
+  const items=doorItems(list), r=DOOR_ARR.observe(items,{armed:ATT_ARMED,isPaused:id=>{const a=byId(id);return !!a&&!!a.paused;}});
   if(r.fresh.length)DOOR_GATE.arrive(r.fresh.length);
+  {const here=new Set(items.map(x=>x.key));for(const x of r.fresh)DOOR_PENDK.add(x.key);for(const k of [...DOOR_PENDK])if(!here.has(k))DOOR_PENDK.delete(k);} /* the new asks that still wait: one answered elsewhere before the opening opens nothing */
   if(r.startup)DOOR_GATE.startup();
-  const d=DOOR_GATE.ruling({open,held:doorHeld()});
+  const d=DOOR_GATE.ruling({open,held:doorHeld(),waiting:DOOR_PENDK.size,any:list.length});
+  if(!DOOR_GATE.isPending())DOOR_PENDK.clear();
   clearTimeout(DOOR_RETRY);DOOR_RETRY=0;{const w=DOOR_GATE.waitMs();if(w>0)DOOR_RETRY=setTimeout(()=>{DOOR_RETRY=0;doorSync(needsMeOrder());},w+60);} /* a throttled opening is kept: look again when the throttle ends */
   if(d==='open'||d==='startup'){openDoor(null,true,d==='startup',list.length);return;}
   const p=$('needsPanel'); if(p){doorPlace(p);if(p.dataset.sig!==doorSig(list))doorRepaint();}
