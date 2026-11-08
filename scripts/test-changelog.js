@@ -17,6 +17,18 @@ const { execFileSync } = require('child_process');
 const cl = require('./changelog.js');
 const rn = require('./release-notes.js');
 
+// spec 012 FR-166 (#1093): every folder made here is removed when the process exits (also a failed assert), with the files made beside it
+const madeTmp = [];
+function mkTmp(prefix) {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  madeTmp.push(d);
+  return d;
+}
+process.on('exit', () => {
+  for (const d of madeTmp) for (const p of [d, `${d}-notes.md`, `${d}-ttitle.txt`, `${d}-summary.md`]) { try { fs.rmSync(p, { recursive: true, force: true }); } catch (_) { /* the OS cleans its temp folder */ } }
+});
+
+
 const RELEASED = [
   '## v0.1.0-alpha.10 ([pre-release](https://example.invalid/a10), 2026-10-21)',
   '',
@@ -32,7 +44,7 @@ const RELEASED = [
 const head = (unreleased) => `# Changelog\n\nIntro paragraph.\n\n## Unreleased (on \`main\`, after the alpha.10 tag)\n\n${unreleased}${unreleased ? '\n\n' : ''}`;
 
 function repo(unreleased, fragments = {}) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-changelog-'));
+  const dir = mkTmp('durbar-changelog-');
   fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), head(unreleased) + RELEASED);
   fs.mkdirSync(path.join(dir, 'changelog.d'));
   fs.writeFileSync(path.join(dir, 'changelog.d', 'README.md'), '# not a fragment\n\nprose\n');
@@ -51,6 +63,80 @@ assert.match(cl.parseFragment('Prose line\n').errors[0], /starts with "- "/);
 assert.match(cl.parseFragment('  indented first\n').errors[0], /must follow/);
 assert.ok(cl.parseFragment('- x --!> y\n').errors.some((e) => /HTML comments/.test(e)), 'the --!> comment end too');
 assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML comments/.test(e)), 'comments refused (they could hide the cut-over marker)');
+
+// spec 008 FR-173: the Highlight: and Scene: fields, at the end of a fragment, dropped from the folded text; a fragment without them is fine
+{
+  const sc = { scenes: ['crews', 'mcp'] };
+  const f = cl.parseFragment('- **Crews** (spec 077): more.\n  Continued.\n  Highlight: **Four new crews**: Settings, Characters.\n  Scene: crews\n', sc);
+  assert.deepStrictEqual(f.errors, []);
+  assert.deepStrictEqual(f.bullets, ['- **Crews** (spec 077): more.\n  Continued.'], 'the fields are not part of the bullet');
+  assert.deepStrictEqual(f.fields, { highlight: '**Four new crews**: Settings, Characters.', scene: 'crews' });
+  assert.deepStrictEqual(cl.parseFragment('- Plain.\n', sc).fields, {}, 'no fields: fine');
+  assert.deepStrictEqual(cl.parseFragment('- A\n  Note: prose that looks like a field\n', sc).errors, [], 'only Highlight and Scene are fields');
+  assert.deepStrictEqual(cl.parseFragment('- A\n  Note: x\n', sc).bullets, ['- A\n  Note: x']);
+  const bad = (t, re, why) => assert.ok(cl.parseFragment(t, sc).errors.some((e) => re.test(e)), `${why}: ${JSON.stringify(cl.parseFragment(t, sc).errors)}`);
+  bad('- A\n  Highlight: x\n  Highlight: y\n', /a second "Highlight:"/, 'two highlights');
+  bad('- A\n  Scene: crews\n  Scene: mcp\n', /a second "Scene:"/, 'two scenes');
+  bad('- A\n  Highlight: ' + 'x'.repeat(101) + '\n', /101 characters/, 'a long highlight');
+  bad('- A\n  Highlight:   \n', /needs a value/, 'an empty highlight');
+  // review on #1083: a Highlight is pasted unattended into public notes, so only plain text passes (an allow-list)
+  for (const [why, v, re] of [
+    ['a link', '[click](https://evil.example/x)', /not "\[" "\]" "\(" "\)"/],
+    ['an image beacon', '![i](https://evil.example/x.png)', /not "!"/],
+    ['@everyone', 'hello @everyone', /not "@"/],
+    ['a mention', 'thanks @octocat', /not "@"/],
+    ['an email (autolinked)', 'mail a@b.example', /not "@"/],
+    ['an issue reference', 'fix #1 closes #2', /not "#"/],
+    ['a GH- reference', 'fixes GH-12 now', /issue or commit reference/],
+    ['a commit hash', 'reverts 3aa0b48', /issue or commit reference/],
+    ['a bidi override', 'safe‮exe.txt', /U\+202E/],
+    ['a zero-width space', 'ever​yone', /U\+200B/],
+    ['a soft hyphen', 'a­b', /U\+00AD/],
+    ['a no-break space', 'a b', /U\+00A0/],
+    ['a control character', 'a\u0007b', /U\+0007/],
+    ['backticks', '```js', /not "`"/],
+    ['a code span', 'run `rm`', /not "`"/],
+    ['a table pipe', 'a | b', /not "\|"/],
+    ['HTML', 'a <img src=x> b', /not "<" "=" ">"/],
+    ['an entity', 'a &lt; b', /not "&"/],
+    ['a URL', 'see https://evil.example', /web address/],
+    ['a bare www address', 'see www.evil.example', /web address/],
+    ['underscore emphasis', '_x_', /not "_"/],
+    ['a strike', '~~x~~', /not "~"/],
+    ['a lone star', '*x*', /balanced \*\*bold\*\*/],
+    ['unbalanced bold', '**x', /balanced \*\*bold\*\*/],
+    ['triple stars', '***x***', /balanced \*\*bold\*\*/],
+    ['a backslash escape', 'a \\[b', /not "\\\\"/],
+  ]) bad(`- A\n  Highlight: ${v}\n`, re, `highlight refuses ${why}`);
+  for (const v of ['**Four new character crews**: Pirate, Monster, Royal and Animal Rebels.', 'MCP cost: a warning above 15 % or 30 %.', "Floors count up; PageUp goes up, not down?", 'Clean Office/Retro Pixel + less CPU', 'Évite les accès: ça marche'])
+    assert.deepStrictEqual(cl.parseFragment(`- A\n  Highlight: ${v}\n`, sc).errors, [], `plain text passes: ${v}`);
+  bad('- A\n  Scene: intro\n', /not in the clip's scene catalogue/, 'a scene outside the catalogue');
+  bad('- A\n  Scene: toString\n', /not in the clip's scene catalogue/, 'a prototype name');
+  bad('- A\n  Highlight: x\n- B\n', /go at the end/, 'a bullet after the fields');
+  bad('- A\n  Highlight: x\n  more text\n', /go at the end/, 'prose after the fields');
+  bad('Highlight: x\n', /starts with "- "/, 'a field without a bullet');
+  assert.deepStrictEqual(cl.parseFragment('- A\n  Highlight: x\n\n  Scene: mcp\n', sc).errors, [], 'a blank line between fields');
+  assert.ok(cl.sceneIds().includes('crews') && !cl.sceneIds().includes('intro') && !cl.sceneIds().includes('outro'), 'the real catalogue, without the cards');
+  // the order: with a Scene first, then file-name order; at most five; none -> no block
+  const fr = (file, highlight, scene) => ({ file, fields: { ...(highlight ? { highlight } : {}), ...(scene ? { scene } : {}) } });
+  const list = cl.highlights([fr('a.md', 'A'), fr('b.md', 'B', 'mcp'), fr('c.md'), fr('d.md', 'D'), fr('e.md', 'E', 'crews'), fr('f.md', 'F'), fr('g.md', 'G')]);
+  assert.deepStrictEqual(list.map((h) => h.text), ['B', 'E', 'A', 'D', 'F'], 'scenes first, then file order, five at most');
+  assert.deepStrictEqual(list.map((h) => h.scene), ['mcp', 'crews', null, null, null]);
+  assert.strictEqual(cl.highlightsBlock(list), '### Highlights\n\n- B\n- E\n- A\n- D\n- F');
+  assert.strictEqual(cl.highlightsBlock(cl.highlights([fr('a.md'), fr('b.md', null, 'mcp')])), '', 'no Highlight: no block (never invented)');
+  // the fold drops the fields: a throwaway repository
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'cl-fields-'));
+  try {
+    fs.mkdirSync(path.join(d, 'changelog.d'));
+    fs.writeFileSync(path.join(d, 'CHANGELOG.md'), '# Changelog\n\n## Unreleased (on `main`, after the alpha.1 tag)\n\n');
+    fs.writeFileSync(path.join(d, 'changelog.d', 'x.md'), '- **New crews**: four.\n  Highlight: **Four new crews**.\n  Scene: crews\n');
+    fs.writeFileSync(path.join(d, 'changelog.d', 'y.md'), '- Plain fix.\n');
+    assert.deepStrictEqual(cl.check(d).errors, []);
+    const r = cl.build(d, { release: 'v0.1.0-alpha.2 (2026-11-03)', dryRun: true });
+    assert.ok(r.section.includes('- **New crews**: four.') && r.section.includes('- Plain fix.'));
+    assert.ok(!/Highlight:|Scene:/.test(r.text), 'no field line reaches CHANGELOG.md or the notes');
+  } finally { fs.rmSync(d, { recursive: true, force: true }); }
+}
 
 // --- check ---
 {
@@ -170,7 +256,7 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
 // --- spec 008 FR-117..FR-119: scripts/release-notes.js on throwaway git repositories ---
 {
   // no user or system git config (signing, hooks, autocrlf): an empty file, which works on Windows too
-  const emptyConfig = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-gitconfig-')), 'config');
+  const emptyConfig = path.join(mkTmp('durbar-gitconfig-'), 'config');
   fs.writeFileSync(emptyConfig, '');
   const gitEnv = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: emptyConfig, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.invalid', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.invalid', GIT_AUTHOR_DATE: '2026-10-23T10:00:00Z', GIT_COMMITTER_DATE: '2026-10-23T10:00:00Z' };
   const g = (d, ...args) => execFileSync('git', args, { cwd: d, env: gitEnv, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -190,6 +276,19 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
     return d;
   };
   const opts = { tag: 'v0.1.0-alpha.11', repo: 'three-feathers/agent-durbar', mainRef: 'refs/heads/main' };
+  {
+    // spec 008 FR-173 (T125): the Highlights block sits under the heading, above the list, from the tagged commit's fragments
+    const d = gitRepo();
+    fs.writeFileSync(path.join(d, 'changelog.d', 'a.md'), '- Change A.\n  Highlight: **A** is new.\n');
+    fs.writeFileSync(path.join(d, 'changelog.d', 'b.md'), '- Change B.\n  Highlight: **B** too.\n  Scene: crews\n');
+    commit(d, 'fields');
+    g(d, 'tag', '-a', '-m', 'alpha.11', 'v0.1.0-alpha.11');
+    const r = rn.releaseNotes(d, opts);
+    const h = r.heading;
+    assert.strictEqual(r.notes, `${rn.PREAMBLE}\n\n## ${h}\n\n### Highlights\n\n- **B** too.\n- **A** is new.\n\n### All changes\n\n- Change A.\n- Change B.\n`, 'Highlights (Scene first) above the whole list; the fields are not in the list');
+    assert.ok(r.highlights.startsWith('### Highlights'), 'the block is also returned on its own');
+    // a section already in CHANGELOG.md (folded) gets no block, and no fragment with a Highlight: no block (covered by the exact notes above)
+  }
   {
     const d = gitRepo();
     g(d, 'tag', '-a', '-m', 'alpha.11', 'v0.1.0-alpha.11');
@@ -343,7 +442,7 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
     assert.ok(sum.includes('gh release edit v0.1.0 --draft=false --latest'), 'the summary gives the owner the publish command');
     assert.ok(!rn.summary({ kind: 'release', heading: 'h', previous: 'p', source: 'fragments', commits: 0 }, 'v0.1.0-rc.1').includes('gh release edit'), 'no such command for a pre-release');
     // the CLI writes what the workflow reads
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-out-'));
+    const tmp = mkTmp('durbar-out-');
     execFileSync(process.execPath, [path.join(__dirname, 'release-notes.js'), '--root', d, '--tag', 'v0.1.0', '--repo', opts.repo, '--main-ref', 'refs/heads/main', '--out', path.join(tmp, 'n.md'), '--github-output', path.join(tmp, 'out')], { env: gitEnv, stdio: 'ignore' });
     assert.strictEqual(fs.readFileSync(path.join(tmp, 'out'), 'utf8'), 'prerelease=false\nlatest=true\n', 'the stable tag writes prerelease=false, latest=true');
     // versionsort.suffix=-: the stable tag sorts above its own pre-releases, so the next release's previous is v0.1.0, not alpha.19
@@ -378,9 +477,7 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
     }
     assert.strictEqual(rn.TEST_TAG_RE.exec('v0.1.0-alpha.15-test.3')[1], '0.1.0-alpha.15', 'the base version is the tag without -test.N');
   }
-  if (!process.features.typescript) {
-    console.log('test-changelog: test-build notes skipped (this Node has no type stripping, so src/shared/redact.ts cannot load; CI runs them)');
-  } else {
+  { // spec 104 FR-080: the masker loads on every Node that engines allows (type stripping, else compiled now), so this runs everywhere
     const { redact, cut } = rn.loadRedact();
     const TOKEN = `ghp_${'Ab1'.repeat(12)}`;
     const LONG = `Long subject with ${TOKEN} inside ${'word '.repeat(60)}end`;
@@ -442,13 +539,14 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
       execFileSync(process.execPath, [path.join(__dirname, 'release-notes.js'), '--root', d, '--tag', topts.tag, '--repo', opts.repo, '--main-ref', 'refs/heads/main', '--out', out, '--title-out', title], { env: gitEnv, stdio: 'ignore' });
       assert.strictEqual(fs.readFileSync(out, 'utf8'), r.notes);
       assert.strictEqual(fs.readFileSync(title, 'utf8'), 'Agent Durbar v0.1.0-alpha.11-test.1 (test build)\n');
-      // fail closed: without type stripping redact.ts cannot load, and there are no notes rather than unmasked ones
+      // fail closed: with no way to load redact.ts, there are no notes rather than unmasked ones
       fs.rmSync(out);
       let failed;
       try {
-        execFileSync(process.execPath, ['--no-experimental-strip-types', path.join(__dirname, 'release-notes.js'), '--root', d, '--tag', topts.tag, '--repo', opts.repo, '--main-ref', 'refs/heads/main', '--out', out], { env: gitEnv, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+        // spec 104 FR-080: no type stripping AND no compiler (DURBAR_REDACT_NO_COMPILE=1, as if typescript were not installed): nothing can mask
+        execFileSync(process.execPath, [...(process.features.typescript ? ['--no-experimental-strip-types'] : []), path.join(__dirname, 'release-notes.js'), '--root', d, '--tag', topts.tag, '--repo', opts.repo, '--main-ref', 'refs/heads/main', '--out', out], { env: { ...gitEnv, DURBAR_REDACT_NO_COMPILE: '1' }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
       } catch (e) { failed = e; }
-      assert.ok(failed && failed.status === 1 && /masked with src\/shared\/redact\.ts, which needs Node 22\.18/.test(failed.stderr), 'no redaction: refused');
+      assert.ok(failed && failed.status === 1 && /masked with src\/shared\/redact\.ts, which could not be loaded/.test(failed.stderr), 'no redaction: refused');
       assert.ok(!fs.existsSync(out), 'no redaction: no notes file');
       // the version: package.json must be the tag without -test.N
       g(d, 'tag', '-a', '-m', 'test', 'v0.1.0-alpha.12-test.1');

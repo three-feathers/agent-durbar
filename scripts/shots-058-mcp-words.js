@@ -161,7 +161,7 @@ module.exports = async (ctx) => {
     await openMcp('sim-6');
     n = await row('my-notes');
     assert.strictEqual(n.word, 'Failed', JSON.stringify(n));
-    assert.match(n.hint, /command was not found/);
+    assert.match(n.hint, /Install the command, or put its full path/);
     await js(`document.getElementById('srAnnounce').textContent=''`);
     await js(`document.querySelector('#agMcp li[data-n="github"] button.swt').click()`);
     assert.ok(await until(`(()=>{const li=document.querySelector('#agMcp li[data-n="github"]');return !!li&&(li.querySelector('.mst-w')||{}).textContent==='Off for this session'})()`), 'a switched-off server reads "Off for this session"');
@@ -254,7 +254,7 @@ module.exports = async (ctx) => {
   // ---- review on PR #588: the footer is opaque in every built-in theme ----
   await H.load({ w: 1280, h: 800, ready: 'fit', focus: true });
   const themes = await js(`Object.keys(window.THEME._builtins())`);
-  assert.ok(themes.length >= 6 && themes.includes('clean-office'), `the built-in themes are listed ${JSON.stringify(themes)}`);
+  assert.ok(themes.length >= 2 && themes.includes('clean-office'), `the built-in themes are listed ${JSON.stringify(themes)}`);
   for (const t of themes) {
     await closePanel();
     await js(`window.THEME.setTheme(${jsLiteral(t)})`);

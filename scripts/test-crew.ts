@@ -5,7 +5,7 @@ import * as path from 'path';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const C = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'crew.js')) as {
-  IDS: string[]; PREHISTORIC_IDS: string[]; ALL_IDS: string[]; CREWS: Record<string, string[]>; idsFor: (c: unknown) => string[]; storeKey: (c: unknown) => string; MAX_ENTRIES: number; MAX_ID: number;
+  IDS: string[]; PREHISTORIC_IDS: string[]; PIRATE_IDS: string[]; MONSTER_IDS: string[]; ROYAL_IDS: string[]; REBELS_IDS: string[]; ALL_IDS: string[]; CREWS: Record<string, string[]>; idsFor: (c: unknown) => string[]; storeKey: (c: unknown) => string; MAX_ENTRIES: number; MAX_ID: number;
   seeded: (s: string) => () => number;
   seededRand: (s: string) => number;
   pickCharacter: (id: string, ids: string[], inUse: string[], rand?: (id: string) => number) => string;
@@ -22,20 +22,49 @@ assert.deepStrictEqual(C.IDS, ['punk', 'gamer', 'hacker', 'rocker', 'buzzcut', '
 assert.ok(C.IDS.every((i) => /^[a-z]+(-[a-z]+)?$/.test(i)), 'ids are file-name safe');
 // FR-072 (issue #815): the Prehistoric crew is another list; Cheeky's ids, order and key do not change
 assert.deepStrictEqual(C.PREHISTORIC_IDS, ['youngbeard', 'braids', 'bigbeard', 'ponytail', 'inventor', 'shaman'], 'the 6 Prehistoric characters');
-assert.deepStrictEqual(C.ALL_IDS, [...C.IDS, ...C.PREHISTORIC_IDS]);
+// FR-074 (issue #815): the Pirate crew is a third list
+assert.deepStrictEqual(C.PIRATE_IDS, ['captain', 'eyepatch', 'hook', 'cook', 'privateer', 'cabinboy'], 'the 6 Pirate characters');
+// FR-075 (issue #815): the Monster crew is a fourth list
+assert.deepStrictEqual(C.MONSTER_IDS, ['frankenstein', 'ghost', 'mummy', 'seacreature', 'vampire', 'werewolf'], 'the 6 Monster characters');
+assert.deepStrictEqual(C.ALL_IDS, [...C.IDS, ...C.PREHISTORIC_IDS, ...C.PIRATE_IDS, ...C.MONSTER_IDS, ...C.ROYAL_IDS, ...C.REBELS_IDS]);
 assert.strictEqual(new Set(C.ALL_IDS).size, C.ALL_IDS.length, 'an id is in one crew only, so one saved map can never confuse two crews');
 assert.ok(C.PREHISTORIC_IDS.every((i) => /^[a-z]+$/.test(i)), 'Prehistoric ids are file-name safe');
 assert.deepStrictEqual(C.idsFor('cheeky'), C.IDS);
 assert.deepStrictEqual(C.idsFor('prehistoric'), C.PREHISTORIC_IDS);
+assert.deepStrictEqual(C.idsFor('pirate'), C.PIRATE_IDS);
+assert.deepStrictEqual(C.idsFor('monster'), C.MONSTER_IDS);
+// FR-076 (issue #815): the Royal crew is a fifth list
+assert.deepStrictEqual(C.ROYAL_IDS, ['alchemist', 'princess', 'knight', 'jester', 'queen', 'king'], 'the 6 Royal characters');
+assert.deepStrictEqual(C.idsFor('royal'), C.ROYAL_IDS);
+assert.deepStrictEqual(Object.keys(C.CREWS), ['cheeky', 'prehistoric', 'pirate', 'monster', 'royal', 'rebels'], 'Animal Rebels is a crew');
+assert.ok(C.ROYAL_IDS.every((i) => /^[a-z]+$/.test(i)), 'Royal ids are file-name safe');
+// FR-077 (issue #815): the Animal Rebels crew is a sixth list
+assert.deepStrictEqual(C.REBELS_IDS, ['bulldog', 'fox', 'owl', 'panda', 'punkcat', 'raccoon'], 'the 6 Animal Rebels characters');
+assert.deepStrictEqual(C.idsFor('rebels'), C.REBELS_IDS);
+assert.ok(C.REBELS_IDS.every((i) => /^[a-z]+$/.test(i)), 'Animal Rebels ids are file-name safe');
+assert.ok(C.MONSTER_IDS.every((i) => /^[a-z]+$/.test(i)), 'Monster ids are file-name safe');
+assert.ok(C.PIRATE_IDS.every((i) => /^[a-z]+$/.test(i)), 'Pirate ids are file-name safe');
 for (const v of ['theme', 'minimalist', 'nope', undefined, null, '__proto__', 'constructor', 'toString']) assert.deepStrictEqual(C.idsFor(v), C.IDS, 'any other value: the Cheeky crew, as before (' + String(v) + ')');
 assert.strictEqual(C.storeKey('cheeky'), 'durbar.crew', "Cheeky's saved choices keep their key");
 assert.strictEqual(C.storeKey('theme'), 'durbar.crew');
 assert.strictEqual(C.storeKey('prehistoric'), 'durbar.crew.prehistoric', 'each crew has its own saved map');
+assert.strictEqual(C.storeKey('pirate'), 'durbar.crew.pirate', 'and so has Pirate');
+assert.strictEqual(C.storeKey('monster'), 'durbar.crew.monster', 'and so has Monster');
+assert.strictEqual(C.storeKey('royal'), 'durbar.crew.royal', 'and so has Royal');
+assert.strictEqual(C.storeKey('rebels'), 'durbar.crew.rebels', 'and so has Animal Rebels');
+assert.deepStrictEqual(C.loadCrew({ s1: 'fox', s2: 'king' }, C.REBELS_IDS), { s1: 'fox' }, "an Animal Rebels load drops the other crews' ids");
+assert.deepStrictEqual(C.loadCrew({ s1: 'king', s2: 'ghost' }, C.ROYAL_IDS), { s1: 'king' }, "a Royal load drops the other crews' ids");
+assert.deepStrictEqual(C.loadCrew({ s1: 'ghost', s2: 'hook' }, C.MONSTER_IDS), { s1: 'ghost' }, "a Monster load drops the other crews' ids");
+assert.deepStrictEqual(C.loadCrew({ s1: 'hook', s2: 'braids' }, C.PIRATE_IDS), { s1: 'hook' }, "a Pirate load drops the other crews' ids");
 assert.deepStrictEqual(C.loadCrew({ s1: 'braids', s2: 'punk' }, C.PREHISTORIC_IDS), { s1: 'braids' }, "a Prehistoric load drops Cheeky's ids");
 assert.deepStrictEqual(C.loadCrew({ s1: 'braids', s2: 'punk' }), { s2: 'punk' }, "a Cheeky load (the default list) drops Prehistoric's ids");
 {
   const six = Array.from({ length: 6 }, (_, i) => 's' + i);
   assert.strictEqual(new Set(Object.values(C.assignCrew({}, six, C.PREHISTORIC_IDS, (id) => C.seededRand(id)))).size, 6, 'six sessions wear the six Prehistoric characters, no twin');
+  assert.strictEqual(new Set(Object.values(C.assignCrew({}, six, C.PIRATE_IDS, (id) => C.seededRand(id)))).size, 6, 'six sessions wear the six Pirate characters, no twin');
+  assert.strictEqual(new Set(Object.values(C.assignCrew({}, six, C.MONSTER_IDS, (id) => C.seededRand(id)))).size, 6, 'six sessions wear the six Monster characters, no twin');
+  assert.strictEqual(new Set(Object.values(C.assignCrew({}, six, C.ROYAL_IDS, (id) => C.seededRand(id)))).size, 6, 'six sessions wear the six Royal characters, no twin');
+  assert.strictEqual(new Set(Object.values(C.assignCrew({}, six, C.REBELS_IDS, (id) => C.seededRand(id)))).size, 6, 'six sessions wear the six Animal Rebels characters, no twin');
 }
 
 // ---- seeded: repeatable, in [0,1), and different ids differ ----
@@ -119,6 +148,18 @@ assert.strictEqual(C.file('braids', 'working'), 'crew/art/prehistoric-braids-wor
 assert.strictEqual(C.files(C.PREHISTORIC_IDS).length, 18, '6 characters x 3 poses');
 assert.ok(C.files(C.PREHISTORIC_IDS).every((f) => /^crew\/art\/prehistoric-[a-z]+-(working|waiting|resting)\.webp$/.test(f)));
 assert.ok(C.files(C.PREHISTORIC_IDS).every((f) => !C.files().includes(f)), 'no file name is in both crews');
+assert.strictEqual(C.file('hook', 'resting'), 'crew/art/pirate-hook-resting.webp', 'a Pirate picture has its own prefix');
+assert.strictEqual(C.files(C.PIRATE_IDS).length, 18, '6 characters x 3 poses');
+assert.strictEqual(C.file('ghost', 'resting'), 'crew/art/monster-ghost-resting.webp', 'a Monster picture has its own prefix');
+assert.strictEqual(C.files(C.MONSTER_IDS).length, 18, '6 characters x 3 poses');
+assert.ok(C.files(C.MONSTER_IDS).every((f) => /^crew\/art\/monster-[a-z]+-(working|waiting|resting)\.webp$/.test(f) && !C.files().includes(f) && !C.files(C.PIRATE_IDS).includes(f)), 'Monster files are in no other crew');
+assert.strictEqual(C.file('king', 'resting'), 'crew/art/royal-king-resting.webp', 'a Royal picture has its own prefix');
+assert.strictEqual(C.files(C.ROYAL_IDS).length, 18, '6 characters x 3 poses');
+assert.ok(C.files(C.ROYAL_IDS).every((f) => /^crew\/art\/royal-[a-z]+-(working|waiting|resting)\.webp$/.test(f) && !C.files().includes(f) && !C.files(C.MONSTER_IDS).includes(f)), 'Royal files are in no other crew');
+assert.strictEqual(C.file('fox', 'resting'), 'crew/art/rebels-fox-resting.webp', 'an Animal Rebels picture has its own prefix');
+assert.strictEqual(C.files(C.REBELS_IDS).length, 18, '6 characters x 3 poses');
+assert.ok(C.files(C.REBELS_IDS).every((f) => /^crew\/art\/rebels-[a-z]+-(working|waiting|resting)\.webp$/.test(f) && !C.files().includes(f) && !C.files(C.ROYAL_IDS).includes(f)), 'Animal Rebels files are in no other crew');
+assert.ok(C.files(C.PIRATE_IDS).every((f) => /^crew\/art\/pirate-[a-z]+-(working|waiting|resting)\.webp$/.test(f) && !C.files().includes(f) && !C.files(C.PREHISTORIC_IDS).includes(f)), 'Pirate files are in no other crew');
 assert.ok(C.usable('shaman') && C.usable('punk'), 'a character of either crew can be drawn');
 assert.ok(C.files(['punk']).every((f) => f.startsWith('crew/art/punk-')));
 assert.ok(C.usable('punk') && C.usable('punk', new Set(['gamer'])), 'a known character with no failed picture');
@@ -186,10 +227,10 @@ assert.deepStrictEqual(Object.keys(C.FACE).sort(), [...C.ALL_IDS].sort(), 'a fac
     }
     assert.strictEqual(used.size, ids.length, 'every ' + choice + ' character is worn by some demo name');
   }
-  assert.deepStrictEqual([S.NAMES.Ada, S.NAMES.Hugo], [['gamer', 'braids'], ['bookworm', 'inventor']], 'the anchors the driver checks: Ada a woman\'s character, Hugo a man\'s');
+  assert.deepStrictEqual([S.NAMES.Ada, S.NAMES.Hugo], [['gamer', 'braids', 'captain', 'werewolf', 'knight', 'fox'], ['bookworm', 'inventor', 'cook', 'vampire', 'alchemist', 'owl']], 'the anchors the driver checks: Ada a woman\'s character, Hugo a man\'s');
   assert.deepStrictEqual(Object.keys(S.NAMES).sort(), [...demoNames].sort(), 'the table has a row for every demo name and no other');
   // the table never uses a character from another crew, and the theme\'s own / an unknown value draw the Cheeky crew like crew.js
-  assert.strictEqual(S.keyFor('theme'), 'cheeky'); assert.strictEqual(S.keyFor('prehistoric'), 'prehistoric');
+  assert.strictEqual(S.keyFor('theme'), 'cheeky'); assert.strictEqual(S.keyFor('prehistoric'), 'prehistoric'); assert.strictEqual(S.keyFor('pirate'), 'pirate'); assert.strictEqual(S.keyFor('monster'), 'monster'); assert.strictEqual(S.keyFor('royal'), 'royal'); assert.strictEqual(S.keyFor('rebels'), 'rebels');
   assert.strictEqual(S.characterFor('cheeky', 'Ada', C.PREHISTORIC_IDS), '', 'an id that is not in the crew is refused');
   assert.strictEqual(S.characterFor('cheeky', 'Task: fix the build'), '', 'a name without a row (a real session) gets nothing');
   assert.strictEqual(S.characterFor('cheeky', '__proto__'), '', 'only own rows count');
@@ -197,6 +238,10 @@ assert.deepStrictEqual(Object.keys(C.FACE).sort(), [...C.ALL_IDS].sort(), 'a fac
   const agents = [{ id: 'sim-1', baseName: 'Ada', name: 'a very long alias' }, { id: 'sim-2', name: 'Hugo' }, { id: 'h1', parent: 'sim-1', name: 'Ada' }, { id: 'r1', name: 'Fix the build' }];
   assert.deepStrictEqual(S.seed('cheeky', agents, C.IDS), { 'sim-1': S.NAMES.Ada[0], 'sim-2': S.NAMES.Hugo[0] }, 'helpers and unknown names are not seeded');
   assert.deepStrictEqual(S.seed('prehistoric', agents, C.PREHISTORIC_IDS), { 'sim-1': S.NAMES.Ada[1], 'sim-2': S.NAMES.Hugo[1] });
+  assert.deepStrictEqual(S.seed('pirate', agents, C.PIRATE_IDS), { 'sim-1': S.NAMES.Ada[2], 'sim-2': S.NAMES.Hugo[2] });
+  assert.deepStrictEqual(S.seed('monster', agents, C.MONSTER_IDS), { 'sim-1': S.NAMES.Ada[3], 'sim-2': S.NAMES.Hugo[3] });
+  assert.deepStrictEqual(S.seed('royal', agents, C.ROYAL_IDS), { 'sim-1': S.NAMES.Ada[4], 'sim-2': S.NAMES.Hugo[4] });
+  assert.deepStrictEqual(S.seed('rebels', agents, C.REBELS_IDS), { 'sim-1': S.NAMES.Ada[5], 'sim-2': S.NAMES.Hugo[5] });
   assert.deepStrictEqual(S.seed('cheeky', [], C.IDS), {});
   // and the seeded map goes through the same assignCrew as before: the unseeded sessions get a random character, the seeded keep theirs
   const m = C.assignCrew(S.seed('cheeky', agents, C.IDS), ['sim-1', 'sim-2', 'r1'], C.IDS, (id) => C.seededRand(id));

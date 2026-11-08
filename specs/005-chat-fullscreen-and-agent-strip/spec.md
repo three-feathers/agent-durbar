@@ -4,7 +4,7 @@
 group: index
 title: Full-screen chat and agent strip
 status: building
-note: tool-JSON decoder, saved output and masking (T038-T048) not built
+note: rail List view built (R1, FR-216); Plan, rail collapse, density, width (FR-190..FR-208) and T038-T048 not built
 -->
 
 **Feature Branch**: `005-chat-fullscreen-and-agent-strip` (reverse-engineered; milestone 6, built on the chat panel of milestones 1-5)
@@ -28,15 +28,15 @@ I click an agent; the chat fills the window. I see its status, task line, usage,
 
 ---
 
-### User Story 2 - Keep the overview in a strip (Priority: P1)
+### User Story 2 - Keep the overview in a rail (Priority: P1)
 
-A 64px strip at the top shows every other visible agent (avatar, name, status dot and word, a short intent), scrolls horizontally, lists waiting and error agents first and highlights them. Clicking one switches the chat.
+*(Changed 2026-11-03 by PR R1, FR-190, FR-194, FR-216: the strip at the top became the rail on the left.)* A 220 px rail on the left of the open chat shows every visible main agent by folder (heading and count; a folder collapses), whoever needs you first in a taller, tinted row with how long and what for; the others in a plain row (avatar, name, status dot and word). Clicking a row switches the chat.
 
 **Acceptance Scenarios**:
 
-1. **Given** 15 agents, **When** a chat is open, **Then** the strip lists all 15 (the open one marked current). *(re-verified 2026-10-16: 15 strip items at both sizes)*
-2. **Given** an agent starts waiting for me while I chat with another, **When** its status changes, **Then** it moves to the front of the strip and is highlighted. *(sim:)*
-3. **Given** I switch agents, **When** the strip re-renders, **Then** its scroll position is kept and the current item is scrolled into view. *(read:)*
+1. **Given** 15 agents, **When** a chat is open, **Then** the rail lists all 15 (the open one marked current). *(sim: `check-rail`, both sizes)*
+2. **Given** an agent starts waiting for me while I chat with another, **When** its status changes, **Then** it becomes a tall row at the top of its folder and its folder moves up among the folders. *(sim: `check-rail`)*
+3. **Given** I switch agents, **When** the rail re-renders, **Then** its scroll position is kept and the current row is scrolled into view. *(read:)*
 
 ---
 
@@ -53,7 +53,7 @@ The turn shows a collapsible Thinking block (live counter "Waiting for the model
 
 ### User Story 4 - Stop, End, New session, Open in VS Code (Priority: P2)
 
-Header actions: **Stop** (interrupt the turn; the agent stays ready), **End session** (frees it; sending resumes it), **+ New session** (feature 006), **Open in VS Code** (feature 009), **Copy resume command** (`copilot --resume <id>`).
+Header actions: **Stop** (interrupt the turn; the agent stays ready), **End session** (frees it; sending resumes it), **+ New session** (feature 006), **Open in VS Code** (feature 009; **Open with** since spec 009 FR-019), **Copy resume command** (`copilot --resume <id>`).
 
 **Acceptance Scenarios**:
 
@@ -75,7 +75,7 @@ Header actions: **Stop** (interrupt the turn; the agent stays ready), **End sess
 ### Functional Requirements
 
 - **FR-001** `[IMPLEMENTED]` re-verified 2026-10-16: While a chat is open the top bar, office floor and list are hidden (`body.panel-open`); the chat plus strip use the whole window with no page overflow and no horizontal overflow in the chat at 1440x900 and 1280x800 (SIM=12 and 15).
-- **FR-002** `[IMPLEMENTED]` read: The strip is 64px high, horizontally scrollable, shows every visible top-level agent, orders waiting, then error, then stable order, marks the current one (`aria-current`), and each item has an accessible name with status.
+- **FR-002** `[IMPLEMENTED]` `sim:` `check-rail` (changed 2026-11-03 by PR R1; was a 64px, later 48px, horizontal strip): the rail (FR-190, FR-194) shows every visible top-level agent, by folder, whoever needs you first, marks the current one (`aria-current`), and each row has an accessible name with status.
 - **FR-003** `[IMPLEMENTED]` read: **Esc** closes in this order: new-session dialog, folders popover, VS Code history view, then the chat. The **Office** button also closes the chat.
 - **FR-004** `[IMPLEMENTED]` read: Header shows name, role, status pill, model/effort chip (live agents), folder, task line (full text in tooltip), usage line (calls, tokens, AIU), session-grant chips, and the action buttons above.
 - **FR-005** `[IMPLEMENTED]` read: Thinking block as described in User Story 3, with a 1-second timer on streaming blocks; `thinking` deltas append live; the complete block is not repeated (feature 002).
@@ -98,14 +98,44 @@ Header actions: **Stop** (interrupt the turn; the agent stays ready), **End sess
 
 ## Success Criteria *(mandatory)*
 
-- **SC-001**: With 15 agents the open chat shows all 15 in the strip and does not overflow the page at 1440x900 and 1280x800 (re-verified 2026-10-16).
-- **SC-002**: Waiting and error agents are the first items of the strip (sim:).
+- **SC-001**: With 15 agents the open chat shows all 15 in the rail and does not overflow the page at 1440x900 and 1280x800; the rail's own scroll stays within FR-195's limit (sim: `check-rail`, 2026-11-03).
+- **SC-002**: Whoever needs you leads its folder, and their folders lead the rail (sim: `check-rail`).
 
 ## Assumptions
 
 - Chat content is not persisted by Agent Durbar; the Copilot runtime keeps the session history on disk.
 
 ## Changes
+
+### 2026-11-02: reopening a long chat is fast (owner yes, Vikram; sweeper report 2026-11-02)
+
+**FR-210** `[IMPLEMENTED]` `sim:` Reopening a long chat lays out only the messages near the view. When a chat is taken off screen (`closePanel`, or `openPanel` for another agent that exists) `cvMark` gives every message but the newest 4 the class `cvo` and, as an inline fallback size, the height that message has at that moment (`contain-intrinsic-block-size: auto <height>px`). `.chat-inner>.cvo` has `content-visibility:auto`, `contain-intrinsic-block-size:auto 90px` (only for a message that was never laid out) and `overflow-clip-margin:14px` (the copy button hangs under a reply and would be cut off). Chats of 40 messages or fewer are not marked, and a chat closed from its Browser tab is not marked (it is 0 high with no padding there, so its messages would be measured at the wrong width; it keeps the marks it had, and a first close is simply not faster). A skipped message therefore has its real height, not a guess, and scrolling through skipped messages does not move the view; it holds while the width and the layout settings (FR-213) and the message itself (FR-215) are as they were measured. Nothing is marked while a chat is open: a rule on every message (first try) made a message just added read as a 90 px box and broke five existing drivers on CI (`check-mode-refusal`, `check-sandbox-floor`, `shots-007-autotier`, `check-answer-safety`, `check-session-summary`), and a rule on all but the newest 4 or 20 made the message leaving that set jump to its guess, so the chat stopped following a streaming turn. With only a 90 px guess (second try) a step of three screens into messages never seen moved the view in 6 to 10 of 24 steps (up to about 1,250 px), and CI saw a half-screen step move it once (417 px); the measured fallback removed that. It reuses the pattern of spec 083's `.nt-row`. The reopen time of a chat of 4,000 simulated messages, rule forced off against on in the same page, is printed by `check-chat-visibility` for every run (`TIMING` lines; Linux simulator, printed, never asserted; the figures of the last run are in the PR). The driver asserts that more than 90% of the messages are skipped and the last one is not (it prints the count). A first open of a long history, which was never closed, is not marked and is not faster. 
+
+**FR-211** `[IMPLEMENTED]` `sim:` Opening a chat of more than 4 messages follows the end for four frames (`openPanel`, only while the view is within 400 px of the end; not at the first frame when that frame dropped the marks of another width or layout, because the end then moved by what it laid out, not by the person): the last messages get their real height one frame after the first layout, which had left the view 32 px short of the end. Unchanged: the chat opens at its end (position is not kept across a close, as before), and it stays pinned while a turn streams.
+
+**FR-213** `[IMPLEMENTED]` `sim:` The stored heights belong to the width and the layout settings they were measured at (`cvMark` records the chat's width and `cvKey`: the root's attributes, which carry density and theme tokens and fonts, and the chat's font). When a chat is opened and its width differs from that by more than 1 px (a window resize, a different panel layout) or its key differs (density, theme, font), `cvUnmarkIfResized` removes the marks and the stored sizes, so the chat is laid out in full once (slower that once, no stale height) and the next close measures again. Driver case 8 of `check-chat-visibility`: mark, close, narrow the window to 820 px (the chat is capped at 865 px wide, so a window that stays wider changes nothing and nothing is stale), reopen (no `cvo` left), close and reopen again (skipped messages have the new heights), then twelve three-screen jumps with real heights. The check runs one frame after the open (a layout read inside `openPanel` itself changed when the pin was lost in the driver's streaming case). The same check runs on a live window resize and on a change of the root's or body's attributes (`cvSoon`, once per frame; driver: a density change with the chat open and closed): a chat open with marks drops them, a chat at its end stays at its end, and otherwise the message at the top of the view keeps its place (driver case 8b: widen and narrow with the chat open, then close and reopen: heights are the new ones).
+
+**FR-214** `[IMPLEMENTED]` `sim:` A late scroll event no longer switches the pin off, and a move up always does. `onscroll` switches the pin off only when the chat is 80 px or more from the end and `scrollTop` is lower than at the previous scroll event (or there was none in this open). The app's own stick-to-bottom writes (`stickyFlush`, `restick`, the live-resize handler, `mcpStick`) move `scrollTop` down; the scroll event they cause arrives a frame later, when a new block (a 291 px agent message) may already have grown the page, and the first version of `onscroll` read that gap as the person leaving the end, so the chat stopped following the turn. A first fix remembered the position of `stickyFlush` only; the other writers and the growth of the page left it stale, so a person who scrolled up by less than the difference stayed pinned and the next block pulled the view back (found by the pre-review of #1061). Comparing with the previous event needs no writer to record anything. Driver case 9: after a turn, a live narrowing moves the end under the pinned chat, a small scroll up leaves the end by more than 80 px, a turn streams: the view does not move; a scroll in the first frames of an open drops the pin.
+
+**FR-215** `[IMPLEMENTED]` `sim:` A marked message that changes while its chat is closed is laid out for real on the next open (`cvMark` watches the closed chat with a `MutationObserver`; `cvGrown` removes `cvo` and the stored size of a message that was touched, and `cvRelease` does it for the records not yet delivered when the chat opens). `cvMark` protects the newest 4 messages only, and a running turn can write into an older one (tool chips and notes after it). Driver case 10 (message 1500 grows while closed). Not covered: a message whose height changes without any DOM change (a web font that loads late, a media query); it keeps its stored size until it is laid out once, and the view may then move by the difference.
+
+**Checked and unchanged** (`check-chat-visibility`, 1440x900 and 1280x800, 4,000 messages): real heights equal those with the rule off; the whole chat is as tall after one pass; the copy button is not cut off; a streaming turn keeps the end; a chat scrolled up is not moved by a turn; a selection across skipped messages copies in full (selection and real Copy); Chromium's find-in-page finds a hit in a skipped message and scrolls to it; `focus()` and Tab reach a button in a skipped message and show it. The app has **no Find box and no Print**, so only the engine's find was tested. Mutants the driver catches: see its header, and the table below.
+
+**Mutants** (each planted by hand in `app.js` or `styles.css`, run with `node scripts/ui-suite.js --only check-chat-visibility`, must FAIL): see the PR comment for the list and the case that caught each; the CSS mutants (`DURBAR_CV_MUTANT=off|hidden|nosize|zero|noclip`) are in the driver. A run with any debug switch (`CVLOG`, `CVBASE`, `CVSKIP`, `CVWH`, `CVSIZE`, `DURBAR_CV_MUTANT`) never prints `all checks passed`.
+
+**Tasks:** T130..T132 and T197..T199 in `tasks.md`. Numbers taken: FR-210..FR-215, T130..T132, T197..T199 (checked against `main`, the remote branches and the open PRs on 2026-11-02, rechecked after merging `main` 2026-11-03; #1014 holds FR-190..FR-209 and T113..T129).
+
+### 2026-11-04: `check-chat-visibility` waits on state, and its height bound is stated (issue #1102, driver only, no app change)
+
+**Driver bounds** `[IMPLEMENTED]` `sim:` The turn samples count painted frames, not seconds (a sample runs until its time and its minimum frame count are both reached), find-in-page is asked again until it finds the token, and the "as tall as with the rule off" check allows 2 px at 1 device pixel per CSS pixel and, above 1 (a Retina Mac; `UI_SUITE_DPR=2` forces it on any OS), 2 px plus 1/64 px per message (layout-unit precision; 63 px for 4,004 messages, 31 px seen at 2x). Nothing else is loosened.
+
+### 2026-11-04: `check-chat-visibility` runs one size per ui-suite entry (issue #1127, driver only)
+
+**Driver split** `[IMPLEMENTED]` `sim:` The driver took more than the suite's 600 s limit on a slow runner with both sizes in one process (CI run 41769615163). `scripts/ui-suite.js` now has two entries, `check-chat-visibility 1440` and `check-chat-visibility 1280` (`CVONLY=1440|1280`, a normal run that can pass), each with its own limit and slot (spec 008 FR-063). Every case and assertion runs at both sizes as before; `--only check-chat-visibility` runs both. With two sizes at once on one machine a neighbour's window could hold the OS focus and Tab moved nothing (seen 3 of 3 pairs), so the driver asks `H.focusPage()` for the page focus before each Tab and waits for the move; a Tab is tried again (3 times) only after a trusted window blur, else it fails naming the blur count and `hasFocus` (the `osRetry` pattern of `check-status-tooltip.js`). The Copy check compares with `\r\n` turned into `\n` on both sides (Windows' clipboard), its length bound unchanged, and waits until both end tokens are in the copy.
+
+### 2026-10-31: MCP context cost (spec 100)
+
+**FR-052**: the token summary adds an *MCP tools* bar when a report exists, labelled as estimated when it is; the MCP chip adds the tokens (FR-053). Owned by [spec 100](../100-mcp-context/spec.md) FR-010, FR-013.
 
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
@@ -247,7 +277,7 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
   - While a turn runs and you have typed text, a live agent still takes the message (as today: Enter sends, spec 012): **Send** shows to the left of the spinner, so a mouse user can send too. A demo agent does not (it says "Hold on…", as today).
   - An agent app that cannot interrupt (`feat(a,'stop')` false, the "basic" kind) has no Stop; while it runs the slot shows the spinner and the (disabled when empty) Send.
   - **Enter** sends, **Shift+Enter** is a new line (unchanged). **Esc** stays *Back to the office* (FR-002; unchanged): no new stop shortcut in this delta (decision below). Stop keeps its keyboard access (Tab, Enter/Space) and the card menu's Stop (FR-017).
-- **FR-039** `[IMPLEMENTED]` (`sim:` `check:composer-toolbar` asserts none of the moved controls is left in the header or More) The chat **header keeps** the agent's identity and state: avatar, name, role, status pill, "active …", the spending-limit chip, the remote-control chip and the folder chip (they describe the session, not the next message), and the actions Previous, + New, Open in VS Code, Pause (demo only) and More. **Stop leaves the header**; *MCP servers* leaves More (FR-037 item 5).
+- **FR-039** `[IMPLEMENTED]` (`sim:` `check:composer-toolbar` asserts none of the moved controls is left in the header or More) The chat **header keeps** the agent's identity and state: avatar, name, role, status pill, "active …", the spending-limit chip, the remote-control chip and the folder chip (they describe the session, not the next message), and the actions Previous, + New, Open in VS Code (**Open with** since spec 009 FR-019), Pause (demo only) and More. **Stop leaves the header**; *MCP servers* leaves More (FR-037 item 5).
 - **FR-040** `[IMPLEMENTED]` (`sim:` `check:composer-toolbar` at a 480px panel; the window sizes in `check:office`) **Narrow widths**: the toolbar is always one row. When its controls do not fit, the ones that fit least are moved, in this order, into an **overflow button "⋯"** at the right of the toolbar (`#ctMoreBtn`, `aria-haspopup`, `aria-expanded`, label "More chat settings"): MCP, Context, Profile, Attach image, Attach file, Model. The **mode never moves** (safety, constitution II). The overflow opens a small popover listing the moved controls as they are (same ids and handlers); Escape or a click outside closes it and returns focus to "⋯". Nothing wraps, overlaps or leaves the panel at 1440x900, at 1280x800, and at 1280x800 with the chat panel 480px wide (the width spec #452's docking may give it).
 - **FR-041** `[IMPLEMENTED]` (`sim:` `check:composer-toolbar` Simple; `shots-052-ux`) **Simple** detail level (spec 052 FR-031) shows: Mode, Context (from 70%, as today), Attach file, Attach image, and the Send/Stop button; Profile, Model and MCP stay hidden in Simple as they are today.
 - **FR-042** `[IMPLEMENTED]` (`sim:` 10.5px and overlap asserted; light and dark user theme; `check:ui-text` from PR #479 passes on a local merge with this branch) **Accessibility and look**: the toolbar is a group (`role="group"`, `aria-label="Chat settings"`; not `role="toolbar"`, which would promise arrow-key movement: Tab moves between its controls as before); every control keeps its name, `aria-haspopup`/`aria-expanded` and focus return; the minimum text is 10.5px; colours are theme tokens (no new literal colours), so light and dark themes both read; the spinner uses `currentColor`.
@@ -408,3 +438,181 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
 *Honest limits:* `[KNOWN GAP]` Windows and macOS rendering and a real screen reader are not verified (simulator on Linux only); the order is per window and per computer; ids of real sessions are stable across a restart only as far as the existing `durbar.chatNo` already relies on (not re-verified here, `read:`); whether *End session* removes the agent from `agents` or leaves it labelled `Ended` is `unverified` and T101 reads it before the prune rule is coded (Q-strip-4).
 
 **Tasks:** T099..T112 in `tasks.md`. Numbers taken: FR-178..FR-189 and T099..T112 of this spec (checked against `main`, remote branches and open PRs on 2026-10-29; no open PR touches this spec).
+
+### 2026-11-01: the agent rail, chat density and a full-width page (design sweep, FR-190..FR-209)
+
+**Status: specified, not built,** except the rail's List view (PR R1, 2026-11-03: FR-190's column, FR-194, FR-195's first measurement and 052 FR-215's top row; see the delta of that date below). The rest is not `[IMPLEMENTED]`; the `test:` and `sim:` lines say what the build must prove.
+
+**The rail's form is chosen (owner, 2026-11-02, from the mocks; T125 done): a small floor plan, with a List switch.** Earlier the same day the form was pending his look, since a plain list could read as other tools. His order: (1) Your door (spec 052 and #1002), (2) the floor plan rail with its list switch, (3) the file drawer (spec 105), (4) going to the desk (FR-209). His changes to the mocks are in FR-193, FR-196, FR-209 and spec 105. **Density, width, notifications, tokens, the lint, the font, the toggle and D1 stand and do not wait for the rail.**
+
+*Source.* A design sweep on 2026-11-01, simulator only, at main `c5f039a1`. Every "after" number below was measured on a mock made by injecting CSS into the running page, not on built code, so each PR measures first. *Owner decision* (Vikram, direct message, 2026-11-01 18:27 UTC): all of the sweep's findings and recommendations are accepted. Rail, density and width live here; Mac rules, Needs you, notices, controls and Settings in spec 052's delta of the same date; tokens and the font in spec 070's; the chat in the world in spec 097's; the closed sidebar question in spec 006's. **The PR order, with its gates and line-count goals, is one table in this spec's `plan.md`.**
+
+*What each one replaces.* Older text is changed in place by the PR that builds it, so the spec keeps describing what the code does until then.
+
+| Older text | Replaced by |
+|---|---|
+| Story 2 (a strip at the top), its scenario 2 ("moves to the front") | FR-190..FR-194: a rail with Plan and List. In the plan nobody moves; in the list those needing you lead. The strip stays until the rail's PR |
+| FR-002 (a horizontal strip, 64 px; really 48 px since 052 FR-095) | FR-190..FR-194. Kept from it: every visible top-level agent, `aria-current`, an accessible name with status |
+| SC-001 | FR-195: all 15 in the rail, no page overflow, the rail's own scroll limited as stated |
+| SC-002 | FR-192: lights and Your door in the plan; FR-194: those needing you lead the list |
+| FR-004, FR-039 | FR-199: what the header holds does not change, only how it is arranged |
+| FR-173 and 052 FR-010 (visible at rest) | FR-204 |
+| FR-179 | FR-198: Paco's yes of 2026-11-01: status order unless manual order is turned on in a folder. "List only" is an agent's reading, not his, awaiting his confirmation |
+| FR-178, FR-180..FR-189 (unbuilt) | FR-198: rewritten for the List view |
+
+*Existing capabilities reused, no second list (FR-031 of spec 021):* `stripAgents()`, `prio` and `renderStrip()`'s keyed rows through `morphHTML` (`data-sw`, `data-key`, `.sel`, `aria-current`); the `data-sw` click that opens a chat; the strip item's menu; the kept scroll and `SCROLL.reveal`; `needsMe()`, `needsMeOrder()`, `NEED_SINCE`, `ATT.waitLabel` (052 FR-014, FR-061); `rememberOn()`; the `--t*`, `--s-*`, `--r-*` and status tokens (spec 070). The strip's code becomes the rail's: this is a change of `renderStrip`, not a new component.
+
+#### The rail (R): a floor plan with a List switch
+
+Mock numbers below are from the simulator at `1a8317fa`, Flat and Photo; nothing is built. The plan was mocked with faces the owner found too zoomed in, so face sizes are measured again (FR-193).
+
+- **FR-190** **A rail replaces the strip, with two views of one list.** With a chat open, a column on the left of the window, full height, 220 px wide, shows every agent `railGroups()` lists (R1, 2026-11-03: it replaced `stripAgents()`); `.strip` goes. Its top row holds **Office** (FR-003), a **Plan | List** switch and a collapse button (FR-196); under it the **Your door N** control (052 FR-216) and the red lock (052 FR-219). The view opened last is kept per window, only when `rememberOn()`; Plan is the default. It exists only while a chat is open: the office and List have none, and a screen over a chat covers it as a screen covers the strip today. Clicking a seat or a row switches the chat. No second list or status logic: both views read `railGroups()`, `needsMe()` and `pillSt()`.
+- **FR-191** **Plan: a floor as a small plan.** The floor's name on top, its rooms below in two columns along an aisle, each labelled with the folder's name, and the lift at the foot (`3 2 1`; `DurbarFloorNav`, `liftCounts()`). **It is not a true map:** the office is wide and the rail tall, so rooms fold along the aisle; their order matches the office, not their positions. A pure `planLayout(model, box)` tries seat sizes until all seats fit, tested without a page. On screen a folder is a folder: no word "room". Reused from the office: the people, the floors, the order.
+- **FR-192** **Seats never change; lights do** (owner, 2026-11-02: the mock's seat changes are dropped). A person keeps a seat while they stay on that floor and in that folder, whatever their status, since the plan's value is that Jonas is always in the same place. Status shows as a ring around the face and a shape on it, in the status colours, **never by colour alone** (FR-046 of spec 097). Who needs you is read from the lights and Your door. A calm pulse, if any, is `opacity` on its own layer, and none under Reduced motion. The question is not on a seat: it shows on hover and focus through `tooltip.js`, and in Your door.
+- **FR-193** **Faces show more of the person** (owner, 2026-11-02: the mock's faces are too zoomed in). A seat shows head and shoulders of the person the office shows, the same art in Flat and in each world, cropped with room around the head instead of filling the circle. The crop is one pure function with a test on every person, as `portraitCrop` does for 097 FR-224, with a new, looser target set on the owner's look at pictures. Names at 10.5 px at least, cut with an ellipsis and a `title`. The mock's numbers were for the tighter crop and are the seat limits, not targets for the head: T127 reports both, then the owner looks.
+- **FR-194** **List: the sweep's rail, kept behind the switch.** For many agents and anyone who prefers text. By folder (heading and count), folders with someone needing you first by oldest wait, then the office's room order; inside a folder `needsMe()` first, oldest first by `NEED_SINCE`, then `prio` and creation order. Two row heights only: plain 30 px (avatar 22 px, name, status word) and tall about 52 px (tinted; name, age, up to two lines by `requestText()` or the task line). Age in words, "Waiting 2 min", from `ATT.waitLabel` with 052 FR-061's text-only tick, under design rules 5 and 7. A row moves only when a status changes, never with time. At 1280x800 with 15 agents the mock scrolls 34 px inside the rail, accepted by the owner; tall rows near 52 px instead of the mock's 60 px should remove it (calculated), and if two lines do not fit unclipped at 11 px they stay 60 px and the 34 px stands. **Not built, on purpose:** a row growing with its wait (about 15 px a minute under the pointer with 5 waiting, by formula). This is `renderStrip()`'s keyed rows (`morphHTML`, `data-sw`, `data-key`, `.sel`, `aria-current`), and the plan's seats are keyed the same way.
+- **FR-195** **Fit, measured on the mocks; each PR measures first.**
+
+  | Plan, measured at 1280x800 | 15 agents | 4 agents | 40, one floor | 40, three floors (31 shown) |
+  |---|---|---|---|---|
+  | Seat, px | 44 x 64 | 99 x 104 | 29 x 40 | 48 x 64 |
+  | Face, px (tighter crop) | 36 | 76 | 26 | 36 |
+  | Names | 10.5 px, shown | 10.5 px, shown | hover or focus only | 10.5 px, shown |
+  | Rail scroll | none, 364 of 656 px | none, 392 of 656 | none, 562 of 678 | none, 622 of 656 |
+
+  No scroll at 1440x900 either. The smallest target is 26 x 26 px (lift buttons; 29 x 26 px at 40), and room labels are 10.5 px with none cut. At 40 on one floor people cannot be told apart without hovering: List is the answer there, and the rail's hint says so. The three-floor case ran in Flat only. Long names are untested.
+
+  | Chat with a rail, measured | 1440 today | 1440 rail | 1280 today | 1280 rail |
+  |---|---:|---:|---:|---:|
+  | Message log height, px | 533 | 717 | 433 | 617 |
+  | Log as share of the window | 59% | 80% | 54% | 77% |
+  | Characters of chat in view | 1156 | 1569 | 1016 | 1440 |
+  | Header, px | 103 | 61 | 103 | 61 |
+  | Composer, px | 122 | 91 | 122 | 91 |
+
+  That log is with the sweep's two rows; FR-199's one row adds 31 px (748 and 648 px, calculated). **Before the rail,** FR-199..FR-202 and the notices' removal give, by subtraction from the same rows (calculated, not captured): the strip 48 + the one-row block 61 + composer 91 = 200 px of chrome, so a log of **700 px at 1440 and 600 px at 1280** once the notice bar is gone (052 FR-218), and 669 and 569 px while its 31 px remain. On FR-199's fallback each is 31 px less. The last chat PR asserts the second pair and `check-notices` the first, within 8 px, measured first. The rail's PR asserts its columns. No page overflow and no horizontal overflow at either size.
+- **FR-196** **Both rails collapse, for a full-screen chat, and the state is kept** (owner, 2026-11-02). The left rail and whatever is open on the right (Your door, spec 105's file drawer) each have a collapse button, also as palette commands, with one more command, *Full-screen chat*, for both. Collapsed, a rail takes no width, and a button in the chat header brings it back. **Each state is saved per window, only when `rememberOn()`,** and survives switching chats and a restart. While the left rail is collapsed, **Office, Your door and the red lock move to the chat header**, so nothing that needs you depends on a rail. A collapsed right side is not a dismissal of Your door: its count stays, and a new request by #1002's rules does not reopen it while a chat is open. **One trigger (2026-11-02, spec 105's review; agent decision, reversible by the owner; it replaces "under about 1100 px wide"):** when the chat beside a full rail would be under 620 px wide, an uncollapsed left rail is a 52 px column of avatars: rows 36 px, avatars 28 px, a status ring, names in `title` and the accessible name. That narrow form applies to Plan and List alike, since the plan is not designed for 52 px. No new key in the first build. Replaces the sweep's "hide".
+- **FR-197** **Readable and reachable.** A `nav` named "Agents"; a seat is a real button with the whole sentence as its name, for example "Jonas, waiting 3 min: Needs your OK to rename the tool. Open chat." **The mock's "Go to desk" is not used: "Open chat" stays clear by ear.** Arrow keys move between seats, room by room, and Enter opens; the hover card (64 px face, text at least 11 px) also shows on focus. Opening a chat reveals its seat or row. Tokens only, so worlds carry it. Seats are updated by key, not rebuilt, since faces repaint on status changes; speed is `check:perf`'s (097 FR-178), not measured yet. `[KNOWN GAP]` until measured: contrast of rings, names and tall rows (4.5:1 for text, 3:1 for marks), a screen reader's speech, forced colours, and arrow keys, none of which were built or checked in the mocks.
+- **FR-198** **Manual order: Paco's yes on the rule; "List only" is an agent's reading, not Paco's, awaiting his confirmation.** Paco chose FR-178..FR-189 (issue #880; his answers to Q-strip-1..7 on 2026-10-30), and the rail does the opposite of FR-179. **Paco's yes, relayed by his agent in the team group, 2026-11-01 20:30 UTC, and the owner's acceptance of the same day, settle the rule: status order by default; favourites as their own group on top; manual order inside a folder only when someone turns it on.** **FR-179 is amended to that:** without the setting a session moves by status as FR-194 says, even after a move; with it on, a manual order is respected inside that folder as FR-179 wrote, and a session that starts waiting keeps its place, colour, word and badge, and *Your door* still opens it. **Where it shows (agent reading of FR-192, not Paco's, awaiting his confirmation, T133):** in the List view only, since the plan's seats never change. Plan is the default view, so by default his rule would not show; that is the open point. T123 rewrites FR-178, FR-180, FR-182 (Alt+Up and Alt+Down), FR-185 (per folder), FR-186, FR-187 and FR-188 for the List, and T099..T112 follow. The rail's first PRs ship status order only. **No PR row schedules favourites or manual order yet:** T099..T112 hold the work, and no row in the plan builds them.
+
+#### Chat density (C)
+
+The chat's chrome takes 367 of 900 px today, 41% of the window, in five rows plus a notice. No text gets smaller in any of this.
+
+- **FR-199** **One row: header, tabs and *Previous sessions*.** Owner, 2026-11-01: a one-row version is the goal. Who, state, actions, *Chat*, *Browser* and the collapsed *Previous sessions* share the header's row; the task and usage line stays under it (FR-004, and 052 FR-095's stated design, which grew). The whole block is 61 px, from 103 + 31 + 32 = 166 px; this exact form was not mocked, so 61 px comes from the sweep's header and T117 measures it. What the header holds stays FR-004's and FR-039's; an open *Previous sessions* unfolds under it as today (006 FR-033). **Fallback, only if the one row fails at 1280x800:** header 61 px, then one 31 px row for the tabs and *Previous sessions*, the arrangement the sweep measured. *Fails* means that with the longest simulator name a control or its name is cut or wraps, or a control leaves the design rules' heights. The PR states the measurement either way: free width in px, what was cut, and which form shipped.
+- **FR-200** **Composer 91 px at rest** (from 122). Smaller padding, a 32 px box and buttons, the hint on the chips' row with the words the chips already say removed (full text in its `title`). Growth, the handle and the saved size stay FR-044..FR-049's. Stop stays visible; every toolbar control stays FR-037..FR-056's. **Amended 2026-11-02 (097 FR-233, 070 FR-075):** in a world and in Flat the box and its tools are one pad, 75 px inside the 91 px, with 24 px controls; Send and Stop on the tool row.
+- **FR-201** **Plain answers.** An agent's answer is text on the page. Only the person's own message stays a bubble. An answer's meta line goes **visually** only: the agent's name stays for screen readers. Waiting and error cards keep their boxes, because they ask for something.
+- **FR-202** **Quiet tool rows and thinking.** A tool call is one borderless row until it fails, waits or opens; FR-006 stands (focusable buttons, `aria-expanded`, failed calls marked, never by colour alone). Thinking has a left rule and no card (FR-005 is otherwise unchanged).
+- **FR-203** **Targets, same content at 1440x900, measured first:**
+
+  | Content | Before, px | After, px |
+  |---|---:|---:|
+  | Agent message with thinking and 3 tools | 575 | 442 |
+  | With an approval card | 649 | 509 |
+  | Long message with helpers | 1358 | 1167 |
+
+  Within 16 px of each. `[KNOWN GAP]` until the driver covers them: Compact density and Simple mode were not captured by the sweep.
+- **FR-204** **Copy and the message menu on hover and focus.** Replaces FR-173's and 052 FR-010's "visible at rest, dimmed". They are always in the tab order (`opacity`, never `display`), appear on hover of the message, on `:focus-visible` and while their menu is open, and stay visible where `@media (hover:none)` applies. **The known loss:** a mouse user does not see them until hovering; the owner accepted that with the rest.
+- **FR-205** **Names stay for screen readers.** A hidden meta line is clipped, not removed; a driver reads the accessible text of a message before and after and they must match, apart from the moved buttons' order.
+
+#### Width (W)
+
+- **FR-206** **`--chat-prose`: the page is full width, prose is capped.** Needs no rail. Option D of four. The log and the composer use the whole width, with 24 px of padding; tool rows, diffs and code use all of it; text starts at the left edge; the person's bubble stays right. Paragraphs, lists and thinking are capped at `--chat-prose`, about 100ch (744 px in today's font). It replaces the 880 px centred column in `#chat` and `.composer`, and the 1240 px header rules go with it where they follow that column. A wider cap is one line. `--chat-prose` is an app-owned size and no pack may set it (070 D2). **Amended 2026-11-02 (070 FR-071):** prose is 14 px on 23 px lines everywhere; the cap stays 744 px, so 116 letters a line, the one target (the table below). Code's width in a world is in 097 FR-233.
+
+  | Letters per line, measured | 1440 | 1920 | 2560 |
+  |---|---:|---:|---:|
+  | A. Today, 880 px centred | 146 | 149 | 149 |
+  | B. 1120 px centred | 187 | 189 | 189 |
+  | C. Everything full width | 233 | 316 | 354 |
+  | **D. Page full width, prose capped** | **126** | **126** | **126** |
+  | **D at 14 px (070 FR-071), the target** | **116** | **116** | **116** |
+
+  The table's first rows were measured at 13 px. **The target is the last row, 116 within 4 letters:** measured once, at 1440 in the mock, in Noto Sans, and 126 x 13 / 14 = 117 agrees; the cap is fixed in px, so 1920 and 2560 are expected to match, not measured. "100ch" is the first guess and the letter count is the requirement: the app keeps its system font (070 FR-058), whose `ch` differs by system, so the driver measures letters, and the token is re-measured if the font ever changes.
+- **FR-207** **Tests.** New drivers, each with `until()` waits, in the UI suite, at 1440x900 and 1280x800, Flat and Real office, with a planted mutation per rule:
+  - `check-rail.js`: Plan: all seats for 4, 15 and 40 agents and three floors; **no seat's rectangle changes when a status does**; lights with a shape; a head-and-shoulders crop on every person; arrow keys; names. List: order by FR-194 after a request arrives and after it is answered; exactly two heights; no height changes with time (clock advanced); scroll at most 34 px at 1280. Both: the switch's state kept; the same list as the Your door count; both rails collapsed, state kept across a chat switch and a reload; the narrow form by FR-196's one trigger (1280x800 with the file drawer, 800x600), and a full rail at 1024x768; no page overflow; contrast. Mutants: a seat moved by status, the state not saved. Existing drivers that read `.sitem` follow (about 23 scripts, among them `check-office-fill`, `shots-074-navigator`, `test-macos`).
+  - `check-chat-density.js`: the two tables of FR-195 and FR-203; Stop visible at both sizes; the hover and focus rule by real keyboard and pointer; accessible text unchanged; Compact and Simple.
+  - `check-chat-width.js`: letters per line at 1440, 1920 and 2560; a code block and a diff wider than the prose cap; no horizontal overflow.
+- **FR-208** **Not checked by anyone yet.** Real macOS, Windows and real sessions; a real screen reader; hover states, dark themes and the browser tab under the rail. The first three stay `[KNOWN GAP]` after the build and say so in each PR; hover states, dark themes and the browser tab are in the drivers above.
+
+#### Going to the desk (owner's fourth)
+
+- **FR-209** **Opening a chat from a desk: smooth or lighter, measure first.** The owner chose this last, and it must not stall. The design: opening a chat from a visible desk grows it out of that desk's monitor in 280 ms, and back in 220 ms, `transform` and `opacity` only. Reduced motion is a plain cut (0 animations measured); so is a chat opened from the rail, a key, Your door or a notification, which has no visible monitor to grow from. **Gate before any build (T128): the videos' cases on real GPUs, on the team's other machines,** Windows, macOS and Linux, at both sizes, Flat and Photo, with `requestAnimationFrame` and compositor frames both counted.
+
+  | Software rendering, 5 runs each, this one machine | Open: frames of 18 | Open: longest gap | Back: frames of 14 | Back: longest gap |
+  |---|---:|---:|---:|---:|
+  | Photo 1440x900, room zooms | 3 to 6 | 133 to 350 ms | 3 | 150 to 183 ms |
+  | Flat 1440x900, room zooms | 2 | 350 to 433 ms | 8 to 11 | 50 to 67 ms |
+  | **Chat grows, room still:** Photo 1440x900 | 10 to 12 | 50 to 67 ms | 10 to 12 | 33 to 50 ms |
+  | Chat grows, room still: Flat 1440x900 | 2 | 317 to 400 ms | 2 | 300 to 333 ms |
+
+  **What the gate decides, from the numbers it gets:** if the full zoom holds 60 fps, within `check:perf`'s budgets, on every machine tried, build it. **Otherwise the fallback, "chat grows, room still";** if that does not hold either, a plain cut stays, and the row is closed with its numbers. Without a GPU (virtual machines, remote desktops) it falls back to a cut by a measured check, never by guessing. Keeping the office painted behind a chat costs memory and must pause when hidden: the build measures that against 097 FR-178. Flat has no monitor, only a cabin picture on a card, so Flat may keep the cut. **There is no user need behind this, only character,** so it never makes the app feel slower. Motion rules: 052 FR-068.
+
+### 2026-11-03: the rail's List view is built (PR R1, T113..T115), and its folders collapse (owner, FR-216, T134)
+
+*Owner request (Paco, 2026-11-03, in the coordinator's terminal):* inside a chat he cannot tell which sessions are active or which belong to the current folder. The List groups sessions by folder (FR-194); each folder group can be collapsed and expanded.
+
+- **FR-216** `[IMPLEMENTED]` `sim:` `check-rail`, `test:` `test-railorder` **A folder in the rail's List collapses and expands.**
+  1. A click, or Enter or Space, on the folder's heading toggles it. The heading is a `button` inside an `h3`, under a visually hidden `h2` "Agents" first in the rail's `nav` (review of R1, 2026-11-04: the outline is h1 > h2 Agents > h3 folders, then the chat's `h2`), with `aria-expanded`, `aria-controls` and a chevron (the app's SVG `chev`, turned a quarter for open; no ▸/▾ glyph, which a Linux font can miss).
+  2. A double click toggles it once: the second click of a double click (`detail` 2) is dropped. It never opens a chat.
+  3. Collapsed, the heading still shows the folder's count and, when someone in it needs you, a mark: the alert triangle and the number, never colour alone. Its name says it, for example "swisscontract-ai: 4 sessions, 2 need you". Expanded, the tall rows say it and the mark is not drawn.
+  4. **Saved per window, only when `rememberOn()`.** The key is `localStorage['durbar.railFolds']` = `{"v":1,"closed":["<folder path>",...]}`, keyed by the folder's path. The path is what `durbar.ui` already stores for the view (FR-087 of spec 052), and nothing else is stored. On save only the paths of folders the app still has are kept, at most 200 of at most 1024 characters each, and the key is removed when nothing is collapsed. *(Changed 2026-11-04, review of R1:)* pruning waits until the session list has loaded (`agentsListed`, as FR-185 and `pruneNumbers` do): a toggle before that keeps every saved path, so a folder whose sessions have not appeared yet is not lost. A corrupt, oversized or wrong-typed value loads as "nothing collapsed", never an error. The state is kept in memory across chat switches and repaints in every case. The simulator saves only with the query `railstore=1`, which `check-rail` uses for its reload step.
+  5. **Decision (agent, as recommended in the request, reversible by the owner): opening a chat expands its folder.** Any route counts: a rail row, a desk, Your door, `N`, a notification. If you collapse the open chat's folder by hand, it stays collapsed; its heading is outlined and its name adds ", the open chat is here".
+  6. The heading shows the folder's name at 11 px (FR-194's text rule: never under 10.5 px), cut with an ellipsis, with the full name in `title`.
+
+**What R1 builds (`[IMPLEMENTED]` `sim:` `check-rail` unless said):** FR-190's column (220 px, full height under the notice bar, `nav` named "Agents") and FR-194's List with its order, two heights and ages. With a chat open the toasts start in the chat column (`--toast-l`), so they never cover the rail's rows (052 FR-170's bottom edge is unchanged).
+- **The code is still `renderStrip()`.** `railGroups()` replaces `stripAgents()` (removed, it had no other caller), and the order rules are the pure `src/renderer/railorder.js` (`window.DurbarRail`). The keyed rows keep `#stripList`, `.sitem`, `data-sw`, `data-key`, `.sel` and `aria-current`, so the drivers that read `.sitem` follow by selector. `.strip` and `.strip-list` are gone, and so are the strip's horizontal fade (052 FR-138) and its Mac grab handle.
+- **The top row:** Office, then the drag room. **Placeholders:** R2 (T127) puts the Plan | List switch in this row and R3 (T116) the collapse button; a comment in `railHTML()` marks the place. Until R2, List is the only view, so "Plan is the default" and the kept view (FR-190) wait for R2.
+- **Under it, Your door (052 FR-216):** a button "Your door N" with the Needs you count (`needsMeOrder()`, the same count as `#inboxBtn`) and `#inboxBtn`'s tooltip and keys. It opens the existing Needs you queue, and the focus comes back to it after Escape. Until #1002's panel exists (052 T225) it has `aria-haspopup="dialog"` instead of `aria-expanded`. The red lock (052 FR-219, T223) is not built; its place is beside the door.
+- **Rows:**
+  - A plain row is 30 px: a 22 px avatar, the name with its marks (draft, unread, dialog) and the status dot and word.
+  - A tall row is 52 px, for whoever `needsMe()`. It is tinted with `--card-waiting` (`--card-error` for an error). It holds the name, the age and up to two lines of `requestText()` (or the task line) at 11 px on 15 px lines.
+  - Age: "Waiting 3 min", or "Error · 3 min", from `ATT.waitLabel` and `NEED_SINCE`. It ticks every 30 s as text only (052 FR-061).
+  - A tall row's accessible name: "Jonas, waiting 3 min: Edit src/… . Open chat."
+  - The strip item had no menu on `main` (the card menu skips `#panel`), and R1 adds none.
+- **Not built in R1:** `[KNOWN GAP]` the arrow keys between rows (FR-197; Tab moves); `[KNOWN GAP]` the hover card on focus (FR-197; rows keep their `title`); `[KNOWN GAP]` favourites and manual order (FR-198: status order only); `[KNOWN GAP]` the narrow form and collapsing the rail (FR-196, R3); `[KNOWN GAP]` the Plan view and the Plan | List switch (FR-191..FR-193, R2).
+- **Kept from the strip, made safe:** the second click of a double click (`detail` 2) never opens a chat from a rail row, since a heading's first click can collapse a folder and move another row under the pointer; a repaint that moves the focused row's or heading's folder gives the focus back to the same key (`focus({preventScroll:true})`).
+- **Existing behaviour, not changed:** a tall row's text is `requestText()`, so a grant hint or sandbox line that `requestText()` keeps (052 FR-214) shows there as it does in the Needs you inbox.
+- **Measured first** (FR-195; `check-rail` prints `RAIL` lines; simulator, 15 agents, Flat, Linux, DejaVu fonts, the restore notice bar of 31 px on):
+
+  | Chat with the rail, measured 2026-11-03 | 1440 before | 1440 R1 | 1280 before | 1280 R1 |
+  |---|---:|---:|---:|---:|
+  | Strip, px | 48 | 0 | 48 | 0 |
+  | Chat width, px | 1440 | 1220 | 1280 | 1060 |
+  | Message log height, px | 533 | 581 | 433 | 481 |
+  | Log as share of the window | 59% | 65% | 54% | 60% |
+  | Header, px (C1 not built) | 103 | 103 | 103 | 103 |
+  | Composer, px (C1 not built) | 122 | 122 | 122 | 122 |
+  | Rail list scroll, px | | 0 | | 21 (limit 34) |
+  | Without the notice bar: log, px / rail scroll, px | | 612 / 0 | | 512 / 0 |
+
+  FR-195's rail columns (717 and 617 px) also need C1 and C2 (header 61 px, composer 91 px). R1 removes only the strip's 48 px, as measured. The tall rows fit at 52 px with two unclipped lines at 11 px, so the 60 px fallback was not needed. The 21 px of rail scroll at 1280 x 800 comes from the notice bar: without it (measured by hiding it, the `RAIL_NOTICE` line) the rail does not scroll at either size, and `check-rail` asserts that. Contrast of the text on tall rows, measured: at least 10.99:1 in Clean Office, 16.59:1 in Retro and 13.16:1 in a dark user theme (rule 4.5:1).
+- **Mac (052 FR-215, T222's R1 part):** the drag areas are the rail's top row (with 78 px for the traffic lights outside full screen, 8 px under a notice bar) and the chat header. Their controls are `no-drag`; in the header so is anything with a `title`, so tooltips still show. A double click follows FR-085 on both (`keys.js`). `test:` `test-macos`, and `check-rail` forces `data-platform="darwin"`. `[KNOWN GAP]` not tried on a real Mac. The collapsed rail's rules are R3's.
+- **Tests:** `check-rail` (in the UI suite) and `test-railorder` (in `npm test`). Mutants planted in the built `dist/renderer` and caught by `check-rail`: a third row height; a height that grows with the wait; a collapsed folder without its needs-you mark; a double click on a heading that also opens a chat; a double click that toggles twice; the state saved while `rememberOn()` is off; opening a chat that does not expand its folder; a saved state not read back after a reload; a folder name put in without `esc()`; (review of R1) the `detail` 2 guard dropped from a row's click (a double click on the last heading of a scrolled rail opened the row moved under the pointer); the focus not given back after a folder moves; an agent name, a tall row's request text, its `aria-label` or its `title` put in without `esc()` (a name and a request holding `<i>`, `<img>`, a quote and `&amp;`); (second review of R1) the focus on a heading not given back after its collapsed folder moves, the open chat's outline dropped from a collapsed heading, and the needs-you mark drawn only from 2 (a collapsed quiet folder gets one request: the mark shows 1 live and goes when it is answered), the rail's `h2` Agents removed or made visible. The picture `005-rail-collapsed-1440x900.png` (linked from `docs/features.md`) comes from `check-rail`. Mutants in `railorder.js` caught by `test-railorder`: folders or rows that do not put whoever needs you first (also as a one-way comparator), the oldest wait first dropped or reversed, the load cap dropped, a bad entry skipped instead of refused, an unknown folder kept on save, an unseen saved folder pruned before the session list has loaded. A source pin in `test-railorder` catches `saveFolds()` not passing `agentsListed||demoOn` to `foldsJSON` (the simulator lists its sessions before any toggle, so no driver can).
+- `[KNOWN GAP]` Not verified: Windows and macOS rendering, a real screen reader, forced colours, real sessions; contrast of the plain rows and the folder headings.
+
+**Tasks:** T113..T115 ticked and T134 added in `tasks.md`. Numbers taken: FR-216 and T134 of this spec, checked on 2026-11-03 against `main`, the remote branches and the open PRs (#1061 holds FR-210..FR-215, T130..T132 and T197..T199; no other open PR adds a number here).
+
+## Changes 2026-11-02: removed page and tools (owner decision, PR #1054)
+
+`scripts/edit-stream-real.ts` were removed on 2026-11-02 by owner decision (no caller; run dates and credit counts above stay valid history); the scripts are in git history at commit `1c75b5bee`.
+
+## Changes 2026-11-04: no empty More menu in a helper's chat (owner feedback, issue #1145)
+
+Owner (Vikram, 2026-11-04, packaged v0.1.8, Real office): More in a sub-agent's chat opened an empty popover. `read:` cause: `openPanel` builds `#moreMenu` and every item is for the session's own agent (`!a.parent`: Tools and usage, Schedules, New session, Continue in another app, Copy resume command, Rename, End session, Remove; Notes and Remote also need `!a.parent`), so a helper's menu has none, yet the button was drawn. FR-004 does not say what a helper's header shows; the empty menu is a defect.
+
+- **FR-234** **More only when it holds something.** The header's More button is hidden whenever its menu has no item (`syncMoreBtn`, run when the header is built and on every header update), and an open empty menu is closed. A helper's chat therefore has no More; a main agent's chat keeps it. No item is added for helpers: each current item acts on the session's own agent (the helper is read-only and its parent's chat holds the actions). Test: `check-helper-more` (a helper's chat has no visible `#moreBtn`; a main agent's has it with at least one item and its open menu is inside the window, both sizes); mutant: remove the `syncMoreBtn()` call, the helper assert fails. `[IMPLEMENTED]` test:
+
+### 2026-11-06: the Contacts drawer, the recipient chip and a Preview label (spec 084 FR-020..FR-025; decided by the coordinator under Ruben's delegation, spec 084)
+
+*Missing:* nothing in the chat panel lets a person pick a contact and send the message box text to them. Spec 084 (contacts, issue 701) adds it; this chat panel gets three additions, all Durbar-only (nothing in them is sent to the agent).
+
+- **A Contacts drawer** over `#chat` only, in the same frame as spec 083's Notes drawer (`role="region"`, name *Contacts*; header, answer bar and composer stay usable; Esc closes the drawer first, a second Esc closes the chat). It is opened by **Contacts…** in the More menu, right after **Notes…**, and by Ctrl+K *Contacts*. Its content is spec 084 FR-024. FR-234 is unchanged (a helper's chat has no More button).
+- **A recipient chip** above the message box (spec 084 FR-022): initials, *→ Alex Example (Teams)*, *Change channel* and *Remove*. It is part of the chat's draft like the box text and is not saved across a restart.
+- **The Send button while a chip is set** is labelled and named **Preview for Alex…** (tooltip *Opens a preview. Nothing is sent to the agent.*) and Enter opens the preview instead of sending a turn (spec 084 FR-023). Removing the chip gives the normal Send back.
+- Offered only in main chats with a usable message box, live or demo (spec 084 FR-025). Everything else (storage, the preview, links, the picker) is owned by spec 084.
+
+## Changes 2026-11-06: the agent rail's width can be dragged (issue #1223)
+
+Request (issue #1223): the rail is fixed at 220px, too narrow for long agent names and wasted space for short ones. `read:` `.rail` had `width:220px`; the message box already has a drag handle with remembered size (FR-044..FR-048, `composersize.js`), which this reuses (FR-031).
+
+- **FR-236** **The rail's width is a splitter.** The rail's right edge is a vertical separator (`#railGrip`: `role="separator"`, `aria-orientation="vertical"`, name "Resize the agent list", focusable, `aria-valuenow/min/max`). Default 220px; minimum 180px; maximum 40% of the window width, clamped again on every window resize (the chosen width is kept and returns when the window grows). Drag with pointer events only (no platform cursor code); double-click goes back to 220px; ArrowRight/ArrowLeft move 16px, Shift+arrow, PageUp and PageDown 64px, Home and End go to the minimum and the maximum, Enter resets. The width is one value for the whole app, remembered in `localStorage` (`durbar.railWidth`), a display preference of this computer, never session data. It shares `DurbarComposerSize` (clamp, `keyStep`, parse) and app.js's `wireSplitter` with the message box's handle; text stays at least 10.5px and 15 agents still fit 1440x900 and 1280x800. Tests: `npm run test:composersize` (the shared part) and `check-rail-resize` (ui-suite: drag, keys, double-click, reload, window shrink, both sizes); mutant: remove the window resize listener, the clamp assert fails; remove `.rail-list`'s right margin, the scrollbar hit-test fails. Enter on the handle resets too; the list's scrollbar stays clear of the 6px handle (`.rail-list` right margin), and the Browser tab's native view is checked to follow the page area at 180, 292, the maximum and 220px. The remembered width may be up to 8000px (40% of very wide windows). `[IMPLEMENTED]` test: `[KNOWN GAP]` the handle's hover and drag line and its focus ring are not checked in every theme; `real:` not on Windows or macOS.

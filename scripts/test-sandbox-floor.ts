@@ -13,6 +13,8 @@ import { HOME_SECRETS, leftOutFields, normalizeRoot, sandboxRoots, splitFolders 
 import * as os from 'os';
 import { cleanSandboxState, outwardSandboxEvent, sandboxReason } from '../src/shared/sandbox';
 import { requireOsSandbox, requireOsSandboxFrom } from '../src/main/sandboxpolicy';
+import { machinePolicyDir, readMachinePolicy, POLICY_MAX_BYTES } from '../src/main/policyfile';
+import type { PolicyFs, PolicyStat } from '../src/main/policyfile';
 import { parseSettings } from '../src/shared/credits';
 
 const ok = (m: string): void => console.log('ok - ' + m);
@@ -318,7 +320,7 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   assert.strictEqual(requireOsSandboxFrom(['unreadable']), true, 'a policy that is present but unreadable: fail closed');
   assert.strictEqual(requireOsSandboxFrom([{ permissions: { requireOsSandbox: true } }, { permissions: { requireOsSandbox: false } }]), true, 'a later layer cannot set it back to false');
   assert.strictEqual(requireOsSandboxFrom([JSON.parse('{"__proto__":{"permissions":{"requireOsSandbox":true}}}')]), false, 'own properties only');
-  assert.strictEqual(requireOsSandbox(), false, 'no spec 076 reader yet: not required ([KNOWN GAP])');
+  assert.strictEqual(requireOsSandbox(), false, 'spec 076 FR-209: no machine policy folder on this runner: not required');
   // FR-007c: the stored choice: known app ids only
   assert.deepStrictEqual(parseSettings(JSON.stringify({ sandboxAlwaysContinue: ['claude', 'evil', 'claude', 3] })).sandboxAlwaysContinue, ['claude']);
   assert.strictEqual(parseSettings(JSON.stringify({ sandboxAlwaysContinue: 'claude' })).sandboxAlwaysContinue, undefined);
@@ -444,7 +446,7 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
     const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-cleanup-test-')));
     const show = (v: unknown): string => String(v);
     let n = 0;
-    const mkF = (o: { readme?: boolean; git?: boolean; hooks?: 'empty' | 'file' | 'full' | 'none' | 'link'; config?: 'empty' | 'full' | 'dir' | 'none' | 'link'; extraGit?: string; extraTop?: string; gitLink?: boolean } = {}): string => {
+    const mkF = (o: { readme?: boolean; git?: boolean; hooks?: 'empty' | 'file' | 'full' | 'none' | 'link'; config?: 'empty' | 'full' | 'dir' | 'fulldir' | 'none' | 'link'; extraGit?: string; extraTop?: string; gitLink?: boolean } = {}): string => {
       const F = path.join(root, `durbar-t066-session-${n++}`);
       fs.mkdirSync(F);
       if (o.readme !== false) fs.writeFileSync(path.join(F, 'README.txt'), 'probe\n');
@@ -461,6 +463,7 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
       if (config === 'empty') fs.writeFileSync(path.join(g, 'config'), '');
       if (config === 'full') fs.writeFileSync(path.join(g, 'config'), '[core]\n');
       if (config === 'dir') fs.mkdirSync(path.join(g, 'config'));
+      if (config === 'fulldir') { fs.mkdirSync(path.join(g, 'config')); fs.writeFileSync(path.join(g, 'config', 'x'), 'x'); }
       if (config === 'link') { fs.writeFileSync(path.join(root, `config-${n}`), ''); fs.symlinkSync(path.join(root, `config-${n}`), path.join(g, 'config')); }
       if (o.extraGit) fs.writeFileSync(path.join(g, o.extraGit), 'ref: x\n');
       if (o.extraTop) fs.writeFileSync(path.join(F, o.extraTop), 'x');
@@ -471,6 +474,9 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
     assert.strictEqual(C.gitPlaceholders(path.join(ph, '.git')), true, 'an empty hooks/ and an empty config: the placeholders');
     assert.match(rm(ph), /^removed .*placeholders/, 'F with the placeholders is removed');
     assert.ok(!fs.existsSync(ph), 'F is gone');
+    const phMac = mkF({ config: 'dir' });
+    assert.strictEqual(C.gitPlaceholders(path.join(phMac, '.git')), true, 'macOS: config is an empty folder (real: 2026-11-01)');
+    assert.match(rm(phMac), /^removed .*placeholders/, 'and F is removed');
     const bare = mkF({ git: false });
     assert.match(rm(bare), /^removed /, 'F with no .git is removed as before');
     for (const [o, why] of [
@@ -479,7 +485,7 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
       [{ hooks: 'none' }, 'no hooks/'],
       [{ hooks: 'link' }, 'hooks is a link'],
       [{ config: 'full' }, 'a config with content'],
-      [{ config: 'dir' }, 'config is a folder'],
+      [{ config: 'fulldir' }, 'config is a folder with something in it'],
       [{ config: 'none' }, 'no config'],
       [{ config: 'link' }, 'config is a link'],
       [{ extraGit: 'HEAD' }, 'anything else inside .git'],
@@ -508,7 +514,7 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   assert.strictEqual(copilotSandboxState({ mode: 'ask', platform: 'linux', host, applied: true })?.approvedMayLeave, true, 'Ask first, on: may leave');
   assert.strictEqual(copilotSandboxState({ mode: 'read-only', platform: 'linux', host, applied: true })?.approvedMayLeave, undefined, 'Read-only: never asks');
   assert.strictEqual(copilotSandboxState({ mode: 'ask', platform: 'linux', host })?.approvedMayLeave, undefined, 'not on yet: no claim');
-  assert.strictEqual(COPILOT_SANDBOX_NOTE_COMMAND, 'If you approve, Copilot’s sandbox may still let this write outside the folder (seen on Linux, 2026-10-25).');
+  assert.strictEqual(COPILOT_SANDBOX_NOTE_COMMAND, 'If you approve, this can also write in Copilot’s temp folder (a private one Durbar gives it), not only this folder.');
   const T = require('../../src/renderer/sandboxtext.js') as { chipWord(s: unknown): string; tooltip(s: unknown, app: string, mask?: (t: string) => string): string; hostLine(v: unknown): string; NOT_VERIFIED: string };
   const on = { state: 'on', mechanism: 'bubblewrap', covers: ['shell'], writes: 'none', verified: false };
   assert.strictEqual(T.chipWord(on), 'Sandboxed');
@@ -528,14 +534,14 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   assert.ok(/MCP servers, hooks, the status line, file reads and edits are outside it\./.test(tip), 'Claude: MCP not covered');
   assert.ok(!T.tooltip({ ...on, verified: true }, 'Claude Code').includes('not verified'), 'a verified state drops it');
   assert.ok(/Shell commands and MCP servers run in the macOS sandbox \(writes: this folder/.test(T.tooltip({ ...on, mechanism: 'seatbelt', covers: ['shell', 'mcp'], writes: 'folders' }, 'Copilot')));
-  // FR-021a (K15): Copilot in Ask first says an approved command may leave the sandbox, and still ends with the not-verified sentence
+  // FR-021a (K15, #755): Copilot in Ask first names its own temp folder, and still ends with the not-verified sentence
   const cpAsk = T.tooltip({ ...on, covers: ['shell', 'mcp'], writes: 'folders', approvedMayLeave: true }, 'Copilot');
-  assert.ok(cpAsk.includes('(writes: not only this folder, network: off). File reads and edits are checked by Durbar. An approved command could write outside the folder (Copilot, seen on Linux, 2026-10-25).'), cpAsk);
-  assert.ok(!cpAsk.includes('writes: this folder'), 'no this-folder claim the run refuted');
+  assert.ok(cpAsk.includes('(writes: this folder and Copilot\u2019s temp folder, network: off). File reads and edits are checked by Durbar. Copilot keeps a temp folder writable; Durbar gives it a private one.'), cpAsk);
+  assert.ok(!/writes: this folder,/.test(cpAsk), 'no bare this-folder claim: the temp folder is named (K15)');
   assert.ok(cpAsk.endsWith(T.NOT_VERIFIED) && cpAsk.length <= 300, 'not cut: the not-verified sentence is kept');
   const cpRo = T.tooltip({ ...on, covers: ['shell', 'mcp'] }, 'Copilot');
-  assert.ok(!cpRo.includes('An approved command'), 'Read-only: no such sentence');
-  assert.ok(cpRo.includes('(writes: none asked; Copilot may add one, network: off)') && !cpRo.includes('writes: none,'), `Read-only: no bare "writes: none" (K15): ${cpRo}`);
+  assert.ok(!cpRo.includes('Durbar gives it a private one'), 'Read-only: no Ask first sentence');
+  assert.ok(cpRo.includes('(writes: none asked; a temp folder likely, network: off)') && !cpRo.includes('writes: none,'), `Read-only: no bare "writes: none" (K15): ${cpRo}`);
   assert.ok(cpRo.endsWith(T.NOT_VERIFIED), 'Read-only keeps the not-verified ending');
   const cpKept = T.tooltip({ ...on, covers: ['shell', 'mcp'], untilNewSession: true, managed: true }, 'Copilot');
   assert.ok(cpKept.endsWith(T.NOT_VERIFIED) && cpKept.length <= 300, `the longest Copilot tooltip still ends with the not-verified sentence (${cpKept.length})`);
@@ -688,6 +694,133 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
     assert.strictEqual(T.allowAllNote(codexSandboxState(mode, 'linux'), 'Codex'), '', `Codex ${mode}: no sentence`);
   }
   ok('T067: Restart without the sandbox only for a kept floor in Allow all (not managed, resume); never for Claude Code or Codex; fails closed; its tooltip and the Allow all sentence (FR-022c)');
+}
+
+// spec 076 FR-209 (issue #734): the machine policy.json, read for requireOsSandbox, failing closed
+{
+  type Node = { kind: 'dir' | 'file' | 'link'; uid?: number; mode?: number; ino?: number; dev?: number; nlink?: number; to?: string; text?: string; size?: number };
+  const D = '/Library/Application Support/AgentDurbar/managed';
+  const F = D + '/policy.json';
+  const root = (): Map<string, Node> => {
+    const m = new Map<string, Node>();
+    let ino = 1;
+    for (const d of ['/', '/Library', '/Library/Application Support', '/Library/Application Support/AgentDurbar', D]) m.set(d, { kind: 'dir', uid: 0, mode: 0o755, ino: ino++ });
+    m.set(F, { kind: 'file', uid: 0, mode: 0o644, ino: 99, text: JSON.stringify({ version: 1, permissions: { requireOsSandbox: true } }) });
+    return m;
+  };
+  const ENOENT = (): Error => Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+  /** A fake file system over `m` (POSIX paths); `onOpen` may change the tree between the checks and the open (a swap). */
+  const fakeFs = (m: Map<string, Node>, onOpen: () => void = () => undefined): PolicyFs => {
+    const st = (n: Node): PolicyStat => ({ uid: n.uid ?? 0, mode: n.mode ?? 0o644, ino: n.ino ?? 0, dev: n.dev ?? 1, nlink: n.nlink ?? 1, size: n.size ?? Buffer.byteLength(n.text ?? ''), isDirectory: () => n.kind === 'dir', isFile: () => n.kind === 'file', isSymbolicLink: () => n.kind === 'link' });
+    const fds = new Map<number, Node>();
+    return {
+      readlinkSync: (p) => { const n = m.get(p); if (!n) throw ENOENT(); if (n.kind !== 'link') throw Object.assign(new Error('EINVAL'), { code: 'EINVAL' }); return n.to!; },
+      lstatSync: (p) => { const n = m.get(p); if (!n) throw ENOENT(); return st(n); },
+      openSync: (p) => { onOpen(); const n = m.get(p); if (!n) throw ENOENT(); if (n.kind === 'link') throw Object.assign(new Error('ELOOP'), { code: 'ELOOP' }); const fd = fds.size + 10; fds.set(fd, n); return fd; },
+      fstatSync: (fd) => st(fds.get(fd)!),
+      readSync: (fd, buf, off, len, pos) => { const n = fds.get(fd)!; const b = n.size !== undefined ? Buffer.alloc(n.size, 0x20) : Buffer.from(n.text ?? ''); return b.copy(buf, off, pos, Math.min(b.length, pos + len)); },
+      closeSync: (fd) => void fds.delete(fd),
+    };
+  };
+  const K = { O_RDONLY: 0, O_NOFOLLOW: 0x100, O_NONBLOCK: 0x4 };
+  const read = (m: Map<string, Node>, onOpen?: () => void) => readMachinePolicy('darwin', fakeFs(m, onOpen), K);
+  const req = (m: Map<string, Node>): boolean => requireOsSandbox(() => read(m), () => undefined);
+  // fixed POSIX paths per OS
+  assert.strictEqual(machinePolicyDir('darwin'), D);
+  assert.strictEqual(machinePolicyDir('linux'), '/etc/agent-durbar/managed');
+  assert.strictEqual(machinePolicyDir('win32'), undefined, 'Windows reads nothing in this slice (KNOWN GAP, #1124)');
+  // no folder under trusted parents: no policy, nothing required
+  const none = root(); none.delete(D); none.delete(F);
+  assert.deepStrictEqual(read(none), { layer: undefined });
+  assert.strictEqual(req(none), false, 'FR-209: no machine folder under trusted parents: nothing changes');
+  // a valid, trusted policy
+  assert.deepStrictEqual(read(root()), { layer: { version: 1, permissions: { requireOsSandbox: true } } }, 'FR-209: a trusted policy is read');
+  assert.strictEqual(req(root()), true, 'FR-209: a trusted policy that sets requireOsSandbox requires it');
+  const off = root(); off.get(F)!.text = JSON.stringify({ version: 1, permissions: { requireOsSandbox: false } });
+  assert.deepStrictEqual(read(off), { layer: { version: 1, permissions: { requireOsSandbox: false } } }, 'FR-209: false is read from a trusted file');
+  assert.strictEqual(req(off), false, 'FR-209: false is honoured from a trusted file');
+  // review of #1123: a byte-order mark is allowed; exactly 256 KiB is read, one byte more is not
+  const bom = root(); bom.get(F)!.text = '﻿' + JSON.stringify({ version: 1 });
+  assert.deepStrictEqual(read(bom), { layer: { version: 1 } }, 'FR-209: a BOM is allowed');
+  const exact = root(); const pad = JSON.stringify({ version: 1, x: '' }); exact.get(F)!.text = pad.slice(0, -2) + ' '.repeat(POLICY_MAX_BYTES - pad.length) + '"}';
+  assert.strictEqual(Buffer.byteLength(exact.get(F)!.text!), POLICY_MAX_BYTES);
+  assert.ok(read(exact).layer !== 'unreadable', 'FR-209: exactly 256 KiB is read');
+  // review of #1123 (finding A): a link in a trusted folder, made by root, to a trusted folder is still read (absolute and relative)
+  for (const to of ['/opt/t', '../../../opt/t']) {
+    const m = root(); m.delete(D); m.delete(F);
+    m.set('/opt', { kind: 'dir', uid: 0, mode: 0o755 }); m.set('/opt/t', { kind: 'dir', uid: 0, mode: 0o755 });
+    m.set('/opt/t/policy.json', { kind: 'file', uid: 0, mode: 0o644, ino: 9, text: '{"version":1,"permissions":{"requireOsSandbox":true}}' });
+    m.set(D, { kind: 'link', to });
+    assert.deepStrictEqual(read(m), { layer: { version: 1, permissions: { requireOsSandbox: true } } }, `FR-209: a root-made link in a trusted folder to a trusted folder (${to}) is read`);
+  }
+  // second review of #1123: "at most 40 links", at the edge. A chain of n root-made links in trusted folders: managed -> /opt/c1 -> ... -> /opt/t
+  const chain = (n: number): Map<string, Node> => {
+    const m = root(); m.delete(D); m.delete(F);
+    m.set('/opt', { kind: 'dir', uid: 0, mode: 0o755 }); m.set('/opt/t', { kind: 'dir', uid: 0, mode: 0o755 });
+    m.set('/opt/t/policy.json', { kind: 'file', uid: 0, mode: 0o644, ino: 9, text: '{"version":1}' });
+    const hop = (i: number): string => (i === n ? '/opt/t' : `/opt/c${i}`);
+    m.set(D, { kind: 'link', to: hop(1) });
+    for (let i = 1; i < n; i++) m.set(`/opt/c${i}`, { kind: 'link', to: hop(i + 1) });
+    return m;
+  };
+  assert.deepStrictEqual(read(chain(40)), { layer: { version: 1 } }, 'FR-209: a chain of exactly 40 links is read');
+  const over = read(chain(41));
+  assert.ok(over.layer === 'unreadable' && /more than 40 links/.test(over.problem), `FR-209: a chain of 41 links is refused (${JSON.stringify(over)})`);
+  // each failure is unreadable, so the sandbox is required, and says why
+  const cases: Array<[string, (m: Map<string, Node>) => void, RegExp]> = [
+    ['folder present, file missing', (m) => { m.delete(F); }, /missing/],
+    ['file broken (not JSON)', (m) => { m.get(F)!.text = '{"version": 1, "permissions": '; }, /not valid JSON/],
+    ['no version 1', (m) => { m.get(F)!.text = '{"permissions": {"requireOsSandbox": false}}'; }, /version 1/],
+    ['not root-owned', (m) => { m.get(F)!.uid = 501; }, /owned by root/],
+    ['a world-writable parent', (m) => { m.get('/Library/Application Support')!.mode = 0o777; }, /folder of the policy path/],
+    ['a group-writable policy folder', (m) => { m.get(D)!.mode = 0o775; }, /folder of the policy path/],
+    ['symlinked to a user-owned file', (m) => { m.set('/Users', { kind: 'dir', uid: 0, mode: 0o755 }); m.set('/Users/me', { kind: 'dir', uid: 501, mode: 0o755 }); m.set('/Users/me/evil.json', { kind: 'file', uid: 501, mode: 0o644, ino: 7, text: '{"version":1,"permissions":{"requireOsSandbox":false}}' }); m.set(F, { kind: 'link', to: '/Users/me/evil.json' }); }, /is a link/],
+    // review of #1123 (HIGH): a user-writable policy folder and policy.json linked to any root-owned JSON with version 1
+    ['user-writable folder, linked to a root-owned JSON', (m) => { m.get(D)!.uid = 501; m.set('/usr', { kind: 'dir', uid: 0, mode: 0o755 }); m.set('/usr/lib', { kind: 'dir', uid: 0, mode: 0o755 }); m.set('/usr/lib/x.json', { kind: 'file', uid: 0, mode: 0o644, ino: 8, text: '{"version":1}' }); m.set(F, { kind: 'link', to: '/usr/lib/x.json' }); }, /folder of the policy path/],
+    ['a root-owned folder, policy.json linked to a root-owned JSON', (m) => { m.set('/usr', { kind: 'dir', uid: 0, mode: 0o755 }); m.set('/usr/lib', { kind: 'dir', uid: 0, mode: 0o755 }); m.set('/usr/lib/x.json', { kind: 'file', uid: 0, mode: 0o644, ino: 8, text: '{"version":1}' }); m.set(F, { kind: 'link', to: '/usr/lib/x.json' }); }, /is a link/],
+    // review of #1123 (MEDIUM): the managed folder deleted under a user-writable parent is not "no policy"
+    ['folder deleted under a user-writable parent', (m) => { m.delete(D); m.delete(F); m.get('/Library/Application Support/AgentDurbar')!.uid = 501; }, /folder of the policy path \(\/Library\/Application Support\/AgentDurbar\)/],
+    ['folder and parent deleted under a world-writable grandparent', (m) => { m.delete(D); m.delete(F); m.delete('/Library/Application Support/AgentDurbar'); m.get('/Library/Application Support')!.mode = 0o777; }, /folder of the policy path \(\/Library\/Application Support\) is not owned/],
+    // review of #1123 (finding A): the folder holding `managed` is user-writable, `managed` swapped for a link to a trusted folder that holds
+    // a root-owned policy.json with version 1: the literal path is checked, not only the resolved one
+    ['managed swapped for a link to a trusted folder, under a user-writable parent', (m) => { m.get('/Library/Application Support/AgentDurbar')!.uid = 501; m.delete(D); m.delete(F); m.set('/opt', { kind: 'dir', uid: 0, mode: 0o755 }); m.set('/opt/t', { kind: 'dir', uid: 0, mode: 0o755 }); m.set('/opt/t/policy.json', { kind: 'file', uid: 0, mode: 0o644, ino: 9, text: '{"version":1}' }); m.set(D, { kind: 'link', to: '/opt/t' }); }, /folder of the policy path \(\/Library\/Application Support\/AgentDurbar\) is not owned/],
+    // a link made by root in a trusted folder, to a folder that is not trusted: the target is walked too
+    ['managed linked by root to a user-owned folder', (m) => { m.delete(D); m.delete(F); m.set('/Users', { kind: 'dir', uid: 0, mode: 0o755 }); m.set('/Users/me', { kind: 'dir', uid: 501, mode: 0o755 }); m.set('/Users/me/policy.json', { kind: 'file', uid: 0, mode: 0o644, ino: 9, text: '{"version":1}' }); m.set(D, { kind: 'link', to: '/Users/me' }); }, /folder of the policy path \(\/Users\/me\) is not owned/],
+    ['a link loop on the policy path', (m) => { m.delete(D); m.delete(F); m.set(D, { kind: 'link', to: 'managed' }); }, /more than 40 links/],
+    ['over 256 KiB', (m) => { m.get(F)!.size = POLICY_MAX_BYTES + 1; }, /256 KiB/],
+    ['a hard link (two links)', (m) => { m.get(F)!.nlink = 2; }, /cannot be read \(links\)/],
+  ];
+  for (const [what, change, why] of cases) {
+    const m = root();
+    change(m);
+    const r = read(m);
+    assert.ok(r.layer === 'unreadable' && why.test(r.problem), `FR-209 ${what}: unreadable with its reason (${JSON.stringify(r)})`);
+    assert.strictEqual(req(m), true, `FR-209 ${what}: the sandbox is required`);
+  }
+  // swapped between the checks and the open: another file, or the same file made user-owned (the trust check on the opened file)
+  {
+    const m = root();
+    const r = read(m, () => { m.set(F, { kind: 'file', uid: 0, mode: 0o644, ino: 100, text: '{"version":1}' }); });
+    assert.ok(r.layer === 'unreadable' && /changed while it was checked/.test(r.problem), 'FR-209: swapped after the checks: unreadable');
+    const m2 = root();
+    const r2 = read(m2, () => { m2.get(F)!.uid = 501; });
+    assert.ok(r2.layer === 'unreadable' && /changed while it was checked/.test(r2.problem), 'FR-209: made untrusted after the checks: the opened file is checked again');
+    // review of #1123 (finding B): the same inode number on another device is another file
+    const m3 = root();
+    const r3 = read(m3, () => { m3.set(F, { kind: 'file', uid: 0, mode: 0o644, ino: 99, dev: 2, text: '{"version":1}' }); });
+    assert.ok(r3.layer === 'unreadable' && /changed while it was checked/.test(r3.problem), 'FR-209: swapped for a file with the same inode on another device: unreadable');
+  }
+  // the reason is logged, once per distinct problem (nobody is locked out without one)
+  const lines: string[] = [];
+  const broken = root(); broken.get(F)!.text = 'nope';
+  requireOsSandbox(() => read(broken), (l) => lines.push(l));
+  requireOsSandbox(() => read(broken), (l) => lines.push(l));
+  assert.strictEqual(lines.length, 1, 'logged once');
+  assert.ok(/could not be read \(policy.json is not valid JSON\): the OS sandbox is required/.test(lines[0]) && !lines[0].includes('nope'), `FR-209: the reason, never the content: ${lines[0]}`);
+  // the refusal the person sees names the organization (spec 087 FR-019)
+  const claudeSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'adapters', 'claude.ts'), 'utf8');
+  assert.ok(claudeSrc.includes('Your organization requires the OS sandbox in Read-only and Ask first, so Durbar cannot continue without it.'), 'the refusal sentence exists');
+  ok('FR-209: the machine policy.json: fixed POSIX paths, every folder of the literal path and of each link target trusted, a link only in a trusted folder, a linked policy.json refused, same inode and device, a missing folder only under trusted parents, size cap, BOM, JSON and version, unreadable requires the sandbox and says why');
 }
 console.log('sandbox floor (spec 087): all checks passed');
 FLOOR_DONE = true;

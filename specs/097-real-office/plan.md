@@ -32,12 +32,14 @@ officeModel(), agents, VISITS, status labels   (app.js, unchanged)
 
 - **Mode switch** (`app.js`): `renderAll` checks `officeView()` (reads `durbar.officeview`); `real` calls `DurbarRealOffice.render` in place of `renderOffice`; the List view is unaffected. The first switch to `real` injects `realoffice.js` and `realoffice.css` (`<script>`/`<link>` from `'self'`) and awaits `people.json`. `walkers` (`syncWalkers`) are not used in Real office.
 - **Settings** (`screens.js` `signsRow()`): a third button `data-officelayout="real"`; the handler reuses `setSignsOn`'s confirmation when leaving cabins (FR-004), then sets `durbar.officeview`.
+- **As built in P1 (2026-10-31)**: the search is over splits of the folders into groups, not orders (spec *Changes*); `people.json` ships as `realoffice/art/people.js` (no `connect-src` in the CSP); the compiled shared modules are page scripts, so their private names carry a prefix (`ro*`, `lightOwn`); the lobby widths come from the pure `lobbyWidths` (owner 2026-10-31 09:03); the WebP chunk walker moved to `scripts/webpinfo.ts`, shared by both asset tests.
 - **Layout engine** (`realLayout`): a port of `b2.js` `render`, `rowGeom`, `zone`, `station` and `lobby` geometry into a pure function returning rectangles. Changes from the mockup: the `u` floor and cap (FR-012), fixtures scaled whole (FR-023), the order search capped past 7 folders (FR-011), plate height per row maximum over possible states (FR-015), lobby crowding and plate-only slots (FR-025), zoom placement as its own pure function `zoomRect(target, avoid[], viewport)` (FR-034).
 - **Drawing**: one container, absolutely placed children keyed by agent id; a re-render updates positions and classes in place (no `innerHTML` rebuild of screens, so the zoom and focus survive). Plates are `<button>`s with accessible names (FR-090).
 - **Screens**: lines come from the same per-agent readout buffer `liveact.js` keeps for the desk readout, after `DurbarSafeText` masking (FR-030); `realoffice.js` keeps the last 24 lines per agent, strips ANSI, cuts to 200 characters and sets `textContent` per line. No Markdown, no links.
+- **As built in P2 (2026-10-31)**: the lines live in `liveact.js` (`screen(id)`, `block`), beside the readout, not in `realoffice.js`; text in the chrome layer over the glass; repaints are per screen and dirty-driven, with no idle timer; two frames are stacked pictures with inverse stepped opacity on one clock per desk; a desk scrolled away or wholly under the zoom pauses (`.ro-off`). Rules from the budgets delta: FR-180, FR-181, FR-182.
 - **Lights**: `lightFor` gives `{lamp: 'warm'|'bright'|'on'|'low'|'off', glow: 'on'|'breathe'|'red'|'low'|'off', call: 'amber'|'red'|'orange'|'green-once'|null, motion: 'pulse'|'breathe'|null}`; the renderer maps it to classes on the desk's light layer (`.lamp`, `.glow`, `.call`) drawn between the art and the chrome (z-order: floor and fixtures < people and desks < lights < screens text, plates, signs, chips). The room ambient is one overlay on the art container with opacity from the active share (FR-043). Fixture lights are classes on the fixture from visits.
 - **Provenance limit**: re-encoding strips the generator's C2PA manifest, so `ASSETS.md` is the only provenance (FR-069, known limit).
-- **Open question Q6 (Paco)**: D3 (Real office ignores the Characters setting) is the default until he answers; FR-081, FR-083, T017, T051 depend on it.
+- **Characters (Q6, answered in part 2026-10-31)**: D3 is reversed; `crew.js` `realOfficeSet(choice)` is the seam that picks the character set and scene for Real office (FR-084); today every choice draws the Office people, and a crew adds FR-083's Settings note. How the scene adapts to the crews' own art waits for a proposal.
 - **Art pack**: `src/renderer/realoffice/art/` (WebP + `people.json` + `ASSETS.md`), copied by `scripts/copy-assets.js` (add the folder to its list). The build PR converts the mockup files: fixtures from PNG to WebP, re-cropped to a common floor line; persons re-encoded at 0.80 with metadata stripped (reuse `stripChunks`/chunk walker from `scripts/test-crew-assets.ts`, or 096's `webpcheck.ts` if merged first).
 - **P3 My characters**: 096's `STYLE_PRESETS` gets `real-office-front-v1`; 096's encoder computes the seat metadata; `pickPerson` consults 096's pins and the Characters setting `mine`.
 - **P3 Lighting**: room menu and desk menu items (reuse the existing room menu and desk context menu builders), `durbar.lighting` read and pruned in a pure helper `cleanLighting()` in `src/shared/lights.ts`.
@@ -100,3 +102,61 @@ Passes; see spec *Constitution check*. No new runtime dependency; no IPC; no ada
 - **Bubble and slip**: the inbox/answer-bar component renders into a bubble or slip frame (098 blocks); placement through `zoomRect` (FR-034) with plates, chips and the lift in the avoid list (FR-108..FR-110).
 - **Grounding**: `realLayout`'s lobby step places standing frames by `floorLine` and scales them by fixture px-per-metre (FR-117); the contact shadow is a CSS ellipse in the same rect.
 - **Checks**: spec 098's `test:surfaces`, `test:world-packs`, token lint and world matrix hold the worlds; 097's `check:office` Real office variant runs per world for the fit, grounding and contrast checks.
+
+## The chat in the world inside the denser chat (delta 2026-11-01; FR-224..FR-227)
+
+Order: row 9 of [spec 005's plan table](../005-chat-fullscreen-and-agent-strip/plan.md). #1001 built the portrait's size, `lampWords` in the header painter and tokens in place of literals, and has landed; the 61 px header and `--chat-prose` come with spec 005's chat PRs. No new file. Constitution V: the header keeps its target with the world on. FR-113 and FR-130 stand.
+
+## The chat and Settings look like the room (delta 2026-11-02; FR-231..FR-235)
+
+Order: rows A15..A18 of [spec 005's plan table](../005-chat-fullscreen-and-agent-strip/plan.md). Tokens and the surface colour: [spec 070](../070-theme-tokens/spec.md) FR-068..FR-074. No new runtime dependency. Constitution V: no text on art, sizes unchanged but prose, contrast by test; art is one static background per surface, with no blur, blend or filter (FR-180, FR-182).
+
+## Attention lights (delta 2026-11-04; FR-236..FR-238, FR-243, FR-244, T185..T193)
+
+Owner decisions (Vikram, Telegram DMs, 2026-11-04):
+- 04:38 UTC: round 3's D1, without D4's Boss-door glow.
+- 04:52 UTC: "Ok, just add light without any dusk". FR-239..FR-242 are withdrawn; FR-043, FR-047 and FR-182 are unchanged.
+
+Spec *Changes* has the requirements and the honest limits. This is PR 1 (spec only). PR 2 builds it in the order below.
+
+- **Geometry, pure** (`src/shared/realoffice-layout.ts`, T185). `lightBar(desk, lay)` returns `{bar, clamp, bezel, pool, poolHole, onEdge}` for each `DeskBox`, from the `screen` and `glass` rects already there. The rules are tested where they are made:
+  - the bar inside the monitor's span;
+  - the pool narrowed, then lowered, clear of every `face` box;
+  - `onEdge` when a `ZoneBox.sign` or other chrome rect the layout places overlaps the bar's normal place.
+
+  No DOM: unit-tested on every OS (FR-019 stays under 5 ms).
+- **State, pure** (`src/shared/lights.ts`, T186).
+  - `Light` gains `bar: 'off'|'amber'|'red'|'orange'|'green'`, and `LIGHT_TABLE` gains the *Bar* column.
+  - `lightFor(state, { still, unread })`: unread turns an off bar green and nothing else.
+  - `lampWords` is unchanged: the words for green are the tag's.
+- **Drawing** (`src/renderer/realoffice.js`, `realoffice.css`, T187).
+  - Bar, clamp, bezel and pool sit in `.ro-lights` (under the chrome), one set per desk, created once and switched by class (`bar-amber` ...). A status change adds no node and no layout read (FR-244).
+  - The New reply tag is a `<span aria-hidden="true">` in `.ro-chrome`, placed from the plate's rect, shown by class from `isUnread(a)`. The plate's `aria-label` takes `unreadWords(a)`.
+  - Forced colours, reduced motion and Serious mode use the existing `.ro.still` and media rules.
+- **Reused, not added** (spec 021 FR-031):
+  - `isUnread` and `unreadWords` (`app.js`, DurbarUnread), not a second unread store;
+  - the existing light layer, its `--ro-*` colours and the FR-049 fixed-colour rule;
+  - `lightState`'s precedence;
+  - the layout's `face` boxes (the same ones `portraitCrop` uses);
+  - FR-050's contrast pass in `check-office-overlap.js`;
+  - `check-office-ops.js` for the op rows;
+  - `shots-097-realoffice.js` for pictures.
+- **Cost** (T190, T192): count checks only.
+  - `check-office-ops` counts 0 nodes and no extra layout reads for a status change that lights a bar.
+  - `test:theme-tokens` finds no `backdrop-filter`, `filter` or `mix-blend-mode` in the bar rules and no animation of anything but `opacity`.
+  - No frame-time measurement: the bar is gradients and opacity only.
+- **Constitution.**
+  - V: no state by colour alone (tag, plate words); no motion in the bar; text never on art.
+  - III: no new storage or IPC; the tag shows no content.
+  - VI: CSS and pure TS only.
+  - VIII: the mock's limits are in the spec.
+
+## The lounge row (delta 2026-11-06; FR-246..FR-249, T199..T203, issue #1220)
+
+One PR, spec first. Who moves is `shutPlan(r)` (spec 001 FR-051, `shutters.js` `roomPlan`): app.js's `realModel` already receives `m.rolled`; it marks those agents `lounge: true` and gives them the lounge words. Nothing else in the app decides it.
+
+- **Engine, pure** (`src/shared/realoffice-layout.ts`, T199): `realLayout` takes the lounge agents out of their folders, works out the row's height (`loungeRow`), searches the desk rows in the floor minus that height (the lobby keeps its range from the whole height) and places the seats under the last desk row. `Layout.lounge = {box, desks}`: each seat is a `DeskBox` with `lounge: true`, a `table` rect (the small desk) and the usual `person`, `face`, `screen`, `glass`, `plate`, `lamp`, so the renderer and `slipAvoid` reuse the desk code. `ASLEEP_W` and the slim desk go.
+- **Arcade, pure** (`src/shared/realoffice-arrangements.ts`, T200): the same split; the seats take cells after the cabinets (`packSeats(sizes, cols, keep, extra)` fills the rows' free cells, the last row first, then new rows) and `planFor` counts them, so the plan is never worse than with those agents at cabinets.
+- **Renderer** (`src/renderer/realoffice.js`, T201): the desk loop body becomes `deskOne(d)`, run for the zones' desks and then the lounge's; a seat draws the world's `desk.webp` small (`ld:` key) instead of the desk or cabinet, no screen text, a still person, the same plate, monitor, lamp and "z z"; seat plates are moved after the desks' plates for Tab. `sweep` fades a leaving desk picture; a new one fades in. The ease is `box()`'s.
+- **CSS**: `.ro-lseat` table, `.ro-lmon` monitor (photo and cave: the desk monitor scaled; arcade: a pixel frame in `worlds/retro/world.css`), `.ro-plate.lounge`.
+- **Checks**: `test:realoffice-layout` and `test-realoffice-aisles` (FR-246..FR-248, mutants), `scripts/check-097-lounge.js` (FR-246..FR-249), `shots-097-moments` asleep moment and `world-matrix.js` lounge scene updated.

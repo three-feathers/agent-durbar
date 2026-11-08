@@ -109,6 +109,59 @@ function helpers(ctx) {
   /** The data-id of the desk whose name starts with `name` (null when none). */
   const idOf = (name) => js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>x.querySelector('.name,.nm,h3,b')&&x.innerText.trim().startsWith(${jsLiteral(name)}));return d?d.dataset.id:null})()`);
   /**
+   * Windows CI: the drivers run three at a time on one desktop and a hidden runner window loses the OS focus to a neighbour, so `document.hasFocus()`
+   * turns false in the middle of a driver (seen as `pageFocus:false, active:true, focus:false` in check-list-columns). `focusPage()` asks for the real
+   * focus until the page has it and returns whether it does. With `{ emulate: true }` it falls back to Chromium's focus emulation only when the real focus does not come; with `{ emulate: 'first' }` it turns the emulation on at once, from the call on, for a driver that tests no OS blur (CDP
+   * `Emulation.setFocusEmulationEnabled`), which makes `hasFocus()` true whatever the OS does and so hides every real blur: the caller owns that
+   * and ends it with `releaseFocus()` (try/finally) before any step that tests a focus loss. Nothing turns it on by itself, `H.key` included.
+   * `loseFocus()` releases, blurs the window and returns whether the page reports no focus, for a driver that tests a blur (assert its result).
+   * Every wait ends as soon as the condition holds. `webContents.isFocused()` is the host's view and stays real.
+   */
+  const emulating = new WeakSet();
+  const emulateFocus = async () => {
+    const c = wc();
+    if (!c || !c.debugger || emulating.has(c)) return;
+    try {
+      if (!c.debugger.isAttached()) c.debugger.attach('1.3');
+      await c.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true });
+      emulating.add(c);
+    } catch (e) { console.log('focus emulation unavailable:', String(e && e.message).slice(0, 80)); }
+  };
+  const releaseFocus = async () => {
+    const c = wc();
+    if (!c || !c.debugger || !emulating.has(c)) return;
+    emulating.delete(c);
+    try { await c.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: false }); } catch { /* the page is gone */ }
+    try { if (c.debugger.isAttached()) c.debugger.detach(); } catch { /* already detached */ }
+  };
+  const focusPage = async (o = {}) => {
+    const end = Date.now() + (o.ms || 3000);
+    /* emulate:'first': the emulation is on from the start, not only after the real focus failed: a neighbour can take the OS focus later (check-edit-popups,
+       #1179: a focus() behind a dialog fires no focusin in an unfocused page), and releaseFocus() ends it as before. emulate:true keeps the
+       fallback only: a driver that tests a blur after releaseFocus() (check-list-columns) must not start with the emulation, because on Windows
+       the blur it then makes does not reach a page that never owned the OS focus (#1179) */
+    if (o.emulate === 'first') { await emulateFocus(); if (emulating.has(wc())) return w.until('document.hasFocus()', 1500); }
+    for (;;) {
+      try { if (ctx.win.show) ctx.win.show(); if (ctx.win.focus) ctx.win.focus(); wc().focus(); } catch { /* the window is going away: the guard reports it */ }
+      if (await w.until('document.hasFocus()', 400)) return true;
+      if (Date.now() > end) break;
+    }
+    if (!o.emulate) return false;
+    await emulateFocus();
+    return w.until('document.hasFocus()', 1500);
+  };
+  const loseFocus = async () => { await releaseFocus(); try { ctx.win.blur(); } catch { /* gone */ } return w.until('!document.hasFocus()', 4000); };
+  /** Give another web contents (a Browser tab's view) the real focus and wait until it reports it; false when it never does. */
+  const focusWc = async (target, ms = 3000) => {
+    const end = Date.now() + ms;
+    for (;;) {
+      try { target.focus(); } catch { /* gone */ }
+      const stop = Date.now() + 300;
+      while (Date.now() < stop) { if (target.isFocused()) return true; await ctx.sleep(30); }
+      if (Date.now() > end) return false;
+    }
+  };
+  /**
    * A key press. Return and Enter also send the char event that activates a button; `char: 'always'` sends it for every key, `char: 'never'` for none (a shortcut such as Ctrl+K).
    * `pause` lets the key's own handler run; what it changes is waited for by the caller.
    */
@@ -156,7 +209,7 @@ function helpers(ctx) {
     if (o.settle) await w.settle();
     if (prep !== 'calm' && !o.walking) await w.settleWalk(); // FR-085 (calm already waited); `walking: true` keeps a figure mid-walk on purpose
     await ctx.sleep(o.delay === undefined ? 150 : o.delay);
-    await ctx.shot(file);
+    await ctx.shot(file); // spec 101: under `npm run shots:docs` main's ctx.shot closes the macOS room for every picture (src/main/docshot.ts)
     if (o.tag) console.log(`[${o.tag}] saved`, o.what !== undefined ? o.what : path.basename(file));
   };
   /**
@@ -186,13 +239,13 @@ function helpers(ctx) {
   /**
    * Spec 092 (floor screens): with two or more floors on, the office shows one floor at a time. `floors()` lists the floors that are on, in floor order
    * ({id, name}, read from the Floors panel); `shownFloor()` is the id of the floor screen shown (the saved current floor); `goToFloor(id)` presses
-   * PageDown / PageUp, as a user does, until that floor is shown (each press waits for the change); `eachFloor(fn)` goes to the first floor and runs
+   * PageUp / PageDown, as a user does, until that floor is shown (each press waits for the change); `eachFloor(fn)` goes to the first floor and runs
    * `fn(floor, index)` on every floor screen in turn, ending on the last one. Office view only. With one floor on, `eachFloor` runs `fn` once.
    */
   const floors = async () => {
     const open = await js(`!document.getElementById('floorsPop').hidden`);
     if (!open) { await js(`document.getElementById('floorsBtn').click()`); await w.until(`!document.getElementById('floorsPop').hidden`); }
-    const rows = await js(`[...document.querySelectorAll('#floorsPop [data-fl="on"]')].map(b=>({id:b.dataset.floor,name:b.getAttribute('aria-label').split(': ')[0],on:b.getAttribute('aria-pressed')==='true'}))`);
+    const rows = await js(`[...document.querySelectorAll('#floorsPop [data-fl="on"]')].map(b=>({id:b.dataset.floor,name:b.getAttribute('aria-label').split(': ')[0],on:b.getAttribute('aria-checked')==='true'}))`);
     if (!open) { await js(`document.getElementById('floorsBtn').click()`); await w.until(`document.getElementById('floorsPop').hidden`); }
     return rows.filter((r) => r.on).map(({ id, name }) => ({ id, name }));
   };
@@ -203,7 +256,7 @@ function helpers(ctx) {
       const here = await shownFloor(), cur = list.findIndex((f) => f.id === here), want = list.findIndex((f) => f.id === id);
       if (want < 0 || cur === want) return cur === want;
       const was = list[cur] ? list[cur].id : null;
-      await key(want > cur ? 'PageDown' : 'PageUp', [], { pause: 30 });
+      await key(want > cur ? 'PageUp' : 'PageDown', [], { pause: 30 }); // spec 092 Q-D: the list goes up the building
       await w.until(`localStorage.getItem('durbar.floor')!==${jsLiteral(was)}`);
     }
     return false;
@@ -214,7 +267,7 @@ function helpers(ctx) {
     await goToFloor(list[0].id);
     for (let i = 0; i < list.length; i++) { await goToFloor(list[i].id); await w.settle(); await fn(list[i], i); }
   };
-  return { ...w, allowWindowClose: closeGuard.allow, wc, js, click, clickText, exists, text, idOf, key, calm, clearToasts, load, shot, openSimAgent, floors, shownFloor, goToFloor, eachFloor, INDEX };
+  return { ...w, allowWindowClose: closeGuard.allow, wc, js, click, clickText, exists, text, idOf, key, calm, clearToasts, focusPage, releaseFocus, loseFocus, focusWc, load, shot, openSimAgent, floors, shownFloor, goToFloor, eachFloor, INDEX };
 }
 
 /**

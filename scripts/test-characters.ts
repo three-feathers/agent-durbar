@@ -20,13 +20,13 @@ const T = require(path.join(ROOT, 'src', 'renderer', 'theme.js'));
 
 // --- the two copies of the rule (agent notes: two copies, one corpus) ---
 assert.deepStrictEqual(T.CHARACTERS, [...CHARACTER_CHOICES], 'theme.js lists the same Characters values, in the same order');
-assert.deepStrictEqual([...CHARACTER_CHOICES], ['theme', 'minimalist', 'cheeky', 'prehistoric', 'mine'], 'new crews are appended: the old values never move (FR-064, FR-072; spec 096 FR-040)');
+assert.deepStrictEqual([...CHARACTER_CHOICES], ['theme', 'minimalist', 'cheeky', 'prehistoric', 'pirate', 'monster', 'royal', 'rebels', 'mine'], 'new crews are appended: the old values never move (FR-064, FR-072; spec 096 FR-040)');
 assert.strictEqual(CHARACTER_KITS.mine, 'crew', 'spec 096 FR-040: My characters draw the crew kit');
-// spec 096 T044: Settings offers the first four and `mine` only behind the character list; a stored `mine` with no character draws the theme's own (check-characters runs it)
+// spec 096 T044: Settings offers the first eight and `mine` only behind the character list; a stored `mine` with no character draws the theme's own (check-characters runs it)
 {
   const screens = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.js'), 'utf8');
   const list = /const charItems=\(\)=>\{[\s\S]*?const list=\[([^\n]*)\];/.exec(screens)?.[1] ?? '';
-  assert.deepStrictEqual([...list.matchAll(/\bid:'([a-z]+)'/g)].map((m) => m[1]), ['theme', 'minimalist', 'cheeky', 'prehistoric'], 'Settings offers these always');
+  assert.deepStrictEqual([...new Set([...list.matchAll(/\bid:'([a-z]+)'/g)].map((m) => m[1]))], ['theme', 'minimalist', 'cheeky', 'prehistoric', 'pirate', 'monster', 'royal', 'rebels'], 'Settings offers these always');
   assert.ok(/if\(mineN>=0\)list\.push\(\{id:'mine'/.test(screens), 'and mine, when the app can list characters');
   assert.ok(!/T\.CHARACTERS|THEME\.CHARACTERS/.test(screens), 'and does not list from theme.js');
   const appJs = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'app.js'), 'utf8');
@@ -35,14 +35,15 @@ assert.strictEqual(CHARACTER_KITS.mine, 'crew', 'spec 096 FR-040: My characters 
 assert.deepStrictEqual(T.CHARACTER_KITS, { ...CHARACTER_KITS }, 'theme.js maps each choice to the same kit');
 assert.strictEqual(T.LEGACY_CREW_THEME, LEGACY_CREW_THEME);
 for (const k of Object.values(CHARACTER_KITS)) assert.ok(SCENE_KITS.includes(k) && T.SCENE_KITS.includes(k), `${k} is a scene kit`);
-const corpus: unknown[] = [...CHARACTER_CHOICES, 'Mine', 'mine ', 'Cheeky', 'Prehistoric', 'prehistoric ', ' cheeky', 'crew', 'office', '', null, undefined, 0, {}, [], '__proto__', 'constructor', 'theme\n'];
+
+const corpus: unknown[] = [...CHARACTER_CHOICES, 'Mine', 'mine ', 'Cheeky', 'Prehistoric', 'prehistoric ', 'Pirate', 'pirate ', 'Monster', 'monster ', 'Royal', 'royal ', 'Rebels', 'rebels ', ' cheeky', 'crew', 'office', '', null, undefined, 0, {}, [], '__proto__', 'constructor', 'theme\n'];
 for (const v of corpus) {
   assert.strictEqual(T.parseCharacters(v), parseCharacters(v), 'parseCharacters agrees on ' + JSON.stringify(v));
   for (const kit of [...SCENE_KITS, undefined, '']) assert.strictEqual(T.kitFor(kit, v), kitFor(kit, v), `kitFor(${kit}, ${JSON.stringify(v)}) agrees`);
 }
 
 // --- kit resolution (FR-065): every built-in theme, each value ---
-const OWN: Record<string, string> = { 'clean-office': 'office', corporate: 'corporate', retro: 'pixel', 'durbar-indian': 'court-indian', 'durbar-european': 'court-european', 'durbar-japanese': 'court-japanese' };
+const OWN: Record<string, string> = { 'clean-office': 'office', retro: 'pixel' };
 assert.deepStrictEqual(T.list().map((t: { id: string }) => t.id).sort(), Object.keys(OWN).sort(), 'the built-in themes; Cheeky Crew is not one of them (FR-066)');
 assert.ok(!T.list().some((t: { id: string; name: string }) => t.id === LEGACY_CREW_THEME || /cheeky/i.test(t.name)), 'Cheeky is not listed as a theme');
 for (const [id, own] of Object.entries(OWN)) {
@@ -60,6 +61,18 @@ for (const [id, own] of Object.entries(OWN)) {
   T.setCharacters('prehistoric');
   assert.strictEqual(T.sceneKit(), 'crew', `${id}: Prehistoric draws the crew kit on top of it (FR-072)`);
   assert.strictEqual(T.themeKit(), own, `${id}: its own kit is unchanged by Prehistoric`);
+  T.setCharacters('pirate');
+  assert.strictEqual(T.sceneKit(), 'crew', `${id}: Pirate draws the crew kit on top of it (FR-074)`);
+  assert.strictEqual(T.themeKit(), own, `${id}: its own kit is unchanged by Pirate`);
+  T.setCharacters('monster');
+  assert.strictEqual(T.sceneKit(), 'crew', `${id}: Monster draws the crew kit on top of it (FR-075)`);
+  assert.strictEqual(T.themeKit(), own, `${id}: its own kit is unchanged by Monster`);
+  T.setCharacters('royal');
+  assert.strictEqual(T.sceneKit(), 'crew', `${id}: Royal draws the crew kit on top of it (FR-076)`);
+  assert.strictEqual(T.themeKit(), own, `${id}: its own kit is unchanged by Royal`);
+  T.setCharacters('rebels');
+  assert.strictEqual(T.sceneKit(), 'crew', `${id}: Animal Rebels draws the crew kit on top of it (FR-077)`);
+  assert.strictEqual(T.themeKit(), own, `${id}: its own kit is unchanged by Animal Rebels`);
   T.setCharacters('mine');
   assert.strictEqual(T.sceneKit(), 'crew', `${id}: My characters draw the crew kit on top of it, in any world (spec 096 FR-040)`);
   assert.strictEqual(T.current().id, id, `${id}: the theme stays under My characters`);
@@ -87,6 +100,18 @@ assert.strictEqual(T.sceneKit(), 'crew', 'a user pack: Cheeky on top');
   assert.strictEqual(T.themeIdForCache(), b, 'the same choice again does not');
   T.setCharacters('prehistoric');
   assert.notStrictEqual(T.themeIdForCache(), b, 'Cheeky to Prehistoric (the same kit) still changes the cache key (FR-072)');
+  const pre = T.themeIdForCache();
+  T.setCharacters('pirate');
+  assert.notStrictEqual(T.themeIdForCache(), pre, 'Prehistoric to Pirate (the same kit) changes the cache key (FR-074)');
+  const pir = T.themeIdForCache();
+  T.setCharacters('monster');
+  assert.notStrictEqual(T.themeIdForCache(), pir, 'Pirate to Monster (the same kit) changes the cache key (FR-075)');
+  const mon = T.themeIdForCache();
+  T.setCharacters('royal');
+  assert.notStrictEqual(T.themeIdForCache(), mon, 'Monster to Royal (the same kit) changes the cache key (FR-076)');
+  const roy = T.themeIdForCache();
+  T.setCharacters('rebels');
+  assert.notStrictEqual(T.themeIdForCache(), roy, 'Royal to Animal Rebels (the same kit) changes the cache key (FR-077)');
 }
 // the old id in the window (FR-067): Clean Office with Cheeky when the choice is the default; another choice in force is kept
 T.setCharacters('theme');
@@ -111,12 +136,16 @@ assert.deepStrictEqual(migrateLegacyTheme({}), { settings: {}, changed: false })
 assert.deepStrictEqual(parseSettings('{"characters":"cheeky"}'), { characters: 'cheeky' });
 assert.deepStrictEqual(parseSettings('{"characters":"minimalist"}'), { characters: 'minimalist' });
 assert.deepStrictEqual(parseSettings('{"characters":"prehistoric"}'), { characters: 'prehistoric' }, 'FR-072');
+assert.deepStrictEqual(parseSettings('{"characters":"pirate"}'), { characters: 'pirate' }, 'FR-074');
+assert.deepStrictEqual(parseSettings('{"characters":"monster"}'), { characters: 'monster' }, 'FR-075');
+assert.deepStrictEqual(parseSettings('{"characters":"royal"}'), { characters: 'royal' }, 'FR-076');
+assert.deepStrictEqual(parseSettings('{"characters":"rebels"}'), { characters: 'rebels' }, 'FR-077');
 assert.deepStrictEqual(parseSettings('{"characters":"mine"}'), { characters: 'mine' }, 'spec 096 FR-040');
 assert.deepStrictEqual(migrateLegacyTheme({ theme: 'cheeky-crew', characters: 'mine' }), { settings: { characters: 'mine' }, changed: true }, 'a stored My characters is kept by the migration');
-// spec 096 FR-033, FR-060: pins and Motion in the file; anything else is dropped
-assert.deepStrictEqual(parseSettings('{"characterPins":{"/a":"my-0123456789ab"},"characterMotion":false}'), { characterPins: { '/a': 'my-0123456789ab' }, characterMotion: false });
-assert.deepStrictEqual(parseSettings('{"characterPins":{"rel":"my-0123456789ab","/a":"../x","/b":7},"characterMotion":true}'), {}, 'bad pins and the default Motion are not kept');
-for (const bad of ['[]', '"x"', '7', 'null']) assert.deepStrictEqual(parseSettings(`{"characterPins":${bad},"characterMotion":${bad}}`), {}, 'dropped: ' + bad);
+// spec 096 FR-033: pins in the file; anything else is dropped (there is no characterMotion setting: the global Motion decides, spec 096 Changes 2026-11-05)
+assert.deepStrictEqual(parseSettings('{"characterPins":{"/a":"my-0123456789ab"}}'), { characterPins: { '/a': 'my-0123456789ab' } });
+assert.deepStrictEqual(parseSettings('{"characterPins":{"rel":"my-0123456789ab","/a":"../x","/b":7},"characterMotion":false}'), {}, 'bad pins and a stray characterMotion are not kept');
+for (const bad of ['[]', '"x"', '7', 'null']) assert.deepStrictEqual(parseSettings(`{"characterPins":${bad}}`), {}, 'dropped: ' + bad);
 assert.deepStrictEqual(migrateLegacyTheme({ theme: 'cheeky-crew', characters: 'prehistoric' }), { settings: { characters: 'prehistoric' }, changed: true }, 'a stored Prehistoric is kept by the migration');
 for (const bad of ['"theme"', '"crew"', '"CHEEKY"', '42', '{}', '["cheeky"]', 'null']) assert.deepStrictEqual(parseSettings(`{"characters":${bad}}`), {}, 'dropped: ' + bad);
 
@@ -167,6 +196,32 @@ async function main(): Promise<void> {
     fs.writeFileSync(file, '{not json');
     assert.deepStrictEqual(new SettingsStore(file).load(), {}, 'a corrupt file is no settings');
 
+    // spec 035 FR-018: a removed built-in theme (Corporate, the courts) becomes Clean Office once, written at once; Characters and the rest are untouched
+    for (const gone of ['corporate', 'durbar-indian', 'durbar-european', 'durbar-japanese']) {
+      fs.writeFileSync(file, JSON.stringify({ version: 1, theme: gone, characters: 'prehistoric', seriousMode: true }));
+      const sr = new SettingsStore(file);
+      const gr = sr.load();
+      assert.deepStrictEqual({ theme: gr.theme, characters: gr.characters, seriousMode: gr.seriousMode }, { theme: undefined, characters: 'prehistoric', seriousMode: true }, gone + ': Clean Office, Characters and the rest kept');
+      assert.ok(!('theme' in read()) && read().characters === 'prehistoric', gone + ': written to the file at once');
+      fs.utimesSync(file, new Date(0), new Date(0));
+      new SettingsStore(file).load();
+      assert.strictEqual(fs.statSync(file).mtimeMs, 0, gone + ': the next load writes nothing (once)');
+      assert.deepStrictEqual(sr.setTheme(gone), { ok: true, theme: 'clean-office' }, gone + ': never stored again');
+      assert.ok(!('theme' in read()), gone + ': not in the file after setTheme');
+    }
+    fs.writeFileSync(file, JSON.stringify({ version: 1, theme: 'retro' }));
+    assert.strictEqual(new SettingsStore(file).load().theme, 'retro', 'Retro Pixel stays (FR-019)');
+    // review of #948: an unknown id and an already migrated file are left alone and nothing is written; setTheme of a removed id on a file with no theme stores nothing
+    for (const body of [{ version: 1, theme: 'not-a-theme', characters: 'cheeky' }, { version: 1, characters: 'cheeky' }]) {
+      fs.writeFileSync(file, JSON.stringify(body));
+      fs.utimesSync(file, new Date(0), new Date(0));
+      const sk = new SettingsStore(file);
+      assert.strictEqual(sk.load().theme, body.theme, 'an unknown or absent theme is kept as it is');
+      assert.strictEqual(fs.statSync(file).mtimeMs, 0, 'nothing is written for it');
+      assert.deepStrictEqual(sk.setTheme('corporate'), { ok: true, theme: 'clean-office' });
+      assert.ok(!('theme' in read()) && read().characters === 'cheeky', 'a removed id is never stored and Characters stays');
+    }
+
     // round trip through the handlers
     fs.rmSync(file);
     const store = new SettingsStore(file);
@@ -188,6 +243,14 @@ async function main(): Promise<void> {
     assert.strictEqual(new SettingsStore(file).load().characters, 'cheeky', 'a refused value changes nothing on disk');
     assert.deepStrictEqual(await call('settings:setCharacters', 'prehistoric'), { ok: true, characters: 'prehistoric' }, 'FR-072');
     assert.strictEqual(new SettingsStore(file).load().characters, 'prehistoric', 'Prehistoric survives a restart');
+    assert.deepStrictEqual(await call('settings:setCharacters', 'pirate'), { ok: true, characters: 'pirate' }, 'FR-074');
+    assert.strictEqual(new SettingsStore(file).load().characters, 'pirate', 'Pirate survives a restart');
+    assert.deepStrictEqual(await call('settings:setCharacters', 'monster'), { ok: true, characters: 'monster' }, 'FR-075');
+    assert.strictEqual(new SettingsStore(file).load().characters, 'monster', 'Monster survives a restart');
+    assert.deepStrictEqual(await call('settings:setCharacters', 'royal'), { ok: true, characters: 'royal' }, 'FR-076');
+    assert.strictEqual(new SettingsStore(file).load().characters, 'royal', 'Royal survives a restart');
+    assert.deepStrictEqual(await call('settings:setCharacters', 'rebels'), { ok: true, characters: 'rebels' }, 'FR-077');
+    assert.strictEqual(new SettingsStore(file).load().characters, 'rebels', 'Animal Rebels survives a restart');
     assert.deepStrictEqual(await call('settings:setCharacters', 'mine'), { ok: true, characters: 'mine' }, 'spec 096 FR-040');
     assert.strictEqual(new SettingsStore(file).load().characters, 'mine', 'My characters survive a restart');
     assert.deepStrictEqual(await call('settings:setCharacters', 'minimalist'), { ok: true, characters: 'minimalist' });

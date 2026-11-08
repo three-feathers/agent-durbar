@@ -1256,7 +1256,7 @@ process.on('exit', () => {
   // app's starts off (no settings) and is the store's value
   {
     const writes: unknown[] = [];
-    const store = { chatLinksNewTab: false, setChatLinksNewTab(on: unknown) { writes.push(on); } };
+    const store = { chatLinksNewTab: false, setChatLinksNewTab(on: unknown) { writes.push(on); return { ok: true, value: on as boolean }; } };
     const sim = makeLinksToggle(true, () => store);
     assert.strictEqual(sim.get(), false, 'the simulator\'s toggle is off by default');
     store.chatLinksNewTab = true;
@@ -1274,8 +1274,23 @@ process.on('exit', () => {
     assert.strictEqual(appS.get(), false, 'the app: off by default');
     store.chatLinksNewTab = true;
     assert.strictEqual(appS.get(), true, 'the app reads the settings store');
-    appS.set(false);
+    assert.strictEqual(appS.set(false), true, 'a saved change says so');
     assert.deepStrictEqual(writes, [false], 'and writes it');
+    // issue 1023: the reply is ok only when it is saved and in force: no store, or an unwritable one, is false (also when asking for off)
+    assert.strictEqual(appT.set(false), false, 'no settings store: not saved, even for off');
+    assert.strictEqual(sim.set(true), true, 'the simulator keeps it in memory: ok');
+    const dead = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-lt-')), 'file');
+    fs.writeFileSync(dead, 'x');
+    const bad = new SettingsStore(path.join(dead, 'durbar-settings.json')); bad.load();
+    const badT = makeLinksToggle(false, () => bad);
+    assert.strictEqual(badT.set(true), false, 'an unwritable profile: the save failed');
+    assert.strictEqual(badT.get(), false, 'and the old value is in force');
+    assert.strictEqual(badT.set(false), false, 'issue 1094: off asked while it is already off, and the write fails: not saved');
+    assert.strictEqual(bad.setChatLinksNewTab(false).ok, false, 'the store says so too');
+    // issue 1023: the session browser's one-time note on an unwritable profile is kept for the run, so the browser opens
+    assert.strictEqual(bad.acceptBrowserNote(), true);
+    assert.strictEqual(bad.browserNoteAccepted, true, 'accepted for this run');
+    fs.rmSync(path.dirname(dead), { recursive: true, force: true });
   }
   // FR-123: the toggle is saved as `chatLinksNewTab: true` only
   {
@@ -1285,7 +1300,7 @@ process.on('exit', () => {
     const st = new SettingsStore(f);
     st.load();
     assert.strictEqual(st.chatLinksNewTab, false, 'off by default');
-    for (const bad of ['yes', 1, null, undefined, {}]) assert.strictEqual(st.setChatLinksNewTab(bad), false, 'a non-boolean changes nothing');
+    for (const bad of ['yes', 1, null, undefined, {}]) assert.strictEqual(st.setChatLinksNewTab(bad).value, false, 'a non-boolean changes nothing');
     st.setChatLinksNewTab(true);
     const back = new SettingsStore(f); back.load();
     assert.strictEqual(back.chatLinksNewTab, true, 'kept after a restart');
@@ -1310,7 +1325,10 @@ process.on('exit', () => {
     // spec 080 FR-123, FR-127: the toggle takes only a real boolean; the window never sends the toggle with a link (main reads it)
     assert.ok(/ipcHandle\('browser:setLinksNewTab', \(e, on: unknown\) => \{\n\s*if \(!fromApp\(e\) \|\| typeof on !== 'boolean'\) return \{ ok: false \};/.test(ipcSrc), 'setLinksNewTab refuses a non-boolean with no effect');
     assert.ok(/ctl\.openLink\(id, url, how\)/.test(ipcSrc) && /const linksToggle = makeLinksToggle\(simulator, \(\) => deps\.getSettingsStore\(\)\);/.test(ipcSrc) && /linksNewTab = \(\): boolean => linksToggle\.get\(\)/.test(ipcSrc), 'the toggle is read in main (makeLinksToggle, tested below)');
-    assert.ok(/typeof on !== 'boolean'\) return \{ ok: false \};\n\s*linksToggle\.set\(on\);/.test(ipcSrc), 'the toggle is set through makeLinksToggle only');
+    assert.ok(/typeof on !== 'boolean'\) return \{ ok: false \};\n\s*const saved = linksToggle\.set\(on\);/.test(ipcSrc), 'the toggle is set through makeLinksToggle only');
+    // issue 1023: both settings replies say ok only when the setter's result is what was asked for
+    assert.ok(/return \{ ok: saved && now === on, on: now \};/.test(ipcSrc), 'setLinksNewTab answers ok only when it was saved and is in force (behaviour: makeLinksToggle above)');
+    assert.ok(/return \{ ok: deps\.getSettingsStore\(\)\?\.acceptBrowserNote\(\) \?\? false \};/.test(ipcSrc), 'consentAccept answers the save result');
     const pre = preloadChannels().all;
     for (const c of CH) assert.ok(pre.has(c), `the preload calls ${c}`);
     assert.deepStrictEqual([...pre].filter((c) => c.startsWith('browser:')).sort(), [...CH].sort(), 'the preload calls nothing else under browser:');

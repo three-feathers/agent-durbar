@@ -10,7 +10,7 @@
  *   2. a 480px panel: the title is cut (the row is really full) and nothing in the first row overlaps;
  *   3. (review on PR 796) a title far wider than the row (450 characters), wide and in a 480px panel: the title is cut and the buttons
  *      (`.actions`) stay on the title's row, inside the panel (spec 052 FR-095: the actions never move down).
- * It runs in the default theme, Retro and Corporate (CHAT_TITLE_THEMES=,retro,corporate; `window.THEME.setTheme`).
+ * It runs in the default theme, Retro (CHAT_TITLE_THEMES=,retro; `window.THEME.setTheme`).
  * A miss prints DRIVER FAILED (Electron still exits 0), so the npm script exits non-zero unless "all checks passed" is printed.
  */
 const { helpers, jsLiteral } = require('./driver-helpers');
@@ -27,9 +27,9 @@ module.exports = async (ctx) => {
     const cut=e=>!!e&&e.scrollWidth>e.clientWidth+1;
     const over=[];for(let i=0;i<kids.length;i++)for(let j=i+1;j<kids.length;j++){const a=R(kids[i]),b=R(kids[j]);
       if(Math.min(a.right,b.right)-Math.max(a.left,b.left)>0.5&&Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)>0.5)over.push((kids[i].className||kids[i].id)+' x '+(kids[j].className||kids[j].id));}
-    const act=top.querySelector('.actions'),ar=act&&R(act),pr=R(document.getElementById('panel'));
+    const act=top.querySelector('.actions'),ar=act&&R(act),pr=R(document.querySelector('#panel>.panel-in')); /* spec 005 FR-190: the chat column, right of the rail */
     return {idTop:Math.round(ir.top),actTop:ar?Math.round(ar.top):null,actRight:ar?Math.round(ar.right):null,panelRight:Math.round(pr.right),titleCut:cut(h),subCut:cut(sub),free:Math.round(stop-ir.right),w:Math.round(ir.width),ttl:(h.getAttribute('title')||''),text:h.textContent.length,over}})()`);
-  const THEMES = (process.env.CHAT_TITLE_THEMES || ',retro,corporate').split(',');
+  const THEMES = (process.env.CHAT_TITLE_THEMES || ',retro').split(',');
   for (const [w, h, theme] of [[1440, 900], [1280, 800]].flatMap(([a, b]) => THEMES.map((t) => [a, b, t]))) {
     const at = `${w}x${h}${theme ? ' ' + theme : ''}`;
     await H.load({ w, h, query: { simtitles: 'long' }, ready: 'fit' });
@@ -43,8 +43,8 @@ module.exports = async (ctx) => {
     assert.ok(!m1.subCut || m1.free < SPARE, `${at} wide: the line under the title is cut while ${m1.free}px are free: ${JSON.stringify(m1)}`);
     assert.ok(m1.w >= 300, `${at} wide: the title block is not squeezed to ${m1.w}px by the chips row (review on PR 796): ${JSON.stringify(m1)}`);
     assert.deepStrictEqual(m1.over, [], `${at} wide: nothing in the first row overlaps: ${JSON.stringify(m1)}`);
-    await js(`(()=>{const s=document.createElement('style');s.id='narrowPanel';s.textContent='#panel{flex:0 0 480px!important;max-width:480px!important}';document.head.append(s);})()`);
-    assert.ok(await until(`document.getElementById('panel').getBoundingClientRect().width<=481`), `${at}: the panel is 480px`);
+    await js(`(()=>{const s=document.createElement('style');s.id='narrowPanel';s.textContent='#panel>.panel-in{flex:0 0 480px!important;max-width:480px!important}';document.head.append(s);})()`);
+    assert.ok(await until(`document.querySelector('#panel>.panel-in').getBoundingClientRect().width<=481`), `${at}: the chat is 480px`);
     await settle();
     const m2 = await measure();
     assert.ok(m2.titleCut, `${at} 480px: the long title is cut (the row is full): ${JSON.stringify(m2)}`);
@@ -62,7 +62,7 @@ module.exports = async (ctx) => {
     };
     await wideLong('480px');
     await js(`document.getElementById('narrowPanel').remove()`);
-    assert.ok(await until(`document.getElementById('panel').getBoundingClientRect().width>600`), `${at}: the panel is wide again`);
+    assert.ok(await until(`document.querySelector('#panel>.panel-in').getBoundingClientRect().width>600`), `${at}: the chat is wide again`);
     await settle();
     await wideLong('wide');
     console.log('[chat-title]', at, 'ok', JSON.stringify({ wide: m1, narrow: m2 }));

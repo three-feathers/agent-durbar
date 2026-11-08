@@ -25,7 +25,7 @@ const path = require('path');
 const { helpers, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
 
-const MAIL = 'jane.doe@contoso.example';
+const MAIL = 'jane.doe@example.invalid';
 const TRACE = '0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0';
 const CLAIMS = 'eyJhY2Nlc3NfdG9rZW4iOnsibmJmIjp7ImVzc2VudGlhbCI6dHJ1ZX19fQ';
 const POLICY = `AADSTS530003: Your device is required to be managed to access this resource. Trace ID: ${TRACE}. User: ${MAIL}. claims=${CLAIMS}`;
@@ -133,7 +133,12 @@ module.exports = async (ctx) => {
     await report(id, all('connected'));
     await failedCall(id, 'tidy', 'HTTP 401', 'c4');
     await failedCall(id, 'agent365-teams', POLICY, 'c5');
+    // The dialog repaints only on an `mcp` event (FR-004; a toolCall event repaints nothing), 150 ms after the first one of a burst. So a call that reaches the page after that
+    // timer fired shows only when a later report repaints (#1196: "the marker call shows" failed once on Linux CI, 1 of 10 runs under a CPU load). The report goes LAST, after every call,
+    // and the marker call is the one before it: events reach the page in order, so the repaint that report causes (a pending one or a new one) reads every call sent before it.
+    await failedCall(id, 'crm', 'HTTP 401', 'c6');
     await report(id, all('connected'));
+    assert.ok(await until(`(()=>{const li=document.querySelector('#agMcp li.srv[data-n="crm"] .mst-call');return !!li&&li.textContent===${jsLiteral(AUTH_WORDS)};})()`), `${w}: the marker call shows`);
     assert.ok(await until(`(()=>{const li=document.querySelector('#agMcp li.srv[data-n="tidy"] .mst-call');return !!li&&li.textContent===${jsLiteral(AUTH_WORDS)};})()`), `${w}: tidy says the last call needs sign-in`);
     assert.strictEqual((await row('agent365-teams')).call, POLICY_WORDS, `${w}: a policy stays across a repeated connected report`);
     await report(id, all('needs-auth'));

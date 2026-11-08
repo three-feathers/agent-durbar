@@ -13,6 +13,17 @@ Rules (checked by `npm run changelog:check`, part of `npm test`):
   an indented line under a bullet continues it; no headings, no HTML comments;
 - the file name is lower case: letters, digits, `.`, `_`, `-`, ending in `.md` (use your branch name);
 - the same entry may not be in another fragment or already in `CHANGELOG.md`.
+- optional, at the end of the fragment (spec 008 FR-173): `  Highlight: <one line>` puts the change in the release's
+  five-line *Highlights* block (its bold name and one short clause, at most 100 characters, no spec numbers; plain text only:
+  letters, digits, spaces, `. , ; : ' - / + % ?` and `**bold**`, so no link, mention, `#` reference, code or HTML), and
+  `  Scene: <id>` shows it in the release clip (`node scripts/release-video.js --list` names the scenes). Both are indented,
+  one of each at most, after the last bullet; the fold drops them from the text. Most fragments have neither:
+
+  ```markdown
+  - **Monster Crew** (spec 077 FR-075): a fourth crew in Settings, Characters ...
+    Highlight: **Four new character crews**: Pirate, Monster, Royal and Animal Rebels, in Settings, Characters.
+    Scene: crews
+  ```
 
 A follow-up PR on the same branch edits its own file. `npm run changelog:preview` prints what the next release will list.
 
@@ -22,7 +33,7 @@ No release PR folds the notes before the tag any more (its notes went stale whil
 no merge freeze is needed:
 
 0. **No spec folder per release** (spec 021 FR-063): a release adds one row to the *Release table* in [spec 008](../specs/008-packaging-and-release/spec.md#release-table) (tag, date, release link, one-line notes, corrective Yes/No/Unknown), in the version PR or the fold PR.
-1. A **version-only PR** sets the new version (`package.json`, `package-lock.json`, the simulator's About label).
+1. A **version-only PR** sets the new version (`package.json` and `package-lock.json` only: the simulator's About label reads `package.json` at build time, spec 008 FR-179).
 2. The release manager **tags a commit on `main`** (annotated; the daily stable release needs no owner OK, spec 021 FR-064; any other tag does). `release.yml`'s `verify` job checks the tag (on `main`, equal to
    `package.json`, the previous release already folded) and writes the draft's notes from exactly that commit's fragments:
    `node scripts/changelog.js build --release "<heading>" --stdout` prints the same section and edits nothing.
@@ -50,7 +61,20 @@ Branch names must match the Spec Kit gate (lowercase letters, digits and hyphens
    (`git rm changelog.d/<file>`): the tag's text is what was released. If the edit added something genuinely new, put that in
    a new fragment for the next release.
 
-4. Check the draft, then publish it by hand as a **pre-release**, not *latest* (a stable tag: next section).
+4. **The release clip** (spec 008 FR-174, FR-175; a stable or pre-release tag, never a `-test.M` build), after `release.yml` has made the draft and before you publish. It never holds a release.
+   Not added to older releases.
+   1. Record, on a checkout of the tag (needs ffmpeg; about 2 minutes; no AI credits): `npm run release:video -- --version <tag> --out <dir>`.
+      Without `--scenes` the clip shows the scenes the release's fragments name (`Scene:` fields, and the scenes whose `refs` a bullet's spec and FR numbers match; spec 008 FR-183). If it says no scene shows the release, pick with `--scenes <ids>` (`--list`), and add a scene or a `refs` entry afterwards.
+   2. Look at the stills in `<dir>` (FR-176: simulator data only, no path, name, token or chat text; captions in the band, nothing broken).
+   3. Upload to the draft: `gh release upload <tag> <dir>/release-<tag>.mp4 <dir>/release-<tag>.gif`.
+   4. Add the image line at the very top of the draft's notes (the Highlights block is already in them, built from the fragments' `Highlight:` fields by `scripts/release-notes.js`):
+      `[![<tag> in <N> seconds](https://github.com/three-feathers/agent-durbar/releases/download/<tag>/release-<tag>.gif)](https://github.com/three-feathers/agent-durbar/releases/download/<tag>/release-<tag>.mp4)`
+   5. On any failure (no ffmpeg, a check or size refused, the upload failed) publish **without** the image line, keep the Highlights block, and say so in the team chat.
+   6. After publishing the first release with a clip, open its page and check the GIF renders inline and the MP4 link works; else use the fallback in FR-174 (T124).
+   The site gets the clip later through spec 104; no YouTube.
+5. Check the draft, then publish it by hand as a **pre-release**, not *latest* (a stable tag: next section).
+
+- In the doc-only fold PR (from 2026-11-07, spec 008 FR-181, owner request): `npm run usage:readme -- --release vX.Y.Z` with every machine's `usage-*.json` in `~/.durbar-usage` (or `--files`). It rewrites the README's *Build cost so far* block, appends the release's row to `docs/build-cost-history.json` and regenerates `docs/build-cost-badge.svg` and `docs/build-cost.svg`; commit those five files. Method: [docs/build-cost.md](../docs/build-cost.md).
 
 ## A stable release (spec 008 FR-129)
 
@@ -66,6 +90,8 @@ A tag without a `-` (`v1.2.3`) is handled by the same flow with these difference
   `v0.1.0` (2026-10-26); check the published release shows as *Latest*.
 - The fold PR for a stable tag also updates the hand-written alpha wording that tests assert: the landing page eyebrow and
   status in `docs/site/landing.json` with their asserts in `scripts/test-site.js`, and the README status block.
+
+- Optional: add the day's *Build cost* table (`npm run usage:day -- --date YYYY-MM-DD`, an API list-price estimate, not billing) to the notes; setup and privacy in [docs/build-cost.md](../docs/build-cost.md).
 
 ## Test builds (spec 008 FR-121..FR-124)
 

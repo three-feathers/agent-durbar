@@ -1,6 +1,6 @@
 /**
- * WebP files, read as bytes with no decoder (spec 096 FR-023, spec 077 FR-050). The chunk walker moved here from
- * `scripts/test-crew-assets.ts` (spec 021 FR-031: one walker for the shipped art test and for main's check of the encoder's output).
+ * WebP files, read as bytes with no decoder (spec 096 FR-023, spec 077 FR-050). The one RIFF chunk walker (spec 021 FR-031): the world pack
+ * validator (`worldpack.ts`) uses it, and `scripts/webpinfo.ts` wraps it for the shipped-art tests (`test-crew-assets.ts`, `test-realoffice-assets.ts`).
  * Every read is bounds-checked: a hostile or truncated file gives `null` or a problem sentence, never an exception or a long loop
  * (each chunk is at least 8 bytes, so the walk is linear in the file size).
  */

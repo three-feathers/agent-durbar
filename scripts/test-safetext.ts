@@ -1,5 +1,7 @@
 /** Agent text on the office floor (spec 041 FR-065, issue #541): mask first, then plain, then cut; fails closed. `npm run test:safetext`. No credits spent. */
+import './safetext-shared'; // the compiled hidden-character module for safetext.js (spec 084 FR-033)
 import assert from 'assert';
+import { assertLinearShape } from './redact-growth-lib';
 import fs from 'fs';
 import path from 'path';
 import { redact, maskSecretCommand, maskSecretUrl } from '../src/shared/redact';
@@ -68,9 +70,8 @@ eq(boom.mask(raw), '', 'a throwing redact: mask gives nothing');
 // time: 200k characters, generous limit
 {
   const big = ('word ' + ghp + ' ').repeat(5000);
-  const t0 = Date.now();
   const out = T.excerpt(big, 140);
-  ok(Date.now() - t0 < 5000, '200k characters in under 5 s');
+  assertLinearShape('excerpt', (x) => void T.excerpt(x, 140), (n) => big.slice(0, n), 200_000); // same shape, same run (spec 012 T138)
   ok(!hasSecret(out), 'big input masked');
 }
 
@@ -190,5 +191,28 @@ eq(T.ready, true, 'redact: ready');
     ok(!piece(b), `excerpt hides a glued token: ${t.slice(0, 20)} -> ${b}`);
   }
   eq(T.mask('Run `npm test` on my_branch **now**'), 'Run `npm test` on my_branch **now**', 'no token: the text stays as written');
+}
+// spec 084 FR-033 (review of PR 1236): without the shared hidden-character module (a source tree nobody handed it to, or a page whose
+// redact.js did not load) every mask fails closed: no throw, '' or the fallback word, and `ready` is false
+{
+  type Bare = typeof S & { unhide(t: unknown): string; maskRaw(t: unknown, r: unknown): string; useShared(m: unknown): boolean };
+  const file = require.resolve(path.join(R, 'safetext.js'));
+  const kept = require.cache[file];
+  delete require.cache[file];
+  const bare = require(file) as Bare;
+  if (kept) require.cache[file] = kept;
+  const tok = 'gh' + 'p_' + 'Q'.repeat(36);
+  const w = bare.create({ redact: (s: string) => redact(s, {}), cut: DurbarCutText_ });
+  eq(w.ready, false, 'no shared module: not ready');
+  eq(w.mask(`a ${tok} b`), '', 'no shared module: mask gives nothing (no throw)');
+  eq(w.excerpt(`a ${tok} b`, 40), 'Finished.', 'no shared module: excerpt gives the fallback word');
+  eq(bare.maskRaw(`a ${tok} b`, (s: string) => redact(s, {})), '', 'no shared module: maskRaw gives nothing');
+  eq(bare.excerpt(`a ${tok} b`, (s: string) => redact(s, {})), '', 'no shared module: excerpt gives nothing');
+  eq(bare.maskLabel(`cat ${tok}`, 'read', { redact: (s: string) => redact(s, {}) }), '', 'no shared module: a label gives nothing');
+  assert.throws(() => bare.unhide('x'), /no unhide/, 'no shared module: unhide throws (its callers fail closed)');
+  eq(bare.useShared({ unhide: 42 }), false, 'a module without unhide is refused');
+  const configured = S as Bare;
+  eq(configured.useShared({ unhide: (x: string) => x }), false, 'a found module cannot be replaced');
+  eq(S.create({ redact: (s: string) => redact(s, {}) }).ready, true, 'with the shared module: ready');
 }
 console.log(`safetext: ${n} checks passed`);

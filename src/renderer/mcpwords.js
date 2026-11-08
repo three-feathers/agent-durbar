@@ -62,15 +62,31 @@
 
   /* The hint (FR-006): failed and needs-auth rows only, one short sentence with what to check. `errorClass` (FR-011) wins; otherwise
      the already-masked text decides. Returns '' when there is nothing useful to say. `app` is the agent app's name. */
-  const CLASS_HINT={
-    'not-found':'The command was not found. Check that it is installed and that its name is right in Settings or the folder\'s extras.',
-    'timeout':'The server took too long to answer. Restart it, or check that it is reachable.',
-    'exited':'The server stopped on its own. Restart it, and check its command and arguments.',
-    'config':'The server\'s settings look wrong. Check them in Settings or the folder\'s extras.',
-    'permission':'Permission was denied. Check that the command is allowed to run and that its folder can be read.',
-    'refused':'The server could not be reached. Check its address and your network.',
-    'disconnected':'The connection to the server closed. Restart it, and check that it is still running or reachable.'
+  /* Spec 058 FR-201: the suggested fix per reason key, fixed text; Agent Durbar never runs it (the person presses it where it is).
+     ctx = {file} (a list's file label, `~/...`, for `config`). Unknown keys get the `unknown` fix. */
+  const FIXES={
+    'auth':'Sign in again: Show opens the chat’s MCP list, with Sign in (or the steps to sign in from a terminal).',
+    'not-found':'Install the command, or put its full path in the server’s entry. Then restart the server, or start a new chat.',
+    'policy':'Your organization’s sign-in rules refused it, usually a managed-device check. Sign in again using a browser your organization allows, or ask your administrator.',
+    'refused':'Check the server’s address or port and that the server is running; another program may use the port. Then press Restart.',
+    'crashed':'Open Details for the server’s own error, fix its command or settings, then press Restart.',
+    'timeout':'Press Restart. If it times out again, check your network or how long the server takes to start.',
+    'permission':'Allow the command to run (its file permissions), then press Restart.',
+    'disconnected':'Press Restart, and check that the server still runs or can be reached.',
+    'unknown':'Open Details or Copy diagnostics to see what the agent app reported.'
   };
+  /* FR-006 hints; since FR-201 (2026-11-03, one wording per failure kind) the fix text of the strip, so the chat dialog, Settings and the
+     launch strip say the same. `config` stays its own: a wrong entry, not an unreadable list. */
+  const CLASS_HINT={
+    'not-found':FIXES['not-found'],
+    'timeout':FIXES.timeout,
+    'exited':FIXES.crashed,
+    'config':'The server\'s settings look wrong. Check them in Settings or the folder\'s extras.',
+    'permission':FIXES.permission,
+    'refused':FIXES.refused,
+    'disconnected':FIXES.disconnected
+  };
+
   const own=(o,k)=>Object.prototype.hasOwnProperty.call(o,k);
   /* Spec 058 FR-006 / FR-090: the one text classifier, shared by the hint and the reason (they never disagree). Reads the already-masked
      text, cut first (linear on hostile input); returns a class word or '' (nothing guessed). */
@@ -102,7 +118,7 @@
   const CALL_WORDS={'policy':'last call blocked by your organization\u2019s access policy','auth':'last call needs sign-in'};
   const callWord=cls=>typeof cls==='string'&&own(CALL_WORDS,cls)?CALL_WORDS[cls]:'';
   function callHint(cls,app){
-    if(cls==='policy')return 'Your organization\u2019s access policy refused the server\u2019s last call (for example, the device must be managed). Agent Durbar cannot change that; ask your administrator.';
+    if(cls==='policy')return 'Your organization\u2019s access policy refused the server\u2019s last call (usually a managed-device check). Sign in again using a browser your organization allows, or ask your administrator. Agent Durbar cannot change the policy.';
     if(cls==='auth')return 'The server refused its last call for a missing sign-in. '+(app?plain(app,40):'Your agent app')+' keeps the sign-in; sign in again to use its tools.';
     return '';
   }
@@ -130,6 +146,11 @@
     const p=v=>String(v).padStart(2,'0'), hm=p(d.getHours())+':'+p(d.getMinutes());
     const same=d.getFullYear()===n.getFullYear()&&d.getMonth()===n.getMonth()&&d.getDate()===n.getDate();
     return same?'at '+hm:'on '+d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' at '+hm;
+  }
+  /* Spec 058 FR-221: "Renewed 12:40" (local; with the date when not today) for a connected server Durbar renewed in the background; '' for no usable time. */
+  function renewedWord(at,now){
+    const w=whenText(at,now);
+    return w?'Renewed '+w.replace(/^at /,'').replace(/^on /,'').replace(' at ',' '):'';
   }
   /* FR-093: the Copy diagnostics text, from the reply only (main masked the error, FR-005). Each value is masked by `redact` (the shared
      masking, the same code as main) BEFORE it is cut and flattened, so no head of a token survives a cut; then the whole text is masked
@@ -199,5 +220,92 @@
     for(const r of servers)if(r.attention)attention++;
     return {servers,attention,chats};
   }
-  return {stateOf,offBy,iconSvg,hintFor,callWord,callHint,signInHint,plain,aggregate,reasonOf,whenText,diagnostics,RANK:RANK.slice(),ICON_NAMES:Object.keys(ICONS)};
+  function fixFor(key,ctx){
+    if(key==='config'){const f=ctx&&ctx.file?plain(ctx.file,120):'';return 'Fix the entry in '+(f||'the agent app’s MCP list')+'. Agent Durbar reads it again when Settings opens.';}
+    return typeof key==='string'&&own(FIXES,key)?FIXES[key]:FIXES.unknown;
+  }
+  /* Spec 058 FR-199 part 1: findings from `mcp:globalState` alone (no session): a list that could not be read, and a stdio server whose
+     command main did not find (FR-198) that new sessions would start. One finding per server name over the apps' lists.
+     Returns [{key, kind:'list', name, where, reason, rkey, fix}]; names and labels are plain text (the caller escapes). */
+  function fileFindings(g){
+    const out=[];
+    if(!g||g.ok!==true||!Array.isArray(g.apps))return out;
+    const byName=new Map();
+    for(const a of g.apps){
+      if(!a||typeof a!=='object')continue;
+      const label=plain(a.label||a.app,40), file=plain(a.file,120);
+      if(typeof a.error==='string'&&a.error){out.push({key:'list:'+String(a.app),kind:'list',name:label+'’s MCP list',where:file,reason:'Could not be read',rkey:'config',fix:fixFor('config',{file})});continue;}
+      const off=new Set(Array.isArray(a.off)?a.off:[]);
+      for(const v of Array.isArray(a.servers)?a.servers:[]){
+        if(!v||v.missing!==true||!okName(v.name)||off.has(v.name))continue;
+        const f=byName.get(v.name);
+        if(f){if(!f.apps.includes(label))f.apps.push(label);continue;}
+        byName.set(v.name,{key:'cmd:'+v.name,kind:'list',name:plain(v.name,80),apps:[label],reason:REASONS['not-found'],rkey:'not-found',fix:fixFor('not-found')});
+      }
+    }
+    for(const f of byName.values()){f.where=f.apps.join(', ')+(f.apps.length>1?' lists':' list');delete f.apps;out.push(f);}
+    return out;
+  }
+  /* Spec 058 FR-199 part 2: one finding for a running chat's server from its `mcp` report entry (FR-090's reason), or for a failed tool
+     call with the `policy` word (FR-193); null when the entry needs nothing. chat = {id, name, app}. */
+  function chatFinding(x,chat,policy){
+    if(!x||!okName(x.name)||!chat)return null;
+    const r=policy===true?{key:'policy',word:'Blocked by your organization’s access policy'}:reasonOf(x);
+    if(!r)return null;
+    return {key:(policy===true?'policy:':'chat:')+JSON.stringify([String(chat.id),x.name]),kind:'chat',chatId:String(chat.id),name:plain(x.name,80),where:plain(chat.name,80)+(chat.app?' ('+plain(chat.app,40)+')':''),reason:r.word,rkey:r.key,fix:fixFor(r.key)};
+  }
+  /* Spec 058 FR-199 part 2: the 10-minute window, on a monotonic clock (`performance.now()` in the page); a clock that went back, or a bad
+     value, counts as outside (nothing new is added). */
+  const LAUNCH_MS=10*60*1000;
+  function launchYoung(t0,now){return typeof t0==='number'&&typeof now==='number'&&isFinite(t0)&&isFinite(now)&&now>=t0&&now-t0<=LAUNCH_MS;}
+  /* One event of a running chat against the strip's findings (a Map key -> finding, changed in place); returns true when it changed.
+     A status finding (`chat:` key) follows the server's reports: Failed / Needs sign-in set it (only while `young`), anything else drops it.
+     A policy finding (`policy:` key, FR-193) is not a server state: reports never touch it; a later successful call of that server drops it. */
+  function launchUpdate(items,e,chat,young){
+    if(!(items instanceof Map)||!e||!chat)return false;
+    let ch=false;
+    const put=f=>{if(f&&young===true){items.set(f.key,f);ch=true;}};
+    const drop=k=>{if(items.delete(k))ch=true;};
+    if(e.type==='mcp'){
+      for(const x of Array.isArray(e.servers)?e.servers:[]){
+        if(!x||!okName(x.name))continue;
+        if(x.status==='failed'||x.status==='needs-auth')put(chatFinding(x,chat));
+        else drop('chat:'+JSON.stringify([String(chat.id),x.name]));
+      }
+    }else if(e.type==='toolCall'&&typeof e.mcpServer==='string'){
+      if(e.phase==='failed'&&e.mcpCall==='policy')put(chatFinding({name:e.mcpServer},chat,true));
+      else if(e.phase==='complete')drop('policy:'+JSON.stringify([String(chat.id),e.mcpServer]));
+    }
+    return ch;
+  }
+  /* Spec 058 FR-196: which chats "Restart where it failed" restarts. `chats` = an aggregate row's chats; `usable(c)` = the window can reach
+     that chat. Failed rows only; a sign-in failure is skipped ('auth', a restart does not fix it), and so is an app without a per-server
+     restart ('session', e.g. Codex). Returns {targets, failed (all failed rows), skipped:[{chat, why}]}. */
+  function restartTargets(chats,usable){
+    const failed=(Array.isArray(chats)?chats:[]).filter(c=>c&&c.entry&&c.entry.status==='failed');
+    const targets=[],skipped=[];
+    for(const c of failed){
+      const r=reasonOf(c.entry);
+      if(r&&r.key==='auth')skipped.push({chat:c,why:'auth'});
+      else if(c.entry.canRestart!==true)skipped.push({chat:c,why:'session'});
+      else if(typeof usable!=='function'||usable(c))targets.push(c);
+    }
+    return {targets,failed,skipped};
+  }
+  /* spec 058 FR-229 (issue 1229): the one text for a chat's Sign in press that could not start a sign-in. Never empty: `row` is the dialog's row for the
+     server (or none), `err` an error text of the call (already masked by main). The wording is the dialog's own ("Could not start the sign-in: ..."). */
+  function signInPressNote(name,row,err,live){
+    const n=plain(name,64)||'this server';
+    let why=typeof err==='string'&&err.trim()?plain(err,160):'';
+    if(!why){
+      if(live===false)why='The chat\u2019s session is not running. Send a message to start it, then sign in.';
+      else if(!row)why=n+' is not in this chat\u2019s MCP list.';
+      else if(row.signIn)why='A sign-in is already open: press Open sign-in page on its row.';
+      else if(row.canSignInAgain===true)why='This row offers Sign in again\u2026 instead: press it on the row.';
+      else if(row.canSignIn!==true)why='This app cannot start the sign-in from here. Open the row for the steps.';
+      else why='Unknown error.';
+    }
+    return 'Could not start the sign-in for '+n+': '+why;
+  }
+  return {signInPressNote,stateOf,offBy,iconSvg,hintFor,callWord,callHint,signInHint,plain,aggregate,reasonOf,whenText,renewedWord,diagnostics,fixFor,fileFindings,chatFinding,launchYoung,launchUpdate,restartTargets,LAUNCH_MS,RANK:RANK.slice(),ICON_NAMES:Object.keys(ICONS)};
 })());

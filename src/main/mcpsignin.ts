@@ -14,7 +14,7 @@ import type { AgentInfo, McpOpenSignInResult, McpSignInStartResult } from '../sh
 import { validSignInEnd } from '../adapters/eventguard';
 import { SIGN_IN_MIN_TTL_MS } from '../shared/mcp';
 import { maskMcpError } from './mcpmask';
-import { canSignInAgainStatus, needsSignIn, validServerName } from './mcpsession';
+import { BLOCK_STATES, canSignInAgainStatus, needsSignIn, validServerName } from './mcpsession';
 
 /** FR-065: how long main keeps an address at most; the runtime's own listener ends on its own. FR-180: an entry with a `ttlMs` keeps its own, shorter limit. */
 export const SIGN_IN_TTL_MS = 10 * 60 * 1000;
@@ -182,6 +182,10 @@ export class McpSignInStore {
   has(agentId: string, name: string): boolean {
     return !!this.live(agentId, name);
   }
+  /** A sign-in for this server is starting (reserved, its address not yet held). */
+  starting(agentId: string, name: string): boolean {
+    return this.pending.has(McpSignInStore.key(agentId, name));
+  }
   /** One sign-in per server: also while the call to the runtime is under way (the address has not arrived yet). False when one is open or starting. */
   reserve(agentId: string, name: string): boolean {
     const k = McpSignInStore.key(agentId, name);
@@ -287,6 +291,19 @@ export interface SignInDeps {
   secrets(agentId: string): readonly string[];
   /** FR-075: the server's own address (http or https) when it has one; stdio and runtime-only servers have none. */
   serverUrl?(agentId: string, name: string): string | undefined;
+  /** Spec 058 FR-218: resolves when no automatic renewal or restart of this server runs in this chat (Sign in again never overlaps one). */
+  settle?(agentId: string, name: string): Promise<void>;
+  /** Spec 058 FR-229 (issue #1229): Durbar's own renewal record says this server needs a new sign-in (the runtime may still read it connected). */
+  blocked?(agentId: string, name: string): boolean;
+  /** Spec 058 FR-229: this agent has the server switched off (a blocked server that is off gets no sign-in and no session start). */
+  off?(agentId: string, name: string): boolean;
+  /** Spec 058 FR-229: the agent app's organization policy refuses this server (same verdict the row shows). */
+  orgRefused?(agentId: string, name: string): boolean;
+  /** Spec 058 FR-229: starts (resumes) the chat's session the way a send does, without sending a message; missing = a session that is not running is refused. */
+  ensureLive?(a: AgentInfo): Promise<void>;
+  /** FR-229: how long to wait for the started session to report this server (ms) and the step; test hooks. */
+  startWaitMs?: number;
+  stepMs?: number;
 }
 
 const NOT_RUNNING = 'This session is not running. Send a message to start it, then sign in.';
@@ -309,13 +326,36 @@ export async function mcpSignInOp(d: SignInDeps, store: McpSignInStore, id: unkn
   const ad = a ? d.router.forAgent(a.id) : undefined;
   if (!a || !ad || !validServerName(name)) return { ok: false, error: UNKNOWN };
   if (typeof ad.startMcpSignIn !== 'function') return { ok: false, manual: true, error: `${ad.displayName} cannot start a sign-in from Agent Durbar.` };
-  if (!ad.isLive(a.id)) return { ok: false, manual: true, error: NOT_RUNNING };
+  // FR-229: Durbar's own block counts only for a server that is on and not refused by the organization's policy (the row's own rule)
+  const wasBlocked = d.blocked?.(a.id, name) === true && d.off?.(a.id, name) !== true && d.orgRefused?.(a.id, name) !== true;
+  if (!ad.isLive(a.id)) {
+    // FR-229: an idle chat's Sign in starts the session the way a send does (no message), then signs in
+    if (!d.ensureLive || !wasBlocked) return { ok: false, manual: true, error: NOT_RUNNING };
+    try {
+      await d.ensureLive(a);
+    } catch (err) {
+      return { ok: false, manual: true, error: signInErrorText(err, d.secrets(a.id), NOT_RUNNING) };
+    }
+    if (!ad.isLive(a.id)) return { ok: false, manual: true, error: NOT_RUNNING };
+    const stepMs = d.stepMs ?? 200;
+    const end = Date.now() + (d.startWaitMs ?? 10_000);
+    while (!d.live(a.id).some((x) => x.name === name && x.status !== 'starting' && x.status !== 'pending') && Date.now() < end) await new Promise((r) => setTimeout(r, stepMs));
+  }
   const st = d.live(a.id).find((x) => x.name === name);
   if (!st) return { ok: false, error: `${name} is not running in this session.` };
+  // FR-229: a block still needs a state in which a sign-in makes sense (not disabled, pending, stopped or not configured)
+  if (wasBlocked && !BLOCK_STATES.includes(st.status)) return { ok: false, error: `${name} cannot be signed in now (${st.status === 'disabled' ? 'it is switched off' : 'it is not running'}).` };
+  const runtimeSaysFine = wasBlocked && !needsSignIn(st);
   // FR-164: Sign in again (only `true` counts) is for a server the agent app can sign in again itself, and not one that waits for its first sign-in
-  const redo = again === true;
+  // FR-229: a server Durbar's renewal gave up on (the runtime may read it connected) is signed in with the app's own Sign in again, which forgets the dead sign-in
+  const redo = again === true || (wasBlocked && runtimeSaysFine && !!ad.capabilities.mcpSignInAgain && canSignInAgainStatus(st, d.serverUrl?.(a.id, name), true));
   if (redo && !ad.capabilities.mcpSignInAgain) return { ok: false, error: `${ad.displayName} cannot sign in again from Agent Durbar.` };
-  if (redo ? !canSignInAgainStatus(st, d.serverUrl?.(a.id, name)) : !needsSignIn(st)) return { ok: false, error: redo ? `${name} cannot be signed in again now.` : `${name} does not need a sign-in.` };
+  if (redo ? !canSignInAgainStatus(st, d.serverUrl?.(a.id, name), wasBlocked) : (!wasBlocked && !needsSignIn(st))) return { ok: false, error: redo ? `${name} cannot be signed in again now.` : `${name} does not need a sign-in.` };
+  try {
+    await d.settle?.(a.id, name); // a renewal already running finishes first: `oauth.login` and `restartServer` never overlap
+  } catch {
+    /* settled or not, the person's sign-in goes on */
+  }
   if (!store.reserve(a.id, name)) return { ok: false, error: store.has(a.id, name) ? `A sign-in for ${name} is already open.` : 'A sign-in for this server is already starting, or too many are open.' };
   try {
     let r;
@@ -324,7 +364,12 @@ export async function mcpSignInOp(d: SignInDeps, store: McpSignInStore, id: unkn
     } catch (err) {
       return { ok: false, manual: true, error: signInErrorText(err, d.secrets(a.id), 'Could not start the sign-in.') };
     }
-    if (r.kind === 'connected') return { ok: true, kind: 'connected' };
+    if (r.kind === 'connected') {
+      // FR-229 [KNOWN GAP: no real Claude Code or no-address Copilot run]: "connected" for a server Durbar knows needs a sign-in (the runtime read it
+      // connected) means the app kept its old sign-in: not fixed, so the block stays and the person gets the steps
+      if (runtimeSaysFine) return { ok: false, manual: true, error: `${ad.displayName} says it is signed in. If calls still fail, use the terminal steps below.` };
+      return { ok: true, kind: 'connected' };
+    }
     // the session may have ended while the runtime was working: nothing is held for a session that is gone
     if (!d.agents.has(a.id) || !ad.isLive(a.id)) {
       try {

@@ -16,13 +16,13 @@ Owner answered Q1-Q9 on 2026-10-22 (see spec.md); Q6 is (b), no Read-only except
 
 ### Wiring
 
-- [ ] T006 `main.ts`: feed final assistant text to the scheduler during a pass, the loop footer in `scheduleDeps.send`, holds from `agentState`, Stop and End session end the loop; a `loop:pass` push to the window; route late `usage` events to `noteUsage` and check the usage/idle order per adapter (spec `[KNOWN GAP]`) [FR-006, FR-007, FR-009, FR-015]
-- [ ] T007 IPC `schedules:stopLoop` and `schedules:restartLoop` (validated, `fromApp`), `ScheduleInfo.loop` in `src/shared/api.ts`, preload; `test:ipcchannels` [FR-005, FR-007, FR-008]
-- [ ] T008 Activity log: decisions `loop-start|pass|skip|hold|end`, rows recorded in main with cleaned reasons and never the prompt; `test:activity` [FR-024, SC-005]
+- [x] T006 `main.ts`: feed final assistant text to the scheduler during a pass, the loop footer in `scheduleDeps.send`, holds from `agentState`, Stop and End session end the loop; a `loop:pass` push to the window; route late `usage` events to `noteUsage` and check the usage/idle order per adapter (spec `[KNOWN GAP]`) [FR-006, FR-007, FR-009, FR-015]
+- [x] T007 IPC `schedules:stopLoop` and `schedules:restartLoop` (validated, `fromApp`), `ScheduleInfo.loop` in `src/shared/api.ts`, preload; `test:ipcchannels` [FR-005, FR-007, FR-008]
+- [x] T008 Activity log: decisions `loop-start|pass|skip|hold|end`, rows recorded in main with cleaned reasons and never the prompt; `test:activity` [FR-024, SC-005]
 
 ### UI (simulator only)
 
-- [ ] T010 Renderer: **Loop this…** in the session menu and the **Loop** kind in the Schedules dialog from a chat, one form with the defaults and the worst-case line [FR-005]
+- [ ] T010 Renderer: **Loop this…** in the session menu and the **Loop** kind in the Schedules dialog from a chat, one form with the defaults and the worst-case line; this PR turns `loopSupport.enabled` on (off since PR #1118), with or after T042 [FR-005]
 - [ ] T011 Renderer: loop rows in the Schedules dialog and Settings > Schedules (next, reason, source, pass N of M, spend, end reason, Stop loop / Start again / Delete) [FR-021]
 - [ ] T012 Renderer: desk chip (icon and word, compact = icon with label), chat notes per pass; `check:office` at 1440x900 and 1280x800 with 15 agents and 5 loops [FR-020, FR-023, SC-006]
 - [ ] T013 Simulator: loops in `simSched`, scripted `LOOP:` replies (`simloop=` next, stop, none, low); driver `scripts/shots-072-loop.js` and screenshots `docs/screenshots/072-*` at both sizes [FR-040, FR-041]
@@ -56,4 +56,8 @@ Owner answered Q1-Q9 on 2026-10-22 (see spec.md); Q6 is (b), no Read-only except
 
 ## Order
 
-T001 → T002 → T003 → T004/T005 → T006 → T007/T008 → T010..T013. T020 and T021 after their PRs. T022/T023 with the last Phase 1 PR. Phase 2: T030 first, then T031 → T032 → T033 → T034 → T035/T036 → T037.
+T001 → T002 → T003 → T004/T005 → T006 → T007/T008 → T010..T013. T020 and T021 after their PRs. T022/T023 with the last Phase 1 PR. Phase 2: T030 first, then T031 → T032 → T033 → T034 → T035/T036 → T037. T042 after T006 and T010.
+
+## Delta 2026-11-02: warn, do not limit
+
+- [ ] T042 Loop limits as warnings (after T006 and T010: `loopSupport.enabled` in `schedules.ts` must be on, and the loop form shows the warning). Change `src/shared/looppace.ts:11-13` (`LOOP_MAX_DELAY` 1440, `LOOP_MAX_PASSES` 100, `LOOP_MAX_HOURS` 24: from hard bounds to warning thresholds; `LOOP_DEFAULTS` at `:9` stays what the form starts with) and, in `src/main/schedules.ts`, `cleanLoopLimits` (about `:184-194`, drops a loop past them), the `endAt` check at save (about `:1005`, refuses past `LOOP_MAX_HOURS`) and `restartLoop` (about `:765`, a **clamp** of the *Start again* span to `LOOP_MAX_HOURS`, not a refusal; stop clamping to it). `cleanLoopLimits` is shared with reading `schedules.json` (`cleanLoop` via `cleanSchedule`, about `:200`, `:236`): the relaxed version must still read files saved before the change, and a pass limit and an end time stay required. `minDelay` of at least 5 and `maxPasses` of at least 1 stay. Tests: in `test:schedules` the existing asserts that refuse 1441 minutes, 101 passes and 25 h (`scripts/test-schedules.ts`, about `:662`, `:681`) change to accepting them (the form warns); asserts that `maxPasses` or `endAt` missing is still refused already pass and stay, plus one with a very large `maxPasses`; in `test:loops` a *Start again* on a loop with a span over 24 h keeps its span (fails if the `restartLoop` clamp stays; today's test uses 3 h); the loop form driver (T013) shows the warning [R5, FR-003]

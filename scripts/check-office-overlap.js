@@ -2,30 +2,28 @@
  * Office layout check (spec 001 FR-021, T025): no overlaps, no clipping, no floor overflow.
  *
  *   npm run check:office                       (builds, then runs this file under Electron; xvfb-run on Linux without DISPLAY)
- *   OFFICE_SHOTS=/path/dir npm run check:office  also saves a screenshot per combination as <dir>/<prefix>-sim15-1440x900-closed3-....png
- *   OFFICE_QUICK=1 npm run check:office        a smaller matrix (sizes x sims x 0/1/3/all closed, one subset each)
+ *   OFFICE_SHOTS=/path/dir npm run check:office  also saves a screenshot per combination as <dir>/<prefix>-sim15-1440x900-office.png
  *
- * Runs against the simulator only (no AI credits). For SIM=12 and SIM=15, at 1440x900 and 1280x800, with 0, 1, 3, 4 and all
- * rooms closed (every subset of 1 and 3 rooms, plus `?closed=` by room name), and again after expanding a `+N more` chip,
+ * Runs against the simulator only (no AI credits). For SIM=12 and SIM=15, at 1440x900 and 1280x800, and again after expanding a `+N more` chip,
  * it measures the rendered boxes and fails (exit code 1) on:
- *   - two boxes intersecting (desk cards, helper tiles, `+N more`/`Show fewer` chips, helper strips, door plates; tolerance 0.5px),
- *   - a box sticking out of its room / door row / floor (clipped by the floor's overflow:hidden),
+ *   - two boxes intersecting (desk cards, helper tiles, `+N more`/`Show fewer` chips, helper strips; tolerance 0.5px),
+ *   - a box sticking out of its room / floor (clipped by the floor's overflow:hidden),
  *   - a unit that does not contain its own desk and helpers,
  *   - a helper strip with a background, border or a height that is not its content's (the 2026-10-16 `.strip` collision),
  *   - the floor scrolling or the page overflowing (stage data-fit must be ok), text below 10.5px,
  *   - the fixed lobby tiles (spec 001 FR-034/FR-035/FR-038/FR-039): the Boss not in the middle of the row, the coffee corner, Bank and Postbox not last in that order;
  *   - who is at a place (spec 001 FR-036): visitor entries that overlap, stick out of their tile or entry, have no name or tooltip, a count that is not the number of visitors;
- *   - the lobby (spec 024): missing, sticking out of the floor, overlapping a room or the door plates, not holding its places (5 plus the custom ones, spec 024 FR-026), more than one row of tiles, a missing Add button below 8 tiles or one at 8, a place or slot
+ *   - the lobby (spec 024): missing, sticking out of the floor, overlapping a room, not holding its places (5 plus the custom ones, spec 024 FR-026), more than one row of tiles, a missing Add button below 8 tiles or one at 8, a place or slot
  *     sticking out of its tile, a walking figure that is not standing on a slot once the walks have settled, or more figures than empty chairs.
  *   - room headers (spec 001 FR-023/FR-024, also `simrooms=solo`: one agent per folder): two header parts overlapping, or one leaving its header;
  *   - the chat panel (spec 005 SC-001): for every main agent, Copilot-only and mixed kinds, no page overflow and the header's chips and
  *     buttons inside the window without overlapping;
- *   - floors (spec 033, `simfloors=1`): with two or more floors on, a room header or door plate without its floor tag; with one floor on,
+ *   - floors (spec 033, `simfloors=1`): with two or more floors on, a room header without its floor tag; with one floor on,
  *     any floor tag; the top bar controls overlapping each other or sticking out of the window (the Floors button must fit at 1280x800);
- *     a 40-character floor name (renamed through the panel) breaking a room header, a plate or the top bar; a floor that is off with agents
+ *     a 40-character floor name (renamed through the panel) breaking a room header or the top bar; a floor that is off with agents
  *     waiting for you that does not say so on its row in the Floors panel, or that shows it anywhere else (pills, button) (FR-010, issue #122).
  *
- *   - floor screens (spec 092, `simfloors=1`, `simfloors=ground`): with two or more floors on, each floor screen (reached with PageDown) is checked like the whole office
+ *   - floor screens (spec 092, `simfloors=1`, `simfloors=ground`): with two or more floors on, each floor screen (reached with PageUp) is checked like the whole office
  *     (the same checks, floor tags on every header), with 15 agents spread over the floors and with all 15 on one floor; the lift panel (phase 2) is on
  *     screen and its width is counted; the per-floor density is compared with the same agents alone with the panel and tag hidden (FR-002, FR-008).
  *   - the All floors view (spec 092 FR-033): every floor that is on in one screen with the lift panel shown, 15 agents spread and 15 on one floor.
@@ -58,12 +56,12 @@ function pageCheck(expanded, expectPlaces) {
   const stage = document.getElementById('stage'), floor = document.getElementById('floor');
   const R = (e) => { const b = e.getBoundingClientRect(); return { x: b.left, y: b.top, r: b.right, b: b.bottom, w: b.width, h: b.height }; };
   const name = (e) => {
-    const id = e.dataset && (e.dataset.id || e.dataset.door || e.dataset.more);
+    const id = e.dataset && (e.dataset.id || e.dataset.more);
     const p = e.closest('.unit'), pid = p && p.dataset.key;
     return (e.className && typeof e.className === 'string' ? e.className.split(' ').slice(0, 2).join('.') : e.tagName) + (id ? '[' + id + ']' : pid ? '{' + pid + '}' : '');
   };
   const problems = [];
-  const items = [...stage.querySelectorAll('.desk, .helper, .more, .helpers, .liveside, .plate, .place, .place-add')].filter((e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; });
+  const items = [...stage.querySelectorAll('.desk, .helper, .more, .helpers, .liveside, .place, .place-add')].filter((e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; });
   for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
     const a = items[i], b = items[j];
     if (a.contains(b) || b.contains(a)) continue; /* a strip contains its tiles */
@@ -84,7 +82,6 @@ function pageCheck(expanded, expectPlaces) {
     inside(room, { x: fx0, y: -1e9, r: fx1, b: expanded ? 1e9 : fy1 }, 'the floor');
     room.querySelectorAll('.desk, .helper, .more, .helpers, .liveside').forEach((e) => inside(e, R(room), 'its room ' + room.dataset.key));
   });
-  stage.querySelectorAll('.doors').forEach((d) => { inside(d, { x: fx0, y: -1e9, r: fx1, b: expanded ? 1e9 : fy1 }, 'the floor'); d.querySelectorAll('.plate').forEach((e) => inside(e, R(d), 'the door row')); });
   stage.querySelectorAll('.unit').forEach((u) => u.querySelectorAll('.desk, .helper, .more, .helpers, .liveside').forEach((e) => inside(e, R(u), 'its unit ' + u.dataset.key)));
   /* lobby (spec 024 FR-004, FR-009) */
   const lobby = stage.querySelector('.lobby');
@@ -92,7 +89,7 @@ function pageCheck(expanded, expectPlaces) {
   else {
     const L = R(lobby);
     inside(lobby, { x: fx0, y: -1e9, r: fx1, b: expanded ? 1e9 : fy1 }, 'the floor');
-    stage.querySelectorAll('.room, .doors').forEach((e) => {
+    stage.querySelectorAll('.room').forEach((e) => {
       const p = R(e), ox = Math.min(p.r, L.r) - Math.max(p.x, L.x), oy = Math.min(p.b, L.b) - Math.max(p.y, L.y);
       if (ox > T && oy > T) problems.push(`lobby overlaps ${name(e)} by ${ox.toFixed(1)}x${oy.toFixed(1)}px`);
     });
@@ -138,7 +135,7 @@ function pageCheck(expanded, expectPlaces) {
       const b = R(w), cx = (b.x + b.r) / 2, cy = (b.y + b.b) / 2;
       if (!slots.some((q) => Math.abs((q.x + q.r) / 2 - cx) < 4 && Math.abs((q.y + q.b) / 2 - cy) < 4)) problems.push(`a walking figure is not on a slot (${cx.toFixed(0)},${cy.toFixed(0)})`);
     });
-    /* an empty chair means its agent is at a place (a visitor listed in a tile); a closed room keeps its visitors in the lobby on purpose */
+    /* an empty chair means its agent is at a place (a visitor listed in a tile) */
     const who = places.map((pl) => pl.getAttribute('aria-label')).join(', ');
     document.querySelectorAll('#stage .desk.is-away').forEach((d) => { const n = d.querySelector('.name'); if (n && !who.includes(n.textContent.trim())) problems.push(`empty chair of ${n.textContent.trim()} but nobody of that name is at a place`); });
   }
@@ -166,6 +163,8 @@ function pageCheck(expanded, expectPlaces) {
     if (B.x < D.x - T || B.r > D.r + T || B.y < D.y - T || B.b > D.b + T) problems.push(`pencil ${who} leaves its card`);
     const nmEl = d.querySelector('.name'); /* #781: with the mode icon wrapped below the name the pencil must not land on the name's first half (it sits after the name, or over its end at most) */
     if (nmEl && nmEl.getClientRects().length) { const N = R(nmEl); if (N.w > 1 && B.x < N.x + N.w / 2 - T && B.y < N.b - T && B.b > N.y + T) problems.push(`pencil ${who} covers the first half of the name`); }
+    /* spec 059 FR-030 (issue #1067): the pencil's whole 24px box, not only its glyph, stays off the name's middle, so a click there (hit-tested, the pencil is invisible until hover) reaches the card */
+    if (nmEl && nmEl.getClientRects().length) { const N = R(nmEl); if (N.w > 1) { const mx = N.x + N.w / 2, my = (N.y + N.b) / 2, hit = document.elementFromPoint(mx, my); if (hit && hit.closest('.ren')) problems.push(`pencil ${who} box covers the middle of its name (a click there lands on the pencil)`); if (B0.x < mx - 0.5 && B0.r > mx + 0.5 && B0.y < N.b && B0.b > N.y) problems.push(`pencil ${who} box reaches the middle of its name`); } }
     /* spec 001 FR-185 (issue #850): nor any text of the details column (.gx: Last tool, Usage, Cost, ...), the role or the task line */
     d.querySelectorAll('.stl, .pill, .badge, .chatno, .draft-mark, .modeic, .modebadge, .gx-h, .gx-t, .gx-l, .role, .intent').forEach((e) => {
       if (!e.getClientRects().length || getComputedStyle(e).visibility === 'hidden') return;
@@ -176,7 +175,7 @@ function pageCheck(expanded, expectPlaces) {
   if (!hadRenShow) document.body.classList.remove('ren-show');
   /* spec 052 (2026-10-21; real 15-session office at 1280x800): inside a desk card no icon (svg, status dot, warning) and no cost text
      leaves the card or is cut by a clipping ancestor; a cut cost or icon once went unnoticed by every other rule here */
-  /* spec 059 FR-020 item 4: a room header's pencil stays inside the header and covers no door, chip, siren, floor tag, cost or count */
+  /* spec 059 FR-020 item 4: a room header's pencil stays inside the header and covers no chip, siren, floor tag, cost or count */
   stage.querySelectorAll('.room-head > .ren[data-renfolder]').forEach((b) => {
     if (!b.getClientRects().length) return;
     const B0 = R(b), B = { x: B0.x + 4, y: B0.y + 4, r: B0.r - 4, b: B0.b - 4 }, hd = b.parentElement, H = R(hd), who = b.dataset.renfolder;
@@ -227,11 +226,11 @@ function pageCheck(expanded, expectPlaces) {
       if (B.x < N.r - T && B.r > N.x + T && B.y < N.b - T && B.b > N.y + T) problems.push(`room "${key}": the folder pencil is over the name`);
     }
   });
-  /* spec 001 FR-023 (T030): a room header's parts (door, name, path, dots, +, MCP, AIU, plant, floor tag) never overlap or leave the header */
+  /* spec 001 FR-023 (T030): a room header's parts (name, path, dots, +, MCP, AIU, plant, floor tag) never overlap or leave the header */
   stage.querySelectorAll('.room-head').forEach((hd) => {
     const H = R(hd), key = (hd.closest('.room') || {}).dataset?.key || '?';
     const parts = [...hd.children].filter((e) => e.getClientRects().length && R(e).w > 0 && getComputedStyle(e).visibility !== 'hidden'); /* spec 001 FR-179: the rename pencil is in the header's flow now, so it is a part like the others */
-    parts.forEach((e) => { const p = R(e), slack = e.classList.contains('door') ? 5 : 1; /* the door hangs 4px left on purpose */ if (p.x < H.x - slack || p.r > H.r + 1) problems.push(`header part ${name(e)} sticks out of the header of ${key}`); });
+    parts.forEach((e) => { const p = R(e), slack = 1; if (p.x < H.x - slack || p.r > H.r + 1) problems.push(`header part ${name(e)} sticks out of the header of ${key}`); });
     for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++) {
       const p = R(parts[i]), q = R(parts[j]);
       const ox = Math.min(p.r, q.r) - Math.max(p.x, q.x), oy = Math.min(p.b, q.b) - Math.max(p.y, q.y);
@@ -258,7 +257,7 @@ function pageCheck(expanded, expectPlaces) {
   const stageH = R(stage).h;
   return {
     problems,
-    info: { d: stage.dataset.d, h: stage.dataset.h, fit: stage.dataset.fit, stageH: Math.round(stageH), floorH: Math.round(floor.clientHeight), desks: stage.querySelectorAll('.desk').length, plates: stage.querySelectorAll('.plate').length, rooms: stage.querySelectorAll('.room').length, minFont },
+    info: { d: stage.dataset.d, h: stage.dataset.h, fit: stage.dataset.fit, stageH: Math.round(stageH), floorH: Math.round(floor.clientHeight), desks: stage.querySelectorAll('.desk').length, rooms: stage.querySelectorAll('.room').length, minFont },
   };
 }
 
@@ -266,7 +265,7 @@ function pageCheck(expanded, expectPlaces) {
 function floorsCheck(expectTags) {
   const problems = [];
   const stage = document.getElementById('stage');
-  const boxes = [...stage.querySelectorAll('.room-head, .plate')];
+  const boxes = [...stage.querySelectorAll('.room-head')];
   boxes.forEach((b) => {
     const t = b.querySelector('.floor-tag');
     if (expectTags && !t) problems.push('no floor tag in ' + (b.querySelector('.room-name, b') || b).textContent.trim());
@@ -287,8 +286,7 @@ function floorsCheck(expectTags) {
   /* spec 052 FR-105 (round 11): the top bar is one row of about 48px, also with the Floors button (its widest case) */
   const tbh = R(document.querySelector('.topbar')).height;
   if (tbh > 52.5) problems.push(`top bar is ${Math.round(tbh)}px tall: it wrapped to a second row`);
-  /* every room header keeps the floor tag and the + / MCP buttons inside it (a long tag shrinks, it never pushes them out;
-     the door button sits on the room's edge on purpose and is not checked) */
+  /* every room header keeps the floor tag and the + / MCP buttons inside it (a long tag shrinks, it never pushes them out) */
   stage.querySelectorAll('.room-head').forEach((h) => {
     const hb = R(h);
     [...h.querySelectorAll('.floor-tag, .room-new, .room-mcp, .room-dots, .room-aiu')].forEach((c) => { const b = R(c); if (b.width && (b.right > hb.right + 0.5 || b.left < hb.left - 0.5)) problems.push(`room header part sticks out: ${(c.className || c.tagName).toString().slice(0, 20)}`); });
@@ -312,16 +310,8 @@ function offAttentionCheck() {
   return problems;
 }
 
-function subsets(list, k) {
-  const out = [];
-  const rec = (start, cur) => { if (cur.length === k) { out.push(cur.slice()); return; } for (let i = start; i < list.length; i++) { cur.push(list[i]); rec(i + 1, cur); cur.pop(); } };
-  rec(0, []);
-  return out;
-}
-
 async function driver(ctx) {
   const H = helpers(ctx); // spec 008 FR-097: shared plumbing
-  const quick = process.env.OFFICE_QUICK === '1';
   const shotsDir = process.env.OFFICE_SHOTS || '';
   const prefix = process.env.OFFICE_SHOT_PREFIX || 'office';
   if (shotsDir) fs.mkdirSync(shotsDir, { recursive: true });
@@ -330,7 +320,7 @@ async function driver(ctx) {
      `stable` waits until the laid-out office has stopped moving (two reads in a row, each after two animation frames, give the same rects). */
   const must = async (expr, what, ms = 15000) => { if (!(await H.until(expr, ms))) throw new Error(`timed out after ${ms} ms waiting for ${what}`); };
   const LAYOUT_SIG = `(async()=>{await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const s=document.getElementById('stage');
-    return innerWidth+'x'+innerHeight+'|'+(s?s.dataset.d+'/'+s.dataset.h+'/'+s.dataset.fit:'')+'|'+[...document.querySelectorAll('#stage .room,#stage .desk,#stage .plate,#stage .more,#stage .room-head,#lift')].map(e=>{const r=e.getBoundingClientRect();return Math.round(r.x)+','+Math.round(r.y)+','+Math.round(r.width)+','+Math.round(r.height)}).join(';')})()`;
+    return innerWidth+'x'+innerHeight+'|'+(s?s.dataset.d+'/'+s.dataset.h+'/'+s.dataset.fit:'')+'|'+[...document.querySelectorAll('#stage .room,#stage .desk,#stage .more,#stage .room-head,#lift')].map(e=>{const r=e.getBoundingClientRect();return Math.round(r.x)+','+Math.round(r.y)+','+Math.round(r.width)+','+Math.round(r.height)}).join(';')})()`;
   const stable = async (what, ms = 15000) => {
     const end = Date.now() + ms;
     let prev = null;
@@ -382,9 +372,9 @@ async function driver(ctx) {
      screen must be the one asked for, or the run fails (it once measured Clean Office for every theme). */
   const userTheme = process.env.OFFICE_USER_THEME ? JSON.parse(fs.readFileSync(process.env.OFFICE_USER_THEME, 'utf8')) : null;
   const wantTheme = userTheme ? userTheme.id : (process.env.OFFICE_THEME || '');
-  /* spec 077 FR-070: OFFICE_CHARACTERS=<value> (theme, minimalist, cheeky, prehistoric) puts who sits at the desks in the address too; checked like the theme */
-  const wantChars = /^(theme|minimalist|cheeky|prehistoric|mine)$/.test(process.env.OFFICE_CHARACTERS || '') ? process.env.OFFICE_CHARACTERS : '';
-  if (process.env.OFFICE_CHARACTERS && !wantChars) throw new Error('OFFICE_CHARACTERS must be theme, minimalist, cheeky, prehistoric or mine');
+  /* spec 077 FR-070: OFFICE_CHARACTERS=<value> (theme, minimalist, cheeky, prehistoric, pirate, monster, royal, rebels, mine) puts who sits at the desks in the address too; checked like the theme */
+  const wantChars = /^(theme|minimalist|cheeky|prehistoric|pirate|monster|royal|rebels|mine)$/.test(process.env.OFFICE_CHARACTERS || '') ? process.env.OFFICE_CHARACTERS : '';
+  if (process.env.OFFICE_CHARACTERS && !wantChars) throw new Error('OFFICE_CHARACTERS must be theme, minimalist, cheeky, prehistoric, pirate, monster, royal, rebels or mine');
   const themeQuery = (wantTheme ? '&theme=' + encodeURIComponent(wantTheme) : '') + (userTheme ? '&usertheme=' + encodeURIComponent(JSON.stringify(userTheme)) : '') + (wantChars ? '&characters=' + wantChars : '') + (wantChars === 'mine' ? '&simmine=3' : ''); /* spec 096 FR-072: the simulator's three saved characters */
   if (wantChars) console.log('check:office: characters ' + wantChars);
   let motionShown = false;
@@ -474,6 +464,149 @@ async function driver(ctx) {
       if (r2.problems.length) { failed++; console.log(`FAIL ${label} +expanded: ${r2.problems.slice(0, 6).join('; ')}`); }
     }
   };
+  /* spec 097 FR-091, FR-050, SC-001, SC-002, SC-004 (OFFICE_VIEW=real): the Real office variant, run alone (check-parallel.js adds it as its own
+     job): SIM 12 and 15 (and 15 in one folder, and in 15 folders) at both sizes, chat closed, open, closed again; no overlap of plates, signs, place plates, chips, screens and faces; nothing
+     outside the floor; no text under 10.5px; no page overflow; no office scroll at the 15-agent scale; the desk face size (SC-002, a ratchet: 30.5px,
+     the 40px target is a KNOWN GAP); every plate, sign and chip readable (4.5:1) at the room's dimmest (70%) and full ambient (FR-050); and flat
+     mode requests no Real office file (SC-004). */
+  if (process.env.OFFICE_VIEW === 'real') {
+    await load('sim=15&simfreeze=1', 1440, 900);
+    const flatFiles = await ctx.js(`performance.getEntriesByType('resource').map(e=>e.name).filter(n=>/realoffice|\\/shared\\/(lights|realoffice-layout)\\.js/.test(n))`);
+    total++;
+    if (flatFiles.length || (await ctx.js(`!!window.DurbarRealOffice||!!document.querySelector('.ro')`))) { failed++; console.log('FAIL real: flat mode loaded Real office files: ' + flatFiles.join(', ')); }
+    const realCheck = (amb) => {
+      const P = [], ro = document.querySelector('#stage .ro'), L = window.__durbarSimUi.realLayout();
+      if (!ro || !L) return { problems: ['no Real office drawn'], info: {} };
+      if (amb != null) ro.style.setProperty('--ro-amb', String(1 - amb));
+      const o = ro.getBoundingClientRect(), fl = document.getElementById('floor').getBoundingClientRect();
+      const R = (e) => { const b = e.getBoundingClientRect(); return { x: b.left, y: b.top, r: b.right, b: b.bottom }; };
+      const boxes = [];
+      const add = (kind, e, r) => { if (e && !e.getClientRects().length) return; boxes.push({ kind, id: e ? (e.dataset.id || e.dataset.place || e.dataset.folder || e.textContent.slice(0, 16)) : '', r: r || R(e) }); };
+      document.querySelectorAll('#stage .ro-plate').forEach((e) => add('plate', e));
+      document.querySelectorAll('#stage .ro-sign').forEach((e) => add('sign', e));
+      document.querySelectorAll('#stage .ro-lplate').forEach((e) => add('placeplate', e));
+      document.querySelectorAll('#stage .ro-chip').forEach((e) => add('chip', e));
+      document.querySelectorAll('#stage .ro-drafttag.on').forEach((e) => add('drafttag', e)); /* spec 097 FR-316 */
+      document.querySelectorAll('#stage .ro-away').forEach((e) => add('away', e));
+      document.querySelectorAll('#stage .ro-screen .ro-bezel').forEach((e) => add('screen', e));
+      for (const z of L.zones) for (const d of z.desks) if (d.person) add('face', null, { x: o.left + d.person.vis.x, y: o.top + d.person.vis.y, r: o.left + d.person.vis.x + d.person.vis.w, b: o.top + d.person.vis.y + Math.min(d.person.vis.h, L.faceH * 1.2) });
+      const hit = (a, b) => a.x + 0.5 < b.r && b.x + 0.5 < a.r && a.y + 0.5 < b.b && b.y + 0.5 < a.b;
+      for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i], b = boxes[j];
+        if (a.kind === 'face' && b.kind === 'face') continue;
+        if (hit(a.r, b.r)) P.push(`${a.kind} ${a.id} overlaps ${b.kind} ${b.id}`);
+      }
+      for (const b of boxes) if (b.r.x < fl.left - 0.5 || b.r.r > fl.right + 0.5 || b.r.y < o.top - 0.5 || b.r.b > o.bottom + 0.5) P.push(`${b.kind} ${b.id} outside the office`);
+      let minFont = 99;
+      const walk = (n) => { for (const c of n.childNodes) { if (c.nodeType === 3 && c.textContent.trim()) { const e = c.parentElement; if (e.getClientRects().length) minFont = Math.min(minFont, parseFloat(getComputedStyle(e).fontSize)); } else if (c.nodeType === 1) walk(c); } };
+      walk(ro);
+      if (minFont < 10.5) P.push(`text at ${minFont}px`);
+      document.querySelectorAll('#stage .ro-plate').forEach((e) => { if (e.scrollHeight > e.clientHeight + 1) P.push(`plate ${e.dataset.id} cuts its lines (${e.scrollHeight}>${e.clientHeight})`); });
+      /* FR-050: text against its own background, which the lights never touch (chrome is above them) */
+      const rgb = (c) => (c.match(/[\d.]+/g) || []).map(Number);
+      const lum = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+      const bgOf = (e) => { for (let n = e; n; n = n.parentElement) { const c = rgb(getComputedStyle(n).backgroundColor); if (c.length >= 3 && (c.length < 4 || c[3] > 0.95)) return c; } return [255, 255, 255]; };
+      let minRatio = 99;
+      document.querySelectorAll('#stage .ro-plate b, #stage .ro-plate .ro-l2, #stage .ro-sign b, #stage .ro-lplate span, #stage .ro-chip, #stage .ro-newtag.on').forEach((e) => { /* spec 097 FR-238: the New reply tag too */
+        if (!e.getClientRects().length) return;
+        const a = lum(rgb(getComputedStyle(e).color)), b = lum(bgOf(e)), k = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+        minRatio = Math.min(minRatio, k);
+        if (k < 4.5) P.push(`contrast ${k.toFixed(2)} on ${e.className || e.tagName} "${e.textContent.slice(0, 20)}"`);
+      });
+      /* spec 097 FR-032, FR-044: monitor text: on its own glass, inside it, readable against it; an awake desk's screen is never empty */
+      let screens = 0;
+      document.querySelectorAll('#stage .ro-stext').forEach((e) => {
+        const b = e.getBoundingClientRect(), g = document.elementsFromPoint(b.left + b.width / 2, b.top + b.height / 2).find((x) => x.classList.contains('ro-glass'));
+        if (e.classList.contains('off')) { if (e.textContent) P.push('an asleep screen shows text'); return; }
+        screens++;
+        if (!e.textContent.trim()) P.push(`an empty screen: ${e.className}`);
+        if (!g) { P.push('screen text without its glass'); return; }
+        const gb = g.getBoundingClientRect();
+        if (b.left < gb.left - 1 || b.right > gb.right + 1 || b.top < gb.top - 1 || b.bottom > gb.bottom + 1) P.push('screen text outside its glass');
+        const bg = lum(rgb(getComputedStyle(g).backgroundColor));
+        e.querySelectorAll('.ro-sl').forEach((r) => { const a = lum(rgb(getComputedStyle(r).color)), k = (Math.max(a, bg) + 0.05) / (Math.min(a, bg) + 0.05); minRatio = Math.min(minRatio, k); if (k < 4.5) P.push(`contrast ${k.toFixed(2)} on screen text "${r.textContent.slice(0, 20)}"`); });
+      });
+      if (!screens) P.push('no screen text');
+      const se = document.scrollingElement;
+      if (se.scrollWidth > innerWidth + 1 || se.scrollHeight > innerHeight + 1) P.push('the page overflows');
+      if (amb != null) ro.style.removeProperty('--ro-amb');
+      return { problems: P, info: { plates: document.querySelectorAll('#stage .ro-plate').length, face: L.faceH, u: L.u, scroll: L.scroll, minFont, minRatio, drafts: document.querySelectorAll('#stage .ro-drafttag.on').length } };
+    };
+    /* simrooms=1: one folder of 15, split over rows (its sign repeats); simrooms=solo: 15 folders, past the exhaustive search */
+    for (const [sim, rooms] of [[3, ''], [12, ''], [15, ''], [15, '1'], [15, 'solo']]) for (const [w, h] of SIZES) {
+      if (!mine()) continue;
+      const tag = `real sim${sim}${rooms ? '-rooms' + rooms : ''}-${w}x${h}`;
+      await load(`sim=${sim}&simfreeze=1&officeview=real${rooms ? '&simrooms=' + rooms : ''}`, w, h);
+      if (!(await H.until(`!!document.querySelector('#stage .ro .ro-plate')&&[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`, 15000))) { total++; failed++; console.log(`FAIL ${tag}: the Real office was not drawn`); continue; }
+      /* OFFICE_FONT: the other fonts of other machines (a CI runner's wider sans broke the chips and plates once): every Real office text in that family, drawn again */
+      if (process.env.OFFICE_FONT) {
+        const css = '.ro,.ro *{font-family:"' + process.env.OFFICE_FONT.replace(/[^A-Za-z0-9 -]/g, '') + '",sans-serif!important}';
+        await ctx.js(`(()=>{const st=document.createElement('style');st.textContent=${jsLiteral(css)};document.head.appendChild(st);window.__durbarSimUi.render();return true})()`);
+      }
+      /* spec 097 FR-316 (issue #1149): unsent drafts on four desks (the narrowest plate also has a New reply tag, so both tags sit above it) and on a lounge seat when there is one: the Draft tag's box is checked against plates, tags, faces and screens at every size */
+      const order = await ctx.js(`[...document.querySelectorAll('#stage .ro-plate')].filter(p=>p.getClientRects().length).sort((a,b)=>a.getBoundingClientRect().width-b.getBoundingClientRect().width).map(p=>p.dataset.id)`);
+      const picks = order.slice(0, 4), lounge = await ctx.js(`(()=>{const l=window.__durbarSimUi.realLayout().lounge;return l&&l.desks.length?l.desks[0].id:null})()`);
+      const marks = { narrow: order[0] || null, rest: picks.length - 1, lounge };
+      console.log(`  ${tag}: drafts on ${picks.length} desks${lounge ? ' and the lounge seat ' + lounge : ' (no lounge row)'}, New reply on ${marks.narrow}`);
+      for (const id of lounge ? [...picks, lounge] : picks) {
+        const sel = `#stage .ro-plate[data-id="${id}"]`;
+        await ctx.js(`(document.querySelector(${jsLiteral(sel)})||{click(){}}).click()`);
+        if (!(await H.until(`document.body.classList.contains('panel-open')&&!!document.getElementById('msgInput')`, 8000))) continue;
+        await ctx.js(`(()=>{const m=document.getElementById('msgInput');m.value='half a prompt';m.dispatchEvent(new Event('input',{bubbles:true}));return 1})()`);
+        await ctx.js(`document.getElementById('backBtn').click()`);
+        await H.until(`!document.body.classList.contains('panel-open')&&!!document.querySelector('#stage .ro .ro-plate')`, 8000);
+      }
+      /* a New reply tag on the narrowest plate too (FR-238). unread.mark only sets the mark: nothing draws it, and an unread agent keeps its desk (spec 001 FR-173), so a lounge seat marked here moves to a desk at the NEXT render, which was the chat step's close (CI, Linux, 4 of 4 runs, and 4 of 6 on the Mac). Draw it now (paint) and wait for the tag and for the plates to stop moving, so the baseline below is taken with every seed applied. */
+      if (marks.narrow) {
+        await ctx.js(`window.__durbarSimUi.unread.mark(${jsLiteral(marks.narrow)})`);
+        await ctx.js(`window.__durbarSimUi.paint()`);
+        if (!(await H.until(`!!document.querySelector('#stage .ro-newtag.on[data-for]')&&window.__durbarSimUi.settleNow()`, 8000))) { total++; failed++; console.log(`FAIL ${tag}: no New reply tag showed on ${marks.narrow}`); }
+      }
+      const plateSig = `(async()=>{await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));return [...document.querySelectorAll('#stage .ro-plate')].map(e=>{const r=e.getBoundingClientRect();return e.dataset.id+'@'+Math.round(r.x)+','+Math.round(r.y)}).join(';')})()`;
+      for (let prevSig = null, end = Date.now() + 15000; ;) { /* the plates' own positions: stable() reads Open office's rooms and desks, none of which a Real office has */
+        const sig = await ctx.js(plateSig);
+        if (sig === prevSig) break;
+        if (Date.now() > end) throw new Error(`timed out after 15000 ms waiting for the plates to settle (${tag} with drafts)`);
+        prevSig = sig;
+        await sleep(50);
+      }
+      if (!(await H.until(`document.querySelectorAll('#stage .ro-drafttag.on').length>=${jsLiteral(Math.min(picks.length, 2))}`, 8000))) { total++; failed++; console.log(`FAIL ${tag}: no Draft tag showed for the drafted desks (${JSON.stringify(marks)})`); }
+      /* the seeding opened and closed chats, which takes wall-clock time: a visit that was waiting for its debounce or dwell starts or ends on its own and re-flows the office (CI, Linux, 4 of 4 runs). Seeds are all applied here; wait until nothing is about to start or end, then take the baseline. */
+      if (!(await H.until(`window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()`, 15000))) { total++; failed++; console.log(`FAIL ${tag}: the office did not settle after the drafts were seeded`); continue; }
+      await stable(tag + ' with drafts');
+      for (const [step, amb] of [['closed', 0.7], ['closed', 1]]) {
+        const res = await ctx.js(`(${realCheck.toString()})(${amb})`);
+        if (!res.info.drafts) res.problems.push('no Draft tag was in the checked layout');
+        total++;
+        if (sim === 15 && res.info.scroll) res.problems.push('the office scrolls at the 15-agent scale');
+        if (sim === 15 && !rooms && res.info.face < 30.5) res.problems.push(`desk face ${res.info.face.toFixed(1)}px (ratchet 30.5px, lowered 2026-11-01 for a room that stays still; SC-002 target 40px is a KNOWN GAP)`);
+        if (res.problems.length) { failed++; console.log(`FAIL ${tag} ${step} ambient ${amb}: ${res.problems.slice(0, 12).join('; ')}`); }
+        rows.push({ label: `${tag} ${step} ambient ${amb}`, d: 'real', h: '-', rooms: '-', plates: res.info.plates, desks: res.info.plates, stageH: Math.round(res.info.u || 0), floorH: 0, minFont: res.info.minFont, problems: res.problems.length });
+        console.log(`  ${tag}: face ${res.info.face ? res.info.face.toFixed(1) : '?'}px, u ${res.info.u ? res.info.u.toFixed(0) : '?'}, contrast >= ${res.info.minRatio ? res.info.minRatio.toFixed(2) : '?'}`);
+      }
+      if (shotsDir) await ctx.shot(path.join(shotsDir, `${prefix}-${tag.replace(/ /g, '-')}.png`));
+      /* (a plate other than the one with the New reply tag: opening that chat reads the reply, and a read finished agent moves to the lounge) chat open: the chat takes the window (spec 001: body.panel-open hides the office); the page must not overflow, and closing it draws the same office */
+      const before = await ctx.js(`[...document.querySelectorAll('#stage .ro-plate')].map(e=>{const r=e.getBoundingClientRect();return Math.round(r.x)+','+Math.round(r.y)}).join(';')`);
+      await ctx.js(`document.querySelector('#stage .ro-plate'+${jsLiteral(marks.narrow ? ':not([data-id="' + marks.narrow + '"])' : '')}).click()`);
+      const open = await H.until(`document.body.classList.contains('panel-open')`, 8000);
+      const of = await ctx.js(`(()=>{const se=document.scrollingElement;return se.scrollWidth>innerWidth+1||se.scrollHeight>innerHeight+1})()`);
+      await ctx.js(`document.getElementById('backBtn').click()`);
+      const back = await H.until(`!document.body.classList.contains('panel-open')&&!!document.querySelector('#stage .ro .ro-plate')`, 8000);
+      await stable(tag + ' after the chat');
+      const after = await ctx.js(`[...document.querySelectorAll('#stage .ro-plate')].map(e=>{const r=e.getBoundingClientRect();return Math.round(r.x)+','+Math.round(r.y)}).join(';')`);
+      total++;
+      const P2 = [];
+      if (!open) P2.push('the chat did not open from a plate'); if (of) P2.push('the page overflows with the chat open'); if (!back) P2.push('the office did not come back');
+      if (before !== after) P2.push('the office moved after the chat was closed');
+      if (P2.length) { failed++; console.log(`FAIL ${tag} chat: ${P2.join('; ')}`); }
+      rows.push({ label: `${tag} chat open/closed`, d: 'real', h: '-', rooms: '-', plates: '-', desks: '-', stageH: 0, floorH: 0, minFont: '-', problems: P2.length });
+    }
+    console.log('\nlayout summary (Real office):');
+    rows.forEach((r) => console.log(`  ${r.problems ? 'FAIL' : 'ok  '} ${r.label.padEnd(60)} plates=${r.plates} minFont=${r.minFont}`));
+    console.log(`\noffice check (Real office): ${total - failed}/${total} checks passed, ${failed} failed`);
+    if (failed) { process.exitCode = 1; fs.writeFileSync(process.env.OFFICE_FAIL_MARKER || path.join(os.tmpdir(), 'durbar-office-check.fail'), String(failed)); }
+    return;
+  }
   for (const sim of SIMS) {
     for (const [w, h] of SIZES) {
       if (!mine()) continue;
@@ -482,49 +615,18 @@ async function driver(ctx) {
       /* spec 033 FR-007: with only the Ground floor the top bar is as before (no Floors button) */
       total++;
       if (!(await ctx.js(`document.getElementById('floorsBtn').hidden`))) { failed++; console.log(`FAIL sim${sim}-${w}x${h}: Floors button shown with one floor`); }
-      const names = await ctx.js(`[...document.querySelectorAll('#stage .room-name')].map(e=>e.textContent.trim())`);
       const themeTag = (process.env.OFFICE_THEME ? process.env.OFFICE_THEME + ' ' : '') + (wantChars ? wantChars + ' ' : '');
       const tag = `${themeTag}sim${sim}-${w}x${h}`;
-      const combos = [{ n: 0, closed: [] }];
-      for (let k = 1; k < names.length; k++) {
-        let subs = subsets(names, k);
-        if (k !== 1 && k !== 3 && subs.length > 3) subs = subs.slice(0, 3);
-        if (quick) subs = subs.slice(0, 1);
-        subs.forEach((s) => combos.push({ n: k, closed: s }));
-      }
-      combos.push({ n: names.length, closed: names });
-      let shotted = new Set();
-      for (const c of combos) {
-        const q = base + (c.closed.length ? '&closed=' + c.closed.map(encodeURIComponent).join(',') : '');
-        const key = c.n === names.length ? 'all' : String(c.n);
-        const wantShot = !shotted.has(key) ? `${tag}-closed${key}` : '';
-        if (wantShot) shotted.add(key);
-        await run(`${tag} closed=${c.n}${c.closed.length ? ' [' + c.closed.join(',') + ']' : ''}`, q, w, h, wantShot);
-      }
-      /* interactive: Close all / Open all, and a single door */
-      await load(base, w, h);
-      await changed(() => ctx.js(`document.getElementById('closeAll').click()`), `${tag} Close all`);
-      let r = await measure(false); total++;
-      if (r.problems.length) { failed++; console.log(`FAIL ${tag} Close all click: ${r.problems.join('; ')}`); }
-      await changed(() => ctx.js(`document.getElementById('openAll').click()`), `${tag} Open all`);
-      r = await measure(false); total++;
-      if (r.problems.length) { failed++; console.log(`FAIL ${tag} Open all click: ${r.problems.join('; ')}`); }
+      await run(tag, base, w, h, `${tag}-office`);
     }
   }
   /* spec 024 FR-026: the same base cases with three custom places (24-character names in the real run of shots-024-custom.js; the simulator seeds
-     Database, Ticket desk and a 24-character name) so the lobby has 8 tiles. No extra room-closing combinations: none, the first room, the first three, all. */
+     Database, Ticket desk and a 24-character name) so the lobby has 8 tiles. */
   for (const sim of SIMS) {
     for (const [w, h] of SIZES) {
       if (!mine()) continue;
       const base = `sim=${sim}&simfreeze=1&simplaces=3`;
-      await load(base, w, h);
-      const names = await ctx.js(`[...document.querySelectorAll('#stage .room-name')].map(e=>e.textContent.trim())`);
-      const tag = `places3 sim${sim}-${w}x${h}`;
-      const cases = [[], names.slice(0, 1), names.slice(0, 3), names];
-      for (const closed of cases) {
-        const qy = base + (closed.length ? '&closed=' + closed.map(encodeURIComponent).join(',') : '');
-        await run(`${tag} closed=${closed.length}`, qy, w, h, closed.length === 0 ? `${tag}-closed0` : '');
-      }
+      await run(`places3 sim${sim}-${w}x${h}`, base, w, h, `places3 sim${sim}-${w}x${h}-office`);
     }
   }
   /* spec 059 FR-016 (SC-005): every main agent carries a 60-character user name, both sizes; the run fails when no card shows one. sim 3 is the full layout (FR-019: the URL-like name must stay in its 164px card) */
@@ -592,6 +694,7 @@ async function driver(ctx) {
   }
   /* spec 001 FR-179 (review on PR 797): in the demo the room headers have no ⋯ menu, so no part may give way (nothing would hold it); the cost may (it is in the
      name's tooltip). pageCheck still runs: the name minimum and the pencil rules (the demo has no pencil either) hold where the layout allows it. */
+  const DEMO_NARROW_STEPS = [164, 148, 132, 116, 100];
   for (const [w, h] of SIZES) {
     if (!mine()) continue;
     await load('sim=15&simfreeze=1&simfloors=1&simsched=1', w, h);
@@ -601,11 +704,16 @@ async function driver(ctx) {
     const res0 = await measure(false);
     const tag = `demo ${w}x${h}`;
     /* the case would be vacuous with roomy headers (nothing has to give way): narrow every header, refit, and require that some header really had to give way */
-    await ctx.js(`(()=>{const st=document.createElement('style');st.id='demoNarrow';st.textContent='#stage .room-head{max-width:190px}';document.head.append(st);window.DurbarFit();})()`);
-    await must(`getComputedStyle(document.querySelector('#stage .room-head')).maxWidth==='190px'`, 'the narrowed headers to apply');
-    await stable('narrowed headers');
-    /* headers that had to give way: the cost is the only part allowed to (it is in the name's tooltip); none gave way means the narrowing proved nothing */
-    const squeezed = await ctx.js(`[...document.querySelectorAll('#stage .room-head')].filter(hd=>!hd.querySelector('.room-more')&&hd.classList.contains('no-aiu')).length`);
+    /* issue 1285: how narrow is "narrow" depends on the theme (a user theme's pixel font holds 164px with no part giving way), so narrow in steps until one gives way */
+    let squeezed = 0;
+    for (const maxW of DEMO_NARROW_STEPS) {
+      await ctx.js(`(()=>{let st=document.getElementById('demoNarrow');if(!st){st=document.createElement('style');st.id='demoNarrow';document.head.append(st);}st.textContent='#stage .room-head{max-width:'+${jsLiteral(maxW)}+'px}';window.DurbarFit();})()`);
+      await must(`getComputedStyle(document.querySelector('#stage .room-head')).maxWidth===${jsLiteral(maxW + 'px')}`, 'the narrowed headers to apply');
+      await stable('narrowed headers');
+      /* headers that had to give way: the cost is the only part allowed to (it is in the name's tooltip); none gave way means the narrowing proved nothing */
+      squeezed = await ctx.js(`[...document.querySelectorAll('#stage .room-head')].filter(hd=>!hd.querySelector('.room-more')&&hd.classList.contains('no-aiu')).length`);
+      if (squeezed) break;
+    }
     total++;
     if (!squeezed) { failed++; console.log(`FAIL ${tag}: narrowing the headers made none give way (not even the cost), so the case proves nothing`); }
     const res = res0; total++;
@@ -616,19 +724,19 @@ async function driver(ctx) {
     rows.push({ label: tag, ...res.info, problems: res.problems.length });
     await ctx.js(`(async()=>{const n=document.getElementById('demoNarrow');if(n)n.remove();const t=document.getElementById('demoToggle');t.checked=false;t.dispatchEvent(new Event('change'));await new Promise(r=>setTimeout(r,300));})()`);
   }
-  /* spec 033: floors on/off (3, 2 and 1 floors on), with and without closed doors, both sizes */
+  /* spec 033: floors on/off (3, 2 and 1 floors on), both sizes */
   for (const [w, h] of SIZES) {
     if (!mineIn('floors')) continue;
     const cases = [
       ['3 floors on', 'sim=15&simfreeze=1&simfloors=1', true],
       ['2 floors on', 'sim=15&simfreeze=1&simfloors=1&floorsoff=Personal', true],
       ['1 floor on', 'sim=15&simfreeze=1&simfloors=1&floorsoff=Personal,Client%20A', false],
-      ['3 floors on, 2 doors closed', 'sim=15&simfreeze=1&simfloors=1&closed=blog,infra-notes', true],
-      ['2 floors on, 1 door closed', 'sim=15&simfreeze=1&simfloors=1&floorsoff=Client%20A&closed=mcp-swiss', true],
-      ['40-char floor name', 'sim=15&simfreeze=1&simfloors=1&closed=infra-notes', true, 'long'],
+      ['3 floors on', 'sim=15&simfreeze=1&simfloors=1', true],
+      ['2 floors on', 'sim=15&simfreeze=1&simfloors=1&floorsoff=Client%20A', true],
+      ['40-char floor name', 'sim=15&simfreeze=1&simfloors=1', true, 'long'],
       /* spec 024 FR-026 with spec 033: floors on and three custom places together (8 lobby tiles); same assertions as every other case (pageCheck + floorsCheck) */
       ['3 floors on, 3 custom places', 'sim=15&simfreeze=1&simfloors=1&simplaces=3', true],
-      ['2 floors on, 3 custom places, 1 door closed', 'sim=15&simfreeze=1&simfloors=1&simplaces=3&floorsoff=Personal&closed=mcp-swiss', true],
+      ['2 floors on, 3 custom places', 'sim=15&simfreeze=1&simfloors=1&simplaces=3&floorsoff=Personal', true],
       ['1 floor on, 3 custom places', 'sim=15&simfreeze=1&simfloors=1&simplaces=3&floorsoff=Personal,Client%20A', false],
       /* spec 001 FR-179 (issue #788): schedule and MCP chips next to a floor tag, one agent per folder (one-desk rooms): the name keeps its minimum, the pencil is never over it, what gave way is in the ⋯ menu */
       ['3 floors on, schedules', 'sim=15&simfreeze=1&simfloors=1&simsched=1', true],
@@ -650,8 +758,8 @@ async function driver(ctx) {
         if (await ctx.js(`!document.getElementById('floorsPop').hidden`)) await ctx.js(`document.getElementById('floorsBtn').click()`);
         await must(`document.getElementById('floorsPop').hidden`, 'the Floors panel to close');
         await stable('after renaming the floor');
-        /* spec 092: the office shows one floor at a time: go to the floor that was renamed (Client A, the second one) with PageDown, so its long name is on screen */
-        await ctx.js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'PageDown',bubbles:true,cancelable:true}))`);
+        /* spec 092: the office shows one floor at a time: go to the floor that was renamed (Client A, the second one) with PageUp, so its long name is on screen */
+        await ctx.js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'PageUp',bubbles:true,cancelable:true}))`);
         try { await ctx.waitFor(`[...document.querySelectorAll('#stage .floor-tag')].some(t=>t.textContent.length===40)`, 5000); } catch (e) { /* reported below */ }
         await stable('on the renamed floor');
         const r1 = await measure(false); total++;
@@ -684,7 +792,7 @@ async function driver(ctx) {
     }
   }
   /* spec 092 FR-001, FR-002, SC-001 (phase 1, floor screens): with two or more floors on the office shows one floor at a time, so every floor screen is checked
-     like any other office: 15 agents spread over three floors, and all 15 on one floor (the other floors empty), each floor reached with PageDown, both sizes.
+     like any other office: 15 agents spread over three floors, and all 15 on one floor (the other floors empty), each floor reached with PageUp, both sizes.
      The density is chosen per floor screen, so the 15-agent rule has to hold on each of them. The single-floor cases above are unchanged (SC-006). */
   for (const [w, h] of SIZES) {
     if (!mineScreens()) continue;
@@ -692,7 +800,7 @@ async function driver(ctx) {
     const screens = [
       ['3 floors, 15 agents spread', 'sim=15&simfreeze=1&simfloors=1'],
       ['3 floors, all 15 agents on the Ground floor', 'sim=15&simfreeze=1&simfloors=ground'],
-      ['2 floors on, 1 door closed', 'sim=15&simfreeze=1&simfloors=1&floorsoff=Client%20A&closed=mcp-swiss'],
+      ['2 floors on', 'sim=15&simfreeze=1&simfloors=1&floorsoff=Client%20A'],
       ['3 floors, 3 custom places', 'sim=15&simfreeze=1&simfloors=1&simplaces=3'],
       ['3 floors, schedules, long names', 'sim=15&simfreeze=1&simfloors=1&simsched=1&simnames=long'],
       ['3 floors, one desk per room', 'sim=15&simfreeze=1&simfloors=1&simrooms=solo'],
@@ -701,7 +809,7 @@ async function driver(ctx) {
       await ctx.js(`localStorage.removeItem('durbar.floor')`); // start on the first floor that is on
       await load(q, w, h);
       const perFloor = []; /* what each floor screen chose, to compare with the same agents as the whole office (below) */
-      const names = await ctx.js(`(()=>{const p=document.getElementById('floorsPop'),was=p.hidden;if(was)document.getElementById('floorsBtn').click();const n=[...p.querySelectorAll('[data-fl="on"]')].filter(b=>b.getAttribute('aria-pressed')==='true').map(b=>b.getAttribute('aria-label').split(': ')[0]);if(was)document.getElementById('floorsBtn').click();return n;})()`);
+      const names = await ctx.js(`(()=>{const p=document.getElementById('floorsPop'),was=p.hidden;if(was)document.getElementById('floorsBtn').click();const n=[...p.querySelectorAll('[data-fl="on"]')].filter(b=>b.getAttribute('aria-checked')==='true').map(b=>b.getAttribute('aria-label').split(': ')[0]);if(was)document.getElementById('floorsBtn').click();return n;})()`);
       const on = Number((await ctx.js(`document.getElementById('floorsBtn').textContent.trim()`)).split('/')[0]);
       total++;
       if (!(on >= 2)) { failed++; console.log(`FAIL floor screens ${w}x${h} ${label}: precondition: two or more floors on, got ${on}`); continue; }
@@ -709,9 +817,9 @@ async function driver(ctx) {
         const tag = `floor screen ${i + 1}/${on} ${w}x${h} ${label}`;
         if (i > 0) {
           const was = await ctx.js(`localStorage.getItem('durbar.floor')`);
-          await ctx.js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'PageDown',bubbles:true,cancelable:true}))`);
-          try { await ctx.waitFor(`localStorage.getItem('durbar.floor')!==${jsLiteral(was)}`, 5000); } catch (e) { failed++; total++; console.log(`FAIL ${tag}: PageDown did not change the floor`); break; }
-          await stable(`${tag} after PageDown`);
+          await ctx.js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'PageUp',bubbles:true,cancelable:true}))`);
+          try { await ctx.waitFor(`localStorage.getItem('durbar.floor')!==${jsLiteral(was)}`, 5000); } catch (e) { failed++; total++; console.log(`FAIL ${tag}: PageUp did not change the floor`); break; }
+          await stable(`${tag} after PageUp`);
         }
         const res = await measure(false);
         total++;
@@ -802,13 +910,11 @@ async function driver(ctx) {
       if (why.length) { failed++; console.log(`FAIL all-off ${w}x${h} ${label}: ${why.join('; ')}`); }
     }
   }
-  /* spec 001 FR-023/FR-024 (T030): many folders with one agent each (simrooms=solo), with and without a closed door, both sizes */
+  /* spec 001 FR-023/FR-024 (T030): many folders with one agent each (simrooms=solo), both sizes */
   for (const [w, h] of SIZES) {
     for (const sim of SIMS) {
       if (!mine()) continue;
       await run(`solo sim${sim}-${w}x${h}`, `sim=${sim}&simfreeze=1&simrooms=solo`, w, h, shotsDir ? `solo-sim${sim}-${w}x${h}` : '');
-      const names = await ctx.js(`[...document.querySelectorAll('#stage .room-name')].map(e=>e.textContent.trim())`);
-      await run(`solo sim${sim}-${w}x${h} closed=1`, `sim=${sim}&simfreeze=1&simrooms=solo&closed=${encodeURIComponent(names[0] || '')}`, w, h, '');
       const tip = await ctx.js(`[...document.querySelectorAll('#stage .room-name')].every((n)=>(n.title||'').startsWith(n.textContent.replace(/…$/,'')))`);
       total++;
       if (!tip) { failed++; console.log(`FAIL solo sim${sim}-${w}x${h}: a room name has no full-name tooltip`); }
@@ -871,8 +977,8 @@ async function driver(ctx) {
         if (ox > T && oy > T) P.push(`${kids[i].id || kids[i].className.split(' ')[0]} overlaps ${kids[j].id || kids[j].className.split(' ')[0]}`);
       }
     }
-    const strip = document.getElementById('stripList');
-    if (strip && R(strip).right > innerWidth + 1) P.push('the agent strip leaves the window');
+    const strip = document.getElementById('stripList'); /* spec 005 FR-190: the agent rail's list */
+    if (strip && (R(strip).right > innerWidth + 1 || R(strip).bottom > innerHeight + 1)) P.push('the agent rail leaves the window');
     /* spec 005 FR-037..FR-040: the chat settings are one row under the message box, inside the window, nothing overlapping; the
        Send / Stop slot sits inside the box */
     const bar = document.getElementById('cToolbar'), row = document.getElementById('ctItems'), box = document.querySelector('#panel .inbox');
@@ -1041,25 +1147,13 @@ async function driver(ctx) {
           total++;
           if (pb.length) { failed++; badB++; console.log(`FAIL browser tab ${w}x${h} agent ${id}: ${pb.slice(0, 4).join('; ')}`); }
         }
-        rows.push({ label: `browser tab ${w}x${h}`, d: 'chat', h: '-', rooms: '-', plates: '-', desks: ids.length, stageH: 0, floorH: 0, minFont: '-', problems: badB });
+        rows.push({ label: `browser tab ${w}x${h}`, d: 'chat', h: '-', rooms: '-', desks: ids.length, stageH: 0, floorH: 0, minFont: '-', problems: badB });
       }
       if (q === 'sim=15&simfreeze=1') {
-        /* Simple hides the developer details (VS Code, model chips); the header must still fit and keep + New */
-        await ctx.js(`(()=>{localStorage.setItem('durbar.detail','simple');return true})()`);
-        await load(q, w, h);
-        let badS = 0;
-        for (const id of ids) {
-          await ctx.js(`(async()=>{const d=document.querySelector(${jsLiteral(`#stage .desk[data-id="${id}"]`)});if(d)d.click();await new Promise(r=>setTimeout(r,250));return true})()`);
-          const ps = await ctx.js(`(${chatCheck.toString()})()`);
-          total++;
-          if (ps.length) { failed++; badS++; if (badS <= 3) console.log(`FAIL chat ${w}x${h} ${q} agent ${id} (Simple): ${ps.slice(0, 4).join('; ')}`); }
-          await ctx.js(`(async()=>{const b=document.getElementById('backBtn');if(b)b.click();await new Promise(r=>setTimeout(r,120));return true})()`);
-        }
         await newBtnFlow(w, h);
-        await ctx.js(`(()=>{localStorage.setItem('durbar.detail','expert');return true})()`);
         await load(q, w, h);
       }
-      rows.push({ label: `chat ${w}x${h} ${q}`, d: 'chat', h: '-', rooms: '-', plates: '-', desks: ids.length, stageH: 0, floorH: 0, minFont: '-', problems: bad });
+      rows.push({ label: `chat ${w}x${h} ${q}`, d: 'chat', h: '-', rooms: '-', desks: ids.length, stageH: 0, floorH: 0, minFont: '-', problems: bad });
     }
   }
   /* spec 009 FR-016 / T026: the VS Code chat view opens scrolled to the latest message (and has Continue in VS Code) */
@@ -1077,7 +1171,7 @@ async function driver(ctx) {
     total++;
     if (!vs) { failed++; console.log(`FAIL vschat ${w}x${h}: the VS Code chat view did not open`); }
     else if (vs.sh <= vs.ch * 2 || Math.abs(vs.st + vs.ch - vs.sh) > 2 || !vs.lastIn || !vs.cont) { failed++; console.log(`FAIL vschat ${w}x${h}: not opened at the latest message or no Continue button ${JSON.stringify(vs)}`); }
-    rows.push({ label: `vschat ${w}x${h}`, d: 'vschat', h: '-', rooms: '-', plates: '-', desks: '-', stageH: 0, floorH: 0, minFont: '-', problems: !vs || vs.sh <= vs.ch * 2 || Math.abs(vs.st + vs.ch - vs.sh) > 2 || !vs.lastIn || !vs.cont ? 1 : 0 });
+    rows.push({ label: `vschat ${w}x${h}`, d: 'vschat', h: '-', rooms: '-', desks: '-', stageH: 0, floorH: 0, minFont: '-', problems: !vs || vs.sh <= vs.ch * 2 || Math.abs(vs.st + vs.ch - vs.sh) > 2 || !vs.lastIn || !vs.cont ? 1 : 0 });
   }
 
   /* spec 005 FR-017 / T026: the card menu of a working main agent offers Stop and End session, a helper does not, and the menu fits the window */
@@ -1100,7 +1194,7 @@ async function driver(ctx) {
       if (r && r.open && (r.stop || r.end)) say(`helper ${id} has Stop/End`);
     }
     await ctx.js(`(()=>{const m=document.getElementById('modeMenu');if(m)m.remove();return true})()`);
-    rows.push({ label: `card menu ${w}x${h}`, d: 'menu', h: '-', rooms: '-', plates: '-', desks: ids.w.length, stageH: 0, floorH: 0, minFont: '-', problems: bad });
+    rows.push({ label: `card menu ${w}x${h}`, d: 'menu', h: '-', rooms: '-', desks: ids.w.length, stageH: 0, floorH: 0, minFont: '-', problems: bad });
   }
 
   /* spec 006 FR-023 (T031): the Previous sessions search box at both sizes: shown with 2+ entries, filters by title ignoring case and accents,
@@ -1144,11 +1238,11 @@ async function driver(ctx) {
     }
     total++;
     if (P.length) { failed++; console.log(`FAIL ${tag}: ${P.join('; ')}`); }
-    rows.push({ label: tag, d: 'prev', h: '-', rooms: '-', plates: '-', desks: ids.length, stageH: 0, floorH: 0, minFont: '-', problems: P.length });
+    rows.push({ label: tag, d: 'prev', h: '-', rooms: '-', desks: ids.length, stageH: 0, floorH: 0, minFont: '-', problems: P.length });
   }
 
   console.log('\nlayout summary (density/helpers shown, stage height vs floor):');
-  rows.forEach((r) => console.log(`  ${r.problems ? 'FAIL' : 'ok  '} ${r.label.padEnd(60)} ${String(r.d).padEnd(5)} h=${r.h} rooms=${r.rooms} plates=${r.plates} desks=${r.desks} stage ${r.stageH}/${r.floorH}px minFont=${r.minFont}`));
+  rows.forEach((r) => console.log(`  ${r.problems ? 'FAIL' : 'ok  '} ${r.label.padEnd(60)} ${String(r.d).padEnd(5)} h=${r.h} rooms=${r.rooms} desks=${r.desks} stage ${r.stageH}/${r.floorH}px minFont=${r.minFont}`));
   console.log(`\noffice check: ${total - failed}/${total} checks passed, ${failed} failed`);
   if (failed) process.exitCode = 1;
   if (failed) fs.writeFileSync(process.env.OFFICE_FAIL_MARKER || path.join(os.tmpdir(), 'durbar-office-check.fail'), String(failed));

@@ -194,7 +194,7 @@ module.exports = async (ctx) => {
   assert.ok(helper, 'a helper is on the office floor' + JSON.stringify(hp));
   assert.ok(!ctx.browserStates().some((x) => x.id === helper.id), 'precondition: the helper has no browser');
   await js(`document.querySelector('#stage .helper[data-id="'+CSS.escape(${jsLiteral(helper.id)})+'"]').click()`);
-  await wait(() => js(`document.body.classList.contains('panel-open')&&document.querySelector('#panel .panel-in.ro')`), "the helper's (read-only) chat is open");
+  await wait(() => js(`document.body.classList.contains('panel-open')&&document.querySelector('#panel .panel-in.helper-ro')`), "the helper's (read-only) chat is open");
   assert.strictEqual(await js(`!!document.getElementById('tabBrowser')`), false, 'a helper\'s chat has no Browser tab of its own');
   await js(`(()=>{const c=document.getElementById('chat');const d=document.createElement('div');d.className='md';const a=document.createElement('a');a.href='durbar-sim://pages/form';a.textContent='helper link';d.appendChild(a);c.appendChild(d);})()`);
   assert.ok(await clickLink('helper link'));

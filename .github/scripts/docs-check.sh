@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Docs check: a WARNING-ONLY reminder that user-visible changes need docs. It never fails (always exits 0), so it cannot block
-# anyone, and it is NOT a required status check. Rules (see AGENTS.md "Keep docs in sync"):
+# anyone, and it is NOT a required status check. Rules (see docs/rules/docs-sync.md, "Keep docs in sync"):
 #   1. src/ changed, but none of README.md, docs/, CHANGELOG.md, changelog.d/ changed -> warning
 #   2. package.json "scripts" changed, but README.md and docs/development.md did not -> warning
 #   3. CHANGELOG.md got a new bullet outside a release (no new "## v" heading)  -> warning: add a changelog.d/ fragment
@@ -59,7 +59,7 @@ if [ -n "$optout" ]; then
   summary "Docs check: opted out by ${optout}. The reviewer must agree with the reason."
 else
   if [ -n "$src_files" ] && [ -z "$docs_touched" ]; then
-    warn "src/ changed but README.md, docs/ and the changelog (a changelog.d/ fragment) did not. If users, scripts, permissions, settings, MCP/tool behavior, release status or contributors are affected, update them in this PR (AGENTS.md, 'Keep docs in sync'); otherwise add a line 'Docs: n/a <reason>' to the PR description."
+    warn "src/ changed but README.md, docs/ and the changelog (a changelog.d/ fragment) did not. If users, scripts, permissions, settings, MCP/tool behavior, release status or contributors are affected, update them in this PR (docs/rules/docs-sync.md, 'Keep docs in sync'); otherwise add a line 'Docs: n/a <reason>' to the PR description."
     warned=1
   fi
   if [ -n "$scripts_changed" ] && [ -z "$readme_touched" ]; then

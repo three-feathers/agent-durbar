@@ -397,7 +397,6 @@ async function main(): Promise<void> {
     {
       const pinned = await call('character:pin', '/work/app/', ours);
       assert.deepStrictEqual(pinned, { ok: true, pins: { '/work/app': ours } }, 'the key is normalised');
-      assert.strictEqual((await call('settings:get') as Rec).characterMotion, true);
       assert.deepStrictEqual((await call('settings:get') as Rec).characterPins, { '/work/app': ours });
       assert.strictEqual((await call('character:pin', '/closed/folder', ours)).ok, false, 'a folder that is not open');
       for (const k of ['', 'relative/path', '..', '../x', '__proto__', 'constructor', '/a\nb', '/' + 'x'.repeat(5000), null, undefined, 7, {}, ['/work/app']]) assert.strictEqual((await call('character:pin', k, ours)).ok, false, 'key ' + JSON.stringify(k));
@@ -467,12 +466,8 @@ async function main(): Promise<void> {
       assert.deepStrictEqual(await call('character:delete', other.id), { ok: true, pinsRemoved: 1 });
     }
 
-    // --- Motion (FR-060) ---
-    assert.deepStrictEqual(await call('settings:setCharacterMotion', false), { ok: true, characterMotion: false });
-    assert.strictEqual(new SettingsStore(file).load().characterMotion, false, 'survives a restart');
-    for (const j of ['false', 0, null, undefined, {}]) assert.deepStrictEqual(await call('settings:setCharacterMotion', j), { ok: true, characterMotion: false }, 'junk keeps it: ' + JSON.stringify(j));
-    assert.deepStrictEqual(await call('settings:setCharacterMotion', true), { ok: true, characterMotion: true });
-    assert.ok(!('characterMotion' in JSON.parse(fs.readFileSync(file, 'utf8'))), 'the default is not written');
+    // --- Motion: no characterMotion setting; the global Motion decides (spec 096 Changes 2026-11-05) ---
+    assert.ok(!handlers.has('settings:setCharacterMotion'), 'no separate character Motion channel');
 
     // --- many characters: no limit in main (owner's principle of 2026-10-31; the window warns) ---
     {
@@ -553,7 +548,7 @@ async function main(): Promise<void> {
     {
       const src = fs.readFileSync(path.join(ROOT, 'src', 'main', 'ipc', 'characters.ts'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
       const logs = [...src.matchAll(/console\.\w+\(([^\n]*?)\)\)?;?\s*$/gm)].map((m) => m[1]);
-      assert.deepStrictEqual(logs, ['`[characters] ${m}`'], 'the one log line is the store\'s own');
+      assert.deepStrictEqual(logs, ['redact(`[characters] ${m}`)'], 'the one log line is the store\'s own, masked (test:consolemask)');
       assert.ok(!/\bshell\b|child_process|nativeImage/.test(src), 'no shell, no process, no decoder here');
       assert.ok(/fromApp\(e\)/.test(src));
       const preload = fs.readFileSync(path.join(ROOT, 'src', 'preload', 'preload.ts'), 'utf8');

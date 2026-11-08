@@ -4,6 +4,10 @@
  * Part of `npm run test:runtime`. No process, no account, no credits.
  */
 import * as assert from 'assert';
+import * as nfs from 'fs';
+import * as nos from 'os';
+import * as npath from 'path';
+import { SettingsStore } from '../src/main/settings';
 import { createSandboxOps } from '../src/main/sandboxops';
 import type { AgentAdapter, AgentEvent } from '../src/adapters/types';
 
@@ -25,7 +29,7 @@ async function main(): Promise<void> {
     sandboxHost: async () => ({ available: false, reason: 'no sandbox here' }),
   } as unknown as AgentAdapter;
   const stored: Array<[unknown, unknown]> = [];
-  const store = { setSandboxAlwaysContinue: (a: unknown, on: unknown) => { stored.push([a, on]); return on === true; }, sandboxAlwaysContinue: (a: string) => stored.some((x) => x[0] === a && x[1] === true) };
+  const store = { setSandboxAlwaysContinue: (a: unknown, on: unknown) => { stored.push([a, on]); return { ok: true, value: on === true }; }, sandboxAlwaysContinue: (a: string) => stored.some((x) => x[0] === a && x[1] === true) };
   const ops = createSandboxOps({ adapterOf: (id) => (id === 's1' || id === 's2' ? ad : undefined), instance: (a) => { if (a !== 'claude') throw new Error('x'); return ad; }, readyAdapterIds: async () => new Set(['claude', 'codex']), store: () => store });
   const note = (id: string, actions: Array<'continue' | 'always'>, refused = false): AgentEvent => ({ type: 'sandbox', sessionId: id, timestamp: 1, sandbox: { state: 'off', covers: ['shell'], verified: false }, notice: { text: 't', actions, ...(refused ? { refused: true } : {}) } });
 
@@ -76,6 +80,53 @@ async function main(): Promise<void> {
   assert.deepStrictEqual(ops.alwaysOff(true, 7), { ok: false });
   assert.deepStrictEqual(ops.alwaysOff(true, 'claude'), { ok: true });
   assert.deepStrictEqual(stored.pop(), ['claude', false]);
+  // issue 1023: turning the choice off is the safe direction. It is off for this run even if the file could not be written, and the window is told it will not last; a store that still has it on is not "ok"
+  {
+    const mk = (still: boolean, unsaved?: boolean) => createSandboxOps({ adapterOf: () => undefined, instance: () => ad, readyAdapterIds: async () => new Set(['claude']), store: () => ({ setSandboxAlwaysContinue: () => ({ ok: !unsaved, value: still }), sandboxAlwaysContinue: () => still, isUnsaved: (k: string) => k === 'sandboxAlwaysContinue' && !!unsaved }) });
+    assert.deepStrictEqual(mk(false, true).alwaysOff(true, 'claude'), { ok: true, saved: false }, 'off for this run, not saved: said');
+    assert.deepStrictEqual(mk(false, false).alwaysOff(true, 'claude'), { ok: true }, 'saved: no extra word');
+    assert.deepStrictEqual(mk(true, false).alwaysOff(true, 'claude'), { ok: false }, 'still on: not ok');
+    // the same with the real store on a path that cannot be written: off for this run, said, and the key that says so is the setting's own
+    {
+      const root = npath.join(nfs.mkdtempSync(npath.join(nos.tmpdir(), 'durbar-sbx-')), 'p');
+      const real = new SettingsStore(npath.join(root, 'durbar-settings.json')); real.load();
+      assert.strictEqual(real.setSandboxAlwaysContinue('claude', true).value, true);
+      nfs.rmSync(root, { recursive: true, force: true }); nfs.writeFileSync(root, 'x'); // every save fails now
+      const o = createSandboxOps({ adapterOf: () => undefined, instance: () => ad, readyAdapterIds: async () => new Set(['claude']), store: () => real });
+      assert.deepStrictEqual(o.alwaysOff(true, 'claude'), { ok: true, saved: false }, 'real store, unwritable: off for this run, not saved');
+      assert.strictEqual(real.sandboxAlwaysContinue('claude'), false);
+      real.setDefaultMaxAiCredits(50).value; // another setting kept for the run does not make a clean undo "not saved"
+      nfs.rmSync(root, { force: true }); nfs.mkdirSync(root, { recursive: true });
+      real.setSeriousMode(true).value; // a save that works clears the flags
+      assert.deepStrictEqual(o.alwaysOff(true, 'claude'), { ok: true }, 'saved: no extra word');
+      nfs.rmSync(npath.dirname(root), { recursive: true, force: true });
+    }
+    // issue 1094: the value already in force, asked again on a path that cannot be written, is not saved
+    {
+      const root = npath.join(nfs.mkdtempSync(npath.join(nos.tmpdir(), 'durbar-sbx2-')), 'p');
+      nfs.mkdirSync(npath.dirname(root), { recursive: true }); nfs.writeFileSync(root, 'x');
+      const dead = new SettingsStore(npath.join(root, 'durbar-settings.json')); dead.load();
+      assert.strictEqual(dead.setSandboxAlwaysContinue('claude', true).ok, false, 'on: rolled back, not ok');
+      assert.strictEqual(dead.setSandboxAlwaysContinue('claude', false).ok, false, 'off while already off: kept for the run, not saved');
+      const o = createSandboxOps({ adapterOf: () => undefined, instance: () => ad, readyAdapterIds: async () => new Set(['claude']), store: () => ({ setSandboxAlwaysContinue: (a, on) => dead.setSandboxAlwaysContinue(a, on), sandboxAlwaysContinue: (a) => dead.sandboxAlwaysContinue(a), isUnsaved: () => false }) });
+      assert.deepStrictEqual(o.alwaysOff(true, 'claude'), { ok: true, saved: false }, 'already off, write fails: said, even with no flag');
+      nfs.rmSync(npath.dirname(root), { recursive: true, force: true });
+    }
+    // Always continue ON that cannot be saved is rolled back: the person is told (the note comes back), the one-shot continue itself went through
+    const sess = (stored: boolean) => {
+      const o = createSandboxOps({ adapterOf: () => ad, instance: () => ad, readyAdapterIds: async () => new Set(['claude']), store: () => ({ setSandboxAlwaysContinue: () => ({ ok: stored, value: stored }), sandboxAlwaysContinue: () => stored }) });
+      o.onEvent(note('s9', ['continue', 'always']));
+      return o;
+    };
+    assert.deepStrictEqual(await sess(false).continueWithout(true, 's9', { always: true }), { ok: true, alwaysSaved: false }, 'always not saved: said');
+    assert.deepStrictEqual(await sess(true).continueWithout(true, 's9', { always: true }), { ok: true }, 'always saved: no extra word');
+    // issue 1094: `ok` false while `value` is what was asked (the write failed, the value was already in force): still "not saved"
+    {
+      const o = createSandboxOps({ adapterOf: () => ad, instance: () => ad, readyAdapterIds: async () => new Set(['claude']), store: () => ({ setSandboxAlwaysContinue: () => ({ ok: false, value: true }), sandboxAlwaysContinue: () => true }) });
+      o.onEvent(note('s9', ['continue', 'always']));
+      assert.deepStrictEqual(await o.continueWithout(true, 's9', { always: true }), { ok: true, alwaysSaved: false }, 'ok false, value true: not saved');
+    }
+  }
   // review round 8 (4): the window always gets the cleaned sandbox event: the seam, and main.ts pinned to it
   const { toWindowEvent } = await import('../src/main/sandboxops');
   const fs = await import('fs');
@@ -87,7 +138,7 @@ async function main(): Promise<void> {
   toWindowEvent({ type: 'output', sessionId: 's', timestamp: 1, delta: 'x' } as AgentEvent, (e) => { outwardCalled++; return e; });
   assert.strictEqual(outwardCalled, 1, 'and still applies outward()');
   const mainSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8');
-  const fwd = mainSrc.match(/router\.onEvent\(\(e\) => toRenderer\('agent:event',[^\n]*/g) ?? [];
+  const fwd = mainSrc.match(/router\.onEvent\(\(e\) => (?:\{ if \(!mcp\.hidesEvent\(e\)\) )?toRenderer\('agent:event',[^\n]*/g) ?? []; // spec 058 FR-215: a declined elicitation is held back first
   assert.deepStrictEqual(fwd.map((l) => /toRenderer\('agent:event', toWindowEvent\(e, outward\)\)/.test(l)), [true], 'main.ts forwards adapter events to the window only through toWindowEvent: ' + fwd.join(' | '));
   done = true;
   console.log('sandbox ops (spec 087): all checks passed');

@@ -18,7 +18,7 @@ import { DEFAULT_STYLE_ID } from '../../shared/charstyle';
 import { cleanCharacterName, pinDecision } from '../../shared/charrules';
 import type { EncoderResult, FaceSet, FrameSet } from '../../shared/charrules';
 import { MAX_IMAGE_BYTES, checkImage } from '../../shared/imagecheck';
-import { maskHomePaths, redactMarkdown } from '../../shared/redact';
+import { maskHomePaths, redact, redactMarkdown } from '../../shared/redact';
 import { encodeSheet } from '../charencoder';
 import type { EncodeOptions } from '../charencoder';
 import { CharacterStore } from '../charstore';
@@ -122,7 +122,7 @@ class Cancelled extends Error {}
 
 export function register(deps: CharactersIpcDeps): CharactersIpc {
   const { dev, registry, router, getSettingsStore, openFolderKeys } = deps;
-  const store = new CharacterStore(path.join(app.getPath('userData'), 'characters'), (m) => console.warn(`[characters] ${m}`));
+  const store = new CharacterStore(path.join(app.getPath('userData'), 'characters'), (m) => console.warn(redact(`[characters] ${m}`)));
   const encode = deps.encode ?? encodeSheet;
   const generateMs = deps.limits?.generateMs ?? GENERATE_TIMEOUT_MS;
   const graceMs = deps.limits?.graceMs ?? GUARD_GRACE_MS;

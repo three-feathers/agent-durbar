@@ -1,1 +1,7 @@
 CHANGELOG.md merge=union
+scripts/test-suites.txt merge=union
+
+# build cost: generated files and their golden fixtures are LF on every OS (the tests compare text)
+scripts/fixtures/build-cost/* text eol=lf
+docs/build-cost*.svg text eol=lf
+docs/build-cost*.json text eol=lf

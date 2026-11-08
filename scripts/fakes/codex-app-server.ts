@@ -50,7 +50,9 @@ export interface FakeCodexOptions {
    * Spec 012 FR-156: how `account/rateLimits/read` answers: `ok` (default, a rate-limit snapshot), `unauthorized` (an auth error),
    * `network` (another error), `missing` (method not found, an older Codex).
    */
-  rateLimits?: 'ok' | 'unauthorized' | 'network' | 'missing';
+  rateLimits?: 'ok' | 'unauthorized' | 'network' | 'missing' | 'limited';
+  /** Spec 011 FR-081: the whole `account/rateLimits/read` result, instead of the default snapshot. */
+  rateLimitsResult?: unknown;
   /** What `getAuthStatus` reports as `authMethod` (default `chatgpt`; null = not signed in). */
   authMethod?: string | null;
   /**
@@ -64,6 +66,10 @@ export interface FakeCodexOptions {
   imageMode?: FakeImageMode;
   /** Spec 096: the kind of fixture sheet `imageMode: 'sheet'` writes (`png-sheet.js`; default `transparent`), or the bytes themselves. */
   imageSheet?: string | Uint8Array;
+  /** Spec 099: this Codex has goals (off: method not found, an older Codex). `goalClear` how `thread/goal/clear` answers; `goalSetError` refuses `thread/goal/set`. */
+  goals?: boolean;
+  goalClear?: 'ok' | 'error' | 'hang' | 'malformed';
+  goalSetError?: string;
   /** Exit (no answer) when a request with this method arrives. */
   exitOn?: { method: string; code?: number | null; signal?: NodeJS.Signals | null };
 }
@@ -331,19 +337,27 @@ export class FakeCodexServer {
         this.enqueue(child, { method: 'thread/deleted', params: { threadId: tid } });
         return;
       }
+      case 'config/read': {
+        if (this.configReadNever) return;
+        // `real:` codex-cli 0.163.0: the effective config, `mcp_servers` holding the user's servers (a disabled one too); starts nothing
+        const mcp_servers = Object.fromEntries((this.configMcpNames ?? []).map((n) => [n, { command: 'node' }]));
+        return this.reply(child, id, { config: { mcp_servers }, origins: {} });
+      }
       case 'mcpServerStatus/list': {
         // spec 069 FR-031: one server's tools when `serverName` is given (a map by tool name, as the generated schema says)
         const all: Array<Record<string, unknown>> = (this.mcpList as Array<Record<string, unknown>> | undefined) ?? [
           { name: 'echo', authStatus: 'unsupported', runtimeStatus: 'connected', tools: { echo: { name: 'echo', description: 'Echo the text back\nSecond line', inputSchema: {} }, ping: { name: 'ping', inputSchema: {} } }, resources: [], resourceTemplates: [] },
           { name: 'broken', authStatus: 'unsupported', runtimeStatus: 'failed', tools: {}, toolsError: 'tools/list failed: spawn broken-mcp ENOENT', resources: [], resourceTemplates: [] },
         ];
+        if (isObj(params) && this.mcpFailFor !== undefined && params.serverName === this.mcpFailFor) return this.fail(child, id, -32000, 'boom');
+        if (isObj(params) && this.mcpNeverFor !== undefined && params.serverName === this.mcpNeverFor) return; // never answers
         const want = isObj(params) && typeof params.serverName === 'string' && !this.mcpIgnoreServerName ? params.serverName : undefined;
         // spec 069 (review on #499): an app-server that pages (`mcpPageSize`, `cursor` = the next index) and may ignore `serverName`
         const list = want ? all.filter((x) => x.name === want) : this.mcpList ?? all.slice(0, 1);
         const from = isObj(params) && typeof params.cursor === 'string' ? Number(params.cursor) || 0 : 0;
         const size = this.mcpPageSize ?? list.length;
         const answer = (): void => this.reply(child, id, { data: list.slice(from, from + size), nextCursor: this.mcpStuckCursor ?? (from + size < list.length ? String(from + size) : null) });
-        if (this.holdMcpList) return void this.heldMcpList.push(answer);
+        if (this.holdMcpList || (isObj(params) && this.mcpHoldName !== undefined && params.serverName === this.mcpHoldName)) return void this.heldMcpList.push(answer);
         return answer();
       }
       case 'model/list':
@@ -396,6 +410,27 @@ export class FakeCodexServer {
         }
         return;
       }
+      case 'thread/goal/set': {
+        if (!this.opts.goals) return this.fail(child, id, -32601, `method not found: ${method}`);
+        if (this.opts.goalSetError) return this.fail(child, id, -32600, this.opts.goalSetError);
+        const tid = isObj(params) && typeof params.threadId === 'string' ? params.threadId : '';
+        this.goals.add(tid);
+        this.reply(child, id, { goal: this.goalOf(tid, 'active', isObj(params) ? params : {}) });
+        this.goalTurn(tid); // like Codex 0.163 (`real:` T093): the goal starts its first turn with no `turn/start`
+        return;
+      }
+      case 'thread/goal/clear': {
+        if (!this.opts.goals) return this.fail(child, id, -32601, `method not found: ${method}`);
+        const how = this.opts.goalClear ?? 'ok';
+        if (how === 'hang') return;
+        if (how === 'error') return this.fail(child, id, -32603, 'goal store unavailable');
+        if (how === 'malformed') return this.reply(child, id, {});
+        const tid = isObj(params) && typeof params.threadId === 'string' ? params.threadId : '';
+        const had = this.goals.delete(tid);
+        this.reply(child, id, { cleared: had });
+        if (had) this.enqueue(child, { method: 'thread/goal/cleared', params: { threadId: tid } });
+        return;
+      }
       case 'turn/interrupt': {
         const tid = isObj(params) && typeof params.threadId === 'string' ? params.threadId : '';
         this.reply(child, id, {});
@@ -408,6 +443,8 @@ export class FakeCodexServer {
         if (r === 'missing') return this.fail(child, id, -32601, `method not found: ${method}`);
         if (r === 'unauthorized') return this.fail(child, id, -32603, 'failed to fetch codex rate limits: 401 Unauthorized');
         if (r === 'network') return this.fail(child, id, -32603, 'failed to fetch codex rate limits: error sending request');
+        if (r === 'limited') return this.fail(child, id, -32603, 'failed to fetch codex rate limits: 429 Too Many Requests');
+        if (this.opts.rateLimitsResult !== undefined) return this.reply(child, id, this.opts.rateLimitsResult);
         return this.reply(child, id, { rateLimits: { primary: { usedPercent: 12, windowDurationMins: 300, resetsAt: 1792403999 }, secondary: null } });
       }
       case 'account/read': {
@@ -423,6 +460,34 @@ export class FakeCodexServer {
       default:
         return this.fail(child, id, -32601, `method not found: ${method}`);
     }
+  }
+
+  /** Spec 099: threads with a goal; shared by all children, as a goal lives on the thread. */
+  goals = new Set<string>();
+  /** Spec 099: a `ThreadGoal` with every required field (`read:` Codex 0.164.0 generated schema; values made up). */
+  goalOf(tid: string, status: string, o: Record<string, unknown> = {}): Record<string, unknown> {
+    return { threadId: tid, objective: typeof o.objective === 'string' ? o.objective : 'fake objective', status, tokenBudget: typeof o.tokenBudget === 'number' ? o.tokenBudget : null, tokensUsed: typeof o.tokensUsed === 'number' ? o.tokensUsed : 0, timeUsedSeconds: 1, createdAt: 1792403000, updatedAt: 1792403001 };
+  }
+  /** Spec 099: `thread/goal/updated`, as the schema has it: `threadId`, `goal` and an optional `turnId`, with no `origin`. */
+  goalUpdate(tid: string, status: string, tokensUsed?: number): void {
+    this.note(tid, 'thread/goal/updated', { turnId: this.openTurn.get(tid) ?? null, goal: this.goalOf(tid, status, tokensUsed === undefined ? {} : { tokensUsed }) });
+  }
+  /** Spec 099: the app starts a turn on its own. Returns its id. */
+  goalTurn(tid: string): string {
+    const child = this.threadChild.get(tid) as FakeChild;
+    const turnId = `turn_${this.nextTurn++}`;
+    this.openTurn.set(tid, turnId);
+    this.enqueue(child, { method: 'turn/started', params: { threadId: tid, turn: { id: turnId, status: 'inProgress' } } });
+    return turnId;
+  }
+  /** Spec 099: any notification, on the child that holds the thread. */
+  note(tid: string, method: string, params: Record<string, unknown>): void {
+    this.enqueue(this.threadChild.get(tid) as FakeChild, { method, params: { threadId: tid, ...params } });
+  }
+  /** Spec 099: the open turn of a thread ends by itself. */
+  endTurn(tid: string, status = 'completed'): void {
+    const open = this.openTurn.get(tid);
+    if (open) this.completeTurn(this.threadChild.get(tid) as FakeChild, tid, open, status as 'completed');
   }
 
   private replayTurn(child: FakeChild, tid: string, turnId: string): void {
@@ -499,6 +564,14 @@ export class FakeCodexServer {
     });
   }
 
+  /** Tests: `mcpServerStatus/list` for this `serverName` answers an error / never answers. */
+  mcpFailFor: string | undefined;
+  mcpNeverFor: string | undefined;
+  /** Tests: hold only this server's reply until `releaseMcpList()`; `config/read` never answers. */
+  mcpHoldName: string | undefined;
+  configReadNever = false;
+  /** The server names `config/read` answers with (the user's `config.toml`). */
+  configMcpNames: string[] | undefined;
   /** What `mcpServerStatus/list` answers (default: one connected `echo`). */
   mcpList: unknown[] | undefined;
   /** Tests: hold the `mcpServerStatus/list` replies until `releaseMcpList()`. */
@@ -510,8 +583,10 @@ export class FakeCodexServer {
   /** Spec 069 (re-review on #499): a broken pager that always answers this `nextCursor`. */
   mcpStuckCursor: string | undefined;
   private heldMcpList: Array<() => void> = [];
+  heldMcpListCount(): number { return this.heldMcpList.length; }
   releaseMcpList(): void {
     this.holdMcpList = false;
+    this.mcpHoldName = undefined;
     for (const f of this.heldMcpList.splice(0)) f();
   }
 

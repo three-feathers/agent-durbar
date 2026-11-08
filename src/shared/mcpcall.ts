@@ -10,7 +10,7 @@ export type McpCallClass = 'auth' | 'policy';
 const MAX = 4000;
 
 /** Organization access policy: Entra Conditional Access / device compliance. Tested first, because such a refusal also says "AADSTS" or "sign in". */
-const POLICY = /AADSTS53\d{4}|conditional access|device (?:is )?(?:required )?(?:to be )?managed|managed device|compliant device|device (?:is )?not (?:compliant|enrolled)/i;
+const POLICY = /\bAADSTS53(?:0\d\d|\d{4})\b|\binsufficient_claims\b|conditional access|device (?:is )?(?:required )?(?:to be )?managed|managed device|compliant device|device (?:is )?not (?:compliant|enrolled)/i;
 /**
  * The server wants a sign-in. Each Entra code below is one that signing in again fixes (meanings from Microsoft's published AADSTS error
  * list, written from memory and not re-checked online); every other `AADSTS50xxx` / `70xxx` code gets no class, because signing in does
@@ -25,12 +25,27 @@ const POLICY = /AADSTS53\d{4}|conditional access|device (?:is )?(?:required )?(?
  * An HTTP 401 counts only as "401 Unauthorized", or next to an HTTP / status / code / error / response word: a bare 401 ("line 401 of
  * input.csv", "issue 401 not found", "Page 401 of 900") is not a sign-in.
  */
-const AUTH = /\b401\s+unauthori[sz]ed|\b(?:http(?:\/\d(?:\.\d)?)?|status(?: code)?|code|error|response)[\s:=(-]{0,4}401\b|unauthori[sz]ed|AADSTS(?:50058|50072|50074|50076|50078|50079|50132|50133|50173|70008|70043|70044|700082|65001)\b|invalid_grant|token (?:is |has )?(?:expired|invalid)|sign[- ]?in (?:is )?required|MCP OAuth challenge required/i;
+const AUTH = /\b401\s+unauthori[sz]ed|\b(?:http(?:\/\d(?:\.\d)?)?|status(?: code)?|code|error|response)[\s:=(-]{0,4}401\b|unauthori[sz]ed|\bAADSTS(?:50058|50072|50074|50076|50078|50079|50132|50133|50173|70008|70043|70044|700082|65001)\b|invalid_grant|token (?:is |has )?(?:expired|invalid)|sign[- ]?in (?:is )?required|MCP OAuth challenge required/i;
 
 /** `auth` when the adapter already said so (`mcpAuth`), else the class of the text, else undefined (nothing guessed). */
 export function classifyMcpCall(text: unknown, mcpAuth?: boolean): McpCallClass | undefined {
   const t = typeof text === 'string' ? text.slice(0, MAX) : '';
   if (POLICY.test(t)) return 'policy';
   if (mcpAuth === true || AUTH.test(t)) return 'auth';
-  return undefined;
+  /* after sign-in: Entra's normal MFA and re-sign-in answers carry this word too, and signing in does fix those */
+  return /\binteraction_required\b/i.test(t) ? 'policy' : undefined;
+}
+
+/**
+ * Spec 058 FR-225 (review of PR 1210): the narrow signal the check before a message acts on. `classifyMcpCall` is wide on purpose (it
+ * only words a failed call); a check restarts a server, so it reads only an HTTP 401 form, the runtime's own "MCP OAuth challenge
+ * required", `invalid_grant`, or an Entra sign-in code that signing in again fixes. Never a bare "unauthorized" or "token expired"
+ * ("unauthorized_client", "page token expired", "unauthorized for this plan tier", "error 401: license seat" are not sign-ins).
+ * A policy text (Conditional Access) is never one. Linear time, input cut first; reads the text, returns only a boolean.
+ */
+const CHECK_AUTH = /\bMCP OAuth challenge required\b|\bhttp(?:\/\d(?:\.\d)?)?[\s:=(-]{0,4}401\b|\b401\s+unauthori[sz]ed\b|\binvalid_grant\b|\bAADSTS(?:50058|50072|50074|50076|50078|50079|50132|50133|50173|70008|70043|70044|700082|65001)\b/i;
+export function isCheckUnauthorized(text: unknown): boolean {
+  const t = typeof text === 'string' ? text.slice(0, MAX) : '';
+  if (POLICY.test(t)) return false;
+  return CHECK_AUTH.test(t);
 }

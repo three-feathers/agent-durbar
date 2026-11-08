@@ -1,18 +1,19 @@
 #!/usr/bin/env node
 /*
- * `npm test` (spec 008 delta 2026-10-19: faster CI). The suites are the `npm run test:*` names in the `test:serial` script,
- * which stays the single list and still runs everything one by one. Here the scripts are compiled ONCE (each `test:*` script
+ * `npm test` (spec 008 delta 2026-10-19: faster CI). The suites are the `npm run test:*` names in scripts/test-suites.txt (one per line;
+ * spec 008 delta 2026-11-01, it was one 4 KB line in package.json that conflicted in every PR pair), the single list. Here the scripts are compiled ONCE (each `test:*` script
  * starts with its own `tsc`, 40 compiles of about 5 s), then the suites run in parallel, each suite's own steps in order.
  *
  *   npm test                     all suites, parallel (TEST_JOBS=n to change the worker count; default: CPUs minus one, at most 8; nice 10)
  *   npm test -- folders claude   only suites whose name contains one of the words
  *   npm test -- --bail           (or TEST_BAIL=1) stop at the first failing suite, for iterating; the default still runs everything
- *   npm run test:serial          the old way, one after another
+ *   npm run test:serial          (--serial) one suite after another, same list
  *
  * With --bail no new suite starts after the first failure and the running ones are stopped (POSIX: the suite's whole process group;
  * Windows: `taskkill /T /F` on its tree), so no Electron or Xvfb is left behind. The final run, PR CI and the merge queue run everything.
- * Every suite writes its own temp folders; a suite's output is printed when it ends, whole, so lines never interleave.
+ * Every suite runs with its own empty TMPDIR and fails if a `durbar-*` entry is left in it (spec 012 FR-166). A suite's output is printed when it ends, whole, so lines never interleave.
  */
+const fs = require('fs');
 const { spawn, spawnSync } = require('child_process');
 const os = require('os');
 const path = require('path');
@@ -29,14 +30,29 @@ function parseArgs(argv, env) {
   return { bail: asked && !ci, ignoredBail: asked && ci, filters: argv.filter((a) => !a.startsWith('-')) };
 }
 
-// the suites: the `npm run test:*` names of test:serial, each as the ordered `node <file>` steps of its script
-function loadSuites(pkg, filters) {
-  const names = pkg.scripts['test:serial'].split('&&').map((s) => s.trim().replace(/^npm run /, ''));
+// scripts/test-suites.txt: one `test:*` script name per line; blank lines and `#` comments are ignored; a name twice is an error
+const SUITE_LIST = path.join(__dirname, 'test-suites.txt');
+function readSuiteList(text = fs.readFileSync(SUITE_LIST, 'utf8')) {
+  const names = text.split(/\r?\n/).map((l) => l.replace(/#.*$/, '').trim()).filter(Boolean);
+  const seen = new Set();
+  for (const n of names) { if (seen.has(n)) throw new Error(`test-suites.txt lists ${n} twice`); seen.add(n); }
+  return names;
+}
+
+// `test:*` scripts that are not suites on purpose: chains that run listed suites, and the manual matrix against the real Claude CLI (no AI credits in `npm test`)
+const NOT_SUITES = ['test:serial', 'test:runtime', 'test:notes', 'test:claudecli'];
+// every `test:*` script of package.json that neither the list nor NOT_SUITES names: a forgotten suite, which would never run
+function unlistedSuites(scripts, names = readSuiteList(), allow = NOT_SUITES) {
+  return Object.keys(scripts).filter((k) => /^test:/.test(k) && !names.includes(k) && !allow.includes(k));
+}
+
+// the suites: the names of the list, each as the ordered `node <file>` steps of its script
+function loadSuites(pkg, filters, names = readSuiteList()) {
   return names
     .filter((n) => !filters.length || filters.some((f) => n.includes(f)))
     .map((name) => {
       const cmd = pkg.scripts[name];
-      if (!cmd) throw new Error(`test:serial names ${name}, which is not a script`);
+      if (!cmd) throw new Error(`test-suites.txt names ${name}, which is not a script`);
       const steps = cmd.replace(TSC_PREFIX, '').split('&&').map((s) => s.trim().split(/\s+/));
       for (const s of steps) if (s[0] !== 'node') throw new Error(`${name}: only "node <file>" steps are supported here, got "${s.join(' ')}"`);
       return { name, steps: steps.map((s) => s.slice(1)) };
@@ -63,16 +79,25 @@ function stopChild(child, { platform = process.platform, spawnFn = spawn, kill =
   if (child.once) child.once('close', () => { clearTimer(timer); force(); });
 }
 
+// spec 012 FR-166 (#1093): every suite gets its own empty temp folder (TMPDIR/TEMP/TMP, so os.tmpdir() is inside it). When the suite ends, a
+// `durbar-*` entry left in it is a leak: the suite fails and names the entry. The folder is removed either way, so a leak never piles up.
+function suiteTmpEnv(env, dir) { return { ...env, TMPDIR: dir, TEMP: dir, TMP: dir }; }
+function makeSuiteTmp(base = os.tmpdir()) { return fs.mkdtempSync(path.join(base, 'suite-tmp-')); }
+function leftBehind(dir) {
+  try { return fs.readdirSync(dir).filter((n) => n.startsWith('durbar-')).sort(); } catch (_) { return []; }
+}
+function removeSuiteTmp(dir) { try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) { /* the OS cleans its temp folder */ } }
+
 // Run the suites with `jobs` at a time. Returns { failed: [names], bailed: name | null }. Everything the outside world touches
 // (spawn, kill, platform, output, clock) is injected so scripts/test-run-tests.ts can drive it with fakes.
 async function runSuites({ suites, jobs, bail = false, cwd = ROOT, env = process.env, platform = process.platform, spawnFn = spawn, kill = process.kill,
-  write = (t) => process.stdout.write(t), now = Date.now, running = new Set(), stopOpts = {}, ctl = {} }) {
+  write = (t) => process.stdout.write(t), now = Date.now, running = new Set(), stopOpts = {}, ctl = {}, tmp = { make: makeSuiteTmp, left: leftBehind, remove: removeSuiteTmp } }) {
   const failed = [];
   let bailed = null;
   let next = 0;
-  const runStep = (args) =>
+  const runStep = (args, stepEnv) =>
     new Promise((resolve) => {
-      const p = spawnFn(process.execPath, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], detached: bail && platform !== 'win32' });
+      const p = spawnFn(process.execPath, args, { cwd, env: stepEnv, stdio: ['ignore', 'pipe', 'pipe'], detached: bail && platform !== 'win32' });
       running.add(p);
       let out = '';
       p.stdout.on('data', (d) => (out += d));
@@ -89,13 +114,20 @@ async function runSuites({ suites, jobs, bail = false, cwd = ROOT, env = process
       const st = now();
       let log = '';
       let code = 0;
+      const tmpDir = tmp.make();
       for (const args of s.steps) {
-        if (bailed) return;
-        const r = await runStep(args);
+        if (bailed) break;
+        const r = await runStep(args, suiteTmpEnv(env, tmpDir));
         log += r.out;
         if (r.code !== 0) { code = r.code || 1; break; }
       }
-      if (bailed) return; // stopped by another suite's failure: its result means nothing
+      const leaks = bailed ? [] : tmp.left(tmpDir);
+      tmp.remove(tmpDir);
+      if (bailed) return;
+      if (!code && leaks.length) {
+        code = 1;
+        log += `${s.name} left ${leaks.length} durbar-* temp entr${leaks.length === 1 ? 'y' : 'ies'} behind (${leaks.slice(0, 5).join(', ')}${leaks.length > 5 ? ', ...' : ''}): remove what the suite makes (try/finally) or use a helper that does\n`;
+      }
       const secs = ((now() - st) / 1000).toFixed(1);
       if (code) {
         failed.push(s.name);
@@ -143,7 +175,7 @@ function runMain({ suites, jobs, bail, t0 = Date.now(), exit = process.exit, run
   });
 }
 
-module.exports = { parseArgs, loadSuites, stopChild, runSuites, runMain };
+module.exports = { suiteTmpEnv, leftBehind, parseArgs, readSuiteList, unlistedSuites, NOT_SUITES, loadSuites, stopChild, runSuites, runMain };
 
 if (require.main === module) {
   const { ensureElectron } = require('./ensure-electron');
@@ -165,7 +197,7 @@ if (require.main === module) {
   }
 
   // leave a core for the desktop and run at low priority, so the machine stays usable while the suites run
-  const jobs = Math.max(1, Number(process.env.TEST_JOBS) || Math.min(os.cpus().length - 1, 8));
+  const jobs = process.argv.includes('--serial') ? 1 : Math.max(1, Number(process.env.TEST_JOBS) || Math.min(os.cpus().length - 1, 8));
   try { os.setPriority(10); } catch (_) { /* not allowed: normal priority */ }
   runMain({ suites, jobs, bail, t0 });
 }

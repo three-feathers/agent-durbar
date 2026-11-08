@@ -169,12 +169,12 @@ const watch = fs.readFileSync(path.join(WF, 'nightly-watch.yml'), 'utf8');
 assert.ok(!/pull_request/.test(watch) && !/actions\/checkout/.test(watch) && watch.includes(`github.event.workflow_run.event == 'schedule'`), 'nightly-watch.yml: only scheduled runs, never PR code');
 const watched = ((/workflows: \[(.*)\]/.exec(watch) || [])[1] || '').split(',').map((x) => x.trim());
 const wfNames = new Set(fs.readdirSync(WF).filter((f) => f.endsWith('.yml')).map((f) => (/^name: (.*)$/m.exec(fs.readFileSync(path.join(WF, f), 'utf8')) || [])[1]));
-for (const w of ['CI', 'UI on three OSes', 'Installed app', 'Packaged check', 'Install check']) assert.ok(watched.includes(w) && wfNames.has(w), `nightly-watch.yml watches "${w}" (a real workflow name)`);
+for (const w of ['CI', 'UI on three OSes', 'Installed app', 'Packaged check', 'Install check', 'E2E real accounts']) assert.ok(watched.includes(w) && wfNames.has(w), `nightly-watch.yml watches "${w}" (a real workflow name)`);
 // FR-111 (owner decision 2026-10-22): theme layout checks run Clean Office and Retro on pull requests, every theme elsewhere
 assert.ok(office.includes(`CHECK_ALL_THEMES: \${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && '0' || '1' }}`) && wf.includes(`CHECK_ALL_THEMES: \${{ github.event_name == 'pull_request' && '0' || '1' }}`), 'every theme on main, nightly and by hand');
 const geo = fs.readFileSync(path.join(ROOT, 'scripts', 'check-theme-geometry.js'), 'utf8');
-assert.ok(/process\.env\.CHECK_ALL_THEMES === '1' \? ALL_THEMES : 'retro'/.test(geo) && /const ALL_THEMES = 'corporate,retro,durbar-indian,durbar-european,durbar-japanese,user,pink-studio'/.test(geo), 'check-theme-geometry: Retro by default, all with CHECK_ALL_THEMES=1');
-assert.ok(/CHECK_ALL_THEMES === '1' \? \[[^\]]*durbar-japanese[^\]]*\] : \['clean', 'retro'\]/.test(fs.readFileSync(path.join(ROOT, 'scripts', 'shots-052-addleft.js'), 'utf8')), 'shots-052-addleft: Clean and Retro by default');
+assert.ok(/process\.env\.CHECK_ALL_THEMES === '1' \? ALL_THEMES : 'retro'/.test(geo) && /const ALL_THEMES = 'retro,user,pink-studio'/.test(geo), 'check-theme-geometry: Retro by default, all with CHECK_ALL_THEMES=1');
+assert.ok(/const THEMES = \['clean', 'retro'\];/.test(fs.readFileSync(path.join(ROOT, 'scripts', 'shots-052-addleft.js'), 'utf8')), 'shots-052-addleft: Clean and Retro, the built-in themes (spec 035 FR-017)');
 // FR-110: every job of every workflow has a time limit
 for (const f of fs.readdirSync(WF).filter((x) => x.endsWith('.yml'))) for (const [id, body] of Object.entries(jobsOf(fs.readFileSync(path.join(WF, f), 'utf8')))) assert.ok(/^ {4}timeout-minutes: /m.test(body), `${f} ${id} has timeout-minutes`);
 // ---- scripts/driver-helpers.js (spec 008 FR-097): the shared plumbing behaves as the drivers' own copies did ----
@@ -220,6 +220,18 @@ const dh = require(path.join(ROOT, 'scripts', 'driver-helpers.js'));
   await assert.rejects(() => H.js('NOPE'), /boom/);
   // shot: prepares, waits, then takes the picture
   codes.length = 0; shots.length = 0; await H.shot('/tmp/x.png', { prep: 'calm', blur: true, settle: false, delay: 7 }); assert.deepStrictEqual(shots, ['/tmp/x.png']); assert.ok(codes[0].includes("shotCalm") && codes[0].includes('blur()')); assert.ok(sleeps.includes(7));
+  // focus emulation is never turned on by H.key, only by focusPage({ emulate }), and releaseFocus turns it off again (a blur check after it tests something)
+  const cmds: any[] = []; let attached = false;
+  const dbgCtx = { ...ctx, win: { ...ctx.win, show: () => undefined, focus: () => undefined, blur: () => undefined, webContents: { ...ctx.win.webContents, debugger: { isAttached: () => attached, attach: () => { attached = true; }, detach: () => { attached = false; }, sendCommand: async (m: string, p: any) => { cmds.push([m, p && p.enabled]); } } } }, js: async (c: string) => { codes.push(c); return !c.includes('hasFocus'); } };
+  const D = dh.helpers(dbgCtx);
+  await D.key('Tab'); assert.deepStrictEqual(cmds, [], 'H.key never turns focus emulation on');
+  assert.strictEqual(await D.focusPage({ ms: 50 }), false, 'without emulate, a page that never gets the focus is reported');
+  assert.deepStrictEqual(cmds, [], 'and nothing is emulated');
+  dbgCtx.js = async (c: string) => (c.includes('!document.hasFocus') ? cmds.length > 0 && cmds[cmds.length - 1][1] === false : !c.includes('hasFocus') || (cmds.length > 0 && cmds[cmds.length - 1][1] === true));
+  assert.strictEqual(await D.focusPage({ ms: 50, emulate: true }), true, 'emulate: true falls back to the emulation'); assert.deepStrictEqual(cmds[0], ['Emulation.setFocusEmulationEnabled', true]);
+  await D.releaseFocus(); cmds.length = 0; let real = 0; dbgCtx.js = async (c: string) => (c.includes('hasFocus') ? (cmds.length > 0 || real++ > 0) : true);
+  assert.strictEqual(await D.focusPage({ ms: 50, emulate: 'first' }), true, "emulate: 'first' emulates before any real attempt"); assert.deepStrictEqual(cmds[0], ['Emulation.setFocusEmulationEnabled', true]); assert.strictEqual(real, 0, 'with no real-focus look first');
+  await D.releaseFocus(); assert.deepStrictEqual(cmds[cmds.length - 1], ['Emulation.setFocusEmulationEnabled', false], 'releaseFocus turns it off'); assert.strictEqual(attached, false, 'and detaches the debugger');
   console.log('driver-helpers: key, load, escaping and shot behave');
 })().catch((e) => { console.error(e); process.exit(1); });
 
@@ -251,7 +263,7 @@ function templates(line: string): { text: string; exprs: string[] }[] {
 }
 /* Allowed raw splices into page code: jsLiteral (or its alias q), and these typed numbers, booleans and ready-made code strings. */
 // box(n) (check-question-options) and the scrollHeight choice (check-question-visible) are ready-made page expressions, not values.
-const RAW_OK = /^(w|h|n|i|width|n - 1|before|sim|expanded|expectPlaces|SECONDS|SPEED|open|!open|iconClick|left|box\(\d\)|where === 'top' \? 0 : 'c\.scrollHeight'|tags|level === 'simple'|[\w.]+\.toString\(\))$/;
+const RAW_OK = /^(w|h|n|i|width|n - 1|before|sim|expanded|expectPlaces|SECONDS|SPEED|open|!open|iconClick|left|box\(\d\)|where === 'top' \? 0 : 'c\.scrollHeight'|tags|[\w.]+\.toString\(\))$/;
 const PAGE = /\b(document|window)\.|localStorage|getComputedStyle|querySelector/;
 const drivers = fs.readdirSync(path.join(ROOT, 'scripts')).filter((x) => /^(shots|check)-.*\.js$/.test(x) && !SKIP.has(x));
 assert.ok(drivers.length >= 45, `${drivers.length} page drivers are checked`);
@@ -337,5 +349,149 @@ process.on('exit', () => { if (!fr114Done) { console.error('FR-114 checks did no
     fs.rmSync(outDir, { recursive: true, force: true });
   }
   fr114Done = true;
-  console.log('ui-suite: check-parallel and ui-suite install Electron once before their parallel jobs (FR-114)');
+async function shardMain(): Promise<void> {
+  const { shard, DRIVERS } = require(SUITE) as { shard: (l: unknown[], s?: string) => unknown[]; DRIVERS: Array<{ name: string }> };
+  // review on #1257: main() must use shard(), from --shard and from UI_SUITE_SHARD; a bare --shard and an empty shard fail
+  {
+    const { main } = require(SUITE) as { main: (o: unknown) => Promise<void> };
+    const want = (shard(DRIVERS, '2/3') as Array<{ name: string }>).map((d) => d.name);
+    assert.ok(want.length > 0 && want.length < DRIVERS.length, 'shard 2/3 is a proper subset');
+    const prev = { shard: process.env.UI_SUITE_SHARD, out: process.env.UI_SUITE_OUT, retry: process.env.UI_SUITE_RETRY, code: process.exitCode };
+    const log = console.log;
+    const outDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ui-suite-shard-'));
+    const go = async (argv: string[], env?: string): Promise<{ ran: string[]; err?: Error; code: unknown }> => {
+      const ran: string[] = [];
+      if (env === undefined) delete process.env.UI_SUITE_SHARD; else process.env.UI_SUITE_SHARD = env;
+      process.env.UI_SUITE_OUT = outDir; process.env.UI_SUITE_RETRY = '0'; process.exitCode = 0;
+      console.log = () => undefined;
+      let err: Error | undefined;
+      let ensured = false;
+      try { await main({ ensure: () => { ensured = true; return true; }, argv, run: async (d: { name: string }) => { ran.push(d.name); return { ok: true, secs: 0, why: '', log: '' }; } }); } catch (e) { err = e as Error; } finally { console.log = log; }
+      if (err) assert.ok(!ensured && ran.length === 0, 'a refused shard starts nothing, not even the Electron install');
+      return { ran, err, code: process.exitCode };
+    };
+    try {
+      assert.deepStrictEqual((await go(['--shard', '2/3'])).ran, want, 'main --shard 2/3 runs exactly shard(DRIVERS, "2/3")');
+      assert.deepStrictEqual((await go([], '2/3')).ran, want, 'main with UI_SUITE_SHARD=2/3 runs exactly shard(DRIVERS, "2/3")');
+      assert.deepStrictEqual((await go(['--shard', '1/3'], '2/3')).ran, (shard(DRIVERS, '1/3') as Array<{ name: string }>).map((d) => d.name), 'the argument wins over the env');
+      assert.strictEqual((await go([], '')).ran.length, DRIVERS.length, 'an empty UI_SUITE_SHARD runs every driver');
+      assert.strictEqual((await go([])).ran.length, DRIVERS.length, 'no shard runs every driver');
+      for (const argv of [['--shard'], ['--shard', ''], ['--only', DRIVERS[0].name, '--shard']]) {
+        const r = await go(argv, '');
+        assert.ok(r.err && /--shard wants a value/.test(r.err.message), `bare --shard is refused (${argv.join(' ')})`);
+      }
+      const bare = await go(['--shard'], '2/3');
+      assert.ok(bare.err, 'bare --shard is refused even when the env is set');
+      const empty = await go(['--only', DRIVERS[0].name, '--shard', '2/3']);
+      assert.ok(empty.err && /selects no driver/.test(empty.err.message), 'an empty shard fails (--only narrowing)');
+      const many = await go([], `${DRIVERS.length + 1}/${DRIVERS.length + 1}`);
+      assert.ok(many.err && /selects no driver/.test(many.err.message), 'an empty shard fails (more shards than drivers)');
+      assert.deepStrictEqual((await go(['--list'], '9/9')).ran, [], '--list still works');
+    } finally {
+      console.log = log;
+      for (const [k, v] of [['UI_SUITE_SHARD', prev.shard], ['UI_SUITE_OUT', prev.out], ['UI_SUITE_RETRY', prev.retry]] as const) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+      process.exitCode = prev.code;
+      fs.rmSync(outDir, { recursive: true, force: true });
+    }
+  }
+}
+// spec 008 FR-095, FR-138: one retry, alone; a repeated failure stays a failure, a pass on retry is FLAKY in the log and the job summary
+async function retries(): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { main, DRIVERS } = require(SUITE) as { main: (o: unknown) => Promise<void>; DRIVERS: Array<{ name: string; label?: string }> };
+  const name = DRIVERS[0].label || DRIVERS[0].name;
+  const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ui-suite-retry-'));
+  const summary = path.join(tmp, 'summary.md');
+  const env = { ...process.env }, log = console.log, was = process.exitCode;
+  const go = async (results: boolean[], retry: string): Promise<{ code: unknown; out: string; runs: number; sum: string }> => {
+    fs.writeFileSync(summary, '');
+    process.env.UI_SUITE_RETRY = retry; process.env.UI_SUITE_JOBS = '1'; process.env.UI_SUITE_OUT = tmp; process.env.GITHUB_STEP_SUMMARY = summary;
+    process.exitCode = 0;
+    const lines: string[] = []; console.log = (...a: unknown[]) => { lines.push(a.join(' ')); };
+    let runs = 0;
+    try {
+      await main({ ensure: () => true, argv: ['--only', DRIVERS[0].name], run: async () => { const ok = results[runs++]; return { ok, secs: 0, why: ok ? '' : 'broken', log: '' }; } });
+    } finally { console.log = log; }
+    const code = process.exitCode; process.exitCode = was;
+    return { code, out: lines.join('\n'), runs, sum: fs.readFileSync(summary, 'utf8') };
+  };
+  try {
+    const twice = await go([false, false], '1');
+    assert.strictEqual(twice.code, 1, 'FR-138: failing twice fails the job');
+    assert.strictEqual(twice.runs, 2, 'one retry, not more');
+    assert.ok(!/FLAKY/.test(twice.out + twice.sum), 'failing twice is not FLAKY');
+    assert.ok(new RegExp('failed: ' + name).test(twice.out), 'and it is named: ' + twice.out.slice(-200));
+    const once = await go([false, true], '1');
+    assert.strictEqual(once.code, 0, 'a pass on retry passes the job');
+    assert.ok(/FLAKY \(passed only on retry\)/.test(once.out), 'FLAKY on the final line');
+    assert.ok(/Flaky drivers/.test(once.sum) && once.sum.includes(name), 'FLAKY in the job summary: ' + once.sum);
+    const off = await go([false, true], '0');
+    assert.strictEqual(off.code, 1, 'no retry where it is off'); assert.strictEqual(off.runs, 1);
+    const clean = await go([true], '1');
+    assert.strictEqual(clean.code, 0); assert.strictEqual(clean.runs, 1, 'a pass is not run again');
+    assert.ok(!/FLAKY/.test(clean.out + clean.sum));
+  } finally {
+    for (const k of ['UI_SUITE_RETRY', 'UI_SUITE_JOBS', 'UI_SUITE_OUT', 'GITHUB_STEP_SUMMARY']) { if (env[k] === undefined) delete process.env[k]; else process.env[k] = env[k]; }
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+  const yml = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'ui-platforms.yml'), 'utf8');
+  assert.ok(/UI_SUITE_RETRY: \$\{\{ matrix\.os != 'ubuntu-latest' && '1' \|\| '0' \}\}/.test(yml), 'FR-138: macOS and Windows retry once, Linux does not');
+}
+await retries();
+await shardMain();
+console.log('ui-suite: check-parallel and ui-suite install Electron once before their parallel jobs (FR-114)');
 })().catch((e) => { console.error(e); process.exitCode = 1; });
+
+// ---- spec 008 FR-182 (issue 839): --shard i/n takes every n-th driver; n shards are disjoint and together hold every driver ----
+{
+  const { shard, DRIVERS } = require(SUITE) as { shard: (l: unknown[], s?: string) => unknown[]; DRIVERS: unknown[] };
+  for (const n of [1, 2, 3, 5]) {
+    const parts = Array.from({ length: n }, (_, i) => shard(DRIVERS, `${i + 1}/${n}`));
+    const all = parts.flat();
+    assert.strictEqual(all.length, DRIVERS.length, `${n} shards hold every driver once`);
+    assert.strictEqual(new Set(all).size, DRIVERS.length, `${n} shards are disjoint`);
+    assert.ok(Math.max(...parts.map((p: unknown[]) => p.length)) - Math.min(...parts.map((p: unknown[]) => p.length)) <= 1, `${n} shards differ by one driver at most`);
+  }
+  assert.deepStrictEqual(shard(DRIVERS, undefined), DRIVERS, 'no shard: the whole list');
+  for (const bad of ['0/3', '4/3', '3', 'a/b', '1/0']) assert.throws(() => shard(DRIVERS, bad), /--shard wants i\/n/, `"${bad}" is refused`);
+  // review on #1257: the workflow's matrix, denominators and excludes agree (plain text; no YAML parser is a dependency)
+  {
+    const wf = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'ui-platforms.yml'), 'utf8');
+    const lines = wf.split(/\r?\n/).filter((l) => !/^\s*#/.test(l));
+    const text = lines.join('\n');
+    const m = text.match(/^\s+shard:\s*\[([^\]]*)\]\s*$/m);
+    assert.ok(m, 'the matrix has a shard list');
+    const list = m[1].split(',').map((x) => Number(x.trim()));
+    const n = list.length;
+    assert.ok(n >= 2, 'macOS is sharded');
+    assert.deepStrictEqual(list, Array.from({ length: n }, (_, i) => i + 1), 'the matrix shard list is exactly 1..n');
+    const env = text.match(/^\s+UI_SUITE_SHARD:.*format\('\{0\}\/(\d+)', matrix\.shard\)/m);
+    assert.ok(env, 'UI_SUITE_SHARD is format("{0}/N", matrix.shard)');
+    assert.strictEqual(Number(env[1]), n, 'the UI_SUITE_SHARD denominator equals the number of shards');
+    const nm = text.match(/^\s+name: UI checks \(.*format\(' \{0\}\/(\d+)', matrix\.shard\)/m);
+    assert.ok(nm, 'the job name shows i/N');
+    assert.strictEqual(Number(nm[1]), n, 'the job name denominator equals the number of shards');
+    const art = text.match(/name: ui-shots-.*format\('-\{0\}', matrix\.shard\)/);
+    assert.ok(art, 'artifacts are named per shard');
+    for (const os of ['ubuntu-latest', 'windows-latest']) {
+      const ex = [...text.matchAll(new RegExp(`-\\s*\\{\\s*os:\\s*${os},\\s*shard:\\s*(\\d+)\\s*\\}`, 'g'))].map((x) => Number(x[1]));
+      assert.deepStrictEqual(ex, Array.from({ length: n - 1 }, (_, i) => i + 2), `${os} excludes shards 2..${n}`);
+    }
+    assert.strictEqual([...text.matchAll(/-\s*\{\s*os:/g)].length, 2 * (n - 1), 'no other excludes');
+    // review on #1257: a step's whole text, from its "- name:" line to the next step
+    const step = (title: string): string => {
+      const at = text.indexOf(`- name: ${title}`);
+      assert.ok(at >= 0, `step "${title}" exists`);
+      const rest = text.slice(at + 1);
+      const next = rest.search(/\n\s+- (name|run|uses):/);
+      return next < 0 ? rest : rest.slice(0, next);
+    };
+    assert.ok(!/^\s+if:/m.test(step('Theme geometry')), 'theme geometry has no if: at all (every shard, every OS)');
+    for (const title of ['Office layout (15 agents, 1440x900 and 1280x800)', 'Mac title bar']) {
+      const cond = step(title).match(/^\s+if: (.*)$/m);
+      assert.ok(cond, `"${title}" has an if:`);
+      assert.ok(cond[1].startsWith('matrix.shard == 1 &&'), `"${title}" runs in shard 1 only: its if: starts with "matrix.shard == 1 &&"`);
+    }
+  }
+  console.log('ui-suite shards: ok');
+}

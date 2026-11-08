@@ -139,9 +139,6 @@ module.exports = async (ctx) => {
   const rows = [];
 
   /* the lounge setting, as a person turns it (Settings) */
-  /* spec 017 FR-014: the cabins (on by default) draw a closed door in place of a busy desk's scene; the scene checks below switch them off
-     for the measurement and on again for the screenshot (the cabins have their own driver, shots-017-signs) */
-  const cabins = async (on) => { const k = on ? 'cabins' : 'open'; await js(`window.DurbarScreens.openSettings()`); await H.until(`!!document.querySelector(${jsLiteral('[data-officelayout="' + k + '"]')})`, 4000); await js(`document.querySelector(${jsLiteral('[data-officelayout="' + k + '"]')}).click()`); await H.until(`document.querySelector(${jsLiteral('[data-officelayout="' + k + '"]')}).getAttribute('aria-pressed')==='true'`, 3000); await H.key('Escape'); await ctx.sleep(500); }; // spec 017 FR-027: Settings > Office layout
   const toggle = async () => { await js(`window.DurbarScreens.openSettings()`); await H.until(`!!document.getElementById('shutSw')`, 4000); await js(`document.getElementById('shutSw').click()`); await H.key('Escape'); await ctx.sleep(500); };
   /* how sharp a scene is drawn: the share (%) of its pixels that are exactly one of its flat colours (+-2 per channel); a blurred drawing
      loses most of them. Under load a capture can show an older frame: read again (up to 3 times) and keep the best */
@@ -508,7 +505,6 @@ module.exports = async (ctx) => {
         /* review of #554 (Paco): the lounge changes no working desk's scene. Every desk open with the setting on and off has the same scene box
            inside its card (size and position), and is drawn as sharp (its flat colours, within 3 points); Jonas's scene was drawn blurred
            beside the lounge at 1280x800 (21% against 33%) while its box was the same */
-        await cabins(false);
         await H.settle(); await ctx.sleep(300);
         const lon = await looks();
         await toggle(); await H.settle(); await ctx.sleep(300);
@@ -530,7 +526,6 @@ module.exports = async (ctx) => {
           check(a.sharp >= b.sharp - 3, `15 agents at ${w}x${h}: desk ${id}'s scene is drawn less sharp with the lounge (${a.sharp}% of its pixels in its flat colours, ${b.sharp}% without)`);
         }
         check(same >= 10, `15 agents at ${w}x${h}: only ${same} desks open with the lounge on and off`);
-        await cabins(true);
         rows.push(`15 agents at ${w}x${h}: ${same} scenes the same with the lounge on and off (sharpness ${[...lon].map(([id, a]) => id + ' ' + a.sharp + '/' + (loff.get(id) || {}).sharp).join(', ')})`);
       }
       if (OUT && w !== 1920) { ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 }); await ctx.sleep(200); await ctx.shot(path.join(OUT, `001-fill-${n}-${w}x${h}.png`)); }
@@ -682,7 +677,7 @@ module.exports = async (ctx) => {
     const b3 = (await lounge()).bubs.find((b) => /\bdream\b/.test(b.cls)) || {};
     check(/^z z The README tool table/.test(b3.on || ''), `${tag}: three turns later the dream is Noor's again (${b3.on})`);
     /* keyboard: the arrow keys of FR-019 reach every resting agent */
-    const nav = await js(`[...document.querySelectorAll('#stage .desk, #stage .helper, #stage .plate')].filter(x=>x.getClientRects().length).map(x=>x.dataset.id||'')`);
+    const nav = await js(`[...document.querySelectorAll('#stage .desk, #stage .helper')].filter(x=>x.getClientRects().length).map(x=>x.dataset.id||'')`);
     check(['sim-2', 'sim-3', 'sim-4', 'sim-6', 'sim-7'].every((id) => nav.includes(id)), `${tag}: resting agents missing from the arrow-key order: ${nav}`);
     await openShot(w, h);
     /* hover opens the peek card beside the lounge, inside the room, and nothing moves */
