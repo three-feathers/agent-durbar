@@ -4,6 +4,7 @@
  *   npm run check:ui                      (builds first)
  *   node scripts/ui-suite.js --list       the drivers
  *   node scripts/ui-suite.js --only shots-017,shots-033
+ *   node scripts/ui-suite.js --shard 2/3                  every third driver from the second (UI_SUITE_SHARD=2/3 too; spec 008 FR-182)
  *   UI_SUITE_OUT=<folder>                 where every screenshot goes (default: a new temp folder, printed at the end)
  *   UI_SUITE_XVFB=1                       Linux: run under xvfb-run even when a display is set
  *   UI_SUITE_DPR=<1..4>                   force the device scale factor (2 = a Retina screen) for every driver
@@ -148,6 +149,7 @@ const DRIVERS = [
   { name: 'check-001-halo' }, // spec 001 FR-210: the waiting halo is a still glow, nothing animates it
   { name: 'check-office-ops-real' }, // spec 097 FR-186: operation counts of Real office, never times (renders, layout reads, nodes, attribute writes, elements recalculated, animations, picture area)
   { name: 'shots-097-realoffice' }, // spec 097 P1: Real office mode (the switch, the scene, the lights, flat loads none of it)
+  { name: 'shots-070-flat-look' }, // spec 070 A14: Flat's modern look behind html[data-flat-look] (24 px controls on, today's off; Retro and Real office equal with it on)
   { name: 'shots-102-arcade' }, // spec 102 RA3: the Retro arcade behind its flag: only its files, cabinets, marquee, no overlap at 3, 4, 8 and 15 at both sizes
   { name: 'shots-097-moments' }, // spec 097 FR-118..FR-129: the nine world moments (first run, empty office, asleep at the desk, walk, inbox, limit, elicitation, coffee, jumps) in the Photo office and the cave
   { name: 'shots-097-moments', label: 'shots-097-moments cave', env: { MOMENTS_WORLDS: 'cave' } }, // the same nine moments in the Prehistoric cave (its flag is the simulator's page address)
@@ -155,6 +157,7 @@ const DRIVERS = [
   { name: 'check-097-chat-look' }, // spec 097 (#1140, T195): every chat, main or helper, has the same world look and follows the Office layout setting while open
   { name: 'check-097-chat-contrast' }, // spec 097 (#1146, T197): chat text, links, code chips and header text against the real pixels behind them, both sizes; header text inside the window
   { name: 'check-097-plate-pencil' }, // spec 059 FR-170 (#1155): the rename pencil beside a Real office plate's name, F2 on a plate, both sizes
+  { name: 'check-097-desk-marks' }, // spec 097 FR-316 (#1149): the Draft tag above a Real office plate for an unsent draft, its words in the plate's name, shown by class, both sizes
   { name: 'check-097-lounge' }, // spec 097 FR-246..FR-249 (#1220): finished, read agents sit in the lounge row in the Photo office and the arcade, unread keeps the desk, the ease back, reduced motion, both sizes
   { name: 'shots-097-cave' }, // spec 097 phase 4: the Prehistoric cave behind its flag (World row, its set, any set in any world, no blend)
   { name: 'shots-001-lobby' }, // spec 001 FR-034..FR-040: Boss queue, Bank, Postbox and its letter, who is at a place (simsched in its own query)
@@ -210,8 +213,18 @@ const OUT_VARS = ['OUT', 'SHOTS_012', 'SHOTS_021', 'SHOTS_024', 'SHOTS_033', 'SH
 const TIMEOUT_MS = Number(process.env.UI_SUITE_TIMEOUT_MS || 600_000);
 
 function args(a = process.argv.slice(2)) {
-  const i = a.indexOf('--only');
-  return { list: a.includes('--list'), only: i >= 0 ? new Set(String(a[i + 1] || '').split(',').filter(Boolean)) : undefined };
+  const i = a.indexOf('--only'), j = a.indexOf('--shard');
+  return { list: a.includes('--list'), only: i >= 0 ? new Set(String(a[i + 1] || '').split(',').filter(Boolean)) : undefined, shard: j >= 0 ? a[j + 1] : undefined, shardGiven: j >= 0 };
+}
+
+/** Spec 008 FR-182 (issue #839): shard `i/n` (1-based) takes every n-th driver of the suite's order, starting at the i-th, so n shards are
+ *  disjoint and together hold every driver (the macOS nightly runs 3, each well under the job's time limit). No spec: the whole list. */
+function shard(list, spec) {
+  if (spec === undefined || spec === '') return list;
+  const m = String(spec).match(/^(\d+)\/(\d+)$/);
+  const i = m ? Number(m[1]) : 0, n = m ? Number(m[2]) : 0;
+  if (!m || n < 1 || i < 1 || i > n) throw new Error(`ui-suite: --shard wants i/n with 1 <= i <= n, got "${spec}"`);
+  return list.filter((_, k) => k % n === i - 1);
 }
 
 /** Spec 008 FR-112: syntax errors in the given files, from `node --check` (no shell, nothing run). [] when all parse. */
@@ -297,8 +310,13 @@ function runOne(d, outDir) {
 /** `ensure`, `run` and `argv` are for tests (scripts/test-ui-suite.ts); the defaults install Electron and start the real drivers. */
 async function main({ ensure = ensureElectron, run = runOne, argv } = {}) {
   const a = args(argv);
-  const todo = DRIVERS.filter((d) => !a.only || a.only.has(d.name) || a.only.has(d.label || ''));
+  // a bare `--shard` (no value) is refused, never "every driver"; only an empty UI_SUITE_SHARD env value means the whole list (FR-182, review on #1257)
+  if (a.shardGiven && !a.shard) throw new Error('ui-suite: --shard wants a value i/n (1 <= i <= n), got none');
+  const sh = a.shardGiven ? a.shard : process.env.UI_SUITE_SHARD;
+  const todo = shard(DRIVERS.filter((d) => !a.only || a.only.has(d.name) || a.only.has(d.label || '')), sh);
   if (a.list) { for (const d of DRIVERS) console.log(d.label || d.name); return; }
+  // a shard that selects no driver (more shards than drivers, or --only narrowing) must not pass green with "0/0"
+  if (sh && todo.length === 0) throw new Error(`ui-suite: shard ${sh} selects no driver${a.only ? ' (with --only)' : ''}; refusing to pass with nothing run`);
   for (const d of todo) if (!fs.existsSync(path.join(__dirname, d.name + '.js'))) throw new Error(`no such driver: ${d.name}`);
   // FR-112: fail at once on a syntax error instead of a silent Electron hang until the time limit
   const bad = syntaxErrors([...new Set(todo.map((d) => path.join(__dirname, d.name + '.js')).concat(path.join(__dirname, 'driver-helpers.js')))]);
@@ -310,7 +328,7 @@ async function main({ ensure = ensureElectron, run = runOne, argv } = {}) {
   if (!ensure()) throw new Error('the Electron binary is not installed and could not be fetched (see above); no driver was started');
   const outDir = process.env.UI_SUITE_OUT ? path.resolve(process.env.UI_SUITE_OUT) : fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-ui-shots-'));
   fs.mkdirSync(outDir, { recursive: true });
-  console.log(`ui-suite: ${todo.length} drivers on ${process.platform}, screenshots in ${outDir}`);
+  console.log(`ui-suite: ${todo.length} drivers on ${process.platform}${sh ? ` (shard ${sh})` : ''}, screenshots in ${outDir}`);
   // fast checks (owner rule): in parallel, never fewer checks; each driver has its own profile and window (own xvfb display on Linux)
   const jobs = Math.max(1, Math.min(6, Number(process.env.UI_SUITE_JOBS || 2) || 2));
   const failed = [];
@@ -344,5 +362,5 @@ async function main({ ensure = ensureElectron, run = runOne, argv } = {}) {
   if (failed.length) process.exitCode = 1;
 }
 
-module.exports = { syntaxErrors, main, runOne, killTree, guardTree, DRIVERS, NOT_IN_SUITE }; // runOne: also spec 001 FR-082 (scripts/shots-docs.js)
+module.exports = { syntaxErrors, main, runOne, killTree, guardTree, shard, DRIVERS, NOT_IN_SUITE }; // runOne: also spec 001 FR-082 (scripts/shots-docs.js)
 if (require.main === module) main().catch((e) => { console.error('ui-suite:', e.message); process.exitCode = 1; });

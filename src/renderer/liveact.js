@@ -37,11 +37,81 @@
     for(let i=pool.length-2;i>=0&&!one;i--){const next=pool[i]+' '+out;if(Array.from(next).length>max)break;out=next;}
     return cutOf(out,max);
   }
+  const openStr=raw=>{const t=String(raw==null?'':raw),i=Math.max(t.lastIndexOf('\x1b]'),t.lastIndexOf('\x1bP'),t.lastIndexOf('\x1b^'),t.lastIndexOf('\x1b_'),t.lastIndexOf('\x1bX'),t.lastIndexOf('\x90'),t.lastIndexOf('\x98'),t.lastIndexOf('\x9d'),t.lastIndexOf('\x9e'),t.lastIndexOf('\x9f'));return i>=0&&!/[\x07\x9c]|\x1b\\/.test(t.slice(i+1));};
+  /* spec 097 FR-317 (issue #1284): a tool NAME is shown through the same mask as a label (MCP servers choose names). Control codes out first, then the mask;
+     a name the mask changed in ANY way is shown as the generic word `tool`, never half hidden. No mask or a failing one: `tool` too. Every surface that shows a name calls this. */
+  const toolName=(raw,mask)=>{const m=mask||{};try{if(typeof m.redact!=='function')return 'tool'; /* no mask: fail closed, as a label */
+    if(openStr(raw))return 'tool'; /* an escape string left open at the end swallows what follows it, and what is shown would be the start of a token (ghp_ and four characters): fail closed (review of PR 1292) */
+    const t=String(clearIn(raw==null?'':raw,m.redact)).trim();if(!t)return 'tool';
+    const x=ST.maskRaw(t,m.redact);return x===t?t:'tool';}catch(e){return 'tool';}}; /* shown only when the mask left it exactly as it was: any change, a failed or cut mask ("[redaction failed]", the 1,000,000-character cut), a throw: `tool` */
+  /* spec 097 FR-318 (issue #1290; review of PR 1292): the words of a permission request (its summary, the scope labels of its buttons, a grant chip, the "why allowed" label)
+     through the same masks as the chat. Returns {text, hidden, why}: why is `secret` (a part was replaced), `control` (control characters were turned into visible markers
+     such as ⟦ESC⟧) or `unchecked` (the mask is missing or failed: neutral words, no text). NEVER deletes a visible character: the grant key is the full raw text, so the card must
+     show all of it. Control characters (escapes, C1, bidi, zero-width) become a visible marker each and hidden is true. A token an escape splits would slip past the mask once marked,
+     so the text is also read three other ways (escape sequences out, introducers out, control characters out): when the mask changes any of them, the neutral words are shown
+     (why `secret`). By kind: `shell` the command after `run ` through the command mask (maskLabel 'run'); `tool` each word of `server › tool` through toolName, then one redact; any other
+     kind: redact (a URL by the URL mask). Empty text stays empty. Only shown text: ids, keys, scopes are untouched. */
+  const PERM_FB={shell:'a command',tool:'tool',other:'request'};
+  /* every character that can make a shown command differ from the real one: C0/C1 controls, any whitespace that is not a plain space (LF, CR, TAB, NBSP, U+2028...), every Cf and
+     Default_Ignorable_Code_Point (ZWJ, ZWNJ, U+2060, variation selectors, tags, soft hyphen, bidi) and the blank fillers (U+2800, U+3164, U+115F, U+1160, U+FFA0) */
+  const PCTRL_T=/[^\S ]|[\x00-\x1f\x7f-\x9f\p{Cf}\p{Default_Ignorable_Code_Point}\u2800\u3164\u115f\u1160\uffa0]/u;
+  const PCTRL=new RegExp(PCTRL_T.source,'gu');
+  const PMARK={'\x1b':'ESC','\n':'LF','\r':'CR','\t':'TAB'};
+  const pmark=c=>'⟦'+(PMARK[c]||'U+'+c.codePointAt(0).toString(16).toUpperCase().padStart(4,'0'))+'⟧';
+  const PERM_CAP=10000; /* characters looked at: more is cut (at a word) before any heavy work, and marked */
+  /* review of PR 1292, round 3: a masked shell command is `lost` (shown text cannot be trusted to say what runs) when the mask blanked the whole command or failed, changed it without
+     a [redacted] marker, or replaced a span that holds command substitution or a shell operator ($( ` ; | & < > or a line break marker): the visible pieces are matched back into the
+     raw command, so every character that is not visible lies in a span that is checked */
+  const REDACTED=/\[redacted[^\]]*\]/, SPANBAD=/\$\(|`|[;|&<>({\n\r]|\u27e6(?:LF|CR)\u27e7/;
+  function shellLost(cmd,x){
+    if(x===cmd)return false;
+    if(/redaction failed/.test(x)||/^\s*\[redacted[^\]]*\]\s*$/.test(x))return true;
+    const parts=x.split(new RegExp(REDACTED.source,'g'));if(parts.length<2)return true;
+    if(!cmd.startsWith(parts[0]))return true;
+    let pos=parts[0].length;
+    for(let i=1;i<parts.length;i++){
+      const p=parts[i],last=i===parts.length-1;let idx;
+      if(last){if(!cmd.endsWith(p)||cmd.length-p.length<pos)return true;idx=cmd.length-p.length;}
+      else{idx=cmd.indexOf(p,pos);if(idx<0)return true;}
+      if(SPANBAD.test(cmd.slice(pos,idx)))return true;
+      pos=idx+p.length;
+    }
+    return false;
+  }
+  function permCore(raw,k,m){ /* {s, out} (out null: the mask gave nothing) for a text without control characters */
+    const s=String(raw).replace(/\s+/g,' ').trim();if(!s)return {s:'',out:''};
+    if(k==='shell'){const mm=/^(run )([\s\S]*)$/.exec(s),pre=mm?mm[1]:'',cmd=mm?mm[2]:s;if(!cmd)return {s,out:s};
+      const x=ST.maskLabel(cmd,'run',m);return {s,out:x?pre+x:null,lost:x?shellLost(cmd,x):false};}
+    if(k==='tool'){const j=s.split(/( › |\s+)/).map((w,i)=>i%2||!w?w:toolName(w,m)).join('');const x=ST.maskLabel(j,'other',m);return {s,out:x||null};}
+    const x=ST.maskLabel(s,'other',m);return {s,out:x||null};
+  }
+  function permText(raw,kind,mask){
+    const m=mask||{}, k=kind==='shell'||kind==='tool'?kind:'other', fb=why=>({text:PERM_FB[k],hidden:true,why});
+    try{
+      if(raw==null||raw==='')return {text:'',hidden:false};
+      if(typeof m.redact!=='function')return fb('unchecked');
+      let r0=String(raw),cut=false;
+      if(r0.length>PERM_CAP){cut=true;r0=r0.slice(0,PERM_CAP);const i=r0.search(/\s\S*$/);r0=i>0?r0.slice(0,i):'';} /* cut at a word: never half a token */
+      const tail=t=>cut?{text:t.text,hidden:true,why:'cut'}:t, suf=cut?' ⟦cut⟧':'';
+      if(!PCTRL_T.test(r0)){
+        const c=permCore(r0,k,m);if(c.out===null)return fb('unchecked');if(c.lost)return fb('concealed');return tail(c.out===c.s?{text:c.out+suf,hidden:false}:{text:c.out+suf,hidden:true,why:'secret'});}
+      for(const v of [stripAnsi(r0),introOut(r0),r0.replace(PCTRL,'')]){ /* a token the controls split: the mask must find nothing in any reading */
+        const c=permCore(v,k,m);if(c.out===null)return fb('unchecked');if(c.out!==c.s)return fb('concealed');} /* a secret behind controls: no text, and the card offers no Allow */
+      let mk=r0.replace(PCTRL,pmark),mcut=false;
+      if(mk.length>PERM_CAP){mcut=true;mk=mk.slice(0,PERM_CAP);const i=mk.search(/\s\S*$/);mk=i>0?mk.slice(0,i):'';} /* the markers grow the text: the cap counts the marked length too */
+      const c=permCore(mk,k,m);if(c.out===null)return fb('unchecked');if(c.lost)return fb('concealed');
+      if(mcut)return {text:c.out+' \u27e6cut\u27e7',hidden:true,why:'cut'};
+      return tail({text:c.out+suf,hidden:true,why:c.out!==c.s?'secret':'control'});
+    }catch(e){return fb('unchecked');}
+  }
   /* A tool start as a verb phrase. kind: read | edit | run | search | tool (the chat's toolKind); label: the chat's toolLabel. */
   function phrase(o,mask){
-    const m=mask||{}, kind=o&&o.kind||'tool', tool=String(o&&o.tool||'tool'), raw=String(o&&o.label||'').trim();
+    const m=mask||{}, cl=x=>m.redact?clearIn(x,m.redact):stripAnsi(x); /* control codes out first, the way the monitor line does (a token split by an escape must be whole for the mask) */
+    const kind=o&&o.kind||'tool', tool=toolName(o&&o.tool,m), raw=String(cl(o&&o.label||'')).trim();
     const isUrl=/^[a-z][a-z0-9+.-]{1,20}:\/\//i.test(raw);
-    const lab=ST.maskLabel(raw,kind,m);
+    /* spec 097 FR-314 (review of PR 1272): the home folder goes BEFORE the cut, so a cut user name leaves no start of itself; no home mask: as it is */
+    const hm=x=>{if(typeof m.home!=='function')return x;const h=m.home(x);return typeof h==='string'?h:'';};
+    const lab=hm(ST.maskLabel(raw,kind,m));
     const t=tool.toLowerCase();
     let verb;
     if(isUrl||/fetch|web|url|http/.test(t))verb='Opening';
@@ -49,8 +119,8 @@
     else if(kind==='edit')verb='Editing';
     else if(kind==='run')verb='Running';
     else if(kind==='search')verb='Searching';
-    else return cutOf('Using '+tool+(lab?' '+lab:''),LINE_MAX);
-    return cutOf(verb+(lab?' '+lab:''),LINE_MAX);
+    else return cutOf(hm('Using '+tool+(lab?' '+lab:'')),LINE_MAX);
+    return cutOf(hm(verb+(lab?' '+lab:'')),LINE_MAX);
   }
   /* spec 097 FR-031: terminal control codes never reach a screen: CSI, OSC, DCS and the like, control characters and text-direction overrides.
      Stripped BEFORE masking: an escape inside a token (gh<ESC>[0mp_...) would hide it from the mask and be glued back by the strip. */
@@ -60,6 +130,9 @@
   /* the same text with only the escape's introducer gone: what `gh<ESC>[p_...` or `gh<U+009B>p_...` is if the letter after it belongs to a token, not to the escape */
   const INTRO=/\x1b\[|\x1b\]|\x1b[P^_X]|\x1b|[\x90\x98\x9b\x9d\x9e\x9f]/g;
   const introOut=t=>String(t==null?'':t).replace(INTRO,'').replace(/\r\n?/g,'\n').replace(CTRL,'');
+  /* spec 097 FR-318: the escape-free text wins when the mask already finds a token in it (an OSC or CSI cut out of the middle of one leaves it whole); the introducer-only text is
+     for a token whose own letter the escape would swallow (`gh<ESC>[p_...`), which the escape-free text no longer shows. Taking it first left the tail of a token after an OSC. */
+  const clearIn=(raw,redact)=>{const a=stripAnsi(raw);try{const b=introOut(raw),u=ST.unhide?ST.unhide:x=>x;if(b!==a&&redact(u(a))===u(a)&&redact(u(b))!==u(b))return b;}catch(e){return '';}return a;};
   /* A sentence over SCREEN_CHARS goes on as more lines, cut at a word where there is one */
   const chunks=t=>{const c=Array.from(t),out=[];let i=0;
     while(c.length-i>SCREEN_CHARS){let j=i+SCREEN_CHARS;for(let k=j;k>i+SCREEN_CHARS/2;k--)if(c[k]===' '){j=k;break;}out.push(c.slice(i,j).join('').trim());i=j;}
@@ -75,7 +148,7 @@
        A text cut at KEEP loses its first word for the same reason. */
     const home=t=>{if(!mask.home)return t;const h=mask.home(t);return typeof h==='string'?h:'';};
     /* control codes out: as escapes, unless read the other way they leave a token, which must then be masked in that reading */
-    const clear=raw=>{const a=stripAnsi(raw);try{const b=introOut(raw),p=ST.unhide?ST.unhide(b):b;if(b!==a&&mask.redact(p)!==p)return b;}catch(e){return '';}return a;};
+    const clear=raw=>clearIn(raw,mask.redact);
     const block=(raw,k,done)=>{
       if(!mask.redact)return [];
       let t=String(raw==null?'':raw);
@@ -133,8 +206,10 @@
         if(e.phase!=='start'||x.skip)return false;
         commit(s);
         s.buf='';
+        /* spec 097 FR-314 (review of PR 1272): ONE phrase (`phrase` clears its input, masks it, the home folder too, before the cut): the desk line, the
+           grown desk's last tool, the zoom and the monitor line all read it. No redact: control codes are stripped and the label masks fail closed. */
         const p=phrase({kind:x.kind,tool:e.tool,label:x.label},mask);
-        if(mask.redact){const l=home(phrase({kind:x.kind,tool:clear(e.tool),label:clear(x.label)},mask));if(l)logPush(s,'cmd',l,e.callId);}
+        if(mask.redact&&p)logPush(s,'cmd',p,e.callId);
         s.tool=p; /* spec 001 FR-047: the last tool of this turn stays for a wide grown desk while the agent thinks or replies */
         return set(s,'tool',p,p);}
       case 'user':commit(s);s.buf='';s.tool='';return set(s,'','','');
@@ -166,5 +241,5 @@
     };
   }
   const KIND_WORD={think:'Thinking',tool:'Working',reply:'Replying'};
-  return {create,phrase,lastSentences,plain,excerpt,stripAnsi,KIND_WORD,PAINT_MS,LINE_MAX,PANEL_MAX,STREAM_MAX,SCREEN_LINES,SCREEN_CHARS};
+  return {create,phrase,toolName,permText,lastSentences,plain,excerpt,stripAnsi,KIND_WORD,PAINT_MS,LINE_MAX,PANEL_MAX,STREAM_MAX,SCREEN_LINES,SCREEN_CHARS};
 })());

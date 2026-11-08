@@ -277,6 +277,10 @@
   /* own-property lookups only: a name such as constructor or __proto__ must not reach Object.prototype (review on #500) */
   const own=(o,k)=>o!=null&&Object.prototype.hasOwnProperty.call(o,k);
   const FONT_INDEX=Object.create(null);FONT_ALLOW.forEach(f=>{FONT_INDEX[f.toLowerCase()]=f;});
+  /* spec 070 FR-053: the top bar's colours, a closed list a world pack may set (the names themes.css and realoffice-world.css re-scope the bar with).
+     Defaults are Flat's light bar: the page values. Set on <html> only when a pack gives one; src/shared/themetokens.ts BAR_TOKENS is the same list. */
+  const BAR_TOKENS={'--wb-bg':'#f7f6f3','--wb-bg-2':'#efece6','--wb-surface':'#fffdf9','--wb-surface-2':'#faf7f1','--wb-ink':'#2c3733','--wb-ink-2':'#56605b','--wb-muted':'#535a55',
+    '--wb-line':'#e7e3dc','--wb-line-2':'#d3cabb','--wb-line-ctl':'#8a8272','--wb-focus':'#2f5f8a','--wb-warn-bg':'#fdf3df','--wb-warn-ink':'#80530a'};
   const TYPED_TOKENS={
     '--font':{type:'font',def:'system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif',generic:'sans-serif'},
     '--ui-display':{type:'font',def:'system-ui',generic:'system-ui'},
@@ -368,6 +372,7 @@
       for(const [k,v] of Object.entries(m.tokens)){
         if(Object.prototype.hasOwnProperty.call(CLEAN_TOKENS,k)){ if(isTokenValue(v)) out.tokens[k]=v.trim(); else drop(k); }
         else if(Object.prototype.hasOwnProperty.call(TYPED_TOKENS,k)){ const t=typedValue(k,v); if(t!==null) out.tokens[k]=t; else drop(k); } /* spec 070 FR-002 */
+        else if(Object.prototype.hasOwnProperty.call(BAR_TOKENS,k)){ if(isTokenValue(v)) out.tokens[k]=v.trim(); else drop(k); } /* spec 070 FR-053 */
         else drop(k);
       }
     }
@@ -459,7 +464,7 @@
   }
   function ratio(a,b){const [x,y]=[lum(a),lum(b)].sort((p,q)=>q-p);return (x+0.05)/(y+0.05);}
   /* spec 070 FR-023: the surfaces a theme is built on. A failing pair never changes them, so a dark theme stays dark and a light one light */
-  const BASE_SURFACE=/^--(bg|surface|surface-2|raised|card(-[a-z]+)?|soft|note|pb-[a-z]+|drop-bg|brand-bg|idle-stub)$/;
+  const BASE_SURFACE=/^--(bg|surface|surface-2|raised|card(-[a-z]+)?|soft|note|pb-[a-z]+|drop-bg|brand-bg|idle-stub|wb-bg|wb-bg-2|wb-surface|wb-surface-2|wb-warn-bg)$/;
   const TINT=/^--tint-[a-z]+$/;
   function hex6(v){let h=HEX_ANY.exec(v)[1];if(h.length===3)h=h.split('').map(c=>c+c).join('');return h;}
   function mixHex(v,to,w){
@@ -480,9 +485,10 @@
     const back=[];
     for(let pass=0;pass<4;pass++){
       let changed=false;
-      for(const [fg,bg,min] of CONTRAST_PAIRS){
-        const a=t[fg],b=t[bg];
-        if(!HEX_ANY.test(String(a||''))||!HEX_ANY.test(String(b||'')))continue;
+      for(const [fg,bg,min,over] of CONTRAST_PAIRS.concat(BAR_PAIRS)){
+        const a=t[fg],b0=t[bg];
+        if(!HEX_ANY.test(String(a||''))||!HEX_ANY.test(String(b0||'')))continue;
+        const b=over?glassOver(b0,over):b0; /* a bar pair is measured on the glass fill as it shows (FR-053) */
         if(ratio(a,b)>=min)continue;
         /* a room tint paints only the rooms, but --ink, --muted and --room-path are also read on the page, cards and tooltips (spec 040 FR-027):
            move the text token only when the result keeps every non-tint pair it is part of; else repair the tint, and the text only if no tint can reach the ratio */
@@ -495,7 +501,7 @@
             const tv=readableOn(b,a,min);
             if(ratio(a,tv)>=min){k=bg;v=tv;}
           }
-        }else v=readableOn(t[k],t[k===fg?bg:fg],min);
+        }else v=readableOn(t[k],k===fg?b:a,min);
         if(v===t[k])continue;
         t[k]=v;changed=true;
         if(!back.includes(k))back.push(k);
@@ -515,7 +521,10 @@
 
   function resolveTokens(manifest){
     const t=Object.assign({}, CLEAN_TOKENS);
-    if(manifest && manifest.tokens) Object.assign(t, manifest.tokens);
+    if(manifest && manifest.tokens){
+      if(Object.keys(manifest.tokens).some(k=>own(BAR_TOKENS,k)))Object.assign(t, BAR_TOKENS); /* a pack that sets part of the bar is repaired against the rest at Flat's values */
+      Object.assign(t, manifest.tokens);
+    }
     return t;
   }
 
@@ -623,6 +632,7 @@
     /* spec 070 FR-001: a typed token the pack does not give is removed, so the CSS default (and the UI style's display font) applies */
     if(typeof document!=='undefined'&&document.documentElement){
       for(const k of Object.keys(TYPED_TOKENS))if(!Object.prototype.hasOwnProperty.call(manifest.tokens||{},k))document.documentElement.style.removeProperty(k);
+      for(const k of Object.keys(BAR_TOKENS))if(!Object.prototype.hasOwnProperty.call(resolved,k))document.documentElement.style.removeProperty(k);
       if(Object.prototype.hasOwnProperty.call(manifest.tokens||{},'--ui-display'))document.documentElement.dataset.display='';else delete document.documentElement.dataset.display;
     }
     /* Clean Office itself has no data-ui (as at startup), so its `html:not([data-ui])` polish in styles.css also returns
@@ -713,6 +723,8 @@
     ['--wb-line-ctl','--wb-surface',3,'#ffffff'],['--wb-warn-ink','--wb-warn-bg',4.5,'#ffffff'],['--wb-ink','--wb-warn-bg',4.5,'#ffffff'],['--wb-focus','--wb-bg',3,'#ffffff'],['--wb-focus','--wb-surface',3,'#ffffff'],
     ['--ink','--surface',4.5,'#000000'],['--ink-2','--surface',4.5,'#000000'],['--muted','--surface',4.5,'#000000'],['--ink','--surface-2',4.5,'#000000'],['--muted','--surface-2',4.5,'#000000'],
     ['--line-ctl','--surface',3,'#000000'],['--focus','--surface',3,null],['--focus','--bg',3,null],['--brand-bg','--wb-bg',1.5,null]];
+  /* spec 070 FR-053: the bar's own pairs of WORLD_PAIRS, in the shared contrast check too (themegen.ts BAR_PAIRS) */
+  const BAR_PAIRS=WORLD_PAIRS.filter(p=>p[0].startsWith('--wb-')&&p[1].startsWith('--wb-'));
   let currentWorld=null, worldResolved=null;
   function worldTokens(id){
     if(!own(WORLD_SETS,id))return null;
@@ -952,6 +964,8 @@
     WORLD_GLASS,
     WORLD_BAR_MAP:WORLD_BAR_MAP.map(p=>p.slice()),
     TYPED_TOKENS:JSON.parse(JSON.stringify(TYPED_TOKENS)),
+    BAR_TOKENS:Object.assign({},BAR_TOKENS),
+    BAR_PAIRS:BAR_PAIRS.map(p=>p.slice()),
     FONT_ALLOW:FONT_ALLOW.slice(),
     CONTRAST_PAIRS:CONTRAST_PAIRS.map(p=>p.slice()),
     _typedValue:typedValue,

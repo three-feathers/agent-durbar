@@ -4,6 +4,7 @@
  * that matter in some UI styles (`UI_PAIRS`) and `themeIssues`, which lists what fails. Pure. Specs 096 and 102 reuse them.
  */
 import { UI_STYLES } from './themes';
+import { BAR_TOKENS } from './themetokens';
 
 const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 const hex6 = (h: string): string => {
@@ -35,6 +36,24 @@ export const CONTRAST_PAIRS: Array<[string, string, number]> = [
   // spec 040 FR-027 (#903): the text of a room header and a desk sits on the room tint, not on --bg (the audit found paths at 2.5 to 3.0:1 in dark themes)
   ...TINTS.flatMap((t): Array<[string, string, number]> => [['--room-path', `--tint-${t}`, 4.5], ['--muted', `--tint-${t}`, 4.5], ['--ink', `--tint-${t}`, 4.5]]),
 ];
+
+/** The opaque share of a glass fill on the bar (spec 097 FR-226); theme.js `WORLD_GLASS` is the same number. */
+export const WORLD_GLASS = 0.9;
+/**
+ * The bar pairs of a world (spec 070 FR-053), the `--wb-*` ones of theme.js `WORLD_PAIRS`: [text, background, minimum, the backdrop the glass fill is
+ * composited over]. Measured on the fill as it shows. The page pairs of a world's own set stay in theme.js (a pack's page is `CONTRAST_PAIRS`).
+ */
+export const BAR_PAIRS: Array<[string, string, number, string]> = [
+  ['--wb-ink', '--wb-bg', 4.5, '#ffffff'], ['--wb-ink', '--wb-bg-2', 4.5, '#ffffff'], ['--wb-ink', '--wb-surface', 4.5, '#ffffff'], ['--wb-ink', '--wb-surface-2', 4.5, '#ffffff'],
+  ['--wb-ink-2', '--wb-bg', 4.5, '#ffffff'], ['--wb-ink-2', '--wb-surface', 4.5, '#ffffff'], ['--wb-muted', '--wb-bg', 4.5, '#ffffff'], ['--wb-muted', '--wb-surface', 4.5, '#ffffff'],
+  ['--wb-muted', '--wb-surface-2', 4.5, '#ffffff'], ['--wb-line-ctl', '--wb-surface', 3, '#ffffff'], ['--wb-warn-ink', '--wb-warn-bg', 4.5, '#ffffff'], ['--wb-ink', '--wb-warn-bg', 4.5, '#ffffff'],
+  ['--wb-focus', '--wb-bg', 3, '#ffffff'], ['--wb-focus', '--wb-surface', 3, '#ffffff'],
+];
+/** A glass fill as it shows: `v` at WORLD_GLASS over `over`. */
+export function glassOver(v: string, over: string): string {
+  const a = hex6(v).slice(1), b = hex6(over).slice(1);
+  return '#' + [0, 2, 4].map((i) => Math.round(parseInt(a.slice(i, i + 2), 16) * WORLD_GLASS + parseInt(b.slice(i, i + 2), 16) * (1 - WORLD_GLASS)).toString(16).padStart(2, '0')).join('');
+}
 
 /**
  * Pairs that matter only in some UI styles (spec 040 FR-027). `--brand-bg` fills the lobby tile icons and the primary buttons in every style
@@ -80,6 +99,15 @@ export function themeIssues(tokens: Record<string, string>, clean: Record<string
   const tb = TOP_BAR[ui];
   const tbBg = tb ? c(tb[0]) : undefined;
   if (tb && tbBg && contrast(tb[1], tbBg) < 4.5) out.push(`the top bar: with ui "${ui}" it is filled with ${tb[0]} (${tbBg}) under fixed light text ${tb[1]} (contrast ${contrast(tb[1], tbBg).toFixed(1)}:1, needs 4.5:1); make ${tb[0]} darker, or use ui "clean", whose top bar follows --surface and --ink`);
+  if (Object.keys(tokens).some((k) => k in BAR_TOKENS)) {
+    const w = (k: string): string | undefined => { const v = tokens[k] ?? BAR_TOKENS[k]; return v && HEX.test(v) ? v : undefined; };
+    for (const [fg, bg, min, over] of BAR_PAIRS) {
+      const a = w(fg), b0 = w(bg);
+      if (!a || !b0) continue;
+      const r = contrast(a, glassOver(b0, over));
+      if (r < min) out.push(`${fg} (${a}) on ${bg} (${b0}) has contrast ${r.toFixed(1)}:1 on the bar's glass, needs ${min}:1`);
+    }
+  }
   const bg = c('--bg');
   if (bg && luminance(bg) < 0.2) {
     const missing = Object.keys(clean).filter((k) => !(k in tokens) && HEX.test(clean[k]) && luminance(clean[k]) > 0.6);

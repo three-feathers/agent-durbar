@@ -12,8 +12,8 @@
 import * as assert from 'node:assert';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { FONT_ALLOW, HOSTILE_RE, TYPED_TOKENS, typedValue } from '../src/shared/themetokens';
-import { CONTRAST_PAIRS, UI_PAIRS, BRAND_UIS, contrast, luminance, themeIssues } from '../src/shared/themegen';
+import { BAR_TOKENS, FONT_ALLOW, HOSTILE_RE, TYPED_TOKENS, typedValue } from '../src/shared/themetokens';
+import { BAR_PAIRS, CONTRAST_PAIRS, UI_PAIRS, BRAND_UIS, WORLD_GLASS, contrast, glassOver, luminance, themeIssues } from '../src/shared/themegen';
 import { ART_SLOTS, checkUserManifest } from '../src/shared/themes';
 
 const ROOT = process.cwd();
@@ -23,6 +23,10 @@ const T = require(path.join(ROOT, 'src', 'renderer', 'theme.js'));
 // ---- 1. the two copies agree ----
 assert.deepStrictEqual(T.TYPED_TOKENS, TYPED_TOKENS, 'theme.js and themetokens.ts register the same typed tokens');
 assert.deepStrictEqual(T.FONT_ALLOW, FONT_ALLOW, 'the same font allow-list');
+// spec 070 FR-053: the bar's closed list, its pairs and its glass share are one in both copies
+assert.deepStrictEqual(T.BAR_TOKENS, BAR_TOKENS, 'theme.js and themetokens.ts register the same --wb-* names and defaults');
+assert.deepStrictEqual(T.BAR_PAIRS, BAR_PAIRS, 'the bar pairs of WORLD_PAIRS are the shared contrast check\'s');
+assert.strictEqual(T.WORLD_GLASS, WORLD_GLASS, 'the same glass share');
 assert.deepStrictEqual(T.CONTRAST_PAIRS, CONTRAST_PAIRS, 'theme.js checks the same text pairs as the AI maker');
 assert.deepStrictEqual(T.ART_SLOTS, ART_SLOTS, 'the same art slots');
 assert.strictEqual(T._HOSTILE_RE.source + '/' + T._HOSTILE_RE.flags, HOSTILE_RE.source + '/' + HOSTILE_RE.flags, 'the same hostile-value rule (FR-020)');
@@ -393,7 +397,7 @@ console.log(`theme tokens guard passed (${n} corpus checks, ${FILES.length} file
   const scr = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.css'), 'utf8');
   const rule = (sel: string): string => { const at = ('\n' + scr).indexOf('\n' + sel + '{'); assert.ok(at >= 0, `${sel} rule exists`); const from = at + sel.length + 1; return scr.slice(from, scr.indexOf('}', from)); }; // plain string search: no selector is turned into a pattern
   for (const sel of ['.swt', '.swt i', '.swt.on', '.swt.on i']) assert.ok(!/#[0-9a-fA-F]{3,8}\b|rgba?\(/.test(rule(sel)), `${sel}: no colour literal, tokens only`);
-  assert.ok(/background:var\(--sage-ink\)/.test(rule('.swt.on')) && /background:var\(--surface\)/.test(rule('.swt.on i')) && /background:var\(--ink-2\)/.test(rule('.swt i')), 'the on track is --sage-ink, the knobs --surface (on) and --ink-2 (off)');
+  assert.ok(/background:var\(--switch-on\)/.test(rule('.swt.on')) && /background:var\(--surface\)/.test(rule('.swt.on i')) && /background:var\(--ink-2\)/.test(rule('.swt i')), 'the on track is --switch-on, the knobs --surface (on) and --ink-2 (off)');
   assert.ok(/@media \(forced-colors:active\)\{[^@]*\.swt\.on\{background:Highlight/.test(scr), 'forced colours: on and off still differ');
   const mixHex = (a: string, pct: number, b: string): string => '#' + [1, 3, 5].map((i) => Math.round(parseInt(a.slice(i, i + 2), 16) * pct + parseInt(b.slice(i, i + 2), 16) * (1 - pct)).toString(16).padStart(2, '0')).join('');
   const sets: Array<[string, Record<string, string>]> = [['Clean Office', { ...T._tokens(), ...T._builtins()[T.CLEAN_ID].tokens }], ['Photo office', T.worldTokens('photo')]];
@@ -402,5 +406,175 @@ console.log(`theme tokens guard passed (${n} corpus checks, ${FILES.length} file
     const rows: Array<[string, string, string]> = [['on track on the page', tk['--sage-ink'], tk['--surface']], ['on knob on the on track', tk['--surface'], tk['--sage-ink']], ['off knob on the off track', tk['--ink-2'], track]];
     for (const [what, a, b] of rows) assert.ok(contrast(a, b) >= 3, `${name}: ${what} ${contrast(a, b).toFixed(2)}:1 is under 3:1`);
   }
-  console.log('toggle switch: on track, both knobs pass 3:1 in Clean Office and the photo world; tokens only; forced colours');
+  { // 070 T024 (FR-051): tier 3 for the switch and the primary button; the chain ends in --sage-ink, so the on track follows the world
+  const root = css.slice(css.indexOf(':root{'), css.indexOf('\n}', css.indexOf(':root{')));
+  const declIn = (src: string, n: string): string => { const all = [...src.matchAll(new RegExp('(?:^|[\\s;])' + n + ':([^;]+);', 'g'))]; assert.ok(all.length > 0, `${n} declared in :root`); return all[all.length - 1][1]; }; // CSS applies the last declaration, so the last one is read
+  const decl = (n: string): string => declIn(root, n);
+  assert.equal(declIn(':root{--accent:var(--sage-ink);--accent:var(--blue-ink);}', '--accent'), 'var(--blue-ink)', 'mutant: a later duplicate --accent wins, as in CSS');
+  assert.equal(decl('--accent'), 'var(--sage-ink)');
+  const scr2 = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.css'), 'utf8');
+  // the aliases sit on the consuming selectors (not :root), so each resolves per element and follows a scope that re-sets --surface or --ink
+  for (const n of ['--btn-primary-bg', '--btn-primary-ink', '--switch-on', '--switch-off']) assert.ok(!new RegExp('(?:^|[\\s;])' + n + ':').test(root), `${n} is not declared in :root (a :root alias resolves there and misses a scope's --surface or --ink)`);
+  assert.ok(/\.btn\.primary\{--btn-primary-bg:var\(--accent\);--btn-primary-ink:var\(--surface\);/.test(css), '.btn.primary sets its own aliases: bg from --accent, ink from --surface, resolved on the element');
+  assert.ok(/\.swt\{--switch-on:var\(--accent\);--switch-off:var\(--tone-neutral-track\);/.test(scr2), '.swt sets its own aliases, resolved on the element');
+  assert.ok(/\.swt\{[^}]*background:var\(--switch-off\)/.test(scr2), '.swt off track reads --switch-off');
+  assert.ok(/\.btn\.primary\{[^}]*background:var\(--btn-primary-bg\)[^}]*color:var\(--btn-primary-ink\)/.test(css), '.btn.primary reads the tier 3 names');
+  assert.ok(/\.att\.plan-chip\{border-color:var\(--accent\);background:color-mix\(in srgb,var\(--accent\) 12%,var\(--surface\)\);color:var\(--ink\)\}/.test(css), 'the plan chip reads the world: accent edge, tinted page colour, page ink (no fixed green, no info tone: 2.9:1 in the arcade)');
+  assert.ok(!/\.swt\.on\{[^}]*sage-ink/.test(scr2) && !/\.btn\.primary[^{]*\{[^}]*sage-ink/.test(css), 'no direct --sage-ink in the switch or the primary button');
+}
+console.log('toggle switch: on track, both knobs pass 3:1 in Clean Office and the photo world; tokens only; forced colours');
+}
+
+// ---- 070 T023 (FR-052, FR-053): `--wb-*` are on the registry; a pack sets the bar, a failing pair is repaired, a tier 3 name is refused ----
+{
+  const names = Object.keys(BAR_TOKENS);
+  assert.strictEqual(names.length, 13, 'the bar list');
+  assert.ok(names.every((k) => /^--wb-[a-z0-9-]+$/.test(k) && /^#[0-9a-f]{6}$/.test(BAR_TOKENS[k])), 'wb names, opaque hex defaults');
+  assert.ok(names.every((k) => !(k in T._tokens()) && !(k in TYPED_TOKENS)), 'in no other list: the bar list is its own');
+  assert.ok(BAR_PAIRS.length >= 14 && BAR_PAIRS.every(([a, b]) => a in BAR_TOKENS && b in BAR_TOKENS), 'every bar pair names the list');
+  // Flat's default bar passes its own pairs (the glass fill as it shows)
+  for (const [fg, bg, min, over] of BAR_PAIRS) assert.ok(contrast(BAR_TOKENS[fg], glassOver(BAR_TOKENS[bg], over)) >= min, `default ${fg} on ${bg}`);
+  // a pack with the bar: 0 dropped on both sides (before T023 on main both names were dropped: measured 2026-11-07)
+  const dark = { '--wb-bg': '#1c1f24', '--wb-bg-2': '#14161a', '--wb-surface': '#262a31', '--wb-surface-2': '#2e333b', '--wb-ink': '#f1f3f6', '--wb-ink-2': '#d3d8df', '--wb-muted': '#b4bcc7',
+    '--wb-line': '#3a404a', '--wb-line-2': '#4a515d', '--wb-line-ctl': '#8e98a6', '--wb-focus': '#ffd36b', '--wb-warn-bg': '#4a3510', '--wb-warn-ink': '#ffd9a0' };
+  const v = T._validateManifest({ id: 'barpack', name: 'Bar pack', tokens: dark });
+  assert.deepStrictEqual(v.dropped, [], 'a pack with all 13 bar names drops none');
+  assert.deepStrictEqual(v.tokens, dark, 'and keeps them');
+  assert.deepStrictEqual(themeIssues(dark, T._tokens()), [], 'the shared check: no issue for a good bar');
+  assert.ok(checkUserManifest(JSON.stringify({ id: 'barpack', name: 'x', tokens: dark })).ok, 'main accepts the same manifest');
+  // hostile or unusable bar values: dropped one by one, as other colours
+  const bad = T._validateManifest({ id: 'badbar', name: 'x', tokens: { '--wb-bg': 'url(x)', '--wb-ink': '#102030' } });
+  assert.deepStrictEqual(bad.dropped, ['--wb-bg'], 'a hostile bar value is dropped by name');
+  // tier 3 names (FR-051) are no pack's: dropped, never reach the page
+  for (const k of ['--btn-primary-bg', '--switch-on', '--pop-shadow', '--overlay', '--h-ctl', '--wp-bg', '--wb-bar-shadow']) {
+    const r = T._validateManifest({ id: 't3', name: 'x', tokens: { [k]: '#102030' } });
+    assert.deepStrictEqual([r.dropped, r.tokens], [[k], {}], `${k} is refused`);
+  }
+  // a failing pair is repaired on its non-surface side: light ink on the default light bar
+  const weak = { id: 'weakbar', name: 'Weak bar', tokens: { '--wb-ink': '#cfcfcf', '--wb-bg': '#fafafa' } };
+  assert.ok(themeIssues(weak.tokens, T._tokens()).some((i) => i.startsWith('--wb-ink ')), 'the shared check reports it');
+  T.registerUserThemes({ weakbar: weak });
+  const fixed = T.fallbacks('weakbar').contrast as string[];
+  assert.ok(fixed.includes('--wb-ink') && !fixed.includes('--wb-bg'), `only the ink changes (${fixed})`);
+  T.setTheme('weakbar');
+  assert.strictEqual(T.token('--wb-bg'), '#fafafa', 'the surface stays the pack\'s');
+  for (const [fg, bg, min, over] of BAR_PAIRS) {
+    const a = T.token(fg) ?? BAR_TOKENS[fg], b = T.token(bg) ?? BAR_TOKENS[bg];
+    assert.ok(contrast(a, glassOver(b, over)) >= min, `repaired: ${fg} on ${bg}`);
+  }
+  T.setTheme(T.CLEAN_ID);
+  // a dark bar: the glass is measured as it shows (0.9 of the colour over white), not as the bare colour (review of #1252)
+  const dk = { ...dark, '--wb-bg': '#202020', '--wb-ink': '#707070' };
+  assert.ok(contrast('#707070', glassOver('#202020', '#ffffff')) < 4.5, 'the dark pair fails on the glass');
+  assert.ok(contrast('#878787', '#202020') >= 4.5 && contrast('#878787', glassOver('#202020', '#ffffff')) < 4.5, 'and a repair that ignored the glass (#878787) would pass bare and still fail on it');
+  assert.ok(themeIssues(dk, T._tokens()).some((i) => i.startsWith('--wb-ink (#707070) on --wb-bg') && i.includes("bar's glass")), 'the shared check reports the dark pair on the glass');
+  assert.ok(themeIssues({ ...dk, '--wb-ink': '#878787' }, T._tokens()).some((i) => i.startsWith('--wb-ink (#878787) on --wb-bg')), 'a pair that passes bare (#878787 on #202020) but fails on the glass is reported');
+  T.registerUserThemes({ darkbar: { id: 'darkbar', name: 'Dark bar', tokens: dk } });
+  assert.ok((T.fallbacks('darkbar').contrast as string[]).includes('--wb-ink'), 'the ink of a dark bar is repaired');
+  T.setTheme('darkbar');
+  assert.strictEqual(T.token('--wb-bg'), '#202020', 'the dark surface stays the pack\'s');
+  for (const [fg, bg, min, over] of BAR_PAIRS) {
+    const a = T.token(fg) ?? BAR_TOKENS[fg], b = T.token(bg) ?? BAR_TOKENS[bg];
+    assert.ok(contrast(a, glassOver(b, over)) >= min, `dark bar repaired on the glass: ${fg} (${a}) on ${bg} (${b}) is ${contrast(a, glassOver(b, over)).toFixed(2)}:1, needs ${min}:1`);
+  }
+  T.setTheme(T.CLEAN_ID);
+  // switching from a theme with bar tokens to one without leaves no stale inline --wb-* (removeProperty)
+  {
+    const m = new Map<string, string>();
+    const g = global as unknown as { document?: unknown };
+    g.document = { documentElement: { style: { setProperty: (k: string, v: string) => { m.set(k, String(v)); }, removeProperty: (k: string) => { m.delete(k); } }, dataset: {} } };
+    try {
+      const file = require.resolve(path.join(ROOT, 'src', 'renderer', 'theme.js'));
+      delete require.cache[file];
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const X = require(file);
+      X.registerUserThemes({ withbar: { id: 'withbar', name: 'With bar', tokens: dark }, nobar: { id: 'nobar', name: 'No bar', tokens: { '--bg': '#ffffff' } } });
+      X.setTheme('withbar');
+      assert.ok([...m.keys()].some((k) => k.startsWith('--wb-')), 'a theme with bar tokens sets them inline');
+      X.setTheme('nobar');
+      assert.deepStrictEqual([...m.keys()].filter((k) => k.startsWith('--wb-')), [], 'switching to a theme without a bar leaves no --wb-* behind');
+    } finally { g.document = undefined; delete require.cache[require.resolve(path.join(ROOT, 'src', 'renderer', 'theme.js'))]; }
+  }
+  console.log('bar tokens: 13 names in both copies, 0 dropped from a pack, a failing pair repaired, tier 3 names refused');
+}
+
+// ---- 070 T022 (FR-054): the size ratchet, `scripts/inventory.js --check`, inside this test; no second lint ----
+{
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const inv = require(path.join(ROOT, 'scripts', 'inventory.js')) as { inventory(dir: string, repo?: string): { chrome: Record<string, number>; office: Record<string, number>; buttonSets: string[] }; compare(a: unknown, b: unknown): string[]; KINDS: string[]; BASELINE: string };
+  const base = JSON.parse(fs.readFileSync(inv.BASELINE, 'utf8'));
+  const real = inv.inventory(path.join(ROOT, 'src', 'renderer'), ROOT);
+  assert.deepStrictEqual(inv.compare(real, base), [], 'the renderer equals scripts/fixtures/ui-inventory.json (lower it with node scripts/inventory.js --update, never raise it)');
+  assert.ok(real.chrome['font-size'] > 100 && real.buttonSets.length > 50 && real.office.shadow > 0, 'the counts are real, chrome and office apart');
+  // planted literals, one of each kind, in a scratch renderer: each fails by its own name; a clean copy passes; a lowered count fails until the baseline is lowered
+  const dir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'inv-'));
+  try {
+    const rd = path.join(dir, 'src', 'renderer'); fs.mkdirSync(rd, { recursive: true });
+    const css = (extra: string): string => `.a{font-size:var(--t3-size);padding:var(--s-2)}\n${extra}\n`;
+    const html = (cls: string): string => `<button class="${cls}">x</button>`;
+    const run = (extra: string, cls = 'btn'): Array<string> => {
+      fs.writeFileSync(path.join(rd, 's.css'), css(extra)); fs.writeFileSync(path.join(rd, 'a.js'), html(cls));
+      return inv.compare(inv.inventory(rd, dir), start);
+    };
+    fs.writeFileSync(path.join(rd, 's.css'), css('')); fs.writeFileSync(path.join(rd, 'a.js'), html('btn'));
+    const start = inv.inventory(rd, dir);
+    assert.deepStrictEqual(run(''), [], 'a clean scratch renderer equals its own baseline');
+    const planted: Array<[string, string, RegExp]> = [
+      ['font-size', '.b{font-size:13px}', /chrome font-size: 1 is over the baseline 0/], ['line-height', '.b{line-height:20px}', /chrome line-height: 1 is over/], ['font-weight', '.b{font-weight:700}', /chrome font-weight: 1 is over/],
+      ['spacing', '.b{padding:5px 7px}', /chrome spacing: 2 is over/], ['radius', '.b{border-radius:5px}', /chrome radius: 1 is over/], ['shadow', '.b{box-shadow:0 1px 2px #000}', /chrome shadow: 1 is over/],
+      ['office rule', '#stage .b{font-size:13px}', /office font-size: 1 is over/],
+      ['font shorthand', '.b{font:700 13px/20px Georgia}', /chrome font-size: 1 is over/], ['font shorthand weight', '.b{font:700 13px/20px Georgia}', /chrome font-weight: 1 is over/], ['font shorthand line-height', '.b{font:13px/20px Georgia}', /chrome line-height: 1 is over/],
+      ['rem size', '.b{font-size:0.8rem}', /chrome font-size: 1 is over/], ['em line-height', '.b{line-height:1.2em}', /chrome line-height: 1 is over/], ['logical padding', '.b{padding-inline-start:7px}', /chrome spacing: 1 is over/],
+      ['text-shadow', '.b{text-shadow:0 1px 2px #000}', /chrome shadow: 1 is over/], ['drop-shadow', '.b{filter:drop-shadow(0 1px 2px #000)}', /chrome shadow: 1 is over/], ['uppercase unit', '.b{font-size:13PX}', /chrome font-size: 1 is over/],
+      ['logical margin', '.b{margin-block:4px 6px}', /chrome spacing: 2 is over/], ['inset', '.b{inset:4px}', /chrome spacing: 1 is over/], ['logical radius', '.b{border-start-start-radius:5px}', /chrome radius: 1 is over/],
+    ];
+    for (const [what, extra, re] of planted) assert.ok(run(extra).some((m) => re.test(m)), `a planted ${what} literal fails`);
+    assert.deepStrictEqual(run('.b{font-size:var(--t3-size);border-radius:var(--r-sm);box-shadow:var(--shadow-card);padding:var(--s-2);border-radius:999px}'), [], 'tokens, the pill and the scale cost nothing');
+    assert.ok(run('', 'btn novel').some((m) => /new button class set "btn novel"/.test(m)), 'a new button class set fails');
+    // under the baseline fails until lowered: a baseline that holds one more literal than the code
+    const high = JSON.parse(JSON.stringify(start)); high.chrome['font-size'] += 1;
+    assert.ok(inv.compare(start, high).some((m) => /under the baseline/.test(m)), 'a lower count fails until the baseline is lowered');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  console.log(`size ratchet: ${inv.KINDS.length} kinds, chrome and office apart, ${real.buttonSets.length} button class sets; a planted literal of each kind fails`);
+}
+
+{ // spec 070 A14 (T034, T036, T038, T044; FR-061, FR-066, FR-067, FR-075): Flat's modern look is behind html[data-flat-look] and only Flat matches
+  const css = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'styles.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const root = css.slice(css.indexOf(':root{'), css.indexOf('}', css.indexOf(':root{')));
+  const flat = (k: string) => (root.match(new RegExp(`--flat-${k}:\\s*(#[0-9a-f]{6})`)) || [])[1] as string;
+  const GATE = 'html[data-flat-look]:not([data-ui]):not([data-world])';
+  const block = css.slice(css.indexOf(GATE + '{'));
+  assert.ok(block.length > 0 && css.split('data-flat-look').length > 1, 'the flat-look block exists');
+  // the gate: every rule naming the flag also excludes another pack and a world (a mutant that drops either is caught here)
+  for (const m of css.matchAll(/([^{}]*data-flat-look[^{}]*)\{/g)) assert.ok(/:not\(\[data-ui\]\):not\(\[data-world\]\)/.test(m[1]), `flag rule is gated to Flat: ${m[1].trim().slice(0, 60)}`);
+  // the flat section (from the first flag rule to the end of the file) holds nothing but gated rules: an unscoped `.btn{height:24px}` next to them would change every world
+  const sectRules = [...block.matchAll(/([^{}]+)\{[^{}]*\}/g)];
+  assert.ok(sectRules.length >= 2, 'the flat section has its rules');
+  for (const m of sectRules) assert.ok(m[1].trim().startsWith(GATE), `flat section: every selector starts with the gate, not "${m[1].trim().slice(0, 60)}"`);
+  assert.strictEqual(block.replace(/[^{}]/g, '').replace(/\{\}/g, '').length, 0, 'flat section: no nested or unbalanced blocks (an @media would hide an ungated rule)');
+  // flag off: the edited-in-place rules resolve (through :root) to main's values, so a token swap such as .inbox radius var(--r-md) fails
+  const screens = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const offCss = css.slice(0, css.indexOf(GATE + '{')) + '\n' + screens;
+  const rootDecl = (n: string): string => { const all = [...root.matchAll(new RegExp(`${n}:\\s*([^;}]+)`, 'g'))]; assert.ok(all.length > 0, `:root declares ${n}`); return all[all.length - 1][1].trim(); };
+  const resolve = (v: string): string => v.replace(/var\((--[\w-]+)\)/g, (_, n) => resolve(rootDecl(n)));
+  const offVal = (sel: string, prop: string): string => {
+    let found = ''; const esc = sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    for (const m of offCss.matchAll(new RegExp(`(?:^|})\\s*${esc}\\s*\\{([^{}]*)\\}`, 'g'))) { const d = m[1].match(new RegExp(`(?:^|;)\\s*${prop}:\\s*([^;]+)`)); if (d) found = d[1].trim(); }
+    return resolve(found);
+  };
+  for (const [sel, prop, want] of [
+    ['.inbox', 'border-radius', '14px'], ['.inbox', 'padding', '6px'], ['.ib', 'width', '34px'], ['.ib', 'height', '34px'], ['.ib', 'border-radius', '10px'],
+    ['.composer', 'padding', '8px max(16px,calc((100% - 880px)/2))'], ['.ptab', 'height', '30px'], ['.ptab', 'padding', '0 12px'], ['.btn', 'height', '32px'], ['.btn', 'padding', '0 14px'], ['.btn', 'border-radius', '10px'],
+    ['.btn', 'font-size', '13px'], ['.btn', 'font-weight', '550'], ['.btn.sm', 'height', '28px'], ['.ph .btn', 'height', '28px'], ['.notice-strip .btn', 'height', '28px'], ['.ctoolbar', '--h-chip', '28px'],
+  ] as Array<[string, string, string]>) assert.strictEqual(offVal(sel, prop), want, `flag off: ${sel} ${prop} is main's ${want}`);
+  // off by default: the :root values, which every other world and pack read, are today's
+  for (const [k, v] of [['--h-ctl', '32px'], ['--r-md', '10px'], ['--btn-pad', '14px'], ['--btn-fw', '550'], ['--ib-size', '34px'], ['--ptab-h', '30px'], ['--btn-sm-h', '28px'], ['--composer-pad', '8px']]) assert.ok(new RegExp(`${k}:\\s*${v}\\b`).test(root), `${k} keeps ${v} in :root`);
+  // FR-075 sizes in the block: 24 px controls, 12 px text at weight 500, 8 px padding, radii 3/4/6/8; nothing under 24
+  for (const re of [/--h-ctl:\s*24px/, /--btn-pad:\s*8px/, /--btn-fs:\s*var\(--t4-size\)/, /--btn-fw:\s*500/, /--ib-size:\s*24px/, /--r-sm:\s*3px;\s*--r-md:\s*4px;\s*--r-lg:\s*6px;\s*--r-xl:\s*8px/]) assert.ok(re.test(block), `flat-look sets ${re}`);
+  for (const m of block.matchAll(/--(?:h-ctl|h-chip|ib-size|ptab-h|ct-h|btn-sm-h):\s*(\d+)px/g)) assert.ok(Number(m[1]) >= 24, `no control token under 24px in the flat block (${m[0]})`);
+  // FR-067: the contrast pairs of FR-061 (4.5:1 for text, 3:1 for the control edge)
+  const page = flat('page'), page2 = flat('page-2'), acc = flat('accent'), hov = flat('accent-hover'), ctl = flat('line-ctl');
+  const ink = '#2c3733', ink2 = '#56605b', muted = '#535a55';
+  for (const [fg, bg, min, what] of [[ink, page, 4.5, 'ink on page'], [ink2, page, 4.5, 'ink-2 on page'], [muted, page, 4.5, 'muted on page'], [ink, page2, 4.5, 'ink on surface-2'], [ink2, page2, 4.5, 'ink-2 on surface-2'], [muted, page2, 4.5, 'muted on surface-2'], [page, acc, 4.5, 'primary text on accent'], [page, hov, 4.5, 'primary text on hover'], [ctl, page, 3, 'control edge on page'], [ctl, page2, 3, 'control edge on surface-2']] as Array<[string, string, number, string]>) assert.ok(contrast(fg, bg) >= min, `flat look: ${what} ${contrast(fg, bg).toFixed(2)} < ${min}`);
+  console.log('flat look: gated to Flat, off values kept in :root, 24 px floor, FR-061 pairs pass');
 }

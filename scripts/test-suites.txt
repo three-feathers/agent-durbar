@@ -8,6 +8,11 @@ test:attachments
 test:vscode
 test:runtime-core
 test:runtime-redact
+test:livehead
+test:maskoutgoing-fuzz
+test:maskoutgoing-fuzz-b
+test:maskoutgoing
+test:contactlinks
 test:runtime-mcp
 test:runtime-sandbox
 test:history
@@ -33,6 +38,7 @@ test:blogcheck
 test:compressshots
 test:changelog
 test:releasevideo
+test:usage
 test:specsindex
 test:stillhighlights
 test:orgwords
@@ -43,6 +49,7 @@ test:brainsurface
 test:toolusage
 test:usagestore
 test:about
+test:contacts
 test:usagetotals
 test:costtable
 test:dialog
@@ -220,3 +227,5 @@ test:mcpcontextipc
 test:quota
 test:featureinventory
 test:simversion
+test:picturebudget
+test:specnumbers

@@ -143,6 +143,10 @@ Animations are subtle, CSS-only in compact densities and stop under reduced-moti
 
 ## Changes
 
+### 2026-11-07: the demo header case narrows in steps (issue #1285, FR-179)
+
+`sim:` The demo case of `check-office-overlap.js` narrowed every room header to 164 px once and required one to give way (`no-aiu`). The user-theme fixture's pixel font still holds at 164 px, so nothing gave way and the 2 user-theme jobs of `check-parallel --themes` failed on `main` (`narrowing the headers made none give way`), at 1440x900 and 1280x800. The headers were not wrong; the 164 px assumption was theme-specific. The driver now narrows in steps (164, 148, 132, 116, 100 px) and stops at the first width where a header gives way; it still fails when none does at 100 px. FR-179 and the app are unchanged. `[KNOWN GAP]` the demo has no cost chip (`roomAiu` is null while the demo is on), so `no-aiu` there marks "the header had to shed a part", not a visible chip going.
+
 ### 2026-11-03: `check-unread` waits for the announcement (spec 021 FR-048b)
 
 `sim:` The driver read the screen-reader announcement of *Mark as read* once, right after the marker cleared; `announce()` writes its text 60 ms later, so the read could come first (1 of 2 runs failed on a Mac on `main`). It now waits with `until()`, and still fails when nothing is announced. Nothing in the app changes.
