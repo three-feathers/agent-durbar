@@ -11,7 +11,7 @@
  *     text, or stays after the pointer left; Esc closes it and it stays closed until the pointer has left; Tab to a desk's plate opens the same zoom, Esc closes it
  *     with the focus kept; it is a named region and not a live one (FR-034);
  *   - 3 agents at both sizes: a screen shows fewer than 8 lines of real text at 11 px or more (FR-020, SC-003, T032);
- * Screenshots: <SHOTS_OUT>/097-zoom-<w>x<h>.png, 097-real-big-<w>x<h>.png
+ * Screenshots: <SHOTS_OUT>/097-zoom-<w>x<h>.jpg, 097-real-big-<w>x<h>.jpg
  */
 const os = require('os');
 const fs = require('fs');
@@ -223,7 +223,7 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(await js(CHIPS), [], 'no chip on a plate or a chip in the zoom picture ' + w);
     for (let t = 0; t < 5; t++) {
       const was = await blurs();
-      await H.shot(path.join(OUT, `097-zoom-${w}x${h}.png`), { prep: 'calm', keepHover: true });
+      await H.shot(path.join(OUT, `097-zoom-${w}x${h}.jpg`), { prep: 'calm', keepHover: true });
       if (await js(OPENED(mid))) break;
       assert.notStrictEqual(await blurs(), was, 'the picture has the zoom, and the window kept the focus: ' + JSON.stringify(await js(`({focus:document.hasFocus(),blurs:window.__blurs})`)));
       console.log('[097-screens] the window lost the focus during the picture');
@@ -422,7 +422,7 @@ module.exports = async (ctx) => {
     console.log('[097-screens] big', w, h, JSON.stringify(big));
     assert.strictEqual(await js(`document.querySelector('#stage .ro').dataset.big`), '1', 'big screens with 3 agents');
     for (const s of big) { assert.ok(!s.small, 'not small'); assert.ok(s.lines >= 8, `SC-003: at least 8 lines: ${JSON.stringify(s)}`); assert.ok(s.font >= 11, 'at 11 px or more'); assert.strictEqual(s.font, s.h - 6 > 200 ? 13 : 11, 'FR-020: 13 px over 200 px tall: ' + JSON.stringify(s)); }
-    await H.shot(path.join(OUT, `097-real-big-${w}x${h}.png`), { prep: 'calm' });
+    await H.shot(path.join(OUT, `097-real-big-${w}x${h}.jpg`), { prep: 'calm' });
   }
 
   mark('facts change');

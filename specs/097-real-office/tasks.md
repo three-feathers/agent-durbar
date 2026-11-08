@@ -234,5 +234,5 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 - [x] T270 [US1] Engine, pure: `RealAgent.helpers`, the strip's reserved height, rows 2 else 1 else none, `strip` box, `slipAvoid`, `headCrop`, `helperPerson`. Test: `test:realoffice-layout` (heads fit, overflow count, no overlap, faces at the floor), mutants [FR-306..FR-308, FR-310, FR-311]
 - [x] T271 [US1] Wiring: `app.js` `orderedHelpers` and `realSubs`; `realoffice.js` draws the strip (`h:` keys, a node per helper kept by id, `+K`); CSS in `realoffice.css` only [FR-306, FR-307, FR-309]
 - [x] T272 [US1] Driver `scripts/check-097-helpers.js` (in `ui-suite`): 15 agents with helpers, both sizes, Photo office, cave and arcade, heads, dot colour, name only in the accessible name, `+K`, `statusNodes`; mutants [FR-311]
-- [x] T273 [US1] Pictures at both sizes (Photo, cave) and a 2x crop to the owner before merge, compressed under 300 KB [FR-307]
+- [x] T273 [US1] Pictures at both sizes (Photo, cave) and a 2x crop to the owner before merge, compressed under 300 KB; the owner looked (2026-11-08 09:30 UTC) and chose "fine as is" [FR-307]
 - [x] T274 [US1] Docs: changelog fragment, `docs/features.md`, `docs/feature-inventory.md`, the spec's tags [FR-306..FR-311]
