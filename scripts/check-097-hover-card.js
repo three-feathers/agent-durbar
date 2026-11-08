@@ -6,7 +6,10 @@
  *   npm run check:ui -- --only check-097-hover-card      (builds first)
  *   mutant (a source edit, not a switch: the page's code is a closure): in src/renderer/realoffice.js placeZoom turn `if (fs && ro.contains(fs)) {` into `if (false && fs && ro.contains(fs)) {`, build, run; it must fail at
  *   "the card does not lie over the focused slip". Two more, same way: the card's z-index 5 instead of 7 (realoffice.css, `.ro-zoom`) must fail at "a slip under the card paints over it";
- *   the focus listeners removed (placeZoom's `document.addEventListener('focusin', replaceZoom, true)` and the focusout one turned into `0`) must fail at "the card is placed again off the slip that took the focus".
+ *   Four more, same way, all in check-097-hover-card (FR-328): `pointerout` closing a held card (`&& !ZOOM.held` dropped in wireZoom's pointerout) fails "still open 700 ms after the refill"; the Escape check in zoomKey for an open menu
+ *   removed fails "Escape closes an open menu while a card is open"; the capture `pointermove` listener in wireZoom deleted fails "a real move to empty floor inside the office closes the held card"; the coordinate comparison dropped
+ *   (`ZOOM.held !== PT` turned into `true`) fails "a pointermove at the same place does not close the held asleep card".
+ *   The focus listeners removed (placeZoom's `document.addEventListener('focusin', replaceZoom, true)` and the focusout one turned into `0`) must fail at "the card is placed again off the slip that took the focus".
  *   SHOTS_OUT=<dir>   where its pictures go (097-hover-<what>-<w>x<h>.png; a temporary folder by default)
  *
  * At 1440x900 and 1280x800, 15 agents, by real pointer moves, it fails (exit 1) when:
@@ -17,7 +20,8 @@
  *   - a lounge agent whose numbers are known has no "Changed" line in the flat office's words ("6 files changed, +120 −35, 1 commit, 40 min · counted by
  *     Agent Durbar"), or an agent at a desk has one (FR-329);
  *   - the card is under 10.5 px anywhere, leaves the window, covers the hovered agent's own plate, or the office scrolls (FR-034, FR-313);
- *   - a card open on a working desk keeps the awake view (status word, tool log) after its agent falls asleep instead of showing the asleep view (FR-328);
+ *   - a card open on a working desk keeps the awake view (status word, tool log) after its agent falls asleep instead of showing the asleep view (FR-328), or closes within 700 ms of it
+ *     under the resting pointer, or closes on a pointermove at the same place, or stays after a real move to empty floor inside the office, or takes the Escape meant for an open menu;
  *   - the card lies over the slip that holds the keyboard focus (a slip with an Allow button, reached by Tab), a card covers that button's point, a click at the button does not press it
  *     once, or a card opens when no place leaves the focused slip free (FR-330, round 3 of #1313; mutant: the focused slip skipped in placeZoom's avoid list, see below);
  *   - with no free place for the card (the room tiled with slips) a slip under the card is not inert, a slip not under it is, or one stays inert after the card moved or Esc closed it (FR-330);
@@ -208,6 +212,19 @@ module.exports = async (ctx) => {
     await js(`(()=>{const m=document.createElement('div');m.id='modeMenu';m.tabIndex=-1;const b=document.createElement('button');b.textContent='x';m.appendChild(b);m.addEventListener('keydown',(e)=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();m.remove();}});document.body.appendChild(m);b.focus();return document.activeElement===b})()`);
     wc().sendInputEvent({ type: 'keyDown', keyCode: 'Escape' }); wc().sendInputEvent({ type: 'keyUp', keyCode: 'Escape' });
     await must(`!document.getElementById('modeMenu')`, `${tag}: Escape closes an open menu while a card is open (FR-328)`);
+    /* held under a resting pointer (FR-328): a pointermove at the same place (the browser sends one after the room changed) does not let go, a real move to empty floor inside the office does */
+    const held = await js(`window.__mv`);
+    assert.ok(/^\d+,\d+$/.test(held), `${tag}: the driver knows where the pointer is: ${held}`);
+    await js(`(()=>{const [x,y]=${jsLiteral(held)}.split(',').map(Number),e=document.elementFromPoint(x,y)||document.body;e.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,cancelable:true,clientX:x,clientY:y,pointerType:'mouse'}));return 1})()`);
+    await js(`new Promise(r=>setTimeout(r,400))`);
+    assert.ok(await js(ZOOM_FOR(wk2)), `${tag}: a pointermove at the same place does not close the held asleep card (FR-328)`);
+    const EMPTY = `(()=>{const ro=document.querySelector('#stage .ro'),o=ro.getBoundingClientRect(),held=${jsLiteral(held)};
+      for(let y=o.top+8;y<o.bottom-8;y+=23)for(let x=o.left+8;x<o.right-8;x+=29){if(Math.round(x)+','+Math.round(y)===held)continue;const e=document.elementFromPoint(x,y);if(e&&ro.contains(e)&&!e.closest('.ro-screen, .ro-person, .ro-person2, .ro-rig, .ro-initials, .ro-marquee, .ro-desk, .ro-ltable, .ro-plate, .ro-zoom, .ro-slip, .ro-chip, .ro-lplate, .ro-visitor'))return {x:Math.round(x),y:Math.round(y)};}
+      return null})()`;
+    const empty = await js(EMPTY);
+    assert.ok(empty, `${tag}: a point of empty floor inside the office to move to`);
+    await moveTo(empty.x, empty.y);
+    await must(NONE, `${tag}: a real move to empty floor inside the office closes the held card (FR-328)`);
     await moveTo(1, 1);
     await must(NONE, `${tag}: closed on leaving after the refill`);
     /* ---- FR-330: no free place: real-shaped slips (they take pointer events, each holds an input) tile the room except round the hovered person, so the card lands over some of them ---- */

@@ -26,6 +26,7 @@
   let ZOOM = null; /* {id, hover, focus, panel, plate} */
   let IO = null, DISMISSED = '';
   /* spec 052 FR-183: focus the app moves by itself onto a plate is not the person asking to read that screen */
+  let PT = ''; /* the pointer's last position in the office (x,y of its last pointermove), the format of QUIET_AT: a card held under a resting pointer (FR-328) is let go only by a move to another one */
   let QUIET_FOCUS = false, QUIET_POINTER = false, QUIET_AT = '', ARMED = false; /* QUIET_POINTER: the room came back (Esc from a chat, issue 1040) under a pointer that has not moved; hovering starts when it leaves QUIET_AT. ARMED: a hover zoom is waiting out its 120 ms (driver reads hoverState) */
   function quietFocus(fn) { QUIET_FOCUS = true; QUIET_POINTER = true; QUIET_AT = ''; try { fn(); } finally { QUIET_FOCUS = false; } }
 
@@ -526,7 +527,7 @@
     if (ZOOM) {
       const zd = CUR.desks.get(ZOOM.id);
       if (!zd || hiddenNow()) closeZoom(); /* FR-328: an asleep agent's card stays (its glass is dark, the card has its reply) */
-      else { if (ZOOM.st !== zd.state) { fillZoom(); ZOOM.held = true; } placeZoom(); } /* FR-328 (2026-11-08): the card follows the agent's state as its facts do (FR-315): asleep or back, it is filled again, not left with the old tool log */
+      else { if (ZOOM.st !== zd.state) { fillZoom(); ZOOM.held = PT || '?'; } placeZoom(); } /* FR-328 (2026-11-08): the card follows the agent's state as its facts do (FR-315): asleep or back, it is filled again, not left with the old tool log */
     }
     settle(chrome, lay.width);
     return lay;
@@ -863,7 +864,10 @@
     const hid = (n) => { const t = n && n.closest && n.closest('.ro-screen, .ro-person, .ro-person2, .ro-rig, .ro-initials, .ro-marquee, .ro-desk, .ro-ltable, .ro-plate'); return t ? (t.classList.contains('ro-plate') ? t.dataset.id : t.dataset.for) || '' : ''; };
     const arm = (id) => { clearTimeout(wait); ARMED = true; wait = setTimeout(() => { ARMED = false; openZoom(id, 'hover'); }, 120); };
     /* FR-328: the agent changed state under a resting pointer (it walked to the lounge): the browser's pointerout is not the person leaving; the next real move is */
-    ro.addEventListener('pointermove', (e) => { if (ZOOM && ZOOM.held) { ZOOM.held = false; if (ZOOM.hover && hid(e.target) !== ZOOM.id) leaveZoom('hover'); } }, true);
+    ro.addEventListener('pointermove', (e) => {
+      PT = e.clientX + ',' + e.clientY;
+      if (ZOOM && ZOOM.held && ZOOM.held !== PT) { ZOOM.held = false; if (ZOOM.hover && hid(e.target) !== ZOOM.id) leaveZoom('hover'); } /* the browser repeats a move at the same place after the room changed: not the person moving (as QUIET_AT below) */
+    }, true);
     ro.addEventListener('pointerleave', () => { if (ZOOM && ZOOM.held) { ZOOM.held = false; if (ZOOM.hover) leaveZoom('hover'); } });
     ro.addEventListener('pointermove', (e) => {
       if (!QUIET_POINTER) return;
