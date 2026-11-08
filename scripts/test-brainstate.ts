@@ -545,6 +545,33 @@ for (const seed0 of [1, 7, 42]) {
     assert.ok(!JSON.stringify(r).includes(pwd.slice(0, 3)), `N2: an unterminated -p${q} value at the end of a thought is masked`);
   }
 }
+// B2 (re-review of #1243 at f8af91b1a, security): a piece that ends 4 to 7 characters into a value masks that prefix as a short value; the rest that the next piece brings is masked too (`NAMED_MASKED_REST`), as when the whole value arrives at once
+{
+  for (const [a, b] of [['password: Pa' + '55', '!word' + '12345'], ['password: ab' + '12', '$Secret' + '999'], ['password: Sup' + '3r', '(S3cret)' + '99']]) {
+    const r = feed(fresh(), [{ type: 'user' }, { type: 'thinking', delta: a }, { type: 'thinking', delta: b }, start('bash', { command: 'ls' })]);
+    assert.ok(!JSON.stringify(r).includes(b.slice(-5)), `B2: the rest of a value after a masked short prefix is masked: ${JSON.stringify(a)} then ${JSON.stringify(b)} gave "${r.turn!.steps[0].why}"`);
+  }
+  assert.strictEqual(feed(fresh(), [{ type: 'user' }, { type: 'thinking', delta: 'password: Pa' + '55' }, { type: 'thinking', delta: '!word' + '12345' }, start('bash', { command: 'ls' })]).turn!.steps[0].why, 'password: [redacted]', 'B2: Pa55 then !word12345 (the reviewer\'s case) is one mask, as on main');
+  // a cut at every position (one cut, and two cuts 3 apart) shows no 4 characters of the value that the whole text, masked at once, hides
+  const values = ['Pa' + '55!word12345', 'ab12' + '$Secret999', 'Sup3r' + '(S3cret)99', 'Zx9!' + 'Qw7#Er5%', 'S3cr3t' + '.P@ss.w0rd', 'Win2024' + '/Spring!', 'tr0ub4' + 'dor&3x'];
+  const leads = ['password: ', 'I will log in with password: ', 'pwd=', 'token: ', 'api_key='];
+  let runs = 0; const shown: string[] = [];
+  for (const v of values) for (const lead of leads) {
+    const full = lead + v + ' and then go on.';
+    const whole = R.redact(full);
+    const base = JSON.stringify(feed(fresh(), [{ type: 'user' }, { type: 'thinking', delta: lead + '[redacted] and then go on.' }, start('bash', { command: 'ls' })])); // what the state holds anyway (`word` is in its keys)
+    const grams = Array.from({ length: v.length - 3 }, (_, k) => v.slice(k, k + 4)).filter((g) => !whole.includes(g) && !base.includes(g));
+    for (let i = 1; i < full.length; i++) for (const j of [0, Math.min(full.length - 1, i + 3)]) {
+      const cuts = j > i ? [full.slice(0, i), full.slice(i, j), full.slice(j)] : [full.slice(0, i), full.slice(i)];
+      const out = JSON.stringify(feed(fresh(), [{ type: 'user' }, ...cuts.map((d) => ({ type: 'thinking', delta: d })), start('bash', { command: 'ls' })]));
+      runs++;
+      const g = grams.find((x) => out.includes(x));
+      if (g) shown.push(`${JSON.stringify(cuts)}: ${g}`);
+    }
+  }
+  assert.ok(runs > 2500, `B2: the cut sweep ran (${runs} runs)`);
+  assert.deepStrictEqual(shown.slice(0, 5), [], `B2: cut at every position, no part of a value that the whole text hides is shown (${shown.length} of ${runs})`);
+}
 // J4: units: costUsd is capped like credits, a NaN rate is "cost unknown", the unit words come from the app (none in src/shared), no "0.00 AIU"
 {
   for (const big of [1e7, 1e300]) assert.strictEqual(feed(fresh(), [{ type: 'user' }, { type: 'usage', costUsd: big }]).costKnown, false, `costUsd ${big} is beyond the cap: not reported`);

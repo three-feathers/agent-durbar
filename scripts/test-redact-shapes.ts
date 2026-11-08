@@ -712,6 +712,10 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
   for (const [t, w] of [['password=#abc' + '12', 'password=[redacted]'], ['password=#a1b2' + 'c', 'password=[redacted]'], ['password: #abc' + '12, next', 'password: [redacted], next'], ['password=#abc' + '12.', 'password=[redacted]']])
     eq(t, w, `NOT_SHORT: five hex digits are not a colour: ${t}`);
   for (const t of ['password=#abc', 'password=#abc1', 'password=#abc' + '123', 'token: #ff' + '00aa']) eq(t, t, `NOT_SHORT: a 3, 4 or 6 digit colour stays: ${t}`);
+  // B2 (re-review of #1243 at f8af91b1a): the rest of a value glued to a mask after a secret name joins the mask (a stream masked the short prefix first); a mask with no name before it, a space or an escape after it, stay
+  eq('password: [redacted]!word' + '12345', 'password: [redacted]', 'B2: the rest glued to a mask after a name is masked');
+  eq('(token: [redacted](S3cret)' + '99)', '(token: [redacted])', 'B2: the rest stops at a bracket opened before the name');
+  for (const t of ['the [redacted]!x' + '12345 stays', 'password: [redacted] next words', '{\\"token\\":\\"[redacted]\\"}']) eq(t, t, `B2 stays: ${t}`);
   // N2: an unterminated quoted -p value
   eq('mysql -u r -p"S3' + 'cret9x', 'mysql -u r -p[redacted]', 'mysql -p: unterminated double quote');
   eq("mysql -u r -p'S3" + 'cret9x', 'mysql -u r -p[redacted]', 'mysql -p: unterminated single quote');

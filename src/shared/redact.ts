@@ -311,6 +311,8 @@ const NAMED_SECRET = named('', '', SECRET_NAMES, false);
 const NAMED_PHRASE = named('', '', PASSWORD_NAMES, true, PHRASE_TAIL);
 /** Short values are only for the names in `SHORT_NAMES` (not `pass` or `auth`, which are common words). */
 const NAMED_SHORT = named('', '', SHORT_NAMES, true);
+/** `password: [redacted]!word12345`: the rest of a value glued to a mask after a secret name. A stream masks a short value (`SHORT_VALUE`, 4 to 7 characters) when a piece ends 4 to 7 characters into a longer one, and the next piece brings the rest (`Pa55` then `!word12345`), which no rule took when it starts with a symbol; on `main` the whole value arrived first and went as one. The rest goes up to the value's stop rule (`valueBody`), as the whole value would, and never starts at a backslash (an escape that closes a quoted value). Anchored at the name and the literal mask, no tail, so linear. Re-review of #1243 at f8af91b1a (B2). */
+const NAMED_MASKED_REST = new RegExp(String.raw`(${SECRET_NAMES}${Q_END}\s{0,8}(?::=|=>|[:=]|%3[DdAa])\s{0,8}${Q_VALUE}\[redacted\])(?!\\)${valueBody()}`, 'g'); // not from a backslash: `\"[redacted]\"}` is an escaped quote after a JSON value, not a rest
 /** `pwd=[redacted] blue8 x`: a password of several words that arrived in pieces (the brain view masks the first word, the next delta brings the rest) keeps taking its words after the mask, also when a few characters of the next piece sit glued to it (`[redacted]4 ef56`, which `maskGluedTail` would take after this). At least one word, so it is anchored at a literal. It runs before `NAMED_PHRASE`, so one call takes at most 8 words after a mask or after a first word; masking the result again takes 8 more (a stream does). */
 const NAMED_PHRASE_MASKED = new RegExp(String.raw`(${PASSWORD_NAMES}${Q_END}\s{0,8}(?::=|=>|[:=]|%3[DdAa])\s{0,8}${Q_VALUE})\[redacted\][A-Za-z0-9]{0,32}(?:${PHRASE_WORD}){1,8}`, 'g');
 /** Where in a value the first closing bracket with no opener inside the value is, or -1: `(token=abc12345)` keeps its `)`, `Sup3r(S3cret)99` is one value. */
@@ -524,7 +526,9 @@ function maskShapes(text: string, mask: string, guard: boolean): string {
   // The named-secret rules before the glued rest: a mask glued to a secret name (`<token>-dbpassword: "V"`) must not fold the name into the mask first, or the value after it is no value of any name (review of PR 1317, Ruben).
   // A value with its own shape is gone whole by now (a named-secret value stops at `\`, which would leave the tail of `token=123456\u003A…`).
   const value = (m: string, keep: string): string => { const v = m.slice(keep.length); const i = closerAt(v); return keep + mask + (i < 0 ? '' : v.slice(i)); };
-  return maskGluedRest(out.replace(NAMED_IN_QUERY, value).replace(NAMED_PHRASE_MASKED, value).replace(NAMED_PHRASE, value).replace(NAMED_SHORT, value).replace(NAMED_SECRET, value), mask);
+  // the rest glued to a mask joins it (`keep` ends with the mask, so nothing is added but a closing bracket of one opened before the name); first, so it sees only the masks of earlier pieces and passes, never the `#` a query mask of this pass stops at
+  const rest = (m: string, keep: string): string => { const v = m.slice(keep.length); const i = closerAt(v); return keep + (i < 0 ? '' : v.slice(i)); };
+  return maskGluedRest(out.replace(NAMED_MASKED_REST, rest).replace(NAMED_IN_QUERY, value).replace(NAMED_PHRASE_MASKED, value).replace(NAMED_PHRASE, value).replace(NAMED_SHORT, value).replace(NAMED_SECRET, value), mask);
 }
 
 /** The one key-shape mask (FR-031): replaces every key block, secret header, URL credential, named secret and bare token shape with `mask` (a JWT's leading underscores and words stay). `redact` adds the env values and the cut. Linear. */
@@ -539,7 +543,7 @@ export function maskBareTokenShapes(text: string, mask: string): string {
   return maskBare(text, mask, true);
 }
 /** Test only: every pattern's source, for the check that none nests quantifiers (`scripts/test-redact-shapes.ts`). */
-export const _maskSourcesForTest = (): string[] => [...HELD_PATTERNS, ...PATTERNS, ...[...HELD_SHAPES, ...TOKEN_SHAPES].flatMap((t) => (typeof t === 'function' ? [] : t instanceof RegExp ? [t] : [t.re])), PREFIXED_AT, PREFIXED_NEXT, JWT_AT, NAMED_IN_QUERY, NAMED_SECRET, NAMED_PHRASE, NAMED_PHRASE_MASKED, NAMED_SHORT, COOKIE_HEAD].map((r) => r.source);
+export const _maskSourcesForTest = (): string[] => [...HELD_PATTERNS, ...PATTERNS, ...[...HELD_SHAPES, ...TOKEN_SHAPES].flatMap((t) => (typeof t === 'function' ? [] : t instanceof RegExp ? [t] : [t.re])), PREFIXED_AT, PREFIXED_NEXT, JWT_AT, NAMED_IN_QUERY, NAMED_SECRET, NAMED_PHRASE, NAMED_PHRASE_MASKED, NAMED_MASKED_REST, NAMED_SHORT, COOKIE_HEAD].map((r) => r.source);
 /** Test only: the same without the marker guard, to prove the guard never changes the result. */
 export function maskTokenShapesUnguarded(text: string, mask: string): string {
   return maskShapes(text, mask, false);
