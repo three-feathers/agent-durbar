@@ -344,7 +344,7 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
 // ---- spec 102 FR-200..FR-202: the world and set seam in crew.js (two flat lists of data, any set in any world) ----
 {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const C = require(path.join(ROOT, 'src', 'renderer', 'crew.js')) as unknown as { WORLD_FLAGS: Record<string, boolean>;  WORLDS: { id: string; name: string; defaultSet: string; flag?: string }[]; REAL_SETS: { id: string; name: string; choice: string; flag?: string }[]; offeredWorlds: (f?: Record<string, boolean>) => { id: string }[]; parseWorld: (v: unknown, f?: Record<string, boolean>) => string; peopleFor: (w: unknown, c: unknown, f?: Record<string, boolean>) => { world: string; set: string; setName: string; note: string }; CREWS: Record<string, unknown> };
+  const C = require(path.join(ROOT, 'src', 'renderer', 'crew.js')) as unknown as { WORLD_FLAGS: Record<string, boolean>;  WORLDS: { id: string; name: string; defaultSet: string; flag?: string }[]; REAL_SETS: { id: string; name: string; choice: string; flag?: string }[]; offeredWorlds: (f?: Record<string, boolean>) => { id: string }[]; parseWorld: (v: unknown, f?: Record<string, boolean>) => string; peopleFor: (w: unknown, c: unknown, f?: Record<string, boolean>) => { world: string; set: string; setName: string; note: string }; levelFor: (c: unknown, f?: Record<string, boolean>) => string; CREWS: Record<string, unknown> };
   assert.deepStrictEqual(C.WORLD_FLAGS, { cave: false, retro: false }, 'the cave is behind an off-by-default flag until the owner opens it (spec 097 phase 4 gate)');
   assert.deepStrictEqual(C.offeredWorlds().map((w) => w.id), ['photo'], 'flag off: only Photo office is offered');
   assert.deepStrictEqual(C.offeredWorlds({ cave: true }).map((w) => w.id), ['photo', 'cave'], 'flag on: Photo office first, then the cave');
@@ -390,7 +390,28 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
   const note = (c: string): string => C.peopleFor('photo', c).note;
   for (const c of ['minimalist', ...Object.keys(C.CREWS)]) if (!C.REAL_SETS.some((s) => s.choice === c)) assert.strictEqual(note(c), `Real office shows Office people until ${c[0].toUpperCase() + c.slice(1)} has Real office poses.`, `${c}: has its note`);
   for (const c of ['theme', 'mine', '', '__proto__', 'constructor', 'office']) assert.strictEqual(note(c), '', `${c || '(none)'}: no note`);
-  assert.strictEqual(note('prehistoric'), 'Real office shows Office people until Prehistoric has Real office poses.', 'flag off: Prehistoric has no poses yet (the flag is what is closed)');
+  assert.strictEqual(note('prehistoric'), 'Real office shows Office people until Prehistoric is open in Real office.', 'FR-336: flag off: Prehistoric has its poses, the owner\u2019s gate is what is closed, and the note says so');
+  assert.strictEqual(C.peopleFor('photo', 'prehistoric', { cave: true }).note, '', 'flag on: Prehistoric is drawn, no note');
+  // spec 097 FR-335, FR-336: every Characters value resolves to one set, with a level and a true note (issue #1154)
+  {
+    const CLOSED = { cave: false, retro: false }, OPEN = { cave: true, retro: false };
+    const want: Record<string, [string, string, string, string]> = { // choice: [level closed, level open, set closed, set open]
+      theme: ['default', 'default', 'office', 'office'], '': ['default', 'default', 'office', 'office'], mine: ['default', 'default', 'office', 'office'],
+      minimalist: ['heads', 'heads', 'office', 'office'], cheeky: ['heads', 'heads', 'office', 'office'], pirate: ['heads', 'heads', 'office', 'office'],
+      monster: ['heads', 'heads', 'office', 'office'], royal: ['heads', 'heads', 'office', 'office'], rebels: ['heads', 'heads', 'office', 'office'],
+      prehistoric: ['closed', 'full', 'office', 'prehistoric'],
+    };
+    for (const [c, [lc, lo, sc, so]] of Object.entries(want)) {
+      assert.strictEqual(C.levelFor(c, CLOSED), lc, `${c || '(none)'}: level, gate closed`); assert.strictEqual(C.levelFor(c, OPEN), lo, `${c || '(none)'}: level, gate open`);
+      assert.strictEqual(C.peopleFor('photo', c, CLOSED).set, sc, `${c || '(none)'}: set, gate closed`); assert.strictEqual(C.peopleFor('photo', c, OPEN).set, so, `${c || '(none)'}: set, gate open`);
+      assert.strictEqual(C.peopleFor('photo', c, OPEN).note === '', lo === 'default' || lo === 'full', `${c || '(none)'}: a note exactly when the people are not the choice's own`);
+    }
+    for (const c of Object.keys(C.CREWS)) assert.ok(c in want, `${c}: every crew is in this table, so a new crew must be decided here`);
+    for (const c of ['__proto__', 'constructor', 'toString', 'office', 'nonsense']) assert.strictEqual(C.levelFor(c, OPEN), 'default', `${c}: not a crew, no level to report`);
+    assert.strictEqual(C.peopleFor('photo', 'retro', { cave: false, retro: true }).set, 'retro', 'a full set outside the crews has its level full');
+    assert.strictEqual(C.levelFor('retro', { cave: false, retro: true }), 'full'); assert.strictEqual(C.levelFor('retro', { cave: false, retro: false }), 'closed');
+    for (const c of Object.keys(C.CREWS)) assert.ok(!/crew\/art|portrait/i.test(JSON.stringify(C.peopleFor('photo', c, OPEN))), `${c}: Real office names no crew picture`);
+  }
   C.CREWS.futurecrew = []; // a future crew (mutant check: a hand list of names would miss it)
   try { assert.strictEqual(note('futurecrew'), 'Real office shows Office people until Futurecrew has Real office poses.', 'a new crew gets its note by construction'); } finally { delete C.CREWS.futurecrew; }
   assert.strictEqual(note('pirate'), 'Real office shows Office people until Pirate has Real office poses.', 'spec 077 FR-074: the Pirate crew has its Real office note');

@@ -66,7 +66,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | OS sandbox floor | works | works | none | 087 | test:runtime-sandbox |
 | Themes and user themes | works | missing (#1153) | none | 035 036 037 038 039 040 | test:theme test:userthemes |
 | One face per agent: rail row, chat header, inbox faces are the same picture | works | works (one picker, `roFace`) | none | 097 | driver:check-097-one-face |
-| Characters (crews): the Characters choice drawn in the office | works | missing, only the Office people are drawn; every other crew shows them (#1154) | none | 077 096 | test:characters test:crew |
+| Characters (crews): the Characters choice drawn in the office | works | missing, the Office people are drawn for every crew and Settings says why; no crew has its own Real office frames yet, art task T238 (#1154) | none | 077 096 | test:characters test:crew driver:check-097-crews |
 | Harness setup, agent-app updates | works | works | none | 051 081 | test:harnesssetup test:updatecheck |
 | Remote control | works | works | none | 054 | test:remote driver:shots-054-remote |
 | Terminal tab in a chat | planned | planned | none | 094 | read:specs/094-terminal-tab/spec.md |

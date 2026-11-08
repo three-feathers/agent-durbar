@@ -205,7 +205,16 @@
     if (byChoice) return { world: w.id, set: byChoice.id, setName: byChoice.name, note: '' };
     const d = rowOf(REAL_SETS, w.defaultSet);
     const def = d && on(d, flags) ? d : REAL_SETS[0];
-    return { world: w.id, set: def.id, setName: def.name, note: crewName(c) ? `Real office shows ${def.name} until ${crewName(c)} has Real office poses.` : '' };
+    const lv = levelFor(c, flags), n = crewName(c);
+    /* FR-336: say the true reason: a set with poses behind a closed flag is "not open", a crew with only heads "has no poses" */
+    return { world: w.id, set: def.id, setName: def.name, note: !n ? '' : lv === 'closed' ? `Real office shows ${def.name} until ${n} is open in Real office.` : `Real office shows ${def.name} until ${n} has Real office poses.` };
   }
-  return { WORLD_FLAGS, WORLDS, REAL_SETS, offeredWorlds, parseWorld, peopleFor, CREWS, PREHISTORIC_IDS, PIRATE_IDS, MONSTER_IDS, ROYAL_IDS, REBELS_IDS, ALL_IDS, idsFor, storeKey, POSES, BOX, PX_PER_UNIT, FACE, FACE_W, FACE_H, FACE_CROP, faceBox, viewBox, poseFor, file, files, usable, IDS, MAX_ENTRIES, MAX_ID, seeded, seededRand, pickCharacter, assignCrew, pruneCrew, loadCrew };
+  /* spec 097 FR-336: what a Characters value has for Real office: `default` (not a crew: nothing to report), `full` (its own set, open),
+     `closed` (its own set, its flag is off) or `heads` (a crew or Minimalist: only the flat kits' heads, no Real office poses) */
+  function levelFor(choice, flags) {
+    const c = String(choice || ''), row = c && c !== 'theme' ? REAL_SETS.find((s) => s.choice === c) : null;
+    if (row) return on(row, flags) ? 'full' : 'closed';
+    return crewName(c) ? 'heads' : 'default';
+  }
+  return { WORLD_FLAGS, WORLDS, REAL_SETS, offeredWorlds, parseWorld, peopleFor, levelFor, CREWS, PREHISTORIC_IDS, PIRATE_IDS, MONSTER_IDS, ROYAL_IDS, REBELS_IDS, ALL_IDS, idsFor, storeKey, POSES, BOX, PX_PER_UNIT, FACE, FACE_W, FACE_H, FACE_CROP, faceBox, viewBox, poseFor, file, files, usable, IDS, MAX_ENTRIES, MAX_ID, seeded, seededRand, pickCharacter, assignCrew, pruneCrew, loadCrew };
 })());
