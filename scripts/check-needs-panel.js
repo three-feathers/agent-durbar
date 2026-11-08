@@ -159,6 +159,17 @@ module.exports = async (ctx) => {
     await ctx.sleep(900);
     const seen1 = JSON.stringify(await js('window.__qa.slice()'));
     assert.deepStrictEqual(await js('window.__qa.slice()'), [], `${at}: a stale option press answers nothing, not the next question: ${seen1}`);
+    // own button: the card still lives but its options were replaced (a rebuilt card); the old option copied into the row answers nothing
+    await js(`window.__qa=[]`);
+    await open();
+    assert.ok(await until(`!!document.querySelector(${jsLiteral(row(E) + ' [data-k="opt"]')})`, 6000), `${at}: the options of the next question appear`);
+    assert.ok(await armed(E));
+    const optsSwapped = await js(`window.__durbarSimUi.swapCardOptions(${jsLiteral(E)})`);
+    assert.ok(optsSwapped >= 2, `${at}: the live card's options were replaced (${optsSwapped})`);
+    await js(`document.querySelector(${jsLiteral(row(E) + ' [data-k="opt"]')}).click()`);
+    await ctx.sleep(900);
+    const seenOwn = JSON.stringify(await js('window.__qa.slice()'));
+    assert.deepStrictEqual(await js('window.__qa.slice()'), [], `${at}: an option press checks its own button: the card lives but no longer holds it, nothing is answered: ${seenOwn}`);
     await js(`window.__durbarSimUi.settleCard(${jsLiteral(E)})`); await clear();
 
     // ---- 7: a spending limit in a row: amount, three buttons, no letter key; and the long request ----

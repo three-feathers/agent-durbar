@@ -272,6 +272,12 @@ const AA = A as unknown as {
     at = rg.place([{ key: 'b/r2', top: 100.4, under: true }, { key: 'c/r3', top: 180, under: false }], 4000);
     assert.strictEqual(at.get('b/r2'), 3400, 'a sub-pixel change is not a move');
     assert.strictEqual(at.get('c/r3'), 1400, 'a new row not under the pointer only has the panel guard');
+    // a realistic one-row move (rows are about 80 to 100 px tall): 60 to 90 px under the pointer is a move
+    for (const dy of [60, 75, 90]) {
+      rg.opened(20000); rg.place([{ key: 'm/r', top: 300, under: false }], 20001);
+      at = rg.place([{ key: 'm/r', top: 300 - dy, under: true }], 25000);
+      assert.strictEqual(at.get('m/r'), 25400, `a row that moved ${dy} px under the pointer is guarded again`);
+    }
     rg.opened(9000); at = rg.place([{ key: 'b/r2', top: 100, under: false }], 9001);
     assert.strictEqual(at.get('b/r2'), 9400, 'a reopened panel forgets the old rows');
   }
