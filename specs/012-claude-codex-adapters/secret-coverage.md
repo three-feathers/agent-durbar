@@ -102,7 +102,7 @@ A shape goes in only with a prefix distinctive enough to stand beside normal tex
 - Vendors change formats; a new prefix passes until it is added. Comparing again is a matter of rerunning this method.
 - A shape added by this change, encoded more than 8 times (`%25` repeated) or glued to a literal `25XX`, does not count as starting after an escape (tested at 8 and 9). The shapes of before keep the wider start.
 - **The one thing `main` hid that now shows**: text after `|`, `&`, `<`, `>` or a backtick in a `tid=` value (`tid=abcdef12;a|sh` keeps `|sh`), the stop rule above, so an agent cannot hide a command behind it. Whether a real Copilot token can hold one of these was not checked.
-- Over-masking is accepted (a `glpat-cross-validation-results-v2-final`, a `next_page_token=…`, a `key-<32 hex>` that is a cache key at the start of a word, `pass: 12345678`, `auth: oauth2-proxy-config`, and a whole line after `Cookie: a=b`).
+- Over-masking is accepted (a word of 8 or more letters or digits glued straight to a mask is taken into it, 16 after a `_`, 32 after a `/` or `+`: `[redacted]documentation` is hidden whole, spec 012 FR-173; a `glpat-cross-validation-results-v2-final`, a `next_page_token=…`, a `key-<32 hex>` that is a cache key at the start of a word, `pass: 12345678`, `auth: oauth2-proxy-config`, and a whole line after `Cookie: a=b`).
 
 ## Where the mask does and does not apply
 
@@ -114,7 +114,7 @@ Checked by reading the code on 2026-11-01 (`read:`), not by a run.
 | Codex stderr tail in that log | Yes | `redact` in `src/adapters/codex.ts` |
 | MCP status, errors and failed tool cards | Yes | `src/main/mcpmask.ts`, also session secret values |
 | MCP read tools (Durbar's own server) | Yes | `src/main/mcp/readtools.ts` |
-| Activity log | Yes | `src/shared/activity.ts` (a one-line summary only) |
+| Activity log | Yes | `src/main/activitymask.ts` (the permission card's `permText`: command mask, tool names, escape-split tokens), then `src/shared/activity.ts` (`redact`; a one-line summary only) |
 | Notes | Yes | `maskNoteText` |
 | Desk lines, tooltips, inbox, session titles, helper cards, tool labels, permission lines, "Send failed" | Yes | `DurbarSafeText`, `LIVEACT` (fail closed when the module is missing) |
 | File edit cards | Yes | adapters, and again in the window |
