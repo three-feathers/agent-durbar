@@ -309,8 +309,52 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
     const g = lib.emptyState('linux'); lib.ingest(g, bodyOf([pt(null, 5)]), NOW);
     assert.strictEqual(g.days['2026-11-07'].models[OPUS].costUsd, 5, 'repo: no filter given (lib default) counts everything, the receiver always passes one');
     assert.deepStrictEqual(lib.parseRepos('https://github.com/a/b.git, https://gitlab.example/x/y'), ['https://github.com/a/b', 'https://gitlab.example/x/y'], 'repo: DURBAR_USAGE_REPOS is a comma-separated list');
-    for (const bad of ['a/b', 'http://github.com/a/b', 'https://github.com/a/b c', 'https://']) assert.throws(() => lib.parseRepos(bad), /DURBAR_USAGE_REPOS/, `repo: ${bad} refused`);
+    for (const bad of ['a/b', 'http://github.com/a/b', 'https://github.com/a/b c', 'https://', 'a', ',,']) assert.throws(() => lib.parseRepos(bad), /DURBAR_USAGE_REPOS/, `repo: ${bad} refused`);
     assert.strictEqual(R.parseArgs(['--port', '0'], { DURBAR_USAGE_MACHINE: 'linux', DURBAR_USAGE_REPOS: 'https://github.com/a/b' }).repos[0], 'https://github.com/a/b', 'repo: the receiver reads DURBAR_USAGE_REPOS');
+    // every spelling of the Durbar remote is accepted and canonical; look-alikes and other places drop; a token never shows
+    const CANON = 'https://github.com/three-feathers/agent-durbar';
+    const TOKEN = 'ghp_FAKEtoken0123456789';
+    const SAME = ['https://github.com/three-feathers/agent-durbar', 'https://github.com/three-feathers/agent-durbar.git', 'https://github.com/three-feathers/agent-durbar/', 'https://github.com/three-feathers/agent-durbar.git/', 'HTTPS://GitHub.com/Three-Feathers/Agent-Durbar',
+      'git@github.com:three-feathers/agent-durbar.git', 'git@github.com:three-feathers/agent-durbar', 'github.com:three-feathers/agent-durbar.git', 'ssh://git@github.com/three-feathers/agent-durbar.git', 'ssh://git@github.com:22/three-feathers/agent-durbar', 'git://github.com/three-feathers/agent-durbar.git',
+      `https://user:${TOKEN}@github.com/three-feathers/agent-durbar.git`, `https://${TOKEN}@github.com/three-feathers/agent-durbar`, '  https://github.com/three-feathers/agent-durbar  '];
+    const OTHER = ['https://github.com/three-feathers/agent-durbar-evil', 'https://github.com/three-feathers-x/agent-durbar', 'https://gitlab.com/three-feathers/agent-durbar', 'https://github.com/three-feathers/agent-durbar/extra', 'git@github.com:three-feathers/agent-durbar/extra.git',
+      'https://github.com/thrеe-feathers/agent-durbar', 'https://github.com/three-feathers/agent-durbаr', 'https://github.com.evil.example/three-feathers/agent-durbar', 'https://evil.example/github.com/three-feathers/agent-durbar', 'https://github.com/three-feathers', 'http://github.com/three-feathers/agent-durbar', 'file:///three-feathers/agent-durbar', '', 'agent-durbar', 'https://github.com/three-feathers/agent-durbar%2fx'];
+    const checkNormalizer = (L) => {
+      const bad = [];
+      for (const u of SAME) if (L.normalizeRepo(u) !== CANON) bad.push(`accepted form not canonical: ${u.replace(TOKEN, '***')}`);
+      for (const u of OTHER) if (L.normalizeRepo(u) === CANON) bad.push(`look-alike accepted: ${u}`);
+      for (const u of SAME) { const f = L.emptyState('linux'); L.ingest(f, bodyOf([pt(u, 1)]), NOW, [CANON]); if (!f.days['2026-11-07']) bad.push(`ingest dropped an accepted form: ${u.replace(TOKEN, '***')}`); }
+      for (const u of OTHER) { const f = L.emptyState('linux'); L.ingest(f, bodyOf([pt(u, 1)]), NOW, [CANON]); if (f.days['2026-11-07']) bad.push(`ingest counted a look-alike: ${u}`); }
+      return bad;
+    };
+    assert.deepStrictEqual(checkNormalizer(lib), [], 'repo: every remote spelling maps to the canonical URL and every look-alike drops');
+    {
+      // mutant: no normalisation (lower-case only) must be caught by the same checks
+      const src = fs.readFileSync(path.join(__dirname, 'usage-lib.js'), 'utf8');
+      assert.ok(src.includes('/*NORM*/'), 'mutant: the marker is in the source');
+      const mf = path.join(os.tmpdir(), `durbar-usage-lib-mutant-${process.pid}.js`);
+      fs.writeFileSync(mf, src.replace('/*NORM*/', "return typeof text === 'string' ? text.trim().toLowerCase() : null;"));
+      const mutantBad = checkNormalizer(require(mf));
+      fs.unlinkSync(mf);
+      assert.ok(mutantBad.length >= 5 && mutantBad.some((b) => b.startsWith('accepted form not canonical')), 'mutant: a lib without normalisation fails the remote-spelling checks');
+    }
+    for (const u of SAME.slice(0, 5).concat(`https://u:${TOKEN}@github.com/other/x`)) assert.ok(lib.parseRepos(u).length === 1, 'repo: DURBAR_USAGE_REPOS entries are normalised too');
+    assert.deepStrictEqual(lib.parseRepos(`git@github.com:a/b.git,https://u:${TOKEN}@github.com/c/d/`), ['https://github.com/a/b', 'https://github.com/c/d'], 'repo: DURBAR_USAGE_REPOS accepts every spelling');
+    for (const bad of [`https://u:${TOKEN}@github.com/a`, `https://u:${TOKEN}@github.com/a/b/c`]) { let msg = ''; try { lib.parseRepos(bad); } catch (e) { msg = e.message; } assert.ok(msg && !msg.includes(TOKEN), 'repo: a refused entry is not echoed (it may hold a token)'); }
+    {
+      const tk = lib.emptyState('linux');
+      lib.ingest(tk, bodyOf([pt(`https://user:${TOKEN}@github.com/three-feathers/agent-durbar.git`, 3), pt(`https://user:${TOKEN}@github.com/someone/else`, 5)]), NOW, [CANON]);
+      assert.ok(!JSON.stringify(tk).includes(TOKEN) && !JSON.stringify(tk).includes('user:'), 'repo: a URL with a token is never stored');
+      const t6 = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-usage-tok-'));
+      const svc6 = R.createService({ dir: t6, machine: 'linux', now: () => NOW });
+      const logged = []; const origErr = console.error; const origLog = console.log; console.error = (...a) => logged.push(a.join(' ')); console.log = (...a) => logged.push(a.join(' '));
+      let resp; try { resp = svc6.handle(Buffer.from(JSON.stringify(bodyOf([pt(`https://user:${TOKEN}@github.com/three-feathers/agent-durbar.git`, 3), pt(`https://user:${TOKEN}@github.com/someone/else`, 5)]))), 'identity'); } finally { console.error = origErr; console.log = origLog; }
+      svc6.release();
+      const all = JSON.stringify(resp) + logged.join('\n') + fs.readdirSync(t6).map((n) => (n.endsWith('.json') ? fs.readFileSync(path.join(t6, n), 'utf8') : '')).join('');
+      assert.ok(!all.includes(TOKEN) && !all.includes('user:'), 'repo: the token appears in no response, log line or file');
+      assert.strictEqual(svc6.state.days['2026-11-07'].models[OPUS].costUsd, 3, 'repo: the token URL of the right repository is counted, the other is dropped');
+      fs.rmSync(t6, { recursive: true, force: true });
+    }
     const t5 = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-usage-repo-'));
     const svc5 = R.createService({ dir: t5, machine: 'linux', now: () => NOW });
     assert.strictEqual(svc5.handle(Buffer.from(JSON.stringify(bodyOf([pt('https://github.com/someone/other-project', 9)]))), 'identity').status, 200, 'repo: a body of other work is answered 200');

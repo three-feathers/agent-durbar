@@ -21,12 +21,28 @@ const FILE_VERSION = 1;
 const SCOPE = 'agent-durbar'; // every file declares it counted Agent Durbar work only (owner, 2026-11-08)
 const REPO_ATTR = 'vcs.repository.url.full'; // Claude Code adds it with OTEL_METRICS_INCLUDE_REPOSITORY=true (v2.1.269+); read only to compare, never kept
 const DEFAULT_REPOS = ['https://github.com/three-feathers/agent-durbar'];
-const REPO_RE = /^https:\/\/[a-z0-9.-]{1,100}\/[a-z0-9._-]{1,100}(\/[a-z0-9._-]{1,100}){0,3}$/;
+const SEG_RE = /^[a-z0-9._-]{1,100}$/i; // ASCII only: a homoglyph (Cyrillic "а" for "a") never matches
+const HOST_RE = /^[a-z0-9.-]{1,100}$/i;
+/**
+ * One spelling for a repository: `https://<host>/<owner>/<repo>`, lowercase, from https://, ssh://, git:// and scp-style (`git@host:owner/repo`) remotes,
+ * with any `user[:token]@`, port, `.git` and trailing slash removed. Exactly two path segments or null. The input is never kept or echoed (it may hold a token).
+ */
+function normalizeRepo(text) {
+  /*NORM*/
+  if (typeof text !== 'string' || text.length > 300) return null;
+  const s = text.trim();
+  let m = /^(?:https|ssh|git):\/\/(?:[^\/@\s]*@)?([^\/:@\s]+)(?::\d{1,5})?\/(.+)$/i.exec(s);
+  if (!m) m = /^(?:[^\/@\s:]+@)?([^\/:@\s]+):(?!\/)(.+)$/.exec(s);
+  if (!m) return null;
+  const parts = m[2].replace(/\/+$/, '').replace(/\.git$/i, '').replace(/\/+$/, '').split('/');
+  if (parts.length !== 2 || !HOST_RE.test(m[1]) || !parts.every((x) => SEG_RE.test(x))) return null;
+  return `https://${m[1]}/${parts[0]}/${parts[1]}`.toLowerCase();
+}
 /** The allowed repository URLs: `DURBAR_USAGE_REPOS` (comma-separated, lowercase https URLs without `.git`) or the default. Throws on a malformed entry. */
 function parseRepos(text) {
   if (text === undefined || text === '') return DEFAULT_REPOS.slice();
-  const list = String(text).split(',').map((x) => x.trim().toLowerCase().replace(/\.git$/, '')).filter(Boolean);
-  if (!list.length || list.some((u) => !REPO_RE.test(u))) throw new Error('DURBAR_USAGE_REPOS must be comma-separated https repository URLs, e.g. https://github.com/three-feathers/agent-durbar');
+  const list = String(text).split(',').map((x) => x.trim()).filter(Boolean).map(normalizeRepo); // an entry is never echoed in an error (it may hold a token)
+  if (!list.length || list.some((u) => u === null)) throw new Error('DURBAR_USAGE_REPOS must be comma-separated repository URLs (https://, ssh:// or git@host:owner/repo), e.g. https://github.com/three-feathers/agent-durbar');
   return list;
 }
 const DELTA = 1; // OTLP AggregationTemporality: 1 = delta, 2 = cumulative
@@ -83,7 +99,7 @@ function pickAttrs(dp) {
   for (const a of dp.attributes) {
     if (!isObj(a) || (a.key !== 'type' && a.key !== 'model' && a.key !== 'query_source' && a.key !== REPO_ATTR)) continue; // the key is checked before the value is touched
     if (!isObj(a.value) || typeof a.value.stringValue !== 'string') continue;
-    if (a.key === REPO_ATTR) out.repo = a.value.stringValue.slice(0, 200).toLowerCase().replace(/\.git$/, '');
+    if (a.key === REPO_ATTR) out.repo = normalizeRepo(a.value.stringValue); // canonical form or null; the original text is dropped here
     else if (a.key === 'type') out.type = a.value.stringValue;
     else if (a.key === 'model') out.model = a.value.stringValue;
     else out.source = a.value.stringValue;
@@ -457,5 +473,5 @@ function chartDaysSvg(rows) {
 
 module.exports = {
   DAY_SPREAD_LINE, chartDaysSvg, TOKEN_METRIC, COST_METRIC, TYPES, SOURCES, MODEL_RE, MACHINE_RE, DATE_RE, MAX_FILE_BYTES, MAX_MODELS_PER_DAY, MAX_DAYS_PER_FILE, MAX_DAYS_PER_REQUEST, FILE_VERSION,
-  SCOPE, DEFAULT_REPOS, REPO_ATTR, parseRepos, modelName, MODEL_NAMES, BEGIN, END, LABEL, validateHistory, upsertRow, badgeSvg, chartSvg, esc, validateBaseline, cumulative, readmeBlock, rewriteReadme, emptyState, checkMachine, dayOf, ingest, validateState, firstDay, report, group, usd,
+  SCOPE, DEFAULT_REPOS, REPO_ATTR, parseRepos, normalizeRepo, modelName, MODEL_NAMES, BEGIN, END, LABEL, validateHistory, upsertRow, badgeSvg, chartSvg, esc, validateBaseline, cumulative, readmeBlock, rewriteReadme, emptyState, checkMachine, dayOf, ingest, validateState, firstDay, report, group, usd,
 };
