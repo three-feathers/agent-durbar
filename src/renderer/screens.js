@@ -642,9 +642,9 @@
   }
   /* spec 096 T040 (spec 021 FR-031): the parts of any "make one with AI" dialog, neutral on purpose: they know no theme, character or world (spec 102 reuses them). The ids are the caller's. */
   const pickIdeas=(list,n)=>{const f=window.exports&&window.exports.pickFrom;return f?f(list,n):list.slice(0,n);}; /* src/shared/ideas.ts, read at call time */
-  const ideaChipsHtml=(ideas,ids)=>ideas.length?`<div class="ai-ideas" id="${ids.box}"><span class="scr-note small">Ideas:</span>${pickIdeas(ideas,4).map((i)=>`<button class="btn ai-idea" type="button" data-idea="${esc(i)}">${esc(i)}</button>`).join('')}<button class="btn ai-more" type="button" id="${ids.more}" title="Show other ideas">More ideas</button></div>`:'';
+  const ideaChipsHtml=(ideas,ids)=>ideas.length?`<div class="ai-ideas" id="${ids.box}"><span class="scr-note small">Ideas:</span>${pickIdeas(ideas,4).map((i)=>`<button class="btn" type="button" data-idea="${esc(i)}">${esc(i)}</button>`).join('')}<button class="btn" type="button" id="${ids.more}" title="Show other ideas">More ideas</button></div>`:'';
   /* a chip fills the description box; More ideas draws four others */
-  const wireIdeaChips=(d,ideas,ids,box,onPick)=>d.addEventListener('click',(e)=>{const b=e.target.closest&&e.target.closest('.ai-idea');if(b){box.value=b.dataset.idea;onPick(box.value);focusIn(box);return;}
+  const wireIdeaChips=(d,ideas,ids,box,onPick)=>d.addEventListener('click',(e)=>{const b=e.target.closest&&e.target.closest("[data-idea]");if(b){box.value=b.dataset.idea;onPick(box.value);focusIn(box);return;}
     if(e.target.closest&&e.target.closest('#'+ids.more)){const el=d.querySelector('#'+ids.box);if(el)el.outerHTML=ideaChipsHtml(ideas,ids);}});
   /* the ready agent apps with one capability ([] when the list cannot be read), and the Made by picker over them */
   async function readyKinds(cap){if(!X.bridge.listAdapters)return [];try{return ((await X.bridge.listAdapters())||[]).filter((k)=>k&&k.state==='ready'&&k.capabilities&&k.capabilities[cap]);}catch(e){return [];}}

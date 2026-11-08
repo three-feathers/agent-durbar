@@ -96,7 +96,7 @@ module.exports = async (ctx) => {
     await openMaker();
     assert.strictEqual(await js(`document.getElementById('scrDlgT').textContent`), 'Make a character with AI');
     assert.strictEqual(await js(`document.getElementById('cmDesc').maxLength`), 300, `${tag}: at most 300 characters`);
-    assert.strictEqual(await js(`document.querySelectorAll('#cmIdeas .ai-idea').length`), 4, `${tag}: 4 ideas`);
+    assert.strictEqual(await js(`document.querySelectorAll('#cmIdeas [data-idea]').length`), 4, `${tag}: 4 ideas`);
     assert.deepStrictEqual(await js(`[...document.getElementById('cmKind').options].map(o=>o.value)`), ['codex'], `${tag}: Made by lists only apps with imageGen, here Codex of the mixed roster`);
     assert.strictEqual(await js(`document.getElementById('cmCost').textContent`), COST_CHATGPT, `${tag}: the cost line (FR-034: "No API money" for chatgpt)`);
     assert.deepStrictEqual(await js(`[...document.querySelectorAll('#cmPoints li')].map(l=>l.textContent)`), ['One picture, about a minute', 'Durbar keeps nothing from your description (Codex keeps its own copy of the picture)', 'Preview before saving'], `${tag}: the points (T041b)`);
@@ -105,10 +105,10 @@ module.exports = async (ctx) => {
     assert.ok(f.text.includes('generated_images'), `${tag}: the copies line is on screen`);
     await H.shot(path.join(OUT, `096-charmaker-dialog-${tag}.png`), { prep: 'mouse' });
     // More ideas draws others; a chip fills the box
-    const ideas0 = await js(`[...document.querySelectorAll('#cmIdeas .ai-idea')].map(b=>b.textContent).join('|')`);
-    for (let i = 0; i < 8; i++) { await js(`document.getElementById('cmMore').click()`); if ((await js(`[...document.querySelectorAll('#cmIdeas .ai-idea')].map(b=>b.textContent).join('|')`)) !== ideas0) break; }
-    assert.notStrictEqual(await js(`[...document.querySelectorAll('#cmIdeas .ai-idea')].map(b=>b.textContent).join('|')`), ideas0, `${tag}: More ideas changes them`);
-    await js(`document.querySelector('#cmIdeas .ai-idea').click()`);
+    const ideas0 = await js(`[...document.querySelectorAll('#cmIdeas [data-idea]')].map(b=>b.textContent).join('|')`);
+    for (let i = 0; i < 8; i++) { await js(`document.getElementById('cmMore').click()`); if ((await js(`[...document.querySelectorAll('#cmIdeas [data-idea]')].map(b=>b.textContent).join('|')`)) !== ideas0) break; }
+    assert.notStrictEqual(await js(`[...document.querySelectorAll('#cmIdeas [data-idea]')].map(b=>b.textContent).join('|')`), ideas0, `${tag}: More ideas changes them`);
+    await js(`document.querySelector('#cmIdeas [data-idea]').click()`);
     assert.ok((await js(`document.getElementById('cmDesc').value`)).length > 3, `${tag}: an idea fills the description`);
     // too short: says so, starts nothing
     await describe('ab');
@@ -500,7 +500,7 @@ module.exports = async (ctx) => {
   await js(`document.querySelector('#chList [data-characters="minimalist"]').click()`);
   await need(`window.THEME.sceneKit()==='office'`, 'Minimalist');
   await closeSettings();
-  assert.strictEqual(await js(`document.querySelectorAll('#stage image.crew-pic').length`), 0, 'Minimalist draws no portraits: the pin waits');
+  await need(`document.querySelectorAll('#stage image.crew-pic').length===0`, 'Minimalist draws no portraits: the pin waits', 4000); /* the office repaints on the next frame since main's incremental render */
   assert.deepStrictEqual(Object.values(await js(`window.__durbarSimUi.crew.own().pins`)), [target.id], 'and it stays');
   await need(`window.__durbarSimUi.crew.own().urls.length===0`, 'nothing shows them: the URLs are given back (FR-043)');
   await openSettings();
@@ -610,7 +610,7 @@ module.exports = async (ctx) => {
   assert.strictEqual(await js(`document.querySelector('#chList [data-characters="mine"]').getAttribute('aria-pressed')`), 'true', 'My characters stays pressed');
   assert.ok((await js(`document.querySelector('#chList [data-characters="mine"]').textContent`)).includes('Make one first'), 'and says Make one first');
   await closeSettings();
-  assert.strictEqual(await js(`document.querySelectorAll('#stage image.crew-pic').length`), 0, 'no portrait is left');
+  await need(`document.querySelectorAll('#stage image.crew-pic').length===0`, 'no portrait is left', 4000);
   // a new one is used once made
   await openMaker();
   await describe('a new hire');

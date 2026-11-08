@@ -191,7 +191,7 @@ module.exports = async (ctx) => {
   assert.ok(empty.text.includes('Make one first') && !empty.pic, `with nothing to draw it says so (${empty.text})`);
   await close();
   // spec 096 T044: the mine value, on any theme: the desks draw the saved characters, the theme stays, the preview is the newest one's working pose
-  for (const theme of ['retro', 'corporate']) {
+  for (const theme of ['retro', 'clean-office']) {
     await H.load({ w: 1280, h: 800, ready: 'fit', settle: false, query: { simmine: '2', theme } });
     await H.office(15);
     await openSettings();
