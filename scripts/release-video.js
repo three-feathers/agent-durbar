@@ -3,7 +3,7 @@
  * Simulator only (DURBAR_SIM=15, frozen, pinned clock): no agent app, no account, no AI credits (constitution IV).
  *
  *   npm run build
- *   node scripts/release-video.js --version v0.1.7 --out <folder>          the trial clip (scenes below, in this order)
+ *   node scripts/release-video.js --version v0.1.7 --out <folder>          the clip of the release's scenes (the fragments' Scene: fields and the scenes whose `refs` a bullet names)
  *   node scripts/release-video.js --version v0.1.7 --out <folder> --scenes crews,mcp
  *   node scripts/release-video.js --list                                    the scene catalogue
  *   FFMPEG=<path to ffmpeg>                                                  when ffmpeg is not on PATH
@@ -50,6 +50,10 @@ const ENV_ALLOW = ['PATH', 'HOME', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'TE
 /* ---------------------------------------------------------------- the scene catalogue (FR-173) ----------------------------------------------------------------
  * id -> { title, sub, play(S) }. `title` names the change (the caption, at least 22 px on a 1440 px frame), `sub` says where to find it.
  * `play` sets the scene up and calls S.film(seconds) for what is recorded; set-up time is never in the clip. */
+/* Values spliced into page code: only strict ids (letters, digits, `_ . : -`), written as a JSON literal that cannot close a script or a template. Free text (chat content) is never spliced: the page reads it itself. */
+const SAFE_ID_RE = /^[A-Za-z0-9_.:-]{1,80}$/;
+const safeId = (v) => { if (!SAFE_ID_RE.test(String(v))) throw new Error('an agent id from the page is not a plain id'); return String(v); };
+const idLit = (v) => JSON.stringify(safeId(v)).replace(/[<>/\u2028\u2029]/g, (c) => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));
 const SCENES = {
   intro: {
     title: 'Agent Durbar {version}', sub: 'What is new, in the simulator',
@@ -57,6 +61,7 @@ const SCENES = {
   },
   crews: {
     title: 'Four new character crews', sub: 'Pirate, Monster, Royal and Animal Rebels: Settings > Characters',
+    refs: [{ spec: '077', fr: [74, 77] }],
     async play(S) {
       await S.reset();
       await S.openSettings();
@@ -75,6 +80,7 @@ const SCENES = {
   },
   mcp: {
     title: 'What MCP servers cost', sub: 'The MCP chip and a line warn when tool definitions fill the window',
+    refs: [{ spec: '100' }],
     async play(S) {
       await S.reset({ simmcpctx: 'owner' });
       await S.openMcpChat();
@@ -83,6 +89,7 @@ const SCENES = {
   },
   org: {
     title: 'Settings > Organization', sub: 'What your organization\'s policy blocks, per agent app (read-only)',
+    refs: [{ spec: '076', fr: [208, 208] }],
     async play(S) {
       await S.reset({ simkinds: 'mixed', simorgpolicy: '1' });
       await S.openSettings();
@@ -94,6 +101,7 @@ const SCENES = {
   },
   floors: {
     title: 'Floors count up from the bottom', sub: 'Floor 1 is at the bottom of the lift; PageUp goes one floor up',
+    refs: [{ spec: '092' }],
     async play(S) {
       await S.reset({ simfloors: '1' });
       if (!(await S.H.until(`(()=>{const l=document.getElementById('lift');return !!l&&!l.hidden&&l.getClientRects().length>0})()`, 8000))) throw new Error('floors: no lift');
@@ -115,6 +123,7 @@ const SCENES = {
   },
   refresh: {
     title: 'MCP sign-ins kept fresh', sub: 'After an hour away, one quiet line while expired sign-ins are renewed',
+    refs: [{ spec: '058', fr: [204, 217] }],
     async play(S) {
       const H = S.H, q = JSON.stringify;
       // the simulator's reconnect takes 4.5 s (the send waits at most 5 s), so the "Reconnecting" line stays long enough to read
@@ -160,6 +169,7 @@ const SCENES = {
   },
   needsyou: {
     title: 'Needs you: the text reads clearly', sub: 'The inbox lists each request in full, with its parts apart',
+    refs: [{ spec: '052', fr: [206, 208] }, { spec: '052', fr: [214, 214] }],
     async play(S) {
       const H = S.H;
       await S.reset({ simquestion: 'compact' });
@@ -186,6 +196,7 @@ const SCENES = {
   },
   mcpsettings: {
     title: 'Settings > MCP servers', sub: 'Refresh MCP sign-ins automatically: on by default, one switch to turn it off',
+    refs: [{ spec: '058', fr: [213, 213] }],
     async play(S) {
       const H = S.H;
       await S.reset();
@@ -215,17 +226,230 @@ const SCENES = {
       await S.closeSettings();
     },
   },
+  lounge: {
+    title: 'Real office: a lounge row', sub: 'Finished agents whose reply you have read sit in a compact row under the desks',
+    refs: [{ spec: '097', fr: [246, 249] }],
+    async play(S) {
+      const H = S.H, SIM = 'window.__durbarSimUi';
+      const REAL = `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'&&[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`;
+      await S.reset({ officeview: 'real', simfreeze: '1', romotion: '1' }, { ready: REAL });
+      // two agents finish (in rooms where others keep working); their replies are unread, so they keep a full desk (the room rule, FR-246)
+      await H.until(`${SIM}.visitsSettled()`, 8000);
+      const pick = await H.js(`(()=>{const A=${SIM}.agents(),M=A.filter(a=>!a.parent),fin=a=>['done','idle'].includes(a.state)&&!a.paused&&!a.limit,out=[];
+        const home=new Set(${SIM}.realLayout().zones.flatMap(z=>z.desks).filter(d=>!d.away).map(d=>d.id));
+        const cand=M.filter(a=>['idle','working','thinking'].includes(a.state)&&home.has(a.id)&&!a.paused&&!a.limit&&!A.some(h=>h.parent===a.id)).sort((x,y)=>(x.state==='idle'?0:1)-(y.state==='idle'?0:1));
+        for(const a of cand){if(out.length===2)break;const next=out.concat(a.id);if(next.every(id=>{const r=A.find(x=>x.id===id).room;return M.some(o=>o.room===r&&!next.includes(o.id)&&!fin(o))}))out.push(a.id);}
+        return out})()`);
+      if (pick.length !== 2) throw new Error('lounge: two agents to finish were not found');
+      await H.js(`(()=>{for(const id of [${pick.map(idLit).join(',')}]){const a=${SIM}.agents().find(x=>x.id===id);a.state='done';a.lastOutput=a.lastOutput||'Finished the change and ran the tests.';a.lastEventAt=Date.now();${SIM}.unread.mark(id);}${SIM}.crew.renderAll();return 1})()`);
+      if (!(await H.until(`document.querySelectorAll('#stage .ro-plate.st-done').length>=2`, 8000))) throw new Error('lounge: no finished desks');
+      await H.settle();
+      await S.caption('{step}. Finished, reply not read yet', 'The agent keeps its full desk and a green screen until you read it');
+      await S.zoomTo(await S.rectOfJs(`[...document.querySelectorAll('#stage .ro-plate.st-done')].slice(0,2)`, { pad: 90, above: 60 }));
+      await S.film(2.4);
+      await S.zoomOut();
+      // read: both move to the lounge row (the second one finished long ago, so it sleeps there)
+      await H.js(`(()=>{const s=${SIM}.agents().find(x=>x.id===${idLit(pick[1])});s.lastEventAt=Date.now()-34*60000;for(const id of [${pick.map(idLit).join(',')}])${SIM}.unread.read(id);${SIM}.crew.renderAll();return 1})()`);
+      if (!(await H.until(`document.querySelectorAll('#stage .ro-plate.lounge').length>=2&&[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`, 8000))) throw new Error('lounge: no lounge row');
+      await H.settle();
+      await S.caption('{step}. Read: they move to the lounge row', 'A seat, a small desk and a monitor; asleep agents have the lamp and screen off');
+      await S.zoomTo(await S.rectOfJs(`[...document.querySelectorAll('#stage .ro-plate.lounge')]`, { pad: 70, above: 90 }));
+      await S.film(3.2);
+      await S.zoomOut();
+      await S.caption('The freed room goes to the busy desks', 'Working and waiting agents keep their full desks');
+      await S.film(1.4);
+    },
+  },
+  railwidth: {
+    title: 'Drag the agent list\'s width', sub: 'The rail beside a chat: drag its right edge; a double-click goes back to 220 px',
+    refs: [{ spec: '005', fr: [236, 236] }],
+    async play(S) {
+      const H = S.H, wc = () => H.wc();
+      await S.reset();
+      await H.js(`localStorage.removeItem('durbar.railWidth');0`);
+      const main = await H.js(`(()=>{const a=window.__durbarSimUi.agents().find(a=>!a.parent&&a.live&&document.querySelector('#stage .desk[data-id="'+CSS.escape(a.id)+'"]'));return a?a.id:null})()`);
+      if (!main) throw new Error('railwidth: no desk to open');
+      await H.js(`document.querySelector('#stage .desk[data-id="'+CSS.escape(${idLit(main)})+'"]').click()`);
+      if (!(await H.until(`document.body.classList.contains('panel-open')&&!!document.getElementById('railGrip')`, 8000))) throw new Error('railwidth: the rail did not open');
+      await H.calm({ blur: true });
+      await H.settle();
+      const grip = () => H.js(`(()=>{const r=document.getElementById('railGrip').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
+      const width = () => H.js(`Math.round(document.querySelector('.rail').getBoundingClientRect().width)`);
+      const at = (n) => H.until(`Math.round(document.querySelector('.rail').getBoundingClientRect().width)===${n}`, 4000);
+      const mouse = (type, x, y, extra = {}) => wc().sendInputEvent({ type, x, y, button: 'left', clickCount: 1, ...extra });
+      const DOWN = { modifiers: ['leftButtonDown'] };
+      const area = () => S.rectOfJs(`[document.querySelector('.rail'),document.getElementById('railGrip'),document.getElementById('chat')]`, { pad: 0 });
+      await S.caption('{step}. The rail is 220 px wide', 'The agent list beside a chat has a splitter on its right edge');
+      await S.zoomTo({ x: 0, y: 60, w: 760, h: 428 });
+      await S.film(1.8);
+      const drag = async (dx, steps, want) => {
+        const c = await grip();
+        mouse('mouseMove', c.x, c.y); mouse('mouseDown', c.x, c.y);
+        for (let i = 1; i <= steps; i++) { mouse('mouseMove', c.x + Math.round(dx * i / steps), c.y, DOWN); await S.film(0.3); }
+        mouse('mouseUp', c.x + dx, c.y);
+        if (!(await at(want))) throw new Error(`railwidth: the rail is ${await width()} px, not ${want}`);
+        await S.film(0.9);
+      };
+      await S.caption('{step}. Drag it wider', 'The width follows the pointer and is remembered on this computer');
+      await drag(100, 5, 320);
+      await S.caption('{step}. Or narrower', 'Between 180 px and 40% of the window');
+      await drag(-60, 3, 260);
+      const c = await grip();
+      mouse('mouseMove', c.x, c.y);
+      await S.caption('{step}. Double-click: back to 220 px', 'The default width again');
+      await S.film(0.8);
+      mouse('mouseDown', c.x, c.y, { clickCount: 2 }); mouse('mouseUp', c.x, c.y, { clickCount: 2 });
+      if (!(await at(220))) throw new Error(`railwidth: a double-click left the rail ${await width()} px wide`);
+      await S.film(1.6);
+      mouse('mouseMove', 1, 1);
+      await H.js(`localStorage.removeItem('durbar.railWidth');0`);
+    },
+  },
+  signin: {
+    title: 'Sign in works from an idle chat', sub: 'An MCP server that needs a sign-in: the chat\'s Sign in... button starts it',
+    refs: [{ spec: '058', fr: [229, 229] }],
+    async play(S) {
+      const H = S.H, q = JSON.stringify; // q only for fixed data (the MCP server list, the report text); the agent id goes through idLit
+      await S.reset({ simkinds: 'mixed', simsigninrefresh: '1', simsigninwait: '1500' });
+      const id = await H.js(`((window.__durbarSimUi.agents().find(a=>!a.parent&&a.live&&(a.info&&a.info.adapterId)==='claude'&&(a.state==='idle'||a.state==='done')&&!(a.info.sandbox&&a.info.sandbox.covers.includes('mcp'))))||{}).id||''`);
+      if (!id) throw new Error('signin: no idle Claude Code chat');
+      const emit = ({ sessionId, ...rest }) => H.js(`window.__durbarSimEmit(Object.assign({timestamp:Date.now(),sessionId:${idLit(sessionId)}},${q(rest)}))`); // rest is fixed data only
+      const servers = [{ name: 'docs', status: 'connected', transport: 'http' }, { name: 'crm', status: 'connected', transport: 'http' }, { name: 'files', status: 'connected', transport: 'stdio' }];
+      await emit({ type: 'mcp', sessionId: id, servers });
+      await H.js(`window.__durbarSimSignIn.fate('docs','ok');window.__durbarSimSignIn.fate('crm','expired');window.__durbarSimSignIn.fate('files','ok');0`);
+      const o = await H.openSimAgent(`a=>a.id===${idLit(id)}`, '#msgInput');
+      if (!o.ok) throw new Error('signin: the chat did not open');
+      await emit({ type: 'status', sessionId: id, status: 'idle' });
+      await H.until(`window.__durbarSimSignIn.lastResponse(${idLit(id)})!==undefined`, 4000);
+      await H.js(`window.__durbarSimSignIn.advance(${60 * 60 * 1000});0`);
+      await H.js(`(()=>{const i=document.getElementById('msgInput');i.focus();i.value='Please continue with the report';i.dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('sendBtn').click();})()`);
+      if (!(await H.until(`!!document.querySelector('#chat .note.mcpre-sign')`, 12000))) throw new Error('signin: no sign-in line');
+      await H.js(`document.querySelector('#chat .note.mcpre-sign').scrollIntoView({block:'center'});0`);
+      H.wc().sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
+      await H.settle();
+      await S.caption('{step}. An idle chat, a server that needs you', 'crm needs a new sign-in; the line has a Sign in... button');
+      const line = await S.rectOf(['#chat .note.mcpre-sign'], { pad: 24, above: 90, minW: 760 });
+      await S.zoomTo(line, 0.6);
+      await S.film(2.4);
+      await S.caption('{step}. Sign in... starts the sign-in', 'The MCP dialog opens and the row\'s own sign-in begins');
+      await S.zoomOut();
+      await H.js(`document.querySelector('#chat .note.mcpre-sign .mcpre-btn').click()`);
+      if (!(await H.until(`!!document.getElementById('agMcp')`, 6000))) throw new Error('signin: the MCP dialog did not open');
+      await H.settle();
+      await S.film(3.2);
+      await H.js(`(()=>{const b=[...document.querySelectorAll('#scrDlg .dbtn .btn')].find(b=>b.textContent==='Done');if(b)b.click();})()`);
+    },
+  },
+  notesource: {
+    title: 'Notes: Open source', sub: 'A note\'s menu opens the chat it came from and outlines the message',
+    refs: [{ spec: '083', fr: [46, 46] }],
+    async play(S) {
+      const H = S.H;
+      await S.reset();
+      const openChat = async (name) => {
+        const id = await H.idOf(name);
+        if (!id) throw new Error(`notesource: ${name} is not on the floor`);
+        if (await H.js(`document.body.classList.contains('panel-open')`)) { await H.js(`document.getElementById('backBtn').click()`); await H.until(`!document.body.classList.contains('panel-open')`, 4000); }
+        await H.js(`document.querySelector('#stage .desk[data-id="'+CSS.escape(${idLit(id)})+'"]').click()`);
+        if (!(await H.until(`document.body.classList.contains('panel-open')&&!!document.getElementById('msgInput')`, 15000))) throw new Error(`notesource: ${name}'s chat did not open`);
+        H.wc().sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
+        await H.settle();
+        return id;
+      };
+      // set-up (not filmed as a step): a note is saved from Noor's first reply, then another chat of the folder opens the notes drawer
+      const src = await openChat('Noor');
+      // the page saves its own reply text: chat content never goes through this script into code
+      const saved = await H.js(`(()=>{const b=document.querySelector('#chat .chat-inner .msg.agent .bubble');if(!b||!b._raw)return Promise.resolve(false);return window.__durbarSimUi.bridge().notesSave(${idLit(src)},{role:'agent',ord:0,text:b._raw,from:'agent',simSession:${idLit(src)},simApp:'copilot'}).then(r=>!!r.ok)})()`);
+      if (!saved) throw new Error('notesource: the note was not saved');
+      await openChat('Ada');
+      await H.js(`window.__durbarSimUi.notes.open()`);
+      if (!(await H.until(`(()=>{const d=document.getElementById('notesDrawer');return !!d&&!d.hidden&&!!d.querySelector('.nt-row')})()`, 8000))) throw new Error('notesource: the notes drawer did not open');
+      await H.js(`(()=>{const e=document.createElement('style');e.textContent='.bubble.nt-found{animation:none!important}';document.head.appendChild(e)})()`); // the outline is held still for the picture
+      await H.settle();
+      await S.caption('{step}. A note, saved from another chat', 'Ada\'s chat, with the notes drawer open');
+      await S.zoomTo(await S.rectOfJs(`document.getElementById('notesDrawer')`, { pad: 20 }));
+      await S.film(1.8);
+      const more = await H.js(`(()=>{const m=document.querySelector('#notesDrawer .nt-row .nt-more');if(!m)return false;m.click();return true})()`); // the drawer holds the one note saved above
+      if (!more || !(await H.until(`!!document.querySelector('#modeMenu [data-nmact="source"]')`, 4000))) throw new Error('notesource: the note menu has no Open source');
+      await S.caption('{step}. The note\'s menu: Open source', 'It opens the chat the note came from; nothing is sent');
+      await S.zoomTo(await S.rectOfJs(`[document.getElementById('modeMenu'),document.querySelector('#notesDrawer .nt-row')]`, { pad: 40 }), 0.6);
+      await S.film(2);
+      await S.zoomOut();
+      await H.js(`document.querySelector('#modeMenu [data-nmact="source"]').click()`);
+      if (!(await H.until(`/Noor/.test((document.getElementById('panelTitle')||{}).textContent||'')&&!!document.querySelector('#chat .bubble.nt-found')`, 8000))) throw new Error('notesource: Noor\'s chat did not open with the message outlined');
+      // the app's own outline ends after 1.2 s; the driver keeps the class on so the clip can show it for a few seconds
+      await H.js(`(()=>{const b=document.querySelector('#chat .bubble.nt-found');window.__ntKeep=setInterval(()=>b.classList.add('nt-found'),40);0})()`);
+      await H.settle();
+      await S.caption('{step}. Noor\'s chat, at that message', 'The message is scrolled into view and outlined for a moment');
+      await S.zoomTo(await S.rectOfJs(`document.querySelector('#chat .bubble.nt-found')`, { pad: 60, above: 40 }));
+      await S.film(2.8);
+      await H.js(`clearInterval(window.__ntKeep);0`);
+    },
+  },
   outro: {
     title: '{count} changes in {version}', sub: 'The full list is in the notes below', titleNoCount: 'All changes in {version}',
     async play(S) { await S.reset(); await S.card(true); await S.film(3); await S.card(false); },
   },
 };
-const DEFAULT_SCENES = ['intro', 'refresh', 'needsyou', 'mcpsettings', 'outro'];
+
+/* ---- the default scenes follow the release (spec 008 delta 2026-11-07; the v0.1.12 clip had shown v0.1.11's fixed list) ----
+ * A scene's `refs` say which spec and FR numbers it shows: `{ spec: '097', fr: [246, 249] }` (no `fr`: any change to that spec). Without
+ * --scenes the clip gets the scenes named by a fragment's `Scene:` field and the scenes whose refs a bullet of the release names, between
+ * the title and end cards; none found is an error that asks for --scenes (never a stale list). */
+const AUTO_MAX = 5;                  // feature scenes in a default clip, so its length stays inside LEN_MAX
+/** The (lo, hi) FR numbers a text names for `spec`: "(spec 097 FR-246..FR-249, FR-236)" gives [[246,249],[236,236]]; [] when the spec is named without FR numbers, null when it is not named. */
+function frsNamed(text, spec) {
+  const out = [];
+  let named = false;
+  // one match per `spec NNN`, its FR list ends at the next `spec` or a `)`, so "(spec 021 FR-063, spec 097 FR-246)" gives each spec its own
+  for (const m of String(text).matchAll(/\bspec (\d{3})\b((?:(?!\bspec \d{3}\b)[^)])*)/g)) {
+    if (m[1] !== spec) continue;
+    named = true;
+    for (const r of m[2].matchAll(/FR-(\d+)(?:\.\.(?:FR-)?(\d+))?/g)) out.push([Number(r[1]), Number(r[2] || r[1])]);
+  }
+  return named ? out : null;
+}
+/** Does a bullet (or any text) name something the scene shows? */
+function refMatches(text, ref) {
+  const got = frsNamed(text, ref.spec);
+  if (got === null) return false;
+  if (!ref.fr) return true;
+  return got.some(([lo, hi]) => lo <= ref.fr[1] && hi >= ref.fr[0]);
+}
+/** The scenes (catalogue order) whose refs match a bullet of `bullets`. */
+function sceneIdsFor(bullets, scenes = SCENES) {
+  return Object.keys(scenes).filter((id) => (scenes[id].refs || []).some((ref) => bullets.some((b) => refMatches(b, ref))));
+}
+/** The default clip: title card, the release's feature scenes (Scene: fields first, then refs in catalogue order, at most AUTO_MAX), end card. */
+function chooseScenes({ sceneFields = [], bullets = [] }, scenes = SCENES) {
+  const named = [...new Set(sceneFields)].filter((id) => Object.prototype.hasOwnProperty.call(scenes, id) && id !== 'intro' && id !== 'outro');
+  const byRef = sceneIdsFor(bullets, scenes).filter((id) => !named.includes(id));
+  const feature = [...named, ...byRef].slice(0, AUTO_MAX);
+  if (!feature.length) throw new Error('no scene shows this release (no fragment has a Scene: field and no bullet names a scene\'s spec and FR); pass --scenes <ids> (see --list)');
+  return ['intro', ...feature, 'outro'];
+}
+/** The bullets and Scene: fields of a release: the pending fragments of the checkout, and the version's section of CHANGELOG.md once folded. */
+function releaseSources(version, root = ROOT) {
+  const cl = require('./changelog.js');
+  const frs = cl.readFragments(root);
+  const bullets = frs.flatMap((f) => f.bullets || []);
+  const sceneFields = frs.map((f) => f.fields && f.fields.scene).filter(Boolean);
+  try {
+    const lines = fs.readFileSync(path.join(root, 'CHANGELOG.md'), 'utf8').replace(/\r\n?/g, '\n').split('\n');
+    const at = lines.findIndex((l) => l.startsWith(`## ${version} `) || l === `## ${version}`);
+    if (at >= 0) {
+      let end = lines.findIndex((l, i) => i > at && /^## /.test(l));
+      if (end < 0) end = lines.length;
+      bullets.push(...cl.bulletBlocks(lines.slice(at + 1, end)).bullets);
+    }
+  } catch { /* no CHANGELOG.md: the fragments alone */ }
+  return { bullets, sceneFields };
+}
 
 /* ---------------------------------------------------------------- pure parts (tested by scripts/test-release-video.js) ---------------------------------------------------------------- */
 
 function parseArgs(argv) {
-  const a = { scenes: DEFAULT_SCENES.slice(), keepFrames: false, list: false, count: null };
+  const a = { scenes: null, keepFrames: false, list: false, count: null };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     const val = () => { const v = argv[++i]; if (v === undefined || v.startsWith('--')) throw new Error(`${k} needs a value`); return v; };
@@ -240,10 +464,11 @@ function parseArgs(argv) {
   if (a.list) return a;
   if (!a.version || !VERSION_RE.test(a.version)) throw new Error(`--version must be a release tag like v1.2.3 or v1.2.3-alpha.4 (got ${JSON.stringify(a.version)})`);
   if (!a.out) throw new Error('--out <folder> is required');
+  if (a.count !== null && !(Number.isInteger(a.count) && a.count > 0 && a.count < 1000)) throw new Error('--count must be a whole number of changes');
+  if (a.scenes === null) return a; // no --scenes: main() picks them from the release (chooseScenes)
   const unknown = a.scenes.filter((s) => !Object.prototype.hasOwnProperty.call(SCENES, s));
   if (unknown.length) throw new Error(`unknown scene(s): ${unknown.join(', ')} (see --list)`);
   if (!a.scenes.length) throw new Error('no scene selected');
-  if (a.count !== null && !(Number.isInteger(a.count) && a.count > 0 && a.count < 1000)) throw new Error('--count must be a whole number of changes');
   return a;
 }
 
@@ -436,12 +661,13 @@ function seconds(file) {
 
 async function main(argv = process.argv.slice(2), deps = {}) {
   const a = parseArgs(argv);
-  if (a.list) { for (const [id, s] of Object.entries(SCENES)) console.log(`${id.padEnd(8)} ${s.title}: ${s.sub}`); return null; }
+  if (a.list) { for (const [id, s] of Object.entries(SCENES)) console.log(`${id.padEnd(11)} ${s.title}: ${s.sub}`); return null; }
   const out = path.resolve(a.out);
-  fs.mkdirSync(out, { recursive: true });
   const base = `release-${a.version}`;
   const finals = ['.mp4', '.gif', '.json'].map((x) => path.join(out, base + x));
   for (const f of finals) fs.rmSync(f, { force: true }); // FR-175: an old clip never stands in for a failed new one, even when this run is killed
+  if (a.scenes === null) a.scenes = (deps.chooseScenes || ((v) => chooseScenes((deps.releaseSources || releaseSources)(v))))(a.version); // after the removal: no scene shows this release is a failure like any other, and it leaves no old clip
+  fs.mkdirSync(out, { recursive: true });
   if (!(deps.hasFfmpeg || hasFfmpeg)()) throw new Error('ffmpeg was not found (install it, or set FFMPEG=<path>); no clip was made');
   if (!fs.existsSync(path.join(ROOT, 'dist', 'renderer', 'index.html'))) throw new Error('no build: run `npm run build` first');
   if (!(deps.ensure || require('./ensure-electron').ensureElectron)()) throw new Error('the Electron binary is not installed and could not be fetched');
@@ -497,7 +723,8 @@ async function driver(ctx) {
   const out = process.env.OUT;
   if (!out) throw new Error('OUT is not set (start this through `node scripts/release-video.js`)');
   const vars = { version: process.env.RV_VERSION || '', count: process.env.RV_COUNT || null };
-  const ids = String(process.env.RV_SCENES || DEFAULT_SCENES.join(',')).split(',').filter(Boolean);
+  const ids = String(process.env.RV_SCENES || '').split(',').filter(Boolean);
+  if (!ids.length) throw new Error('RV_SCENES is not set (start this through `node scripts/release-video.js`)');
   let redact = null;
   try { redact = require(path.join(ROOT, 'dist', 'shared', 'redact.js')).redact; } catch { /* checked below */ }
   if (typeof redact !== 'function') throw new Error('dist/shared/redact.js did not load: the privacy check cannot run, so no clip is made (FR-176)');
@@ -559,10 +786,11 @@ async function driver(ctx) {
   const S = {
     H,
     /** A fresh simulator page at 1440x900 (extra query values for the scene), calm: no toasts, the pointer off the controls. */
-    async reset(query = {}) {
+    async reset(query = {}, o = {}) {
       cam = FULL; zoomStill = false;
-      await H.load({ w: W, h: H_, ready: 'fit', query });
-      await H.office(query.simfloors === '1' ? 1 : 12);
+      await H.load({ w: W, h: H_, ready: o.ready || 'fit', query, settle: o.ready ? false : undefined }); // `ready`: a page expression for a world whose desks are not `.desk` cards (Real office)
+      if (!o.ready) await H.office(query.simfloors === '1' ? 1 : 12);
+      else await H.settle();
       H.wc().sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
       await H.calm();
       await H.settle();
@@ -693,7 +921,7 @@ async function driver(ctx) {
     scenes.push(rec);
     // the caption is set by reset() callers through `S.caption`; put it on after every reset (a reload drops it)
     const reset = S.reset.bind(S);
-    S.reset = async (q) => { await reset(q); await S.caption(title, sc.sub); };
+    S.reset = async (q, o) => { await reset(q, o); await S.caption(title, sc.sub); };
     await sc.play(S);
     S.reset = reset;
     if (cam !== FULL) await S.zoomOut(); // a scene never ends zoomed in: the next starts from the whole app
@@ -708,5 +936,5 @@ async function driver(ctx) {
 }
 
 module.exports = driver;
-Object.assign(module.exports, { sceneTitle, ZOOM_MAX, ZOOM_FPS, ZOOM_SECS, FULL, fitCamera, ease, zoomPath, cropRect, stillNames, HOME_PATH_RE, PLATFORM_ADDED, unexpectedEnvKeys, ENV_ALLOW, RECORD_MS, FFMPEG_MS, childEnv, gitEmail, run, W, H_, BAND, FRAME_H, composeFrame, SCENES, DEFAULT_SCENES, stepCounter, VERSION_RE, FPS, GIF_MAX, MP4_MAX, parseArgs, fill, forbiddenValues, privacyProblems, concatList, mp4Args, gifArgs, gifTries, lengthOk, main });
+Object.assign(module.exports, { sceneTitle, ZOOM_MAX, ZOOM_FPS, ZOOM_SECS, FULL, fitCamera, ease, zoomPath, cropRect, stillNames, HOME_PATH_RE, PLATFORM_ADDED, unexpectedEnvKeys, ENV_ALLOW, RECORD_MS, FFMPEG_MS, childEnv, gitEmail, run, W, H_, BAND, FRAME_H, composeFrame, SCENES, AUTO_MAX, frsNamed, refMatches, sceneIdsFor, chooseScenes, releaseSources, stepCounter, VERSION_RE, FPS, GIF_MAX, MP4_MAX, parseArgs, fill, forbiddenValues, privacyProblems, concatList, mp4Args, gifArgs, gifTries, lengthOk, main });
 if (require.main === module) main().catch((e) => { console.error('release-video:', e.message); process.exitCode = 1; });

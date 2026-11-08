@@ -9,6 +9,9 @@ test:attachments
 test:vscode
 test:runtime-core
 test:runtime-redact
+test:livehead
+test:maskoutgoing-fuzz
+test:maskoutgoing-fuzz-b
 test:maskoutgoing
 test:contactlinks
 test:runtime-mcp
@@ -36,6 +39,7 @@ test:blogcheck
 test:compressshots
 test:changelog
 test:releasevideo
+test:usage
 test:specsindex
 test:stillhighlights
 test:orgwords
@@ -145,6 +149,8 @@ test:mcpservertools
 test:navigator
 test:crew
 test:characters
+test:chargen
+test:imagecheck
 test:crew-assets
 test:realoffice-layout
 test:realoffice-assets

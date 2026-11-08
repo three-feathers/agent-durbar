@@ -1076,9 +1076,17 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   assert.strictEqual(h('x /opt/me/proj and /opt/me', ['/opt/me']), 'x ~/proj and ~', 'a given home folder');
   assert.strictEqual(h('/opt/meow/x', ['/opt/me']), '/opt/meow/x', 'only a whole folder name');
   assert.strictEqual(h('/x', ['/']), '/x', 'a too-short home is ignored');
+  // UNC paths (review of PR 1272): host, share and the next folder
+  assert.strictEqual(h('open \\\\fs1.example.invalid\\share\\alexexample\\proj\\a.txt now'), 'open ~\\proj\\a.txt now', 'UNC');
+  assert.strictEqual(h('{"p":"\\\\\\\\fs1\\\\share\\\\alexexample\\\\x"}'), '{"p":"~\\\\x"}', 'UNC, JSON-escaped');
+  assert.strictEqual(h('\\\\fs1\\share\\Alex Example\\x'), '~\\x', 'UNC, a user name with a space');
+  assert.strictEqual(h('\\\\fs1\\alexexample'), '~', 'UNC, only host and share');
+  assert.strictEqual(h('C:\\\\work\\a\\b and D:\\x\\y\\z'), 'C:\\\\work\\a\\b and D:\\x\\y\\z', 'a doubled drive path is not a UNC path');
+  assert.strictEqual(h('~\\proj\\.github\\a.txt'), '~\\proj\\.github\\a.txt', 'a masked Windows path stays as it is');
   const t0 = Date.now();
   maskHomePaths('/home/' + 'a'.repeat(1_000_000), []);
   maskHomePaths('/home/a '.repeat(100_000), []);
+  maskHomePaths('\\\\a\\b\\'.repeat(100_000), []);
   assert.ok(Date.now() - t0 < 1500, 'bounded on hostile input');
   const u = maskSecretUrl('https://x.test/cb?code=AbC123&state=xyz9&Code=Q1&id_token=i.d.t&refresh_token=rr&ok=1#access_token=at1');
   for (const v of ['AbC123', 'xyz9', 'Q1', 'i.d.t', 'rr', 'at1']) assert.ok(!u.includes(v), 'OAuth value masked: ' + v + ' in ' + u);
