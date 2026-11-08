@@ -46,3 +46,10 @@ I: spec, plan and task first, in the same PR. III: no secret in the repo, logs o
 - **Pieces:** the rule in `AGENTS.md` (canonical) with pointers in the other agent and contributor docs; one trusted list (`scripts/trusted-authors.txt`) and one set of jq helpers (`scripts/trusted-lib.sh`) used by `scripts/pr-gate.sh` and the new `scripts/gh-trusted.sh`, so the filter exists once.
 - **Choice:** hide by default and show only the trusted, rather than block-list known outsiders: an unknown account is outside. Hidden items still count as asks in `pr-gate.sh`, so a PR with an outside comment waits for a human.
 - **Tests:** `scripts/test-trusted-content.ts` runs the real scripts with a fake `gh` that applies each `--jq` program with jq; planted payloads must not appear.
+
+## Delta: hot files become fragments (FR-086, proposal awaiting team review)
+
+- **Not built until Paco's and Ruben's sides approve.** Then one migration PR per file, smallest risk first: `package.json` `test:*` order (T068), `docs/features.d/` (T069), `docs/feature-inventory.d/` (T070), the timings rule and the CI half (T071), the `ui-suite.js` scan (T072), the rule text and the README warning (T073).
+- **Reuse:** `scripts/changelog.js`'s name rule and bullet parser move to a shared module used by a new `scripts/fragments.js` (`build`, `--check` offline in `npm test`, `--pr-check` in the existing `spec-numbers` job of `spec-kit.yml`); the daily fold PR runs `fragments:build` beside `changelog:build`; `scripts/feature-inventory.js` reads fragments; `test-ui-suite.ts`'s FR-057 scan becomes `DRIVERS`.
+- **Each migration PR shows equivalence:** the assembled page equals today's byte for byte, `--list` prints the same labels, the parsed `package.json` is equal.
+- **Constitution:** I (spec first, this PR); III (no secret, no PR text in a shell; paths through `safe-print.js`); IV (no credits); VI (plain Node, LF-normalised reads, lower-case names, code-unit sort); VIII (counts are a replay, gaps in the spec).
