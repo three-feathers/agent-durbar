@@ -114,7 +114,7 @@
     let out='';const at=[];let last=0,m;FRMARK.lastIndex=0;
     const put=(s,from)=>{for(let i=0;i<s.length;i++){out+=s[i];at.push(from+i);}};
     while((m=FRMARK.exec(t))){put(t.slice(last,m.index),last);
-      const w=m[1]?/\s/.test(String.fromCodePoint(parseInt(m[1],16))):m[0]!=='\u27e6cut\u27e7';if(w){out+='\n';at.push(m.index);}last=m.index+m[0].length;}
+      const w=m[1]?/\s/.test(String.fromCodePoint(parseInt(m[1],16))):/^\u27e6(?:LF|CR|TAB)\u27e7$/.test(m[0]); /* only a whitespace control separates words, as clean() reads it (ESC is dropped: fix round 2) */if(w){out+='\n';at.push(m.index);}last=m.index+m[0].length;}
     put(t.slice(last),last);at.push(t.length);return {s:out,at};
   }
   const NONASCII_W=/(?![\x00-\x7f])[\p{L}\p{M}\p{N}]/u;
@@ -135,9 +135,9 @@
     const take=p=>{if(!p)return true;const i=Rs.indexOf(p,pos);if(i<0||(parts===0&&i!==0))return false;vis.fill(1,i,i+p.length);pos=i+p.length;return true;};
     while((m=PLACEHOLDER.exec(S))){if(!take(S.slice(last,m.index)))return null;parts++;last=m.index+m[0].length;}
     const tail=S.slice(last);
-    if(parts===0)return S===Rs?(i=>rawToR[i]>=0):null;
+    if(parts===0)return S===Rs?(i=>rawToR[i]>=0?1:-1):null;
     if(tail){const i=Rs.lastIndexOf(tail);if(i<pos||i+tail.length!==Rs.length)return null;vis.fill(1,i,i+tail.length);}
-    return i=>rawToR[i]>=0&&vis[rawToR[i]]===1;
+    return i=>rawToR[i]<0?-1:vis[rawToR[i]]===1?1:0; /* 1 shown, 0 hidden, -1 a control left out of both */
   }
   function permLook(b,raw,k){
     const L=LK();
@@ -145,11 +145,12 @@
     if(!L||typeof L.check!=='function')return NONASCII_W.test(r0)?Object.assign({},b,{look:{unchecked:true}}):b;
     try{
       const rc=L.check(r0,k), u=unmark(b.text), sc=L.check(u.s,k), vis=shownRaw(r0,u.s);
-      const seenRaw=i=>vis?vis(i):false;
+      const seenRaw=i=>vis?vis(i)===1:false;
+      const spanSeen=(a,e)=>{if(!vis||!(e>a))return false;for(let i=a;i<e;i++)if(vis(i)===0)return false;return true;}; /* every character of a host shown (fix round 2: a token masked inside a host never reaches the line) */
       /* hosts and unreadable hosts come from the raw text, only where it is shown (a host the mask made, `[redacted]x.invalid`, is never one) */
-      const hosts=rc.hosts.filter(h=>L.hostOdd(h)&&seenRaw(h.index)&&seenRaw(h.index+h.shown.length-1));
-      const fs=sc.findings.filter(f=>f.rule!=='host').concat(rc.findings.filter(f=>f.rule==='host'&&seenRaw(f.index)&&seenRaw(f.index+f.token.length-1)));
-      const inHidden=rc.findings.some(f=>!seenRaw(f.index))||rc.hosts.some(h=>L.hostOdd(h)&&!(seenRaw(h.index)&&seenRaw(h.index+h.shown.length-1)));
+      const hosts=rc.hosts.filter(h=>L.hostOdd(h)&&spanSeen(h.index,h.end));
+      const fs=sc.findings.filter(f=>f.rule!=='host').concat(rc.findings.filter(f=>f.rule==='host'&&spanSeen(f.index,f.end)));
+      const inHidden=rc.findings.some(f=>f.rule==='host'?!spanSeen(f.index,f.end):!seenRaw(f.index))||rc.hosts.some(h=>L.hostOdd(h)&&!spanSeen(h.index,h.end));
       if(!fs.length&&!hosts.length&&!inHidden)return b;
       /* one pass, in order: a marker after each of the first MARK_MAX flagged letters, then one "and N more" */
       const at=[],done=new Set();for(const f of sc.findings){if(f.rule==='host'||done.has(f.index))continue;done.add(f.index);at.push(f);}

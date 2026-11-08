@@ -60,19 +60,48 @@
     }
     return r;
   }
-  /* FR-116: every scheme://host (userinfo and port left out), and the bare host of a `fetch host` grant label. In a shell command (fix round 1 of
-     PR review, #1300) also a host without a scheme in an argument: `user@host` (ssh, git@host:repo), `host.tld:path` (scp) and `host.tld/path` or
-     `host.tld:port` (curl). A bare dotted word with nothing after it (`notes.txt`, `curl host.invalid`) reads like a file name and is not taken. */
-  const ARGW=/[^\s;|&`()<>"']+/g, AT_HOST=/^[^@\/\s:]+@([^@\/\s:]+)/, DOTTED=/^([\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)+)(?=[:\/])/u;
+  /* FR-116: every scheme://host (userinfo and port left out), and the bare host of a `fetch host` grant label. In a shell command (review fix rounds 1
+     and 2 of #1300) also a host without a scheme, but only as an argument of a network program, never inside quotes: `user@host` (not an all-digit
+     version such as `pkg@1.2.3`), `host.tld:path` (scp, rsync, sftp, git clone/fetch/pull/push), `host.tld/...` or `host.tld:port` (curl, wget...),
+     a bare `host.tld` (ssh, ping, nc...). Anything else, a file name like `notes.txt:12` or `name.io/x` included, is not a host. */
+  const AT_HOST=/^[^@\/\s]+@([^@\/\s:]+)/, DOTTED=/^([\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)+)(?=$|[:\/])/u;
+  const NET_URL=new Set(['curl','wget','http','https','xh','aria2c','lftp','httpie']), NET_COPY=new Set(['scp','rsync','sftp']),
+    NET_HOST=new Set(['ssh','mosh','telnet','ping','ping6','nc','ncat','netcat','dig','nslookup','host','traceroute','tracepath','ftp','ssh-copy-id','whois']),
+    GIT_NET=new Set(['clone','fetch','pull','push','ls-remote','remote','submodule']),
+    WRAP=new Set(['sudo','doas','env','nohup','time','command','exec','nice','timeout','torsocks','proxychains','proxychains4','builtin']);
+  /* the words of a shell command outside quotes, grouped by command (a new command after ; | & a line break, a backtick or a parenthesis) */
+  function shellCmds(s){
+    const cmds=[];let cur=[],q='',w=-1;const n=s.length;let i=s.slice(0,4)==='run '?4:0;
+    const end=k=>{if(w>=0){cur.push({x:s.slice(w,k),i:w});w=-1;}};
+    for(;i<n;i++){const c=s[i];
+      if(q){if(c===q)q='';continue;}
+      if(c==='"'||c==="'"){end(i);q=c;continue;}
+      if(c===';'||c==='|'||c==='&'||c==='\n'||c==='`'||c==='('||c===')'){end(i);if(cur.length)cmds.push(cur);cur=[];continue;}
+      if(c===' '||c==='<'||c==='>'){end(i);continue;}
+      if(w<0)w=i;}
+    end(n);if(cur.length)cmds.push(cur);return cmds;
+  }
+  const hostSpanOf=(x,cls)=>{ /* [start,end) of the host in one argument word, or null */
+    const a=AT_HOST.exec(x);if(a){if(/^[\d.]+$/.test(a[1]))return null;const st=a[0].length-a[1].length;return [st,st+a[1].length];}
+    const d=DOTTED.exec(x);if(!d||!/\p{L}/u.test(d[1].slice(d[1].lastIndexOf('.')+1)))return null;
+    const nx=x[d[1].length]||'';
+    if(cls==='copy'&&nx!==':')return null;
+    if(cls==='url'&&nx!=='/'&&nx!==':')return null;
+    return [0,d[1].length];};
   function hostSpans(s,k){
     const r=[];const re=/[A-Za-z][A-Za-z0-9+.-]{0,20}:\/\/([^\s\/?#"'<>\\`]*)/g;let m;
     while((m=re.exec(s))){const auth=m[1];let st=m.index+m[0].length-auth.length;const at=auth.lastIndexOf('@');let h=at>=0?auth.slice(at+1):auth;if(at>=0)st+=at+1;
       if(h[0]!=='['){const p=h.search(/:[0-9]*$/);if(p>=0)h=h.slice(0,p);}if(h)r.push([st,st+h.length]);}
     if(!r.length){const f=/^fetch ([^\s\/?#"'<>\\`]+)$/.exec(s);if(f&&f[1].indexOf('://')<0)r.push([6,6+f[1].length]);}
-    if(k==='shell'){ARGW.lastIndex=0;let w;
-      while((w=ARGW.exec(s))){const x=w[0];if(x.indexOf('://')>=0)continue;
-        const a=AT_HOST.exec(x);if(a){const st=w.index+x.indexOf('@')+1;r.push([st,st+a[1].length]);continue;}
-        const d=DOTTED.exec(x);if(d&&/[\p{L}]/u.test(d[1].slice(d[1].lastIndexOf('.')+1)))r.push([w.index,w.index+d[1].length]);}}
+    if(k==='shell')for(const ws of shellCmds(s)){
+      let j=0;while(j<ws.length&&(WRAP.has(ws[j].x)||/^-/.test(ws[j].x)||/^[\d.]+$/.test(ws[j].x)||/^[A-Za-z_][A-Za-z0-9_]*=/.test(ws[j].x)))j++;
+      if(j>=ws.length)continue;
+      const prog=ws[j].x.slice(Math.max(ws[j].x.lastIndexOf('/'),ws[j].x.lastIndexOf('\\'))+1).toLowerCase().replace(/\.exe$/,'');
+      let cls='';if(NET_URL.has(prog))cls='url';else if(NET_COPY.has(prog))cls='copy';else if(NET_HOST.has(prog))cls='host';
+      else if(prog==='git'){const sub=ws.slice(j+1).find(o=>!/^-/.test(o.x));if(sub&&GIT_NET.has(sub.x))cls='copy';}
+      if(!cls)continue;
+      for(const o of ws.slice(j+1)){if(o.x.indexOf('://')>=0||/^-/.test(o.x))continue;const h=hostSpanOf(o.x,cls);if(h)r.push([o.i+h[0],o.i+h[1]]);}
+    }
     return r;
   }
   /* the rules for one token (an array of characters); name: FR-114 (d) applies. Returns [{i, rule}] (i within the token) */
@@ -141,8 +170,8 @@
     for(const [a,b] of hs){
       const shown=chars.slice(a,b).join('');let ascii=null;
       try{ascii=new URL('https://'+shown+'/').hostname;}catch(e){ascii=null;}
-      if(ascii===null||ascii===''){const c=chars[a];findings.push({token:shown,at:at[a],index:at[a],char:c,cp:c.codePointAt(0),script:scOf(c),rule:'host',marked:cutS(shown,HOST_MAX)});continue;}
-      hosts.push({shown,ascii,index:at[a]});
+      if(ascii===null||ascii===''){const c=chars[a];findings.push({token:shown,at:at[a],index:at[a],end:at[b-1]+chars[b-1].length,char:c,cp:c.codePointAt(0),script:scOf(c),rule:'host',marked:cutS(shown,HOST_MAX)});continue;}
+      hosts.push({shown,ascii,index:at[a],end:at[b-1]+chars[b-1].length});
     }
     findings.sort((x,y)=>x.index-y.index);
     return {findings,hosts};

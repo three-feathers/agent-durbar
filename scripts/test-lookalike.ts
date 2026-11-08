@@ -8,7 +8,7 @@ import { assertLinearShape } from './redact-growth-lib';
 
 const R = path.join(__dirname, '..', '..', 'src', 'renderer');
 type Finding = { token: string; index: number; char: string; cp: number; script: string; rule: string; marked: string };
-type Host = { shown: string; ascii: string; index: number };
+type Host = { shown: string; ascii: string; index: number; end?: number };
 type Look = { n?: number; findings?: Finding[]; hosts?: Host[]; inHidden?: boolean; unchecked?: boolean };
 const L = require(path.join(R, 'lookalike.js')) as {
   check(t: unknown, kind: string): { findings: Finding[]; hosts: Host[] };
@@ -120,7 +120,7 @@ const none = (t: string, k: string, m: string) => eq(L.check(t, k).findings, [],
 // T044 / FR-116: hosts as the network reads them
 {
   const h1 = L.check('fetch https://exampl\u0435.invalid/x', 'other').hosts;
-  eq(h1, [{ shown: 'exampl\u0435.invalid', ascii: 'xn--exampl-8of.invalid', index: 'fetch https://'.length }], 'scenario 1: the host and its punycode');
+  eq(h1, [{ shown: 'exampl\u0435.invalid', ascii: 'xn--exampl-8of.invalid', index: 'fetch https://'.length, end: 'fetch https://exampl\u0435.invalid'.length }], 'scenario 1: the host and its punycode');
   ok(L.hostOdd(h1[0]), 'a punycode host is named');
   ok(/host is xn--exampl-8of\.invalid:/.test(L.line({ hosts: h1 })), 'the line names the host as the network reads it: ' + L.line({ hosts: h1 }));
   ok(!L.line({ hosts: h1 }).includes('host is exampl\u0435'), 'never the Unicode host as the host');
@@ -204,5 +204,17 @@ const none = (t: string, k: string, m: string) => eq(L.check(t, k).findings, [],
   ok(Array.from(tip('run x ' + 'a\u27e6U+0430 Cyrillic\u27e7'.repeat(500))).length <= L.TIP_MAX, 'the tooltip has a hard cap');
   eq(L.tipLen('run x'), 240, 'a short text: 240');
   assertLinearShape('tooltip', (x) => { tip(x); }, (k) => ('a\u27e6U+0430 Cyrillic\u27e7 ').repeat(Math.ceil(k / 20)).slice(0, k), 10000);
+}
+// fix round 2 (#1300 re-review): a host without a scheme only as an argument of a network program, never in quotes, never a version
+{
+  const P = '\u0440\u0430\u0443\u0440\u0430\u04cf';
+  for (const [t, host] of [['run scp f user:pw@' + P + '.invalid:/x', P + '.invalid'], ['run sudo ssh ' + P + '.invalid', P + '.invalid'], ['run git clone git@' + P + ':repo', P], ['run rsync -a d/ ' + P + '.invalid:/x', P + '.invalid'], ['run git push ' + P + '.invalid:repo', P + '.invalid']] as const)
+    eq(L.check(t, 'shell').hosts.map((h) => h.shown), [host], 'a network program\'s host: ' + t);
+  for (const t of ['run npm i pkg@1.2.3', 'run cat \u0444\u0430\u0439\u043b.txt:12', 'run cp x \u8cc7\u6599.bak/', 'run python3 \u0441\u043a\u0440\u0438\u043f\u0442.py/x', 'run docker run \u0438\u043c\u044f.io/x',
+    'run cp a \u0441\u043e\u0440.d/x', 'run git commit -m "see git@' + P + '.invalid:x"', 'run git config user.email a@' + P + '.example', 'run grep x file.tar.gz:3', 'run cp C:\\x\\y.txt D:/z',
+    'run node -e "require(\'node:fs\')"', 'run echo "http: ' + P + '.invalid/x"', 'run tar xf \u0430\u0440\u0445\u0438\u0432.tar.gz', 'run git push origin main:\u0432\u0435\u0442\u043a\u0430', 'run git add \u043f\u0430\u043f\u043a\u0430.old/x', 'run scp \u043f\u0430\u043f\u043a\u0430.old/x h.invalid:/y', 'run curl -o \u0444\u0430\u0439\u043b.txt https://ok.invalid/']) {
+    const r = L.check(t, 'shell');
+    ok(r.findings.length === 0 && r.hosts.filter(L.hostOdd).length === 0, 'stays clean (no host line, no rule (d)): ' + t + ' ' + JSON.stringify(r));
+  }
 }
 console.log(`lookalike: ${n} checks passed`);

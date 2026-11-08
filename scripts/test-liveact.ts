@@ -782,4 +782,24 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   assertLinearShape('permText one long lookalike token', (x) => { L.permText('run ' + x, 'shell', mask); }, (k) => '\uff41'.repeat(k), 10000);
   assertLinearShape('permText many lookalike tokens', (x) => { L.permText('run x ' + x, 'shell', mask); }, (k) => 'a\u0430 '.repeat(Math.ceil(k / 3)).slice(0, k), 10000);
 }
+// fix round 2 (#1300 re-review): a token masked inside a host never reaches the line; inHidden per finding (pinned with a stub mask); ESC is no word break
+{
+  type Look = { n?: number; findings?: { cp: number; rule: string; marked?: string; token?: string }[]; hosts?: { shown: string; ascii: string }[]; inHidden?: boolean };
+  const LK = require(path.join(R, 'lookalike.js')) as { line(l: unknown): string };
+  const G = 'ghp' + '_' + 'Q7'.repeat(18), PARTS = /ghp_|Q7Q7|7Q7Q/;
+  for (const [t, k] of [['fetch https://\u0435x-' + G + '-y.invalid/', 'other'], ['run curl https://\u0435x-' + G + '-y.invalid/', 'shell'], ['run ssh u@\u0435x-' + G + '-y.invalid', 'shell'], ['fetch https://ex^' + G + '^y.invalid/', 'other'], ['run scp f u@\u0435x-' + G + '-y.invalid:/x', 'shell']] as const) {
+    const r = L.permText(t, k, mask) as { text: string; look?: Look };
+    const line = r.look ? LK.line(r.look) : '';
+    ok(!PARTS.test(r.text) && !PARTS.test(line) && !PARTS.test(JSON.stringify(r.look || {})), 'no part of a token masked inside a host in the text, the line or look: ' + JSON.stringify([r.text, line]));
+    ok(r.look && r.look.inHidden === true && r.look.hosts!.length === 0 && !r.look.findings!.some((f) => f.rule === 'host'), 'the host is hidden, said as a hidden part: ' + t);
+  }
+  // pins inHidden per finding: the raw text has fewer findings (no host: the / before @) than the shown one, yet a letter is hidden
+  const P = '\u0440\u0430\u0443\u0440\u0430\u04cf', stub = (x: string) => x.replace(/a\/SECRET[^@]*/g, '[redacted]');
+  const sp = L.permText('run scp a/SECRET\u0430@' + P + '.invalid:/y .', 'shell', { redact: stub, cmd: stub, url: stub }) as { text: string; look?: Look };
+  ok(sp.text.startsWith('run scp [redacted]@') && sp.look && sp.look.n! > 1 && sp.look.inHidden === true, 'the hidden Cyrillic letter is said although the shown text has more findings: ' + JSON.stringify([sp.text, sp.look && sp.look.n, sp.look && sp.look.inHidden]));
+  // ESC is left out like clean() does, so it does not start a new word: an argument after it is no program name
+  const e = L.permText('run x \u001b' + P, 'shell', mask) as { text: string; look?: Look };
+  ok(!e.look || (e.look.n === 0 && !e.look.inHidden), 'an argument after ESC is not a program name: ' + JSON.stringify(e));
+  ok((L.permText('run x\n' + P, 'shell', mask) as { look?: Look }).look!.n === 6, 'a line break still starts a command');
+}
 console.log(`liveact: ${n} checks passed`);
