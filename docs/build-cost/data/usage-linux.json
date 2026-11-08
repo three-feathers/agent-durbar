@@ -82,6 +82,85 @@
           }
         }
       }
+    },
+    "2026-11-08": {
+      "models": {
+        "claude-opus-5-5": {
+          "input": 98324,
+          "output": 809892,
+          "cacheRead": 690514022,
+          "cacheCreation": 2766972,
+          "costUsd": 172.13364840000028,
+          "bySource": {
+            "main": {
+              "tokens": 518205644,
+              "costUsd": 122.16299740000004
+            },
+            "subagent": {
+              "tokens": 57124363,
+              "costUsd": 24.949714600000007
+            },
+            "auxiliary": {
+              "tokens": 118859203,
+              "costUsd": 25.020936400000007
+            },
+            "other": {
+              "tokens": 0,
+              "costUsd": 0
+            }
+          }
+        },
+        "claude-sonnet-5-5": {
+          "input": 7524,
+          "output": 1891017,
+          "cacheRead": 584956651,
+          "cacheCreation": 13428732,
+          "costUsd": 110.99271309999996,
+          "bySource": {
+            "main": {
+              "tokens": 0,
+              "costUsd": 0
+            },
+            "subagent": {
+              "tokens": 600283924,
+              "costUsd": 110.99271309999996
+            },
+            "auxiliary": {
+              "tokens": 0,
+              "costUsd": 0
+            },
+            "other": {
+              "tokens": 0,
+              "costUsd": 0
+            }
+          }
+        },
+        "claude-haiku-5-5": {
+          "input": 5260525,
+          "output": 376613,
+          "cacheRead": 0,
+          "cacheCreation": 0,
+          "costUsd": 0.914359,
+          "bySource": {
+            "main": {
+              "tokens": 0,
+              "costUsd": 0
+            },
+            "subagent": {
+              "tokens": 0,
+              "costUsd": 0
+            },
+            "auxiliary": {
+              "tokens": 5637138,
+              "costUsd": 0.914359
+            },
+            "other": {
+              "tokens": 0,
+              "costUsd": 0
+            }
+          }
+        }
+      }
     }
   }
 }
