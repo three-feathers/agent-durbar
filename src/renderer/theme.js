@@ -474,7 +474,18 @@
     if(/^[a-z]+$/.test(s)){const h=own(NAMED,s)?NAMED[s]:null;return h?[0,2,4].map(i=>parseInt(h.slice(i,i+2),16)).concat([1]):null;}
     m=/^(rgba?|hsla?)\(([^()]*)\)$/.exec(s);
     if(!m)return null;
-    const args=m[2].split(/[\s,/]+/).filter(Boolean);
+    /* CSS has two grammars and never mixes them: `a, b, c[, alpha]` or `a b c[ / alpha]` */
+    const body=m[2].trim();
+    let args;
+    if(body.includes(',')){
+      if(body.includes('/'))return null;
+      args=body.split(',').map(x=>x.trim());
+      if(args.some(x=>!x))return null;
+    }else{
+      const sp=/^([^\s/]+)\s+([^\s/]+)\s+([^\s/]+)(?:\s*\/\s*([^\s/]+))?$/.exec(body);
+      if(!sp)return null;
+      args=sp.slice(1).filter(x=>x!==undefined);
+    }
     if(args.length!==3&&args.length!==4)return null;
     const NUM=/^[+-]?(\d+\.?\d*|\.\d+)(%?)$/;
     const num=a=>{const n=NUM.exec(a);return n?[parseFloat(a),n[2]==='%']:null;};
@@ -530,11 +541,11 @@
     for(let pass=0;pass<4;pass++){
       let changed=false;
       const page=colorHex(t['--bg'],'#ffffff')||'#ffffff'; /* what a translucent colour is composited over (spec 070 FR-080) */
-      const hexOf=(k,over)=>colorHex(t[k],over||page);
+      const hexOf=(k,over)=>colorHex(t[k],k==='--bg'?'#ffffff':(over||page)); /* the page is --bg over white, never over itself */
       for(const [fg,bg,min,over] of CONTRAST_PAIRS.concat(BAR_PAIRS)){
-        const b0=hexOf(bg),a=b0&&hexOf(fg,b0); /* a pair measured as opaque colours; a form that cannot be resolved is skipped here and listed by unmeasured() */
+        const b0=hexOf(bg),b=b0&&(over?glassOver(b0,over):b0); /* a bar pair is measured on the glass fill as it shows (FR-053) */
+        const a=b&&hexOf(fg,b); /* the text is composited over what it is read on, glass included, as themeIssues does; a form that cannot be resolved is skipped here and listed by unmeasured() */
         if(!a||!b0)continue;
-        const b=over?glassOver(b0,over):b0; /* a bar pair is measured on the glass fill as it shows (FR-053) */
         if(ratio(a,b)>=min)continue;
         /* a room tint paints only the rooms, but --ink, --muted and --room-path are also read on the page, cards and tooltips (spec 040 FR-027):
            move the text token only when the result keeps every non-tint pair it is part of; else repair the tint, and the text only if no tint can reach the ratio */
@@ -647,13 +658,11 @@
 
   /* Apply a pack or id; unknown ids fall back to Clean Office (with a warning). Strings resolve
      synchronously when already known; a `resolveUser` hook (stage E) can fetch a user pack manifest. */
-  /* relative luminance below 0.35 for a #rgb/#rrggbb colour; anything else counts as light */
+  /* relative luminance below 0.35 for any colour form `parseColor` reads (alpha over white); anything else counts as light */
   function isDarkColor(v){
-    const m=/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(v||'').trim());
-    if(!m)return false;
-    let h=m[1]; if(h.length===3)h=h.split('').map(c=>c+c).join('');
-    const ch=[0,2,4].map(i=>{const c=parseInt(h.slice(i,i+2),16)/255;return c<=0.03928?c/12.92:Math.pow((c+0.055)/1.055,2.4);});
-    return 0.2126*ch[0]+0.7152*ch[1]+0.0722*ch[2]<0.35;
+    const x=colorHex(v,'#ffffff'); /* spec 070 FR-080: any colour form, alpha over white */
+    if(!x)return false;
+    return lum(x)<0.35;
   }
   function setTheme(idOrManifest){
     /* spec 077 FR-067: the old Cheeky Crew id is Clean Office with Characters = Cheeky (unless another choice is in force), no warning */
@@ -744,7 +753,7 @@
         '--line':'#3a3360','--line-2':'#4f4680','--line-ctl':'#8c84c0','--ink':'#f4eefc','--ink-2':'#d8d0ec','--muted':'#bdb5d6','--room-path':'#bdb5d6',
         '--sage':'#3d7a55','--sage-ink':'#ff77a8','--focus':'#ffec27','--focus-halo':'#ff004d','--sel-border':'#ff77a8','--sel-ring':'#3a2350','--sel-ring-2':'#33204a',
         '--stat-sel-border':'#ff77a8','--stat-sel-ring':'#3a2350','--brand-mark':'#111122','--brand-bg':'#ffec27','--avatar-bg':'#262044',
-        '--idle-stub':'#221d3d','--idle-stub-ink':'#bdb5d6','--drop':'#29adff','--drop-ink':'#cfe3ff',
+        '--idle-stub':'#221d3d','--idle-stub-ink':'#bdb5d6','--drop':'#29adff','--drop-bg':'#1b2a44','--drop-ink':'#cfe3ff',
         '--tint-sage':'#162420','--wall-sage':'#2c4a3c','--tint-blue':'#141d30','--wall-blue':'#2c3f66','--tint-sand':'#241f14','--wall-sand':'#4d4128','--tint-clay':'#291a1a','--wall-clay':'#55332f',
         '--cwall-sage':'#3c6a54','--cwall-blue':'#3c5a92','--cwall-sand':'#6e5c36','--cwall-clay':'#7a4842',
         '--red-ink':'#ff9a8f','--amber-ink':'#ffc35c','--blue-ink':'#8fc3ff'},
@@ -792,9 +801,11 @@
   function worldContrast(id){
     const t=worldTokens(id); if(!t)return null;
     const out=[];
-    for(const [fg,bg,min] of CONTRAST_PAIRS){const a=t[fg],b=t[bg];if(HEX_ANY.test(String(a||''))&&HEX_ANY.test(String(b||'')))out.push({fg,bg,min,ratio:ratio(a,b)});}
+    const page=colorHex(t['--bg'],'#ffffff')||'#ffffff'; /* spec 070 FR-080: every colour form, a translucent one over the page (as contrastFix measures) */
+    const hx=(k,over)=>colorHex(t[k],k==='--bg'?'#ffffff':(over||page));
+    for(const [fg,bg,min] of CONTRAST_PAIRS){const b=hx(bg),a=b&&hx(fg,b);if(a&&b)out.push({fg,bg,min,ratio:ratio(a,b)});}
     const dark=!!WORLD_SETS[id].dark; /* a dark world's panels hold light ink: their worst backdrop is white, not black */
-    for(const [fg,bg,min,o] of WORLD_PAIRS)for(const over of dark&&o==='#000000'?['#000000','#ffffff']:[o]){const a=t[fg],b=over?glassOver(t[bg],over):t[bg];out.push({fg,bg:bg+(over?' (glass over '+over+')':''),min,ratio:ratio(a,b)});} /* a dark world: over black and over white, both (pre-review of #1079) */
+    for(const [fg,bg,min,o] of WORLD_PAIRS)for(const over of dark&&o==='#000000'?['#000000','#ffffff']:[o]){const b0=hx(bg),b=b0&&(over?glassOver(b0,over):b0),a=b&&hx(fg,b);if(!a||!b)continue;out.push({fg,bg:bg+(over?' (glass over '+over+')':''),min,ratio:ratio(a,b)});} /* a dark world: over black and over white, both (pre-review of #1079) */
     return out;
   }
   /* the UI style while a world is shown: the world's own, else the theme's (as setTheme sets it) */
@@ -852,7 +863,7 @@
   /* spec 070 FR-022: what a theme could not use: dropped values and text pairs set back to Clean Office */
   function fallbacks(id){
     const m=loadManifest(id);
-    if(!m)return {dropped:[],contrast:[]};
+    if(!m)return {dropped:[],contrast:[],unmeasured:[]};
     const r=resolveTokens(m),user=!own(BUILT_IN,m.id);
     return {dropped:(m.dropped||[]).slice(),contrast:user?contrastFix(r):[],unmeasured:user?unmeasured(r):[]}; /* spec 070 FR-080: unmeasured = the colours a pair could not measure */
   }

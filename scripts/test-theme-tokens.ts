@@ -238,8 +238,11 @@ for (const f of FILES) {
   }
   const bad = rows.filter((r) => !(r.ratio >= r.min));
   assert.deepStrictEqual(bad.map((r) => `${r.fg} on ${r.bg} ${r.ratio.toFixed(2)}:1 < ${r.min}`), [], 'every pair of the photo world passes WCAG AA');
-  const hex = (v: string): boolean => /^#[0-9a-f]{3,8}$/i.test(String(v || ''));
-  for (const [fg, bg, min] of CONTRAST_PAIRS) if (hex(t[fg]) && hex(t[bg])) assert.ok(contrast(t[fg], t[bg]) >= min, `${fg} on ${bg}: themegen agrees`); /* non-hex (--drop-bg's rgb()) is Clean Office's, as in theme.js */
+  // spec 070 FR-080: every colour form is measured (the page is --bg over white, a translucent surface over it, text over its surface), as theme.js does
+  const pg = resolveColor(t['--bg']) as string;
+  const px = (k: string, over?: string): string => resolveColor(t[k], k === '--bg' ? '#ffffff' : over ?? pg) as string;
+  const hex = (v: string): boolean => resolveColor(v) !== null;
+  for (const [fg, bg, min] of CONTRAST_PAIRS) { assert.ok(hex(t[fg]) && hex(t[bg]), `${fg} and ${bg} are measurable colours`); const b = px(bg); assert.ok(contrast(px(fg, b), b) >= min, `${fg} on ${bg}: themegen agrees`); }
   for (const [fg, bg, min, why] of UI_PAIRS) assert.ok(contrast(t[fg], t[bg]) >= min, `${fg} on ${bg} (${why}): ${contrast(t[fg], t[bg]).toFixed(2)}:1`);
   for (const ui of ['clean', ...BRAND_UIS]) assert.deepStrictEqual(themeIssues(t, clean, ui).filter((x) => !/the top bar/.test(x)), [], `no contrast issue with ui ${ui}`);
   const worst = Math.min(...rows.map((r) => r.ratio / r.min));
@@ -262,7 +265,7 @@ for (const f of FILES) {
     for (const k of Object.keys(T._builtins()[T.CLEAN_ID].tokens).concat(Object.keys(T._tokens()))) assert.ok(c[k] !== undefined, `the cave set has ${k}`);
     for (const k of Object.keys(clean).filter((x) => /^--(c|pb|pc|halo)-|^--(amber|red|green|blue)(-ink)?$|^--desk-(new|needs)$/.test(x))) assert.strictEqual(c[k], clean[k], `cave: status colour ${k} is unchanged`);
     assert.deepStrictEqual(cr.filter((r) => !(r.ratio >= r.min)).map((r) => `${r.fg} on ${r.bg} ${r.ratio.toFixed(2)}:1 < ${r.min}`), [], 'every pair of the cave world passes WCAG AA');
-    for (const [fg, bg, min] of CONTRAST_PAIRS) if (hex(c[fg]) && hex(c[bg])) assert.ok(contrast(c[fg], c[bg]) >= min, `cave: ${fg} on ${bg}: themegen agrees`);
+    for (const [fg, bg, min] of CONTRAST_PAIRS) { assert.ok(hex(c[fg]) && hex(c[bg]), `cave: ${fg} and ${bg} are measurable`); const cp = resolveColor(c['--bg']) as string, b = resolveColor(c[bg], bg === '--bg' ? '#ffffff' : cp) as string; assert.ok(contrast(resolveColor(c[fg], b) as string, b) >= min, `cave: ${fg} on ${bg}: themegen agrees`); }
     for (const [fg, bg, min, why] of UI_PAIRS) assert.ok(contrast(c[fg], c[bg]) >= min, `cave: ${fg} on ${bg} (${why})`);
   }
   console.log(`photo world: ${rows.length} pairs + ${UI_PAIRS.length} UI pairs pass; tightest margin ${worst.toFixed(2)}x its minimum`);
@@ -609,4 +612,87 @@ console.log('toggle switch: on track, both knobs pass 3:1 in Clean Office and th
   assert.ok(!fk.contrast.includes('--ink'), 'and left as written');
   // built-ins report nothing (designed by hand)
   console.log('theme colour forms: measured, repaired or reported');
+}
+
+// ---- review of #1307 (FR-030): the findings, one test each ----
+{
+  const doc = { documentElement: { style: { setProperty() { /* */ }, removeProperty() { /* */ } }, dataset: {} as Record<string, string> } };
+  (global as unknown as { document?: unknown }).document = doc;
+  const file = require.resolve(path.join(ROOT, 'src', 'renderer', 'theme.js'));
+  delete require.cache[file];
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const R = require(file) as typeof T;
+  const CL = R._tokens() as Record<string, string>;
+  const reg = (id: string, tokens: Record<string, string>): void => { R.registerUserThemes({ [id]: { id, tokens } }); };
+  const issuesOf = (tokens: Record<string, string>): string[] => themeIssues(tokens, CL);
+  // 1. a name that is an Object.prototype member is not a colour, in both parsers (it used to throw in themegen.ts)
+  for (const n of ['constructor', '__proto__', 'toString', 'hasOwnProperty', 'valueOf']) {
+    assert.strictEqual(parseColor(n), null, n); assert.deepStrictEqual(R.parseColor(n), null, n);
+    assert.ok(issuesOf({ '--ink': n }).some((i) => i.startsWith(`--ink (${n}) is in a contrast pair`)), `${n} is reported unmeasured, not thrown`);
+  }
+  // 4. the two CSS grammars are not mixed; both parsers refuse the same malformed forms and read the same good ones
+  const grammar = ['rgb(0 0 0 0)', 'rgb(0,,0,0)', 'rgb(0, 0 0)', 'rgb(0 0, 0)', 'rgb(0,0,0 / .5)', 'rgb(0 0 0 / )', 'rgb(0,0,0,)', 'rgb(0 0 0 / .5 / .5)', 'hsl(0 100% 50% 50%)', 'rgb(0 0 0/.5)', 'rgb( 0 , 0 , 0 )', 'rgb(0 0 0 / 50%)', 'hsl(0,100%,50%,.5)', 'rgb(1,2,3,.5)'];
+  for (const g of grammar) assert.deepStrictEqual(R.parseColor(g), parseColor(g), `parsers agree on ${g}`);
+  for (const bad of grammar.slice(0, 9)) assert.strictEqual(parseColor(bad), null, `${bad} is not a colour`);
+  for (const good of grammar.slice(9)) assert.notStrictEqual(parseColor(good), null, `${good} is a colour`);
+  // 12. alpha is clamped to 0..1, both forms, both parsers
+  for (const [v, a] of [['rgb(0 0 0 / 2)', 1], ['rgb(0 0 0 / -1)', 0], ['rgb(0 0 0 / 200%)', 1], ['rgba(0,0,0,5)', 1], ['hsl(0 0% 0% / 3)', 1]] as Array<[string, number]>) { assert.strictEqual(parseColor(v)?.[3], a, v); assert.strictEqual(R.parseColor(v)?.[3], a, v); }
+
+  // 2. a translucent --bg is composited over white once: the page is #808080, not #404040
+  assert.deepStrictEqual(issuesOf({ '--bg': 'rgba(0,0,0,.5)', '--ink': '#111111' }).filter((i) => /^--ink .* on --bg/.test(i)), [], 'ink #111 on the painted page #808080 (4.8:1) is not reported');
+  assert.ok(issuesOf({ '--bg': 'rgba(0,0,0,.5)', '--ink': '#444444' }).some((i) => /^--ink .* on --bg/.test(i)), 'and #444 on #808080 is');
+  reg('tr-page', { '--bg': 'rgba(0,0,0,.5)', '--ink': '#111111', '--room-path': '#111111' });
+  assert.ok(!(R.fallbacks('tr-page').contrast as string[]).includes('--ink'), 'the renderer does not repair what reads at 4.8:1 on the translucent page');
+  // 12. the renderer's translucent surface over a non-white page: white at 10% over a black page paints #1a1a1a (every surface the text pairs read on is set so)
+  const glassy: Record<string, string> = { '--bg': '#000000' };
+  for (const [fg, bg] of CONTRAST_PAIRS) if (/^--(ink|ink-2|muted|room-path)$/.test(fg) && bg !== '--bg') glassy[bg] = 'rgba(255,255,255,.1)';
+  reg('tr-surf-ok', { ...glassy, '--ink': '#dddddd', '--ink-2': '#dddddd', '--muted': '#dddddd', '--room-path': '#dddddd' });
+  assert.deepStrictEqual((R.fallbacks('tr-surf-ok').contrast as string[]).filter((k) => /^--(ink|ink-2|muted|room-path)$/.test(k)), [], 'light text on the dark translucent surfaces reads, no text token is repaired (composited over white they would read #f0f0f0, 1.4:1)');
+  assert.deepStrictEqual(themeIssues({ ...glassy, '--ink': '#dddddd', '--ink-2': '#dddddd', '--muted': '#dddddd', '--room-path': '#dddddd' }, CL).filter((i) => /^--(ink|ink-2|muted|room-path) /.test(i)), [], 'and themegen agrees');
+  reg('tr-surf-low', { ...glassy, '--ink': '#222222' });
+  assert.ok((R.fallbacks('tr-surf-low').contrast as string[]).includes('--ink'), 'dark ink on them is repaired');
+  // 3. translucent bar text: check and repair agree on the glass (over the glass, not the bare background); swept over alphas
+  const wbBg = { '--wb-bg': '#000000', '--wb-bg-2': '#000000', '--wb-surface': '#000000', '--wb-surface-2': '#000000', '--wb-warn-bg': '#000000' };
+  let flagged = 0;
+  for (let a = 0.2; a <= 0.8; a += 0.005) {
+    const ink = `rgba(255,255,255,${a.toFixed(3)})`, tk = { ...wbBg, '--wb-ink': ink };
+    const said = themeIssues(tk, CL).some((i) => i.startsWith('--wb-ink ')), fixed = (() => { reg('bar-alpha', tk); return (R.fallbacks('bar-alpha').contrast as string[]).includes('--wb-ink'); })();
+    assert.strictEqual(fixed, said, `bar text ${ink}: themeIssues ${said}, contrastFix ${fixed}`);
+    if (said) flagged++;
+  }
+  assert.ok(flagged > 0 && flagged < 121, `the sweep crosses the 4.5:1 line (${flagged} of 121 flagged)`);
+  // 12. a bar token set to a value that cannot be measured is reported by both
+  assert.ok(issuesOf({ '--wb-ink': 'currentColor' }).some((i) => i.startsWith('--wb-ink (currentColor) is in a contrast pair')), 'themeIssues names an unmeasured --wb-ink');
+  reg('bar-kw', { '--wb-ink': 'currentColor' });
+  assert.ok((R.fallbacks('bar-kw').unmeasured as string[]).includes('--wb-ink'), 'fallbacks lists it');
+  assert.ok(!(R.fallbacks('bar-kw').contrast as string[]).includes('--wb-ink'), 'and does not change it');
+
+  // 5. worlds: worldContrast measures every colour form; the arcade sets its own --drop-bg (dark ink was left on Clean Office's light drop zone)
+  for (const id of R.WORLD_IDS as string[]) {
+    const rows = R.worldContrast(id) as Array<{ fg: string; bg: string; min: number; ratio: number }>, t = R.worldTokens(id) as Record<string, string>;
+    const expect = CONTRAST_PAIRS.filter(([f, b]) => resolveColor(t[f]) !== null && resolveColor(t[b]) !== null).length;
+    assert.ok(rows.filter((r) => CONTRAST_PAIRS.some(([f, b]) => f === r.fg && b === r.bg)).length >= expect, `${id}: every page pair is measured, rgb() ones too`);
+    assert.ok(rows.some((r) => r.fg === '--drop-ink' && r.bg === '--drop-bg'), `${id}: the drop zone pair is measured`);
+    assert.deepStrictEqual(rows.filter((r) => !(r.ratio >= r.min)).map((r) => `${id} ${r.fg} on ${r.bg} ${r.ratio.toFixed(2)}`), [], `${id}: every pair passes`);
+  }
+  const arcade = R.worldTokens('retro') as Record<string, string>;
+  assert.ok(luminance(resolveColor(arcade['--drop-bg']) as string) < 0.1 && /^#[0-9a-f]{6}$/i.test(arcade['--drop-bg']), 'the arcade has its own dark --drop-bg');
+  assert.ok(contrast(arcade['--drop-ink'], arcade['--drop-bg']) >= 4.5, 'its drop zone reads');
+
+  // 6. data-dark follows --surface in any colour form
+  for (const [v, dark] of [['rgb(20 20 30)', true], ['hsl(240 20% 10%)', true], ['black', true], ['#000000ff', true], ['rgb(250 250 250)', false], ['white', false], ['rgba(0,0,0,.1)', false], ['currentColor', false]] as Array<[string, boolean]>) {
+    reg('dk', { '--surface': v }); R.setTheme('dk');
+    assert.strictEqual('dark' in doc.documentElement.dataset, dark, `data-dark for --surface ${v}`);
+  }
+  R.setTheme(R.CLEAN_ID);
+
+  // 9. a missing manifest still has every key
+  assert.deepStrictEqual(R.fallbacks('no-such-theme'), { dropped: [], contrast: [], unmeasured: [] }, 'fallbacks of an unknown id');
+
+  // 14. a user theme with a light --drop-ink and no --drop-bg of its own is now adjusted (the drop zone it sets over Clean Office's light one used to pass unseen)
+  reg('light-drop-ink', { '--drop-ink': '#e0ecf8' });
+  assert.deepStrictEqual(R.fallbacks('light-drop-ink').contrast, ['--drop-ink'], 'its --drop-ink is adjusted and counted for the Settings note');
+  assert.ok(issuesOf({ '--drop-ink': '#e0ecf8' }).some((i) => i.startsWith('--drop-ink (#e0ecf8) on --drop-bg (rgb(233 241 248 / .93))')), 'and themeIssues reports it');
+  delete (global as unknown as { document?: unknown }).document;
+  console.log('review of #1307: own-property names, one grammar, translucent page and bar, worlds, data-dark, unmeasured bar tokens, alpha clamp');
 }

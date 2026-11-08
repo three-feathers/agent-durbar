@@ -1,6 +1,7 @@
 /** Contrast rules for user themes (spec 040 FR-017, FR-027; the AI theme maker was retired, FR-031): `themeIssues`, `CONTRAST_PAIRS`, `contrast`. `npm run test:themegen`. Specs 096 and 102 reuse them. */
 import * as assert from 'assert';
 import * as path from 'path';
+import { createHash } from 'crypto';
 import { CONTRAST_PAIRS, NAMED_COLOURS, contrast, parseColor, resolveColor, themeIssues } from '../src/shared/themegen';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -79,11 +80,27 @@ assert.ok(Object.keys(clean).length > 100, 'all of Clean Office');
   eq('white', [255, 255, 255, 1]); eq('Rebeccapurple', [102, 51, 153, 1]); eq('transparent', [0, 0, 0, 0]);
   // what it cannot resolve is null: keywords, var(), color-mix(), calc(), an angle unit but deg, malformed
   for (const bad of ['currentColor', 'inherit', 'initial', 'none', 'notacolour', 'var(--x)', 'color-mix(in srgb, red 50%, blue)', 'rgb(calc(1+1) 0 0)', 'hsl(1turn 50% 50%)', 'hsl(0 50 50)', 'rgb(1 2)', '#12', '#12345', 'rgb(1 2 3 4 5)', '']) assert.strictEqual(parseColor(bad), null, bad);
-  // all 148 CSS names agree with the npm `color-name` table
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const cn = require('color-name') as Record<string, number[]>;
+  // all 148 CSS names: the table is pinned by a hash of "name:rrggbb" (sorted) computed from the npm `color-name` 1.1.4 table when this was written
+  // (it is only a transitive dev dependency, so the test does not require it), plus values of the CSS Color 4 spec
   assert.strictEqual(Object.keys(NAMED_COLOURS).length, 148);
-  for (const [k, v] of Object.entries(cn)) assert.deepStrictEqual(parseColor(k)?.slice(0, 3), v, k);
+  const table = Object.keys(NAMED_COLOURS).sort().map((k) => `${k}:${NAMED_COLOURS[k]}`).join(',');
+  assert.strictEqual(createHash('sha256').update(table).digest('hex'), '2e0dc585a01c414f086e17cbd8b1cbe39a1032e9757b57ac54b0d8cb304b70a4', 'the named colours are the CSS Color 4 table');
+  for (const [k, v] of Object.entries({ red: [255, 0, 0], rebeccapurple: [102, 51, 153], lightgoldenrodyellow: [250, 250, 210], darkslategrey: [47, 79, 79], yellowgreen: [154, 205, 50] })) assert.deepStrictEqual(parseColor(k)?.slice(0, 3), v, k);
+  // a name that is an Object.prototype member is not a colour (review of #1307: it used to throw)
+  for (const k of ['constructor', '__proto__', 'toString', 'hasOwnProperty', 'valueOf']) { assert.strictEqual(parseColor(k), null, k); assert.doesNotThrow(() => themeIssues({ '--ink': k }, clean), k); }
+  // the two grammars of rgb()/hsl() are not mixed (CSS rejects these, and the page falls back to an inherited colour)
+  for (const bad of ['rgb(0 0 0 0)', 'rgb(0,,0,0)', 'rgb(0, 0 0)', 'rgb(0 0, 0)', 'rgb(0,0,0 / .5)', 'rgb(0 0 0 / )', 'rgb(0,0,0,)', 'rgb(0 0 0 / .5 / .5)', 'hsl(0 100% 50% 50%)']) assert.strictEqual(parseColor(bad), null, bad);
+  for (const good of ['rgb(0 0 0/.5)', 'rgb( 0 , 0 , 0 )', 'rgb(0 0 0 / 50%)', 'rgba(1,2,3,.5)']) assert.notStrictEqual(parseColor(good), null, good);
+  // alpha is clamped to 0..1
+  for (const [v, a] of [['rgb(0 0 0 / 2)', 1], ['rgb(0 0 0 / -1)', 0], ['rgb(0 0 0 / 200%)', 1], ['rgba(0,0,0,5)', 1]] as Array<[string, number]>) assert.strictEqual(parseColor(v)?.[3], a, v);
+  assert.strictEqual(resolveColor('rgb(0 0 0 / 2)'), '#000000'); assert.strictEqual(resolveColor('rgb(0 0 0 / -1)'), '#ffffff');
+  // a translucent --bg is composited over white once: rgba(0,0,0,.5) paints #808080, so #111 ink reads 4.8:1 (it was measured on #404040, 1.8:1)
+  assert.deepStrictEqual(themeIssues({ '--bg': 'rgba(0,0,0,.5)', '--ink': '#111111' }, clean).filter((i) => /^--ink .* on --bg/.test(i)), []);
+  assert.ok(themeIssues({ '--bg': 'rgba(0,0,0,.5)', '--ink': '#444444' }, clean).some((i) => /^--ink .* on --bg/.test(i)), '#444 on #808080 fails');
+  // translucent bar text is composited over the glass fill
+  assert.ok(themeIssues({ '--wb-bg': '#000000', '--wb-bg-2': '#000000', '--wb-surface': '#000000', '--wb-surface-2': '#000000', '--wb-warn-bg': '#000000', '--wb-ink': 'rgba(255,255,255,.3)' }, clean).some((i) => i.startsWith('--wb-ink ')), 'faint bar text is caught');
+  // a bar token that cannot be measured is reported
+  assert.ok(themeIssues({ '--wb-ink': 'currentColor' }, clean).some((i) => i.startsWith('--wb-ink (currentColor) is in a contrast pair')), 'unmeasured --wb-ink');
   // alpha is composited over the page, not ignored
   assert.strictEqual(resolveColor('rgba(0,0,0,.5)', '#ffffff'), '#808080');
   assert.strictEqual(resolveColor('#ff000000', '#00ff00'), '#00ff00');

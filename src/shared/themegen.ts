@@ -33,12 +33,23 @@ export function parseColor(v: string): Rgba | null {
     return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)).concat([h.length === 8 ? parseInt(h.slice(6), 16) / 255 : 1]) as Rgba;
   }
   if (/^[a-z]+$/.test(s)) {
-    const h = NAMED_COLOURS[s];
+    const h = Object.prototype.hasOwnProperty.call(NAMED_COLOURS, s) ? NAMED_COLOURS[s] : undefined; // own property: `constructor` is not a colour
     return h ? [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)).concat([1]) as Rgba : null;
   }
   m = /^(rgba?|hsla?)\(([^()]*)\)$/.exec(s);
   if (!m) return null;
-  const args = m[2].split(/[\s,/]+/).filter(Boolean);
+  // CSS has two grammars and never mixes them: `a, b, c[, alpha]` or `a b c[ / alpha]`
+  const body = m[2].trim();
+  let args: string[];
+  if (body.includes(',')) {
+    if (body.includes('/')) return null;
+    args = body.split(',').map((x) => x.trim());
+    if (args.some((x) => !x)) return null;
+  } else {
+    const sp = /^([^\s/]+)\s+([^\s/]+)\s+([^\s/]+)(?:\s*\/\s*([^\s/]+))?$/.exec(body);
+    if (!sp) return null;
+    args = sp.slice(1).filter((x) => x !== undefined);
+  }
   if (args.length !== 3 && args.length !== 4) return null;
   const NUM = /^[+-]?(\d+\.?\d*|\.\d+)(%?)$/;
   const num = (a: string): [number, boolean] | null => { const n = NUM.exec(a); return n ? [parseFloat(a), n[2] === '%'] : null; };
@@ -136,7 +147,7 @@ export function themeIssues(tokens: Record<string, string>, clean: Record<string
   const c = (k: string, over: string): string | undefined => {
     const v = raw(k);
     if (v === undefined) return undefined;
-    const r = resolveColor(v, over);
+    const r = resolveColor(v, k === '--bg' ? '#ffffff' : over); // the page is --bg over white, never over itself
     if (r === null) { unmeasured.set(k, v); return undefined; }
     return r;
   };
@@ -187,6 +198,6 @@ export function themeIssues(tokens: Record<string, string>, clean: Record<string
     if (missing.length) out.push(`the page is dark but these tokens keep the light default; set them for the dark look: ${missing.join(', ')}`);
   }
   // spec 070 FR-080: a value the check cannot resolve (currentColor, inherit, ...) is reported, never passed silently
-  for (const [k, v] of unmeasured) out.push(`${k} (${v}) is in a contrast pair but is not a colour that can be measured, so its contrast is unmeasured; use #hex, rgb(), hsl() or a colour name`);
+  for (const [k, v] of unmeasured) out.push(`${k} (${v}) is in a contrast pair but is not a colour that can be measured, so its contrast is unmeasured; give it as a hex, rgb or hsl colour`);
   return out;
 }
