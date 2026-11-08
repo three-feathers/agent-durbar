@@ -127,7 +127,9 @@ module.exports = async (ctx) => {
     /* ---- 2. a key on a plate moves its desk one place, the focus stays, the words are the flat office's ---- */
     const P = await plates(A), pa = await pathOf(A);
     /* who is away is the simulator's choice (an away desk is a narrow plate and does not move): every step picks from the plates that can move, never a fixed place in the row */
+    const alreadyFirst = `/is already first/.test(document.getElementById('srAnnounce').textContent)`, focusExpr = `document.activeElement&&document.activeElement.dataset.id`;
     const walk = async (P, label) => {
+      const awayExpr = `[...document.querySelectorAll('#stage .ro-plate.narrow[data-id]')].map(p=>p.dataset.id)`, savedExpr = `window.__durbarSimUi.order.get().desks[${jsLiteral(pa)}]`;
       const awayA = await js(`[...document.querySelectorAll('#stage .ro-plate.narrow[data-id]')].map(p=>p.dataset.id)`);
       const movable = P.map((id, i) => (awayA.includes(id) ? -1 : i)).filter((i) => i >= 0);
       const k = movable.find((i) => i >= 1);
@@ -156,7 +158,8 @@ module.exports = async (ctx) => {
       await js(`document.getElementById('srAnnounce').textContent=''`);
       assert.ok(await focus(`#stage .ro-plate[data-id="${P[m0]}"]`), `${tag}: the first plate takes the focus`);
       await key('Left', ['alt'], { char: 'never' });
-      await must(`/is already first/.test(document.getElementById('srAnnounce').textContent)`, async () => `${tag}: the first desk says it is already first (${label}; heard now: ${await said()}; plates ${await plates(A)}, away ${await js(`[...document.querySelectorAll('#stage .ro-plate.narrow[data-id]')].map(p=>p.dataset.id)`)}, saved ${await js(`window.__durbarSimUi.order.get().desks[${jsLiteral(pa)}]`)}, focus ${await js(`document.activeElement&&document.activeElement.dataset.id`)})`);
+      const diag = async () => [tag, label, 'heard now: ' + await said(), 'plates ' + await plates(A), 'away ' + await js(awayExpr), 'saved ' + await js(savedExpr), 'focus ' + await js(focusExpr)].join('; ');
+      await must(alreadyFirst, async () => 'the first desk says it is already first (' + await diag() + ')');
       assert.deepStrictEqual(await plates(A), front, `${tag}: and nothing moved`);
       for (let i = 0; i < m0; i++) {
         await key('Right', ['alt'], { char: 'never' });
@@ -168,8 +171,8 @@ module.exports = async (ctx) => {
     /* the case the simulator only sometimes makes, made every time: the first two desks of the room stand away at a place, so the first desk that can move has an away desk before it (it swaps past them, and says already first only at the front of the whole room) */
     {
       const agentsMain = await js(`window.__durbarSimUi.agents().filter(a=>!a.parent).map(a=>a.id)`), P1 = await plates(A);
-      for (const id of P1.slice(0, 2)) await js(`window.__durbarSimUi.crowd('library',1,${agentsMain.indexOf(id)})`);
-      await must(`['${P1[0]}','${P1[1]}'].every(id=>{const e=document.querySelector('#stage .ro-plate[data-id="'+id+'"]');return e&&e.classList.contains('narrow')})`, `${tag}: the first two desks of the room are away (${P1})`);
+      for (const id of P1.slice(0, 2)) await js(`window.__durbarSimUi.crowd('library',1,${jsLiteral(agentsMain.indexOf(id))})`);
+      await must(`${jsLiteral([P1[0], P1[1]])}.every(id=>{const e=document.querySelector('#stage .ro-plate[data-id="'+id+'"]');return e&&e.classList.contains('narrow')})`, `${tag}: the first two desks of the room are away (${P1})`);
       const P2 = await plates(A);
       assert.deepStrictEqual(P2.slice(0, 2), P1.slice(0, 2), `${tag}: they keep their places in the row (${P1} / ${P2})`);
       await walk(P2, 'the first two desks away');
