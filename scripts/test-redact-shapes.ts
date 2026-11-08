@@ -6,6 +6,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
+import { spawnSync } from 'child_process';
 import { finishEdit } from '../src/shared/edits';
 import { heldSamples, heldSurfaces, jwtFuzzTexts, JWT_HELD, longestSurvivor } from './redact-held-lib';
 import { REDACT_MAX_CHARS, _maskSourcesForTest, maskBareTokenShapes, maskNoteText, maskSecretArgs, maskKeepingMarkdownReference, maskOutgoing, maskSecretCommand, maskSecretUrl, maskTokenShapes, maskTokenShapesUnguarded, redact, redactMarkdown, unhide } from '../src/shared/redact';
@@ -366,6 +367,24 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
   const sources = _maskSourcesForTest();
   assert.ok(sources.length > 15, 'the sources are listed');
   for (const src of sources) assert.strictEqual(nested(src), undefined, `nested quantifier in ${src.slice(0, 60)}`);
+  // review of PR 1317, round 2: a lookbehind holds no unbounded quantifier (`*`, `+`, `{n,}`): it is retried at every position and walks back over the whole run, quadratic on some V8 versions
+  // (the unbounded quote run in the lookbehind of `named` took 3.5 s at 8,000 quotes on the reviewer's machine and not on Node 24, so the check is on the source, not on a clock)
+  const lookbehindUnbounded = (src: string): string | undefined => {
+    const flat = src.replace(/\\./g, '__').replace(/\[(?:[^\]\\]|\\.)*\]/g, '_');
+    for (let i = flat.indexOf('(?<'); i >= 0; i = flat.indexOf('(?<', i + 1)) {
+      if (flat[i + 3] !== '=' && flat[i + 3] !== '!') continue;
+      let depth = 0;
+      let j = i;
+      for (; j < flat.length; j++) { if (flat[j] === '(') depth++; else if (flat[j] === ')' && --depth === 0) break; }
+      const inside = flat.slice(i, j + 1);
+      if (/[*+]|\{[0-9]+,\}/.test(inside.replace(/^\(\?<[=!]/, ''))) return src.slice(i, i + 60);
+    }
+    return undefined;
+  };
+  assert.ok(lookbehindUnbounded('a(?<=x*)b'), 'the walker sees an unbounded lookbehind');
+  assert.ok(lookbehindUnbounded('a(?<!(?:x|y)+)b'), 'the walker sees an unbounded repeat of a group in a lookbehind');
+  assert.strictEqual(lookbehindUnbounded('a(?<=[a-z]{1,3}\\*?)b(?<![A-Za-z])'), undefined, 'a bounded lookbehind is fine');
+  for (const src of sources) assert.strictEqual(lookbehindUnbounded(src), undefined, `#1317 round 2: an unbounded quantifier in a lookbehind: ${src.slice(0, 60)}`);
 }
 
 // Linear, part 2 (adversarial runs): the `shapes` part of test-redact-growth.ts.
@@ -428,6 +447,92 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
       for (let k = 0; k < n; k++) { const [pre, g] = fam[rnd(fam.length)]; parts.push([pre, g()]); }
       check(parts, `chain ${i}: ${parts.map(([p2]) => p2).join('')}`);
     }
+  }
+  // Issue #1237 (spec 012 FR-173): tokens of DIFFERENT families written back to back. Every ordered pair of the bare-token samples of FAMILIES (a family added later is covered) is
+  // one run of masks with no run of 8 letters or digits left; then the issue's own pairs by name.
+  {
+    const left = (out: string): string => out.replace(/\[redacted\]/g, '');
+    const readable = (out: string): boolean => /[A-Za-z0-9]{8}/.test(left(out));
+    const flat: Array<[string, string]> = [];
+    for (const [family, samples] of Object.entries(FAMILIES)) {
+      if (CONTEXT.has(family)) continue;
+      for (const sample of samples) if (!GLUE_GAP.has(sample.slice(0, 8))) flat.push([family, sample]);
+    }
+    const sampleOf = (prefix: string): string => { const f = flat.find(([, x]) => x.startsWith(prefix)); assert.ok(f, `a sample starts with ${prefix}`); return f![1]; };
+    // the issue's repro: A = 'sk-' + 40, B = 'hf_' + 30; the same with glpat- + 20, xoxb- + 20, and B a PREFIXED family
+    const A: Array<[string, string]> = [['sk-', 'sk-' + an(40)], ['glpat-', 'glpat-' + an(20)], ['xoxb-', 'xoxb-' + an(20)], ['xapp-', 'xapp-1-' + an(20)], ['gh' + 'p_', 'gh' + 'p_' + an(36)], ['github' + '_pat_', 'github' + '_pat_' + an(22) + '_' + an(59)]];
+    const B: Array<[string, string]> = [['hf_', 'hf' + '_' + an(30)], ['vcc_', 'vc' + 'c_' + an(50)], ['lin_', sampleOf('lin_')], ['sbp_', sampleOf('sbp_')], ['AstraCS', sampleOf('AstraCS')], ['ya29.', sampleOf('ya29.')]];
+    for (const [la, a] of A) for (const [lb, b] of B) {
+      const out = redact(a + b, {});
+      assert.ok(out.includes('[redacted]') && !readable(out), `#1237: ${la} then ${lb}: a body is readable in ${out.replace(/[A-Za-z0-9]{12,}/g, '<LEAK>')}`);
+      assert.ok(!out.includes(b.slice(-12)), `#1237: ${la} then ${lb}: the end of the second token is readable in ${out.replace(/[A-Za-z0-9]{12,}/g, '<LEAK>')}`);
+    }
+    // a base64 shape first (AKLT, GOOG1, LTAI, AKCp, eyJrIjoi, an X bearer), then a token of another family
+    const B64: Array<[string, string]> = [['AKLT', sampleOf('AK' + 'LT')], ['GOOG1', sampleOf('GO' + 'OG1')], ['LTAI', sampleOf('LT' + 'AI')], ['AKCp', 'AK' + 'Cp' + an(60)], ['eyJrIjoi', 'ey' + 'JrIjoi' + an(70)], ['X bearer', sampleOf('AAAAAAAAAAAAAAAAAAAAAAB')]];
+    for (const [la, a] of B64) for (const [lb, b] of B) {
+      const out = redact(a + b, {});
+      assert.ok(out.includes('[redacted]') && !readable(out), `#1237: ${la} then ${lb}: a body is readable in ${out.replace(/[A-Za-z0-9]{12,}/g, '<LEAK>')}`);
+    }
+    // the eight prefixed pairs: `sk.eyJ` or `ops_eyJ` before `pat.` or `sc_`; `sc_` before `fm1r_`, `fm2_`, `ops_eyJ` or `xkeysib-`
+    const pairs: Array<[string, string]> = [['sk.eyJ', 'pat.'], ['sk.eyJ', 'sc_'], ['ops_eyJ', 'pat.'], ['ops_eyJ', 'sc_'], ['sc_', 'fm1r_'], ['sc_', 'fm2_'], ['sc_', 'ops_eyJ'], ['sc_', 'xkeysib-']];
+    for (const [pa, pb] of pairs) {
+      const out = redact(sampleOf(pa) + sampleOf(pb), {});
+      assert.ok(!readable(out), `#1237: ${pa} then ${pb}: a body is readable in ${out.replace(/[A-Za-z0-9]{12,}/g, '<LEAK>')}`);
+    }
+    // all of them, every order
+    let n = 0;
+    for (const [fa, a] of flat) for (const [fb, b] of flat) {
+      const out = redact(a + b, {});
+      if (readable(out) || !out.includes('[redacted]')) assert.fail(`#1237: pair ${fa} ${a.slice(0, 8)}… + ${fb} ${b.slice(0, 8)}…: a body is readable in ${out.replace(/[A-Za-z0-9]{12,}/g, '<LEAK>').slice(0, 80)}`);
+      n++;
+    }
+    assert.ok(n > 15000, `#1237: the pair loop ran: ${n}`);
+    // pre-review of PR 1317: a base64 token has `/` and `+` in its body, and the first token's body stops there, so the rest starts with one of them (the pair loop above has no such sample)
+    {
+      const abs = 'AB' + 'SK' + an(30) + '/' + an(30) + '+' + an(50) + '==';
+      for (const [la, a] of A) {
+        const out = redact(a + abs, {});
+        assert.ok(out.includes('[redacted]') && !readable(out), `#1237: ${la} then ABSK with / and +: a rest after the first / or + is readable in ${out.replace(/[A-Za-z0-9]{12,}/g, '<LEAK>')}`);
+      }
+      const gh2 = 'gh' + 'p_' + an(36);
+      assert.strictEqual(redact(gh2 + '/v1/chat/completions', {}), '[redacted]/v1/chat/completions', '#1237: a short path after a token stays (fewer than 32 letters and digits after a /)');
+      assert.strictEqual(redact(gh2 + '+' + an(31), {}), '[redacted]+' + an(31), '#1237: 31 letters and digits after a + stay');
+      assert.strictEqual(redact(gh2 + '+' + an(32), {}), '[redacted]', '#1237: 32 letters and digits after a + are the rest of a token');
+      // pre-review of PR 1317: the counts and the start characters are pinned from both sides, so a threshold moved by one or a start character added is caught
+      assert.strictEqual(redact(gh2 + '.' + an(8), {}), '[redacted]', '#1237: exactly 8 letters and digits after a . are the rest of a token (GLUE_MIN)');
+      assert.strictEqual(redact(gh2 + '_' + an(16), {}), '[redacted]', '#1237: exactly 16 letters and digits after a _ are the rest of a token (GLUE_MIN_UNDERSCORE)');
+      assert.strictEqual(redact(gh2 + '_' + an(15), {}), '[redacted]_' + an(15), '#1237: 15 after a _ stay (GLUE_MIN_UNDERSCORE)');
+      assert.strictEqual(redact(gh2 + '/repos/owner/project', {}), '[redacted]/repos/owner/project', '#1237: a repository path after a token stays (GLUE_START has no / below 32)');
+      assert.strictEqual(redact(gh2 + '/' + an(32), {}), '[redacted]', '#1237: 32 letters and digits after a / are the rest of a token (GLUE_MIN_B64)');
+      assert.strictEqual(redact(gh2 + '=' + an(40), {}), '[redacted]=' + an(40), '#1237: `=` does not start a glued rest (GLUE_START)');
+      assert.strictEqual(redact(gh2 + '?' + an(40), {}), '[redacted]?' + an(40), '#1237: `?` does not start a glued rest (GLUE_START)');
+    }
+    // pre-review of PR 1317: the GOOG1 rule has the base64 list's start and line-break rules (each asserted alone: remove one and its own line fails)
+    {
+      const g1 = 'GO' + 'OG1' + up(44);
+      assert.strictEqual(redact('ab/' + g1, {}), 'ab/' + g1, '#1237: GOOG1 after a / is base64 text, not a key (the start rule)');
+      assert.strictEqual(redact(an(76) + '\n' + g1 + '\n' + an(76), {}), an(76) + '\n' + g1 + '\n' + an(76), '#1237: GOOG1 as one line of a wrapped base64 block stays (the line-break rules)');
+      assert.strictEqual(redact(g1 + '\n' + an(76), {}), g1 + '\n' + an(76), '#1237: GOOG1 before a base64 line stays (the line-break lookahead)');
+      assert.strictEqual(redact(an(76) + '\n' + g1, {}), an(76) + '\n' + g1, '#1237: GOOG1 after a base64 line stays (the line-break lookbehind)');
+      assert.strictEqual(redact('key ' + g1, {}), 'key [redacted]', '#1237: a GOOG1 key after a space is a key');
+    }
+    // pre-review of PR 1317: an empty mask finds itself at every place; the scan must still end (a child with a timeout: a loop that does not end cannot be caught in this process)
+    {
+      const child = spawnSync(process.execPath, ['-e', `const r=require(${JSON.stringify(path.join(__dirname, '..', 'src', 'shared', 'redact'))});r.maskTokenShapes(' a ['+'x]b '+'c'.repeat(9)+' d','');process.stdout.write('ok')`], { timeout: 8000, encoding: 'utf8' });
+      assert.ok(!child.error && child.status === 0 && child.stdout === 'ok', `#1237: maskTokenShapes with an empty mask returns (no endless scan): ${child.error ? String(child.error.message) : `status ${child.status}`}`);
+    }
+    // what stays: a separator keeps two masks, and a short rest (a port, `.git`, an encoded space, a short word) is not a second token
+    const gh = 'gh' + 'p_' + an(36);
+    assert.strictEqual(redact(gh + '.git', {}), '[redacted].git', '#1237: `.git` after a token stays');
+    assert.strictEqual(redact(gh + ':8080', {}), '[redacted]:8080', '#1237: a port after a token stays');
+    assert.strictEqual(redact(gh + '%20ok', {}), '[redacted]%20ok', '#1237: an encoded space and a short word stay');
+    assert.strictEqual(redact(gh + '_' + an(15), {}), '[redacted]_' + an(15), '#1237: a suffix of 15 characters after `_` stays, as in FR-169');
+    assert.strictEqual(redact(gh + '.' + an(7), {}), '[redacted].' + an(7), '#1237: 7 characters after a token stay');
+    assert.strictEqual(redact(gh + '/x', {}), '[redacted]/x', '#1237: a path after a token stays');
+    assert.strictEqual(redact(gh + ' hf_' + an(30), {}), '[redacted] [redacted]', '#1237: a space keeps two masks');
+    assert.strictEqual(redact('Key is [redacted]' + an(10) + '.', {}), 'Key is [redacted].', '#1237: the full stop of a sentence after a glued rest stays');
+    assert.strictEqual(redact('Key is [redacted]' + an(10) + ': next', {}), 'Key is [redacted]: next', '#1237: a colon after a glued rest stays');
+    assert.strictEqual(redact('go' + 'og1 ' + 'GO' + 'OG1' + up(10), {}), 'go' + 'og1 ' + 'GO' + 'OG1' + up(10), '#1237: a short GOOG1 run is no key');
   }
   // F1: a plain list of prefixes is no token (the `_` after a lead counts only after a full body of letters and digits)
   for (const t of ['the prefixes ' + 'gh' + 'p_gho_ghu_ghs_ghr_gh' + 'p_gho_ghu_', ('gh' + 'p_').repeat(40), ('np' + 'm_gh' + 'p_').repeat(20)]) assert.strictEqual(redact(t, {}), t, `a prefix list stays: ${t.slice(0, 30)}`);
@@ -625,6 +730,108 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
   // #1298: the glued form in a sentence and a command line
   eq('run mysql -p' + 'hunter2x db', 'run mysql -p[redacted] db', '#1298: mysql -p<pass> db glued');
   assert.ok(!maskSecretCommand('run mysql -p' + 'hunter2x db').includes('hunter2x'), '#1298: maskSecretCommand hides the glued mysql password');
+}
+
+// Issue #1298 (spec 012 FR-174): a secret name split by quotes is the name the shell reads. Values are made up at run time.
+{
+  const V = an(12);
+  const P = 'pass' + 'word';
+  const both = (cmd: string, want: string, label: string): void => {
+    assert.strictEqual(maskSecretCommand(cmd, {}), want, `#1298: maskSecretCommand: ${label}`);
+    assert.strictEqual(redact(cmd, {}), want, `#1298: redact: ${label}`);
+  };
+  both(`run echo 'pass'"word"=${V}`, `run echo 'pass'"word"=[redacted]`, `the issue's example 'pass'"word"=<value>`);
+  both(`echo pa"ss"word=${V}`, `echo pa"ss"word=[redacted]`, 'a name split once inside');
+  both(`echo "pass"word=${V}`, `echo "pass"word=[redacted]`, 'a quoted head');
+  both(`echo pass'word'=${V}`, `echo pass'word'=[redacted]`, 'a quoted tail');
+  both(`echo "pass"'word'=${V}`, `echo "pass"'word'=[redacted]`, 'two quote kinds');
+  both(`echo pa''ss''word=${V}`, `echo pa''ss''word=[redacted]`, 'empty quotes inside');
+  both(`echo 'tok'"en"=${V}`, `echo 'tok'"en"=[redacted]`, 'token split');
+  both(`echo "api_"'key'=${V}`, `echo "api_"'key'=[redacted]`, 'api_key split');
+  both(`echo 'pass'"word"="${V}"`, `echo 'pass'"word"="[redacted]"`, 'a quoted value');
+  both(`echo pa\\ss${P.slice(4)}=${V}`, `echo pa\\ss${P.slice(4)}=[redacted]`, 'a backslash inside the name');
+  assert.ok(!maskSecretCommand(`sh -c "echo 'pass'\\"word\\"=${V}"`, {}).includes(V), '#1298: inside sh -c with escaped quotes');
+  assert.ok(!redact(`sh -c "echo 'pass'\\"word\\"=${V}"`, {}).includes(V), '#1298: redact: inside sh -c with escaped quotes');
+  assert.ok(!maskSecretCommand(`run env X=1 'DB_'"PASS"'WORD'=${V} cmd`, {}).includes(V), '#1298: an upper-case name split in three');
+  // pre-review of PR 1317: the quote run between two atoms of a name has no limit (the shell takes any number of empty quotes); it was 6, so a seventh was a bypass
+  both(`echo pa${'""'.repeat(4)}ss${'""'.repeat(2)}word=${V}`, `echo pa${'""'.repeat(4)}ss${'""'.repeat(2)}word=[redacted]`, 'eight quote characters inside a name (more than 6 in one gap)');
+  both(`echo pa${'"'.repeat(200)}ss${P.slice(4)}=${V}`, `echo pa${'"'.repeat(200)}ss${P.slice(4)}=[redacted]`, '200 quote characters inside a name');
+  both(`echo to${"'\\".repeat(30)}ken=${V}`, `echo to${"'\\".repeat(30)}ken=[redacted]`, 'quotes and backslashes mixed, 60 in one gap');
+  assert.strictEqual(redact(`echo pa${'"'.repeat(200)}x=${V}`, {}), `echo pa${'"'.repeat(200)}x=${V}`, '#1298: a long quote run inside a word that is not a secret name stays');
+  // what stays: a name that is not a secret, a short value, a split that is not a secret name, the plain forms
+  assert.strictEqual(redact(`echo 'max_to'"kens"=${V}`, {}), `echo 'max_to'"kens"=${V}`, '#1298: max_tokens split stays');
+  assert.strictEqual(redact(`echo "to"ken=short`, {}), `echo "to"ken=short`, '#1298: a short value stays');
+  assert.strictEqual(redact(`echo 'user'"name"=${V}`, {}), `echo 'user'"name"=${V}`, '#1298: a name that is not secret stays');
+  assert.strictEqual(redact(`echo ${P}=${V}`, {}), `echo ${P}=[redacted]`, 'the plain form is still hidden');
+  assert.strictEqual(redact(`{"${P}": "${V}"}`, {}), `{"${P}": "[redacted]"}`, 'the JSON form is still hidden');
+}
+
+// Review of PR 1317 (Ruben), items 1 and 2. Every input is run through the four surfaces that take free text: `redact`, `maskTokenShapes`, `maskOutgoing` and `maskNoteText` (notes go to disk); the
+// command mask too where the input is a command. Values are made up at run time.
+{
+  const V = an(14);
+  const tok = 'gh' + 'p_' + an(36);
+  const surfaces: Record<string, (t: string) => string> = {
+    redact: (t) => redact(t, {}),
+    maskTokenShapes: (t) => maskTokenShapes(t, '[redacted]'),
+    maskOutgoing: (t) => maskOutgoing(t, []).text,
+    maskNoteText: (t) => maskNoteText(t, []).text,
+  };
+  const hidden = (input: string, label: string, withCommand = false): void => {
+    for (const [name, f] of Object.entries(surfaces)) assert.ok(!f(input).includes(V), `${label}: ${name} shows the value in ${JSON.stringify(f(input).replace(V, '<LEAK>'))}`);
+    if (withCommand) assert.ok(!maskSecretCommand(input, {}).includes(V), `${label}: maskSecretCommand shows the value`);
+  };
+  // item 1: a secret name glued to a mask. The glued-rest scan must not fold the name into the mask before the named-secret rules see it (a value that starts with a quote, a backslash or a space after the colon stayed readable)
+  hidden(`${tok}-dbpassword: "${V}"`, '#1317 item 1: a token, -dbpassword: "value"');
+  hidden(`${tok}.password=\\"${V}\\"`, '#1317 item 1: a token, .password=\\"value\\"');
+  hidden(`${tok}-xxpassword="${V}"`, '#1317 item 1: a token, -xxpassword="value"');
+  hidden(`x=${tok}_aaaaaaaaaaaaaaaaapi_key="${V}"`, '#1317 item 1: x=<token>_…api_key="value"');
+  hidden(`see [redacted]-mydbpassword: "${V}"`, '#1317 item 1: a mask already in the text, -mydbpassword: "value"');
+  hidden(`${tok}-dbpassword: '${V}'`, '#1317 item 1: single quotes');
+  assert.strictEqual(redact(`${tok}-dbpassword: "${V}"`, {}), '[redacted]: "[redacted]"', '#1317 item 1: both are masks and the words between them are gone with the glued name');
+  // item 2: any run of quotes (or an empty `` or $()) between a name and its separator, around the value, and inside the name
+  hidden(`--pass'word'''=${V}`, '#1317 item 2: --pass\'word\'\'\'=value', true);
+  hidden(`--password''=${V}`, '#1317 item 2: --password\'\'=value', true);
+  hidden(`''--pass''word''=''${V}''`, '#1317 item 2: \'\'--pass\'\'word\'\'=\'\'value\'\'', true);
+  hidden(`--password${'"'.repeat(40)}=${V}`, '#1317 item 2: 40 quotes before the separator', true);
+  hidden(`--password=${"'".repeat(40)}${V}`, '#1317 item 2: 40 quotes before the value', true);
+  hidden(`--pa\`\`ss=${V}`, '#1317 item 2: an empty backtick pair inside a name', true);
+  hidden(`--pa$()ss=${V}`, '#1317 item 2: an empty $() inside a name', true);
+  hidden(`--password$()=${V}`, '#1317 item 2: an empty $() after a name', true);
+  hidden(`--password\`\`=${V}`, '#1317 item 2: an empty backtick pair after a name', true);
+  hidden(`pa$'ss'word=${V}`, '#1317 item 2: the $ of $\'…\' inside a name', true);
+  hidden(`--pa$()$()\`\`ss=${V}`, '#1317 item 2: empty splits mixed', true);
+  // round 2 of the review: a line continuation (backslash and line break) is removed by the shell too; `$( )` and a backtick pair with spaces are empty
+  hidden(`--pass\\\nword=${V}`, '#1317 round 2: a backslash and a line break inside a name', true);
+  hidden(`--pass\\\r\nword=${V}`, '#1317 round 2: a backslash and CRLF inside a name', true);
+  hidden(`--password\\\n=${V}`, '#1317 round 2: a line continuation after a name', true);
+  hidden(`--pa$( )ss=${V}`, '#1317 round 2: $( ) with a space inside a name', true);
+  hidden(`--pa\` \`ss=${V}`, '#1317 round 2: a backtick pair with a space inside a name', true);
+  hidden(`--password$( )=${V}`, '#1317 round 2: $( ) with a space after a name', true);
+  hidden(`--password=$( )${V}`, '#1317 round 2: $( ) with a space before the value', true);
+  // round 3: a line continuation before the value (`--password=\<newline>V`, also CRLF, with quotes, and twice)
+  hidden(`--password=\\\n${V}`, '#1317 round 3: a line continuation before the value', true);
+  hidden(`--password=\\\r\n${V}`, '#1317 round 3: a line continuation (CRLF) before the value', true);
+  hidden(`--password=\\\n'${V}'`, '#1317 round 3: a line continuation before a quoted value', true);
+  hidden(`--password=\\\n\\\n${V}`, '#1317 round 3: two line continuations before the value', true);
+  hidden(`--password=\\\n"${V}"`, '#1317 round 3: a line continuation before a double-quoted value', true);
+  hidden(`password: \\\n${V}`, '#1317 round 3: a line continuation after a colon');
+  // round 3: whitespace- or comment-only substitutions that expand to nothing are a LISTED GAP (spec 012 FR-174), not a name. These asserts pin the leak: when a later fix makes one of them
+  // masked, its assert fails and the list in the spec and issue #1320 shrink with it.
+  const gapShown = (input: string, label: string): void => assert.ok(redact(input, {}).includes(V), `#1317 round 3 KNOWN GAP pinned (it leaks today; a fix updates the spec list and #1320): ${label}`);
+  gapShown(`--pa$(  )ss=${V}`, '$(  ) with two spaces inside a name');
+  gapShown(`--pa$(\t)ss=${V}`, '$(<tab>) inside a name');
+  gapShown(`--pa$(\n)ss=${V}`, '$(<newline>) inside a name');
+  gapShown(`--pa\`  \`ss=${V}`, 'a backtick pair with two spaces inside a name');
+  gapShown(`--pa\`\t\`ss=${V}`, 'a backtick pair with a tab inside a name');
+  gapShown(`--pa$(#x)ss=${V}`, '$(#x), a comment-only substitution, inside a name');
+  assert.strictEqual(redact(`echo --pa$(x)ss=${V}`, {}), `echo --pa$(x)ss=${V}`, '#1317 round 2: a non-empty substitution is a listed gap, not a name');
+  // a hidden character in the text makes `maskOutgoing` take its slow path: the head list (`LIVE_HEADS`) must see the same names
+  hidden(`--pass'word'''=${V}​`, '#1317 item 2: a zero-width character after the value, quote run before the separator');
+  // what stays
+  assert.strictEqual(redact(`echo max_to$()kens=${V}`, {}), `echo max_to$()kens=${V}`, '#1317 item 2: an empty $() inside a name that is no secret stays');
+  assert.strictEqual(redact(`echo pa\`\`x=${V}`, {}), `echo pa\`\`x=${V}`, '#1317 item 2: an empty backtick pair in a word that is no secret name stays');
+  assert.strictEqual(redact(`echo ${tok}-dbname: "plain words here"`, {}), `echo [redacted]-dbname: "plain words here"`, '#1317 item 1: a non-secret name glued to a mask keeps its value');
 }
 
 // A real image, whole, stays (every repo image: test-redact-images.ts).

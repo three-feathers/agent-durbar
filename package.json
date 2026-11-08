@@ -66,6 +66,7 @@
     "test:redact-growth-hashtable": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-redact-growth.js hashtable",
     "test:redact-growth-hashtablegrowth": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-redact-growth.js hashtablegrowth",
     "test:redact-growth-shapes": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-redact-growth.js shapes",
+    "test:redact-growth-masks": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-redact-growth.js masks",
     "test:redact-growth-shapes2": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-redact-growth.js shapes2",
     "test:redact-images-whole": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-redact-images.js whole",
     "test:redact-images-forms": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-redact-images.js forms",
@@ -77,7 +78,7 @@
     "test:runtime-redact": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-redact.js && node dist-scripts/scripts/test-redact-shapes.js",
     "test:runtime-mcp": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-mcp-paths.js && node dist-scripts/scripts/test-mcp-protocol.js && node dist-scripts/scripts/test-mcp-auth.js && node dist-scripts/scripts/test-mcp-agentstate.js && node dist-scripts/scripts/test-mcp-tools.js && node dist-scripts/scripts/test-mcp-simmain.js && node dist-scripts/scripts/test-mcp-errormask.js && node dist-scripts/scripts/test-demo-oauth-mcp.js",
     "test:runtime-sandbox": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-sandbox-floor.js && node dist-scripts/scripts/test-claude-sandbox.js && node dist-scripts/scripts/test-copilot-sandbox.js && node dist-scripts/scripts/test-sandbox-ops.js",
-    "test:runtime": "npm run test:runtime-core && npm run test:runtime-redact && npm run test:redact-growth-tokens && npm run test:redact-growth-adversarial && npm run test:redact-growth-adversarial2 && npm run test:redact-growth-r11 && npm run test:redact-growth-args && npm run test:redact-growth-runs && npm run test:redact-growth-wrappers && npm run test:redact-growth-hashtable && npm run test:redact-growth-hashtablegrowth && npm run test:redact-growth-shapes && npm run test:redact-growth-shapes2 && npm run test:redact-images-whole && npm run test:redact-images-forms && npm run test:runtime-mcp && npm run test:runtime-sandbox",
+    "test:runtime": "npm run test:runtime-core && npm run test:runtime-redact && npm run test:redact-growth-tokens && npm run test:redact-growth-adversarial && npm run test:redact-growth-adversarial2 && npm run test:redact-growth-r11 && npm run test:redact-growth-args && npm run test:redact-growth-runs && npm run test:redact-growth-wrappers && npm run test:redact-growth-hashtable && npm run test:redact-growth-hashtablegrowth && npm run test:redact-growth-shapes && npm run test:redact-growth-shapes2 && npm run test:redact-growth-masks && npm run test:redact-images-whole && npm run test:redact-images-forms && npm run test:runtime-mcp && npm run test:runtime-sandbox",
     "prepare-runtime": "node scripts/prepare-runtime.js",
     "pack:dir": "npm run build && node scripts/prepare-runtime.js && electron-builder --dir --publish never && node scripts/check-runtime-signature.js && node scripts/check-fuses.js && node scripts/check-names.js",
     "check:fuses-launch": "xvfb-run -a node scripts/check-fuses-launch.js",
@@ -120,6 +121,9 @@
     "specs:check": "node scripts/specs-index.js --check",
     "rules:check": "node scripts/rules-check.js",
     "test:weeklyretro": "node scripts/test-weekly-retro.js",
+    "test:picturebudget": "node scripts/test-picture-budget.js && node scripts/picture-budget.js",
+    "test:specnumbers": "node scripts/test-spec-numbers.js",
+    "specs:numbers": "node scripts/spec-numbers.js",
     "test:rules": "node scripts/test-rules-check.js && node scripts/rules-check.js",
     "test:themegen": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-themegen.js",
     "test:updatecheck": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-updatecheck.js",
@@ -228,6 +232,8 @@
     "test:worldpack": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-worldpack.js",
     "test:world-packs": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-world-packs.js",
     "test:crew": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-crew.js",
+    "test:chargen": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-chargen.js",
+    "test:imagecheck": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-imagecheck.js",
     "test:logo-assets": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-logo-assets.js",
     "test:crew-assets": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-crew-assets.js",
     "test:realoffice-layout": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-realoffice-layout.js && node dist-scripts/scripts/test-realoffice-aisles.js",
@@ -309,7 +315,9 @@
     "marked": "18.1.2"
   },
   "overrides": {
-    "zod": "4.6.6"
+    "zod": "4.6.6",
+    "minimatch@^9.0.3": "11.0.5",
+    "minimatch@^10.2.5": "11.0.5"
   },
   "homepage": "https://github.com/three-feathers/agent-durbar",
   "repository": {
