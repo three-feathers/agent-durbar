@@ -167,9 +167,9 @@ One PR, spec first. Who moves is `shutPlan(r)` (spec 001 FR-051, `shutters.js` `
 - **App** (`src/renderer/app.js`, T261): `reoStepModel(kind, key, delta, roomId, refocus)` is the one model-based move (desk group from `deskOrder(realModel(officeModel()), roomId)`, the layout's own order via `shownDesks`; rooms and places from `officeModel()` and `lobbyPlaces()`; base `deskBase(shown, reoFullKeys)`; write through `reoApply`, the flat `reoCommit`'s body); `reoStep` and the folder menu's `moveRoomStep` call it; the Alt+arrows handler also finds `.ro-plate[data-id]`, `.ro-sb` and `.ro-lplate[data-place]`; `realModel` sets `keep` from `ORDER.desks[path]`. No new store, channel or tab stop.
 - **Checks**: `test:realoffice-layout`, `test-realoffice-aisles`, `scripts/check-097-order.js` (in `ui-suite`), `shots-033-order` unchanged, `check-office-ops`, `OFFICE_VIEW=real` `check-office-overlap`.
 
-## 2026-11-08 delta 2: drag, kept room order, arcade, lobby (FR-352..FR-355, T269..T274)
+## 2026-11-08 delta 2: drag, kept room order, arcade, lobby (FR-352..FR-355, T284..T289)
 
 - **Reused** (FR-031): `DurbarReorder.attach` (reorder.js: threshold, Esc, cancel rules, lift and slot classes, `busy()`), `reoApply` and the one saved order, `reoStepModel`'s base (`deskOrder`, `deskBase`), the folder menu's disabled-item pattern, the `#srAnnounce` live region and `RO.announce`'s words. New: a second `attach` over `#stage` with Real office kinds (plate, sign), `reoDropModel`, `hooks.still` (no ease), `roRuns` and `RealModel.keepRooms` in the layout, `data-place` on a chip, `data-pfact` items in `openPlaceMenu`.
-- **Layout** (T269): with `keepRooms` `roPack` searches `roRuns(folders)` (contiguous splits) instead of every partition; the part-split of a big folder uses the same flag.
+- **Layout** (T284): with `keepRooms` `roPack` searches `roRuns(folders)` (contiguous splits) instead of every partition; the part-split of a big folder uses the same flag.
 - **Checks**: `test:realoffice-layout`, `scripts/check-097-drag.js` (in `ui-suite`), `shots-033-order`, `check-office-ops`, `OFFICE_VIEW=real` `check-office-overlap`.
 
