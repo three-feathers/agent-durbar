@@ -298,8 +298,9 @@ function heldOk(mask: BrainMask, head: string): boolean {
     const m = /^["'(]?[A-Za-z][A-Za-z0-9_.-]{0,40}["']?[:=]["']?(.*)$/.exec(w);
     return !!m && (m[1] === '' || mask.schemePrefix(m[1].replace(/^["']/, '')));
   };
-  // N1 (review of #1243): a word `SHORT_VALUE` takes after a secret name (4 to 7 characters with a letter and a digit: `abc123`, `Win2024`) is a value, however short
-  const shortValue = (w: string): boolean => /^(?=.{4,7}$)(?=.*[0-9])(?=.*[A-Za-z])/.test(w.replace(/[^\w]+$/, ''));
+  // N1 (review of #1243): a word `SHORT_VALUE` takes after a secret name (4 to 7 characters with a letter and a digit: `abc123`, `Win2024`, `Zx9!`, `ab1.`) is a value, however short.
+  // The raw word is tested: stripping its trailing punctuation first let `Zx9!` and `ab1...` through (fewer than 4 left), and a raw word longer than 7 already fails the length test below.
+  const shortValue = (w: string): boolean => /^(?=.{4,7}$)(?=.*[0-9])(?=.*[A-Za-z])/.test(w);
   return words.every((w) => named(w) || mask.schemePrefix(w) || (w.length <= 7 && !shortValue(w)));
 }
 /**

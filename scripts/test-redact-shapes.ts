@@ -708,7 +708,7 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
   // R1: what stays on purpose (a [KNOWN GAP] in FR-170 item 5, each pinned here)
   for (const t of ['password=0x' + '1234', 'api_key=0x' + 'dead', 'token=v1.' + '2.3', 'password: X' + '12345', 'password=Q' + '2024', 'password=#abc' + '123', 'token: #ff' + '00aa', 'token: SHA' + '512', 'token: Win' + '64', 'token: AES' + '128', 'token: TLS' + '12', 'token: md' + '5'])
     eq(t, t, `NOT_SHORT: left readable on purpose (known gap): ${t}`);
-  // N3 (review of #1243): a colour has 3, 4, 6 or 8 digits; 5 is not one
+  // N3 (review of #1243): `NOT_SHORT` takes a colour of 3, 4 or 6 hex digits; 5 is not one (an 8-digit colour with its `#` is 9 characters, past the 4 to 7 window, so the rule has no 8)
   for (const [t, w] of [['password=#abc' + '12', 'password=[redacted]'], ['password=#a1b2' + 'c', 'password=[redacted]'], ['password: #abc' + '12, next', 'password: [redacted], next'], ['password=#abc' + '12.', 'password=[redacted]']])
     eq(t, w, `NOT_SHORT: five hex digits are not a colour: ${t}`);
   for (const t of ['password=#abc', 'password=#abc1', 'password=#abc' + '123', 'token: #ff' + '00aa']) eq(t, t, `NOT_SHORT: a 3, 4 or 6 digit colour stays: ${t}`);
@@ -716,6 +716,10 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
   eq('mysql -u r -p"S3' + 'cret9x', 'mysql -u r -p[redacted]', 'mysql -p: unterminated double quote');
   eq("mysql -u r -p'S3" + 'cret9x', 'mysql -u r -p[redacted]', 'mysql -p: unterminated single quote');
   eq('mysql -u r -p`S3' + 'cret9x\nnext line', 'mysql -u r -p[redacted]\nnext line', 'mysql -p: unterminated backtick ends at the line');
+  // re-review of #1243 at 5ede1bfde: the double and single quote forms end at a line break too (LF and CRLF), not only at the end of the text
+  for (const q of ['"', "'"]) for (const [eol, name] of [['\n', 'LF'], ['\r\n', 'CRLF']]) {
+    eq(`mysql -u r -p${q}S3` + `cret9x${eol}next line`, `mysql -u r -p[redacted]${eol}next line`, `mysql -p: unterminated ${q === '"' ? 'double' : 'single'} quote ends at the line (${name})`);
+  }
   // N4: the quote after the program name needs a space or comma after it (mutant: `["\']` without the lookahead)
   for (const t of ["MySQL's docs: use rsync -ptgo src dst", '{"mysql":{"opts":"-pfoo' + '123"}}']) eq(t, t, `mysql -p stays: a quote after the name with no space: ${t}`);
   // R2: the quoted and array forms of -p

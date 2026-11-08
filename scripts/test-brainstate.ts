@@ -521,7 +521,7 @@ for (const seed0 of [1, 7, 42]) {
 }
 // N1 (review of #1243, security): a short value after a secret name that ENDS a thought is never kept raw, whatever its length: not in the step's Why, not in the tails, not after a tool start or idle
 {
-  const pw = ['abc' + '123', 'Win' + '2024', 'ab12 cd' + '34'];
+  const pw = ['abc' + '123', 'Win' + '2024', 'ab12 cd' + '34', 'Zx' + '9!', 'ab' + '1.']; // `Zx9!`, `ab1.`: fewer than 4 letters and digits once the punctuation is gone (re-review of #1243 at 5ede1bfde)
   for (const v of pw) for (const lead of ['I will log in with password: ', 'Use password: ', 'the db password: ']) {
     const secret = v.split(' ')[0];
     for (const [label, tail] of [['a tool start', start('bash', { command: 'ls' })], ['idle', { type: 'idle' }]] as Array<[string, unknown]>) {
