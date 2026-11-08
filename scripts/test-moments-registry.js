@@ -27,11 +27,27 @@ const stripRetro = (reg) => {
 };
 const retroPart = (reg) => JSON.stringify([reg.worlds.retro, reg.moments.map((m) => [m.id, m.worlds.retro, m.evidence && m.evidence.retro, m.gap && m.gap.retro])]);
 
+/** The picture names the driver writes: the name argument of `shot(world, <name>, w, h)` (a literal, or the literals of a ternary after its `?`), and the X of a `${world}-X-${w}x${h}.png` template; never the condition's operands ('15' in `n === '15' ? ...`). */
+function writtenPictures(driver, everyQuotedWord = false) {
+  const out = new Set();
+  for (const line of driver.split('\n')) {
+    const i = line.indexOf('shot(world, ');
+    if (i < 0) continue;
+    const rest = line.slice(i + 'shot(world, '.length);
+    if (everyQuotedWord) { for (const x of rest.matchAll(/'([\w-]+)'/g)) out.add(x[1]); continue; }
+    const arg = rest.slice(0, rest.lastIndexOf(', w, h)'));
+    const q = arg.indexOf('?') >= 0 ? arg.slice(arg.indexOf('?') + 1) : arg;
+    for (const x of q.matchAll(/'([\w-]+)'(?!\s*\+)/g)) out.add(x[1]);
+  }
+  for (const x of driver.matchAll(/\$\{world\}-([\w-]+)-\$\{w\}x\$\{h\}\.png/g)) out.add(x[1]);
+  return out;
+}
+
 /** reg: the registry; main: main's registry or null; driver: scripts/shots-097-moments.js text; css: the arcade's world.css text */
 function check({ reg, main, driver, css }) {
   const bad = [];
   /* only names given to the picture writer count: shot(world, 'X', ...) and `${world}-X-${w}x${h}.png` */
-  const written = new Set(driver.split('\n').filter((l) => /\bshot\(world, /.test(l)).flatMap((l) => [...l.slice(l.indexOf('shot(world, ')).matchAll(/'([\w-]+)'/g)].map((x) => x[1])).concat([...driver.matchAll(/\$\{world\}-([\w-]+)-\$\{w\}x\$\{h\}\.png/g)].map((x) => x[1])));
+  const written = writtenPictures(driver);
   const ids = reg.moments.map((m) => m.id);
   if (JSON.stringify(ids.slice().sort()) !== JSON.stringify(RETRO_CELLS.slice().sort())) bad.push(`the moments are not the 26 the arcade has cells for: ${ids.join(',')}`);
   const world = reg.worlds.retro;
@@ -81,6 +97,10 @@ if (require.main === module) {
   const inputs = { reg, main, driver, css };
   assert.deepStrictEqual(check(inputs), [], 'the real registry passes');
   assert.strictEqual(RETRO_CELLS.length, 26);
+  { const w = writtenPictures(driver);
+    for (const n of ['inbox', 'asleep', 'coffee', 'notes', 'jump-f1', 'jump-f2', 'cell-chat']) assert.ok(w.has(n), 'the picture ' + n + ' is read as written');
+    for (const n of ['15', 'inbox-', 'world', 'limitfocus', 'scope', 'w', 'h']) assert.ok(!w.has(n), `${n} is not a picture name`);
+    assert.ok(writtenPictures(driver, true).has('15'), 'the old parse (every quoted word on a shot line) took the 15: the mutant is real'); }
   assert.strictEqual(Object.keys(reg.worlds).sort().join(), WORLDS.slice().sort().join(), 'the four worlds');
 
   // mutants: each fails with its own message
@@ -99,6 +119,7 @@ if (require.main === module) {
   fails('a built cell naming a picture the driver does not write', (i) => { i.reg.moments.find((m) => m.id === 'lobby').evidence.retro.pictures = ['nopic']; }, /picture nopic/);
   fails('a built cell with no picture (walk)', (i) => { const m = i.reg.moments.find((x) => x.id === 'walk'); m.worlds.retro = 'built'; m.evidence = { retro: { steps: ['inbox'], pictures: [] } }; }, /walk is built with no picture/);
   fails('a picture named that is only text in the driver', (i) => { i.reg.moments.find((x) => x.id === 'lobby').evidence.retro.pictures = ['limitfocus']; }, /picture limitfocus/);
+  fails('a picture named 15 (the old every-quoted-word parse would pass it)', (i) => { i.reg.moments.find((x) => x.id === 'lounge').evidence.retro.pictures = ['15']; }, /picture 15/);
   fails('empty-office built again with no evidence', (i) => { i.reg.moments.find((m) => m.id === 'empty-office').worlds.retro = 'built'; }, /empty-office is built and names no evidence/);
   fails('a missing cell without a reason', (i) => { delete i.reg.moments.find((m) => m.id === 'empty-office').gap; }, /empty-office is missing and says nothing why/);
   fails('shippable while a cell is missing', (i) => { i.reg.worlds.retro.shippable = true; }, /shippable while a cell is missing/);
