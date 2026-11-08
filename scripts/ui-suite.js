@@ -4,7 +4,7 @@
  *   npm run check:ui                      (builds first)
  *   node scripts/ui-suite.js --list       the drivers
  *   node scripts/ui-suite.js --only shots-017,shots-033
- *   node scripts/ui-suite.js --shard 2/3                  every third driver from the second (UI_SUITE_SHARD=2/3 too; spec 008 FR-182)
+ *   node scripts/ui-suite.js --shard 2/3                  shard 2 of 3, balanced by recorded duration (UI_SUITE_SHARD=2/3 too; spec 008 FR-182, FR-183)
  *   UI_SUITE_OUT=<folder>                 where every screenshot goes (default: a new temp folder, printed at the end)
  *   UI_SUITE_XVFB=1                       Linux: run under xvfb-run even when a display is set
  *   UI_SUITE_DPR=<1..4>                   force the device scale factor (2 = a Retina screen) for every driver
@@ -216,14 +216,34 @@ function args(a = process.argv.slice(2)) {
   return { list: a.includes('--list'), only: i >= 0 ? new Set(String(a[i + 1] || '').split(',').filter(Boolean)) : undefined, shard: j >= 0 ? a[j + 1] : undefined, shardGiven: j >= 0 };
 }
 
-/** Spec 008 FR-182 (issue #839): shard `i/n` (1-based) takes every n-th driver of the suite's order, starting at the i-th, so n shards are
- *  disjoint and together hold every driver (the macOS nightly runs 3, each well under the job's time limit). No spec: the whole list. */
-function shard(list, spec) {
+/** Recorded seconds per driver (scripts/ui-suite-timings.json), only to balance shards; a driver with no entry counts as the median. */
+function timings() {
+  try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'ui-suite-timings.json'), 'utf8')); } catch { return {}; }
+}
+/** Seconds the office layout and the Mac title bar (run in shard 1 only, ui-platforms.yml) are assumed to cost, so shard 1 gets fewer drivers. */
+const SHARD1_HEAD_START_SECS = 240;
+
+/** Spec 008 FR-182 (issue #839), FR-183: shard `i/n` (1-based) is a greedy split by recorded duration: drivers from the slowest down, each to the
+ *  shard with the least time so far (ties: the lower shard, then the suite's order), shard 1 starting with SHARD1_HEAD_START_SECS. Each shard
+ *  runs its drivers in the suite's order. n shards are disjoint and together hold every driver of `list`; the result depends only on `list`
+ *  and the committed timing file. No spec: the whole list. */
+function shard(list, spec, times = timings()) {
   if (spec === undefined || spec === '') return list;
   const m = String(spec).match(/^(\d+)\/(\d+)$/);
   const i = m ? Number(m[1]) : 0, n = m ? Number(m[2]) : 0;
   if (!m || n < 1 || i < 1 || i > n) throw new Error(`ui-suite: --shard wants i/n with 1 <= i <= n, got "${spec}"`);
-  return list.filter((_, k) => k % n === i - 1);
+  const known = Object.entries(times).filter(([k, v]) => !k.startsWith('_') && Number.isFinite(v)).map(([, v]) => v).sort((x, y) => x - y);
+  const median = known.length ? known[Math.floor(known.length / 2)] : 1;
+  const w = (d) => { const v = times[d.name]; return Number.isFinite(v) ? v : median; };
+  const load = Array.from({ length: n }, (_, k) => (k === 0 && n > 1 ? SHARD1_HEAD_START_SECS : 0));
+  const mine = new Set();
+  list.map((d, k) => ({ d, k })).sort((x, y) => w(y.d) - w(x.d) || x.k - y.k).forEach(({ d }) => {
+    let best = 0;
+    for (let b = 1; b < n; b++) if (load[b] < load[best]) best = b;
+    load[best] += w(d);
+    if (best === i - 1) mine.add(d);
+  });
+  return list.filter((d) => mine.has(d));
 }
 
 /** Spec 008 FR-112: syntax errors in the given files, from `node --check` (no shell, nothing run). [] when all parse. */
