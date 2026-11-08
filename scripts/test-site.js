@@ -31,6 +31,7 @@ bad3.harnesses[0].name = 'Imaginary Agent';
 assert.ok(site.validateLanding(bad3, { readme }).some((e) => /not in the README's Harnesses table/.test(e)), 'an unknown harness fails');
 assert.ok(site.headingAnchors(readme).has('costs-and-caps') && site.headingAnchors(readme).has('safety-model'), 'README anchors');
 assert.strictEqual(site.stripRefs('**Cost per folder (spec 052 FR-044, #315).** Tools'), '**Cost per folder.** Tools', 'spec references are stripped');
+assert.strictEqual(site.stripRefs('**Notes: Open source** (spec 083 FR-046, [issue 699](https://example.com/issues/699)): a note'), '**Notes: Open source**: a note', 'a reference group holding a markdown link is stripped whole');
 for (const os of ['macOS', 'Windows', 'Linux']) assert.ok(site.installSteps(readme)[os], `README has the ${os} install step`);
 
 const out = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-site-'));
