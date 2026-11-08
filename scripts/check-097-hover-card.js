@@ -5,7 +5,8 @@
  *
  *   npm run check:ui -- --only check-097-hover-card      (builds first)
  *   mutant (a source edit, not a switch: the page's code is a closure): in src/renderer/realoffice.js placeZoom turn `if (fs && ro.contains(fs)) {` into `if (false && fs && ro.contains(fs)) {`, build, run; it must fail at
- *   "the card does not lie over the focused slip".
+ *   "the card does not lie over the focused slip". Two more, same way: the card's z-index 5 instead of 7 (realoffice.css, `.ro-zoom`) must fail at "a slip under the card paints over it";
+ *   the focus listeners removed (placeZoom's `document.addEventListener('focusin', replaceZoom, true)` and the focusout one turned into `0`) must fail at "the card is placed again off the slip that took the focus".
  *   SHOTS_OUT=<dir>   where its pictures go (097-hover-<what>-<w>x<h>.png; a temporary folder by default)
  *
  * At 1440x900 and 1280x800, 15 agents, by real pointer moves, it fails (exit 1) when:
@@ -50,7 +51,7 @@ module.exports = async (ctx) => {
   const spot = (kind, id) => js(`(()=>{const S=CSS.escape(${jsLiteral(id)}),q={plate:'.ro-plate[data-id="'+S+'"]',person:'.ro-person[data-for="'+S+'"]',desk:'.ro-desk[data-for="'+S+'"]',table:'.ro-ltable[data-for="'+S+'"]',screen:'.ro-screen[data-for="'+S+'"]'}[${jsLiteral(kind)}];
     const e=document.querySelector('#stage '+q);if(!e)return null;const b=e.getBoundingClientRect();
     /* the part of the box that is really this part (a person's box is partly under the desk, a plate is over it): a point whose topmost element is the part or inside it */
-    for(const [fx,fy] of [[.5,.5],[.5,.3],[.5,.7],[.3,.5],[.7,.5],[.5,.15],[.5,.85],[.2,.2],[.8,.8]]){const x=b.left+b.width*fx,y=b.top+b.height*fy,t=document.elementFromPoint(x,y);if(t&&(t===e||e.contains(t)||(${jsLiteral(kind)}==='person'&&t.classList.contains('ro-rig')&&t.dataset.for===${jsLiteral(id)})))return {x,y};}
+    for(const [fx,fy] of [[.5,.5],[.5,.3],[.5,.7],[.3,.5],[.7,.5],[.5,.15],[.5,.85],[.2,.2],[.8,.8]]){const x=b.left+b.width*fx,y=b.top+b.height*fy,t=document.elementFromPoint(x,y);if(t&&(t===e||e.contains(t)||(${jsLiteral(kind)}==='person'&&(t.classList.contains('ro-rig')||t.classList.contains('ro-person2'))&&t.dataset.for===${jsLiteral(id)})))return {x,y};}
     return null;})()`);
   const hoverAt = async (kind, id, tag) => {
     for (let t = 0; t < 4; t++) {
@@ -76,6 +77,16 @@ module.exports = async (ctx) => {
     console.log('[hover-card] no zoom for', id, JSON.stringify(await js(`(()=>{const e=document.elementFromPoint(${jsLiteral(q.x)},${jsLiteral(q.y)});return {at:e&&(e.className||e.tagName),for:e&&e.dataset&&e.dataset.for,id:e&&e.dataset&&e.dataset.id,zoom:(document.getElementById('roZoom')||{dataset:{}}).dataset.for,hover:window.DurbarRealOffice.hoverState(),mv:window.__mv,focus:document.hasFocus(),zlog:window.__zlog,now:Math.round(performance.now()),scrollY:document.getElementById('floor').scrollTop}})()`)));
     return false;
   };
+  /* one re-pick for every hover that targets a working desk's person: a visit can start under load (even with simfreeze), and no sim hook pins an agent, so the desk is picked again when its person has gone */
+  const PICKW = (excl) => `(()=>{const L=${sim}.realLayout();const d=L.zones.flatMap(z=>z.desks).find(x=>['working','thinking'].includes(x.state)&&!x.away&&!${jsLiteral(excl)}.includes(x.id)&&document.querySelector('#stage .ro-person[data-for="'+CSS.escape(x.id)+'"]'));return d&&d.id;})()`;
+  const HAS = (id) => `!!document.querySelector('#stage .ro-person[data-for="'+CSS.escape(${jsLiteral(id)})+'"]')&&!${sim}.realLayout().zones.flatMap(z=>z.desks).some(d=>d.id===${jsLiteral(id)}&&d.away)`;
+  const hoverWork = async (kind, id, excl, tag) => {
+    for (let t = 0; t < 5; t++) {
+      if (!id || !(await js(HAS(id)))) { id = null; for (let u = 0; u < 40 && !id; u++) { id = await js(PICKW(excl)); if (!id) await js(`new Promise(r=>setTimeout(r,200))`); } }
+      if (id && await hoverAt(kind, id, tag)) return id;
+    }
+    return null;
+  };
   const card = async () => { await H.until(`!!document.getElementById('roZoom')`, 3000); return card1(); }; /* an open card is read once it is there (a read in the same tick as its opening is not a failure of the card) */
   const card1 = () => js(`(()=>{const z=document.getElementById('roZoom');if(!z)return null;const b=z.getBoundingClientRect(),w=document.getElementById('floor').getBoundingClientRect(),id=z.dataset.for,pl=document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(id)+'"]').getBoundingClientRect();
     const small=[...z.querySelectorAll('*')].filter(e=>e.children.length===0&&e.textContent.trim()&&parseFloat(getComputedStyle(e).fontSize)<10.5).map(e=>e.textContent.slice(0,20));
@@ -98,21 +109,12 @@ module.exports = async (ctx) => {
     await must(`${sim}.visitsSettled()`, `${tag}: no visit about to start or end`);
     await refocus();
     /* ---- FR-327: any part of a working desk opens its zoom ---- */
-    const PICK1 = `(()=>{const L=${sim}.realLayout();const d=L.zones.flatMap(z=>z.desks).find(x=>['working','thinking'].includes(x.state)&&!x.away&&document.querySelector('#stage .ro-person[data-for="'+CSS.escape(x.id)+'"]'));return d&&d.id;})()`;
-    let wk = await js(PICK1);
+    let wk = await js(PICKW([]));
     const desks = await js(`${sim}.realLayout().zones.flatMap(z=>z.desks).map(d=>d.id+':'+d.state+(d.away?'@':''))`);
     assert.ok(wk, `${tag}: a working desk: ${JSON.stringify(desks)}`);
-    /* no sim hook pins an agent at its desk (a visit can start under load, even with simfreeze): the desk is picked again right before each hover when its person has gone */
     for (const kind of ['person', 'desk', 'plate', 'screen']) {
-      let ok = false;
-      for (let t = 0; t < 5 && !ok; t++) {
-        if (!(await js(`!!document.querySelector('#stage .ro-person[data-for="'+CSS.escape(${jsLiteral(wk)})+'"]')&&!${sim}.realLayout().zones.flatMap(z=>z.desks).some(d=>d.id===${jsLiteral(wk)}&&d.away)`))) {
-          let n = null; for (let u = 0; u < 40 && !n; u++) { n = await js(PICK1); if (!n) await js(`new Promise(r=>setTimeout(r,200))`); }
-          assert.ok(n, `${tag}: a working desk again for the ${kind} hover`); wk = n;
-        }
-        ok = await hoverAt(kind, wk, `${tag} ${kind}`);
-      }
-      assert.ok(ok, `${tag}: hovering the ${kind} of ${wk} opens its zoom (FR-327)`);
+      wk = await hoverWork(kind, wk, [], `${tag} ${kind}`);
+      assert.ok(wk, `${tag}: hovering the ${kind} of a working desk opens its zoom (FR-327)`);
     }
     /* from the screen to the person of the same desk: the same panel stays (no close and reopen) */
     const c0 = await card();
@@ -190,9 +192,8 @@ module.exports = async (ctx) => {
     assert.ok(await js(`document.activeElement&&document.activeElement.dataset&&document.activeElement.dataset.id===${jsLiteral(S)}`), `${tag}: the focus stays on the plate`);
     await js(`document.activeElement.blur();0`);
     /* ---- FR-328 (2026-11-08): an agent falls asleep while its card is open: the open card switches to the asleep view (the masked last reply, no tool log) ---- */
-    const wk2 = await js(`(()=>{const L=${sim}.realLayout();const d=L.zones.flatMap(z=>z.desks).find(x=>['working','thinking'].includes(x.state)&&!x.away&&![${jsLiteral(R)},${jsLiteral(S)}].includes(x.id)&&document.querySelector('#stage .ro-person[data-for="'+CSS.escape(x.id)+'"]'));return d&&d.id;})()`);
-    assert.ok(wk2, `${tag}: a second working desk for the falls-asleep step`);
-    assert.ok(await hoverAt('person', wk2, `${tag} falls asleep`), `${tag}: the card opens on the working desk of ${wk2}`);
+    const wk2 = await hoverWork('person', null, [R, S], `${tag} falls asleep`);
+    assert.ok(wk2, `${tag}: the card opens on a second working desk for the falls-asleep step`);
     const before = await card();
     assert.ok(!/^Asleep/.test(before.word), `${tag}: the card starts awake: ${before.word}`);
     const SAID = 'Wrapped up the fallback and ran the checks. ' + TOKEN;
@@ -206,21 +207,26 @@ module.exports = async (ctx) => {
     /* ---- FR-330: no free place: real-shaped slips (they take pointer events, each holds an input) tile the room except round the hovered person, so the card lands over some of them ---- */
     /* a desk that is working now (read again here: an agent may have left on a visit since the first one was chosen) */
     await js(`(()=>{const a=${sim}.agents().find(x=>x.id===${jsLiteral(wk2)});a.state='working';a.lastEventAt=Date.now();${sim}.crew.renderAll();return 1})()`); /* the one that fell asleep goes back to work: a working desk for this step */
-    const PICK3 = `(()=>{const L=${sim}.realLayout();const d=L.zones.flatMap(z=>z.desks).find(x=>['working','thinking'].includes(x.state)&&!x.away&&![${jsLiteral(R)},${jsLiteral(S)}].includes(x.id)&&document.querySelector('#stage .ro-person[data-for="'+CSS.escape(x.id)+'"]'));return d&&d.id;})()`;
     let wk3 = null;
-    for (let t = 0; t < 40 && !wk3; t++) { wk3 = await js(PICK3); if (!wk3) await js(`new Promise(r=>setTimeout(r,200))`); }
-    assert.ok(wk3, `${tag}: a working desk for the covered-slip step`);
     const TILES = (keep) => `(()=>{const ro=document.querySelector('#stage .ro'),o=ro.getBoundingClientRect(),k=${jsLiteral(keep)},keep=document.querySelector('#stage .ro-person[data-for="'+CSS.escape(k)+'"]').getBoundingClientRect();for(const e of ro.querySelectorAll('.fake-slip'))e.remove();
       let n=0;for(let y=0;y<o.height;y+=70)for(let x=0;x<o.width;x+=110){const L=o.left+x,T=o.top+y;if(L<keep.right+40&&keep.left-40<L+104&&T<keep.bottom+40&&keep.top-40<T+64)continue;
         const e=document.createElement('div');e.className='ro-slip fake-slip';e.dataset.n=String(n++);e.style.cssText='position:absolute;left:'+x+'px;top:'+y+'px;width:104px;height:64px;pointer-events:auto';const i=document.createElement('input');i.style.cssText='width:90px';e.appendChild(i);ro.appendChild(e);}return n})()`;
     const COVER = `(()=>{const z=document.getElementById('roZoom');if(!z)return null;const b=z.getBoundingClientRect(),r={under:0,inertUnder:0,inertOther:0,first:-1};
       for(const e of document.querySelectorAll('#stage .ro .fake-slip')){const q=e.getBoundingClientRect(),hit=q.left<b.right&&b.left<q.right&&q.top<b.bottom&&b.top<q.bottom;if(hit){r.under++;const ar=(Math.min(b.right,q.right)-Math.max(b.left,q.left))*(Math.min(b.bottom,q.bottom)-Math.max(b.top,q.top));if(ar>(r.area||0)){r.area=ar;r.first=+e.dataset.n;}if(e.hasAttribute('inert'))r.inertUnder++;}else if(e.hasAttribute('inert'))r.inertOther++;}return r})()`;
     const ANYINERT = `document.querySelectorAll('#stage .ro .fake-slip[inert]').length`;
-    assert.ok(await hoverAt('person', wk3, `${tag} no place`), `${tag}: the card opens on ${wk3} for the covered-slip step`);
+    wk3 = await hoverWork('person', wk3, [R, S], `${tag} no place`);
+    assert.ok(wk3, `${tag}: the card opens on a working desk for the covered-slip step`);
     assert.ok(await js(TILES(wk3)) > 20, `${tag}: slips tiled`); await js(`${sim}.crew.renderAll();0`);
     await must(`${ANYINERT}>0`, `${tag}: a slip under the card is inert (FR-330)`, 8000);
     const cv = await js(COVER);
     assert.ok(cv.under > 0 && cv.inertUnder === cv.under && cv.inertOther === 0, `${tag}: every slip under the card, and none other, is inert: ${JSON.stringify(cv)}`);
+    /* the z-order (FR-330): the slips under the card are made live for a moment (inert elements may be skipped by hit-testing) and the card takes pointer events; what is painted at the overlap's points must be the card */
+    const zo = await js(`(()=>{const z=document.getElementById('roZoom'),b=z.getBoundingClientRect(),hit=[...document.querySelectorAll('#stage .ro .fake-slip')].filter(e=>{const q=e.getBoundingClientRect();return q.left<b.right&&b.left<q.right&&q.top<b.bottom&&b.top<q.bottom}),bad=[],pts=[0];
+      const was=hit.map(e=>e.hasAttribute('inert'));hit.forEach(e=>e.removeAttribute('inert'));z.style.pointerEvents='auto';
+      for(const e of hit){const q=e.getBoundingClientRect(),L=Math.max(b.left+10,q.left),R=Math.min(b.right-10,q.right),T=Math.max(b.top+10,q.top),B=Math.min(b.bottom-10,q.bottom);if(R-L<2||B-T<2)continue; /* 10 px in from the card's rounded edge */
+        for(const [fx,fy] of [[.5,.5],[.1,.1],[.9,.1],[.1,.9],[.9,.9]]){pts[0]++;const x=L+(R-L-1)*fx,y=T+(B-T-1)*fy,t=document.elementFromPoint(x,y);if(!t||!z.contains(t))bad.push(Math.round(x)+','+Math.round(y)+' '+(t&&(t.className||t.tagName))+' n'+e.dataset.n+' zi'+(t&&getComputedStyle(t).zIndex));}}
+      z.style.pointerEvents='';hit.forEach((e,i)=>{if(was[i])e.setAttribute('inert','')});return {n:hit.length,pts:pts[0],bad:bad.slice(0,4)}})()`);
+    assert.ok(zo.n > 0 && zo.pts > 0 && zo.bad.length === 0, `${tag}: a slip under the card paints over it (z-order, FR-330): ${JSON.stringify(zo)}`);
     /* the slips go elsewhere and the card is placed again: nothing is inert any more */
     await js(`(()=>{for(const e of document.querySelectorAll('#stage .ro .fake-slip'))e.style.left='-9999px';${sim}.crew.renderAll();return 1})()`);
     await must(`${ANYINERT}===0`, `${tag}: a slip no longer under the card is not inert (the card moved)`, 8000);
@@ -236,7 +242,8 @@ module.exports = async (ctx) => {
     await js(`(()=>{const e=document.querySelector('#stage .ro .fake-slip[data-n="'+${jsLiteral(cv2.first)}+'"]');window.__allow=0;const b=document.createElement('button');b.textContent='Allow';b.style.cssText='width:60px;height:22px';b.addEventListener('click',()=>{window.__allow++});e.appendChild(b);e.querySelector('input').focus();return 1})()`);
     wc().sendInputEvent({ type: 'keyDown', keyCode: 'Tab' }); wc().sendInputEvent({ type: 'keyUp', keyCode: 'Tab' });
     await must(`document.activeElement&&document.activeElement.textContent==='Allow'`, `${tag}: Tab reaches the Allow button of the slip`, 5000);
-    assert.ok(await hoverAt('person', wk3, `${tag} focus slip`), `${tag}: the card opens near the focused slip (a place that leaves it free exists)`);
+    wk3 = await hoverWork('person', wk3, [R, S], `${tag} focus slip`);
+    assert.ok(wk3, `${tag}: the card opens near the focused slip (a place that leaves it free exists)`);
     await js(`${sim}.crew.renderAll();0`);
     const FS = `(()=>{const z=document.getElementById('roZoom'),e=document.querySelector('#stage .ro .fake-slip[data-n="'+${jsLiteral(cv2.first)}+'"]'),bt=e.querySelector('button');if(!z)return {card:false,active:document.activeElement===bt};
       const a=z.getBoundingClientRect(),q=e.getBoundingClientRect(),r=bt.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height/2;z.style.pointerEvents='auto';const t=document.elementFromPoint(x,y);z.style.pointerEvents='';
@@ -254,6 +261,25 @@ module.exports = async (ctx) => {
     await moveTo(pq.x - 2, pq.y); await moveTo(pq.x, pq.y);
     await js(`new Promise(r=>setTimeout(r,1200))`);
     assert.ok(await js(NONE), `${tag}: with a focused slip over the whole room no card opens (FR-330)`);
+    /* the focus moves into a slip while the card is open (FR-330): the card is placed again off it, or closed when no place leaves it free */
+    await js(`(()=>{const b=document.querySelector('#stage .ro .fake-slip[data-n="'+${jsLiteral(cv2.first)}+'"] button');if(b)b.blur();for(const e of document.querySelectorAll('#stage .ro .fake-slip'))e.remove();document.activeElement&&document.activeElement.blur&&document.activeElement.blur();return 1})()`);
+    await moveTo(1, 1);
+    await must(NONE, `${tag}: closed before the focus-move step`);
+    wk3 = await hoverWork('person', wk3, [R, S], `${tag} focus move`);
+    assert.ok(wk3, `${tag}: the card opens for the focus-move step`);
+    const SLIPAT = (full) => `(()=>{const z=document.getElementById('roZoom'),ro=document.querySelector('#stage .ro'),o=ro.getBoundingClientRect(),b=z.getBoundingClientRect(),e=document.createElement('div');e.className='ro-slip fake-slip';e.id='fmSlip';
+      e.style.cssText=${jsLiteral(full)}?'position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none':'position:absolute;left:'+(b.left-o.left+20)+'px;top:'+(b.top-o.top+20)+'px;width:104px;height:64px;pointer-events:none';
+      const i=document.createElement('input');i.style.cssText='width:90px';e.appendChild(i);ro.appendChild(e);i.focus();return document.activeElement===i})()`;
+    assert.ok(await js(SLIPAT(false)), `${tag}: the input of a slip lying under the open card took the focus`);
+    await must(`(()=>{const z=document.getElementById('roZoom'),e=document.getElementById('fmSlip');if(!z||!e)return false;const a=z.getBoundingClientRect(),q=e.getBoundingClientRect();return !(q.left<a.right&&a.left<q.right&&q.top<a.bottom&&a.top<q.bottom)})()`, `${tag}: the card is placed again off the slip that took the focus (FR-330)`, 4000);
+    await js(`document.getElementById('fmSlip').remove();document.activeElement.blur&&document.activeElement.blur();0`);
+    await moveTo(1, 1);
+    await must(NONE, `${tag}: closed after the re-place`);
+    wk3 = await hoverWork('person', wk3, [R, S], `${tag} focus move closes`);
+    assert.ok(wk3, `${tag}: the card opens again`);
+    assert.ok(await js(SLIPAT(true)), `${tag}: the input of a slip over the whole room took the focus`);
+    await must(NONE, `${tag}: the card closes when the focus moves into a slip and no place leaves it free (FR-330)`, 4000);
+    await js(`document.getElementById('fmSlip').remove();document.activeElement.blur&&document.activeElement.blur();0`);
     await js(`for(const e of document.querySelectorAll('#stage .ro .fake-slip'))e.remove();0`);
     await moveTo(1, 1);
     await must(NONE, `${tag}: closed after the slip steps`);
