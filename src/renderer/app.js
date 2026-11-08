@@ -976,7 +976,10 @@ function deskFacts(a,withModel){
   if(busy)put('On this task',busy==='just now'?'just started':busy.replace(/ ago$/,'')); else if(last)put('Last activity',last);
   return facts;
 }
-const realFacts=id=>{const a=byId(id);return a&&!a.parent?deskFacts(a,true):[];};
+let RO_LOUNGE=new Set(); /* ids in the Real office's lounge row at the last model (spec 097 FR-329) */
+const realFacts=id=>{const a=byId(id);if(!a||a.parent)return [];const f=deskFacts(a,true),w=RO_LOUNGE.has(id)?loungeSum(a):'';
+  if(w){const m=deskMask(w+' · counted by Agent Durbar');if(typeof m==='string'&&m.trim())f.push(['Changed',m]);} /* the flat peek card's line, read once per reply (spec 085 FR-008) */
+  return f;};
 function grownSideHTML(a){
   if(a.parent)return '';
   const rep=grownShowsReply(a)?'':replyExcerpt(a), facts=deskFacts(a,false);
@@ -1669,6 +1672,7 @@ function roFailed(){syncWorld();toast('The Real office could not be loaded, so t
 const ALERT_ICON='<svg viewBox="0 0 12 12" aria-hidden="true" focusable="false" data-icon="alert"><path d="M6 1.6 11 10.4H1Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M6 4.8v2.6M6 8.9v.1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
 function realModel(model){
   const D=window.DurbarPlaces, E=window.exports;
+  RO_LOUNGE=new Set(model.flatMap(m=>(m.rolled||[]).map(x=>x.a.id)));
   const stOf=(a,asleep)=>E.lightState(isFailing(a)?'failing':isRetrying(a)?'retrying':isCompacting(a)?'compacting':vis(a),{limit:!!a.limit,paused:!!a.paused,asleep:!!asleep});
   const folders=model.map(m=>{
     const r=m.r, old=new Set((m.rolled||[]).filter(x=>x.k==='old').map(x=>x.a.id)), rolled=new Set((m.rolled||[]).map(x=>x.a.id)); /* spec 097 FR-246: who the flat office rolls into its lounge (shutPlan) sits in the lounge row; an old one asleep */
@@ -1755,7 +1759,9 @@ document.addEventListener('click',e=>{
 });
 /* spec 097 FR-030..FR-035: what a monitor shows: the agent's lines (liveact.js, masked), else its last reply or task through the same steps, with
    the status lines the state asks for; no working mask: only the status word (fail closed). Live activity off: no live lines, as in flat. */
-function realScreen(id,state,word){
+function realScreen(id,state,word,card){
+  /* spec 097 FR-328: the card of a lounge agent (resting or asleep) shows its masked last reply as its lines, as the flat peek card does, not the tool log; the glass of an asleep one stays dark (screenFor asleep) */
+  if(card&&(state==='asleep'||RO_LOUNGE.has(id))){const a=byId(id),reply=a&&LIVEACT&&a.lastOutput?LIVEACT.block(a.lastOutput,'reply'):[];return window.exports.screenFor(state==='asleep'?'idle':state,[],[],reply,word,false);}
   const a=byId(id), live=liveOn(), log=a&&live&&!a.parent?LIVEACT.screen(id):[];
   const ask=state==='waiting'||state==='limit'||state==='error', quiet=!live&&(state==='working'||state==='thinking'); /* the setting hid what it does: the status and bars, as flat shows no reply while it works */
   const task=!a||!LIVEACT||quiet?[]:ask?LIVEACT.strict(taskText(a),'plain'):!log.length?LIVEACT.block(taskOf(a),'plain'):[];

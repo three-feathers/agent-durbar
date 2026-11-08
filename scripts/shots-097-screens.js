@@ -349,15 +349,17 @@ module.exports = async (ctx) => {
     assert.ok(await H.until(`(()=>{const e=document.querySelector('#roZoom .ro-zs');return !!e&&e.textContent!==${jsLiteral(zs0)};})()`, 5000), 'the open zoom shows the new status: was ' + zs0);
     await moveTo(1, 1);
     await must(`!document.getElementById('roZoom')`, 'the zoom closed when the pointer left');
-    /* an open zoom of a desk that goes to sleep closes: an asleep screen is off (FR-035) */
+    /* an open zoom of a desk that goes to sleep stays and becomes the asleep card (spec 097 FR-328; the glass is dark, FR-035) */
     const sl = await js(`(()=>{const d=window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).find(x=>(x.state==='done'||x.state==='idle')&&document.querySelector('#stage .ro-person[data-for="'+CSS.escape(x.id)+'"]'));return d&&d.id;})()`);
     assert.ok(sl, 'an idle desk to send to sleep');
     const s0 = await at(sl);
     await hover(sl, s0);
     await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id===${jsLiteral(sl)});a.state='done';a.lastOutput=a.lastOutput||'done';a.unread=false;a.lastEventAt=Date.now()-30*864e5;window.__durbarSimUi.unread.read(a.id);window.__durbarSimUi.setLive(true);})();0`);
     await must(`(()=>{const L=window.__durbarSimUi.realLayout();return L.zones.flatMap(z=>z.desks).concat(L.lounge?L.lounge.desks:[]).find(x=>x.id===${jsLiteral(sl)}).state==='asleep'})()`, 'the agent asleep (in the lounge row, spec 097 FR-246)');
-    assert.ok(await H.until(`!document.getElementById('roZoom')`, 1000), 'the zoom of a desk gone to sleep closes');
+    /* the pointer's desk moved away, so the zoom may close with it; if one is open it is this agent's asleep card, never a stale awake one (the asleep card itself: check-097-hover-card) */
+    assert.ok(await H.until(`(()=>{const z=document.getElementById('roZoom');return !z||(z.dataset.for===${jsLiteral(sl)}&&z.dataset.state==='asleep')})()`, 1500), 'an open zoom of a desk gone to sleep is the asleep card (FR-328)');
     await moveTo(1, 1);
+    await must(`!document.getElementById('roZoom')`, 'the asleep card closed when the pointer left');
   }
 
   /* Ruben's review of #979: a chat opening and closing pauses and resumes at once; leaving Real office leaves no key listener behind */

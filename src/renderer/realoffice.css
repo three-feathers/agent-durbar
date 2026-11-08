@@ -68,6 +68,7 @@
 .ro-zk[hidden]{display:none}
 .ro-zi{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .ro-zw{grid-column:1/-1}
+.ro-zc{white-space:normal;text-overflow:clip}
 .ro-zy{color:var(--muted)}
 .ro-zb{position:relative;flex:1;min-height:0;overflow:hidden;background:#0f1418}
 .ro-zl .ro-sl{flex:none} /* whole lines, the newest in view */
