@@ -18,8 +18,8 @@
  *   - a kind of text the check exists for is missing (no line measured, no link, no code chip), so it cannot pass by measuring nothing.
  * Prints each chat's worst lines. Screenshots: <SHOTS_OUT>/chatcontrast-<main|helper>-<w>x<h>.png and the glyph-free captures (-bg).
  * CONTRAST_MUTANT=ro (the helper panel gets the Real office root's class again, #1164's bug) or =clear (the chat's surfaces transparent):
- * both must fail on the 4.5:1 assert; =nohide (the rule that makes the glyphs transparent never applies, as when a capture is a frame from before it) must fail on
- * "the glyph-free frame was captured", never read as a contrast of 1.00:1; used to show the check can fail.
+ * both must fail on the 4.5:1 assert; =nohide (the rule that makes the glyphs transparent never applies: the text stays in the frame, as in a capture from before the rule)
+ * must fail on it too (about 1:1); used to show the check can fail. A stale frame itself cannot be made on demand: the marker wait has no mutant of its own.
  *
  * The glyph-free capture (#1301, spec 008 FR-184): `capturePage()` can return the compositor's previous frame, one that still shows the text, under load (on Linux CI
  * every line then measured 1.00:1: the text blended over itself). The same call that hides the glyphs adds a 4x4 magenta marker in the window's top right corner; the
