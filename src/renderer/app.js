@@ -4143,8 +4143,7 @@ function syncAttention(list){
   }
   const focused=document.hasFocus(), enabled=NOTIFY&&!demoOn&&typeof Notification==='function';
   NOTIFIER.observe(attentionItems(list,ATT_ARMED&&enabled&&!focused),{armed:ATT_ARMED,enabled,focused});
-  const due=NOTIFIER.dueAt();
-  if(due!=null&&!attTimer)attTimer=setTimeout(()=>{attTimer=0;showAttention();},Math.max(0,due-Date.now()));
+  if(!attTimer){const id=ATT.scheduleDue(NOTIFIER,setTimeout,()=>{attTimer=0;showAttention();});if(id)attTimer=id;}
 }
 function showAttention(){
   syncAttention(needsMeOrder()); /* drop what was answered meanwhile, and what you saw by coming back */
@@ -4281,6 +4280,7 @@ function doorSync(list){
   const open=!!$('needsPanel');
   const items=doorItems(list), r=DOOR_ARR.observe(items,{armed:ATT_ARMED,isPaused:id=>{const a=byId(id);return !!a&&!!a.paused;}});
   if(r.fresh.length)DOOR_GATE.arrive(r.fresh.length);
+  for(const [o,n] of r.flips||[])if(DOOR_PENDK.delete(o))DOOR_PENDK.add(n); /* a card-less ask that gained its card is the same ask */
   {const here=new Set(items.map(x=>x.key));for(const x of r.fresh)DOOR_PENDK.add(x.key);for(const k of [...DOOR_PENDK])if(!here.has(k))DOOR_PENDK.delete(k);} /* the new asks that still wait: one answered elsewhere before the opening opens nothing */
   if(r.startup)DOOR_GATE.startup();
   const d=DOOR_GATE.ruling({open,held:doorHeld(),waiting:DOOR_PENDK.size,any:list.length});

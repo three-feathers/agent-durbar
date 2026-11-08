@@ -57,6 +57,7 @@
         known=keys;
       },
       dueAt(){return batch.length?Math.max(batchAt+coalesce,last+throttle):null;},
+      dueIn(){const d=this.dueAt();return d==null?null:Math.max(0,d-now());}, /* ms from now on the notifier's own clock (never mix it with Date.now) */
       take(){
         if(!batch.length||now()<this.dueAt())return null;
         const ids=[...new Set(batch.map(x=>x.id))], first=batch[0];
@@ -80,13 +81,13 @@
       observe(items,f){
         const opts=f||{}, armed=!!opts.armed, paused=typeof opts.isPaused==='function'?opts.isPaused:()=>false;
         const list=(Array.isArray(items)?items:[]).filter(x=>x&&x.key!=null&&x.id!=null), present=new Set(list.map(x=>String(x.key)));
-        const fresh=[];
+        const fresh=[], flips=[];
         for(const x of list){
           const k=String(x.key), v=known.get(k);
           if(v){v.seen=now();continue;}
           /* the same agent gaining its card (a demo chat being built): its card-less wait of the same kind, or a plain wait */
           const flip=x.card?[String(x.id)+'|'+x.kind,String(x.id)+'|w'].find(f=>known.has(f)&&!known.get(f).card):null;
-          if(flip){known.delete(flip);known.set(k,{id:x.id,kind:x.kind,card:true,seen:now()});continue;}
+          if(flip){known.delete(flip);known.set(k,{id:x.id,kind:x.kind,card:true,seen:now()});flips.push([flip,k]);continue;}
           known.set(k,{id:x.id,kind:x.kind,card:!!x.card,seen:now()});
           if(armed)fresh.push(x);
         }
@@ -97,7 +98,7 @@
         }
         let startup=false;
         if(armed&&!wasArmed){wasArmed=true;startup=list.length>0;}
-        return {fresh,startup};
+        return {fresh,startup,flips};
       },
     };
   }
@@ -159,5 +160,9 @@
      copied; disabled: that button is on its way. Only 'send' sends; the agent's next card is never used in place of a missing one. */
   function pressVerdict(s){const x=s||{};if(!x.found||!x.holds)return 'stale';return x.disabled?'waiting':'send';}
 
-  return {APP,COALESCE_MS,THROTTLE_MS,BODY_MAX,titleFor,clip,waitLabel,sortOldestFirst,createNotifier,createArrivals,createDoorGate,createRiseGuard,pressVerdict,RISE_GUARD_MS};
+  /* The one place the page schedules the next look at a pending notification: the delay comes from the notifier's own clock, so a wall clock
+     is never subtracted from a monotonic one. Returns the timer, or 0 when nothing is pending. */
+  function scheduleDue(notifier,set,fire){const w=notifier.dueIn();return w==null?0:set(fire,w);}
+
+  return {APP,COALESCE_MS,THROTTLE_MS,BODY_MAX,titleFor,clip,waitLabel,sortOldestFirst,createNotifier,createArrivals,createDoorGate,createRiseGuard,pressVerdict,RISE_GUARD_MS,scheduleDue};
 })());

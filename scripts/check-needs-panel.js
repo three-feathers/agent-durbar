@@ -646,6 +646,15 @@ module.exports = async (ctx) => {
         assert.strictEqual(await panelOpen(), false, `${at}: a second ask inside the throttle does not open it yet (B)`);
         assert.ok(await until(`!!document.getElementById('needsPanel')`, 11000), `${at}: nothing else changed: the kept ask opens the panel by itself when the throttle ends`);
         await clean();
+        // a card-less ask that gains its card while the opening is kept is the same ask: it still opens when the throttle ends
+        await openAndClose('C');
+        await emit({ type: 'status', sessionId: R2, status: 'needs-permission', intent: 'Waiting' }); // waiting, no card yet
+        await ctx.sleep(500);
+        await perm(R2, 'thCb-' + w, 'Run, its card arrives after the wait'); // the card arrives: the same ask
+        await ctx.sleep(500);
+        assert.strictEqual(await panelOpen(), false, `${at}: a second ask inside the throttle does not open it yet (C)`);
+        assert.ok(await until(`!!document.getElementById('needsPanel')`, 11000), `${at}: an ask that gained its card while kept still opens the panel when the throttle ends`);
+        await clean();
       }
 
       // ---- FR-033: focus in a limit row's amount field, the row leaves (round 4, finding 2) ----

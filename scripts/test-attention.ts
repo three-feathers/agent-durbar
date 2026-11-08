@@ -11,6 +11,7 @@ type Item = { key: string; id: string; name: string; text: string };
 type Notifier = {
   observe: (items: Item[], f: { armed?: boolean; enabled?: boolean; focused?: boolean }) => void;
   dueAt: () => number | null;
+  dueIn: () => number | null;
   take: () => { title: string; body: string; id: string } | null;
 };
 const ROOT = path.join(__dirname, '..', '..');
@@ -128,7 +129,7 @@ for (const v of ['true', '"false"', '0', 'null']) assert.deepStrictEqual(parseSe
 
 // ---- spec 052 FR-193 / FR-205 (T196): createArrivals(), what is new for Your door ----
 type ArrItem = { key: string; id: string; kind: string; card?: boolean };
-type Arrivals = { observe: (items: ArrItem[], f: { armed?: boolean; isPaused?: (id: string) => boolean }) => { fresh: ArrItem[]; startup: boolean } };
+type Arrivals = { observe: (items: ArrItem[], f: { armed?: boolean; isPaused?: (id: string) => boolean }) => { fresh: ArrItem[]; startup: boolean; flips: string[][] } };
 type Gate = {
   arrive: (n: number) => void; startup: () => void; dismissed: () => void;
   ruling: (s: { open: boolean; held: boolean; waiting?: number; any?: number }) => 'open' | 'startup' | 'hold' | 'none';
@@ -296,6 +297,44 @@ const AA = A as unknown as {
     mono += A.THROTTLE_MS + 5; wall -= 3_600_000; // time passes; the wall clock is set back an hour
     g2.arrive(1); assert.strictEqual(g2.ruling({ open: false, held: false }), 'open', 'after the throttle a new ask opens it even though the wall clock went back');
   } finally { Date.now = realNow; (performance as unknown as { now: () => number }).now = realPerf; }
+}
+
+// the page's scheduling of the next look at a pending notification (round 7): the delay comes from the notifier's own clock, never wall minus monotonic
+{
+  const S = (A as unknown as { scheduleDue: (n: Notifier, set: (f: () => void, ms: number) => number, fire: () => void) => number }).scheduleDue;
+  // the real default clock, a fake setTimeout: a pending notification is scheduled once, after a positive delay of at most THROTTLE_MS
+  const Nd = A.createNotifier();
+  const delays: number[] = [];
+  const fake = (_f: () => void, ms: number): number => { delays.push(ms); return delays.length; };
+  assert.strictEqual(S(Nd, fake, () => undefined), 0, 'nothing pending: nothing scheduled');
+  assert.strictEqual(delays.length, 0);
+  Nd.observe([], { armed: true, enabled: true, focused: false });
+  Nd.observe([it('z', 'Zed', 'x', 'z|p|1')], { armed: true, enabled: true, focused: false });
+  assert.ok(S(Nd, fake, () => undefined) > 0, 'a pending notification is scheduled');
+  assert.strictEqual(delays.length, 1, 'once');
+  assert.ok(delays[0] > 0 && delays[0] <= A.THROTTLE_MS, `the delay is positive and at most THROTTLE_MS, not 0 and not a mixed-clock number (got ${delays[0]})`);
+  // no 0 ms loop: with a fake clock that the timers advance, the page's fire-and-reschedule reaches the notification in a few steps
+  let tt = 50_000; const Nf = A.createNotifier({ now: () => tt });
+  Nf.observe([], { armed: true, enabled: true, focused: false }); Nf.observe([it('y', 'Why', 'x', 'y|p|1')], { armed: true, enabled: true, focused: false });
+  let calls = 0, shown = false;
+  const run = (): void => { const id = S(Nf, (f, ms) => { calls++; tt += ms; setImmediate(() => 0); f(); return 1; }, () => { if (Nf.take()) shown = true; else if (calls < 20) run(); }); void id; };
+  run();
+  assert.ok(shown && calls <= 3, `the notification is reached in a few timer steps, not a busy loop (${calls} timer calls)`);
+  // the page uses it
+  const appSrc = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'app.js'), 'utf8');
+  assert.ok(/ATT\.scheduleDue\(NOTIFIER,setTimeout/.test(appSrc), 'app.js schedules through ATT.scheduleDue');
+  assert.ok(!/due-Date\.now\(\)/.test(appSrc), 'app.js never subtracts Date.now() from a notifier time');
+}
+
+// a card-less ask that gains its card is reported as a flip, so the page carries it (round 7)
+{
+  const ar = AA.createArrivals({ now: () => 1000 });
+  const plainW: ArrItem = { key: 'a|w', id: 'a', kind: 'w' };
+  ar.observe([], { armed: true });
+  assert.strictEqual(ar.observe([plainW], { armed: true }).fresh.length, 1, 'a card-less wait is new');
+  const o = ar.observe([{ key: 'r:9', id: 'a', kind: 'p', card: true }], { armed: true });
+  assert.strictEqual(o.fresh.length, 0, 'gaining its card is not new');
+  assert.deepStrictEqual(o.flips, [['a|w', 'r:9']], 'but it is reported as the same ask under a new key');
 }
 
 // wiring: the page loads the helper and the build copies it
