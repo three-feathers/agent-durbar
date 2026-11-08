@@ -2,11 +2,20 @@
 
 Agent Durbar `v0.1.0` is the first stable release. Builds are unsigned and not notarized (see "Honest limits" in the README for where each OS has been run). Each entry names the spec that describes the behavior and how it was checked.
 
-## Unreleased (on `main`, after the v0.1.11 tag)
+## Unreleased (on `main`, after the v0.1.12 tag)
 
 Not released yet: each change is a file in [`changelog.d/`](changelog.d/) until the next release folds them in (`npm run changelog:preview` lists them).
 
 <!-- changelog.d: fragments only; a bullet here fails npm run changelog:check -->
+
+## v0.1.12 ([release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.12), 2026-11-07)
+
+- **Drag the agent list's width** (spec 005 FR-236, issue #1223): the right edge of the rail beside a chat is a splitter. Drag it, or focus it and use the arrow keys (Shift or PageUp/PageDown for bigger steps, Home and End for the smallest and largest); double-click goes back to 220 px. It stays between 180 px and 40% of the window, is remembered on this computer and is never part of a session. Checked in the simulator at 1440x900 and 1280x800.
+- The release clip's step captions are numbered 1, 2, 3... in the order they are shown (spec 008; the v0.1.11 clip read "3." then "2."). Checked by `test:releasevideo` with a mutant; the clip was not re-filmed.
+- **Agent rules split** (spec 021 FR-081, FR-082): `AGENTS.md` is now a shorter core every agent loads, and task-only rules (incident triage, merge mechanics, review rounds and pace, chat and decisions, keeping docs in sync) moved word for word to `docs/rules/`, each linked from `AGENTS.md`; a new priority order (bugs, existing-world parity, the Retro world, new features, other worlds) is in the core. Checked with `npm run rules:check` (per-file budgets, every task file linked) and a line-by-line verbatim check.
+- MCP: the chat's *Sign in...* button now starts the sign-in (it used to only open the MCP list and showed nothing when the row had no button), also in an idle chat, and the MCP row shows Sign in for a server whose automatic renewal gave up even while Copilot still says it is connected (spec 058 FR-229, issue #1229). Checked with fake-adapter tests; not on a real server yet.
+- **Notes: Open source** (spec 083 FR-046, [issue 699](https://github.com/three-feathers/agent-durbar/issues/699)): a note's `⋯` has **Open source**. It opens the chat the note came from (a past session through Previous sessions, sending nothing), scrolls to the message inside the chat and outlines it for a moment; if the session is gone or the message is not found, a toast says so and the note stays.
+- **Real office: finished agents sit in a lounge row** (spec 097 FR-246..FR-249, issue #1220): an agent that is done and whose reply you have read leaves its full desk for a compact row under the desks, seated on their chair beside a small desk and monitor with their name plate; asleep agents too, lamp and screen off. An unread reply keeps the full desk until read. The freed room goes to the working and waiting desks; in the Retro arcade the seats are stools beside a small console. Moving back to work eases (none with reduced motion). Who moves is the flat office's lounge rule. Simulator-checked at 1440x900 and 1280x800.
 
 ## v0.1.11 ([release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.11), 2026-11-06)
 
