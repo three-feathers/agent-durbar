@@ -199,7 +199,7 @@ function helpers(ctx) {
   };
   /**
    * A screenshot of the page as it is now: `prep` first ('toasts' removes the toasts on screen, 'calm' moves the pointer off the controls (unless `keepHover`) and hides them with a style (`keepActions`, `blur` as in calm),
-   * 'mouse' moves the pointer off the controls, 'none'), then (`settle: true`) the page settles, then `delay` ms for paint (default 150). `file` is the full path.
+   * 'mouse' moves the pointer off the controls, 'none'; a `file` ending .jpg is written as a JPEG, `quality` 1..100, default 60), then (`settle: true`) the page settles, then `delay` ms for paint (default 150). `file` is the full path.
    */
   const shot = async (file, o = {}) => {
     const prep = o.prep || 'none';
@@ -209,7 +209,7 @@ function helpers(ctx) {
     if (o.settle) await w.settle();
     if (prep !== 'calm' && !o.walking) await w.settleWalk(); // FR-085 (calm already waited); `walking: true` keeps a figure mid-walk on purpose
     await ctx.sleep(o.delay === undefined ? 150 : o.delay);
-    await ctx.shot(file); // spec 101: under `npm run shots:docs` main's ctx.shot closes the macOS room for every picture (src/main/docshot.ts)
+    await ctx.shot(file, { quality: o.quality }); // spec 101: under `npm run shots:docs` main's ctx.shot closes the macOS room for every picture (src/main/docshot.ts); a `.jpg` file is written as a JPEG by that same capture (quality 1..100, default 60), for a photo-heavy picture the PNG palette guard (compress-shots) refuses
     if (o.tag) console.log(`[${o.tag}] saved`, o.what !== undefined ? o.what : path.basename(file));
   };
   /**

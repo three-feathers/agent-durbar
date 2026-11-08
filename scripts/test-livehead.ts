@@ -47,6 +47,13 @@ for (const c of COVERED) {
   assert.strictEqual(hiddenCanHide('é‍é ' + c.sample, [], {}), true, `LIVE_HEAD makes hidden characters live for ${c.what}`);
 }
 assert.strictEqual(hiddenCanHide('é‍é plain words', [], {}), false, 'no rule head: an inert hidden character stays inert');
+// review of PR 1317 (Ruben, item 2): the named-secret head sees the same names as the rule: any run of quotes, an empty backtick pair or `$()` between the name and its separator or inside it
+{
+  const head = alts.filter((x) => x.source.includes('%3[DdAa]'));
+  assert.strictEqual(head.length, 1, 'LIVE_HEAD has one named-secret head');
+  for (const t of ["--pass'word'''=v", "--password''=v", "''--pass''word''=''v''", '--pa``ss=v', '--pa$()ss=v', '--password$()=v', '--password' + '"'.repeat(30) + ':= v']) assert.ok(head[0].test(t), `#1317 item 2: the named-secret head matches ${t}`);
+  assert.ok(!head[0].test('--pass word v'), 'the named-secret head needs a separator');
+}
 
 // the walker: every shape the review of PR 1244 named is flagged, the ASCII ones are not
 const flagged = (src: string): boolean => windowsOf(src).length > 0;
