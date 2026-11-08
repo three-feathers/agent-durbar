@@ -679,7 +679,7 @@ async function main(): Promise<void> {
 
   // finding 6: each JSDoc sits on its own getter (the Autopilot limit was once put between `notifyNeedsMe`'s doc and its getter)
   {
-    const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'settings.ts'), 'utf8');
+    const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'settings.ts'), 'utf8').replace(/\r\n/g, '\n'); // line-end agnostic: a Windows checkout has CRLF
     assert.ok(/\/\*\* OS notifications when an agent needs you[^\n]*\*\/\n  get notifyNeedsMe\(\)/.test(src), 'finding 6: the notifyNeedsMe doc is on notifyNeedsMe');
     assert.ok(/\/\*\* Spec 099 S1[^\n]*\*\/\n  get autopilotLimit\(\)/.test(src), 'finding 6: the Autopilot limit doc is on its getter');
   }
