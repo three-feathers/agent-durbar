@@ -1,5 +1,5 @@
 /**
- * Unit test (spec 008 FR-104, FR-190): .github/scripts/ci-changes.js, the one decision of which CI parts a pull request needs.
+ * Unit test (spec 008 FR-104, FR-191): .github/scripts/ci-changes.js, the one decision of which CI parts a pull request needs.
  * Feeds changed-file lists against this checkout (base files are faked in memory) and asserts code / themes / ui / macos.
  * No git, no network, no Electron.
  */

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /*
- * Which parts of CI a pull request needs: the ONE place that decides (spec 008 FR-104, FR-190). `.github/scripts/ci-changes.sh`
+ * Which parts of CI a pull request needs: the ONE place that decides (spec 008 FR-104, FR-191). `.github/scripts/ci-changes.sh`
  * runs this file; each job that skips work calls it after a `fetch-depth: 2` checkout. Writes name=true|false lines to
  * $GITHUB_OUTPUT (stdout when unset).
  *
@@ -10,12 +10,12 @@
  *
  *   code=false    only docs/, specs/ or Markdown changed: build, test, office and package jobs pass without running (FR-104)
  *   themes=true   the look or the layout checks can change: the office job also runs theme geometry (FR-031)
- *   ui=true       something the app, its build, its packaging or the simulator UI drivers use changed (FR-190): the UI suite
+ *   ui=true       something the app, its build, its packaging or the simulator UI drivers use changed (FR-191): the UI suite
  *                 (ui-platforms.yml), the office layout job and package smoke run. False for tooling, report and unit-test
  *                 scripts, docs, other workflows, a version-only bump of package.json / package-lock.json and a package.json
  *                 change only to npm scripts the UI run cannot reach (not build, pack:dir or a lifecycle hook).
  *   macos=true    the path-filtered macOS build and test (macos-pr.yml) has work: false only when every change is docs or a
- *                 version-only bump (FR-190)
+ *                 version-only bump (FR-191)
  *
  * When in doubt a path counts (fail open toward running): an unknown top-level file or folder, a file under scripts/fixtures or
  * scripts/fakes, a non-source file in scripts/, an unreadable or unparsable package.json are all ui=true.
@@ -156,8 +156,8 @@ function main(env = process.env) {
     console.log(files.join('\n'));
     r = decide(files, gitIo(root));
     if (!r.code) console.log('Docs, specs and Markdown only: build, test and office checks are skipped (the job passes).');
-    else if (!r.ui) console.log('Nothing the app, its build or the UI drivers use changed: the UI suite, office layout and package smoke are skipped (spec 008 FR-190).');
-    if (r.code && !r.macos) console.log('Docs and a version-only package bump: the macOS pull-request build and test is skipped (spec 008 FR-190).');
+    else if (!r.ui) console.log('Nothing the app, its build or the UI drivers use changed: the UI suite, office layout and package smoke are skipped (spec 008 FR-191).');
+    if (r.code && !r.macos) console.log('Docs and a version-only package bump: the macOS pull-request build and test is skipped (spec 008 FR-191).');
   }
   for (const k of ['code', 'themes', 'ui', 'macos']) out(k, r[k]);
 }

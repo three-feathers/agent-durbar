@@ -6,7 +6,7 @@ name: macOS on pull requests
 # behaviour differs between operating systems (processes, paths, sockets, shell scripts, dependencies, packaging). GitHub's own
 # `paths:` filter decides, so no job waits for another and a PR that does not match starts nothing (no macOS minutes).
 # It is not a required check (the ruleset is unchanged): when it runs, read it in `gh pr checks` like any other.
-# Spec 008 FR-190 (owner decision 2026-11-08): `package.json` and the lock match the filter on every release's version bump, which
+# Spec 008 FR-191 (owner decision 2026-11-08): `package.json` and the lock match the filter on every release's version bump, which
 # changes nothing macOS can see. The job's first step asks ci-changes.js (the one decision) and skips the rest when the PR is only
 # docs and a version-only bump. A step, not a separate Linux job: this runs rarely, and a decision job on every run would cost more
 # Linux minutes than the macOS minutes it saves.

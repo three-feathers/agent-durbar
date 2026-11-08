@@ -96,7 +96,7 @@ specs/008-packaging-and-release/
 - One file per machine label, so machines never write the same file; the report adds files. Delta temporality only.
 - Docs: `docs/build-cost.md`, README, `docs/development.md`, `docs/collaboration.md`, `changelog.d/README.md`.
 
-## 2026-11-08: pull requests skip the CI parts their change cannot affect (T143, FR-190, owner decision)
+## 2026-11-08: pull requests skip the CI parts their change cannot affect (T144, FR-191, owner decision)
 
 - One decision, `.github/scripts/ci-changes.js` (plain Node, built-ins only, git through `execFileSync` with argument arrays, no shell). `ci-changes.sh` stays the entry point every job already calls and only runs it, so FR-104's code and themes are unchanged and the new outputs (`ui`, `macos`) come from the same place.
 - The UI closure is derived from the tree, not a hand list: roots from `ui-platforms.yml`'s `scripts/*.js`, `check-parallel.js`, `package.json`'s `build` and `pack:dir` and `build.afterPack`; then every string literal in a closure file naming a file or folder in `scripts/` (`require('./x')`, `path.join(__dirname, 'x.json')`, the DRIVERS names). scripts/ is listed once, so a decision takes about 40 ms.

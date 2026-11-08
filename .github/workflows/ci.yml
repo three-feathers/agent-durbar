@@ -9,7 +9,7 @@ name: CI
 #     "Build and test (macos-latest)" reports from a short Linux job that says so; the real macOS build and test runs on every
 #     push to main, nightly and by hand, and a nightly failure opens or updates an issue (nightly-watch.yml);
 #   - drafts run nothing until they are marked ready for review; a newer push cancels the PR's older run;
-#   - FR-190 (owner decision 2026-11-08): on a pull request, Package smoke and the office layout run only when something the app,
+#   - FR-191 (owner decision 2026-11-08): on a pull request, Package smoke and the office layout run only when something the app,
 #     its build, its packaging or the UI drivers use changed (`ui` from ci-changes.js); a tooling, report or unit-test script, or a
 #     version-only bump, skips their steps and the required checks pass. Build and test keeps `code` (unit tests read the version).
 #     Main, the merge queue, the nightly and by-hand runs run everything.
@@ -126,7 +126,7 @@ jobs:
       - if: steps.changes.outputs.ui == 'true'
         uses: ./.github/actions/npm-ci
       # Builds the app with electron-builder and fails if the Copilot runtime is not unpacked (scripts/after-pack.js).
-      # FR-190: ui=false (nothing the app or its packaging uses changed) skips it and the required check passes
+      # FR-191: ui=false (nothing the app or its packaging uses changed) skips it and the required check passes
       - if: steps.changes.outputs.ui == 'true'
         run: npm run pack:dir
 

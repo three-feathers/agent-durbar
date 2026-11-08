@@ -9,7 +9,7 @@ name: UI on three OSes
 # macOS only nightly and by hand (`gh workflow run ui-platforms.yml --ref <branch>`); a nightly failure opens or updates an issue
 # (nightly-watch.yml). Pull requests and pushes to main run Linux and Windows.
 #
-# Spec 008 FR-190 (owner decision, Vikram 2026-11-08): on a pull request the shards run only when something the app, its build or
+# Spec 008 FR-191 (owner decision, Vikram 2026-11-08): on a pull request the shards run only when something the app, its build or
 # the UI drivers use changed (`ui` from .github/scripts/ci-changes.js, the one decision; `paths:` below is only a coarse prefilter).
 # A report or tooling script, a unit-test script or a version-only bump runs no shard, and "UI suite complete" passes saying so.
 # Pushes to main, the nightly and by-hand runs always run every shard.
@@ -51,7 +51,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # FR-190: a cheap Linux job decides (seconds); the shards wait for it. Every event but pull_request says ui=true.
+  # FR-191: a cheap Linux job decides (seconds); the shards wait for it. Every event but pull_request says ui=true.
   changes:
     name: What the UI suite needs
     if: ${{ !github.event.pull_request.draft }}
@@ -139,7 +139,7 @@ jobs:
           if-no-files-found: ignore
 
   # FR-183: the one stable name for the whole UI suite: green only when every shard of every OS passed. A skipped (draft) or cancelled
-  # shard is not a pass. Branch protection can require this job instead of the shards. FR-190: when the decision said ui=false (a
+  # shard is not a pass. Branch protection can require this job instead of the shards. FR-191: when the decision said ui=false (a
   # pull request that changes nothing the UI run uses) the shards are skipped on purpose and this job passes, saying so; a failed or
   # cancelled decision job is a failure.
   complete:
@@ -159,7 +159,7 @@ jobs:
           echo "Decision: $CHANGES (ui=$UI_NEEDED); UI shards: $RESULT"
           test "$CHANGES" = "success"
           if [ "$UI_NEEDED" = "false" ]; then
-            echo "Nothing the app, its build or the UI drivers use changed: the UI shards did not run (spec 008 FR-190)." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "Nothing the app, its build or the UI drivers use changed: the UI shards did not run (spec 008 FR-191)." | tee -a "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           test "$RESULT" = "success"
