@@ -6,7 +6,7 @@
 
 <p align="center"><em>A calm command center for your AI agents</em></p>
 
-<p align="center"><a href="#build-cost-so-far"><img src="docs/build-cost-badge.svg" alt="Build cost, about US$3,758 at API list prices (estimate, not billing)"></a></p>
+<p align="center"><a href="#build-cost-so-far"><img src="docs/build-cost-badge.svg" alt="Build cost, about US$4,042 at API list prices (estimate, not billing)"></a></p>
 
 When you run many agent sessions across several windows, you end up watching your digital agents instead of working. Agent Durbar puts them in one office and shows you only the ones that need you. It is for anyone who works with agents, not only developers: a room is any folder an agent works in.
 
