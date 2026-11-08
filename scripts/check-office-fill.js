@@ -138,7 +138,8 @@ module.exports = async (ctx) => {
   const rows = [];
 
   /* the lounge setting, as a person turns it (Settings) */
-  const toggle = async () => { await js(`window.DurbarScreens.openSettings()`); await H.until(`!!document.getElementById('shutSw')`, 4000); await js(`document.getElementById('shutSw').click()`); await H.key('Escape'); await H.until(`!document.body.classList.contains('screen-open')&&window.__durbarSimUi.settleNow()`, 4000); };
+  /* waits on the setting's own effect (the stored value flips, then the screen closes and two frames are drawn), not on the screen closing alone: the render that follows the flip is what the callers read */
+  const toggle = async () => { await js(`window.DurbarScreens.openSettings()`); await H.until(`!!document.getElementById('shutSw')`, 4000); const was = await js(`localStorage.getItem('durbar.shutters')!=='off'`); await js(`document.getElementById('shutSw').click()`); await H.until(`(localStorage.getItem('durbar.shutters')!=='off')===${!was}`, 4000); await H.key('Escape'); await H.until(`!document.body.classList.contains('screen-open')&&window.__durbarSimUi.settleNow()`, 4000); await js(`new Promise((r)=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(true))))`); };
   /* how sharp a scene is drawn: the share (%) of its pixels that are exactly one of its flat colours (+-2 per channel); a blurred drawing
      loses most of them. Under load a capture can show an older frame: read again (up to 3 times) and keep the best */
   const sharp = async (sc) => {

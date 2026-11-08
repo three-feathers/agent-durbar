@@ -432,7 +432,7 @@ I choose a world, and its people come with it. If I pick characters myself, they
   |---|---|---|
   | Office people | Full by 097's art (#921; re-checked by the validator, T107) | Nothing |
   | Cheeky | Heads (3 poses, spec 077) | New frames, per picture by Paco (T108) |
-  | Prehistoric | Heads (3 poses) | New frames, per picture by Paco (T109) |
+  | Prehistoric | Full (6 people x 12 frames, `set.json` level `full`; drawn in Real office since spec 097 Q12, 2026-11-08) | Nothing; the cave world's frames are T109's |
   | Minimalist | Heads (the drawn `office` kit) | Full poses like every set; art in progress (T110, OP-11). Until then Flat only, and it says so. Flat keeps drawing the `office` kit |
   | Retro pixel people | Does not exist | New set (T111) |
   | My characters | Heads (096); per character | 096's Real office frames (T112) |
@@ -772,6 +772,10 @@ Agent decisions stand until the owner changes them.
 - **A5 decided (owner, 2026-11-01):** neither relaxed to fewer agents nor dropped: faces may go down to 24 px at 15 people (FR-229). An arrangement under that floor is redesigned.
 
 ## Changes
+
+### 2026-11-08: one caret element per screen, hidden not removed (FR-229, pointer to spec 008 FR-184)
+
+The arcade screen's repaint is throttled (spec 097 FR-033, once per 2 s) and its caret was removed and re-created with the state, so a trailing repaint under load counted as a node a status update added or removed (`statusNodes@retro`, FR-229, SC-024). `paintScreen` now keeps one caret and hides it, on the desk's clock again when shown. Cause, fix and mutant: spec 008 FR-184.
 
 ### 2026-11-07: RA5 (Light) booked: night built, the light choice withdrawn, T218 stays open (T217..T219, no new numbers)
 

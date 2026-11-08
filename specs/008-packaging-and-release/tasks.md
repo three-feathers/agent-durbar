@@ -174,6 +174,8 @@
 ## 2026-11-07: the macOS nightly UI checks in three shards (issue #839; FR-182)
 
 - [x] T134 Issue #839 (FR-182, owner decision 2026-11-07): `ui-suite --shard i/n` / `UI_SUITE_SHARD`, bare `--shard` and an empty shard refused; tested in `test:uisuite` (incl. `main()` and the workflow matrix); `ui-platforms.yml` runs macOS as three shards (geometry in every shard, office layout and title bar in shard 1, artifacts per shard), 45 minutes for every job
+- [x] T136 (2026-11-08, issues #1301, #1302, #1208; FR-184): `check-097-chat-contrast` waits for a capture that holds its own marker (was 4 of 10 under load, now 20 of 20); the mood and "ago" ticks compare with what the last draw showed (`renderAll`, `timerDraw` hook) and `check-office-ops` asserts none is due after an update; its calibration trace holds the page's marker; the arcade screen keeps one caret element and hides it (`paintScreen`), and the `statusNodes` row waits for the screen repaint after each update. Mutants: `CONTRAST_MUTANT=nohide`, `OPS_TRACE_MUTANT=name|nomark`, a build without the stored signatures. Mutants also: a build that removes the caret on repaint (`statusNodes@retro15 = 8, limit 0`). `[KNOWN GAP]` #1208's cause is a hypothesis; `check-097-plate-pencil` fails with and without this change (not investigated).
+
 
 ## 2026-11-08: the spec-numbers job (FR-185)
 
@@ -188,4 +190,4 @@
 
 ## 2026-11-08: faster UI drivers (FR-190)
 
-- [x] T143 (FR-190) Wave 1 of the faster UI drivers: `scripts/driver-helpers.js` (`load` steady wait, ready-timeout line, `fastVisits`, `fastReply`), `src/renderer/app.js` (`simvisits=fast`) and `src/renderer/sim.ts` (`simreply=fast`), both simulator-only; drivers check-office-fill, check-crew, check-auto-follow, shots-017, check-sched-top, check-answer-safety; check-office-ops opts out of the steady wait (`steady: false`). Each changed driver: a mutant that still fails on its own labelled assert, 5 local runs.
+- [x] T143 (FR-190) Wave 1 of the faster UI drivers: `scripts/driver-helpers.js` (`load` steady wait, ready-timeout line, `fastVisits`), `src/renderer/app.js` (`simvisits=fast`) (simulator-only); drivers check-office-fill, check-crew, check-auto-follow, shots-017, check-sched-top, check-answer-safety. Each changed driver: a mutant that still fails on its own labelled assert, 5 local runs.

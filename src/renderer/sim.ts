@@ -1574,8 +1574,6 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     }
 
     // Replies to chat messages the user types in sim mode.
-    /* spec 008 FR-190: `simreply=fast` (simulator only, opt-in per driver) shortens the four thinking pauses of a simulated reply from 650 ms to 60 ms, for drivers that wait for the reply and do not look at how long it thinks */
-    const simReplyFast = typeof location !== 'undefined' && new URLSearchParams(location.search).get('simreply') === 'fast';
     const wait = (ms: number): Promise<void> => new Promise((r) => window.setTimeout(r, ms));
     /** Spec 066 FR-008: a simulated plan-first turn: the agent reads, then proposes a plan and waits. */
     function simPlan(s: SimAgent, text: string, feedback?: string): void {
@@ -1596,7 +1594,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       s.state = 'working'; // spec 007 FR-018 (review on PR 642): a reply in progress is busy, so a model or tier switch asked now is queued as on a real runtime
       emit({ type: 'status', sessionId: sid(s), timestamp: now(), status: 'working', intent: 'Answering: ' + text.slice(0, 60) });
       if (/\bfallback\b/i.test(text)) runtimeSwitch(s, 'fallback'); // demo: the runtime switches models by itself (spec 030 FR-015)
-      if (!/\bquick\b/i.test(text)) for (let i = 0; i < 4; i++) { think(s, 1); await wait(simReplyFast ? 60 : 650); } // "quick": a turn where the model sends no reasoning
+      if (!/\bquick\b/i.test(text)) for (let i = 0; i < 4; i++) { think(s, 1); await wait(650); } // "quick": a turn where the model sends no reasoning
       if (/\blinks?\b/i.test(text)) {
         // spec 080 T018 AC3: the agent prints links to the simulator's test pages (and a mail link and a refused one), so a driver clicks them
         const LINKS = 'Here are the pages:\n\n- [the form page](durbar-sim://pages/form)\n- [the links page](durbar-sim://pages/links)\n- [the slow page](durbar-sim://pages/slow?ms=1500)\n- [mail me](mailto:sim@example.invalid)\n- [a web page](https://example.invalid/docs)\n- [a local page](http://127.0.0.1:9/page)\n- [not a web link](ms-msdt:/id)\n- [the tabs page](durbar-sim://pages/tabs)\n- [the keys page](durbar-sim://pages/keys)';
