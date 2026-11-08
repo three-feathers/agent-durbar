@@ -67,6 +67,8 @@
 /* the plate: the status, one line: the name is on the marquee and in the button's label */
 /* spec 102 T276 (issue #1303): the plate is AISLE_PLATE_H (21) tall with a 1 px border: 2 px of padding and a 15 px line (10.5 px text at the page's 1.25 would need 13.1, the lounge's 14 px strut 17.5, which cut the line) leave room for the whole line; it starts at the top (the lounge's two parts too, both 15 px lines), so a line too tall for its box overflows the bottom, where the overlap check reads it (centred, half of it would go above and not count) */
 .ro[data-world="retro"] .ro-plate{--arc-plate-pad:2px;--arc-plate-line:15px;padding-block:var(--arc-plate-pad);line-height:var(--arc-plate-line);justify-content:flex-start}
+/* waiting and limit plates have a 1.5 px border (realoffice.css): half a px less padding keeps 3 + 3 + 15 = 21 */
+.ro[data-world="retro"] .ro-plate:is(.st-waiting,.st-limit){--arc-plate-padw:1.5px;padding-block:var(--arc-plate-padw)}
 .ro[data-world="retro"] .ro-plate .ro-l1{display:none}
 .ro[data-world="retro"] .ro-plate .ro-l2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
 /* a one-line pill is as tall as a sign, so it fits the free part of a sign row: in the arcade it never covers a screen or a person (owner, 2026-11-03) */
