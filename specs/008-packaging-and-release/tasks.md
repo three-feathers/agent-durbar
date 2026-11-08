@@ -188,4 +188,4 @@
 
 ## 2026-11-08: faster UI drivers (FR-190)
 
-- [x] T143 (FR-190) Wave 1 of the faster UI drivers: `scripts/driver-helpers.js` (`load` steady wait, ready-timeout line, `fastVisits`, `fastReply`), `src/renderer/app.js` (`simvisits=fast`) and `src/renderer/sim.ts` (`simreply=fast`), both simulator-only; drivers check-office-fill, check-crew, check-auto-follow, shots-017, check-sched-top, check-answer-safety, check-notes-source; check-office-ops opts out of the steady wait (`steady: false`). Each changed driver: a mutant that still fails on its own labelled assert, 5 local runs.
+- [x] T143 (FR-190) Wave 1 of the faster UI drivers: `scripts/driver-helpers.js` (`load` steady wait, ready-timeout line, `fastVisits`, `fastReply`), `src/renderer/app.js` (`simvisits=fast`) and `src/renderer/sim.ts` (`simreply=fast`), both simulator-only; drivers check-office-fill, check-crew, check-auto-follow, shots-017, check-sched-top, check-answer-safety; check-office-ops opts out of the steady wait (`steady: false`). Each changed driver: a mutant that still fails on its own labelled assert, 5 local runs.

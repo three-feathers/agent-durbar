@@ -34,7 +34,7 @@ module.exports = async (ctx) => {
     await d.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: reduce ? 'reduce' : 'no-preference' }] });
   };
   const load = async (w, h) => {
-    await H.load({ fastVisits: true, fastReply: true, w, h, query: {}, ready: 'fit' });
+    await H.load({ w, h, query: {}, ready: 'fit' });
     await js(`(()=>{const b=window.__durbarSimUi.bridge();window.__calls=[];window.__rsArg=[];for(const k of ['send','resumeSession']){const f=b[k];if(!f||f.__rec)continue;const w=function(...a){window.__calls.push(k);if(k==='resumeSession')window.__rsArg.push(a[0]);return f.apply(this,a)};w.__rec=1;b[k]=w;}})()`);
   };
   const calls = (k) => js(`window.__calls.filter(c=>c===${jsLiteral(k)}).length`);
@@ -241,7 +241,7 @@ module.exports = async (ctx) => {
     check(await js(`document.getElementById('notesDrawer').hidden`), `${tag}: the drawer closed`);
 
     /* ---- the saved session id is not the agent's id (simresumeid=1, as with a Codex thread id): the office session is still found ---- */
-    await H.load({ fastVisits: true, fastReply: true, w, h, query: { simresumeid: '1' }, ready: 'fit' });
+    await H.load({ w, h, query: { simresumeid: '1' }, ready: 'fit' });
     await js(`(()=>{const b=window.__durbarSimUi.bridge();window.__calls=[];for(const k of ['send','resumeSession']){const f=b[k];if(!f||f.__rec)continue;const x=function(...a){window.__calls.push(k);if(k==='resumeSession')window.__rsArg.push(a[0]);return f.apply(this,a)};x.__rec=1;b[k]=x;}})()`);
     const nid = await open('Noor');
     const nreply = await firstReply();
@@ -253,7 +253,7 @@ module.exports = async (ctx) => {
     check((await calls('resumeSession')) === 0, `${tag}: the office session is not resumed from Previous sessions`);
 
     /* ---- a past session of ANOTHER app in the same folder (simkinds=mixed: Copilot and Claude Code chats share the folder) ---- */
-    await H.load({ fastVisits: true, fastReply: true, w, h, query: { simkinds: 'mixed', simprevkinds: '1' }, ready: 'fit' });
+    await H.load({ w, h, query: { simkinds: 'mixed', simprevkinds: '1' }, ready: 'fit' });
     await js(`(()=>{const b=window.__durbarSimUi.bridge();window.__calls=[];window.__rsArg=[];for(const k of ['send','resumeSession']){const f=b[k];if(!f||f.__rec)continue;const x=function(...a){window.__calls.push(k);if(k==='resumeSession')window.__rsArg.push(a[0]);return f.apply(this,a)};x.__rec=1;b[k]=x;}})()`);
     const pair = await js(`(()=>{const ag=window.__durbarSimUi.agents().filter(a=>!a.parent),noor=ag.find(a=>a.name==='Noor');if(!noor)return null;const m=ag.filter(a=>a.room===noor.room),cop=m.find(a=>(a.info.adapterId||'copilot')==='copilot'),cl=m.find(a=>a.info.adapterId==='claude');return cop&&cl?{cop:cop.name,copId:cop.id,cl:cl.name,clId:cl.id}:null})()`);
     check(pair, `${tag}: Noor's folder holds a Copilot chat and a Claude Code chat (${JSON.stringify(pair)})`);
