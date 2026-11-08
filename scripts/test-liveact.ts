@@ -812,6 +812,11 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
     ok(!PARTS.test(r.text) && !PARTS.test(line) && !PARTS.test(JSON.stringify(r.look || {})), 'no part of a token masked inside a host in the text, the line or look: ' + JSON.stringify([r.text, line]));
     ok(r.look && r.look.inHidden === true && r.look.hosts!.length === 0 && !r.look.findings!.some((f) => f.rule === 'host'), 'the host is hidden, said as a hidden part: ' + t);
   }
+  // pins "every character of the host": a stub mask that hides only the middle of a host, so both ends stay shown (the real mask now hides to the end of the host)
+  { const st = (x: string) => x.replace(/SECRET\d+/g, '[redacted]');
+    for (const [t, k] of [['fetch https://еx-SECRET123456-y.invalid/', 'other'], ['run ssh u@еx-SECRET123456-y.invalid', 'shell']] as const) {
+      const r = L.permText(t, k, { redact: st, cmd: st, url: st }) as { text: string; look?: Look };
+      ok(/е⟦U\+0435 Cyrillic⟧x-\[redacted\]-y\.invalid/.test(r.text) && !/SECRET/.test(r.text + (r.look ? LK.line(r.look) + JSON.stringify(r.look) : '')) && r.look!.hosts!.length === 0 && r.look!.inHidden === true, 'a host whose middle is hidden is never named: ' + JSON.stringify([r.text, r.look])); } }
   // pins inHidden per finding: the raw text has fewer findings (no host: the / before @) than the shown one, yet a letter is hidden
   const P = '\u0440\u0430\u0443\u0440\u0430\u04cf', stub = (x: string) => x.replace(/a\/SECRET[^@]*/g, '[redacted]');
   const sp = L.permText('run scp a/SECRET\u0430@' + P + '.invalid:/y .', 'shell', { redact: stub, cmd: stub, url: stub }) as { text: string; look?: Look };
