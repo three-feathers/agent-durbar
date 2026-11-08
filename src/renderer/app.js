@@ -1675,7 +1675,7 @@ function realModel(model){
     const list=m.mains.concat((m.rolled||[]).map(x=>x.a));
     const counts=['waiting','error','working','done','idle'].map(k=>{const n=m.all.filter(a=>!a.parent&&(k==='working'?(vis(a)==='working'||vis(a)==='thinking'):vis(a)===k)).length;return {state:k,n,word:LABELS[k].toLowerCase()};}).filter(c=>c.n);
     const u=SIM_QUIET_HEADS.has('aiu')?null:roomAiu(r);
-    return {id:r.id,name:r.name,path:deskMask(showPath(r.path)),cost:u?u.long:'',counts,newSess:!!(bridge&&bridge.newSession&&anyKindReady()&&!demoOn),menu:!!(bridge&&bridge.removeFolder&&!demoOn),
+    return {id:r.id,keep:!!(ORDER.desks[r.path]&&ORDER.desks[r.path].length),name:r.name,path:deskMask(showPath(r.path)),cost:u?u.long:'',counts,newSess:!!(bridge&&bridge.newSession&&anyKindReady()&&!demoOn),menu:!!(bridge&&bridge.removeFolder&&!demoOn),
       agents:list.map(a=>{const v=VISITS.at(a.id),st=stOf(a,old.has(a.id)),task=deskMask(taskOf(a)),place=v?placeLabel(v.place):'',needs=st==='waiting'||st==='limit';
         if(rolled.has(a.id)&&!v){ /* spec 097 FR-246, FR-120: in the lounge row, resting or asleep; the words of the flat lounge's peek card and label, the same masked reply (shutReply) */
           const asleep=old.has(a.id), ago=ACT.agoLong(sinceLast(a)), said=SHUT.spoken(ago), line=shutReply(a,140), who=a.profile?a.profile.name+' · '+a.role:a.role, word=asleep?'Asleep':stWord(a);
@@ -3914,11 +3914,13 @@ function reoGroup(kind,el){
   if(kind==='desk')return [...el.parentElement.children].filter(c=>c.classList&&c.classList.contains('unit'));
   return [...st.querySelectorAll('.lobby .place[data-reo]')];
 }
-/* the whole group in its shown order (also what the status filter hides), as keys: the base for a move */
-function reoFull(kind,el){
-  if(kind==='room'){const r=roomOfEl(el);return roomsInOrder().filter(x=>x.floor===r.floor).map(x=>x.path);}
-  if(kind==='desk'){const r=roomOfEl(el.closest('.room')),key=a=>Math.min(prio(a),...helpersOf(a).map(prio));
-    const l=agents.filter(a=>!a.parent&&a.room===r.id).sort((x,y)=>key(x)-key(y));return RO.sortBy(l,a=>a.id,ORDER.desks[r.path]).map(a=>a.id);}
+/* the whole group in its shown order (also what the status filter hides), as keys: the base for a move.
+   spec 097 FR-348 (issue 1152): from the model and a room id, not from elements, so Real office (no flat elements) moves the same way */
+function reoFullKeys(kind,roomId){
+  const r=ROOMS.find(x=>x.id===roomId);
+  if(kind==='room'){return r?roomsInOrder().filter(x=>x.floor===r.floor).map(x=>x.path):[];}
+  if(kind==='desk'){const key=a=>Math.min(prio(a),...helpersOf(a).map(prio));
+    const l=r?agents.filter(a=>!a.parent&&a.room===r.id).sort((x,y)=>key(x)-key(y)):[];return RO.sortBy(l,a=>a.id,r&&ORDER.desks[r.path]).map(a=>a.id);}
   return RO.sortBy(window.DurbarPlaces.allPlaces(CUSTOM),p=>p.id,ORDER.places).map(p=>p.id);
 }
 async function saveOrder(){
@@ -3927,12 +3929,17 @@ async function saveOrder(){
   try{const d=await bridge.setOrder(ORDER);if(!d)throw new Error('no answer');}
   catch(e){toast('The new order could not be saved. It stays until you close the app.',5000);}
 }
-function reoCommit(kind,el,els,from,to){
-  const key=REO_KEY[kind](el),target=REO_KEY[kind](els[to]),full=reoFull(kind,el),next=RO.moveTo(full,key,target,to>from);
+/* put `key` before or after `target` in the saved order (the one document, FR-085) and save it; `roomId`: the room (of the room, or of the desk) */
+function reoApply(kind,key,target,after,roomId){
+  const next=RO.moveTo(reoFullKeys(kind,roomId),key,target,after),r=ROOMS.find(x=>x.id===roomId);
   if(kind==='room'){ORDER.rooms=RO.merge(ORDER.rooms,next,RO.MAX_ROOMS);}
-  else if(kind==='desk'){const r=roomOfEl(el.closest('.room'));ORDER.desks={[r.path]:next.slice(0,RO.MAX_DESKS),...Object.fromEntries(Object.entries(ORDER.desks).filter(([k])=>k!==r.path))};}
-  else ORDER.places=RO.merge(ORDER.places,next,RO.MAX_PLACES);
+  else if(kind==='desk'&&r){ORDER.desks={[r.path]:next.slice(0,RO.MAX_DESKS),...Object.fromEntries(Object.entries(ORDER.desks).filter(([k])=>k!==r.path))};}
+  else if(kind==='place')ORDER.places=RO.merge(ORDER.places,next,RO.MAX_PLACES);
   saveOrder();
+}
+function reoCommit(kind,el,els,from,to){
+  const rm=kind==='room'?roomOfEl(el):kind==='desk'?roomOfEl(el.closest('.room')):null;
+  reoApply(kind,REO_KEY[kind](el),REO_KEY[kind](els[to]),to>from,rm?rm.id:'');
 }
 const reoName=(kind,el)=>kind==='room'?(roomOfEl(el)||{name:'Folder'}).name:kind==='desk'?((byId(REO_KEY.desk(el))||{name:'Desk'}).name):placeLabel(el.dataset.place);
 function reoSay(kind,el,els,to){
@@ -3951,6 +3958,25 @@ function reoStep(kind,el,delta){
   const moved=document.querySelector('#stage '+sel);
   if(moved){if(kind==='room'){if(!moved.contains(document.activeElement)){const b=moved.querySelector('.room-more,.room-new,.desk[data-id]');if(b)b.focus({preventScroll:true});}}else{if(!moved.hasAttribute('tabindex')&&moved.tagName!=='BUTTON')moved.setAttribute('tabindex','-1');moved.focus({preventScroll:true});}
     const node=kind==='desk'?moved.closest('.unit'):moved,now=reoGroup(kind,node);reoSay(kind,node,now,now.indexOf(node));}
+  return true;
+}
+/* spec 097 FR-346..FR-348 (issue 1152): one step in Real office (and from its folder menu), from the model: the shown group is what the office draws
+   (`officeModel`, `lobbyPlaces`), the base and the write are the flat office's (`reoApply`); the focus goes back to `refocus` (a selector under #stage). */
+function reoStepModel(kind,key,delta,roomId,refocus){
+  const rm=ROOMS.find(x=>x.id===roomId);
+  let keys=[];
+  if(kind==='room'&&rm)keys=officeModel().map(m=>m.r).filter(x=>x.floor===rm.floor).map(x=>x.path);
+  else if(kind==='desk'){const m=officeModel().find(x=>x.r.id===roomId);keys=m?m.mains.map(a=>a.id):[];}
+  else if(kind==='place')keys=lobbyPlaces().map(p=>p.id).filter(reorderablePlace);
+  const i=keys.indexOf(key),j=i+delta;
+  if(i<0||keys.length<2)return false;
+  const name=kind==='room'?rm.name:kind==='desk'?(byId(key)||{name:'Desk'}).name:placeLabel(key);
+  if(j<0||j>=keys.length){announce(name+' is already '+(delta<0?'first':'last')+'.');return false;}
+  reoApply(kind,key,keys[j],j>i,roomId);
+  renderAll();
+  const el=refocus&&document.querySelector('#stage '+refocus);
+  if(el)afQuiet(()=>el.focus({preventScroll:true}));
+  announce(RO.announce(name,j+1,keys.length,kind==='desk'?'its room':kind==='place'?'the lobby':''));
   return true;
 }
 function resetOrder(){
@@ -3973,6 +3999,17 @@ function resetOrder(){
     if(!e.altKey||e.ctrlKey||e.metaKey||e.isComposing||e.defaultPrevented||ui.view!=='office'||modalOpen())return;
     const d={ArrowLeft:-1,ArrowUp:-1,ArrowRight:1,ArrowDown:1}[e.key];
     if(!d||!e.target||!e.target.closest||!e.target.closest('#stage')||e.target.closest('input,textarea,select,[contenteditable="true"]'))return;
+    if(OFFICE_VIEW==='real'&&RO_LOAD==='ready'){ /* spec 097 FR-347: a name plate, a folder sign's button, a lobby plate that is a button */
+      const t=e.target,pl=t.closest('.ro-plate[data-id]'),sb=t.closest('.ro-sb[data-foldermenu],.ro-sb[data-newsess]'),lp=t.closest('.ro-lplate[data-place]');
+      const ag=pl&&byId(pl.dataset.id),rid=e.shiftKey?(ag&&!ag.parent?ag.room:sb?(sb.dataset.foldermenu||sb.dataset.newsess):''):'';
+      if(e.shiftKey?rid:(ag&&!ag.parent&&pl.dataset.surface!=='lounge')||(lp&&reorderablePlace(lp.dataset.place))){
+        e.preventDefault();e.stopPropagation();
+        if(e.shiftKey){const r=ROOMS.find(x=>x.id===rid);if(r)reoStepModel('room',r.path,d,r.id,pl?`.ro-plate[data-id="${CSS.escape(pl.dataset.id)}"]`:sb.dataset.foldermenu?`.ro-sb[data-foldermenu="${CSS.escape(rid)}"]`:`.ro-sb[data-newsess="${CSS.escape(rid)}"]`);}
+        else if(ag&&!ag.parent&&pl.dataset.surface!=='lounge')reoStepModel('desk',ag.id,d,ag.room,`.ro-plate[data-id="${CSS.escape(ag.id)}"]`);
+        else reoStepModel('place',lp.dataset.place,d,'',`.ro-lplate[data-place="${CSS.escape(lp.dataset.place)}"]`);
+      }
+      return;
+    }
     let kind='',el=null;
     if(e.shiftKey){el=e.target.closest('.room');kind='room';}
     else if((el=e.target.closest('.place[data-reo]')))kind='place';
@@ -7262,7 +7299,7 @@ document.addEventListener('click',e=>{
 const roomPeers=r=>roomsInOrder().filter(x=>x.floor===r.floor&&roomShown(x)&&agents.some(a=>!a.parent&&a.room===x.id));
 const roomMoveOk=r=>ui.view==='office'&&roomPeers(r).length>1;
 const roomStepAt=(r,d)=>{const l=roomPeers(r),i=l.indexOf(r);return i>=0&&i+d>=0&&i+d<l.length;};
-function moveRoomStep(r,d){const el=document.querySelector(`#stage .room[data-key="room:${CSS.escape(r.id)}"]`);if(el)reoStep('room',el,d);}
+function moveRoomStep(r,d){const el=document.querySelector(`#stage .room[data-key="room:${CSS.escape(r.id)}"]`);if(el)reoStep('room',el,d);else if(OFFICE_VIEW==='real')reoStepModel('room',r.path,d,r.id,`.ro-sb[data-foldermenu="${CSS.escape(r.id)}"]`);} /* spec 097 FR-346: Real office has no flat room element */
 function openFolderMenu(r,x,y,anchor){
   if(!r||demoOn||!bridge||!bridge.removeFolder)return;
   closeModeMenu();

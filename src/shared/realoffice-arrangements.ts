@@ -148,7 +148,7 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
   const W = Math.max(200, view.w), Ho = Math.max(200, view.h);
   /* FR-248: the lounge's agents leave their cabinets; their seats take cells after the cabinets (below) */
   const sp = splitLounge(model), lounge = sp.lounge;
-  const folders = sp.desks.filter((f) => f.agents.length).map((f) => ({ id: f.id, agents: sortDesks(f.agents) }));
+  const folders = sp.desks.filter((f) => f.agents.length).map((f) => ({ id: f.id, agents: f.keep ? f.agents : sortDesks(f.agents) })); /* FR-345: a saved desk order is kept in the cabinet rows too */
   const seats = folders.flatMap((f) => f.agents.map((a) => ({ a, f: f.id })));
   const k = seats.length;
   const [lobbyMin0, lobbyMax] = lobbyRange(Ho), lobbyMin = lobbyMin0 - AISLE_LANE;

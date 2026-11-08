@@ -853,5 +853,25 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
   const P = ['library', 'software', 'terminal', 'web', 'other', 'coffee', 'boss', 'bank', 'postbox'].map((id, i) => ({ id, visitors: i % 3 === 0 ? [{ id: 'v' + i, person: PEOPLE[i], needsYou: false }] : [] }));
   assert.strictEqual(createHash('sha256').update(JSON.stringify(lobbyBand(META, P, 1408, 150))).digest('hex').slice(0, 16), 'fad790c1536fb4f8', 'FR-255 lobby: the photo world is unchanged');
 }
+{
+  // spec 097 FR-345 (T260, issue #1152): a folder with a saved desk order (`keep`) keeps the model's order; one without is sorted by status (FR-022); the lounge row is unchanged
+  const order = (L: Layout, z: number): string[] => L.zones[z].desks.map((d) => d.id);
+  const mk = (keep: boolean): RealModel => ({ folders: [
+    { id: 'k', keep, agents: [{ id: 'k0', state: 'idle', person: PEOPLE[0], away: null }, { id: 'k1', state: 'waiting', person: PEOPLE[1], away: null }, { id: 'k2', state: 'working', person: PEOPLE[2], away: null }, { id: 'k3', state: 'error', person: PEOPLE[3], away: null }] },
+    { id: 'o', agents: [{ id: 'o0', state: 'idle', person: PEOPLE[4], away: null }, { id: 'o1', state: 'waiting', person: PEOPLE[5], away: null }] } ],
+    places: PLACES.map((id) => ({ id, visitors: [] })) });
+  for (const [W, H] of [[1440, 848], [1280, 748]] as [number, number][]) {
+    const kept = realLayout(mk(true), { w: W, h: H }, META), auto = realLayout(mk(false), { w: W, h: H }, META);
+    const kz = kept.zones.findIndex((z) => z.id === 'k'), az = auto.zones.findIndex((z) => z.id === 'k'), oz = kept.zones.findIndex((z) => z.id === 'o');
+    assert.deepStrictEqual(order(kept, kz), ['k0', 'k1', 'k2', 'k3'], `FR-345 ${W}: a kept folder keeps the model's order`);
+    assert.deepStrictEqual(order(auto, az), ['k1', 'k3', 'k2', 'k0'], `FR-345 ${W}: a folder without a saved order is sorted by status`);
+    assert.deepStrictEqual(order(kept, oz), ['o1', 'o0'], `FR-345 ${W}: another folder in the same model is still sorted by status`);
+  }
+  const lm: RealModel = mk(true);
+  lm.folders[0].agents[0] = { ...lm.folders[0].agents[0], lounge: true } as RealAgent; lm.folders[0].agents[2] = { ...lm.folders[0].agents[2], lounge: true, state: 'done' } as RealAgent;
+  const ll = realLayout(lm, { w: 1440, h: 848 }, META);
+  assert.deepStrictEqual(ll.lounge ? ll.lounge.desks.map((d) => d.id) : [], ['k2', 'k0'], 'FR-345: the lounge row keeps FR-246 status order (done before idle) for a kept folder');
+  assert.deepStrictEqual(order(ll, ll.zones.findIndex((z) => z.id === 'k')), ['k1', 'k3'], 'FR-345: a kept folder without its lounge seats keeps the model order');
+}
 console.log(`realoffice layout and lights tests passed (${cases} layouts, ${lcases} with a lounge, faces ${JSON.stringify(faces)})`);
 process.exitCode = 0;
