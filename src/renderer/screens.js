@@ -34,6 +34,7 @@
     if(!cur)return;
     const after=cur.kind==='notes'&&typeof cur.onClose==='function'?cur.onClose:null; /* spec 083 T034a: the Notes screen puts the focus back */
     cur=null;root().hidden=true;root().innerHTML='';if(window.DurbarHarnesses&&window.DurbarHarnesses.shown)window.DurbarHarnesses.shown(false);
+    if(X.own)X.own.screenClosed(); /* spec 096 FR-043: the rows' pictures are no longer shown */
     document.body.classList.remove('screen-open');
     ['toolsBtn','settingsBtn'].forEach(id=>{const b=$(id);if(b)b.setAttribute('aria-pressed','false');});
     if(after){try{after();}catch(e){/* the screen is closed whatever the hook does */}}
@@ -49,12 +50,27 @@
   /* modal: body is an element or html; buttons [{label,value,cls}]; resolves value (or null when dismissed). `validate(root)` may return an error text (keeps it open and shows it), `true` (keeps it open; the caller already showed the error) or a promise of either. */
   function dialog({title,html,buttons,wide,size,cls,validate,onOpen}){
     return new Promise(resolve=>{
-      const old=document.getElementById('scrDlg');if(old)old.remove();
+      /* spec 096: a dialog replaced by another is dismissed, so whoever waits on it hears (a running try is cancelled, never left with no Cancel) */
+      const old=document.getElementById('scrDlg');if(old){if(old._onReplaced)old._onReplaced();if(old._close)old._close();else old.remove();}
+      const back=document.activeElement; /* focus goes back here when it closes (spec 096 review) */
       const d=document.createElement('div');d.id='scrDlg';d.className='dlg-ov';
       d.innerHTML=`<div class="dlg${wide?' wide':''}${size==='m'||size==='l'?' '+size:''}${cls?' '+cls:''}" role="dialog" aria-modal="true" aria-labelledby="scrDlgT"><h3 id="scrDlgT"></h3><div class="dbody">${html||''}</div><p class="derr" id="scrDlgErr" role="alert" hidden></p><div class="dbtn"></div></div>`;
       d.querySelector('#scrDlgT').textContent=title;
       const row=d.querySelector('.dbtn');
-      const done=v=>{d.remove();resolve(v);};
+      /* spec 096 review: keyboard contract as dialog.js: Tab cannot leave, anything that steals focus is undone, Escape works with the focus anywhere. Only the top dialog acts (DurbarDialog may be open over this one, with its own trap). */
+      const onTop=()=>{const a=document.querySelectorAll('.dlg-ov');return a[a.length-1]===d;};
+      const focusables=()=>[...d.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),a[href],summary,[tabindex]:not([tabindex="-1"])')].filter(e=>e.getClientRects().length);
+      const onKey=e=>{
+        if(!onTop())return;
+        if(e.key==='Escape'&&!d.contains(document.activeElement)){e.preventDefault();e.stopPropagation();done(null);return;} /* inside, the listener below lets a control keep its own Escape */
+        if(e.key!=='Tab')return;
+        const f=focusables(),i=f.indexOf(document.activeElement);
+        if(!f.length){e.preventDefault();return;}
+        if(i<0||(e.shiftKey?i===0:i===f.length-1)){e.preventDefault();focusIn(e.shiftKey?f[f.length-1]:f[0]);}
+      };
+      const onFocus=e=>{if(onTop()&&!d.contains(e.target)){const f=focusables();if(f[0])focusIn(f[0]);}};
+      document.addEventListener('keydown',onKey,true);document.addEventListener('focusin',onFocus);
+      const done=v=>{if(!d.isConnected&&d._over)return;d._over=true;document.removeEventListener('keydown',onKey,true);document.removeEventListener('focusin',onFocus);d.remove();if(back&&back.isConnected&&back!==document.body&&!document.querySelector('.dlg-ov'))focusIn(back);resolve(v);};
       buttons.forEach(b=>{const el=document.createElement('button');el.type='button';el.className='btn'+(b.cls?' '+b.cls:'');el.textContent=b.label;if(b.value===null)el.dataset.cancel='1';
         el.onclick=async()=>{if(b.value!==null&&validate){el.disabled=true;let err;try{err=await validate(d);}finally{el.disabled=false;}if(err){if(typeof err==='string'){const e=d.querySelector('#scrDlgErr');e.textContent=err;e.hidden=false;}return;}}done(b.value===null?null:{value:b.value,root:d});};row.appendChild(el);});
       window.DurbarDialog.onBackdrop(d,()=>done(null)); /* spec 052 FR-237: not on a drag that only ends on the backdrop */
@@ -68,6 +84,13 @@
       d._close=()=>done(null);
     });
   }
+  /* spec 096 review: a prompt from the background (a folder's setup) must neither replace what the person is doing nor vanish: it waits. A flow of several dialogs holds them while it runs. */
+  let dialogHolds=0;const holdWatchers=new Set();
+  const dialogsAreFree=()=>!dialogHolds&&!document.querySelector('.dlg-ov');
+  function holdDialogs(){dialogHolds++;let on=true;return()=>{if(!on)return;on=false;dialogHolds--;holdWatchers.forEach(f=>f());};}
+  function dialogsFree(){return new Promise(res=>{if(dialogsAreFree())return res();
+    const tick=()=>{if(dialogsAreFree()){ob.disconnect();holdWatchers.delete(tick);res();}};
+    const ob=new MutationObserver(tick);ob.observe(document.body,{childList:true});holdWatchers.add(tick);});}
   const sw=(on,label,attrs)=>`<button class="swt${on?' on':''}" type="button" role="switch" aria-checked="${on?'true':'false'}" aria-label="${esc(label)}" ${attrs||''}><i></i></button>`;
 
   /* ---------------- Settings: Profiles (custom agents), spec 043 FR-010/FR-014 ---------------- */
@@ -407,18 +430,24 @@
         ${themeFallbackNote(themes)}
         ${badThemes.length?`<p class="scr-note warn" role="status">${badThemes.length} theme folder${badThemes.length>1?'s were':' was'} ignored: ${esc(badThemes.map((b)=>b.id+': '+(b.error||'invalid')).join('; '))}</p>`:''}
         <div class="scr-tools"><button class="btn" type="button" id="thExport" title="Copy the active theme's folder (one of your own themes) to a folder you pick">Export the active theme…</button>${userThemes.some((u)=>u.ok!==false)&&X.bridge.removeTheme?'<button class="btn" type="button" id="thRemove" title="Delete the active theme (one of your own themes) from this computer">Remove the active theme…</button>':''}</div></section>`;
+    if(X.own&&X.bridge.characterList)await X.own.load(); /* spec 096 FR-040: the list, the count and the preview of My characters */
     /* Characters (spec 077 FR-064, FR-068): who sits at the desks, on top of any theme; the theme picker's pattern, one figure per choice */
     const KIT_NAMES={office:'Minimalist',pixel:'Pixel',crew:'Cheeky'};
     /* the items are painted again after a theme pick: the theme's own figures and every preview follow the theme */
     const charItems=()=>{
-      const cur=window.THEME.characters(), own=window.THEME.themeKit(), crewN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.IDS)?window.DurbarCrew.IDS.length:0; const preN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.PREHISTORIC_IDS)?window.DurbarCrew.PREHISTORIC_IDS.length:0,pirN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.PIRATE_IDS)?window.DurbarCrew.PIRATE_IDS.length:0,monN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.MONSTER_IDS)?window.DurbarCrew.MONSTER_IDS.length:0,royN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.ROYAL_IDS)?window.DurbarCrew.ROYAL_IDS.length:0,rebN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.REBELS_IDS)?window.DurbarCrew.REBELS_IDS.length:0;
+      const cur=X.charactersChosen?X.charactersChosen():window.THEME.characters(), own=window.THEME.themeKit(), crewN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.IDS)?window.DurbarCrew.IDS.length:0; const preN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.PREHISTORIC_IDS)?window.DurbarCrew.PREHISTORIC_IDS.length:0,pirN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.PIRATE_IDS)?window.DurbarCrew.PIRATE_IDS.length:0,monN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.MONSTER_IDS)?window.DurbarCrew.MONSTER_IDS.length:0,royN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.ROYAL_IDS)?window.DurbarCrew.ROYAL_IDS.length:0,rebN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.REBELS_IDS)?window.DurbarCrew.REBELS_IDS.length:0;
       const real=X.view&&X.view.get()==='real'&&X.view.world; /* FR-201: in Real office the first choice is the world's default set */
       const list=[real?{id:'theme',name:'World\u2019s default ('+real.defaultSet()+')',sub:'People follow the world'}:{id:'theme',name:'The theme\u2019s own',sub:(KIT_NAMES[own]||own)+' figures'},{id:'minimalist',name:'Minimalist',sub:'The calm office figure'},{id:'cheeky',name:'Cheeky',sub:crewN?crewN+' cheeky characters':'Cheeky characters'},{id:'prehistoric',name:'Prehistoric',sub:preN?preN+' cave characters':'Cave characters'},{id:'pirate',name:'Pirate',sub:pirN?pirN+' pirate characters':'Pirate characters'},{id:'monster',name:'Monster',sub:monN?monN+' monster characters':'Monster characters'},{id:'royal',name:'Royal',sub:royN?royN+' royal characters':'Royal characters'},{id:'rebels',name:'Animal Rebels',sub:rebN?rebN+' animal characters':'Animal characters'}];
-      return list.map((c)=>`<li class="throw"><button class="thpick" type="button" data-characters="${esc(c.id)}" aria-pressed="${c.id===cur}" aria-label="Characters ${esc(c.name)}: ${esc(c.sub)}"><span class="chsw" aria-hidden="true">${X.charPreview?X.charPreview(c.id):''}</span><span class="thtx"><b title="${esc(c.name)}">${esc(c.name)}</b><small>${esc(c.sub)}</small></span></button></li>`).join('');
+      /* spec 096 FR-040: My characters; with none yet it says "Make one first" and does nothing else */
+      const mineN=X.own&&X.bridge.characterList?X.own.list().length:-1;
+      const mineD=mineN>0&&window.DurbarCrew?window.DurbarCrew.idsFor('mine').length:0; /* how many can be drawn: with none, the theme's own figures are */
+      if(mineN>=0)list.push({id:'mine',name:'My characters',sub:!mineN?'Make one first':!mineD?'Pictures cannot be read':mineN+(mineN===1?' character':' characters'),off:!mineN});
+      return list.map((c)=>`<li class="throw"><button class="thpick" type="button" data-characters="${esc(c.id)}" aria-pressed="${c.id===cur}"${c.off?' aria-disabled="true"':''} aria-label="Characters ${esc(c.name)}: ${esc(c.sub)}"><span class="chsw" aria-hidden="true">${X.charPreview?X.charPreview(c.id):''}</span><span class="thtx"><b title="${esc(c.name)}">${esc(c.name)}</b><small>${esc(c.sub)}</small></span></button></li>`).join('');
     };
     const charSec=window.THEME&&window.THEME.setCharacters&&X.applyCharacters?`<section class="scr-sec" aria-labelledby="chH"><h3 id="chH">Characters</h3>
         <p class="scr-note">Who sits at the desks, on top of any theme; the choice applies at once and is kept on this computer.</p>
-        <ul class="thlist" id="chList">${charItems()}</ul></section>`:'';
+        <ul class="thlist" id="chList">${charItems()}</ul>
+        ${X.own&&X.bridge.characterList?`<div class="scr-tools"><button class="btn" type="button" id="chMake">Make a character with AI…</button></div><p class="scr-note small" id="chMakeNote" hidden></p><div id="chManage"></div>`:''}</section>`:'';
     /* Logo (spec 101 FR-020..FR-023): the top-bar icon, the Characters pattern; DurbarLogo (logo-marks.js) keeps the choice in localStorage and applies it at once */
     const LG=window.DurbarLogo;
     const logoItems=()=>{const cur=LG.current();return LG.IDS.map((id)=>{const n=LG.NAMES[id];return `<li class="throw"><button class="thpick" type="button" data-logo="${esc(id)}" aria-pressed="${id===cur}" aria-label="Logo ${esc(n[0])}: ${esc(n[1])}"><span class="lgsw" aria-hidden="true">${LG.preview(id)}</span><span class="thtx"><b title="${esc(n[0])}">${esc(n[0])}</b><small title="${esc(n[1])}">${esc(n[1])}</small></span></button></li>`;}).join('');};
@@ -553,7 +582,7 @@
     });
     /* spec 077 FR-068: a Characters pick applies live through app.js's applyCharacters and shows the new choice at once */
     if($('chList'))$('chList').addEventListener('click',(e)=>{
-      const b=e.target.closest&&e.target.closest('[data-characters]');if(!b||!X.applyCharacters)return;
+      const b=e.target.closest&&e.target.closest('[data-characters]');if(!b||!X.applyCharacters||b.getAttribute('aria-disabled')==='true')return;
       const done=X.applyCharacters(b.dataset.characters);
       Promise.resolve(done).then(()=>{const n=$('dsR'),V=X.view;if(n&&V)n.textContent=V.note();}); /* spec 102 FR-202: the one line saying a choice has no Real office poses follows the pick */
       $('chList').querySelectorAll('[data-characters]').forEach((x)=>x.setAttribute('aria-pressed',String(x===b)));
@@ -566,6 +595,7 @@
       const v=window.DurbarLogo.set(b.dataset.logo);
       $('lgList').querySelectorAll('[data-logo]').forEach((x)=>x.setAttribute('aria-pressed',String(x.dataset.logo===v)));
     });
+    if($('chMake')&&window.DurbarCharMaker)window.DurbarCharMaker.paint({X,dialog,holdDialogs,focusIn,scrollTo:scrollInBody,maker:window.DurbarScreens.maker,repaintChoices:()=>{const l=$('chList');if(l)l.innerHTML=charItems();}}); /* spec 096 T041, T045 */
     if($('thExport'))$('thExport').onclick=async()=>{
       if(!X.bridge.exportTheme)return;
       /* spec 040 FR-019: the theme active NOW, not the one when Settings was painted; a built-in one says why it cannot be exported */
@@ -596,6 +626,9 @@
   /* spec 040 FR-015 / spec 052 FR-093: what one one-shot request costs, in the words of the app's plan (also used by spec 043 FR-028) */
   function oneShotCostLine(k){const n=k.displayName||k.id;
     return 'Uses your own '+n+' account: '+(k.id==='claude'?'a small cost (at most $0.25, usually about a cent).':k.id==='copilot'?'a few AI credits from your plan.':k.id==='codex'?'a small part of your ChatGPT plan\'s usage.':'a small cost on your own plan.');}
+  /* spec 096 FR-034: one picture. "No API money" only for a login known to be ChatGPT; `login` is `chatgpt`, `apikey` or anything else (unknown) */
+  function imageCostLine(k,login){const n=k.id==='codex'?'Codex':(k.displayName||k.id);
+    return login==='chatgpt'?'Uses your own '+n+' (ChatGPT plan): about a minute and one picture from your plan\'s limits per try. No API money.':login==='apikey'?n+' is signed in with an API key, so a picture would be charged by OpenAI.':'Uses your own '+n+': about a minute and one picture per try. If it is signed in with an API key, OpenAI charges each picture, so Durbar asks before every try.';}
   /* spec 040 FR-015: AI credits a Copilot generation reported (1e9 nano = 1 credit) */
   const aiCredits=(nano)=>(Number(nano)/1e9).toFixed(2);
   /* spec 070 FR-022: one line per own theme that could not use some of its values (dropped, or a text pair set back for contrast) */
@@ -607,6 +640,17 @@
       return parts.length?esc(t.name)+': '+parts.join('; '):'';}).filter(Boolean);
     return lines.length?`<p class="scr-note small" role="status" id="thFallbacks">${lines.join('; ')}.</p>`:'';
   }
+  /* spec 096 T040 (spec 021 FR-031): the parts of any "make one with AI" dialog, neutral on purpose: they know no theme, character or world (spec 102 reuses them). The ids are the caller's. */
+  const pickIdeas=(list,n)=>{const f=window.exports&&window.exports.pickFrom;return f?f(list,n):list.slice(0,n);}; /* src/shared/ideas.ts, read at call time */
+  const ideaChipsHtml=(ideas,ids)=>ideas.length?`<div class="ai-ideas" id="${ids.box}"><span class="scr-note small">Ideas:</span>${pickIdeas(ideas,4).map((i)=>`<button class="btn" type="button" data-idea="${esc(i)}">${esc(i)}</button>`).join('')}<button class="btn" type="button" id="${ids.more}" title="Show other ideas">More ideas</button></div>`:'';
+  /* a chip fills the description box; More ideas draws four others */
+  const wireIdeaChips=(d,ideas,ids,box,onPick)=>d.addEventListener('click',(e)=>{const b=e.target.closest&&e.target.closest("[data-idea]");if(b){box.value=b.dataset.idea;onPick(box.value);focusIn(box);return;}
+    if(e.target.closest&&e.target.closest('#'+ids.more)){const el=d.querySelector('#'+ids.box);if(el)el.outerHTML=ideaChipsHtml(ideas,ids);}});
+  /* the ready agent apps with one capability ([] when the list cannot be read), and the Made by picker over them */
+  async function readyKinds(cap){if(!X.bridge.listAdapters)return [];try{return ((await X.bridge.listAdapters())||[]).filter((k)=>k&&k.state==='ready'&&k.capabilities&&k.capabilities[cap]);}catch(e){return [];}}
+  const harnessPickerHtml=(kinds,chosen,id)=>`<label>Made by<select id="${id}">${kinds.map((k)=>`<option value="${esc(k.id)}"${k.id===chosen?' selected':''}>${esc(k.displayName||k.id)}</option>`).join('')}</select></label>`;
+  /* the cost line follows the pick: it names only the app picked (spec 052 FR-093) */
+  const wireHarnessPicker=(d,id,costId,onPick,costOf)=>d.querySelector('#'+id).addEventListener('change',(e)=>{onPick(e.target.value);const c=d.querySelector('#'+costId);if(c)c.textContent=costOf(e.target.value);});
   /* one server of the Copilot CLI list (or the built-in one): read-only, with its exact command/URL and a switch for new sessions */
   function cliRow(a){
     const run=a.command||a.url?(a.transport==='stdio'||a.command?[a.command].concat(a.args||[]).join(' '):a.url):'';
@@ -1861,6 +1905,7 @@
   }
 
   window.DurbarScreens={saveFailText,oneShotCostLine,aiCredits,
+    maker:{readyKinds,ideaChipsHtml,wireIdeaChips,harnessPickerHtml,wireHarnessPicker,imageCostLine}, /* spec 096 T040 */
     init(ctx){X=ctx;if(window.DurbarHarnesses)window.DurbarHarnesses.init({bridge:ctx.bridge,mask:ctx.mask,handover:ctx.handover,toast:(t)=>ctx.toast(ctx.esc(t),3600),onAccounts:(a)=>{if(ctx.setAccounts)ctx.setAccounts(a);},onBadge:setUpdBadge,onChange:(again)=>{X._hsRefresh=true;X._acctRefresh='check';if(ctx.refreshKinds)ctx.refreshKinds();if(cur&&cur.kind==='settings')paint();}});},
     folderMcp:openFolder,
     folderNotes:openNotes, /* spec 083 T034a: {key, name, render(focus), onClose()} */
@@ -1873,7 +1918,8 @@
     mcpEvent:id=>{if(mcpDlgHook)mcpDlgHook(id);liveEvent(id);},
     liveEvent, /* spec 058 FR-083: a chat stopped or is ready again */
     placeDialog,
-    dialog, /* spec 061: the folder-setup list uses the same modal */
+    dialog, /* spec 061: the folder-setup list uses the same modal; spec 096: a replaced one is dismissed */
+    dialogsFree,
     close,isOpen,
     /* live refresh while the Tools view is open (called when events arrive) */
     refresh:()=>{if(cur&&cur.kind==='tools'&&!document.getElementById('scrDlg'))paintTools();},

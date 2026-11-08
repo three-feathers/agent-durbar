@@ -6,7 +6,8 @@ import { normaliseFolderKey } from './usagedoc';
 import { MAX_FRAME_BYTES, checkFrames, stripChunks } from './webpcheck';
 
 export const CHARACTER_ID_RE = /^my-[0-9a-f]{12}$/;
-export const MAX_CHARACTERS = 24;
+/** Owner's principle of 2026-10-31 (spec `## Changes`): from this many the maker warns, and the person may go on. It is no limit: the store keeps as many as it is given. */
+export const CHARACTERS_WARN_AT = 24;
 export const MAX_CHARACTER_NAME = 40;
 /** The poses in the order of the sheet's panels (FR-010); `blink` is the working pose with the eyes closed (D2). */
 export const SHEET_POSES = ['working', 'waiting', 'resting', 'blink'] as const;

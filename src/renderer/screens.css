@@ -514,6 +514,27 @@ body.has-bridge #topBtns{display:flex}
 .ns-done{margin:10px 0 0}
 .ns-done>summary{cursor:pointer;margin:0 0 6px;padding:4px 2px;font-size:12px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--ink-2);border-radius:6px}
 .ns-done>summary:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+/* spec 096 FR-041, FR-042: the character maker's preview and My characters' rows (spacing, sizes and radii from the scale, spec 070 FR-054) */
+.dlg.cm-preview .cm-frames{display:flex;flex-wrap:wrap;gap:var(--s-2);align-items:flex-end;margin:var(--s-1) 0 var(--s-2)}
+.cm-frame{margin:0;display:flex;flex-direction:column;align-items:center;gap:var(--s-1);min-width:0}
+.cm-frame figcaption{font-size:var(--t4-size);color:var(--ink-2,inherit)}
+.cm-pic{display:block;width:88px;height:88px;border:1px solid var(--line-2);border-radius:var(--r-md);background:var(--bg);overflow:hidden}
+.cm-pic img{display:block;width:88px;height:88px}
+.cm-round{display:block;width:64px;height:64px;border-radius:50%;border:1px solid var(--line-2);background:var(--bg);overflow:hidden;margin-top:var(--s-5)}
+.cm-round svg{display:block}
+.dlg .derr#cmSaveErr{margin:var(--s-1) 0 0}
+.chm-list{list-style:none;margin:var(--s-1) 0 0;padding:0;display:flex;flex-direction:column;gap:var(--s-1)}
+.chm-row{display:flex;align-items:center;gap:var(--s-2);padding:var(--s-1) var(--s-2);border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface-2);min-width:0}
+.chm-pic{flex:none;width:44px;height:44px;border-radius:var(--r-md);background:var(--bg);overflow:hidden}
+.chm-pic img{display:block;width:44px;height:44px}
+.chm-tx{flex:1 1 140px;min-width:0;display:flex;flex-direction:column;gap:0}
+.chm-name,.chm-sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chm-sub{font-size:var(--t4-size);color:var(--ink-2,inherit)}
+.chm-act{flex:none;display:flex;flex-wrap:wrap;gap:var(--s-1);justify-content:flex-end}
+.ai-ideas{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s-1);margin:var(--s-1) 0}
+.ai-ideas .btn{height:auto;min-height:var(--h-ctl);padding:var(--s-1) var(--s-2);font-size:var(--t4-size);white-space:normal;text-align:start;max-width:100%} /* a long idea wraps inside the dialog instead of running past it */
+.ai-ideas .btn:last-child{border-style:dashed}
+.thpick[aria-disabled=true]{cursor:default}
 .orgrows{list-style:none;margin:0;padding:0}.orgrow{padding:6px 0;border-top:1px solid var(--line);display:flex;flex-direction:column;align-items:flex-start;gap:2px;font-size:var(--t3-size,12px)}.orgrow small{font-size:11px;color:var(--muted,inherit);overflow-wrap:anywhere}.orgrow small.warn{color:var(--amber-ink)}.orgrow ul{margin:2px 0 0;padding-left:18px}
 
 @media (forced-colors:active){.swt{border-color:ButtonText;forced-color-adjust:none;background:Canvas}.swt i{background:ButtonText;box-shadow:none}.swt.on{background:Highlight;border-color:Highlight}.swt.on i{background:HighlightText}} /* on and off differ by the knob's place and by colour: both survive */

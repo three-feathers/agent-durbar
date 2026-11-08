@@ -295,6 +295,10 @@ Read-only, and the command it lets through then runs inside the app's OS sandbox
 
 ## Changes
 
+### 2026-11-01: the prompt waits and cannot vanish (spec 096 review)
+
+The folder-setup prompt opens by itself, so it could replace another dialog, or be replaced and never asked again. It now waits until no dialog or longer flow is open, and comes back if a dialog replaces it. Evidence: `sim:` `check-charmaker`, `shots-061-foldersetup`.
+
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):

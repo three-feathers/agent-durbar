@@ -8,7 +8,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { CharacterStore, nameSlug } from '../src/main/charstore';
 import type { NewCharacter } from '../src/main/charstore';
-import { CHARACTER_ID_RE, MAX_CHARACTERS } from '../src/shared/charrules';
+import { CHARACTER_ID_RE, CHARACTERS_WARN_AT } from '../src/shared/charrules';
 
 const ROOT = path.join(__dirname, '..', '..');
 const artDir = path.join(ROOT, 'src', 'renderer', 'crew', 'art');
@@ -71,14 +71,14 @@ try {
     assert.ok(!store.save(NEW, 'bad\u0007name').ok, 'a control character');
     assert.ok(!fs.existsSync(root) || tree(root).length === 0, 'nothing was written');
   }
-  // --- the cap (Q5) ---
+  // --- many characters are the person's call (owner's principle of 2026-10-31): the store keeps past the number the maker warns at ---
   {
     const { store } = setup();
-    for (let i = 0; i < MAX_CHARACTERS; i++) saved(store.save(NEW, `C${i}`));
+    assert.strictEqual(CHARACTERS_WARN_AT, 24);
+    for (let i = 0; i < CHARACTERS_WARN_AT; i++) saved(store.save(NEW, `C${i}`));
     assert.strictEqual(store.list().length, 24);
-    const r = store.save(NEW, 'one more');
-    assert.ok(!r.ok && /24/.test(r.error), 'the 25th is refused');
-    assert.strictEqual(store.list().length, 24);
+    saved(store.save(NEW, 'one more'));
+    assert.strictEqual(store.list().length, 25, 'the 25th is kept');
   }
   // --- a write that fails leaves nothing (Edge cases: disk full) ---
   {

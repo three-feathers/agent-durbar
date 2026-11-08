@@ -10,7 +10,7 @@
 import { randomBytes } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { CHARACTER_ID_RE, MAX_CHARACTERS, cleanCharacterName, isStoredFace } from '../shared/charrules';
+import { CHARACTER_ID_RE, cleanCharacterName, isStoredFace } from '../shared/charrules';
 import type { FaceSet, FrameSet } from '../shared/charrules';
 import { MAX_FRAME_BYTES, checkFrames } from '../shared/webpcheck';
 
@@ -144,7 +144,6 @@ export class CharacterStore {
   /** FR-030: checks the frames again, writes a temp folder, renames it to a new id. A failure leaves nothing. `name` is the caller's checked name, or empty for "My character N". */
   save(c: NewCharacter, name: string): { ok: true; id: string; name: string } | StoreFailure {
     const current = this.list();
-    if (current.length >= MAX_CHARACTERS) return { ok: false, error: `You have ${MAX_CHARACTERS} characters, the most Durbar keeps. Delete one first.` };
     const frames = [c.frames.working, c.frames.waiting, c.frames.resting, ...(c.frames.blink ? [c.frames.blink] : [])];
     if (checkFrames(frames).length) return { ok: false, error: 'The pictures did not pass the final check. Try again.' };
     if (!STYLE_RE.test(c.style) || !POSES.every((p) => isStoredFace(c.face[p]))) return { ok: false, error: 'The pictures did not pass the final check. Try again.' };

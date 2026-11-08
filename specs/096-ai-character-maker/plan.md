@@ -22,7 +22,7 @@ Codex gets a new adapter capability, `imageGen`. It makes one 2x2 sheet (working
 - **Constraints**:
   - a frame is at most 40 KB and a character at most 160 KB;
   - a generation times out after 5 minutes and the encoder after 20 s;
-  - at most 24 characters;
+  - from 24 characters the maker warns, with no limit (spec `## Changes`, 2026-10-31);
   - text is at least 10.5px;
   - motion adds at most 3 points of renderer CPU (recorded, not gated).
 
@@ -115,7 +115,7 @@ Results go to `docs/agent-apps.md` (Codex) and this spec's `## Changes`, with `r
 - **R3 Showing user pictures within the CSP.**
   - The choice is `blob:` in `img-src` (FR-043). Blob URLs can only be made by our own script (`script-src 'self'`), and the markup stays small.
   - The alternative, `data:` URLs (already allowed), costs about 54 KB per desk string, and 15 desks x re-renders make the scene cache heavy.
-  - The phase-3 PR measures both on the simulator (`check:office` time, heap) and keeps `data:` if the difference is small, so the CSP stays unchanged.
+  - Measured in phase 4 (spec `## Changes`, 2026-10-31): `data:` costs 1.6x the time and 1,117 KB of markup per paint against 3 KB, so `blob:` is kept and the CSP gains it for images only.
 - **R4 Blur from animation** (agent note, spec 077 FR-051). The bob is a discrete `y` attribute, a repaint with no compositor layer. The typing keys use `fill-opacity`. The cross-fade uses `opacity` only for 250 ms. `check:crew` measures sharpness after it.
 - **R5 CPU with 15 desks.**
   - One shared blink timer; the discrete bob repaints 3 times per 4.2 s per desk; only working and waiting desks move.
