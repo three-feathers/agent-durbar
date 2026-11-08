@@ -178,4 +178,4 @@
 ## 2026-11-08: the spec-numbers job (FR-185)
 
 - [x] T137 (FR-185) `.github/workflows/spec-kit.yml` job `spec-numbers`: `spec-numbers-selftest` (the PR's scripts, no token) and `spec-numbers` (the BASE copy of `picture-budget.js --strict` and `spec-numbers.js` on the PR checkout as data, `persist-credentials: false` everywhere, token on one step), no `pull_request_target`; workflow-shape test in `test:specnumbers`. Mutants: a checkout without `persist-credentials: false`, a token in the self-test job, the PR's copy of the script in the token job each fail it. `[KNOWN GAP]` the jobs run for the first time on the next PR (the base has no scripts yet).
-- [x] T138 (FR-186) `.github/actions/npm-ci` (Electron and electron-builder download cache + 3-try `npm ci`) used by every Electron-installing job; assert in `test:supplychain`. `[KNOWN GAP]` proves itself on CI only.
+- [x] T140 (FR-188) `.github/actions/npm-ci` (Electron and electron-builder download cache + 3-try `npm ci`) used by every Electron-installing job; assert in `test:supplychain`. `[KNOWN GAP]` proves itself on CI only.
