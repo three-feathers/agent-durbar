@@ -285,13 +285,21 @@ function split(map, total, labelOf = (k) => k) {
     .map(([k, v]) => `${labelOf(k)} ${total > 0 ? Math.round((v / total) * 100) : 0}% (US$${group(v)})`).join(', ');
 }
 
+/** The scope facts in the README sentence, all computed from the data (never typed): machine count, since date, spread share (`estUsd` = the estimated, spread part of the total). */
+const scopeClause = (cum, estUsd) => {
+  const n = [...cum.machines.values()].filter((v) => v > 0).length;
+  const share = cum.total > 0 ? estUsd / cum.total : 0;
+  const how = share <= 0 ? 'all measured' : share > 0.5 ? 'mostly spread over earlier days rather than measured' : `${Math.round(share * 100)}% spread over earlier days rather than measured`;
+  return `work on ${n === 1 ? 'one machine' : `${n} machines`} since ${cum.since}, ${how}`;
+};
+
 /** The README block, markers included: one short paragraph and, when there is a spread, the daily graph (owner decisions 2026-11-08; the details live in docs/build-cost.md). `release` is a tag such as `v0.1.12` (checked). Same inputs, same text. */
-function readmeBlock(cum, date, release, withDaily = false) {
+function readmeBlock(cum, date, release, withDaily = false, estUsd = 0) {
   if (!DATE_RE.test(date)) throw new Error('--date must be YYYY-MM-DD');
   if (!/^v\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(release)) throw new Error('--release must look like v0.1.12');
   return [BEGIN, '## Build cost so far', '',
-    `**About US$${group(cum.total)}** at API list prices to build this app with AI agents, as of ${date} (release [\`${release}\`](https://github.com/three-feathers/agent-durbar/releases/tag/${release})). `
-    + `This is an **${LABEL}**: Claude Code's own list-price figure, not what anyone was charged. The spread of the earlier days, the split by model and machine, what is not counted and the method: [docs/build-cost.md](docs/build-cost.md).`, '',
+    `**About US$${group(cum.total)}** at API list prices to build this app with AI agents, as of ${date} (release [\`${release}\`](https://github.com/three-feathers/agent-durbar/releases/tag/${release})): an **${LABEL}** of ${scopeClause(cum, estUsd)}. `
+    + `The rest is not counted yet; the split, the spread of the earlier days and the method: [docs/build-cost.md](docs/build-cost.md).`, '',
     ...(withDaily ? ['![Daily build cost by model: measured days solid, estimated (spread) days faded and dashed](docs/build-cost-days.svg)', ''] : []),
     END].join('\n').replace(/\n\n<!-- build-cost:end -->$/, '\n' + END);
 }
@@ -499,6 +507,6 @@ function chartDaysSvg(rows) {
 }
 
 module.exports = {
-  DAY_SPREAD_LINE, chartDaysSvg, detailBlock, rewriteDetail, rewriteBadgeAlt, badgeAlt, DETAIL_BEGIN, DETAIL_END, TOKEN_METRIC, COST_METRIC, TYPES, SOURCES, MODEL_RE, MACHINE_RE, DATE_RE, MAX_FILE_BYTES, MAX_MODELS_PER_DAY, MAX_DAYS_PER_FILE, MAX_DAYS_PER_REQUEST, FILE_VERSION,
+  DAY_SPREAD_LINE, chartDaysSvg, detailBlock, rewriteDetail, scopeClause, rewriteBadgeAlt, badgeAlt, DETAIL_BEGIN, DETAIL_END, TOKEN_METRIC, COST_METRIC, TYPES, SOURCES, MODEL_RE, MACHINE_RE, DATE_RE, MAX_FILE_BYTES, MAX_MODELS_PER_DAY, MAX_DAYS_PER_FILE, MAX_DAYS_PER_REQUEST, FILE_VERSION,
   SCOPE, DEFAULT_REPOS, REPO_ATTR, parseRepos, normalizeRepo, modelName, MODEL_NAMES, BEGIN, END, LABEL, validateHistory, upsertRow, badgeSvg, chartSvg, esc, validateBaseline, cumulative, readmeBlock, rewriteReadme, emptyState, checkMachine, dayOf, ingest, validateState, firstDay, report, group, usd,
 };

@@ -146,6 +146,14 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
   assert.ok(/About US\$3,858\*\*/.test(block) && block.includes('as of 2026-11-10') && block.includes('`v0.1.13`'), 'block: total, date and release');
   assert.ok(!block.includes('Opus 5.5') && !block.includes('By model') && !block.includes('By machine') && !block.includes('Not counted') && !block.includes('Estimated, not measured'), 'block: no split, not-counted line or spread paragraph in the README block (spec 008 2026-11-08 delta)');
   assert.ok(!/!\[/.test(block) && /!\[[^\]]*\]\(docs\/build-cost-days\.svg\)/.test(lib.readmeBlock(cum1, '2026-11-10', 'v0.1.13', true)) && !block.includes('docs/build-cost.svg'), 'block: the daily graph only when there is a spread, never the cumulative one');
+  const cum0b = lib.cumulative([], '2026-11-07', base);
+  const sc = (c, est) => lib.readmeBlock(c, '2026-11-10', 'v0.1.13', true, est);
+  assert.ok(sc(cum1, 0).includes('of work on 2 machines since 2026-10-25, all measured.'), 'scope: the machine count (2), the since date and "all measured" come from the data');
+  assert.ok(sc(cum0b, 0).includes('work on one machine since 2026-10-25'), 'scope: one machine from a machine count of one');
+  assert.ok(sc(cum0b, 3000).includes('mostly spread over earlier days rather than measured'), 'scope: "mostly spread" above 50% estimated (3000 of 3758)');
+  assert.ok(sc(cum0b, 1000).includes('27% spread over earlier days') && !sc(cum0b, 1000).includes('mostly'), 'scope: at or below 50% the percentage is given, never "mostly"');
+  assert.ok(sc(cum0b, 1879).includes('50% spread') && !sc(cum0b, 1879).includes('mostly'), 'scope: exactly half is not "mostly"');
+  assert.ok(block.includes('The rest is not counted yet'), 'scope: the rest is said to be not counted');
   assert.ok(block.includes('(docs/build-cost.md)'), 'block: link to docs/build-cost.md');
   assert.ok(detail.includes('Opus 5.5 77% (US$2,956)') && !detail.includes('claude-opus-5-5') && detail.includes('mac 3% (US$100)') && detail.includes('linux 97%') && detail.includes('SPREADNOTE') && detail.includes('Not counted yet: older work') && detail.includes('(build-cost-days.svg)') && detail.includes('(build-cost.svg)'), 'detail: docs/build-cost.md gets both graphs, the spread note, the split and the not-counted line');
   const badgeReadme = '<p><a href="#x"><img src="docs/build-cost-badge.svg" alt="old"></a></p>';
@@ -290,6 +298,7 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
   assert.ok(r3.text.includes('About US$1,000**') && r3.text.includes('(docs/build-cost.md)') && r3.days.includes('<svg'), 'command: the README block names the total and links docs/build-cost.md');
   const blk3 = r3.text.slice(r3.text.indexOf('<!-- build-cost:begin'), r3.text.indexOf('<!-- build-cost:end -->'));
   assert.deepStrictEqual(blk3.match(/!\[[^\]]*\]\([^)]*\)/g).map((m) => m.replace(/^.*\(|\)$/g, '')), ['docs/build-cost-days.svg'], 'command: the README block has exactly one image, the daily graph (spec 008 2026-11-08 deltas)');
+  assert.ok(/ of work on one machine since 2026-10-25, (mostly spread over earlier days rather than measured|\d+% spread over earlier days rather than measured)\. The rest is not counted yet/.test(blk3), 'command: the README sentence says one machine, since 2026-10-25, the spread share and not counted, from the data');
   assert.ok(!/Estimated, not measured|By model|By machine|Not counted|an assumption/.test(blk3), 'command: the README block has no spread paragraph, split or not-counted line');
   assert.ok(r3.docText.includes('(build-cost-days.svg)') && r3.docText.includes('Estimated, not measured: US$') && r3.docText.includes('an assumption') && r3.docText.includes('By model:') && r3.docText.includes('Not counted yet:'), 'command: docs/build-cost.md holds the daily graph, the spread paragraph, the split and the not-counted line');
   assert.ok(r3.text.includes('alt="Build cost, about US$1,000 at API list prices (estimate, not billing)"'), 'command: the badge alt text and the block say the same total (#1351)');

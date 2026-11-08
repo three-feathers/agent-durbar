@@ -79,15 +79,15 @@ function build(o) {
   const states = loadAll(o);
   const cum = lib.cumulative(states, o.date, baseline);
   const spread = readSpread(o.spread);
-  let rows = null; let note;
+  let rows = null; let note; let estUsd = 0;
   if (spread) {
     rows = spreadLib.dailyRows(spread, states, baseline, o.date);
     const shown = rows.reduce((a, r) => a + r.measCents + r.estCents, 0);
     if (Math.abs(shown / 100 - cum.total) > 0.011) throw new Error(`the daily chart adds up to US$${(shown / 100).toFixed(2)} but the total is US$${cum.total.toFixed(2)}: run "npm run usage:spread -- --write" again`);
-    const est = rows.reduce((a, r) => a + r.estCents, 0) / 100; const n = rows.filter((r) => r.estCents > 0).length;
+    const est = rows.reduce((a, r) => a + r.estCents, 0) / 100; estUsd = est; const n = rows.filter((r) => r.estCents > 0).length;
     if (n) note = lib.DAY_SPREAD_LINE(est, n, rows.find((r) => r.estCents > 0).date, [...rows].reverse().find((r) => r.estCents > 0).date);
   }
-  const block = lib.readmeBlock(cum, o.date, o.release, !!rows);
+  const block = lib.readmeBlock(cum, o.date, o.release, !!rows, estUsd);
   const detail = lib.detailBlock(cum, o.date, o.release, baseline.note, note);
   const history = lib.upsertRow(readHistory(o.history), cum, o.date, o.release);
   return { block, detail, text: lib.rewriteBadgeAlt(lib.rewriteReadme(fs.readFileSync(o.readme, 'utf8'), block), cum.total), docText: lib.rewriteDetail(fs.readFileSync(o.doc, 'utf8'), detail), history, badge: lib.badgeSvg(cum.total), chart: lib.chartSvg(history), days: rows ? lib.chartDaysSvg(rows) : null };

@@ -10,6 +10,8 @@ The graphs, the split and the total are in **The numbers so far** below (generat
 
 **Estimated days.** Telemetry only began on 2026-11-07, so the earlier spend (the baseline's lump, 2026-10-25 to 2026-11-06) was one number. It is **spread, not measured**: each day's weight is 50% its share of the lines changed (added plus deleted, `git log --numstat` on `main`, without lockfiles, pictures and other binaries, generated and build-cost files) and 50% its share of the merged PRs (merge commits and `(#N)` squash commits). The per-model split of an estimated day uses the same mix as the lump (an assumption). Estimated days are the faded, dashed bars and say so in the chart's legend; measured days keep their real numbers and the total is unchanged to the cent. See section 4.
 
+**The committed figure comes from the committed data** (the baseline, `docs/build-cost/data/` and the spread file). Running `npm run usage:readme` also reads this machine's local receiver folder (`~/.durbar-usage`), which adds local days that are not committed yet (US$4,057 instead of US$4,042 on 2026-11-09). For the README, run it with `DURBAR_USAGE_DIR` set to an empty folder, so only committed data counts.
+
 (The pictures, the numbers section and the README's short *Build cost so far* paragraph are generated: section 4.)
 
 <!-- build-cost-detail:begin (written by `npm run usage:readme`) -->

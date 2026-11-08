@@ -82,7 +82,7 @@ How we work (spec-driven, with [GitHub Spec Kit](https://github.com/github/spec-
 <!-- build-cost:begin (written by `npm run usage:readme`; method in docs/build-cost.md) -->
 ## Build cost so far
 
-**About US$4,042** at API list prices to build this app with AI agents, as of 2026-11-08 (release [`v0.1.13`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.13)). This is an **API list-price estimate, not billing**: Claude Code's own list-price figure, not what anyone was charged. The spread of the earlier days, the split by model and machine, what is not counted and the method: [docs/build-cost.md](docs/build-cost.md).
+**About US$4,042** at API list prices to build this app with AI agents, as of 2026-11-08 (release [`v0.1.13`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.13)): an **API list-price estimate, not billing** of work on one machine since 2026-10-25, mostly spread over earlier days rather than measured. The rest is not counted yet; the split, the spread of the earlier days and the method: [docs/build-cost.md](docs/build-cost.md).
 
 ![Daily build cost by model: measured days solid, estimated (spread) days faded and dashed](docs/build-cost-days.svg)
 <!-- build-cost:end -->
