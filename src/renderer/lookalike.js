@@ -91,7 +91,10 @@
       for(;i<to;i++){const c=s[i];
         if(q==="'"){if(c==="'")q='';else u+=c;continue;}
         if(q==='A'){if(c==='\\'&&i+1<to){u+=s[i+1];i++;}else if(c==="'")q='';else u+=c;continue;} /* $'...': literal text, \' does not end it */
-        if(q==='"'){if(c==='\\'&&i+1<to&&'$`"\\\n'.indexOf(s[i+1])>=0){if(s[i+1]!=='\n')u+=s[i+1];i++;}else if(c==='"')q='';else u+=c;continue;}
+        if(q==='"'){if(c==='\\'&&i+1<to&&'$`"\\\n'.indexOf(s[i+1])>=0){if(s[i+1]!=='\n')u+=s[i+1];i++;}
+          else if(c==='$'&&s[i+1]==='('&&depth<32){plain=false;i=run(i+2,to,')',depth+1);} /* "$(...)" and "`...`" run too (fix round 5); in single quotes they stay text */
+          else if(c==='`'&&stopAt!=='`'&&depth<32){plain=false;i=run(i+1,to,'`',depth+1);}
+          else if(c==='"')q='';else u+=c;continue;}
         if(c==='\\'){if(i+1<to&&s[i+1]==='\n'){i++;continue;}start(i);plain=false;if(i+1<to){u+=s[i+1];i++;}continue;} /* a line continuation, or an escaped character */
         if(c===stopAt){end(i);flush();return i;}
         if(c==='#'&&w<0){while(i+1<to&&s[i+1]!=='\n')i++;continue;} /* a comment: a quote in it opens nothing */

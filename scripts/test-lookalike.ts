@@ -245,4 +245,13 @@ const none = (t: string, k: string, m: string) => eq(L.check(t, k).findings, [],
   eq(L.check("run ssh $'" + C + "'", 'shell').hosts, [], 'a quoted host is not read (spec 003 known gap)');
   eq(L.check('run ssh "u"@' + C, 'shell').hosts, [], 'nor a host after a quoted user (spec 003 known gap)');
 }
+// fix round 5 (#1300): $(...) and backticks inside double quotes are commands too; in single quotes or escaped they stay text
+{
+  const C = 'раураӏ.invalid';
+  for (const t of ['echo "$(ssh ' + C + ')"', 'echo "`ssh ' + C + '`"', 'x="$(curl ' + C + '/x)"', 'echo "a $(echo ")" ; ssh ' + C + ') b"', 'echo "$(echo "$(ssh ' + C + ')")"'])
+    ok(L.check('run ' + t, 'shell').hosts.some((h) => h.shown === C), 'a substitution in double quotes runs: ' + JSON.stringify(t));
+  for (const t of ["echo '$(ssh " + C + ")'", 'echo "\\$(ssh ' + C + ')"', "echo '`ssh " + C + "`'", 'echo "\\`ssh ' + C + '\\`"'])
+    ok(!L.check('run ' + t, 'shell').hosts.some(L.hostOdd) && L.check('run ' + t, 'shell').findings.length === 0, 'stays text: ' + JSON.stringify(t));
+  assertLinearShape('nested quotes and substitutions', (x) => { L.check(x, 'shell'); }, (k) => 'run ' + 'echo "$(x \'$(\' "`y`" '.repeat(Math.ceil(k / 22)).slice(0, k), 50000);
+}
 console.log(`lookalike: ${n} checks passed`);
