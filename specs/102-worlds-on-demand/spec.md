@@ -432,7 +432,7 @@ I choose a world, and its people come with it. If I pick characters myself, they
   |---|---|---|
   | Office people | Full by 097's art (#921; re-checked by the validator, T107) | Nothing |
   | Cheeky | Heads (3 poses, spec 077) | New frames, per picture by Paco (T108) |
-  | Prehistoric | Heads (3 poses) | New frames, per picture by Paco (T109) |
+  | Prehistoric | Full (6 people x 12 frames, `set.json` level `full`; drawn in Real office since spec 097 Q12, 2026-11-08) | Nothing; the cave world's frames are T109's |
   | Minimalist | Heads (the drawn `office` kit) | Full poses like every set; art in progress (T110, OP-11). Until then Flat only, and it says so. Flat keeps drawing the `office` kit |
   | Retro pixel people | Does not exist | New set (T111) |
   | My characters | Heads (096); per character | 096's Real office frames (T112) |
