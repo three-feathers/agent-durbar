@@ -159,7 +159,7 @@ function mergeStates(lists) {
 }
 function readCommitted(dir, readState) {
   if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir).filter((n) => /^usage-[A-Za-z0-9_-]+\.json$/.test(n)).sort().map((n) => readState(path.join(dir, n)));
+  return fs.readdirSync(dir).filter((n) => /^usage-[A-Za-z0-9_-]+\.json$/.test(n)).sort().map((n) => readState(path.join(dir, n), { requireScope: true })); // a committed file must declare scope "agent-durbar"
 }
 
 function gitStats(ref, through, root = ROOT) {

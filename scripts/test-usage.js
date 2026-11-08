@@ -20,7 +20,8 @@ const NOW = Date.UTC(2026, 10, 7, 12, 0, 0); // 2026-11-07 12:00 UTC
 const NOW2 = Date.UTC(2026, 10, 8, 0, 5, 0); // 2026-11-08 00:05 UTC
 const nano = (iso) => String(BigInt(Date.parse(iso)) * 1000000n);
 const attr = (key, v) => ({ key, value: { stringValue: v } });
-const ident = () => [attr('user.email', FAKE[0]), attr('user.id', FAKE[1]), attr('user.account_uuid', FAKE[2]), attr('organization.id', FAKE[3]), attr('session.id', FAKE[4]), attr('agent.name', FAKE[5])];
+const DURBAR_REPO = 'https://github.com/three-feathers/agent-durbar';
+const ident = () => [attr('vcs.repository.url.full', DURBAR_REPO), attr('user.email', FAKE[0]), attr('user.id', FAKE[1]), attr('user.account_uuid', FAKE[2]), attr('organization.id', FAKE[3]), attr('session.id', FAKE[4]), attr('agent.name', FAKE[5])];
 const tok = (type, model, value, iso, source = 'main', extra = ident()) => ({ attributes: [attr('type', type), attr('model', model), attr('query_source', source), ...extra], asInt: String(value), timeUnixNano: nano(iso) });
 const cost = (model, value, iso, source = 'main') => ({ attributes: [attr('model', model), attr('query_source', source), ...ident()], asDouble: value, timeUnixNano: nano(iso) });
 const body = (tokenPts, costPts, temporality = 1) => ({ resourceMetrics: [{ resource: { attributes: ident() }, scopeMetrics: [{ scope: { name: 'com.anthropic.claude_code' }, metrics: [
@@ -289,9 +290,50 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
   R2.publish(o4);
   assert.deepStrictEqual(fs.readdirSync(Q('data')).sort(), ['usage-linux.json', 'usage-mac.json'], 'publish: one file per machine, committed files kept');
   assert.ok(!fs.readFileSync(Q('data', 'usage-mac.json'), 'utf8').includes(FAKE[0]), 'publish: unknown keys are not copied');
-  fs.writeFileSync(Q('data', 'usage-bad.json'), JSON.stringify({ version: 1, machine: 'bad', days: { '2026-10-26': { models: { x: { input: -1 } } } } }));
+  fs.writeFileSync(Q('data', 'usage-bad.json'), JSON.stringify({ version: 1, machine: 'bad', scope: 'agent-durbar', days: { '2026-10-26': { models: { x: { input: -1 } } } } }));
   assert.throws(() => R2.build(R2.parseArgs(args3, { DURBAR_USAGE_DIR: Q('nodir') }, NOW)), /number is wrong/, 'data: a malformed committed usage file fails the build');
   fs.rmSync(t3, { recursive: true, force: true });
+
+  // only Agent Durbar work (owner, 2026-11-08): the repository attribute decides, everything else is dropped unrecorded
+  {
+    const rp = (url) => (url === null ? [] : [attr('vcs.repository.url.full', url)]);
+    const pt = (url, v, extra = []) => ({ attributes: [attr('model', OPUS), attr('query_source', 'main'), ...rp(url), ...extra], asDouble: v, timeUnixNano: nano('2026-11-07T10:00:00Z') });
+    const bodyOf = (pts) => body([], pts);
+    const repos = lib.parseRepos(undefined);
+    const f = lib.emptyState('linux');
+    const rr = lib.ingest(f, bodyOf([pt(DURBAR_REPO, 1), pt('HTTPS://GitHub.com/Three-Feathers/Agent-Durbar.git', 2), pt('https://github.com/someone/other-project', 4), pt(null, 8), pt('https://github.com/three-feathers/agent-durbar-evil', 16)]), NOW, repos);
+    assert.strictEqual(f.days['2026-11-07'].models[OPUS].costUsd, 3, 'repo: only the Agent Durbar repository is counted (case and .git ignored)');
+    assert.strictEqual(rr.otherWork, 3, 'repo: another repository, a look-alike name and no repository attribute are dropped');
+    assert.strictEqual(f.skipped, 0, 'repo: other work is not an error and is not counted as skipped');
+    assert.ok(!JSON.stringify(f).includes('github.com'), 'repo: the repository URL is compared, never stored');
+    const g = lib.emptyState('linux'); lib.ingest(g, bodyOf([pt(null, 5)]), NOW);
+    assert.strictEqual(g.days['2026-11-07'].models[OPUS].costUsd, 5, 'repo: no filter given (lib default) counts everything, the receiver always passes one');
+    assert.deepStrictEqual(lib.parseRepos('https://github.com/a/b.git, https://gitlab.example/x/y'), ['https://github.com/a/b', 'https://gitlab.example/x/y'], 'repo: DURBAR_USAGE_REPOS is a comma-separated list');
+    for (const bad of ['a/b', 'http://github.com/a/b', 'https://github.com/a/b c', 'https://']) assert.throws(() => lib.parseRepos(bad), /DURBAR_USAGE_REPOS/, `repo: ${bad} refused`);
+    assert.strictEqual(R.parseArgs(['--port', '0'], { DURBAR_USAGE_MACHINE: 'linux', DURBAR_USAGE_REPOS: 'https://github.com/a/b' }).repos[0], 'https://github.com/a/b', 'repo: the receiver reads DURBAR_USAGE_REPOS');
+    const t5 = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-usage-repo-'));
+    const svc5 = R.createService({ dir: t5, machine: 'linux', now: () => NOW });
+    assert.strictEqual(svc5.handle(Buffer.from(JSON.stringify(bodyOf([pt('https://github.com/someone/other-project', 9)]))), 'identity').status, 200, 'repo: a body of other work is answered 200');
+    assert.deepStrictEqual(Object.keys(svc5.state.days), [], 'repo: the receiver records nothing for it');
+    assert.ok(!fs.existsSync(svc5.file), 'repo: and writes no file for it');
+    svc5.handle(Buffer.from(JSON.stringify(bodyOf([pt(DURBAR_REPO, 7)]))), 'identity');
+    assert.strictEqual(JSON.parse(fs.readFileSync(svc5.file, 'utf8')).scope, 'agent-durbar', 'scope: the receiver writes the scope');
+    svc5.release();
+    fs.rmSync(t5, { recursive: true, force: true });
+    // scope: required in a committed file, and only the one value
+    const sc = path.join(os.tmpdir(), `durbar-scope-${process.pid}.json`);
+    const withScope = (v) => JSON.stringify({ version: 1, machine: 'x', ...(v === undefined ? {} : { scope: v }), days: {} });
+    fs.writeFileSync(sc, withScope(undefined));
+    assert.throws(() => D.readState(sc, { requireScope: true }), /scope must be "agent-durbar"/, 'scope: a committed file without it is refused');
+    assert.ok(D.readState(sc), 'scope: the receiver\'s own older file (no scope yet) is still read');
+    fs.writeFileSync(sc, withScope('everything'));
+    assert.throws(() => D.readState(sc), /scope must be/, 'scope: another value is refused');
+    assert.throws(() => D.readState(sc, { requireScope: true }), /scope must be/, 'scope: another value is refused in a committed file');
+    fs.writeFileSync(sc, withScope('agent-durbar'));
+    assert.strictEqual(D.readState(sc, { requireScope: true }).scope, 'agent-durbar', 'scope: the declared value passes');
+    fs.unlinkSync(sc);
+    assert.strictEqual(lib.emptyState('m').scope, 'agent-durbar', 'scope: a new state declares it');
+  }
 
   // the committed files of THIS repo: every usage file is valid (another side's PR cannot break the release) and the spread adds up
   const repo = path.join(__dirname, '..');
@@ -299,7 +341,7 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
   const committed = fs.existsSync(dataDir) ? fs.readdirSync(dataDir) : [];
   for (const n of committed) {
     assert.ok(/^usage-[A-Za-z0-9_-]+\.json$/.test(n), `repo data: ${n} must be named usage-<machine>.json`);
-    const st = D.readState(path.join(dataDir, n)); // validateState: refuses a bad number, model or machine label
+    const st = D.readState(path.join(dataDir, n), { requireScope: true }); // validateState: refuses a bad number, model or machine label
     assert.strictEqual(`usage-${st.machine}.json`, n, `repo data: ${n} holds its own machine label`);
   }
   const realBase = R2.readBaseline(path.join(repo, 'docs', 'build-cost-baseline.json'));
@@ -331,7 +373,7 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
   for (const f of FAKE) assert.ok(!written.includes(f), `privacy: ${f.slice(0, 9)}... never reaches the file`);
   for (const k of ['email', 'user.id', 'account', 'organization', 'session', 'agent.name', 'timeUnixNano', 'attributes']) assert.ok(!written.includes(k), `privacy: no "${k}" key in the file`);
   const onDisk = JSON.parse(written);
-  assert.deepStrictEqual(Object.keys(onDisk).sort(), ['days', 'machine', 'skipped', 'version'], 'file: only version, machine, skipped and days');
+  assert.deepStrictEqual(Object.keys(onDisk).sort(), ['days', 'machine', 'scope', 'skipped', 'version'], 'file: only version, machine, scope, skipped and days');
   assert.strictEqual(onDisk.days['2026-11-07'].models[OPUS].input, 100, 'file: the sums are in the file');
   assert.deepStrictEqual(fs.readdirSync(dir).filter((n) => !n.endsWith('.lock')),['usage-linux.json'], 'atomic: no temporary file is left');
   if (process.platform !== 'win32') assert.strictEqual(fs.statSync(file).mode & 0o077, 0, 'file: owner-only');

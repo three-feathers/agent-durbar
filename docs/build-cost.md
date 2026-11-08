@@ -25,7 +25,8 @@ Add the `env` block to your Claude Code settings (`~/.claude/settings.json`, or 
     "OTEL_METRICS_EXPORTER": "otlp",
     "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
     "OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4318",
-    "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE": "delta"
+    "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE": "delta",
+    "OTEL_METRICS_INCLUDE_REPOSITORY": "true"
   }
 }
 ```
@@ -38,6 +39,8 @@ Metrics only: do not add a logs or traces exporter. The receiver adds **delta** 
 DURBAR_USAGE_MACHINE=linux node scripts/usage-receiver.js            # or: npm run usage:receiver
 ```
 
+- **Only Agent Durbar work is counted** (owner, 2026-11-08: "it should only be about costs of developing Durbar, [not] other work or projects"). Claude Code's metrics carry no working directory, but with `OTEL_METRICS_INCLUDE_REPOSITORY=true` (Claude Code 2.1.269 or later; the sixth env var above) every data point carries `vcs.repository.url.full`, taken from the session's `origin` remote (a worktree has the same `origin`). The receiver keeps a data point only when that URL is `https://github.com/three-feathers/agent-durbar`, or one of the comma-separated URLs of `DURBAR_USAGE_REPOS` (for a fork); a point of another repository, a look-alike name or **no repository attribute at all** is dropped without being stored (the URL is compared and never written). If the setting is missing the receiver therefore records nothing: a zero is the sign to check the env block.
+- **The rule for publishing a machine's file:** a file may go into `docs/build-cost/data/` only if every number in it is Agent Durbar work. Receiver files written with the repository setting on are that, by construction. A file made before it, or by a tool that sends no repository (the Copilot CLI, Codex, a hand-written file), is publishable only if that machine ran Durbar work and nothing else in those days. Every committed file declares it with `"scope": "agent-durbar"` (required; the release step and `test:usage` refuse a file without it or with another value). The receiver writes the field itself.
 - `DURBAR_USAGE_MACHINE` is **required**: a short label you choose (`linux`, `mac`, `paco-mac`; 1-24 letters, digits, `_`, `-`). The host name is never used.
 - `--port <n>` or `DURBAR_USAGE_PORT` (default 4318; then change the endpoint above to match), `--dir <folder>` or `DURBAR_USAGE_DIR` (default `<home folder>/.durbar-usage`, from `os.homedir()`).
 - It listens on `127.0.0.1` only and writes `<dir>/usage-<machine>.json`. Stop it any time; the next start continues from the file. It needs Node only, no `npm ci`. A lock file `usage-<machine>.lock` (the process id only, owner-only) next to the usage file stops a second receiver on the same folder and label from starting (it would overwrite the first one's sums). It is removed on a normal stop and on SIGTERM, SIGINT and SIGHUP. A lock left by a process that is gone, or written before the last boot, is taken over atomically (a temporary lock is renamed over it and read back; two receivers replacing the same stale lock at the same moment may both believe they hold it for a moment; the receiver checks the lock is still its own before every write, and the loser writes nothing, answers 503, prints `usage-receiver: lock lost to pid N, exiting` on stderr and exits with code 1, so a service manager restarts it and the restart refuses loudly). A lock that is not a process id, or whose live process is another user's, is never replaced: **if a receiver refuses to start and you know none runs (for example the old process id now belongs to something else), delete the `.lock` file by hand.** The receiver cannot tell that a live process with that id is not a receiver. Different labels or folders run side by side.
@@ -84,7 +87,7 @@ The table has one row per machine and model (input, output, cache read, cache wr
 **Tools that send no telemetry** (the Copilot CLI, Codex, a teammate's setup): write a file by hand with the same shape and its own label and pass it with `--files`:
 
 ```json
-{ "version": 1, "machine": "paco-codex", "days": { "2026-11-07": { "models": { "gpt-5": { "input": 120000, "output": 8000, "cacheRead": 0, "cacheCreation": 0, "costUsd": 1.4 } } } } }
+{ "version": 1, "machine": "paco-codex", "scope": "agent-durbar", "days": { "2026-11-07": { "models": { "gpt-5": { "input": 120000, "output": 8000, "cacheRead": 0, "cacheCreation": 0, "costUsd": 1.4 } } } } }
 ```
 
 Paste the printed table into the release notes next to the clip (`changelog.d/README.md`, release steps).
@@ -101,7 +104,7 @@ Paste the printed table into the release notes next to the clip (`changelog.d/RE
 
 ## What is kept, and what is not
 
-- Only sums per UTC day, model and token type (and per main, subagent, auxiliary source) are written. The receiver parses the whole JSON body, and **keeps only** three attributes of a data point (`type`, `model`, `query_source`); it checks an attribute's key before it looks at its value. **Emails, user, account and organization ids, session ids and agent names are never kept, written or printed** (`test:usage` plants fake ones and checks the file and the report).
+- Only sums per UTC day, model and token type (and per main, subagent, auxiliary source) are written. The receiver parses the whole JSON body, and **keeps only** three attributes of a data point (`type`, `model`, `query_source`) and reads one more, `vcs.repository.url.full`, only to compare it with the allowed repositories (never stored); it checks an attribute's key before it looks at its value. **Emails, user, account and organization ids, session ids and agent names are never kept, written or printed** (`test:usage` plants fake ones and checks the file and the report).
 - The receiver reads no Claude Code file (nothing under `~/.claude`), starts no process, makes no outgoing connection and has no dependency. It accepts `POST /v1/metrics` with `application/json` from a loopback `Host` only, at most 1 MiB (also after gunzip), a strict JSON parse; anything else is refused and changes nothing. The file is written through a temporary file (created with `wx`) and a rename, readable by you only (on POSIX; the folder is created 0700, and the default `.durbar-usage` folder is tightened to it).
 - Bounded: a data point must be dated between two days ago and five minutes ahead (an exporter reports "now"; anything else is dropped and counted), so at most four days open per request and only as time passes (and at most 1,500 days in a file); at most 50 distinct models per day (the rest are added to `other-model`), a data point above 10^12 tokens or US$1,000,000 is refused, and a write that would take the file past 5 MiB is refused with 507 and loses nothing already stored.
 - A model name that is not a plain id is counted as `other-model`; the usage files hold no prompt, path or file content.

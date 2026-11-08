@@ -18,6 +18,17 @@ const MAX_USD_PER_POINT = 1e6;
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const MAX_MODELS_PER_DAY = 50; // distinct model ids per day; the rest are added to `other-model`, so one process cannot grow the file
 const FILE_VERSION = 1;
+const SCOPE = 'agent-durbar'; // every file declares it counted Agent Durbar work only (owner, 2026-11-08)
+const REPO_ATTR = 'vcs.repository.url.full'; // Claude Code adds it with OTEL_METRICS_INCLUDE_REPOSITORY=true (v2.1.269+); read only to compare, never kept
+const DEFAULT_REPOS = ['https://github.com/three-feathers/agent-durbar'];
+const REPO_RE = /^https:\/\/[a-z0-9.-]{1,100}\/[a-z0-9._-]{1,100}(\/[a-z0-9._-]{1,100}){0,3}$/;
+/** The allowed repository URLs: `DURBAR_USAGE_REPOS` (comma-separated, lowercase https URLs without `.git`) or the default. Throws on a malformed entry. */
+function parseRepos(text) {
+  if (text === undefined || text === '') return DEFAULT_REPOS.slice();
+  const list = String(text).split(',').map((x) => x.trim().toLowerCase().replace(/\.git$/, '')).filter(Boolean);
+  if (!list.length || list.some((u) => !REPO_RE.test(u))) throw new Error('DURBAR_USAGE_REPOS must be comma-separated https repository URLs, e.g. https://github.com/three-feathers/agent-durbar');
+  return list;
+}
 const DELTA = 1; // OTLP AggregationTemporality: 1 = delta, 2 = cumulative
 
 const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
@@ -28,7 +39,7 @@ function emptyModel() {
   for (const s of SOURCES) bySource[s] = { tokens: 0, costUsd: 0 };
   return { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, costUsd: 0, bySource };
 }
-function emptyState(machine) { return { version: FILE_VERSION, machine, skipped: 0, days: {} }; }
+function emptyState(machine) { return { version: FILE_VERSION, machine, scope: SCOPE, skipped: 0, days: {} }; }
 
 /** The machine label: one the person chose (`DURBAR_USAGE_MACHINE`), never a host name. */
 function checkMachine(label) {
@@ -65,14 +76,15 @@ function pointValue(dp, max) {
   return v;
 }
 
-/** `{type, model, source}` from the three allowlisted attributes of a data point; every other attribute is ignored unread. */
+/** `{type, model, source, repo}` from the allowlisted attributes of a data point (`repo` is only compared, never stored); every other attribute is ignored unread. */
 function pickAttrs(dp) {
-  const out = { type: null, model: null, source: null };
+  const out = { type: null, model: null, source: null, repo: null };
   if (!Array.isArray(dp.attributes)) return out;
   for (const a of dp.attributes) {
-    if (!isObj(a) || (a.key !== 'type' && a.key !== 'model' && a.key !== 'query_source')) continue; // the key is checked before the value is touched
+    if (!isObj(a) || (a.key !== 'type' && a.key !== 'model' && a.key !== 'query_source' && a.key !== REPO_ATTR)) continue; // the key is checked before the value is touched
     if (!isObj(a.value) || typeof a.value.stringValue !== 'string') continue;
-    if (a.key === 'type') out.type = a.value.stringValue;
+    if (a.key === REPO_ATTR) out.repo = a.value.stringValue.slice(0, 200).toLowerCase().replace(/\.git$/, '');
+    else if (a.key === 'type') out.type = a.value.stringValue;
     else if (a.key === 'model') out.model = a.value.stringValue;
     else out.source = a.value.stringValue;
   }
@@ -92,8 +104,8 @@ function modelSlot(state, day, model, capped = true) {
  * a cumulative sum cannot be told from a repeat without the session id, which is never kept, so it is skipped and counted.
  * Returns `{tokens, costs, skipped}` (data points added, data points refused).
  */
-function ingest(state, body, nowMs = Date.now()) {
-  const res = { tokens: 0, costs: 0, skipped: 0 };
+function ingest(state, body, nowMs = Date.now(), repos = null) {
+  const res = { tokens: 0, costs: 0, skipped: 0, otherWork: 0 }; // otherWork: points of another repository or with no repository, dropped unrecorded (not an error)
   const seenDays = new Set();
   if (!isObj(body) || !Array.isArray(body.resourceMetrics)) throw new Error('not an OTLP metrics body');
   for (const rm of body.resourceMetrics) {
@@ -110,6 +122,7 @@ function ingest(state, body, nowMs = Date.now()) {
           const isToken = m.name === TOKEN_METRIC;
           const v = pointValue(dp, isToken ? MAX_TOKENS_PER_POINT : MAX_USD_PER_POINT);
           const a = pickAttrs(dp);
+          if (repos && !(a.repo !== null && repos.includes(a.repo))) { res.otherWork++; continue; } // only Agent Durbar work; no repository attribute = not provably Durbar = dropped
           if (v === null || (isToken && !TYPES.includes(a.type))) { res.skipped++; continue; }
           const model = a.model !== null && MODEL_RE.test(a.model) ? a.model : 'other-model';
           const source = SOURCES.includes(a.source) ? a.source : 'other';
@@ -128,8 +141,9 @@ function ingest(state, body, nowMs = Date.now()) {
 }
 
 /** A state read from a file, checked field by field and rebuilt from the allowed fields only (extra keys are dropped). Throws on anything else. */
-function validateState(raw, where = 'usage file') {
+function validateState(raw, where = 'usage file', opts = {}) {
   if (!isObj(raw) || raw.version !== FILE_VERSION || !isObj(raw.days)) throw new Error(`${where}: not a usage file (version ${FILE_VERSION})`);
+  if (opts.requireScope ? raw.scope !== SCOPE : (raw.scope !== undefined && raw.scope !== SCOPE)) throw new Error(`${where}: scope must be "${SCOPE}" (this machine counted Agent Durbar work only)`);
   const st = emptyState(checkMachine(raw.machine));
   const num = (v) => { if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) throw new Error(`${where}: a number is wrong`); return v; };
   for (const day of Object.keys(raw.days)) {
@@ -443,5 +457,5 @@ function chartDaysSvg(rows) {
 
 module.exports = {
   DAY_SPREAD_LINE, chartDaysSvg, TOKEN_METRIC, COST_METRIC, TYPES, SOURCES, MODEL_RE, MACHINE_RE, DATE_RE, MAX_FILE_BYTES, MAX_MODELS_PER_DAY, MAX_DAYS_PER_FILE, MAX_DAYS_PER_REQUEST, FILE_VERSION,
-  modelName, MODEL_NAMES, BEGIN, END, LABEL, validateHistory, upsertRow, badgeSvg, chartSvg, esc, validateBaseline, cumulative, readmeBlock, rewriteReadme, emptyState, checkMachine, dayOf, ingest, validateState, firstDay, report, group, usd,
+  SCOPE, DEFAULT_REPOS, REPO_ATTR, parseRepos, modelName, MODEL_NAMES, BEGIN, END, LABEL, validateHistory, upsertRow, badgeSvg, chartSvg, esc, validateBaseline, cumulative, readmeBlock, rewriteReadme, emptyState, checkMachine, dayOf, ingest, validateState, firstDay, report, group, usd,
 };

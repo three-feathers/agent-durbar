@@ -1,6 +1,7 @@
 {
   "version": 1,
   "machine": "linux",
+  "scope": "agent-durbar",
   "skipped": 0,
   "days": {
     "2026-11-07": {
