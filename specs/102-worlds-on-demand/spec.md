@@ -432,7 +432,7 @@ I choose a world, and its people come with it. If I pick characters myself, they
   |---|---|---|
   | Office people | Full by 097's art (#921; re-checked by the validator, T107) | Nothing |
   | Cheeky | Heads (3 poses, spec 077) | New frames, per picture by Paco (T108) |
-  | Prehistoric | Heads (3 poses) | New frames, per picture by Paco (T109) |
+  | Prehistoric | Full (6 people x 12 frames, `set.json` level `full`; drawn in Real office since spec 097 Q12, 2026-11-08) | Nothing; the cave world's frames are T109's |
   | Minimalist | Heads (the drawn `office` kit) | Full poses like every set; art in progress (T110, OP-11). Until then Flat only, and it says so. Flat keeps drawing the `office` kit |
   | Retro pixel people | Does not exist | New set (T111) |
   | My characters | Heads (096); per character | 096's Real office frames (T112) |
@@ -781,6 +781,10 @@ Agent decisions stand until the owner changes them.
 - **T223:** `docs/experience/world-moments.json` gains the world `retro` (`shippable: false`) and one cell for each of the 26 moments. A cell is `built` only where a picture of it in the arcade was looked at in the PR (`test:momentsregistry` requires one named picture that the driver writes); the shared dark-token cells are `fallback-flat`; a cell nobody drew or looked at is `designed` or `missing`, never assumed.
 - **Review of #1279 (FR-030, 2026-11-08):** `empty-office` is `missing`, not `built`: its picture shows the arcade stage ending at about y=410 of 800 with the rest of the window blank (Photo and the cave fill it); the words, three desks and lift are right, the layout is not built (`[KNOWN GAP]`, the app is not changed here). `all-floors` was looked at once the driver stopped skipping it silently (the `cells` step now fails if the All floors view does not come): the window is full but every folder stands on one floor, no floor names; `missing`. `npm run test:momentsregistry` guards the registry (26 cell ids, states, `shippable: false` while a cell is `missing`, evidence for each `built` cell, a reason for each `missing`, other worlds equal to the registry at the merge-base with `origin/main` when the retro cells change; CI's shallow clone skips that comparison, it runs locally and in a full clone) and that the arcade's first-run rule is scoped to `html[data-world="retro"]`; the driver's `scope` step adds the arcade's CSS to a Photo and a cave first run and fails if the counts change.
 - **`[KNOWN GAP]`** in the arcade's chat the permission and question card is cream with pale, unreadable text (found by a picture, `retro-cell-chat`; both cells `missing`, to fix with T221's dark chat); the building preview and the answer bar were not looked at (`designed`), and neither was the walk (the driver asserts it, no picture shows it; `designed`, third review of #1279); the first-run card stands on the plain dark page, not in a hall with dark cabinets (`welcome-night` is not drawn, T206); the elicitation bubble is the app's dark card, not a pixel bubble; the lift and the ride are the plain panel. Each is a look the owner has not seen: PR question, not built here. `test:surfaces` is named by T223 but is not a script on `main`; `test:worldmatrix`, `test:worldpack` and `test:featureinventory` read the registry and are run instead.
+
+### 2026-11-08: one caret element per screen, hidden not removed (FR-229, pointer to spec 008 FR-184)
+
+The arcade screen's repaint is throttled (spec 097 FR-033, once per 2 s) and its caret was removed and re-created with the state, so a trailing repaint under load counted as a node a status update added or removed (`statusNodes@retro`, FR-229, SC-024). `paintScreen` now keeps one caret and hides it, on the desk's clock again when shown. Cause, fix and mutant: spec 008 FR-184.
 
 ### 2026-11-07: RA5 (Light) booked: night built, the light choice withdrawn, T218 stays open (T217..T219, no new numbers)
 

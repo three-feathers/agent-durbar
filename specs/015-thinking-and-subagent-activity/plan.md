@@ -21,3 +21,8 @@
 - Adapters: `claudeMap.ts` keeps a set of background call ids from the `Agent` / `Task` input (`run_in_background === true`); `user()` closes only calls not in it; `task_notification` closes both; `reset` clears it. `map.ts` sets `background: true` on `subagent.started` when `executionMode === 'background'`.
 - Renderer (`app.js`): `onSubagent` stores `s.background`; `onTaskTool` on `complete` of a background record that is still running changes nothing (no status, no result, no card change); `failed` still ends it; the session `stopped` branch ends running helpers as failed ("Stopped with its session").
 - Simulator: `simbghelper=1` in `subRun`. Tests: `scripts/test-claude-map.ts`, `scripts/test-events.ts` (or the Copilot mapper test), a case in `scripts/check-office-fill.js` next to the Claude-shaped helper case.
+
+## 2026-11-08 delta: one helper mask (issue #1330)
+
+- Renderer (`app.js`): `homeMask` (`DurbarRedact.maskHomePaths`, kept text when it is missing) and `helperMask = deskMask(homeMask(t))`, the names and order of PR #1322; used by `onSubagent` / `onTaskTool` (stored name, agent name), `buildSubTranscript` (title, task line), `subPaintView` (error line), `subBlock` (task line), `helperTileHTML`, the `DurbarHelperCard` deps, and before every helper card `setState` excerpt. No change to `src/shared/redact.ts`.
+- Tests: `scripts/test-helpercard.ts` (the two lines from the page's source, real modules), `scripts/check-015-bg-helper.js` step 4.
