@@ -4283,15 +4283,15 @@ function doorRepaint(){
   if(p.querySelector('.inbox-row.settled,.inbox-row[data-answering]'))return; /* an answer is folding away: its own timer repaints */
   const ae=document.activeElement, row=ae&&p.contains(ae)?ae.closest('.inbox-row'):null, id=row&&row.dataset.id, k=ae&&ae.dataset?ae.dataset.k:'', head=!!ae&&ae.classList&&ae.classList.contains('ib-h');
   const idx=row?[...p.querySelectorAll('.inbox-row')].indexOf(row):-1;
-  const rq0=row?row.dataset.rq||'':'';
+  const rq0=row?row.dataset.rq||'':'', held=!!DOOR_NOACT&&ae===DOOR_NOACT; /* the focus was put there by an earlier repaint and the person has not moved */
   paintInbox(null);
   if(row&&(head||k)){
     const rs=[...p.querySelectorAll('.inbox-row')], same=rs.find(x=>x.dataset.id===id&&(x.dataset.rq||'')===rq0);
     /* FR-033: the person's own row, still holding the same request, keeps what they had; anything else (the row left, or its request was replaced) lands on a
        heading, never a button, and the answer keys wait there until the person moves (DOOR_NOACT), so a repaint never lets A answer a request nobody read */
-    if(same){const t=(k&&same.querySelector('[data-k="'+k+'"]'))||same.querySelector('.ib-h');focusIn(t||$('inboxClose'));}
+    if(same){const t=(k&&same.querySelector('[data-k="'+k+'"]'))||same.querySelector('.ib-h');if(held&&t)DOOR_NOACT=t; /* set before the focus moves: the repaint's own focusin is not the person moving */focusIn(t||$('inboxClose'));}
     else{const r=rs.find(x=>x.dataset.id===id)||rs[Math.min(idx,rs.length-1)], h=r&&r.querySelector('.ib-h');
-      if(h){focusIn(h);DOOR_NOACT=h;announce('That request went away. Focus is on '+(r.dataset.name||'the next agent')+'. Move to a row before answering.');}else focusIn(p.querySelector('.inbox-empty')||$('inboxClose'));}
+      if(h){DOOR_NOACT=h;focusIn(h);announce('That request went away. Focus is on '+(r.dataset.name||'the next agent')+'. Move to a row before answering.');}else focusIn(p.querySelector('.inbox-empty')||$('inboxClose'));}
   }
 }
 function doorAfterPaint(list){
