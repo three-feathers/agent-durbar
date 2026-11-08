@@ -12,7 +12,7 @@ type Host = { shown: string; ascii: string; index: number };
 type Look = { n?: number; findings?: Finding[]; hosts?: Host[]; inHidden?: boolean; unchecked?: boolean };
 const L = require(path.join(R, 'lookalike.js')) as {
   check(t: unknown, kind: string): { findings: Finding[]; hosts: Host[] };
-  line(l: Look | Look[]): string; marker(f: { cp: number; script: string }): string; hostOdd(h: Host): boolean; PCTRL_T: RegExp; CAP: number;
+  line(l: Look | Look[]): string; marker(f: { cp: number; script: string }): string; hostOdd(h: Host): boolean; tipLen(t: string): number; PCTRL_T: RegExp; CAP: number; TIP_MAX: number;
 };
 let n = 0;
 const ok = (c: unknown, m: string) => { assert.ok(c, m); n++; };
@@ -61,7 +61,9 @@ const none = (t: string, k: string, m: string) => eq(L.check(t, k).findings, [],
 
 // T042 / FR-114 (c): two digit systems in one token
 {
-  eq(L.check('read /x/a1\u0662', 'other').findings.map((f) => [f.cp, f.rule]), [[0x662, 'digits']], 'ASCII and Arabic-Indic digits in one token');
+  eq(L.check('run a1\u0662 x', 'shell').findings.map((f) => [f.cp, f.rule]), [[0x662, 'digits']], 'ASCII and Arabic-Indic digits in one program name');
+  none('read /x/\u0645\u0644\u0641\u0661\u06622.txt', 'other', 'fix round 1: Arabic-Indic and ASCII digits in an Arabic file name do not warn');
+  eq(rules('read /x/a\u0661\u06f2', 'other'), ['digits'], 'Arabic-Indic and Extended Arabic-Indic still warn in a path');
   none('read /x/\u0661\u0662\u0663', 'other', 'one digit system');
   none('read /x/report2026', 'other', 'ASCII digits');
   eq(rules('read /x/\u0966\u0967\u0e51', 'other').includes('digits'), true, 'Devanagari and Thai digits in one token');
@@ -72,7 +74,10 @@ const none = (t: string, k: string, m: string) => eq(L.check(t, k).findings, [],
   ok(rules('run \uff44\uff55\uff52\uff42 x', 'shell').every((r) => r === 'nfkc') && cps('run \uff44\uff55\uff52\uff42 x', 'shell').length === 4, 'fullwidth letters warn, each marked');
   eq(cps('read /x/notes\ud835\udc1d.txt', 'other'), [0x1d41d], 'a mathematical bold letter warns, in a path too');
   eq(rules('read /x/\ufb01le', 'other'), ['nfkc'], 'a ligature warns');
-  eq(rules('read /x/x\u00b2', 'other'), ['nfkc'], 'a superscript warns');
+  eq(rules('run x\u00b2', 'shell'), ['nfkc'], 'a superscript warns in a program name');
+  none('read /x/x\u00b2', 'other', 'fix round 1: a superscript in a path does not warn');
+  eq(rules('read /x/\uff44\uff55\uff52\uff42', 'other'), [], 'fix round 1: width variants in a path do not warn');
+  eq(rules('fetch https://\uff44\uff55\uff52\uff42.invalid/', 'other').length, 4, 'but they do in a host');
   none('read /x/caf\u00e9 r\u00e9sum\u00e9', 'other', 'composed accents are NFC and NFKC alike');
 }
 
@@ -152,4 +157,50 @@ const none = (t: string, k: string, m: string) => eq(L.check(t, k).findings, [],
   for (const [label, unit] of shapes) assertLinearShape('lookalike ' + label, (x) => { L.check(x, 'shell'); L.check(x, 'other'); }, (k) => unit.repeat(Math.ceil(k / unit.length)).slice(0, k), 10000);
 }
 
+// fix round 1 (#1300 review): hosts without a scheme in a shell command (FR-116)
+{
+  const P = '\u0440\u0430\u0443\u0440\u0430\u04cf'; // made-up Cyrillic letters that read like a Latin word
+  for (const [t, host] of [['run curl ' + P + '.invalid/x', P + '.invalid'], ['run ssh u@' + P + '.invalid', P + '.invalid'], ['run scp f ' + P + '.invalid:/x', P + '.invalid'], ['run git clone git@' + P + ':repo', P], ['run curl ' + P + '.invalid:8443/x', P + '.invalid']] as const) {
+    const r = L.check(t, 'shell');
+    eq(r.hosts.map((h) => h.shown), [host], 'a host without a scheme: ' + t);
+    ok(L.hostOdd(r.hosts[0]) && r.findings.length === 6 && r.findings.every((f) => f.rule === 'lookalike'), 'its labels are names (FR-114 (d)) and it gets the punycode line: ' + t);
+  }
+  for (const t of ['run cp a.txt v1.2.3 foo.tar.gz notes.v2.md /tmp/x', 'run tar -C foo.tar.gz/ -xf b.zip', 'run cp \u043e\u0442\u0447\u0451\u0442.txt d/', 'run python -m pkg.mod:main', 'run cp C:\\x\\y.txt D:/z']) {
+    const r = L.check(t, 'shell');
+    ok(r.findings.length === 0 && !r.hosts.some(L.hostOdd), 'ordinary file names give no warning as hosts: ' + t + ' ' + JSON.stringify(r));
+  }
+  none('read /x/' + P + '.invalid/y', 'other', 'a path of another kind is not a host');
+}
+// fix round 1: Latin in a forbidden mix: the other script's letters are marked, not the Latin one
+{
+  const r = L.check('fetch https://\u0440\u0430\u0443\u0440\u0430l.invalid/', 'other');
+  ok(r.findings.length === 5 && r.findings.every((f) => f.script === 'Cyrillic' && f.rule === 'mixed') && !r.findings.some((f) => f.char === 'l'), 'the Cyrillic letters are marked, not the l: ' + JSON.stringify(r.findings.map((f) => f.cp)));
+  eq(cps('run durbtoo\u04cf', 'shell'), [0x4cf], 'a Latin name with one Cyrillic letter: that letter');
+}
+// fix round 1: real non-Latin names in paths and arguments never warn (Paco): 35 made-up file and folder names in many scripts
+{
+  const words = ['\u043e\u0442\u0447\u0451\u0442', '\u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b', '\u041f\u0440\u0438\u0432\u0435\u0442', '\u043f\u0440\u043e\u0435\u043a\u0442', '\u0131\u015f\u0131k', '\u00c7al\u0131\u015fma', '\u00f6\u011frenci', '\u015eirket', '\u0645\u0644\u0641', '\u062a\u0642\u0631\u064a\u0631', '\u0627\u0644\u0645\u0634\u0631\u0648\u0639', '\u03b1\u03c1\u03c7\u03b5\u03af\u03bf', '\u0388\u03b3\u03b3\u03c1\u03b1\u03c6\u03b1', '\u03c6\u03ac\u03ba\u03b5\u03bb\u03bf\u03c2', '\u0926\u0938\u094d\u0924\u093e\u0935\u0947\u091c\u093c', '\u092b\u093c\u093e\u0907\u0932', '\u092a\u0930\u093f\u092f\u094b\u091c\u0928\u093e', '\ubb38\uc11c', '\ubcf4\uace0\uc11c', '\ud55c\uae00\ud30c\uc77c', '\u8cc7\u6599\u30c7\u30fc\u30bf', '\u6771\u4eac\u30ce\u30fc\u30c8', '\u3072\u3089\u304c\u306a\u30ab\u30bf\u30ab\u30ca\u6f22\u5b57', '\u5199\u771f\uff71\uff99\uff8a\uff9e\uff91', '\u05de\u05e1\u05de\u05da', '\u0e40\u0e2d\u0e01\u0e2a\u0e32\u0e23', '\u6587\u4ef6\u5939', '\u0583\u0561\u057d\u057f\u0561\u0569\u0578\u0582\u0572\u0569', '\u10d3\u10dd\u10d9\u10e3\u10db\u10d4\u10dc\u10e2\u10d8', 't\u00e0i li\u1ec7u', '\u043c\u02bc\u044f\u0441\u043e', '\u0395\u03bb\u03bb\u03b7\u03bd\u03b9\u03ba\u03ac2024', '\ub370\uc774\ud130\uff12', '\uff83\uff9e\uff70\uff80', '\u8cc7\u6599\uff11'];
+  eq(words.length, 35, 'the corpus');
+  for (const w of words) {
+    none('read /home/u/' + w + '/' + w + '.txt', 'other', 'POSIX path: ' + w);
+    none('write C:\\Users\\u\\' + w + '\\notes.md', 'other', 'Windows path: ' + w);
+    none('run durbtool --out ' + w + ' ' + w + '.md', 'shell', 'shell argument: ' + w);
+  }
+  none('run echo m\u00b2', 'shell', 'echo m with a superscript two');
+  none('read /x/\ufe43\uff83\uff9e\uff70\uff80.txt', 'other', 'halfwidth katakana');
+}
+// fix round 1: bounded and linear: one long token full of findings, and many tokens; the line and the tooltip length stay small
+{
+  const CT = require(path.join(R, 'cuttext.js')) as { cutText(t: string, n: number): string };
+  const long = (k: number) => 'run ' + '\uff41'.repeat(k);
+  const many = (k: number) => 'run x ' + 'a\u0430 '.repeat(Math.ceil(k / 3)).slice(0, k);
+  ok(L.line(L.check(long(9990), 'shell')).length < 600, 'the line of 9990 flagged letters is short: ' + L.line(L.check(long(9990), 'shell')).length);
+  ok(L.line(L.check(many(9990), 'shell')).length < 1200, 'the line of thousands of tokens is short');
+  for (const [label, make] of [['one long token', long], ['many tokens', many], ['dotted hosts', (k: number) => 'run ' + 'a\u0430.b/ u@\u0430.c '.repeat(Math.ceil(k / 16)).slice(0, k)], ['one long dotted word', (k: number) => 'run ' + 'a.'.repeat(Math.ceil(k / 2)).slice(0, k)]] as const)
+    assertLinearShape('line ' + label, (x) => { L.line(L.check(x, 'shell')); }, make, 10000);
+  const tip = (t: string) => CT.cutText(t, L.tipLen(t));
+  ok(Array.from(tip('run x ' + 'a\u27e6U+0430 Cyrillic\u27e7'.repeat(500))).length <= L.TIP_MAX, 'the tooltip has a hard cap');
+  eq(L.tipLen('run x'), 240, 'a short text: 240');
+  assertLinearShape('tooltip', (x) => { tip(x); }, (k) => ('a\u27e6U+0430 Cyrillic\u27e7 ').repeat(Math.ceil(k / 20)).slice(0, k), 10000);
+}
 console.log(`lookalike: ${n} checks passed`);

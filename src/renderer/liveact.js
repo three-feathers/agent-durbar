@@ -118,19 +118,46 @@
     put(t.slice(last),last);at.push(t.length);return {s:out,at};
   }
   const NONASCII_W=/(?![\x00-\x7f])[\p{L}\p{M}\p{N}]/u;
+  const MARK_MAX=20; /* at most this many lookalike markers in one text, then one "and N more" (fix round 1: the text stays near its own length) */
+  const PLACEHOLDER=/\[(?:redacted[^\]]*|redaction failed|secret hidden)\]/g;
+  /* Which characters of the raw text are shown (fix round 1 of #1300's review: inHidden is decided per finding, not by counting). Both texts read with the
+     controls out and whitespace runs as one space; the shown text's parts between mask placeholders are found in order in the raw one, and what lies
+     between them is hidden. Returns a function rawIndex -> shown?, or null when the shown text cannot be matched back (then everything counts as hidden). */
+  function shownRaw(r0,shown){
+    const R=[],rawToR=new Int32Array(r0.length+1).fill(-1);let sp=true;
+    for(let i=0;i<r0.length;){const cp=r0.codePointAt(i),c=String.fromCodePoint(cp);
+      if(/\s/.test(c)){if(!sp){R.push(' ');sp=true;}}
+      else if(!PCTRL_T.test(c)){for(let j=0;j<c.length;j++){rawToR[i+j]=R.length;R.push(c[j]);}sp=false;}
+      i+=c.length;}
+    while(R.length&&R[R.length-1]===' ')R.pop();
+    const Rs=R.join(''), S=shown.replace(/\s+/g,' ').trim(), vis=new Uint8Array(Rs.length+1);
+    let pos=0,last=0,m,parts=0;PLACEHOLDER.lastIndex=0;
+    const take=p=>{if(!p)return true;const i=Rs.indexOf(p,pos);if(i<0||(parts===0&&i!==0))return false;vis.fill(1,i,i+p.length);pos=i+p.length;return true;};
+    while((m=PLACEHOLDER.exec(S))){if(!take(S.slice(last,m.index)))return null;parts++;last=m.index+m[0].length;}
+    const tail=S.slice(last);
+    if(parts===0)return S===Rs?(i=>rawToR[i]>=0):null;
+    if(tail){const i=Rs.lastIndexOf(tail);if(i<pos||i+tail.length!==Rs.length)return null;vis.fill(1,i,i+tail.length);}
+    return i=>rawToR[i]>=0&&vis[rawToR[i]]===1;
+  }
   function permLook(b,raw,k){
     const L=LK();
     const r0=String(raw).slice(0,PERM_CAP);
     if(!L||typeof L.check!=='function')return NONASCII_W.test(r0)?Object.assign({},b,{look:{unchecked:true}}):b;
     try{
-      const rf=L.check(r0,k).findings.length;
-      const u=unmark(b.text), sc=L.check(u.s,k), hosts=sc.hosts.filter(L.hostOdd);
-      const fs=sc.findings, inHidden=rf>fs.length;
+      const rc=L.check(r0,k), u=unmark(b.text), sc=L.check(u.s,k), vis=shownRaw(r0,u.s);
+      const seenRaw=i=>vis?vis(i):false;
+      /* hosts and unreadable hosts come from the raw text, only where it is shown (a host the mask made, `[redacted]x.invalid`, is never one) */
+      const hosts=rc.hosts.filter(h=>L.hostOdd(h)&&seenRaw(h.index)&&seenRaw(h.index+h.shown.length-1));
+      const fs=sc.findings.filter(f=>f.rule!=='host').concat(rc.findings.filter(f=>f.rule==='host'&&seenRaw(f.index)&&seenRaw(f.index+f.token.length-1)));
+      const inHidden=rc.findings.some(f=>!seenRaw(f.index))||rc.hosts.some(h=>L.hostOdd(h)&&!(seenRaw(h.index)&&seenRaw(h.index+h.shown.length-1)));
       if(!fs.length&&!hosts.length&&!inHidden)return b;
-      let text=b.text;const done=new Set();
-      for(const f of fs.slice().sort((x,y)=>y.index-x.index)){if(f.rule==='host'||done.has(f.index))continue;done.add(f.index); /* from the end, so earlier places stay put */
-        const p=u.at[f.index]+f.char.length;text=text.slice(0,p)+L.marker(f)+text.slice(p);}
-      return Object.assign({},b,{text,look:{n:fs.length,findings:fs,hosts,inHidden}});
+      /* one pass, in order: a marker after each of the first MARK_MAX flagged letters, then one "and N more" */
+      const at=[],done=new Set();for(const f of sc.findings){if(f.rule==='host'||done.has(f.index))continue;done.add(f.index);at.push(f);}
+      at.sort((x,y)=>x.index-y.index);
+      const out=[];let from=0;const m=Math.min(at.length,MARK_MAX);
+      for(let i=0;i<m;i++){const f=at[i],p=u.at[f.index]+f.char.length;out.push(b.text.slice(from,p),L.marker(f));if(i===m-1&&at.length>m)out.push('⟦and '+(at.length-m)+' more lookalike letters⟧');from=p;}
+      out.push(b.text.slice(from));
+      return Object.assign({},b,{text:out.join(''),look:{n:fs.length,findings:fs,hosts,inHidden}});
     }catch(e){return NONASCII_W.test(r0)?Object.assign({},b,{look:{unchecked:true}}):b;}
   }
   function permText(raw,kind,mask){

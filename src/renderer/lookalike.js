@@ -30,7 +30,10 @@
     0x410,0x412,0x415,0x41a,0x41c,0x41d,0x41e,0x420,0x421,0x422,0x425,0x405,0x406,0x408,0x4ae,0x51a,0x51c,0x4ba,0x4c0]);
   const GREK_LOOK=new Set([0x3bf,0x3bd,0x3b1,0x3b9,0x3ba,0x3c5,0x3c1,
     0x391,0x392,0x395,0x396,0x397,0x399,0x39a,0x39c,0x39d,0x39f,0x3a1,0x3a4,0x3a5,0x3a7]);
+  const WIDTH_SUP=cp=>(cp>=0xff00&&cp<=0xffef)||cp===0xb2||cp===0xb3||cp===0xb9||(cp>=0x2070&&cp<=0x209f);
   const hex=cp=>'U+'+cp.toString(16).toUpperCase().padStart(4,'0');
+  const WIN=12, HOST_MAX=80, TIP_MAX=1000;
+  const cutS=(t,n)=>{const a=Array.from(String(t));return a.length>n?a.slice(0,n-1).join('')+'\u2026':String(t);};
   const sname=s=>String(s).replace(/_/g,' ');
   /* the visible marker after a flagged character (spec 097 FR-318's shape): [[U+0435 Cyrillic]] in the white square brackets U+27E6 and U+27E7 */
   const marker=f=>'\u27e6'+hex(f.cp)+' '+sname(f.script)+'\u27e7';
@@ -57,12 +60,19 @@
     }
     return r;
   }
-  /* FR-116: every scheme://host (userinfo and port left out), and the bare host of a `fetch host` grant label */
-  function hostSpans(s){
+  /* FR-116: every scheme://host (userinfo and port left out), and the bare host of a `fetch host` grant label. In a shell command (fix round 1 of
+     PR review, #1300) also a host without a scheme in an argument: `user@host` (ssh, git@host:repo), `host.tld:path` (scp) and `host.tld/path` or
+     `host.tld:port` (curl). A bare dotted word with nothing after it (`notes.txt`, `curl host.invalid`) reads like a file name and is not taken. */
+  const ARGW=/[^\s;|&`()<>"']+/g, AT_HOST=/^[^@\/\s:]+@([^@\/\s:]+)/, DOTTED=/^([\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)+)(?=[:\/])/u;
+  function hostSpans(s,k){
     const r=[];const re=/[A-Za-z][A-Za-z0-9+.-]{0,20}:\/\/([^\s\/?#"'<>\\`]*)/g;let m;
     while((m=re.exec(s))){const auth=m[1];let st=m.index+m[0].length-auth.length;const at=auth.lastIndexOf('@');let h=at>=0?auth.slice(at+1):auth;if(at>=0)st+=at+1;
       if(h[0]!=='['){const p=h.search(/:[0-9]*$/);if(p>=0)h=h.slice(0,p);}if(h)r.push([st,st+h.length]);}
     if(!r.length){const f=/^fetch ([^\s\/?#"'<>\\`]+)$/.exec(s);if(f&&f[1].indexOf('://')<0)r.push([6,6+f[1].length]);}
+    if(k==='shell'){ARGW.lastIndex=0;let w;
+      while((w=ARGW.exec(s))){const x=w[0];if(x.indexOf('://')>=0)continue;
+        const a=AT_HOST.exec(x);if(a){const st=w.index+x.indexOf('@')+1;r.push([st,st+a[1].length]);continue;}
+        const d=DOTTED.exec(x);if(d&&/[\p{L}]/u.test(d[1].slice(d[1].lastIndexOf('.')+1)))r.push([w.index,w.index+d[1].length]);}}
     return r;
   }
   /* the rules for one token (an array of characters); name: FR-114 (d) applies. Returns [{i, rule}] (i within the token) */
@@ -78,6 +88,7 @@
         if(!okMix){
           const cnt=new Map();for(const l of lets)for(const x of l.s)cnt.set(x,(cnt.get(x)||0)+1);
           let main='',best=-1;for(const [x,k] of cnt)if(k>best||(k===best&&x==='Latin')){main=x;best=k;}
+          if(lets.some(l=>l.s.has('Latin')))main='Latin'; /* Latin in a forbidden mix: the other script's letters are the odd ones (fix round 1: `\u0440\u0430\u0443\u0440\u0430l` marks the Cyrillic, not the l) */
           let any=false;for(const l of lets)if(!l.s.has(main)){add(l.i,'mixed');any=true;}
           if(!any)for(const l of lets)if(!l.s.has('Latin'))add(l.i,'mixed');
         }
@@ -85,11 +96,13 @@
     }
     /* (b) compatibility forms: fullwidth, mathematical, ligatures, superscripts, circled */
     const t=tok.join('');
-    if(t.normalize('NFKC')!==t.normalize('NFC')){let any=false;tok.forEach((c,i)=>{if(c.normalize('NFKC')!==c.normalize('NFC')){add(i,'nfkc');any=true;}});if(!any){const j=tok.findIndex(c=>NONASCII.test(c));add(j<0?0:j,'nfkc');}}
+    /* outside name positions a width variant (U+FF00..U+FFEF: fullwidth digits, halfwidth kana) or a super- or subscript is ordinary text (Paco, fix round 1) */
+    if(t.normalize('NFKC')!==t.normalize('NFC')){let any=false;tok.forEach((c,i)=>{if(c.normalize('NFKC')!==c.normalize('NFC')){any=true;if(name||!WIDTH_SUP(c.codePointAt(0)))add(i,'nfkc');}});if(!any){const j=tok.findIndex(c=>NONASCII.test(c));add(j<0?0:j,'nfkc');}}
     /* (c) digits of two decimal systems */
     const ds=[];tok.forEach((c,i)=>{if(ND.test(c))ds.push({i,z:zeroOf(c.codePointAt(0))});});
     if(ds.length>1){const cnt=new Map();for(const d of ds)cnt.set(d.z,(cnt.get(d.z)||0)+1);
-      if(cnt.size>1){let main=0,best=-1;for(const [z,k] of cnt)if(k>best||(k===best&&z===0x30)){main=z;best=k;}for(const d of ds)if(d.z!==main)add(d.i,'digits');}}
+      const arabicAscii=!name&&cnt.size===2&&cnt.has(0x30)&&(cnt.has(0x660)||cnt.has(0x6f0)); /* outside names: Arabic-Indic with ASCII digits is ordinary text (fix round 1) */
+      if(cnt.size>1&&!arabicAscii){let main=0,best=-1;for(const [z,k] of cnt)if(k>best||(k===best&&z===0x30)){main=z;best=k;}for(const d of ds)if(d.z!==main)add(d.i,'digits');}}
     /* (d) lookalike letters in one script: name positions only (owner decision 2) */
     if(name){
       tok.forEach((c,i)=>{if(LET.test(c)&&LATIN_LOOK(c.codePointAt(0)))add(i,'lookalike');});
@@ -106,7 +119,7 @@
     const {chars,at}=clean(s), n=chars.length, joined=chars.join('');
     /* character index -> UTF-16 offset in `joined`, for the host spans */
     const off=new Map();let o=0;chars.forEach((c,j)=>{off.set(o,j);o+=c.length;});off.set(o,n);
-    const hs=hostSpans(joined).map(([a,b])=>[off.get(a),off.get(b)]).filter(([a,b])=>a!==undefined&&b!==undefined);
+    const hs=hostSpans(joined,k).map(([a,b])=>[off.get(a),off.get(b)]).filter(([a,b])=>a!==undefined&&b!==undefined);
     const nm=names(chars,k).concat(hs), isName=new Uint8Array(n+1);for(const [a,b] of nm)for(let i=a;i<b;i++)isName[i]=1;
     const findings=[];
     let i=0;
@@ -118,14 +131,17 @@
       const fs=rules(tok,name);if(!fs.length)continue;
       const flagged=new Set(fs.map(f=>f.i));
       const token=tok.join('');
-      const mk=tok.map((c,j)=>flagged.has(j)?c+marker({cp:c.codePointAt(0),script:scOf(c)}):c).join('');
-      for(const f of fs){const c=tok[f.i];findings.push({token,index:at[st+f.i],char:c,cp:c.codePointAt(0),script:scOf(c),rule:f.rule,marked:mk});}
+      /* `marked`: a window of the token around the letter (at most WIN letters each side, at most 3 markers), so the line stays short and linear (fix round 1) */
+      const win=i0=>{const a=Math.max(0,i0-WIN),b=Math.min(tok.length,i0+WIN+1);let o=a>0?'\u2026':'',k2=0;
+        for(let j=a;j<b;j++){o+=tok[j];if(flagged.has(j)&&k2<3&&(j===i0||Math.abs(j-i0)<=WIN)){o+=marker({cp:tok[j].codePointAt(0),script:scOf(tok[j])});k2++;}}return o+(b<tok.length?'\u2026':'');};
+      const first=new Map();for(const f of fs)if(!first.has(f.rule))first.set(f.rule,win(f.i));
+      for(const f of fs){const c=tok[f.i];findings.push({token,at:at[st],index:at[st+f.i],char:c,cp:c.codePointAt(0),script:scOf(c),rule:f.rule,marked:first.get(f.rule)});}
     }
     const hosts=[];
     for(const [a,b] of hs){
       const shown=chars.slice(a,b).join('');let ascii=null;
       try{ascii=new URL('https://'+shown+'/').hostname;}catch(e){ascii=null;}
-      if(ascii===null||ascii===''){const c=chars[a];findings.push({token:shown,index:at[a],char:c,cp:c.codePointAt(0),script:scOf(c),rule:'host',marked:shown});continue;}
+      if(ascii===null||ascii===''){const c=chars[a];findings.push({token:shown,at:at[a],index:at[a],char:c,cp:c.codePointAt(0),script:scOf(c),rule:'host',marked:cutS(shown,HOST_MAX)});continue;}
       hosts.push({shown,ascii,index:at[a]});
     }
     findings.sort((x,y)=>x.index-y.index);
@@ -142,20 +158,24 @@
     const items=[],seen=new Map();let unchecked=false,inHidden=false;const hosts=[],hseen=new Set();
     for(const l of ls){
       if(l.unchecked)unchecked=true;if(l.inHidden)inHidden=true;
-      for(const f of l.findings||[]){const key=f.marked+'\n'+f.rule;let it=seen.get(key);if(!it){it=Object.assign({},f,{cps:[]});seen.set(key,it);items.push(it);}if(!it.cps.includes(f.cp))it.cps.push(f.cp);}
+      for(const f of l.findings||[]){const tk=String(f.token||''),key=f.rule+'\n'+tk.length+'\n'+tk.slice(0,32)+'\n'+tk.slice(-32); /* the token and rule, constant size (fix round 1: the whole marked token made this quadratic) */
+        let it=seen.get(key);if(!it){it={rule:f.rule,script:f.script,token:tk.length>200?tk.slice(0,200):tk,marked:f.marked,cps:[],cpset:new Set()};seen.set(key,it);items.push(it);}
+        if(!it.cpset.has(f.cp)){it.cpset.add(f.cp);if(it.cps.length<3)it.cps.push(f.cp);}}
       for(const h of l.hosts||[])if(hostOdd(h)&&!hseen.has(h.ascii)){hseen.add(h.ascii);hosts.push(h);}
     }
     const out=[];
     if(items.length){
       const desc=f=>f.rule==='mixed'?(f.script!=='Latin'&&LATIN_IN.test(f.token)?'a '+sname(f.script)+' letter, not the Latin one':'a '+sname(f.script)+' letter among letters of another script'):
         f.rule==='lookalike'&&f.script!=='Latin'?'a '+sname(f.script)+' letter that looks like a Latin one':RULE_WORD[f.rule]||'a lookalike letter';
-      const shown=items.slice(0,5).map(f=>f.rule==='host'?'"'+f.marked+'" is '+desc(f):'"'+f.marked+'" has '+f.cps.slice(0,3).map(hex).join(', ')+(f.cps.length>3?' and '+(f.cps.length-3)+' more':'')+', '+desc(f));
+      const shown=items.slice(0,5).map(f=>f.rule==='host'?'"'+f.marked+'" is '+desc(f):'"'+f.marked+'" has '+f.cps.map(hex).join(', ')+(f.cpset.size>3?' and '+(f.cpset.size-3)+' more':'')+', '+desc(f));
       out.push('Lookalike letters: '+shown.join('; ')+(items.length>5?'; and '+(items.length-5)+' more':'')+'. Check the name before you allow it.');
     }
-    for(const h of hosts.slice(0,3))out.push('This address\u2019s host is '+h.ascii+': the name you see, '+h.shown+', is written with letters that are not plain ASCII.');
+    for(const h of hosts.slice(0,3))out.push('This address\u2019s host is '+cutS(h.ascii,HOST_MAX)+': the name you see, '+cutS(h.shown,HOST_MAX)+', is written with letters that are not plain ASCII.');
     if(inHidden)out.push('There are lookalike letters in the hidden part too.');
     if(unchecked)out.push('Durbar could not check this request for lookalike letters.');
     return out.join(' ');
   }
-  return {check,line,marker,hostOdd,PCTRL_T,CAP};
+  /* FR-118: how much of a session button's tooltip to keep: 240 characters, more to reach the last marker, never more than TIP_MAX (fix round 1) */
+  const tipLen=t=>{const s=String(t==null?'':t);return Math.min(TIP_MAX,Math.max(240,s.lastIndexOf('\u27e7')+2));};
+  return {check,line,marker,hostOdd,tipLen,PCTRL_T,CAP,TIP_MAX};
 })());
