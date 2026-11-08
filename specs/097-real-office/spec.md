@@ -1155,3 +1155,20 @@ Found in the security review of #1286, on main, not caused by it. The words of a
 **Delta 2026-11-08 (fourth review of PR #1292, Ruben; FR-318 changed, T224):** PowerShell parity: a parenthesised, `@(...)` or script-block argument runs as a command (`-Password (Remove-Item -Recurse ./data)` showed `-Password [redacted] -Recurse ./data)`), so `(` and `{` join `$(`, a backtick, `;`, `|`, `&`, `<`, `>` and a line break in the spans that make a masked shell command `concealed` (Deny only); plain token values in PowerShell form stay `secret`. The tests that read `app.js` normalise CRLF (Windows checkouts); every source regex of this PR was run against a CRLF copy of the sources. A stub mask that changes the text before the first `[redacted]` is `concealed`.
 
 - `[KNOWN GAP]` Homoglyphs and mixed-script lookalikes (a Cyrillic letter in a host or program name) are not marked: #1300.
+
+## Changes 2026-11-08: a Minimalist crew of six new drawn people lands as art, pack-only (issue #1154; T245 art part)
+
+Six invented, calm flat-vector office people (designer, manager, analyst, engineer, writer, support) are in the repository as art only: `src/renderer/realoffice/sets/minimalist/` (72 WebP frames, a measured `set.json`, an `ASSETS.md`) and their 18 portraits `src/renderer/crew/art/minimalist-<id>-{working,waiting,resting}.webp` (rows in that folder's `ASSETS.md`). No `CREWS` entry, no `REAL_SETS` row and no wiring: the Mac session does that in the wiring PR (after #1308).
+
+**Owner messages (Telegram DM, Vikram Gorla, verbatim).**
+1. 2026-11-08 11:03 UTC: "2", the answer to "Invent a fixed cast of drawn Minimalist people like the other crews".
+2. 2026-11-08 11:23 UTC: "Good and good on drawings as well, go full speed" (the look, on the designer and manager sample).
+3. 2026-11-08 11:27 UTC: "I can approve Paco's pictures if you want" (he approves in Paco's place, T238).
+4. 2026-11-08 12:00 UTC: "Look approved and none look like a real person", the approval of the look and the explicit likeness check, answering "1. Approve the look and confirm none resembles a real person you know".
+
+Each frame and each portrait is recorded as approved by Vikram Gorla (owner) in Paco's place with message 4's quote, and every `likeness-check` is that message. It claims no more than the owner's own knowledge, not a search for lookalikes.
+
+**Checks.** `test:realoffice-assets` adds `minimalist` to the pack-only allow-list (the likeness text is now per set: the Minimalist one differs from the five crews of the earlier delta) and runs every frame through the same metadata, alpha, size and approval checks. `test:crew-assets` has a narrow `PENDING_CREWS = ['minimalist']` allowance: its portraits are in `crew/art` without a `crew.js` entry, each with an `ASSETS.md` row and the 352x352, size and metadata checks, in threes; remove it when `crew.js` names the crew. The set folder is `minimalist` (the Characters choice id `minimalist` that `crewName` already knows), so `set.json` id is `minimalist`.
+
+- `[KNOWN GAP]` Not wired and not seen in the app: no screenshot of the crew in a world was taken here.
+- `[KNOWN GAP]` Known deviations from the cast text, kept in `ASSETS.md`: the designer's and analyst's sneakers are light grey (visible on a light floor), the envelope is kraft tan, and the designer's three standing frames from one sheet were stretched 12 percent wider after cutting.

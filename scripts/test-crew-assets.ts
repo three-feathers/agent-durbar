@@ -70,6 +70,11 @@ for (const id of C.PIRATE_IDS) for (const pose of C.POSES) assert.ok(files.has(`
 for (const id of C.MONSTER_IDS) for (const pose of C.POSES) assert.ok(files.has(`monster-${id}-${pose}.webp`), `monster-${id}-${pose}.webp exists (FR-075)`);
 for (const id of C.ROYAL_IDS) for (const pose of C.POSES) assert.ok(files.has(`royal-${id}-${pose}.webp`), `royal-${id}-${pose}.webp exists (FR-076)`);
 for (const id of C.REBELS_IDS) for (const pose of C.POSES) assert.ok(files.has(`rebels-${id}-${pose}.webp`), `rebels-${id}-${pose}.webp exists (FR-077)`);
+// a crew whose art is approved but not wired yet (no CREWS entry): its 3 portraits per person are allowed here, each with its row in ASSETS.md; remove the entry when crew.js names it (spec 097, Mac wiring PR)
+const PENDING_CREWS = ['minimalist'];
+const pendingFiles = [...files.keys()].filter((f) => PENDING_CREWS.some((c) => f.startsWith(c + '-')));
+assert.strictEqual(pendingFiles.length % 3, 0, 'pending crew pictures come in threes (working, waiting, resting)');
+for (const f of pendingFiles) files.delete(f);
 assert.deepStrictEqual([...files.keys()].sort(), C.files(C.IDS.concat(C.PREHISTORIC_IDS, C.PIRATE_IDS, C.MONSTER_IDS, C.ROYAL_IDS, C.REBELS_IDS)).map((f) => f.replace(/^crew\/art\//, '')).sort(), 'the folder holds exactly the pictures crew.js names');
 
 // ---- the check itself: each rule fails when its case is broken (so a rule removed from the check shows here) ----
@@ -100,8 +105,8 @@ assert.ok(!/ASSETS|PROMPTS/.test(copy.replace(/\/\/.*$/gm, '')), 'copy-assets.js
 // the build output holds the pictures when dist/ exists (npm run build first; the full run builds before the tests)
 const OUT = path.join(ROOT, 'dist', 'renderer', 'crew', 'art');
 if (fs.existsSync(path.join(ROOT, 'dist', 'renderer', 'index.html'))) {
-  assert.deepStrictEqual(fs.readdirSync(OUT).sort(), [...files.keys()].sort(), 'dist/renderer/crew/art holds exactly the pictures: no ASSETS.md, no prompts');
+  assert.deepStrictEqual(fs.readdirSync(OUT).sort(), [...files.keys(), ...pendingFiles].sort(), 'dist/renderer/crew/art holds exactly the pictures: no ASSETS.md, no prompts');
 }
 const csp = /Content-Security-Policy" content="([^"]*)"/.exec(fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'index.html'), 'utf8'));
 assert.strictEqual(csp && csp[1], "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;", 'the CSP is unchanged (FR-057)');
-console.log('crew assets tests passed (' + files.size + ' pictures)');
+console.log('crew assets tests passed (' + (files.size + pendingFiles.length) + ' pictures)');
