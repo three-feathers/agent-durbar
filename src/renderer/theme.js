@@ -693,6 +693,7 @@
         '--idle-stub':'#221d3d','--idle-stub-ink':'#bdb5d6','--drop':'#29adff','--drop-ink':'#cfe3ff',
         /* the info tone (file chips, ask tags, a selected row) is not a status colour: styles.css derives it from the light --pb-/--pc-working, which here gave 2.16:1 on a dark panel (#1278), so the arcade sets its own, in the working blue (spec 070 FR-081) */
         '--tone-info-ink':'#8fc3ff','--tone-info-soft':'#1e2c4e','--tone-info-faint':'#1a2140','--tone-info-hover':'#2a3b66',
+        '--tone-ok-ink':'#8fe3ab','--tone-ok-soft':'#1b3a2c','--tone-ok-faint':'#162e24','--tone-ok-hover':'#26503b', /* the ok tone (image chips .att.img, .chip.att-chip.img) the same way: its derived fill was 1.9:1 under the dark green ink */
         '--tint-sage':'#162420','--wall-sage':'#2c4a3c','--tint-blue':'#141d30','--wall-blue':'#2c3f66','--tint-sand':'#241f14','--wall-sand':'#4d4128','--tint-clay':'#291a1a','--wall-clay':'#55332f',
         '--cwall-sage':'#3c6a54','--cwall-blue':'#3c5a92','--cwall-sand':'#6e5c36','--cwall-clay':'#7a4842',
         '--red-ink':'#ff9a8f','--amber-ink':'#ffc35c','--blue-ink':'#8fc3ff'},
@@ -726,6 +727,7 @@
     ['--ink','--surface',4.5,'#000000'],['--ink-2','--surface',4.5,'#000000'],['--muted','--surface',4.5,'#000000'],['--ink','--surface-2',4.5,'#000000'],['--muted','--surface-2',4.5,'#000000'],
     ['--line-ctl','--surface',3,'#000000'],['--focus','--surface',3,null],['--focus','--bg',3,null],['--brand-bg','--wb-bg',1.5,null],
     /* spec 070 FR-081 (#1278): the info tone's text pairs: the file chip (.att, .chip.att-chip, .btn.session), the ask tag (.mode-ask, .mtag), the plain text on a soft row (.note.mcpre, .pico-opt) */
+    ['--tone-ok-ink','--tone-ok-soft',4.5,null],['--tone-ok-ink','--tone-ok-faint',4.5,null],['--tone-ok-ink','--tone-ok-hover',4.5,null],
     ['--tone-info-ink','--tone-info-soft',4.5,null],['--tone-info-ink','--tone-info-faint',4.5,null],['--tone-info-ink','--tone-info-hover',4.5,null],['--ink','--tone-info-soft',4.5,null],['--ink-2','--tone-info-soft',4.5,null]];
   /* spec 070 FR-053: the bar's own pairs of WORLD_PAIRS, in the shared contrast check too (themegen.ts BAR_PAIRS) */
   const BAR_PAIRS=WORLD_PAIRS.filter(p=>p[0].startsWith('--wb-')&&p[1].startsWith('--wb-'));
@@ -742,7 +744,12 @@
   /* the info tone of styles.css :root as hex, from a token map: ink = --pc-working; soft, faint and hover = color-mix(in srgb, ...) of --pb-working with --surface (55%, 28%) and of --pb-working with --pc-working (12%).
      A world or theme that sets its own --tone-info-* keeps it (spec 070 FR-081); the guard measures what the CSS would show */
   function toneInfo(t){
-    const d={'--tone-info-ink':t['--pc-working'],'--tone-info-soft':mixHex(t['--surface'],t['--pb-working'],0.55),'--tone-info-faint':mixHex(t['--surface'],t['--pb-working'],0.28),'--tone-info-hover':mixHex(t['--pb-working'],t['--pc-working'],0.12)};
+    const d={};
+    for(const [n,s] of [['info','working'],['ok','done']]){
+      const pb=t['--pb-'+s],pc=t['--pc-'+s];
+      d['--tone-'+n+'-ink']=pc; d['--tone-'+n+'-soft']=mixHex(t['--surface'],pb,0.55); d['--tone-'+n+'-faint']=mixHex(t['--surface'],pb,0.28);
+      d['--tone-'+n+'-hover']=mixHex(pb,pc,0.12); d['--tone-'+n+'-line']=mixHex(pb,pc,0.26);
+    }
     for(const k of Object.keys(d))if(own(t,k))d[k]=t[k];
     return Object.assign({},t,d);
   }
