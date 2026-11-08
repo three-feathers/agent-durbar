@@ -612,6 +612,22 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
   hidden(`--pa\` \`ss=${V}`, '#1317 round 2: a backtick pair with a space inside a name', true);
   hidden(`--password$( )=${V}`, '#1317 round 2: $( ) with a space after a name', true);
   hidden(`--password=$( )${V}`, '#1317 round 2: $( ) with a space before the value', true);
+  // round 3: a line continuation before the value (`--password=\<newline>V`, also CRLF, with quotes, and twice)
+  hidden(`--password=\\\n${V}`, '#1317 round 3: a line continuation before the value', true);
+  hidden(`--password=\\\r\n${V}`, '#1317 round 3: a line continuation (CRLF) before the value', true);
+  hidden(`--password=\\\n'${V}'`, '#1317 round 3: a line continuation before a quoted value', true);
+  hidden(`--password=\\\n\\\n${V}`, '#1317 round 3: two line continuations before the value', true);
+  hidden(`--password=\\\n"${V}"`, '#1317 round 3: a line continuation before a double-quoted value', true);
+  hidden(`password: \\\n${V}`, '#1317 round 3: a line continuation after a colon');
+  // round 3: whitespace- or comment-only substitutions that expand to nothing are a LISTED GAP (spec 012 FR-174), not a name. These asserts pin the leak: when a later fix makes one of them
+  // masked, its assert fails and the list in the spec and issue #1320 shrink with it.
+  const gapShown = (input: string, label: string): void => assert.ok(redact(input, {}).includes(V), `#1317 round 3 KNOWN GAP pinned (it leaks today; a fix updates the spec list and #1320): ${label}`);
+  gapShown(`--pa$(  )ss=${V}`, '$(  ) with two spaces inside a name');
+  gapShown(`--pa$(\t)ss=${V}`, '$(<tab>) inside a name');
+  gapShown(`--pa$(\n)ss=${V}`, '$(<newline>) inside a name');
+  gapShown(`--pa\`  \`ss=${V}`, 'a backtick pair with two spaces inside a name');
+  gapShown(`--pa\`\t\`ss=${V}`, 'a backtick pair with a tab inside a name');
+  gapShown(`--pa$(#x)ss=${V}`, '$(#x), a comment-only substitution, inside a name');
   assert.strictEqual(redact(`echo --pa$(x)ss=${V}`, {}), `echo --pa$(x)ss=${V}`, '#1317 round 2: a non-empty substitution is a listed gap, not a name');
   // a hidden character in the text makes `maskOutgoing` take its slow path: the head list (`LIVE_HEADS`) must see the same names
   hidden(`--pass'word'''=${V}​`, '#1317 item 2: a zero-width character after the value, quote run before the separator');

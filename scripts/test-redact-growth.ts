@@ -179,6 +179,9 @@ if (part === 'adversarial' || part === 'adversarial2' || part === 'masks') {
     bareQuotesColon: "':".repeat(MB / 2),
     lineContinuations: 'pa\\\n'.repeat(MB / 4),
     spacedSubst: 'pa$(  )'.repeat(MB / 7),
+    // round 3: line continuations before a value
+    valueContinuations: 'password=\\\n'.repeat(MB / 11),
+    valueContinuationRun: 'password=' + '\\\n'.repeat(MB / 2),
   };
   for (const [k, v] of part === 'masks' ? Object.entries(maskCases) : Object.entries(adversarial).filter((_e, i) => i % 2 === (part === 'adversarial' ? 0 : 1))) assertLinearGrowth(`adversarial ${k}`, (input) => workerRun(`adversarial ${k}`, code, { mod, input }, 30000), v);
 }
