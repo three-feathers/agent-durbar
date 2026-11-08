@@ -12,7 +12,7 @@ const D = load(path.join(DIR, 'draw.js'));
 const P = load(path.join(DIR, 'points.js'));
 
 type Ops = Record<string, number>;
-interface Rec { ops: Ops; log: { op: string; alpha: number; arg?: unknown }[]; forbidden: string[]; fillStyles: string[]; strokeStyles: string[] }
+interface Rec { onOp?: (k: string) => void; ops: Ops; log: { op: string; alpha: number; arg?: unknown }[]; forbidden: string[]; fillStyles: string[]; strokeStyles: string[] }
 const FORBIDDEN = ['filter', 'shadowBlur', 'shadowColor', 'globalCompositeOperation', 'backdropFilter', 'mixBlendMode'];
 
 function fakeCtx(rec: Rec) {
@@ -21,7 +21,7 @@ function fakeCtx(rec: Rec) {
     get(t, k: string) {
       if (k in t) return t[k];
       return (...args: unknown[]) => {
-        rec.ops[k] = (rec.ops[k] || 0) + 1;
+        rec.ops[k] = (rec.ops[k] || 0) + 1; if (rec.onOp) rec.onOp(k);
         rec.log.push({ op: k, alpha: state.globalAlpha as number, arg: args[0] });
         if (k === 'createRadialGradient') return { addColorStop() { /* nothing */ } };
         return undefined;
@@ -175,11 +175,11 @@ for (const [name, mk] of [['Still', () => rig({ motion: 'still' })], ['forced co
   r.d.set(view(null, 'done', 1, { bloom: ['frontal', 'cerebellum'] }));
   const alphas: number[] = [];
   const stampsBefore = r.sprites.length;
-  assert.strictEqual(stampsBefore, 7, 'the seven sprites exist before the first frame; the base layer is made by it');
+  assert.strictEqual(stampsBefore, 8, 'the base layer (made at once) and the seven sprites exist before the first frame');
   for (let i = 0; i < 120 && r.pending(); i++) {
     const n = r.main.log.length; r.tick(17);
-    const stamps = r.main.log.slice(n).filter((l) => l.op === 'drawImage' && r.sprites.slice(0, 7).includes(l.arg));
-    const used = new Set(stamps.map((s) => r.sprites.indexOf(s.arg)));
+    const stamps = r.main.log.slice(n).filter((l) => l.op === 'drawImage' && r.sprites.slice(1, 8).includes(l.arg));
+    const used = new Set(stamps.map((s) => r.sprites.indexOf(s.arg) - 1)); // sprite 0 is the base layer
     used.forEach((u) => assert.ok([P.LOBES.indexOf('frontal'), P.LOBES.indexOf('cerebellum')].includes(u), 'only the lobes the turn used swell'));
     if (stamps.length) alphas.push(Math.max(...stamps.map((s) => s.alpha)));
   }
@@ -217,6 +217,62 @@ for (const [name, mk] of [['Still', () => rig({ motion: 'still' })], ['forced co
   assert.ok(!r.offs.some((o) => o.ops.createRadialGradient), 'no gradient');
 }
 
+// ---- FR-104 (hidden mid-burst): a burst cut short by hiding leaves a part frame; shown again, the settled state is drawn once with no new event
+{
+  const r = rig();
+  r.d.set(view('frontal')); r.tick(17); // t is about 0.07: the lobe is part lit
+  const part = r.d.stats.pointsLast;
+  r.d.setVisible(false); r.tick(500);
+  const frames = r.d.stats.frames;
+  r.d.setVisible(true);
+  assert.strictEqual(r.d.stats.frames, frames + 1, 'hidden mid-burst, then shown: one frame, with no event in between');
+  assert.ok(r.d.stats.pointsLast > part, `the one frame draws the whole lobe, not the part frame (${part} then ${r.d.stats.pointsLast})`);
+  assert.strictEqual(r.pending(), 0, 'and no loop');
+}
+
+// ---- the picture is never "the same" across agents: rev counts per agent, so the view carries the agent
+{
+  const r = rig();
+  r.d.set({ ...view('frontal', 'done', 3, { trail: [{ lobe: 'frontal', state: 'done' }] }), id: 'agent-a' }); r.settle();
+  const f = r.d.stats.frames;
+  r.d.set({ ...view('frontal', 'done', 3, { trail: [{ lobe: 'frontal', state: 'done' }] }), id: 'agent-b' }); r.settle();
+  assert.ok(r.d.stats.frames > f, 'another agent with the same lobe, state, rev and trail length is drawn again');
+  const g = r.d.stats.frames; r.d.set({ ...view('frontal', 'done', 3, { trail: [{ lobe: 'frontal', state: 'done' }] }), id: 'agent-b' });
+  assert.strictEqual(r.d.stats.frames, g, 'the same agent with nothing changed is not drawn again');
+}
+
+// ---- FR-102: the base layer (all the points) is built outside any frame; a frame draws only the lit lobe
+{
+  const r = rig({ size: 'dock' });
+  assert.strictEqual(r.d.stats.frames, 0);
+  assert.deepStrictEqual([r.d.stats.baseBuilds, r.d.stats.basePoints], [1, P.SIZES.dock], 'the base layer is built at once, before any frame, and holds the dock set');
+  const fills = (): number => r.main.ops.fillRect || 0;
+  r.d.set(view('frontal')); r.tick(17);
+  const lit = P.build('dock').byLobe[P.LOBES.indexOf('frontal')].length;
+  assert.ok(fills() > 0 && fills() <= lit, `the first frame draws at most the lit lobe's ${lit} points, never the whole set (${fills()})`);
+}
+
+// ---- Calm: a thin burst (half the points, 150 ms) and Full's burst are not the same
+{
+  assert.strictEqual(D.BURST_MS.calm, 150); assert.strictEqual(D.BURST_MS.full, 250);
+  const idx = P.build('dock').byLobe[P.LOBES.indexOf('frontal')].length;
+  const calm = rig({ motion: 'calm' }), full = rig({ motion: 'full' });
+  calm.d.set(view('frontal')); calm.tick(30); full.d.set(view('frontal')); full.tick(30);
+  assert.strictEqual(calm.d.stats.pointsLast, Math.ceil(idx * (30 / 150) * 0.5), 'Calm: half the points of its own burst progress');
+  assert.strictEqual(full.d.stats.pointsLast, Math.ceil(idx * (30 / 250)), 'Full: all the points of its burst progress');
+}
+
+// ---- constitution V: "3 frames in a row": a fast frame between slow ones starts the count again
+{
+  const r = rig({ size: 'dock' });
+  const pattern = [5, 5, 0.1, 5, 5, 0.1]; let i = 0, t = 1000;
+  (r.host as { now: () => number }).now = () => t;
+  r.main.onOp = (k) => { if (k === 'clearRect') t += pattern[(i++) % pattern.length]; }; // each frame's painted time is the next value
+  r.d.set(view('frontal')); r.settle();
+  assert.strictEqual(r.d.stats.degraded, false, 'slow, slow, fast, slow, slow: never three in a row, so the canvas stays in Full');
+  assert.ok(r.d.stats.overBudget >= 4, 'the slow frames were counted (' + r.d.stats.overBudget + ')');
+}
+
 // ---- constitution V: the frame budget (a fake clock; 3 frames in a row over budget drop the canvas to Calm)
 {
   const r = rig({ size: 'dock' });
@@ -251,6 +307,7 @@ console.log('braindraw: ok');
   const names = (): Map<string, unknown> => new Map(Object.getOwnPropertyNames(win).map((k) => [k, win[k]]));
   const lexical = (code: string): string[] => { const o: string[] = []; for (const m of code.matchAll(/^(?:const|let|function|var|class) ([A-Za-z_$][\w$]*)/gm)) o.push(m[1]); return o; };
   const before = names();
+  const exportsBefore = new Map(Object.entries(win.exports as Record<string, unknown>));
   const files = ['brainstate.js', 'brainsurface.js'].map((f) => path.join(root, 'dist', 'shared', f));
   const declared = files.flatMap((f) => lexical(fs.readFileSync(f, 'utf8')));
   assert.ok(declared.length > 20);
@@ -261,5 +318,110 @@ console.log('braindraw: ok');
   assert.strictEqual(typeof rd.cardLines, 'function', 'the page gets brainsurface\'s functions');
   assert.strictEqual(typeof rd.brainState, 'function', 'and brainstate\'s');
   for (const [k, v] of before) if (k !== 'exports') assert.strictEqual(win[k], v, `loading the brain files left the global "${k}" as it was`);
+  // `window.exports` is the object redact.js, quota and cost code export into (window.DurbarRedact is the same object): the brain files add names to it and must replace none
+  for (const [k, v] of exportsBefore) assert.strictEqual(rd[k], v, `loading the brain files left window.exports.${k} (a function or constant of another shared module) as it was`);
+  assert.ok(exportsBefore.size > 20 && Object.keys(rd).length > exportsBefore.size, 'the guard compared a real set of exports, and the brain files did add theirs');
+  // the plain page scripts that are not in the load above (sim.js, demo.js, dialog.js) share the global scope too: no top-level name of the brain files is theirs
+  const others = ['sim.js', 'demo.js', 'dialog.js'].flatMap((f) => lexical(fs.readFileSync(path.join(root, 'dist', 'renderer', f), 'utf8')));
+  assert.ok(others.length > 50, 'the other page scripts were read');
+  for (const n of declared) assert.ok(!others.includes(n), `brainstate.js or brainsurface.js declares the global "${n}", which sim.js, demo.js or dialog.js also declares`);
 }
 console.log('braindraw: page load ok');
+
+// ---- the floating host (host.js) on a minimal fake page: name masking, Hide, blur, forgetting, the cap, the Motion button's focus
+{
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const H = load(path.join(DIR, 'host.js'));
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const R = require('../src/shared/redact'); const BS = require('../src/shared/brainstate'); const SF = require('../src/shared/brainsurface');
+  const root = path.join(__dirname, '..', '..', 'src', 'renderer');
+  const USAGE = load(path.join(root, 'usagetotals.js')), COST = load(path.join(root, 'costtable.js'));
+  const mask = { ...R, units: { validNano: USAGE.validNano, AIU_USD: COST.AIU_USD, money: COST.money, creditsWord: 'AIU', estimateWord: 'Claude (est.)' } };
+  const GH = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
+  type Fn = (...a: unknown[]) => void;
+  function fakeEl(): Record<string, unknown> {
+    const kids = new Map<string, Record<string, unknown>>(), classes = new Set<string>(), attrs: Record<string, string> = {}, listeners: Record<string, Fn[]> = {};
+    const e: Record<string, unknown> = {
+      className: '', textContent: '', innerHTML: '', style: {}, width: 0, height: 0, attrs, listeners, classes,
+      setAttribute: (k: string, v: unknown) => { attrs[k] = String(v); }, getAttribute: (k: string) => attrs[k],
+      addEventListener: (k: string, f: Fn) => { (listeners[k] = listeners[k] || []).push(f); }, appendChild: () => undefined,
+      classList: { toggle: (c: string, on: boolean) => { if (on) classes.add(c); else classes.delete(c); }, add: (c: string) => classes.add(c), remove: (c: string) => classes.delete(c), contains: (c: string) => classes.has(c) },
+      querySelector: (sel: string) => { if (!kids.has(sel)) kids.set(sel, fakeEl()); return kids.get(sel); },
+      getContext: () => fakeCtx(newRec()),
+    };
+    return e;
+  }
+  function page(nameOf: (id: string) => string) {
+    let clock = 5000; const timers: Fn[] = [], rafs: Fn[] = [];
+    const docL: Record<string, Fn[]> = {}, winL: Record<string, Fn[]> = {};
+    const mqReduce = { matches: false, listeners: [] as Fn[], addEventListener: (_: string, f: Fn) => { mqReduce.listeners.push(f); } };
+    const doc = { hidden: false, hasFocus: () => true, body: { appendChild: () => undefined }, createElement: () => fakeEl(), addEventListener: (k: string, f: Fn) => { (docL[k] = docL[k] || []).push(f); } };
+    const win = {
+      exports: { ...BS, ...SF }, DurbarBrainDraw: D, performance: { now: () => clock }, devicePixelRatio: 1,
+      matchMedia: (q: string) => (q.includes('reduced') ? mqReduce : { matches: false, addEventListener: () => undefined }),
+      requestAnimationFrame: (f: Fn) => rafs.push(f), cancelAnimationFrame: () => undefined,
+      setTimeout: (f: Fn) => timers.push(f), clearTimeout: () => undefined, addEventListener: (k: string, f: Fn) => { (winL[k] = winL[k] || []).push(f); },
+    };
+    const host = H.start({ doc, win, mask, now: () => clock, name: nameOf });
+    const flush = (): void => { for (let i = 0; i < 50 && timers.length; i++) timers.splice(0).forEach((f) => f()); };
+    const ev = (n: number, tool = 'bash'): unknown => ({ type: 'toolCall', sessionId: 'x', callId: 'c' + n, tool, phase: 'start', args: { command: 'ls' }, timestamp: clock });
+    return { host, doc, win, docL, winL, mqReduce, flush, ev, tick: (ms: number) => { clock += ms; }, rafs };
+  }
+  const q = (h: { el: Record<string, unknown> }, s: string): { attrs: Record<string, string>; listeners: Record<string, Fn[]> } => (h.el.querySelector as (s: string) => never)(s);
+
+  // the region's name is masked like every other surface (FR-021, FR-085)
+  {
+    const p = page(() => 'Ada ' + GH + ' ‮\nx'); p.host.feed('a', 'x', p.ev(1)); p.flush();
+    const label = (p.host.el.attrs as Record<string, string>)['aria-label'];
+    assert.ok(label.startsWith('Brain view, Ada') && !/ghp_|[‪-‮⁦-⁩\n]/.test(label), 'the region label holds no token, bidi control or line break: ' + label);
+  }
+  // Hide tells the renderer: nothing is drawn while folded, one frame when shown again
+  {
+    const p = page(() => 'Ada'); p.host.feed('a', 'Ada', p.ev(1)); p.flush(); while (p.rafs.length) { p.tick(17); p.rafs.splice(0).forEach((f) => f()); }
+    const fold = q(p.host, '[data-bv=fold]'), btn = (p.host.el.querySelector as (s: string) => Record<string, unknown>)('[data-bv=fold]');
+    fold.listeners.click[0]({ currentTarget: btn });
+    const f = p.host.draw.stats.frames;
+    p.host.feed('a', 'Ada', p.ev(2, 'view')); p.flush(); p.tick(300); p.rafs.splice(0).forEach((fn) => fn());
+    assert.strictEqual(p.host.draw.stats.frames, f, 'folded (Hide): the renderer draws no frame');
+    assert.strictEqual(p.rafs.length, 0, 'folded: no loop');
+    fold.listeners.click[0]({ currentTarget: btn });
+    assert.strictEqual(p.host.draw.stats.frames, f + 1, 'shown again: the settled state is drawn once');
+  }
+  // focus and blur are wired: an unfocused window draws Still (FR-104)
+  {
+    const p = page(() => 'Ada'); assert.strictEqual(p.host.draw.mode(), 'full');
+    assert.ok(p.winL.blur && p.winL.focus && p.docL.visibilitychange, 'the host listens for blur, focus and visibilitychange');
+    p.winL.blur[0](); assert.strictEqual(p.host.draw.mode(), 'still', 'blur: Still');
+    p.winL.focus[0](); assert.strictEqual(p.host.draw.mode(), 'full', 'focus: the user\'s setting again');
+    p.doc.hidden = true; p.docL.visibilitychange[0]();
+    const f = p.host.draw.stats.frames; p.host.feed('a', 'Ada', p.ev(1)); p.flush();
+    assert.strictEqual(p.host.draw.stats.frames, f, 'a hidden window: no frame');
+  }
+  // a removed agent's brain is forgotten; the box is empty if it was the one shown
+  {
+    const p = page(() => 'Ada'); p.host.feed('a', 'Ada', p.ev(1)); p.flush();
+    assert.strictEqual(p.host.shown(), 'a');
+    p.host.forget('a');
+    assert.strictEqual(p.host.shown(), null, 'the removed agent is no longer shown');
+    assert.ok((p.host.el.classes as Set<string>).has('is-empty'), 'and the box is empty');
+    assert.strictEqual(p.host.count(), 0, 'its state is gone');
+    p.host.feed('b', 'Bo', p.ev(2)); p.flush();
+    assert.ok(!(p.host.el.classes as Set<string>).has('is-empty'), 'the next event brings the box back');
+  }
+  // the 60-state cap holds even when the oldest agent is the one shown and keeps feeding
+  {
+    const p = page(() => 'Ada');
+    for (let i = 1; i <= 150; i++) { p.host.feed('0', 'Zero', p.ev(i * 2)); p.host.feed('id' + i, 'A' + i, p.ev(i * 2 + 1)); p.flush(); }
+    assert.ok(p.host.count() <= 60, `at most 60 brains are kept (${p.host.count()})`);
+  }
+  // reduced motion disables nothing the user is standing on: the Motion button keeps focus (aria-disabled) and ignores a click
+  {
+    const p = page(() => 'Ada'); const b = q(p.host, '[data-bv=motion]');
+    p.mqReduce.matches = true; p.mqReduce.listeners.forEach((f) => f());
+    assert.strictEqual(b.attrs['aria-disabled'], 'true', 'set by the system: aria-disabled');
+    assert.strictEqual((b as unknown as { disabled?: boolean }).disabled, undefined, 'not the disabled attribute, which would drop the keyboard focus');
+    const text = (p.host.el.querySelector as (s: string) => Record<string, unknown>)('[data-bv=motion]').textContent;
+    b.listeners.click[0](); assert.strictEqual((p.host.el.querySelector as (s: string) => Record<string, unknown>)('[data-bv=motion]').textContent, text, 'a click does nothing while the system decides');
+  }
+}
+console.log('braindraw: host ok');

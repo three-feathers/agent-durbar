@@ -24,13 +24,13 @@
     const colors=Object.assign({},LOBE_COLORS,o.colors||{});
     let W=o.width||240, H=Math.round(W/P.ASPECT), dpr=host.dpr?host.dpr():1;
     let ctx=canvas.getContext('2d'), base=null, sprites=null;
-    let view={lobe:null,state:'done',trail:[],bloom:[],rev:0};
+    let view={id:null,lobe:null,state:'done',trail:[],bloom:[],rev:0};
     let anim=null, rafId=0, dirty=true, destroyed=false, degraded=false, over=0;
-    const stats={frames:0,pointsLast:0,pointsMax:0,framesHidden:0,loops:0,loopRunning:false,baseBuilds:0,spriteBuilds:0,overBudget:0,degraded:false,lastMs:0,canvases:1};
+    const stats={frames:0,basePoints:0,pointsLast:0,pointsMax:0,framesHidden:0,loops:0,loopRunning:false,baseBuilds:0,spriteBuilds:0,overBudget:0,degraded:false,lastMs:0,canvases:1};
 
     const eff=()=>(forced||!focused)?'still':(degraded?'calm':motion);
     const px=(x)=>x*W, py=(y)=>y*H;
-    function fit(){canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);if(canvas.style){canvas.style.width=W+'px';canvas.style.height=H+'px';}ctx=canvas.getContext('2d');base=null;}
+    function fit(){canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);if(canvas.style){canvas.style.width=W+'px';canvas.style.height=H+'px';}ctx=canvas.getContext('2d');base=null;buildBase();} /* the base layer is built here, never inside a frame: a frame draws only the lit lobe (FR-102) */
     function buildBase(){
       const c=host.makeCanvas(canvas.width,canvas.height), x=c.getContext('2d'), s=PT[size]*dpr;
       x.setTransform(1,0,0,1,0,0);
@@ -40,7 +40,7 @@
         const idx=set0.byLobe[l];
         for(let k=0;k<idx.length;k++){const i=idx[k];x.fillRect(set0.xs[i]*canvas.width,set0.ys[i]*canvas.height,s,s);}
       }
-      stats.baseBuilds++;base=c;
+      stats.baseBuilds++;stats.basePoints=set0.n;base=c;
     }
     function buildSprites(){
       if(forced||sprites)return;
@@ -115,11 +115,11 @@
     const api={
       stats,
       mode:eff,
-      /* view: {lobe, state, trail:[{lobe,state}], bloom:[lobe], rev}; draws only when something visibly changed */
+      /* view: {id (the agent: rev counts per agent), lobe, state, trail:[{lobe,state}], bloom:[lobe], rev}; draws only when something visibly changed */
       set(v){
         if(destroyed)return;
-        const prev=view, nv={lobe:v.lobe||null,state:v.state||'done',trail:Array.isArray(v.trail)?v.trail.slice():[],bloom:Array.isArray(v.bloom)?v.bloom.filter(l=>P.LOBES.indexOf(l)>=0):[],rev:v.rev||0};
-        const same=prev.rev===nv.rev&&prev.lobe===nv.lobe&&prev.state===nv.state&&prev.trail.length===nv.trail.length&&prev.bloom.join()===nv.bloom.join();
+        const prev=view, nv={id:v.id==null?null:String(v.id),lobe:v.lobe||null,state:v.state||'done',trail:Array.isArray(v.trail)?v.trail.slice():[],bloom:Array.isArray(v.bloom)?v.bloom.filter(l=>P.LOBES.indexOf(l)>=0):[],rev:v.rev||0};
+        const same=prev.id===nv.id&&prev.rev===nv.rev&&prev.lobe===nv.lobe&&prev.state===nv.state&&prev.trail.length===nv.trail.length&&prev.bloom.join()===nv.bloom.join();
         view=nv;
         if(same&&!dirty)return;
         if(!visible){dirty=true;return;}
@@ -136,9 +136,9 @@
         }else drawOnce();
       },
       setMotion(m){if(motion===m)return;motion=m;degraded=false;over=0;stats.degraded=false;stopLoop();anim=null;if(m!=='still')buildSprites();drawOnce();},
-      setForced(f){forced=!!f;base=null;sprites=null;stopLoop();anim=null;drawOnce();},
+      setForced(f){forced=!!f;base=null;sprites=null;stopLoop();anim=null;buildBase();drawOnce();},
       /* FR-104: hidden draws nothing and stops the loop; shown again draws the latest state once */
-      setVisible(v){visible=!!v;if(!visible){stopLoop();anim=null;return;}if(dirty)drawOnce();},
+      setVisible(v){visible=!!v;if(!visible){stopLoop();anim=null;dirty=true;return;} /* a burst cut short leaves a part frame on the canvas: draw the settled state once on show */if(dirty)drawOnce();},
       /* unfocused: no animation; the state change is drawn as Still */
       setFocused(f){focused=!!f;if(!focused){stopLoop();anim=null;drawOnce();}},
       resize(w,r){W=Math.max(80,Math.round(w));H=Math.round(W/P.ASPECT);dpr=r||dpr;stopLoop();anim=null;sprites=null;fit();drawOnce();},

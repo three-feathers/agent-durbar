@@ -5,7 +5,7 @@
  *   - with `?brain=1`: no brain after an event; a canary token in a command reaches any text of the host, its labels or its canvas alternative (FR-021, FR-085);
  *   - a text of the host is under 12 px (FR-097); the host moves a desk (the office layout must be unchanged); the canvas is not decorative or not drawn;
  *   - a step does not change the picture; a failed step is not drawn as a cross (the cross is checked in the unit test; here the picture must differ);
- *   - a loop is left running when nothing happens (FR-103); a frame draws more points than the dock set (FR-102);
+ *   - a loop is left running when nothing happens (FR-103); a frame draws more points than the largest lit lobe (FR-102);
  *   - Still (the button, by keyboard) or reduced motion (emulated) starts an animation frame loop (SC-004); a hidden page draws a frame; forced colours keep it still.
  * Reported, not asserted: how many desks the floating host covers (it is fixed at the corner until T006's dock; the covering is why it stays off by default).
  * Screenshots: <SHOTS_OUT>/106-brain-<state>-<w>x<h>.png
@@ -49,8 +49,16 @@ module.exports = async (ctx) => {
     assert.strictEqual(await js(`document.querySelectorAll('script[src*=brain],link[href*=brain]').length>0`), false, 'off by default: no Brain view file is loaded (FR-105)');
     await emit({ type: 'toolCall', sessionId: id, callId: 'off-1', tool: 'bash', phase: 'complete', output: 'ok' });
 
+    // ---- no masking, no brain (fail closed): with the redact module "missing" the loader gives up and shows nothing
+    await H.load({ w, h, query: { brain: '1', noredact: '1' } });
+    await emit({ type: 'toolCall', sessionId: id, callId: 'nr-1', tool: 'bash', phase: 'start', args: { command: 'npm test' } });
+    await must(`window.__durbarSimUi.brain.state()==='failed'&&window.__durbarSimUi.brain.why()==='no mask'`, 'the brain refuses to start without masking');
+    assert.strictEqual(await js(`!!document.querySelector('.bv')`), false, 'no masking, no brain: nothing is shown');
+
     // ---- on: the layout is unchanged, the brain follows the agent
     await H.load({ w, h, query: { brain: '1' } });
+    // the OS may take the focus from a driver (three run at a time): an unfocused page draws Still, which would make the "no loop" checks below pass for any code
+    await H.focusPage({ emulate: 'first' });
     const before = await js(DESKS);
     assert.strictEqual(before.length, 15, '15 desks');
     await js(`window.__errs=[];addEventListener('error',e=>window.__errs.push(String(e.message)+' '+String(e.filename).split('/').pop()));0`);
@@ -58,6 +66,8 @@ module.exports = async (ctx) => {
     await emit({ type: 'toolCall', sessionId: id, callId: 'b-1', tool: 'bash', phase: 'start', args: { command: cmd } });
     await must(`!!document.querySelector('.bv .bv-c1')&&/running/.test(document.querySelector('.bv .bv-c1').textContent)`, 'the card of a running command');
     await calmDown();
+    assert.strictEqual(await js(`window.__durbarSimUi.brain.host().draw.mode()`), 'full', 'the brain is in Full (the page has focus), so the Still checks below test something');
+    assert.ok((await stats()).loops >= 1, 'a step in Full ran an animation loop');
     assert.deepStrictEqual(await js(DESKS), before, 'the floating brain moves no desk');
     const everything = await js(`document.querySelector('.bv').outerHTML+'|'+document.querySelector('.bv').innerText+'|'+document.querySelector('.bv canvas').toDataURL().length`);
     assert.ok(!everything.includes(CANARY) && !everything.includes('ghp_'), 'a token in a command reaches no text of the brain (FR-021)');
@@ -84,7 +94,9 @@ module.exports = async (ctx) => {
     assert.ok(!(await js(`document.querySelector('.bv').innerText`)).includes('/home/someone'), 'a home path is masked (FR-085)');
     let s = await stats();
     assert.strictEqual(s.loopRunning, false, 'FR-103: no frame loop is left');
-    assert.ok(s.pointsMax > 0 && s.pointsMax <= 6000, 'FR-102: points per frame within the dock set: ' + s.pointsMax);
+    const litMax = await js(`window.DurbarBrainPoints.build('dock').byLobe.reduce((m,l)=>Math.max(m,l.length),0)`);
+    assert.ok(s.pointsMax > 0 && s.pointsMax <= litMax, 'FR-102: a frame draws only the lit lobe, at most ' + litMax + ' points: ' + s.pointsMax);
+    assert.strictEqual(s.basePoints, 6000, 'the base layer holds the 6,000 dock points, built outside any frame');
     assert.strictEqual(s.canvases, 1, 'one canvas');
     const f0 = s.frames; await new Promise((r) => setTimeout(r, 1500));
     assert.strictEqual((await stats()).frames, f0, 'FR-103: 1.5 s of nothing, 0 frames drawn');
@@ -127,7 +139,7 @@ module.exports = async (ctx) => {
     // ---- reduced motion (emulated): forced Still, the button says why
     await media([{ name: 'prefers-reduced-motion', value: 'reduce' }]);
     await must(`/system/.test(document.querySelector('.bv [data-bv=motion]').textContent)`, 'the button says reduced motion decides');
-    assert.strictEqual(await js(`document.querySelector('.bv [data-bv=motion]').disabled`), true);
+    assert.strictEqual(await js(`document.querySelector('.bv [data-bv=motion]').getAttribute('aria-disabled')`), 'true');
     s = await stats(); const rl = s.loops;
     await emit({ type: 'toolCall', sessionId: id, callId: 'b-6', tool: 'fetch', phase: 'start', args: { url: 'https://example.test/' } });
     await must(`/Web/.test(document.querySelector('.bv-lobe').textContent)`, 'a step under reduced motion');

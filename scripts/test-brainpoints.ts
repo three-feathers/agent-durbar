@@ -40,14 +40,20 @@ assert.ok(same(P.build('dock'), P2.build('dock')), 'a fixed seed: identical poin
 {
   let a = 12345; const rnd = (): number => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
   const bins = (d: number | null): number => (d === null ? -1 : d < 0.1 ? 0 : d > 0.9 ? 2 : 1);
-  const ref = [0, 0, 0]; let inside = 0;
-  for (let i = 0; i < 400000; i++) { const b = bins(P.depthAt(rnd(), rnd())); if (b >= 0) { ref[b]++; inside++; } }
-  assert.ok(inside > 100000);
-  const set = P.build('dock'), cnt = [0, 0, 0];
-  for (let i = 0; i < set.n; i++) cnt[bins(P.depthAt(set.xs[i], set.ys[i]))]++;
-  const dens = cnt.map((c, k) => c / ref[k]);
-  assert.ok(cnt[0] > 20, 'points exist inside the border band: a soft edge, not a cut');
-  assert.ok(dens[0] <= 0.3 * dens[2], `the band is thin: density ${dens[0].toFixed(4)} against ${dens[2].toFixed(4)} inside`);
-  assert.ok(dens[0] >= 0.03 * dens[2], 'and not empty: the band thins, it does not become a gap');
+  // per lobe, not pooled: one lobe with a hard edge must fail even if the others thin well (FR-010 "at each lobe's border")
+  const L = P.LOBES.length, at = (l: string | null, k: number): number => (l === null ? -1 : P.LOBES.indexOf(l) * 3 + k);
+  const ref = new Array(L * 3).fill(0);
+  for (let i = 0; i < 400000; i++) { const x = rnd(), y = rnd(), b = bins(P.depthAt(x, y)); if (b >= 0) ref[at(P.lobeAt(x, y), b)]++; }
+  const set = P.build('dock'), cnt = new Array(L * 3).fill(0);
+  for (let i = 0; i < set.n; i++) { const b = bins(P.depthAt(set.xs[i], set.ys[i])); if (b >= 0) cnt[at(P.lobeAt(set.xs[i], set.ys[i]), b)]++; }
+  for (let l = 0; l < L; l++) {
+    const name = P.LOBES[l], d = [0, 1, 2].map((k) => (ref[l * 3 + k] > 0 ? cnt[l * 3 + k] / ref[l * 3 + k] : 0));
+    assert.ok(ref[l * 3] > 100 && ref[l * 3 + 2] > 1000, `${name}: the reference has a band and an inside`);
+    // a small lobe's band holds under four expected points, which says nothing: only lobes with a measurable band are checked for "not a cut" and "not a gap"
+    const measurable = ref[l * 3] * d[2] * 0.08 >= 4;
+    if (measurable) assert.ok(cnt[l * 3] >= 1, `${name}: points exist inside the border band: a soft edge, not a cut`);
+    assert.ok(d[0] <= 0.3 * d[2], `${name}: the band is thin: density ${d[0].toFixed(4)} against ${d[2].toFixed(4)} inside`);
+    if (measurable) assert.ok(d[0] >= 0.03 * d[2], `${name}: and not empty: the band thins, it does not become a gap`);
+  }
 }
 console.log('brainpoints: ok');

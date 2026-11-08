@@ -6673,7 +6673,7 @@ function brainLoad(){
 }
 function brainFeed(a,e){
   if(!BRAIN_PREVIEW||BRAIN_STATE==='failed')return;
-  if(BRAIN_H)BRAIN_H.feed(a.id,a.name,e);else{if(BRAIN_Q.length<500)BRAIN_Q.push([a.id,a.name,e]);if(BRAIN_STATE==='idle'){BRAIN_STATE='waiting';if(document.readyState==='complete')brainLoad();else window.addEventListener('load',brainLoad,{once:true});}}
+  if(BRAIN_H)BRAIN_H.feed(a.id,a.name,e);else{BRAIN_Q.push([a.id,a.name,e]);if(BRAIN_Q.length>500)BRAIN_Q.shift(); /* while it loads, the newest 500 events are kept (a step's end beats its start) */if(BRAIN_STATE==='idle'){BRAIN_STATE='waiting';if(document.readyState==='complete')brainLoad();else window.addEventListener('load',brainLoad,{once:true});}}
 }
 function onLiveEvent(e){
   const a=liveById(e.sessionId); if(!a)return;
@@ -8720,7 +8720,7 @@ async function removeSessionUi(a){
   const name=r.name; removeLiveAgent(r.id); renderFolders(); scheduleRender(); toast(esc(name)+' removed. Its history is under Previous sessions.',3600).classList.add('ok');
 }
 function removeLiveAgent(id){
-  STATS.forget(id); MOOD.forget(id);
+  STATS.forget(id); MOOD.forget(id); if(BRAIN_H)BRAIN_H.forget(id); /* spec 106 T005 */
   if(LIVEACT){LIVEACT.drop(id);clearTimeout(liveTimers.get(id));liveTimers.delete(id);} /* spec 001 FR-028 */
   VISITS.leave(id); dropWalker(id); BREAKS.end(id); /* spec 068: a removed agent's break is forgotten */
   for(let i=agents.length-1;i>=0;i--)if(agents[i].id===id||agents[i].parent===id){DRAFTS.delete(agents[i].id);UNREAD.forget(agents[i].id);UNREAD_AT.delete(agents[i].id);UNREAD_SAID.delete(agents[i].id);HL_AT.delete(agents[i].id);delete chats[agents[i].id];delete prev[agents[i].id];agents.splice(i,1);}
