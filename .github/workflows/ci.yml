@@ -79,7 +79,7 @@ jobs:
           node-version: 22
           cache: npm
       - if: steps.changes.outputs.code == 'true'
-        run: npm ci
+        uses: ./.github/actions/npm-ci
       # spec 103: test:prereview drives the real pinned Agent SDK binary against a loopback mock (fake key, no network); only this job installs it
       - if: steps.changes.outputs.code == 'true' && matrix.os == 'ubuntu-latest'
         run: npm ci --ignore-scripts --no-audit --no-fund --prefix scripts/prereview
@@ -120,7 +120,7 @@ jobs:
           node-version: 22
           cache: npm
       - if: steps.changes.outputs.code == 'true'
-        run: npm ci
+        uses: ./.github/actions/npm-ci
       # Builds the app with electron-builder and fails if the Copilot runtime is not unpacked (scripts/after-pack.js).
       - if: steps.changes.outputs.code == 'true'
         run: npm run pack:dir
@@ -156,7 +156,7 @@ jobs:
       - if: steps.changes.outputs.code == 'true'
         run: sudo apt-get update && sudo apt-get install -y xvfb
       - if: steps.changes.outputs.code == 'true'
-        run: npm ci
+        uses: ./.github/actions/npm-ci
       - if: steps.changes.outputs.code == 'true'
         run: npm run build
       - name: Theme geometry
@@ -183,7 +183,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - uses: ./.github/actions/npm-ci
       - run: sudo apt-get update && sudo apt-get install -y xvfb
       - shell: bash
         env:
