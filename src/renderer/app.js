@@ -3969,8 +3969,8 @@ function reoStep(kind,el,delta){
 }
 /* spec 097 FR-346..FR-348 (issue 1152): one step in Real office (and from its folder menu), from the model: the shown group is what the office draws
    (`officeModel`, `lobbyPlaces`), the base and the write are the flat office's (`reoApply`); the focus goes back to `refocus` (a selector under #stage). */
+const plateAway=pl=>pl.classList.contains('narrow')||!!VISITS.at(pl.dataset.id); /* away from its desk: the photo office narrows the plate, the arcade does not (it has the visit) */
 function realDeskKeys(roomId){return window.exports.deskOrder(realModel(officeModel()),roomId);} /* spec 097 FR-348: the desks of a room left to right, by the layout's own rule (keep, else status, lounge seats out) */
-const plateAway=pl=>pl.classList.contains('narrow')||!!VISITS.at(pl.dataset.id); /* away from its desk: the photo office narrows the plate, the arcade does not */
 const roArcade=()=>{const r=document.querySelector('#stage .ro');return !!r&&r.dataset.world==='retro';}; /* spec 097 FR-354 (Q32): the arcade's rooms keep their cells */
 const roFixedWords=name=>name+' is a fixed place and does not move.'; /* spec 097 FR-355 (Q33) */
 /* the one write of a drop in Real office (drag): `key` goes before or after `target`, as the keys do (`reoStepModel`): a desk from the order on screen */
