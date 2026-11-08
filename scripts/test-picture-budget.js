@@ -158,6 +158,21 @@ try {
   d = repo(); markMain(d); fs.mkdirSync(path.join(d, 'scripts'), { recursive: true }); fs.writeFileSync(path.join(d, pb.ALLOW_FILE), `${path.relative(d, outside)} | 10 | probe\n`);
   r = pb.check(d); assert.strictEqual(r.status, 'fail'); assert.match(r.lines.join('\n'), /must be a path inside the repository/); assert.doesNotMatch(r.lines.join('\n'), /does not exist/);
 
+  // a symlinked FOLDER that points outside the checkout: an allow-list entry under it is refused the same way whether or not the target exists
+  // (no probing of files elsewhere); mutant: only the last path part checked
+  d = repo(); markMain(d);
+  const outDir = path.join(tmp, `outdir-${n++}`); fs.mkdirSync(outDir); fs.writeFileSync(path.join(outDir, 'secret.bin'), 'x');
+  let dirLinked = true;
+  try { fs.symlinkSync(outDir, path.join(d, 'd'), 'dir'); } catch (e) { dirLinked = false; console.log(`skipped the symlinked-folder case: cannot create a symlink here (${e.code})`); }
+  if (dirLinked) {
+    fs.mkdirSync(path.join(d, 'scripts'), { recursive: true });
+    const answer = (entry) => { fs.writeFileSync(path.join(d, pb.ALLOW_FILE), `${entry} | 10 | probe\n`); const x = pb.check(d); return x.lines.join('\n').replace(entry, '<entry>'); };
+    const there = answer('d/secret.bin'), notThere = answer('d/nothere.bin');
+    assert.match(there, /must be a path inside the repository/); assert.doesNotMatch(there, /does not exist/);
+    assert.strictEqual(there, notThere, 'the answer does not depend on whether the file outside exists');
+    assert.strictEqual(pb.check(d).status, 'fail');
+  }
+
   // a git failure is "could not check" (exit 2), not a pass
   d = repo(); markMain(d); put(d, 'docs/p.png', 50 * KB, 30); commit(d, 'f');
   const blob = G(d, 'rev-parse', 'HEAD:docs/p.png'); fs.rmSync(path.join(d, '.git/objects', blob.slice(0, 2), blob.slice(2)), { force: true });

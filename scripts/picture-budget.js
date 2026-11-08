@@ -106,10 +106,24 @@ function blobSizes(root, shas) {
   return m;
 }
 const lstatOf = (root, p) => { try { return fs.lstatSync(path.join(root, p)); } catch { return null; } };
-// A symlink is never read through (its target may be anywhere: a big file outside the checkout would be judged, or its existence revealed): the
-// working tree sees it as no file; git holds only the link text, a few bytes, and historyBlobs skips mode 120000 the same way.
-const headOfFile = (root, p) => { try { if (!lstatOf(root, p).isFile()) return Buffer.alloc(0); const fd = fs.openSync(path.join(root, p), 'r'); try { const b = Buffer.alloc(32); fs.readSync(fd, b, 0, 32, 0); return b; } finally { fs.closeSync(fd); } } catch { return Buffer.alloc(0); } };
+// A symlink is never read through (its target may be anywhere: a big file outside the checkout would be judged, or its existence revealed): sizeOf
+// (the only caller's gate) sees it as no file; git holds only the link text, a few bytes, and historyBlobs skips mode 120000 the same way.
+const headOfFile = (root, p) => { try { const fd = fs.openSync(path.join(root, p), 'r'); try { const b = Buffer.alloc(32); fs.readSync(fd, b, 0, 32, 0); return b; } finally { fs.closeSync(fd); } } catch { return Buffer.alloc(0); } };
 const headOfBlob = (root, sha) => execFileSync('git', ['cat-file', 'blob', sha], { cwd: root, maxBuffer: 256 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] }).subarray(0, 32);
+
+/** True when `p`, with every symlink on the way resolved (a symlinked FOLDER included), stays inside the real root. The nearest existing ancestor is
+ * resolved, so the answer is the same whether or not the file at the end exists. */
+function insideRoot(root, p) {
+  let realRoot;
+  try { realRoot = fs.realpathSync(root); } catch { return false; }
+  let dir = path.dirname(path.resolve(root, p));
+  for (;;) {
+    try { const rel = path.relative(realRoot, fs.realpathSync(dir)); return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel)); } catch { /* not there: its parent decides */ }
+    const up = path.dirname(dir);
+    if (up === dir) return false;
+    dir = up;
+  }
+}
 
 function sizeOf(root, p) {
   const st = lstatOf(root, p);
@@ -124,6 +138,7 @@ function check(root, { strict = false, budget = BUDGET_BYTES } = {}) {
   const allow = parseAllow(allowText);
   const problems = [...allow.problems];
   for (const p of allow.entries.keys()) {
+    if (!insideRoot(root, p)) { problems.push(`${ALLOW_FILE}: ${printable(p)} must be a path inside the repository (no .. segment, not absolute, no symlinked folder out of it)`); continue; }
     const st = lstatOf(root, p);
     if (st && st.isSymbolicLink()) problems.push(`${ALLOW_FILE}: ${printable(p)} is a symlink; list the file itself`);
     else if (!st || !st.isFile()) problems.push(`${ALLOW_FILE}: ${printable(p)} does not exist; delete the line`);

@@ -84,18 +84,19 @@ jobs:
   # Workflow files are CODEOWNERS.
   #
   # Threat model, and its limits (reviews of PR #1316). What protects the token here is GitHub's policy and the job's own settings, in this order:
-  #  - A fork PR gets a READ-ONLY token and no secrets by GitHub's rules (and a first-time contributor's run needs an owner's approval). The jobs
-  #    use `pull_request`, never `pull_request_target` (a test fails if that word appears anywhere in this file), so that policy applies.
+  #  - A fork PR gets a read-only token and no secrets by GitHub's rules (and a first-time contributor's run needs an owner's approval). The jobs
+  #    use `pull_request`, never `pull_request_target` (a test fails if that word appears anywhere outside comments), so that policy applies.
   #  - Each job's `permissions:` is read-only (`contents: read`, plus `pull-requests: read` for `gh pr list`), and no other secret is used.
   #  - `persist-credentials: false` on every checkout leaves no credential in .git/config for code in the checkout to read.
   # What the split into two jobs and the base copy do NOT do: on `pull_request` the workflow file itself is read from the PR's merge commit, so a
-  # same-repo PR can rewrite this file and run its own code with GH_TOKEN (a read-only token on public data). Running `base/scripts/` protects
-  # against a PR that changes the SCRIPTS in an unmodified workflow, not against a modified workflow; a changed workflow is what CODEOWNERS
-  # review of `.github/` covers. The older jobs above (`spec-gate`, `docs-check`) also run PR scripts with their checkout credentials kept.
+  # same-repo PR can rewrite this file, ask for `contents: write` or more, and run its own code with GH_TOKEN (read-only only by this repository's default
+  # setting for the token, which was checked, not by anything in this file). Running `base/scripts/` protects
+  # against a PR that changes the SCRIPTS in an unmodified workflow, not against a modified workflow. CODEOWNERS review of `.github/` gates the MERGE
+  # only: a changed workflow has already run on the PR by then. The older jobs above (`spec-gate`, `docs-check`) also run PR scripts with their checkout credentials kept.
   # Within that:
   #  - `spec-numbers-selftest` runs the PR's OWN scripts and self-tests, and no step of it has a token in its environment. It is a separate job
   #    so PR code cannot write GITHUB_ENV or GITHUB_PATH, or change files, for the token step. (The job's token still exists in the runner's
-  #    memory while it runs: read-only, low impact.)
+  #    memory while it runs: read-only by that default, low impact.)
   #  - `spec-numbers` runs the BASE branch's copy of the scripts (`base/`, the sha the PR targets, reviewed on main) on the PR checkout (`pr/`),
   #    read as data; GH_TOKEN (the default GITHUB_TOKEN, used by `gh pr list`) is in the environment of that one step only.
   # Nothing from the PR is put in a shell string or `${{ }}` in `run:`. The scripts print no environment value. A path or name from the PR is

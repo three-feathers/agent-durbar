@@ -276,13 +276,14 @@ try {
     for (const c of checkouts) assert.match(c.split(/\n\s+- /)[0], /persist-credentials: false/, `${name}: every checkout has persist-credentials: false`);
   }
   // a token (secrets.*, GH_TOKEN, GITHUB_TOKEN, github.token) appears in exactly one place of the whole workflow's two jobs: the step that runs the base spec-numbers.js
-  const tokenRe = /secrets\.|GH_TOKEN|GITHUB_TOKEN|github\.token/g;
+  const tokenRe = /secrets\.|GH_TOKEN|GITHUB_TOKEN|github\.token/; // no /g: test() on a /g regex keeps lastIndex between calls
+  const tokenAll = new RegExp(tokenRe.source, 'g');
   const mine = code_(job('spec-numbers')) + '\n' + code_(job('spec-numbers-selftest'));
   const steps = mine.split(/\n      - /);
-  const withToken = steps.filter((t) => tokenRe.test(t)); tokenRe.lastIndex = 0;
+  const withToken = steps.filter((t) => tokenRe.test(t));
   assert.strictEqual(withToken.length, 1, 'one step holds a token');
   assert.match(withToken[0], /node base\/scripts\/spec-numbers\.js/); assert.doesNotMatch(withToken[0], /picture-budget/);
-  assert.strictEqual((mine.match(tokenRe) || []).length, 3, 'one line: GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}');
+  assert.strictEqual((mine.match(tokenAll) || []).length, 3, 'one line: GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}');
   const selftest = code_(job('spec-numbers-selftest'));
   assert.doesNotMatch(selftest, /secrets\.|GH_TOKEN|GITHUB_TOKEN|github\.token/, 'the job that runs the PR scripts has no token');
   const nums = code_(job('spec-numbers'));
