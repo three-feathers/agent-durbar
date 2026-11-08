@@ -2210,6 +2210,24 @@ h2,h3,h4{text-wrap:balance}
 .room-head :is(button,a,input){cursor:pointer}
 #stage .place[data-reo]{cursor:grab}
 
+/* spec 052 FR-191..FR-196 (T197): Your door, the Needs you panel. Fixed over the room: no layout space, no backdrop, below dialogs (60). Tokens only (the size ratchet counts every literal). */
+.door-panel{position:fixed;z-index:35;display:flex;flex-direction:column;gap:var(--row-pad);box-sizing:border-box;padding:var(--row-pad);border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface);color:var(--ink);box-shadow:var(--shadow-pop)}
+body.panel-open .door-panel,#screen:not([hidden]) ~ .door-panel{display:none}
+.door-head{display:flex;align-items:center;gap:var(--row-pad)}
+.door-head h2{margin:0;flex:1 1 auto;min-width:0;font-size:var(--t2-size);line-height:var(--t2-lh);font-weight:var(--t2-weight)}
+.door-head .btn{flex:none;min-height:28px;min-width:28px}
+.door-line{margin:0;font-size:var(--t4-size);color:var(--muted)}
+.door-faces{display:flex;align-items:center;min-height:0}
+.door-faces:empty{display:none}
+.door-face{width:28px;height:28px;margin-left:calc(-1 * var(--r-sm));border-radius:50%;overflow:hidden;border:2px solid var(--surface);background:var(--surface-2);flex:none}
+.door-face:first-child{margin-left:0}
+.door-face>*{width:100%;height:100%}
+.door-more{margin-left:var(--r-sm);font-size:var(--t4-size);color:var(--muted)}
+.door-body{flex:1 1 auto;min-height:0;overflow:hidden auto;display:flex;flex-direction:column;gap:var(--row-pad);padding-right:var(--r-sm)}
+@media (forced-colors:active){.door-panel{border:1px solid CanvasText}}
+.door-body .inbox-row .ib-ans{flex-wrap:wrap;max-width:100%}
+.door-body .inbox-row .ib-ans>.btn.session{flex:1 1 100%;display:block;height:auto;min-height:28px;padding-top:var(--r-sm);padding-bottom:var(--r-sm);white-space:normal;overflow:visible;text-overflow:clip;text-align:left} /* FR-199 (Q-NY-10): the session grant on its own line, wrapped and never cut */
+
 /* ---- spec 070 A14 (FR-061..FR-066, FR-075, FR-076; T034..T036, T044): Flat's modern look, behind html[data-flat-look] (flatlook.js; off by default).
    Only Flat matches: Clean Office has no data-ui and no world is shown, so Real office, Retro, the cave and every other pack are untouched (FR-066).
    Colours are !important because theme.js writes the pack's values as inline style; sizes and radii are tokens the rules above read. ---- */

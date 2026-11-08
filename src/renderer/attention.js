@@ -7,6 +7,7 @@
   'use strict';
   const CUT=typeof module==='object'&&module.exports?require('./cuttext.js'):self.DurbarCutText;
   const APP='Agent Durbar';
+  const MONO=()=>(typeof performance!=='undefined'&&performance&&typeof performance.now==='function')?performance.now():Date.now(); /* a clock that never goes back: a wall-clock change must not stop openings (review of #1273) */
   const COALESCE_MS=2000;   /* items that arrive within this long share one notification */
   const THROTTLE_MS=10000;  /* at most one notification this often */
   const BODY_MAX=80;
@@ -42,7 +43,7 @@
        new; before `armed` (startup) every key is only remembered. An item that leaves the list leaves the pending batch too; focus drops it.
      dueAt(): when the batch may be shown (null = nothing pending). take(): the notification {title, body, id} when due, else null. */
   function createNotifier(o){
-    const now=(o&&o.now)||(()=>Date.now()), coalesce=(o&&o.coalesceMs)||COALESCE_MS, throttle=(o&&o.throttleMs)||THROTTLE_MS;
+    const now=(o&&o.now)||MONO, coalesce=(o&&o.coalesceMs)||COALESCE_MS, throttle=(o&&o.throttleMs)||THROTTLE_MS;
     let known=new Set(), batch=[], batchAt=0, last=-Infinity;
     return {
       observe(items,f){
@@ -56,6 +57,7 @@
         known=keys;
       },
       dueAt(){return batch.length?Math.max(batchAt+coalesce,last+throttle):null;},
+      dueIn(){const d=this.dueAt();return d==null?null:Math.max(0,d-now());}, /* ms from now on the notifier's own clock (never mix it with Date.now) */
       take(){
         if(!batch.length||now()<this.dueAt())return null;
         const ids=[...new Set(batch.map(x=>x.id))], first=batch[0];
@@ -67,5 +69,76 @@
     };
   }
 
-  return {APP,COALESCE_MS,THROTTLE_MS,BODY_MAX,titleFor,clip,waitLabel,sortOldestFirst,createNotifier};
+  /* Your door (spec 052 FR-193, T196): what is NEW to the panel that opens by itself. Pure; time injected. Items are {key, id, kind, card}:
+     a card's key is its request id (all of an agent's cards, not only the oldest), a state with no card is agent plus kind. Unlike the notifier
+     it remembers a key after the agent leaves the list while that agent is paused (unpausing shows the same card: not new). A settled card, or a
+     card-less key whose agent left that state, is forgotten; an error is forgotten only after a full THROTTLE_MS out of error (a retry loop opens once).
+     Before `armed` everything is only remembered. observe() returns {fresh, startup}: startup is true once, on the first armed look with anything waiting. */
+  function createArrivals(o){
+    const now=(o&&o.now)||MONO, throttle=(o&&o.throttleMs)||THROTTLE_MS;
+    const known=new Map(); let wasArmed=false;
+    return {
+      observe(items,f){
+        const opts=f||{}, armed=!!opts.armed, paused=typeof opts.isPaused==='function'?opts.isPaused:()=>false;
+        const list=(Array.isArray(items)?items:[]).filter(x=>x&&x.key!=null&&x.id!=null), present=new Set(list.map(x=>String(x.key)));
+        const fresh=[], flips=[];
+        for(const x of list){
+          const k=String(x.key), v=known.get(k);
+          if(v){v.seen=now();continue;}
+          /* the same agent gaining its card (a demo chat being built): its card-less wait of the same kind, or a plain wait */
+          const flip=x.card?[String(x.id)+'|'+x.kind,String(x.id)+'|w'].find(f=>known.has(f)&&!known.get(f).card):null;
+          if(flip){known.delete(flip);known.set(k,{id:x.id,kind:x.kind,card:true,seen:now()});flips.push([flip,k]);continue;}
+          known.set(k,{id:x.id,kind:x.kind,card:!!x.card,seen:now()});
+          if(armed)fresh.push(x);
+        }
+        for(const [k,v] of [...known]){
+          if(present.has(k)||paused(v.id))continue;
+          if(!v.card&&v.kind==='e'&&now()-v.seen<throttle)continue;
+          known.delete(k);
+        }
+        let startup=false;
+        if(armed&&!wasArmed){wasArmed=true;startup=list.length>0;}
+        return {fresh,startup,flips};
+      },
+    };
+  }
+
+  /* When the panel may open by itself. arrive(n): n new requests; startup(): something waited at app start; dismissed(): the person closed it.
+     ruling({open, held}) -> 'open' | 'startup' | 'hold' | 'none'. A burst is one opening; a held opening stays pending (nothing is lost) and
+     opens once when the guard clears; a request within COALESCE_MS of a dismissal does not snap it back, and it opens at most once per THROTTLE_MS.
+     App start is not throttled or coalesced (the owner wants the list) but is held like any opening. */
+  function createDoorGate(o){
+    const now=(o&&o.now)||MONO, coalesce=(o&&o.coalesceMs)||COALESCE_MS, throttle=(o&&o.throttleMs)||THROTTLE_MS;
+    let pending=0, start=false, lastDismiss=-Infinity, lastOpen=-Infinity;
+    return {
+      arrive(n){if(n>0)pending+=n;},
+      startup(){start=true;},
+      dismissed(){lastDismiss=now();},
+      ruling(s){
+        const st=s||{};
+        if(st.open){pending=0;start=false;return 'none';}
+        /* what arrived but no longer waits (answered elsewhere) opens nothing: an empty panel that says All clear is not worth opening */
+        if(pending&&typeof st.waiting==='number'&&st.waiting<=0)pending=0;
+        if(start&&typeof st.any==='number'&&st.any<=0)start=false;
+        if(!pending&&!start)return 'none';
+        if(st.held)return 'hold';
+        const t=now();
+        if(start){start=false;pending=0;lastOpen=t;return 'startup';}
+        if(t-lastDismiss<coalesce){pending=0;return 'none';} /* a request right after the person closed it does not snap it back */
+        if(t-lastOpen<throttle)return 'none'; /* FR-194: at most one opening per THROTTLE_MS; what is pending is kept and opens, once, at the next look after it (waitMs) */
+        pending=0;lastOpen=t;return 'open';
+      },
+      isPending(){return pending>0||start;},
+      waitMs(){ /* how long until a pending opening may happen (0 when nothing is pending or the throttle has run out) */
+        if(!pending)return 0;
+        return Math.max(0,throttle-(now()-lastOpen));
+      },
+    };
+  }
+
+  /* The one place the page schedules the next look at a pending notification: the delay comes from the notifier's own clock, so a wall clock
+     is never subtracted from a monotonic one. Returns the timer, or 0 when nothing is pending. */
+  function scheduleDue(notifier,set,fire){const w=notifier.dueIn();return w==null?0:set(fire,w);}
+
+  return {APP,COALESCE_MS,THROTTLE_MS,BODY_MAX,titleFor,clip,waitLabel,sortOldestFirst,createNotifier,createArrivals,createDoorGate,scheduleDue};
 })());
