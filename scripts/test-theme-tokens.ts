@@ -397,7 +397,7 @@ console.log(`theme tokens guard passed (${n} corpus checks, ${FILES.length} file
   const scr = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.css'), 'utf8');
   const rule = (sel: string): string => { const at = ('\n' + scr).indexOf('\n' + sel + '{'); assert.ok(at >= 0, `${sel} rule exists`); const from = at + sel.length + 1; return scr.slice(from, scr.indexOf('}', from)); }; // plain string search: no selector is turned into a pattern
   for (const sel of ['.swt', '.swt i', '.swt.on', '.swt.on i']) assert.ok(!/#[0-9a-fA-F]{3,8}\b|rgba?\(/.test(rule(sel)), `${sel}: no colour literal, tokens only`);
-  assert.ok(/background:var\(--sage-ink\)/.test(rule('.swt.on')) && /background:var\(--surface\)/.test(rule('.swt.on i')) && /background:var\(--ink-2\)/.test(rule('.swt i')), 'the on track is --sage-ink, the knobs --surface (on) and --ink-2 (off)');
+  assert.ok(/background:var\(--switch-on\)/.test(rule('.swt.on')) && /background:var\(--surface\)/.test(rule('.swt.on i')) && /background:var\(--ink-2\)/.test(rule('.swt i')), 'the on track is --switch-on, the knobs --surface (on) and --ink-2 (off)');
   assert.ok(/@media \(forced-colors:active\)\{[^@]*\.swt\.on\{background:Highlight/.test(scr), 'forced colours: on and off still differ');
   const mixHex = (a: string, pct: number, b: string): string => '#' + [1, 3, 5].map((i) => Math.round(parseInt(a.slice(i, i + 2), 16) * pct + parseInt(b.slice(i, i + 2), 16) * (1 - pct)).toString(16).padStart(2, '0')).join('');
   const sets: Array<[string, Record<string, string>]> = [['Clean Office', { ...T._tokens(), ...T._builtins()[T.CLEAN_ID].tokens }], ['Photo office', T.worldTokens('photo')]];
@@ -406,7 +406,23 @@ console.log(`theme tokens guard passed (${n} corpus checks, ${FILES.length} file
     const rows: Array<[string, string, string]> = [['on track on the page', tk['--sage-ink'], tk['--surface']], ['on knob on the on track', tk['--surface'], tk['--sage-ink']], ['off knob on the off track', tk['--ink-2'], track]];
     for (const [what, a, b] of rows) assert.ok(contrast(a, b) >= 3, `${name}: ${what} ${contrast(a, b).toFixed(2)}:1 is under 3:1`);
   }
-  console.log('toggle switch: on track, both knobs pass 3:1 in Clean Office and the photo world; tokens only; forced colours');
+  { // 070 T024 (FR-051): tier 3 for the switch and the primary button; the chain ends in --sage-ink, so the on track follows the world
+  const root = css.slice(css.indexOf(':root{'), css.indexOf('\n}', css.indexOf(':root{')));
+  const declIn = (src: string, n: string): string => { const all = [...src.matchAll(new RegExp('(?:^|[\\s;])' + n + ':([^;]+);', 'g'))]; assert.ok(all.length > 0, `${n} declared in :root`); return all[all.length - 1][1]; }; // CSS applies the last declaration, so the last one is read
+  const decl = (n: string): string => declIn(root, n);
+  assert.equal(declIn(':root{--accent:var(--sage-ink);--accent:var(--blue-ink);}', '--accent'), 'var(--blue-ink)', 'mutant: a later duplicate --accent wins, as in CSS');
+  assert.equal(decl('--accent'), 'var(--sage-ink)');
+  const scr2 = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.css'), 'utf8');
+  // the aliases sit on the consuming selectors (not :root), so each resolves per element and follows a scope that re-sets --surface or --ink
+  for (const n of ['--btn-primary-bg', '--btn-primary-ink', '--switch-on', '--switch-off']) assert.ok(!new RegExp('(?:^|[\\s;])' + n + ':').test(root), `${n} is not declared in :root (a :root alias resolves there and misses a scope's --surface or --ink)`);
+  assert.ok(/\.btn\.primary\{--btn-primary-bg:var\(--accent\);--btn-primary-ink:var\(--surface\);/.test(css), '.btn.primary sets its own aliases: bg from --accent, ink from --surface, resolved on the element');
+  assert.ok(/\.swt\{--switch-on:var\(--accent\);--switch-off:var\(--tone-neutral-track\);/.test(scr2), '.swt sets its own aliases, resolved on the element');
+  assert.ok(/\.swt\{[^}]*background:var\(--switch-off\)/.test(scr2), '.swt off track reads --switch-off');
+  assert.ok(/\.btn\.primary\{[^}]*background:var\(--btn-primary-bg\)[^}]*color:var\(--btn-primary-ink\)/.test(css), '.btn.primary reads the tier 3 names');
+  assert.ok(/\.att\.plan-chip\{border-color:var\(--accent\);background:color-mix\(in srgb,var\(--accent\) 12%,var\(--surface\)\);color:var\(--ink\)\}/.test(css), 'the plan chip reads the world: accent edge, tinted page colour, page ink (no fixed green, no info tone: 2.9:1 in the arcade)');
+  assert.ok(!/\.swt\.on\{[^}]*sage-ink/.test(scr2) && !/\.btn\.primary[^{]*\{[^}]*sage-ink/.test(css), 'no direct --sage-ink in the switch or the primary button');
+}
+console.log('toggle switch: on track, both knobs pass 3:1 in Clean Office and the photo world; tokens only; forced colours');
 }
 
 // ---- 070 T023 (FR-052, FR-053): `--wb-*` are on the registry; a pack sets the bar, a failing pair is repaired, a tier 3 name is refused ----
@@ -520,4 +536,45 @@ console.log(`theme tokens guard passed (${n} corpus checks, ${FILES.length} file
     assert.ok(inv.compare(start, high).some((m) => /under the baseline/.test(m)), 'a lower count fails until the baseline is lowered');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
   console.log(`size ratchet: ${inv.KINDS.length} kinds, chrome and office apart, ${real.buttonSets.length} button class sets; a planted literal of each kind fails`);
+}
+
+{ // spec 070 A14 (T034, T036, T038, T044; FR-061, FR-066, FR-067, FR-075): Flat's modern look is behind html[data-flat-look] and only Flat matches
+  const css = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'styles.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const root = css.slice(css.indexOf(':root{'), css.indexOf('}', css.indexOf(':root{')));
+  const flat = (k: string) => (root.match(new RegExp(`--flat-${k}:\\s*(#[0-9a-f]{6})`)) || [])[1] as string;
+  const GATE = 'html[data-flat-look]:not([data-ui]):not([data-world])';
+  const block = css.slice(css.indexOf(GATE + '{'));
+  assert.ok(block.length > 0 && css.split('data-flat-look').length > 1, 'the flat-look block exists');
+  // the gate: every rule naming the flag also excludes another pack and a world (a mutant that drops either is caught here)
+  for (const m of css.matchAll(/([^{}]*data-flat-look[^{}]*)\{/g)) assert.ok(/:not\(\[data-ui\]\):not\(\[data-world\]\)/.test(m[1]), `flag rule is gated to Flat: ${m[1].trim().slice(0, 60)}`);
+  // the flat section (from the first flag rule to the end of the file) holds nothing but gated rules: an unscoped `.btn{height:24px}` next to them would change every world
+  const sectRules = [...block.matchAll(/([^{}]+)\{[^{}]*\}/g)];
+  assert.ok(sectRules.length >= 2, 'the flat section has its rules');
+  for (const m of sectRules) assert.ok(m[1].trim().startsWith(GATE), `flat section: every selector starts with the gate, not "${m[1].trim().slice(0, 60)}"`);
+  assert.strictEqual(block.replace(/[^{}]/g, '').replace(/\{\}/g, '').length, 0, 'flat section: no nested or unbalanced blocks (an @media would hide an ungated rule)');
+  // flag off: the edited-in-place rules resolve (through :root) to main's values, so a token swap such as .inbox radius var(--r-md) fails
+  const screens = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const offCss = css.slice(0, css.indexOf(GATE + '{')) + '\n' + screens;
+  const rootDecl = (n: string): string => { const all = [...root.matchAll(new RegExp(`${n}:\\s*([^;}]+)`, 'g'))]; assert.ok(all.length > 0, `:root declares ${n}`); return all[all.length - 1][1].trim(); };
+  const resolve = (v: string): string => v.replace(/var\((--[\w-]+)\)/g, (_, n) => resolve(rootDecl(n)));
+  const offVal = (sel: string, prop: string): string => {
+    let found = ''; const esc = sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    for (const m of offCss.matchAll(new RegExp(`(?:^|})\\s*${esc}\\s*\\{([^{}]*)\\}`, 'g'))) { const d = m[1].match(new RegExp(`(?:^|;)\\s*${prop}:\\s*([^;]+)`)); if (d) found = d[1].trim(); }
+    return resolve(found);
+  };
+  for (const [sel, prop, want] of [
+    ['.inbox', 'border-radius', '14px'], ['.inbox', 'padding', '6px'], ['.ib', 'width', '34px'], ['.ib', 'height', '34px'], ['.ib', 'border-radius', '10px'],
+    ['.composer', 'padding', '8px max(16px,calc((100% - 880px)/2))'], ['.ptab', 'height', '30px'], ['.ptab', 'padding', '0 12px'], ['.btn', 'height', '32px'], ['.btn', 'padding', '0 14px'], ['.btn', 'border-radius', '10px'],
+    ['.btn', 'font-size', '13px'], ['.btn', 'font-weight', '550'], ['.btn.sm', 'height', '28px'], ['.ph .btn', 'height', '28px'], ['.notice-strip .btn', 'height', '28px'], ['.ctoolbar', '--h-chip', '28px'],
+  ] as Array<[string, string, string]>) assert.strictEqual(offVal(sel, prop), want, `flag off: ${sel} ${prop} is main's ${want}`);
+  // off by default: the :root values, which every other world and pack read, are today's
+  for (const [k, v] of [['--h-ctl', '32px'], ['--r-md', '10px'], ['--btn-pad', '14px'], ['--btn-fw', '550'], ['--ib-size', '34px'], ['--ptab-h', '30px'], ['--btn-sm-h', '28px'], ['--composer-pad', '8px']]) assert.ok(new RegExp(`${k}:\\s*${v}\\b`).test(root), `${k} keeps ${v} in :root`);
+  // FR-075 sizes in the block: 24 px controls, 12 px text at weight 500, 8 px padding, radii 3/4/6/8; nothing under 24
+  for (const re of [/--h-ctl:\s*24px/, /--btn-pad:\s*8px/, /--btn-fs:\s*var\(--t4-size\)/, /--btn-fw:\s*500/, /--ib-size:\s*24px/, /--r-sm:\s*3px;\s*--r-md:\s*4px;\s*--r-lg:\s*6px;\s*--r-xl:\s*8px/]) assert.ok(re.test(block), `flat-look sets ${re}`);
+  for (const m of block.matchAll(/--(?:h-ctl|h-chip|ib-size|ptab-h|ct-h|btn-sm-h):\s*(\d+)px/g)) assert.ok(Number(m[1]) >= 24, `no control token under 24px in the flat block (${m[0]})`);
+  // FR-067: the contrast pairs of FR-061 (4.5:1 for text, 3:1 for the control edge)
+  const page = flat('page'), page2 = flat('page-2'), acc = flat('accent'), hov = flat('accent-hover'), ctl = flat('line-ctl');
+  const ink = '#2c3733', ink2 = '#56605b', muted = '#535a55';
+  for (const [fg, bg, min, what] of [[ink, page, 4.5, 'ink on page'], [ink2, page, 4.5, 'ink-2 on page'], [muted, page, 4.5, 'muted on page'], [ink, page2, 4.5, 'ink on surface-2'], [ink2, page2, 4.5, 'ink-2 on surface-2'], [muted, page2, 4.5, 'muted on surface-2'], [page, acc, 4.5, 'primary text on accent'], [page, hov, 4.5, 'primary text on hover'], [ctl, page, 3, 'control edge on page'], [ctl, page2, 3, 'control edge on surface-2']] as Array<[string, string, number, string]>) assert.ok(contrast(fg, bg) >= min, `flat look: ${what} ${contrast(fg, bg).toFixed(2)} < ${min}`);
+  console.log('flat look: gated to Flat, off values kept in :root, 24 px floor, FR-061 pairs pass');
 }

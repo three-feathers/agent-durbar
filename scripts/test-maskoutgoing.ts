@@ -6,22 +6,9 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { assertLinearShape } from './redact-growth-lib';
-import { HIDDEN_CHARS, NOTE_MARK, maskNoteText, maskOutgoing, redact } from '../src/shared/redact';
+import { HIDDEN_CHARS, NOTE_MARK, hiddenCanHide, maskKeepingMarkdownReference, maskNoteText, maskOutgoing, redact } from '../src/shared/redact';
 
-// test-redact.ts's corpus (§3 `planted`), one sample per kind, with the part that must never survive
-const CORPUS: Array<[string, string, string]> = [
-  ['ghp', 'gh' + 'p_' + 'x'.repeat(36), ''],
-  ['gho', 'gh' + 'o_' + 'Y'.repeat(30), ''],
-  ['github_pat', 'github' + '_pat_' + '11ABCDEFG0abcdefghij_' + 'z'.repeat(30), ''],
-  ['glpat', 'gl' + 'pat-' + 'a1B2c3D4e5_f6G7-h8I9j0K', ''],
-  ['sk', 's' + 'k-' + 'a1B2'.repeat(10), ''],
-  ['skant', 's' + 'k-ant-api03-' + 'Q9w8'.repeat(10), ''],
-  ['bearer', 'Bear' + 'er ' + 'abcdef1234567890.token-value', 'abcdef1234567890'],
-  ['jwt', 'ey' + 'JhbGciOiJIUzI1NiJ9.' + 'ey' + 'JzdWIiOiIxMjM0NTYifQ.' + 'SflKxwRJSMeKKF2QT4fwpMeJf36', ''],
-  ['aws', 'AK' + 'IA' + 'ABCDEFGH12345678', ''],
-  ['authHeader', 'Authori' + 'zation: Basic ' + 'dXNlcjpw' + 'YXNzd29yZA==', 'dXNlcjpwYXNzd29yZA'],
-  ['urlCreds', 'https://alice:' + 'hunter2' + 'pass@example.invalid/repo.git', 'hunter2pass'],
-];
+import { CORPUS, V1, V2 } from './maskoutgoing-corpus';
 const secretOf = (v: string, part: string): string => part || v.slice(-12);
 // where a mark may split the value: inside its secret part (after the scheme word for the header kinds)
 const splitAt = (v: string, part: string): number[] => {
@@ -66,8 +53,6 @@ for (const t of PLAIN) {
 }
 
 // AC1: known values first (4 characters or more, longest first), then the shapes
-const V1 = 'hunter2-' + 'plain-value';
-const V2 = 'xyz-' + 'longer-secret-value';
 assert.deepStrictEqual(maskOutgoing(`the pass is ${V1}.`, [V1]), { text: 'the pass is [redacted].', changed: true }, 'a known value without a shape');
 assert.strictEqual(maskOutgoing(`the pass is ${V1}.`).changed, false, 'unknown, a plain word is not guessed');
 assert.strictEqual(maskOutgoing('abcdefgh', ['abcd', 'abcdefgh']).text, '[redacted]', 'longest first: the longer value is not half masked');
@@ -228,6 +213,73 @@ for (const t of texts) {
     assert.deepStrictEqual(maskOutgoing(t2, vals), maskNoteText(t2, vals), `same result: ${JSON.stringify(t2.slice(0, 60))}`);
   }
 }
+
+// the rule itself (spec 095 T065)
+{
+  // the rule itself
+  assert.strictEqual(hiddenCanHide('ab'), false);
+  assert.strictEqual(hiddenCanHide('\u{1F468}\u200d\u{1F4BB}'), false, 'a ZWJ sequence is inert');
+  assert.strictEqual(hiddenCanHide('\u2764\ufe0f\u{1F600}'), false, 'a VS16 between two emoji is inert');
+  assert.strictEqual(hiddenCanHide('\u2764\ufe0f x'), true, 'next to a space: live');
+  assert.strictEqual(hiddenCanHide('gh\u200dp'), true, 'next to ASCII: live');
+  assert.strictEqual(hiddenCanHide('\u200d\u00e9'), true, 'at the start: live');
+  assert.strictEqual(hiddenCanHide('\u00e9\u200d'), true, 'at the end: live');
+  assert.strictEqual(hiddenCanHide('\u00e9\u200d\u200b\u00e9'), false, 'a run of hidden characters between two letters: inert');
+  assert.strictEqual(hiddenCanHide('\u00e9\u200d\u200bx'), true, 'a run with an ASCII end: live');
+  assert.strictEqual(hiddenCanHide('\u00e9\u200d\u00e9', ['caf\u00e9']), true, 'a non-ASCII known value: live');
+  assert.strictEqual(hiddenCanHide('\ud83d\u200d\ude00'), true, 'a surrogate half beside it: live');
+}
+// review of PR 1244, item 1: Markdown marks inside a rule head. `maskCore` also masks the text without its marks, where `pass**word**=` is
+// `password=`; the head is read there too, so the hidden character is live and the password does not show.
+{
+  const Z = '\u200d';
+  const pw = 'Hunter2' + 'pass99';
+  const e = '\u00e9';
+  const repros: Record<string, string> = {
+    url_marks: 'https:**//**' + (e + Z).repeat(110) + e + ':' + pw + '@x.test/',
+    password_bold: '**Password**: ' + e.repeat(64) + Z + e.repeat(64) + '1',
+    pass_word: 'pass**word**=' + (e + Z).repeat(70) + '1',
+    pass_tick: 'pass`word`=' + (e + Z).repeat(70) + '1',
+    api_key: 'api\\_key=' + (e + Z).repeat(70) + '1',
+    eq_bold: 'password**=**' + (e + Z).repeat(70) + '1',
+    cookie_marks: 'Coo**kie**: ' + (e + Z).repeat(70) + '=' + pw,
+    cookie_json: '{"Coo**kie**": "' + (e + Z).repeat(70) + '=' + pw + '"}',
+    machine_marks: 'mach**ine** ' + (e + Z).repeat(130) + ' login bob password ' + pw,
+  };
+  for (const [k, t] of Object.entries(repros)) {
+    const a = maskOutgoing(t, []);
+    assert.strictEqual(a.changed, true, `marks ${k}: masked`);
+    assert.strictEqual(maskKeepingMarkdownReference(t, []).changed, true, `marks ${k}: the reference masks it`);
+    assert.ok(!a.text.includes(pw), `marks ${k}: the password is gone`);
+    assert.strictEqual(hiddenCanHide(t, [], {}), true, `marks ${k}: the head read without marks makes the hidden characters live`);
+  }
+  // review of PR 1244, item 3: a space beside a hidden run is not an inert neighbour (M09), and a non-ASCII environment secret split by a
+  // hidden character is live (M13); both would mask less than the reference
+  const sp = '\u3000';
+  const m09 = 'Bearer' + sp.repeat(4) + Z + sp.repeat(4) + 'abcdef1234567890xyz';
+  assert.strictEqual(hiddenCanHide(m09, [], {}), true, 'M09: a space beside a hidden run is live');
+  assert.strictEqual(hiddenCanHide(e + Z + ' ' + e, [], {}), true, 'M09: an ASCII space beside a hidden run is live');
+  assert.strictEqual(hiddenCanHide(sp + Z + e, [], {}), true, 'M09: U+3000 on one side is live');
+  assert.strictEqual(maskOutgoing(m09, []).changed, maskKeepingMarkdownReference(m09, []).changed, 'M09: changed as the reference');
+  const secret = 'ab\u65e5\u672ccdS3cretV4lue9';
+  const split = 'note ' + secret.slice(0, 3) + Z + secret.slice(3) + ' end';
+  assert.strictEqual(hiddenCanHide(split, [], { MY_SECRET: secret }), true, 'M13: a non-ASCII environment secret makes every hidden character live');
+  assert.strictEqual(hiddenCanHide(split, [], { MY_SECRET: 'plainsecretvalue99' }), false, 'M13: an ASCII environment secret does not');
+  const saved = { ...process.env };
+  for (const k of Object.keys(process.env)) delete process.env[k];
+  process.env.MY_SECRET = secret;
+  try {
+    const a = maskOutgoing(split, []);
+    assert.strictEqual(a.changed, true, 'M13: the split environment secret is masked');
+    assert.ok(!a.text.includes('S3cretV4lue9'), 'M13: no piece of it is left');
+    assert.strictEqual(maskKeepingMarkdownReference(split, []).changed, true, 'M13: the reference masks it');
+  } finally {
+    for (const k of Object.keys(process.env)) delete process.env[k];
+    Object.assign(process.env, saved);
+  }
+}
+// the differential and long-value fuzz, the audit repros and the template fuzz: `scripts/test-maskoutgoing-fuzz.ts` (own suite, FR-048b)
+
 const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'shared', 'redact.ts'), 'utf8');
 assert.ok(!/^\s*import\s/m.test(src) && !/\brequire\(/.test(src), 'redact.ts still has no imports');
 const body = (name: string): string => (src.match(new RegExp(`export function ${name}\\([^]*?\\r?\\n}\\r?\\n`)) ?? [''])[0];

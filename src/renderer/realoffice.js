@@ -324,7 +324,7 @@
     if (ZOOM && !ZOOM.panel.isConnected) closeZoom();
     const sized = view.w + 'x' + view.h, sameSize = !!CUR && CUR.sized === sized && !!CUR.painted;
     const wasLive = CUR && CUR.ro === ro ? CUR.live : undefined;
-    CUR = { pixelArt: !!meta.pixelArt, ro, live: opts.live, screenOf: opts.screenOf || null, sized, still: !!opts.still, hold: !!opts.hold, desks: new Map(lay.zones.flatMap((z) => z.desks.map((d) => [d.id, d])).concat(lay.lounge ? lay.lounge.desks.map((d) => [d.id, d]) : [])), agents: new Map(model.folders.flatMap((f) => f.agents.map((a) => [a.id, { ...a, folder: f.name }]))), drawn, scroll: !!lay.scroll };
+    CUR = { pixelArt: !!meta.pixelArt, ro, live: opts.live, screenOf: opts.screenOf || null, factsOf: opts.factsOf || null, sized, still: !!opts.still, hold: !!opts.hold, desks: new Map(lay.zones.flatMap((z) => z.desks.map((d) => [d.id, d])).concat(lay.lounge ? lay.lounge.desks.map((d) => [d.id, d]) : [])), agents: new Map(model.folders.flatMap((f) => f.agents.map((a) => [a.id, { ...a, folder: f.name }]))), drawn, scroll: !!lay.scroll };
     SLIDE = sameSize && moving() && !hiddenNow();
     CUR.painted = true;
     ro.classList.toggle('paused', hiddenNow()); if (hiddenNow()) finishMoves(ro);
@@ -431,6 +431,9 @@
         if (L.doneTick(SEEN, k, d.state) && st && st.flourish && moving() && !hiddenNow()) coinUp(chrome, k, lay.g); /* spec 102 FR-261: the arcade's coin on a turn to done (FR-236: no call light any more) */
         /* FR-238: "New reply" above the plate's right end while the reply is unread (the flat desk's "New", the same isUnread); made once, shown by class */
         const nt = el(chrome, 'nr:' + k, 'span', 'ro-newtag' + (a.unread ? ' on' : '')); box(nt, { x: d.plate.x + d.plate.w, y: d.plate.y }); attr(nt, 'aria-hidden', 'true'); text(nt, 'New reply'); dset(nt, 'for', k);
+        /* spec 097 FR-316: "Draft" above the plate's left end while the chat has an unsent draft (the flat desk's pencil, the same hasDraft); made once, shown by class; aria-hidden (the plate's name says it) */
+        const dt = el(chrome, 'dr:' + k, 'span', 'ro-drafttag' + (a.draft ? ' on' : '')); box(dt, d.away ? { x: d.away.x - d.away.s / 2, y: d.away.y } : { x: d.plate.x, y: d.plate.y }); /* an empty seat's post-it fills the place above the plate: the tag sits on top of the note's left corner */ attr(dt, 'aria-hidden', 'true'); dset(dt, 'for', k);
+        if (!dt.firstChild) { if (model.draftIcon) dt.innerHTML = model.draftIcon; dt.appendChild(document.createTextNode('Draft')); } /* the icon is the app's own markup (trusted, as renIcon) */
         /* FR-038: cues, inside the slot */
         if (d.bubble) { const b = el(chrome, 'b:' + k, 'div', 'ro-bub'); box(b, d.bubble); attr(b, 'aria-hidden', 'true'); text(b, '?'); }
         if (d.bang) { const b = el(chrome, 'x:' + k, 'div', 'ro-bang'); box(b, d.bang); attr(b, 'aria-hidden', 'true'); text(b, '!'); }
@@ -809,7 +812,7 @@
     if (data.caret && !s.caret) { s.caret = document.createElement('i'); s.caret.className = 'ro-caret'; s.box.appendChild(s.caret); const m = L.personMotion(id, 'typeA', d.state); setVar(s.caret, '--ro-per', '1.2s'); s.caretMs = m.offset; if (moving()) { clock(s.caret, m.offset); if (CUR && !CUR.pixelArt) onGrid(s.caret); }; }
     else if (!data.caret && s.caret) { s.caret.remove(); s.caret = null; }
     s.painted = true;
-    if (ZOOM && ZOOM.id === id) fillZoom();
+    if (ZOOM && ZOOM.id === id) { const k = ZOOM.kh; fillZoom(); if (k !== ZOOM.kh) placeZoom(); }
   }
 
   /* FR-074: a window hidden or back; FR-181: desks scrolled away stand still and do not paint, and catch up once when they are back */
@@ -853,6 +856,7 @@
 
   /* ---- FR-034: the zoom ---- */
   const ZOOM_W = [380, 480], ZOOM_HEAD = 44, ZOOM_LH = 17, ZOOM_ROWS = 12, ZOOM_MIN_ROWS = 4;
+  const ZWIDE = new Set(['Model', 'Now', 'Last tool', 'Usage']);
   function wireZoom(ro) {
     let wait = 0;
     ro.addEventListener('pointermove', (e) => {
@@ -891,7 +895,7 @@
     if (!ZOOM || ZOOM.id !== id) {
       closeZoom();
       const p = document.createElement('div'); p.className = 'ro-zoom'; p.id = 'roZoom'; p.setAttribute('role', 'region');
-      p.innerHTML = '<div class="ro-zh"><b></b><span class="ro-zr"></span><span class="ro-zs"></span><span class="ro-zf"></span></div><div class="ro-zb"><div class="ro-zl"></div></div>';
+      p.innerHTML = '<div class="ro-zh"><b></b><span class="ro-zr"></span><span class="ro-zs"></span><span class="ro-zf"></span></div><div class="ro-zk"></div><div class="ro-zb"><div class="ro-zl"></div></div>';
       CUR.ro.appendChild(p);
       ZOOM = { id, hover: false, focus: false, panel: p, plate: CUR.ro.querySelector('.ro-plate[data-id="' + CSS.escape(id) + '"]') };
       if (ZOOM.plate) ZOOM.plate.setAttribute('aria-describedby', 'roZoom');
@@ -923,6 +927,12 @@
     const data = CUR.screenOf(ZOOM.id, d.state, a.word);
     const host = p.querySelector('.ro-zl');
     fillRows(host, data.lines);
+    /* spec 097 FR-312: the facts, label and text, two to a line; textContent only */
+    const facts = (CUR.factsOf ? CUR.factsOf(ZOOM.id) : []).slice(0, 8), kb = p.querySelector('.ro-zk');
+    kb.textContent = '';
+    for (const [k, v] of facts) { const l = document.createElement('span'); l.className = ZWIDE.has(k) ? 'ro-zi ro-zw' : 'ro-zi'; const kk = document.createElement('span'); kk.className = 'ro-zy'; text(kk, k); l.appendChild(kk); l.appendChild(document.createTextNode(' ')); const vv = document.createElement('span'); vv.className = 'ro-zv'; text(vv, v); l.appendChild(vv); kb.appendChild(l); }
+    const wide = facts.filter(([k]) => ZWIDE.has(k)).length; /* long ones take a whole line, cut with an ellipsis when too long (FR-313) */
+    ZOOM.kh = facts.length ? (wide + Math.ceil((facts.length - wide) / 2)) * ZOOM_LH + 9 : 0; /* .ro-zk: 4 px padding above and below, a 1 px rule */ kb.hidden = !facts.length;
     ZOOM.rows = data.lines.reduce((n, l) => n + Math.max(1, Math.ceil(Array.from(l.t).length / 52)), 0);
   }
   function placeZoom() {
@@ -932,10 +942,10 @@
     if (ZOOM.plate) avoid.push(near(ZOOM.plate));
     const view = { x: Math.max(0, f.left - o.left), y: Math.max(0, f.top - o.top), w: Math.min(f.right, o.right) - Math.max(f.left, o.left), h: Math.min(f.bottom, o.bottom) - Math.max(f.top, o.top) };
     const w = Math.max(ZOOM_W[0], Math.min(ZOOM_W[1], view.w * 0.34));
-    const rows = Math.max(ZOOM_MIN_ROWS, Math.min(ZOOM_ROWS, ZOOM.rows || 0));
-    const r = X().zoomRect(d.screen, avoid, view, { w, h: ZOOM_HEAD + rows * ZOOM_LH + 12, minH: ZOOM_HEAD + ZOOM_MIN_ROWS * ZOOM_LH + 12 });
+    const HEAD = ZOOM_HEAD + (ZOOM.kh || 0), rows = Math.max(ZOOM_MIN_ROWS, Math.min(ZOOM_ROWS, ZOOM.rows || 0));
+    const r = X().zoomRect(d.screen, avoid, view, { w, h: HEAD + rows * ZOOM_LH + 12, minH: HEAD + ZOOM_MIN_ROWS * ZOOM_LH + 12 });
     box(ZOOM.panel, r); ZOOM.panel.dataset.side = r.side;
-    setVar(ZOOM.panel, '--ro-zh', Math.max(1, Math.floor((r.h - ZOOM_HEAD - 8) / ZOOM_LH)) * ZOOM_LH + 'px');
+    setVar(ZOOM.panel, '--ro-zh', Math.max(1, Math.floor((r.h - HEAD - 8) / ZOOM_LH)) * ZOOM_LH + 'px');
     /* what the panel covers whole stands still until it closes */
     const under = [];
     for (const [id, de] of CUR.desks) if (id !== ZOOM.id && de.person && de.person.x >= r.x && de.person.x + de.person.w <= r.x + r.w && de.person.y >= r.y && de.person.y + de.person.h <= r.y + r.h) { under.push(id); setOff(id, true); }

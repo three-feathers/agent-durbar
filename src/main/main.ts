@@ -98,6 +98,7 @@ import type { SchedulerDeps } from './schedules';
 import { loopActivity, loopPrompt, loopPush, loopStillWanted, loopWaitOf, routeLoopEvent } from './loopwiring';
 import { UsageTotalsStore } from './usagetotalsstore';
 import { ActivityStore } from './activitystore';
+import { maskActivityAction } from './activitymask';
 import { decisionOf } from '../shared/activity';
 import type { ActivityDecision } from '../shared/activity';
 import { folderKeyOf, folderNameOf } from '../shared/usagedoc';
@@ -316,8 +317,9 @@ router.onEvent((e) => {
   if (a) usageTotalsStore?.record(folderKeyOf(a), folderNameOf(a), e);
 });
 /** One activity row for agent `a` (spec 052 FR-071): names, the folder's base name, the adapter's display name and a short summary. */
-const logActivity = (a: AgentInfo, decision: ActivityDecision, action: string, mode: string = a.permMode): void => {
-  activityStore?.record({ agent: a.alias || a.label || a.name, folder: folderNameOf(a), app: registry.get(a.adapterId)?.displayName ?? a.adapterId, mode, action, decision });
+const logActivity = (a: AgentInfo, decision: ActivityDecision, action: string, mode: string = a.permMode, kind?: string): void => {
+  // the action is masked as the chat masks a permission request (spec 012 FR-175, issue #1295): the command mask, tool names, escape-split tokens
+  activityStore?.record({ agent: a.alias || a.label || a.name, folder: folderNameOf(a), app: registry.get(a.adapterId)?.displayName ?? a.adapterId, mode, action: maskActivityAction(action, kind), decision });
 };
 // The answer to a permission request, or an automatic approval (Allow all, a session permission), arrives as a `permission` event;
 // it is logged here, in main, so the window cannot add or change rows. Pending requests, plain reads and stopped sessions are not logged.
@@ -325,7 +327,7 @@ router.onEvent((e) => {
   if (e.type !== 'permission') return;
   const a = agents.get(e.sessionId);
   const decision = decisionOf(e.permission);
-  if (a && decision) logActivity(a, decision, e.permission.summary);
+  if (a && decision) logActivity(a, decision, e.permission.summary, undefined, e.permission.kind);
 });
 // The runtime confirms the cap now in force (also after a change made by another client): keep AgentInfo and the folder's saved cap in step.
 router.onEvent((e) => {
