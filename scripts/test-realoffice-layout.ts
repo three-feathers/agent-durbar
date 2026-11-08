@@ -641,6 +641,54 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
   }
   console.log('lounge: the staying desks against everyone at a desk (width:in lounge:ratio):', gains.join(' '));
 }
+{
+  /* spec 097 FR-246, FR-247 with FR-308's helper strips (delta 2026-11-08, review of PR #1322): the same room before and after its finished agents move to the lounge.
+     u after >= u before. The scene is the one shots-097-moments failed on (the cave, 1280x800 less the top bar: u 103.4 -> 99.4, two rows of heads before, one after, the
+     lounge row taking the height a strip had been getting for free); then random rooms with helpers in both worlds. Where no strip level keeps u, no strip is drawn, so
+     u after is never under the smaller of u before and the same room's u without helpers. Mutant (by hand, 2026-11-08: `const floor = 0` in realLayout, the strip levels
+     judged on the current rows only): the scene fails here. */
+  const CAVE = { ...readJson('worlds', 'cave', 'world.json'), ...readJson('sets', 'prehistoric', 'set.json') } as unknown as RealMeta;
+  const scene: [string, RealState, string, number, string, number][][] = [
+    [['a3', 'waiting', 'shaman', 0, 'boss', 0], ['a1', 'working', 'inventor', 2, 'terminal', 0], ['a2', 'thinking', 'ponytail', 0, '', 0], ['a4', 'asleep', 'bigbeard', 0, '', 1]],
+    [['a8', 'waiting', 'shaman', 1, 'boss', 0], ['a5', 'working', 'braids', 6, 'software', 0], ['a6', 'error', 'youngbeard', 0, '', 0], ['a7', 'idle', 'ponytail', 0, '', 0]],
+    [['a10', 'waiting', 'inventor', 0, 'boss', 0], ['a11', 'limit', 'youngbeard', 0, 'bank', 0], ['a9', 'error', 'bigbeard', 0, 'library', 0]],
+    [['a12', 'working', 'braids', 3, 'terminal', 0], ['a13', 'idle', 'inventor', 0, '', 0]],
+    [['a14', 'working', 'youngbeard', 0, 'software', 0], ['a15', 'asleep', 'bigbeard', 0, '', 1]],
+  ];
+  const sceneModel = (moved: boolean): RealModel => {
+    const folders = scene.map((ag, i) => ({ id: 'f' + i, agents: ag.map(([id, state, person, helpers, away, lounge]): RealAgent => ({ id, state: lounge && !moved ? 'done' : state, person, helpers, away: away || null, ...(lounge && moved ? { lounge: true } : {}) })) }));
+    const visitors: Record<string, { id: string; person: string; needsYou: boolean }[]> = {};
+    for (const f of folders) for (const a of f.agents) if (a.away) (visitors[a.away] ||= []).push({ id: a.id, person: a.person as string, needsYou: a.state === 'waiting' || a.state === 'limit' });
+    return { folders, places: ['library', 'software', 'terminal', 'web', 'boss', 'other', 'coffee', 'bank', 'postbox'].map((id) => ({ id, visitors: visitors[id] || [] })) };
+  };
+  {
+    const B = realLayout(sceneModel(false), { w: 1248, h: 697 }, CAVE), A = realLayout(sceneModel(true), { w: 1248, h: 697 }, CAVE);
+    assert.ok(A.lounge && A.lounge.desks.length === 2 && !A.scroll && !B.scroll, 'the scene: two agents in the lounge row, nothing scrolls');
+    assert.ok(A.u >= B.u - 1e-6, `FR-247 with helpers (the shots-097-moments scene, cave 1248x697): the desks shrank when two agents went to the lounge: u ${B.u.toFixed(2)} -> ${A.u.toFixed(2)} (helpRows ${B.helpRows} -> ${A.helpRows})`);
+    assert.strictEqual(B.helpRows, 2, 'the scene before: two rows of heads (FR-308)');
+  }
+  let n = 0, s = 7;
+  const rnd = (): number => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+  for (const [wn, M] of [['photo', META], ['cave', CAVE]] as [string, RealMeta][]) {
+    const ppl = Object.keys(M.seat).sort();
+    for (const [W, H] of SIZES.slice(0, 2)) for (let k = 0; k < 60; k++) {
+      const nn = 10 + Math.floor(rnd() * 8), f = 2 + Math.floor(rnd() * 4), st: RealState[] = ['working', 'waiting', 'thinking', 'error', 'done', 'idle'];
+      const m: RealModel = { folders: Array.from({ length: f }, (_, i) => ({ id: 'f' + i, agents: [] as RealAgent[] })), places: PLACES.map((id) => ({ id, visitors: [] })) };
+      for (let i = 0; i < nn; i++) m.folders[i % f].agents.push({ id: 'a' + i, state: st[i % 6], away: null, person: ppl[i % ppl.length], helpers: rnd() < 0.7 ? Math.floor(rnd() * 7) : 0 });
+      const go = m.folders.flatMap((fo) => fo.agents.slice(1).filter(() => rnd() < 0.25));
+      if (!go.length) continue;
+      const L0 = realLayout(m, { w: W, h: H }, M);
+      go.forEach((a) => { a.lounge = true; a.state = 'asleep'; });
+      const L1 = realLayout(m, { w: W, h: H }, M), bare = JSON.parse(JSON.stringify(m)) as RealModel;
+      bare.folders.forEach((fo) => fo.agents.forEach((a) => { a.helpers = 0; }));
+      const Lz = realLayout(bare, { w: W, h: H }, M);
+      assert.ok(L1.u >= Math.min(L0.u, Lz.u) - 1e-6, `FR-247 with helpers, ${wn} ${W}x${H}, room ${k}: u ${L0.u.toFixed(1)} -> ${L1.u.toFixed(1)} (helpRows ${L0.helpRows} -> ${L1.helpRows}), without helpers ${Lz.u.toFixed(1)}`);
+      n++;
+    }
+  }
+  assert.ok(n >= 150, `rooms with helpers before and after the lounge move: ${n}`);
+  console.log(`lounge with helpers: the moments scene and ${n} rooms keep u`);
+}
 
 // ---- owner 2026-11-02: one post-it paper colour per place, dark ink at 4.5:1 or better on each, one default for a custom place ----
 {

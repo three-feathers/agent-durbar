@@ -1086,7 +1086,11 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   // spec 097 FR-311 delta 2026-11-08 (review of PR #1322): any run of two or more `\` (an odd count, as a Markdown escape leaves it) and `//`
   for (const n of [2, 3, 4, 5, 6, 8]) assert.strictEqual(h('x ' + '\\'.repeat(n) + 'fs01\\homes\\zed_q\\notes'), 'x ~\\notes', 'UNC with ' + n + ' backslashes');
   assert.strictEqual(h('see //fs01/homes/zed_q/notes now'), 'see ~/notes now', 'UNC with forward slashes');
-  assert.strictEqual(h('"//fs01/zed_q"'), '"~"', 'forward-slash UNC, only host and share');
+  assert.strictEqual(h('"//fs01/Homes"'), '"~"', 'forward-slash UNC, only host and a home share');
+  assert.strictEqual(h('x //nas.example.invalid/users$/Zed Q/a and //fs1/PROFILES/zq'), 'x ~/a and ~', 'forward-slash UNC: users$, any case, a name with a space');
+  // second review of PR #1322: `//` is not a UNC path unless the share is a home share
+  for (const t of ['//cdn.example.com/lib/app.js', 'src="//cdn.example.com/x.js"', '//TODO/fix/this', 'a //b/c', '//fs01/zed_q/notes', '//fs01/homesick/zed_q', '//fs01/myusers/zed_q'])
+    assert.strictEqual(h(t), t, 'not a home on a share: ' + t);
   assert.strictEqual(h('https://fs01.example.invalid/homes/zed_q/x and file:///srv/a/b'), 'https://fs01.example.invalid/homes/zed_q/x and file:///srv/a/b', 'a URL is not a UNC path');
   assert.strictEqual(h('a//b/c/d and // note/x'), 'a//b/c/d and // note/x', '`//` after a letter, or before a space, is not a UNC path');
   assert.strictEqual(h('\\\\\\fs01\\homes'), '~', 'three backslashes, only host and share');

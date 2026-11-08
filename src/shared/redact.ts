@@ -1632,13 +1632,18 @@ const oauthParam = (name: string): boolean => {
 const UNC_SEG = String.raw`[^\\/\s"'<>|:;,*?]{1,128}`;
 const UNC_SEP = String.raw`(?:\\{1,2}|\/)`;
 // spec 097 FR-311 delta 2026-11-08 (review of PR #1322): the lead is any run of two or more `\` (an odd count, `\\\server`, showed the name once
-// a Markdown unescape halved it) or `//` (`//server/share/user`, the forward-slash UNC form); never after a letter, digit, `:` (a URL's `://`) or another separator
-const UNC_HOME = new RegExp(String.raw`(?<![A-Za-z0-9_.~:\\/-])(?:\\{2,}|\/\/)${UNC_SEG}${UNC_SEP}${UNC_SEG}(?:${UNC_SEP}(?:[^\\/\r\n"'<>|:;,*?]{1,128}(?=[\\/])|${UNC_SEG}))?`, 'g');
+// a Markdown unescape halved it); never after a letter, digit, `:` or another separator
+const UNC_HOME = new RegExp(String.raw`(?<![A-Za-z0-9_.~:\\/-])\\{2,}${UNC_SEG}${UNC_SEP}${UNC_SEG}(?:${UNC_SEP}(?:[^\\/\r\n"'<>|:;,*?]{1,128}(?=[\\/])|${UNC_SEG}))?`, 'g');
+// The forward-slash form (`//server/homes/user`, second review of PR #1322): `//` starts far more than UNC paths (`//cdn.example.com/x.js`, a protocol-relative
+// URL; `//TODO/fix`, a comment), so it counts only when the share has a home-share name (`home`, `homes`, `user`, `users`, `profile`, `profiles`, any case, a
+// hidden `$` allowed): host, share and the next folder become `~`. Any other `//host/share/...` is left as it is (a `[KNOWN GAP]` for a home on a share named otherwise).
+const UNC_FWD_HOME = new RegExp(String.raw`(?<![A-Za-z0-9_.~:\\/-])\/\/${UNC_SEG}\/(?:homes?|users?|profiles?)\$?(?![^\\/\s"'<>|:;,*?])(?:\/(?:[^\\/\r\n"'<>|:;,*?]{1,128}(?=[\\/])|${UNC_SEG}))?`, 'gi');
 /**
  * Home folders in free text become `~` (review on PR #630: a copied error must not carry the user name): `/home/<user>`,
  * `/Users/<user>`, `<drive>:\Users\<user>` (also with `/` or doubled `\\` as in JSON), and the given home folders themselves
  * (`HOME`, `USERPROFILE` of this process by default). A user name with spaces is covered when a separator follows it. A UNC path
- * (`\\server\share\user`, with any run of two or more `\` or with `//`): its host, share and next folder. Bounded; never throws.
+ * (`\\server\share\user`, with any run of two or more `\`; with `//` only on a home-share name, `//server/homes/user`): its host, share and next folder.
+ * Bounded; never throws.
  */
 export function maskHomePaths(text: unknown, homes?: readonly (string | undefined)[]): string {
   try {
@@ -1651,7 +1656,7 @@ export function maskHomePaths(text: unknown, homes?: readonly (string | undefine
     }
     s = s.replace(/(?<![A-Za-z0-9_.~-])(?:\/(?:home|Users)\/|[A-Za-z]:(?:\\{1,2}|\/)Users(?:\\{1,2}|\/))(?:[^\\/\r\n"'<>|:;,*?]{1,128}(?=[\\/])|[^\\/\s"'<>|:;,*?]{1,128})/g, '~');
     // a UNC path (`\\server\share\user\...`, or doubled as in JSON): where the user name sits is not known, so host, share and the next folder become `~`
-    return s.replace(UNC_HOME, '~');
+    return s.replace(UNC_HOME, '~').replace(UNC_FWD_HOME, '~');
   } catch {
     return '[redaction failed]';
   }

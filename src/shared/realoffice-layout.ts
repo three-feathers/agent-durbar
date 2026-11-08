@@ -427,29 +427,40 @@ export function realLayout(model: RealModel, viewport: { w: number; h: number },
   if (folders.length) {
     /* a folder too big for one row is split into parts (its sign repeats, "continued"), the fewest splits that fit; spec 097 delta 2026-10-31 */
     const rank = (x: ReturnType<typeof roPack>): number => (x.fits ? 2 : x.wide ? 1 : 0);
-    /* the search, as one function of the strip's height `hh` (0: none), so the helper levels (FR-308) are more steps of the same search */
-    const pack = (hh: number): ReturnType<typeof roPack> => {
-      let p = roPack(meta, folders, W, Ho, lobbyMin, hh);
+    /* the search, as one function of the folders, the floor's height and the strip's height `hh` (0: none), so the helper levels (FR-308) are more steps of the same search */
+    const pack = (fs: typeof folders, ho: number, hh: number): ReturnType<typeof roPack> => {
+      let p = roPack(meta, fs, W, ho, lobbyMin, hh);
       for (const most of [8, 6, 5, 4]) {
         if (p.fits) break;
-        if (!folders.some((f) => f.agents.length > most)) continue;
-        const parts = folders.flatMap((f) => { const k = Math.ceil(f.agents.length / most), per = Math.ceil(f.agents.length / k); return Array.from({ length: k }, (_, i) => ({ id: i ? f.id + '\u0000' + (i + 1) : f.id, agents: f.agents.slice(i * per, (i + 1) * per) })); });
-        const q = roPack(meta, parts, W, Ho, lobbyMin, hh);
+        if (!fs.some((f) => f.agents.length > most)) continue;
+        const parts = fs.flatMap((f) => { const k = Math.ceil(f.agents.length / most), per = Math.ceil(f.agents.length / k); return Array.from({ length: k }, (_, i) => ({ id: i ? f.id + '\u0000' + (i + 1) : f.id, agents: f.agents.slice(i * per, (i + 1) * per) })); });
+        const q = roPack(meta, parts, W, ho, lobbyMin, hh);
         if (rank(q) > rank(p) || (rank(q) === rank(p) && (q.fits ? q.u > p.u : q.used < p.used))) p = q;
       }
       return p;
     };
-    let p = pack(0);
-    /* FR-308: with helpers, one row of head figures is kept while the desks still fit and a slot holds a figure; two rows are tried first and kept while u stays at least HELP_KEEP x the one-row u. Else none: the plate's +N and dots (FR-016). */
-    if (folders.some((f) => f.agents.some((a) => (a.helpers || 0) > 0))) {
+    /* FR-308: with helpers, one row of head figures is kept while the desks still fit and a slot holds a figure; two rows are tried first and kept while u stays at least HELP_KEEP x the one-row u. Else none: the plate's +N and dots (FR-016).
+       `floor` (FR-246, FR-247, delta 2026-11-08, review of PR 1322): a strip level is taken only while its u is at least `floor`; when none is, no strip (the plate keeps its +N and dots). */
+    const choose = (fs: typeof folders, ho: number, floor: number): { p: ReturnType<typeof roPack>; hr: number } => {
+      const p0 = pack(fs, ho, 0);
+      if (!fs.some((f) => f.agents.some((a) => (a.helpers || 0) > 0))) return { p: p0, hr: 0 };
       const room = (q: ReturnType<typeof roPack>): boolean => q.rows.every((r) => !r.strip || r.Sw - 16 >= HEAD);
-      const p1 = pack(helpH(1));
-      if (p1.fits && room(p1)) {
-        p = p1; helpRows = 1;
-        const q = pack(helpH(2));
-        if (HELP_ROWS_MAX >= 2 && q.fits && q.u >= HELP_KEEP * p1.u && room(q)) { p = q; helpRows = 2; }
+      const ok = (q: ReturnType<typeof roPack>): boolean => q.fits && room(q) && q.u >= floor - 1e-6;
+      const p1 = pack(fs, ho, helpH(1));
+      if (ok(p1)) {
+        const q = HELP_ROWS_MAX >= 2 ? pack(fs, ho, helpH(2)) : null;
+        return q && ok(q) && q.u >= HELP_KEEP * p1.u ? { p: q, hr: 2 } : { p: p1, hr: 1 };
       }
-    }
+      return { p: p0, hr: 0 };
+    };
+    /* FR-246, FR-247: the room the lounge's agents leave goes to the desks, helpers or not. The strip levels are judged against the u the same folders get with those agents
+       back at their desks (no lounge row, the whole height, its own strip level): before, a strip that the desks' width paid for could start costing height once the row
+       took its share, and the desks shrank when an agent fell asleep (u 103.4 -> 99.4, cave 1280x800, shots-097-moments). */
+    const helpersAny = (fs: typeof folders): boolean => fs.some((f) => f.agents.some((a) => (a.helpers || 0) > 0));
+    const back = lounge.length && helpersAny(folders) ? model.folders.filter((f) => f.agents.length).map((f) => ({ id: f.id, agents: sortDesks(f.agents) })) : null;
+    const floor = back ? choose(back, H0, 0).p.u : 0;
+    const c = choose(folders, Ho, floor);
+    const p = c.p; helpRows = c.hr;
     rows = p.rows; u = p.u; used = p.used; fits = p.fits; big = rows.length === 1 && rows[0].scrH > 0;
   }
   const Lb = Math.round(fits ? Math.max(lobbyMin, Math.min(Ho - used, lobbyMax)) : lobbyMin);
