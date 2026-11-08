@@ -119,7 +119,7 @@ assert.ok(!ciJobs.changes && !/needs:/.test(ci), 'ci.yml: no changes job and no 
 for (const j of ['build-test', 'package-smoke', 'office-check']) assert.ok(ciJobs[j] && ciJobs[j].includes('bash .github/scripts/ci-changes.sh') && ciJobs[j].includes('fetch-depth: 2'), `ci.yml ${j} works out what changed inline`);
 const changesSh = fs.readFileSync(path.join(ROOT, '.github', 'scripts', 'ci-changes.sh'), 'utf8');
 const changes = fs.readFileSync(path.join(ROOT, '.github', 'scripts', 'ci-changes.js'), 'utf8');
-assert.ok(/exec node "\$\(dirname "\$0"\)\/ci-changes\.js"/.test(changesSh), 'ci-changes.sh runs the one decision, ci-changes.js (FR-191)');
+assert.ok(changesSh.includes("git show 'HEAD^1:.github/scripts/ci-changes.js'") && changesSh.includes('node "$tmp/.github/scripts/ci-changes.js" --root .'), 'ci-changes.sh runs the base copy of the one decision, ci-changes.js (FR-191; test:cichanges runs it)');
 assert.ok(changes.includes("['diff', '--name-only', '--no-renames', '-z', 'HEAD^1', 'HEAD']") && changes.includes("env.EVENT_NAME !== 'pull_request'"), 'ci-changes.js: diff of the test merge commit on PRs, everything on other events (test:cichanges runs it)');
 // FR-191: on a pull request the office layout and package smoke steps follow `ui`; Build and test keeps `code`
 for (const j of ['package-smoke', 'office-check']) assert.ok(!ciJobs[j].includes("outputs.code == 'true'") && ciJobs[j].includes("steps.changes.outputs.ui == 'true'"), `ci.yml ${j} runs its steps only when ui=true`);

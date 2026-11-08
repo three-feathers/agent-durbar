@@ -7,6 +7,9 @@
  * On a pull request the checkout is GitHub's test merge commit, so HEAD^1 is the base branch and `git diff HEAD^1 HEAD` is exactly
  * what the PR changes. EVERY OTHER EVENT (push to main, merge queue, nightly, by hand) RUNS EVERYTHING: every output is true, so the
  * checks before a release are never fewer (owner decision, Vikram 2026-11-08: "Ok go"; "Include common sense optimization").
+ * (ui-platforms.yml has no merge_group trigger: in the queue only ci.yml runs, in full; the UI suite runs on pushes to main, nightly
+ * and by hand.) On a pull request ci-changes.sh runs the BASE branch's copy of this file (HEAD^1's, reviewed on main) with
+ * `--root <checkout>`, so a PR's own edit of the decision cannot skip its own checks; with no base copy everything runs.
  *
  *   code=false    only docs/, specs/ or Markdown changed: build, test, office and package jobs pass without running (FR-104)
  *   themes=true   the look or the layout checks can change: the office job also runs theme geometry (FR-031)
@@ -18,10 +21,12 @@
  *                 version-only bump (FR-191)
  *
  * When in doubt a path counts (fail open toward running): an unknown top-level file or folder, a file under scripts/fixtures or
- * scripts/fakes, a non-source file in scripts/, an unreadable or unparsable package.json are all ui=true.
+ * scripts/fakes, a non-source file in scripts/, a scripts/ path gone at head (deleted or renamed away), a scripts/ name the literal
+ * matcher cannot read, an unreadable or unparsable package.json are all ui=true.
  *
- * The UI closure is derived, not hand-listed: the roots are every scripts/*.js that ui-platforms.yml runs, check-parallel.js (the
- * office job), the scripts in package.json's build and pack:dir and electron-builder's afterPack; from each JS file in the closure
+ * The UI closure is derived, not hand-listed: the roots are every scripts/*.{js,cjs,mjs,ts} that ui-platforms.yml names,
+ * check-parallel.js (the office job), the scripts of the npm scripts the UI run reaches (build, pack:dir, the lifecycle hooks npm ci
+ * runs, every `npm run` in the workflow, followed through package.json) and electron-builder's afterPack; from each code file in the closure
  * every string literal that names a file or folder in scripts/ is followed (require('./x'), path.join(__dirname, 'x.json') and
  * ui-suite.js's DRIVERS names, which are file names without .js). A new helper a driver loads is in the closure as soon as it is
  * named. Files are read as data only: no PR text reaches a shell (execFileSync with an argument array, no shell).
@@ -30,6 +35,9 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
+// review of PR #1349: names from the PR are printed through the repo's safe-print (no workflow command, no second line); the workflow
+// runs the BASE branch's copy of this file and of safe-print.js, so both sit at the same relative place in the temp copy
+const { printable } = require(path.join(__dirname, '..', '..', 'scripts', 'safe-print.js'));
 
 const DOCS = /^(docs\/|specs\/|changelog\.d\/)|\.md$|^LICENSE$/;
 const THEMES = /^(src\/renderer\/|scripts\/check-office-overlap\.js|scripts\/check-theme-geometry\.js|scripts\/check-parallel\.js|scripts\/fixtures\/themes\/|\.github\/workflows\/ci\.yml|\.github\/scripts\/ci-changes\.(sh|js))/;
@@ -64,21 +72,36 @@ function versionOnly(name, io, uiScripts = false) {
 }
 
 const LITERAL = /(['"`])([\w./-]+)\1/g;
-/** Every file (and folder prefix, ending in /) in scripts/ that the UI run can load, from the roots by string literals. */
+// a name the literal matcher cannot read (a space, a non-ASCII letter, ...) can never join the closure, so it counts (fail open)
+const PLAIN_NAME = /^[\w./-]+$/;
+const SCRIPT_FILE = /scripts\/[\w.-]+\.(?:js|cjs|mjs|ts)/g;
+const CODE = /\.(js|cjs|mjs|ts)$/;
+/** Every file (and folder prefix, ending in /) in scripts/ that the UI run can load, from the roots by string literals. Roots: the
+ *  scripts/ files ui-platforms.yml names, check-parallel.js (the office job), and the scripts/ files of every npm script the UI run
+ *  can reach: `build`, `pack:dir`, the lifecycle hooks `npm ci` runs, each `npm run <name>` in the workflow, and every `npm run`
+ *  inside those, followed; plus electron-builder's afterPack. */
 function uiClosure(io) {
   const roots = new Set(['scripts/check-parallel.js']);
   const wf = io.read('.github/workflows/ui-platforms.yml') || '';
-  for (const m of wf.matchAll(/scripts\/[\w.-]+\.js/g)) roots.add(m[0]);
+  for (const m of wf.matchAll(SCRIPT_FILE)) roots.add(m[0]);
   let pkg = {};
   try { pkg = JSON.parse(io.read('package.json') || '{}'); } catch { /* the package rule makes it ui=true */ }
-  const named = [pkg.scripts && pkg.scripts.build, pkg.scripts && pkg.scripts['pack:dir'], pkg.build && pkg.build.afterPack].filter(Boolean).join(' ');
-  for (const m of named.matchAll(/scripts\/[\w.-]+\.js/g)) roots.add(m[0]);
+  const scripts = (pkg && typeof pkg.scripts === 'object' && pkg.scripts) || {};
+  const npmNames = new Set(Object.keys(scripts).filter((k) => UI_NPM_SCRIPT.test(k)));
+  for (const m of wf.matchAll(/npm run ([\w:.-]+)/g)) npmNames.add(m[1]);
+  const npmTodo = [...npmNames];
+  while (npmTodo.length) {
+    const line = String(scripts[npmTodo.pop()] || '');
+    for (const m of line.matchAll(SCRIPT_FILE)) roots.add(m[0]);
+    for (const m of line.matchAll(/npm run ([\w:.-]+)/g)) if (!npmNames.has(m[1])) { npmNames.add(m[1]); npmTodo.push(m[1]); }
+  }
+  if (pkg && pkg.build && typeof pkg.build.afterPack === 'string') for (const m of pkg.build.afterPack.matchAll(SCRIPT_FILE)) roots.add(m[0]);
   const seen = new Set(), todo = [...roots];
   while (todo.length) {
     const f = todo.pop();
     if (seen.has(f)) continue;
     seen.add(f);
-    if (!/\.(js|cjs|mjs)$/.test(f)) continue;
+    if (!CODE.test(f)) continue;
     const text = io.read(f);
     if (text == null) continue;
     const dir = path.posix.dirname(f);
@@ -87,7 +110,7 @@ function uiClosure(io) {
       if (!lit || lit.startsWith('/') || lit.includes('..')) continue;
       const rel = path.posix.normalize(path.posix.join(dir, lit));
       if (!rel.startsWith('scripts/')) continue;
-      for (const c of [rel, rel + '.js']) {
+      for (const c of [rel, rel + '.js', rel + '.ts']) {
         if (io.isFile(c)) { todo.push(c); break; }
         if (io.isDir(c)) { seen.add(c.replace(/\/?$/, '/')); break; }
       }
@@ -102,6 +125,9 @@ function uiPath(f, io, closure) {
   if (PKG.includes(f)) return !versionOnly(f, io, true);
   if (f.startsWith('scripts/')) {
     if (closure.has(f) || [...closure].some((c) => c.endsWith('/') && f.startsWith(c))) return true;
+    // review of PR #1349: a file gone at head (deleted, or the old name of a rename: the diff has --no-renames) may have been loaded
+    // by the UI run, and the head closure cannot know; a name the literal matcher cannot read can never join it. Both count.
+    if (!io.isFile(f) || !PLAIN_NAME.test(f)) return true;
     return !SOURCE.test(f);
   }
   if (DOCS.test(f) || f.startsWith('.github/')) return false;
@@ -144,16 +170,18 @@ function gitIo(root) {
   };
 }
 
-function main(env = process.env) {
+function main(env = process.env, argv = process.argv.slice(2)) {
   const out = (k, v) => { if (env.GITHUB_OUTPUT) fs.appendFileSync(env.GITHUB_OUTPUT, `${k}=${v}\n`); else console.log(`${k}=${v}`); };
   let r;
   if (env.EVENT_NAME !== 'pull_request') {
     r = { code: true, themes: true, ui: true, macos: true };
     console.log(`${env.EVENT_NAME || 'no event'}: not a pull request, everything runs.`);
   } else {
-    const root = path.join(__dirname, '..', '..');
+    // --root <checkout>: the workflow runs the base copy of this file from a temp folder on the PR's checkout
+    const at = argv.indexOf('--root');
+    const root = at >= 0 && argv[at + 1] ? path.resolve(argv[at + 1]) : path.join(__dirname, '..', '..');
     const files = execFileSync('git', ['diff', '--name-only', '--no-renames', '-z', 'HEAD^1', 'HEAD'], { cwd: root, encoding: 'utf8', shell: false, maxBuffer: 64 * 1024 * 1024 }).split('\0').filter(Boolean);
-    console.log(files.join('\n'));
+    for (const f of files) console.log(printable(f)); // a name may hold a newline or `::`: never a workflow command
     r = decide(files, gitIo(root));
     if (!r.code) console.log('Docs, specs and Markdown only: build, test and office checks are skipped (the job passes).');
     else if (!r.ui) console.log('Nothing the app, its build or the UI drivers use changed: the UI suite, office layout and package smoke are skipped (spec 008 FR-191).');

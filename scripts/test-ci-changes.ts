@@ -17,12 +17,12 @@ interface Io { read(p: string): string | null; readBase(p: string): string | nul
 
 const real = cc.gitIo(ROOT);
 /** The real head tree with some files replaced or added; the base is the head unless `base` says otherwise. */
-function io(head: Record<string, string> = {}, base: Record<string, string> = {}): Io {
+function io(head: Record<string, string> = {}, base: Record<string, string> = {}, gone: string[] = [], dirs: string[] = []): Io {
   return {
-    read: (p) => (p in head ? head[p] : real.read(p)),
-    readBase: (p) => (p in base ? base[p] : p in head ? real.read(p) : real.read(p)),
-    isFile: (p) => p in head || real.isFile(p),
-    isDir: (p) => real.isDir(p),
+    read: (p) => (gone.includes(p) ? null : p in head ? head[p] : real.read(p)),
+    readBase: (p) => (p in base ? base[p] : real.read(p)),
+    isFile: (p) => !gone.includes(p) && (p in head || real.isFile(p)),
+    isDir: (p) => dirs.includes(p) || real.isDir(p),
   };
 }
 const pkgText = fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8');
@@ -65,7 +65,7 @@ assert.strictEqual(ui(['.github/workflows/ui-platforms.yml']), true, 'the UI wor
 assert.strictEqual(ui(['.github/scripts/ci-changes.js']), true, 'the decision itself is UI');
 assert.strictEqual(ui(['.github/actions/npm-ci/action.yml']), true, 'the npm ci action is UI');
 assert.strictEqual(ui(['some-new-top-level.cfg']), true, 'an unknown top-level file counts (fail open)');
-assert.strictEqual(ui(['scripts/new-data.json']), true, 'a non-source file in scripts/ counts (fail open)');
+assert.strictEqual(ui(['scripts/new-data.json'], io({ 'scripts/new-data.json': '{}' })), true, 'a non-source file in scripts/ counts (fail open)');
 { // a lockfile dependency change is UI, also when the version moves with it
   const lockDep = JSON.parse(lockText);
   const dep = Object.keys(lockDep.packages).find((k) => k.startsWith('node_modules/'))!;
@@ -95,6 +95,36 @@ assert.strictEqual(ui(['scripts/new-data.json']), true, 'a non-source file in sc
   assert.strictEqual(ui(['scripts/bar.js'], io(nested)), true, 'a helper of a helper is UI (the closure is transitive)');
 }
 
+// review of PR #1349, finding 1: a file gone at head (deleted, or a rename's old name: the diff has --no-renames) counts; the head
+// closure cannot know it. scripts/ui-text-page.js is read only by check-ui-text.js (no unit test loads it).
+assert.strictEqual(ui(['scripts/ui-text-page.js'], io({}, {}, ['scripts/ui-text-page.js'])), true, 'deleting a UI helper is UI');
+assert.strictEqual(ui(['scripts/ui-text-page.js', 'scripts/ui-text-page2.js'], io({ 'scripts/ui-text-page2.js': 'x' }, {}, ['scripts/ui-text-page.js'])), true, 'renaming a UI helper (delete plus add) is UI');
+assert.strictEqual(ui(['scripts/usage-lib.js'], io({}, {}, ['scripts/usage-lib.js'])), true, 'deleting any scripts/ file counts (fail open: the base closure is not computed)');
+// finding 2: a name the literal matcher cannot read can never join the closure, so it counts
+assert.strictEqual(ui(['scripts/a b.js'], io({ 'scripts/a b.js': 'module.exports = 1;\n' })), true, 'a scripts/ name with a space is UI');
+assert.strictEqual(ui(['scripts/a\u00f1o.js'], io({ 'scripts/a\u00f1o.js': 'module.exports = 1;\n' })), true, 'a scripts/ name with a non-ASCII letter is UI');
+// finding 6: a folder the closure names (other than fixtures/, which is always UI) covers every file under it
+{
+  const suite = real.read('scripts/ui-suite.js')!;
+  const head = { 'scripts/ui-suite.js': suite + "\nconst DATA = path.join(__dirname, 'zz-data');\n", 'scripts/zz-data/table.txt': 'x' };
+  assert.strictEqual(ui(['scripts/zz-data/table.txt'], io(head, {}, [], ['scripts/zz-data'])), true, 'a file in a folder the UI run names is UI');
+  assert.strictEqual(ui(['scripts/zz-data/table.txt'], io({ 'scripts/zz-data/table.txt': 'x' }, {}, [], ['scripts/zz-data'])), false, 'the same folder nothing names is not');
+}
+// finding 7: roots from .ts files, `npm run` chains (from the workflow and inside package.json) and the lifecycle hooks npm ci runs
+{
+  const wf = real.read('.github/workflows/ui-platforms.yml')!;
+  const tsRoot = { '.github/workflows/ui-platforms.yml': wf + '\n      - run: npx tsx scripts/zz-root.ts\n', 'scripts/zz-root.ts': "import './zz-dep';\n", 'scripts/zz-dep.ts': 'export {};\n' };
+  assert.strictEqual(ui(['scripts/zz-root.ts'], io(tsRoot)), true, 'a .ts file the UI workflow runs is UI');
+  assert.strictEqual(ui(['scripts/zz-dep.ts'], io(tsRoot)), true, 'a .ts file it imports is UI');
+  assert.strictEqual(ui(['scripts/zz-root.ts'], io({ 'scripts/zz-root.ts': 'x' })), false, 'the same .ts file nothing runs is not');
+  const pkgWith = (scripts: Record<string, string>) => JSON.stringify({ ...pkg, scripts: { ...pkg.scripts, ...scripts } });
+  const chain = { '.github/workflows/ui-platforms.yml': wf + '\n      - run: npm run zz:check\n', 'package.json': pkgWith({ 'zz:check': 'npm run zz:inner', 'zz:inner': 'node scripts/zz-two.js' }), 'scripts/zz-two.js': 'x' };
+  assert.strictEqual(ui(['scripts/zz-two.js'], io(chain)), true, 'a script reached through npm run, two levels deep, is UI');
+  const hook = { 'package.json': pkgWith({ postinstall: 'node scripts/zz-setup.js' }), 'scripts/zz-setup.js': 'x' };
+  assert.strictEqual(ui(['scripts/zz-setup.js'], io(hook)), true, 'a script of a lifecycle hook (postinstall) is UI');
+  assert.strictEqual(ui(['scripts/zz-setup.js'], io({ 'package.json': pkgWith({ 'zz:report': 'node scripts/zz-setup.js' }), 'scripts/zz-setup.js': 'x' })), false, 'the same script under a report npm script is not');
+}
+
 // code / themes keep FR-104 and FR-031 as they were
 const d = (files: string[], x: Io = io()) => cc.decide(files, x);
 assert.deepStrictEqual(d(['docs/a.md', 'specs/008-packaging-and-release/tasks.md']), { code: false, themes: false, ui: false, macos: false }, 'docs only: nothing runs');
@@ -116,7 +146,8 @@ assert.strictEqual(d(['scripts/test-usage.js']).macos, true, 'a test script runs
   const repo = path.join(tmp, 'repo');
   fs.mkdirSync(path.join(repo, '.github', 'scripts'), { recursive: true });
   fs.mkdirSync(path.join(repo, 'docs'));
-  fs.copyFileSync(path.join(ROOT, '.github', 'scripts', 'ci-changes.js'), path.join(repo, '.github', 'scripts', 'ci-changes.js'));
+  fs.mkdirSync(path.join(repo, 'scripts'));
+  for (const f of ['.github/scripts/ci-changes.js', '.github/scripts/ci-changes.sh', 'scripts/safe-print.js']) fs.copyFileSync(path.join(ROOT, ...f.split('/')), path.join(repo, ...f.split('/')));
   const git = (...a: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', '-c', 'commit.gpgsign=false', ...a], { cwd: repo, stdio: 'ignore', shell: false });
   git('init', '-q');
   git('add', '-A'); git('commit', '-q', '-m', 'base');
@@ -129,6 +160,45 @@ assert.strictEqual(d(['scripts/test-usage.js']).macos, true, 'a test script runs
   };
   assert.strictEqual(run('pull_request'), 'code=false\nthemes=false\nui=false\nmacos=false\n', 'pull_request: the diff of HEAD^1..HEAD decides (docs only: nothing)');
   for (const ev of ['push', 'merge_group', 'schedule', 'workflow_dispatch', '']) assert.strictEqual(run(ev), 'code=true\nthemes=true\nui=true\nmacos=true\n', `${ev || 'no event'}: everything runs`);
+  const ALL = 'code=true\nthemes=true\nui=true\nmacos=true\n';
+  // finding 3: a file name with a newline and `::` is printed escaped, so it cannot start a workflow command (POSIX: Windows forbids the name)
+  if (process.platform !== 'win32') {
+    fs.writeFileSync(path.join(repo, 'scripts', 'x\n::warning::injected ##[error]y.txt'), 'x');
+    git('add', '-A'); git('commit', '-q', '-m', 'hostile name');
+    const outFile = path.join(tmp, 'out-hostile');
+    const stdout = execFileSync(process.execPath, [path.join(repo, '.github', 'scripts', 'ci-changes.js')], { cwd: repo, env: { ...process.env, EVENT_NAME: 'pull_request', GITHUB_OUTPUT: outFile }, encoding: 'utf8', shell: false });
+    assert.ok(stdout.includes('injected') && stdout.split(/\r?\n/).every((l) => !l.trim().startsWith('::') && !l.includes('##[') && !l.includes('::warning')), 'a hostile file name is printed escaped: no line starts a workflow command');
+  }
+  // finding 4: ci-changes.sh runs the BASE copy of the decision (HEAD^1), never the PR's; with no base copy everything runs
+  const bash = (cwd: string, ev: string) => {
+    const outFile = path.join(tmp, `sh-${Math.random().toString(36).slice(2)}`);
+    execFileSync('bash', [path.join('.github', 'scripts', 'ci-changes.sh')], { cwd, env: { ...process.env, EVENT_NAME: ev, GITHUB_OUTPUT: outFile }, stdio: 'ignore', shell: false });
+    return fs.readFileSync(outFile, 'utf8');
+  };
+  let haveBash = true;
+  try { execFileSync('bash', ['-c', 'exit 0'], { stdio: 'ignore', shell: false }); } catch { haveBash = false; }
+  if (haveBash) {
+    // a tooling script the closure does not name, present at head: the base copy, run with --root on the checkout, says ui=false
+    fs.writeFileSync(path.join(repo, 'scripts', 'tool.js'), 'module.exports = 1;\n');
+    git('add', '-A'); git('commit', '-q', '-m', 'a tooling script');
+    assert.strictEqual(bash(repo, 'pull_request'), 'code=true\nthemes=false\nui=false\nmacos=true\n', 'the wrapper decides on the PR checkout (--root): a tooling script is not UI');
+    const broken = "require('fs').appendFileSync(process.env.GITHUB_OUTPUT, 'code=true\\nthemes=false\\nui=false\\nmacos=false\\n');\n";
+    fs.mkdirSync(path.join(repo, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(repo, 'src', 'app.js'), 'x');
+    fs.writeFileSync(path.join(repo, '.github', 'scripts', 'ci-changes.js'), broken);
+    git('add', '-A'); git('commit', '-q', '-m', 'a PR that breaks the decision and changes src/');
+    assert.strictEqual(bash(repo, 'pull_request'), ALL, 'the base copy decides: a PR that breaks ci-changes.js still runs its UI checks');
+    assert.ok(!fs.existsSync(path.join(repo, '.ci-changes-base')), 'the base copy folder is removed');
+    const fresh = path.join(tmp, 'fresh');
+    fs.mkdirSync(path.join(fresh, '.github', 'scripts'), { recursive: true });
+    fs.copyFileSync(path.join(ROOT, '.github', 'scripts', 'ci-changes.sh'), path.join(fresh, '.github', 'scripts', 'ci-changes.sh'));
+    const g2 = (...a: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', '-c', 'commit.gpgsign=false', ...a], { cwd: fresh, stdio: 'ignore', shell: false });
+    g2('init', '-q'); g2('add', '-A'); g2('commit', '-q', '-m', 'base without the decision');
+    fs.mkdirSync(path.join(fresh, 'docs')); fs.writeFileSync(path.join(fresh, 'docs', 'a.md'), 'x');
+    g2('add', '-A'); g2('commit', '-q', '-m', 'docs');
+    assert.strictEqual(bash(fresh, 'pull_request'), ALL, 'no base copy of the decision: everything runs');
+    assert.strictEqual(bash(fresh, 'push'), ALL, 'a push runs everything (the wrapper says so without the decision)');
+  } else console.log('ci-changes: bash not found, the wrapper test is skipped here (CI runs it on every OS)');
   fs.rmSync(tmp, { recursive: true, force: true });
 }
 // the decision has no shell: execFileSync with argument arrays only
