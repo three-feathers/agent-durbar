@@ -196,6 +196,8 @@ const none = (t: string, k: string, m: string) => eq(L.check(t, k).findings, [],
   const many = (k: number) => 'run x ' + 'a\u0430 '.repeat(Math.ceil(k / 3)).slice(0, k);
   ok(L.line(L.check(long(9990), 'shell')).length < 600, 'the line of 9990 flagged letters is short: ' + L.line(L.check(long(9990), 'shell')).length);
   ok(L.line(L.check(many(9990), 'shell')).length < 1200, 'the line of thousands of tokens is short');
+  const abc = L.line(L.check('run ' + Array.from({ length: 26 }, (_, i) => String.fromCodePoint(0xff41 + i)).join(''), 'shell'));
+  ok(abc.includes('has U+FF41, U+FF42, U+FF43 and 23 more,'), 'a token with 26 distinct flagged letters names 3 and counts the rest: ' + abc);
   for (const [label, make] of [['one long token', long], ['many tokens', many], ['dotted hosts', (k: number) => 'run ' + 'a\u0430.b/ u@\u0430.c '.repeat(Math.ceil(k / 16)).slice(0, k)], ['one long dotted word', (k: number) => 'run ' + 'a.'.repeat(Math.ceil(k / 2)).slice(0, k)]] as const)
     assertLinearShape('line ' + label, (x) => { L.line(L.check(x, 'shell')); }, make, 10000);
   const tip = (t: string) => CT.cutText(t, L.tipLen(t));
