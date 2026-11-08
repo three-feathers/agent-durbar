@@ -8,7 +8,8 @@
  *   "the card does not lie over the focused slip". Two more, same way: the card's z-index 5 instead of 7 (realoffice.css, `.ro-zoom`) must fail at "a slip under the card paints over it";
  *   Four more, same way, all in check-097-hover-card (FR-328): `pointerout` closing a held card (`&& !ZOOM.held` dropped in wireZoom's pointerout) fails "still open 700 ms after the refill"; the Escape check in zoomKey for an open menu
  *   removed fails "Escape closes an open menu while a card is open"; the capture `pointermove` listener in wireZoom deleted fails "a real move to empty floor inside the office closes the held card"; the coordinate comparison dropped
- *   (`ZOOM.held !== PT` turned into `true`) fails "a pointermove at the same place does not close the held asleep card".
+ *   (`ZOOM.held !== PT` turned into `true`) fails "a pointermove at the same place does not close the held asleep card"; the `pointerleave` listener in wireZoom deleted ("noleave") fails "a jump straight off the
+ *   office closes the held card"; the window's `focus` listener (`addEventListener('focus', replaceZoom)` in openZoom, turned into `0`) removed ("no window focus") fails "the card closes on the window's focus event".
  *   The focus listeners removed (placeZoom's `document.addEventListener('focusin', replaceZoom, true)` and the focusout one turned into `0`) must fail at "the card is placed again off the slip that took the focus".
  *   SHOTS_OUT=<dir>   where its pictures go (097-hover-<what>-<w>x<h>.png; a temporary folder by default)
  *
@@ -22,6 +23,7 @@
  *   - the card is under 10.5 px anywhere, leaves the window, covers the hovered agent's own plate, or the office scrolls (FR-034, FR-313);
  *   - a card open on a working desk keeps the awake view (status word, tool log) after its agent falls asleep instead of showing the asleep view (FR-328), or closes within 700 ms of it
  *     under the resting pointer, or closes on a pointermove at the same place, or stays after a real move to empty floor inside the office, or takes the Escape meant for an open menu;
+ *   - a held asleep card stays open after the pointer jumps straight off the office, or a card stays over a slip that took the focus by script while the window was in the background, once the window has the focus (FR-328, FR-330);
  *   - the card lies over the slip that holds the keyboard focus (a slip with an Allow button, reached by Tab), a card covers that button's point, a click at the button does not press it
  *     once, or a card opens when no place leaves the focused slip free (FR-330, round 3 of #1313; mutant: the focused slip skipped in placeZoom's avoid list, see below);
  *   - with no free place for the card (the room tiled with slips) a slip under the card is not inert, a slip not under it is, or one stays inert after the card moved or Esc closed it (FR-330);
@@ -227,6 +229,18 @@ module.exports = async (ctx) => {
     await must(NONE, `${tag}: a real move to empty floor inside the office closes the held card (FR-328)`);
     await moveTo(1, 1);
     await must(NONE, `${tag}: closed on leaving after the refill`);
+    /* a fresh refill, then the pointer jumps straight off the office with no move inside it: only the office's pointerleave lets the held card go (FR-328) */
+    await js(`(()=>{const a=${sim}.agents().find(x=>x.id===${jsLiteral(wk2)});a.state='working';a.lastEventAt=Date.now();${sim}.crew.renderAll();return 1})()`); /* the first one goes back to work: a working desk for this step */
+    const wk4 = await hoverWork('person', null, [R, S], `${tag} falls asleep, then leaves`);
+    assert.ok(wk4, `${tag}: the card opens on a third working desk for the leave step`);
+    await js(`(()=>{const a=${sim}.agents().find(x=>x.id===${jsLiteral(wk4)});a.state='done';a.lastOutput='Done and checked.';a.lastEventAt=Date.now()-34*60000;${sim}.crew.renderAll();return 1})()`);
+    await must(`(()=>{const z=document.getElementById('roZoom');return !!z&&z.dataset.for===${jsLiteral(wk4)}&&z.dataset.state==='asleep'&&/^Asleep/.test(z.querySelector('.ro-zs').textContent)})()`, `${tag}: the card of the third agent shows the asleep view`, 8000);
+    await js(`new Promise(r=>setTimeout(r,400))`);
+    assert.ok(await js(ZOOM_FOR(wk4)), `${tag}: the held card of the third agent is still open before the pointer leaves`);
+    assert.strictEqual(await js(`(()=>{const e=document.elementFromPoint(1,1);return !!e&&!document.querySelector('#stage .ro').contains(e)})()`), true, `${tag}: (1,1) is outside the office, so the jump leaves it without a move inside`);
+    await moveTo(1, 1);
+    await must(NONE, `${tag}: a jump straight off the office closes the held card (pointerleave, FR-328)`);
+    await js(`(()=>{const a=${sim}.agents().find(x=>x.id===${jsLiteral(wk4)});a.state='working';a.lastEventAt=Date.now();${sim}.crew.renderAll();return 1})()`);
     /* ---- FR-330: no free place: real-shaped slips (they take pointer events, each holds an input) tile the room except round the hovered person, so the card lands over some of them ---- */
     /* a desk that is working now (read again here: an agent may have left on a visit since the first one was chosen) */
     await js(`(()=>{const a=${sim}.agents().find(x=>x.id===${jsLiteral(wk2)});a.state='working';a.lastEventAt=Date.now();${sim}.crew.renderAll();return 1})()`); /* the one that fell asleep goes back to work: a working desk for this step */
@@ -288,6 +302,7 @@ module.exports = async (ctx) => {
     await js(`(()=>{const b=document.querySelector('#stage .ro .fake-slip[data-n="'+${jsLiteral(cv2.first)}+'"] button');if(b)b.blur();for(const e of document.querySelectorAll('#stage .ro .fake-slip'))e.remove();document.activeElement&&document.activeElement.blur&&document.activeElement.blur();return 1})()`);
     await moveTo(1, 1);
     await must(NONE, `${tag}: closed before the focus-move step`);
+    await refocus(); assert.ok(await js(`document.hasFocus()`), `${tag}: the window has the focus for the focus-move steps (a window that lost the system focus fires no focusin: an environment problem, not the card)`);
     wk3 = await hoverWork('person', wk3, [R, S], `${tag} focus move`);
     assert.ok(wk3, `${tag}: the card opens for the focus-move step`);
     const SLIPAT = (full) => `(()=>{const z=document.getElementById('roZoom'),ro=document.querySelector('#stage .ro'),o=ro.getBoundingClientRect(),b=z.getBoundingClientRect(),e=document.createElement('div');e.className='ro-slip fake-slip';e.id='fmSlip';
@@ -298,6 +313,7 @@ module.exports = async (ctx) => {
     await js(`document.getElementById('fmSlip').remove();document.activeElement.blur&&document.activeElement.blur();0`);
     await moveTo(1, 1);
     await must(NONE, `${tag}: closed after the re-place`);
+    await refocus(); assert.ok(await js(`document.hasFocus()`), `${tag}: the window has the focus for the no-place focus step (an environment problem when not)`);
     wk3 = await hoverWork('person', wk3, [R, S], `${tag} focus move closes`);
     assert.ok(wk3, `${tag}: the card opens again`);
     assert.ok(await js(SLIPAT(true)), `${tag}: the input of a slip over the whole room took the focus`);
@@ -306,6 +322,19 @@ module.exports = async (ctx) => {
     await js(`for(const e of document.querySelectorAll('#stage .ro .fake-slip'))e.remove();0`);
     await moveTo(1, 1);
     await must(NONE, `${tag}: closed after the slip steps`);
+    /* the window is in the background when a slip takes the focus by script (no focusin fires): the card is placed again, here closed, when the window has the focus (FR-330) */
+    assert.ok(await H.loseFocus(), `${tag}: the window lost the focus (the page reports none)`);
+    wk3 = await hoverWork('person', wk3, [R, S], `${tag} window blurred`);
+    assert.ok(wk3 && await js(`!document.hasFocus()`), `${tag}: a card is open on a window without the focus`);
+    assert.ok(await js(SLIPAT(true)), `${tag}: the input of a slip over the whole room took the focus by script`);
+    await js(`new Promise(r=>setTimeout(r,500))`);
+    assert.ok(await js(`!!document.getElementById('roZoom')`), `${tag}: no focusin fired in the background window, so the card is still open (the step is real)`);
+    /* the window's own focus event, alone (Chromium also sends a focusin to the focused slip when the window is given the focus, which would hide a missing listener; some hosts send none, #1179): the card closes on it */
+    await js(`window.dispatchEvent(new Event('focus'));0`);
+    await must(NONE, `${tag}: the card closes on the window's focus event when no place leaves the focused slip free (FR-330)`, 4000);
+    await refocus();
+    await js(`for(const e of document.querySelectorAll('#stage .ro .fake-slip'))e.remove();document.activeElement&&document.activeElement.blur&&document.activeElement.blur();0`);
+    await moveTo(1, 1);
     /* ---- FR-329: an agent that rested (its numbers are read and kept) and is at a desk again has no Changed line ---- */
     await js(`(()=>{const a=${sim}.agents().find(x=>x.id===${jsLiteral(R)});a.state='working';a.lastEventAt=Date.now();${sim}.crew.renderAll();return 1})()`);
     await must(`(()=>{const L=${sim}.realLayout();return L.zones.flatMap(z=>z.desks).some(d=>d.id===${jsLiteral(R)}&&!d.away&&['working','thinking'].includes(d.state))&&!(L.lounge&&L.lounge.desks.some(d=>d.id===${jsLiteral(R)}))&&!!document.querySelector('#stage .ro-person[data-for="'+CSS.escape(${jsLiteral(R)})+'"]')})()`, `${tag}: the rested agent ${R} is back at a desk`, 8000);

@@ -912,6 +912,7 @@
       document.addEventListener('keydown', zoomKey, true);
       document.addEventListener('focusin', replaceZoom, true); document.addEventListener('focusout', replaceLater, true);
       addEventListener('blur', closeZoom);
+      addEventListener('focus', replaceZoom); /* FR-330: a slip focused by script while the window was in the background fired no focusin; the place is sought again when the window has the focus */
       const fl = CUR.ro.closest('#floor'); if (fl) { ZOOM.floor = fl; fl.addEventListener('scroll', closeZoom, { passive: true }); }
       fillZoom(); if (!placeZoom()) return; /* FR-330: no place that leaves the focused slip uncovered: no card */
     }
@@ -926,6 +927,7 @@
     document.removeEventListener('keydown', zoomKey, true);
     document.removeEventListener('focusin', replaceZoom, true); document.removeEventListener('focusout', replaceLater, true);
     removeEventListener('blur', closeZoom);
+    removeEventListener('focus', replaceZoom);
     if (z.floor) z.floor.removeEventListener('scroll', closeZoom);
     for (const id of z.under || []) { const s = SCR.get(id); if (!s || !s.away) setOff(id, false); }
     if (CUR && CUR.ro) for (const e of CUR.ro.querySelectorAll('.ro-slip[inert]')) e.removeAttribute('inert');
