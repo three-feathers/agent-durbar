@@ -282,6 +282,8 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
   const args3 = ['--release', 'v0.1.12', '--date', '2026-10-30', '--baseline', Q('base.json'), '--readme', Q('README.md'), '--history', Q('h.json'), '--badge', Q('b.svg'), '--chart', Q('c.svg'), '--days', Q('d.svg'), '--data', Q('data'), '--spread', Q('spread.json')];
   const r3 = R2.build(R2.parseArgs(args3, { DURBAR_USAGE_DIR: Q('nodir') }, NOW));
   assert.ok(r3.text.includes('About US$1,000**') && r3.text.includes('Estimated, not measured: US$') && r3.text.includes('docs/build-cost-days.svg') && r3.text.includes('an assumption') && r3.days.includes('<svg'), 'command: the README names the estimate, links the daily chart and states the model-mix assumption; the total is the baseline');
+  assert.strictEqual((r3.text.match(/!\[[^\]]*\]\(docs\/build-cost[^)]*\.svg\)/g) || []).length, 1, 'command: the README block has exactly one graph, the daily one (spec 008 2026-11-08 delta)');
+  assert.ok(!r3.text.includes('docs/build-cost.svg') && !lib.readmeBlock(cum1, '2026-11-10', 'v0.1.13', base.note, 'x').includes('docs/build-cost.svg'), 'command: the cumulative graph is not in the README block');
   fs.writeFileSync(Q('bad.json'), JSON.stringify({ ...sp, days: sp.days.map((d, i) => (i ? d : { ...d, cents: { 'claude-opus-5-5': d.cents['claude-opus-5-5'] + 500, 'claude-sonnet-5-5': d.cents['claude-sonnet-5-5'] } })) }));
   assert.throws(() => R2.build(R2.parseArgs(args3.map((a) => (a === Q('spread.json') ? Q('bad.json') : a)), { DURBAR_USAGE_DIR: Q('nodir') }, NOW)), /usage:spread/, 'command: a spread that does not add up to the total is refused');
   // publish: the receiver folder's file is copied (validated fields only) next to a teammate's committed file

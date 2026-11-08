@@ -146,6 +146,10 @@ Retired spec numbers, never to be reused for a new spec (`specs:check` and `--ad
 
 ## Changes
 
+### 2026-11-08: the README build-cost block shows one graph, the daily one (FR-181; owner decision)
+
+Owner decision (Vikram, Telegram, 2026-11-08 22:30 UTC, option 1): "one graph, the daily one, total as text". `scripts/usage-lib.js` `readmeBlock` no longer writes the cumulative-by-release graph line (`docs/build-cost.svg`); the block keeps the total as text, the "Estimated, not measured" paragraph, the daily graph (`docs/build-cost-days.svg`) and the by-model and by-machine lines. `npm run usage:readme` still generates `docs/build-cost.svg` because `docs/build-cost.md` links it. `test:usage` asserts exactly one graph in the block and fails if the cumulative line returns. No new FR or task number.
+
 ### 2026-11-08: three flaky UI checks fixed at the cause (issues #1301, #1302, #1208; FR-184, T136)
 
 *Why:* `check-097-chat-contrast` (#1301, Linux CI at 1440x900), `check-office-ops` "every status update is one render" (#1302) and its calibration trace (#1208) fail now and then on Linux under load and hide every row after them. FR-096 and FR-030 apply: find the cause, wait for a real condition, never raise a limit, add a retry or weaken an assert.

@@ -84,8 +84,6 @@ How we work (spec-driven, with [GitHub Spec Kit](https://github.com/github/spec-
 
 **About US$3,758** at API list prices to build this app with AI agents, as of 2026-11-07 (release [`v0.1.12`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.12)), tracked since 2026-10-25. This is an **API list-price estimate, not billing**: Claude Code's own list-price figure, not what anyone was charged. Method and privacy: [docs/build-cost.md](docs/build-cost.md).
 
-![Cumulative build cost by model over releases (API list-price estimate, not billing)](docs/build-cost.svg)
-
 Estimated, not measured: US$3,666 of the total, spent before telemetry could count it per day, is spread over 13 days (2026-10-25 to 2026-11-06) by 50% lines changed and 50% merged PRs of each day (git history); the faded, dashed bars are those estimates, the solid bars are measured. Per-model split of an estimated day: the same mix as the original lump (an assumption).
 
 ![Daily build cost by model: measured days solid, estimated (spread) days faded and dashed](docs/build-cost-days.svg)
