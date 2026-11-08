@@ -20,7 +20,8 @@ const NOW = Date.UTC(2026, 10, 7, 12, 0, 0); // 2026-11-07 12:00 UTC
 const NOW2 = Date.UTC(2026, 10, 8, 0, 5, 0); // 2026-11-08 00:05 UTC
 const nano = (iso) => String(BigInt(Date.parse(iso)) * 1000000n);
 const attr = (key, v) => ({ key, value: { stringValue: v } });
-const ident = () => [attr('user.email', FAKE[0]), attr('user.id', FAKE[1]), attr('user.account_uuid', FAKE[2]), attr('organization.id', FAKE[3]), attr('session.id', FAKE[4]), attr('agent.name', FAKE[5])];
+const DURBAR_REPO = 'https://github.com/three-feathers/agent-durbar';
+const ident = () => [attr('vcs.repository.url.full', DURBAR_REPO), attr('user.email', FAKE[0]), attr('user.id', FAKE[1]), attr('user.account_uuid', FAKE[2]), attr('organization.id', FAKE[3]), attr('session.id', FAKE[4]), attr('agent.name', FAKE[5])];
 const tok = (type, model, value, iso, source = 'main', extra = ident()) => ({ attributes: [attr('type', type), attr('model', model), attr('query_source', source), ...extra], asInt: String(value), timeUnixNano: nano(iso) });
 const cost = (model, value, iso, source = 'main') => ({ attributes: [attr('model', model), attr('query_source', source), ...ident()], asDouble: value, timeUnixNano: nano(iso) });
 const body = (tokenPts, costPts, temporality = 1) => ({ resourceMetrics: [{ resource: { attributes: ident() }, scopeMetrics: [{ scope: { name: 'com.anthropic.claude_code' }, metrics: [
@@ -143,6 +144,7 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
   assert.ok(block.includes('**API list-price estimate, not billing**'), 'label: the estimate text is in the block');
   assert.ok(/About US\$3,858\*\*/.test(block) && block.includes('as of 2026-11-10') && block.includes('`v0.1.13`'), 'block: total, date and release');
   assert.ok(block.includes('Opus 5.5 77% (US$2,956)') && !block.includes('claude-opus-5-5') && block.includes('mac 3% (US$100)') && block.includes('linux 97%'), 'block: split by model and by machine');
+  assert.ok(!block.includes('docs/build-cost.svg') && !lib.readmeBlock(cum1, '2026-11-10', 'v0.1.13', base.note, 'x').includes('docs/build-cost.svg'), 'block: the cumulative graph is not in the README block');
   assert.ok(block.includes('docs/build-cost.md') && block.includes('Not counted yet: older work'), 'block: method link and what is not counted');
   assert.throws(() => lib.readmeBlock(cum1, '2026-11-10', 'v1', 'x'), /--release/, 'block: a release must look like a tag');
   const readme = `# T\n\nintro\n\n${lib.BEGIN}\nold stuff\n${lib.END}\n\nrest\n`;
@@ -201,7 +203,7 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
   const t2 = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-usage-readme-'));
   const P = (n) => path.join(t2, n);
   fs.writeFileSync(P('README.md'), readme); fs.writeFileSync(P('base.json'), JSON.stringify({ version: 1, since: '2026-10-25', through: '2026-11-07', note: 'older work.', models: { 'claude-opus-5-5': 10 }, machines: { linux: 10 } }));
-  const args = ['--release', 'v0.1.12', '--date', '2026-11-07', '--baseline', P('base.json'), '--readme', P('README.md'), '--history', P('h.json'), '--badge', P('b.svg'), '--chart', P('c.svg'), '--files', P('none.json')];
+  const args = ['--release', 'v0.1.12', '--date', '2026-11-07', '--baseline', P('base.json'), '--readme', P('README.md'), '--history', P('h.json'), '--badge', P('b.svg'), '--chart', P('c.svg'), '--days', P('d.svg'), '--data', P('nodata'), '--spread', P('nospread.json'), '--files', P('none.json')];
   const mk2 = () => R2.build(R2.parseArgs(args.filter((a, i) => args[i - 1] !== '--files' && a !== '--files'), { DURBAR_USAGE_DIR: P('nodir') }, NOW));
   const r1 = mk2();
   assert.ok(r1.text.includes('About US$10**') && r1.history.rows.length === 1 && r1.badge.includes('US$10 ') && r1.chart.includes('<svg'), 'command: block, history, badge and chart from the baseline alone');
@@ -209,6 +211,206 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
   fs.writeFileSync(P('README.md'), '# no markers\n');
   assert.throws(() => mk2(), /exactly one/, 'command: a README without markers fails');
   fs.rmSync(t2, { recursive: true, force: true });
+}
+
+// ---- spread of the unmeasured lump over the days it covers (FR-181 delta 2026-11-08) ----
+{
+  const S = require('./usage-spread');
+  const R2 = require('./usage-readme');
+  const { execFileSync } = require('child_process');
+  const base = lib.validateBaseline({ version: 1, since: '2026-10-25', through: '2026-10-30', note: 'older work.', models: { 'claude-opus-5-5': 700.01, 'claude-sonnet-5-5': 300.02 }, machines: { linux: 1000.03 } });
+  const stats = new Map([['2026-10-25', { lines: 100, prs: 1 }], ['2026-10-26', { lines: 300, prs: 3 }], ['2026-10-27', { lines: 0, prs: 0 }], ['2026-10-28', { lines: 600, prs: 6 }], ['2026-10-29', { lines: 7, prs: 0 }], ['2026-10-30', { lines: 1, prs: 1 }], ['2026-11-30', { lines: 5000, prs: 50 }]]);
+  const meas = lib.emptyState('linux'); lib.ingest(meas, body([], [cost('claude-opus-5-5', 12.34, '2026-10-30T10:00:00Z'), cost('claude-sonnet-5-5', 5.67, '2026-10-30T10:00:00Z')]), Date.UTC(2026, 9, 30, 12));
+  const sp = S.computeSpread(base, [meas], stats);
+  const again = S.computeSpread(base, [meas], stats);
+  assert.deepStrictEqual(sp, again, 'spread: deterministic (same input, same output)');
+  assert.deepStrictEqual(sp.days.map((d) => d.date), ['2026-10-25', '2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29'], 'spread: only days without measured data; a day outside the range is not used');
+  assert.ok(Math.abs(sp.days.reduce((a, d) => a + d.weight, 0) - 1) < 1e-8, 'spread: the weights sum to 1');
+  const w = (d) => sp.days.find((x) => x.date === d).weight;
+  assert.ok(w('2026-10-27') === 0 && w('2026-10-26') > w('2026-10-25'), 'spread: a day with no lines and no PRs gets weight 0, more work more weight');
+  assert.ok(Math.abs(w('2026-10-26') - (0.5 * 300 / 1007 + 0.5 * 3 / 10)) < 1e-8, 'spread: weight = 50% share of lines + 50% share of PRs');
+  for (const m of ['claude-opus-5-5', 'claude-sonnet-5-5']) {
+    const got = sp.days.reduce((a, d) => a + d.cents[m], 0);
+    assert.strictEqual(got, Math.round(base.models[m] * 100) - Math.round((m.includes('opus') ? 12.34 : 5.67) * 100), `spread: ${m} is preserved to the cent (lump minus what was measured)`);
+  }
+  const rows = S.dailyRows(sp, [meas], base, '2026-10-30');
+  assert.strictEqual(rows.reduce((a, r) => a + r.estCents + r.measCents, 0), Math.round(lib.cumulative([meas], '2026-10-30', base).total * 100), 'spread: estimated plus measured is exactly the README total');
+  const mrow = rows.find((r) => r.date === '2026-10-30');
+  assert.deepStrictEqual([mrow.estCents, mrow.meas['claude-opus-5-5']], [0, 12.34], 'spread: a measured day keeps its real numbers and gets no estimate');
+  assert.strictEqual(S.dailyRows(sp, [], base, '2026-10-30').length, 5, 'spread: without the measured data the days are the spread days');
+  // another machine's measured days are its own: they add to the total, do not remove a spread day, and are not estimates
+  const pv = lib.emptyState('paco-vps'); lib.ingest(pv, body([], [cost('claude-opus-5-5', 9, '2026-10-26T10:00:00Z')]), Date.UTC(2026, 9, 26, 12));
+  assert.strictEqual(S.computeSpread(base, [meas, pv], stats).days.length, 5, 'machines: a teammate machine does not remove a spread day');
+  assert.strictEqual(lib.cumulative([meas, pv], '2026-10-30', base).total, 1009.03, 'machines: its dollars are added from its first day');
+  const rp = S.dailyRows(sp, [meas, pv], base, '2026-10-30');
+  assert.strictEqual(rp.reduce((a, r) => a + r.estCents + r.measCents, 0), 100903, 'machines: the chart still equals the total');
+  // an unlisted model measured inside the lump is deducted, so the total is kept
+  const odd = lib.emptyState('linux'); lib.ingest(odd, body([], [cost('claude-haiku-9', 1.5, '2026-10-30T10:00:00Z')]), Date.UTC(2026, 9, 30, 12));
+  assert.strictEqual(S.dailyRows(S.computeSpread(base, [odd], stats), [odd], base, '2026-10-30').reduce((a, r) => a + r.estCents + r.measCents, 0), 100003, 'spread: a model the lump does not list keeps the total');
+  // all days measured: nothing to spread
+  const full = lib.emptyState('linux'); for (const d of S.daysBetween('2026-10-25', '2026-10-30')) full.days[d] = { models: {} };
+  assert.throws(() => S.computeSpread(base, [full], stats), /nothing to spread/, 'spread: no day left is an error');
+  const none = S.computeSpread(base, [], new Map());
+  assert.ok(none.days.every((d) => Math.abs(d.weight - 1 / 6) < 1e-8), 'spread: no history at all gives equal weights');
+  // git history parsing
+  const ns = '@2026-10-25\n10\t5\tsrc/a.ts\n-\t-\tdocs/p.png\n3\t4\tpackage-lock.json\n8\t0\tdocs/x.PNG\n2\t2\tdocs/build-cost-spread.json\n1\t1\tdist/x.js\n@2026-10-26\n7\t0\tREADME.md\n';
+  assert.deepStrictEqual([...S.parseNumstat(ns)], [['2026-10-25', 15], ['2026-10-26', 7]], 'git: lines = added + deleted; lockfiles, binaries, pictures, generated and build-cost files are left out');
+  const pr = '2026-10-25\tMerge pull request #5 from a/b\n2026-10-25\tFix a thing (#6)\n2026-10-25\tplain commit\n2026-10-26\tMerge branch main into x\n';
+  assert.deepStrictEqual([...S.parsePrs(pr)], [['2026-10-25', 2]], 'git: merged PRs are merge commits and squash commits with (#N)');
+  // the chart
+  const svg = lib.chartDaysSvg(rows);
+  assert.strictEqual(svg, lib.chartDaysSvg(rows), 'chart: deterministic');
+  assert.ok(svg.includes('class="s0 est"') && svg.includes('class="s0"') && svg.includes('estimated (spread)') && svg.includes('solid = measured') && svg.includes('weighted 50% by lines changed') && svg.includes('prefers-color-scheme:dark'), 'chart: estimated bars are styled apart, with a legend and the weighting line');
+  assert.ok(svg.includes('estimated') && !svg.includes('NaN'), 'chart: the text alternative names estimated days');
+  assert.ok(!lib.chartDaysSvg(rows.filter((r) => r.estCents === 0)).includes('Estimate:'), 'chart: no estimate line when no day is estimated');
+  assert.ok(lib.chartDaysSvg([]).includes('no days recorded yet'), 'chart: empty renders');
+  {
+    const hk = lib.emptyState('linux'); lib.ingest(hk, body([], [cost('claude-haiku-5-5', 0.26, '2026-10-30T10:00:00Z'), cost('claude-opus-5-5', 1, '2026-10-30T10:00:00Z')]), Date.UTC(2026, 9, 30, 12));
+    const zr = S.dailyRows(sp, [hk], base, '2026-10-30'); zr[0].est['claude-zero-1-0'] = 0;
+    const lsvg = lib.chartDaysSvg(zr);
+    const labels = [...lsvg.matchAll(/<rect x="[\d.]+" y="246"[^>]*class="s\d"\/><text[^>]*>([^<]*)<\/text>/g)].map((m) => m[1]);
+    assert.ok(labels.length >= 3 && labels.includes('Haiku 5.5') && labels.includes('Opus 5.5'), 'legend: a small real model stays in the legend with its pretty name');
+    assert.ok(labels.every((l) => !/^claude-/.test(l)), 'legend: no label is a raw claude- id');
+    assert.ok(!lsvg.includes('Zero 1.0') && !lsvg.includes('claude-zero'), 'legend: a model with no amount is not listed');
+    assert.strictEqual(lib.modelName('claude-haiku-4-5'), 'Haiku 4.5', 'names: an unlisted claude id gets a pretty name');
+  }
+  // the command: a spread file makes the README note, the daily chart and an unchanged total; a spread that does not add up is refused
+  const t3 = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-usage-spread-'));
+  const Q = (...n) => path.join(t3, ...n);
+  fs.writeFileSync(Q('README.md'), `${lib.BEGIN}\nold\n${lib.END}\n`); fs.writeFileSync(Q('base.json'), JSON.stringify({ version: 1, since: '2026-10-25', through: '2026-10-30', note: 'older work.', models: { 'claude-opus-5-5': 700.01, 'claude-sonnet-5-5': 300.02 }, machines: { linux: 1000.03 } }));
+  fs.writeFileSync(Q('spread.json'), JSON.stringify(sp)); fs.mkdirSync(Q('data'));
+  fs.writeFileSync(Q('data', 'usage-linux.json'), JSON.stringify(meas));
+  const args3 = ['--release', 'v0.1.12', '--date', '2026-10-30', '--baseline', Q('base.json'), '--readme', Q('README.md'), '--history', Q('h.json'), '--badge', Q('b.svg'), '--chart', Q('c.svg'), '--days', Q('d.svg'), '--data', Q('data'), '--spread', Q('spread.json')];
+  const r3 = R2.build(R2.parseArgs(args3, { DURBAR_USAGE_DIR: Q('nodir') }, NOW));
+  assert.ok(r3.text.includes('About US$1,000**') && r3.text.includes('Estimated, not measured: US$') && r3.text.includes('docs/build-cost-days.svg') && r3.text.includes('an assumption') && r3.days.includes('<svg'), 'command: the README names the estimate, links the daily chart and states the model-mix assumption; the total is the baseline');
+  assert.strictEqual((r3.text.match(/!\[[^\]]*\]\(docs\/build-cost[^)]*\.svg\)/g) || []).length, 1, 'command: the README block has exactly one graph, the daily one (spec 008 2026-11-08 delta)');
+  assert.ok(!r3.text.includes('docs/build-cost.svg') , 'command: the cumulative graph is not in the README block');
+  fs.writeFileSync(Q('bad.json'), JSON.stringify({ ...sp, days: sp.days.map((d, i) => (i ? d : { ...d, cents: { 'claude-opus-5-5': d.cents['claude-opus-5-5'] + 500, 'claude-sonnet-5-5': d.cents['claude-sonnet-5-5'] } })) }));
+  assert.throws(() => R2.build(R2.parseArgs(args3.map((a) => (a === Q('spread.json') ? Q('bad.json') : a)), { DURBAR_USAGE_DIR: Q('nodir') }, NOW)), /usage:spread/, 'command: a spread that does not add up to the total is refused');
+  // publish: the receiver folder's file is copied (validated fields only) next to a teammate's committed file
+  fs.mkdirSync(Q('home')); fs.writeFileSync(Q('home', 'usage-mac.json'), JSON.stringify({ ...pv, machine: 'mac', secretExtra: FAKE[0] }));
+  const o4 = R2.parseArgs([...args3.filter((a, i) => args3[i - 1] !== '--data' && a !== '--data'), '--data', Q('data'), '--publish'], { DURBAR_USAGE_DIR: Q('home') }, NOW);
+  R2.publish(o4);
+  assert.deepStrictEqual(fs.readdirSync(Q('data')).sort(), ['usage-linux.json', 'usage-mac.json'], 'publish: one file per machine, committed files kept');
+  assert.ok(!fs.readFileSync(Q('data', 'usage-mac.json'), 'utf8').includes(FAKE[0]), 'publish: unknown keys are not copied');
+  fs.writeFileSync(Q('data', 'usage-bad.json'), JSON.stringify({ version: 1, machine: 'bad', scope: 'agent-durbar', days: { '2026-10-26': { models: { x: { input: -1 } } } } }));
+  assert.throws(() => R2.build(R2.parseArgs(args3, { DURBAR_USAGE_DIR: Q('nodir') }, NOW)), /number is wrong/, 'data: a malformed committed usage file fails the build');
+  fs.rmSync(t3, { recursive: true, force: true });
+
+  // only Agent Durbar work (owner, 2026-11-08): the repository attribute decides, everything else is dropped unrecorded
+  {
+    const rp = (url) => (url === null ? [] : [attr('vcs.repository.url.full', url)]);
+    const pt = (url, v, extra = []) => ({ attributes: [attr('model', OPUS), attr('query_source', 'main'), ...rp(url), ...extra], asDouble: v, timeUnixNano: nano('2026-11-07T10:00:00Z') });
+    const bodyOf = (pts) => body([], pts);
+    const repos = lib.parseRepos(undefined);
+    const f = lib.emptyState('linux');
+    const rr = lib.ingest(f, bodyOf([pt(DURBAR_REPO, 1), pt('HTTPS://GitHub.com/Three-Feathers/Agent-Durbar.git', 2), pt('https://github.com/someone/other-project', 4), pt(null, 8), pt('https://github.com/three-feathers/agent-durbar-evil', 16)]), NOW, repos);
+    assert.strictEqual(f.days['2026-11-07'].models[OPUS].costUsd, 3, 'repo: only the Agent Durbar repository is counted (case and .git ignored)');
+    assert.strictEqual(rr.otherWork, 3, 'repo: another repository, a look-alike name and no repository attribute are dropped');
+    assert.strictEqual(f.skipped, 0, 'repo: other work is not an error and is not counted as skipped');
+    assert.ok(!/github\.com/.test(JSON.stringify(f)), 'repo: the repository URL is compared, never stored');
+    const g = lib.emptyState('linux'); lib.ingest(g, bodyOf([pt(null, 5)]), NOW);
+    assert.strictEqual(g.days['2026-11-07'].models[OPUS].costUsd, 5, 'repo: no filter given (lib default) counts everything, the receiver always passes one');
+    assert.deepStrictEqual(lib.parseRepos('https://github.com/a/b.git, https://gitlab.example/x/y'), ['https://github.com/a/b', 'https://gitlab.example/x/y'], 'repo: DURBAR_USAGE_REPOS is a comma-separated list');
+    for (const bad of ['a/b', 'http://github.com/a/b', 'https://github.com/a/b c', 'https://', 'a', ',,']) assert.throws(() => lib.parseRepos(bad), /DURBAR_USAGE_REPOS/, `repo: ${bad} refused`);
+    assert.strictEqual(R.parseArgs(['--port', '0'], { DURBAR_USAGE_MACHINE: 'linux', DURBAR_USAGE_REPOS: 'https://github.com/a/b' }).repos[0], 'https://github.com/a/b', 'repo: the receiver reads DURBAR_USAGE_REPOS');
+    // every spelling of the Durbar remote is accepted and canonical; look-alikes and other places drop; a token never shows
+    const CANON = 'https://github.com/three-feathers/agent-durbar';
+    const TOKEN = 'ghp_FAKEtoken0123456789';
+    const SAME = ['https://github.com/three-feathers/agent-durbar', 'https://github.com/three-feathers/agent-durbar.git', 'https://github.com/three-feathers/agent-durbar/', 'https://github.com/three-feathers/agent-durbar.git/', 'HTTPS://GitHub.com/Three-Feathers/Agent-Durbar',
+      'git@github.com:three-feathers/agent-durbar.git', 'git@github.com:three-feathers/agent-durbar', 'github.com:three-feathers/agent-durbar.git', 'ssh://git@github.com/three-feathers/agent-durbar.git', 'ssh://git@github.com:22/three-feathers/agent-durbar', 'git://github.com/three-feathers/agent-durbar.git',
+      `https://user:${TOKEN}@github.com/three-feathers/agent-durbar.git`, `https://${TOKEN}@github.com/three-feathers/agent-durbar`, 'https://evil.com%23@github.com/three-feathers/agent-durbar', '  https://github.com/three-feathers/agent-durbar  '];
+    const OTHER = ['https://github.com/three-feathers/agent-durbar-evil', 'https://github.com/three-feathers-x/agent-durbar', 'https://gitlab.com/three-feathers/agent-durbar', 'https://github.com/three-feathers/agent-durbar/extra', 'git@github.com:three-feathers/agent-durbar/extra.git',
+      'https://github.com/thrеe-feathers/agent-durbar', 'https://github.com/three-feathers/agent-durbаr', 'https://github.com.evil.example/three-feathers/agent-durbar', 'https://evil.example/github.com/three-feathers/agent-durbar', 'https://github.com/three-feathers', 'http://github.com/three-feathers/agent-durbar', 'file:///three-feathers/agent-durbar', 'https://evil.com#@github.com/three-feathers/agent-durbar', 'https://evil.com?@github.com/three-feathers/agent-durbar', 'https://evil.com\\@github.com/three-feathers/agent-durbar', 'https://github.com@evil.com/three-feathers/agent-durbar', 'https://github.com/three-feathers/agent-durbar#frag', 'https://github.com/three-feathers/agent-durbar?x=1', 'https://github.com/three-feathers/agent-durbar\u0000', 'https://git hub.com/three-feathers/agent-durbar', 'ssh://evil.com#@github.com/three-feathers/agent-durbar', 'evil.com#@github.com:three-feathers/agent-durbar', '', 'agent-durbar', 'https://github.com/three-feathers/agent-durbar%2fx'];
+    const checkNormalizer = (L) => {
+      const bad = [];
+      for (const u of SAME) if (L.normalizeRepo(u) !== CANON) bad.push(`accepted form not canonical: ${u.replace(TOKEN, '***')}`);
+      for (const u of OTHER) if (L.normalizeRepo(u) === CANON) bad.push(`look-alike accepted: ${u}`);
+      for (const u of SAME) { const f = L.emptyState('linux'); L.ingest(f, bodyOf([pt(u, 1)]), NOW, [CANON]); if (!f.days['2026-11-07']) bad.push(`ingest dropped an accepted form: ${u.replace(TOKEN, '***')}`); }
+      for (const u of OTHER) { const f = L.emptyState('linux'); L.ingest(f, bodyOf([pt(u, 1)]), NOW, [CANON]); if (f.days['2026-11-07']) bad.push(`ingest counted a look-alike: ${u}`); }
+      return bad;
+    };
+    assert.deepStrictEqual(checkNormalizer(lib), [], 'repo: every remote spelling maps to the canonical URL and every look-alike drops');
+    {
+      // mutant: no normalisation (lower-case only) must be caught by the same checks
+      const src = fs.readFileSync(path.join(__dirname, 'usage-lib.js'), 'utf8').replace(/\r\n/g, '\n'); // a Windows checkout has CRLF; '.' does not match '\r'
+      assert.ok(src.includes('/*NORM*/'), 'mutant: the marker is in the source');
+      const mf = path.join(os.tmpdir(), `durbar-usage-lib-mutant-${process.pid}.js`);
+      fs.writeFileSync(mf, src.replace('/*NORM*/', "return typeof text === 'string' ? text.trim().toLowerCase() : null;"));
+      const mutantBad = checkNormalizer(require(mf));
+      fs.unlinkSync(mf);
+      assert.ok(mutantBad.length >= 5 && mutantBad.some((b) => b.startsWith('accepted form not canonical')), 'mutant: a lib without normalisation fails the remote-spelling checks');
+      // mutant 2: '#', '?' and '\\' allowed inside the userinfo, and no early rejection, must be caught by the look-alike checks
+      assert.ok(/const USERINFO = .*\n/.test(src) && /\/\*REJECT\*\/.*\n/.test(src), 'mutant: the userinfo and reject markers are in the source');
+      const mf2 = path.join(os.tmpdir(), `durbar-usage-lib-mutant2-${process.pid}.js`);
+      fs.writeFileSync(mf2, src.replace(/const USERINFO = .*\n/, "const USERINFO = '(?:[^\\\\/@\\\\s]*@)?';\n").replace(/\/\*REJECT\*\/.*\n/, '\n').replace(/\n  if \(isUrl\) \{.*\n/, '\n'));
+      const mutant2 = checkNormalizer(require(mf2));
+      fs.unlinkSync(mf2);
+      assert.ok(mutant2.some((b) => b.startsWith('look-alike accepted: https://evil.com#@github.com')), 'mutant: a userinfo that may hold "#" is caught (evil.com#@github.com must drop)');
+    }
+    for (const u of SAME.slice(0, 5).concat(`https://u:${TOKEN}@github.com/other/x`)) assert.ok(lib.parseRepos(u).length === 1, 'repo: DURBAR_USAGE_REPOS entries are normalised too');
+    assert.deepStrictEqual(lib.parseRepos(`git@github.com:a/b.git,https://u:${TOKEN}@github.com/c/d/`), ['https://github.com/a/b', 'https://github.com/c/d'], 'repo: DURBAR_USAGE_REPOS accepts every spelling');
+    for (const bad of [`https://u:${TOKEN}@github.com/a`, `https://u:${TOKEN}@github.com/a/b/c`]) { let msg = ''; try { lib.parseRepos(bad); } catch (e) { msg = e.message; } assert.ok(msg && !msg.includes(TOKEN), 'repo: a refused entry is not echoed (it may hold a token)'); }
+    {
+      const tk = lib.emptyState('linux');
+      lib.ingest(tk, bodyOf([pt(`https://user:${TOKEN}@github.com/three-feathers/agent-durbar.git`, 3), pt(`https://user:${TOKEN}@github.com/someone/else`, 5)]), NOW, [CANON]);
+      assert.ok(!JSON.stringify(tk).includes(TOKEN) && !JSON.stringify(tk).includes('user:'), 'repo: a URL with a token is never stored');
+      const t6 = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-usage-tok-'));
+      const svc6 = R.createService({ dir: t6, machine: 'linux', now: () => NOW });
+      const logged = []; const origErr = console.error; const origLog = console.log; console.error = (...a) => logged.push(a.join(' ')); console.log = (...a) => logged.push(a.join(' '));
+      let resp; try { resp = svc6.handle(Buffer.from(JSON.stringify(bodyOf([pt(`https://user:${TOKEN}@github.com/three-feathers/agent-durbar.git`, 3), pt(`https://user:${TOKEN}@github.com/someone/else`, 5)]))), 'identity'); } finally { console.error = origErr; console.log = origLog; }
+      svc6.release();
+      const all = JSON.stringify(resp) + logged.join('\n') + fs.readdirSync(t6).map((n) => (n.endsWith('.json') ? fs.readFileSync(path.join(t6, n), 'utf8') : '')).join('');
+      assert.ok(!all.includes(TOKEN) && !all.includes('user:'), 'repo: the token appears in no response, log line or file');
+      assert.strictEqual(svc6.state.days['2026-11-07'].models[OPUS].costUsd, 3, 'repo: the token URL of the right repository is counted, the other is dropped');
+      fs.rmSync(t6, { recursive: true, force: true });
+    }
+    const t5 = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-usage-repo-'));
+    const svc5 = R.createService({ dir: t5, machine: 'linux', now: () => NOW });
+    assert.strictEqual(svc5.handle(Buffer.from(JSON.stringify(bodyOf([pt('https://github.com/someone/other-project', 9)]))), 'identity').status, 200, 'repo: a body of other work is answered 200');
+    assert.deepStrictEqual(Object.keys(svc5.state.days), [], 'repo: the receiver records nothing for it');
+    assert.ok(!fs.existsSync(svc5.file), 'repo: and writes no file for it');
+    svc5.handle(Buffer.from(JSON.stringify(bodyOf([pt(DURBAR_REPO, 7)]))), 'identity');
+    assert.strictEqual(JSON.parse(fs.readFileSync(svc5.file, 'utf8')).scope, 'agent-durbar', 'scope: the receiver writes the scope');
+    svc5.release();
+    fs.rmSync(t5, { recursive: true, force: true });
+    // scope: required in a committed file, and only the one value
+    const sc = path.join(os.tmpdir(), `durbar-scope-${process.pid}.json`);
+    const withScope = (v) => JSON.stringify({ version: 1, machine: 'x', ...(v === undefined ? {} : { scope: v }), days: {} });
+    fs.writeFileSync(sc, withScope(undefined));
+    assert.throws(() => D.readState(sc, { requireScope: true }), /scope must be "agent-durbar"/, 'scope: a committed file without it is refused');
+    assert.ok(D.readState(sc), 'scope: the receiver\'s own older file (no scope yet) is still read');
+    fs.writeFileSync(sc, withScope('everything'));
+    assert.throws(() => D.readState(sc), /scope must be/, 'scope: another value is refused');
+    assert.throws(() => D.readState(sc, { requireScope: true }), /scope must be/, 'scope: another value is refused in a committed file');
+    fs.writeFileSync(sc, withScope('agent-durbar'));
+    assert.strictEqual(D.readState(sc, { requireScope: true }).scope, 'agent-durbar', 'scope: the declared value passes');
+    fs.unlinkSync(sc);
+    assert.strictEqual(lib.emptyState('m').scope, 'agent-durbar', 'scope: a new state declares it');
+  }
+
+  // the committed files of THIS repo: every usage file is valid (another side's PR cannot break the release) and the spread adds up
+  const repo = path.join(__dirname, '..');
+  const dataDir = path.join(repo, 'docs', 'build-cost', 'data');
+  const committed = fs.existsSync(dataDir) ? fs.readdirSync(dataDir) : [];
+  for (const n of committed) {
+    assert.ok(/^usage-[A-Za-z0-9_-]+\.json$/.test(n), `repo data: ${n} must be named usage-<machine>.json`);
+    const st = D.readState(path.join(dataDir, n), { requireScope: true }); // validateState: refuses a bad number, model or machine label
+    assert.strictEqual(`usage-${st.machine}.json`, n, `repo data: ${n} holds its own machine label`);
+  }
+  const realBase = R2.readBaseline(path.join(repo, 'docs', 'build-cost-baseline.json'));
+  const realSpread = R2.readSpread(path.join(repo, 'docs', 'build-cost-spread.json'));
+  const realStates = S.readCommitted(dataDir, D.readState);
+  const spreadSum = realSpread.days.reduce((a, d) => a + Object.values(d.cents).reduce((x, y) => x + y, 0), 0);
+  const measSum = [...S.measuredOfBaseline(realStates, realBase).values()].reduce((a, slot) => a + Object.values(slot).reduce((x, y) => x + y, 0), 0);
+  assert.strictEqual(spreadSum + measSum, Math.round(Object.values(realBase.models).reduce((a, b) => a + b, 0) * 100), 'repo data: the committed spread plus the measured days is the baseline to the cent (run "npm run usage:spread -- --write")');
+  assert.ok(Math.abs(realSpread.days.reduce((a, d) => a + d.weight, 0) - 1) < 1e-8, 'repo data: the committed weights sum to 1');
+  const committedSpread = JSON.parse(fs.readFileSync(path.join(repo, 'docs', 'build-cost-spread.json'), 'utf8'));
+  let haveCommit = false; try { execFileSync('git', ['cat-file', '-e', `${committedSpread.commit}^{commit}`], { cwd: repo, stdio: 'ignore' }); haveCommit = /^[0-9a-f]{40}$/.test(committedSpread.commit); } catch { /* shallow clone: the pinned commit is not here, skipped */ }
+  if (haveCommit) {
+    const again2 = S.computeSpread(realBase, realStates, S.gitStats(committedSpread.commit, realBase.through), committedSpread.ref, committedSpread.commit);
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(again2)), committedSpread, 'repo data: the committed spread is exactly what the pinned git history gives');
+  }
 }
 
 (async () => {
@@ -225,7 +427,7 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
   for (const f of FAKE) assert.ok(!written.includes(f), `privacy: ${f.slice(0, 9)}... never reaches the file`);
   for (const k of ['email', 'user.id', 'account', 'organization', 'session', 'agent.name', 'timeUnixNano', 'attributes']) assert.ok(!written.includes(k), `privacy: no "${k}" key in the file`);
   const onDisk = JSON.parse(written);
-  assert.deepStrictEqual(Object.keys(onDisk).sort(), ['days', 'machine', 'skipped', 'version'], 'file: only version, machine, skipped and days');
+  assert.deepStrictEqual(Object.keys(onDisk).sort(), ['days', 'machine', 'scope', 'skipped', 'version'], 'file: only version, machine, scope, skipped and days');
   assert.strictEqual(onDisk.days['2026-11-07'].models[OPUS].input, 100, 'file: the sums are in the file');
   assert.deepStrictEqual(fs.readdirSync(dir).filter((n) => !n.endsWith('.lock')),['usage-linux.json'], 'atomic: no temporary file is left');
   if (process.platform !== 'win32') assert.strictEqual(fs.statSync(file).mode & 0o077, 0, 'file: owner-only');
