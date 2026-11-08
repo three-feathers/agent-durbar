@@ -6,13 +6,27 @@ A reference for contributors (spec 008 FR-181; owner request 2026-11-07): how ma
 
 **Numbers start on the day you switch it on.** Nothing earlier is known, and a machine that never runs the receiver is missing from the table. The report says the first day with data.
 
+The graphs, the split and the total are in **The numbers so far** below (generated: section 4).
+
+**Estimated days.** Telemetry only began on 2026-11-07, so the earlier spend (the baseline's lump, 2026-10-25 to 2026-11-06) was one number. It is **spread, not measured**: each day's weight is 50% its share of the lines changed (added plus deleted, `git log --numstat` on `main`, without lockfiles, pictures and other binaries, generated and build-cost files) and 50% its share of the merged PRs (merge commits and `(#N)` squash commits). The per-model split of an estimated day uses the same mix as the lump (an assumption). Estimated days are the faded, dashed bars and say so in the chart's legend; measured days keep their real numbers and the total is unchanged to the cent. See section 4.
+
+(The pictures, the numbers section and the README's short *Build cost so far* paragraph are generated: section 4.)
+
+<!-- build-cost-detail:begin (written by `npm run usage:readme`) -->
+## The numbers so far
+
+**About US$4,042** (API list-price estimate, not billing), tracked since 2026-10-25, as of 2026-11-08 (release `v0.1.13`).
+
 ![Cumulative build cost by model over releases (API list-price estimate, not billing)](build-cost.svg)
 
 ![Daily build cost by model: measured days solid, estimated (spread) days faded and dashed](build-cost-days.svg)
 
-**Estimated days.** Telemetry only began on 2026-11-07, so the earlier spend (the baseline's lump, 2026-10-25 to 2026-11-06) was one number. It is **spread, not measured**: each day's weight is 50% its share of the lines changed (added plus deleted, `git log --numstat` on `main`, without lockfiles, pictures and other binaries, generated and build-cost files) and 50% its share of the merged PRs (merge commits and `(#N)` squash commits). The per-model split of an estimated day uses the same mix as the lump (an assumption). Estimated days are the faded, dashed bars and say so in the chart's legend; measured days keep their real numbers and the total is unchanged to the cent. See section 4.
+Estimated, not measured: US$3,666 of the total, spent before telemetry could count it per day, is spread over 13 days (2026-10-25 to 2026-11-06) by 50% lines changed and 50% merged PRs of each day (git history); the faded, dashed bars are those estimates, the solid bars are measured. Per-model split of an estimated day: the same mix as the original lump (an assumption).
 
-(The pictures and the README's *Build cost so far* block are generated: section 4.)
+- By model: Opus 5.5 75% (US$3,028), Sonnet 5.5 25% (US$1,013), Haiku 5.5 0% (US$1).
+- By machine or team: linux 100% (US$4,042).
+- Not counted yet: work before 2026-10-25, and other machines and teams (a Mac, Copilot, Codex, the other two owners' setups).
+<!-- build-cost-detail:end -->
 
 ## 1. Point Claude Code at the receiver
 
@@ -95,7 +109,7 @@ Paste the printed table into the release notes next to the clip (`changelog.d/RE
 ## 4. README block, badge and chart at every release
 
 `npm run usage:readme -- --release vX.Y.Z [--date YYYY-MM-DD] [--files a.json,b.json]` (pure text, no network) adds up `docs/build-cost-baseline.json` (what was spent before the receivers ran: `since`, `through`, per-model and per-machine dollars, and a note on what is not counted) and every usage-file day after the baseline's `through` day, then:
-- rewrites the README block between `<!-- build-cost:begin ... -->` and `<!-- build-cost:end -->` (it fails, changing nothing, when either marker is missing, doubled or out of order);
+- rewrites the README block (one short paragraph with the total; owner decision 2026-11-08) and the badge's alt text, and the *The numbers so far* section of this file between its two `build-cost-detail` comment lines (graphs, spread note, by model and machine, not counted), and rewrites the README block between `<!-- build-cost:begin ... -->` and `<!-- build-cost:end -->` (it fails, changing nothing, when either marker is missing, doubled or out of order);
 - adds the release's row (date, version, cumulative dollars per model and per machine) to `docs/build-cost-history.json` (the same version replaces its row);
 - regenerates `docs/build-cost-badge.svg`, `docs/build-cost.svg` (local plain SVG, no external service, a few KB; the chart stacks the models over release dates) and `docs/build-cost-days.svg` (US$ per day by model: measured solid, estimated faded and dashed).
 - **Every machine publishes its own file at each release.** Every team machine runs the same receiver and, at each daily release, runs `npm run usage:readme -- --release vX.Y.Z --publish` (copies its `usage-<machine>.json` into `docs/build-cost/data/` through the same validation and merges days into what is committed) or commits its file there by hand. The release step reads **all** `docs/build-cost/data/usage-*.json` plus the local folder, so the README block, chart and badge come from every machine's committed file. A file whose machine label is not in the baseline's `machines` counts in full from its first day (it adds to the total); `test:usage` fails on a malformed committed file, so another side's PR cannot break the release.

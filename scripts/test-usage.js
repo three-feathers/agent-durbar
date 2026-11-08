@@ -140,12 +140,17 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
   assert.strictEqual(cum1.models.get('claude-opus-5-5'), 2956, 'merge: their dollars are added in that row');
   assert.strictEqual(lib.modelName('claude-sonnet-5-5'), 'Sonnet 5.5', 'names: ids map to display names in one place');
   assert.strictEqual(lib.modelName('__proto__'), '__proto__', 'names: an unlisted id (or a prototype name) shows as itself');
-  const block = lib.readmeBlock(cum1, '2026-11-10', 'v0.1.13', base.note);
+  const block = lib.readmeBlock(cum1, '2026-11-10', 'v0.1.13');
+  const detail = lib.detailBlock(cum1, '2026-11-10', 'v0.1.13', base.note, 'SPREADNOTE');
   assert.ok(block.includes('**API list-price estimate, not billing**'), 'label: the estimate text is in the block');
   assert.ok(/About US\$3,858\*\*/.test(block) && block.includes('as of 2026-11-10') && block.includes('`v0.1.13`'), 'block: total, date and release');
-  assert.ok(block.includes('Opus 5.5 77% (US$2,956)') && !block.includes('claude-opus-5-5') && block.includes('mac 3% (US$100)') && block.includes('linux 97%'), 'block: split by model and by machine');
-  assert.ok(!block.includes('docs/build-cost.svg') && !lib.readmeBlock(cum1, '2026-11-10', 'v0.1.13', base.note, 'x').includes('docs/build-cost.svg'), 'block: the cumulative graph is not in the README block');
-  assert.ok(block.includes('docs/build-cost.md') && block.includes('Not counted yet: older work'), 'block: method link and what is not counted');
+  assert.ok(!block.includes('Opus 5.5') && !block.includes('By model') && !block.includes('By machine') && !block.includes('Not counted') && !block.includes('Estimated, not measured'), 'block: no split, not-counted line or spread paragraph in the README block (spec 008 2026-11-08 delta)');
+  assert.ok(!/!\[/.test(block) && /!\[[^\]]*\]\(docs\/build-cost-days\.svg\)/.test(lib.readmeBlock(cum1, '2026-11-10', 'v0.1.13', true)) && !block.includes('docs/build-cost.svg'), 'block: the daily graph only when there is a spread, never the cumulative one');
+  assert.ok(block.includes('(docs/build-cost.md)'), 'block: link to docs/build-cost.md');
+  assert.ok(detail.includes('Opus 5.5 77% (US$2,956)') && !detail.includes('claude-opus-5-5') && detail.includes('mac 3% (US$100)') && detail.includes('linux 97%') && detail.includes('SPREADNOTE') && detail.includes('Not counted yet: older work') && detail.includes('(build-cost-days.svg)') && detail.includes('(build-cost.svg)'), 'detail: docs/build-cost.md gets both graphs, the spread note, the split and the not-counted line');
+  const badgeReadme = '<p><a href="#x"><img src="docs/build-cost-badge.svg" alt="old"></a></p>';
+  assert.ok(lib.rewriteBadgeAlt(badgeReadme, 3858).includes('alt="Build cost, about US$3,858 at API list prices (estimate, not billing)"'), 'badge: alt text is rewritten from the total');
+  assert.throws(() => lib.rewriteBadgeAlt('no badge', 1), /badge image/, 'badge: a README without the badge fails clearly');
   assert.throws(() => lib.readmeBlock(cum1, '2026-11-10', 'v1', 'x'), /--release/, 'block: a release must look like a tag');
   const readme = `# T\n\nintro\n\n${lib.BEGIN}\nold stuff\n${lib.END}\n\nrest\n`;
   const once = lib.rewriteReadme(readme, block);
@@ -202,13 +207,13 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
   // the command, end to end on temporary files
   const t2 = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-usage-readme-'));
   const P = (n) => path.join(t2, n);
-  fs.writeFileSync(P('README.md'), readme); fs.writeFileSync(P('base.json'), JSON.stringify({ version: 1, since: '2026-10-25', through: '2026-11-07', note: 'older work.', models: { 'claude-opus-5-5': 10 }, machines: { linux: 10 } }));
-  const args = ['--release', 'v0.1.12', '--date', '2026-11-07', '--baseline', P('base.json'), '--readme', P('README.md'), '--history', P('h.json'), '--badge', P('b.svg'), '--chart', P('c.svg'), '--days', P('d.svg'), '--data', P('nodata'), '--spread', P('nospread.json'), '--files', P('none.json')];
+  fs.writeFileSync(P('README.md'), '<img src="docs/build-cost-badge.svg" alt="old">\n' + readme); fs.writeFileSync(P('doc.md'), `${lib.DETAIL_BEGIN}\nold\n${lib.DETAIL_END}\n`); fs.writeFileSync(P('base.json'), JSON.stringify({ version: 1, since: '2026-10-25', through: '2026-11-07', note: 'older work.', models: { 'claude-opus-5-5': 10 }, machines: { linux: 10 } }));
+  const args = ['--release', 'v0.1.12', '--date', '2026-11-07', '--baseline', P('base.json'), '--readme', P('README.md'), '--doc', P('doc.md'), '--history', P('h.json'), '--badge', P('b.svg'), '--chart', P('c.svg'), '--days', P('d.svg'), '--data', P('nodata'), '--spread', P('nospread.json'), '--files', P('none.json')];
   const mk2 = () => R2.build(R2.parseArgs(args.filter((a, i) => args[i - 1] !== '--files' && a !== '--files'), { DURBAR_USAGE_DIR: P('nodir') }, NOW));
   const r1 = mk2();
   assert.ok(r1.text.includes('About US$10**') && r1.history.rows.length === 1 && r1.badge.includes('US$10 ') && r1.chart.includes('<svg'), 'command: block, history, badge and chart from the baseline alone');
   assert.throws(() => R2.parseArgs(['--date', '2026-11-07'], {}, NOW), /--release/, 'command: --release required');
-  fs.writeFileSync(P('README.md'), '# no markers\n');
+  fs.writeFileSync(P('README.md'), '<img src="docs/build-cost-badge.svg" alt="x">\n# no markers\n');
   assert.throws(() => mk2(), /exactly one/, 'command: a README without markers fails');
   fs.rmSync(t2, { recursive: true, force: true });
 }
@@ -277,14 +282,17 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
   // the command: a spread file makes the README note, the daily chart and an unchanged total; a spread that does not add up is refused
   const t3 = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-usage-spread-'));
   const Q = (...n) => path.join(t3, ...n);
-  fs.writeFileSync(Q('README.md'), `${lib.BEGIN}\nold\n${lib.END}\n`); fs.writeFileSync(Q('base.json'), JSON.stringify({ version: 1, since: '2026-10-25', through: '2026-10-30', note: 'older work.', models: { 'claude-opus-5-5': 700.01, 'claude-sonnet-5-5': 300.02 }, machines: { linux: 1000.03 } }));
+  fs.writeFileSync(Q('README.md'), `<img src="docs/build-cost-badge.svg" alt="old">\n${lib.BEGIN}\nold\n${lib.END}\n`); fs.writeFileSync(Q('doc.md'), `${lib.DETAIL_BEGIN}\nold\n${lib.DETAIL_END}\n`); fs.writeFileSync(Q('base.json'), JSON.stringify({ version: 1, since: '2026-10-25', through: '2026-10-30', note: 'older work.', models: { 'claude-opus-5-5': 700.01, 'claude-sonnet-5-5': 300.02 }, machines: { linux: 1000.03 } }));
   fs.writeFileSync(Q('spread.json'), JSON.stringify(sp)); fs.mkdirSync(Q('data'));
   fs.writeFileSync(Q('data', 'usage-linux.json'), JSON.stringify(meas));
-  const args3 = ['--release', 'v0.1.12', '--date', '2026-10-30', '--baseline', Q('base.json'), '--readme', Q('README.md'), '--history', Q('h.json'), '--badge', Q('b.svg'), '--chart', Q('c.svg'), '--days', Q('d.svg'), '--data', Q('data'), '--spread', Q('spread.json')];
+  const args3 = ['--release', 'v0.1.12', '--date', '2026-10-30', '--baseline', Q('base.json'), '--readme', Q('README.md'), '--doc', Q('doc.md'), '--history', Q('h.json'), '--badge', Q('b.svg'), '--chart', Q('c.svg'), '--days', Q('d.svg'), '--data', Q('data'), '--spread', Q('spread.json')];
   const r3 = R2.build(R2.parseArgs(args3, { DURBAR_USAGE_DIR: Q('nodir') }, NOW));
-  assert.ok(r3.text.includes('About US$1,000**') && r3.text.includes('Estimated, not measured: US$') && r3.text.includes('docs/build-cost-days.svg') && r3.text.includes('an assumption') && r3.days.includes('<svg'), 'command: the README names the estimate, links the daily chart and states the model-mix assumption; the total is the baseline');
-  assert.strictEqual((r3.text.match(/!\[[^\]]*\]\(docs\/build-cost[^)]*\.svg\)/g) || []).length, 1, 'command: the README block has exactly one graph, the daily one (spec 008 2026-11-08 delta)');
-  assert.ok(!r3.text.includes('docs/build-cost.svg') , 'command: the cumulative graph is not in the README block');
+  assert.ok(r3.text.includes('About US$1,000**') && r3.text.includes('(docs/build-cost.md)') && r3.days.includes('<svg'), 'command: the README block names the total and links docs/build-cost.md');
+  const blk3 = r3.text.slice(r3.text.indexOf('<!-- build-cost:begin'), r3.text.indexOf('<!-- build-cost:end -->'));
+  assert.deepStrictEqual(blk3.match(/!\[[^\]]*\]\([^)]*\)/g).map((m) => m.replace(/^.*\(|\)$/g, '')), ['docs/build-cost-days.svg'], 'command: the README block has exactly one image, the daily graph (spec 008 2026-11-08 deltas)');
+  assert.ok(!/Estimated, not measured|By model|By machine|Not counted|an assumption/.test(blk3), 'command: the README block has no spread paragraph, split or not-counted line');
+  assert.ok(r3.docText.includes('(build-cost-days.svg)') && r3.docText.includes('Estimated, not measured: US$') && r3.docText.includes('an assumption') && r3.docText.includes('By model:') && r3.docText.includes('Not counted yet:'), 'command: docs/build-cost.md holds the daily graph, the spread paragraph, the split and the not-counted line');
+  assert.ok(r3.text.includes('alt="Build cost, about US$1,000 at API list prices (estimate, not billing)"'), 'command: the badge alt text and the block say the same total (#1351)');
   fs.writeFileSync(Q('bad.json'), JSON.stringify({ ...sp, days: sp.days.map((d, i) => (i ? d : { ...d, cents: { 'claude-opus-5-5': d.cents['claude-opus-5-5'] + 500, 'claude-sonnet-5-5': d.cents['claude-sonnet-5-5'] } })) }));
   assert.throws(() => R2.build(R2.parseArgs(args3.map((a) => (a === Q('spread.json') ? Q('bad.json') : a)), { DURBAR_USAGE_DIR: Q('nodir') }, NOW)), /usage:spread/, 'command: a spread that does not add up to the total is refused');
   // publish: the receiver folder's file is copied (validated fields only) next to a teammate's committed file

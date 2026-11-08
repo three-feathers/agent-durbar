@@ -82,15 +82,9 @@ How we work (spec-driven, with [GitHub Spec Kit](https://github.com/github/spec-
 <!-- build-cost:begin (written by `npm run usage:readme`; method in docs/build-cost.md) -->
 ## Build cost so far
 
-**About US$4,042** at API list prices to build this app with AI agents, as of 2026-11-08 (release [`v0.1.13`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.13)), tracked since 2026-10-25. This is an **API list-price estimate, not billing**: Claude Code's own list-price figure, not what anyone was charged. Method and privacy: [docs/build-cost.md](docs/build-cost.md).
-
-Estimated, not measured: US$3,666 of the total, spent before telemetry could count it per day, is spread over 13 days (2026-10-25 to 2026-11-06) by 50% lines changed and 50% merged PRs of each day (git history); the faded, dashed bars are those estimates, the solid bars are measured. Per-model split of an estimated day: the same mix as the original lump (an assumption).
+**About US$4,042** at API list prices to build this app with AI agents, as of 2026-11-08 (release [`v0.1.13`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.13)). This is an **API list-price estimate, not billing**: Claude Code's own list-price figure, not what anyone was charged. The spread of the earlier days, the split by model and machine, what is not counted and the method: [docs/build-cost.md](docs/build-cost.md).
 
 ![Daily build cost by model: measured days solid, estimated (spread) days faded and dashed](docs/build-cost-days.svg)
-
-- By model: Opus 5.5 75% (US$3,028), Sonnet 5.5 25% (US$1,013), Haiku 5.5 0% (US$1).
-- By machine or team: linux 100% (US$4,042).
-- Not counted yet: work before 2026-10-25, and other machines and teams (a Mac, Copilot, Codex, the other two owners' setups).
 <!-- build-cost:end -->
 
 ## License and credits
