@@ -456,6 +456,7 @@ function maskGluedRest(s: string, mask: string): string {
         end++;
       }
     }
+    while (end > start && (s[end - 1] === '.' || s[end - 1] === ':')) end--; // a full stop or a colon that ends the run is the sentence's (spec 106 FR-021: "[redacted]." keeps its full stop)
     if (alnum >= (s[start] === '_' ? GLUE_MIN_UNDERSCORE : GLUE_MIN)) { out += s.slice(from, start); from = end; }
     at = s.indexOf(mask, Math.max(end, start));
   }

@@ -467,6 +467,8 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
     assert.strictEqual(redact(gh + '.' + an(7), {}), '[redacted].' + an(7), '#1237: 7 characters after a token stay');
     assert.strictEqual(redact(gh + '/x', {}), '[redacted]/x', '#1237: a path after a token stays');
     assert.strictEqual(redact(gh + ' hf_' + an(30), {}), '[redacted] [redacted]', '#1237: a space keeps two masks');
+    assert.strictEqual(redact('Key is [redacted]' + an(10) + '.', {}), 'Key is [redacted].', '#1237: the full stop of a sentence after a glued rest stays');
+    assert.strictEqual(redact('Key is [redacted]' + an(10) + ': next', {}), 'Key is [redacted]: next', '#1237: a colon after a glued rest stays');
     assert.strictEqual(redact('go' + 'og1 ' + 'GO' + 'OG1' + up(10), {}), 'go' + 'og1 ' + 'GO' + 'OG1' + up(10), '#1237: a short GOOG1 run is no key');
   }
   // F1: a plain list of prefixes is no token (the `_` after a lead counts only after a full body of letters and digits)
