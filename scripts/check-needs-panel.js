@@ -215,8 +215,10 @@ module.exports = async (ctx) => {
         assert.strictEqual(f.row, Y, `${at}: on the next row's heading ${JSON.stringify(f)}`);
         await key('a', [], { char: 'always' }); await ctx.sleep(500);
         assert.deepStrictEqual(await js('window.__perm.slice()'), [], `${at}: A right after a repaint answers nothing (nobody read that request)`);
-        await key('j', [], { char: 'always' }); await key('k', [], { char: 'always' });
-        assert.strictEqual((await aeInfo()).row, Y, `${at}: the person moved (J, K) and is back on the row`);
+        await key('j', [], { char: 'always' });
+        assert.ok(await until(`document.activeElement.classList.contains('ib-h')&&document.activeElement.closest('.inbox-row').dataset.id!==${jsLiteral(Y)}`, 3000), `${at}: J moved to the next row ${JSON.stringify(await aeInfo())}`);
+        await key('k', [], { char: 'always' });
+        assert.ok(await until(`document.activeElement.classList.contains('ib-h')&&document.activeElement.closest('.inbox-row').dataset.id===${jsLiteral(Y)}`, 3000), `${at}: the person moved (J, K) and is back on the row ${JSON.stringify(await aeInfo())}`);
         await key('a', [], { char: 'always' });
         assert.ok(await until(`window.__perm.length===1`, 3000), `${at}: after the person moves, A answers the row they are on`);
         assert.deepStrictEqual(await js('window.__perm.slice()'), ['fa2-' + w + ':true'], `${at}: and it is that row's own request`);
@@ -258,6 +260,48 @@ module.exports = async (ctx) => {
         assert.ok(f.head && f.tag !== 'BUTTON', `${at}: a request replaced in the same row puts focus on the heading, not on its Allow (FR-033) ${JSON.stringify(f)}`);
         await key('a', [], { char: 'always' }); await ctx.sleep(500);
         assert.deepStrictEqual(await js('window.__perm.slice()'), [], `${at}: A answers nothing for a request that rose under the person's focus`);
+        await clean();
+      }
+
+      // ---- FR-033: a deliberate move of the person ends the wait: I back to the panel, a click, coming back from the office (review of #1273, round 3) ----
+      {
+        const X = await live(0), Y = await live(1);
+        let n = 0;
+        const arm = async () => { // X and Y wait; focus on X's Allow; X goes idle: a repaint puts focus on Y's heading and the answer keys wait
+          n++;
+          await perm(X, `dm${n}x-` + w, 'Run the first'); await ctx.sleep(120); await perm(Y, `dm${n}y-` + w, 'Run the second');
+          assert.ok(await until(`Number((document.querySelector('#inboxBtn b')||{}).textContent)===2`, 6000), `${at}: two wait (${n})`);
+          await ensureOpen();
+          assert.ok(await until(`document.querySelectorAll('#needsPanel .inbox-row').length===2`, 4000), `${at}: two rows (${n})`);
+          await js(`window.__perm=[];document.querySelector('#needsPanel .inbox-row[data-id=${jsLiteral(X)}] [data-k="approve"]').focus()`);
+          await idle(X);
+          assert.ok(await until(`document.querySelectorAll('#needsPanel .inbox-row').length===1&&document.activeElement.classList.contains('ib-h')`, 6000), `${at}: the repaint put focus on a heading (${n}) ${JSON.stringify(await aeInfo())}`);
+          await key('a', [], { char: 'always' }); await ctx.sleep(300);
+          assert.deepStrictEqual(await js('window.__perm.slice()'), [], `${at}: the answer keys wait after the repaint (${n})`);
+        };
+        const answered = async (what) => {
+          await key('a', [], { char: 'always' });
+          assert.ok(await until(`window.__perm.length===1`, 3000), `${at}: ${what} ${JSON.stringify(await js('window.__perm.slice()'))}`);
+          assert.deepStrictEqual(await js('window.__perm.slice()'), [`dm${n}y-` + w + ':true'], `${at}: and it is that row's own request (${n})`);
+          await ctx.sleep(1000);
+        };
+        // I from the office: focus left the panel to nowhere, I brings it back to the same heading
+        await arm();
+        await js(`document.activeElement.blur()`);
+        await key('i', [], { char: 'always' });
+        assert.ok(await until(`document.activeElement.classList.contains('ib-h')`, 3000), `${at}: I puts focus on a heading ${JSON.stringify(await aeInfo())}`);
+        await answered('after I, A answers the row the person asked for');
+        await clean();
+        // coming back from a desk: focus moved to the office and back to the same heading
+        await arm();
+        await js(`window.__hd=document.activeElement;document.querySelector('#stage .desk[data-id]').focus()`);
+        await js(`window.__hd.focus()`);
+        await answered('after leaving to a desk and coming back, A answers');
+        await clean();
+        // a click on the heading that already has focus
+        await arm();
+        await js(`document.activeElement.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}))`);
+        await answered('after a click on the heading, A answers');
         await clean();
       }
 

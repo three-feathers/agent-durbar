@@ -4306,7 +4306,7 @@ function doorAfterPaint(list){
 function openDoor(focusId,auto,startup,count){
   let p=$('needsPanel');
   if(p){ /* already open: only move focus (FR-195), no second slide */
-    if(!auto){const list=needsMeOrder(),i=typeof focusId==='string'?list.findIndex(a=>a.id===focusId):-1,hs=p.querySelectorAll('.ib-h'),h=hs[Math.max(0,Math.min(i,hs.length-1))]||p.querySelector('.inbox-empty')||$('inboxClose');if(h)focusIn(h);}
+    if(!auto){const list=needsMeOrder(),i=typeof focusId==='string'?list.findIndex(a=>a.id===focusId):-1,hs=p.querySelectorAll('.ib-h'),h=hs[Math.max(0,Math.min(i,hs.length-1))]||p.querySelector('.inbox-empty')||$('inboxClose');DOOR_NOACT=null; /* on purpose: the person asked to go there */if(h)focusIn(h);}
     return;
   }
   const quiet=!!auto||focusId==='quiet';
@@ -4319,6 +4319,8 @@ function openDoor(focusId,auto,startup,count){
   document.body.appendChild(p);doorPlace(p);
   p.addEventListener('keydown',inboxKey);
   p.addEventListener('focusin',e=>{if(DOOR_NOACT&&e.target!==DOOR_NOACT)DOOR_NOACT=null;});
+  p.addEventListener('focusout',e=>{if(DOOR_NOACT&&e.relatedTarget&&!p.contains(e.relatedTarget))DOOR_NOACT=null;}); /* the person left the panel on purpose (a removed row has no relatedTarget) */
+  p.addEventListener('pointerdown',()=>{DOOR_NOACT=null;}); /* a click or touch inside the panel is the person choosing, even on the heading that has focus */
   $('inboxClose').onclick=()=>closeInbox(true);
   if(startup){const l=$('doorLater');l.hidden=false;l.onclick=()=>closeInbox(true);}
   const at=typeof focusId==='string'&&focusId!=='quiet'?needsMeOrder().findIndex(a=>a.id===focusId):-1;
@@ -6626,6 +6628,7 @@ function settlePerm(a,p){
   e.n.classList.add('settled',word);
   if(word==='denied'&&!p.via)roAskHint(a,e.n); /* denied by the mode (no one answered it): Read-only */
   stickyScroll(liveChat(a));
+  if(DOOR_ON&&$('needsPanel'))renderInboxBtn(); /* the panel's row for this request is stale now: look again at once */
 }
 function setGrants(a,list){a.grants=list;a.grantsKnown=true;const sn=a.grantSeen||(a.grantSeen=new Set());for(const g of list)sn.add(g.key);while(sn.size>500)sn.delete(sn.values().next().value);if(ui.selected&&liveRoot(byId(ui.selected)||a)===a)renderGrants();whyRefresh(a);}
 /* spec 052 FR-141: 1-2 grants are single chips; 3 or more are one "Allowed (N)" chip that opens a list (a row per grant, Revoke all).
