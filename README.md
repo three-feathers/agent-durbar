@@ -86,6 +86,10 @@ How we work (spec-driven, with [GitHub Spec Kit](https://github.com/github/spec-
 
 ![Cumulative build cost by model over releases (API list-price estimate, not billing)](docs/build-cost.svg)
 
+Estimated, not measured: US$3,666 of the total, spent before telemetry could count it per day, is spread over 13 days (2026-10-25 to 2026-11-06) by 50% lines changed and 50% merged PRs of each day (git history); the faded, dashed bars are those estimates, the solid bars are measured. Per-model split of an estimated day: the same mix as the original lump (an assumption).
+
+![Daily build cost by model: measured days solid, estimated (spread) days faded and dashed](docs/build-cost-days.svg)
+
 - By model: Opus 5.5 76% (US$2,856), Sonnet 5.5 24% (US$902).
 - By machine or team: linux 100% (US$3,758).
 - Not counted yet: work before 2026-10-25, and other machines and teams (a Mac, Copilot, Codex, the other two owners' setups).
