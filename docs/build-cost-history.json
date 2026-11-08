@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "rows": [
+    {
+      "date": "2026-11-07",
+      "version": "v0.1.12",
+      "models": {
+        "claude-opus-5-5": 2856,
+        "claude-sonnet-5-5": 902
+      },
+      "machines": {
+        "linux": 3758
+      }
+    }
+  ]
+}

@@ -27,6 +27,15 @@ export const TYPED_TOKENS: Record<string, TypedToken> = {
   '--shadow-card': { type: 'shadow', def: 'none' }, '--shadow-pop': { type: 'shadow', def: '0 14px 40px rgba(40,35,25,.22)' },
 };
 
+/**
+ * The top bar's colours (spec 070 FR-053), a closed list a world pack may set, with Flat's light bar as the default. The same list as `BAR_TOKENS`
+ * in theme.js (`test:theme-tokens` pins them). Colours: they take the colour grammar of the pack's other tokens, not the typed grammar.
+ */
+export const BAR_TOKENS: Record<string, string> = {
+  '--wb-bg': '#f7f6f3', '--wb-bg-2': '#efece6', '--wb-surface': '#fffdf9', '--wb-surface-2': '#faf7f1', '--wb-ink': '#2c3733', '--wb-ink-2': '#56605b', '--wb-muted': '#535a55',
+  '--wb-line': '#e7e3dc', '--wb-line-2': '#d3cabb', '--wb-line-ctl': '#8a8272', '--wb-focus': '#2f5f8a', '--wb-warn-bg': '#fdf3df', '--wb-warn-ink': '#80530a',
+};
+
 /** Markup or CSS syntax in a value: a crafted pack (spec 070 D6, FR-020). */
 export const HOSTILE_RE = /[<>{};\\@]|url\s*\(|expression\s*\(|var\s*\(/i;
 const COLOR_RE = /^(#[0-9a-f]{3}|#[0-9a-f]{4}|#[0-9a-f]{6}|#[0-9a-f]{8}|(?:rgb|rgba|hsl|hsla)\((?:[0-9.%\s,/+-]|deg)+\)|transparent)$/i;

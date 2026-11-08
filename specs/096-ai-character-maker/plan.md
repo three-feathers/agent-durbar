@@ -6,7 +6,7 @@
 
 Codex gets a new adapter capability, `imageGen`. It makes one 2x2 sheet (working, waiting, resting, blink) from a fixed style preset, a fixed layout block and the user's description inside a guard wrapper.
 - **Main** reads the one expected file, checks its header bytes, and has a sandboxed hidden encoder window decode, slice, key out, resize and encode it to four 352x352 WebP frames. Main checks the frames again, holds them as a *try*, and saves them to `userData/characters/<id>/` on Save.
-- **The renderer** reuses the theme maker's dialog parts, adds **My characters** as a Characters value, and registers the generated ids with `crew.js`, so the existing pick, crops, fallback and checks work unchanged.
+- **The renderer** reuses `screens.js`'s `dialog` helper and writes the idea chips and harness picker as neutral helpers (the theme maker is retired), adds **My characters** as a Characters value, and registers the generated ids with `crew.js`, so the existing pick, crops, fallback and checks work unchanged.
 - **Motion** is route (1): cross-fade, discrete bob, blink frame, typing cue, existing glow. It is paused by reduced motion, the global Motion setting (not Serious mode, 2026-11-05), a hidden window and idleness.
 
 ## Technical Context
@@ -75,12 +75,12 @@ Results go to `docs/agent-apps.md` (Codex) and this spec's `## Changes`, with `r
 |---|---|---|
 | Short-lived Codex child, temp folder, cleanup | `CodexAdapter.probe`, `generateText`'s mkdtemp/rm pattern, `spawnChild`, `codexSpawnPath` | a new method `generateImage` next to `generateText` |
 | Capability flag and contract test | `capabilities.ts` `oneShot`, contract C2 in `test:runtime` | add `imageGen` and C2-style pair |
-| Dialog, idea chips, harness select, cost line, busy toast, error and retry dialog | `aiTheme()` in `screens.js` (`dialog`, `ideaHtml`/`pick`, `oneShotCostLine`, `X.toast`) | factor the chips and the harness picker into small helpers that both makers call; `oneShotCostLine` gains an `image` variant |
-| Ideas | `pickIdeas` in `src/shared/themegen.ts` | move to a tiny shared helper or import; `CHARACTER_IDEAS` list |
+| Dialog, idea chips, harness select, cost line, busy toast, error and retry dialog | `dialog`, `oneShotCostLine`, `X.toast` in `screens.js` (`aiTheme()` with its chips was retired, spec 040 FR-031: write the chips and harness picker new, as neutral helpers) | factor the chips and the harness picker into small helpers that both makers call; `oneShotCostLine` gains an `image` variant |
+| Ideas | `pickFrom` in `src/shared/ideas.ts` (built; `pickIdeas` is gone with the theme maker) | `CHARACTER_IDEAS` list |
 | Pick, keep, prune, load | `crew.js` `pickCharacter`, `assignCrew`, `pruneCrew`, `loadCrew`, `storeKey`, `idsFor` | `registerOwn(list)` adds ids, face points and URLs; `idsFor('mine')`; nothing forked |
 | Crops, seats, fallback | `viewBox`, `faceBox`, `FACE_CROP`, `CREW_BAD`, `crewPreload`, `crewRefreshAvatars` | `facePoint` looks up registered faces |
 | Characters setting | `src/shared/characters.ts`, `theme.js` list, `settings:setCharacters`, `#chList` | append `mine`; kit `crew` |
-| WebP chunk check | `scripts/test-crew-assets.ts` chunk reader | move to `src/shared/webpcheck.ts`, used by the test and main |
+| WebP chunk check | `webpInfo` in `src/shared/webpcheck.ts` (built; `scripts/webpinfo.ts` wraps it for the art tests, `worldpack.ts` uses it) | `checkFrame`, `stripChunks` next to it |
 | Error masking | `redactMarkdown`, `maskHomePaths` (as history replay) | none |
 | Folder key | `folderKeyOf`, `normaliseFolderKey` (`src/shared/usagedoc.ts`) | none |
 | Usage line | Codex `account/rateLimits/read` (spec 051/068) | show the plan's window in the maker when it answers |
@@ -134,7 +134,7 @@ Results go to `docs/agent-apps.md` (Codex) and this spec's `## Changes`, with `r
 1. **Probes** P1-P8, owner's go given 2026-10-31 for P1-P6 (P7, P8 ride the same run), with results recorded (`docs/agent-apps.md`, spec `## Changes`). No `src/` change.
 2. **Pure core**: `chargen.ts`, `charstyle.ts`, `imagecheck.ts`, `webpcheck.ts` (moved from the test), plus tests.
 3. **Adapter and main**: `imageGen` capability, `CodexAdapter.generateImage`, fake app-server modes, `charencoder`, `charstore`, IPC, preload and types, pins, simulator fake.
-4. **Window**: the maker dialog (shared helpers with the theme maker), My characters in the Characters setting, `registerOwn`, `blob:` URLs, manage rows; CSP decision R3; screenshots.
+4. **Window**: the maker dialog (neutral shared dialog helpers; the theme maker is retired), My characters in the Characters setting, `registerOwn`, `blob:` URLs, manage rows; CSP decision R3; screenshots.
 5. **Motion**: cross-fade, bob, blink, typing cue, pause rules, Motion setting, `check-charmotion`.
 6. **Close-out**: README (features, *Safety model* line on Codex image generation, limits), the spec 077 `## Changes` line (FR-061), converge, a real run (SC-006) on the owner's go.
 
