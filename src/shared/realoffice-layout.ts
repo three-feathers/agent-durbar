@@ -10,7 +10,8 @@ export interface RealAgent { id: string; state: RealState; away?: string | null;
 export interface RealFolder { id: string; agents: RealAgent[]; keep?: boolean }
 export interface RealVisitor { id: string; person?: string | null; needsYou?: boolean }
 export interface RealPlace { id: string; custom?: boolean; visitors: RealVisitor[] }
-export interface RealModel { folders: RealFolder[]; places: RealPlace[] }
+/** `keepRooms`: the person saved a room order for this floor (spec 097 FR-353, owner Q31): the rooms stand in rows in that order, left to right, top to bottom, even if the picture is a little smaller */
+export interface RealModel { folders: RealFolder[]; places: RealPlace[]; keepRooms?: boolean }
 export interface SeatMeta { w: number; h: number; headTop: number; bodyH: number; hand: number }
 /** `feet` and `top`: per pose, the lowest and highest opaque row as a share of the picture's height, measured from its alpha (owner 2026-10-31 10:19) */
 export interface StandMeta { figH: number; poses: Record<string, [number, number]>; feet?: Record<string, number>; top?: Record<string, number>; foot?: Record<string, number> }
@@ -117,6 +118,18 @@ function roSetPartitions<T>(list: T[], most: number): T[][][] {
   return res;
 }
 
+/** Every split of `list` into at most `most` runs of neighbours (spec 097 FR-353): the rooms keep their order, left to right and top to bottom. */
+function roRuns<T>(list: T[], most: number): T[][][] {
+  const res: T[][][] = [];
+  const rec = (i: number, cur: T[][]): void => {
+    if (i === list.length) { res.push(cur.map((r) => r.slice())); return; }
+    cur[cur.length - 1].push(list[i]); rec(i + 1, cur); cur[cur.length - 1].pop();
+    if (cur.length < most) { cur.push([list[i]]); rec(i + 1, cur); cur.pop(); }
+  };
+  if (list.length) rec(1, [[list[0]]]);
+  return res;
+}
+
 interface Row { zones: RealFolder[]; n: number; Sw: number; scrH: number }
 interface Geom { dh: number; head: number; deskBack: number; bottom: number }
 
@@ -167,7 +180,7 @@ export function lobbyRange(H: number): [number, number] {
 }
 
 /** FR-011, FR-020: the rows of folders and the unit u, by search. */
-function roPack(meta: RealMeta, folders: RealFolder[], W: number, Ho: number, lobbyMin: number): { rows: Row[]; u: number; used: number; fits: boolean; wide: boolean } {
+function roPack(meta: RealMeta, folders: RealFolder[], W: number, Ho: number, lobbyMin: number, keepRooms = false): { rows: Row[]; u: number; used: number; fits: boolean; wide: boolean } {
   const total = folders.reduce((p, f) => p + f.agents.length, 0);
   const avail = Ho - lobbyMin;
   if (total <= BIG_MAX) {
@@ -189,6 +202,7 @@ function roPack(meta: RealMeta, folders: RealFolder[], W: number, Ho: number, lo
   const maxRows = many ? folders.length : 4; /* past the 15-agent scale (scrolling) many zones may take more than 4 rows */
   const cands: RealFolder[][][] = many
     ? Array.from({ length: Math.min(maxRows, folders.length) }, (_, i) => roBalanced(folders, i + 1))
+    : keepRooms ? roRuns(folders, maxRows) /* FR-353: only the splits that keep the saved order */
     : roSetPartitions(folders, maxRows).map((rs) => rs.map((zs) => zs.slice().sort((p, q) => at(p) - at(q))).sort((p, q) => at(p[0]) - at(q[0])));
   for (const part of cands) {
     const rows: Row[] = part.map((zs) => { const n = zs.reduce((p, z) => p + z.agents.length, 0); return { zones: zs, n, Sw: roSlotWidth(W, zs.length, n), scrH: 0 }; });
@@ -391,13 +405,13 @@ export function realLayout(model: RealModel, viewport: { w: number; h: number },
   let u = U_MIN, big = false, used = 0, fits = true, rows: Row[] = [];
   if (folders.length) {
     /* a folder too big for one row is split into parts (its sign repeats, "continued"), the fewest splits that fit; spec 097 delta 2026-10-31 */
-    let p = roPack(meta, folders, W, Ho, lobbyMin);
+    let p = roPack(meta, folders, W, Ho, lobbyMin, !!model.keepRooms);
     const rank = (x: typeof p): number => (x.fits ? 2 : x.wide ? 1 : 0);
     for (const most of [8, 6, 5, 4]) {
       if (p.fits) break;
       if (!folders.some((f) => f.agents.length > most)) continue;
       const parts = folders.flatMap((f) => { const k = Math.ceil(f.agents.length / most), per = Math.ceil(f.agents.length / k); return Array.from({ length: k }, (_, i) => ({ id: i ? f.id + '\u0000' + (i + 1) : f.id, agents: f.agents.slice(i * per, (i + 1) * per) })); });
-      const q = roPack(meta, parts, W, Ho, lobbyMin);
+      const q = roPack(meta, parts, W, Ho, lobbyMin, !!model.keepRooms);
       if (rank(q) > rank(p) || (rank(q) === rank(p) && (q.fits ? q.u > p.u : q.used < p.used))) p = q;
     }
     rows = p.rows; u = p.u; used = p.used; fits = p.fits; big = rows.length === 1 && rows[0].scrH > 0;

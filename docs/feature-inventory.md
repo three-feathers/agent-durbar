@@ -17,7 +17,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Model, tokens, cost, context, last tool on the desk | works | works in the hover zoom (#1148, 097 FR-312..FR-315); a figure on the name plate is open (Q8) | none | 019 097 | test:ctxbreakdown driver:shots-097-screens |
 | Unread "New", draft, question marks | works | works, a New reply tag and a green screen (097 FR-236, FR-238); draft and question marks missing (#1149) | none | 001 005 097 | test:unread driver:shots-097-realoffice |
 | Hover card | works | missing, tooltip only (#1151) | none | 001 097 | test:tooltip read:src/renderer/realoffice.js |
-| Drag to rearrange rooms, desks, places | works | works only by keys and the folder menu, the same saved order; the mouse drag is missing (#1152, 097 Q30) | none | 033 097 | test:roomorder driver:shots-033-order driver:check-097-order |
+| Drag to rearrange rooms, desks, places | works | works by dragging a name plate or a folder sign, by keys and the folder menu, a lobby place by a visitor's chip or the +N menu, the same saved order; the arcade drags desks, its rooms keep their cells (#1152, 097 Q30..Q33) | none | 033 097 | test:roomorder driver:shots-033-order driver:check-097-order driver:check-097-drag |
 | Rename a session (F2, pencil) | works | works, the pencil beside a plate's name and F2 on a plate (059 FR-170) | none | 059 | test:sessionname driver:check-097-plate-pencil |
 | Lobby places, visitors, away at a place | works | works | mock+planned (lobby) | 024 | test:places driver:shots-024 |
 | Boss queue, Bank, Postbox | works | works | mock+planned (boss-bank-post-coffee) | 001 024 | driver:shots-001-lobby read:src/renderer/realoffice.js |

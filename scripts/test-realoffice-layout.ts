@@ -902,5 +902,21 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
   const m0 = model(false), shown0 = deskOrder(m0, 'f'), wrong = R.moveTo(modelOrder, shown0[0], shown0[1], true);
   assert.notDeepStrictEqual(wrong.slice(0, 2), [shown0[1], shown0[0]], 'mutant: moving from the model order is not the swap on screen');
 }
+
+// ---- spec 097 FR-353 (owner Q31 = 1, 2026-11-08): a saved room order is kept in the rows, left to right, top to bottom, for every split tried ----
+{
+  const mk = (sizes: number[], keepRooms?: boolean): RealModel => ({ keepRooms, places: model(1, 1).places, folders: sizes.map((n, fi) => ({ id: 'r' + fi, agents: Array.from({ length: n }, (_, i) => ({ id: `r${fi}a${i}`, state: 'idle' as RealState, person: PEOPLE[(fi + i) % PEOPLE.length], away: null }) as RealAgent) })) });
+  const rowsOf = (L: ReturnType<typeof realLayout>): string[] => L.zones.slice().sort((a, b) => (Math.abs(a.box.y - b.box.y) > 2 ? a.box.y - b.box.y : a.box.x - b.box.x)).map((z) => z.id).filter((id, i, l) => l.indexOf(id) === i); /* a folder in parts counts once, at its first part */
+  const SPLIT_SIZES: number[][] = [[1, 5, 2, 5, 2], [5, 1, 1, 5, 3], [2, 2, 2, 2, 2, 2, 3], [6, 1, 6, 1, 1], [1, 1, 4, 1, 4, 4]];
+  let differs = 0;
+  for (const [W, H] of SIZES) for (const sz of SPLIT_SIZES) {
+    const m = mk(sz, true), want = m.folders.map((f) => f.id);
+    assert.deepStrictEqual(rowsOf(realLayout(m, { w: W, h: H }, META)), want, `FR-353: ${sz} at ${W}x${H}: rooms stand in the saved order, left to right, top to bottom`);
+    // no saved order: exactly main's layout (the flag false or missing changes nothing)
+    assert.strictEqual(JSON.stringify(realLayout(mk(sz, false), { w: W, h: H }, META)), JSON.stringify(realLayout(mk(sz), { w: W, h: H }, META)), 'FR-353: no saved order, the same layout as before');
+    if (rowsOf(realLayout(mk(sz), { w: W, h: H }, META)).join() !== want.join()) differs++;
+  }
+  assert.ok(differs > 0, `FR-353: best fit alone reorders some of these (so the test can fail when the order is ignored; ${differs})`);
+}
 console.log(`realoffice layout and lights tests passed (${cases} layouts, ${lcases} with a lounge, faces ${JSON.stringify(faces)})`);
 process.exitCode = 0;

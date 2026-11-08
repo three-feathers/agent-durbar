@@ -481,12 +481,19 @@ function openPlaceMenu(pid,anchor){
   const ids=placeVisitors(pid); if(!ids.length)return;
   const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','At '+placeLabelFull(pid));
   m.innerHTML=ids.map(id=>{const a=byId(id),v=VISITS.at(id),r=roomOf(a),of=otherFloor(a);return `<button type="button" role="menuitem" data-pvopen="${esc(id)}"><span class="mt"><b>${esc(a.name)}</b><small>${esc((r?r.name+(of?' ('+DurbarCutText.cutText(of.name,16)+')':'')+' · ':'')+(v?visitDoing(a,v):''))}</small></span></button>`;}).join('');
+  if(OFFICE_VIEW==='real'&&RO_LOAD==='ready'){ /* spec 097 FR-355 (Q33): Move earlier / Move later for the place, through the order the flat office's places use; a fixed place and the ends are disabled and say why */
+    const ks=lobbyPlaces().map(q=>q.id).filter(reorderablePlace),i=ks.indexOf(pid),pit=(f,t,ok)=>`<button type="button" role="menuitem" data-pfact="${f}"${ok?'':' aria-disabled="true"'}><span class="mt"><b>${t}</b></span></button>`;
+    m.insertAdjacentHTML('beforeend',pit('pup','Move earlier',i>0)+pit('pdn','Move later',i>=0&&i<ks.length-1));
+  }
   document.body.appendChild(m);
   const ab=anchor.getBoundingClientRect(),b=m.getBoundingClientRect();
   m.style.left=Math.max(8,Math.min(ab.left,innerWidth-b.width-8))+'px';
   m.style.top=(ab.bottom+6+b.height<=innerHeight-8?ab.bottom+6:Math.max(8,ab.top-6-b.height))+'px';
-  m.addEventListener('click',e=>{const t=e.target.closest('[data-pvopen]');if(!t)return;closeModeMenu();openAtRequest(t.dataset.pvopen);});
-  m.addEventListener('keydown',e=>{const its=[...m.querySelectorAll('[data-pvopen]')],i=its.indexOf(document.activeElement);
+  m.addEventListener('click',e=>{
+    const pf=e.target.closest('[data-pfact]');
+    if(pf){const d=pf.dataset.pfact==='pup'?-1:1;closeModeMenu();reoStepModel('place',pid,d,'',`.ro-lplate[data-place="${CSS.escape(pid)}"]`);return;}
+    const t=e.target.closest('[data-pvopen]');if(!t)return;closeModeMenu();openAtRequest(t.dataset.pvopen);});
+  m.addEventListener('keydown',e=>{const its=[...m.querySelectorAll('[data-pvopen],[data-pfact]')],i=its.indexOf(document.activeElement);
     if(e.key==='ArrowDown'){e.preventDefault();focusIn(its[(i+1)%its.length]);}else if(e.key==='ArrowUp'){e.preventDefault();focusIn(its[(i+its.length-1)%its.length]);}
     else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();if(anchor&&document.contains(anchor))focusIn(anchor);}});
   focusIn(m.querySelector('button'));
@@ -1694,7 +1701,7 @@ function realModel(model){
       title:p.id===D.POSTBOX?placeLabelFull(p.id)+': the next scheduled runs. Open Settings > Schedules.':placeTip(p.id,ids,wait),
       visitors:ids.map(id=>{const a=byId(id),v=VISITS.at(id);return {id,name:a.name,needsYou:vis(a)==='waiting'||!!a.limit,title:visitorWords(a,v,true)};})};
   });
-  return {folders,places,slips:realSlips(),alertIcon:ALERT_ICON,renIcon:ICON('rename'),sessions:agents.filter(a=>!a.parent).map(a=>({id:a.id,folder:a.room}))};
+  return {folders,places,keepRooms:model.some(m=>ORDER.rooms.includes(m.r.path)),slips:realSlips(),alertIcon:ALERT_ICON,renIcon:ICON('rename'),sessions:agents.filter(a=>!a.parent).map(a=>({id:a.id,folder:a.room}))};
 }
 /* spec 097 FR-121, FR-122, FR-124 (Real office): the requests the world draws as slips at the Boss door and the Bank, and as a bubble at the desk. Plain data
    from the very cards the chat and the inbox already hold (pendingCardOf, inboxActs, requestText), so the words, the buttons, their order and their tooltips are
@@ -3963,19 +3970,35 @@ function reoStep(kind,el,delta){
 /* spec 097 FR-346..FR-348 (issue 1152): one step in Real office (and from its folder menu), from the model: the shown group is what the office draws
    (`officeModel`, `lobbyPlaces`), the base and the write are the flat office's (`reoApply`); the focus goes back to `refocus` (a selector under #stage). */
 function realDeskKeys(roomId){return window.exports.deskOrder(realModel(officeModel()),roomId);} /* spec 097 FR-348: the desks of a room left to right, by the layout's own rule (keep, else status, lounge seats out) */
+const plateAway=pl=>pl.classList.contains('narrow')||!!VISITS.at(pl.dataset.id); /* away from its desk: the photo office narrows the plate, the arcade does not */
+const roArcade=()=>{const r=document.querySelector('#stage .ro');return !!r&&r.dataset.world==='retro';}; /* spec 097 FR-354 (Q32): the arcade's rooms keep their cells */
+const roFixedWords=name=>name+' is a fixed place and does not move.'; /* spec 097 FR-355 (Q33) */
+/* the one write of a drop in Real office (drag): `key` goes before or after `target`, as the keys do (`reoStepModel`): a desk from the order on screen */
+function realRoomKeys(roomId){ /* a floor's folders as Real office draws them (rows top to bottom, left to right, a folder once at its first sign): the base of a room move; the rest after them */
+  const rm=ROOMS.find(x=>x.id===roomId),all=rm?officeModel().map(m=>m.r).filter(x=>x.floor===rm.floor):[],pos=new Map();
+  document.querySelectorAll('#stage .ro-sign').forEach(sg=>{if(sg.querySelector('.ro-sc'))pos.set(sg.dataset.folder,[sg.offsetTop,sg.offsetLeft]); /* not getBoundingClientRect: a sign still easing from its old place would read as there */});
+  const on=all.filter(r=>pos.has(r.id)).sort((a,b)=>{const p=pos.get(a.id),q=pos.get(b.id);return Math.abs(p[0]-q[0])>4?p[0]-q[0]:p[1]-q[1];});
+  return on.concat(all.filter(r=>!pos.has(r.id))).map(r=>r.path);
+}
+function reoDropModel(kind,key,target,after,roomId){
+  const shown=kind==='desk'?realDeskKeys(roomId):kind==='room'?realRoomKeys(roomId):null;
+  reoApply(kind,key,target,after,roomId,shown&&window.exports.deskBase(shown,reoFullKeys(kind,roomId)));
+}
 function reoStepModel(kind,key,delta,roomId,refocus){
   const rm=ROOMS.find(x=>x.id===roomId);
+  if(kind==='room'&&roArcade()){announce((rm?rm.name:'Folder')+' keeps its place in the arcade: its desks move, the rooms stay in their cells.');return false;}
+  if(kind==='place'&&!reorderablePlace(key)){announce(roFixedWords(placeLabel(key)));return false;}
   let keys=[],shown=null;
-  if(kind==='room'&&rm)keys=officeModel().map(m=>m.r).filter(x=>x.floor===rm.floor).map(x=>x.path);
+  if(kind==='room'&&rm)keys=realRoomKeys(roomId); /* FR-353: the rows as drawn */
   else if(kind==='desk'){shown=realDeskKeys(roomId);keys=shown;} /* FR-348: the desks as Real office draws them (the layout's own function), not the attention order */
   else if(kind==='place')keys=lobbyPlaces().map(p=>p.id).filter(reorderablePlace);
   const i=keys.indexOf(key),j=i+delta;
   const name=kind==='room'?(rm?rm.name:'Folder'):kind==='desk'?(byId(key)||{name:'Desk'}).name:placeLabel(key);
   if(i<0||keys.length<2){announce(name+' has nowhere to move.');return false;}
   if(j<0||j>=keys.length){announce(name+' is already '+(delta<0?'first':'last')+'.');return false;}
-  reoApply(kind,key,keys[j],j>i,roomId,shown&&window.exports.deskBase(shown,reoFullKeys('desk',roomId))); /* the saved order starts from the shown one */
+  reoDropModel(kind,key,keys[j],j>i,roomId); /* the saved order starts from the shown one */
   renderAll();
-  const el=refocus&&document.querySelector('#stage '+refocus);
+  const el=refocus&&(typeof refocus==='string'?document.querySelector('#stage '+refocus):refocus.isConnected?refocus:null); /* a selector, or the very element (a chip button) */
   if(el)afQuiet(()=>el.focus({preventScroll:true}));
   announce(RO.announce(name,j+1,keys.length,kind==='desk'?'its room':kind==='place'?'the lobby':''));
   return true;
@@ -4001,7 +4024,7 @@ function resetOrder(){
     const d={ArrowLeft:-1,ArrowUp:-1,ArrowRight:1,ArrowDown:1}[e.key];
     if(!d||!e.target||!e.target.closest||!e.target.closest('#stage')||e.target.closest('input,textarea,select,[contenteditable="true"]'))return;
     if(OFFICE_VIEW==='real'&&RO_LOAD==='ready'){ /* spec 097 FR-347: a name plate, a folder sign's button, a lobby plate that is a button */
-      const t=e.target,pl=t.closest('.ro-plate[data-id]'),sb=t.closest('.ro-sb[data-foldermenu],.ro-sb[data-newsess]'),lp=t.closest('.ro-lplate[data-place]');
+      let ch=null;const t=e.target,pl=t.closest('.ro-plate[data-id]'),sb=t.closest('.ro-sb[data-foldermenu],.ro-sb[data-newsess]'),lp=t.closest('.ro-lplate[data-place]');
       const ag=pl&&byId(pl.dataset.id),main=!!ag&&!ag.parent,lounge=!!pl&&pl.dataset.surface==='lounge';
       const stop=()=>{e.preventDefault();e.stopPropagation();};
       if(e.shiftKey){ /* the room of a desk's plate or of a folder sign's button; a lounge seat and a lobby plate have no room to move */
@@ -4011,9 +4034,10 @@ function resetOrder(){
       }else if(main){
         stop();
         if(lounge)announce(ag.name+' is resting in the lounge and does not move.');
-        else if(pl.classList.contains('narrow'))announce(ag.name+' is away from its desk and does not move.');
+        else if(plateAway(pl))announce(ag.name+' is away from its desk and does not move.');
         else reoStepModel('desk',ag.id,d,ag.room,`.ro-plate[data-id="${CSS.escape(ag.id)}"]`);
-      }else if(lp&&reorderablePlace(lp.dataset.place)){stop();reoStepModel('place',lp.dataset.place,d,'',`.ro-lplate[data-place="${CSS.escape(lp.dataset.place)}"]`);}
+      }else if(lp){stop();reoStepModel('place',lp.dataset.place,d,'',`.ro-lplate[data-place="${CSS.escape(lp.dataset.place)}"]`);}
+      else if(!e.shiftKey&&(ch=t.closest('.ro-chip[data-pvopen][data-place]'))){stop();reoStepModel('place',ch.dataset.place,d,'',ch);} /* spec 097 FR-355 (Q33): a visitor's chip button moves its place; no new tab stop */
       return;
     }
     let kind='',el=null;
@@ -4024,6 +4048,42 @@ function resetOrder(){
     e.preventDefault();e.stopPropagation();
     reoStep(kind,el,d);
   },true);
+})();
+/* spec 097 FR-352..FR-355 (issue 1152, owner Q30 = 1, 2026-11-08): drag in Real office. A press on a desk's name plate or a folder sign, then 6 px of movement, starts the flat office's
+   own drag (`RO.attach`, reorder.js: 6 px, Esc, pointercancel, blur, scroll, the lift and the slots, `RO.busy()` holding the repaint); under 6 px it stays a click. The drop writes
+   through `reoDropModel` (reoApply: the one saved order). The arcade drags desks (Q32) but not rooms; lounge seats, away desks and lobby places do not drag. */
+(function(){
+  const st=reoStage();if(!st||!RO||!RO.attach)return;
+  const live=()=>OFFICE_VIEW==='real'&&RO_LOAD==='ready'&&ui.view==='office';
+  const roomIdOfPlate=el=>{const a=byId(el.dataset.id);return a&&!a.parent?a.room:'';};
+  const signRoom=el=>ROOMS.find(r=>r.id===el.dataset.folder)||null;
+  const plateKey=el=>el.dataset.id||'', signKey=el=>{const r=signRoom(el);return r?r.path:'';};
+  let focusAfter='';
+  RO.attach(st,[
+    {kind:'desk',item:t=>{const p=t.closest('.ro-plate[data-id]');return p&&p.dataset.surface!=='lounge'&&!plateAway(p)&&roomIdOfPlate(p)?p:null;},
+      group:el=>{const m=new Map([...st.querySelectorAll('.ro-plate[data-id]')].map(x=>[x.dataset.id,x]));return realDeskKeys(roomIdOfPlate(el)).map(k=>m.get(k)).filter(Boolean);},key:plateKey},
+    {kind:'room',item:t=>{const sg=t.closest('.ro-sign');return sg&&!t.closest('button,a,input')&&sg.querySelector('.ro-sc')&&signRoom(sg)&&!roArcade()?sg:null;},
+      group:el=>{const r=signRoom(el),by=new Map([...st.querySelectorAll('.ro-sign')].filter(x=>x.querySelector('.ro-sc')).map(x=>[x.dataset.folder,x]));
+        return realRoomKeys(r.id).map(pa=>ROOMS.find(x=>x.path===pa)).map(x=>x&&by.get(x.id)).filter(Boolean);},key:signKey}
+  ],{
+    disabled:()=>!live()||modalOpen()||!!document.getElementById('modeMenu'),
+    still:()=>!MOTION||reducedMotion(),
+    commit:(kind,el,els,from,to)=>{
+      if(kind==='desk'){const id=el.dataset.id,rid=roomIdOfPlate(el),n=realDeskKeys(rid).length;
+        reoDropModel('desk',id,els[to].dataset.id,to>from,rid);focusAfter=`.ro-plate[data-id="${CSS.escape(id)}"]`;
+        announce(RO.announce((byId(id)||{name:'Desk'}).name,realDeskKeys(rid).indexOf(id)+1,n,'its room'));}
+      else{const r=signRoom(el),t=signRoom(els[to]);if(!r||!t)return;
+        reoDropModel('room',r.path,t.path,to>from,r.id);focusAfter=`.ro-sign[data-folder="${CSS.escape(r.id)}"] .ro-sb`;
+        announce(RO.announce(r.name,to+1,els.length,''));}
+    },
+    end:()=>{if(REO_LATE)REO_LATE=false;renderAll();const f=focusAfter;focusAfter='';
+      const e=f&&document.querySelector('#stage '+f);if(e)afQuiet(()=>{if(!e.hasAttribute('tabindex')&&e.tagName!=='BUTTON')e.setAttribute('tabindex','-1');e.focus({preventScroll:true});});}
+  });
+  /* the arcade's rooms keep their cells: a drag from a folder sign says so, once */
+  let arc=null;
+  st.addEventListener('pointerdown',e=>{arc=null;if(e.button===0&&live()&&roArcade()){const sg=e.target.closest&&e.target.closest('.ro-sign');if(sg&&!e.target.closest('button,a,input')&&signRoom(sg))arc={x:e.clientX,y:e.clientY,r:signRoom(sg)};}});
+  document.addEventListener('pointermove',e=>{if(arc&&(e.buttons&1)&&Math.hypot(e.clientX-arc.x,e.clientY-arc.y)>=6){const r=arc.r;arc=null;announce(r.name+' keeps its place in the arcade: its desks move, the rooms stay in their cells.');}});
+  document.addEventListener('pointerup',()=>{arc=null;});
 })();
 /* a file dropped anywhere else must not navigate the window away */
 ['dragover','drop'].forEach(t=>window.addEventListener(t,e=>{if(e.dataTransfer&&[...(e.dataTransfer.types||[])].includes('Files'))e.preventDefault();}));
