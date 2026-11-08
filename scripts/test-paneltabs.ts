@@ -62,7 +62,7 @@ assert.strictEqual(P.tabsHTML(two, 'chat'),
   + '<button class="ptab" id="tabBrowser" role="tab" type="button" aria-selected="false" aria-controls="browserPane" tabindex="-1">Browser</button></div>', 'tablist markup, byte for byte');
 
 // byId: by id, never by position
-assert.strictEqual(P.byId(two, 'chat')?.elId, 'tabChat'); assert.strictEqual(P.byId(two, 'browser')?.elId, 'tabBrowser');
+assert.strictEqual(P.byId(two, 'chat')?.elId, 'tabChat', 'byId finds Chat by its id, not by position'); assert.strictEqual(P.byId(two, 'browser')?.elId, 'tabBrowser', 'byId finds Browser by its id, not by position');
 assert.strictEqual(P.byId(two, 'terminal'), undefined, 'an id with no tab is undefined, not Browser');
 
 // the DOM half, on a fake document: selected state, click and key rules, focus
@@ -77,7 +77,7 @@ assert.strictEqual(P.byId(two, 'terminal'), undefined, 'an id with no tab is und
   P.setSelected(two, 'browser', f.doc);
   assert.deepStrictEqual([f.els.tabChat.attrs['aria-selected'], f.els.tabBrowser.attrs['aria-selected']], ['false', 'true'], 'setSelected: aria-selected as strings');
   assert.deepStrictEqual([f.els.tabChat.tabIndex, f.els.tabBrowser.tabIndex], [-1, 0], 'setSelected: the one tab stop moves with the selection');
-  P.setSelected(two, 'chat', mk(['tabChat']).doc); // a missing tab element is skipped, not a throw (the old code threw and aborted mount)
+  assert.doesNotThrow(() => P.setSelected(two, 'chat', mk(['tabChat']).doc), 'setSelected on a page with no Browser tab element does nothing for it (the old code threw and aborted mount)');
 
   const chosen: { id: string; o?: { focus?: boolean } }[] = [];
   const g = mk(['tabChat', 'tabBrowser']);
@@ -90,11 +90,15 @@ assert.strictEqual(P.byId(two, 'terminal'), undefined, 'an id with no tab is und
   assert.deepStrictEqual([right.prevented, right.stopped], [1, 1], 'and the key is neither scrolled nor seen by the page\'s other key listeners');
   const left = ev('ArrowLeft'); g.els.tabChat.onkeydown?.(left); assert.strictEqual(chosen.pop()?.id, 'browser', 'ArrowLeft wraps');
   for (const k of [ev('Enter'), ev('ArrowRight', { shiftKey: true }), ev('ArrowRight', { ctrlKey: true })]) { g.els.tabChat.onkeydown?.(k); assert.deepStrictEqual([chosen.length, k.prevented, k.stopped], [0, 0, 0], `${k.key} is left alone`); }
-  P.wire(two, () => undefined, mk(['tabChat']).doc); // a missing element: no throw
+  const h = mk(['tabChat']);
+  assert.doesNotThrow(() => P.wire(two, () => undefined, h.doc), 'wire on a missing tab element does nothing');
+  assert.ok(typeof h.els.tabChat.onclick === 'function' && typeof h.els.tabChat.onkeydown === 'function', 'wire on a missing tab element still wires the tabs that exist');
+  assert.deepStrictEqual(Object.keys(h.els), ['tabChat'], 'and creates nothing for the missing one');
 
   P.focusTab(P.byId(two, 'browser'), f.doc);
   assert.deepStrictEqual([f.els.tabBrowser.focused, f.els.tabChat.focused], [[{ preventScroll: true }], []], 'focusTab focuses that tab without scrolling');
-  P.focusTab(P.byId(two, 'terminal'), f.doc); // no tab for the id: nothing happens (select() with an unknown id must not throw)
+  assert.doesNotThrow(() => P.focusTab(P.byId(two, 'terminal'), f.doc), 'focusTab for an id with no tab does nothing (select() with an unknown id must not throw)');
+  assert.deepStrictEqual([f.els.tabBrowser.focused.length, f.els.tabChat.focused.length], [1, 0], 'select() with an unknown id leaves focus where it was: no tab is focused or moved');
 }
 
 // the page path: paneltabs.js sets window.DurbarPanelTabs and browserpane.js, loaded after it, reads it (a rename of the global would leave no DurbarBrowserPane)
