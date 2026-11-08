@@ -320,4 +320,47 @@ console.log(`test-helpercard: repaint ratio ${ratio.toFixed(2)} (big ${big.toFix
   ok(/'helpercard\.js'/.test(copy), 'copy-assets.js copies helpercard.js');
   ok(/window\.DurbarHelperCard/.test(app), 'app.js uses DurbarHelperCard');
 }
+// ---- spec 015 FR-021 (issue 1330): the one helper mask (app.js homeMask + helperMask), run from the page's own source ----
+{
+  const app = fs.readFileSync(path.join(R, 'app.js'), 'utf8');
+  const line = (re: RegExp, what: string) => { const m = app.match(re); assert.ok(m, 'app.js defines ' + what); return m![0]; };
+  const src = line(/^const homeMask=.*$/m, 'homeMask') + '\n' + line(/^const helperMask=.*$/m, 'helperMask');
+  const shared = require('../src/shared/redact') as { redact(t: string): string; maskHomePaths(t: unknown): string };
+  const S = ST.create({ redact: (t) => shared.redact(t), cut: cutText });
+  const make = (win: object) => new Function('window', 'deskMask', src + '\nreturn {homeMask,helperMask};')(win, (t: unknown) => S.mask(t)) as { homeMask(t: unknown): unknown; helperMask(t: unknown): string };
+  const { helperMask } = make({ DurbarRedact: shared });
+  const tok = 'ghp_' + 'Zq9Xw8Vu7Ts6Rq5Po4Nm3Lk2Ji1Hg0Fe9Dc8';
+  const bad = (out: string) => [tok, 'zed_q', 'zedq', 'fs01'].filter((w) => out.includes(w));
+  const cases: [string, string][] = [
+    ['a token', 'check ' + tok + ' now'],
+    ['a macOS home', 'read /Users/zedq/proj/a.txt'],
+    ['a Windows home', 'read C:\\Users\\zedq\\proj\\a.txt'],
+    ['a UNC home', 'open \\\\fs01\\homes\\zedq\\notes'],
+    ['a JSON-doubled token', JSON.stringify({ t: 'x ' + tok })],
+    ['a JSON-doubled macOS home', JSON.stringify({ p: '/Users/zedq/proj' })],
+    ['a JSON-doubled Windows home', JSON.stringify({ p: 'C:\\Users\\zedq\\proj' })],
+    ['a JSON-doubled UNC home', JSON.stringify({ p: '\\\\fs01\\homes\\zedq\\notes' })],
+    ['all of them', 'Review ' + tok + ' in /Users/zedq/a and \\\\fs01\\homes\\zedq\\b'],
+  ];
+  for (const [what, t] of cases) { const out = helperMask(t); eq(bad(out).join(), '', 'helperMask hides ' + what + ': ' + out); ok(out.length > 0, 'helperMask keeps the rest of ' + what); }
+  eq(helperMask('/Users/zedq/proj/a.txt'), '~/proj/a.txt', 'a home folder becomes ~');
+  eq(helperMask('\\\\fs01\\homes\\zedq\\notes'), '~\\notes', 'a UNC home becomes ~');
+  for (const t of ['Fix the build', 'Look around and report', 'Count files in src/renderer (about 120)', '']) eq(helperMask(t), t, 'ordinary text is unchanged: ' + JSON.stringify(t));
+  // the order is the point: the desk mask first unescapes `\\` and the UNC home is no longer seen
+  ok(shared.maskHomePaths(S.mask('\\\\fs01\\homes\\zedq\\notes')).includes('zedq'), 'the wrong order (desk mask first) would leak, so the order test bites');
+  // fail closed: no redact module keeps no agent text; a throwing or odd home mask gives ''
+  eq(make({}).helperMask('x ' + tok), S.mask('x ' + tok), 'no DurbarRedact: the desk mask alone');
+  eq(make({ DurbarRedact: { maskHomePaths: () => 7 } }).homeMask('/Users/zedq'), '', 'a home mask that gives no string gives ""');
+  // every surface that shows a helper's name or task goes through the chain (source checks; the rendered surfaces are in check-015-bg-helper)
+  for (const [re, what] of [
+    [/s\.name=helperMask\(e\.name\)/, 'onSubagent stores the name through helperMask'],
+    [/s\.name=SHORT\(helperMask\(s\.task\),40\)/, 'onTaskTool names a helper from its task through helperMask'],
+    [/'h3'\)\.textContent=helperMask\(s\.name\)/, 'the Sub-agent activity panel title'],
+    [/'\.sub-full-task'\)\.textContent=helperMask\(s\.task\)/, 'the Sub-agent activity panel task line'],
+    [/'Failed: '\+helperMask\(s\.error\)/, 'the panel error line'],
+    [/n=helperMask\(h\.name\)\|\|'Helper', t=helperMask\(taskText\(h\)\)/, 'the flat helper tile, its tooltip and aria-label'],
+    [/excerpt:\(t,n,fb\)=>safeExcerpt\(homeMask\(t\),n,fb\),mask:t=>helperMask\(t\)/, 'the expanded helper card'],
+  ] as [RegExp, string][]) ok(re.test(app), what);
+  ok(!/s\.name=safeMask\(/.test(app), 'no helper name is stored with the desk mask alone');
+}
 console.log(`test-helpercard: ok (${n} checks)`);
