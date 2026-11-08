@@ -34,13 +34,16 @@
     const draw=DR.create({canvas,size:'dock',width:240,motion,forced:!!(mqForced&&mqForced.matches),visible:!doc.hidden,focused:doc.hasFocus?doc.hasFocus():true,
       host:{now:()=>win.performance.now(),raf:(f)=>win.requestAnimationFrame(f),caf:(i)=>win.cancelAnimationFrame(i),dpr:()=>win.devicePixelRatio||1,makeCanvas:(w,h)=>{const c=doc.createElement('canvas');c.width=w;c.height=h;return c;}}});
     /* drawn only while the window is shown and the body is not folded: a folded host draws nothing (FR-104) */
-    function syncVisible(){draw.setVisible(!doc.hidden&&!collapsed);}
+    /* and not while a chat, Settings or List view covers the office: the box is hidden by brain.css then (it would sit on their controls) */
+    function covered(){const c=doc.body&&doc.body.classList;return !!c&&c.contains&&(c.contains('panel-open')||c.contains('screen-open')||c.contains('list-mode'));}
+    function syncVisible(){draw.setVisible(!doc.hidden&&!collapsed&&!covered());}
     const applyMotion=()=>{const m=mqReduce&&mqReduce.matches?'still':motion;draw.setMotion(m);const b=q('[data-bv=motion]');b.textContent='Motion: '+WORD[m]+(m!==motion?' (system)':'');b.setAttribute('aria-label','Brain motion '+WORD[m]+(m!==motion?', set by reduced motion':'')+'. Press to change');b.setAttribute('aria-disabled',String(m!==motion));};
     q('[data-bv=motion]').addEventListener('click',()=>{if(mqReduce&&mqReduce.matches)return; /* set by the system: the button keeps focus and does nothing */motion=MOTIONS[(MOTIONS.indexOf(motion)+1)%3];store.set('durbar.brainMotion',motion);applyMotion();});
     q('[data-bv=fold]').addEventListener('click',(e)=>{collapsed=!collapsed;el.classList.toggle('is-folded',collapsed);syncVisible();e.currentTarget.textContent=collapsed?'Show':'Hide';e.currentTarget.setAttribute('aria-expanded',String(!collapsed));});
     if(mqReduce&&mqReduce.addEventListener)mqReduce.addEventListener('change',applyMotion);
     if(mqForced&&mqForced.addEventListener)mqForced.addEventListener('change',()=>draw.setForced(mqForced.matches));
     doc.addEventListener('visibilitychange',syncVisible);
+    if(typeof win.MutationObserver==='function'&&doc.body&&doc.body.nodeType)new win.MutationObserver(syncVisible).observe(doc.body,{attributes:true,attributeFilter:['class']}); /* a chat or Settings opening or closing */
     win.addEventListener('focus',()=>draw.setFocused(true)); win.addEventListener('blur',()=>draw.setFocused(false));
     applyMotion();
 
@@ -49,6 +52,7 @@
       timer=0;
       const s=states.get(shownId); if(!s)return;
       el.classList.remove('is-empty');
+      syncVisible();
       const ctx={mask:opts.mask,folder:opts.folder?opts.folder(shownId):undefined,now:opts.now()}, st=S.currentStep(s);
       const nm=opts.name?opts.name(shownId):s.name;
       el.setAttribute('aria-label',regionLabel(SF,nm,ctx));

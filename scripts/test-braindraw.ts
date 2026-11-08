@@ -355,7 +355,7 @@ console.log('braindraw: page load ok');
     let clock = 5000; const timers: Fn[] = [], rafs: Fn[] = [];
     const docL: Record<string, Fn[]> = {}, winL: Record<string, Fn[]> = {};
     const mqReduce = { matches: false, listeners: [] as Fn[], addEventListener: (_: string, f: Fn) => { mqReduce.listeners.push(f); } };
-    const doc = { hidden: false, hasFocus: () => true, body: { appendChild: () => undefined }, createElement: () => fakeEl(), addEventListener: (k: string, f: Fn) => { (docL[k] = docL[k] || []).push(f); } };
+    const doc: { hidden: boolean; body: { classes: Set<string>; [k: string]: unknown }; [k: string]: unknown } = { hidden: false, hasFocus: () => true, body: { appendChild: () => undefined, classes: new Set<string>(), classList: { contains(c: string) { return (doc.body.classes as Set<string>).has(c); } } }, createElement: () => fakeEl(), addEventListener: (k: string, f: Fn) => { (docL[k] = docL[k] || []).push(f); } };
     const win = {
       exports: { ...BS, ...SF }, DurbarBrainDraw: D, performance: { now: () => clock }, devicePixelRatio: 1,
       matchMedia: (q: string) => (q.includes('reduced') ? mqReduce : { matches: false, addEventListener: () => undefined }),
@@ -397,6 +397,16 @@ console.log('braindraw: page load ok');
     const f = p.host.draw.stats.frames; p.host.feed('a', 'Ada', p.ev(1)); p.flush();
     assert.strictEqual(p.host.draw.stats.frames, f, 'a hidden window: no frame');
   }
+  // over a chat, Settings or List view the box is hidden (brain.css) and the renderer draws nothing (no overlap with the composer)
+  for (const cls of ['panel-open', 'screen-open', 'list-mode']) {
+    const p = page(() => 'Ada'); p.doc.body.classes.add(cls);
+    const f = p.host.draw.stats.frames; p.host.feed('a', 'Ada', p.ev(1)); p.flush(); p.tick(300); p.rafs.splice(0).forEach((fn) => fn());
+    assert.strictEqual(p.host.draw.stats.frames, f, `body.${cls}: the covered box draws no frame`);
+    p.doc.body.classes.delete(cls); p.host.feed('a', 'Ada', p.ev(2, 'view')); p.flush();
+    assert.ok(p.host.draw.stats.frames > f, `without body.${cls}: it draws again`);
+  }
+  const css = fs.readFileSync(path.join(DIR, 'brain.css'), 'utf8');
+  assert.ok(/body\.panel-open \.bv,body\.screen-open \.bv,body\.list-mode \.bv\{display:none\}/.test(css), 'brain.css hides the floating box over a chat, Settings and List view');
   // a removed agent's brain is forgotten; the box is empty if it was the one shown
   {
     const p = page(() => 'Ada'); p.host.feed('a', 'Ada', p.ev(1)); p.flush();

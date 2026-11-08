@@ -14,3 +14,5 @@
 .bv.is-folded .bv-body{display:none}
 @media (forced-colors:active){.bv .btn{background:ButtonFace;color:ButtonText;border-color:ButtonText}.bv{border-color:CanvasText;background:Canvas;color:CanvasText}.bv-card{background:Canvas;border:1px solid CanvasText}}
 .bv.is-empty{display:none}
+/* the floating box is for the office only: over a chat it would sit on the composer, over Settings or List view on their controls (no overlap, Calm UI) */
+body.panel-open .bv,body.screen-open .bv,body.list-mode .bv{display:none}

@@ -153,6 +153,16 @@ module.exports = async (ctx) => {
     assert.ok((await lit()).n > 1000, 'forced colours: still drawn');
     await H.shot(path.join(OUT, `106-brain-forced-${tag}.png`), { prep: 'calm' });
     await media([{ name: 'forced-colors', value: 'none' }]);
+    // ---- no overlap with the chat: the floating box is for the office only; with a chat open it is hidden and the composer is not under it
+    await H.focusPage({ emulate: 'first' });
+    const opened = await H.openSimAgent(`a=>a.id===${jsLiteral(id)}`, '#msgInput');
+    assert.ok(opened.ok, 'the chat opens: ' + JSON.stringify(opened.seen));
+    const under = await js(`(()=>{const out=[];for(const sel of ['#msgInput','#sendBtn','.composer']){const e=document.querySelector(sel);if(!e)continue;const r=e.getBoundingClientRect();if(!r.width)continue;
+      for(const [fx,fy] of [[0.5,0.5],[0.1,0.5],[0.9,0.5],[0.5,0.2],[0.5,0.8]]){const h=document.elementFromPoint(r.left+r.width*fx,r.top+r.height*fy);if(h&&h.closest('.bv'))out.push(sel+'@'+fx+','+fy);}}
+      const b=document.querySelector('.bv').getBoundingClientRect();return {out,w:b.width,composer:!!document.querySelector('.composer')};})()`);
+    assert.ok(under.composer, 'the composer exists');
+    assert.deepStrictEqual(under.out, [], 'FR-105: the brain box is not over the composer, the message box or Send at ' + tag);
+    assert.strictEqual(under.w, 0, 'with a chat open the floating box takes no room at all (' + tag + ')');
     console.log(`[106-brain] ${tag}: ok`);
   }
   console.log('[106-brain] screenshots in ' + OUT);
