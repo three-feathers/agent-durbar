@@ -39,8 +39,9 @@ concurrency:
 
 jobs:
   ui:
-    # spec 008 FR-182: macOS runs in three shards, named "UI checks (macos-latest 1/3)" etc.; Linux and Windows keep their names
-    name: UI checks (${{ matrix.os }}${{ matrix.os == 'macos-latest' && format(' {0}/3', matrix.shard) || '' }})
+    # spec 008 FR-182, FR-183: every OS runs the drivers in shards (Linux and Windows 4, macOS 3), named "UI shard (ubuntu-latest 1/4)" etc.;
+    # the job "UI suite complete" below needs all of them and is the one name to require
+    name: UI shard (${{ matrix.os }} ${{ matrix.shard }}/${{ matrix.os == 'macos-latest' && 3 || 4 }})
     if: ${{ !github.event.pull_request.draft }}
     runs-on: ${{ matrix.os }}
     # FR-131 gave macOS 80 minutes (one driver at a time, UI_SUITE_JOBS=1); it outgrew that too (nightly run 42205363015,
@@ -51,13 +52,10 @@ jobs:
       matrix:
         # FR-108: macOS nightly and by hand only
         os: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest","macos-latest","windows-latest"]' || '["ubuntu-latest","windows-latest"]') }}
-        # FR-182: shard i of 3 runs every third driver (scripts/ui-suite.js --shard); only macOS is sharded
-        shard: [1, 2, 3]
+        # FR-183: shard i of 4 runs a time-balanced quarter of the drivers (scripts/ui-suite.js --shard); macOS keeps 3 (FR-182)
+        shard: [1, 2, 3, 4]
         exclude:
-          - { os: ubuntu-latest, shard: 2 }
-          - { os: ubuntu-latest, shard: 3 }
-          - { os: windows-latest, shard: 2 }
-          - { os: windows-latest, shard: 3 }
+          - { os: macos-latest, shard: 4 }
     env:
       UI_SUITE_OUT: ${{ github.workspace }}/ui-shots
       # fast checks: drivers in parallel (measured 2026-10-20 on Linux: 18/18 in 222 s at 3, against about 560 s one by one)
@@ -65,8 +63,8 @@ jobs:
       UI_SUITE_JOBS: ${{ matrix.os == 'macos-latest' && '1' || '3' }}
       # Windows: 3 drivers on one shared desktop lose real input now and then (spec 008 FR-138): one retry, alone, reported as FLAKY; a second failure stays a failure
       UI_SUITE_RETRY: ${{ matrix.os != 'ubuntu-latest' && '1' || '0' }}
-      # FR-182: empty (every driver) off macOS
-      UI_SUITE_SHARD: ${{ matrix.os == 'macos-latest' && format('{0}/3', matrix.shard) || '' }}
+      # FR-182, FR-183: shard i of n
+      UI_SUITE_SHARD: ${{ format('{0}/{1}', matrix.shard, matrix.os == 'macos-latest' && 3 || 4) }}
       # FR-111 (owner decision 2026-10-22): theme geometry and shots-052-addleft check Clean Office and Retro on pull requests,
       # every built-in theme on main, nightly and by hand
       CHECK_ALL_THEMES: ${{ github.event_name == 'pull_request' && '0' || '1' }}
@@ -81,12 +79,12 @@ jobs:
           cache: npm
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y xvfb
-      - run: npm ci
+      - uses: ./.github/actions/npm-ci
       - run: npm run build
       # Theme geometry runs first in every job, macOS shards 2 and 3 included: the first Electron on a fresh Linux runner failed its
       # first frame capture when a driver was first (shots-001-welcome, UnknownVizError, PR #507); after geometry it passes. Whether a
       # fresh macOS runner has the same problem is unknown, so shards 2 and 3 do not risk it (geometry is fast).
-      # FR-182: the office layout and the Mac title bar run once per OS, in shard 1
+      # FR-182, FR-183: the office layout and the Mac title bar run once per OS, in shard 1 (which gets fewer drivers to make up for it)
       - name: Theme geometry
         run: node scripts/check-theme-geometry.js
       # the whole office layout, one Electron at a time (on Windows and macOS all windows share one desktop, and a covered test
@@ -104,7 +102,24 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ui-shots-${{ matrix.os }}${{ matrix.os == 'macos-latest' && format('-{0}', matrix.shard) || '' }}
+          name: ui-shots-${{ matrix.os }}-${{ matrix.shard }}
           path: ui-shots
           retention-days: 14
           if-no-files-found: ignore
+
+  # FR-183: the one stable name for the whole UI suite: green only when every shard of every OS passed. A skipped (draft) or cancelled
+  # shard is not a pass. Branch protection can require this job instead of the shards.
+  complete:
+    name: UI suite complete
+    if: ${{ always() && !github.event.pull_request.draft }}
+    needs: ui
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Every UI shard passed
+        env:
+          RESULT: ${{ needs.ui.result }}
+        run: |
+          echo "UI shards: $RESULT"
+          test "$RESULT" = "success"
