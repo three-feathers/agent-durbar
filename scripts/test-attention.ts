@@ -139,6 +139,9 @@ type Gate = {
 const AA = A as unknown as {
   createArrivals: (o?: { now?: () => number; throttleMs?: number }) => Arrivals;
   createDoorGate: (o?: { now?: () => number; coalesceMs?: number; throttleMs?: number }) => Gate;
+  createRiseGuard: (o?: { ms?: number }) => { opened: (t: number) => void; close: () => void; place: (l: { key: string; top: number; under: boolean }[], t: number) => Map<string, number>; armed: (at: number, t: number) => boolean };
+  pressVerdict: (s?: { found?: boolean; holds?: boolean; disabled?: boolean }) => 'send' | 'stale' | 'waiting';
+  RISE_GUARD_MS: number;
 };
 {
   let t = 1000; const now = () => t;
@@ -251,6 +254,41 @@ const AA = A as unknown as {
   assert.strictEqual(g.ruling({ open: false, held: false }), 'none', 'pending is cleared while the panel is open: a close that is not a dismissal does not reopen it');
   g.startup(); assert.strictEqual(g.ruling({ open: true, held: false }), 'none', 'open: the app-start opening is seen too');
   assert.strictEqual(g.ruling({ open: false, held: false }), 'none', 'the app-start flag is cleared while the panel is open');
+
+  // the rise guard (FR-198): no press for RISE_GUARD_MS after the panel opened or a row moved under the pointer
+  {
+    assert.strictEqual(AA.RISE_GUARD_MS, 400, 'the guard is 400 ms');
+    const rg = AA.createRiseGuard();
+    rg.opened(1000);
+    let at = rg.place([{ key: 'a/r1', top: 100, under: false }, { key: 'b/r2', top: 200, under: true }], 1010);
+    assert.strictEqual(at.get('a/r1'), 1400, 'every row of a newly opened panel is guarded until 400 ms after it opened');
+    assert.strictEqual(rg.armed(at.get('a/r1') as number, 1399), false, 'a press at 399 ms takes nothing');
+    assert.strictEqual(rg.armed(at.get('a/r1') as number, 1400), true, 'a press at 400 ms does');
+    assert.strictEqual(at.get('b/r2'), 1410, 'a new row under the pointer is guarded from when it appeared');
+    at = rg.place([{ key: 'a/r1', top: 100, under: true }, { key: 'b/r2', top: 200, under: true }], 2000);
+    assert.strictEqual(at.get('a/r1'), 1400, 'a row that did not move keeps its time, the pointer on it or not');
+    at = rg.place([{ key: 'b/r2', top: 100, under: true }], 3000);
+    assert.strictEqual(at.get('b/r2'), 3400, 'a row that moved to a place under the pointer is guarded again');
+    at = rg.place([{ key: 'b/r2', top: 100.4, under: true }, { key: 'c/r3', top: 180, under: false }], 4000);
+    assert.strictEqual(at.get('b/r2'), 3400, 'a sub-pixel change is not a move');
+    assert.strictEqual(at.get('c/r3'), 1400, 'a new row not under the pointer only has the panel guard');
+    // a realistic one-row move (rows are about 80 to 100 px tall): 60 to 90 px under the pointer is a move
+    for (const dy of [60, 75, 90]) {
+      rg.opened(20000); rg.place([{ key: 'm/r', top: 300, under: false }], 20001);
+      at = rg.place([{ key: 'm/r', top: 300 - dy, under: true }], 25000);
+      assert.strictEqual(at.get('m/r'), 25400, `a row that moved ${dy} px under the pointer is guarded again`);
+    }
+    rg.opened(9000); at = rg.place([{ key: 'b/r2', top: 100, under: false }], 9001);
+    assert.strictEqual(at.get('b/r2'), 9400, 'a reopened panel forgets the old rows');
+  }
+  // what a press does (FR-197): only the row's own live request is ever answered
+  {
+    assert.strictEqual(AA.pressVerdict({ found: true, holds: true, disabled: false }), 'send', 'own live card, own button: send');
+    assert.strictEqual(AA.pressVerdict({ found: false, holds: false, disabled: false }), 'stale', 'no card with that id: nothing is sent');
+    assert.strictEqual(AA.pressVerdict({ found: true, holds: false, disabled: false }), 'stale', 'the card no longer holds that button: nothing is sent');
+    assert.strictEqual(AA.pressVerdict({ found: true, holds: true, disabled: true }), 'waiting', 'a button already on its way: still waiting, nothing sent');
+    assert.strictEqual(AA.pressVerdict(undefined), 'stale', 'no information is a stale press');
+  }
 }
 
 // the default clock never goes back (round 6): a wall-clock jump back must not stop automatic openings

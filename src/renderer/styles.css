@@ -2190,6 +2190,7 @@ h2,h3,h4{text-wrap:balance}
 /* spec 052 FR-191..FR-196 (T197): Your door, the Needs you panel. Fixed over the room: no layout space, no backdrop, below dialogs (60). Tokens only (the size ratchet counts every literal). */
 .door-panel{position:fixed;z-index:35;display:flex;flex-direction:column;gap:var(--row-pad);box-sizing:border-box;padding:var(--row-pad);border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface);color:var(--ink);box-shadow:var(--shadow-pop)}
 body.panel-open .door-panel,#screen:not([hidden]) ~ .door-panel{display:none}
+.door-panel .inbox-row .ib-ans{flex-wrap:wrap}.door-panel .inbox-row .ib-ans>.btn{white-space:normal;text-align:left}.door-panel .ib-note{font-size:var(--t3-size);line-height:var(--t3-lh);color:var(--ink-2)} /* spec 052 FR-199: option buttons and a limit row wrap inside the panel; the row's own lines */
 .door-head{display:flex;align-items:center;gap:var(--row-pad)}
 .door-head h2{margin:0;flex:1 1 auto;min-width:0;font-size:var(--t2-size);line-height:var(--t2-lh);font-weight:var(--t2-weight)}
 .door-head .btn{flex:none;min-height:28px;min-width:28px}
@@ -2204,6 +2205,7 @@ body.panel-open .door-panel,#screen:not([hidden]) ~ .door-panel{display:none}
 @media (forced-colors:active){.door-panel{border:1px solid CanvasText}}
 .door-body .inbox-row .ib-ans{flex-wrap:wrap;max-width:100%}
 .door-body .inbox-row .ib-ans>.btn.session{flex:1 1 100%;display:block;height:auto;min-height:28px;padding-top:var(--r-sm);padding-bottom:var(--r-sm);white-space:normal;overflow:visible;text-overflow:clip;text-align:left} /* FR-199 (Q-NY-10): the session grant on its own line, wrapped and never cut */
+.door-body .inbox-row.is-limit .ib-ans>.btn.session{flex:none;display:inline-block;height:28px;min-height:0;padding-top:0;padding-bottom:0;white-space:nowrap;text-align:center} /* the limit row's Remove limit is a plain button like Raise limit and Stop here */
 
 /* ---- spec 070 A14 (FR-061..FR-066, FR-075, FR-076; T034..T036, T044): Flat's modern look, behind html[data-flat-look] (flatlook.js; off by default).
    Only Flat matches: Clean Office has no data-ui and no world is shown, so Real office, Retro, the cave and every other pack are untouched (FR-066).
