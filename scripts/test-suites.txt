@@ -148,6 +148,8 @@ test:mcpservertools
 test:navigator
 test:crew
 test:characters
+test:chargen
+test:imagecheck
 test:crew-assets
 test:realoffice-layout
 test:realoffice-assets
@@ -223,3 +225,5 @@ test:quota
 test:featureinventory
 test:simversion
 test:momentsregistry
+test:picturebudget
+test:specnumbers

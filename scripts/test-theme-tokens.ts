@@ -537,3 +537,44 @@ console.log('toggle switch: on track, both knobs pass 3:1 in Clean Office and th
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
   console.log(`size ratchet: ${inv.KINDS.length} kinds, chrome and office apart, ${real.buttonSets.length} button class sets; a planted literal of each kind fails`);
 }
+
+{ // spec 070 A14 (T034, T036, T038, T044; FR-061, FR-066, FR-067, FR-075): Flat's modern look is behind html[data-flat-look] and only Flat matches
+  const css = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'styles.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const root = css.slice(css.indexOf(':root{'), css.indexOf('}', css.indexOf(':root{')));
+  const flat = (k: string) => (root.match(new RegExp(`--flat-${k}:\\s*(#[0-9a-f]{6})`)) || [])[1] as string;
+  const GATE = 'html[data-flat-look]:not([data-ui]):not([data-world])';
+  const block = css.slice(css.indexOf(GATE + '{'));
+  assert.ok(block.length > 0 && css.split('data-flat-look').length > 1, 'the flat-look block exists');
+  // the gate: every rule naming the flag also excludes another pack and a world (a mutant that drops either is caught here)
+  for (const m of css.matchAll(/([^{}]*data-flat-look[^{}]*)\{/g)) assert.ok(/:not\(\[data-ui\]\):not\(\[data-world\]\)/.test(m[1]), `flag rule is gated to Flat: ${m[1].trim().slice(0, 60)}`);
+  // the flat section (from the first flag rule to the end of the file) holds nothing but gated rules: an unscoped `.btn{height:24px}` next to them would change every world
+  const sectRules = [...block.matchAll(/([^{}]+)\{[^{}]*\}/g)];
+  assert.ok(sectRules.length >= 2, 'the flat section has its rules');
+  for (const m of sectRules) assert.ok(m[1].trim().startsWith(GATE), `flat section: every selector starts with the gate, not "${m[1].trim().slice(0, 60)}"`);
+  assert.strictEqual(block.replace(/[^{}]/g, '').replace(/\{\}/g, '').length, 0, 'flat section: no nested or unbalanced blocks (an @media would hide an ungated rule)');
+  // flag off: the edited-in-place rules resolve (through :root) to main's values, so a token swap such as .inbox radius var(--r-md) fails
+  const screens = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const offCss = css.slice(0, css.indexOf(GATE + '{')) + '\n' + screens;
+  const rootDecl = (n: string): string => { const all = [...root.matchAll(new RegExp(`${n}:\\s*([^;}]+)`, 'g'))]; assert.ok(all.length > 0, `:root declares ${n}`); return all[all.length - 1][1].trim(); };
+  const resolve = (v: string): string => v.replace(/var\((--[\w-]+)\)/g, (_, n) => resolve(rootDecl(n)));
+  const offVal = (sel: string, prop: string): string => {
+    let found = ''; const esc = sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    for (const m of offCss.matchAll(new RegExp(`(?:^|})\\s*${esc}\\s*\\{([^{}]*)\\}`, 'g'))) { const d = m[1].match(new RegExp(`(?:^|;)\\s*${prop}:\\s*([^;]+)`)); if (d) found = d[1].trim(); }
+    return resolve(found);
+  };
+  for (const [sel, prop, want] of [
+    ['.inbox', 'border-radius', '14px'], ['.inbox', 'padding', '6px'], ['.ib', 'width', '34px'], ['.ib', 'height', '34px'], ['.ib', 'border-radius', '10px'],
+    ['.composer', 'padding', '8px max(16px,calc((100% - 880px)/2))'], ['.ptab', 'height', '30px'], ['.ptab', 'padding', '0 12px'], ['.btn', 'height', '32px'], ['.btn', 'padding', '0 14px'], ['.btn', 'border-radius', '10px'],
+    ['.btn', 'font-size', '13px'], ['.btn', 'font-weight', '550'], ['.btn.sm', 'height', '28px'], ['.ph .btn', 'height', '28px'], ['.notice-strip .btn', 'height', '28px'], ['.ctoolbar', '--h-chip', '28px'],
+  ] as Array<[string, string, string]>) assert.strictEqual(offVal(sel, prop), want, `flag off: ${sel} ${prop} is main's ${want}`);
+  // off by default: the :root values, which every other world and pack read, are today's
+  for (const [k, v] of [['--h-ctl', '32px'], ['--r-md', '10px'], ['--btn-pad', '14px'], ['--btn-fw', '550'], ['--ib-size', '34px'], ['--ptab-h', '30px'], ['--btn-sm-h', '28px'], ['--composer-pad', '8px']]) assert.ok(new RegExp(`${k}:\\s*${v}\\b`).test(root), `${k} keeps ${v} in :root`);
+  // FR-075 sizes in the block: 24 px controls, 12 px text at weight 500, 8 px padding, radii 3/4/6/8; nothing under 24
+  for (const re of [/--h-ctl:\s*24px/, /--btn-pad:\s*8px/, /--btn-fs:\s*var\(--t4-size\)/, /--btn-fw:\s*500/, /--ib-size:\s*24px/, /--r-sm:\s*3px;\s*--r-md:\s*4px;\s*--r-lg:\s*6px;\s*--r-xl:\s*8px/]) assert.ok(re.test(block), `flat-look sets ${re}`);
+  for (const m of block.matchAll(/--(?:h-ctl|h-chip|ib-size|ptab-h|ct-h|btn-sm-h):\s*(\d+)px/g)) assert.ok(Number(m[1]) >= 24, `no control token under 24px in the flat block (${m[0]})`);
+  // FR-067: the contrast pairs of FR-061 (4.5:1 for text, 3:1 for the control edge)
+  const page = flat('page'), page2 = flat('page-2'), acc = flat('accent'), hov = flat('accent-hover'), ctl = flat('line-ctl');
+  const ink = '#2c3733', ink2 = '#56605b', muted = '#535a55';
+  for (const [fg, bg, min, what] of [[ink, page, 4.5, 'ink on page'], [ink2, page, 4.5, 'ink-2 on page'], [muted, page, 4.5, 'muted on page'], [ink, page2, 4.5, 'ink on surface-2'], [ink2, page2, 4.5, 'ink-2 on surface-2'], [muted, page2, 4.5, 'muted on surface-2'], [page, acc, 4.5, 'primary text on accent'], [page, hov, 4.5, 'primary text on hover'], [ctl, page, 3, 'control edge on page'], [ctl, page2, 3, 'control edge on surface-2']] as Array<[string, string, number, string]>) assert.ok(contrast(fg, bg) >= min, `flat look: ${what} ${contrast(fg, bg).toFixed(2)} < ${min}`);
+  console.log('flat look: gated to Flat, off values kept in :root, 24 px floor, FR-061 pairs pass');
+}
