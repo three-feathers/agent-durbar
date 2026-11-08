@@ -180,7 +180,7 @@ function helpers(ctx) {
   const clearToasts = () => js(`document.querySelectorAll('#toasts .toast').forEach(t=>t.remove())`);
   /**
    * Size the window, load the renderer with the simulator query and wait until it is ready (default: 15 desks) and has stopped changing.
-   * `query` is added to sim=15 and simfreeze=1 (an undefined value removes one); `fastVisits: true` adds `simvisits=fast` (spec 008 FR-190: the lobby's own timers 10x shorter, simulator only; for a driver that never looks at lobby visits or walking and takes no picture of them); `fastReply: true` adds `simreply=fast` (a simulated reply's four thinking pauses 60 ms instead of 650 ms; for a driver that waits for the reply and does not look at how long it thinks); `ready` is a page expression ('fit': the stage has laid out); `settle: false` skips the
+   * `query` is added to sim=15 and simfreeze=1 (an undefined value removes one); `fastVisits: true` adds `simvisits=fast` (spec 008 FR-190: the lobby's own timers 10x shorter, simulator only; for a driver that never looks at lobby visits or walking and takes no picture of them); `fastReply: true` adds `simreply=fast` (a simulated reply's four thinking pauses 60 ms instead of 650 ms; for a driver that waits for the reply and does not look at how long it thinks); `steady: false` skips that wait for the simulator's steady state (check-office-ops: it counts what changes right after a load); `ready` is a page expression ('fit': the stage has laid out); `settle: false` skips the
    * settling wait; `focus` focuses the page afterwards.
    */
   const load = async (o = {}) => {
@@ -196,7 +196,7 @@ function helpers(ctx) {
     if (!(await ctx.waitFor(ready, o.readyMs || 15000))) console.log(`[waits] load: the ready expression never held in ${o.readyMs || 15000} ms (pass \`ready\` for this page): ${String(ready).replace(/\s+/g, ' ').slice(0, 120)}`); // spec 008 FR-190: a timeout here costs the whole wait
     // spec 008 FR-190: a frozen simulator says when it is steady (every script replayed, no lobby visit waiting to start or end, the frame drawn): wait for that
     // instead of letting `settle` find it by sampling 200 ms apart (a load used to spend 0.5-1 s there). `settle` still runs after it, so nothing is skipped.
-    if (query.simfreeze === '1' && !o.index && o.settle !== false) await w.until(`!!window.__durbarSimReplayed&&!!window.__durbarSimUi&&window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()&&!document.querySelector('.scene-out')`, 4000);
+    if (query.simfreeze === '1' && !o.index && o.settle !== false && o.steady !== false) await w.until(`!!window.__durbarSimReplayed&&!!window.__durbarSimUi&&window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()&&!document.querySelector('.scene-out')`, 4000);
     if (o.settle !== false) await w.settle();
     if (o.focus) wc().focus();
   };

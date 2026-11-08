@@ -83,7 +83,8 @@ module.exports = async (ctx) => {
     await js(TWO_FRAMES);
   };
   for (const n of [15, 40]) {
-    const load = (w = 1440, h = 900) => H.load({ w, h, index: process.env.OPS_INDEX || undefined, query: { sim: String(n) }, ready: FLAT, readyMs: 30000 });
+    /* `steady: false` (spec 008 FR-190): this driver counts what changes in a short window after a load; the row statusNodes@retro* is a race with the screen painter (a working desk's caret is made, then removed by the next status, about 0.2 s after the observer starts in about half of the local runs, on main too), so it keeps the old load timing instead of getting faster */
+    const load = (w = 1440, h = 900) => H.load({ steady: false, w, h, index: process.env.OPS_INDEX || undefined, query: { sim: String(n) }, ready: FLAT, readyMs: 30000 });
     await load();
     await js(`localStorage.setItem('durbar.doorsigns','off')`); // desks as scenes, not doors: every working desk animates (the doors and signs are going)
     await load();
@@ -245,7 +246,7 @@ module.exports = async (ctx) => {
     }
 
     /* spec 102 T212: a world's arrangement has the same row and no allowance of its own: the arcade, one text change on a marquee. */
-    await H.load({ w: 1440, h: 900, index: process.env.OPS_INDEX || undefined, query: { sim: String(n), officeview: 'real', worldflags: 'retro', world: 'retro' }, ready: `!!document.querySelector('#stage .ro .ro-marquee')`, readyMs: 30000 });
+    await H.load({ steady: false, w: 1440, h: 900, index: process.env.OPS_INDEX || undefined, query: { sim: String(n), officeview: 'real', worldflags: 'retro', world: 'retro' }, ready: `!!document.querySelector('#stage .ro .ro-marquee')`, readyMs: 30000 });
     await js(`(()=>{const s=document.createElement('style');s.textContent='*,*::before,*::after{animation:none!important;transition:none!important}';document.head.appendChild(s);})();0`);
     await measure('#stage .ro-marquee', '#stage .ro-marquee', `elementsRecalculated@retro${n}`, `${n} agents, arcade`);
     /* spec 102 T262 (FR-229, SC-024): in the arcade a status update adds or removes no element under the office: 8 status events alternating idle and
@@ -273,7 +274,7 @@ module.exports = async (ctx) => {
 
     /* spec 097 FR-244 (T190): a status change that tints or clears a desk's screen (FR-236) adds or removes no screen or New reply tag: the tint is a
        class on the screen made once per desk. 8 status events alternating error (red) and working (the normal screen) on one desk. */
-    await H.load({ w: 1440, h: 900, index: process.env.OPS_INDEX || undefined, query: { sim: String(n), officeview: 'real' }, ready: `!!document.querySelector('#stage .ro .ro-screen')`, readyMs: 30000 });
+    await H.load({ steady: false, w: 1440, h: 900, index: process.env.OPS_INDEX || undefined, query: { sim: String(n), officeview: 'real' }, ready: `!!document.querySelector('#stage .ro .ro-screen')`, readyMs: 30000 });
     const tid = await js(`(()=>{const p=[...document.querySelectorAll('#stage .ro-plate[data-state="working"]')][0];return p?p.dataset.id:'';})()`);
     assert.ok(tid, `${n} agents: a working desk with the normal screen`);
     await js(`(()=>{window.__tN=0;const f=ms=>{for(const m of ms)for(const x of [...m.addedNodes,...m.removedNodes])if(x.nodeType===1&&x.matches('.ro-screen,.ro-newtag'))window.__tN++;};window.__tO=new MutationObserver(f);for(const l of document.querySelectorAll('#stage .ro-art,#stage .ro-chrome'))window.__tO.observe(l,{childList:true});})()`);
