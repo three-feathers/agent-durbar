@@ -11,6 +11,7 @@ import { COPILOT_CAPABILITIES, COPILOT_STEP_NO_ANSWER, COPILOT_STOP_WAIT, COPILO
 import { AUTOPILOT_ANSWER, CLOCK_SAMPLE_MS } from '../src/adapters/autopilot';
 import { AUTOPILOT_ONE_RUN, LINE_BACKSTOP, LINE_CAP_NOT_RESTORED, LINE_CLOSED, LINE_SELF_STARTED, LINE_UNCONFIRMED } from '../src/adapters/autopilotHost';
 import type { AutopilotTuning } from '../src/adapters/autopilotHost';
+import { MIN_CAP } from '../src/shared/credits';
 import { eventProblems } from '../src/adapters/eventguard';
 import type { AgentEvent } from '../src/adapters/types';
 
@@ -67,6 +68,7 @@ function orderedModes(s: FakeSession): { asked: () => boolean; release: () => vo
 
 async function main(): Promise<void> {
   process.exitCode = 1;
+  assert.strictEqual(COPILOT_CAPABILITIES.autopilot?.capMin, MIN_CAP, 'T022: the capability\'s smallest cap is the runtime\'s own MIN_CAP (D9), never a copy of the number');
   assert.deepStrictEqual({ ...COPILOT_CAPABILITIES.autopilot }, { capUnit: 'aiu', attachments: true, planApproval: true, verified: false, capMin: 30 }, 'T022: capability, not verified; its smallest cap (D9) is the adapter\'s own');
 
   // FR-050: Stop acts before anything is awaited: a hung limit answer and a sign-in refresh hold nothing back (Phase 3)

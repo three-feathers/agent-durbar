@@ -423,7 +423,7 @@ the cap is reached, the run ends with **cap**. Without a cap, the dialog says pl
   - **The settings form** in the page (`askDialog`) collects the values, and it grants nothing:
     - "Keep going for at most [5] more turns per message", with the warning above 20 (FR-021);
     - "Stop after [2] hours", with the warning above 2 (FR-021);
-    - "[ ] Stop at a spend cap of [ ] <unit>" (FR-022: unit words "AI credits", "US dollars (Claude's estimate)", "tokens";
+    - "[ ] Stop at a spend cap of [ ] <unit>" (FR-022: unit words "AI credits", "US dollars (an estimate)", "tokens";
       Copilot minimum 30: a lower value is raised to 30 with the D9 sentence), followed by what the value counts (FR-022): "for this session in total (<spent> so far)" on Copilot and Claude Code, "for this run" on Codex;
     - the no-cap sentence while it is unticked;
     - buttons *Cancel* and *Continue…*.
