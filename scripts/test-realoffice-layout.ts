@@ -352,7 +352,9 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
   assert.deepStrictEqual(C.peopleFor('cave', 'theme', { cave: true }), { world: 'cave', set: 'prehistoric', setName: 'Prehistoric', note: '' }, "the cave's default set is Prehistoric");
   assert.deepStrictEqual(C.peopleFor('cave', 'theme', { cave: false }), { world: 'photo', set: 'office', setName: 'Office people', note: '' }, 'flag off: the cave is not drawn');
   assert.strictEqual(C.peopleFor('photo', 'prehistoric', { cave: true }).set, 'prehistoric', 'any set in any world: Prehistoric in the Photo office');
-  assert.strictEqual(C.peopleFor('photo', 'prehistoric', { cave: false }).set, 'office', 'flag off: the set is not drawn either');
+  assert.strictEqual(C.peopleFor('photo', 'prehistoric', { cave: false }).set, 'prehistoric', 'Q12 (owner 2026-11-08): the full Prehistoric set is drawn in the Photo office with the cave closed');
+  assert.ok(!C.REAL_SETS.find((x) => x.id === 'prehistoric')!.flag, 'Q12: the Prehistoric row has no flag (re-coupling it to the cave fails here)');
+  assert.deepStrictEqual(C.offeredWorlds({ cave: false }).map((w) => w.id), ['photo'], 'Q12: the cave world stays closed with its flag');
   // the lists are data: a flagged world with its own default set is added by rows alone (a Pirate world later changes no code)
   C.WORLDS.push({ id: 'pirate', name: 'Pirate ship', defaultSet: 'pirates', flag: 'pirate' });
   C.REAL_SETS.push({ id: 'pirates', name: 'Pirates', choice: 'pirates', flag: 'pirate' });
@@ -390,8 +392,14 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
   const note = (c: string): string => C.peopleFor('photo', c).note;
   for (const c of ['minimalist', ...Object.keys(C.CREWS)]) if (!C.REAL_SETS.some((s) => s.choice === c)) assert.strictEqual(note(c), `Real office shows Office people until ${c[0].toUpperCase() + c.slice(1)} has Real office poses.`, `${c}: has its note`);
   for (const c of ['theme', 'mine', '', '__proto__', 'constructor', 'office']) assert.strictEqual(note(c), '', `${c || '(none)'}: no note`);
-  assert.strictEqual(note('prehistoric'), 'Real office shows Office people until Prehistoric is open in Real office.', 'FR-336: flag off: Prehistoric has its poses, the owner\u2019s gate is what is closed, and the note says so');
-  assert.strictEqual(C.peopleFor('photo', 'prehistoric', { cave: true }).note, '', 'flag on: Prehistoric is drawn, no note');
+  assert.strictEqual(note('prehistoric'), 'Real office draws the Prehistoric people.', 'Q12: Prehistoric draws its own people, and Settings says so');
+  { // FR-336 `closed` stays for any set row whose flag is off (here a crew's, temporarily)
+    C.REAL_SETS.push({ id: 'royals', name: 'Royals', choice: 'royal', flag: 'cave' });
+    try {
+      assert.strictEqual(C.levelFor('royal', { cave: false }), 'closed'); assert.strictEqual(C.levelFor('royal', { cave: true }), 'full');
+      assert.strictEqual(note('royal'), 'Real office shows Office people until Royal is open in Real office.', 'FR-336: a set with poses behind a closed flag says it is not open');
+    } finally { C.REAL_SETS.pop(); }
+  }
   // spec 097 FR-335, FR-336: every Characters value resolves to one set, with a level and a true note (issue #1154)
   {
     const CLOSED = { cave: false, retro: false }, OPEN = { cave: true, retro: false };
@@ -399,12 +407,12 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
       theme: ['default', 'default', 'office', 'office'], '': ['default', 'default', 'office', 'office'], mine: ['default', 'default', 'office', 'office'],
       minimalist: ['heads', 'heads', 'office', 'office'], cheeky: ['heads', 'heads', 'office', 'office'], pirate: ['heads', 'heads', 'office', 'office'],
       monster: ['heads', 'heads', 'office', 'office'], royal: ['heads', 'heads', 'office', 'office'], rebels: ['heads', 'heads', 'office', 'office'],
-      prehistoric: ['closed', 'full', 'office', 'prehistoric'],
+      prehistoric: ['full', 'full', 'prehistoric', 'prehistoric'],
     };
     for (const [c, [lc, lo, sc, so]] of Object.entries(want)) {
       assert.strictEqual(C.levelFor(c, CLOSED), lc, `${c || '(none)'}: level, gate closed`); assert.strictEqual(C.levelFor(c, OPEN), lo, `${c || '(none)'}: level, gate open`);
       assert.strictEqual(C.peopleFor('photo', c, CLOSED).set, sc, `${c || '(none)'}: set, gate closed`); assert.strictEqual(C.peopleFor('photo', c, OPEN).set, so, `${c || '(none)'}: set, gate open`);
-      assert.strictEqual(C.peopleFor('photo', c, OPEN).note === '', lo === 'default' || lo === 'full', `${c || '(none)'}: a note exactly when the people are not the choice's own`);
+      assert.strictEqual(C.peopleFor('photo', c, OPEN).note === '', lo === 'default', `${c || '(none)'}: no note only for the default; a crew always gets a line`);
     }
     for (const c of Object.keys(C.CREWS)) assert.ok(c in want, `${c}: every crew is in this table, so a new crew must be decided here`);
     for (const c of ['__proto__', 'constructor', 'toString', 'office', 'nonsense']) assert.strictEqual(C.levelFor(c, OPEN), 'default', `${c}: not a crew, no level to report`);

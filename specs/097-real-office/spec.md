@@ -1163,6 +1163,31 @@ Numbers checked 2026-11-08 against `main`, every remote branch and every open PR
 
 ### Questions for the owner (this delta)
 
-- **Q12 Open the Prehistoric people in Real office before the cave?** Prehistoric's frames are full, but its set row shares `WORLD_FLAGS.cave` with the cave world, so a Prehistoric user sees Office people in Real office. (a) Keep the gate until the cave ships (nothing changes); (b) give the set its own flag, `prehistoric`, open, so Prehistoric people work in the Photo office now (spec 102 FR-200: any set in any world); the cave world stays closed. Recommendation: (b), but the gate is yours (the 2026-11-01 delta), so nothing here opens it.
-- **Q13 Which crew's Real office frames first, and who draws them?** 468 frames in all (FR-337). Recommendation by size: Pirate, Monster, Royal, Rebels (72 each), then Cheeky (180). Paco approves each picture.
-- **Q14 Minimalist in Real office.** It has no pictures, so Real office shows the Office people with a note. (a) Keep that, since Office people are the plain people anyway and the note is honest; (b) hide the note for Minimalist. Recommendation: (a).
+- **Q12** *Answered 2026-11-08, see the next delta: yes (b).* **Open the Prehistoric people in Real office before the cave?** Prehistoric's frames are full, but its set row shares `WORLD_FLAGS.cave` with the cave world, so a Prehistoric user sees Office people in Real office. (a) Keep the gate until the cave ships (nothing changes); (b) give the set its own flag, `prehistoric`, open, so Prehistoric people work in the Photo office now (spec 102 FR-200: any set in any world); the cave world stays closed. Recommendation: (b), but the gate is yours (the 2026-11-01 delta), so nothing here opens it.
+- **Q13** *Answered 2026-11-08, see the next delta: Codex image generation, in the order given there.* **Which crew's Real office frames first, and who draws them?** 468 frames in all (FR-337). Recommendation by size: Pirate, Monster, Royal, Rebels (72 each), then Cheeky (180). Paco approves each picture.
+- **Q14** *Answered 2026-11-08, see the next delta: support all characters in all worlds, so no fallback note in the end.* **Minimalist in Real office.** It has no pictures, so Real office shows the Office people with a note. (a) Keep that, since Office people are the plain people anyway and the note is honest; (b) hide the note for Minimalist. Recommendation: (a).
+
+### 2026-11-08: owner answers to Q12, Q13, Q14; every Characters value in every world (issue #1154; changes FR-335, FR-336, FR-337; T238..T239; new T240..T249)
+
+**Quotes.** Q12 and Q13, Vikram, Telegram DM, 2026-11-08 05:29 UTC, relayed by the coordinator session: "Yes and also creating images if it is about all poses and only image generation as you have codex". Q14, Vikram, 05:31 UTC, relayed: "What is the note? We should support all characters on all worlds".
+
+- **Q12 resolved: yes.** A set with full poses needs no flag (the owner's rule: what is usable in full is not hidden). The Prehistoric `REAL_SETS` row has no `flag`; only the cave **world** stays behind `WORLD_FLAGS.cave`. `levelFor('prehistoric')` is `full` in the Photo office with the cave closed, and `peopleFor('photo', 'prehistoric')` draws the Prehistoric set. FR-335's table row for Prehistoric reads: full, open, draws its own people. `closed` stays in `levelFor` for any future set row with a flag that is off.
+- **FR-336 changed.** A crew whose own set is drawn says so in the one Settings line: "Real office draws the <Crew> people." (Prehistoric today). The `heads` line stays only as a **temporary, true** state: it goes **per set, in the task that lands that set** (T240..T245), never before, because the note is the honest statement while the Office people are drawn instead.
+- **Q13 resolved.** The missing frames (T238, FR-337's 12 per person) are made by **Codex image generation** (the owner approved image generation for office and character art on 2026-10-31; this answer extends it to all poses), by the coordinator's art lane, **Pirate first as the quality sample for the owner's look**, then Royal, Rebels, Monster, Cheeky, Minimalist. Per-picture approval, provenance in `ASSETS.md`, fictional people and no likeness (FR-067) are unchanged. Nothing is faked from heads. Minimalist joins the scope: its Real office people are new art (6 or more people in the plain look; spec 102 OP-11, T110), 12 frames each.
+- **Q14 resolved: the end state is every Characters value drawing its own figures in every world, with no fallback note.** Until each set lands the note stays (above).
+
+**The parity matrix, read from the code on 2026-11-08** (cells say what the world draws today for the Characters value; sources: `src/shared/characters.ts` `CHARACTER_CHOICES`, `CHARACTER_KITS`; `src/renderer/crew.js` `WORLDS`, `REAL_SETS`, `WORLD_FLAGS`, `peopleFor`, `levelFor`, `idsFor`; spec 102 FR-202; the sets under `src/renderer/realoffice/sets/`):
+
+| Characters | Flat / Open office | Retro arcade (flag `retro` closed) | Photo office | Prehistoric cave (flag `cave` closed) |
+|---|---|---|---|---|
+| Default (`theme`) | the theme's own figures | Retro pixel people (the world's default set) | Office people | Prehistoric (the world's default set) |
+| Minimalist | the `office` kit | Retro pixel people + note | Office people + note | Prehistoric people + note |
+| Cheeky | `crew` kit, 15 heads (3 poses) | Retro pixel people + note | Office people + note | Prehistoric people + note |
+| Prehistoric | `crew` kit, 6 heads | its set is chosen by `peopleFor`; never looked at in the arcade (spec 102 T225 not done) | its own set, full (Q12) | its own set (the world's default) |
+| Pirate | `crew` kit, 6 heads | Retro pixel people + note | Office people + note | Prehistoric people + note |
+| Monster | `crew` kit, 6 heads | Retro pixel people + note | Office people + note | Prehistoric people + note |
+| Royal | `crew` kit, 6 heads | Retro pixel people + note | Office people + note | Prehistoric people + note |
+| Rebels | `crew` kit, 6 heads | Retro pixel people + note | Office people + note | Prehistoric people + note |
+| My characters | not a Characters value yet (spec 096 unbuilt; absent from `CHARACTER_CHOICES`) | none | none (FR-081: Office people when it exists and has no frames) | none |
+
+Missing cells and the task that books each (none is built in this PR): the six crew and Minimalist cells in the Photo office, the arcade and the cave need the set to exist: T240..T245 (art, one per set, with the note's removal). Every landed set must then be drawn and read in the arcade and in the cave: T247 (arcade, with spec 102 T225 for Prehistoric and the Retro pixel people in the Photo office) and T248 (cave). My characters everywhere: T246 (with spec 096 and spec 102 T112). Flat has every cell but My characters.

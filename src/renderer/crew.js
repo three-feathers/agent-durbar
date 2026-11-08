@@ -186,7 +186,7 @@
   ];
   const REAL_SETS = [
     { id: 'office', name: 'Office people', choice: '' },
-    { id: 'prehistoric', name: 'Prehistoric', choice: 'prehistoric', flag: 'cave' },
+    { id: 'prehistoric', name: 'Prehistoric', choice: 'prehistoric' }, /* owner 2026-11-08 (097 Q12): a set with full poses needs no flag; only the cave WORLD is gated */
     { id: 'retro', name: 'Retro pixel', choice: 'retro', flag: 'retro' },
   ];
   /* the Characters choices that name a crew (Minimalist has none), from CREWS: a new crew gets its note by construction */
@@ -202,7 +202,7 @@
   function peopleFor(world, choice, flags) {
     const w = rowOf(WORLDS, parseWorld(world, flags)), c = String(choice || '');
     const byChoice = c && c !== 'theme' ? REAL_SETS.find((s) => s.choice === c && on(s, flags)) : null;
-    if (byChoice) return { world: w.id, set: byChoice.id, setName: byChoice.name, note: '' };
+    if (byChoice) return { world: w.id, set: byChoice.id, setName: byChoice.name, note: crewName(c) ? `Real office draws the ${crewName(c)} people.` : '' }; /* 097 Q12: say that the crew's own people are drawn */
     const d = rowOf(REAL_SETS, w.defaultSet);
     const def = d && on(d, flags) ? d : REAL_SETS[0];
     const lv = levelFor(c, flags), n = crewName(c);

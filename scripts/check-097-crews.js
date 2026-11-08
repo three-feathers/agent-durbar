@@ -8,13 +8,14 @@
  * For each Characters value (picked in Settings, the real path, then the page is loaded again so what was fetched is only what Real
  * office asks for) it fails when:
  *   - the room does not draw the people set `peopleFor` names (data-set on the room): the Office people for the default, Minimalist,
- *     Cheeky, Pirate, Monster, Royal and Rebels, and for Prehistoric while the cave gate is closed; the Prehistoric set when the
- *     simulator opens the gate (worldflags=cave);
+ *     Cheeky, Pirate, Monster, Royal and Rebels; the Prehistoric set, also with the cave
+ *     gate closed (owner 2026-11-08, Q12: only the cave world is gated; its frames are requested, no Office people picture is, and the
+ *     cave world is not offered); the same with the simulator's worldflags=cave;
  *   - a person or visitor picture of the scene is not from that set's folder, or there are fewer than 12 of them;
  *   - a crew picture (crew/art/) is in the Real office scene, or was requested by the page at all, or a set's pack other than the Office people's (the page starts on them) and the chosen set's, or any
  *     world but the Photo office, was requested (spec 102 FR-205);
  *   - the line under Office layout (#dsR) is not the true one: "... until <Crew> has Real office poses." for a crew with heads only
- *     and Minimalist, "... until Prehistoric is open in Real office." with the gate closed, empty for the default and for a set that is drawn;
+ *     and Minimalist, "Real office draws the Prehistoric people." for Prehistoric, empty for the default;
  *   - the room scrolls or a plate overlaps another (spec 001's 15-agent fit).
  * Screenshots: <SHOTS_OUT>/097-crews-<value>-<w>x<h>.png.
  */
@@ -35,8 +36,9 @@ const CASES = [
   ['monster', false, 'office', 'Real office shows Office people until Monster has Real office poses.'],
   ['royal', false, 'office', 'Real office shows Office people until Royal has Real office poses.'],
   ['rebels', false, 'office', 'Real office shows Office people until Rebels has Real office poses.'],
-  ['prehistoric', false, 'office', 'Real office shows Office people until Prehistoric is open in Real office.'],
-  ['prehistoric', true, 'prehistoric', ''],
+  /* owner 2026-11-08 (097 Q12): the full Prehistoric set has no gate of its own; only the cave world is gated */
+  ['prehistoric', false, 'prehistoric', 'Real office draws the Prehistoric people.'],
+  ['prehistoric', true, 'prehistoric', 'Real office draws the Prehistoric people.'],
 ];
 
 module.exports = async (ctx) => {
@@ -72,7 +74,10 @@ module.exports = async (ctx) => {
       L=window.__durbarSimUi.realLayout();
       return {set:ro.dataset.set,world:ro.dataset.world,n:pics.length,foreign:pics.filter(i=>!i.getAttribute('src').includes('sets/'+ro.dataset.set+'/')).map(i=>i.getAttribute('src')),
         crewInScene:document.querySelectorAll('#stage image[href*="crew/art/"],#stage img[src*="crew/art/"]').length,crewReq:res.filter(n=>/crew\\/art\\//.test(n)).length,packs,
-        scroll:L.scroll,plates:document.querySelectorAll('#stage .ro-plate').length}})()`);
+        worlds:window.DurbarCrew.offeredWorlds().map(x=>x.id),officeReq:res.filter(n=>/sets\\/office\\/.*\\.webp/.test(n)).length,setReq:res.filter(n=>new RegExp('sets\\/'+ro.dataset.set+'\\/.*\\.webp').test(n)).length,scroll:L.scroll,plates:document.querySelectorAll('#stage .ro-plate').length}})()`);
+    assert.deepStrictEqual(r.worlds, gate ? ['photo', 'cave'] : ['photo'], `${tag}: the cave world is offered only with its own flag: ${r.worlds}`);
+    assert.strictEqual(r.officeReq, set === 'office' ? r.officeReq : 0, `${tag}: Office people pictures requested after the pick: ${r.officeReq}`);
+    if (set !== 'office') assert.ok(r.setReq >= 12, `${tag}: the ${set} frames were requested (${r.setReq})`);
     assert.strictEqual(r.set, set, `${tag}: the room draws the ${set} people, not ${r.set}`);
     assert.strictEqual(r.world, 'photo', `${tag}: the Photo office is the world`);
     assert.ok(r.n >= 12, `${tag}: ${r.n} people drawn at 15 agents`);
