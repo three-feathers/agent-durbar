@@ -210,6 +210,9 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 - [x] T201 [US1] Wiring: app.js marks rolled agents `lounge` with the lounge words; `realoffice.js` draws a seat (person, small desk, monitor, plate, lamp, "z z") and fades the desk picture out and in; CSS for the photo office, the cave and the arcade [FR-246..FR-249]
 - [x] T202 [US1] Driver `scripts/check-097-lounge.js` (in `ui-suite`): both sizes, Photo office and arcade, unread keeps the desk, read moves, back to work eases, reduced motion does not; the moments driver's asleep moment and the world matrix's lounge scene follow the row [FR-246..FR-249]
 - [x] T203 [US1] Docs: changelog fragment, `docs/features.md`, `docs/feature-inventory.md`, `docs/experience/world-moments.json`, the linked Real office pictures retaken [FR-246..FR-249]
+- [x] T215 [US1] Wiring: `realModel` gives each desk `draft` (`hasDraft`) and the model `draftIcon`; the plate's name adds `draftWords` before the New reply words (desk and lounge seat) [FR-316]
+- [x] T216 [US1] Driver `scripts/check-097-desk-marks.js` (in `ui-suite`) and the overlap check's new box, tests first [FR-316]
+- [x] T217 [US1] `realoffice.js` makes the Draft tag once per desk and shows it by class; `realoffice.css` styles it; changelog, `docs/features.md`, `docs/feature-inventory.md` [FR-316]
 
 ## 2026-11-07: facts in the zoom (issue #1148, FR-312..FR-315)
 
