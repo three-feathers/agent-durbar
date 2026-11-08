@@ -796,7 +796,7 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   // pins inHidden per finding: the raw text has fewer findings (no host: the / before @) than the shown one, yet a letter is hidden
   const P = '\u0440\u0430\u0443\u0440\u0430\u04cf', stub = (x: string) => x.replace(/a\/SECRET[^@]*/g, '[redacted]');
   const sp = L.permText('run scp a/SECRET\u0430@' + P + '.invalid:/y .', 'shell', { redact: stub, cmd: stub, url: stub }) as { text: string; look?: Look };
-  ok(sp.text.startsWith('run scp [redacted]@') && sp.look && sp.look.n! > 1 && sp.look.inHidden === true, 'the hidden Cyrillic letter is said although the shown text has more findings: ' + JSON.stringify([sp.text, sp.look && sp.look.n, sp.look && sp.look.inHidden]));
+  ok(sp.text.startsWith('run scp [redacted]@') && sp.look && sp.look.n! > 1 && sp.look.inHidden === true && sp.look.hosts!.length === 0, 'the hidden Cyrillic letter is said although the shown text has more findings; hosts come from the raw text only: ' + JSON.stringify([sp.text, sp.look && sp.look.n, sp.look && sp.look.inHidden]));
   // ESC is left out like clean() does, so it does not start a new word: an argument after it is no program name
   const e = L.permText('run x \u001b' + P, 'shell', mask) as { text: string; look?: Look };
   ok(!e.look || (e.look.n === 0 && !e.look.inHidden), 'an argument after ESC is not a program name: ' + JSON.stringify(e));

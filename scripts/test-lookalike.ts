@@ -212,7 +212,7 @@ const none = (t: string, k: string, m: string) => eq(L.check(t, k).findings, [],
     eq(L.check(t, 'shell').hosts.map((h) => h.shown), [host], 'a network program\'s host: ' + t);
   for (const t of ['run npm i pkg@1.2.3', 'run cat \u0444\u0430\u0439\u043b.txt:12', 'run cp x \u8cc7\u6599.bak/', 'run python3 \u0441\u043a\u0440\u0438\u043f\u0442.py/x', 'run docker run \u0438\u043c\u044f.io/x',
     'run cp a \u0441\u043e\u0440.d/x', 'run git commit -m "see git@' + P + '.invalid:x"', 'run git config user.email a@' + P + '.example', 'run grep x file.tar.gz:3', 'run cp C:\\x\\y.txt D:/z',
-    'run node -e "require(\'node:fs\')"', 'run echo "http: ' + P + '.invalid/x"', 'run tar xf \u0430\u0440\u0445\u0438\u0432.tar.gz', 'run git push origin main:\u0432\u0435\u0442\u043a\u0430', 'run git add \u043f\u0430\u043f\u043a\u0430.old/x', 'run scp \u043f\u0430\u043f\u043a\u0430.old/x h.invalid:/y', 'run curl -o \u0444\u0430\u0439\u043b.txt https://ok.invalid/']) {
+    'run node -e "require(\'node:fs\')"', 'run echo "http: ' + P + '.invalid/x"', 'run tar xf \u0430\u0440\u0445\u0438\u0432.tar.gz', 'run git push origin main:\u0432\u0435\u0442\u043a\u0430', 'run git add \u043f\u0430\u043f\u043a\u0430.old/x', 'run scp \u043f\u0430\u043f\u043a\u0430.old/x h.invalid:/y', 'run curl -o \u0444\u0430\u0439\u043b.txt https://ok.invalid/', 'run curl -d "' + P + '.invalid/x" https://ok.invalid/', 'run curl -u a@1.2.3 https://ok.invalid/']) {
     const r = L.check(t, 'shell');
     ok(r.findings.length === 0 && r.hosts.filter(L.hostOdd).length === 0, 'stays clean (no host line, no rule (d)): ' + t + ' ' + JSON.stringify(r));
   }
