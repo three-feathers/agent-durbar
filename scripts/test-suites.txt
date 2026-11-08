@@ -215,6 +215,7 @@ test:redact-growth-hashtable
 test:redact-growth-hashtablegrowth
 test:redact-growth-shapes
 test:redact-growth-shapes2
+test:redact-growth-masks
 test:redact-images-whole
 test:redact-images-forms
 test:doormigrate
@@ -226,3 +227,5 @@ test:mcpcontextipc
 test:quota
 test:featureinventory
 test:simversion
+test:picturebudget
+test:specnumbers

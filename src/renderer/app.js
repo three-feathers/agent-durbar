@@ -222,11 +222,11 @@ markDensity();
 const PLACE_VERB={library:'Reading notes',software:'Searching files',terminal:'Running a command',web:'Searching the web',other:'Using a tool'}; /* FR-037: words for people who do not write code */
 let AMB_ID=null;   /* the one agent that has the ambulance (the most recent error), chosen once per render */
 const NO_MOOD={body:'normal',trouble:null,pct:null,words:''};
-function moodFor(a){
+function moodFor(a,at){
   if(SERIOUS||!a||a.parent||!a.live)return NO_MOOD;
   const c=STATS.agent(a.id).ctx, pct=c&&c.limit>0?window.DurbarStats.ctxLevel(c.tokens,c.limit).pct:null;
   const st=vis(a), body=MOODS.bodyOf(pct), failStreak=MOOD.failStreak(a.id);
-  const waitingMs=st==='waiting'?MOOD.waitingMs(a.id):0; /* only while the figure is waiting: a request answered elsewhere must not leave it tapping */
+  const waitingMs=st==='waiting'?MOOD.waitingMs(a.id,at):0; /* only while the figure is waiting: a request answered elsewhere must not leave it tapping */
   const coffee=!!a.coffee&&a.coffeeKind!=='cap'; /* spec 068 FR-005: calm on a coffee break, with a cup; spec 001 FR-035: calm at the Bank, no cup */
   const trouble=MOODS.troubleOf({state:st,ambulance:AMB_ID===a.id,limit:!!a.limit,waitingMs,failStreak,coffee:!!a.coffee});
   return {body,trouble,pct,coffee,words:MOODS.phrases({body,pct,trouble,waitingMs,failStreak,coffee}).join(', ')};
@@ -291,11 +291,15 @@ function charPreview(choice){
 }
 const SIREN=()=>'<span class="siren" aria-hidden="true"><svg viewBox="0 0 14 14" focusable="false"><rect class="siren-light" x="3" y="2" width="8" height="6.5" rx="3.2"/><rect x="1.5" y="8.5" width="11" height="3" rx="1" fill="'+T_('--siren-base')+'"/></svg></span>';
 /* "impatient" starts after 60 s without any event, so look every few seconds and redraw only when somebody's mood changed */
+/* spec 008 FR-184: a draw takes the signature it drew (`renderAll`), so a tick redraws only for a change no draw has shown (the clock, a limit), never again for the status change the last draw already showed */
 let moodSig='';
-setInterval(()=>{if(SERIOUS||demoOn)return;const sig=agents.map(x=>x.live&&!x.parent?moodFor(x).trouble+'/'+moodFor(x).body:'').join('|');if(sig!==moodSig){moodSig=sig;scheduleRender();}},5000);
+const moodSigNow=at=>agents.map(x=>{if(!x.live||x.parent)return '';const m=moodFor(x,at);return m.trouble+'/'+m.body;}).join('|'); /* `at`: the signature as of that time (a draw's own, spec 008 FR-184) */
+setInterval(()=>{if(SERIOUS||demoOn)return;if(moodSigNow()!==moodSig){moodSig=moodSigNow();scheduleRender();}},5000);
 /* spec 052 FR-062: "Last activity" labels follow the clock through the normal render, every 30 s and only when a label changed */
 let agoSig='';
-setInterval(()=>{if(demoOn)return;const sig=agents.map(x=>(x.lastEventAt?ACT.agoShort(Date.now()-x.lastEventAt):'')+(x.busySince?'/'+ACT.agoShort(Date.now()-x.busySince):'')).join('|');if(sig!==agoSig){agoSig=sig;scheduleRender();}},30000);
+const agoSigNow=(at=Date.now())=>agents.map(x=>(x.lastEventAt?ACT.agoShort(at-x.lastEventAt):'')+(x.busySince?'/'+ACT.agoShort(at-x.busySince):'')).join('|');
+let drawnAt=0;
+setInterval(()=>{if(demoOn)return;const sig=agoSigNow();if(sig!==agoSig){agoSig=sig;scheduleRender();}},30000);
 /* ---- places in the office (spec 024): a shared lobby; main agents walk to the place of the tool they are using ---- */
 const VISITS=window.DurbarPlaces.createVisits();
 const SEEN_SERVERS=new Set(); /* MCP server names seen in tool events this run (per-folder extras included): the Places settings list them */
@@ -1058,15 +1062,15 @@ function moreHTML(a,hidden,d){
   return `<button class="more" data-more="${esc(a.id)}" aria-expanded="false" aria-label="Show ${hidden.length} more helpers of ${esc(a.name)}">+${hidden.length} more ${dots}</button>`;
 }
 function helperHTML(h){
-  const st=vis(h);
-  return `<button class="helper is-${st}" data-id="${esc(h.id)}" aria-pressed="${ui.selected===h.id}" aria-label="${esc(h.name)}, helper of ${esc(byId(h.parent).name)}, ${esc(h.role)}, folder ${esc(roomOf(h).path)}, ${label(h)}: ${esc(taskText(h))}" title="${esc(taskText(h))}">
+  const st=vis(h), n=helperMask(h.name)||'Helper', r=helperMask(h.role)||'Helper', t=helperMask(taskText(h)); /* spec 015 FR-021; the folder is the user's own (as on the room head) */
+  return `<button class="helper is-${st}" data-id="${esc(h.id)}" aria-pressed="${ui.selected===h.id}" aria-label="${esc(n)}, helper of ${esc(byId(h.parent).name)}, ${esc(r)}, folder ${esc(roomOf(h).path)}, ${label(h)}: ${esc(t)}" title="${esc(t)}">
     ${scene(h,true)}<span class="badge ${st}">${badgeSVG(st)}</span>
-    <div class="hinfo"><div class="hname">${esc(h.name)}</div><div class="hrole">${esc(h.role)}</div><div class="hst"><span class="dot ${st}"></span>${label(h)}</div></div></button>`;
+    <div class="hinfo"><div class="hname">${esc(n)}</div><div class="hrole">${esc(r)}</div><div class="hst"><span class="dot ${st}"></span>${label(h)}</div></div></button>`;
 }
 function helperTileHTML(h){
-  const st=vis(h);
-  return `<button class="helper hc is-${st}" data-id="${esc(h.id)}" aria-pressed="${ui.selected===h.id}" aria-label="${esc(h.name)}, helper of ${esc(byId(h.parent).name)}, ${label(h)}: ${esc(taskText(h))}" title="${esc(h.name)} · ${label(h)}: ${esc(taskText(h))}">
-    <span class="sc">${sceneC(h)}</span><span class="hi"><span class="hname">${esc(h.name)}</span><span class="hs st-${st}">${label(h,true)}</span></span></button>`;
+  const st=vis(h), n=helperMask(h.name)||'Helper', t=helperMask(taskText(h)); /* spec 015 FR-021: the one helper mask on every word it shows */
+  return `<button class="helper hc is-${st}" data-id="${esc(h.id)}" aria-pressed="${ui.selected===h.id}" aria-label="${esc(n)}, helper of ${esc(byId(h.parent).name)}, ${label(h)}: ${esc(t)}" title="${esc(n)} · ${label(h)}: ${esc(t)}">
+    <span class="sc">${sceneC(h)}</span><span class="hi"><span class="hname">${esc(n)}</span><span class="hs st-${st}">${label(h,true)}</span></span></button>`;
 }
 /* spec 001 FR-089..FR-093 (issue 697): the expanded helper card, level 1 or 2. Same button, data-id and selectors as the tile; its lines come from
    helpercard.js (masked, then cut, once per field change); the card is display only. */
@@ -1603,8 +1607,8 @@ async function setOfficeView(v){
   if(v==='flat'&&window.DurbarRealOffice&&window.DurbarRealOffice.leave)window.DurbarRealOffice.leave(); /* spec 097 Changes 2026-11-01 */
   syncWorld();layoutKey='';scheduleRender();return true;
 }
-/* spec 097 FR-084 (owners 2026-10-31): the Characters setting applies in Real office too; a set without Real office pictures (today
-   every crew) shows the Office people, and Settings says so until that crew's world ships (FR-083, FR-100, FR-114) */
+/* spec 097 FR-084 (owners 2026-10-31): the Characters setting applies in Real office too; a crew without Real office pictures (today all but Prehistoric)
+   shows the Office people, and Settings says so until that crew's own pictures land (FR-083, FR-100, FR-114) */
 /* spec 102 FR-200..FR-202 (owner's latest; replaces 097 FR-100/FR-114's "crews pick their world"): worlds and character sets are two flat
    lists in crew.js, any set in any world. The World choice is kept in localStorage `durbar.world` (a bad or unoffered value is the first
    world); `[KNOWN GAP]` spec 102 FR-201 keeps it in durbar-settings.json through main, which needs an IPC channel and is not built yet.
@@ -1667,6 +1671,13 @@ function roFailed(){syncWorld();toast('The Real office could not be loaded, so t
 /* the plain model Real office draws (no markup but the places' own icons): every text is already masked (deskMask = DurbarSafeText) */
 /* the Alert sign of a needs-you chip in Real office (spec 097 FR-026): a warning triangle in the text colour, built here from trusted markup (the sign set of the removed meeting-room doors, spec 017, kept only for this one) */
 const ALERT_ICON='<svg viewBox="0 0 12 12" aria-hidden="true" focusable="false" data-icon="alert"><path d="M6 1.6 11 10.4H1Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M6 4.8v2.6M6 8.9v.1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
+/* spec 015 FR-021 (issue 1330): the one mask of a helper's (sub-agent's) name and task, for every surface that shows them (the Sub-agent
+   activity panel's title, task line and error, the chat block, the flat helper tile and its tooltip and aria-label, the expanded helper card).
+   Home folders become ~ (redact.ts maskHomePaths) on the RAW text first, THEN the desk mask (DurbarSafeText), never the other way: the desk
+   mask undoes Markdown escapes (`\\` -> `\`), so a UNC home `\\server\share\user` would reach maskHomePaths as `\server\share\user` and the
+   user name would show. No redact module: homeMask keeps the text and deskMask gives '' (fail closed). */
+const homeMask=t=>{const R=window.DurbarRedact;if(!R||typeof R.maskHomePaths!=='function')return t;const h=R.maskHomePaths(t);return typeof h==='string'?h:'';};
+const helperMask=t=>deskMask(homeMask(t));
 function realModel(model){
   const D=window.DurbarPlaces, E=window.exports;
   const stOf=(a,asleep)=>E.lightState(isFailing(a)?'failing':isRetrying(a)?'retrying':isCompacting(a)?'compacting':vis(a),{limit:!!a.limit,paused:!!a.paused,asleep:!!asleep});
@@ -1679,12 +1690,12 @@ function realModel(model){
       agents:list.map(a=>{const v=VISITS.at(a.id),st=stOf(a,old.has(a.id)),task=deskMask(taskOf(a)),place=v?placeLabel(v.place):'',needs=st==='waiting'||st==='limit';
         if(rolled.has(a.id)&&!v){ /* spec 097 FR-246, FR-120: in the lounge row, resting or asleep; the words of the flat lounge's peek card and label, the same masked reply (shutReply) */
           const asleep=old.has(a.id), ago=ACT.agoLong(sinceLast(a)), said=SHUT.spoken(ago), line=shutReply(a,140), who=a.profile?a.profile.name+' · '+a.role:a.role, word=asleep?'Asleep':stWord(a);
-          return {id:a.id,name:a.name,role:a.role,state:st,word,task:ago?'finished '+ago:'',asleep,lounge:true,tip:word+(asleep?' · '+stWord(a):'')+(ago?' · finished '+ago:'')+(asleep?' · Lamp off':'')+'\n'+shutReply(a,300),selected:ui.selected===a.id,ren:canRenameSession(a),unread:isUnread(a),away:null,awayLabel:'',
-            label:a.name+unreadWords(a)+', '+who+', folder '+deskMask(showPath(r.path))+(asleep?', asleep in the lounge':', resting in the lounge')+(said?', finished '+said:'')+': '+line+(/[.!?…]$/.test(line)?'':'.')+' Open chat panel.',helpers:helpersOf(a).map(h=>stOf(h,false))};
+          return {id:a.id,name:a.name,role:a.role,state:st,word,task:ago?'finished '+ago:'',asleep,lounge:true,tip:word+(asleep?' · '+stWord(a):'')+(ago?' · finished '+ago:'')+(asleep?' · Lamp off':'')+'\n'+shutReply(a,300),selected:ui.selected===a.id,ren:canRenameSession(a),unread:isUnread(a),draft:hasDraft(a),away:null,awayLabel:'',
+            label:a.name+draftWords(a)+unreadWords(a)+', '+who+', folder '+deskMask(showPath(r.path))+(asleep?', asleep in the lounge':', resting in the lounge')+(said?', finished '+said:'')+': '+line+(/[.!?…]$/.test(line)?'':'.')+' Open chat panel.',helpers:helpersOf(a).map(h=>stOf(h,false))};
         }
         const br=v&&v.place===D.COFFEE&&BREAKS.get(a.id)&&BREAKS.get(a.id).kind!=='cap'?coffeeUntilWords(a):''; /* owner 2026-11-02: the post-it of a coffee break says until when (an app's usage window), never of Durbar's cap at the Bank */
-        return {id:a.id,name:a.name,role:a.role,state:st,word:stWord(a),task,tip:deskTip(a),selected:ui.selected===a.id,ren:canRenameSession(a),unread:isUnread(a),away:v?v.place:null,awayLabel:place+(br?' '+br:''),
-          label:[a.name+unreadWords(a),a.role,stWord(a)].concat(task?[task]:[],needs?['needs you']:[],place?['at '+place]:[]).join(', ')+'. Open chat panel.', /* FR-090: text for setAttribute, not markup */
+        return {id:a.id,name:a.name,role:a.role,state:st,word:stWord(a),task,tip:deskTip(a),selected:ui.selected===a.id,ren:canRenameSession(a),unread:isUnread(a),draft:hasDraft(a),away:v?v.place:null,awayLabel:place+(br?' '+br:''),
+          label:[a.name+draftWords(a)+unreadWords(a),a.role,stWord(a)].concat(task?[task]:[],needs?['needs you']:[],place?['at '+place]:[]).join(', ')+'. Open chat panel.', /* FR-090: text for setAttribute, not markup */
           helpers:helpersOf(a).map(h=>stOf(h,false))};})};
   });
   const places=lobbyPlaces().map(p=>{
@@ -1694,7 +1705,7 @@ function realModel(model){
       title:p.id===D.POSTBOX?placeLabelFull(p.id)+': the next scheduled runs. Open Settings > Schedules.':placeTip(p.id,ids,wait),
       visitors:ids.map(id=>{const a=byId(id),v=VISITS.at(id);return {id,name:a.name,needsYou:vis(a)==='waiting'||!!a.limit,title:visitorWords(a,v,true)};})};
   });
-  return {folders,places,slips:realSlips(),alertIcon:ALERT_ICON,renIcon:ICON('rename'),sessions:agents.filter(a=>!a.parent).map(a=>({id:a.id,folder:a.room}))};
+  return {folders,places,slips:realSlips(),alertIcon:ALERT_ICON,renIcon:ICON('rename'),draftIcon:ICON('edit'),sessions:agents.filter(a=>!a.parent).map(a=>({id:a.id,folder:a.room}))};
 }
 /* spec 097 FR-121, FR-122, FR-124 (Real office): the requests the world draws as slips at the Boss door and the Bank, and as a bubble at the desk. Plain data
    from the very cards the chat and the inbox already hold (pendingCardOf, inboxActs, requestText), so the words, the buttons, their order and their tooltips are
@@ -2029,6 +2040,7 @@ function renderAll(){
   syncChatNos(); /* spec 074 FR-011 */
   if(CREW_FOR)syncCrew(); /* spec 077: a closed session frees its character even when no desk is drawn (the last one) */
   AMB_ID=pickAmbulanceId();
+  drawnAt=Date.now(); moodSig=moodSigNow(drawnAt); agoSig=agoSigNow(drawnAt); /* what this draw shows (after AMB_ID, which the mood reads): the two ticks above compare against it (spec 008 FR-184) */
   syncDesks(); /* spec 001 FR-034: who walks to the Boss and who comes back */
   prepareWalkers();
   const ae=document.activeElement, id=ae&&ae.dataset&&(ae.dataset.id||ae.dataset.more||ae.dataset.foldermenu||ae.dataset.newsess||ae.dataset.lsort||ae.dataset.ren), inPanel=ae&&ae.closest&&ae.closest('#panel'), scope=ae&&ae.closest?(ae.closest('#list')?'#list ':ae.closest('#stage')?'#stage ':''):''; /* FR-173: read before the render detaches it */
@@ -5834,7 +5846,7 @@ function subPaintView(v){
   const showRes=s.result&&s.result!==s.lastFinal;
   v.res.hidden=!showRes;
   if(showRes&&v.res._raw!==s.result){v.res.innerHTML='<span class="lbl">Result</span><div class="rt"></div>';mdSet(v.res.querySelector('.rt'),s.result,true);v.res._raw=s.result;}
-  v.err.hidden=!s.error; v.err.textContent=s.error?'Failed: '+s.error:'';
+  v.err.hidden=!s.error; v.err.textContent=s.error?'Failed: '+helperMask(s.error):''; /* spec 015 FR-021: it can be the helper's task */
   v.foot.textContent=subFoot(s);
   if(v.paint)v.paint();
 }
@@ -5849,7 +5861,7 @@ function subBlock(s,T){
   v.paint=()=>{
     el.classList.toggle('running',s.status==='running');el.classList.toggle('failed',s.status==='failed');el.classList.toggle('done',s.status==='done');
     el.querySelector('.sub-name').textContent=s.name;
-    el.querySelector('.sub-task').textContent=s.status==='running'?safeExcerpt(s.task||s.prompt,90):safeExcerpt(s.result||s.lastFinal||s.error||s.task,110);
+    el.querySelector('.sub-task').textContent=s.status==='running'?safeExcerpt(homeMask(s.task||s.prompt),90):safeExcerpt(homeMask(s.result||s.lastFinal||s.error||s.task),110); /* spec 015 FR-021: home folders on the raw text first */
     el.querySelector('.sub-st').textContent=subStatusText(s);
     el.querySelector('.sub-open').hidden=!s.card;
   };
@@ -5889,23 +5901,23 @@ function onSubEvent(a,e){
   subPaint(s);
   /* helper card: what it is doing right now */
   if(e.type==='thinking')setState(card,'thinking',null);
-  else if(e.type==='output')setState(card,'working',null,e.final?safeExcerpt(e.text,100):undefined);
+  else if(e.type==='output')setState(card,'working',null,e.final?safeExcerpt(homeMask(e.text),100):undefined);
   else if(e.type==='toolCall'&&e.phase==='start'){setState(card,'working',null,toolTask(e,s.parent&&s.parent.info&&s.parent.info.cwd,80));}
-  else if(e.type==='status'&&e.intent)setState(card,'working',null,safeExcerpt(e.intent,100));
+  else if(e.type==='status'&&e.intent)setState(card,'working',null,safeExcerpt(homeMask(e.intent),100));
   if(ui.selected===card.id)updatePanelHeader();
 }
 function onSubagent(a,e){
   const s=subRec(a,e.subagentId), card=s.card;
-  if(e.name)s.name=safeMask(e.name)||s.name; if(e.model)s.model=e.model; if(e.agentName)s.agentName=safeMask(e.agentName)||''; /* spec 041 FR-065 */
+  if(e.name)s.name=helperMask(e.name)||s.name; if(e.model)s.model=e.model; if(e.agentName)s.agentName=helperMask(e.agentName)||''; /* spec 041 FR-065; spec 015 FR-021: home folders first, on the raw text */
   if(e.task&&e.phase==='started')s.task=e.task;
   if(e.phase==='started'&&e.background===true)s.background=true; /* spec 015 FR-018: the parent's call returns at once; only this helper's own end ends it */
   if(e.durationMs)s.durationMs=e.durationMs; if(e.totalTokens)s.tokens=e.totalTokens; if(e.totalToolCalls!=null)s.tools=Math.max(s.tools,e.totalToolCalls);
   card.name=s.name;card.role=s.agentName?'Helper · '+s.agentName:'Helper';
-  if(e.phase==='started'){s.status='running';setState(card,'working',null,s.task||'Working');}
+  if(e.phase==='started'){s.status='running';setState(card,'working',null,s.task?homeMask(s.task):'Working');} /* s.task stays raw in the record (masked where shown, FR-021) */
   else{
     s.t1=Date.now();
-    if(e.phase==='failed'){s.status='failed';s.error=e.error||e.task||'Failed';setState(card,'error',null,safeExcerpt(s.error,100));}
-    else{s.status='done';setState(card,'done','Done',safeExcerpt(s.result||s.lastFinal||s.task,100));}
+    if(e.phase==='failed'){s.status='failed';s.error=e.error||e.task||'Failed';setState(card,'error',null,safeExcerpt(homeMask(s.error),100));}
+    else{s.status='done';setState(card,'done','Done',safeExcerpt(homeMask(s.result||s.lastFinal||s.task),100));}
     s.views.forEach(v=>{tEnd(v.T,{note:false});});
     subCollapse(s);
   }
@@ -5919,8 +5931,8 @@ function onTaskTool(a,e){
     const g=e.args||{};
     if(g.prompt&&!s.prompt)s.prompt=String(g.prompt);
     if(g.description&&!s.task)s.task=String(g.description);
-    if(g.agent_type&&!s.agentName)s.agentName=safeMask(String(g.agent_type))||''; /* spec 041 FR-065 */
-    if(s.name==='Sub-agent'&&s.task)s.name=SHORT(safeMask(s.task),40);
+    if(g.agent_type&&!s.agentName)s.agentName=helperMask(String(g.agent_type))||''; /* spec 041 FR-065 */
+    if(s.name==='Sub-agent'&&s.task)s.name=SHORT(helperMask(s.task),40);
   } else if(e.phase==='update')return; /* FR-095: an update changes no status, does not collapse the block and does not touch the card */
   else if(e.phase==='complete'&&s.background)return; /* spec 015 FR-018 (issue 1141): a background helper's call returns with a launch note, never its result or its end; only the helper's own end event (or its session stopping) ends it */
   else {
@@ -5928,7 +5940,7 @@ function onTaskTool(a,e){
     if(e.phase==='failed'){s.status='failed';s.error=String(e.output||'Failed');}
     else if(s.status==='running'){s.status='done';}
     s.views.forEach(v=>tEnd(v.T,{note:false}));
-    if(s.card)setState(s.card,s.status==='failed'?'error':'done',s.status==='failed'?null:'Done',safeExcerpt(s.result||s.error||s.task,100));
+    if(s.card)setState(s.card,s.status==='failed'?'error':'done',s.status==='failed'?null:'Done',safeExcerpt(homeMask(s.result||s.error||s.task),100));
     subCollapse(s);
   }
   subPaint(s);scheduleRender();
@@ -5945,7 +5957,7 @@ function buildSubTranscript(card,chat){
   host.appendChild(wrap);
   const body=document.createElement('div');body.className='sub-full-body';wrap.appendChild(body);
   const v=subBody(s,body,chat);
-  v.paint=()=>{wrap.querySelector('.sub-ic').innerHTML=SUBIC;wrap.querySelector('h3').textContent=s.name;wrap.querySelector('.sub-st').textContent=subStatusText(s);wrap.querySelector('.sub-st').className='sub-st '+s.status;wrap.querySelector('.sub-full-task').textContent=s.task;};
+  v.paint=()=>{wrap.querySelector('.sub-ic').innerHTML=SUBIC;wrap.querySelector('h3').textContent=helperMask(s.name)||'Sub-agent';wrap.querySelector('.sub-st').textContent=subStatusText(s);wrap.querySelector('.sub-st').className='sub-st '+s.status;wrap.querySelector('.sub-full-task').textContent=helperMask(s.task);}; /* spec 015 FR-021 (issue 1330): the task was shown raw */
   v.paint();
   if(s.status!=='running')tEnd(v.T,{note:false});
 }
@@ -5984,7 +5996,7 @@ const safeExcerpt=(t,n,fb)=>SAFE.excerpt(t,n,fb),safeMask=t=>SAFE.mask(t);
 const TOOLMASK=RED?{redact:t=>RED.redact(t),cmd:t=>RED.maskSecretCommand(t),url:t=>RED.maskSecretUrl(t)}:{};
 const safeToolLabel=(tool,l,n)=>{const m=STX?STX.maskLabel(l,toolKind(tool),TOOLMASK):'';return m?SHORT(m,n):'';};
 /* spec 001 FR-089, FR-090: the text of an expanded helper card, through the same masking path as every other line of agent text; without safetext.js the layout never takes a level (compact tiles) */
-const HXC=window.DurbarHelperCard&&STX?window.DurbarHelperCard.create({excerpt:(t,n,fb)=>safeExcerpt(t,n,fb),mask:t=>safeMask(t),toolLabel:(tool,l,n)=>safeToolLabel(tool,l,n),toolName:t=>shownTool(t),cut:(t,n)=>SHORT(t,n),fmtTok:n=>fmtTok(n)}):null;
+const HXC=window.DurbarHelperCard&&STX?window.DurbarHelperCard.create({excerpt:(t,n,fb)=>safeExcerpt(homeMask(t),n,fb),mask:t=>helperMask(t),toolLabel:(tool,l,n)=>safeToolLabel(tool,l,n),toolName:t=>shownTool(t),cut:(t,n)=>SHORT(t,n),fmtTok:n=>fmtTok(n)}):null;
 /* setState's backstop (FR-065): the task text is masked. With no redact module only Durbar's own fixed words stay (agent text is blanked) */
 const FIXED_TASK=new Set(['Ready','Thinking','Working','Finished.','Waiting for permission','Waiting for your OK on a plan','The agent asks you a question','Stopped. Ready for your next message.','Signed in again. Ready for your message.','Session ended. Send a message to resume it.','Ready. Send a message to start.','Plan rejected. Nothing was changed.','Continuing your last session…','Your last session here. It continues when you open it.']);
 const FIXED_TASK_FORMAT=/^Stopped at \$?[\d.,]+( AIU)?\. (Raise the limit to go on|Ready for your next message)\.$/; /* Durbar's own limit lines, whole string: a prefix alone would let agent text through */
@@ -9207,7 +9219,7 @@ const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueu
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
 if(SIM)window.__durbarSimUi={afPasses:()=>AF_PASSES,railPlans:()=>{renderStrip();return faceMemoPlans;}, /* issue 1193: room plans one rail render worked out */ops:()=>({...OPS}),agents:()=>agents,scene:(a,mini,c)=>scene(a,mini,c), /* a drawn scene's markup, for the drivers (FR-192: the SMIL wave) */cv:{mark:cvMark,release:cvRelease,drop:cvDrop,openPanel,setDensity},setLive:setLiveOn,setOfficeView,needsCount:()=>needsMeOrder().length,clearDetail:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;c.querySelectorAll(':scope > details.pdiff').forEach(x=>x.remove());scheduleRender();return true;},addDetail:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;const d=document.createElement('details');d.className='pdiff';d.innerHTML='<summary>Show the change (+1 \u22121)</summary><pre>- a\n+ b</pre>';c.insertBefore(d,c.querySelector(':scope > .note-actions'));scheduleRender();return true;},requestText:s=>{const n=document.createElement('div');n.className='note elicit';n.textContent=String(s);return requestText(n);},setSerious:v=>{SERIOUS=!!v;return SERIOUS;}, setMotion:v=>{MOTION=!!v;markMotion();return MOTION;}, /* spec 097 (the moments driver): a change in the card, the card text's masking, Serious mode */unread:{mark:id=>UNREAD.complete(id,false)==='marked',read:id=>markRead(byId(id))}, /* spec 097 (the moments driver): the New reply mark and Mark as read, as the app sets them */order:{get:()=>ORDER,saved:()=>bridge.getOrder?bridge.getOrder():null,reset:resetOrder,path:id=>(ROOMS.find(r=>'room:'+r.id===id)||{}).path||''}, /* issue 677 (check 033-order): the order held and saved, Reset, a room's key */
-  toast:(s,act)=>{const t=act?toastAction(esc(String(s)),String(act),()=>{},8000):toast(esc(String(s)),8000);return !!t;}, /* spec 097 FR-113: a toast for the world-chrome driver (simulator only) */visitsSettled:()=>VISITS.settled(), /* spec 097 FR-186: no visit is about to start or end on the wall clock (check-office-ops-real reads a settled lobby) */realLayout:()=>RO_LAST, /* spec 097: the last Real office layout (check-office-overlap's Real office variant) */slips:()=>realSlips(), /* spec 097: what the world draws as slips (the moments driver; simulator only) */uncrowd:()=>{agents.forEach(x=>VISITS.unpin(x.id));scheduleRender();return true;},crowd:(pid,n,from)=>{const a=agents.filter(x=>!x.parent).slice(from||0,(from||0)+n);a.forEach(x=>VISITS.pin(x.id,pid,'test'));scheduleRender();return a.length;}, /* spec 097: n main agents stand at a place (a "+N" crowd for the driver; simulator only) */crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
+  toast:(s,act)=>{const t=act?toastAction(esc(String(s)),String(act),()=>{},8000):toast(esc(String(s)),8000);return !!t;}, /* spec 097 FR-113: a toast for the world-chrome driver (simulator only) */visitsSettled:()=>VISITS.settled(),timerDraw:()=>moodSigNow(drawnAt)!==moodSig||agoSigNow(drawnAt)!==agoSig, /* spec 008 FR-184: a mood or "ago" tick would draw now (a draw shows both; check-office-ops asserts none is due after an update's draw) */ /* spec 097 FR-186: no visit is about to start or end on the wall clock (check-office-ops-real reads a settled lobby) */realLayout:()=>RO_LAST, /* spec 097: the last Real office layout (check-office-overlap's Real office variant) */slips:()=>realSlips(), /* spec 097: what the world draws as slips (the moments driver; simulator only) */uncrowd:()=>{agents.forEach(x=>VISITS.unpin(x.id));scheduleRender();return true;},crowd:(pid,n,from)=>{const a=agents.filter(x=>!x.parent).slice(from||0,(from||0)+n);a.forEach(x=>VISITS.pin(x.id,pid,'test'));scheduleRender();return a.length;}, /* spec 097: n main agents stand at a place (a "+N" crowd for the driver; simulator only) */crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
   readAll:(quiet)=>{const n=UNREAD.size;UNREAD.ids().forEach(id=>{UNREAD.read(id);UNREAD_AT.delete(id);});if(!quiet)scheduleRender();return n;},notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),boxUsable:()=>boxUsable(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},selNow:()=>{showSelButton();const b=document.getElementById('ntSelBtn');return !!b&&!b.hidden;},open:()=>openNotes(byId(ui.selected)),close:()=>closeNotes(false),search:q=>{const f=$('ntSearch');if(!f)return false;f.value=q;f.dispatchEvent(new Event('input'));return true;},marks:{clear:()=>{document.querySelectorAll('#chat .nt-mark').forEach(x=>x.remove());document.querySelectorAll('#chat .bubble').forEach(b=>{b._nd=undefined;});return true;},run:()=>notesMarkAll(byId(ui.selected))},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),rename:note=>renameNote(byId(ui.selected),note,null),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
   sizingLounges:()=>lastSizing.reduce((n,m)=>n+(m.rolled||[]).length,0), sizingMains:()=>lastSizing.reduce((n,m)=>n+m.mains.length,0), /* FR-181: the desks it is sized for (a pill does not reshape the cards) */ /* spec 001 FR-180: the finished agents the office is sized for */
   hxOff:(off)=>{HX_OFF=!!off;layoutKey='';scheduleRender();return HX_OFF;},renamePrevRow,settleNow,bridge:()=>bridge,render:()=>{layoutKey='';scheduleRender();},loungeTurn,quietHeads:(parts)=>{SIM_QUIET_HEADS=new Set(Array.isArray(parts)?parts:[]);},paint:()=>scheduleRender(),emit:onLiveEvent,

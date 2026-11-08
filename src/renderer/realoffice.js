@@ -431,6 +431,9 @@
         if (L.doneTick(SEEN, k, d.state) && st && st.flourish && moving() && !hiddenNow()) coinUp(chrome, k, lay.g); /* spec 102 FR-261: the arcade's coin on a turn to done (FR-236: no call light any more) */
         /* FR-238: "New reply" above the plate's right end while the reply is unread (the flat desk's "New", the same isUnread); made once, shown by class */
         const nt = el(chrome, 'nr:' + k, 'span', 'ro-newtag' + (a.unread ? ' on' : '')); box(nt, { x: d.plate.x + d.plate.w, y: d.plate.y }); attr(nt, 'aria-hidden', 'true'); text(nt, 'New reply'); dset(nt, 'for', k);
+        /* spec 097 FR-316: "Draft" above the plate's left end while the chat has an unsent draft (the flat desk's pencil, the same hasDraft); made once, shown by class; aria-hidden (the plate's name says it) */
+        const dt = el(chrome, 'dr:' + k, 'span', 'ro-drafttag' + (a.draft ? ' on' : '')); box(dt, d.away ? { x: d.away.x - d.away.s / 2, y: d.away.y } : { x: d.plate.x, y: d.plate.y }); /* an empty seat's post-it fills the place above the plate: the tag sits on top of the note's left corner */ attr(dt, 'aria-hidden', 'true'); dset(dt, 'for', k);
+        if (!dt.firstChild) { if (model.draftIcon) dt.innerHTML = model.draftIcon; dt.appendChild(document.createTextNode('Draft')); } /* the icon is the app's own markup (trusted, as renIcon) */
         /* FR-038: cues, inside the slot */
         if (d.bubble) { const b = el(chrome, 'b:' + k, 'div', 'ro-bub'); box(b, d.bubble); attr(b, 'aria-hidden', 'true'); text(b, '?'); }
         if (d.bang) { const b = el(chrome, 'x:' + k, 'div', 'ro-bang'); box(b, d.bang); attr(b, 'aria-hidden', 'true'); text(b, '!'); }
@@ -806,8 +809,17 @@
     const added = fillRows(s.rows, shown);
     /* FR-033: the new line slides in, three steps, transform only; the text is already right, so a dropped frame costs nothing */
     if (added && s.painted && moving() && !s.away) s.lines.animate([{ transform: 'translateY(' + Math.min(added, 2) * f.lh + 'px)' }, { transform: 'none' }], { duration: 180, easing: 'steps(3, end)' });
-    if (data.caret && !s.caret) { s.caret = document.createElement('i'); s.caret.className = 'ro-caret'; s.box.appendChild(s.caret); const m = L.personMotion(id, 'typeA', d.state); setVar(s.caret, '--ro-per', '1.2s'); s.caretMs = m.offset; if (moving()) { clock(s.caret, m.offset); if (CUR && !CUR.pixelArt) onGrid(s.caret); }; }
-    else if (!data.caret && s.caret) { s.caret.remove(); s.caret = null; }
+    /* spec 008 FR-184: one caret element per screen, shown or hidden: a repaint after the throttle (FR-033) changes no node, so a status update adds or removes none (spec 102 FR-229);
+       shown again it is a new animation, so it takes its desk's clock again */
+    if (data.caret) {
+      const fresh = !s.caret;
+      if (fresh) { s.caret = document.createElement('i'); s.caret.className = 'ro-caret'; s.box.appendChild(s.caret); setVar(s.caret, '--ro-per', '1.2s'); }
+      if (fresh || s.caret.hidden) {
+        s.caret.hidden = false;
+        s.caretMs = L.personMotion(id, 'typeA', d.state).offset;
+        if (moving()) { clock(s.caret, s.caretMs); if (CUR && !CUR.pixelArt) onGrid(s.caret); }
+      }
+    } else if (s.caret && !s.caret.hidden) s.caret.hidden = true;
     s.painted = true;
     if (ZOOM && ZOOM.id === id) { const k = ZOOM.kh; fillZoom(); if (k !== ZOOM.kh) placeZoom(); }
   }
