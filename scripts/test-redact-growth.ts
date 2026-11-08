@@ -44,7 +44,7 @@ if (part === 'tokens') {
 }
 }
 
-if (part === 'adversarial' || part === 'adversarial2') {
+if (part === 'adversarial' || part === 'adversarial2' || part === 'masks') {
 // 9. adversarial 1 MB inputs: every pattern stays linear (growth against a same-shape quarter-size input, no fixed time limit)
 {
   const MB = 1_000_000;
@@ -152,7 +152,38 @@ if (part === 'adversarial' || part === 'adversarial2') {
     `try{const {redact}=require(w.mod);const tc=typeof process.threadCpuUsage==='function';const w0=process.hrtime.bigint(),c0=tc?process.threadCpuUsage():null;redact(w.input,{});const wall=Number(process.hrtime.bigint()-w0)/1e6;let cpu=wall;if(tc){const d=process.threadCpuUsage(c0);cpu=(d.user+d.system)/1000}out[0]=cpu;out[1]=wall;Atomics.store(flag,0,1)}` +
     `catch(e){Atomics.store(flag,0,2)}Atomics.notify(flag,0)`;
   // two suites, each case in one (over 30 s on Windows as one)
-  for (const [k, v] of Object.entries(adversarial).filter((_e, i) => i % 2 === (part === 'adversarial' ? 0 : 1))) assertLinearGrowth(`adversarial ${k}`, (input) => workerRun(`adversarial ${k}`, code, { mod, input }, 30000), v);
+  // the cases of the masking batch of 2026-11-08 (spec 012 FR-173/FR-174, PR 1317) are their own suite, so the two above stay under 30 s
+  const maskCases: Record<string, string> = {
+    // spec 012 FR-173/FR-174 (pre-review of PR 1317): the glued-rest scan (a literal mask in the text is enough to start it) and the quote runs inside a secret name
+    glueMasks: '[redacted]a-'.repeat(MB / 12),
+    glueRun: '[redacted]' + 'a'.repeat(MB),
+    glueDots: '[redacted]' + '.'.repeat(MB),
+    glueSlash: '[redacted]/'.repeat(MB / 11),
+    quotesRun: 'pa' + '"'.repeat(MB) + 'ssword=Hunter2Secret99',
+    quotesPairs: 'pa"'.repeat(MB / 3),
+    quotesNames: 'p"a"s"s"w"o"r"'.repeat(MB / 14),
+    quotesMixed: 'to' + "'\\".repeat(MB / 6) + 'ken=Hunter2Secret99',
+    // review of PR 1317 (Ruben): quote runs, empty backtick pairs and `$()` between a name and its separator or its value, and a glued rest before a secret name
+    quotesEnd: 'password' + '"'.repeat(MB) + '=Hunter2Secret99',
+    quotesEndPairs: 'password"'.repeat(MB / 9),
+    quotesValue: 'password=' + "'".repeat(MB),
+    quotesValuePairs: "password=''".repeat(MB / 11),
+    emptySubst: 'pa$()'.repeat(MB / 5),
+    emptyBackticks: 'pa``'.repeat(MB / 4),
+    glueNames: '[redacted]-dbpassword: "'.repeat(MB / 24),
+    // review of PR 1317, round 2: a bare run with no name (a lookbehind over it was retried at every position), with a separator in it, and line continuations
+    bareQuotes: "'".repeat(MB),
+    bareBackslashes: '\\'.repeat(MB),
+    bareBackticks: '`'.repeat(MB),
+    bareMixedSep: '"\'`\\='.repeat(MB / 5),
+    bareQuotesColon: "':".repeat(MB / 2),
+    lineContinuations: 'pa\\\n'.repeat(MB / 4),
+    spacedSubst: 'pa$(  )'.repeat(MB / 7),
+    // round 3: line continuations before a value
+    valueContinuations: 'password=\\\n'.repeat(MB / 11),
+    valueContinuationRun: 'password=' + '\\\n'.repeat(MB / 2),
+  };
+  for (const [k, v] of part === 'masks' ? Object.entries(maskCases) : Object.entries(adversarial).filter((_e, i) => i % 2 === (part === 'adversarial' ? 0 : 1))) assertLinearGrowth(`adversarial ${k}`, (input) => workerRun(`adversarial ${k}`, code, { mod, input }, 30000), v);
 }
 
 }
