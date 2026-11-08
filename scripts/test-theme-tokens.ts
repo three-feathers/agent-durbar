@@ -255,6 +255,21 @@ for (const f of FILES) {
     assert.ok(luminance(r['--surface']) < 0.05 && luminance(r['--bg']) < 0.05 && luminance(r['--card']) < 0.05 && luminance(r['--wb-bg']) < 0.05, 'retro: page, cards and bar are dark');
     assert.deepStrictEqual(rr.filter((x) => !(x.ratio >= x.min)).map((x) => `${x.fg} on ${x.bg} ${x.ratio.toFixed(2)}:1 < ${x.min}`), [], 'every pair of the arcade passes WCAG AA');
     assert.ok(rr.some((x) => / \(glass over #ffffff\)$/.test(x.bg) && x.fg === '--ink'), 'a dark panel is checked over white');
+    // spec 070 FR-081 (#1278): the info tone (file chips, ask tags, selected rows) is measured in every world, and the arcade sets its own: derived from the light working pair it was 2.16:1
+    for (const [fg, bg] of [['--tone-info-ink', '--tone-info-soft'], ['--tone-info-ink', '--tone-info-faint'], ['--tone-info-ink', '--tone-info-hover'], ['--ink', '--tone-info-soft'], ['--ink-2', '--tone-info-soft']]) {
+      assert.ok(rr.some((x) => x.fg === fg && x.bg === bg && x.min === 4.5), `the arcade checks ${fg} on ${bg}`);
+      for (const w of T.WORLD_IDS) assert.ok((T.worldContrast(w) as typeof rr).some((x) => x.fg === fg && x.bg === bg && x.ratio >= 4.5), `${w}: ${fg} on ${bg} reaches 4.5:1`);
+    }
+    for (const k of ['--tone-info-ink', '--tone-info-soft', '--tone-info-faint', '--tone-info-hover']) assert.ok(/^#[0-9a-f]{6}$/i.test(r[k]), `the arcade sets ${k} as hex`);
+    assert.ok(contrast(r['--tone-info-ink'], r['--tone-info-soft']) >= 4.5 && luminance(r['--tone-info-soft']) < 0.05, 'the arcade .att chip: light blue ink on a dark soft fill');
+    assert.deepStrictEqual(['--pb-working', '--pc-working'].map((k) => r[k]), ['--pb-working', '--pc-working'].map((k) => clean[k]), 'the working status pair itself is unchanged (FR-050)');
+    // the same pair as the CSS derives it, for each built-in theme (Retro Pixel included): ink is --pc-working, soft is 55% --pb-working over --surface
+    for (const [id, b] of Object.entries(T._builtins() as Record<string, { tokens: Record<string, string> }>)) {
+      const ti = T.toneInfo({ ...clean, ...b.tokens }) as Record<string, string>;
+      for (const bgk of ['--tone-info-soft', '--tone-info-faint', '--tone-info-hover']) assert.ok(contrast(ti['--tone-info-ink'], ti[bgk]) >= 4.5, `built-in ${id}: --tone-info-ink on ${bgk} is ${contrast(ti['--tone-info-ink'], ti[bgk]).toFixed(2)}:1`);
+    }
+    const css = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'styles.css'), 'utf8');
+    assert.ok(/--tone-info-ink:var\(--pc-working\)[^}]*--tone-info-soft:color-mix\(in srgb,var\(--pb-working\) 55%,var\(--surface\)\)[^}]*--tone-info-faint:color-mix\(in srgb,var\(--pb-working\) 28%,var\(--surface\)\)[^}]*--tone-info-hover:color-mix\(in srgb,var\(--pb-working\) 88%,var\(--pc-working\)\)/.test(css), 'styles.css still derives the info tone the way toneInfo() models it');
   }
   // the cave's set: complete, status colours unchanged, every pair AA with the glass composited (the same checks as the photo set)
   {

@@ -1,0 +1,1 @@
+- **Readable file chips in the Retro arcade** (spec 070 FR-081, issue #1278): in the dark Retro arcade world, attachment chips, ask tags and selected rows used a light-grey fill with blue text at about 2.2:1 (hard to read at 12 px). They now use a dark blue fill with light blue text (7.5:1). Other looks are unchanged; the contrast check now covers these pairs in every look.
