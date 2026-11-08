@@ -72,48 +72,55 @@
      and 2 of #1300) also a host without a scheme, but only as an argument of a network program, never inside quotes: `user@host` (not an all-digit
      version such as `pkg@1.2.3`), `host.tld:path` (scp, rsync, sftp, git clone/fetch/pull/push), `host.tld/...` or `host.tld:port` (curl, wget...),
      a bare `host.tld` (ssh, ping, nc...). Anything else, a file name like `notes.txt:12` or `name.io/x` included, is not a host. */
-  const AT_HOST=/^[^@\/\s]+@([^@\/\s:]+)/, DOTTED=/^([\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)+)(?=$|[:\/])/u;
+  const AT_HOST=/^[^@\/\s]+@([^@\/\s:#?]+)/, DOTTED=/^([\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)+)(?=$|[:\/])/u;
   const NET_URL=new Set(['curl','wget','http','https','xh','aria2c','lftp','httpie']), NET_COPY=new Set(['scp','rsync','sftp']),
     NET_HOST=new Set(['ssh','mosh','telnet','ping','ping6','nc','ncat','netcat','dig','nslookup','host','traceroute','tracepath','ftp','ssh-copy-id','whois']),
     GIT_NET=new Set(['clone','fetch','pull','push','ls-remote','remote','submodule']);
-  /* the words of a shell command outside quotes, grouped by command (a new command after ; | & or a line break). Fix round 3: a backslash outside single
-     quotes escapes the next character (so `"a\"b"` does not leave a quote open), and `$(...)` or a backtick pair is read as commands of its own while the
-     word around it goes on (so `ssh $(echo) host` stays one command). Linear: every character is read once. */
+  /* the words of a shell command, grouped by command (a new command after ; | & or a line break). Each word keeps where it starts (`i`), its raw text (`x`),
+     its text with the quotes and backslashes taken out the way the shell does (`u`, `$'...'` read as literal text) and whether it was written plainly
+     (`plain`: no quote, backslash or substitution; only such a word is read as a host). A backslash outside single quotes escapes the next character and
+     a backslash before a line break joins the lines (fix round 3, 4); `$(...)` and a backtick pair are commands of their own while the word around them goes
+     on; a `#` at the start of a word is a comment to the end of the line (fix round 4). Linear: every character is read once. */
   function shellCmds(s){
     const cmds=[];const n=s.length;
     const run=(from,to,stopAt,depth)=>{ /* reads s[from..to) and returns where it stopped (a ')' or '`' that closes a substitution, or `to`) */
-      let cur=[],q='',w=-1,i=from;
-      const end=k=>{if(w>=0){cur.push({x:s.slice(w,k),i:w});w=-1;}};
+      let cur=[],q='',w=-1,u='',plain=true,i=from;
+      const start=k=>{if(w<0){w=k;u='';plain=true;}};
+      const end=k=>{if(w>=0){cur.push({x:s.slice(w,k),i:w,u,plain});w=-1;}};
       const flush=()=>{if(cur.length)cmds.push(cur);cur=[];};
       for(;i<to;i++){const c=s[i];
-        if(q==="'"){if(c==="'")q='';continue;}
-        if(c==='\\'){if(w<0&&!q)w=i;i++;continue;} /* the escaped character belongs to the word (or to the quoted text) */
-        if(q){if(c===q)q='';continue;}
+        if(q==="'"){if(c==="'")q='';else u+=c;continue;}
+        if(q==='A'){if(c==='\\'&&i+1<to){u+=s[i+1];i++;}else if(c==="'")q='';else u+=c;continue;} /* $'...': literal text, \' does not end it */
+        if(q==='"'){if(c==='\\'&&i+1<to&&'$`"\\\n'.indexOf(s[i+1])>=0){if(s[i+1]!=='\n')u+=s[i+1];i++;}else if(c==='"')q='';else u+=c;continue;}
+        if(c==='\\'){if(i+1<to&&s[i+1]==='\n'){i++;continue;}start(i);plain=false;if(i+1<to){u+=s[i+1];i++;}continue;} /* a line continuation, or an escaped character */
         if(c===stopAt){end(i);flush();return i;}
-        if(c==='$'&&s[i+1]==='('&&depth<32){if(w<0)w=i;i=run(i+2,to,')',depth+1);continue;} /* at most 32 levels deep: the stack stays small */
-        if(c==='`'&&stopAt!=='`'&&depth<32){if(w<0)w=i;i=run(i+1,to,'`',depth+1);continue;}
-        if(c==='"'||c==="'"){end(i);q=c;continue;}
+        if(c==='#'&&w<0){while(i+1<to&&s[i+1]!=='\n')i++;continue;} /* a comment: a quote in it opens nothing */
+        if(c==='$'&&s[i+1]==="'"){start(i);plain=false;q='A';i++;continue;}
+        if(c==='$'&&s[i+1]==='('&&depth<32){start(i);plain=false;i=run(i+2,to,')',depth+1);continue;} /* at most 32 levels deep: the stack stays small */
+        if(c==='`'&&stopAt!=='`'&&depth<32){start(i);plain=false;i=run(i+1,to,'`',depth+1);continue;}
+        if(c==='"'||c==="'"){start(i);plain=false;q=c;continue;}
         if(c===';'||c==='|'||c==='&'||c==='\n'||c==='('||c===')'){end(i);flush();continue;}
         if(c===' '||c==='<'||c==='>'){end(i);continue;}
-        if(w<0)w=i;}
+        start(i);u+=c;}
       end(Math.min(i,to));flush();return to;};
     run(s.slice(0,4)==='run '?4:0,n,'',0);
     return cmds;
   }
   /* wrappers that run another program, and their options that take a separate value (fix round 3: `sudo -u root ssh h`, `xargs ssh h`, `strace -e x ssh h`) */
   const WRAP_VAL={sudo:'ughpCDrtUT',doas:'uC',env:'uCS',nohup:'',time:'fo',command:'',exec:'a',nice:'n',timeout:'sk',torsocks:'aPu',proxychains:'f',proxychains4:'f',builtin:'',
-    xargs:'nILPdsEa',watch:'n',strace:'eopsaPIbuE',ltrace:'eopsun',stdbuf:'ioe',ionice:'cnp',chrt:'',taskset:'',unbuffer:'',chroot:'',runuser:'ug',su:'cs',flock:'wEc'};
+    xargs:'nILPdsEa','{':'','}':'','!':'',if:'',then:'',do:'',else:'',elif:'',while:'',until:'', /* shell keywords at a command's start (fix round 4) */
+    watch:'n',strace:'eopsaPIbuE',ltrace:'eopsun',stdbuf:'ioe',ionice:'cnp',chrt:'',taskset:'',unbuffer:'',chroot:'',runuser:'ug',su:'cs',flock:'wEc'};
   const CONTAINER=new Set(['kubectl','docker','podman','oc','nerdctl']);
   const base=x=>x.slice(Math.max(x.lastIndexOf('/'),x.lastIndexOf('\\'))+1).toLowerCase().replace(/\.exe$/,'');
   /* the index of the program a command runs, past env assignments, numbers, wrappers with their options, and a container's `--` */
   function progAt(ws){
     let j=0;
     for(let guard=0;guard<ws.length+1&&j<ws.length;guard++){
-      const x=ws[j].x,b=base(x);
+      const x=ws[j].u,b=base(x);
       if(/^[A-Za-z_][A-Za-z0-9_]*=/.test(x)||/^[\d.]+[smhd]?$/.test(x)){j++;continue;}
       if(Object.prototype.hasOwnProperty.call(WRAP_VAL,b)){const vals=WRAP_VAL[b];j++;
-        while(j<ws.length&&/^-/.test(ws[j].x)){const o=ws[j].x;j++;if(o==='--')break;if(/^-[A-Za-z]$/.test(o)&&vals.indexOf(o[1])>=0)j++;}continue;}
-      if(CONTAINER.has(b)){const k=ws.findIndex((o,m)=>m>j&&o.x==='--');if(k>j){j=k+1;continue;}}
+        while(j<ws.length&&/^-/.test(ws[j].u)){const o=ws[j].u;j++;if(o==='--')break;if(/^-[A-Za-z]$/.test(o)&&vals.indexOf(o[1])>=0)j++;}continue;}
+      if(CONTAINER.has(b)){const k=ws.findIndex((o,m)=>m>j&&o.u==='--');if(k>j){j=k+1;continue;}}
       break;}
     return j;
   }
@@ -131,12 +138,12 @@
     if(!r.length){const f=/^fetch ([^\s\/?#"'<>\\`]+)$/.exec(s);if(f&&f[1].indexOf('://')<0)r.push([6,6+f[1].length]);}
     if(k==='shell')for(const ws of shellCmds(s)){
       const j=progAt(ws);if(j>=ws.length)continue;
-      const prog=base(ws[j].x);
+      const prog=base(ws[j].u);
       let cls='';if(NET_URL.has(prog))cls='url';else if(NET_COPY.has(prog))cls='copy';else if(NET_HOST.has(prog))cls='host';
-      else if(prog==='git'){let m=j+1;while(m<ws.length&&/^-/.test(ws[m].x)){if(/^(?:-C|-c|--git-dir|--work-tree|--namespace|--exec-path)$/.test(ws[m].x))m++;m++;} /* git -C d clone ... (fix round 3) */
-        if(m<ws.length&&GIT_NET.has(ws[m].x))cls='copy';}
+      else if(prog==='git'){let m=j+1;while(m<ws.length&&/^-/.test(ws[m].u)){if(/^(?:-C|-c|--git-dir|--work-tree|--namespace|--exec-path)$/.test(ws[m].u))m++;m++;} /* git -C d clone ... (fix round 3) */
+        if(m<ws.length&&GIT_NET.has(ws[m].u))cls='copy';}
       if(!cls)continue;
-      for(const o of ws.slice(j+1)){if(o.x.indexOf('://')>=0||/^-/.test(o.x))continue;const h=hostSpanOf(o.x,cls);if(h)r.push([o.i+h[0],o.i+h[1]]);}
+      for(const o of ws.slice(j+1)){if(!o.plain||o.x.indexOf('://')>=0||/^-/.test(o.x))continue; /* a quoted or escaped host is not read (spec 003 gap) */const h=hostSpanOf(o.x,cls);if(h)r.push([o.i+h[0],o.i+h[1]]);}
     }
     return r;
   }

@@ -234,4 +234,15 @@ const none = (t: string, k: string, m: string) => eq(L.check(t, k).findings, [],
   assertLinearShape('nested substitutions', (x) => { L.check(x, 'shell'); }, (k) => 'run ' + '$('.repeat(Math.ceil(k / 2)).slice(0, k), 10000);
   assertLinearShape('backslashes and quotes', (x) => { L.check(x, 'shell'); }, (k) => 'run ' + '\\"a\'\\\\ `$(x) ssh a.b:c ;'.repeat(Math.ceil(k / 24)).slice(0, k), 10000);
 }
+// fix round 4 (#1300): quoted or escaped program names, shell keywords and groups, comments (the reviewer's inputs)
+{
+  const C = 'раураӏ.invalid';
+  for (const t of ['"ssh" ' + C, "'ssh' " + C, '"ss"h ' + C, 's\\sh ' + C, "$'ssh' " + C, "$'s\\sh' " + C, 'ss\\\nh ' + C, 'ssh \\\n' + C, '{ ssh ' + C + '; }', 'if true; then ssh ' + C + '; fi', '! ssh ' + C,
+    'while true; do ssh ' + C + '; done', 'ls #"\nssh ' + C, "ls #'\nssh " + C, 'echo # x\nssh ' + C, "echo '#' ; ssh " + C, 'ssh u@' + C + '#x'])
+    ok(L.check('run ' + t, 'shell').hosts.some((h) => h.shown === C), 'the host is found: ' + JSON.stringify(t));
+  for (const t of ['echo "ssh" ' + C, '# ssh ' + C, 'echo if ssh ' + C, 'echo { ssh ' + C, 'ls # "\nls ' + C, "echo \"ssh $'x'\" " + C])
+    ok(!L.check('run ' + t, 'shell').hosts.some(L.hostOdd) && L.check('run ' + t, 'shell').findings.length === 0, 'stays clean: ' + JSON.stringify(t));
+  eq(L.check("run ssh $'" + C + "'", 'shell').hosts, [], 'a quoted host is not read (spec 003 known gap)');
+  eq(L.check('run ssh "u"@' + C, 'shell').hosts, [], 'nor a host after a quoted user (spec 003 known gap)');
+}
 console.log(`lookalike: ${n} checks passed`);
