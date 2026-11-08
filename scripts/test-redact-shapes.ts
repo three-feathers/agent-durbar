@@ -715,6 +715,9 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
   // B2 (re-review of #1243 at f8af91b1a): the rest of a value glued to a mask after a secret name joins the mask (a stream masked the short prefix first); a mask with no name before it, a space or an escape after it, stay
   eq('password: [redacted]!word' + '12345', 'password: [redacted]', 'B2: the rest glued to a mask after a name is masked');
   eq('(token: [redacted](S3cret)' + '99)', '(token: [redacted])', 'B2: the rest stops at a bracket opened before the name');
+  // O1 (review of #1243 at bda3f0d33): a rest needs a letter or a digit; the punctuation of a sentence after a mask stays (a saved note keeps it for good)
+  for (const t of ['password: [redacted].', 'password: [redacted]. Then the build', 'password: [redacted], and', 'password: [redacted]!', 'password: [redacted])', 'token: [redacted]...', 'pwd=[redacted]?']) eq(t, t, `O1 stays: ${t}`);
+  for (const r of ['!word' + '12345', '.ab' + '12', '-Xy' + '9']) eq('password: [redacted]' + r, 'password: [redacted]', `O1 still masked: a rest with a letter or a digit: ${r}`);
   for (const t of ['the [redacted]!x' + '12345 stays', 'password: [redacted] next words', '{\\"token\\":\\"[redacted]\\"}']) eq(t, t, `B2 stays: ${t}`);
   // N2: an unterminated quoted -p value
   eq('mysql -u r -p"S3' + 'cret9x', 'mysql -u r -p[redacted]', 'mysql -p: unterminated double quote');
