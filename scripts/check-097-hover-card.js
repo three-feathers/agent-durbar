@@ -15,6 +15,7 @@
  *     Agent Durbar"), or an agent at a desk has one (FR-329);
  *   - the card is under 10.5 px anywhere, leaves the window, covers the hovered agent's own plate, or the office scrolls (FR-034, FR-313);
  *   - a card open on a working desk keeps the awake view (status word, tool log) after its agent falls asleep instead of showing the asleep view (FR-328);
+ *   - with no free place for the card (the room tiled with slips) a slip under the card is not inert, a slip not under it is, or one stays inert after the card moved or Esc closed it (FR-330);
  *   - keyboard focus on an asleep agent's plate does not open the same card, or Esc does not close it (FR-328).
  */
 const os = require('os');
@@ -179,6 +180,28 @@ module.exports = async (ctx) => {
     assert.ok(after.node === before.node && after.facts.some(([k]) => k === 'Last activity') && after.inside && !after.small.length, `${tag}: the same panel, refilled: ${JSON.stringify(after.facts)}`);
     await moveTo(1, 1);
     await must(NONE, `${tag}: closed on leaving after the refill`);
+    /* ---- FR-330: no free place: the slips tile the room, so the card lands over some of them; those are inert while it is open, and only those ---- */
+    const TILES = `(()=>{const ro=document.querySelector('#stage .ro'),o=ro.getBoundingClientRect();for(const e of ro.querySelectorAll('.fake-slip'))e.remove();
+      for(let y=0;y<o.height;y+=70)for(let x=0;x<o.width;x+=110){const e=document.createElement('div');e.className='ro-slip fake-slip';e.style.cssText='position:absolute;left:'+x+'px;top:'+y+'px;width:104px;height:64px;pointer-events:none';ro.appendChild(e);}return 1})()`;
+    const COVER = `(()=>{const z=document.getElementById('roZoom');if(!z)return null;const b=z.getBoundingClientRect(),r={under:0,inertUnder:0,inertOther:0};
+      for(const e of document.querySelectorAll('#stage .ro .fake-slip')){const q=e.getBoundingClientRect(),hit=q.left<b.right&&b.left<q.right&&q.top<b.bottom&&b.top<q.bottom;if(hit){r.under++;if(e.hasAttribute('inert'))r.inertUnder++;}else if(e.hasAttribute('inert'))r.inertOther++;}return r})()`;
+    const ANYINERT = `document.querySelectorAll('#stage .ro .fake-slip[inert]').length`;
+    assert.ok(await hoverAt('person', wk, `${tag} no place`), `${tag}: the card opens on ${wk} for the covered-slip step`);
+    await js(TILES); await js(`${sim}.crew.renderAll();0`);
+    await must(`${ANYINERT}>0`, `${tag}: a slip under the card is inert (FR-330)`, 8000);
+    const cv = await js(COVER);
+    assert.ok(cv.under > 0 && cv.inertUnder === cv.under && cv.inertOther === 0, `${tag}: every slip under the card, and none other, is inert: ${JSON.stringify(cv)}`);
+    /* the slips go elsewhere and the card is placed again: nothing is inert any more */
+    await js(`(()=>{for(const e of document.querySelectorAll('#stage .ro .fake-slip'))e.style.left='-9999px';${sim}.crew.renderAll();return 1})()`);
+    await must(`${ANYINERT}===0`, `${tag}: a slip no longer under the card is not inert (the card moved)`, 8000);
+    /* Esc: the card closes and no slip stays inert */
+    await js(TILES); await js(`${sim}.crew.renderAll();0`);
+    await must(`${ANYINERT}>0`, `${tag}: slips inert again under the card`, 8000);
+    wc().sendInputEvent({ type: 'keyDown', keyCode: 'Escape' }); wc().sendInputEvent({ type: 'keyUp', keyCode: 'Escape' });
+    await must(NONE, `${tag}: Esc closes the card over the slips`);
+    await must(`${ANYINERT}===0`, `${tag}: after Esc no slip is inert`, 8000);
+    await js(`for(const e of document.querySelectorAll('#stage .ro .fake-slip'))e.remove();0`);
+    await moveTo(1, 1);
     console.log(`[hover-card] ${tag}: ok; working ${wk}, resting ${R}, asleep ${S}`);
   }
   console.log('[hover-card] pictures:', shots.join(' '));
