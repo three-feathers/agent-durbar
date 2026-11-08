@@ -81,7 +81,7 @@ jobs:
           cache: npm
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y xvfb
-      - run: npm ci
+      - uses: ./.github/actions/npm-ci
       - run: npm run build
       # Theme geometry runs first in every job, macOS shards 2 and 3 included: the first Electron on a fresh Linux runner failed its
       # first frame capture when a driver was first (shots-001-welcome, UnknownVizError, PR #507); after geometry it passes. Whether a

@@ -45,7 +45,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - uses: ./.github/actions/npm-ci
       - run: npx tsc -p tsconfig.scripts.json
       # the demo server enforces the flow (401, PKCE, one-use codes) before the real check trusts its counters
       - run: node dist-scripts/scripts/test-demo-oauth-mcp.js
