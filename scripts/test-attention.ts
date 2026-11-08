@@ -271,6 +271,9 @@ const AA = A as unknown as {
 {
   const S = (A as unknown as { scheduleDue: (n: Notifier, set: (f: () => void, ms: number) => number, fire: () => void) => number }).scheduleDue;
   // the real default clock, a fake setTimeout: a pending notification is scheduled once, after a positive delay of at most THROTTLE_MS
+  // the monotonic clock is set well ahead first: in a fresh process it is only a few hundred ms, where an absolute due time would also look like a small delay
+  const realPerf2 = performance.now.bind(performance);
+  (performance as unknown as { now: () => number }).now = () => 1e7;
   const Nd = A.createNotifier();
   const delays: number[] = [];
   const fake = (_f: () => void, ms: number): number => { delays.push(ms); return delays.length; };
@@ -281,6 +284,7 @@ const AA = A as unknown as {
   assert.ok(S(Nd, fake, () => undefined) > 0, 'a pending notification is scheduled');
   assert.strictEqual(delays.length, 1, 'once');
   assert.ok(delays[0] > 0 && delays[0] <= A.THROTTLE_MS, `the delay is positive and at most THROTTLE_MS, not 0 and not a mixed-clock number (got ${delays[0]})`);
+  (performance as unknown as { now: () => number }).now = realPerf2;
   // no 0 ms loop: with a fake clock that the timers advance, the page's fire-and-reschedule reaches the notification in a few steps
   let tt = 50_000; const Nf = A.createNotifier({ now: () => tt });
   Nf.observe([], { armed: true, enabled: true, focused: false }); Nf.observe([it('y', 'Why', 'x', 'y|p|1')], { armed: true, enabled: true, focused: false });
