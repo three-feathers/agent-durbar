@@ -526,7 +526,7 @@
     if (ZOOM) {
       const zd = CUR.desks.get(ZOOM.id);
       if (!zd || hiddenNow()) closeZoom(); /* FR-328: an asleep agent's card stays (its glass is dark, the card has its reply) */
-      else { if (ZOOM.st !== zd.state) fillZoom(); placeZoom(); } /* FR-328 (2026-11-08): the card follows the agent's state as its facts do (FR-315): asleep or back, it is filled again, not left with the old tool log */
+      else { if (ZOOM.st !== zd.state) { fillZoom(); ZOOM.held = true; } placeZoom(); } /* FR-328 (2026-11-08): the card follows the agent's state as its facts do (FR-315): asleep or back, it is filled again, not left with the old tool log */
     }
     settle(chrome, lay.width);
     return lay;
@@ -862,6 +862,9 @@
     /* spec 097 FR-327: the agent a pointer is over: its monitor, person, desk (or lounge table) or name plate, never a visitor, chip or lobby plate */
     const hid = (n) => { const t = n && n.closest && n.closest('.ro-screen, .ro-person, .ro-person2, .ro-rig, .ro-initials, .ro-marquee, .ro-desk, .ro-ltable, .ro-plate'); return t ? (t.classList.contains('ro-plate') ? t.dataset.id : t.dataset.for) || '' : ''; };
     const arm = (id) => { clearTimeout(wait); ARMED = true; wait = setTimeout(() => { ARMED = false; openZoom(id, 'hover'); }, 120); };
+    /* FR-328: the agent changed state under a resting pointer (it walked to the lounge): the browser's pointerout is not the person leaving; the next real move is */
+    ro.addEventListener('pointermove', (e) => { if (ZOOM && ZOOM.held) { ZOOM.held = false; if (ZOOM.hover && hid(e.target) !== ZOOM.id) leaveZoom('hover'); } }, true);
+    ro.addEventListener('pointerleave', () => { if (ZOOM && ZOOM.held) { ZOOM.held = false; if (ZOOM.hover) leaveZoom('hover'); } });
     ro.addEventListener('pointermove', (e) => {
       if (!QUIET_POINTER) return;
       const at = e.clientX + ',' + e.clientY;
@@ -882,7 +885,7 @@
       const id = hid(e.target);
       if (!id || hid(e.relatedTarget) === id) return; /* still on the same agent's desk */
       clearTimeout(wait); ARMED = false; DISMISSED = '';
-      if (ZOOM && ZOOM.id === id) leaveZoom('hover');
+      if (ZOOM && ZOOM.id === id && !ZOOM.held) leaveZoom('hover');
     });
     ro.addEventListener('focusin', (e) => { const p = e.target.closest && e.target.closest('.ro-plate'); if (p && !QUIET_FOCUS && p.matches(':focus-visible')) openZoom(p.dataset.id, 'focus'); });
     ro.addEventListener('focusout', (e) => { const p = e.target.closest && e.target.closest('.ro-plate'); if (p && ZOOM && ZOOM.id === p.dataset.id) leaveZoom('focus'); });
@@ -890,6 +893,7 @@
   function zoomKey(e) {
     if (e.key !== 'Escape' || !ZOOM) return;
     if (hiddenNow()) { closeZoom(); return; } /* the office is covered: this Escape is for what covers it */
+    if (document.querySelector('#modeMenu,#modelMenu,#agentMenu,#ctxMenu')) return; /* FR-328: an open menu is above the card: this Escape closes the menu first (the card is not told apart from it; it goes with its hover or focus) */
     e.preventDefault(); e.stopPropagation(); DISMISSED = ZOOM.hover ? ZOOM.id : ''; closeZoom();
   }
   function openZoom(id, why) {

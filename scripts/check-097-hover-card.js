@@ -202,6 +202,12 @@ module.exports = async (ctx) => {
     const after = await card();
     noBad(`${tag} fell asleep`, after);
     assert.ok(after.node === before.node && after.facts.some(([k]) => k === 'Last activity') && after.inside && !after.small.length, `${tag}: the same panel, refilled: ${JSON.stringify(after.facts)}`);
+    await js(`new Promise(r=>setTimeout(r,700))`); /* the agent walks to the lounge row under the resting pointer: that is not the pointer leaving (the card stays) */
+    assert.ok(await js(ZOOM_FOR(wk2)) && (await card()).word.startsWith('Asleep'), `${tag}: the asleep card is still open 700 ms after the refill, the pointer has not moved`);
+    /* an open menu is above the card: Escape closes the menu (the app's menus stop the key themselves), the card does not take it first (FR-328) */
+    await js(`(()=>{const m=document.createElement('div');m.id='modeMenu';m.tabIndex=-1;const b=document.createElement('button');b.textContent='x';m.appendChild(b);m.addEventListener('keydown',(e)=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();m.remove();}});document.body.appendChild(m);b.focus();return document.activeElement===b})()`);
+    wc().sendInputEvent({ type: 'keyDown', keyCode: 'Escape' }); wc().sendInputEvent({ type: 'keyUp', keyCode: 'Escape' });
+    await must(`!document.getElementById('modeMenu')`, `${tag}: Escape closes an open menu while a card is open (FR-328)`);
     await moveTo(1, 1);
     await must(NONE, `${tag}: closed on leaving after the refill`);
     /* ---- FR-330: no free place: real-shaped slips (they take pointer events, each holds an input) tile the room except round the hovered person, so the card lands over some of them ---- */
