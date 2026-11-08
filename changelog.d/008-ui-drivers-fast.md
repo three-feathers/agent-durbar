@@ -1,0 +1,1 @@
+- The simulator UI checks wait for the page's own word that it is steady instead of guessing, so the slowest ones run in about half the time (check-office-fill, check-crew, check-auto-follow, shots-017 and others): no check was dropped or loosened (spec 008 FR-190).
