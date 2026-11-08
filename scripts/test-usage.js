@@ -305,7 +305,7 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
     assert.strictEqual(f.days['2026-11-07'].models[OPUS].costUsd, 3, 'repo: only the Agent Durbar repository is counted (case and .git ignored)');
     assert.strictEqual(rr.otherWork, 3, 'repo: another repository, a look-alike name and no repository attribute are dropped');
     assert.strictEqual(f.skipped, 0, 'repo: other work is not an error and is not counted as skipped');
-    assert.ok(!JSON.stringify(f).includes('github.com'), 'repo: the repository URL is compared, never stored');
+    assert.ok(!/github\.com/.test(JSON.stringify(f)), 'repo: the repository URL is compared, never stored');
     const g = lib.emptyState('linux'); lib.ingest(g, bodyOf([pt(null, 5)]), NOW);
     assert.strictEqual(g.days['2026-11-07'].models[OPUS].costUsd, 5, 'repo: no filter given (lib default) counts everything, the receiver always passes one');
     assert.deepStrictEqual(lib.parseRepos('https://github.com/a/b.git, https://gitlab.example/x/y'), ['https://github.com/a/b', 'https://gitlab.example/x/y'], 'repo: DURBAR_USAGE_REPOS is a comma-separated list');
