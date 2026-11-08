@@ -279,6 +279,16 @@ body.ro-chat .ph .avatar{display:none}
 .ro-newtag{display:none;transform:translate(-100%,calc(-100% - 2px));padding:1px 6px;border-radius:7px;font-size:11px;font-weight:700;line-height:15px;white-space:nowrap;color:#fff;background:#1f7a45;box-shadow:0 0 0 2px rgba(255,255,255,.92);pointer-events:none}
 .ro-newtag.on{display:block}
 @media (forced-colors:active){.ro-newtag{color:CanvasText;background:Canvas;border:1px solid CanvasText;box-shadow:none}}
+/* spec 097 FR-350..FR-352 (#1171): trouble signs on a desk, in the chrome (never dimmed, FR-044): a heavy body's sweat drop, a monster's horns and green ring, the siren of an ambulance or a faint */
+.ro-mood{pointer-events:none!important;display:block}
+.ro-mood svg{display:block;width:100%;height:100%;overflow:visible}
+.ro-sweat path{fill:#a9c6e3;stroke:#3f6f9e;stroke-width:1.1px}
+.ro-horns path{fill:#6e8a70;stroke:#2f4a33;stroke-width:1.3px;stroke-linejoin:round}
+.ro-ring{box-sizing:border-box;border-radius:50%;border:2px solid #6e8a70;outline:1px solid rgba(255,255,255,.85)}
+.ro-siren .siren{display:block;width:100%;height:100%;margin:0}
+.ro-siren{border-radius:50%;background:rgba(255,255,255,.82)}
+.ro-siren .siren svg{display:block;width:100%;height:100%}
+@media (forced-colors:active){.ro-sweat path,.ro-horns path{fill:Canvas;stroke:CanvasText}.ro-ring{border-color:CanvasText;outline-color:Canvas}}
 /* spec 059 FR-170 (#1155): Open office's rename pencil (.ren, styles.css) beside a plate's name. It is the plate's next sibling, anchored by CSS to
    the name (anchor-name and position-anchor are set per desk), so it follows the name with no script. The plate keeps 22px after the name for it,
    so it covers neither the role nor the helper dots; a long name gives way first (ellipsis). It shows on the plate's hover and focus, as on a desk. */
