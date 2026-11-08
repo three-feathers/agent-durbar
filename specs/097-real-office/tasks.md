@@ -245,3 +245,4 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 - [ ] T247 [US5] Every landed set drawn and read in the Retro arcade at 15 agents, both sizes (a non-pixel set in a pixel-art world), with spec 102 T225 for Prehistoric; the arcade's default stays Retro pixel people. Test: `shots-102-arcade`, `check-097-crews` with `world=retro` [FR-335]
 - [ ] T248 [US5] Every landed set drawn and read in the Prehistoric cave at 15 agents, both sizes, when the cave opens. Test: `check-097-crews` with `world=cave` [FR-335]
 - [ ] T249 [US5] The matrix kept true: a test that fails when a Characters value or world is added without a cell (`test:realoffice-layout`) [FR-335]
+- Art for T240..T244 (from #1308, 2026-11-08): the five crews' packs (`sets/pirate`, `royal`, `rebels`, `monster`, `cheeky`) are added as art only by PR #1327; the wiring (`REAL_SETS` row, `check-097-crews` case flip) stays in #1308's T240..T244.

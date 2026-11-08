@@ -1,0 +1,1 @@
+- **Five Real office crews as art** (spec 097 FR-067, T240..T244 art part): Pirate, Royal, Rebels, Monster and Cheeky people (72, 72, 72, 72 and 156 frames) are in the repository, approved by the owner. Not selectable yet: wiring follows. Checked by `test:realoffice-assets`; simulator only.
