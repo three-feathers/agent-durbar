@@ -404,6 +404,7 @@ function worldCssProblems(cssIn: string): string[] {
     assert.deepStrictEqual([...(T.WORLD_IDS as string[])].sort(), Object.keys(WANT).sort(), 'every world has an expectation here');
     const picks: Array<string | Record<string, unknown>> = [...ids, ...packs];
     let measured = 0;
+    const wShadow: Record<string, Record<string, string>> = {}; // the first pick is Clean Office, which sets no shadow of its own
     for (const wid of T.WORLD_IDS as string[]) {
       const wt = T.worldTokens(wid) as Record<string, string>;
       assert.ok(Object.keys(wt).length > 100, `${wid}: the world sets a complete token set`);
@@ -429,7 +430,7 @@ function worldCssProblems(cssIn: string): string[] {
         for (const k of [...clean.keys()].filter((x) => /^--(c|halo)-(working|thinking|waiting|idle|error|done)$/.test(x))) assert.strictEqual(nrm(m.get(k)), nrm(clean.get(k)), `${label}: ${k} is Clean Office's status colour`);
         if (pid === 'retro') assert.notStrictEqual(nrm(before.get('--c-working')), nrm(m.get('--c-working')), 'Retro Pixel\'s own status colour does not show in a world (measured, FR-350)');
         // shadows, UI style, dark flag
-        for (const k of ['--shadow-card', '--shadow-pop']) { assert.ok(WANT[wid].shadow.test(String(m.get(k))), `${label}: ${k} is the world's (${m.get(k)})`); }
+        for (const k of ['--shadow-card', '--shadow-pop']) { assert.ok(WANT[wid].shadow.test(String(m.get(k))), `${label}: ${k} is the world's (${m.get(k)})`); if (!wShadow[wid]) wShadow[wid] = {}; if (!wShadow[wid][k]) wShadow[wid][k] = nrm(m.get(k)); assert.strictEqual(nrm(m.get(k)), wShadow[wid][k], `${label}: ${k} equals the world's value under the first theme (a theme's shadow does not reach it)`); }
         assert.strictEqual(ds.world, wid, `${label}: data-world`);
         assert.strictEqual(ds.ui, WANT[wid].ui, `${label}: the world's own UI style`);
         assert.strictEqual('dark' in ds, WANT[wid].dark, `${label}: the dark flag is the world's`);
@@ -445,6 +446,14 @@ function worldCssProblems(cssIn: string): string[] {
         for (const k of Object.keys(wt)) assert.strictEqual(nrm(d3.documentElement.style.m.get(k)), nrm(wt[k]), `${label}: ${k} stays the world's when the theme is picked meanwhile`);
         U.setWorld(null); assert.strictEqual(snap(d3), alone, `${label}: world first, then the theme, then leaving: the theme alone`);
       }
+    }
+    // FR-351 one source: the arcade's drop overlay fill is world.css's rule or a --drop-bg token in its set, never both (a dead source)
+    {
+      const css = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'realoffice', 'worlds', 'retro', 'world.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+      const rule = /html\[data-world="retro"\]\s*\.drop-ov\s*\{[^}]*background/.test(css);
+      const token = nrm((T.worldTokens('retro') as Record<string, string>)['--drop-bg']) !== nrm(cleanRef.T.worldTokens('photo')['--drop-bg']);
+      assert.ok(!(rule && token), 'the arcade sets --drop-bg in WORLD_SETS.retro and world.css still has the .drop-ov rule: delete the rule (one source, FR-351)');
+      assert.ok(rule || token, 'the arcade\'s drop overlay has a fill of its own: the world.css rule or a --drop-bg in WORLD_SETS.retro (FR-351)');
     }
     assert.ok(measured > 3 * 3 * 7, `the applied-style contrast ran (${measured} pairs)`);
   }
