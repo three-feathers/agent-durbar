@@ -31,6 +31,8 @@ async function main(): Promise<void> {
     // a token that ends right at the cut, and a secret flag value
     const g2 = grantScope({ kind: 'shell', fullCommandText: 'run-tool --token ' + body.slice(0, 12) + ' --verbose=1 --name=abc' });
     assert.ok(!g2.label.includes(body.slice(0, 6)), `#1296: a secret flag value is not in the label: ${g2.label}`);
+    // a secret in a word that is whole before the cut (a word-boundary cut of the raw text keeps it): only the mask hides it
+    assert.strictEqual(grantScope({ kind: 'shell', fullCommandText: 'export TOKEN=' + body.slice(0, 9) + ' && echo done' }).label, 'run export TOKEN=[redacted] &&…', '#1296: a secret whole before the cut is masked, not shown');
     // a marker is never cut in two; a first word longer than the cut is cut as it is (it holds nothing the mask found)
     const g3 = grantScope({ kind: 'shell', fullCommandText: 'echo pass' + 'word=' + body.slice(0, 12) + ' && echo done' });
     assert.ok(!/\[redac[^\]]*…/.test(g3.label), `#1296: no half marker: ${g3.label}`);
