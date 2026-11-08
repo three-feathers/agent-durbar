@@ -18,6 +18,37 @@ const MAX_USD_PER_POINT = 1e6;
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const MAX_MODELS_PER_DAY = 50; // distinct model ids per day; the rest are added to `other-model`, so one process cannot grow the file
 const FILE_VERSION = 1;
+const SCOPE = 'agent-durbar'; // every file declares it counted Agent Durbar work only (owner, 2026-11-08)
+const REPO_ATTR = 'vcs.repository.url.full'; // Claude Code adds it with OTEL_METRICS_INCLUDE_REPOSITORY=true (v2.1.269+); read only to compare, never kept
+const DEFAULT_REPOS = ['https://github.com/three-feathers/agent-durbar'];
+const SEG_RE = /^[a-z0-9._-]{1,100}$/i; // ASCII only: a homoglyph (Cyrillic "а" for "a") never matches
+const HOST_RE = /^[a-z0-9.-]{1,100}$/i;
+const USERINFO = "(?:[A-Za-z0-9._~%!$&'()*+,;=:-]*@)?"; // RFC 3986 userinfo: unreserved, sub-delims, pct-encoded, ':'; never '/', '#', '?', '\\' or '@'
+/**
+ * One spelling for a repository: `https://<host>/<owner>/<repo>`, lowercase, from https://, ssh://, git:// and scp-style (`git@host:owner/repo`) remotes,
+ * with any `user[:token]@`, port, `.git` and trailing slash removed. Exactly two path segments or null. The input is never kept or echoed (it may hold a token).
+ */
+function normalizeRepo(text) {
+  /*NORM*/
+  if (typeof text !== 'string' || text.length > 300) return null;
+  const s = text.trim();
+  /*REJECT*/ if (/[\s#?\\\u0000-\u001f\u007f-\u009f]/.test(s)) return null; // a '#', '?', '\\' or control character would let a URL parser read another host than this regex does
+  const isUrl = /^(?:https|ssh|git):\/\//i.test(s);
+  let m = new RegExp(`^(?:https|ssh|git):\\/\\/${USERINFO}([^\\/:@]+)(?::\\d{1,5})?\\/(.+)$`, 'i').exec(s);
+  if (!m) m = /^(?:[A-Za-z0-9._~%!$&'()*+,;=-]+@)?([^\/:@]+):(?!\/)(.+)$/.exec(s);
+  if (!m) return null;
+  if (isUrl) { let h = null; try { h = new URL(s).hostname; } catch { return null; } if (h.toLowerCase() !== m[1].toLowerCase()) return null; } // a real URL parser must read the same host
+  const parts = m[2].replace(/\/+$/, '').replace(/\.git$/i, '').replace(/\/+$/, '').split('/');
+  if (parts.length !== 2 || !HOST_RE.test(m[1]) || !parts.every((x) => SEG_RE.test(x))) return null;
+  return `https://${m[1]}/${parts[0]}/${parts[1]}`.toLowerCase();
+}
+/** The allowed repository URLs: `DURBAR_USAGE_REPOS` (comma-separated, lowercase https URLs without `.git`) or the default. Throws on a malformed entry. */
+function parseRepos(text) {
+  if (text === undefined || text === '') return DEFAULT_REPOS.slice();
+  const list = String(text).split(',').map((x) => x.trim()).filter(Boolean).map(normalizeRepo); // an entry is never echoed in an error (it may hold a token)
+  if (!list.length || list.some((u) => u === null)) throw new Error('DURBAR_USAGE_REPOS must be comma-separated repository URLs (https://, ssh:// or git@host:owner/repo), e.g. https://github.com/three-feathers/agent-durbar');
+  return list;
+}
 const DELTA = 1; // OTLP AggregationTemporality: 1 = delta, 2 = cumulative
 
 const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
@@ -28,7 +59,7 @@ function emptyModel() {
   for (const s of SOURCES) bySource[s] = { tokens: 0, costUsd: 0 };
   return { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, costUsd: 0, bySource };
 }
-function emptyState(machine) { return { version: FILE_VERSION, machine, skipped: 0, days: {} }; }
+function emptyState(machine) { return { version: FILE_VERSION, machine, scope: SCOPE, skipped: 0, days: {} }; }
 
 /** The machine label: one the person chose (`DURBAR_USAGE_MACHINE`), never a host name. */
 function checkMachine(label) {
@@ -65,14 +96,15 @@ function pointValue(dp, max) {
   return v;
 }
 
-/** `{type, model, source}` from the three allowlisted attributes of a data point; every other attribute is ignored unread. */
+/** `{type, model, source, repo}` from the allowlisted attributes of a data point (`repo` is only compared, never stored); every other attribute is ignored unread. */
 function pickAttrs(dp) {
-  const out = { type: null, model: null, source: null };
+  const out = { type: null, model: null, source: null, repo: null };
   if (!Array.isArray(dp.attributes)) return out;
   for (const a of dp.attributes) {
-    if (!isObj(a) || (a.key !== 'type' && a.key !== 'model' && a.key !== 'query_source')) continue; // the key is checked before the value is touched
+    if (!isObj(a) || (a.key !== 'type' && a.key !== 'model' && a.key !== 'query_source' && a.key !== REPO_ATTR)) continue; // the key is checked before the value is touched
     if (!isObj(a.value) || typeof a.value.stringValue !== 'string') continue;
-    if (a.key === 'type') out.type = a.value.stringValue;
+    if (a.key === REPO_ATTR) out.repo = normalizeRepo(a.value.stringValue); // canonical form or null; the original text is dropped here
+    else if (a.key === 'type') out.type = a.value.stringValue;
     else if (a.key === 'model') out.model = a.value.stringValue;
     else out.source = a.value.stringValue;
   }
@@ -92,8 +124,8 @@ function modelSlot(state, day, model, capped = true) {
  * a cumulative sum cannot be told from a repeat without the session id, which is never kept, so it is skipped and counted.
  * Returns `{tokens, costs, skipped}` (data points added, data points refused).
  */
-function ingest(state, body, nowMs = Date.now()) {
-  const res = { tokens: 0, costs: 0, skipped: 0 };
+function ingest(state, body, nowMs = Date.now(), repos = null) {
+  const res = { tokens: 0, costs: 0, skipped: 0, otherWork: 0 }; // otherWork: points of another repository or with no repository, dropped unrecorded (not an error)
   const seenDays = new Set();
   if (!isObj(body) || !Array.isArray(body.resourceMetrics)) throw new Error('not an OTLP metrics body');
   for (const rm of body.resourceMetrics) {
@@ -110,6 +142,7 @@ function ingest(state, body, nowMs = Date.now()) {
           const isToken = m.name === TOKEN_METRIC;
           const v = pointValue(dp, isToken ? MAX_TOKENS_PER_POINT : MAX_USD_PER_POINT);
           const a = pickAttrs(dp);
+          if (repos && !(a.repo !== null && repos.includes(a.repo))) { res.otherWork++; continue; } // only Agent Durbar work; no repository attribute = not provably Durbar = dropped
           if (v === null || (isToken && !TYPES.includes(a.type))) { res.skipped++; continue; }
           const model = a.model !== null && MODEL_RE.test(a.model) ? a.model : 'other-model';
           const source = SOURCES.includes(a.source) ? a.source : 'other';
@@ -128,8 +161,9 @@ function ingest(state, body, nowMs = Date.now()) {
 }
 
 /** A state read from a file, checked field by field and rebuilt from the allowed fields only (extra keys are dropped). Throws on anything else. */
-function validateState(raw, where = 'usage file') {
+function validateState(raw, where = 'usage file', opts = {}) {
   if (!isObj(raw) || raw.version !== FILE_VERSION || !isObj(raw.days)) throw new Error(`${where}: not a usage file (version ${FILE_VERSION})`);
+  if (opts.requireScope ? raw.scope !== SCOPE : (raw.scope !== undefined && raw.scope !== SCOPE)) throw new Error(`${where}: scope must be "${SCOPE}" (this machine counted Agent Durbar work only)`);
   const st = emptyState(checkMachine(raw.machine));
   const num = (v) => { if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) throw new Error(`${where}: a number is wrong`); return v; };
   for (const day of Object.keys(raw.days)) {
@@ -207,8 +241,13 @@ const BEGIN = '<!-- build-cost:begin (written by `npm run usage:readme`; method 
 const END = '<!-- build-cost:end -->';
 const LABEL = 'API list-price estimate, not billing';
 /** Model id (what the telemetry sends) -> display name: the one place. An id not listed shows as itself. */
-const MODEL_NAMES = { 'claude-opus-5-5': 'Opus 5.5', 'claude-sonnet-5-5': 'Sonnet 5.5' };
-const modelName = (id) => (own(MODEL_NAMES, id) ? MODEL_NAMES[id] : id);
+const MODEL_NAMES = { 'claude-opus-5-5': 'Opus 5.5', 'claude-sonnet-5-5': 'Sonnet 5.5', 'claude-haiku-5-5': 'Haiku 5.5' };
+// an id not listed above: `claude-<family>-<major>-<minor>` reads as "Family major.minor"; anything else shows as itself
+const modelName = (id) => {
+  if (own(MODEL_NAMES, id)) return MODEL_NAMES[id];
+  const m = /^claude-([a-z]+)-(\d+)-(\d+)$/.exec(id);
+  return m ? `${m[1][0].toUpperCase()}${m[1].slice(1)} ${m[2]}.${m[3]}` : id;
+};
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 ._:\[\]()+-]{0,79}$/; // a display name in the baseline
 
 /** The baseline file (committed, written by hand): what was spent before the receivers ran, or on machines and teams that are not tracked. */
@@ -233,7 +272,8 @@ function cumulative(states, date, baseline) {
   for (const [k, v] of Object.entries(baseline.models)) add(models, k, v);
   for (const [k, v] of Object.entries(baseline.machines)) add(machines, k, v);
   for (const st of states) for (const day of Object.keys(st.days)) {
-    if (day <= baseline.through || day > date) continue;
+    // a machine with its own baseline entry is counted after the baseline's day; one without (a teammate's machine) from its first day
+    if ((own(baseline.machines, st.machine) && day <= baseline.through) || day > date) continue;
     for (const model of Object.keys(st.days[day].models)) { const c = st.days[day].models[model].costUsd; add(models, model, c); add(machines, st.machine, c); }
   }
   let total = 0; for (const v of models.values()) total += v;
@@ -246,13 +286,14 @@ function split(map, total, labelOf = (k) => k) {
 }
 
 /** The README block, markers included. `release` is a tag such as `v0.1.12` (checked). Same inputs, same text. */
-function readmeBlock(cum, date, release, note) {
+function readmeBlock(cum, date, release, note, spreadNote) {
   if (!DATE_RE.test(date)) throw new Error('--date must be YYYY-MM-DD');
   if (!/^v\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(release)) throw new Error('--release must look like v0.1.12');
   return [BEGIN, '## Build cost so far', '',
     `**About US$${group(cum.total)}** at API list prices to build this app with AI agents, as of ${date} (release [\`${release}\`](https://github.com/three-feathers/agent-durbar/releases/tag/${release})), tracked since ${cum.since}. `
     + `This is an **${LABEL}**: Claude Code's own list-price figure, not what anyone was charged. Method and privacy: [docs/build-cost.md](docs/build-cost.md).`, '',
     '![Cumulative build cost by model over releases (API list-price estimate, not billing)](docs/build-cost.svg)', '',
+    ...(spreadNote ? [spreadNote, '', '![Daily build cost by model: measured days solid, estimated (spread) days faded and dashed](docs/build-cost-days.svg)', ''] : []),
     `- By model: ${split(cum.models, cum.total, modelName) || 'none yet'}.`,
     `- By machine or team: ${split(cum.machines, cum.total) || 'none yet'}.`,
     `- Not counted yet: ${note}`, END].join('\n');
@@ -374,7 +415,67 @@ function chartSvg(history) {
   return out.join('');
 }
 
+const DAY_SPREAD_LINE = (est, n, since, through) => `Estimated, not measured: US$${group(est)} of the total, spent before telemetry could count it per day, is spread over ${n} days (${since} to ${through}) by 50% lines changed and 50% merged PRs of each day (git history); the faded, dashed bars are those estimates, the solid bars are measured. Per-model split of an estimated day: the same mix as the original lump (an assumption).`;
+
+/** Daily spend, stacked by model: measured part solid, estimated (spread) part faded with a dashed outline. `rows` from usage-spread.dailyRows. */
+function chartDaysSvg(rows) {
+  const W = 720; const H = 300; const L = 62; const R = 16; const T = 14; const B = 108; const pw = W - L - R; const ph = H - T - B;
+  const head = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img"`;
+  const style = '<style>text{fill:#1f2328;font:11px Verdana,DejaVu Sans,sans-serif;font-variant-numeric:tabular-nums}.ax{stroke:#8c959f;stroke-width:1}.gr{stroke:#8c959f;stroke-opacity:.35;stroke-width:1}'
+    + '.est{fill-opacity:.4;stroke:#8c959f;stroke-width:1;stroke-dasharray:3 2}.key{fill:#8c959f;fill-opacity:.4;stroke:#8c959f;stroke-dasharray:3 2}.keym{fill:#8c959f}'
+    + '@media (prefers-color-scheme:dark){text{fill:#e6edf3}}' + seriesCss() + '</style>';
+  if (!rows.length) {
+    const t = `Daily build cost (${LABEL}): no days recorded yet`;
+    return `${head} aria-label="${esc(t)}"><title>${esc(t)}</title>${style}<text x="${W / 2}" y="${H / 2}" text-anchor="middle">${esc(t)}</text></svg>\n`;
+  }
+  const names = [];
+  const tot = (r, n) => (r.est[n] || 0) + (r.meas[n] || 0);
+  for (const r of rows) for (const n of [...Object.keys(r.est), ...Object.keys(r.meas)]) if (!names.includes(n)) names.push(n);
+  const sumOf = (n) => rows.reduce((a, r) => a + tot(r, n), 0);
+  names.sort((a, b) => sumOf(b) - sumOf(a) || (a < b ? -1 : 1));
+  for (let i = names.length - 1; i >= 0; i--) if (sumOf(names[i]) <= 0) names.splice(i, 1); // only models with an amount
+  const cls = (n) => `s${Math.min(names.indexOf(n), SERIES_COLORS.length - 1)}`;
+  const dayTotal = (r) => names.reduce((a, n) => a + tot(r, n), 0);
+  const top = Math.max(...rows.map(dayTotal), 1);
+  const mag = Math.pow(10, Math.floor(Math.log10(top))); const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s * 4 >= top);
+  const ymax = step * Math.ceil(top / step);
+  const y = (v) => T + ph - (v / ymax) * ph;
+  const slot = pw / rows.length; const bw = Math.min(40, slot * 0.7);
+  const estTotal = rows.reduce((a, r) => a + r.estCents, 0) / 100; const estDays = rows.filter((r) => r.estCents > 0).length;
+  const estFrom = rows.find((r) => r.estCents > 0); const estTo = [...rows].reverse().find((r) => r.estCents > 0);
+  const kind = (r) => (r.estCents > 0 && r.measCents === 0 ? ' estimated' : r.estCents > 0 ? ' part estimated' : ' measured');
+  const desc = `Daily build cost, ${LABEL}: ${rows.map((r) => `${r.date} US$${group(dayTotal(r))}${kind(r)}`).join('; ')}`;
+  const out = [`${head} aria-label="${esc(desc)}"><title>${esc('Daily build cost (' + LABEL + ')')}</title><desc>${esc(desc)}</desc>${style}`];
+  for (let v = 0; v <= ymax + 1e-9; v += step) out.push(`<line class="gr" x1="${L}" y1="${f1(y(v))}" x2="${W - R}" y2="${f1(y(v))}"/><text x="${L - 6}" y="${f1(y(v) + 4)}" text-anchor="end">US$${group(v)}</text>`);
+  const every = Math.ceil(rows.length / Math.max(1, Math.floor(pw / 40)));
+  rows.forEach((r, i) => {
+    const cx = L + slot * (i + 0.5); let acc = 0;
+    for (const part of ['meas', 'est']) for (const n of names) {
+      const v = r[part][n] || 0; if (v <= 0) continue;
+      out.push(`<rect x="${f1(cx - bw / 2)}" y="${f1(y(acc + v))}" width="${f1(bw)}" height="${f1(y(acc) - y(acc + v))}" class="${cls(n)}${part === 'est' ? ' est' : ''}"/>`);
+      acc += v;
+    }
+    if (i % every === 0 || i === rows.length - 1) out.push(`<text x="${f1(cx)}" y="${T + ph + 14}" text-anchor="middle">${esc(r.date.slice(5))}</text>`);
+  });
+  out.push(`<line class="ax" x1="${L}" y1="${T}" x2="${L}" y2="${T + ph}"/><line class="ax" x1="${L}" y1="${T + ph}" x2="${W - R}" y2="${T + ph}"/>`);
+  out.push(`<text x="${L + pw / 2}" y="${T + ph + 30}" text-anchor="middle">day, UTC (US$ per day, ${esc(LABEL)})</text>`);
+  let lx = L;
+  for (const n of names.slice(0, SERIES_COLORS.length)) {
+    const label = modelName(n);
+    out.push(`<rect x="${lx}" y="${H - 54}" width="10" height="10" class="${cls(n)}"/><text x="${lx + 14}" y="${H - 45}">${esc(label)}</text>`);
+    lx += 14 + Math.round(label.length * 6.6) + 14;
+  }
+  out.push(`<rect x="${lx}" y="${H - 54}" width="10" height="10" class="keym"/><text x="${lx + 14}" y="${H - 45}">solid = measured</text>`);
+  out.push(`<rect x="${lx + 120}" y="${H - 54}" width="10" height="10" class="key"/><text x="${lx + 134}" y="${H - 45}">faded, dashed = estimated (spread)</text>`);
+  if (estDays) {
+    out.push(`<text x="${L}" y="${H - 28}">Estimate: US$${group(estTotal)} over ${estDays} days (${esc(estFrom.date)} to ${esc(estTo.date)}), weighted 50% by lines changed</text>`);
+    out.push(`<text x="${L}" y="${H - 14}">and 50% by merged PRs per day (git history); model mix of the original lump. See docs/build-cost.md.</text>`);
+  }
+  out.push('</svg>\n');
+  return out.join('');
+}
+
 module.exports = {
-  TOKEN_METRIC, COST_METRIC, TYPES, SOURCES, MODEL_RE, MACHINE_RE, DATE_RE, MAX_FILE_BYTES, MAX_MODELS_PER_DAY, MAX_DAYS_PER_FILE, MAX_DAYS_PER_REQUEST, FILE_VERSION,
-  modelName, MODEL_NAMES, BEGIN, END, LABEL, validateHistory, upsertRow, badgeSvg, chartSvg, esc, validateBaseline, cumulative, readmeBlock, rewriteReadme, emptyState, checkMachine, dayOf, ingest, validateState, firstDay, report, group, usd,
+  DAY_SPREAD_LINE, chartDaysSvg, TOKEN_METRIC, COST_METRIC, TYPES, SOURCES, MODEL_RE, MACHINE_RE, DATE_RE, MAX_FILE_BYTES, MAX_MODELS_PER_DAY, MAX_DAYS_PER_FILE, MAX_DAYS_PER_REQUEST, FILE_VERSION,
+  SCOPE, DEFAULT_REPOS, REPO_ATTR, parseRepos, normalizeRepo, modelName, MODEL_NAMES, BEGIN, END, LABEL, validateHistory, upsertRow, badgeSvg, chartSvg, esc, validateBaseline, cumulative, readmeBlock, rewriteReadme, emptyState, checkMachine, dayOf, ingest, validateState, firstDay, report, group, usd,
 };
