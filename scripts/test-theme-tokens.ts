@@ -388,6 +388,33 @@ function worldCssProblems(cssIn: string): string[] {
   assert.strictEqual(doc.documentElement.dataset.ui, 'clean', 'the cave sets the plain UI style over the Retro theme');
   W.setWorld(null);
   assert.strictEqual(snap(doc), want4, 'leaving the cave restores the theme exactly');
+  // spec 097 delta 2026-11-08 (issue #1153, FR-350): what a theme reaches in Real office today, for every built-in theme, the dark user
+  // fixture and Pink Studio over every world. The world's colours and shadows win everywhere; the theme's fonts and title weight stay;
+  // every pair the world paints passes 070 D4 whatever theme is picked. (Q34 may change what reaches; this pins what does.)
+  {
+    const fx = (n: string): Record<string, unknown> => JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'fixtures', 'themes', n), 'utf8'));
+    const users = [fx('dark-audit.json'), fx('pink-studio.json')];
+    const rgb = (v: string): string => v.replace(/\s/g, '');
+    for (const wid of T.WORLD_IDS as string[]) {
+      const wt = T.worldTokens(wid) as Record<string, string>;
+      const colourKeys = Object.keys(wt).filter((k) => /^#[0-9a-f]{6}$/i.test(wt[k]));
+      assert.ok(colourKeys.length > 40, `${wid}: the world sets a full colour set`);
+      for (const pick of [...ids, ...users] as Array<string | Record<string, unknown>>) {
+        const label = `${wid} over ${typeof pick === 'string' ? pick : String(pick.id)}`;
+        const { T: V, doc: d2 } = fresh();
+        V.setTheme(pick);
+        const themeFont = rgb(String(d2.documentElement.style.m.get('--font') || '')), themeWeight = d2.documentElement.style.m.get('--t1-weight');
+        V.setWorld(wid);
+        const m = d2.documentElement.style.m;
+        for (const k of colourKeys) assert.strictEqual(String(m.get(k)).toLowerCase(), wt[k].toLowerCase(), `${label}: ${k} is the world's, the theme does not reach it`);
+        assert.strictEqual(rgb(String(m.get('--font') || '')), themeFont, `${label}: the theme's font stays`);
+        assert.strictEqual(m.get('--t1-weight'), themeWeight, `${label}: the theme's title weight stays`);
+        for (const k of ['--c-working', '--c-waiting', '--c-error', '--c-done']) assert.strictEqual(V.token(k), wt[k], `${label}: ${k} (status colours never change, 070 FR-050)`);
+        for (const r of V.worldContrast(wid) as Array<{ fg: string; bg: string; min: number; ratio: number }>) assert.ok(r.ratio >= r.min, `${label}: ${r.fg} on ${r.bg} is ${r.ratio.toFixed(2)}:1, needs ${r.min}`);
+        V.setWorld(null);
+      }
+    }
+  }
   g.document = undefined;
 }
 console.log(`theme tokens guard passed (${n} corpus checks, ${FILES.length} files under the ratchet)`);
