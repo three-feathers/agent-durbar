@@ -8,7 +8,11 @@ name: CI
 #   - macOS does not run on pull requests or merge queue entries (it had the longest queue): the required check
 #     "Build and test (macos-latest)" reports from a short Linux job that says so; the real macOS build and test runs on every
 #     push to main, nightly and by hand, and a nightly failure opens or updates an issue (nightly-watch.yml);
-#   - drafts run nothing until they are marked ready for review; a newer push cancels the PR's older run.
+#   - drafts run nothing until they are marked ready for review; a newer push cancels the PR's older run;
+#   - FR-190 (owner decision 2026-11-08): on a pull request, Package smoke and the office layout run only when something the app,
+#     its build, its packaging or the UI drivers use changed (`ui` from ci-changes.js); a tooling, report or unit-test script, or a
+#     version-only bump, skips their steps and the required checks pass. Build and test keeps `code` (unit tests read the version).
+#     Main, the merge queue, the nightly and by-hand runs run everything.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -114,15 +118,16 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
         run: bash .github/scripts/ci-changes.sh
-      - if: steps.changes.outputs.code == 'true'
+      - if: steps.changes.outputs.ui == 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
-      - if: steps.changes.outputs.code == 'true'
+      - if: steps.changes.outputs.ui == 'true'
         uses: ./.github/actions/npm-ci
       # Builds the app with electron-builder and fails if the Copilot runtime is not unpacked (scripts/after-pack.js).
-      - if: steps.changes.outputs.code == 'true'
+      # FR-190: ui=false (nothing the app or its packaging uses changed) skips it and the required check passes
+      - if: steps.changes.outputs.ui == 'true'
         run: npm run pack:dir
 
   # The required check "Office layout check (xvfb)" is this one job (FR-105; it was 6 shard jobs and a summary job). Simulator
@@ -148,22 +153,22 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
         run: bash .github/scripts/ci-changes.sh
-      - if: steps.changes.outputs.code == 'true'
+      - if: steps.changes.outputs.ui == 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
-      - if: steps.changes.outputs.code == 'true'
+      - if: steps.changes.outputs.ui == 'true'
         run: sudo apt-get update && sudo apt-get install -y xvfb
-      - if: steps.changes.outputs.code == 'true'
+      - if: steps.changes.outputs.ui == 'true'
         uses: ./.github/actions/npm-ci
-      - if: steps.changes.outputs.code == 'true'
+      - if: steps.changes.outputs.ui == 'true'
         run: npm run build
       - name: Theme geometry
-        if: steps.changes.outputs.code == 'true' && steps.changes.outputs.themes == 'true'
+        if: steps.changes.outputs.ui == 'true' && steps.changes.outputs.themes == 'true'
         run: node scripts/check-theme-geometry.js
       - name: Office layout (15 agents, 1440x900 and 1280x800), parts in parallel
-        if: steps.changes.outputs.code == 'true' && (success() || failure())
+        if: steps.changes.outputs.ui == 'true' && (success() || failure())
         run: node scripts/check-parallel.js
 
   # On demand only (workflow_dispatch with full_themes): the full office check in every other theme, reduced motion, 2 shards each.

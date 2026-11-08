@@ -8,6 +8,11 @@ name: UI on three OSes
 # Spec 008 FR-108 (owner decision 2026-10-22): ONE job per OS, except macOS in three shards (FR-182, owner decision 2026-11-07) (the 3 jobs per OS of FR-100 cost more queue than they saved), and
 # macOS only nightly and by hand (`gh workflow run ui-platforms.yml --ref <branch>`); a nightly failure opens or updates an issue
 # (nightly-watch.yml). Pull requests and pushes to main run Linux and Windows.
+#
+# Spec 008 FR-190 (owner decision, Vikram 2026-11-08): on a pull request the shards run only when something the app, its build or
+# the UI drivers use changed (`ui` from .github/scripts/ci-changes.js, the one decision; `paths:` below is only a coarse prefilter).
+# A report or tooling script, a unit-test script or a version-only bump runs no shard, and "UI suite complete" passes saying so.
+# Pushes to main, the nightly and by-hand runs always run every shard.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -17,6 +22,10 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/ui-platforms.yml'
+      - '.github/scripts/ci-changes.*'
+      - '.github/actions/npm-ci/**'
+      - 'tsconfig.json'
+      - 'build/**'
   push:
     branches: [main]
     paths:
@@ -25,6 +34,10 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/ui-platforms.yml'
+      - '.github/scripts/ci-changes.*'
+      - '.github/actions/npm-ci/**'
+      - 'tsconfig.json'
+      - 'build/**'
   schedule:
     - cron: '17 3 * * *'
   workflow_dispatch:
@@ -38,11 +51,29 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # FR-190: a cheap Linux job decides (seconds); the shards wait for it. Every event but pull_request says ui=true.
+  changes:
+    name: What the UI suite needs
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      ui: ${{ steps.changes.outputs.ui }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+      - id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: bash .github/scripts/ci-changes.sh
+
   ui:
     # spec 008 FR-182, FR-183: every OS runs the drivers in shards (Linux and Windows 4, macOS 3), named "UI shard (ubuntu-latest 1/4)" etc.;
     # the job "UI suite complete" below needs all of them and is the one name to require
     name: UI shard (${{ matrix.os }} ${{ matrix.shard }}/${{ matrix.os == 'macos-latest' && 3 || 4 }})
-    if: ${{ !github.event.pull_request.draft }}
+    needs: changes
+    if: ${{ !github.event.pull_request.draft && needs.changes.outputs.ui == 'true' }}
     runs-on: ${{ matrix.os }}
     # FR-131 gave macOS 80 minutes (one driver at a time, UI_SUITE_JOBS=1); it outgrew that too (nightly run 42205363015,
     # cancelled at 80 with drivers left): FR-182 splits its drivers over three jobs instead, each about a third, so 45 for all
@@ -108,18 +139,27 @@ jobs:
           if-no-files-found: ignore
 
   # FR-183: the one stable name for the whole UI suite: green only when every shard of every OS passed. A skipped (draft) or cancelled
-  # shard is not a pass. Branch protection can require this job instead of the shards.
+  # shard is not a pass. Branch protection can require this job instead of the shards. FR-190: when the decision said ui=false (a
+  # pull request that changes nothing the UI run uses) the shards are skipped on purpose and this job passes, saying so; a failed or
+  # cancelled decision job is a failure.
   complete:
     name: UI suite complete
     if: ${{ always() && !github.event.pull_request.draft }}
-    needs: ui
+    needs: [changes, ui]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
     steps:
       - name: Every UI shard passed
         env:
+          CHANGES: ${{ needs.changes.result }}
+          UI_NEEDED: ${{ needs.changes.outputs.ui }}
           RESULT: ${{ needs.ui.result }}
         run: |
-          echo "UI shards: $RESULT"
+          echo "Decision: $CHANGES (ui=$UI_NEEDED); UI shards: $RESULT"
+          test "$CHANGES" = "success"
+          if [ "$UI_NEEDED" = "false" ]; then
+            echo "Nothing the app, its build or the UI drivers use changed: the UI shards did not run (spec 008 FR-190)." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           test "$RESULT" = "success"
