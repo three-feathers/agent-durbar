@@ -9,6 +9,8 @@ const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
 const modPath = process.env.SN_MODULE ? path.resolve(process.env.SN_MODULE) : path.join(__dirname, 'spec-numbers.js');
 const sn = require(modPath);
+const { plumbCommit } = require('./git-index-helper.js');
+const { printable } = require('./safe-print.js');
 const ids = (t, k) => [...sn.parseDefinitions(t, k)].sort();
 
 // ---- parser: spec.md (FR, Q)
@@ -195,14 +197,27 @@ try {
   assert.strictEqual(cli(hid, ['--no-fetch', '--head', 'nothex']).status, 2);
   assert.strictEqual(sn.definitionCounts('- [ ] T001 a\n- [ ] T001 again\n', 'tasks').get('T001'), 2);
 
-  // a hostile directory name (newline, ::error::) is never printed raw: both branch and main define T010 there
-  const ev = repo(); const evil = 'specs/009-x\n::error::pwned\n::set-output name=a::b/tasks.md';
-  write(ev, evil, T('001')); commit(ev, 'evil base');
-  G(ev, 'checkout', '-q', '-b', 'mine'); write(ev, evil, T('001', '010')); commit(ev, 'mine');
-  G(ev, 'checkout', '-q', 'main'); write(ev, evil, T('001', '010')); commit(ev, 'main'); G(ev, 'update-ref', 'refs/remotes/origin/main', 'HEAD'); G(ev, 'checkout', '-q', 'mine');
+  // a hostile directory name (newline, ::error::, ##[error]) is never printed raw: both branch and main define T010 there. Built in the git index
+  // only (git-index-helper.js), so it runs on Windows too, where such a directory name cannot exist.
+  const ev = repo(); const evil = 'specs/009-x\n::error::pwned\n##[add-mask]y\n::set-output name=a::b/tasks.md';
+  const evBase = plumbCommit(ev, 'HEAD', { [evil]: T('001') }, 'evil base');
+  const evMine = plumbCommit(ev, evBase, { [evil]: T('001', '010') }, 'mine', 'refs/heads/mine');
+  const evMain = plumbCommit(ev, evBase, { [evil]: T('001', '010') }, 'main');
+  G(ev, 'update-ref', 'refs/remotes/origin/main', evMain); G(ev, 'symbolic-ref', 'HEAD', 'refs/heads/mine');
   r = cli(ev); assert.strictEqual(r.status, 1, r.stdout + r.stderr);
-  for (const line of (r.stdout + r.stderr).split('\n')) assert.ok(!/^\s*::/.test(line) && !line.includes('::'), `raw workflow command in output: ${JSON.stringify(line)}`);
-  assert.match(r.stdout, /CLASH specs\/009-x\\n: :error: :pwned\\n: :set-output name=a: :b\/tasks\.md: T010/);
+  for (const line of (r.stdout + r.stderr).split('\n')) assert.ok(!/^\s*::/.test(line) && !line.includes('::') && !line.includes('##['), `raw workflow command in output: ${JSON.stringify(line)}`);
+  assert.match(r.stdout, /CLASH specs\/009-x\\n: :error: :pwned\\n# #\[add-mask\]y\\n: :set-output name=a: :b\/tasks\.md: T010/);
+  assert.ok(evMine);
+
+  // printable: every `::` and every legacy `##[` / `##vso[` form is broken, anywhere in the text, with a control character or not
+  for (const form of ['error', 'warning', 'add-mask', 'set-output name=x', 'debug', 'group', 'endgroup', 'stop-commands', 'notice', 'command']) {
+    for (const t of [`##[${form}]x`, `docs/a##[${form}]fake##[${form}]CLASH.png`, `###[${form}]`, `x\n##[${form}]y`, `  ##[${form}]`]) {
+      const out = printable(t); assert.ok(!out.includes('##['), `##[${form}] survives in ${JSON.stringify(out)}`); assert.ok(!/\n/.test(out));
+    }
+  }
+  for (const t of ['##vso[task.setvariable variable=a]b', 'a##vso[task.complete result=Failed]']) assert.ok(!printable(t).includes('##vso['), t);
+  for (const t of ['::error::x', 'a\n::warning::x', ':::error::x', 'a::b::c']) assert.ok(!printable(t).includes('::'), t);
+  assert.strictEqual(printable('plain/path.png #1 [x] #[y]'), 'plain/path.png #1 [x] #[y]');
 
   // the PR list: a 401 with the token is retried without it; no token, no retry; both fail: null
   const calls = [];
@@ -214,17 +229,60 @@ try {
   assert.strictEqual(await sn.restOpenPrs('o/r', 'tok', dead), null);
   assert.strictEqual(await sn.restOpenPrs('o/r', '', async () => { throw Object.assign(new Error('HTTP 403'), { status: 403 }); }), null);
 
+  // paging: pages are read until a short one; a list that never ends (more than the pages read) is "cannot tell", never a cut-short list
+  const pagesSeen = [];
+  const paged = async (url) => { const pg = Number(new URL(url).searchParams.get('page')); pagesSeen.push(pg); return Array.from({ length: pg < 3 ? 100 : 50 }, (_, i) => ({ number: pg * 1000 + i, head: { sha: 'b'.repeat(40) } })); };
+  assert.strictEqual((await sn.restOpenPrs('o/r', '', paged)).length, 250); assert.deepStrictEqual(pagesSeen, [1, 2, 3]);
+  assert.strictEqual(await sn.restOpenPrs('o/r', '', async () => Array.from({ length: 100 }, (_, i) => ({ number: i, head: { sha: 'c'.repeat(40) } }))), null);
+  // `gh pr list --limit N` cuts the rest silently: an answer that reaches the limit is not trusted, the REST pages are read instead
+  const gh = (n) => () => JSON.stringify(Array.from({ length: n }, (_, i) => ({ number: i + 1, headRefOid: 'd'.repeat(40) })));
+  const gr = repo(); G(gr, 'remote', 'add', 'origin', 'https://github.com/o/r.git');
+  let rest = 0; const getJson = async () => { rest++; return [{ number: 7, head: { sha: 'e'.repeat(40) } }]; };
+  assert.strictEqual((await sn.openPrs(gr, {}, { runCmd: gh(sn.GH_LIMIT - 1), getJson })).length, sn.GH_LIMIT - 1); assert.strictEqual(rest, 0);
+  assert.deepStrictEqual(await sn.openPrs(gr, {}, { runCmd: gh(sn.GH_LIMIT), getJson }), [{ number: 7, sha: 'e'.repeat(40) }]); assert.strictEqual(rest, 1);
+  assert.strictEqual(await sn.openPrs(gr, {}, { runCmd: gh(sn.GH_LIMIT), getJson: async () => { throw new Error('offline'); } }), null, 'at the limit and no REST: exit 2 follows, not a cut list');
+
+  // a failed fetch of the PR heads is exit 2 (origin and the list are fine; the head ref does not exist on origin)
+  { const out = []; const lg = console.log; console.log = (x) => out.push(String(x));
+    let code; try { code = await sn.main(['--root', src], {}, { openPrs: async () => [{ number: 99, sha: 'a'.repeat(40) }] }); } finally { console.log = lg; }
+    assert.strictEqual(code, 2, out.join('\n')); assert.ok(out.some((l) => /NOT CHECKED: could not fetch the PR heads/.test(l)), out.join('\n')); }
+
+  // --head / PR_HEAD_SHA must be a full 40-hex sha: the check is what keeps `--output=...` or a branch name from reaching git as a revision.
+  // `main` is a valid revision here, so only the check (not git's own failure) makes it exit 2; a real sha is accepted.
+  { const sha = G(hid, 'rev-parse', 'main');
+    for (const bad of ['main', 'HEAD~1', '--output=/dev/null', 'abc123', `${sha}x`, `${sha.slice(0, 39)}`]) {
+      r = cli(hid, ['--no-fetch', '--head', bad]); assert.strictEqual(r.status, 2, `--head ${bad}`); assert.match(r.stdout, /40-character commit sha/, bad);
+      r = cli(hid, ['--no-fetch'], { PR_HEAD_SHA: bad }); assert.strictEqual(r.status, 2, `PR_HEAD_SHA ${bad}`); assert.match(r.stdout, /40-character commit sha/);
+    }
+    r = cli(hid, ['--no-fetch', '--head', sha]); assert.notStrictEqual(r.status, 2, r.stdout); }
+
   // the workflow keeps the token away from PR code (mutant: remove any of these and this fails)
   const wf = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'spec-kit.yml'), 'utf8');
   const job = (name) => { const m = wf.match(new RegExp(`^  ${name}:\\n([\\s\\S]*?)(?=^  [A-Za-z0-9_-]+:\\n|(?![\\s\\S]))`, 'm')); assert.ok(m, `job ${name}`); return m[1]; };
   const code_ = (t) => t.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+  // the trigger: `pull_request_target` nowhere in the workflow (the `on:` block and any `if:` included), no workflow-level or job-level `env:`
+  // (a token set there reaches every step and every checkout, not only the one that needs it)
+  const wfCode = code_(wf);
+  assert.doesNotMatch(wfCode, /pull_request_target/, 'no pull_request_target anywhere in the workflow');
+  assert.doesNotMatch(wfCode, /^env:/m, 'no workflow-level env');
   for (const name of ['spec-numbers', 'spec-numbers-selftest']) {
     const j = code_(job(name));
+    assert.doesNotMatch(j, /^    env:/m, `${name}: no job-level env (a token there reaches every step)`);
+    assert.doesNotMatch(j, /^    (?:container|services|defaults):/m);
+    const perms = (j.match(/^    permissions:\n((?:      [a-z-]+: [a-z]+\n)+)/m) || [])[1] || '';
+    assert.ok(perms, `${name}: job permissions`); assert.doesNotMatch(perms, /: write/, `${name}: read-only permissions`);
     const checkouts = j.split(/- (?:name: [^\n]*\n\s+)?uses: actions\/checkout@/).slice(1);
     assert.ok(checkouts.length >= 1);
     for (const c of checkouts) assert.match(c.split(/\n\s+- /)[0], /persist-credentials: false/, `${name}: every checkout has persist-credentials: false`);
-    assert.doesNotMatch(j, /pull_request_target/);
   }
+  // a token (secrets.*, GH_TOKEN, GITHUB_TOKEN, github.token) appears in exactly one place of the whole workflow's two jobs: the step that runs the base spec-numbers.js
+  const tokenRe = /secrets\.|GH_TOKEN|GITHUB_TOKEN|github\.token/g;
+  const mine = code_(job('spec-numbers')) + '\n' + code_(job('spec-numbers-selftest'));
+  const steps = mine.split(/\n      - /);
+  const withToken = steps.filter((t) => tokenRe.test(t)); tokenRe.lastIndex = 0;
+  assert.strictEqual(withToken.length, 1, 'one step holds a token');
+  assert.match(withToken[0], /node base\/scripts\/spec-numbers\.js/); assert.doesNotMatch(withToken[0], /picture-budget/);
+  assert.strictEqual((mine.match(tokenRe) || []).length, 3, 'one line: GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}');
   const selftest = code_(job('spec-numbers-selftest'));
   assert.doesNotMatch(selftest, /secrets\.|GH_TOKEN|GITHUB_TOKEN|github\.token/, 'the job that runs the PR scripts has no token');
   const nums = code_(job('spec-numbers'));

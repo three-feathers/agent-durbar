@@ -20,7 +20,7 @@
  *
  * It NEVER prints a token or an environment value: git and gh output is scrubbed (URL credentials, token shapes anywhere in the text, the values
  * of secret-looking variables; plus src/shared/redact.ts when the build is there) before it is shown, and only the first line of a failure
- * is printed. Everything from a PR (paths) goes through scripts/safe-print.js (no `::` workflow command, no newline).
+ * is printed. Everything from a PR (paths) goes through scripts/safe-print.js (no `::` or `##[` workflow command, no newline).
  *
  *   node scripts/spec-numbers.js [--no-fetch] [--exclude N] [--head SHA] [--root D]     --no-fetch: use the refs already there (refs/remotes/pr/*)
  */
@@ -190,31 +190,35 @@ function ownerRepo(root) {
   const m = url.match(/github\.com[:/]([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/);
   return m ? `${m[1]}/${m[2]}` : null;
 }
-/** The open PRs over the public REST API. A token that is invalid or expired answers 401/403 even for public data: retry once without it. */
+const GH_LIMIT = 500, REST_PAGES = 30;
+/** The open PRs over the public REST API, paged until a short page. A token that is invalid or expired answers 401/403 even for public data:
+ * retry once without it. More than REST_PAGES full pages is "cannot tell" (null), never a silently cut list. */
 async function restOpenPrs(repo, token, getJson = httpsJson) {
   const pages = async (tok) => {
     const res = [];
-    for (let page = 1; page <= 10; page++) {
+    for (let page = 1; page <= REST_PAGES; page++) {
       const rows = await getJson(`https://api.github.com/repos/${repo}/pulls?state=open&per_page=100&page=${page}`, tok);
       for (const r of rows) res.push({ number: r.number, sha: r.head && r.head.sha });
-      if (rows.length < 100) break;
+      if (rows.length < 100) return res;
     }
-    return res;
+    throw new Error('more open PRs than the pages read');
   };
   try { return await pages(token); } catch (e) {
     if (token && (e.status === 401 || e.status === 403)) { try { return await pages(''); } catch { return null; } }
     return null;
   }
 }
-/** -> [{ number, sha }] of the open PRs, or null when the list cannot be read */
-async function openPrs(root, env = process.env) {
+/** -> [{ number, sha }] of the open PRs, or null when the list cannot be read or may be cut short. `gh pr list --limit` drops the rest without
+ * a word, so an answer that reaches GH_LIMIT is not trusted: the REST pages are read instead. deps: runCmd, getJson (tests). */
+async function openPrs(root, env = process.env, deps = {}) {
   try {
-    const out = run(root, 'gh', ['pr', 'list', '--state', 'open', '--limit', '500', '--json', 'number,headRefOid']);
-    return JSON.parse(out).map((p) => ({ number: p.number, sha: p.headRefOid }));
+    const out = (deps.runCmd || run)(root, 'gh', ['pr', 'list', '--state', 'open', '--limit', String(GH_LIMIT), '--json', 'number,headRefOid']);
+    const rows = JSON.parse(out);
+    if (rows.length < GH_LIMIT) return rows.map((p) => ({ number: p.number, sha: p.headRefOid }));
   } catch { /* no gh, or not logged in, or a bad token: the public API */ }
   const repo = ownerRepo(root);
   if (!repo) return null;
-  return restOpenPrs(repo, env.GH_TOKEN || env.GITHUB_TOKEN || '');
+  return restOpenPrs(repo, env.GH_TOKEN || env.GITHUB_TOKEN || '', deps.getJson || httpsJson);
 }
 function fetchHeads(root, prs) {
   for (let i = 0; i < prs.length; i += 100) {
@@ -265,7 +269,7 @@ async function main(argv, env, deps = {}) {
   return clashes.length ? 1 : 0;
 }
 
-module.exports = { parseDefinitions, definitionCounts, added, findClashes, scrub, collect, report, restOpenPrs, main, show, SPEC_FILE_RE };
+module.exports = { openPrs, GH_LIMIT, parseDefinitions, definitionCounts, added, findClashes, scrub, collect, report, restOpenPrs, main, show, SPEC_FILE_RE };
 
 if (require.main === module) {
   main(process.argv.slice(2), process.env).then((c) => process.exit(c), (e) => { emit(`specs:numbers: NOT CHECKED: ${firstLine(e)}`); process.exit(2); });

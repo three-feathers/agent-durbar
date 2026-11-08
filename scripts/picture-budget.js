@@ -43,6 +43,10 @@ const FIX = 'commit a crop or downscale that passes compress-shots (`npm run sho
 const git = (root, args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
 const gitOk = (root, args) => { try { return git(root, args).trim(); } catch { return null; } };
 
+/** An allow-list path that could point outside the checkout (`../x`, `/etc/x`, `C:\\x`, NUL): refused before anything is looked up, so the check cannot be
+ * used to learn whether a file exists elsewhere. */
+const unsafePath = (p) => path.isAbsolute(p) || path.win32.isAbsolute(p) || /^[A-Za-z]:/.test(p) || p.includes('\0') || p.split(/[\\/]/).includes('..');
+
 /** `path | max KB | reason` lines -> { entries: Map(path -> bytes), problems } */
 function parseAllow(text) {
   const entries = new Map(), problems = [];
@@ -51,7 +55,8 @@ function parseAllow(text) {
     if (!line || line.startsWith('#')) return;
     const [p, kb, ...rest] = line.split('|').map((s) => s.trim());
     const reason = rest.join('|').trim();
-    if (!p || !/^\d+$/.test(kb || '') || Number(kb) <= 0) problems.push(`${ALLOW_FILE}:${i + 1}: needs "path | max KB | reason" with a whole number of KB`);
+    if (p && unsafePath(p)) problems.push(`${ALLOW_FILE}:${i + 1}: ${printable(p)} must be a path inside the repository (no .. segment, not absolute)`);
+    else if (!p || !/^\d+$/.test(kb || '') || Number(kb) <= 0) problems.push(`${ALLOW_FILE}:${i + 1}: needs "path | max KB | reason" with a whole number of KB`);
     else if (!reason) problems.push(`${ALLOW_FILE}:${i + 1}: ${printable(p)} has no reason`);
     else if (entries.has(p)) problems.push(`${ALLOW_FILE}:${i + 1}: ${printable(p)} is listed twice`);
     else entries.set(p, Number(kb) * 1024);
@@ -100,11 +105,15 @@ function blobSizes(root, shas) {
   for (const l of out.split('\n')) { const [sha, size] = l.split(' '); if (/^\d+$/.test(size || '')) m.set(sha, Number(size)); else if (l) throw new Error(`cannot read object ${String(sha).slice(0, 12)}`); }
   return m;
 }
-const headOfFile = (root, p) => { try { const fd = fs.openSync(path.join(root, p), 'r'); try { const b = Buffer.alloc(32); fs.readSync(fd, b, 0, 32, 0); return b; } finally { fs.closeSync(fd); } } catch { return Buffer.alloc(0); } };
+const lstatOf = (root, p) => { try { return fs.lstatSync(path.join(root, p)); } catch { return null; } };
+// A symlink is never read through (its target may be anywhere: a big file outside the checkout would be judged, or its existence revealed): the
+// working tree sees it as no file; git holds only the link text, a few bytes, and historyBlobs skips mode 120000 the same way.
+const headOfFile = (root, p) => { try { if (!lstatOf(root, p).isFile()) return Buffer.alloc(0); const fd = fs.openSync(path.join(root, p), 'r'); try { const b = Buffer.alloc(32); fs.readSync(fd, b, 0, 32, 0); return b; } finally { fs.closeSync(fd); } } catch { return Buffer.alloc(0); } };
 const headOfBlob = (root, sha) => execFileSync('git', ['cat-file', 'blob', sha], { cwd: root, maxBuffer: 256 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] }).subarray(0, 32);
 
 function sizeOf(root, p) {
-  try { return fs.statSync(path.join(root, p)).size; } catch { return null; }
+  const st = lstatOf(root, p);
+  return st && st.isFile() ? st.size : null;
 }
 
 /** -> { status: 'ok' | 'skip' | 'fail', lines: [string] } */
@@ -114,7 +123,11 @@ function check(root, { strict = false, budget = BUDGET_BYTES } = {}) {
   try { allowText = fs.readFileSync(path.join(root, ALLOW_FILE), 'utf8'); } catch { /* no list: nothing is allowed */ }
   const allow = parseAllow(allowText);
   const problems = [...allow.problems];
-  for (const p of allow.entries.keys()) if (sizeOf(root, p) === null) problems.push(`${ALLOW_FILE}: ${printable(p)} does not exist; delete the line`);
+  for (const p of allow.entries.keys()) {
+    const st = lstatOf(root, p);
+    if (st && st.isSymbolicLink()) problems.push(`${ALLOW_FILE}: ${printable(p)} is a symlink; list the file itself`);
+    else if (!st || !st.isFile()) problems.push(`${ALLOW_FILE}: ${printable(p)} does not exist; delete the line`);
+  }
 
   let base = null;
   if (gitOk(root, ['rev-parse', '--verify', '-q', 'origin/main'])) base = gitOk(root, ['merge-base', 'HEAD', 'origin/main']);

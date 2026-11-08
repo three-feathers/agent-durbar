@@ -6,6 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const { plumbCommit } = require('./git-index-helper.js');
 const pb = require(process.env.PB_MODULE ? path.resolve(process.env.PB_MODULE) : './picture-budget.js');
 
 const KB = 1024;
@@ -118,14 +119,44 @@ try {
   // a blob that main already holds, moved or reverted, is not new
   d = repo(); markMain(d); G(d, 'mv', 'docs/old-big.png', 'docs/elsewhere.png'); G(d, 'commit', '-q', '-m', 'mv'); assert.strictEqual(pb.check(d).status, 'ok');
 
-  // a hostile file name (newline, ::error::) is never printed raw: no output line starts a workflow command (review of PR #1316)
-  d = repo(); markMain(d); const evil = 'docs/x\n::error::pwned\n::add-mask::y.png';
-  put(d, evil, 500 * KB, 24); commit(d, 'evil'); fs.mkdirSync(path.join(d, 'scripts'), { recursive: true }); fs.writeFileSync(path.join(d, pb.ALLOW_FILE), '::warning::bad\u2028::error::z.png | 10 |\n'); // allow-list line from the PR, a problem line
-  r = pb.check(d); assert.strictEqual(r.status, 'fail');
+  // a hostile file name (newline, ::error::, ##[error]) is never printed raw: no output line starts a workflow command (review of PR #1316).
+  // Built in the git index only (git-index-helper.js), so it runs on Windows too, where such a file name cannot exist.
+  d = repo(); markMain(d);
+  const evil = 'docs/x\n::error::pwned\n##[add-mask]y\n::add-mask::z.png';
+  plumbCommit(d, 'HEAD', { [evil]: 'A'.repeat(500 * KB) }, 'evil', 'refs/heads/feat');
+  fs.mkdirSync(path.join(d, 'scripts'), { recursive: true }); fs.writeFileSync(path.join(d, pb.ALLOW_FILE), '::warning::bad\u2028##[error]x::error::z.png | 10 |\n'); // an allow-list line from the PR: a problem line
+  r = pb.check(d); assert.strictEqual(r.status, 'fail', r.lines.join('\n'));
   const cli = require('child_process').spawnSync(process.execPath, [path.join(__dirname, 'picture-budget.js'), '--root', d], { encoding: 'utf8' });
   assert.strictEqual(cli.status, 1, cli.stdout + cli.stderr);
-  for (const line of cli.stdout.split('\n')) assert.ok(!/^\s*::/.test(line) && !line.includes('::'), `raw workflow command in output: ${JSON.stringify(line)}`);
-  assert.match(cli.stdout, /docs\/x\\n: :error: :pwned\\n: :add-mask: :y\.png/);
+  for (const line of cli.stdout.split('\n')) assert.ok(!/^\s*::/.test(line) && !line.includes('::') && !line.includes('##['), `raw workflow command in output: ${JSON.stringify(line)}`);
+  assert.match(cli.stdout, /docs\/x\\n: :error: :pwned\\n# #\[add-mask\]y\\n: :add-mask: :z\.png: 500 KB/);
+
+  // content sniffing in the WORKING TREE (a staged `.dat` that is a PNG, never committed: history does not see it); mutant: `if (!named) continue`
+  d = repo(); markMain(d); withBytes(d, 'x/staged.dat', Buffer.from('\x89PNG\r\n\x1a\n', 'latin1'), 400 * KB); G(d, 'add', 'x/staged.dat');
+  r = pb.check(d); assert.strictEqual(r.status, 'fail', 'a staged PNG under another name'); assert.match(r.lines.join('\n'), /x\/staged\.dat: 400 KB, over/);
+  withBytes(d, 'x/staged.dat', Buffer.from('plain'), 400 * KB); assert.strictEqual(pb.check(d).status, 'ok', 'plain bytes under the same name pass');
+
+  // a picture renamed AND edited, staged only (history does not see it): counted under the new name; mutant: every rename skipped
+  d = repo(); markMain(d); G(d, 'mv', 'docs/old-big.png', 'docs/moved2.png'); fs.appendFileSync(path.join(d, 'docs/moved2.png'), 'edit'); G(d, 'add', 'docs/moved2.png');
+  r = pb.check(d); assert.strictEqual(r.status, 'fail', 'staged rename with edits'); assert.match(r.lines.join('\n'), /docs\/moved2\.png: 900 KB/);
+  d = repo(); markMain(d); G(d, 'mv', 'docs/old-big.png', 'docs/moved3.png'); assert.strictEqual(pb.check(d).status, 'ok', 'a staged pure rename is not new');
+
+  // symlinks are never read through: a committed x.png that links to a big file outside the checkout is not judged by the target
+  d = repo(); markMain(d);
+  const outside = path.join(tmp, `outside-${n++}.png`); put(path.dirname(outside), path.basename(outside), 900 * KB, 40);
+  let linked = true;
+  try { fs.symlinkSync(outside, path.join(d, 'docs/link.png')); } catch (e) { linked = false; console.log(`skipped the symlink case: cannot create a symlink here (${e.code}); the index-built link below still runs`); }
+  plumbCommit(d, 'HEAD', { 'docs/link.png': { content: outside, mode: '120000' } }, 'link', 'refs/heads/feat');
+  G(d, 'add', '-N', '.'); // makes no difference to the result; the link is in HEAD and, where possible, on disk
+  r = pb.check(d); assert.strictEqual(r.status, 'ok', `${linked ? 'a symlink' : 'a link in history'} to a big file: ${r.lines.join('\n')}`);
+  if (linked) { assert.strictEqual(pb.check(d).lines.join('\n').includes('link.png'), false); fs.mkdirSync(path.join(d, 'scripts'), { recursive: true }); fs.writeFileSync(path.join(d, pb.ALLOW_FILE), 'docs/link.png | 10 | linked\n'); assert.match(pb.check(d).lines.join('\n'), /docs\/link\.png is a symlink/); fs.rmSync(path.join(d, pb.ALLOW_FILE)); }
+
+  // allow-list paths outside the checkout are refused without being looked up (no probing of files elsewhere)
+  const ap = pb.parseAllow(`../outside.png | 10 | up\n/etc/hosts | 10 | absolute\nC:\\x.png | 10 | drive\na/../../b.png | 10 | inside-out\nok/fine.png | 10 | fine\n`);
+  assert.strictEqual(ap.problems.length, 4, ap.problems.join('\n')); assert.deepStrictEqual([...ap.entries.keys()], ['ok/fine.png']);
+  for (const x of ap.problems) assert.match(x, /must be a path inside the repository/);
+  d = repo(); markMain(d); fs.mkdirSync(path.join(d, 'scripts'), { recursive: true }); fs.writeFileSync(path.join(d, pb.ALLOW_FILE), `${path.relative(d, outside)} | 10 | probe\n`);
+  r = pb.check(d); assert.strictEqual(r.status, 'fail'); assert.match(r.lines.join('\n'), /must be a path inside the repository/); assert.doesNotMatch(r.lines.join('\n'), /does not exist/);
 
   // a git failure is "could not check" (exit 2), not a pass
   d = repo(); markMain(d); put(d, 'docs/p.png', 50 * KB, 30); commit(d, 'f');
