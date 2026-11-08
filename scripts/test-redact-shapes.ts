@@ -9,7 +9,7 @@ import * as path from 'path';
 import { spawnSync } from 'child_process';
 import { finishEdit } from '../src/shared/edits';
 import { heldSamples, heldSurfaces, jwtFuzzTexts, JWT_HELD, longestSurvivor } from './redact-held-lib';
-import { REDACT_MAX_CHARS, _maskSourcesForTest, maskBareTokenShapes, maskNoteText, maskSecretArgs, maskSecretCommand, maskSecretUrl, maskTokenShapes, maskTokenShapesUnguarded, redact, redactMarkdown } from '../src/shared/redact';
+import { REDACT_MAX_CHARS, _maskSourcesForTest, maskBareTokenShapes, maskNoteText, maskOutgoing, maskSecretArgs, maskSecretCommand, maskSecretUrl, maskTokenShapes, maskTokenShapesUnguarded, redact, redactMarkdown } from '../src/shared/redact';
 
 /** A made-up run of n characters from a class: not random (a test that fails must fail the same way) and never a real key. */
 const run = (n: number, chars = 'aB3dE6gH9jK2mN5pQ8sT1vW4yZ7'): string => { let s = ''; while (s.length < n) s += chars; return s.slice(0, n); };
@@ -549,6 +549,49 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
   assert.strictEqual(redact(`echo 'user'"name"=${V}`, {}), `echo 'user'"name"=${V}`, '#1298: a name that is not secret stays');
   assert.strictEqual(redact(`echo ${P}=${V}`, {}), `echo ${P}=[redacted]`, 'the plain form is still hidden');
   assert.strictEqual(redact(`{"${P}": "${V}"}`, {}), `{"${P}": "[redacted]"}`, 'the JSON form is still hidden');
+}
+
+// Review of PR 1317 (Ruben), items 1 and 2. Every input is run through the four surfaces that take free text: `redact`, `maskTokenShapes`, `maskOutgoing` and `maskNoteText` (notes go to disk); the
+// command mask too where the input is a command. Values are made up at run time.
+{
+  const V = an(14);
+  const tok = 'gh' + 'p_' + an(36);
+  const surfaces: Record<string, (t: string) => string> = {
+    redact: (t) => redact(t, {}),
+    maskTokenShapes: (t) => maskTokenShapes(t, '[redacted]'),
+    maskOutgoing: (t) => maskOutgoing(t, []).text,
+    maskNoteText: (t) => maskNoteText(t, []).text,
+  };
+  const hidden = (input: string, label: string, withCommand = false): void => {
+    for (const [name, f] of Object.entries(surfaces)) assert.ok(!f(input).includes(V), `${label}: ${name} shows the value in ${JSON.stringify(f(input).replace(V, '<LEAK>'))}`);
+    if (withCommand) assert.ok(!maskSecretCommand(input, {}).includes(V), `${label}: maskSecretCommand shows the value`);
+  };
+  // item 1: a secret name glued to a mask. The glued-rest scan must not fold the name into the mask before the named-secret rules see it (a value that starts with a quote, a backslash or a space after the colon stayed readable)
+  hidden(`${tok}-dbpassword: "${V}"`, '#1317 item 1: a token, -dbpassword: "value"');
+  hidden(`${tok}.password=\\"${V}\\"`, '#1317 item 1: a token, .password=\\"value\\"');
+  hidden(`${tok}-xxpassword="${V}"`, '#1317 item 1: a token, -xxpassword="value"');
+  hidden(`x=${tok}_aaaaaaaaaaaaaaaaapi_key="${V}"`, '#1317 item 1: x=<token>_…api_key="value"');
+  hidden(`see [redacted]-mydbpassword: "${V}"`, '#1317 item 1: a mask already in the text, -mydbpassword: "value"');
+  hidden(`${tok}-dbpassword: '${V}'`, '#1317 item 1: single quotes');
+  assert.strictEqual(redact(`${tok}-dbpassword: "${V}"`, {}), '[redacted]: "[redacted]"', '#1317 item 1: both are masks and the words between them are gone with the glued name');
+  // item 2: any run of quotes (or an empty `` or $()) between a name and its separator, around the value, and inside the name
+  hidden(`--pass'word'''=${V}`, '#1317 item 2: --pass\'word\'\'\'=value', true);
+  hidden(`--password''=${V}`, '#1317 item 2: --password\'\'=value', true);
+  hidden(`''--pass''word''=''${V}''`, '#1317 item 2: \'\'--pass\'\'word\'\'=\'\'value\'\'', true);
+  hidden(`--password${'"'.repeat(40)}=${V}`, '#1317 item 2: 40 quotes before the separator', true);
+  hidden(`--password=${"'".repeat(40)}${V}`, '#1317 item 2: 40 quotes before the value', true);
+  hidden(`--pa\`\`ss=${V}`, '#1317 item 2: an empty backtick pair inside a name', true);
+  hidden(`--pa$()ss=${V}`, '#1317 item 2: an empty $() inside a name', true);
+  hidden(`--password$()=${V}`, '#1317 item 2: an empty $() after a name', true);
+  hidden(`--password\`\`=${V}`, '#1317 item 2: an empty backtick pair after a name', true);
+  hidden(`pa$'ss'word=${V}`, '#1317 item 2: the $ of $\'…\' inside a name', true);
+  hidden(`--pa$()$()\`\`ss=${V}`, '#1317 item 2: empty splits mixed', true);
+  // a hidden character in the text makes `maskOutgoing` take its slow path: the head list (`LIVE_HEADS`) must see the same names
+  hidden(`--pass'word'''=${V}​`, '#1317 item 2: a zero-width character after the value, quote run before the separator');
+  // what stays
+  assert.strictEqual(redact(`echo max_to$()kens=${V}`, {}), `echo max_to$()kens=${V}`, '#1317 item 2: an empty $() inside a name that is no secret stays');
+  assert.strictEqual(redact(`echo pa\`\`x=${V}`, {}), `echo pa\`\`x=${V}`, '#1317 item 2: an empty backtick pair in a word that is no secret name stays');
+  assert.strictEqual(redact(`echo ${tok}-dbname: "plain words here"`, {}), `echo [redacted]-dbname: "plain words here"`, '#1317 item 1: a non-secret name glued to a mask keeps its value');
 }
 
 // A real image, whole, stays (every repo image: test-redact-images.ts).

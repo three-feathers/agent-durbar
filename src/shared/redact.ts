@@ -251,7 +251,14 @@ export function openKeyBlockStart(text: string): number {
  * a count (it was 6) is a bypass one quote longer (pre-review of PR 1317). An ASCII class that no atom of a name shares, so a run is taken once from each start: linear (`test-redact-growth.ts`,
  * `quotes`), and nothing for the hidden-character walker to add.
  */
-const splitQuotes = (src: string): string => (src.match(/\[[^\]]*\]\??|\(\?:[^)]*\)\??|\\.\??|[^[(\\]\??/g) ?? [src]).join(String.raw`["'\\]*`);
+/**
+ * What a shell removes without a trace: quotes (any number, `''`), backslashes, an empty backtick pair, an empty `$()`, and the `$` of `$'…'` or `$"…"`. Between the atoms of a secret name (`Q_SPLIT`), and
+ * between the name and its separator or the value (`Q_END`: one more quote was a bypass, review of PR 1317 by Ruben). ASCII only and no atom of a name shares a character with them, so a run is taken once from
+ * each start: linear (`test-redact-growth.ts`, `quotes*`), nothing for the hidden-character walker to add.
+ */
+const Q_SPLIT = String.raw`(?:["'\\]|\`\`|\$\(\)|\$(?=["']))*`;
+const Q_END = String.raw`(?:["'\`\\]|\$\(\))*`;
+const splitQuotes = (src: string): string => (src.match(/\[[^\]]*\]\??|\(\?:[^)]*\)\??|\\.\??|[^[(\\]\??/g) ?? [src]).join(Q_SPLIT);
 /** A name that holds a secret, right before its separator (checked backwards from the separator, so `max_tokens` and `token_count` are not it). */
 const SECRET_NAMES = `(?:${['secret_?access_?key', 'session_?token', 'client_?secret', 'api_?secret', 'app_?secret', 'consumer_?secret', 'shared_?secret', 'secret_?key', 'api[_-]?key', 'access[_-]?key', 'auth[_-]?key', 'account_?key', 'sharedaccesskey', 'private[_-]?key', 'priv_?key', 'signing_?key', 'encryption_?key', 'master_?key', 'license_?key', 'service_?key', 'token', 'secret', 'password', 'passwd', 'passphrase', 'contrase(?:n|ñ)a', '_gitlab_session'].map((n) => splitQuotes(ci(n))).join('|')}|(?<![A-Za-z])(?:${['pwd', 'pass', 'auth'].map((n) => splitQuotes(ci(n))).join('|')}))`;
 /**
@@ -282,7 +289,7 @@ const NOT_A_VALUE = [
  * at the separator, so plain text costs one test per `:` or `=`. A value is 8 or more characters with a digit in the first 128, or 20 or more with a symbol letters and hyphens do not explain
  * (`please-enter-your-password` is prose, and a saved note keeps the mask for good). The body has no tail, so open-ended is linear.
  */
-const named = (before: string, extra: string): RegExp => new RegExp(String.raw`(?<=${before}${SECRET_NAMES}\\{0,2}["'\`]?\s{0,8})((?::=|=>|[:=]|%3[DdAa])\s{0,8}\\{0,2}["'\`]?)(?:${SLASH_B64}|(?!\/|${NOT_A_VALUE})(?:(?=${NV}{8})(?=${NV}{0,128}[0-9])|(?=${NV}{20})(?=[A-Za-z_.-]{0,128}[+=~@!#^*?])))${valueBody(extra)}`, 'g');
+const named = (before: string, extra: string): RegExp => new RegExp(String.raw`(?<=${before}${SECRET_NAMES}${Q_END}\s{0,8})((?::=|=>|[:=]|%3[DdAa])\s{0,8}${Q_END})(?:${SLASH_B64}|(?!\/|${NOT_A_VALUE})(?:(?=${NV}{8})(?=${NV}{0,128}[0-9])|(?=${NV}{20})(?=[A-Za-z_.-]{0,128}[+=~@!#^*?])))${valueBody(extra)}`, 'g');
 const NAMED_IN_QUERY = named('[?&]', '#');
 const NAMED_SECRET = named('', '');
 /** Where in a value the first closing bracket with no opener inside the value is, or -1: `(token=abc12345)` keeps its `)`, `Sup3r(S3cret)99` is one value. */
@@ -480,10 +487,10 @@ function maskShapes(text: string, mask: string, guard: boolean): string {
   replaced(PATTERNS);
   out = maskCookies(out, mask);
   out = maskList(out, mask, guard, TOKEN_SHAPES);
-  out = maskGluedRest(out, mask);
-  // Last: a value with its own shape is gone whole by now (a named-secret value stops at `\`, which would leave the tail of `token=123456\u003A…`).
+  // The named-secret rules before the glued rest: a mask glued to a secret name (`<token>-dbpassword: "V"`) must not fold the name into the mask first, or the value after it is no value of any name (review of PR 1317, Ruben).
+  // A value with its own shape is gone whole by now (a named-secret value stops at `\`, which would leave the tail of `token=123456\u003A…`).
   const value = (m: string, keep: string): string => { const v = m.slice(keep.length); const i = closerAt(v); return keep + mask + (i < 0 ? '' : v.slice(i)); };
-  return out.replace(NAMED_IN_QUERY, value).replace(NAMED_SECRET, value);
+  return maskGluedRest(out.replace(NAMED_IN_QUERY, value).replace(NAMED_SECRET, value), mask);
 }
 
 /** The one key-shape mask (FR-031): replaces every key block, secret header, URL credential, named secret and bare token shape with `mask` (a JWT's leading underscores and words stay). `redact` adds the env values and the cut. Linear. */
@@ -1707,7 +1714,7 @@ const PLAIN_ASCII = /^[\x20-\x7e]*$/;
  * fails when one has no alternative here. A per-line guard is possible later.
  */
 const LIVE_HEADS: readonly string[] = [
-  String.raw`${SECRET_NAMES}\\{0,2}["'\`]?\s{0,8}(?::=|=>|[:=]|%3[DdAa])`, // a secret name and its separator
+  String.raw`${SECRET_NAMES}${Q_END}\s{0,8}(?::=|=>|[:=]|%3[DdAa])`, // a secret name and its separator
   'cookie',
   String.raw`\bmachine\s`,
   String.raw`\bcurl\b`,

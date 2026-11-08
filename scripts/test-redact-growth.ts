@@ -149,6 +149,14 @@ if (part === 'adversarial' || part === 'adversarial2') {
     quotesPairs: 'pa"'.repeat(MB / 3),
     quotesNames: 'p"a"s"s"w"o"r"'.repeat(MB / 14),
     quotesMixed: 'to' + "'\\".repeat(MB / 6) + 'ken=Hunter2Secret99',
+    // review of PR 1317 (Ruben): quote runs, empty backtick pairs and `$()` between a name and its separator or its value, and a glued rest before a secret name
+    quotesEnd: 'password' + '"'.repeat(MB) + '=Hunter2Secret99',
+    quotesEndPairs: 'password"'.repeat(MB / 9),
+    quotesValue: 'password=' + "'".repeat(MB),
+    quotesValuePairs: "password=''".repeat(MB / 11),
+    emptySubst: 'pa$()'.repeat(MB / 5),
+    emptyBackticks: 'pa``'.repeat(MB / 4),
+    glueNames: '[redacted]-dbpassword: "'.repeat(MB / 24),
   };
   // Each case runs in a worker thread that times redact() itself with the thread's own CPU time (`process.threadCpuUsage()`, Node 22
   // and later; wall time from `hrtime` only on Node 20.19, which has no per-thread CPU time), so a busy runner cannot fail the test;

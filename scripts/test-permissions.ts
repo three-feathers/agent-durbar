@@ -38,6 +38,8 @@ async function main(): Promise<void> {
     assert.ok(!/\[redac[^\]]*…/.test(g3.label), `#1296: no half marker: ${g3.label}`);
     // pre-review of PR 1317: the marker guard has its own case: a marker that starts inside a first word longer than the cut (no space to cut at) is dropped whole, never `[redacte…`
     assert.strictEqual(grantScope({ kind: 'shell', fullCommandText: 'MY_SERVICE_' + 'PASS' + 'WORD=' + body.slice(0, 12) }).label, 'run MY_SERVICE_' + 'PASS' + 'WORD=…', '#1296: a marker in a long first word is shown whole or not at all');
+    // review of PR 1317 (Ruben, item 3): the word cut has its own case: the cut at 27 falls inside a plain word after a space, so the label ends at the word before it, never inside a word
+    assert.strictEqual(grantScope({ kind: 'shell', fullCommandText: 'echo hello wonderfully-long-word more' }).label, 'run echo hello…', '#1296: the cut is at a word: the cut lands inside a plain word after a space');
     assert.strictEqual(grantScope({ kind: 'shell', fullCommandText: 'x'.repeat(60) }).label, 'run ' + 'x'.repeat(27) + '…', '#1296: a long plain word is cut as before');
     assert.strictEqual(grantScope({ kind: 'shell', fullCommandText: 'npm test' }).label, 'run npm test', 'a short command is unchanged');
   }
