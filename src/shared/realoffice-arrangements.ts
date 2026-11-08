@@ -1,7 +1,7 @@
 /** Spec 102 FR-227, FR-256 (T202, T203, T205): where the people sit. `rows` is `realLayout`, untouched; `aisles` is the Retro arcade hall:
  *  staggered aisles of cabinets in an integer pixel scale `g`. Pure, no DOM, nothing draws it yet (RA3). The numbers marked "provisional"
  *  come from the mockup and the art by eye and are replaced by measured ones (T201's `faceBox`, T207's frame sizes). */
-import { lobbyBand, lobbyRange, realLayout, sortDesks, signWidth, splitLounge, FACE_U, type DeskBox, type Layout, type RealAgent, type RealMeta, type RealModel, type RealState, type Rect, type ZoneBox } from './realoffice-layout';
+import { lobbyBand, lobbyRange, realLayout, shownDesks, signWidth, splitLounge, FACE_U, type DeskBox, type Layout, type RealAgent, type RealMeta, type RealModel, type RealState, type Rect, type ZoneBox } from './realoffice-layout';
 
 export const ARRANGEMENTS = ['rows', 'aisles'] as const;
 export type Arrangement = (typeof ARRANGEMENTS)[number];
@@ -148,7 +148,7 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
   const W = Math.max(200, view.w), Ho = Math.max(200, view.h);
   /* FR-248: the lounge's agents leave their cabinets; their seats take cells after the cabinets (below) */
   const sp = splitLounge(model), lounge = sp.lounge;
-  const folders = sp.desks.filter((f) => f.agents.length).map((f) => ({ id: f.id, agents: f.keep ? f.agents : sortDesks(f.agents) })); /* FR-345: a saved desk order is kept in the cabinet rows too */
+  const folders = sp.desks.filter((f) => f.agents.length).map((f) => ({ id: f.id, agents: shownDesks(f) })); /* FR-345: a saved desk order is kept in the cabinet rows too */
   const seats = folders.flatMap((f) => f.agents.map((a) => ({ a, f: f.id })));
   const k = seats.length;
   const [lobbyMin0, lobbyMax] = lobbyRange(Ho), lobbyMin = lobbyMin0 - AISLE_LANE;

@@ -3,7 +3,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { placeBox, portraitCrop, PORTRAIT_SIDE, slipAvoid, NOTE_PAPER, NOTE_PAPER_DEFAULT, NOTE_INK, notePaper, screenFit, screenFor, personMotion, zoomRect, realLayout, lobbyWidths, sortDesks, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
+import { placeBox, portraitCrop, PORTRAIT_SIDE, slipAvoid, NOTE_PAPER, NOTE_PAPER_DEFAULT, NOTE_INK, notePaper, screenFit, screenFor, personMotion, zoomRect, realLayout, lobbyWidths, sortDesks, deskOrder, deskBase, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
   type RealModel, type RealMeta, type RealAgent, type RealState, type Rect, type Layout } from '../src/shared/realoffice-layout';
 import { lobbyBand, lobbyScale, visitorScale } from '../src/shared/realoffice-layout';
 import { createHash } from 'crypto';
@@ -872,6 +872,35 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
   const ll = realLayout(lm, { w: 1440, h: 848 }, META);
   assert.deepStrictEqual(ll.lounge ? ll.lounge.desks.map((d) => d.id) : [], ['k2', 'k0'], 'FR-345: the lounge row keeps FR-246 status order (done before idle) for a kept folder');
   assert.deepStrictEqual(order(ll, ll.zones.findIndex((z) => z.id === 'k')), ['k1', 'k3'], 'FR-345: a kept folder without its lounge seats keeps the model order');
+}
+{
+  // spec 097 FR-348 (review of PR 1315): the first Alt+arrow in a room with no saved order starts from the order on screen, not the attention order of the model
+  const R = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'reorder.js')) as { moveTo(l: string[], key: string, target: string, after?: boolean): string[] };
+  const ag = (id: string, state: RealState, extra: Partial<RealAgent> = {}): RealAgent => ({ id, state, person: PEOPLE[Number(id.slice(1))], away: null, ...extra } as RealAgent);
+  const model = (keep: boolean): RealModel => ({ folders: [{ id: 'f', keep, agents: [ag('f0', 'idle'), ag('f1', 'working'), ag('f2', 'waiting'), ag('f3', 'done', { lounge: true }), ag('f4', 'error')] }, { id: 'g', agents: [ag('g5', 'idle'), ag('g6', 'waiting')] }], places: PLACES.map((id) => ({ id, visitors: [] })) });
+  const modelOrder = ['f0', 'f1', 'f2', 'f3', 'f4'];
+  for (const keep of [false, true]) {
+    const m = model(keep), lay = realLayout(m, { w: 1440, h: 848 }, META), z = lay.zones.find((q) => q.id === 'f')!;
+    const shown = deskOrder(m, 'f');
+    assert.deepStrictEqual(shown, z.desks.map((d) => d.id), `FR-348 keep=${keep}: deskOrder is exactly the layout's left-to-right order`);
+    assert.deepStrictEqual(shown, keep ? ['f0', 'f1', 'f2', 'f4'] : ['f2', 'f4', 'f1', 'f0'], `FR-348 keep=${keep}: the order on screen (the lounge seat is out)`);
+    assert.deepStrictEqual(deskOrder(m, 'nope'), [], 'an unknown folder has no desks');
+    const base = deskBase(shown, modelOrder);
+    assert.deepStrictEqual(base, [...shown, 'f3'], `FR-348 keep=${keep}: the base is the shown order, then what is not shown`);
+    // Alt+Right on the first desk shown swaps it with the second desk shown
+    const saved = R.moveTo(base, shown[0], shown[1], true);
+    assert.deepStrictEqual(saved.slice(0, 4), [shown[1], shown[0], shown[2], shown[3]], `FR-348 keep=${keep}: Alt+Right on the first visible desk swaps with the second visible desk`);
+    // and the layout then draws the saved order
+    const after = realLayout({ ...m, folders: [{ ...m.folders[0], keep: true, agents: saved.map((id) => m.folders[0].agents.find((a) => a.id === id)!) }, m.folders[1]] }, { w: 1440, h: 848 }, META);
+    assert.deepStrictEqual(after.zones.find((q) => q.id === 'f')!.desks.map((d) => d.id), saved.filter((id) => id !== 'f3'), `FR-348 keep=${keep}: the saved order is what the layout draws next`);
+  }
+  // FR-345: a status change in a room with a saved order moves no desk
+  const k1 = model(true), k2 = model(true);
+  k2.folders[0].agents = k2.folders[0].agents.map((x, i) => ({ ...x, state: (['waiting', 'idle', 'error', 'done', 'working'] as RealState[])[i] }));
+  assert.deepStrictEqual(deskOrder(k2, 'f'), deskOrder(k1, 'f'), 'FR-345: a status change moves no desk in a kept room');
+  // the mutant (the model's attention order as the base) fails the same assertion
+  const m0 = model(false), shown0 = deskOrder(m0, 'f'), wrong = R.moveTo(modelOrder, shown0[0], shown0[1], true);
+  assert.notDeepStrictEqual(wrong.slice(0, 2), [shown0[1], shown0[0]], 'mutant: moving from the model order is not the swap on screen');
 }
 console.log(`realoffice layout and lights tests passed (${cases} layouts, ${lcases} with a lounge, faces ${JSON.stringify(faces)})`);
 process.exitCode = 0;

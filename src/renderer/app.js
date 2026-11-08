@@ -3930,8 +3930,8 @@ async function saveOrder(){
   catch(e){toast('The new order could not be saved. It stays until you close the app.',5000);}
 }
 /* put `key` before or after `target` in the saved order (the one document, FR-085) and save it; `roomId`: the room (of the room, or of the desk) */
-function reoApply(kind,key,target,after,roomId){
-  const next=RO.moveTo(reoFullKeys(kind,roomId),key,target,after),r=ROOMS.find(x=>x.id===roomId);
+function reoApply(kind,key,target,after,roomId,base){
+  const next=RO.moveTo(base||reoFullKeys(kind,roomId),key,target,after),r=ROOMS.find(x=>x.id===roomId);
   if(kind==='room'){ORDER.rooms=RO.merge(ORDER.rooms,next,RO.MAX_ROOMS);}
   else if(kind==='desk'&&r){ORDER.desks={[r.path]:next.slice(0,RO.MAX_DESKS),...Object.fromEntries(Object.entries(ORDER.desks).filter(([k])=>k!==r.path))};}
   else if(kind==='place')ORDER.places=RO.merge(ORDER.places,next,RO.MAX_PLACES);
@@ -3962,17 +3962,18 @@ function reoStep(kind,el,delta){
 }
 /* spec 097 FR-346..FR-348 (issue 1152): one step in Real office (and from its folder menu), from the model: the shown group is what the office draws
    (`officeModel`, `lobbyPlaces`), the base and the write are the flat office's (`reoApply`); the focus goes back to `refocus` (a selector under #stage). */
+function realDeskKeys(roomId){return window.exports.deskOrder(realModel(officeModel()),roomId);} /* spec 097 FR-348: the desks of a room left to right, by the layout's own rule (keep, else status, lounge seats out) */
 function reoStepModel(kind,key,delta,roomId,refocus){
   const rm=ROOMS.find(x=>x.id===roomId);
-  let keys=[];
+  let keys=[],shown=null;
   if(kind==='room'&&rm)keys=officeModel().map(m=>m.r).filter(x=>x.floor===rm.floor).map(x=>x.path);
-  else if(kind==='desk'){const m=officeModel().find(x=>x.r.id===roomId);keys=m?m.mains.map(a=>a.id):[];}
+  else if(kind==='desk'){shown=realDeskKeys(roomId);keys=shown;} /* FR-348: the desks as Real office draws them (the layout's own function), not the attention order */
   else if(kind==='place')keys=lobbyPlaces().map(p=>p.id).filter(reorderablePlace);
   const i=keys.indexOf(key),j=i+delta;
-  if(i<0||keys.length<2)return false;
-  const name=kind==='room'?rm.name:kind==='desk'?(byId(key)||{name:'Desk'}).name:placeLabel(key);
+  const name=kind==='room'?(rm?rm.name:'Folder'):kind==='desk'?(byId(key)||{name:'Desk'}).name:placeLabel(key);
+  if(i<0||keys.length<2){announce(name+' has nowhere to move.');return false;}
   if(j<0||j>=keys.length){announce(name+' is already '+(delta<0?'first':'last')+'.');return false;}
-  reoApply(kind,key,keys[j],j>i,roomId);
+  reoApply(kind,key,keys[j],j>i,roomId,shown&&window.exports.deskBase(shown,reoFullKeys('desk',roomId))); /* the saved order starts from the shown one */
   renderAll();
   const el=refocus&&document.querySelector('#stage '+refocus);
   if(el)afQuiet(()=>el.focus({preventScroll:true}));
@@ -4001,13 +4002,18 @@ function resetOrder(){
     if(!d||!e.target||!e.target.closest||!e.target.closest('#stage')||e.target.closest('input,textarea,select,[contenteditable="true"]'))return;
     if(OFFICE_VIEW==='real'&&RO_LOAD==='ready'){ /* spec 097 FR-347: a name plate, a folder sign's button, a lobby plate that is a button */
       const t=e.target,pl=t.closest('.ro-plate[data-id]'),sb=t.closest('.ro-sb[data-foldermenu],.ro-sb[data-newsess]'),lp=t.closest('.ro-lplate[data-place]');
-      const ag=pl&&byId(pl.dataset.id),rid=e.shiftKey?(ag&&!ag.parent?ag.room:sb?(sb.dataset.foldermenu||sb.dataset.newsess):''):'';
-      if(e.shiftKey?rid:(ag&&!ag.parent&&pl.dataset.surface!=='lounge')||(lp&&reorderablePlace(lp.dataset.place))){
-        e.preventDefault();e.stopPropagation();
-        if(e.shiftKey){const r=ROOMS.find(x=>x.id===rid);if(r)reoStepModel('room',r.path,d,r.id,pl?`.ro-plate[data-id="${CSS.escape(pl.dataset.id)}"]`:sb.dataset.foldermenu?`.ro-sb[data-foldermenu="${CSS.escape(rid)}"]`:`.ro-sb[data-newsess="${CSS.escape(rid)}"]`);}
-        else if(ag&&!ag.parent&&pl.dataset.surface!=='lounge')reoStepModel('desk',ag.id,d,ag.room,`.ro-plate[data-id="${CSS.escape(ag.id)}"]`);
-        else reoStepModel('place',lp.dataset.place,d,'',`.ro-lplate[data-place="${CSS.escape(lp.dataset.place)}"]`);
-      }
+      const ag=pl&&byId(pl.dataset.id),main=!!ag&&!ag.parent,lounge=!!pl&&pl.dataset.surface==='lounge';
+      const stop=()=>{e.preventDefault();e.stopPropagation();};
+      if(e.shiftKey){ /* the room of a desk's plate or of a folder sign's button; a lounge seat and a lobby plate have no room to move */
+        const rid=main?(lounge?'':ag.room):sb?(sb.dataset.foldermenu||sb.dataset.newsess):'',r=rid&&ROOMS.find(x=>x.id===rid);
+        if(r){stop();reoStepModel('room',r.path,d,r.id,pl?`.ro-plate[data-id="${CSS.escape(pl.dataset.id)}"]`:sb.dataset.foldermenu?`.ro-sb[data-foldermenu="${CSS.escape(rid)}"]`:`.ro-sb[data-newsess="${CSS.escape(rid)}"]`);}
+        else if(main&&lounge){stop();announce(ag.name+' is resting in the lounge: its folder moves from a desk or a folder sign.');}
+      }else if(main){
+        stop();
+        if(lounge)announce(ag.name+' is resting in the lounge and does not move.');
+        else if(pl.classList.contains('narrow'))announce(ag.name+' is away from its desk and does not move.');
+        else reoStepModel('desk',ag.id,d,ag.room,`.ro-plate[data-id="${CSS.escape(ag.id)}"]`);
+      }else if(lp&&reorderablePlace(lp.dataset.place)){stop();reoStepModel('place',lp.dataset.place,d,'',`.ro-lplate[data-place="${CSS.escape(lp.dataset.place)}"]`);}
       return;
     }
     let kind='',el=null;

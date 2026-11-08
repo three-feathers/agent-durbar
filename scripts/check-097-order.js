@@ -13,7 +13,10 @@
  *   - the folder menu's Move earlier / Move later (the sign's ⋯ button) does nothing;
  *   - the keys on a lobby plate that is a button move a fixed place (Boss, coffee, Bank, Postbox) or fail to move a movable one;
  *   - the order made in Real office is not what the flat office shows after a reload;
- *   - a room without a saved desk order is not sorted by status while an ordered one keeps its order after a status change;
+ *   - after Reset a room is not sorted by status again (a status change in a kept room moves no desk: the layout test of T260);
+ *   - in a fresh room with no saved order, Alt+Right on the first movable visible desk (the first that is not away) does not swap it with the next desk shown, or does not save the order on screen
+ *     (source mutant: the attention order as the base; run with the app's reoStepModel reading `prio` order, it fails here);
+ *   - an away desk or a lounge seat moves, or does not say it does not;
  *   - 15 desks do not all show, a plate's text is under 10.5 px, plates overlap, or the office scrolls.
  *   SHOTS_OUT=docs/screenshots writes the two full pictures (097-order-<w>x<h>.png; the crops in docs are made from them).
  *   ORDER_MUTANT=keys   Alt+arrows on a plate are swallowed before the app sees them (must fail)
@@ -49,6 +52,49 @@ module.exports = async (ctx) => {
 
   for (const [w, h] of SIZES) {
     const tag = `${w}x${h}`;
+    /* ---- 0. a fresh room (no saved order): the first Alt+Right on the first desk shown swaps with the second desk shown (review of PR 1315, finding 1) ---- */
+    await js(`try{sessionStorage.removeItem('durbar.simorder')}catch(e){}`);
+    await H.load({ w, h, query: { officeview: 'real', simrooms: '3', sim: '15' }, ready: `document.querySelectorAll('#stage .ro-plate').length>=10`, readyMs: 30000, settle: false, focus: true });
+    assert.deepStrictEqual(await js(`window.__durbarSimUi.order.get().desks`), {}, `${tag}: a fresh office has no saved desk order`);
+    const roomIds = await js(`[...new Set(window.__durbarSimUi.agents().filter(a=>!a.parent).map(a=>a.room))]`);
+    let F = null, FP = [];
+    for (const id of roomIds) { const l = await plates(id); if (l.length > FP.length) { F = id; FP = l; } }
+    assert.ok(F && FP.length >= 3, `${tag}: a room with three desks (${FP})`);
+    const fpath = await pathOf(F);
+    const awayNow = await js(`[...document.querySelectorAll('#stage .ro-plate.narrow[data-id]')].map(p=>p.dataset.id)`);
+    const k0 = FP.findIndex((id, i) => !awayNow.includes(id) && i + 1 < FP.length);
+    assert.ok(k0 >= 0, `${tag}: a desk at its seat with a desk after it (${FP}, away ${awayNow})`);
+    const swapAt = (l, i) => { const c = l.slice(); [c[i], c[i + 1]] = [c[i + 1], c[i]]; return c; };
+    assert.ok(await focus(`#stage .ro-plate[data-id="${FP[k0]}"]`), `${tag}: the plate takes the focus`);
+    await key('Right', ['alt'], { char: 'never' });
+    await must(`!!window.__durbarSimUi.order.get().desks[${jsLiteral(fpath)}]`, `${tag}: the first move saved an order (heard: ${await said()}; plates ${FP})`);
+    assert.deepStrictEqual(await plates(F), swapAt(FP, k0), `${tag}: Alt+Right swapped the desk with the next desk shown (was ${FP}, now ${await plates(F)})`);
+    assert.deepStrictEqual((await js(`window.__durbarSimUi.order.get().desks[${jsLiteral(fpath)}]`)).filter((i) => FP.includes(i)), swapAt(FP, k0), `${tag}: the saved order is the order on screen, with that swap`);
+    await must(`document.activeElement&&document.activeElement.dataset.id===${jsLiteral(FP[k0])}`, `${tag}: the focus stays on the moved plate`);
+    /* an away desk and a lounge seat do not move, and say so (findings 2, 4, 5) */
+    const before = await saved();
+    await js(`window.__durbarSimUi.crowd('library',1,${jsLiteral(0)})`);
+    await must(`!!document.querySelector('#stage .ro-plate.narrow[data-id]')`, `${tag}: an agent is away at a place`);
+    const awayId = await js(`document.querySelector('#stage .ro-plate.narrow[data-id]').dataset.id`);
+    const awayRoom = await js(`window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(awayId)}).room`);
+    const awayOrder = await plates(awayRoom);
+    await js(`document.getElementById('srAnnounce').textContent=''`);
+    assert.ok(await focus(`#stage .ro-plate[data-id="${awayId}"]`), `${tag}: the away plate takes the focus`);
+    await key('Right', ['alt'], { char: 'never' });
+    await must(`/is away from its desk and does not move/.test(document.getElementById('srAnnounce').textContent)`, `${tag}: an away desk says it does not move (heard: ${await said()})`);
+    assert.deepStrictEqual(await plates(awayRoom), awayOrder, `${tag}: the away desk did not move`);
+    const lounge = await js(`(()=>{const p=document.querySelector('#stage .ro-plate[data-surface="lounge"][data-id]');return p?p.dataset.id:''})()`);
+    console.log('[097-order] ' + tag + ': lounge seat ' + (lounge || 'none at this size') + ', away desk ' + awayId);
+    if (lounge) {
+      assert.ok(await focus(`#stage .ro-plate[data-id="${lounge}"]`), `${tag}: the lounge plate takes the focus`);
+      const rooms0 = (await saved()).rooms.join();
+      await key('Right', ['alt', 'shift'], { char: 'never' });
+      await must(`/resting in the lounge/.test(document.getElementById('srAnnounce').textContent)`, `${tag}: Alt+Shift on a lounge seat says the room moves from a desk (heard: ${await said()})`);
+      assert.strictEqual((await saved()).rooms.join(), rooms0, `${tag}: and no room moved`);
+    }
+    await js(`window.__durbarSimUi.uncrowd()`);
+    assert.deepStrictEqual((await saved()).places, before.places, `${tag}: places untouched`);
+
     /* ---- 1. an order made in the flat office shows in Real office ---- */
     await js(`try{sessionStorage.removeItem('durbar.simorder')}catch(e){}`);
     await H.load({ w, h, query: { simrooms: '3' }, focus: true });
