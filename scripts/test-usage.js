@@ -262,6 +262,16 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
   assert.ok(svg.includes('estimated') && !svg.includes('NaN'), 'chart: the text alternative names estimated days');
   assert.ok(!lib.chartDaysSvg(rows.filter((r) => r.estCents === 0)).includes('Estimate:'), 'chart: no estimate line when no day is estimated');
   assert.ok(lib.chartDaysSvg([]).includes('no days recorded yet'), 'chart: empty renders');
+  {
+    const hk = lib.emptyState('linux'); lib.ingest(hk, body([], [cost('claude-haiku-5-5', 0.26, '2026-10-30T10:00:00Z'), cost('claude-opus-5-5', 1, '2026-10-30T10:00:00Z')]), Date.UTC(2026, 9, 30, 12));
+    const zr = S.dailyRows(sp, [hk], base, '2026-10-30'); zr[0].est['claude-zero-1-0'] = 0;
+    const lsvg = lib.chartDaysSvg(zr);
+    const labels = [...lsvg.matchAll(/<rect x="[\d.]+" y="246"[^>]*class="s\d"\/><text[^>]*>([^<]*)<\/text>/g)].map((m) => m[1]);
+    assert.ok(labels.length >= 3 && labels.includes('Haiku 5.5') && labels.includes('Opus 5.5'), 'legend: a small real model stays in the legend with its pretty name');
+    assert.ok(labels.every((l) => !/^claude-/.test(l)), 'legend: no label is a raw claude- id');
+    assert.ok(!lsvg.includes('Zero 1.0') && !lsvg.includes('claude-zero'), 'legend: a model with no amount is not listed');
+    assert.strictEqual(lib.modelName('claude-haiku-4-5'), 'Haiku 4.5', 'names: an unlisted claude id gets a pretty name');
+  }
   // the command: a spread file makes the README note, the daily chart and an unchanged total; a spread that does not add up is refused
   const t3 = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-usage-spread-'));
   const Q = (...n) => path.join(t3, ...n);

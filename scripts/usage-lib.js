@@ -207,8 +207,13 @@ const BEGIN = '<!-- build-cost:begin (written by `npm run usage:readme`; method 
 const END = '<!-- build-cost:end -->';
 const LABEL = 'API list-price estimate, not billing';
 /** Model id (what the telemetry sends) -> display name: the one place. An id not listed shows as itself. */
-const MODEL_NAMES = { 'claude-opus-5-5': 'Opus 5.5', 'claude-sonnet-5-5': 'Sonnet 5.5' };
-const modelName = (id) => (own(MODEL_NAMES, id) ? MODEL_NAMES[id] : id);
+const MODEL_NAMES = { 'claude-opus-5-5': 'Opus 5.5', 'claude-sonnet-5-5': 'Sonnet 5.5', 'claude-haiku-5-5': 'Haiku 5.5' };
+// an id not listed above: `claude-<family>-<major>-<minor>` reads as "Family major.minor"; anything else shows as itself
+const modelName = (id) => {
+  if (own(MODEL_NAMES, id)) return MODEL_NAMES[id];
+  const m = /^claude-([a-z]+)-(\d+)-(\d+)$/.exec(id);
+  return m ? `${m[1][0].toUpperCase()}${m[1].slice(1)} ${m[2]}.${m[3]}` : id;
+};
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 ._:\[\]()+-]{0,79}$/; // a display name in the baseline
 
 /** The baseline file (committed, written by hand): what was spent before the receivers ran, or on machines and teams that are not tracked. */
@@ -394,6 +399,7 @@ function chartDaysSvg(rows) {
   for (const r of rows) for (const n of [...Object.keys(r.est), ...Object.keys(r.meas)]) if (!names.includes(n)) names.push(n);
   const sumOf = (n) => rows.reduce((a, r) => a + tot(r, n), 0);
   names.sort((a, b) => sumOf(b) - sumOf(a) || (a < b ? -1 : 1));
+  for (let i = names.length - 1; i >= 0; i--) if (sumOf(names[i]) <= 0) names.splice(i, 1); // only models with an amount
   const cls = (n) => `s${Math.min(names.indexOf(n), SERIES_COLORS.length - 1)}`;
   const dayTotal = (r) => names.reduce((a, n) => a + tot(r, n), 0);
   const top = Math.max(...rows.map(dayTotal), 1);
