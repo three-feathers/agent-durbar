@@ -163,9 +163,27 @@
 - [x] T127 (2026-11-05, issue #1162): the simulator's About version from `package.json` through a generated `appversion.js`; `test:simversion`; release steps no longer list `sim.ts` [FR-179]
 - [x] T128 Issue #839 (FR-180): `check-inbox-safety` and `check-answer-safety` press the Mac keys; `check-answer-safety` waits for the card before scrolling; `shots-097-realoffice` measures the glass at `prefers-reduced-transparency: no-preference`; `check-characters` reports the app state on a crew-step timeout (cause not found yet)
 - [x] T129 Issue #1214: the release clip's step captions use `{step}`, numbered 1..n by position in the clip; test and mutant in `test:releasevideo` [FR-171] (spec delta 2026-11-06)
+- [x] T135 (2026-11-07, owner: the v0.1.12 clip showed v0.1.11's scenes): `refs` on every scene and a default taken from the release's fragments and CHANGELOG section instead of `DEFAULT_SCENES`; scenes `lounge`, `railwidth`, `signin`, `notesource`; `test:releasevideo` with ten mutants; v0.1.12 re-filmed and its assets replaced [FR-183] (spec delta 2026-11-07)
 
 ## 2026-11-07: the Build cost report (owner request; FR-181)
 
 - [x] T131: `scripts/usage-lib.js`, `scripts/usage-receiver.js`, `scripts/usage-day.js`, `npm run usage:receiver` and `usage:day`; `scripts/test-usage.js` (`test:usage`, in `test-suites.txt`), mutation-checked [FR-181]
 - [x] T132: `docs/build-cost.md` (env vars, running the receiver, start-at-login examples as text, privacy), linked from README, `docs/development.md`, `docs/collaboration.md`, `changelog.d/README.md`; fragment `changelog.d/008-build-cost.md` [FR-181]
 - [x] T133: `npm run usage:readme` (`scripts/usage-readme.js`): the README *Build cost so far* block between markers, `docs/build-cost-baseline.json`, `docs/build-cost-history.json` (seeded 2026-11-07, v0.1.12), `docs/build-cost-badge.svg`, `docs/build-cost.svg`; the fold-PR release step; tests and goldens in `test:usage` [FR-181] (owner addition 2026-11-07; T133 checked against main, branches and open PRs)
+
+## 2026-11-07: the macOS nightly UI checks in three shards (issue #839; FR-182)
+
+- [x] T134 Issue #839 (FR-182, owner decision 2026-11-07): `ui-suite --shard i/n` / `UI_SUITE_SHARD`, bare `--shard` and an empty shard refused; tested in `test:uisuite` (incl. `main()` and the workflow matrix); `ui-platforms.yml` runs macOS as three shards (geometry in every shard, office layout and title bar in shard 1, artifacts per shard), 45 minutes for every job
+- [x] T136 (2026-11-08, issues #1301, #1302, #1208; FR-184): `check-097-chat-contrast` waits for a capture that holds its own marker (was 4 of 10 under load, now 20 of 20); the mood and "ago" ticks compare with what the last draw showed (`renderAll`, `timerDraw` hook) and `check-office-ops` asserts none is due after an update; its calibration trace holds the page's marker; the arcade screen keeps one caret element and hides it (`paintScreen`), and the `statusNodes` row waits for the screen repaint after each update. Mutants: `CONTRAST_MUTANT=nohide`, `OPS_TRACE_MUTANT=name|nomark`, a build without the stored signatures. Mutants also: a build that removes the caret on repaint (`statusNodes@retro15 = 8, limit 0`). `[KNOWN GAP]` #1208's cause is a hypothesis; `check-097-plate-pencil` fails with and without this change (not investigated).
+
+
+## 2026-11-08: the spec-numbers job (FR-185)
+
+- [x] T137 (FR-185) `.github/workflows/spec-kit.yml` job `spec-numbers`: `spec-numbers-selftest` (the PR's scripts, no token) and `spec-numbers` (the BASE copy of `picture-budget.js --strict` and `spec-numbers.js` on the PR checkout as data, `persist-credentials: false` everywhere, token on one step), no `pull_request_target`; workflow-shape test in `test:specnumbers`. Mutants: a checkout without `persist-credentials: false`, a token in the self-test job, the PR's copy of the script in the token job each fail it. `[KNOWN GAP]` the jobs run for the first time on the next PR (the base has no scripts yet).
+- [x] T140 (FR-188) `.github/actions/npm-ci` (Electron and electron-builder download cache + 3-try `npm ci`) used by every Electron-installing job; assert in `test:supplychain`. `[KNOWN GAP]` proves itself on CI only.
+- [x] T141 (FR-189) `ui-suite.js shard()` balanced by `scripts/ui-suite-timings.json`; `ui-platforms.yml` 4 shards per OS (macOS 3) and the aggregate job `UI suite complete`; `test:uisuite` updated. `[KNOWN GAP]` proves itself on this PR's CI run.
+
+## 2026-11-08: the README for first-time visitors (FR-186, FR-187; issue #1256)
+
+- [x] T138 (FR-186) README cut to a 30-second read (owner: clean, no release numbers, no junk): tagline, problem line, download line, the Real office picture, Works with / Not yet, one-line status, short bullets, Install, short Safety lead, Quick start with the clone line, Contributing, Build cost block moved down, short credits; `docs/credits.md` takes the art and app-id history; `scripts/shots-readme-real.js` registered in `ui-suite.js` and `shots-docs.js`; the two pictures through `npm run shots:docs`; both pictures are JPEGs under 170 KB (no budget exception). `[KNOWN GAP]` the About description, Discussions and topics are owner actions.
+- [x] T139 (FR-187) `scripts/release-video.js`: scene `realoffice` (Real office, queue slip, Needs you inbox); fragment `changelog.d/008-readme-refresh.md` with `Scene: realoffice`; `AUTO_MAX` 5 to 4 after the v0.1.13 clip measured 6.23 MB against the 5 MiB cap (#1305); the clip is 4.52 MiB; `test:releasevideo` covers the scene and the new `AUTO_MAX`.

@@ -42,7 +42,7 @@ assert.ok(/permissions:\s*\n\s+contents: read\s*$/m.test(subset) && !/issues:/.t
 assert.ok(/--size 1280x800/.test(subset) && !/1440x900/.test(subset), 'the PR subset runs at 1280x800 only');
 for (const p of ['src/renderer/realoffice/**', 'docs/experience/**', 'scripts/world-matrix.js', 'scripts/check-world-tools.js', '.github/workflows/world-matrix.yml']) assert.ok(code.includes(`- '${p}'`), `path filter has ${p}`);
 assert.ok(!/- 'src\/renderer\/(app|styles|screens)/.test(code), 'shared renderer files do not start the subset (D5)');
-for (const m of code.matchAll(/uses: (\S+)/g)) assert.ok(/@[0-9a-f]{40}$/.test(m[1]), `pinned: ${m[1]}`);
+for (const m of code.matchAll(/uses: (?!\.\/)(\S+)/g)) assert.ok(/@[0-9a-f]{40}$/.test(m[1]), `pinned: ${m[1]}`);
 assert.ok(/retention-days: 14/.test(code), 'artifacts kept 14 days');
 const jobs = { subset, weekly: code.slice(code.indexOf('  weekly:')) };
 for (const [name, text] of Object.entries(jobs)) {

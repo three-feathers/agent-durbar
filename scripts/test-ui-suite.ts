@@ -349,7 +349,53 @@ process.on('exit', () => { if (!fr114Done) { console.error('FR-114 checks did no
     fs.rmSync(outDir, { recursive: true, force: true });
   }
   fr114Done = true;
-  // spec 008 FR-095, FR-138: one retry, alone; a repeated failure stays a failure, a pass on retry is FLAKY in the log and the job summary
+async function shardMain(): Promise<void> {
+  const { shard, DRIVERS } = require(SUITE) as { shard: (l: unknown[], s?: string) => unknown[]; DRIVERS: Array<{ name: string }> };
+  // review on #1257: main() must use shard(), from --shard and from UI_SUITE_SHARD; a bare --shard and an empty shard fail
+  {
+    const { main } = require(SUITE) as { main: (o: unknown) => Promise<void> };
+    const want = (shard(DRIVERS, '2/3') as Array<{ name: string }>).map((d) => d.name);
+    assert.ok(want.length > 0 && want.length < DRIVERS.length, 'shard 2/3 is a proper subset');
+    const prev = { shard: process.env.UI_SUITE_SHARD, out: process.env.UI_SUITE_OUT, retry: process.env.UI_SUITE_RETRY, code: process.exitCode };
+    const log = console.log;
+    const outDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ui-suite-shard-'));
+    const go = async (argv: string[], env?: string): Promise<{ ran: string[]; err?: Error; code: unknown }> => {
+      const ran: string[] = [];
+      if (env === undefined) delete process.env.UI_SUITE_SHARD; else process.env.UI_SUITE_SHARD = env;
+      process.env.UI_SUITE_OUT = outDir; process.env.UI_SUITE_RETRY = '0'; process.exitCode = 0;
+      console.log = () => undefined;
+      let err: Error | undefined;
+      let ensured = false;
+      try { await main({ ensure: () => { ensured = true; return true; }, argv, run: async (d: { name: string }) => { ran.push(d.name); return { ok: true, secs: 0, why: '', log: '' }; } }); } catch (e) { err = e as Error; } finally { console.log = log; }
+      if (err) assert.ok(!ensured && ran.length === 0, 'a refused shard starts nothing, not even the Electron install');
+      return { ran, err, code: process.exitCode };
+    };
+    try {
+      assert.deepStrictEqual((await go(['--shard', '2/3'])).ran, want, 'main --shard 2/3 runs exactly shard(DRIVERS, "2/3")');
+      assert.deepStrictEqual((await go([], '2/3')).ran, want, 'main with UI_SUITE_SHARD=2/3 runs exactly shard(DRIVERS, "2/3")');
+      assert.deepStrictEqual((await go(['--shard', '1/3'], '2/3')).ran, (shard(DRIVERS, '1/3') as Array<{ name: string }>).map((d) => d.name), 'the argument wins over the env');
+      assert.strictEqual((await go([], '')).ran.length, DRIVERS.length, 'an empty UI_SUITE_SHARD runs every driver');
+      assert.strictEqual((await go([])).ran.length, DRIVERS.length, 'no shard runs every driver');
+      for (const argv of [['--shard'], ['--shard', ''], ['--only', DRIVERS[0].name, '--shard']]) {
+        const r = await go(argv, '');
+        assert.ok(r.err && /--shard wants a value/.test(r.err.message), `bare --shard is refused (${argv.join(' ')})`);
+      }
+      const bare = await go(['--shard'], '2/3');
+      assert.ok(bare.err, 'bare --shard is refused even when the env is set');
+      const empty = await go(['--only', DRIVERS[0].name, '--shard', '3/3']);
+      assert.ok(empty.err && /selects no driver/.test(empty.err.message), 'an empty shard fails (--only narrowing)');
+      const many = await go([], `1/${DRIVERS.length + 1}`);
+      assert.ok(many.err && /selects no driver/.test(many.err.message), 'an empty shard fails (more shards than drivers)');
+      assert.deepStrictEqual((await go(['--list'], '9/9')).ran, [], '--list still works');
+    } finally {
+      console.log = log;
+      for (const [k, v] of [['UI_SUITE_SHARD', prev.shard], ['UI_SUITE_OUT', prev.out], ['UI_SUITE_RETRY', prev.retry]] as const) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+      process.exitCode = prev.code;
+      fs.rmSync(outDir, { recursive: true, force: true });
+    }
+  }
+}
+// spec 008 FR-095, FR-138: one retry, alone; a repeated failure stays a failure, a pass on retry is FLAKY in the log and the job summary
 async function retries(): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { main, DRIVERS } = require(SUITE) as { main: (o: unknown) => Promise<void>; DRIVERS: Array<{ name: string; label?: string }> };
@@ -392,5 +438,80 @@ async function retries(): Promise<void> {
   assert.ok(/UI_SUITE_RETRY: \$\{\{ matrix\.os != 'ubuntu-latest' && '1' \|\| '0' \}\}/.test(yml), 'FR-138: macOS and Windows retry once, Linux does not');
 }
 await retries();
+await shardMain();
 console.log('ui-suite: check-parallel and ui-suite install Electron once before their parallel jobs (FR-114)');
 })().catch((e) => { console.error(e); process.exitCode = 1; });
+
+// ---- spec 008 FR-182 (issue 839): --shard i/n takes every n-th driver; n shards are disjoint and together hold every driver ----
+{
+  const { shard, DRIVERS } = require(SUITE) as { shard: (l: unknown[], s?: string, t?: Record<string, number>) => unknown[]; DRIVERS: unknown[] };
+  const times = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'ui-suite-timings.json'), 'utf8')) as Record<string, number>;
+  const names = (DRIVERS as Array<{ name: string }>).map((d) => d.name);
+  assert.ok(Object.keys(times).filter((k) => !k.startsWith('_')).every((k) => names.includes(k)), 'the timing file names only drivers that exist (refresh it when one is renamed)');
+  const wt = (d: { name: string }): number => times[d.name] ?? 0;
+  for (const n of [1, 2, 3, 4, 5]) {
+    const parts = Array.from({ length: n }, (_, i) => shard(DRIVERS, `${i + 1}/${n}`) as Array<{ name: string }>);
+    const all = parts.flat();
+    assert.strictEqual(all.length, DRIVERS.length, `${n} shards hold every driver once`);
+    assert.strictEqual(new Set(all).size, DRIVERS.length, `${n} shards are disjoint`);
+    assert.deepStrictEqual([...all].sort((a, b) => (DRIVERS as unknown[]).indexOf(a) - (DRIVERS as unknown[]).indexOf(b)), DRIVERS, `${n} shards: the union is the full list`);
+    parts.forEach((p) => assert.deepStrictEqual(p, (DRIVERS as Array<{ name: string }>).filter((d) => p.includes(d)), 'a shard keeps the suite order'));
+    assert.deepStrictEqual(parts, Array.from({ length: n }, (_, i) => shard(DRIVERS, `${i + 1}/${n}`)), `${n} shards: the split is deterministic`);
+    if (n > 1) {
+      const secs = parts.map((p) => p.reduce((a, d) => a + wt(d), 0));
+      const total = secs.reduce((a, b) => a + b, 0), top = Math.max(...Object.values(times).filter((v) => typeof v === 'number'));
+      assert.ok(Math.max(...secs) <= total / n + top, `${n} shards: the slowest shard is within one driver of the mean (${secs.join(', ')})`);
+    }
+  }
+  // the unknown driver counts as the median, and a list that is not the suite's still splits into disjoint parts
+  {
+    const odd = [{ name: 'zz-new-a' }, { name: 'zz-new-b' }, { name: 'zz-new-c' }];
+    const got = [1, 2].map((i) => shard(odd, `${i}/2`) as unknown[]);
+    assert.strictEqual(got.flat().length, 3, 'drivers without a timing are all placed once');
+    assert.deepStrictEqual(shard(DRIVERS, '1/2', {}), shard(DRIVERS, '1/2', {}), 'no timing file: still deterministic');
+  }
+  assert.deepStrictEqual(shard(DRIVERS, undefined), DRIVERS, 'no shard: the whole list');
+  for (const bad of ['0/3', '4/3', '3', 'a/b', '1/0']) assert.throws(() => shard(DRIVERS, bad), /--shard wants i\/n/, `"${bad}" is refused`);
+  // review on #1257: the workflow's matrix, denominators and excludes agree (plain text; no YAML parser is a dependency)
+  {
+    const wf = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'ui-platforms.yml'), 'utf8');
+    const lines = wf.split(/\r?\n/).filter((l) => !/^\s*#/.test(l));
+    const text = lines.join('\n');
+    const m = text.match(/^\s+shard:\s*\[([^\]]*)\]\s*$/m);
+    assert.ok(m, 'the matrix has a shard list');
+    const list = m[1].split(',').map((x) => Number(x.trim()));
+    const n = list.length;
+    assert.strictEqual(n, 4, 'Linux and Windows run 4 shards');
+    assert.deepStrictEqual(list, Array.from({ length: n }, (_, i) => i + 1), 'the matrix shard list is exactly 1..n');
+    assert.ok(/UI_SUITE_SHARD: \$\{\{ format\('\{0\}\/\{1\}', matrix\.shard, matrix\.os == 'macos-latest' && 3 \|\| 4\) \}\}/.test(text), 'UI_SUITE_SHARD is i/n with n = 3 on macOS, 4 elsewhere');
+    assert.ok(/name: UI shard \(\$\{\{ matrix\.os \}\} \$\{\{ matrix\.shard \}\}\/\$\{\{ matrix\.os == 'macos-latest' && 3 \|\| 4 \}\}\)/.test(text), 'the job name shows i/n with the same denominators');
+    assert.ok(/name: ui-shots-\$\{\{ matrix\.os \}\}-\$\{\{ matrix\.shard \}\}/.test(text), 'artifacts are named per shard');
+    const ex = [...text.matchAll(/-\s*\{\s*os:\s*([\w-]+),\s*shard:\s*(\d+)\s*\}/g)].map((x) => `${x[1]}:${x[2]}`);
+    assert.deepStrictEqual(ex, ['macos-latest:4'], 'only macOS skips shard 4 (it runs 3)');
+    // FR-183: one aggregate job, named UI suite complete, needs the shards, fails unless all passed, and runs even when a shard failed
+    {
+      const at = text.indexOf('  complete:');
+      assert.ok(at > 0, 'the aggregate job exists');
+      const job = text.slice(at);
+      assert.ok(job.includes('name: UI suite complete') && /^\s+needs: ui\s*$/m.test(job), 'UI suite complete needs the shard job');
+      assert.ok(/if: \$\{\{ always\(\) && !github\.event\.pull_request\.draft \}\}/.test(job), 'it runs after a failed shard, and skips drafts');
+      assert.ok(/RESULT: \$\{\{ needs\.ui\.result \}\}/.test(job) && job.includes('test "$RESULT" = "success"'), 'it passes only when every shard succeeded');
+      assert.ok(/permissions: \{\}/.test(job) && !/\$\{\{ github\.event\.(pull_request|issue|head_commit)\.(title|body)/.test(wf), 'no permissions, no PR text in the workflow');
+    }
+    // review on #1257: a step's whole text, from its "- name:" line to the next step
+    const step = (title: string): string => {
+      const at = text.indexOf(`- name: ${title}`);
+      assert.ok(at >= 0, `step "${title}" exists`);
+      const rest = text.slice(at + 1);
+      const next = rest.search(/\n\s+- (name|run|uses):/);
+      return next < 0 ? rest : rest.slice(0, next);
+    };
+    assert.ok(!/^\s+if:/m.test(step('Theme geometry')), 'theme geometry has no if: at all (every shard, every OS)');
+    for (const title of ['Office layout (15 agents, 1440x900 and 1280x800)', 'Mac title bar']) {
+      const cond = step(title).match(/^\s+if: (.*)$/m);
+      assert.ok(cond, `"${title}" has an if:`);
+      assert.ok(cond[1].startsWith('matrix.shard == 1 &&'), `"${title}" runs in shard 1 only: its if: starts with "matrix.shard == 1 &&"`);
+    }
+  }
+  console.log('ui-suite shards: ok');
+}

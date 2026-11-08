@@ -8,6 +8,9 @@ test:attachments
 test:vscode
 test:runtime-core
 test:runtime-redact
+test:livehead
+test:maskoutgoing-fuzz
+test:maskoutgoing-fuzz-b
 test:maskoutgoing
 test:contactlinks
 test:runtime-mcp
@@ -145,6 +148,8 @@ test:mcpservertools
 test:navigator
 test:crew
 test:characters
+test:chargen
+test:imagecheck
 test:crew-assets
 test:realoffice-layout
 test:realoffice-assets
@@ -208,6 +213,7 @@ test:redact-growth-hashtable
 test:redact-growth-hashtablegrowth
 test:redact-growth-shapes
 test:redact-growth-shapes2
+test:redact-growth-masks
 test:redact-images-whole
 test:redact-images-forms
 test:doormigrate
@@ -219,3 +225,5 @@ test:mcpcontextipc
 test:quota
 test:featureinventory
 test:simversion
+test:picturebudget
+test:specnumbers

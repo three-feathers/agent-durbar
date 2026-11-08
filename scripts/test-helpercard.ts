@@ -37,8 +37,9 @@ const hasSecret = (t: string) => tokens.some((x) => t.includes(x) || t.includes(
 
 const SAFE = ST.create({ redact: (s) => redact(s, {}), cut: cutText });
 const tooLabel = (tool: string, label: string, max: number): string => { const m = redact(label, {}); return typeof m === 'string' ? cutText(m, max) : ''; };
+const LA = require(path.join(R, 'liveact.js')) as { toolName(t: unknown, m?: { redact(s: string): string }): string };
 const deps = (over?: Record<string, unknown>) => ({
-  excerpt: (t: string, m: number, fb: string) => SAFE.excerpt(t, m, fb), mask: (t: string) => SAFE.mask(t), toolLabel: tooLabel, cut: cutText,
+  toolName: (t: string) => LA.toolName(t, { redact: (s) => redact(s, {}) }), excerpt: (t: string, m: number, fb: string) => SAFE.excerpt(t, m, fb), mask: (t: string) => SAFE.mask(t), toolLabel: tooLabel, cut: cutText,
   fmtTok: (x: number) => (x >= 1000 ? (x / 1000).toFixed(1) + 'k' : String(x)), ...over,
 });
 const card = (over?: Record<string, unknown>): Card => HC.create(deps(over));
@@ -286,7 +287,20 @@ eq(HC.HX_TIP, 200, 'the tooltip cut is the desk card\'s number');
     if (big < Math.max(base, MIN_BASE_MS) * MAX_RATIO) break;
   }
   const ratio = big / Math.max(base, MIN_BASE_MS);
-  console.log(`test-helpercard: repaint ratio ${ratio.toFixed(2)} (big ${big.toFixed(1)} ms, base ${base.toFixed(1)} ms, limit ${MAX_RATIO})`);
+  // ---- spec 097 FR-317 (#1284, review): the helper's tool name goes through the one tool-name mask, with the clear step ----
+{
+  const tk = 'ghp_' + 'Zq9Xw8Vu7Ts6Rp5On4Ml3Kj2Ih1G';
+  for (const [what, name] of [['plain', tk], ['ANSI', tk.slice(0, 9) + '\x1b[0m' + tk.slice(9)], ['OSC', tk.slice(0, 9) + '\x1b]0;t\x07' + tk.slice(9)], ['bidi', tk.slice(0, 9) + '\u202e' + tk.slice(9)]]) {
+    const ex = C.view(helper({ task: 'T', now: { kind: 'tool', tool: name, label: '' } }), 1);
+    eq(textOf(ex, 'now'), 'tool', what + ': the helper card names the tool as `tool`');
+    ok(!/Zq9Xw8|Ts6Rp5|Kj2Ih1/.test(ex.aria + ex.title + ex.lines.map((l) => l.text).join('|')), what + ': no part of the name on the card');
+  }
+  eq(textOf(C.view(helper({ task: 'T', now: { kind: 'tool', tool: 'grep', label: '' } }), 1), 'now'), 'grep', 'a plain name stays');
+  eq(textOf(card({ toolName: undefined }).view(helper({ task: 'T', now: { kind: 'tool', tool: 'grep', label: '' } }), 1), 'now'), 'tool', 'no tool-name function: tool');
+  eq(textOf(card({ toolName: () => { throw new Error('x'); } }).view(helper({ task: 'T', now: { kind: 'tool', tool: tk, label: '' } }), 1), 'now'), 'tool', 'a throwing tool-name function: tool');
+  ok(/toolName:t=>shownTool\(t\)/.test(fs.readFileSync(path.join(R, 'app.js'), 'utf8')), 'app.js hands the card the page shownTool');
+}
+console.log(`test-helpercard: repaint ratio ${ratio.toFixed(2)} (big ${big.toFixed(1)} ms, base ${base.toFixed(1)} ms, limit ${MAX_RATIO})`);
   ok(big < Math.max(base, MIN_BASE_MS) * MAX_RATIO, `1000 repaints of a 1 MB result: ${big.toFixed(1)} ms of CPU against ${base.toFixed(1)} ms for a short one (ratio ${ratio.toFixed(1)}, limit ${MAX_RATIO}; the memo makes it about 1)`);
 }
 
@@ -305,5 +319,58 @@ eq(HC.HX_TIP, 200, 'the tooltip cut is the desk card\'s number');
   ok(/<script src="helpercard\.js"><\/script>/.test(html) && html.indexOf('helpercard.js') < html.indexOf('src="app.js"'), 'index.html loads helpercard.js before app.js (the script order of safetext, liveact and app stays adjacent)');
   ok(/'helpercard\.js'/.test(copy), 'copy-assets.js copies helpercard.js');
   ok(/window\.DurbarHelperCard/.test(app), 'app.js uses DurbarHelperCard');
+}
+// ---- spec 015 FR-021 (issue 1330): the one helper mask (app.js homeMask + helperMask), run from the page's own source ----
+{
+  const app = fs.readFileSync(path.join(R, 'app.js'), 'utf8');
+  const line = (re: RegExp, what: string) => { const m = app.match(re); assert.ok(m, 'app.js defines ' + what); return m![0]; };
+  const src = line(/^const homeMask=.*$/m, 'homeMask') + '\n' + line(/^const helperMask=.*$/m, 'helperMask');
+  const shared = require('../src/shared/redact') as { redact(t: string): string; maskHomePaths(t: unknown): string };
+  const S = ST.create({ redact: (t) => shared.redact(t), cut: cutText });
+  const make = (win: object) => new Function('window', 'deskMask', src + '\nreturn {homeMask,helperMask};')(win, (t: unknown) => S.mask(t)) as { homeMask(t: unknown): unknown; helperMask(t: unknown): string };
+  const { helperMask } = make({ DurbarRedact: shared });
+  const tok = 'ghp_' + 'Zq9Xw8Vu7Ts6Rq5Po4Nm3Lk2Ji1Hg0Fe9Dc8';
+  const bad = (out: string) => [tok, 'zed_q', 'zedq', 'fs01', 'Jürgen', 'Smith', 'Ölçü', 'zoë'].filter((w) => out.includes(w));
+  const cases: [string, string][] = [
+    ['a token', 'check ' + tok + ' now'],
+    ['a macOS home', 'read /Users/zedq/proj/a.txt'],
+    ['a Windows home', 'read C:\\Users\\zedq\\proj\\a.txt'],
+    ['a UNC home', 'open \\\\fs01\\homes\\zedq\\notes'],
+    ['a JSON-doubled token', JSON.stringify({ t: 'x ' + tok })],
+    ['a JSON-doubled macOS home', JSON.stringify({ p: '/Users/zedq/proj' })],
+    ['a JSON-doubled Windows home', JSON.stringify({ p: 'C:\\Users\\zedq\\proj' })],
+    ['a JSON-doubled UNC home', JSON.stringify({ p: '\\\\fs01\\homes\\zedq\\notes' })],
+    ['all of them', 'Review ' + tok + ' in /Users/zedq/a and \\\\fs01\\homes\\zedq\\b'],
+  ];
+  // non-ASCII home names (they pass today; pinned): plain and JSON-doubled
+  for (const [what, t] of [
+    ['a Windows home with an umlaut', 'C:\\Users\\Jürgen\\proj'],
+    ['a Windows home with a space', 'C:\\Users\\Jürgen Smith\\proj'],
+    ['a UNC home with non-ASCII letters', '\\\\fs01\\homes\\Ölçü\\notes'],
+    ['a macOS home with a diaeresis', '/Users/zoë/a.txt'],
+    ['a Linux home with non-ASCII letters', '/home/Ölçü/x'],
+    ['a Windows home with forward slashes', 'C:/Users/Jürgen/x'],
+  ] as [string, string][]) { cases.push([what, 'read ' + t]); cases.push(['a JSON-doubled ' + what.slice(2), JSON.stringify({ p: t })]); }
+  for (const [what, t] of cases) { const out = helperMask(t); eq(bad(out).join(), '', 'helperMask hides ' + what + ': ' + out); ok(out.length > 0, 'helperMask keeps the rest of ' + what); }
+  eq(helperMask('/Users/zedq/proj/a.txt'), '~/proj/a.txt', 'a home folder becomes ~');
+  eq(helperMask('\\\\fs01\\homes\\zedq\\notes'), '~\\notes', 'a UNC home becomes ~');
+  for (const t of ['Fix the build', 'Look around and report', 'Count files in src/renderer (about 120)', '']) eq(helperMask(t), t, 'ordinary text is unchanged: ' + JSON.stringify(t));
+  // the order is the point: the desk mask first unescapes `\\` and the UNC home is no longer seen
+  ok(shared.maskHomePaths(S.mask('\\\\fs01\\homes\\zedq\\notes')).includes('zedq'), 'the wrong order (desk mask first) would leak, so the order test bites');
+  // fail closed: no redact module keeps no agent text; a throwing or odd home mask gives ''
+  eq(make({}).helperMask('x ' + tok), S.mask('x ' + tok), 'no DurbarRedact: the desk mask alone');
+  eq(make({ DurbarRedact: { maskHomePaths: () => 7 } }).homeMask('/Users/zedq'), '', 'a home mask that gives no string gives ""');
+  // every surface that shows a helper's name or task goes through the chain (source checks; the rendered surfaces are in check-015-bg-helper)
+  for (const [re, what] of [
+    [/s\.name=helperMask\(e\.name\)/, 'onSubagent stores the name through helperMask'],
+    [/s\.name=SHORT\(helperMask\(s\.task\),40\)/, 'onTaskTool names a helper from its task through helperMask'],
+    [/'h3'\)\.textContent=helperMask\(s\.name\)/, 'the Sub-agent activity panel title'],
+    [/'\.sub-full-task'\)\.textContent=helperMask\(s\.task\)/, 'the Sub-agent activity panel task line'],
+    [/'Failed: '\+helperMask\(s\.error\)/, 'the panel error line'],
+    [/n=helperMask\(h\.name\)\|\|'Helper', t=helperMask\(taskText\(h\)\)/, 'the flat helper tile, its tooltip and aria-label'],
+    [/n=helperMask\(h\.name\)\|\|'Helper', r=helperMask\(h\.role\)\|\|'Helper', t=helperMask\(taskText\(h\)\)/, 'the full-density helper (helperHTML)'],
+    [/excerpt:\(t,n,fb\)=>safeExcerpt\(homeMask\(t\),n,fb\),mask:t=>helperMask\(t\)/, 'the expanded helper card'],
+  ] as [RegExp, string][]) ok(re.test(app), what);
+  ok(!/s\.name=safeMask\(/.test(app), 'no helper name is stored with the desk mask alone');
 }
 console.log(`test-helpercard: ok (${n} checks)`);
