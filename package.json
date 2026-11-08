@@ -311,7 +311,9 @@
     "marked": "18.1.2"
   },
   "overrides": {
-    "zod": "4.6.6"
+    "zod": "4.6.6",
+    "minimatch@^9.0.3": "11.0.5",
+    "minimatch@^10.2.5": "11.0.5"
   },
   "homepage": "https://github.com/three-feathers/agent-durbar",
   "repository": {
