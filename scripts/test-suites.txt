@@ -225,3 +225,5 @@ test:mcpcontextipc
 test:quota
 test:featureinventory
 test:simversion
+test:picturebudget
+test:specnumbers
