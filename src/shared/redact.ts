@@ -1573,10 +1573,14 @@ const oauthParam = (name: string): boolean => {
   return OAUTH_PARAMS.has(n.toLowerCase());
 };
 
+const UNC_SEG = String.raw`[^\\/\s"'<>|:;,*?]{1,128}`;
+const UNC_SEP = String.raw`(?:\\{1,2}|\/)`;
+const UNC_HOME = new RegExp(String.raw`(?<![A-Za-z0-9_.~:\\/-])(?:\\{4}|\\{2})${UNC_SEG}${UNC_SEP}${UNC_SEG}(?:${UNC_SEP}(?:[^\\/\r\n"'<>|:;,*?]{1,128}(?=[\\/])|${UNC_SEG}))?`, 'g');
 /**
  * Home folders in free text become `~` (review on PR #630: a copied error must not carry the user name): `/home/<user>`,
  * `/Users/<user>`, `<drive>:\Users\<user>` (also with `/` or doubled `\\` as in JSON), and the given home folders themselves
- * (`HOME`, `USERPROFILE` of this process by default). A user name with spaces is covered when a separator follows it. Bounded; never throws.
+ * (`HOME`, `USERPROFILE` of this process by default). A user name with spaces is covered when a separator follows it. A UNC path
+ * (`\\server\share\user`): its host, share and next folder. Bounded; never throws.
  */
 export function maskHomePaths(text: unknown, homes?: readonly (string | undefined)[]): string {
   try {
@@ -1587,7 +1591,9 @@ export function maskHomePaths(text: unknown, homes?: readonly (string | undefine
       // only a whole folder: `/home/vik` is not the start of `/home/vikram`
       for (const v of new Set([h, JSON.stringify(h).slice(1, -1)])) s = s.replace(new RegExp(v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + String.raw`(?![^\\/\s"'<>|:;,*?])`, 'g'), '~');
     }
-    return s.replace(/(?<![A-Za-z0-9_.~-])(?:\/(?:home|Users)\/|[A-Za-z]:(?:\\{1,2}|\/)Users(?:\\{1,2}|\/))(?:[^\\/\r\n"'<>|:;,*?]{1,128}(?=[\\/])|[^\\/\s"'<>|:;,*?]{1,128})/g, '~');
+    s = s.replace(/(?<![A-Za-z0-9_.~-])(?:\/(?:home|Users)\/|[A-Za-z]:(?:\\{1,2}|\/)Users(?:\\{1,2}|\/))(?:[^\\/\r\n"'<>|:;,*?]{1,128}(?=[\\/])|[^\\/\s"'<>|:;,*?]{1,128})/g, '~');
+    // a UNC path (`\\server\share\user\...`, or doubled as in JSON): where the user name sits is not known, so host, share and the next folder become `~`
+    return s.replace(UNC_HOME, '~');
   } catch {
     return '[redaction failed]';
   }
@@ -1643,6 +1649,76 @@ const HIDDEN_ALL = new RegExp(HIDDEN_CHARS.source, 'gu');
 /** The text without `HIDDEN_CHARS` (DurbarSafeText.unhide in the window, `convmask` in main, and the notes and outgoing masks). */
 export function unhide(t: unknown): string {
   return String(t == null ? '' : t).replace(HIDDEN_ALL, '');
+}
+const PLAIN_ASCII = /^[\x20-\x7e]*$/;
+/**
+ * Text that makes every hidden character live (review of PR 1244; the independent audit). A rule with a bounded window (`{0,N}`, `{1,N}`) over a
+ * class that admits non-ASCII (`[^...]`, `\S`) counts an inert hidden character toward its limit, so the copy without it reads a token the text
+ * as written does not: the fast path would mask less than the reference. Each alternative is the head of such a rule: a secret name and its
+ * separator (`named`: the value, its digit look-ahead and its closer), `cookie` (the header, the JSON form and `cookieEnd`'s 128-character name
+ * loop, a count in code, not a regex), `machine` (netrc: host and login), `curl` (the window before `-u` and the user), `://` (URL credentials).
+ * Text-wide on purpose: the netrc `\s{1,8}` crosses line breaks. `scripts/test-livehead.ts` (FR-063) lists the mask rules with such a window and
+ * fails when one has no alternative here. A per-line guard is possible later.
+ */
+const LIVE_HEADS: readonly string[] = [
+  String.raw`${SECRET_NAMES}\\{0,2}["'\`]?\s{0,8}(?::=|=>|[:=]|%3[DdAa])`, // a secret name and its separator
+  'cookie',
+  String.raw`\bmachine\s`,
+  String.raw`\bcurl\b`,
+  String.raw`:\/\/`,
+];
+const LIVE_HEAD = new RegExp(LIVE_HEADS.join('|'), 'i');
+/** The alternatives of `LIVE_HEAD`, one regex each (`scripts/test-livehead.ts` checks each against its own sample). */
+export const _liveHeadsForTest = (): RegExp[] => LIVE_HEADS.map((h) => new RegExp(h, 'i'));
+/** A character a token cannot be made of or sit next to: non-ASCII, not a space (U+0085 and the Unicode spaces included), not hidden, a whole code point. */
+function isInertSide(cp: number | undefined): boolean {
+  if (cp === undefined || cp < 0x80 || (cp >= 0xd800 && cp <= 0xdfff)) return false;
+  const ch = String.fromCodePoint(cp);
+  return !/\s/u.test(ch) && !HIDDEN_CHARS.test(ch);
+}
+/**
+ * Spec 095 *Changes* 2026-11-07 (issue 1234): whether `s` holds a hidden character (`HIDDEN_CHARS`) that can hide a token, so the masks
+ * must also read the copy without hidden characters (`maskKeepingMarkdown`, three passes when live, and `convmask.maskWork`'s x3). A run of hidden
+ * characters is inert when the characters on both sides are non-ASCII, not spaces and not hidden (a ZWJ or VS16 inside an emoji sequence
+ * or a script): every token shape is ASCII, so one split or glued by it has an ASCII neighbour and stays live. That premise fails for `name=value` (a value may be non-ASCII, and the digit look-ahead counts up to 128 characters, hidden ones too), so a text with a secret name and a separator (`LIVE_HEAD`) is always live (review of PR 1244). A run at either end, or next
+ * to a space or an ASCII character, is live. Known values (and the environment's secrets) with a non-ASCII or non-printable character are
+ * matched literally, so a hidden character could split one between two non-ASCII characters: then every hidden character is live.
+ * The one rule of `maskNoteText`, `maskOutgoing` and `maskWork`.
+ */
+export function hiddenCanHide(s: string, values: readonly string[] = [], env?: Env): boolean {
+  return hiddenScan(s, values, env).live;
+}
+/**
+ * `hiddenCanHide` and what the scan cost: `runs`, the hidden runs it walked (a live text stops at the first reason, so `runs` is only
+ * meaningful when `live` is false). `convmask.maskWork` prices the scan per run (review of PR 1244, item 5: it runs once in `maskWork`
+ * and once in the mask, and a text of joined emoji has thousands of runs).
+ */
+export function hiddenScan(s: string, values: readonly string[] = [], env?: Env): { live: boolean; runs: number } {
+  const LIVE = { live: true, runs: 0 };
+  HIDDEN_ALL.lastIndex = 0;
+  let m = HIDDEN_ALL.exec(s);
+  if (!m) return { live: false, runs: 0 };
+  if (!values.every((v) => PLAIN_ASCII.test(v))) return LIVE;
+  // a rule's bounded window counts hidden characters too: always live. The head is read on the text as written and on the text without its
+  // Markdown marks (`maskCore` masks both: `pass**word**=`, `Coo**kie**:`, `https:**//**`, `api\_key=` are heads there; review of PR 1244, item 1)
+  if (LIVE_HEAD.test(s) || (NOTE_MARK.test(s) && LIVE_HEAD.test(withoutMarks(s).k))) return LIVE;
+  const e = snapshot(env);
+  for (const [, v] of SNAPSHOTS.get(e) ?? []) if (!PLAIN_ASCII.test(v)) return LIVE;
+  let runs = 0;
+  while (m) {
+    const a = m.index;
+    let b = a + m[0].length;
+    HIDDEN_ALL.lastIndex = b;
+    for (let n = HIDDEN_ALL.exec(s); n && n.index === b; n = HIDDEN_ALL.exec(s)) b = n.index + n[0].length; // the whole run
+    if (/\s/u.test(s.slice(a, b))) return LIVE; // a hidden character the rules read as a space (VT, FF, LS, PS, BOM) ends a value: live
+    const lo = a > 1 && s.charCodeAt(a - 1) >= 0xdc00 && s.charCodeAt(a - 1) <= 0xdfff && s.charCodeAt(a - 2) >= 0xd800 && s.charCodeAt(a - 2) <= 0xdbff ? a - 2 : a - 1;
+    const before = a > 0 ? s.codePointAt(lo) : undefined;
+    if (!isInertSide(before) || !isInertSide(b < s.length ? s.codePointAt(b) : undefined)) return LIVE;
+    runs++;
+    HIDDEN_ALL.lastIndex = b;
+    m = HIDDEN_ALL.exec(s);
+  }
+  return { live: false, runs };
 }
 /** For each character of `unhide(s)`, its index in `s` (plus a final entry, `s.length`). */
 function unhiddenIndex(s: string): Int32Array {
@@ -1841,14 +1917,14 @@ function maskCore(s: string, vals: readonly string[], env: Env): string {
  * through. Known values under 4 characters are skipped, longest first. Mask first, cut after (the caller): a secret across the cut
  * would leave a head. `changed` says whether anything was masked. Linear: a fixed number of passes.
  */
-function maskKeepingMarkdown(text: unknown, values: readonly string[]): { text: string; changed: boolean } {
+function maskKeepingMarkdown(text: unknown, values: readonly string[], alwaysCopy = false): { text: string; changed: boolean } {
   const original = typeof text === 'string' ? text : text == null ? '' : String(text);
   // longest first only for a stable order: the values are spans of one union, so a shorter value inside a longer one cannot leave a piece
   const vals = [...new Set(values.filter((v) => typeof v === 'string' && v.length >= 4))].sort((a, b) => b.length - a.length);
   const env = snapshot(); // the environment's secrets read once for every pass of this call, not once per pass
   let out = maskCore(original, vals, env);
   const c = unhide(original);
-  if (c !== original) {
+  if (c !== original && (alwaysCopy || hiddenCanHide(original, vals, env))) {
     const copy = maskCore(c, vals, env);
     if (copy !== c) {
       const at = unhiddenIndex(original);
@@ -1858,6 +1934,11 @@ function maskKeepingMarkdown(text: unknown, values: readonly string[]): { text: 
     }
   }
   return { text: out, changed: out !== original };
+}
+
+/** Test reference only (spec 095 T065): the masks as they were before an inert hidden character skipped the copy pass, the copy always read. The differential fuzz in `scripts/test-maskoutgoing.ts` compares against it. */
+export function maskKeepingMarkdownReference(text: unknown, values: readonly string[] = []): { text: string; changed: boolean } {
+  return maskKeepingMarkdown(text, values, true);
 }
 
 /** Spec 083 FR-005 (D3): the mask every note passes before it is stored; `changed` is the note's `hidden`. See `maskKeepingMarkdown`. */

@@ -28,7 +28,7 @@ A hall of arcade cabinets, drawn **in code** (`scripts/build-arcade-pack.py`, fr
 - approved by: Vikram, 2026-11-01 (the mockup's look)
 - reference: the mockup
 - prompt: none, drawn in code
-- cut: as room-day; not listed in `lightSets` yet because its `welcome-night` part is not drawn (spec 102 FR-252: all three or none)
+- cut: as room-day; night only, one dark set (owner 2026-11-03, spec 102: no light choice, so no `lightSets`); its `welcome-night` part is not drawn (the world's `welcome` part is T206)
 - licence: MIT
 
 ### cabinets
