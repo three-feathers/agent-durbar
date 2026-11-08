@@ -63,7 +63,8 @@ module.exports = async (ctx) => {
     assert.strictEqual(note, line, `${tag}: the line under Office layout: ${JSON.stringify(note)}`);
     /* Settings showed the crew's portraits as swatches; from here on only the office's own requests count */
     await js(`performance.clearResourceTimings();window.__durbarSimUi.render();true`);
-    await must(`document.querySelector('#stage .ro .ro-plate')&&${PICS}&&document.querySelector('#stage .ro').dataset.set===${jsLiteral(set)}`, `${tag}: the pictures`);
+    await must(`document.querySelector('#stage .ro .ro-plate')&&document.querySelector('#stage .ro').dataset.set===${jsLiteral(set)}`, `${tag}: the room draws ${set}`);
+    await must(PICS, `${tag}: the pictures`);
     assert.strictEqual(await js(`window.THEME.characters()`), value, `${tag}: the choice is kept`);
     const r = await js(`(()=>{const ro=document.querySelector('#stage .ro'),pics=[...document.querySelectorAll('#stage .ro-person,#stage .ro-visitor')].filter(i=>i.tagName==='IMG'),
       res=[...performance.getEntriesByType('resource').map(e=>e.name),...[...document.querySelectorAll('script[src],link[href],img[src],image')].map(e=>e.getAttribute('src')||e.getAttribute('href'))],
