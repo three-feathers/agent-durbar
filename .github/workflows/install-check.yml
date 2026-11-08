@@ -60,7 +60,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - uses: ./.github/actions/npm-ci
       - run: npx tsc -p tsconfig.scripts.json
 
       # ---- 1. a standard user without admin rights ----
