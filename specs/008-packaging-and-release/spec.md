@@ -146,6 +146,12 @@ Retired spec numbers, never to be reused for a new spec (`specs:check` and `--ad
 
 ## Changes
 
+### 2026-11-08: three flaky UI checks fixed at the cause (issues #1301, #1302, #1208; FR-184, T136)
+
+*Why:* `check-097-chat-contrast` (#1301, Linux CI at 1440x900), `check-office-ops` "every status update is one render" (#1302) and its calibration trace (#1208) fail now and then on Linux under load and hide every row after them. FR-096 and FR-030 apply: find the cause, wait for a real condition, never raise a limit, add a retry or weaken an assert.
+
+- **FR-184** `[KNOWN GAP]` (T136) **A flaky driver is fixed at its cause, and its check still fails on the real fault.** The causes and fixes are recorded in T136 once measured under load (a busy-loop on 4 cores, before and after pass counts). Each fix is shown with a mutant that dies on the assert it is labelled with.
+
 ### 2026-11-07: the clip's default scenes follow the release; four v0.1.12 scenes (owner, v0.1.12 clip)
 
 *Why:* the v0.1.12 clip showed v0.1.11's changes: `DEFAULT_SCENES` was a fixed list that had to be edited by hand every release, and nobody did. The catalogue had no scene for v0.1.12's changes either.

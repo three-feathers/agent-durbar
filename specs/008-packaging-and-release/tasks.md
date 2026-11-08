@@ -174,3 +174,4 @@
 ## 2026-11-07: the macOS nightly UI checks in three shards (issue #839; FR-182)
 
 - [x] T134 Issue #839 (FR-182, owner decision 2026-11-07): `ui-suite --shard i/n` / `UI_SUITE_SHARD`, bare `--shard` and an empty shard refused; tested in `test:uisuite` (incl. `main()` and the workflow matrix); `ui-platforms.yml` runs macOS as three shards (geometry in every shard, office layout and title bar in shard 1, artifacts per shard), 45 minutes for every job
+- [ ] T136 (2026-11-08, issues #1301, #1302, #1208; FR-184): `check-097-chat-contrast`, `check-office-ops` status renders and calibration trace fixed at the cause, each proved under a CPU load (before and after pass counts) and by a mutant killed by its labelled assert
