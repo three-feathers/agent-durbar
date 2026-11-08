@@ -8,19 +8,76 @@
 
 <p align="center"><a href="#build-cost-so-far"><img src="docs/build-cost-badge.svg" alt="Build cost, about US$3,758 at API list prices (estimate, not billing)"></a></p>
 
-Agent Durbar is an office-style desktop app to **see, chat with and coordinate AI agents across several agent apps (harnesses)**: GitHub Copilot, Claude Code and OpenAI Codex. It is for **anyone who works with agents**, not only developers. A room is any folder an agent works in: code, documents, research or notes.
+When you run many agent sessions across several windows, you end up watching your digital agents instead of working. Agent Durbar puts them in one office and shows you only the ones that need you. It is for anyone who works with agents, not only developers: a room is any folder an agent works in.
 
-**Website:** <https://three-feathers.github.io/agent-durbar/>
+**[Download the latest for macOS, Windows or Linux](https://github.com/three-feathers/agent-durbar/releases/latest)** (unsigned, see [Install](#install)) · [Website](https://three-feathers.github.io/agent-durbar/)
 
-> **Status: first stable release.**
-> - The newest release is [`v0.1.11`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.11) (2026-11-06), after [`v0.1.10`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.10) (2026-11-05), [`v0.1.9`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.9) (2026-11-04), [`v0.1.8`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.8) (2026-11-03), [`v0.1.7`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.7) (2026-11-03), [`v0.1.6`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.6) (2026-11-02), [`v0.1.5`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.5) (2026-11-01), [`v0.1.4`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.4) (2026-10-31), [`v0.1.3`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.3) (2026-10-30), [`v0.1.2`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.2) (2026-10-29), [`v0.1.1`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.1) (2026-10-28) and [`v0.1.0`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0), the first stable one (2026-10-26). It is unsigned and not notarized, like every build so far; the known limits are in [docs/limits.md](docs/limits.md) and in the Settings.
-> - What changed in each release is in the [CHANGELOG](CHANGELOG.md).
-> - **Where it has been run:** Linux by hand every day; macOS by hand on two Macs (macOS 26, Apple Silicon); Windows by hand on one real PC, once (2026-10-21), with findings filed. CI builds and starts the packaged app and runs the UI checks on Linux, macOS and Windows. The detail, with the real-account runs, is in [docs/limits.md](docs/limits.md#where-it-has-been-run).
-> - Built by [Three Feathers](https://github.com/three-feathers), tracked on the [project board](https://github.com/orgs/three-feathers/projects/1).
+![The Real office: 15 agents at their desks, the ones that need you marked](docs/screenshots/readme-real-office-1440x900.jpg)
 
-![15 simulated agents at 1440x900](docs/screenshots/m5-sim15-1440x900-closed.png)
+**Works with:** GitHub Copilot, Claude Code and OpenAI Codex ([agent apps](docs/harnesses.md)). **Not yet:** signed builds (your OS warns the first time), auto-update, and Windows tried by hand only once; the spending limit is soft ([known limits](docs/limits.md)).
 
-> **Disclaimer.** Agent Durbar is an independent community project. It is **not affiliated with, endorsed by or sponsored by GitHub, Microsoft, Anthropic or OpenAI**. "GitHub Copilot", "Visual Studio Code", "Claude" and "Codex" are trademarks of their owners. Durbar only drives the tools you installed yourself, on your own machine.
+> **Status:** first stable release, latest [`v0.1.12`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.12), unsigned. What changed: [CHANGELOG](CHANGELOG.md).
+
+## What it does
+
+- **An office, not a log:** every agent is a person at a desk in its folder's room; you see who is working, waiting for you or in trouble.
+- **Needs you:** one inbox of every agent waiting for an answer or a permission, oldest first.
+- **Full-screen chat** with tool calls, diffs, questions and files, and the other agents always in view.
+- **Three agent apps side by side:** Copilot, Claude Code and Codex, with the same permission modes and spending controls.
+- **Sessions that last:** resume after a restart, scheduled prompts, undo file changes, notes.
+- **MCP servers** shared across your agent apps, with health, sign-in and what each costs in context.
+- **Three looks:** the Real office (shown here), the flat Clean Office (the default) and Retro Pixel.
+
+![The Needs you inbox over the Real office: permission requests and an error](docs/screenshots/readme-real-inbox-1440x900.jpg)
+
+![Full-screen chat with the other agents in the rail on its left](docs/screenshots/m6-fullchat-sim15-1280x800.png)
+
+Every feature, with its limits: [docs/features.md](docs/features.md).
+
+## Install
+
+Download the build for your system from the [Releases page](https://github.com/three-feathers/agent-durbar/releases) (macOS `.dmg`, Windows `.exe`, Linux `.AppImage`) and check it against `SHA256SUMS.txt`. There is no auto-update. You also need at least one agent app (Copilot, Claude Code or Codex); **Settings > Agent apps** can install it for you.
+
+**The builds are not code-signed** (certificates cost money), so your OS warns you the first time. Only open files from this repository's Releases page.
+- **macOS:** right-click the app and choose **Open**, or allow it in System Settings > Privacy & Security.
+- **Windows:** on "Windows protected your PC", click **More info**, then **Run anyway**.
+- **Linux:** run `chmod +x Agent-Durbar-*.AppImage && ./Agent-Durbar-*.AppImage` (it needs FUSE 2, see the details).
+
+Every file, the Windows and Mac notes, verifying a download and the requirements: [docs/install.md](docs/install.md).
+
+## Safety model
+
+**Everything runs locally as you; Durbar has no accounts, servers or telemetry and never sees your tokens; agents start Read-only.** Every agent has one of three permission modes, named the same for every agent app:
+
+- **Read-only** (the default): reads inside the session's folders only; everything else is denied.
+- **Ask first**: writes, shell commands, URLs and tools wait for *Allow once*, *Allow for this session* or *Deny*.
+- **Allow all**: no prompts. Use it only in folders you trust; it asks once to confirm.
+
+Usage bills against **your** plans; a per-session spending limit is a soft limit. Details and spending caps: [docs/safety.md](docs/safety.md). Report a problem: [SECURITY.md](SECURITY.md).
+
+## Quick start
+
+1. Install an agent app and sign in to it, then start Agent Durbar.
+2. **+ Folder** (Ctrl+O) adds a folder as a room; pick the agent app and keep **Read-only** until you trust the folder.
+3. Click an agent to chat. Press **I** for everyone waiting for you, **Ctrl+K** for the command palette, **?** for all shortcuts.
+
+No agent app yet? From a clone: `npm ci && DURBAR_SIM=15 npm start` starts the app with 15 agents, no sessions and no AI credits.
+
+## Contributing
+
+Try it and tell us what confuses you or breaks, as an [issue](https://github.com/three-feathers/agent-durbar/issues). To build it:
+
+```bash
+npm ci
+npm run typecheck && npm run build && npm test
+npm start
+```
+
+How we work (spec-driven, with [GitHub Spec Kit](https://github.com/github/spec-kit)): [CONTRIBUTING.md](CONTRIBUTING.md), [docs/development.md](docs/development.md).
+
+## More documentation
+
+[Features](docs/features.md) · [Agent apps](docs/harnesses.md) · [Install](docs/install.md) · [Safety and costs](docs/safety.md) · [Themes](docs/themes.md) · [Known limits](docs/limits.md) · [Development](docs/development.md) · [Credits](docs/credits.md) · [CHANGELOG](CHANGELOG.md)
 
 <!-- build-cost:begin (written by `npm run usage:readme`; method in docs/build-cost.md) -->
 ## Build cost so far
@@ -38,73 +95,8 @@ Estimated, not measured: US$3,666 of the total, spent before telemetry could cou
 - Not counted yet: work before 2026-10-25, and other machines and teams (a Mac, Copilot, Codex, the other two owners' setups).
 <!-- build-cost:end -->
 
-## What it does
-
-- **An office, not a log:** every agent is a person at a desk in its folder's room; you see at a glance who is working, waiting for you or in trouble. 15 agents fit one screen. Drag a room, a desk or a lobby place to put them in your order (or Alt+arrows; Alt+Shift+arrows moves the room); the order is saved and the layout stays automatic.
-- **Full-screen chat** with thinking, tool calls, diffs, questions and file attachments streaming live; a browser tab in every chat. A rail on its left keeps every agent in view by folder, whoever needs you first; a folder collapses with a click.
-- **Three agent apps side by side:** Copilot, Claude Code and Codex, with one set of permission modes and model, context and spending controls.
-- **Needs you:** one inbox of every agent waiting for an answer or a permission, oldest first.
-- **Sessions that last:** resume after a restart or a crash, scheduled prompts, undo an agent's file changes, notes, continue in another app.
-- **MCP servers** shared across your agent apps, with health (checked at launch too), sign-in and restart from a chat or Settings, sign-ins the agent app renews by itself before a message after a quiet hour (on by default; Durbar never sees a token), per-tool switches and what each costs in context. When your organization's sign-in rules (Entra Conditional Access, for example a managed-device check) refuse a tool, the chat says so under the failed call and offers Sign in again….
-- **Two themes** (Clean Office and Retro Pixel), and your own saved themes; **four logos** to choose in Settings (the top-bar icon takes your theme's or world's colours; the app's own icon stays the same).
-
-![Full-screen chat with the other agents in the rail on its left, 1280x800](docs/screenshots/m6-fullchat-sim15-1280x800.png)
-
-Every feature, with its limits: [docs/features.md](docs/features.md).
-
-## Install
-
-Download the build for your system from the [Releases page](https://github.com/three-feathers/agent-durbar/releases) (macOS `.dmg`, Windows `.exe`, Linux `.AppImage`) and check it against `SHA256SUMS.txt`. There is no auto-update. You also need at least one agent app (Copilot, Claude Code or Codex); **Settings > Agent apps** can install it for you.
-
-**The builds are not code-signed** (certificates cost money), so your OS warns you the first time. Only open files from this repository's Releases page.
-- **macOS:** right-click the app and choose **Open**, or allow it in System Settings > Privacy & Security.
-- **Windows:** on "Windows protected your PC", click **More info**, then **Run anyway**.
-- **Linux:** run `chmod +x Agent-Durbar-*.AppImage && ./Agent-Durbar-*.AppImage` (it needs FUSE 2, see the details).
-
-Every file, the Windows and Mac notes, verifying a download and the requirements: [docs/install.md](docs/install.md).
-
-## Safety model
-
-Agents run **locally, on your machine, as you**, in the folders you add. Every agent has a permission mode, named the same for every harness:
-
-- **Read-only** (the default): reads inside the session's folders only; everything else is denied.
-- **Ask first**: writes, shell commands, URLs and tools wait for *Allow once*, *Allow for this session* or *Deny*.
-- **Allow all**: no prompts. Use it only in folders you trust; it asks once to confirm.
-
-Durbar never sees, stores or sends your tokens (each agent app reads its own sign-in) and has no accounts, servers or telemetry. It may ask Copilot or Claude Code to reconnect a chat's remote MCP servers before a message after a quiet hour, so the app renews its own sign-in; in Copilot's sandboxed modes (Read-only, Ask first) it only says when you need to sign in again (switch: *Settings > MCP servers*). Usage bills against **your** plans; a per-session spending limit is a soft limit. Details and spending caps: [docs/safety.md](docs/safety.md). Report a problem: [SECURITY.md](SECURITY.md).
-
-## Quick start
-
-1. Install an agent app and sign in to it, then start Agent Durbar.
-2. **+ Folder** (Ctrl+O) adds a folder as a room; pick the agent app and keep **Read-only** until you trust the folder.
-3. Click an agent to chat. Press **I** (or Ctrl+Shift+A) for everyone waiting for you, **Ctrl+K** for the command palette, **?** for all shortcuts.
-
-No agent app yet, or just curious? `DURBAR_SIM=15 npm start` from source shows 15 simulated agents: no sessions, no AI credits.
-
-## Development
-
-```bash
-npm ci
-npm run typecheck && npm run build && npm test
-npm start                 # the app; DURBAR_SIM=15 npm start for 15 simulated agents, no AI credits
-```
-
-What the agents spend to build the app (tokens per model, list-price dollars; contributors can add their own machine): [docs/build-cost.md](docs/build-cost.md). All `npm run` commands, the repository layout and how we work (spec-driven with [GitHub Spec Kit](https://github.com/github/spec-kit): no code without a spec, a plan and tasks): [docs/development.md](docs/development.md), [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md).
-
-## More documentation
-
-- [Features](docs/features.md) · [Agent apps](docs/harnesses.md) · [Install](docs/install.md) · [Safety and costs](docs/safety.md) · [Themes](docs/themes.md)
-- [Known limits and roadmap](docs/limits.md) · [Development](docs/development.md)
-- [Specs](specs/README.md) · [Constitution](.specify/memory/constitution.md) · [Collaboration](docs/collaboration.md) · [CHANGELOG](CHANGELOG.md)
-
 ## License and credits
 
-[MIT](LICENSE), Copyright (c) 2026 Three Feathers contributors.
+[MIT](LICENSE), Copyright (c) 2026 Three Feathers contributors. Agent Durbar is by **Three Feathers**; key contributors: [vikramgorla](https://github.com/vikramgorla), [fjcabello](https://github.com/fjcabello) and [rubenlupi](https://github.com/rubenlupi) (GitHub handles are used as the names). The art and who made it: [docs/credits.md](docs/credits.md).
 
-Agent Durbar is by **Three Feathers**. Key contributors: [vikramgorla](https://github.com/vikramgorla), [fjcabello](https://github.com/fjcabello) and [rubenlupi](https://github.com/rubenlupi) (GitHub handles are used as the names). The names live in [`src/shared/about.ts`](src/shared/about.ts) and are shown in the OS About panel and in Settings > About.
-
-The Cheeky, Prehistoric, Pirate, Monster, Royal and Animal Rebels Crew pictures (`src/renderer/crew/art/`) were made by Paco with ChatGPT image generation, and Paco did the final pass; [`ASSETS.md`](src/renderer/crew/art/ASSETS.md) gives the tool and date of each (spec 077). The app id is `io.github.three-feathers.agentdurbar` since 2026-10-16; a build from before then is a separate app to the OS.
-
-The Real office pictures (`src/renderer/realoffice/worlds/photo/` for the room, `src/renderer/realoffice/sets/office/` for the people) were made with Codex image generation on Vikram's plan and approved by Vikram, MIT like the code; the `ASSETS.md` in each folder ([room](src/renderer/realoffice/worlds/photo/ASSETS.md), [people](src/renderer/realoffice/sets/office/ASSETS.md)) gives each sheet's tool, date and prompt (spec 097). A world and a set of people are separate packs that load only when shown (the Photo office with the Office people: 6.1 MB; a second world with its people: 1.8 MB, in the app but off by default behind a switch until the owner opens it). That world's pictures were made with Codex image generation on Vikram's plan and approved by Paco ([room](src/renderer/realoffice/worlds/cave/ASSETS.md), [people](src/renderer/realoffice/sets/prehistoric/ASSETS.md)).
-
-See also [SECURITY.md](SECURITY.md), [CONTRIBUTING.md](CONTRIBUTING.md) and the [CHANGELOG](CHANGELOG.md).
+Agent Durbar is an independent community project, **not affiliated with, endorsed by or sponsored by GitHub, Microsoft, Anthropic or OpenAI**. "GitHub Copilot", "Visual Studio Code", "Claude" and "Codex" are trademarks of their owners; Durbar only drives the tools you installed yourself, on your own machine.
