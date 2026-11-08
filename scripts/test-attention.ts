@@ -131,8 +131,9 @@ type ArrItem = { key: string; id: string; kind: string; card?: boolean };
 type Arrivals = { observe: (items: ArrItem[], f: { armed?: boolean; isPaused?: (id: string) => boolean }) => { fresh: ArrItem[]; startup: boolean } };
 type Gate = {
   arrive: (n: number) => void; startup: () => void; dismissed: () => void;
-  ruling: (s: { open: boolean; held: boolean }) => 'open' | 'startup' | 'hold' | 'none';
+  ruling: (s: { open: boolean; held: boolean; waiting?: number; any?: number }) => 'open' | 'startup' | 'hold' | 'none';
   waitMs: () => number;
+  isPending: () => boolean;
 };
 const AA = A as unknown as {
   createArrivals: (o?: { now?: () => number; throttleMs?: number }) => Arrivals;
@@ -230,12 +231,39 @@ const AA = A as unknown as {
   assert.strictEqual(g.ruling({ open: false, held: false }), 'open', 'the held opening is kept through the throttle and opens at the next look');
   assert.strictEqual(g.ruling({ open: false, held: false }), 'none', 'once, for everything held');
   assert.strictEqual(g.waitMs(), 0, 'and nothing is left to wait for');
+  // asks answered elsewhere before the opening open nothing (round 6): the throttle ends with nothing waiting
+  t += A.THROTTLE_MS + 1; g.arrive(1); assert.strictEqual(g.ruling({ open: false, held: false, waiting: 1, any: 1 }), 'open');
+  t += 200; g.arrive(1); assert.strictEqual(g.ruling({ open: false, held: false, waiting: 1, any: 2 }), 'none', 'throttled, kept');
+  assert.strictEqual(g.isPending(), true);
+  t += A.THROTTLE_MS + 1; assert.strictEqual(g.ruling({ open: false, held: false, waiting: 0, any: 1 }), 'none', 'the new ask was answered elsewhere: nothing to open for');
+  assert.strictEqual(g.isPending(), false, 'and nothing is kept');
+  t += A.THROTTLE_MS + 1; assert.strictEqual(g.ruling({ open: false, held: false, waiting: 0, any: 1 }), 'none');
+  g.startup(); assert.strictEqual(g.ruling({ open: false, held: false, any: 0 }), 'none', 'app start with nobody waiting any more opens nothing');
+  // a request within COALESCE_MS of a dismissal is dropped, not kept for later (round 6)
+  t += A.THROTTLE_MS + 1; g.dismissed(); t += 100; g.arrive(1);
+  assert.strictEqual(g.ruling({ open: false, held: false, waiting: 1, any: 1 }), 'none', 'right after a dismissal: not opened');
+  assert.strictEqual(g.isPending(), false, 'and not kept for later');
+  t += A.COALESCE_MS + A.THROTTLE_MS + 1; assert.strictEqual(g.ruling({ open: false, held: false, waiting: 1, any: 1 }), 'none', 'past both windows nothing comes back');
   // requests that arrive while the panel is open are seen there: a later close that is not a dismissal does not reopen it for them
   t += A.THROTTLE_MS + 1; g.arrive(2);
   assert.strictEqual(g.ruling({ open: true, held: false }), 'none', 'open: the arrivals are seen');
   assert.strictEqual(g.ruling({ open: false, held: false }), 'none', 'pending is cleared while the panel is open: a close that is not a dismissal does not reopen it');
   g.startup(); assert.strictEqual(g.ruling({ open: true, held: false }), 'none', 'open: the app-start opening is seen too');
   assert.strictEqual(g.ruling({ open: false, held: false }), 'none', 'the app-start flag is cleared while the panel is open');
+}
+
+// the default clock never goes back (round 6): a wall-clock jump back must not stop automatic openings
+{
+  const AAx = AA as unknown as { createDoorGate: (o?: object) => { arrive: (n: number) => void; ruling: (s: { open: boolean; held: boolean }) => string } };
+  const realNow = Date.now; const realPerf = performance.now.bind(performance);
+  let wall = 1_700_000_000_000, mono = 5000;
+  Date.now = () => wall; (performance as unknown as { now: () => number }).now = () => mono;
+  try {
+    const g2 = AAx.createDoorGate();
+    g2.arrive(1); assert.strictEqual(g2.ruling({ open: false, held: false }), 'open', 'first opening');
+    mono += A.THROTTLE_MS + 5; wall -= 3_600_000; // time passes; the wall clock is set back an hour
+    g2.arrive(1); assert.strictEqual(g2.ruling({ open: false, held: false }), 'open', 'after the throttle a new ask opens it even though the wall clock went back');
+  } finally { Date.now = realNow; (performance as unknown as { now: () => number }).now = realPerf; }
 }
 
 // wiring: the page loads the helper and the build copies it
