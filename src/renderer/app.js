@@ -4164,7 +4164,7 @@ function renderInboxBtn(){
   if(DOOR_ON)doorSync(list);
   b.hidden=!agents.length; b.classList.toggle('attn',n>0);
   rollCount(b.querySelector('b'),n);
-  if(DOOR_ON){b.setAttribute('aria-controls','needsPanel');b.setAttribute('aria-expanded',$('needsPanel')?'true':'false');}
+  if(DOOR_ON){const pn=$('needsPanel');if(pn)b.setAttribute('aria-controls','needsPanel');else b.removeAttribute('aria-controls');b.setAttribute('aria-expanded',pn?'true':'false');}
   b.setAttribute('aria-label',n?n+(n===1?' agent needs':' agents need')+' you. Open the inbox (I or '+INBOX_KEY+').':'Nobody needs you. Open the inbox (I or '+INBOX_KEY+').');
 }
 /* spec 044 FR-027..FR-029, FR-033 (issue 523): the Schedules button left of Needs you. The facts and the words are in schedtop.js (unit-tested). */
@@ -4284,14 +4284,22 @@ function doorSync(list){
   if(d==='open'||d==='startup'){openDoor(null,true,d==='startup',list.length);return;}
   const p=$('needsPanel'); if(p){doorPlace(p);if(p.dataset.sig!==doorSig(list))doorRepaint();}
 }
+let DOOR_NOACT=null; /* the heading a repaint put focus on: A, S, D, O and Enter do nothing there until focus moves */
 function doorRepaint(){
   const p=$('needsPanel'),body=$('inboxBody'); if(!p||!body)return;
   if(p.querySelector('.inbox-row.settled,.inbox-row[data-answering]'))return; /* an answer is folding away: its own timer repaints */
   const ae=document.activeElement, row=ae&&p.contains(ae)?ae.closest('.inbox-row'):null, id=row&&row.dataset.id, k=ae&&ae.dataset?ae.dataset.k:'', head=!!ae&&ae.classList&&ae.classList.contains('ib-h');
   const idx=row?[...p.querySelectorAll('.inbox-row')].indexOf(row):-1;
+  const rq0=row?row.dataset.rq||'':'';
   paintInbox(null);
-  if(row&&(head||k)){const rs=[...p.querySelectorAll('.inbox-row')], r=rs.find(x=>x.dataset.id===id)||rs[Math.min(idx,rs.length-1)];
-    const t=r&&((k&&r.querySelector('[data-k="'+k+'"]'))||r.querySelector('.ib-h'));focusIn(t||$('inboxClose'));} /* a row that left: the next heading, never body */
+  if(row&&(head||k)){
+    const rs=[...p.querySelectorAll('.inbox-row')], same=rs.find(x=>x.dataset.id===id&&(x.dataset.rq||'')===rq0);
+    /* FR-033: the person's own row, still holding the same request, keeps what they had; anything else (the row left, or its request was replaced) lands on a
+       heading, never a button, and the answer keys wait there until the person moves (DOOR_NOACT), so a repaint never lets A answer a request nobody read */
+    if(same){const t=(k&&same.querySelector('[data-k="'+k+'"]'))||same.querySelector('.ib-h');focusIn(t||$('inboxClose'));}
+    else{const r=rs.find(x=>x.dataset.id===id)||rs[Math.min(idx,rs.length-1)], h=r&&r.querySelector('.ib-h');
+      if(h){focusIn(h);DOOR_NOACT=h;announce('That request went away. Focus is on '+(r.dataset.name||'the next agent')+'. Move to a row before answering.');}else focusIn(p.querySelector('.inbox-empty')||$('inboxClose'));}
+  }
 }
 function doorAfterPaint(list){
   const p=$('needsPanel'); if(!p)return;
@@ -4317,16 +4325,17 @@ function openDoor(focusId,auto,startup,count){
     +'<div class="door-body" id="inboxBody"></div><p class="inbox-keys" id="inboxKeys">Keys: J/K move · A allow · S session · D deny · O open · spending limits: buttons only</p>';
   document.body.appendChild(p);doorPlace(p);
   p.addEventListener('keydown',inboxKey);
+  p.addEventListener('focusin',e=>{if(DOOR_NOACT&&e.target!==DOOR_NOACT)DOOR_NOACT=null;});
   $('inboxClose').onclick=()=>closeInbox(true);
   if(startup){const l=$('doorLater');l.hidden=false;l.onclick=()=>closeInbox(true);}
   const at=typeof focusId==='string'&&focusId!=='quiet'?needsMeOrder().findIndex(a=>a.id===focusId):-1;
   paintInbox(quiet?null:at>0?at:0); /* FR-192: opening by itself never touches focus, selection or scroll; on purpose it lands on a row's heading */
   inboxTick=setInterval(()=>{const b=$('inboxBody');if(!b){clearInterval(inboxTick);inboxTick=0;return;}b.querySelectorAll('.inbox-row[data-id]').forEach(r=>{const w=r.querySelector('.ib-wait'),t=NEED_SINCE.get(r.dataset.id);if(w&&t!=null)w.textContent='· '+ATT.waitLabel(Date.now()-t);});},30000);
   if(!document.hidden)motion(p,[{transform:'translateX(24px)',opacity:0},{transform:'none',opacity:1}],{duration:220,easing:'ease-out'}); /* FR-204: one slide, transform and opacity only; reduced motion and a hidden window: at once */
-  const b=$('inboxBtn');if(b)b.setAttribute('aria-expanded','true');
+  const b=$('inboxBtn');if(b){b.setAttribute('aria-expanded','true');b.setAttribute('aria-controls','needsPanel');}
   if(auto){const n=count||needsMeOrder().length;announce(startup?n+(n===1?' agent needs':' agents need')+' you. Needs you is open, with a Later button. Press I to go there.':'Needs you is open. '+n+(n===1?' agent needs':' agents need')+' you. Press I to go there.');}
 }
-function doorRemove(){DOOR_GUARD.close();clearInterval(inboxTick);inboxTick=0;clearTimeout(DOOR_CLEAR);DOOR_CLEAR=0;const p=$('needsPanel');if(p)p.remove();const b=$('inboxBtn');if(b)b.setAttribute('aria-expanded','false');}
+function doorRemove(){DOOR_GUARD.close();DOOR_NOACT=null;clearInterval(inboxTick);inboxTick=0;clearTimeout(DOOR_CLEAR);DOOR_CLEAR=0;const p=$('needsPanel');if(p)p.remove();const b=$('inboxBtn');if(b){b.setAttribute('aria-expanded','false');b.removeAttribute('aria-controls');}}
 /* FR-194: an automatic close never moves focus; the focus step runs only when focus was inside the panel */
 function closeDoor(dismiss){
   const p=$('needsPanel'); if(!p)return;
@@ -4376,6 +4385,7 @@ function inboxKey(e){
   if(k==='j'||e.key==='ArrowDown'){e.preventDefault();go(ri+1);return;}
   if(k==='k'||e.key==='ArrowUp'){e.preventDefault();go(ri<0?0:ri-1);return;}
   if(!row)return;
+  if(DOOR_NOACT&&document.activeElement===DOOR_NOACT&&(k==='a'||k==='s'||k==='d'||k==='o'||e.key==='Enter')){e.preventDefault();return;} /* focus was put here by a repaint, not by the person */
   const act=x=>{const b=row.querySelector(`[data-k="${x}"]`);if(b){e.preventDefault();b.click();}};
   if(row.classList.contains('settled')||row.dataset.answering)return; /* FR-208: a row being answered or answered takes no key (O or Enter during the fold would open its chat) */
   if(k==='a')act('approve');else if(k==='d')act('deny');else if(k==='s')act('session');
@@ -4404,7 +4414,7 @@ function paintInbox(focusIndex){
     const card=pendingCardOf(a), row=document.createElement('section');row.className='inbox-row';
     const door=DOOR_ON&&!!$('needsPanel'), rq=card?reqOf(card):'', isLimit=!!card&&card.classList.contains('limit'), isCoffee=door&&!!card&&card.classList.contains('coffee'); /* FR-206: the request this row was painted for; FR-207: a limit row has its own amount and no letter key */
     const st=vis(a), q=card&&card.classList.contains('question'), what=card?(q?'asks':card.classList.contains('limit')?'reached its spending limit':card.classList.contains('coffee')?'is on a '+coffeeWord().toLowerCase():'needs your OK'):(st==='error'?'has an error':a.limit?'reached its limit':LABELS[st]||st);
-    row.setAttribute('aria-labelledby','ibh'+i);row.dataset.id=a.id;if(door)row.dataset.rq=rq;if(door&&isLimit)row.classList.add('is-limit');
+    row.setAttribute('aria-labelledby','ibh'+i);row.dataset.id=a.id;row.dataset.name=a.name;if(door)row.dataset.rq=rq;if(door&&isLimit)row.classList.add('is-limit');
     row.innerHTML='<div class="ib-av" aria-hidden="true" data-face="'+esc(faceKey(a))+'">'+avatar(a)+'</div><div class="ib-main"><div class="ib-top"><h4 class="ib-h" id="ibh'+i+'" tabindex="-1"><b class="ib-n"></b> <span class="ib-sub"><span class="ib-w"></span> <span class="ib-f"></span> <span class="ib-wait"></span></span></h4></div><p class="ib-t" id="ibt'+i+'"></p><div class="ib-act"></div></div>';
     row.querySelector('.ib-h b').textContent=a.name;row.querySelector('.ib-h b').title=a.name;row.querySelector('.ib-w').textContent=what;row.querySelector('.ib-f').textContent='· '+roomOf(a).name;row.querySelector('.ib-f').title=roomOf(a).name; /* spec 052 FR-170: the name is its own line, the rest wraps below it */
     {const t=NEED_SINCE.get(a.id);row.querySelector('.ib-wait').textContent=t!=null?'· '+ATT.waitLabel(Date.now()-t):'';} /* FR-061 */
@@ -4439,7 +4449,9 @@ function paintInbox(focusIndex){
       const after=ok=>{const left=needsMeOrder().length;announce(!ok?'Could not answer. '+a.name+'.':stale?(waiting?'Still waiting for the answer. ':'Already answered. ')+a.name+'.':(shown?'Answered ':word+' ')+(shown||'')+(shown?' for ':'')+a.name+'. '+(left?left+' left.':'Nobody else needs you.'));renderInboxBtn();
         if(!row.isConnected){done();if(!door)paintInbox(i);return;} /* in the panel a row that is gone belongs to a list already rebuilt: never repaint the new one under an answer in flight */
         row.classList.add('settled');act.innerHTML='';const p=document.createElement('p');p.className='ib-done '+(!ok?'no':stale||k==='other'?'':k==='deny'?'no':'yes');p.textContent=!ok?'Could not answer':stale?(waiting?'Still waiting':'Already answered'):shown?'\u2713 '+shown:k==='deny'?'Denied':k==='other'?word:'\u2713 '+word;act.appendChild(p);
-        if(!ok){setTimeout(()=>{if(row.isConnected)paintInbox(i);},3000);return;} /* FR-200: the card is not settled: the row stays with the words and Open, then offers its buttons again */
+        if(!ok){setTimeout(()=>{if(!row.isConnected)return;if(!door){paintInbox(i);return;}
+          const inRow=row.contains(document.activeElement);paintInbox(inRow?i:null); /* FR-033: a row the person did not leave keeps their place only if it still holds the same request; else the heading is not theirs to answer from */
+          if(inRow){const h=document.activeElement,r=h&&h.closest&&h.closest('.inbox-row');if(r&&!(r.dataset.id===a.id&&(r.dataset.rq||'')===rq)){DOOR_NOACT=h;announce('That request went away. Focus is on '+(r.dataset.name||'the next agent')+'. Move to a row before answering.');}}},3000);return;} /* FR-200: the card is not settled: the row stays with the words and Open, then offers its buttons again */
         setTimeout(()=>{if(!row.isConnected)return door?0:paintInbox(i);if(reducedMotion())return paintInbox(i);
           row.classList.add('gone');setTimeout(()=>flipInbox(()=>paintInbox(i)),180);},600);};
       if(door&&!stale)doorSettled(a,rq,after);else setTimeout(()=>after(true),250);

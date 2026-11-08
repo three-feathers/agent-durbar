@@ -9,7 +9,7 @@
  *   OUT=$(mktemp -d) DURBAR_USER_DATA=$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 \
  *     DURBAR_DRIVER=$PWD/scripts/check-needs-panel.js xvfb-run -a npx electron . --no-sandbox
  *
- * The page is loaded with `door=1` (the flag). Mutation checks (listed in the PR): focus the first heading on an automatic open (step 1),
+ * The page is loaded with `door=1` (the flag). Mutation checks (listed in the PR and the 2026-11-08 delta): focus the first heading on an automatic open (step 1),
  * drop the arming at app start (9a), make the panel modal (aria-modal, step 1), drop the throttle or the dismissal rule (step 3), let Esc close
  * from a text field (step 8), give the panel a layout position (step 2); second slice: answer a stale press, drop the rise guard, drop the moved-under-pointer rule,
  * let a letter key press Raise limit, answer the agent's next card for a stale option, show the word without waiting for the card.
@@ -217,6 +217,31 @@ module.exports = async (ctx) => {
     assert.strictEqual(await js(`!!document.querySelector(${jsLiteral(row(N) + ' [data-k="open"]')})`), true, `${at}: with Open`);
     assert.ok(await until(`!!document.querySelector(${jsLiteral(row(N) + ' [data-k="opt"]')})`, 6000), `${at}: and then offers its options again`);
     await js(`window.__nosettle=false`);
+    await clear();
+
+    // ---- 6d (FR-033): the retry repaint after "Could not answer" must not leave the answer keys live on a row nobody read ----
+    const N2 = await ag(0), M2 = await ag(1);
+    await ask(N2, 'nr1-' + tag, 'Which one fails again?', ['One', 'Two']);
+    await ctx.sleep(150);
+    await perm(M2, 'nr2-' + tag, 'Run the one behind');
+    assert.ok(await until(`Number((document.querySelector('#inboxBtn b')||{}).textContent)===2`, 6000), `${at}: two wait`);
+    await open();
+    assert.ok(await armed(N2), `${at}: armed`);
+    await js(`window.__nosettle=true;window.__done=[];window.__perm=[]`);
+    await js(`document.querySelector(${jsLiteral(row(N2) + ' [data-k="opt"]')}).click()`);
+    assert.ok(await until(`window.__done.includes('Could not answer')`, 5000), `${at}: it says Could not answer`);
+    await js(`window.__nosettle=false`);
+    await emit({ sessionId: N2, type: 'status', status: 'working', intent: 'Working' }); await emit({ sessionId: N2, type: 'output', final: true, text: 'Done.' }); await emit({ sessionId: N2, type: 'status', status: 'idle' }); // its question goes away while the row shows the words
+    assert.ok(await until(`!document.querySelector(${jsLiteral(row(N2))})`, 8000), `${at}: the failed row left`);
+    const ae6 = await js(`(()=>{const a=document.activeElement,r=a&&a.closest&&a.closest('.inbox-row');return {tag:a?a.tagName:'',head:!!a&&a.classList.contains('ib-h'),row:r?r.dataset.id:''}})()`);
+    assert.ok(ae6.tag !== 'BUTTON', `${at}: focus is never on a button after the retry repaint ${JSON.stringify(ae6)}`);
+    if (ae6.row) {
+      assert.strictEqual(ae6.row, M2, `${at}: on the next row's heading`);
+      await js(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'a',bubbles:true,cancelable:true}))`);
+      await ctx.sleep(400);
+      assert.deepStrictEqual(await perms(), [], `${at}: A right after the retry repaint answers nothing (nobody read that request)`);
+    }
+    await clear();
   };
 
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
@@ -226,11 +251,12 @@ module.exports = async (ctx) => {
       // a page that watches every panel that is added, and every answer that reaches the bridge
       const load = async (door) => {
         await H.load({ w, h, query: Object.assign(view === 'real' ? { officeview: 'real' } : {}, door ? { door: '1' } : {}), ready: READY[view], settle: false, focus: true });
-        await js(`(()=>{window.__adds=0;window.__perm=[];window.__done=[];new MutationObserver(ms=>{for(const m of ms)for(const n of m.addedNodes){const d=n.nodeType===1&&(n.matches('.ib-done')?n:n.querySelector('.ib-done'));if(d)window.__done.push(d.textContent);}}).observe(document.body,{childList:true,subtree:true});new MutationObserver(ms=>{for(const m of ms)for(const n of m.addedNodes)if(n.id==='needsPanel')window.__adds++;}).observe(document.body,{childList:true});
+        await js(`(()=>{window.__adds=0;window.__perm=[];window.__ann=[];window.__done=[];new MutationObserver(ms=>{for(const m of ms)for(const n of m.addedNodes){const d=n.nodeType===1&&(n.matches('.ib-done')?n:n.querySelector('.ib-done'));if(d)window.__done.push(d.textContent);}}).observe(document.body,{childList:true,subtree:true});new MutationObserver(ms=>{for(const m of ms)for(const n of m.addedNodes)if(n.id==='needsPanel')window.__adds++;}).observe(document.body,{childList:true});
           const b=window.__durbarSimUi.bridge();if(!b.__w2){const p=b.resolvePermission;b.resolvePermission=function(id,rid,ok){window.__perm.push(rid+':'+ok);return p.apply(this,arguments)};b.__w2=1;}
           if(!b.__w3){window.__lim=[];window.__qa=[];b.resolveLimit=function(id,rid,c){window.__lim.push(JSON.stringify(c));return Promise.resolve({ok:true})};
             b.answerQuestion=function(id,rid,ans){window.__qa.push(rid+':'+JSON.stringify(ans));return Promise.resolve(window.__nosettle?{ok:false,error:'not now'}:{ok:true})}; /* the simulator's main side does not know a question the page was only told about, so the bridge says yes: only the page's use of it is under test */
-            b.__w3=1;}})()`);
+            b.__w3=1;}
+          const sr=document.getElementById('srAnnounce');if(sr&&!window.__annObs){window.__annObs=1;new MutationObserver(()=>window.__ann.push(sr.textContent)).observe(sr,{childList:true,characterData:true,subtree:true});}})()`);
       };
 
       // ---- the flag is off: the modal inbox, no panel, whatever waits ----
@@ -247,6 +273,7 @@ module.exports = async (ctx) => {
 
       // ---- 9a: app start (Q-NY-3) ----
       await load(true);
+      const quietIds = JSON.parse(await js(`JSON.stringify(window.__durbarSimUi.agents().filter(a=>!a.parent&&a.live&&a.state!=='waiting'&&a.state!=='error'&&a.state!=='needs-permission'&&!a.limit).map(a=>a.id))`)); // agents with no request of their own, for the steps at the end
       assert.ok(await until(`Number((document.querySelector('#inboxBtn b')||{}).textContent)>0`, 15000), `${at}: something waits in the simulator`);
       await js(`window.__ae0=document.activeElement===document.body?'body':document.activeElement.id||document.activeElement.tagName`);
       assert.ok(await until(`!!document.getElementById('needsPanel')`, 12000), `${at}: with requests waiting at arming the panel opens with the list`);
@@ -360,6 +387,7 @@ module.exports = async (ctx) => {
       const C = await js(`window.__durbarSimUi.agents().filter(a=>!a.parent&&a.live)[5].id`);
       await emit({ type: 'status', sessionId: C, status: 'needs-permission', intent: 'Waiting', permission: { requestId: 'np3-' + w, kind: 'shell', summary: 'Run the third', state: 'pending' } });
       assert.ok(await until(`!!document.getElementById('needsPanel')&&document.querySelectorAll('#needsPanel .inbox-row').length===3`, 6000), `${at}: a new request reopens it with all three`);
+      const tOpen3 = Date.now(); // the gate's throttle for the next automatic opening runs from here
       // opened by itself and emptied (Q-NY-13): All clear, then it goes, focus untouched
       await js(`document.getElementById('drvTxt').focus()`);
       await answerAll();
@@ -367,6 +395,114 @@ module.exports = async (ctx) => {
       assert.ok(await until(`!document.getElementById('needsPanel')`, 5000), `${at}: and slides away by itself`);
       assert.strictEqual(await js(`document.activeElement===document.getElementById('drvTxt')`), true, `${at}: an automatic close leaves focus alone`);
       await js(`document.getElementById('drvTxt').remove()`);
+
+      // ---- the new steps below open the panel on purpose (the amber button); the gate is not involved except in the last two ----
+      const ensureOpen = async () => { if (!(await panelOpen())) await js(`document.getElementById('inboxBtn').click()`); assert.ok(await until(`!!document.getElementById('needsPanel')`, 4000), `${at}: the panel is open`); };
+      const pend = [[A, 'np1-' + w], [B, 'np2-' + w], [C, 'np3-' + w]]; // cards the steps above left in their chats
+      const perm = (id, rid, summary) => (pend.push([id, rid]), emit({ type: 'status', sessionId: id, status: 'needs-permission', intent: 'Waiting', permission: { requestId: rid, kind: 'shell', summary, state: 'pending' } }));
+      assert.ok(quietIds.length >= 3, `${at}: three agents with no request of their own ${JSON.stringify(quietIds)}`);
+      const live = async (i) => quietIds[i];
+      const idle = async (id) => { await emit({ sessionId: id, type: 'status', status: 'working', intent: 'Working' }); await emit({ sessionId: id, type: 'output', final: true, text: 'Done.' }); await emit({ sessionId: id, type: 'status', status: 'idle' }); };
+      const aeInfo = () => js(`(()=>{const a=document.activeElement,r=a&&a.closest&&a.closest('.inbox-row');return {tag:a?a.tagName:'',head:!!a&&a.classList.contains('ib-h'),row:r?r.dataset.id:'',k:a&&a.dataset?a.dataset.k||'':''}})()`);
+      const clean = async () => { await answerAll(); while (pend.length) { const [id, rid] = pend.pop(); await emit({ type: 'permission', sessionId: id, permission: { requestId: rid, state: 'denied', via: 'stopped' } }); } assert.ok(await until(`Number((document.querySelector('#inboxBtn b')||{}).textContent)===0`, 8000), `${at}: nothing waits again`); await js(`(document.getElementById('inboxClose')||{click(){}}).click()`); await until(`!document.getElementById('needsPanel')`, 4000); await js(`window.__perm=[];window.__ann=[]`); };
+      await clean();
+
+      // ---- FR-033: a repaint never leaves focus on another agent's button, and A answers nothing nobody read (review of #1273, finding 1) ----
+      {
+        const [X, Y, Z] = [await live(0), await live(1), await live(2)];
+        await perm(X, 'fa1-' + w, 'Run the first'); await ctx.sleep(120); await perm(Y, 'fa2-' + w, 'Run the second'); await ctx.sleep(120); await perm(Z, 'fa3-' + w, 'Run the third');
+        assert.ok(await until(`Number((document.querySelector('#inboxBtn b')||{}).textContent)===3`, 6000), `${at}: three wait`);
+        await ensureOpen();
+        assert.ok(await until(`document.querySelectorAll('#needsPanel .inbox-row').length===3`, 4000), `${at}: three rows`);
+        await js(`window.__perm=[];document.querySelector('#needsPanel .inbox-row[data-id=${jsLiteral(X)}] [data-k="approve"]').focus()`);
+        assert.strictEqual((await aeInfo()).k, 'approve', `${at}: focus is on the first agent's Allow button`);
+        await idle(X); // its request goes away by itself
+        assert.ok(await until(`document.querySelectorAll('#needsPanel .inbox-row').length===2&&!document.querySelector('#needsPanel .inbox-row[data-id=${jsLiteral(X)}]')`, 6000), `${at}: the first row left`);
+        const f = await aeInfo();
+        assert.ok(f.head && f.tag !== 'BUTTON', `${at}: after the row left, focus is on a heading, never a button (FR-033) ${JSON.stringify(f)}`);
+        assert.strictEqual(f.row, Y, `${at}: on the next row's heading ${JSON.stringify(f)}`);
+        await key('a', [], { char: 'always' }); await ctx.sleep(500);
+        assert.deepStrictEqual(await js('window.__perm.slice()'), [], `${at}: A right after a repaint answers nothing (nobody read that request)`);
+        await key('j', [], { char: 'always' }); await key('k', [], { char: 'always' });
+        assert.strictEqual((await aeInfo()).row, Y, `${at}: the person moved (J, K) and is back on the row`);
+        await key('a', [], { char: 'always' });
+        assert.ok(await until(`window.__perm.length===1`, 3000), `${at}: after the person moves, A answers the row they are on`);
+        assert.deepStrictEqual(await js('window.__perm.slice()'), ['fa2-' + w + ':true'], `${at}: and it is that row's own request`);
+        await ctx.sleep(300);
+        assert.strictEqual(await js(`!document.body.classList.contains('panel-open')&&!!document.getElementById('needsPanel')`), true, `${at}: answering in the panel opens no chat and the panel stays (a row's buttons are not a click on its desk)`);
+        await clean();
+      }
+
+            // ---- FR-206 and FR-208 in the panel (review finding 2) ----
+      {
+        const W = await live(0);
+        await perm(W, 'st1-' + w, 'Run the stale one');
+        assert.ok(await until(`Number((document.querySelector('#inboxBtn b')||{}).textContent)===1`, 6000));
+        await ensureOpen();
+        assert.ok(await until(`!!document.querySelector('#needsPanel .inbox-row[data-id=${jsLiteral(W)}] [data-k="approve"]')`, 4000), `${at}: the row offers Allow`);
+        await js(`window.__perm=[];window.__ann=[];window.__rq1=document.querySelector('#needsPanel .inbox-row[data-id=${jsLiteral(W)}]').dataset.rq;window.__stale=document.querySelector('#needsPanel .inbox-row[data-id=${jsLiteral(W)}] [data-k="approve"]')`);
+        assert.ok(await until(`(document.querySelector('#needsPanel .inbox-row[data-id=${jsLiteral(W)}]')||{dataset:{}}).dataset.armed==='1'`, 3000), `${at}: the row is past its rise guard (FR-198), so the press below is a stale one and not a guarded one`);
+        await emit({ type: 'permission', sessionId: W, permission: { requestId: 'st1-' + w, state: 'denied', via: 'user' } }); // answered elsewhere
+        await perm(W, 'st2-' + w, 'Run the second one');
+        assert.ok(await until(`(document.querySelector('#needsPanel .inbox-row[data-id=${jsLiteral(W)}]')||{dataset:{}}).dataset.rq!==window.__rq1`, 6000), `${at}: the row now holds the second request`);
+        await js(`window.__stale.click()`);
+        assert.ok(await until(`window.__ann.some(t=>/^Already answered/.test(t))||window.__perm.length>0`, 3000), `${at}: the stale press ends`);
+        assert.deepStrictEqual(await js('window.__perm.slice()'), [], `${at}: a stale button in the panel sends nothing (its request was answered, the card now holds another)`);
+        assert.ok(await js(`window.__ann.some(t=>/^Already answered/.test(t))`), `${at}: and it is announced`);
+        // a held key answers nothing
+        await js(`document.querySelector('#needsPanel .inbox-row[data-id=${jsLiteral(W)}] .ib-h').focus()`);
+        for (const k of ['a', 's', 'd', 'Enter']) await js(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:${jsLiteral(k)},repeat:true,bubbles:true,cancelable:true}))`);
+        await ctx.sleep(300);
+        assert.deepStrictEqual(await js('window.__perm.slice()'), [], `${at}: a held A, S, D or Enter in the panel answers nothing`);
+        await clean();
+      }
+
+      // ---- FR-199: Open steps the panel aside, Back to the office returns it (review finding 6) ----
+      {
+        const X = await live(0);
+        await perm(X, 'sa1-' + w, 'Run it');
+        assert.ok(await until(`Number((document.querySelector('#inboxBtn b')||{}).textContent)===1`, 6000));
+        await ensureOpen();
+        assert.ok(await until(`!!document.querySelector('#needsPanel .inbox-row[data-id=${jsLiteral(X)}] [data-k="open"]')`, 4000));
+        await js(`document.querySelector('#needsPanel .inbox-row[data-id=${jsLiteral(X)}] [data-k="open"]').click()`);
+        assert.ok(await until(`document.body.classList.contains('panel-open')&&!document.getElementById('needsPanel')`, 4000), `${at}: Open shows the chat and the panel steps aside`);
+        assert.deepStrictEqual(await js(`[document.getElementById('inboxBtn').getAttribute('aria-controls'),document.getElementById('inboxBtn').getAttribute('aria-expanded')]`), [null, 'false'], `${at}: with no panel on screen the amber button controls nothing (no aria-controls to a missing element)`);
+        await js(`document.activeElement&&document.activeElement.blur&&document.activeElement.blur()`);
+        await key('Escape', [], { char: 'never' });
+        assert.ok(await until(`!document.body.classList.contains('panel-open')&&!!document.getElementById('needsPanel')`, 4000), `${at}: Back to the office returns the panel`);
+        await js(`document.getElementById('inboxClose').click()`); // dismissed: the next trip to a chat does not bring it back
+        assert.ok(await until(`!document.getElementById('needsPanel')`, 3000));
+        await clean();
+      }
+
+      // ---- FR-202, FR-203: it never opens over the key the person is on (review finding 4) ----
+      {
+        await ctx.sleep(Math.max(0, 10800 - (Date.now() - tOpen3))); // past the throttle of the last automatic opening
+        await ctx.sleep(2200); // past COALESCE_MS of the dismissal that ended the step before
+        await js(`(()=>{const i=document.createElement('input');i.id='drvUnder';i.style.cssText='position:fixed;right:24px;top:140px;width:160px;z-index:50';document.body.appendChild(i);i.focus();})()`);
+        const E1 = await live(0);
+        await perm(E1, 'ov1-' + w, 'Run under the panel');
+        await ctx.sleep(1800);
+        assert.strictEqual(await panelOpen(), false, `${at}: with focus under where the panel goes, a new request does not open it (FR-203)`);
+        await js(`document.getElementById('drvUnder').remove()`);
+        await idle(await live(1)); // any later change in the office gives the held opening its next look
+        assert.ok(await until(`!!document.getElementById('needsPanel')`, 8000), `${at}: once focus is elsewhere the held opening happens`);
+        const tOpenE = Date.now();
+        await clean();
+
+        // ---- the gate's dismissal rule, wired (review finding 3): a request within COALESCE_MS of Close does not snap the panel back ----
+        await ctx.sleep(Math.max(0, 10800 - (Date.now() - tOpenE)));
+        const D1 = await live(1), D2 = await live(2);
+        await ensureOpen();
+        await js(`document.getElementById('inboxClose').click()`); // dismissed by the person
+        await perm(D1, 'di1-' + w, 'Run right after Close');
+        await ctx.sleep(1200);
+        assert.strictEqual(await panelOpen(), false, `${at}: a new request within COALESCE_MS of a dismissal does not snap it back`);
+        await ctx.sleep(1500); // past COALESCE_MS
+        await perm(D2, 'di2-' + w, 'Run a while after Close');
+        assert.ok(await until(`!!document.getElementById('needsPanel')`, 6000), `${at}: after the coalescing window a new request reopens it`);
+        await clean();
+      }
       await door2(at, tag, w, view, load);
     }
   }
