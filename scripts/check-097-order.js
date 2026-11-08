@@ -174,7 +174,8 @@ module.exports = async (ctx) => {
       /* the visit record is the truth (a plate shows it a render later, which a loaded machine delays): read who is away from it, pin them by id, then wait for the plates to agree */
       const away1 = await js(`window.__durbarSimUi.awayIds()`);
       for (const id of away1) assert.ok(await js(`window.__durbarSimUi.pinAt(${jsLiteral(id)},'library')`), `${tag}: ${id} is pinned`);
-      await must(`${jsLiteral(away1.slice().sort().join())}===[...document.querySelectorAll('#stage .ro-plate.narrow[data-id]')].map(p=>p.dataset.id).sort().join()`, async () => `${tag}: the plates show the pinned away set (${away1.slice().sort()}; shown ${await js(`[...document.querySelectorAll('#stage .ro-plate.narrow[data-id]')].map(p=>p.dataset.id).sort()`)})`);
+      const narrowIds = `[...document.querySelectorAll('#stage .ro-plate.narrow[data-id]')].map(p=>p.dataset.id).sort()`;
+      await must(jsLiteral(away1.slice().sort().join()) + '===' + narrowIds + '.join()', async () => tag + ': the plates show the pinned away set (' + away1.slice().sort() + '; shown ' + await js(narrowIds) + ')');
       await walk(await plates(A), 'the away set the simulator made, pinned');
     }
     /* the case the simulator only sometimes makes, made every time: the first two desks of the room stand away at a place, so the first desk that can move has an away desk before it (it swaps past them, and says already first only at the front of the whole room) */
