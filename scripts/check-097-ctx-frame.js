@@ -4,16 +4,23 @@
  * an until(), every page value goes through jsLiteral.
  *
  *   npm run check:ui -- --only check-097-ctx-frame      (builds first)
- *   CTX_MUTANT=colour|glass|node|unknown   a warn desk's line drawn amber / the line moved onto the glass / a node added by every context update / a line for an
- *                                          unknown context (each must fail)
+ *   CTX_MUTANT=colour|glass|node|rebuild|unknown   a warn desk's line drawn amber / the line moved onto the glass / a node added to the desk's plate by every
+ *                                          context update / the desk's line re-created (a new svg) by every context update / a line for an unknown context (each must fail)
+ *   Source mutants of the cheap path (edit src/renderer, `npm run build`, run, `git checkout -- <file>`, rebuild; each must fail the cheap step, review of #1299):
+ *     push        delete the realCtxPush(a) call after STATS.setContext in the 'context' branch of the event handler (app.js)  -> "a context event reaches the line and the name without a draw"
+ *     compaction  delete the realCtxPush(a) call in onCompaction (app.js)                                                     -> "a finished compaction reaches the line and the name without a draw"
+ *     noop        make ctx() in realoffice.js return false at once                                                          -> both of the above
  *   SHOTS_OUT=<dir>                        also saves ctx-<world>-<w>x<h>.png (15 agents, every band) and ctx-<world>-crop-<w>x<h>.png (the three desks, 2x)
  *
  * At 15 agents, 1440x900 and 1280x800, each world, with the context seeded across the bands (4 % .. 100 %) and two agents unknown, it fails (exit 1) when:
  *   - an agent with a context has no line, or its band (data-lv), dash (the share of the outline) or computed stroke is not the band's token
- *     (ok below 70 % and warn 70..90 % soft white --tint-ink, high above 90 % red; owner 2026-11-07 21:01 UTC); the line is not aria-hidden; the plate's name lacks ", context N %";
- *   - a line's ring crosses the glass or the screen's text box, or lies inside the glass element; the glass tint is not the state's (not drawn on);
+ *     (ok below 70 % and warn 70..90 % soft white --tint-ink, high above 90 % red; owner 2026-11-07 21:01 UTC; the dash is exactly the share, no tolerance); the line is not aria-hidden; the plate's name lacks ", context N %";
+ *   - a line's ring crosses the glass or the screen's text box (the glass and the text box lie inside the ring's inner edge, 0.6 px of rounding), or lies inside the glass element; the glass tint is not the state's (not drawn on);
  *   - an unknown context draws a line, or its plate's name carries context words;
- *   - the line animates or transitions; a context event adds or removes a node anywhere in the stage, or does not move the line and the name.
+ *   - the line animates or transitions; a context event, once the desk is quiet, adds or removes a node in the desk's frame (.ro-ctx) or plate, or replaces one of them
+ *     (the same nodes are there before and after), or does not move the line and the name;
+ *   - FR-326, the cheap path alone: with every draw of the office held (DurbarRealOffice.render counted and skipped, so an ordinary redraw cannot write the same
+ *     attributes), a context event and a finished compaction still move the line and the name, and no draw runs while they do.
  */
 const fs = require('fs');
 const os = require('os');
@@ -47,7 +54,10 @@ module.exports = async (ctx) => {
     if (MUTANT === 'unknown') await js(`(()=>{window.exports.ctxFrame=(p,l)=>({lv:l==='warn'||l==='high'?l:'ok',dash:(p||0)+' 100'});return 1})()`);
     if (MUTANT === 'colour') await ctx.win.webContents.insertCSS('.ro-ctx[data-lv="warn"] rect:not(.ro-ck){stroke:var(--amber)!important}');
     if (MUTANT === 'glass') await ctx.win.webContents.insertCSS('.ro-ctx rect{x:8px!important;y:8px!important;width:calc(var(--ro-cw,20px) - 16px)!important;height:calc(var(--ro-ch,20px) - 16px)!important}');
-    if (MUTANT === 'node') await js(`(()=>{const o=window.DurbarRealOffice.ctx;window.DurbarRealOffice.ctx=(id,c)=>{const r=o(id,c);document.querySelector('#stage .ro-art').appendChild(document.createElement('i'));return r};return 1})()`);
+    if (MUTANT === 'node') await js(`(()=>{const o=window.DurbarRealOffice.ctx;window.DurbarRealOffice.ctx=(id,c)=>{const r=o(id,c);const p=document.querySelector('#stage .ro-plate[data-id='+JSON.stringify(id)+']');if(p)p.appendChild(document.createElement('i'));return r};return 1})()`);
+    if (MUTANT === 'rebuild') await js(`(()=>{const o=window.DurbarRealOffice.ctx;window.DurbarRealOffice.ctx=(id,c)=>{const r=o(id,c);const s=document.querySelector('#stage .ro-screen[data-for='+JSON.stringify(id)+'] > .ro-ctx');if(s)s.replaceWith(s.cloneNode(true));return r};return 1})()`);
+    /* every draw of the office is counted; while __roHold is set a draw is skipped (the last layout is handed back), so only DurbarRealOffice.ctx can write (FR-326) */
+    await js(`(()=>{const R=window.DurbarRealOffice;if(!R.__render){R.__render=R.render;R.render=function(){window.__roDraws=(window.__roDraws||0)+1;if(window.__roHold&&window.__roRet){window.__roHeld=(window.__roHeld||0)+1;return window.__roRet;}return window.__roRet=R.__render.apply(this,arguments);};}window.__roDraws=0;window.__roHold=false;return 1})()`);
 
     /* the agents with a desk (a main session), in the simulator's order; the unknown ones wait for the next message (the chat header's "Context: waiting") */
     const ids = await js(`window.__durbarSimUi.agents().filter(a=>!a.parent).map(a=>a.id)`);
@@ -122,15 +132,34 @@ module.exports = async (ctx) => {
     /* the glass keeps its own tint: it is the state's, never the band's (the line is not the tint) */
     assert.ok(await js(`[...document.querySelectorAll('#stage .ro-screen .ro-glass')].every(g=>!/ro-ctx/.test(g.innerHTML))`), `${tag}: nothing of the line in a glass`);
 
-    /* one context event: the line and the name move, with no node added or removed anywhere in the stage (FR-326) */
+    /* one context event: the line and the name move, with no node added or removed in this desk's frame and plate, and the same nodes there afterwards (FR-326). Only the desk's own
+       subtree is watched, and only once it is quiet (other desks, visitors, chips and shadows redraw on their own and are not this event) */
     const pick = ids.find((id, i) => share(i) !== null && byId.get(id) && !byId.get(id).lounge && share(i) < 60);
-    await js(`(()=>{window.__ctxMut=0;const o=new MutationObserver(l=>{for(const m of l)window.__ctxMut+=m.addedNodes.length+m.removedNodes.length});o.observe(document.getElementById('stage'),{childList:true,subtree:true});window.__ctxObs=o;return 1})()`);
+    await js(`window.__scr=k=>document.querySelector('#stage .ro-screen[data-for='+JSON.stringify(k)+']');window.__plt=k=>document.querySelector('#stage .ro-plate[data-id='+JSON.stringify(k)+']');1`);
+    await js(`(()=>{window.__ctxMut=0;window.__ctxLast=-1;window.__ctxAt=0;const o=new MutationObserver(l=>{for(const m of l)window.__ctxMut+=m.addedNodes.length+m.removedNodes.length});
+      const sv=window.__scr(${jsLiteral(pick)}).querySelector(':scope > .ro-ctx'),pl=window.__plt(${jsLiteral(pick)});o.observe(sv,{childList:true,subtree:true});o.observe(pl,{childList:true,subtree:true});window.__ctxObs=o;
+      window.__ctxNodes=[sv,...sv.querySelectorAll('*'),pl,...pl.querySelectorAll('*')];window.__ctxSvg=sv;return 1})()`);
+    await must(`(()=>{const n=window.__ctxMut;if(window.__ctxLast!==n){window.__ctxLast=n;window.__ctxAt=Date.now();}return Date.now()-window.__ctxAt>400})()`, `${tag}: the desk's frame and plate quiet`);
+    await js(`window.__ctxObs.takeRecords();window.__ctxMut=0;1`);
     await js(`window.__durbarSimEmit({type:'context',sessionId:${jsLiteral(pick)},timestamp:Date.now(),tokens:930,limit:1000})`);
     await js(`window.__cx=k=>document.querySelector('#stage .ro-screen[data-for='+JSON.stringify(k)+'] > .ro-ctx');window.__cl=k=>document.querySelector('#stage .ro-plate[data-id='+JSON.stringify(k)+']').getAttribute('aria-label');1`);
     await must(`window.__cx(${jsLiteral(pick)}).dataset.lv==='high'&&window.__cx(${jsLiteral(pick)}).lastChild.getAttribute('stroke-dasharray')==='93 100'&&/context 93 %/.test(window.__cl(${jsLiteral(pick)}))`, `${tag}: a context event moves the line and the name`);
     await js(`new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(1))))`);
-    assert.strictEqual(await js(`window.__ctxObs.takeRecords().length+window.__ctxMut`), 0, `${tag}: a context event adds or removes no node`);
+    assert.strictEqual(await js(`window.__ctxObs.takeRecords().length+window.__ctxMut`), 0, `${tag}: a context event adds or removes no node in the desk's frame or plate`);
+    assert.ok(await js(`window.__ctxNodes.every(n=>n.isConnected)&&window.__scr(${jsLiteral(pick)}).querySelector(':scope > .ro-ctx')===window.__ctxSvg`), `${tag}: a context event keeps the desk's frame and plate nodes (none replaced)`);
     await js(`window.__ctxObs.disconnect();1`);
+
+    /* FR-326, the cheap path alone: every draw held, so an ordinary redraw cannot write the same attributes. A context event and a finished compaction must still move the
+       line and the name, and no draw runs for them. */
+    await must(`(()=>{const n=window.__roDraws;if(window.__roLast!==n){window.__roLast=n;window.__roAt=Date.now();}return Date.now()-window.__roAt>400})()`, `${tag}: no draw running`);
+    await js(`window.__roHold=true;window.__roHeld=0;window.__roDraws0=window.__roDraws;1`);
+    try {
+      await js(`window.__durbarSimEmit({type:'context',sessionId:${jsLiteral(pick)},timestamp:Date.now(),tokens:760,limit:1000})`);
+      await must(`window.__cx(${jsLiteral(pick)}).dataset.lv==='warn'&&window.__cx(${jsLiteral(pick)}).lastChild.getAttribute('stroke-dasharray')==='76 100'&&/context 76 %/.test(window.__cl(${jsLiteral(pick)}))`, `${tag}: a context event reaches the line and the name without a draw`);
+      await js(`window.__durbarSimEmit({type:'compaction',sessionId:${jsLiteral(pick)},timestamp:Date.now(),phase:'complete',trigger:'auto',tokensBefore:760,tokensAfter:240,tokensRemoved:520,limit:1000})`);
+      await must(`window.__cx(${jsLiteral(pick)}).dataset.lv==='ok'&&window.__cx(${jsLiteral(pick)}).lastChild.getAttribute('stroke-dasharray')==='24 100'&&/context 24 %/.test(window.__cl(${jsLiteral(pick)}))`, `${tag}: a finished compaction reaches the line and the name without a draw`);
+      assert.strictEqual(await js(`window.__roDraws-window.__roDraws0-window.__roHeld`), 0, `${tag}: no draw ran while the line moved`);
+    } finally { await js(`window.__roHold=false;1`); }
 
     if (OUT) {
       await js(`window.__durbarSimEmit({type:'context',sessionId:${jsLiteral(pick)},timestamp:Date.now(),tokens:${jsLiteral(share(ids.indexOf(pick)) * 10)},limit:1000})`);

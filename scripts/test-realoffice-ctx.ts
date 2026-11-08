@@ -22,6 +22,14 @@ for (const [u, l] of [[undefined, 1000], [500, 0], [500, undefined], [NaN, 1000]
 assert.strictEqual(ctxFrame(null, 'unknown'), null);
 assert.strictEqual(ctxFrame(50, 'unknown'), null, 'a share with an unknown band draws nothing');
 assert.strictEqual(ctxFrame(NaN, 'ok'), null);
+// the cap lives in ctxFrame and ctxWords themselves, not only in ctxLevel (review of #1299): a share over 100 draws the whole outline and reads 100 %
+assert.strictEqual(ctxFrame(250, 'high')?.dash, '100 100');
+assert.strictEqual(ctxWords(250), ', context 100 %');
+// rounding: the words round to a whole percent (72.4 -> 72, 72.6 -> 73); the dash is the share as given (ctxLevel already hands over a whole percent, so the page never passes a fraction)
+assert.strictEqual(ctxWords(72.4), ', context 72 %');
+assert.strictEqual(ctxWords(72.6), ', context 73 %');
+assert.strictEqual(ctxFrame(72.4, 'warn')?.dash, '72.4 100');
+assert.strictEqual(ctxFrame(72.6, 'warn')?.dash, '72.6 100');
 // the words of the plate's name
 assert.strictEqual(ctxWords(72), ', context 72 %');
 assert.strictEqual(ctxWords(0), ', context 0 %');
