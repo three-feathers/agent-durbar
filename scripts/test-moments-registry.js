@@ -30,6 +30,8 @@ const retroPart = (reg) => JSON.stringify([reg.worlds.retro, reg.moments.map((m)
 /** reg: the registry; main: main's registry or null; driver: scripts/shots-097-moments.js text; css: the arcade's world.css text */
 function check({ reg, main, driver, css }) {
   const bad = [];
+  /* only names given to the picture writer count: shot(world, 'X', ...) and `${world}-X-${w}x${h}.png` */
+  const written = new Set(driver.split('\n').filter((l) => /\bshot\(world, /.test(l)).flatMap((l) => [...l.slice(l.indexOf('shot(world, ')).matchAll(/'([\w-]+)'/g)].map((x) => x[1])).concat([...driver.matchAll(/\$\{world\}-([\w-]+)-\$\{w\}x\$\{h\}\.png/g)].map((x) => x[1])));
   const ids = reg.moments.map((m) => m.id);
   if (JSON.stringify(ids.slice().sort()) !== JSON.stringify(RETRO_CELLS.slice().sort())) bad.push(`the moments are not the 26 the arcade has cells for: ${ids.join(',')}`);
   const world = reg.worlds.retro;
@@ -43,7 +45,8 @@ function check({ reg, main, driver, css }) {
     if (s === 'built') {
       if (!ev || !Array.isArray(ev.steps) || !ev.steps.length || !Array.isArray(ev.pictures)) { bad.push(`retro cell ${m.id} is built and names no evidence (driver steps and pictures)`); continue; }
       for (const st of ev.steps) if (!driver.includes(`run('${st}')`)) bad.push(`retro cell ${m.id}: evidence step ${st} is not a step of shots-097-moments`);
-      for (const p of ev.pictures) if (!driver.includes(`'${p}'`) && !driver.includes(`-${p}-`)) bad.push(`retro cell ${m.id}: evidence picture ${p} is not written by shots-097-moments`);
+      if (!ev.pictures.length) bad.push(`retro cell ${m.id} is built with no picture (T223: built only where a picture of it in the arcade was looked at)`);
+      for (const p of ev.pictures) if (!written.has(p)) bad.push(`retro cell ${m.id}: evidence picture ${p} is not written by shots-097-moments`);
     } else if (ev) bad.push(`retro cell ${m.id} is ${s} but names evidence`);
     if (s === 'missing' && !(m.gap && typeof m.gap.retro === 'string' && m.gap.retro.length > 10)) bad.push(`retro cell ${m.id} is missing and says nothing why (gap.retro)`);
   }
@@ -62,7 +65,10 @@ function check({ reg, main, driver, css }) {
 }
 
 function readMain() {
-  const r = spawnSync('git', ['show', 'origin/main:docs/experience/world-moments.json'], { cwd: ROOT, encoding: 'utf8' });
+  /* the registry at the merge-base with origin/main, not at whatever origin/main is now; null in a shallow checkout (CI fetches depth 2), where the comparison is skipped and says so */
+  const mb = spawnSync('git', ['merge-base', 'HEAD', 'origin/main'], { cwd: ROOT, encoding: 'utf8' });
+  if (mb.status !== 0 || !mb.stdout.trim()) return null;
+  const r = spawnSync('git', ['show', mb.stdout.trim() + ':docs/experience/world-moments.json'], { cwd: ROOT, encoding: 'utf8' });
   return r.status === 0 ? JSON.parse(r.stdout) : null;
 }
 
@@ -71,7 +77,7 @@ if (require.main === module) {
   const driver = fs.readFileSync(path.join(__dirname, 'shots-097-moments.js'), 'utf8');
   const css = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'realoffice', 'worlds', 'retro', 'world.css'), 'utf8');
   const main = readMain();
-  if (!main) console.log('[momentsregistry] SKIP the origin/main comparison: no origin/main in this checkout (a shallow clone); every other check ran');
+  if (!main) console.log('[momentsregistry] SKIP the origin/main comparison: no merge-base with origin/main in this checkout (a shallow clone as in CI: this runs locally and in a full clone only); every other check ran');
   const inputs = { reg, main, driver, css };
   assert.deepStrictEqual(check(inputs), [], 'the real registry passes');
   assert.strictEqual(RETRO_CELLS.length, 26);
@@ -91,12 +97,14 @@ if (require.main === module) {
   fails('a built cell without evidence', (i) => { delete i.reg.moments.find((m) => m.id === 'lobby').evidence; }, /lobby is built and names no evidence/);
   fails('a built cell naming a step the driver does not have', (i) => { i.reg.moments.find((m) => m.id === 'lobby').evidence.retro.steps = ['nowhere']; }, /step nowhere/);
   fails('a built cell naming a picture the driver does not write', (i) => { i.reg.moments.find((m) => m.id === 'lobby').evidence.retro.pictures = ['nopic']; }, /picture nopic/);
+  fails('a built cell with no picture (walk)', (i) => { const m = i.reg.moments.find((x) => x.id === 'walk'); m.worlds.retro = 'built'; m.evidence = { retro: { steps: ['inbox'], pictures: [] } }; }, /walk is built with no picture/);
+  fails('a picture named that is only text in the driver', (i) => { i.reg.moments.find((x) => x.id === 'lobby').evidence.retro.pictures = ['limitfocus']; }, /picture limitfocus/);
   fails('empty-office built again with no evidence', (i) => { i.reg.moments.find((m) => m.id === 'empty-office').worlds.retro = 'built'; }, /empty-office is built and names no evidence/);
   fails('a missing cell without a reason', (i) => { delete i.reg.moments.find((m) => m.id === 'empty-office').gap; }, /empty-office is missing and says nothing why/);
   fails('shippable while a cell is missing', (i) => { i.reg.worlds.retro.shippable = true; }, /shippable while a cell is missing/);
   fails('the first-run rule unscoped', (i) => { i.css = i.css.replace('html[data-world="retro"] body:has(#stage > .welcome) #stats', 'body:has(#stage > .welcome) #stats'); }, /not scoped to html\[data-world="retro"\]/);
   { /* main stands in as a registry whose retro part differs (as on this branch), so these stay mutants after the arcade is merged */
-    const asMain = () => { const m = clone(); m.moments.find((x) => x.id === 'walk').worlds.retro = 'designed'; return m; };
+    const asMain = () => { const m = clone(); m.moments.find((x) => x.id === 'lobby').worlds.retro = 'designed'; return m; };
     fails('a photo cell changed alongside the retro cells', (i) => { i.main = asMain(); const m = i.reg.moments.find((x) => x.id === 'walk'); m.worlds.photo = m.worlds.photo === 'built' ? 'designed' : 'built'; }, /not equal to origin\/main outside the retro cells/);
     fails('a photo crew changed alongside the retro cells', (i) => { i.main = asMain(); i.reg.worlds.photo.crews.push('x'); }, /not equal to origin\/main outside the retro cells/);
     assert.deepStrictEqual(check({ reg: clone(), main: asMain(), driver, css }), [], 'retro-only changes pass the main comparison');

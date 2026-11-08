@@ -275,17 +275,9 @@
         "photo": "designed",
         "cave": "designed",
         "loft": "missing",
-        "retro": "built"
+        "retro": "designed"
       },
-      "nonNegotiables": "M",
-      "evidence": {
-        "retro": {
-          "steps": [
-            "inbox"
-          ],
-          "pictures": []
-        }
-      }
+      "nonNegotiables": "M"
     },
     {
       "id": "empty-office",
@@ -563,7 +555,9 @@
             "inbox",
             "limitfocus"
           ],
-          "pictures": []
+          "pictures": [
+            "inbox"
+          ]
         }
       }
     },
