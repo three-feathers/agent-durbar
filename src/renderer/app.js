@@ -929,6 +929,14 @@ const LIVE_MASK=(()=>{const L=window.DurbarLiveAct,R=NO_REDACT?null:window.Durba
 const LIVEACT=LIVE_MASK?window.DurbarLiveAct.create({mask:LIVE_MASK}):null;
 /* spec 097 FR-317: a tool name on any chat surface (chip, its tooltip, the waiting line, a card's task) goes through the one mask; a masked name shows as `tool` */
 const shownTool=t=>LIVE_MASK&&window.DurbarLiveAct?window.DurbarLiveAct.toolName(t,LIVE_MASK):'tool'; /* no mask (redact module missing, ?noredact=1): the generic word, as a label fails closed (FR-065) */
+/* spec 097 FR-318: the words of a permission request (summary, scope labels, grant chips, why-allowed label) through the one mask; {text,hidden}. The kind is the request's, or a grant key's prefix. */
+const permKind=k=>k==='shell'||/^shell(-exact)?:/.test(k)?'shell':k==='mcp'||k==='custom-tool'||/^(mcp|custom-tool):/.test(k)?'tool':'other';
+const shownPerm=(t,kind)=>window.DurbarLiveAct?window.DurbarLiveAct.permText(t,permKind(kind),LIVE_MASK||{}):{text:'request',hidden:true,why:'unchecked'};
+/* spec 097 FR-318 (review of PR 1292): what a hidden part is, in words: a secret replaced, control characters shown as markers, or a request Durbar could not check (no mask) */
+const PERM_WHY={secret:'A part of this request looks like a secret and is hidden.',control:'This request holds control characters, shown as markers like \u27e6ESC\u27e7: read all of it before you allow it.',unchecked:'Durbar could not check this request\u2019s text, so it is not shown.',concealed:'This request hides a secret behind control characters, so its text cannot be shown.',cut:'This request is too long to show in full, so it cannot be allowed from here.'};
+const PERM_GRANT=' Allow for this session covers exactly what was asked, the hidden part included.';
+const permWhy=(...xs)=>{const w=xs.filter(x=>x&&x.hidden).map(x=>x.why||'secret');return w.includes('cut')?'cut':w.includes('unchecked')?'unchecked':w.includes('concealed')?'concealed':w.includes('secret')?'secret':w.length?'control':'';};
+const permBlind=w=>w==='unchecked'||w==='concealed'||w==='cut'; /* neutral words only: no Allow, Deny stays */
 const liveOn=()=>!!LIVEACT&&LIVE_PREF;
 function setLiveOn(on){LIVE_PREF=!!on;try{localStorage.setItem('durbar.liveActivity',LIVE_PREF?'on':'off');}catch(e){}scheduleRender();}
 /* the readout to show now, or null: a live main agent that is Working or Thinking (Waiting, Error, Done and Idle keep their own text) */
@@ -2451,7 +2459,7 @@ function wireAnswerBar(a){
     else if(!long&&!card.classList.contains('limit'))for(const src of card.querySelectorAll(':scope > .note-actions button'))if(!src.dataset.broad){ /* a spending limit has an amount the bar cannot show: only "Show in chat" (review of PR 1004) */
       /* spec 003 FR-095: a Read-only denial's "Switch to Ask first…" opens the mode menu here, anchored to the bar's own button */
       if(src.dataset.act==='ro-ask'){const b=add(src.textContent,'',()=>roAskOpen(a,b),src.title);b.dataset.act='ro-ask';b.setAttribute('aria-haspopup','menu');b.setAttribute('aria-expanded','false');continue;}
-      const k=card.classList.contains('limit')?'':answerKeyOf(src);add(src.textContent,(src.className.match(/\b(primary|danger|session)\b/)||[''])[0],answerPress(src,text),k?(src.title?src.title+' ':'')+'('+chatKeyText(k)+')':src.title,k?chatKeyAria(k):'');}
+      const k=card.classList.contains('limit')?'':answerKeyOf(src);const ab=add(src.textContent,(src.className.match(/\b(primary|danger|session)\b/)||[''])[0],answerPress(src,text),k?(src.title?src.title+' ':'')+'('+chatKeyText(k)+')':src.title,k?chatKeyAria(k):'');if(src.dataset.blind){ab.disabled=true;ab.title=src.title;}}
     add(q?'Show question':'Show in chat','ghost',show,q?'Scroll to the question in the chat':'Scroll to the request in the chat');
     bar.hidden=false;
     /* FR-016 (review of PR 1004): a repaint keeps focus on the same control only while the card is the same; a new card or a changed count never puts it on an answering
@@ -4311,7 +4319,8 @@ function paintInbox(focusIndex){
        button at the end of the heading line (a question keeps "Answer in chat" with the actions). FR-077: each button names its key in its title and aria-keyshortcuts. */
     const KEY={approve:"A",session:"S",deny:"D",open:"O"}, RANK=INBOX_RANK;
     const ans=document.createElement('span');ans.className='ib-ans';act.appendChild(ans);
-    const add=(label,cls,k,fn,title,box)=>{const b=document.createElement('button');b.type='button';b.className=cls==='link'?'linkbtn ib-open':'btn sm '+cls;b.textContent=label;b.dataset.k=k;b.setAttribute('aria-describedby','ibh'+i+' ibt'+i);
+    let curSrc=null; /* spec 097 FR-318: the card button this row button copies (a request Durbar could not check has no Allow) */
+    const add=(label,cls,k,fn,title,box)=>{const b=document.createElement('button');b.type='button';b.className=cls==='link'?'linkbtn ib-open':'btn sm '+cls;b.textContent=label;b.dataset.k=k;b.setAttribute('aria-describedby','ibh'+i+' ibt'+i);if(curSrc&&curSrc.dataset.blind){b.disabled=true;title=curSrc.title;}
       if(KEY[k]){b.setAttribute('aria-keyshortcuts',KEY[k]);title=(title?title+' ':'')+'(key '+KEY[k]+')';}if(title)b.title=title;b.onclick=fn;(box||ans).appendChild(b);};
     const kOf=src=>isLimit?'other':src.dataset.act==='session'?'session':/danger/.test(src.className)?'deny':/primary/.test(src.className)?'approve':'other';
     let amt=null; /* FR-207: the amount the card would send, shown in the row and sent from it */
@@ -4319,7 +4328,7 @@ function paintInbox(focusIndex){
       amt.setAttribute('aria-label',ci.getAttribute('aria-label')||'Amount to add');amt.title=amt.getAttribute('aria-label');amt.oninput=()=>{amt.removeAttribute('aria-invalid');INBOX_AMT.set(rq,amt.value);};
       amt.onkeydown=ev=>{if(ev.key!=='Enter'||ev.isComposing)return;ev.preventDefault();if(!ev.repeat){const r=[...ans.querySelectorAll('button')].find(x=>x.dataset.k==='other'&&x.classList.contains('primary'));if(r)r.click();}}; /* Enter in the field presses the row's own Raise limit; a held Enter does nothing */ans.appendChild(amt);}}
     if(card&&!q)for(const src of [...card.querySelectorAll(':scope > .note-actions button')].filter(x=>!x.dataset.broad).sort((x,y)=>RANK[kOf(x)]-RANK[kOf(y)])){
-      const k=kOf(src);
+      const k=kOf(src);curSrc=src;
       /* spec 003 FR-097: the Read-only denial's "Switch to Ask first…" opens the same mode menu, from the chat (the inbox is modal) */
       if(src.dataset.act==='ro-ask'){add(src.textContent,'',k,()=>{closeInbox();openPanel(a.id,true);requestAnimationFrame(()=>{if(!src.isConnected)return;src.focus({preventScroll:true});src.click();});},src.title);ans.lastElementChild.setAttribute('aria-haspopup','menu');continue;}
       add(src.textContent,(src.className.match(/\b(primary|danger|session)\b/)||[''])[0],k,ev=>{const word=k==='deny'?'Denied':k==='other'?src.textContent:'Allowed';
@@ -5656,6 +5665,7 @@ function whyPaint(c){
   const d=WHY&&c.whyBy?WHY.describe(c.whyBy,whyLive(c.aid),whyOpts(c)):null;
   el._whyC=c;
   if(!d)return;
+  if(d.label){const wl=shownPerm(d.label,String(c.whyBy&&c.whyBy.key||''));d.label=wl.text;if(wl.hidden)d.sentence+=' (A part of the rule is hidden: '+(wl.why==='control'?'it holds control characters, shown as markers.':wl.why==='unchecked'?'Durbar could not check its text.':wl.why==='concealed'?'it hides a secret behind control characters.':wl.why==='cut'?'it is too long to show in full.':'it looks like a secret.')+')';} /* spec 097 FR-318: the session rule's label through the one mask; d is this call's copy */
   const pill=document.createElement('span');pill.className='why';pill.dataset.why=d.kind;if(d.gone)pill.dataset.gone='1';pill.textContent=d.pill;
   pill.title=d.sentence+(d.label||'');
   const body=document.createElement('span');body.className='xbody whybody';
@@ -5979,11 +5989,11 @@ const HXC=window.DurbarHelperCard&&STX?window.DurbarHelperCard.create({excerpt:(
 const FIXED_TASK=new Set(['Ready','Thinking','Working','Finished.','Waiting for permission','Waiting for your OK on a plan','The agent asks you a question','Stopped. Ready for your next message.','Signed in again. Ready for your message.','Session ended. Send a message to resume it.','Ready. Send a message to start.','Plan rejected. Nothing was changed.','Continuing your last session…','Your last session here. It continues when you open it.']);
 const FIXED_TASK_FORMAT=/^Stopped at \$?[\d.,]+( AIU)?\. (Raise the limit to go on|Ready for your next message)\.$/; /* Durbar's own limit lines, whole string: a prefix alone would let agent text through */
 /* a permission line from an adapter ("Waiting for permission: run <command>", "Allowed: fetch <url>", ...): the part after the verb is a command or a URL, masked like a tool label (--api-key K, ?key=K) */
-const PERM_LINE=/^(Waiting for permission|Denied \(read-only mode\)|Allowed for this session|Allowed|Approved|Denied): (run|fetch|write|edit|read|mcp)\b ?([\s\S]*)$/;
+const PERM_LINE=/^(Waiting for permission|Denied \(read-only mode\)|Allowed for this session|Allowed|Approved|Denied): (run|fetch|write|edit|read|mcp|custom-tool)\b ?([\s\S]*)$/;
 const taskMask=t=>{
   if(!SAFE.ready)return FIXED_TASK.has(t)||FIXED_TASK_FORMAT.test(t)||(RETRY&&RETRY.LINE_RE.test(t))?t:(/^Waiting for permission\b/.test(t)?'Waiting for permission':'');
   const p=PERM_LINE.exec(t);
-  if(p){const rest=STX?STX.maskLabel(p[3],p[2]==='run'?'run':'tool',TOOLMASK):'';return p[1]+': '+p[2]+(rest?' '+rest:'');}
+  if(p){const rest=shownPerm(p[3],p[2]==='run'?'shell':p[2]==='mcp'||p[2]==='custom-tool'?'mcp':'other').text;return p[1]+': '+p[2]+(rest?' '+rest:'');} /* spec 097 FR-318: the one permission mask (control characters shown, a split token never leaks) */
   return SAFE.mask(t);};
 /* a working or error intent: masked and plain through the helper (a permission line is left to taskMask, which keeps its command's own characters) */
 const intentText=t=>typeof t!=='string'||!t||PERM_LINE.test(t)?t:(SAFE.ready?SAFE.excerpt(t,null,''):t);
@@ -6438,10 +6448,14 @@ function showPerm(a,p){
   const t=ensureTurn(a);
   const n=document.createElement('div');n.className='note perm';n.setAttribute('role','group');n.setAttribute('aria-label','Permission request');
   n.innerHTML='<b>Needs your OK:</b> <span class="psum"></span><span class="pstate"></span>';
-  const ps=n.querySelector('.psum');ps.textContent=p.summary;
+  const ps=n.querySelector('.psum');
+  const sumS=shownPerm(p.summary,p.kind), scopeS=shownPerm(p.scopeLabel||p.kind||'this',p.kind), broadS=shownPerm(p.broadScopeLabel||p.kind,p.kind); /* spec 097 FR-318: only the shown words; the request id, scope keys and the answer stay raw */
+  ps.textContent=sumS.text;
   if(p.state==='pending'&&typeof p.diff==='string'&&p.diff)n.appendChild(diffBlock(p.diff)); /* spec 052 FR-063 */
   if(p.state==='pending'&&typeof p.sandboxNote==='string'&&p.sandboxNote){const sn=document.createElement('p');sn.className='psbx';sn.textContent=safeMask(p.sandboxNote.slice(0,300));n.appendChild(sn);} /* spec 087 FR-021: its own line, never cut */
-  if(p.state==='pending'){const sh=typeof DurbarGrantLabel!=='undefined'?DurbarGrantLabel.scopeHint(p):'';if(sh){const sp=document.createElement('p');sp.className='pscope';sp.textContent=safeMask(sh);n.appendChild(sp);}} /* spec 003 FR-108: how far "for this session" reaches, in words */
+  if(p.state==='pending'){const sh=typeof DurbarGrantLabel!=='undefined'?DurbarGrantLabel.scopeHint(Object.assign({},p,{scopeLabel:p.scopeLabel?scopeS.text:p.scopeLabel,broadScopeLabel:p.broadScopeLabel?broadS.text:p.broadScopeLabel})):'';if(sh){const sp=document.createElement('p');sp.className='pscope';sp.textContent=safeMask(sh);n.appendChild(sp);}} /* spec 003 FR-108: how far "for this session" reaches, in words */
+  const hwhy=permWhy(sumS,scopeS,broadS), hgrant=hwhy&&!permBlind(hwhy)&&(p.scopeKey||p.broadScopeKey)?PERM_GRANT:'';
+  if(p.state==='pending'&&hwhy){const hp=document.createElement('p');hp.className='pscope phid';hp.textContent=PERM_WHY[hwhy]+hgrant;n.appendChild(hp);} /* also a card with no grant (a bare tool name): the line says what is hidden */ /* spec 097 FR-318: what a grant covers stays truthful when a part is hidden */
   const st=n.querySelector('.pstate');
   if(p.state==='denied'){ /* spec 003 FR-094: with the button the text no longer repeats the suggestion */
     st.innerHTML=roAskHint(a,n)?' <i>(denied: this agent is in Read-only)</i>':' <i>(denied: this agent is in Read-only. Switch it to Ask first to be asked instead)</i>';
@@ -6451,16 +6465,17 @@ function showPerm(a,p){
     const mk=(l,cls,title,fn)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=l;if(title)b.title=title;b.onclick=fn;row.appendChild(b);};
     const answer=(approve,remember,broad)=>{bridge.resolvePermission(a.id,p.requestId,approve,remember,!!broad);settlePerm(a,{requestId:p.requestId,state:approve?'approved':'denied',via:'user',remembered:approve&&remember,scopeLabel:broad?p.broadScopeLabel:p.scopeLabel,summary:p.summary});};
     mk('Allow once','primary','Allow this one request',()=>answer(true,false)); /* spec 052 FR-037/FR-051 */
-    if(p.scopeKey){mk('Allow “'+expertScopeLabel(p.scopeLabel||p.kind||'this')+'” for this session','session','Allow "'+DurbarCutText.cutText(p.scopeLabel||p.kind,30)+'" until you end this session'+(p.kind==='shell'?' (this exact command)':'')+'. Revoke from its chip.',()=>answer(true,true));const sb=row.lastElementChild;sb.dataset.act='session';}
-    if(p.broadScopeKey){mk('Allow for this session: any arguments','session','Allow every simple "'+DurbarCutText.cutText(p.broadScopeLabel||p.kind,18)+'" command (no pipes, redirects or substitutions) until you end this session.',()=>answer(true,true,true));row.lastElementChild.dataset.broad='1';}
+    if(p.scopeKey){mk('Allow “'+expertScopeLabel(scopeS.text)+'” for this session','session','Allow "'+DurbarCutText.cutText(scopeS.text,30)+'" until you end this session'+(p.kind==='shell'?' (this exact command)':'')+'. Revoke from its chip.'+(scopeS.hidden?' '+PERM_WHY[scopeS.why||'secret']+PERM_GRANT:''),()=>answer(true,true));const sb=row.lastElementChild;sb.dataset.act='session';}
+    if(p.broadScopeKey){mk('Allow for this session: any arguments','session','Allow every simple "'+DurbarCutText.cutText(broadS.text,18)+'" command (no pipes, redirects or substitutions) until you end this session.'+(broadS.hidden?' '+PERM_WHY[broadS.why||'secret']+PERM_GRANT:''),()=>answer(true,true,true));row.lastElementChild.dataset.broad='1';}
     mk('Deny','danger','Deny this request',()=>answer(false,false));
+    if(permBlind(hwhy))row.querySelectorAll('button:not(.danger)').forEach(b=>{b.disabled=true;b.dataset.blind='1';b.title=PERM_WHY[hwhy]+' Deny it.';}); /* spec 097 FR-318: no Allow on a request whose text could not be checked */
     n.appendChild(row);
     a.pend.set(p.requestId,{n,row,st});
     n.classList.add('pending');n.dataset.t0=String(Date.now()); /* the waiting line says "Waiting for your OK" meanwhile */
   }
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
   if(t.T.typing)typingPaint(t.T.typing);
-  if(p.state==='pending')announce(a.name+' needs your OK: '+p.summary);
+  if(p.state==='pending')announce(a.name+' needs your OK: '+sumS.text+(hwhy?'. '+PERM_WHY[hwhy]+hgrant:''));
   renderInboxBtn();
 }
 /* spec 003 FR-094..FR-096 (owner 2026-10-23, supersedes spec 052 FR-074's button): under a request denied by Read-only, one button
@@ -6525,19 +6540,20 @@ function setGrants(a,list){a.grants=list;a.grantsKnown=true;const sn=a.grantSeen
 let grantsAllBusy=''; /* the agent id while its Revoke all is under way (the revokes arrive one by one and the focus may be lost in between); '' otherwise */
 let grantsAgent='';
 let grantsOpen=false, grantsFocus=null; /* grantsFocus: where the focus goes after the next draw (a revoke button index, or 'chip') */
-function grantChipX(g){return `<button type="button" data-revoke="${esc(g.key)}" aria-label="Revoke permission: ${esc(g.label)}">${ICON('x')}</button>`;}
+const gLab=g=>shownPerm(g.label,String(g.key||'')); /* spec 097 FR-318: a chip, its tooltip and the list show the masked label; data-revoke keeps the raw key */
+function grantChipX(g){return `<button type="button" data-revoke="${esc(g.key)}" aria-label="Revoke permission: ${esc(gLab(g).text)}">${ICON('x')}</button>`;}
 function renderGrants(){
   const box=$('grants'),a0=byId(ui.selected);if(!box||!a0)return;const a=liveRoot(a0),gs=a.grants||[];
   if(grantsAgent!==a.id){grantsAgent=a.id;grantsFocus=null;} /* a focus target left over from another agent */
   grantsAllBusy=window.DurbarGrantLabel.grantsBusyFor(grantsAllBusy,a.id); /* another agent: that Revoke all is not ours to finish */
-  const short=g=>window.DurbarGrantLabel.shortGrantLabel(g.label);
+  const short=g=>window.DurbarGrantLabel.shortGrantLabel(gLab(g).text);
   const hadFocus=box.contains(document.activeElement)||grantsFocus!==null||grantsAllBusy!==''; /* the user is working in the grants: do not let the focus fall to <body> when they all go */
   if(gs.length<=2){
     grantsOpen=false;
-    box.innerHTML=gs.map(g=>`<span class="gchip" title="Allowed for this session: ${esc(DurbarCutText.cutText(g.label,240))}. Revoke to be asked again."><span>Allowed: ${esc(short(g))}</span>${grantChipX(g)}</span>`).join('');
+    box.innerHTML=gs.map(g=>`<span class="gchip" title="Allowed for this session: ${esc(DurbarCutText.cutText(gLab(g).text,240))}.${gLab(g).hidden?' '+PERM_WHY[gLab(g).why||'secret']:''} Revoke to be asked again."><span>Allowed: ${esc(short(g))}</span>${grantChipX(g)}</span>`).join('');
   }else{
     box.innerHTML=`<button type="button" class="gchip gchip-btn" id="grantsBtn" aria-expanded="${grantsOpen}" aria-controls="grantsPop" title="${gs.length} permissions allowed for this session. Open the list to revoke them."><span>Allowed (${gs.length})</span><svg class="chev" width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button>
-      <div class="grants-pop" id="grantsPop" role="group" aria-label="Allowed for this session"${grantsOpen?'':' hidden'}><ul role="list" class="gp-list">${gs.map(g=>`<li class="gp-row" title="Allowed for this session: ${esc(DurbarCutText.cutText(g.label,240))}. Revoke to be asked again."><span class="gp-t">${esc(short(g))}</span>${grantChipX(g)}</li>`).join('')}</ul><button type="button" class="btn sm gp-all" id="grantsAll">Revoke all</button></div>`;
+      <div class="grants-pop" id="grantsPop" role="group" aria-label="Allowed for this session"${grantsOpen?'':' hidden'}><ul role="list" class="gp-list">${gs.map(g=>`<li class="gp-row" title="Allowed for this session: ${esc(DurbarCutText.cutText(gLab(g).text,240))}.${gLab(g).hidden?' '+PERM_WHY[gLab(g).why||'secret']:''} Revoke to be asked again."><span class="gp-t">${esc(short(g))}</span>${grantChipX(g)}</li>`).join('')}</ul><button type="button" class="btn sm gp-all" id="grantsAll">Revoke all</button></div>`;
   }
   box.hidden=!gs.length;
   if(grantsFocus!==null){
