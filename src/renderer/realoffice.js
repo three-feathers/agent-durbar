@@ -860,7 +860,7 @@
   function wireZoom(ro) {
     let wait = 0;
     /* spec 097 FR-327: the agent a pointer is over: its monitor, person, desk (or lounge table) or name plate, never a visitor, chip or lobby plate */
-    const hid = (n) => { const t = n && n.closest && n.closest('.ro-screen, .ro-person, .ro-person2, .ro-initials, .ro-marquee, .ro-desk, .ro-ltable, .ro-plate'); return t ? (t.classList.contains('ro-plate') ? t.dataset.id : t.dataset.for) || '' : ''; };
+    const hid = (n) => { const t = n && n.closest && n.closest('.ro-screen, .ro-person, .ro-person2, .ro-rig, .ro-initials, .ro-marquee, .ro-desk, .ro-ltable, .ro-plate'); return t ? (t.classList.contains('ro-plate') ? t.dataset.id : t.dataset.for) || '' : ''; };
     const arm = (id) => { clearTimeout(wait); ARMED = true; wait = setTimeout(() => { ARMED = false; openZoom(id, 'hover'); }, 120); };
     ro.addEventListener('pointermove', (e) => {
       if (!QUIET_POINTER) return;
@@ -902,6 +902,7 @@
       ZOOM = { id, hover: false, focus: false, panel: p, plate: CUR.ro.querySelector('.ro-plate[data-id="' + CSS.escape(id) + '"]') };
       if (ZOOM.plate) ZOOM.plate.setAttribute('aria-describedby', 'roZoom');
       document.addEventListener('keydown', zoomKey, true);
+      document.addEventListener('focusin', coverSlips, true); document.addEventListener('focusout', coverLater, true);
       addEventListener('blur', closeZoom);
       const fl = CUR.ro.closest('#floor'); if (fl) { ZOOM.floor = fl; fl.addEventListener('scroll', closeZoom, { passive: true }); }
       fillZoom(); placeZoom();
@@ -915,6 +916,7 @@
     z.panel.remove();
     if (z.plate) z.plate.removeAttribute('aria-describedby');
     document.removeEventListener('keydown', zoomKey, true);
+    document.removeEventListener('focusin', coverSlips, true); document.removeEventListener('focusout', coverLater, true);
     removeEventListener('blur', closeZoom);
     if (z.floor) z.floor.removeEventListener('scroll', closeZoom);
     for (const id of z.under || []) { const s = SCR.get(id); if (!s || !s.away) setOff(id, false); }
@@ -955,9 +957,19 @@
     for (const [id, de] of CUR.desks) if (id !== ZOOM.id && de.person && de.person.x >= r.x && de.person.x + de.person.w <= r.x + r.w && de.person.y >= r.y && de.person.y + de.person.h <= r.y + r.h) { under.push(id); setOff(id, true); }
     for (const id of ZOOM.under || []) if (!under.includes(id)) { const s = SCR.get(id); if (!s || !s.away) setOff(id, false); }
     ZOOM.under = under;
-    /* FR-330: a slip the card still covers (no free place was left) takes no click or key while it is hidden under the card */
-    for (const e of ro.querySelectorAll('.ro-slip')) { const b = near(e), hit = !e.hidden && b.x < r.x + r.w && r.x < b.x + b.w && b.y < r.y + r.h && r.y < b.y + b.h; if (hit) e.setAttribute('inert', ''); else e.removeAttribute('inert'); }
+    ZOOM.rect = r; coverSlips();
   }
+  /* FR-330: a slip the card still covers (no free place was left) takes no click or key while it is hidden under the card, except the one that holds the keyboard focus (a typed answer or limit is never cut off); done again when the focus moves */
+  function coverSlips() {
+    if (!ZOOM || !ZOOM.rect || !CUR || !CUR.ro) return;
+    const ro = CUR.ro, o = ro.getBoundingClientRect(), r = ZOOM.rect, act = document.activeElement;
+    for (const e of ro.querySelectorAll('.ro-slip')) {
+      const q = e.getBoundingClientRect(), x = q.left - o.left, y = q.top - o.top;
+      const hit = !e.hidden && !(act && e.contains(act)) && x < r.x + r.w && r.x < x + q.width && y < r.y + r.h && r.y < y + q.height;
+      if (hit) e.setAttribute('inert', ''); else e.removeAttribute('inert');
+    }
+  }
+  const coverLater = () => setTimeout(coverSlips, 0);
 
   /* Paco's review of #921 (art): a lobby place plate reads in full (never an ellipsis) when there is room: a plate wider than its
      slot grows to the right, then to the left, into free space only (up to the next plate on the same rows or the band's edge); no

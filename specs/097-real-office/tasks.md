@@ -230,4 +230,4 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 - [x] T228 [US2] Hover on a desk's person, desk, monitor or plate opens the zoom [FR-327, #1151]: `wireZoom` in `realoffice.js` (one target-to-agent function; the panel stays while the pointer moves over one desk). Test: `check-097-hover-card`
 - [x] T229 [US2] The zoom opens for an asleep agent [FR-328]: `openZoom`, the layout refresh and `realScreen` (reply lines for the zoom only). Test: `check-097-hover-card`, `shots-097-screens` asleep step (the open card is refilled when its agent falls asleep)
 - [x] T230 [US2] The Changed fact for lounge agents [FR-329]: `realFacts`, `Changed` wraps. Test: `check-097-hover-card`
-- [x] T231 [US2] Docs and pictures [FR-330]: changelog fragment, `docs/features.md`, two compressed pictures; Q25 recorded
+- [x] T231 [US2] Docs and pictures [FR-330]: changelog fragment, `docs/features.md`; no committed picture (round 2: the two crops were linked from nowhere); Q25 resolved (no helpers on the card)
