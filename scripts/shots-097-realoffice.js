@@ -43,6 +43,8 @@ module.exports = async (ctx) => {
   const { js } = H;
   const SHARP = `(()=>{const px={...window.DurbarRealOfficeWorlds.photo.px,...window.DurbarRealOfficeSets.office.px},all=[...document.querySelectorAll('#stage .ro-person,#stage .ro-visitor')].filter(i=>i.currentSrc);const rows=all.map(i=>{const half=/\.h\.webp$/.test(i.currentSrc),file=i.currentSrc.split('/').pop().replace('.h.webp','.webp'),own=half?Math.ceil(px[file]/2):px[file];return {half,seat:i.classList.contains('ro-person'),ratio:own/(i.getBoundingClientRect().width*devicePixelRatio)};});const rs=(f)=>rows.filter(f).map(r=>r.ratio);return {dpr:devicePixelRatio,seatFull:rows.filter(r=>r.seat&&!r.half).length,seatHalf:rows.filter(r=>r.seat&&r.half).length,lobbyFull:rows.filter(r=>!r.seat&&!r.half).length,lobbyHalf:rows.filter(r=>!r.seat&&r.half).length,minHalfRatio:Math.min(99,...rs(r=>r.half)),seatRatios:[Math.min(99,...rs(r=>r.seat)),Math.max(0,...rs(r=>r.seat))]};})()`;
   const must = async (expr, what, ms = 15000) => assert.ok(await H.until(expr, ms), 'timed out waiting for ' + what);
+  /* the pointer rests where an earlier step or the display left it (under a virtual X display, on a plate): a pointer on a plate opens that agent's card (FR-327), so a step that wants no card moves it off the office first */
+  const park = async () => { ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 }); await js(`new Promise(r=>setTimeout(r,150))`); };
   const REAL = `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'`;
   /* every picture of the office has decoded (or failed): no half-drawn screenshot */
   const PICS = `[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`;
@@ -242,6 +244,7 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(pl.cc, [], 'no two chips overlap');
     assert.deepStrictEqual(pl.initials, [], `no bare initial in the lobby (names, or their first letters and an ellipsis): ${JSON.stringify(pl.initials)} of ${pl.chips}`);
     /* going back from the chat above leaves the focus on a plate, and a focused plate has its zoom open (FR-034): not in the picture */
+    await park();
     await js(`document.activeElement&&document.activeElement.blur&&document.activeElement.blur();0`);
     await must(`!document.getElementById('roZoom')`, 'no zoom in the picture');
     await H.shot(path.join(OUT, `097-real-15-${w}x${h}.png`), { prep: 'calm' });
@@ -306,6 +309,7 @@ module.exports = async (ctx) => {
     await must(`!document.getElementById('modeMenu')`, 'the list closed');
     await must(`document.activeElement&&document.activeElement.matches('#stage .ro-lplate[data-placemore]')`, 'focus is back on the "+N" plate after Escape');
     await loadReal(w, h);
+    await park();
     await js(`document.querySelector('#stage .ro-plate').focus()`);
     const first = await js(`document.activeElement.dataset.id`);
     await H.key('Right');

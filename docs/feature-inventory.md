@@ -16,7 +16,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Live activity on the desk | works | works, monitors show the newest output (PR 979) | mock+planned (live-screen) | 001 097 | test:liveact driver:shots-001-live-activity |
 | Model, tokens, cost, context, last tool on the desk | works | works in the hover zoom (#1148, 097 FR-312..FR-315); a figure on the name plate is open (Q8) | none | 019 097 | test:ctxbreakdown driver:shots-097-screens |
 | Unread "New", draft, question marks | works | works, a New reply tag and a green screen (097 FR-236, FR-238), a Draft tag and "unsent draft" in the plate's name (097 FR-316); a question shows as the "?" bubble, the plate's text and "needs you" (FR-038, FR-016) | none | 001 005 097 | test:unread driver:shots-097-realoffice driver:check-097-desk-marks |
-| Hover card | works | missing, tooltip only (#1151) | none | 001 097 | test:tooltip read:src/renderer/realoffice.js |
+| Hover card | works | works, the zoom opens over the person, desk, table, monitor or plate, also for asleep agents, with the Changed line (097 FR-327..FR-330); helpers stay with the desk's own tiles, as in Open office (Q25 decided, 2026-11-08) | none | 001 097 | test:tooltip driver:check-097-hover-card |
 | Drag to rearrange rooms, desks, places | works | missing (#1152) | none | 033 | test:roomorder driver:shots-033-order |
 | Rename a session (F2, pencil) | works | works, the pencil beside a plate's name and F2 on a plate (059 FR-170) | none | 059 | test:sessionname driver:check-097-plate-pencil |
 | Lobby places, visitors, away at a place | works | works | mock+planned (lobby) | 024 | test:places driver:shots-024 |
