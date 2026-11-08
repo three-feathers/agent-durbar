@@ -210,6 +210,9 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 - [x] T201 [US1] Wiring: app.js marks rolled agents `lounge` with the lounge words; `realoffice.js` draws a seat (person, small desk, monitor, plate, lamp, "z z") and fades the desk picture out and in; CSS for the photo office, the cave and the arcade [FR-246..FR-249]
 - [x] T202 [US1] Driver `scripts/check-097-lounge.js` (in `ui-suite`): both sizes, Photo office and arcade, unread keeps the desk, read moves, back to work eases, reduced motion does not; the moments driver's asleep moment and the world matrix's lounge scene follow the row [FR-246..FR-249]
 - [x] T203 [US1] Docs: changelog fragment, `docs/features.md`, `docs/feature-inventory.md`, `docs/experience/world-moments.json`, the linked Real office pictures retaken [FR-246..FR-249]
+- [x] T215 [US1] Wiring: `realModel` gives each desk `draft` (`hasDraft`) and the model `draftIcon`; the plate's name adds `draftWords` before the New reply words (desk and lounge seat) [FR-316]
+- [x] T216 [US1] Driver `scripts/check-097-desk-marks.js` (in `ui-suite`) and the overlap check's new box, tests first [FR-316]
+- [x] T217 [US1] `realoffice.js` makes the Draft tag once per desk and shows it by class; `realoffice.css` styles it; changelog, `docs/features.md`, `docs/feature-inventory.md` [FR-316]
 
 ## 2026-11-07: facts in the zoom (issue #1148, FR-312..FR-315)
 
@@ -224,7 +227,7 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 - [x] T222 [US2] Second review of PR #1292 (FR-318 delta 2026-11-07): LF, CR, TAB and other non-space whitespace shown as markers; a secret behind a control is `concealed` and blocks Allow like `unchecked`; every Cf, default-ignorable and blank-filler character marked; text over 10,000 characters cut at a word, marked, fast, and a cut card offers no Allow; homoglyphs #1300 a known gap. Test: `test:liveact` (`r2 item 1..4`, 12 mutants) and `check-why-allowed`
 - [x] T223 [US2] Third review of PR #1292 (FR-318 delta 2026-11-07): `cut` ranks first and always wins, the cap counts marker growth, a masked shell command that lost its shape or whose replaced span holds `$(`, a backtick, `;`, `|`, `&`, `<`, `>` or a line break is `concealed` (Deny only). Test: `test:liveact` (`r3 ...`, 13 mutants) and `check-why-allowed` (cut and `$( )` cards)
 - [x] T224 [US2] Fourth review of PR #1292 (FR-318 delta 2026-11-08): CRLF-safe source reads in `test:liveact` (proved on a CRLF copy), `(` and `{` (PowerShell) join the spans that conceal a masked command, a mask that changes text before the first `[redacted]` is concealed. Test: `test:liveact` (`r3 item 2` PowerShell cases, `r4 item 3`, 3 mutants)
-- [x] T280 [US2] Real office trouble signs, spec delta 2026-11-08 [FR-350..FR-352, #1171]: spec, tasks and changelog fragment
-- [x] T281 [US2] `realModel` passes `mood` (from `moodFor`) and `sirenIcon`; `realoffice.js` draws the sweat drop, horns, ring and siren in the chrome layer; the plate name carries the words; `realoffice.css` [FR-350, FR-351, FR-352]
-- [x] T282 [US2] `scripts/check-097-trouble-signs.js`: the same desks as Open office, geometry, Serious mode, words, both sizes; in `ui-suite` [FR-350, FR-351]
-- [x] T283 [US2] Mutation checks (no sweat, no horns, no ring, no siren, a sign on every desk) and pictures at both sizes [FR-351]
+- [x] T280 [US2] Real office trouble signs, spec delta 2026-11-08 [FR-360..FR-362, #1171]: spec, tasks and changelog fragment
+- [x] T281 [US2] `realModel` passes `mood` (from `moodFor`) and `sirenIcon`; `realoffice.js` draws the sweat drop, horns, ring and siren in the chrome layer; the plate name carries the words; `realoffice.css` [FR-360, FR-361, FR-362]
+- [x] T282 [US2] `scripts/check-097-trouble-signs.js`: the same desks as Open office, geometry, Serious mode, words, both sizes; in `ui-suite` [FR-360, FR-361]
+- [x] T283 [US2] Mutation checks (no sweat, no horns, no ring, no siren, a sign on every desk) and pictures at both sizes [FR-361]

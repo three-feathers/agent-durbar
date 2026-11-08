@@ -1,5 +1,5 @@
 /*
- * Spec 097 FR-350..FR-352 (issue #1171, part of #1147): the heavy look, the monster face and the siren on a Real office desk, on Open office's own
+ * Spec 097 FR-360..FR-362 (issue #1171, part of #1147): the heavy look, the monster face and the siren on a Real office desk, on Open office's own
  * triggers. Simulator only (DURBAR_SIM=15, a frozen simulator), no AI credits; every wait is an until().
  *
  *   npm run check:ui -- --only check-097-trouble-signs      (builds first)
@@ -40,7 +40,7 @@ module.exports = async (ctx) => {
   };
   /* the signs in the page, by desk, and the geometry of everything they must keep clear of */
   const read = () => js(`(()=>{const L=window.__durbarSimUi.realLayout(),ro=document.querySelector('#stage .ro'),o=ro.getBoundingClientRect(),R=e=>{const b=e.getBoundingClientRect();return {x:b.left-o.left,y:b.top-o.top,r:b.right-o.left,b:b.bottom-o.top}};
-    const signs=[...document.querySelectorAll('#stage .ro-mood')].map(e=>({id:e.dataset.for,kind:/ro-sweat/.test(e.className)?'sweat':/ro-horns/.test(e.className)?'horns':/ro-ring/.test(e.className)?'ring':/ro-siren/.test(e.className)?'siren':'?',r:R(e),text:e.textContent.trim(),hidden:e.getAttribute('aria-hidden')==='true',pe:getComputedStyle(e).pointerEvents,shown:e.getClientRects().length>0}));
+    const signs=[...document.querySelectorAll('#stage .ro-mood')].map(e=>({id:e.dataset.for,kind:/ro-sweat/.test(e.className)?'sweat':/ro-horns/.test(e.className)?'horns':/ro-ring/.test(e.className)?'ring':/ro-siren/.test(e.className)?'siren':'?',r:R(e),text:e.textContent.trim(),paths:e.querySelectorAll('path').length,vb:(e.querySelector('svg')||{getAttribute:()=>''}).getAttribute('viewBox'),siren:!!e.querySelector('.siren'),hidden:e.getAttribute('aria-hidden')==='true',pe:getComputedStyle(e).pointerEvents,shown:e.getClientRects().length>0}));
     const desks=L.zones.flatMap(z=>z.desks).map(d=>{const p=document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(d.id)+'"]'),s=document.querySelector('#stage .ro-screen[data-for="'+CSS.escape(d.id)+'"] .ro-bezel'),n=document.querySelector('#stage .ro-away[data-for="'+CSS.escape(d.id)+'"]');
       return {id:d.id,face:d.face,slot:d.slot,hasPerson:!!d.person,away:!!d.away,plate:p?R(p):null,screen:s?R(s):null,note:n&&n.getClientRects().length?R(n):null,label:p?p.getAttribute('aria-label'):''}});
     const se=document.scrollingElement;
@@ -54,10 +54,10 @@ module.exports = async (ctx) => {
     await H.load({ w, h, query: { officeview: 'real' }, ready: REAL, settle: false });
     await must(PICS, 'the pictures');
     await must(`window.__durbarSimUi.visitsSettled()`, `${tag}: no visit about to start or end`);
-    /* the simulator sends some agents to a place (a tool call or a request open) and a desk with nobody at it has no face to put a sign on (FR-351): so the agents that
-       carry a mood go home here, by a status event, and think at their desks (no tool call open); which ones are away at load is a matter of timing */
+    /* the simulator sends some agents to a place (a tool call or a request open) and a desk with nobody at it has no face to put a sign on (FR-361): so the agents that
+       carry a mood go home here, by a status event (the turn ended); no agent's state is set by hand; which ones are away at load is a matter of timing */
     const moody = F.filter((x) => x.body && x.body !== 'normal' && !x.trouble).map((x) => x.id);
-    await js(`(()=>{for(const id of ${jsLiteral(moody)}){window.__durbarSimEmit({type:'status',sessionId:id,timestamp:Date.now(),status:'idle'}); /* the app's own way home: the turn ended */ const a=window.__durbarSimUi.agents().find(x=>x.id===id);if(a)a.state='thinking';}window.__durbarSimUi.render();return 1})()`);
+    await js(`(()=>{for(const id of ${jsLiteral(moody)})window.__durbarSimEmit({type:'status',sessionId:id,timestamp:Date.now(),status:'idle'});window.__durbarSimUi.render();return 1})()`); /* the app's own way home (the turn ended); no state is set by hand */
     await must(`(()=>{const L=window.__durbarSimUi.realLayout(),ids=${jsLiteral(moody)};const ds=L.zones.flatMap(z=>z.desks);return ids.every(id=>{const d=ds.find(x=>x.id===id);return d&&d.person&&d.face&&!d.away})})()`, `${tag}: the heavy and monster agents at their desks`);
     await must(`window.__durbarSimUi.visitsSettled()`, `${tag}: no visit about to start or end`);
     let S = await read();
@@ -70,6 +70,10 @@ module.exports = async (ctx) => {
       assert.ok(kinds[k].size >= 1, `${tag}: the simulator has a desk for the ${k} sign (else this check is empty): ${JSON.stringify(F.map((x) => x.id + ':' + x.body + '/' + x.trouble + (drawn.has(x.id) ? '' : ' nodrawn=' + JSON.stringify((S.desks.find((d) => d.id === x.id) || {}).hasPerson) + (S.lounge.includes(x.id) ? 'lounge' : ''))))}; signs ${jsLiteral(S.signs.length)}`);
       assert.ok(same(kinds[k], have(k)), `${tag}: ${k} sign on exactly Open office's desks: want ${[...kinds[k]]}, drawn ${[...have(k)]}`);
     }
+    /* the shape, not only the class: a stale picture under the wrong class must fail (a heavy desk that climbed to monster, and back) */
+    const shapeOf = { sweat: (x) => x.paths === 1 && x.vb === '0 0 10 16' && !x.siren, horns: (x) => x.paths === 2 && x.vb === '0 0 40 20' && !x.siren, ring: (x) => x.paths === 0 && !x.vb && !x.siren, siren: (x) => x.siren };
+    const shapes = (sg, t) => sg.forEach((x) => assert.ok(shapeOf[x.kind](x), `${t}: the ${x.kind} on ${x.id} has its own shape: ${JSON.stringify({ paths: x.paths, vb: x.vb, siren: x.siren })}`));
+    shapes(S.signs, tag);
     assert.strictEqual(S.signs.filter((s) => s.kind === '?').length, 0, `${tag}: only known signs`);
     assert.strictEqual(S.scroll, false, `${tag}: the office does not scroll`);
     /* geometry: inside its slot and the office, clear of the face (the ring excepted: it is the face's frame, outside it), plate, monitor, note and every other sign */
@@ -88,6 +92,16 @@ module.exports = async (ctx) => {
     for (const id of kinds.ring) assert.ok(/Context almost full \(\d+%\)/.test(label(id)), `${tag}: ${id}'s plate name says the monster's words: ${label(id)}`);
     for (const id of kinds.sweat) assert.ok(!/Context almost full/.test(label(id)), `${tag}: ${id}'s heavy look has no words, as in Open office (from 90% only): ${label(id)}`);
     for (const id of kinds.siren) assert.ok(/Error: please check it|Spending limit reached/.test(label(id)), `${tag}: ${id}'s plate name names the trouble: ${label(id)}`);
+    /* a desk that climbs from heavy to monster and back, by the real context event: the sign changes with it, with its own picture each time */
+    const top = [...kinds.sweat][0];
+    const ctxAt = async (tokens) => js(`window.__durbarSimEmit({type:'context',sessionId:${jsLiteral(top)},timestamp:Date.now(),tokens:${jsLiteral(tokens)},limit:100000});window.__durbarSimUi.render();1`);
+    const kindsOf = (id) => js(`[...document.querySelectorAll('#stage .ro-mood[data-for=${jsLiteral(id)}]')].map(e=>({kind:/ro-sweat/.test(e.className)?'sweat':/ro-horns/.test(e.className)?'horns':/ro-ring/.test(e.className)?'ring':'siren',paths:e.querySelectorAll('path').length,vb:(e.querySelector('svg')||{getAttribute:()=>''}).getAttribute('viewBox'),siren:!!e.querySelector('.siren')}))`);
+    const want2 = async (names, what) => {
+      assert.ok(await H.until(`[...document.querySelectorAll('#stage .ro-mood[data-for=${jsLiteral(top)}]')].map(e=>/ro-sweat/.test(e.className)?'sweat':/ro-horns/.test(e.className)?'horns':/ro-ring/.test(e.className)?'ring':'siren').sort().join()===${jsLiteral(names.slice().sort().join())}`, 15000), `${tag}: ${what}: signs ${names}`);
+      (await kindsOf(top)).forEach((x) => assert.ok(shapeOf[x.kind](x), `${tag}: ${what}: the ${x.kind} has its own picture: ${JSON.stringify(x)}`));
+    };
+    await ctxAt(95000); await want2(['horns', 'ring'], 'heavy to monster');
+    await ctxAt(80000); await want2(['sweat'], 'monster back to heavy');
     await H.shot(path.join(OUT, `097-trouble-signs-${tag}.png`), { prep: 'calm', delay: 300, tag: '097', what: `trouble signs ${tag}` });
     /* Serious mode removes every sign and brings them back */
     await serious(true);

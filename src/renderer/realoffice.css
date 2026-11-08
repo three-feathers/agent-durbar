@@ -279,7 +279,7 @@ body.ro-chat .ph .avatar{display:none}
 .ro-newtag{display:none;transform:translate(-100%,calc(-100% - 2px));padding:1px 6px;border-radius:7px;font-size:11px;font-weight:700;line-height:15px;white-space:nowrap;color:#fff;background:#1f7a45;box-shadow:0 0 0 2px rgba(255,255,255,.92);pointer-events:none}
 .ro-newtag.on{display:block}
 @media (forced-colors:active){.ro-newtag{color:CanvasText;background:Canvas;border:1px solid CanvasText;box-shadow:none}}
-/* spec 097 FR-350..FR-352 (#1171): trouble signs on a desk, in the chrome (never dimmed, FR-044): a heavy body's sweat drop, a monster's horns and green ring, the siren of an ambulance or a faint */
+/* spec 097 FR-360..FR-362 (#1171): trouble signs on a desk, in the chrome (never dimmed, FR-044): a heavy body's sweat drop, a monster's horns and green ring, the siren of an ambulance or a faint */
 .ro-mood{pointer-events:none!important;display:block}
 .ro-mood svg{display:block;width:100%;height:100%;overflow:visible}
 .ro-sweat path{fill:#a9c6e3;stroke:#3f6f9e;stroke-width:1.1px}
@@ -289,6 +289,11 @@ body.ro-chat .ph .avatar{display:none}
 .ro-siren{border-radius:50%;background:rgba(255,255,255,.82)}
 .ro-siren .siren svg{display:block;width:100%;height:100%}
 @media (forced-colors:active){.ro-sweat path,.ro-horns path{fill:Canvas;stroke:CanvasText}.ro-ring{border-color:CanvasText;outline-color:Canvas}}
+/* spec 097 FR-316: "Draft" above the plate's left end (New reply is over the right end); chrome layer, made once per desk, shown by class, aria-hidden */
+.ro-drafttag{display:none;transform:translate(0,calc(-100% - 2px));align-items:center;gap:var(--s-1);padding:0 var(--s-1);border-radius:var(--r-md);font-size:var(--t5-size);font-weight:var(--t1-weight);line-height:var(--t5-lh);white-space:nowrap;color:var(--ink);background:var(--surface);border:1px solid var(--line);pointer-events:none}
+.ro-drafttag.on{display:inline-flex}
+.ro-drafttag>svg{width:12px;height:12px;flex:none}
+@media (forced-colors:active){.ro-drafttag{color:CanvasText;background:Canvas;border-color:CanvasText}}
 /* spec 059 FR-170 (#1155): Open office's rename pencil (.ren, styles.css) beside a plate's name. It is the plate's next sibling, anchored by CSS to
    the name (anchor-name and position-anchor are set per desk), so it follows the name with no script. The plate keeps 22px after the name for it,
    so it covers neither the role nor the helper dots; a long name gives way first (ellipsis). It shows on the plate's hover and focus, as on a desk. */

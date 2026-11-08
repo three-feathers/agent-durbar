@@ -1679,14 +1679,14 @@ function realModel(model){
       agents:list.map(a=>{const v=VISITS.at(a.id),st=stOf(a,old.has(a.id)),task=deskMask(taskOf(a)),place=v?placeLabel(v.place):'',needs=st==='waiting'||st==='limit';
         if(rolled.has(a.id)&&!v){ /* spec 097 FR-246, FR-120: in the lounge row, resting or asleep; the words of the flat lounge's peek card and label, the same masked reply (shutReply) */
           const asleep=old.has(a.id), ago=ACT.agoLong(sinceLast(a)), said=SHUT.spoken(ago), line=shutReply(a,140), who=a.profile?a.profile.name+' · '+a.role:a.role, word=asleep?'Asleep':stWord(a);
-          return {id:a.id,name:a.name,role:a.role,state:st,word,task:ago?'finished '+ago:'',asleep,lounge:true,tip:word+(asleep?' · '+stWord(a):'')+(ago?' · finished '+ago:'')+(asleep?' · Lamp off':'')+'\n'+shutReply(a,300),selected:ui.selected===a.id,ren:canRenameSession(a),unread:isUnread(a),away:null,awayLabel:'',
-            label:a.name+unreadWords(a)+', '+who+', folder '+deskMask(showPath(r.path))+(asleep?', asleep in the lounge':', resting in the lounge')+(said?', finished '+said:'')+': '+line+(/[.!?…]$/.test(line)?'':'.')+' Open chat panel.',helpers:helpersOf(a).map(h=>stOf(h,false))};
+          return {id:a.id,name:a.name,role:a.role,state:st,word,task:ago?'finished '+ago:'',asleep,lounge:true,tip:word+(asleep?' · '+stWord(a):'')+(ago?' · finished '+ago:'')+(asleep?' · Lamp off':'')+'\n'+shutReply(a,300),selected:ui.selected===a.id,ren:canRenameSession(a),unread:isUnread(a),draft:hasDraft(a),away:null,awayLabel:'',
+            label:a.name+draftWords(a)+unreadWords(a)+', '+who+', folder '+deskMask(showPath(r.path))+(asleep?', asleep in the lounge':', resting in the lounge')+(said?', finished '+said:'')+': '+line+(/[.!?…]$/.test(line)?'':'.')+' Open chat panel.',helpers:helpersOf(a).map(h=>stOf(h,false))};
         }
         const br=v&&v.place===D.COFFEE&&BREAKS.get(a.id)&&BREAKS.get(a.id).kind!=='cap'?coffeeUntilWords(a):''; /* owner 2026-11-02: the post-it of a coffee break says until when (an app's usage window), never of Durbar's cap at the Bank */
-        const mo=moodFor(a); /* spec 097 FR-350: Open office's own decision (context window, ambulance, faint; none in Serious mode) */
-        return {id:a.id,name:a.name,role:a.role,state:st,word:stWord(a),task,tip:deskTip(a),selected:ui.selected===a.id,ren:canRenameSession(a),unread:isUnread(a),away:v?v.place:null,awayLabel:place+(br?' '+br:''),
+        const mo=moodFor(a); /* spec 097 FR-360: Open office's own decision (context window, ambulance, faint; none in Serious mode) */
+        return {id:a.id,name:a.name,role:a.role,state:st,word:stWord(a),task,tip:deskTip(a),selected:ui.selected===a.id,ren:canRenameSession(a),unread:isUnread(a),draft:hasDraft(a),away:v?v.place:null,awayLabel:place+(br?' '+br:''),
           mood:{body:mo.body,siren:mo.trouble==='ambulance'||mo.trouble==='faint'},
-          label:[a.name+unreadWords(a),a.role,stWord(a)].concat(task?[task]:[],needs?['needs you']:[],place?['at '+place]:[],mo.words?[mo.words]:[]).join(', ')+'. Open chat panel.', /* FR-090: text for setAttribute, not markup */
+          label:[a.name+draftWords(a)+unreadWords(a),a.role,stWord(a)].concat(task?[task]:[],needs?['needs you']:[],place?['at '+place]:[],mo.words?[mo.words]:[]).join(', ')+'. Open chat panel.', /* FR-090: text for setAttribute, not markup */
           helpers:helpersOf(a).map(h=>stOf(h,false))};})};
   });
   const places=lobbyPlaces().map(p=>{
@@ -1696,7 +1696,7 @@ function realModel(model){
       title:p.id===D.POSTBOX?placeLabelFull(p.id)+': the next scheduled runs. Open Settings > Schedules.':placeTip(p.id,ids,wait),
       visitors:ids.map(id=>{const a=byId(id),v=VISITS.at(id);return {id,name:a.name,needsYou:vis(a)==='waiting'||!!a.limit,title:visitorWords(a,v,true)};})};
   });
-  return {folders,places,slips:realSlips(),alertIcon:ALERT_ICON,sirenIcon:SIREN(),renIcon:ICON('rename'),sessions:agents.filter(a=>!a.parent).map(a=>({id:a.id,folder:a.room}))};
+  return {folders,places,slips:realSlips(),alertIcon:ALERT_ICON,sirenIcon:SIREN(),renIcon:ICON('rename'),draftIcon:ICON('edit'),sessions:agents.filter(a=>!a.parent).map(a=>({id:a.id,folder:a.room}))};
 }
 /* spec 097 FR-121, FR-122, FR-124 (Real office): the requests the world draws as slips at the Boss door and the Bank, and as a bubble at the desk. Plain data
    from the very cards the chat and the inbox already hold (pendingCardOf, inboxActs, requestText), so the words, the buttons, their order and their tooltips are
