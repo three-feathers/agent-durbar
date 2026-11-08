@@ -293,8 +293,10 @@ module.exports = async (ctx) => {
       const st = i % 2 ? 'working' : 'idle';
       await js(`window.__durbarSimEmit({type:'status',sessionId:${jsLiteral(aid)},timestamp:Date.now(),status:${jsLiteral(st)}})`);
       aseen.push(await until(`(document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(aid)})+'"]')||{classList:{contains:()=>false}}).classList.contains('st-working')===${jsLiteral(st === 'working')}`, 8000));
+      /* and its screen's throttled repaint (2 s, FR-033) has landed inside the window, whatever the load: a repaint that removes the caret (a node) then always counts */
+      aseen.push(await until(`window.DurbarRealOffice.pending().screens===0`, 8000));
     }
-    assert.ok(aseen.every(Boolean), `${n} agents, arcade: every status event reached the desk's plate (${aseen})`);
+    assert.ok(aseen.every(Boolean), `${n} agents, arcade: every status event reached the desk's plate and its screen repainted (${aseen})`);
     rows[`statusNodes@retro${n}`] = await js(`(window.__aO.disconnect(),window.__aN)`);
     console.log('[ops]', n, 'agents, arcade: elements added or removed under the office over 8 status updates', rows[`statusNodes@retro${n}`]);
 
