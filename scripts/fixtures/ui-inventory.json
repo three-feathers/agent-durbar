@@ -1,14 +1,14 @@
 {
  "chrome": {
-  "font-size": 374,
+  "font-size": 373,
   "line-height": 118,
-  "font-weight": 202,
-  "spacing": 1168,
-  "radius": 156,
+  "font-weight": 201,
+  "spacing": 1165,
+  "radius": 154,
   "shadow": 73
  },
  "office": {
-  "font-size": 44,
+  "font-size": 43,
   "line-height": 20,
   "font-weight": 21,
   "spacing": 100,

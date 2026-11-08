@@ -39,15 +39,15 @@ try {
   fails({ md: (t) => t.replace('mock+planned (desk-card)', 'mock+planned (no-such-moment)') }, /no moment/);
   fails({ md: (t) => t.replace('mock+planned (desk-card)', 'built (desk-card)') }, /code: present/);
   fails({ md: (t) => t.replace(/\| OS sandbox[^\n]*\n/, '') }, /087-.* built but in no row/);
-  fails({ md: (t) => t.replace('missing (#1148)', 'in PR') }, /must name the branch/);
+  fails({ md: (t) => t.replace('missing, tooltip only (#1151)', 'in PR') }, /must name the branch/);
   fails({ md: (t) => t.replace('Exempt: 002 ', 'Exempt: ') }, /002-.* built but in no row/);
   fails({ md: (t) => t.replace(/\| Helpers[^\n]*\n/, '') , reg: (t) => t.replace('"shippable": false', '"shippable": true') }, /shippable: true/);
   fails({ reg: (t) => t.replace('"shippable": false', '"shippable": true') }, /shippable: true/);
   // parity (spec 021 FR-078)
-  fails({ md: (t) => t.replace('missing (#1148)', 'missing') }, /Real office cell "missing" is not plain works/);
+  fails({ md: (t) => t.replace('missing, tooltip only (#1151)', 'missing') }, /Real office cell "missing" is not plain works/);
   fails({ md: (t) => t.replace('Helpers (sub-agents): card, tree, own chat, needs you | works | missing, only `+N` and 3 dots; planned as small figures beside the desk (#1139)', 'Helpers (sub-agents): card, tree, own chat, needs you | works | in PR 097-helpers') }, /Real office cell "in PR 097-helpers" is not plain works/);
   fails({ crew: (t) => t.replace('retro: false', 'retro: true') }, /world\(s\) retro offered, but Worlds "none" is not built and carries no owner decision of its own/);
-  assert.ok(!check(copy({ md: (t) => t.replace('missing (#1148)', 'missing (owner decision, 2026-11-04)') })).some((m) => /Real office cell/.test(m)), 'a marker accepts a Real office gap');
+  assert.ok(!check(copy({ md: (t) => t.replace('missing, tooltip only (#1151)', 'missing (owner decision, 2026-11-04)') })).some((m) => /Real office cell/.test(m)), 'a marker accepts a Real office gap');
   fails({ crew: (t) => t.replace('cave: false', 'cave: true') }, /world\(s\) cave offered, but Worlds "none" is not built/);
   // a decision waives only its own cell
   const HALO = 'row "Waiting desk halo (a still glow behind the screen)"';
@@ -58,14 +58,14 @@ try {
   const own = (md) => ({ crew: retro.crew, md: (t) => md(flatHalo(t)) });
   const haloWorld = (t) => t.replace('(owner decision, 2026-11-05) | none | 001 | driver:check-001-lights', '(owner decision, 2026-11-05) | none (owner decision, 2026-11-05) | 001 | driver:check-001-lights');
   assert.ok(!check(copy(own(haloWorld))).some((m) => m.startsWith(HALO) && !/: no scripts\//.test(m)), 'a decision in the Worlds cell waives the Worlds gap');
-  const deskWorld = (t) => t.replace('| missing (#1148) | none |', '| missing | none (owner decision, 2026-11-04) |');
+  const deskWorld = (t) => t.replace('| missing, tooltip only (#1151) | none |', '| missing | none (owner decision, 2026-11-04) |');
   assert.ok(check(copy({ md: deskWorld })).some((m) => /Real office cell "missing" is not plain works/.test(m)), 'a Worlds decision does not waive the Real office cell');
   // the marker's form (escape every regex metacharacter, backslash included; CodeQL js/incomplete-sanitization)
   const reEsc = (x) => x.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
   for (const bad of ['(owner decision, x)', '(owner decision, 2026-02-30)', '(owner decision, 2026-11-4)', '(owner decision, #0)', '(owner decision 2026-11-04)', '(Owner decision, #12'])
-    fails({ md: (t) => t.replace('missing (#1148)', 'missing ' + bad) }, new RegExp('marker "' + reEsc(bad) + '\\)?" must be exactly'));
-  assert.ok(check(copy({ md: (t) => t.replace('missing (#1148)', 'missing (owner decision, 2026-02-30)') })).some((m) => /Real office cell "missing \(owner decision, 2026-02-30\)" is not plain works/.test(m)), 'a marker with no real date does not waive the gap');
-  assert.ok(!check(copy({ md: (t) => t.replace('missing (#1148)', 'missing (owner decision, #1148)') })).some((m) => /marker|Real office cell/.test(m)), 'an issue marker is accepted');
+    fails({ md: (t) => t.replace('missing, tooltip only (#1151)', 'missing ' + bad) }, new RegExp('marker "' + reEsc(bad) + '\\)?" must be exactly'));
+  assert.ok(check(copy({ md: (t) => t.replace('missing, tooltip only (#1151)', 'missing (owner decision, 2026-02-30)') })).some((m) => /Real office cell "missing \(owner decision, 2026-02-30\)" is not plain works/.test(m)), 'a marker with no real date does not waive the gap');
+  assert.ok(!check(copy({ md: (t) => t.replace('missing, tooltip only (#1151)', 'missing (owner decision, #1148)') })).some((m) => /marker|Real office cell/.test(m)), 'an issue marker is accepted');
   // a works note with a limiting word is not parity
   for (const w of ['works pose, dots and lights only', 'works, partly', 'works, partial', 'works, partially drawn', 'works, no pencil', 'works, not the lounge', 'works, missing drag', 'works without drag', 'works except drag'])
     fails({ md: (t) => t.replace('works pose, dots and lights only; heavy, monster and siren missing (#1171)', w) }, new RegExp('Real office cell "' + reEsc(w) + '" is not plain works'));

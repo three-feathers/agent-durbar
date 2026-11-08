@@ -9,6 +9,7 @@
  *   - one status event of one agent, 8 times, each a real change (every sample must draw, none may search; renders, style reads of the floor and layout reads are the median): renders and searches are the app's own counters (`__durbarSimUi.ops()`), reads are offset*, client*, scroll*, getBoundingClientRect and
  *     getClientRects calls. The first proxy for renders, `getComputedStyle(#floor)`, was read twice per render and showed two where there was one;
  *   - one live paint (a thinking delta rewrites one desk's live line, no render; review of #1138), 8 times: the layout reads, the pencils' frame included (median of the samples without a render);
+ *   - the arcade (spec 102 T262): over 8 status events on one desk, no element is added or removed anywhere under the office;
  *   - Real office (spec 097 FR-244, T190): over 8 status events that tint and clear one desk's screen (FR-236), no screen or New reply tag is added or removed;
  *   - after each of those status updates no `data-placed` mark sits on anything but a role or a pencil (a finished turn marks the desk unread and shifts keyless spans);
  *   - at 15 agents, 1280x800: after each status pill's filter and its clearing, after an agent starts or stops matching a status filter (a neighbour room's width changes while its HTML does not; its header is made tight by a spacer) and after a body class changes with no room changing (the fit key), the header and usage-line fit classes equal what a
@@ -247,6 +248,28 @@ module.exports = async (ctx) => {
     await H.load({ w: 1440, h: 900, index: process.env.OPS_INDEX || undefined, query: { sim: String(n), officeview: 'real', worldflags: 'retro', world: 'retro' }, ready: `!!document.querySelector('#stage .ro .ro-marquee')`, readyMs: 30000 });
     await js(`(()=>{const s=document.createElement('style');s.textContent='*,*::before,*::after{animation:none!important;transition:none!important}';document.head.appendChild(s);})();0`);
     await measure('#stage .ro-marquee', '#stage .ro-marquee', `elementsRecalculated@retro${n}`, `${n} agents, arcade`);
+    /* spec 102 T262 (FR-229, SC-024): in the arcade a status update adds or removes no element under the office: 8 status events alternating idle and
+       working on one desk (neither needs you, so the inbox count and its slip keep their words; an error would change them), every element added or
+       removed anywhere under #stage .ro counted (subtree), so a world that rebuilds a desk or a slip on a status change fails (`OPS_INDEX` with a build that
+       appends a node on each status update shows the row fails) */
+    const aid = await js(`(()=>{const p=document.querySelector('#stage .ro-plate.st-working');return p?p.dataset.id:'';})()`);
+    assert.ok(aid, `${n} agents, arcade: a working desk`);
+    /* settle first: the desk's first change of state may send a visitor away or clear an away mark once; the row counts what repeats, from a settled office */
+    for (const st of ['idle', 'working']) {
+      await js(`window.__durbarSimEmit({type:'status',sessionId:${jsLiteral(aid)},timestamp:Date.now(),status:${jsLiteral(st)}})`);
+      assert.ok(await until(`(document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(aid)})+'"]')||{classList:{contains:()=>false}}).classList.contains('st-working')===${jsLiteral(st === 'working')}`, 8000), `${n} agents, arcade: the desk settles (${st})`);
+    }
+    assert.ok(await until(`window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()`, 15000), `${n} agents, arcade: the office settled before the status updates`);
+    await js(`(()=>{window.__aN=0;window.__aO=new MutationObserver(ms=>{for(const m of ms)for(const x of [...m.addedNodes,...m.removedNodes])if(x.nodeType===1)window.__aN++;});window.__aO.observe(document.querySelector('#stage .ro'),{childList:true,subtree:true});})()`);
+    const aseen = [];
+    for (let i = 0; i < 8; i++) {
+      const st = i % 2 ? 'working' : 'idle';
+      await js(`window.__durbarSimEmit({type:'status',sessionId:${jsLiteral(aid)},timestamp:Date.now(),status:${jsLiteral(st)}})`);
+      aseen.push(await until(`(document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(aid)})+'"]')||{classList:{contains:()=>false}}).classList.contains('st-working')===${jsLiteral(st === 'working')}`, 8000));
+    }
+    assert.ok(aseen.every(Boolean), `${n} agents, arcade: every status event reached the desk's plate (${aseen})`);
+    rows[`statusNodes@retro${n}`] = await js(`(window.__aO.disconnect(),window.__aN)`);
+    console.log('[ops]', n, 'agents, arcade: elements added or removed under the office over 8 status updates', rows[`statusNodes@retro${n}`]);
 
     /* spec 097 FR-244 (T190): a status change that tints or clears a desk's screen (FR-236) adds or removes no screen or New reply tag: the tint is a
        class on the screen made once per desk. 8 status events alternating error (red) and working (the normal screen) on one desk. */
