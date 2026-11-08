@@ -593,8 +593,11 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
   for (const t of ['token ring network', 'token 4096', 'token 12345678', 'token docs/readme2.md', 'the token bucket', 'token configuration', 'token abc1234', 'token count: 1', 'api key rotation2'])
     eq(t, t, `scheme word stays: ${t}`);
   // 9. `Bearer x. <value>`
-  eq('Bearer x. ' + 'abc1234xyz9Q', 'Bearer [redacted]', 'bearer: a stop character after the first word');
-  eq('bearer ab, ' + 'abc1234xyz9Qrs', 'bearer [redacted]', 'bearer: comma, lower case');
+  // merge check of #1243 against main: this rule runs before the `Bearer` shape of `HELD_SHAPES`, so it hides the scheme word too, or it shows what `main` hides
+  eq('"Authorization": "Bearer sk-proj-' + 'Ab1Cd2Ef3 x', '"Authorization": "[redacted] x', 'bearer: the scheme word goes as on main (a hyphen after the first word)');
+  eq('Cookie: a=Bearer _Kxq.' + 'EbAt=cz6vz/yHTxbJHF; b=1', 'Cookie: [redacted]', 'bearer: a cookie header stays one mask as on main (no a=Bearer, no b=1)');
+  eq('Bearer x. ' + 'abc1234xyz9Q', '[redacted]', 'bearer: a stop character after the first word');
+  eq('bearer ab, ' + 'abc1234xyz9Qrs', '[redacted]', 'bearer: comma, lower case');
   eq('Bearer x. ' + 'abc1234xyz', 'Bearer x. ' + 'abc1234xyz', 'bearer stays: a value of 10 characters');
   eq('Bearer x. then more', 'Bearer x. then more', 'bearer stays: no value');
   eq('Bearer of bad news. Sorry', 'Bearer of bad news. Sorry', 'bearer stays: prose');
@@ -649,16 +652,16 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
   for (const v of ['abc123', 'a1b2c3d', 'Zx9Zx9', 'hunter2']) eq('password: ' + v, 'password: [redacted]', `short goes: ${v}`);
   // F1: Bearer stops
   const bv = 'abc123def456ghi';
-  eq('Bearer abcdefg. ' + bv, 'Bearer [redacted]', 'bearer: a first word of 7 characters');
-  eq('BEARER ab12:' + bv, 'BEARER [redacted]', 'bearer: no space after the stop');
-  eq('Bearer x) "' + bv + '"', 'Bearer [redacted]"', 'bearer: a quote before the value');
-  eq('Bearer ab! ' + bv, 'Bearer [redacted]', 'bearer: !');
-  eq('Bearer ab- ' + bv, 'Bearer [redacted]', 'bearer: -');
+  eq('Bearer abcdefg. ' + bv, '[redacted]', 'bearer: a first word of 7 characters');
+  eq('BEARER ab12:' + bv, '[redacted]', 'bearer: no space after the stop');
+  eq('Bearer x) "' + bv + '"', '[redacted]"', 'bearer: a quote before the value');
+  eq('Bearer ab! ' + bv, '[redacted]', 'bearer: !');
+  eq('Bearer ab- ' + bv, '[redacted]', 'bearer: -');
   eq('Bearer x. abcdefghijkl', 'Bearer x. abcdefghijkl', 'bearer stays: 12 letters and no digit');
   // survivors of the pre-review mutant run (2026-11-07): each line names the mutant it kills
   for (const t of ['token: RS256', 'secret: tls13']) eq(t, t, `short stays: ${t} (NOT_SHORT without rs, tls)`);
-  eq('Bearer ab; ' + bv, 'Bearer [redacted]', 'bearer: ; after the first word');
-  eq('Bearer ab? ' + bv, 'Bearer [redacted]', 'bearer: ? after the first word');
+  eq('Bearer ab; ' + bv, '[redacted]', 'bearer: ; after the first word');
+  eq('Bearer ab? ' + bv, '[redacted]', 'bearer: ? after the first word');
   eq('mysql -e "select `id`" -p' + 'S3cret', 'mysql -e "select `id`" -p[redacted]', 'mysql: a backtick that is not a continuation');
   eq('mysql -e "a\\b" -p' + 'S3cret', 'mysql -e "a\\b" -p[redacted]', 'mysql: a backslash that is not a continuation');
   eq('mysql -e "a^b" -p' + 'S3cret', 'mysql -e "a^b" -p[redacted]', 'mysql: a caret that is not a continuation');

@@ -432,8 +432,8 @@ const CMD_VALUE = String.raw`(?![Bb][Ee][Aa][Rr][Ee][Rr]\s)(?:[^\s"'|;&\`$()<>]|
 const HELD_PATTERNS: RegExp[] = [
   // `Bearer: <value>` (a colon after the scheme word, as in hand-written headers): 8 or more characters with a digit, so `Bearer: configuration` stays
   shape(String.raw`([Bb][Ee][Aa][Rr][Ee][Rr]:\s{0,8})(?=[A-Za-z0-9._~+/=-]{8})(?=[A-Za-z0-9._~+/=-]{0,64}[0-9])[A-Za-z0-9._~+/=-]+`),
-  // `Bearer x. <value>`: a short first word and a stop character (`. , ; : ! ? ) -`, spaces or none after it, an optional quote) hide the value from the `Bearer` shape (issue #1227); the value is 12 or more characters with a digit. All of it goes: the first word may be the head of the secret.
-  shape(String.raw`([Bb][Ee][Aa][Rr][Ee][Rr]\s{1,8})(?=[A-Za-z0-9_~+/=-]{1,7}[.,;:!?)-]\s{0,8}["']?(?=[A-Za-z0-9._~+/=-]{0,64}[0-9])[A-Za-z0-9._~+/=-]{12})[A-Za-z0-9_~+/=-]{1,7}[.,;:!?)-]\s{0,8}["']?[A-Za-z0-9._~+/=-]+`),
+  // `Bearer x. <value>`: a short first word and a stop character (`. , ; : ! ? ) -`, spaces or none after it, an optional quote) hide the value from the `Bearer` shape (issue #1227); the value is 12 or more characters with a digit. All of it goes, the scheme word too, as the `Bearer` shape of `HELD_SHAPES` hides it: this rule runs first, so keeping `Bearer ` showed what `main` hid (`"Bearer sk-proj-…`, `Cookie: a=Bearer x.…; b=1`). The first word may be the head of the secret.
+  shape(String.raw`[Bb][Ee][Aa][Rr][Ee][Rr]\s{1,8}(?=[A-Za-z0-9_~+/=-]{1,7}[.,;:!?)-]\s{0,8}["']?(?=[A-Za-z0-9._~+/=-]{0,64}[0-9])[A-Za-z0-9._~+/=-]{12})[A-Za-z0-9_~+/=-]{1,7}[.,;:!?)-]\s{0,8}["']?[A-Za-z0-9._~+/=-]+`),
   shape(String.raw`(authorization\s{0,8}[:=]\s{0,8})(?:(?:bearer|basic|token)\s{1,8}){0,8}(?!'?\[(?:redacted|secret hidden)\]'?\}*(?:[\s",;]|$))[^\s",;]+`, 'gi'), // a value R12 already hid, whole, inside single quotes (`Authorization='[redacted]'}`) stays as it is; `[redacted]TOKEN` is not a hidden value
   shape(String.raw`([a-z][a-z0-9+.-]{1,20}:\/\/)[^\s/:@"]{0,200}:[^\s/@"]{1,200}(?=@)`, 'gi'),
   /(?<![A-Za-z0-9_-])tid=[0-9a-f]{8,64};[^\s"|<>`&]*/g,
