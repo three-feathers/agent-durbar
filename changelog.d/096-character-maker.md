@@ -1,0 +1,1 @@
+- **AI character maker, first piece** (spec 096): the prompt builder with its prompt-injection guard, the realistic-office style preset, the picture header checks and the WebP frame checks are in the code, with tests; nothing in the app uses them yet, so the app looks the same. The next phases add the Codex image call, the maker dialog and My characters.
