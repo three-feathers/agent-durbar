@@ -78,3 +78,32 @@ jobs:
           PR_BODY: ${{ github.event.pull_request.body }}
           PR_LABELS_JSON: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: bash .github/scripts/docs-check.sh
+
+  # Spec 008 FR-184 / spec 021 FR-085: no number clash with main or another open PR (scripts/spec-numbers.js) and no picture over budget
+  # (scripts/picture-budget.js, strict: a missing origin/main fails). Not a required check: it needs the network, and a blip must not block a merge.
+  # Safe for a fork PR: `pull_request` (never `pull_request_target`), read-only permissions, the default GITHUB_TOKEN only (passed as GH_TOKEN to
+  # `gh pr list`, read access to public PRs), no secret; nothing from the PR is put in a shell string. The scripts print no environment value.
+  # Workflow files are CODEOWNERS.
+  spec-numbers:
+    name: Spec numbers and picture budget
+    if: github.event_name == 'pull_request' && !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          filter: blob:none # partial clone: the history is needed for the merge-base, file contents are fetched when read
+      - name: Self-tests (throwaway repos, no network)
+        run: |
+          node scripts/test-picture-budget.js
+          node scripts/test-spec-numbers.js
+      - name: No picture over the budget
+        run: node scripts/picture-budget.js --strict
+      - name: No spec number taken twice
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/spec-numbers.js

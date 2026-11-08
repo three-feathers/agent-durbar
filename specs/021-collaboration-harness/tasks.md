@@ -61,3 +61,8 @@
 - [x] T059 (2026-11-05, #1190) `scripts/pr-gate.sh` matches hold and lift phrases as whole words (`\b`): "the condition holds" is no hold. Test: `npm run test:trustedcontent` with two mutants [FR-083]
 - [x] T060 (Vikram's decision 2026-11-04 08:42 UTC) AGENTS.md *Priority order* bullet in *Claim, label, branch*: bugs, existing-world parity, Retro world, new features, other worlds; FR-039 and FR-043 still apply [FR-081]
 - [x] T058 (Vikram's decision 2026-11-04 23:18 UTC, option A) Split AGENTS.md into a core and `docs/rules/*.md` task files, moved word for word; `scripts/rules-check.js` per-file budgets, core cap 2,000, shared cap 3,500, every task file linked from AGENTS.md and headed as rule text; references, `CODEOWNERS`, `labels-backfill.ts` updated. Test: `npm run test:rules` with five mutants, the one-off verbatim check with three [FR-082]
+
+## 2026-11-08: a picture budget and a spec-number check (FR-085)
+
+- [x] T066 (FR-085) `scripts/picture-budget.js` (one `BUDGET_BYTES`, 300 KB, with its reason), `scripts/picture-budget-allow.txt`, suite `test:picturebudget` in `npm test`; `scripts/test-picture-budget.js` on throwaway git repos (rename, delete, merge-base, no `origin/main`, allow-list). Mutant: a budget check that passes everything fails the test.
+- [x] T067 (FR-085) `npm run specs:numbers` (`scripts/spec-numbers.js`), suite `test:specnumbers` (parser fixtures: a renumber, mentions, two specs with one number; clash logic with fake heads; a secret-scrub test); AGENTS.md *Numbers*, `docs/agent-notes.md`, `docs/development.md`, `docs/collaboration.md`. Mutants: a detector that ignores PR heads, one that counts mentions, one that prints an env var all fail the test.

@@ -35,7 +35,7 @@ The commands only; each step's rule is in AGENTS.md.
    ```
 4. **Spec first**: `/speckit-specify`, `/speckit-clarify`, `/speckit-plan`, `/speckit-tasks`, `/speckit-analyze` (or a dated spec delta for a fix). A new spec also gets its index block: `npm run specs:index -- --add specs/NNN-name`. Commit these first.
 5. **Implement** (`/speckit-implement`); test on the simulator (`DURBAR_SIM=15 npm start`) and with `npm test`.
-6. **Before the PR**: `npm run changelog:check`, `npm run specs:check`, then `npm run typecheck && npm run build && npm test`; for UI, `npm run shots:docs`; `/speckit-converge`. Theme or CSS changes: `npm run check:geometry` (Retro against Clean Office, about 20 s; `CHECK_ALL_THEMES=1` for every theme). The full layout check in every theme is on demand: `npm run check:themes` locally, or `gh workflow run ci.yml --ref <branch> -f full_themes=true`.
+6. **Before the PR**: `npm run changelog:check`, `npm run specs:check`, `npm run specs:numbers` (network), then `npm run typecheck && npm run build && npm test`; for UI, `npm run shots:docs`; `/speckit-converge`. Theme or CSS changes: `npm run check:geometry` (Retro against Clean Office, about 20 s; `CHECK_ALL_THEMES=1` for every theme). The full layout check in every theme is on demand: `npm run check:themes` locally, or `gh workflow run ci.yml --ref <branch> -f full_themes=true`.
 7. **Open the PR** (`git push -u origin <branch>`, then `gh pr create`), fill the template, move the issue to *In review* on the board.
 8. **Review and merge** as AGENTS.md says (*Reviews and merge*, and the `docs/rules/` files it links); `scripts/pr-gate.sh <N>` must say *ready to merge*.
 

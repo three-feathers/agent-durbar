@@ -747,3 +747,9 @@ The nightly macOS UI job failed every night from 2026-10-28; run 41816841090 (20
 - `sim:` the four drivers pass on the Mac, three of them for the first time.
 - Not verified: the macOS runner itself (the next nightly).
 
+
+### 2026-11-08: the spec-numbers check runs in the Spec Kit workflow (FR-184, T136; spec 021 FR-085)
+
+- **FR-184** `spec-kit.yml` gains a job `spec-numbers` ("Spec numbers and picture budget", not a required check, so a network blip never blocks a merge): on `pull_request` only, `permissions: contents: read, pull-requests: read` on the job, the default `GITHUB_TOKEN` (as `GH_TOKEN`, so `gh pr list` can read the open PRs) and no secret, a full-history partial clone of the PR's own checkout, **no `pull_request_target`**: a fork PR gets a read-only token and its own code runs with no secret. Steps: the two offline tests, `node scripts/picture-budget.js --strict`, then `node scripts/spec-numbers.js`. The PR number is not put in a shell string; the script reads its own checkout. `.github/workflows/` is CODEOWNERS, so a workflow change needs one of the three owners.
+  - `[KNOWN GAP]` `read:` the job has not run yet; it runs on the next pull request after this one lands.
+  - Numbers checked 2026-11-08 against `main` and every open PR head: FR-184 and T136 are the next free in this spec.

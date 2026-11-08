@@ -76,7 +76,7 @@ Command names: `CLAUDE.md`, `.github/copilot-instructions.md`; other tools follo
 - **Labels** (FR-045): one type (`bug`, `enhancement`, `task`, `documentation` = user docs, `question`; spec-only PR = `task`), at least one `area:*` from `.github/labels.tsv`, `spec:NNN` per spec. Flags only when true (`status:*`, `needs-owner-approval`, `spec-exempt`, `docs-n/a`, `accessibility`, `incident`); no other families; GitHub's defaults are for closing. `npm run labels:backfill` (dry run, add-only) fills gaps.
 - **One issue = one task** (`Tnnn` in `tasks.md`); unrelated work gets a new issue (review findings on the PR's own change are not unrelated).
 - **Branch `NNN-slug`** in its own worktree; **never check out a PR or branch in your main checkout** (FR-050). **Never push to `main`.**
-- **Numbers** (FR-048c): check `main`, remote branches and open PRs before taking a spec, FR or task number; the PR names them.
+- **Numbers** (FR-048c): check `main`, remote branches and open PRs before taking a spec, FR or task number; the PR names them. `npm run specs:numbers` (network) does it for FR, T and Q numbers: run it before every push. **Pictures**: `npm test` fails a picture added since `origin/main` over 300 KB (`scripts/picture-budget.js`); compress it or keep it local.
 - **PRs** say `Closes #N`, fill the template (spec link, *Agent used*, what you did not verify), stay small. Stuck: `status:blocked` plus what you need.
 
 ### Commit identity and signed commits

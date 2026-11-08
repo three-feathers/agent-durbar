@@ -174,3 +174,7 @@
 ## 2026-11-07: the macOS nightly UI checks in three shards (issue #839; FR-182)
 
 - [x] T134 Issue #839 (FR-182, owner decision 2026-11-07): `ui-suite --shard i/n` / `UI_SUITE_SHARD`, bare `--shard` and an empty shard refused; tested in `test:uisuite` (incl. `main()` and the workflow matrix); `ui-platforms.yml` runs macOS as three shards (geometry in every shard, office layout and title bar in shard 1, artifacts per shard), 45 minutes for every job
+
+## 2026-11-08: the spec-numbers job (FR-184)
+
+- [x] T136 (FR-184) `.github/workflows/spec-kit.yml` job `spec-numbers`: read-only permissions, default token only, no `pull_request_target`; runs `test:picturebudget`'s and `test:specnumbers`'s scripts, `picture-budget.js --strict` and `spec-numbers.js`. `[KNOWN GAP]` the job runs for the first time on the next PR.
