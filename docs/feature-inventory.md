@@ -15,7 +15,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Helpers (sub-agents): card, tree, own chat, needs you | works | missing, only `+N` and 3 dots; planned as small figures beside the desk (#1139) | planned | 001 015 097 | test:helpercard read:src/renderer/realoffice.js |
 | Live activity on the desk | works | works, monitors show the newest output (PR 979) | mock+planned (live-screen) | 001 097 | test:liveact driver:shots-001-live-activity |
 | Model, tokens, cost, context, last tool on the desk | works | works in the hover zoom (#1148, 097 FR-312..FR-315); a figure on the name plate is open (Q8) | none | 019 097 | test:ctxbreakdown driver:shots-097-screens |
-| Unread "New", draft, question marks | works | works, a New reply tag and a green screen (097 FR-236, FR-238); draft and question marks missing (#1149) | none | 001 005 097 | test:unread driver:shots-097-realoffice |
+| Unread "New", draft, question marks | works | works, a New reply tag and a green screen (097 FR-236, FR-238), a Draft tag and "unsent draft" in the plate's name (097 FR-316); a question shows as the "?" bubble, the plate's text and "needs you" (FR-038, FR-016) | none | 001 005 097 | test:unread driver:shots-097-realoffice driver:check-097-desk-marks |
 | Hover card | works | missing, tooltip only (#1151) | none | 001 097 | test:tooltip read:src/renderer/realoffice.js |
 | Drag to rearrange rooms, desks, places | works | missing (#1152) | none | 033 | test:roomorder driver:shots-033-order |
 | Rename a session (F2, pencil) | works | works, the pencil beside a plate's name and F2 on a plate (059 FR-170) | none | 059 | test:sessionname driver:check-097-plate-pencil |
@@ -67,7 +67,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | OS sandbox floor | works | works | none | 087 | test:runtime-sandbox |
 | Themes and user themes | works | missing (#1153) | none | 035 036 037 038 039 040 | test:theme test:userthemes |
 | One face per agent: rail row, chat header, inbox faces are the same picture | works | works (one picker, `roFace`) | none | 097 | driver:check-097-one-face |
-| Characters (crews): the Characters choice drawn in the office | works | missing, only the Office people are drawn; every other crew shows them (#1154) | none | 077 096 | test:characters test:crew |
+| Characters (crews): the Characters choice drawn in the office | works | missing, Prehistoric is drawn in its own people; the other crews and Minimalist show the Office people and Settings says why; art tasks T238, T240..T245 (#1154) | none | 077 096 | test:characters test:crew driver:check-097-crews |
 | Harness setup, agent-app updates | works | works | none | 051 081 | test:harnesssetup test:updatecheck |
 | Remote control | works | works | none | 054 | test:remote driver:shots-054-remote |
 | Terminal tab in a chat | planned | planned | none | 094 | read:specs/094-terminal-tab/spec.md |

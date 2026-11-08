@@ -150,6 +150,18 @@ for (const f of fs.readdirSync(wfDir).filter((n) => /\.ya?ml$/.test(n))) {
 }
 assert.ok(uses > 5, 'the workflows were actually read');
 
+// spec 008 (2026-11-08): a GitHub 504 on the Electron download failed the queue; every job installs through the cached, retrying composite action
+for (const f of fs.readdirSync(wfDir).filter((n) => /\.ya?ml$/.test(n))) {
+  const text = fs.readFileSync(path.join(wfDir, f), 'utf8');
+  assert.ok(!/^\s*(?:- )?run:\s*npm ci\s*$/m.test(text), `${f}: a plain "npm ci" would download Electron with no cache or retry; use ./.github/actions/npm-ci`);
+}
+const npmCiAction = fs.readFileSync(path.join(root, '.github', 'actions', 'npm-ci', 'action.yml'), 'utf8');
+assert.ok(/actions\/cache@[0-9a-f]{40}/.test(npmCiAction), 'the Electron download cache step exists');
+for (const v of ['ELECTRON_CACHE=', 'electron_config_cache=', 'ELECTRON_BUILDER_CACHE=']) assert.ok(npmCiAction.includes(v), `${v} points at the cached directory`);
+assert.ok(/key: electron-.*steps\.versions\.outputs\.electron/.test(npmCiAction), 'the cache key carries the exact Electron version');
+assert.ok(/for try in 1 2 3/.test(npmCiAction) && /exit 1/.test(npmCiAction), 'npm ci retries 3 times and still fails loudly');
+assert.ok(!/secrets\./.test(npmCiAction), 'the action touches no secrets');
+
 export type GitRun = (args: string[]) => { status: number | null; stdout: string; stderr: string; error?: Error };
 const realGit: GitRun = (args) => { const r = spawnSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 64 << 20 }); return { status: r.status, stdout: r.stdout || '', stderr: r.stderr || '', error: r.error }; };
 const readHead = (dir: string) => (f: string) => { const fd = fs.openSync(path.join(dir, f), 'r'); try { const b = Buffer.alloc(HEAD); const n = fs.readSync(fd, b, 0, HEAD, 0); return b.subarray(0, n); } finally { fs.closeSync(fd); } };
