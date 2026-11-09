@@ -102,7 +102,13 @@ assert.strictEqual(ui(['scripts/new-data.json'], io({ 'scripts/new-data.json': '
   // build is a seed of its own (the office job and package smoke run it), not only because the UI workflow says `npm run build`
   const wfNoBuild = wfText.split('npm run build').join('echo no-build');
   const noChain = { ...s0, 'pack:dir': 'electron-builder --dir' }; // and no other reached script chains to it
-  assert.strictEqual(ui(['package.json'], both({ ...noChain, build: s0.build + ' --edited' }, noChain, wfNoBuild)), true, 'editing build is UI even when nothing else names it');
+  { // also without ci.yml's office job naming it: build stays a seed
+    const ciNoBuild = real.read('.github/workflows/ci.yml')!.split('npm run build').join('echo no-build');
+    const pkgOf = (sc: Record<string, string>) => JSON.stringify({ ...pkg, scripts: sc });
+    const x = io({ 'package.json': pkgOf({ ...noChain, build: s0.build + ' --edited' }), '.github/workflows/ui-platforms.yml': wfNoBuild, '.github/workflows/ci.yml': ciNoBuild },
+      { 'package.json': pkgOf(noChain), '.github/workflows/ui-platforms.yml': wfNoBuild, '.github/workflows/ci.yml': ciNoBuild });
+    assert.strictEqual(ui(['package.json'], x), true, 'editing build is UI even when nothing else names it');
+  }
   // round 3: other ways a line starts an npm script. Each row: the UI workflow runs `cmd`, and only the script it names (`zz:t`, or
   // the npm command's own script) changes. Runners this cannot resolve make every script count (fail open).
   const viaWf = (cmd: string, target: string) => {
@@ -153,6 +159,40 @@ assert.strictEqual(ui(['scripts/new-data.json'], io({ 'scripts/new-data.json': '
     const target = /start/.test(cmd) ? 'start' : /npm t(est)?$/.test(cmd) ? 'test' : 'zz:t';
     assert.strictEqual(viaBuild(cmd, target), true, `build running the exact form "${cmd}": editing ${target} is UI (it is reached)`);
   }
+  // round 5: (1) a scripts/ name without its extension, or a folder with an index file, is a root like a node path
+  {
+    const noExt = { ...s0, build: s0.build + ' && node scripts/zz-noext', 'zz:dir': 'x' };
+    const head = { 'package.json': JSON.stringify({ ...pkg, scripts: noExt }), 'scripts/zz-noext.js': 'module.exports = 1;\n' };
+    assert.strictEqual(ui(['scripts/zz-noext.js'], io(head)), true, 'build running "node scripts/zz-noext": scripts/zz-noext.js is UI');
+    const withIndex = { ...s0, build: s0.build + ' && node scripts/zz-pkg' };
+    const head2 = { 'package.json': JSON.stringify({ ...pkg, scripts: withIndex }), 'scripts/zz-pkg/index.js': "require('./part');\n", 'scripts/zz-pkg/part.js': 'x' };
+    assert.strictEqual(ui(['scripts/zz-pkg/part.js'], io(head2, {}, [], ['scripts/zz-pkg'])), true, 'build running "node scripts/zz-pkg": its index.js and what that loads are UI');
+    // resolved as node does: the folder's index.js is the root (not the whole folder), so a file there that nothing loads is not UI
+    assert.strictEqual(ui(['scripts/zz-pkg/unused.js'], io({ ...head2, 'scripts/zz-pkg/unused.js': 'x' }, {}, [], ['scripts/zz-pkg'])), false, 'a file in that folder that index.js does not load is not UI');
+    const head3 = { 'package.json': JSON.stringify({ ...pkg, scripts: { ...s0, build: s0.build + ' && node scripts/zz-tsx' } }), 'scripts/zz-tsx.mjs': 'x' };
+    assert.strictEqual(ui(['scripts/zz-tsx.mjs'], io(head3)), true, 'build running "node scripts/zz-tsx": scripts/zz-tsx.mjs is UI');
+    for (const [file, label] of [['scripts/zz-ext.js', '.js'], ['scripts/zz-ext.ts', '.ts'], ['scripts/zz-ext.cjs', '.cjs'], ['scripts/zz-ext/index.ts', 'index.ts']]) {
+      const h = { 'package.json': JSON.stringify({ ...pkg, scripts: { ...s0, build: s0.build + ' && node scripts/zz-ext' } }), [file]: 'x' };
+      assert.strictEqual(ui([file], io(h, {}, [], file.includes('/index') ? ['scripts/zz-ext'] : [])), true, `build running "node scripts/zz-ext": ${file} (${label}) is UI`);
+    }
+  }
+  // (2) ci.yml steps the ui decision gates (the office job) seed npm names and roots; steps gated on code (Build and test) do not
+  {
+    const ciText = real.read('.github/workflows/ci.yml')!;
+    const officeStep = "      - if: steps.changes.outputs.ui == 'true'\n        run: npm run zz:office && node scripts/zz-office-root.js\n";
+    const ciWith = ciText.replace('  # On demand only (workflow_dispatch with full_themes)', officeStep + '\n  # On demand only (workflow_dispatch with full_themes)');
+    assert.ok(ciWith !== ciText, 'the test step was placed in the office job');
+    const scr = { ...s0, 'zz:office': 'node scripts/zz-office.js' };
+    const pair = (head: Record<string, string>) => io({ '.github/workflows/ci.yml': ciWith, 'package.json': JSON.stringify({ ...pkg, scripts: { ...scr, ...head } }), 'scripts/zz-office.js': 'x', 'scripts/zz-office-root.js': 'x' },
+      { '.github/workflows/ci.yml': ciWith, 'package.json': JSON.stringify({ ...pkg, scripts: scr }) });
+    assert.strictEqual(ui(['package.json'], pair({ 'zz:office': 'node scripts/zz-office.js --edited' })), true, 'a script a ui-gated ci.yml step runs (npm run zz:office) is reached');
+    assert.strictEqual(ui(['scripts/zz-office.js'], pair({})), true, 'and its scripts/ file is UI');
+    assert.strictEqual(ui(['scripts/zz-office-root.js'], pair({})), true, 'a scripts/ file a ui-gated ci.yml step runs by node is UI');
+    assert.strictEqual(ui(['package.json'], pair({ test: s0.test + ' --edited' })), false, 'the test script, which only the code-gated Build and test runs, is not reached');
+    assert.strictEqual(ui(['package.json'], both({ ...s0, 'pack:dir:prebuilt': s0['pack:dir:prebuilt'] + ' --edited' }, s0)), true, 'the office job runs pack:dir:prebuilt: editing it is UI');
+  }
+  // (3) runner words in any case are looked at; upper case is not an exact form, so the line fails open
+  for (const cmd of ['NPM run zz:t', 'Npm.cmd run zz:t', 'NPX run-p zz:t', 'YARN zz:t']) assert.strictEqual(viaWf(cmd, 'zz:t'), true, `the UI workflow running "${cmd}": editing zz:t is UI`);
   // the parser on its own: the exact forms name what they start and are not opaque; one non-exact command makes the whole line opaque
   assert.deepStrictEqual(cc.npmTargets('tsc -p a && npm run -s zz:t -- --x && npm test'), { names: ['zz:t', 'test'], opaque: false }, 'exact forms are read');
   assert.deepStrictEqual(cc.npmTargets('npm run zz:t && sudo rm x'), { names: ['zz:t'], opaque: true }, 'an unknown command word makes the line opaque');

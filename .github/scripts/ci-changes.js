@@ -93,7 +93,8 @@ function npmTargets(line) {
 }
 // a workflow line starts npm scripts only when it names a runner; only those lines are parsed (strictly), other commands
 // (apt-get, echo, test ...) start none
-const RUNNER_WORD = /(^|[^\w.-])(npm|npx|yarn|pnpm|bun|npm-run-all\d*|run-[ps]|concurrently|lerna|nx|turbo)([^\w-]|$)|\.bin[\/\\]|npm\.cmd/;
+// case-insensitive (review round 5): `NPM run x` or `Npm.cmd` is looked at, and as it is not an exact form (those are lower case) it fails open
+const RUNNER_WORD = /(^|[^\w.-])(npm|npx|yarn|pnpm|bun|npm-run-all\d*|run-[ps]|concurrently|lerna|nx|turbo)([^\w-]|$)|\.bin[\/\\]|npm\.cmd/i;
 /** The command lines of a workflow: each `run:` value and each line of a `run: |` block (comments and blank lines dropped). */
 function workflowCommands(wfText) {
   const out = [];
@@ -157,26 +158,43 @@ function versionOnly(name, io, keep = null) {
 const LITERAL = /(['"`])([\w./-]+)\1/g;
 // a name the literal matcher cannot read (a space, a non-ASCII letter, ...) can never join the closure, so it counts (fail open)
 const PLAIN_NAME = /^[\w./-]+$/;
-const SCRIPT_FILE = /scripts\/[\w.-]+\.(?:js|cjs|mjs|ts)/g;
+// a scripts/ path named in a command, with or without its extension (review round 5: `node scripts/copy-assets` runs copy-assets.js)
+const SCRIPT_FILE = /(?<![\w./-])scripts\/[\w./-]*[\w-]/g;
 const CODE = /\.(js|cjs|mjs|ts)$/;
+// how a name resolves, as node does for a script path: the file, the name with an extension, the folder's index file, the folder
+const RESOLVE = ['', '.js', '.ts', '.cjs', '.mjs', '/index.js', '/index.ts', '/index.cjs', '/index.mjs'];
+/** The file (or folder prefix, ending in /) a scripts/ name resolves to in the head tree, or null. */
+function resolveScript(rel, io) {
+  for (const ext of RESOLVE) if (io.isFile(rel + ext)) return rel + ext;
+  return io.isDir(rel) ? rel.replace(/\/?$/, '/') : null;
+}
+// the ci.yml steps the `ui` decision gates (the office job: office layout and package smoke) start commands too (review round 5)
+const WF_UI = '.github/workflows/ui-platforms.yml';
+const WF_CI = '.github/workflows/ci.yml';
+/** The workflow text the UI decision covers: all of ui-platforms.yml, and each ci.yml step whose `if:` reads the ui output. */
+function uiWorkflowText(wfUiText, ciText) {
+  const gated = String(ciText || '').split(/\r?\n(?=\s*- )/).filter((step) => step.includes("steps.changes.outputs.ui == 'true'"));
+  return [String(wfUiText || ''), ...gated.flatMap((step) => workflowCommands(step).map((c) => `      - run: ${c}`))].join('\n');
+}
 /** Every file (and folder prefix, ending in /) in scripts/ that the UI run can load, from the roots by string literals. Roots: the
  *  scripts/ files ui-platforms.yml names, check-parallel.js (the office job), and the scripts/ files of every npm script the UI run
  *  can reach: `build`, `pack:dir`, the lifecycle hooks `npm ci` runs, each `npm run <name>` in the workflow, and every `npm run`
  *  inside those, followed; plus electron-builder's afterPack. */
 function uiClosure(io) {
-  const roots = new Set(['scripts/check-parallel.js']);
-  const wf = io.read('.github/workflows/ui-platforms.yml') || '';
-  for (const m of wf.matchAll(SCRIPT_FILE)) roots.add(m[0]);
+  const roots = new Set(); // check-parallel.js comes from the office job's ui-gated step in ci.yml
+  const wf = uiWorkflowText(io.read(WF_UI), io.read(WF_CI));
+  const addRoot = (name) => { const r = resolveScript(name, io); if (r) roots.add(r); };
+  for (const m of wf.matchAll(SCRIPT_FILE)) addRoot(m[0]);
   const pkg = parseJson(io.read('package.json')) || {}; // unparsable: the package rule makes it ui=true
   const scripts = (typeof pkg.scripts === 'object' && pkg.scripts) || {};
-  for (const n of reachedNpm(io.read('package.json'), wf)) for (const m of String(scripts[n] || '').matchAll(SCRIPT_FILE)) roots.add(m[0]);
-  if (pkg && pkg.build && typeof pkg.build.afterPack === 'string') for (const m of pkg.build.afterPack.matchAll(SCRIPT_FILE)) roots.add(m[0]);
+  for (const n of reachedNpm(io.read('package.json'), wf)) for (const m of String(scripts[n] || '').matchAll(SCRIPT_FILE)) addRoot(m[0]);
+  if (pkg && pkg.build && typeof pkg.build.afterPack === 'string') for (const m of pkg.build.afterPack.matchAll(SCRIPT_FILE)) addRoot(m[0]);
   const seen = new Set(), todo = [...roots];
   while (todo.length) {
     const f = todo.pop();
     if (seen.has(f)) continue;
     seen.add(f);
-    if (!CODE.test(f)) continue;
+    if (f.endsWith('/') || !CODE.test(f)) continue;
     const text = io.read(f);
     if (text == null) continue;
     const dir = path.posix.dirname(f);
@@ -185,19 +203,18 @@ function uiClosure(io) {
       if (!lit || lit.startsWith('/') || lit.includes('..')) continue;
       const rel = path.posix.normalize(path.posix.join(dir, lit));
       if (!rel.startsWith('scripts/')) continue;
-      for (const c of [rel, rel + '.js', rel + '.ts']) {
-        if (io.isFile(c)) { todo.push(c); break; }
-        if (io.isDir(c)) { seen.add(c.replace(/\/?$/, '/')); break; }
-      }
+      const r = resolveScript(rel, io);
+      if (r && r.endsWith('/')) seen.add(r);
+      else if (r) todo.push(r);
     }
   }
   return seen;
 }
 
-const WF_UI = '.github/workflows/ui-platforms.yml';
 /** The reached npm names of base and head together: a line reached on either side counts when it changes. */
 function keepNpm(io) {
-  return new Set([...reachedNpm(io.read('package.json'), io.read(WF_UI)), ...reachedNpm(io.readBase('package.json'), io.readBase(WF_UI))]);
+  return new Set([...reachedNpm(io.read('package.json'), uiWorkflowText(io.read(WF_UI), io.read(WF_CI))),
+    ...reachedNpm(io.readBase('package.json'), uiWorkflowText(io.readBase(WF_UI), io.readBase(WF_CI)))]);
 }
 
 /** Does this one changed path count for the UI suite? */
