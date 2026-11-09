@@ -108,6 +108,14 @@ Four reviewers worked from 17 simulator screenshots: the office at 1440x900 and 
 
 ## Changes
 
+### 2026-11-09: FR-237's drag waits until the page saw each event (driver only, CI flake)
+
+*Seen* (`read:` `gh run view --log-failed`, ui-platforms runs from 2026-11-05 to 2026-11-09): 9 failures, all ubuntu, none on Windows or macOS, at both sizes, always `command palette: after the drag the text is intact, selected and focused: {"v":"Draft name 42","s":13,"e":13,"focus":true}` (passes on rerun). Not reproduced locally: 0 of 15 full runs idle, 0 of 4 with 3 CPU hogs, 0 of 22 palette-only runs (44 drags) with hogs, xvfb, `main` at c200fafe7. *What the trace showed* (an event log in the page, the same runs): the driver sent the press, 8 moves 15 ms apart and the release back to back; the page often got the last move in the same millisecond as the release (the moves waited in the renderer's queue until the release flushed them), and only moves over the text (x below its end) or outside the field move the selection. A drag whose moves the page sees only past the text's end leaves exactly `{s:13,e:13}` (mutation below), so the CI payload is what a drag looks like when its later moves did not reach the page before the release.
+
+- **The FR-237 drag** `sim:` `scripts/check-edit-popups.js`: the drag (field kinds and the inbox and keyboard sheet) sends each event only once the page saw the one before, with `until()`: the press, every move with the left button down at its point, then the release. A drag the page did not see that way fails with its own message and the events the page saw; the selection message lists them too, so a next CI failure says which events arrived. The product is unchanged.
+- *Mutations* (1440x900, `EP_ONLY='command palette'`): moves sent without the button fail `the page saw the drag's press, each move with the button down and the release: mousedown 657 149 1, mousemove 627 149 0`; a drag that stays past the text's end fails `after the drag the text is intact, selected and focused: {"v":"Draft name 42","s":13,"e":13,...}`, the CI payload.
+- `[KNOWN GAP]` The cause is inferred, not proven: the failure never happened locally, so a pass here does not show the CI flake is gone; the CI rate after this change is the evidence. Windows and macOS not run.
+
 ### 2026-11-08: the "ago" and mood ticks draw only a change no draw showed (FR-062, pointer to spec 008 FR-184)
 
 A draw records the signatures it showed, so the 30 s "ago" tick (FR-062) and the 5 s mood tick redraw only for a change no draw has shown, not again for a status update the last draw already showed. Checked by `check-office-ops` (`timerDraw`); the cause, fix and mutants are in spec 008 FR-184 (issues #1302, #1301, #1208).
