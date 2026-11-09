@@ -1165,7 +1165,10 @@ async function main(): Promise<void> {
     const ad = new ClaudeAdapter({ autopilot: { wired: false }, sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/bin/claude', configDir: cfg, makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
     const sid = await ad.start({ workspace: ws, quiet: true });
     assert.deepStrictEqual((await ad.listAgentProfiles(sid)).map((p) => [p.id, p.source]), [['pirate', 'repo']]);
-    assert.strictEqual((await ad.selectAgentProfile(sid, 'pirate'))?.id, 'pirate');
+    // spec 043 FR-044: a folder's agent is selected only with the bytes main read (as agents:selectProfile passes them)
+    const pirateFile = path.join(ws, '.claude', 'agents', 'pirate.md');
+    await assert.rejects(ad.selectAgentProfile(sid, 'pirate'), /not available/, 'a folder agent without main\'s bytes is refused');
+    assert.strictEqual((await ad.selectAgentProfile(sid, 'pirate', { path: pirateFile, bytes: fs.readFileSync(pirateFile) }))?.id, 'pirate');
     await ad.send(sid, { text: 'hi' });
     await until('launch', () => (sp.calls.length === 1 ? true : undefined));
     const args = sp.calls[0].args;
