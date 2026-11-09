@@ -824,3 +824,10 @@ The owner lifted the hold on 2026-11-08. All six findings of the review at d90b6
 - **Docs**: the guard is `bothGuards(eventShape, autopilotOps.accepts)` in spec 010 FR-035's note, this spec's FR-082 text, plan and tasks.
 - **Out of scope**: `serial()`'s `finally` survives a `.then` mutant (from #967): issue #1341.
 
+
+### 2026-11-09: a failed queued step frees the Copilot queue, tested (issue #1341)
+
+Found in the review of #982: `serial()`'s `finally` (FR-059's queue, from #967) survived a mutant that frees the place with `.then`, which frees only after a success, so a step that failed would hold the session's queue for every later step on it. The code was right; the tests did not pin it.
+
+- **Changes:** nothing in FR-059's behaviour: a step queued through `serial` that rejects, before or after a later step reserved its place, or throws at once, frees its place, and the later step runs. A step that never settles is not freed by `serial` itself (it has no timer): each step bounds its own runtime calls (`bounded`, `within`), and that bound's rejection frees the place. **Replaces:** nothing.
+- Tests: `test-autopilot-copilot.ts` probes F1 to F3 (`serial` directly) and F4, F5 (a late turn-on's queued reset to interactive refused, or never answered with a 20 ms bound, then a send still goes). The `.then` mutant dies on probe F1, and on F4 and on F5 each alone. No real session (T055).
