@@ -300,6 +300,7 @@
     WPX = root.DurbarRealOfficeWorlds[world].px || {}; SPX = root.DurbarRealOfficeSets[set].px || {};
     const meta = Object.assign({}, root.DurbarRealOfficeWorlds[world], root.DurbarRealOfficeSets[set]); /* the world's furniture numbers with the set's people numbers */
     onArt = opts.onArt || null;
+    meta.pixelPeople = !!root.DurbarRealOfficeSets[set].pixelArt; /* spec 097 T247: a crew's hi-res people in a pixel world are scaled to its people */
     PIXEL = !!meta.pixelArt;
     const ids = Object.keys(meta.seat).sort();
     const who = people(model, ids, opts.rand, !!opts.remember);
