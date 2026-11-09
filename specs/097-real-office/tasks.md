@@ -294,6 +294,7 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 - [x] T249 [US5] The matrix kept true: a test that fails when a Characters value or world is added without a cell (`test:realoffice-layout`) [FR-335]
 - Art for T240..T244 (from #1308, 2026-11-08): the five crews' packs (`sets/pirate`, `royal`, `rebels`, `monster`, `cheeky`) are added as art only by PR #1327; the wiring (`REAL_SETS` row, `check-097-crews` case flip) stays in #1308's T240..T244.
 - Built 2026-11-09 (#1154): T240..T244 are the five `REAL_SETS` rows with their notes gone and the `check-097-crews` cases flipped; T247 and T248 are `check-097-crews` in the arcade and the cave (with `worldflags`) plus the arcade's scaling and pose fallbacks (FR-335 amended); T249 is the matrix test. Minimalist (T245) and My characters (T246) stay open.
+- Art for T245 (PR #1331, 2026-11-08): the Minimalist crew's art, six new people, pack-only, approved by the owner in Paco's place [FR-067]: `sets/minimalist` (72 frames) and 18 portraits in `crew/art`; `minimalist` is in `SETS_PACK_ONLY` of `scripts/test-realoffice-assets.ts` and `PENDING_CREWS` of `scripts/test-crew-assets.ts` (each fails once `crew.js` wires the crew); the `CREWS` entry, `REAL_SETS` row and wiring stay in T245, which stays open.
 
 
 ## 2026-11-08 delta 2: drag, kept room order, arcade and lobby in Real office (FR-352..FR-355, issue #1152, Q30..Q33)
