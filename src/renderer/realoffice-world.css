@@ -15,7 +15,7 @@ html[data-world] .dlg{background:var(--surface);border-color:var(--line-2);box-s
 html[data-world] .dlg-ov{background:color-mix(in srgb,var(--wb-bg-2) 34%,transparent)}
 html[data-world] .toast{color:var(--ink);background:color-mix(in srgb,var(--wb-bg) 90%,transparent);-webkit-backdrop-filter:blur(14px) saturate(1.2);backdrop-filter:blur(14px) saturate(1.2);box-shadow:var(--shadow-pop)}
 html[data-world][data-ui="retro"] .topbar .seg button[aria-pressed="true"]{color:var(--brand-mark)} /* spec 102 FR-263: the yellow of the pressed button takes the mark's dark ink, not the bar's light one */
-/* spec 102 FR-263, T221, T277: the chat header carries the arcade's name in the mark's yellow, on the panel itself (no fill: the bar's black rectangle did not match the panel, issue #1429). Paint only (070 D2: no font, size or spacing here) */
+/* spec 102 FR-263, T221, T277: the chat header carries the arcade's name in the mark's yellow, on the panel itself (no fill: the bar's black rectangle did not match the panel, issue 1429). Paint only (070 D2: no font, size or spacing here) */
 html[data-world="retro"] body.ro-chat #panelTitle{color:var(--brand-bg)}
 html[data-world][data-dark] .ro-plate:is(.st-waiting,.st-limit){background:var(--surface);color:var(--amber-ink);border-color:var(--c-waiting)} /* spec 102, owner 2026-11-03: a dark plate with a status-yellow edge and ink, no light block (070 FR-050: the status hue is kept) */
 html[data-world][data-dark][data-ui] .notice-strip{background:var(--wb-bg);color:var(--wb-ink);border-bottom-color:var(--wb-line)} /* spec 102, owner 2026-11-03: a dark world's notice strip is its dark bar, with the mark's yellow */
