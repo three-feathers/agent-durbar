@@ -335,7 +335,7 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 
 ## Changes
 
-### 2026-11-09 (later): trouble signs while the window is hidden (issue #1171; FR-074, FR-326, FR-361; T290)
+### 2026-11-09 (later): trouble signs while the window is hidden (issue #1171; FR-074, FR-326, FR-361; T295)
 
 `check-097-motion` failed "FR-074: nothing runs while hidden" on this branch (Mac and Linux CI), passing on `main`: the one running animation was `sirenblink` on a siren sign's light (`.siren-light`, the app's siren markup, 6 breaths of 1.6 s). The signs are in the chrome layer, and `.ro.paused` paused only the art, the lights and the caret.
 - **The signs pause with the room (FR-074).** While the office is paused (hidden or covered) a sign's animation is paused too (`.ro.paused .ro-mood *`); `.still` stops it as it stops the lights.

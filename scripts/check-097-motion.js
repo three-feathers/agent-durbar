@@ -5,7 +5,7 @@
  *     second a desk; anything but `transform` and `opacity` in an animation of the people or screens, or no stepped timing; a blur on the zoom (FR-070, FR-180, FR-181, FR-182);
  *   - under reduced motion (emulated, page loaded with it) or Settings > Motion off (the real switch; Serious mode no longer stops motion, check-serious-motion): a person moves, a second frame or a caret is there, or captures differ; the text still changes (FR-071, FR-033);
  *   - hidden: animations run or text repaints while hidden; a missed line does not show once on return (FR-074); a trouble sign's siren still breathing counts
- *     (mutant: drop `.ro.paused .ro-mood *` in realoffice.css -> "FR-074: nothing runs while hidden" with 'sirenblink', spec 097 T290);
+ *     (mutant: drop `.ro.paused .ro-mood *` in realoffice.css -> "FR-074: nothing runs while hidden" with 'sirenblink', spec 097 T295);
  *   - a pose change without its cross-fade, a desk-to-lobby move without its fade at both ends, a person drawn over the desk after coming back (FR-072, FR-073);
  *   - 40 agents: a desk scrolled out of view keeps moving, or paints (FR-181, spec 097 T030 pacing).
  * Screenshots: <SHOTS_OUT>/097-real-moving-<w>x<h>.png

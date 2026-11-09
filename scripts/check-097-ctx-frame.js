@@ -194,7 +194,7 @@ module.exports = async (ctx) => {
       await must(`!!document.querySelector('#stage .ro-horns[data-for=${jsLiteral(mp)}]')&&!!document.querySelector('#stage .ro-ring[data-for=${jsLiteral(mp)}]')`, `${tag}: the draw after the context-only events draws ${mp}'s horns and ring (the mood redraw)`);
       await must(`/, Context almost full \\(95%\\), context 95 %(\\. \\d+ helpers?)?\\. Open chat panel\\.$/.test(window.__cl(${jsLiteral(mp)}))`, `${tag}: ${mp}'s name reads the mood words, then the context words, then Open chat panel, once the signs are drawn (the full draw writes what the cheap path wrote)`);
 
-      /* FR-074 (2026-11-09 later, T290): the document hidden (its own signal, as check-097-motion where the window manager gives no real hide), a context event that makes another
+      /* FR-074 (2026-11-09 later, T295): the document hidden (its own signal, as check-097-motion where the window manager gives no real hide), a context event that makes another
          seated desk a monster runs no draw and draws no horns or ring, while its name has the words by the cheap path; once visible, one draw draws the horns and the ring, the name the same */
       const hp = await js(`(()=>{const L=window.__durbarSimUi.realLayout();for(const d of L.zones.flatMap(z=>z.desks)){if(d.lounge||!d.face||d.away||!d.person||d.id===${jsLiteral(mp)})continue;if(document.querySelector('#stage :is(.ro-horns,.ro-ring)[data-for='+JSON.stringify(d.id)+']'))continue;return d.id}return null})()`);
       assert.ok(hp, `${tag}: a second seated desk that is no monster yet, for the hidden step`);
