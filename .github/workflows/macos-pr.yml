@@ -6,6 +6,10 @@ name: macOS on pull requests
 # behaviour differs between operating systems (processes, paths, sockets, shell scripts, dependencies, packaging). GitHub's own
 # `paths:` filter decides, so no job waits for another and a PR that does not match starts nothing (no macOS minutes).
 # It is not a required check (the ruleset is unchanged): when it runs, read it in `gh pr checks` like any other.
+# Spec 008 FR-191 (owner decision 2026-11-08): `package.json` and the lock match the filter on every release's version bump, which
+# changes nothing macOS can see. The job's first step asks ci-changes.js (the one decision) and skips the rest when the PR is only
+# docs and a version-only bump. A step, not a separate Linux job: this runs rarely, and a decision job on every run would cost more
+# Linux minutes than the macOS minutes it saves.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -39,11 +43,21 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          fetch-depth: 2
+      - id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: bash .github/scripts/ci-changes.sh
+      - if: steps.changes.outputs.macos == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
-      - uses: ./.github/actions/npm-ci
+      - if: steps.changes.outputs.macos == 'true'
+        uses: ./.github/actions/npm-ci
       # spec 008 FR-193: build runs the same tsc as typecheck
-      - run: npm run build
-      - run: npm test
+      - if: steps.changes.outputs.macos == 'true'
+        run: npm run build
+      - if: steps.changes.outputs.macos == 'true'
+        run: npm test
