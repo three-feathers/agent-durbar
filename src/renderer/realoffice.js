@@ -107,7 +107,7 @@
     if (ro._ready || ro._waiting) return;
     ro._waiting = true;
     setTimeout(() => {
-      ro._ready = true;
+      ro._ready = true; ro.dataset.go = '1'; /* spec 102 FR-309: the arcade's CSS loops (marquee flash, cue dots, caret) start now, not at the first draw */
       if (!CUR || CUR.ro !== ro) return;
       for (const c of SCR.values()) if (c.caret) clock(c.caret, c.caretMs);
       if (onArt) onArt();
@@ -526,7 +526,7 @@
     SLIDE = false;
     CUR.drawn = true;
     whenReady(ro);
-    if (moving() && !meta.pixelArt) onGrid(ro);
+    if (moving()) onGrid(ro); /* spec 102 FR-309: the arcade's loops too */
     if (moving() && !hiddenNow()) handOver(ro);
     watchFrames(ro);
     if (wasLive !== undefined && wasLive !== CUR.live) for (const [id, s] of SCR) { /* the setting holds at once: it does not wait for the next line, or the repaint pace */
@@ -910,7 +910,7 @@
       if (fresh || s.caret.hidden) {
         s.caret.hidden = false;
         s.caretMs = L.personMotion(id, 'typeA', d.state).offset;
-        if (moving()) { clock(s.caret, s.caretMs); if (CUR && !CUR.pixelArt) onGrid(s.caret); }
+        if (moving()) { clock(s.caret, s.caretMs); onGrid(s.caret); }
       }
     } else if (s.caret && !s.caret.hidden) s.caret.hidden = true;
     s.painted = true;
@@ -931,7 +931,7 @@
     const h = hiddenNow(); CUR.ro.classList.toggle('paused', h); if (h) finishMoves(CUR.ro);
     if (h) { closeZoom(); return; }
     QUIET_POINTER = true; QUIET_AT = ''; /* back in view: a pointer resting on a screen is not asking to read it */
-    if (moving() && !CUR.pixelArt) onGrid(CUR.ro); /* FR-229 */
+    if (moving()) onGrid(CUR.ro); /* FR-229 */
     for (const [id, s] of SCR) if (s.dirty) plan(id);
   }
   document.addEventListener('visibilitychange', resume);
@@ -942,7 +942,7 @@
     const art = CUR.ro.querySelector(':scope > .ro-art');
     for (const key of ['p:', 'pb:', 'rg:']) { const e = art && art._k.get(key + id); if (e) e.classList.toggle('ro-off', off); }
     const s = SCR.get(id); if (s) s.box.classList.toggle('ro-off', off);
-    if (!off && moving() && !CUR.pixelArt) onGrid(CUR.ro); /* FR-229: back in view, back on the grid */
+    if (!off && moving()) onGrid(CUR.ro); /* FR-229: back in view, back on the grid */
   }
   function watchOff(lay) {
     if (!lay.scroll || typeof IntersectionObserver !== 'function') {
