@@ -178,6 +178,7 @@ test:simclock
 test:labelsbackfill
 test:claim
 test:prgatenotes
+test:prgatecodeql
 test:trustedcontent
 test:checkparallel
 test:cappedread
