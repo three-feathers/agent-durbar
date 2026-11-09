@@ -305,7 +305,7 @@
     const who = people(model, ids, opts.rand, !!opts.remember);
     const seatOk = (p) => !!p && !['typeA', 'think', 'waveA', 'rest'].some((f) => BAD.has(SD + p + '-' + f + '.webp'));
     const engine = {
-      folders: model.folders.map((f) => ({ id: f.id, agents: f.agents.map((a) => ({ id: a.id, state: a.state, away: a.away || null, person: seatOk(who[a.id]) ? who[a.id] : null, lounge: !!a.lounge, helpers: a.lounge || !a.subs ? 0 : a.subs.length })) })), /* spec 097 FR-246: the app's room rule (shutPlan) seats it in the lounge row; FR-306: the strip's helpers (none in the lounge; none without their list: the plate keeps its +N) */
+      folders: model.folders.map((f) => ({ id: f.id, keep: !!f.keep, agents: f.agents.map((a) => ({ id: a.id, state: a.state, away: a.away || null, person: seatOk(who[a.id]) ? who[a.id] : null, lounge: !!a.lounge, helpers: a.lounge || !a.subs ? 0 : a.subs.length })) })), /* spec 097 FR-246: the app's room rule (shutPlan) seats it in the lounge row; FR-306: the strip's helpers (none in the lounge; none without their list: the plate keeps its +N) */
       places: model.places.map((p) => ({ id: p.id, custom: !!p.custom, visitors: p.visitors.map((v) => ({ id: v.id, needsYou: !!v.needsYou, person: who[v.id] || null })) })),
     };
     const signs = {};

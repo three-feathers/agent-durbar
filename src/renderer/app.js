@@ -1717,7 +1717,7 @@ function realModel(model){
     const list=m.mains.concat((m.rolled||[]).map(x=>x.a));
     const counts=['waiting','error','working','done','idle'].map(k=>{const n=m.all.filter(a=>!a.parent&&(k==='working'?(vis(a)==='working'||vis(a)==='thinking'):vis(a)===k)).length;return {state:k,n,word:LABELS[k].toLowerCase()};}).filter(c=>c.n);
     const u=SIM_QUIET_HEADS.has('aiu')?null:roomAiu(r);
-    return {id:r.id,name:r.name,path:deskMask(showPath(r.path)),cost:u?u.long:'',counts,newSess:!!(bridge&&bridge.newSession&&anyKindReady()&&!demoOn),menu:!!(bridge&&bridge.removeFolder&&!demoOn),
+    return {id:r.id,keep:!!(ORDER.desks[r.path]&&ORDER.desks[r.path].length),name:r.name,path:deskMask(showPath(r.path)),cost:u?u.long:'',counts,newSess:!!(bridge&&bridge.newSession&&anyKindReady()&&!demoOn),menu:!!(bridge&&bridge.removeFolder&&!demoOn),
       agents:list.map(a=>{const v=VISITS.at(a.id),st=stOf(a,old.has(a.id)),task=deskMask(taskOf(a)),place=v?placeLabel(v.place):'',needs=st==='waiting'||st==='limit';
         if(rolled.has(a.id)&&!v){ /* spec 097 FR-246, FR-120: in the lounge row, resting or asleep; the words of the flat lounge's peek card and label, the same masked reply (shutReply) */
           const asleep=old.has(a.id), ago=ACT.agoLong(sinceLast(a)), said=SHUT.spoken(ago), line=shutReply(a,140), who=a.profile?a.profile.name+' · '+a.role:a.role, word=asleep?'Asleep':stWord(a);
@@ -3967,11 +3967,13 @@ function reoGroup(kind,el){
   if(kind==='desk')return [...el.parentElement.children].filter(c=>c.classList&&c.classList.contains('unit'));
   return [...st.querySelectorAll('.lobby .place[data-reo]')];
 }
-/* the whole group in its shown order (also what the status filter hides), as keys: the base for a move */
-function reoFull(kind,el){
-  if(kind==='room'){const r=roomOfEl(el);return roomsInOrder().filter(x=>x.floor===r.floor).map(x=>x.path);}
-  if(kind==='desk'){const r=roomOfEl(el.closest('.room')),key=a=>Math.min(prio(a),...helpersOf(a).map(prio));
-    const l=agents.filter(a=>!a.parent&&a.room===r.id).sort((x,y)=>key(x)-key(y));return RO.sortBy(l,a=>a.id,ORDER.desks[r.path]).map(a=>a.id);}
+/* the whole group in its shown order (also what the status filter hides), as keys: the base for a move.
+   spec 097 FR-348 (issue 1152): from the model and a room id, not from elements, so Real office (no flat elements) moves the same way */
+function reoFullKeys(kind,roomId){
+  const r=ROOMS.find(x=>x.id===roomId);
+  if(kind==='room'){return r?roomsInOrder().filter(x=>x.floor===r.floor).map(x=>x.path):[];}
+  if(kind==='desk'){const key=a=>Math.min(prio(a),...helpersOf(a).map(prio));
+    const l=r?agents.filter(a=>!a.parent&&a.room===r.id).sort((x,y)=>key(x)-key(y)):[];return RO.sortBy(l,a=>a.id,r&&ORDER.desks[r.path]).map(a=>a.id);}
   return RO.sortBy(window.DurbarPlaces.allPlaces(CUSTOM),p=>p.id,ORDER.places).map(p=>p.id);
 }
 async function saveOrder(){
@@ -3980,12 +3982,17 @@ async function saveOrder(){
   try{const d=await bridge.setOrder(ORDER);if(!d)throw new Error('no answer');}
   catch(e){toast('The new order could not be saved. It stays until you close the app.',5000);}
 }
-function reoCommit(kind,el,els,from,to){
-  const key=REO_KEY[kind](el),target=REO_KEY[kind](els[to]),full=reoFull(kind,el),next=RO.moveTo(full,key,target,to>from);
+/* put `key` before or after `target` in the saved order (the one document, FR-085) and save it; `roomId`: the room (of the room, or of the desk) */
+function reoApply(kind,key,target,after,roomId,base){
+  const next=RO.moveTo(base||reoFullKeys(kind,roomId),key,target,after),r=ROOMS.find(x=>x.id===roomId);
   if(kind==='room'){ORDER.rooms=RO.merge(ORDER.rooms,next,RO.MAX_ROOMS);}
-  else if(kind==='desk'){const r=roomOfEl(el.closest('.room'));ORDER.desks={[r.path]:next.slice(0,RO.MAX_DESKS),...Object.fromEntries(Object.entries(ORDER.desks).filter(([k])=>k!==r.path))};}
-  else ORDER.places=RO.merge(ORDER.places,next,RO.MAX_PLACES);
+  else if(kind==='desk'&&r){ORDER.desks={[r.path]:next.slice(0,RO.MAX_DESKS),...Object.fromEntries(Object.entries(ORDER.desks).filter(([k])=>k!==r.path))};}
+  else if(kind==='place')ORDER.places=RO.merge(ORDER.places,next,RO.MAX_PLACES);
   saveOrder();
+}
+function reoCommit(kind,el,els,from,to){
+  const rm=kind==='room'?roomOfEl(el):kind==='desk'?roomOfEl(el.closest('.room')):null;
+  reoApply(kind,REO_KEY[kind](el),REO_KEY[kind](els[to]),to>from,rm?rm.id:'');
 }
 const reoName=(kind,el)=>kind==='room'?(roomOfEl(el)||{name:'Folder'}).name:kind==='desk'?((byId(REO_KEY.desk(el))||{name:'Desk'}).name):placeLabel(el.dataset.place);
 function reoSay(kind,el,els,to){
@@ -4004,6 +4011,27 @@ function reoStep(kind,el,delta){
   const moved=document.querySelector('#stage '+sel);
   if(moved){if(kind==='room'){if(!moved.contains(document.activeElement)){const b=moved.querySelector('.room-more,.room-new,.desk[data-id]');if(b)b.focus({preventScroll:true});}}else{if(!moved.hasAttribute('tabindex')&&moved.tagName!=='BUTTON')moved.setAttribute('tabindex','-1');moved.focus({preventScroll:true});}
     const node=kind==='desk'?moved.closest('.unit'):moved,now=reoGroup(kind,node);reoSay(kind,node,now,now.indexOf(node));}
+  return true;
+}
+/* spec 097 FR-346..FR-348 (issue 1152): one step in Real office (and from its folder menu), from the model: the shown group is what the office draws
+   (`officeModel`, `lobbyPlaces`), the base and the write are the flat office's (`reoApply`); the focus goes back to `refocus` (a selector under #stage). */
+const plateAway=pl=>pl.classList.contains('narrow')||!!VISITS.at(pl.dataset.id); /* away from its desk: the photo office narrows the plate, the arcade does not (it has the visit) */
+function realDeskKeys(roomId){return window.exports.deskOrder(realModel(officeModel()),roomId);} /* spec 097 FR-348: the desks of a room left to right, by the layout's own rule (keep, else status, lounge seats out) */
+function reoStepModel(kind,key,delta,roomId,refocus){
+  const rm=ROOMS.find(x=>x.id===roomId);
+  let keys=[],shown=null;
+  if(kind==='room'&&rm)keys=officeModel().map(m=>m.r).filter(x=>x.floor===rm.floor).map(x=>x.path);
+  else if(kind==='desk'){shown=realDeskKeys(roomId);keys=shown;} /* FR-348: the desks as Real office draws them (the layout's own function), not the attention order */
+  else if(kind==='place')keys=lobbyPlaces().map(p=>p.id).filter(reorderablePlace);
+  const i=keys.indexOf(key),j=i+delta;
+  const name=kind==='room'?(rm?rm.name:'Folder'):kind==='desk'?(byId(key)||{name:'Desk'}).name:placeLabel(key);
+  if(i<0||keys.length<2){announce(name+' has nowhere to move.');return false;}
+  if(j<0||j>=keys.length){announce(name+' is already '+(delta<0?'first':'last')+'.');return false;}
+  reoApply(kind,key,keys[j],j>i,roomId,shown&&window.exports.deskBase(shown,reoFullKeys('desk',roomId))); /* the saved order starts from the shown one */
+  renderAll();
+  const el=refocus&&document.querySelector('#stage '+refocus);
+  if(el)afQuiet(()=>el.focus({preventScroll:true}));
+  announce(RO.announce(name,j+1,keys.length,kind==='desk'?'its room':kind==='place'?'the lobby':''));
   return true;
 }
 function resetOrder(){
@@ -4026,6 +4054,22 @@ function resetOrder(){
     if(!e.altKey||e.ctrlKey||e.metaKey||e.isComposing||e.defaultPrevented||ui.view!=='office'||modalOpen())return;
     const d={ArrowLeft:-1,ArrowUp:-1,ArrowRight:1,ArrowDown:1}[e.key];
     if(!d||!e.target||!e.target.closest||!e.target.closest('#stage')||e.target.closest('input,textarea,select,[contenteditable="true"]'))return;
+    if(OFFICE_VIEW==='real'&&RO_LOAD==='ready'){ /* spec 097 FR-347: a name plate, a folder sign's button, a lobby plate that is a button */
+      const t=e.target,pl=t.closest('.ro-plate[data-id]'),sb=t.closest('.ro-sb[data-foldermenu],.ro-sb[data-newsess]'),lp=t.closest('.ro-lplate[data-place]');
+      const ag=pl&&byId(pl.dataset.id),main=!!ag&&!ag.parent,lounge=!!pl&&pl.dataset.surface==='lounge';
+      const stop=()=>{e.preventDefault();e.stopPropagation();};
+      if(e.shiftKey){ /* the room of a desk's plate or of a folder sign's button; a lounge seat and a lobby plate have no room to move */
+        const rid=main?(lounge?'':ag.room):sb?(sb.dataset.foldermenu||sb.dataset.newsess):'',r=rid&&ROOMS.find(x=>x.id===rid);
+        if(r){stop();reoStepModel('room',r.path,d,r.id,pl?`.ro-plate[data-id="${CSS.escape(pl.dataset.id)}"]`:sb.dataset.foldermenu?`.ro-sb[data-foldermenu="${CSS.escape(rid)}"]`:`.ro-sb[data-newsess="${CSS.escape(rid)}"]`);}
+        else if(main&&lounge){stop();announce(ag.name+' is resting in the lounge: its folder moves from a desk or a folder sign.');}
+      }else if(main){
+        stop();
+        if(lounge)announce(ag.name+' is resting in the lounge and does not move.');
+        else if(plateAway(pl))announce(ag.name+' is away from its desk and does not move.');
+        else reoStepModel('desk',ag.id,d,ag.room,`.ro-plate[data-id="${CSS.escape(ag.id)}"]`);
+      }else if(lp&&reorderablePlace(lp.dataset.place)){stop();reoStepModel('place',lp.dataset.place,d,'',`.ro-lplate[data-place="${CSS.escape(lp.dataset.place)}"]`);}
+      return;
+    }
     let kind='',el=null;
     if(e.shiftKey){el=e.target.closest('.room');kind='room';}
     else if((el=e.target.closest('.place[data-reo]')))kind='place';
@@ -7568,7 +7612,7 @@ document.addEventListener('click',e=>{
 const roomPeers=r=>roomsInOrder().filter(x=>x.floor===r.floor&&roomShown(x)&&agents.some(a=>!a.parent&&a.room===x.id));
 const roomMoveOk=r=>ui.view==='office'&&roomPeers(r).length>1;
 const roomStepAt=(r,d)=>{const l=roomPeers(r),i=l.indexOf(r);return i>=0&&i+d>=0&&i+d<l.length;};
-function moveRoomStep(r,d){const el=document.querySelector(`#stage .room[data-key="room:${CSS.escape(r.id)}"]`);if(el)reoStep('room',el,d);}
+function moveRoomStep(r,d){const el=document.querySelector(`#stage .room[data-key="room:${CSS.escape(r.id)}"]`);if(el)reoStep('room',el,d);else if(OFFICE_VIEW==='real')reoStepModel('room',r.path,d,r.id,`.ro-sb[data-foldermenu="${CSS.escape(r.id)}"]`);} /* spec 097 FR-346: Real office has no flat room element */
 function openFolderMenu(r,x,y,anchor){
   if(!r||demoOn||!bridge||!bridge.removeFolder)return;
   closeModeMenu();
@@ -9516,7 +9560,7 @@ const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueu
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
 if(SIM)window.__durbarSimUi={announce,swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
   settleCard:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;c.classList.add('settled');c.classList.remove('pending');return true;}, /* spec 052 FR-197 (the door driver): the agent's pending card is answered elsewhere, as in the chat, so a row painted for it is stale */afPasses:()=>AF_PASSES,railPlans:()=>{renderStrip();return faceMemoPlans;}, /* issue 1193: room plans one rail render worked out */ops:()=>({...OPS}),agents:()=>agents,scene:(a,mini,c)=>scene(a,mini,c), /* a drawn scene's markup, for the drivers (FR-192: the SMIL wave) */cv:{mark:cvMark,release:cvRelease,drop:cvDrop,openPanel,setDensity},setLive:setLiveOn,setOfficeView,needsCount:()=>needsMeOrder().length,clearDetail:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;c.querySelectorAll(':scope > details.pdiff').forEach(x=>x.remove());scheduleRender();return true;},addDetail:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;const d=document.createElement('details');d.className='pdiff';d.innerHTML='<summary>Show the change (+1 \u22121)</summary><pre>- a\n+ b</pre>';c.insertBefore(d,c.querySelector(':scope > .note-actions'));scheduleRender();return true;},requestText:s=>{const n=document.createElement('div');n.className='note elicit';n.textContent=String(s);return requestText(n);},setSerious:v=>{SERIOUS=!!v;return SERIOUS;}, setMotion:v=>{MOTION=!!v;markMotion();return MOTION;}, /* spec 097 (the moments driver): a change in the card, the card text's masking, Serious mode */unread:{mark:id=>UNREAD.complete(id,false)==='marked',read:id=>markRead(byId(id))}, /* spec 097 (the moments driver): the New reply mark and Mark as read, as the app sets them */order:{get:()=>ORDER,saved:()=>bridge.getOrder?bridge.getOrder():null,reset:resetOrder,path:id=>(ROOMS.find(r=>'room:'+r.id===id)||{}).path||''}, /* issue 677 (check 033-order): the order held and saved, Reset, a room's key */
-  toast:(s,act)=>{const t=act?toastAction(esc(String(s)),String(act),()=>{},8000):toast(esc(String(s)),8000);return !!t;}, /* spec 097 FR-113: a toast for the world-chrome driver (simulator only) */visitsSettled:()=>VISITS.settled(),timerDraw:()=>moodSigNow(drawnAt)!==moodSig||agoSigNow(drawnAt)!==agoSig, /* spec 008 FR-184: a mood or "ago" tick would draw now (a draw shows both; check-office-ops asserts none is due after an update's draw) */ /* spec 097 FR-186: no visit is about to start or end on the wall clock (check-office-ops-real reads a settled lobby) */realLayout:()=>RO_LAST, /* spec 097: the last Real office layout (check-office-overlap's Real office variant) */slips:()=>realSlips(), /* spec 097: what the world draws as slips (the moments driver; simulator only) */uncrowd:()=>{agents.forEach(x=>VISITS.unpin(x.id));scheduleRender();return true;},crowd:(pid,n,from)=>{const a=agents.filter(x=>!x.parent).slice(from||0,(from||0)+n);a.forEach(x=>VISITS.pin(x.id,pid,'test'));scheduleRender();return a.length;}, /* spec 097: n main agents stand at a place (a "+N" crowd for the driver; simulator only) */crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
+  toast:(s,act)=>{const t=act?toastAction(esc(String(s)),String(act),()=>{},8000):toast(esc(String(s)),8000);return !!t;}, /* spec 097 FR-113: a toast for the world-chrome driver (simulator only) */visitsSettled:()=>VISITS.settled(),timerDraw:()=>moodSigNow(drawnAt)!==moodSig||agoSigNow(drawnAt)!==agoSig, /* spec 008 FR-184: a mood or "ago" tick would draw now (a draw shows both; check-office-ops asserts none is due after an update's draw) */ /* spec 097 FR-186: no visit is about to start or end on the wall clock (check-office-ops-real reads a settled lobby) */realLayout:()=>RO_LAST, /* spec 097: the last Real office layout (check-office-overlap's Real office variant) */slips:()=>realSlips(), /* spec 097: what the world draws as slips (the moments driver; simulator only) */uncrowd:()=>{agents.forEach(x=>VISITS.unpin(x.id));scheduleRender();return true;},awayIds:()=>agents.filter(x=>!x.parent&&VISITS.at(x.id)).map(x=>x.id),pinAt:(id,pid)=>{const a=agents.find(x=>x.id===id&&!x.parent);if(!a)return false;VISITS.pin(id,pid,'test');scheduleRender();return true;}, /* spec 097 (order driver, test only): who stands at a place by the visit record itself (the plates follow a render later), and one agent pinned by id (crowd pins by position) */crowd:(pid,n,from)=>{const a=agents.filter(x=>!x.parent).slice(from||0,(from||0)+n);a.forEach(x=>VISITS.pin(x.id,pid,'test'));scheduleRender();return a.length;}, /* spec 097: n main agents stand at a place (a "+N" crowd for the driver; simulator only) */crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
   readAll:(quiet)=>{const n=UNREAD.size;UNREAD.ids().forEach(id=>{UNREAD.read(id);UNREAD_AT.delete(id);});if(!quiet)scheduleRender();return n;},notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),boxUsable:()=>boxUsable(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},selNow:()=>{showSelButton();const b=document.getElementById('ntSelBtn');return !!b&&!b.hidden;},open:()=>openNotes(byId(ui.selected)),close:()=>closeNotes(false),search:q=>{const f=$('ntSearch');if(!f)return false;f.value=q;f.dispatchEvent(new Event('input'));return true;},marks:{clear:()=>{document.querySelectorAll('#chat .nt-mark').forEach(x=>x.remove());document.querySelectorAll('#chat .bubble').forEach(b=>{b._nd=undefined;});return true;},run:()=>notesMarkAll(byId(ui.selected))},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),rename:note=>renameNote(byId(ui.selected),note,null),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
   sizingLounges:()=>lastSizing.reduce((n,m)=>n+(m.rolled||[]).length,0), sizingMains:()=>lastSizing.reduce((n,m)=>n+m.mains.length,0), /* FR-181: the desks it is sized for (a pill does not reshape the cards) */ /* spec 001 FR-180: the finished agents the office is sized for */
   hxOff:(off)=>{HX_OFF=!!off;layoutKey='';scheduleRender();return HX_OFF;},renamePrevRow,settleNow,bridge:()=>bridge,render:()=>{layoutKey='';scheduleRender();},loungeTurn,quietHeads:(parts)=>{SIM_QUIET_HEADS=new Set(Array.isArray(parts)?parts:[]);},paint:()=>scheduleRender(),emit:onLiveEvent,
