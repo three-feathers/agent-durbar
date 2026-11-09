@@ -2921,7 +2921,7 @@ function msgInfo(btn){
   const bubble=btn&&btn.closest&&btn.closest('.bubble'),msg=bubble&&bubble.closest('.msg'); if(!bubble||!msg)return null;
   const role=msg.classList.contains('user')?'user':'agent', root=bubble.closest('.chat-inner')||$('chat');
   const all=[...root.querySelectorAll(role==='user'?'.msg.user .bubble':'.msg.agent .bubble')];
-  return {bubble,role,text:bubbleText(bubble),ord:Math.max(0,all.indexOf(bubble))};
+  return {bubble,role,text:bubbleText(bubble),ord:ordGone(root,role)+Math.max(0,all.indexOf(bubble))}; /* FR-238: counting the bubbles a trim removed */
 }
 async function msgDigest(text){try{return await DN.digestOf(text,crypto.subtle);}catch(e){return '';}}
 function openMsgMenu(btn,x,y){
@@ -3170,7 +3170,7 @@ async function notesMarkAll(a){
   if(!notesOn(a))return;
   const root=$('chat'), el=root&&root.querySelector('.chat-inner[data-notes]'); if(!el)return;
   const st0=notesOf(a); if(!st0||!st0.ok)return;
-  const all=[...el.querySelectorAll('.msg.user .bubble')].map((b,i)=>({b,role:'user',ord:i})).concat([...el.querySelectorAll('.msg.agent .bubble')].map((b,i)=>({b,role:'agent',ord:i})))
+  const all=[...el.querySelectorAll('.msg.user .bubble')].map((b,i)=>({b,role:'user',ord:ordGone(el,'user')+i})).concat([...el.querySelectorAll('.msg.agent .bubble')].map((b,i)=>({b,role:'agent',ord:ordGone(el,'agent')+i})))
     .filter(x=>x.b.querySelector(':scope > .nt-btn')); /* finished messages only (they have the ⋯) */
   for(const x of all){const t=bubbleText(x.b);if(!x.b._nd||x.b._nd.t!==t)x.b._nd={t,d:await msgDigest(t)};}
   if(byId(ui.selected)!==a)return;
@@ -3306,9 +3306,10 @@ async function ntSourceBubble(src){
   const root=($('chat')||document).querySelector('.chat-inner')||$('chat'); if(!root)return null;
   const all=[...root.querySelectorAll(src.role==='user'?'.msg.user .bubble':'.msg.agent .bubble')];
   const dig=async b=>{const t=bubbleText(b);if(!b._nd||b._nd.t!==t)b._nd={t,d:await msgDigest(t)};return b._nd.d;};
-  if(all[src.ord]&&await dig(all[src.ord])===src.digest)return all[src.ord];
+  const at=src.ord-ordGone(root,src.role); /* FR-238: the place among the bubbles still in the view */
+  if(all[at]&&await dig(all[at])===src.digest)return all[at];
   let best=null,bd=Infinity;
-  for(let i=0;i<all.length;i++){if(await dig(all[i])===src.digest){const d=Math.abs(i-src.ord);if(d<bd){bd=d;best=all[i];}}}
+  for(let i=0;i<all.length;i++){if(await dig(all[i])===src.digest){const d=Math.abs(i-at);if(d<bd){bd=d;best=all[i];}}}
   return best;
 }
 function ntLeaveNotes(){
@@ -5248,7 +5249,7 @@ function labelDemo(){const w=$('demoWord');if(w)w.textContent=demoOn?'Turn off d
 function liveChat(a){
   if(chats[a.id])return chats[a.id];
   const el=document.createElement('div');el.className='chat-inner';
-  const chat=chats[a.id]={el,busy:false};
+  const chat=chats[a.id]={el,busy:false,agent:a}; /* agent: spec 005 FR-238, its sign-in and fresh-note cards are never trimmed */
   if(a.live&&!a.parent&&DN&&bridge&&bridge.notesSave)el.dataset.notes='1'; /* spec 083 FR-010/FR-027: only a main, live chat has the message ⋯; a helper's chat, the VS Code view and the canned demo chats have none (it would open nothing) */
   if(a.sub)buildSubTranscript(a,chat);
   return chat;
@@ -5697,11 +5698,69 @@ function mdSet(el,raw,now){
 /* spec 052 (2026-10-21, measured): following the chat to the bottom read scrollHeight (a full layout of the chat) on every event,
    so a long conversation got slower with each message (27 ms per message at 1000). Now one read and one write per frame. */
 let stickyRaf=0; const stickyChats=new Set();
-function stickyScroll(chat){stickyChats.add(chat);if(!stickyRaf)stickyRaf=requestAnimationFrame(stickyFlush);}
+/* spec 005 FR-238: a hidden window draws no frame, so stickyFlush does not run: chats that grow while it is hidden are trimmed by a slow
+   timer instead (30 s; the simulator alone may shorten it with simtrimtick=ms for a driver). It runs only while the page is hidden and
+   something was added since its last pass, and stops when the page shows again (the next frame flushes as usual). */
+const TRIM_HIDDEN_MS=(()=>{const n=SIM?parseInt(qs.get('simtrimtick')||'',10):0;return n>=50&&n<=600000?n:30000;})();
+let hiddenTrimT=0,hiddenDirty=false;
+function hiddenTrimTick(){if(!document.hidden||!hiddenDirty){clearInterval(hiddenTrimT);hiddenTrimT=0;return 0;}hiddenDirty=false;return chatTrimPending(true);}
+function chatTrimPending(hidden){const c=$('chat');let n=0;stickyChats.forEach(chat=>{n+=chatTrim(chat,c,hidden)||0;});return n;} /* the chats waiting for a frame, trimmed now */
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&hiddenTrimT){clearInterval(hiddenTrimT);hiddenTrimT=0;}});
+function stickyScroll(chat){stickyChats.add(chat);if(!stickyRaf)stickyRaf=requestAnimationFrame(stickyFlush);if(document.hidden){hiddenDirty=true;if(!hiddenTrimT)hiddenTrimT=setInterval(hiddenTrimTick,TRIM_HIDDEN_MS);}}
 function stickyFlush(){stickyRaf=0;const c=$('chat');const l=[...stickyChats];stickyChats.clear();
+  l.forEach(chat=>chatTrim(chat,c)); /* spec 005 FR-238: before the scroll, so a chat at its end stays there */
   if(c&&c.dataset.pin!=='0'&&l.some(chat=>chat.el.parentNode===c))c.scrollTop=c.scrollHeight;
   const bodies=[...thinkScroll];thinkScroll.clear();bodies.forEach(b=>{if(b.isConnected&&b.scrollHeight>b.clientHeight)b.scrollTop=b.scrollHeight;});}
 const thinkScroll=new Set(); /* the open thinking box follows its own text, in the same frame */
+/* spec 005 FR-238 (issue 1380): a chat keeps a bounded transcript (src/renderer/chattrim.js), every chat, open or not, at most once a
+   frame (stickyFlush). The cheap check first: nothing is read or built while a chat is under its caps. When the open chat is not at its
+   end, the first block in view that stays keeps its place on screen (as cvSoon, FR-213). */
+const CT=window.DurbarChatTrim;
+/* simulator only: `simchatkeep=N` raises both caps for a driver that builds a longer chat on purpose (check-chat-visibility, 4,000 messages) */
+const CHAT_KEEP_SIM=(()=>{const n=SIM?parseInt(qs.get('simchatkeep')||'',10):0;return n>=1&&n<=1e6?{messages:n,blocks:n}:null;})();
+function chatTrim(chat,c,hidden){
+  if(!CT||!chat||!chat.el)return;
+  const K=CHAT_KEEP_SIM||CT.CHAT_KEEP,el=chat.el,t=chat.turn&&chat.turn.T&&chat.turn.T.chat===chat?chat.turn:null,T=t&&t.T;
+  const subs=[];
+  if(chat.subViews)for(const v of chat.subViews){if(v.s.status==='running'&&v.T&&v.T.tl&&el.contains(v.T.tl))subs.push(v);else chat.subViews.delete(v);} /* a running helper's own timeline grows too */
+  const noteIn=!!chat.trimNote&&chat.trimNote.parentNode===el;
+  const tls=(T?[{tl:T.tl}]:[]).concat(subs.map(v=>({tl:v.T.tl})));
+  if(!CT.over({el,keep:K,tls,noteIn}))return; /* at or under every cap: counts only, nothing measured (FR-238) */
+  const st=chat.trimStats||(chat.trimStats={slow:0,measured:0,runs:0});st.slow++;
+  const a=chat.agent,live=CT.liveSet(a,t);
+  const liveOf=x=>new Set([x.T.typing,x.T.think&&x.T.think.el,x.T.bubble,x.T.chipsEl].filter(Boolean));
+  const drops=CT.plan({el,keep:K,live,tls:(T?[{tl:T.tl}]:[]).concat(subs.map(v=>({tl:v.T.tl,live:liveOf(v)})))});
+  if(!drops.length)return 0;
+  let marks=null;
+  if(c&&el.parentNode===c&&c.dataset.pin==='0'){ /* the reader is up in the chat: where the blocks from the first one in view are, only now that some go */
+    st.measured++;
+    const top=c.getBoundingClientRect().top,blocks=[...el.children].flatMap(x=>t&&x===t.m&&T.tl?[...T.tl.children]:[x]); /* the open turn by its blocks: its own top stays while its first blocks go */
+    const i=blocks.findIndex(x=>x.getBoundingClientRect().bottom>top+1);
+    if(i>=0)marks=blocks.slice(i,i+K.messages+K.blocks+2).map(x=>[x,x.getBoundingClientRect().top]);}
+  const ord=el._ordGone||(el._ordGone={user:0,agent:0});
+  const r=CT.apply(drops,[T].concat(subs.map(v=>v.T)),d=>{
+    /* spec 083: a saved note names its message by role and place among the chat's bubbles; the removed ones still count, so a place stays the same message */
+    const m=d.closest&&d.closest('.msg'),role=m&&m.classList.contains('user')?'user':m&&m.classList.contains('agent')?'agent':'';
+    if(role)ord[role]+=(d.matches('.bubble')?1:0)+d.querySelectorAll('.bubble').length;
+    /* a removed helper block: its view goes from the helper's record, so nothing keeps the element */
+    const sb=[...(d.matches('.subblk')?[d]:[]),...d.querySelectorAll('.subblk')];
+    for(const x of sb){const s=a&&a.subs&&a.subs.get(x.dataset.sub);if(!s)continue;
+      s.views=s.views.filter(v=>{const out=v.el===x||x.contains(v.host);if(out&&chat.subViews)chat.subViews.delete(v);return !out;});
+      if(s.block&&s.block.el===x)s.block=null;}
+  });
+  st.runs++;if(hidden)st.hiddenRuns=(st.hiddenRuns||0)+1;
+  if(r.actGone&&T)tActNext(T);
+  chat.trimmed=(chat.trimmed||0)+r.removed;
+  let n=chat.trimNote;
+  if(!n||n.parentNode!==el){n=chat.trimNote=document.createElement('div');n.className='note info '+CT.NOTE_CLASS;n.setAttribute('role','note');}
+  n.textContent=CT.noteText(chat.trimmed);
+  if(el.firstElementChild!==n)el.insertBefore(n,el.firstChild);
+  const mk=marks&&marks.find(([x])=>el.contains(x));
+  if(mk)c.scrollTop+=mk[0].getBoundingClientRect().top-mk[1];
+  return r.removed;
+}
+/* spec 005 FR-238, spec 083: the bubbles of a role a trim removed from this chat, so a note's place (`ord`) counts from the session view's start */
+const ordGone=(root,role)=>(root&&root._ordGone&&root._ordGone[role])||0;
 
 function makeT(tl,chat){return {tl,chat,think:null,thinkN:0,bubble:null,chipsEl:null,chipEls:{},intent:'',typing:null};}
 function tScroll(T){if(T.chat)stickyScroll(T.chat);}
@@ -6035,7 +6094,9 @@ function subBody(s,host,chat){
   host.insertAdjacentHTML('beforeend','<div class="sub-prompt"></div><div class="tl"></div><div class="sub-res"></div><div class="sub-err" role="alert" hidden></div><div class="sub-foot"></div>');
   const v={s,host,chat,prompt:host.querySelector('.sub-prompt'),res:host.querySelector('.sub-res'),err:host.querySelector('.sub-err'),foot:host.querySelector('.sub-foot'),T:null};
   v.T=makeT(host.querySelector('.tl'),chat);v.T.folder=s.parent&&s.parent.info&&s.parent.info.cwd;
+  s.views=s.views.filter(x=>!x.chat||!x.chat.el||x.chat.el.contains(x.host)); /* FR-238: a view rebuilt or trimmed away is not kept */
   s.views.push(v); subPaintView(v);
+  if(chat)(chat.subViews||(chat.subViews=new Set())).add(v); /* FR-238: a running helper's timeline is trimmed as the open turn's */
   s.log.forEach(e=>subApply(v,e,true));
   return v;
 }
@@ -6170,19 +6231,21 @@ function ensureTurn(a){
   const T=makeT(m.querySelector('.tl'),chat);T.folder=a.info&&a.info.cwd; /* spec 005 FR-020: edit paths relative to it */
   const ty=document.createElement('div');ty.className='typing';ty.dataset.t0=String(Date.now());ty.innerHTML='<i></i><i></i><i></i><span class="t-l"></span>';
   T.tl.appendChild(ty);T.typing=ty;
-  const t=a.turn={m,T};
+  const t=a.turn={m,T};chat.turn=t;chat.agent=a; /* spec 005 FR-238: the open turn's blocks are trimmed, its live ones never */
   stickyScroll(chat);return t;
 }
 function closeTurn(a){
   const t=a.turn; if(!t)return;
   tEnd(t.T,{note:true});
+  if(t.T.chat&&t.T.chat.turn===t)t.T.chat.turn=null;
   a.turn=null;
 }
+const TASK_LOG_KEEP=500; /* spec 005 FR-239: the simulator's task log keeps the last 500 lines (check-done-desk-mask reads a few per check) */
 function setState(a,state,label,task){
   if(typeof task==='string')task=taskMask(task); /* spec 041 FR-065: backstop, whatever path built the line (the helper masks before cutting; this one cannot repair a cut token) */
   const ch=a.state!==state||(label!==undefined&&a.label!==label)||(task!==undefined&&a.task!==task);
   a.state=state; if(label!==undefined)a.label=label; if(task!==undefined)a.task=task;
-  if(SIM&&task!==undefined)(window.__taskLog=window.__taskLog||[]).push(a.task); /* simulator only: every task line ever stored, for the FR-065 driver (a line is often replaced at once) */
+  if(SIM&&task!==undefined){const L=(window.__taskLog=window.__taskLog||[]);L.push(a.task);if(L.length>TASK_LOG_KEEP)L.splice(0,L.length-TASK_LOG_KEEP);} /* simulator only: the last task lines stored (FR-239), for the FR-065 driver (a line is often replaced at once) */
   if(state==='working'||state==='thinking'){if(!a.busySince)a.busySince=Date.now();}else if(state==='done'||state==='idle')a.busySince=null; /* spec 001 FR-047: time on task */
   if(ch&&a.live&&a.info&&a.info.modelControl&&a.info.modelControl.compact&&!a.parent)updateCtxChip(a); /* the Compact button is greyed while the agent works */
   if(ch){if(a.parent&&HX)scheduleRenderSoon();else scheduleRender();}
@@ -8229,7 +8292,7 @@ async function compactDialog(a,anchor){
 function maybeSuggestFresh(a){
   const c=STATS.agent(a.id).ctx;if(!c||!(c.limit>0))return;
   const pct=Math.round(c.tokens/c.limit*100);
-  if(a.freshNote&&a.freshNote.isConnected){if(pct<80){a.freshNote.remove();a.freshNote=null;}return;}
+  if(a.freshNote&&liveChat(a).el.contains(a.freshNote)){if(pct<80){a.freshNote.remove();a.freshNote=null;}return;} /* in its chat, open or not (isConnected is false for a closed chat: a new note was added at every idle, issue 1380) */
   const idle=!busyNow(a);
   if(!DM.suggestFresh({percent:pct,compactions:a.compactions||0,lastCompactionFailed:!!a.compactFailed,idle,dismissed:a.freshDismissed,canCompact:ctrlOf(a).compact===true}))return;
   const chat=liveChat(a),n=document.createElement('div');n.className='note fresh';n.setAttribute('role','note');
@@ -9514,6 +9577,11 @@ const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueu
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
 if(SIM)window.__durbarSimUi={swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
+  chatTrimNow:()=>chatTrimPending(false), /* spec 005 FR-238: trim the chats waiting for a frame now (a burst with no frame between) */
+  hiddenTrimTimer:()=>({on:!!hiddenTrimT,ms:TRIM_HIDDEN_MS}),
+  chatSizes:()=>Object.entries(chats).map(([id,c])=>{const T=c.turn&&c.turn.T,a=c.agent,st=c.trimStats||{};let subViews=0,staleViews=0,subBlockGone=0;
+    if(a&&a.subs)for(const s of a.subs.values()){subViews+=s.views.length;staleViews+=s.views.filter(v=>!v.chat||!v.chat.el||!v.chat.el.contains(v.host)).length;if(s.block&&!c.el.contains(s.block.el))subBlockGone++;}
+    return {id,messages:c.el.querySelectorAll(':scope > :not(.chat-trim)').length,blocks:T&&T.tl?T.tl.childElementCount:0,leaves:CT?CT.leafTotal(c.el):0,chipRefs:T?Object.values(T.chipEls).filter(Boolean).length:0,chipsInTurn:T&&T.tl?T.tl.querySelectorAll('.chip').length:0,stale:T?Object.values(T.chipEls).filter(x=>x&&!T.tl.contains(x.el)).length+(T.think&&!T.tl.contains(T.think.el)?1:0):0,trimmed:c.trimmed||0,note:c.trimNote&&c.trimNote.parentNode===c.el&&c.el.firstElementChild===c.trimNote?c.trimNote.textContent:'',slow:st.slow||0,measured:st.measured||0,runs:st.runs||0,hiddenRuns:st.hiddenRuns||0,lastIsNote:!!(c.el.lastElementChild&&c.el.lastElementChild.classList.contains('note')),lastUser:((x=>x?x.textContent:'')([...c.el.querySelectorAll('.msg.user .bubble')].pop())).slice(0,60),lastAgent:((x=>x?x.textContent:'')([...c.el.querySelectorAll('.msg.agent .bubble')].pop())).slice(0,60),ordGone:c.el._ordGone||{user:0,agent:0},denials:c.el.querySelectorAll('.note.perm:not(.settled):not(.pending)').length,denialButtons:c.el.querySelectorAll('.note.perm:not(.settled) > .note-actions button').length,subViews,staleViews,subBlockGone,subBlocksMax:c.subViews?Math.max(0,...[...c.subViews].map(v=>v.T&&v.T.tl?v.T.tl.childElementCount:0)):0,signCard:!!(a&&a.signCard&&c.el.contains(a.signCard)),freshNote:!!(a&&a.freshNote&&c.el.contains(a.freshNote)),freshMark:a&&a.freshNote&&c.el.contains(a.freshNote)?a.freshNote.dataset.ccm||'':'',actId:T?T.actId||null:null,actIn:T&&T.actId?!!T.chipEls[T.actId]:true};}), /* spec 005 FR-238: each chat's size for check-chat-memory */
   settleCard:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;c.classList.add('settled');c.classList.remove('pending');return true;}, /* spec 052 FR-197 (the door driver): the agent's pending card is answered elsewhere, as in the chat, so a row painted for it is stale */afPasses:()=>AF_PASSES,railPlans:()=>{renderStrip();return faceMemoPlans;}, /* issue 1193: room plans one rail render worked out */ops:()=>({...OPS}),agents:()=>agents,scene:(a,mini,c)=>scene(a,mini,c), /* a drawn scene's markup, for the drivers (FR-192: the SMIL wave) */cv:{mark:cvMark,release:cvRelease,drop:cvDrop,openPanel,setDensity},setLive:setLiveOn,setOfficeView,needsCount:()=>needsMeOrder().length,clearDetail:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;c.querySelectorAll(':scope > details.pdiff').forEach(x=>x.remove());scheduleRender();return true;},addDetail:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;const d=document.createElement('details');d.className='pdiff';d.innerHTML='<summary>Show the change (+1 \u22121)</summary><pre>- a\n+ b</pre>';c.insertBefore(d,c.querySelector(':scope > .note-actions'));scheduleRender();return true;},requestText:s=>{const n=document.createElement('div');n.className='note elicit';n.textContent=String(s);return requestText(n);},setSerious:v=>{SERIOUS=!!v;return SERIOUS;}, setMotion:v=>{MOTION=!!v;markMotion();return MOTION;}, /* spec 097 (the moments driver): a change in the card, the card text's masking, Serious mode */unread:{mark:id=>UNREAD.complete(id,false)==='marked',read:id=>markRead(byId(id))}, /* spec 097 (the moments driver): the New reply mark and Mark as read, as the app sets them */order:{get:()=>ORDER,saved:()=>bridge.getOrder?bridge.getOrder():null,reset:resetOrder,path:id=>(ROOMS.find(r=>'room:'+r.id===id)||{}).path||''}, /* issue 677 (check 033-order): the order held and saved, Reset, a room's key */
   toast:(s,act)=>{const t=act?toastAction(esc(String(s)),String(act),()=>{},8000):toast(esc(String(s)),8000);return !!t;}, /* spec 097 FR-113: a toast for the world-chrome driver (simulator only) */visitsSettled:()=>VISITS.settled(),timerDraw:()=>moodSigNow(drawnAt)!==moodSig||agoSigNow(drawnAt)!==agoSig, /* spec 008 FR-184: a mood or "ago" tick would draw now (a draw shows both; check-office-ops asserts none is due after an update's draw) */ /* spec 097 FR-186: no visit is about to start or end on the wall clock (check-office-ops-real reads a settled lobby) */realLayout:()=>RO_LAST, /* spec 097: the last Real office layout (check-office-overlap's Real office variant) */slips:()=>realSlips(), /* spec 097: what the world draws as slips (the moments driver; simulator only) */uncrowd:()=>{agents.forEach(x=>VISITS.unpin(x.id));scheduleRender();return true;},crowd:(pid,n,from)=>{const a=agents.filter(x=>!x.parent).slice(from||0,(from||0)+n);a.forEach(x=>VISITS.pin(x.id,pid,'test'));scheduleRender();return a.length;}, /* spec 097: n main agents stand at a place (a "+N" crowd for the driver; simulator only) */crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
   readAll:(quiet)=>{const n=UNREAD.size;UNREAD.ids().forEach(id=>{UNREAD.read(id);UNREAD_AT.delete(id);});if(!quiet)scheduleRender();return n;},notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),boxUsable:()=>boxUsable(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},selNow:()=>{showSelButton();const b=document.getElementById('ntSelBtn');return !!b&&!b.hidden;},open:()=>openNotes(byId(ui.selected)),close:()=>closeNotes(false),search:q=>{const f=$('ntSearch');if(!f)return false;f.value=q;f.dispatchEvent(new Event('input'));return true;},marks:{clear:()=>{document.querySelectorAll('#chat .nt-mark').forEach(x=>x.remove());document.querySelectorAll('#chat .bubble').forEach(b=>{b._nd=undefined;});return true;},run:()=>notesMarkAll(byId(ui.selected))},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),rename:note=>renameNote(byId(ui.selected),note,null),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
