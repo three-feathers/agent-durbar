@@ -300,6 +300,6 @@ Starts after the next built-in world's stack lands (FR-296, decided Q4). All beh
 
 - [ ] T277 FR-307: the arcade's helper heads written as 097's, with the one recorded gap (12 and 15 agents at 1280x800). Test: `test:realoffice-layout` (strips and fallbacks), `check-097-helpers` (arcade world), `shots-097-screens retro`'s helper step.
 - [ ] T278 FR-308: the arcade's `big` is 4 or fewer; 8 lines of 11 px or more at 1 to 3 agents (both sizes) and at 4 in 1440x900; the text growth stops where 8 lines stay. Test first: `test-realoffice-aisles` and `test-realoffice-layout` (mutants: `big` from the cabinet's kind, no cap on the growth, each fails); `shots-097-screens retro`.
-- [ ] T279 FR-309: no arcade loop at the first draw, every loop after the 2 s calm, on the 1/12 s grid. Test first: `check-097-motion retro` (mutants: loops at first draw, no `onGrid`, a bob on an idle person, each fails).
+- [ ] T279 FR-309: no arcade loop at the first draw, every loop after the 2 s calm, with FR-260's own periods. Test first: `check-097-motion retro` (mutants: loops at first draw, a flash period of 2.4 s, a bob on an idle person, each fails).
 - [ ] T280 FR-310: `check-097-motion retro` and `shots-097-screens retro` in `ui-suite` (no workflow change). Test: both pass at the head; each mutant above fails its driver.
 - [ ] T281 Pictures of every arcade scene (3, 12 and 15 agents, rooms, a solo room, helpers present, big screens) at 1440x900 and 1280x800, looked at, on the pull request.

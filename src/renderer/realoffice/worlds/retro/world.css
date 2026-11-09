@@ -35,7 +35,7 @@
 .ro[data-world="retro"] .ro-marquee.mq-dim{background:#0d0a18;color:#c9bfa6}
 .ro[data-world="retro"] .ro-marquee.mq-off{background:#07060c;color:#a39c8c}
 .ro[data-world="retro"] .ro-marquee:is(.mq-flash,.mq-flash-red)::after{content:"";position:absolute;inset:0;pointer-events:none;outline:3px solid var(--c-waiting);outline-offset:-3px}
-/* spec 102 FR-309: the loops (flash, cue dots, caret) run from `data-go`, set when the room is ready (2 s after the first draw, as 097 FR-228), and on the 1/12 s grid (`onGrid` rounds each to whole twelfths) */
+/* spec 102 FR-309: the loops (flash, cue dots, caret) run from `data-go`, set when the room is ready (2 s after the first draw, as 097 FR-228), and keep FR-260's own periods (2.2 s, 2 s, 1 s), not 097 FR-229's 1/12 s grid */
 .ro[data-world="retro"][data-go] .ro-marquee:is(.mq-flash,.mq-flash-red)::after{animation:ro-arc-flash 2.2s steps(1) infinite}
 .ro[data-world="retro"]:not([data-go]) .ro-caret{animation:none}
 .ro[data-world="retro"] .ro-marquee.mq-flash-red::after{outline-color:var(--c-error)}

@@ -9,7 +9,7 @@
  *   - 40 agents: a desk scrolled out of view keeps moving, or paints (FR-181, spec 097 T030 pacing).
  * MOTION_WORLD=retro: the same driver in the Retro arcade (spec 102 FR-309, FR-310; issue #1428): the page address forces the world, the loops are looked for in the whole room (the arcade's flash, caret and cue
  * loops are not in `.ro-art`), and the parts that are the Photo office's own (the typing rig, a runner on two pictures, the cross-fade of a pose, the desk-to-lobby fades, the count-change ease) are not run: the arcade swaps
- * a frame and has no second picture (FR-261). What the arcade owes instead: no loop at the first draw and every loop after it (FR-309), each on the 1/12 s grid, a bob only on a working person, nothing but
+ * a frame and has no second picture (FR-261). What the arcade owes instead: no loop at the first draw and every loop after it (FR-309), each stepped with FR-260's own period (not the 1/12 s grid), a bob only on a working person, nothing but
  * `transform` and `opacity`, and the pause, the still and the scrolled-away rules as in every world.
  * Screenshots: <SHOTS_OUT>/097-real-moving-<w>x<h>.png
  */
@@ -47,10 +47,21 @@ module.exports = async (ctx) => {
     await must(`(${LOOPS})>0`, 'FR-228: the loops start', 6000);
     /* FR-229: every endless loop on one grid of 1/12 s */
     const GRID = `(()=>{const S=1000/12,off=(v)=>{const m=((v%S)+S)%S;return Math.min(m,S-m);},bad=[];let n=0;for(const a of document.querySelector('#stage .ro').getAnimations({subtree:true})){if(!a.animationName)continue;const t=a.effect.getTiming();if(t.iterations!==Infinity)continue;n++;if(!t.easing.startsWith('steps')||off(t.duration)>0.01||off(a.startTime)>0.01)bad.push(a.animationName+' '+t.easing+' '+t.duration+' '+a.startTime);}return {n,bad};})()`;
+    if (RETRO) {
+      /* spec 102 FR-309: the arcade's loops keep FR-260's periods (not 097 FR-229's grid): each is stepped and has one of the periods the spec names */
+      const PERIODS = { 'ro-arc-flash': [2200], 'ro-arc-dots': [2000], 'ro-arc-bob': [1000], 'ro-blink': [1200] };
+      const SEEN = `[...document.querySelector('#stage .ro').getAnimations({subtree:true})].filter(a=>a.animationName&&a.effect.getTiming().iterations===Infinity).map(a=>({n:a.animationName,d:a.effect.getTiming().duration,e:getComputedStyle(a.effect.target,a.effect.pseudoElement).animationTimingFunction}))`;
+      await must(`(${SEEN}).length>=8`, 'FR-309: loops to look at', 6000);
+      const seen = await js(SEEN);
+      console.log('[097-motion] arcade loops', seen.length);
+      const bad = seen.filter((a) => !(PERIODS[a.n] || []).includes(a.d) || !/steps|step-/.test(a.e));
+      assert.deepStrictEqual(bad, [], 'FR-309, FR-260: every loop stepped, with the period the spec names');
+    } else {
     await must(`(${GRID}).n>=8`, 'FR-229: loops to look at', 6000);
     const grid = await js(GRID);
     console.log('[097-motion] grid', grid.n, 'loops');
     assert.deepStrictEqual(grid.bad, [], 'FR-229: every loop stepped, its duration and start on the grid');
+    }
   }
   const loadReal = async (w, h, query = {}) => {
     await H.load({ w, h, query: { officeview: 'real', romotion: '1', ...WORLD_Q, ...query }, ready: REAL, settle: false });
