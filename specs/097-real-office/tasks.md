@@ -305,4 +305,5 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 - [x] T287 [US2] Mutants fail: threshold, Esc, bypassing `reoApply`, arcade room drag, wrong arcade neighbour, menu does nothing, fixed place moves, order ignored. Run 2026-11-09, each failing assert recorded in the PR #1394 comment (also: a fixed place's menu with Move items, the grab cursor removed, order not saved); `order ignored` is `test:realoffice-layout`'s
 - [x] T288 [US2] `shots-033-order`, `check-office-ops`, `check-office-overlap` (real, with a saved room order, arcade) pass
 - [x] T289 [US2] Pictures mid-drag and after the drop read and compressed; spec, plan and changelog fragment match [FR-352]
+- [x] T297 [US2] Bug #1423 (spec delta 2026-11-09): `check-097-drag` waits until the drawn desks match the visit record before it picks a desk, and asserts the drag started before the status change (labelled); mutant `DRAG_MUTANT=away` fails on the label. Test: `sim:` 20 runs under two CPU hogs
 
