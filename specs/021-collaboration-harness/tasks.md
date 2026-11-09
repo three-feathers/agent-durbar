@@ -79,3 +79,7 @@
 ## 2026-11-09: project skills (FR-087)
 
 - [x] T074 (FR-087) `.claude/skills/durbar-release/`, `durbar-fold/`, `durbar-ci-rerun/` (`SKILL.md` each: frontmatter name and when-to-use description, a short checklist, links to the source of truth, commands checked against `package.json` and `scripts/`). `read:` only; not run in a real session.
+
+## 2026-11-09: pr-gate and a CodeQL check skipped by its path filter (FR-089, issue #1420)
+
+- [ ] T076 (FR-089) `scripts/pr-gate.sh`: a `skipping` or absent `CodeQL` check counts as passed only when the check list was read, every changed file (`gh pr diff --name-only`) is on the no-code list, and the merge-ref plus head-ref alerts were read as numbers adding to 0; any other CodeQL state blocks. Test `test:prgatecodeql` (fake `gh`): lockfile-only skipped PR with 0 alerts is ready; with 1 alert, a failing, pending or cancelled CodeQL, a skipped CodeQL with `src/*.ts`, an unknown file type, a failed diff, a failed alerts call and a failed checks call are not ready. Mutants: a failing CodeQL treated as skipped, the file filter removed, each fail a labelled assert.
