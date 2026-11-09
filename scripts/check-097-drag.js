@@ -165,7 +165,8 @@ module.exports = async (ctx) => {
     if (MUTANT === 'away') { await js(`window.__durbarSimUi.pinAt(${jsLiteral(O2[k2])},'library')`); await must(`window.__durbarSimUi.realLayout().zones.some(z=>z.desks.some(d=>d.id===${jsLiteral(O2[k2])}&&d.away))`, 'the mutant desk is drawn away'); }
     await drag(await grab(plateSel(O2[k2])), await center(plateSel(O2[k2 + 1])), {
       mid: async () => {
-        assert.strictEqual(await lifted(), true, `${tag}: the drag started before the status change (dragging ${O2[k2]}; away now: ${await js('window.__durbarSimUi.awayIds()')})`);
+        const on = await lifted(), awayNow = on ? [] : await js(`window.__durbarSimUi.awayIds()`);
+        assert.strictEqual(on, true, `${tag}: the drag started before the status change (dragging ${O2[k2]}; away now: ${awayNow})`);
         await js(`window.__durbarSimUi.crowd('library',1,${jsLiteral(0)})`);
         await ctx.sleep(300);
         assert.strictEqual(await lifted(), true, `${tag}: a status change does not end the drag`);
