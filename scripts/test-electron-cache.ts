@@ -185,7 +185,7 @@ async function main(): Promise<void> {
   assert.ok(/path: \$\{\{ steps\.plan\.outputs\.paths \}\}\r?\n\s+key: \$\{\{ steps\.plan\.outputs\.key \}\}/.test(action), 'npm-ci caches the planned paths under the planned key');
   assert.ok(/restore-keys: \$\{\{ steps\.plan\.outputs\.restore-prefix \}\}/.test(action), 'a miss falls back to the same Electron version');
   assert.ok(action.includes(`retry-waits:`) && action.includes(`default: '${ec.RETRY_WAITS.join(' ')}'`), 'by default npm ci waits as long as the warmer');
-  assert.ok(/RETRY_WAITS: \$\{\{ inputs\.retry-waits \}\}/.test(action) && /read -ra waits <<< "\$RETRY_WAITS"/.test(action) && /\n\s+for w in "\$\{waits\[@\]\}"; do case "\$w" in ''\|\*\[!0-9\]\*\) echo "::error::retry-waits must be whole seconds, got: \$w"; exit 1;; esac; done\n/.test(action), 'the waits pass through env: and must be whole seconds');
+  assert.ok(/RETRY_WAITS: \$\{\{ inputs\.retry-waits \}\}/.test(action) && /read -ra waits <<< "\$RETRY_WAITS"/.test(action) && /\r?\n\s+for w in "\$\{waits\[@\]\}"; do case "\$w" in ''\|\*\[!0-9\]\*\) echo "::error::retry-waits must be whole seconds, got: \$w"; exit 1;; esac; done\r?\n/.test(action), 'the waits pass through env: and must be whole seconds');
   assert.ok(/Electron download host/.test(action) && /exit 1/.test(action), 'the last failure names the Electron host and fails');
   assert.ok(action.indexOf('node scripts/electron-cache.js seed') > action.indexOf('npm ci $NPM_CI_ARGS'), 'the checksum file is seeded after the install');
   assert.ok(!/secrets\./.test(action) && !/github\.event|head_ref/.test(action), 'no secrets, no PR text');
