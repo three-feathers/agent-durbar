@@ -377,10 +377,11 @@ export function claudeArgs(i: ClaudeLaunch): string[] {
 
 export interface ClaudeMdIo {
   readFile(p: string): string | undefined;
-  realpath(p: string): string;
+  /** The resolved path, or undefined when it cannot be resolved (the file is then skipped). */
+  realpath(p: string): string | undefined;
 }
 
-const nodeIo: ClaudeMdIo = {
+export const claudeMdNodeIo: ClaudeMdIo = {
   readFile: (p) => {
     try {
       const st = fs.statSync(p);
@@ -393,7 +394,7 @@ const nodeIo: ClaudeMdIo = {
     try {
       return fs.realpathSync(p);
     } catch {
-      return p;
+      return undefined;
     }
   },
 };
@@ -402,9 +403,12 @@ const nodeIo: ClaudeMdIo = {
  * The folder's `CLAUDE.md` with its `@path` imports expanded (an import is a whitespace-separated `@relative/path` token
  * outside code spans). Only files inside the folder (symlinks resolved) are read; at most `CLAUDE_MD_MAX_CHARS` in total
  * and `CLAUDE_MD_MAX_DEPTH` levels; each file once. Returns undefined when there is no CLAUDE.md.
+ * Spec 012 FR-177: an import is checked against the folder by its text before any file access (`io` is asked about nothing
+ * outside it), then again once resolved; a path that cannot be resolved is skipped.
  */
-export function claudeMdPrompt(folder: string, io: ClaudeMdIo = nodeIo, flavor: Pick<typeof path, 'resolve' | 'relative' | 'isAbsolute' | 'dirname' | 'sep'> = path): string | undefined {
+export function claudeMdPrompt(folder: string, io: ClaudeMdIo = claudeMdNodeIo, flavor: Pick<typeof path, 'resolve' | 'relative' | 'isAbsolute' | 'dirname' | 'sep'> = path): string | undefined {
   const root = io.realpath(flavor.resolve(folder));
+  if (root === undefined) return undefined;
   const inside = (p: string): boolean => {
     const r = flavor.relative(root, p);
     return r === '' || (!r.startsWith('..') && !flavor.isAbsolute(r));
@@ -412,8 +416,9 @@ export function claudeMdPrompt(folder: string, io: ClaudeMdIo = nodeIo, flavor: 
   const seen = new Set<string>();
   let budget = CLAUDE_MD_MAX_CHARS;
   const load = (file: string, depth: number): string | undefined => {
+    if (!inside(file) || budget <= 0) return undefined; // by text, before any file access
     const real = io.realpath(file);
-    if (!inside(real) || seen.has(real) || budget <= 0) return undefined;
+    if (real === undefined || !inside(real) || seen.has(real)) return undefined;
     seen.add(real);
     const text = io.readFile(real);
     if (text === undefined) return undefined;
@@ -427,7 +432,7 @@ export function claudeMdPrompt(folder: string, io: ClaudeMdIo = nodeIo, flavor: 
         if (/^\s*(```|~~~)/.test(line)) inFence = !inFence;
         if (inFence) return line;
         return line.replace(/(^|\s)@([^\s`]+)/g, (whole, pre: string, ref: string) => {
-          if (/^[a-z][a-z0-9+.-]*:/i.test(ref) || ref.startsWith('~')) return whole; // URLs and home paths are not imported
+          if (ref.includes(':') || ref.startsWith('~') || /^[\\/]{2}/.test(ref)) return whole; // URLs, home paths and other refs that are not folder paths are not imported
           const target = flavor.resolve(flavor.dirname(real), ref);
           const sub = load(target, depth + 1);
           return sub === undefined ? whole : `${pre}\n<!-- imported from ${ref} -->\n${sub}\n`;

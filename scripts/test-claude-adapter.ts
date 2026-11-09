@@ -7,7 +7,7 @@ import { McpContextTracker } from '../src/main/mcpcontextop';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { CLAUDE_ENTRYPOINT, ClaudeAdapter, PRE_TOOL_USE_HOOK, budgetText, claudeArgs, claudeForwardsSubagentText, CLAUDE_FORWARD_SUBAGENT_MIN_VERSION, handoffArgs, oneShotArgs, parseHandoffOutput, claudeMdPrompt, claudeModelFlag, claudeModelOptions, cliLaunchArgs, mcpConfigOf, permissionLikeOf, userContentOf } from '../src/adapters/claude';
+import { CLAUDE_ENTRYPOINT, ClaudeAdapter, PRE_TOOL_USE_HOOK, budgetText, claudeArgs, claudeForwardsSubagentText, CLAUDE_FORWARD_SUBAGENT_MIN_VERSION, handoffArgs, oneShotArgs, parseHandoffOutput, claudeMdNodeIo, claudeMdPrompt, claudeModelFlag, claudeModelOptions, cliLaunchArgs, mcpConfigOf, permissionLikeOf, userContentOf } from '../src/adapters/claude';
 import { createCliTransport } from '../src/adapters/claudeTransport';
 import type { AgentEvent } from '../src/adapters/types';
 import { FakeClaudeChild, fakeSpawn, SANDBOX_HOST_OK } from './fakes/claude-cli';
@@ -189,6 +189,54 @@ async function main(): Promise<void> {
     assert.strictEqual(claudeMdPrompt('/none', { readFile: () => undefined, realpath: (p) => p }, path.posix), undefined);
     const big = { readFile: (p: string) => (p === '/b/CLAUDE.md' ? 'x'.repeat(200_000) : undefined), realpath: (p: string) => p };
     assert.ok(claudeMdPrompt('/b', big, path.posix)!.length < 70_000, 'bounded');
+  }
+  {
+    // Spec 012 FR-177: imports are checked against the folder by their text before any file access, then again once resolved.
+    const recIo = (files: Record<string, string>, o: { links?: Record<string, string>; fail?: string[] } = {}) => {
+      const calls: string[] = [];
+      return {
+        calls,
+        realpath: (p: string) => (calls.push(`realpath ${p}`), o.fail?.includes(p) ? undefined : (o.links?.[p] ?? p)),
+        readFile: (p: string) => (calls.push(`readFile ${p}`), files[p]),
+      };
+    };
+    const refs = String.raw`@\\host\share\x.md @//host/x @C:\x.md @..\..\x.md @../../x.md @/etc/passwd @.\AGENTS.md:s`;
+    {
+      const io = recIo({ 'C:\\r\\CLAUDE.md': `Top. ${refs} @AGENTS.md`, 'C:\\r\\AGENTS.md': 'Agents.', 'C:\\x.md': 'OUT', '\\\\host\\share\\x.md': 'OUT', 'C:\\etc\\passwd': 'OUT' });
+      const out = claudeMdPrompt('C:\\r', io, path.win32)!;
+      assert.match(out, /Agents\./, 'FR-177 win32: a normal import still works');
+      assert.ok(!out.includes('OUT') && out.includes(refs), 'FR-177 win32: refs outside the folder stay as text');
+      assert.deepStrictEqual(io.calls, ['realpath C:\\r', 'realpath C:\\r\\CLAUDE.md', 'readFile C:\\r\\CLAUDE.md', 'realpath C:\\r\\AGENTS.md', 'readFile C:\\r\\AGENTS.md'], 'FR-177 win32: realpath and readFile are never asked about a ref outside the folder');
+    }
+    {
+      const io = recIo({ '/r/CLAUDE.md': `Top. ${refs} @AGENTS.md`, '/r/AGENTS.md': 'Agents.', '/x.md': 'OUT', '/host/x': 'OUT', '/etc/passwd': 'OUT' });
+      const out = claudeMdPrompt('/r', io, path.posix)!;
+      assert.match(out, /Agents\./, 'FR-177 posix: a normal import still works');
+      assert.ok(!out.includes('OUT'), 'FR-177 posix: refs outside the folder are not read');
+      for (const c of io.calls) assert.ok(/^(realpath|readFile) \/r(\/|$)/.test(c), `FR-177 posix: io is asked only about paths inside the folder: ${c}`);
+      for (const bad of ['/x.md', '/host/x', '/etc/passwd']) assert.ok(!io.calls.some((c) => c.endsWith(` ${bad}`)), `FR-177 posix: never asked about ${bad}`);
+    }
+    {
+      // A folder whose own path starts like the ref: the ref stays text even though it would resolve inside.
+      const px = recIo({ '/host/CLAUDE.md': 'Top. @//host/x', '/host/x': 'REMOTE' });
+      assert.ok(!claudeMdPrompt('/host', px, path.posix)!.includes('REMOTE') && !px.calls.includes('realpath /host/x'), 'FR-177 posix: a // ref is not imported');
+      const wx = recIo({ '\\\\host\\share\\CLAUDE.md': 'Top. @\\\\host\\share\\x.md', '\\\\host\\share\\x.md': 'REMOTE' });
+      assert.ok(!claudeMdPrompt('\\\\host\\share', wx, path.win32)!.includes('REMOTE') && !wx.calls.includes('realpath \\\\host\\share\\x.md'), 'FR-177 win32: a \\\\ ref is not imported');
+    }
+    {
+      const io = recIo({ '/r/CLAUDE.md': 'Top. @link.md @docs/x.md', '/outside.md': 'SECRET', '/r/docs/x.md': 'Doc x.' }, { links: { '/r/link.md': '/outside.md' }, fail: ['/r/docs/x.md'] });
+      const out = claudeMdPrompt('/r', io, path.posix)!;
+      assert.ok(!out.includes('SECRET') && !io.calls.includes('readFile /outside.md'), 'FR-177: a link that resolves outside is refused after realpath');
+      assert.ok(!out.includes('Doc x.') && !io.calls.includes('readFile /r/docs/x.md'), 'FR-177: a realpath failure skips the import');
+      const none = recIo({ '/r/CLAUDE.md': 'Top.' }, { fail: ['/r'] });
+      assert.strictEqual(claudeMdPrompt('/r', none, path.posix), undefined, 'FR-177: a folder that cannot be resolved gives nothing');
+      assert.deepStrictEqual(none.calls, ['realpath /r'], 'FR-177: nothing is read when the folder cannot be resolved');
+    }
+    {
+      const dir = tmpDir('durbar-claudemd-');
+      assert.strictEqual(claudeMdNodeIo.realpath(path.join(dir, 'missing.md')), undefined, 'FR-177: the node realpath gives undefined on failure');
+      assert.strictEqual(claudeMdNodeIo.realpath(dir), fs.realpathSync(dir));
+    }
   }
   {
     assert.strictEqual(userContentOf({ text: 'hi' }), 'hi');
