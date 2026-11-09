@@ -90,6 +90,8 @@
 .ro[data-world="retro"] .ro-plate.lounge .ro-l1{display:block;font-size:var(--t4-size);flex:none;max-width:55%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ro[data-world="retro"] .ro-plate.lounge .ro-role{display:none}
 .ro[data-world="retro"] .ro-plate.lounge .ro-l2{display:block;flex:1 1 auto;min-width:0;-webkit-line-clamp:unset}
+/* spec 097 FR-351 (issue #1153, found by check-097-world-look): the arcade's --drop-ink is light and --drop-bg is not in its set, so the drop overlay read 1.0:1; its fill is the page surface. One source: if WORLD_SETS.retro ever sets --drop-bg, delete this rule (test:theme-tokens fails while both exist) */
+html[data-world="retro"] .drop-ov{background:var(--surface)}
 
 /* spec 102 FR-264, 097 FR-118 first run: no counts in the top bar (all zero); the space stays, so the bar does not move */
 html[data-world="retro"] body:has(#stage > .welcome) #stats{visibility:hidden}
