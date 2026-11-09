@@ -236,7 +236,7 @@ const none = (t: string, k: string, m: string) => eq(L.check(t, k).findings, [],
 }
 // fix round 4 (#1300): quoted or escaped program names, shell keywords and groups, comments (the reviewer's inputs)
 {
-  const C = 'раураӏ.invalid';
+  const C = '\u0440\u0430\u0443\u0440\u0430\u04cf.invalid';
   for (const t of ['"ssh" ' + C, "'ssh' " + C, '"ss"h ' + C, 's\\sh ' + C, "$'ssh' " + C, "$'s\\sh' " + C, 'ss\\\nh ' + C, 'ssh \\\n' + C, '{ ssh ' + C + '; }', 'if true; then ssh ' + C + '; fi', '! ssh ' + C,
     'while true; do ssh ' + C + '; done', '"sudo" -u root ssh ' + C, 'echo a#b ; ssh ' + C, 'ls #"\nssh ' + C, "ls #'\nssh " + C, 'echo # x\nssh ' + C, "echo '#' ; ssh " + C, 'ssh u@' + C + '#x'])
     ok(L.check('run ' + t, 'shell').hosts.some((h) => h.shown === C), 'the host is found: ' + JSON.stringify(t));
@@ -247,7 +247,7 @@ const none = (t: string, k: string, m: string) => eq(L.check(t, k).findings, [],
 }
 // fix round 5 (#1300): $(...) and backticks inside double quotes are commands too; in single quotes or escaped they stay text
 {
-  const C = 'раураӏ.invalid';
+  const C = '\u0440\u0430\u0443\u0440\u0430\u04cf.invalid';
   for (const t of ['echo "$(ssh ' + C + ')"', 'echo "`ssh ' + C + '`"', 'x="$(curl ' + C + '/x)"', 'echo "a $(echo ")" ; ssh ' + C + ') b"', 'echo "$(echo "$(ssh ' + C + ')")"'])
     ok(L.check('run ' + t, 'shell').hosts.some((h) => h.shown === C), 'a substitution in double quotes runs: ' + JSON.stringify(t));
   for (const t of ["echo '$(ssh " + C + ")'", 'echo "\\$(ssh ' + C + ')"', "echo '`ssh " + C + "`'", 'echo "\\`ssh ' + C + '\\`"'])
