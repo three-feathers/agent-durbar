@@ -437,7 +437,7 @@ export function claudeMdPrompt(folder: string, io: ClaudeMdIo = claudeMdNodeIo, 
   };
   const win = flavor.sep === '\\';
   const notPath = (r: string): boolean => /^[\\/]{2}/.test(r) || (win && r.includes(':'));
-  // Each link on the way from the folder to the file must point inside the folder by its text.
+  // The file, and each link on the way from the folder to it, must be inside the folder by its text.
   const linksInside = (file: string): boolean => {
     let p = file;
     for (let hops = 0; ; ) {
@@ -462,8 +462,7 @@ export function claudeMdPrompt(folder: string, io: ClaudeMdIo = claudeMdNodeIo, 
   const seen = new Set<string>();
   let budget = CLAUDE_MD_MAX_CHARS;
   const load = (file: string, depth: number): string | undefined => {
-    if (!inside(file) || budget <= 0) return undefined; // by text, before any file access
-    if (!linksInside(file)) return undefined;
+    if (budget <= 0 || !linksInside(file)) return undefined; // by text, before any file access
     const real = io.realpath(file);
     if (real === undefined || !inside(real) || seen.has(real)) return undefined;
     seen.add(real);
