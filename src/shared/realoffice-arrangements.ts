@@ -112,7 +112,19 @@ const AISLE_FALLBACK: Record<string, string[]> = { 'face-knock': ['knock'], 'fac
 const own = (o: object, k: string): boolean => Object.prototype.hasOwnProperty.call(o, k);
 /** spec 097 FR-335 (T247): grid px per picture px for a person. A pixel-art set is drawn 1:1 (the arcade's own grid); any other set is scaled so its standing figure is as tall
  *  as the arcade's people (AISLE_PERSON.h), and every size is whole grid px, so the art still sits on the grid (FR-255). */
-const aisleK = (meta: RealMeta, st: { figH: number }): number => meta.pixelPeople === false && st.figH > 0 ? AISLE_PERSON.h / st.figH : 1;
+/** the widest a place beside a cabinet may be, in grid px: a picture wider than this would reach the next cabinet or screen (owner, 2026-11-03: no person is cut) */
+export const AISLE_PW_MAX = 48;
+/** the widest picture, in the set's own pixels, that a person can show at a cabinet (every state's frame and its fallbacks); the seat frame ('rest') is not one */
+const usedWidth = (meta: RealMeta): number => {
+  let w = 0;
+  for (const st of Object.values(meta.stand || {})) for (const pose of Object.values(AISLE_POSE)) for (const p of [pose, ...(AISLE_FALLBACK[pose] || [])]) if (own(st.poses, p)) { w = Math.max(w, st.poses[p][0]); break; }
+  return w;
+};
+const aisleK = (meta: RealMeta, st: { figH: number }): number => {
+  if (meta.pixelPeople !== false || !(st.figH > 0)) return 1;
+  const w = usedWidth(meta); /* as tall as the arcade's people, but never wider than the place beside a cabinet (a wide figure such as Prehistoric bigbeard's knock is 284 px for 355 tall) */
+  return Math.min(AISLE_PERSON.h / st.figH, w > 0 ? AISLE_PW_MAX / w : Infinity);
+};
 const gridPx = (v: number, k: number): number => k === 1 ? v : Math.max(1, Math.round(v * k));
 /** the frame a person shows at a cabinet and its size in grid pixels, or null when the set has neither (then the initials, FR-065) */
 function aislePose(meta: RealMeta, pid: string, state: RealState): { pose: string; w: number; h: number } | null {
@@ -159,7 +171,7 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
   const k = seats.length;
   const [lobbyMin0, lobbyMax] = lobbyRange(Ho), lobbyMin = lobbyMin0 - AISLE_LANE;
   /* the place beside a cabinet is as wide as the widest standing picture of the set, so a picture centred in it never reaches a cabinet */
-  const PW = Math.min(48, Math.max(AISLE_PERSON.w, ...Object.values(meta.stand || {}).flatMap((s) => Object.values(s.poses || {}).map((p) => gridPx(p[0], aisleK(meta, s)))))); /* grid px; a set not drawn at the arcade's scale is scaled to it (aisleK) */
+  const PW = Math.min(AISLE_PW_MAX, Math.max(AISLE_PERSON.w, ...Object.values(meta.stand || {}).flatMap((s) => Object.values(s.poses || {}).map((p) => gridPx(p[0], aisleK(meta, s)))))); /* grid px; a set not drawn at the arcade's scale is scaled to it (aisleK) */
   /* the lobby first: the rows bend only with what is left once it has its height */
   /* FR-248: the lounge's seats take cells after the cabinets, in the hall's own grid (so the plan is never worse than with those agents at cabinets): as many
      cells as the seats need at the narrowest cell a plan can have (a seat is narrower than a cabinet with its player, so 5 seats take 4 cells) */

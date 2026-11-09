@@ -191,6 +191,6 @@ The fix is in the engine, where the cause is: `realLayout`'s strip levels become
 ## 2026-11-09 delta: the five crews wired (FR-335, FR-336 amended; T240..T244, T247..T249, issue #1154)
 
 - **Data** (`src/renderer/crew.js`): five `REAL_SETS` rows, no flag. Nothing else in `crew.js`, `app.js` or Settings changes: `peopleFor` and `levelFor` already drive the note.
-- **Arcade** (`src/shared/realoffice-arrangements.ts`, `realoffice-layout.ts`, `realoffice.js`, `worlds/retro/world.css`): `RealMeta.pixelPeople`; `aisleK` scales a non-pixel set to 72 grid px, `AISLE_FALLBACK` lists the next frame to try, the lobby's whole-scale snap applies only to pixel people, smooth rendering for another set's people.
+- **Arcade** (`src/shared/realoffice-arrangements.ts`, `realoffice-layout.ts`, `realoffice.js`, `worlds/retro/world.css`): `RealMeta.pixelPeople`; `aisleK` scales a non-pixel set to 72 grid px tall and at most `AISLE_PW_MAX` (48) wide (the smaller of the two), `AISLE_FALLBACK` lists the next frame to try, the lobby's whole-scale snap applies only to pixel people, smooth rendering for another set's people.
 - **Checks**: `test:realoffice-layout` (rows, matrix, per-crew pack), `test-realoffice-aisles` (crews in the arcade, mutants), `test:realoffice-assets` (no allow-list), `check-097-crews` (three worlds).
 

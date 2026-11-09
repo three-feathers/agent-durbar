@@ -1,9 +1,10 @@
 /** Spec 102 T202, T203, T205 (FR-229, FR-255, FR-256): the `aisles` arrangement of the Retro arcade hall. Pure functions, plain Node, no DOM, 0 credits.
  *  Measure first: it prints what fits. `npm run test:realoffice-layout` runs it after the rows tests. */
 import * as assert from 'assert';
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { realLayout, sortDesks, type RealMeta, type RealModel, type RealAgent, type RealState, type Rect, type Layout } from '../src/shared/realoffice-layout';
+import { realLayout, sortDesks, type RealMeta, type RealModel, type RealAgent, type RealState, type Rect, type Layout, type DeskBox } from '../src/shared/realoffice-layout';
 import { aisleStatus, aislesLayout, layoutFor, aisleTabOrder, aisleFace, FACE_FLOOR, AISLE_SIGN_MIN_W, AISLE_PLATE_H, ARRANGEMENTS } from '../src/shared/realoffice-arrangements';
 
 process.exitCode = 1;
@@ -50,6 +51,13 @@ const NAMES = ['1440x900', '1280x800'];
   console.log(`arcade plates: ${np} cabinet and ${nl} lounge plates, box ${AISLE_PLATE_H} px, line needs ${need} px (${needWait} waiting or limit)`);
 }
 
+/** owner, 2026-11-03: no person is cut by a cabinet or a screen: the whole picture, not only the stand, is clear of every cabinet and screen (spec 097 T247: also run for every crew) */
+function cuts(ds: DeskBox[]): string[] {
+  const out: string[] = [];
+  for (const d of ds) for (const o of ds) for (const r of [o.desk, o.screen as Rect]) for (const [nm, p] of [['person', d.stand], ['picture', d.person]] as [string, Rect | null][]) if (p && r && inter(p, r, 0.5)) out.push(`${nm} of ${d.id} (${d.person ? `${d.person.pid}/${d.person.pose}` : 'initials'}) is on the cabinet or screen of ${o.id}`);
+  return out;
+}
+
 /** FR-229, FR-255, FR-256: every rule the renderer will rely on, as sentences */
 function problems(L: Layout, W: number, k: number): string[] {
   const out: string[] = [], g = L.g as number;
@@ -76,7 +84,7 @@ function problems(L: Layout, W: number, k: number): string[] {
     if ((d.face as Rect).w < FACE_FLOOR && k >= 9) out.push(`face of ${d.id} is ${(d.face as Rect).w}px`);
   }
   /* owner, 2026-11-03: no person is cut by a cabinet or a screen: the whole picture, not only the stand, is clear of every cabinet and screen */
-  for (const d of ds) for (const o of ds) for (const r of [o.desk, o.screen as Rect]) for (const [nm, p] of [['person', d.stand], ['picture', d.person]] as [string, Rect | null][]) if (p && r && inter(p, r, 0.5)) out.push(`${nm} of ${d.id} is on the cabinet or screen of ${o.id}`);
+  out.push(...cuts(ds));
   for (let i = 0; i < ds.length; i++) for (let j = 0; j < ds.length; j++) {
     if (i === j) continue;
     const a = items[i], b = items[j];
@@ -419,6 +427,16 @@ console.log(`floor covered with 4 or fewer: ${covs.join('; ')}`);
   console.log(`arcade helper heads: ${strips} strips, ${fell} fallbacks`);
 }
 
+/* spec 097 T247: the default arcade is unchanged by the crews' scaling: the Retro pixel people (pixelPeople unset, k 1) give the layout they gave before it. The hash is of every
+   layout below (4, 12, 15 agents, both sizes), taken from the code before the change; a change here moves a pixel-art arcade, which is not what the crews' wiring may do. */
+{
+  const h = crypto.createHash('sha256');
+  for (const [W, H] of SIZES) for (const n of [4, 12, 15]) h.update(JSON.stringify(aislesLayout(model(n, 4, STATES, n > 4 ? 3 : 0), { w: W, h: H }, META, SIGNS(4))));
+  const got = h.digest('hex');
+  console.log(`arcade, Retro pixel people layout hash ${got}`);
+  assert.strictEqual(got, '023205d51dcbf9399756cbadf8af0ac0448731a2cd7e725950800feef1f11b97', 'the Retro pixel set lays out differently than before the crews were wired');
+}
+
 /* spec 097 FR-335, T247: another set's people in the arcade. A crew's hi-res frames (350 px tall) are scaled to the arcade's people (72 grid px) and its standing poses
    (book, coffee, knock, letter, runA, runB: no `type`, `sit` or `counter`) fall back, so every player at a cabinet is drawn, at the arcade's size, on the grid. */
 {
@@ -438,6 +456,8 @@ console.log(`floor covered with 4 or fewer: ${covs.join('; ')}`);
         assert.ok(pr.h <= 72 * g + 1 && pr.h >= 40 * g, `${crew}: a person is the arcade's height (${pr.h} px at g ${g}), not its ${set.stand[pr.pid].poses[pr.pose][1]} picture pixels`);
         assert.ok(pr.w % g === 0 && pr.h % g === 0, `${crew}: the person sits on the grid`);
       }
+      const cut = cuts(L.zones.flatMap((z) => z.desks));
+      assert.deepStrictEqual(cut, [], `${crew}: ${n} agents at ${W}x${H}: a person is cut by a cabinet or screen (${cut.length}): ${cut.slice(0, 3).join('; ')}`);
       if (n === 15) assert.ok(shown.size >= 3, `${crew}: the states show different frames (${[...shown].join(', ')})`);
     }
   }
