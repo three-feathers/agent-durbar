@@ -434,6 +434,13 @@ module.exports = async (ctx) => {
     assert.strictEqual(await run([['Noor asks: a', 1], [REQ, 1]]), REQ, `${w}: equal priority: the latest wins`);
     assert.strictEqual(await run([['One'], ['Two']]), 'Two', `${w}: statuses: the latest wins, as before`);
     assert.strictEqual(await run([[REQ, 1], ['Working…', 0, 200]]), 'Working…', `${w}: after the request was written, a status is spoken again`);
+    // the Auto-follow arrival line (afDeliver) at the priority the app gives each kind: a limit arrival beats the limit card's own request said by
+    // openPanel just before it; a done or error arrival of agent A never replaces agent B's request in the same window
+    const prio = (kind) => js(`window.__durbarSimUi.afArrivalPrio(${jsLiteral(kind)})`);
+    const LIM = 'Maya reached its limit. Its chat is open.';
+    assert.strictEqual(await run([['Maya needs your OK: Choose in the limit card', 1], [LIM, await prio('limit')]]), LIM, `${w}: a limit arrival is what the live region ends on`);
+    assert.strictEqual(await run([[REQ, 1], ['Ada finished. Its chat is open.', await prio('done')]]), REQ, `${w}: agent A's done arrival does not replace agent B's request`);
+    assert.strictEqual(await run([[REQ, 1], ['Ada has an error. Its chat is open.', await prio('error')]]), REQ, `${w}: agent A's error arrival does not replace agent B's request`);
   }
   console.log('[answer-safety] PASS');
 };
