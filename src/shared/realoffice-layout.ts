@@ -53,7 +53,7 @@ export interface Layout {
   lane?: Rect;
   /** `aisles` only: the pixel scale (CSS px per art pixel) and the cabinet's size */
   g?: number; cabinet?: { w: number; h: number; gw: number; gh: number; cols: number; rows: number };
-  /** spec 097 FR-308: the rows of the helper strip (1 or 2), or 0: none drawn, the plate keeps its `+N` and dots (no room, or no helpers) */
+  /** spec 097 FR-308: FR-338: the rows of the helper strip (1), or 0: none drawn, the plate keeps its `+N` and dots (no room, or no helpers) */
   helpRows?: number;
   /** spec 097 FR-246..FR-248: the lounge row (its box and its seats), when an agent sits there */
   lounge?: { box: Rect; desks: DeskBox[] };
@@ -70,8 +70,9 @@ export const U_MIN = Math.ceil(28 / FACE_U), U_MAX = 260, U_MAX_BIG = 420;
 export const PLATE_H = 36, PLATE_H_ASK = 50;
 /** Spec 097 FR-306..FR-308 (delta 2026-11-08, owner "1265 1"): the helper strip is a row (or two) of small head figures under the plate. `HEAD`: a figure's side (a circle with the
  *  status dot on its corner); `HEAD_FACE`: the share of it that the face (crown to chin) fills, so a face is `HEAD * HEAD_FACE` px, never under `HELP_FACE_MIN` (the lounge's floor, FR-247);
- *  `HELP_GAP`: between figures; `HELP_ROWS_MAX`: rows tried (2, then 1); `HELP_KEEP`: two rows are kept only while the desks stay this share of what one row gives. */
-export const HEAD = 30, HEAD_FACE = 0.8, HELP_FACE_MIN = 24, HELP_GAP = 4, HELP_PAD = 4, HELP_ROWS_MAX = 2, HELP_KEEP = 0.95;
+ *  `HELP_GAP`: between figures. FR-338 (bug #1384, delta 2026-11-09): the strip is one row; the places it holds are the figures across, the last one `+K` when more helpers exist,
+ *  never a second line (FR-308's two-row level, `HELP_ROWS_MAX` and `HELP_KEEP`, is removed: a second row read as a head wrapped under the row). */
+export const HEAD = 30, HEAD_FACE = 0.8, HELP_FACE_MIN = 24, HELP_GAP = 4, HELP_PAD = 4;
 /** FR-308: the strip's height for `rows` rows (the row's fixed extra height, FR-015) */
 export const helpH = (rows: number): number => rows * HEAD + (rows - 1) * HELP_GAP + HELP_PAD;
 /** FR-308: the figures across a strip of width `w` */
@@ -439,19 +440,15 @@ export function realLayout(model: RealModel, viewport: { w: number; h: number },
       }
       return p;
     };
-    /* FR-308: with helpers, one row of head figures is kept while the desks still fit and a slot holds a figure; two rows are tried first and kept while u stays at least HELP_KEEP x the one-row u. Else none: the plate's +N and dots (FR-016).
-       `floor` (FR-246, FR-247, delta 2026-11-08, review of PR 1322): a strip level is taken only while its u is at least `floor`; when none is, no strip (the plate keeps its +N and dots). */
+    /* FR-308, FR-338: with helpers, one row of head figures is kept while the desks still fit and a slot holds a figure; else none: the plate's +N and dots (FR-016). Never two rows (FR-338).
+       `floor` (FR-246, FR-247, delta 2026-11-08, review of PR 1322): the row is taken only while its u is at least `floor`; else no strip (the plate keeps its +N and dots). */
     const choose = (fs: typeof folders, ho: number, floor: number): { p: ReturnType<typeof roPack>; hr: number } => {
       const p0 = pack(fs, ho, 0);
       if (!fs.some((f) => f.agents.some((a) => (a.helpers || 0) > 0))) return { p: p0, hr: 0 };
       const room = (q: ReturnType<typeof roPack>): boolean => q.rows.every((r) => !r.strip || r.Sw - 16 >= HEAD);
       const ok = (q: ReturnType<typeof roPack>): boolean => q.fits && room(q) && q.u >= floor - 1e-6;
       const p1 = pack(fs, ho, helpH(1));
-      if (ok(p1)) {
-        const q = HELP_ROWS_MAX >= 2 ? pack(fs, ho, helpH(2)) : null;
-        return q && ok(q) && q.u >= HELP_KEEP * p1.u ? { p: q, hr: 2 } : { p: p1, hr: 1 };
-      }
-      return { p: p0, hr: 0 };
+      return ok(p1) ? { p: p1, hr: 1 } : { p: p0, hr: 0 };
     };
     /* FR-246, FR-247: the room the lounge's agents leave goes to the desks, helpers or not. The strip levels are judged against the u the same folders get with those agents
        back at their desks (no lounge row, the whole height, its own strip level): before, a strip that the desks' width paid for could start costing height once the row
