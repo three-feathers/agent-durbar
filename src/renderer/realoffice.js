@@ -584,7 +584,7 @@
   function helpWordsOf(a, d) { return d && !d.strip && a.helpWords && a.helpers && a.helpers.length ? a.helpWords : ''; } /* FR-308: the fallback plate's helper count, in the flat desk's words */
   function labelOf(a, d) {
     const w = d && d.lounge ? '' : X().ctxWords(a.ctx && a.ctx.pct), hw = helpWordsOf(a, d), l = String(a.label || '');
-    return l.endsWith(OPEN_WORDS) ? l.slice(0, -OPEN_WORDS.length) + hw + w + OPEN_WORDS : l + hw;
+    return l.endsWith(OPEN_WORDS) ? l.slice(0, -OPEN_WORDS.length) + w + hw + OPEN_WORDS : l + hw; /* the context words, then the helpers' (". 6 helpers" stays one phrase) */
   }
   /* FR-326: a context event of one agent: its line and its plate's name, without a draw; the next draw writes the same */
   function ctx(id, c) {
