@@ -11,6 +11,7 @@ const ROOT = path.join(__dirname, '..', '..');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const cc = require(path.join(ROOT, '.github', 'scripts', 'ci-changes.js')) as {
   decide: (files: string[], io: Io) => { code: boolean; themes: boolean; ui: boolean; macos: boolean };
+  npmTargets: (line: string) => { names: string[]; opaque: boolean };
   gitIo: (root: string) => Io;
 };
 interface Io { read(p: string): string | null; readBase(p: string): string | null; isFile(p: string): boolean; isDir(p: string): boolean }
@@ -122,6 +123,40 @@ assert.strictEqual(ui(['scripts/new-data.json'], io({ 'scripts/new-data.json': '
     assert.strictEqual(ui(['scripts/zz-u.js'], io({ 'package.json': JSON.stringify({ ...pkg, scripts: opaque }), 'scripts/zz-u.js': 'x' })), true, 'and so does a scripts/ file any script names');
   }
   assert.strictEqual(viaWf('echo done', 'zz:t'), false, 'a workflow line that starts no npm script reaches nothing');
+  // round 4 (default inverted): a reached line counts as parsed only when every command is an exact form. Every evasion Paco listed
+  // must give ui=true when only the called script changes, from the workflow and from inside build; every exact form must give
+  // ui=false when an unreached script changes.
+  const EVASIONS = ['npm --loglevel warn run zz:t', 'npm run zz:a & npm run zz:t', '(npm run zz:t)', '`npm run zz:t`', '$(npm run zz:t)', 'npm run zz:t>log',
+    'npm run zz:t < in.txt', 'npm run zz:t | cat', 'npm run zz:a; npm run zz:t', 'npm run zz:a || npm run zz:t', 'npm.cmd run zz:t', 'node_modules/.bin/run-p zz:t',
+    'npm exec run-p zz:t', 'npm x run-p zz:t', 'npx run-p zz:t', 'npx cross-env A=1 npm run zz:t', 'yarn zz:t', 'pnpm run zz:t', 'run-s zz:t', 'npm-run-all zz:*',
+    'npm run zz:t --if-present', 'npm run "zz:t"', 'npm --prefix . run zz:t', 'sh -c npm-run-zz', 'bash scripts/zz.sh',
+    'node scripts/zz-x.js `npm run zz:t`', 'node scripts/zz-x.js; npm run zz:t', 'npm run zz:t,zz:u', 'npm run zz:t@1'];
+  const viaBuild = (cmd: string, target: string) => {
+    const base = { ...s0, build: s0.build + ' && ' + cmd, [target]: 'node scripts/zz-target.js' };
+    return ui(['package.json'], both({ ...base, [target]: 'node scripts/zz-target.js --edited' }, base));
+  };
+  const unreachedEdit = (cmd: string) => {
+    const base = { ...s0, build: s0.build + ' && ' + cmd, 'zz:t': 'node scripts/zz-target.js', 'zz+t': 'node scripts/zz-target.js', 'usage:zz': 'node scripts/usage-zz.js' };
+    return ui(['package.json'], both({ ...base, 'usage:zz': 'node scripts/usage-zz.js --edited' }, base));
+  };
+  for (const cmd of EVASIONS) {
+    assert.strictEqual(viaBuild(cmd, 'zz:t'), true, `build running "${cmd}": editing zz:t is UI (not an exact form: every script counts)`);
+    // from a workflow, only lines that name a runner start npm scripts; `sh -c npm-run-zz` and `bash scripts/zz.sh` name none
+    assert.strictEqual(unreachedEdit(cmd), true, `build running "${cmd}": even an unreached script counts (fail open)`);
+    if (!/^(sh|bash) /.test(cmd)) assert.strictEqual(viaWf(cmd, 'zz:t'), true, `the UI workflow running "${cmd}": editing zz:t is UI`);
+  }
+  const EXACT = ['node scripts/zz-x.js --a b', 'tsc -p tsconfig.json', 'electron .', 'electron-builder --dir --publish never', 'npx tsc -p x', 'npx electron-builder --dir',
+    'FOO=1 node scripts/zz-x.js', 'npm run zz:t', 'npm run -s zz:t', 'npm run --silent zz:t -- --x', 'npm run-script zz:t', 'npm start', 'npm test', 'npm t', 'npm run zz+t', 'npm stop', 'npm run zz:none',
+    'tsc -p a && node scripts/zz-x.js && npm run zz:t'];
+  for (const cmd of EXACT) assert.strictEqual(unreachedEdit(cmd), false, `build running the exact form "${cmd}": editing an unreached script is not UI`);
+  for (const cmd of ['npm run zz:t', 'npm run -s zz:t', 'npm run-script zz:t', 'npm start', 'npm test', 'npm t']) {
+    const target = /start/.test(cmd) ? 'start' : /npm t(est)?$/.test(cmd) ? 'test' : 'zz:t';
+    assert.strictEqual(viaBuild(cmd, target), true, `build running the exact form "${cmd}": editing ${target} is UI (it is reached)`);
+  }
+  // the parser on its own: the exact forms name what they start and are not opaque; one non-exact command makes the whole line opaque
+  assert.deepStrictEqual(cc.npmTargets('tsc -p a && npm run -s zz:t -- --x && npm test'), { names: ['zz:t', 'test'], opaque: false }, 'exact forms are read');
+  assert.deepStrictEqual(cc.npmTargets('npm run zz:t && sudo rm x'), { names: ['zz:t'], opaque: true }, 'an unknown command word makes the line opaque');
+  assert.deepStrictEqual(cc.npmTargets(''), { names: [], opaque: true }, 'an empty command is not an exact form');
   assert.strictEqual(ui(['package.json'], both({ ...s0, 'usage:zz': 'node scripts/usage-zz.js --new' }, { ...s0, 'usage:zz': 'node scripts/usage-zz.js' })), false, 'editing an unreached usage:* script is not UI');
   assert.strictEqual(ui(['package.json'], io({ 'package.json': JSON.stringify({ ...pkg, scripts: chain }) }, { 'package.json': JSON.stringify({ ...pkg, scripts: { ...s0, build: s0.build + ' && npm run zcopy' } }) })), true, 'adding a script line that build reaches is UI');
 }

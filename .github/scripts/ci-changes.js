@@ -50,34 +50,64 @@ const PKG = ['package.json', 'package-lock.json'];
 // the npm scripts the UI run, the office job and package smoke start: `build`, `pack:dir` and every lifecycle hook npm ci runs
 // (pre*, post*, install, prepare); with every `npm run <name>` in ui-platforms.yml they seed the REACHED set (reachedNpm)
 const UI_NPM_SCRIPT = /^(build|pack:dir|install|prepare|pre.*|post.*)$/;
-// review of PR #1349, round 3: which npm scripts a command line starts. `npm run [flags] <name>`, `npm run-script <name>`,
-// `npm start`, `npm test` (and `npm t`), `npm restart`, `npm stop` are read, flags skipped, names may hold `+`. A runner whose target
-// this cannot resolve (npm-run-all, run-p, run-s, yarn, pnpm, bun, concurrently, lerna, nx, turbo, `npm --prefix`/`-C`/`--workspace`)
-// makes the line OPAQUE, and an opaque reached line makes every npm script count as reached (fail open).
-const OPAQUE_RUNNER = new Set(['npm-run-all', 'npm-run-all2', 'run-p', 'run-s', 'yarn', 'pnpm', 'bun', 'concurrently', 'lerna', 'nx', 'turbo']);
-const NPM_DIR_FLAG = /^(--prefix|-C|--workspaces?|-w|--ws|--include-workspace-root)(=|$)/;
-const NPM_SCRIPT_CMD = { start: 'start', test: 'test', t: 'test', tst: 'test', restart: 'restart', stop: 'stop' };
-/** The npm script names one command line starts, and whether it starts something this cannot resolve. */
+// Review of PR #1349, round 4 (Paco's suggestion): which npm scripts a command line starts, with the default INVERTED. A line is
+// PARSED only when every command in it (commands joined by `&&` only) is one of these exact forms:
+//   [VAR=value ...] node|tsc|electron|electron-builder <args>       starts no npm script
+//   [VAR=value ...] npx node|tsc|electron|electron-builder <args>   starts no npm script
+//   [VAR=value ...] npm run|run-script [-s|--silent] <name> [-- <args>]          starts <name>
+//   [VAR=value ...] npm start|test|t|tst|restart|stop [-- <args>]                 starts that script
+// Anything else is OPAQUE: a shell metacharacter (& | ; ` $ ( ) < > quotes backslash), npm with an option before its command,
+// `npm.cmd`, a path to `.bin`, `npm exec`, yarn, pnpm, run-p and every other word as the command. An opaque REACHED line makes
+// every npm script count as reached (fail open), so the list of evasions stops mattering: what is not listed above runs everything.
+const EXACT_TOOL = new Set(['node', 'tsc', 'electron', 'electron-builder']);
+const NPM_LIFECYCLE_CMD = { start: 'start', test: 'test', t: 'test', tst: 'test', restart: 'restart', stop: 'stop' };
+const NPM_RUN_FLAG = new Set(['-s', '--silent']);
+const SCRIPT_NAME = /^[\w:.+-]+$/;
+const ENV_ASSIGN = /^[A-Za-z_]\w*=[\w./:,+-]*$/;
+const SHELL_META = /[&|;`$()<>'"\\\r\n]/;
+/** The npm script names one command line starts, and whether any of it is not an exact form (opaque). */
 function npmTargets(line) {
   const names = [];
-  let opaque = false;
-  for (const cmd of String(line || '').split(/&&|\|\||[;|\n]/)) {
-    let t = cmd.trim().split(/\s+/).map((w) => w.replace(/^['"]|['"]$/g, '')).filter(Boolean);
-    // start at the first runner word: skips a workflow's `- run:`, `FOO=1`, `time`, and the like (an `echo npm run x` counts too: fail open)
-    const at = t.findIndex((w) => w === 'npm' || w === 'npx' || w === 'cross-env' || OPAQUE_RUNNER.has(w));
-    if (at < 0) continue;
-    t = t.slice(at);
-    while (t[0] === 'npx' || t[0] === 'cross-env') { t.shift(); while (t.length && (/^-/.test(t[0]) || /^[A-Za-z_]\w*=/.test(t[0]))) t.shift(); }
-    if (!t.length) continue;
-    if (OPAQUE_RUNNER.has(t[0])) { opaque = true; continue; }
-    if (t[0] !== 'npm') continue;
-    let i = 1;
-    const nextWord = () => { while (i < t.length && t[i].startsWith('-')) { if (NPM_DIR_FLAG.test(t[i])) opaque = true; i++; } return t[i++]; };
-    const sub = nextWord();
-    if (sub === 'run' || sub === 'run-script' || sub === 'rum' || sub === 'urn') { const n = nextWord(); if (n && n !== '--') names.push(n); }
-    else if (sub && NPM_SCRIPT_CMD[sub]) names.push(NPM_SCRIPT_CMD[sub]);
+  const text = String(line == null ? '' : line);
+  if (SHELL_META.test(text.split('&&').join(' '))) return { names, opaque: true };
+  for (const cmd of text.split('&&')) {
+    const t = cmd.trim().split(/\s+/).filter(Boolean);
+    while (t.length && ENV_ASSIGN.test(t[0])) t.shift();
+    if (!t.length) return { names, opaque: true };
+    if (t[0] === 'npx') t.shift();
+    if (EXACT_TOOL.has(t[0])) continue;
+    if (t[0] !== 'npm') return { names, opaque: true };
+    const sub = t[1];
+    let i = 2;
+    if (sub === 'run' || sub === 'run-script') {
+      while (i < t.length && NPM_RUN_FLAG.has(t[i])) i++;
+      const name = t[i++];
+      if (!name || !SCRIPT_NAME.test(name)) return { names, opaque: true };
+      names.push(name);
+    } else if (Object.prototype.hasOwnProperty.call(NPM_LIFECYCLE_CMD, sub)) {
+      names.push(NPM_LIFECYCLE_CMD[sub]);
+    } else return { names, opaque: true };
+    if (i < t.length && t[i] !== '--') return { names, opaque: true };
   }
-  return { names, opaque };
+  return { names, opaque: false };
+}
+// a workflow line starts npm scripts only when it names a runner; only those lines are parsed (strictly), other commands
+// (apt-get, echo, test ...) start none
+const RUNNER_WORD = /(^|[^\w.-])(npm|npx|yarn|pnpm|bun|npm-run-all\d*|run-[ps]|concurrently|lerna|nx|turbo)([^\w-]|$)|\.bin[\/\\]|npm\.cmd/;
+/** The command lines of a workflow: each `run:` value and each line of a `run: |` block (comments and blank lines dropped). */
+function workflowCommands(wfText) {
+  const out = [];
+  const lines = String(wfText || '').split(/\r?\n/);
+  for (let k = 0; k < lines.length; k++) {
+    const m = lines[k].match(/^(\s*)(?:-\s+)?run:\s*(.*)$/);
+    if (!m) continue;
+    const rest = m[2].trim();
+    if (/^[|>][-+]?\d*$/.test(rest)) {
+      const indent = m[1].length;
+      while (k + 1 < lines.length && (lines[k + 1].trim() === '' || lines[k + 1].search(/\S/) > indent)) out.push(lines[++k].trim());
+    } else out.push(rest);
+  }
+  return out.filter((c) => c && !c.startsWith('#'));
 }
 const parseJson = (text) => { try { const j = JSON.parse(text || ''); return j && typeof j === 'object' ? j : null; } catch { return null; } };
 /** Every npm script name the UI run can reach: the seeds, every script a workflow line starts, and every script a reached script
@@ -92,10 +122,12 @@ function reachedNpm(pkgText, wfText) {
     if (r.opaque) opaque = true;
     return r.names;
   };
-  for (const line of String(wfText || '').split(/\r?\n/)) for (const n of visit(line)) names.add(n);
+  for (const cmd of workflowCommands(wfText)) if (RUNNER_WORD.test(cmd)) for (const n of visit(cmd)) names.add(n);
   const todo = [...names];
   while (todo.length) {
-    for (const n of visit(scripts[todo.pop()])) if (!names.has(n)) { names.add(n); todo.push(n); }
+    const n = todo.pop();
+    if (!Object.prototype.hasOwnProperty.call(scripts, n)) continue; // a name with no script starts nothing
+    for (const m of visit(scripts[n])) if (!names.has(m)) { names.add(m); todo.push(m); }
   }
   if (opaque) for (const k of Object.keys(scripts)) names.add(k);
   return names;
@@ -239,5 +271,5 @@ function main(env = process.env, argv = process.argv.slice(2)) {
   for (const k of ['code', 'themes', 'ui', 'macos']) out(k, r[k]);
 }
 
-module.exports = { decide, uiClosure, versionOnly, gitIo, npmTargets, reachedNpm };
+module.exports = { decide, uiClosure, versionOnly, gitIo, npmTargets, reachedNpm, workflowCommands };
 if (require.main === module) main();
