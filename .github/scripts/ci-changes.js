@@ -47,27 +47,42 @@ const ALWAYS_UI = /^(src\/|scripts\/fixtures\/|scripts\/fakes\/|\.github\/action
 const SOURCE = /\.(js|cjs|mjs|ts|sh|py|md|txt|re)$/;
 const PKG = ['package.json', 'package-lock.json'];
 
-// npm scripts the UI run, the office job or package smoke can reach: `build`, `pack:dir`, and every lifecycle hook (pre*, post*,
-// install, prepare); for `ui` a change to any other npm script (a report or test script's line) does not count
+// the npm scripts the UI run, the office job and package smoke start: `build`, `pack:dir` and every lifecycle hook npm ci runs
+// (pre*, post*, install, prepare); with every `npm run <name>` in ui-platforms.yml they seed the REACHED set (reachedNpm)
 const UI_NPM_SCRIPT = /^(build|pack:dir|install|prepare|pre.*|post.*)$/;
-/** package.json / package-lock.json without the release's version fields (and, with uiScripts, the npm scripts the UI run cannot
- *  reach); null when it does not parse. */
-function withoutVersion(text, name, uiScripts) {
+const NPM_RUN = /npm run ([\w:.-]+)/g;
+const parseJson = (text) => { try { const j = JSON.parse(text || ''); return j && typeof j === 'object' ? j : null; } catch { return null; } };
+/** Every npm script name the UI run can reach: the seeds, and each `npm run <name>` inside a reached script, followed to any depth. */
+function reachedNpm(pkgText, wfText) {
+  const pkg = parseJson(pkgText) || {};
+  const scripts = (typeof pkg.scripts === 'object' && pkg.scripts) || {};
+  const names = new Set(Object.keys(scripts).filter((k) => UI_NPM_SCRIPT.test(k)));
+  for (const m of String(wfText || '').matchAll(NPM_RUN)) names.add(m[1]);
+  const todo = [...names];
+  while (todo.length) {
+    for (const m of String(scripts[todo.pop()] || '').matchAll(NPM_RUN)) if (!names.has(m[1])) { names.add(m[1]); todo.push(m[1]); }
+  }
+  return names;
+}
+/** package.json / package-lock.json without the release's version fields (and, with `keep`, without the npm scripts not in it: the
+ *  scripts the UI run cannot reach); null when it does not parse. */
+function withoutVersion(text, name, keep) {
   if (text == null) return null;
   let j;
   try { j = JSON.parse(text); } catch { return null; }
   if (!j || typeof j !== 'object') return null;
   delete j.version;
   if (name === 'package-lock.json' && j.packages && j.packages[''] && typeof j.packages[''] === 'object') delete j.packages[''].version;
-  if (uiScripts && name === 'package.json' && j.scripts && typeof j.scripts === 'object') {
-    j.scripts = Object.fromEntries(Object.entries(j.scripts).filter(([k]) => UI_NPM_SCRIPT.test(k)));
+  if (keep && name === 'package.json' && j.scripts && typeof j.scripts === 'object') {
+    j.scripts = Object.fromEntries(Object.entries(j.scripts).filter(([k]) => keep.has(k)));
   }
   return JSON.stringify(j);
 }
-/** True when base and head differ only in the top-level "version" (and the lock's packages[""].version); with uiScripts also
- *  in npm scripts the UI run cannot reach. */
-function versionOnly(name, io, uiScripts = false) {
-  const a = withoutVersion(io.readBase(name), name, uiScripts), b = withoutVersion(io.read(name), name, uiScripts);
+/** True when base and head differ only in the top-level "version" (and the lock's packages[""].version); with `keep` also in npm
+ *  scripts outside it. For ui, `keep` is the reached set of base and head together (review of PR #1349): an edit of any reached
+ *  line (`test:uisuite`, a script `build` chains to) counts. */
+function versionOnly(name, io, keep = null) {
+  const a = withoutVersion(io.readBase(name), name, keep), b = withoutVersion(io.read(name), name, keep);
   return a !== null && b !== null && a === b;
 }
 
@@ -84,17 +99,9 @@ function uiClosure(io) {
   const roots = new Set(['scripts/check-parallel.js']);
   const wf = io.read('.github/workflows/ui-platforms.yml') || '';
   for (const m of wf.matchAll(SCRIPT_FILE)) roots.add(m[0]);
-  let pkg = {};
-  try { pkg = JSON.parse(io.read('package.json') || '{}'); } catch { /* the package rule makes it ui=true */ }
-  const scripts = (pkg && typeof pkg.scripts === 'object' && pkg.scripts) || {};
-  const npmNames = new Set(Object.keys(scripts).filter((k) => UI_NPM_SCRIPT.test(k)));
-  for (const m of wf.matchAll(/npm run ([\w:.-]+)/g)) npmNames.add(m[1]);
-  const npmTodo = [...npmNames];
-  while (npmTodo.length) {
-    const line = String(scripts[npmTodo.pop()] || '');
-    for (const m of line.matchAll(SCRIPT_FILE)) roots.add(m[0]);
-    for (const m of line.matchAll(/npm run ([\w:.-]+)/g)) if (!npmNames.has(m[1])) { npmNames.add(m[1]); npmTodo.push(m[1]); }
-  }
+  const pkg = parseJson(io.read('package.json')) || {}; // unparsable: the package rule makes it ui=true
+  const scripts = (typeof pkg.scripts === 'object' && pkg.scripts) || {};
+  for (const n of reachedNpm(io.read('package.json'), wf)) for (const m of String(scripts[n] || '').matchAll(SCRIPT_FILE)) roots.add(m[0]);
   if (pkg && pkg.build && typeof pkg.build.afterPack === 'string') for (const m of pkg.build.afterPack.matchAll(SCRIPT_FILE)) roots.add(m[0]);
   const seen = new Set(), todo = [...roots];
   while (todo.length) {
@@ -119,10 +126,16 @@ function uiClosure(io) {
   return seen;
 }
 
+const WF_UI = '.github/workflows/ui-platforms.yml';
+/** The reached npm names of base and head together: a line reached on either side counts when it changes. */
+function keepNpm(io) {
+  return new Set([...reachedNpm(io.read('package.json'), io.read(WF_UI)), ...reachedNpm(io.readBase('package.json'), io.readBase(WF_UI))]);
+}
+
 /** Does this one changed path count for the UI suite? */
 function uiPath(f, io, closure) {
   if (ALWAYS_UI.test(f)) return true;
-  if (PKG.includes(f)) return !versionOnly(f, io, true);
+  if (PKG.includes(f)) return !versionOnly(f, io, keepNpm(io));
   if (f.startsWith('scripts/')) {
     if (closure.has(f) || [...closure].some((c) => c.endsWith('/') && f.startsWith(c))) return true;
     // review of PR #1349: a file gone at head (deleted, or the old name of a rename: the diff has --no-renames) may have been loaded

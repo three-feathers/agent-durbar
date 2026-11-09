@@ -49,6 +49,7 @@ assert.strictEqual(ui(['.github/workflows/pages.yml']), false, 'another workflow
 // ui=true: the app, the drivers and what they load, build inputs, dependencies, the workflow and this decision
 assert.strictEqual(ui(['src/renderer/app.js']), true, 'src/renderer/app.js is UI');
 assert.strictEqual(ui(['src/main/main.ts']), true, 'anything in src/ is UI');
+assert.strictEqual(ui(['src/renderer/realoffice/sets/office/ASSETS.md', 'scripts/usage-lib.js']), true, 'Markdown inside src/ is UI too (with a non-doc file, the docs rule does not take it)');
 assert.strictEqual(ui(['scripts/check-office-ops.js']), true, 'a driver in ui-suite DRIVERS (check-office-ops.js) is UI');
 assert.strictEqual(ui(['scripts/driver-helpers.js']), true, 'the shared driver helpers are UI');
 assert.strictEqual(ui(['scripts/ui-suite.js']), true, 'the suite runner is UI');
@@ -85,6 +86,24 @@ assert.strictEqual(ui(['scripts/new-data.json'], io({ 'scripts/new-data.json': '
   assert.strictEqual(ui(['package.json'], withScript({ ...pkg.scripts, build: pkg.scripts.build + ' && node x.js' })), true, 'a change to the build script is UI');
   assert.strictEqual(ui(['package.json'], withScript({ ...pkg.scripts, 'pack:dir': 'electron-builder --dir' })), true, 'a change to pack:dir is UI');
   assert.strictEqual(ui(['package.json'], withScript({ ...pkg.scripts, postinstall: 'node x.js' })), true, 'a lifecycle hook is UI');
+  // review of PR #1349 (round 2): the npm lines compared are every name the UI run REACHES (seeds, the workflow's `npm run`s, followed),
+  // not a fixed pattern. Base and head both set here so only the one line differs.
+  const wfText = real.read('.github/workflows/ui-platforms.yml')!;
+  const both = (headScripts: Record<string, string>, baseScripts: Record<string, string>, wf = wfText) => io(
+    { 'package.json': JSON.stringify({ ...pkg, scripts: headScripts }), '.github/workflows/ui-platforms.yml': wf },
+    { 'package.json': JSON.stringify({ ...pkg, scripts: baseScripts }), '.github/workflows/ui-platforms.yml': wf });
+  const wfRunsUisuite = wfText + '\n      - run: npm run test:uisuite\n';
+  const s0 = pkg.scripts as Record<string, string>;
+  assert.strictEqual(ui(['package.json'], both({ ...s0, 'test:uisuite': s0['test:uisuite'] + ' --edited' }, s0, wfRunsUisuite)), true, 'editing test:uisuite, which the UI workflow runs, is UI');
+  assert.strictEqual(ui(['package.json'], both({ ...s0, 'test:uisuite': s0['test:uisuite'] + ' --edited' }, s0)), false, 'the same edit while nothing in the UI run reaches test:uisuite is not');
+  const chain = { ...s0, build: s0.build + ' && npm run zcopy', zcopy: 'node scripts/zz-copy.js' };
+  assert.strictEqual(ui(['package.json'], both({ ...chain, zcopy: 'node scripts/zz-copy.js --all' }, chain)), true, 'editing a script that build chains to (zcopy) is UI');
+  // build is a seed of its own (the office job and package smoke run it), not only because the UI workflow says `npm run build`
+  const wfNoBuild = wfText.split('npm run build').join('echo no-build');
+  const noChain = { ...s0, 'pack:dir': 'electron-builder --dir' }; // and no other reached script chains to it
+  assert.strictEqual(ui(['package.json'], both({ ...noChain, build: s0.build + ' --edited' }, noChain, wfNoBuild)), true, 'editing build is UI even when nothing else names it');
+  assert.strictEqual(ui(['package.json'], both({ ...s0, 'usage:zz': 'node scripts/usage-zz.js --new' }, { ...s0, 'usage:zz': 'node scripts/usage-zz.js' })), false, 'editing an unreached usage:* script is not UI');
+  assert.strictEqual(ui(['package.json'], io({ 'package.json': JSON.stringify({ ...pkg, scripts: chain }) }, { 'package.json': JSON.stringify({ ...pkg, scripts: { ...s0, build: s0.build + ' && npm run zcopy' } }) })), true, 'adding a script line that build reaches is UI');
 }
 { // a new helper that ui-suite.js loads counts as soon as it is named, without editing the decision
   const suite = real.read('scripts/ui-suite.js')!;
@@ -118,8 +137,8 @@ assert.strictEqual(ui(['scripts/a\u00f1o.js'], io({ 'scripts/a\u00f1o.js': 'modu
   assert.strictEqual(ui(['scripts/zz-dep.ts'], io(tsRoot)), true, 'a .ts file it imports is UI');
   assert.strictEqual(ui(['scripts/zz-root.ts'], io({ 'scripts/zz-root.ts': 'x' })), false, 'the same .ts file nothing runs is not');
   const pkgWith = (scripts: Record<string, string>) => JSON.stringify({ ...pkg, scripts: { ...pkg.scripts, ...scripts } });
-  const chain = { '.github/workflows/ui-platforms.yml': wf + '\n      - run: npm run zz:check\n', 'package.json': pkgWith({ 'zz:check': 'npm run zz:inner', 'zz:inner': 'node scripts/zz-two.js' }), 'scripts/zz-two.js': 'x' };
-  assert.strictEqual(ui(['scripts/zz-two.js'], io(chain)), true, 'a script reached through npm run, two levels deep, is UI');
+  const chain = { '.github/workflows/ui-platforms.yml': wf + '\n      - run: npm run zz:check\n', 'package.json': pkgWith({ 'zz:check': 'npm run zz:mid', 'zz:mid': 'npm run zz:inner', 'zz:inner': 'node scripts/zz-two.js' }), 'scripts/zz-two.js': 'x' };
+  assert.strictEqual(ui(['scripts/zz-two.js'], io(chain)), true, 'a script reached through npm run, three levels deep, is UI');
   const hook = { 'package.json': pkgWith({ postinstall: 'node scripts/zz-setup.js' }), 'scripts/zz-setup.js': 'x' };
   assert.strictEqual(ui(['scripts/zz-setup.js'], io(hook)), true, 'a script of a lifecycle hook (postinstall) is UI');
   assert.strictEqual(ui(['scripts/zz-setup.js'], io({ 'package.json': pkgWith({ 'zz:report': 'node scripts/zz-setup.js' }), 'scripts/zz-setup.js': 'x' })), false, 'the same script under a report npm script is not');
@@ -182,6 +201,11 @@ assert.strictEqual(d(['scripts/test-usage.js']).macos, true, 'a test script runs
     fs.writeFileSync(path.join(repo, 'scripts', 'tool.js'), 'module.exports = 1;\n');
     git('add', '-A'); git('commit', '-q', '-m', 'a tooling script');
     assert.strictEqual(bash(repo, 'pull_request'), 'code=true\nthemes=false\nui=false\nmacos=true\n', 'the wrapper decides on the PR checkout (--root): a tooling script is not UI');
+    // a committed .ci-changes-base/ is cleared first: its package.json saying "type":"module" would make the copied decision fail
+    fs.mkdirSync(path.join(repo, '.ci-changes-base'));
+    fs.writeFileSync(path.join(repo, '.ci-changes-base', 'package.json'), '{"type":"module"}\n');
+    git('add', '-A'); git('commit', '-q', '-m', 'a planted base folder');
+    assert.strictEqual(bash(repo, 'pull_request'), 'code=true\nthemes=false\nui=true\nmacos=true\n', 'a committed .ci-changes-base/ is cleared before the base copy runs');
     const broken = "require('fs').appendFileSync(process.env.GITHUB_OUTPUT, 'code=true\\nthemes=false\\nui=false\\nmacos=false\\n');\n";
     fs.mkdirSync(path.join(repo, 'src'), { recursive: true });
     fs.writeFileSync(path.join(repo, 'src', 'app.js'), 'x');
