@@ -40,7 +40,8 @@ jobs:
     name: macOS build and test (path-filtered)
     if: ${{ !github.event.pull_request.draft }}
     runs-on: macos-latest
-    timeout-minutes: 20
+    # spec 008 FR-195: was 20; up to 9 min of work plus up to about 12 min of npm ci retries in an Electron download outage
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

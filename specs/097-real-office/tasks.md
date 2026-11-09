@@ -263,6 +263,12 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 - [x] T273 [US1] Pictures at both sizes (Photo, cave) and a 2x crop to the owner before merge, compressed under 300 KB; the owner looked (2026-11-08 09:30 UTC) and chose "fine as is" [FR-307]
 - [x] T274 [US1] Docs: changelog fragment, `docs/features.md`, `docs/feature-inventory.md`, the spec's tags [FR-306..FR-311]
 
+## 2026-11-09: a helper strip is one row, never a second line (bug #1384, FR-338; changes FR-308)
+
+- [x] T275 [US1] Spec delta 2026-11-09 (report, the measurement before the fix, the cause, FR-338), plan and tasks, before any src change [FR-338]
+- [x] T276 [US1] Engine, pure: `realLayout` takes one row of heads, else none; `HELP_ROWS_MAX` and `HELP_KEEP` removed. Test: `test:realoffice-layout` re-pinned (rows 1 on every strip, the lounge scene, the 15-agent case and the measured numbers), mutant by hand (two rows back) [FR-338]
+- [x] T277 [US1] Driver `scripts/check-097-helper-row.js` (in `ui-suite`): 6 and 7 helpers, default and lounge scene, Photo office, cave and arcade, both sizes; one line, `+K` last, no overlap; mutant `tworows`; before and after pictures of the lounge row through the driver's own `H.shot` (under 300 KB) [FR-338]
+
 ## Phase 3b: every Characters crew in Real office (issue #1154, part of #1147; delta 2026-11-08)
 
 - [x] T235 [US5] Spec delta: what art each Characters value has, the fallback and why no crew portrait on the plate, the art list, Q12..Q14 [FR-335, FR-336, FR-337]
@@ -284,8 +290,8 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 
 ## 2026-11-08 delta 2: drag, kept room order, arcade and lobby in Real office (FR-352..FR-355, issue #1152, Q30..Q33)
 
-- [x] T284 [US2] FR-353: `RealModel.keepRooms`, `roRuns` (splits into rows of neighbours) used by `roPack` when a room order is saved. Test: `test:realoffice-layout`; mutant: the order ignored
-- [x] T285 [US2] FR-352, FR-354: pointer drag of plates and folder signs through `DurbarReorder.attach` and `reoDropModel` (the arcade: desks only). Test: `sim:` `check-097-drag`, three worlds, both sizes
+- [x] T290 [US2] FR-353: `RealModel.keepRooms`, `roRuns` (splits into rows of neighbours) used by `roPack` when a room order is saved. Test: `test:realoffice-layout`; mutant: the order ignored
+- [x] T291 [US2] FR-352, FR-354: pointer drag of plates and folder signs through `DurbarReorder.attach` and `reoDropModel` (the arcade: desks only). Test: `sim:` `check-097-drag`, three worlds, both sizes
 - [x] T286 [US2] FR-355: Alt+arrows on a visitor's chip button, Move earlier / later in the "+N" place menu, fixed places refused. Test: `check-097-drag`
 - [x] T287 [US2] Mutants fail: threshold, Esc, bypassing `reoApply`, arcade room drag, wrong arcade neighbour, menu does nothing, fixed place moves, order ignored
 - [x] T288 [US2] `shots-033-order`, `check-office-ops`, `check-office-overlap` (real, with a saved room order, arcade) pass

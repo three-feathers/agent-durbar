@@ -46,7 +46,8 @@ jobs:
     name: Build and test (${{ matrix.os }})
     if: ${{ !github.event.pull_request.draft }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 20
+    # spec 008 FR-195: was 20; Windows takes up to 10 min and npm ci may wait out an Electron download outage (about 12 min)
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -181,7 +182,8 @@ jobs:
     name: Theme layout ${{ matrix.theme }} ${{ matrix.shard }}/2
     if: github.event_name == 'workflow_dispatch' && inputs.full_themes
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    # spec 008 FR-195: was 12; about 3 min of work plus up to about 12 min of npm ci retries in an Electron download outage
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:

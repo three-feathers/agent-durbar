@@ -197,6 +197,7 @@ test:newfolderop
 test:newfolderipc
 test:newfoldergit
 test:supplychain
+test:electroncache
 test:claudecliunit
 test:rules
 test:weeklyretro

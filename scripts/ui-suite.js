@@ -167,6 +167,7 @@ const DRIVERS = [
   { name: 'check-097-ctx-frame' }, // spec 097 FR-322..FR-326 (Q8, owner 2026-11-07): the context line round each monitor frame in the Photo office, the cave and the arcade; bands, share, outside the glass, none for unknown, no node per update; CTX_MUTANT=colour|glass|node|unknown
   { name: 'check-097-desk-marks' }, // spec 097 FR-316 (#1149): the Draft tag above a Real office plate for an unsent draft, its words in the plate's name, shown by class, both sizes
   { name: 'check-097-helpers' }, // spec 097 FR-306..FR-311 (#1139): a desk's helpers as head figures with a status dot under its plate, Photo office, cave and the arcade at 1440x900, both sizes; where no strip fits (the arcade at 1280x800, the default scene at 1280x800) the plate keeps +N
+  { name: 'check-097-helper-row' }, // spec 097 FR-338 (issue #1384): a helper strip never wraps a head onto a second line; the last place is +K (6 and 7 helpers, the default scene and the lounge scene, Photo office, cave and arcade, both sizes)
   { name: 'check-097-hover-card' }, // spec 097 FR-327..FR-330 (#1151): the zoom opens over the person, desk and plate, for asleep agents, with the Changed line
   { name: 'check-097-lounge' }, // spec 097 FR-246..FR-249 (#1220): finished, read agents sit in the lounge row in the Photo office and the arcade, unread keeps the desk, the ease back, reduced motion, both sizes
   { name: 'check-097-world-look' }, // spec 097 FR-350, FR-351 (#1153): a world keeps its own colours whatever theme is picked, and the arcade's drop overlay reads
