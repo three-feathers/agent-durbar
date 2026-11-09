@@ -115,7 +115,16 @@ async function main(): Promise<void> {
   // 6b. warm() itself (review of #1363): the checksums it passes come from Electron's npm package, nothing turns the check off,
   // a zip that fails the check is refused (after its retries), a good one is cached and the seed is written
   assert.strictEqual(ec.checksumsPath(), require.resolve('electron/checksums.json', { paths: [root] }), 'the checksums come from node_modules/electron (the lockfile-pinned package)');
-  assert.strictEqual(path.relative(root, ec.checksumsPath()).split(path.sep).join('/'), 'node_modules/electron/checksums.json');
+  // #1391: node_modules may be a symlink (worktrees) or a junction (Windows), and require.resolve returns the real path,
+  // so compare the real paths of both sides (fs.realpathSync resolves symlinks and junctions; .native is not needed here)
+  const sameFile = (a: string, b: string): boolean => fs.realpathSync(a) === fs.realpathSync(b);
+  const pinnedSums = path.join(root, 'node_modules', 'electron', 'checksums.json');
+  assert.ok(sameFile(ec.checksumsPath(), pinnedSums), 'checksumsPath() is the checksums.json of the pinned node_modules/electron');
+  const decoyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'decoy-electron-'));
+  const decoy = path.join(decoyDir, 'checksums.json');
+  fs.copyFileSync(pinnedSums, decoy);
+  assert.ok(!sameFile(decoy, pinnedSums), 'a copy of checksums.json from another electron package is not accepted');
+  fs.rmSync(decoyDir, { recursive: true, force: true });
   const realSums = ec.electronChecksums();
   assert.deepStrictEqual(realSums, sums);
   const wo = ec.warmOptions(v.electron, { platform: 'darwin', arch: 'x64' }, '/c', realSums);
