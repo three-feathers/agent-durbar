@@ -166,6 +166,7 @@ const DRIVERS = [
   { name: 'check-097-helpers' }, // spec 097 FR-306..FR-311 (#1139): a desk's helpers as head figures with a status dot under its plate, Photo office, cave and the arcade at 1440x900, both sizes; where no strip fits (the arcade at 1280x800, the default scene at 1280x800) the plate keeps +N
   { name: 'check-097-hover-card' }, // spec 097 FR-327..FR-330 (#1151): the zoom opens over the person, desk and plate, for asleep agents, with the Changed line
   { name: 'check-097-lounge' }, // spec 097 FR-246..FR-249 (#1220): finished, read agents sit in the lounge row in the Photo office and the arcade, unread keeps the desk, the ease back, reduced motion, both sizes
+  { name: 'check-097-world-look' }, // spec 097 FR-350, FR-351 (#1153): a world keeps its own colours whatever theme is picked, and the arcade's drop overlay reads
   { name: 'shots-097-cave' }, // spec 097 phase 4: the Prehistoric cave behind its flag (World row, its set, any set in any world, no blend)
   { name: 'shots-001-lobby' }, // spec 001 FR-034..FR-040: Boss queue, Bank, Postbox and its letter, who is at a place (simsched in its own query)
   { name: 'check-done-desk-mask' }, // spec 041 FR-065: no token of a done reply on the office floor
@@ -188,6 +189,8 @@ const DRIVERS = [
   // issue #748 (spec 021 FR-057): drivers that asserted but nothing ran, each passing alone on the simulator (seconds on a 4-core Linux box)
   { name: 'check-checkpoints' }, // spec 065 FR-003/FR-004/FR-007: the note after a turn that changed files, preview, restore, Undo the undo, the refusal (~21 s)
   { name: 'check-mode-refusal' }, // spec 012 FR-087: Codex refusing Read-only / Ask first (simsendfail=sandbox) (~14 s)
+  { name: 'check-autopilot', label: 'check-autopilot default' }, // spec 099: the default build: nothing offers Autopilot
+  { name: 'check-autopilot', env: { DURBAR_AUTOPILOT_TEST: '1' } }, // spec 099 T037: the test-only gate: menu, form, chip, every end reason, hostile text, both sizes
   { name: 'check-plan-mode' }, // spec 066: Plan first (next message), the chip, the plan card with Approve / Revise / Reject (~18 s)
   { name: 'shots-006-continue' }, // spec 006 FR-021: a folder continues its last session after a restart (~12 s)
   { name: 'shots-006-remove' }, // spec 006 FR-022: removing a folder is easy to find, Cancel keeps it (~26 s)

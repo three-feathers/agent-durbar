@@ -223,6 +223,8 @@ export interface AppSettingsView {
   characters?: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric' | 'pirate' | 'monster' | 'royal' | 'rebels';
   /** OS notifications when an agent needs you while the window is in the background (spec 052 FR-059). On unless turned off. */
   notifyNeedsMe?: boolean;
+  /** Spec 099 S1: the turn limit last used for Autopilot; absent until then. */
+  autopilotLimit?: number;
   /** Spec 068 FR-006: after a coffee break, `auto` resumes by itself when it costs nothing extra; `ask` always asks. */
   breakResume?: 'auto' | 'ask';
   /** Spec 080 FR-031: where a plain click on a chat link opens (default `'session'`). */
@@ -902,6 +904,8 @@ export interface DurbarApi {
   handoff?(id: string): Promise<{ ok: boolean; error?: string; summary?: string; costUsd?: number }>;
   /** Turn remote control (follow and steer from the agent app's web or mobile app) on or off for live agent `id` (spec 054 FR-004). */
   setRemote?(id: string, on: boolean): Promise<RemoteState>;
+  /** Spec 099: Autopilot on (its settings; main asks the native confirmation) or off (`null`). Refused while `AUTOPILOT_WIRED` is false. */
+  setAutopilot?(id: string, settings: { limit: number; hours?: number; cap?: number } | null): Promise<{ ok: boolean; error?: string; cancelled?: true; mode?: PermMode; autopilot?: AgentInfo['autopilot']; pending?: number; note?: string }>;
   /** Open agent `id`'s remote link (stored in main, https://github.com only) in the system browser (spec 054 FR-005). */
   openRemote?(id: string): Promise<{ ok: boolean }>;
   /** Spec 065: a turn's file changes (what an undo would do), the undo itself, and the note after a turn that changed files. */
@@ -970,6 +974,12 @@ export interface DurbarApi {
   setTheme?(id: string): Promise<{ ok: boolean; theme?: string; characters?: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric' | 'pirate' | 'monster' | 'royal' | 'rebels' }>;
   /** Spec 077 FR-064: set who sits at the desks; main refuses anything not on the list (`ok: false`, the value in force). */
   setCharacters?(v: string): Promise<{ ok: boolean; characters: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric' | 'pirate' | 'monster' | 'royal' | 'rebels' }>;
+  /** Spec 102 FR-064: installed worlds as main lists them; `state` is *Damaged* when a re-check failed. No path, no description. */
+  worldList?(): Promise<Array<{ key: string; name: string; origin: 'project' | 'source' | 'uploaded' | 'made' | 'imported' | null; version: number; size: number; state: 'ok' | 'unfinished' | 'damaged' | 'revoked'; unfinished: boolean; parts: string[]; date: string }>>;
+  /** Spec 102 FR-062, FR-063: one part's bytes (PNG or WebP) for a key main listed, after the re-check; nothing for anything else. */
+  worldPart?(key: string, name: string): Promise<{ ok: boolean; bytes?: Uint8Array; mime?: 'image/webp' | 'image/png'; reason?: string; error?: string }>;
+  /** Spec 102 FR-061: remove one installed world by key. */
+  worldRemove?(key: string): Promise<{ ok: boolean; error?: string }>;
   /** User themes (spec 040): scan userData/themes; each valid pack listed, each invalid one given back with a reason. */
   listUserThemes?(): Promise<Array<{ id: string; name?: string; ok: boolean; error?: string }>>;
   getUserTheme?(id: string): Promise<Record<string, unknown> | null>;
@@ -1017,6 +1027,8 @@ export interface DurbarApi {
   onHeldStopped?(cb: (p: { id?: string; why: string }) => void): () => void;
   /** Spec 076 FR-203: a session started under advice of its agent app's organization policy; the words to show (no policy values). */
   onOrgNote?(cb: (p: { id: string; text: string }) => void): () => void;
+  /** Spec 099: main's Autopilot state of one session changed; the window shows what main holds. */
+  onAutopilotState?(cb: (p: { id: string; autopilot: AgentInfo['autopilot'] | null }) => void): () => void;
   /** Spec 058 FR-208, FR-211: the sign-in refresh lines of a chat. */
   onMcpSignInRefresh?(cb: (p: McpSignInRefreshNote) => void): () => void;
   /** Spec 054 FR-062: remote control is still on with a new (checked) link after a relaunch. */

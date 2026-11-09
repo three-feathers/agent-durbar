@@ -239,6 +239,13 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 - [x] T254 [US2] Simulator pictures at both sizes in Photo office, cave and arcade, each looked at, and a 2x crop of three desks; kept in `docs/screenshots`, linked from the spec (not from site pages); review of #1299: the six crops at both sizes in all three worlds are linked and retaken, the lone full arcade picture is removed (full PNGs exceed 300 KB)
 - [x] T255 [US2] Docs: changelog fragment, `docs/features.md`, `docs/feature-inventory.md`
 
+## 2026-11-08: themes in Real office superseded by worlds (issue #1153, FR-350, FR-351; Q34 withdrawn)
+
+- [x] ~~T265~~ [US2] Spec delta 2026-11-08, first version: the measured theme gap table and Q34. Superseded by the owner's decision of 2026-11-08 (a world is the look; themes stay until the Retro flip removes them); the delta now holds FR-350, FR-351 and this decision [FR-350]
+- [x] ~~T266~~ [US2] A per-theme matrix pin in `test:theme-tokens`. Superseded: section 7 keeps only what guards a world's look (FR-350), see T268
+- [ ] ~~T267~~ [US2] Build Q34's answer. Superseded, not built: Q34 is withdrawn
+- [x] T268 [US2] `scripts/check-097-world-look.js` (in `ui-suite`): a world keeps its own colours under three themes in three worlds; FR-351 the arcade's drop overlay fill (`worlds/retro/world.css`). `test:theme-tokens` section 7 over every built-in theme and the dark fixture. Mutants: a theme token let through (three keys), a status colour, the world shadows, the dark flag, the UI style, a theme ink on a plate, the drop rule removed [FR-350, FR-351]
+
 ## 2026-11-08: a desk's helpers as head figures (issue #1139, FR-306..FR-311; owner decision "1265 1", 2026-11-08 08:29 UTC; replaces PR #1265)
 
 - [x] T269 [US1] Owner decision recorded verbatim in the spec delta, tiles replaced by head figures with a status dot; spec, plan and tasks before any src change [FR-306..FR-311]

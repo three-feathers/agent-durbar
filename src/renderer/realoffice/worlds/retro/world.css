@@ -65,6 +65,10 @@
 .ro[data-world="retro"] .ro-dis.d2{mask:repeating-conic-gradient(#000 0 25%,transparent 0 50%) 0 0/calc(8px*var(--ro-g)) calc(8px*var(--ro-g))}
 @media (forced-colors:active){.ro[data-world="retro"] .ro-marquee:is(.mq-flash,.mq-flash-red)::after{animation:none;opacity:1}.ro[data-world="retro"] :is(.ro-person.bob,.ro-cue.cue-dots){animation:none}.ro[data-world="retro"] :is(.ro-coin,.ro-fglow){display:none}}
 /* the plate: the status, one line: the name is on the marquee and in the button's label */
+/* spec 102 T276 (issue #1303): the plate is AISLE_PLATE_H (21) tall with a 1 px border: 2 px of padding and a 15 px line (10.5 px text at the page's 1.25 would need 13.1, the lounge's 14 px strut 17.5, which cut the line) leave room for the whole line; it starts at the top (the lounge's two parts too, both 15 px lines), so a line too tall for its box overflows the bottom, where the overlap check reads it (centred, half of it would go above and not count) */
+.ro[data-world="retro"] .ro-plate{--arc-plate-pad:2px;--arc-plate-line:15px;padding-block:var(--arc-plate-pad);line-height:var(--arc-plate-line);justify-content:flex-start}
+/* waiting and limit plates have a 1.5 px border (realoffice.css): half a px less padding keeps 3 + 3 + 15 = 21 */
+.ro[data-world="retro"] .ro-plate:is(.st-waiting,.st-limit){--arc-plate-padw:1.5px;padding-block:var(--arc-plate-padw)}
 .ro[data-world="retro"] .ro-plate .ro-l1{display:none}
 .ro[data-world="retro"] .ro-plate .ro-l2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
 /* spec 097 FR-308 (review of PR 1322): with no strip, the helpers' "+N and dots" stay in view: on the one line, before the status (the name and role stay on the marquee) */
@@ -82,13 +86,15 @@
 .ro[data-world="retro"] .ro-ltable{z-index:2}
 .ro[data-world="retro"] .ro-screen.ro-lmon{background:#2b2742;box-shadow:inset 0 0 0 2px #463f66,inset 0 -4px 0 #1b1830}
 .ro[data-world="retro"] .ro-screen.ro-lmon .ro-bezel{inset:6px}
-.ro[data-world="retro"] .ro-plate.lounge{flex-direction:row;align-items:center;gap:6px}
-.ro[data-world="retro"] .ro-plate.lounge .ro-l1{display:block;flex:none;max-width:55%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ro[data-world="retro"] .ro-plate.lounge{flex-direction:row;align-items:flex-start;gap:6px}
+.ro[data-world="retro"] .ro-plate.lounge .ro-l1{display:block;font-size:var(--t4-size);flex:none;max-width:55%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ro[data-world="retro"] .ro-plate.lounge .ro-role{display:none}
 .ro[data-world="retro"] .ro-plate.lounge .ro-l2{display:block;flex:1 1 auto;min-width:0;-webkit-line-clamp:unset}
 /* spec 097 FR-324 (review of #1299): the arcade's line lies in the screen's own frame band, the 4 grid-pixel border between the cabinet body and the glass (the svg is that whole screen box): the line is 2 grid pixels (4 px at g=2) in the band's outer half and its keyline one px wider each side, so every pixel of both stays inside the band: inside the cabinet's body, under the marquee, above the control strip, and clear of the glass and its text bars (the band's inner half stays bare) */
 .ro[data-world="retro"] .ro-ctx rect{x:calc(1.5px*var(--ro-g));y:calc(1.5px*var(--ro-g));width:calc(var(--ro-cw,0px) - 3px*var(--ro-g));height:calc(var(--ro-ch,0px) - 3px*var(--ro-g));stroke-width:max(4px,calc(2px*var(--ro-g)))}
 .ro[data-world="retro"] .ro-ctx .ro-ck{stroke-width:calc(max(4px,2px*var(--ro-g)) + 2px)}
+/* spec 097 FR-351 (issue #1153, found by check-097-world-look): the arcade's --drop-ink is light and --drop-bg is not in its set, so the drop overlay read 1.0:1; its fill is the page surface. One source: if WORLD_SETS.retro ever sets --drop-bg, delete this rule (test:theme-tokens fails while both exist) */
+html[data-world="retro"] .drop-ov{background:var(--surface)}
 
 /* spec 102 FR-264, 097 FR-118 first run: no counts in the top bar (all zero); the space stays, so the bar does not move */
 html[data-world="retro"] body:has(#stage > .welcome) #stats{visibility:hidden}

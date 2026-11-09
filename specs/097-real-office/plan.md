@@ -165,6 +165,10 @@ One PR, spec first. Who moves is `shutPlan(r)` (spec 001 FR-051, `shutters.js` `
 
 `realModel` adds `ctx: {pct, level}` (from `DurbarScreens.ctxChip`, the chat header's source) and the context words to each desk's accessible name. `realoffice.js` makes one `svg.ro-ctx > rect` per desk in `.ro-screen` (pathLength 100) and writes `stroke-dasharray` and `data-lv` only when they changed; `DurbarRealOffice.ctx(id, {pct, level} | null)` (called by `realCtxPush` on a context event and after a finished compaction) does the same on a context event without a render. World CSS sets the inset and width (Photo and cave on the bezel, arcade on the cabinet's screen frame); colours are `var(--tint-ink)` (soft white) for `ok` and `warn` and `var(--red)` for `high` (FR-323, owner 2026-11-07 21:01 UTC); forced colours use `Highlight`.
 
+## A world keeps its own colours; the arcade's drop overlay (delta 2026-11-08, issue #1153; FR-350, FR-351, Q34 withdrawn)
+
+The owner decided on 2026-11-08 that worlds are the new themes: nothing is built for themes in Real office (Q34 withdrawn). What stays is a guard that a world's colours, shadows, UI style and dark flag come from the world whatever theme is picked (`test:theme-tokens` section 7, `scripts/check-097-world-look.js`), and one bug fix: `html[data-world="retro"] .drop-ov{background:var(--surface)}` in `worlds/retro/world.css`, because the overlay's light ink sat on a light default fill (1.2:1). No `theme.js` change.
+
 ## A desk's helpers as head figures (delta 2026-11-08; FR-306..FR-311, T269..T274, issue #1139)
 
 Spec first; the owner chose head figures with a status dot (2026-11-08 08:29 UTC, "1265 1"). One PR on a fresh branch, reusing the flat office's pieces (`orderedHelpers` for order, the tile's accessible name and tooltip, the `[data-id]` and `[data-more]` handlers, `dotHTML` and the `.dot` classes) and the room's own people art.
