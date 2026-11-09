@@ -293,3 +293,13 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 - [ ] T248 [US5] Every landed set drawn and read in the Prehistoric cave at 15 agents, both sizes, when the cave opens. Test: `check-097-crews` with `world=cave` [FR-335]
 - [ ] T249 [US5] The matrix kept true: a test that fails when a Characters value or world is added without a cell (`test:realoffice-layout`) [FR-335]
 - Art for T240..T244 (from #1308, 2026-11-08): the five crews' packs (`sets/pirate`, `royal`, `rebels`, `monster`, `cheeky`) are added as art only by PR #1327; the wiring (`REAL_SETS` row, `check-097-crews` case flip) stays in #1308's T240..T244.
+
+## 2026-11-08 delta 2: drag, kept room order, arcade and lobby in Real office (FR-352..FR-355, issue #1152, Q30..Q33)
+
+- [x] T290 [US2] FR-353: `RealModel.keepRooms`, `roRuns` (splits into rows of neighbours) used by `roPack` when a room order is saved. Test: `test:realoffice-layout`; mutant: the order ignored
+- [x] T291 [US2] FR-352, FR-354: pointer drag of plates and folder signs through `DurbarReorder.attach` and `reoDropModel` (the arcade: desks only). Test: `sim:` `check-097-drag`, three worlds, both sizes
+- [x] T286 [US2] FR-355: Alt+arrows on a visitor's chip button, Move earlier / later in the "+N" place menu, fixed places refused. Test: `check-097-drag`
+- [x] T287 [US2] Mutants fail: threshold, Esc, bypassing `reoApply`, arcade room drag, wrong arcade neighbour, menu does nothing, fixed place moves, order ignored. Run 2026-11-09, each failing assert recorded in the PR #1394 comment (also: a fixed place's menu with Move items, the grab cursor removed, order not saved); `order ignored` is `test:realoffice-layout`'s
+- [x] T288 [US2] `shots-033-order`, `check-office-ops`, `check-office-overlap` (real, with a saved room order, arcade) pass
+- [x] T289 [US2] Pictures mid-drag and after the drop read and compressed; spec, plan and changelog fragment match [FR-352]
+

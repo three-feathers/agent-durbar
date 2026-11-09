@@ -305,6 +305,7 @@
     const who = people(model, ids, opts.rand, !!opts.remember);
     const seatOk = (p) => !!p && !['typeA', 'think', 'waveA', 'rest'].some((f) => BAD.has(SD + p + '-' + f + '.webp'));
     const engine = {
+      keepRooms: !!model.keepRooms, /* spec 097 FR-353: a saved room order is kept in the rows */
       folders: model.folders.map((f) => ({ id: f.id, keep: !!f.keep, agents: f.agents.map((a) => ({ id: a.id, state: a.state, away: a.away || null, person: seatOk(who[a.id]) ? who[a.id] : null, lounge: !!a.lounge, helpers: a.lounge || !a.subs ? 0 : a.subs.length })) })), /* spec 097 FR-246: the app's room rule (shutPlan) seats it in the lounge row; FR-306: the strip's helpers (none in the lounge; none without their list: the plate keeps its +N) */
       places: model.places.map((p) => ({ id: p.id, custom: !!p.custom, visitors: p.visitors.map((v) => ({ id: v.id, needsYou: !!v.needsYou, person: who[v.id] || null })) })),
     };
@@ -492,7 +493,7 @@
            data-coffeeid for the coffee menu): app.js's delegated handlers open the chat; others forward to their plate (data-for) */
         const ch = el(chrome, 'vc:' + v.id, p.go ? 'button' : 'span', 'ro-chip' + (ag.needsYou ? ' wait' : '')); dset(ch, 'y', String(v.chip.y)); dset(ch, 'x', String(v.chip.x)); /* its place is stagger()'s to write */
         if (p.go) { if (ch.type !== 'button') ch.type = 'button'; dset(ch, 'pvopen', v.id); if (fx.id === 'coffee') dset(ch, 'coffeeid', v.id); attr(ch, 'aria-label', ag.title + '. Open the chat.'); } else dset(ch, 'for', v.id);
-        attr(ch, 'title', ag.title); dset(ch, 'name', ag.name); chipFill(ch, ag.name, ag.needsYou, model.alertIcon);
+        dset(ch, 'place', fx.id); attr(ch, 'title', ag.title); dset(ch, 'name', ag.name); chipFill(ch, ag.name, ag.needsYou, model.alertIcon);
       }
       /* FR-025/FR-026 "as the flat lobby": the people that do not fit ("+N") open the flat lobby's own list (data-placemore, app.js
          openPlaceMenu), so the plate is a button then, with a name that says so */

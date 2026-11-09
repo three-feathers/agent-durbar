@@ -1193,6 +1193,21 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
   }
   console.log(`helper heads: ${sc} layouts, ${withStrip} with strips`);
 }
+// ---- spec 097 FR-353 (owner Q31 = 1, 2026-11-08): a saved room order is kept in the rows, left to right, top to bottom, for every split tried ----
+{
+  const mk = (sizes: number[], keepRooms?: boolean): RealModel => ({ keepRooms, places: model(1, 1).places, folders: sizes.map((n, fi) => ({ id: 'r' + fi, agents: Array.from({ length: n }, (_, i) => ({ id: `r${fi}a${i}`, state: 'idle' as RealState, person: PEOPLE[(fi + i) % PEOPLE.length], away: null }) as RealAgent) })) });
+  const rowsOf = (L: ReturnType<typeof realLayout>): string[] => L.zones.slice().sort((a, b) => (Math.abs(a.box.y - b.box.y) > 2 ? a.box.y - b.box.y : a.box.x - b.box.x)).map((z) => z.id).filter((id, i, l) => l.indexOf(id) === i); /* a folder in parts counts once, at its first part */
+  const SPLIT_SIZES: number[][] = [[1, 5, 2, 5, 2], [5, 1, 1, 5, 3], [2, 2, 2, 2, 2, 2, 3], [6, 1, 6, 1, 1], [1, 1, 4, 1, 4, 4]];
+  let differs = 0;
+  for (const [W, H] of SIZES) for (const sz of SPLIT_SIZES) {
+    const m = mk(sz, true), want = m.folders.map((f) => f.id);
+    assert.deepStrictEqual(rowsOf(realLayout(m, { w: W, h: H }, META)), want, `FR-353: ${sz} at ${W}x${H}: rooms stand in the saved order, left to right, top to bottom`);
+    // no saved order: exactly main's layout (the flag false or missing changes nothing)
+    assert.strictEqual(JSON.stringify(realLayout(mk(sz, false), { w: W, h: H }, META)), JSON.stringify(realLayout(mk(sz), { w: W, h: H }, META)), 'FR-353: no saved order, the same layout as before');
+    if (rowsOf(realLayout(mk(sz), { w: W, h: H }, META)).join() !== want.join()) differs++;
+  }
+  assert.ok(differs > 0, `FR-353: best fit alone reorders some of these (so the test can fail when the order is ignored; ${differs})`);
+}
 /* spec 097 FR-356 (bug #1392): a room narrower than the narrowest whole sign (3 letters of the name, no path, counts, cost, + and menu) takes the short sign (name, counts, + and menu), a wide one keeps it whole */
 {
   const m = model(14, 4, { away: false, states: ['working'] }); /* 15 people: four rooms and a one-desk room, as the cave's lounge scene (#1392) */
