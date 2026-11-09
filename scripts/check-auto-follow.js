@@ -349,7 +349,10 @@ module.exports = async (ctx) => {
     await ok(`document.getElementById('panelTitle').textContent===${jsLiteral(await nameOf(S1))}&&${jsLiteral(S1)}===(document.querySelector('.is-followed')||{dataset:{}}).dataset.id`, `${tag}: its own chat, still followed`);
     await js(`(()=>{const c=document.getElementById('chat');const f=document.createElement('div');f.id='afFill';f.style.height='3000px';f.style.flex='none';c.appendChild(f);c.scrollTop=0;window.__ann=[];})();0`);
     await ok(`document.getElementById('chat').dataset.pin==='0'`, `${tag}: scrolled up`);
-    await mclick('#panelTitle');
+    /* out of the message box with a click on the chat log, not on the title: a click on the title more than 400 ms after the chat opened starts
+       a rename (FR-020 item 1), whose field then holds the arrival as typing for good (issue #1343: seen under load, where the click came late) */
+    await mclick('#chat');
+    await ok(`document.activeElement&&document.activeElement.id!=='msgInput'&&!document.activeElement.closest('input,textarea,[contenteditable="true"]')`, `${tag}: out of the message box, in no field`);
     await ok(`!document.querySelector('.is-followed')`, `${tag}: its arrival was handled: no longer followed, nothing held`, 25000);
     assert.ok(!(await anns()).some((t) => /Its chat is open/.test(t)), `${tag}: already shown: no switch and nothing said: ${JSON.stringify(await anns())}`);
     assert.strictEqual(await js(`document.getElementById('chat').scrollTop`), 0, `${tag}: the chat stays where it was scrolled`);
