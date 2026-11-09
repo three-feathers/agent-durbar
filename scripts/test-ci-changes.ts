@@ -191,6 +191,31 @@ assert.strictEqual(ui(['scripts/new-data.json'], io({ 'scripts/new-data.json': '
     assert.strictEqual(ui(['package.json'], pair({ test: s0.test + ' --edited' })), false, 'the test script, which only the code-gated Build and test runs, is not reached');
     assert.strictEqual(ui(['package.json'], both({ ...s0, 'pack:dir:prebuilt': s0['pack:dir:prebuilt'] + ' --edited' }, s0)), true, 'the office job runs pack:dir:prebuilt: editing it is UI');
   }
+  // round 6: the whole text of every ci.yml job that reads `outputs.ui` in any way is taken, cut by indentation; no step condition
+  // escapes. Each row adds a step to the office job (or a new job) that runs `npm run zz:office`, and edits only that script line.
+  {
+    const ciText = real.read('.github/workflows/ci.yml')!;
+    const ANCHOR = '  # On demand only (workflow_dispatch with full_themes)';
+    assert.ok(ciText.includes(ANCHOR), 'the office job ends before the on-demand theme job');
+    const scr = { ...s0, 'zz:office': 'node scripts/zz-office.js' };
+    const edited = (ci: string) => ui(['package.json'], io({ '.github/workflows/ci.yml': ci, 'package.json': JSON.stringify({ ...pkg, scripts: { ...scr, 'zz:office': 'node scripts/zz-office.js --edited' } }) },
+      { '.github/workflows/ci.yml': ci, 'package.json': JSON.stringify({ ...pkg, scripts: scr }) }));
+    const inOffice = (step: string) => ciText.replace(ANCHOR, step + '\n' + ANCHOR);
+    const CASES: [string, string][] = [
+      ['double quotes', '      - if: steps.changes.outputs.ui == "true"\n        run: npm run zz:office\n'],
+      ["!= 'false'", "      - if: steps.changes.outputs.ui != 'false'\n        run: npm run zz:office\n"],
+      ['fromJSON', '      - if: ${{ fromJSON(steps.changes.outputs.ui) }}\n        run: npm run zz:office\n'],
+      ['gated only on the build outcome', "      - if: steps.build.outcome == 'success'\n        run: npm run zz:office\n"],
+      ['a run block holding a "- " line', "      - if: steps.changes.outputs.ui == 'true'\n        run: |\n          echo start\n          - not a step\n          npm run zz:office\n"],
+    ];
+    for (const [label, step] of CASES) assert.strictEqual(edited(inOffice(step)), true, `a ci.yml office step written with ${label}: its npm script is reached`);
+    const newJob = '  extra:\n    runs-on: ubuntu-latest\n    steps:\n      - id: changes\n        run: bash .github/scripts/ci-changes.sh\n      - if: steps.changes.OUTPUTS.UI == \'true\'\n        run: npm run zz:office\n\n';
+    assert.strictEqual(edited(ciText.replace(ANCHOR, newJob + ANCHOR)), true, 'a new ci.yml job that reads outputs.UI in another case is covered whole');
+    const noUiJob = '  extra:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run zz:office\n\n';
+    assert.strictEqual(edited(ciText.replace(ANCHOR, noUiJob + ANCHOR)), false, 'a ci.yml job that never reads outputs.ui is not covered');
+    const uncut = ciText.replace(/^jobs:/m, 'jobs_renamed:') + '\n# npm run zz:office\n      - run: npm run zz:office\n';
+    assert.strictEqual(edited(uncut), true, 'a ci.yml whose jobs cannot be cut is taken whole (fail open)');
+  }
   // (3) runner words in any case are looked at; upper case is not an exact form, so the line fails open
   for (const cmd of ['NPM run zz:t', 'Npm.cmd run zz:t', 'NPX run-p zz:t', 'YARN zz:t']) assert.strictEqual(viaWf(cmd, 'zz:t'), true, `the UI workflow running "${cmd}": editing zz:t is UI`);
   // the parser on its own: the exact forms name what they start and are not opaque; one non-exact command makes the whole line opaque

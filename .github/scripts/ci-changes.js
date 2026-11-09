@@ -168,13 +168,32 @@ function resolveScript(rel, io) {
   for (const ext of RESOLVE) if (io.isFile(rel + ext)) return rel + ext;
   return io.isDir(rel) ? rel.replace(/\/?$/, '/') : null;
 }
-// the ci.yml steps the `ui` decision gates (the office job: office layout and package smoke) start commands too (review round 5)
+// ci.yml jobs the `ui` decision gates (the office job: office layout and package smoke) start commands too. Review rounds 5 and 6:
+// the WHOLE text of every ci.yml job that reads `outputs.ui` in any way (any case, any quoting, `!=`, fromJSON, a step gated only
+// on the build's outcome) is taken, not step by step, so no way of writing a step's condition escapes. Jobs are cut by indentation
+// (a job starts at two spaces under `jobs:`), so a `run: |` block holding a `- ` line stays in its job. When the jobs cannot be
+// cut (no `jobs:` line, no job found), the whole of ci.yml is taken (fail open).
 const WF_UI = '.github/workflows/ui-platforms.yml';
 const WF_CI = '.github/workflows/ci.yml';
-/** The workflow text the UI decision covers: all of ui-platforms.yml, and each ci.yml step whose `if:` reads the ui output. */
+/** The jobs of a workflow as text, cut by indentation; null when they cannot be found. */
+function workflowJobs(text) {
+  const lines = String(text || '').split(/\r?\n/);
+  const at = lines.findIndex((l) => /^jobs:\s*(#.*)?$/.test(l));
+  if (at < 0) return null;
+  const jobs = [];
+  for (const l of lines.slice(at + 1)) {
+    if (/^ {2}[^\s#][^:]*:\s*(#.*)?$/.test(l)) jobs.push([l]);
+    else if (/^\S/.test(l)) break; // a new top-level key ends `jobs:`
+    else if (jobs.length) jobs[jobs.length - 1].push(l);
+  }
+  return jobs.length ? jobs.map((j) => j.join('\n')) : null;
+}
+/** The workflow text the UI decision covers: all of ui-platforms.yml, and each ci.yml job that reads the ui output (or all of
+ *  ci.yml when its jobs cannot be cut). */
 function uiWorkflowText(wfUiText, ciText) {
-  const gated = String(ciText || '').split(/\r?\n(?=\s*- )/).filter((step) => step.includes("steps.changes.outputs.ui == 'true'"));
-  return [String(wfUiText || ''), ...gated.flatMap((step) => workflowCommands(step).map((c) => `      - run: ${c}`))].join('\n');
+  const jobs = workflowJobs(ciText);
+  const covered = jobs ? jobs.filter((job) => /outputs\.ui\b/i.test(job)) : [String(ciText || '')];
+  return [String(wfUiText || ''), ...covered.flatMap((job) => workflowCommands(job).map((c) => `      - run: ${c}`))].join('\n');
 }
 /** Every file (and folder prefix, ending in /) in scripts/ that the UI run can load, from the roots by string literals. Roots: the
  *  scripts/ files ui-platforms.yml names, check-parallel.js (the office job), and the scripts/ files of every npm script the UI run
