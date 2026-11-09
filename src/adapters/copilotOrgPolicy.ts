@@ -167,7 +167,7 @@ const lastCopilotFile: LastRead = {};
 /** Copilot's policy: the runtime's answer, else the machine file (FR-198). */
 export async function readCopilotOrgPolicy(client: CopilotManagedClient | undefined, file: () => OrgPolicy = () => readCopilotFileOrgPolicy()): Promise<OrgPolicy> {
   const answer = await resolveCopilotManaged(client);
-  if (answer === undefined) return file();
+  if (answer === undefined) return { ...file(), runtimeUnread: client ? 'failed' : 'none' };
   // FR-201 (review on PR 644 item 3): the answer is hostile input with a size cap, and an answer that did not change is not parsed again
   let text: string | undefined;
   try {
@@ -175,13 +175,13 @@ export async function readCopilotOrgPolicy(client: CopilotManagedClient | undefi
   } catch {
     text = undefined; // a cycle or a throwing getter: not an answer Durbar can read
   }
-  if (text === undefined) return file();
+  if (text === undefined) return { ...file(), runtimeUnread: 'failed' };
   if (text.length > ORG_LIMITS.totalFileBytes) return wholeOrgPolicy(COPILOT_APP, ['the Copilot runtime (managed settings)'], ['the Copilot runtime answer is larger than Agent Durbar reads'], 'doubt', true);
   const key = createHash('sha256').update(text).digest('hex');
   const last = lastCopilot.key === key ? lastCopilot.policy : undefined;
   if (last) return last;
   const fromRuntime = copilotOrgPolicyFromResolve(answer);
-  if (!fromRuntime) return file();
+  if (!fromRuntime) return { ...file(), runtimeUnread: 'failed' };
   lastCopilot.key = key;
   lastCopilot.policy = fromRuntime;
   return fromRuntime;
