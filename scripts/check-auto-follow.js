@@ -67,7 +67,19 @@ module.exports = async (ctx) => {
   const followed = () => js(`[...document.querySelectorAll('.is-followed')].map(n=>n.dataset.id).sort().join(',')`);
   const marks = () => js(`[...document.querySelectorAll('#stage .unread-mark')].map(m=>m.closest('[data-id]').dataset.id).sort().join(',')`);
   /* the desk's picture: the middle of a name or a card can be the rename pencil, which is there on purpose and opens a rename */
-  const openChat = async (id) => { const p = await js(`(()=>{const d=document.querySelector(${jsLiteral(sel(id))});d.scrollIntoView({block:'nearest'});const b=d.getBoundingClientRect(),x=Math.round(b.left+Math.min(24,b.width/4)),y=Math.round(b.top+b.height*0.7),e=document.elementFromPoint(x,y);return {x,y,inside:!!e&&d.contains(e)};})()`); assert.ok(p.inside, id + ': the point on its desk is the desk'); await clickAt(p.x, p.y); await ok(`document.body.classList.contains('panel-open')&&!!document.getElementById('msgInput')`, 'the chat of ' + id + ' opens'); };
+  /* Issue #1343: the office lays out again only some time after the floor changes height (the strip appearing when Auto-follow is turned on: up to
+     2 s here, longer on a loaded runner), and until then its desks overflow the floor. At 1280x800 that layout puts Priya's desk elsewhere, so a
+     point measured before it was a point on another desk by the time of the click (Omar's: the send went to him and nothing was followed). The
+     click waits for the office to fit its floor again, and the chat that opens must be the one asked for. */
+  const officeFits = `document.body.classList.contains('panel-open')||document.getElementById('stage').dataset.fit!=='ok'||document.getElementById('floor').scrollHeight<=document.getElementById('floor').clientHeight+1`;
+  const openChat = async (id) => {
+    if (!(await until(officeFits, 10000))) assert.fail('the office is laid out for its floor before ' + id + ' is clicked (floor scroll/client height: ' + await js(`(()=>{const f=document.getElementById('floor');return f.scrollHeight+'/'+f.clientHeight})()`) + ')');
+    const name = await nameOf(id);
+    const p = await js(`(()=>{const d=document.querySelector(${jsLiteral(sel(id))});d.scrollIntoView({block:'nearest'});const b=d.getBoundingClientRect(),x=Math.round(b.left+Math.min(24,b.width/4)),y=Math.round(b.top+b.height*0.7),e=document.elementFromPoint(x,y);return {x,y,inside:!!e&&d.contains(e)};})()`);
+    assert.ok(p.inside, id + ': the point on its desk is the desk');
+    await clickAt(p.x, p.y);
+    if (!(await until(`document.body.classList.contains('panel-open')&&!!document.getElementById('msgInput')&&(document.getElementById('panelTitle')||{}).textContent===${jsLiteral(name)}`, 8000))) assert.fail('the chat of ' + id + ' (' + name + ') opens (open: ' + await panelOpen() + ', title: ' + JSON.stringify(await title()) + ')');
+  };
   const backToOffice = async () => { await H.key('Escape'); await ok(`!document.body.classList.contains('panel-open')`, 'the chat closes'); };
   const send = async (id, text) => { await openChat(id); await mclick('#msgInput'); await type(text); await H.key('Return'); };
   /* accepted, with no scripted reply after it: the event the step emits is the only arrival (the script's own Done would replace an error) */
@@ -249,12 +261,15 @@ module.exports = async (ctx) => {
     await setting(true);
     const S1 = A, S2 = B, S3 = C;
 
+    /* The dialog, menu and typing steps make the arrival themselves (sendQuiet, then finish() once the guard is up), as the pointer and popover
+       steps do. They used to send for real and race the simulator's scripted reply (Done about 3 s after the send) against the guard: on a slow
+       runner the reply came first, its chat opened with nothing to hold, and the 25 s wait for "Held: ..." failed (issue #1343). */
     // a dialog holds the switch; closing it delivers
-    await send(S1, 'hello dialog');
+    await sendQuiet(S1, 'hello dialog');
     await H.key('k', MOD, { char: 'never' });
     await ok(`!!document.getElementById('palDlg')`, `${tag}: the palette (a dialog) is open`);
+    await finish(S1);
     await ok(`(document.getElementById('afText').textContent||'').startsWith('Held: a dialog is open')`, `${tag}: held by the dialog, and it says so`, 25000);
-    await settled(S1);
     await stays(`!document.body.classList.contains('panel-open')&&!!document.getElementById('palDlg')`, `${tag}: the dialog and the office stay: nothing was switched while it was open`);
     assert.ok((await strip()).text.includes('1 is waiting to open'), `${tag}: the arrival waits in the count`);
     await H.key('Escape');
@@ -263,31 +278,33 @@ module.exports = async (ctx) => {
     await backToOffice();
 
     // a menu holds it
-    await send(S1, 'hello menu');
-    await ok(`!document.body.classList.contains('panel-open')`, `${tag}: back in the office`);
+    await sendQuiet(S1, 'hello menu');
     await mclick('#topMoreBtn');
     await ok(`document.getElementById('topMoreBtn').getAttribute('aria-expanded')==='true'`, `${tag}: the More menu is open`);
+    await finish(S1);
     await ok(`(document.getElementById('afText').textContent||'').startsWith('Held: a menu is open')`, `${tag}: held by the menu`, 25000);
     await stays(`!document.body.classList.contains('panel-open')`, `${tag}: nothing switched under the open menu`);
     await H.key('Escape');
     await ok(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle').textContent===${jsLiteral(await nameOf(S1))}`, `${tag}: closing the menu delivers it`, 8000);
-    await settled(S1); await backToOffice();
+    await backToOffice();
 
     // typing in a field holds it (renaming a desk in place)
-    await send(S1, 'hello typing');
+    await sendQuiet(S1, 'hello typing');
     await ok(`!document.body.classList.contains('panel-open')&&document.activeElement&&document.activeElement.dataset.id===${jsLiteral(S1)}`, `${tag}: office, desk focused`);
     await H.key('F2');
     await ok(`document.activeElement&&document.activeElement.tagName==='INPUT'`, `${tag}: the rename field is open`);
     await type('zz');
+    await finish(S1);
     await ok(`(document.getElementById('afText').textContent||'').startsWith('Held: you are typing')`, `${tag}: held while typing`, 25000);
-    await stays(`!document.body.classList.contains('panel-open')&&String(document.activeElement.value).endsWith('zz')`, `${tag}: the field keeps its focus and text; no switch`);
+    /* longer than the 2 s a typed key holds it (FR-185), so the field having the focus is what holds it at the end */
+    await stays(`!document.body.classList.contains('panel-open')&&String(document.activeElement.value).endsWith('zz')`, `${tag}: the field keeps its focus and text; no switch`, 2600);
     /* FR-185: out of the field, a key typed in the last 2 s still holds it: a lower bound, so a slow machine cannot fail it */
     await js(`(()=>{window.__keyAt=0;window.__openAt=0;document.addEventListener('keydown',e=>{if(e.key==='q')window.__keyAt=Date.now();},true);clearInterval(window.__op);window.__op=setInterval(()=>{if(!window.__openAt&&document.body.classList.contains('panel-open'))window.__openAt=Date.now();},20);})();0`);
     await type('q');
     await H.key('Escape');
     await ok(`document.body.classList.contains('panel-open')&&window.__openAt>0`, `${tag}: leaving the field delivers it`, 10000);
     { const gap = await js(`clearInterval(window.__op);window.__openAt-window.__keyAt`); assert.ok(gap >= 1900, `${tag}: the last key held it for 2 s, then it came: ${gap} ms`); }
-    await settled(S1); await backToOffice();
+    await backToOffice();
 
     // the user opened another agent by hand: the following has ended (FR-185), so its chat, typed in and scrolled up, is never switched away from
     await send(S1, 'hello other');

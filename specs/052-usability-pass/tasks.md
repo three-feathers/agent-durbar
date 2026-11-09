@@ -408,3 +408,6 @@
 
 ## 2026-11-05: Windows UI drivers wait for the focus (issue #1179)
 - [x] T266 Windows flakes: `check-auto-follow` waits for arrivals with the real focus asked again at each look; `H.focusPage({emulate:'first'})` emulates from the start (`check-edit-popups`, `check-auto-follow`), `emulate:true` stays fallback-only (`check-list-columns`) [issue #1179, test driver only]
+
+## 2026-11-09: `check-auto-follow` waits for the office layout before a click (issue #1343)
+- [x] T268 `check-auto-follow`: `openChat` waits until the office fits its floor and asserts the chat that opened; the dialog, menu and typing hold steps send with `sendQuiet` and emit the arrival with `finish()` once their guard is up; the typing step's no-switch check outlasts the 2 s key hold (mutation-checked) [issue #1343, test driver only]
