@@ -344,6 +344,7 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 - `check-097-trouble-signs` runs in the cave too (heavy, monster, siren, the same desks as Open office, geometry, no overlap, Serious mode, words) and in the Retro arcade (no sign at a cabinet though a monster sits at it; its plate name keeps the words).
 - The cave showed the folder's "need you · Open the inbox" pill touching a siren: the slips and the pill are now placed clear of every sign (`MOOD_BOXES` on the slips' avoid list), and the driver checks that no slip lies on a sign.
 - A lounge seat: its full draw carries no mood (the lounge row's model has none), and `ctx` now gives it none either, so a context event at 95 % writes no mood words on its name and asks no draw. The driver checks a lounge seat at 95 % (Open office gives it the monster body): no sign, no mood words, by the cheap path (read in the same task as the event) and after a draw. The engine's `!d.lounge` guard alone is an equivalent mutant (the model carries no mood for a seat); the mutant that drops it and gives the seat a mood fails the driver.
+- `shots-097-moments` (coffee break, every world) expected the plate name of T284's merge without the mood's words; Open office's words for a coffee break ("On a coffee break", FR-362) now come before the context words, and the driver asks for them.
 
 ### 2026-11-08: heavy, monster and siren trouble signs on a Real office desk (issue #1171, part of #1147; FR-360..FR-362, T280..T283)
 
