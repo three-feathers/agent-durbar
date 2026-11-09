@@ -37,7 +37,7 @@ module.exports = async (ctx) => {
     const ask = (rid, q, labels) => emit({ type: 'question', phase: 'asked', requestId: rid, questions: [{ question: q, multiSelect: false, options: (labels || ['yes', 'no']).map((label) => ({ label })) }] });
     // a page per part; every answer that reaches the bridge is counted, and a limit answer can be held in flight (window.__hold)
     const fresh = async (query) => {
-      await H.load({ w, h, focus: true, query });
+      await H.load({ fastVisits: true, w, h, focus: true, query });
       const first = await H.openSimAgent(`a=>!a.parent&&a.live&&a.info&&(a.state==='idle'||a.state==='done')`, '#msgInput');
       assert.ok(first.ok, `${w}: opened an idle agent's chat ${jsLiteral(first.seen)}`);
       A = first.id;

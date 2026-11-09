@@ -26,6 +26,7 @@
   let ZOOM = null; /* {id, hover, focus, panel, plate} */
   let IO = null, DISMISSED = '';
   /* spec 052 FR-183: focus the app moves by itself onto a plate is not the person asking to read that screen */
+  let PT = ''; /* the pointer's last position in the office (x,y of its last pointermove), the format of QUIET_AT: a card held under a resting pointer (FR-328) is let go only by a move to another one */
   let QUIET_FOCUS = false, QUIET_POINTER = false, QUIET_AT = '', ARMED = false; /* QUIET_POINTER: the room came back (Esc from a chat, issue 1040) under a pointer that has not moved; hovering starts when it leaves QUIET_AT. ARMED: a hover zoom is waiting out its 120 ms (driver reads hoverState) */
   function quietFocus(fn) { QUIET_FOCUS = true; QUIET_POINTER = true; QUIET_AT = ''; try { fn(); } finally { QUIET_FOCUS = false; } }
 
@@ -526,8 +527,8 @@
     }
     if (ZOOM) {
       const zd = CUR.desks.get(ZOOM.id);
-      if (!zd || zd.state === 'asleep' || hiddenNow()) closeZoom(); /* FR-035: an asleep screen is off, nothing to read */
-      else placeZoom();
+      if (!zd || hiddenNow()) closeZoom(); /* FR-328: an asleep agent's card stays (its glass is dark, the card has its reply) */
+      else { if (ZOOM.st !== zd.state) { fillZoom(); ZOOM.held = PT || '?'; } placeZoom(); } /* FR-328 (2026-11-08): the card follows the agent's state as its facts do (FR-315): asleep or back, it is filled again, not left with the old tool log */
     }
     settle(chrome, lay.width);
     return lay;
@@ -893,30 +894,39 @@
 
   /* ---- FR-034: the zoom ---- */
   const ZOOM_W = [380, 480], ZOOM_HEAD = 44, ZOOM_LH = 17, ZOOM_ROWS = 12, ZOOM_MIN_ROWS = 4;
-  const ZWIDE = new Set(['Model', 'Now', 'Last tool', 'Usage']);
+  const ZWIDE = new Set(['Model', 'Now', 'Last tool', 'Usage', 'Changed']);
   function wireZoom(ro) {
     let wait = 0;
+    /* spec 097 FR-327: the agent a pointer is over: its monitor, person, desk (or lounge table) or name plate, never a visitor, chip or lobby plate */
+    const hid = (n) => { const t = n && n.closest && n.closest('.ro-screen, .ro-person, .ro-person2, .ro-rig, .ro-initials, .ro-marquee, .ro-desk, .ro-ltable, .ro-plate'); return t ? (t.classList.contains('ro-plate') ? t.dataset.id : t.dataset.for) || '' : ''; };
+    const arm = (id) => { clearTimeout(wait); ARMED = true; wait = setTimeout(() => { ARMED = false; openZoom(id, 'hover'); }, 120); };
+    /* FR-328: the agent changed state under a resting pointer (it walked to the lounge): the browser's pointerout is not the person leaving; the next real move is */
+    ro.addEventListener('pointermove', (e) => {
+      PT = e.clientX + ',' + e.clientY;
+      if (ZOOM && ZOOM.held && ZOOM.held !== PT) { ZOOM.held = false; if (ZOOM.hover && hid(e.target) !== ZOOM.id) leaveZoom('hover'); } /* the browser repeats a move at the same place after the room changed: not the person moving (as QUIET_AT below) */
+    }, true);
+    ro.addEventListener('pointerleave', () => { if (ZOOM && ZOOM.held) { ZOOM.held = false; if (ZOOM.hover) leaveZoom('hover'); } });
     ro.addEventListener('pointermove', (e) => {
       if (!QUIET_POINTER) return;
       const at = e.clientX + ',' + e.clientY;
       if (!QUIET_AT) QUIET_AT = at;
       if (QUIET_AT === at) return;
       QUIET_POINTER = false;
-      const sc = e.target.closest && e.target.closest('.ro-screen');
-      if (sc && sc.dataset.for && e.pointerType !== 'touch' && DISMISSED !== sc.dataset.for) { clearTimeout(wait); ARMED = true; wait = setTimeout(() => { ARMED = false; openZoom(sc.dataset.for, 'hover'); }, 120); }
+      const id = hid(e.target);
+      if (id && e.pointerType !== 'touch' && DISMISSED !== id) arm(id);
     });
     ro.addEventListener('pointerover', (e) => {
-      const sc = e.target.closest && e.target.closest('.ro-screen');
+      const id = hid(e.target);
       if (QUIET_POINTER && !QUIET_AT) QUIET_AT = e.clientX + ',' + e.clientY;
-      if (QUIET_POINTER || !sc || e.pointerType === 'touch' || !sc.dataset.for) return;
-      if ((ZOOM && ZOOM.hover && ZOOM.id === sc.dataset.for) || DISMISSED === sc.dataset.for) return; /* Esc holds until the pointer has left */
-      clearTimeout(wait); ARMED = true; wait = setTimeout(() => { ARMED = false; openZoom(sc.dataset.for, 'hover'); }, 120); /* crossing the room opens nothing */
+      if (QUIET_POINTER || !id || e.pointerType === 'touch') return;
+      if ((ZOOM && ZOOM.hover && ZOOM.id === id) || DISMISSED === id) return; /* Esc holds until the pointer has left */
+      arm(id); /* crossing the room opens nothing */
     });
     ro.addEventListener('pointerout', (e) => {
-      const sc = e.target.closest && e.target.closest('.ro-screen');
-      if (!sc || (e.relatedTarget && sc.contains(e.relatedTarget))) return;
+      const id = hid(e.target);
+      if (!id || hid(e.relatedTarget) === id) return; /* still on the same agent's desk */
       clearTimeout(wait); ARMED = false; DISMISSED = '';
-      if (ZOOM && ZOOM.id === sc.dataset.for) leaveZoom('hover');
+      if (ZOOM && ZOOM.id === id && !ZOOM.held) leaveZoom('hover');
     });
     ro.addEventListener('focusin', (e) => { const p = e.target.closest && e.target.closest('.ro-plate'); if (p && !QUIET_FOCUS && p.matches(':focus-visible')) openZoom(p.dataset.id, 'focus'); });
     ro.addEventListener('focusout', (e) => { const p = e.target.closest && e.target.closest('.ro-plate'); if (p && ZOOM && ZOOM.id === p.dataset.id) leaveZoom('focus'); });
@@ -924,11 +934,11 @@
   function zoomKey(e) {
     if (e.key !== 'Escape' || !ZOOM) return;
     if (hiddenNow()) { closeZoom(); return; } /* the office is covered: this Escape is for what covers it */
+    if (document.querySelector('#modeMenu,#modelMenu,#agentMenu,#ctxMenu')) return; /* FR-328: an open menu is above the card: this Escape closes the menu first (the card is not told apart from it; it goes with its hover or focus) */
     e.preventDefault(); e.stopPropagation(); DISMISSED = ZOOM.hover ? ZOOM.id : ''; closeZoom();
   }
   function openZoom(id, why) {
     if (!CUR || hiddenNow() || !CUR.desks.has(id) || !CUR.screenOf) return;
-    if (CUR.desks.get(id).state === 'asleep') return; /* FR-035: an asleep screen is off, nothing to read */
     if (!ZOOM || ZOOM.id !== id) {
       closeZoom();
       const p = document.createElement('div'); p.className = 'ro-zoom'; p.id = 'roZoom'; p.setAttribute('role', 'region');
@@ -937,9 +947,11 @@
       ZOOM = { id, hover: false, focus: false, panel: p, plate: CUR.ro.querySelector('.ro-plate[data-id="' + CSS.escape(id) + '"]') };
       if (ZOOM.plate) ZOOM.plate.setAttribute('aria-describedby', 'roZoom');
       document.addEventListener('keydown', zoomKey, true);
+      document.addEventListener('focusin', replaceZoom, true); document.addEventListener('focusout', replaceLater, true);
       addEventListener('blur', closeZoom);
+      addEventListener('focus', replaceZoom); /* FR-330: a slip focused by script while the window was in the background fired no focusin; the place is sought again when the window has the focus */
       const fl = CUR.ro.closest('#floor'); if (fl) { ZOOM.floor = fl; fl.addEventListener('scroll', closeZoom, { passive: true }); }
-      fillZoom(); placeZoom();
+      fillZoom(); if (!placeZoom()) return; /* FR-330: no place that leaves the focused slip uncovered: no card */
     }
     ZOOM[why] = true;
   }
@@ -950,37 +962,52 @@
     z.panel.remove();
     if (z.plate) z.plate.removeAttribute('aria-describedby');
     document.removeEventListener('keydown', zoomKey, true);
+    document.removeEventListener('focusin', replaceZoom, true); document.removeEventListener('focusout', replaceLater, true);
     removeEventListener('blur', closeZoom);
+    removeEventListener('focus', replaceZoom);
     if (z.floor) z.floor.removeEventListener('scroll', closeZoom);
     for (const id of z.under || []) { const s = SCR.get(id); if (!s || !s.away) setOff(id, false); }
+    if (CUR && CUR.ro) for (const e of CUR.ro.querySelectorAll('.ro-slip[inert]')) e.removeAttribute('inert');
   }
   /* name, role, status, folder and the last lines, textContent only (FR-031, FR-034); a described region, not a live one */
   function fillZoom() {
     const a = CUR.agents.get(ZOOM.id), d = CUR.desks.get(ZOOM.id), p = ZOOM.panel;
     if (!a || !d) return;
     p.setAttribute('aria-label', 'Screen of ' + a.name);
-    p.dataset.state = d.state; p.dataset.for = ZOOM.id;
+    p.dataset.state = d.state; p.dataset.for = ZOOM.id; ZOOM.st = d.state;
     text(p.querySelector('.ro-zh b'), a.name); text(p.querySelector('.ro-zr'), a.role); text(p.querySelector('.ro-zs'), a.word); text(p.querySelector('.ro-zf'), a.folder);
-    const data = CUR.screenOf(ZOOM.id, d.state, a.word);
+    const data = CUR.screenOf(ZOOM.id, d.state, a.word, true); /* true: for the card (FR-328: an asleep agent's reply lines) */
     const host = p.querySelector('.ro-zl');
     fillRows(host, data.lines);
     /* spec 097 FR-312: the facts, label and text, two to a line; textContent only */
     const facts = (CUR.factsOf ? CUR.factsOf(ZOOM.id) : []).slice(0, 8), kb = p.querySelector('.ro-zk');
     kb.textContent = '';
-    for (const [k, v] of facts) { const l = document.createElement('span'); l.className = ZWIDE.has(k) ? 'ro-zi ro-zw' : 'ro-zi'; const kk = document.createElement('span'); kk.className = 'ro-zy'; text(kk, k); l.appendChild(kk); l.appendChild(document.createTextNode(' ')); const vv = document.createElement('span'); vv.className = 'ro-zv'; text(vv, v); l.appendChild(vv); kb.appendChild(l); }
+    for (const [k, v] of facts) { const l = document.createElement('span'); l.className = k === 'Changed' ? 'ro-zi ro-zw ro-zc' : ZWIDE.has(k) ? 'ro-zi ro-zw' : 'ro-zi'; const kk = document.createElement('span'); kk.className = 'ro-zy'; text(kk, k); l.appendChild(kk); l.appendChild(document.createTextNode(' ')); const vv = document.createElement('span'); vv.className = 'ro-zv'; text(vv, v); l.appendChild(vv); kb.appendChild(l); }
     const wide = facts.filter(([k]) => ZWIDE.has(k)).length; /* long ones take a whole line, cut with an ellipsis when too long (FR-313) */
-    ZOOM.kh = facts.length ? (wide + Math.ceil((facts.length - wide) / 2)) * ZOOM_LH + 9 : 0; /* .ro-zk: 4 px padding above and below, a 1 px rule */ kb.hidden = !facts.length;
+    const extra = facts.filter(([k, v]) => k === 'Changed' && Array.from(v).length + 8 > 54).length; /* FR-329: a Changed line wraps, so it takes a second row */
+    ZOOM.kh = facts.length ? (wide + extra + Math.ceil((facts.length - wide) / 2)) * ZOOM_LH + 9 : 0; /* .ro-zk: 4 px padding above and below, a 1 px rule */ kb.hidden = !facts.length;
     ZOOM.rows = data.lines.reduce((n, l) => n + Math.max(1, Math.ceil(Array.from(l.t).length / 52)), 0);
   }
   function placeZoom() {
     const ro = CUR.ro, o = ro.getBoundingClientRect(), fl = ro.closest('#floor'), f = fl ? fl.getBoundingClientRect() : o, d = CUR.desks.get(ZOOM.id);
     const near = (e) => { const b = e.getBoundingClientRect(); return { x: b.left - o.left, y: b.top - o.top, w: b.width, h: b.height }; };
-    const avoid = [d.screen, ...[...ro.querySelectorAll('.ro-plate:is(.st-waiting,.st-limit), .ro-lplate.wait, .ro-chip.wait')].map(near)];
+    const slipRects = [...ro.querySelectorAll('.ro-slip:not([hidden])')].map(near);
+    const avoid = [d.screen, ...[...ro.querySelectorAll('.ro-plate:is(.st-waiting,.st-limit), .ro-lplate.wait, .ro-chip.wait')].map(near), ...slipRects]; /* FR-330 (2026-11-08): a slip or bubble (FR-110) is avoided too; the card is painted above them (CSS) for when no free place is left */
     if (ZOOM.plate) avoid.push(near(ZOOM.plate));
     const view = { x: Math.max(0, f.left - o.left), y: Math.max(0, f.top - o.top), w: Math.min(f.right, o.right) - Math.max(f.left, o.left), h: Math.min(f.bottom, o.bottom) - Math.max(f.top, o.top) };
     const w = Math.max(ZOOM_W[0], Math.min(ZOOM_W[1], view.w * 0.34));
     const HEAD = ZOOM_HEAD + (ZOOM.kh || 0), rows = Math.max(ZOOM_MIN_ROWS, Math.min(ZOOM_ROWS, ZOOM.rows || 0));
-    const r = X().zoomRect(d.screen, avoid, view, { w, h: HEAD + rows * ZOOM_LH + 12, minH: HEAD + ZOOM_MIN_ROWS * ZOOM_LH + 12 });
+    const size = { w, h: HEAD + rows * ZOOM_LH + 12, minH: HEAD + ZOOM_MIN_ROWS * ZOOM_LH + 12 };
+    let r = X().zoomRect(d.screen, avoid, view, size);
+    /* FR-330 (2026-11-08, round 3 of #1313): the card is never over the slip that holds the keyboard focus (a click through the card, which takes no pointer events, would press a hidden button). That slip is the avoid list's first claim: when the place found covers it, the other slips are let go and the place is sought again; when none is left, no card */
+    const act = document.activeElement, fs = act && act.closest && act.closest('.ro-slip:not([hidden])');
+    if (fs && ro.contains(fs)) {
+      const fr = near(fs), hits = (q) => q.x < fr.x + fr.w && fr.x < q.x + q.w && q.y < fr.y + fr.h && fr.y < q.y + q.h;
+      if (hits(r)) {
+        r = X().zoomRect(d.screen, avoid.filter((a) => !slipRects.includes(a)).concat([fr]), view, size);
+        if (hits(r)) { closeZoom(); return false; }
+      }
+    }
     box(ZOOM.panel, r); ZOOM.panel.dataset.side = r.side;
     setVar(ZOOM.panel, '--ro-zh', Math.max(1, Math.floor((r.h - HEAD - 8) / ZOOM_LH)) * ZOOM_LH + 'px');
     /* what the panel covers whole stands still until it closes */
@@ -988,7 +1015,21 @@
     for (const [id, de] of CUR.desks) if (id !== ZOOM.id && de.person && de.person.x >= r.x && de.person.x + de.person.w <= r.x + r.w && de.person.y >= r.y && de.person.y + de.person.h <= r.y + r.h) { under.push(id); setOff(id, true); }
     for (const id of ZOOM.under || []) if (!under.includes(id)) { const s = SCR.get(id); if (!s || !s.away) setOff(id, false); }
     ZOOM.under = under;
+    ZOOM.rect = r; coverSlips();
+    return true;
   }
+  /* FR-330: a slip the card still covers (no free place was left) takes no click or key while it is hidden under the card; the slip that holds the keyboard focus is never under it (placeZoom), so it needs no exception. The place is sought again when the focus moves */
+  function coverSlips() {
+    if (!ZOOM || !ZOOM.rect || !CUR || !CUR.ro) return;
+    const ro = CUR.ro, o = ro.getBoundingClientRect(), r = ZOOM.rect;
+    for (const e of ro.querySelectorAll('.ro-slip')) {
+      const q = e.getBoundingClientRect(), x = q.left - o.left, y = q.top - o.top;
+      const hit = !e.hidden && x < r.x + r.w && r.x < x + q.width && y < r.y + r.h && r.y < y + q.height;
+      if (hit) e.setAttribute('inert', ''); else e.removeAttribute('inert');
+    }
+  }
+  const replaceZoom = () => { if (ZOOM && CUR && CUR.desks.has(ZOOM.id)) placeZoom(); };
+  const replaceLater = () => setTimeout(replaceZoom, 0);
 
   /* Paco's review of #921 (art): a lobby place plate reads in full (never an ellipsis) when there is room: a plate wider than its
      slot grows to the right, then to the left, into free space only (up to the next plate on the same rows or the band's edge); no
