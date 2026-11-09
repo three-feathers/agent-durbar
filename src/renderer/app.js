@@ -8142,8 +8142,11 @@ async function openAgentMenu(a0,x,y,anchor){
 /* select (null id = default); a repository agent asks once with what it brings (spec 043 US2) */
 async function applyProfile(a,p,anchor){
   let r=await bridge.selectProfile(a.id,p.id||null).catch(err=>({ok:false,error:String(err&&err.message||err)}));
-  if(r&&r.needsConfirm){
-    const q=r.profile||p, lines=[];
+  /* spec 043 FR-044: the answer names the hash of the text shown; a file changed since then is shown again (a few times at most) */
+  for(let n=0;r&&r.needsConfirm;n++){
+    if(n>=3){r={ok:false,error:'the profile file keeps changing; try again later'};break;}
+    const q=r.profile||p, sha=r.sha256, lines=[];
+    if(n>0)lines.push('The file changed after the last question: this is its new version.');
     lines.push('Tools: '+(q.tools?(q.tools.length?q.tools.join(', '):'none'):'all the tools of this session'));
     lines.push('Preferred model: '+(q.model||'none (the session model)'));
     lines.push('MCP servers it starts: '+(q.mcpServers&&q.mcpServers.length?q.mcpServers.join(', '):'none'));
@@ -8151,7 +8154,7 @@ async function applyProfile(a,p,anchor){
     const ok=await askDialog({title:'Use the profile '+q.name+' from this folder?',body:'This profile comes from the folder\'s repository, so someone else may have written it. It changes how the agent answers and which tools it uses; your permission mode stays as it is. Asked once for this folder and this version of the file.',lines,returnFocus:anchor||$('agentChip'),
       buttons:[{label:'Cancel',value:null},{label:'Use this profile',value:'ok',cls:'primary'}]});
     if(!ok)return;
-    r=await bridge.selectProfile(a.id,q.id,true).catch(err=>({ok:false,error:String(err&&err.message||err)}));
+    r=await bridge.selectProfile(a.id,q.id,{sha256:sha}).catch(err=>({ok:false,error:String(err&&err.message||err)}));
   }
   if(!r||!r.ok){toast('Could not change the profile: '+esc((r&&r.error)||'unknown error'),5000);return;}
   a.profile=r.profile?Object.assign({},(a.profileList||[]).find(x=>x.id===r.profile.id)||{},r.profile):null;

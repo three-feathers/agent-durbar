@@ -5,6 +5,7 @@
  */
 import { createHash } from 'crypto';
 import * as fs from 'fs';
+import { readCapped, type CappedFlags, type CappedFs } from '../shared/cappedread';
 
 export interface AgentTrust {
   folder: string;
@@ -36,15 +37,51 @@ export function parseAgentTrust(text: string): AgentTrust[] {
   return out;
 }
 
-/** SHA-256 of an agent file (at most 1 MB), or undefined when it cannot be read. */
-export function hashAgentFile(file: string): string | undefined {
+/** One read of an agent file: its bytes and their SHA-256 (spec 043 FR-044). */
+export interface AgentFileBytes {
+  sha256: string;
+  bytes: Buffer;
+}
+
+/** The file calls `readAgentFile` uses; tests pass flags without `O_NOFOLLOW`, as on Windows. */
+export interface AgentFileFs {
+  io: CappedFs;
+  flags: CappedFlags;
+  lstat(file: string): { isSymbolicLink(): boolean; dev: number; ino: number };
+}
+const nodeFs: AgentFileFs = { io: fs, flags: fs.constants, lstat: (f) => fs.lstatSync(f) };
+
+/**
+ * Spec 043 FR-044: an agent file's bytes and their SHA-256 from ONE open, so the hash is of exactly the bytes used. Never follows a
+ * final link: `O_NOFOLLOW` where defined; where it is not (Windows) an `lstat` first refuses a link, and the opened file must be the
+ * one it saw (same `dev` and `ino`, which on NTFS is the file index). `fstat` on the descriptor: a regular file with one link, at most
+ * 1 MB (`readCapped`). Undefined when it cannot be read.
+ */
+export function readAgentFile(file: string, d: AgentFileFs = nodeFs): AgentFileBytes | undefined {
+  let seen: { dev: number; ino: number } | undefined;
   try {
-    const st = fs.statSync(file);
-    if (!st.isFile() || st.size > MAX_AGENT_FILE) return undefined;
-    return createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+    if (!d.flags.O_NOFOLLOW) {
+      const st = d.lstat(file);
+      if (st.isSymbolicLink()) return undefined;
+      seen = { dev: st.dev, ino: st.ino };
+    }
   } catch {
     return undefined;
   }
+  const vet = (st: { isFile(): boolean; size: number; nlink: number; dev: number; ino: number }): string | undefined => (seen && (st.dev !== seen.dev || st.ino !== seen.ino) ? 'replaced' : undefined);
+  const r = readCapped(d.io, d.flags, file, MAX_AGENT_FILE, vet);
+  return r.ok ? { sha256: createHash('sha256').update(r.buf).digest('hex'), bytes: r.buf } : undefined;
+}
+
+/** SHA-256 of an agent file (at most 1 MB, `readAgentFile`), or undefined when it cannot be read. */
+export function hashAgentFile(file: string): string | undefined {
+  return readAgentFile(file)?.sha256;
+}
+
+/** Spec 043 FR-044: the confirmation of `agents:selectProfile` is `{ sha256 }` of the text the dialog showed; anything else is not one. */
+export function shownSha(confirm: unknown): string | undefined {
+  const s = confirm && typeof confirm === 'object' ? (confirm as { sha256?: unknown }).sha256 : undefined;
+  return typeof s === 'string' && /^[0-9a-f]{64}$/.test(s) ? s : undefined;
 }
 
 export class AgentTrustStore {
