@@ -1070,8 +1070,12 @@ export interface DurbarApi {
   openElicitationUrl?(id: string, requestId: string): Promise<{ ok: boolean; error?: string }>;
   /** Custom agents the session can use (spec 043); `trusted` is false for a repository agent not yet confirmed for this folder and file. */
   listProfiles?(id: string): Promise<{ ok: boolean; error?: string; profiles: (ProfileInfo & { trusted: boolean })[] }>;
-  /** Select a custom agent (null = default). A repository agent not yet confirmed answers `needsConfirm`; call again with `confirm` after the user agreed. */
-  selectProfile?(id: string, profileId: string | null, confirm?: boolean): Promise<{ ok: boolean; error?: string; needsConfirm?: boolean; profile?: ProfileInfo | null }>;
+  /**
+   * Select a custom agent (null = default). A repository agent not yet confirmed answers `needsConfirm` with the profile to show and
+   * `sha256`, the hash of the file text it comes from; after the user agreed, call again with `confirm: { sha256 }` (spec 043 FR-044).
+   * A file that changed meanwhile answers `needsConfirm` again with its new profile and hash.
+   */
+  selectProfile?(id: string, profileId: string | null, confirm?: { sha256: string }): Promise<{ ok: boolean; error?: string; needsConfirm?: boolean; profile?: ProfileInfo | null; sha256?: string }>;
   /** Spec 043 FR-010: the profile files of the office's folders and the user (main lists them; `folders` = the places a new file can go, by id, FR-020; `userDirs` = each app's user agent folder, for the New profile hint, FR-013). */
   listProfileFiles?(): Promise<{ ok: boolean; error?: string; folders: ProfileFolderInfo[]; files: ProfileFileInfo[]; userDirs?: { copilot?: string; claude?: string } }>;
   /** Spec 043 FR-011/FR-012: read by id only (never a path); text with LF line endings, `sha256` of the bytes on disk. */

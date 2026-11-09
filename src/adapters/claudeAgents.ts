@@ -35,6 +35,15 @@ export function parseClaudeAgent(text: string, fileName: string, source: AgentPr
   };
 }
 
+/**
+ * Spec 043 FR-044: the agent that these exact bytes of `file` define (main read them once and hashed them), so what the confirmation
+ * shows and what the session starts with come from the same bytes. Undefined over the 64 KB cap or when unusable.
+ */
+export function claudeAgentOfBytes(bytes: Buffer, file: string, source: AgentProfile['source']): ClaudeAgentDef | undefined {
+  if (bytes.length > MAX_AGENT_BYTES) return undefined;
+  return parseClaudeAgent(bytes.toString('utf8'), path.basename(file), source, file);
+}
+
 function readDir(dir: string, source: AgentProfile['source'], out: Map<string, ClaudeAgentDef>): void {
   let names: string[];
   try {

@@ -178,6 +178,7 @@
     "test:claudeadapter": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-claude-adapter.js",
     "test:claudehistory": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-claude-history.js",
     "test:agentprofiles": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-agentprofiles.js",
+    "test:agentconfirm": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-agentconfirm.js",
     "test:profilefiles": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-profilefiles.js",
     "test:profileeditor": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-profileeditor.js",
     "test:profilegen": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-profilegen.js",

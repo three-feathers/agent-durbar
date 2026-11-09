@@ -4,7 +4,8 @@ import type { AdapterRouter } from '../../adapters/router';
 import type { AgentInfo } from '../../shared/api';
 import { errText } from '../agentops';
 import type { AgentTrustStore } from '../agenttrust';
-import { hashAgentFile } from '../agenttrust';
+import { hashAgentFile, readAgentFile, shownSha } from '../agenttrust';
+import type { AgentFileRead } from '../../adapters/types';
 import { PROFILE_ID } from '../folders';
 import type { ProfileFreshness } from '../profilefiles';
 import { createProfileFile, createProfileFreshness, deleteProfileFile, listAgentProfilesFresh, listProfileFiles, pathOfProfile, profileDirs, profileFolders, readProfileFile, saveProfileFile, userAgentDirs } from '../profilefiles';
@@ -58,19 +59,27 @@ export function register(deps: ProfilesIpcDeps): void {
     if (profileId !== null && (typeof profileId !== 'string' || !PROFILE_ID.test(profileId))) return { ok: false, error: 'Unknown agent.' };
     try {
       await ensureLive(a);
+      let file: AgentFileRead | undefined;
       if (profileId !== null) {
         const p = (await ad.listAgentProfiles?.(a.id))?.find((x) => x.id === profileId);
         if (!p) return { ok: false, error: 'That agent is not available in this session.' };
         if (p.source === 'repo') {
-          const sha = p.path ? hashAgentFile(p.path) : undefined;
-          if (!sha) return { ok: false, error: 'The agent file could not be read.' };
-          if (!agentTrust()?.isTrusted(wsKey(a), p.id, sha)) {
-            if (confirm !== true) return { ok: false, needsConfirm: true, profile: p };
-            agentTrust()?.trust(wsKey(a), p.id, sha);
+          // FR-044: one read gives the hash, the profile the dialog shows and the bytes the session uses; the confirmation names that hash
+          const got = p.path ? readAgentFile(p.path) : undefined;
+          file = got && p.path ? { path: p.path, bytes: got.bytes } : undefined;
+          const shown = file ? (ad.agentProfileOfFile ? ad.agentProfileOfFile(a.id, p.id, file) : p) : undefined;
+          if (!got || !shown) return { ok: false, error: 'The agent file could not be read.' };
+          if (!agentTrust()?.isTrusted(wsKey(a), p.id, got.sha256)) {
+            if (confirm === undefined || confirm === null) return { ok: false, needsConfirm: true, profile: shown, sha256: got.sha256 };
+            const sha = shownSha(confirm);
+            if (!sha) return { ok: false, error: 'invalid request' };
+            // the file is not the text the dialog showed: show the new text and ask again
+            if (sha !== got.sha256) return { ok: false, needsConfirm: true, profile: shown, sha256: got.sha256 };
+            agentTrust()?.trust(wsKey(a), p.id, got.sha256);
           }
         }
       }
-      const profile = await ad.selectAgentProfile(a.id, profileId as string | null);
+      const profile = await ad.selectAgentProfile(a.id, profileId as string | null, file);
       return { ok: true, profile };
     } catch (err) {
       return { ok: false, error: errText(err) };
