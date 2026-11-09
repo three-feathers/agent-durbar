@@ -22,13 +22,19 @@ const path = require('path');
    CHECK_DARK is the manifest, CHECK_DARK_QUERY loads it in the simulator (`theme` + `usertheme`), and `window.THEME.setTheme(CHECK_DARK)` switches to it in a loaded page. */
 const CHECK_DARK = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'themes', 'check-dark.json'), 'utf8'));
 const CHECK_DARK_QUERY = { theme: CHECK_DARK.id, usertheme: JSON.stringify(CHECK_DARK) };
-/* spec 102 T226: a run that says "dark" must be on the dark fixture: the theme on screen is `check-dark` and the page (`--bg`) is dark (luminance under 0.2).
-   A renamed or swapped fixture file then fails the run instead of being measured under its own name. Returns the problem text, or '' when it is right. */
-async function darkFixtureProblem(ctx) {
-  const on = await ctx.js(`(()=>{const e=document.createElement('i');e.style.cssText='position:fixed;background:var(--bg)';document.body.appendChild(e);const c=getComputedStyle(e).backgroundColor;e.remove();const m=/\\d+(\\.\\d+)?/g,v=(c.match(m)||[]).slice(0,3).map(Number);const l=v.length===3?(0.2126*v[0]+0.7152*v[1]+0.0722*v[2])/255:1;return {id:window.THEME.current().id,bg:c,lum:l}})()`);
+/* spec 102 T226: a run that says "dark" must be on the dark fixture: the theme on screen is `check-dark` and the page (`--bg`) is an opaque fill with luminance under 0.2.
+   A transparent or unparsable `--bg` is not dark (review of PR #1276, B). `darkProblem` judges what the page reported; `darkFixtureProblem` reads it. Both return the problem text, or '' when it is right. */
+function darkProblem(on) {
   if (on.id !== CHECK_DARK.id) return `the dark run is on theme "${on.id}", not the fixture "${CHECK_DARK.id}"`;
-  if (!(on.lum < 0.2)) return `the dark run's page is not dark (--bg ${on.bg}, luminance ${on.lum.toFixed(2)})`;
+  const v = /^rgba?\(/.test(String(on.bg)) ? (String(on.bg).match(/\d+(\.\d+)?/g) || []).map(Number) : [];
+  const alpha = v.length === 3 ? 1 : v.length === 4 ? v[3] : NaN; /* rgb() has none; rgba() carries it as the fourth number */
+  if (!(v.length === 3 || v.length === 4) || !(alpha >= 0.9)) return `the dark run's page is not an opaque fill (--bg ${on.bg})`;
+  const lum = (0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]) / 255;
+  if (!(lum < 0.2)) return `the dark run's page is not dark (--bg ${on.bg}, luminance ${lum.toFixed(2)})`;
   return '';
+}
+async function darkFixtureProblem(ctx) {
+  return darkProblem(await ctx.js(`(()=>{const e=document.createElement('i');e.style.cssText='position:fixed;background:var(--bg)';document.body.appendChild(e);const c=getComputedStyle(e).backgroundColor;e.remove();return {id:window.THEME.current().id,bg:c}})()`));
 }
 const LIMIT = 8000;
 const INDEX = path.join(__dirname, '..', 'dist', 'renderer', 'index.html');
@@ -310,4 +316,4 @@ async function shotWithView(win, view, file) {
   fs.writeFileSync(file, nativeImage.createFromBitmap(base, { width: size.width, height: size.height }).toPNG());
 }
 
-module.exports = { waits, helpers, guardWindow, jsLiteral, shotWithView, LIMIT, INDEX, CHECK_DARK, CHECK_DARK_QUERY, darkFixtureProblem };
+module.exports = { waits, helpers, guardWindow, jsLiteral, shotWithView, LIMIT, INDEX, CHECK_DARK, CHECK_DARK_QUERY, darkFixtureProblem, darkProblem };

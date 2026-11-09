@@ -198,5 +198,5 @@ jobs:
           OFFICE_REDUCED_MOTION: 1
           THEME: ${{ matrix.theme }}
         run: |
-          if [ "$THEME" = user ]; then export OFFICE_USER_THEME=scripts/fixtures/themes/check-user.json; else export OFFICE_USER_THEME=scripts/fixtures/themes/check-dark.json; fi
+          if [ "$THEME" = user ]; then export OFFICE_USER_THEME=scripts/fixtures/themes/check-user.json; else export OFFICE_USER_THEME=scripts/fixtures/themes/check-dark.json CHECK_EXPECT_DARK=1; fi
           npm run check:office

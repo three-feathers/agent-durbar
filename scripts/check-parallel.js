@@ -94,8 +94,8 @@ const variants = themes
   ? [{ name: 'clean-office', env: { DURBAR_THEME: 'clean-office', OFFICE_THEME: 'clean-office' } }]
       // spec 102 T226 (FR-267): the dark fixture user theme (dark page, its own display font) takes Retro Pixel's two places
       // spec 077 FR-070: Cheeky is a Characters choice, not a theme: measured on top of the dark theme
-      .concat([{ name: 'dark theme', env: { OFFICE_USER_THEME: DARK_THEME } }])
-      .concat([{ name: 'dark theme + cheeky', env: { OFFICE_USER_THEME: DARK_THEME, OFFICE_CHARACTERS: 'cheeky' } }])
+      .concat([{ name: 'dark theme', env: { OFFICE_USER_THEME: DARK_THEME, CHECK_EXPECT_DARK: '1' } }])
+      .concat([{ name: 'dark theme + cheeky', env: { OFFICE_USER_THEME: DARK_THEME, CHECK_EXPECT_DARK: '1', OFFICE_CHARACTERS: 'cheeky' } }])
       .concat([{ name: 'user theme', env: { OFFICE_USER_THEME: 'scripts/fixtures/themes/check-user.json' } }])
   : [{ name: 'default', env: {} }, { name: 'real office', env: { OFFICE_VIEW: 'real' } }, { name: 'real office wide font', env: { OFFICE_VIEW: 'real', OFFICE_FONT: 'DejaVu Sans' } }, { name: 'arcade', env: { OFFICE_VIEW: 'real', OFFICE_WORLD: 'retro' } }]; // spec 097 FR-091: the Real office variant of check-office-overlap.js
 const jobs = [];

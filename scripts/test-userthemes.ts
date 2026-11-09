@@ -59,7 +59,8 @@ assert.deepStrictEqual(checkUserManifest('{"id":"x","ui":"retro","scene":"pixel"
   // no script names the built-in Retro as the second theme of a layout check: the fixture is that theme (a script that tests Retro itself is on the T230 list)
   const SCRIPTS = path.join(__dirname, '..', '..', 'scripts');
   for (const f of ['check-theme-geometry.js', 'shots-052-addleft.js', 'check-sched-top.js', 'check-chat-title.js', 'check-inbox-avatar.js', 'check-rail.js', 'check-status-filter.js', 'check-no-demo-badge.js', 'check-status-tooltip.js', 'check-composer-toolbar.js', 'check-office-fill.js', 'check-perf.js']) {
-    assert.ok(!/'retro'/.test(fs.readFileSync(path.join(SCRIPTS, f), 'utf8')), `${f} no longer names Retro as its second theme`);
+    // the arcade WORLD (spec 102 T220: `worldflags: 'retro'`, `surfaces('retro'`) is not the Retro theme: those two spellings are allowed, any other 'retro' fails
+    assert.ok(!/'retro'/.test(fs.readFileSync(path.join(SCRIPTS, f), 'utf8').replace(/worldflags: 'retro'|surfaces\('retro'/g, '')), `${f} no longer names Retro as its second theme`);
   }
 }
 assert.ok(checkUserManifest('{"id":"x","ui":"court-mars"}').error!.includes('ui must be one of: clean, retro'), 'only the removed names are tolerated');

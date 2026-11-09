@@ -202,11 +202,21 @@ assert.ok(office.includes(`CHECK_ALL_THEMES: \${{ (github.event_name == 'pull_re
 const geo = fs.readFileSync(path.join(ROOT, 'scripts', 'check-theme-geometry.js'), 'utf8');
 assert.ok(/process\.env\.CHECK_ALL_THEMES === '1' \? ALL_THEMES : 'dark'/.test(geo) && /const ALL_THEMES = 'dark,user,pink-studio'/.test(geo), 'check-theme-geometry: the dark fixture by default, all with CHECK_ALL_THEMES=1 (spec 102 T226)');
 assert.ok(/const THEMES = \[\['clean', \{ theme: 'clean' \}\], \['dark', CHECK_DARK_QUERY\]\];/.test(fs.readFileSync(path.join(ROOT, 'scripts', 'shots-052-addleft.js'), 'utf8')), 'shots-052-addleft: Clean Office and the dark fixture theme (spec 102 T226)');
+// review of PR #1276 (A): the dark jobs say so (CHECK_EXPECT_DARK=1), so the driver demands the dark fixture whatever its file is called; both job definitions are pinned here
+const par = fs.readFileSync(path.join(ROOT, 'scripts', 'check-parallel.js'), 'utf8');
+assert.ok(par.includes(`const DARK_THEME = 'scripts/fixtures/themes/check-dark.json';`), 'check-parallel: DARK_THEME is the dark fixture');
+assert.ok(par.includes(`env: { OFFICE_USER_THEME: DARK_THEME, CHECK_EXPECT_DARK: '1' } }`) && par.includes(`env: { OFFICE_USER_THEME: DARK_THEME, CHECK_EXPECT_DARK: '1', OFFICE_CHARACTERS: 'cheeky' } }`), 'check-parallel: both dark jobs set CHECK_EXPECT_DARK=1');
+assert.ok(ci.includes('else export OFFICE_USER_THEME=scripts/fixtures/themes/check-dark.json CHECK_EXPECT_DARK=1; fi'), 'ci.yml theme-shard: the dark entry loads the dark fixture and sets CHECK_EXPECT_DARK=1');
+const ovl = fs.readFileSync(path.join(ROOT, 'scripts', 'check-office-overlap.js'), 'utf8');
+assert.ok(ovl.includes(`process.env.CHECK_EXPECT_DARK === '1'`) && /if \(expectDark \|\| /.test(ovl) && ovl.includes('CHECK_EXPECT_DARK=1 needs OFFICE_USER_THEME'), 'check-office-overlap: CHECK_EXPECT_DARK=1 requires the dark fixture check, and a user theme');
 // FR-110: every job of every workflow has a time limit
 for (const f of fs.readdirSync(WF).filter((x) => x.endsWith('.yml'))) for (const [id, body] of Object.entries(jobsOf(fs.readFileSync(path.join(WF, f), 'utf8')))) assert.ok(/^ {4}timeout-minutes: /m.test(body), `${f} ${id} has timeout-minutes`);
 // ---- scripts/driver-helpers.js (spec 008 FR-097): the shared plumbing behaves as the drivers' own copies did ----
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const dh = require(path.join(ROOT, 'scripts', 'driver-helpers.js'));
+// review of PR #1276 (B): the dark fixture's page must be an opaque dark fill; transparent and unparsable values are not dark
+for (const [bg, ok] of [['rgb(20, 18, 43)', true], ['rgba(20, 18, 43, 1)', true], ['rgba(20, 18, 43, 0.95)', true], ['rgba(0, 0, 0, 0)', false], ['rgba(20, 18, 43, 0.5)', false], ['', false], ['transparent', false], ['color(srgb 0.1 0.1 0.1)', false], ['rgb(244, 241, 232)', false]]) assert.strictEqual(dh.darkProblem({ id: 'check-dark', bg }) === '', ok, `darkProblem ${JSON.stringify(bg)} is ${ok ? 'dark' : 'a problem'}`);
+assert.ok(dh.darkProblem({ id: 'check-user', bg: 'rgb(20, 18, 43)' }).includes('not the fixture'), 'darkProblem: another theme id is a problem');
 (async () => {
   const events: any[] = [], sizes: any[] = [], loads: any[] = [], codes: string[] = [], waited: string[] = [], shots: string[] = [], sleeps: number[] = [];
   const ctx = {
