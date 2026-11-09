@@ -87,6 +87,7 @@ test:claudetransport
 test:claudeadapter
 test:claudesdk
 test:agentprofiles
+test:agentconfirm
 test:claudehistory
 test:broadfolder
 test:remote

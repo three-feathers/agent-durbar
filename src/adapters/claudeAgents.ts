@@ -5,6 +5,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { linkedBelow } from '../shared/linkedfolders';
 import { cleanSessionTitle } from './history';
 import { parseFrontMatter } from './slashcommands';
 import type { AgentProfile } from './types';
@@ -35,6 +36,15 @@ export function parseClaudeAgent(text: string, fileName: string, source: AgentPr
   };
 }
 
+/**
+ * Spec 043 FR-044: the agent that these exact bytes of `file` define (main read them once and hashed them), so what the confirmation
+ * shows and what the session starts with come from the same bytes. Undefined over the 64 KB cap or when unusable.
+ */
+export function claudeAgentOfBytes(bytes: Buffer, file: string, source: AgentProfile['source']): ClaudeAgentDef | undefined {
+  if (bytes.length > MAX_AGENT_BYTES) return undefined;
+  return parseClaudeAgent(bytes.toString('utf8'), path.basename(file), source, file);
+}
+
 function readDir(dir: string, source: AgentProfile['source'], out: Map<string, ClaudeAgentDef>): void {
   let names: string[];
   try {
@@ -56,11 +66,19 @@ function readDir(dir: string, source: AgentProfile['source'], out: Map<string, C
   }
 }
 
-/** The session folders' `.claude/agents` (repository) and the user's `agents` folder, repository first. */
-export function listClaudeAgents(folders: readonly string[], configDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')): ClaudeAgentDef[] {
+/**
+ * The session folders' `.claude/agents` (repository) and the user's `agents` folder, repository first. A repository folder whose
+ * `.claude` or `.claude/agents` is a link (spec 043 FR-044, `linkedBelow`) is left out: nothing is listed or read through it.
+ */
+export function claudeAgentDirs(folders: readonly string[], configDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')): { dir: string; source: AgentProfile['source'] }[] {
+  const repo = [...new Set(folders)].map((f) => ({ root: f, dir: path.join(f, '.claude', 'agents') })).filter((d) => !linkedBelow(d.root, d.dir));
+  return [...repo.map((d) => ({ dir: d.dir, source: 'repo' as const })), { dir: path.join(configDir, 'agents'), source: 'user' as const }];
+}
+
+/** The agents of `claudeAgentDirs`, in that order (the first of a name wins). */
+export function listClaudeAgents(folders: readonly string[], configDir?: string): ClaudeAgentDef[] {
   const out = new Map<string, ClaudeAgentDef>();
-  for (const f of [...new Set(folders)]) readDir(path.join(f, '.claude', 'agents'), 'repo', out);
-  readDir(path.join(configDir, 'agents'), 'user', out);
+  for (const d of claudeAgentDirs(folders, configDir)) readDir(d.dir, d.source, out);
   return [...out.values()];
 }
 

@@ -2376,7 +2376,10 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         const p = simProfiles().find((x) => x.id === profileId);
         if (!p) return { ok: false, error: 'That agent is not available in this session.' };
         if (p.source === 'repo' && !simTrusted.has(p.id)) {
-          if (confirm !== true) return { ok: false, needsConfirm: true, profile: p };
+          // as main (FR-044): the confirmation names the hash of what was shown (here: the profile's fields)
+          const sha = pfHash(JSON.stringify(p));
+          if (confirm === undefined || confirm === null) return { ok: false, needsConfirm: true, profile: p, sha256: sha };
+          if (!confirm || typeof confirm !== 'object' || confirm.sha256 !== sha) return { ok: false, error: 'invalid request' };
           simTrusted.add(p.id);
         }
         emit({ type: 'agentProfile', sessionId: id, timestamp: now(), profile: p } as AgentEvent);
