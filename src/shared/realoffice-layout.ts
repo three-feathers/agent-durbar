@@ -11,7 +11,8 @@ export interface RealAgent { id: string; state: RealState; away?: string | null;
 export interface RealFolder { id: string; agents: RealAgent[]; keep?: boolean }
 export interface RealVisitor { id: string; person?: string | null; needsYou?: boolean }
 export interface RealPlace { id: string; custom?: boolean; visitors: RealVisitor[] }
-export interface RealModel { folders: RealFolder[]; places: RealPlace[] }
+/** `keepRooms`: the person saved a room order for this floor (spec 097 FR-353, owner Q31): the rooms stand in rows in that order, left to right, top to bottom, even if the picture is a little smaller */
+export interface RealModel { folders: RealFolder[]; places: RealPlace[]; keepRooms?: boolean }
 export interface SeatMeta { w: number; h: number; headTop: number; bodyH: number; hand: number }
 /** `feet` and `top`: per pose, the lowest and highest opaque row as a share of the picture's height, measured from its alpha (owner 2026-10-31 10:19) */
 export interface StandMeta { figH: number; poses: Record<string, [number, number]>; feet?: Record<string, number>; top?: Record<string, number>; foot?: Record<string, number> }
@@ -20,6 +21,8 @@ export interface StandMeta { figH: number; poses: Record<string, [number, number
 export interface RealMeta {
   /** spec 102 FR-255: a pixel world's art (one integer scale); its lobby keeps people apart */
   pixelArt?: boolean;
+  /** spec 097 FR-335 (T247): the people's own art is not pixel art (false); a hi-res crew in a pixel world is scaled to the world's people, not drawn at whole multiples of its pixels */
+  pixelPeople?: boolean;
   seat: Record<string, SeatMeta>; stand: Record<string, StandMeta>;
   fixtures: Record<string, [number, number]>; fixtureTop?: Record<string, number>; floorLine: number;
   /** the world's desk picture in its own pixels (spec 097 FR-247: the lounge's small desk keeps its shape) */
@@ -154,6 +157,18 @@ function roSetPartitions<T>(list: T[], most: number): T[][][] {
   return res;
 }
 
+/** Every split of `list` into at most `most` runs of neighbours (spec 097 FR-353): the rooms keep their order, left to right and top to bottom. */
+function roRuns<T>(list: T[], most: number): T[][][] {
+  const res: T[][][] = [];
+  const rec = (i: number, cur: T[][]): void => {
+    if (i === list.length) { res.push(cur.map((r) => r.slice())); return; }
+    cur[cur.length - 1].push(list[i]); rec(i + 1, cur); cur[cur.length - 1].pop();
+    if (cur.length < most) { cur.push([list[i]]); rec(i + 1, cur); cur.pop(); }
+  };
+  if (list.length) rec(1, [[list[0]]]);
+  return res;
+}
+
 interface Row { zones: RealFolder[]; n: number; Sw: number; scrH: number; /** FR-306: the strip's height in this row, 0 when no desk of it has helpers */ strip: number }
 interface Geom { dh: number; head: number; deskBack: number; bottom: number; stripY: number; /** the row without its strip: the desk picture is cut here */ base: number }
 
@@ -207,7 +222,7 @@ export function lobbyRange(H: number): [number, number] {
 }
 
 /** FR-011, FR-020: the rows of folders and the unit u, by search. */
-function roPack(meta: RealMeta, folders: RealFolder[], W: number, Ho: number, lobbyMin: number, hh = 0): { rows: Row[]; u: number; used: number; fits: boolean; wide: boolean } {
+function roPack(meta: RealMeta, folders: RealFolder[], W: number, Ho: number, lobbyMin: number, hh = 0, keepRooms = false): { rows: Row[]; u: number; used: number; fits: boolean; wide: boolean } {
   const total = folders.reduce((p, f) => p + f.agents.length, 0);
   const avail = Ho - lobbyMin;
   if (total <= BIG_MAX) {
@@ -229,6 +244,7 @@ function roPack(meta: RealMeta, folders: RealFolder[], W: number, Ho: number, lo
   const maxRows = many ? folders.length : 4; /* past the 15-agent scale (scrolling) many zones may take more than 4 rows */
   const cands: RealFolder[][][] = many
     ? Array.from({ length: Math.min(maxRows, folders.length) }, (_, i) => roBalanced(folders, i + 1))
+    : keepRooms ? roRuns(folders, maxRows) /* FR-353: only the splits that keep the saved order */
     : roSetPartitions(folders, maxRows).map((rs) => rs.map((zs) => zs.slice().sort((p, q) => at(p) - at(q))).sort((p, q) => at(p[0]) - at(q[0])));
   for (const part of cands) {
     const rows: Row[] = part.map((zs) => { const n = zs.reduce((p, z) => p + z.agents.length, 0); return { zones: zs, n, Sw: roSlotWidth(W, zs.length, n), scrH: 0, strip: roStrip(zs, hh) }; });
@@ -347,7 +363,7 @@ function roLobby(meta: RealMeta, places: RealPlace[], W: number, Lb: number): { 
         /* the feet (the picture's lowest opaque row) stand on the front floor plane, in front of the fixture; one scale per person,
            from its upright 'letter' pose, NEAR_SCALE larger than at the wall line. */
         const k0 = nearPx / standHeight(meta, String(v.person));
-        const k = snap ? visitorScale(k0) : k0, fw2 = sp.size[0] * k, fh2 = sp.size[1] * k; /* FR-255 (#1104): whole scale in a pixel world */
+        const k = snap && meta.pixelPeople !== false ? visitorScale(k0) : k0, fw2 = sp.size[0] * k, fh2 = sp.size[1] * k; /* FR-255 (#1104): whole scale in a pixel world */
         const px = (n: number): number => (snap ? Math.round(n) : n);
         const faces = meta.facing || 'left', st = meta.stand[String(v.person)], fb = roOwn(POSE_FRAME_B, sp.pose) && roOwn(st.poses, POSE_FRAME_B[sp.pose]) ? POSE_FRAME_B[sp.pose] : null;
         /* the two running pictures have their own canvases: each in its own box, the feet on one spot, so changing picture moves no foot */
@@ -439,12 +455,12 @@ export function realLayout(model: RealModel, viewport: { w: number; h: number },
     const rank = (x: ReturnType<typeof roPack>): number => (x.fits ? 2 : x.wide ? 1 : 0);
     /* the search, as one function of the folders, the floor's height and the strip's height `hh` (0: none), so the helper levels (FR-308) are more steps of the same search */
     const pack = (fs: typeof folders, ho: number, hh: number): ReturnType<typeof roPack> => {
-      let p = roPack(meta, fs, W, ho, lobbyMin, hh);
+      let p = roPack(meta, fs, W, ho, lobbyMin, hh, !!model.keepRooms);
       for (const most of [8, 6, 5, 4]) {
         if (p.fits) break;
         if (!fs.some((f) => f.agents.length > most)) continue;
         const parts = fs.flatMap((f) => { const k = Math.ceil(f.agents.length / most), per = Math.ceil(f.agents.length / k); return Array.from({ length: k }, (_, i) => ({ id: i ? f.id + '\u0000' + (i + 1) : f.id, agents: f.agents.slice(i * per, (i + 1) * per) })); });
-        const q = roPack(meta, parts, W, ho, lobbyMin, hh);
+        const q = roPack(meta, parts, W, ho, lobbyMin, hh, !!model.keepRooms);
         if (rank(q) > rank(p) || (rank(q) === rank(p) && (q.fits ? q.u > p.u : q.used < p.used))) p = q;
       }
       return p;

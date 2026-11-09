@@ -184,9 +184,21 @@ Spec first; the owner chose head figures with a status dot (2026-11-08 08:29 UTC
 - **CSS** (`src/renderer/realoffice.css`, no styles.css, themes.css or screens.css): `.ro-hstrip`, `.ro-hd` (the figure), `.ro-hmore`.
 - **Checks**: `test:realoffice-layout`, `scripts/check-097-helpers.js` (mutants), `OFFICE_VIEW=real check-office-overlap.js` and `check-office-ops.js`, the linked pictures by `shots-097-realoffice` and `shots-097-screens` (JPEG) and `check-097-helpers` (the helper pictures).
 
+## 2026-11-08 delta 2: drag, kept room order, arcade, lobby (FR-352..FR-355, T286..T291)
+
+- **Reused** (FR-031): `DurbarReorder.attach` (reorder.js: threshold, Esc, cancel rules, lift and slot classes, `busy()`), `reoApply` and the one saved order, `reoStepModel`'s base (`deskOrder`, `deskBase`), the folder menu's disabled-item pattern, the `#srAnnounce` live region and `RO.announce`'s words. New: a second `attach` over `#stage` with Real office kinds (plate, sign), `reoDropModel`, `hooks.still` (no ease), `roRuns` and `RealModel.keepRooms` in the layout, `data-place` on a chip, `data-pfact` items in `openPlaceMenu`.
+- **Layout** (T290): with `keepRooms` `roPack` searches `roRuns(folders)` (contiguous splits) instead of every partition; the part-split of a big folder uses the same flag.
+- **Checks**: `test:realoffice-layout`, `scripts/check-097-drag.js` (in `ui-suite`), `shots-033-order`, `check-office-ops`, `OFFICE_VIEW=real` `check-office-overlap`.
+
 ## A helper strip is one row (delta 2026-11-09; FR-338, T275..T277, bug #1384)
 
 The fix is in the engine, where the cause is: `realLayout`'s strip levels become one row, else none (the two-row step, `HELP_ROWS_MAX` and `HELP_KEEP`, is removed from `src/shared/realoffice-layout.ts`). Nothing changes in the renderer or the CSS: the strip already draws `cols` columns and `shown` heads, and with `rows` 1 the grid has one line. The arcade (`realoffice-arrangements.ts`) already takes one row. Checks: `test:realoffice-layout` re-pinned, the new driver `scripts/check-097-helper-row.js` (default and lounge scenes, 6 and 7 helpers, three worlds, both sizes; mutant), and `check-097-helpers` (its `rows === 1 || rows === 2` becomes `rows === 1`).
+
+## 2026-11-09 delta: the five crews wired (FR-335, FR-336 amended; T240..T244, T247..T249, issue #1154)
+
+- **Data** (`src/renderer/crew.js`): five `REAL_SETS` rows, no flag. Nothing else in `crew.js`, `app.js` or Settings changes: `peopleFor` and `levelFor` already drive the note.
+- **Arcade** (`src/shared/realoffice-arrangements.ts`, `realoffice-layout.ts`, `realoffice.js`, `worlds/retro/world.css`): `RealMeta.pixelPeople`; `aisleK` scales a non-pixel set to 72 grid px tall and at most `AISLE_PW_MAX` (48) wide (the smaller of the two), `AISLE_FALLBACK` lists the next frame to try, the lobby's whole-scale snap applies only to pixel people, smooth rendering for another set's people.
+- **Checks**: `test:realoffice-layout` (rows, matrix, per-crew pack), `test-realoffice-aisles` (crews in the arcade, mutants), `test:realoffice-assets` (no allow-list), `check-097-crews` (three worlds).
 
 ## A folder sign keeps its + and menu (delta 2026-11-09; FR-356, T292..T294, bug #1392)
 

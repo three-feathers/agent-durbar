@@ -4,7 +4,8 @@
 # --wait: first wait until no check is pending, still none after 90 s.
 # Waits until no check is pending, still none after 90 s (later workflows register their checks after the first ones end).
 # Blocks (prints why, exits 1) on:
-#   - a check that is not pass/skipping, or CodeQL not passed;
+#   - a check that is not pass/skipping, or CodeQL not passed; a CodeQL check GitHub skipped on a PR that changes no analysed file counts as
+#     passed only when every changed file is on the no-code list in nocode() and the alerts are 0 (spec 021 FR-089, #1420);
 #   - a PR GitHub cannot merge (conflicts): GitHub then runs only CodeQL, so the other checks look absent rather than red;
 #   - a PR that changes src/ without the Spec Kit gate and the Linux build-and-test check present and passing;
 #   - an open code-scanning alert on the PR's merge ref or head ref (a bot line comment can be carried forward after its alert is fixed);
@@ -53,8 +54,70 @@ PROSE='gsub("```(.|\n)*?```";"") | gsub("(^|\n)[ \t]*>[^\n]*";"\n") | gsub("`[^`
 HOLD_KIND="select((.user.login // \"\")|ascii_downcase|test(\"^($OWNERS_RE)\$\")) | ((.body // \"\") | $PROSE | if test(\"\\\\b(hold lifted|off hold)\\\\b\";\"i\") then \"lift\" elif test(\"\\\\b(on hold|owner hold|do not merge|don['\u2019]t merge)\\\\b\";\"i\") then \"hold\" else empty end) as \$k"
 hold=$( { gh api --paginate repos/$R/issues/$p/comments --jq ".[]|$HOLD_KIND|\"\(.created_at)\t\(.html_url)\t\(\$k)\""; gh api --paginate repos/$R/pulls/$p/reviews --jq ".[]|$HOLD_KIND|\"\(.submitted_at)\t\(.html_url)\t\(\$k)\""; gh api --paginate repos/$R/pulls/$p/comments --jq ".[]|$HOLD_KIND|\"\(.created_at)\t\(.html_url)\t\(\$k)\""; } | sort | tail -1)
 case $hold in *"	hold") bad="$bad owner-hold(owner comment of $(echo "$hold" | cut -f1): $(echo "$hold" | cut -f2); read it, wait for a written lift)";; esac
-codeql=$(gh pr checks $p | awk -F'\t' '$1=="CodeQL"{print $2}')
-alerts=$(( $(gh api "repos/$R/code-scanning/alerts?ref=refs/pull/$p/merge&state=open" --jq length) + $(gh api "repos/$R/code-scanning/alerts?ref=refs/pull/$p/head&state=open" --jq length) ))
+checks_out=$(gh pr checks $p 2>/dev/null)
+codeql=$(printf '%s\n' "$checks_out" | awk -F'\t' '$1=="CodeQL"{print $2}')
+codeql_ok=; [ "$codeql" = pass ] && codeql_ok=passed; [ -n "$codeql" ] || codeql=missing
+# FR-089 (#1420): GitHub reports CodeQL as "skipping" on a PR that changes no file it analyses. Only that literal state counts as passed (a
+# missing check may just not have registered yet), and only when every changed file is on this fixed no-code list (the default setup's
+# path filter is not readable here); an API error, an empty file list or any other file blocks (fail closed). The alerts must still be 0.
+# Dependency files: the root package-lock.json and scripts/<dir>/package-lock.json or package.json only, and only in a Dependabot PR.
+nocode() { case $1 in *.md|*.png|*.jpg|*.jpeg|*.gif|*.webp) return 0;; scripts/*/*/*) return 1;; package-lock.json|scripts/*/package-lock.json|scripts/*/package.json) return 0;; esac; return 1; }
+# every path the PR touches: added, changed and removed files, and a renamed file's old path too (a rename out of src/ is not a docs change);
+# a name with a control character (a newline would split it into two lines) is a "C" line and blocks.
+# The files API stops at 3000 files without an error, so the listed count must equal the PR's changed_files and be under 3000.
+# Dependency files are not code to CodeQL but run on install: each changed one is read at the head commit (the PR's base must be main) and
+# blocks on a dependency spec with ":" or "/" (git, file, URL, user/repo) in any dependency map, `overrides` or `resolutions` at any depth,
+# a non-empty bundledDependencies/bundleDependencies (bundled code ships in the package), a lockfile `link` entry (key and resolved) the
+# base copy does not have, a package.json `scripts`
+# object that differs from the base commit's, a lockfile below lockfileVersion 2 or without a `packages` map, a non-root, non-link lockfile
+# entry whose `resolved` is not on https://registry.npmjs.org/, or a lockfile package with an install script (hasInstallScript) that the
+# base copy does not have (a missing or unreadable base copy counts as empty); a reviewer still reads the diff (return 2 = refused).
+INSTALLS='.packages? // {}|to_entries[]|select(.value.hasInstallScript == true)|.key'
+DEPCHECK='[..|objects|(.dependencies?, .devDependencies?, .optionalDependencies?, .peerDependencies?)|objects|.[]|strings|select(test("[:/]"))] + [..|objects|(.overrides?, .resolutions?)|..|strings|select(test("[:/]"))] + [..|objects|(.bundledDependencies?, .bundleDependencies?)|select(. != null and . != false and . != [])]|length'
+LINKS='.packages? // {}|to_entries[]|select(.value.link == true)|"\(.key) \(.value.resolved)"'
+LOCKCHECK='if (.lockfileVersion|type) == "number" and .lockfileVersion >= 2 and (.packages|type) == "object" then [.packages|to_entries[]|select(.key != "" and .value.link != true)|select((.value.resolved // "")|startswith("https://registry.npmjs.org/")|not)]|length else "old-or-no-packages" end'
+SCRIPTS='(.scripts // {})|to_entries|sort_by(.key)|tojson'
+# a file of this repo at a commit, through a jq program: depraw <sha> <path> <program>
+depraw() { gh api -H 'Accept: application/vnd.github.raw+json' "repos/$R/contents/$2?ref=$1" --jq "$3"; }
+only_nocode() { local f files n pr total sha base baseref author head_i base_i head_l base_l; local -a deps; deps=()
+  files=$(gh api --paginate "repos/$R/pulls/$p/files" --jq '.[]|if ([.filename, (.previous_filename // empty)]|any(test("[\\x00-\\x1f\\x7f]"))) then "C" else "F \(.filename)", (.previous_filename // empty|"P \(.)") end') && [ -n "$files" ] || return 1
+  n=$(grep -c '^F ' <<< "$files"); pr=$(gh api "repos/$R/pulls/$p" --jq '"\(.changed_files) \(.head.sha) \(.base.sha) \(.base.ref) \(.user.login)"') || return 1
+  read -r total sha base baseref author <<< "$pr"; isnum "$total" && [ "$n" = "$total" ] && [ "$n" -lt 3000 ] || return 1
+  while IFS= read -r f; do
+    case $f in 'F '*) f=${f#F }; case $f in *package-lock.json|*package.json) deps+=("$f");; esac;; 'P '*) f=${f#P };; *) return 1;; esac
+    nocode "$f" || return 1
+  done <<< "$files"
+  [ ${#deps[@]} = 0 ] && return 0
+  [ "$author" = "dependabot[bot]" ] && [ "$baseref" = main ] || return 2
+  for f in "$sha" "$base"; do case $f in *[!0-9a-f]*|'') return 2;; esac; [ ${#f} = 40 ] || return 2; done
+  for f in "${deps[@]}"; do
+    case $f in *[!A-Za-z0-9._/-]*|*..*) return 2;; esac
+    [ "$(depraw "$sha" "$f" "$DEPCHECK")" = 0 ] || return 2
+    case $f in
+      *package-lock.json)
+        [ "$(depraw "$sha" "$f" "$LOCKCHECK")" = 0 ] || return 2
+        head_i=$(depraw "$sha" "$f" "$INSTALLS") || return 2
+        base_i=$(depraw "$base" "$f" "$INSTALLS" 2>/dev/null) || base_i=
+        printf '%s\n' "$head_i" | grep -vxF -f <(printf '%s\n' "$base_i") | grep -q . && return 2
+        head_l=$(depraw "$sha" "$f" "$LINKS") || return 2
+        base_l=$(depraw "$base" "$f" "$LINKS" 2>/dev/null) || base_l=
+        printf '%s\n' "$head_l" | grep -vxF -f <(printf '%s\n' "$base_l") | grep -q . && return 2;;
+      *package.json)
+        head_i=$(depraw "$sha" "$f" "$SCRIPTS") || return 2
+        base_i=$(depraw "$base" "$f" "$SCRIPTS" 2>/dev/null) || base_i='[]'
+        [ "$head_i" = "$base_i" ] || return 2;;
+    esac
+  done
+  depnote="; dependency files changed: CodeQL does not read them, a reviewer reads the diff"; }
+isnum() { case $1 in ''|*[!0-9]*) return 1;; esac; }
+depnote=
+if [ -z "$codeql_ok" ] && [ "$codeql" = skipping ] && printf '%s\n' "$checks_out" | grep -q $'\t'; then
+  if only_nocode; then codeql_ok="skipped (no analysed files$depnote)"; codeql="skipping(no analysed files$depnote)"
+  elif [ $? = 2 ]; then codeql="skipping(dependency files refused: not a Dependabot PR, a non-registry source, an install script or an unreadable file)"
+  else codeql="skipping(analysed or unknown files changed)"; fi
+fi
+# the open alerts on the merge and head refs, read as two numbers; an API error or a non-number blocks
+a_merge=$(gh api "repos/$R/code-scanning/alerts?ref=refs/pull/$p/merge&state=open" --jq length) && a_head=$(gh api "repos/$R/code-scanning/alerts?ref=refs/pull/$p/head&state=open" --jq length) && isnum "$a_merge" && isnum "$a_head" && alerts=$((a_merge + a_head)) || alerts="unread(code-scanning API)"
 # --paginate everywhere below: the REST lists return 30 items a page, and a long PR has more (spec 021 FR-055). --jq runs per page,
 # so the latest review per person is picked in the shell, across pages, not with jq's group_by
 changes=$(gh api --paginate repos/$R/pulls/$p/reviews --jq '.[]|select(.state!="COMMENTED" and .state!="PENDING")|"\(.user.login)\t\(.submitted_at)\t\(.state)"' | sort -k1,1 -k2,2 | awk -F'\t' -v me="$ME" '{last[$1]=$3} END{for(u in last) if(last[u]=="CHANGES_REQUESTED" && u!=me) printf "%s%s", (n++?",":""), u}')
@@ -73,10 +136,10 @@ notes=$( { gh api --paginate repos/$R/issues/$p/comments --jq "$JQ_TRUST .[]|sel
 approvals=$(gh api --paginate repos/$R/pulls/$p/reviews --jq "$JQ_TRUST .[]|select(.state!=\"COMMENTED\" and .state!=\"PENDING\" and (.user.login|trusted))|\"\(.user.login)\t\(.submitted_at)\t\(.state)\t\(.commit_id[0:8])\"" | sort -k1,1 -k2,2 | awk -F'\t' '{last[$1]=$0} END{for(u in last){split(last[u],f,"\t"); if(f[3]=="APPROVED") print "approved by: " f[1] " at " f[4] " (" f[2] ")"}}' | sort)
 [ -n "$approvals" ] && echo "$approvals"
 [ -n "$notes" ] && { echo "status notes, not counted as asks:"; echo "$notes"; }
-if [ -n "$bad" ] || [ "$codeql" != "pass" ] || [ "$alerts" != "0" ] || [ -n "$changes" ] || [ "$threads" != "0" ] || [ -n "$newer" ] || [ -n "$outside_edits" ]; then
+if [ -n "$bad" ] || [ -z "$codeql_ok" ] || [ "$alerts" != "0" ] || [ -n "$changes" ] || [ "$threads" != "0" ] || [ -n "$newer" ] || [ -n "$outside_edits" ]; then
   echo "#$p not ready: checks=[$bad] codeql=$codeql alerts=$alerts changes_requested=[$changes] open_threads=$threads"
   [ -n "$newer" ] && { echo "unanswered human comments (read, answer or fix, then rerun; an outside one goes to your human as its link):"; echo "$newer"; }
   [ -n "$outside_edits" ] && { echo "comments last edited by an outside account (not shown, for a human):"; echo "$outside_edits"; }
   exit 1
 fi
-echo "#$p ready to merge: checks green, CodeQL passed, no open alerts, no requested changes, no open threads, no unanswered comments"
+echo "#$p ready to merge: checks green, CodeQL $codeql_ok, no open alerts, no requested changes, no open threads, no unanswered comments"

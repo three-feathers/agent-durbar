@@ -2,6 +2,7 @@
  * Office layout check (spec 001 FR-021, T025): no overlaps, no clipping, no floor overflow.
  *
  *   npm run check:office                       (builds, then runs this file under Electron; xvfb-run on Linux without DISPLAY)
+ *   OFFICE_VIEW=real OFFICE_WORLD=retro|cave      the Real office variant in the arcade or the cave; OFFICE_ROOM_ORDER=reversed saves a room order first (spec 097 FR-353)
  *   OFFICE_SHOTS=/path/dir npm run check:office  also saves a screenshot per combination as <dir>/<prefix>-sim15-1440x900-office.png
  *
  * Runs against the simulator only (no AI credits). For SIM=12 and SIM=15, at 1440x900 and 1280x800, and again after expanding a `+N more` chip,
@@ -548,12 +549,15 @@ async function driver(ctx) {
     for (const [sim, rooms] of [[3, ''], [12, ''], [15, ''], [15, '1'], [15, 'solo']]) for (const [w, h] of SIZES) {
       if (!mine()) continue;
       const tag = `real sim${sim}${rooms ? '-rooms' + rooms : ''}-${w}x${h}`;
-      await load(`sim=${sim}&simfreeze=1&officeview=real${rooms ? '&simrooms=' + rooms : ''}`, w, h);
+      await load(`sim=${sim}&simfreeze=1&officeview=real${rooms ? '&simrooms=' + rooms : ''}${/^(retro|cave)$/.test(process.env.OFFICE_WORLD || '') ? '&worldflags=' + process.env.OFFICE_WORLD + '&world=' + process.env.OFFICE_WORLD : ''}`, w, h);
       if (!(await H.until(`!!document.querySelector('#stage .ro .ro-plate')&&[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`, 15000))) { total++; failed++; console.log(`FAIL ${tag}: the Real office was not drawn`); continue; }
       /* OFFICE_FONT: the other fonts of other machines (a CI runner's wider sans broke the chips and plates once): every Real office text in that family, drawn again */
       if (process.env.OFFICE_FONT) {
         const css = '.ro,.ro *{font-family:"' + process.env.OFFICE_FONT.replace(/[^A-Za-z0-9 -]/g, '') + '",sans-serif!important}';
         await ctx.js(`(()=>{const st=document.createElement('style');st.textContent=${jsLiteral(css)};document.head.appendChild(st);window.__durbarSimUi.render();return true})()`);
+      }
+      if (process.env.OFFICE_ROOM_ORDER === 'reversed') { /* spec 097 FR-353: a saved room order (the folders reversed) is kept in the rows: the same checks, the same floors for the faces */
+        await ctx.js(`(()=>{const U=window.__durbarSimUi,ps=[...document.querySelectorAll('#stage .ro-sign')].filter((s)=>s.querySelector('.ro-sc')).map((s)=>U.order.path('room:'+s.dataset.folder)).reverse();U.order.get().rooms=ps;U.render();return ps.length})()`);
       }
       /* spec 097 FR-316 (issue #1149): unsent drafts on four desks (the narrowest plate also has a New reply tag, so both tags sit above it) and on a lounge seat when there is one: the Draft tag's box is checked against plates, tags, faces and screens at every size */
       const order = await ctx.js(`[...document.querySelectorAll('#stage .ro-plate')].filter(p=>p.getClientRects().length).sort((a,b)=>a.getBoundingClientRect().width-b.getBoundingClientRect().width).map(p=>p.dataset.id)`);
