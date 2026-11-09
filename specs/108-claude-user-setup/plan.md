@@ -4,13 +4,13 @@
 
 ## Summary
 
-One boolean setting (off by default) makes the Claude adapter, at each CLI launch, extend the two readers it already has: `claudeMdPrompt` reads the person's `CLAUDE.md` from the Claude folder with a stricter import filter and a shared budget, and `claudeAgents.ts` builds one multi-entry `--agents` definition from the person's agents and the session folders' confirmed agents. Both go to Claude through private `0600` files (`--append-system-prompt-file`, `--agents <file>`), never the command line, gated on a known Claude Code version. Settings gets one switch and an on-request preview of names, sizes and counts. No new dependency.
+One boolean setting (off by default) makes the Claude adapter, at each CLI launch, extend the two readers it already has: `claudeMdPrompt` reads the person's `CLAUDE.md` from the Claude folder with a stricter import filter and a shared budget, and `claudeAgents.ts` builds one multi-entry `--agents` definition from the person's ticked agents (folder agents are not helpers, Q7). Only the items the person ticked in a Settings checklist are read at launch (Q2 changed 2026-11-09 07:40 UTC to an allow-list; nothing ticked by default). Both go to Claude through private `0600` files (`--append-system-prompt-file`, `--agents <file>`), never the command line, gated on a known Claude Code version. Settings gets one switch and a checklist of offered items (name, size, masked first line, one sentence each; *Pick for me*, *Select all*, *Select none*). Every read is one no-follow open checked on the handle and capped; imports are checked by text before any fs call; the SDK transport uses the same files or sends nothing; stale private folders are swept at start; each session shows what it got. No new dependency.
 
 ## Technical context
 
 - **Language**: TypeScript (adapter, main, shared), plain JS (renderer `screens.js`).
 - **Dependencies**: none new.
-- **Storage**: one key in `durbar-settings.json` (`claudeUserSetup: true` or absent). Nothing else.
+- **Storage**: two keys in `durbar-settings.json`: `claudeUserSetup: true` or absent, and `claudeUserSetupItems` (at most 64 names relative to the Claude folder, FR-031). No content, hash or absolute path.
 - **Testing**: Node unit tests in `npm test` (`test:claudemd`, `test:claudeagents`, `test:settings`, `test:ipcchannels`, the fake CLI launch tests); simulator driver at both sizes. Zero AI credits; one `real:` check (T012) only with the owner's OK.
 - **Platforms**: Windows, macOS, Linux; containment tests in both `path.posix` and `path.win32` flavours.
 
@@ -21,7 +21,9 @@ One boolean setting (off by default) makes the Claude adapter, at each CLI launc
 | Read CLAUDE.md with imports, contained, budgeted | `claudeMdPrompt`, `ClaudeMdIo`, `CLAUDE_MD_MAX_CHARS`, `CLAUDE_MD_MAX_DEPTH` (`src/adapters/claude.ts`) | Extend: root kind, heading, import filter, shared budget. No second loader. |
 | Read agent files, capped, named | `listClaudeAgents`, `parseClaudeAgent`, `agentsArg`, caps (`src/adapters/claudeAgents.ts`), `parseFrontMatter` (`slashcommands.ts`) | Extend: `subAgentsArg`, SHA-256 of bytes read, null-prototype maps. |
 | Claude folder location | `claudeConfigDir` (`claudeHistory.ts`), `ClaudeAdapterDeps.configDir` | Reuse as is. |
-| Folder agent trust | `AgentTrustStore`, `hashAgentFile` (`src/main/agenttrust.ts`), spec 043 FR-003 confirmation in `ipc/profiles.ts` | Reuse: main passes confirmed (id, sha) pairs; confirmation UI unchanged. |
+| Folder agent trust | `AgentTrustStore`, `hashAgentFile` (`src/main/agenttrust.ts`), spec 043 FR-003 confirmation in `ipc/profiles.ts` | Not used for helpers in this version (Q7); unchanged for profiles. |
+| Private folder sweep | `sweepPrivateDirs` (`privatedirs.ts`, called at `will-quit`) | Extend: a start-up sweep of stale folders with Durbar's prefix owned by this user (FR-038). |
+| SDK options | `sdkOptions` in `claudeSdk.ts` (`:93` `systemPrompt.append`, `extraArgs`) | Extend: file flags through `extraArgs` or nothing (FR-042). |
 | Private launch files | `privateMcpConfig`, `makePrivateDir`, `sweepPrivateDirs` (`claude.ts`, `privatedirs.ts`) | Reuse the pattern for two more files in the same private folder. |
 | Version gate | `claudeForwardsSubagentText`, `CLAUDE_FORWARD_SUBAGENT_MIN_VERSION`, `compareVersions`, `sandboxFactsNow().version` | Same pattern, own constant. |
 | Named helpers | `ClaudeMapper` `subagent` event `agentName`; `app.js` *Helper · name*, `helperMask` (spec 015 FR-021) | Reuse; test only. |
@@ -34,20 +36,22 @@ One boolean setting (off by default) makes the Claude adapter, at each CLI launc
 |---|---|---|
 | `src/shared/credits.ts` | `AppSettings.claudeUserSetup?: true`; `parseSettings` keeps only `true` | FR-001 |
 | `src/main/settings.ts` | `get claudeUserSetup`, `setClaudeUserSetup(v)` (boolean only, `Saved`) | FR-001 |
-| `src/main/ipc/settings.ts` | `settings:setClaudeUserSetup` via `setting()`; `settings:get` adds `claudeUserSetup` | FR-001 |
+| `src/main/ipc/settings.ts` | `settings:setClaudeUserSetup` and `settings:setClaudeUserSetupItems(names[])` via `setting()` (names validated against FR-004's patterns and the last preview's offered set); `settings:get` adds both | FR-001, FR-031 |
+| `src/adapters/privatedirs.ts` | `sweepStalePrivateDirs(tmpRoot, prefix, uid)` called by main at start before any launch | FR-038 |
+| `src/adapters/claudeSdk.ts` | user content only through `extraArgs` file flags, or nothing; never `systemPrompt.append` | FR-042 |
 | `src/main/ipc/claudesetup.ts` (new, small) | `settings:claudeUserSetupPreview`: `fromAppFrame`, takes no arguments, `simguard` under `DURBAR_SIM` (fixture folder), returns FR-020's shape; registered in `test:ipcchannels`; never in `durbar-mcp` | FR-020, FR-021 |
-| `src/adapters/types.ts` | `StartOptions.userSetup?: { on: true; confirmedFolderAgents: { id; sha256 }[] }` | FR-019 |
-| `src/main/main.ts` / start-option path (`startopts.ts` caller) | fill `userSetup` from `SettingsStore` and `AgentTrustStore` for Claude sessions at start and relaunch | FR-014, FR-019 |
-| `src/adapters/claude.ts` | `claudeMdPrompt` root kind + filter + shared budget; `ClaudeLaunch.appendSystemPromptFile`, `agentsFile`; `claudeArgs` passes `--append-system-prompt-file` / `--agents <file>` (no `--agent` unless a profile); `cliLaunchArgs` writes the private files beside the MCP config; version constant and gate; `launch` reads only when `o.userSetup?.on` | FR-005..FR-011, FR-015..FR-018 |
-| `src/adapters/claudeAgents.ts` | `readClaudeAgentsWithHash`, `subAgentsArg(defs, profile?)`, reserved names, null-prototype output | FR-010..FR-014 |
+| `src/adapters/types.ts` | `StartOptions.userSetup?: { on: true; items: string[] }`; the launch result carries the counts for the session line | FR-019, FR-039 |
+| `src/main/main.ts` / start-option path (`startopts.ts` caller) | fill `userSetup` from `SettingsStore` for Claude sessions at start and relaunch; call the start-up sweep before any session launches | FR-019, FR-038 |
+| `src/adapters/claude.ts` | `claudeMdPrompt` root kind + FR-005's four steps (text, `realpath`, real-path rules, ticks) + shared budget + FR-041's one-open capped read; `ClaudeLaunch.appendSystemPromptFile`, `agentsFile`; `claudeArgs` passes `--append-system-prompt-file` / `--agents <file>` (no `--agent` unless a profile); `cliLaunchArgs` writes the private files beside the MCP config; version constant and gate; `launch` reads only when `o.userSetup?.on` | FR-005..FR-011, FR-015..FR-018 |
+| `src/adapters/claudeAgents.ts` | FR-041's read (no-follow open, `fstat` on the handle, cap + 1 bytes) replacing `lstat` then read by path (`:49-51`); `subAgentsArg(defs, profile?)` for ticked user agents only; reserved names, null-prototype output | FR-010..FR-014, FR-041, FR-043 |
 | `src/adapters/slashcommands.ts` | `parseFrontMatter` maps become null-prototype (behaviour for slash entries otherwise unchanged) | FR-013 |
 | `src/preload/preload.ts`, `src/shared/api.ts` | `setClaudeUserSetup`, `claudeUserSetupPreview` | FR-001, FR-020 |
-| `src/renderer/screens.js` | the row under Agent apps > Claude Code, preview list, status region | FR-002, FR-020, FR-025 |
+| `src/renderer/screens.js` | the row under Agent apps > Claude Code, the *What Claude gets* checklist (fieldset, boxes, sentences, *Pick for me*, *Select all*, *Select none*, *Check what loads*), status region; the session line in the chat's session details | FR-002, FR-020, FR-025, FR-030..FR-036, FR-039 |
 | `src/renderer/sim.ts` | fake bridge for both calls from the fixture | FR-026 |
 
-**IPC**: two new window channels, both `fromAppFrame`: `settings:setClaudeUserSetup(boolean)` (non-boolean refused) and `settings:claudeUserSetupPreview()` (any argument ignored). Neither accepts a path, name or text from the window.
+**IPC**: three new window channels, all `fromAppFrame`: `settings:setClaudeUserSetup(boolean)` (non-boolean refused), `settings:setClaudeUserSetupItems(names[])` (relative names only, each matching FR-004's patterns and offered by the last preview; anything else refused) and `settings:claudeUserSetupPreview()` (any argument ignored). None accepts an absolute path or file text from the window.
 
-**Data flow at launch** (switch on): main → `StartOptions.userSetup` (boolean + confirmed pairs) → `ClaudeAdapter.launch` → readers (allow-list, caps) → private folder (`mcp-config.json`, `instructions.md`, `agents.json`, all `0600`, `wx`) → argv holds only file paths → files removed at CLI exit.
+**Data flow at launch** (switch on): main → `StartOptions.userSetup` (boolean + ticked names) → `ClaudeAdapter.launch` → readers (allow-list, caps) → private folder (`mcp-config.json`, `instructions.md`, `agents.json`, all `0600`, `wx`) → argv holds only file paths → files removed at CLI exit.
 
 ## Constitution check
 
@@ -67,6 +71,7 @@ One boolean setting (off by default) makes the Claude adapter, at each CLI launc
 
 ## Test plan (zero AI credits)
 
+- **Mutants** (review 10; each must fail a named assertion, a compile error does not count): T003 containment checked only after `realpath`; `.md` rule on the token; unresolved path used when `realpath` fails; short-name rule dropped. T004 confirmed folder agents included; `{}` assignment; extra key passes; read by path after `lstat`. T007 version gate dropped; file content put back on argv; a permission flag that differs between on and off; an agent's tools copied into `--allowedTools`; send a new unticked file. T013 SDK user text in `systemPrompt.append`. T010 the description returned unmasked or two lines returned; outside imports listed by path; accept a name not offered; tick everything on switch-on. T014 sweep only at quit. T015 session line from the current switch instead of the launch.
 - `test:claudemd`: user root with fixtures: allowed import, `../` escape, symlink escape (posix and win32 flavour), `.json`/`.jsonl`/credentials import refused, data folders refused, dot segment refused, depth 4, cycle, budget shared with folder first, cut marker, heading order, `@~/` per Q1 (answered (a)). Mutants: containment off, `.md` rule off, budget not shared, folder cut by the user file.
 - `test:claudeagents`: multi-entry JSON, no `--agent` without profile, profile kept, clash order, reserved names, `__proto__` front matter, 10,000-line front matter, binary and invalid UTF-8, never-closed front matter, oversize skip, prompt cut, over-50 count, only four keys pass, hash of the bytes parsed, unconfirmed and changed folder agents left out. Mutants: extra key passes, `{}` assignment, folder agent without trust.
 - Launch tests on the fake CLI: switch off = today's argv exactly (SC-001); switch on = file paths only, files `0600`, gone after exit; permission flags equal on and off in every mode (SC-004); old or unknown version sends nothing.

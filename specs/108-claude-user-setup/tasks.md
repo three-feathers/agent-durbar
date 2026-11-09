@@ -12,20 +12,24 @@
 
 ## G1: readers (no launch change yet)
 
-- [ ] T003 [G1] `claudeMdPrompt`: root kind (folder or user Claude folder), the user heading, FR-005's import filter (`.md` only, data folders and dot segments refused, `realpath` containment), Q1's `@~/` rule (answered (a)), one budget across both calls with the folder first and the cut marker. Test first: `test:claudemd` cases and mutants of plan.md, both path flavours [FR-003, FR-004, FR-005, FR-009, FR-018, FR-028]
-- [ ] T004 [G1] `claudeAgents.ts`: read with SHA-256 of the bytes parsed, reserved names, `subAgentsArg(defs, profile?)` with only four keys and a null-prototype object, clash order (profile, folder, user), skip and cut counts; `parseFrontMatter` null-prototype maps. Test first: `test:claudeagents` hostile fixtures and mutants; `test:slash` unchanged [FR-010, FR-012, FR-013, FR-014, FR-018]
+- [ ] T003 [G1] `claudeMdPrompt`: root kind (folder or user Claude folder), the user heading, FR-005's four steps (text check before any fs call: `\\`, `//`, `:`, NUL refused, inside by `path.relative`; `realpath` failure skips; real-path rules case-folded with Windows trailing dot/space and 8.3 short names refused; ticked), Q1's `@~/` rule, FR-041's one-open capped read, one budget across both calls with the folder first and the cut marker. Test first: `test:claudemd` cases in both path flavours with a recording `io` (step-1 refusals make no fs call; `rules.md -> .credentials.json` refused; `PROJEC~1` refused; `projects/x/memory/a.md` never offered; unticked import left as text; swap between `lstat` and read skipped). Mutants: containment only after `realpath`; `.md` rule on the token; unresolved path on `realpath` failure; short-name rule dropped [FR-003, FR-004, FR-005, FR-009, FR-018, FR-028, FR-041, FR-043]
+- [ ] T004 [G1] `claudeAgents.ts`: FR-041's read (no-follow open or dev/inode compare, `fstat` on the handle, at most 64 KB + 1 bytes, parse that buffer) replacing `lstat`-then-read (`:49-51`); an `agents` folder linking outside not read (FR-043, Q8 default); reserved names; `subAgentsArg(defs, profile?)` with ticked user agents only, four keys, null-prototype; clash order (profile over user); skip and cut counts; `parseFrontMatter` null-prototype maps. Test first: `test:claudeagents` hostile fixtures, swap-in-between fixtures, an outside-linked `agents` folder, a confirmed folder agent never in the definition; `test:slash` unchanged. Mutants: include confirmed folder agents; `{}` assignment; extra key passes; read by path after `lstat` [FR-010, FR-012, FR-013, FR-014, FR-018, FR-041, FR-043]
 
 ## G2: launch
 
 - [ ] T005 [G2] R1/R2 research (free `--help` probes and the vendor CHANGELOG, no session): the first Claude Code version with `--agents <file>` and `--append-system-prompt-file`; record as `read:` in spec.md and set the gate constant. Test: none (research), the facts written with their source [FR-016, FR-027]
-- [ ] T006 [G2] `StartOptions.userSetup`, filled by main from `SettingsStore` and `AgentTrustStore` for Claude sessions at start and relaunch; other adapters ignore it. Test first: start-option tests (off: absent; on: confirmed pairs of the session's folders only; Copilot/Codex unchanged) [FR-014, FR-019]
-- [ ] T007 [G2] `ClaudeAdapter.launch` / `claudeArgs` / `cliLaunchArgs`: read only when on; private `instructions.md` and `agents.json` beside `mcp-config.json` (`0600`, `wx`, removed at exit, swept at quit); `--append-system-prompt-file` and `--agents <file>`, `--agent` only with a profile; version gate sends nothing on an old or unknown version; `--setting-sources ""` and every permission flag unchanged. Test first: fake CLI launch tests for SC-001, SC-002, SC-004, file lifetime, the gate, Read-only note per Q3 [FR-006, FR-007, FR-008, FR-011, FR-015, FR-016, FR-017, FR-022, FR-023]
+- [ ] T006 [G2] `StartOptions.userSetup` (`on`, ticked names), filled by main from `SettingsStore` for Claude sessions at start and relaunch; other adapters ignore it. Test first: start-option tests (off: absent; on: ticked names only; Copilot/Codex unchanged) [FR-019, FR-031]
+- [ ] T007 [G2] `ClaudeAdapter.launch` / `claudeArgs` / `cliLaunchArgs`: read only when on; private `instructions.md` and `agents.json` beside `mcp-config.json` (`0600`, `wx`, removed at exit, swept at quit); `--append-system-prompt-file` and `--agents <file>`, `--agent` only with a profile; version gate sends nothing on an old or unknown version; `--setting-sources ""` and every permission flag unchanged. Test first: fake CLI launch tests for SC-001, SC-002, SC-004, file lifetime, the gate, Read-only note per Q3, `tools: ["*"]` / absent / `["Bash"]` in Read-only keep the permission flags equal on and off, a model `claudeModelFlag` refuses is dropped, a new unticked agent file not sent, stderr through `redact` with launch-file paths masked. Mutants: version gate dropped; file content back on argv; a permission flag differs between on and off; an agent's tools copied into `--allowedTools`; send a new unticked file [FR-006, FR-007, FR-008, FR-011, FR-015, FR-016, FR-017, FR-022, FR-023, FR-033]
 - [ ] T008 [G2] Named helpers: a fake stream with `subagent_type: "analyst"` (and a hostile, token-shaped name) shows *Helper · analyst* and a masked name in Flat, Real office and Retro. Test: `test:helpercard` case and `check-015-bg-helper` step with a named agent [FR-024, spec 015 FR-021]
 
 ## G3: Settings
 
 - [ ] T009 [G3] Setting: `AppSettings.claudeUserSetup`, `SettingsStore` getter and setter, `settings:setClaudeUserSetup` through `setting()`, `settings:get`, preload and `api.ts`. Test first: `test:settings` (off by default, junk refused, off not written, failed write not "Saved") [FR-001]
-- [ ] T010 [G3] Preview channel `settings:claudeUserSetupPreview` (`fromAppFrame`, no arguments, `simguard` fixture under `DURBAR_SIM`, masked names, counts and reasons only, nothing cached) and the Settings row under Agent apps > Claude Code: label, sentence, masked Claude folder, *Check what loads*, status region, "Needs Claude Code …" and Read-only notes; sim bridge. Test first: `test:ipcchannels`, preview shape test with the leak fixture; `scripts/check-108-settings.js` at both sizes in Open office, Real office and Retro arcade (keyboard order, `role="switch"`, `aria-describedby`, polite status, no overlap, 10.5 px floor) [FR-002, FR-020, FR-021, FR-024, FR-025, FR-026]
+- [ ] T010 [G3] Preview channel `settings:claudeUserSetupPreview` (`fromAppFrame`, no arguments, `simguard` fixture under `DURBAR_SIM`, offered items with masked name, size, masked first line or description cut to 80, *New*/*Missing*/*Not allowed now*; skipped counts by reason with no path; nothing cached), `settings:setClaudeUserSetupItems`, `AppSettings.claudeUserSetupItems`, and the Settings row under Agent apps > Claude Code: label, sentence, masked Claude folder, the *What Claude gets* checklist (FR-030 sentences, nothing ticked on switch-on, *Pick for me*, *Select all*, *Select none*, *Check what loads*), status region, "Needs Claude Code …" and Read-only notes; sim bridge. Test first: `test:ipcchannels`; preview shape test with the leak fixture (token on line 1 masked, line 2 never, outside import path never); `test:settings` for the names (65 names, `../x.md`, `projects/a.md`, `.hidden/a.md`, a name not offered refused; switch-on = empty); no read on opening Settings (recording `io`); `scripts/check-108-settings.js` at both sizes in Open office, Real office and Retro arcade (keyboard order, native checkboxes named and described, *Pick for me* / *Select all* / *Select none*, polite count, 64 rows scroll inside, no overlap, 10.5 px floor). Mutants: description returned unmasked; two lines returned; outside imports listed by path; a name not offered accepted; everything ticked on switch-on [FR-002, FR-020, FR-021, FR-024, FR-025, FR-026, FR-030, FR-031, FR-032, FR-033, FR-034, FR-035, FR-036, FR-037]
+
+- [ ] T013 [G2] SDK transport (`claudeSdk.ts:93`): user content only through `extraArgs` file flags under its own version gate, else nothing; never `systemPrompt.append`. Test first: SDK options test (switch on: no user text in `systemPrompt.append`; `extraArgs` holds file paths only, or neither). Mutant: user text in `systemPrompt.append` [FR-042]
+- [ ] T014 [G2] Start-up sweep of stale private folders (Durbar prefix, this user's, not live) before any session launches. Test first: `test:privatedirs` (stale own folder removed; another user's, a non-prefixed and a live one kept). Mutant: sweep only at quit [FR-038, FR-044]
+- [ ] T015 [G3] Session line "Your setup: ..." from the launch's counts (in memory), with the resume note. Test first: adapter launch result carries counts; driver shows the line in the chat's session details. Mutant: line from the current switch instead of the launch [FR-039, FR-027]
 
 ## G4: docs
 
@@ -46,7 +50,7 @@
 | FR-009 | T003 |
 | FR-010, FR-012, FR-013 | T004 |
 | FR-011 | T007, T012 |
-| FR-014 | T004, T006 |
+| FR-014 | T004 |
 | FR-015 | T007, T012 |
 | FR-016, FR-017 | T005, T007 |
 | FR-018 | T003, T004 |
@@ -55,6 +59,13 @@
 | FR-022, FR-023 | T007 (and T010's leak fixture) |
 | FR-024 | T008, T010, T011 |
 | FR-025, FR-026 | T010 |
-| FR-027 | T005, T011, T012 |
+| FR-027 | T005, T011, T012, T015 |
+| FR-030..FR-037 | T010 |
+| FR-038 | T014 |
+| FR-039 | T015 |
+| FR-041 | T003, T004 |
+| FR-042 | T013 |
+| FR-043 | T003, T004 |
+| FR-044 | T014 |
 | FR-028 | T003, T011 |
 | FR-029 | T011, T012 |
