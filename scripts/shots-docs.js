@@ -40,7 +40,6 @@ const DOC_SHOTS = [
   { name: 'shots-005-cardmenu', files: ['005-card-menu-stop-end-1440x900.png'] },
   { name: 'check-ro-ask', files: ['003-ro-ask-menu-1440x900.png'] },
   { name: 'check-why-allowed', files: ['003-why-allowed-1440x900.png'] },
-  { name: 'check-permission-lookalike', files: ['003-lookalike-url-1440x900.png'] }, // spec 003 FR-118 (#1300): the lookalike warning on an approval card (the 1280x800 twin is linked from the spec only)
   { name: 'check-sandbox-floor', files: ['087-sandbox-note-1440x900.png'] }, // spec 087: the OS sandbox note and the chip
   { name: 'check-composer-toolbar', files: ['005-composer-expert-light-1440x900.png', '005-composer-ctxsummary-1440x900.png', '005-composer-ctxsummary-1280x800.png'] },
   { name: 'check-edits', files: ['005-edit-expert-1440x900.png'] },
