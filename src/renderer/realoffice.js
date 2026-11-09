@@ -26,6 +26,7 @@
   let ZOOM = null; /* {id, hover, focus, panel, plate} */
   let IO = null, DISMISSED = '';
   /* spec 052 FR-183: focus the app moves by itself onto a plate is not the person asking to read that screen */
+  let PT = ''; /* the pointer's last position in the office (x,y of its last pointermove), the format of QUIET_AT: a card held under a resting pointer (FR-328) is let go only by a move to another one */
   let QUIET_FOCUS = false, QUIET_POINTER = false, QUIET_AT = '', ARMED = false; /* QUIET_POINTER: the room came back (Esc from a chat, issue 1040) under a pointer that has not moved; hovering starts when it leaves QUIET_AT. ARMED: a hover zoom is waiting out its 120 ms (driver reads hoverState) */
   function quietFocus(fn) { QUIET_FOCUS = true; QUIET_POINTER = true; QUIET_AT = ''; try { fn(); } finally { QUIET_FOCUS = false; } }
 
@@ -288,7 +289,7 @@
 
   /**
    * Draw the office into `stage`. `model`: {folders:[{id,name,path,cost,counts:[{state,n,word}],newSess,menu,agents:[{id,name,role,
-   * state,word,task,label,tip,selected,away,awayLabel,helpers:[state]}]}], places:[{id,label,custom,post,title,go,visitors:[{id,name,
+   * state,word,task,label,tip,selected,away,awayLabel,helpers:[state],helpWords}]}], places:[{id,label,custom,post,title,go,visitors:[{id,name,
    * needsYou,title}]}]}; `view`: {w,h}; `opts`: {still, world, set, rand, remember, onArt}. Returns the layout (for the app's checks).
    */
   function render(stage, model, view, opts) {
@@ -299,12 +300,14 @@
     WPX = root.DurbarRealOfficeWorlds[world].px || {}; SPX = root.DurbarRealOfficeSets[set].px || {};
     const meta = Object.assign({}, root.DurbarRealOfficeWorlds[world], root.DurbarRealOfficeSets[set]); /* the world's furniture numbers with the set's people numbers */
     onArt = opts.onArt || null;
+    meta.pixelPeople = !!root.DurbarRealOfficeSets[set].pixelArt; /* spec 097 T247: a crew's hi-res people in a pixel world are scaled to its people */
     PIXEL = !!meta.pixelArt;
     const ids = Object.keys(meta.seat).sort();
     const who = people(model, ids, opts.rand, !!opts.remember);
     const seatOk = (p) => !!p && !['typeA', 'think', 'waveA', 'rest'].some((f) => BAD.has(SD + p + '-' + f + '.webp'));
     const engine = {
-      folders: model.folders.map((f) => ({ id: f.id, agents: f.agents.map((a) => ({ id: a.id, state: a.state, away: a.away || null, person: seatOk(who[a.id]) ? who[a.id] : null, lounge: !!a.lounge })) })), /* spec 097 FR-246: the app's room rule (shutPlan) seats it in the lounge row */
+      keepRooms: !!model.keepRooms, /* spec 097 FR-353: a saved room order is kept in the rows */
+      folders: model.folders.map((f) => ({ id: f.id, keep: !!f.keep, agents: f.agents.map((a) => ({ id: a.id, state: a.state, away: a.away || null, person: seatOk(who[a.id]) ? who[a.id] : null, lounge: !!a.lounge, helpers: a.lounge || !a.subs ? 0 : a.subs.length })) })), /* spec 097 FR-246: the app's room rule (shutPlan) seats it in the lounge row; FR-306: the strip's helpers (none in the lounge; none without their list: the plate keeps its +N) */
       places: model.places.map((p) => ({ id: p.id, custom: !!p.custom, visitors: p.visitors.map((v) => ({ id: v.id, needsYou: !!v.needsYou, person: who[v.id] || null })) })),
     };
     const signs = {};
@@ -360,7 +363,7 @@
       for (const d of lay.lounge.desks) deskOne(d); /* spec 097 FR-247: after the desks */
       /* FR-249: keyboard order is the desks', then the seats': a plate that was a desk's keeps its element, so it is moved after the last desk's plate (and its pencil), unless it has the focus */
       const last = lay.zones.length ? lay.zones[lay.zones.length - 1].desks.slice(-1)[0] : null;
-      let at = last ? chrome._k.get('rn:' + last.id) || chrome._k.get('n:' + last.id) : null;
+      let at = last ? chrome._k.get('h:' + last.id) || chrome._k.get('rn:' + last.id) || chrome._k.get('n:' + last.id) : null;
       for (const d of lay.lounge.desks) {
         const pl = chrome._k.get('n:' + d.id), rb = chrome._k.get('rn:' + d.id);
         if (!pl || pl.contains(document.activeElement) || (rb && rb.contains(document.activeElement))) { at = rb || pl || at; continue; }
@@ -410,8 +413,9 @@
         }
         /* the monitor: the glass in the art; its text sits with the chrome, above the lights (FR-044), and repaints on its own (FR-033) */
         const sc = el(art, 'm:' + k, 'div', 'ro-screen st-' + d.state + (lt.glow === 'off' ? ' off' : '') + (a.asleep ? ' asleep' : '') + (d.lounge ? ' ro-lmon' : '') + (lt.tint !== 'none' ? ' tint-' + lt.tint : '')); /* FR-236: the screen is the status cue */ box(sc, d.screen); dset(sc, 'for', k);
-        if (!sc.firstChild) sc.innerHTML = '<div class="ro-bezel"><div class="ro-glass" aria-hidden="true"></div></div><div class="ro-neck"></div><div class="ro-foot"></div>';
+        if (!sc.firstChild) sc.innerHTML = '<div class="ro-bezel"><div class="ro-glass" aria-hidden="true"></div></div><div class="ro-neck"></div><div class="ro-foot"></div><svg class="ro-ctx" aria-hidden="true" focusable="false"><rect class="ro-ck" pathLength="100" fill="none"/><rect pathLength="100" fill="none"/></svg>'; /* spec 097 FR-324: the context line, made once per desk */
         const bez = sc.firstChild; bez.style.height = px(d.glass.h + 6);
+        ctxPaint(sc, a, d); /* FR-322: the line round the frame, outside the glass; attributes only (FR-326) */
         if (!d.lounge) screenBox(chrome, d, k);
         else { const s = SCR.get(k); if (s) { clearTimeout(s.timer); if (IO) IO.unobserve(s.box); SCR.delete(k); } } /* FR-247: a lounge monitor shows no text (the zoom still reads its last lines, FR-034) */
         /* spec 102 FR-257: the marquee carries the name: real text, level, never inside the mirrored picture */
@@ -442,10 +446,12 @@
         /* FR-120: a static "z z" over a sleeping person (carved in the cave); aria-hidden, the plate and the name carry the meaning */
         if (a.asleep && d.person) { const z = el(chrome, 'z:' + k, 'div', 'ro-zz'); box(z, { x: d.person.x + d.person.w * 0.62, y: Math.max(d.slot.y + 2, d.person.y + d.person.h * 0.04) }); attr(z, 'aria-hidden', 'true'); text(z, 'z z'); }
         /* FR-016, FR-090: the name plate is the desk's one focusable button; the app's click handler opens the chat ([data-id]) */
-        const pl = el(chrome, 'n:' + k, 'button', 'ro-plate st-' + d.state + (a.selected ? ' sel' : '') + (d.narrow ? ' narrow' : '') + (a.asleep ? ' asleep' : '') + (d.lounge ? ' lounge' : '') + (a.ren ? ' has-ren' : '')); box(pl, d.plate);
+        const pl = el(chrome, 'n:' + k, 'button', 'ro-plate st-' + d.state + (a.selected ? ' sel' : '') + (d.narrow ? ' narrow' : '') + (a.asleep ? ' asleep' : '') + (d.lounge ? ' lounge' : '') + (a.ren ? ' has-ren' : '') + (!d.strip && a.helpers && a.helpers.length ? ' has-help' : '')); box(pl, d.plate); /* has-help: the plate carries the +N (FR-308); a class, not :has(), so one text change does not re-match the arcade's whole tree */
         if (pl.type !== 'button') pl.type = 'button'; dset(pl, 'id', k); dset(pl, 'state', d.state); if (d.lounge) dset(pl, 'surface', 'lounge'); else if (pl.dataset.surface) delete pl.dataset.surface; /* spec 098 FR-010: the moment's marker (spec 097 FR-246: every lounge seat) */
-        attr(pl, 'aria-pressed', a.selected ? 'true' : 'false'); attr(pl, 'aria-label', a.label); attr(pl, 'title', a.tip);
-        plateFill(pl, a, d.state);
+        /* spec 097 FR-308 (review of PR 1322): helpers with no strip (the fallback: the plate's +N and dots) are said in the plate's name and tooltip, in the flat desk's words (`helpWords`); FR-325: so is the context (`labelOf`) */
+        const hw = helpWordsOf(a, d);
+        attr(pl, 'aria-pressed', a.selected ? 'true' : 'false'); attr(pl, 'aria-label', labelOf(a, d)); attr(pl, 'title', hw ? a.tip + ' · ' + hw.slice(2) : a.tip);
+        plateFill(pl, a, d.state, !!d.strip);
         /* spec 059 FR-170 (#1155): Open office's rename pencil (.ren[data-ren]: the app's own click and F2 handlers, the same in-place edit), right
            after its plate (a button cannot sit inside one) so the plate's hover and focus show it; CSS anchors it just after the name: no layout read */
         if (a.ren) {
@@ -457,6 +463,9 @@
           if (rb.style.getPropertyValue('position-anchor') !== anc) rb.style.setProperty('position-anchor', anc);
           if (!rb.firstChild && model.renIcon) rb.innerHTML = model.renIcon; /* the app's own icon markup (trusted, as alertIcon) */
         }
+        /* spec 097 FR-306..FR-309 (issue #1139): the helpers' head figures under the plate, right after it and its pencil in the Tab order; a lounge seat and the fallback (no room: the plate keeps +N; the arcade at 1280x800) have no strip box, so no strip */
+        if (d.strip && a.subs && a.subs.length) helperStrip(chrome, d, a, k, who, ids, meta);
+        else if (chrome._k.get('h:' + k)) { chrome._k.get('h:' + k).remove(); chrome._k.delete('h:' + k); }
     }
     /* the lobby band: fixtures, their lights, visitors and chips, place plates (FR-023..FR-027, FR-045) */
     const byPlace = new Map(model.places.map((p) => [p.id, p]));
@@ -485,7 +494,7 @@
            data-coffeeid for the coffee menu): app.js's delegated handlers open the chat; others forward to their plate (data-for) */
         const ch = el(chrome, 'vc:' + v.id, p.go ? 'button' : 'span', 'ro-chip' + (ag.needsYou ? ' wait' : '')); dset(ch, 'y', String(v.chip.y)); dset(ch, 'x', String(v.chip.x)); /* its place is stagger()'s to write */
         if (p.go) { if (ch.type !== 'button') ch.type = 'button'; dset(ch, 'pvopen', v.id); if (fx.id === 'coffee') dset(ch, 'coffeeid', v.id); attr(ch, 'aria-label', ag.title + '. Open the chat.'); } else dset(ch, 'for', v.id);
-        attr(ch, 'title', ag.title); dset(ch, 'name', ag.name); chipFill(ch, ag.name, ag.needsYou, model.alertIcon);
+        dset(ch, 'place', fx.id); attr(ch, 'title', ag.title); dset(ch, 'name', ag.name); chipFill(ch, ag.name, ag.needsYou, model.alertIcon);
       }
       /* FR-025/FR-026 "as the flat lobby": the people that do not fit ("+N") open the flat lobby's own list (data-placemore, app.js
          openPlaceMenu), so the plate is a button then, with a name that says so */
@@ -525,8 +534,8 @@
     }
     if (ZOOM) {
       const zd = CUR.desks.get(ZOOM.id);
-      if (!zd || zd.state === 'asleep' || hiddenNow()) closeZoom(); /* FR-035: an asleep screen is off, nothing to read */
-      else placeZoom();
+      if (!zd || hiddenNow()) closeZoom(); /* FR-328: an asleep agent's card stays (its glass is dark, the card has its reply) */
+      else { if (ZOOM.st !== zd.state) { fillZoom(); ZOOM.held = PT || '?'; } placeZoom(); } /* FR-328 (2026-11-08): the card follows the agent's state as its facts do (FR-315): asleep or back, it is filled again, not left with the old tool log */
     }
     settle(chrome, lay.width);
     return lay;
@@ -537,7 +546,7 @@
     const sig = JSON.stringify([f.name, f.path, !!f.cost, f.newSess, f.menu, z.part]);
     if (sg._sig !== sig) {
       sg._sig = sig; sg.textContent = ''; sg._cnt = null; sg._cost = null;
-      const b = document.createElement('b'); b.textContent = z.part > 1 ? f.name + ' (continued)' : f.name; b.title = f.name + '\n' + f.path; sg.appendChild(b);
+      const b = document.createElement('b'); b.textContent = z.part > 1 ? f.name + ' (continued)' : f.name; b.title = f.name + '\n' + f.path; sg.appendChild(b); sg._b = b;
       if (z.part > 1) return;
       const p = document.createElement('span'); p.className = 'ro-path'; p.textContent = f.path; sg.appendChild(p);
       const sc = document.createElement('span'); sc.className = 'ro-sc'; sg._sc = sc; sg._cnt = new Map();
@@ -547,7 +556,7 @@
       sg.appendChild(sc);
     }
     if (!sg._cnt) return;
-    if (sg._cost) text(sg._cost, f.cost);
+    if (sg._cost) { text(sg._cost, f.cost); attr(sg._b, 'title', f.name + '\n' + f.path + (z.signShort ? '\n' + f.cost : '')); } /* FR-256, FR-356: the short sign hides the cost, so its name's hover says it */
     /* one count per state, reused by state and kept in the model's order, in front of the cost and the buttons */
     const sc = sg._sc, live = new Set(f.counts.map((c) => c.state));
     for (const [st, e] of sg._cnt) if (!live.has(st)) { e.remove(); sg._cnt.delete(st); }
@@ -561,8 +570,92 @@
     }
   }
 
+  /* spec 097 FR-322..FR-326: the context line round a desk's monitor frame. One svg with one rect per desk (made with the monitor); the rect's dash is the share of
+     its outline (pathLength 100, from the top-left corner, clockwise), its band is data-lv (the CSS colours it from the theme tokens). No line for an unknown
+     context, a known 0 % or a lounge seat. Only attributes and two custom properties change: no node, no layout read. */
+  function ctxPaint(sc, a, d) {
+    const s = sc.lastElementChild; if (!s || !s.classList.contains('ro-ctx')) return;
+    const f = d && d.lounge ? null : X().ctxFrame(a.ctx && a.ctx.pct, a.ctx && a.ctx.level);
+    const lv = f ? f.lv : '', dash = f ? f.dash : '';
+    if ((s.dataset.lv || '') !== lv) { if (lv) s.dataset.lv = lv; else delete s.dataset.lv; }
+    for (const r of s.children) attr(r, 'stroke-dasharray', dash || null); /* the dark keyline under the line (.ro-ck) and the line itself: the same dash */
+    if (d) { setVar(s, '--ro-cw', px(d.screen.w)); setVar(s, '--ro-ch', px(CUR && CUR.pixelArt ? d.screen.h : d.glass.h + 6)); /* the arcade's screen box is the whole frame; the others' is the bezel */ }
+  }
+  /* FR-325: the plate's name with the context in the flat office's words, before "Open chat panel."; a lounge seat's name is the model's */
+  const OPEN_WORDS = '. Open chat panel.';
+  function helpWordsOf(a, d) { return d && !d.strip && a.helpWords && a.helpers && a.helpers.length ? a.helpWords : ''; } /* FR-308: the fallback plate's helper count, in the flat desk's words */
+  function labelOf(a, d) {
+    const w = d && d.lounge ? '' : X().ctxWords(a.ctx && a.ctx.pct), hw = helpWordsOf(a, d), l = String(a.label || '');
+    return l.endsWith(OPEN_WORDS) ? l.slice(0, -OPEN_WORDS.length) + w + hw + OPEN_WORDS : l + hw; /* the context words, then the helpers' (". 6 helpers" stays one phrase) */
+  }
+  /* FR-326: a context event of one agent: its line and its plate's name, without a draw; the next draw writes the same */
+  function ctx(id, c) {
+    if (!CUR) return false;
+    const a = CUR.agents.get(id), d = CUR.desks.get(id); if (!a || !d) return false;
+    a.ctx = c || null;
+    const sc = CUR.ro.querySelector('.ro-screen[data-for="' + CSS.escape(id) + '"]'), pl = CUR.ro.querySelector('.ro-plate[data-id="' + CSS.escape(id) + '"]');
+    if (sc) ctxPaint(sc, a, d);
+    if (pl) attr(pl, 'aria-label', labelOf(a, d));
+    return true;
+  }
+  /* spec 097 FR-306..FR-309, FR-184 (issue #1139): one desk's helper strip of head figures. The container (key h:<id>) sits in the layout's strip box; each helper is one button (data-id: the app's own click opens its
+     Sub-agent activity view) kept by id, so a status change writes only the dot's class, the edge and the labels, never a node; the name is only in the accessible name and the tooltip (no tile). `+K` and
+     `Show fewer` are the one button the app's [data-more] handler folds. `a.subs`: the helpers in `orderedHelpers` order ({id,name,state,label,title,selected}); the picture is a person of the set, never the parent's
+     (`helperPerson`), cropped on the head by `headCrop`, from the seated rest picture (`SD + person-rest.webp`, the half-size file by `img`'s own rule). Opened, all helpers show in one scrolling row (a fixed height, FR-015). */
+  function helperStrip(chrome, d, a, k, who, ids, meta) {
+    const L = X(), st = d.strip, subs = a.subs, open = !!a.subsOpen && subs.length > st.shown;
+    const bx = el(chrome, 'h:' + k, 'div', 'ro-hstrip' + (open ? ' open' : ''));
+    box(bx, { x: st.x, y: st.y, w: st.w, h: st.h });
+    attr(bx, 'role', 'group'); attr(bx, 'aria-label', 'Helpers of ' + a.name);
+    setVar(bx, '--ro-hc', String(Math.max(1, st.cols)));
+    setVar(bx, '--ro-head', L.HEAD + 'px');
+    const anchor = chrome._k.get('rn:' + k) || chrome._k.get('n:' + k);
+    if (anchor && anchor.nextElementSibling !== bx && !bx.contains(document.activeElement)) anchor.after(bx);
+    if (!bx._b) bx._b = new Map();
+    const shown = open ? subs : subs.slice(0, st.shown), hidden = open ? [] : subs.slice(st.shown);
+    const want = [];
+    const seat = meta.seat || {};
+    for (const h of shown) {
+      let b = bx._b.get(h.id);
+      if (!b) {
+        b = document.createElement('button'); b.type = 'button'; bx._b.set(h.id, b);
+        b._pic = document.createElement('span'); b._pic.className = 'ro-hp'; b._pic.setAttribute('aria-hidden', 'true');
+        b._dot = document.createElement('span'); b._dot.setAttribute('aria-hidden', 'true');
+        b.append(b._pic, b._dot);
+      }
+      const cls = 'ro-hd st-' + h.state + (h.selected ? ' sel' : '');
+      if (b.className !== cls) b.className = cls;
+      const dc = dotClass(h.state); if (b._dot.className !== dc) b._dot.className = dc;
+      const person = L.helperPerson ? L.helperPerson(h.id, who[a.id], ids) : null, sm = person && has(seat, person) ? seat[person] : null, file = person ? person + '-rest.webp' : '';
+      if (sm && !BAD.has(SD + file) && L.headCrop) {
+        const c = L.headCrop(sm), f = L.HEAD / c.s;
+        let im = b._img;
+        if (!im) { im = b._img = document.createElement('img'); b._pic.textContent = ''; b._pic.appendChild(im); }
+        sty(im, 'width', px(sm.w * f)); sty(im, 'left', px(-c.x * f)); sty(im, 'top', px(-c.y * f));
+        img(im, file, true, sm.w * f);
+      } else {
+        if (b._img) { b._img = null; b._pic.textContent = ''; }
+        if (!b._pic.firstChild || b._pic.firstChild.className !== 'ro-hg') { b._pic.textContent = ''; const g = document.createElement('span'); g.className = 'ro-hg'; b._pic.appendChild(g); } /* FR-065: no picture, a neutral silhouette (CSS), never a letter of the name: the name is drawn nowhere */
+      }
+      dset(b, 'id', h.id); attr(b, 'aria-pressed', h.selected ? 'true' : 'false'); attr(b, 'aria-label', h.label); attr(b, 'title', h.title);
+      want.push(b);
+    }
+    for (const [id, b] of bx._b) if (!shown.some((h) => h.id === id)) { b.remove(); bx._b.delete(id); }
+    if (hidden.length || open) {
+      let m = bx._more;
+      if (!m) { m = bx._more = document.createElement('button'); m.type = 'button'; m.className = 'ro-hmore'; }
+      dset(m, 'more', a.id);
+      text(m, open ? 'Fewer' : '+' + hidden.length);
+      attr(m, 'aria-expanded', open ? 'true' : 'false'); attr(m, 'aria-label', open ? 'Show fewer helpers of ' + a.name : 'Show ' + hidden.length + ' more helpers of ' + a.name); attr(m, 'title', open ? 'Show fewer helpers' : hidden.map((h) => h.name).slice(0, 8).join(', ') + (hidden.length > 8 ? ', ...' : ''));
+      want.push(m);
+    } else if (bx._more) { bx._more.remove(); bx._more = null; }
+    let next = bx.firstChild;
+    for (const e of want) { if (e === next) next = next.nextSibling; else bx.insertBefore(e, next); }
+  }
+
   /* FR-016, FR-184: the plate keeps its nodes on a status change: only the text and the dot that changed are written (a helper's list is rebuilt when it changes) */
-  function plateFill(pl, a, state) {
+  /* `strip`: the desk's helpers are drawn as head figures (spec 097 FR-306), so the plate keeps no +N and dots; they stay when the strip cannot be drawn (FR-308's last step, the arcade) */
+  function plateFill(pl, a, state, strip) {
     let P = pl._parts;
     if (!P) {
       P = pl._parts = { l1: document.createElement('span'), nm: document.createElement('b'), rl: document.createElement('span'), l2: document.createElement('span'), dot: document.createElement('span'), tn: document.createTextNode(''), h: null, hs: '' };
@@ -571,10 +664,10 @@
       pl.textContent = ''; pl.append(P.l1, P.l2);
     }
     text(P.nm, a.name); text(P.rl, a.role);
-    const hs = a.helpers.join();
+    const hs = strip ? '' : a.helpers.join();
     if (P.hs !== hs) {
       P.hs = hs; if (P.h) { P.h.remove(); P.h = null; }
-      if (a.helpers.length) { P.h = document.createElement('span'); P.h.className = 'ro-help'; P.h.textContent = '+' + a.helpers.length + ' '; a.helpers.slice(0, 3).forEach((s) => P.h.insertAdjacentHTML('beforeend', dotHTML(s))); P.l1.appendChild(P.h); }
+      if (hs) { P.h = document.createElement('span'); P.h.className = 'ro-help'; P.h.textContent = '+' + a.helpers.length + ' '; a.helpers.slice(0, 3).forEach((s) => P.h.insertAdjacentHTML('beforeend', dotHTML(s))); P.l1.appendChild(P.h); }
     }
     const dc = dotClass(state), line = ' ' + [a.word, a.task].filter(Boolean).join(' · ');
     if (P.dot.className !== dc) P.dot.className = dc;
@@ -809,8 +902,17 @@
     const added = fillRows(s.rows, shown);
     /* FR-033: the new line slides in, three steps, transform only; the text is already right, so a dropped frame costs nothing */
     if (added && s.painted && moving() && !s.away) s.lines.animate([{ transform: 'translateY(' + Math.min(added, 2) * f.lh + 'px)' }, { transform: 'none' }], { duration: 180, easing: 'steps(3, end)' });
-    if (data.caret && !s.caret) { s.caret = document.createElement('i'); s.caret.className = 'ro-caret'; s.box.appendChild(s.caret); const m = L.personMotion(id, 'typeA', d.state); setVar(s.caret, '--ro-per', '1.2s'); s.caretMs = m.offset; if (moving()) { clock(s.caret, m.offset); if (CUR && !CUR.pixelArt) onGrid(s.caret); }; }
-    else if (!data.caret && s.caret) { s.caret.remove(); s.caret = null; }
+    /* spec 008 FR-184: one caret element per screen, shown or hidden: a repaint after the throttle (FR-033) changes no node, so a status update adds or removes none (spec 102 FR-229);
+       shown again it is a new animation, so it takes its desk's clock again */
+    if (data.caret) {
+      const fresh = !s.caret;
+      if (fresh) { s.caret = document.createElement('i'); s.caret.className = 'ro-caret'; s.box.appendChild(s.caret); setVar(s.caret, '--ro-per', '1.2s'); }
+      if (fresh || s.caret.hidden) {
+        s.caret.hidden = false;
+        s.caretMs = L.personMotion(id, 'typeA', d.state).offset;
+        if (moving()) { clock(s.caret, s.caretMs); if (CUR && !CUR.pixelArt) onGrid(s.caret); }
+      }
+    } else if (s.caret && !s.caret.hidden) s.caret.hidden = true;
     s.painted = true;
     if (ZOOM && ZOOM.id === id) { const k = ZOOM.kh; fillZoom(); if (k !== ZOOM.kh) placeZoom(); }
   }
@@ -856,30 +958,39 @@
 
   /* ---- FR-034: the zoom ---- */
   const ZOOM_W = [380, 480], ZOOM_HEAD = 44, ZOOM_LH = 17, ZOOM_ROWS = 12, ZOOM_MIN_ROWS = 4;
-  const ZWIDE = new Set(['Model', 'Now', 'Last tool', 'Usage']);
+  const ZWIDE = new Set(['Model', 'Now', 'Last tool', 'Usage', 'Changed']);
   function wireZoom(ro) {
     let wait = 0;
+    /* spec 097 FR-327: the agent a pointer is over: its monitor, person, desk (or lounge table) or name plate, never a visitor, chip or lobby plate */
+    const hid = (n) => { const t = n && n.closest && n.closest('.ro-screen, .ro-person, .ro-person2, .ro-rig, .ro-initials, .ro-marquee, .ro-desk, .ro-ltable, .ro-plate'); return t ? (t.classList.contains('ro-plate') ? t.dataset.id : t.dataset.for) || '' : ''; };
+    const arm = (id) => { clearTimeout(wait); ARMED = true; wait = setTimeout(() => { ARMED = false; openZoom(id, 'hover'); }, 120); };
+    /* FR-328: the agent changed state under a resting pointer (it walked to the lounge): the browser's pointerout is not the person leaving; the next real move is */
+    ro.addEventListener('pointermove', (e) => {
+      PT = e.clientX + ',' + e.clientY;
+      if (ZOOM && ZOOM.held && ZOOM.held !== PT) { ZOOM.held = false; if (ZOOM.hover && hid(e.target) !== ZOOM.id) leaveZoom('hover'); } /* the browser repeats a move at the same place after the room changed: not the person moving (as QUIET_AT below) */
+    }, true);
+    ro.addEventListener('pointerleave', () => { if (ZOOM && ZOOM.held) { ZOOM.held = false; if (ZOOM.hover) leaveZoom('hover'); } });
     ro.addEventListener('pointermove', (e) => {
       if (!QUIET_POINTER) return;
       const at = e.clientX + ',' + e.clientY;
       if (!QUIET_AT) QUIET_AT = at;
       if (QUIET_AT === at) return;
       QUIET_POINTER = false;
-      const sc = e.target.closest && e.target.closest('.ro-screen');
-      if (sc && sc.dataset.for && e.pointerType !== 'touch' && DISMISSED !== sc.dataset.for) { clearTimeout(wait); ARMED = true; wait = setTimeout(() => { ARMED = false; openZoom(sc.dataset.for, 'hover'); }, 120); }
+      const id = hid(e.target);
+      if (id && e.pointerType !== 'touch' && DISMISSED !== id) arm(id);
     });
     ro.addEventListener('pointerover', (e) => {
-      const sc = e.target.closest && e.target.closest('.ro-screen');
+      const id = hid(e.target);
       if (QUIET_POINTER && !QUIET_AT) QUIET_AT = e.clientX + ',' + e.clientY;
-      if (QUIET_POINTER || !sc || e.pointerType === 'touch' || !sc.dataset.for) return;
-      if ((ZOOM && ZOOM.hover && ZOOM.id === sc.dataset.for) || DISMISSED === sc.dataset.for) return; /* Esc holds until the pointer has left */
-      clearTimeout(wait); ARMED = true; wait = setTimeout(() => { ARMED = false; openZoom(sc.dataset.for, 'hover'); }, 120); /* crossing the room opens nothing */
+      if (QUIET_POINTER || !id || e.pointerType === 'touch') return;
+      if ((ZOOM && ZOOM.hover && ZOOM.id === id) || DISMISSED === id) return; /* Esc holds until the pointer has left */
+      arm(id); /* crossing the room opens nothing */
     });
     ro.addEventListener('pointerout', (e) => {
-      const sc = e.target.closest && e.target.closest('.ro-screen');
-      if (!sc || (e.relatedTarget && sc.contains(e.relatedTarget))) return;
+      const id = hid(e.target);
+      if (!id || hid(e.relatedTarget) === id) return; /* still on the same agent's desk */
       clearTimeout(wait); ARMED = false; DISMISSED = '';
-      if (ZOOM && ZOOM.id === sc.dataset.for) leaveZoom('hover');
+      if (ZOOM && ZOOM.id === id && !ZOOM.held) leaveZoom('hover');
     });
     ro.addEventListener('focusin', (e) => { const p = e.target.closest && e.target.closest('.ro-plate'); if (p && !QUIET_FOCUS && p.matches(':focus-visible')) openZoom(p.dataset.id, 'focus'); });
     ro.addEventListener('focusout', (e) => { const p = e.target.closest && e.target.closest('.ro-plate'); if (p && ZOOM && ZOOM.id === p.dataset.id) leaveZoom('focus'); });
@@ -887,11 +998,11 @@
   function zoomKey(e) {
     if (e.key !== 'Escape' || !ZOOM) return;
     if (hiddenNow()) { closeZoom(); return; } /* the office is covered: this Escape is for what covers it */
+    if (document.querySelector('#modeMenu,#modelMenu,#agentMenu,#ctxMenu')) return; /* FR-328: an open menu is above the card: this Escape closes the menu first (the card is not told apart from it; it goes with its hover or focus) */
     e.preventDefault(); e.stopPropagation(); DISMISSED = ZOOM.hover ? ZOOM.id : ''; closeZoom();
   }
   function openZoom(id, why) {
     if (!CUR || hiddenNow() || !CUR.desks.has(id) || !CUR.screenOf) return;
-    if (CUR.desks.get(id).state === 'asleep') return; /* FR-035: an asleep screen is off, nothing to read */
     if (!ZOOM || ZOOM.id !== id) {
       closeZoom();
       const p = document.createElement('div'); p.className = 'ro-zoom'; p.id = 'roZoom'; p.setAttribute('role', 'region');
@@ -900,9 +1011,11 @@
       ZOOM = { id, hover: false, focus: false, panel: p, plate: CUR.ro.querySelector('.ro-plate[data-id="' + CSS.escape(id) + '"]') };
       if (ZOOM.plate) ZOOM.plate.setAttribute('aria-describedby', 'roZoom');
       document.addEventListener('keydown', zoomKey, true);
+      document.addEventListener('focusin', replaceZoom, true); document.addEventListener('focusout', replaceLater, true);
       addEventListener('blur', closeZoom);
+      addEventListener('focus', replaceZoom); /* FR-330: a slip focused by script while the window was in the background fired no focusin; the place is sought again when the window has the focus */
       const fl = CUR.ro.closest('#floor'); if (fl) { ZOOM.floor = fl; fl.addEventListener('scroll', closeZoom, { passive: true }); }
-      fillZoom(); placeZoom();
+      fillZoom(); if (!placeZoom()) return; /* FR-330: no place that leaves the focused slip uncovered: no card */
     }
     ZOOM[why] = true;
   }
@@ -913,37 +1026,52 @@
     z.panel.remove();
     if (z.plate) z.plate.removeAttribute('aria-describedby');
     document.removeEventListener('keydown', zoomKey, true);
+    document.removeEventListener('focusin', replaceZoom, true); document.removeEventListener('focusout', replaceLater, true);
     removeEventListener('blur', closeZoom);
+    removeEventListener('focus', replaceZoom);
     if (z.floor) z.floor.removeEventListener('scroll', closeZoom);
     for (const id of z.under || []) { const s = SCR.get(id); if (!s || !s.away) setOff(id, false); }
+    if (CUR && CUR.ro) for (const e of CUR.ro.querySelectorAll('.ro-slip[inert]')) e.removeAttribute('inert');
   }
   /* name, role, status, folder and the last lines, textContent only (FR-031, FR-034); a described region, not a live one */
   function fillZoom() {
     const a = CUR.agents.get(ZOOM.id), d = CUR.desks.get(ZOOM.id), p = ZOOM.panel;
     if (!a || !d) return;
     p.setAttribute('aria-label', 'Screen of ' + a.name);
-    p.dataset.state = d.state; p.dataset.for = ZOOM.id;
+    p.dataset.state = d.state; p.dataset.for = ZOOM.id; ZOOM.st = d.state;
     text(p.querySelector('.ro-zh b'), a.name); text(p.querySelector('.ro-zr'), a.role); text(p.querySelector('.ro-zs'), a.word); text(p.querySelector('.ro-zf'), a.folder);
-    const data = CUR.screenOf(ZOOM.id, d.state, a.word);
+    const data = CUR.screenOf(ZOOM.id, d.state, a.word, true); /* true: for the card (FR-328: an asleep agent's reply lines) */
     const host = p.querySelector('.ro-zl');
     fillRows(host, data.lines);
     /* spec 097 FR-312: the facts, label and text, two to a line; textContent only */
     const facts = (CUR.factsOf ? CUR.factsOf(ZOOM.id) : []).slice(0, 8), kb = p.querySelector('.ro-zk');
     kb.textContent = '';
-    for (const [k, v] of facts) { const l = document.createElement('span'); l.className = ZWIDE.has(k) ? 'ro-zi ro-zw' : 'ro-zi'; const kk = document.createElement('span'); kk.className = 'ro-zy'; text(kk, k); l.appendChild(kk); l.appendChild(document.createTextNode(' ')); const vv = document.createElement('span'); vv.className = 'ro-zv'; text(vv, v); l.appendChild(vv); kb.appendChild(l); }
+    for (const [k, v] of facts) { const l = document.createElement('span'); l.className = k === 'Changed' ? 'ro-zi ro-zw ro-zc' : ZWIDE.has(k) ? 'ro-zi ro-zw' : 'ro-zi'; const kk = document.createElement('span'); kk.className = 'ro-zy'; text(kk, k); l.appendChild(kk); l.appendChild(document.createTextNode(' ')); const vv = document.createElement('span'); vv.className = 'ro-zv'; text(vv, v); l.appendChild(vv); kb.appendChild(l); }
     const wide = facts.filter(([k]) => ZWIDE.has(k)).length; /* long ones take a whole line, cut with an ellipsis when too long (FR-313) */
-    ZOOM.kh = facts.length ? (wide + Math.ceil((facts.length - wide) / 2)) * ZOOM_LH + 9 : 0; /* .ro-zk: 4 px padding above and below, a 1 px rule */ kb.hidden = !facts.length;
+    const extra = facts.filter(([k, v]) => k === 'Changed' && Array.from(v).length + 8 > 54).length; /* FR-329: a Changed line wraps, so it takes a second row */
+    ZOOM.kh = facts.length ? (wide + extra + Math.ceil((facts.length - wide) / 2)) * ZOOM_LH + 9 : 0; /* .ro-zk: 4 px padding above and below, a 1 px rule */ kb.hidden = !facts.length;
     ZOOM.rows = data.lines.reduce((n, l) => n + Math.max(1, Math.ceil(Array.from(l.t).length / 52)), 0);
   }
   function placeZoom() {
     const ro = CUR.ro, o = ro.getBoundingClientRect(), fl = ro.closest('#floor'), f = fl ? fl.getBoundingClientRect() : o, d = CUR.desks.get(ZOOM.id);
     const near = (e) => { const b = e.getBoundingClientRect(); return { x: b.left - o.left, y: b.top - o.top, w: b.width, h: b.height }; };
-    const avoid = [d.screen, ...[...ro.querySelectorAll('.ro-plate:is(.st-waiting,.st-limit), .ro-lplate.wait, .ro-chip.wait')].map(near)];
+    const slipRects = [...ro.querySelectorAll('.ro-slip:not([hidden])')].map(near);
+    const avoid = [d.screen, ...[...ro.querySelectorAll('.ro-plate:is(.st-waiting,.st-limit), .ro-lplate.wait, .ro-chip.wait')].map(near), ...slipRects]; /* FR-330 (2026-11-08): a slip or bubble (FR-110) is avoided too; the card is painted above them (CSS) for when no free place is left */
     if (ZOOM.plate) avoid.push(near(ZOOM.plate));
     const view = { x: Math.max(0, f.left - o.left), y: Math.max(0, f.top - o.top), w: Math.min(f.right, o.right) - Math.max(f.left, o.left), h: Math.min(f.bottom, o.bottom) - Math.max(f.top, o.top) };
     const w = Math.max(ZOOM_W[0], Math.min(ZOOM_W[1], view.w * 0.34));
     const HEAD = ZOOM_HEAD + (ZOOM.kh || 0), rows = Math.max(ZOOM_MIN_ROWS, Math.min(ZOOM_ROWS, ZOOM.rows || 0));
-    const r = X().zoomRect(d.screen, avoid, view, { w, h: HEAD + rows * ZOOM_LH + 12, minH: HEAD + ZOOM_MIN_ROWS * ZOOM_LH + 12 });
+    const size = { w, h: HEAD + rows * ZOOM_LH + 12, minH: HEAD + ZOOM_MIN_ROWS * ZOOM_LH + 12 };
+    let r = X().zoomRect(d.screen, avoid, view, size);
+    /* FR-330 (2026-11-08, round 3 of #1313): the card is never over the slip that holds the keyboard focus (a click through the card, which takes no pointer events, would press a hidden button). That slip is the avoid list's first claim: when the place found covers it, the other slips are let go and the place is sought again; when none is left, no card */
+    const act = document.activeElement, fs = act && act.closest && act.closest('.ro-slip:not([hidden])');
+    if (fs && ro.contains(fs)) {
+      const fr = near(fs), hits = (q) => q.x < fr.x + fr.w && fr.x < q.x + q.w && q.y < fr.y + fr.h && fr.y < q.y + q.h;
+      if (hits(r)) {
+        r = X().zoomRect(d.screen, avoid.filter((a) => !slipRects.includes(a)).concat([fr]), view, size);
+        if (hits(r)) { closeZoom(); return false; }
+      }
+    }
     box(ZOOM.panel, r); ZOOM.panel.dataset.side = r.side;
     setVar(ZOOM.panel, '--ro-zh', Math.max(1, Math.floor((r.h - HEAD - 8) / ZOOM_LH)) * ZOOM_LH + 'px');
     /* what the panel covers whole stands still until it closes */
@@ -951,7 +1079,21 @@
     for (const [id, de] of CUR.desks) if (id !== ZOOM.id && de.person && de.person.x >= r.x && de.person.x + de.person.w <= r.x + r.w && de.person.y >= r.y && de.person.y + de.person.h <= r.y + r.h) { under.push(id); setOff(id, true); }
     for (const id of ZOOM.under || []) if (!under.includes(id)) { const s = SCR.get(id); if (!s || !s.away) setOff(id, false); }
     ZOOM.under = under;
+    ZOOM.rect = r; coverSlips();
+    return true;
   }
+  /* FR-330: a slip the card still covers (no free place was left) takes no click or key while it is hidden under the card; the slip that holds the keyboard focus is never under it (placeZoom), so it needs no exception. The place is sought again when the focus moves */
+  function coverSlips() {
+    if (!ZOOM || !ZOOM.rect || !CUR || !CUR.ro) return;
+    const ro = CUR.ro, o = ro.getBoundingClientRect(), r = ZOOM.rect;
+    for (const e of ro.querySelectorAll('.ro-slip')) {
+      const q = e.getBoundingClientRect(), x = q.left - o.left, y = q.top - o.top;
+      const hit = !e.hidden && x < r.x + r.w && r.x < x + q.width && y < r.y + r.h && r.y < y + q.height;
+      if (hit) e.setAttribute('inert', ''); else e.removeAttribute('inert');
+    }
+  }
+  const replaceZoom = () => { if (ZOOM && CUR && CUR.desks.has(ZOOM.id)) placeZoom(); };
+  const replaceLater = () => setTimeout(replaceZoom, 0);
 
   /* Paco's review of #921 (art): a lobby place plate reads in full (never an ellipsis) when there is room: a plate wider than its
      slot grows to the right, then to the left, into free space only (up to the next plate on the same rows or the band's edge); no
@@ -1127,5 +1269,5 @@
   }
   /* spec 097 FR-186: work the room has put off on a timer (a screen's throttled repaint, FR-033; a redraw when a done tick ends): check-office-ops-real starts a measured update only when there is none, so no earlier update's deferred work is counted in it. Read only */
   const pending = () => { let screens = 0; for (const s of SCR.values()) if (s.timer) screens++; return { screens }; }; /* FR-236: no done tick to wait for any more */
-  root.DurbarRealOffice = { hoverState: () => ({ still: QUIET_POINTER, armed: ARMED }), pending, render, reset, leave, feed, resume, quietFocus, whereSize: () => WHERE.size, bad: () => [...BAD], resolve, stagger, personOf: (id) => (PEOPLE && has(PEOPLE, id) ? PEOPLE[id] : null) /* the chat's header draws the same person (spec 097 FR-106) */ }; /* resolve: for the driver's deterministic check */
+  root.DurbarRealOffice = { hoverState: () => ({ still: QUIET_POINTER, armed: ARMED }), pending, render, reset, leave, feed, resume, quietFocus, ctx, whereSize: () => WHERE.size, bad: () => [...BAD], resolve, stagger, personOf: (id) => (PEOPLE && has(PEOPLE, id) ? PEOPLE[id] : null) /* the chat's header draws the same person (spec 097 FR-106) */ }; /* resolve: for the driver's deterministic check */
 })(typeof self !== 'undefined' ? self : this);

@@ -2,6 +2,7 @@
  * Office layout check (spec 001 FR-021, T025): no overlaps, no clipping, no floor overflow.
  *
  *   npm run check:office                       (builds, then runs this file under Electron; xvfb-run on Linux without DISPLAY)
+ *   OFFICE_VIEW=real OFFICE_WORLD=retro|cave      the Real office variant in the arcade or the cave; OFFICE_ROOM_ORDER=reversed saves a room order first (spec 097 FR-353)
  *   OFFICE_SHOTS=/path/dir npm run check:office  also saves a screenshot per combination as <dir>/<prefix>-sim15-1440x900-office.png
  *
  * Runs against the simulator only (no AI credits). For SIM=12 and SIM=15, at 1440x900 and 1280x800, and again after expanding a `+N more` chip,
@@ -48,7 +49,7 @@ const INDEX = path.join(ROOT, 'dist', 'renderer', 'index.html');
 const SIZES = [[1440, 900], [1280, 800]];
 const SIMS = [12, 15];
 const TOL = 0.5;
-const { jsLiteral, helpers } = require('./driver-helpers'); /* jsLiteral lives there (CodeQL js/bad-code-sanitization) */
+const { jsLiteral, helpers, darkFixtureProblem } = require('./driver-helpers'); /* jsLiteral lives there (CodeQL js/bad-code-sanitization) */
 
 /* runs inside the page; returns {problems:[...], info:{...}} */
 function pageCheck(expanded, expectPlaces) {
@@ -375,7 +376,12 @@ async function driver(ctx) {
   /* spec 077 FR-070: OFFICE_CHARACTERS=<value> (theme, minimalist, cheeky, prehistoric, pirate, monster, royal, rebels) puts who sits at the desks in the address too; checked like the theme */
   const wantChars = /^(theme|minimalist|cheeky|prehistoric|pirate|monster|royal|rebels)$/.test(process.env.OFFICE_CHARACTERS || '') ? process.env.OFFICE_CHARACTERS : '';
   if (process.env.OFFICE_CHARACTERS && !wantChars) throw new Error('OFFICE_CHARACTERS must be theme, minimalist, cheeky, prehistoric, pirate, monster, royal or rebels');
-  const themeQuery = (wantTheme ? '&theme=' + encodeURIComponent(wantTheme) : '') + (userTheme ? '&usertheme=' + encodeURIComponent(JSON.stringify(userTheme)) : '') + (wantChars ? '&characters=' + wantChars : '');
+  /* spec 102 T226 (FR-267): OFFICE_WORLD=retro (with OFFICE_VIEW=real) draws the arcade, the one world behind a flag today, in the address like the theme; only a listed value */
+  const wantWorld = process.env.OFFICE_WORLD === 'retro' ? 'retro' : '';
+  if (process.env.OFFICE_WORLD && !wantWorld) throw new Error('OFFICE_WORLD must be retro');
+  const expectDark = process.env.CHECK_EXPECT_DARK === '1';
+  if (expectDark && !userTheme) throw new Error('CHECK_EXPECT_DARK=1 needs OFFICE_USER_THEME: the dark fixture is a user theme');
+  const themeQuery = (wantWorld ? '&worldflags=' + wantWorld + '&world=' + wantWorld : '') + (wantTheme ? '&theme=' + encodeURIComponent(wantTheme) : '') + (userTheme ? '&usertheme=' + encodeURIComponent(JSON.stringify(userTheme)) : '') + (wantChars ? '&characters=' + wantChars : '');
   if (wantChars) console.log('check:office: characters ' + wantChars);
   let motionShown = false;
   if (wantTheme) console.log('check:office: theme ' + wantTheme + (userTheme ? ' (user theme from ' + path.basename(process.env.OFFICE_USER_THEME) + ')' : ''));
@@ -388,6 +394,9 @@ async function driver(ctx) {
       try { await ctx.waitFor(`window.THEME&&window.THEME.current().id===${jsLiteral(wantTheme)}`, 5000); } catch (e) { /* reported below */ }
       const on = await ctx.js(`({id:window.THEME.current().id,ui:document.documentElement.dataset.ui||'clean',want:(window.THEME.current().manifest||{}).ui||'clean'})`);
       if (on.id !== wantTheme || on.ui !== on.want) throw new Error(`theme ${wantTheme} was not applied (on screen: ${on.id}, data-ui ${on.ui})`);
+      /* spec 102 T226: the check-parallel "dark theme" jobs and ci.yml's theme-shard `dark` load check-dark.json: it must be the dark fixture, on a dark page */
+      /* CHECK_EXPECT_DARK=1 (set by check-parallel.js and ci.yml's theme-shard for their dark jobs) demands it whatever the file is called; the name check stays for a hand run */
+      if (expectDark || (userTheme && path.basename(process.env.OFFICE_USER_THEME) === 'check-dark.json')) { const bad = await darkFixtureProblem(ctx); if (bad) throw new Error(bad); }
     }
     if (wantChars) {
       try { await ctx.waitFor(`window.THEME.characters()===${jsLiteral(wantChars)}`, 5000); } catch (e) { /* reported below */ }
@@ -469,14 +478,18 @@ async function driver(ctx) {
      outside the floor; no text under 10.5px; no page overflow; no office scroll at the 15-agent scale; the desk face size (SC-002, a ratchet: 30.5px,
      the 40px target is a KNOWN GAP); every plate, sign and chip readable (4.5:1) at the room's dimmest (70%) and full ambient (FR-050); and flat
      mode requests no Real office file (SC-004). */
+  /* spec 102 T276: the arcade is measured only in the Real office view (T226's arcade layout job); the flag itself is T275's */
+  if (wantWorld && process.env.OFFICE_VIEW !== 'real') throw new Error('OFFICE_WORLD=' + wantWorld + ' needs OFFICE_VIEW=real: the flat office would be measured, not the arcade');
   if (process.env.OFFICE_VIEW === 'real') {
     await load('sim=15&simfreeze=1', 1440, 900);
     const flatFiles = await ctx.js(`performance.getEntriesByType('resource').map(e=>e.name).filter(n=>/realoffice|\\/shared\\/(lights|realoffice-layout)\\.js/.test(n))`);
     total++;
     if (flatFiles.length || (await ctx.js(`!!window.DurbarRealOffice||!!document.querySelector('.ro')`))) { failed++; console.log('FAIL real: flat mode loaded Real office files: ' + flatFiles.join(', ')); }
-    const realCheck = (amb) => {
+    const realCheck = (amb, want) => {
       const P = [], ro = document.querySelector('#stage .ro'), L = window.__durbarSimUi.realLayout();
       if (!ro || !L) return { problems: ['no Real office drawn'], info: {} };
+      /* T276: a run that asked for the arcade must have drawn it, or it would pass on the Photo office */
+      if (want && (ro.dataset.world !== want || document.documentElement.dataset.world !== want)) return { problems: ['the ' + want + ' world was asked for but not drawn (office world: ' + (ro.dataset.world || 'none') + ', page: ' + (document.documentElement.dataset.world || 'none') + ')'], info: {} };
       if (amb != null) ro.style.setProperty('--ro-amb', String(1 - amb));
       const o = ro.getBoundingClientRect(), fl = document.getElementById('floor').getBoundingClientRect();
       const R = (e) => { const b = e.getBoundingClientRect(); return { x: b.left, y: b.top, r: b.right, b: b.bottom }; };
@@ -536,12 +549,15 @@ async function driver(ctx) {
     for (const [sim, rooms] of [[3, ''], [12, ''], [15, ''], [15, '1'], [15, 'solo']]) for (const [w, h] of SIZES) {
       if (!mine()) continue;
       const tag = `real sim${sim}${rooms ? '-rooms' + rooms : ''}-${w}x${h}`;
-      await load(`sim=${sim}&simfreeze=1&officeview=real${rooms ? '&simrooms=' + rooms : ''}`, w, h);
+      await load(`sim=${sim}&simfreeze=1&officeview=real${rooms ? '&simrooms=' + rooms : ''}${/^(retro|cave)$/.test(process.env.OFFICE_WORLD || '') ? '&worldflags=' + process.env.OFFICE_WORLD + '&world=' + process.env.OFFICE_WORLD : ''}`, w, h);
       if (!(await H.until(`!!document.querySelector('#stage .ro .ro-plate')&&[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`, 15000))) { total++; failed++; console.log(`FAIL ${tag}: the Real office was not drawn`); continue; }
       /* OFFICE_FONT: the other fonts of other machines (a CI runner's wider sans broke the chips and plates once): every Real office text in that family, drawn again */
       if (process.env.OFFICE_FONT) {
         const css = '.ro,.ro *{font-family:"' + process.env.OFFICE_FONT.replace(/[^A-Za-z0-9 -]/g, '') + '",sans-serif!important}';
         await ctx.js(`(()=>{const st=document.createElement('style');st.textContent=${jsLiteral(css)};document.head.appendChild(st);window.__durbarSimUi.render();return true})()`);
+      }
+      if (process.env.OFFICE_ROOM_ORDER === 'reversed') { /* spec 097 FR-353: a saved room order (the folders reversed) is kept in the rows: the same checks, the same floors for the faces */
+        await ctx.js(`(()=>{const U=window.__durbarSimUi,ps=[...document.querySelectorAll('#stage .ro-sign')].filter((s)=>s.querySelector('.ro-sc')).map((s)=>U.order.path('room:'+s.dataset.folder)).reverse();U.order.get().rooms=ps;U.render();return ps.length})()`);
       }
       /* spec 097 FR-316 (issue #1149): unsent drafts on four desks (the narrowest plate also has a New reply tag, so both tags sit above it) and on a lounge seat when there is one: the Draft tag's box is checked against plates, tags, faces and screens at every size */
       const order = await ctx.js(`[...document.querySelectorAll('#stage .ro-plate')].filter(p=>p.getClientRects().length).sort((a,b)=>a.getBoundingClientRect().width-b.getBoundingClientRect().width).map(p=>p.dataset.id)`);
@@ -575,7 +591,7 @@ async function driver(ctx) {
       if (!(await H.until(`window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()`, 15000))) { total++; failed++; console.log(`FAIL ${tag}: the office did not settle after the drafts were seeded`); continue; }
       await stable(tag + ' with drafts');
       for (const [step, amb] of [['closed', 0.7], ['closed', 1]]) {
-        const res = await ctx.js(`(${realCheck.toString()})(${amb})`);
+        const res = await ctx.js(`(${realCheck.toString()})(${amb},${jsLiteral(wantWorld)})`);
         if (!res.info.drafts) res.problems.push('no Draft tag was in the checked layout');
         total++;
         if (sim === 15 && res.info.scroll) res.problems.push('the office scrolls at the 15-agent scale');

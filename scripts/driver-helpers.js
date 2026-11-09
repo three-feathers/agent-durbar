@@ -16,7 +16,26 @@
 const UNSAFE = { '<': '\\u003C', '>': '\\u003E', '/': '\\u002F', '\u2028': '\\u2028', '\u2029': '\\u2029' };
 const jsLiteral = (v) => JSON.stringify(v).replace(/[<>/\u2028\u2029]/g, (c) => UNSAFE[c]);
 
+const fs = require('fs');
 const path = require('path');
+/* spec 102 T226 (FR-267): the fixture user theme with a dark page and its own display font; it takes Retro Pixel's place as the second theme of the layout checks.
+   CHECK_DARK is the manifest, CHECK_DARK_QUERY loads it in the simulator (`theme` + `usertheme`), and `window.THEME.setTheme(CHECK_DARK)` switches to it in a loaded page. */
+const CHECK_DARK = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'themes', 'check-dark.json'), 'utf8'));
+const CHECK_DARK_QUERY = { theme: CHECK_DARK.id, usertheme: JSON.stringify(CHECK_DARK) };
+/* spec 102 T226: a run that says "dark" must be on the dark fixture: the theme on screen is `check-dark` and the page (`--bg`) is an opaque fill with luminance under 0.2.
+   A transparent or unparsable `--bg` is not dark (review of PR #1276, B). `darkProblem` judges what the page reported; `darkFixtureProblem` reads it. Both return the problem text, or '' when it is right. */
+function darkProblem(on) {
+  if (on.id !== CHECK_DARK.id) return `the dark run is on theme "${on.id}", not the fixture "${CHECK_DARK.id}"`;
+  const v = /^rgba?\(/.test(String(on.bg)) ? (String(on.bg).match(/\d+(\.\d+)?/g) || []).map(Number) : [];
+  const alpha = v.length === 3 ? 1 : v.length === 4 ? v[3] : NaN; /* rgb() has none; rgba() carries it as the fourth number */
+  if (!(v.length === 3 || v.length === 4) || !(alpha >= 0.9)) return `the dark run's page is not an opaque fill (--bg ${on.bg})`;
+  const lum = (0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]) / 255;
+  if (!(lum < 0.2)) return `the dark run's page is not dark (--bg ${on.bg}, luminance ${lum.toFixed(2)})`;
+  return '';
+}
+async function darkFixtureProblem(ctx) {
+  return darkProblem(await ctx.js(`(()=>{const e=document.createElement('i');e.style.cssText='position:fixed;background:var(--bg)';document.body.appendChild(e);const c=getComputedStyle(e).backgroundColor;e.remove();return {id:window.THEME.current().id,bg:c}})()`));
+}
 const LIMIT = 8000;
 const INDEX = path.join(__dirname, '..', 'dist', 'renderer', 'index.html');
 
@@ -180,7 +199,7 @@ function helpers(ctx) {
   const clearToasts = () => js(`document.querySelectorAll('#toasts .toast').forEach(t=>t.remove())`);
   /**
    * Size the window, load the renderer with the simulator query and wait until it is ready (default: 15 desks) and has stopped changing.
-   * `query` is added to sim=15 and simfreeze=1 (an undefined value removes one); `ready` is a page expression ('fit': the stage has laid out); `settle: false` skips the
+   * `query` is added to sim=15 and simfreeze=1 (an undefined value removes one); `fastVisits: true` adds `simvisits=fast` (spec 008 FR-190: the lobby's own timers 10x shorter, simulator only; for a driver that never looks at lobby visits or walking and takes no picture of them); `ready` is a page expression ('fit': the stage has laid out); `settle: false` skips the
    * settling wait; `focus` focuses the page afterwards.
    */
   const load = async (o = {}) => {
@@ -188,12 +207,15 @@ function helpers(ctx) {
     // spec 001 FR-084: a pinned simulator clock (main's `simclock`, from DURBAR_SIM_CLOCK) stays pinned across the driver's reloads
     let clock = null;
     try { clock = new URL(wc().getURL()).searchParams.get('simclock'); } catch { clock = null; }
-    const query = { sim: '15', simfreeze: '1', ...(clock && /^\d{1,15}$/.test(clock) ? { simclock: clock } : {}), ...(o.query || {}) };
+    const query = { sim: '15', simfreeze: '1', ...(clock && /^\d{1,15}$/.test(clock) ? { simclock: clock } : {}), ...(o.fastVisits ? { simvisits: 'fast' } : {}), ...(o.query || {}) };
     for (const k of Object.keys(query)) if (query[k] === undefined) delete query[k];
     await ctx.win.loadFile(o.index || INDEX, { query });
     // spec 092: with `simfloors=1` (the 15 agents spread over three floors on) the office shows one floor, so the default "15 desks" would only be met by its timeout
     const ready = o.ready === 'fit' ? `document.getElementById('stage')&&document.getElementById('stage').dataset.fit` : o.ready || `document.querySelectorAll('#stage .desk[data-id]').length>=${query.simfloors === '1' ? 1 : 15}`;
-    await ctx.waitFor(ready, o.readyMs || 15000);
+    if (!(await ctx.waitFor(ready, o.readyMs || 15000))) console.log(`[waits] load: the ready expression never held in ${o.readyMs || 15000} ms (pass \`ready\` for this page): ${String(ready).replace(/\s+/g, ' ').slice(0, 120)}`); // spec 008 FR-190: a timeout here costs the whole wait
+    // spec 008 FR-190: a frozen simulator says when it is steady (every script replayed, no lobby visit waiting to start or end, the frame drawn): wait for that
+    // instead of letting `settle` find it by sampling 200 ms apart (a load used to spend 0.5-1 s there). `settle` still runs after it, so nothing is skipped.
+    if (query.simfreeze === '1' && !o.index && o.settle !== false) await w.until(`!!window.__durbarSimReplayed&&!!window.__durbarSimUi&&window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()&&!document.querySelector('.scene-out')`, 4000);
     if (o.settle !== false) await w.settle();
     if (o.focus) wc().focus();
   };
@@ -294,4 +316,4 @@ async function shotWithView(win, view, file) {
   fs.writeFileSync(file, nativeImage.createFromBitmap(base, { width: size.width, height: size.height }).toPNG());
 }
 
-module.exports = { waits, helpers, guardWindow, jsLiteral, shotWithView, LIMIT, INDEX };
+module.exports = { waits, helpers, guardWindow, jsLiteral, shotWithView, LIMIT, INDEX, CHECK_DARK, CHECK_DARK_QUERY, darkFixtureProblem, darkProblem };

@@ -1083,10 +1083,32 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   assert.strictEqual(h('\\\\fs1\\alexexample'), '~', 'UNC, only host and share');
   assert.strictEqual(h('C:\\\\work\\a\\b and D:\\x\\y\\z'), 'C:\\\\work\\a\\b and D:\\x\\y\\z', 'a doubled drive path is not a UNC path');
   assert.strictEqual(h('~\\proj\\.github\\a.txt'), '~\\proj\\.github\\a.txt', 'a masked Windows path stays as it is');
+  // spec 097 FR-311 delta 2026-11-08 (review of PR #1322): any run of two or more `\` (an odd count, as a Markdown escape leaves it) and `//`
+  for (const n of [2, 3, 4, 5, 6, 8]) assert.strictEqual(h('x ' + '\\'.repeat(n) + 'fs01\\homes\\zed_q\\notes'), 'x ~\\notes', 'UNC with ' + n + ' backslashes');
+  assert.strictEqual(h('see //fs01/homes/zed_q/notes now'), 'see ~/notes now', 'UNC with forward slashes');
+  assert.strictEqual(h('"//fs01/Homes"'), '"~"', 'forward-slash UNC, only host and a home share');
+  assert.strictEqual(h('x //nas/users$/Zed Q/a and //fs1/PROFILES/zq'), 'x ~/a and ~', 'forward-slash UNC: users$, any case, a name with a space');
+  assert.strictEqual(h('//fs01/homes/u/x and //fs01/Users/u/y and "//srv/home/bob" (see //srv/home/bob)'), '~/x and ~/y and "~" (see ~)', 'forward-slash UNC on a bare host; a closing paren stays');
+  assert.strictEqual(h('\\\\fs01.corp\\homes\\u\\x'), '~\\x', 'the backslash form keeps an FQDN host masked');
+  // third review of PR #1322: a web URL is not a UNC path (a dotted host, localhost, or after src=, href=, srcset=, url()
+  for (const t of ['src="//api.example.com/users/42/avatar.png"', '<img src="//gravatar.com/users/abc">', '//www.example.com/home', '//localhost/home/index.html',
+    'url(//fonts.example/home/x.woff)', 'url("//cdn/home/x.woff")', "href='//mysite/profiles/settings'", 'src=//cdn/profile/pic.png', 'srcset="//img/users/a.png 2x"',
+    '//fs01.corp.example/homes/u'])
+    assert.strictEqual(h(t), t, 'a web URL, not a home on a share: ' + t);
+  // a bare host outside those attributes cannot be told from a NetBIOS server: masked (the safe side, [KNOWN GAP] in spec 097); no `)` is eaten
+  assert.strictEqual(h('"//cdn/profile/pic.png" //mysite/profiles/settings //HOME/users (//cdn/home/x)'), '"~" ~ ~ (~)', 'bare hosts are masked as shares (host, share and the next folder)');
+  // second review of PR #1322: `//` is not a UNC path unless the share is a home share
+  for (const t of ['//cdn.example.com/lib/app.js', 'src="//cdn.example.com/x.js"', '//TODO/fix/this', 'a //b/c', '//fs01/zed_q/notes', '//fs01/homesick/zed_q', '//fs01/myusers/zed_q'])
+    assert.strictEqual(h(t), t, 'not a home on a share: ' + t);
+  assert.strictEqual(h('https://fs01.example.invalid/homes/zed_q/x and file:///srv/a/b'), 'https://fs01.example.invalid/homes/zed_q/x and file:///srv/a/b', 'a URL is not a UNC path');
+  assert.strictEqual(h('a//b/c/d and // note/x'), 'a//b/c/d and // note/x', '`//` after a letter, or before a space, is not a UNC path');
+  assert.strictEqual(h('\\\\\\fs01\\homes'), '~', 'three backslashes, only host and share');
   const t0 = Date.now();
   maskHomePaths('/home/' + 'a'.repeat(1_000_000), []);
   maskHomePaths('/home/a '.repeat(100_000), []);
   maskHomePaths('\\\\a\\b\\'.repeat(100_000), []);
+  maskHomePaths('\\'.repeat(1_000_000) + 'x', []);
+  maskHomePaths('//a/'.repeat(200_000), []);
   assert.ok(Date.now() - t0 < 1500, 'bounded on hostile input');
   const u = maskSecretUrl('https://x.test/cb?code=AbC123&state=xyz9&Code=Q1&id_token=i.d.t&refresh_token=rr&ok=1#access_token=at1');
   for (const v of ['AbC123', 'xyz9', 'Q1', 'i.d.t', 'rr', 'at1']) assert.ok(!u.includes(v), 'OAuth value masked: ' + v + ' in ' + u);

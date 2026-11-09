@@ -11,11 +11,11 @@
  *   2. real fonts: the office check's own rules (overlap, clipping, room headers, text at least 10.5px) on the same layouts in
  *      the theme's own fonts, where a wider display font could push header parts. Motion is reduced; a few seconds per theme.
  *
- *   npm run check:geometry                     Retro (dark, its own display font and art) against Clean Office
- *   CHECK_ALL_THEMES=1 npm run check:geometry  the other built-in theme (Clean Office is the baseline), scripts/fixtures/themes/check-user.json and pink-studio.json (nightly CI)
- *   GEOMETRY_THEMES=retro,user npm run check:geometry
+ *   npm run check:geometry                     the dark fixture theme (check-dark.json: dark page, its own display font) against Clean Office
+ *   CHECK_ALL_THEMES=1 npm run check:geometry  the dark fixture, scripts/fixtures/themes/check-user.json and pink-studio.json (nightly CI; Clean Office is the baseline)
+ *   GEOMETRY_THEMES=dark,user npm run check:geometry
  *
- * Spec 008 FR-111 (owner decision 2026-10-22): pull requests check Retro only. The other styles change only colours, borders,
+ * Spec 008 FR-111 (owner decision 2026-10-22; Retro replaced by the dark fixture, spec 102 T226): pull requests check the dark fixture only. The other styles change only colours, borders,
  * art and the display font through themes.css, and test:theme fails the build if themes.css sets any size (spec 035 FR-010) or a
  * manifest carries anything but known tokens and a known UI style; nightly CI runs every theme here.
  *
@@ -23,7 +23,7 @@
  */
 const fs = require('fs');
 const { pageCheck } = require('./check-office-overlap.js');
-const { helpers, jsLiteral } = require('./driver-helpers');
+const { helpers, jsLiteral, CHECK_DARK, darkFixtureProblem } = require('./driver-helpers');
 const os = require('os');
 const path = require('path');
 
@@ -33,22 +33,22 @@ const SIZES = [[1440, 900], [1280, 800]];
 /* spec 001 FR-094 (issue #697): 15 and 12 agents, plus a sparse office that draws expanded helper cards (three parents in one room with two helpers each: `hx`) */
 const SIMS = [15, 12, 'hx'];
 const SIM_QUERY = { hx: { sim: '3', simrooms: '1', simhelpers: '2' } };
-/* user packs by name: `user` (check-user.json) and the sample AI-style pack with fonts, corners, shadows and clothes (spec 070) */
-const FIXTURES = { user: 'check-user.json', 'pink-studio': 'pink-studio.json' };
-const ALL_THEMES = 'retro,user,pink-studio';
+/* user packs by name: `dark` (check-dark.json: a dark page and its own display font, spec 102 T226), `user` (check-user.json) and the sample AI-style pack with fonts, corners, shadows and clothes (spec 070) */
+const FIXTURES = { dark: 'check-dark.json', user: 'check-user.json', 'pink-studio': 'pink-studio.json' };
+const ALL_THEMES = 'dark,user,pink-studio';
 /* spec 070: the Pink Studio pack (fonts, radii, shadows, clothes) runs with every theme (nightly, or GEOMETRY_THEMES=pink-studio) */
-const THEMES = (process.env.GEOMETRY_THEMES || (process.env.CHECK_ALL_THEMES === '1' ? ALL_THEMES : 'retro')).split(',').map((s) => s.trim()).filter(Boolean);
+const THEMES = (process.env.GEOMETRY_THEMES || (process.env.CHECK_ALL_THEMES === '1' ? ALL_THEMES : 'dark')).split(',').map((s) => s.trim()).filter(Boolean);
 
 /* runs in the page: the box of EVERY element of the office, the lobby and the top bar (SVG art inside excluded: scene kits draw
    their own), keyed by order and class, plus the font size of each text element; the DOM must be the same in every theme */
-function measure() {
+function measure(sel) {
   const out = {};
   if (window.__durbarSimUi) window.__durbarSimUi.settleNow(); /* spec 008 FR-113: a frame still queued is drawn before measuring */
   const st = document.createElement('style');
-  st.textContent = '#stage *, .lobby *, header *{font-family:sans-serif!important;font-weight:400!important;font-style:normal!important;letter-spacing:normal!important;text-transform:none!important;word-spacing:normal!important;font-variant:normal!important;font-feature-settings:normal!important;font-stretch:normal!important}';
+  st.textContent = '#stage *, .lobby *, header *, #list *, [data-geo="scr"] *{font-family:sans-serif!important;font-weight:400!important;font-style:normal!important;letter-spacing:normal!important;text-transform:none!important;word-spacing:normal!important;font-variant:normal!important;font-feature-settings:normal!important;font-stretch:normal!important}';
   document.head.appendChild(st);
   if (window.DurbarFit) window.DurbarFit(); /* fit the usage lines and room headers in the forced font, as the app does in its own */
-  const els = [...document.querySelectorAll('#stage, #stage *, .lobby, .lobby *, header, header *')].filter((e) => !e.closest('svg') && e.getClientRects().length
+  const els = [...document.querySelectorAll(sel || '#stage, #stage *, .lobby, .lobby *, header, header *')].filter((e) => !e.closest('svg') && e.getClientRects().length
     /* spec 059: the rename pencil (button.ren) is anchored to the END OF THE NAME'S TEXT (placeRen), like a label: a theme's own font moves it, so its position is text-dependent and not a layout box. Its size and overlaps are checked by check:office. */
     && !e.closest('.ren'));
   els.forEach((e, i) => {
@@ -76,6 +76,8 @@ async function driver(ctx) {
     await ctx.waitFor(`window.THEME&&window.THEME.current().id===${jsLiteral(want)}`, 5000);
     const on = await ctx.js(`window.THEME.current().id`);
     if (on !== want) throw new Error(`theme ${want} was not applied (on screen: ${on})`);
+    /* spec 102 T226 (Paco, PR #1276): "dark" is the dark fixture, not just whatever file the name points at */
+    if (theme === 'dark') { const bad = await darkFixtureProblem(ctx); if (bad) throw new Error(`${theme} sim${sim}-${w}x${h}: ${bad}`); }
     await ctx.js(`document.fonts.ready.then(()=>true)`);
     /* spec 008 FR-113: a steady simulator before every capture, the reference included. PR #535's CI once measured a Clean Office
        page whose agents were added but whose replayed events were never drawn (no animation frame for over 3 s): every theme then
@@ -86,7 +88,7 @@ async function driver(ctx) {
     // agents go to the lobby after about 600 ms (instant with reduced motion): wait until somebody is there
     // (spec 068: not the coffee corner, where an agent on a break stands at once; spec 008 FR-113: on a steady simulator)
     if (!(await ctx.waitFor(`window.__durbarSimUi&&window.__durbarSimUi.settleNow()&&!!document.querySelector('.place.busy:not([data-place="coffee"]):not([data-place="boss"]):not([data-place="bank"])')`, 8000))) throw new Error(`${theme} sim${sim}-${w}x${h}: nobody reached a place in the lobby`);
-    // the pointer of the virtual display rests mid-window: a hover style (retro nudges a card by 1px) is not layout
+    // the pointer of the virtual display rests mid-window: a hover style (a theme may nudge a card by 1px) is not layout
     ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 0, y: 0 });
     await ctx.sleep(300);
     // a settled layout: measure until two snapshots 300 ms apart agree (a slow runner, macOS in CI, once caught the reference
@@ -105,14 +107,14 @@ async function driver(ctx) {
     if (more) { await ctx.sleep(300); expanded = await ctx.js(`(${measure.toString()})()`); real.push(await ctx.js(`(${pageCheck.toString()})(true, 5)`)); }
     return { base, expanded, real: real.flatMap((r) => r.problems) };
   };
-  const diff = (a, b) => {
+  const diff = (a, b, wordy) => {
     const out = [];
     for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) {
       if (!(k in a)) { out.push(`${k}: only in the theme`); continue; }
       if (!(k in b)) { out.push(`${k}: missing in the theme`); continue; }
       // place names are a theme's own words (spec 036): their width, and so the seats beside them, may change; the real-font
       // step checks that both stay inside the place's tile. Their top and height must still match.
-      const idx = /span\.(pn|prow)$/.test(k) ? [1, 3, 4] : [0, 1, 2, 3, 4];
+      const idx = /span\.(pn|prow)$/.test(k) || (wordy && wordy.test(k)) ? [1, 3, 4] : [0, 1, 2, 3, 4];
       if (idx.some((i) => a[k][i] !== undefined && Math.abs(a[k][i] - b[k][i]) > 0.5)) out.push(`${k}: ${a[k].join(',')} -> ${b[k].join(',')}`);
     }
     return out;
@@ -133,6 +135,39 @@ async function driver(ctx) {
         const label = `${theme} sim${sim}-${w}x${h}${part === 'expanded' ? ' +expanded' : ''}`;
         if (d.length) { failed++; console.log(`FAIL ${label}: ${d.length} differences: ${d.slice(0, 8).join('; ')}${d.length > 8 ? ' ...' : ''}`); }
         else console.log(`  ok   ${label} (${Object.keys(r[part]).length} boxes and fonts)`);
+      }
+    }
+  }
+  /* spec 102 T220 / FR-263: the arcade's chrome while its world shows (`data-ui="retro"`, its dark tokens) lays the top bar, the List view and Settings out in
+     the same boxes as Clean Office's (035 FR-010; 097 FR-130's amendment for this world): with display text neutralised, every box and font size within 0.5 px.
+     Both pages are the Real office with the flag open, so the same rows are offered; they differ only in the world, the Photo office's chrome being plain (`ui: "clean"`). */
+  if (!process.env.GEOMETRY_NO_WORLD) {
+    const surfaces = async (world, w, h) => {
+      await H.load({ w, h, query: { sim: '15', simfreeze: '1', officeview: 'real', worldflags: 'retro', world }, ready: 'fit', settle: false });
+      if (!(await ctx.waitFor(`window.__durbarSimUi&&window.__durbarSimUi.settleNow()&&document.documentElement.dataset.world===${jsLiteral(world)}`, 8000))) throw new Error(`world ${world}: not shown`);
+      await ctx.js(`document.fonts.ready.then(()=>true)`);
+      ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 0, y: 0 });
+      const read = async (sel) => { let a = await ctx.js(`(${measure.toString()})(${jsLiteral(sel)})`); for (let i = 0; i < 10; i++) { await ctx.sleep(300); const b = await ctx.js(`(${measure.toString()})(${jsLiteral(sel)})`); if (JSON.stringify(a) === JSON.stringify(b)) break; a = b; } return a; };
+      const out = {};
+      await ctx.js(`document.getElementById('vList').click();0`);
+      await ctx.waitFor(`document.getElementById('vList').getAttribute('aria-pressed')==='true'`, 5000);
+      out.list = await read('header, header *, #list, #list *');
+      await ctx.js(`window.DurbarScreens.openSettings();0`);
+      await ctx.waitFor(`!!document.getElementById('motionSw')`, 5000);
+      await ctx.js(`document.getElementById('scrClose').closest('.scr-head').parentElement.dataset.geo='scr';0`); /* Settings' own box, whatever its class */
+      out.settings = await read('[data-geo="scr"], [data-geo="scr"] *');
+      if (Object.keys(out.settings).length < 20) throw new Error(`world ${world}: Settings has only ${Object.keys(out.settings).length} boxes`);
+      if (Object.keys(out.list).length < 20) throw new Error(`world ${world}: the List view has only ${Object.keys(out.list).length} boxes`);
+      return out;
+    };
+    for (const [w, h] of SIZES) {
+      const r = await surfaces('photo', w, h), t = await surfaces('retro', w, h);
+      for (const part of ['list', 'settings']) {
+        total++;
+        /* the one text that is the world's own words: Settings' "World's default (Office people)" and "(Retro pixel)" (a bold with no class); its width follows its words, its top and height must still match */
+        const d = diff(r[part], t[part], /^\d+ b\.$/);
+        if (d.length) { failed++; console.log(`FAIL world retro ${part} ${w}x${h}: ${d.length} differences: ${d.slice(0, 8).join('; ')}${d.length > 8 ? ' ...' : ''}`); }
+        else console.log(`  ok   world retro ${part} ${w}x${h} (${Object.keys(r[part]).length} boxes and fonts, beside the plain chrome)`);
       }
     }
   }
