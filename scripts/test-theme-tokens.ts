@@ -276,6 +276,39 @@ for (const f of FILES) {
     assert.ok(luminance(r['--surface']) < 0.05 && luminance(r['--bg']) < 0.05 && luminance(r['--card']) < 0.05 && luminance(r['--wb-bg']) < 0.05, 'retro: page, cards and bar are dark');
     assert.deepStrictEqual(rr.filter((x) => !(x.ratio >= x.min)).map((x) => `${x.fg} on ${x.bg} ${x.ratio.toFixed(2)}:1 < ${x.min}`), [], 'every pair of the arcade passes WCAG AA');
     assert.ok(rr.some((x) => / \(glass over #ffffff\)$/.test(x.bg) && x.fg === '--ink'), 'a dark panel is checked over white');
+    // spec 070 FR-081 (#1278): the info tone (file chips, ask tags, selected rows) is measured in every world, and the arcade sets its own: derived from the light working pair it was 2.16:1
+    for (const [fg, bg, min] of [['--tone-info-ink', '--tone-info-soft', 4.5], ['--tone-info-ink', '--tone-info-faint', 4.5], ['--tone-info-ink', '--tone-info-hover', 4.5], ['--ink', '--tone-info-soft', 4.5], ['--ink-2', '--tone-info-soft', 4.5],
+      ['--tone-ok-ink', '--tone-ok-soft', 4.5], ['--tone-ok-ink', '--tone-ok-faint', 4.5], ['--tone-ok-ink', '--tone-ok-hover', 4.5], // image chips (#1278 follow-up)
+      // #1309 review: every other tone pair the CSS paints, measured in every world (.fl-focus, .sub-st.done, .mtag.extra, .hs-ok; .mtag.warn, .imp-block, .scr-warn, .quick; .dlg .derr, .note.limit, .chip.fail, .btn.danger:hover; .mtag.src; .scr-note.ok, .srv-org, .fl-err on the page)
+      ['--tone-ok-ink', '--tone-ok-bg', 4.5], ['--tone-warn-ink', '--tone-warn-bg', 4.5], ['--tone-warn-ink', '--tone-warn-faint', 4.5], ['--tone-warn-ink', '--tone-warn-soft', 4.5], ['--tone-warn-ink', '--tone-warn-hover', 4.5],
+      ['--tone-bad-ink', '--tone-bad-bg', 4.5], ['--tone-bad-ink', '--tone-bad-soft', 4.5], ['--tone-idea-ink', '--tone-idea-bg', 4.5],
+      ['--tone-ok-ink', '--surface', 4.5], ['--tone-warn-ink', '--surface', 4.5], ['--tone-bad-ink', '--surface', 4.5],
+    ] as Array<[string, string, number]>) {
+      assert.ok(rr.some((x) => x.fg === fg && x.bg === bg && x.min === min), `the arcade checks ${fg} on ${bg}`);
+      for (const w of T.WORLD_IDS) assert.ok((T.worldContrast(w) as typeof rr).some((x) => x.fg === fg && x.bg === bg && x.ratio >= min), `${w}: ${fg} on ${bg} reaches ${min}:1`);
+    }
+    // the chip's 1px border is its edge in the dark world (non-text, WCAG 1.4.11: 3:1) against the panel and its own fills; the light worlds keep the app's quiet 1.5:1 hairline, the fill and the text carry the chip there
+    const ti0 = T.toneInfo(r) as Record<string, string>;
+    for (const n of ['info', 'ok', 'warn', 'bad', 'idea']) for (const against of ['--surface', `--tone-${n}-bg`, `--tone-${n}-soft`, `--tone-${n}-faint`]) assert.ok(contrast(ti0[`--tone-${n}-line`], ti0[against] ?? r[against]) >= 3, `the arcade's ${n} border on ${against} is ${contrast(ti0[`--tone-${n}-line`], ti0[against] ?? r[against]).toFixed(2)}:1`);
+    for (const n of ['info', 'ok', 'warn', 'bad', 'idea']) for (const k of ['ink', 'bg', 'soft', 'faint', 'hover', 'line']) assert.ok(/^#[0-9a-f]{6}$/i.test(r[`--tone-${n}-${k}`]), `the arcade sets --tone-${n}-${k} as hex`);
+    // every painted fill is dark and every ink light (the .fl-focus and .sub-st.done bug of #1309: light ink on the light --pb-done)
+    for (const n of ['info', 'ok', 'warn', 'bad', 'idea']) { for (const k of ['bg', 'soft', 'faint', 'hover']) assert.ok(luminance(r[`--tone-${n}-${k}`]) < 0.1, `the arcade's --tone-${n}-${k} is dark`); assert.ok(luminance(r[`--tone-${n}-ink`]) > 0.3, `the arcade's --tone-${n}-ink is light`); }
+    assert.ok(contrast(r['--tone-info-ink'], r['--tone-info-soft']) >= 4.5 && luminance(r['--tone-info-soft']) < 0.05, 'the arcade .att chip: light blue ink on a dark soft fill');
+    assert.deepStrictEqual(['--pb-working', '--pc-working'].map((k) => r[k]), ['#142534', '#9dcdf1'], 'the working status pair is spec 102 RA6\'s dark pair (#1283); the tone fix does not touch it');
+    // the same pair as the CSS derives it, for each built-in theme (Retro Pixel included): ink is --pc-working, soft is 55% --pb-working over --surface
+    for (const [id, b] of Object.entries(T._builtins() as Record<string, { tokens: Record<string, string> }>)) {
+      const ti = T.toneInfo({ ...clean, ...b.tokens }) as Record<string, string>;
+      for (const n of ['info', 'ok', 'warn', 'bad', 'idea']) {
+        for (const bgk of ['bg', 'soft', 'faint', 'hover']) assert.ok(contrast(ti[`--tone-${n}-ink`], ti[`--tone-${n}-${bgk}`]) >= 4.5, `built-in ${id}: --tone-${n}-ink on ${bgk} is ${contrast(ti[`--tone-${n}-ink`], ti[`--tone-${n}-${bgk}`]).toFixed(2)}:1`);
+        if (n === 'info' || n === 'ok') for (const bgk of ['soft', 'faint']) assert.ok(contrast(ti[`--tone-${n}-line`], ti[`--tone-${n}-${bgk}`]) >= 1.5, `built-in ${id}: the ${n} border is visible on ${bgk}`);
+      }
+    }
+    const css = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'styles.css'), 'utf8');
+    // every tone of :root derives the way toneInfo() models it (ink, bg, soft, faint, line, hover): a changed line fails here, not in the picture
+    for (const [n, st] of [['info', 'working'], ['ok', 'done'], ['warn', 'waiting'], ['bad', 'error'], ['idea', 'thinking']]) {
+      const row = css.split('\n').find((l) => l.trimStart().startsWith(`--tone-${n}-bg:`)) || '';
+      assert.strictEqual(row.trim().replace(/\s+/g, ' '), `--tone-${n}-bg:var(--pb-${st}); --tone-${n}-ink:var(--pc-${st}); --tone-${n}-soft:color-mix(in srgb,var(--pb-${st}) 55%,var(--surface)); --tone-${n}-faint:color-mix(in srgb,var(--pb-${st}) 28%,var(--surface)); --tone-${n}-line:color-mix(in srgb,var(--pc-${st}) 26%,var(--pb-${st})); --tone-${n}-hover:color-mix(in srgb,var(--pb-${st}) 88%,var(--pc-${st}));`, `styles.css derives the ${n} tone the way toneInfo() models it`);
+    }
   }
   // the cave's set: complete, status colours unchanged, every pair AA with the glass composited (the same checks as the photo set)
   {
@@ -398,6 +431,16 @@ function worldCssProblems(cssIn: string): string[] {
   assert.deepStrictEqual([doc.documentElement.dataset.ui, 'dark' in doc.documentElement.dataset, st.get('--surface')], ['retro', true, W.worldTokens('retro')['--surface']], 'the arcade shown');
   W.setWorld(null);
   assert.strictEqual(snap(doc), want3, 'leaving the arcade restores the theme exactly');
+  // #1309 review: the arcade's own keys (--tone-*) do not stay on the page when Real office goes from the arcade straight to another world
+  W.setTheme(other); const want5 = snap(doc);
+  W.setWorld('retro'); assert.strictEqual(st.get('--tone-ok-bg'), W.worldTokens('retro')['--tone-ok-bg'], 'the arcade sets its ok fill');
+  for (const w of ['photo', 'cave']) {
+    W.setWorld('retro'); W.setWorld(w);
+    assert.deepStrictEqual([...st.keys()].filter((k) => /^--tone-/.test(k)), [], `retro to ${w}: no arcade tone key is left on the page`);
+    assert.strictEqual(doc.documentElement.dataset.world, w, `${w} is shown`);
+  }
+  W.setWorld(null);
+  assert.strictEqual(snap(doc), want5, 'and leaving restores the theme exactly');
   // #1144 (spec 097 FR-245): the photo office and the cave set their own plain chrome, so Retro Pixel's offset button shadows never reach them
   W.setTheme('retro'); const want4 = snap(doc);
   assert.strictEqual(doc.documentElement.dataset.ui, 'retro', 'Retro Pixel sets its UI style');

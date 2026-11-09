@@ -762,6 +762,14 @@
         '--sage':'#3d7a55','--sage-ink':'#ff77a8','--focus':'#ffec27','--focus-halo':'#ff004d','--sel-border':'#ff77a8','--sel-ring':'#3a2350','--sel-ring-2':'#33204a',
         '--stat-sel-border':'#ff77a8','--stat-sel-ring':'#3a2350','--brand-mark':'#111122','--brand-bg':'#ffec27','--avatar-bg':'#262044',
         '--idle-stub':'#221d3d','--idle-stub-ink':'#bdb5d6','--drop':'#29adff','--drop-ink':'#cfe3ff',
+        /* the info tone (file chips, ask tags, a selected row) is not a status colour: styles.css derives it from the light --pb-/--pc-working, which here gave 2.16:1 on a dark panel (#1278), so the arcade sets its own, in the working blue (spec 070 FR-081) */
+        /* the 1px borders: 3:1 or more on the page and each fill (#1283's dark status pair made the derived border 2.2:1) */
+        '--tone-info-ink':'#8fc3ff','--tone-info-bg':'#22335a','--tone-info-soft':'#1e2c4e','--tone-info-faint':'#1a2140','--tone-info-hover':'#2a3b66','--tone-info-line':'#6991c5',
+        '--tone-ok-ink':'#8fe3ab','--tone-ok-bg':'#1f4332','--tone-ok-soft':'#1b3a2c','--tone-ok-faint':'#162e24','--tone-ok-hover':'#26503b','--tone-ok-line':'#68ab81', /* the ok tone (image chips .att.img, .chip.att-chip.img) the same way: its derived fill was 1.9:1 under the dark green ink */
+        /* the other three tones the same way (#1309 review): each ink is painted on its own -bg, -soft, -faint, -hover or the dark page (.fl-focus, .sub-st.done, .mtag.*, .quick, .chip.fail, .scr-warn, .srv-org, .fl-err); derived from the light status pair they were 1.0 to 2.7:1 */
+        '--tone-warn-ink':'#ffc35c','--tone-warn-bg':'#3a2c0e','--tone-warn-soft':'#2e2410','--tone-warn-faint':'#241d10','--tone-warn-hover':'#4a3a14','--tone-warn-line':'#ba8e41',
+        '--tone-bad-ink':'#ff9a8f','--tone-bad-bg':'#3a1a1d','--tone-bad-soft':'#2c1518','--tone-bad-faint':'#22121a','--tone-bad-hover':'#4a2024','--tone-bad-line':'#ba6d67',
+        '--tone-idea-ink':'#b9c0ff','--tone-idea-bg':'#262a52','--tone-idea-soft':'#202444','--tone-idea-faint':'#1b1e3a','--tone-idea-hover':'#30366a','--tone-idea-line':'#868cc2',
         '--tint-sage':'#162420','--wall-sage':'#2c4a3c','--tint-blue':'#141d30','--wall-blue':'#2c3f66','--tint-sand':'#241f14','--wall-sand':'#4d4128','--tint-clay':'#291a1a','--wall-clay':'#55332f',
         '--cwall-sage':'#3c6a54','--cwall-blue':'#3c5a92','--cwall-sand':'#6e5c36','--cwall-clay':'#7a4842',
         '--red-ink':'#ff9a8f','--amber-ink':'#ffc35c','--blue-ink':'#8fc3ff',
@@ -800,6 +808,13 @@
     ['--wb-line-ctl','--wb-surface',3,'#ffffff'],['--wb-warn-ink','--wb-warn-bg',4.5,'#ffffff'],['--wb-ink','--wb-warn-bg',4.5,'#ffffff'],['--wb-focus','--wb-bg',3,'#ffffff'],['--wb-focus','--wb-surface',3,'#ffffff'],
     ['--ink','--surface',4.5,'#000000'],['--ink-2','--surface',4.5,'#000000'],['--muted','--surface',4.5,'#000000'],['--ink','--surface-2',4.5,'#000000'],['--muted','--surface-2',4.5,'#000000'],
     ['--line-ctl','--surface',3,'#000000'],
+    /* spec 070 FR-081 (#1278): the info tone's text pairs: the file chip (.att, .chip.att-chip, .btn.session), the ask tag (.mode-ask, .mtag), the plain text on a soft row (.note.mcpre, .pico-opt) */
+    ['--tone-ok-ink','--tone-ok-soft',4.5,null],['--tone-ok-ink','--tone-ok-faint',4.5,null],['--tone-ok-ink','--tone-ok-hover',4.5,null],
+    /* #1309 review: every other tone pair the CSS paints (.fl-focus and .sub-st.done: ok ink on ok bg; .mtag.extra, .hs-ok; .mtag.warn, .imp-block; .dlg .derr, .note.limit; .mtag.src; .scr-warn; .quick; .chip.fail, .btn.danger:hover), and the tone inks on the page they sit on (.scr-note.ok, .srv-org, .fl-err, .bnote) */
+    ['--tone-ok-ink','--tone-ok-bg',4.5,null],['--tone-warn-ink','--tone-warn-bg',4.5,null],['--tone-warn-ink','--tone-warn-faint',4.5,null],['--tone-warn-ink','--tone-warn-soft',4.5,null],['--tone-warn-ink','--tone-warn-hover',4.5,null],
+    ['--tone-bad-ink','--tone-bad-bg',4.5,null],['--tone-bad-ink','--tone-bad-soft',4.5,null],['--tone-idea-ink','--tone-idea-bg',4.5,null],
+    ['--tone-ok-ink','--surface',4.5,null],['--tone-warn-ink','--surface',4.5,null],['--tone-bad-ink','--surface',4.5,null],
+    ['--tone-info-ink','--tone-info-soft',4.5,null],['--tone-info-ink','--tone-info-faint',4.5,null],['--tone-info-ink','--tone-info-hover',4.5,null],['--ink','--tone-info-soft',4.5,null],['--ink-2','--tone-info-soft',4.5,null],
     /* a status card (.note: ink-2 on pb-waiting, .note.err: red-ink on pb-error) and the status pills (pc on pb), on the fill itself, no glass (spec 102 RA6) */
     ['--ink-2','--pb-waiting',4.5,null],['--ink','--pb-waiting',4.5,null],['--ink-2','--pb-error',4.5,null],['--amber-ink','--pb-waiting',4.5,null],['--red-ink','--pb-error',4.5,null],['--red-ink','--bad-bg',4.5,null],['--ink-2','--bad-bg',4.5,null],['--ink','--bad-bg',4.5,null],
     ['--pc-working','--pb-working',4.5,null],['--pc-thinking','--pb-thinking',4.5,null],['--pc-waiting','--pb-waiting',4.5,null],['--pc-idle','--pb-idle',4.5,null],['--pc-error','--pb-error',4.5,null],['--pc-done','--pb-done',4.5,null],
@@ -816,8 +831,20 @@
   }
   function glassOver(v,over){const a=hex6(v),b=hex6(over);return '#'+[0,2,4].map(i=>Math.round(parseInt(a.slice(i,i+2),16)*WORLD_GLASS+parseInt(b.slice(i,i+2),16)*(1-WORLD_GLASS)).toString(16).padStart(2,'0')).join('');}
   /* every pair of a world's set with its ratio: 070 D4's pairs on the resolved set, then the world's own (glass composited) */
+  /* the tones (info, ok, warn, bad, idea) of styles.css :root as hex, from a token map: ink = --pc-working; soft, faint and hover = color-mix(in srgb, ...) of --pb-working with --surface (55%, 28%) and of --pb-working with --pc-working (12%).
+     A world or theme that sets its own --tone-info-* keeps it (spec 070 FR-081); the guard measures what the CSS would show */
+  function toneInfo(t){
+    const d={};
+    for(const [n,s] of [['info','working'],['ok','done'],['warn','waiting'],['bad','error'],['idea','thinking']]){
+      const pb=t['--pb-'+s],pc=t['--pc-'+s];
+      d['--tone-'+n+'-ink']=pc; d['--tone-'+n+'-bg']=pb; d['--tone-'+n+'-soft']=mixHex(t['--surface'],pb,0.55); d['--tone-'+n+'-faint']=mixHex(t['--surface'],pb,0.28);
+      d['--tone-'+n+'-hover']=mixHex(pb,pc,0.12); d['--tone-'+n+'-line']=mixHex(pb,pc,0.26);
+    }
+    for(const k of Object.keys(d))if(own(t,k))d[k]=t[k];
+    return Object.assign({},t,d);
+  }
   function worldContrast(id){
-    const t=worldTokens(id); if(!t)return null;
+    const t=worldTokens(id)&&toneInfo(worldTokens(id)); if(!t)return null;
     const out=[];
     const page=colorHex(t['--bg'],'#ffffff')||'#ffffff'; /* spec 070 FR-080: every colour form, a translucent one over the page (as contrastFix measures) */
     const hx=(k,over)=>colorHex(t[k],k==='--bg'?'#ffffff':(over||page));
@@ -851,7 +878,11 @@
     if(want===currentWorld)return currentWorld;
     const was=currentWorld;
     currentWorld=want; worldResolved=want?worldTokens(want):null;
-    if(want)paintWorld();
+    if(want){
+      /* retro to photo or cave: keys only the world just left sets (the arcade's --tone-*) must not stay on <html> (#1309 review) */
+      if(was&&typeof document!=='undefined'&&document.documentElement){const keep=worldTokens(want);for(const k of Object.keys(worldTokens(was)))if(!own(CLEAN_TOKENS,k)&&!own(keep,k))document.documentElement.style.removeProperty(k);}
+      paintWorld();
+    }
     else if(was&&typeof document!=='undefined'&&document.documentElement){
       const el=document.documentElement;
       for(const k of Object.keys(worldTokens(was)))if(!own(CLEAN_TOKENS,k))el.style.removeProperty(k);
@@ -1039,6 +1070,7 @@
     figures,
     fallbacks,
     contrastCheck,
+    toneInfo, /* spec 070 FR-081: test:theme-tokens measures the info tone of every built-in theme too */
     parseColor, colorHex, NAMED_COLOURS:NAMED, unmeasured, /* spec 070 FR-080: test:theme-tokens */
     setWorld,
     world,
