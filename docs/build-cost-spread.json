@@ -2,7 +2,7 @@
   "version": 1,
   "method": "weight = 0.5 * share of lines changed + 0.5 * share of merged PRs, over the days without measured data; per-model split = the lump's model mix; whole cents, largest remainder",
   "ref": "origin/main",
-  "commit": "b7cb124968c59d80c7e5783670c3d635ce82e4a3",
+  "commit": "92b4183994ac593c3aa360e99728f714fa4ed793",
   "since": "2026-10-25",
   "through": "2026-11-07",
   "weights": {
@@ -10,7 +10,7 @@
     "prs": 0.5
   },
   "totals": {
-    "lines": 190228,
+    "lines": 195814,
     "prs": 364
   },
   "remainderCents": {
@@ -25,130 +25,130 @@
       "date": "2026-10-25",
       "lines": 23368,
       "prs": 41,
-      "weight": 0.1177397129,
+      "weight": 0.1159875508,
       "cents": {
-        "claude-opus-5-5": 32984,
-        "claude-sonnet-5-5": 10182
+        "claude-opus-5-5": 32493,
+        "claude-sonnet-5-5": 10031
       }
     },
     {
       "date": "2026-10-26",
       "lines": 9446,
       "prs": 23,
-      "weight": 0.0564215076,
+      "weight": 0.0557132346,
       "cents": {
-        "claude-opus-5-5": 15806,
-        "claude-sonnet-5-5": 4880
+        "claude-opus-5-5": 15608,
+        "claude-sonnet-5-5": 4818
       }
     },
     {
       "date": "2026-10-27",
       "lines": 10083,
       "prs": 18,
-      "weight": 0.0512276824,
+      "weight": 0.0504716463,
       "cents": {
-        "claude-opus-5-5": 14351,
-        "claude-sonnet-5-5": 4430
+        "claude-opus-5-5": 14139,
+        "claude-sonnet-5-5": 4365
       }
     },
     {
       "date": "2026-10-28",
       "lines": 6942,
       "prs": 23,
-      "weight": 0.0498399318,
+      "weight": 0.0493194119,
       "cents": {
-        "claude-opus-5-5": 13962,
-        "claude-sonnet-5-5": 4310
+        "claude-opus-5-5": 13817,
+        "claude-sonnet-5-5": 4265
       }
     },
     {
       "date": "2026-10-29",
       "lines": 6446,
       "prs": 28,
-      "weight": 0.055404365,
+      "weight": 0.0549210357,
       "cents": {
-        "claude-opus-5-5": 15521,
-        "claude-sonnet-5-5": 4792
+        "claude-opus-5-5": 15386,
+        "claude-sonnet-5-5": 4750
       }
     },
     {
       "date": "2026-10-30",
       "lines": 2237,
       "prs": 8,
-      "weight": 0.0168687974,
+      "weight": 0.0167010643,
       "cents": {
-        "claude-opus-5-5": 4726,
-        "claude-sonnet-5-5": 1459
+        "claude-opus-5-5": 4679,
+        "claude-sonnet-5-5": 1444
       }
     },
     {
       "date": "2026-10-31",
-      "lines": 51871,
+      "lines": 56637,
       "prs": 22,
-      "weight": 0.166558805,
+      "weight": 0.1748391639,
       "cents": {
-        "claude-opus-5-5": 46661,
-        "claude-sonnet-5-5": 14405
+        "claude-opus-5-5": 48980,
+        "claude-sonnet-5-5": 15121
       }
     },
     {
       "date": "2026-11-01",
-      "lines": 29466,
+      "lines": 30035,
       "prs": 27,
-      "weight": 0.1145370784,
+      "weight": 0.1137805898,
       "cents": {
-        "claude-opus-5-5": 32087,
-        "claude-sonnet-5-5": 9906
+        "claude-opus-5-5": 31875,
+        "claude-sonnet-5-5": 9840
       }
     },
     {
       "date": "2026-11-02",
       "lines": 12848,
       "prs": 40,
-      "weight": 0.0887150573,
+      "weight": 0.087751698,
       "cents": {
-        "claude-opus-5-5": 24853,
-        "claude-sonnet-5-5": 7672
+        "claude-opus-5-5": 24583,
+        "claude-sonnet-5-5": 7589
       }
     },
     {
       "date": "2026-11-03",
       "lines": 16004,
       "prs": 51,
-      "weight": 0.1121202562,
+      "weight": 0.110920256,
       "cents": {
-        "claude-opus-5-5": 31410,
-        "claude-sonnet-5-5": 9696
+        "claude-opus-5-5": 31074,
+        "claude-sonnet-5-5": 9593
       }
     },
     {
       "date": "2026-11-04",
-      "lines": 9434,
+      "lines": 9436,
       "prs": 48,
-      "weight": 0.0907306259,
+      "weight": 0.0900283595,
       "cents": {
-        "claude-opus-5-5": 25418,
-        "claude-sonnet-5-5": 7847
+        "claude-opus-5-5": 25221,
+        "claude-sonnet-5-5": 7786
       }
     },
     {
       "date": "2026-11-05",
       "lines": 6422,
       "prs": 17,
-      "weight": 0.0402313927,
+      "weight": 0.039749863,
       "cents": {
-        "claude-opus-5-5": 11271,
-        "claude-sonnet-5-5": 3479
+        "claude-opus-5-5": 11136,
+        "claude-sonnet-5-5": 3438
       }
     },
     {
       "date": "2026-11-06",
-      "lines": 5661,
+      "lines": 5910,
       "prs": 18,
-      "weight": 0.0396047877,
+      "weight": 0.0398161262,
       "cents": {
-        "claude-opus-5-5": 11095,
-        "claude-sonnet-5-5": 3425
+        "claude-opus-5-5": 11154,
+        "claude-sonnet-5-5": 3443
       }
     }
   ]

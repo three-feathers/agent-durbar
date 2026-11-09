@@ -1,6 +1,6 @@
 {
   "name": "agent-durbar",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "Office-style command center to see, chat with and coordinate AI agents across harnesses (GitHub Copilot, Claude Code, OpenAI Codex), for anyone who works with agents.",
   "private": true,
   "desktopName": "agent-durbar.desktop",
@@ -191,6 +191,7 @@
     "test:debuggerguard": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-debuggerguard.js",
     "test:claudecli": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/claude-cli-matrix.js",
     "test:claudecliunit": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-claude-cli-matrix.js",
+    "test:electroncache": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-electron-cache.js",
     "test:supplychain": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-supplychain.js",
     "test:checknames": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-checknames.js",
     "test:verifytarball": "node scripts/test-verify-tarball.js",
@@ -205,6 +206,7 @@
     "test:runtests": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-run-tests.js",
     "test:officeops": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-office-ops.js",
     "test:uisuite": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-ui-suite.js",
+    "test:cichanges": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-ci-changes.js",
     "test:activity": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-activity.js",
     "test:globals": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-renderer-globals.js",
     "test:authcheck": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-authcheck.js",

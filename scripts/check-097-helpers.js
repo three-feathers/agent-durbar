@@ -3,7 +3,7 @@
  * under the parent's name plate. Simulator only (DURBAR_SIM=15, a frozen simulator), no AI credits; every wait is an until(), every page value goes through jsLiteral.
  *
  *   npm run check:ui -- --only check-097-helpers      (builds first)
- *   SHOTS_OUT=<dir>   where its pictures go (097-helpers-<world>-<w>x<h>.png; a temporary folder by default)
+ *   SHOTS_OUT=<dir>   where its pictures go (097-helpers-<world>-<w>x<h>.jpg, JPEG quality 60, the spec's linked pictures: SHOTS_OUT=docs/screenshots retakes them; a temporary folder by default)
  *   HELPERS_WORLDS=photo,cave,retro   the worlds (default: all three; the arcade measured to fit one row of heads under each cabinet's plate, spec 097 FR-306 as built)
  *   HELPERS_MUTANT=nostrip|status|nametile|overlap|hidefallback   no strip is drawn / a status change rebuilds the head's node / a name tile is drawn / a strip lies over its plate /
  *     the fallback "+N and dots" is 0x0, as the arcade drew it before the review of PR #1322 (each must fail)
@@ -139,7 +139,7 @@ module.exports = async (ctx) => {
     let s = await read();
     assert.ok(!s.scroll, `${tag}: the office does not scroll`);
     assert.ok(s.face >= FACE_FLOOR - 1e-9, `${tag}: desk face ${s.face} px, over the SC-002 ratchet ${FACE_FLOOR}`);
-    assert.ok(s.rows === 1 || s.rows === 2, `${tag}: strips drawn at 15 agents (rows ${s.rows})`);
+    assert.ok(s.rows === 1, `${tag}: strips drawn at 15 agents, one row (FR-338; rows ${s.rows})`);
     const withHelpers = s.desks.filter((d) => d.helpers > 0);
     assert.ok(withHelpers.length >= 10, `${tag}: 15 agents with helpers (${withHelpers.length})`);
     let overflowSeen = 0, dotsChecked = 0, hostileSeen = 0, pictures = 0;
@@ -177,7 +177,7 @@ module.exports = async (ctx) => {
       if (d.helpers > d.layoutStrip.shown) { overflowSeen++; assert.ok(d.more && /^\+\d+$/.test(d.more.text) && Number(d.more.text) === d.helpers - d.layoutStrip.shown && d.more.fs >= 10.5 && /more helpers of/.test(d.more.label), `${tag}: ${d.id}: the rest is "+K" (${JSON.stringify([d.more, d.helpers, d.layoutStrip, d.heads.length])})`); }
       else assert.ok(!d.more, `${tag}: ${d.id}: no "+K" when all fit`);
     }
-    assert.ok((hostileSeen >= 1 || world === 'retro') && pictures >= 20, `${tag}: the hostile helper was seen (${hostileSeen}) and ${pictures} pictures were checked`);
+    assert.ok(pictures >= 20, `${tag}: ${pictures} pictures were checked (hostile heads shown in the row: ${hostileSeen}; with one row (FR-338) they may sit behind +K, so they are checked again with the strip open)`);
     assert.ok(overflowSeen >= 1 && dotsChecked >= 20, `${tag}: an overflow "+K" was seen (${overflowSeen}) and ${dotsChecked} dots were checked`);
     const moreTitles = await js(`[...document.querySelectorAll('#stage .ro-hmore')].map(m=>(m.getAttribute('title')||'')+'|'+(m.getAttribute('aria-label')||''))`);
     assert.ok(moreTitles.length >= 1 && moreTitles.every((t) => !RAW.some((x) => t.includes(x))), `${tag}: the +K tooltips carry no token, path or link: ${JSON.stringify(moreTitles).slice(0, 200)}`);
@@ -244,13 +244,17 @@ module.exports = async (ctx) => {
     await js(`document.querySelector('#stage .ro-hmore[data-more="'+CSS.escape(${jsLiteral(mid)})+'"]').click()`);
     await must(`(()=>{const m=document.querySelector('#stage .ro-hmore[data-more="'+CSS.escape(${jsLiteral(mid)})+'"]');return m&&m.getAttribute('aria-expanded')==='true'&&m.parentElement.classList.contains('open')&&m.parentElement.querySelectorAll('.ro-hd').length===${jsLiteral(6 + EXTRA + 1)}})()`, `${tag}: "+K" opens all ${jsLiteral(6 + EXTRA + 1)} helpers`);
     const open = await read();
+    /* the hostile helper's head, shown now that the strip is open (FR-338: one row, so it may have been behind +K): its masked name is in its accessible name, and no token, path or link */
+    const hostile = (open.desks.find((d) => d.id === mid) || { heads: [] }).heads.find((t) => t.id.includes('hostile') && !t.id.includes('hostile2'));
+    assert.ok(hostile && /Hx/.test(hostile.label) && /helper of /.test(hostile.label), `${tag}: the hostile helper's masked name is in its accessible name with the strip open: ${hostile && hostile.label}`);
+    assert.deepStrictEqual(RAW.filter((x) => hostile.label.includes(x) || hostile.title.includes(x)), [], `${tag}: a token, a home path or a link reached the hostile head's accessible name or tooltip: ${hostile.label} | ${hostile.title}`);
     const b0 = (r) => JSON.stringify(r.desks.map((d) => [d.id, d.box, d.plate]));
     assert.strictEqual(b0(open), b0(mb), `${tag}: opening a strip moves no desk box`);
     await js(`document.querySelector('#stage .ro-hmore[data-more="'+CSS.escape(${jsLiteral(mid)})+'"]').click()`);
     await must(`(()=>{const m=document.querySelector('#stage .ro-hmore[data-more="'+CSS.escape(${jsLiteral(mid)})+'"]');return m&&m.getAttribute('aria-expanded')==='false'&&!m.parentElement.classList.contains('open')&&m.parentElement.querySelectorAll('.ro-hd').length===${jsLiteral(firstD.heads.length)}})()`, `${tag}: "Fewer" folds them`);
     await js(`document.activeElement&&document.activeElement.blur();0`);
-    await H.shot(path.join(OUT, `097-helpers-${world}-${w}x${h}.png`), { prep: 'calm', tag: 'helpers', what: tag });
-    shots.push(`097-helpers-${world}-${w}x${h}.png`);
+    await H.shot(path.join(OUT, `097-helpers-${world}-${w}x${h}.jpg`), { prep: 'calm', tag: 'helpers', what: tag });
+    shots.push(`097-helpers-${world}-${w}x${h}.jpg`);
     /* a picture that fails to load: the head keeps its button and its accessible name and shows a neutral silhouette, never a letter of the name */
     const gone = firstD.heads[0].id, nameBefore = await js(`document.querySelector('#stage .ro-hd[data-id="'+CSS.escape(${jsLiteral(gone)})+'"]').getAttribute('aria-label')`);
     await js(`(()=>{const im=document.querySelector('#stage .ro-hd[data-id="'+CSS.escape(${jsLiteral(gone)})+'"] img');im.dispatchEvent(new Event('error'));return 1})()`);

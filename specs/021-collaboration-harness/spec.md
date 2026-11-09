@@ -626,3 +626,21 @@ Owner decisions (Vikram, Telegram DM, 2026-11-08). 05:00 UTC: "there are too man
 - **One masking PR per day.** New rule; replaces none (before, each masking bug had its own PR). Masking and redaction hardening and bugs that leak nothing land as one batched PR per day. A confirmed secret leak is a security fix: it lands at once as its own PR, as before.
 - **Pre-review before team review.** New rule; replaces none. It binds Vikram's side, whose owner decided it and pays for it. Before asking a teammate's agent for review, a PR from that side gets the Codex review and the Anthropic-key pre-review bot (spec 103, inside its ceilings, posting off), and its findings are fixed in the PR first. It binds Paco's or Ruben's side only once that side's human has provided the key or login and a spending ceiling and said so (money needs that owner's own approval, AGENTS.md *Needs approval*).
 - FR-063 accounting: one rule replaced (the 8-PR cap), two rules added (one masking PR a day, pre-review on Vikram's side). No new FR number; FR-039 and `docs/rules/review-rounds.md` (*Land before building*) carry them.
+
+## Changes 2026-11-09
+
+### 2026-11-09: project skills for repeated procedures (FR-087; owner OK, Vikram, 2026-11-09)
+
+*Why:* the release, the fold PR and a CI rerun decision each send an agent through several long files (AGENTS.md, `docs/rules/`, `changelog.d/README.md`, `docs/build-cost.md`, spec 008). Owner OK (Vikram, 2026-11-09) to load a short checklist instead; Paco's side agreed on these first three (relayed to Vikram's agent; not checked in the chat by this PR's author).
+
+- **FR-087** `[IMPLEMENTED]` `read:` Three project skills in `.claude/skills/<name>/SKILL.md` (Claude Code reads that folder; so does the Copilot CLI, per our own discovery list `copilotSlashPlaces` in `src/adapters/slashcommands.ts`):
+  - `durbar-release`: the daily stable release, from the version PR to publishing, then the fold;
+  - `durbar-fold`: the doc-only fold PR after a tag;
+  - `durbar-ci-rerun`: deciding whether a red CI run may be rerun, and what to write.
+  - **Not rule text.** A skill is a checklist of steps with links to its source of truth (AGENTS.md, `docs/rules/*.md`, `changelog.d/README.md`, `docs/build-cost.md`, the specs, the scripts); it restates no rule and adds none. Where a skill and its source differ, the source wins: a skill is guidance, like `docs/agent-notes.md`. Commands in a skill are copied from `package.json` and `scripts/`.
+  - No secrets, chat ids, private paths or personal data in a skill (public repo, AGENTS.md *Public text*).
+  - `.claude/skills/speckit-*` stay managed by `specify integration`; the `durbar-*` skills are hand-written and not in `.specify/integrations/claude.manifest.json`.
+  - FR-063 accounting: the skills add no rule; the one owner decision below (CI reruns) is recorded in this FR and replaces none (no rerun rule existed); no rule file or word budget changed (skills are not in `scripts/rules-check.js`'s table).
+  - `[IMPLEMENTED]` `read:` **CI reruns: accepted by: Vikram, 2026-11-09 (Telegram DM, option 1; relayed by his coordinator).** The rerun practice `durbar-ci-rerun` links to: rerun a failed CI job only when its failing step's log quotes an infrastructure error (a 5xx on a download from github.com: the Electron zip, the CodeQL bundle, an Actions cache restore; or a runner lost or job cancelled, as the log says); every other failure is fixed at the cause, and a flake call needs evidence (it fails on `main` too, or across several reruns). The reading: such a rerun uses no AI credits, so it is not an "unasked Actions run" in the sense of AGENTS.md *No AI credits*. This FR is its written home; no rule file changed (FR-063: nothing added to AGENTS.md or `docs/rules/`, so nothing replaced); the skill links here.
+  - `[KNOWN GAP]` not verified that Claude Code or the Copilot CLI lists and loads these skills (no real session run, AGENTS.md *No AI credits*); no test checks that a skill's commands and links still exist (checked by hand on 2026-11-09).
+  - Numbers checked 2026-11-09 with `npm run specs:numbers`, open PRs and remote `021-*` branches: FR-084 and T061 to T065 are open PR #1247's; this takes FR-087 and T074.
