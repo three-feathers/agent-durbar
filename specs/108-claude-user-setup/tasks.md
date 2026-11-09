@@ -8,11 +8,11 @@
 
 ## G0: owner answers
 
-- [ ] T002 [G0] Owner answers Q1..Q6 (spec Clarifications); record each with its date in spec.md and adjust FR-005, FR-009, FR-016 and the Read-only note. Test: `npm run specs:check`. Blocks: G1 for Q1, Q2, Q4; G2 for Q3, Q5; G3 for Q6.
+- [x] T002 [G0] Owner answers Q1..Q6 (all (a), Vikram, 2026-11-09 07:24 UTC) (spec Clarifications); record each with its date in spec.md and adjust FR-005, FR-009, FR-016 and the Read-only note. Test: `npm run specs:check`. Blocks: G1 for Q1, Q2, Q4; G2 for Q3, Q5; G3 for Q6.
 
 ## G1: readers (no launch change yet)
 
-- [ ] T003 [G1] `claudeMdPrompt`: root kind (folder or user Claude folder), the user heading, FR-005's import filter (`.md` only, data folders and dot segments refused, `realpath` containment), Q1's `@~/` rule, one budget across both calls with the folder first and the cut marker. Test first: `test:claudemd` cases and mutants of plan.md, both path flavours [FR-003, FR-004, FR-005, FR-009, FR-018, FR-028]
+- [ ] T003 [G1] `claudeMdPrompt`: root kind (folder or user Claude folder), the user heading, FR-005's import filter (`.md` only, data folders and dot segments refused, `realpath` containment), Q1's `@~/` rule (answered (a)), one budget across both calls with the folder first and the cut marker. Test first: `test:claudemd` cases and mutants of plan.md, both path flavours [FR-003, FR-004, FR-005, FR-009, FR-018, FR-028]
 - [ ] T004 [G1] `claudeAgents.ts`: read with SHA-256 of the bytes parsed, reserved names, `subAgentsArg(defs, profile?)` with only four keys and a null-prototype object, clash order (profile, folder, user), skip and cut counts; `parseFrontMatter` null-prototype maps. Test first: `test:claudeagents` hostile fixtures and mutants; `test:slash` unchanged [FR-010, FR-012, FR-013, FR-014, FR-018]
 
 ## G2: launch

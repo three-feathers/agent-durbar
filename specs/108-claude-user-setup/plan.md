@@ -53,7 +53,7 @@ One boolean setting (off by default) makes the Claude adapter, at each CLI launc
 
 - **I Spec Kit**: this spec, plan and tasks before any `src/` code. Pass.
 - **II Adapters**: the option is adapter-neutral (`userSetup`), all Claude specifics stay in `claude.ts` / `claudeAgents.ts`; Copilot and Codex ignore it. Pass.
-- **III Safe by default**: off by default; allow-list of files; contained imports; no persistence, logs or unmasked display; no widening; private files not argv; folder agents keep per-file trust. Pass, pending the owner's Q1..Q5.
+- **III Safe by default**: off by default; allow-list of files; contained imports; no persistence, logs or unmasked display; no widening; private files not argv; folder agents keep per-file trust. Pass; the owner answered Q1..Q6 on 2026-11-09 (recommended defaults).
 - **IV No credits**: fixtures, fake CLI, simulator; the one `real:` check (T012) is listed and waits for the owner's OK. Pass.
 - **V Calm UI**: one row, existing switch control, text at least 10.5 px, both sizes. Pass.
 - **VI Platforms**: `os.homedir()`, `CLAUDE_CONFIG_DIR`, `path`/`realpath`, both path flavours in tests; Windows and macOS real runs are `[KNOWN GAP]` (FR-029). Pass with the gap stated.
@@ -67,7 +67,7 @@ One boolean setting (off by default) makes the Claude adapter, at each CLI launc
 
 ## Test plan (zero AI credits)
 
-- `test:claudemd`: user root with fixtures: allowed import, `../` escape, symlink escape (posix and win32 flavour), `.json`/`.jsonl`/credentials import refused, data folders refused, dot segment refused, depth 4, cycle, budget shared with folder first, cut marker, heading order, `@~/` per Q1. Mutants: containment off, `.md` rule off, budget not shared, folder cut by the user file.
+- `test:claudemd`: user root with fixtures: allowed import, `../` escape, symlink escape (posix and win32 flavour), `.json`/`.jsonl`/credentials import refused, data folders refused, dot segment refused, depth 4, cycle, budget shared with folder first, cut marker, heading order, `@~/` per Q1 (answered (a)). Mutants: containment off, `.md` rule off, budget not shared, folder cut by the user file.
 - `test:claudeagents`: multi-entry JSON, no `--agent` without profile, profile kept, clash order, reserved names, `__proto__` front matter, 10,000-line front matter, binary and invalid UTF-8, never-closed front matter, oversize skip, prompt cut, over-50 count, only four keys pass, hash of the bytes parsed, unconfirmed and changed folder agents left out. Mutants: extra key passes, `{}` assignment, folder agent without trust.
 - Launch tests on the fake CLI: switch off = today's argv exactly (SC-001); switch on = file paths only, files `0600`, gone after exit; permission flags equal on and off in every mode (SC-004); old or unknown version sends nothing.
 - `test:settings`: off by default, junk refused, off not written. `test:ipcchannels`: both channels listed, window-only.
