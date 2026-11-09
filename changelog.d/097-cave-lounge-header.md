@@ -1,0 +1,1 @@
+- **A folder's sign in a narrow room keeps its + and menu** (spec 097 FR-356, issue #1392): in the cave at 1280x800, a room of one desk cut its sign's + and ⋯ buttons off at its right edge. Such a room now shows the short sign (name, counts, + and menu), as the Retro arcade already did; the path and the cost are on the name's tooltip.

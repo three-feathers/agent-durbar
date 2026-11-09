@@ -126,6 +126,7 @@ test:logo-assets
 test:autofollow
 test:openwith
 test:liveact
+test:lookalike
 test:names
 test:renameadapters
 test:sessionname

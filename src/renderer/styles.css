@@ -1374,6 +1374,7 @@ body.panel-open #panel{flex-direction:row}
 .mm-sbx{max-width:340px;white-space:normal;line-height:1.35}
 .note.perm .pscope{margin:4px 0 0;font-size:11.5px;color:var(--ink);white-space:normal;overflow:visible;text-overflow:clip}
 .note.perm:not(.pending) .pscope{display:none} /* a settled card no longer offers the grant */ /* spec 003 FR-108 */
+.note.perm .plook{overflow-wrap:anywhere} /* spec 003 FR-118: a long marked name wraps inside the card, never cut */
 .note.perm .psbx{margin:4px 0 0;font-size:11.5px;color:var(--amber-ink);white-space:normal;overflow:visible;text-overflow:clip}
 .msg.user.not-sent .bubble{opacity:.75}
 .msg.user.auto .bubble{font-style:italic;border:1px dashed currentColor} /* spec 058 FR-218: Agent Durbar's own automatic message */

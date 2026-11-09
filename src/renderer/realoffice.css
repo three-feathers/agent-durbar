@@ -168,6 +168,7 @@
 .ro-sign b{font-size:12px;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:3ch}
 .ro-sign .ro-path{font:10.5px ui-monospace,"Cascadia Mono",Menlo,Consolas,monospace;color:var(--muted);overflow:hidden;text-overflow:ellipsis;min-width:0;flex:0 1000 auto} /* the path gives way long before the name (a font wider than measured, #1079 on Linux) */
 .ro-sc{display:flex;gap:6px;align-items:center;flex:none}
+.ro-sign.short :is(.ro-path,.ro-cost){display:none} /* the sign's shortest form: name, counts, + and menu; path and cost on the name's hover (FR-256; FR-356, bug #1392: a room too narrow for the whole sign, in every world) */
 .ro-cnt{display:inline-flex;gap:3px;align-items:center}
 .ro-cost{font-weight:600}
 .ro-sb{width:20px;height:16px;padding:0;border-radius:4px;border:1px solid var(--line);background:transparent;color:var(--ink);font-size:11px;line-height:1;cursor:pointer}
@@ -324,3 +325,6 @@ body.ro-chat .ph .avatar{display:none}
 .ro-hd:hover{--ro-ring:var(--line-2,var(--line))}
 .ro-hmore:hover{border-color:var(--line-2,var(--line))}
 @media (forced-colors:active){.ro-hd,.ro-hmore{border:1px solid CanvasText;background:Canvas;color:CanvasText}}
+/* spec 097 FR-352 (2026-11-09 delta): the drag shows by pointing, as the flat room head does; only where a drag starts (no lounge seat, away desk or arcade room sign (a "continued" sign shows it without a drag: [KNOWN GAP], cosmetic); the lift's grabbing is reorder.js's) */
+.ro:not([data-world="retro"]) .ro-sign,.ro:not([data-world="retro"]) .ro-plate[data-id]:not(.narrow,[data-surface="lounge"]){cursor:grab}
+.ro-sign :is(button,a,input){cursor:pointer}

@@ -269,6 +269,12 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 - [x] T276 [US1] Engine, pure: `realLayout` takes one row of heads, else none; `HELP_ROWS_MAX` and `HELP_KEEP` removed. Test: `test:realoffice-layout` re-pinned (rows 1 on every strip, the lounge scene, the 15-agent case and the measured numbers), mutant by hand (two rows back) [FR-338]
 - [x] T277 [US1] Driver `scripts/check-097-helper-row.js` (in `ui-suite`): 6 and 7 helpers, default and lounge scene, Photo office, cave and arcade, both sizes; one line, `+K` last, no overlap; mutant `tworows`; before and after pictures of the lounge row through the driver's own `H.shot` (under 300 KB) [FR-338]
 
+## 2026-11-09: a folder sign in a narrow room keeps its + and menu (bug #1392, FR-356)
+
+- [x] T292 [US1] Spec delta 2026-11-09 (report, the measurement before the fix, the cause, FR-356), plan and tasks, before any src change [FR-356]
+- [x] T293 [US1] Engine and chrome: `signMin` and `signShort` on the desk rows' zones in `realLayout`; the short sign's CSS in `realoffice.css` for every world (out of the arcade's `world.css`); the cost in a short sign's name tooltip. Test: `test:realoffice-layout` (short exactly when `signMin` does not fit; mutant: none short fails) [FR-356]
+- [x] T294 [US1] Driver `scripts/check-097-helper-row.js` (in `ui-suite`): every sign inside the window and its room, **+** and **⋯** whole, counts and cost not cut, name at least 18 px, text at least 10.5 px, no overlap; three worlds, both sizes, both scenes, with and without helpers; source mutant fails in the cave lounge at 1280x800; the after picture of the cave's lounge scene at 1280x800 through the driver (under 300 KB) [FR-356]
+
 ## Phase 3b: every Characters crew in Real office (issue #1154, part of #1147; delta 2026-11-08)
 
 - [x] T235 [US5] Spec delta: what art each Characters value has, the fallback and why no crew portrait on the plate, the art list, Q12..Q14 [FR-335, FR-336, FR-337]
@@ -288,3 +294,14 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 - [x] T249 [US5] The matrix kept true: a test that fails when a Characters value or world is added without a cell (`test:realoffice-layout`) [FR-335]
 - Art for T240..T244 (from #1308, 2026-11-08): the five crews' packs (`sets/pirate`, `royal`, `rebels`, `monster`, `cheeky`) are added as art only by PR #1327; the wiring (`REAL_SETS` row, `check-097-crews` case flip) stays in #1308's T240..T244.
 - Built 2026-11-09 (#1154): T240..T244 are the five `REAL_SETS` rows with their notes gone and the `check-097-crews` cases flipped; T247 and T248 are `check-097-crews` in the arcade and the cave (with `worldflags`) plus the arcade's scaling and pose fallbacks (FR-335 amended); T249 is the matrix test. Minimalist (T245) and My characters (T246) stay open.
+
+
+## 2026-11-08 delta 2: drag, kept room order, arcade and lobby in Real office (FR-352..FR-355, issue #1152, Q30..Q33)
+
+- [x] T290 [US2] FR-353: `RealModel.keepRooms`, `roRuns` (splits into rows of neighbours) used by `roPack` when a room order is saved. Test: `test:realoffice-layout`; mutant: the order ignored
+- [x] T291 [US2] FR-352, FR-354: pointer drag of plates and folder signs through `DurbarReorder.attach` and `reoDropModel` (the arcade: desks only). Test: `sim:` `check-097-drag`, three worlds, both sizes
+- [x] T286 [US2] FR-355: Alt+arrows on a visitor's chip button, Move earlier / later in the "+N" place menu, fixed places refused. Test: `check-097-drag`
+- [x] T287 [US2] Mutants fail: threshold, Esc, bypassing `reoApply`, arcade room drag, wrong arcade neighbour, menu does nothing, fixed place moves, order ignored. Run 2026-11-09, each failing assert recorded in the PR #1394 comment (also: a fixed place's menu with Move items, the grab cursor removed, order not saved); `order ignored` is `test:realoffice-layout`'s
+- [x] T288 [US2] `shots-033-order`, `check-office-ops`, `check-office-overlap` (real, with a saved room order, arcade) pass
+- [x] T289 [US2] Pictures mid-drag and after the drop read and compressed; spec, plan and changelog fragment match [FR-352]
+

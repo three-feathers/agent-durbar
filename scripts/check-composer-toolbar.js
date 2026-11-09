@@ -25,7 +25,7 @@
 const path = require('path');
 const fs = require('fs');
 const assert = require('assert');
-const { helpers, jsLiteral } = require('./driver-helpers');
+const { helpers, jsLiteral, CHECK_DARK_QUERY } = require('./driver-helpers');
 
 const OUT = process.env.OUT || process.env.SHOTS_OUT || require('os').tmpdir();
 const DARK = fs.readFileSync(path.join(__dirname, 'fixtures', 'themes', 'dark-audit.json'), 'utf8');
@@ -97,7 +97,7 @@ function SUMMARY() {
   };
 }
 
-const THEMES = ['clean-office', 'retro'];
+const THEMES = [['clean-office', { theme: 'clean-office' }], [CHECK_DARK_QUERY.theme, CHECK_DARK_QUERY]]; // spec 102 T226: the dark fixture theme took Retro's place
 
 module.exports = async (ctx) => {
   const H = helpers(ctx);
@@ -430,9 +430,9 @@ module.exports = async (ctx) => {
         await key('Escape');
         check(await until(`!document.getElementById('ctxMenu')&&(document.activeElement||{}).id==='ctxChip'`, 3000), `${tag}: Escape does not close the summary back to the ring`);
       }
-      /* FR-055: the built-in themes lay the row out the same: no overlap, 28px, 10.5px, everything incl. MCP in the row */
-      for (const th of THEMES) {
-        await load(w, h, { theme: th });
+      /* FR-055: Clean Office and the dark fixture theme lay the row out the same: no overlap, 28px, 10.5px, everything incl. MCP in the row */
+      for (const [th, themeQuery] of THEMES) {
+        await load(w, h, themeQuery);
         await until(`window.THEME&&THEME.current().id===${jsLiteral(th)}`, 6000);
         await openIdle();
         const tm = await M();

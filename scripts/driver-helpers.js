@@ -16,7 +16,26 @@
 const UNSAFE = { '<': '\\u003C', '>': '\\u003E', '/': '\\u002F', '\u2028': '\\u2028', '\u2029': '\\u2029' };
 const jsLiteral = (v) => JSON.stringify(v).replace(/[<>/\u2028\u2029]/g, (c) => UNSAFE[c]);
 
+const fs = require('fs');
 const path = require('path');
+/* spec 102 T226 (FR-267): the fixture user theme with a dark page and its own display font; it takes Retro Pixel's place as the second theme of the layout checks.
+   CHECK_DARK is the manifest, CHECK_DARK_QUERY loads it in the simulator (`theme` + `usertheme`), and `window.THEME.setTheme(CHECK_DARK)` switches to it in a loaded page. */
+const CHECK_DARK = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'themes', 'check-dark.json'), 'utf8'));
+const CHECK_DARK_QUERY = { theme: CHECK_DARK.id, usertheme: JSON.stringify(CHECK_DARK) };
+/* spec 102 T226: a run that says "dark" must be on the dark fixture: the theme on screen is `check-dark` and the page (`--bg`) is an opaque fill with luminance under 0.2.
+   A transparent or unparsable `--bg` is not dark (review of PR #1276, B). `darkProblem` judges what the page reported; `darkFixtureProblem` reads it. Both return the problem text, or '' when it is right. */
+function darkProblem(on) {
+  if (on.id !== CHECK_DARK.id) return `the dark run is on theme "${on.id}", not the fixture "${CHECK_DARK.id}"`;
+  const v = /^rgba?\(/.test(String(on.bg)) ? (String(on.bg).match(/\d+(\.\d+)?/g) || []).map(Number) : [];
+  const alpha = v.length === 3 ? 1 : v.length === 4 ? v[3] : NaN; /* rgb() has none; rgba() carries it as the fourth number */
+  if (!(v.length === 3 || v.length === 4) || !(alpha >= 0.9)) return `the dark run's page is not an opaque fill (--bg ${on.bg})`;
+  const lum = (0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]) / 255;
+  if (!(lum < 0.2)) return `the dark run's page is not dark (--bg ${on.bg}, luminance ${lum.toFixed(2)})`;
+  return '';
+}
+async function darkFixtureProblem(ctx) {
+  return darkProblem(await ctx.js(`(()=>{const e=document.createElement('i');e.style.cssText='position:fixed;background:var(--bg)';document.body.appendChild(e);const c=getComputedStyle(e).backgroundColor;e.remove();return {id:window.THEME.current().id,bg:c}})()`));
+}
 const LIMIT = 8000;
 const INDEX = path.join(__dirname, '..', 'dist', 'renderer', 'index.html');
 
@@ -297,4 +316,4 @@ async function shotWithView(win, view, file) {
   fs.writeFileSync(file, nativeImage.createFromBitmap(base, { width: size.width, height: size.height }).toPNG());
 }
 
-module.exports = { waits, helpers, guardWindow, jsLiteral, shotWithView, LIMIT, INDEX };
+module.exports = { waits, helpers, guardWindow, jsLiteral, shotWithView, LIMIT, INDEX, CHECK_DARK, CHECK_DARK_QUERY, darkFixtureProblem, darkProblem };
