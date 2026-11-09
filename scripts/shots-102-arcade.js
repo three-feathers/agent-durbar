@@ -4,6 +4,7 @@
  *
  * It fails (exit 1) when:
  *   - the flag is closed and a stored choice draws the arcade, asks for one of its files or offers it (FR-254);
+ *   - the flag is open and the night room's files (wall-night, floor-night) are not fetched, or the day room's (wall, floor, welcome) are, seen in a session request log (T218, SC-023);
  *   - the flag is open and a file of another world or set is asked for, a picture fails, or the art is not at one integer scale with the nearest pixel (FR-255);
  *   - at 3, 4, 8 and 15 agents, 1440x900 and 1280x800: plates, signs, marquees, cues, chips or fixtures overlap, text is under 10.5 px or a marquee under 12 px,
  *     the office scrolls at 15, or Tab does not follow the seats (FR-229, FR-256, SC-022);
@@ -32,7 +33,16 @@ module.exports = async (ctx) => {
   const PICS = `[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`;
   const packs = () => js(`[...new Set([...document.querySelectorAll('script[src],link[href],#stage img[src]')].map(e=>e.getAttribute('src')||e.getAttribute('href')).filter(n=>/realoffice\\/(worlds|sets)\\//.test(n)).map(n=>n.replace(/^.*realoffice\\/(worlds|sets)\\/([^/]+)\\/.*$/,'$1/$2')))].sort().join(' ')`);
   const ARCADE = { worldflags: 'retro', world: 'retro' };
+  /* spec 102 T218 (SC-023): a session request log, as in check-097-crews.js: what the page really requests (a file:// page cannot report its own requests).
+     The arcade's room is the night pair; the day pair (wall.webp, floor.webp) and welcome.webp must never be fetched. */
+  const reqs = new Map();
+  const ses = ctx.win.webContents.session;
+  ses.webRequest.onBeforeRequest({ urls: ['file://*/*'] }, (d, cb) => { reqs.set(d.id, { url: decodeURIComponent(d.url), status: 0, error: '' }); cb({}); });
+  ses.webRequest.onCompleted({ urls: ['file://*/*'] }, (d) => { const e = reqs.get(d.id); if (e) e.status = d.statusCode; });
+  ses.webRequest.onErrorOccurred({ urls: ['file://*/*'] }, (d) => { const e = reqs.get(d.id); if (e) e.error = d.error; });
+  const roomFetched = (name) => [...reqs.values()].filter((e) => new RegExp('/realoffice/worlds/retro/' + name + '\\.webp(\\?|#|$)').test(e.url));
   const loadArcade = async (w, h, n, query = {}) => {
+    reqs.clear();
     await H.load({ w, h, query: { officeview: 'real', ...ARCADE, sim: String(n), ...query }, ready: REAL, settle: false });
     await must(PICS, 'the pictures');
   };
@@ -63,6 +73,10 @@ module.exports = async (ctx) => {
     await loadArcade(w, h, n);
     assert.strictEqual(await js(`(()=>{const r=document.querySelector('#stage .ro');return r.dataset.world+' '+r.dataset.set})()`), 'retro retro', tag + ': the arcade with its set');
     assert.strictEqual(await packs(), 'sets/retro worlds/retro', tag + ': only its own files: ' + await packs());
+    for (let i = 0; i < 50 && !(roomFetched('wall-night').some((e) => e.status === 200) && roomFetched('floor-night').some((e) => e.status === 200)); i++) await ctx.sleep(100);
+    await ctx.sleep(400); /* a stray day file would be asked for with the first drawing: give it time to show */
+    for (const f of ['wall-night', 'floor-night']) assert.ok(roomFetched(f).some((e) => e.status === 200 && !e.error), tag + ': the night room\'s files are fetched: ' + f + '.webp');
+    for (const f of ['wall', 'floor', 'welcome']) assert.deepStrictEqual(roomFetched(f).map((e) => e.url), [], tag + ': the day room\'s files are never fetched: ' + f + '.webp');
     assert.deepStrictEqual(await js(`[...document.querySelectorAll('#stage .ro img')].filter(i=>!i.naturalWidth).map(i=>i.getAttribute('src'))`), [], tag + ': every picture loads');
     const art = await js(`(()=>{const L=window.__durbarSimUi.realLayout(),g=L.g,ro=document.querySelector('#stage .ro').getBoundingClientRect(),off=[];
       for(const e of document.querySelectorAll('#stage .ro-person,#stage .ro-cab')){const b=e.getBoundingClientRect(),x=b.left-ro.left,y=b.top-ro.top;if(Math.abs(b.width/g-Math.round(b.width/g))>0.01)off.push(e.className+' w '+b.width);if(e.classList.contains('ro-cab')&&Math.abs(x/g-Math.round(x/g))>0.01)off.push('cab x '+x);}
