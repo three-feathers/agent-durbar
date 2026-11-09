@@ -4678,13 +4678,54 @@ function afBackToOffice(a,what){
     announce(what+(moved&&fname?' on '+fname:'')+'. Back to the office.');
   }
 }
+/* ---- spec 052 FR-238..FR-241 (owner, 2026-11-09): a full-screen notice with a 3 s countdown before each automatic move, every time. It is
+   askDialog() (dialog.js: focus inside, Tab wraps, Escape and the backdrop cancel, focus goes back) with its overlayClass / role / auto options;
+   said once with announce(..., ANN_REQUEST) (spec 005 FR-237); the name through deskMask. Resolves true to move, false to stay. ---- */
+let AF_NOTICE=null, AF_NOTICE_MS=3000; /* AF_NOTICE_MS: the simulator's drivers may shorten it (__durbarSimUi.afNotice) */
+const AF_ARRIVE={done:' finished',ask:' needs you',error:' has an error',limit:' reached its limit'};
+const AF_NOTICE_ART='<svg class="afn-art" viewBox="0 0 120 40" aria-hidden="true" focusable="false"><path class="afn-bubble" d="M6 8h28a4 4 0 0 1 4 4v12a4 4 0 0 1-4 4H18l-7 6v-6H6a4 4 0 0 1-4-4V12a4 4 0 0 1 4-4z"/><path class="afn-lines" d="M10 15h20M10 21h14"/><path class="afn-track" d="M44 20h32"/><circle class="afn-dot" cx="44" cy="20" r="3.5"/><path class="afn-desk" d="M84 22h34M88 22v12M114 22v12M94 8h22v11H94zM103 19v3"/></svg>';
+function afNotice({head,sub,stay,said,toOffice}){
+  if(AF_NOTICE)return Promise.resolve(false); /* one at a time: a second move while one is shown does not happen */
+  const secs=Math.max(1,Math.round(AF_NOTICE_MS/1000));
+  const node=document.createElement('div');node.className='afn-body';
+  node.innerHTML=AF_NOTICE_ART+'<div class="afn-count" aria-hidden="true"><svg class="afn-ring" viewBox="0 0 48 48" focusable="false"><circle class="afn-ring-bg" cx="24" cy="24" r="21"/><circle class="afn-ring-fg" cx="24" cy="24" r="21" pathLength="100"/></svg><span class="afn-n"></span></div>';
+  node.querySelector('.afn-n').textContent=String(secs);
+  announce(said+' in '+secs+(secs===1?' second':' seconds')+'. Press Escape to '+stay.toLowerCase()+'.',ANN_REQUEST); /* FR-240: once, at request priority */
+  const was=document.activeElement&&document.activeElement!==document.body?document.activeElement:null;
+  AF_NOTICE=askDialog({title:head,body:sub,custom:{node,value:()=>null,valid:()=>true},buttons:[{label:stay,value:null,cls:'primary'}],
+    returnFocus:()=>liveBack(was), /* FR-239: back to where it was; a desk drawn again meanwhile is found by its id */
+    overlayClass:'af-notice '+(toOffice?'afn-to-office':'afn-to-chat'),role:'dialog',label:'Auto-follow',
+    auto:(close,d)=>{ /* FR-239: the count runs only while the window is visible and has the focus */
+      let left=AF_NOTICE_MS,last=performance.now();const num=d.querySelector('.afn-n');
+      d.style.setProperty('--afn-ms',AF_NOTICE_MS+'ms');
+      const t=setInterval(()=>{
+        if(!d.isConnected){close(null);return;} /* another dialog took its place: nothing moves */
+        const now=performance.now(),run=document.visibilityState!=='hidden'&&schedHasFocus();
+        if(run)left-=now-last;last=now;
+        if(d.classList.contains('afn-paused')===run)d.classList.toggle('afn-paused',!run);
+        if(left<=0){close('go');return;}
+        const n=String(Math.max(1,Math.ceil(left/1000)));if(num.textContent!==n)num.textContent=n;
+      },100);
+      return ()=>clearInterval(t);
+    }}).then(r=>{AF_NOTICE=null;const go=!!r&&r.value==='go';if(!go)announce(toOffice?'Staying here.':'Staying in the office.');return go;});
+  return AF_NOTICE;
+}
+/* FR-183 with FR-238: the notice, then the return to the office, unless you stayed, Auto-follow was turned off or paused, or another chat is shown */
+function afLeaveChat(a,what,head){
+  const shown=afPanelId(), room=roomOf(a);
+  if(!shown||!room||!roomShown(room)||AF.holdReason(afSnapshot(),{office:true})){afBackToOffice(a,what);return;} /* no move to announce: as before */
+  const nm=deskMask(a.name)||'The agent';
+  afNotice({head:head||nm+' is working on this',sub:'Taking you to the office. Auto-follow brings you back when '+(head?'they finish or need you':nm+' finishes or needs you')+'.',stay:'Stay here',
+    said:(head||nm+' is working on this')+'. Taking you to the office',toOffice:true})
+    .then(go=>{if(go&&AF_ON&&!AF_PAUSED&&afPanelId()===shown)afBackToOffice(a,what);afTick();});
+}
 /* FR-183: an accepted message follows its agent and returns to the office. `shown` = the chat shown before the send; `several` = one of a Send to several */
 function afOnAccepted(a,shown,several){
   if(!AF_ON||AF_PAUSED||a.state==='idle'||a.state==='done')return; /* the app answered, and no turn is running */
   const now=afPanelId();
   if(now&&now!==shown)return; /* FR-183: you opened another chat while it was on its way */
   AFT.follow(a.id); AFT.acted();
-  if(!several&&now===shown)afBackToOffice(a,a.name+' is working');
+  if(!several&&now===shown)afLeaveChat(a,a.name+' is working');
   afTick();
 }
 function afOnCompleted(a){
@@ -4711,9 +4752,15 @@ function afDeliver(){
   if(!d){afRender();return;}
   const a=byId(d.id);
   if(a&&!(afPanelId()===d.id)){ /* already shown: nothing moves */
-    AF_AUTO=true; try{openPanel(d.id,'title');}finally{AF_AUTO=false;}
-    AF_OPENED_AT=performance.now();
-    if(d.kind!=='ask')announce(a.name+(d.kind==='done'?' finished':d.kind==='error'?' has an error':' reached its limit')+'. Its chat is open.',afArrivalPrio(d.kind));
+    /* FR-238, FR-239: the notice first; Stay in the office leaves the arrival delivered (in the queue, New kept) and the tracker quiet until you act */
+    const cur=afPanelId(), nm=deskMask(a.name)||'The agent', head=nm+(AF_ARRIVE[d.kind]||AF_ARRIVE.done), see=d.kind==='done'?'See if it is OK. ':'';
+    afNotice({head,sub:see+'Opening its chat.',stay:'Stay in the office',said:head+'. '+see+'Opening its chat',toOffice:false}).then(go=>{
+      if(!go||!AF_ON||AF_PAUSED||afPanelId()!==cur||!byId(d.id)){afTick();return;}
+      AF_AUTO=true; try{openPanel(d.id,'title');}finally{AF_AUTO=false;}
+      AF_OPENED_AT=performance.now();
+      if(d.kind!=='ask')announce(a.name+(d.kind==='done'?' finished':d.kind==='error'?' has an error':' reached its limit')+'. Its chat is open.',afArrivalPrio(d.kind));
+      afTick();
+    });
   }
   afTick();
 }
@@ -5066,7 +5113,7 @@ async function sendToSeveral(anchor){
   const shown0=afPanelId(); /* spec 052 FR-183: the chat shown once, before the first send: a chat opened by hand while the sends go on is not the one to leave */
   for(const id of r.picked){const a=byId(id);if(!a||!a.live){bad.push(a?a.name:id);continue;}
     try{await sendLive(text,id,{fromComposer:false,several:true,afShown:shown0});n++;if(AFT.has(a.id))last=a;}catch(err){bad.push(a.name);}}
-  if(AF_ON&&!AF_PAUSED&&last&&AFT.has(last.id)&&afPanelId()===shown0){afBackToOffice(last,AFT.size>1?AFT.size+' followed agents are working':last.name+' is working');afTick();} /* spec 052 FR-183: one move and one announcement for the whole send */
+  if(AF_ON&&!AF_PAUSED&&last&&AFT.has(last.id)&&afPanelId()===shown0){afLeaveChat(last,AFT.size>1?AFT.size+' followed agents are working':last.name+' is working',AFT.size>1?AFT.size+' followed agents are working on this':'');afTick();} /* spec 052 FR-183: one move and one announcement for the whole send */
   toast(bad.length?'Sent to '+n+'; could not send to '+esc(bad.join(', '))+'.':'Sent to '+n+' session'+(n===1?'':'s')+'.',3600).classList.add(bad.length?'err':'ok');
 }
 const folderOfAgentName=a=>{const r=roomOf(a);const p=r&&r.path?String(r.path).replace(/[\\/]+$/,''):'';return p.split(/[\\/]/).pop()||'';};
@@ -5197,7 +5244,7 @@ function setView(v){ui.view=v;document.body.classList.toggle('list-mode',v==='li
 $('vOffice').onclick=()=>setView('office');
 $('vList').onclick=()=>setView('list');
 let resizeQueued=false;
-const relayout=()=>{if(resizeQueued)return;resizeQueued=true;requestAnimationFrame(()=>{resizeQueued=false;if(ui.view==='office'){renderOffice();syncWalkers();}placePencils();INL().follow();});}; /* spec 024: figures follow a resize */
+const relayout=()=>{if(resizeQueued)return;resizeQueued=true;requestAnimationFrame(()=>{resizeQueued=false;if(ui.view==='office'){renderOffice();syncWalkers();afTick();}placePencils();INL().follow();});}; /* spec 024: figures follow a resize */
 new ResizeObserver(relayout).observe($('floor'));
 window.addEventListener('resize',relayout);
 document.addEventListener('scroll',()=>INL().follow(),{capture:true,passive:true}); /* spec 059 FR-023 item 5: the floor, the list or the chat scrolled: the open field follows its name */
@@ -9561,7 +9608,7 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
-if(SIM)window.__durbarSimUi={announce,afArrivalPrio,swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
+if(SIM)window.__durbarSimUi={announce,afArrivalPrio,afNotice:{ms:v=>{AF_NOTICE_MS=Math.max(100,Number(v)||3000);return AF_NOTICE_MS;},on:v=>{setAutoFollowOn(!!v);return AF_ON;},shown:()=>!!AF_NOTICE}, /* spec 052 FR-239: drivers only: the notice's length, Auto-follow without Settings */swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
   settleCard:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;c.classList.add('settled');c.classList.remove('pending');return true;}, /* spec 052 FR-197 (the door driver): the agent's pending card is answered elsewhere, as in the chat, so a row painted for it is stale */afPasses:()=>AF_PASSES,railPlans:()=>{renderStrip();return faceMemoPlans;}, /* issue 1193: room plans one rail render worked out */ops:()=>({...OPS}),agents:()=>agents,scene:(a,mini,c)=>scene(a,mini,c), /* a drawn scene's markup, for the drivers (FR-192: the SMIL wave) */cv:{mark:cvMark,release:cvRelease,drop:cvDrop,openPanel,setDensity},setLive:setLiveOn,setOfficeView,needsCount:()=>needsMeOrder().length,clearDetail:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;c.querySelectorAll(':scope > details.pdiff').forEach(x=>x.remove());scheduleRender();return true;},addDetail:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;const d=document.createElement('details');d.className='pdiff';d.innerHTML='<summary>Show the change (+1 \u22121)</summary><pre>- a\n+ b</pre>';c.insertBefore(d,c.querySelector(':scope > .note-actions'));scheduleRender();return true;},requestText:s=>{const n=document.createElement('div');n.className='note elicit';n.textContent=String(s);return requestText(n);},setSerious:v=>{SERIOUS=!!v;return SERIOUS;}, setMotion:v=>{MOTION=!!v;markMotion();return MOTION;}, /* spec 097 (the moments driver): a change in the card, the card text's masking, Serious mode */unread:{mark:id=>UNREAD.complete(id,false)==='marked',read:id=>markRead(byId(id))}, /* spec 097 (the moments driver): the New reply mark and Mark as read, as the app sets them */order:{get:()=>ORDER,saved:()=>bridge.getOrder?bridge.getOrder():null,reset:resetOrder,path:id=>(ROOMS.find(r=>'room:'+r.id===id)||{}).path||''}, /* issue 677 (check 033-order): the order held and saved, Reset, a room's key */
   toast:(s,act)=>{const t=act?toastAction(esc(String(s)),String(act),()=>{},8000):toast(esc(String(s)),8000);return !!t;}, /* spec 097 FR-113: a toast for the world-chrome driver (simulator only) */visitsSettled:()=>VISITS.settled(),timerDraw:()=>moodSigNow(drawnAt)!==moodSig||agoSigNow(drawnAt)!==agoSig, /* spec 008 FR-184: a mood or "ago" tick would draw now (a draw shows both; check-office-ops asserts none is due after an update's draw) */ /* spec 097 FR-186: no visit is about to start or end on the wall clock (check-office-ops-real reads a settled lobby) */realLayout:()=>RO_LAST, /* spec 097: the last Real office layout (check-office-overlap's Real office variant) */slips:()=>realSlips(), /* spec 097: what the world draws as slips (the moments driver; simulator only) */uncrowd:()=>{agents.forEach(x=>VISITS.unpin(x.id));scheduleRender();return true;},awayIds:()=>agents.filter(x=>!x.parent&&VISITS.at(x.id)).map(x=>x.id),pinAt:(id,pid)=>{const a=agents.find(x=>x.id===id&&!x.parent);if(!a)return false;VISITS.pin(id,pid,'test');scheduleRender();return true;}, /* spec 097 (order driver, test only): who stands at a place by the visit record itself (the plates follow a render later), and one agent pinned by id (crowd pins by position) */crowd:(pid,n,from)=>{const a=agents.filter(x=>!x.parent).slice(from||0,(from||0)+n);a.forEach(x=>VISITS.pin(x.id,pid,'test'));scheduleRender();return a.length;}, /* spec 097: n main agents stand at a place (a "+N" crowd for the driver; simulator only) */crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
   readAll:(quiet)=>{const n=UNREAD.size;UNREAD.ids().forEach(id=>{UNREAD.read(id);UNREAD_AT.delete(id);});if(!quiet)scheduleRender();return n;},notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),boxUsable:()=>boxUsable(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},selNow:()=>{showSelButton();const b=document.getElementById('ntSelBtn');return !!b&&!b.hidden;},open:()=>openNotes(byId(ui.selected)),close:()=>closeNotes(false),search:q=>{const f=$('ntSearch');if(!f)return false;f.value=q;f.dispatchEvent(new Event('input'));return true;},marks:{clear:()=>{document.querySelectorAll('#chat .nt-mark').forEach(x=>x.remove());document.querySelectorAll('#chat .bubble').forEach(b=>{b._nd=undefined;});return true;},run:()=>notesMarkAll(byId(ui.selected))},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),rename:note=>renameNote(byId(ui.selected),note,null),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */

@@ -273,5 +273,46 @@ const setup = () => {
     tm('mousedown', dov); tm('mouseup', dov); dov.dispatchEvent(stamp(new t.window.MouseEvent('click', { bubbles: true }), now + 5));
     assert.strictEqual(await p, null, 'a press and release on the backdrop closes it');
   }
+  // spec 052 FR-239, FR-240 (the Auto-follow notice): overlayClass, role 'dialog' with a label, and auto(close) for a dialog that closes by itself
+  {
+    const t = setup(); t.chip.focus();
+    let stops = 0, closeIt: ((v: string) => void) | null = null, seenEl: unknown = null;
+    const p = t.ask({ title: 'Ada is working on this', body: 'Taking you to the office.', returnFocus: t.chip, overlayClass: 'af-notice  x2', role: 'dialog', label: 'Auto-follow',
+      buttons: [{ label: 'Stay here', value: null, cls: 'primary' }], auto: (close: (v: string) => void, el: unknown) => { closeIt = close; seenEl = el; return () => { stops++; }; } });
+    const box = t.doc.querySelector('#modeDlg .dlg') as HTMLElement;
+    assert.ok(t.dlg()!.classList.contains('af-notice') && t.dlg()!.classList.contains('x2') && t.dlg()!.classList.contains('dlg-ov'), 'overlayClass adds its classes to the backdrop, which keeps dlg-ov');
+    assert.strictEqual(box.getAttribute('role'), 'dialog', "role 'dialog' replaces alertdialog");
+    assert.strictEqual(box.getAttribute('aria-label'), 'Auto-follow', 'the label names it');
+    assert.strictEqual(box.getAttribute('aria-labelledby'), null, 'no labelledby with a label');
+    assert.strictEqual(box.getAttribute('aria-describedby'), null, 'no describedby: the caller announces the text once');
+    assert.strictEqual(box.getAttribute('aria-modal'), 'true', 'still modal');
+    assert.strictEqual(seenEl, t.dlg(), 'auto gets the dialog element, once it is in the page');
+    assert.strictEqual(t.doc.activeElement, t.btn('Stay here'), 'focus starts on the only (cancel) button');
+    closeIt!('go');
+    assert.deepStrictEqual(await p, { value: 'go' }, 'close(value) resolves {value}');
+    assert.strictEqual(t.dlg(), null, 'and removes the dialog');
+    assert.strictEqual(stops, 1, 'the cleanup ran once');
+    assert.strictEqual(t.doc.activeElement, t.chip, 'focus goes back as for a button');
+    closeIt!('again');
+    assert.strictEqual(stops, 1, 'a second close does nothing');
+  }
+  // the cleanup also runs on Escape and on the button; without the new options nothing changes
+  {
+    for (const how of ['Escape', 'button']) {
+      const t = setup(); t.chip.focus();
+      let stops = 0;
+      const p = t.ask({ ...t.opts(), auto: () => () => { stops++; } });
+      if (how === 'Escape') t.key('Escape'); else t.btn('Cancel').click();
+      assert.strictEqual(await p, null, how + ' cancels');
+      assert.strictEqual(stops, 1, how + ': the cleanup ran');
+    }
+    const t = setup();
+    const p = t.ask(t.opts());
+    const box = t.doc.querySelector('#modeDlg .dlg') as HTMLElement;
+    assert.strictEqual(box.getAttribute('role'), 'alertdialog', 'default role unchanged');
+    assert.strictEqual(box.getAttribute('aria-describedby'), 'mdB mdL', 'default describedby unchanged');
+    assert.strictEqual(t.dlg()!.className, 'dlg-ov', 'default backdrop class unchanged');
+    t.key('Escape'); await p;
+  }
   console.log('dialog tests passed');
 })().catch((e) => { console.error(e); process.exit(1); });
