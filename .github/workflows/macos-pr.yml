@@ -43,7 +43,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
-      - run: npm run typecheck
+      - uses: ./.github/actions/npm-ci
+      # spec 008 FR-193: build runs the same tsc as typecheck
       - run: npm run build
       - run: npm test

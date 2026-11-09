@@ -88,6 +88,10 @@ A pack with a script in an SVG, a font that is not on the allow-list, a 2px font
 
 ## Changes
 
+### 2026-11-08: review of #1271 (flat look behind the flag)
+
+Test-only and task-text changes, no behaviour change. `test:theme-tokens` now (a) resolves, with the flag off, the rules edited in place (`.inbox`, `.ib`, `.composer`, `.ptab`, `.btn`, `.btn.sm`, `.ph .btn`, `.notice-strip .btn`, `.ctoolbar`) through `:root` and pins radius, padding, sizes and weights to `main`'s values (a static resolve of the CSS, not a browser measure: `[KNOWN GAP]` the driver's off-run still probes only the top-bar button), and (b) asserts the flat section holds only rules that start with the full gate and no nested block. T036 and T044 are `[~]` with what is and is not built.
+
 ### 2026-11-03: FR-050 amended for dark worlds (owner's look at the arcade, decided by his coordinating agent)
 
 - **FR-050, amended for a dark world.** A world whose page is dark (`dark: true` in `WORLD_SETS`, today only the Retro arcade, spec 102) keeps every status hue (`--c-*`, `--pb-*`, `--pc-*`, `--halo-*`, `--red`, `--amber`, `--green`, `--blue`, `--desk-new`, `--desk-needs`) and lightens only the status ink shades `--red-ink`, `--amber-ink` and `--blue-ink`, in the same hue (within 12 degrees), so a status word or a danger or warn fill reads at AA on its dark surfaces. Contrast wins over the token rule. A light world changes none of them, as before. `test:` `test:theme-tokens` (the hue, the lightness, every pair AA).
@@ -196,7 +200,7 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
 
 ### 2026-11-02: Flat's modern look and one button scale (owner, #524; FR-061..FR-067)
 
-**Status: specified, not built.** Owner decision, Vikram, 2026-11-02: issue #524 is kept and handled as part of the design sweep: "change oversized buttons and implement cleaner colors as well - modern language". #524 is Paco's request of 2026-10-22. Built by one PR, [spec 005's plan row A14](../005-chat-fullscreen-and-agent-strip/plan.md), which also builds T020; it says `Closes #495` and `Closes #524`, and #495 stays open until then.
+**Status: first slice built behind a flag that is off by default (2026-11-07, PR A14a): `html[data-flat-look]`, set by `flatlook.js` from `localStorage durbar.flatLook = '1'` or `?flatlook=1`; only Flat (Clean Office, no world) matches it, so every other pack and world is unchanged (FR-066). Built: FR-061's colours as `--flat-*` tokens read by the flag's block (`!important`, because theme.js writes the pack's values inline; `theme.js` is not touched), FR-075's 24 px controls, 12 px text at weight 500, 8 px padding, radii 3/4/6/8, Send on the primary tokens, a smaller composer pad. [KNOWN GAP] not built here: T020/T037's literal migration beyond what the new tokens replaced, FR-076's 3:1 edge on quiet buttons and its walking driver, FR-062's role list, the header row (24 px bar buttons follow `--btn-sm-h`), Compact (FR-079), Stone for the worlds (A15), checkboxes and the 18 px switch, the owner's look (T039).** Owner decision, Vikram, 2026-11-02: issue #524 is kept and handled as part of the design sweep: "change oversized buttons and implement cleaner colors as well - modern language". #524 is Paco's request of 2026-10-22. Built by one PR, [spec 005's plan row A14](../005-chat-fullscreen-and-agent-strip/plan.md), which also builds T020; it says `Closes #495` and `Closes #524`, and #495 stays open until then.
 
 *Reused, nothing new:* `CLEAN_TOKENS`, the two pinned copies (FR-001), `CONTRAST_PAIRS`, `test:theme-tokens`, `check-ui-text`, `check:geometry`, `check:office`, `.btn.primary`, Phase 3's `--accent` and `--btn-*` (FR-051, FR-052). *Not repeated:* T024 keeps the switch, T217 keeps `accent-color` and the focus halo, T027 keeps selects, inputs and `.seg`.
 

@@ -64,6 +64,7 @@ Branch names must match the Spec Kit gate (lowercase letters, digits and hyphens
 4. **The release clip** (spec 008 FR-174, FR-175; a stable or pre-release tag, never a `-test.M` build), after `release.yml` has made the draft and before you publish. It never holds a release.
    Not added to older releases.
    1. Record, on a checkout of the tag (needs ffmpeg; about 2 minutes; no AI credits): `npm run release:video -- --version <tag> --out <dir>`.
+      Without `--scenes` the clip shows the scenes the release's fragments name (`Scene:` fields, and the scenes whose `refs` a bullet's spec and FR numbers match; spec 008 FR-183). If it says no scene shows the release, pick with `--scenes <ids>` (`--list`), and add a scene or a `refs` entry afterwards.
    2. Look at the stills in `<dir>` (FR-176: simulator data only, no path, name, token or chat text; captions in the band, nothing broken).
    3. Upload to the draft: `gh release upload <tag> <dir>/release-<tag>.mp4 <dir>/release-<tag>.gif`.
    4. Add the image line at the very top of the draft's notes (the Highlights block is already in them, built from the fragments' `Highlight:` fields by `scripts/release-notes.js`):
@@ -73,7 +74,7 @@ Branch names must match the Spec Kit gate (lowercase letters, digits and hyphens
    The site gets the clip later through spec 104; no YouTube.
 5. Check the draft, then publish it by hand as a **pre-release**, not *latest* (a stable tag: next section).
 
-- In the doc-only fold PR (from 2026-11-07, spec 008 FR-181, owner request): `npm run usage:readme -- --release vX.Y.Z` with every machine's `usage-*.json` in `~/.durbar-usage` (or `--files`). It rewrites the README's *Build cost so far* block, appends the release's row to `docs/build-cost-history.json` and regenerates `docs/build-cost-badge.svg` and `docs/build-cost.svg`; commit those five files. Method: [docs/build-cost.md](../docs/build-cost.md).
+- In the doc-only fold PR (from 2026-11-07, spec 008 FR-181, owner request): `npm run usage:readme -- --release vX.Y.Z --publish` with your machine's `usage-*.json` in `~/.durbar-usage` (or `--files`): it copies it into `docs/build-cost/data/` and builds from **all machines' files, refreshed at each release** (every team machine runs the same receiver and publishes its `docs/build-cost/data/usage-<machine>.json` the same way). It rewrites the README's *Build cost so far* block, appends the release's row to `docs/build-cost-history.json` and regenerates `docs/build-cost-badge.svg`, `docs/build-cost.svg` and `docs/build-cost-days.svg` (estimated days faded); commit those files and the data file. Method: [docs/build-cost.md](../docs/build-cost.md).
 
 ## A stable release (spec 008 FR-129)
 

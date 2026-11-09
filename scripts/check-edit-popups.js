@@ -10,7 +10,8 @@
  * Popups are opened and put away with synthetic clicks and page calls; the numbered steps use real input (webContents.sendInputEvent
  * and insertText):
  *   1. a click in the field, Ctrl/Cmd+A and typed text;
- *   2. a mouse drag that starts in the field and ends outside the popup (on the backdrop, or beside the popover): the popup stays open,
+ *   2. a mouse drag that starts in the field and ends outside the popup (on the backdrop, or beside the popover), each event sent once the
+ *      page saw the one before (a queue flushed by the release made it flaky on CI): the popup stays open,
  *      the text is unchanged and the drag's selection is there (the bug: the browser sends that click to the backdrop);
  *   3. Ctrl/Cmd+A selects the whole text and nothing else happens;
  *   4. live events while typing (status ticks on every desk, permission requests, a toast, a full render): open, text, selection and
@@ -49,6 +50,19 @@ module.exports = async (ctx) => {
   /* wait until the field meets `cond` (page code over i = the field, f = it has the focus); the field's state for the message */
   const fieldUntil = async (sel, cond, ms = 3000) => { const ok = await until('(()=>{const i=document.querySelector(' + jsLiteral(sel) + ');if(!i||!i.getClientRects().length)return false;const f=document.activeElement===i;return !!(' + cond + ')})()', ms); return { ok, f: await field(sel) }; }; /* cond is this driver's own page code, never data */
   const pageSel = (sel, a, b) => js(`(()=>{const i=document.querySelector(${jsLiteral(sel)}),a=${jsLiteral(a)},b=${jsLiteral(b)};i.setSelectionRange(a===null?i.value.length:a,b===null?i.value.length:b);return true})()`); /* null: the end of the text */
+  /* a drag with real input, one event at a time: each event is sent once the page has seen the one before (a wait, never a sleep). Sent back
+     to back, the moves wait in the renderer's queue and only the release flushes them, so under load what reached the page was left to that
+     queue: on ubuntu CI (9 runs, 2026-11-08/09) the palette drag selected nothing ({s:13,e:13}). Returns ok and the events the page saw. */
+  const drag = async (sx, sy, ex, ey) => {
+    await js(`(()=>{if(window.__epOff)window.__epOff();const L=window.__epSeen=[],N=['mousedown','mousemove','mouseup'],on=e=>{L.push([e.type,e.clientX,e.clientY,e.buttons])};N.forEach(n=>document.addEventListener(n,on,true));window.__epOff=()=>N.forEach(n=>document.removeEventListener(n,on,true));return true})()`);
+    const seen = (type, x, y, b) => until(`(window.__epSeen||[]).some(e=>e[0]===${jsLiteral(type)}&&Math.abs(e[1]-${jsLiteral(Math.round(x))})<=1&&Math.abs(e[2]-${jsLiteral(Math.round(y))})<=1&&(e[3]&1)===${jsLiteral(b)})`, 3000);
+    mouse('mouseDown', sx, sy);
+    let ok = await seen('mousedown', sx, sy, 1);
+    for (let s = 1; s <= 8 && ok; s++) { const x = sx + (ex - sx) * s / 8, y = sy + (ey - sy) * s / 8; mouse('mouseMove', x, y, { modifiers: ['leftButtonDown'] }); ok = await seen('mousemove', x, y, 1); }
+    if (ok) { mouse('mouseUp', ex, ey); ok = await seen('mouseup', ex, ey, 0); }
+    const trace = await js(`(()=>{const L=window.__epSeen||[];if(window.__epOff)window.__epOff();window.__epOff=null;window.__epSeen=null;return L.map(e=>e.join(' ')).join(', ')})()`);
+    return { ok, trace };
+  };
   /* the point just outside the popup's box: to its left on the field's line when there is room, else above it */
   const outside = (box, fy) => (box.l > 40 ? { x: box.l - 24, y: fy } : { x: (box.l + box.r) / 2, y: box.t > 40 ? box.t - 20 : box.b + 20 });
   const reset = async () => {
@@ -96,12 +110,12 @@ module.exports = async (ctx) => {
     // 2. a drag from the field's end to outside the popup
     ri = await rect(k.input); box = await rect(k.box);
     const o = outside(box, fy), sx = Math.min(ri.r - 6, ri.l + 200);
-    mouse('mouseDown', sx, fy);
-    for (let s = 1; s <= 8; s++) { mouse('mouseMove', sx + (o.x - sx) * s / 8, fy + (o.y - fy) * s / 8, { modifiers: ['leftButtonDown'] }); await ctx.sleep(15); }
-    mouse('mouseUp', o.x, o.y); await ctx.sleep(SETTLE);
+    const dr = await drag(sx, fy, o.x, o.y);
+    assert.ok(dr.ok, `${t}: the page saw the drag's press, each move with the button down and the release: ${dr.trace}`);
+    await ctx.sleep(SETTLE);
     assert.ok(await isOpen(), `${t}: a drag from the field that ends outside the popup keeps it open`);
     r = await fieldUntil(k.input, `i.value===${jsLiteral(TEXT)}&&f${num || MAC ? '' : '&&i.selectionStart<i.selectionEnd'}`);
-    assert.ok(r.ok, `${t}: after the drag the text is intact${num || MAC ? '' : ', selected'} and focused: ${jsLiteral(r.f)}`);
+    assert.ok(r.ok, `${t}: after the drag the text is intact${num || MAC ? '' : ', selected'} and focused: ${jsLiteral(r.f)}; the page saw: ${dr.trace}`);
     // 3. Ctrl/Cmd+A
     await H.key('A', [MOD], { char: 'never' });
     if (num || MAC) { await ctx.sleep(SETTLE); r = await fieldUntil(k.input, `i.value===${jsLiteral(TEXT)}&&f`); if (MAC && !num) await pageSel(k.input, 0, null); }
@@ -151,9 +165,9 @@ module.exports = async (ctx) => {
     assert.ok(await k.open(), `${t}: the popup opens`);
     const box = await rect(k.box);
     const sx = box.l + 30, sy = box.t + 14, o = outside(box, sy);
-    mouse('mouseDown', sx, sy);
-    for (let s = 1; s <= 8; s++) { mouse('mouseMove', sx + (o.x - sx) * s / 8, sy + (o.y - sy) * s / 8, { modifiers: ['leftButtonDown'] }); await ctx.sleep(15); }
-    mouse('mouseUp', o.x, o.y); await ctx.sleep(SETTLE); /* nothing to wait for when it stays */
+    const dr = await drag(sx, sy, o.x, o.y);
+    assert.ok(dr.ok, `${t}: the page saw the drag's press, each move with the button down and the release: ${dr.trace}`);
+    await ctx.sleep(SETTLE); /* nothing to wait for when it stays */
     assert.ok(await js(`(()=>{const b=document.querySelector(${jsLiteral(k.box)});return !!b&&b.getClientRects().length>0})()`), `${t}: a drag from inside that ends on the backdrop keeps it open`);
     clickAt(o.x, o.y);
     assert.ok(await until(`!document.querySelector(${jsLiteral(k.box)})`, 3000), `${t}: a click on the backdrop closes it`);
