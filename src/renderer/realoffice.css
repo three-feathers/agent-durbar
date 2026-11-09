@@ -42,6 +42,17 @@
 .ro-screen.tint-orange .ro-glass{background:#7a2e00}
 .ro-screen.tint-green .ro-glass{background:#0f4526}
 .ro-screen.off .ro-glass{background:#121314}
+/* spec 097 FR-322..FR-325 (owner, 2026-11-07 20:20 UTC, Q8: "Frame fill and it can go until red as well"): context as a line round the monitor frame, filling clockwise from the
+   top-left as the context fills. One svg and rect per desk (realoffice.js ctxPaint); the dash is the share (pathLength 100); no line until the context is known (no empty track).
+   It lies on the frame, outside the glass (the glass keeps its FR-236 tint), static. Colours (owner, 2026-11-07 21:01 UTC, "2"): soft white (--tint-ink) while the context is ok or warn, red (--red) only above 90 %. */
+.ro-ctx{position:absolute;left:0;top:0;width:var(--ro-cw,100%);height:var(--ro-ch,100%);overflow:visible;pointer-events:none}
+.ro-ctx:not([data-lv]),.ro-screen.ro-lmon .ro-ctx{display:none}
+.ro-ctx rect{x:1px;y:1px;width:calc(var(--ro-cw,2px) - 2px);height:calc(var(--ro-ch,2px) - 2px);stroke-width:4px;stroke-linecap:butt}
+/* a dark keyline 2 px wider each side under the coloured line (soft white on the Photo office's light wall needs it) (the same dash), so a red line round a red error screen or an amber one round an amber needs-you screen reads as its own band */
+.ro-ctx .ro-ck{stroke:rgba(8,10,12,.85);stroke-width:8px}
+.ro-ctx:is([data-lv="ok"],[data-lv="warn"]) rect:not(.ro-ck){stroke:var(--tint-ink)}
+.ro-ctx[data-lv="high"] rect:not(.ro-ck){stroke:var(--red)}
+@media (forced-colors:active){.ro-ctx rect:not(.ro-ck){stroke:Highlight!important}.ro-ctx .ro-ck{stroke:Canvas!important}}
 /* FR-030..FR-033: the text of a monitor, in the chrome over the glass; newest at the bottom, the top scrolls away as in flat's side panel */
 .ro-stext{overflow:hidden;pointer-events:none;border-radius:2px;font:var(--ro-sf,11px)/var(--ro-sl,15px) ui-monospace,"Cascadia Mono",Menlo,Consolas,monospace;color:var(--ro-scr-plain)}
 .ro-chrome>.ro-stext{pointer-events:none}

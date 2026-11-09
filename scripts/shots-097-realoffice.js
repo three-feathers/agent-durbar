@@ -483,7 +483,7 @@ module.exports = async (ctx) => {
     /* amber at the Boss: the empty desk of a waiting agent at the Boss keeps its amber screen, and its plate says Waiting (acceptance 3) */
     await loadReal(1440, 900);
     await installTint();
-    const boss = await js(`(()=>{const p=[...document.querySelectorAll('#stage .ro-plate[data-state="waiting"]')].find(p=>(p.getAttribute('aria-label')||'').includes(', at Boss.'));return p?p.dataset.id:'';})()`);
+    const boss = await js(`(()=>{const p=[...document.querySelectorAll('#stage .ro-plate[data-state="waiting"]')].find(p=>(p.getAttribute('aria-label')||'').includes(', at Boss'));return p?p.dataset.id:'';})()`);
     assert.ok(boss, 'the simulator has an agent waiting at the Boss');
     const b0 = await js(T(boss));
     assert.ok(b0.tint === 'amber' && b0.glass === TINT.amber, `FR-236: the empty desk of an agent waiting at the Boss keeps its amber screen: ${JSON.stringify(b0)}`);

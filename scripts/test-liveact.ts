@@ -631,7 +631,9 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   for (const k of ['shell', 'shell:git status', 'shell-exact:run ls']) eq(permKind(k), 'shell', 'N15: permKind(' + k + ') is shell');
   for (const k of ['mcp', 'custom-tool', 'mcp:srv', 'custom-tool:x']) eq(permKind(k), 'tool', 'N15: permKind(' + k + ') is tool');
   for (const k of ['write', 'fetch', '', 'url:x']) eq(permKind(k), 'other', 'N15: permKind(' + k + ') is other');
-  { const c = 'run tool --api-key abcdefgh12345678'; ok(L.permText(c, 'shell', hm).hidden === true && !/abcdefgh/.test(L.permText(c, 'shell', hm).text) && L.permText(c, 'other', hm).hidden === false, 'N15: the shell kind uses the command mask (redact alone leaves --api-key K)'); }
+  // a flag value only the command mask finds: `--password K` (plain redact needs `=` or `:` after the name). `--api-key K` was the case until spec 012 FR-170 made plain redact hide `api-key K` too; it is now hidden by both kinds
+  { const c = 'run tool --password abcdefgh12345678'; ok(L.permText(c, 'shell', hm).hidden === true && !/abcdefgh/.test(L.permText(c, 'shell', hm).text) && L.permText(c, 'other', hm).hidden === false && /abcdefgh/.test(L.permText(c, 'other', hm).text), 'N15: the shell kind uses the command mask (redact alone leaves --password K)'); }
+  { const c = 'run tool --api-key abcdefgh12345678'; ok(['shell', 'other'].every((k) => L.permText(c, k, hm).hidden === true && !/abcdefgh/.test(L.permText(c, k, hm).text)), 'N15: --api-key K is hidden by both kinds (spec 012 FR-170)'); }
   // item 4: the announcement and a card with no scope
   ok(/announce\(a\.name\+' needs your OK: '\+sumS\.text\+\(hwhy\?'\. '\+PERM_WHY\[hwhy\]\+hgrant:''\)\)/.test(card), 'item 4: the announcement carries the hidden-part warning');
   // item 5: a request whose text could not be checked: truthful copy, no Allow
