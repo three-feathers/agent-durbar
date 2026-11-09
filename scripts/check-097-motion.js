@@ -181,8 +181,14 @@ module.exports = async (ctx) => {
   const arcadeLoops = async (w, h) => {
     await loadReal(w, h);
     await js(INSTALL);
+    /* under xvfb the pointer rests mid-window, on a desk: its hover card (FR-034) opens and the desks under the card stand still (`ro-off`,
+       on purpose). At 1280x800 the card covered the typist, so the bob was rightly still (PR #1436 review); park the pointer off the room first */
+    H.wc().sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
+    await must(`!document.getElementById('roZoom')`, 'no hover card open before the typist sits (the pointer parked off the room)');
     const typist = await seat();
     await must(`!!document.querySelector('#stage .ro-person.bob[data-for="'+CSS.escape(${jsLiteral(typist)})+'"]')`, 'the typist bobs');
+    const still = await js(`(()=>{const p=document.querySelector('#stage .ro-person[data-for="'+CSS.escape(${jsLiteral(typist)})+'"]'),z=document.getElementById('roZoom'),f=document.getElementById('floor').getBoundingClientRect(),b=p.getBoundingClientRect();return {off:p.classList.contains('ro-off'),zoom:z?z.getBoundingClientRect().toJSON():null,inFloor:b.top>=f.top&&b.bottom<=f.bottom&&b.left>=f.left&&b.right<=f.right};})()`);
+    assert.ok(!still.off && !still.zoom && still.inFloor, `the typist ${typist} is on screen and free to move (no hover card over it, not scrolled away) before its bob is measured: ${JSON.stringify(still)}`);
     const anims = await js(animInfo);
     const names = {}; for (const a of anims) names[a.name] = (names[a.name] || 0) + 1;
     console.log('[097-motion] arcade animations', w, h, JSON.stringify(names));
