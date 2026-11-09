@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "machine": "ruben-server",
+  "scope": "agent-durbar",
+  "skipped": 0,
+  "days": {
+    "2026-11-09": {
+      "models": {
+        "claude-haiku-5-5": {
+          "input": 1405,
+          "output": 25,
+          "cacheRead": 0,
+          "cacheCreation": 0,
+          "costUsd": 0.000153,
+          "bySource": {
+            "main": {
+              "tokens": 0,
+              "costUsd": 0
+            },
+            "subagent": {
+              "tokens": 0,
+              "costUsd": 0
+            },
+            "auxiliary": {
+              "tokens": 1430,
+              "costUsd": 0.000153
+            },
+            "other": {
+              "tokens": 0,
+              "costUsd": 0
+            }
+          }
+        },
+        "claude-sonnet-5-5": {
+          "input": 11130,
+          "output": 38648,
+          "cacheRead": 7883661,
+          "cacheCreation": 452363,
+          "costUsd": 2.4946951,
+          "bySource": {
+            "main": {
+              "tokens": 5914178,
+              "costUsd": 1.2584089000000003
+            },
+            "subagent": {
+              "tokens": 1566312,
+              "costUsd": 1.1067255
+            },
+            "auxiliary": {
+              "tokens": 905312,
+              "costUsd": 0.1295607
+            },
+            "other": {
+              "tokens": 0,
+              "costUsd": 0
+            }
+          }
+        }
+      }
+    }
+  }
+}
