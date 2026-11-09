@@ -202,13 +202,21 @@ module.exports = async (ctx) => {
     /* ---- 2b. Alt+arrows inside a text field do nothing in Real office (review of PR 1315, finding 3). No text field of the office sits on a plate, so a plain <input> is put inside a movable plate (the guard ahead of the Real branch is what is tested) ---- */
     {
       const nowP = await plates(A), nowAway = await js(`[...document.querySelectorAll('#stage .ro-plate.narrow[data-id]')].map(p=>p.dataset.id)`), holder = nowP.find((id) => !nowAway.includes(id)), doc = await saved(), orderBefore = await plates(A);
-      await js(`(()=>{const pl=document.querySelector(${jsLiteral('#stage .ro-plate[data-id="' + holder + '"]')});const i=document.createElement('input');i.id='tp-field';i.type='text';i.value='hello world';pl.appendChild(i);const c=document.createElement('input');c.id='tp-control';c.type='text';c.value='hello world';document.body.appendChild(c);for(const e of [i,c]){e.__n=0;e.__prevented=0;e.addEventListener('keydown',ev=>{e.__n++;if(ev.defaultPrevented)e.__prevented++})}return 1})()`);
+      await js(`(()=>{const pl=document.querySelector(${jsLiteral('#stage .ro-plate[data-id="' + holder + '"]')});const i=document.createElement('input');i.id='tp-field';i.type='text';i.value='hello world';pl.appendChild(i);const c=document.createElement('input');c.id='tp-control';c.type='text';c.value='hello world';document.body.appendChild(c);for(const e of [i,c]){e.__n=0;e.__prevented=0;e.__up=0;e.addEventListener('keydown',ev=>{e.__n++;if(ev.defaultPrevented)e.__prevented++});e.addEventListener('keyup',()=>{e.__up++})}return 1})()`);
       /* announce() writes the live region 60 ms late: wait for the last move's words to land, then compare against them (a stale write would otherwise look like a new one) */
       await must(`/moved to position/.test(document.getElementById('srAnnounce').textContent)`, `${tag}: the last move's words are in the live region`);
       const heard0 = await said();
       for (const [name, mods] of [['Up', ['alt']], ['Down', ['alt']], ['Left', ['alt']], ['Right', ['alt']]]) {
-        /* the control sits outside the stage, so the app never handles it: whatever the platform's own editing does to the caret there is what the field in the plate must show too */
-        const caretOf = async (id) => { await js(`(()=>{const e=document.getElementById(${jsLiteral(id)});e.focus();e.setSelectionRange(5,5)})()`); await key(name, mods, { char: 'never' }); return js(`(()=>{const e=document.getElementById(${jsLiteral(id)});return [e.value,e.selectionStart,e.selectionEnd]})()`); };
+        /* the control sits outside the stage, so the app never handles it: whatever the platform's own editing does to the caret there is what the field in the plate must show too.
+           sendInputEvent only queues the key: on a loaded machine it lands after key()'s pause, so the caret is read, and the focus moved on, only once this element has had the key's keyup
+           (the last event of the press; a late key would otherwise reach the next element focused and be counted there) */
+        const caretOf = async (id) => {
+          const up0 = await js(`(()=>{const e=document.getElementById(${jsLiteral(id)});e.focus();e.setSelectionRange(5,5);return e.__up})()`);
+          await key(name, mods, { char: 'never' });
+          const upExpr = `document.getElementById(${jsLiteral(id)}).__up`;
+          await must(upExpr + '===' + jsLiteral(up0 + 1), async () => tag + ': Alt+' + name + ' reached #' + id + ' (keyups ' + await js(upExpr) + ', before ' + up0 + ')');
+          return js(`(()=>{const e=document.getElementById(${jsLiteral(id)});return [e.value,e.selectionStart,e.selectionEnd]})()`);
+        };
         const want = await caretOf('tp-control'), got = await caretOf('tp-field');
         assert.deepStrictEqual(got, want, `${tag}: Alt+${name} in a text field in a plate leaves the text and caret as in any text field`);
         assert.strictEqual(got[0], 'hello world', `${tag}: Alt+${name} left the text`);
