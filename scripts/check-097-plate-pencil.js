@@ -5,6 +5,7 @@
  *   npm run check:ui -- --only check-097-plate-pencil      (builds first)
  *   PENCIL_MUTANT=anchor|f2|hover|plate   the name's anchor removed / F2 not reaching a plate / the pencil's own hover rule removed /
  *                                         the plate's anchor removed (spec 097 FR-357: an arcade cabinet's pencil) (each must fail)
+ *   PENCIL_MUTANT=shown                   every pencil always shown (must fail "the pencils are hidden until a plate is hovered or focused")
  *   SHOTS_OUT=<dir>                        also saves 097-plate-pencil-<world>-<w>x<h>.png with every pencil shown (before the geometry asserts, so a failing build has its picture)
  *   UI_SUITE_XVFB=1 locally: a DISPLAY without a pointer reports hover:none, which shows every pencil (docs/agent-notes.md)
  *
@@ -36,10 +37,12 @@ module.exports = async (ctx) => {
   const { until } = waits(ctx);
   const must = async (expr, what, ms = 8000) => assert.ok(await until(expr, ms), 'timed out waiting for ' + what);
   const wc = () => ctx.win.webContents;
-  for (const [world, wq] of WORLDS) for (const [w, h] of SIZES) {
+  const only = (process.env.PENCIL_WORLDS || '').split(',').filter(Boolean); /* PENCIL_WORLDS=cave,arcade: only those worlds (repeat runs of one step) */
+  for (const [world, wq] of WORLDS.filter(([n]) => !only.length || only.includes(n))) for (const [w, h] of SIZES) {
     const tag = `${world} ${w}x${h}`;
     await H.load({ w, h, query: { officeview: 'real', sim: '15', ...wq }, ready: `document.querySelectorAll('#stage .ro-plate').length>=10`, readyMs: 30000, settle: false });
     await must(`document.querySelectorAll('#stage .ren.ro-ren').length>=1`, `${tag}: the pencils`);
+    if (MUTANT === 'shown') await js(`(()=>{document.querySelectorAll('#stage .ren.ro-ren').forEach(b=>b.style.setProperty('opacity','1','important'));return 1})()`); /* CSSOM: the page's CSP refuses a new <style> */
     if (MUTANT === 'plate') await js(`(()=>{document.querySelectorAll('#stage .ro-plate').forEach(p=>p.style.removeProperty('anchor-name'));return 1})()`);
     if (MUTANT === 'anchor') await js(`(()=>{document.querySelectorAll('#stage .ro-plate .ro-l1>b').forEach(b=>b.style.removeProperty('anchor-name'));return 1})()`);
     if (MUTANT === 'hover') await js(`(()=>{for(const sh of document.styleSheets){let rs;try{rs=sh.cssRules}catch{continue}for(let i=rs.length-1;i>=0;i--)if(rs[i].selectorText&&rs[i].selectorText.includes('.ren.ro-ren:is(:hover'))sh.deleteRule(i);}return 1})()`);
@@ -57,11 +60,17 @@ module.exports = async (ctx) => {
       hit=(a,c)=>a.x+0.5<c.r&&c.x+0.5<a.r&&a.y+0.5<c.b&&c.y+0.5<a.b,parts=[['name',p.querySelector('.ro-l1>b')],['role',p.querySelector('.ro-role')],['status',p.querySelector('.ro-l2')],['helpers',p.querySelector('.ro-help')]].filter(x=>x[1]&&x[1].getClientRects().length);
       const P=R(p),nb=p.querySelector('.ro-l1>b'),shown=!!nb.getClientRects().length,nm=R(nb),rd=o=>Object.fromEntries(Object.entries(o).map(([k,v])=>[k,Math.round(v)]));
       return {k:b.dataset.ren,named:shown,covers:parts.filter(x=>hit(ic,R(x[1]))).map(x=>x[0]),out:ic.x<P.x-0.5||ic.r>P.r+0.5||ic.y<P.y-0.5||ic.b>P.b+0.5,gap:Math.round(shown?ic.x-nm.r:P.r-ic.r),plate:rd(P),icon:rd(ic),hidden:getComputedStyle(b).opacity==='0'}})`);
-    if (OUT) { await js(`document.body.classList.add('ren-show');true`); await H.shot(path.join(OUT, `097-plate-pencil-${world}-${w}x${h}.png`), { prep: 'mouse' }); await js(`document.body.classList.remove('ren-show');true`); }
+    /* the picture: every pencil shown; the office's request slips are hidden for it (review of #1432: at 1280x800 the arcade's limit pill docks over a plate) */
+    if (OUT) { await js(`(()=>{document.body.classList.add('ren-show');document.querySelectorAll('#stage .ro-slip').forEach(e=>e.style.setProperty('visibility','hidden','important'));return 1})()`); await H.shot(path.join(OUT, `097-plate-pencil-${world}-${w}x${h}.png`), { prep: 'mouse' }); await js(`(()=>{document.body.classList.remove('ren-show');document.querySelectorAll('#stage .ro-slip').forEach(e=>e.style.removeProperty('visibility'));return 1})()`); }
     const bad = geo.filter((g) => g.covers.length || g.out || g.gap < 0 || g.gap > 8).map((g) => `${g.k}: covers ${g.covers.join(',') || '-'}, outside ${g.out}, ${g.gap}px ${g.named ? 'after the name' : 'before the plate\'s right end'} (plate ${JSON.stringify(g.plate)}, icon ${JSON.stringify(g.icon)})`);
     console.log('[097-plate-pencil]', tag, geo.filter((g) => g.named).length, 'named plates,', geo.filter((g) => !g.named).length, 'without the name; e.g.', JSON.stringify(geo.slice(0, 2).map((g) => [g.k, g.plate, g.icon])));
     assert.deepStrictEqual(bad, [], `${tag}: each pencil sits just after its name (or at the right end of a plate with no name), inside its plate, over nothing`);
-    assert.ok(geo.every((g) => g.hidden), `${tag}: the pencils are hidden until a plate is hovered or focused`);
+    /* review of #1432 (a cave run failed this 2 of 5 times on another machine, never here in 20): the pointer is parked off the office and the hover and the
+       0.12 s fade must clear first, so a pointer left on a plate by the load (or the world before) is not read as a pencil shown without hover */
+    wc().sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
+    const calm = `![...document.querySelectorAll('#stage .ro-plate,#stage .ren.ro-ren')].some(e=>e.matches(':hover'))&&[...document.querySelectorAll('#stage .ren.ro-ren')].every(b=>getComputedStyle(b).opacity==='0')`;
+    if (!(await until(calm, 3000))) console.log('[097-plate-pencil] shown before hover', tag, JSON.stringify(await js(`[...document.querySelectorAll('#stage .ren.ro-ren')].filter(b=>getComputedStyle(b).opacity!=='0').map(b=>({k:b.dataset.ren,op:getComputedStyle(b).opacity,plateHover:b.previousElementSibling.matches(':hover'),plateFocus:b.previousElementSibling.matches(':focus-visible'),penHover:b.matches(':hover'),renShow:document.body.classList.contains('ren-show'),hoverNone:matchMedia('(hover:none)').matches}))`)));
+    assert.ok(await js(calm), `${tag}: the pencils are hidden until a plate is hovered or focused (pointer parked at 1,1, no plate hovered)`);
     /* hover shows it */
     const k = (geo.find((g) => !g.named) || geo[0]).k; /* FR-357: a cabinet plate when there is one (its field goes over the marquee) */
     await js(INSTALL); await js(`window.__ppK=${jsLiteral(k)};true`);
