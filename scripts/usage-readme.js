@@ -15,20 +15,20 @@ const spreadLib = require('./usage-spread');
 const ROOT = path.join(__dirname, '..');
 
 function parseArgs(argv, env = process.env, nowMs = Date.now()) {
-  const o = { release: null, history: path.join(ROOT, 'docs', 'build-cost-history.json'), badge: path.join(ROOT, 'docs', 'build-cost-badge.svg'), chart: path.join(ROOT, 'docs', 'build-cost.svg'), days: path.join(ROOT, 'docs', 'build-cost-days.svg'), data: path.join(ROOT, 'docs', 'build-cost', 'data'), spread: path.join(ROOT, 'docs', 'build-cost-spread.json'), publish: false, baseline: path.join(ROOT, 'docs', 'build-cost-baseline.json'), readme: path.join(ROOT, 'README.md'), check: false };
+  const o = { release: null, history: path.join(ROOT, 'docs', 'build-cost-history.json'), badge: path.join(ROOT, 'docs', 'build-cost-badge.svg'), chart: path.join(ROOT, 'docs', 'build-cost.svg'), days: path.join(ROOT, 'docs', 'build-cost-days.svg'), data: path.join(ROOT, 'docs', 'build-cost', 'data'), spread: path.join(ROOT, 'docs', 'build-cost-spread.json'), publish: false, baseline: path.join(ROOT, 'docs', 'build-cost-baseline.json'), readme: path.join(ROOT, 'README.md'), doc: path.join(ROOT, 'docs', 'build-cost.md'), check: false };
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--check') o.check = true;
     else if (a === '--publish') o.publish = true;
-    else if (['--release', '--baseline', '--readme', '--history', '--badge', '--chart', '--days', '--data', '--spread'].includes(a)) {
+    else if (['--release', '--baseline', '--readme', '--doc', '--history', '--badge', '--chart', '--days', '--data', '--spread'].includes(a)) {
       if (argv[i + 1] === undefined) throw new Error(`${a} needs a value`);
       o[a.slice(2)] = argv[++i];
     } else if (a === '--date' || a === '--files') { if (argv[i + 1] === undefined) throw new Error(`${a} needs a value`); rest.push(a, argv[++i]); }
     else throw new Error(`unknown argument ${a}`);
   }
   if (!o.release) throw new Error('--release vX.Y.Z is required');
-  return Object.assign(o, day.parseArgs(rest, env, nowMs), { release: o.release, baseline: o.baseline, readme: o.readme, check: o.check, history: o.history, badge: o.badge, chart: o.chart, days: o.days, data: o.data, spread: o.spread, publish: o.publish });
+  return Object.assign(o, day.parseArgs(rest, env, nowMs), { release: o.release, baseline: o.baseline, readme: o.readme, doc: o.doc, check: o.check, history: o.history, badge: o.badge, chart: o.chart, days: o.days, data: o.data, spread: o.spread, publish: o.publish });
 }
 
 function readBaseline(file) {
@@ -79,17 +79,18 @@ function build(o) {
   const states = loadAll(o);
   const cum = lib.cumulative(states, o.date, baseline);
   const spread = readSpread(o.spread);
-  let rows = null; let note;
+  let rows = null; let note; let estUsd = 0;
   if (spread) {
     rows = spreadLib.dailyRows(spread, states, baseline, o.date);
     const shown = rows.reduce((a, r) => a + r.measCents + r.estCents, 0);
     if (Math.abs(shown / 100 - cum.total) > 0.011) throw new Error(`the daily chart adds up to US$${(shown / 100).toFixed(2)} but the total is US$${cum.total.toFixed(2)}: run "npm run usage:spread -- --write" again`);
-    const est = rows.reduce((a, r) => a + r.estCents, 0) / 100; const n = rows.filter((r) => r.estCents > 0).length;
+    const est = rows.reduce((a, r) => a + r.estCents, 0) / 100; estUsd = est; const n = rows.filter((r) => r.estCents > 0).length;
     if (n) note = lib.DAY_SPREAD_LINE(est, n, rows.find((r) => r.estCents > 0).date, [...rows].reverse().find((r) => r.estCents > 0).date);
   }
-  const block = lib.readmeBlock(cum, o.date, o.release, baseline.note, note);
+  const block = lib.readmeBlock(cum, o.date, o.release, !!rows, estUsd);
+  const detail = lib.detailBlock(cum, o.date, o.release, baseline.note, note);
   const history = lib.upsertRow(readHistory(o.history), cum, o.date, o.release);
-  return { block, text: lib.rewriteReadme(fs.readFileSync(o.readme, 'utf8'), block), history, badge: lib.badgeSvg(cum.total), chart: lib.chartSvg(history), days: rows ? lib.chartDaysSvg(rows) : null };
+  return { block, detail, text: lib.rewriteBadgeAlt(lib.rewriteReadme(fs.readFileSync(o.readme, 'utf8'), block), cum.total), docText: lib.rewriteDetail(fs.readFileSync(o.doc, 'utf8'), detail), history, badge: lib.badgeSvg(cum.total), chart: lib.chartSvg(history), days: rows ? lib.chartDaysSvg(rows) : null };
 }
 
 function main() {
@@ -98,8 +99,8 @@ function main() {
     if (o.publish && !o.check) publish(o);
     const r = build(o);
     if (o.check) process.stdout.write(r.block + '\n'); else {
-      fs.writeFileSync(o.history, JSON.stringify(r.history, null, 2) + '\n'); fs.writeFileSync(o.badge, r.badge); fs.writeFileSync(o.chart, r.chart); if (r.days) fs.writeFileSync(o.days, r.days); fs.writeFileSync(o.readme, r.text);
-      console.log('usage-readme: updated the README block, the history, the badge and the chart');
+      fs.writeFileSync(o.history, JSON.stringify(r.history, null, 2) + '\n'); fs.writeFileSync(o.badge, r.badge); fs.writeFileSync(o.chart, r.chart); if (r.days) fs.writeFileSync(o.days, r.days); fs.writeFileSync(o.readme, r.text); fs.writeFileSync(o.doc, r.docText);
+      console.log('usage-readme: updated the README block and badge text, the docs/build-cost.md numbers, the history, the badge and the chart');
     }
   } catch (e) { console.error(`usage-readme: ${e.message}`); process.exit(1); }
 }

@@ -6,7 +6,7 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { contrast } from '../src/shared/themegen';
-import { captureWithoutRoom } from '../src/main/docshot';
+import { captureWithoutRoom, PAINTED } from '../src/main/docshot';
 
 const ROOT = path.join(__dirname, '..', '..');
 const LOGO = path.join(ROOT, 'build', 'logo');
@@ -224,11 +224,14 @@ for (const rel of ['scripts', 'src', 'package.json', 'README.md']) {
   const run = async (code: string) => { calls.push(code); if (/h\.dataset\.fullscreen=''/.test(code)) { const w = state; state = true; return w; } if (/delete /.test(code)) state = false; return undefined; };
   void (async () => {
     let during = false;
-    const r = await captureWithoutRoom(run, async () => { during = state; return 'png'; }, true);
+    let before: string[] = [];
+    const r = await captureWithoutRoom(run, async () => { during = state; before = calls.slice(); return 'png'; }, true);
     assert.ok(r === 'png' && during && !state, 'DURBAR_DOC_SHOTS: fullscreen set during the capture, put back after');
+    /* review of #1322: capturePage takes the last painted frame, so the closed room must have painted before the capture */
+    assert.ok(before.length === 2 && before[1] === PAINTED && /requestAnimationFrame/.test(PAINTED), 'the capture waits for the closed room to paint (two animation frames) after setting it');
     state = true; calls.length = 0;
     await captureWithoutRoom(run, async () => 1, true);
-    assert.ok(state && calls.length === 1, 'an app already in full screen stays so');
+    assert.ok(state && calls.length === 2, 'an app already in full screen stays so');
     state = false; calls.length = 0;
     await assert.rejects(captureWithoutRoom(run, async () => { throw new Error('x'); }, true), /x/);
     assert.ok(!state, 'put back even when the capture fails');
