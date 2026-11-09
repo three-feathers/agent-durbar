@@ -107,15 +107,21 @@ export function aisleStatus(state: RealState, still = false): AisleStatus {
 
 /** FR-259: what someone at a cabinet shows, per state. `face-*` are front frames, an optional group: each falls back to its view-a pose, so any full set works. Asleep: the seated frame. */
 export const AISLE_POSE: Record<RealState, string> = { working: 'type', thinking: 'book', error: 'knock', waiting: 'face-knock', limit: 'face-knock', done: 'face-coffee', idle: 'face-book', asleep: 'sit' }; /* asleep sits on a stool, whole, beside the cabinet (owner, 2026-11-03); its marquee is off and it shows z z */
-const AISLE_FALLBACK: Record<string, string> = { 'face-knock': 'knock', 'face-coffee': 'counter', 'face-book': 'book', sit: 'face-book' };
+/* a frame a set has not: the next to try (any full set works, FR-259). The crews' standing poses are book, coffee, knock, letter, runA, runB: a player who types shows the book, and who is done the coffee */
+const AISLE_FALLBACK: Record<string, string[]> = { 'face-knock': ['knock'], 'face-coffee': ['counter', 'coffee'], 'face-book': ['book'], sit: ['face-book', 'book'], type: ['book'] };
 const own = (o: object, k: string): boolean => Object.prototype.hasOwnProperty.call(o, k);
+/** spec 097 FR-335 (T247): grid px per picture px for a person. A pixel-art set is drawn 1:1 (the arcade's own grid); any other set is scaled so its standing figure is as tall
+ *  as the arcade's people (AISLE_PERSON.h), and every size is whole grid px, so the art still sits on the grid (FR-255). */
+const aisleK = (meta: RealMeta, st: { figH: number }): number => meta.pixelPeople === false && st.figH > 0 ? AISLE_PERSON.h / st.figH : 1;
+const gridPx = (v: number, k: number): number => k === 1 ? v : Math.max(1, Math.round(v * k));
 /** the frame a person shows at a cabinet and its size in grid pixels, or null when the set has neither (then the initials, FR-065) */
 function aislePose(meta: RealMeta, pid: string, state: RealState): { pose: string; w: number; h: number } | null {
   const pose = AISLE_POSE[state];
   if (pose === 'rest') { const m = own(meta.seat, pid) ? meta.seat[pid] : null; return m ? { pose, w: m.w, h: m.h } : null; }
   const st = own(meta.stand, pid) ? meta.stand[pid] : null;
   if (!st) return null;
-  for (const p of [pose, AISLE_FALLBACK[pose]]) if (p && own(st.poses, p)) return { pose: p, w: st.poses[p][0], h: st.poses[p][1] };
+  const k = aisleK(meta, st);
+  for (const p of [pose, ...(AISLE_FALLBACK[pose] || [])]) if (p && own(st.poses, p)) return { pose: p, w: gridPx(st.poses[p][0], k), h: gridPx(st.poses[p][1], k) };
   return null;
 }
 
@@ -153,7 +159,7 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
   const k = seats.length;
   const [lobbyMin0, lobbyMax] = lobbyRange(Ho), lobbyMin = lobbyMin0 - AISLE_LANE;
   /* the place beside a cabinet is as wide as the widest standing picture of the set, so a picture centred in it never reaches a cabinet */
-  const PW = Math.min(48, Math.max(AISLE_PERSON.w, ...Object.values(meta.stand || {}).flatMap((s) => Object.values(s.poses || {}).map((p) => p[0])))); /* grid px; a set drawn at another scale is not an arcade set */
+  const PW = Math.min(48, Math.max(AISLE_PERSON.w, ...Object.values(meta.stand || {}).flatMap((s) => Object.values(s.poses || {}).map((p) => gridPx(p[0], aisleK(meta, s)))))); /* grid px; a set not drawn at the arcade's scale is scaled to it (aisleK) */
   /* the lobby first: the rows bend only with what is left once it has its height */
   /* FR-248: the lounge's seats take cells after the cabinets, in the hall's own grid (so the plan is never worse than with those agents at cabinets): as many
      cells as the seats need at the narrowest cell a plan can have (a seat is narrower than a cabinet with its player, so 5 seats take 4 cells) */

@@ -418,5 +418,31 @@ console.log(`floor covered with 4 or fewer: ${covs.join('; ')}`);
   assert.strictEqual(at15s.helpRows, 0, 'arcade, 15 agents at 1280x748: no room, the plates keep +N (a recorded limit)');
   console.log(`arcade helper heads: ${strips} strips, ${fell} fallbacks`);
 }
+
+/* spec 097 FR-335, T247: another set's people in the arcade. A crew's hi-res frames (350 px tall) are scaled to the arcade's people (72 grid px) and its standing poses
+   (book, coffee, knock, letter, runA, runB: no `type`, `sit` or `counter`) fall back, so every player at a cabinet is drawn, at the arcade's size, on the grid. */
+{
+  let drawn = 0;
+  for (const crew of ['pirate', 'royal', 'rebels', 'monster', 'cheeky', 'prehistoric']) {
+    const set = readJson('sets', crew, 'set.json') as unknown as RealMeta, ids = Object.keys(set.seat).sort();
+    const M = { ...readJson('worlds', 'retro', 'world.json'), ...set, pixelPeople: false } as unknown as RealMeta;
+    for (const [W, H] of SIZES) for (const n of [4, 15]) {
+      const m = model(n, 4, STATES), shown = new Set<string>();
+      m.folders.forEach((f) => f.agents.forEach((a, i) => { a.person = ids[(i + a.id.length) % ids.length]; a.away = null; }));
+      const L = aislesLayout(m, { w: W, h: H }, M, SIGNS(4));
+      assert.ok(!L.scroll, `${crew}: ${n} agents at ${W}x${H}: the hall fits`);
+      const g = L.g as number;
+      for (const z of L.zones) for (const d of z.desks) {
+        assert.ok(d.person, `${crew}: ${d.state} at a cabinet draws the person (a pose falls back, never the initials)`);
+        const pr = d.person!; shown.add(pr.pose); drawn++;
+        assert.ok(pr.h <= 72 * g + 1 && pr.h >= 40 * g, `${crew}: a person is the arcade's height (${pr.h} px at g ${g}), not its ${set.stand[pr.pid].poses[pr.pose][1]} picture pixels`);
+        assert.ok(pr.w % g === 0 && pr.h % g === 0, `${crew}: the person sits on the grid`);
+      }
+      if (n === 15) assert.ok(shown.size >= 3, `${crew}: the states show different frames (${[...shown].join(', ')})`);
+    }
+  }
+  assert.ok(drawn > 200, `crews in the arcade: ${drawn} players checked`);
+  console.log(`arcade, other sets' people: ${drawn} players checked`);
+}
 console.log(`aisles tests passed (${cases} layouts)`);
 process.exitCode = 0;

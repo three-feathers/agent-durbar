@@ -3,6 +3,7 @@
    Colours here belong to the art; a plate's text is the app's token. No text is inside a mirrored element. */
 .ro[data-world="retro"]{--ro-g:2;background:#1a1426 url(floor-night.webp) 0 0/calc(24px*var(--ro-g)) calc(24px*var(--ro-g)) repeat;image-rendering:pixelated}
 .ro[data-world="retro"] img{image-rendering:pixelated}
+.ro[data-world="retro"]:not([data-set="retro"]) img.ro-person,.ro[data-world="retro"]:not([data-set="retro"]) img.ro-visitor{image-rendering:auto} /* spec 097 T247: another set's people are not pixel art: smooth, not blocks */
 .ro[data-world="retro"] .ro-lobby{background:#241a38 url(wall-night.webp) 0 0/auto 100% repeat-x;image-rendering:pixelated;border-bottom-color:rgba(0,0,0,.5)}
 .ro[data-world="retro"] .ro-strip{background:#1a1426 url(floor-night.webp) 0 0/calc(24px*var(--ro-g)) calc(24px*var(--ro-g)) repeat}
 .ro[data-world="retro"] .ro-zone{background:none;box-shadow:none}
