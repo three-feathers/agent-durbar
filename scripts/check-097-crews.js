@@ -8,8 +8,8 @@
  * For each Characters value (picked in Settings, the real path, for the line under Office layout; the page is then loaded again on that choice
  * (the simulator's `characters=`, as a saved choice) and the main process's request log is read from that load on, so every request Real
  * office makes is seen, not only what is left in the DOM; `performance` resource timings are empty on a file:// page) it fails when:
- *   - the room does not draw the people set `peopleFor` names (data-set on the room): the Office people for the default, Minimalist,
- *     Cheeky, Pirate, Monster, Royal and Rebels; the Prehistoric set, also with the cave
+ *   - the room does not draw the people set `peopleFor` names (data-set on the room): the Office people for the default and Minimalist;
+ *     the crew's own set for Cheeky, Pirate, Monster, Royal and Rebels (T240..T244: each a REAL_SETS row, no flag) and the Prehistoric set, also with the cave
  *     gate closed (owner 2026-11-08, Q12: only the cave world is gated; its frames are requested, no Office people picture is, and the
  *     cave world is not offered); the same with the simulator's worldflags=cave;
  *   - a person or visitor picture of the scene is not from that set's folder, or there are fewer than 12 of them;
@@ -18,15 +18,16 @@
  *   - the Office people's frames are requested for any other set, or are not requested for the default (12 at least);
  *   - a crew picture (crew/art/) is in the Real office scene, or was requested by the page at all, or a set's pack other than the chosen
  *     set's, or any world but the Photo office, was requested (spec 102 FR-205; after the reload the page starts on the chosen set);
- *   - the line under Office layout (#dsR) is not the true one: "... until <Crew> has Real office poses." for a crew with heads only
- *     and Minimalist, "Real office draws the Prehistoric people." for Prehistoric, empty for the default;
+ *   - the line under Office layout (#dsR) is not the true one: "... until Minimalist has Real office poses." for Minimalist
+ *     (no set yet), "Real office draws the <Crew> people." for every crew with a set, empty for the default;
  *   - the room scrolls or a name plate overlaps another (spec 001's 15-agent fit; every pair of plates is compared).
  *   - a requested file is missing, or did not complete with status 200. A request the browser cancelled because the page swapped a frame's file (net::ERR_ABORTED, no status)
  *     is not a failure when the file is on disk, and every picture on screen must have a request that completed with status 200;
  *   - the log is read before the page is quiet (the pictures complete with the same files for 600 ms and no request open).
  *   CREWS_MUTANT=missing|abortmissing|abort: a request of a file that is not in the pack (completes with an error) / one that is cancelled at once (no such file) / one that is
  *   cancelled at once (a file in the pack). `missing` and `abortmissing` must fail; `abort` must pass (the tolerated case).
- * Screenshots: <SHOTS_OUT>/097-crews-<value>-<w>x<h>.png.
+ * Worlds (T247, T248): the same in the Retro arcade and the Prehistoric cave (each with its own simulator flag), 15 agents, both sizes; CREWS_WORLD=photo|retro|cave runs one.
+ * Screenshots: <SHOTS_OUT>/097-crews-[<world>-]<value>-<w>x<h>.png.
  */
 const os = require('os');
 const fs = require('fs');
@@ -37,15 +38,18 @@ const { helpers, jsLiteral } = require('./driver-helpers');
 const MUTANT = process.env.CREWS_MUTANT || '';
 const OUT = process.env.SHOTS_OUT || fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-097-crews-'));
 const SIZES = [[1440, 900], [1280, 800]];
-/* value, gate open in the simulator, set drawn, Settings line */
+/* the worlds drawn (T247, T248): the Photo office, the Retro arcade (a pixel-art world; `worldflags=retro`) and the Prehistoric cave (`worldflags=cave`), each with the people set it
+   takes for the default and for Minimalist (the world's default set: spec 102 FR-202); every crew with a set draws its own people in every world. CREWS_WORLD=photo|retro|cave runs one. */
+const WORLDS = [['photo', 'office', 'Office people'], ['retro', 'retro', 'Retro pixel'], ['cave', 'prehistoric', 'Prehistoric']].filter(([w]) => !process.env.CREWS_WORLD || process.env.CREWS_WORLD === w);
+/* value, gate open in the simulator, set drawn ('' = the world's default set), Settings line ('{def}' = the world's default set's name) */
 const CASES = [
-  ['theme', false, 'office', ''],
-  ['minimalist', false, 'office', 'Real office shows Office people until Minimalist has Real office poses.'],
-  ['cheeky', false, 'office', 'Real office shows Office people until Cheeky has Real office poses.'],
-  ['pirate', false, 'office', 'Real office shows Office people until Pirate has Real office poses.'],
-  ['monster', false, 'office', 'Real office shows Office people until Monster has Real office poses.'],
-  ['royal', false, 'office', 'Real office shows Office people until Royal has Real office poses.'],
-  ['rebels', false, 'office', 'Real office shows Office people until Rebels has Real office poses.'],
+  ['theme', false, '', ''],
+  ['minimalist', false, '', 'Real office shows {def} until Minimalist has Real office poses.'],
+  ['cheeky', false, 'cheeky', 'Real office draws the Cheeky people.'],
+  ['pirate', false, 'pirate', 'Real office draws the Pirate people.'],
+  ['monster', false, 'monster', 'Real office draws the Monster people.'],
+  ['royal', false, 'royal', 'Real office draws the Royal people.'],
+  ['rebels', false, 'rebels', 'Real office draws the Rebels people.'],
   /* owner 2026-11-08 (097 Q12): the full Prehistoric set has no gate of its own; only the cave world is gated */
   ['prehistoric', false, 'prehistoric', 'Real office draws the Prehistoric people.'],
   ['prehistoric', true, 'prehistoric', 'Real office draws the Prehistoric people.'],
@@ -77,7 +81,7 @@ module.exports = async (ctx) => {
     for (let i = 0; i < 100 && pending(); i++) await ctx.sleep(100);
     assert.strictEqual(pending(), 0, `${tag}: requests of the page still open`);
   };
-  const q = (gate) => ({ officeview: 'real', simfreeze: '1', ...(gate ? { worldflags: 'cave' } : {}) });
+  const q = (gate, world) => ({ officeview: 'real', simfreeze: '1', ...(world === 'cave' || world === 'retro' ? { worldflags: world, world } : gate ? { worldflags: 'cave' } : {}) });
   const pick = async (value, gate) => { // the real path: Settings > Characters
     await js(`window.DurbarScreens.openSettings()`);
     await must(`!!document.querySelector('#chList [data-characters=${jsLiteral(value)}]')`, `the ${value} button`);
@@ -88,9 +92,11 @@ module.exports = async (ctx) => {
     return note;
   };
 
-  for (const [w, h] of SIZES) for (const [value, gate, set, line] of CASES) {
-    const tag = `${value}${gate ? ' (cave gate open)' : ''} ${w}x${h}`;
-    await H.load({ w, h, query: q(gate), ready: REAL, settle: false });
+  for (const [world, defSet, defName] of WORLDS) for (const [w, h] of SIZES) for (const [value, gate, set0, line0] of CASES) {
+    if (gate && world !== 'photo') continue; /* the gate case is the Photo office with the cave flag; the other worlds open their own flag */
+    const set = set0 || defSet, line = line0.replace('{def}', defName);
+    const tag = `${world}: ${value}${gate ? ' (cave gate open)' : ''} ${w}x${h}`;
+    await H.load({ w, h, query: q(gate, world), ready: REAL, settle: false });
     const note = await pick(value, gate);
     assert.strictEqual(note, line, `${tag}: the line under Office layout: ${JSON.stringify(note)}`);
     /* the choice loads its set's pack on this page (ensurePack adds set.js); wait until this page draws the set and its pictures, so no
@@ -102,7 +108,7 @@ module.exports = async (ctx) => {
        FR-070); the page starts on it, and the session's log from here holds every request of that load */
     await ses.clearCache(); /* a picture cached by the last case would not be requested (or logged) again */
     reqs.clear();
-    await H.load({ w, h, query: { ...q(gate), characters: value }, ready: REAL, settle: false });
+    await H.load({ w, h, query: { ...q(gate, world), characters: value }, ready: REAL, settle: false });
     await must(`window.THEME.characters()===${jsLiteral(value)}`, `${tag}: the choice kept across the reload`);
     await must(`document.querySelector('#stage .ro .ro-plate')&&document.querySelector('#stage .ro').dataset.set===${jsLiteral(set)}`, `${tag}: the room draws ${set}`);
     await must(PICS, `${tag}: the pictures loaded (complete and naturalWidth > 0)`);
@@ -116,9 +122,11 @@ module.exports = async (ctx) => {
       for(let i=0;i<plates.length;i++)for(let j=i+1;j<plates.length;j++){const a=plates[i],b=plates[j],ox=Math.min(a.right,b.right)-Math.max(a.left,b.left),oy=Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top);if(ox>1&&oy>1)overlaps.push(i+'x'+j+' '+Math.round(ox)+'x'+Math.round(oy));}
       return {shown:[...new Set([...document.querySelectorAll('#stage .ro img')].map(i=>decodeURIComponent(i.currentSrc||i.src)))],overlaps,unloaded:[...document.querySelectorAll('#stage .ro img')].filter(i=>!(i.complete&&i.naturalWidth>0)).map(i=>i.getAttribute('src')),set:ro.dataset.set,world:ro.dataset.world,n:pics.length,foreign:pics.filter(i=>!i.getAttribute('src').includes('sets/'+ro.dataset.set+'/')).map(i=>i.getAttribute('src')),
         crewInScene:document.querySelectorAll('#stage image[href*="crew/art/"],#stage img[src*="crew/art/"]').length,        worlds:window.DurbarCrew.offeredWorlds().map(x=>x.id),scroll:L.scroll,plates:document.querySelectorAll('#stage .ro-plate').length}})()`);
-    assert.deepStrictEqual(r.worlds, gate ? ['photo', 'cave'] : ['photo'], `${tag}: the cave world is offered only with its own flag: ${r.worlds}`);
+    assert.deepStrictEqual(r.worlds, world === 'photo' ? (gate ? ['photo', 'cave'] : ['photo']) : ['photo', world], `${tag}: a world other than the Photo office is offered only with its own flag: ${r.worlds}`);
+    /* the picture first, so a failed case leaves what the room looked like */
+    await H.shot(path.join(OUT, `097-crews-${world === 'photo' ? '' : world + '-'}${value}${gate ? '-open' : ''}-${w}x${h}.png`), { prep: 'calm' });
     const log = [...reqs.values()], urls = log.map((e) => e.url), webps = log.filter((e) => /\.webp(\?|$)/.test(e.url));
-    assert.ok(log.some((e) => /realoffice\/worlds\/photo\//.test(e.url)), `${tag}: the session saw no Real office request (${log.length} in all): the request checks would see nothing`);
+    assert.ok(log.some((e) => e.url.includes(`realoffice/worlds/${world}/`)), `${tag}: the session saw no Real office request (${log.length} in all): the request checks would see nothing`);
     const packs = [...new Set(urls.map((n) => /realoffice\/(worlds|sets)\/([a-z0-9-]+)\//.exec(n)).filter(Boolean).map((m) => m[1] + '/' + m[2]))].sort();
     const crewReq = urls.filter((n) => /crew\/art\//.test(n)).length;
     const officeReq = webps.filter((e) => /sets\/office\//.test(e.url)).length, setReq = webps.filter((e) => e.url.includes(`/sets/${set}/`)).length;
@@ -135,18 +143,17 @@ module.exports = async (ctx) => {
     assert.ok(setReq >= shownSet, `${tag}: ${setReq} ${set} frames requested, ${shownSet} shown`);
     if (set !== 'office') assert.strictEqual(officeReq, 0, `${tag}: Office people pictures requested for the ${set} set: ${officeReq}`);
     assert.strictEqual(r.set, set, `${tag}: the room draws the ${set} people, not ${r.set}`);
-    assert.strictEqual(r.world, 'photo', `${tag}: the Photo office is the world`);
+    assert.strictEqual(r.world, world, `${tag}: the ${world} world is drawn`);
     assert.ok(r.n >= 12, `${tag}: ${r.n} people drawn at 15 agents`);
     assert.deepStrictEqual(r.foreign, [], `${tag}: a person picture from another set`);
     assert.strictEqual(r.crewInScene, 0, `${tag}: a crew picture is in the Real office scene`);
     assert.strictEqual(crewReq, 0, `${tag}: the page requested ${crewReq} crew pictures in Real office`);
     /* the page starts on the saved choice: its set's pack and the Photo office's, no other set's, no other world's */
-    assert.deepStrictEqual(packs, [`sets/${set}`, 'worlds/photo'].sort(), `${tag}: packs requested: ${packs.join(' ')}`);
+    assert.deepStrictEqual(packs, [`sets/${set}`, `worlds/${world}`].sort(), `${tag}: packs requested: ${packs.join(' ')}`);
     assert.deepStrictEqual(r.overlaps, [], `${tag}: name plates overlap (pair, px)`);
     assert.ok(!r.scroll, `${tag}: the office scrolls`);
     assert.ok(r.plates >= 15, `${tag}: ${r.plates} plates at 15 agents`);
-    await H.shot(path.join(OUT, `097-crews-${value}${gate ? '-open' : ''}-${w}x${h}.png`), { prep: 'calm' });
     console.log(`[crews] ${tag}: set ${r.set}, ${r.n} people, packs ${packs.join(' ')}`);
   }
-  console.log('check-097-crews: every Characters value draws its set or the Office people, and says why');
+  console.log('check-097-crews: every Characters value draws its own set (or the default set of the world for the default and Minimalist) in the Photo office, the arcade and the cave, and says why');
 };
