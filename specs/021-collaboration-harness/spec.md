@@ -637,7 +637,7 @@ Owner decisions (Vikram, Telegram DM, 2026-11-08). 05:00 UTC: "there are too man
   - `durbar-release`: the daily stable release, from the version PR to publishing, then the fold;
   - `durbar-fold`: the doc-only fold PR after a tag;
   - `durbar-ci-rerun`: deciding whether a red CI run may be rerun, and what to write.
-  - **Not rule text.** A skill is a checklist of steps with links to its source of truth (AGENTS.md, `docs/rules/*.md`, `changelog.d/README.md`, `docs/build-cost.md`, the specs, the scripts); it restates no rule and adds none. Where a skill and its source differ, the source wins and the skill is fixed in the same PR that changes the source (`docs/rules/docs-sync.md` applies to skills like any doc). Commands in a skill are copied from `package.json` and `scripts/`.
+  - **Not rule text.** A skill is a checklist of steps with links to its source of truth (AGENTS.md, `docs/rules/*.md`, `changelog.d/README.md`, `docs/build-cost.md`, the specs, the scripts); it restates no rule and adds none. Where a skill and its source differ, the source wins: a skill is guidance, like `docs/agent-notes.md`. Commands in a skill are copied from `package.json` and `scripts/`.
   - No secrets, chat ids, private paths or personal data in a skill (public repo, AGENTS.md *Public text*).
   - `.claude/skills/speckit-*` stay managed by `specify integration`; the `durbar-*` skills are hand-written and not in `.specify/integrations/claude.manifest.json`.
   - FR-063 accounting: no rule added or replaced; no word budget changed (skills are not in `scripts/rules-check.js`'s table).
