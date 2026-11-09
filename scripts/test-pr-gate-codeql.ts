@@ -182,6 +182,27 @@ const CASES: Record<string, Case> = {
     }
   },
   'dep-no-resolved: a lockfile package entry without a resolved URL (caught by the same check as dep-resolved)': N({ contents: { 'scripts/prereview/package-lock.json': lock({ version: '1.0.0' }) } }, refused),
+  'dep-link-same: a link entry identical to the base commit\'s': R({ contents: { 'scripts/prereview/package-lock.json': lock({ link: true, resolved: 'scripts/y' }) }, base: { 'scripts/prereview/package-lock.json': lock({ link: true, resolved: 'scripts/y' }) } }),
+  'dep-link: a link entry new or changed against the base commit': (g, l) => {
+    fixture({ contents: { 'scripts/prereview/package-lock.json': lock({ link: true, resolved: '../../evil' }) } });
+    notReady(g, `${l}: new`, refused);
+    fixture({ contents: { 'scripts/prereview/package-lock.json': lock({ link: true, resolved: '../../evil' }) }, base: { 'scripts/prereview/package-lock.json': lock({ link: true, resolved: 'scripts/y' }) } });
+    notReady(g, `${l}: changed`, refused);
+  },
+  'dep-overrides: a git, file or URL spec in package.json overrides, at any depth': (g, l) => {
+    for (const overrides of [{ a: { b: 'github:evil/b' } }, { a: 'file:../a' }, { a: { '.': 'https://evil.example/a.tgz' } }, { a: { b: { c: 'evil/c' } } }]) {
+      fixture({ contents: { 'scripts/prereview/package.json': { ...PKG, overrides } } });
+      notReady(g, `${l}: ${JSON.stringify(overrides)}`, refused);
+    }
+  },
+  'dep-resolutions: a git, file or URL spec in package.json resolutions': N({ contents: { 'scripts/prereview/package.json': { ...PKG, resolutions: { 'a/**/b': 'github:evil/b' } } } }, refused),
+  'dep-bundled: bundled dependencies in package.json': (g, l) => {
+    for (const b of [{ bundledDependencies: ['x'] }, { bundleDependencies: ['x'] }, { bundleDependencies: true }]) {
+      fixture({ contents: { 'scripts/prereview/package.json': { ...PKG, ...b } } });
+      notReady(g, `${l}: ${JSON.stringify(b)}`, refused);
+    }
+  },
+  'dep-overrides-plain: plain version overrides': R({ files: ['scripts/prereview/package.json'], contents: { 'scripts/prereview/package.json': { ...PKG, overrides: { a: '1.2.3', b: { c: '^2.0.0' } }, bundleDependencies: [] } } }),
   'dep-base-branch: a Dependabot PR whose base is not main': N({ baseRef: 'release' }, refused),
   'dep-spec: a git, file or URL dependency spec': (g, l) => {
     for (const spec of ['github:evil/y', 'git+https://evil.example/y.git', 'file:../y', 'evil/y']) {
@@ -225,6 +246,10 @@ try {
     ['the lockfileVersion check removed', '.lockfileVersion >= 2', 'true', 'dep-lockv1'],
     ['the spec check at the top level only', '[..|objects|(.dependencies?', '[(.dependencies?', 'dep-nested-spec'],
     ['entries without resolved accepted', 'select((.value.resolved // "")|startswith("https://registry.npmjs.org/")|not)', 'select(false)', 'dep-resolved'],
+    ['the link comparison removed', `printf '%s\\n' "$head_l" | grep -vxF -f <(printf '%s\\n' "$base_l") | grep -q . && return 2`, 'true', 'dep-link'],
+    ['overrides not scanned', '(.overrides?, .resolutions?)', '(.resolutions?)', 'dep-overrides'],
+    ['resolutions not scanned', '(.overrides?, .resolutions?)', '(.overrides?)', 'dep-resolutions'],
+    ['bundled dependencies accepted', 'select(. != null and . != false and . != [])', 'select(false)', 'dep-bundled'],
     ['the base branch check removed', '&& [ "$baseref" = main ] ', '', 'dep-base-branch'],
     ['the dependency spec check removed', 'select(test("[:/]"))', 'select(false)', 'dep-spec'],
     ['the dependency files not read', '[ ${#deps[@]} = 0 ] && return 0', 'return 0', 'lockfile-skipped'],

@@ -66,17 +66,20 @@ nocode() { case $1 in *.md|*.png|*.jpg|*.jpeg|*.gif|*.webp) return 0;; scripts/*
 # a name with a control character (a newline would split it into two lines) is a "C" line and blocks.
 # The files API stops at 3000 files without an error, so the listed count must equal the PR's changed_files and be under 3000.
 # Dependency files are not code to CodeQL but run on install: each changed one is read at the head commit (the PR's base must be main) and
-# blocks on a dependency spec with ":" or "/" (git, file, URL, user/repo) in any dependency map at any depth, a package.json `scripts`
+# blocks on a dependency spec with ":" or "/" (git, file, URL, user/repo) in any dependency map, `overrides` or `resolutions` at any depth,
+# a non-empty bundledDependencies/bundleDependencies (bundled code ships in the package), a lockfile `link` entry (key and resolved) the
+# base copy does not have, a package.json `scripts`
 # object that differs from the base commit's, a lockfile below lockfileVersion 2 or without a `packages` map, a non-root, non-link lockfile
 # entry whose `resolved` is not on https://registry.npmjs.org/, or a lockfile package with an install script (hasInstallScript) that the
 # base copy does not have (a missing or unreadable base copy counts as empty); a reviewer still reads the diff (return 2 = refused).
 INSTALLS='.packages? // {}|to_entries[]|select(.value.hasInstallScript == true)|.key'
-DEPCHECK='[..|objects|(.dependencies?, .devDependencies?, .optionalDependencies?, .peerDependencies?)|objects|.[]|strings|select(test("[:/]"))]|length'
+DEPCHECK='[..|objects|(.dependencies?, .devDependencies?, .optionalDependencies?, .peerDependencies?)|objects|.[]|strings|select(test("[:/]"))] + [..|objects|(.overrides?, .resolutions?)|..|strings|select(test("[:/]"))] + [..|objects|(.bundledDependencies?, .bundleDependencies?)|select(. != null and . != false and . != [])]|length'
+LINKS='.packages? // {}|to_entries[]|select(.value.link == true)|"\(.key) \(.value.resolved)"'
 LOCKCHECK='if (.lockfileVersion|type) == "number" and .lockfileVersion >= 2 and (.packages|type) == "object" then [.packages|to_entries[]|select(.key != "" and .value.link != true)|select((.value.resolved // "")|startswith("https://registry.npmjs.org/")|not)]|length else "old-or-no-packages" end'
 SCRIPTS='(.scripts // {})|to_entries|sort_by(.key)|tojson'
 # a file of this repo at a commit, through a jq program: depraw <sha> <path> <program>
 depraw() { gh api -H 'Accept: application/vnd.github.raw+json' "repos/$R/contents/$2?ref=$1" --jq "$3"; }
-only_nocode() { local f files n pr total sha base baseref author head_i base_i; local -a deps; deps=()
+only_nocode() { local f files n pr total sha base baseref author head_i base_i head_l base_l; local -a deps; deps=()
   files=$(gh api --paginate "repos/$R/pulls/$p/files" --jq '.[]|if ([.filename, (.previous_filename // empty)]|any(test("[\\x00-\\x1f\\x7f]"))) then "C" else "F \(.filename)", (.previous_filename // empty|"P \(.)") end') && [ -n "$files" ] || return 1
   n=$(grep -c '^F ' <<< "$files"); pr=$(gh api "repos/$R/pulls/$p" --jq '"\(.changed_files) \(.head.sha) \(.base.sha) \(.base.ref) \(.user.login)"') || return 1
   read -r total sha base baseref author <<< "$pr"; isnum "$total" && [ "$n" = "$total" ] && [ "$n" -lt 3000 ] || return 1
@@ -95,7 +98,10 @@ only_nocode() { local f files n pr total sha base baseref author head_i base_i; 
         [ "$(depraw "$sha" "$f" "$LOCKCHECK")" = 0 ] || return 2
         head_i=$(depraw "$sha" "$f" "$INSTALLS") || return 2
         base_i=$(depraw "$base" "$f" "$INSTALLS" 2>/dev/null) || base_i=
-        printf '%s\n' "$head_i" | grep -vxF -f <(printf '%s\n' "$base_i") | grep -q . && return 2;;
+        printf '%s\n' "$head_i" | grep -vxF -f <(printf '%s\n' "$base_i") | grep -q . && return 2
+        head_l=$(depraw "$sha" "$f" "$LINKS") || return 2
+        base_l=$(depraw "$base" "$f" "$LINKS" 2>/dev/null) || base_l=
+        printf '%s\n' "$head_l" | grep -vxF -f <(printf '%s\n' "$base_l") | grep -q . && return 2;;
       *package.json)
         head_i=$(depraw "$sha" "$f" "$SCRIPTS") || return 2
         base_i=$(depraw "$base" "$f" "$SCRIPTS" 2>/dev/null) || base_i='[]'
