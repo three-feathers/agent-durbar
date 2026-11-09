@@ -709,7 +709,8 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
     const B = realLayout(sceneModel(false), { w: 1248, h: 697 }, CAVE), A = realLayout(sceneModel(true), { w: 1248, h: 697 }, CAVE);
     assert.ok(A.lounge && A.lounge.desks.length === 2 && !A.scroll && !B.scroll, 'the scene: two agents in the lounge row, nothing scrolls');
     assert.ok(A.u >= B.u - 1e-6, `FR-247 with helpers (the shots-097-moments scene, cave 1248x697): the desks shrank when two agents went to the lounge: u ${B.u.toFixed(2)} -> ${A.u.toFixed(2)} (helpRows ${B.helpRows} -> ${A.helpRows})`);
-    assert.strictEqual(B.helpRows, 2, 'the scene before: two rows of heads (FR-308)');
+    assert.strictEqual(B.helpRows, 1, 'the scene before: one row of heads (FR-308; FR-338: never two)');
+    assert.ok((A.helpRows || 0) <= 1, `FR-338 (bug #1384): the lounge move never gives the strip a second row (helpRows ${A.helpRows})`);
   }
   let n = 0, s = 7;
   const rnd = (): number => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
@@ -1027,7 +1028,7 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
         const t = d.strip;
         strips.push([`strip of ${d.id}`, t]);
         if (!inside(t, d.slot, 0.5) || !inside(t, z.box, 2)) out.push(`${label}: strip of ${d.id} leaves its slot ${JSON.stringify(t)} ${JSON.stringify(d.slot)}`);
-        if (t.rows < 1 || t.rows > 2 || t.h !== helpH(t.rows) - 2) out.push(`${label}: strip of ${d.id} has ${t.rows} rows, height ${t.h}`);
+        if (t.rows !== 1 || t.h !== helpH(1) - 2) out.push(`${label}: strip of ${d.id} has ${t.rows} rows, height ${t.h} (FR-338: one row, never a second line)`);
         if (t.y < d.plate.y + 50 - 0.5) out.push(`${label}: strip of ${d.id} starts above the needs-you plate's bottom`);
         // the heads fit: cols across at HEAD + gap, rows down, inside the strip box
         if (t.cols * HEAD + (t.cols - 1) * HELP_GAP > t.w + 0.01) out.push(`${label}: ${t.cols} heads across do not fit ${t.w}px`);
@@ -1051,7 +1052,7 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
     });
     return out;
   };
-  let sc = 0, withStrip = 0, twoRows = 0;
+  let sc = 0, withStrip = 0;
   for (const [W, H] of SIZES) for (const n of [1, 2, 3, 4, 5, 8, 12, 15, 20, 30, 40]) for (const f of [1, 2, 4, 6]) for (const hc of [0, 1, 2, 6, 10]) {
     if (f > n || (W < 1000 && n > 15)) continue;
     const m = withHelpers(n, f, (i) => (i % 3 === 0 ? hc : i % 3 === 1 ? Math.min(hc, 1) : 0));
@@ -1065,20 +1066,19 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
     if (hc === 0) assert.strictEqual(JSON.stringify(L), JSON.stringify(base), `${label}: no helpers, no change at all`);
     if (hasStrip) {
       withStrip++;
-      assert.ok(L.helpRows === 1 || L.helpRows === 2, `${label}: strips drawn with 1 or 2 rows`);
+      assert.strictEqual(L.helpRows, 1, `${label}: FR-338 strips drawn with one row`);
       assert.strictEqual(L.zones.flatMap((z) => z.desks).filter((d) => d.strip).length, L.zones.flatMap((z) => z.desks).filter((d) => !d.lounge && helpersOf(m, d.id) > 0).length, `${label}: exactly the desks with helpers have a strip`);
-      if (L.helpRows === 2) twoRows++;
     } else assert.ok(L.helpRows === 0 || hc === 0, `${label}: no strip means helpRows 0`);
     if (hc === 0) assert.ok(!hasStrip && L.helpRows === 0, `${label}: helpers none, strips none`);
     sc++;
   }
-  assert.ok(sc > 200 && withStrip > 100 && twoRows > 10, `strip cases ran (${sc} layouts, ${withStrip} with strips, ${twoRows} with two rows)`);
+  assert.ok(sc > 200 && withStrip > 100, `strip cases ran (${sc} layouts, ${withStrip} with strips)`);
 
-  // the 15-agent case (SC-002), both sizes: the measured room: two rows of 4 across, at most 7 heads and +K; faces stay over the ratchet; nothing scrolls
+  // the 15-agent case (SC-002), both sizes: the measured room: one row (FR-338), at least 4 across, so at most 3 heads and +K in the narrowest; faces stay over the ratchet; nothing scrolls
   for (const [W, H] of SIZES.slice(0, 2)) {
     const m = withHelpers(15, 4, (i) => [1, 2, 3, 6, 10][i % 5]);
     const L = realLayout(m, { w: W, h: H }, META);
-    assert.ok(!L.scroll && L.helpRows === 2, `15 agents with helpers at ${W}: two rows, no scroll`);
+    assert.ok(!L.scroll && L.helpRows === 1, `15 agents with helpers at ${W}: one row (FR-338), no scroll`);
     assert.ok(L.faceH >= FACE_FLOOR - 1e-9, `15 agents with helpers at ${W}: face ${L.faceH}`);
     assert.deepStrictEqual(stripProblems(L, `15@${W}`, m), []);
     const ds = L.zones.flatMap((z) => z.desks.filter((d) => d.strip));
@@ -1086,8 +1086,8 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
     for (const d of ds) {
       const k = helpersOf(m, d.id);
       assert.ok(d.strip!.cols >= 4, `15@${W}: ${d.strip!.cols} heads across`);
-      assert.strictEqual(d.strip!.shown, placesFor(d.strip!.w, 2, k), `15@${W}: shown of ${k}`);
-      if (k === 10 && d.strip!.cols === 4) assert.ok(d.strip!.shown === 7, `15@${W}: the narrowest slot (4 across) shows 7 heads and +3 (${d.strip!.shown} of ${k})`);
+      assert.strictEqual(d.strip!.shown, placesFor(d.strip!.w, 1, k), `15@${W}: shown of ${k}`);
+      if (k === 10 && d.strip!.cols === 4) assert.ok(d.strip!.shown === 3, `15@${W}: the narrowest slot (4 across) shows 3 heads and +7 (${d.strip!.shown} of ${k})`);
       if (k <= 3) assert.strictEqual(d.strip!.shown, k, `15@${W}: ${k} helpers all show`);
     }
     const strip = ds[0].strip!;
@@ -1120,12 +1120,11 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
     assert.ok(!L.scroll && L.zones[0].desks[0].plate.w < HEAD, 'the case has a slot under one head wide');
     assert.strictEqual(L.helpRows, 0, 'a slot under one head wide: no strip, the plate keeps +N');
     assert.ok(L.zones.every((z) => z.desks.every((d) => !d.strip)), 'no strip box in a slot under one head wide');
-    // `HELP_KEEP`: 15 agents in 3 folders at 1440x848 keep one row, because two rows would cost the desks more than 5 % of u (and the face would go under the ratchet)
+    // FR-338 (bug #1384): one row whatever the room gives: 15 agents in 3 folders (where FR-308's `HELP_KEEP` used to refuse a second row) and in 4 folders (where it used to take one)
     const three = realLayout(withHelpers(15, 3, () => 3), { w: 1440, h: 848 }, META);
-    assert.strictEqual(three.helpRows, 1, '15 agents in 3 folders: one row (two would cost over 5 % of u)');
-    assert.ok(three.faceH >= 28 - 1e-9 && three.faceH < 31.5, `one row keeps the face (${three.faceH}) at 31: two rows would put it under 28`);
-    // 4 folders: two rows cost nothing like that (the width binds), so two rows are kept
-    assert.strictEqual(realLayout(withHelpers(15, 4, () => 3), { w: 1440, h: 848 }, META).helpRows, 2, '15 agents in 4 folders: two rows');
+    assert.strictEqual(three.helpRows, 1, '15 agents in 3 folders: one row');
+    assert.ok(three.faceH >= 28 - 1e-9, `one row keeps the face (${three.faceH}) over the 28 px floor`);
+    assert.strictEqual(realLayout(withHelpers(15, 4, () => 3), { w: 1440, h: 848 }, META).helpRows, 1, '15 agents in 4 folders: one row (FR-338; two before, FR-308)');
     // the chat open at 15 (the office is 470 px narrower): the office scrolls even without helpers, so no strip is drawn
     const chat = realLayout(withHelpers(15, 4, () => 3), { w: 970, h: 848 }, META);
     assert.ok(chat.scroll && chat.helpRows === 0, 'chat open at 15 agents: the office scrolls, no strip (the plate keeps +N)');
