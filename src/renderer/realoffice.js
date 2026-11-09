@@ -455,12 +455,14 @@
         /* spec 059 FR-170 (#1155): Open office's rename pencil (.ren[data-ren]: the app's own click and F2 handlers, the same in-place edit), right
            after its plate (a button cannot sit inside one) so the plate's hover and focus show it; CSS anchors it just after the name: no layout read */
         if (a.ren) {
-          const anc = '--ren-' + k.replace(/[^A-Za-z0-9_-]/g, '_'), nm = pl._parts.nm;
+          /* spec 097 FR-357 (#1427): two anchors, the name and the plate; the world's CSS picks the plate where the plate does not draw the name (an arcade cabinet's) */
+          const anc = '--ren-' + k.replace(/[^A-Za-z0-9_-]/g, '_'), ancP = anc + '-pl', nm = pl._parts.nm;
           if (nm.style.getPropertyValue('anchor-name') !== anc) nm.style.setProperty('anchor-name', anc);
+          if (pl.style.getPropertyValue('anchor-name') !== ancP) pl.style.setProperty('anchor-name', ancP);
           const rb = el(chrome, 'rn:' + k, 'button', 'ren ro-ren');
           if (pl.nextElementSibling !== rb) pl.after(rb);
           if (rb.type !== 'button') rb.type = 'button'; dset(rb, 'ren', k); attr(rb, 'aria-label', 'Rename ' + a.name); attr(rb, 'title', 'Rename ' + a.name);
-          if (rb.style.getPropertyValue('position-anchor') !== anc) rb.style.setProperty('position-anchor', anc);
+          if (rb.style.getPropertyValue('--ro-ren-nm') !== anc) { rb.style.setProperty('--ro-ren-nm', anc); rb.style.setProperty('--ro-ren-pl', ancP); }
           if (!rb.firstChild && model.renIcon) rb.innerHTML = model.renIcon; /* the app's own icon markup (trusted, as alertIcon) */
         }
         /* spec 097 FR-306..FR-309 (issue #1139): the helpers' head figures under the plate, right after it and its pencil in the Tab order; a lounge seat and the fallback (no room: the plate keeps +N; the arcade at 1280x800) have no strip box, so no strip */
