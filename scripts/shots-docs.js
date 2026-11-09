@@ -29,7 +29,7 @@ const CLOCK = '2026-10-20T09:30:00Z';
 /** `f`: a file the driver writes under the same name; `{ to, from }`: the linked name and the name the driver writes. */
 const THEMES = [['clean-office', 'clean'], ['retro']];
 const DOC_SHOTS = [
-  { name: 'shots-hero', files: ['m5-sim15-1440x900-closed.png', 'm6-fullchat-sim15-1280x800.png'] },
+  { name: 'shots-hero', files: ['m6-fullchat-sim15-1280x800.png'] },
   { name: 'shots-003-011', files: ['m6-fullchat-sim15-1440x900.png', '003-allow-all-menu-1440x900.png'] },
   { name: 'check-office-fill', files: ['001-helpers-2-1440x900.png', '001-helpers-2-1280x800.png', '001-helpers-3-1440x900.png', '001-helpers-3-1280x800.png', '001-fill-1-1440x900.png', '001-fill-1-1920x1080.png', '001-fill-4-1440x900.png', '001-fill-6-1440x900.png', '001-shutters-1440x900.png'] },
   { name: 'shots-001-live-activity', freeze: false, files: ['001-live-activity-dense-1440x900.png', '001-live-activity-side-1440x900.png'] },
@@ -52,6 +52,7 @@ const DOC_SHOTS = [
   { name: 'shots-017', files: [{ to: '012-harness-picker-1440x900.png', from: '012-picker-1440x900.png' }] },
   { name: 'shots-024', files: ['024-lobby-1440x900.png'] },
   { name: 'shots-097-realoffice', files: ['097-office-layout-1440x900.png'] }, // spec 097 P1: Real office mode (its photo-heavy 15-agent pictures stay out of the site budget: linked from the spec only, retaken with SHOTS_OUT=docs/screenshots)
+  { name: 'shots-readme-real', files: ['readme-real-office-1440x900.jpg', 'readme-real-inbox-1440x900.jpg'] }, // spec 008 delta 2026-11-08 (issue #1256): the README's lead pictures (Real office, simulated data)
   { name: 'shots-030-handoff', files: ['handoff-review-1440x900.png'] },
   { name: 'shots-033', files: ['033-floors-on-1440x900.png'] },
   { name: 'shots-040-picker', files: ['040-theme-picker-1440x900.png'] }, // spec 040 FR-032: the theme picker, Export and Remove
@@ -63,6 +64,7 @@ const DOC_SHOTS = [
   { label: 'shots-051-setup win32', name: 'shots-051-setup', files: ['051-install-manual-win32-1440x900.png'] },
   { name: 'shots-081-updates', files: ['081-updates-avail-1440x900.png'] },
   { name: 'shots-052-ux', files: ['052-office-1440x900.png'] },
+  { name: 'check-settings-nav', files: ['052-settings-nav-1440x900.png'] }, // spec 052 FR-226: the Settings section list (the 1280x800 twin is not linked: the site's 8 MB budget)
   { name: 'check-auto-follow', files: ['052-auto-follow-queue-1440x900.png', '052-auto-follow-queue-1280x800.png'] },
   { name: 'shots-063-folder-status', files: ['063-folder-changes-1440x900.png'] },
   { name: 'shots-009-openwith', files: ['009-openwith-1440x900.png', '009-openwith-1280x800.png'] }, // spec 009 FR-019: the chat header's Open with menu
@@ -118,7 +120,7 @@ function linkedImages(root = ROOT) {
   // the README and the docs pages it moved its detail to (docs/site/pages.json, spec 021 FR-065)
   const pages = JSON.parse(fs.readFileSync(path.join(root, 'docs', 'site', 'pages.json'), 'utf8'));
   const readme = ['README.md', ...pages.map((f) => 'docs/' + f)].map((f) => fs.readFileSync(path.join(root, f), 'utf8')).join('\n');
-  for (const m of readme.matchAll(/(?:docs\/)?screenshots\/([A-Za-z0-9._-]+\.png)/g)) out.add(m[1]);
+  for (const m of readme.matchAll(/(?:docs\/)?screenshots\/([A-Za-z0-9._-]+\.(?:png|jpg))/g)) out.add(m[1]);
   const gallery = JSON.parse(fs.readFileSync(path.join(root, 'docs', 'site', 'gallery.json'), 'utf8'));
   for (const g of gallery) if (g && typeof g.file === 'string') out.add(g.file);
   const landing = fs.readFileSync(path.join(root, 'docs', 'site', 'landing.json'), 'utf8');
@@ -159,7 +161,7 @@ function suiteEnv(d, suite) {
  * error prints one line and leaves the picture as the driver wrote it. DURBAR_SHOTS_COMPRESS=off skips it. Returns the bytes saved.
  */
 function squeeze(file, env = process.env, root = path.dirname(file)) {
-  if (/^(off|0|false)$/i.test(String(env.DURBAR_SHOTS_COMPRESS || ''))) return 0;
+  if (/^(off|0|false)$/i.test(String(env.DURBAR_SHOTS_COMPRESS || '')) || /\.jpe?g$/i.test(file)) return 0; // a JPEG is written at its quality by the driver (driver-helpers shot): nothing to palette-compress
   try {
     const r = require('./compress-shots.js').compressFile(file, { root });
     if (r.status === 'compressed') return r.before - r.after;

@@ -11,6 +11,7 @@ import { COPILOT_CAPABILITIES, COPILOT_STEP_NO_ANSWER, COPILOT_STOP_WAIT, COPILO
 import { AUTOPILOT_ANSWER, CLOCK_SAMPLE_MS } from '../src/adapters/autopilot';
 import { AUTOPILOT_ONE_RUN, LINE_BACKSTOP, LINE_CAP_NOT_RESTORED, LINE_CLOSED, LINE_SELF_STARTED, LINE_UNCONFIRMED } from '../src/adapters/autopilotHost';
 import type { AutopilotTuning } from '../src/adapters/autopilotHost';
+import { MIN_CAP } from '../src/shared/credits';
 import { eventProblems } from '../src/adapters/eventguard';
 import type { AgentEvent } from '../src/adapters/types';
 
@@ -67,7 +68,52 @@ function orderedModes(s: FakeSession): { asked: () => boolean; release: () => vo
 
 async function main(): Promise<void> {
   process.exitCode = 1;
-  assert.deepStrictEqual({ ...COPILOT_CAPABILITIES.autopilot }, { capUnit: 'aiu', attachments: true, planApproval: true, verified: false }, 'T022: capability, not verified');
+  assert.strictEqual(COPILOT_CAPABILITIES.autopilot?.capMin, MIN_CAP, 'T022: the capability\'s smallest cap is the runtime\'s own MIN_CAP (D9), never a copy of the number');
+  assert.deepStrictEqual({ ...COPILOT_CAPABILITIES.autopilot }, { capUnit: 'aiu', attachments: true, planApproval: true, verified: false, capMin: 30 }, 'T022: capability, not verified; its smallest cap (D9) is the adapter\'s own');
+
+  // FR-050: Stop acts before anything is awaited: a hung limit answer and a sign-in refresh hold nothing back (Phase 3)
+  {
+    const r = await rig();
+    await r.ad.setAutopilot!(r.sid, { limit: 5 });
+    await r.ad.send(r.sid, { text: 'go' });
+    const live = (r.ad as unknown as { sessions: Map<string, { limitRequestId?: string }> }).sessions.get(r.sid)!;
+    live.limitRequestId = 'stuck';
+    (r.s.rpc as unknown as { ui: unknown }).ui = { handlePendingSessionLimitsExhausted: () => new Promise(() => undefined) };
+    void r.ad.interrupt!(r.sid);
+    assert.deepStrictEqual(reasons(r), ['stopped'], 'ended in the same tick as Stop');
+    const q = await rig();
+    await q.ad.setAutopilot!(q.sid, { limit: 5 });
+    await q.ad.send(q.sid, { text: 'go' });
+    (q.ad as unknown as { refreshing: Promise<void> }).refreshing = new Promise(() => undefined);
+    void q.ad.setAutopilot!(q.sid, null, 'stopped');
+    assert.deepStrictEqual(reasons(q), ['stopped'], 'a refresh does not hold a stop back');
+    (q.ad as unknown as { refreshing?: Promise<void> }).refreshing = undefined;
+  }
+
+  // review of #982, finding 2: Autopilot off during a run, and Stop, act at once but hold a place in the queue until the run's stop is done, so a turn-on
+  // right after them cannot race the old run's late abort (it would end run 2) or its cap restore
+  for (const how of ['off', 'stop'] as const) {
+    const r = await rig({ tuning: { waitMs: 60_000 } }); // the abort is held by the test: the stop's own bounds must not run out under load (a failed-closed session would refuse the turn-on)
+    await r.ad.setAutopilot!(r.sid, { limit: 5 });
+    await r.ad.send(r.sid, { text: 'go' });
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((res) => { release = res; });
+    const real = r.s.abort;
+    r.s.abort = async (): Promise<void> => { await real(); await gate; }; // the old run's abort answers late
+    const stop = how === 'off' ? r.ad.setAutopilot!(r.sid, null, 'stopped') : r.ad.interrupt!(r.sid);
+    void stop.catch(() => undefined);
+    const before = r.order().filter((x) => x === 'mode:autopilot').length;
+    const again = r.ad.setAutopilot!(r.sid, { limit: 5 }); // the user turns Autopilot on again at once
+    void again.catch(() => undefined);
+    await until(() => r.order().includes('abort'), `${how}: the old run's abort started at once`);
+    await tick(20);
+    assert.strictEqual(r.order().filter((x) => x === 'mode:autopilot').length, before, `${how}: the turn-on waits for the old run's stop to finish (no race with its late abort)`);
+    release();
+    await settles(stop, `${how}: the stop finished`);
+    await settles(again, `${how}: the turn-on went through after it`);
+    assert.strictEqual(r.order().filter((x) => x === 'mode:autopilot').length, before + 1, `${how}: and then it happened`);
+    assert.ok(r.order().lastIndexOf('mode:autopilot') > r.order().indexOf('abort'), `${how}: after the abort, never before it`);
+  }
 
   // only in Allow all
   {
@@ -862,7 +908,7 @@ async function main(): Promise<void> {
     const stopping = r.ad.interrupt(r.sid);
     await until(() => asked, 'Stop is stopping Autopilot: its mode.set waits');
     const typed = r.ad.send(r.sid, { text: 'typed during the stop' });
-    await until(() => r.lines().includes(COPILOT_STOP_WAIT), `${running ? 'run' : 'no run'}: the send says it waits for the Stop`);
+    await tick(20); // review of #982 (finding 2): the send now queues behind the Stop's own place, so it says nothing yet; it simply does not go out
     assert.strictEqual(r.s.calls.filter((c) => c.name === 'send').length, before, `${running ? 'run' : 'no run'}: a send during a Stop that is still stopping Autopilot waits`);
     answer();
     await stopping;
@@ -1046,11 +1092,11 @@ async function main(): Promise<void> {
     assert.ok(client.last.calls.some((c) => c.name === 'mode.set'));
   }
 
-  // FR-053 stays off in a real session until T030 wires it (AUTOPILOT_WIRED), unless setAutopilot ran on this adapter
+  // FR-053 off where `wired` is false (the default build, AUTOPILOT_WIRED), unless setAutopilot ran on this adapter
   {
     const client = new FakeClient();
     client.onDisk.add('old-2');
-    const ad = new FakeCopilot(client);
+    const ad = new FakeCopilot(client, undefined, { wired: false });
     await ad.start({ workspace: ws, resumeSessionId: 'old-2', permissionMode: 'allow', quiet: true });
     assert.ok(!client.last.calls.some((c) => c.name.startsWith('mode.')), 'nothing new on a real resume yet');
   }
@@ -1101,11 +1147,11 @@ async function main(): Promise<void> {
 
   // FR-006: until T030 a session not on Autopilot is left alone
   {
-    const n = await rig();
+    const n = await rig({ tuning: { wired: false } });
     fire(n.s, { type: 'session.mode_changed', data: { newMode: 'autopilot', previousMode: 'interactive' } });
     fire(n.s, cont);
     await tick();
-    assert.deepStrictEqual(n.order(), [], 'nothing changes for a session not on Autopilot in this phase');
+    assert.deepStrictEqual(n.order(), [], 'nothing changes for a session not on Autopilot where `wired` is false (the default build)');
     assert.ok(!n.lines().includes(LINE_SELF_STARTED));
   }
 

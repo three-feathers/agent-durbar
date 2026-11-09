@@ -27,7 +27,7 @@
  *   - a picture that fails to load leaves a broken image instead of the initials disc (FR-065).
  *   - the world chrome (FR-113): in Real office the top bar, More menu, a toast, Settings and a dialog do not use the photo world's
  *     tokens (glass on the menu and toast, bar ink, page ink; FR-182: a dialog has no blur and is the opaque surface, its text at 4.5:1 on computed colours), text under 10.5px, or leaving Real office does not restore the theme exactly; flat has no world.
- * Screenshots: <SHOTS_OUT>/097-world-{menu,toast,settings,dialog}-<w>x<h>.png, 097-real-15-<w>x<h>.png, 097-real-lobby-<w>x<h>.png (the lobby band, with the Terminal runner), 097-real-3-<w>x<h>.png, 097-real-lights-1440x900.png, 097-office-layout-1440x900.png.
+ * Screenshots: <SHOTS_OUT>/097-world-{menu,toast,settings,dialog}-<w>x<h>.png, 097-real-15-<w>x<h>.jpg, 097-real-lobby-<w>x<h>.png (the lobby band, with the Terminal runner), 097-real-3-<w>x<h>.png, 097-real-lights-1440x900.png, 097-office-layout-1440x900.png.
  */
 const os = require('os');
 const fs = require('fs');
@@ -43,6 +43,8 @@ module.exports = async (ctx) => {
   const { js } = H;
   const SHARP = `(()=>{const px={...window.DurbarRealOfficeWorlds.photo.px,...window.DurbarRealOfficeSets.office.px},all=[...document.querySelectorAll('#stage .ro-person,#stage .ro-visitor')].filter(i=>i.currentSrc);const rows=all.map(i=>{const half=/\.h\.webp$/.test(i.currentSrc),file=i.currentSrc.split('/').pop().replace('.h.webp','.webp'),own=half?Math.ceil(px[file]/2):px[file];return {half,seat:i.classList.contains('ro-person'),ratio:own/(i.getBoundingClientRect().width*devicePixelRatio)};});const rs=(f)=>rows.filter(f).map(r=>r.ratio);return {dpr:devicePixelRatio,seatFull:rows.filter(r=>r.seat&&!r.half).length,seatHalf:rows.filter(r=>r.seat&&r.half).length,lobbyFull:rows.filter(r=>!r.seat&&!r.half).length,lobbyHalf:rows.filter(r=>!r.seat&&r.half).length,minHalfRatio:Math.min(99,...rs(r=>r.half)),seatRatios:[Math.min(99,...rs(r=>r.seat)),Math.max(0,...rs(r=>r.seat))]};})()`;
   const must = async (expr, what, ms = 15000) => assert.ok(await H.until(expr, ms), 'timed out waiting for ' + what);
+  /* the pointer rests where an earlier step or the display left it (under a virtual X display, on a plate): a pointer on a plate opens that agent's card (FR-327), so a step that wants no card moves it off the office first */
+  const park = async () => { ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 }); await js(`new Promise(r=>setTimeout(r,150))`); };
   const REAL = `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'`;
   /* every picture of the office has decoded (or failed): no half-drawn screenshot */
   const PICS = `[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`;
@@ -242,9 +244,10 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(pl.cc, [], 'no two chips overlap');
     assert.deepStrictEqual(pl.initials, [], `no bare initial in the lobby (names, or their first letters and an ellipsis): ${JSON.stringify(pl.initials)} of ${pl.chips}`);
     /* going back from the chat above leaves the focus on a plate, and a focused plate has its zoom open (FR-034): not in the picture */
+    await park();
     await js(`document.activeElement&&document.activeElement.blur&&document.activeElement.blur();0`);
     await must(`!document.getElementById('roZoom')`, 'no zoom in the picture');
-    await H.shot(path.join(OUT, `097-real-15-${w}x${h}.png`), { prep: 'calm' });
+    await H.shot(path.join(OUT, `097-real-15-${w}x${h}.jpg`), { prep: 'calm' });
     // ---- owner 2026-10-31 ("make a real running pose"): someone at the Terminal jogs in place (stride A in P1), no treadmill; a
     //      close crop of the lobby band shows it ----
     // A simulator visit comes and goes, so wait for one, let its pictures decode, take the crop, and keep the crop only if the runner is still there.
@@ -306,6 +309,7 @@ module.exports = async (ctx) => {
     await must(`!document.getElementById('modeMenu')`, 'the list closed');
     await must(`document.activeElement&&document.activeElement.matches('#stage .ro-lplate[data-placemore]')`, 'focus is back on the "+N" plate after Escape');
     await loadReal(w, h);
+    await park();
     await js(`document.querySelector('#stage .ro-plate').focus()`);
     const first = await js(`document.activeElement.dataset.id`);
     await H.key('Right');
@@ -402,7 +406,7 @@ module.exports = async (ctx) => {
     const sharp3 = await js(SHARP);
     console.log('[097] sharp at 3', w, JSON.stringify(sharp3));
     assert.ok(sharp3.minHalfRatio >= 1.45, 'at 3 agents too: ' + JSON.stringify(sharp3));
-    await H.shot(path.join(OUT, `097-real-3-${w}x${h}.png`), { prep: 'calm' });
+    await H.shot(path.join(OUT, `097-real-3-${w}x${h}.jpg`), { prep: 'calm' });
   }
 
   // ---- FR-006: a click on a person opens its chat ----
