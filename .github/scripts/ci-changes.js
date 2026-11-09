@@ -49,7 +49,7 @@ const PKG = ['package.json', 'package-lock.json'];
 
 // the npm scripts the UI run, the office job and package smoke start: `build`, `pack:dir` and every lifecycle hook npm ci runs
 // (pre*, post*, install, prepare); with every `npm run <name>` in ui-platforms.yml they seed the REACHED set (reachedNpm)
-const UI_NPM_SCRIPT = /^(build|pack:dir|install|prepare|pre.*|post.*)$/;
+const UI_NPM_SCRIPT = /^(build|pack:dir|pack:dir:prebuilt|install|prepare|pre.*|post.*)$/; // pack:dir:prebuilt: the office job's package step (FR-194)
 // Review of PR #1349, round 4 (Paco's suggestion): which npm scripts a command line starts, with the default INVERTED. A line is
 // PARSED only when every command in it (commands joined by `&&` only) is one of these exact forms:
 //   [VAR=value ...] node|tsc|electron|electron-builder <args>       starts no npm script

@@ -56,8 +56,7 @@ jobs:
           cache: npm
       - if: steps.changes.outputs.macos == 'true'
         uses: ./.github/actions/npm-ci
-      - if: steps.changes.outputs.macos == 'true'
-        run: npm run typecheck
+      # spec 008 FR-193: build runs the same tsc as typecheck
       - if: steps.changes.outputs.macos == 'true'
         run: npm run build
       - if: steps.changes.outputs.macos == 'true'
