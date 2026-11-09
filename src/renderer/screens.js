@@ -602,9 +602,9 @@
   /* spec 070 FR-022: one line per own theme that could not use some of its values (dropped, or a text pair set back for contrast) */
   function themeFallbackNote(themes){
     if(!window.THEME||!window.THEME.fallbacks)return '';
-    const lines=themes.filter((t)=>t.own).map((t)=>{const f=window.THEME.fallbacks(t.id);const d=f.dropped.length,c=f.contrast.length;
+    const lines=themes.filter((t)=>t.own).map((t)=>{const f=window.THEME.fallbacks(t.id);const d=f.dropped.length,c=f.contrast.length,u=(f.unmeasured||[]).length;
       /* spec 070 FR-022: dropped values use the defaults; hard-to-read colours are adjusted, not set back (FR-023) */
-      const parts=[d?d+' value'+(d>1?'s use':' uses')+' the defaults (not usable)':'',c?c+' colour'+(c>1?'s':'')+' adjusted so text stays readable':''].filter(Boolean);
+      const parts=[d?d+' value'+(d>1?'s use':' uses')+' the defaults (not usable)':'',c?c+' colour'+(c>1?'s':'')+' adjusted so text stays readable':'',u?u+' colour'+(u>1?'s':'')+' could not be checked for contrast (give it as a hex, rgb or hsl colour)':''].filter(Boolean); /* spec 070 FR-080 */
       return parts.length?esc(t.name)+': '+parts.join('; '):'';}).filter(Boolean);
     return lines.length?`<p class="scr-note small" role="status" id="thFallbacks">${lines.join('; ')}.</p>`:'';
   }

@@ -7,10 +7,12 @@ export type RealState = 'working' | 'thinking' | 'waiting' | 'error' | 'limit' |
 /** `lounge`: the app's room rule (spec 001 FR-051, `shutPlan`) rolls this finished, read agent in: it sits in the lounge row, not at a desk (spec 097 FR-246) */
 /** `helpers`: how many sub-agents the desk has (spec 097 FR-306: the engine reserves a strip for them under the plate) */
 export interface RealAgent { id: string; state: RealState; away?: string | null; person?: string | null; lounge?: boolean; helpers?: number }
-export interface RealFolder { id: string; agents: RealAgent[] }
+/** `keep`: the folder has a saved desk order (spec 097 FR-345): its desks stay in the model's order, no status sort */
+export interface RealFolder { id: string; agents: RealAgent[]; keep?: boolean }
 export interface RealVisitor { id: string; person?: string | null; needsYou?: boolean }
 export interface RealPlace { id: string; custom?: boolean; visitors: RealVisitor[] }
-export interface RealModel { folders: RealFolder[]; places: RealPlace[] }
+/** `keepRooms`: the person saved a room order for this floor (spec 097 FR-353, owner Q31): the rooms stand in rows in that order, left to right, top to bottom, even if the picture is a little smaller */
+export interface RealModel { folders: RealFolder[]; places: RealPlace[]; keepRooms?: boolean }
 export interface SeatMeta { w: number; h: number; headTop: number; bodyH: number; hand: number }
 /** `feet` and `top`: per pose, the lowest and highest opaque row as a share of the picture's height, measured from its alpha (owner 2026-10-31 10:19) */
 export interface StandMeta { figH: number; poses: Record<string, [number, number]>; feet?: Record<string, number>; top?: Record<string, number>; foot?: Record<string, number> }
@@ -19,6 +21,8 @@ export interface StandMeta { figH: number; poses: Record<string, [number, number
 export interface RealMeta {
   /** spec 102 FR-255: a pixel world's art (one integer scale); its lobby keeps people apart */
   pixelArt?: boolean;
+  /** spec 097 FR-335 (T247): the people's own art is not pixel art (false); a hi-res crew in a pixel world is scaled to the world's people, not drawn at whole multiples of its pixels */
+  pixelPeople?: boolean;
   seat: Record<string, SeatMeta>; stand: Record<string, StandMeta>;
   fixtures: Record<string, [number, number]>; fixtureTop?: Record<string, number>; floorLine: number;
   /** the world's desk picture in its own pixels (spec 097 FR-247: the lounge's small desk keeps its shape) */
@@ -43,7 +47,7 @@ export interface DeskBox {
   marquee?: Rect; stand?: Rect; facing?: 'left' | 'right'; body?: number /* spec 102 FR-306: the cabinet's body, 0..3: the seat with 4 agents or fewer, else (column + 2 x row) mod 4, so a seat differs from its neighbours on the grid */; cue?: { x: number; y: number };
 }
 /** `id` is the folder's id; `part` is 1, or 2, 3... for the rest of a folder split over rows */
-export interface ZoneBox { id: string; part: number; box: Rect; sign: Rect; desks: DeskBox[]; /** `aisles`: the sign shows name, counts, + and menu only; path and cost go to its hover (FR-256) */ signShort?: boolean }
+export interface ZoneBox { id: string; part: number; box: Rect; sign: Rect; desks: DeskBox[]; /** the sign shows name, counts, + and menu only; path and cost go to its hover (FR-256 in `aisles`; FR-356 in a room too narrow for the whole sign) */ signShort?: boolean }
 export interface VisitorBox { id: string; fig: (Rect & { file: string; fileB: string | null; b: Rect | null; pose: string; feetY: number; faces: 'left' | 'right' }) | null; chip: { x: number; y: number }; face: Rect | null; shadow: Rect | null }
 export interface FixtureBox { id: string; custom: boolean; art: Rect | null; slot: Rect; plate: { x: number; y: number; w: number }; visitors: VisitorBox[]; more: number; light: Rect }
 export interface Layout {
@@ -53,7 +57,7 @@ export interface Layout {
   lane?: Rect;
   /** `aisles` only: the pixel scale (CSS px per art pixel) and the cabinet's size */
   g?: number; cabinet?: { w: number; h: number; gw: number; gh: number; cols: number; rows: number };
-  /** spec 097 FR-308: the rows of the helper strip (1 or 2), or 0: none drawn, the plate keeps its `+N` and dots (no room, or no helpers) */
+  /** spec 097 FR-308: FR-338: the rows of the helper strip (1), or 0: none drawn, the plate keeps its `+N` and dots (no room, or no helpers) */
   helpRows?: number;
   /** spec 097 FR-246..FR-248: the lounge row (its box and its seats), when an agent sits there */
   lounge?: { box: Rect; desks: DeskBox[] };
@@ -70,8 +74,9 @@ export const U_MIN = Math.ceil(28 / FACE_U), U_MAX = 260, U_MAX_BIG = 420;
 export const PLATE_H = 36, PLATE_H_ASK = 50;
 /** Spec 097 FR-306..FR-308 (delta 2026-11-08, owner "1265 1"): the helper strip is a row (or two) of small head figures under the plate. `HEAD`: a figure's side (a circle with the
  *  status dot on its corner); `HEAD_FACE`: the share of it that the face (crown to chin) fills, so a face is `HEAD * HEAD_FACE` px, never under `HELP_FACE_MIN` (the lounge's floor, FR-247);
- *  `HELP_GAP`: between figures; `HELP_ROWS_MAX`: rows tried (2, then 1); `HELP_KEEP`: two rows are kept only while the desks stay this share of what one row gives. */
-export const HEAD = 30, HEAD_FACE = 0.8, HELP_FACE_MIN = 24, HELP_GAP = 4, HELP_PAD = 4, HELP_ROWS_MAX = 2, HELP_KEEP = 0.95;
+ *  `HELP_GAP`: between figures. FR-338 (bug #1384, delta 2026-11-09): the strip is one row; the places it holds are the figures across, the last one `+K` when more helpers exist,
+ *  never a second line (FR-308's two-row level, `HELP_ROWS_MAX` and `HELP_KEEP`, is removed: a second row read as a head wrapped under the row). */
+export const HEAD = 30, HEAD_FACE = 0.8, HELP_FACE_MIN = 24, HELP_GAP = 4, HELP_PAD = 4;
 /** FR-308: the strip's height for `rows` rows (the row's fixed extra height, FR-015) */
 export const helpH = (rows: number): number => rows * HEAD + (rows - 1) * HELP_GAP + HELP_PAD;
 /** FR-308: the figures across a strip of width `w` */
@@ -134,6 +139,10 @@ export function sortDesks(agents: readonly RealAgent[]): RealAgent[] {
   return agents.map((a, i) => [a, i] as const).sort((p, q) => (STATE_ORDER[p[0].state] ?? 4) - (STATE_ORDER[q[0].state] ?? 4) || p[1] - q[1]).map((x) => x[0]);
 }
 
+/** FR-345: the order a folder's desks are laid out in: the model's order when the folder has a saved desk order (`keep`), else the status order (FR-022).
+ *  The one function the layouts (`realLayout`, `aislesLayout`) and the keys' move (`deskOrder`) share, so a move starts from what is on screen. */
+export function shownDesks(f: RealFolder): RealAgent[] { return f.keep ? f.agents : sortDesks(f.agents); }
+
 /** Every split of `list` into at most `most` unordered groups (restricted growth strings; 187 for 6 folders in up to 4 rows, 2,795 for 8).
  *  Geometry does not depend on the order of rows or of zones in a row, so the mockup's search over every order and contiguous split
  *  (FR-011) is the same search without its repeats. */
@@ -145,6 +154,18 @@ function roSetPartitions<T>(list: T[], most: number): T[][][] {
     if (blocks.length < most) { blocks.push([list[i]]); rec(i + 1); blocks.pop(); }
   };
   if (list.length) rec(0);
+  return res;
+}
+
+/** Every split of `list` into at most `most` runs of neighbours (spec 097 FR-353): the rooms keep their order, left to right and top to bottom. */
+function roRuns<T>(list: T[], most: number): T[][][] {
+  const res: T[][][] = [];
+  const rec = (i: number, cur: T[][]): void => {
+    if (i === list.length) { res.push(cur.map((r) => r.slice())); return; }
+    cur[cur.length - 1].push(list[i]); rec(i + 1, cur); cur[cur.length - 1].pop();
+    if (cur.length < most) { cur.push([list[i]]); rec(i + 1, cur); cur.pop(); }
+  };
+  if (list.length) rec(1, [[list[0]]]);
   return res;
 }
 
@@ -201,7 +222,7 @@ export function lobbyRange(H: number): [number, number] {
 }
 
 /** FR-011, FR-020: the rows of folders and the unit u, by search. */
-function roPack(meta: RealMeta, folders: RealFolder[], W: number, Ho: number, lobbyMin: number, hh = 0): { rows: Row[]; u: number; used: number; fits: boolean; wide: boolean } {
+function roPack(meta: RealMeta, folders: RealFolder[], W: number, Ho: number, lobbyMin: number, hh = 0, keepRooms = false): { rows: Row[]; u: number; used: number; fits: boolean; wide: boolean } {
   const total = folders.reduce((p, f) => p + f.agents.length, 0);
   const avail = Ho - lobbyMin;
   if (total <= BIG_MAX) {
@@ -223,6 +244,7 @@ function roPack(meta: RealMeta, folders: RealFolder[], W: number, Ho: number, lo
   const maxRows = many ? folders.length : 4; /* past the 15-agent scale (scrolling) many zones may take more than 4 rows */
   const cands: RealFolder[][][] = many
     ? Array.from({ length: Math.min(maxRows, folders.length) }, (_, i) => roBalanced(folders, i + 1))
+    : keepRooms ? roRuns(folders, maxRows) /* FR-353: only the splits that keep the saved order */
     : roSetPartitions(folders, maxRows).map((rs) => rs.map((zs) => zs.slice().sort((p, q) => at(p) - at(q))).sort((p, q) => at(p[0]) - at(q[0])));
   for (const part of cands) {
     const rows: Row[] = part.map((zs) => { const n = zs.reduce((p, z) => p + z.agents.length, 0); return { zones: zs, n, Sw: roSlotWidth(W, zs.length, n), scrH: 0, strip: roStrip(zs, hh) }; });
@@ -341,7 +363,7 @@ function roLobby(meta: RealMeta, places: RealPlace[], W: number, Lb: number): { 
         /* the feet (the picture's lowest opaque row) stand on the front floor plane, in front of the fixture; one scale per person,
            from its upright 'letter' pose, NEAR_SCALE larger than at the wall line. */
         const k0 = nearPx / standHeight(meta, String(v.person));
-        const k = snap ? visitorScale(k0) : k0, fw2 = sp.size[0] * k, fh2 = sp.size[1] * k; /* FR-255 (#1104): whole scale in a pixel world */
+        const k = snap && meta.pixelPeople !== false ? visitorScale(k0) : k0, fw2 = sp.size[0] * k, fh2 = sp.size[1] * k; /* FR-255 (#1104): whole scale in a pixel world */
         const px = (n: number): number => (snap ? Math.round(n) : n);
         const faces = meta.facing || 'left', st = meta.stand[String(v.person)], fb = roOwn(POSE_FRAME_B, sp.pose) && roOwn(st.poses, POSE_FRAME_B[sp.pose]) ? POSE_FRAME_B[sp.pose] : null;
         /* the two running pictures have their own canvases: each in its own box, the feet on one spot, so changing picture moves no foot */
@@ -414,12 +436,16 @@ function roStation(meta: RealMeta, a: RealAgent, sx: number, y: number, Sw: numb
 export const signWidth = (name: string, path: string, counts: number, zw: number): number =>
   Math.max(60, Math.min(zw - 8, 120 + 7 * (Math.min(40, name.length) + Math.min(40, path.length)) * 0.75 + 30 * counts));
 
+/** FR-356 (bug #1392): the narrowest whole sign: its name cut to 3 letters, no path, the counts, the cost (`counts` counts it, as `signWidth`), + and menu. Measured 183 px with two
+ *  counts and a cost (the cave at 1280x800, 2026-11-09), plus 7 px for a wider font (#1079). A room narrower than this takes the short sign (FR-256's: no cost, no path). */
+export const signMin = (counts: number): number => 100 + 30 * counts;
+
 /** FR-019: the whole office: pure, no DOM. `signs` gives each folder's sign text lengths (name, path, number of count chips). */
 export function realLayout(model: RealModel, viewport: { w: number; h: number }, meta: RealMeta, signs?: Record<string, { name: string; path: string; counts: number }>): Layout {
   const W = Math.max(200, viewport.w), H0 = Math.max(200, viewport.h);
   /* FR-246, FR-247: the lounge's agents leave their folders; the row's height is set aside before the desk search, so the room they leave goes to the desks. The lobby keeps its range from the whole height. */
   const { desks: atDesks, lounge } = splitLounge(model);
-  const folders = atDesks.filter((f) => f.agents.length).map((f) => ({ id: f.id, agents: sortDesks(f.agents) }));
+  const folders = atDesks.filter((f) => f.agents.length).map((f) => ({ id: f.id, agents: shownDesks(f) })); /* FR-345: a saved desk order is kept */
   const [lobbyMin, lobbyMax] = lobbyRange(H0);
   const LR = lounge.length ? loungeRows(meta, lounge, W, 0) : null, R = LR ? LR.h : 0, Ho = Math.max(200, H0 - R);
   const zones: ZoneBox[] = [];
@@ -429,29 +455,25 @@ export function realLayout(model: RealModel, viewport: { w: number; h: number },
     const rank = (x: ReturnType<typeof roPack>): number => (x.fits ? 2 : x.wide ? 1 : 0);
     /* the search, as one function of the folders, the floor's height and the strip's height `hh` (0: none), so the helper levels (FR-308) are more steps of the same search */
     const pack = (fs: typeof folders, ho: number, hh: number): ReturnType<typeof roPack> => {
-      let p = roPack(meta, fs, W, ho, lobbyMin, hh);
+      let p = roPack(meta, fs, W, ho, lobbyMin, hh, !!model.keepRooms);
       for (const most of [8, 6, 5, 4]) {
         if (p.fits) break;
         if (!fs.some((f) => f.agents.length > most)) continue;
         const parts = fs.flatMap((f) => { const k = Math.ceil(f.agents.length / most), per = Math.ceil(f.agents.length / k); return Array.from({ length: k }, (_, i) => ({ id: i ? f.id + '\u0000' + (i + 1) : f.id, agents: f.agents.slice(i * per, (i + 1) * per) })); });
-        const q = roPack(meta, parts, W, ho, lobbyMin, hh);
+        const q = roPack(meta, parts, W, ho, lobbyMin, hh, !!model.keepRooms);
         if (rank(q) > rank(p) || (rank(q) === rank(p) && (q.fits ? q.u > p.u : q.used < p.used))) p = q;
       }
       return p;
     };
-    /* FR-308: with helpers, one row of head figures is kept while the desks still fit and a slot holds a figure; two rows are tried first and kept while u stays at least HELP_KEEP x the one-row u. Else none: the plate's +N and dots (FR-016).
-       `floor` (FR-246, FR-247, delta 2026-11-08, review of PR 1322): a strip level is taken only while its u is at least `floor`; when none is, no strip (the plate keeps its +N and dots). */
+    /* FR-308, FR-338: with helpers, one row of head figures is kept while the desks still fit and a slot holds a figure; else none: the plate's +N and dots (FR-016). Never two rows (FR-338).
+       `floor` (FR-246, FR-247, delta 2026-11-08, review of PR 1322): the row is taken only while its u is at least `floor`; else no strip (the plate keeps its +N and dots). */
     const choose = (fs: typeof folders, ho: number, floor: number): { p: ReturnType<typeof roPack>; hr: number } => {
       const p0 = pack(fs, ho, 0);
       if (!fs.some((f) => f.agents.some((a) => (a.helpers || 0) > 0))) return { p: p0, hr: 0 };
       const room = (q: ReturnType<typeof roPack>): boolean => q.rows.every((r) => !r.strip || r.Sw - 16 >= HEAD);
       const ok = (q: ReturnType<typeof roPack>): boolean => q.fits && room(q) && q.u >= floor - 1e-6;
       const p1 = pack(fs, ho, helpH(1));
-      if (ok(p1)) {
-        const q = HELP_ROWS_MAX >= 2 ? pack(fs, ho, helpH(2)) : null;
-        return q && ok(q) && q.u >= HELP_KEEP * p1.u ? { p: q, hr: 2 } : { p: p1, hr: 1 };
-      }
-      return { p: p0, hr: 0 };
+      return ok(p1) ? { p: p1, hr: 1 } : { p: p0, hr: 0 };
     };
     /* FR-246, FR-247: the room the lounge's agents leave goes to the desks, helpers or not. The strip levels are judged against the u the same folders get with those agents
        back at their desks (no lounge row, the whole height, its own strip level): before, a strip that the desks' width paid for could start costing height once the row
@@ -483,7 +505,9 @@ export function realLayout(model: RealModel, viewport: { w: number; h: number },
       if (hits(sx)) { sx = x + zw - 4 - sw; if (hits(sx)) sx = Math.max(...hands.map((h) => h[1])) + 6; }
       sx = Math.max(x + 4, Math.min(sx, x + zw - 4 - sw));
       const [fid, part] = z.id.split('\u0000');
-      zones.push({ id: fid, part: Number(part || 1), box: { x, y: y + 2, w: zw, h: g.bottom - 2 }, sign: { x: sx, y: y + 1, w: sw, h: 20 }, desks });
+      /* spec 097 FR-356 (bug #1392): the path gives way first, then the name down to 3 letters; a room too narrow even then takes FR-256's short sign (name, counts, + and menu; the cost on the name's hover) */
+      const short = signMin(s.counts) > zw - 8;
+      zones.push({ id: fid, part: Number(part || 1), box: { x, y: y + 2, w: zw, h: g.bottom - 2 }, sign: { x: sx, y: y + 1, w: sw, h: 20 }, desks, ...(short ? { signShort: true } : {}) });
       x += zw + ZGAP;
     }
     y += g.bottom + extra;
@@ -499,7 +523,7 @@ export function realLayout(model: RealModel, viewport: { w: number; h: number },
 /** FR-246: the agents the app put in the lounge (`lounge`, never one away at a place) leave their folders; the lounge in status order (FR-022), then folder order */
 export function splitLounge(model: RealModel): { desks: RealFolder[]; lounge: RealAgent[] } {
   const inLounge = (a: RealAgent): boolean => !!a.lounge && !a.away;
-  return { desks: model.folders.map((f) => ({ id: f.id, agents: f.agents.filter((a) => !inLounge(a)) })), lounge: sortDesks(model.folders.flatMap((f) => f.agents.filter(inLounge))) };
+  return { desks: model.folders.map((f) => ({ id: f.id, keep: f.keep, agents: f.agents.filter((a) => !inLounge(a)) })), lounge: sortDesks(model.folders.flatMap((f) => f.agents.filter(inLounge))) };
 }
 
 /** FR-247 (owner 2026-11-06, issue #1220): a lounge seat in the `rows` worlds. LOUNGE_U: the seated person's body height (a face of FACE_U x 84 = 25 px, over FR-229's 24);
@@ -731,4 +755,17 @@ export function zoomRect(target: Rect, avoid: readonly Rect[], view: Rect, size:
     if (l < least) { least = l; best = { ...r, side: 'covering', covers: true }; }
   }
   return best;
+}
+
+/** FR-347, FR-348: a folder's desk ids exactly as the layout draws them left to right (lounge seats are not at desks), or [] for an unknown folder. */
+export function deskOrder(model: RealModel, folderId: string): string[] {
+  const f = splitLounge(model).desks.find((x) => x.id === folderId);
+  return f ? shownDesks(f).map((a) => a.id) : [];
+}
+
+/** FR-348: the base a desk move is made in and saved from: the desks as shown first, then the keys that are not shown (the lounge, a status filter) in `full` order,
+ *  so the first move in a room with no saved order saves the order on screen, with the neighbour on screen swapped. */
+export function deskBase(shown: readonly string[], full: readonly string[]): string[] {
+  const seen = new Set(shown);
+  return [...shown, ...full.filter((k) => !seen.has(k))];
 }

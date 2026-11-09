@@ -114,6 +114,7 @@ test:copilotshared
 test:gitstatus
 test:officeops
 test:uisuite
+test:cichanges
 test:pathdirs
 test:officialinstall
 test:checknames
@@ -126,6 +127,7 @@ test:logo-assets
 test:autofollow
 test:openwith
 test:liveact
+test:lookalike
 test:names
 test:renameadapters
 test:sessionname
@@ -197,6 +199,7 @@ test:newfolderop
 test:newfolderipc
 test:newfoldergit
 test:supplychain
+test:electroncache
 test:claudecliunit
 test:rules
 test:weeklyretro
@@ -233,5 +236,6 @@ test:quota
 test:featureinventory
 test:simversion
 test:momentsregistry
+test:paritytick
 test:picturebudget
 test:specnumbers

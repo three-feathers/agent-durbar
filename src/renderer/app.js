@@ -487,12 +487,19 @@ function openPlaceMenu(pid,anchor){
   const ids=placeVisitors(pid); if(!ids.length)return;
   const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','At '+placeLabelFull(pid));
   m.innerHTML=ids.map(id=>{const a=byId(id),v=VISITS.at(id),r=roomOf(a),of=otherFloor(a);return `<button type="button" role="menuitem" data-pvopen="${esc(id)}"><span class="mt"><b>${esc(a.name)}</b><small>${esc((r?r.name+(of?' ('+DurbarCutText.cutText(of.name,16)+')':'')+' · ':'')+(v?visitDoing(a,v):''))}</small></span></button>`;}).join('');
+  if(OFFICE_VIEW==='real'&&RO_LOAD==='ready'&&reorderablePlace(pid)){ /* spec 097 FR-355 (Q33): Move earlier / Move later for a place that can be reordered, through the order the flat office's places use (as the folder menu: none for a fixed place, the end one is disabled; 2026-11-09 delta) */
+    const ks=lobbyPlaces().map(q=>q.id).filter(reorderablePlace),i=ks.indexOf(pid),pit=(f,t,sub,ok)=>`<button type="button" role="menuitem" data-pfact="${f}"${ok?'':' aria-disabled="true"'} title="${esc(sub)}"><span class="mt"><b>${t}</b><small>${esc(sub)}</small></span></button>`;
+    m.insertAdjacentHTML('beforeend',pit('pup','Move earlier','One place earlier in the lobby',i>0)+pit('pdn','Move later','One place later in the lobby',i>=0&&i<ks.length-1));
+  }
   document.body.appendChild(m);
   const ab=anchor.getBoundingClientRect(),b=m.getBoundingClientRect();
   m.style.left=Math.max(8,Math.min(ab.left,innerWidth-b.width-8))+'px';
   m.style.top=(ab.bottom+6+b.height<=innerHeight-8?ab.bottom+6:Math.max(8,ab.top-6-b.height))+'px';
-  m.addEventListener('click',e=>{const t=e.target.closest('[data-pvopen]');if(!t)return;closeModeMenu();openAtRequest(t.dataset.pvopen);});
-  m.addEventListener('keydown',e=>{const its=[...m.querySelectorAll('[data-pvopen]')],i=its.indexOf(document.activeElement);
+  m.addEventListener('click',e=>{
+    const pf=e.target.closest('[data-pfact]');
+    if(pf){const d=pf.dataset.pfact==='pup'?-1:1;closeModeMenu();reoStepModel('place',pid,d,'',`.ro-lplate[data-place="${CSS.escape(pid)}"]`);return;}
+    const t=e.target.closest('[data-pvopen]');if(!t)return;closeModeMenu();openAtRequest(t.dataset.pvopen);});
+  m.addEventListener('keydown',e=>{const its=[...m.querySelectorAll('[data-pvopen],[data-pfact]')],i=its.indexOf(document.activeElement);
     if(e.key==='ArrowDown'){e.preventDefault();focusIn(its[(i+1)%its.length]);}else if(e.key==='ArrowUp'){e.preventDefault();focusIn(its[(i+its.length-1)%its.length]);}
     else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();if(anchor&&document.contains(anchor))focusIn(anchor);}});
   focusIn(m.querySelector('button'));
@@ -944,6 +951,16 @@ const PERM_WHY={secret:'A part of this request looks like a secret and is hidden
 const PERM_GRANT=' Allow for this session covers exactly what was asked, the hidden part included.';
 const permWhy=(...xs)=>{const w=xs.filter(x=>x&&x.hidden).map(x=>x.why||'secret');return w.includes('cut')?'cut':w.includes('unchecked')?'unchecked':w.includes('concealed')?'concealed':w.includes('secret')?'secret':w.length?'control':'';};
 const permBlind=w=>w==='unchecked'||w==='concealed'||w==='cut'; /* neutral words only: no Allow, Deny stays */
+/* spec 003 FR-118 (issue 1300): what a session grant covers, from its raw key, not the 28-character label: the exact command, the host as the network reads it, server/tool (the label when it says the same) */
+const grantText=(key,label)=>{const k=String(key||''),l=String(label||'');let m;
+  if((m=/^shell-exact:([\s\S]+)$/.exec(k)))return 'run '+m[1];
+  if((m=/^url:([\s\S]+)$/.exec(k)))return 'fetch '+m[1];
+  if((m=/^mcp:([\s\S]+)$/.exec(k)))return l&&l.replace(' \u203a ','/')===m[1]?l:m[1];
+  return l;};
+/* spec 003 FR-117..FR-119: lookalike letters. hasLook: a shownPerm result with a finding (shown or in a hidden part); lookLine: the card's one plain line for some of them, or '' */
+const hasLook=x=>!!(x&&x.look&&(x.look.n>0||x.look.inHidden));
+const LOOK_UNCHECKED='Durbar could not check this request for lookalike letters.';
+const lookLine=(...xs)=>{const ls=xs.map(x=>x&&x.look).filter(Boolean);if(!ls.length)return '';const L=window.DurbarLookalike;try{if(L&&typeof L.line==='function')return L.line(ls);}catch(e){}return LOOK_UNCHECKED;}; /* no module: the could-not-check words (FR-119), never nothing */
 const liveOn=()=>!!LIVEACT&&LIVE_PREF;
 function setLiveOn(on){LIVE_PREF=!!on;try{localStorage.setItem('durbar.liveActivity',LIVE_PREF?'on':'off');}catch(e){}scheduleRender();}
 /* the readout to show now, or null: a live main agent that is Working or Thinking (Waiting, Error, Done and Idle keep their own text) */
@@ -1717,7 +1734,7 @@ function realModel(model){
     const list=m.mains.concat((m.rolled||[]).map(x=>x.a));
     const counts=['waiting','error','working','done','idle'].map(k=>{const n=m.all.filter(a=>!a.parent&&(k==='working'?(vis(a)==='working'||vis(a)==='thinking'):vis(a)===k)).length;return {state:k,n,word:LABELS[k].toLowerCase()};}).filter(c=>c.n);
     const u=SIM_QUIET_HEADS.has('aiu')?null:roomAiu(r);
-    return {id:r.id,name:r.name,path:deskMask(showPath(r.path)),cost:u?u.long:'',counts,newSess:!!(bridge&&bridge.newSession&&anyKindReady()&&!demoOn),menu:!!(bridge&&bridge.removeFolder&&!demoOn),
+    return {id:r.id,keep:!!(ORDER.desks[r.path]&&ORDER.desks[r.path].length),name:r.name,path:deskMask(showPath(r.path)),cost:u?u.long:'',counts,newSess:!!(bridge&&bridge.newSession&&anyKindReady()&&!demoOn),menu:!!(bridge&&bridge.removeFolder&&!demoOn),
       agents:list.map(a=>{const v=VISITS.at(a.id),st=stOf(a,old.has(a.id)),task=deskMask(taskOf(a)),place=v?placeLabel(v.place):'',needs=st==='waiting'||st==='limit';
         if(rolled.has(a.id)&&!v){ /* spec 097 FR-246, FR-120: in the lounge row, resting or asleep; the words of the flat lounge's peek card and label, the same masked reply (shutReply) */
           const asleep=old.has(a.id), ago=ACT.agoLong(sinceLast(a)), said=SHUT.spoken(ago), line=shutReply(a,140), who=a.profile?a.profile.name+' · '+a.role:a.role, word=asleep?'Asleep':stWord(a);
@@ -1737,7 +1754,7 @@ function realModel(model){
       title:p.id===D.POSTBOX?placeLabelFull(p.id)+': the next scheduled runs. Open Settings > Schedules.':placeTip(p.id,ids,wait),
       visitors:ids.map(id=>{const a=byId(id),v=VISITS.at(id);return {id,name:a.name,needsYou:vis(a)==='waiting'||!!a.limit,title:visitorWords(a,v,true)};})};
   });
-  return {folders,places,slips:realSlips(),alertIcon:ALERT_ICON,renIcon:ICON('rename'),draftIcon:ICON('edit'),sessions:agents.filter(a=>!a.parent).map(a=>({id:a.id,folder:a.room}))};
+  return {folders,places,keepRooms:model.some(m=>ORDER.rooms.includes(m.r.path)),slips:realSlips(),alertIcon:ALERT_ICON,renIcon:ICON('rename'),draftIcon:ICON('edit'),sessions:agents.filter(a=>!a.parent).map(a=>({id:a.id,folder:a.room}))};
 }
 /* spec 097 FR-121, FR-122, FR-124 (Real office): the requests the world draws as slips at the Boss door and the Bank, and as a bubble at the desk. Plain data
    from the very cards the chat and the inbox already hold (pendingCardOf, inboxActs, requestText), so the words, the buttons, their order and their tooltips are
@@ -2523,7 +2540,7 @@ function wireAnswerBar(a){
      A question or a spending limit is answered in its card; a long request is read in the chat first. Returns false when nothing applies. */
   const answerKey=kind=>{
     const c=pending(); if(!c)return false;
-    if(c.classList.contains('question')||c.classList.contains('limit')||textOf(c).length>REQ_TEXT_MAX){card=c;show();announce(c.classList.contains('question')?'Answer the question in its card.':c.classList.contains('limit')?'Choose in the spending limit card.':'A long request: read it in the chat before you answer.');return true;}
+    if(c.classList.contains('question')||c.classList.contains('limit')||textOf(c).length>REQ_TEXT_MAX){card=c;show();announce(c.classList.contains('question')?'Answer the question in its card.':c.classList.contains('limit')?'Choose in the spending limit card.':'A long request: read it in the chat before you answer.',ANN_REQUEST);return true;}
     const src=[...c.querySelectorAll(':scope > .note-actions button')].find(b=>!b.dataset.broad&&answerKeyOf(b)===kind);
     if(!src)return false;
     answerPress(src,textOf(c))();return true;
@@ -2713,7 +2730,7 @@ function openPanel(id,focus){
   if($('ntCount'))$('ntCount').onclick=e=>toggleNotes(a,e.currentTarget); /* spec 083 FR-040: the header count opens and closes the drawer */
   if($('notesHdrBtn'))$('notesHdrBtn').onclick=()=>openNotes(a,{opener:$('moreBtn')});
   wireAnswerBar(a);paintCoffeeBar.key='';paintCoffeeBar(); /* spec 068 FR-022 */
-  if(needsMe(a)){const c=pendingCardOf(a);if(c)announce(a.name+(c.classList.contains('question')?' asks: ':' needs your OK: ')+requestText(c));}
+  if(needsMe(a)){const c=pendingCardOf(a);if(c)announce(a.name+(c.classList.contains('question')?' asks: ':' needs your OK: ')+requestText(c),ANN_REQUEST);}
   $('pauseBtn').onclick=()=>{a.paused=!a.paused;if(a.live&&bridge.setPaused)bridge.setPaused(a.id,a.paused);toast(esc(a.name)+(a.paused?' paused.':' resumed.'));renderAll();};
   $('railDoor').onclick=()=>openInbox(); /* spec 052 FR-216: Your door opens the Needs you queue */
   if($('stopBtn'))$('stopBtn').onclick=e=>{RUN_SAID.stopped=true;if(a.live){const b=e.currentTarget;if(b.getAttribute('aria-busy')==='true')return;b.setAttribute('aria-busy','true');return stopLive(a).catch(failToast('stop')).finally(()=>{b.removeAttribute('aria-busy');syncRunState();});}stopDemoTurn(a);a.paused=false;a.state='idle';a.label=null;a.task='Stopped by you. Ready for a new task.';toast(esc(a.name)+' stopped.');renderAll();};
@@ -3968,11 +3985,13 @@ function reoGroup(kind,el){
   if(kind==='desk')return [...el.parentElement.children].filter(c=>c.classList&&c.classList.contains('unit'));
   return [...st.querySelectorAll('.lobby .place[data-reo]')];
 }
-/* the whole group in its shown order (also what the status filter hides), as keys: the base for a move */
-function reoFull(kind,el){
-  if(kind==='room'){const r=roomOfEl(el);return roomsInOrder().filter(x=>x.floor===r.floor).map(x=>x.path);}
-  if(kind==='desk'){const r=roomOfEl(el.closest('.room')),key=a=>Math.min(prio(a),...helpersOf(a).map(prio));
-    const l=agents.filter(a=>!a.parent&&a.room===r.id).sort((x,y)=>key(x)-key(y));return RO.sortBy(l,a=>a.id,ORDER.desks[r.path]).map(a=>a.id);}
+/* the whole group in its shown order (also what the status filter hides), as keys: the base for a move.
+   spec 097 FR-348 (issue 1152): from the model and a room id, not from elements, so Real office (no flat elements) moves the same way */
+function reoFullKeys(kind,roomId){
+  const r=ROOMS.find(x=>x.id===roomId);
+  if(kind==='room'){return r?roomsInOrder().filter(x=>x.floor===r.floor).map(x=>x.path):[];}
+  if(kind==='desk'){const key=a=>Math.min(prio(a),...helpersOf(a).map(prio));
+    const l=r?agents.filter(a=>!a.parent&&a.room===r.id).sort((x,y)=>key(x)-key(y)):[];return RO.sortBy(l,a=>a.id,r&&ORDER.desks[r.path]).map(a=>a.id);}
   return RO.sortBy(window.DurbarPlaces.allPlaces(CUSTOM),p=>p.id,ORDER.places).map(p=>p.id);
 }
 async function saveOrder(){
@@ -3981,12 +4000,17 @@ async function saveOrder(){
   try{const d=await bridge.setOrder(ORDER);if(!d)throw new Error('no answer');}
   catch(e){toast('The new order could not be saved. It stays until you close the app.',5000);}
 }
-function reoCommit(kind,el,els,from,to){
-  const key=REO_KEY[kind](el),target=REO_KEY[kind](els[to]),full=reoFull(kind,el),next=RO.moveTo(full,key,target,to>from);
+/* put `key` before or after `target` in the saved order (the one document, FR-085) and save it; `roomId`: the room (of the room, or of the desk) */
+function reoApply(kind,key,target,after,roomId,base){
+  const next=RO.moveTo(base||reoFullKeys(kind,roomId),key,target,after),r=ROOMS.find(x=>x.id===roomId);
   if(kind==='room'){ORDER.rooms=RO.merge(ORDER.rooms,next,RO.MAX_ROOMS);}
-  else if(kind==='desk'){const r=roomOfEl(el.closest('.room'));ORDER.desks={[r.path]:next.slice(0,RO.MAX_DESKS),...Object.fromEntries(Object.entries(ORDER.desks).filter(([k])=>k!==r.path))};}
-  else ORDER.places=RO.merge(ORDER.places,next,RO.MAX_PLACES);
+  else if(kind==='desk'&&r){ORDER.desks={[r.path]:next.slice(0,RO.MAX_DESKS),...Object.fromEntries(Object.entries(ORDER.desks).filter(([k])=>k!==r.path))};}
+  else if(kind==='place')ORDER.places=RO.merge(ORDER.places,next,RO.MAX_PLACES);
   saveOrder();
+}
+function reoCommit(kind,el,els,from,to){
+  const rm=kind==='room'?roomOfEl(el):kind==='desk'?roomOfEl(el.closest('.room')):null;
+  reoApply(kind,REO_KEY[kind](el),REO_KEY[kind](els[to]),to>from,rm?rm.id:'');
 }
 const reoName=(kind,el)=>kind==='room'?(roomOfEl(el)||{name:'Folder'}).name:kind==='desk'?((byId(REO_KEY.desk(el))||{name:'Desk'}).name):placeLabel(el.dataset.place);
 function reoSay(kind,el,els,to){
@@ -4005,6 +4029,42 @@ function reoStep(kind,el,delta){
   const moved=document.querySelector('#stage '+sel);
   if(moved){if(kind==='room'){if(!moved.contains(document.activeElement)){const b=moved.querySelector('.room-more,.room-new,.desk[data-id]');if(b)b.focus({preventScroll:true});}}else{if(!moved.hasAttribute('tabindex')&&moved.tagName!=='BUTTON')moved.setAttribute('tabindex','-1');moved.focus({preventScroll:true});}
     const node=kind==='desk'?moved.closest('.unit'):moved,now=reoGroup(kind,node);reoSay(kind,node,now,now.indexOf(node));}
+  return true;
+}
+/* spec 097 FR-346..FR-348 (issue 1152): one step in Real office (and from its folder menu), from the model: the shown group is what the office draws
+   (`officeModel`, `lobbyPlaces`), the base and the write are the flat office's (`reoApply`); the focus goes back to `refocus` (a selector under #stage). */
+const plateAway=pl=>pl.classList.contains('narrow')||!!VISITS.at(pl.dataset.id); /* away from its desk: the photo office narrows the plate, the arcade does not (it has the visit) */
+function realDeskKeys(roomId){return window.exports.deskOrder(realModel(officeModel()),roomId);} /* spec 097 FR-348: the desks of a room left to right, by the layout's own rule (keep, else status, lounge seats out) */
+const roArcade=()=>{const r=document.querySelector('#stage .ro');return !!r&&r.dataset.world==='retro';}; /* spec 097 FR-354 (Q32): the arcade's rooms keep their cells */
+const roFixedWords=name=>name+' is a fixed place and does not move.'; /* spec 097 FR-355 (Q33) */
+/* the one write of a drop in Real office (drag): `key` goes before or after `target`, as the keys do (`reoStepModel`): a desk from the order on screen */
+function realRoomKeys(roomId){ /* a floor's folders as Real office draws them (rows top to bottom, left to right, a folder once at its first sign): the base of a room move; the rest after them */
+  const rm=ROOMS.find(x=>x.id===roomId),all=rm?officeModel().map(m=>m.r).filter(x=>x.floor===rm.floor):[],pos=new Map();
+  document.querySelectorAll('#stage .ro-sign').forEach(sg=>{if(sg.querySelector('.ro-sc'))pos.set(sg.dataset.folder,[sg.offsetTop,sg.offsetLeft]); /* not getBoundingClientRect: a sign still easing from its old place would read as there */});
+  const on=all.filter(r=>pos.has(r.id)).sort((a,b)=>{const p=pos.get(a.id),q=pos.get(b.id);return Math.abs(p[0]-q[0])>4?p[0]-q[0]:p[1]-q[1];});
+  return on.concat(all.filter(r=>!pos.has(r.id))).map(r=>r.path);
+}
+function reoDropModel(kind,key,target,after,roomId){
+  const shown=kind==='desk'?realDeskKeys(roomId):kind==='room'?realRoomKeys(roomId):null;
+  reoApply(kind,key,target,after,roomId,shown&&window.exports.deskBase(shown,reoFullKeys(kind,roomId)));
+}
+function reoStepModel(kind,key,delta,roomId,refocus){
+  const rm=ROOMS.find(x=>x.id===roomId);
+  if(kind==='room'&&roArcade()){announce((rm?rm.name:'Folder')+' keeps its place in the arcade: its desks move, the rooms stay in their cells.');return false;}
+  if(kind==='place'&&!reorderablePlace(key)){announce(roFixedWords(placeLabel(key)));return false;}
+  let keys=[],shown=null;
+  if(kind==='room'&&rm)keys=realRoomKeys(roomId); /* FR-353: the rows as drawn */
+  else if(kind==='desk'){shown=realDeskKeys(roomId);keys=shown;} /* FR-348: the desks as Real office draws them (the layout's own function), not the attention order */
+  else if(kind==='place')keys=lobbyPlaces().map(p=>p.id).filter(reorderablePlace);
+  const i=keys.indexOf(key),j=i+delta;
+  const name=kind==='room'?(rm?rm.name:'Folder'):kind==='desk'?(byId(key)||{name:'Desk'}).name:placeLabel(key);
+  if(i<0||keys.length<2){announce(name+' has nowhere to move.');return false;}
+  if(j<0||j>=keys.length){announce(name+' is already '+(delta<0?'first':'last')+'.');return false;}
+  reoDropModel(kind,key,keys[j],j>i,roomId); /* the saved order starts from the shown one */
+  renderAll();
+  const el=refocus&&(typeof refocus==='string'?document.querySelector('#stage '+refocus):refocus.isConnected?refocus:null); /* a selector, or the very element (a chip button) */
+  if(el)afQuiet(()=>el.focus({preventScroll:true}));
+  announce(RO.announce(name,j+1,keys.length,kind==='desk'?'its room':kind==='place'?'the lobby':''));
   return true;
 }
 function resetOrder(){
@@ -4027,6 +4087,23 @@ function resetOrder(){
     if(!e.altKey||e.ctrlKey||e.metaKey||e.isComposing||e.defaultPrevented||ui.view!=='office'||modalOpen())return;
     const d={ArrowLeft:-1,ArrowUp:-1,ArrowRight:1,ArrowDown:1}[e.key];
     if(!d||!e.target||!e.target.closest||!e.target.closest('#stage')||e.target.closest('input,textarea,select,[contenteditable="true"]'))return;
+    if(OFFICE_VIEW==='real'&&RO_LOAD==='ready'){ /* spec 097 FR-347: a name plate, a folder sign's button, a lobby plate that is a button */
+      let ch=null;const t=e.target,pl=t.closest('.ro-plate[data-id]'),sb=t.closest('.ro-sb[data-foldermenu],.ro-sb[data-newsess]'),lp=t.closest('.ro-lplate[data-place]');
+      const ag=pl&&byId(pl.dataset.id),main=!!ag&&!ag.parent,lounge=!!pl&&pl.dataset.surface==='lounge';
+      const stop=()=>{e.preventDefault();e.stopPropagation();};
+      if(e.shiftKey){ /* the room of a desk's plate or of a folder sign's button; a lounge seat and a lobby plate have no room to move */
+        const rid=main?(lounge?'':ag.room):sb?(sb.dataset.foldermenu||sb.dataset.newsess):'',r=rid&&ROOMS.find(x=>x.id===rid);
+        if(r){stop();reoStepModel('room',r.path,d,r.id,pl?`.ro-plate[data-id="${CSS.escape(pl.dataset.id)}"]`:sb.dataset.foldermenu?`.ro-sb[data-foldermenu="${CSS.escape(rid)}"]`:`.ro-sb[data-newsess="${CSS.escape(rid)}"]`);}
+        else if(main&&lounge){stop();announce(ag.name+' is resting in the lounge: its folder moves from a desk or a folder sign.');}
+      }else if(main){
+        stop();
+        if(lounge)announce(ag.name+' is resting in the lounge and does not move.');
+        else if(plateAway(pl))announce(ag.name+' is away from its desk and does not move.');
+        else reoStepModel('desk',ag.id,d,ag.room,`.ro-plate[data-id="${CSS.escape(ag.id)}"]`);
+      }else if(lp){stop();reoStepModel('place',lp.dataset.place,d,'',`.ro-lplate[data-place="${CSS.escape(lp.dataset.place)}"]`);}
+      else if(!e.shiftKey&&(ch=t.closest('.ro-chip[data-pvopen][data-place]'))){stop();reoStepModel('place',ch.dataset.place,d,'',ch);} /* spec 097 FR-355 (Q33): a visitor's chip button moves its place; no new tab stop */
+      return;
+    }
     let kind='',el=null;
     if(e.shiftKey){el=e.target.closest('.room');kind='room';}
     else if((el=e.target.closest('.place[data-reo]')))kind='place';
@@ -4035,6 +4112,42 @@ function resetOrder(){
     e.preventDefault();e.stopPropagation();
     reoStep(kind,el,d);
   },true);
+})();
+/* spec 097 FR-352..FR-355 (issue 1152, owner Q30 = 1, 2026-11-08): drag in Real office. A press on a desk's name plate or a folder sign, then 6 px of movement, starts the flat office's
+   own drag (`RO.attach`, reorder.js: 6 px, Esc, pointercancel, blur, scroll, the lift and the slots, `RO.busy()` holding the repaint); under 6 px it stays a click. The drop writes
+   through `reoDropModel` (reoApply: the one saved order). The arcade drags desks (Q32) but not rooms; lounge seats, away desks and lobby places do not drag. */
+(function(){
+  const st=reoStage();if(!st||!RO||!RO.attach)return;
+  const live=()=>OFFICE_VIEW==='real'&&RO_LOAD==='ready'&&ui.view==='office';
+  const roomIdOfPlate=el=>{const a=byId(el.dataset.id);return a&&!a.parent?a.room:'';};
+  const signRoom=el=>ROOMS.find(r=>r.id===el.dataset.folder)||null;
+  const plateKey=el=>el.dataset.id||'', signKey=el=>{const r=signRoom(el);return r?r.path:'';};
+  let focusAfter='';
+  RO.attach(st,[
+    {kind:'desk',item:t=>{const p=t.closest('.ro-plate[data-id]');return p&&p.dataset.surface!=='lounge'&&!plateAway(p)&&roomIdOfPlate(p)?p:null;},
+      group:el=>{const m=new Map([...st.querySelectorAll('.ro-plate[data-id]')].map(x=>[x.dataset.id,x]));return realDeskKeys(roomIdOfPlate(el)).map(k=>m.get(k)).filter(Boolean);},key:plateKey},
+    {kind:'room',item:t=>{const sg=t.closest('.ro-sign');return sg&&!t.closest('button,a,input')&&sg.querySelector('.ro-sc')&&signRoom(sg)&&!roArcade()?sg:null;},
+      group:el=>{const r=signRoom(el),by=new Map([...st.querySelectorAll('.ro-sign')].filter(x=>x.querySelector('.ro-sc')).map(x=>[x.dataset.folder,x]));
+        return realRoomKeys(r.id).map(pa=>ROOMS.find(x=>x.path===pa)).map(x=>x&&by.get(x.id)).filter(Boolean);},key:signKey}
+  ],{
+    disabled:()=>!live()||modalOpen()||!!document.getElementById('modeMenu'),
+    still:()=>!MOTION||reducedMotion(),
+    commit:(kind,el,els,from,to)=>{
+      if(kind==='desk'){const id=el.dataset.id,rid=roomIdOfPlate(el),n=realDeskKeys(rid).length;
+        reoDropModel('desk',id,els[to].dataset.id,to>from,rid);focusAfter=`.ro-plate[data-id="${CSS.escape(id)}"]`;
+        announce(RO.announce((byId(id)||{name:'Desk'}).name,realDeskKeys(rid).indexOf(id)+1,n,'its room'));}
+      else{const r=signRoom(el),t=signRoom(els[to]);if(!r||!t)return;
+        reoDropModel('room',r.path,t.path,to>from,r.id);focusAfter=`.ro-sign[data-folder="${CSS.escape(r.id)}"] .ro-sb`;
+        announce(RO.announce(r.name,to+1,els.length,''));}
+    },
+    end:()=>{if(REO_LATE)REO_LATE=false;renderAll();const f=focusAfter;focusAfter='';
+      const e=f&&document.querySelector('#stage '+f);if(e)afQuiet(()=>{if(!e.hasAttribute('tabindex')&&e.tagName!=='BUTTON')e.setAttribute('tabindex','-1');e.focus({preventScroll:true});});}
+  });
+  /* the arcade's rooms keep their cells: a drag from a folder sign says so, once */
+  let arc=null;
+  st.addEventListener('pointerdown',e=>{arc=null;if(e.button===0&&live()&&roArcade()){const sg=e.target.closest&&e.target.closest('.ro-sign');if(sg&&!e.target.closest('button,a,input')&&signRoom(sg))arc={x:e.clientX,y:e.clientY,r:signRoom(sg)};}});
+  document.addEventListener('pointermove',e=>{if(arc&&(e.buttons&1)&&Math.hypot(e.clientX-arc.x,e.clientY-arc.y)>=6){const r=arc.r;arc=null;announce(r.name+' keeps its place in the arcade: its desks move, the rooms stay in their cells.');}});
+  document.addEventListener('pointerup',()=>{arc=null;});
 })();
 /* a file dropped anywhere else must not navigate the window away */
 ['dragover','drop'].forEach(t=>window.addEventListener(t,e=>{if(e.dataTransfer&&[...(e.dataTransfer.types||[])].includes('Files'))e.preventDefault();}));
@@ -4300,8 +4413,9 @@ let inboxTick=0;
 function closeInbox(dismiss){if($('needsPanel'))closeDoor(dismiss===true);clearInterval(inboxTick);inboxTick=0;const d=$('inboxDlg');if(!d)return;d.remove();const back=inboxBack;inboxBack=null;
   const b=back&&back.isConnected&&back.getClientRects().length&&!back.disabled?back:$('inboxBtn');if(b&&b.getClientRects().length)focusIn(b);}
 /* spec 052 FR-034: one polite live region for requests and answers (screen readers hear them; nothing visible changes) */
-let announceT=0;
-function announce(text){const el=$('srAnnounce');if(!el||!text)return;clearTimeout(announceT);el.textContent='';announceT=setTimeout(()=>{el.textContent=String(text).slice(0,300);},60);}
+let announceT=0,announceP=0;
+const ANN_REQUEST=1; /* spec 005 FR-237: a request for the user's OK or an answer outranks a status within the 60 ms window */
+function announce(text,prio){const el=$('srAnnounce');if(!el||!text)return;const p=prio||0;if(announceT&&p<announceP)return;clearTimeout(announceT);announceP=p;el.textContent='';announceT=setTimeout(()=>{announceT=0;announceP=0;el.textContent=String(text).slice(0,300);},60);}
 
 /* ---- spec 052 FR-191..FR-196 (T196, T197): Your door, the Needs you queue as a panel beside the office. It reuses paintInbox() for the rows (the
    guards of FR-206..FR-213 are unchanged), needsMeOrder() for the order and NEED_SINCE for the waits. Non-modal: no backdrop, no aria-modal, a
@@ -4655,6 +4769,9 @@ function afScan(){
     else AFT.retract(id,['ask','error','limit']);
   }
 }
+/* spec 005 FR-237: a limit arrival is a request (it follows openPanel's own "needs your OK" for the limit card in the same 60 ms window and must still win);
+   a done or error arrival is a status, so it never replaces another agent's request waiting to be written */
+const afArrivalPrio=kind=>kind==='limit'?ANN_REQUEST:0;
 function afDeliver(){
   if(!AF_ON||AF_PAUSED)return;
   AF_PASSES++; /* only read by the simulator's driver, as the witness that a delivery pass ran */
@@ -4666,7 +4783,7 @@ function afDeliver(){
   if(a&&!(afPanelId()===d.id)){ /* already shown: nothing moves */
     AF_AUTO=true; try{openPanel(d.id,'title');}finally{AF_AUTO=false;}
     AF_OPENED_AT=performance.now();
-    if(d.kind!=='ask')announce(a.name+(d.kind==='done'?' finished':d.kind==='error'?' has an error':' reached its limit')+'. Its chat is open.');
+    if(d.kind!=='ask')announce(a.name+(d.kind==='done'?' finished':d.kind==='error'?' has an error':' reached its limit')+'. Its chat is open.',afArrivalPrio(d.kind));
   }
   afTick();
 }
@@ -5936,7 +6053,7 @@ function whyPaint(c){
   const d=WHY&&c.whyBy?WHY.describe(c.whyBy,whyLive(c.aid),whyOpts(c)):null;
   el._whyC=c;
   if(!d)return;
-  if(d.label){const wl=shownPerm(d.label,String(c.whyBy&&c.whyBy.key||''));d.label=wl.text;if(wl.hidden)d.sentence+=' (A part of the rule is hidden: '+(wl.why==='control'?'it holds control characters, shown as markers.':wl.why==='unchecked'?'Durbar could not check its text.':wl.why==='concealed'?'it hides a secret behind control characters.':wl.why==='cut'?'it is too long to show in full.':'it looks like a secret.')+')';} /* spec 097 FR-318: the session rule's label through the one mask; d is this call's copy */
+  if(d.label){const wl=shownPerm(d.label,String(c.whyBy&&c.whyBy.key||'')),wk=String(c.whyBy&&c.whyBy.key||''),wlook=hasLook(wl)||(wk&&hasLook(shownPerm(grantText(wk,d.label),wk)));d.label=wl.text;if(wl.hidden)d.sentence+=' (A part of the rule is hidden: '+(wl.why==='control'?'it holds control characters, shown as markers.':wl.why==='unchecked'?'Durbar could not check its text.':wl.why==='concealed'?'it hides a secret behind control characters.':wl.why==='cut'?'it is too long to show in full.':'it looks like a secret.')+')';if(wlook)d.sentence+=' (The rule has lookalike letters.)';} /* spec 097 FR-318: the session rule's label through the one mask; d is this call's copy */ /* spec 003 FR-118 */
   const pill=document.createElement('span');pill.className='why';pill.dataset.why=d.kind;if(d.gone)pill.dataset.gone='1';pill.textContent=d.pill;
   pill.title=d.sentence+(d.label||'');
   const body=document.createElement('span');body.className='xbody whybody';
@@ -6729,8 +6846,11 @@ function showPerm(a,p){
   if(p.state==='pending'&&typeof p.diff==='string'&&p.diff)n.appendChild(diffBlock(p.diff)); /* spec 052 FR-063 */
   if(p.state==='pending'&&typeof p.sandboxNote==='string'&&p.sandboxNote){const sn=document.createElement('p');sn.className='psbx';sn.textContent=safeMask(p.sandboxNote.slice(0,300));n.appendChild(sn);} /* spec 087 FR-021: its own line, never cut */
   if(p.state==='pending'){const sh=typeof DurbarGrantLabel!=='undefined'?DurbarGrantLabel.scopeHint(Object.assign({},p,{scopeLabel:p.scopeLabel?scopeS.text:p.scopeLabel,broadScopeLabel:p.broadScopeLabel?broadS.text:p.broadScopeLabel})):'';if(sh){const sp=document.createElement('p');sp.className='pscope';sp.textContent=safeMask(sh);n.appendChild(sp);}} /* spec 003 FR-108: how far "for this session" reaches, in words */
-  const hwhy=permWhy(sumS,scopeS,broadS), hgrant=hwhy&&!permBlind(hwhy)&&(p.scopeKey||p.broadScopeKey)?PERM_GRANT:'';
+  const keyS=p.scopeKey?shownPerm(grantText(p.scopeKey,p.scopeLabel),String(p.scopeKey)):null; /* spec 003 FR-118: the session button names exactly what it grants */
+  const hwhy=permWhy(sumS,scopeS,broadS,keyS), hgrant=hwhy&&!permBlind(hwhy)&&(p.scopeKey||p.broadScopeKey)?PERM_GRANT:'';
   if(p.state==='pending'&&hwhy){const hp=document.createElement('p');hp.className='pscope phid';hp.textContent=PERM_WHY[hwhy]+hgrant;n.appendChild(hp);} /* also a card with no grant (a bare tool name): the line says what is hidden */ /* spec 097 FR-318: what a grant covers stays truthful when a part is hidden */
+  const look=p.state==='pending'&&!permBlind(hwhy)?lookLine(sumS,keyS||scopeS,broadS):''; /* spec 003 FR-118: a blind card shows no text, so no lookalike line; the whole key, not the cut label (a token cut in it is no longer a token the mask knows: fix round 2) */
+  if(look){const lp=document.createElement('p');lp.className='pscope plook';lp.textContent=look;n.appendChild(lp);} /* warn, never block (owner decision 1): no button changes for it */
   const st=n.querySelector('.pstate');
   if(p.state==='denied'){ /* spec 003 FR-094: with the button the text no longer repeats the suggestion */
     st.innerHTML=roAskHint(a,n)?' <i>(denied: this agent is in Read-only)</i>':' <i>(denied: this agent is in Read-only. Switch it to Ask first to be asked instead)</i>';
@@ -6740,7 +6860,8 @@ function showPerm(a,p){
     const mk=(l,cls,title,fn)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=l;if(title)b.title=title;b.onclick=fn;row.appendChild(b);};
     const answer=(approve,remember,broad)=>{bridge.resolvePermission(a.id,p.requestId,approve,remember,!!broad);settlePerm(a,{requestId:p.requestId,state:approve?'approved':'denied',via:'user',remembered:approve&&remember,scopeLabel:broad?p.broadScopeLabel:p.scopeLabel,summary:p.summary});};
     mk('Allow once','primary','Allow this one request',()=>answer(true,false)); /* spec 052 FR-037/FR-051 */
-    if(p.scopeKey){mk('Allow “'+expertScopeLabel(scopeS.text)+'” for this session','session','Allow "'+DurbarCutText.cutText(scopeS.text,30)+'" until you end this session'+(p.kind==='shell'?' (this exact command)':'')+'. Revoke from its chip.'+(scopeS.hidden?' '+PERM_WHY[scopeS.why||'secret']+PERM_GRANT:''),()=>answer(true,true));const sb=row.lastElementChild;sb.dataset.act='session';}
+    if(p.scopeKey){const gt=keyS.text,exact=/^shell-exact:/.test(p.scopeKey),tip=DurbarCutText.cutText(gt,window.DurbarLookalike&&typeof window.DurbarLookalike.tipLen==='function'?window.DurbarLookalike.tipLen(gt):240); /* spec 003 FR-118: from the raw key; the tooltip keeps the last marker, with a hard cap (tipLen) */
+      mk(exact?(Array.from(gt).length<=32?'Allow “'+gt+'” for this session':'Allow this exact command for this session'):'Allow “'+expertScopeLabel(gt)+'” for this session','session','Allow "'+tip+'" until you end this session'+(p.kind==='shell'?' (this exact command)':'')+'. Revoke from its chip.'+(keyS.hidden?' '+PERM_WHY[keyS.why||'secret']+PERM_GRANT:''),()=>answer(true,true));const sb=row.lastElementChild;sb.dataset.act='session';}
     if(p.broadScopeKey){mk('Allow for this session: any arguments','session','Allow every simple "'+DurbarCutText.cutText(broadS.text,18)+'" command (no pipes, redirects or substitutions) until you end this session.'+(broadS.hidden?' '+PERM_WHY[broadS.why||'secret']+PERM_GRANT:''),()=>answer(true,true,true));row.lastElementChild.dataset.broad='1';}
     mk('Deny','danger','Deny this request',()=>answer(false,false));
     if(permBlind(hwhy))row.querySelectorAll('button:not(.danger)').forEach(b=>{b.disabled=true;b.dataset.blind='1';b.title=PERM_WHY[hwhy]+' Deny it.';}); /* spec 097 FR-318: no Allow on a request whose text could not be checked */
@@ -6750,7 +6871,7 @@ function showPerm(a,p){
   }
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
   if(t.T.typing)typingPaint(t.T.typing);
-  if(p.state==='pending')announce(a.name+' needs your OK: '+sumS.text+(hwhy?'. '+PERM_WHY[hwhy]+hgrant:''));
+  if(p.state==='pending')announce(a.name+' needs your OK: '+(look?look+' The request: ':'')+sumS.text+(hwhy?'. '+PERM_WHY[hwhy]+hgrant:'')); /* spec 003 FR-118: the lookalike line first, so the 300-character announcement keeps it */
   renderInboxBtn();
 }
 /* spec 003 FR-094..FR-096 (owner 2026-10-23, supersedes spec 052 FR-074's button): under a request denied by Read-only, one button
@@ -6817,7 +6938,8 @@ let grantsAllBusy=''; /* the agent id while its Revoke all is under way (the rev
 let grantsAgent='';
 let grantsOpen=false, grantsFocus=null; /* grantsFocus: where the focus goes after the next draw (a revoke button index, or 'chip') */
 const gLab=g=>shownPerm(g.label,String(g.key||'')); /* spec 097 FR-318: a chip, its tooltip and the list show the masked label; data-revoke keeps the raw key */
-function grantChipX(g){return `<button type="button" data-revoke="${esc(g.key)}" aria-label="Revoke permission: ${esc(gLab(g).text)}">${ICON('x')}</button>`;}
+const gLook=g=>hasLook(gLab(g))||hasLook(shownPerm(grantText(g.key,g.label),String(g.key||''))) ? ' Has lookalike letters.' : ''; /* spec 003 FR-118: the label and the whole key (a cut label can hide the letter) */
+function grantChipX(g){return `<button type="button" data-revoke="${esc(g.key)}" aria-label="Revoke permission: ${esc(gLab(g).text)}${gLook(g)?'.'+esc(gLook(g)):''}">${ICON('x')}</button>`;}
 function renderGrants(){
   const box=$('grants'),a0=byId(ui.selected);if(!box||!a0)return;const a=liveRoot(a0),gs=a.grants||[];
   if(grantsAgent!==a.id){grantsAgent=a.id;grantsFocus=null;} /* a focus target left over from another agent */
@@ -6826,10 +6948,10 @@ function renderGrants(){
   const hadFocus=box.contains(document.activeElement)||grantsFocus!==null||grantsAllBusy!==''; /* the user is working in the grants: do not let the focus fall to <body> when they all go */
   if(gs.length<=2){
     grantsOpen=false;
-    box.innerHTML=gs.map(g=>`<span class="gchip" title="Allowed for this session: ${esc(DurbarCutText.cutText(gLab(g).text,240))}.${gLab(g).hidden?' '+PERM_WHY[gLab(g).why||'secret']:''} Revoke to be asked again."><span>Allowed: ${esc(short(g))}</span>${grantChipX(g)}</span>`).join('');
+    box.innerHTML=gs.map(g=>`<span class="gchip" title="Allowed for this session: ${esc(DurbarCutText.cutText(gLab(g).text,240))}.${gLab(g).hidden?' '+PERM_WHY[gLab(g).why||'secret']:''} Revoke to be asked again.${esc(gLook(g))}"><span>Allowed: ${esc(short(g))}</span>${grantChipX(g)}</span>`).join('');
   }else{
     box.innerHTML=`<button type="button" class="gchip gchip-btn" id="grantsBtn" aria-expanded="${grantsOpen}" aria-controls="grantsPop" title="${gs.length} permissions allowed for this session. Open the list to revoke them."><span>Allowed (${gs.length})</span><svg class="chev" width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button>
-      <div class="grants-pop" id="grantsPop" role="group" aria-label="Allowed for this session"${grantsOpen?'':' hidden'}><ul role="list" class="gp-list">${gs.map(g=>`<li class="gp-row" title="Allowed for this session: ${esc(DurbarCutText.cutText(gLab(g).text,240))}.${gLab(g).hidden?' '+PERM_WHY[gLab(g).why||'secret']:''} Revoke to be asked again."><span class="gp-t">${esc(short(g))}</span>${grantChipX(g)}</li>`).join('')}</ul><button type="button" class="btn sm gp-all" id="grantsAll">Revoke all</button></div>`;
+      <div class="grants-pop" id="grantsPop" role="group" aria-label="Allowed for this session"${grantsOpen?'':' hidden'}><ul role="list" class="gp-list">${gs.map(g=>`<li class="gp-row" title="Allowed for this session: ${esc(DurbarCutText.cutText(gLab(g).text,240))}.${gLab(g).hidden?' '+PERM_WHY[gLab(g).why||'secret']:''} Revoke to be asked again.${esc(gLook(g))}"><span class="gp-t">${esc(short(g))}</span>${grantChipX(g)}</li>`).join('')}</ul><button type="button" class="btn sm gp-all" id="grantsAll">Revoke all</button></div>`;
   }
   box.hidden=!gs.length;
   if(grantsFocus!==null){
@@ -7630,7 +7752,7 @@ document.addEventListener('click',e=>{
 const roomPeers=r=>roomsInOrder().filter(x=>x.floor===r.floor&&roomShown(x)&&agents.some(a=>!a.parent&&a.room===x.id));
 const roomMoveOk=r=>ui.view==='office'&&roomPeers(r).length>1;
 const roomStepAt=(r,d)=>{const l=roomPeers(r),i=l.indexOf(r);return i>=0&&i+d>=0&&i+d<l.length;};
-function moveRoomStep(r,d){const el=document.querySelector(`#stage .room[data-key="room:${CSS.escape(r.id)}"]`);if(el)reoStep('room',el,d);}
+function moveRoomStep(r,d){const el=document.querySelector(`#stage .room[data-key="room:${CSS.escape(r.id)}"]`);if(el)reoStep('room',el,d);else if(OFFICE_VIEW==='real')reoStepModel('room',r.path,d,r.id,`.ro-sb[data-foldermenu="${CSS.escape(r.id)}"]`);} /* spec 097 FR-346: Real office has no flat room element */
 function openFolderMenu(r,x,y,anchor){
   if(!r||demoOn||!bridge||!bridge.removeFolder)return;
   closeModeMenu();
@@ -9576,14 +9698,14 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
-if(SIM)window.__durbarSimUi={swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
+if(SIM)window.__durbarSimUi={announce,afArrivalPrio,swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
   chatTrimNow:()=>chatTrimPending(false), /* spec 005 FR-238: trim the chats waiting for a frame now (a burst with no frame between) */
   hiddenTrimTimer:()=>({on:!!hiddenTrimT,ms:TRIM_HIDDEN_MS}),
   chatSizes:()=>Object.entries(chats).map(([id,c])=>{const T=c.turn&&c.turn.T,a=c.agent,st=c.trimStats||{};let subViews=0,staleViews=0,subBlockGone=0;
     if(a&&a.subs)for(const s of a.subs.values()){subViews+=s.views.length;staleViews+=s.views.filter(v=>!v.chat||!v.chat.el||!v.chat.el.contains(v.host)).length;if(s.block&&!c.el.contains(s.block.el))subBlockGone++;}
     return {id,messages:c.el.querySelectorAll(':scope > :not(.chat-trim)').length,blocks:T&&T.tl?T.tl.childElementCount:0,leaves:CT?CT.leafTotal(c.el):0,chipRefs:T?Object.values(T.chipEls).filter(Boolean).length:0,chipsInTurn:T&&T.tl?T.tl.querySelectorAll('.chip').length:0,stale:T?Object.values(T.chipEls).filter(x=>x&&!T.tl.contains(x.el)).length+(T.think&&!T.tl.contains(T.think.el)?1:0):0,trimmed:c.trimmed||0,note:c.trimNote&&c.trimNote.parentNode===c.el&&c.el.firstElementChild===c.trimNote?c.trimNote.textContent:'',slow:st.slow||0,measured:st.measured||0,runs:st.runs||0,hiddenRuns:st.hiddenRuns||0,lastIsNote:!!(c.el.lastElementChild&&c.el.lastElementChild.classList.contains('note')),lastUser:((x=>x?x.textContent:'')([...c.el.querySelectorAll('.msg.user .bubble')].pop())).slice(0,60),lastAgent:((x=>x?x.textContent:'')([...c.el.querySelectorAll('.msg.agent .bubble')].pop())).slice(0,60),ordGone:c.el._ordGone||{user:0,agent:0},denials:c.el.querySelectorAll('.note.perm:not(.settled):not(.pending)').length,denialButtons:c.el.querySelectorAll('.note.perm:not(.settled) > .note-actions button').length,subViews,staleViews,subBlockGone,subBlocksMax:c.subViews?Math.max(0,...[...c.subViews].map(v=>v.T&&v.T.tl?v.T.tl.childElementCount:0)):0,signCard:!!(a&&a.signCard&&c.el.contains(a.signCard)),freshNote:!!(a&&a.freshNote&&c.el.contains(a.freshNote)),freshMark:a&&a.freshNote&&c.el.contains(a.freshNote)?a.freshNote.dataset.ccm||'':'',actId:T?T.actId||null:null,actIn:T&&T.actId?!!T.chipEls[T.actId]:true};}), /* spec 005 FR-238: each chat's size for check-chat-memory */
   settleCard:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;c.classList.add('settled');c.classList.remove('pending');return true;}, /* spec 052 FR-197 (the door driver): the agent's pending card is answered elsewhere, as in the chat, so a row painted for it is stale */afPasses:()=>AF_PASSES,railPlans:()=>{renderStrip();return faceMemoPlans;}, /* issue 1193: room plans one rail render worked out */ops:()=>({...OPS}),agents:()=>agents,scene:(a,mini,c)=>scene(a,mini,c), /* a drawn scene's markup, for the drivers (FR-192: the SMIL wave) */cv:{mark:cvMark,release:cvRelease,drop:cvDrop,openPanel,setDensity},setLive:setLiveOn,setOfficeView,needsCount:()=>needsMeOrder().length,clearDetail:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;c.querySelectorAll(':scope > details.pdiff').forEach(x=>x.remove());scheduleRender();return true;},addDetail:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;const d=document.createElement('details');d.className='pdiff';d.innerHTML='<summary>Show the change (+1 \u22121)</summary><pre>- a\n+ b</pre>';c.insertBefore(d,c.querySelector(':scope > .note-actions'));scheduleRender();return true;},requestText:s=>{const n=document.createElement('div');n.className='note elicit';n.textContent=String(s);return requestText(n);},setSerious:v=>{SERIOUS=!!v;return SERIOUS;}, setMotion:v=>{MOTION=!!v;markMotion();return MOTION;}, /* spec 097 (the moments driver): a change in the card, the card text's masking, Serious mode */unread:{mark:id=>UNREAD.complete(id,false)==='marked',read:id=>markRead(byId(id))}, /* spec 097 (the moments driver): the New reply mark and Mark as read, as the app sets them */order:{get:()=>ORDER,saved:()=>bridge.getOrder?bridge.getOrder():null,reset:resetOrder,path:id=>(ROOMS.find(r=>'room:'+r.id===id)||{}).path||''}, /* issue 677 (check 033-order): the order held and saved, Reset, a room's key */
-  toast:(s,act)=>{const t=act?toastAction(esc(String(s)),String(act),()=>{},8000):toast(esc(String(s)),8000);return !!t;}, /* spec 097 FR-113: a toast for the world-chrome driver (simulator only) */visitsSettled:()=>VISITS.settled(),timerDraw:()=>moodSigNow(drawnAt)!==moodSig||agoSigNow(drawnAt)!==agoSig, /* spec 008 FR-184: a mood or "ago" tick would draw now (a draw shows both; check-office-ops asserts none is due after an update's draw) */ /* spec 097 FR-186: no visit is about to start or end on the wall clock (check-office-ops-real reads a settled lobby) */realLayout:()=>RO_LAST, /* spec 097: the last Real office layout (check-office-overlap's Real office variant) */slips:()=>realSlips(), /* spec 097: what the world draws as slips (the moments driver; simulator only) */uncrowd:()=>{agents.forEach(x=>VISITS.unpin(x.id));scheduleRender();return true;},crowd:(pid,n,from)=>{const a=agents.filter(x=>!x.parent).slice(from||0,(from||0)+n);a.forEach(x=>VISITS.pin(x.id,pid,'test'));scheduleRender();return a.length;}, /* spec 097: n main agents stand at a place (a "+N" crowd for the driver; simulator only) */crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
+  toast:(s,act)=>{const t=act?toastAction(esc(String(s)),String(act),()=>{},8000):toast(esc(String(s)),8000);return !!t;}, /* spec 097 FR-113: a toast for the world-chrome driver (simulator only) */visitsSettled:()=>VISITS.settled(),timerDraw:()=>moodSigNow(drawnAt)!==moodSig||agoSigNow(drawnAt)!==agoSig, /* spec 008 FR-184: a mood or "ago" tick would draw now (a draw shows both; check-office-ops asserts none is due after an update's draw) */ /* spec 097 FR-186: no visit is about to start or end on the wall clock (check-office-ops-real reads a settled lobby) */realLayout:()=>RO_LAST, /* spec 097: the last Real office layout (check-office-overlap's Real office variant) */slips:()=>realSlips(), /* spec 097: what the world draws as slips (the moments driver; simulator only) */uncrowd:()=>{agents.forEach(x=>VISITS.unpin(x.id));scheduleRender();return true;},awayIds:()=>agents.filter(x=>!x.parent&&VISITS.at(x.id)).map(x=>x.id),pinAt:(id,pid)=>{const a=agents.find(x=>x.id===id&&!x.parent);if(!a)return false;VISITS.pin(id,pid,'test');scheduleRender();return true;}, /* spec 097 (order driver, test only): who stands at a place by the visit record itself (the plates follow a render later), and one agent pinned by id (crowd pins by position) */crowd:(pid,n,from)=>{const a=agents.filter(x=>!x.parent).slice(from||0,(from||0)+n);a.forEach(x=>VISITS.pin(x.id,pid,'test'));scheduleRender();return a.length;}, /* spec 097: n main agents stand at a place (a "+N" crowd for the driver; simulator only) */crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
   readAll:(quiet)=>{const n=UNREAD.size;UNREAD.ids().forEach(id=>{UNREAD.read(id);UNREAD_AT.delete(id);});if(!quiet)scheduleRender();return n;},notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),boxUsable:()=>boxUsable(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},selNow:()=>{showSelButton();const b=document.getElementById('ntSelBtn');return !!b&&!b.hidden;},open:()=>openNotes(byId(ui.selected)),close:()=>closeNotes(false),search:q=>{const f=$('ntSearch');if(!f)return false;f.value=q;f.dispatchEvent(new Event('input'));return true;},marks:{clear:()=>{document.querySelectorAll('#chat .nt-mark').forEach(x=>x.remove());document.querySelectorAll('#chat .bubble').forEach(b=>{b._nd=undefined;});return true;},run:()=>notesMarkAll(byId(ui.selected))},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),rename:note=>renameNote(byId(ui.selected),note,null),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
   sizingLounges:()=>lastSizing.reduce((n,m)=>n+(m.rolled||[]).length,0), sizingMains:()=>lastSizing.reduce((n,m)=>n+m.mains.length,0), /* FR-181: the desks it is sized for (a pill does not reshape the cards) */ /* spec 001 FR-180: the finished agents the office is sized for */
   hxOff:(off)=>{HX_OFF=!!off;layoutKey='';scheduleRender();return HX_OFF;},renamePrevRow,settleNow,bridge:()=>bridge,render:()=>{layoutKey='';scheduleRender();},loungeTurn,quietHeads:(parts)=>{SIM_QUIET_HEADS=new Set(Array.isArray(parts)?parts:[]);},paint:()=>scheduleRender(),emit:onLiveEvent,

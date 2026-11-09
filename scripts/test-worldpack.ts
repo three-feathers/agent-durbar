@@ -195,6 +195,12 @@ assert.ok(check(goodPack({ tokens: undefined }), { knownSets: ['office'], requir
   assert.strictEqual(withManifest({}).contrastIssues, 0);
   const t = withManifest({ tokens: { '--bg': '#ffffff', '--ink': '#dddddd' } });
   assert.ok(!t.ok && /cannot be read/.test(t.reason), 'body text at 1.4:1 refuses the pack: ' + t.reason);
+  // spec 070 FR-080 (review of #1307): a pack's colours reach `themeIssues` as hex with the alpha byte, and only a token that is translucent in Clean Office may be (`--drop-bg`,
+  // alpha 230+); that alpha is now measured, not ignored. #777 on rgba(0,0,0,.92) reads 4.7:1 as opaque black but the zone paints #141414 over white (4.1:1): reported, the pack stays valid
+  const tr = withManifest({ tokens: { '--drop-bg': 'rgba(0,0,0,.92)', '--drop-ink': '#777777' } });
+  assert.ok(tr.ok && tr.contrastIssues === 1, 'a translucent --drop-bg is measured over the page: ' + tr.contrastIssues + ' ' + tr.reason);
+  const tr2 = withManifest({ tokens: { '--drop-bg': 'rgba(0,0,0,.92)', '--drop-ink': '#ffffff' } });
+  assert.ok(tr2.ok && tr2.contrastIssues === 0, 'and one that reads is not reported');
   for (const k of ['--ink-2', '--muted']) { const u = withManifest({ tokens: { '--bg': '#ffffff', '--surface': '#ffffff', '--soft': '#ffffff', '--note': '#ffffff', [k]: '#fefefe' } }); assert.ok(!u.ok && /cannot be read/.test(u.reason), k + ' on white: ' + u.reason); }
 }
 

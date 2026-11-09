@@ -161,6 +161,12 @@ One PR, spec first. Who moves is `shutPlan(r)` (spec 001 FR-051, `shutters.js` `
 - **CSS**: `.ro-lseat` table, `.ro-lmon` monitor (photo and cave: the desk monitor scaled; arcade: a pixel frame in `worlds/retro/world.css`), `.ro-plate.lounge`.
 - **Checks**: `test:realoffice-layout` and `test-realoffice-aisles` (FR-246..FR-248, mutants), `scripts/check-097-lounge.js` (FR-246..FR-249), `shots-097-moments` asleep moment and `world-matrix.js` lounge scene updated.
 
+## 2026-11-08 delta: rearrange in Real office (FR-345..FR-349, T260..T264)
+
+- **Pure** (`src/shared/realoffice-layout.ts`, `realoffice-arrangements.ts`, T260): `RealFolder.keep?`; `splitLounge` carries it; `realLayout` and `aislesLayout` use `f.keep ? f.agents : sortDesks(f.agents)`.
+- **App** (`src/renderer/app.js`, T261): `reoStepModel(kind, key, delta, roomId, refocus)` is the one model-based move (desk group from `deskOrder(realModel(officeModel()), roomId)`, the layout's own order via `shownDesks`; rooms and places from `officeModel()` and `lobbyPlaces()`; base `deskBase(shown, reoFullKeys)`; write through `reoApply`, the flat `reoCommit`'s body); `reoStep` and the folder menu's `moveRoomStep` call it; the Alt+arrows handler also finds `.ro-plate[data-id]`, `.ro-sb` and `.ro-lplate[data-place]`; `realModel` sets `keep` from `ORDER.desks[path]`. No new store, channel or tab stop.
+- **Checks**: `test:realoffice-layout`, `test-realoffice-aisles`, `scripts/check-097-order.js` (in `ui-suite`), `shots-033-order` unchanged, `check-office-ops`, `OFFICE_VIEW=real` `check-office-overlap`.
+
 ## Context as a line round the monitor frame (delta 2026-11-07; FR-322..FR-326, T250..T255)
 
 `realModel` adds `ctx: {pct, level}` (from `DurbarScreens.ctxChip`, the chat header's source) and the context words to each desk's accessible name. `realoffice.js` makes one `svg.ro-ctx > rect` per desk in `.ro-screen` (pathLength 100) and writes `stroke-dasharray` and `data-lv` only when they changed; `DurbarRealOffice.ctx(id, {pct, level} | null)` (called by `realCtxPush` on a context event and after a finished compaction) does the same on a context event without a render. World CSS sets the inset and width (Photo and cave on the bezel, arcade on the cabinet's screen frame); colours are `var(--tint-ink)` (soft white) for `ok` and `warn` and `var(--red)` for `high` (FR-323, owner 2026-11-07 21:01 UTC); forced colours use `Highlight`.
@@ -177,3 +183,24 @@ Spec first; the owner chose head figures with a status dot (2026-11-08 08:29 UTC
 - **Renderer** (`src/renderer/realoffice.js`, T271): in `deskOne`, after the plate and its pencil, an `h:` keyed strip in the chrome layer; each helper is one button kept by id (a status change writes the dot class, the label and the edge only, no node); `+K` is the one `data-more` button; the plate keeps `+N` only on the fallback. `app.js`: `orderedHelpers`, `realSubs` (id, name, state, accessible name, tooltip, the head's picture and crop through the `roFace` data).
 - **CSS** (`src/renderer/realoffice.css`, no styles.css, themes.css or screens.css): `.ro-hstrip`, `.ro-hd` (the figure), `.ro-hmore`.
 - **Checks**: `test:realoffice-layout`, `scripts/check-097-helpers.js` (mutants), `OFFICE_VIEW=real check-office-overlap.js` and `check-office-ops.js`, the linked pictures by `shots-097-realoffice` and `shots-097-screens` (JPEG) and `check-097-helpers` (the helper pictures).
+
+## 2026-11-08 delta 2: drag, kept room order, arcade, lobby (FR-352..FR-355, T286..T291)
+
+- **Reused** (FR-031): `DurbarReorder.attach` (reorder.js: threshold, Esc, cancel rules, lift and slot classes, `busy()`), `reoApply` and the one saved order, `reoStepModel`'s base (`deskOrder`, `deskBase`), the folder menu's disabled-item pattern, the `#srAnnounce` live region and `RO.announce`'s words. New: a second `attach` over `#stage` with Real office kinds (plate, sign), `reoDropModel`, `hooks.still` (no ease), `roRuns` and `RealModel.keepRooms` in the layout, `data-place` on a chip, `data-pfact` items in `openPlaceMenu`.
+- **Layout** (T290): with `keepRooms` `roPack` searches `roRuns(folders)` (contiguous splits) instead of every partition; the part-split of a big folder uses the same flag.
+- **Checks**: `test:realoffice-layout`, `scripts/check-097-drag.js` (in `ui-suite`), `shots-033-order`, `check-office-ops`, `OFFICE_VIEW=real` `check-office-overlap`.
+
+## A helper strip is one row (delta 2026-11-09; FR-338, T275..T277, bug #1384)
+
+The fix is in the engine, where the cause is: `realLayout`'s strip levels become one row, else none (the two-row step, `HELP_ROWS_MAX` and `HELP_KEEP`, is removed from `src/shared/realoffice-layout.ts`). Nothing changes in the renderer or the CSS: the strip already draws `cols` columns and `shown` heads, and with `rows` 1 the grid has one line. The arcade (`realoffice-arrangements.ts`) already takes one row. Checks: `test:realoffice-layout` re-pinned, the new driver `scripts/check-097-helper-row.js` (default and lounge scenes, 6 and 7 helpers, three worlds, both sizes; mutant), and `check-097-helpers` (its `rows === 1 || rows === 2` becomes `rows === 1`).
+
+## 2026-11-09 delta: the five crews wired (FR-335, FR-336 amended; T240..T244, T247..T249, issue #1154)
+
+- **Data** (`src/renderer/crew.js`): five `REAL_SETS` rows, no flag. Nothing else in `crew.js`, `app.js` or Settings changes: `peopleFor` and `levelFor` already drive the note.
+- **Arcade** (`src/shared/realoffice-arrangements.ts`, `realoffice-layout.ts`, `realoffice.js`, `worlds/retro/world.css`): `RealMeta.pixelPeople`; `aisleK` scales a non-pixel set to 72 grid px tall and at most `AISLE_PW_MAX` (48) wide (the smaller of the two), `AISLE_FALLBACK` lists the next frame to try, the lobby's whole-scale snap applies only to pixel people, smooth rendering for another set's people.
+- **Checks**: `test:realoffice-layout` (rows, matrix, per-crew pack), `test-realoffice-aisles` (crews in the arcade, mutants), `test:realoffice-assets` (no allow-list), `check-097-crews` (three worlds).
+
+## A folder sign keeps its + and menu (delta 2026-11-09; FR-356, T292..T294, bug #1392)
+
+Existing capability reused (FR-031): the arcade's short sign (FR-256, `ZoneBox.signShort` and the `.ro-sign.short` rule). The cause is in the engine, so the fix is there: `realLayout` sets `signShort` on a desk row's zone when its room is narrower than `signMin(counts)`, the narrowest whole sign, and the `.short` rule moves from the arcade's `world.css` to `realoffice.css` so every world draws it; the name's tooltip adds the cost on a short sign (FR-256's "cost on its hover"). No new IPC, store or setting. Checks: `test:realoffice-layout` (short exactly when it does not fit; mutant), `scripts/check-097-helper-row.js` (every sign whole in three worlds, both sizes, both scenes; source mutant), the after picture through that driver.
+

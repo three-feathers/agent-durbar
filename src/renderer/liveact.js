@@ -85,7 +85,7 @@
     if(k==='tool'){const j=s.split(/( › |\s+)/).map((w,i)=>i%2||!w?w:toolName(w,m)).join('');const x=ST.maskLabel(j,'other',m);return {s,out:x||null};}
     const x=ST.maskLabel(s,'other',m);return {s,out:x||null};
   }
-  function permText(raw,kind,mask){
+  function permBase(raw,kind,mask){
     const m=mask||{}, k=kind==='shell'||kind==='tool'?kind:'other', fb=why=>({text:PERM_FB[k],hidden:true,why});
     try{
       if(raw==null||raw==='')return {text:'',hidden:false};
@@ -103,6 +103,68 @@
       if(mcut)return {text:c.out+' \u27e6cut\u27e7',hidden:true,why:'cut'};
       return tail({text:c.out+suf,hidden:true,why:c.out!==c.s?'secret':'control'});
     }catch(e){return fb('unchecked');}
+  }
+  /* spec 003 FR-117, FR-119 (issue #1300): lookalike letters. The check reads the raw text (controls out, before the mask: so a letter the mask hid is still
+     counted, `inHidden`) and the shown text (FR-318 markers out); only what is shown gets a marker after each flagged letter, never a letter of a hidden part.
+     The text keeps every character: the markers only add. No lookalike.js, or a throw: `look.unchecked` when the text has a non-ASCII letter, digit or mark. */
+  const LK=()=>{try{return typeof module==='object'&&module.exports?require('./lookalike.js'):self.DurbarLookalike;}catch(e){return null;}}; /* read on each call: a page without it fails safe */
+  const FRMARK=/\u27e6(?:ESC|LF|CR|TAB|cut|U\+([0-9A-F]{4,6}))\u27e7/g;
+  /* the shown text without the FR-318 markers (a whitespace one as a line break, as the check reads a control), and where each character is in the shown text */
+  function unmark(t){
+    let out='';const at=[];let last=0,m;FRMARK.lastIndex=0;
+    const put=(s,from)=>{for(let i=0;i<s.length;i++){out+=s[i];at.push(from+i);}};
+    while((m=FRMARK.exec(t))){put(t.slice(last,m.index),last);
+      const w=m[1]?/\s/.test(String.fromCodePoint(parseInt(m[1],16))):/^\u27e6(?:LF|CR|TAB)\u27e7$/.test(m[0]); /* only a whitespace control separates words, as clean() reads it (ESC is dropped: fix round 2) */if(w){out+='\n';at.push(m.index);}last=m.index+m[0].length;}
+    put(t.slice(last),last);at.push(t.length);return {s:out,at};
+  }
+  const NONASCII_W=/(?![\x00-\x7f])[\p{L}\p{M}\p{N}]/u;
+  const MARK_MAX=20; /* at most this many lookalike markers in one text, then one "and N more" (fix round 1: the text stays near its own length) */
+  const PLACEHOLDER=/\[(?:redacted[^\]]*|redaction failed|secret hidden)\]/g;
+  /* Which characters of the raw text are shown (fix round 1 of #1300's review: inHidden is decided per finding, not by counting). Both texts read with the
+     controls out and whitespace runs as one space; the shown text's parts between mask placeholders are found in order in the raw one, and what lies
+     between them is hidden. Returns a function rawIndex -> shown?, or null when the shown text cannot be matched back (then everything counts as hidden). */
+  function shownRaw(r0,shown){
+    const R=[],rawToR=new Int32Array(r0.length+1).fill(-1);let sp=true;
+    for(let i=0;i<r0.length;){const cp=r0.codePointAt(i),c=String.fromCodePoint(cp);
+      if(/\s/.test(c)){if(!sp){R.push(' ');sp=true;}}
+      else if(!PCTRL_T.test(c)){for(let j=0;j<c.length;j++){rawToR[i+j]=R.length;R.push(c[j]);}sp=false;}
+      i+=c.length;}
+    while(R.length&&R[R.length-1]===' ')R.pop();
+    const Rs=R.join(''), S=shown.replace(/\s+/g,' ').trim(), vis=new Uint8Array(Rs.length+1);
+    let pos=0,last=0,m,parts=0;PLACEHOLDER.lastIndex=0;
+    const take=p=>{if(!p)return true;const i=Rs.indexOf(p,pos);if(i<0||(parts===0&&i!==0))return false;vis.fill(1,i,i+p.length);pos=i+p.length;return true;};
+    while((m=PLACEHOLDER.exec(S))){if(!take(S.slice(last,m.index)))return null;parts++;last=m.index+m[0].length;}
+    const tail=S.slice(last);
+    if(parts===0)return S===Rs?(i=>rawToR[i]>=0?1:-1):null;
+    if(tail){const i=Rs.lastIndexOf(tail);if(i<pos||i+tail.length!==Rs.length)return null;vis.fill(1,i,i+tail.length);}
+    return i=>rawToR[i]<0?-1:vis[rawToR[i]]===1?1:0; /* 1 shown, 0 hidden, -1 a control left out of both */
+  }
+  function permLook(b,raw,k){
+    const L=LK();
+    const r0=String(raw).slice(0,PERM_CAP);
+    if(!L||typeof L.check!=='function')return NONASCII_W.test(r0)?Object.assign({},b,{look:{unchecked:true}}):b;
+    try{
+      const rc=L.check(r0,k), u=unmark(b.text), sc=L.check(u.s,k), vis=shownRaw(r0,u.s);
+      const seenRaw=i=>vis?vis(i)===1:false;
+      const spanSeen=(a,e)=>{if(!vis||!(e>a))return false;for(let i=a;i<e;i++)if(vis(i)===0)return false;return true;}; /* every character of a host shown (fix round 2: a token masked inside a host never reaches the line) */
+      /* hosts and unreadable hosts come from the raw text, only where it is shown (a host the mask made, `[redacted]x.invalid`, is never one) */
+      const hosts=rc.hosts.filter(h=>L.hostOdd(h)&&spanSeen(h.index,h.end));
+      const fs=sc.findings.filter(f=>f.rule!=='host').concat(rc.findings.filter(f=>f.rule==='host'&&spanSeen(f.index,f.end)));
+      const inHidden=rc.findings.some(f=>f.rule==='host'?!spanSeen(f.index,f.end):!seenRaw(f.index))||rc.hosts.some(h=>L.hostOdd(h)&&!spanSeen(h.index,h.end));
+      if(!fs.length&&!hosts.length&&!inHidden)return b;
+      /* one pass, in order: a marker after each of the first MARK_MAX flagged letters, then one "and N more" */
+      const at=[],done=new Set();for(const f of sc.findings){if(f.rule==='host'||done.has(f.index))continue;done.add(f.index);at.push(f);}
+      at.sort((x,y)=>x.index-y.index);
+      const out=[];let from=0;const m=Math.min(at.length,MARK_MAX);
+      for(let i=0;i<m;i++){const f=at[i],p=u.at[f.index]+f.char.length;out.push(b.text.slice(from,p),L.marker(f));if(i===m-1&&at.length>m)out.push('⟦and '+(at.length-m)+' more lookalike letters⟧');from=p;}
+      out.push(b.text.slice(from));
+      return Object.assign({},b,{text:out.join(''),look:{n:fs.length,findings:fs,hosts,inHidden}});
+    }catch(e){return NONASCII_W.test(r0)?Object.assign({},b,{look:{unchecked:true}}):b;}
+  }
+  function permText(raw,kind,mask){
+    const b=permBase(raw,kind,mask), k=kind==='shell'||kind==='tool'?kind:'other';
+    if(!b||!b.text||raw==null||(b.hidden&&(b.why==='unchecked'||b.why==='concealed'||b.why==='cut')))return b; /* a blind card shows no text, so no lookalike line (FR-118) */
+    return permLook(b,raw,k);
   }
   /* A tool start as a verb phrase. kind: read | edit | run | search | tool (the chat's toolKind); label: the chat's toolLabel. */
   function phrase(o,mask){

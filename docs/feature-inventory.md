@@ -17,7 +17,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Model, tokens, cost, context, last tool on the desk | works | works in the hover zoom (#1148, 097 FR-312..FR-315), and a line round the monitor frame that fills clockwise as the context fills, soft white up to 90 % and red above (097 FR-322..FR-326, owner Q8) | none | 019 097 | test:ctxbreakdown driver:shots-097-screens driver:check-097-ctx-frame |
 | Unread "New", draft, question marks | works | works, a New reply tag and a green screen (097 FR-236, FR-238), a Draft tag and "unsent draft" in the plate's name (097 FR-316); a question shows as the "?" bubble, the plate's text and "needs you" (FR-038, FR-016) | none | 001 005 097 | test:unread driver:shots-097-realoffice driver:check-097-desk-marks |
 | Hover card | works | works, the zoom opens over the person, desk, table, monitor or plate, also for asleep agents, with the Changed line (097 FR-327..FR-330); helpers stay with the desk's own tiles, as in Open office (Q25 decided, 2026-11-08) | none | 001 097 | test:tooltip driver:check-097-hover-card |
-| Drag to rearrange rooms, desks, places | works | missing (#1152) | none | 033 | test:roomorder driver:shots-033-order |
+| Drag to rearrange rooms, desks, places | works | works by dragging a name plate or a folder sign, by keys and the folder menu, a lobby place by a visitor's chip or the +N menu, the same saved order; the arcade drags desks, its rooms keep their cells (#1152, 097 Q30..Q33) | none | 033 097 | test:roomorder driver:shots-033-order driver:check-097-order driver:check-097-drag |
 | Rename a session (F2, pencil) | works | works, the pencil beside a plate's name and F2 on a plate (059 FR-170) | none | 059 | test:sessionname driver:check-097-plate-pencil |
 | Lobby places, visitors, away at a place | works | works | mock+planned (lobby) | 024 | test:places driver:shots-024 |
 | Boss queue, Bank, Postbox | works | works | mock+planned (boss-bank-post-coffee) | 001 024 | driver:shots-001-lobby read:src/renderer/realoffice.js |
@@ -42,7 +42,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | File edits as they happen, Undo these changes | works | works | none | 065 | test:edits test:checkpoints |
 | Attachments (pick, drop, paste) | works | works | none | 004 | test:attachments |
 | Browser tab in a chat | works | works | none | 080 | test:browsertabs test:browserpane |
-| Questions and permission cards | works | works | mock+planned (permission-card) | 003 012 | test:elicit test:permissions driver:shots-012-elicit |
+| Questions and permission cards | works | works | mock+planned (permission-card) | 003 012 | test:elicit test:permissions test:lookalike driver:shots-012-elicit driver:check-permission-lookalike |
 | Needs-you inbox | works | works | planned (inbox) | 052 | test:attention read:src/renderer/app.js |
 | Modes Read-only, Ask first, Allow all; switch any time | works | works | none | 003 018 | test:permissions driver:shots-018 |
 | Plan first | works | works | none | 066 | test:planmode |
@@ -68,7 +68,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | OS sandbox floor | works | works | none | 087 | test:runtime-sandbox |
 | Themes and user themes | works | missing (#1153) | none | 035 036 037 038 039 040 | test:theme test:userthemes |
 | One face per agent: rail row, chat header, inbox faces are the same picture | works | works (one picker, `roFace`) | none | 097 | driver:check-097-one-face |
-| Characters (crews): the Characters choice drawn in the office | works | missing, Prehistoric is drawn in its own people; the other crews and Minimalist show the Office people and Settings says why; art tasks T238, T240..T245 (#1154) | none | 077 096 | test:characters test:crew driver:check-097-crews |
+| Characters (crews): the Characters choice drawn in the office | works | missing, Minimalist and My characters have no Real office people (Minimalist shows the world's people and Settings says why; #1331, spec 096); Cheeky, Prehistoric, Pirate, Monster, Royal and Rebels are drawn in their own people in Real office (#1154) | none | 077 096 | test:characters test:crew driver:check-097-crews |
 | Harness setup, agent-app updates | works | works | none | 051 081 | test:harnesssetup test:updatecheck |
 | Remote control | works | works | none | 054 | test:remote driver:shots-054-remote |
 | Terminal tab in a chat | planned | planned | none | 094 | read:specs/094-terminal-tab/spec.md |
