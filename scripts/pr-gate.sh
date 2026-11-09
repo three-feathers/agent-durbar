@@ -4,7 +4,8 @@
 # --wait: first wait until no check is pending, still none after 90 s.
 # Waits until no check is pending, still none after 90 s (later workflows register their checks after the first ones end).
 # Blocks (prints why, exits 1) on:
-#   - a check that is not pass/skipping, or CodeQL not passed;
+#   - a check that is not pass/skipping, or CodeQL not passed; a CodeQL check GitHub skipped (or left out) on a PR that changes no analysed
+#     file counts as passed only when every changed file is on the no-code list in nocode() and the alerts are 0 (spec 021 FR-089, #1420);
 #   - a PR GitHub cannot merge (conflicts): GitHub then runs only CodeQL, so the other checks look absent rather than red;
 #   - a PR that changes src/ without the Spec Kit gate and the Linux build-and-test check present and passing;
 #   - an open code-scanning alert on the PR's merge ref or head ref (a bot line comment can be carried forward after its alert is fixed);
@@ -53,8 +54,21 @@ PROSE='gsub("```(.|\n)*?```";"") | gsub("(^|\n)[ \t]*>[^\n]*";"\n") | gsub("`[^`
 HOLD_KIND="select((.user.login // \"\")|ascii_downcase|test(\"^($OWNERS_RE)\$\")) | ((.body // \"\") | $PROSE | if test(\"\\\\b(hold lifted|off hold)\\\\b\";\"i\") then \"lift\" elif test(\"\\\\b(on hold|owner hold|do not merge|don['\u2019]t merge)\\\\b\";\"i\") then \"hold\" else empty end) as \$k"
 hold=$( { gh api --paginate repos/$R/issues/$p/comments --jq ".[]|$HOLD_KIND|\"\(.created_at)\t\(.html_url)\t\(\$k)\""; gh api --paginate repos/$R/pulls/$p/reviews --jq ".[]|$HOLD_KIND|\"\(.submitted_at)\t\(.html_url)\t\(\$k)\""; gh api --paginate repos/$R/pulls/$p/comments --jq ".[]|$HOLD_KIND|\"\(.created_at)\t\(.html_url)\t\(\$k)\""; } | sort | tail -1)
 case $hold in *"	hold") bad="$bad owner-hold(owner comment of $(echo "$hold" | cut -f1): $(echo "$hold" | cut -f2); read it, wait for a written lift)";; esac
-codeql=$(gh pr checks $p | awk -F'\t' '$1=="CodeQL"{print $2}')
-alerts=$(( $(gh api "repos/$R/code-scanning/alerts?ref=refs/pull/$p/merge&state=open" --jq length) + $(gh api "repos/$R/code-scanning/alerts?ref=refs/pull/$p/head&state=open" --jq length) ))
+checks_out=$(gh pr checks $p 2>/dev/null)
+codeql=$(printf '%s\n' "$checks_out" | awk -F'\t' '$1=="CodeQL"{print $2}')
+codeql_ok=; [ "$codeql" = pass ] && codeql_ok=passed
+# FR-089 (#1420): GitHub skips CodeQL ("skipping", or no CodeQL check) on a PR that changes no file it analyses. That counts as passed only
+# when the check list was read and every changed file is on this fixed no-code list (the default setup's path filter is not readable here);
+# an API error, an empty file list or any other file blocks (fail closed). The alerts must still be 0 (below). Any other CodeQL state blocks.
+nocode() { case $1 in *.md|*.png|*.jpg|*.jpeg|*.gif|*.webp|package-lock.json|*/package-lock.json|scripts/*/package.json) return 0;; esac; return 1; }
+only_nocode() { local f files; files=$(gh pr diff $p --name-only) && [ -n "$files" ] || return 1
+  while IFS= read -r f; do nocode "$f" || return 1; done <<< "$files"; }
+if [ -z "$codeql_ok" ] && { [ "$codeql" = skipping ] || [ -z "$codeql" ]; } && printf '%s\n' "$checks_out" | grep -q $'\t'; then
+  if only_nocode; then codeql_ok="skipped (no analysed files)"; codeql="skipping(no analysed files)"; else codeql="${codeql:-missing}(analysed or unknown files changed)"; fi
+fi
+# the open alerts on the merge and head refs, read as two numbers; an API error or a non-number blocks
+isnum() { case $1 in ''|*[!0-9]*) return 1;; esac; }
+a_merge=$(gh api "repos/$R/code-scanning/alerts?ref=refs/pull/$p/merge&state=open" --jq length) && a_head=$(gh api "repos/$R/code-scanning/alerts?ref=refs/pull/$p/head&state=open" --jq length) && isnum "$a_merge" && isnum "$a_head" && alerts=$((a_merge + a_head)) || alerts="unread(code-scanning API)"
 # --paginate everywhere below: the REST lists return 30 items a page, and a long PR has more (spec 021 FR-055). --jq runs per page,
 # so the latest review per person is picked in the shell, across pages, not with jq's group_by
 changes=$(gh api --paginate repos/$R/pulls/$p/reviews --jq '.[]|select(.state!="COMMENTED" and .state!="PENDING")|"\(.user.login)\t\(.submitted_at)\t\(.state)"' | sort -k1,1 -k2,2 | awk -F'\t' -v me="$ME" '{last[$1]=$3} END{for(u in last) if(last[u]=="CHANGES_REQUESTED" && u!=me) printf "%s%s", (n++?",":""), u}')
@@ -73,10 +87,10 @@ notes=$( { gh api --paginate repos/$R/issues/$p/comments --jq "$JQ_TRUST .[]|sel
 approvals=$(gh api --paginate repos/$R/pulls/$p/reviews --jq "$JQ_TRUST .[]|select(.state!=\"COMMENTED\" and .state!=\"PENDING\" and (.user.login|trusted))|\"\(.user.login)\t\(.submitted_at)\t\(.state)\t\(.commit_id[0:8])\"" | sort -k1,1 -k2,2 | awk -F'\t' '{last[$1]=$0} END{for(u in last){split(last[u],f,"\t"); if(f[3]=="APPROVED") print "approved by: " f[1] " at " f[4] " (" f[2] ")"}}' | sort)
 [ -n "$approvals" ] && echo "$approvals"
 [ -n "$notes" ] && { echo "status notes, not counted as asks:"; echo "$notes"; }
-if [ -n "$bad" ] || [ "$codeql" != "pass" ] || [ "$alerts" != "0" ] || [ -n "$changes" ] || [ "$threads" != "0" ] || [ -n "$newer" ] || [ -n "$outside_edits" ]; then
+if [ -n "$bad" ] || [ -z "$codeql_ok" ] || [ "$alerts" != "0" ] || [ -n "$changes" ] || [ "$threads" != "0" ] || [ -n "$newer" ] || [ -n "$outside_edits" ]; then
   echo "#$p not ready: checks=[$bad] codeql=$codeql alerts=$alerts changes_requested=[$changes] open_threads=$threads"
   [ -n "$newer" ] && { echo "unanswered human comments (read, answer or fix, then rerun; an outside one goes to your human as its link):"; echo "$newer"; }
   [ -n "$outside_edits" ] && { echo "comments last edited by an outside account (not shown, for a human):"; echo "$outside_edits"; }
   exit 1
 fi
-echo "#$p ready to merge: checks green, CodeQL passed, no open alerts, no requested changes, no open threads, no unanswered comments"
+echo "#$p ready to merge: checks green, CodeQL $codeql_ok, no open alerts, no requested changes, no open threads, no unanswered comments"
