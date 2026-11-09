@@ -8,7 +8,7 @@ import { hashAgentFile, readAgentFile, shownSha } from '../agenttrust';
 import type { AgentFileRead } from '../../adapters/types';
 import { PROFILE_ID } from '../folders';
 import type { ProfileFreshness } from '../profilefiles';
-import { createProfileFile, createProfileFreshness, deleteProfileFile, listAgentProfilesFresh, listProfileFiles, pathOfProfile, profileDirs, profileFolders, readProfileFile, saveProfileFile, userAgentDirs } from '../profilefiles';
+import { createProfileFile, createProfileFreshness, deleteProfileFile, isInside, listAgentProfilesFresh, listProfileFiles, pathOfProfile, profileDirs, profileFolders, readProfileFile, saveProfileFile, userAgentDirs } from '../profilefiles';
 import { openInVSCode } from '../vscode';
 import * as path from 'path';
 import { linkedBelow } from '../../shared/linkedfolders';
@@ -36,8 +36,7 @@ export interface ProfilesIpcDeps {
  */
 export function linkedInProject(folders: readonly string[], file: string): boolean {
   const dir = path.dirname(file);
-  const inside = folders.filter((f) => !!f && !linkedBelow(f, dir, () => ({ isSymbolicLink: () => false })));
-  const nearest = inside.sort((x, y) => y.length - x.length)[0];
+  const nearest = folders.filter((f) => !!f && isInside(f, dir)).sort((x, y) => y.length - x.length)[0]; // the longest holding folder
   return nearest !== undefined && linkedBelow(nearest, dir);
 }
 

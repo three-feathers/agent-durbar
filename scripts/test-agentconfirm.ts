@@ -233,6 +233,23 @@ async function main(): Promise<void> {
     assert.strictEqual(linkedInProject([WS], file), false, 'a plain project folder is fine');
     assert.strictEqual(linkedInProject([root, WS], file), false, 'the nearest session folder is the project');
     assert.strictEqual(linkedInProject([path.join(root, 'other')], file), false, 'a file in no session folder: nothing to check');
+    // two session folders, the inner one reached through a link in the outer one: the inner (nearest) folder is the project
+    const real = path.join(root, 'real-inner');
+    fs.mkdirSync(path.join(real, '.claude', 'agents'), { recursive: true });
+    const outer = path.join(root, 'outer');
+    fs.mkdirSync(outer);
+    const inner = path.join(outer, 'inner');
+    fs.symlinkSync(real, inner);
+    const innerFile = path.join(inner, '.claude', 'agents', 'a.md');
+    assert.strictEqual(linkedInProject([outer, inner], innerFile), false, 'a link between the outer and the inner session folder does not count');
+    assert.strictEqual(linkedInProject([inner, outer], innerFile), false, 'whatever the order of the folders');
+    // a longer session folder that does not hold the file is not the project
+    const longer = path.join(root, 'ws-and-more-letters');
+    fs.mkdirSync(longer);
+    assert.strictEqual(linkedInProject([WS, longer], file), false, 'a longer folder that does not hold the file is not used');
+    const { linkedBelow } = require('../src/shared/linkedfolders') as typeof import('../src/shared/linkedfolders'); // eslint-disable-line @typescript-eslint/no-require-imports
+    assert.strictEqual(linkedBelow(longer, path.dirname(file)), true, 'a folder outside root counts as linked');
+    assert.strictEqual(linkedBelow(WS, path.dirname(file)), false);
     ad = claude;
   }
 
