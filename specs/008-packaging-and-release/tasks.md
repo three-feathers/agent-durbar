@@ -189,6 +189,10 @@
 - [x] T138 (FR-186) README cut to a 30-second read (owner: clean, no release numbers, no junk): tagline, problem line, download line, the Real office picture, Works with / Not yet, one-line status, short bullets, Install, short Safety lead, Quick start with the clone line, Contributing, Build cost block moved down, short credits; `docs/credits.md` takes the art and app-id history; `scripts/shots-readme-real.js` registered in `ui-suite.js` and `shots-docs.js`; the two pictures through `npm run shots:docs`; both pictures are JPEGs under 170 KB (no budget exception). `[KNOWN GAP]` the About description, Discussions and topics are owner actions.
 - [x] T139 (FR-187) `scripts/release-video.js`: scene `realoffice` (Real office, queue slip, Needs you inbox); fragment `changelog.d/008-readme-refresh.md` with `Scene: realoffice`; `AUTO_MAX` 5 to 4 after the v0.1.13 clip measured 6.23 MB against the 5 MiB cap (#1305); the clip is 4.52 MiB; `test:releasevideo` covers the scene and the new `AUTO_MAX`.
 
+## 2026-11-09: no duplicate typecheck step before build in CI
+
+- [x] T150 (FR-193) Removed `npm run typecheck` before `npm run build` in `ci.yml` and `macos-pr.yml`; `scripts/test-ci-typecheck.js` + suite `test:citypecheck` with three mutants; `release.yml` unchanged (no build before its tests)
+
 ## 2026-11-08: faster UI drivers (FR-190)
 
 - [x] T143 (FR-190) Wave 1 of the faster UI drivers: `scripts/driver-helpers.js` (`load` steady wait, ready-timeout line, `fastVisits`), `src/renderer/app.js` (`simvisits=fast`) (simulator-only); drivers check-office-fill, check-crew, check-auto-follow, shots-017, check-sched-top, check-answer-safety. Each changed driver: a mutant that still fails on its own labelled assert, 5 local runs.

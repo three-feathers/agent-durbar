@@ -102,6 +102,7 @@
     "test:blogcheck": "node scripts/test-check-posts.js",
     "blog:check": "node scripts/check-posts.js",
     "test:docsscripts": "node scripts/test-docs-scripts.js",
+    "test:citypecheck": "node scripts/test-ci-typecheck.js",
     "test:perfrecord": "node scripts/test-perf-record.js",
     "test:worldmatrix": "node scripts/test-world-matrix.js",
     "world:matrix": "npm run build && node scripts/world-matrix.js",

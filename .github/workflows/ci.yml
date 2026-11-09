@@ -83,8 +83,7 @@ jobs:
       # spec 103: test:prereview drives the real pinned Agent SDK binary against a loopback mock (fake key, no network); only this job installs it
       - if: steps.changes.outputs.code == 'true' && matrix.os == 'ubuntu-latest'
         run: npm ci --ignore-scripts --no-audit --no-fund --prefix scripts/prereview
-      - if: steps.changes.outputs.code == 'true'
-        run: npm run typecheck
+      # spec 008 FR-193: no separate typecheck step; `npm run build` runs the same `tsc -p tsconfig.json` and fails on type errors (scripts/test-ci-typecheck.js)
       - if: steps.changes.outputs.code == 'true'
         run: npm run build
       # compiles the test scripts once and runs the suites in parallel (scripts/run-tests.js)
