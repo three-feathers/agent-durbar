@@ -90,6 +90,12 @@ module.exports = async (ctx) => {
     if (world !== 'photo') assert.strictEqual(await js(`document.querySelector('#stage .ro').dataset.world`), world, `${tag}: the world is shown`);
     const { r: A, o: O, k } = await bigRoom();
     const pa = await pathOf(A);
+    /* pointing shows the drag (the flat room head's grab): a plate and a folder sign where a drag starts, never an arcade room sign */
+    const cur = (sel) => js(`getComputedStyle(document.querySelector(${jsLiteral(sel)})).cursor`);
+    if (world !== 'retro') {
+      assert.strictEqual(await cur(plateSel(O[k])), 'grab', `${tag}: a desk's plate shows the grab cursor`);
+      assert.strictEqual(await cur(signSel(A)), 'grab', `${tag}: a folder sign shows the grab cursor`);
+    } else assert.notStrictEqual(await cur(signSel(A)), 'grab', `${tag}: an arcade room sign does not promise a drag`);
     const docDesks = () => js(`window.__durbarSimUi.order.get().desks[${jsLiteral(pa)}]`);
 
     /* ---- a press under 6 px is a click: it opens the chat, and writes nothing ---- */
@@ -224,7 +230,22 @@ module.exports = async (ctx) => {
       await js(`document.querySelector('#modeMenu [data-pfact="pdn"]').click()`);
       await must(`window.__durbarSimUi.order.get().places.indexOf('library')===${jsLiteral(i1)}`, `${tag}: Move later moved it back`);
       assert.deepStrictEqual((await saved()).places, await js(`window.__durbarSimUi.order.get().places`), `${tag}: and it is the saved document`);
-      await js(`document.querySelectorAll('#tp-chip-library,#tp-chip-boss,#tp-more').forEach(e=>e.remove())`);
+      /* a fixed place's menu: the visitors only, no Move items (the folder menu's pattern; not dashed disabled ones); a movable place's items say what they do */
+      await js(`window.__durbarSimUi.crowd('boss',1,1)`);
+      await js(`(()=>{const m=document.createElement('button');m.type='button';m.id='tp-more-boss';m.className='ro-lplate';m.dataset.place='boss';m.dataset.placemore='boss';m.textContent='boss +1';document.querySelector('#stage .ro-chrome').appendChild(m);return 1})()`);
+      await must(`window.__durbarSimUi.awayIds().length>=2`, `${tag}: someone is at the Boss too`);
+      await js(`document.getElementById('modeMenu')&&document.getElementById('modeMenu').remove()`);
+      await js(`document.getElementById('tp-more-boss').click()`);
+      await must(`!!document.querySelector('#modeMenu [data-pvopen]')`, `${tag}: the Boss's +N menu opens`);
+      assert.strictEqual(await js(`document.querySelectorAll('#modeMenu [data-pfact]').length`), 0, `${tag}: a fixed place's menu has no Move earlier / Move later`);
+      await key('Escape');
+      await must(`!document.getElementById('modeMenu')`, `${tag}: the Boss's menu closes`);
+      await js(`document.getElementById('tp-more').click()`);
+      await must(`!!document.querySelector('#modeMenu [data-pfact="pup"]')`, `${tag}: the library's menu opens`);
+      assert.ok(await js(`[...document.querySelectorAll('#modeMenu [data-pfact]')].every(b=>!!b.querySelector('small')&&!!b.title)`), `${tag}: a movable place's Move items say what they do (a sub-line and a title)`);
+      await key('Escape');
+      await must(`!document.getElementById('modeMenu')`, `${tag}: the library's menu closes`);
+      await js(`document.querySelectorAll('#tp-chip-library,#tp-chip-boss,#tp-more,#tp-more-boss').forEach(e=>e.remove())`);
       await js(`window.__durbarSimUi.uncrowd()`);
       await checks(`${tag} after the place moves`);
       const doc = await saved();

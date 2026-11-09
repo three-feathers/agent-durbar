@@ -324,3 +324,6 @@ body.ro-chat .ph .avatar{display:none}
 .ro-hd:hover{--ro-ring:var(--line-2,var(--line))}
 .ro-hmore:hover{border-color:var(--line-2,var(--line))}
 @media (forced-colors:active){.ro-hd,.ro-hmore{border:1px solid CanvasText;background:Canvas;color:CanvasText}}
+/* spec 097 FR-352 (2026-11-09 delta): the drag shows by pointing, as the flat room head does; only where a drag starts (no lounge seat, away desk or arcade room sign; the lift's grabbing is reorder.js's) */
+.ro:not([data-world="retro"]) .ro-sign:has(.ro-sc),.ro:not([data-world="retro"]) .ro-plate[data-id]:not(.narrow,[data-surface="lounge"]){cursor:grab}
+.ro-sign:has(.ro-sc) :is(button,a,input){cursor:pointer}

@@ -487,9 +487,9 @@ function openPlaceMenu(pid,anchor){
   const ids=placeVisitors(pid); if(!ids.length)return;
   const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','At '+placeLabelFull(pid));
   m.innerHTML=ids.map(id=>{const a=byId(id),v=VISITS.at(id),r=roomOf(a),of=otherFloor(a);return `<button type="button" role="menuitem" data-pvopen="${esc(id)}"><span class="mt"><b>${esc(a.name)}</b><small>${esc((r?r.name+(of?' ('+DurbarCutText.cutText(of.name,16)+')':'')+' · ':'')+(v?visitDoing(a,v):''))}</small></span></button>`;}).join('');
-  if(OFFICE_VIEW==='real'&&RO_LOAD==='ready'){ /* spec 097 FR-355 (Q33): Move earlier / Move later for the place, through the order the flat office's places use; a fixed place and the ends are disabled and say why */
-    const ks=lobbyPlaces().map(q=>q.id).filter(reorderablePlace),i=ks.indexOf(pid),pit=(f,t,ok)=>`<button type="button" role="menuitem" data-pfact="${f}"${ok?'':' aria-disabled="true"'}><span class="mt"><b>${t}</b></span></button>`;
-    m.insertAdjacentHTML('beforeend',pit('pup','Move earlier',i>0)+pit('pdn','Move later',i>=0&&i<ks.length-1));
+  if(OFFICE_VIEW==='real'&&RO_LOAD==='ready'&&reorderablePlace(pid)){ /* spec 097 FR-355 (Q33): Move earlier / Move later for a place that can be reordered, through the order the flat office's places use (as the folder menu: none for a fixed place, the end one is disabled; 2026-11-09 delta) */
+    const ks=lobbyPlaces().map(q=>q.id).filter(reorderablePlace),i=ks.indexOf(pid),pit=(f,t,sub,ok)=>`<button type="button" role="menuitem" data-pfact="${f}"${ok?'':' aria-disabled="true"'} title="${esc(sub)}"><span class="mt"><b>${t}</b><small>${esc(sub)}</small></span></button>`;
+    m.insertAdjacentHTML('beforeend',pit('pup','Move earlier','One place earlier in the lobby',i>0)+pit('pdn','Move later','One place later in the lobby',i>=0&&i<ks.length-1));
   }
   document.body.appendChild(m);
   const ab=anchor.getBoundingClientRect(),b=m.getBoundingClientRect();
