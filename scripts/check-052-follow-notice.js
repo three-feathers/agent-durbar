@@ -25,6 +25,10 @@ module.exports = async (ctx) => {
   await H.focusPage({ emulate: 'first' }); /* as check-auto-follow (#1179): the background steps below use window.__durbarFocus, not the OS */
   try {
   const wc = ctx.win.webContents;
+  /* CI run 42670456931 (Windows): the runner's OS asks for reduced motion, so "motion allowed" must be set, not assumed. Media emulation (the same
+     on every OS) says no-preference for the whole driver; the reduced-motion step sets reduce and back. */
+  const media = async (v) => { const d = wc.debugger; if (!d.isAttached()) d.attach('1.3'); await d.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: v }] }); };
+  await media('no-preference');
   const ok = async (expr, what, ms) => assert.ok(await until(expr, ms || 8000), what);
   const stays = async (expr, what, ms = 700) => assert.strictEqual(await js(`new Promise(res=>{const end=Date.now()+${Number(ms)},t=setInterval(()=>{if(!(${expr})){clearInterval(t);res(false);}else if(Date.now()>=end){clearInterval(t);res(true);}},25);})`), true, what);
   const E = (id, ev) => js(`window.__durbarSimEmit(Object.assign({timestamp:Date.now(),sessionId:${jsLiteral(id)}},${jsLiteral(ev)}))`);
@@ -115,6 +119,7 @@ module.exports = async (ctx) => {
     assert.strictEqual(n.n, '3', `${tag}: FR-239: the countdown starts at 3`);
     assert.strictEqual(await js(OPEN), true, `${tag}: the chat is still open under the notice`);
     assert.deepStrictEqual(await fit(), [], `${tag}: FR-241: the notice to the office fits`);
+    assert.strictEqual(await js(`matchMedia('(prefers-reduced-motion: reduce)').matches`), false, `${tag}: motion is allowed in this step (emulated no-preference, whatever the runner's OS asks)`);
     if (w === 1440) assert.ok((await running()) >= 2, `${tag}: FR-241: the picture and the ring move with motion allowed`);
     await ok(`!document.querySelector('.dlg-ov.af-notice')&&!document.body.classList.contains('panel-open')`, `${tag}: FR-239: the move happens when the count ends`, 6000);
     const took = await js(`window.__nGone-window.__nAt`);
@@ -285,7 +290,7 @@ module.exports = async (ctx) => {
         assert.strictEqual(await running(), 0, `${how}: FR-241: still none later`);
         await ok(`!document.querySelector('.dlg-ov.af-notice')&&!document.body.classList.contains('panel-open')`, `${how}: the move happens`, 4000);
       } finally {
-        if (how === 'reduced motion') await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] });
+        if (how === 'reduced motion') await media('no-preference');
       }
     }
   }

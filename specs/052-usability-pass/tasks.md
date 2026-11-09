@@ -419,3 +419,4 @@
 - [x] T273 `scripts/check-052-follow-notice.js` in the UI suite (both notices, Stay, Escape, timeout, background pause, announcement and priority, reduced motion, four looks at two sizes, pictures); `check-auto-follow` through the notice; mutants fail on labelled asserts [FR-238..FR-241]
 - [x] T274 Docs: `docs/features.md`, `docs/feature-inventory.md` (an Auto-follow row in every world), a `changelog.d` fragment; both notices in every world and in Open office's Retro Pixel theme at both sizes in `docs/screenshots/`, linked from the spec, looked at [FR-238]
 - [x] T275 Review on #1414: the notice waits while you type and a typed character closes it into the box; a replaced `askDialog` leaves the focus in the new one; a hostile name stays text (driver steps, `test-dialog` cases, mutants) [FR-238, FR-239]
+- [x] T276 `check-052-follow-notice`: motion allowed by media emulation, asserted (a Windows runner asks for reduced motion; CI run 42670456931) [FR-241]
