@@ -11,7 +11,7 @@
  * a request: "needs you"); Stay here, Escape and Stay in the office cancel (the chat stays and the agent stays followed; the arrival is not
  * offered again and keeps its New marker); a chat already shown shows no notice; a window in the background pauses the count. Reduced motion
  * (media emulation) and the Motion setting off: no running animation, the number still counts. In Open office, the Photo office, the cave and
- * the arcade at both sizes: the notice covers the window, its card is inside it, nothing in it overlaps, text >= 10.5 px, no page scroll.
+ * the arcade at both sizes (and Open office in the Retro Pixel theme): the notice covers the window, its card is inside it, nothing in it overlaps, text >= 10.5 px, no page scroll.
  * Every wait is until() and its result is asserted; keys and clicks are real input events.
  */
 const assert = require('assert');
@@ -233,23 +233,26 @@ module.exports = async (ctx) => {
 
   // ======== Open office and the worlds (Photo office, cave, arcade), both sizes: both notices fit; pictures ========
   const REAL = `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'`;
-  const WORLDS = [['flat', null], ['photo', {}], ['cave', { worldflags: 'cave', world: 'cave' }], ['arcade', { worldflags: 'retro', world: 'retro' }]];
-  for (const [world, q] of WORLDS) for (const [w, h] of [[1440, 900], [1280, 800]]) {
+  /* `flat-retro`: Open office in the Retro Pixel theme (html[data-ui="retro"], no world) */
+  const WORLDS = [['flat', null], ['flat-retro', null, { theme: 'retro' }], ['photo', {}], ['cave', { worldflags: 'cave', world: 'cave' }], ['arcade', { worldflags: 'retro', world: 'retro' }]];
+  for (const [world, q, tq] of WORLDS) for (const [w, h] of [[1440, 900], [1280, 800]]) {
     const tag = `${world} ${w}x${h}`;
-    if (q) { await H.load({ w, h, query: { officeview: 'real', ...q }, ready: REAL }); await ok(REAL, `${tag}: the Real office`); } else await H.load({ w, h });
+    if (q) { await H.load({ w, h, query: { officeview: 'real', ...q }, ready: REAL }); await ok(REAL, `${tag}: the Real office`); } else await H.load({ w, h, query: tq || {} });
+    if (tq) assert.strictEqual(await js(`document.documentElement.dataset.ui||''`), tq.theme, `${tag}: the theme drawn`);
     if (q && q.world) assert.strictEqual(await js(`document.documentElement.dataset.world`), q.world, `${tag}: the world drawn`);
     await H.calm({ blur: true });
     await hooks();
     await js(`window.__durbarSimUi.afNotice.on(true)`);
     const nameA = await nameOf(A);
     const home = q ? plate(A) : sel(A);
+    const ext = world === 'cave' ? 'jpg' : 'png'; /* the cave's art shows through the backdrop: as a palette PNG its picture passes the 300 KB limit */
     await openChatBy(home, nameA);
     await quiet(true);
     await sendHere('hello world');
     await ok(NOTICE, `${tag}: the notice to the office`, 4000);
     await bg(true); /* the count waits, so the picture shows 3 */
     assert.deepStrictEqual(await fit(), [], `${tag}: FR-241: the notice to the office fits`);
-    await shotTo(`052-follow-notice-office-${world}-${w}x${h}.png`);
+    await shotTo(`052-follow-notice-office-${world}-${w}x${h}.${ext}`);
     await bg(false);
     await ok(`!document.querySelector('.dlg-ov.af-notice')&&!document.body.classList.contains('panel-open')`, `${tag}: the move`, 6000);
     await ok(`!!document.querySelector(${jsLiteral(home + '.is-followed')})`, `${tag}: its desk is followed`);
@@ -258,7 +261,7 @@ module.exports = async (ctx) => {
     await bg(true);
     assert.strictEqual((await notice()).head, `${nameA} finished`, `${tag}: the words`);
     assert.deepStrictEqual(await fit(), [], `${tag}: FR-241: the notice to the chat fits`);
-    await shotTo(`052-follow-notice-chat-${world}-${w}x${h}.png`);
+    await shotTo(`052-follow-notice-chat-${world}-${w}x${h}.${ext}`);
     await bg(false);
     await ok(`!document.querySelector('.dlg-ov.af-notice')&&document.body.classList.contains('panel-open')&&document.activeElement&&document.activeElement.id==='panelTitle'`, `${tag}: its chat opens`, 6000);
     console.log(`[follow-notice] ${tag} ok`);
