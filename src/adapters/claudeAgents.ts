@@ -5,6 +5,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { linkedBelow } from '../shared/linkedfolders';
 import { cleanSessionTitle } from './history';
 import { parseFrontMatter } from './slashcommands';
 import type { AgentProfile } from './types';
@@ -65,9 +66,13 @@ function readDir(dir: string, source: AgentProfile['source'], out: Map<string, C
   }
 }
 
-/** The session folders' `.claude/agents` (repository) and the user's `agents` folder, repository first. */
+/**
+ * The session folders' `.claude/agents` (repository) and the user's `agents` folder, repository first. A repository folder whose
+ * `.claude` or `.claude/agents` is a link (spec 043 FR-044, `linkedBelow`) is left out: nothing is listed or read through it.
+ */
 export function claudeAgentDirs(folders: readonly string[], configDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')): { dir: string; source: AgentProfile['source'] }[] {
-  return [...[...new Set(folders)].map((f) => ({ dir: path.join(f, '.claude', 'agents'), source: 'repo' as const })), { dir: path.join(configDir, 'agents'), source: 'user' as const }];
+  const repo = [...new Set(folders)].map((f) => ({ root: f, dir: path.join(f, '.claude', 'agents') })).filter((d) => !linkedBelow(d.root, d.dir));
+  return [...repo.map((d) => ({ dir: d.dir, source: 'repo' as const })), { dir: path.join(configDir, 'agents'), source: 'user' as const }];
 }
 
 /** The agents of `claudeAgentDirs`, in that order (the first of a name wins). */

@@ -33,7 +33,8 @@ async function main(): Promise<void> {
   require.cache[electronPath] = { id: electronPath, filename: electronPath, loaded: true, exports: fake } as unknown as NodeJS.Module;
   /* eslint-disable @typescript-eslint/no-require-imports */
   (require('../src/main/ipcguard') as typeof import('../src/main/ipcguard')).initSimGuard(false);
-  const { register } = require('../src/main/ipc/profiles') as typeof import('../src/main/ipc/profiles');
+  const { register, linkedInProject } = require('../src/main/ipc/profiles') as typeof import('../src/main/ipc/profiles');
+  const { listClaudeAgents } = require('../src/adapters/claudeAgents') as typeof import('../src/adapters/claudeAgents');
   const { AgentTrustStore, readAgentFile, shownSha } = require('../src/main/agenttrust') as typeof import('../src/main/agenttrust');
   const { ClaudeAdapter, claudeArgs } = require('../src/adapters/claude') as typeof import('../src/adapters/claude');
   const { createCliTransport } = require('../src/adapters/claudeTransport') as typeof import('../src/adapters/claudeTransport');
@@ -68,6 +69,9 @@ async function main(): Promise<void> {
       // without O_NOFOLLOW: a file replaced between the lstat and the open (another dev/ino on the descriptor) is refused
       const otherIno = { ...noFollowless, lstat: (f: string) => { const st = fs.lstatSync(f); return { isSymbolicLink: () => st.isSymbolicLink(), dev: st.dev, ino: st.ino + 1 }; } };
       assert.strictEqual(readAgentFile(file, otherIno), undefined, 'a file other than the one the lstat saw is refused');
+      // the link check on its own: an lstat that reports a link with the real file's dev and ino is still refused
+      const linkSameIno = { ...noFollowless, lstat: (f: string) => { const st = fs.lstatSync(f); return { isSymbolicLink: () => true, dev: st.dev, ino: st.ino }; } };
+      assert.strictEqual(readAgentFile(file, linkSameIno), undefined, 'a link is refused even when dev and ino match');
       const otherDev = { ...noFollowless, lstat: (f: string) => { const st = fs.lstatSync(f); return { isSymbolicLink: () => false, dev: st.dev + 1, ino: st.ino }; } };
       assert.strictEqual(readAgentFile(file, otherDev), undefined, 'another device is refused');
       const hard = path.join(root, 'hard.md');
@@ -199,6 +203,36 @@ async function main(): Promise<void> {
     assert.strictEqual(await claude.selectAgentProfile(s5, 'reviewer', { path: path.join(root, 'reviewer.md'), bytes: fs.readFileSync(userFile) }).catch(() => 'refused'), 'refused', 'a file outside the agent folders is refused');
     await claude.stop(s5);
     fs.unlinkSync(folderFile);
+    ad = claude;
+  }
+
+  // a project whose .claude/agents or .claude is a link to a folder elsewhere: nothing listed, nothing read through it
+  if (process.platform !== 'win32') {
+    const elsewhere = path.join(root, 'elsewhere');
+    fs.mkdirSync(path.join(elsewhere, 'agents'), { recursive: true });
+    fs.writeFileSync(path.join(elsewhere, 'agents', 'far.md'), '---\nname: far\n---\nFrom outside the project.\n');
+    const W2 = path.join(root, 'w2');
+    fs.mkdirSync(path.join(W2, '.claude'), { recursive: true });
+    fs.symlinkSync(path.join(elsewhere, 'agents'), path.join(W2, '.claude', 'agents'));
+    const W3 = path.join(root, 'w3');
+    fs.mkdirSync(W3);
+    fs.symlinkSync(elsewhere, path.join(W3, '.claude'));
+    for (const [w, what] of [[W2, '.claude/agents'], [W3, '.claude']]) {
+      assert.deepStrictEqual(listClaudeAgents([w], CFG).filter((d) => d.profile.source === 'repo'), [], `a linked ${what} lists nothing`);
+      const far = path.join(w, '.claude', 'agents', 'far.md');
+      assert.strictEqual(linkedInProject([w], far), true, `a linked ${what} is found`);
+      const sw = await claude.start({ workspace: w, quiet: true } as never);
+      assert.ok(!(await claude.listAgentProfiles(sw)).some((x) => x.id === 'far'), `the session lists nothing through a linked ${what}`);
+      await assert.rejects(claude.selectAgentProfile(sw, 'far', { path: far, bytes: fs.readFileSync(far) }), /not available/, `bytes from a linked ${what} are refused`);
+      await claude.stop(sw);
+      const fp: AgentProfile = { id: 'far', name: 'far', source: 'repo', path: far };
+      ad = { listAgentProfiles: async () => [fp], selectAgentProfile: async () => fp };
+      agents.set('linked', { id: 'linked', cwd: w });
+      assert.deepStrictEqual(await selectId('linked', 'far'), { ok: false, error: 'The agent file could not be read.' }, `main refuses a file under a linked ${what}`);
+    }
+    assert.strictEqual(linkedInProject([WS], file), false, 'a plain project folder is fine');
+    assert.strictEqual(linkedInProject([root, WS], file), false, 'the nearest session folder is the project');
+    assert.strictEqual(linkedInProject([path.join(root, 'other')], file), false, 'a file in no session folder: nothing to check');
     ad = claude;
   }
 
