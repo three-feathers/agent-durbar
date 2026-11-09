@@ -208,6 +208,27 @@ const LIST = [
   r = run(w);
   assert.strictEqual(r.code, 1, 'main: a tracker that cannot be read makes the run red');
   assert.strictEqual((w[1404] as { body: string }).body, '- [x] #1154 crews\n- [ ] #1500 arcade', 'main: the next tracker is still reconciled');
+  // fail closed (F3): a missing, comment-only or empty trusted list means nobody is trusted: no call at all, exit 0 with a notice
+  {
+    const os = require('os');
+    for (const [label, text] of [['missing', null], ['empty', ''], ['comments only', '# vikramgorla\n  # fjcabello\n'], ['bad shapes only', 'vikram gorla\n<script>\n']] as [string, string | null][]) {
+      const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-pt-'));
+      fs.mkdirSync(path.join(tmp, 'scripts')); fs.mkdirSync(path.join(tmp, '.github'));
+      fs.copyFileSync(path.join(ROOT, 'scripts', 'trusted-authors.js'), path.join(tmp, 'scripts', 'trusted-authors.js'));
+      fs.copyFileSync(path.join(ROOT, '.github', 'parity-trackers.json'), path.join(tmp, '.github', 'parity-trackers.json'));
+      if (text !== null) fs.writeFileSync(path.join(tmp, 'scripts', 'trusted-authors.txt'), text);
+      const calls: string[][] = [];
+      const log = console.log; const said: string[] = []; console.log = (m: string) => { said.push(m); };
+      let code = -1;
+      try { assert.doesNotThrow(() => { code = PT.main({ GITHUB_REPOSITORY: 'three-feathers/agent-durbar' }, tmp, (a: string[]) => { calls.push(a); return JSON.stringify({ state: 'open', user: me, body: '- [x] #1 a' }); }); }, `fail closed: ${label} trusted list does not throw`); } finally { console.log = log; }
+      assert.strictEqual(calls.length, 0, `fail closed: ${label} trusted list makes no call`);
+      assert.strictEqual(code, 0, `fail closed: ${label} trusted list exits 0`);
+      assert.ok(said.some((m) => /no trusted accounts/.test(m)), `fail closed: ${label} trusted list says why`);
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+    const TA = require(path.join(ROOT, 'scripts', 'trusted-authors.js'));
+    assert.deepStrictEqual(TA.parseTrusted('# c\r\nvikramgorla\r\n  # x\n github-actions[bot]\nfoo bar\ngithub-actions[bot]x\nrubenlupi\n'), ['vikramgorla', 'rubenlupi'], 'parser: as trusted-lib.sh (comments, CR, exact shapes)');
+  }
   // a bad repository name does nothing
   r = run(world(), { GITHUB_REPOSITORY: 'a/b/../c' });
   assert.strictEqual(r.reads.length, 0, 'main: a bad repository name does nothing');

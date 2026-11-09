@@ -73,9 +73,10 @@ function desiredState(issue, isTrusted) {
   return isTrusted(author) || isTrusted(closer) ? 'tick' : null;
 }
 
+// The trusted logins, from the repo's one parser (scripts/trusted-authors.js). Fail closed: a missing, unreadable or empty
+// list means nobody is trusted.
 function readTrusted(root) {
-  return fs.readFileSync(path.join(root, 'scripts', 'trusted-authors.txt'), 'utf8')
-    .split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
+  try { return require(path.join(root, 'scripts', 'trusted-authors.js')).trustedAuthors(root); } catch { return new Set(); }
 }
 
 function readTrackers(root) {
@@ -93,7 +94,8 @@ function gh(args, input) {
 function main(env, root, call = gh) {
   const repo = env.GITHUB_REPOSITORY || '';
   if (!REPO_RE.test(repo)) { console.log('parity-tick: bad repository name; nothing done'); return 1; }
-  const trusted = new Set(readTrusted(root));
+  const trusted = readTrusted(root);
+  if (trusted.size === 0) { console.log('parity-tick: no trusted accounts read from scripts/trusted-authors.txt; nothing done'); return 0; }
   const isTrusted = (login) => typeof login === 'string' && trusted.has(login); // exact match against the list
   const states = new Map(); // issue number -> desired state, looked up once per run
   let failed = 0;
