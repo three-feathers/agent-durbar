@@ -1,1 +1,0 @@
-- The pull request UI checks run the simulator drivers in four time-balanced jobs per OS instead of one, so Linux and Windows finish in about a third of the time; a job named "UI suite complete" is green only when every shard passed (spec 008 FR-189).

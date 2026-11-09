@@ -447,7 +447,7 @@ module.exports = async (ctx) => {
   // ---- the empty queue: two agents, none needs you
   for (const [w, h] of SIZES) {
     const tag = `${w}x${h} empty queue`;
-    await H.load({ w, h, query: { sim: '2' } });
+    await H.load({ w, h, query: { sim: '2' }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=2` }); /* the default (15 desks) never holds with 2 agents: the load waited its whole 15 s (spec 008 FR-190) */
     await H.calm({ blur: true });
     wc.focus();
     await hooks();
@@ -565,7 +565,7 @@ module.exports = async (ctx) => {
     }],
     ['the Real office', async () => {
       const REAL = `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'`;
-      await H.load({ w: 1440, h: 900, query: { officeview: 'real' } });
+      await H.load({ w: 1440, h: 900, query: { officeview: 'real' }, ready: REAL }); /* the Real office has plates, not desks: the default ready never held (spec 008 FR-190) */
       await ok(REAL, 'the Real office');
       await setting(true);
       await ok(REAL, 'the Real office after Settings');
