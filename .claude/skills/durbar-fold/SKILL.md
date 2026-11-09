@@ -31,4 +31,4 @@ A checklist, not rule text. The steps in full: [changelog.d/README.md](../../../
 ## Finish
 
 10. `git merge origin/main`. A modify/delete conflict on a fragment: keep the deletion (`git rm changelog.d/<file>`); new text goes in a new fragment.
-11. `npm run specs:check && npm run changelog:check`, then the AGENTS.md *Before you finish* checks; labels as the last fold PR (`gh pr view 1350 --json labels`); merge as any PR ([docs/rules/merge-mechanics.md](../../../docs/rules/merge-mechanics.md), `scripts/pr-gate.sh <N>`).
+11. `npm run specs:check && npm run changelog:check`, then the AGENTS.md *Before you finish* checks; labels as the previous fold PR (the PR that changed `CHANGELOG.md` last); merge as any PR ([docs/rules/merge-mechanics.md](../../../docs/rules/merge-mechanics.md), `scripts/pr-gate.sh <N>`).
