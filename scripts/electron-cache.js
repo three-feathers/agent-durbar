@@ -91,7 +91,34 @@ function seed(electronRoot, version, checksums) {
   return f;
 }
 
-const electronChecksums = () => JSON.parse(fs.readFileSync(path.join(ROOT, 'node_modules', 'electron', 'checksums.json'), 'utf8'));
+/** Electron's own checksums, from its npm package (the lockfile's `integrity` covers it): the only source of the seed and of warm's check. */
+const checksumsPath = () => require.resolve('electron/checksums.json', { paths: [ROOT] });
+const electronChecksums = () => JSON.parse(fs.readFileSync(checksumsPath(), 'utf8'));
+
+/** The @electron/get options of one warmed zip: always the given checksums, never a switch that turns the check off. */
+function warmOptions(version, target, cacheRoot, checksums) {
+  if (!checksums || !Object.keys(checksums).length) throw new Error('warm needs Electron\'s checksums');
+  return { version, artifactName: 'electron', platform: target.platform, arch: target.arch, cacheRoot, checksums };
+}
+
+/** Downloads (or re-checks) every zip this runner OS needs into the Electron cache, then seeds the checksum file. */
+async function warm(p, runnerOs, deps = {}) {
+  const checksums = deps.checksums || electronChecksums();
+  // the copy electron/install.js uses
+  const downloadArtifact = deps.downloadArtifact || require(require.resolve('@electron/get', { paths: [path.join(ROOT, 'node_modules', 'electron')] })).downloadArtifact;
+  const log = deps.log || console.log;
+  fs.mkdirSync(p.builderDir, { recursive: true }); // actions/cache/save wants every listed path to exist
+  const zips = [];
+  for (const t of warmTargets(runnerOs)) {
+    // a corrupt or tampered zip is refused, never cached
+    const zip = await withRetries(`Electron ${p.electron} ${t.platform}-${t.arch} download`, () => downloadArtifact(warmOptions(p.electron, t, p.electronDir, checksums)), deps.waits || RETRY_WAITS, deps.sleep, log);
+    log(`cached ${zip}`);
+    zips.push(zip);
+  }
+  const seeded = seed(p.electronDir, p.electron, checksums);
+  log(`seeded ${seeded}`);
+  return { zips, seeded };
+}
 
 async function main(cmd) {
   const p = plan();
@@ -102,20 +129,12 @@ async function main(cmd) {
   } else if (cmd === 'seed') {
     console.log(`seeded ${seed(p.electronDir, p.electron, electronChecksums())}`);
   } else if (cmd === 'warm') {
-    const sums = electronChecksums();
-    const { downloadArtifact } = require(require.resolve('@electron/get', { paths: [path.join(ROOT, 'node_modules', 'electron')] })); // the copy electron/install.js uses
-    fs.mkdirSync(p.builderDir, { recursive: true }); // actions/cache/save wants every listed path to exist
-    for (const t of warmTargets(process.env.RUNNER_OS)) {
-      // checksums from the npm package (integrity-checked by the lockfile): a corrupt or tampered zip is refused, never cached
-      const zip = await withRetries(`Electron ${p.electron} ${t.platform}-${t.arch} download`, () => downloadArtifact({ version: p.electron, artifactName: 'electron', platform: t.platform, arch: t.arch, cacheRoot: p.electronDir, checksums: sums }));
-      console.log(`cached ${zip}`);
-    }
-    console.log(`seeded ${seed(p.electronDir, p.electron, sums)}`);
+    await warm(p, process.env.RUNNER_OS);
   } else {
     throw new Error('usage: node scripts/electron-cache.js plan|seed|warm');
   }
 }
 
-module.exports = { lockVersions, cacheKey, electronCacheRoot, warmTargets, shasumsText, withRetries, plan, seed, RETRY_WAITS };
+module.exports = { lockVersions, cacheKey, electronCacheRoot, warmTargets, shasumsText, withRetries, plan, seed, checksumsPath, electronChecksums, warmOptions, warm, RETRY_WAITS };
 
 if (require.main === module) main(process.argv[2]).catch((e) => { console.error(`::error::${e.message}`); process.exit(1); });

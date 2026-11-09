@@ -21,9 +21,15 @@ const ec = require(path.join(root, 'scripts', 'electron-cache.js')) as {
   withRetries: <T>(what: string, fn: () => Promise<T>, waits?: number[], sleep?: (s: number) => Promise<void>, log?: (s: string) => void) => Promise<T>;
   plan: (env: Record<string, string | undefined>, home: string, platform: string, lock?: unknown) => Plan;
   seed: (dir: string, version: string, checksums: Record<string, string>) => string;
+  checksumsPath: () => string;
+  electronChecksums: () => Record<string, string>;
+  warmOptions: (version: string, t: { platform: string; arch: string }, cacheRoot: string, c: Record<string, string>) => Record<string, unknown>;
+  warm: (p: Plan, runnerOs: string, deps?: Record<string, unknown>) => Promise<{ zips: string[]; seeded: string }>;
   RETRY_WAITS: number[];
 };
 const lock = JSON.parse(fs.readFileSync(path.join(root, 'package-lock.json'), 'utf8'));
+// the @electron/get switch that turns its checksum check off, spelled in pieces so the source scan below can include this file
+const SWITCH = ['unsafely', 'DisableChecksums'].join('');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'electron-cache-test-'));
 
 async function main(): Promise<void> {
@@ -45,6 +51,7 @@ async function main(): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const builderGet = require(path.join(root, 'node_modules', 'app-builder-lib', 'out', 'util', 'electronGet.js')) as {
     defaultElectronGetCacheRoot: () => string; resolveSeededChecksums: (root: string, version: string, file: string) => Promise<Record<string, string> | null>;
+    buildElectronArtifactConfig: (o: Record<string, unknown>) => Promise<Record<string, unknown>>;
   };
   const here = ec.electronCacheRoot(process.platform, process.env, os.homedir());
   assert.strictEqual(here, envPaths('electron', { suffix: '' }).cache, 'same directory as @electron/get\'s default');
@@ -105,6 +112,64 @@ async function main(): Promise<void> {
     await assert.rejects(get.downloadArtifact(opts), /checksum|match/i, `${name}: a download that fails the checksum is refused`);
   }
 
+  // 6b. warm() itself (review of #1363): the checksums it passes come from Electron's npm package, nothing turns the check off,
+  // a zip that fails the check is refused (after its retries), a good one is cached and the seed is written
+  assert.strictEqual(ec.checksumsPath(), require.resolve('electron/checksums.json', { paths: [root] }), 'the checksums come from node_modules/electron (the lockfile-pinned package)');
+  assert.strictEqual(path.relative(root, ec.checksumsPath()).split(path.sep).join('/'), 'node_modules/electron/checksums.json');
+  const realSums = ec.electronChecksums();
+  assert.deepStrictEqual(realSums, sums);
+  const wo = ec.warmOptions(v.electron, { platform: 'darwin', arch: 'x64' }, '/c', realSums);
+  assert.deepStrictEqual(wo, { version: v.electron, artifactName: 'electron', platform: 'darwin', arch: 'x64', cacheRoot: '/c', checksums: realSums }, 'exactly these options: the checksums, and no switch that turns the check off');
+  assert.throws(() => ec.warmOptions(v.electron, { platform: 'linux', arch: 'x64' }, '/c', {}), /checksums/);
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const installGet = require(require.resolve('@electron/get', { paths: [path.join(root, 'node_modules', 'electron')] })) as { downloadArtifact: (o: Record<string, unknown>) => Promise<string> };
+  const wp: Plan = { ...v, key: '', restorePrefix: '', electronDir: path.join(tmp, 'warm', 'electron'), builderDir: path.join(tmp, 'warm', 'builder') };
+  const seen: Record<string, unknown>[] = []; let serveWarm = bad; let warmDownloads = 0; const warmSlept: number[] = [];
+  const warmDeps = (c: Record<string, string> | undefined) => ({
+    checksums: c, log: () => undefined, sleep: async (sec: number) => { warmSlept.push(sec); },
+    // the real @electron/get, with a fake network: warm()'s own options decide what is checked
+    downloadArtifact: (o: Record<string, unknown>) => { seen.push(o); return installGet.downloadArtifact({ ...o, downloader: { download: async (_u: string, to: string) => { warmDownloads++; fs.writeFileSync(to, serveWarm); } } }); },
+  });
+  await assert.rejects(ec.warm(wp, 'Linux', warmDeps(checksums)), /failed 4 times/, 'warm() refuses a zip with a wrong checksum');
+  assert.deepStrictEqual([warmDownloads, warmSlept], [4, ec.RETRY_WAITS], 'every try downloaded and was refused');
+  assert.ok(!fs.existsSync(path.join(wp.electronDir, `SHASUMS256.txt-${v.electron}`)), 'no seed after a refused zip');
+  serveWarm = good; seen.length = 0;
+  const warmed = await ec.warm(wp, 'Linux', warmDeps(checksums));
+  assert.ok(warmed.zips.length === 1 && fs.readFileSync(warmed.zips[0]).equals(good) && warmed.zips[0].startsWith(wp.electronDir), 'warm() caches the good zip in the Electron cache directory');
+  assert.ok(seen.every((o) => o.checksums === checksums && !(SWITCH in o) && o.cacheRoot === wp.electronDir), 'warm() passes its checksums and never disables the check');
+  assert.ok(warmed.seeded === path.join(wp.electronDir, `SHASUMS256.txt-${v.electron}`) && fs.existsSync(warmed.seeded), 'warm() writes the seed');
+  assert.strictEqual(fs.readFileSync(warmed.seeded, 'utf8'), ec.shasumsText(checksums));
+  // without injected checksums warm() uses Electron's own (seen through the options it passes)
+  seen.length = 0;
+  await assert.rejects(ec.warm({ ...wp, electronDir: path.join(tmp, 'warm2') }, 'Linux', { ...warmDeps(undefined), checksums: undefined, waits: [] }));
+  assert.ok(seen.length === 1 && seen[0].checksums && JSON.stringify(seen[0].checksums) === JSON.stringify(sums), 'by default warm() checks against node_modules/electron/checksums.json');
+
+  // 6c. the seed is the exact file electron-builder reads: its own config builder turns it into the checksums it checks a cached
+  // zip against, and that zip then needs no SHASUMS256.txt from the network (a fake network that fails proves it)
+  const bRoot = path.join(tmp, 'builder-seed');
+  ec.seed(bRoot, v.electron, checksums);
+  const cfg = await builderGet.buildElectronArtifactConfig({ arch: 'x64', version: v.electron, platformName: 'linux', artifactName: 'electron', cacheDir: bRoot });
+  assert.deepStrictEqual(cfg.checksums, checksums, 'electron-builder reads the seed as its checksums');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const bGet = require(require.resolve('@electron/get', { paths: [path.join(root, 'node_modules', 'app-builder-lib')] })) as { downloadArtifact: (o: Record<string, unknown>) => Promise<string> };
+  let bServe = good; let bUrls: string[] = [];
+  const bDownloader = { download: async (u: string, to: string) => { bUrls.push(u); if (/SHASUMS/.test(u)) throw new Error('offline'); fs.writeFileSync(to, bServe); } };
+  const bZip = await bGet.downloadArtifact({ ...cfg, downloader: bDownloader });
+  assert.ok(fs.readFileSync(bZip).equals(good) && bUrls.length === 1 && !/SHASUMS/.test(bUrls[0]), 'one zip download, no SHASUMS256.txt');
+  bUrls = []; await bGet.downloadArtifact({ ...cfg, downloader: bDownloader });
+  assert.deepStrictEqual(bUrls, [], 'a seeded cache hit needs no network at all');
+  fs.writeFileSync(bZip, bad); bServe = bad;
+  await assert.rejects(bGet.downloadArtifact({ ...cfg, downloader: bDownloader }), /checksum|match/i, 'a tampered cached zip is refused against the seed');
+  fs.rmSync(path.join(bRoot, `SHASUMS256.txt-${v.electron}`));
+  const unseeded = await builderGet.buildElectronArtifactConfig({ arch: 'x64', version: v.electron, platformName: 'linux', artifactName: 'electron', cacheDir: bRoot });
+  assert.strictEqual(unseeded.checksums, undefined, 'without the seed electron-builder has no checksums (it would fetch SHASUMS256.txt)');
+
+  // 6d. nothing in scripts/ turns the checksum check off (a source scan; this file names the switch only to look for it)
+  const scan = (d: string): string[] => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? (['node_modules', 'prereview'].includes(e.name) ? [] : scan(path.join(d, e.name))) : /\.(js|ts|cjs|mjs)$/.test(e.name) ? [path.join(d, e.name)] : []);
+  const scanned = scan(path.join(root, 'scripts'));
+  assert.ok(scanned.some((f) => f.endsWith('electron-cache.js')) && scanned.length > 50, 'the scan read scripts/');
+  for (const f of scanned) assert.ok(!fs.readFileSync(f, 'utf8').includes(SWITCH), `${path.relative(root, f)} must not set ${SWITCH}`);
+
   // 7. retries: 4 tries, 30 s, 120 s and 300 s apart (about 8 minutes), and the last error names the Electron host
   assert.deepStrictEqual(ec.RETRY_WAITS, [30, 120, 300]);
   const slept: number[] = []; let calls = 0;
@@ -119,7 +184,8 @@ async function main(): Promise<void> {
   assert.ok(/id: plan\r?\n\s+shell: bash\r?\n\s+run: node scripts\/electron-cache\.js plan/.test(action), 'npm-ci computes the key with the shared script');
   assert.ok(/path: \$\{\{ steps\.plan\.outputs\.paths \}\}\r?\n\s+key: \$\{\{ steps\.plan\.outputs\.key \}\}/.test(action), 'npm-ci caches the planned paths under the planned key');
   assert.ok(/restore-keys: \$\{\{ steps\.plan\.outputs\.restore-prefix \}\}/.test(action), 'a miss falls back to the same Electron version');
-  assert.ok(action.includes(`waits=(${ec.RETRY_WAITS.join(' ')})`), 'npm ci waits as long as the warmer');
+  assert.ok(action.includes(`retry-waits:`) && action.includes(`default: '${ec.RETRY_WAITS.join(' ')}'`), 'by default npm ci waits as long as the warmer');
+  assert.ok(/RETRY_WAITS: \$\{\{ inputs\.retry-waits \}\}/.test(action) && /read -ra waits <<< "\$RETRY_WAITS"/.test(action) && /\n\s+for w in "\$\{waits\[@\]\}"; do case "\$w" in ''\|\*\[!0-9\]\*\) echo "::error::retry-waits must be whole seconds, got: \$w"; exit 1;; esac; done\n/.test(action), 'the waits pass through env: and must be whole seconds');
   assert.ok(/Electron download host/.test(action) && /exit 1/.test(action), 'the last failure names the Electron host and fails');
   assert.ok(action.indexOf('node scripts/electron-cache.js seed') > action.indexOf('npm ci $NPM_CI_ARGS'), 'the checksum file is seeded after the install');
   assert.ok(!/secrets\./.test(action) && !/github\.event|head_ref/.test(action), 'no secrets, no PR text');
@@ -131,7 +197,8 @@ async function main(): Promise<void> {
   let yaml: { load: (s: string) => unknown } | undefined; try { yaml = require('js-yaml'); } catch { yaml = undefined; }
   type Step = { id?: string; if?: string; uses?: string; run?: string; with?: Record<string, unknown> };
   type Wf = { on: Record<string, unknown>; permissions: Record<string, string>; jobs: Record<string, { permissions?: unknown; strategy: { matrix: { os: string[] } }; steps: Step[] }> };
-  if (yaml) {
+  assert.ok(yaml, 'js-yaml is missing: the warmer\'s triggers, permissions and steps cannot be checked (it is a transitive dependency; no devDependency is added for it, review of #1354). Fix the install instead of skipping.');
+  {
     const wf = yaml.load(text) as Wf & { true?: Record<string, unknown> };
     const on = wf.on || wf.true || {};
     assert.deepStrictEqual(Object.keys(on).sort(), ['push', 'schedule', 'workflow_dispatch'], 'warmer triggers: push to main, schedule, by hand (no pull_request, pull_request_target, merge_group or workflow_run)');
@@ -159,6 +226,38 @@ async function main(): Promise<void> {
     if (!t.includes('./.github/actions/npm-ci')) continue;
     for (const o of t.match(/\b(?:ubuntu|windows|macos)-(?:latest|\d[\w.]*)\b/g) || []) assert.ok(text.includes(o), `${f} runs on ${o}, which the warmer does not warm`);
   }
+  // 10. every job that uses npm-ci has room for its retries (review of #1363): typical minutes + retry budget <= timeout-minutes.
+  // Typical: the longest successful run among the last 15 of each workflow (gh run list/view, 2026-11-09), across its matrix.
+  // Budget: the job's waits plus one failed npm ci try before each wait (an outage fails a try in about a minute; 1.5 allowed).
+  const TYPICAL_MIN: Record<string, number> = {
+    'ci.yml:build-test': 9.8, 'ci.yml:office-check': 5.2, 'ci.yml:theme-shard': 3.0, 'e2e-real.yml:e2e': 2.5, 'install-check.yml:install': 4.4,
+    'installed-app.yml:installed': 10.2, 'macos-pr.yml:macos-test': 8.8, 'mcp-oauth-real.yml:check': 1.1, 'packaged-check.yml:check': 1.6,
+    'release.yml:build': 14.4, 'ui-platforms.yml:ui': 22.7, 'world-matrix.yml:subset': 2.1,
+    'world-matrix.yml:weekly': 25, // estimate: no weekly run among the last 40 runs of the workflow
+  };
+  const FAILED_TRY_MIN = 1.5;
+  type Job = { 'timeout-minutes'?: number; steps?: { uses?: string; with?: Record<string, string> }[] };
+  const defaultWaits = ((yaml.load(action) as { inputs: Record<string, { default: string }> }).inputs['retry-waits'].default).split(/\s+/).map(Number);
+  const budgets: string[] = [];
+  for (const f of fs.readdirSync(wfDir).filter((n) => /\.ya?ml$/.test(n))) {
+    const jobsOf = (yaml.load(fs.readFileSync(path.join(wfDir, f), 'utf8')) as { jobs?: Record<string, Job> }).jobs || {};
+    for (const [id, job] of Object.entries(jobsOf)) {
+      const uses = (job.steps || []).filter((st) => st.uses === './.github/actions/npm-ci');
+      if (!uses.length) continue;
+      const name = `${f}:${id}`;
+      assert.ok(name in TYPICAL_MIN, `${name} uses npm-ci: add its typical minutes to TYPICAL_MIN (measured, or an estimate said so)`);
+      for (const st of uses) {
+        const raw = st.with && st.with['retry-waits'];
+        const waits = raw === undefined ? defaultWaits : String(raw).split(/\s+/).map(Number);
+        assert.ok(waits.length > 0 && waits.every((w) => Number.isInteger(w) && w >= 0), `${name}: retry-waits are whole seconds`);
+        const budget = waits.reduce((a, b) => a + b, 0) / 60 + waits.length * FAILED_TRY_MIN;
+        const limit = Number(job['timeout-minutes']);
+        assert.ok(TYPICAL_MIN[name] + budget <= limit, `${name}: ${TYPICAL_MIN[name]} min of work + ${budget.toFixed(1)} min of npm ci retries is more than timeout-minutes ${limit}`);
+        budgets.push(name);
+      }
+    }
+  }
+  assert.ok(budgets.length >= 13 && Object.keys(TYPICAL_MIN).every((k) => budgets.includes(k)), 'every listed job was checked, and no stale entry is listed');
   console.log('electron-cache: ok');
 }
 

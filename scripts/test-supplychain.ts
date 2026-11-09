@@ -161,7 +161,7 @@ assert.ok(/actions\/cache@[0-9a-f]{40}/.test(npmCiAction), 'the Electron downloa
 const cacheScript = fs.readFileSync(path.join(root, 'scripts', 'electron-cache.js'), 'utf8');
 for (const v of ['ELECTRON_CACHE=', 'electron_config_cache=', 'ELECTRON_BUILDER_CACHE=']) assert.ok(cacheScript.includes(v), `${v} points at the cached directory`);
 assert.ok(/key: \$\{\{ steps\.plan\.outputs\.key \}\}/.test(npmCiAction) && /electron-\$\{runnerOs\}-\$\{runnerArch\}-\$\{v\.electron\}-builder-/.test(cacheScript), 'the cache key carries the exact Electron version');
-assert.ok(/waits=\(30 120 300\)/.test(npmCiAction) && /exit 1/.test(npmCiAction), 'npm ci retries 4 times (30 s, 120 s, 300 s apart) and still fails loudly');
+assert.ok(/default: '30 120 300'/.test(npmCiAction) && /exit 1/.test(npmCiAction), 'npm ci retries 4 times by default (30 s, 120 s, 300 s apart) and still fails loudly');
 assert.ok(!/secrets\./.test(npmCiAction), 'the action touches no secrets');
 
 export type GitRun = (args: string[]) => { status: number | null; stdout: string; stderr: string; error?: Error };
