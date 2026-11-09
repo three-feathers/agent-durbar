@@ -20,7 +20,7 @@
  * Mutants (edit src/renderer/realoffice.js, `npm run build`, run, `git checkout -- <file>`; each must fail its assert):
  *   cabinet     drop `!lay.cabinet` from the signs' guard                       -> "no trouble sign at an arcade cabinet"
  *   loungectx   in ctx() use `mood` for a lounge seat (drop `d.lounge ? null :`)  -> "gives ...'s lounge seat no mood words by the cheap path"
- *   loungemodel drop `!d.lounge` from the signs' guard AND give realModel's lounge seat `mood:realMood(moodFor(a))` (app.js) -> "a lounge seat ... draws no sign"
+ *   loungemodel drop `!d.lounge` from the signs' guard AND give realModel's lounge seat `mood:realMood(moodFor(a))` (app.js) -> "sweat sign on exactly Open office's desks" (a lounge seat with a heavy body gets a drop) or "a lounge seat ... draws no sign"
  *               (dropping `!d.lounge` alone is equivalent: the lounge seat's model carries no mood; spec 097 FR-361)
  *   slipavoid   drop `avoid.push(...MOOD_BOXES)` in drawSlips                    -> "... and a slip or pill ... do not overlap" (the cave at 1440x900)
  */

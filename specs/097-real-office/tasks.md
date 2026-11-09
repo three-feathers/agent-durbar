@@ -227,12 +227,6 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 - [x] T222 [US2] Second review of PR #1292 (FR-318 delta 2026-11-07): LF, CR, TAB and other non-space whitespace shown as markers; a secret behind a control is `concealed` and blocks Allow like `unchecked`; every Cf, default-ignorable and blank-filler character marked; text over 10,000 characters cut at a word, marked, fast, and a cut card offers no Allow; homoglyphs #1300 a known gap. Test: `test:liveact` (`r2 item 1..4`, 12 mutants) and `check-why-allowed`
 - [x] T223 [US2] Third review of PR #1292 (FR-318 delta 2026-11-07): `cut` ranks first and always wins, the cap counts marker growth, a masked shell command that lost its shape or whose replaced span holds `$(`, a backtick, `;`, `|`, `&`, `<`, `>` or a line break is `concealed` (Deny only). Test: `test:liveact` (`r3 ...`, 13 mutants) and `check-why-allowed` (cut and `$( )` cards)
 - [x] T224 [US2] Fourth review of PR #1292 (FR-318 delta 2026-11-08): CRLF-safe source reads in `test:liveact` (proved on a CRLF copy), `(` and `{` (PowerShell) join the spans that conceal a masked command, a mask that changes text before the first `[redacted]` is concealed. Test: `test:liveact` (`r3 item 2` PowerShell cases, `r4 item 3`, 3 mutants)
-- [x] T280 [US2] Real office trouble signs, spec delta 2026-11-08 [FR-360..FR-362, #1171]: spec, tasks and changelog fragment
-- [x] T281 [US2] `realModel` passes `mood` (from `moodFor`) and `sirenIcon`; `realoffice.js` draws the sweat drop, horns, ring and siren in the chrome layer; the plate name carries the words; `realoffice.css` [FR-360, FR-361, FR-362]
-- [x] T282 [US2] `scripts/check-097-trouble-signs.js`: the same desks as Open office, geometry, Serious mode, words, both sizes; in `ui-suite` [FR-360, FR-361]
-- [x] T283 [US2] Mutation checks (no sweat, no horns, no ring, no siren, a sign on every desk) and pictures at both sizes [FR-361]
-- [x] T284 [US2] After the merge with main: the mood's words live in `a.moodWords` and are joined by `labelOf` (mood, context, helpers, Open chat panel); the cheap context path carries the mood and schedules a draw when the look changes; `check-097-ctx-frame` passes again [FR-326, FR-362]
-
 - [x] T228 [US2] Hover on a desk's person, desk, monitor or plate opens the zoom [FR-327, #1151]: `wireZoom` in `realoffice.js` (one target-to-agent function; the panel stays while the pointer moves over one desk). Test: `check-097-hover-card`
 - [x] T229 [US2] The zoom opens for an asleep agent [FR-328]: `openZoom`, the layout refresh and `realScreen` (reply lines for the zoom only). Test: `check-097-hover-card`, `shots-097-screens` asleep step (the open card is refilled when its agent falls asleep)
 - [x] T230 [US2] The Changed fact for lounge agents [FR-329]: `realFacts`, `Changed` wraps. Test: `check-097-hover-card`
@@ -260,6 +254,15 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 - [x] T272 [US1] Driver `scripts/check-097-helpers.js` (in `ui-suite`): 15 agents with helpers, both sizes, Photo office, cave and arcade, heads, dot colour, name only in the accessible name, `+K`, `statusNodes`; mutants [FR-311]
 - [x] T273 [US1] Pictures at both sizes (Photo, cave) and a 2x crop to the owner before merge, compressed under 300 KB; the owner looked (2026-11-08 09:30 UTC) and chose "fine as is" [FR-307]
 - [x] T274 [US1] Docs: changelog fragment, `docs/features.md`, `docs/feature-inventory.md`, the spec's tags [FR-306..FR-311]
+
+## 2026-11-08: trouble signs on a Real office desk (issue #1171, FR-360..FR-362)
+
+- [x] T280 [US2] Real office trouble signs, spec delta 2026-11-08 [FR-360..FR-362, #1171]: spec, tasks and changelog fragment
+- [x] T281 [US2] `realModel` passes `mood` (from `moodFor`) and `sirenIcon`; `realoffice.js` draws the sweat drop, horns, ring and siren in the chrome layer; the plate name carries the words; `realoffice.css` [FR-360, FR-361, FR-362]
+- [x] T282 [US2] `scripts/check-097-trouble-signs.js`: the same desks as Open office, geometry, Serious mode, words, both sizes; in `ui-suite` [FR-360, FR-361]
+- [x] T283 [US2] Mutation checks (no sweat, no horns, no ring, no siren, a sign on every desk) and pictures at both sizes [FR-361]
+- [x] T284 [US2] After the merge with main: the mood's words live in `a.moodWords` and are joined by `labelOf` (mood, context, helpers, Open chat panel); the cheap context path carries the mood and schedules a draw when the look changes; `check-097-ctx-frame` passes again [FR-326, FR-362]
+- [x] T285 [US2] Review of PR #1321 (2026-11-09, five findings) [FR-326, FR-361, FR-362]: `check-097-ctx-frame`'s mood step reads `ctx`'s answer and the cheap path's stored look and words while draws are held, then asks for one real draw (`__durbarSimUi.render`) instead of waiting for a natural one; `check-097-trouble-signs` runs in the Photo office, the cave (heavy, siren, monster, geometry, no overlap) and the Retro arcade (no sign at a cabinet), and checks a lounge seat at 95 % (no sign, no mood words by the cheap path or a draw); `ctx` gives a lounge seat no mood; slips and the inbox pill are placed clear of the signs (`MOOD_BOXES`); mutants listed in each driver's header
 
 ## Phase 3b: every Characters crew in Real office (issue #1154, part of #1147; delta 2026-11-08)
 
