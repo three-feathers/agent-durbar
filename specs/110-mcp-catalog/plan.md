@@ -21,7 +21,7 @@ A shipped, reviewed JSON catalog in spec 076's `durbar-mcp-list-v1` format, read
 - **III Safe by default**: pasted text and VS Code files are untrusted, capped, parsed as data, never run; values stay in main after **Check**, masked in every view, never logged; folder pastes are saved off and untrusted; global writes need spec 069's per-file confirmation; the catalog is reviewed data with a host allow-list test (FR-060..FR-066). Pass.
 - **IV No credits**: simulator and fixtures only; the real check T018 reads files with the apps' own `mcp list` commands at 0 credits, as spec 069's T060 did, and needs the owner's OK per AGENTS.md. Pass.
 - **V Calm UI**: tool-surface dialogs, text at least 10.5 px (12 px list), list scrolls inside, state by word and icon, keyboard and screen reader contract (FR-070..FR-073). Pass.
-- **VI Platforms**: paths with `path` and spec 069's resolvers; `WIN_EXTS` for the command check; Windows `npx` is an open question with a safe default and a `[KNOWN GAP]` (FR-081, FR-093). Pass with a stated gap.
+- **VI Platforms**: paths with `path` and spec 069's resolvers; `WIN_EXTS` for the command check; Windows `npx` follows Q6 (answered C: plain `npx` with a note until the real check) and a `[KNOWN GAP]` (FR-081, FR-093). Pass with a stated gap.
 - **VII Quality gates**: unit tests, drivers, screenshots at both sizes per UI group, feature inventory row. Pass.
 - **VIII Honest limits**: FR-090..FR-095; vendor URLs confirmed per entry in G1, never from memory. Pass.
 
@@ -34,7 +34,7 @@ A shipped, reviewed JSON catalog in spec 076's `durbar-mcp-list-v1` format, read
 | Folder save, secrets, trust | `mcp:upsert`, `mcpstore.ts`, `needsSecrets`, `trustHash`, the trust prompt | none (a paste apply calls the store's upsert in main, as `applyFolderImport` does) |
 | Global save | `mcp:globalPreview` / `mcp:globalApply`, `reviewGlobal`, 069 writers | none (a global paste apply builds `globalPreview` inputs in main) |
 | Parsing | `parseMcpConfig`, `parseVSCodeMcp`, `stripJsonc`, `candidateInput` (`src/shared/mcpimport.ts`) | a front end for the shapes of FR-032, placeholder detection (FR-034), hidden-character refusal (FR-037), caps |
-| VS Code files | `previewFolderImport`, `readVSCodeFile` (`src/main/mcpimport.ts`), `vscodeUserDirs` (`src/main/vscode.ts`), `mcp:importPreview` / `mcp:importApply` | apply targets spec 069's writers (G5, after Q1, Q2) |
+| VS Code files | `previewFolderImport`, `readVSCodeFile` (`src/main/mcpimport.ts`), `vscodeUserDirs` (`src/main/vscode.ts`), `mcp:importPreview` / `mcp:importApply` | apply targets spec 069's writers (G5; Q1 A, Q2 B) |
 | Command found | `commandFound`, `foldersFor`, `WIN_EXTS` (`src/main/mcpcmdcheck.ts`) | none |
 | Sign-in | `agents:mcpSignIn`, `canSignIn`, `signInSteps`, `mcpwords.js` (spec 058) | none |
 | Masking | `redact`, `maskSecretArgs`, `maskSecretUrl`, `HIDDEN_CHARS` (`redact.ts`) | none; a gap found is fixed in `redact.ts` for everyone |
@@ -64,12 +64,12 @@ A shipped, reviewed JSON catalog in spec 076's `durbar-mcp-list-v1` format, read
 
 | Group | Content | Waits for |
 |---|---|---|
-| G1 | Catalog data (entries checked against vendor pages), `policymcp.ts` v1 reader, `mcp:catalog`, tests | Q4, Q5 defaults usable |
-| G2 | Catalog dialog, entry points, `editServer` prefill, needs and Needs sign-in lines, simulator, driver, screenshots | G1; Q3 default usable |
+| G1 | Catalog data (entries checked against vendor pages), `policymcp.ts` v1 reader, `mcp:catalog`, tests | Q4 A, Q5 A (answered) |
+| G2 | Catalog dialog, entry points, `editServer` prefill, needs and Needs sign-in lines, simulator, driver, screenshots | G1; Q3 A (answered) |
 | G3 | Paste parser front end, placeholders, warnings, refusals, caps (pure) | none |
 | G4 | `mcp:pastePreview` / `mcp:pasteApply`, the paste dialog and preview, both targets, driver, screenshots | G3, G2 |
-| G5 | Import from VS Code on the paste pipeline, targeting the apps' own lists; spec 020 delta | Q1, Q2 answered |
-| G6 | Windows `npx` handling per Q6 | Q6 (default A until then) |
+| G5 | Import from VS Code on the paste pipeline, targeting the apps' own lists; spec 020 delta | Q1 A, Q2 B (answered 2026-11-09) |
+| G6 | Windows `npx` handling per Q6 | Q6 C (A until T019) |
 | G7 | Worlds and accessibility audit, docs, feature inventory, changelog | G2, G4 |
 | G8 | Real checks (owner's OK) | G2, G4 |
 

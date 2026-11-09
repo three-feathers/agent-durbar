@@ -4,12 +4,12 @@
 
 ## Spec
 
-- [ ] T001 Spec, plan, tasks and specs-index block (`specs/110-mcp-catalog/`), this PR. Test: `npm run specs:check`, `npm run rules:check`.
+- [ ] T001 Spec, plan, tasks and specs-index block (`specs/110-mcp-catalog/`), and the `.github/CODEOWNERS` line for the catalog file (FR-065, approved 2026-11-09), this PR. Test: `npm run specs:check`, `npm run rules:check`.
 
 ## G1: catalog data (P1)
 
 - [ ] T002 [G1] `src/shared/policymcp.ts`: the `durbar-mcp-list-v1` reader (spec 076's schema, by hand), with the no-secret rule. Test first: `test:mcpcatalog` with planted bad entries; agreement with the schema through `ajv` [FR-004, FR-006, FR-007, SC-002]
-- [ ] T003 [G1] `src/shared/mcpcatalog.json`: the first entries, each checked against the vendor's page (named with its date in the PR body), pinned packages, no values; the host and package allow-list in the test; proposed CODEOWNERS line for the file (owner approval) [FR-001..FR-005, FR-065, Q4, Q5]
+- [ ] T003 [G1] `src/shared/mcpcatalog.json`: the first entries, each checked against the vendor's page (named with its date in the PR body), pinned packages, no values; the host and package allow-list in the test; the CODEOWNERS line for the file is already in place (approved 2026-11-09, added with T001) [FR-001..FR-005, FR-065, Q4, Q5]
 - [ ] T004 [G1] `src/main/mcpcatalog.ts` and `mcp:catalog` (`ipcHandle`, preload, `api.ts`): entries, `found` per stdio command from `commandFound`, per-app sign-in ability from adapter capabilities. Test first: `test:mcpcatalog` (broken file gives an empty catalog and no throw; network paths not judged) [FR-006, FR-013, FR-015, FR-064]
 
 ## G2: catalog dialog (P1)
@@ -29,13 +29,13 @@
 - [ ] T011 [G4] `src/main/mcppaste.ts`: `mcp:pastePreview` (64 KiB, NUL, parse, `validateInput` per candidate, rename and clash rules, masked preview type with no value field, token for 5 minutes) and `mcp:pasteApply` (argument checks, folder apply off and untrusted through the store, global apply through spec 069's preview); `simguard`. Test first: `test:mcppaste` (no planted secret in any answer or log line; token expiry, reuse and foreign ids refused; write counters 0 before confirm) [FR-031, FR-033, FR-038, FR-039, FR-061, FR-064, SC-003, SC-004]
 - [ ] T012 [G4] Paste dialog and preview: labelled text area cleared after **Check**, Ctrl/⌘+Enter, the full per-server preview (exact command and arguments or URL, ASCII host, keys with masked values, notes, warnings), boxes, target choice, then the folder save or spec 069's review. Test: `shots-110-paste` (valid, placeholder, warning, refused, hostile) [FR-030, FR-035, FR-062, FR-071, FR-072, SC-004]
 
-## G5: Import from VS Code, retargeted (P2; waits for Q1, Q2)
+## G5: Import from VS Code, retargeted (P2; Q1 A and Q2 B answered 2026-11-09)
 
 - [ ] T013 [G5] Import from VS Code on the paste pipeline: read the file(s) of Q2 in main, FR-035's preview, apply to the apps' own lists through spec 069's review (Q1's scope); `inputs` never resolved; spec 020 dated delta (FR-020, FR-024 amended). Test first: `test:mcp` import cases moved to the new target; `shots-110-paste` import step [FR-050..FR-052]
 
-## G6: Windows npx (P2; default until Q6)
+## G6: Windows npx (P2; Q6 answered C: plain `npx` with the note until T019)
 
-- [ ] T014 [G6] Per-app, per-OS view of what will be written for a catalog `npx` entry, with the default of Q6 (plain `npx` and the "not checked" note) or its answer; pure function with an injected platform. Test first: unit test from every OS for win32, darwin, linux [FR-080, FR-081]
+- [ ] T014 [G6] Per-app, per-OS view of what will be written for a catalog `npx` entry, with Q6's answer (plain `npx` and the "not checked" note until T019, then per app); pure function with an injected platform. Test first: unit test from every OS for win32, darwin, linux [FR-080, FR-081]
 
 ## G7: worlds, accessibility, docs (P2)
 
@@ -46,7 +46,7 @@
 ## G8: real checks (owner's OK first, AGENTS.md *No AI credits*)
 
 - [ ] T018 [G8] Each agent app reads every catalog entry as written (Copilot CLI, Claude Code, Codex `mcp list` on a scratch home, 0 credits, as spec 069's T060); record `real:` per entry and app in *Changes* [FR-092, SC-001]
-- [ ] T019 [G8] `npx` catalog entry on Windows and macOS for each app (the Mac session for macOS); answer input for Q6 [FR-081, FR-093]
+- [ ] T019 [G8] `npx` catalog entry on Windows and macOS for each app (the Mac session for macOS); input for the per-app choice of Q6 (C) [FR-081, FR-093]
 - [ ] T020 [G8] One OAuth catalog server through spec 058's Sign in on a real account, after #364's open real checks (T105..T107) [FR-016, FR-091]
 
 ## Coverage (hand analysis)

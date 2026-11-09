@@ -4,12 +4,12 @@
 group: 046
 title: MCP server catalog and Paste a config (owner 2026-11-09, issue #539): a reviewed built-in list of official servers (durbar-mcp-list-v1) prefilling the add form, a pasted mcpServers snippet parsed in main as untrusted and shown masked before saving, Import from VS Code into the agent apps' own lists; Needs sign-in until #364, no new sign-in code
 status: specified
-note: spec, plan, tasks; Q1-Q6 open for the owner; nothing built
+note: spec, plan, tasks; Q1-Q6 answered 2026-11-09 (recommended defaults), CODEOWNERS line approved; nothing built
 -->
 
 **Feature Branch**: `110-mcp-catalog` (spec, plan and tasks only). The build is one small PR per task group (G1..G7), then the real checks (G8).
 **Created**: 2026-11-09
-**Status**: Specified. Nothing built. Q1..Q6 below are open for the owner; each has a recommended default, and no build task depends on a default that is not marked as such.
+**Status**: Specified. Nothing built. Q1..Q6 below were answered by the owner on 2026-11-09 (the recommended default of each); no group waits for an answer.
 **Issue**: #539 (Refs: the issue stays open for the build).
 **Input**: Owner idea and decisions on issue #539, quoted with their dates:
 
@@ -17,6 +17,7 @@ note: spec, plan, tasks; Q1-Q6 open for the owner; nothing built
 - **2026-11-02 (Vikram, on #539)**: "Owner decision 2026-11-02: keep; spec soon. Spec 076 waits for it."
 - **2026-11-02 (Vikram, on #539)**: "Import from VS Code stays, and changes target. It reads the MCP servers of VS Code's `mcp.json` and brings them into the agent app's own MCP config (the CLI or SDK Durbar runs), not into a separate Durbar list. MCP servers only. Spec together with this issue's paste config, reusing `parseMcpConfig`. The person sees what would be written before it is written."
 - **2026-11-09 (Vikram, triage, Telegram 06:59 UTC, recorded on #539)**: "yes: MCP catalog plus paste-a-config now, 'Needs sign-in' shown until #364 lands".
+- **2026-11-09 (Vikram, Telegram 07:24 UTC, recorded on PR #1369)**: "All ok": every open question takes its recommended default (Q1..Q6 below), and the CODEOWNERS line for the catalog file (FR-065) is approved.
 
 ## Summary
 
@@ -135,7 +136,7 @@ The catalog has no entry for what the person wants (*Custom…* and *Paste a con
 - **FR-062** **Exact command before saving.** No server is saved without its exact command and arguments, or URL, being on screen in the step the person confirms (FR-035 and spec 069's review); the folder trust prompt (spec 019 FR-005) and spec 061's folder consent are unchanged.
 - **FR-063** **No shell, no spawn.** Durbar does not run a pasted or catalog command to test it; `commandFound` only reads folder listings (spec 058 FR-198). Durbar never adds a shell wrapper to a pasted or custom command (FR-081 is about catalog entries only).
 - **FR-064** **Validated in main.** The new channels (`mcp:catalog`, `mcp:pastePreview`, `mcp:pasteApply`) are registered with `ipcHandle` (only the app's own window), check every argument's type and size, and are refused under `DURBAR_SIM` by `simguard` where they would write (the simulator answers with a fake store, as spec 069's fixtures).
-- **FR-065** **Catalog data is reviewed code.** The catalog file changes only by pull request, and FR-002's test guards its hosts and packages. G1 proposes a CODEOWNERS line for the file so an owner reviews every change; `.github/` is owner-owned, so that line needs an owner's approval (it is not assumed here).
+- **FR-065** **Catalog data is reviewed code.** The catalog file changes only by pull request, and FR-002's test guards its hosts and packages. `.github/CODEOWNERS` names the file (`/src/shared/mcpcatalog.json`, the three owners), so an owner reviews every change: approved by the owner 2026-11-09 (Vikram, Telegram 07:24 UTC) and added in this spec's PR.
 - **FR-066** **Org policy hook.** Once spec 076 is built, `mcp:pasteApply` and the catalog go through its enforcement points in main (076 FR-043), so `allowlist` refuses a pasted server that is not on the list.
 
 ### F. Worlds, accessibility, platforms
@@ -145,7 +146,7 @@ The catalog has no entry for what the person wants (*Custom…* and *Paste a con
 - **FR-072** **Screen reader.** Each entry's accessible name is one sentence (US7); state is never colour alone (constitution V); the result count and the paste result go to `#srAnnounce` (polite); errors are linked to the text area (`aria-describedby`) with their line and column.
 - **FR-073** **Size and fit.** Text at least 10.5 px (12 px for the list); the dialog fits 1440x900 and 1280x800, the list scrolls inside the dialog, never the page.
 - **FR-080** **Windows, macOS, Linux.** File locations stay with spec 069 FR-001 (`path`, `os.homedir()`); the command check uses `WIN_EXTS` on Windows (`npx.cmd`); paths in arguments are shown as written.
-- **FR-081** **`npx` on Windows** (Q6). Agent apps start stdio servers themselves, and on Windows `npx` is a `.cmd` file that some apps cannot start without a shell (`read:` Claude Code's docs ask for `cmd /c npx` on native Windows). The review shows, per app and OS, exactly what will be written. Default until Q6 is answered: plain `npx` for every app, with the note "On Windows, <app> may need `cmd /c npx`; not checked" under the app's row.
+- **FR-081** **`npx` on Windows** (Q6). Agent apps start stdio servers themselves, and on Windows `npx` is a `.cmd` file that some apps cannot start without a shell (`read:` Claude Code's docs ask for `cmd /c npx` on native Windows). The review shows, per app and OS, exactly what will be written. Q6 answer (C, 2026-11-09): plain `npx` for every app, with the note "On Windows, <app> may need `cmd /c npx`; not checked" under the app's row, until the real check T019; then the choice is made per app as a dated delta here.
 
 ### G. Honest limits
 
@@ -173,17 +174,17 @@ The catalog has no entry for what the person wants (*Custom…* and *Paste a con
 - The first entries' URLs and packages are confirmed in G1 from the vendors' pages; none is taken from memory into the file.
 - 64 KiB is enough for any vendor snippet; VS Code files keep spec 020's cap (`readSmallFile`).
 
-## Clarifications (open questions for the owner)
+## Clarifications
 
-None of these is answered. Each lists options and the recommended default; only the group it names waits for it.
+All six were answered on 2026-11-09 by the owner (Vikram, Telegram 07:24 UTC, "All ok"): the recommended default of each was accepted. The options are kept for the record.
 
-- **Q1 (blocks G5): where do VS Code's servers go?** The owner said "into the agent app's own MCP config … not into a separate Durbar list". (A) The **user-level** lists of the apps the person ticks, through spec 069's writers and per-file review, even when they came from a folder's `.vscode/mcp.json` (the server then reaches every folder). (B) As A, plus a choice "This folder only" that keeps today's folder extras. (C) The apps' **project** files in the folder (`.mcp.json` for Claude Code, `.codex/config.toml` for Codex), which writes into the person's repository. **Recommended: A**, with a line in the review: "Servers from this folder's VS Code file will be available in all folders."
-- **Q2 (blocks G5): which VS Code files?** (A) The folder's `.vscode/mcp.json` only (today). (B) Also VS Code's **user** `mcp.json` (and Insiders, VSCodium, as `vscodeUserDirs` knows them), listed as separate sources. **Recommended: B.**
-- **Q3 (G2 uses the default): default "Add to" from a folder.** (A) *This folder only* (today's default). (B) *All my folders*. **Recommended: A.**
-- **Q4 (G1 uses the default): what counts as official?** (A) The vendor's own server, or the MCP project's reference server (labelled "Reference server by the MCP project", as Filesystem); Slack only if Slack publishes its own. (B) Vendor servers only (Filesystem left out). (C) Also well-known community servers. **Recommended: A.**
-- **Q5 (G1 uses the default): local packages pinned or `@latest`?** (A) Pinned to a version reviewed in the PR, updated by PRs (FR-005). (B) `@latest`, as most vendor pages write it. **Recommended: A**; it means a catalog PR for each update.
-- **Q6 (G6 uses the default): `npx` on Windows.** (A) Write plain `npx` for every app with a "not checked" note (FR-081). (B) Write `cmd /c npx …` for Claude Code on Windows only, as its docs say, plain `npx` for the others. (C) Wait for the real check T019 and then decide per app. **Recommended: C, with A until then.**
+- **Q1 (G5): where do VS Code's servers go?** The owner said "into the agent app's own MCP config … not into a separate Durbar list". (A) The **user-level** lists of the apps the person ticks, through spec 069's writers and per-file review, even when they came from a folder's `.vscode/mcp.json` (the server then reaches every folder). (B) As A, plus a choice "This folder only" that keeps today's folder extras. (C) The apps' **project** files in the folder (`.mcp.json` for Claude Code, `.codex/config.toml` for Codex), which writes into the person's repository. **Recommended: A**, with a line in the review: "Servers from this folder's VS Code file will be available in all folders." **Answered 2026-11-09 (Vikram): A** (the recommended default).
+- **Q2 (G5): which VS Code files?** (A) The folder's `.vscode/mcp.json` only (today). (B) Also VS Code's **user** `mcp.json` (and Insiders, VSCodium, as `vscodeUserDirs` knows them), listed as separate sources. **Recommended: B.** **Answered 2026-11-09 (Vikram): B** (the recommended default).
+- **Q3 (G2): default "Add to" from a folder.** (A) *This folder only* (today's default). (B) *All my folders*. **Recommended: A.** **Answered 2026-11-09 (Vikram): A** (the recommended default).
+- **Q4 (G1): what counts as official?** (A) The vendor's own server, or the MCP project's reference server (labelled "Reference server by the MCP project", as Filesystem); Slack only if Slack publishes its own. (B) Vendor servers only (Filesystem left out). (C) Also well-known community servers. **Recommended: A.** **Answered 2026-11-09 (Vikram): A** (the recommended default).
+- **Q5 (G1): local packages pinned or `@latest`?** (A) Pinned to a version reviewed in the PR, updated by PRs (FR-005). (B) `@latest`, as most vendor pages write it. **Recommended: A**; it means a catalog PR for each update. **Answered 2026-11-09 (Vikram): A** (the recommended default).
+- **Q6 (G6): `npx` on Windows.** (A) Write plain `npx` for every app with a "not checked" note (FR-081). (B) Write `cmd /c npx …` for Claude Code on Windows only, as its docs say, plain `npx` for the others. (C) Wait for the real check T019 and then decide per app. **Recommended: C, with A until then.** **Answered 2026-11-09 (Vikram): C, with A until T019** (the recommended default).
 
 ## Changes
 
-None yet.
+- **2026-11-09, owner answers.** Vikram (Telegram 07:24 UTC, "All ok") accepted the recommended default of Q1..Q6 (Q1 A, Q2 B, Q3 A, Q4 A, Q5 A, Q6 C with A until T019) and approved the CODEOWNERS line for the catalog file. FR-065 now says the line is approved and `.github/CODEOWNERS` gains `/src/shared/mcpcatalog.json` in this PR; FR-081 states Q6's answer; the Clarifications record each answer; G5 no longer waits.
