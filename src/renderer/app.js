@@ -9023,7 +9023,7 @@ function inlineNameEl(surface,id,pid){
   const q='[data-id="'+CSS.escape(id)+'"]';
   const n=document.querySelector(list?'#list .lrow'+q+' .lnm':'#stage .desk'+q+' .name, #stage .ro-plate'+q+' .ro-l1>b'); /* spec 059 FR-170: or a Real office plate's name */
   if(list||!n||n.getClientRects().length)return n;
-  /* spec 097 FR-357 (bug #1427): a plate that does not draw the name (an arcade cabinet's) is edited on the desk's marquee, where the name is drawn */
+  /* spec 097 FR-357 (bug 1427): a plate that does not draw the name (an arcade cabinet's) is edited on the desk's marquee, where the name is drawn */
   return document.querySelector('#stage .ro-marquee[data-for="'+CSS.escape(id)+'"]')||n;
 }
 /* One session's name edited in place. `from`: what started it ('title', 'pencil', 'card'), so focus goes back there. The save is the
