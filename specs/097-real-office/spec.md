@@ -1349,7 +1349,7 @@ The Pirate, Royal, Rebels, Monster and Cheeky Real office sets (`src/renderer/re
 
 ## Changes 2026-11-08 (2): the mouse drag, the kept room order, the arcade and the lobby (issue #1152; FR-352..FR-355, T286..T291; Q30..Q33 resolved)
 
-Numbers checked 2026-11-08 against `main` and every open PR head (`npm run specs:numbers`): #1315 holds FR-345..FR-349, T260..T264, Q30..Q33; #1319 (`097-real-themes`) FR-350..FR-351, T265..T268, Q34; #1322 T269..T274; the highest task on any head was T283. This slice is stacked on #1315, takes FR-352..FR-355 and T286..T291, and answers Q30..Q33 (it defines no question).
+Numbers checked 2026-11-08 against `main` and every open PR head (`npm run specs:numbers`): #1315 holds FR-345..FR-349, T260..T264, Q30..Q33; #1319 (`097-real-themes`) FR-350..FR-351, T265..T268, Q34; #1322 T269..T274; the highest task on any head was T285 (re-checked 2026-11-09; this slice first took T284 and T285, which #1321 holds, so they became T290 and T291). This slice is stacked on #1315, takes FR-352..FR-355 and T286..T291, and answers Q30..Q33 (it defines no question).
 
 **Owner decisions** (Vikram, Telegram DM, relayed by the coordinator session, 2026-11-08):
 - **Answer to Q30** 08:30 UTC: "Q30 1". The question was: "1. Drag a desk by its name plate (or a room by its sign), with a live preview; Esc cancels, and a tiny press still counts as a click (recommended) / 2. Drag only by a small grip handle that appears on hover / 3. No mouse drag; keyboard and the folder menu only".
