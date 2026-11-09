@@ -9,7 +9,7 @@ import { webpInfo } from './webpinfo';
 const ROOT = path.join(__dirname, '..', '..');
 const DIR = path.join(ROOT, 'src', 'renderer', 'crew', 'art');
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const C = require(path.join(ROOT, 'src', 'renderer', 'crew.js')) as { IDS: string[]; PREHISTORIC_IDS: string[]; PIRATE_IDS: string[]; MONSTER_IDS: string[]; ROYAL_IDS: string[]; REBELS_IDS: string[]; POSES: string[]; BOX: { w: number; h: number }; PX_PER_UNIT: number; files: (ids?: string[]) => string[] };
+const C = require(path.join(ROOT, 'src', 'renderer', 'crew.js')) as { IDS: string[]; PREHISTORIC_IDS: string[]; PIRATE_IDS: string[]; MONSTER_IDS: string[]; ROYAL_IDS: string[]; REBELS_IDS: string[]; CREWS: Record<string, unknown>; POSES: string[]; BOX: { w: number; h: number }; PX_PER_UNIT: number; files: (ids?: string[]) => string[] };
 
 const MAX_FILE = 40 * 1024, MAX_TOTAL = 4.5 * 1024 * 1024; // FR-050, FR-072, FR-075, FR-076, FR-077 (3 poses per character; 13 Cheeky characters are 1.2 MB, 6 Prehistoric ones 0.6 MB, 6 Pirate ones 0.65 MB, 6 Monster ones 0.6 MB, 6 Royal ones 0.66 MB, 6 Animal Rebels ones 0.69 MB: 4.5 MB of the 4.5 MiB; 4 MiB before Animal Rebels, 3 MiB before Royal, 2.5 MiB before Monster)
 const COLUMNS = ['file', 'character', 'tool', 'date', 'prompt', 'made by', 'edited by', 'licence', 'generator terms read'];
@@ -72,8 +72,15 @@ for (const id of C.ROYAL_IDS) for (const pose of C.POSES) assert.ok(files.has(`r
 for (const id of C.REBELS_IDS) for (const pose of C.POSES) assert.ok(files.has(`rebels-${id}-${pose}.webp`), `rebels-${id}-${pose}.webp exists (FR-077)`);
 // a crew whose art is approved but not wired yet (no CREWS entry): its 3 portraits per person are allowed here, each with its row in ASSETS.md; remove the entry when crew.js names it (spec 097, Mac wiring PR)
 const PENDING_CREWS = ['minimalist'];
+for (const c of PENDING_CREWS) assert.ok(!(c in C.CREWS), c + ' is wired: remove it from PENDING_CREWS');
 const pendingFiles = [...files.keys()].filter((f) => PENDING_CREWS.some((c) => f.startsWith(c + '-')));
-assert.strictEqual(pendingFiles.length % 3, 0, 'pending crew pictures come in threes (working, waiting, resting)');
+// complete: exactly one portrait per pose for every person of the crew's Real office set (its set.json seat keys), nothing more
+const pendingWant = PENDING_CREWS.flatMap((c) => {
+  const seat = (JSON.parse(fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'realoffice', 'sets', c, 'set.json'), 'utf8')) as { seat: Record<string, unknown> }).seat;
+  assert.ok(Object.keys(seat).length >= 1, `${c}: set.json names its people`);
+  return Object.keys(seat).flatMap((id) => C.POSES.map((pose) => `${c}-${id}-${pose}.webp`));
+});
+assert.deepStrictEqual(pendingFiles.slice().sort(), pendingWant.sort(), 'pending crew portraits: every person of set.json in every pose (working, waiting, resting), nothing else');
 for (const f of pendingFiles) files.delete(f);
 assert.deepStrictEqual([...files.keys()].sort(), C.files(C.IDS.concat(C.PREHISTORIC_IDS, C.PIRATE_IDS, C.MONSTER_IDS, C.ROYAL_IDS, C.REBELS_IDS)).map((f) => f.replace(/^crew\/art\//, '')).sort(), 'the folder holds exactly the pictures crew.js names');
 
