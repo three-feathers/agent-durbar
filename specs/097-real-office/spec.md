@@ -1400,3 +1400,20 @@ Numbers checked 2026-11-09 against `main`, the remote branches and every open PR
 
 - **T297** `check-097-drag` waits, after every load, until the drawn desks match the visit record (each desk's `away` in `realLayout()` equals `awayIds()`), then picks the desk; and the status-change step first asserts, labelled `the drag started before the status change`, that the drag is on before it injects the status change, so a refused drag is no longer reported as a status change ending one. Mutant `DRAG_MUTANT=away` (the picked desk's agent sent to a place just before the drag) fails on that label. `sim:` 20 runs under two CPU hogs pass after the fix.
 - `[KNOWN GAP]` The fix is checked on Linux under xvfb only; Windows and macOS run it in CI.
+
+## Changes 2026-11-08: a Minimalist crew of six new drawn people lands as art, pack-only (issue #1154; T245 art part)
+
+Six invented, calm flat-vector office people (designer, manager, analyst, engineer, writer, support) are in the repository as art only: `src/renderer/realoffice/sets/minimalist/` (72 WebP frames, a measured `set.json`, an `ASSETS.md`) and their 18 portraits `src/renderer/crew/art/minimalist-<id>-{working,waiting,resting}.webp` (rows in that folder's `ASSETS.md`). No `CREWS` entry, no `REAL_SETS` row and no wiring: the Mac session does that in the wiring PR (after #1308).
+
+**Owner messages (Telegram DM, Vikram Gorla, verbatim).**
+1. 2026-11-08 11:03 UTC: "2", the answer to "Invent a fixed cast of drawn Minimalist people like the other crews".
+2. 2026-11-08 11:23 UTC: "Good and good on drawings as well, go full speed" (the look, on the designer and manager sample).
+3. 2026-11-08 11:27 UTC: "I can approve Paco's pictures if you want" (he approves in Paco's place, T238).
+4. 2026-11-08 12:00 UTC: "Look approved and none look like a real person", the approval of the look and the explicit likeness check, answering "1. Approve the look and confirm none resembles a real person you know".
+
+Each frame and each portrait is recorded as approved by Vikram Gorla (owner) in Paco's place with message 4's quote, and every `likeness-check` is that message. It claims no more than the owner's own knowledge, not a search for lookalikes.
+
+**Checks.** `test:realoffice-assets` names `minimalist` in `SETS_PACK_ONLY`, the one allowance for a crew set with no `REAL_SETS` row (it fails once `crew.js` has the row); each crew set has its own entry in `RECORD` (the frame lines' approval time and quote, and the likeness text; the Minimalist one differs from the five crews of the earlier delta), and a set with no entry fails; every frame line must carry its set's recorded time and quote, and every frame goes through the same metadata, alpha, size and approval checks. `test:crew-assets` has a narrow `PENDING_CREWS = ['minimalist']` allowance: its portraits are in `crew/art` without a `crew.js` entry, each with an `ASSETS.md` row and the 352x352, size and metadata checks; the portraits must be exactly one per pose for every person in the set's `set.json` (6 people x 3 poses), and the allowance fails once `crew.js` `CREWS` names the crew (review of #1331, fjcabello, 2026-11-08: no fallback likeness, no stale allowance, no incomplete portraits). The set folder is `minimalist` (the Characters choice id `minimalist` that `crewName` already knows), so `set.json` id is `minimalist`.
+
+- `[KNOWN GAP]` Not wired and not seen in the app: no screenshot of the crew in a world was taken here.
+- `[KNOWN GAP]` Known deviations from the cast text, kept in `ASSETS.md`: the designer's and analyst's sneakers are light grey (visible on a light floor), the envelope is kraft tan, and the designer's three standing frames from one sheet were stretched 12 percent wider after cutting.
