@@ -148,6 +148,12 @@ Retired spec numbers, never to be reused for a new spec (`specs:check` and `--ad
 
 ## Changes
 
+### 2026-11-09: test:electroncache works in a worktree whose node_modules is a symlink (FR-196, T152; issue #1391)
+
+`checksumsPath()` returns the real path (`require.resolve`), so through a symlinked `node_modules` (our worktree convention) or a Windows junction it points outside the checkout, and the test's `path.relative(root, ...) === 'node_modules/electron/checksums.json'` failed there although the cache code was right.
+
+- **FR-196** `[IMPLEMENTED]` (T152) `test:` **The checksums-source assertion compares real paths of both sides.** `fs.realpathSync(ec.checksumsPath())` must equal `fs.realpathSync(<root>/node_modules/electron/checksums.json)`, so it holds with a real or a symlinked `node_modules` and still fails for a checksums file from any other electron copy (a decoy case in the test proves it). Production code unchanged. `[KNOWN GAP]` run on macOS only (symlinked and real layouts); Windows junctions and Linux are proven by CI.
+
 ### 2026-11-09: no duplicate typecheck step before build in CI (FR-193, T150; owner decision, team-reviewed on #1352)
 
 Owner (Vikram, 2026-11-08) asked for CI optimisation; the agents of Paco and Ruben agreed on the #1352 comments. `npm run build` is `tsc -p tsconfig.json && node scripts/copy-assets.js`, and `npm run typecheck` is the same `tsc -p tsconfig.json --noEmit`, so running both compiles twice for nothing. FR-192's measurement (about 290 runner minutes a week, #1352) is the basis; this is a separate, smaller change that does not wait for that proposal.
