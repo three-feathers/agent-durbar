@@ -6,6 +6,8 @@
  *   npm run check:ui -- --only check-097-drag      (builds first)
  *   SHOTS_OUT=<dir>   writes 097-drag-<w>x<h>.png (mid-drag) and 097-drag-done-<w>x<h>.png (after the drop), Photo office
  *   DRAG_MUTANT=menu    the place menu's Move earlier / later is swallowed (must fail)
+ *   DRAG_MUTANT=away    the dragged desk's agent is sent to a place just before the status-change drag, as a late visit render did in CI (must fail:
+ *                       "the drag started before the status change")
  *   Source mutants (threshold 6 px -> 0, Esc not cancelling, the drop not reaching reoApply, a room drag allowed in the arcade, the arcade swap going to the wrong
  *   neighbour, a fixed place moving, a fixed place's menu with Move items, the grab cursor removed, saveOrder returning before bridge.setOrder): each was applied
  *   to src/renderer, built, run under this driver and reverted; the failing assert of each is in the table in the PR #1394 comment "mutants run at ..." (2026-11-09).
@@ -19,7 +21,8 @@
  *   - in the arcade a room sign drags (or does not say it keeps its cell), or a plate does not swap with its neighbouring cabinet and save;
  *   - an away desk or a lounge seat drags;
  *   - plates overlap after a drop, the office scrolls, or text is under 10.5 px;
- *   - a status change in the middle of a drag breaks it (the drop still saves, after the repaint that waited);
+ *   - a status change in the middle of a drag breaks it (the drop still saves, after the repaint that waited); the drag is first asserted to have
+ *     started (labelled "the drag started before the status change"), on a desk picked only once the drawn plates match the visit record (T297);
  *   - Alt+arrows on a visitor's chip button do not move a movable place, or move a fixed one (Boss, Bank), or lose the focus or the words;
  *   - a fixed place's "+N" menu has Move items, a movable one's lack their sub-line, or a drag start lacks the grab cursor (a desk's plate, a folder sign; not an arcade sign);
  *   - the drop does not save the order that is on screen (labelled: "the drop saved the new order");
@@ -43,10 +46,16 @@ module.exports = async (ctx) => {
   const said = () => js(`document.getElementById('srAnnounce').textContent`);
   const saved = () => js(`window.__durbarSimUi.order.saved()`);
   const query = (world) => ({ officeview: 'real', simrooms: '3', sim: '15', ...(world === 'retro' ? { worldflags: 'retro', world: 'retro' } : world === 'cave' ? { worldflags: 'cave', world: 'cave' } : {}) });
+  /* no visit about to start or end, and the drawn office matches the visit record: right after a load the plates can lag the record by a
+     render, and a desk the stale layout shows at its seat is away by the press (an away desk does not drag: CI #1412, #1410, #1413; T297) */
+  const settled = async () => {
+    await must(`window.__durbarSimUi.visitsSettled()`, 'no visit about to start or end', 20000);
+    await must(`(()=>{const U=window.__durbarSimUi,v=new Set(U.awayIds());return U.realLayout().zones.flatMap(z=>z.desks).filter(d=>!d.lounge).every(d=>!!d.away===v.has(d.id))})()`, 'the drawn desks match the visit record', 20000);
+  };
   const load = async (w, h, world) => {
     await js(`try{sessionStorage.removeItem('durbar.simorder')}catch(e){}`);
     await H.load({ w, h, query: query(world), ready: `document.querySelectorAll('#stage .ro-plate').length>=10`, readyMs: 30000, settle: false, focus: true });
-    await must(`window.__durbarSimUi.visitsSettled()`, 'no visit about to start or end', 20000);
+    await settled();
   };
   const mouse = (type, p, extra = {}) => wc().sendInputEvent({ type, x: Math.round(p.x), y: Math.round(p.y), button: 'left', clickCount: 1, ...extra });
   /** press at `a`, move to `b` in steps (call `mid` with the button down), Escape first with `cancel`, release */
@@ -148,13 +157,15 @@ module.exports = async (ctx) => {
       const flat = await js(`(()=>{const r=document.querySelector('#stage .room[data-key="room:'+${jsLiteral(A)}+'"]');return r?[...r.querySelectorAll('.unit > .desk[data-id]')].map(d=>d.dataset.id):[]})()`);
       assert.deepStrictEqual(flat, doc.desks[pa].filter((i) => flat.includes(i)), `${tag}: the flat office shows the order the drag saved`);
       await H.load({ w, h, query: query(world), ready: `document.querySelectorAll('#stage .ro-plate').length>=10`, readyMs: 30000, settle: false, focus: true });
-      await must(`window.__durbarSimUi.visitsSettled()`, 'settled', 20000);
+      await settled();
     }
 
     /* ---- a status change in the middle of a drag does not break it ---- */
     const O2 = await orderOf(A), away2 = await awayIds(), k2 = O2.findIndex((id, i) => i + 1 < O2.length && !away2.includes(id)), docBefore = JSON.stringify(await js(`window.__durbarSimUi.order.get().desks[${jsLiteral(pa)}]||null`));
+    if (MUTANT === 'away') { await js(`window.__durbarSimUi.pinAt(${jsLiteral(O2[k2])},'library')`); await must(`window.__durbarSimUi.realLayout().zones.some(z=>z.desks.some(d=>d.id===${jsLiteral(O2[k2])}&&d.away))`, 'the mutant desk is drawn away'); }
     await drag(await grab(plateSel(O2[k2])), await center(plateSel(O2[k2 + 1])), {
       mid: async () => {
+        assert.strictEqual(await lifted(), true, `${tag}: the drag started before the status change (dragging ${O2[k2]}; away now: ${await js('window.__durbarSimUi.awayIds()')})`);
         await js(`window.__durbarSimUi.crowd('library',1,${jsLiteral(0)})`);
         await ctx.sleep(300);
         assert.strictEqual(await lifted(), true, `${tag}: a status change does not end the drag`);
