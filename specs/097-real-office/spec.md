@@ -335,10 +335,10 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 
 ## Changes
 
-### 2026-11-09 (later): trouble signs while the window is hidden (issue #1171; FR-074, FR-326, FR-361; T286)
+### 2026-11-09 (later): trouble signs while the window is hidden (issue #1171; FR-074, FR-326, FR-361; T290)
 
 `check-097-motion` failed "FR-074: nothing runs while hidden" on this branch (Mac and Linux CI), passing on `main`: the one running animation was `sirenblink` on a siren sign's light (`.siren-light`, the app's siren markup, 6 breaths of 1.6 s). The signs are in the chrome layer, and `.ro.paused` paused only the art, the lights and the caret.
-- **FR-074 for the signs.** While the office is paused (hidden or covered) a sign's animation is paused too (`.ro.paused .ro-mood *`); `.still` stops it as it stops the lights.
+- **The signs pause with the room (FR-074).** While the office is paused (hidden or covered) a sign's animation is paused too (`.ro.paused .ro-mood *`); `.still` stops it as it stops the lights.
 - **No mood redraw while hidden.** A context event that changes a desk's look (`ctx` answers `'mood'`, FR-326) while `document.hidden` schedules no draw: the cheap path still writes the name with the mood's words at once, and the draw for the signs is asked for once the document is visible again (`visibilitychange`), so the signs are right on return and nothing is drawn while hidden. The app's 5 s mood tick (`moodSig`, which redraws when a mood changed on the clock) also skips while hidden; the return's draw or its next tick catches up. A draw that another event makes while hidden draws the signs as usual (the model is read fresh). In a real hidden window the browser runs no frame, so a scheduled draw waited for the return anyway; the rule matters where the document says hidden but frames still run (the drivers' own signal, a covered office).
 - `check-097-ctx-frame` checks it (Photo office and cave): the document hidden (its own signal), a context event that makes a seated desk a monster runs no draw and draws no horns or ring while its name already has the words; once visible, one draw within three frames draws the horns and the ring and the name is the same.
 - `check-ui-text dark` (CI) failed `literal-light` on two halos of this branch (`.ro-ring`'s outline, `.ro-siren`'s disc, `rgba(255,255,255,.8x)`): both now take the theme's `--surface` (`color-mix`).
