@@ -4,19 +4,19 @@
  *
  *   npm run check:ui -- --only check-no-demo-badge
  *
- * At 1440x900 and 1280x800, default theme, Retro:
+ * At 1440x900 and 1280x800, default theme, the dark fixture theme (spec 102 T226):
  *   1. no `#protoBadge` / `.proto` anywhere, and no top bar text "Demo" or "Live" (simulator, demo off);
  *   2. the app name is the brand's only text and is vertically centred on the brand mark;
  *   3. the demo cues remain: the composer hint of a simulator chat says "Demo, no credits used";
  *   4. with demo on: still no badge, the demo item in the more menu is checked and says "Turn off demo", the top bar does not overflow.
  * A miss prints DRIVER FAILED (Electron still exits 0), so the npm script exits non-zero unless "all checks passed" is printed.
  */
-const { helpers, jsLiteral } = require('./driver-helpers');
+const { helpers, jsLiteral, CHECK_DARK, CHECK_DARK_QUERY } = require('./driver-helpers');
 const assert = require('assert');
 module.exports = async (ctx) => {
   const H = helpers(ctx);
   const { until, settle, js } = H;
-  const THEMES = (process.env.NO_BADGE_THEMES || ',retro').split(',');
+  const THEMES = (process.env.NO_BADGE_THEMES || ',dark').split(',');
   const topbar = () => js(`(()=>{const R=e=>e.getBoundingClientRect(),t=document.querySelector('.topbar'),b=t.querySelector('.brand'),h=b.querySelector('h1'),m=b.querySelector('.brand-mark');
     const words=[...t.querySelectorAll('*')].filter(e=>!e.children.length&&/\\b(Demo|Live)\\b/.test(e.textContent)&&e.getClientRects().length&&!e.closest('.more-menu,[hidden]')).map(e=>e.textContent.trim());
     return {badge:!!document.getElementById('protoBadge')||!!document.querySelector('.proto'),words,brandText:b.innerText.trim(),
@@ -24,7 +24,7 @@ module.exports = async (ctx) => {
   for (const [w, h, theme] of [[1440, 900], [1280, 800]].flatMap(([a, b]) => THEMES.map((t) => [a, b, t]))) {
     const at = `${w}x${h}${theme ? ' ' + theme : ''}`;
     await H.load({ w, h, query: { simquestion: 'compact' }, ready: 'fit' });
-    if (theme) { await js(`window.THEME.setTheme(${jsLiteral(theme)})`); await settle(); }
+    if (theme) { await js(`window.THEME.setTheme(${jsLiteral(theme === 'dark' ? CHECK_DARK : theme)})`); await settle(); }
     const a = await topbar();
     assert.ok(!a.badge, `${at} simulator: no badge element: ${JSON.stringify(a)}`);
     assert.deepStrictEqual(a.words, [], `${at} simulator: no Demo or Live word in the top bar: ${JSON.stringify(a)}`);

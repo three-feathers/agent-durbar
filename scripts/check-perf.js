@@ -20,7 +20,7 @@
  */
 const assert = require('assert');
 const path = require('path');
-const { helpers, jsLiteral, INDEX } = require('./driver-helpers');
+const { helpers, jsLiteral, INDEX, CHECK_DARK } = require('./driver-helpers');
 const SECONDS = Number(process.env.PERF_SECONDS || 20);
 const SPEED = String(process.env.PERF_SPEED || 10);
 
@@ -66,7 +66,7 @@ module.exports = async (ctx) => {
     return {messages:1000,totalMs:Math.round(ms),perMessageMs:Math.round(ms/10)/100,domAdded:document.getElementsByTagName('*').length-n0};})()`);
 
   // a theme switch and back
-  const themeMs = await js(`(async()=>{if(!window.THEME||!window.THEME.setTheme)return null;const cur=window.THEME.current().id;const t=performance.now();window.THEME.setTheme('retro');
+  const themeMs = await js(`(async()=>{if(!window.THEME||!window.THEME.setTheme)return null;const cur=window.THEME.current().id;const t=performance.now();window.THEME.setTheme(${jsLiteral(CHECK_DARK)});
     await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r())));const ms=performance.now()-t;window.THEME.setTheme(cur);return Math.round(ms);})()`);
 
   const report = { office, openChatMs: openMs, switchAgent: switchMs, longChat: chat, themeSwitchMs: themeMs };
