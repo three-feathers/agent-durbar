@@ -222,11 +222,11 @@ markDensity();
 const PLACE_VERB={library:'Reading notes',software:'Searching files',terminal:'Running a command',web:'Searching the web',other:'Using a tool'}; /* FR-037: words for people who do not write code */
 let AMB_ID=null;   /* the one agent that has the ambulance (the most recent error), chosen once per render */
 const NO_MOOD={body:'normal',trouble:null,pct:null,words:''};
-function moodFor(a){
+function moodFor(a,at){
   if(SERIOUS||!a||a.parent||!a.live)return NO_MOOD;
   const c=STATS.agent(a.id).ctx, pct=c&&c.limit>0?window.DurbarStats.ctxLevel(c.tokens,c.limit).pct:null;
   const st=vis(a), body=MOODS.bodyOf(pct), failStreak=MOOD.failStreak(a.id);
-  const waitingMs=st==='waiting'?MOOD.waitingMs(a.id):0; /* only while the figure is waiting: a request answered elsewhere must not leave it tapping */
+  const waitingMs=st==='waiting'?MOOD.waitingMs(a.id,at):0; /* only while the figure is waiting: a request answered elsewhere must not leave it tapping */
   const coffee=!!a.coffee&&a.coffeeKind!=='cap'; /* spec 068 FR-005: calm on a coffee break, with a cup; spec 001 FR-035: calm at the Bank, no cup */
   const trouble=MOODS.troubleOf({state:st,ambulance:AMB_ID===a.id,limit:!!a.limit,waitingMs,failStreak,coffee:!!a.coffee});
   return {body,trouble,pct,coffee,words:MOODS.phrases({body,pct,trouble,waitingMs,failStreak,coffee}).join(', ')};
@@ -291,13 +291,19 @@ function charPreview(choice){
 }
 const SIREN=()=>'<span class="siren" aria-hidden="true"><svg viewBox="0 0 14 14" focusable="false"><rect class="siren-light" x="3" y="2" width="8" height="6.5" rx="3.2"/><rect x="1.5" y="8.5" width="11" height="3" rx="1" fill="'+T_('--siren-base')+'"/></svg></span>';
 /* "impatient" starts after 60 s without any event, so look every few seconds and redraw only when somebody's mood changed */
+/* spec 008 FR-184: a draw takes the signature it drew (`renderAll`), so a tick redraws only for a change no draw has shown (the clock, a limit), never again for the status change the last draw already showed */
 let moodSig='';
-setInterval(()=>{if(SERIOUS||demoOn)return;const sig=agents.map(x=>x.live&&!x.parent?moodFor(x).trouble+'/'+moodFor(x).body:'').join('|');if(sig!==moodSig){moodSig=sig;scheduleRender();}},5000);
+const moodSigNow=at=>agents.map(x=>{if(!x.live||x.parent)return '';const m=moodFor(x,at);return m.trouble+'/'+m.body;}).join('|'); /* `at`: the signature as of that time (a draw's own, spec 008 FR-184) */
+setInterval(()=>{if(SERIOUS||demoOn)return;if(moodSigNow()!==moodSig){moodSig=moodSigNow();scheduleRender();}},5000);
 /* spec 052 FR-062: "Last activity" labels follow the clock through the normal render, every 30 s and only when a label changed */
 let agoSig='';
-setInterval(()=>{if(demoOn)return;const sig=agents.map(x=>(x.lastEventAt?ACT.agoShort(Date.now()-x.lastEventAt):'')+(x.busySince?'/'+ACT.agoShort(Date.now()-x.busySince):'')).join('|');if(sig!==agoSig){agoSig=sig;scheduleRender();}},30000);
+const agoSigNow=(at=Date.now())=>agents.map(x=>(x.lastEventAt?ACT.agoShort(at-x.lastEventAt):'')+(x.busySince?'/'+ACT.agoShort(at-x.busySince):'')).join('|');
+let drawnAt=0;
+setInterval(()=>{if(demoOn)return;const sig=agoSigNow();if(sig!==agoSig){agoSig=sig;scheduleRender();}},30000);
 /* ---- places in the office (spec 024): a shared lobby; main agents walk to the place of the tool they are using ---- */
-const VISITS=window.DurbarPlaces.createVisits();
+/* Simulator only (spec 008 FR-190): `simvisits=fast` shortens the lobby's own timers (a visit starts after 60 ms instead of 600, stays 200 ms instead of 2 s, a walk takes 100 ms instead of 1 s), for drivers that measure where things stand and do not look at the visit rules (those keep the real timers: check-office-ops, places tests) */
+const SIM_FAST_VISITS=(()=>{try{const q=new URLSearchParams(location.search);return q.has('sim')&&q.get('simvisits')==='fast';}catch(e){return false;}})();
+const VISITS=window.DurbarPlaces.createVisits(SIM_FAST_VISITS?{debounceMs:60,dwellMs:200}:undefined);
 const SEEN_SERVERS=new Set(); /* MCP server names seen in tool events this run (per-folder extras included): the Places settings list them */
 let CUSTOM=[]; /* the user's own places [{id,name,icon}] (spec 024 FR-018), from the settings; changed only through setCustomPlaces */
 const customIds=()=>CUSTOM.map(p=>p.id);
@@ -516,7 +522,7 @@ function openCoffeeMenu(id,anchor){
 }
 document.addEventListener('contextmenu',e=>{const b=e.target.closest&&e.target.closest('#stage [data-coffeeid]');if(!b)return;e.preventDefault();e.stopImmediatePropagation();openCoffeeMenu(b.dataset.coffeeid,b);},true);
 document.addEventListener('keydown',e=>{if(!((e.key==='F10'&&e.shiftKey)||e.key==='ContextMenu'))return;const b=e.target.closest&&e.target.closest('#stage [data-coffeeid]');if(!b)return;e.preventDefault();e.stopImmediatePropagation();openCoffeeMenu(b.dataset.coffeeid,b);},true);
-const WALK_MS=1000, MAX_WALKS=3; /* about 1 s per walk; beyond 3 at once the others simply appear */
+const WALK_MS=SIM_FAST_VISITS?100:1000, MAX_WALKS=3; /* about 1 s per walk; beyond 3 at once the others simply appear. */
 const walkers=new Map(); /* agent id -> {el, back, walking, shown, timer, to} */
 const walkCount=()=>{let n=0;walkers.forEach(w=>{if(w.walking)n++;});return n;};
 function dropWalker(id){const w=walkers.get(id);if(!w)return;clearTimeout(w.timer);if(w.off)w.off();w.el.remove();walkers.delete(id);RETURNING.delete(id);}
@@ -976,7 +982,10 @@ function deskFacts(a,withModel){
   if(busy)put('On this task',busy==='just now'?'just started':busy.replace(/ ago$/,'')); else if(last)put('Last activity',last);
   return facts;
 }
-const realFacts=id=>{const a=byId(id);return a&&!a.parent?deskFacts(a,true):[];};
+let RO_LOUNGE=new Set(); /* ids in the Real office's lounge row at the last model (spec 097 FR-329) */
+const realFacts=id=>{const a=byId(id);if(!a||a.parent)return [];const f=deskFacts(a,true),w=RO_LOUNGE.has(id)?loungeSum(a):'';
+  if(w){const m=deskMask(w+' · counted by Agent Durbar');if(typeof m==='string'&&m.trim())f.push(['Changed',m]);} /* the flat peek card's line, read once per reply (spec 085 FR-008) */
+  return f;};
 function grownSideHTML(a){
   if(a.parent)return '';
   const rep=grownShowsReply(a)?'':replyExcerpt(a), facts=deskFacts(a,false);
@@ -1603,8 +1612,8 @@ async function setOfficeView(v){
   if(v==='flat'&&window.DurbarRealOffice&&window.DurbarRealOffice.leave)window.DurbarRealOffice.leave(); /* spec 097 Changes 2026-11-01 */
   syncWorld();layoutKey='';scheduleRender();return true;
 }
-/* spec 097 FR-084 (owners 2026-10-31): the Characters setting applies in Real office too; a set without Real office pictures (today
-   every crew) shows the Office people, and Settings says so until that crew's world ships (FR-083, FR-100, FR-114) */
+/* spec 097 FR-084 (owners 2026-10-31): the Characters setting applies in Real office too; a crew without Real office pictures (today all but Prehistoric)
+   shows the Office people, and Settings says so until that crew's own pictures land (FR-083, FR-100, FR-114) */
 /* spec 102 FR-200..FR-202 (owner's latest; replaces 097 FR-100/FR-114's "crews pick their world"): worlds and character sets are two flat
    lists in crew.js, any set in any world. The World choice is kept in localStorage `durbar.world` (a bad or unoffered value is the first
    world); `[KNOWN GAP]` spec 102 FR-201 keeps it in durbar-settings.json through main, which needs an IPC channel and is not built yet.
@@ -1676,6 +1685,7 @@ const homeMask=t=>{const R=window.DurbarRedact;if(!R||typeof R.maskHomePaths!=='
 const helperMask=t=>deskMask(homeMask(t));
 function realModel(model){
   const D=window.DurbarPlaces, E=window.exports;
+  RO_LOUNGE=new Set(model.flatMap(m=>(m.rolled||[]).map(x=>x.a.id)));
   const stOf=(a,asleep)=>E.lightState(isFailing(a)?'failing':isRetrying(a)?'retrying':isCompacting(a)?'compacting':vis(a),{limit:!!a.limit,paused:!!a.paused,asleep:!!asleep});
   const folders=model.map(m=>{
     const r=m.r, old=new Set((m.rolled||[]).filter(x=>x.k==='old').map(x=>x.a.id)), rolled=new Set((m.rolled||[]).map(x=>x.a.id)); /* spec 097 FR-246: who the flat office rolls into its lounge (shutPlan) sits in the lounge row; an old one asleep */
@@ -1708,6 +1718,7 @@ function realModel(model){
    the flat ones; a click goes back to the card's own button (data-slipact, the handler below). A request that is only a status (an error, a plain wait) has no
    card and no slip. */
 /* each pending card is one request: its id is made once and kept, so a slip's button names the request it shows, not "the agent's first pending card" (a double click, or a new request arriving, must never answer another one) */
+const REQ_TEXT_MAX=480; /* spec 052 FR-199, spec 041 FR-060: a request longer than this is read in the chat, not answered from the bar or a panel row (one number, three users) */
 const CARD_REQ=new WeakMap(); let CARD_REQ_N=0;
 const reqOf=c=>{if(!CARD_REQ.has(c))CARD_REQ.set(c,'rq'+(++CARD_REQ_N));return CARD_REQ.get(c);};
 /* a card the inbox row shows details for ("Show the change", "Show the command"): the very selector the inbox row uses. A slip never offers Allow for such a card: a person must not approve blind (review on PR 994, 2026-11-02) */
@@ -1762,7 +1773,9 @@ document.addEventListener('click',e=>{
 });
 /* spec 097 FR-030..FR-035: what a monitor shows: the agent's lines (liveact.js, masked), else its last reply or task through the same steps, with
    the status lines the state asks for; no working mask: only the status word (fail closed). Live activity off: no live lines, as in flat. */
-function realScreen(id,state,word){
+function realScreen(id,state,word,card){
+  /* spec 097 FR-328: the card of a lounge agent (resting or asleep) shows its masked last reply as its lines, as the flat peek card does, not the tool log; the glass of an asleep one stays dark (screenFor asleep) */
+  if(card&&(state==='asleep'||RO_LOUNGE.has(id))){const a=byId(id),reply=a&&LIVEACT&&a.lastOutput?LIVEACT.block(a.lastOutput,'reply'):[];return window.exports.screenFor(state==='asleep'?'idle':state,[],[],reply,word,false);}
   const a=byId(id), live=liveOn(), log=a&&live&&!a.parent?LIVEACT.screen(id):[];
   const ask=state==='waiting'||state==='limit'||state==='error', quiet=!live&&(state==='working'||state==='thinking'); /* the setting hid what it does: the status and bars, as flat shows no reply while it works */
   const task=!a||!LIVEACT||quiet?[]:ask?LIVEACT.strict(taskText(a),'plain'):!log.length?LIVEACT.block(taskOf(a),'plain'):[];
@@ -2036,6 +2049,7 @@ function renderAll(){
   syncChatNos(); /* spec 074 FR-011 */
   if(CREW_FOR)syncCrew(); /* spec 077: a closed session frees its character even when no desk is drawn (the last one) */
   AMB_ID=pickAmbulanceId();
+  drawnAt=Date.now(); moodSig=moodSigNow(drawnAt); agoSig=agoSigNow(drawnAt); /* what this draw shows (after AMB_ID, which the mood reads): the two ticks above compare against it (spec 008 FR-184) */
   syncDesks(); /* spec 001 FR-034: who walks to the Boss and who comes back */
   prepareWalkers();
   const ae=document.activeElement, id=ae&&ae.dataset&&(ae.dataset.id||ae.dataset.more||ae.dataset.foldermenu||ae.dataset.newsess||ae.dataset.lsort||ae.dataset.ren), inPanel=ae&&ae.closest&&ae.closest('#panel'), scope=ae&&ae.closest?(ae.closest('#list')?'#list ':ae.closest('#stage')?'#stage ':''):''; /* FR-173: read before the render detaches it */
@@ -2408,6 +2422,15 @@ function requestText(n){const c=n.cloneNode(true);c.querySelectorAll('.note-acti
 const answerKeyOf=b=>b.dataset.act==='session'?'S':/\bdanger\b/.test(b.className)?'D':/\bprimary\b/.test(b.className)?'A':'';
 const chatKeyText=k=>keyText(KEYS.chatParts(k,IS_MAC)), chatKeyAria=k=>ariaKeys(KEYS.chatParts(k,IS_MAC)); /* FR-084: Alt+A elsewhere, ⌥⌘A on a Mac */
 const answerPress=(src,what)=>()=>{if(src.disabled)return;const word=src.textContent;src.click();announce(word+': '+what);const m=$('msgInput');if(m)focusIn(m);};
+/* spec 052 FR-162: a short question with one choice and a few short options is answered from its option buttons (the answer bar and, from FR-199, a row of Your door):
+   they press the card's own controls, so the card's Answer handler sends and settles (one code path) */
+function inboxQFit(c){
+  if(!c.classList.contains('question')||c.classList.contains('elicit'))return null;const it=c.querySelectorAll('.q-item');if(it.length!==1)return null;
+  const opts=[...it[0].querySelectorAll('.q-opt')],other=it[0].querySelector('.q-other'),ok=c.querySelector(':scope > .note-actions .btn.primary'),skip=c.querySelector(':scope > .note-actions .btn.danger');
+  if(it[0].querySelector('.q-opts[role="group"]')||opts.length>4||!other||!ok||opts.some(o=>(o.querySelector('.q-lbl')||o).textContent.length>40))return null;
+  const qt=it[0].querySelector('.q-text').cloneNode(true),tag=qt.querySelector('.tag');if(tag)tag.remove();
+  return {opts,other,ok,skip,tag:tag?tag.textContent:'',q:safeMask(qt.textContent.replace(/\s+/g,' ').trim())};}
+
 function wireAnswerBar(a){
   if(answerObs){answerObs.m.disconnect();answerObs.i.disconnect();answerObs=null;}
   const bar=$('answerBar'), chat=$('chat'); if(!bar||!chat)return;
@@ -2425,13 +2448,7 @@ function wireAnswerBar(a){
   const textOf=requestText;
   /* FR-016: to the request itself, not to its Approve button (an Enter right after must not approve) */
   const show=()=>{if(card)focusRequest(card);};
-  /* spec 052 FR-162: a short question with one choice and a few short options is answered from the bar itself: its option buttons, its
-     own "Other answer" box and Skip press the card's own controls (one code path: the card's Answer handler sends and settles). */
-  const qFits=c=>{if(!c.classList.contains('question')||c.classList.contains('elicit'))return null;const it=c.querySelectorAll('.q-item');if(it.length!==1)return null;
-    const opts=[...it[0].querySelectorAll('.q-opt')],other=it[0].querySelector('.q-other'),ok=c.querySelector(':scope > .note-actions .btn.primary'),skip=c.querySelector(':scope > .note-actions .btn.danger');
-    if(it[0].querySelector('.q-opts[role="group"]')||opts.length>4||!other||!ok||opts.some(o=>(o.querySelector('.q-lbl')||o).textContent.length>40))return null;
-    const qt=it[0].querySelector('.q-text').cloneNode(true),tag=qt.querySelector('.tag');if(tag)tag.remove();
-    return {opts,other,ok,skip,tag:tag?tag.textContent:'',q:safeMask(qt.textContent.replace(/\s+/g,' ').trim())};};
+  const qFits=inboxQFit;
   let painted='';
   function paint(){
     if(!card||cardVisible){if(painted||!bar.hidden){bar.hidden=true;bar.innerHTML='';painted='';}return;}
@@ -2440,7 +2457,7 @@ function wireAnswerBar(a){
     const key=n+'\u0001'+text;if(painted&&bar._card===card&&painted===key&&!bar.hidden)return;
     const ae=document.activeElement, hadFocus=bar.contains(ae), prevCard=bar._card, hadIdx=hadFocus?[...bar.querySelectorAll('.ab-act button,.ab-act input')].indexOf(ae):-1; /* by position, never by text: option labels come from the agent */
     painted=key;bar._card=card;
-    const q=card.classList.contains('question'), long=text.length>480, fit=q&&!long?qFits(card):null;
+    const q=card.classList.contains('question'), long=text.length>REQ_TEXT_MAX, fit=q&&!long?qFits(card):null;
     bar.innerHTML='<span class="ab-q"><b><span class="ab-n" dir="auto"></span></b> <span></span></span><span class="ab-act"></span>';
     /* spec 052 FR-177: the name is its own one-line span, cut by CSS with an ellipsis and titled with the whole name; the count and the verb stay outside it */
     const nm=bar.querySelector('.ab-n');nm.textContent=a.name;nm.title=a.name;
@@ -2480,7 +2497,7 @@ function wireAnswerBar(a){
      A question or a spending limit is answered in its card; a long request is read in the chat first. Returns false when nothing applies. */
   const answerKey=kind=>{
     const c=pending(); if(!c)return false;
-    if(c.classList.contains('question')||c.classList.contains('limit')||textOf(c).length>480){card=c;show();announce(c.classList.contains('question')?'Answer the question in its card.':c.classList.contains('limit')?'Choose in the spending limit card.':'A long request: read it in the chat before you answer.');return true;}
+    if(c.classList.contains('question')||c.classList.contains('limit')||textOf(c).length>REQ_TEXT_MAX){card=c;show();announce(c.classList.contains('question')?'Answer the question in its card.':c.classList.contains('limit')?'Choose in the spending limit card.':'A long request: read it in the chat before you answer.');return true;}
     const src=[...c.querySelectorAll(':scope > .note-actions button')].find(b=>!b.dataset.broad&&answerKeyOf(b)===kind);
     if(!src)return false;
     answerPress(src,textOf(c))();return true;
@@ -2603,7 +2620,7 @@ let cvRz=0; const cvSoon=()=>{if(cvRz)return; cvRz=requestAnimationFrame(()=>{cv
   cvDrop(el); if(pinned)c.scrollTop=c.scrollHeight; else if(a)c.scrollTop+=a.getBoundingClientRect().top-top;});};
 addEventListener('resize',cvSoon); new MutationObserver(cvSoon).observe(document.documentElement,{attributes:true});
 function openPanel(id,focus){
-  const a=byId(id); if(!a)return; if(ui.selected!==id||!document.body.classList.contains('panel-open'))cvMark(); /* after the check: an unknown id leaves the chat on screen unmarked */ if(!pulling)PULLED.delete(id); /* the user came back: this session may bring its chat forward again */
+  const a=byId(id); if(!a)return; if(DOOR_ON)doorStepAside(); /* FR-199: a chat fills the window; the door returns on Back to the office unless dismissed */ if(ui.selected!==id||!document.body.classList.contains('panel-open'))cvMark(); /* after the check: an unknown id leaves the chat on screen unmarked */ if(!pulling)PULLED.delete(id); /* the user came back: this session may bring its chat forward again */
   if(AF_ON&&!AF_AUTO&&!pulling&&(ui.selected!==id||!document.body.classList.contains('panel-open')))AFT.manualOpen(id); /* spec 052 FR-185: opening another agent by hand ends the following of the others */
   if(ui.selected!==id||!document.body.classList.contains('panel-open'))PANEL_OPENED_AT=performance.now(); closeSlash(); keepDraft(); ui.selected=id; attached=(DRAFTS.get(id)||{att:[]}).att.slice();
   noteRecentChat(a); rememberUi();
@@ -3812,6 +3829,7 @@ function closePanel(){closeSlash();keepDraft();
   const id=ui.selected; ui.selected=null; document.body.classList.remove('panel-open'); $('panel').innerHTML='';
   renderAll(); placeToasts();
   const n=id&&document.querySelector(`[data-id="${CSS.escape(id)}"]`); if(n)focusIn(n);
+  if(DOOR_ON)doorReturn();
 }
 
 /* ---------------- events ---------------- */
@@ -3906,7 +3924,7 @@ document.addEventListener('click',e=>{
   const sc=e.target.closest('[data-schedroom]'); if(sc){const r=ROOMS.find(x=>x.id===sc.dataset.schedroom);if(r)openSchedules(r);return;}
   const fm=e.target.closest('[data-foldermenu]'); if(fm){const r=ROOMS.find(x=>x.id===fm.dataset.foldermenu),b=fm.getBoundingClientRect();openFolderMenu(r,b.left,b.bottom+4,fm);return;}
   const ns=e.target.closest('[data-newsess]'); if(ns){const r=ROOMS.find(x=>x.id===ns.dataset.newsess),ag=r&&agents.find(x=>!x.parent&&x.room===r.id);if(ag)newSession(ag);return;}
-  const t=e.target.closest('[data-id]'); if(t&&!t.closest('#panel,#inboxDlg')){openPanel(t.dataset.id,true);} /* spec 074 FR-019: mouse or keyboard, desk or list row */
+  const t=e.target.closest('[data-id]'); if(t&&!t.closest('#panel,#inboxDlg,#needsPanel')){openPanel(t.dataset.id,true);} /* spec 074 FR-019: mouse or keyboard, desk or list row */
 });
 
 /* ---- issue 677 (spec 033 delta 2026-11-01): rearrange rooms, desks and places by drag and by keyboard. Order is sequencing only: the layout
@@ -4066,6 +4084,7 @@ document.addEventListener('keydown',e=>{
     if(e.target&&e.target.id==='ntSearch'&&e.target.value){e.target.value='';notesPaint();return;} /* spec 083 FR-043: Esc clears the search first */
     if(notesIsOpen()){closeNotes(true);return;} /* spec 083 FR-020: the drawer closes first, a second Esc closes the chat */
     if(vsViewing){leaveVsView();return;}
+    if(DOOR_ON&&$('needsPanel')&&!(e.target&&e.target.closest&&e.target.closest('input,textarea,select,[contenteditable="true"]'))){closeInbox(true);return;} /* FR-194: Esc with focus on the office closes it, never from a text field */
     if(ui.selected){closePanel();return;}
   }
   if((e.key==='Enter'||e.key===' ')&&e.target.matches&&e.target.matches('#chat .chip:not(.att-chip)')){e.preventDefault();e.target.click();}
@@ -4128,6 +4147,10 @@ function renderRestoreStrip(){
 const needsMe=a=>!!a&&!a.parent&&(vis(a)==='waiting'||vis(a)==='error'||!!a.limit);
 const NEED_SINCE=new Map();
 const ATT=window.DurbarAttention;
+/* spec 052 FR-191 (T197, owner's standing order 2026-11-07): Your door, the Needs you panel, is behind this flag until the owner's look. While it is
+   off the modal inbox below is exactly what it was. ?door=1 (DURBAR_DOOR=1) turns it on for one run, ?door=0 off; the switch of the default is one line. */
+const DOOR_DEFAULT=false;
+const DOOR_ON=qs.get('door')==='1'||(DOOR_DEFAULT&&qs.get('door')!=='0');
 function needsMeOrder(){
   const ids=[...document.querySelectorAll('#stage .desk[data-id]')].map(d=>d.dataset.id);
   const list=[...ids,...agents.map(a=>a.id).filter(id=>!ids.includes(id))].map(byId).filter(needsMe), now=Date.now(), live=new Set();
@@ -4160,8 +4183,7 @@ function syncAttention(list){
   }
   const focused=document.hasFocus(), enabled=NOTIFY&&!demoOn&&typeof Notification==='function';
   NOTIFIER.observe(attentionItems(list,ATT_ARMED&&enabled&&!focused),{armed:ATT_ARMED,enabled,focused});
-  const due=NOTIFIER.dueAt();
-  if(due!=null&&!attTimer)attTimer=setTimeout(()=>{attTimer=0;showAttention();},Math.max(0,due-Date.now()));
+  if(!attTimer){const id=ATT.scheduleDue(NOTIFIER,setTimeout,()=>{attTimer=0;showAttention();});if(id)attTimer=id;}
 }
 function showAttention(){
   syncAttention(needsMeOrder()); /* drop what was answered meanwhile, and what you saw by coming back */
@@ -4178,8 +4200,10 @@ function renderInboxBtn(){
   const b=$('inboxBtn'); if(!b)return;
   const list=needsMeOrder(), n=list.length;
   syncAttention(list);
+  if(DOOR_ON)doorSync(list);
   b.hidden=!agents.length; b.classList.toggle('attn',n>0);
   rollCount(b.querySelector('b'),n);
+  if(DOOR_ON){const pn=$('needsPanel');if(pn)b.setAttribute('aria-controls','needsPanel');else b.removeAttribute('aria-controls');b.setAttribute('aria-expanded',pn?'true':'false');}
   b.setAttribute('aria-label',n?n+(n===1?' agent needs':' agents need')+' you. Open the inbox (I or '+INBOX_KEY+').':'Nobody needs you. Open the inbox (I or '+INBOX_KEY+').');
 }
 /* spec 044 FR-027..FR-029, FR-033 (issue 523): the Schedules button left of Needs you. The facts and the words are in schedtop.js (unit-tested). */
@@ -4244,12 +4268,134 @@ function pendingCardOf(a){const c=getChat(a);const all=[...c.el.querySelectorAll
 let inboxBack=null;
 const INBOX_AMT=new Map(); /* FR-209: what was typed in a limit row's amount, per request id, so a repaint does not lose it */
 let inboxTick=0;
-function closeInbox(){clearInterval(inboxTick);inboxTick=0;const d=$('inboxDlg');if(!d)return;d.remove();const back=inboxBack;inboxBack=null;
+function closeInbox(dismiss){if($('needsPanel'))closeDoor(dismiss===true);clearInterval(inboxTick);inboxTick=0;const d=$('inboxDlg');if(!d)return;d.remove();const back=inboxBack;inboxBack=null;
   const b=back&&back.isConnected&&back.getClientRects().length&&!back.disabled?back:$('inboxBtn');if(b&&b.getClientRects().length)focusIn(b);}
 /* spec 052 FR-034: one polite live region for requests and answers (screen readers hear them; nothing visible changes) */
 let announceT=0;
 function announce(text){const el=$('srAnnounce');if(!el||!text)return;clearTimeout(announceT);el.textContent='';announceT=setTimeout(()=>{el.textContent=String(text).slice(0,300);},60);}
+
+/* ---- spec 052 FR-191..FR-196 (T196, T197): Your door, the Needs you queue as a panel beside the office. It reuses paintInbox() for the rows (the
+   guards of FR-206..FR-213 are unchanged), needsMeOrder() for the order and NEED_SINCE for the waits. Non-modal: no backdrop, no aria-modal, a
+   labelled region; fixed on top of the room, so it takes no layout space. Rows are repainted whole for now (keyed rows are T200). ---- */
+const DOOR_ARR=ATT.createArrivals(), DOOR_GATE=ATT.createDoorGate();
+let DOOR_RETRY=0;
+const DOOR_PENDK=new Set(); /* request keys that arrived and have not been shown yet */
+let DOOR_RETURN=false, DOOR_CLEAR=0, DOOR_OPEN_AT=0, DOOR_PTR=null;
+const RISE_GUARD_MS=ATT.RISE_GUARD_MS, DOOR_GUARD=ATT.createRiseGuard(); /* FR-198: no press before this long after the panel opened or a row moved under the pointer (attention.js; its memory is by agent and request) */
+document.addEventListener('pointermove',e=>{DOOR_PTR={x:e.clientX,y:e.clientY};},{passive:true});
+/* FR-200: after a row's answer was sent, wait (at most 2.5 s) for the card itself to settle; the row's word comes from that, never from the press */
+function doorSettled(a,rq,cb){const t0=performance.now(),tick=()=>{const live=[...getChat(a).el.querySelectorAll('.note.perm:not(.settled)')].some(n=>reqOf(n)===rq);if(!live)return cb(true);if(performance.now()-t0>=2500)return cb(false);setTimeout(tick,100);};setTimeout(tick,250);}
+const leaveInbox=()=>{if(!(DOOR_ON&&$('needsPanel')))closeInbox();}; /* a row's Open: the panel steps aside in openPanel (and returns), the modal closes */
+function doorGeom(){
+  const ws=document.querySelector('.workspace'), r=ws?ws.getBoundingClientRect():{top:52,bottom:innerHeight}, lift=$('lift');
+  const lr=lift&&!lift.hidden&&lift.getClientRects().length?lift.getBoundingClientRect():null; /* left of the lift (Q-NY-7) */
+  const full=innerWidth<900, w=full?innerWidth:innerWidth>=1200?360:320, right=full?0:lr?Math.max(8,Math.round(innerWidth-lr.left)+6):8;
+  return {top:Math.max(0,Math.round(r.top)),maxH:Math.max(160,Math.round(r.bottom-r.top)-8),w,right,left:innerWidth-right-w,full};
+}
+function doorPlace(p){const g=doorGeom();p.style.top=g.top+'px';p.style.maxHeight=g.maxH+'px';p.style.width=g.full?'auto':g.w+'px';p.style.right=g.right+'px';p.style.left=g.full?'0':'auto';}
+window.addEventListener('resize',()=>{const p=$('needsPanel');if(p)doorPlace(p);});
+/* FR-202, FR-203: it never opens by itself over a dialog, a menu, Settings or Tools, a chat, a narrow window, or the key the person is on */
+function doorHeld(){
+  if(ui.selected||modalOpen()||document.querySelector('.dlg-ov')||innerWidth<900)return true;
+  if(window.DurbarScreens&&window.DurbarScreens.isOpen())return true;
+  if(!$('foldersPop').hidden||!$('floorsPop').hidden)return true;
+  if([...document.querySelectorAll('.mode-menu,.more-menu,[role="menu"]')].some(m=>m.getClientRects().length))return true;
+  const ae=document.activeElement;
+  if(ae&&ae!==document.body&&ae.getBoundingClientRect){const g=doorGeom(),r=ae.getBoundingClientRect();if(r.width&&r.right>g.left&&r.left<g.left+g.w&&r.bottom>g.top&&r.top<g.top+g.maxH)return true;} /* focus is never hidden under it */
+  return false;
+}
+/* FR-193: every pending card of every agent that needs you is one request (by request id); a state with no card is agent plus kind */
+function doorItems(list){
+  const out=[];
+  for(const a of list){
+    const live=a.live||chats[a.id]; /* never build a demo chat just to look */
+    const cards=live?[...getChat(a).el.querySelectorAll('.note.perm:not(.settled)')].filter(n=>n.querySelector(':scope > .note-actions button')):[];
+    if(cards.length){for(const c of cards)out.push({key:'r:'+reqOf(c),id:a.id,kind:c.classList.contains('question')?'q':c.classList.contains('limit')?'l':c.classList.contains('coffee')?'c':'p',card:true});}
+    else out.push({key:a.id+'|'+(vis(a)==='error'?'e':a.limit?'l':'w'),id:a.id,kind:vis(a)==='error'?'e':a.limit?'l':'w',card:false});
+  }
+  return out;
+}
+const doorSig=list=>list.map(a=>{const c=(a.live||chats[a.id])?pendingCardOf(a):null;return a.id+'/'+(c?reqOf(c):'')+'/'+vis(a);}).join('|');
+function doorSync(list){
+  const open=!!$('needsPanel');
+  const items=doorItems(list), r=DOOR_ARR.observe(items,{armed:ATT_ARMED,isPaused:id=>{const a=byId(id);return !!a&&!!a.paused;}});
+  if(r.fresh.length)DOOR_GATE.arrive(r.fresh.length);
+  for(const [o,n] of r.flips||[])if(DOOR_PENDK.delete(o))DOOR_PENDK.add(n); /* a card-less ask that gained its card is the same ask */
+  {const here=new Set(items.map(x=>x.key));for(const x of r.fresh)DOOR_PENDK.add(x.key);for(const k of [...DOOR_PENDK])if(!here.has(k))DOOR_PENDK.delete(k);} /* the new asks that still wait: one answered elsewhere before the opening opens nothing */
+  if(r.startup)DOOR_GATE.startup();
+  const d=DOOR_GATE.ruling({open,held:doorHeld(),waiting:DOOR_PENDK.size,any:list.length});
+  if(!DOOR_GATE.isPending())DOOR_PENDK.clear();
+  clearTimeout(DOOR_RETRY);DOOR_RETRY=0;{const w=DOOR_GATE.waitMs();if(w>0)DOOR_RETRY=setTimeout(()=>{DOOR_RETRY=0;doorSync(needsMeOrder());},w+60);} /* a throttled opening is kept: look again when the throttle ends */
+  if(d==='open'||d==='startup'){openDoor(null,true,d==='startup',list.length);return;}
+  const p=$('needsPanel'); if(p){doorPlace(p);if(p.dataset.sig!==doorSig(list))doorRepaint();}
+}
+let DOOR_NOACT=null; /* the heading a repaint put focus on: A, S, D, O and Enter do nothing there until focus moves */
+function doorRepaint(){
+  const p=$('needsPanel'),body=$('inboxBody'); if(!p||!body)return;
+  if(p.querySelector('.inbox-row.settled,.inbox-row[data-answering]'))return; /* an answer is folding away: its own timer repaints */
+  const ae=document.activeElement, row=ae&&p.contains(ae)?ae.closest('.inbox-row'):null, id=row&&row.dataset.id, k=ae&&ae.dataset?ae.dataset.k:'', head=!!ae&&ae.classList&&ae.classList.contains('ib-h');
+  const idx=row?[...p.querySelectorAll('.inbox-row')].indexOf(row):-1;
+  const rq0=row?row.dataset.rq||'':'', held=!!DOOR_NOACT&&ae===DOOR_NOACT; /* the focus was put there by an earlier repaint and the person has not moved */
+  paintInbox(null);
+  if(row){ /* focus anywhere in a row: a heading, a button, the amount field, a "Show the change" summary */
+    const rs=[...p.querySelectorAll('.inbox-row')], same=rs.find(x=>x.dataset.id===id&&(x.dataset.rq||'')===rq0);
+    /* FR-033: the person's own row, still holding the same request, keeps what they had; anything else (the row left, or its request was replaced) lands on a
+       heading, never a button, and the answer keys wait there until the person moves (DOOR_NOACT), so a repaint never lets A answer a request nobody read */
+    if(same&&ae.classList.contains('ib-amt')){/* paintInbox put the amount field back, with its selection */}
+    else if(same){const t=(k&&(k==='opt'&&ae.textContent?[...same.querySelectorAll('[data-k="opt"]')].find(x=>x.textContent===ae.textContent):same.querySelector('[data-k="'+k+'"]')))||same.querySelector('.ib-h');if(held&&t)DOOR_NOACT=t; /* set before the focus moves: the repaint's own focusin is not the person moving */focusIn(t||$('inboxClose'));}
+    else{const r=rs.find(x=>x.dataset.id===id)||rs[Math.min(idx,rs.length-1)], h=r&&r.querySelector('.ib-h');
+      if(h){DOOR_NOACT=h;focusIn(h);announce('That request went away. Focus is on '+(r.dataset.name||'the next agent')+'. Move to a row before answering.');}else focusIn(p.querySelector('.inbox-empty')||$('inboxClose'));}
+  }
+}
+function doorAfterPaint(list){
+  const p=$('needsPanel'); if(!p)return;
+  const n=list.length;
+  $('doorLine').textContent=n?n+' outside your door, oldest first':'Nobody outside your door.';
+  $('doorFaces').innerHTML=list.slice(0,8).map(a=>'<span class="door-face" data-face="'+esc(faceKey(a))+'">'+avatar(a)+'</span>').join('')+(n>8?'<span class="door-more">+'+(n-8)+'</span>':'');
+  p.dataset.sig=doorSig(list);
+  clearTimeout(DOOR_CLEAR);DOOR_CLEAR=0;
+  if(!n&&p.dataset.auto==='1')DOOR_CLEAR=setTimeout(()=>{DOOR_CLEAR=0;if($('needsPanel')&&!needsMeOrder().length)closeDoor(false);},2000); /* Q-NY-13: opened by itself and emptied, All clear for about 2 s */
+}
+function openDoor(focusId,auto,startup,count){
+  let p=$('needsPanel');
+  if(p){ /* already open: only move focus (FR-195), no second slide */
+    if(!auto){const list=needsMeOrder(),i=typeof focusId==='string'?list.findIndex(a=>a.id===focusId):-1,hs=p.querySelectorAll('.ib-h'),h=hs[Math.max(0,Math.min(i,hs.length-1))]||p.querySelector('.inbox-empty')||$('inboxClose');DOOR_NOACT=null; /* on purpose: the person asked to go there */if(h)focusIn(h);}
+    return;
+  }
+  const quiet=!!auto||focusId==='quiet';
+  inboxBack=quiet||!document.activeElement||document.activeElement===document.body?null:document.activeElement;
+  DOOR_OPEN_AT=performance.now();DOOR_GUARD.opened(DOOR_OPEN_AT);p=document.createElement('aside');p.id='needsPanel';p.className='door-panel';p.setAttribute('role','region');p.setAttribute('aria-labelledby','doorT');
+  p.dataset.auto=auto?'1':'0';if(startup)p.dataset.startup='1';
+  p.innerHTML='<div class="door-head"><h2 id="doorT">Needs you</h2><button class="btn sm" type="button" id="doorLater" hidden title="Close the list; the asks stay on the amber button">Later</button><button class="btn sm" type="button" id="inboxClose">Close</button></div>'
+    +'<p class="door-line" id="doorLine"></p><div class="door-faces" id="doorFaces" aria-hidden="true"></div>'
+    +'<div class="door-body" id="inboxBody"></div><p class="inbox-keys" id="inboxKeys">Keys: J/K move · A allow · S session · D deny · O open · spending limits: buttons only</p>';
+  document.body.appendChild(p);doorPlace(p);
+  p.addEventListener('keydown',inboxKey);
+  p.addEventListener('focusin',e=>{if(DOOR_NOACT&&e.target!==DOOR_NOACT)DOOR_NOACT=null;});
+  p.addEventListener('focusout',e=>{if(DOOR_NOACT&&e.relatedTarget&&!p.contains(e.relatedTarget))DOOR_NOACT=null;}); /* the person left the panel on purpose (a removed row has no relatedTarget) */
+  p.addEventListener('pointerdown',()=>{DOOR_NOACT=null;}); /* a click or touch inside the panel is the person choosing, even on the heading that has focus */
+  $('inboxClose').onclick=()=>closeInbox(true);
+  if(startup){const l=$('doorLater');l.hidden=false;l.onclick=()=>closeInbox(true);}
+  const at=typeof focusId==='string'&&focusId!=='quiet'?needsMeOrder().findIndex(a=>a.id===focusId):-1;
+  paintInbox(quiet?null:at>0?at:0); /* FR-192: opening by itself never touches focus, selection or scroll; on purpose it lands on a row's heading */
+  inboxTick=setInterval(()=>{const b=$('inboxBody');if(!b){clearInterval(inboxTick);inboxTick=0;return;}b.querySelectorAll('.inbox-row[data-id]').forEach(r=>{const w=r.querySelector('.ib-wait'),t=NEED_SINCE.get(r.dataset.id);if(w&&t!=null)w.textContent='· '+ATT.waitLabel(Date.now()-t);});},30000);
+  if(!document.hidden)motion(p,[{transform:'translateX(24px)',opacity:0},{transform:'none',opacity:1}],{duration:220,easing:'ease-out'}); /* FR-204: one slide, transform and opacity only; reduced motion and a hidden window: at once */
+  const b=$('inboxBtn');if(b){b.setAttribute('aria-expanded','true');b.setAttribute('aria-controls','needsPanel');}
+  if(auto){const n=count||needsMeOrder().length;announce(startup?n+(n===1?' agent needs':' agents need')+' you. Needs you is open, with a Later button. Press I to go there.':'Needs you is open. '+n+(n===1?' agent needs':' agents need')+' you. Press I to go there.');}
+}
+function doorRemove(){DOOR_GUARD.close();DOOR_NOACT=null;clearInterval(inboxTick);inboxTick=0;clearTimeout(DOOR_CLEAR);DOOR_CLEAR=0;const p=$('needsPanel');if(p)p.remove();const b=$('inboxBtn');if(b){b.setAttribute('aria-expanded','false');b.removeAttribute('aria-controls');}}
+/* FR-194: an automatic close never moves focus; the focus step runs only when focus was inside the panel */
+function closeDoor(dismiss){
+  const p=$('needsPanel'); if(!p)return;
+  const inside=p.contains(document.activeElement), back=inboxBack; inboxBack=null;
+  doorRemove(); DOOR_RETURN=false;
+  if(dismiss)DOOR_GATE.dismissed();
+  if(inside){const b=back&&back.isConnected&&back.getClientRects().length&&!back.disabled?back:$('inboxBtn');if(b&&b.getClientRects().length)focusIn(b);}
+}
+function doorStepAside(){if(!$('needsPanel'))return;DOOR_RETURN=true;inboxBack=null;doorRemove();}
+function doorReturn(){if(!DOOR_RETURN)return;DOOR_RETURN=false;if(!ui.selected)openDoor('quiet');}
 function openInbox(focusId){
+  if(DOOR_ON&&!ui.selected)return openDoor(focusId); /* with a chat open the modal stays until the door can push the chat (T201) */
   const back=$('inboxDlg')?inboxBack:document.activeElement;
   closeInbox(); inboxBack=back&&back!==document.body?back:null;
   const d=document.createElement('div');d.id='inboxDlg';d.className='dlg-ov';
@@ -4274,9 +4420,9 @@ function openInbox(focusId){
 }
 /* FR-033: keys inside the inbox act on the row that holds focus; Tab stays inside the dialog */
 function inboxKey(e){
-  const d=$('inboxDlg'); if(!d)return;
-  if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closeInbox();return;}
-  if(e.key==='Tab'){const f=[...d.querySelectorAll('button,summary,[tabindex="-1"].ib-h,input')].filter(x=>x.getClientRects().length);if(!f.length)return;const i=f.indexOf(document.activeElement);if(e.shiftKey&&(i<=0)){e.preventDefault();focusIn(f[f.length-1]);}else if(!e.shiftKey&&i===f.length-1){e.preventDefault();focusIn(f[0]);}return;}
+  const d=$('inboxDlg')||$('needsPanel'); if(!d)return;
+  if(e.key==='Escape'){if(d.id==='needsPanel'&&e.target&&e.target.tagName==='INPUT')return; /* FR-194: never from a text field */e.preventDefault();e.stopPropagation();closeInbox(true);return;}
+  if(e.key==='Tab'&&d.id==='inboxDlg'){const f=[...d.querySelectorAll('button,summary,[tabindex="-1"].ib-h,input')].filter(x=>x.getClientRects().length);if(!f.length)return;const i=f.indexOf(document.activeElement);if(e.shiftKey&&(i<=0)){e.preventDefault();focusIn(f[f.length-1]);}else if(!e.shiftKey&&i===f.length-1){e.preventDefault();focusIn(f[0]);}return;}
   if(e.altKey||e.ctrlKey||e.metaKey)return;
   if(e.target&&e.target.tagName==='INPUT')return; /* spec 052 FR-207: typing an amount is not a command */
   const rows=[...d.querySelectorAll('.inbox-row')], row=document.activeElement&&document.activeElement.closest('.inbox-row'), ri=rows.indexOf(row);
@@ -4287,6 +4433,7 @@ function inboxKey(e){
   if(k==='j'||e.key==='ArrowDown'){e.preventDefault();go(ri+1);return;}
   if(k==='k'||e.key==='ArrowUp'){e.preventDefault();go(ri<0?0:ri-1);return;}
   if(!row)return;
+  if(DOOR_NOACT&&document.activeElement===DOOR_NOACT&&(k==='a'||k==='s'||k==='d'||k==='o'||e.key==='Enter')){e.preventDefault();return;} /* focus was put here by a repaint, not by the person */
   const act=x=>{const b=row.querySelector(`[data-k="${x}"]`);if(b){e.preventDefault();b.click();}};
   if(row.classList.contains('settled')||row.dataset.answering)return; /* FR-208: a row being answered or answered takes no key (O or Enter during the fold would open its chat) */
   if(k==='a')act('approve');else if(k==='d')act('deny');else if(k==='s')act('session');
@@ -4309,19 +4456,21 @@ const inboxActs=card=>[...card.querySelectorAll(':scope > .note-actions button')
 function paintInbox(focusIndex){
   const body=$('inboxBody'); if(!body)return;
   const ae0=document.activeElement, typing=ae0&&ae0.classList&&ae0.classList.contains('ib-amt')&&body.contains(ae0)?{rq:ae0.dataset.rq,a:ae0.selectionStart,b:ae0.selectionEnd}:null; /* a repaint leaves focus in an amount field (restored to the same request's field) */
-  const list=needsMeOrder();
+  const list=needsMeOrder(), scrollTop0=body.scrollTop, door0=DOOR_ON&&!!$('needsPanel');
   body.innerHTML=list.length?'':'<p class="inbox-empty" tabindex="-1"><span class="ib-ok" aria-hidden="true"></span><span><b>All clear. Nobody needs you right now.</b><small>Agents that ask for permission, ask a question, reach their limit or hit an error appear here.</small></span></p>'; /* spec 052 FR-048 */
   list.forEach((a,i)=>{
     const card=pendingCardOf(a), row=document.createElement('section');row.className='inbox-row';
-    const rq=card?reqOf(card):'', isLimit=!!card&&card.classList.contains('limit'); /* FR-206: the request this row was painted for; FR-207: a limit row has its own amount and no letter key */
+    const door=DOOR_ON&&!!$('needsPanel'), rq=card?reqOf(card):'', isLimit=!!card&&card.classList.contains('limit'), isCoffee=door&&!!card&&card.classList.contains('coffee'); /* FR-206: the request this row was painted for; FR-207: a limit row has its own amount and no letter key */
     const st=vis(a), q=card&&card.classList.contains('question'), what=card?(q?'asks':card.classList.contains('limit')?'reached its spending limit':card.classList.contains('coffee')?'is on a '+coffeeWord().toLowerCase():'needs your OK'):(st==='error'?'has an error':a.limit?'reached its limit':LABELS[st]||st);
-    row.setAttribute('aria-labelledby','ibh'+i);row.dataset.id=a.id;
+    row.setAttribute('aria-labelledby','ibh'+i);row.dataset.id=a.id;row.dataset.name=a.name;if(door)row.dataset.rq=rq;if(door&&isLimit)row.classList.add('is-limit');
     row.innerHTML='<div class="ib-av" aria-hidden="true" data-face="'+esc(faceKey(a))+'">'+avatar(a)+'</div><div class="ib-main"><div class="ib-top"><h4 class="ib-h" id="ibh'+i+'" tabindex="-1"><b class="ib-n"></b> <span class="ib-sub"><span class="ib-w"></span> <span class="ib-f"></span> <span class="ib-wait"></span></span></h4></div><p class="ib-t" id="ibt'+i+'"></p><div class="ib-act"></div></div>';
     row.querySelector('.ib-h b').textContent=a.name;row.querySelector('.ib-h b').title=a.name;row.querySelector('.ib-w').textContent=what;row.querySelector('.ib-f').textContent='· '+roomOf(a).name;row.querySelector('.ib-f').title=roomOf(a).name; /* spec 052 FR-170: the name is its own line, the rest wraps below it */
     {const t=NEED_SINCE.get(a.id);row.querySelector('.ib-wait').textContent=t!=null?'· '+ATT.waitLabel(Date.now()-t):'';} /* FR-061 */
-    const text=card?requestText(card):(taskOf(a)||'');row.querySelector('.ib-t').textContent=text;
+    const text=card?requestText(card):(taskOf(a)||''), long=door&&!!card&&!isLimit&&text.length>REQ_TEXT_MAX; /* FR-199 (Q-NY-11): over FR-060's 480 characters a row only reads the request's start and offers Open */
+    row.querySelector('.ib-t').textContent=long?DurbarCutText.cutText(text,160):text;
+    row._armAt=door?DOOR_OPEN_AT+RISE_GUARD_MS:0;
     const act=row.querySelector('.ib-act');
-    for(const dd of card?card.querySelectorAll(':scope > details.pdiff'):[]){const c=dd.cloneNode(true);c.open=false;act.before(c);} /* spec 052 FR-063: the card's "Show the change", collapsed */
+    for(const dd of card&&!long?card.querySelectorAll(':scope > details.pdiff'):[]){const c=dd.cloneNode(true);c.open=false;act.before(c);} /* spec 052 FR-063: the card's "Show the change", collapsed */
     /* spec 052 FR-076: Allow, Allow for session, Deny in one fixed order inside a group that never wraps; FR-096: "Open" is a small link-style
        button at the end of the heading line (a question keeps "Answer in chat" with the actions). FR-077: each button names its key in its title and aria-keyshortcuts. */
     const KEY={approve:"A",session:"S",deny:"D",open:"O"}, RANK=INBOX_RANK;
@@ -4329,40 +4478,64 @@ function paintInbox(focusIndex){
     let curSrc=null; /* spec 097 FR-318: the card button this row button copies (a request Durbar could not check has no Allow) */
     const add=(label,cls,k,fn,title,box)=>{const b=document.createElement('button');b.type='button';b.className=cls==='link'?'linkbtn ib-open':'btn sm '+cls;b.textContent=label;b.dataset.k=k;b.setAttribute('aria-describedby','ibh'+i+' ibt'+i);if(curSrc&&curSrc.dataset.blind){b.disabled=true;title=curSrc.title;}
       if(KEY[k]){b.setAttribute('aria-keyshortcuts',KEY[k]);title=(title?title+' ':'')+'(key '+KEY[k]+')';}if(title)b.title=title;b.onclick=fn;(box||ans).appendChild(b);};
-    const kOf=src=>isLimit?'other':src.dataset.act==='session'?'session':/danger/.test(src.className)?'deny':/primary/.test(src.className)?'approve':'other';
+    const kOf=src=>isLimit||isCoffee?'other':src.dataset.act==='session'?'session':/danger/.test(src.className)?'deny':/primary/.test(src.className)?'approve':'other';
     let amt=null; /* FR-207: the amount the card would send, shown in the row and sent from it */
     if(isLimit){const ci=card.querySelector('.limit-amt');if(ci){amt=document.createElement('input');amt.type='number';amt.min=ci.min;amt.step=ci.step;amt.value=INBOX_AMT.has(rq)?INBOX_AMT.get(rq):ci.value;amt.className='limit-amt ib-amt';amt.dataset.rq=rq;
       amt.setAttribute('aria-label',ci.getAttribute('aria-label')||'Amount to add');amt.title=amt.getAttribute('aria-label');amt.oninput=()=>{amt.removeAttribute('aria-invalid');INBOX_AMT.set(rq,amt.value);};
       amt.onkeydown=ev=>{if(ev.key!=='Enter'||ev.isComposing)return;ev.preventDefault();if(!ev.repeat){const r=[...ans.querySelectorAll('button')].find(x=>x.dataset.k==='other'&&x.classList.contains('primary'));if(r)r.click();}}; /* Enter in the field presses the row's own Raise limit; a held Enter does nothing */ans.appendChild(amt);}}
-    if(card&&!q)for(const src of [...card.querySelectorAll(':scope > .note-actions button')].filter(x=>!x.dataset.broad).sort((x,y)=>RANK[kOf(x)]-RANK[kOf(y)])){
+    /* The one answer path of a row (FR-047, FR-206, FR-209): the row's buttons go busy, the row shows the answer for 600ms, folds away in 200ms, then the list repaints.
+       `src` is the card's own control this press stands for: the card must still be this agent's live pending card with this request id and still hold it, else nothing
+       is sent. In Your door (FR-198) a row takes no press before its rise guard has run out, and (FR-200) the word shown is the card's real outcome. */
+    const run=(btn,k,word,src,pre,send,shown)=>{
+      if(row.classList.contains('settled')||row.dataset.answering)return;
+      if(door&&performance.now()<row._armAt)return; /* FR-198: a row that has just risen or moved under the pointer takes no press */
+      if(pre&&pre()===false)return;
+      row.dataset.answering='1';
+      const live=rq&&[...getChat(a).el.querySelectorAll('.note.perm:not(.settled)')].find(n=>reqOf(n)===rq), verdict=ATT.pressVerdict({found:!!live,holds:!!live&&live.contains(src),disabled:src.disabled}), waiting=verdict==='waiting', stale=verdict!=='send'; /* the card is live and still holds this very button (a card may rebuild its buttons); a disabled one is still on its way, not answered */
+      act.querySelectorAll('button,input').forEach(x=>{if(x!==btn)x.disabled=true;});const done=busy(btn,'Sending…');
+      focusIn(row.querySelector('.ib-h'));
+      if(!stale)send(live);
+      const after=ok=>{const left=needsMeOrder().length;announce(!ok?'Could not answer. '+a.name+'.':stale?(waiting?'Still waiting for the answer. ':'Already answered. ')+a.name+'.':(shown?'Answered ':word+' ')+(shown||'')+(shown?' for ':'')+a.name+'. '+(left?left+' left.':'Nobody else needs you.'));renderInboxBtn();
+        if(!row.isConnected){done();if(!door)paintInbox(i);return;} /* in the panel a row that is gone belongs to a list already rebuilt: never repaint the new one under an answer in flight */
+        row.classList.add('settled');act.innerHTML='';const p=document.createElement('p');p.className='ib-done '+(!ok?'no':stale||k==='other'?'':k==='deny'?'no':'yes');p.textContent=!ok?'Could not answer':stale?(waiting?'Still waiting':'Already answered'):shown?'\u2713 '+shown:k==='deny'?'Denied':k==='other'?word:'\u2713 '+word;act.appendChild(p);
+        if(!ok){setTimeout(()=>{if(!row.isConnected)return;if(!door){paintInbox(i);return;}
+          row.classList.remove('settled');delete row.dataset.answering;doorRepaint(); /* FR-033: the same repaint as every other: focus anywhere in a row stays on the same request or goes to a heading that takes no answer key (DOOR_NOACT), never a button */},3000);return;} /* FR-200: the card is not settled: the row stays with the words and Open, then offers its buttons again */
+        setTimeout(()=>{if(!row.isConnected)return door?0:paintInbox(i);if(reducedMotion())return paintInbox(i);
+          row.classList.add('gone');setTimeout(()=>flipInbox(()=>paintInbox(i)),180);},600);};
+      if(door&&!stale)doorSettled(a,rq,after);else setTimeout(()=>after(true),250);
+    };
+    if(card&&!q&&!long)for(const src of [...card.querySelectorAll(':scope > .note-actions button')].filter(x=>!x.dataset.broad).sort((x,y)=>RANK[kOf(x)]-RANK[kOf(y)])){
       const k=kOf(src);curSrc=src;
       /* spec 003 FR-097: the Read-only denial's "Switch to Ask first…" opens the same mode menu, from the chat (the inbox is modal) */
-      if(src.dataset.act==='ro-ask'){add(src.textContent,'',k,()=>{closeInbox();openPanel(a.id,true);requestAnimationFrame(()=>{if(!src.isConnected)return;src.focus({preventScroll:true});src.click();});},src.title);ans.lastElementChild.setAttribute('aria-haspopup','menu');continue;}
+      if(src.dataset.act==='ro-ask'){add(src.textContent,'',k,()=>{leaveInbox();openPanel(a.id,true);requestAnimationFrame(()=>{if(!src.isConnected)return;src.focus({preventScroll:true});src.click();});},src.title);ans.lastElementChild.setAttribute('aria-haspopup','menu');continue;}
       add(src.textContent,(src.className.match(/\b(primary|danger|session)\b/)||[''])[0],k,ev=>{const word=k==='deny'?'Denied':k==='other'?src.textContent:'Allowed';
-        /* spec 052 FR-047/FR-048: the row's buttons go busy, then the row shows the answer for 600ms, folds away in 200ms, then the list repaints */
-        if(row.classList.contains('settled')||row.dataset.answering)return;
         /* FR-207: the Raise button sends the number the row shows; an empty or zero amount sends nothing */
-        const raises=isLimit&&/primary/.test(src.className)&&amt; if(raises&&!(Math.round(parseFloat(amt.value)*100)/100>0)){amt.setAttribute('aria-invalid','true');announce('Enter an amount above zero to raise the limit.');focusIn(amt);return;}
-        row.dataset.answering='1';
-        /* FR-206: the card must still be this agent's live pending card with this request id and its button still there; else nothing is sent */
-        const live=rq&&[...getChat(a).el.querySelectorAll('.note.perm:not(.settled)')].find(n=>reqOf(n)===rq), waiting=!!live&&live.contains(src)&&src.disabled, stale=!live||!live.contains(src)||waiting; /* the card is live and still holds this very button (a card may rebuild its buttons); a disabled one is still on its way, not answered */
-        act.querySelectorAll('button,input').forEach(x=>{if(x!==ev.currentTarget)x.disabled=true;});const done=busy(ev.currentTarget,'Sending…');
-        focusIn(row.querySelector('.ib-h'));
-        if(!stale){if(raises){const ci=live.querySelector('.limit-amt');if(ci)ci.value=amt.value;}src.click();}
-        setTimeout(()=>{const left=needsMeOrder().length;announce(stale?(waiting?'Still waiting for the answer. ':'Already answered. ')+a.name+'.':word+' '+a.name+'. '+(left?left+' left.':'Nobody else needs you.'));renderInboxBtn();
-          if(!row.isConnected){done();paintInbox(i);return;}
-          row.classList.add('settled');act.innerHTML='';const p=document.createElement('p');p.className='ib-done '+(stale||k==='other'?'':k==='deny'?'no':'yes');p.textContent=stale?(waiting?'Still waiting':'Already answered'):k==='deny'?'Denied':k==='other'?word:'✓ '+word;act.appendChild(p);
-          setTimeout(()=>{if(!row.isConnected)return paintInbox(i);if(reducedMotion())return paintInbox(i);
-            row.classList.add('gone');setTimeout(()=>flipInbox(()=>paintInbox(i)),180);},600);},250);},src.title);
+        const raises=isLimit&&/primary/.test(src.className)&&amt;
+        run(ev.currentTarget,k,word,src,()=>{if(raises&&!(Math.round(parseFloat(amt.value)*100)/100>0)){amt.setAttribute('aria-invalid','true');announce('Enter an amount above zero to raise the limit.');focusIn(amt);return false;}},live=>{if(raises){const ci=live.querySelector('.limit-amt');if(ci)ci.value=amt.value;}src.click();});
+      },src.title);
     }
-    if(q)add('Answer in chat','primary','open',()=>{closeInbox();openPanel(a.id,true);},'',act);
-    else add('Open','link','open',()=>{closeInbox();openPanel(a.id,true);},'Open the chat',row.querySelector('.ib-top'));
+    const fit0=door&&q&&!long?inboxQFit(card):null, fit=fit0&&fit0.opts.length?fit0:null; /* FR-199 (Q-NY-12): a question with a few short options gets them as buttons; a typed one, or one without options, keeps Answer in chat */
+    if(long){const n=document.createElement('p');n.className='ib-note';n.textContent='Too long to answer here. Read it in the chat.';act.appendChild(n);}
+    else if(fit){
+      for(const o of fit.opts){const lb=(o.querySelector('.q-lbl')||o).textContent;
+        add(lb,'','opt',ev=>run(ev.currentTarget,'opt',lb,o,null,()=>{o.click();fit.ok.click();},lb),o.title);}
+    }
+    else if(q)add('Answer in chat','primary','open',()=>{leaveInbox();openPanel(a.id,true);},'',act);
+    else if(door&&card&&!isLimit&&!ans.querySelector('button')&&!amt){const n=document.createElement('p');n.className='ib-note';n.textContent='This one is answered in the chat.';act.appendChild(n);}
+    if(!q||fit||long)add('Open','link','open',()=>{leaveInbox();openPanel(a.id,true);},'Open the chat',row.querySelector('.ib-top'));
     body.appendChild(row);
   });
+  if(door0){ /* FR-198: a row that is new or moved to a place under the pointer is guarded for RISE_GUARD_MS; one already there keeps its time */
+    const now=performance.now(), pr=DOOR_PTR, rows=[...body.querySelectorAll('.inbox-row[data-id]')];
+    const at=DOOR_GUARD.place(rows.map(r=>{const rc=r.getBoundingClientRect();return {key:r.dataset.id+'/'+(r.dataset.rq||''),top:rc.top,under:!!pr&&pr.x>=rc.left&&pr.x<=rc.right&&pr.y>=rc.top&&pr.y<=rc.bottom};}),now);
+    rows.forEach(r=>{r._armAt=at.get(r.dataset.id+'/'+(r.dataset.rq||''));r.dataset.armed=DOOR_GUARD.armed(r._armAt,now)?'1':'0';
+      if(r.dataset.armed==='0')setTimeout(()=>{if(r.isConnected&&DOOR_GUARD.armed(r._armAt,performance.now()))r.dataset.armed='1';},r._armAt-now+10);});
+  }
   /* FR-033: focus a heading (it reads the agent and its request through the row), never a button */
   const again=typing&&[...body.querySelectorAll('.ib-amt')].find(x=>x.dataset.rq===typing.rq);
   if(again){focusIn(again);try{again.setSelectionRange(typing.a,typing.b);}catch(e){}}
   else if(focusIndex!=null){const hs=body.querySelectorAll('.ib-h');const h=hs[Math.min(focusIndex,hs.length-1)]||body.querySelector('.inbox-empty')||$('inboxClose');if(h)focusIn(h);}
+  if($('needsPanel')){body.scrollTop=scrollTop0;doorAfterPaint(list);}
 }
 function openNextNeedsMe(){
   const list=needsMeOrder(); if(!list.length){toast('Nobody needs you right now.',2600);return;}
@@ -6540,6 +6713,7 @@ function settlePerm(a,p){
   e.n.classList.add('settled',word);
   if(word==='denied'&&!p.via)roAskHint(a,e.n); /* denied by the mode (no one answered it): Read-only */
   stickyScroll(liveChat(a));
+  if(DOOR_ON&&$('needsPanel'))renderInboxBtn(); /* the panel's row for this request is stale now: look again at once */
 }
 function setGrants(a,list){a.grants=list;a.grantsKnown=true;const sn=a.grantSeen||(a.grantSeen=new Set());for(const g of list)sn.add(g.key);while(sn.size>500)sn.delete(sn.values().next().value);if(ui.selected&&liveRoot(byId(ui.selected)||a)===a)renderGrants();whyRefresh(a);}
 /* spec 052 FR-141: 1-2 grants are single chips; 3 or more are one "Allowed (N)" chip that opens a list (a row per grant, Revoke all).
@@ -9116,7 +9290,7 @@ if(bridge){
   wireDefaults();
   $('endAllBtn').hidden=$('endAllSep').hidden=!bridge.end; /* spec 052 FR-090 */
   if($('sendSeveralBtn'))$('sendSeveralBtn').hidden=!bridge.send; /* spec 064 FR-001 */
-  $('inboxBtn').onclick=openInbox;
+  $('inboxBtn').onclick=()=>{if(DOOR_ON&&$('needsPanel'))closeInbox(true);else openInbox();}; /* FR-194: the amber button is a toggle */
   /* spec 093 FR-001: + Folder (and the welcome screen's add button, which presses it) asks: add an existing folder, or create one */
   $('addFolder').onclick=()=>NEWFOLDER.choose(false);
   $('addWs').onclick=()=>addVia(bridge.addWorkspaceFile);
@@ -9179,7 +9353,7 @@ if(bridge){
     renderCrashStrip(); /* spec 006 FR-041 */
     void mcpLaunchStart(); /* spec 058 FR-199 */
     /* spec 052 FR-059: what already needs you a few seconds after start is remembered, not notified */
-    setTimeout(()=>{renderInboxBtn();ATT_ARMED=true;},3000);});
+    setTimeout(()=>{renderInboxBtn();ATT_ARMED=true;if(DOOR_ON)renderInboxBtn(); /* FR-193, Q-NY-3: what waits at arming opens the list, with Later */},3000);});
   loadModels();
   refreshSchedules();
   /* User themes (spec 040): register imported packs, then apply the saved theme id */
@@ -9213,8 +9387,9 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
-if(SIM)window.__durbarSimUi={afPasses:()=>AF_PASSES,railPlans:()=>{renderStrip();return faceMemoPlans;}, /* issue 1193: room plans one rail render worked out */ops:()=>({...OPS}),agents:()=>agents,scene:(a,mini,c)=>scene(a,mini,c), /* a drawn scene's markup, for the drivers (FR-192: the SMIL wave) */cv:{mark:cvMark,release:cvRelease,drop:cvDrop,openPanel,setDensity},setLive:setLiveOn,setOfficeView,needsCount:()=>needsMeOrder().length,clearDetail:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;c.querySelectorAll(':scope > details.pdiff').forEach(x=>x.remove());scheduleRender();return true;},addDetail:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;const d=document.createElement('details');d.className='pdiff';d.innerHTML='<summary>Show the change (+1 \u22121)</summary><pre>- a\n+ b</pre>';c.insertBefore(d,c.querySelector(':scope > .note-actions'));scheduleRender();return true;},requestText:s=>{const n=document.createElement('div');n.className='note elicit';n.textContent=String(s);return requestText(n);},setSerious:v=>{SERIOUS=!!v;return SERIOUS;}, setMotion:v=>{MOTION=!!v;markMotion();return MOTION;}, /* spec 097 (the moments driver): a change in the card, the card text's masking, Serious mode */unread:{mark:id=>UNREAD.complete(id,false)==='marked',read:id=>markRead(byId(id))}, /* spec 097 (the moments driver): the New reply mark and Mark as read, as the app sets them */order:{get:()=>ORDER,saved:()=>bridge.getOrder?bridge.getOrder():null,reset:resetOrder,path:id=>(ROOMS.find(r=>'room:'+r.id===id)||{}).path||''}, /* issue 677 (check 033-order): the order held and saved, Reset, a room's key */
-  toast:(s,act)=>{const t=act?toastAction(esc(String(s)),String(act),()=>{},8000):toast(esc(String(s)),8000);return !!t;}, /* spec 097 FR-113: a toast for the world-chrome driver (simulator only) */visitsSettled:()=>VISITS.settled(), /* spec 097 FR-186: no visit is about to start or end on the wall clock (check-office-ops-real reads a settled lobby) */realLayout:()=>RO_LAST, /* spec 097: the last Real office layout (check-office-overlap's Real office variant) */slips:()=>realSlips(), /* spec 097: what the world draws as slips (the moments driver; simulator only) */uncrowd:()=>{agents.forEach(x=>VISITS.unpin(x.id));scheduleRender();return true;},crowd:(pid,n,from)=>{const a=agents.filter(x=>!x.parent).slice(from||0,(from||0)+n);a.forEach(x=>VISITS.pin(x.id,pid,'test'));scheduleRender();return a.length;}, /* spec 097: n main agents stand at a place (a "+N" crowd for the driver; simulator only) */crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
+if(SIM)window.__durbarSimUi={swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
+  settleCard:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;c.classList.add('settled');c.classList.remove('pending');return true;}, /* spec 052 FR-197 (the door driver): the agent's pending card is answered elsewhere, as in the chat, so a row painted for it is stale */afPasses:()=>AF_PASSES,railPlans:()=>{renderStrip();return faceMemoPlans;}, /* issue 1193: room plans one rail render worked out */ops:()=>({...OPS}),agents:()=>agents,scene:(a,mini,c)=>scene(a,mini,c), /* a drawn scene's markup, for the drivers (FR-192: the SMIL wave) */cv:{mark:cvMark,release:cvRelease,drop:cvDrop,openPanel,setDensity},setLive:setLiveOn,setOfficeView,needsCount:()=>needsMeOrder().length,clearDetail:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;c.querySelectorAll(':scope > details.pdiff').forEach(x=>x.remove());scheduleRender();return true;},addDetail:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;const d=document.createElement('details');d.className='pdiff';d.innerHTML='<summary>Show the change (+1 \u22121)</summary><pre>- a\n+ b</pre>';c.insertBefore(d,c.querySelector(':scope > .note-actions'));scheduleRender();return true;},requestText:s=>{const n=document.createElement('div');n.className='note elicit';n.textContent=String(s);return requestText(n);},setSerious:v=>{SERIOUS=!!v;return SERIOUS;}, setMotion:v=>{MOTION=!!v;markMotion();return MOTION;}, /* spec 097 (the moments driver): a change in the card, the card text's masking, Serious mode */unread:{mark:id=>UNREAD.complete(id,false)==='marked',read:id=>markRead(byId(id))}, /* spec 097 (the moments driver): the New reply mark and Mark as read, as the app sets them */order:{get:()=>ORDER,saved:()=>bridge.getOrder?bridge.getOrder():null,reset:resetOrder,path:id=>(ROOMS.find(r=>'room:'+r.id===id)||{}).path||''}, /* issue 677 (check 033-order): the order held and saved, Reset, a room's key */
+  toast:(s,act)=>{const t=act?toastAction(esc(String(s)),String(act),()=>{},8000):toast(esc(String(s)),8000);return !!t;}, /* spec 097 FR-113: a toast for the world-chrome driver (simulator only) */visitsSettled:()=>VISITS.settled(),timerDraw:()=>moodSigNow(drawnAt)!==moodSig||agoSigNow(drawnAt)!==agoSig, /* spec 008 FR-184: a mood or "ago" tick would draw now (a draw shows both; check-office-ops asserts none is due after an update's draw) */ /* spec 097 FR-186: no visit is about to start or end on the wall clock (check-office-ops-real reads a settled lobby) */realLayout:()=>RO_LAST, /* spec 097: the last Real office layout (check-office-overlap's Real office variant) */slips:()=>realSlips(), /* spec 097: what the world draws as slips (the moments driver; simulator only) */uncrowd:()=>{agents.forEach(x=>VISITS.unpin(x.id));scheduleRender();return true;},crowd:(pid,n,from)=>{const a=agents.filter(x=>!x.parent).slice(from||0,(from||0)+n);a.forEach(x=>VISITS.pin(x.id,pid,'test'));scheduleRender();return a.length;}, /* spec 097: n main agents stand at a place (a "+N" crowd for the driver; simulator only) */crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
   readAll:(quiet)=>{const n=UNREAD.size;UNREAD.ids().forEach(id=>{UNREAD.read(id);UNREAD_AT.delete(id);});if(!quiet)scheduleRender();return n;},notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),boxUsable:()=>boxUsable(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},selNow:()=>{showSelButton();const b=document.getElementById('ntSelBtn');return !!b&&!b.hidden;},open:()=>openNotes(byId(ui.selected)),close:()=>closeNotes(false),search:q=>{const f=$('ntSearch');if(!f)return false;f.value=q;f.dispatchEvent(new Event('input'));return true;},marks:{clear:()=>{document.querySelectorAll('#chat .nt-mark').forEach(x=>x.remove());document.querySelectorAll('#chat .bubble').forEach(b=>{b._nd=undefined;});return true;},run:()=>notesMarkAll(byId(ui.selected))},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),rename:note=>renameNote(byId(ui.selected),note,null),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
   sizingLounges:()=>lastSizing.reduce((n,m)=>n+(m.rolled||[]).length,0), sizingMains:()=>lastSizing.reduce((n,m)=>n+m.mains.length,0), /* FR-181: the desks it is sized for (a pill does not reshape the cards) */ /* spec 001 FR-180: the finished agents the office is sized for */
   hxOff:(off)=>{HX_OFF=!!off;layoutKey='';scheduleRender();return HX_OFF;},renamePrevRow,settleNow,bridge:()=>bridge,render:()=>{layoutKey='';scheduleRender();},loungeTurn,quietHeads:(parts)=>{SIM_QUIET_HEADS=new Set(Array.isArray(parts)?parts:[]);},paint:()=>scheduleRender(),emit:onLiveEvent,

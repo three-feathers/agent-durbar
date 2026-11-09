@@ -116,7 +116,8 @@ module.exports = async (ctx) => {
   await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
   const rows = {};
   const readsBy = {}; /* n -> the layout reads of the update with the most, by the page line that made them (a reads row over its limit names them) */
-  const load = (n, extra = {}) => H.load({ w: 1440, h: 900, index, query: { sim: String(n), officeview: 'real', ...extra }, ready: REAL, readyMs: 30000, settle: false });
+  /* spec 097 FR-327: a pointer resting on a desk or plate opens that agent's card, and an open card is placed again on every draw (more layout reads). Under a virtual display the pointer rests mid-window, so every load moves it off the office first: the rows count the room, not a card */
+  const load = async (n, extra = {}) => { await H.load({ w: 1440, h: 900, index, query: { sim: String(n), officeview: 'real', ...extra }, ready: REAL, readyMs: 30000, settle: false }); ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 }); await H.until(`!document.getElementById('roZoom')`, 3000); };
   const frames = () => js(`new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>{const c=new MessageChannel();c.port1.onmessage=()=>r(1);c.port2.postMessage(0);})))`);
 
   // ---- FR-183 at big screens ----
