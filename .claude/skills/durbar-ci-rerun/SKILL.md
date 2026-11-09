@@ -18,7 +18,7 @@ A checklist, not rule text. The rules: spec 021 FR-036 and [docs/rules/review-ro
    - a 5xx (such as 504) on a download from github.com: the Electron zip (spec 008 FR-188), the CodeQL bundle, an Actions cache restore;
    - a runner lost or the job cancelled, with the log saying so.
    Then `gh run rerun <run-id> --failed`.
-4. Anything else (any assert, any test failure, a timeout inside a test, a driver step, a spec gate) is not rerun until its cause is found and fixed (AGENTS.md merge condition 5). Calling it a flake needs evidence: it fails on `main` too, or across several reruns.
+4. Anything else (any assert, any test failure, a timeout inside a test, a driver step, a spec gate) is not rerun until its cause is found and fixed (AGENTS.md merge condition 5). Calling it a flake needs evidence: it fails on `main` too, or across several local runs.
 5. A run of the merge queue is a real check of the merged result (FR-036): a failure there is read the same way, never waved through because the PR's own run was green.
 6. A dynamic CodeQL run (GitHub's default setup) cannot be rerun: push a new commit to restart it.
 
