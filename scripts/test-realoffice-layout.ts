@@ -1207,5 +1207,6 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
     if (rowsOf(realLayout(mk(sz), { w: W, h: H }, META)).join() !== want.join()) differs++;
   }
   assert.ok(differs > 0, `FR-353: best fit alone reorders some of these (so the test can fail when the order is ignored; ${differs})`);
+}
 console.log(`realoffice layout and lights tests passed (${cases} layouts, ${lcases} with a lounge, faces ${JSON.stringify(faces)})`);
 process.exitCode = 0;
