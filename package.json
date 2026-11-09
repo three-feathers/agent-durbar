@@ -205,6 +205,7 @@
     "test:runtests": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-run-tests.js",
     "test:officeops": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-office-ops.js",
     "test:uisuite": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-ui-suite.js",
+    "test:cichanges": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-ci-changes.js",
     "test:activity": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-activity.js",
     "test:globals": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-renderer-globals.js",
     "test:authcheck": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-authcheck.js",
