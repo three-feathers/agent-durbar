@@ -293,7 +293,7 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 - [x] T290 [US2] FR-353: `RealModel.keepRooms`, `roRuns` (splits into rows of neighbours) used by `roPack` when a room order is saved. Test: `test:realoffice-layout`; mutant: the order ignored
 - [x] T291 [US2] FR-352, FR-354: pointer drag of plates and folder signs through `DurbarReorder.attach` and `reoDropModel` (the arcade: desks only). Test: `sim:` `check-097-drag`, three worlds, both sizes
 - [x] T286 [US2] FR-355: Alt+arrows on a visitor's chip button, Move earlier / later in the "+N" place menu, fixed places refused. Test: `check-097-drag`
-- [x] T287 [US2] Mutants fail: threshold, Esc, bypassing `reoApply`, arcade room drag, wrong arcade neighbour, menu does nothing, fixed place moves, order ignored
+- [x] T287 [US2] Mutants fail: threshold, Esc, bypassing `reoApply`, arcade room drag, wrong arcade neighbour, menu does nothing, fixed place moves, order ignored. Run 2026-11-09, each failing assert recorded in the PR #1394 comment (also: a fixed place's menu with Move items, the grab cursor removed, order not saved); `order ignored` is `test:realoffice-layout`'s
 - [x] T288 [US2] `shots-033-order`, `check-office-ops`, `check-office-overlap` (real, with a saved room order, arcade) pass
 - [x] T289 [US2] Pictures mid-drag and after the drop read and compressed; spec, plan and changelog fragment match [FR-352]
 

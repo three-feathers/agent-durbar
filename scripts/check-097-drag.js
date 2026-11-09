@@ -6,8 +6,9 @@
  *   npm run check:ui -- --only check-097-drag      (builds first)
  *   SHOTS_OUT=<dir>   writes 097-drag-<w>x<h>.png (mid-drag) and 097-drag-done-<w>x<h>.png (after the drop), Photo office
  *   DRAG_MUTANT=menu    the place menu's Move earlier / later is swallowed (must fail)
- *   (source mutants, run by hand and recorded in the PR: threshold removed, Esc not cancelling, drop bypassing reoApply, a room drag allowed in the arcade,
- *    the arcade swap going to the wrong neighbour, a fixed place moving)
+ *   Source mutants (threshold 6 px -> 0, Esc not cancelling, the drop not reaching reoApply, a room drag allowed in the arcade, the arcade swap going to the wrong
+ *   neighbour, a fixed place moving, a fixed place's menu with Move items, the grab cursor removed, saveOrder returning before bridge.setOrder): each was applied
+ *   to src/renderer, built, run under this driver and reverted; the failing assert of each is in the table in the PR #1394 comment "mutants run at ..." (2026-11-09).
  *
  * At 15 agents, 1440x900 and 1280x800, in the Photo office, the cave and the arcade, it fails (exit 1) when:
  *   - a drag of a plate onto its neighbour does not reorder and save the order the flat office then shows (Photo), does not say "moved to position n of m in its room",
@@ -20,6 +21,8 @@
  *   - plates overlap after a drop, the office scrolls, or text is under 10.5 px;
  *   - a status change in the middle of a drag breaks it (the drop still saves, after the repaint that waited);
  *   - Alt+arrows on a visitor's chip button do not move a movable place, or move a fixed one (Boss, Bank), or lose the focus or the words;
+ *   - a fixed place's "+N" menu has Move items, a movable one's lack their sub-line, or a drag start lacks the grab cursor (a desk's plate, a folder sign; not an arcade sign);
+ *   - the drop does not save the order that is on screen (labelled: "the drop saved the new order");
  *   - the "+N" place menu lacks Move earlier / Move later, or they do not move the place on the one saved order (the flat office shows it).
  */
 const assert = require('assert');
