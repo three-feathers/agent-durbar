@@ -79,3 +79,7 @@
 ## 2026-11-09: project skills (FR-087)
 
 - [x] T074 (FR-087) `.claude/skills/durbar-release/`, `durbar-fold/`, `durbar-ci-rerun/` (`SKILL.md` each: frontmatter name and when-to-use description, a short checklist, links to the source of truth, commands checked against `package.json` and `scripts/`). `read:` only; not run in a real session.
+
+## 2026-11-09: parity checklists tick themselves (FR-088)
+
+- [x] T075 (FR-088) `.github/workflows/parity-tick.yml` (issues closed/reopened; `issues: write`, `contents: read`; concurrency `parity-tick`), `.github/parity-trackers.json`, `scripts/parity-tick.js` (pure `tickBody` plus the `gh` calls, no shell), suite `test:paritytick` (`scripts/test-parity-tick.ts`: tick, untick, no line, #11 vs #114, CRLF, Unicode, huge body, fenced code untouched, idempotent, input validation; mutants fail on labelled asserts). Check after merge: reopen and close one listed issue.

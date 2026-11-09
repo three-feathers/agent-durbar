@@ -53,3 +53,7 @@ I: spec, plan and task first, in the same PR. III: no secret in the repo, logs o
 - **Reuse:** `scripts/changelog.js`'s name rule and bullet parser move to a shared module used by a new `scripts/fragments.js` (`build`, `--check` offline in `npm test`, `--pr-check` in the existing `spec-numbers` job of `spec-kit.yml`); the daily fold PR runs `fragments:build` beside `changelog:build`; `scripts/feature-inventory.js` reads fragments; `test-ui-suite.ts`'s FR-057 scan becomes `DRIVERS`.
 - **Each migration PR shows equivalence:** the assembled page equals today's byte for byte, `--list` prints the same labels, the parsed `package.json` is equal.
 - **Constitution:** I (spec first, this PR); III (no secret, no PR text in a shell; paths through `safe-print.js`); IV (no credits); VI (plain Node, LF-normalised reads, lower-case names, code-unit sort); VIII (counts are a replay, gaps in the spec).
+
+## Delta: parity checklists tick themselves (FR-088, 2026-11-09)
+
+- An `issues` workflow, not a merge-skill step: it fires on every close, whoever closes the issue and however (a `Closes #N` merge, the merge queue, by hand), so nobody has to remember. Pure text transform in `scripts/parity-tick.js` (unit-tested), GitHub calls in the same file through `gh` with `execFileSync`. Tracker numbers in `.github/parity-trackers.json` (CODEOWNERS). Existing capability (FR-031): `weekly-retro.yml` and `scripts/weekly-retro.js` are the pattern (same permission style, pinned checkout, `gh` without a shell); `scripts/trusted-authors.txt` is the trust list reused.
