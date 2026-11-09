@@ -544,7 +544,7 @@
     const sig = JSON.stringify([f.name, f.path, !!f.cost, f.newSess, f.menu, z.part]);
     if (sg._sig !== sig) {
       sg._sig = sig; sg.textContent = ''; sg._cnt = null; sg._cost = null;
-      const b = document.createElement('b'); b.textContent = z.part > 1 ? f.name + ' (continued)' : f.name; b.title = f.name + '\n' + f.path; sg.appendChild(b);
+      const b = document.createElement('b'); b.textContent = z.part > 1 ? f.name + ' (continued)' : f.name; b.title = f.name + '\n' + f.path; sg.appendChild(b); sg._b = b;
       if (z.part > 1) return;
       const p = document.createElement('span'); p.className = 'ro-path'; p.textContent = f.path; sg.appendChild(p);
       const sc = document.createElement('span'); sc.className = 'ro-sc'; sg._sc = sc; sg._cnt = new Map();
@@ -554,7 +554,7 @@
       sg.appendChild(sc);
     }
     if (!sg._cnt) return;
-    if (sg._cost) text(sg._cost, f.cost);
+    if (sg._cost) { text(sg._cost, f.cost); attr(sg._b, 'title', f.name + '\n' + f.path + (z.signShort ? '\n' + f.cost : '')); } /* FR-256, FR-356: the short sign hides the cost, so its name's hover says it */
     /* one count per state, reused by state and kept in the model's order, in front of the cost and the buttons */
     const sc = sg._sc, live = new Set(f.counts.map((c) => c.state));
     for (const [st, e] of sg._cnt) if (!live.has(st)) { e.remove(); sg._cnt.delete(st); }

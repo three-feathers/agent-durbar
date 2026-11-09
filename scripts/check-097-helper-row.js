@@ -1,5 +1,5 @@
 /*
- * Spec 097 FR-338 (bug #1384, delta 2026-11-09): a desk's helper strip is one row of heads; when the helpers do not fit, the last place is "+K", and no head
+ * Spec 097 FR-338 (bug #1384, delta 2026-11-09) and FR-356 (bug #1392): a desk's helper strip is one row of heads; when the helpers do not fit, the last place is "+K", and no head
  * is ever laid out on a second line. Simulator only (DURBAR_SIM=15, a frozen simulator), no AI credits; every wait is an until(), every page value goes through jsLiteral.
  *
  *   npm run check:ui -- --only check-097-helper-row      (builds first)
@@ -19,6 +19,10 @@
  *   - the heads plus K are not the helpers, the heads are not the places across (cols) less one when there is a "+K", "+K" is not the strip's last child, or its text is under 10.5 px;
  *   - the strip overlaps a plate, a sign (the folder's header), a screen or another strip;
  *   - where the room draws no strip (the plate's fallback, FR-308), the plate has no "+N".
+ * Spec 097 FR-356 (bug #1392), before and after the helpers are added, for every folder sign: it leaves the window or its room (the arcade's aisle sign may run into
+ * the free aisle, FR-256), its + or menu is not whole inside it (cut by the sign's edge), a count or the cost is cut, its name shows under 18 px, text is under
+ * 10.5 px, or it overlaps another sign. Mutant on the source: undo FR-356 in `realLayout` (no `signShort` for a narrow room), `npm run build`: the cave's lounge
+ * scene at 1280x800 fails on "its ⋯ button whole inside the sign" (the one-desk room "blog", sign 170 px, the menu at 1238..1258 past its right edge 1252).
  */
 const os = require('os');
 const fs = require('fs');
@@ -67,6 +71,32 @@ module.exports = async (ctx) => {
       return {id:d.id,n,lay:d.strip||null,box:st?R(st):null,plate:pl?R(pl):null,kids,help:!!(pl&&pl.querySelector('.ro-help')),helpText:pl&&pl.querySelector('.ro-help')?pl.querySelector('.ro-help').textContent.trim():''}}).filter(Boolean);
     return {rows:L.helpRows,scroll:L.scroll,lounge:L.lounge?L.lounge.desks.length:0,vw,vh,desks,
       plates:[...document.querySelectorAll('#stage .ro-plate')].map(e=>({id:e.dataset.id,...R(e)})),signs:[...document.querySelectorAll('#stage .ro-sign')].map(R),screens:[...document.querySelectorAll('#stage .ro-screen')].map(e=>({id:e.dataset.for,...R(e)}))}})()`);
+  /* spec 097 FR-356 (bug #1392): every folder sign whole: inside its room and the window, its + and menu whole inside the sign (none cut by its edge), the name at least
+     its 3 letters, no text under 10.5 px. (The arcade's aisle sign may run past its room into the free aisle, FR-256: there only the window, the other signs and the buttons.) Read from the page (the drawn rects), so a sign wider than its room or a button cut by the sign's overflow fails. */
+  const signs = () => js(`(()=>{const R=e=>{const r=e.getBoundingClientRect();return {x:r.left,y:r.top,w:r.width,h:r.height}};
+    const o=R(document.querySelector('#stage .ro')),Z=${SIM}.realLayout().zones; /* the layout's rooms are in the office's own coordinates */
+    return [...document.querySelectorAll('#stage .ro-sign')].map(sg=>{const b=sg.querySelector('b'),r=R(sg),cx=r.x+r.w/2-o.x,cy=r.y-o.y,zone=Z.find(z=>z.id===sg.dataset.folder&&cx>=z.box.x&&cx<=z.box.x+z.box.w&&cy>=z.box.y-4&&cy<=z.box.y+z.box.h)||Z.find(z=>z.id===sg.dataset.folder&&z.part===1); /* a folder in parts has a sign per part: its own room */
+      return {folder:sg.dataset.folder,text:sg.textContent.replace(/\\s+/g,' ').trim(),part:zone?zone.part:1,short:sg.classList.contains('short'),aisles:!!document.querySelector('#stage .ro[data-world="retro"]'),box:r,zone:zone?{x:zone.box.x+o.x,y:zone.box.y+o.y,w:zone.box.w,h:zone.box.h}:null,name:b?R(b):null,nameFull:b?b.scrollWidth<=b.clientWidth+0.5:false,
+        btns:[...sg.querySelectorAll('.ro-sb')].map(x=>({t:x.textContent,box:R(x)})),cnts:[...sg.querySelectorAll('.ro-cnt,.ro-cost')].filter(x=>getComputedStyle(x).display!=='none').map(x=>({t:x.textContent,box:R(x),fs:parseFloat(getComputedStyle(x).fontSize)})),
+        fs:[b,...sg.querySelectorAll('.ro-path,.ro-cnt,.ro-cost')].filter(x=>x&&getComputedStyle(x).display!=='none').map(x=>parseFloat(getComputedStyle(x).fontSize))}})})()`);
+  let signsChecked = 0;
+  const checkSigns = async (tag) => {
+    const list = await signs();
+    console.log('[helper-row] signs', tag, JSON.stringify(list.map((g) => [(g.short ? 'SHORT ' : '') + g.text, Math.round(g.box.x), Math.round(g.box.w), g.zone ? Math.round(g.zone.x + g.zone.w) : null, g.btns.map((b) => b.t + '@' + Math.round(b.box.x) + '+' + Math.round(b.box.w)).join(' ')])));
+    for (const g of list) {
+      const L = `${tag}: FR-356 the sign of ${g.folder} (${JSON.stringify(g.text)})`, inside = (a, b, t = 0.5) => a.x >= b.x - t && a.y >= b.y - t && a.x + a.w <= b.x + b.w + t && a.y + a.h <= b.y + b.h + t;
+      check(inside(g.box, { x: 0, y: 0, w: s0.vw, h: s0.vh }), `${L}: inside the window ${JSON.stringify(g.box)}`);
+      if (g.zone && !g.aisles) check(g.box.x >= g.zone.x - 0.5 && g.box.x + g.box.w <= g.zone.x + g.zone.w + 0.5, `${L}: inside its room ${JSON.stringify([g.box, g.zone])}`);
+      check(g.btns.length === (g.part > 1 ? 0 : 2), `${L}: + and the menu on the first part's sign only (${g.btns.length})`);
+      for (const b of g.btns) check(b.box.w >= 19.5 && inside(b.box, g.box), `${L}: its ${b.t} button whole inside the sign ${JSON.stringify([b.box, g.box])}`);
+      for (const c of g.cnts) check(inside(c.box, g.box), `${L}: ${JSON.stringify(c.t)} whole inside the sign ${JSON.stringify([c.box, g.box])}`);
+      check(g.name && g.name.w >= 18, `${L}: the name shows at least its first letters (${g.name && g.name.w} px)`);
+      check(g.fs.every((f) => f >= 10.5), `${L}: text at least 10.5 px ${JSON.stringify(g.fs)}`);
+      for (const o of list) if (o !== g) check(!hit(g.box, o.box), `${L}: overlaps the sign of ${o.folder}`);
+      signsChecked++;
+    }
+  };
+  let s0 = { vw: 0, vh: 0 };
   const hit = (a, b, t = 0.5) => a.x + t < b.x + b.w && b.x + t < a.x + a.w && a.y + t < b.y + b.h && b.y + t < a.y + a.h;
   const shots = [];
   const fails = [];
@@ -79,12 +109,14 @@ module.exports = async (ctx) => {
     await H.load({ w, h, query: q(world), ready: REAL, readyMs: 30000, settle: false });
     await must(PICS, `${tag}: the pictures`);
     if (scene === 'lounge') await lounge(tag);
+    s0 = { vw: w, vh: h };
+    await checkSigns(tag + ' (no helpers)');
     /* 6 and 7 helpers on two desks at home that had none (not in the lounge, not away) */
     const ids = await js(`(()=>{const A=${SIM}.agents();return ${SIM}.realLayout().zones.flatMap(z=>z.desks).filter(d=>!d.away&&!A.some(x=>x.parent===d.id)).slice(0,2).map(d=>d.id)})()`);
     assert.strictEqual(ids.length, 2, `${tag}: two desks without helpers`);
     for (const [k, id] of ids.entries()) for (let i = 0; i < ADD[k]; i++) await emit({ sessionId: id, type: 'subagent', subagentId: `row-${k}-${i}`, name: `Row helper ${k + 1}.${i + 1}`, phase: 'started', task: 'Check part ' + (i + 1), agentName: 'explore' });
     await must(`${ids.map((id, k) => `${SIM}.agents().filter(x=>x.parent===${jsLiteral(id)}).length===${ADD[k]}`).join('&&')}`, `${tag}: the added helpers`);
-    await must(`(()=>{const L=window.__durbarSimUi.realLayout(),ids=${jsLiteral(ids)};return ids.every(id=>{const d=L.zones.flatMap(z=>z.desks).find(x=>x.id===id),p=document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(id)+'"]');if(!d||!p)return false;if(!d.strip)return !!p.querySelector('.ro-help');let e=p.nextElementSibling;if(e&&e.matches('.ren'))e=e.nextElementSibling;return !!e&&e.matches('.ro-hstrip')&&e.children.length===Math.min(d.strip.shown+(d.strip.shown<window.__durbarSimUi.agents().filter(x=>x.parent===id).length?1:0),99)})})()`, `${tag}: the strips drawn for the added helpers`);
+    await must(`(()=>{const L=window.__durbarSimUi.realLayout(),ids=${jsLiteral(ids)};return ids.every(id=>{const d=L.zones.flatMap(z=>z.desks).find(x=>x.id===id),p=document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(id)+'"]');if(!d||!p)return false;const n=window.__durbarSimUi.agents().filter(x=>x.parent===id).length;if(!d.strip){const h=p.querySelector('.ro-help');return !!h&&h.textContent.trim().startsWith('+'+n)}let e=p.nextElementSibling;if(e&&e.matches('.ren'))e=e.nextElementSibling;const m=e&&e.querySelector('.ro-hmore');return !!e&&e.matches('.ro-hstrip')&&e.children.length===d.strip.shown+(d.strip.shown<n?1:0)&&(d.strip.shown<n?!!m&&m.textContent.trim()==='+'+(n-d.strip.shown):!m)})})()`, `${tag}: the strips drawn for the added helpers`);
     await must(PICS, `${tag}: the head pictures`);
     await mutate();
     if (MUTANT) console.log('[helper-row] mutant:', MUTANT);
@@ -105,6 +137,7 @@ module.exports = async (ctx) => {
       }
     }
     check(!s.scroll, `${tag}: the office does not scroll`);
+    await checkSigns(tag + ' (helpers)');
     const strips = s.desks.filter((d) => d.lay);
     for (const d of s.desks) {
       if (!d.lay) { /* FR-308's fallback: no strip, the plate keeps +N */
@@ -143,7 +176,7 @@ module.exports = async (ctx) => {
   }
   assert.deepStrictEqual(fails, [], `${fails.length} failure(s), first: ${fails[0]}`);
   const nw = WORLDS.length; /* at all three worlds: 42 strips, 16 with +K, 30 fallbacks (2026-11-09) */
-  assert.ok(stripsChecked >= 4 * nw && overflowSeen >= nw && wrapsLooked >= 4 * nw && fallbacks >= 4, `the cases ran: ${stripsChecked} strips, ${overflowSeen} with +K, ${fallbacks} fallbacks`);
-  console.log('[helper-row] ok:', stripsChecked, 'strips,', overflowSeen, 'with +K,', fallbacks, 'fallbacks;', shots.join(' '));
+  assert.ok(stripsChecked >= 4 * nw && overflowSeen >= nw && wrapsLooked >= 4 * nw && fallbacks >= 4 && signsChecked >= 20 * nw, `the cases ran: ${stripsChecked} strips, ${overflowSeen} with +K, ${fallbacks} fallbacks, ${signsChecked} signs`);
+  console.log('[helper-row] ok:', stripsChecked, 'strips,', overflowSeen, 'with +K,', fallbacks, 'fallbacks,', signsChecked, 'signs;', shots.join(' '));
   process.exitCode = 0;
 };

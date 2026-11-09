@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { placeBox, portraitCrop, PORTRAIT_SIDE, slipAvoid, NOTE_PAPER, NOTE_PAPER_DEFAULT, NOTE_INK, notePaper, screenFit, screenFor, personMotion, zoomRect, realLayout, lobbyWidths, sortDesks, deskOrder, deskBase, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
   type RealModel, type RealMeta, type RealAgent, type RealState, type Rect, type Layout } from '../src/shared/realoffice-layout';
-import { lobbyBand, lobbyScale, visitorScale, HEAD, HEAD_FACE, HELP_FACE_MIN, HELP_GAP, helpH, helpCols, helpShown, headCrop, helperPerson } from '../src/shared/realoffice-layout';
+import { signMin, lobbyBand, lobbyScale, visitorScale, HEAD, HEAD_FACE, HELP_FACE_MIN, HELP_GAP, helpH, helpCols, helpShown, headCrop, helperPerson } from '../src/shared/realoffice-layout';
 import { createHash } from 'crypto';
 import { lampWords, lightFor, lightState, LIGHT_TABLE, ambientFor, doneTick, fixtureLight, isActive, type LightState } from '../src/shared/lights';
 
@@ -1192,6 +1192,23 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
     assert.ok(stripProblems(tall, 'mutant', m).length > 0, 'mutant: too many rows is caught');
   }
   console.log(`helper heads: ${sc} layouts, ${withStrip} with strips`);
+}
+/* spec 097 FR-356 (bug #1392): a room narrower than the narrowest whole sign (3 letters of the name, no path, counts, cost, + and menu) takes the short sign (name, counts, + and menu), a wide one keeps it whole */
+{
+  const m = model(14, 4, { away: false, states: ['working'] }); /* 15 people: four rooms and a one-desk room, as the cave's lounge scene (#1392) */
+  m.folders.push({ id: 'blog', agents: [{ id: 'c0', state: 'working', away: null, person: PEOPLE[14] }] });
+  const signs: Record<string, { name: string; path: string; counts: number }> = { blog: { name: 'blog', path: '~/work/blog', counts: 3 } }; /* two counts and the cost, as the renderer passes them */
+  for (const f of m.folders.slice(0, 4)) signs[f.id] = { name: 'swisscontract-ai', path: '~/work/swisscontract-ai', counts: 3 };
+  let shortSeen = 0, wholeSeen = 0;
+  for (const [w, h] of [[1280, 748], [1440, 848], [900, 748]] as [number, number][]) {
+    const L = realLayout(m, { w, h }, META, signs);
+    for (const z of L.zones) {
+      const need = signMin(signs[z.id].counts);
+      assert.strictEqual(!!z.signShort, need > z.box.w - 8, `${w}x${h} ${z.id}: short sign exactly when ${need} px does not fit its room ${z.box.w - 8} px`);
+      if (z.signShort) shortSeen++; else wholeSeen++;
+    }
+  }
+  assert.ok(shortSeen > 0 && wholeSeen > 0, `a one-desk room takes the short sign, a wide room keeps it whole (${shortSeen} short, ${wholeSeen} whole)`);
 }
 console.log(`realoffice layout and lights tests passed (${cases} layouts, ${lcases} with a lounge, faces ${JSON.stringify(faces)})`);
 process.exitCode = 0;

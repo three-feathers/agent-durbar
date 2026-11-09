@@ -187,3 +187,8 @@ Spec first; the owner chose head figures with a status dot (2026-11-08 08:29 UTC
 ## A helper strip is one row (delta 2026-11-09; FR-338, T275..T277, bug #1384)
 
 The fix is in the engine, where the cause is: `realLayout`'s strip levels become one row, else none (the two-row step, `HELP_ROWS_MAX` and `HELP_KEEP`, is removed from `src/shared/realoffice-layout.ts`). Nothing changes in the renderer or the CSS: the strip already draws `cols` columns and `shown` heads, and with `rows` 1 the grid has one line. The arcade (`realoffice-arrangements.ts`) already takes one row. Checks: `test:realoffice-layout` re-pinned, the new driver `scripts/check-097-helper-row.js` (default and lounge scenes, 6 and 7 helpers, three worlds, both sizes; mutant), and `check-097-helpers` (its `rows === 1 || rows === 2` becomes `rows === 1`).
+
+## A folder sign keeps its + and menu (delta 2026-11-09; FR-356, T292..T294, bug #1392)
+
+Existing capability reused (FR-031): the arcade's short sign (FR-256, `ZoneBox.signShort` and the `.ro-sign.short` rule). The cause is in the engine, so the fix is there: `realLayout` sets `signShort` on a desk row's zone when its room is narrower than `signMin(counts)`, the narrowest whole sign, and the `.short` rule moves from the arcade's `world.css` to `realoffice.css` so every world draws it; the name's tooltip adds the cost on a short sign (FR-256's "cost on its hover"). No new IPC, store or setting. Checks: `test:realoffice-layout` (short exactly when it does not fit; mutant), `scripts/check-097-helper-row.js` (every sign whole in three worlds, both sizes, both scenes; source mutant), the after picture through that driver.
+
