@@ -314,5 +314,26 @@ const setup = () => {
     assert.strictEqual(t.dlg()!.className, 'dlg-ov', 'default backdrop class unchanged');
     t.key('Escape'); await p;
   }
+  // spec 052 FR-239 (review on #1414): a dialog that another one replaced does not pull the focus out of the new one when it closes;
+  // FR-238: the title and body are text, never markup (a hostile agent name)
+  {
+    const t = setup(); t.chip.focus();
+    let closeA: ((v: string | null) => void) | null = null;
+    const hostile = '<img src=x onerror="window.__pwn=1"> "q" & \u202eevil\u200b';
+    const pa = t.ask({ title: hostile, body: hostile, returnFocus: t.chip, buttons: [{ label: 'Stay here', value: null, cls: 'primary' }], auto: (close: (v: string | null) => void) => { closeA = close; } });
+    assert.strictEqual(t.doc.querySelector('#modeDlg img'), null, 'a name with markup makes no element');
+    assert.strictEqual(t.doc.getElementById('mdT')!.textContent, hostile, 'the title shows it as text');
+    assert.strictEqual(t.doc.getElementById('mdB')!.textContent, hostile, 'the body too');
+    const pb = t.ask(t.opts()); // replaces the first (same id)
+    const inB = t.doc.activeElement;
+    let chipFocus = 0; t.chip.addEventListener('focus', () => { chipFocus++; });
+    assert.ok(t.inDlg() && inB !== t.chip, 'the new dialog has the focus');
+    closeA!(null);
+    assert.deepStrictEqual(await pa, { value: null }, 'the replaced dialog resolves');
+    assert.strictEqual(t.doc.activeElement, inB, 'and leaves the focus in the new dialog');
+    assert.strictEqual(chipFocus, 0, 'the focus never went back to the opener behind the new dialog, not even for a moment');
+    t.key('Escape'); await pb;
+    assert.strictEqual(t.doc.activeElement, t.chip, 'the new one still returns the focus when it closes');
+  }
   console.log('dialog tests passed');
 })().catch((e) => { console.error(e); process.exit(1); });

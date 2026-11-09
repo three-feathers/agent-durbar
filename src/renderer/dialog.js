@@ -88,9 +88,12 @@ const DURBAR_PRESS=(function(){
         if(closed)return;closed=true;
         if(typeof stopAuto==='function'){try{stopAuto();}catch(e){}}
         doc.removeEventListener('keydown',onKey,true);doc.removeEventListener('focusin',onFocusIn,true);
+        /* spec 052 FR-239 (review on #1414): focus goes back only from a dialog that still holds it (or from nowhere): a dialog another one replaced
+           (removed from the page) must not pull the focus out of the new one */
+        const ae=doc.activeElement, held=!ae||ae===doc.body||d.contains(ae);
         d.remove();
         const t=typeof opener==='function'?opener():opener;
-        if(t&&typeof t.focus==='function'&&doc.contains(t))focusIn(t);
+        if(held&&t&&typeof t.focus==='function'&&doc.contains(t))focusIn(t);
         resolve(v);
       };
       const textOf=()=>input?d.querySelector('#mdIn').value:undefined;

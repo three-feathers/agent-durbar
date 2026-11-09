@@ -4698,6 +4698,11 @@ function afNotice({head,sub,stay,said,toOffice}){
     auto:(close,d)=>{ /* FR-239: the count runs only while the window is visible and has the focus */
       let left=AF_NOTICE_MS,last=performance.now();const num=d.querySelector('.afn-n');
       d.style.setProperty('--afn-ms',AF_NOTICE_MS+'ms');
+      /* FR-239 (review on #1414): opened over a text field, a typed character means you are writing: the notice closes as Stay, the focus goes back to the
+         field during the key press, so the character lands there and nothing typed is lost (Enter and Escape keep their meaning on the notice) */
+      const field=was&&was.matches&&was.matches('input,textarea,[contenteditable]:not([contenteditable="false"])')?was:null;
+      const onType=e=>{if(field&&e.key&&e.key.length===1&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!e.isComposing)close(null);};
+      document.addEventListener('keydown',onType,true);
       const t=setInterval(()=>{
         if(!d.isConnected){close(null);return;} /* another dialog took its place: nothing moves */
         const now=performance.now(),run=document.visibilityState!=='hidden'&&schedHasFocus();
@@ -4706,18 +4711,36 @@ function afNotice({head,sub,stay,said,toOffice}){
         if(left<=0){close('go');return;}
         const n=String(Math.max(1,Math.ceil(left/1000)));if(num.textContent!==n)num.textContent=n;
       },100);
-      return ()=>clearInterval(t);
+      return ()=>{clearInterval(t);document.removeEventListener('keydown',onType,true);};
     }}).then(r=>{AF_NOTICE=null;const go=!!r&&r.value==='go';if(!go)announce(toOffice?'Staying here.':'Staying in the office.');return go;});
   return AF_NOTICE;
 }
 /* FR-183 with FR-238: the notice, then the return to the office, unless you stayed, Auto-follow was turned off or paused, or another chat is shown */
+let AF_LEAVE_T=0;
 function afLeaveChat(a,what,head){
   const shown=afPanelId(), room=roomOf(a);
-  if(!shown||!room||!roomShown(room)||AF.holdReason(afSnapshot(),{office:true})){afBackToOffice(a,what);return;} /* no move to announce: as before */
-  const nm=deskMask(a.name)||'The agent';
-  afNotice({head:head||nm+' is working on this',sub:'Taking you to the office. Auto-follow brings you back when '+(head?'they finish or need you':nm+' finishes or needs you')+'.',stay:'Stay here',
-    said:(head||nm+' is working on this')+'. Taking you to the office',toOffice:true})
-    .then(go=>{if(go&&AF_ON&&!AF_PAUSED&&afPanelId()===shown)afBackToOffice(a,what);afTick();});
+  clearInterval(AF_LEAVE_T);AF_LEAVE_T=0;
+  if(!shown||!room||!roomShown(room)){afBackToOffice(a,what);return;} /* no move to announce: as before */
+  /* FR-239 (review on #1414): while the focused field holds text you are writing (the next message), the notice waits and takes no focus; it comes when the
+     field is empty again, as long as this chat is still shown and the agent still followed. A key typed on the notice itself closes it into the field (afNotice).
+     Any other guard (a dialog, a menu, the window in the background) keeps the move off, as before. */
+  const typing=()=>{const sn=afSnapshot();return sn.editable&&sn.editableText;};
+  const show=()=>{
+    const nm=deskMask(a.name)||'The agent';
+    afNotice({head:head||nm+' is working on this',sub:'Taking you to the office. Auto-follow brings you back when '+(head?'they finish or need you':nm+' finishes or needs you')+'.',stay:'Stay here',
+      said:(head||nm+' is working on this')+'. Taking you to the office',toOffice:true})
+      .then(go=>{if(go&&AF_ON&&!AF_PAUSED&&afPanelId()===shown)afBackToOffice(a,what);afTick();});
+  };
+  const ready=()=>{
+    if(!AF_ON||AF_PAUSED||afPanelId()!==shown||!AFT.has(a.id))return 'gone';
+    if(typing())return 'wait';
+    return AF.holdReason(afSnapshot(),{office:true})?'held':'go';
+  };
+  const r=ready();
+  if(r==='go'){show();return;}
+  if(r==='held'){afBackToOffice(a,what);return;} /* moves nothing: the guard holds, as before */
+  if(r==='gone')return;
+  AF_LEAVE_T=setInterval(()=>{const q=ready();if(q==='wait')return;clearInterval(AF_LEAVE_T);AF_LEAVE_T=0;if(q==='go')show();},200);
 }
 /* FR-183: an accepted message follows its agent and returns to the office. `shown` = the chat shown before the send; `several` = one of a Send to several */
 function afOnAccepted(a,shown,several){

@@ -205,6 +205,65 @@ module.exports = async (ctx) => {
     console.log(`[follow-notice] open office ${tag} ok`);
   }
 
+  // ======== review on #1414: typing holds the notice and is never eaten (F2), a replacing dialog keeps its focus (F3), a hostile name is text (F1) ========
+  {
+    const tag = 'review 1440x900';
+    const MOD = process.platform === 'darwin' ? ['meta'] : ['control'];
+    const box = () => js(`(document.getElementById('msgInput')||{}).value`);
+    await H.load({ w: 1440, h: 900 });
+    await H.calm({ blur: true });
+    await hooks();
+    await js(`window.__durbarSimUi.afNotice.on(true)`);
+    const nameA = await nameOf(A);
+    await openChatBy(sel(A), nameA);
+    await quiet(true);
+    // F2: text in the box holds the notice; it takes no focus and moves nothing
+    await js(`window.__nAt=0;(()=>{const b=window.__durbarSimUi.bridge();b.__q=b.send;window.__gate=new Promise(r=>{window.__openGate=r;});b.send=async()=>{await window.__gate;return {ok:true};};})();0`);
+    await sendHere('first');
+    await type('draft'); /* the next message, written while the first is on its way */
+    await js(`(()=>{window.__openGate();const b=window.__durbarSimUi.bridge();b.send=b.__q;})();0`);
+    await stays(`!document.querySelector('.dlg-ov.af-notice')&&document.body.classList.contains('panel-open')&&document.activeElement&&document.activeElement.id==='msgInput'`, `${tag}: FR-239: while you type, no notice, the focus stays in the box`, 3000);
+    assert.strictEqual(await js(`window.__nAt`), 0, `${tag}: FR-239: no notice opened at any time while you typed`);
+    assert.strictEqual(await box(), 'draft', `${tag}: the draft is whole`);
+    await H.key('a', MOD, { char: 'never' }); await H.key('Backspace');
+    await ok(`!!document.querySelector('.dlg-ov.af-notice')`, `${tag}: FR-239: with the box empty again, the notice comes`, 6000);
+    // F2: typing on the notice is writing: it stays, and the text lands in the box
+    await type('ok go');
+    await ok(`!document.querySelector('.dlg-ov.af-notice')`, `${tag}: FR-239: a typed character closes the notice as Stay`, 2000);
+    assert.strictEqual(await box(), 'ok go', `${tag}: FR-239: every typed character landed in the message box`);
+    await stays(`!document.querySelector('.dlg-ov.af-notice')&&document.body.classList.contains('panel-open')`, `${tag}: FR-239: and nothing moves`, 3500);
+    // F3: another dialog replaces the notice: the focus stays in the new dialog
+    await H.key('a', MOD, { char: 'never' }); await H.key('Backspace');
+    await H.key('Return');
+    await sendHere('third');
+    await ok(`!!document.querySelector('.dlg-ov.af-notice')`, `${tag}: the notice`, 6000);
+    await js(`window.__opFocus=0;document.getElementById('msgInput').addEventListener('focus',()=>{window.__opFocus++;});window.__d2=window.DurbarDialog(document)({title:'Another dialog',body:'It replaces the notice.',buttons:[{label:'OK',value:null}]});0`);
+    await ok(`!document.querySelector('.dlg-ov.af-notice')&&!!document.getElementById('modeDlg')`, `${tag}: the new dialog took the notice's place`, 2000);
+    await stays(`!!document.getElementById('modeDlg')&&document.getElementById('modeDlg').contains(document.activeElement)&&document.body.classList.contains('panel-open')`, `${tag}: FR-239: the replaced notice leaves the focus in the new dialog and moves nothing`, 3500);
+    assert.strictEqual(await js(`window.__opFocus`), 0, `${tag}: FR-239: the focus never went back to the message box behind the new dialog, not even for a moment (its own trap would only pull it back)`);
+    await H.key('Escape');
+    await ok(`!document.getElementById('modeDlg')`, `${tag}: the new dialog closes`);
+    // F1: a hostile name is shown as masked text, never as markup
+    await mclick('#backBtn');
+    await ok(`!document.body.classList.contains('panel-open')`, `${tag}: back in the office`);
+    const TOKEN = 'ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
+    const hostile = '<img src=x onerror="window.__pwn=1"> "q" & \u202eevil\u200b ' + TOKEN;
+    await js(`window.__pwn=0;window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(A)}).name=${jsLiteral(hostile)};0`);
+    await js(`window.__ann.length=0;0`);
+    await finish(A, 'Done.');
+    await ok(`!!document.querySelector('.dlg-ov.af-notice')`, `${tag}: the notice for the hostile name`, 15000);
+    await ctx.sleep(300);
+    const seen = await js(`(()=>{const d=document.querySelector('.dlg-ov.af-notice');return {els:[...d.querySelectorAll('*')].filter(e=>!e.closest('svg')).map(e=>e.tagName.toLowerCase()).filter(t=>!['div','h3','p','button','span'].includes(t)),head:d.querySelector('h3').textContent,pwn:window.__pwn,said:window.__ann.filter(t=>/Press Escape/.test(t)).join(' | ')}})()`);
+    assert.deepStrictEqual(seen.els, [], `${tag}: FR-238: the name made no element in the notice: ${JSON.stringify(seen.els)}`);
+    assert.strictEqual(seen.pwn, 0, `${tag}: FR-238: no script ran`);
+    assert.ok(/Press Escape/.test(seen.said), `${tag}: the notice's line was said`);
+    assert.ok(seen.head.endsWith(' finished') && seen.head.includes('<img'), `${tag}: FR-238: the name is shown as text: ${JSON.stringify(seen.head)}`);
+    assert.ok(!seen.head.includes(TOKEN) && !seen.said.includes(TOKEN), `${tag}: FR-238: the token-shaped part is masked in the notice and its own announcement: ${JSON.stringify(seen)}`);
+    await mclick('.dlg-ov.af-notice .dbtn .btn');
+    await ok(`!document.querySelector('.dlg-ov.af-notice')`, `${tag}: Stay in the office`);
+    console.log(`[follow-notice] ${tag} ok`);
+  }
+
   // ======== reduced motion (media emulation) and the Motion setting off: nothing moves, the number still counts ========
   {
     const dbg = wc.debugger;
