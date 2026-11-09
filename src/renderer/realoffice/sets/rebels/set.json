@@ -1,0 +1,322 @@
+{
+ "formatVersion": 1,
+ "id": "rebels",
+ "name": "Rebels",
+ "level": "full",
+ "seat": {
+  "bulldog": {
+   "bodyH": 342,
+   "h": 359,
+   "hand": 0.88,
+   "headTop": 17,
+   "w": 358
+  },
+  "fox": {
+   "bodyH": 342,
+   "h": 356,
+   "hand": 0.88,
+   "headTop": 14,
+   "w": 372
+  },
+  "owl": {
+   "bodyH": 344,
+   "h": 362,
+   "hand": 0.88,
+   "headTop": 18,
+   "w": 340
+  },
+  "panda": {
+   "bodyH": 340,
+   "h": 354,
+   "hand": 0.88,
+   "headTop": 14,
+   "w": 371
+  },
+  "punkcat": {
+   "bodyH": 340,
+   "h": 354,
+   "hand": 0.88,
+   "headTop": 14,
+   "w": 304
+  },
+  "raccoon": {
+   "bodyH": 343,
+   "h": 355,
+   "hand": 0.88,
+   "headTop": 12,
+   "w": 366
+  }
+ },
+ "stand": {
+  "bulldog": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "runA": 1.0,
+    "runB": 1.0
+   },
+   "figH": 361,
+   "poses": {
+    "book": [
+     168,
+     361
+    ],
+    "coffee": [
+     170,
+     360
+    ],
+    "knock": [
+     181,
+     361
+    ],
+    "letter": [
+     177,
+     361
+    ],
+    "runA": [
+     164,
+     361
+    ],
+    "runB": [
+     185,
+     361
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "runA": 0.0,
+    "runB": 0.0
+   }
+  },
+  "fox": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "runA": 1.0,
+    "runB": 1.0
+   },
+   "figH": 361,
+   "poses": {
+    "book": [
+     156,
+     361
+    ],
+    "coffee": [
+     154,
+     360
+    ],
+    "knock": [
+     168,
+     361
+    ],
+    "letter": [
+     157,
+     361
+    ],
+    "runA": [
+     147,
+     361
+    ],
+    "runB": [
+     150,
+     361
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "runA": 0.0,
+    "runB": 0.0
+   }
+  },
+  "owl": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "runA": 1.0,
+    "runB": 1.0
+   },
+   "figH": 361,
+   "poses": {
+    "book": [
+     164,
+     361
+    ],
+    "coffee": [
+     161,
+     361
+    ],
+    "knock": [
+     200,
+     361
+    ],
+    "letter": [
+     178,
+     361
+    ],
+    "runA": [
+     156,
+     359
+    ],
+    "runB": [
+     172,
+     360
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "runA": 0.0,
+    "runB": 0.0
+   }
+  },
+  "panda": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "runA": 1.0,
+    "runB": 1.0
+   },
+   "figH": 362,
+   "poses": {
+    "book": [
+     152,
+     361
+    ],
+    "coffee": [
+     152,
+     361
+    ],
+    "knock": [
+     170,
+     362
+    ],
+    "letter": [
+     154,
+     361
+    ],
+    "runA": [
+     151,
+     360
+    ],
+    "runB": [
+     153,
+     361
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "runA": 0.0,
+    "runB": 0.0
+   }
+  },
+  "punkcat": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "runA": 1.0,
+    "runB": 1.0
+   },
+   "figH": 361,
+   "poses": {
+    "book": [
+     130,
+     361
+    ],
+    "coffee": [
+     130,
+     360
+    ],
+    "knock": [
+     149,
+     361
+    ],
+    "letter": [
+     163,
+     361
+    ],
+    "runA": [
+     136,
+     361
+    ],
+    "runB": [
+     146,
+     360
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0028,
+    "runA": 0.0028,
+    "runB": 0.0
+   }
+  },
+  "raccoon": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "runA": 1.0,
+    "runB": 1.0
+   },
+   "figH": 363,
+   "poses": {
+    "book": [
+     130,
+     363
+    ],
+    "coffee": [
+     132,
+     361
+    ],
+    "knock": [
+     159,
+     359
+    ],
+    "letter": [
+     130,
+     361
+    ],
+    "runA": [
+     148,
+     361
+    ],
+    "runB": [
+     153,
+     361
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "runA": 0.0,
+    "runB": 0.0
+   }
+  }
+ }
+}

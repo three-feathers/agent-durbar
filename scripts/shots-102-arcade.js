@@ -287,5 +287,31 @@ module.exports = async (ctx) => {
   await must(`!!document.getElementById('motionSw')`, 'the Motion switch');
   await js(`document.getElementById('motionSw').click();document.getElementById('scrClose').click();0`);
 
+  /* ---- spec 102 T220 / FR-263: Settings, the List view and the palette while the world shows: `data-ui="retro"` and the dark page, every text 4.5:1 on what is behind it; leaving gives the theme's own back ---- */
+  await loadArcade(1440, 900, 15, { simfreeze: '1' });
+  const CHROME = `(()=>{const d=document.documentElement;return {ui:d.dataset.ui||'',world:d.dataset.world||'',dark:d.dataset.dark!==undefined,bg:getComputedStyle(document.body).backgroundColor}})()`;
+  assert.deepStrictEqual(await js(`(()=>{const c=${CHROME};return [c.ui,c.world,c.dark]})()`), ['retro', 'retro', true], 'the arcade shown: data-ui retro, data-world retro, dark');
+  const SWEEP = (sel) => '(()=>{' + LUM + `const low=[];let n=0;const root=document.querySelector(${jsLiteral(sel)});if(!root)return {n:0,low:['no '+${jsLiteral(sel)}]};for(const e of root.querySelectorAll('*')){if(!e.getClientRects().length||e.closest('svg,[disabled],[aria-disabled="true"]')||![...e.childNodes].some(x=>x.nodeType===3&&x.textContent.trim()))continue;const c=getComputedStyle(e);if(c.visibility==='hidden'||+c.opacity===0)continue;n++;const px=parseFloat(c.fontSize),need=px>=24?3:4.5,r=ratio(c.color,bgOf(e));if(r<need)low.push((e.id||e.className||e.tagName)+' '+r.toFixed(2)+' '+c.color+' on '+bgOf(e)+' '+JSON.stringify(e.textContent.trim().slice(0,24)));if(px<10.5)low.push('small '+px+' '+e.textContent.trim().slice(0,20));}return {n,low};})()`;
+  const SURF = { settings: '[data-sweep="scr"]', list: '#list', palette: '#palDlg' };
+  const SURFACES = [
+    ['settings', async () => { await js(`window.DurbarScreens.openSettings();0`); await must(`!!document.getElementById('motionSw')`, 'Settings'); await js(`document.getElementById('scrClose').closest('.scr-head').parentElement.dataset.sweep='scr';0`); }, async () => { await js(`document.getElementById('scrClose').click();0`); await must(`!document.getElementById('motionSw')`, 'Settings closed'); }],
+    ['list', async () => { await js(`document.getElementById('vList').click();0`); await must(`document.getElementById('vList').getAttribute('aria-pressed')==='true'`, 'the List view'); }, async () => { await js(`document.getElementById('vOffice').click();0`); await must(REAL, 'the office back'); }],
+    ['palette', async () => { await js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',code:'KeyK',metaKey:/Mac/.test(navigator.platform),ctrlKey:!/Mac/.test(navigator.platform),bubbles:true}));0`); await must(`!!document.querySelector('#palDlg')&&document.querySelector('#palDlg').getClientRects().length>0`, 'the palette'); }, async () => { await js(`(document.getElementById('palIn')||document).dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',bubbles:true}));0`); await must(`!document.querySelector('#palDlg')||!document.querySelector('#palDlg').getClientRects().length`, 'the palette closed'); }],
+  ];
+  for (const [name, open, close] of SURFACES) {
+    await open();
+    const c = await js(CHROME);
+    assert.deepStrictEqual([c.ui, c.world, c.dark], ['retro', 'retro', true], `${name}: data-ui retro, the world's dark page`);
+    const sw = await js(SWEEP(SURF[name]));
+    assert.ok(sw.n > 5, `${name}: the sweep reads its text (${sw.n})`);
+    assert.deepStrictEqual(sw.low, [], `${name}: every text 4.5:1 and at least 10.5 px (${sw.n} read)`);
+    await H.shot(path.join(OUT, `102-arcade-${name}-1440x900.png`), { prep: 'calm', settle: true, tag: '102-arcade', what: name });
+    await close();
+  }
+  /* leaving gives the theme's look back: the flat office, no world, the theme's own UI style (Clean Office has none) */
+  await js(`window.__durbarSimUi.setOfficeView('flat');0`);
+  await must(`document.documentElement.dataset.world===undefined&&document.documentElement.dataset.ui===undefined`, 'the flat office: no world, the theme\'s UI style');
+  assert.strictEqual(await js(`document.documentElement.dataset.dark===undefined`), true, 'leaving: the theme\'s light page');
+
   console.log('[102-arcade] PASS');
 };

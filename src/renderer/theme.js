@@ -700,7 +700,13 @@
         '--tone-idea-ink':'#b9c0ff','--tone-idea-bg':'#262a52','--tone-idea-soft':'#202444','--tone-idea-faint':'#1b1e3a','--tone-idea-hover':'#30366a',
         '--tint-sage':'#162420','--wall-sage':'#2c4a3c','--tint-blue':'#141d30','--wall-blue':'#2c3f66','--tint-sand':'#241f14','--wall-sand':'#4d4128','--tint-clay':'#291a1a','--wall-clay':'#55332f',
         '--cwall-sage':'#3c6a54','--cwall-blue':'#3c5a92','--cwall-sand':'#6e5c36','--cwall-clay':'#7a4842',
-        '--red-ink':'#ff9a8f','--amber-ink':'#ffc35c','--blue-ink':'#8fc3ff'},
+        '--red-ink':'#ff9a8f','--amber-ink':'#ffc35c','--blue-ink':'#8fc3ff',
+        /* the status fills of pills, tags and every .note card (permission, question, limit): a dark tint of each hue with a light ink (spec 102 RA6; the Clean Office
+           values are cream, which put the page's light ink on cream, 1.4:1) */
+        '--pb-working':'#142534','--pc-working':'#9dcdf1','--pb-thinking':'#161a36','--pc-thinking':'#9daff1','--pb-waiting':'#2e2410','--pc-waiting':'#f1d19d',
+        '--pb-idle':'#25232f','--pc-idle':'#c9c6d6','--pb-error':'#2e1814','--pc-error':'#f1a49d','--pb-done':'#10281a','--pc-done':'#9df1bf',
+        /* the other pale Clean Office fills still read by the arcade: a denied card, the limit chip, attachment notes (`--bad-bg`) and the drop overlay (`--drop-bg`, light `--drop-ink`) */
+        '--bad-bg':'#2c1518','--drop-bg':'#141d30'},
       bar:{'--world-tint':'#ff77a8','--wb-bg':'#07060f','--wb-bg-2':'#000000','--wb-surface':'#16132b','--wb-surface-2':'#201b3c','--wb-ink':'#f4eefc','--wb-ink-2':'#d8d0ec',
         '--wb-muted':'#bdb5d6','--wb-line':'#2e2850','--wb-line-2':'#3f3768','--wb-line-ctl':'#8c84c0','--wb-focus':'#ffec27',
         '--wb-warn-bg':'#3a2a08','--wb-warn-ink':'#ffd166'},
@@ -729,14 +735,18 @@
     ['--wb-ink-2','--wb-bg',4.5,'#ffffff'],['--wb-ink-2','--wb-surface',4.5,'#ffffff'],['--wb-muted','--wb-bg',4.5,'#ffffff'],['--wb-muted','--wb-surface',4.5,'#ffffff'],['--wb-muted','--wb-surface-2',4.5,'#ffffff'],
     ['--wb-line-ctl','--wb-surface',3,'#ffffff'],['--wb-warn-ink','--wb-warn-bg',4.5,'#ffffff'],['--wb-ink','--wb-warn-bg',4.5,'#ffffff'],['--wb-focus','--wb-bg',3,'#ffffff'],['--wb-focus','--wb-surface',3,'#ffffff'],
     ['--ink','--surface',4.5,'#000000'],['--ink-2','--surface',4.5,'#000000'],['--muted','--surface',4.5,'#000000'],['--ink','--surface-2',4.5,'#000000'],['--muted','--surface-2',4.5,'#000000'],
-    ['--line-ctl','--surface',3,'#000000'],['--focus','--surface',3,null],['--focus','--bg',3,null],['--brand-bg','--wb-bg',1.5,null],
+    ['--line-ctl','--surface',3,'#000000'],
     /* spec 070 FR-081 (#1278): the info tone's text pairs: the file chip (.att, .chip.att-chip, .btn.session), the ask tag (.mode-ask, .mtag), the plain text on a soft row (.note.mcpre, .pico-opt) */
     ['--tone-ok-ink','--tone-ok-soft',4.5,null],['--tone-ok-ink','--tone-ok-faint',4.5,null],['--tone-ok-ink','--tone-ok-hover',4.5,null],
     /* #1309 review: every other tone pair the CSS paints (.fl-focus and .sub-st.done: ok ink on ok bg; .mtag.extra, .hs-ok; .mtag.warn, .imp-block; .dlg .derr, .note.limit; .mtag.src; .scr-warn; .quick; .chip.fail, .btn.danger:hover), and the tone inks on the page they sit on (.scr-note.ok, .srv-org, .fl-err, .bnote) */
     ['--tone-ok-ink','--tone-ok-bg',4.5,null],['--tone-warn-ink','--tone-warn-bg',4.5,null],['--tone-warn-ink','--tone-warn-faint',4.5,null],['--tone-warn-ink','--tone-warn-soft',4.5,null],['--tone-warn-ink','--tone-warn-hover',4.5,null],
     ['--tone-bad-ink','--tone-bad-bg',4.5,null],['--tone-bad-ink','--tone-bad-soft',4.5,null],['--tone-idea-ink','--tone-idea-bg',4.5,null],
     ['--tone-ok-ink','--surface',4.5,null],['--tone-warn-ink','--surface',4.5,null],['--tone-bad-ink','--surface',4.5,null],
-    ['--tone-info-ink','--tone-info-soft',4.5,null],['--tone-info-ink','--tone-info-faint',4.5,null],['--tone-info-ink','--tone-info-hover',4.5,null],['--ink','--tone-info-soft',4.5,null],['--ink-2','--tone-info-soft',4.5,null]];
+    ['--tone-info-ink','--tone-info-soft',4.5,null],['--tone-info-ink','--tone-info-faint',4.5,null],['--tone-info-ink','--tone-info-hover',4.5,null],['--ink','--tone-info-soft',4.5,null],['--ink-2','--tone-info-soft',4.5,null],
+    /* a status card (.note: ink-2 on pb-waiting, .note.err: red-ink on pb-error) and the status pills (pc on pb), on the fill itself, no glass (spec 102 RA6) */
+    ['--ink-2','--pb-waiting',4.5,null],['--ink','--pb-waiting',4.5,null],['--ink-2','--pb-error',4.5,null],['--amber-ink','--pb-waiting',4.5,null],['--red-ink','--pb-error',4.5,null],['--red-ink','--bad-bg',4.5,null],['--ink-2','--bad-bg',4.5,null],['--ink','--bad-bg',4.5,null],
+    ['--pc-working','--pb-working',4.5,null],['--pc-thinking','--pb-thinking',4.5,null],['--pc-waiting','--pb-waiting',4.5,null],['--pc-idle','--pb-idle',4.5,null],['--pc-error','--pb-error',4.5,null],['--pc-done','--pb-done',4.5,null],
+    ['--focus','--surface',3,null],['--focus','--bg',3,null],['--brand-bg','--wb-bg',1.5,null]];
   /* spec 070 FR-053: the bar's own pairs of WORLD_PAIRS, in the shared contrast check too (themegen.ts BAR_PAIRS) */
   const BAR_PAIRS=WORLD_PAIRS.filter(p=>p[0].startsWith('--wb-')&&p[1].startsWith('--wb-'));
   let currentWorld=null, worldResolved=null;

@@ -249,9 +249,27 @@ for (const f of FILES) {
     const r = T.worldTokens('retro') as Record<string, string>, rr = T.worldContrast('retro') as Array<{ fg: string; bg: string; min: number; ratio: number }>;
     for (const k of Object.keys(T._builtins()[T.CLEAN_ID].tokens).concat(Object.keys(T._tokens()))) assert.ok(r[k] !== undefined, `retro has ${k}`);
     const INKS = ['--red-ink', '--amber-ink', '--blue-ink'];
-    for (const k of Object.keys(clean).filter((x) => /^--(c|pb|pc|halo)-|^--(amber|red|green|blue)(-ink)?$|^--desk-(new|needs)$/.test(x) && !INKS.includes(x))) assert.strictEqual(r[k], clean[k], `retro: status colour ${k} is unchanged`);
+    // spec 102 RA6 (2026-11-07): the status fills `--pb-*` and their inks `--pc-*` are dark/light shades of the same hue too, or a `.note` card (permission,
+    // question, limit) is cream with the page's light ink (#1279). Every other status colour is unchanged.
+    const FILLS = ['working', 'thinking', 'waiting', 'idle', 'error', 'done'].flatMap((s) => [`--pb-${s}`, `--pc-${s}`]);
+    for (const k of Object.keys(clean).filter((x) => /^--(c|pb|pc|halo)-|^--(amber|red|green|blue)(-ink)?$|^--desk-(new|needs)$/.test(x) && !INKS.includes(x) && !FILLS.includes(x))) assert.strictEqual(r[k], clean[k], `retro: status colour ${k} is unchanged`);
     const hue = (h: string): number => { const [R, G, B] = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255), mx = Math.max(R, G, B), mn = Math.min(R, G, B), d = mx - mn; if (!d) return 0; const x = mx === R ? ((G - B) / d) % 6 : mx === G ? (B - R) / d + 2 : (R - G) / d + 4; return (x * 60 + 360) % 360; };
     for (const k of INKS) { assert.ok(luminance(r[k]) > luminance(clean[k]), `retro: ${k} is lighter`); const dh = Math.abs(hue(r[k]) - hue(clean[k])); assert.ok(Math.min(dh, 360 - dh) <= 12, `retro: ${k} keeps its hue (${dh.toFixed(1)} degrees)`); }
+    for (const s of ['working', 'thinking', 'waiting', 'idle', 'error', 'done']) {
+      assert.ok(luminance(r[`--pb-${s}`]) < 0.05, `retro: --pb-${s} is a dark fill (${r[`--pb-${s}`]})`);
+      assert.ok(luminance(r[`--pc-${s}`]) > luminance(r[`--pb-${s}`]), `retro: --pc-${s} is lighter than its fill`);
+      if (s !== 'idle') for (const k of [`--pb-${s}`, `--pc-${s}`]) { const dh = Math.abs(hue(r[k]) - hue(clean[k])); assert.ok(Math.min(dh, 360 - dh) <= 12, `retro: ${k} keeps its hue (${dh.toFixed(1)} degrees)`); }
+    }
+    // the card's ink on its fill, measured here on its own: a permission, question or limit card is .note (ink-2 on pb-waiting), an error card .note.err (red-ink on pb-error)
+    for (const [fg, bg] of [['--ink-2', '--pb-waiting'], ['--ink', '--pb-waiting'], ['--ink-2', '--pb-error'], ['--amber-ink', '--pb-waiting'], ['--red-ink', '--pb-error'], ['--pc-working', '--pb-working'], ['--pc-thinking', '--pb-thinking'], ['--pc-waiting', '--pb-waiting'], ['--pc-idle', '--pb-idle'], ['--pc-error', '--pb-error'], ['--pc-done', '--pb-done'], ['--red-ink', '--bad-bg'], ['--ink-2', '--bad-bg'], ['--ink', '--bad-bg']]) {
+      assert.ok(contrast(r[fg], r[bg]) >= 4.5, `retro: ${fg} on ${bg}: ${contrast(r[fg], r[bg]).toFixed(2)}:1 is under 4.5:1`);
+      assert.ok(rr.some((x) => x.fg === fg && x.bg === bg && x.min === 4.5), `retro: worldContrast checks ${fg} on ${bg}`);
+    }
+    // review of #1283: no pale Clean Office `-bg` fill is left under the arcade's light ink (`--bad-bg` was: the limit chip at 1.77:1). Every `-bg` token of the arcade that is a
+    // plain colour is dark, bar and brand fills apart (own pairs); the drop overlay (`--drop-bg`, light `--drop-ink`) is a pair of its own. Not text fills: `--walker-bg` (an avatar disc), `--done-bg` (a tick disc)
+    for (const k of Object.keys(r).filter((x) => /-bg$/.test(x) && !/^--(wb|wp)-|^--(brand|walker|done)-bg$/.test(x))) assert.ok(/^#[0-9a-f]{6}$/i.test(r[k]) && luminance(r[k]) < 0.05, `retro: ${k} is a dark fill (${r[k]})`);
+    assert.ok(contrast(r['--brand-bg'], r['--wb-bg-2']) >= 4.5, `retro: the marquee name (--brand-bg on --wb-bg-2) ${contrast(r['--brand-bg'], r['--wb-bg-2']).toFixed(2)}:1`);
+    assert.ok(contrast(r['--drop-ink'], r['--drop-bg']) >= 4.5, `retro: --drop-ink on --drop-bg ${contrast(r['--drop-ink'], r['--drop-bg']).toFixed(2)}:1`);
     assert.ok(luminance(r['--surface']) < 0.05 && luminance(r['--bg']) < 0.05 && luminance(r['--card']) < 0.05 && luminance(r['--wb-bg']) < 0.05, 'retro: page, cards and bar are dark');
     assert.deepStrictEqual(rr.filter((x) => !(x.ratio >= x.min)).map((x) => `${x.fg} on ${x.bg} ${x.ratio.toFixed(2)}:1 < ${x.min}`), [], 'every pair of the arcade passes WCAG AA');
     assert.ok(rr.some((x) => / \(glass over #ffffff\)$/.test(x.bg) && x.fg === '--ink'), 'a dark panel is checked over white');
@@ -431,6 +449,75 @@ function worldCssProblems(cssIn: string): string[] {
   assert.strictEqual(doc.documentElement.dataset.ui, 'clean', 'the cave sets the plain UI style over the Retro theme');
   W.setWorld(null);
   assert.strictEqual(snap(doc), want4, 'leaving the cave restores the theme exactly');
+  // spec 097 FR-350 (issue #1153, superseded by worlds, owner 2026-11-08): a world keeps its own colours whatever theme is picked, measured on
+  // the page's applied style map for every built-in theme and a dark user pack over every world: every key the world sets (any colour form),
+  // its shadows, UI style and dark flag are the world's, status colours are Clean Office's, the applied colour pairs pass, and leaving
+  // restores the theme exactly in both orders.
+  {
+    const fx = (n: string): Record<string, unknown> => JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'fixtures', 'themes', n), 'utf8'));
+    const packs = ['dark-audit.json'].map(fx);
+    const nrm = (v: unknown): string => String(v === undefined ? '' : v).replace(/\s/g, '').toLowerCase();
+    const mapOf = (d: ReturnType<typeof mkDoc>): Map<string, string> => new Map(d.documentElement.style.m);
+    const cleanRef = fresh(); cleanRef.T.setTheme(cleanRef.T.CLEAN_ID); const clean = mapOf(cleanRef.doc);
+    const WANT: Record<string, { ui: string; dark: boolean; shadow: RegExp }> = {
+      photo: { ui: 'clean', dark: false, shadow: /46,\s*32,\s*18/ }, cave: { ui: 'clean', dark: false, shadow: /40,\s*22,\s*10/ }, retro: { ui: 'retro', dark: true, shadow: /rgba\(0,\s*0,\s*0/ },
+    };
+    assert.deepStrictEqual([...(T.WORLD_IDS as string[])].sort(), Object.keys(WANT).sort(), 'every world has an expectation here');
+    const picks: Array<string | Record<string, unknown>> = [...ids, ...packs];
+    let measured = 0;
+    const wShadow: Record<string, Record<string, string>> = {}; // the first pick is Clean Office, which sets no shadow of its own
+    for (const wid of T.WORLD_IDS as string[]) {
+      const wt = T.worldTokens(wid) as Record<string, string>;
+      assert.ok(Object.keys(wt).length > 100, `${wid}: the world sets a complete token set`);
+      // worldContrast reads no theme: once per world (section 6 has the numbers)
+      for (const r of T.worldContrast(wid) as Array<{ fg: string; bg: string; min: number; ratio: number }>) assert.ok(r.ratio >= r.min, `${wid}: ${r.fg} on ${r.bg} is ${r.ratio.toFixed(2)}:1, needs ${r.min}`);
+      for (const pick of picks) {
+        const pid = typeof pick === 'string' ? pick : String(pick.id), label = `${wid} over ${pid}`;
+        const { T: V, doc: d2 } = fresh();
+        V.setTheme(pick);
+        assert.strictEqual(V.current().id, pid, `${label}: the theme was applied (not Clean Office after a refusal)`);
+        const before = mapOf(d2), alone = snap(d2);
+        if (typeof pick !== 'string') {
+          const tk = pick.tokens as Record<string, string>;
+          const own = Object.keys(tk).filter((k) => /^#[0-9a-f]{6}$/i.test(tk[k]) && nrm(tk[k]) !== nrm(clean.get(k)))[0];
+          assert.ok(own, `${label}: the pack has a colour of its own`);
+          assert.strictEqual(nrm(before.get(own)), nrm(tk[own]), `${label}: the pack's ${own} is applied before the world`);
+        }
+        V.setWorld(wid);
+        const m = mapOf(d2), ds = d2.documentElement.dataset;
+        // every key the world sets, whatever its colour form
+        for (const k of Object.keys(wt)) assert.strictEqual(nrm(m.get(k)), nrm(wt[k]), `${label}: ${k} is the world's, the theme does not reach it`);
+        // status colours: Clean Office's, in every world (070 FR-050), not the theme's own (Retro Pixel's differ in the flat office)
+        for (const k of [...clean.keys()].filter((x) => /^--(c|halo)-(working|thinking|waiting|idle|error|done)$/.test(x))) assert.strictEqual(nrm(m.get(k)), nrm(clean.get(k)), `${label}: ${k} is Clean Office's status colour`);
+        if (pid === 'retro') assert.notStrictEqual(nrm(before.get('--c-working')), nrm(m.get('--c-working')), 'Retro Pixel\'s own status colour does not show in a world (measured, FR-350)');
+        // shadows, UI style, dark flag
+        for (const k of ['--shadow-card', '--shadow-pop']) { assert.ok(WANT[wid].shadow.test(String(m.get(k))), `${label}: ${k} is the world's (${m.get(k)})`); if (!wShadow[wid]) wShadow[wid] = {}; if (!wShadow[wid][k]) wShadow[wid][k] = nrm(m.get(k)); assert.strictEqual(nrm(m.get(k)), wShadow[wid][k], `${label}: ${k} equals the world's value under the first theme (a theme's shadow does not reach it)`); }
+        assert.strictEqual(ds.world, wid, `${label}: data-world`);
+        assert.strictEqual(ds.ui, WANT[wid].ui, `${label}: the world's own UI style`);
+        assert.strictEqual('dark' in ds, WANT[wid].dark, `${label}: the dark flag is the world's`);
+        // contrast of what the page now holds (the applied style map, per theme and world), for every hex pair of 070 D4 on the world's own values
+        for (const [fg, bg, min] of CONTRAST_PAIRS as Array<[string, string, number]>) {
+          const a = m.get(fg), b = m.get(bg);
+          if (/^#[0-9a-f]{6}$/i.test(String(a)) && /^#[0-9a-f]{6}$/i.test(String(b))) { assert.ok(contrast(String(a), String(b)) >= min, `${label}: ${fg} on ${bg} (${contrast(String(a), String(b)).toFixed(2)}:1, needs ${min}) as applied`); measured++; }
+        }
+        // leaving gives the theme back exactly; the other order (world first, theme picked meanwhile) also ends on the reference page
+        V.setWorld(null);
+        assert.strictEqual(snap(d2), alone, `${label}: leaving the world restores the theme exactly`);
+        const { T: U, doc: d3 } = fresh(); U.setWorld(wid); U.setTheme(pick);
+        for (const k of Object.keys(wt)) assert.strictEqual(nrm(d3.documentElement.style.m.get(k)), nrm(wt[k]), `${label}: ${k} stays the world's when the theme is picked meanwhile`);
+        U.setWorld(null); assert.strictEqual(snap(d3), alone, `${label}: world first, then the theme, then leaving: the theme alone`);
+      }
+    }
+    // FR-351 one source: the arcade's drop overlay fill is world.css's rule or a --drop-bg token in its set, never both (a dead source)
+    {
+      const css = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'realoffice', 'worlds', 'retro', 'world.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+      const rule = /html\[data-world="retro"\]\s*\.drop-ov\s*\{[^}]*background/.test(css);
+      const token = nrm((T.worldTokens('retro') as Record<string, string>)['--drop-bg']) !== nrm(cleanRef.T.worldTokens('photo')['--drop-bg']);
+      assert.ok(!(rule && token), 'the arcade sets --drop-bg in WORLD_SETS.retro and world.css still has the .drop-ov rule: delete the rule (one source, FR-351)');
+      assert.ok(rule || token, 'the arcade\'s drop overlay has a fill of its own: the world.css rule or a --drop-bg in WORLD_SETS.retro (FR-351)');
+    }
+    assert.ok(measured > 3 * 3 * 7, `the applied-style contrast ran (${measured} pairs)`);
+  }
   g.document = undefined;
 }
 console.log(`theme tokens guard passed (${n} corpus checks, ${FILES.length} files under the ratchet)`);
