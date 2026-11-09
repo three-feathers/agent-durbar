@@ -12,7 +12,7 @@ type Host = { shown: string; ascii: string; index: number; end?: number };
 type Look = { n?: number; findings?: Finding[]; hosts?: Host[]; inHidden?: boolean; unchecked?: boolean };
 const L = require(path.join(R, 'lookalike.js')) as {
   check(t: unknown, kind: string): { findings: Finding[]; hosts: Host[] };
-  line(l: Look | Look[]): string; marker(f: { cp: number; script: string }): string; hostOdd(h: Host): boolean; tipLen(t: string): number; PCTRL_T: RegExp; CAP: number; TIP_MAX: number;
+  line(l: Look | Look[]): string; marker(f: { cp: number; script: string }): string; hostOdd(h: Host): boolean; tipLen(t: string): number; memoSizes(): Record<string, number>; PCTRL_T: RegExp; CAP: number; TIP_MAX: number;
 };
 let n = 0;
 const ok = (c: unknown, m: string) => { assert.ok(c, m); n++; };
@@ -253,5 +253,48 @@ const none = (t: string, k: string, m: string) => eq(L.check(t, k).findings, [],
   for (const t of ["echo '$(ssh " + C + ")'", 'echo "\\$(ssh ' + C + ')"', "echo '`ssh " + C + "`'", 'echo "\\`ssh ' + C + '\\`"'])
     ok(!L.check('run ' + t, 'shell').hosts.some(L.hostOdd) && L.check('run ' + t, 'shell').findings.length === 0, 'stays text: ' + JSON.stringify(t));
   assertLinearShape('nested quotes and substitutions', (x) => { L.check(x, 'shell'); }, (k) => 'run ' + 'echo "$(x \'$(\' "`y`" '.repeat(Math.ceil(k / 22)).slice(0, k), 50000);
+}
+// fix round 6 (review of #1334): Greek inside a Latin word (Greek is on the not-with-Latin list), in names, paths and hosts
+{
+  const r1 = L.check('run t\u03bfol --sync', 'shell').findings;
+  eq(r1.map((f) => [f.token, f.cp, f.script, f.rule]), [['t\u03bfol', 0x3bf, 'Greek', 'mixed']], 'a Greek omicron in a Latin program name');
+  eq(L.line({ findings: r1 }), 'Lookalike letters: "t\u03bf\u27e6U+03BF Greek\u27e7ol" has U+03BF, a Greek letter, not the Latin one. Check the name before you allow it.', 'its line');
+  eq(cps('read /x/n\u03bftes.txt', 'other'), [0x3bf], 'a Greek letter in a Latin path word warns (rule (a) applies to paths)');
+  eq(cps('run durbtool --out n\u03bftes.md', 'shell'), [0x3bf], 'and in a shell argument');
+  const r2 = L.check('fetch https://\u03b1pple.invalid/x', 'other');
+  eq(r2.findings.map((f) => [f.cp, f.script, f.rule]), [[0x3b1, 'Greek', 'mixed']], 'a Greek alpha in a URL host');
+  eq(r2.hosts.map((h) => h.ascii), ['xn--pple-zld.invalid'], 'and the host as the network reads it');
+  for (const t of ['run ssh \u03b1pple.invalid', 'run curl exampl\u03b5.invalid/x', 'run scp f u@t\u03bfol.invalid:/x']) {
+    const r = L.check(t, 'shell');
+    ok(r.findings.length === 1 && r.findings[0].script === 'Greek' && r.findings[0].rule === 'mixed' && r.hosts.length === 1 && L.hostOdd(r.hosts[0]), 'a Greek letter in a shell host without a scheme: ' + t + ' ' + JSON.stringify(r));
+  }
+  none('read /home/u/\u03b1\u03c1\u03c7\u03b5\u03af\u03bf/notes.txt', 'other', 'a Greek word and a Latin word apart do not warn');
+}
+// fix round 6 (review of #1334): a combining mark in a bare shell host, and the precomposed letter
+{
+  for (const [t, shown, ascii] of [['run ssh g\u0307oogle.invalid', 'g\u0307oogle.invalid', 'xn--oogle-v1a.invalid'], ['run ssh g\u022foogle.invalid', 'g\u022foogle.invalid', 'xn--google-iqc.invalid'],
+    ['run curl ex\u0301ample.invalid/x', 'ex\u0301ample.invalid', ''], ['run scp f u@g\u0307o.invalid:/x', 'g\u0307o.invalid', ''], ['run ssh durb.g\u0307o.invalid', 'durb.g\u0307o.invalid', '']] as const) {
+    const r = L.check(t, 'shell');
+    eq(r.hosts.map((h) => h.shown), [shown], 'the host is read with its mark: ' + t);
+    ok(L.hostOdd(r.hosts[0]) && /^xn--|\.xn--/.test(r.hosts[0].ascii) && (!ascii || r.hosts[0].ascii === ascii), 'and named as the network reads it: ' + JSON.stringify(r.hosts));
+    ok(L.line(r).includes('This address\u2019s host is ' + r.hosts[0].ascii + ':'), 'the card line names it: ' + L.line(r));
+  }
+  for (const t of ['run cp e\u0301t\u00e9.txt d/', 'run cat r\u0301esum\u0301e.txt:3', 'run scp k\u0301ey.pem h.invalid:/x'])
+    ok(!L.check(t, 'shell').hosts.some(L.hostOdd), 'a file name with a mark is still not a host: ' + t);
+  // the host pattern alone, linear up to 50000 characters (its source read from the file, as PCTRL_T above)
+  const m = /DOTTED=(\/.*?\/u);/.exec(fs.readFileSync(path.join(R, 'lookalike.js'), 'utf8'));
+  ok(m && m[1].includes('\\p{M}'), 'the host pattern takes combining marks');
+  const DOT = new RegExp(m![1].slice(1, -2), 'u');
+  for (const [label, unit] of [['marks and dots', 'g\u0307.'], ['one long label', 'a\u0301'], ['labels, no tld letter', 'a\u0307.1'], ['hyphens and marks', '-\u0307a.']] as const)
+    assertLinearShape('host pattern ' + label, (x) => { DOT.exec(x + ' '); DOT.exec(x + '.'); }, (k) => unit.repeat(Math.ceil(k / unit.length)).slice(0, k), 50000);
+  assertLinearShape('check, marked hosts', (x) => { L.check(x, 'shell'); }, (k) => ('run ssh ' + 'g\u0307.'.repeat(Math.ceil(k / 3))).slice(0, k), 10000);
+}
+// fix round 6 (review of #1334): every memo is cleared past 4096 entries (the script memos too)
+{
+  // each token: two Arabic letters and one Han letter, so the Han one is flagged and named (scOf) and every letter's scripts are looked up (scxOf)
+  for (let base = 0x4e00; base < 0x4e00 + 6000; base += 2000)
+    L.check('read ' + Array.from({ length: 2000 }, (_, i) => '\u0628\u062a' + String.fromCodePoint(base + i)).join(' '), 'other');
+  const s = L.memoSizes();
+  ok(Object.values(s).every((v) => v <= 4097) && s.scx > 0 && s.sc > 0, 'every memo stays at most 4097 entries after 6000 distinct letters: ' + JSON.stringify(s));
 }
 console.log(`lookalike: ${n} checks passed`);

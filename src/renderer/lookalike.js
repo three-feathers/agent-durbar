@@ -16,9 +16,9 @@
   const SCX=[],SC=[];for(const s of SCRIPTS){try{SCX.push([s,new RegExp('\\p{scx='+s+'}','u')]);SC.push([s,new RegExp('\\p{sc='+s+'}','u')]);}catch(e){/* an older engine without this script: it counts for none */}}
   const scxMemo=new Map(), scMemo=new Map();
   /* Script_Extensions of one character, as a list of names ([] for Common and Inherited); memoized per code point, so the cost is per distinct letter */
-  const scxOf=c=>{if(c<'\x80')return /[A-Za-z]/.test(c)?['Latin']:[];let v=scxMemo.get(c);if(!v){v=SCX.filter(x=>x[1].test(c)).map(x=>x[0]);scxMemo.set(c,v);}return v;};
+  const scxOf=c=>{if(c<'\x80')return /[A-Za-z]/.test(c)?['Latin']:[];let v=scxMemo.get(c);if(!v){v=SCX.filter(x=>x[1].test(c)).map(x=>x[0]);if(scxMemo.size>4096)scxMemo.clear();scxMemo.set(c,v);}return v;};
   /* the Script value, for the marker's name only */
-  const scOf=c=>{let v=scMemo.get(c);if(v===undefined){const h=SC.find(x=>x[1].test(c));v=h?h[0]:(scxOf(c)[0]||'Common');scMemo.set(c,v);}return v;};
+  const scOf=c=>{let v=scMemo.get(c);if(v===undefined){const h=SC.find(x=>x[1].test(c));v=h?h[0]:(scxOf(c)[0]||'Common');if(scMemo.size>4096)scMemo.clear();scMemo.set(c,v);}return v;};
   /* UTS #39 resolved scripts: Han, Hiragana, Katakana, Bopomofo and Hangul also count as the writing systems they belong to */
   const aug=s=>{const o=new Set(s);if(o.has('Han')){o.add('Jpan');o.add('Kore');o.add('Hanb');}if(o.has('Hiragana')||o.has('Katakana'))o.add('Jpan');if(o.has('Bopomofo'))o.add('Hanb');if(o.has('Hangul'))o.add('Kore');return o;};
   const augMemo=new Map(), augOf=(c,s)=>{let v=augMemo.get(c);if(!v){v=aug(s);if(augMemo.size>4096)augMemo.clear();augMemo.set(c,v);}return v;}; /* shared, never changed: inter() makes new sets */
@@ -40,7 +40,7 @@
   const marker=f=>'\u27e6'+hex(f.cp)+' '+sname(f.script)+'\u27e7';
   /* the zero of a decimal digit: Unicode keeps each system's ten digits in a row from its zero, and rows of ten follow each other */
   /* what one character is, memoized (fix round 3: the Unicode property tests were most of the time): 1 token, 2 letter, 4 decimal digit, 8 FR-318 control, 16 whitespace control */
-  const kindMemo=new Map();
+  const kindMemo=new Map(); /* every memo is cleared past 4096 entries, so a long run of distinct letters keeps memory bounded */
   const kindOf=c=>{const cc=c.charCodeAt(0);
     if(c.length===1&&cc>=0x20&&cc<0x7f)return (cc>=0x30&&cc<=0x39)?5:((cc|32)>=0x61&&(cc|32)<=0x7a)?3:0;
     let v=kindMemo.get(c);if(v===undefined){v=(TOK.test(c)?1:0)|(LET.test(c)?2:0)|(ND.test(c)?4:0)|(PCTRL_T.test(c)?8:0)|(WS.test(c)?16:0);if(kindMemo.size>4096)kindMemo.clear();kindMemo.set(c,v);}return v;};
@@ -71,8 +71,8 @@
   /* FR-116: every scheme://host (userinfo and port left out), and the bare host of a `fetch host` grant label. In a shell command (review fix rounds 1
      and 2 of #1300) also a host without a scheme, but only as an argument of a network program, never inside quotes: `user@host` (not an all-digit
      version such as `pkg@1.2.3`), `host.tld:path` (scp, rsync, sftp, git clone/fetch/pull/push), `host.tld/...` or `host.tld:port` (curl, wget...),
-     a bare `host.tld` (ssh, ping, nc...). Anything else, a file name like `notes.txt:12` or `name.io/x` included, is not a host. */
-  const AT_HOST=/^[^@\/\s]+@([^@\/\s:#?]+)/, DOTTED=/^([\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)+)(?=$|[:\/])/u;
+     a bare `host.tld` (ssh, ping, nc...), its labels letters, combining marks, digits and hyphens. Anything else, a file name like `notes.txt:12` or `name.io/x` included, is not a host. */
+  const AT_HOST=/^[^@\/\s]+@([^@\/\s:#?]+)/, DOTTED=/^([\p{L}\p{M}\p{N}-]+(?:\.[\p{L}\p{M}\p{N}-]+)+)(?=$|[:\/])/u; /* marks too: `g` + U+0307 is a host (review of #1334) */
   const NET_URL=new Set(['curl','wget','http','https','xh','aria2c','lftp','httpie']), NET_COPY=new Set(['scp','rsync','sftp']),
     NET_HOST=new Set(['ssh','mosh','telnet','ping','ping6','nc','ncat','netcat','dig','nslookup','host','traceroute','tracepath','ftp','ssh-copy-id','whois']),
     GIT_NET=new Set(['clone','fetch','pull','push','ls-remote','remote','submodule']);
@@ -252,5 +252,7 @@
   }
   /* FR-118: how much of a session button's tooltip to keep: 240 characters, more to reach the last marker, never more than TIP_MAX (fix round 1) */
   const tipLen=t=>{const s=String(t==null?'':t);return Math.min(TIP_MAX,Math.max(240,s.lastIndexOf('\u27e7')+2));};
-  return {check,line,marker,hostOdd,tipLen,PCTRL_T,CAP,TIP_MAX};
+  /* the memo sizes, for the test of the 4096 cap only */
+  const memoSizes=()=>({scx:scxMemo.size,sc:scMemo.size,aug:augMemo.size,kind:kindMemo.size,zero:zeroMemo.size});
+  return {check,line,marker,hostOdd,tipLen,memoSizes,PCTRL_T,CAP,TIP_MAX};
 })());
