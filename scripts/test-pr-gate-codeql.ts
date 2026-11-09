@@ -27,13 +27,17 @@ if (!bash || bash.status !== 0) {
   process.exit(0);
 }
 
+const SHA = 'a'.repeat(40);
+const BASE = 'b'.repeat(40);
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-gate-codeql-'));
 const bin = path.join(dir, 'bin');
 const fx = path.join(dir, 'fx');
 fs.mkdirSync(bin);
 fs.mkdirSync(fx);
-// fixtures: checks.txt (tab-separated `gh pr checks` lines; absent = the call fails), files.json (the PR files API; absent = the call fails),
-// alerts-merge.json / alerts-head.json (absent = the call fails); the comment lists are empty and the PR is ours
+// fixtures: checks.txt (tab-separated `gh pr checks` lines; absent = the call fails), files.json and files2.json (pages 1 and 2 of the PR
+// files API: page 2 only with --paginate, as the real gh; absent = the call fails), pull.json (the PR: changed_files, head sha),
+// contents/<path> (a file at the head commit; absent = 404), alerts-merge.json / alerts-head.json (absent = the call fails);
+// the comment lists are empty and the PR is ours
 fs.writeFileSync(path.join(bin, 'gh'), `#!/bin/bash
 F="${fx}"; prog=.; prev=
 for a in "$@"; do { [ "$prev" = --jq ] || [ "$prev" = -q ]; } && prog=$a; prev=$a; done
@@ -48,13 +52,16 @@ case $ep in
   graphql) echo '{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[]},"comments":{"nodes":[]},"reviews":{"nodes":[]}}}}}' | jq -r "$prog"; exit;;
   repos/o/r/code-scanning/alerts?ref=refs/pull/1/merge*) f=alerts-merge;;
   repos/o/r/code-scanning/alerts?ref=refs/pull/1/head*) f=alerts-head;;
-  repos/o/r/pulls/1) echo '{"user":{"login":"dependabot[bot]"},"head":{"repo":{"full_name":"o/r"}},"base":{"repo":{"full_name":"o/r"}}}' | jq -r "$prog"; exit;;
+  repos/o/r/pulls/1) f=pull;;
+  repos/o/r/contents/*\?ref=${BASE}) c=\${ep#repos/o/r/contents/}; c=\${c%%\?ref=*}; [ -f "$F/base/$c" ] || { echo "fake gh: 404 $c" >&2; exit 1; }; jq -r "$prog" < "$F/base/$c"; exit;;
+  repos/o/r/contents/*\?ref=${SHA}) c=\${ep#repos/o/r/contents/}; c=\${c%%\?ref=*}; [ -f "$F/contents/$c" ] || { echo "fake gh: 404 $c" >&2; exit 1; }; jq -r "$prog" < "$F/contents/$c"; exit;;
   repos/o/r/pulls/1/files) f=files;;
   repos/o/r/pulls/1/reviews|repos/o/r/issues/1/comments|repos/o/r/pulls/1/comments) echo '[]' | jq -r "$prog"; exit;;
   *) echo "fake gh: no fixture for $*" >&2; exit 9;;
 esac
 [ -f "$F/$f.json" ] || { echo "fake gh: $f failed" >&2; exit 1; }
 jq -r "$prog" < "$F/$f.json" || exit
+case " $* " in *" --paginate "*) [ -f "$F/\${f}2.json" ] && { jq -r "$prog" < "$F/\${f}2.json" || exit; };; esac
 [ -f "$F/$f.fail" ] && { echo "fake gh: $f failed after its first page" >&2; exit 1; }
 exit 0
 `, { mode: 0o755 });
@@ -67,11 +74,28 @@ const set = (name: string, v: string | null): void => {
   else fs.writeFileSync(f, v);
 };
 type File = string | { filename: string; previous_filename: string };
-const fixture = (o: { codeql?: string | null; checks?: boolean; files?: File[] | null; merge?: unknown[] | null; head?: unknown[] | null } = {}): void => {
+const LOCK = { lockfileVersion: 3, packages: { '': { dependencies: { x: '^1.0.0' } }, 'node_modules/x': { version: '1.0.1', resolved: 'https://registry.npmjs.org/x/-/x-1.0.1.tgz', integrity: 'sha512-AAAA' } } };
+const PKG = { name: 'prereview', scripts: { test: 'node test.js' }, dependencies: { x: '^1.0.0' } };
+const fixture = (o: { codeql?: string | null; checks?: boolean; files?: File[] | null; page2?: File[]; changed?: number; contents?: Record<string, unknown>; base?: Record<string, unknown>; author?: string; merge?: unknown[] | null; head?: unknown[] | null } = {}): void => {
   const codeql = o.codeql === undefined ? 'skipping' : o.codeql;
   set('checks.txt', o.checks === false ? null : OTHER + (codeql === null ? '' : `CodeQL\t${codeql}\t0\thttps://x\n`));
   const files = o.files ?? ['scripts/prereview/package-lock.json', 'scripts/prereview/package.json'];
-  set('files.json', o.files === null ? null : JSON.stringify(files.map((f) => (typeof f === 'string' ? { filename: f } : f))));
+  const page = (l: File[]): string => JSON.stringify(l.map((f) => (typeof f === 'string' ? { filename: f } : f)));
+  set('files.json', o.files === null ? null : page(files));
+  set('files2.json', o.page2 ? page(o.page2) : null);
+  set('pull.json', JSON.stringify({ user: { login: o.author ?? 'dependabot[bot]' }, head: { sha: SHA, repo: { full_name: 'o/r' } }, base: { sha: BASE, repo: { full_name: 'o/r' } }, changed_files: o.changed ?? files.length + (o.page2 ?? []).length }));
+  fs.rmSync(path.join(fx, 'contents'), { recursive: true, force: true });
+  fs.rmSync(path.join(fx, 'base'), { recursive: true, force: true });
+  for (const [f, v] of Object.entries(o.base ?? {})) {
+    fs.mkdirSync(path.dirname(path.join(fx, 'base', f)), { recursive: true });
+    fs.writeFileSync(path.join(fx, 'base', f), JSON.stringify(v));
+  }
+  const contents: Record<string, unknown> = { 'scripts/prereview/package-lock.json': LOCK, 'scripts/prereview/package.json': PKG, 'package-lock.json': LOCK, ...(o.contents ?? {}) };
+  for (const [f, v] of Object.entries(contents)) {
+    if (v === null) continue;
+    fs.mkdirSync(path.dirname(path.join(fx, 'contents', f)), { recursive: true });
+    fs.writeFileSync(path.join(fx, 'contents', f), JSON.stringify(v));
+  }
   set('alerts-merge.json', o.merge === null ? null : JSON.stringify(o.merge ?? []));
   set('alerts-head.json', o.head === null ? null : JSON.stringify(o.head ?? []));
   set('files.fail', null);
@@ -90,72 +114,112 @@ const notReady = (gatePath: string, label: string, want: RegExp): void => {
   assert.ok(r.code === 1 && r.out.includes('#1 not ready') && want.test(r.out), `${label}: not ready\n${r.out}`);
 };
 
-// every case, against a given copy of the gate; each assert's label names the case, so a mutant's failure says which case caught it
-const cases = (g: string): void => {
-  fixture({ codeql: 'pass', files: ['src/main/a.ts'] });
-  ready(g, 'CASE pass: a passed CodeQL');
-  fixture();
-  ready(g, 'CASE lockfile-skipped: a lockfile-only PR, CodeQL skipping, 0 alerts');
-  const r = run(g);
-  assert.ok(r.out.includes('CodeQL skipped (no analysed files)'), `CASE lockfile-skipped: the verdict says why\n${r.out}`);
-  fixture({ codeql: null, files: ['docs/a.md', 'docs/pics/a.png', 'package-lock.json', 'specs/021-x/spec.md'] });
-  ready(g, 'CASE no-codeql-check: docs, a picture and the root lockfile, no CodeQL check at all');
-  fixture({ merge: [{ number: 1 }] });
-  notReady(g, 'CASE alert-merge: lockfile-only, 1 alert on the merge ref', /alerts=1/);
-  fixture({ head: [{ number: 1 }] });
-  notReady(g, 'CASE alert-head: lockfile-only, 1 alert on the head ref', /alerts=1/);
-  fixture({ codeql: 'fail' });
-  notReady(g, 'CASE codeql-fail: a failing CodeQL on a lockfile-only PR', /codeql=fail/);
-  fixture({ codeql: 'pending' });
-  notReady(g, 'CASE codeql-pending: a pending CodeQL', /codeql=pending/);
-  fixture({ codeql: 'cancel' });
-  notReady(g, 'CASE codeql-cancel: a cancelled CodeQL', /codeql=cancel/);
-  fixture({ files: ['scripts/prereview/package-lock.json', 'src/main/a.ts'] });
-  notReady(g, 'CASE skipped-with-src: CodeQL skipped on a PR that changes src/*.ts', /codeql=skipping\(analysed or unknown files changed\)/);
-  fixture({ codeql: null, files: ['src/main/a.ts'] });
-  notReady(g, 'CASE missing-with-src: no CodeQL check on a PR that changes src/*.ts', /codeql=missing\(analysed or unknown files changed\)/);
-  for (const f of ['scripts/trusted-authors.txt', 'package.json', 'docs/site/app.js', '.github/workflows/ci.yml', 'docs/a.svg', 'README.MD', 'scripts/x/package.json.bak', 'evil-package-lock.json']) {
-    fixture({ files: ['docs/a.md', f] });
-    notReady(g, `CASE unknown-file: ${f} is not on the no-code list`, /codeql=skipping\(analysed or unknown files changed\)/);
-  }
-  fixture({ files: [{ filename: 'docs/a.md', previous_filename: 'src/main/a.ts' }] });
-  notReady(g, 'CASE rename-from-src: a src/*.ts file renamed to a .md', /codeql=skipping\(analysed or unknown files changed\)/);
-  fixture({ files: [] });
-  notReady(g, 'CASE empty-files: no changed files read', /codeql=skipping\(/);
-  fixture();
-  set('files.fail', '');
-  notReady(g, 'CASE files-partial: the file list fails after its first page (all docs so far)', /codeql=skipping\(/);
-  fixture({ files: null });
-  notReady(g, 'CASE files-error: the file list cannot be read', /codeql=skipping\(/);
-  fixture({ merge: null });
-  notReady(g, 'CASE alerts-error: the alerts cannot be read', /alerts=unread/);
-  fixture();
-  set('alerts-merge.json', '');
-  notReady(g, 'CASE alerts-empty: the alerts call prints no number', /alerts=unread/);
-  fixture({ checks: false });
-  notReady(g, 'CASE checks-error: the check list cannot be read', /codeql=/);
+// the cases by name; a mutant runs only the case named for it and must fail it (the label names the case)
+type Case = (g: string, label: string) => void;
+const R = (o: Parameters<typeof fixture>[0]): Case => (g, l) => { fixture(o); ready(g, l); };
+const N = (o: Parameters<typeof fixture>[0], want: RegExp, after?: () => void): Case => (g, l) => { fixture(o); after?.(); notReady(g, l, want); };
+const other = /codeql=skipping\(analysed or unknown files changed\)/;
+const refused = /codeql=skipping\(dependency files refused/;
+const lock = (pkg: object): object => ({ ...LOCK, packages: { ...LOCK.packages, 'node_modules/y': pkg } });
+const CASES: Record<string, Case> = {
+  'pass: a passed CodeQL': R({ codeql: 'pass', files: ['src/main/a.ts'] }),
+  'lockfile-skipped: a Dependabot lockfile-only PR, CodeQL skipping, 0 alerts': (g, l) => {
+    fixture({});
+    const r = run(g);
+    assert.ok(r.code === 0 && r.out.includes('CodeQL skipped (no analysed files; dependency files changed: CodeQL does not read them, a reviewer reads the diff)'), `${l}: ready, and the verdict says why\n${r.out}`);
+  },
+  'docs-skipped: docs, a picture and a spec, CodeQL skipping': (g, l) => {
+    fixture({ files: ['docs/a.md', 'docs/pics/a.png', 'specs/021-x/spec.md'], author: 'vikramgorla' });
+    const r = run(g);
+    assert.ok(r.code === 0 && !r.out.includes('dependency files changed'), `${l}: ready, no dependency note\n${r.out}`);
+  },
+  'root-lockfile: the root package-lock.json in a Dependabot PR': R({ files: ['package-lock.json'] }),
+  'two-pages-docs: two pages of docs (--paginate reads both)': R({ files: ['docs/a.md'], page2: ['docs/b.md'] }),
+  'no-codeql-check: no CodeQL check yet on a docs-only PR': N({ codeql: null, files: ['docs/a.md'] }, /codeql=missing /),
+  'alert-merge: 1 alert on the merge ref': N({ merge: [{ number: 1 }] }, /alerts=1/),
+  'alert-head: 1 alert on the head ref': N({ head: [{ number: 1 }] }, /alerts=1/),
+  'codeql-fail: a failing CodeQL on a lockfile-only PR': N({ codeql: 'fail' }, /codeql=fail /),
+  'codeql-pending: a pending CodeQL': N({ codeql: 'pending' }, /codeql=pending /),
+  'codeql-cancel: a cancelled CodeQL': N({ codeql: 'cancel' }, /codeql=cancel /),
+  'skipped-with-src: CodeQL skipped on a PR that changes src/*.ts': N({ files: ['scripts/prereview/package-lock.json', 'src/main/a.ts'] }, other),
+  'missing-with-src: no CodeQL check on a PR that changes src/*.ts': N({ codeql: null, files: ['src/main/a.ts'] }, /codeql=missing /),
+  'unknown-file: files off the no-code list': (g, l) => {
+    for (const f of ['scripts/trusted-authors.txt', 'package.json', 'docs/site/app.js', '.github/workflows/ci.yml', 'docs/a.svg', 'README.MD', 'scripts/x/package.json.bak', 'evil-package-lock.json', 'src/package-lock.json', '.github/workflows/package-lock.json', 'scripts/a/b/package-lock.json']) {
+      fixture({ files: ['docs/a.md', f] });
+      notReady(g, `${l}: ${f}`, other);
+    }
+  },
+  'newline-name: a file name with a newline that splits into two allowed names': N({ files: ['a.md\npackage-lock.json'] }, other),
+  'control-name: a file name with a control character': N({ files: ['docs/a\u0001.md'] }, other),
+  'rename-from-src: a src/*.ts file renamed to a .md': N({ files: [{ filename: 'docs/a.md', previous_filename: 'src/main/a.ts' }] }, other),
+  'page2-src: src/a.ts on the second page of the file list': N({ files: ['docs/a.md'], page2: ['src/a.ts'] }, other),
+  'count-mismatch: the API lists fewer files than the PR changed': N({ files: ['docs/a.md'], changed: 2 }, other),
+  'cap-3000: 3000 files, where the files API stops': N({ files: Array.from({ length: 3000 }, (_, i) => `docs/f${i}.md`) }, other),
+  'empty-files: no changed files read': N({ files: [] }, other),
+  'files-partial: the file list fails after its first page (all docs so far)': N({}, other, () => set('files.fail', '')),
+  'files-error: the file list cannot be read': N({ files: null }, other),
+  'dep-author: a lockfile-only PR by a teammate, not Dependabot': N({ author: 'vikramgorla' }, refused),
+  'dep-resolved: a lockfile entry resolved outside registry.npmjs.org': N({ contents: { 'scripts/prereview/package-lock.json': lock({ version: '1.0.0', resolved: 'https://evil.example/y-1.0.0.tgz' }) } }, refused),
+  'dep-installscript-old: an install script the base commit already has': R({ contents: { 'scripts/prereview/package-lock.json': lock({ version: '1.0.1', resolved: 'https://registry.npmjs.org/y/-/y-1.0.1.tgz', hasInstallScript: true }) }, base: { 'scripts/prereview/package-lock.json': lock({ version: '1.0.0', resolved: 'https://registry.npmjs.org/y/-/y-1.0.0.tgz', hasInstallScript: true }) } }),
+  'dep-installscript: a new dependency with an install script': N({ contents: { 'scripts/prereview/package-lock.json': lock({ version: '1.0.0', resolved: 'https://registry.npmjs.org/y/-/y-1.0.0.tgz', hasInstallScript: true }) } }, refused),
+  'dep-lifecycle: a preinstall, install, postinstall or prepare script': (g, l) => {
+    for (const k of ['preinstall', 'install', 'postinstall', 'prepare']) {
+      fixture({ contents: { 'scripts/prereview/package.json': { ...PKG, scripts: { [k]: 'node x.js' } } } });
+      notReady(g, `${l}: ${k}`, refused);
+    }
+  },
+  'dep-spec: a git, file or URL dependency spec': (g, l) => {
+    for (const spec of ['github:evil/y', 'git+https://evil.example/y.git', 'file:../y', 'evil/y']) {
+      fixture({ contents: { 'scripts/prereview/package.json': { ...PKG, dependencies: { y: spec } } } });
+      notReady(g, `${l}: ${spec}`, refused);
+    }
+  },
+  'dep-unreadable: a dependency file that cannot be read at the head commit': N({ contents: { 'scripts/prereview/package-lock.json': null } }, refused),
+  'dep-odd-path: a dependency file path with a space': N({ files: ['scripts/a b/package.json'], contents: { 'scripts/a b/package.json': PKG } }, refused),
+  'alerts-error: the alerts cannot be read': N({ merge: null }, /alerts=unread/),
+  'alerts-empty: the alerts call prints no number': N({}, /alerts=unread/, () => set('alerts-merge.json', '')),
+  'checks-error: the check list cannot be read': N({ checks: false }, /codeql=missing /),
+};
+const runCase = (g: string, name: string): void => {
+  const k = Object.keys(CASES).find((c) => c.startsWith(`${name}:`));
+  assert.ok(k, `no case ${name}`);
+  CASES[k as string](g, `CASE ${k}`);
 };
 
 try {
-  cases(path.join(SCRIPTS, 'pr-gate.sh'));
+  for (const name of Object.keys(CASES)) runCase(path.join(SCRIPTS, 'pr-gate.sh'), name.split(':')[0]);
   // mutants: a copy of the gate next to copies of the files it sources; each must fail the case named
   const mdir = path.join(dir, 'mutant');
   fs.mkdirSync(mdir);
   for (const f of ['trusted-lib.sh', 'trusted-authors.txt', 'pr-status-note.re']) fs.copyFileSync(path.join(SCRIPTS, f), path.join(mdir, f));
   const mutants: Array<[string, string, string, string]> = [
-    ['a failing CodeQL treated as skipped', '[ "$codeql" = skipping ] ||', '[ "$codeql" = skipping ] || [ "$codeql" = fail ] ||', 'CASE codeql-fail'],
-    ['the file filter removed', 'nocode "$f" || return 1', 'true', 'CASE skipped-with-src'],
-    ['a partly read file list accepted', "--jq '.[]|.filename,(.previous_filename // empty)') && [ -n", "--jq '.[]|.filename,(.previous_filename // empty)'); [ -n", 'CASE files-partial'],
-    ['a rename\'s old path ignored', ',(.previous_filename // empty)', '', 'CASE rename-from-src'],
-    ['the alerts read without a number check', '&& isnum "$a_merge" && isnum "$a_head" ', '', 'CASE alerts-empty'],
+    ['a failing CodeQL treated as skipped', '[ "$codeql" = skipping ] &&', '{ [ "$codeql" = skipping ] || [ "$codeql" = fail ]; } &&', 'codeql-fail'],
+    ['a missing CodeQL treated as skipped', '[ "$codeql" = skipping ] &&', '{ [ "$codeql" = skipping ] || [ "$codeql" = missing ]; } &&', 'no-codeql-check'],
+    ['the file filter removed', 'nocode "$f" || return 1', 'true', 'skipped-with-src'],
+    ['lockfiles in any folder', 'scripts/*/*/*) return 1;; package-lock.json|', '*/package-lock.json|package-lock.json|', 'unknown-file'],
+    ['the control-character check removed', '|any(test("[\\\\x00-\\\\x1f\\\\x7f]"))', '|any(false)', 'control-name'],
+    ['a partly read file list accepted', `"P \\(.)") end') && [ -n`, `"P \\(.)") end'); [ -n`, 'files-partial'],
+    ['a rename\'s old path ignored', ', (.previous_filename // empty|"P \\(.)")', '', 'rename-from-src'],
+    ['--paginate removed from the file list', 'gh api --paginate "repos/$R/pulls/$p/files"', 'gh api "repos/$R/pulls/$p/files"', 'two-pages-docs'],
+    ['the count check removed', '[ "$n" = "$total" ] && ', '', 'count-mismatch'],
+    ['the 3000-file cap removed', '&& [ "$n" -lt 3000 ] ', '', 'cap-3000'],
+    ['the Dependabot author check removed', '[ "$author" = "dependabot[bot]" ] || return 2', '', 'dep-author'],
+    ['the resolved URL check removed', 'select(startswith("https://registry.npmjs.org/")|not)', 'select(false)', 'dep-resolved'],
+    ['the install-script check removed', '| grep -q . && return 2', '| grep -q . && true', 'dep-installscript'],
+    ['every install script refused', 'grep -vxF -f <(printf \'%s\\n\' "$base_i")', 'cat', 'dep-installscript-old'],
+    ['the lifecycle script check removed', 'select(. == "preinstall" or . == "install" or . == "postinstall" or . == "prepare")', 'select(false)', 'dep-lifecycle'],
+    ['the dependency spec check removed', 'select(test("[:/]"))', 'select(false)', 'dep-spec'],
+    ['the dependency files not read', '[ ${#deps[@]} = 0 ] && return 0', 'return 0', 'lockfile-skipped'],
+    ['the path check removed', 'case $f in *[!A-Za-z0-9._/-]*|*..*) return 2;; esac', '', 'dep-odd-path'],
+    ['the alerts read without a number check', '&& isnum "$a_merge" && isnum "$a_head" ', '', 'alerts-empty'],
   ];
   for (const [name, from, to, caught] of mutants) {
     assert.ok(gate.includes(from), `mutant "${name}": its anchor is in the gate`);
     const m = path.join(mdir, 'pr-gate.sh');
     fs.writeFileSync(m, gate.replace(from, to), { mode: 0o755 });
     let msg = '';
-    try { cases(m); } catch (e) { msg = (e as Error).message; }
-    assert.ok(msg.startsWith(caught), `mutant "${name}" is caught by ${caught}, got: ${msg.split('\n')[0] || 'no failure'}`);
+    try { runCase(m, caught); } catch (e) { msg = (e as Error).message; }
+    assert.ok(msg.startsWith(`CASE ${caught}:`), `mutant "${name}" is caught by CASE ${caught}, got: ${msg.split('\n')[0] || 'no failure'}`);
   }
 } finally {
   fs.rmSync(dir, { recursive: true, force: true });
