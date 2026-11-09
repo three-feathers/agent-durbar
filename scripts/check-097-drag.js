@@ -128,7 +128,10 @@ module.exports = async (ctx) => {
       },
     });
     await must(`(window.__durbarSimUi.order.get().desks[${jsLiteral(pa)}]||[]).filter(i=>${jsLiteral(O)}.includes(i)).join()===${jsLiteral(swapAt(O, k).join())}`, `${tag}: the drop saved the swap (order ${await docDesks()}, was ${O})`);
-    assert.deepStrictEqual((await saved()).desks[pa].filter((i) => O.includes(i)), swapAt(O, k), `${tag}: it is the saved document`);
+    const sv = await saved(), onScreen = await js(`window.__durbarSimUi.order.get().desks[${jsLiteral(pa)}]`);
+    assert.ok(sv && sv.desks && Array.isArray(sv.desks[pa]), `${tag}: the drop saved the new order (nothing was saved: ${JSON.stringify(sv)})`);
+    assert.deepStrictEqual(sv.desks[pa], onScreen, `${tag}: the drop saved the new order (the saved order equals the order on screen)`);
+    assert.deepStrictEqual(sv.desks[pa].filter((i) => O.includes(i)), swapAt(O, k), `${tag}: it is the saved document`);
     await must(`new RegExp(${jsLiteral('moved to position ' + (k + 2) + ' of ' + O.length + ' in its room')}).test(document.getElementById('srAnnounce').textContent)`, `${tag}: the flat office's words (heard: ${await said()})`);
     await must(`document.activeElement&&document.activeElement.dataset.id===${jsLiteral(O[k])}`, `${tag}: the focus stays on the moved plate`);
     assert.deepStrictEqual(await orderOf(A), swapAt(O, k), `${tag}: the layout draws the new order`);
