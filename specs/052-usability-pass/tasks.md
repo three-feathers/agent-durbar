@@ -411,3 +411,10 @@
 
 ## 2026-11-09: `check-auto-follow` waits for the office layout before a click (issue #1343)
 - [x] T268 `check-auto-follow`: `openChat` waits until the office fits its floor and asserts the chat that opened; the dialog, menu and typing hold steps send with `sendQuiet` and emit the arrival with `finish()` once their guard is up; the typing step's no-switch check outlasts the 2 s key hold; the "chat already shown" step leaves the message box by a click on the chat log, not the title (mutation-checked) [issue #1343, test driver only]
+
+## 2026-11-09: the Auto-follow notice (FR-238..FR-241, owner request)
+- [ ] T269 `askDialog()` options `overlayClass`, `role` + `label`, `auto(close)`; `test-dialog` cases (a dialog that closes by itself, its cleanup on every close, the role and name, nothing changed without them) [FR-239, FR-240]
+- [ ] T270 `afNotice()` in `app.js`: words, mask, countdown that runs only in a visible focused window, Stay and Escape, `ANN_REQUEST` once; before `afBackToOffice()` in `afOnAccepted()` and before `openPanel()` in `afDeliver()` [FR-238, FR-239, FR-240]
+- [ ] T271 `styles.css`: the full-screen overlay, the card, the picture and the ring from theme tokens; no motion under reduced motion or Motion off [FR-241]
+- [ ] T272 `scripts/check-052-follow-notice.js` in the UI suite (both notices, Stay, Escape, timeout, background pause, announcement and priority, reduced motion, four looks at two sizes, pictures); `check-auto-follow` through the notice; mutants fail on labelled asserts [FR-238..FR-241]
+- [ ] T273 Docs: `docs/features.md`, `docs/feature-inventory.md` (an Auto-follow row in every world), a `changelog.d` fragment; pictures looked at [FR-238]
