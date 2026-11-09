@@ -55,7 +55,7 @@ module.exports = async (ctx) => {
      queue: on ubuntu CI (9 runs, 2026-11-08/09) the palette drag selected nothing ({s:13,e:13}). Returns ok and the events the page saw. */
   const drag = async (sx, sy, ex, ey) => {
     await js(`(()=>{if(window.__epOff)window.__epOff();const L=window.__epSeen=[],N=['mousedown','mousemove','mouseup'],on=e=>{L.push([e.type,e.clientX,e.clientY,e.buttons])};N.forEach(n=>document.addEventListener(n,on,true));window.__epOff=()=>N.forEach(n=>document.removeEventListener(n,on,true));return true})()`);
-    const seen = (type, x, y, b) => until(`(window.__epSeen||[]).some(e=>e[0]===${jsLiteral(type)}&&Math.abs(e[1]-${Math.round(x)})<=1&&Math.abs(e[2]-${Math.round(y)})<=1&&(e[3]&1)===${b})`, 3000);
+    const seen = (type, x, y, b) => until(`(window.__epSeen||[]).some(e=>e[0]===${jsLiteral(type)}&&Math.abs(e[1]-${jsLiteral(Math.round(x))})<=1&&Math.abs(e[2]-${jsLiteral(Math.round(y))})<=1&&(e[3]&1)===${jsLiteral(b)})`, 3000);
     mouse('mouseDown', sx, sy);
     let ok = await seen('mousedown', sx, sy, 1);
     for (let s = 1; s <= 8 && ok; s++) { const x = sx + (ex - sx) * s / 8, y = sy + (ey - sy) * s / 8; mouse('mouseMove', x, y, { modifiers: ['leftButtonDown'] }); ok = await seen('mousemove', x, y, 1); }
