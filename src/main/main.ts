@@ -967,6 +967,7 @@ function createWindow(): void {
     if (dev.DURBAR_SIM_FLOORS_OFF) query.floorsoff = dev.DURBAR_SIM_FLOORS_OFF.slice(0, 200);
     if (simClock.query) query.simclock = simClock.query; // spec 001 FR-084: a pinned page clock for screenshots
   }
+  if (dev.DURBAR_DOOR === '1') query.door = '1'; // spec 052 FR-191: Your door (the Needs you panel) is behind a flag until the owner's look
   win.on('focus', () => win?.flashFrame(false)); // spec 052 FR-059: the taskbar flash stops when you come back
   {
     // spec 052 FR-085 / FR-087 / FR-090: on macOS closing the window hides it (the agents keep running; ⌘Q quits);
