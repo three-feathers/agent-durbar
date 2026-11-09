@@ -1201,7 +1201,7 @@ Found in the security review of #1286, on main, not caused by it. The words of a
 
 **Delta 2026-11-08 (fourth review of PR #1292, Ruben; FR-318 changed, T224):** PowerShell parity: a parenthesised, `@(...)` or script-block argument runs as a command (`-Password (Remove-Item -Recurse ./data)` showed `-Password [redacted] -Recurse ./data)`), so `(` and `{` join `$(`, a backtick, `;`, `|`, `&`, `<`, `>` and a line break in the spans that make a masked shell command `concealed` (Deny only); plain token values in PowerShell form stay `secret`. The tests that read `app.js` normalise CRLF (Windows checkouts); every source regex of this PR was run against a CRLF copy of the sources. A stub mask that changes the text before the first `[redacted]` is `concealed`.
 
-- `[KNOWN GAP]` Homoglyphs and mixed-script lookalikes (a Cyrillic letter in a host or program name) are not marked: #1300.
+- Homoglyphs and mixed-script lookalikes (a Cyrillic letter in a host or program name) are marked on the permission card by spec 003 FR-113..FR-119 (#1300), through this `permText`; its own `[KNOWN GAP]`s (closed lists, no confusables table) are there.
 
 ## Changes 2026-11-08: rearrange rooms, desks and places in Real office, the keyboard and menu path and the shared order (issue #1152, part of #1147; FR-345..FR-349, T260..T264, Q30..Q33)
 

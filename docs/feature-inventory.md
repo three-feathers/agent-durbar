@@ -41,7 +41,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | File edits as they happen, Undo these changes | works | works | none | 065 | test:edits test:checkpoints |
 | Attachments (pick, drop, paste) | works | works | none | 004 | test:attachments |
 | Browser tab in a chat | works | works | none | 080 | test:browsertabs test:browserpane |
-| Questions and permission cards | works | works | mock+planned (permission-card) | 003 012 | test:elicit test:permissions driver:shots-012-elicit |
+| Questions and permission cards | works | works | mock+planned (permission-card) | 003 012 | test:elicit test:permissions test:lookalike driver:shots-012-elicit driver:check-permission-lookalike |
 | Needs-you inbox | works | works | planned (inbox) | 052 | test:attention read:src/renderer/app.js |
 | Modes Read-only, Ask first, Allow all; switch any time | works | works | none | 003 018 | test:permissions driver:shots-018 |
 | Plan first | works | works | none | 066 | test:planmode |
