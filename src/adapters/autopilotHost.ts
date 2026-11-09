@@ -10,9 +10,9 @@ import type { AskedQuestion, AutopilotEnd, AutopilotEvent, AutopilotSettings } f
 import type { EventBody } from './map';
 
 /**
- * False until T030 gives `setAutopilot` a caller in main. Until then nothing about a session that is not on Autopilot changes: a resume sends no clear
+ * False in the default build (spec *Changes*, Phase 3 gate): main's calls of `setAutopilot` refuse while it is. Until then nothing about a session that is not on Autopilot changes: a resume sends no clear
  * (FR-053's no-goal case is not probed: T091, T092, T094) and a goal the app reports is left alone (FR-006). An adapter on which `setAutopilot` was called does both whatever this says.
- * `scripts/test-autopilot-reach.ts` fails if main calls `setAutopilot` while this is false.
+ * Stays false until the review of #923 and the owners are through: what the flip changes for people not on Autopilot is in the spec's *Changes* (2026-11-01).
  */
 export const AUTOPILOT_WIRED = false as boolean;
 

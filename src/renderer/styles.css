@@ -1874,7 +1874,7 @@ h2,h3,h4{text-wrap:balance}
 /* spec 066: plan first. The proposed plan scrolls inside its card; the one-shot chip above the composer */
 .note.plan-card .plan-body{max-height:min(42vh,360px);overflow:auto;margin:6px 0 4px;padding:6px 10px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2)}
 .note.plan-card .plan-why{margin:4px 0 0;color:var(--ink-2);font-size:var(--t4-size)}
-.att.plan-chip{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--surface));color:var(--ink)} /* 070 T024: all three come from the world (accent edge, tinted page colour, page ink), so the chip reads in every world; the info tone gave 2.9:1 in the arcade, where --tone-info-soft is a mid grey */
+.att.plan-chip{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--surface));color:var(--ink)} /* 070 T024: all three come from the world (accent edge, tinted page colour, page ink), so the chip reads in every world; the derived info tone gave 2.9:1 in the arcade, so the arcade now sets its own dark --tone-* fills (spec 070 FR-081) */
 
 /* spec 001 FR-028..FR-030: live activity on the desks. The side panel has a fixed size and is reserved next to every main desk while the
    layout uses it (an empty one is invisible), so the office never moves when an agent starts or stops; text changes only. No animation. */
@@ -2169,6 +2169,29 @@ h2,h3,h4{text-wrap:balance}
 .mcp-costs{margin:6px 0 10px;padding:0;list-style:none;font-size:12px;color:var(--ink-2)}
 .mcp-costs li{padding:2px 0}
 
+/* spec 099 FR-056: Autopilot: its own glyph and word, in Allow all's warning ink because it includes Allow all */
+.mode-chip.mode-autopilot{color:var(--red-ink);background:var(--pb-error);border-color:var(--tone-bad-line);font-weight:var(--t1-weight);font-variant-numeric:tabular-nums}
+.modeic.mode-autopilot{color:var(--red-ink)}
+.mode-menu .mm-autopilot .mi{color:var(--red-ink)}
+.mm-autopilot{border-top:1px solid var(--line)}
+.ap-noatt{display:inline-grid;place-items:center;opacity:.4;cursor:help}
+.note.ap-line{font-size:var(--t4-size);color:var(--ink-2);background:none;border:0;padding:0;box-shadow:none}
+.note.ap-end{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--s-1);border-left:3px solid var(--tone-info-line)}
+.note.ap-end:not([data-reason="done"]){border-left-color:var(--tone-bad-line)}
+.note.ap-end .ap-ic{font-weight:var(--t1-weight)}
+.note.ap-end .ap-words{font-weight:var(--t1-weight);min-width:0;overflow-wrap:anywhere}
+.note.ap-end .note-actions{flex-basis:100%}
+.note.ap-line,.note.ap-question{flex:0 0 100%;box-sizing:border-box;max-width:100%}
+.note.ap-question b{display:block;font-size:var(--t4-size)}
+.note.ap-question .q-text{margin:var(--s-1) 0 0;overflow-wrap:anywhere}
+.ap-form{display:flex;flex-direction:column;gap:var(--s-1);margin:var(--s-2) 0}
+.dlg .ap-form label.ap-row{display:flex;flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:flex-start;text-align:left;gap:var(--s-1);font-size:var(--t3-size);font-weight:var(--t3-weight);margin:0}
+.ap-form .ap-lbl{flex:none}
+.ap-form input[type=checkbox]{flex:none;width:auto;margin:0}
+.dlg .ap-form .ap-num{flex:none;width:88px;height:28px;padding:0 var(--s-1);font:inherit;margin:0}
+.ap-form .ap-hint{margin:0;font-size:var(--t4-size);color:var(--ink-2)}
+.ap-form .ap-warn{margin:0;font-size:var(--t4-size);font-weight:var(--t1-weight);color:var(--amber-ink)}
+.ap-form [hidden]{display:none}
 
 /* spec 085 FR-009: the day's numbers in the Since you were away strip */
 .aw-brief{display:block;font-size:11px;line-height:15px;color:var(--ink-2);margin-top:2px}
@@ -2187,6 +2210,26 @@ h2,h3,h4{text-wrap:balance}
 .room-head{cursor:grab}
 .room-head :is(button,a,input){cursor:pointer}
 #stage .place[data-reo]{cursor:grab}
+
+/* spec 052 FR-191..FR-196 (T197): Your door, the Needs you panel. Fixed over the room: no layout space, no backdrop, below dialogs (60). Tokens only (the size ratchet counts every literal). */
+.door-panel{position:fixed;z-index:35;display:flex;flex-direction:column;gap:var(--row-pad);box-sizing:border-box;padding:var(--row-pad);border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface);color:var(--ink);box-shadow:var(--shadow-pop)}
+body.panel-open .door-panel,#screen:not([hidden]) ~ .door-panel{display:none}
+.door-panel .inbox-row .ib-ans{flex-wrap:wrap}.door-panel .inbox-row .ib-ans>.btn{white-space:normal;text-align:left}.door-panel .ib-note{font-size:var(--t3-size);line-height:var(--t3-lh);color:var(--ink-2)} /* spec 052 FR-199: option buttons and a limit row wrap inside the panel; the row's own lines */
+.door-head{display:flex;align-items:center;gap:var(--row-pad)}
+.door-head h2{margin:0;flex:1 1 auto;min-width:0;font-size:var(--t2-size);line-height:var(--t2-lh);font-weight:var(--t2-weight)}
+.door-head .btn{flex:none;min-height:28px;min-width:28px}
+.door-line{margin:0;font-size:var(--t4-size);color:var(--muted)}
+.door-faces{display:flex;align-items:center;min-height:0}
+.door-faces:empty{display:none}
+.door-face{width:28px;height:28px;margin-left:calc(-1 * var(--r-sm));border-radius:50%;overflow:hidden;border:2px solid var(--surface);background:var(--surface-2);flex:none}
+.door-face:first-child{margin-left:0}
+.door-face>*{width:100%;height:100%}
+.door-more{margin-left:var(--r-sm);font-size:var(--t4-size);color:var(--muted)}
+.door-body{flex:1 1 auto;min-height:0;overflow:hidden auto;display:flex;flex-direction:column;gap:var(--row-pad);padding-right:var(--r-sm)}
+@media (forced-colors:active){.door-panel{border:1px solid CanvasText}}
+.door-body .inbox-row .ib-ans{flex-wrap:wrap;max-width:100%}
+.door-body .inbox-row .ib-ans>.btn.session{flex:1 1 100%;display:block;height:auto;min-height:28px;padding-top:var(--r-sm);padding-bottom:var(--r-sm);white-space:normal;overflow:visible;text-overflow:clip;text-align:left} /* FR-199 (Q-NY-10): the session grant on its own line, wrapped and never cut */
+.door-body .inbox-row.is-limit .ib-ans>.btn.session{flex:none;display:inline-block;height:28px;min-height:0;padding-top:0;padding-bottom:0;white-space:nowrap;text-align:center} /* the limit row's Remove limit is a plain button like Raise limit and Stop here */
 
 /* ---- spec 070 A14 (FR-061..FR-066, FR-075, FR-076; T034..T036, T044): Flat's modern look, behind html[data-flat-look] (flatlook.js; off by default).
    Only Flat matches: Clean Office has no data-ui and no world is shown, so Real office, Retro, the cave and every other pack are untouched (FR-066).

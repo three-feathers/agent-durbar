@@ -227,3 +227,63 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 - [x] T222 [US2] Second review of PR #1292 (FR-318 delta 2026-11-07): LF, CR, TAB and other non-space whitespace shown as markers; a secret behind a control is `concealed` and blocks Allow like `unchecked`; every Cf, default-ignorable and blank-filler character marked; text over 10,000 characters cut at a word, marked, fast, and a cut card offers no Allow; homoglyphs #1300 a known gap. Test: `test:liveact` (`r2 item 1..4`, 12 mutants) and `check-why-allowed`
 - [x] T223 [US2] Third review of PR #1292 (FR-318 delta 2026-11-07): `cut` ranks first and always wins, the cap counts marker growth, a masked shell command that lost its shape or whose replaced span holds `$(`, a backtick, `;`, `|`, `&`, `<`, `>` or a line break is `concealed` (Deny only). Test: `test:liveact` (`r3 ...`, 13 mutants) and `check-why-allowed` (cut and `$( )` cards)
 - [x] T224 [US2] Fourth review of PR #1292 (FR-318 delta 2026-11-08): CRLF-safe source reads in `test:liveact` (proved on a CRLF copy), `(` and `{` (PowerShell) join the spans that conceal a masked command, a mask that changes text before the first `[redacted]` is concealed. Test: `test:liveact` (`r3 item 2` PowerShell cases, `r4 item 3`, 3 mutants)
+- [x] T228 [US2] Hover on a desk's person, desk, monitor or plate opens the zoom [FR-327, #1151]: `wireZoom` in `realoffice.js` (one target-to-agent function; the panel stays while the pointer moves over one desk). Test: `check-097-hover-card`
+- [x] T229 [US2] The zoom opens for an asleep agent [FR-328]: `openZoom`, the layout refresh and `realScreen` (reply lines for the zoom only). Test: `check-097-hover-card`, `shots-097-screens` asleep step (the open card is refilled when its agent falls asleep)
+- [x] T230 [US2] The Changed fact for lounge agents [FR-329]: `realFacts`, `Changed` wraps. Test: `check-097-hover-card`
+- [x] T231 [US2] Docs and pictures [FR-330]: changelog fragment, `docs/features.md`; no committed picture (round 2: the two crops were linked from nowhere); Q25 resolved (no helpers on the card); round 3 of #1313: the card is never placed over the focused slip (`placeZoom`), the driver's focused-slip step is an Allow button reached by Tab, and its working-desk pick is made again when the person has left
+
+## 2026-11-08 delta: rearrange rooms, desks and places in Real office (FR-345..FR-349, issue #1152)
+
+- [x] T260 [US2] FR-345: `RealFolder.keep` set from the saved desk order; `sortDesks` is skipped for a kept folder in `realLayout` and `aislesLayout`, the lounge keeps status order. Test: `test:realoffice-layout`, `test-realoffice-aisles`; mutant: `sortDesks` always
+- [x] T261 [US2] FR-346..FR-348: model-based move (`reoStepModel`, desk order from `deskOrder`) used by the flat and the Real office keys and by the folder menu; Alt+arrows on `.ro-plate`, `.ro-sb` and `.ro-lplate[data-place]`; focus and words kept. Test: `sim:` `check-097-order` both sizes; mutants: desk sort back on, menu reading flat elements, key handler not seeing plates, the attention (`prio`) order as the base Review of #1315 (Paco, round 6): the step that puts desks away picks desks that are not away, asserts that before the pin and, after it, away in the plates (`.narrow`) and the visit record (`awayIds()`), so a `pinAt` that only returns true fails; `ORDER_MUTANT=pinnoop` shows it.
+- [x] T262 [US2] Spec 033's driver `shots-033-order` still passes: the flat office is unchanged [FR-086]
+- [x] T263 [US2] `check-office-ops`: a move adds no node churn [FR-186]
+- [x] T264 [US2] Pictures at 1440x900 and 1280x800 read and compressed; spec, plan, README and changelog fragment match [FR-349, Q30..Q33]
+
+- [x] T250 [US2] Unit tests first: band mapping and dash from the share [FR-322, FR-323] (`test-realoffice-ctx.ts`, run by `test:realoffice-layout`)
+- [x] T251 [US2] The frame line: one svg and rect per desk in `realoffice.js`, world CSS in `realoffice.css`, the cave and arcade rules in their `world.css`; unknown draws none [FR-322..FR-324]
+- [x] T252 [US2] The share from `ctxChip` through `realModel`, the plate's name with `, context N %`, the cheap `DurbarRealOffice.ctx` update on a context event [FR-325, FR-326]
+- [x] T253 [US2] Driver `check-097-ctx-frame` in `ui-suite`, five driver mutants and three source mutants of the cheap path (review of #1299: the node step watches only the desk's frame and plate after a quiet wait; a held-draw step tests FR-326; the cap and rounding of `ctxFrame` and `ctxWords` in `test-realoffice-ctx.ts`) each shown failing; `check-office-overlap`, `check-office-ops`, `check-office-ops-real` green Round 5 (review of #1299, Ruben): a step for the arcade's fallback desk (helpers, no strip) after a context event by the cheap path: the name reads `, context P %. N helpers. Open chat panel.`, and the next full draw writes the same; source mutants `hwdrop`, `hworder`, `oldlabel` each fail it.
+- [x] T254 [US2] Simulator pictures at both sizes in Photo office, cave and arcade, each looked at, and a 2x crop of three desks; kept in `docs/screenshots`, linked from the spec (not from site pages); review of #1299: the six crops at both sizes in all three worlds are linked and retaken, the lone full arcade picture is removed (full PNGs exceed 300 KB)
+- [x] T255 [US2] Docs: changelog fragment, `docs/features.md`, `docs/feature-inventory.md`
+
+## 2026-11-08: themes in Real office superseded by worlds (issue #1153, FR-350, FR-351; Q34 withdrawn)
+
+- [x] ~~T265~~ [US2] Spec delta 2026-11-08, first version: the measured theme gap table and Q34. Superseded by the owner's decision of 2026-11-08 (a world is the look; themes stay until the Retro flip removes them); the delta now holds FR-350, FR-351 and this decision [FR-350]
+- [x] ~~T266~~ [US2] A per-theme matrix pin in `test:theme-tokens`. Superseded: section 7 keeps only what guards a world's look (FR-350), see T268
+- [ ] ~~T267~~ [US2] Build Q34's answer. Superseded, not built: Q34 is withdrawn
+- [x] T268 [US2] `scripts/check-097-world-look.js` (in `ui-suite`): a world keeps its own colours under three themes in three worlds; FR-351 the arcade's drop overlay fill (`worlds/retro/world.css`). `test:theme-tokens` section 7 over every built-in theme and the dark fixture. Mutants: a theme token let through (three keys), a status colour, the world shadows, the dark flag, the UI style, a theme ink on a plate, the drop rule removed [FR-350, FR-351]
+
+## 2026-11-08: a desk's helpers as head figures (issue #1139, FR-306..FR-311; owner decision "1265 1", 2026-11-08 08:29 UTC; replaces PR #1265)
+
+- [x] T269 [US1] Owner decision recorded verbatim in the spec delta, tiles replaced by head figures with a status dot; spec, plan and tasks before any src change [FR-306..FR-311]
+- [x] T270 [US1] Engine, pure: `RealAgent.helpers`, the strip's reserved height, rows 2 else 1 else none, `strip` box, `slipAvoid`, `headCrop`, `helperPerson`. Test: `test:realoffice-layout` (heads fit, overflow count, no overlap, faces at the floor), mutants [FR-306..FR-308, FR-310, FR-311]
+- [x] T271 [US1] Wiring: `app.js` `orderedHelpers` and `realSubs`; `realoffice.js` draws the strip (`h:` keys, a node per helper kept by id, `+K`); CSS in `realoffice.css` only [FR-306, FR-307, FR-309]
+- [x] T272 [US1] Driver `scripts/check-097-helpers.js` (in `ui-suite`): 15 agents with helpers, both sizes, Photo office, cave and arcade, heads, dot colour, name only in the accessible name, `+K`, `statusNodes`; mutants [FR-311]
+- [x] T273 [US1] Pictures at both sizes (Photo, cave) and a 2x crop to the owner before merge, compressed under 300 KB; the owner looked (2026-11-08 09:30 UTC) and chose "fine as is" [FR-307]
+- [x] T274 [US1] Docs: changelog fragment, `docs/features.md`, `docs/feature-inventory.md`, the spec's tags [FR-306..FR-311]
+
+## 2026-11-09: a helper strip is one row, never a second line (bug #1384, FR-338; changes FR-308)
+
+- [x] T275 [US1] Spec delta 2026-11-09 (report, the measurement before the fix, the cause, FR-338), plan and tasks, before any src change [FR-338]
+- [x] T276 [US1] Engine, pure: `realLayout` takes one row of heads, else none; `HELP_ROWS_MAX` and `HELP_KEEP` removed. Test: `test:realoffice-layout` re-pinned (rows 1 on every strip, the lounge scene, the 15-agent case and the measured numbers), mutant by hand (two rows back) [FR-338]
+- [x] T277 [US1] Driver `scripts/check-097-helper-row.js` (in `ui-suite`): 6 and 7 helpers, default and lounge scene, Photo office, cave and arcade, both sizes; one line, `+K` last, no overlap; mutant `tworows`; before and after pictures of the lounge row through the driver's own `H.shot` (under 300 KB) [FR-338]
+
+## Phase 3b: every Characters crew in Real office (issue #1154, part of #1147; delta 2026-11-08)
+
+- [x] T235 [US5] Spec delta: what art each Characters value has, the fallback and why no crew portrait on the plate, the art list, Q12..Q14 [FR-335, FR-336, FR-337]
+- [x] T236 [US5] `crew.js` `levelFor` and the `closed` note; `test:realoffice-layout` per value (theme, minimalist, each crew, a future crew, a closed set), mutants: the old "has no poses" wording for a closed set, a crew with a row treated as heads, a note for the default [FR-335, FR-336]
+- [x] T237 [US5] Driver `check-097-crews`: Real office at 15 agents, 1440x900 and 1280x800, each Characters value shows the people set it should (Office people; Prehistoric with the cave flag on in the simulator), no `crew/art/` picture in the scene, only that set's and the Photo office's packs requested, the note text. Registered in `ui-suite.js`. Mutants: a crew picture drawn in the scene, a second set requested [FR-335]
+- [ ] T238 [US5] `[ART, not code, Paco approves each picture]` Real office frames (the 12 of FR-337) for Pirate, Monster, Royal, Rebels (6 people, 72 frames each) and Cheeky (13 people, 156); each then is one `REAL_SETS` row, `set.json` and `ASSETS.md` provenance, checked by `test:realoffice-assets`. By Codex image generation in the coordinator's art lane, Pirate first as the owner's quality sample, then Royal, Rebels, Monster, Cheeky, Minimalist (Q13, Q14 answered 2026-11-08): the six tasks below [FR-337]
+- [x] T239 [US5] Q12 built (owner 2026-11-08): the Prehistoric `REAL_SETS` row has no flag, the cave world keeps its own; Settings says "Real office draws the Prehistoric people.". Test: `test:realoffice-layout` (re-coupling to the cave fails), driver `check-097-crews` (Prehistoric in the Photo office with the cave closed: its frames, no Office people picture, the cave not offered; mutants) [FR-336]
+- [ ] T240 [US5] `[ART]` Pirate Real office set lands (sample for the owner's look first): `REAL_SETS` row, `set.json`, `ASSETS.md`; **its "until Pirate has Real office poses" note goes in this task**; `check-097-crews` case moves to the Pirate set [FR-336, FR-337]
+- [ ] T241 [US5] `[ART]` Royal set lands; its note goes in this task [FR-336, FR-337]
+- [ ] T242 [US5] `[ART]` Rebels set lands; its note goes in this task [FR-336, FR-337]
+- [ ] T243 [US5] `[ART]` Monster set lands; its note goes in this task [FR-336, FR-337]
+- [ ] T244 [US5] `[ART]` Cheeky set lands (13 people, 156 frames); its note goes in this task [FR-336, FR-337]
+- [ ] T245 [US5] `[ART]` Minimalist Real office set lands (new art, spec 102 T110); its note goes in this task, and `levelFor` has no `heads` value left [FR-336, FR-337]
+- [ ] T246 [US5] My characters as a Characters value in every world (spec 096 and spec 102 T112); the matrix cell in Flat, arcade, Photo office and cave [FR-081]
+- [ ] T247 [US5] Every landed set drawn and read in the Retro arcade at 15 agents, both sizes (a non-pixel set in a pixel-art world), with spec 102 T225 for Prehistoric; the arcade's default stays Retro pixel people. Test: `shots-102-arcade`, `check-097-crews` with `world=retro` [FR-335]
+- [ ] T248 [US5] Every landed set drawn and read in the Prehistoric cave at 15 agents, both sizes, when the cave opens. Test: `check-097-crews` with `world=cave` [FR-335]
+- [ ] T249 [US5] The matrix kept true: a test that fails when a Characters value or world is added without a cell (`test:realoffice-layout`) [FR-335]
+- Art for T240..T244 (from #1308, 2026-11-08): the five crews' packs (`sets/pirate`, `royal`, `rebels`, `monster`, `cheeky`) are added as art only by PR #1327; the wiring (`REAL_SETS` row, `check-097-crews` case flip) stays in #1308's T240..T244.

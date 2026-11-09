@@ -2,11 +2,39 @@
 
 Agent Durbar `v0.1.0` is the first stable release. Builds are unsigned and not notarized (see "Honest limits" in the README for where each OS has been run). Each entry names the spec that describes the behavior and how it was checked.
 
-## Unreleased (on `main`, after the v0.1.12 tag)
+## Unreleased (on `main`, after the v0.1.14 tag)
 
 Not released yet: each change is a file in [`changelog.d/`](changelog.d/) until the next release folds them in (`npm run changelog:preview` lists them).
 
 <!-- changelog.d: fragments only; a bullet here fails npm run changelog:check -->
+
+## v0.1.14 ([release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.14), 2026-11-09)
+
+- **Context on the monitor frame** (issue #1148): in Real office a thin line round each desk's monitor frame fills clockwise from the top-left as the agent's context fills. It is soft white up to 90 % and red above 90 % (the same steps as the chat header's ring); it draws nothing while the context is unknown, never tints the screen, and does not move. A screen reader hears "context N %" with the desk's name. In the Photo office, the cave and the arcade; 15 agents still fit at 1440x900 and 1280x800.
+- **Helpers at the desk** (issue #1139): each desk's sub-agents show as small round heads with a status dot under the name plate in the Photo office, the cave and the Retro arcade (at 1440x900); click one to open its activity view, **+K** shows the rest, and the name is in the tooltip. Where there is no room the plate keeps its "+N". 15 agents still fit both window sizes. Known issue (issue #1384): a desk with six or more helpers can wrap the sixth head onto a second line instead of showing **+K**.
+- **The arcade's drag-a-file overlay is readable** (issue #1153): it had light text on a light fill; it now uses the page surface, and a new check keeps each world's own colours whatever theme is picked.
+- **The arcade's name plates show their whole line** (issue #1303): a lounge plate's text was cut at 12 and 15 agents; the plates now have room for the full name.
+- **More secrets masked** (issue #1227): short passwords (4 to 7 characters with a letter and a digit) after a secret name, several-word passwords, `Bearer` values after a short first word, `mysql -pPASSWORD` (also across continued lines), AWS secret key names written with spaces, `Cookie` values without `=`, and unfinished key starts are hidden; ids, versions and algorithm names (`HS256`, `tls13`, `v1.2.3`) stay readable. Checked by tests only; no real service was called.
+- **Network home folders hidden in helper names**: a home folder on a network share (`\\server\share\name`, also with extra backslashes, or `//server/homes/name`) no longer shows its user name in a helper's name, task or tooltip, in Real office and the flat office.
+- Coming next, not visible yet: the code for a fourth agent mode, Autopilot, is in place behind a switch that stays off, so the mode menu has no new item and nothing changes for anyone. One stricter check applies today: remote control checks its mode again after its own dialog. Tested on fakes only, not in a real session.
+- For contributors: a pull request builds the unpacked Linux app once, inside the required *Office layout check* job, and two slow UI checks wait for the page to be steady instead of guessing (no check was dropped or loosened).
+
+## v0.1.13 ([release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.13), 2026-11-08)
+
+- **Model, tokens, cost, context and the last tool in the zoom** (issue #1148): hovering a monitor (or tabbing to its desk) shows, under the agent's name, the same facts the Open office desk shows: Model, Now or Last tool, Usage, Cost, Context and time on the task. Unknown facts are left out, and every line is masked like a screen line.
+- **The hover card opens over the whole desk** (issue #1151): hover a person, desk or name plate, not only the monitor. An asleep agent has its card too, with its last reply; a resting agent's card shows the session's changes ("6 files changed, +120 −35, 1 commit, 40 min · counted by Agent Durbar"), as in Open office.
+- **A desk's unsent draft** (issue #1149): a small Draft tag sits on the name plate while a chat has text you have not sent, and the plate's name says "unsent draft", as in Open office.
+- **The Characters crews, said honestly** (issue #1154): Real office draws the Office people for every Characters crew that has no Real office pictures yet, and the line under Office layout says why. Prehistoric now draws its own people in the Photo office.
+- **A section list in Settings**: a list on the left jumps within the page, marks the section you're in as you scroll, works with the keyboard and in every world, and becomes a row in a narrow window.
+- **Masking fixes** (issues #1237, #1298, #1295, #1296): two tokens of different kinds written back to back are hidden whole; a secret name split by quotes (`'pass'"word"=...`) is hidden; the activity log hides a command, tool name or token split by an escape the way the chat does; the chip of an "approve this exact command" scope is masked before it is shortened.
+- **A permission request never shows a secret-looking tool name or command** (issue #1290): the *Needs your OK* card, its buttons and tooltips, the grant chips and list, and the "why was this allowed" text show a name like a token as `tool`, and a command keeps its shape with the secret hidden. A card offering "Allow for this session" says when a part is hidden and that the grant covers it. Escape codes are shown as visible markers, and a request Durbar cannot check has no Allow button. What you approve is unchanged.
+- **A tool named like a secret is hidden** (issue #1284) on the chat, desk, helper card and Settings screens; the chip keeps its icon and label.
+- **A helper's task no longer shows a token or a home folder** in the Sub-agent activity panel (issue #1330), its title or the office helper tile (also network `\\server\share\user` paths).
+- Conversation search no longer drops a long message because it holds an emoji.
+- The Retro arcade's plan chip is readable (contrast 2.99:1 to 13.14:1) and follows the world's colours.
+- **README for first-time visitors** (issue #1256): the Real office leads the page, with a one-line problem statement, a download line, "Works with / Not yet" and a shorter safety lead. The release clip films the Real office.
+- **Build cost**: the README shows an estimate of what building Durbar with AI agents has cost so far (API list prices, not billing), with a daily chart. Method and privacy: `docs/build-cost.md`.
+- Coming next, not visible yet: the Needs you panel ("Your door") is built behind a switch that is off; five new Real office crews (Pirate, Royal, Rebels, Monster, Cheeky) are in, approved, and wait to be wired up; the first piece of the AI character maker is in the code.
 
 ## v0.1.12 ([release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.12), 2026-11-07)
 

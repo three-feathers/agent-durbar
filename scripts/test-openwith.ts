@@ -307,7 +307,7 @@ process.exitCode = 1; // a promise that never settles must not pass (checklist);
       const agents = new Map([['p', { id: 'p', cwd: dir, name: 'p', permMode: 'ask' }], ['app', { id: 'app', cwd: appDir, name: 'a', permMode: 'ask' }], ['l', { id: 'l', cwd: linkOk ? link : dir, name: 'l', permMode: 'ask' }]]) as never;
       agentsIpc.register({
         agents, router: { onEvent: () => () => undefined, forAgent: () => undefined, instance: () => undefined } as never, agentState: {} as never, opsDeps: {} as never,
-        remoteOps: { release: async () => undefined, has: () => false } as never, getScheduler: () => undefined, getCheckpointStore: () => undefined, vsChatRefs: new Map(), continued: new Map(), wsKey: () => dir, asEffort: () => undefined,
+        remoteOps: { release: async () => undefined, has: () => false } as never, autopilot: { setAutopilot: async () => ({ ok: false }), forget: () => undefined, stopSeen: () => undefined } as never, getScheduler: () => undefined, getCheckpointStore: () => undefined, vsChatRefs: new Map(), continued: new Map(), wsKey: () => dir, asEffort: () => undefined,
         addMany: async () => ({ ok: true, agents: [] }) as never, addWorkspace: (async () => undefined) as never, ensureLive: async () => undefined, readyAdapterIds: async () => new Set<string>(), forgetOpenSession: () => undefined,
         maskHistory: (_id, h) => h, mcpSecrets: () => [], logMcp: () => undefined, sendOp: async () => ({ ok: true }) as never,
       });

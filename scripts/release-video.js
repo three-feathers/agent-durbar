@@ -56,7 +56,7 @@ const safeId = (v) => { if (!SAFE_ID_RE.test(String(v))) throw new Error('an age
 const idLit = (v) => JSON.stringify(safeId(v)).replace(/[<>/\u2028\u2029]/g, (c) => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));
 const SCENES = {
   intro: {
-    title: 'Agent Durbar {version}', sub: 'What is new, in the simulator',
+    title: 'Agent Durbar {version}', sub: 'What is new',
     async play(S) { await S.reset(); await S.card(true); await S.film(3); await S.card(false); },
   },
   crews: {
@@ -224,6 +224,24 @@ const SCENES = {
       await S.zoomOut();
       await S.film(1);
       await S.closeSettings();
+    },
+  },
+  realoffice: {
+    title: 'The Real office and its inbox', sub: '15 agents at their desks; one inbox for the ones that need you',
+    refs: [{ spec: '008', fr: [187, 187] }],
+    async play(S) {
+      const H = S.H;
+      const REAL = `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'&&[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`;
+      await S.reset({ officeview: 'real', simfreeze: '1', romotion: '1' }, { ready: REAL });
+      if (!(await H.until(`document.querySelectorAll('#stage .ro-plate').length>=15&&!!document.querySelector('#stage .ro-slip.ro-queue:not([hidden])')`, 12000))) throw new Error('realoffice: no 15 desks and queue slip');
+      await S.film(2.6);
+      await H.js(`document.getElementById('inboxBtn').click()`);
+      if (!(await H.until(`document.querySelectorAll('#inboxDlg .inbox-row').length>=3`, 8000))) throw new Error('realoffice: no inbox rows');
+      await H.settle();
+      await S.caption('{step}. The inbox lists every request', 'Oldest first: Allow once, Allow for this session or Deny');
+      await S.film(3.2);
+      await H.js(`document.getElementById('inboxClose').click();0`);
+      if (!(await H.until(`!document.getElementById('inboxDlg')`, 4000))) throw new Error('realoffice: the inbox did not close');
     },
   },
   lounge: {
@@ -396,7 +414,7 @@ const SCENES = {
  * A scene's `refs` say which spec and FR numbers it shows: `{ spec: '097', fr: [246, 249] }` (no `fr`: any change to that spec). Without
  * --scenes the clip gets the scenes named by a fragment's `Scene:` field and the scenes whose refs a bullet of the release names, between
  * the title and end cards; none found is an error that asks for --scenes (never a stale list). */
-const AUTO_MAX = 5;                  // feature scenes in a default clip, so its length stays inside LEN_MAX
+const AUTO_MAX = 4;                  // feature scenes in a default clip, so its length stays inside LEN_MAX and its GIF inside GIF_MAX (issue #1305: Real office scenes are photos, about 1-2.4 MB each at 640 px and 128 colours; five of them did not fit)
 /** The (lo, hi) FR numbers a text names for `spec`: "(spec 097 FR-246..FR-249, FR-236)" gives [[246,249],[236,236]]; [] when the spec is named without FR numbers, null when it is not named. */
 function frsNamed(text, spec) {
   const out = [];

@@ -377,10 +377,15 @@ export function claudeArgs(i: ClaudeLaunch): string[] {
 
 export interface ClaudeMdIo {
   readFile(p: string): string | undefined;
-  realpath(p: string): string;
+  /** The resolved path, or undefined when it cannot be resolved (the file is then skipped). */
+  realpath(p: string): string | undefined;
+  /** The entry itself, links not followed; undefined when it is missing. */
+  lstat(p: string): { isSymbolicLink(): boolean } | undefined;
+  /** A link's target as written, or undefined. */
+  readlink(p: string): string | undefined;
 }
 
-const nodeIo: ClaudeMdIo = {
+export const claudeMdNodeIo: ClaudeMdIo = {
   readFile: (p) => {
     try {
       const st = fs.statSync(p);
@@ -389,31 +394,79 @@ const nodeIo: ClaudeMdIo = {
       return undefined;
     }
   },
+  // The JS `fs.realpathSync` resolves link targets by their text, as the link walk in `claudeMdPrompt` does. Do not switch to
+  // `fs.realpathSync.native`: it resolves a `..` after a link the way the system does, and the two would disagree (spec 012 FR-177).
   realpath: (p) => {
     try {
       return fs.realpathSync(p);
     } catch {
-      return p;
+      return undefined;
+    }
+  },
+  lstat: (p) => {
+    try {
+      return fs.lstatSync(p);
+    } catch {
+      return undefined;
+    }
+  },
+  readlink: (p) => {
+    try {
+      return fs.readlinkSync(p);
+    } catch {
+      return undefined;
     }
   },
 };
+
+/** At most this many links are followed for one `CLAUDE.md` import. */
+const CLAUDE_MD_MAX_LINKS = 40;
 
 /**
  * The folder's `CLAUDE.md` with its `@path` imports expanded (an import is a whitespace-separated `@relative/path` token
  * outside code spans). Only files inside the folder (symlinks resolved) are read; at most `CLAUDE_MD_MAX_CHARS` in total
  * and `CLAUDE_MD_MAX_DEPTH` levels; each file once. Returns undefined when there is no CLAUDE.md.
+ * Spec 012 FR-177: an import is checked against the folder by its text before any file access (`io` is asked about nothing
+ * outside it); links inside the folder are checked by their text before they are followed; then the resolved path is checked
+ * again. A path that cannot be resolved is skipped.
  */
-export function claudeMdPrompt(folder: string, io: ClaudeMdIo = nodeIo, flavor: Pick<typeof path, 'resolve' | 'relative' | 'isAbsolute' | 'dirname' | 'sep'> = path): string | undefined {
+export function claudeMdPrompt(folder: string, io: ClaudeMdIo = claudeMdNodeIo, flavor: Pick<typeof path, 'resolve' | 'relative' | 'isAbsolute' | 'dirname' | 'sep'> = path): string | undefined {
   const root = io.realpath(flavor.resolve(folder));
+  if (root === undefined) return undefined;
   const inside = (p: string): boolean => {
     const r = flavor.relative(root, p);
     return r === '' || (!r.startsWith('..') && !flavor.isAbsolute(r));
   };
+  const win = flavor.sep === '\\';
+  const notPath = (r: string): boolean => /^[\\/]{2}/.test(r) || (win && r.includes(':'));
+  // The file, and each link on the way from the folder to it, must be inside the folder by its text.
+  const linksInside = (file: string): boolean => {
+    let p = file;
+    for (let hops = 0; ; ) {
+      if (!inside(p)) return false;
+      const parts = flavor.relative(root, p).split(flavor.sep).filter(Boolean);
+      let cur = root;
+      let next: string | undefined;
+      for (let i = 0; i < parts.length && next === undefined; i++) {
+        cur = flavor.resolve(cur, parts[i]);
+        const st = io.lstat(cur);
+        if (!st) return false;
+        if (!st.isSymbolicLink()) continue;
+        if (++hops > CLAUDE_MD_MAX_LINKS) return false;
+        const t = io.readlink(cur);
+        if (t === undefined || notPath(win ? t.replace(/^[A-Za-z]:(?=[\\/])/, '') : t)) return false;
+        next = flavor.resolve(flavor.dirname(cur), t, ...parts.slice(i + 1));
+      }
+      if (next === undefined) return true;
+      p = next;
+    }
+  };
   const seen = new Set<string>();
   let budget = CLAUDE_MD_MAX_CHARS;
   const load = (file: string, depth: number): string | undefined => {
+    if (budget <= 0 || !linksInside(file)) return undefined; // by text, before any file access
     const real = io.realpath(file);
-    if (!inside(real) || seen.has(real) || budget <= 0) return undefined;
+    if (real === undefined || !inside(real) || seen.has(real)) return undefined;
     seen.add(real);
     const text = io.readFile(real);
     if (text === undefined) return undefined;
@@ -427,7 +480,7 @@ export function claudeMdPrompt(folder: string, io: ClaudeMdIo = nodeIo, flavor: 
         if (/^\s*(```|~~~)/.test(line)) inFence = !inFence;
         if (inFence) return line;
         return line.replace(/(^|\s)@([^\s`]+)/g, (whole, pre: string, ref: string) => {
-          if (/^[a-z][a-z0-9+.-]*:/i.test(ref) || ref.startsWith('~')) return whole; // URLs and home paths are not imported
+          if (/^[a-z][a-z0-9+.-]*:/i.test(ref) || ref.startsWith('~') || notPath(ref)) return whole; // URLs, home paths and other refs that are not folder paths are not imported
           const target = flavor.resolve(flavor.dirname(real), ref);
           const sub = load(target, depth + 1);
           return sub === undefined ? whole : `${pre}\n<!-- imported from ${ref} -->\n${sub}\n`;
@@ -918,7 +971,7 @@ export class ClaudeAdapter implements AgentAdapter {
 
   /** FR-126: a session's chat for the replay after a resume. */
   async history(sessionId: string): Promise<HistoryResult> {
-    return readClaudeHistory(sessionId, this.sessions.get(sessionId)?.cwd, this.deps.configDir);
+    return readClaudeHistory(sessionId, this.sessions.get(sessionId)?.cwd, this.deps.configDir, this.goalsWired());
   }
 
   /**

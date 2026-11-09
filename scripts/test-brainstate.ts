@@ -519,6 +519,59 @@ for (const seed0 of [1, 7, 42]) {
   const r2 = feed(fresh(), [{ type: 'user' }, { type: 'output', delta: 'Old reply here.' }, start('bash', { command: 'one' }), { type: 'output', delta: ' fresh words' }, start('bash', { command: 'two' })]);
   assert.ok(!r2.turn!.steps[1].why.includes('Old reply'), 'also for a reply');
 }
+// N1 (review of #1243, security): a short value after a secret name that ENDS a thought is never kept raw, whatever its length: not in the step's Why, not in the tails, not after a tool start or idle
+{
+  const pw = ['abc' + '123', 'Win' + '2024', 'ab12 cd' + '34', 'Zx' + '9!', 'ab' + '1.']; // `Zx9!`, `ab1.`: fewer than 4 letters and digits once the punctuation is gone (re-review of #1243 at 5ede1bfde)
+  for (const v of pw) for (const lead of ['I will log in with password: ', 'Use password: ', 'the db password: ']) {
+    const secret = v.split(' ')[0];
+    for (const [label, tail] of [['a tool start', start('bash', { command: 'ls' })], ['idle', { type: 'idle' }]] as Array<[string, unknown]>) {
+      const r = feed(fresh(), [{ type: 'user' }, { type: 'thinking', delta: lead + v }, tail]);
+      assert.ok(!JSON.stringify(r).includes(secret), `N1: no raw short value "${secret}" after "${lead}" and ${label}`);
+    }
+  }
+  // the header still holds: a value that has not arrived is not masked early
+  assert.ok(feed(fresh(), [{ type: 'user' }, { type: 'thinking', delta: 'status: idle, password: ' }]).think.buf.includes('password:'), 'N1: the header words stay readable');
+}
+// N2 (review of #1243, security): an unterminated quoted -p value is masked while it streams (one character per delta) and when the line ends there
+{
+  const pwd = 'S3' + 'cret9x';
+  for (const q of ['"', "'", '`']) {
+    let r = feed(fresh(), [{ type: 'user' }]);
+    for (const ch of 'mysql -u r -p' + q + pwd) {
+      r = feed(r, [{ type: 'thinking', delta: ch }]);
+      assert.ok(!JSON.stringify(r).includes(pwd.slice(0, 3)), `N2: streaming a -p${q} value one character at a time: no leak of "${pwd.slice(0, 3)}" after "${r.think.buf.slice(-12)}"`);
+    }
+    r = feed(r, [start('bash', { command: 'ls' })]);
+    assert.ok(!JSON.stringify(r).includes(pwd.slice(0, 3)), `N2: an unterminated -p${q} value at the end of a thought is masked`);
+  }
+}
+// B2 (re-review of #1243 at f8af91b1a, security): a piece that ends 4 to 7 characters into a value masks that prefix as a short value; the rest that the next piece brings is masked too (`NAMED_MASKED_REST`), as when the whole value arrives at once
+{
+  for (const [a, b] of [['password: Pa' + '55', '!word' + '12345'], ['password: ab' + '12', '$Secret' + '999'], ['password: Sup' + '3r', '(S3cret)' + '99']]) {
+    const r = feed(fresh(), [{ type: 'user' }, { type: 'thinking', delta: a }, { type: 'thinking', delta: b }, start('bash', { command: 'ls' })]);
+    assert.ok(!JSON.stringify(r).includes(b.slice(-5)), `B2: the rest of a value after a masked short prefix is masked: ${JSON.stringify(a)} then ${JSON.stringify(b)} gave "${r.turn!.steps[0].why}"`);
+  }
+  assert.strictEqual(feed(fresh(), [{ type: 'user' }, { type: 'thinking', delta: 'password: Pa' + '55' }, { type: 'thinking', delta: '!word' + '12345' }, start('bash', { command: 'ls' })]).turn!.steps[0].why, 'password: [redacted]', 'B2: Pa55 then !word12345 (the reviewer\'s case) is one mask, as on main');
+  // a cut at every position (one cut, and two cuts 3 apart) shows no 4 characters of the value that the whole text, masked at once, hides
+  const values = ['Pa' + '55!word12345', 'ab12' + '$Secret999', 'Sup3r' + '(S3cret)99', 'Zx9!' + 'Qw7#Er5%', 'S3cr3t' + '.P@ss.w0rd', 'Win2024' + '/Spring!', 'tr0ub4' + 'dor&3x'];
+  const leads = ['password: ', 'I will log in with password: ', 'pwd=', 'token: ', 'api_key='];
+  let runs = 0; const shown: string[] = [];
+  for (const v of values) for (const lead of leads) {
+    const full = lead + v + ' and then go on.';
+    const whole = R.redact(full);
+    const base = JSON.stringify(feed(fresh(), [{ type: 'user' }, { type: 'thinking', delta: lead + '[redacted] and then go on.' }, start('bash', { command: 'ls' })])); // what the state holds anyway (`word` is in its keys)
+    const grams = Array.from({ length: v.length - 3 }, (_, k) => v.slice(k, k + 4)).filter((g) => !whole.includes(g) && !base.includes(g));
+    for (let i = 1; i < full.length; i++) for (const j of [0, Math.min(full.length - 1, i + 3)]) {
+      const cuts = j > i ? [full.slice(0, i), full.slice(i, j), full.slice(j)] : [full.slice(0, i), full.slice(i)];
+      const out = JSON.stringify(feed(fresh(), [{ type: 'user' }, ...cuts.map((d) => ({ type: 'thinking', delta: d })), start('bash', { command: 'ls' })]));
+      runs++;
+      const g = grams.find((x) => out.includes(x));
+      if (g) shown.push(`${JSON.stringify(cuts)}: ${g}`);
+    }
+  }
+  assert.ok(runs > 2500, `B2: the cut sweep ran (${runs} runs)`);
+  assert.deepStrictEqual(shown.slice(0, 5), [], `B2: cut at every position, no part of a value that the whole text hides is shown (${shown.length} of ${runs})`);
+}
 // J4: units: costUsd is capped like credits, a NaN rate is "cost unknown", the unit words come from the app (none in src/shared), no "0.00 AIU"
 {
   for (const big of [1e7, 1e300]) assert.strictEqual(feed(fresh(), [{ type: 'user' }, { type: 'usage', costUsd: big }]).costKnown, false, `costUsd ${big} is beyond the cap: not reported`);
@@ -557,5 +610,35 @@ assert.ok(s.loop && s.loop.a === 'edit' && s.loop.b === 'shell' && s.loop.pairs 
 assert.strictEqual(loopText(s), 'looping? Edit ↔ Shell · 3 times · cost unknown');
 assert.strictEqual(s.sentence, 'Ada may be looping between Edit and Shell');
 assert.strictEqual(sentenceOf(s), s.sentence);
+
+// Spec 012 FR-170 (issue #1227, review of #1243 F6): a password of several words streamed in pieces is masked whole, word per delta and at random cuts.
+{
+  const cases: Array<[string, string[]]> = [
+    ['password: ab12 cd34 ef56 done', ['ab12', 'cd34', 'ef56']],
+    ['pwd=red7 blue8 green9 x', ['red7', 'blue8', 'green9']],
+    ['passphrase: hunter2 hunter3 hunter4.', ['hunter2', 'hunter3', 'hunter4']],
+  ];
+  let seed = 1227;
+  const rnd = (): number => { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; return seed / 2 ** 32; };
+  const leaks = (chunks: string[], words: string[]): string[] => {
+    const st = feed(fresh(), [{ type: 'user' }, ...chunks.map((delta) => ({ type: 'thinking', delta })), start('bash', { command: 'ls' })], 1);
+    const out = JSON.stringify(st);
+    return words.filter((w) => out.includes(w));
+  };
+  for (const [text, words] of cases) {
+    const parts = text.split(/(?<= )/); // one word per delta
+    assert.deepStrictEqual(leaks(parts, words), [], `word per delta: ${JSON.stringify(parts)}`);
+    for (let k = 0; k < 400; k++) {
+      const n = 1 + Math.floor(rnd() * 6);
+      const cuts = new Set<number>();
+      while (cuts.size < n) cuts.add(1 + Math.floor(rnd() * (text.length - 1)));
+      const pts = [0, ...[...cuts].sort((x, y) => x - y), text.length];
+      const chunks = pts.slice(1).map((q, i) => text.slice(pts[i], q));
+      assert.deepStrictEqual(leaks(chunks, words), [], `random cuts: ${JSON.stringify(chunks)}`);
+    }
+  }
+  assert.deepStrictEqual(leaks(['pwd=red7 ', 'blue8 x'], ['red7', 'blue8']), [], 'the issue pair');
+  assert.deepStrictEqual(leaks(['password: ab12 cd34 e', 'f56 done'], ['ab12', 'cd34', 'ef56']), [], 'the issue pair with a cut inside a word');
+}
 
 console.log('brainstate: all checks passed');
