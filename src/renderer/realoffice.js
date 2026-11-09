@@ -594,18 +594,20 @@
   const OPEN_WORDS = '. Open chat panel.';
   function helpWordsOf(a, d) { return d && !d.strip && a.helpWords && a.helpers && a.helpers.length ? a.helpWords : ''; } /* FR-308: the fallback plate's helper count, in the flat desk's words */
   function labelOf(a, d) {
-    const w = d && d.lounge ? '' : X().ctxWords(a.ctx && a.ctx.pct), hw = helpWordsOf(a, d), l = String(a.label || '');
-    return l.endsWith(OPEN_WORDS) ? l.slice(0, -OPEN_WORDS.length) + w + hw + OPEN_WORDS : l + hw; /* the context words, then the helpers' (". 6 helpers" stays one phrase) */
+    const w = d && d.lounge ? '' : X().ctxWords(a.ctx && a.ctx.pct), hw = helpWordsOf(a, d), l = String(a.label || ''), mw = a.moodWords ? ', ' + a.moodWords : '';
+    return l.endsWith(OPEN_WORDS) ? l.slice(0, -OPEN_WORDS.length) + mw + w + hw + OPEN_WORDS : l + mw + hw; /* the mood's words (FR-362), the context words, then the helpers' (". 6 helpers" stays one phrase) */
   }
   /* FR-326: a context event of one agent: its line and its plate's name, without a draw; the next draw writes the same */
-  function ctx(id, c) {
+  function ctx(id, c, mood, moodWords) {
     if (!CUR) return false;
     const a = CUR.agents.get(id), d = CUR.desks.get(id); if (!a || !d) return false;
     a.ctx = c || null;
+    const old = a.mood, moved = !!mood && (!old || old.body !== mood.body || old.siren !== mood.siren); /* FR-360: the signs change only by a draw */
+    if (mood) { a.mood = mood; a.moodWords = moodWords || ''; }
     const sc = CUR.ro.querySelector('.ro-screen[data-for="' + CSS.escape(id) + '"]'), pl = CUR.ro.querySelector('.ro-plate[data-id="' + CSS.escape(id) + '"]');
     if (sc) ctxPaint(sc, a, d);
     if (pl) attr(pl, 'aria-label', labelOf(a, d));
-    return true;
+    return moved ? 'mood' : true;
   }
   /* spec 097 FR-306..FR-309, FR-184 (issue #1139): one desk's helper strip of head figures. The container (key h:<id>) sits in the layout's strip box; each helper is one button (data-id: the app's own click opens its
      Sub-agent activity view) kept by id, so a status change writes only the dot's class, the edge and the labels, never a node; the name is only in the accessible name and the tooltip (no tile). `+K` and

@@ -1692,8 +1692,12 @@ function realCtx(a){
 }
 /* FR-326: a new context figure reaches the drawn desk's line and name without a draw (the draw writes the same) */
 function realCtxPush(a){
-  if(OFFICE_VIEW==='real'&&a&&!a.parent&&window.DurbarRealOffice&&window.DurbarRealOffice.ctx)window.DurbarRealOffice.ctx(a.id,realCtx(a));
+  if(OFFICE_VIEW==='real'&&a&&!a.parent&&window.DurbarRealOffice&&window.DurbarRealOffice.ctx){
+    const mo=moodFor(a); /* FR-360: the context decides the heavy and monster looks and their words, so the cheap path carries them; a changed look needs the signs drawn */
+    if(window.DurbarRealOffice.ctx(a.id,realCtx(a),realMood(mo),mo.words||'')==='mood')scheduleRender();
+  }
 }
+function realMood(mo){return {body:mo.body,siren:mo.trouble==='ambulance'||mo.trouble==='faint'};}
 /* spec 097 FR-306, FR-307 (issue 1139): a desk's helpers for the Real office head figures, in orderedHelpers' order. The name is only in the accessible name and the tooltip (the flat tile's words: helperTileHTML), masked */
 /* spec 015 FR-021 (issue 1330): the one mask of a helper's (sub-agent's) name and task, for every surface that shows them (the Sub-agent
    activity panel's title, task line and error, the chat block, the flat helper tile and its tooltip and aria-label, the expanded helper card).
@@ -1727,8 +1731,8 @@ function realModel(model){
         const br=v&&v.place===D.COFFEE&&BREAKS.get(a.id)&&BREAKS.get(a.id).kind!=='cap'?coffeeUntilWords(a):''; /* owner 2026-11-02: the post-it of a coffee break says until when (an app's usage window), never of Durbar's cap at the Bank */
         const mo=moodFor(a); /* spec 097 FR-360: Open office's own decision (context window, ambulance, faint; none in Serious mode) */
         return {id:a.id,name:a.name,role:a.role,state:st,word:stWord(a),task,ctx:realCtx(a),tip:deskTip(a),selected:ui.selected===a.id,ren:canRenameSession(a),unread:isUnread(a),draft:hasDraft(a),away:v?v.place:null,awayLabel:place+(br?' '+br:''),
-          mood:{body:mo.body,siren:mo.trouble==='ambulance'||mo.trouble==='faint'},
-          label:[a.name+draftWords(a)+unreadWords(a),a.role,stWord(a)].concat(task?[task]:[],needs?['needs you']:[],place?['at '+place]:[],mo.words?[mo.words]:[]).join(', ')+'. Open chat panel.', /* FR-090: text for setAttribute, not markup */
+          mood:realMood(mo),moodWords:mo.words||'',
+          label:[a.name+draftWords(a)+unreadWords(a),a.role,stWord(a)].concat(task?[task]:[],needs?['needs you']:[],place?['at '+place]:[]).join(', ')+'. Open chat panel.', /* FR-090: text for setAttribute, not markup */
           helpWords:helperCountWords(helpersOf(a).length), /* spec 097 FR-308: what the plate adds when its helpers have no strip (the flat desk's words) */
           helpers:helpersOf(a).map(h=>stOf(h,false)),subs:realSubs(a,stOf),subsOpen:!!ui.expanded[a.id]};})};
   });

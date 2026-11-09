@@ -231,6 +231,7 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 - [x] T281 [US2] `realModel` passes `mood` (from `moodFor`) and `sirenIcon`; `realoffice.js` draws the sweat drop, horns, ring and siren in the chrome layer; the plate name carries the words; `realoffice.css` [FR-360, FR-361, FR-362]
 - [x] T282 [US2] `scripts/check-097-trouble-signs.js`: the same desks as Open office, geometry, Serious mode, words, both sizes; in `ui-suite` [FR-360, FR-361]
 - [x] T283 [US2] Mutation checks (no sweat, no horns, no ring, no siren, a sign on every desk) and pictures at both sizes [FR-361]
+- [x] T284 [US2] After the merge with main: the mood's words live in `a.moodWords` and are joined by `labelOf` (mood, context, helpers, Open chat panel); the cheap context path carries the mood and schedules a draw when the look changes; `check-097-ctx-frame` passes again [FR-326, FR-362]
 
 - [x] T228 [US2] Hover on a desk's person, desk, monitor or plate opens the zoom [FR-327, #1151]: `wireZoom` in `realoffice.js` (one target-to-agent function; the panel stays while the pointer moves over one desk). Test: `check-097-hover-card`
 - [x] T229 [US2] The zoom opens for an asleep agent [FR-328]: `openZoom`, the layout refresh and `realScreen` (reply lines for the zoom only). Test: `check-097-hover-card`, `shots-097-screens` asleep step (the open card is refilled when its agent falls asleep)
