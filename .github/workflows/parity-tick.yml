@@ -4,7 +4,8 @@ name: Parity tick
 # issue in .github/parity-trackers.json with the live state of the issues its `- [ ] #M` lines name: closed as completed by or
 # for a trusted account => `[x]`, open => `[ ]`, anything else unchanged. GitHub keeps only one pending run per concurrency
 # group (a newer one cancels it), so runs do not act on "the issue that triggered me": the next run does a cancelled run's work.
-# Triggers: an issue closed or reopened, by hand, and a daily backstop. No value of the event is used; no AI call, secret or
+# Triggers: an issue closed or reopened, by hand, and a daily backstop. No value of the event reaches the script (only the job's
+# `if:` reads two logins and the author association); no AI call, secret or
 # third-party action. An `issues` event always runs main's workflow and code (never a PR's); a PR close is a pull_request
 # event and does not start this workflow. scripts/parity-tick.js uses the GITHUB_TOKEN through the preinstalled gh, no shell.
 on:
@@ -25,6 +26,10 @@ concurrency:
 jobs:
   tick:
     name: Reconcile the parity checklists
+    # Skip only an outsider closing or reopening their OWN issue (only a collaborator can close someone else's): such a loop
+    # would otherwise spend the repo's GITHUB_TOKEN budget on full reconciles (review N1). Schedule and dispatch runs have no
+    # issue payload and always run. These event values stay in this expression and never reach a shell or the script.
+    if: github.event_name != 'issues' || contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association) || github.event.sender.login != github.event.issue.user.login
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

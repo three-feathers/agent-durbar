@@ -235,7 +235,7 @@ const LIST = [
   assert.strictEqual(r.code, 1, 'main: a bad repository name is red');
 }
 // 14 the workflow's shape: issues closed/reopened, by hand and daily; minimal permissions; pinned checkout without credentials;
-// no PR code; no value of the event at all (no `github.event`), no `${{ }}` inside `run:`; the trackers file holds only numbers
+// no PR code; event values only in the job `if:` (outsider self-close skip), none in env or `run:`; the trackers file holds only numbers
 {
   const wf = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'parity-tick.yml'), 'utf8').replace(/\r\n/g, '\n');
   const code = wf.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
@@ -252,7 +252,9 @@ const LIST = [
   assert.deepStrictEqual(uses.map((u) => u.split('@')[0]), ['uses: actions/checkout'], 'workflow: no other action');
   const runs = code.match(/run: [^\n]*/g) || [];
   assert.deepStrictEqual(runs, ['run: node scripts/parity-tick.js'], 'workflow: one run line, no expression in it');
-  assert.doesNotMatch(code, /github\.event/, 'workflow: no value of the event');
+  const IF = "    if: github.event_name != 'issues' || contains(fromJSON('[\"OWNER\",\"MEMBER\",\"COLLABORATOR\"]'), github.event.issue.author_association) || github.event.sender.login != github.event.issue.user.login";
+  assert.ok(code.split('\n').includes(IF), 'workflow: job if skips only an outsider closing or reopening their own issue; schedule and dispatch always run');
+  assert.doesNotMatch(code.split('\n').filter((l) => l !== IF).join('\n'), /github\.event/, 'workflow: no value of the event outside the job if');
   const env = (code.match(/        env:\n((?:          [A-Z_]+: [^\n]*\n)+)/) || [])[1] || '';
   assert.deepStrictEqual(env.trim().split('\n').map((l) => l.trim().split(':')[0]), ['GH_TOKEN', 'GITHUB_REPOSITORY'], 'workflow: env holds only the token and the repository');
   assert.doesNotMatch(code, /secrets\./, 'workflow: no secret');
