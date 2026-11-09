@@ -38,6 +38,8 @@ module.exports = async (ctx) => {
     }
   };
   const key = (k, mods, o) => H.key(k, mods, o);
+  // spec 052 FR-084: the app's shortcuts use ⌘ on a Mac (KEYS.modDown needs Meta and no Control there), Ctrl elsewhere (issue #1377)
+  const MOD = process.platform === 'darwin' ? 'meta' : 'control', MOD_A = process.platform === 'darwin' ? '⇧⌘A' : 'Ctrl+Shift+A';
 
   // ---- T198, T199: stale and rise guards in rows, option buttons by request id, the limit row, the long request, the real outcome ----
   const door2 = async (at, tag, w, view, load) => {
@@ -375,8 +377,8 @@ module.exports = async (ctx) => {
       assert.ok(await until(`!document.getElementById('needsPanel')`, 3000), `${at}: Esc with focus inside closes it`);
       assert.ok(await until(`document.activeElement===document.getElementById('inboxBtn')`, 3000), `${at}: focus goes back (to the amber button when nothing had it)`);
       await js(`(()=>{const i=document.createElement('input');i.id='drvTxt';i.style.cssText='position:fixed;left:12px;bottom:12px;z-index:50;width:200px';document.body.appendChild(i);i.value='hello';i.focus();i.setSelectionRange(1,3);})()`);
-      await key('A', ['control', 'shift'], { char: 'never' });
-      assert.ok(await until(`!!document.getElementById('needsPanel')&&document.activeElement.classList.contains('ib-h')`, 3000), `${at}: Ctrl+Shift+A opens it from a text field, focus on a heading`);
+      await key('A', [MOD, 'shift'], { char: 'never' });
+      assert.ok(await until(`!!document.getElementById('needsPanel')&&document.activeElement.classList.contains('ib-h')`, 3000), `${at}: ${MOD_A} opens it from a text field, focus on a heading`);
       await key('Escape', [], { char: 'never' });
       assert.ok(await until(`!document.getElementById('needsPanel')&&document.activeElement===document.getElementById('drvTxt')`, 3000), `${at}: Esc returns focus to the text field it came from`);
       // Esc from a text field never closes the panel

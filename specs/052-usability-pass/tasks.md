@@ -411,3 +411,6 @@
 
 ## 2026-11-09: `check-auto-follow` waits for the office layout before a click (issue #1343)
 - [x] T268 `check-auto-follow`: `openChat` waits until the office fits its floor and asserts the chat that opened; the dialog, menu and typing hold steps send with `sendQuiet` and emit the arrival with `finish()` once their guard is up; the typing step's no-switch check outlasts the 2 s key hold; the "chat already shown" step leaves the message box by a click on the chat log, not the title (mutation-checked) [issue #1343, test driver only]
+
+## 2026-11-09: `check-needs-panel` presses ⇧⌘A on a Mac (issue #1377)
+- [x] T269 `check-needs-panel` step 8 sends the inbox shortcut with Meta on darwin, Control elsewhere (FR-084); the failing step passes on a Mac, Control on darwin fails it again (mutation) [FR-205, issue #1377, test driver only]
