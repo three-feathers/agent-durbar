@@ -161,6 +161,10 @@ One PR, spec first. Who moves is `shutPlan(r)` (spec 001 FR-051, `shutters.js` `
 - **CSS**: `.ro-lseat` table, `.ro-lmon` monitor (photo and cave: the desk monitor scaled; arcade: a pixel frame in `worlds/retro/world.css`), `.ro-plate.lounge`.
 - **Checks**: `test:realoffice-layout` and `test-realoffice-aisles` (FR-246..FR-248, mutants), `scripts/check-097-lounge.js` (FR-246..FR-249), `shots-097-moments` asleep moment and `world-matrix.js` lounge scene updated.
 
+## A world keeps its own colours; the arcade's drop overlay (delta 2026-11-08, issue #1153; FR-350, FR-351, Q34 withdrawn)
+
+The owner decided on 2026-11-08 that worlds are the new themes: nothing is built for themes in Real office (Q34 withdrawn). What stays is a guard that a world's colours, shadows, UI style and dark flag come from the world whatever theme is picked (`test:theme-tokens` section 7, `scripts/check-097-world-look.js`), and one bug fix: `html[data-world="retro"] .drop-ov{background:var(--surface)}` in `worlds/retro/world.css`, because the overlay's light ink sat on a light default fill (1.2:1). No `theme.js` change.
+
 ## A desk's helpers as head figures (delta 2026-11-08; FR-306..FR-311, T269..T274, issue #1139)
 
 Spec first; the owner chose head figures with a status dot (2026-11-08 08:29 UTC, "1265 1"). One PR on a fresh branch, reusing the flat office's pieces (`orderedHelpers` for order, the tile's accessible name and tooltip, the `[data-id]` and `[data-more]` handlers, `dotHTML` and the `.dot` classes) and the room's own people art.
