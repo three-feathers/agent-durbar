@@ -22,6 +22,7 @@
  *   source mutant (run by hand): the key path's away test back to `pl.classList.contains('narrow')` only: the arcade step fails
  *   ORDER_MUTANT=keys   Alt+arrows on a plate are swallowed before the app sees them (must fail)
  *   ORDER_MUTANT=menu   the menu's Move earlier / later is swallowed (must fail)
+ *   ORDER_MUTANT=pinnoop   the simulator's pinAt does nothing but return true (must fail: the pinned desks never go away)
  */
 const assert = require('assert');
 const path = require('path');
@@ -136,6 +137,7 @@ module.exports = async (ctx) => {
       assert.ok(k !== undefined, `${tag}: a desk at its seat that is not first (${P}, away ${awayA})`);
       const swapAt2 = (l, i) => { const c = l.slice(); [c[i], c[i + 1]] = [c[i + 1], c[i]]; return c; };
       const savedDesks = (list) => `window.__durbarSimUi.order.get().desks[${jsLiteral(pa)}].filter(i=>${jsLiteral(P)}.includes(i)).join()===${jsLiteral(list.join())}`;
+      if (MUTANT === 'pinnoop') await js(`(()=>{window.__durbarSimUi.pinAt=()=>true;return 1})()`);
       if (MUTANT === 'keys') await js(`(()=>{window.addEventListener('keydown',e=>{if(e.altKey&&e.target.closest&&e.target.closest('.ro-plate'))e.stopImmediatePropagation()},true);return 1})()`);
       await must(`!!document.querySelector(${jsLiteral('#stage .ro-plate[data-id="' + P[k] + '"]')})`, `${tag}: the plate`);
       assert.ok(await focus(`#stage .ro-plate[data-id="${P[k]}"]`), `${tag}: the plate takes the focus`);
@@ -178,14 +180,23 @@ module.exports = async (ctx) => {
       await must(jsLiteral(away1.slice().sort().join()) + '===' + narrowIds + '.join()', async () => tag + ': the plates show the pinned away set (' + away1.slice().sort() + '; shown ' + await js(narrowIds) + ')');
       await walk(await plates(A), 'the away set the simulator made, pinned');
     }
-    /* the case the simulator only sometimes makes, made every time: the first two desks of the room stand away at a place, so the first desk that can move has an away desk before it (it swaps past them, and says already first only at the front of the whole room) */
+    /* the case the simulator only sometimes makes, made every time: desks that are NOT away stand away at a place, put there by the pin (review of PR 1315, Paco: a pinAt that does nothing but return
+       true must fail). Two desks that are not away are pinned, this room's first, then any other desk's: when the room's front is not away they are its first two desks (an away desk before the first desk that can
+       move, which swaps past them and says already first only at the front of the whole room); when the simulator already had the front away, that case holds as well. Before the pin they are
+       asserted NOT away (the plates and the visit record), after it away in both, so this step can never run without the pin. */
     {
-      const P1 = await plates(A);
-      for (const id of P1.slice(0, 2)) assert.ok(await js(`window.__durbarSimUi.pinAt(${jsLiteral(id)},'library')`), `${tag}: ${id} is pinned`);
-      await must(`${jsLiteral([P1[0], P1[1]])}.every(id=>{const e=document.querySelector('#stage .ro-plate[data-id="'+id+'"]');return e&&e.classList.contains('narrow')})`, `${tag}: the first two desks of the room are away (${P1})`);
+      const P1 = await plates(A), awayNow = await js(`window.__durbarSimUi.awayIds()`), narrowNow = await js(`[...document.querySelectorAll('#stage .ro-plate.narrow[data-id]')].map(p=>p.dataset.id)`);
+      const everyone = await js(`[...document.querySelectorAll('#stage .ro-plate[data-id]:not(.lounge)')].map(p=>p.dataset.id)`);
+      const notAway = (id) => !awayNow.includes(id) && !narrowNow.includes(id), inRoom = P1.filter(notAway), elsewhere = everyone.filter((id) => !P1.includes(id) && notAway(id));
+      /* this room's desks first, but never its last desk that can move (the walk needs one), then any other desk */
+      const free = [...inRoom.slice(0, Math.max(0, Math.min(2, inRoom.length - 1))), ...elsewhere].slice(0, 2);
+      assert.strictEqual(free.length, 2, `${tag}: two desks that are not away to pin (room ${P1}; away ${awayNow})`);
+      for (const id of free) assert.ok(!awayNow.includes(id) && !narrowNow.includes(id), `${tag}: ${id} is not away before the pin`);
+      for (const id of free) assert.ok(await js(`window.__durbarSimUi.pinAt(${jsLiteral(id)},'library')`), `${tag}: ${id} is pinned`);
+      await must(`${jsLiteral(free)}.every(id=>{const e=document.querySelector('#stage .ro-plate[data-id="'+id+'"]');return e&&e.classList.contains('narrow')})&&${jsLiteral(free)}.every(id=>window.__durbarSimUi.awayIds().includes(id))`, async () => tag + ': the pinned desks are away, in the plates and in the visit record (' + free + '; away ' + await js(`window.__durbarSimUi.awayIds()`) + ')');
       const P2 = await plates(A);
-      assert.deepStrictEqual(P2.slice(0, 2), P1.slice(0, 2), `${tag}: they keep their places in the row (${P1} / ${P2})`);
-      await walk(P2, 'the first two desks away');
+      assert.deepStrictEqual(P2, P1, `${tag}: pinning moves no desk in the row (${P1} / ${P2})`);
+      await walk(P2, 'two more desks away, put there by the pin');
     }
 
     /* ---- 2b. Alt+arrows inside a text field do nothing in Real office (review of PR 1315, finding 3). No text field of the office sits on a plate, so a plain <input> is put inside a movable plate (the guard ahead of the Real branch is what is tested) ---- */
