@@ -1,6 +1,6 @@
 {
   "name": "agent-durbar",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "Office-style command center to see, chat with and coordinate AI agents across harnesses (GitHub Copilot, Claude Code, OpenAI Codex), for anyone who works with agents.",
   "private": true,
   "desktopName": "agent-durbar.desktop",
@@ -285,6 +285,7 @@
     "usage:receiver": "node scripts/usage-receiver.js",
     "usage:day": "node scripts/usage-day.js",
     "usage:readme": "node scripts/usage-readme.js",
+    "usage:spread": "node scripts/usage-spread.js",
     "shots:compress": "node scripts/compress-shots.js",
     "check:office:fast": "npm run build && node scripts/check-parallel.js",
     "check:geometry": "npm run build && node scripts/check-theme-geometry.js",
