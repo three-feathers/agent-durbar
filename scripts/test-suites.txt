@@ -113,6 +113,7 @@ test:copilotshared
 test:gitstatus
 test:officeops
 test:uisuite
+test:cichanges
 test:pathdirs
 test:officialinstall
 test:checknames
@@ -196,6 +197,7 @@ test:newfolderop
 test:newfolderipc
 test:newfoldergit
 test:supplychain
+test:electroncache
 test:claudecliunit
 test:rules
 test:weeklyretro

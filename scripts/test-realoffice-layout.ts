@@ -3,7 +3,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { placeBox, portraitCrop, PORTRAIT_SIDE, slipAvoid, NOTE_PAPER, NOTE_PAPER_DEFAULT, NOTE_INK, notePaper, screenFit, screenFor, personMotion, zoomRect, realLayout, lobbyWidths, sortDesks, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
+import { placeBox, portraitCrop, PORTRAIT_SIDE, slipAvoid, NOTE_PAPER, NOTE_PAPER_DEFAULT, NOTE_INK, notePaper, screenFit, screenFor, personMotion, zoomRect, realLayout, lobbyWidths, sortDesks, deskOrder, deskBase, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
   type RealModel, type RealMeta, type RealAgent, type RealState, type Rect, type Layout } from '../src/shared/realoffice-layout';
 import { lobbyBand, lobbyScale, visitorScale, HEAD, HEAD_FACE, HELP_FACE_MIN, HELP_GAP, helpH, helpCols, helpShown, headCrop, helperPerson } from '../src/shared/realoffice-layout';
 import { createHash } from 'crypto';
@@ -709,7 +709,8 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
     const B = realLayout(sceneModel(false), { w: 1248, h: 697 }, CAVE), A = realLayout(sceneModel(true), { w: 1248, h: 697 }, CAVE);
     assert.ok(A.lounge && A.lounge.desks.length === 2 && !A.scroll && !B.scroll, 'the scene: two agents in the lounge row, nothing scrolls');
     assert.ok(A.u >= B.u - 1e-6, `FR-247 with helpers (the shots-097-moments scene, cave 1248x697): the desks shrank when two agents went to the lounge: u ${B.u.toFixed(2)} -> ${A.u.toFixed(2)} (helpRows ${B.helpRows} -> ${A.helpRows})`);
-    assert.strictEqual(B.helpRows, 2, 'the scene before: two rows of heads (FR-308)');
+    assert.strictEqual(B.helpRows, 1, 'the scene before: one row of heads (FR-308; FR-338: never two)');
+    assert.ok((A.helpRows || 0) <= 1, `FR-338 (bug #1384): the lounge move never gives the strip a second row (helpRows ${A.helpRows})`);
   }
   let n = 0, s = 7;
   const rnd = (): number => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
@@ -945,6 +946,55 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
   const P = ['library', 'software', 'terminal', 'web', 'other', 'coffee', 'boss', 'bank', 'postbox'].map((id, i) => ({ id, visitors: i % 3 === 0 ? [{ id: 'v' + i, person: PEOPLE[i], needsYou: false }] : [] }));
   assert.strictEqual(createHash('sha256').update(JSON.stringify(lobbyBand(META, P, 1408, 150))).digest('hex').slice(0, 16), 'fad790c1536fb4f8', 'FR-255 lobby: the photo world is unchanged');
 }
+{
+  // spec 097 FR-345 (T260, issue #1152): a folder with a saved desk order (`keep`) keeps the model's order; one without is sorted by status (FR-022); the lounge row is unchanged
+  const order = (L: Layout, z: number): string[] => L.zones[z].desks.map((d) => d.id);
+  const mk = (keep: boolean): RealModel => ({ folders: [
+    { id: 'k', keep, agents: [{ id: 'k0', state: 'idle', person: PEOPLE[0], away: null }, { id: 'k1', state: 'waiting', person: PEOPLE[1], away: null }, { id: 'k2', state: 'working', person: PEOPLE[2], away: null }, { id: 'k3', state: 'error', person: PEOPLE[3], away: null }] },
+    { id: 'o', agents: [{ id: 'o0', state: 'idle', person: PEOPLE[4], away: null }, { id: 'o1', state: 'waiting', person: PEOPLE[5], away: null }] } ],
+    places: PLACES.map((id) => ({ id, visitors: [] })) });
+  for (const [W, H] of [[1440, 848], [1280, 748]] as [number, number][]) {
+    const kept = realLayout(mk(true), { w: W, h: H }, META), auto = realLayout(mk(false), { w: W, h: H }, META);
+    const kz = kept.zones.findIndex((z) => z.id === 'k'), az = auto.zones.findIndex((z) => z.id === 'k'), oz = kept.zones.findIndex((z) => z.id === 'o');
+    assert.deepStrictEqual(order(kept, kz), ['k0', 'k1', 'k2', 'k3'], `FR-345 ${W}: a kept folder keeps the model's order`);
+    assert.deepStrictEqual(order(auto, az), ['k1', 'k3', 'k2', 'k0'], `FR-345 ${W}: a folder without a saved order is sorted by status`);
+    assert.deepStrictEqual(order(kept, oz), ['o1', 'o0'], `FR-345 ${W}: another folder in the same model is still sorted by status`);
+  }
+  const lm: RealModel = mk(true);
+  lm.folders[0].agents[0] = { ...lm.folders[0].agents[0], lounge: true } as RealAgent; lm.folders[0].agents[2] = { ...lm.folders[0].agents[2], lounge: true, state: 'done' } as RealAgent;
+  const ll = realLayout(lm, { w: 1440, h: 848 }, META);
+  assert.deepStrictEqual(ll.lounge ? ll.lounge.desks.map((d) => d.id) : [], ['k2', 'k0'], 'FR-345: the lounge row keeps FR-246 status order (done before idle) for a kept folder');
+  assert.deepStrictEqual(order(ll, ll.zones.findIndex((z) => z.id === 'k')), ['k1', 'k3'], 'FR-345: a kept folder without its lounge seats keeps the model order');
+}
+{
+  // spec 097 FR-348 (review of PR 1315): the first Alt+arrow in a room with no saved order starts from the order on screen, not the attention order of the model
+  const R = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'reorder.js')) as { moveTo(l: string[], key: string, target: string, after?: boolean): string[] };
+  const ag = (id: string, state: RealState, extra: Partial<RealAgent> = {}): RealAgent => ({ id, state, person: PEOPLE[Number(id.slice(1))], away: null, ...extra } as RealAgent);
+  const model = (keep: boolean): RealModel => ({ folders: [{ id: 'f', keep, agents: [ag('f0', 'idle'), ag('f1', 'working'), ag('f2', 'waiting'), ag('f3', 'done', { lounge: true }), ag('f4', 'error')] }, { id: 'g', agents: [ag('g5', 'idle'), ag('g6', 'waiting')] }], places: PLACES.map((id) => ({ id, visitors: [] })) });
+  const modelOrder = ['f0', 'f1', 'f2', 'f3', 'f4'];
+  for (const keep of [false, true]) {
+    const m = model(keep), lay = realLayout(m, { w: 1440, h: 848 }, META), z = lay.zones.find((q) => q.id === 'f')!;
+    const shown = deskOrder(m, 'f');
+    assert.deepStrictEqual(shown, z.desks.map((d) => d.id), `FR-348 keep=${keep}: deskOrder is exactly the layout's left-to-right order`);
+    assert.deepStrictEqual(shown, keep ? ['f0', 'f1', 'f2', 'f4'] : ['f2', 'f4', 'f1', 'f0'], `FR-348 keep=${keep}: the order on screen (the lounge seat is out)`);
+    assert.deepStrictEqual(deskOrder(m, 'nope'), [], 'an unknown folder has no desks');
+    const base = deskBase(shown, modelOrder);
+    assert.deepStrictEqual(base, [...shown, 'f3'], `FR-348 keep=${keep}: the base is the shown order, then what is not shown`);
+    // Alt+Right on the first desk shown swaps it with the second desk shown
+    const saved = R.moveTo(base, shown[0], shown[1], true);
+    assert.deepStrictEqual(saved.slice(0, 4), [shown[1], shown[0], shown[2], shown[3]], `FR-348 keep=${keep}: Alt+Right on the first visible desk swaps with the second visible desk`);
+    // and the layout then draws the saved order
+    const after = realLayout({ ...m, folders: [{ ...m.folders[0], keep: true, agents: saved.map((id) => m.folders[0].agents.find((a) => a.id === id)!) }, m.folders[1]] }, { w: 1440, h: 848 }, META);
+    assert.deepStrictEqual(after.zones.find((q) => q.id === 'f')!.desks.map((d) => d.id), saved.filter((id) => id !== 'f3'), `FR-348 keep=${keep}: the saved order is what the layout draws next`);
+  }
+  // FR-345: a status change in a room with a saved order moves no desk
+  const k1 = model(true), k2 = model(true);
+  k2.folders[0].agents = k2.folders[0].agents.map((x, i) => ({ ...x, state: (['waiting', 'idle', 'error', 'done', 'working'] as RealState[])[i] }));
+  assert.deepStrictEqual(deskOrder(k2, 'f'), deskOrder(k1, 'f'), 'FR-345: a status change moves no desk in a kept room');
+  // the mutant (the model's attention order as the base) fails the same assertion
+  const m0 = model(false), shown0 = deskOrder(m0, 'f'), wrong = R.moveTo(modelOrder, shown0[0], shown0[1], true);
+  assert.notDeepStrictEqual(wrong.slice(0, 2), [shown0[1], shown0[0]], 'mutant: moving from the model order is not the swap on screen');
+}
 
 // ---- spec 097 FR-306..FR-311 (issue #1139, owner "1265 1", 2026-11-08): small head figures with a status dot under each parent's plate ----
 {
@@ -978,7 +1028,7 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
         const t = d.strip;
         strips.push([`strip of ${d.id}`, t]);
         if (!inside(t, d.slot, 0.5) || !inside(t, z.box, 2)) out.push(`${label}: strip of ${d.id} leaves its slot ${JSON.stringify(t)} ${JSON.stringify(d.slot)}`);
-        if (t.rows < 1 || t.rows > 2 || t.h !== helpH(t.rows) - 2) out.push(`${label}: strip of ${d.id} has ${t.rows} rows, height ${t.h}`);
+        if (t.rows !== 1 || t.h !== helpH(1) - 2) out.push(`${label}: strip of ${d.id} has ${t.rows} rows, height ${t.h} (FR-338: one row, never a second line)`);
         if (t.y < d.plate.y + 50 - 0.5) out.push(`${label}: strip of ${d.id} starts above the needs-you plate's bottom`);
         // the heads fit: cols across at HEAD + gap, rows down, inside the strip box
         if (t.cols * HEAD + (t.cols - 1) * HELP_GAP > t.w + 0.01) out.push(`${label}: ${t.cols} heads across do not fit ${t.w}px`);
@@ -1002,7 +1052,7 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
     });
     return out;
   };
-  let sc = 0, withStrip = 0, twoRows = 0;
+  let sc = 0, withStrip = 0;
   for (const [W, H] of SIZES) for (const n of [1, 2, 3, 4, 5, 8, 12, 15, 20, 30, 40]) for (const f of [1, 2, 4, 6]) for (const hc of [0, 1, 2, 6, 10]) {
     if (f > n || (W < 1000 && n > 15)) continue;
     const m = withHelpers(n, f, (i) => (i % 3 === 0 ? hc : i % 3 === 1 ? Math.min(hc, 1) : 0));
@@ -1016,20 +1066,19 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
     if (hc === 0) assert.strictEqual(JSON.stringify(L), JSON.stringify(base), `${label}: no helpers, no change at all`);
     if (hasStrip) {
       withStrip++;
-      assert.ok(L.helpRows === 1 || L.helpRows === 2, `${label}: strips drawn with 1 or 2 rows`);
+      assert.strictEqual(L.helpRows, 1, `${label}: FR-338 strips drawn with one row`);
       assert.strictEqual(L.zones.flatMap((z) => z.desks).filter((d) => d.strip).length, L.zones.flatMap((z) => z.desks).filter((d) => !d.lounge && helpersOf(m, d.id) > 0).length, `${label}: exactly the desks with helpers have a strip`);
-      if (L.helpRows === 2) twoRows++;
     } else assert.ok(L.helpRows === 0 || hc === 0, `${label}: no strip means helpRows 0`);
     if (hc === 0) assert.ok(!hasStrip && L.helpRows === 0, `${label}: helpers none, strips none`);
     sc++;
   }
-  assert.ok(sc > 200 && withStrip > 100 && twoRows > 10, `strip cases ran (${sc} layouts, ${withStrip} with strips, ${twoRows} with two rows)`);
+  assert.ok(sc > 200 && withStrip > 100, `strip cases ran (${sc} layouts, ${withStrip} with strips)`);
 
-  // the 15-agent case (SC-002), both sizes: the measured room: two rows of 4 across, at most 7 heads and +K; faces stay over the ratchet; nothing scrolls
+  // the 15-agent case (SC-002), both sizes: the measured room: one row (FR-338), at least 4 across, so at most 3 heads and +K in the narrowest; faces stay over the ratchet; nothing scrolls
   for (const [W, H] of SIZES.slice(0, 2)) {
     const m = withHelpers(15, 4, (i) => [1, 2, 3, 6, 10][i % 5]);
     const L = realLayout(m, { w: W, h: H }, META);
-    assert.ok(!L.scroll && L.helpRows === 2, `15 agents with helpers at ${W}: two rows, no scroll`);
+    assert.ok(!L.scroll && L.helpRows === 1, `15 agents with helpers at ${W}: one row (FR-338), no scroll`);
     assert.ok(L.faceH >= FACE_FLOOR - 1e-9, `15 agents with helpers at ${W}: face ${L.faceH}`);
     assert.deepStrictEqual(stripProblems(L, `15@${W}`, m), []);
     const ds = L.zones.flatMap((z) => z.desks.filter((d) => d.strip));
@@ -1037,8 +1086,8 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
     for (const d of ds) {
       const k = helpersOf(m, d.id);
       assert.ok(d.strip!.cols >= 4, `15@${W}: ${d.strip!.cols} heads across`);
-      assert.strictEqual(d.strip!.shown, placesFor(d.strip!.w, 2, k), `15@${W}: shown of ${k}`);
-      if (k === 10 && d.strip!.cols === 4) assert.ok(d.strip!.shown === 7, `15@${W}: the narrowest slot (4 across) shows 7 heads and +3 (${d.strip!.shown} of ${k})`);
+      assert.strictEqual(d.strip!.shown, placesFor(d.strip!.w, 1, k), `15@${W}: shown of ${k}`);
+      if (k === 10 && d.strip!.cols === 4) assert.ok(d.strip!.shown === 3, `15@${W}: the narrowest slot (4 across) shows 3 heads and +7 (${d.strip!.shown} of ${k})`);
       if (k <= 3) assert.strictEqual(d.strip!.shown, k, `15@${W}: ${k} helpers all show`);
     }
     const strip = ds[0].strip!;
@@ -1071,12 +1120,11 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
     assert.ok(!L.scroll && L.zones[0].desks[0].plate.w < HEAD, 'the case has a slot under one head wide');
     assert.strictEqual(L.helpRows, 0, 'a slot under one head wide: no strip, the plate keeps +N');
     assert.ok(L.zones.every((z) => z.desks.every((d) => !d.strip)), 'no strip box in a slot under one head wide');
-    // `HELP_KEEP`: 15 agents in 3 folders at 1440x848 keep one row, because two rows would cost the desks more than 5 % of u (and the face would go under the ratchet)
+    // FR-338 (bug #1384): one row whatever the room gives: 15 agents in 3 folders (where FR-308's `HELP_KEEP` used to refuse a second row) and in 4 folders (where it used to take one)
     const three = realLayout(withHelpers(15, 3, () => 3), { w: 1440, h: 848 }, META);
-    assert.strictEqual(three.helpRows, 1, '15 agents in 3 folders: one row (two would cost over 5 % of u)');
-    assert.ok(three.faceH >= 28 - 1e-9 && three.faceH < 31.5, `one row keeps the face (${three.faceH}) at 31: two rows would put it under 28`);
-    // 4 folders: two rows cost nothing like that (the width binds), so two rows are kept
-    assert.strictEqual(realLayout(withHelpers(15, 4, () => 3), { w: 1440, h: 848 }, META).helpRows, 2, '15 agents in 4 folders: two rows');
+    assert.strictEqual(three.helpRows, 1, '15 agents in 3 folders: one row');
+    assert.ok(three.faceH >= 28 - 1e-9, `one row keeps the face (${three.faceH}) over the 28 px floor`);
+    assert.strictEqual(realLayout(withHelpers(15, 4, () => 3), { w: 1440, h: 848 }, META).helpRows, 1, '15 agents in 4 folders: one row (FR-338; two before, FR-308)');
     // the chat open at 15 (the office is 470 px narrower): the office scrolls even without helpers, so no strip is drawn
     const chat = realLayout(withHelpers(15, 4, () => 3), { w: 970, h: 848 }, META);
     assert.ok(chat.scroll && chat.helpRows === 0, 'chat open at 15 agents: the office scrolls, no strip (the plate keeps +N)');

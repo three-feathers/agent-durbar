@@ -161,6 +161,12 @@ One PR, spec first. Who moves is `shutPlan(r)` (spec 001 FR-051, `shutters.js` `
 - **CSS**: `.ro-lseat` table, `.ro-lmon` monitor (photo and cave: the desk monitor scaled; arcade: a pixel frame in `worlds/retro/world.css`), `.ro-plate.lounge`.
 - **Checks**: `test:realoffice-layout` and `test-realoffice-aisles` (FR-246..FR-248, mutants), `scripts/check-097-lounge.js` (FR-246..FR-249), `shots-097-moments` asleep moment and `world-matrix.js` lounge scene updated.
 
+## 2026-11-08 delta: rearrange in Real office (FR-345..FR-349, T260..T264)
+
+- **Pure** (`src/shared/realoffice-layout.ts`, `realoffice-arrangements.ts`, T260): `RealFolder.keep?`; `splitLounge` carries it; `realLayout` and `aislesLayout` use `f.keep ? f.agents : sortDesks(f.agents)`.
+- **App** (`src/renderer/app.js`, T261): `reoStepModel(kind, key, delta, roomId, refocus)` is the one model-based move (desk group from `deskOrder(realModel(officeModel()), roomId)`, the layout's own order via `shownDesks`; rooms and places from `officeModel()` and `lobbyPlaces()`; base `deskBase(shown, reoFullKeys)`; write through `reoApply`, the flat `reoCommit`'s body); `reoStep` and the folder menu's `moveRoomStep` call it; the Alt+arrows handler also finds `.ro-plate[data-id]`, `.ro-sb` and `.ro-lplate[data-place]`; `realModel` sets `keep` from `ORDER.desks[path]`. No new store, channel or tab stop.
+- **Checks**: `test:realoffice-layout`, `test-realoffice-aisles`, `scripts/check-097-order.js` (in `ui-suite`), `shots-033-order` unchanged, `check-office-ops`, `OFFICE_VIEW=real` `check-office-overlap`.
+
 ## Context as a line round the monitor frame (delta 2026-11-07; FR-322..FR-326, T250..T255)
 
 `realModel` adds `ctx: {pct, level}` (from `DurbarScreens.ctxChip`, the chat header's source) and the context words to each desk's accessible name. `realoffice.js` makes one `svg.ro-ctx > rect` per desk in `.ro-screen` (pathLength 100) and writes `stroke-dasharray` and `data-lv` only when they changed; `DurbarRealOffice.ctx(id, {pct, level} | null)` (called by `realCtxPush` on a context event and after a finished compaction) does the same on a context event without a render. World CSS sets the inset and width (Photo and cave on the bezel, arcade on the cabinet's screen frame); colours are `var(--tint-ink)` (soft white) for `ok` and `warn` and `var(--red)` for `high` (FR-323, owner 2026-11-07 21:01 UTC); forced colours use `Highlight`.
@@ -177,3 +183,7 @@ Spec first; the owner chose head figures with a status dot (2026-11-08 08:29 UTC
 - **Renderer** (`src/renderer/realoffice.js`, T271): in `deskOne`, after the plate and its pencil, an `h:` keyed strip in the chrome layer; each helper is one button kept by id (a status change writes the dot class, the label and the edge only, no node); `+K` is the one `data-more` button; the plate keeps `+N` only on the fallback. `app.js`: `orderedHelpers`, `realSubs` (id, name, state, accessible name, tooltip, the head's picture and crop through the `roFace` data).
 - **CSS** (`src/renderer/realoffice.css`, no styles.css, themes.css or screens.css): `.ro-hstrip`, `.ro-hd` (the figure), `.ro-hmore`.
 - **Checks**: `test:realoffice-layout`, `scripts/check-097-helpers.js` (mutants), `OFFICE_VIEW=real check-office-overlap.js` and `check-office-ops.js`, the linked pictures by `shots-097-realoffice` and `shots-097-screens` (JPEG) and `check-097-helpers` (the helper pictures).
+
+## A helper strip is one row (delta 2026-11-09; FR-338, T275..T277, bug #1384)
+
+The fix is in the engine, where the cause is: `realLayout`'s strip levels become one row, else none (the two-row step, `HELP_ROWS_MAX` and `HELP_KEEP`, is removed from `src/shared/realoffice-layout.ts`). Nothing changes in the renderer or the CSS: the strip already draws `cols` columns and `shown` heads, and with `rows` 1 the grid has one line. The arcade (`realoffice-arrangements.ts`) already takes one row. Checks: `test:realoffice-layout` re-pinned, the new driver `scripts/check-097-helper-row.js` (default and lounge scenes, 6 and 7 helpers, three worlds, both sizes; mutant), and `check-097-helpers` (its `rows === 1 || rows === 2` becomes `rows === 1`).

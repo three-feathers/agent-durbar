@@ -232,6 +232,14 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 - [x] T230 [US2] The Changed fact for lounge agents [FR-329]: `realFacts`, `Changed` wraps. Test: `check-097-hover-card`
 - [x] T231 [US2] Docs and pictures [FR-330]: changelog fragment, `docs/features.md`; no committed picture (round 2: the two crops were linked from nowhere); Q25 resolved (no helpers on the card); round 3 of #1313: the card is never placed over the focused slip (`placeZoom`), the driver's focused-slip step is an Allow button reached by Tab, and its working-desk pick is made again when the person has left
 
+## 2026-11-08 delta: rearrange rooms, desks and places in Real office (FR-345..FR-349, issue #1152)
+
+- [x] T260 [US2] FR-345: `RealFolder.keep` set from the saved desk order; `sortDesks` is skipped for a kept folder in `realLayout` and `aislesLayout`, the lounge keeps status order. Test: `test:realoffice-layout`, `test-realoffice-aisles`; mutant: `sortDesks` always
+- [x] T261 [US2] FR-346..FR-348: model-based move (`reoStepModel`, desk order from `deskOrder`) used by the flat and the Real office keys and by the folder menu; Alt+arrows on `.ro-plate`, `.ro-sb` and `.ro-lplate[data-place]`; focus and words kept. Test: `sim:` `check-097-order` both sizes; mutants: desk sort back on, menu reading flat elements, key handler not seeing plates, the attention (`prio`) order as the base Review of #1315 (Paco, round 6): the step that puts desks away picks desks that are not away, asserts that before the pin and, after it, away in the plates (`.narrow`) and the visit record (`awayIds()`), so a `pinAt` that only returns true fails; `ORDER_MUTANT=pinnoop` shows it.
+- [x] T262 [US2] Spec 033's driver `shots-033-order` still passes: the flat office is unchanged [FR-086]
+- [x] T263 [US2] `check-office-ops`: a move adds no node churn [FR-186]
+- [x] T264 [US2] Pictures at 1440x900 and 1280x800 read and compressed; spec, plan, README and changelog fragment match [FR-349, Q30..Q33]
+
 - [x] T250 [US2] Unit tests first: band mapping and dash from the share [FR-322, FR-323] (`test-realoffice-ctx.ts`, run by `test:realoffice-layout`)
 - [x] T251 [US2] The frame line: one svg and rect per desk in `realoffice.js`, world CSS in `realoffice.css`, the cave and arcade rules in their `world.css`; unknown draws none [FR-322..FR-324]
 - [x] T252 [US2] The share from `ctxChip` through `realModel`, the plate's name with `, context N %`, the cheap `DurbarRealOffice.ctx` update on a context event [FR-325, FR-326]
@@ -254,6 +262,12 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 - [x] T272 [US1] Driver `scripts/check-097-helpers.js` (in `ui-suite`): 15 agents with helpers, both sizes, Photo office, cave and arcade, heads, dot colour, name only in the accessible name, `+K`, `statusNodes`; mutants [FR-311]
 - [x] T273 [US1] Pictures at both sizes (Photo, cave) and a 2x crop to the owner before merge, compressed under 300 KB; the owner looked (2026-11-08 09:30 UTC) and chose "fine as is" [FR-307]
 - [x] T274 [US1] Docs: changelog fragment, `docs/features.md`, `docs/feature-inventory.md`, the spec's tags [FR-306..FR-311]
+
+## 2026-11-09: a helper strip is one row, never a second line (bug #1384, FR-338; changes FR-308)
+
+- [x] T275 [US1] Spec delta 2026-11-09 (report, the measurement before the fix, the cause, FR-338), plan and tasks, before any src change [FR-338]
+- [x] T276 [US1] Engine, pure: `realLayout` takes one row of heads, else none; `HELP_ROWS_MAX` and `HELP_KEEP` removed. Test: `test:realoffice-layout` re-pinned (rows 1 on every strip, the lounge scene, the 15-agent case and the measured numbers), mutant by hand (two rows back) [FR-338]
+- [x] T277 [US1] Driver `scripts/check-097-helper-row.js` (in `ui-suite`): 6 and 7 helpers, default and lounge scene, Photo office, cave and arcade, both sizes; one line, `+K` last, no overlap; mutant `tworows`; before and after pictures of the lounge row through the driver's own `H.shot` (under 300 KB) [FR-338]
 
 ## Phase 3b: every Characters crew in Real office (issue #1154, part of #1147; delta 2026-11-08)
 
