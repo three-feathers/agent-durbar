@@ -191,6 +191,7 @@
     "test:debuggerguard": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-debuggerguard.js",
     "test:claudecli": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/claude-cli-matrix.js",
     "test:claudecliunit": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-claude-cli-matrix.js",
+    "test:electroncache": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-electron-cache.js",
     "test:supplychain": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-supplychain.js",
     "test:checknames": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-checknames.js",
     "test:verifytarball": "node scripts/test-verify-tarball.js",

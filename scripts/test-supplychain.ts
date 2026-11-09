@@ -157,9 +157,11 @@ for (const f of fs.readdirSync(wfDir).filter((n) => /\.ya?ml$/.test(n))) {
 }
 const npmCiAction = fs.readFileSync(path.join(root, '.github', 'actions', 'npm-ci', 'action.yml'), 'utf8');
 assert.ok(/actions\/cache@[0-9a-f]{40}/.test(npmCiAction), 'the Electron download cache step exists');
-for (const v of ['ELECTRON_CACHE=', 'electron_config_cache=', 'ELECTRON_BUILDER_CACHE=']) assert.ok(npmCiAction.includes(v), `${v} points at the cached directory`);
-assert.ok(/key: electron-.*steps\.versions\.outputs\.electron/.test(npmCiAction), 'the cache key carries the exact Electron version');
-assert.ok(/for try in 1 2 3/.test(npmCiAction) && /exit 1/.test(npmCiAction), 'npm ci retries 3 times and still fails loudly');
+// FR-195: the key, the paths and the three cache variables come from the script the warmer shares (test:electroncache checks it)
+const cacheScript = fs.readFileSync(path.join(root, 'scripts', 'electron-cache.js'), 'utf8');
+for (const v of ['ELECTRON_CACHE=', 'electron_config_cache=', 'ELECTRON_BUILDER_CACHE=']) assert.ok(cacheScript.includes(v), `${v} points at the cached directory`);
+assert.ok(/key: \$\{\{ steps\.plan\.outputs\.key \}\}/.test(npmCiAction) && /electron-\$\{runnerOs\}-\$\{runnerArch\}-\$\{v\.electron\}-builder-/.test(cacheScript), 'the cache key carries the exact Electron version');
+assert.ok(/waits=\(30 120 300\)/.test(npmCiAction) && /exit 1/.test(npmCiAction), 'npm ci retries 4 times (30 s, 120 s, 300 s apart) and still fails loudly');
 assert.ok(!/secrets\./.test(npmCiAction), 'the action touches no secrets');
 
 export type GitRun = (args: string[]) => { status: number | null; stdout: string; stderr: string; error?: Error };
