@@ -4767,7 +4767,7 @@ function afNotice({head,sub,stay,said,toOffice}){
     auto:(close,d)=>{ /* FR-239: the count runs only while the window is visible and has the focus */
       let left=AF_NOTICE_MS,last=performance.now();const num=d.querySelector('.afn-n');
       d.style.setProperty('--afn-ms',AF_NOTICE_MS+'ms');
-      /* FR-239 (review on #1414): opened over a text field, a typed character means you are writing: the notice closes as Stay, the focus goes back to the
+      /* FR-239 (review on PR 1414): opened over a text field, a typed character means you are writing: the notice closes as Stay, the focus goes back to the
          field during the key press, so the character lands there and nothing typed is lost (Enter and Escape keep their meaning on the notice) */
       const field=was&&was.matches&&was.matches('input,textarea,[contenteditable]:not([contenteditable="false"])')?was:null;
       const onType=e=>{if(field&&e.key&&e.key.length===1&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!e.isComposing)close(null);};
@@ -4790,7 +4790,7 @@ function afLeaveChat(a,what,head){
   const shown=afPanelId(), room=roomOf(a);
   clearInterval(AF_LEAVE_T);AF_LEAVE_T=0;
   if(!shown||!room||!roomShown(room)){afBackToOffice(a,what);return;} /* no move to announce: as before */
-  /* FR-239 (review on #1414): while the focused field holds text you are writing (the next message), the notice waits and takes no focus; it comes when the
+  /* FR-239 (review on PR 1414): while the focused field holds text you are writing (the next message), the notice waits and takes no focus; it comes when the
      field is empty again, as long as this chat is still shown and the agent still followed. A key typed on the notice itself closes it into the field (afNotice).
      Any other guard (a dialog, a menu, the window in the background) keeps the move off, as before. */
   const typing=()=>{const sn=afSnapshot();return sn.editable&&sn.editableText;};
