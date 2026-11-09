@@ -301,7 +301,9 @@ const agoSigNow=(at=Date.now())=>agents.map(x=>(x.lastEventAt?ACT.agoShort(at-x.
 let drawnAt=0;
 setInterval(()=>{if(demoOn)return;const sig=agoSigNow();if(sig!==agoSig){agoSig=sig;scheduleRender();}},30000);
 /* ---- places in the office (spec 024): a shared lobby; main agents walk to the place of the tool they are using ---- */
-const VISITS=window.DurbarPlaces.createVisits();
+/* Simulator only (spec 008 FR-190): `simvisits=fast` shortens the lobby's own timers (a visit starts after 60 ms instead of 600, stays 200 ms instead of 2 s, a walk takes 100 ms instead of 1 s), for drivers that measure where things stand and do not look at the visit rules (those keep the real timers: check-office-ops, places tests) */
+const SIM_FAST_VISITS=(()=>{try{const q=new URLSearchParams(location.search);return q.has('sim')&&q.get('simvisits')==='fast';}catch(e){return false;}})();
+const VISITS=window.DurbarPlaces.createVisits(SIM_FAST_VISITS?{debounceMs:60,dwellMs:200}:undefined);
 const SEEN_SERVERS=new Set(); /* MCP server names seen in tool events this run (per-folder extras included): the Places settings list them */
 let CUSTOM=[]; /* the user's own places [{id,name,icon}] (spec 024 FR-018), from the settings; changed only through setCustomPlaces */
 const customIds=()=>CUSTOM.map(p=>p.id);
@@ -520,7 +522,7 @@ function openCoffeeMenu(id,anchor){
 }
 document.addEventListener('contextmenu',e=>{const b=e.target.closest&&e.target.closest('#stage [data-coffeeid]');if(!b)return;e.preventDefault();e.stopImmediatePropagation();openCoffeeMenu(b.dataset.coffeeid,b);},true);
 document.addEventListener('keydown',e=>{if(!((e.key==='F10'&&e.shiftKey)||e.key==='ContextMenu'))return;const b=e.target.closest&&e.target.closest('#stage [data-coffeeid]');if(!b)return;e.preventDefault();e.stopImmediatePropagation();openCoffeeMenu(b.dataset.coffeeid,b);},true);
-const WALK_MS=1000, MAX_WALKS=3; /* about 1 s per walk; beyond 3 at once the others simply appear */
+const WALK_MS=SIM_FAST_VISITS?100:1000, MAX_WALKS=3; /* about 1 s per walk; beyond 3 at once the others simply appear. */
 const walkers=new Map(); /* agent id -> {el, back, walking, shown, timer, to} */
 const walkCount=()=>{let n=0;walkers.forEach(w=>{if(w.walking)n++;});return n;};
 function dropWalker(id){const w=walkers.get(id);if(!w)return;clearTimeout(w.timer);if(w.off)w.off();w.el.remove();walkers.delete(id);RETURNING.delete(id);}
