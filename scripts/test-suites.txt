@@ -234,5 +234,6 @@ test:quota
 test:featureinventory
 test:simversion
 test:momentsregistry
+test:paritytick
 test:picturebudget
 test:specnumbers
