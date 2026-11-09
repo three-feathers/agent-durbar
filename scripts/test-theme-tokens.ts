@@ -287,11 +287,11 @@ for (const f of FILES) {
     // the chip's 1px border is its edge in the dark world (non-text, WCAG 1.4.11: 3:1) against the panel and its own fills; the light worlds keep the app's quiet 1.5:1 hairline, the fill and the text carry the chip there
     const ti0 = T.toneInfo(r) as Record<string, string>;
     for (const n of ['info', 'ok', 'warn', 'bad', 'idea']) for (const against of ['--surface', `--tone-${n}-bg`, `--tone-${n}-soft`, `--tone-${n}-faint`]) assert.ok(contrast(ti0[`--tone-${n}-line`], ti0[against] ?? r[against]) >= 3, `the arcade's ${n} border on ${against} is ${contrast(ti0[`--tone-${n}-line`], ti0[against] ?? r[against]).toFixed(2)}:1`);
-    for (const n of ['info', 'ok', 'warn', 'bad', 'idea']) for (const k of ['ink', 'bg', 'soft', 'faint', 'hover']) assert.ok(/^#[0-9a-f]{6}$/i.test(r[`--tone-${n}-${k}`]), `the arcade sets --tone-${n}-${k} as hex`);
+    for (const n of ['info', 'ok', 'warn', 'bad', 'idea']) for (const k of ['ink', 'bg', 'soft', 'faint', 'hover', 'line']) assert.ok(/^#[0-9a-f]{6}$/i.test(r[`--tone-${n}-${k}`]), `the arcade sets --tone-${n}-${k} as hex`);
     // every painted fill is dark and every ink light (the .fl-focus and .sub-st.done bug of #1309: light ink on the light --pb-done)
     for (const n of ['info', 'ok', 'warn', 'bad', 'idea']) { for (const k of ['bg', 'soft', 'faint', 'hover']) assert.ok(luminance(r[`--tone-${n}-${k}`]) < 0.1, `the arcade's --tone-${n}-${k} is dark`); assert.ok(luminance(r[`--tone-${n}-ink`]) > 0.3, `the arcade's --tone-${n}-ink is light`); }
     assert.ok(contrast(r['--tone-info-ink'], r['--tone-info-soft']) >= 4.5 && luminance(r['--tone-info-soft']) < 0.05, 'the arcade .att chip: light blue ink on a dark soft fill');
-    assert.deepStrictEqual(['--pb-working', '--pc-working'].map((k) => r[k]), ['--pb-working', '--pc-working'].map((k) => clean[k]), 'the working status pair itself is unchanged (FR-050)');
+    assert.deepStrictEqual(['--pb-working', '--pc-working'].map((k) => r[k]), ['#142534', '#9dcdf1'], 'the working status pair is spec 102 RA6\'s dark pair (#1283); the tone fix does not touch it');
     // the same pair as the CSS derives it, for each built-in theme (Retro Pixel included): ink is --pc-working, soft is 55% --pb-working over --surface
     for (const [id, b] of Object.entries(T._builtins() as Record<string, { tokens: Record<string, string> }>)) {
       const ti = T.toneInfo({ ...clean, ...b.tokens }) as Record<string, string>;

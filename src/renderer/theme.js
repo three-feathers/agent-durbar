@@ -692,12 +692,13 @@
         '--stat-sel-border':'#ff77a8','--stat-sel-ring':'#3a2350','--brand-mark':'#111122','--brand-bg':'#ffec27','--avatar-bg':'#262044',
         '--idle-stub':'#221d3d','--idle-stub-ink':'#bdb5d6','--drop':'#29adff','--drop-ink':'#cfe3ff',
         /* the info tone (file chips, ask tags, a selected row) is not a status colour: styles.css derives it from the light --pb-/--pc-working, which here gave 2.16:1 on a dark panel (#1278), so the arcade sets its own, in the working blue (spec 070 FR-081) */
-        '--tone-info-ink':'#8fc3ff','--tone-info-bg':'#22335a','--tone-info-soft':'#1e2c4e','--tone-info-faint':'#1a2140','--tone-info-hover':'#2a3b66',
-        '--tone-ok-ink':'#8fe3ab','--tone-ok-bg':'#1f4332','--tone-ok-soft':'#1b3a2c','--tone-ok-faint':'#162e24','--tone-ok-hover':'#26503b', /* the ok tone (image chips .att.img, .chip.att-chip.img) the same way: its derived fill was 1.9:1 under the dark green ink */
+        /* the 1px borders: 3:1 or more on the page and each fill (#1283's dark status pair made the derived border 2.2:1) */
+        '--tone-info-ink':'#8fc3ff','--tone-info-bg':'#22335a','--tone-info-soft':'#1e2c4e','--tone-info-faint':'#1a2140','--tone-info-hover':'#2a3b66','--tone-info-line':'#6991c5',
+        '--tone-ok-ink':'#8fe3ab','--tone-ok-bg':'#1f4332','--tone-ok-soft':'#1b3a2c','--tone-ok-faint':'#162e24','--tone-ok-hover':'#26503b','--tone-ok-line':'#68ab81', /* the ok tone (image chips .att.img, .chip.att-chip.img) the same way: its derived fill was 1.9:1 under the dark green ink */
         /* the other three tones the same way (#1309 review): each ink is painted on its own -bg, -soft, -faint, -hover or the dark page (.fl-focus, .sub-st.done, .mtag.*, .quick, .chip.fail, .scr-warn, .srv-org, .fl-err); derived from the light status pair they were 1.0 to 2.7:1 */
-        '--tone-warn-ink':'#ffc35c','--tone-warn-bg':'#3a2c0e','--tone-warn-soft':'#2e2410','--tone-warn-faint':'#241d10','--tone-warn-hover':'#4a3a14',
-        '--tone-bad-ink':'#ff9a8f','--tone-bad-bg':'#3a1a1d','--tone-bad-soft':'#2c1518','--tone-bad-faint':'#22121a','--tone-bad-hover':'#4a2024',
-        '--tone-idea-ink':'#b9c0ff','--tone-idea-bg':'#262a52','--tone-idea-soft':'#202444','--tone-idea-faint':'#1b1e3a','--tone-idea-hover':'#30366a',
+        '--tone-warn-ink':'#ffc35c','--tone-warn-bg':'#3a2c0e','--tone-warn-soft':'#2e2410','--tone-warn-faint':'#241d10','--tone-warn-hover':'#4a3a14','--tone-warn-line':'#ba8e41',
+        '--tone-bad-ink':'#ff9a8f','--tone-bad-bg':'#3a1a1d','--tone-bad-soft':'#2c1518','--tone-bad-faint':'#22121a','--tone-bad-hover':'#4a2024','--tone-bad-line':'#ba6d67',
+        '--tone-idea-ink':'#b9c0ff','--tone-idea-bg':'#262a52','--tone-idea-soft':'#202444','--tone-idea-faint':'#1b1e3a','--tone-idea-hover':'#30366a','--tone-idea-line':'#868cc2',
         '--tint-sage':'#162420','--wall-sage':'#2c4a3c','--tint-blue':'#141d30','--wall-blue':'#2c3f66','--tint-sand':'#241f14','--wall-sand':'#4d4128','--tint-clay':'#291a1a','--wall-clay':'#55332f',
         '--cwall-sage':'#3c6a54','--cwall-blue':'#3c5a92','--cwall-sand':'#6e5c36','--cwall-clay':'#7a4842',
         '--red-ink':'#ff9a8f','--amber-ink':'#ffc35c','--blue-ink':'#8fc3ff',
