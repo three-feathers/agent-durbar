@@ -4710,7 +4710,8 @@ function afDeliver(){
   if(a&&!(afPanelId()===d.id)){ /* already shown: nothing moves */
     AF_AUTO=true; try{openPanel(d.id,'title');}finally{AF_AUTO=false;}
     AF_OPENED_AT=performance.now();
-    if(d.kind!=='ask')announce(a.name+(d.kind==='done'?' finished':d.kind==='error'?' has an error':' reached its limit')+'. Its chat is open.');
+    /* spec 005 FR-237: said at request priority, after openPanel's own "needs your OK" for a limit card in the same 60 ms window: the arrival line still wins */
+    if(d.kind!=='ask')announce(a.name+(d.kind==='done'?' finished':d.kind==='error'?' has an error':' reached its limit')+'. Its chat is open.',ANN_REQUEST);
   }
   afTick();
 }
