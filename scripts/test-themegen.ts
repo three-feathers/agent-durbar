@@ -2,7 +2,8 @@
 import * as assert from 'assert';
 import * as path from 'path';
 import { createHash } from 'crypto';
-import { CONTRAST_PAIRS, NAMED_COLOURS, contrast, parseColor, resolveColor, themeIssues } from '../src/shared/themegen';
+import { COLOUR_HUE_RE, COLOUR_NUM_RE, CONTRAST_PAIRS, NAMED_COLOURS, contrast, parseColor, resolveColor, themeIssues } from '../src/shared/themegen';
+import { TOKEN_VALUE_MAX } from '../src/shared/themes';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const T = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'theme.js')) as { _tokens(): Record<string, string> };
@@ -94,6 +95,32 @@ assert.ok(Object.keys(clean).length > 100, 'all of Clean Office');
   // alpha is clamped to 0..1
   for (const [v, a] of [['rgb(0 0 0 / 2)', 1], ['rgb(0 0 0 / -1)', 0], ['rgb(0 0 0 / 200%)', 1], ['rgba(0,0,0,5)', 1]] as Array<[string, number]>) assert.strictEqual(parseColor(v)?.[3], a, v);
   assert.strictEqual(resolveColor('rgb(0 0 0 / 2)'), '#000000'); assert.strictEqual(resolveColor('rgb(0 0 0 / -1)'), '#ffffff');
+  // review of #1307, finding 1: forms Chromium rejects (CSS.supports false in Electron 44) are not colours, so they are reported unmeasured, not measured and passed.
+  // The comma syntax takes three numbers or three percentages; a number never ends in a dot. The space syntax may mix numbers and percentages.
+  for (const bad of ['rgb(72.549%, 199, 194)', 'rgb(50%, 100, 0)', 'rgba(10, 20%, 30, .5)', 'rgb(185. 199. 194.)', 'rgb(1. 2 3)', 'hsl(0 0% 100% / 1.)', 'hsl(1. 50% 50%)', 'rgb(0 0 0 / .5.)']) {
+    assert.strictEqual(parseColor(bad), null, `${bad} is not a colour`);
+    assert.ok(themeIssues({ '--ink': bad }, clean).some((i) => i.startsWith(`--ink (${bad}) is in a contrast pair but is not a colour that can be measured`)), `${bad} is reported unmeasured`);
+  }
+  for (const [good, want] of [['rgb(72.549% 199 194)', [185, 199, 194, 1]], ['rgb(50% 100 0 / 50%)', [128, 100, 0, 0.5]], ['rgb(10%, 20%, 30%, .5)', [26, 51, 77, 0.5]], ['rgb(1, 2, 3, 50%)', [1, 2, 3, 0.5]], ['rgb(.5 1.5 +2)', [1, 2, 2, 1]]] as Array<[string, number[]]>) eq(good, want);
+  // finding 2: the number regexes are linear (\d+\.?\d* was quadratic), and parseColor refuses input longer than a token value (TOKEN_VALUE_MAX)
+  assert.strictEqual(parseColor(`rgb(${'0'.repeat(TOKEN_VALUE_MAX)} 0 0)`), null, 'a value longer than TOKEN_VALUE_MAX is not parsed');
+  assert.deepStrictEqual(parseColor(`rgb(${'0'.repeat(TOKEN_VALUE_MAX - 9)} 0 0)`), [0, 0, 0, 1], 'one of exactly TOKEN_VALUE_MAX is');
+  {
+    // CPU time (not wall clock) of a failing match on n digits then 'x': 8x the input costs about 8x when linear, about 64x when quadratic.
+    // The repeat count is raised until the small input takes 2 ms, then both sizes run that many times; best of three rounds, so a busy machine slows a round, not the minimum.
+    const cpu = (re: RegExp, s: string, n: number): number => {
+      let best = Infinity;
+      for (let r = 0; r < 3; r++) { const t0 = process.cpuUsage(); for (let i = 0; i < n; i++) re.test(s); const d = process.cpuUsage(t0); best = Math.min(best, d.user + d.system); }
+      return Math.max(best, 1);
+    };
+    for (const [name, re] of [['COLOUR_NUM_RE', COLOUR_NUM_RE], ['COLOUR_HUE_RE', COLOUR_HUE_RE]] as Array<[string, RegExp]>) {
+      const s1 = '1'.repeat(2000) + 'x', s8 = '1'.repeat(16000) + 'x';
+      let n = 1;
+      while (cpu(re, s1, n) < 2000 && n < 1e6) n *= 2;
+      const small = cpu(re, s1, n), big = cpu(re, s8, n);
+      assert.ok(big / small < 24, `${name} grows linearly: 8x the input took ${(big / small).toFixed(1)}x the CPU (${small} us, ${big} us, ${n} runs)`);
+    }
+  }
   // a translucent --bg is composited over white once: rgba(0,0,0,.5) paints #808080, so #111 ink reads 4.8:1 (it was measured on #404040, 1.8:1)
   assert.deepStrictEqual(themeIssues({ '--bg': 'rgba(0,0,0,.5)', '--ink': '#111111' }, clean).filter((i) => /^--ink .* on --bg/.test(i)), []);
   assert.ok(themeIssues({ '--bg': 'rgba(0,0,0,.5)', '--ink': '#444444' }, clean).some((i) => /^--ink .* on --bg/.test(i)), '#444 on #808080 fails');

@@ -13,8 +13,8 @@ import * as assert from 'node:assert';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { BAR_TOKENS, FONT_ALLOW, HOSTILE_RE, TYPED_TOKENS, typedValue } from '../src/shared/themetokens';
-import { BAR_PAIRS, CONTRAST_PAIRS, NAMED_COLOURS, UI_PAIRS, BRAND_UIS, WORLD_GLASS, contrast, glassOver, luminance, parseColor, resolveColor, themeIssues } from '../src/shared/themegen';
-import { ART_SLOTS, checkUserManifest } from '../src/shared/themes';
+import { BAR_PAIRS, COLOUR_HUE_RE, COLOUR_NUM_RE, CONTRAST_PAIRS, NAMED_COLOURS, UI_PAIRS, BRAND_UIS, WORLD_GLASS, contrast, glassOver, luminance, parseColor, resolveColor, themeIssues } from '../src/shared/themegen';
+import { ART_SLOTS, TOKEN_VALUE_MAX, checkUserManifest } from '../src/shared/themes';
 
 const ROOT = process.cwd();
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -722,6 +722,21 @@ console.log('toggle switch: on track, both knobs pass 3:1 in Clean Office and th
   for (const g of grammar) assert.deepStrictEqual(R.parseColor(g), parseColor(g), `parsers agree on ${g}`);
   for (const bad of grammar.slice(0, 9)) assert.strictEqual(parseColor(bad), null, `${bad} is not a colour`);
   for (const good of grammar.slice(9)) assert.notStrictEqual(parseColor(good), null, `${good} is a colour`);
+  // review of #1307, finding 1: forms Chromium rejects (mixed number and percent in the comma syntax, a number ending in a dot) are refused by both
+  // parsers alike; mixing in the space syntax is valid CSS and read alike
+  const chromium = ['rgb(72.549%, 199, 194)', 'rgb(50%, 100, 0)', 'rgba(10, 20%, 30, .5)', 'rgb(185. 199. 194.)', 'rgb(1. 2 3)', 'hsl(0 0% 100% / 1.)', 'hsl(1. 50% 50%)', 'rgb(0 0 0 / .5.)',
+    'rgb(72.549% 199 194)', 'rgb(50% 100 0 / 50%)', 'rgb(10%, 20%, 30%, .5)', 'rgb(1, 2, 3, 50%)', 'rgb(.5 1.5 +2)'];
+  for (const g of chromium) assert.deepStrictEqual(R.parseColor(g), parseColor(g), `parsers agree on ${g}`);
+  for (const bad of chromium.slice(0, 8)) assert.strictEqual(R.parseColor(bad), null, `theme.js: ${bad} is not a colour`);
+  for (const good of chromium.slice(8)) assert.notStrictEqual(R.parseColor(good), null, `theme.js: ${good} is a colour`);
+  reg('chromium-bad', { '--ink': 'rgb(72.549%, 199, 194)' });
+  assert.ok((R.fallbacks('chromium-bad').unmeasured as string[]).includes('--ink'), 'a mixed comma --ink is listed unmeasured by the renderer, not measured');
+  // finding 2: one length limit and the same linear number regexes in both copies; a value over the limit is not parsed
+  assert.strictEqual(R._TOKEN_VALUE_MAX, TOKEN_VALUE_MAX, 'theme.js TOKEN_VALUE_MAX equals themes.ts');
+  assert.strictEqual(String(R._COLOUR_NUM_RE), String(COLOUR_NUM_RE), 'the same number regex');
+  assert.strictEqual(String(R._COLOUR_HUE_RE), String(COLOUR_HUE_RE), 'the same hue regex');
+  for (const n of [TOKEN_VALUE_MAX - 9, TOKEN_VALUE_MAX - 8]) { const v = `rgb(${'0'.repeat(n)} 0 0)`; assert.deepStrictEqual(R.parseColor(v), parseColor(v), `parsers agree at length ${v.length}`); }
+  assert.strictEqual(R.parseColor(`rgb(${'0'.repeat(TOKEN_VALUE_MAX)} 0 0)`), null, 'theme.js: a value over TOKEN_VALUE_MAX is not parsed');
   // 12. alpha is clamped to 0..1, both forms, both parsers
   for (const [v, a] of [['rgb(0 0 0 / 2)', 1], ['rgb(0 0 0 / -1)', 0], ['rgb(0 0 0 / 200%)', 1], ['rgba(0,0,0,5)', 1], ['hsl(0 0% 0% / 3)', 1]] as Array<[string, number]>) { assert.strictEqual(parseColor(v)?.[3], a, v); assert.strictEqual(R.parseColor(v)?.[3], a, v); }
 
@@ -765,6 +780,13 @@ console.log('toggle switch: on track, both knobs pass 3:1 in Clean Office and th
   const arcade = R.worldTokens('retro') as Record<string, string>;
   assert.ok(luminance(resolveColor(arcade['--drop-bg']) as string) < 0.1 && /^#[0-9a-f]{6}$/i.test(arcade['--drop-bg']), 'the arcade has its own dark --drop-bg');
   assert.ok(contrast(arcade['--drop-ink'], arcade['--drop-bg']) >= 4.5, 'its drop zone reads');
+  // review of #1307, finding 3: one --drop-bg in the arcade's page set (a second key in the same object literal is dead: the later one wins silently)
+  {
+    const src = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'theme.js'), 'utf8');
+    const at = src.indexOf("name:'Retro arcade'"), page = src.slice(at, src.indexOf('bar:{', at));
+    assert.ok(at > 0 && page.length > 0, 'the arcade set is found in theme.js');
+    assert.strictEqual(page.split("'--drop-bg':").length - 1, 1, 'WORLD_SETS.retro.page sets --drop-bg exactly once');
+  }
 
   // 6. data-dark follows --surface in any colour form
   for (const [v, dark] of [['rgb(20 20 30)', true], ['hsl(240 20% 10%)', true], ['black', true], ['#000000ff', true], ['rgb(250 250 250)', false], ['white', false], ['rgba(0,0,0,.1)', false], ['currentColor', false]] as Array<[string, boolean]>) {
