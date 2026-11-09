@@ -75,3 +75,7 @@
 - [ ] T071 (FR-086 item 4 and the CI half) `test-ui-suite.ts` ignores timings for missing drivers; `node base/scripts/fragments.js --pr-check --root pr`, a token-free step of the `spec-numbers` job (base copy, PR read as data through git, paths through `safe-print.js`; self-tests in `spec-numbers-selftest`), after T069 and T070, fails a non-fold PR that changes a generated page or the timings outside a refresh PR. Test: throwaway git repos (fold PR passes, feature PR fails, refresh PR passes, a hostile path is printed safely); mutants for each.
 - [ ] T072 (FR-086 item 3, last; answer b) `DRIVERS` from the asserting-driver scan plus `VARIANTS`; `--list` before and after shows the same labels; lands only if the PR's own UI shards pass in name order on Linux and Windows, otherwise `DRIVERS` stays with the one-entry-per-line advice. Test: `test:uisuite` with a mutant that drops the scan.
 - [ ] T073 (FR-086, FR-063) `docs/rules/docs-sync.md` lines as written in FR-086, `npm run rules:check` in budget; `docs-check.sh` warns when a non-fold PR changes README's *What it does*; `docs/collaboration.md` and the PR template consistent.
+
+## 2026-11-09: project skills (FR-087)
+
+- [x] T074 (FR-087) `.claude/skills/durbar-release/`, `durbar-fold/`, `durbar-ci-rerun/` (`SKILL.md` each: frontmatter name and when-to-use description, a short checklist, links to the source of truth, commands checked against `package.json` and `scripts/`). `read:` only; not run in a real session.
