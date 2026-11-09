@@ -61,7 +61,8 @@ codeql_ok=; [ "$codeql" = pass ] && codeql_ok=passed
 # when the check list was read and every changed file is on this fixed no-code list (the default setup's path filter is not readable here);
 # an API error, an empty file list or any other file blocks (fail closed). The alerts must still be 0 (below). Any other CodeQL state blocks.
 nocode() { case $1 in *.md|*.png|*.jpg|*.jpeg|*.gif|*.webp|package-lock.json|*/package-lock.json|scripts/*/package.json) return 0;; esac; return 1; }
-only_nocode() { local f files; files=$(gh pr diff $p --name-only) && [ -n "$files" ] || return 1
+# every path the PR touches: added, changed and removed files, and a renamed file's old path too (a rename out of src/ is not a docs change)
+only_nocode() { local f files; files=$(gh api --paginate "repos/$R/pulls/$p/files" --jq '.[]|.filename,(.previous_filename // empty)') && [ -n "$files" ] || return 1
   while IFS= read -r f; do nocode "$f" || return 1; done <<< "$files"; }
 if [ -z "$codeql_ok" ] && { [ "$codeql" = skipping ] || [ -z "$codeql" ]; } && printf '%s\n' "$checks_out" | grep -q $'\t'; then
   if only_nocode; then codeql_ok="skipped (no analysed files)"; codeql="skipping(no analysed files)"; else codeql="${codeql:-missing}(analysed or unknown files changed)"; fi

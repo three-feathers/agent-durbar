@@ -1,8 +1,8 @@
 /*
  * scripts/pr-gate.sh and a CodeQL check GitHub skipped (spec 021 FR-089, issue #1420): a `skipping` or absent CodeQL check counts as passed
  * only when the check list was read, every changed file is on the no-code list and the open alerts are 0; anything else blocks (fail closed).
- * Runs the gate against a fake `gh` (bash, answers from fixture files, applies each `--jq` / `-q` with the real jq), then plants two mutants
- * in a copy of the gate (a failing CodeQL treated as skipped; the file filter removed) and checks each is caught by its labelled assert.
+ * Runs the gate against a fake `gh` (bash, answers from fixture files, applies each `--jq` / `-q` with the real jq), then plants mutants
+ * in a copy of the gate (a failing CodeQL treated as skipped, the file filter removed and more) and checks each is caught by its labelled assert.
  * Needs bash and jq: on Windows, or without jq, only the static checks run (Linux CI runs it all).
  */
 import assert from 'assert';
@@ -17,7 +17,7 @@ const gate = fs.readFileSync(path.join(SCRIPTS, 'pr-gate.sh'), 'utf8');
 
 // ---- static: the rule's parts are in the gate
 assert.ok(/nocode\(\) \{ case \$1 in /.test(gate), 'pr-gate.sh has the no-code file list');
-assert.ok(gate.includes('gh pr diff $p --name-only'), 'pr-gate.sh reads the changed files');
+assert.ok(gate.includes('repos/$R/pulls/$p/files'), 'pr-gate.sh reads the changed files, renames\' old paths too');
 assert.ok(gate.includes('[ -z "$codeql_ok" ]'), 'the verdict uses codeql_ok, not a raw state');
 
 const bash = process.platform === 'win32' ? null : spawnSync('bash', ['-c', 'command -v jq'], { encoding: 'utf8' });
@@ -32,7 +32,7 @@ const bin = path.join(dir, 'bin');
 const fx = path.join(dir, 'fx');
 fs.mkdirSync(bin);
 fs.mkdirSync(fx);
-// fixtures: checks.txt (tab-separated `gh pr checks` lines; absent = the call fails), diff.txt (absent = the call fails),
+// fixtures: checks.txt (tab-separated `gh pr checks` lines; absent = the call fails), files.json (the PR files API; absent = the call fails),
 // alerts-merge.json / alerts-head.json (absent = the call fails); the comment lists are empty and the PR is ours
 fs.writeFileSync(path.join(bin, 'gh'), `#!/bin/bash
 F="${fx}"; prog=.; prev=
@@ -41,7 +41,6 @@ ep=; for a in "$@"; do case $a in repos/*|graphql|user) ep=$a; break;; esac; don
 case "$1 $2" in
   "repo view") echo '{"nameWithOwner":"o/r"}' | jq -r "$prog"; exit;;
   "pr checks") [ -f "$F/checks.txt" ] || { echo "fake gh: checks failed" >&2; exit 1; }; cat "$F/checks.txt"; exit;;
-  "pr diff") [ -f "$F/diff.txt" ] || { echo "fake gh: diff failed" >&2; exit 1; }; cat "$F/diff.txt"; exit;;
   "pr view") echo '{"mergeable":"MERGEABLE","files":[{"path":"package-lock.json"}],"labels":[]}' | jq -r "$prog"; exit;;
 esac
 case $ep in
@@ -50,11 +49,14 @@ case $ep in
   repos/o/r/code-scanning/alerts?ref=refs/pull/1/merge*) f=alerts-merge;;
   repos/o/r/code-scanning/alerts?ref=refs/pull/1/head*) f=alerts-head;;
   repos/o/r/pulls/1) echo '{"user":{"login":"dependabot[bot]"},"head":{"repo":{"full_name":"o/r"}},"base":{"repo":{"full_name":"o/r"}}}' | jq -r "$prog"; exit;;
+  repos/o/r/pulls/1/files) f=files;;
   repos/o/r/pulls/1/reviews|repos/o/r/issues/1/comments|repos/o/r/pulls/1/comments) echo '[]' | jq -r "$prog"; exit;;
   *) echo "fake gh: no fixture for $*" >&2; exit 9;;
 esac
 [ -f "$F/$f.json" ] || { echo "fake gh: $f failed" >&2; exit 1; }
-jq -r "$prog" < "$F/$f.json"
+jq -r "$prog" < "$F/$f.json" || exit
+[ -f "$F/$f.fail" ] && { echo "fake gh: $f failed after its first page" >&2; exit 1; }
+exit 0
 `, { mode: 0o755 });
 const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` };
 
@@ -64,12 +66,15 @@ const set = (name: string, v: string | null): void => {
   if (v === null) fs.rmSync(f, { force: true });
   else fs.writeFileSync(f, v);
 };
-const fixture = (o: { codeql?: string | null; checks?: boolean; files?: string[] | null; merge?: unknown[] | null; head?: unknown[] | null } = {}): void => {
+type File = string | { filename: string; previous_filename: string };
+const fixture = (o: { codeql?: string | null; checks?: boolean; files?: File[] | null; merge?: unknown[] | null; head?: unknown[] | null } = {}): void => {
   const codeql = o.codeql === undefined ? 'skipping' : o.codeql;
   set('checks.txt', o.checks === false ? null : OTHER + (codeql === null ? '' : `CodeQL\t${codeql}\t0\thttps://x\n`));
-  set('diff.txt', o.files === null ? null : `${(o.files ?? ['scripts/prereview/package-lock.json', 'scripts/prereview/package.json']).join('\n')}\n`);
+  const files = o.files ?? ['scripts/prereview/package-lock.json', 'scripts/prereview/package.json'];
+  set('files.json', o.files === null ? null : JSON.stringify(files.map((f) => (typeof f === 'string' ? { filename: f } : f))));
   set('alerts-merge.json', o.merge === null ? null : JSON.stringify(o.merge ?? []));
   set('alerts-head.json', o.head === null ? null : JSON.stringify(o.head ?? []));
+  set('files.fail', null);
 };
 const run = (gatePath: string): { code: number | null; out: string } => {
   const r = spawnSync('bash', [gatePath, '1'], { env, encoding: 'utf8', timeout: 60000 });
@@ -113,10 +118,15 @@ const cases = (g: string): void => {
     fixture({ files: ['docs/a.md', f] });
     notReady(g, `CASE unknown-file: ${f} is not on the no-code list`, /codeql=skipping\(analysed or unknown files changed\)/);
   }
+  fixture({ files: [{ filename: 'docs/a.md', previous_filename: 'src/main/a.ts' }] });
+  notReady(g, 'CASE rename-from-src: a src/*.ts file renamed to a .md', /codeql=skipping\(analysed or unknown files changed\)/);
   fixture({ files: [] });
-  notReady(g, 'CASE empty-diff: no changed files read', /codeql=skipping\(/);
+  notReady(g, 'CASE empty-files: no changed files read', /codeql=skipping\(/);
+  fixture();
+  set('files.fail', '');
+  notReady(g, 'CASE files-partial: the file list fails after its first page (all docs so far)', /codeql=skipping\(/);
   fixture({ files: null });
-  notReady(g, 'CASE diff-error: the file list cannot be read', /codeql=skipping\(/);
+  notReady(g, 'CASE files-error: the file list cannot be read', /codeql=skipping\(/);
   fixture({ merge: null });
   notReady(g, 'CASE alerts-error: the alerts cannot be read', /alerts=unread/);
   fixture();
@@ -135,7 +145,8 @@ try {
   const mutants: Array<[string, string, string, string]> = [
     ['a failing CodeQL treated as skipped', '[ "$codeql" = skipping ] ||', '[ "$codeql" = skipping ] || [ "$codeql" = fail ] ||', 'CASE codeql-fail'],
     ['the file filter removed', 'nocode "$f" || return 1', 'true', 'CASE skipped-with-src'],
-    ['an API error on the diff ignored', 'files=$(gh pr diff $p --name-only) && [ -n "$files" ] || return 1', 'files=$(gh pr diff $p --name-only); [ -n "$files" ] || return 0', 'CASE empty-diff'],
+    ['a partly read file list accepted', "--jq '.[]|.filename,(.previous_filename // empty)') && [ -n", "--jq '.[]|.filename,(.previous_filename // empty)'); [ -n", 'CASE files-partial'],
+    ['a rename\'s old path ignored', ',(.previous_filename // empty)', '', 'CASE rename-from-src'],
     ['the alerts read without a number check', '&& isnum "$a_merge" && isnum "$a_head" ', '', 'CASE alerts-empty'],
   ];
   for (const [name, from, to, caught] of mutants) {
