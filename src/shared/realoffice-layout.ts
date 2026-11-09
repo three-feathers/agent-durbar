@@ -7,7 +7,8 @@ export type RealState = 'working' | 'thinking' | 'waiting' | 'error' | 'limit' |
 /** `lounge`: the app's room rule (spec 001 FR-051, `shutPlan`) rolls this finished, read agent in: it sits in the lounge row, not at a desk (spec 097 FR-246) */
 /** `helpers`: how many sub-agents the desk has (spec 097 FR-306: the engine reserves a strip for them under the plate) */
 export interface RealAgent { id: string; state: RealState; away?: string | null; person?: string | null; lounge?: boolean; helpers?: number }
-export interface RealFolder { id: string; agents: RealAgent[] }
+/** `keep`: the folder has a saved desk order (spec 097 FR-345): its desks stay in the model's order, no status sort */
+export interface RealFolder { id: string; agents: RealAgent[]; keep?: boolean }
 export interface RealVisitor { id: string; person?: string | null; needsYou?: boolean }
 export interface RealPlace { id: string; custom?: boolean; visitors: RealVisitor[] }
 export interface RealModel { folders: RealFolder[]; places: RealPlace[] }
@@ -133,6 +134,10 @@ const roSeatOf = (meta: RealMeta, a: RealAgent): SeatMeta | null => (a.person &&
 export function sortDesks(agents: readonly RealAgent[]): RealAgent[] {
   return agents.map((a, i) => [a, i] as const).sort((p, q) => (STATE_ORDER[p[0].state] ?? 4) - (STATE_ORDER[q[0].state] ?? 4) || p[1] - q[1]).map((x) => x[0]);
 }
+
+/** FR-345: the order a folder's desks are laid out in: the model's order when the folder has a saved desk order (`keep`), else the status order (FR-022).
+ *  The one function the layouts (`realLayout`, `aislesLayout`) and the keys' move (`deskOrder`) share, so a move starts from what is on screen. */
+export function shownDesks(f: RealFolder): RealAgent[] { return f.keep ? f.agents : sortDesks(f.agents); }
 
 /** Every split of `list` into at most `most` unordered groups (restricted growth strings; 187 for 6 folders in up to 4 rows, 2,795 for 8).
  *  Geometry does not depend on the order of rows or of zones in a row, so the mockup's search over every order and contiguous split
@@ -419,7 +424,7 @@ export function realLayout(model: RealModel, viewport: { w: number; h: number },
   const W = Math.max(200, viewport.w), H0 = Math.max(200, viewport.h);
   /* FR-246, FR-247: the lounge's agents leave their folders; the row's height is set aside before the desk search, so the room they leave goes to the desks. The lobby keeps its range from the whole height. */
   const { desks: atDesks, lounge } = splitLounge(model);
-  const folders = atDesks.filter((f) => f.agents.length).map((f) => ({ id: f.id, agents: sortDesks(f.agents) }));
+  const folders = atDesks.filter((f) => f.agents.length).map((f) => ({ id: f.id, agents: shownDesks(f) })); /* FR-345: a saved desk order is kept */
   const [lobbyMin, lobbyMax] = lobbyRange(H0);
   const LR = lounge.length ? loungeRows(meta, lounge, W, 0) : null, R = LR ? LR.h : 0, Ho = Math.max(200, H0 - R);
   const zones: ZoneBox[] = [];
@@ -499,7 +504,7 @@ export function realLayout(model: RealModel, viewport: { w: number; h: number },
 /** FR-246: the agents the app put in the lounge (`lounge`, never one away at a place) leave their folders; the lounge in status order (FR-022), then folder order */
 export function splitLounge(model: RealModel): { desks: RealFolder[]; lounge: RealAgent[] } {
   const inLounge = (a: RealAgent): boolean => !!a.lounge && !a.away;
-  return { desks: model.folders.map((f) => ({ id: f.id, agents: f.agents.filter((a) => !inLounge(a)) })), lounge: sortDesks(model.folders.flatMap((f) => f.agents.filter(inLounge))) };
+  return { desks: model.folders.map((f) => ({ id: f.id, keep: f.keep, agents: f.agents.filter((a) => !inLounge(a)) })), lounge: sortDesks(model.folders.flatMap((f) => f.agents.filter(inLounge))) };
 }
 
 /** FR-247 (owner 2026-11-06, issue #1220): a lounge seat in the `rows` worlds. LOUNGE_U: the seated person's body height (a face of FACE_U x 84 = 25 px, over FR-229's 24);
@@ -731,4 +736,17 @@ export function zoomRect(target: Rect, avoid: readonly Rect[], view: Rect, size:
     if (l < least) { least = l; best = { ...r, side: 'covering', covers: true }; }
   }
   return best;
+}
+
+/** FR-347, FR-348: a folder's desk ids exactly as the layout draws them left to right (lounge seats are not at desks), or [] for an unknown folder. */
+export function deskOrder(model: RealModel, folderId: string): string[] {
+  const f = splitLounge(model).desks.find((x) => x.id === folderId);
+  return f ? shownDesks(f).map((a) => a.id) : [];
+}
+
+/** FR-348: the base a desk move is made in and saved from: the desks as shown first, then the keys that are not shown (the lounge, a status filter) in `full` order,
+ *  so the first move in a room with no saved order saves the order on screen, with the neighbour on screen swapped. */
+export function deskBase(shown: readonly string[], full: readonly string[]): string[] {
+  const seen = new Set(shown);
+  return [...shown, ...full.filter((k) => !seen.has(k))];
 }

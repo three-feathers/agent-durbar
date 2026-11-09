@@ -161,6 +161,12 @@ One PR, spec first. Who moves is `shutPlan(r)` (spec 001 FR-051, `shutters.js` `
 - **CSS**: `.ro-lseat` table, `.ro-lmon` monitor (photo and cave: the desk monitor scaled; arcade: a pixel frame in `worlds/retro/world.css`), `.ro-plate.lounge`.
 - **Checks**: `test:realoffice-layout` and `test-realoffice-aisles` (FR-246..FR-248, mutants), `scripts/check-097-lounge.js` (FR-246..FR-249), `shots-097-moments` asleep moment and `world-matrix.js` lounge scene updated.
 
+## 2026-11-08 delta: rearrange in Real office (FR-345..FR-349, T260..T264)
+
+- **Pure** (`src/shared/realoffice-layout.ts`, `realoffice-arrangements.ts`, T260): `RealFolder.keep?`; `splitLounge` carries it; `realLayout` and `aislesLayout` use `f.keep ? f.agents : sortDesks(f.agents)`.
+- **App** (`src/renderer/app.js`, T261): `reoStepModel(kind, key, delta, roomId, refocus)` is the one model-based move (desk group from `deskOrder(realModel(officeModel()), roomId)`, the layout's own order via `shownDesks`; rooms and places from `officeModel()` and `lobbyPlaces()`; base `deskBase(shown, reoFullKeys)`; write through `reoApply`, the flat `reoCommit`'s body); `reoStep` and the folder menu's `moveRoomStep` call it; the Alt+arrows handler also finds `.ro-plate[data-id]`, `.ro-sb` and `.ro-lplate[data-place]`; `realModel` sets `keep` from `ORDER.desks[path]`. No new store, channel or tab stop.
+- **Checks**: `test:realoffice-layout`, `test-realoffice-aisles`, `scripts/check-097-order.js` (in `ui-suite`), `shots-033-order` unchanged, `check-office-ops`, `OFFICE_VIEW=real` `check-office-overlap`.
+
 ## Context as a line round the monitor frame (delta 2026-11-07; FR-322..FR-326, T250..T255)
 
 `realModel` adds `ctx: {pct, level}` (from `DurbarScreens.ctxChip`, the chat header's source) and the context words to each desk's accessible name. `realoffice.js` makes one `svg.ro-ctx > rect` per desk in `.ro-screen` (pathLength 100) and writes `stroke-dasharray` and `data-lv` only when they changed; `DurbarRealOffice.ctx(id, {pct, level} | null)` (called by `realCtxPush` on a context event and after a finished compaction) does the same on a context event without a render. World CSS sets the inset and width (Photo and cave on the bezel, arcade on the cabinet's screen frame); colours are `var(--tint-ink)` (soft white) for `ok` and `warn` and `var(--red)` for `high` (FR-323, owner 2026-11-07 21:01 UTC); forced colours use `Highlight`.
