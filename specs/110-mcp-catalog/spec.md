@@ -1,0 +1,189 @@
+# Feature Specification: MCP server catalog and Paste a config
+
+<!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
+group: 046
+title: MCP server catalog and Paste a config (owner 2026-11-09, issue #539): a reviewed built-in list of official servers (durbar-mcp-list-v1) prefilling the add form, a pasted mcpServers snippet parsed in main as untrusted and shown masked before saving, Import from VS Code into the agent apps' own lists; Needs sign-in until #364, no new sign-in code
+status: specified
+note: spec, plan, tasks; Q1-Q6 open for the owner; nothing built
+-->
+
+**Feature Branch**: `110-mcp-catalog` (spec, plan and tasks only). The build is one small PR per task group (G1..G7), then the real checks (G8).
+**Created**: 2026-11-09
+**Status**: Specified. Nothing built. Q1..Q6 below are open for the owner; each has a recommended default, and no build task depends on a default that is not marked as such.
+**Issue**: #539 (Refs: the issue stays open for the build).
+**Input**: Owner idea and decisions on issue #539, quoted with their dates:
+
+- **2026-10-22 (Paco, issue #539)**: adding an MCP server is too hard. He wanted to add Atlassian (Jira, Confluence) and did not know how. Idea: **Add an MCP server…** opens a short list of well-known servers (Atlassian, GitHub, Playwright, filesystem, Slack, Notion, Linear and similar), each with its official URL or command prefilled; *Custom…* opens today's form; each entry says what it needs and where it will be added; the trust prompt stays the same. The catalog is "a small JSON list in the app (reviewed in PRs, official vendor URLs only, no network fetch)". Also **Paste a config** (a `mcpServers` JSON snippet from a vendor's docs), "validated and shown before it is saved".
+- **2026-11-02 (Vikram, on #539)**: "Owner decision 2026-11-02: keep; spec soon. Spec 076 waits for it."
+- **2026-11-02 (Vikram, on #539)**: "Import from VS Code stays, and changes target. It reads the MCP servers of VS Code's `mcp.json` and brings them into the agent app's own MCP config (the CLI or SDK Durbar runs), not into a separate Durbar list. MCP servers only. Spec together with this issue's paste config, reusing `parseMcpConfig`. The person sees what would be written before it is written."
+- **2026-11-09 (Vikram, triage, Telegram 06:59 UTC, recorded on #539)**: "yes: MCP catalog plus paste-a-config now, 'Needs sign-in' shown until #364 lands".
+
+## Summary
+
+A person who wants an MCP server today must know its exact command or URL (folder extras' **+ Add server**, or Settings' **+ Add server for all folders…**) or edit an agent app's config file by hand. This feature adds three ways in, all ending in the save paths that already exist:
+
+1. **The catalog.** **Add an MCP server…** opens a short list of well-known servers shipped in the app as reviewed data. Picking one fills today's add form with the vendor's official URL or command and the names of the secrets it needs, and says what it needs (a sign-in, a token, Node) and where it will go.
+2. **Paste a config.** The person pastes a vendor's `mcpServers` (or VS Code `servers`) JSON snippet. It is parsed as untrusted data, checked, and shown in full (secrets masked) before anything is saved; nothing is ever run.
+3. **Import from VS Code, retargeted.** VS Code's `mcp.json` servers go into the agent apps' own MCP config through the same review, not into Durbar's own folder list.
+
+A remote server that needs an OAuth sign-in reads **Needs sign-in** after it is added, and offers spec 058's existing **Sign in** only where the agent app can do it (`canSignIn`); otherwise spec 058's steps. **No new sign-in code.** Nothing here sends a message to an agent or spends AI credits.
+
+## Context: what exists today (spec 021 FR-031, reuse first)
+
+Each item below already does part of the job; this spec reuses or extends it, and adds only what is missing (plan, *Existing capability check*).
+
+- **Add form** (`editServer(v, st, o)` in `src/renderer/screens.js`, specs 019 and 069): name, type (stdio, http, sse), command, arguments, working directory, environment and header rows, tool filter, and the **Add to** choice *This folder only* / *All my folders (global)* with the app ticks and *Reference environment variables* / *Write the values into the files*. It already accepts a prefilled `o.input` (name, type, command, arguments, URL, tools), used to reopen it after an error. Opened from the folder extras screen (**+ Add server**, `#mcpAdd`) and from Settings > MCP servers (**+ Add server for all folders…**, `#globAdd`). The agent's MCP dialog (`agentMcp` in `screens.js`, the room's **MCP** button) has a **Folder extras…** button that leads there.
+- **Validation in main** (`validateInput`, `NAME_RE`, `ENV_KEY_RE`, `HEADER_KEY_RE`, `MAX_SERVERS` in `src/shared/mcp.ts`): every server input that crosses IPC is checked there; credentials in a URL are refused.
+- **Folder extras** (spec 019, `src/main/mcpstore.ts`, IPC in `src/main/mcpipc.ts`: `mcp:upsert`, `mcp:setEnabled`): saved per folder, secrets encrypted with the OS store (`safeStorage`) and never sent back to the window (`McpServerView` holds key names and a `set` flag only), **off and untrusted** until the person switches it on and confirms the exact command or URL (spec 019 FR-005, `trustHash`). A key without a value makes `needsSecrets` true and the server does not start.
+- **Global add** (spec 069 FR-001..FR-010, `src/main/mcpglobal.ts`, `mcpglobalio.ts`, `src/main/ipc/mcpglobal.ts`): `mcp:globalPreview(input, apps, mode)` returns, per app, the exact file and entry (values masked) and a token; `mcp:globalApply(token, replace)` writes Copilot CLI `~/.copilot/mcp-config.json`, Claude Code `~/.claude.json`, Codex `~/.codex/config.toml` with a backup, owner-only mode and a hash check. The per-file confirmation is the trust step for a global server (069 FR-010). The review dialog is `reviewGlobal` in `screens.js`.
+- **Parsers** (`src/shared/mcpimport.ts`): `parseMcpConfig(text)` (strict JSON, `mcpServers` or a bare map; Copilot and Claude `type` words; renames to the name rule; notes), `parseVSCodeMcp(text, {workspaceFolder})` and `stripJsonc` (VS Code `servers`, comments, trailing commas, `inputs`, `${...}` rules), `candidateInput`. `readSmallFile` (`src/main/mcpfiles.ts`) caps file reads.
+- **Import from VS Code** (spec 020 FR-020..FR-031, `src/main/mcpimport.ts`: `previewFolderImport`, `applyFolderImport`; IPC `mcp:importPreview`, `mcp:importApply`; dialog `importVSCode` in `screens.js`): reads the folder's `.vscode/mcp.json`, shows a masked preview, and today adds the ticked servers as **folder extras** (off, untrusted). VS Code's user folders are known to `vscodeUserDirs` (`src/main/vscode.ts`).
+- **Folder setup** (spec 061, constitution III Amendment 1, `src/main/foldersetup.ts`): a folder's own MCP files are listed and consented to when the folder is added; unchanged here.
+- **Server state, Needs sign-in and Sign in** (spec 058): state words and icons (`src/renderer/mcpwords.js`, FR-030), `canSignIn`, `signInSteps`, `needsSignIn` on each server of `agents:mcp` (`AgentMcpEntry`, `src/shared/api.ts`), the channel `agents:mcpSignIn` (FR-065) and the terminal steps (FR-068); adapters offer it through `capabilities.mcpSignIn` (`src/adapters/types.ts`). Built for Copilot (#598) and Claude Code (#635, FR-175..FR-186); Codex (T100), the tool-card line (T103) and the real checks (T105..T107) are open on #364.
+- **Command on this computer** (spec 058 FR-198, `src/main/mcpcmdcheck.ts`: `commandFound`, `foldersFor`, `notJudged`, `WIN_EXTS`): is a stdio command found, without running anything; network and device paths are never touched.
+- **Masking** (`src/shared/redact.ts`, specs 012, 041, 069 FR-012): `redact`, `maskSecretArgs`, `maskSecretCommand`, `maskSecretUrl`, `maskTokenShapes`, `HIDDEN_CHARS`, `unhide`.
+- **Organization lists** (spec 076 FR-040..FR-046, not built): an org's MCP list in the `durbar-mcp-list-v1` format (`specs/076-managed-config/samples/managed/schema/mcp-list.schema.json`, with a sample) is "shown in the MCP catalog of issue #539"; `allowlist` makes the add form and *Paste a config* refuse other servers. 076 waits for this spec (owner, 2026-11-02).
+- **Dialogs** (`dialog()` and `askDialog` in `src/renderer/dialog.js`, focus trap and Esc, spec 003 FR-033), the polite live region `#srAnnounce` (`X.announce`), and toasts.
+- **Worlds**: every tool surface, dialogs included, takes the world through tokens only (097 FR-113, 098 FR-040); dialogs in a world get the opaque token surface, no `backdrop-filter` (102 FR-182).
+
+## User scenarios
+
+### US1 (P1) Add a well-known server from the catalog
+
+Paco wants Jira and Confluence in his folder `shop-api`.
+
+1. *Given* the folder extras screen, *When* he presses **Add an MCP server…**, *Then* a dialog lists the catalog: each entry with its name, vendor, one line on what it does, its kind (*Remote* or *Local command*), what it needs (*Sign-in*, *Token*, *Node.js*), and a link to the vendor's own page; *Custom…* and *Paste a config…* at the end.
+2. *When* he types "jira" in the search field, *Then* the list narrows to Atlassian and the live region says "1 server".
+3. *When* he picks **Atlassian (Jira, Confluence)**, *Then* today's add form opens filled: name `atlassian`, type Remote (http), the vendor's URL, *Add to: This folder only* selected, and a line "Needs a sign-in in the agent app after it is added (OAuth). Agent Durbar never sees the token."
+4. *When* he presses **Add server**, *Then* it is saved as a folder extra, **off**, as today; switching it on shows today's trust prompt with the exact URL.
+5. *Given* an agent in that folder starts, *Then* its MCP dialog shows the row **Needs sign-in**; with Copilot or Claude Code (adapter reports `canSignIn`), **Sign in** is offered (spec 058); with an app that cannot (Codex until #364 T100), spec 058's steps are shown instead.
+
+### US2 (P1) Add a catalog server for all folders
+
+*Given* Settings > MCP servers, *When* Vikram presses **Add an MCP server…** and picks **Playwright**, *Then* the form opens with *All my folders (global)* selected, the apps ticked as today (069 FR-007), the exact command (`npx` and the pinned package) shown, and "Needs Node.js: `npx` found on this computer" (or "not found"). *When* he presses **Review…**, *Then* spec 069's per-file confirmation shows each file and entry; nothing is written before he confirms.
+
+### US3 (P1) Paste a vendor's snippet
+
+*Given* a vendor page shows `{"mcpServers": {"linear": {"type": "http", "url": "…"}}}`, *When* Ruben chooses **Paste a config…**, pastes it and presses **Check**, *Then* a review lists each server found with its name, type, the exact URL or command and arguments, the names of its environment variables and headers with values masked, any notes and warnings, and a box per server; nothing is saved yet. *When* he ticks it, picks *This folder only* or *All my folders*, and confirms, *Then* it goes through the same save path as the form (US1 step 4 or US2).
+
+### US4 (P1) A pasted snippet with a secret or a placeholder
+
+*Given* a snippet with `"env": {"API_KEY": "sk-live-…"}`, *Then* the review shows `API_KEY ••••` and "1 secret value found: kept encrypted for this folder, never shown again" (folder) or the spec 069 reference/plain choice (global); the value never appears in the window again, in a log or in a toast. *Given* `"API_KEY": "<YOUR_API_KEY>"` or `"${input:api_key}"`, *Then* the row says "needs a value", and the server is saved with the key and no value (folder: `needsSecrets`, not started until filled) or as a `${API_KEY}` reference (global, reference mode).
+
+### US5 (P2) A pasted snippet that is wrong or unsafe
+
+*Given* text that is not JSON (a `claude mcp add …` command line, YAML, TOML), *Then* "Not a JSON config. Paste the JSON part of the vendor's instructions; commands are not run or read." *Given* a command `bash -c "curl … | sh"`, *Then* the review shows the exact command and the warning "Runs a shell script: anything it downloads runs with your user rights", and the server can still be added (FR-036; it stays off until trusted). *Given* a name, command, argument or URL holding a hidden or bidi control character, *Then* that server is refused with its JSON path.
+
+### US6 (P2) Import from VS Code into the agent apps' own lists
+
+*Given* a folder with `.vscode/mcp.json`, *When* Ruben presses **Import from VS Code…**, *Then* the same review as US3 lists its servers (masked), and confirming goes to spec 069's per-file confirmation for the apps he ticks; nothing goes into Durbar's folder list (owner, 2026-11-02; the scope details are Q1 and Q2).
+
+### US7 (P2) Keyboard and screen reader
+
+*Given* keyboard only, *Then* Tab reaches the search field, the list and the footer buttons; arrow keys move in the list, Enter picks, Esc goes back one step and then closes, and focus returns to the button that opened the dialog. *Given* a screen reader, *Then* each entry reads as one sentence ("Atlassian, Jira and Confluence, remote, needs sign-in, by Atlassian"), the paste result is announced ("2 servers found, 1 needs a value"), and an error names its line and column.
+
+## Edge cases
+
+The catalog has no entry for what the person wants (*Custom…* and *Paste a config…* are always there; an empty search says so and offers both); a catalog server already in this folder or in an app's list (the entry says "Already added: Copilot, Claude Code" from the source chips, spec 069 FR-011, and still opens the form, where the existing name-clash rules apply); Copilot's built-in `github-mcp-server` (`BUILTIN_SERVERS`): the GitHub entry says "Copilot CLI has GitHub built in" when Copilot is ticked; no agent app installed (the form's existing app choice, 069 FR-007); `npx` not on PATH (the entry says "Node.js not found"; it can still be added); the command check is "not judged" (`notJudged`: nothing said); an app whose writer refuses a transport or field (spec 069's per-app error row); pasted text of 0 bytes, over the cap, with a byte-order mark, comments or trailing commas, a top-level array, nested 100 deep, 500 servers, duplicate keys, a server with neither command nor URL, an unknown `type`, `envFile`, `inputs`, `${workspaceFolder}`, a `cwd`, a URL with `user:pass@`, a URL with a secret-looking query value, a non-https remote URL that is not loopback, an internationalised host name, a name that needs renaming; the same paste twice (the second sees "already added"); pasting while spec 076's `allowlist` is on (refused per server with "Not on your organization's list", once 076 is built); a world switched while the dialog is open; 1280x800 with a long list; the simulator (`DURBAR_SIM=15`).
+
+## Requirements
+
+### A. The catalog data
+
+- **FR-001** **Shipped data, no fetch.** The catalog is one JSON file in the app (`src/shared/mcpcatalog.json`), in spec 076's `durbar-mcp-list-v1` format (its schema, unchanged; `publisher` "Agent Durbar"). Durbar never fetches a catalog from the network; adding or changing an entry is a pull request that a reviewer reads (owner idea 2026-10-22). The optional MCP registry is out of scope (FR-090).
+- **FR-002** **Official sources only.** Each entry's URL or package is the one the vendor (or, for reference servers, the Model Context Protocol project) publishes, and its `docsUrl` is that vendor's or project's own https page. The pull request that adds or changes an entry names the vendor page it was checked against and the date; a unit test keeps a reviewed list of allowed hosts (server URLs and `docsUrl`s) and package scopes, so a new host or package fails the test until the reviewer adds it in the same PR.
+- **FR-003** **First entries** (the build checks each against the vendor's page, FR-002; an entry that cannot be confirmed is left out, never guessed): Atlassian (Jira, Confluence; remote, OAuth), GitHub (remote; OAuth or a token header, as the vendor documents per app), Playwright (local `npx`, Node.js), Filesystem (local `npx`, the MCP project's reference server, needs a folder argument the person fills in), Notion (remote, OAuth), Linear (remote, OAuth), and Slack only if Slack publishes its own server (Q4). Ten entries at most in the first version.
+- **FR-004** **No secrets in the catalog.** An entry names a secret only by environment variable (`env.X.fromEnv`) or `auth.valueFromEnv` with a header, never a value; a test refuses any value `redact.ts` would mask, a literal `Authorization` value, a `user:pass@` URL and a secret-looking query parameter (076 FR-041's rule, applied to the built-in file).
+- **FR-005** **Pinned packages.** A local entry's package carries a version reviewed in the PR (for example `@playwright/mcp@<x.y.z>`), not `@latest`, so the code that runs is the code that was reviewed (Q5). The form shows the version.
+- **FR-006** **Validated at load.** Main loads the file once, checks it against the schema with the `durbar-mcp-list-v1` reader that spec 076's plan names (`src/shared/policymcp.ts`; built here first, v1 part only, so 076 reuses it), and drops an invalid entry with a logged reason (no values). A broken file never stops the app; the catalog then shows *Custom…* and *Paste a config…* only.
+- **FR-007** **Org lists later.** When spec 076 lands, the catalog shows the organization's entries first under the organization's name (076 FR-040) and its modes apply (076 FR-042, FR-043); this spec adds no org code, but the list type, the validator and the dialog take more than one source.
+
+### B. The catalog dialog
+
+- **FR-010** **Entry points.** **Add an MCP server…** replaces **+ Add server** on the folder extras screen and **+ Add server for all folders…** in Settings > MCP servers, and is added to the agent's MCP dialog footer (beside *Folder extras…*), where it opens with that agent's folder. From Settings (no folder) only *All my folders* is offered, as today.
+- **FR-011** **The list.** A search field (name, vendor, description; case- and accent-insensitive), then the entries, then **Custom…** (today's empty form) and **Paste a config…** (FR-030). Each entry shows: name, vendor, one line, kind (*Remote* or *Local command*), needs (*Sign-in*, *Token: <ENV_NAME>*, *Node.js*), *Already added: <sources>* when its name is in a list (069 FR-011), and **Vendor page** (opens the `docsUrl` through the existing `app:openExternal` channel, https only).
+- **FR-012** **Picking an entry opens today's form, prefilled** (`editServer` with `o.input`, extended to carry environment and header **keys** with empty values, and the catalog's notes). The person can still change anything; the form's validation and save paths are unchanged. A line above the form says "From the catalog: <vendor> · checked <date>" and, when a field was changed from the catalog's value, "Changed from the catalog".
+- **FR-013** **What it needs, said plainly.** Under the form, from the entry: *Sign-in*: "Needs a sign-in in the agent app after it is added (OAuth). Agent Durbar never sees the token." *Token*: "Needs a token in <ENV_NAME>" with the reference/plain choice of 069 FR-004 for a global add, or the masked secret field for a folder add. *Node.js*: "Runs `npx` (Node.js): found on this computer" / "not found on this computer" / nothing when not judged, from spec 058 FR-198's `commandFound`.
+- **FR-014** **Where it goes.** The form's existing **Add to** choice decides: *This folder only* (folder extra, off until trusted, spec 019) or *All my folders (global)* (spec 069's per-file review). Default: *This folder only* when opened from a folder, *All my folders* from Settings (Q3).
+- **FR-015** **Per-app support.** When an entry lists `apps`, an app it does not list is shown unticked with "Not documented for <app> by the vendor"; the person may still tick it. When spec 069's writer for an app refuses the entry (a transport or field that app's format cannot hold), its review row says why, as today.
+- **FR-016** **Needs sign-in after adding** (owner, 2026-11-09). An OAuth entry adds no sign-in step of its own. After it is added, the agent's MCP dialog shows the server's state word from spec 058 (*Needs sign-in* once the agent app reports it) and offers **Sign in** (`agents:mcpSignIn`) **only where the row has `canSignIn`**; otherwise spec 058 FR-068's steps (`signInSteps`) or its hint. Until the session has started and the app has reported the server, the catalog's line from FR-013 is the only sign-in text. No sign-in code is added here.
+- **FR-017** **Closing.** Esc goes back one step (form to list, list to closed); Cancel closes; nothing is saved by closing. Focus returns to the opener.
+
+### C. Paste a config
+
+- **FR-030** **The paste dialog.** A text area labelled "Paste the JSON from the vendor's instructions", **Check**, and a note: "Nothing you paste is run. Values of environment variables and headers are treated as secrets." The text area is cleared once the check has passed, so secret values do not stay in the window.
+- **FR-031** **Main parses.** **Check** sends the text to main (`mcp:pastePreview(text)`), which refuses text over **64 KiB** or with a NUL, and parses it with the shared parser (FR-032). The window never keeps the parsed values: main answers with a masked preview and a token; the values stay in main (at most 5 minutes, dropped on apply, cancel or expiry, as 069 FR-004).
+- **FR-032** **One parser, reused** (owner 2026-11-02: "reusing `parseMcpConfig`"). `parseMcpConfig` gains a front end that accepts, in this order: `{"mcpServers": {…}}` (Copilot CLI, Claude Code, Cursor and most vendor pages), `{"servers": {…}}` (VS Code, through `stripJsonc` and `parseVSCodeMcp`'s rules for `inputs` and `${…}`), a bare map of servers, and a single server object with a name given in the form; comments, trailing commas and a byte-order mark are accepted (`stripJsonc`). Anything else is "Not a JSON config" (US5). Caps: at most 20 servers, nesting depth 16, strings 8 KiB (validateInput's limits apply to each result).
+- **FR-033** **Checked like the form.** Every candidate goes through `validateInput` in main; one that fails is listed with the reason and cannot be ticked. Names follow the existing rename and clash rules (`parseMcpConfig`'s `-2` suffix; "already added" against the folder's extras and the apps' lists).
+- **FR-034** **Placeholders.** A value that is empty, `${input:…}`, `${env:X}` or `${X}`, or matches a placeholder shape (`<…>`, `YOUR_…`, `your-…`, `xxx…`, `…`, `TODO`) is a placeholder: the row says "needs a value". Folder target: the key is saved with no value (`needsSecrets`), so the server does not start until the person types the value in the existing Edit form. Global target, reference mode: written as a `${NAME}` reference (069 FR-004). A placeholder in a command, argument or URL blocks that server with "Fill in <the part> first" and opens the prefilled form on request.
+- **FR-035** **Shown in full before saving.** The preview shows per server: name (and the original key when renamed), type, the exact command and every argument, or the exact URL with its host also shown in ASCII (punycode) form when it differs, the working directory, the tool filter, the environment and header **keys** with every value masked (`••••`, whatever it looks like), notes (ignored fields such as `envFile`, renamed names, `inputs`) and warnings (FR-036). Secret-shaped argument values and URL query values are masked with `maskSecretArgs` and `maskSecretUrl`, with "1 value hidden in the arguments"; the rest of the command is shown as written.
+- **FR-036** **Warnings, not blocks** (the owner's "warn, do not limit", spec 072 *Changes* 2026-11-01). Shown on the server's row and kept on the confirmation: a shell as the command (`sh`, `bash`, `zsh`, `cmd`, `powershell`, `pwsh` with a script argument): "Runs a shell script"; a download piped into a shell; `npx`, `uvx`, `pnpm dlx`, `bunx` without a version: "Runs the newest version of <package> each time"; a remote `http:` URL that is not loopback: "Not encrypted"; a secret-looking value in a URL query: "Move it to a header"; a relative command path. None of these is executed or resolved to check it.
+- **FR-037** **Refused.** A name, command, argument, URL, key or working directory holding a hidden or bidi control character (`HIDDEN_CHARS`) is refused with its JSON path, never its value; so is a URL with credentials (as `validateInput`). The rest of the paste stays usable.
+- **FR-038** **Never auto-trusted.** Confirming the paste preview with *This folder only* saves the ticked servers as folder extras **off and untrusted** through the store's existing upsert (as spec 020 FR-024), so switching one on shows today's trust prompt with the exact command or URL. With *All my folders*, main turns the token's servers into spec 069's `globalPreview` inputs and the person gets spec 069's per-file confirmation, which is the trust step there (069 FR-010). Nothing is written or started by **Check**.
+- **FR-039** **Apply by token.** `mcp:pasteApply(token, ids, target)` takes only the token, the ticked candidate ids and a target (`{kind: 'folder', key}` or `{kind: 'global', apps, mode}`), validated in main (known folder key, known apps, mode `ref` or `plain`, ids from this token); an unknown, used or expired token is refused. A folder apply answers like `mcp:importApply`; a global apply answers with spec 069's preview (and its own token for `mcp:globalApply`).
+
+### D. Import from VS Code, retargeted (owner, 2026-11-02)
+
+- **FR-050** **Same review, new target.** **Import from VS Code…** reads the VS Code `mcp.json` file(s) in main (Q2: the folder's `.vscode/mcp.json`, and VS Code's user `mcp.json` from `vscodeUserDirs`), parses them with FR-032's parser, and shows FR-035's preview. Confirming goes to spec 069's per-file confirmation for the ticked apps, so the servers land in **the agent apps' own MCP config**, not in Durbar's folder list (Q1 sets the scope).
+- **FR-051** **MCP servers only.** Other parts of VS Code's settings are not read. `inputs` are never prompted for, stored or resolved (spec 020 FR-026); a `${input:…}` value is a placeholder (FR-034).
+- **FR-052** **What changes from spec 020.** Spec 020 FR-020 and FR-024 (import into folder extras) are amended by this spec once built: a dated delta in spec 020's *Changes* records it in the PR that builds G5; servers already imported as folder extras stay where they are.
+
+### E. Safety (constitution III)
+
+- **FR-060** **Untrusted text.** A pasted snippet and a VS Code file are untrusted: size-capped, parsed as data, never executed, opened, fetched or resolved, and never trusted automatically (FR-031, FR-037, FR-038).
+- **FR-061** **Secrets.** Every environment and header value from a paste or a file is a secret: masked in every view, never sent back to the window after **Check**, never in a log, toast, error, debug sink or crash report (`redact` on every log line of these modules), stored only by the existing paths (folder: OS-encrypted store; global: 069 FR-004's reference or the person's choice to write values).
+- **FR-062** **Exact command before saving.** No server is saved without its exact command and arguments, or URL, being on screen in the step the person confirms (FR-035 and spec 069's review); the folder trust prompt (spec 019 FR-005) and spec 061's folder consent are unchanged.
+- **FR-063** **No shell, no spawn.** Durbar does not run a pasted or catalog command to test it; `commandFound` only reads folder listings (spec 058 FR-198). Durbar never adds a shell wrapper to a pasted or custom command (FR-081 is about catalog entries only).
+- **FR-064** **Validated in main.** The new channels (`mcp:catalog`, `mcp:pastePreview`, `mcp:pasteApply`) are registered with `ipcHandle` (only the app's own window), check every argument's type and size, and are refused under `DURBAR_SIM` by `simguard` where they would write (the simulator answers with a fake store, as spec 069's fixtures).
+- **FR-065** **Catalog data is reviewed code.** The catalog file changes only by pull request, and FR-002's test guards its hosts and packages. G1 proposes a CODEOWNERS line for the file so an owner reviews every change; `.github/` is owner-owned, so that line needs an owner's approval (it is not assumed here).
+- **FR-066** **Org policy hook.** Once spec 076 is built, `mcp:pasteApply` and the catalog go through its enforcement points in main (076 FR-043), so `allowlist` refuses a pasted server that is not on the list.
+
+### F. Worlds, accessibility, platforms
+
+- **FR-070** **All worlds.** The catalog and paste dialogs are tool surfaces: Open office (Flat), Real office and Retro arcade style them through tokens only (097 FR-113, 098 FR-040), with the opaque dialog surface (102 FR-182); no art behind text. The feature inventory row for MCP adds these features with Flat, Real office and worlds cells (spec 021 FR-078).
+- **FR-071** **Keyboard.** The list is a `listbox` with one option per entry (or a list of buttons, the build picks one and tests it); arrow keys, Home, End, Enter; type-ahead goes to the search field; Esc and focus return as FR-017. The paste text area is a labelled `textarea`; **Check** is reachable with Tab and with Ctrl+Enter (⌘+Enter on a Mac).
+- **FR-072** **Screen reader.** Each entry's accessible name is one sentence (US7); state is never colour alone (constitution V); the result count and the paste result go to `#srAnnounce` (polite); errors are linked to the text area (`aria-describedby`) with their line and column.
+- **FR-073** **Size and fit.** Text at least 10.5 px (12 px for the list); the dialog fits 1440x900 and 1280x800, the list scrolls inside the dialog, never the page.
+- **FR-080** **Windows, macOS, Linux.** File locations stay with spec 069 FR-001 (`path`, `os.homedir()`); the command check uses `WIN_EXTS` on Windows (`npx.cmd`); paths in arguments are shown as written.
+- **FR-081** **`npx` on Windows** (Q6). Agent apps start stdio servers themselves, and on Windows `npx` is a `.cmd` file that some apps cannot start without a shell (`read:` Claude Code's docs ask for `cmd /c npx` on native Windows). The review shows, per app and OS, exactly what will be written. Default until Q6 is answered: plain `npx` for every app, with the note "On Windows, <app> may need `cmd /c npx`; not checked" under the app's row.
+
+### G. Honest limits
+
+- **FR-090** `[KNOWN GAP]` No MCP registry or other online source; spec 076 owns organization lists (FR-001, FR-007).
+- **FR-091** `[KNOWN GAP]` Sign-in for Codex (#364 T100) is not built; a Codex row shows spec 058's steps. Copilot's Sign in was checked once on a real account (#598); Claude Code's on fakes and the simulator only (#635).
+- **FR-092** `[KNOWN GAP]` Whether each agent app reads every catalog entry as written is checked only by the real check T018 (0 credits, like spec 069's T060); until then the build says `sim:`/`test:` only.
+- **FR-093** `[KNOWN GAP]` `npx` on Windows and macOS is not checked on a device (FR-081, T019).
+- **FR-094** `[KNOWN GAP]` Vendor URLs and packages change; the catalog is only as current as its last reviewed PR. Each entry shows its check date (FR-012).
+- **FR-095** `[KNOWN GAP]` Pasted commands in formats other than JSON (`claude mcp add …`, `codex mcp add …`, TOML) are not read (US5).
+
+## Success criteria
+
+- **SC-001** From the folder extras screen, a catalog server is added with at most 3 choices and no typing beyond its secret values (driver count of key presses and clicks, simulator).
+- **SC-002** Every catalog entry passes the schema, the host and package allow-list, the no-secret rule and the pinned-version rule (unit test); a planted bad entry fails each.
+- **SC-003** No pasted secret value of the masking fixtures (spec 106 FR-086's inputs and spec 069's) reaches the window after **Check**, a log, a toast or the global review (unit and driver).
+- **SC-004** Nothing pasted is saved, written or started before the person confirms a screen showing its exact command or URL; a folder paste is saved off and untrusted (driver and unit, with a counter on store writes and file writes).
+- **SC-005** Hostile pastes (over the cap, deep nesting, 500 servers, hidden characters, credentials in a URL, non-JSON) are refused with a reason and never throw (unit, mutation-checked).
+- **SC-006** Keyboard only: open, search, pick, add, and back out with Esc, focus back on the opener (driver); the accessible names and announcements of US7 are present.
+- **SC-007** Open office, Real office and Retro arcade at 1440x900 and 1280x800: dialogs fit, no page scroll, text at least 10.5 px (driver, screenshots).
+- **SC-008** An OAuth catalog server reads *Needs sign-in* in the simulator and offers **Sign in** only for a fake adapter with `canSignIn` (driver).
+
+## Assumptions
+
+- Spec 076's `durbar-mcp-list-v1` schema is used as it is; if 076 changes it before G1, the built-in file follows.
+- The first entries' URLs and packages are confirmed in G1 from the vendors' pages; none is taken from memory into the file.
+- 64 KiB is enough for any vendor snippet; VS Code files keep spec 020's cap (`readSmallFile`).
+
+## Clarifications (open questions for the owner)
+
+None of these is answered. Each lists options and the recommended default; only the group it names waits for it.
+
+- **Q1 (blocks G5): where do VS Code's servers go?** The owner said "into the agent app's own MCP config … not into a separate Durbar list". (A) The **user-level** lists of the apps the person ticks, through spec 069's writers and per-file review, even when they came from a folder's `.vscode/mcp.json` (the server then reaches every folder). (B) As A, plus a choice "This folder only" that keeps today's folder extras. (C) The apps' **project** files in the folder (`.mcp.json` for Claude Code, `.codex/config.toml` for Codex), which writes into the person's repository. **Recommended: A**, with a line in the review: "Servers from this folder's VS Code file will be available in all folders."
+- **Q2 (blocks G5): which VS Code files?** (A) The folder's `.vscode/mcp.json` only (today). (B) Also VS Code's **user** `mcp.json` (and Insiders, VSCodium, as `vscodeUserDirs` knows them), listed as separate sources. **Recommended: B.**
+- **Q3 (G2 uses the default): default "Add to" from a folder.** (A) *This folder only* (today's default). (B) *All my folders*. **Recommended: A.**
+- **Q4 (G1 uses the default): what counts as official?** (A) The vendor's own server, or the MCP project's reference server (labelled "Reference server by the MCP project", as Filesystem); Slack only if Slack publishes its own. (B) Vendor servers only (Filesystem left out). (C) Also well-known community servers. **Recommended: A.**
+- **Q5 (G1 uses the default): local packages pinned or `@latest`?** (A) Pinned to a version reviewed in the PR, updated by PRs (FR-005). (B) `@latest`, as most vendor pages write it. **Recommended: A**; it means a catalog PR for each update.
+- **Q6 (G6 uses the default): `npx` on Windows.** (A) Write plain `npx` for every app with a "not checked" note (FR-081). (B) Write `cmd /c npx …` for Claude Code on Windows only, as its docs say, plain `npx` for the others. (C) Wait for the real check T019 and then decide per app. **Recommended: C, with A until then.**
+
+## Changes
+
+None yet.
