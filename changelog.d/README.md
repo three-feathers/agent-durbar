@@ -74,7 +74,7 @@ Branch names must match the Spec Kit gate (lowercase letters, digits and hyphens
    The site gets the clip later through spec 104; no YouTube.
 5. Check the draft, then publish it by hand as a **pre-release**, not *latest* (a stable tag: next section).
 
-- In the doc-only fold PR (from 2026-11-07, spec 008 FR-181, owner request): `npm run usage:readme -- --release vX.Y.Z` with every machine's `usage-*.json` in `~/.durbar-usage` (or `--files`). It rewrites the README's *Build cost so far* block, appends the release's row to `docs/build-cost-history.json` and regenerates `docs/build-cost-badge.svg` and `docs/build-cost.svg`; commit those five files. Method: [docs/build-cost.md](../docs/build-cost.md).
+- In the doc-only fold PR (from 2026-11-07, spec 008 FR-181, owner request): `npm run usage:readme -- --release vX.Y.Z --publish` with your machine's `usage-*.json` in `~/.durbar-usage` (or `--files`): it copies it into `docs/build-cost/data/` and builds from **all machines' files, refreshed at each release** (every team machine runs the same receiver and publishes its `docs/build-cost/data/usage-<machine>.json` the same way). It rewrites the README's *Build cost so far* block, appends the release's row to `docs/build-cost-history.json` and regenerates `docs/build-cost-badge.svg`, `docs/build-cost.svg` and `docs/build-cost-days.svg` (estimated days faded); commit those files and the data file. Method: [docs/build-cost.md](../docs/build-cost.md).
 
 ## A stable release (spec 008 FR-129)
 
