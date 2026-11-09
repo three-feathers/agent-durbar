@@ -294,7 +294,7 @@ const SIREN=()=>'<span class="siren" aria-hidden="true"><svg viewBox="0 0 14 14"
 /* spec 008 FR-184: a draw takes the signature it drew (`renderAll`), so a tick redraws only for a change no draw has shown (the clock, a limit), never again for the status change the last draw already showed */
 let moodSig='';
 const moodSigNow=at=>agents.map(x=>{if(!x.live||x.parent)return '';const m=moodFor(x,at);return m.trouble+'/'+m.body;}).join('|'); /* `at`: the signature as of that time (a draw's own, spec 008 FR-184) */
-setInterval(()=>{if(SERIOUS||demoOn)return;if(moodSigNow()!==moodSig){moodSig=moodSigNow();scheduleRender();}},5000);
+setInterval(()=>{if(SERIOUS||demoOn||document.hidden)return;if(moodSigNow()!==moodSig){moodSig=moodSigNow();scheduleRender();}},5000); /* spec 097 FR-074 (2026-11-09 later): no mood draw while hidden; the return draws it (RO_MOOD_LATE) or the next tick */
 /* spec 052 FR-062: "Last activity" labels follow the clock through the normal render, every 30 s and only when a label changed */
 let agoSig='';
 const agoSigNow=(at=Date.now())=>agents.map(x=>(x.lastEventAt?ACT.agoShort(at-x.lastEventAt):'')+(x.busySince?'/'+ACT.agoShort(at-x.busySince):'')).join('|');
@@ -1694,9 +1694,11 @@ function realCtx(a){
 function realCtxPush(a){
   if(OFFICE_VIEW==='real'&&a&&!a.parent&&window.DurbarRealOffice&&window.DurbarRealOffice.ctx){
     const mo=moodFor(a); /* FR-360: the context decides the heavy and monster looks and their words, so the cheap path carries them; a changed look needs the signs drawn */
-    if(window.DurbarRealOffice.ctx(a.id,realCtx(a),realMood(mo),mo.words||'')==='mood')scheduleRender();
+    if(window.DurbarRealOffice.ctx(a.id,realCtx(a),realMood(mo),mo.words||'')==='mood'){if(document.hidden)RO_MOOD_LATE=true;else scheduleRender();} /* FR-074: no draw while hidden; the name has the words already */
   }
 }
+let RO_MOOD_LATE=false; /* spec 097 FR-074, FR-361 (2026-11-09 later): a look changed while hidden; its signs are drawn once visible again */
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&RO_MOOD_LATE){RO_MOOD_LATE=false;scheduleRender();}});
 function realMood(mo){return {body:mo.body,siren:mo.trouble==='ambulance'||mo.trouble==='faint'};}
 /* spec 097 FR-306, FR-307 (issue 1139): a desk's helpers for the Real office head figures, in orderedHelpers' order. The name is only in the accessible name and the tooltip (the flat tile's words: helperTileHTML), masked */
 /* spec 015 FR-021 (issue 1330): the one mask of a helper's (sub-agent's) name and task, for every surface that shows them (the Sub-agent

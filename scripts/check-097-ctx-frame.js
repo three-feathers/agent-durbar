@@ -15,6 +15,9 @@
  *     ctxnomood   in ctx() (realoffice.js) do not store `a.mood = mo`                                                     -> "a second context event with the same look (monster) asks for no draw"
  *     ctxnowords  in ctx() do not store `a.moodWords`                                                                       -> "name takes the mood words by the cheap path alone"
  *     ctxtrue     `ctx` returns true instead of 'mood'                                                                      -> "ctx answers 'mood'" (and "asks for one draw")
+ *     hiddraw     realCtxPush calls scheduleRender on 'mood' even while document.hidden (app.js)                            -> "FR-074: a context event that changes ...'s look while the document is hidden runs no draw"
+ *     hidtick     the 5 s mood tick (app.js, moodSig) runs while document.hidden too                                        -> "runs no draw" when the tick lands in the hidden window (timing-dependent: read, not a reliable kill)
+ *     hidlate     the visibilitychange listener that draws RO_MOOD_LATE is removed (app.js)                                 -> "once visible again, the draw asked for while hidden draws ...'s horns and ring within three frames"
  *     hwdrop      in labelOf (realoffice.js) return `l.slice(0, -OPEN_WORDS.length) + w + OPEN_WORDS` without `hw`            -> "a context event keeps the helper words, in order"
  *     hworder     in labelOf swap `w + hw` to `hw + w`                                                                       -> "a context event keeps the helper words, in order"
  *     oldlabel    in ctx() write `a.label` (not labelOf(a, d)) as the plate's aria-label                                      -> the cheap step of every world, and the helper words
@@ -190,6 +193,28 @@ module.exports = async (ctx) => {
       await js(`window.__durbarSimUi.render();1`);
       await must(`!!document.querySelector('#stage .ro-horns[data-for=${jsLiteral(mp)}]')&&!!document.querySelector('#stage .ro-ring[data-for=${jsLiteral(mp)}]')`, `${tag}: the draw after the context-only events draws ${mp}'s horns and ring (the mood redraw)`);
       await must(`/, Context almost full \\(95%\\), context 95 %(\\. \\d+ helpers?)?\\. Open chat panel\\.$/.test(window.__cl(${jsLiteral(mp)}))`, `${tag}: ${mp}'s name reads the mood words, then the context words, then Open chat panel, once the signs are drawn (the full draw writes what the cheap path wrote)`);
+
+      /* FR-074 (2026-11-09 later, T286): the document hidden (its own signal, as check-097-motion where the window manager gives no real hide), a context event that makes another
+         seated desk a monster runs no draw and draws no horns or ring, while its name has the words by the cheap path; once visible, one draw draws the horns and the ring, the name the same */
+      const hp = await js(`(()=>{const L=window.__durbarSimUi.realLayout();for(const d of L.zones.flatMap(z=>z.desks)){if(d.lounge||!d.face||d.away||!d.person||d.id===${jsLiteral(mp)})continue;if(document.querySelector('#stage :is(.ro-horns,.ro-ring)[data-for='+JSON.stringify(d.id)+']'))continue;return d.id}return null})()`);
+      assert.ok(hp, `${tag}: a second seated desk that is no monster yet, for the hidden step`);
+      await js(`(()=>{Object.defineProperty(document,'hidden',{configurable:true,get:()=>true});document.dispatchEvent(new Event('visibilitychange'));return 1})()`);
+      let hid = null, back3 = false;
+      try {
+        await must(`(()=>{const n=window.__roDraws;if(window.__roLast!==n){window.__roLast=n;window.__roAt=Date.now();}return Date.now()-window.__roAt>600})()`, `${tag}: no draw running (hidden step)`);
+        await js(`window.__ctxRet=[];window.__roDrawsH=window.__roDraws;1`);
+        /* the event, then three frames and a bound (longer than a frame of a scheduled draw, which runs on the next frame): no draw may run */
+        hid = await js(`(()=>{window.__durbarSimEmit({type:'context',sessionId:${jsLiteral(hp)},timestamp:Date.now(),tokens:930,limit:1000});return new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>requestAnimationFrame(()=>setTimeout(()=>r({draws:window.__roDraws-window.__roDrawsH,signs:document.querySelectorAll('#stage :is(.ro-horns,.ro-ring)[data-for='+JSON.stringify(${jsLiteral(hp)})+']').length,name:window.__cl(${jsLiteral(hp)}),back:(window.__ctxRet.filter(x=>x[0]===${jsLiteral(hp)}).pop()||[])[1]}),400)))))})()`);
+      } finally {
+        /* back: the draw asked for while hidden runs on the next frame, so the signs are there within three frames (the app's 5 s mood tick cannot stand in for it) */
+        back3 = await js(`(()=>{delete document.hidden;document.dispatchEvent(new Event('visibilitychange'));return new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(!!document.querySelector('#stage .ro-horns[data-for='+JSON.stringify(${jsLiteral(hp)})+']')&&!!document.querySelector('#stage .ro-ring[data-for='+JSON.stringify(${jsLiteral(hp)})+']'))))))})()`);
+      }
+      assert.strictEqual(hid.back, 'mood', `${tag}: ctx answers 'mood' for the hidden event that makes ${hp} a monster`);
+      assert.strictEqual(hid.draws, 0, `${tag}: FR-074: a context event that changes ${hp}'s look while the document is hidden runs no draw`);
+      assert.strictEqual(hid.signs, 0, `${tag}: FR-074: no horns or ring drawn for ${hp} while hidden`);
+      assert.ok(/, Context almost full \(93%\)(, [^,.]+)*, context 93 %(\. \d+ helpers?)?\. Open chat panel\.$/.test(hid.name), `${tag}: ${hp}'s name has the mood words while hidden, by the cheap path: "${hid.name}"`);
+      assert.ok(back3, `${tag}: once visible again, the draw asked for while hidden draws ${hp}'s horns and ring within three frames (no stale look)`);
+      await must(`window.__cl(${jsLiteral(hp)})===${jsLiteral(hid.name)}`, `${tag}: ${hp}'s name once visible again (after the draw) is the one the cheap path wrote while hidden`);
     }
 
     /* FR-326, the cheap path alone: every draw held, so an ordinary redraw cannot write the same attributes. A context event and a finished compaction must still move the
