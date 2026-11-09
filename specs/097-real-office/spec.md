@@ -1406,6 +1406,17 @@ An arcade cabinet's plate is the one-line status pill: the name is on the cabine
   - Pictures (`SHOTS_OUT`, compressed): [before](../../docs/screenshots/097-plate-pencil-arcade-before-1440x900.png) (the pencil at the floor's top-left, every pencil shown), after at [1440x900](../../docs/screenshots/097-plate-pencil-arcade-1440x900.png) and [1280x800](../../docs/screenshots/097-plate-pencil-arcade-1280x800.png).
 - `[KNOWN GAP]` Not run on Windows or macOS (the Mac reported the bug at 1440x900), nor in a real session.
 
+## Changes 2026-11-09: the drag driver's status-change step waits for the drawn office (bug, issue #1423; T297; no new FR, no behaviour change)
+
+Numbers checked 2026-11-09 against `main`, the remote branches and every open PR head (`npm run specs:numbers`): the highest task in spec 097 on any of them is T296, so this delta takes T297; it adds no FR and no question.
+
+**What failed.** After #1394 merged, `check-097-drag` (T291) failed on Linux CI at `<world> <size>: a status change does not end the drag` in three unrelated PRs (#1412, #1410, #1413), and once on Windows (passed on retry). Reproduced on Linux under xvfb: 2 of 20 runs idle and 3 of 15 under two CPU hogs, in the Photo office and the arcade only, at either size. A recording of the pointer events showed the drag had **never started**: at the press, the desk the driver picked was already away (a narrow plate, in the visit record), and an away desk does not drag (FR-352). The driver had picked it from the last drawn layout right after a reload (the step before reloads the flat office and comes back), when the plates still lagged the visit record by a render; `visitsSettled()` says no visit is about to start or end, not that the plates show the visits already. The cave never reloads before this step and never failed.
+
+**Cause: the driver, not the app.** The app did what FR-352 says (no repaint under a drag, `RO.busy()`; an away desk does not drag). Nothing in the app changes.
+
+- **T297** `check-097-drag` waits, after every load, until the drawn desks match the visit record (each desk's `away` in `realLayout()` equals `awayIds()`), then picks the desk; and the status-change step first asserts, labelled `the drag started before the status change`, that the drag is on before it injects the status change, so a refused drag is no longer reported as a status change ending one. Mutant `DRAG_MUTANT=away` (the picked desk's agent sent to a place just before the drag) fails on that label. `sim:` 20 runs under two CPU hogs pass after the fix.
+- `[KNOWN GAP]` The fix is checked on Linux under xvfb only; Windows and macOS run it in CI.
+
 ## Changes 2026-11-08: a Minimalist crew of six new drawn people lands as art, pack-only (issue #1154; T245 art part)
 
 Six invented, calm flat-vector office people (designer, manager, analyst, engineer, writer, support) are in the repository as art only: `src/renderer/realoffice/sets/minimalist/` (72 WebP frames, a measured `set.json`, an `ASSETS.md`) and their 18 portraits `src/renderer/crew/art/minimalist-<id>-{working,waiting,resting}.webp` (rows in that folder's `ASSETS.md`). No `CREWS` entry, no `REAL_SETS` row and no wiring: the Mac session does that in the wiring PR (after #1308).
