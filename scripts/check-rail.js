@@ -11,7 +11,7 @@
  *   - order (FR-194): folders with someone needing you first, then the office's room order; inside a folder whoever needs you first; after a
  *     request arrives in a quiet folder it moves up, and after it is answered it goes back.
  *   - two row heights only, 30 and 52px (T115): tall for whoever needs you; with the clock 25 minutes on, the ages say so and no row changes
- *     height or place; two lines of a request fit unclipped; text on tall rows at 4.5:1 in the default, Retro and a dark user theme.
+ *     height or place; two lines of a request fit unclipped; text on tall rows at 4.5:1 in the default, the dark fixture theme (spec 102 T226) and a second dark user theme.
  *   - folders collapse (FR-216): Enter and Space on the heading, a real click, a real double click (once, and no chat opens); a collapsed
  *     folder keeps its count and a needs-you mark with its number (live, 1 included), says when the open chat is in it, and its focused
  *     heading keeps the focus when the folder moves; the state survives switching chats and a status change; opening a chat
@@ -23,7 +23,7 @@
  * Every wait is until() and its result is asserted.
  */
 const assert = require('assert');
-const { helpers, jsLiteral } = require('./driver-helpers');
+const { helpers, jsLiteral, CHECK_DARK } = require('./driver-helpers');
 const path = require('path');
 const OUT = process.env.OUT || require('os').tmpdir();
 
@@ -198,8 +198,8 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(await heights(), h0, `${tag}: no row changed height with time`);
     assert.strictEqual(JSON.stringify(await rows()), order0, `${tag}: no row moved with time`);
     await js(`Date.now=window.__realNow;window.__durbarSimUi.render()`);
-    for (const theme of ['default', 'retro', 'dark']) {
-      if (theme === 'retro') await js(`window.THEME.setTheme('retro')`);
+    for (const theme of ['default', 'check-dark', 'dark']) { // spec 102 T226: the dark fixture theme took Retro's place
+      if (theme === 'check-dark') await js(`window.THEME.setTheme(${jsLiteral(CHECK_DARK)})`);
       if (theme === 'dark') await js(`window.THEME.setTheme(${jsLiteral(DARK)})`);
       await H.settle();
       const cs = await contrast();
