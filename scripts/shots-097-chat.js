@@ -79,8 +79,10 @@ module.exports = async (ctx) => {
     await shot(world, 'chat', w, h);
     if (world === 'retro') {
       /* spec 102 T221: the name on the marquee; every text of the cards, deep, 4.5:1; a waiting agent's permission card is dark */
-      const mq = await js(`(()=>{const t=document.getElementById('panelTitle'),c=getComputedStyle(t);return {bg:c.backgroundColor,ink:c.color,px:parseFloat(c.fontSize),font:c.fontFamily}})()`);
-      assert.ok(mq.bg !== 'rgba(0, 0, 0, 0)' && mq.ink === 'rgb(255, 236, 39)' && /mono/i.test(mq.font) && mq.px >= 10.5, `${tag}: the header's name is on a marquee (filled, the mark's yellow, mono): ${JSON.stringify(mq)}`);
+      const mq = await js(`(()=>{const t=document.getElementById('panelTitle'),c=getComputedStyle(t);return {bg:c.backgroundColor,img:c.backgroundImage,outline:c.outlineStyle+' '+c.outlineWidth,ink:c.color,px:parseFloat(c.fontSize),font:c.fontFamily}})()`);
+      assert.ok(mq.ink === 'rgb(255, 236, 39)' && /mono/i.test(mq.font) && mq.px >= 10.5, `${tag}: the header's name is the mark's yellow, mono: ${JSON.stringify(mq)}`);
+      /* issue #1429 (T277): no black rectangle behind the name: its own fill is none, so it shows the panel's surface (a fill of the bar's black did not match it) */
+      assert.ok(mq.bg === 'rgba(0, 0, 0, 0)' && mq.img === 'none' && /^none/.test(mq.outline), `${tag}: the header's name has no fill of its own, so it sits on the panel's colour: ${JSON.stringify(mq)}`);
       const deep = await js(CONTRAST_OF(true));
       assert.deepStrictEqual(deep.bad, [], `${tag}: contrast of ${deep.n} text elements of the header and the cards (deep)`);
       await js(`document.getElementById('backBtn').click()`);
