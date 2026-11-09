@@ -232,6 +232,22 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 - [x] T230 [US2] The Changed fact for lounge agents [FR-329]: `realFacts`, `Changed` wraps. Test: `check-097-hover-card`
 - [x] T231 [US2] Docs and pictures [FR-330]: changelog fragment, `docs/features.md`; no committed picture (round 2: the two crops were linked from nowhere); Q25 resolved (no helpers on the card); round 3 of #1313: the card is never placed over the focused slip (`placeZoom`), the driver's focused-slip step is an Allow button reached by Tab, and its working-desk pick is made again when the person has left
 
+## 2026-11-08: themes in Real office superseded by worlds (issue #1153, FR-350, FR-351; Q34 withdrawn)
+
+- [x] ~~T265~~ [US2] Spec delta 2026-11-08, first version: the measured theme gap table and Q34. Superseded by the owner's decision of 2026-11-08 (a world is the look; themes stay until the Retro flip removes them); the delta now holds FR-350, FR-351 and this decision [FR-350]
+- [x] ~~T266~~ [US2] A per-theme matrix pin in `test:theme-tokens`. Superseded: section 7 keeps only what guards a world's look (FR-350), see T268
+- [ ] ~~T267~~ [US2] Build Q34's answer. Superseded, not built: Q34 is withdrawn
+- [x] T268 [US2] `scripts/check-097-world-look.js` (in `ui-suite`): a world keeps its own colours under three themes in three worlds; FR-351 the arcade's drop overlay fill (`worlds/retro/world.css`). `test:theme-tokens` section 7 over every built-in theme and the dark fixture. Mutants: a theme token let through (three keys), a status colour, the world shadows, the dark flag, the UI style, a theme ink on a plate, the drop rule removed [FR-350, FR-351]
+
+## 2026-11-08: a desk's helpers as head figures (issue #1139, FR-306..FR-311; owner decision "1265 1", 2026-11-08 08:29 UTC; replaces PR #1265)
+
+- [x] T269 [US1] Owner decision recorded verbatim in the spec delta, tiles replaced by head figures with a status dot; spec, plan and tasks before any src change [FR-306..FR-311]
+- [x] T270 [US1] Engine, pure: `RealAgent.helpers`, the strip's reserved height, rows 2 else 1 else none, `strip` box, `slipAvoid`, `headCrop`, `helperPerson`. Test: `test:realoffice-layout` (heads fit, overflow count, no overlap, faces at the floor), mutants [FR-306..FR-308, FR-310, FR-311]
+- [x] T271 [US1] Wiring: `app.js` `orderedHelpers` and `realSubs`; `realoffice.js` draws the strip (`h:` keys, a node per helper kept by id, `+K`); CSS in `realoffice.css` only [FR-306, FR-307, FR-309]
+- [x] T272 [US1] Driver `scripts/check-097-helpers.js` (in `ui-suite`): 15 agents with helpers, both sizes, Photo office, cave and arcade, heads, dot colour, name only in the accessible name, `+K`, `statusNodes`; mutants [FR-311]
+- [x] T273 [US1] Pictures at both sizes (Photo, cave) and a 2x crop to the owner before merge, compressed under 300 KB; the owner looked (2026-11-08 09:30 UTC) and chose "fine as is" [FR-307]
+- [x] T274 [US1] Docs: changelog fragment, `docs/features.md`, `docs/feature-inventory.md`, the spec's tags [FR-306..FR-311]
+
 ## Phase 3b: every Characters crew in Real office (issue #1154, part of #1147; delta 2026-11-08)
 
 - [x] T235 [US5] Spec delta: what art each Characters value has, the fallback and why no crew portrait on the plate, the art list, Q12..Q14 [FR-335, FR-336, FR-337]

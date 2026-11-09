@@ -28,7 +28,7 @@ npm run dist:<target> = build (tsc + copy-assets) -> prepare-runtime <target> ->
 electron-builder -> asar (dist, package.json) + asarUnpack(@github/copilot-sdk-*, koffi) -> afterPack check -> dmg/zip | nsis/portable | AppImage
 runtime: app (packaged) -> unpackedRuntimePath() -> CopilotClient(RuntimeConnection.forStdio({path}))
 
-ci.yml        pull_request, push main: build-test (3 OS) -> package-smoke (ubuntu, pack:dir)
+ci.yml        pull_request, push main: build-test (3 OS); office-check (ubuntu: build once, layout, then pack:dir:prebuilt; FR-194)
 release.yml   tag v*: build (mac, win, linux; tag==version check; typecheck; test; package) -> draft-release (checksums, gh release create --draft)
 ```
 

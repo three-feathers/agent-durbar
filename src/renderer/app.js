@@ -662,7 +662,8 @@ function plainChip(k,tool,label,running){
   if(k==='search')return /grep|glob|find|rg\b|file/.test(t)?(running?'Searching files':'Searched files'):(running?'Searching':'Ran a search'); /* round 4: an issue or notes search is not a file search */
   return running?'Using a tool':'Used a tool';
 }
-const taskText=a=>a.task==null?'':String(a.task);
+/* spec 099 FR-056: the desk line starts "On Autopilot:" */
+const taskText=a=>(a&&!a.parent&&a.info&&a.info.autopilot?'On Autopilot: ':'')+(a.task==null?'':String(a.task));
 const fmtUsd=v=>approx(v)+' est.';
 /* spec 052 (2026-10-21, round 7): the home folder shows as ~ (Windows C:\\Users\\name, macOS /Users/name, Linux /home/name), so the part after it, where the folder is, survives an ellipsis; tooltips keep the full path */
 const showPath=p=>String(p||'').replace(/^(?:\/home\/[^/]+|\/Users\/[^/]+|[A-Za-z]:\\Users\\[^\\]+)(?=[\\/]|$)/,'~');
@@ -1056,8 +1057,9 @@ const helperCap=(d,a)=>(a&&HBOOST.get(a.id))||HCAP;
 const SC_CACHE=new Map();
 function sceneCacheKey(a){const st=vis(a),k=a.look,m=moodFor(a);return st+k.shirt+k.skin+k.hair+k.style+(k.glasses?1:0)+'|'+m.body+(m.trouble||'')+'|'+THEME.themeIdForCache()+crewKey(a);}
 function sceneC(a){const key=sceneCacheKey(a);let v=SC_CACHE.get(key);if(!v){v=scene(a,false,true);SC_CACHE.set(key,v);}return v;}
+const orderedHelpers=a=>helpersOf(a).slice().sort((x,y)=>prio(x)-prio(y)); /* waiting and error first (spec 001 FR-089); the flat office's strip and Real office's head figures (spec 097 FR-306) read the one order */
 function visibleHelpers(a,d){
-  const all=helpersOf(a).slice().sort((x,y)=>prio(x)-prio(y));
+  const all=orderedHelpers(a);
   const cap=helperCap(d,a);
   if(all.length<=cap+1||ui.expanded[a.id])return {shown:all,hidden:[]};
   return {shown:all.slice(0,cap),hidden:all.slice(cap)};
@@ -1071,6 +1073,11 @@ function helperHTML(h){
   return `<button class="helper is-${st}" data-id="${esc(h.id)}" aria-pressed="${ui.selected===h.id}" aria-label="${esc(n)}, helper of ${esc(byId(h.parent).name)}, ${esc(r)}, folder ${esc(roomOf(h).path)}, ${label(h)}: ${esc(t)}" title="${esc(t)}">
     ${scene(h,true)}<span class="badge ${st}">${badgeSVG(st)}</span>
     <div class="hinfo"><div class="hname">${esc(n)}</div><div class="hrole">${esc(r)}</div><div class="hst"><span class="dot ${st}"></span>${label(h)}</div></div></button>`;
+}
+/* the one set of words for a helper's accessible name and tooltip: the flat tile (helperTileHTML) and Real office's head figure (realSubs, spec 097 FR-307) both read it; `m` maps every agent-written text (the flat tile escapes it later, Real office masks it) */
+function helperWords(h,m=x=>x){
+  const p=byId(h.parent), n=m(h.name), t=m(taskText(h));
+  return {name:n,aria:n+', helper of '+m(p?p.name:'')+', '+label(h)+(t?': '+t:''),tip:n+' · '+label(h)+(t?': '+t:'')};
 }
 function helperTileHTML(h){
   const st=vis(h), n=helperMask(h.name)||'Helper', t=helperMask(taskText(h)); /* spec 015 FR-021: the one helper mask on every word it shows */
@@ -1086,9 +1093,11 @@ function helperCardHTML(h,L){
     <span class="sc">${sceneC(h)}</span><span class="badge ${st}">${badgeSVG(st)}</span><span class="hi"><span class="hh"><span class="hname">${esc(v.name)}</span><span class="hs st-${st}">${label(h,true)}</span></span><span class="hx-b">${HXC.html(v,esc)}</span></span></button>`;
 }
 const visitPlace=a=>{const v=a.parent?null:VISITS.at(a.id);return v?v.place:(RETURNING.has(a.id)?null:null);};
+/* the flat desk's helper count words (". 2 helpers"), also Real office's plate when its helpers have no strip (spec 097 FR-308 fallback) */
+const helperCountWords=n=>n?'. '+n+' helper'+(n>1?'s':''):'';
 function cardHTML(a,d,nSubs){
   const st=vis(a), use=usageShort(a);
-  return `<button class="desk card is-${st}${isUnread(a)?' is-unread':''}${hlIn(a,st)}${isRetrying(a)?' is-retrying':isCompacting(a)?' is-compacting':isFailing(a)?' is-failing':''}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}" data-state="${st}" data-tint="${deskTint(a)}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}" title="${esc(deskTip(a))}${moodWords(a)}${use?' · '+use:''}${esc(lastTip(a))}" aria-label="${esc(a.name)}${chatNoWords(a)}${draftWords(a)}${unreadWords(a)}, ${esc(a.role)}${modeWords(a)}${remoteWords(a)}, folder ${esc(roomOf(a).path)}, ${esc(stWord(a))}: ${esc(deskMask(taskOf(a)))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}${use?'. Usage '+use:''}. Open chat panel.">
+  return `<button class="desk card is-${st}${isUnread(a)?' is-unread':''}${hlIn(a,st)}${isRetrying(a)?' is-retrying':isCompacting(a)?' is-compacting':isFailing(a)?' is-failing':''}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}" data-state="${st}" data-tint="${deskTint(a)}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}" title="${esc(deskTip(a))}${moodWords(a)}${use?' · '+use:''}${esc(lastTip(a))}" aria-label="${esc(a.name)}${chatNoWords(a)}${draftWords(a)}${unreadWords(a)}, ${esc(a.role)}${modeWords(a)}${remoteWords(a)}, folder ${esc(roomOf(a).path)}, ${esc(stWord(a))}: ${esc(deskMask(taskOf(a)))}${moodWords(a)}${helperCountWords(nSubs)}${use?'. Usage '+use:''}. Open chat panel.">
     <span class="sc">${sceneC(a)}</span>
     <span class="ci"><span class="l1">${chatNoHTML(a)}${draftHTML(a)}${unreadHTML(a)}${dialogHTML(a)}<span class="name"${nameTipAttr(a)}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a)+remoteTag(a))}</span><span class="stl st-${pillSt(a)}">${esc(stWord(a,true))}</span></span>    <span class="intent"${liveAttrs(a)} title="${esc(taskOf(a))}">${esc(deskLine(a))}</span>
     <span class="l3"><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a,true))}${pillWarn(a)}</span><span class="use"${use.endsWith(' est.')?` title="${esc(USD_TIP)}"`:''}>${capOf(a)&&use.includes(' · ')?`<span class="aiu">${useCost(use.split(' · ')[1])}</span>`:`<span class="tok">${esc(use.split(' · ')[0]||'')}</span>${use.includes(' · ')?`<span class="aiu"><span class="sep">&nbsp;· </span>${useCost(use.split(' · ')[1])}</span>`:''}`}</span></span></span>${GROW?grownSideHTML(a):''}</button>`;
@@ -1122,7 +1131,7 @@ function unitHTML(a,d){
   }
   let desk;
   if(d==='full'){
-    desk=`<button class="desk is-${st}${isUnread(a)?' is-unread':''}${hlIn(a,st)}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}" data-state="${st}" data-tint="${deskTint(a)}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}"${lastTip(a)?` title="${esc(lastTip(a).slice(3))}"`:''} aria-label="${esc(a.name)}${chatNoWords(a)}${draftWords(a)}${unreadWords(a)}, ${esc(a.role)}${modeWords(a)}${remoteWords(a)}, folder ${esc(roomOf(a).path)}, ${esc(stWord(a))}: ${esc(deskMask(taskOf(a)))}${moodWords(a)}${nSubs?`. ${nSubs} helper${nSubs>1?'s':''}`:''}. Open chat panel.">
+    desk=`<button class="desk is-${st}${isUnread(a)?' is-unread':''}${hlIn(a,st)}${isAway(a)?' is-away':''}" data-id="${esc(a.id)}" data-state="${st}" data-tint="${deskTint(a)}"${isAway(a)&&VISITS.at(a.id)?` data-place="${VISITS.at(a.id).place}"`:''} aria-pressed="${ui.selected===a.id}"${lastTip(a)?` title="${esc(lastTip(a).slice(3))}"`:''} aria-label="${esc(a.name)}${chatNoWords(a)}${draftWords(a)}${unreadWords(a)}, ${esc(a.role)}${modeWords(a)}${remoteWords(a)}, folder ${esc(roomOf(a).path)}, ${esc(stWord(a))}: ${esc(deskMask(taskOf(a)))}${moodWords(a)}${helperCountWords(nSubs)}. Open chat panel.">
       ${scene(a,false)}<span class="badge ${st}">${badgeSVG(st)}</span>
       <div class="info"><div class="who">${chatNoHTML(a)}${draftHTML(a)}${unreadHTML(a)}${dialogHTML(a)}<span class="name"${nameTipAttr(a)}>${esc(a.name)}</span>${modeIcon(a)}<span class="role">${esc((a.profile?a.profile.name+" · "+a.role:a.role)+kindTag(a)+remoteTag(a))}</span></div>
       <p class="task"${liveAttrs(a)} title="${esc(taskOf(a))}">${esc(deskLine(a))}</p><span class="pill st-${pillSt(a)}"${pillTip(a)}><i></i>${esc(stWord(a))}${pillWarn(a)}</span></div></button>`;    if(LIVE_SIDE)desk+=sideHTML(a);
@@ -1676,6 +1685,7 @@ function roFailed(){syncWorld();toast('The Real office could not be loaded, so t
 /* the plain model Real office draws (no markup but the places' own icons): every text is already masked (deskMask = DurbarSafeText) */
 /* the Alert sign of a needs-you chip in Real office (spec 097 FR-026): a warning triangle in the text colour, built here from trusted markup (the sign set of the removed meeting-room doors, spec 017, kept only for this one) */
 const ALERT_ICON='<svg viewBox="0 0 12 12" aria-hidden="true" focusable="false" data-icon="alert"><path d="M6 1.6 11 10.4H1Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M6 4.8v2.6M6 8.9v.1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
+/* spec 097 FR-306, FR-307 (issue 1139): a desk's helpers for the Real office head figures, in orderedHelpers' order. The name is only in the accessible name and the tooltip (the flat tile's words: helperTileHTML), masked */
 /* spec 015 FR-021 (issue 1330): the one mask of a helper's (sub-agent's) name and task, for every surface that shows them (the Sub-agent
    activity panel's title, task line and error, the chat block, the flat helper tile and its tooltip and aria-label, the expanded helper card).
    Home folders become ~ (redact.ts maskHomePaths) on the RAW text first, THEN the desk mask (DurbarSafeText), never the other way: the desk
@@ -1683,6 +1693,12 @@ const ALERT_ICON='<svg viewBox="0 0 12 12" aria-hidden="true" focusable="false" 
    user name would show. No redact module: homeMask keeps the text and deskMask gives '' (fail closed). */
 const homeMask=t=>{const R=window.DurbarRedact;if(!R||typeof R.maskHomePaths!=='function')return t;const h=R.maskHomePaths(t);return typeof h==='string'?h:'';};
 const helperMask=t=>deskMask(homeMask(t));
+/* spec 097 FR-311 (review of PR 1322): the head figures use the one helper mask above (home folders first, on the raw text) */
+const roHelperMask=helperMask;
+function realSubs(a,stOf){
+  return orderedHelpers(a).map(h=>{const w=helperWords(h,roHelperMask);
+    return {id:h.id,name:w.name||'Helper',state:stOf(h,false),label:w.aria,title:w.tip,selected:ui.selected===h.id};});
+}
 function realModel(model){
   const D=window.DurbarPlaces, E=window.exports;
   RO_LOUNGE=new Set(model.flatMap(m=>(m.rolled||[]).map(x=>x.a.id)));
@@ -1702,7 +1718,8 @@ function realModel(model){
         const br=v&&v.place===D.COFFEE&&BREAKS.get(a.id)&&BREAKS.get(a.id).kind!=='cap'?coffeeUntilWords(a):''; /* owner 2026-11-02: the post-it of a coffee break says until when (an app's usage window), never of Durbar's cap at the Bank */
         return {id:a.id,name:a.name,role:a.role,state:st,word:stWord(a),task,tip:deskTip(a),selected:ui.selected===a.id,ren:canRenameSession(a),unread:isUnread(a),draft:hasDraft(a),away:v?v.place:null,awayLabel:place+(br?' '+br:''),
           label:[a.name+draftWords(a)+unreadWords(a),a.role,stWord(a)].concat(task?[task]:[],needs?['needs you']:[],place?['at '+place]:[]).join(', ')+'. Open chat panel.', /* FR-090: text for setAttribute, not markup */
-          helpers:helpersOf(a).map(h=>stOf(h,false))};})};
+          helpWords:helperCountWords(helpersOf(a).length), /* spec 097 FR-308: what the plate adds when its helpers have no strip (the flat desk's words) */
+          helpers:helpersOf(a).map(h=>stOf(h,false)),subs:realSubs(a,stOf),subsOpen:!!ui.expanded[a.id]};})};
   });
   const places=lobbyPlaces().map(p=>{
     const ids=p.id===D.POSTBOX?[]:placeVisitors(p.id), custom=CUSTOM.some(q=>q.id===p.id);
@@ -2621,6 +2638,7 @@ let cvRz=0; const cvSoon=()=>{if(cvRz)return; cvRz=requestAnimationFrame(()=>{cv
 addEventListener('resize',cvSoon); new MutationObserver(cvSoon).observe(document.documentElement,{attributes:true});
 function openPanel(id,focus){
   const a=byId(id); if(!a)return; if(DOOR_ON)doorStepAside(); /* FR-199: a chat fills the window; the door returns on Back to the office unless dismissed */ if(ui.selected!==id||!document.body.classList.contains('panel-open'))cvMark(); /* after the check: an unknown id leaves the chat on screen unmarked */ if(!pulling)PULLED.delete(id); /* the user came back: this session may bring its chat forward again */
+  {const seen=byId(id);if(seen&&seen.apEnded){seen.apEnded=false;scheduleRender();}} /* spec 099 FR-056: an ended run needs you until it is seen */
   if(AF_ON&&!AF_AUTO&&!pulling&&(ui.selected!==id||!document.body.classList.contains('panel-open')))AFT.manualOpen(id); /* spec 052 FR-185: opening another agent by hand ends the following of the others */
   if(ui.selected!==id||!document.body.classList.contains('panel-open'))PANEL_OPENED_AT=performance.now(); closeSlash(); keepDraft(); ui.selected=id; attached=(DRAFTS.get(id)||{att:[]}).att.slice();
   noteRecentChat(a); rememberUi();
@@ -2714,6 +2732,7 @@ function openPanel(id,focus){
   if(!window.__grantsOutside){window.__grantsOutside=true;document.addEventListener('click',e=>{const path=e.composedPath();if(grantsOpen&&!path.some(n=>n.id==='grants')&&!path.some(n=>n.classList&&n.classList.contains('dlg-ov')))closeGrants(false);}); /* a click in the Revoke all dialog (Cancel) is not outside: it behaves like Esc and keeps the list open */ /* composedPath: a revoke redraws the list, so the clicked button may already be detached here */}
   $('attached').onclick=e=>{const po=e.target.closest('[data-planoff]');if(po){const pa=byId(ui.selected);if(pa)pa.planNext=false;renderAttached();const m=$('msgInput');if(m)focusIn(m);return;}const b=e.target.closest('[data-rm]');if(b){attached.splice(+b.dataset.rm,1);renderAttached();setSend();attNotice([]);}};
   const input=$('msgInput');
+  {const r0=byId(id);const rr=r0&&liveRoot(r0);if(rr&&rr.info&&rr.info.autopilot)apComposer(rr);} /* spec 099 FR-058 */
   fitPlaceholder();if(window.ResizeObserver){if(phRO)phRO.disconnect();else phRO=new ResizeObserver(fitPlaceholder);phRO.observe(input);}
   input.addEventListener('input',autoGrow);
   initSlash(a,input); /* spec 073: the "/" list; its keydown runs first, so Enter / Tab / Esc pick or close while it is open */
@@ -2732,7 +2751,7 @@ function openPanel(id,focus){
 function composerHint(a){
   const base='Shift+Enter: new line · Drop or paste images';
   if(!a||!a.live)return base+' · Demo: sample data';
-  const r=liveRoot(a)||a, m=MODE_NAME[((r.info||a.info)||{}).permMode];
+  const r=liveRoot(a)||a, m=modeNameOf(r.info||a.info);
   return base+' · '+(SIM?'Demo, no credits used':'Live '+kindWord(r.info&&r.info.adapterId))+(m?' · '+m:'');
 }
 /* ---------------- spec 073: the "/" list in the message box (an ARIA combobox with a listbox; focus stays in the box) ----------------
@@ -4144,7 +4163,7 @@ function renderRestoreStrip(){
 /* spec 052 FR-014: the agents that need you, and the next one after the open chat.
    FR-061: oldest first, by when each started needing you (a pending permission's arrival time when the mood tracker has it, else when this
    page first saw it need you); a tie keeps office order (desks on screen first, then the rest). */
-const needsMe=a=>!!a&&!a.parent&&(vis(a)==='waiting'||vis(a)==='error'||!!a.limit);
+const needsMe=a=>!!a&&!a.parent&&(vis(a)==='waiting'||vis(a)==='error'||!!a.limit||!!a.apEnded); /* spec 099 FR-056: an ended run with any reason but done, until it is seen */
 const NEED_SINCE=new Map();
 const ATT=window.DurbarAttention;
 /* spec 052 FR-191 (T197, owner's standing order 2026-11-07): Your door, the Needs you panel, is behind this flag until the owner's look. While it is
@@ -4981,7 +5000,7 @@ async function sendToSeveral(anchor){
   const r=await askDialog({title:'Send to several sessions',size:'m',
     body:'Each session you tick gets this message as if you typed it in its chat, with its own agent app, mode and spending limit.',
     input:{label:'Message',multiline:true,max:4000,focus:true,placeholder:'For example: pull the latest main and run the tests again'},
-    picks:list.map(({a,why})=>({label:a.name+' \u00b7 '+(folderOfAgentName(a)||'')+' \u00b7 '+kindWord(kindOf(a))+' \u00b7 '+(MODE_NAME[a.info.permMode]||'Read-only'),note:why,value:a.id,disabled:!!why})),
+    picks:list.map(({a,why})=>({label:a.name+' \u00b7 '+(folderOfAgentName(a)||'')+' \u00b7 '+kindWord(kindOf(a))+' \u00b7 '+(modeNameOf(a.info)||'Read-only'),note:why,value:a.id,disabled:!!why})),
     need:{text:true,picks:1,label:n=>n?'Send to '+n+' session'+(n===1?'':'s'):'Send'},
     buttons:[{label:'Cancel',value:null},{label:'Send',value:'send',cls:'primary'}],returnFocus:anchor});
   if(!r||r.value!=='send')return;
@@ -5227,6 +5246,8 @@ function liveChat(a){
 }
 function addNote(chat,html,err){const n=document.createElement('div');n.className='note'+(err?' err':'');n.innerHTML=html;chat.el.appendChild(n);stickyScroll(chat);return n;}
 const MODE_NAME={'read-only':'Read-only','ask':'Ask first','allow':'Allow all'};
+/* spec 099 FR-056: the real mode, wherever it is said: Autopilot is Allow all plus a session state, never a value of permMode */
+function modeNameOf(i){return i&&i.autopilot?'Autopilot':MODE_NAME[(i||{}).permMode];}
 /* spec 003 (2026-10-21): a session that came back (restart or Previous sessions) says in its chat which mode it is in and why, so a mode never changes unseen */
 function modeBackNote(a,was){
   const i=a&&a.info; if(!i||!i.permMode||!i.permFrom||a.parent)return;
@@ -5244,11 +5265,13 @@ const KIND_WORD={copilot:'Copilot',claude:'Claude Code',codex:'Codex'};
 const kindWord=id=>{const k=id||'copilot';if(KIND_WORD[k])return KIND_WORD[k];const d=(KINDS||[]).find(x=>x.id===k);return d&&d.displayName?d.displayName:k;};
 const RESUME_CMD={copilot:id=>'copilot --resume '+id,claude:id=>'claude --resume '+id}; /* kinds with a terminal resume command */
 const resumeCmdOf=a=>{const r=liveRoot(a),f=r&&RESUME_CMD[(r.info&&r.info.adapterId)||'copilot'];return f?f(r.id):'';};
-const roleFor=info=>kindWord(info.adapterId)+' ('+MODE_TEXT[info.permMode]+')'+(info.model&&info.model!=='auto'?' · '+info.model:'');
+const roleFor=info=>kindWord(info.adapterId)+' ('+(info.autopilot?'on Autopilot':MODE_TEXT[info.permMode])+')'+(info.model&&info.model!=='auto'?' · '+info.model:'');
 const MODE_IC={
  'read-only':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3.2" y="7" width="9.6" height="6.6" rx="1.6"/><path d="M5.4 7V5.4a2.6 2.6 0 0 1 5.2 0V7"/></svg>',
  'ask':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.8l5 1.8v3.8c0 3-2.1 5.2-5 6.6-2.9-1.4-5-3.6-5-6.6V3.6z"/><path d="M6.2 7.8l1.4 1.4 2.4-2.6"/></svg>',
  /* spec 052 FR-018: an open padlock, not a pencil: Allow all is unguarded, not "editable" */
+  /* spec 099 FR-056: a looping arrow, its own glyph: not colour alone */
+ 'autopilot':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13.2 8a5.2 5.2 0 1 1-1.6-3.7"/><path d="M11.8 1.6v2.9H8.9"/><path d="M6.4 6.2 9.8 8l-3.4 1.8z"/></svg>',
  'allow':'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><rect x="3.2" y="7" width="9.6" height="6.6" rx="1.6"/><path d="M5.6 7V5.2a2.4 2.4 0 0 1 4.7-.7"/></svg>'};
 /* spec 052 FR-011: the desk's accessible name says its permission mode; the glyph next to the name is decoration for screen readers */
 /* spec 052 FR-039: with more than one harness in the office, each card says which one runs it ("Reviewer · Codex") */
@@ -5256,7 +5279,7 @@ const kindTag=a=>{const r=a&&a.parent?byId(a.parent):a;if(!r||!r.live||!r.info)r
 /* spec 054 FR-007: remote control on = text in the card's existing role line and its accessible name (no new element, no size change) */
 const remoteTag=a=>a&&!a.parent&&a.remote?' · Remote':'';
 const remoteWords=a=>a&&!a.parent&&a.remote?', remote control on':'';
-const modeWords=a=>a&&a.live&&a.info&&!a.parent&&a.info.permMode?', '+MODE_NAME[a.info.permMode]+(a.info.permMode==='allow'&&a.info.permRestored?' (restored)':''):'';
+const modeWords=a=>a&&a.live&&a.info&&!a.parent&&a.info.permMode?', '+modeNameOf(a.info)+(a.info.permMode==='allow'&&a.info.permRestored?' (restored)':''):'';
 /* spec 052 FR-065: Allow all is a small red "Allow all" text badge in the icon's slot (the words, not only a padlock); the other modes keep the icon */
 /* spec 052 FR-065: the list row says "Allow all" in a red badge (text=true); a desk card keeps the red icon, because a text badge
    there hides the agent's name at 1280x800 (office check) */
@@ -5266,7 +5289,7 @@ const sbxWord=a=>SBX&&a&&a.info?SBX.chipWord(a.info.sandbox):'';
 const sbxTip=a=>SBX&&a&&a.info&&a.info.sandbox?SBX.tooltip(a.info.sandbox,kindWord(a.info.adapterId),safeMask):'';
 const sbxTitle=a=>{const w=sbxWord(a);return w?' '+w+'.':'';}; /* the card's mode icon: the word only (its tooltip stays short); details on the chip and in the mode menu */
 const sbxDetails=a=>SBX&&a&&a.info&&a.info.sandbox?SBX.details(a.info.sandbox,kindWord(a.info.adapterId),safeMask):'';
-const modeIcon=(a,text)=>a&&a.live&&a.info&&!a.parent&&a.info.permMode?(a.info.permMode==='allow'&&text?`<span class="modebadge" title="${esc(MODE_NAME.allow)}${a.info.permRestored?' (restored from your last run)':''}: ${esc(MODE_SHORT.allow)}.${esc(sbxTitle(a))} Right-click for options." aria-hidden="true">Allow all</span>`:`<span class="modeic mode-${a.info.permMode}" title="${esc(MODE_NAME[a.info.permMode])}${a.info.permMode==='allow'&&a.info.permRestored?' (restored from your last run)':''}: ${esc(MODE_SHORT[a.info.permMode])}.${esc(sbxTitle(a))} Right-click for options." aria-hidden="true">${MODE_IC[a.info.permMode]}</span>`):'';
+const modeIcon=(a,text)=>a&&a.live&&a.info&&!a.parent&&a.info.autopilot?apModeIcon(a,text):a&&a.live&&a.info&&!a.parent&&a.info.permMode?(a.info.permMode==='allow'&&text?`<span class="modebadge" title="${esc(MODE_NAME.allow)}${a.info.permRestored?' (restored from your last run)':''}: ${esc(MODE_SHORT.allow)}.${esc(sbxTitle(a))} Right-click for options." aria-hidden="true">Allow all</span>`:`<span class="modeic mode-${a.info.permMode}" title="${esc(MODE_NAME[a.info.permMode])}${a.info.permMode==='allow'&&a.info.permRestored?' (restored from your last run)':''}: ${esc(MODE_SHORT[a.info.permMode])}.${esc(sbxTitle(a))} Right-click for options." aria-hidden="true">${MODE_IC[a.info.permMode]}</span>`):'';
 /* spec 033 SC-003 (2026-10-21, issue #454): a floor switch is timed inside the app, from the click to the end of the office render
    that shows it (that render measures the stage, so its layout is done). One User Timing entry, replaced on each switch; the
    simulator check reads it. Nothing else uses it. */
@@ -6817,7 +6840,7 @@ function applyTitle(a,title){
 function repaintName(a){
   a.name=SN().displayName(a.alias,a.title,a.folderLabel);
   if(a.info)a.info.alias=a.alias;
-  if(ui.selected===a.id){const h=document.getElementById('panelTitle');if(h)paintPanelTitle(a,h);const mi=$('msgInput');if(mi){mi.setAttribute('aria-label','Message '+a.name);fitPlaceholder();}const c=document.getElementById('chat');if(c)c.setAttribute('aria-label','Chat with '+a.name);}
+  if(ui.selected===a.id){const h=document.getElementById('panelTitle');if(h)paintPanelTitle(a,h);const mi=$('msgInput');if(mi&&!(a.info&&a.info.autopilot)){mi.setAttribute('aria-label','Message '+a.name);fitPlaceholder();}const c=document.getElementById('chat');if(c)c.setAttribute('aria-label','Chat with '+a.name);}
   if(ui.selected===a.id&&answerObs&&answerObs.rename)answerObs.rename(); /* spec 052 FR-177: the answer bar names the session */
   scheduleRender();
   if(document.getElementById('schedDlg'))try{renderSchedDlg();}catch(e){}
@@ -6864,6 +6887,9 @@ function onLiveEvent(e){
     if(e.auto===true&&um){um.classList.add('auto');const mt=um.querySelector('.meta');if(mt)mt.textContent=mt.textContent.replace(/^You/,'Agent Durbar, automatic');} /* spec 058 FR-218: not the person's own message */
     return;}
   case 'status':{
+    /* spec 099 FR-005, FR-052: a closed session is not on Autopilot; no card, and no ended event comes */
+    if(a.info&&a.info.autopilot&&!e.agentId&&(e.status==='stopped'||(APW&&e.intent===APW.CLOSED_LINE))){a.info.autopilot=undefined;apRepaint(a);}
+    if(a.apEndTask&&!e.agentId&&e.status==='idle'){const t=a.apEndTask;a.apEndTask=null;closeTurn(a);a.worked=false;setState(a,'idle',null,t);updatePanelHeader();scheduleRender();return;}
     if(!main)return;
     /* spec 015 FR-009b: the desk mark ends when the agent goes idle, stops or fails (a compaction in the background may still run: its line stays until the result);
        a stop or an error also ends the line, honestly: "stopped", never "failed" */
@@ -6925,7 +6951,9 @@ function onLiveEvent(e){
     if(e.phase==='proposed'){showPlan(a,e);setState(a,'waiting',null,'Waiting for your OK on a plan');updatePanelHeader();scheduleRender();}
     else if(a.plan&&a.plan.requestId===e.requestId)settlePlan(a,e.action||'reject');
     return;
+  case 'autopilot':onAutopilot(a,e);return; /* spec 099; main checked it (FR-082) */
   case 'question': /* spec 012 FR-130 */
+    if(e.autoAnswered===true){if(e.phase==='asked')showAutoQuestion(a,e);return;} /* spec 099 FR-030: shown, not waited on */
     if(e.phase==='asked'){if(a.qs&&a.qs.has(e.requestId))return;showQuestion(a,e);setState(a,'waiting',null,'The agent asks you a question');updatePanelHeader();scheduleRender();}
     else if(a.qs&&a.qs.has(e.requestId)){const Q=a.qs.get(e.requestId);settleQuestion(a,e.phase==='answered'?e.answers:null,Q.elicit?(e.phase==='answered'?(e.elicitAction||'accept'):'cancel'):undefined,e.requestId,e.reason);}
     else if(e.phase==='cancelled')reSkipQuestion(a,e.requestId,e.reason);
@@ -7273,7 +7301,7 @@ function renderStrip(){
 
 
 /* ---------------- permission mode: change it at any time (spec 018) ---------------- */
-function modeChipHTML(a){const m=a.info.permMode, rs=m==='allow'&&a.info.permRestored;
+function modeChipHTML(a){if(a.info.autopilot)return apChipHTML(a);const m=a.info.permMode, rs=m==='allow'&&a.info.permRestored;
   /* spec 061 FR-012: Read-only still means something: when the folder's own hooks or allow rules apply, the chip says so */
   const fr=a.info.folderRules?' + folder rules':'';
   /* spec 087 FR-009: the floor in force after the mode, in words (never colour alone); its tooltip says what it covers (FR-010) */
@@ -7295,6 +7323,88 @@ async function restartWithoutSandbox(a0,anchor){
   catch(err){toast('Could not restart without the OS sandbox: '+esc(String(err&&err.message||err)),6000).classList.add('err');}
   finally{a.sbxRestarting=false;paint();}
 }
+/* ---------------- spec 099: Autopilot in the window. Everything here follows main: the page alone grants nothing, and the words go through esc or textContent ---------------- */
+const APW=window.DurbarAutopilot||null;
+const AP_MODE='autopilot'; /* the class names are built from it as the other modes' are (one button class set each, spec 070 FR-054) */
+const apUnit=a=>{const c=capsFor(a).autopilot;return c&&c.capUnit?c.capUnit:null;};
+const apSpent=a=>{const u=apUnit(a),us=a.usage||{};return u==='usd'?us.usd||0:u==='aiu'?(us.nano||0)/1e9:undefined;};
+const apTip=a=>{const c=capsFor(a).autopilot;return APW.tooltip(a.info.autopilot,apUnit(a),apSpent(a),!!(c&&c.verified));};
+function apChipHTML(a){const c=a.info.autopilot,sw=sbxWord(a);
+  return `<button class="mode-chip mode-${AP_MODE}" id="modeChip" type="button" aria-haspopup="menu" aria-expanded="false" title="${esc(apTip(a))}" data-ap-run="${c.run?esc(String(c.run.continuation)):''}"><span class="mi">${MODE_IC.autopilot}</span><span>${esc(APW.chipLabel(c))}${sw?` · ${esc(sw)}`:''}</span>${ICON('chev')}</button>`;}
+function apModeIcon(a,text){const t=esc(apTip(a).replace(' Click to change.',''));
+  return text?`<span class="modebadge ap-badge" title="${t}" aria-hidden="true">Autopilot</span>`:`<span class="modeic mode-autopilot" title="${t}" aria-hidden="true">${MODE_IC.autopilot}</span>`;}
+function apMenuItem(a){const c=capsFor(a).autopilot;if(!APW||!c||a.parent||!bridge.setAutopilot)return '';
+  const o=orgMode(a.info.adapterId,'allow'),why=o?o.why:a.remote?APW.REMOTE:'',on=!!a.info.autopilot; /* FR-070: blocked wherever Allow all is, greyed with the reason; main decides again */
+  return `<button type="button" role="menuitemradio" aria-checked="${on}" data-act="autopilot" class="mm-${AP_MODE}${why?' mm-org':''}"${why?' aria-disabled="true"':''} title="${esc(why||APW.HELP)}"><span class="mi">${MODE_IC.autopilot}</span><span class="mt"><b>Autopilot…</b><small>${esc(why||APW.SHORT)}</small></span><span class="ck">${on?'✓':''}</span></button>`;}
+/* the chip, the composer and the office say what main says */
+function apRepaint(a){
+  a.role=roleFor(a.info);
+  if(ui.selected&&liveRoot(byId(ui.selected)||a)===a){const c=$('modeChip');if(c)setModeChip(c,a);apComposer(a);const h=document.querySelector('#panel .hint');if(h)h.textContent=composerHint(byId(ui.selected)||a);updatePanelHeader();}
+  scheduleRender();
+}
+/* FR-058, D10: the placeholder, and the attach buttons of an app whose goal takes text only (hidden, with the reason where they were) */
+function apComposer(a){
+  const t=$('msgInput');if(!t||!APW||!a.info)return;
+  const on=!!a.info.autopilot,app=kindWord(a.info.adapterId),c=capsFor(a).autopilot;
+  const lbl=on?APW.placeholder(app):'Message '+a.name;
+  if(t.getAttribute('aria-label')!==lbl){t.setAttribute('aria-label',lbl);fitPlaceholder();}
+  const noAtt=on&&!!c&&c.attachments===false;
+  ['attFile','attImg'].forEach(id=>{const b=$(id);if(b){b.hidden=noAtt;b.style.display=noAtt?'none':'';}});
+  const b=$('attFile'),old=$('apNoAttach');
+  if(noAtt&&b&&!old){const s=document.createElement('span');s.id='apNoAttach';s.className='ct-ib ap-noatt';s.setAttribute('role','img');s.setAttribute('aria-label',APW.attachTip(app));s.title=APW.attachTip(app);s.innerHTML=ICON('file');b.parentNode.insertBefore(s,b);}
+  else if(!noAtt&&old)old.remove();
+}
+/* FR-055: the settings form, then main's native dialog. Run again on Autopilot… asks the same */
+async function autopilotFlow(a,anchor){
+  const c=capsFor(a).autopilot;if(!APW||!c||!bridge.setAutopilot||a.autopilotAsking)return;
+  const app=kindWord(a.info.adapterId),f=APW.form(document,{app,unit:c.capUnit,limit:APP_SETTINGS&&APP_SETTINGS.autopilotLimit,spent:apSpent(a),ownCap:a.info.maxAiCredits,mode:a.info.permMode,folder:roomOf(a).name,verified:!!c.verified,capMin:typeof c.capMin==='number'?c.capMin:undefined});
+  const r=await askDialog({title:'Autopilot for '+a.name+'?',body:app+' keeps working on each message until it judges the task done, and decides its own questions. Set its limits here.',custom:f,size:'m',returnFocus:anchor,buttons:[{label:'Cancel',value:null},{label:'Continue…',value:'ok',cls:'primary'}]});
+  if(!r)return;
+  a.autopilotAsking=true;
+  const res=await bridge.setAutopilot(a.id,r.custom).catch(e=>({ok:false,error:String(e&&e.message||e)}));
+  a.autopilotAsking=false;
+  if(!res||res.cancelled||byId(a.id)!==a)return; /* spec 099 FR-059: removed while main asked: nothing to say; an End leaves the agent here, and main's answer says why ("The session is not running.") */
+  if(res.mode){a.info.permMode=res.mode;a.info.permRestored=undefined;a.info.permFrom=undefined;}
+  if(!res.ok){apRepaint(a);addNote(liveChat(a),'Autopilot did not start: '+esc(safeMask(String(res.error||'unknown error'))),true);return;}
+  a.info.autopilot=res.autopilot;a.apEnded=false;
+  if(APP_SETTINGS&&res.autopilot)APP_SETTINGS.autopilotLimit=res.autopilot.limit;
+  apRepaint(a);renderRestoreStrip();
+  toast(esc(a.name)+': <b>Autopilot</b>. The next message starts it.',4200);
+  if(res.pending)addNote(liveChat(a),res.pending+' request'+(res.pending>1?'s':'')+' from before still '+(res.pending>1?'wait':'waits')+' for your answer.');
+}
+/* FR-040, FR-057: the chat lines and the end card, from main's checked event */
+function onAutopilot(a,e){
+  if(!APW||!a.info||a.parent)return;
+  const chat=liveChat(a),ap=a.info.autopilot,unit=apUnit(a);
+  const line=t=>{const n=document.createElement('div');n.className='note ap-line';n.textContent=t;tChips(ensureTurn(a).T).appendChild(n);return n;}; /* in the turn, in order with its question card */
+  if(e.phase==='started'){if(ap)ap.run={continuation:0,startedAt:Date.now()};a.apEnded=false;line(APW.startLine(ap||{limit:e.limit},unit));}
+  else if(e.phase==='continued'){if(ap)ap.run={continuation:e.n,startedAt:(ap.run||{}).startedAt||Date.now()};line(APW.contLine(e.n,e.limit));}
+  else if(e.phase==='ended'){
+    if(ap){ap.run=undefined;if(e.reason!=='done')a.info.autopilot=undefined;}
+    const n=addNote(chat,'');n.classList.add('ap-end');n.dataset.reason=String(e.reason);
+    const i=document.createElement('span');i.className='ap-ic';i.setAttribute('aria-hidden','true');i.textContent=APW.endIcon(e.reason);n.appendChild(i);
+    const w=document.createElement('span');w.className='ap-words';w.textContent=APW.endLine(e,kindWord(a.info.adapterId));n.appendChild(w);
+    const row=document.createElement('div');row.className='note-actions';
+    const btn=(label,fn)=>{const b=document.createElement('button');b.type='button';b.className='btn';b.textContent=label;b.onclick=fn;row.appendChild(b);};
+    if(e.reason!=='done'&&capsFor(a).autopilot)btn('Run again on Autopilot…',()=>void autopilotFlow(a,null));
+    if(feat(a,'modeList','ask'))btn('Switch to Ask first…',()=>void changeMode(a,'ask',null));
+    if(row.children.length)n.appendChild(row);
+    a.apEndReason=e.reason;
+    /* the end reason on the status too: an idle after a run that did not finish is never "Done" (stopped says so by itself) */
+    if(e.reason!=='done'&&e.reason!=='stopped'){if(busyNow(a))a.apEndTask=w.textContent;else{closeTurn(a);a.worked=false;setState(a,'idle',null,w.textContent);}}
+    a.apEnded=e.reason!=='done'&&!(ui.selected===a.id&&document.body.classList.contains('panel-open')); /* FR-056: needs me until it is seen */
+    if(typeof renderInboxBtn==='function')renderInboxBtn();
+  }
+  stickyScroll(chat);apRepaint(a);
+}
+/* FR-030: shown, not waited on: the question's own text, no buttons, and who decided */
+function showAutoQuestion(a,e){
+  const t=ensureTurn(a),qs=(e.questions||[]).slice(0,4);
+  const n=document.createElement('div');n.className='note ap-question';n.setAttribute('role','group');n.setAttribute('aria-label','Question from the agent');
+  const head=document.createElement('b');head.textContent=e.elicitation?'Declined (Autopilot)':'Decided by itself (Autopilot)';n.appendChild(head);
+  qs.forEach(q=>{const p=document.createElement('p');p.className='q-text';p.textContent=String(q&&q.question||'');n.appendChild(p);});
+  tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
+}
 function closeModeMenu(){const m=document.getElementById('modeMenu');if(m){m.remove();const c=$('modeChip');if(c)c.setAttribute('aria-expanded','false');document.querySelectorAll('[data-act="ro-ask"][aria-expanded="true"]').forEach(b=>b.setAttribute('aria-expanded','false'));}}
 function openModeMenu(a0,x,y,anchor,o){ /* o.modesOnly (spec 003 FR-095): the three modes and the note, without Model, Plan first, folder setup or card actions */
   const a=liveRoot(a0); if(!a||!a.live)return false;
@@ -7309,10 +7419,11 @@ function openModeMenu(a0,x,y,anchor,o){ /* o.modesOnly (spec 003 FR-095): the th
   closeModeMenu();
   const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label',(hasOps?'Actions for ':'Permission mode for ')+a.name);
   m.innerHTML=(hasMode?['read-only','ask','allow'].filter(k=>feat(a,'modeList',k)).map(k=>{const o=orgMode(a.info.adapterId,k),w=o?o.why:''; /* spec 076 FR-202: blocked: disabled, the reason as its text; advice (FR-201): the words, still selectable */
-    return `<button type="button" role="menuitemradio" aria-checked="${a.info.permMode===k}" data-mode="${k}" class="mm-${k}${w?(o.refuse?' mm-org':' mm-orgdoubt'):''}"${o&&o.refuse?' aria-disabled="true"':''} title="${esc(w||MODE_HELP[k])}"><span class="mi">${MODE_IC[k]}</span><span class="mt"><b>${MODE_NAME[k]}</b><small>${esc(w||MODE_SHORT[k])}</small></span><span class="ck">${a.info.permMode===k?'✓':''}</span></button>`;}).join('')+(canSbxRestart(a)&&!onCard?`<button type="button" role="menuitem" data-act="sbxRestart" class="mm-sbxrestart"${a.sbxRestarting?' aria-disabled="true"':''} title="${esc(sbxRestartTip(a))}"><span class="mt"><b>Restart without the sandbox</b><small>Keeps this conversation; a new session in Allow all</small></span></button>`:'')+(!only&&bridge.setModel&&a.info?`<button type="button" role="menuitem" data-act="model" class="mm-model"><span class="mt"><b>Model and context…</b><small>${esc(modelLabel(a.info).text)}</small></span></button>`:'')+(!only&&capsFor(a)&&capsFor(a).planMode&&!a0.parent?`<button type="button" role="menuitemcheckbox" aria-checked="${!!a.planNext}" data-act="planNext" class="mm-plan"><span class="mt"><b>Plan first (next message)</b><small>It plans first; you approve before it acts.</small></span><span class="ck">${a.planNext?'✓':''}</span></button>`:'')+(!only&&bridge.folderSetupScan&&window.DurbarFolderSetup&&a.info?`<button type="button" role="menuitem" data-act="foldersetup" class="mm-fsetup"><span class="mt"><b>This folder\u2019s setup…</b><small>${a.info.folderRules?'Its own hooks or allow rules are on':'Hooks, rules and MCP servers in its files'}</small></span></button>`:'')+`<p class="mm-note">Applies from the next request. The session keeps running.</p>`+(sbxWord(a)?`<p class="mm-note mm-sbx"><b>${esc(sbxWord(a))}.</b> ${esc(sbxDetails(a))}</p>`:''):'')+(hasOps?`<div class="mm-sep" role="separator"></div>`+(canRead?`<button type="button" role="menuitem" data-op="read" class="mm-read"><span class="mt"><b>Mark as read</b><small>Clears \u201cNew\u201d without opening the chat</small></span></button>`:'')+(canRen?`<button type="button" role="menuitem" data-op="rename" class="mm-rename" title="Give this session a short name"><span class="mt"><b>Rename…</b><small>A short name for this session</small></span></button>`:'')+(ops.stop?`<button type="button" role="menuitem" data-op="stop" class="mm-stop"${ops.stop.disabled?` aria-disabled="true" aria-describedby="mmStopWhy" title="${esc(ops.stop.reason)}"`:''}><span class="mt"><b>Stop</b><small${ops.stop.disabled?' id="mmStopWhy"':''}>${esc(ops.stop.disabled?ops.stop.reason:'Stops this reply. The agent stays open.')}</small></span></button>`:'')+(ops.end&&bridge.end?`<button type="button" role="menuitem" data-op="end" class="mm-end mm-danger"><span class="mt"><b>End session</b><small>Send a message to pick up where you left off.</small></span></button>`:''):'');
+    const isOn=a.info.permMode===k&&!a.info.autopilot; /* spec 099 FR-056: on Autopilot the check mark is on Autopilot, not on Allow all */
+    return `<button type="button" role="menuitemradio" aria-checked="${isOn}" data-mode="${k}" class="mm-${k}${w?(o.refuse?' mm-org':' mm-orgdoubt'):''}"${o&&o.refuse?' aria-disabled="true"':''} title="${esc(w||MODE_HELP[k])}"><span class="mi">${MODE_IC[k]}</span><span class="mt"><b>${MODE_NAME[k]}</b><small>${esc(w||MODE_SHORT[k])}</small></span><span class="ck">${isOn?'✓':''}</span></button>`;}).join('')+(only?'':apMenuItem(a))+(canSbxRestart(a)&&!onCard?`<button type="button" role="menuitem" data-act="sbxRestart" class="mm-sbxrestart"${a.sbxRestarting?' aria-disabled="true"':''} title="${esc(sbxRestartTip(a))}"><span class="mt"><b>Restart without the sandbox</b><small>Keeps this conversation; a new session in Allow all</small></span></button>`:'')+(!only&&bridge.setModel&&a.info?`<button type="button" role="menuitem" data-act="model" class="mm-model"><span class="mt"><b>Model and context…</b><small>${esc(modelLabel(a.info).text)}</small></span></button>`:'')+(!only&&capsFor(a)&&capsFor(a).planMode&&!a0.parent?`<button type="button" role="menuitemcheckbox" aria-checked="${!!a.planNext}" data-act="planNext" class="mm-plan"><span class="mt"><b>Plan first (next message)</b><small>It plans first; you approve before it acts.</small></span><span class="ck">${a.planNext?'✓':''}</span></button>`:'')+(!only&&bridge.folderSetupScan&&window.DurbarFolderSetup&&a.info?`<button type="button" role="menuitem" data-act="foldersetup" class="mm-fsetup"><span class="mt"><b>This folder\u2019s setup…</b><small>${a.info.folderRules?'Its own hooks or allow rules are on':'Hooks, rules and MCP servers in its files'}</small></span></button>`:'')+`<p class="mm-note">Applies from the next request. The session keeps running.</p>`+(sbxWord(a)?`<p class="mm-note mm-sbx"><b>${esc(sbxWord(a))}.</b> ${esc(sbxDetails(a))}</p>`:''):'')+(hasOps?`<div class="mm-sep" role="separator"></div>`+(canRead?`<button type="button" role="menuitem" data-op="read" class="mm-read"><span class="mt"><b>Mark as read</b><small>Clears \u201cNew\u201d without opening the chat</small></span></button>`:'')+(canRen?`<button type="button" role="menuitem" data-op="rename" class="mm-rename" title="Give this session a short name"><span class="mt"><b>Rename…</b><small>A short name for this session</small></span></button>`:'')+(ops.stop?`<button type="button" role="menuitem" data-op="stop" class="mm-stop"${ops.stop.disabled?` aria-disabled="true" aria-describedby="mmStopWhy" title="${esc(ops.stop.reason)}"`:''}><span class="mt"><b>Stop</b><small${ops.stop.disabled?' id="mmStopWhy"':''}>${esc(ops.stop.disabled?ops.stop.reason:'Stops this reply. The agent stays open.')}</small></span></button>`:'')+(ops.end&&bridge.end?`<button type="button" role="menuitem" data-op="end" class="mm-end mm-danger"><span class="mt"><b>End session</b><small>Send a message to pick up where you left off.</small></span></button>`:''):'');
   document.body.appendChild(m);
   const {px,py}=placeMenu(m,x,y,anchor); /* spec 005 FR-037: above a toolbar chip */
-  m.addEventListener('click',e=>{const pn=e.target.closest('[data-act="planNext"]');if(pn){a.planNext=!a.planNext;closeModeMenu();renderAttached();announce(a.planNext?'The next message asks for a plan first.':'Plan first is off.');const mi=$('msgInput');if(mi)focusIn(mi);return;}const g=e.target.closest('[data-act="model"]');if(g){closeModeMenu();openModelMenu(a,px,py,anchor);return;}if(e.target.closest('[data-act="foldersetup"]')){closeModeMenu();window.DurbarFolderSetup.openFor(a.info);return;}const sr=e.target.closest('[data-act="sbxRestart"]');if(sr){if(sr.getAttribute('aria-disabled')==='true')return;closeModeMenu();restartWithoutSandbox(a,anchor);return;}const o=e.target.closest('[data-op]');if(o){if(o.getAttribute('aria-disabled')==='true')return;closeModeMenu();cardOp(a,o.dataset.op,anchor);return;}const b=e.target.closest('[data-mode]');if(!b||b.getAttribute('aria-disabled')==='true')return;closeModeMenu();changeMode(a,b.dataset.mode,anchor);});
+  m.addEventListener('click',e=>{const ap=e.target.closest('[data-act="autopilot"]');if(ap){if(ap.getAttribute('aria-disabled')==='true')return;closeModeMenu();if(!a.info.autopilot)void autopilotFlow(a,anchor);return;}const pn=e.target.closest('[data-act="planNext"]');if(pn){a.planNext=!a.planNext;closeModeMenu();renderAttached();announce(a.planNext?'The next message asks for a plan first.':'Plan first is off.');const mi=$('msgInput');if(mi)focusIn(mi);return;}const g=e.target.closest('[data-act="model"]');if(g){closeModeMenu();openModelMenu(a,px,py,anchor);return;}if(e.target.closest('[data-act="foldersetup"]')){closeModeMenu();window.DurbarFolderSetup.openFor(a.info);return;}const sr=e.target.closest('[data-act="sbxRestart"]');if(sr){if(sr.getAttribute('aria-disabled')==='true')return;closeModeMenu();restartWithoutSandbox(a,anchor);return;}const o=e.target.closest('[data-op]');if(o){if(o.getAttribute('aria-disabled')==='true')return;closeModeMenu();cardOp(a,o.dataset.op,anchor);return;}const b=e.target.closest('[data-mode]');if(!b||b.getAttribute('aria-disabled')==='true')return;closeModeMenu();changeMode(a,b.dataset.mode,anchor);});
   m.addEventListener('keydown',e=>{const it=[...m.querySelectorAll('[data-mode],[data-act],[data-op]')],i=it.indexOf(document.activeElement);
     if(e.key==='ArrowDown'){e.preventDefault();focusIn(it[(i+1)%it.length]);}else if(e.key==='ArrowUp'){e.preventDefault();focusIn(it[(i+it.length-1)%it.length]);}
     else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();if(anchor&&anchor.focus&&document.contains(anchor))focusIn(anchor);}});
@@ -7393,6 +7504,9 @@ async function changeMode(a,mode,anchor){
   try{await changeModeInner(a,mode,anchor);}finally{refocusAnchor(anchor);}
 }
 async function changeModeInner(a,mode,anchor){
+  /* spec 099 FR-051: a person can always get down. Allow all from Autopilot is only a stop; another mode ends it first, in main, also if the switch is then refused */
+  const onAp=!!a.info.autopilot;
+  if(onAp&&mode===a.info.permMode&&bridge.setAutopilot){const r=await bridge.setAutopilot(a.id,null).catch(e=>({ok:false,error:String(e&&e.message||e)}));if(r&&r.ok)a.info.autopilot=undefined;else toast('Could not stop Autopilot: '+esc((r&&r.error)||'unknown error'),5000);apRepaint(a);return;}
   const cur=a.info.permMode; if(mode===cur||!bridge.setPermMode)return;
   const pend=a.pend?a.pend.size:0, grants=(a.grants||[]).length;
   const opts={};
@@ -7408,6 +7522,7 @@ async function changeModeInner(a,mode,anchor){
     if(!r)return; opts.clearGrants=r.value==='clear';
   }
   const res=await bridge.setPermMode(a.id,mode,opts).catch(e=>({ok:false,error:String(e&&e.message||e)}));
+  if(onAp){a.info.autopilot=undefined;apRepaint(a);}
   if(!res||!res.ok){toast('Could not change the mode: '+esc((res&&res.error)||'unknown error'),5000);return;}
   a.info.permMode=mode; a.info.permRestored=undefined; a.info.permFrom=undefined; a.role=roleFor(a.info); roAskAfterSwitch(a,mode,anchor);
   if(opts.clearGrants)setGrants(a,[]);
@@ -8678,6 +8793,8 @@ if(bridge&&bridge.heldList){
   if(bridge.onHeldStopped)bridge.onHeldStopped(p=>{const a=p&&p.id&&byId(p.id);const t=(a?esc(a.name)+': ':'')+'Send stopped because '+esc(HELD_STOP_WHY[p&&p.why]||'it could not go now')+'. The rest stay held in Settings > Schedules.';toast(t,6000).classList.add('err');});
 }
 /* spec 076 FR-203: a session started while Durbar could not read all of its agent app's organization policy: the advice, once */
+/* spec 099 FR-056: the real mode, also when no event comes: a stop with no run, a session that closed */
+if(bridge&&bridge.onAutopilotState){bridge.onAutopilotState(p=>{const a=p&&liveById(p.id);if(!a||!a.info)return;const had=!!a.info.autopilot;a.info.autopilot=p.autopilot||undefined;if(had||p.autopilot)apRepaint(a);});}
 if(bridge&&bridge.onMcpSignInRefresh){bridge.onMcpSignInRefresh(p=>{try{mcpReLine(p);}catch(e){}});} /* spec 058 FR-208, FR-211 */
 if(bridge&&bridge.onOrgNote){bridge.onOrgNote(p=>{if(p&&typeof p.text==='string'&&p.text)toast(esc(p.text.slice(0,300)),7000);});}
 if(bridge&&bridge.onRemoteOff){bridge.onRemoteOff(p=>{const id=typeof p==='string'?p:p&&p.id;const a=liveById(id);if(!a||!a.remote)return;a.remote=null;updateRemoteUi(a);

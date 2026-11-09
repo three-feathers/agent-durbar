@@ -4,7 +4,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { realLayout, sortDesks, type RealMeta, type RealModel, type RealAgent, type RealState, type Rect, type Layout } from '../src/shared/realoffice-layout';
-import { aisleStatus, aislesLayout, layoutFor, aisleTabOrder, aisleFace, FACE_FLOOR, AISLE_SIGN_MIN_W, ARRANGEMENTS } from '../src/shared/realoffice-arrangements';
+import { aisleStatus, aislesLayout, layoutFor, aisleTabOrder, aisleFace, FACE_FLOOR, AISLE_SIGN_MIN_W, AISLE_PLATE_H, ARRANGEMENTS } from '../src/shared/realoffice-arrangements';
 
 process.exitCode = 1;
 const ROOT = (() => { let d = __dirname; while (!fs.existsSync(path.join(d, 'package.json'))) d = path.dirname(d); return d; })();
@@ -13,9 +13,9 @@ const readJson = (...p: string[]): Record<string, unknown> => JSON.parse(fs.read
 const META = { ...readJson('worlds', 'retro', 'world.json'), ...readJson('sets', 'retro', 'set.json') } as unknown as RealMeta; // the arcade's own people: the place beside a cabinet is measured on them
 const PEOPLE = Object.keys(META.seat).sort();
 const STATES: RealState[] = ['working', 'thinking', 'waiting', 'error', 'limit', 'done', 'idle', 'asleep'];
-function model(n: number, f: number, states: RealState[] = STATES): RealModel {
+function model(n: number, f: number, states: RealState[] = STATES, lounge = 0): RealModel {
   const folders = Array.from({ length: f }, (_, i) => ({ id: 'f' + i, agents: [] as RealAgent[] }));
-  for (let i = 0; i < n; i++) folders[i % f].agents.push({ id: 'a' + i, state: states[i % states.length], person: PEOPLE[i % 15], away: i % 5 === 4 ? 'library' : null });
+  for (let i = 0; i < n; i++) folders[i % f].agents.push({ id: 'a' + i, state: states[i % states.length], person: PEOPLE[i % 15], away: i % 5 === 4 ? 'library' : null, ...(i < lounge ? { lounge: true } : {}) });
   return { folders, places: ['library', 'software', 'terminal', 'web', 'other', 'coffee', 'boss', 'bank', 'postbox'].map((id) => ({ id, visitors: [] })) };
 }
 const SIGNS = (f: number): Record<string, { name: string; path: string; counts: number }> => Object.fromEntries(Array.from({ length: f }, (_, i) => ['f' + i, { name: 'project-' + i, path: '~/work/long/path/to/project-' + i, counts: 3 }]));
@@ -24,6 +24,31 @@ const inside = (a: Rect, b: Rect, t = 0.5): boolean => a.x >= b.x - t && a.y >= 
 /** the floors the app shows: both sizes with the chat closed; an open chat hides the office (#1001), so no office floor has a chat beside it */
 const SIZES: [number, number][] = [[1440, 848], [1280, 748]];
 const NAMES = ['1440x900', '1280x800'];
+
+/* spec 102 T276 (issue #1303): a one-line arcade plate fits its line. The plate box is AISLE_PLATE_H tall; what its CSS asks for (border, padding, one line) must fit in it, at the dense levels too
+ * (12 and 15 agents, both sizes), where every cabinet and lounge plate has that height; text never under 10.5 px. check-office-overlap.js (OFFICE_WORLD=retro) measures the drawn plate; this holds the numbers. */
+{
+  const css = fs.readFileSync(path.join(RO, 'worlds', 'retro', 'world.css'), 'utf8'), base = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'realoffice.css'), 'utf8');
+  const rule = /\.ro\[data-world="retro"\] \.ro-plate\{--arc-plate-pad:([\d.]+)px;--arc-plate-line:([\d.]+)px;padding-block:var\(--arc-plate-pad\);line-height:var\(--arc-plate-line\);justify-content:flex-start\}/.exec(css);
+  assert.ok(rule, 'world.css: the arcade plate rule (padding and a line height in px) is missing');
+  const border = /\.ro-plate\{[^}]*?border:([\d.]+)px solid/.exec(base), wborder = /\.ro-plate:is\(\.st-waiting,\.st-limit\)\{[^}]*?border:([\d.]+)px solid/.exec(base);
+  assert.ok(border && wborder, 'realoffice.css: the plate border (plain, waiting and limit) is not found');
+  const wpad = /\.ro-plate:is\(\.st-waiting,\.st-limit\)\{--arc-plate-padw:([\d.]+)px;padding-block:var\(--arc-plate-padw\)\}/.exec(css);
+  assert.ok(wpad, 'world.css: the waiting and limit plate padding rule is missing');
+  const need = 2 * Number(border[1]) + 2 * Number(rule[1]) + Number(rule[2]);
+  const needWait = 2 * Number(wborder[1]) + 2 * Number(wpad[1]) + Number(rule[2]);
+  for (const [nm, n] of [['plain', need], ['waiting or limit (the thicker border)', needWait]] as [string, number][]) assert.ok(n <= AISLE_PLATE_H, `an arcade ${nm} plate needs ${n} px (border, padding, one line) and has ${AISLE_PLATE_H}: its line is cut`);
+  const l1 = /\.ro-plate\.lounge \.ro-l1\{[^}]*?font-size:var\(--t4-size\)/.exec(css), t4 = /--t4-size:\s*([\d.]+)px/.exec(fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'styles.css'), 'utf8'));
+  assert.ok(l1 && t4 && Number(t4[1]) >= 10.5 && Number(t4[1]) <= Number(rule[2]), 'the lounge plate name is at least 10.5 px and fits the line');
+  let np = 0, nl = 0;
+  for (const [W, H] of SIZES) for (const k of [12, 15]) {
+    const L = aislesLayout(model(k, 3, STATES, 3), { w: W, h: H }, META, SIGNS(3));
+    assert.ok(L.lounge && L.lounge.desks.length > 0, `${W}x${H}, ${k} agents: no lounge seat to measure`);
+    for (const d of L.zones.flatMap((z) => z.desks)) { assert.ok(d.plate.h >= needWait, `${W}x${H}, ${k} agents: plate ${d.plate.h} px is shorter than its line needs (${needWait})`); np++; }
+    for (const d of L.lounge.desks) { assert.ok(d.plate.h >= needWait, `${W}x${H}, ${k} agents: lounge plate ${d.plate.h} px is shorter than its line needs (${needWait})`); nl++; }
+  }
+  console.log(`arcade plates: ${np} cabinet and ${nl} lounge plates, box ${AISLE_PLATE_H} px, line needs ${need} px (${needWait} waiting or limit)`);
+}
 
 /** FR-229, FR-255, FR-256: every rule the renderer will rely on, as sentences */
 function problems(L: Layout, W: number, k: number): string[] {
@@ -351,6 +376,34 @@ console.log(`floor covered with 4 or fewer: ${covs.join('; ')}`);
     }
   }
   console.log(`arcade lounge: ${lc} layouts`);
+}
+
+// ---- spec 097 FR-306, FR-308 (issue #1139): one row of helper heads under each cabinet's plate, by measurement ----
+{
+  const withH = (n: number, f: number, h: number): RealModel => { const m = model(n, f); m.folders.forEach((fo) => fo.agents.forEach((a) => { a.helpers = h; })); return m; };
+  let strips = 0, fell = 0;
+  for (const [i, [W, H]] of SIZES.entries()) for (const [n, f] of [[3, 1], [8, 2], [15, 4], [20, 4]] as [number, number][]) for (const h of [0, 2, 10]) {
+    const m = withH(n, f, h), L = aislesLayout(m, { w: W, h: H }, META, SIGNS(f)), base = aislesLayout(withH(n, f, 0), { w: W, h: H }, META, SIGNS(f)), label = `${n} agents, ${h} helpers, ${NAMES[i]}`;
+    const ds = L.zones.flatMap((z) => z.desks);
+    if (h === 0) { assert.strictEqual(JSON.stringify(L), JSON.stringify(base), `${label}: no helpers, no change`); continue; }
+    if (!L.helpRows) { fell++; assert.ok(ds.every((d) => !d.strip), `${label}: the fallback draws no strip`); continue; }
+    assert.ok(!L.scroll === !base.scroll || n > 15, `${label}: strips do not start a scroll`);
+    for (const d of ds) {
+      const t = d.strip!;
+      assert.ok(t, `${label}: ${d.id} has a strip`); strips++;
+      assert.ok(inside(t, d.slot, 0.5), `${label}: strip of ${d.id} inside its slot`);
+      assert.ok(t.y >= d.plate.y + d.plate.h - 0.5 && !inter(t, d.plate) && !inter(t, d.screen) && !(d.person && inter(t, d.person.vis)), `${label}: strip of ${d.id} touches nothing of its own cabinet`);
+      assert.ok(t.cols * 30 + (t.cols - 1) * 4 <= t.w + 0.01 && t.shown <= t.cols && t.shown === (h <= t.cols ? h : Math.max(0, t.cols - 1)), `${label}: shown ${t.shown} of ${h} in ${t.cols} across`);
+      for (const o of ds) if (o !== d) { assert.ok(!inter(t, o.strip!), `${label}: two strips overlap`); assert.ok(!inter(t, o.plate) && !inter(t, o.screen), `${label}: a strip over another cabinet`); }
+    }
+  }
+  assert.ok(strips > 50 && fell >= 1, `arcade strips ran (${strips} strips, ${fell} layouts fell back to +N)`);
+  const at15 = aislesLayout(withH(15, 4, 10), { w: 1440, h: 848 }, META, SIGNS(4));
+  assert.ok(at15.helpRows === 1 && !at15.scroll && at15.faceH >= FACE_FLOOR, 'arcade, 15 agents at 1440x848: one row of heads, no scroll, face over the ratchet');
+  assert.strictEqual(at15.g, aislesLayout(withH(15, 4, 0), { w: 1440, h: 848 }, META, SIGNS(4)).g, 'arcade, 15 agents at 1440x848: the strips keep the hall\'s scale (g)');
+  const at15s = aislesLayout(withH(15, 4, 10), { w: 1280, h: 748 }, META, SIGNS(4));
+  assert.strictEqual(at15s.helpRows, 0, 'arcade, 15 agents at 1280x748: no room, the plates keep +N (a recorded limit)');
+  console.log(`arcade helper heads: ${strips} strips, ${fell} fallbacks`);
 }
 console.log(`aisles tests passed (${cases} layouts)`);
 process.exitCode = 0;

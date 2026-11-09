@@ -27,7 +27,7 @@
  *   - a picture that fails to load leaves a broken image instead of the initials disc (FR-065).
  *   - the world chrome (FR-113): in Real office the top bar, More menu, a toast, Settings and a dialog do not use the photo world's
  *     tokens (glass on the menu and toast, bar ink, page ink; FR-182: a dialog has no blur and is the opaque surface, its text at 4.5:1 on computed colours), text under 10.5px, or leaving Real office does not restore the theme exactly; flat has no world.
- * Screenshots: <SHOTS_OUT>/097-world-{menu,toast,settings,dialog}-<w>x<h>.png, 097-real-15-<w>x<h>.png, 097-real-lobby-<w>x<h>.png (the lobby band, with the Terminal runner), 097-real-3-<w>x<h>.png, 097-real-lights-1440x900.png, 097-office-layout-1440x900.png.
+ * Screenshots: <SHOTS_OUT>/097-world-{menu,toast,settings,dialog}-<w>x<h>.png, 097-real-15-<w>x<h>.jpg, 097-real-lobby-<w>x<h>.png (the lobby band, with the Terminal runner), 097-real-3-<w>x<h>.png, 097-real-lights-1440x900.png, 097-office-layout-1440x900.png.
  */
 const os = require('os');
 const fs = require('fs');
@@ -247,7 +247,7 @@ module.exports = async (ctx) => {
     await park();
     await js(`document.activeElement&&document.activeElement.blur&&document.activeElement.blur();0`);
     await must(`!document.getElementById('roZoom')`, 'no zoom in the picture');
-    await H.shot(path.join(OUT, `097-real-15-${w}x${h}.png`), { prep: 'calm' });
+    await H.shot(path.join(OUT, `097-real-15-${w}x${h}.jpg`), { prep: 'calm' });
     // ---- owner 2026-10-31 ("make a real running pose"): someone at the Terminal jogs in place (stride A in P1), no treadmill; a
     //      close crop of the lobby band shows it ----
     // A simulator visit comes and goes, so wait for one, let its pictures decode, take the crop, and keep the crop only if the runner is still there.
@@ -406,7 +406,7 @@ module.exports = async (ctx) => {
     const sharp3 = await js(SHARP);
     console.log('[097] sharp at 3', w, JSON.stringify(sharp3));
     assert.ok(sharp3.minHalfRatio >= 1.45, 'at 3 agents too: ' + JSON.stringify(sharp3));
-    await H.shot(path.join(OUT, `097-real-3-${w}x${h}.png`), { prep: 'calm' });
+    await H.shot(path.join(OUT, `097-real-3-${w}x${h}.jpg`), { prep: 'calm' });
   }
 
   // ---- FR-006: a click on a person opens its chat ----

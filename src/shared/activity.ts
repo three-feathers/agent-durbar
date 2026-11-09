@@ -13,7 +13,7 @@ const NAME_MAX = 80;
 /** The most of an action `sanitizeActivityRow` reads before it masks (pre-review of PR 1317: without a bound a stored row of 20 million characters cost seconds). `cut` ends it before the start of a token, never inside one. */
 export const ACTIVITY_ACTION_READ_MAX = 20_000;
 
-export const ACTIVITY_DECISIONS = ['allowed-once', 'allowed-session', 'denied', 'auto-allow-all', 'auto-session-grant', 'mode-change', 'limit-change', 'remote-on', 'remote-off', 'session-deleted', 'mcp-restart', 'loop-start', 'loop-pass', 'loop-skip', 'loop-hold', 'loop-end'] as const; // spec 072 FR-024: self-paced loops
+export const ACTIVITY_DECISIONS = ['allowed-once', 'allowed-session', 'denied', 'auto-allow-all', 'auto-session-grant', 'mode-change', 'limit-change', 'remote-on', 'remote-off', 'session-deleted', 'mcp-restart', 'loop-start', 'loop-pass', 'loop-skip', 'loop-hold', 'loop-end', 'autopilot-on', 'autopilot-end', 'autopilot-off'] as const; // spec 072 FR-024: self-paced loops
 export type ActivityDecision = (typeof ACTIVITY_DECISIONS)[number];
 
 export interface ActivityRow {
