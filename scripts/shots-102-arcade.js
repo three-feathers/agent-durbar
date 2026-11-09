@@ -25,7 +25,7 @@ const { helpers, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.SHOTS_OUT || fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-102-arcade-'));
 const SIZES = [[1440, 900], [1280, 800]];
 
-module.exports = async (ctx) => {
+const run = async (ctx, reqs) => {
   const H = helpers(ctx);
   const js = async (e) => { try { return await H.js(e); } catch (x) { console.log('[102-arcade] this page script failed:', String(e).slice(0, 300)); throw x; } };
   const must = async (expr, what, ms = 15000) => assert.ok(await H.until(expr, ms), 'timed out waiting for ' + what);
@@ -35,11 +35,6 @@ module.exports = async (ctx) => {
   const ARCADE = { worldflags: 'retro', world: 'retro' };
   /* spec 102 T218 (SC-023): a session request log, as in check-097-crews.js: what the page really requests (a file:// page cannot report its own requests).
      The arcade's room is the night pair; the day pair (wall.webp, floor.webp) and welcome.webp must never be fetched. */
-  const reqs = new Map();
-  const ses = ctx.win.webContents.session;
-  ses.webRequest.onBeforeRequest({ urls: ['file://*/*'] }, (d, cb) => { reqs.set(d.id, { url: decodeURIComponent(d.url), status: 0, error: '' }); cb({}); });
-  ses.webRequest.onCompleted({ urls: ['file://*/*'] }, (d) => { const e = reqs.get(d.id); if (e) e.status = d.statusCode; });
-  ses.webRequest.onErrorOccurred({ urls: ['file://*/*'] }, (d) => { const e = reqs.get(d.id); if (e) e.error = d.error; });
   const roomFetched = (name) => [...reqs.values()].filter((e) => new RegExp('/realoffice/worlds/retro/' + name + '\\.webp(\\?|#|$)').test(e.url));
   const loadArcade = async (w, h, n, query = {}) => {
     reqs.clear();
@@ -328,4 +323,20 @@ module.exports = async (ctx) => {
   assert.strictEqual(await js(`document.documentElement.dataset.dark===undefined`), true, 'leaving: the theme\'s light page');
 
   console.log('[102-arcade] PASS');
+};
+
+/* The three listeners are on the session, which Electron keeps one per event: a later driver in the same process would inherit or replace them, and onBeforeRequest
+   must answer every request. So they are installed here and always removed (as check-done-desk-mask.js does), then a probe request proves they are gone (review of #1435). */
+module.exports = async (ctx) => {
+  const reqs = new Map();
+  const wr = ctx.win.webContents.session.webRequest;
+  const remove = () => { wr.onBeforeRequest(null); wr.onCompleted(null); wr.onErrorOccurred(null); };
+  wr.onBeforeRequest({ urls: ['file://*/*'] }, (d, cb) => { reqs.set(d.id, { url: decodeURIComponent(d.url), status: 0, error: '' }); cb({}); });
+  wr.onCompleted({ urls: ['file://*/*'] }, (d) => { const e = reqs.get(d.id); if (e) e.status = d.statusCode; });
+  wr.onErrorOccurred({ urls: ['file://*/*'] }, (d) => { const e = reqs.get(d.id); if (e) e.error = d.error; });
+  try { await run(ctx, reqs); } finally { remove(); }
+  reqs.clear();
+  await helpers(ctx).js(`new Promise((r)=>{const i=new Image();i.onload=i.onerror=()=>r(0);i.src=new URL('realoffice/worlds/retro/floor-night.webp?probe='+Date.now(),location.href).href;})`);
+  await ctx.sleep(200);
+  assert.strictEqual(reqs.size, 0, 'the request log listeners are removed when the driver ends: ' + [...reqs.values()].map((e) => e.url).join(' '));
 };
