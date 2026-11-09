@@ -410,6 +410,30 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(await got('plan'), [], `${w}: a held Enter on Approve answers nothing ${jsLiteral(await got('plan'))}`);
     await nkey('Return');
     assert.ok(await until(`window.__plan.length===1`, 3000), `${w}: one Enter on Approve approves (the control)`);
+
+    // ---- spec 005 FR-237 (issue 1324): an idle agent goes straight to needs-permission, with NO earlier `working` status (no workaround).
+    // The chat is closed while the request arrives, so the header has not yet said "Working…"; opening it says "Working…" (turn start) and
+    // "needs your OK" in one tick, and the request must be what the live region ends on ----
+    await fresh();
+    await js(`document.getElementById('backBtn').click()`);
+    await js(`window.__ann.length=0;0`);
+    await perm('an-' + w, 'Run the announce check');
+    await js(`document.querySelector('.desk[data-id='+${jsLiteral(A)}+']').click()`);
+    assert.ok(await until(`!!document.querySelector('#chat .note.perm.pending')`, 8000), `${w}: the permission card is in the chat`);
+    assert.ok(await until(`window.__ann.some(t=>/needs your OK/.test(t))`, 5000), `${w}: "needs your OK" reaches the live region ${jsLiteral(await got('ann'))}`);
+    await ctx.sleep(400); // past the 60 ms write window: a late "Working…" would have replaced it by now
+    const said = await js(`document.getElementById('srAnnounce').textContent`);
+    assert.ok(/needs your OK/.test(said), `${w}: the live region ends on the request, not a status (is ${jsLiteral(said)}; history ${jsLiteral(await got('ann'))})`);
+
+    // the rule itself, in one tick: a status after a request never replaces it; a request after a status does; equal priority: the latest wins
+    // a step is [text, priority, wait before it in ms]
+    const run = (steps) => js(`(async()=>{const ann=window.__durbarSimUi.announce;for(const [t,p,w] of ${jsLiteral(steps)}){if(w)await new Promise(r=>setTimeout(r,w));ann(t,p)}await new Promise(r=>setTimeout(r,300));return document.getElementById('srAnnounce').textContent})()`);
+    const REQ = 'Noor needs your OK: x';
+    assert.strictEqual(await run([[REQ, 1], ['Working…']]), REQ, `${w}: a status in the same window does not replace a request`);
+    assert.strictEqual(await run([['Working…'], [REQ, 1]]), REQ, `${w}: a later request replaces a status`);
+    assert.strictEqual(await run([['Noor asks: a', 1], [REQ, 1]]), REQ, `${w}: equal priority: the latest wins`);
+    assert.strictEqual(await run([['One'], ['Two']]), 'Two', `${w}: statuses: the latest wins, as before`);
+    assert.strictEqual(await run([[REQ, 1], ['Working…', 0, 200]]), 'Working…', `${w}: after the request was written, a status is spoken again`);
   }
   console.log('[answer-safety] PASS');
 };
