@@ -196,3 +196,4 @@
 ## 2026-11-08: faster UI drivers (FR-190)
 
 - [x] T143 (FR-190) Wave 1 of the faster UI drivers: `scripts/driver-helpers.js` (`load` steady wait, ready-timeout line, `fastVisits`), `src/renderer/app.js` (`simvisits=fast`) (simulator-only); drivers check-office-fill, check-crew, check-auto-follow, shots-017, check-sched-top, check-answer-safety. Each changed driver: a mutant that still fails on its own labelled assert, 5 local runs.
+- [x] T147 (FR-194) Fold *Package smoke (unpacked Linux app)* into *Office layout check (xvfb)* in `ci.yml` (`pack:dir:prebuilt` step with `always()`, summary step naming the failed part), `pack:dir` split, required-name pins and mutants in `test-ui-suite.ts` / `test-checknames.ts`, `ruleset-main.json`, docs. The PR waits (`status:blocked`) until an owner removes the old required check.

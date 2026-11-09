@@ -24,7 +24,7 @@ npm run usage:readme -- --release vX.Y.Z   # in the fold PR after a release: rew
 npm run check:geometry    # Retro lays out exactly like Clean Office (CHECK_ALL_THEMES=1: every theme, about a minute)
 npm run check:ui          # every simulator driver that asserts, one after another, on any OS (UI_SUITE_XVFB=1 keeps windows off a Linux desktop); -- --list names them, -- --only check-notes,check-edits runs just those
 npm run check:themes      # on demand: the full layout check in every theme, a few at a time, low priority, memory limits
-npm run pack:dir          # unpacked app for this OS in release/ (also dist, dist:mac:arm64, dist:mac:x64, dist:win, dist:linux; unsigned); then checks the Electron fuses and the display names
+npm run pack:dir          # (CI: a step of the required check "Office layout check (xvfb)", which covers packaging on Linux, spec 008 FR-194) unpacked app for this OS in release/ (also dist, dist:mac:arm64, dist:mac:x64, dist:win, dist:linux; unsigned); then checks the Electron fuses and the display names
 npm run check:fuses-launch  # on demand, after pack:dir: the packed Linux app opens its window and offers no debugger (xvfb on Linux)
 npm run specs:index       # the full specs index from each spec's specs-index block, into specs/INDEX.md (git-ignored); --add specs/NNN-x for a new spec; specs:check in npm test, which also refuses conflict markers
 npm run labels:backfill   # dry run: the labels each issue and PR is missing (spec 021 FR-045); -- --create-labels --apply adds them (add-only)
