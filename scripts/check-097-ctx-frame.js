@@ -10,6 +10,9 @@
  *     push        delete the realCtxPush(a) call after STATS.setContext in the 'context' branch of the event handler (app.js)  -> "a context event reaches the line and the name without a draw"
  *     compaction  delete the realCtxPush(a) call in onCompaction (app.js)                                                     -> "a finished compaction reaches the line and the name without a draw"
  *     noop        make ctx() in realoffice.js return false at once                                                          -> both of the above
+ *     hwdrop      in labelOf (realoffice.js) return `l.slice(0, -OPEN_WORDS.length) + w + OPEN_WORDS` without `hw`            -> "a context event keeps the helper words, in order"
+ *     hworder     in labelOf swap `w + hw` to `hw + w`                                                                       -> "a context event keeps the helper words, in order"
+ *     oldlabel    in ctx() write `a.label` (not labelOf(a, d)) as the plate's aria-label                                      -> the cheap step of every world, and the helper words
  *   SHOTS_OUT=<dir>                        also saves ctx-<world>-<w>x<h>.png (15 agents, every band) and ctx-<world>-crop-<w>x<h>.png (the three desks, 2x)
  *
  * At 15 agents, 1440x900 and 1280x800, each world, with the context seeded across the bands (4 % .. 100 %) and two agents unknown, it fails (exit 1) when:
@@ -19,6 +22,8 @@
  *   - an unknown context draws a line, or its plate's name carries context words;
  *   - the line animates or transitions; a context event, once the desk is quiet, adds or removes a node in the desk's frame (.ro-ctx) or plate, or replaces one of them
  *     (the same nodes are there before and after), or does not move the line and the name;
+ *   - FR-325 with FR-308 (review of #1299): an arcade desk with helpers and no strip has the name `..., context P %. N helpers. Open chat panel.` after a context event by the cheap path
+ *     alone (no draw), and the next full draw writes the same name;
  *   - FR-326, the cheap path alone: with every draw of the office held (DurbarRealOffice.render counted and skipped, so an ordinary redraw cannot write the same
  *     attributes), a context event and a finished compaction still move the line and the name, and no draw runs while they do.
  */
@@ -160,6 +165,30 @@ module.exports = async (ctx) => {
       await must(`window.__cx(${jsLiteral(pick)}).dataset.lv==='ok'&&window.__cx(${jsLiteral(pick)}).lastChild.getAttribute('stroke-dasharray')==='24 100'&&/context 24 %/.test(window.__cl(${jsLiteral(pick)}))`, `${tag}: a finished compaction reaches the line and the name without a draw`);
       assert.strictEqual(await js(`window.__roDraws-window.__roDraws0-window.__roHeld`), 0, `${tag}: no draw ran while the line moved`);
     } finally { await js(`window.__roHold=false;1`); }
+
+    /* review of #1299 (Ruben): the plate's name when it carries BOTH words, the arcade's fallback plate (helpers with no strip: "+N" on the plate, FR-308) and a context (FR-325).
+       The name reads ", context P %" then ". N helpers" then ". Open chat panel.", by the cheap path alone (every draw held), and the next full draw writes the same name. */
+    const fb = world === 'arcade' ? await js(`(()=>{for(const p of document.querySelectorAll('#stage .ro-plate[data-id]')){if(p.classList.contains('lounge'))continue;const h=p.querySelector('.ro-help');if(h){const n=parseInt(h.textContent.replace('+',''),10);if(n>0)return {id:p.dataset.id,n}}}return null})()`) : null;
+    if (world === 'arcade' && w === 1280) assert.ok(fb, `${tag}: an arcade desk with helpers and no strip is on show (the fallback plate)`);
+    if (fb) {
+      const words = `${fb.n} helper${fb.n > 1 ? 's' : ''}`, tail = `, context 93 %. ${words}. Open chat panel.`;
+      await must(`(()=>{const n=window.__roDraws;if(window.__roLast!==n){window.__roLast=n;window.__roAt=Date.now();}return Date.now()-window.__roAt>400})()`, `${tag}: no draw running (helpers step)`);
+      await js(`window.__roHold=true;window.__roHeld=0;window.__roDraws0=window.__roDraws;1`);
+      let cheap = '';
+      try {
+        await js(`window.__durbarSimEmit({type:'context',sessionId:${jsLiteral(fb.id)},timestamp:Date.now(),tokens:930,limit:1000})`);
+        await must(`/context 93 %/.test(window.__cl(${jsLiteral(fb.id)}))`, `${tag}: a context event reaches the name of ${fb.id}, an arcade desk with ${words}, without a draw`);
+        cheap = await js(`window.__cl(${jsLiteral(fb.id)})`);
+        assert.ok(cheap.endsWith(tail), `${tag}: ${fb.id}: a context event keeps the helper words, in order (context, helpers, Open chat panel): "...${tail}" vs "${cheap}"`);
+        assert.strictEqual((cheap.match(/helpers?/g) || []).length, 1, `${tag}: ${fb.id}: the helper words are said once (${cheap})`);
+        assert.strictEqual(await js(`window.__roDraws-window.__roDraws0-window.__roHeld`), 0, `${tag}: no draw ran while ${fb.id}'s name moved`);
+      } finally { await js(`window.__roHold=false;1`); }
+      /* the next full draw (the window resizes and returns) writes the same name */
+      const d0 = await js(`window.__roDraws`);
+      ctx.win.setContentSize(w, h - 40); await ctx.sleep(300); ctx.win.setContentSize(w, h);
+      await must(`window.__roDraws>${jsLiteral(d0)}`, `${tag}: a full draw after the cheap step`);
+      await must(`window.__cl(${jsLiteral(fb.id)})===${jsLiteral(cheap)}`, `${tag}: ${fb.id}: the next full draw writes the same name as the cheap path ("${cheap}")`);
+    }
 
     if (OUT) {
       await js(`window.__durbarSimEmit({type:'context',sessionId:${jsLiteral(pick)},timestamp:Date.now(),tokens:${jsLiteral(share(ids.indexOf(pick)) * 10)},limit:1000})`);
