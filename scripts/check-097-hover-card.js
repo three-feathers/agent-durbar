@@ -11,6 +11,9 @@
  *   (`ZOOM.held !== PT` turned into `true`) fails "a pointermove at the same place does not close the held asleep card"; the `pointerleave` listener in wireZoom deleted ("noleave") fails "a jump straight off the
  *   office closes the held card"; the window's `focus` listener (`addEventListener('focus', replaceZoom)` in openZoom, turned into `0`) removed ("no window focus") fails "the card closes on the window's focus event".
  *   The focus listeners removed (placeZoom's `document.addEventListener('focusin', replaceZoom, true)` and the focusout one turned into `0`) must fail at "the card is placed again off the slip that took the focus".
+ *   The page focus (#1408): the shared focus emulation holds it for the steps that test no blur (a neighbour driver takes the OS focus on Windows CI);
+ *   CHECK_097_STEAL_FOCUS=plate|refill|all blurs the window just before the plate's focus() and/or the 700 ms rest. Mutant: `focusPage({ emulate: 'first' })` in
+ *   ownFocus turned into `focusPage()`, run with `plate`, fails "the asleep agent's plate holds the keyboard focus"; with `refill`, "no window blur during the 700 ms rest".
  *   SHOTS_OUT=<dir>   where its pictures go (097-hover-<what>-<w>x<h>.png; a temporary folder by default)
  *
  * At 1440x900 and 1280x800, 15 agents, by real pointer moves, it fails (exit 1) when:
