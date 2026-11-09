@@ -22,7 +22,8 @@ function check(pkg, workflows) {
   }
 }
 
-const read = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
+// Windows checks files out with CRLF: normalise so the regexes and the mutants see one line ending (CI run 42536047148)
+const read = (f) => fs.readFileSync(path.join(process.env.CITC_ROOT || ROOT, f), 'utf8').replace(/\r\n/g, '\n');
 const pkg = JSON.parse(read('package.json'));
 const ci = read('.github/workflows/ci.yml');
 const mac = read('.github/workflows/macos-pr.yml');
