@@ -105,7 +105,7 @@ export interface AdapterCapabilities {
    * `capUnit` is the unit of the optional spend cap (`null`: none possible); `attachments`: the Autopilot send takes attachments (D10);
    * `planApproval`: the plan card may offer Autopilot (FR-060); `verified`: true only after a real run is recorded in the spec.
    */
-  readonly autopilot?: Readonly<{ capUnit: 'aiu' | 'usd' | 'tokens' | null; attachments: boolean; planApproval: boolean; verified: boolean }>;
+  readonly autopilot?: Readonly<{ capUnit: 'aiu' | 'usd' | 'tokens' | null; attachments: boolean; planApproval: boolean; verified: boolean; /** The app's smallest spend cap, in `capUnit`: a lower one is raised to it, and the window says so (the app's own fact, not main's or the window's). */ capMin?: number }>;
 }
 
 /** Where an adapter stands on this machine (spec 012 FR-030). `unknown` also covers a detect that failed. */

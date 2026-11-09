@@ -12,11 +12,11 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 |---|---|---|---|---|---|
 | Desk: name, role, status word, task | works | works | mock+planned (desk-card) | 001 034 097 | test:mood driver:shots-097-realoffice |
 | Moods and trouble signs (heavy, monster, siren); Serious mode hides them and only them (not motion, issue #1182) | works | works | mock+planned (desk-lights) | 034 097 | test:mood driver:check-097-trouble-signs |
-| Helpers (sub-agents): card, tree, own chat, needs you | works | missing, only `+N` and 3 dots; planned as small figures beside the desk (#1139) | planned | 001 015 097 | test:helpercard read:src/renderer/realoffice.js |
+| Helpers (sub-agents): card, tree, own chat, needs you | works | works, only partly where no strip fits: small head figures with a status dot under each desk plate (Photo office, cave, Retro arcade at 1440x900); with no room (15 agents in 5 folders at 1280x800, the arcade at 1280x800, 20 or more agents) the plate keeps `+N` and dots (#1139) | planned | 001 015 097 | test:helpercard test:realoffice-layout driver:check-097-helpers |
 | Live activity on the desk | works | works, monitors show the newest output (PR 979) | mock+planned (live-screen) | 001 097 | test:liveact driver:shots-001-live-activity |
-| Model, tokens, cost, context, last tool on the desk | works | works in the hover zoom (#1148, 097 FR-312..FR-315); a figure on the name plate is open (Q8) | none | 019 097 | test:ctxbreakdown driver:shots-097-screens |
+| Model, tokens, cost, context, last tool on the desk | works | works in the hover zoom (#1148, 097 FR-312..FR-315), and a line round the monitor frame that fills clockwise as the context fills, soft white up to 90 % and red above (097 FR-322..FR-326, owner Q8) | none | 019 097 | test:ctxbreakdown driver:shots-097-screens driver:check-097-ctx-frame |
 | Unread "New", draft, question marks | works | works, a New reply tag and a green screen (097 FR-236, FR-238), a Draft tag and "unsent draft" in the plate's name (097 FR-316); a question shows as the "?" bubble, the plate's text and "needs you" (FR-038, FR-016) | none | 001 005 097 | test:unread driver:shots-097-realoffice driver:check-097-desk-marks |
-| Hover card | works | missing, tooltip only (#1151) | none | 001 097 | test:tooltip read:src/renderer/realoffice.js |
+| Hover card | works | works, the zoom opens over the person, desk, table, monitor or plate, also for asleep agents, with the Changed line (097 FR-327..FR-330); helpers stay with the desk's own tiles, as in Open office (Q25 decided, 2026-11-08) | none | 001 097 | test:tooltip driver:check-097-hover-card |
 | Drag to rearrange rooms, desks, places | works | missing (#1152) | none | 033 | test:roomorder driver:shots-033-order |
 | Rename a session (F2, pencil) | works | works, the pencil beside a plate's name and F2 on a plate (059 FR-170) | none | 059 | test:sessionname driver:check-097-plate-pencil |
 | Lobby places, visitors, away at a place | works | works | mock+planned (lobby) | 024 | test:places driver:shots-024 |
@@ -29,6 +29,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Waiting desk halo (a still glow behind the screen) | missing, the screen's tint replaces it (owner decision, 2026-11-05) | missing, the screen's tint replaces it (owner decision, 2026-11-05) | none | 001 | driver:check-001-lights |
 | Status screen tint: the monitor screen amber when an agent needs you, orange at its limit, red on an error, green with an unread reply | works | works | none | 001 097 | driver:check-001-lights driver:shots-097-realoffice |
 | Motion (default on): Settings > Motion stops walking, typing and lights; reduced motion does too, Serious mode does not (issue #1182) | works | works, the whole room stands still | none | 052 | driver:check-serious-motion driver:check-097-motion |
+| Settings section list on the left: jumps within the page, follows the scroll, built from the rendered headings (FR-226) | works | works | none | 052 | test:settingsnav driver:check-settings-nav |
 | Still highlights (no motion): Settings > Highlights | works | works, the whole room stands still | none | 001 | test:stillhighlights driver:check-unread |
 | Simple / Expert switch and the "Do you write code?" question | missing, removed by owner decision (#1060) | missing, removed | none | 052 | driver:shots-052-ux |
 | Old app-level MCP servers in the folder extras dialog | missing, removed (#1058) | missing, removed | none | 020 | driver:shots-m10 |
@@ -66,7 +67,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | OS sandbox floor | works | works | none | 087 | test:runtime-sandbox |
 | Themes and user themes | works | missing (#1153) | none | 035 036 037 038 039 040 | test:theme test:userthemes |
 | One face per agent: rail row, chat header, inbox faces are the same picture | works | works (one picker, `roFace`) | none | 097 | driver:check-097-one-face |
-| Characters (crews): the Characters choice drawn in the office | works | missing, only the Office people are drawn; every other crew shows them (#1154) | none | 077 096 | test:characters test:crew |
+| Characters (crews): the Characters choice drawn in the office | works | missing, Prehistoric is drawn in its own people; the other crews and Minimalist show the Office people and Settings says why; art tasks T238, T240..T245 (#1154) | none | 077 096 | test:characters test:crew driver:check-097-crews |
 | Harness setup, agent-app updates | works | works | none | 051 081 | test:harnesssetup test:updatecheck |
 | Remote control | works | works | none | 054 | test:remote driver:shots-054-remote |
 | Terminal tab in a chat | planned | planned | none | 094 | read:specs/094-terminal-tab/spec.md |

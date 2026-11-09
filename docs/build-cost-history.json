@@ -11,6 +11,18 @@
       "machines": {
         "linux": 3758
       }
+    },
+    {
+      "date": "2026-11-08",
+      "version": "v0.1.13",
+      "models": {
+        "claude-opus-5-5": 3028.13,
+        "claude-sonnet-5-5": 1012.99,
+        "claude-haiku-5-5": 0.91
+      },
+      "machines": {
+        "linux": 4042.04
+      }
     }
   ]
 }

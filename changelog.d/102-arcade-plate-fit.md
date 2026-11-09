@@ -1,0 +1,1 @@
+- **The arcade's plates show their whole line** (spec 102 T276, issue #1303): a lounge plate in the Retro arcade had a 14 px name line (17.5 px) in a 21 px box, so its text was cut at 12 and 15 agents; the arcade's plates now have a 15 px line, 2 px padding and a 12 px name, and the arcade is a `check-parallel` layout job, so a pull request lays it out.

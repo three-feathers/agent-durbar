@@ -6,6 +6,7 @@ import { assertLinearShape } from './redact-growth-lib';
 import fs from 'fs';
 import path from 'path';
 import { redact, maskSecretCommand, maskSecretUrl, maskHomePaths } from '../src/shared/redact';
+import { grantScope } from '../src/adapters/permissions';
 
 const ROOT = path.join(__dirname, '..', '..');
 const R = path.join(ROOT, 'src', 'renderer');
@@ -537,6 +538,24 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   ok(/announce\(a\.name\+' needs your OK: '\+sumS\.text\+/.test(card), 'screen-reader announcement shows the masked summary');
   ok(/expertScopeLabel\(scopeS\.text\)/.test(card) && /cutText\(scopeS\.text,30\)/.test(card), 'session button and its tooltip');
   ok(/cutText\(broadS\.text,18\)/.test(card), 'any-arguments tooltip');
+  // follow-up of the pre-review of PR 1317 (spec 012 FR-176): the "any arguments" scope label is built by the adapter from the command's first word, unmasked (the grant key needs it raw);
+  // the page shows it only through `permText` (`broadS`, its tooltip and the scope hint), so a token-shaped first word is hidden there. Values are made up at run time.
+  {
+    const body = 'aB3dE6gH9jK2mN5pQ8sT1vW4yZ7aB3dE6gH9jK2';
+    for (const first of ['gh' + 'p_' + body.slice(0, 36), 'sk-' + 'ant-' + body, 'xo' + 'xb-' + body.slice(0, 12) + '-' + body.slice(0, 24)]) {
+      const g = grantScope({ kind: 'shell', fullCommandText: first + ' --version' });
+      ok(g.broad && g.broad.label === 'run ' + first + ' (any arguments)', 'the adapter offers the any-arguments scope for a first word that is a token (raw label, raw key): ' + first.slice(0, 6));
+      const shown = L.permText(g.broad!.label, 'shell', mask);
+      ok(shown.hidden && shown.why === 'secret' && !shown.text.includes(first.slice(0, 8)) && !shown.text.includes(body.slice(4, 16)), `#1296 follow-up: a token-shaped first word of the any-arguments label is hidden on the page: ${shown.text}`);
+      eq(shown.text, 'run [redacted] (any arguments)', '#1296 follow-up: the label keeps its words around the mask');
+    }
+    const plain = grantScope({ kind: 'shell', fullCommandText: 'npm test' });
+    eq(L.permText(plain.broad!.label, 'shell', mask), { text: 'run npm (any arguments)', hidden: false }, 'a plain first word stays in the any-arguments label');
+    // a first word that is a secret NAME with a value (`TOKEN=<value> cmd`) is no any-arguments scope at all
+    ok(grantScope({ kind: 'shell', fullCommandText: 'TOKEN=' + body.slice(0, 12) + ' npm test' }).broad === undefined, 'no any-arguments scope for an environment assignment first word');
+    // the page builds the label's shown form with the one permission mask and uses it for the tooltip and the hint
+    ok(/broadS=shownPerm\(p\.broadScopeLabel\|\|p\.kind,p\.kind\)/.test(app), 'the page masks the any-arguments label with shownPerm');
+  }
   ok(/scopeHint\(Object\.assign\(\{\},p,\{scopeLabel:p\.scopeLabel\?scopeS\.text:p\.scopeLabel,broadScopeLabel:p\.broadScopeLabel\?broadS\.text:p\.broadScopeLabel\}\)\)/.test(card), 'the scope hint');
   ok(/const hwhy=permWhy\(sumS,scopeS,broadS\)/.test(card) && /if\(p\.state==='pending'&&hwhy\)\{const hp=/.test(card) && /PERM_WHY\[hwhy\]\+hgrant/.test(card), 'review 4: the hidden-part line shows on every pending card with a hidden part, with or without a scope key');
   ok(/bridge\.resolvePermission\(a\.id,p\.requestId,approve,remember,!!broad\)/.test(card) && /a\.pend\.set\(p\.requestId,/.test(card), 'the answer still binds to the real request id');
@@ -612,7 +631,9 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   for (const k of ['shell', 'shell:git status', 'shell-exact:run ls']) eq(permKind(k), 'shell', 'N15: permKind(' + k + ') is shell');
   for (const k of ['mcp', 'custom-tool', 'mcp:srv', 'custom-tool:x']) eq(permKind(k), 'tool', 'N15: permKind(' + k + ') is tool');
   for (const k of ['write', 'fetch', '', 'url:x']) eq(permKind(k), 'other', 'N15: permKind(' + k + ') is other');
-  { const c = 'run tool --api-key abcdefgh12345678'; ok(L.permText(c, 'shell', hm).hidden === true && !/abcdefgh/.test(L.permText(c, 'shell', hm).text) && L.permText(c, 'other', hm).hidden === false, 'N15: the shell kind uses the command mask (redact alone leaves --api-key K)'); }
+  // a flag value only the command mask finds: `--password K` (plain redact needs `=` or `:` after the name). `--api-key K` was the case until spec 012 FR-170 made plain redact hide `api-key K` too; it is now hidden by both kinds
+  { const c = 'run tool --password abcdefgh12345678'; ok(L.permText(c, 'shell', hm).hidden === true && !/abcdefgh/.test(L.permText(c, 'shell', hm).text) && L.permText(c, 'other', hm).hidden === false && /abcdefgh/.test(L.permText(c, 'other', hm).text), 'N15: the shell kind uses the command mask (redact alone leaves --password K)'); }
+  { const c = 'run tool --api-key abcdefgh12345678'; ok(['shell', 'other'].every((k) => L.permText(c, k, hm).hidden === true && !/abcdefgh/.test(L.permText(c, k, hm).text)), 'N15: --api-key K is hidden by both kinds (spec 012 FR-170)'); }
   // item 4: the announcement and a card with no scope
   ok(/announce\(a\.name\+' needs your OK: '\+sumS\.text\+\(hwhy\?'\. '\+PERM_WHY\[hwhy\]\+hgrant:''\)\)/.test(card), 'item 4: the announcement carries the hidden-part warning');
   // item 5: a request whose text could not be checked: truthful copy, no Allow

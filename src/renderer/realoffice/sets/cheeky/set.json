@@ -1,0 +1,686 @@
+{
+ "formatVersion": 1,
+ "id": "cheeky",
+ "name": "Cheeky",
+ "level": "full",
+ "seat": {
+  "bob-glasses": {
+   "bodyH": 343,
+   "h": 356,
+   "hand": 0.88,
+   "headTop": 13,
+   "w": 346
+  },
+  "bookworm": {
+   "bodyH": 341,
+   "h": 361,
+   "hand": 0.88,
+   "headTop": 20,
+   "w": 348
+  },
+  "buzzcut": {
+   "bodyH": 343,
+   "h": 353,
+   "hand": 0.88,
+   "headTop": 10,
+   "w": 345
+  },
+  "disco": {
+   "bodyH": 344,
+   "h": 354,
+   "hand": 0.88,
+   "headTop": 10,
+   "w": 328
+  },
+  "gamer": {
+   "bodyH": 343,
+   "h": 353,
+   "hand": 0.88,
+   "headTop": 10,
+   "w": 364
+  },
+  "hacker": {
+   "bodyH": 343,
+   "h": 353,
+   "hand": 0.88,
+   "headTop": 10,
+   "w": 327
+  },
+  "metalhead": {
+   "bodyH": 355,
+   "h": 365,
+   "hand": 0.88,
+   "headTop": 10,
+   "w": 367
+  },
+  "punk": {
+   "bodyH": 343,
+   "h": 358,
+   "hand": 0.88,
+   "headTop": 15,
+   "w": 303
+  },
+  "rocker": {
+   "bodyH": 343,
+   "h": 354,
+   "hand": 0.88,
+   "headTop": 11,
+   "w": 376
+  },
+  "scientist": {
+   "bodyH": 341,
+   "h": 362,
+   "hand": 0.88,
+   "headTop": 21,
+   "w": 367
+  },
+  "skater": {
+   "bodyH": 339,
+   "h": 356,
+   "hand": 0.88,
+   "headTop": 17,
+   "w": 338
+  },
+  "sporty": {
+   "bodyH": 345,
+   "h": 355,
+   "hand": 0.88,
+   "headTop": 10,
+   "w": 250
+  },
+  "surfer": {
+   "bodyH": 342,
+   "h": 358,
+   "hand": 0.88,
+   "headTop": 16,
+   "w": 382
+  }
+ },
+ "stand": {
+  "bob-glasses": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "runA": 1.0,
+    "runB": 1.0
+   },
+   "figH": 362,
+   "poses": {
+    "book": [
+     113,
+     361
+    ],
+    "coffee": [
+     112,
+     361
+    ],
+    "knock": [
+     127,
+     361
+    ],
+    "letter": [
+     142,
+     361
+    ],
+    "runA": [
+     126,
+     362
+    ],
+    "runB": [
+     135,
+     362
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "runA": 0.0,
+    "runB": 0.0
+   }
+  },
+  "bookworm": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "runA": 1.0,
+    "runB": 1.0
+   },
+   "figH": 361,
+   "poses": {
+    "book": [
+     149,
+     361
+    ],
+    "coffee": [
+     147,
+     361
+    ],
+    "knock": [
+     160,
+     361
+    ],
+    "letter": [
+     123,
+     361
+    ],
+    "runA": [
+     127,
+     361
+    ],
+    "runB": [
+     135,
+     361
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0028,
+    "letter": 0.0,
+    "runA": 0.0,
+    "runB": 0.0
+   }
+  },
+  "buzzcut": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "runA": 1.0,
+    "runB": 1.0
+   },
+   "figH": 362,
+   "poses": {
+    "book": [
+     124,
+     362
+    ],
+    "coffee": [
+     121,
+     361
+    ],
+    "knock": [
+     137,
+     361
+    ],
+    "letter": [
+     143,
+     361
+    ],
+    "runA": [
+     144,
+     360
+    ],
+    "runB": [
+     151,
+     360
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "runA": 0.0,
+    "runB": 0.0028
+   }
+  },
+  "disco": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 0.9972,
+    "knock": 1.0,
+    "letter": 1.0,
+    "runA": 1.0,
+    "runB": 1.0
+   },
+   "figH": 361,
+   "poses": {
+    "book": [
+     148,
+     361
+    ],
+    "coffee": [
+     153,
+     360
+    ],
+    "knock": [
+     149,
+     361
+    ],
+    "letter": [
+     142,
+     361
+    ],
+    "runA": [
+     143,
+     361
+    ],
+    "runB": [
+     146,
+     361
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "runA": 0.0,
+    "runB": 0.0
+   }
+  },
+  "gamer": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "runA": 1.0,
+    "runB": 1.0
+   },
+   "figH": 361,
+   "poses": {
+    "book": [
+     157,
+     361
+    ],
+    "coffee": [
+     156,
+     361
+    ],
+    "knock": [
+     165,
+     361
+    ],
+    "letter": [
+     164,
+     361
+    ],
+    "runA": [
+     145,
+     361
+    ],
+    "runB": [
+     150,
+     361
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "runA": 0.0,
+    "runB": 0.0
+   }
+  },
+  "hacker": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "runA": 1.0,
+    "runB": 1.0
+   },
+   "figH": 361,
+   "poses": {
+    "book": [
+     160,
+     361
+    ],
+    "coffee": [
+     156,
+     361
+    ],
+    "knock": [
+     164,
+     361
+    ],
+    "letter": [
+     156,
+     361
+    ],
+    "runA": [
+     144,
+     361
+    ],
+    "runB": [
+     144,
+     361
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "runA": 0.0,
+    "runB": 0.0
+   }
+  },
+  "metalhead": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "runA": 1.0,
+    "runB": 1.0
+   },
+   "figH": 361,
+   "poses": {
+    "book": [
+     149,
+     360
+    ],
+    "coffee": [
+     151,
+     361
+    ],
+    "knock": [
+     171,
+     361
+    ],
+    "letter": [
+     192,
+     361
+    ],
+    "runA": [
+     164,
+     361
+    ],
+    "runB": [
+     165,
+     361
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "runA": 0.0,
+    "runB": 0.0
+   }
+  },
+  "punk": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "runA": 1.0,
+    "runB": 1.0
+   },
+   "figH": 361,
+   "poses": {
+    "book": [
+     115,
+     361
+    ],
+    "coffee": [
+     112,
+     360
+    ],
+    "knock": [
+     118,
+     361
+    ],
+    "letter": [
+     160,
+     361
+    ],
+    "runA": [
+     126,
+     358
+    ],
+    "runB": [
+     138,
+     359
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0028,
+    "runA": 0.0028,
+    "runB": 0.0028
+   }
+  },
+  "rocker": {
+   "feet": {
+    "book": 0.9972,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "runA": 1.0,
+    "runB": 1.0
+   },
+   "figH": 361,
+   "poses": {
+    "book": [
+     112,
+     360
+    ],
+    "coffee": [
+     120,
+     361
+    ],
+    "knock": [
+     129,
+     361
+    ],
+    "letter": [
+     134,
+     361
+    ],
+    "runA": [
+     139,
+     360
+    ],
+    "runB": [
+     147,
+     359
+    ]
+   },
+   "top": {
+    "book": 0.0028,
+    "coffee": 0.0,
+    "knock": 0.0028,
+    "letter": 0.0,
+    "runA": 0.0,
+    "runB": 0.0
+   }
+  },
+  "scientist": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 0.9972,
+    "letter": 1.0,
+    "runA": 1.0,
+    "runB": 1.0
+   },
+   "figH": 362,
+   "poses": {
+    "book": [
+     123,
+     361
+    ],
+    "coffee": [
+     120,
+     361
+    ],
+    "knock": [
+     137,
+     362
+    ],
+    "letter": [
+     122,
+     361
+    ],
+    "runA": [
+     140,
+     361
+    ],
+    "runB": [
+     146,
+     361
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "runA": 0.0,
+    "runB": 0.0
+   }
+  },
+  "skater": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 0.9972,
+    "knock": 1.0,
+    "letter": 1.0,
+    "runA": 1.0,
+    "runB": 1.0
+   },
+   "figH": 362,
+   "poses": {
+    "book": [
+     125,
+     361
+    ],
+    "coffee": [
+     122,
+     362
+    ],
+    "knock": [
+     140,
+     361
+    ],
+    "letter": [
+     138,
+     361
+    ],
+    "runA": [
+     152,
+     362
+    ],
+    "runB": [
+     159,
+     361
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "runA": 0.0,
+    "runB": 0.0
+   }
+  },
+  "sporty": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 0.9972,
+    "runA": 1.0,
+    "runB": 1.0
+   },
+   "figH": 361,
+   "poses": {
+    "book": [
+     100,
+     361
+    ],
+    "coffee": [
+     104,
+     361
+    ],
+    "knock": [
+     129,
+     360
+    ],
+    "letter": [
+     126,
+     361
+    ],
+    "runA": [
+     112,
+     360
+    ],
+    "runB": [
+     117,
+     359
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0028,
+    "runA": 0.0028,
+    "runB": 0.0028
+   }
+  },
+  "surfer": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "runA": 1.0,
+    "runB": 1.0
+   },
+   "figH": 362,
+   "poses": {
+    "book": [
+     117,
+     359
+    ],
+    "coffee": [
+     111,
+     361
+    ],
+    "knock": [
+     127,
+     362
+    ],
+    "letter": [
+     114,
+     361
+    ],
+    "runA": [
+     157,
+     361
+    ],
+    "runB": [
+     154,
+     360
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "runA": 0.0,
+    "runB": 0.0
+   }
+  }
+ }
+}

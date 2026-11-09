@@ -143,6 +143,10 @@ Animations are subtle, CSS-only in compact densities and stop under reduced-moti
 
 ## Changes
 
+### 2026-11-09: `check-001-lights` picks its four desks from a settled office (issue #1342, FR-231)
+
+`sim:` The driver waited for 8 desks, then took four desks whose screen was off and whose person was at the desk. The frozen simulator's replay leaves some working agents' tool calls open; each shows as a visit to a place once the lobby's 600 ms debounce has passed, and stays. Read before the debounce, 7 desks qualified; read after it, 3 (sim-1, -5, -12 and -14 away), so the driver failed with `four desks with their light off (3)` whenever the read came late: under load, and on CI (15 of the last 100 failed `ui-platforms.yml` runs, Linux and Windows, every kit and both sizes). The tint rule and the app are not wrong. The driver now waits until the office has settled (`visitsSettled()`, `settleNow()`, no figure walking) and picks from every desk whose screen is off, wherever its person stands: its check reads an away desk's screen like any other (sim-3, amber and away, was already checked on every run). Nothing in the app changes.
+
 ### 2026-11-07: the demo header case narrows in steps (issue #1285, FR-179)
 
 `sim:` The demo case of `check-office-overlap.js` narrowed every room header to 164 px once and required one to give way (`no-aiu`). The user-theme fixture's pixel font still holds at 164 px, so nothing gave way and the 2 user-theme jobs of `check-parallel --themes` failed on `main` (`narrowing the headers made none give way`), at 1440x900 and 1280x800. The headers were not wrong; the 164 px assumption was theme-specific. The driver now narrows in steps (164, 148, 132, 116, 100 px) and stops at the first width where a header gives way; it still fails when none does at 100 px. FR-179 and the app are unchanged. `[KNOWN GAP]` the demo has no cost chip (`roomAiu` is null while the demo is on), so `no-aiu` there marks "the header had to shed a part", not a visible chip going.
