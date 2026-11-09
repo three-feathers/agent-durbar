@@ -2,11 +2,22 @@
 
 Agent Durbar `v0.1.0` is the first stable release. Builds are unsigned and not notarized (see "Honest limits" in the README for where each OS has been run). Each entry names the spec that describes the behavior and how it was checked.
 
-## Unreleased (on `main`, after the v0.1.13 tag)
+## Unreleased (on `main`, after the v0.1.14 tag)
 
 Not released yet: each change is a file in [`changelog.d/`](changelog.d/) until the next release folds them in (`npm run changelog:preview` lists them).
 
 <!-- changelog.d: fragments only; a bullet here fails npm run changelog:check -->
+
+## v0.1.14 ([release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.14), 2026-11-09)
+
+- **Context on the monitor frame** (issue #1148): in Real office a thin line round each desk's monitor frame fills clockwise from the top-left as the agent's context fills. It is soft white up to 90 % and red above 90 % (the same steps as the chat header's ring); it draws nothing while the context is unknown, never tints the screen, and does not move. A screen reader hears "context N %" with the desk's name. In the Photo office, the cave and the arcade; 15 agents still fit at 1440x900 and 1280x800.
+- **Helpers at the desk** (issue #1139): each desk's sub-agents show as small round heads with a status dot under the name plate in the Photo office, the cave and the Retro arcade (at 1440x900); click one to open its activity view, **+K** shows the rest, and the name is in the tooltip. Where there is no room the plate keeps its "+N". 15 agents still fit both window sizes. Known issue (issue #1384): a desk with six or more helpers can wrap the sixth head onto a second line instead of showing **+K**.
+- **The arcade's drag-a-file overlay is readable** (issue #1153): it had light text on a light fill; it now uses the page surface, and a new check keeps each world's own colours whatever theme is picked.
+- **The arcade's name plates show their whole line** (issue #1303): a lounge plate's text was cut at 12 and 15 agents; the plates now have room for the full name.
+- **More secrets masked** (issue #1227): short passwords (4 to 7 characters with a letter and a digit) after a secret name, several-word passwords, `Bearer` values after a short first word, `mysql -pPASSWORD` (also across continued lines), AWS secret key names written with spaces, `Cookie` values without `=`, and unfinished key starts are hidden; ids, versions and algorithm names (`HS256`, `tls13`, `v1.2.3`) stay readable. Checked by tests only; no real service was called.
+- **Network home folders hidden in helper names**: a home folder on a network share (`\\server\share\name`, also with extra backslashes, or `//server/homes/name`) no longer shows its user name in a helper's name, task or tooltip, in Real office and the flat office.
+- Coming next, not visible yet: the code for a fourth agent mode, Autopilot, is in place behind a switch that stays off, so the mode menu has no new item and nothing changes for anyone. One stricter check applies today: remote control checks its mode again after its own dialog. Tested on fakes only, not in a real session.
+- For contributors: a pull request builds the unpacked Linux app once, inside the required *Office layout check* job, and two slow UI checks wait for the page to be steady instead of guessing (no check was dropped or loosened).
 
 ## v0.1.13 ([release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.13), 2026-11-08)
 
