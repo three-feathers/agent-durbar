@@ -437,6 +437,46 @@ console.log(`floor covered with 4 or fewer: ${covs.join('; ')}`);
   assert.strictEqual(got, '023205d51dcbf9399756cbadf8af0ac0448731a2cd7e725950800feef1f11b97', 'the Retro pixel set lays out differently than before the crews were wired');
 }
 
+/* spec 097 FR-335, T247: the width cap, checked directly (the cut check above has about 6 grid px of slack). For a set that is not pixel art, the widest frame a person can show at a cabinet,
+   times the scale the layout used, is at most AISLE_PW_MAX (48 grid px). The widest frame is found here, not by the layout: every standing person, every pose a cabinet shows (the state's frame,
+   else the next that exists), the seat frame excluded. A synthetic set whose widest frame belongs to a LATER person guards a width taken from the first person only. */
+{
+  const CAP = 48; /* AISLE_PW_MAX */
+  const POSE: Record<string, string> = { working: 'type', thinking: 'book', error: 'knock', waiting: 'face-knock', limit: 'face-knock', done: 'face-coffee', idle: 'face-book', asleep: 'sit' };
+  const NEXT: Record<string, string[]> = { 'face-knock': ['knock'], 'face-coffee': ['counter', 'coffee'], 'face-book': ['book'], sit: ['face-book', 'book'], type: ['book'] };
+  const shownFrame = (st: { poses: Record<string, number[]> }, state: RealState): string | null => { const pose = POSE[state]; return [pose, ...(NEXT[pose] || [])].find((p) => Object.prototype.hasOwnProperty.call(st.poses, p)) ?? null; };
+  const capCheck = (label: string, set: RealMeta): number => {
+    const M = { ...readJson('worlds', 'retro', 'world.json'), ...set, pixelPeople: false } as unknown as RealMeta;
+    const ids = Object.keys(set.stand), pairs: [string, RealState][] = ids.flatMap((id) => STATES.map((s) => [id, s] as [string, RealState]));
+    let widest = 0, widestWho = '', worst = 0, worstWho = '', seen = 0;
+    for (const id of ids) for (const state of STATES) { const f = shownFrame(set.stand[id], state); if (f && set.stand[id].poses[f][0] > widest) { widest = set.stand[id].poses[f][0]; widestWho = `${id}/${f}`; } }
+    assert.ok(widest > 0, `${label}: the set shows no frame at a cabinet`);
+    for (let at = 0; at < pairs.length; at += 15) {
+      const chunk = pairs.slice(at, at + 15), m = model(chunk.length, 4, STATES);
+      let i = 0; m.folders.forEach((f) => f.agents.forEach((a) => { const [id, state] = chunk[i++]; a.person = id; a.state = state; a.away = null; }));
+      const L = aislesLayout(m, { w: 1440, h: 848 }, M, SIGNS(4)), g = L.g as number;
+      for (const z of L.zones) for (const d of z.desks) {
+        const pr = d.person!; seen++;
+        if (pr.w / g > worst) { worst = pr.w / g; worstWho = `${pr.pid}/${pr.pose}`; }
+      }
+    }
+    assert.ok(seen >= pairs.length - 15, `${label}: ${seen} of ${pairs.length} person and state pairs drawn`);
+    assert.ok(worst <= CAP, `${label}: the width cap is broken: its widest frame (${widestWho}, ${widest} px) is drawn ${worst} grid px wide (${worstWho}), the cap is ${CAP}`);
+    return widest;
+  };
+  for (const crew of ['pirate', 'royal', 'rebels', 'monster', 'cheeky', 'prehistoric']) capCheck(`width cap, ${crew}`, readJson('sets', crew, 'set.json') as unknown as RealMeta);
+  /* a fixture: the first person is narrow, the second's knock is wide (300 px for 350 tall: 72/350 alone would make it 61.7 grid px) */
+  const base = readJson('sets', 'pirate', 'set.json') as unknown as RealMeta, ids = Object.keys(base.stand).sort();
+  const clone = JSON.parse(JSON.stringify(base)) as RealMeta;
+  clone.stand = {}; clone.seat = {};
+  ids.slice(0, 2).forEach((id, n) => {
+    const st = JSON.parse(JSON.stringify(base.stand[id])); st.figH = 350;
+    for (const p of Object.keys(st.poses)) st.poses[p] = [n === 0 ? 120 : 200, 350];
+    if (n === 1) st.poses.knock = [300, 350];
+    clone.stand[id] = st; clone.seat[id] = base.seat[id];
+  });
+  assert.strictEqual(capCheck('width cap, synthetic set (narrow first person, wide later one)', clone), 300);
+}
 /* spec 097 FR-335, T247: another set's people in the arcade. A crew's hi-res frames (350 px tall) are scaled to the arcade's people (72 grid px) and its standing poses
    (book, coffee, knock, letter, runA, runB: no `type`, `sit` or `counter`) fall back, so every player at a cabinet is drawn, at the arcade's size, on the grid. */
 {
