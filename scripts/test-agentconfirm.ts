@@ -65,6 +65,11 @@ async function main(): Promise<void> {
       const noFollowless = { io: fs, flags: { O_RDONLY: fs.constants.O_RDONLY }, lstat: (f: string) => fs.lstatSync(f) };
       assert.strictEqual(readAgentFile(link, noFollowless), undefined, 'without O_NOFOLLOW (Windows) the lstat refuses the link');
       assert.ok(readAgentFile(file, noFollowless)?.sha256 === sha(V1), 'without O_NOFOLLOW a plain file is read');
+      // without O_NOFOLLOW: a file replaced between the lstat and the open (another dev/ino on the descriptor) is refused
+      const otherIno = { ...noFollowless, lstat: (f: string) => { const st = fs.lstatSync(f); return { isSymbolicLink: () => st.isSymbolicLink(), dev: st.dev, ino: st.ino + 1 }; } };
+      assert.strictEqual(readAgentFile(file, otherIno), undefined, 'a file other than the one the lstat saw is refused');
+      const otherDev = { ...noFollowless, lstat: (f: string) => { const st = fs.lstatSync(f); return { isSymbolicLink: () => false, dev: st.dev + 1, ino: st.ino }; } };
+      assert.strictEqual(readAgentFile(file, otherDev), undefined, 'another device is refused');
       const hard = path.join(root, 'hard.md');
       fs.linkSync(file, hard);
       assert.strictEqual(readAgentFile(file), undefined, 'a file with a second hard link is refused');
@@ -94,7 +99,13 @@ async function main(): Promise<void> {
   const indexUrl = pathToFileURL(path.join(__dirname, '..', 'src', 'renderer', 'index.html')).href;
   const frame = { url: indexUrl };
   const win = { senderFrame: frame, sender: { mainFrame: frame } };
-  const select = (id: string, confirm?: unknown) => Promise.resolve(handlers.get('agents:selectProfile')!(win, id, 'pirate', confirm)) as Promise<{ ok: boolean; error?: string; needsConfirm?: boolean; sha256?: string; profile?: AgentProfile | null }>;
+  type Sel = { ok: boolean; error?: string; needsConfirm?: boolean; sha256?: string; profile?: AgentProfile | null };
+  const selectId = (id: string, profileId: string, confirm?: unknown) => Promise.resolve(handlers.get('agents:selectProfile')!(win, id, profileId, confirm)) as Promise<Sel>;
+  const select = (id: string, confirm?: unknown) => selectId(id, 'pirate', confirm);
+  const launched = async (from: number, name: string): Promise<{ prompt: string; tools?: string[] }> => {
+    const a = await until('launch', () => sp.calls[from]?.args);
+    return (JSON.parse(a[a.indexOf('--agents') + 1]) as Record<string, { prompt: string; tools?: string[] }>)[name];
+  };
   const trusted = (): boolean => fs.existsSync(trustFile) && fs.readFileSync(trustFile, 'utf8').includes('pirate');
   const newSession = async (): Promise<string> => {
     const sid = await claude.start({ workspace: WS, quiet: true } as never);
@@ -136,6 +147,60 @@ async function main(): Promise<void> {
   const s2 = await newSession();
   const quiet = await select(s2);
   assert.deepStrictEqual([quiet.ok, quiet.needsConfirm], [true, undefined], 'already confirmed: no question');
+
+  // the shown profile and the launch come from main's one read, not from the disk later: the adapter's calls run after the file
+  // changed again (the stand-in writes S3 just before each one), and still show and launch S2
+  {
+    const scout = path.join(WS, '.claude', 'agents', 'scout.md');
+    const S2 = '---\nname: scout\ntools: Read, Grep\n---\nScout two.\n';
+    const S3 = '---\nname: scout\ntools: Bash\n---\nScout three, never shown.\n';
+    ad = {
+      listAgentProfiles: (sid: string) => claude.listAgentProfiles(sid),
+      agentProfileOfFile: (sid: string, id: string, f: AgentFileRead) => (fs.writeFileSync(scout, S3), claude.agentProfileOfFile(sid, id, f)),
+      selectAgentProfile: (sid: string, id: string | null, f?: AgentFileRead) => (fs.writeFileSync(scout, S3), claude.selectAgentProfile(sid, id, f)),
+    };
+    const s3 = await newSession();
+    fs.writeFileSync(scout, S2);
+    const q = await selectId(s3, 'scout');
+    assert.deepStrictEqual([q.needsConfirm, q.sha256, q.profile?.tools], [true, sha(S2), ['Read', 'Grep']], 'the dialog shows the profile of the bytes that were hashed');
+    fs.writeFileSync(scout, S2);
+    const done = await selectId(s3, 'scout', { sha256: q.sha256 });
+    assert.deepStrictEqual([done.ok, done.profile?.tools], [true, ['Read', 'Grep']]);
+    const from = sp.calls.length;
+    await claude.send(s3, { text: 'hi' } as never);
+    assert.deepStrictEqual(await launched(from, 'scout'), { description: 'scout', prompt: 'Scout two.', tools: ['Read', 'Grep'] }, 'the launch holds the confirmed S2, not the S3 on disk');
+    await claude.stop(s3);
+    ad = claude;
+  }
+
+  // a user agent whose name a folder file takes over after the list: the session starts with the user file main read, and an adapter
+  // call without main's bytes never picks the folder's file
+  {
+    const userFile = path.join(CFG, 'agents', 'reviewer.md');
+    fs.mkdirSync(path.dirname(userFile), { recursive: true });
+    fs.writeFileSync(userFile, '---\nname: reviewer\n---\nThe user reviewer.\n');
+    const folderFile = path.join(WS, '.claude', 'agents', 'x.md');
+    fs.writeFileSync(folderFile, '---\nname: reviewer\n---\n'); // no prompt: not an agent when the list is read
+    ad = {
+      listAgentProfiles: async (sid: string) => { const l = await claude.listAgentProfiles(sid); fs.writeFileSync(folderFile, '---\nname: reviewer\n---\nFolder text nobody confirmed.\n'); return l; },
+      agentProfileOfFile: (sid: string, id: string, f: AgentFileRead) => claude.agentProfileOfFile(sid, id, f),
+      selectAgentProfile: (sid: string, id: string | null, f?: AgentFileRead) => claude.selectAgentProfile(sid, id, f),
+    };
+    const s4 = await newSession();
+    const r = await selectId(s4, 'reviewer');
+    assert.deepStrictEqual([r.ok, r.needsConfirm, r.profile?.source, r.profile?.path], [true, undefined, 'user', userFile], 'the listed user agent is selected');
+    const from = sp.calls.length;
+    await claude.send(s4, { text: 'hi' } as never);
+    assert.strictEqual((await launched(from, 'reviewer')).prompt, 'The user reviewer.', 'the launch holds the user file, not the folder file');
+    await claude.stop(s4);
+    const s5 = await newSession();
+    await assert.rejects(claude.selectAgentProfile(s5, 'reviewer'), /not available/, 'without main\'s bytes a folder agent is refused');
+    assert.strictEqual(await claude.selectAgentProfile(s5, 'reviewer', { path: folderFile, bytes: Buffer.from('---\nname: other\n---\nx') }).catch(() => 'refused'), 'refused', 'bytes that define another agent are refused');
+    assert.strictEqual(await claude.selectAgentProfile(s5, 'reviewer', { path: path.join(root, 'reviewer.md'), bytes: fs.readFileSync(userFile) }).catch(() => 'refused'), 'refused', 'a file outside the agent folders is refused');
+    await claude.stop(s5);
+    fs.unlinkSync(folderFile);
+    ad = claude;
+  }
 
   // the adapter is handed the bytes main hashed
   {

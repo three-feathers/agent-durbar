@@ -66,10 +66,14 @@ function readDir(dir: string, source: AgentProfile['source'], out: Map<string, C
 }
 
 /** The session folders' `.claude/agents` (repository) and the user's `agents` folder, repository first. */
-export function listClaudeAgents(folders: readonly string[], configDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')): ClaudeAgentDef[] {
+export function claudeAgentDirs(folders: readonly string[], configDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')): { dir: string; source: AgentProfile['source'] }[] {
+  return [...[...new Set(folders)].map((f) => ({ dir: path.join(f, '.claude', 'agents'), source: 'repo' as const })), { dir: path.join(configDir, 'agents'), source: 'user' as const }];
+}
+
+/** The agents of `claudeAgentDirs`, in that order (the first of a name wins). */
+export function listClaudeAgents(folders: readonly string[], configDir?: string): ClaudeAgentDef[] {
   const out = new Map<string, ClaudeAgentDef>();
-  for (const f of [...new Set(folders)]) readDir(path.join(f, '.claude', 'agents'), 'repo', out);
-  readDir(path.join(configDir, 'agents'), 'user', out);
+  for (const d of claudeAgentDirs(folders, configDir)) readDir(d.dir, d.source, out);
   return [...out.values()];
 }
 

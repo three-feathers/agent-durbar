@@ -63,7 +63,7 @@ import type { SkipReason } from './questions';
 import { claudeSlashPlaces, cleanBuiltins, mergeSlash, SlashCache, vscodeUserPromptDirs } from './slashcommands';
 import type { SlashPlace } from './slashcommands';
 import { compareVersions } from './detect';
-import { agentsArg, claudeAgentOfBytes, listClaudeAgents } from './claudeAgents';
+import { agentsArg, claudeAgentDirs, claudeAgentOfBytes, listClaudeAgents } from './claudeAgents';
 import type { ClaudeAgentDef } from './claudeAgents';
 import type { AgentFileRead, AgentProfile, AskedQuestion, ElicitAnswer, SlashCommand, SlashExpansion } from './types';
 import { answerElicitation, cancelElicitations, declineElicitation, runElicitation, type ElicitWaiter } from './elicitation';
@@ -955,11 +955,13 @@ export class ClaudeAdapter implements AgentAdapter {
     return s ? this.agentOfFile(s, id, file)?.profile : undefined;
   }
 
-  /** FR-044: agent `id` parsed from `file.bytes`, only when `id` is listed from that same file (the folder's agent wins a name clash). */
+  /**
+   * FR-044: agent `id` parsed from `file.bytes`, only when the file sits directly in one of the session's agent folders (its source
+   * is that folder's) and the bytes define `id`. No new read and no new list: the bytes main read are the ones launched.
+   */
   private agentOfFile(s: { roots: string[] }, id: string, file: AgentFileRead): ClaudeAgentDef | undefined {
-    const listed = listClaudeAgents(s.roots, this.deps.configDir).find((d) => d.profile.id === id);
-    if (!listed || listed.profile.path !== file.path) return undefined;
-    const def = claudeAgentOfBytes(file.bytes, file.path, listed.profile.source);
+    const place = claudeAgentDirs(s.roots, this.deps.configDir).find((d) => path.dirname(file.path) === d.dir);
+    const def = place ? claudeAgentOfBytes(file.bytes, file.path, place.source) : undefined;
     return def && def.profile.id === id ? def : undefined;
   }
 
@@ -972,7 +974,8 @@ export class ClaudeAdapter implements AgentAdapter {
     if (!s) throw new Error('Unknown Claude session.');
     if (s.resumable) throw new Error('Claude Code sets the agent when a session starts. Start a new session with this agent (+ New session).');
     // FR-044: with the confirmed bytes, the session starts with exactly them (no second read of the file)
-    const def = id === null ? undefined : file ? this.agentOfFile(s, id, file) : listClaudeAgents(s.roots, this.deps.configDir).find((d) => d.profile.id === id);
+    // without them, never a folder's agent: it needs main's read and confirmation (a folder file could win a name clash after the list)
+    const def = id === null ? undefined : file ? this.agentOfFile(s, id, file) : listClaudeAgents(s.roots, this.deps.configDir).find((d) => d.profile.id === id && d.profile.source !== 'repo');
     if (id !== null && !def) throw new Error('That agent is not available in this session.');
     s.agent = def;
     this.emit(s.id, { type: 'agentProfile', profile: def ? def.profile : null });

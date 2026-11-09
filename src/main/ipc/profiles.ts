@@ -63,10 +63,11 @@ export function register(deps: ProfilesIpcDeps): void {
       if (profileId !== null) {
         const p = (await ad.listAgentProfiles?.(a.id))?.find((x) => x.id === profileId);
         if (!p) return { ok: false, error: 'That agent is not available in this session.' };
+        // FR-044: one read gives the hash, the profile the dialog shows and the bytes the session uses, whatever the source (the
+        // adapter launches exactly the listed file's bytes, never a file that won a name clash afterwards)
+        const got = p.path ? readAgentFile(p.path) : undefined;
+        file = got && p.path ? { path: p.path, bytes: got.bytes } : undefined;
         if (p.source === 'repo') {
-          // FR-044: one read gives the hash, the profile the dialog shows and the bytes the session uses; the confirmation names that hash
-          const got = p.path ? readAgentFile(p.path) : undefined;
-          file = got && p.path ? { path: p.path, bytes: got.bytes } : undefined;
           const shown = file ? (ad.agentProfileOfFile ? ad.agentProfileOfFile(a.id, p.id, file) : p) : undefined;
           if (!got || !shown) return { ok: false, error: 'The agent file could not be read.' };
           if (!agentTrust()?.isTrusted(wsKey(a), p.id, got.sha256)) {
