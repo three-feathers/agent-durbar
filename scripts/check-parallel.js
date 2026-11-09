@@ -97,7 +97,7 @@ const variants = themes
       .concat([{ name: 'dark theme', env: { OFFICE_USER_THEME: DARK_THEME } }])
       .concat([{ name: 'dark theme + cheeky', env: { OFFICE_USER_THEME: DARK_THEME, OFFICE_CHARACTERS: 'cheeky' } }])
       .concat([{ name: 'user theme', env: { OFFICE_USER_THEME: 'scripts/fixtures/themes/check-user.json' } }])
-  : [{ name: 'default', env: {} }, { name: 'real office', env: { OFFICE_VIEW: 'real' } }, { name: 'real office wide font', env: { OFFICE_VIEW: 'real', OFFICE_FONT: 'DejaVu Sans' } }]; // spec 097 FR-091: the Real office variant of check-office-overlap.js
+  : [{ name: 'default', env: {} }, { name: 'real office', env: { OFFICE_VIEW: 'real' } }, { name: 'real office wide font', env: { OFFICE_VIEW: 'real', OFFICE_FONT: 'DejaVu Sans' } }, { name: 'arcade', env: { OFFICE_VIEW: 'real', OFFICE_WORLD: 'retro' } }]; // spec 097 FR-091: the Real office variant of check-office-overlap.js
 const jobs = [];
 for (const v of variants) for (let k = 0; k < SHARDS; k++) jobs.push({ label: `${v.name} ${k + 1}/${SHARDS}`, env: { ...v.env, OFFICE_SHARDS: String(SHARDS), OFFICE_SHARD: String(k) } });
 

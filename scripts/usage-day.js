@@ -29,12 +29,12 @@ function parseArgs(argv, env = process.env, nowMs = Date.now()) {
   return o;
 }
 
-function readState(file) {
+function readState(file, opts = {}) {
   const st = fs.statSync(file);
   if (!st.isFile() || st.size > lib.MAX_FILE_BYTES) throw new Error(`${path.basename(file)}: not a usage file`);
   let raw;
   try { raw = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { throw new Error(`${path.basename(file)}: not JSON`); }
-  return lib.validateState(raw, path.basename(file));
+  return lib.validateState(raw, path.basename(file), opts);
 }
 
 /** Files to read: the --files list, else every `usage-*.json` of the folder. Two files for one machine label are refused (they would count twice). */

@@ -41,14 +41,14 @@ const THEMES = (process.env.GEOMETRY_THEMES || (process.env.CHECK_ALL_THEMES ===
 
 /* runs in the page: the box of EVERY element of the office, the lobby and the top bar (SVG art inside excluded: scene kits draw
    their own), keyed by order and class, plus the font size of each text element; the DOM must be the same in every theme */
-function measure() {
+function measure(sel) {
   const out = {};
   if (window.__durbarSimUi) window.__durbarSimUi.settleNow(); /* spec 008 FR-113: a frame still queued is drawn before measuring */
   const st = document.createElement('style');
-  st.textContent = '#stage *, .lobby *, header *{font-family:sans-serif!important;font-weight:400!important;font-style:normal!important;letter-spacing:normal!important;text-transform:none!important;word-spacing:normal!important;font-variant:normal!important;font-feature-settings:normal!important;font-stretch:normal!important}';
+  st.textContent = '#stage *, .lobby *, header *, #list *, [data-geo="scr"] *{font-family:sans-serif!important;font-weight:400!important;font-style:normal!important;letter-spacing:normal!important;text-transform:none!important;word-spacing:normal!important;font-variant:normal!important;font-feature-settings:normal!important;font-stretch:normal!important}';
   document.head.appendChild(st);
   if (window.DurbarFit) window.DurbarFit(); /* fit the usage lines and room headers in the forced font, as the app does in its own */
-  const els = [...document.querySelectorAll('#stage, #stage *, .lobby, .lobby *, header, header *')].filter((e) => !e.closest('svg') && e.getClientRects().length
+  const els = [...document.querySelectorAll(sel || '#stage, #stage *, .lobby, .lobby *, header, header *')].filter((e) => !e.closest('svg') && e.getClientRects().length
     /* spec 059: the rename pencil (button.ren) is anchored to the END OF THE NAME'S TEXT (placeRen), like a label: a theme's own font moves it, so its position is text-dependent and not a layout box. Its size and overlaps are checked by check:office. */
     && !e.closest('.ren'));
   els.forEach((e, i) => {
@@ -107,14 +107,14 @@ async function driver(ctx) {
     if (more) { await ctx.sleep(300); expanded = await ctx.js(`(${measure.toString()})()`); real.push(await ctx.js(`(${pageCheck.toString()})(true, 5)`)); }
     return { base, expanded, real: real.flatMap((r) => r.problems) };
   };
-  const diff = (a, b) => {
+  const diff = (a, b, wordy) => {
     const out = [];
     for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) {
       if (!(k in a)) { out.push(`${k}: only in the theme`); continue; }
       if (!(k in b)) { out.push(`${k}: missing in the theme`); continue; }
       // place names are a theme's own words (spec 036): their width, and so the seats beside them, may change; the real-font
       // step checks that both stay inside the place's tile. Their top and height must still match.
-      const idx = /span\.(pn|prow)$/.test(k) ? [1, 3, 4] : [0, 1, 2, 3, 4];
+      const idx = /span\.(pn|prow)$/.test(k) || (wordy && wordy.test(k)) ? [1, 3, 4] : [0, 1, 2, 3, 4];
       if (idx.some((i) => a[k][i] !== undefined && Math.abs(a[k][i] - b[k][i]) > 0.5)) out.push(`${k}: ${a[k].join(',')} -> ${b[k].join(',')}`);
     }
     return out;
@@ -135,6 +135,39 @@ async function driver(ctx) {
         const label = `${theme} sim${sim}-${w}x${h}${part === 'expanded' ? ' +expanded' : ''}`;
         if (d.length) { failed++; console.log(`FAIL ${label}: ${d.length} differences: ${d.slice(0, 8).join('; ')}${d.length > 8 ? ' ...' : ''}`); }
         else console.log(`  ok   ${label} (${Object.keys(r[part]).length} boxes and fonts)`);
+      }
+    }
+  }
+  /* spec 102 T220 / FR-263: the arcade's chrome while its world shows (`data-ui="retro"`, its dark tokens) lays the top bar, the List view and Settings out in
+     the same boxes as Clean Office's (035 FR-010; 097 FR-130's amendment for this world): with display text neutralised, every box and font size within 0.5 px.
+     Both pages are the Real office with the flag open, so the same rows are offered; they differ only in the world, the Photo office's chrome being plain (`ui: "clean"`). */
+  if (!process.env.GEOMETRY_NO_WORLD) {
+    const surfaces = async (world, w, h) => {
+      await H.load({ w, h, query: { sim: '15', simfreeze: '1', officeview: 'real', worldflags: 'retro', world }, ready: 'fit', settle: false });
+      if (!(await ctx.waitFor(`window.__durbarSimUi&&window.__durbarSimUi.settleNow()&&document.documentElement.dataset.world===${jsLiteral(world)}`, 8000))) throw new Error(`world ${world}: not shown`);
+      await ctx.js(`document.fonts.ready.then(()=>true)`);
+      ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 0, y: 0 });
+      const read = async (sel) => { let a = await ctx.js(`(${measure.toString()})(${jsLiteral(sel)})`); for (let i = 0; i < 10; i++) { await ctx.sleep(300); const b = await ctx.js(`(${measure.toString()})(${jsLiteral(sel)})`); if (JSON.stringify(a) === JSON.stringify(b)) break; a = b; } return a; };
+      const out = {};
+      await ctx.js(`document.getElementById('vList').click();0`);
+      await ctx.waitFor(`document.getElementById('vList').getAttribute('aria-pressed')==='true'`, 5000);
+      out.list = await read('header, header *, #list, #list *');
+      await ctx.js(`window.DurbarScreens.openSettings();0`);
+      await ctx.waitFor(`!!document.getElementById('motionSw')`, 5000);
+      await ctx.js(`document.getElementById('scrClose').closest('.scr-head').parentElement.dataset.geo='scr';0`); /* Settings' own box, whatever its class */
+      out.settings = await read('[data-geo="scr"], [data-geo="scr"] *');
+      if (Object.keys(out.settings).length < 20) throw new Error(`world ${world}: Settings has only ${Object.keys(out.settings).length} boxes`);
+      if (Object.keys(out.list).length < 20) throw new Error(`world ${world}: the List view has only ${Object.keys(out.list).length} boxes`);
+      return out;
+    };
+    for (const [w, h] of SIZES) {
+      const r = await surfaces('photo', w, h), t = await surfaces('retro', w, h);
+      for (const part of ['list', 'settings']) {
+        total++;
+        /* the one text that is the world's own words: Settings' "World's default (Office people)" and "(Retro pixel)" (a bold with no class); its width follows its words, its top and height must still match */
+        const d = diff(r[part], t[part], /^\d+ b\.$/);
+        if (d.length) { failed++; console.log(`FAIL world retro ${part} ${w}x${h}: ${d.length} differences: ${d.slice(0, 8).join('; ')}${d.length > 8 ? ' ...' : ''}`); }
+        else console.log(`  ok   world retro ${part} ${w}x${h} (${Object.keys(r[part]).length} boxes and fonts, beside the plain chrome)`);
       }
     }
   }

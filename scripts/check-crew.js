@@ -166,8 +166,10 @@ async function runCrew(ctx, full) {
     await H.js(`window.DurbarScreens.close()`);
     await H.until(`!document.querySelector('.scene-out')`, 3000);
     await H.settle();
+    /* spec 008 FR-190: instead of a fixed 250 ms for the new pictures: every portrait on the stage is decoded (the fade of the old scene was waited for above
+       with `.scene-out`), then two painted frames */
+    await H.js(`Promise.all([...document.querySelectorAll('#stage image')].map((i)=>{const m=new Image();m.src=i.getAttribute('href')||i.getAttribute('xlink:href')||'';return m.decode().catch(()=>0);})).then(()=>true)`);
     await H.js(`new Promise((r)=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(true))))`);
-    await ctx.sleep(250);
   };
   const pick = (id) => pickIn('theme', id);
   const pickChars = (v) => pickIn('characters', v);
@@ -277,7 +279,7 @@ async function runCrew(ctx, full) {
     assert.strictEqual(s.broken, 0, `${tag}: no picture without a source`);
     console.log(`[crew] ${tag}`, JSON.stringify({ scenes: mains.length, characters: [...seen], walkers: s.walkers.length, chips: s.chips.length, lounge: s.lounge.length }));
     await H.clearToasts();
-    await ctx.sleep(200);
+    await H.js(`new Promise((r)=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(true))))`); /* the toasts are gone from a painted frame (was a 200 ms sleep) */
     await ctx.shot(path.join(out, `crew-office-${CHARS}-${THEME_ID}-${tag}.png`));
     // FR-061: an idle desk's portrait is full colour; its furniture keeps the dim
     const idle = await H.js(`(${idleOpacity.toString()})()`);

@@ -1,0 +1,155 @@
+{
+  "version": 1,
+  "method": "weight = 0.5 * share of lines changed + 0.5 * share of merged PRs, over the days without measured data; per-model split = the lump's model mix; whole cents, largest remainder",
+  "ref": "origin/main",
+  "commit": "b7cb124968c59d80c7e5783670c3d635ce82e4a3",
+  "since": "2026-10-25",
+  "through": "2026-11-07",
+  "weights": {
+    "lines": 0.5,
+    "prs": 0.5
+  },
+  "totals": {
+    "lines": 190228,
+    "prs": 364
+  },
+  "remainderCents": {
+    "claude-opus-5-5": 280145,
+    "claude-sonnet-5-5": 86483
+  },
+  "measuredDays": [
+    "2026-11-07"
+  ],
+  "days": [
+    {
+      "date": "2026-10-25",
+      "lines": 23368,
+      "prs": 41,
+      "weight": 0.1177397129,
+      "cents": {
+        "claude-opus-5-5": 32984,
+        "claude-sonnet-5-5": 10182
+      }
+    },
+    {
+      "date": "2026-10-26",
+      "lines": 9446,
+      "prs": 23,
+      "weight": 0.0564215076,
+      "cents": {
+        "claude-opus-5-5": 15806,
+        "claude-sonnet-5-5": 4880
+      }
+    },
+    {
+      "date": "2026-10-27",
+      "lines": 10083,
+      "prs": 18,
+      "weight": 0.0512276824,
+      "cents": {
+        "claude-opus-5-5": 14351,
+        "claude-sonnet-5-5": 4430
+      }
+    },
+    {
+      "date": "2026-10-28",
+      "lines": 6942,
+      "prs": 23,
+      "weight": 0.0498399318,
+      "cents": {
+        "claude-opus-5-5": 13962,
+        "claude-sonnet-5-5": 4310
+      }
+    },
+    {
+      "date": "2026-10-29",
+      "lines": 6446,
+      "prs": 28,
+      "weight": 0.055404365,
+      "cents": {
+        "claude-opus-5-5": 15521,
+        "claude-sonnet-5-5": 4792
+      }
+    },
+    {
+      "date": "2026-10-30",
+      "lines": 2237,
+      "prs": 8,
+      "weight": 0.0168687974,
+      "cents": {
+        "claude-opus-5-5": 4726,
+        "claude-sonnet-5-5": 1459
+      }
+    },
+    {
+      "date": "2026-10-31",
+      "lines": 51871,
+      "prs": 22,
+      "weight": 0.166558805,
+      "cents": {
+        "claude-opus-5-5": 46661,
+        "claude-sonnet-5-5": 14405
+      }
+    },
+    {
+      "date": "2026-11-01",
+      "lines": 29466,
+      "prs": 27,
+      "weight": 0.1145370784,
+      "cents": {
+        "claude-opus-5-5": 32087,
+        "claude-sonnet-5-5": 9906
+      }
+    },
+    {
+      "date": "2026-11-02",
+      "lines": 12848,
+      "prs": 40,
+      "weight": 0.0887150573,
+      "cents": {
+        "claude-opus-5-5": 24853,
+        "claude-sonnet-5-5": 7672
+      }
+    },
+    {
+      "date": "2026-11-03",
+      "lines": 16004,
+      "prs": 51,
+      "weight": 0.1121202562,
+      "cents": {
+        "claude-opus-5-5": 31410,
+        "claude-sonnet-5-5": 9696
+      }
+    },
+    {
+      "date": "2026-11-04",
+      "lines": 9434,
+      "prs": 48,
+      "weight": 0.0907306259,
+      "cents": {
+        "claude-opus-5-5": 25418,
+        "claude-sonnet-5-5": 7847
+      }
+    },
+    {
+      "date": "2026-11-05",
+      "lines": 6422,
+      "prs": 17,
+      "weight": 0.0402313927,
+      "cents": {
+        "claude-opus-5-5": 11271,
+        "claude-sonnet-5-5": 3479
+      }
+    },
+    {
+      "date": "2026-11-06",
+      "lines": 5661,
+      "prs": 18,
+      "weight": 0.0396047877,
+      "cents": {
+        "claude-opus-5-5": 11095,
+        "claude-sonnet-5-5": 3425
+      }
+    }
+  ]
+}
