@@ -1,0 +1,322 @@
+{
+ "formatVersion": 1,
+ "id": "minimalist",
+ "name": "Minimalist",
+ "level": "full",
+ "seat": {
+  "designer": {
+   "bodyH": 343,
+   "h": 356,
+   "hand": 0.88,
+   "headTop": 13,
+   "w": 358
+  },
+  "manager": {
+   "bodyH": 344,
+   "h": 355,
+   "hand": 0.88,
+   "headTop": 11,
+   "w": 305
+  },
+  "analyst": {
+   "bodyH": 346,
+   "h": 358,
+   "hand": 0.88,
+   "headTop": 12,
+   "w": 326
+  },
+  "engineer": {
+   "bodyH": 343,
+   "h": 356,
+   "hand": 0.88,
+   "headTop": 13,
+   "w": 314
+  },
+  "writer": {
+   "bodyH": 343,
+   "h": 367,
+   "hand": 0.88,
+   "headTop": 24,
+   "w": 345
+  },
+  "support": {
+   "bodyH": 353,
+   "h": 363,
+   "hand": 0.88,
+   "headTop": 10,
+   "w": 286
+  }
+ },
+ "stand": {
+  "designer": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "runA": 1.0,
+    "runB": 1.0
+   },
+   "figH": 361,
+   "poses": {
+    "book": [
+     144,
+     361
+    ],
+    "coffee": [
+     142,
+     361
+    ],
+    "knock": [
+     144,
+     361
+    ],
+    "letter": [
+     138,
+     361
+    ],
+    "runA": [
+     148,
+     361
+    ],
+    "runB": [
+     148,
+     361
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "runA": 0.0,
+    "runB": 0.0
+   }
+  },
+  "manager": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "runA": 1.0,
+    "runB": 1.0
+   },
+   "figH": 362,
+   "poses": {
+    "book": [
+     154,
+     361
+    ],
+    "coffee": [
+     155,
+     361
+    ],
+    "knock": [
+     164,
+     361
+    ],
+    "letter": [
+     185,
+     361
+    ],
+    "runA": [
+     154,
+     362
+    ],
+    "runB": [
+     149,
+     361
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "runA": 0.0,
+    "runB": 0.0
+   }
+  },
+  "analyst": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "runA": 1.0,
+    "runB": 1.0
+   },
+   "figH": 361,
+   "poses": {
+    "book": [
+     137,
+     361
+    ],
+    "coffee": [
+     136,
+     361
+    ],
+    "knock": [
+     142,
+     361
+    ],
+    "letter": [
+     134,
+     361
+    ],
+    "runA": [
+     136,
+     361
+    ],
+    "runB": [
+     138,
+     361
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "runA": 0.0,
+    "runB": 0.0
+   }
+  },
+  "engineer": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "runA": 1.0,
+    "runB": 1.0
+   },
+   "figH": 361,
+   "poses": {
+    "book": [
+     168,
+     361
+    ],
+    "coffee": [
+     178,
+     361
+    ],
+    "knock": [
+     177,
+     361
+    ],
+    "letter": [
+     212,
+     361
+    ],
+    "runA": [
+     166,
+     361
+    ],
+    "runB": [
+     184,
+     360
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "runA": 0.0,
+    "runB": 0.0
+   }
+  },
+  "writer": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "runA": 1.0,
+    "runB": 1.0
+   },
+   "figH": 361,
+   "poses": {
+    "book": [
+     166,
+     361
+    ],
+    "coffee": [
+     164,
+     361
+    ],
+    "knock": [
+     173,
+     361
+    ],
+    "letter": [
+     147,
+     361
+    ],
+    "runA": [
+     189,
+     361
+    ],
+    "runB": [
+     180,
+     361
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "runA": 0.0,
+    "runB": 0.0
+   }
+  },
+  "support": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "runA": 1.0,
+    "runB": 1.0
+   },
+   "figH": 361,
+   "poses": {
+    "book": [
+     150,
+     361
+    ],
+    "coffee": [
+     148,
+     361
+    ],
+    "knock": [
+     151,
+     361
+    ],
+    "letter": [
+     143,
+     361
+    ],
+    "runA": [
+     134,
+     361
+    ],
+    "runB": [
+     137,
+     361
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "runA": 0.0,
+    "runB": 0.0
+   }
+  }
+ }
+}

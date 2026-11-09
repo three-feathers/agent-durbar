@@ -21,6 +21,8 @@ export interface StandMeta { figH: number; poses: Record<string, [number, number
 export interface RealMeta {
   /** spec 102 FR-255: a pixel world's art (one integer scale); its lobby keeps people apart */
   pixelArt?: boolean;
+  /** spec 097 FR-335 (T247): the people's own art is not pixel art (false); a hi-res crew in a pixel world is scaled to the world's people, not drawn at whole multiples of its pixels */
+  pixelPeople?: boolean;
   seat: Record<string, SeatMeta>; stand: Record<string, StandMeta>;
   fixtures: Record<string, [number, number]>; fixtureTop?: Record<string, number>; floorLine: number;
   /** the world's desk picture in its own pixels (spec 097 FR-247: the lounge's small desk keeps its shape) */
@@ -361,7 +363,7 @@ function roLobby(meta: RealMeta, places: RealPlace[], W: number, Lb: number): { 
         /* the feet (the picture's lowest opaque row) stand on the front floor plane, in front of the fixture; one scale per person,
            from its upright 'letter' pose, NEAR_SCALE larger than at the wall line. */
         const k0 = nearPx / standHeight(meta, String(v.person));
-        const k = snap ? visitorScale(k0) : k0, fw2 = sp.size[0] * k, fh2 = sp.size[1] * k; /* FR-255 (#1104): whole scale in a pixel world */
+        const k = snap && meta.pixelPeople !== false ? visitorScale(k0) : k0, fw2 = sp.size[0] * k, fh2 = sp.size[1] * k; /* FR-255 (#1104): whole scale in a pixel world */
         const px = (n: number): number => (snap ? Math.round(n) : n);
         const faces = meta.facing || 'left', st = meta.stand[String(v.person)], fb = roOwn(POSE_FRAME_B, sp.pose) && roOwn(st.poses, POSE_FRAME_B[sp.pose]) ? POSE_FRAME_B[sp.pose] : null;
         /* the two running pictures have their own canvases: each in its own box, the feet on one spot, so changing picture moves no foot */
