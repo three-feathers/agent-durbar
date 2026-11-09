@@ -102,6 +102,26 @@ assert.strictEqual(ui(['scripts/new-data.json'], io({ 'scripts/new-data.json': '
   const wfNoBuild = wfText.split('npm run build').join('echo no-build');
   const noChain = { ...s0, 'pack:dir': 'electron-builder --dir' }; // and no other reached script chains to it
   assert.strictEqual(ui(['package.json'], both({ ...noChain, build: s0.build + ' --edited' }, noChain, wfNoBuild)), true, 'editing build is UI even when nothing else names it');
+  // round 3: other ways a line starts an npm script. Each row: the UI workflow runs `cmd`, and only the script it names (`zz:t`, or
+  // the npm command's own script) changes. Runners this cannot resolve make every script count (fail open).
+  const viaWf = (cmd: string, target: string) => {
+    const base = { ...s0, [target]: 'node scripts/zz-target.js' };
+    return ui(['package.json'], both({ ...base, [target]: 'node scripts/zz-target.js --edited' }, base, wfText + `\n      - run: ${cmd}\n`));
+  };
+  for (const [cmd, target] of [
+    ['npm run -s zz:t', 'zz:t'], ['npm run --silent zz:t -- --x', 'zz:t'], ['npm run-script zz:t', 'zz:t'], ['npm start', 'start'], ['npm test', 'test'],
+    ['npm t', 'test'], ['npm run zz+t', 'zz+t'], ['FOO=1 npx cross-env A=1 npm run zz:t', 'zz:t'],
+    ['npm --prefix . run zz:t', 'zz:t'], ['npm -C . run zz:t', 'zz:t'], ['npm-run-all zz:*', 'zz:t'], ['run-p zz:a zz:t', 'zz:t'], ['run-s zz:t', 'zz:t'],
+    ['yarn zz:t', 'zz:t'], ['pnpm run zz:t', 'zz:t'],
+  ]) assert.strictEqual(viaWf(cmd, target), true, `the UI workflow running "${cmd}": editing ${target} is UI`);
+  { // the same forms one level down, inside a reached script (build), and an opaque runner there
+    const base = { ...s0, build: s0.build + ' && npm run -s zz:t', 'zz:t': 'node scripts/zz-target.js' };
+    assert.strictEqual(ui(['package.json'], both({ ...base, 'zz:t': 'node scripts/zz-target.js --edited' }, base)), true, 'build running "npm run -s zz:t": editing zz:t is UI');
+    const opaque = { ...s0, build: s0.build + ' && run-p zz:*', 'zz:u': 'node scripts/zz-u.js' };
+    assert.strictEqual(ui(['package.json'], both({ ...opaque, 'zz:u': 'node scripts/zz-u.js --edited' }, opaque)), true, 'build running run-p: every script counts (fail open)');
+    assert.strictEqual(ui(['scripts/zz-u.js'], io({ 'package.json': JSON.stringify({ ...pkg, scripts: opaque }), 'scripts/zz-u.js': 'x' })), true, 'and so does a scripts/ file any script names');
+  }
+  assert.strictEqual(viaWf('echo done', 'zz:t'), false, 'a workflow line that starts no npm script reaches nothing');
   assert.strictEqual(ui(['package.json'], both({ ...s0, 'usage:zz': 'node scripts/usage-zz.js --new' }, { ...s0, 'usage:zz': 'node scripts/usage-zz.js' })), false, 'editing an unreached usage:* script is not UI');
   assert.strictEqual(ui(['package.json'], io({ 'package.json': JSON.stringify({ ...pkg, scripts: chain }) }, { 'package.json': JSON.stringify({ ...pkg, scripts: { ...s0, build: s0.build + ' && npm run zcopy' } }) })), true, 'adding a script line that build reaches is UI');
 }

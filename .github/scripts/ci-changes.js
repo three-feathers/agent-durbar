@@ -50,18 +50,54 @@ const PKG = ['package.json', 'package-lock.json'];
 // the npm scripts the UI run, the office job and package smoke start: `build`, `pack:dir` and every lifecycle hook npm ci runs
 // (pre*, post*, install, prepare); with every `npm run <name>` in ui-platforms.yml they seed the REACHED set (reachedNpm)
 const UI_NPM_SCRIPT = /^(build|pack:dir|install|prepare|pre.*|post.*)$/;
-const NPM_RUN = /npm run ([\w:.-]+)/g;
+// review of PR #1349, round 3: which npm scripts a command line starts. `npm run [flags] <name>`, `npm run-script <name>`,
+// `npm start`, `npm test` (and `npm t`), `npm restart`, `npm stop` are read, flags skipped, names may hold `+`. A runner whose target
+// this cannot resolve (npm-run-all, run-p, run-s, yarn, pnpm, bun, concurrently, lerna, nx, turbo, `npm --prefix`/`-C`/`--workspace`)
+// makes the line OPAQUE, and an opaque reached line makes every npm script count as reached (fail open).
+const OPAQUE_RUNNER = new Set(['npm-run-all', 'npm-run-all2', 'run-p', 'run-s', 'yarn', 'pnpm', 'bun', 'concurrently', 'lerna', 'nx', 'turbo']);
+const NPM_DIR_FLAG = /^(--prefix|-C|--workspaces?|-w|--ws|--include-workspace-root)(=|$)/;
+const NPM_SCRIPT_CMD = { start: 'start', test: 'test', t: 'test', tst: 'test', restart: 'restart', stop: 'stop' };
+/** The npm script names one command line starts, and whether it starts something this cannot resolve. */
+function npmTargets(line) {
+  const names = [];
+  let opaque = false;
+  for (const cmd of String(line || '').split(/&&|\|\||[;|\n]/)) {
+    let t = cmd.trim().split(/\s+/).map((w) => w.replace(/^['"]|['"]$/g, '')).filter(Boolean);
+    // start at the first runner word: skips a workflow's `- run:`, `FOO=1`, `time`, and the like (an `echo npm run x` counts too: fail open)
+    const at = t.findIndex((w) => w === 'npm' || w === 'npx' || w === 'cross-env' || OPAQUE_RUNNER.has(w));
+    if (at < 0) continue;
+    t = t.slice(at);
+    while (t[0] === 'npx' || t[0] === 'cross-env') { t.shift(); while (t.length && (/^-/.test(t[0]) || /^[A-Za-z_]\w*=/.test(t[0]))) t.shift(); }
+    if (!t.length) continue;
+    if (OPAQUE_RUNNER.has(t[0])) { opaque = true; continue; }
+    if (t[0] !== 'npm') continue;
+    let i = 1;
+    const nextWord = () => { while (i < t.length && t[i].startsWith('-')) { if (NPM_DIR_FLAG.test(t[i])) opaque = true; i++; } return t[i++]; };
+    const sub = nextWord();
+    if (sub === 'run' || sub === 'run-script' || sub === 'rum' || sub === 'urn') { const n = nextWord(); if (n && n !== '--') names.push(n); }
+    else if (sub && NPM_SCRIPT_CMD[sub]) names.push(NPM_SCRIPT_CMD[sub]);
+  }
+  return { names, opaque };
+}
 const parseJson = (text) => { try { const j = JSON.parse(text || ''); return j && typeof j === 'object' ? j : null; } catch { return null; } };
-/** Every npm script name the UI run can reach: the seeds, and each `npm run <name>` inside a reached script, followed to any depth. */
+/** Every npm script name the UI run can reach: the seeds, every script a workflow line starts, and every script a reached script
+ *  starts, followed to any depth; with an opaque runner on any of those lines, every script. */
 function reachedNpm(pkgText, wfText) {
   const pkg = parseJson(pkgText) || {};
   const scripts = (typeof pkg.scripts === 'object' && pkg.scripts) || {};
   const names = new Set(Object.keys(scripts).filter((k) => UI_NPM_SCRIPT.test(k)));
-  for (const m of String(wfText || '').matchAll(NPM_RUN)) names.add(m[1]);
+  let opaque = false;
+  const visit = (line) => {
+    const r = npmTargets(line);
+    if (r.opaque) opaque = true;
+    return r.names;
+  };
+  for (const line of String(wfText || '').split(/\r?\n/)) for (const n of visit(line)) names.add(n);
   const todo = [...names];
   while (todo.length) {
-    for (const m of String(scripts[todo.pop()] || '').matchAll(NPM_RUN)) if (!names.has(m[1])) { names.add(m[1]); todo.push(m[1]); }
+    for (const n of visit(scripts[todo.pop()])) if (!names.has(n)) { names.add(n); todo.push(n); }
   }
+  if (opaque) for (const k of Object.keys(scripts)) names.add(k);
   return names;
 }
 /** package.json / package-lock.json without the release's version fields (and, with `keep`, without the npm scripts not in it: the
@@ -203,5 +239,5 @@ function main(env = process.env, argv = process.argv.slice(2)) {
   for (const k of ['code', 'themes', 'ui', 'macos']) out(k, r[k]);
 }
 
-module.exports = { decide, uiClosure, versionOnly, gitIo };
+module.exports = { decide, uiClosure, versionOnly, gitIo, npmTargets, reachedNpm };
 if (require.main === module) main();
