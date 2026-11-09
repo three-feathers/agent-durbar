@@ -106,19 +106,30 @@ assert.ok(Object.keys(clean).length > 100, 'all of Clean Office');
   assert.strictEqual(parseColor(`rgb(${'0'.repeat(TOKEN_VALUE_MAX)} 0 0)`), null, 'a value longer than TOKEN_VALUE_MAX is not parsed');
   assert.deepStrictEqual(parseColor(`rgb(${'0'.repeat(TOKEN_VALUE_MAX - 9)} 0 0)`), [0, 0, 0, 1], 'one of exactly TOKEN_VALUE_MAX is');
   {
-    // CPU time (not wall clock) of a failing match on n digits then 'x': 8x the input costs about 8x when linear, about 64x when quadratic.
-    // The repeat count is raised until the small input takes 2 ms, then both sizes run that many times; best of three rounds, so a busy machine slows a round, not the minimum.
+    // CPU time (not wall clock) of failing matches on digits then 'x', the same number of characters on both sides: k runs on 2,000 digits
+    // against k/8 runs on 16,000. Linear is a ratio of about 1 (under 1: fewer calls), quadratic (\d+\d*, or the old \d+\.?\d*) about 8; the limit is 3.
+    // k is raised until the short side takes FLOOR_US, far above the CPU timer step (about 15.6 ms on Windows): the old check divided
+    // by a 1 us baseline there, a timer read of 0, and failed linear code at "78000x" (spec 070 `## Changes` 2026-11-09). The ratio
+    // never divides by less than half the floor. Best of three rounds and a round that passes stops, so load or a GC pause slows a round, not the verdict.
+    const FLOOR_US = process.platform === 'win32' ? 250_000 : 20_000;
     const cpu = (re: RegExp, s: string, n: number): number => {
-      let best = Infinity;
-      for (let r = 0; r < 3; r++) { const t0 = process.cpuUsage(); for (let i = 0; i < n; i++) re.test(s); const d = process.cpuUsage(t0); best = Math.min(best, d.user + d.system); }
-      return Math.max(best, 1);
+      const t0 = process.cpuUsage();
+      for (let i = 0; i < n; i++) re.test(s);
+      const d = process.cpuUsage(t0);
+      return d.user + d.system;
     };
     for (const [name, re] of [['COLOUR_NUM_RE', COLOUR_NUM_RE], ['COLOUR_HUE_RE', COLOUR_HUE_RE]] as Array<[string, RegExp]>) {
       const s1 = '1'.repeat(2000) + 'x', s8 = '1'.repeat(16000) + 'x';
-      let n = 1;
-      while (cpu(re, s1, n) < 2000 && n < 1e6) n *= 2;
-      const small = cpu(re, s1, n), big = cpu(re, s8, n);
-      assert.ok(big / small < 24, `${name} grows linearly: 8x the input took ${(big / small).toFixed(1)}x the CPU (${small} us, ${big} us, ${n} runs)`);
+      let k = 8;
+      while (cpu(re, s1, k) < FLOOR_US && k < 2 ** 24) k *= 2;
+      let small = Infinity, big = Infinity;
+      for (let r = 0; r < 3; r++) {
+        small = Math.min(small, cpu(re, s1, k));
+        big = Math.min(big, cpu(re, s8, k / 8));
+        if (big / Math.max(small, FLOOR_US / 2) < 3) break;
+      }
+      const ratio = big / Math.max(small, FLOOR_US / 2);
+      assert.ok(ratio < 3, `${name} grows linearly: the same characters in 8x longer inputs took ${ratio.toFixed(1)}x the CPU (${small} us for ${k} runs of ${s1.length}, ${big} us for ${k / 8} runs of ${s8.length}; linear is about 1, quadratic about 8, limit 3, floor ${FLOOR_US} us)`);
     }
   }
   // a translucent --bg is composited over white once: rgba(0,0,0,.5) paints #808080, so #111 ink reads 4.8:1 (it was measured on #404040, 1.8:1)
