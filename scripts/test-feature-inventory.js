@@ -45,7 +45,7 @@ try {
   fails({ reg: (t) => t.replace('"shippable": false', '"shippable": true') }, /shippable: true/);
   // parity (spec 021 FR-078). The fixtures edit the themes row's "missing (#1153)": #1152's row now says what Real office has (PR 1315)
   fails({ md: (t) => t.replace('missing (#1153)', 'missing') }, /Real office cell "missing" is not plain works/);
-  fails({ md: (t) => t.replace('Helpers (sub-agents): card, tree, own chat, needs you | works | missing, only `+N` and 3 dots; planned as small figures beside the desk (#1139)', 'Helpers (sub-agents): card, tree, own chat, needs you | works | in PR 097-helpers') }, /Real office cell "in PR 097-helpers" is not plain works/);
+  fails({ md: (t) => t.replace(/(Helpers \(sub-agents\)[^|]*\| works \| )[^|]*\|/, '$1in PR 097-helpers |') }, /Real office cell "in PR 097-helpers" is not plain works/);
   fails({ crew: (t) => t.replace('retro: false', 'retro: true') }, /world\(s\) retro offered, but Worlds "none" is not built and carries no owner decision of its own/);
   assert.ok(!check(copy({ md: (t) => t.replace('missing (#1153)', 'missing (owner decision, 2026-11-04)') })).some((m) => /Real office cell/.test(m)), 'a marker accepts a Real office gap');
   fails({ crew: (t) => t.replace('cave: false', 'cave: true') }, /world\(s\) cave offered, but Worlds "none" is not built/);

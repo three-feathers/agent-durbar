@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { placeBox, portraitCrop, PORTRAIT_SIDE, slipAvoid, NOTE_PAPER, NOTE_PAPER_DEFAULT, NOTE_INK, notePaper, screenFit, screenFor, personMotion, zoomRect, realLayout, lobbyWidths, sortDesks, deskOrder, deskBase, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
   type RealModel, type RealMeta, type RealAgent, type RealState, type Rect, type Layout } from '../src/shared/realoffice-layout';
-import { lobbyBand, lobbyScale, visitorScale } from '../src/shared/realoffice-layout';
+import { lobbyBand, lobbyScale, visitorScale, HEAD, HEAD_FACE, HELP_FACE_MIN, HELP_GAP, helpH, helpCols, helpShown, headCrop, helperPerson } from '../src/shared/realoffice-layout';
 import { createHash } from 'crypto';
 import { lampWords, lightFor, lightState, LIGHT_TABLE, ambientFor, doneTick, fixtureLight, isActive, type LightState } from '../src/shared/lights';
 
@@ -685,6 +685,54 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
   }
   console.log('lounge: the staying desks against everyone at a desk (width:in lounge:ratio):', gains.join(' '));
 }
+{
+  /* spec 097 FR-246, FR-247 with FR-308's helper strips (delta 2026-11-08, review of PR #1322): the same room before and after its finished agents move to the lounge.
+     u after >= u before. The scene is the one shots-097-moments failed on (the cave, 1280x800 less the top bar: u 103.4 -> 99.4, two rows of heads before, one after, the
+     lounge row taking the height a strip had been getting for free); then random rooms with helpers in both worlds. Where no strip level keeps u, no strip is drawn, so
+     u after is never under the smaller of u before and the same room's u without helpers. Mutant (by hand, 2026-11-08: `const floor = 0` in realLayout, the strip levels
+     judged on the current rows only): the scene fails here. */
+  const CAVE = { ...readJson('worlds', 'cave', 'world.json'), ...readJson('sets', 'prehistoric', 'set.json') } as unknown as RealMeta;
+  const scene: [string, RealState, string, number, string, number][][] = [
+    [['a3', 'waiting', 'shaman', 0, 'boss', 0], ['a1', 'working', 'inventor', 2, 'terminal', 0], ['a2', 'thinking', 'ponytail', 0, '', 0], ['a4', 'asleep', 'bigbeard', 0, '', 1]],
+    [['a8', 'waiting', 'shaman', 1, 'boss', 0], ['a5', 'working', 'braids', 6, 'software', 0], ['a6', 'error', 'youngbeard', 0, '', 0], ['a7', 'idle', 'ponytail', 0, '', 0]],
+    [['a10', 'waiting', 'inventor', 0, 'boss', 0], ['a11', 'limit', 'youngbeard', 0, 'bank', 0], ['a9', 'error', 'bigbeard', 0, 'library', 0]],
+    [['a12', 'working', 'braids', 3, 'terminal', 0], ['a13', 'idle', 'inventor', 0, '', 0]],
+    [['a14', 'working', 'youngbeard', 0, 'software', 0], ['a15', 'asleep', 'bigbeard', 0, '', 1]],
+  ];
+  const sceneModel = (moved: boolean): RealModel => {
+    const folders = scene.map((ag, i) => ({ id: 'f' + i, agents: ag.map(([id, state, person, helpers, away, lounge]): RealAgent => ({ id, state: lounge && !moved ? 'done' : state, person, helpers, away: away || null, ...(lounge && moved ? { lounge: true } : {}) })) }));
+    const visitors: Record<string, { id: string; person: string; needsYou: boolean }[]> = {};
+    for (const f of folders) for (const a of f.agents) if (a.away) (visitors[a.away] ||= []).push({ id: a.id, person: a.person as string, needsYou: a.state === 'waiting' || a.state === 'limit' });
+    return { folders, places: ['library', 'software', 'terminal', 'web', 'boss', 'other', 'coffee', 'bank', 'postbox'].map((id) => ({ id, visitors: visitors[id] || [] })) };
+  };
+  {
+    const B = realLayout(sceneModel(false), { w: 1248, h: 697 }, CAVE), A = realLayout(sceneModel(true), { w: 1248, h: 697 }, CAVE);
+    assert.ok(A.lounge && A.lounge.desks.length === 2 && !A.scroll && !B.scroll, 'the scene: two agents in the lounge row, nothing scrolls');
+    assert.ok(A.u >= B.u - 1e-6, `FR-247 with helpers (the shots-097-moments scene, cave 1248x697): the desks shrank when two agents went to the lounge: u ${B.u.toFixed(2)} -> ${A.u.toFixed(2)} (helpRows ${B.helpRows} -> ${A.helpRows})`);
+    assert.strictEqual(B.helpRows, 2, 'the scene before: two rows of heads (FR-308)');
+  }
+  let n = 0, s = 7;
+  const rnd = (): number => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+  for (const [wn, M] of [['photo', META], ['cave', CAVE]] as [string, RealMeta][]) {
+    const ppl = Object.keys(M.seat).sort();
+    for (const [W, H] of SIZES.slice(0, 2)) for (let k = 0; k < 60; k++) {
+      const nn = 10 + Math.floor(rnd() * 8), f = 2 + Math.floor(rnd() * 4), st: RealState[] = ['working', 'waiting', 'thinking', 'error', 'done', 'idle'];
+      const m: RealModel = { folders: Array.from({ length: f }, (_, i) => ({ id: 'f' + i, agents: [] as RealAgent[] })), places: PLACES.map((id) => ({ id, visitors: [] })) };
+      for (let i = 0; i < nn; i++) m.folders[i % f].agents.push({ id: 'a' + i, state: st[i % 6], away: null, person: ppl[i % ppl.length], helpers: rnd() < 0.7 ? Math.floor(rnd() * 7) : 0 });
+      const go = m.folders.flatMap((fo) => fo.agents.slice(1).filter(() => rnd() < 0.25));
+      if (!go.length) continue;
+      const L0 = realLayout(m, { w: W, h: H }, M);
+      go.forEach((a) => { a.lounge = true; a.state = 'asleep'; });
+      const L1 = realLayout(m, { w: W, h: H }, M), bare = JSON.parse(JSON.stringify(m)) as RealModel;
+      bare.folders.forEach((fo) => fo.agents.forEach((a) => { a.helpers = 0; }));
+      const Lz = realLayout(bare, { w: W, h: H }, M);
+      assert.ok(L1.u >= Math.min(L0.u, Lz.u) - 1e-6, `FR-247 with helpers, ${wn} ${W}x${H}, room ${k}: u ${L0.u.toFixed(1)} -> ${L1.u.toFixed(1)} (helpRows ${L0.helpRows} -> ${L1.helpRows}), without helpers ${Lz.u.toFixed(1)}`);
+      n++;
+    }
+  }
+  assert.ok(n >= 150, `rooms with helpers before and after the lounge move: ${n}`);
+  console.log(`lounge with helpers: the moments scene and ${n} rooms keep u`);
+}
 
 // ---- owner 2026-11-02: one post-it paper colour per place, dark ink at 4.5:1 or better on each, one default for a custom place ----
 {
@@ -945,6 +993,206 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
   // the mutant (the model's attention order as the base) fails the same assertion
   const m0 = model(false), shown0 = deskOrder(m0, 'f'), wrong = R.moveTo(modelOrder, shown0[0], shown0[1], true);
   assert.notDeepStrictEqual(wrong.slice(0, 2), [shown0[1], shown0[0]], 'mutant: moving from the model order is not the swap on screen');
+}
+
+// ---- spec 097 FR-306..FR-311 (issue #1139, owner "1265 1", 2026-11-08): small head figures with a status dot under each parent's plate ----
+{
+  /** the model with `h(i)` helpers on agent i */
+  const withHelpers = (n: number, f: number, h: (i: number) => number): RealModel => {
+    const m = model(n, f);
+    m.folders.forEach((fo) => fo.agents.forEach((a) => { a.helpers = h(Number(a.id.slice(1))); }));
+    return m;
+  };
+  const helpersOf = (m: RealModel, id: string): number => m.folders.flatMap((x) => x.agents).find((a) => a.id === id)!.helpers || 0;
+  /** an independent count of the places (not `helpShown`): heads laid one after another, 30 px and a 4 px gap, left to right, row by row, inside the strip's width; the last place is the +K button when more helpers exist than places */
+  const placesFor = (w: number, rows: number, k: number): number => {
+    let places = 0;
+    for (let r = 0; r < rows; r++) for (let x = 0; x + 30 <= w + 1e-9; x += 34) places++;
+    return k <= places ? k : Math.max(0, places - 1);
+  };
+  // the function under test agrees with the independent count, and the edges are literal: 4 across x 2 rows = 8 places; 8 helpers all show, 9 helpers show 7 and +K
+  for (const [w, rows, k, shown] of [[155, 2, 8, 8], [155, 2, 9, 7], [155, 2, 3, 3], [155, 1, 4, 4], [155, 1, 5, 3], [29, 1, 1, 0], [30, 1, 1, 1], [64, 1, 3, 1], [64, 1, 2, 2]] as [number, number, number, number][]) {
+    assert.strictEqual(helpShown(w, rows, k), shown, `helpShown(${w}, ${rows}, ${k})`);
+    assert.strictEqual(placesFor(w, rows, k), shown, `placesFor(${w}, ${rows}, ${k})`);
+  }
+  /** FR-307, FR-310, FR-311: every rule of the strip, as sentences */
+  const stripProblems = (L: Layout, label: string, m?: RealModel): string[] => {
+    const out: string[] = [];
+    const strips: [string, Rect][] = [], others: [string, Rect][] = [];
+    for (const z of L.zones) {
+      z.desks.forEach((d) => {
+        for (const [k, r] of [['plate', d.plate], ['screen', d.screen], ['desk', d.desk], ['face', d.face], ['person', d.person && d.person.vis]] as [string, Rect | null][]) if (r) others.push([`${k} of ${d.id}`, r]);
+        if (d.away) others.push([`note of ${d.id}`, { x: d.away.x - d.away.s / 2, y: d.away.y, w: d.away.s, h: d.away.s }]);
+        if (!d.strip) return;
+        const t = d.strip;
+        strips.push([`strip of ${d.id}`, t]);
+        if (!inside(t, d.slot, 0.5) || !inside(t, z.box, 2)) out.push(`${label}: strip of ${d.id} leaves its slot ${JSON.stringify(t)} ${JSON.stringify(d.slot)}`);
+        if (t.rows < 1 || t.rows > 2 || t.h !== helpH(t.rows) - 2) out.push(`${label}: strip of ${d.id} has ${t.rows} rows, height ${t.h}`);
+        if (t.y < d.plate.y + 50 - 0.5) out.push(`${label}: strip of ${d.id} starts above the needs-you plate's bottom`);
+        // the heads fit: cols across at HEAD + gap, rows down, inside the strip box
+        if (t.cols * HEAD + (t.cols - 1) * HELP_GAP > t.w + 0.01) out.push(`${label}: ${t.cols} heads across do not fit ${t.w}px`);
+        if (t.rows * HEAD + (t.rows - 1) * HELP_GAP > t.h + 0.01) out.push(`${label}: ${t.rows} rows of heads do not fit ${t.h}px`);
+        // faces at the floor: the face is HEAD_FACE of the figure
+        if (HEAD * HEAD_FACE < HELP_FACE_MIN - 1e-9) out.push(`${label}: a head's face is ${HEAD * HEAD_FACE}px, under ${HELP_FACE_MIN}`);
+        if (m) {
+          const k = helpersOf(m, d.id);
+          const want = placesFor(t.w, t.rows, k);
+          if (t.shown !== want) out.push(`${label}: shown ${t.shown} of ${d.id} is not ${want} (${k} helpers in a ${t.w}px strip of ${t.rows} rows)`);
+          const overflow = k - t.shown;
+          if (t.shown > t.cols * t.rows || t.shown > k) out.push(`${label}: ${t.shown} heads shown of ${k} helpers in ${t.cols}x${t.rows}`);
+          if (overflow > 0 && t.shown + 1 !== Math.min(k, t.cols * t.rows) && t.shown !== Math.max(0, t.cols * t.rows - 1)) out.push(`${label}: overflow ${overflow} of ${d.id} does not take the last place`);
+        }
+      });
+      others.push([`sign ${z.id}`, z.sign]);
+    }
+    strips.forEach(([a, r], i) => {
+      strips.forEach(([b, q], j) => { if (j > i && inter(r, q, 0.5)) out.push(`${label}: ${a} overlaps ${b}`); });
+      for (const [b, q] of others) if (inter(r, q, 0.5)) out.push(`${label}: ${a} overlaps ${b}`);
+    });
+    return out;
+  };
+  let sc = 0, withStrip = 0, twoRows = 0;
+  for (const [W, H] of SIZES) for (const n of [1, 2, 3, 4, 5, 8, 12, 15, 20, 30, 40]) for (const f of [1, 2, 4, 6]) for (const hc of [0, 1, 2, 6, 10]) {
+    if (f > n || (W < 1000 && n > 15)) continue;
+    const m = withHelpers(n, f, (i) => (i % 3 === 0 ? hc : i % 3 === 1 ? Math.min(hc, 1) : 0));
+    const L = realLayout(m, { w: W, h: H }, META), base = realLayout(withHelpers(n, f, () => 0), { w: W, h: H }, META);
+    const label = `${n} agents, ${f} folders, ${hc} helpers, ${W}x${H}`;
+    assert.deepStrictEqual(problems(L, W, H), [], label);
+    assert.deepStrictEqual(stripProblems(L, label, m), [], label);
+    if (n <= 15 && W >= 1280) assert.ok(!L.scroll, `${label}: 15 agents never scroll with helpers`);
+    if (n === 15 && f === 4 && W >= 1280) assert.ok(L.faceH >= FACE_FLOOR - 1e-9, `${label}: face ${L.faceH} over the SC-002 ratchet`);
+    const hasStrip = L.zones.some((z) => z.desks.some((d) => d.strip));
+    if (hc === 0) assert.strictEqual(JSON.stringify(L), JSON.stringify(base), `${label}: no helpers, no change at all`);
+    if (hasStrip) {
+      withStrip++;
+      assert.ok(L.helpRows === 1 || L.helpRows === 2, `${label}: strips drawn with 1 or 2 rows`);
+      assert.strictEqual(L.zones.flatMap((z) => z.desks).filter((d) => d.strip).length, L.zones.flatMap((z) => z.desks).filter((d) => !d.lounge && helpersOf(m, d.id) > 0).length, `${label}: exactly the desks with helpers have a strip`);
+      if (L.helpRows === 2) twoRows++;
+    } else assert.ok(L.helpRows === 0 || hc === 0, `${label}: no strip means helpRows 0`);
+    if (hc === 0) assert.ok(!hasStrip && L.helpRows === 0, `${label}: helpers none, strips none`);
+    sc++;
+  }
+  assert.ok(sc > 200 && withStrip > 100 && twoRows > 10, `strip cases ran (${sc} layouts, ${withStrip} with strips, ${twoRows} with two rows)`);
+
+  // the 15-agent case (SC-002), both sizes: the measured room: two rows of 4 across, at most 7 heads and +K; faces stay over the ratchet; nothing scrolls
+  for (const [W, H] of SIZES.slice(0, 2)) {
+    const m = withHelpers(15, 4, (i) => [1, 2, 3, 6, 10][i % 5]);
+    const L = realLayout(m, { w: W, h: H }, META);
+    assert.ok(!L.scroll && L.helpRows === 2, `15 agents with helpers at ${W}: two rows, no scroll`);
+    assert.ok(L.faceH >= FACE_FLOOR - 1e-9, `15 agents with helpers at ${W}: face ${L.faceH}`);
+    assert.deepStrictEqual(stripProblems(L, `15@${W}`, m), []);
+    const ds = L.zones.flatMap((z) => z.desks.filter((d) => d.strip));
+    assert.strictEqual(ds.length, 15, 'a strip on each of the 15 desks');
+    for (const d of ds) {
+      const k = helpersOf(m, d.id);
+      assert.ok(d.strip!.cols >= 4, `15@${W}: ${d.strip!.cols} heads across`);
+      assert.strictEqual(d.strip!.shown, placesFor(d.strip!.w, 2, k), `15@${W}: shown of ${k}`);
+      if (k === 10 && d.strip!.cols === 4) assert.ok(d.strip!.shown === 7, `15@${W}: the narrowest slot (4 across) shows 7 heads and +3 (${d.strip!.shown} of ${k})`);
+      if (k <= 3) assert.strictEqual(d.strip!.shown, k, `15@${W}: ${k} helpers all show`);
+    }
+    const strip = ds[0].strip!;
+    assert.ok(slipAvoid(L).some((r) => r.x === strip.x && r.y === strip.y && r.w === strip.w && r.h === strip.h), `FR-310: slipAvoid carries the strip boxes (${W})`);
+  }
+
+  // the fallback (FR-308's last step): too many desks, the plate keeps +N and dots, and a test records it
+  {
+    const m = withHelpers(40, 8, () => 2), L = realLayout(m, { w: 1440, h: 848 }, META);
+    assert.strictEqual(L.helpRows, 0, '40 agents scroll: no strips, the plate keeps its +N and dots');
+    assert.ok(L.zones.every((z) => z.desks.every((d) => !d.strip)), 'no strip box in the fallback');
+    const narrow = realLayout(withHelpers(15, 4, () => 2), { w: 1440 - 470, h: 848 }, META);
+    assert.ok(narrow.zones.every((z) => z.desks.every((d) => !d.strip)) || stripProblems(narrow, 'narrow').length === 0, 'chat open: strips or the fallback, never an overlap');
+  }
+
+  // the fallback at 15 agents (FR-308's last step), recorded: in 5 folders at 1280x748 the desks keep a 32.8 px face without strips, and the strips' 34 px a row would push them under the 28 px floor, so the
+  // plates keep +N and dots (the default simulator scene at 1280x800: pictures `097-real-15-1280x800`); the same agents in 4 folders, or at 1440x848, draw heads
+  {
+    const five = withHelpers(15, 5, (i) => 1 + (i % 3)), four = withHelpers(15, 4, (i) => 1 + (i % 3));
+    const L5 = realLayout(five, { w: 1280, h: 748 }, META), L4 = realLayout(four, { w: 1280, h: 748 }, META), L5w = realLayout(five, { w: 1440, h: 848 }, META);
+    assert.strictEqual(L5.helpRows, 0, '15 agents in 5 folders at 1280x748: no room for strips, the plates keep +N');
+    assert.ok(!L5.scroll && L5.faceH >= FACE_FLOOR - 1e-9 && L5.zones.every((z) => z.desks.every((d) => !d.strip)), 'the fallback keeps the office whole: no scroll, faces over the ratchet, no strip box');
+    assert.ok((L4.helpRows || 0) >= 1 && (L5w.helpRows || 0) >= 1, 'the same agents in 4 folders, or at 1440x848, draw heads');
+  }
+
+  // FR-308's guards, pinned (each has a mutant: the guard removed makes the case fail)
+  {
+    // `room`: a slot narrower than one head + the plate's margins (4 agents in one row of a 200 px floor: a 28 px plate) draws no strip
+    const m = withHelpers(4, 1, () => 2), L = realLayout(m, { w: 200, h: 848 }, META);
+    assert.ok(!L.scroll && L.zones[0].desks[0].plate.w < HEAD, 'the case has a slot under one head wide');
+    assert.strictEqual(L.helpRows, 0, 'a slot under one head wide: no strip, the plate keeps +N');
+    assert.ok(L.zones.every((z) => z.desks.every((d) => !d.strip)), 'no strip box in a slot under one head wide');
+    // `HELP_KEEP`: 15 agents in 3 folders at 1440x848 keep one row, because two rows would cost the desks more than 5 % of u (and the face would go under the ratchet)
+    const three = realLayout(withHelpers(15, 3, () => 3), { w: 1440, h: 848 }, META);
+    assert.strictEqual(three.helpRows, 1, '15 agents in 3 folders: one row (two would cost over 5 % of u)');
+    assert.ok(three.faceH >= 28 - 1e-9 && three.faceH < 31.5, `one row keeps the face (${three.faceH}) at 31: two rows would put it under 28`);
+    // 4 folders: two rows cost nothing like that (the width binds), so two rows are kept
+    assert.strictEqual(realLayout(withHelpers(15, 4, () => 3), { w: 1440, h: 848 }, META).helpRows, 2, '15 agents in 4 folders: two rows');
+    // the chat open at 15 (the office is 470 px narrower): the office scrolls even without helpers, so no strip is drawn
+    const chat = realLayout(withHelpers(15, 4, () => 3), { w: 970, h: 848 }, META);
+    assert.ok(chat.scroll && chat.helpRows === 0, 'chat open at 15 agents: the office scrolls, no strip (the plate keeps +N)');
+  }
+
+  // the measured numbers of the spec (FR-308), pinned: 15 agents in 4 folders, helpers on every desk, one pass of the scratch run kept as a test
+  for (const [W, H, face, slot] of [[1440, 848, 36.0, 159], [1280, 748, 31.8, 139]] as [number, number, number, number][]) {
+    const L = realLayout(withHelpers(15, 4, () => 3), { w: W, h: H }, META);
+    const narrow = Math.min(...L.zones.flatMap((z) => z.desks.map((d) => d.strip!.w)));
+    assert.ok(Math.abs(L.faceH - face) < 0.1, `15 agents, ${W}: face ${L.faceH} is the measured ${face}`);
+    assert.ok(Math.abs(narrow - slot) < 1, `15 agents, ${W}: narrowest strip ${narrow} px is the measured ${slot}`);
+    assert.strictEqual(Math.floor((narrow + 4) / 34), 4, `15 agents, ${W}: 4 heads across in the narrowest strip`);
+  }
+  // face floor (FR-307) with a mutant: a crop that is too wide for its face fails the same predicate
+  {
+    const faceOk = (crop: (s: { w: number; h: number; headTop: number; bodyH: number }) => { x: number; y: number; s: number }): boolean => Object.values(META.seat).every((seat) => (seat.bodyH * FACE_U / crop(seat).s) * HEAD >= HELP_FACE_MIN - 0.01);
+    assert.ok(faceOk(headCrop), 'headCrop keeps every face at the floor');
+    assert.ok(!faceOk((seat) => ({ ...headCrop(seat), s: Math.min(seat.w, seat.h) })), 'mutant: a crop of the whole picture puts the face under the floor (caught)');
+  }
+
+  // a status change moves no box (FR-015): the same helpers with other states give the same strips
+  {
+    const a = withHelpers(15, 4, () => 2), b = withHelpers(15, 4, () => 2);
+    b.folders.forEach((fo) => fo.agents.forEach((x, i) => { x.state = (['waiting', 'error', 'done', 'working'] as RealState[])[i % 4]; }));
+    const La = realLayout(a, { w: 1440, h: 848 }, META), Lb = realLayout(b, { w: 1440, h: 848 }, META);
+    const byId = (L: Layout): Record<string, unknown> => Object.fromEntries(L.zones.flatMap((z) => z.desks.map((d) => [d.id, d.strip && { w: d.strip.w, h: d.strip.h, rows: d.strip.rows, shown: d.strip.shown }])));
+    assert.deepStrictEqual(byId(La), byId(Lb), 'FR-015: a status change leaves every strip as it was');
+    assert.strictEqual(La.helpRows, Lb.helpRows);
+    assert.strictEqual(La.u, Lb.u, 'FR-015: u does not move with a status');
+  }
+
+  // the pure pieces: the head's crop and the helper's person
+  for (const [id, seat] of Object.entries(META.seat)) {
+    const c = headCrop(seat);
+    assert.ok(c.x >= 0 && c.y >= 0 && c.x + c.s <= seat.w + 1e-6 && c.y + c.s <= seat.h + 1e-6, `headCrop of ${id} stays inside its picture`);
+    const faceShown = (seat.bodyH * FACE_U / c.s) * HEAD;
+    assert.ok(faceShown >= HELP_FACE_MIN - 0.01, `headCrop of ${id}: face ${faceShown.toFixed(1)} px at the floor ${HELP_FACE_MIN}`);
+    const faceTop = seat.headTop, faceBot = seat.headTop + seat.bodyH * FACE_U;
+    assert.ok(c.y <= faceTop + 0.5 && c.y + c.s >= faceBot - 0.5, `headCrop of ${id} holds the whole face (${c.y.toFixed(1)}..${(c.y + c.s).toFixed(1)} vs ${faceTop}..${faceBot.toFixed(1)})`);
+  }
+  for (let i = 0; i < 40; i++) {
+    const p = helperPerson('h' + i, PEOPLE[i % 15], PEOPLE);
+    assert.ok(p && PEOPLE.includes(p) && p !== PEOPLE[i % 15], 'a helper is never its parent');
+    assert.strictEqual(helperPerson('h' + i, PEOPLE[i % 15], PEOPLE), p, 'stable');
+  }
+  assert.strictEqual(helperPerson('x', 'a', ['a']), 'a', 'one person only: the parent');
+  assert.strictEqual(helperPerson('x', null, []), null);
+
+  // mutants (FR-311): the checks above must catch each of these
+  {
+    const m = withHelpers(15, 4, () => 10);
+    const L = realLayout(m, { w: 1440, h: 848 }, META);
+    const clone = (): Layout => JSON.parse(JSON.stringify(L));
+    const noHeight = clone(); for (const z of noHeight.zones) for (const d of z.desks) d.strip!.y -= 30; /* no height reserved: the strip sits on the plate */
+    assert.ok(stripProblems(noHeight, 'mutant', m).length > 0, 'mutant: no height reserved is caught');
+    const outside = clone(); for (const z of outside.zones) for (const d of z.desks) d.strip!.x += d.slot.w; /* the strip outside the slot */
+    assert.ok(stripProblems(outside, 'mutant', m).length > 0, 'mutant: the strip outside the slot is caught');
+    const wide = clone(); for (const z of wide.zones) for (const d of z.desks) d.strip!.cols += 2; /* more heads across than the strip holds */
+    assert.ok(stripProblems(wide, 'mutant', m).length > 0, 'mutant: heads that do not fit are caught');
+    const count = clone(); for (const z of count.zones) for (const d of z.desks) d.strip!.shown -= 1; /* a wrong overflow count */
+    assert.ok(stripProblems(count, 'mutant', m).length > 0, 'mutant: a wrong overflow count is caught');
+    const lap = clone(); { const ds = lap.zones.flatMap((z) => z.desks); ds[1].strip!.y = ds[0].strip!.y; ds[1].strip!.x = ds[0].strip!.x; ds[1].slot = { ...ds[0].slot }; } /* two strips on one place */
+    assert.ok(stripProblems(lap, 'mutant', m).length > 0, 'mutant: an overlap is caught');
+    const tall = clone(); for (const z of tall.zones) for (const d of z.desks) d.strip!.rows = 3; /* three rows in a two-row strip */
+    assert.ok(stripProblems(tall, 'mutant', m).length > 0, 'mutant: too many rows is caught');
+  }
+  console.log(`helper heads: ${sc} layouts, ${withStrip} with strips`);
 }
 console.log(`realoffice layout and lights tests passed (${cases} layouts, ${lcases} with a lounge, faces ${JSON.stringify(faces)})`);
 process.exitCode = 0;

@@ -74,6 +74,11 @@ module.exports = async (ctx) => {
     await H.load({ w, h, query: q(gate), ready: REAL, settle: false });
     const note = await pick(value, gate);
     assert.strictEqual(note, line, `${tag}: the line under Office layout: ${JSON.stringify(note)}`);
+    /* the choice loads its set's pack on this page (ensurePack adds set.js); wait until this page draws the set and its pictures, so no
+       request of this page is still in flight when the log is cleared and the page reloads (a reload aborts it: net::ERR_ABORTED, seen on
+       Windows CI only, where the script started after the clear) */
+    await must(`document.querySelector('#stage .ro .ro-plate')&&document.querySelector('#stage .ro').dataset.set===${jsLiteral(set)}`, `${tag}: the chosen set is drawn before the reload`);
+    await must(PICS, `${tag}: the chosen set's pictures loaded before the reload`);
     /* the simulator keeps the choice in memory only, so the new load is given it as a saved choice would give it (`characters=`, spec 077
        FR-070); the page starts on it, and the session's log from here holds every request of that load */
     await ses.clearCache(); /* a picture cached by the last case would not be requested (or logged) again */

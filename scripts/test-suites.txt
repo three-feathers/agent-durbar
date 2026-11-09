@@ -100,6 +100,8 @@ test:autopilot-copilot
 test:autopilot-claude
 test:autopilot-codex
 test:autopilot-reach
+test:autopilot-ipc
+test:autopilot-window
 test:elicit
 test:macos
 test:profiledir
@@ -198,10 +200,13 @@ test:claudecliunit
 test:rules
 test:weeklyretro
 test:docsscripts
+test:citypecheck
 test:worldmatrix
 test:worldzip
 test:worldpack
 test:world-packs
+test:worldstore
+test:worldipc
 test:consolemask
 test:redact-growth-tokens
 test:redact-growth-adversarial

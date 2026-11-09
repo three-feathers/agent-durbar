@@ -240,6 +240,15 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 - [x] T263 [US2] `check-office-ops`: a move adds no node churn [FR-186]
 - [x] T264 [US2] Pictures at 1440x900 and 1280x800 read and compressed; spec, plan, README and changelog fragment match [FR-349, Q30..Q33]
 
+## 2026-11-08: a desk's helpers as head figures (issue #1139, FR-306..FR-311; owner decision "1265 1", 2026-11-08 08:29 UTC; replaces PR #1265)
+
+- [x] T269 [US1] Owner decision recorded verbatim in the spec delta, tiles replaced by head figures with a status dot; spec, plan and tasks before any src change [FR-306..FR-311]
+- [x] T270 [US1] Engine, pure: `RealAgent.helpers`, the strip's reserved height, rows 2 else 1 else none, `strip` box, `slipAvoid`, `headCrop`, `helperPerson`. Test: `test:realoffice-layout` (heads fit, overflow count, no overlap, faces at the floor), mutants [FR-306..FR-308, FR-310, FR-311]
+- [x] T271 [US1] Wiring: `app.js` `orderedHelpers` and `realSubs`; `realoffice.js` draws the strip (`h:` keys, a node per helper kept by id, `+K`); CSS in `realoffice.css` only [FR-306, FR-307, FR-309]
+- [x] T272 [US1] Driver `scripts/check-097-helpers.js` (in `ui-suite`): 15 agents with helpers, both sizes, Photo office, cave and arcade, heads, dot colour, name only in the accessible name, `+K`, `statusNodes`; mutants [FR-311]
+- [x] T273 [US1] Pictures at both sizes (Photo, cave) and a 2x crop to the owner before merge, compressed under 300 KB; the owner looked (2026-11-08 09:30 UTC) and chose "fine as is" [FR-307]
+- [x] T274 [US1] Docs: changelog fragment, `docs/features.md`, `docs/feature-inventory.md`, the spec's tags [FR-306..FR-311]
+
 ## Phase 3b: every Characters crew in Real office (issue #1154, part of #1147; delta 2026-11-08)
 
 - [x] T235 [US5] Spec delta: what art each Characters value has, the fallback and why no crew portrait on the plate, the art list, Q12..Q14 [FR-335, FR-336, FR-337]

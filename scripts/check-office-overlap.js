@@ -375,7 +375,10 @@ async function driver(ctx) {
   /* spec 077 FR-070: OFFICE_CHARACTERS=<value> (theme, minimalist, cheeky, prehistoric, pirate, monster, royal, rebels) puts who sits at the desks in the address too; checked like the theme */
   const wantChars = /^(theme|minimalist|cheeky|prehistoric|pirate|monster|royal|rebels)$/.test(process.env.OFFICE_CHARACTERS || '') ? process.env.OFFICE_CHARACTERS : '';
   if (process.env.OFFICE_CHARACTERS && !wantChars) throw new Error('OFFICE_CHARACTERS must be theme, minimalist, cheeky, prehistoric, pirate, monster, royal or rebels');
-  const themeQuery = (wantTheme ? '&theme=' + encodeURIComponent(wantTheme) : '') + (userTheme ? '&usertheme=' + encodeURIComponent(JSON.stringify(userTheme)) : '') + (wantChars ? '&characters=' + wantChars : '');
+  /* spec 102 T226 (FR-267): OFFICE_WORLD=retro (with OFFICE_VIEW=real) draws the arcade, the one world behind a flag today, in the address like the theme; only a listed value */
+  const wantWorld = process.env.OFFICE_WORLD === 'retro' ? 'retro' : '';
+  if (process.env.OFFICE_WORLD && !wantWorld) throw new Error('OFFICE_WORLD must be retro');
+  const themeQuery = (wantWorld ? '&worldflags=' + wantWorld + '&world=' + wantWorld : '') + (wantTheme ? '&theme=' + encodeURIComponent(wantTheme) : '') + (userTheme ? '&usertheme=' + encodeURIComponent(JSON.stringify(userTheme)) : '') + (wantChars ? '&characters=' + wantChars : '');
   if (wantChars) console.log('check:office: characters ' + wantChars);
   let motionShown = false;
   if (wantTheme) console.log('check:office: theme ' + wantTheme + (userTheme ? ' (user theme from ' + path.basename(process.env.OFFICE_USER_THEME) + ')' : ''));
@@ -469,14 +472,18 @@ async function driver(ctx) {
      outside the floor; no text under 10.5px; no page overflow; no office scroll at the 15-agent scale; the desk face size (SC-002, a ratchet: 30.5px,
      the 40px target is a KNOWN GAP); every plate, sign and chip readable (4.5:1) at the room's dimmest (70%) and full ambient (FR-050); and flat
      mode requests no Real office file (SC-004). */
+  /* spec 102 T276: the arcade is measured only in the Real office view (T226's arcade layout job); the flag itself is T275's */
+  if (wantWorld && process.env.OFFICE_VIEW !== 'real') throw new Error('OFFICE_WORLD=' + wantWorld + ' needs OFFICE_VIEW=real: the flat office would be measured, not the arcade');
   if (process.env.OFFICE_VIEW === 'real') {
     await load('sim=15&simfreeze=1', 1440, 900);
     const flatFiles = await ctx.js(`performance.getEntriesByType('resource').map(e=>e.name).filter(n=>/realoffice|\\/shared\\/(lights|realoffice-layout)\\.js/.test(n))`);
     total++;
     if (flatFiles.length || (await ctx.js(`!!window.DurbarRealOffice||!!document.querySelector('.ro')`))) { failed++; console.log('FAIL real: flat mode loaded Real office files: ' + flatFiles.join(', ')); }
-    const realCheck = (amb) => {
+    const realCheck = (amb, want) => {
       const P = [], ro = document.querySelector('#stage .ro'), L = window.__durbarSimUi.realLayout();
       if (!ro || !L) return { problems: ['no Real office drawn'], info: {} };
+      /* T276: a run that asked for the arcade must have drawn it, or it would pass on the Photo office */
+      if (want && (ro.dataset.world !== want || document.documentElement.dataset.world !== want)) return { problems: ['the ' + want + ' world was asked for but not drawn (office world: ' + (ro.dataset.world || 'none') + ', page: ' + (document.documentElement.dataset.world || 'none') + ')'], info: {} };
       if (amb != null) ro.style.setProperty('--ro-amb', String(1 - amb));
       const o = ro.getBoundingClientRect(), fl = document.getElementById('floor').getBoundingClientRect();
       const R = (e) => { const b = e.getBoundingClientRect(); return { x: b.left, y: b.top, r: b.right, b: b.bottom }; };
@@ -575,7 +582,7 @@ async function driver(ctx) {
       if (!(await H.until(`window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()`, 15000))) { total++; failed++; console.log(`FAIL ${tag}: the office did not settle after the drafts were seeded`); continue; }
       await stable(tag + ' with drafts');
       for (const [step, amb] of [['closed', 0.7], ['closed', 1]]) {
-        const res = await ctx.js(`(${realCheck.toString()})(${amb})`);
+        const res = await ctx.js(`(${realCheck.toString()})(${amb},${jsLiteral(wantWorld)})`);
         if (!res.info.drafts) res.problems.push('no Draft tag was in the checked layout');
         total++;
         if (sim === 15 && res.info.scroll) res.problems.push('the office scrolls at the 15-agent scale');

@@ -136,9 +136,33 @@
     };
   }
 
+  /* FR-198: a row's answer buttons take no press until RISE_GUARD_MS after the panel opened or the row moved under the pointer. opened(t) starts the panel's
+     guard; place(list, t) takes [{key, top, under}] (key = agent and request, top = the row's place, under = the pointer is on it now) and returns key -> armAt
+     (a row already there keeps its time; a new or moved row under the pointer gets t + ms); armed(armAt, t) says whether a press is allowed. */
+  const RISE_GUARD_MS=400;
+  function createRiseGuard(o){
+    const ms=(o&&o.ms)||RISE_GUARD_MS; let openAt=-Infinity; const rows=new Map();
+    return {
+      opened(t){openAt=t;rows.clear();},
+      close(){rows.clear();},
+      place(list,t){
+        const next=new Map();
+        for(const r of list||[]){const prev=rows.get(r.key);let at=Math.max(openAt+ms,prev?prev.armAt:0);const moved=!prev||Math.abs(prev.top-r.top)>=1;
+          if(moved&&r.under)at=Math.max(at,t+ms);next.set(r.key,{top:r.top,armAt:at});}
+        rows.clear();next.forEach((v,k)=>rows.set(k,v));
+        const out=new Map();next.forEach((v,k)=>out.set(k,v.armAt));return out;
+      },
+      armed(at,t){return t>=at;},
+    };
+  }
+
+  /* FR-197: what a press does. found: the agent's live pending card with the id the row was painted for exists; holds: that card still holds the very button the row
+     copied; disabled: that button is on its way. Only 'send' sends; the agent's next card is never used in place of a missing one. */
+  function pressVerdict(s){const x=s||{};if(!x.found||!x.holds)return 'stale';return x.disabled?'waiting':'send';}
+
   /* The one place the page schedules the next look at a pending notification: the delay comes from the notifier's own clock, so a wall clock
      is never subtracted from a monotonic one. Returns the timer, or 0 when nothing is pending. */
   function scheduleDue(notifier,set,fire){const w=notifier.dueIn();return w==null?0:set(fire,w);}
 
-  return {APP,COALESCE_MS,THROTTLE_MS,BODY_MAX,titleFor,clip,waitLabel,sortOldestFirst,createNotifier,createArrivals,createDoorGate,scheduleDue};
+  return {APP,COALESCE_MS,THROTTLE_MS,BODY_MAX,titleFor,clip,waitLabel,sortOldestFirst,createNotifier,createArrivals,createDoorGate,createRiseGuard,pressVerdict,RISE_GUARD_MS,scheduleDue};
 })());
