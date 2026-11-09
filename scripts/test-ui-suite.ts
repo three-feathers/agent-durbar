@@ -116,11 +116,43 @@ const jobsOf = (y: string): Record<string, string> => {
 const ciJobs = jobsOf(ci);
 // FR-104: no separate "What changed" job, and no job waits for another one in a pull request
 assert.ok(!ciJobs.changes && !/needs:/.test(ci), 'ci.yml: no changes job and no needs (each job decides what to run itself)');
-for (const j of ['build-test', 'package-smoke', 'office-check']) assert.ok(ciJobs[j] && ciJobs[j].includes('bash .github/scripts/ci-changes.sh') && ciJobs[j].includes('fetch-depth: 2'), `ci.yml ${j} works out what changed inline`);
-const changes = fs.readFileSync(path.join(ROOT, '.github', 'scripts', 'ci-changes.sh'), 'utf8');
-assert.ok(changes.includes('git diff --name-only HEAD^1 HEAD') && /"\$\{EVENT_NAME:-\}" != "pull_request"/.test(changes), 'ci-changes.sh: diff of the test merge commit on PRs, everything on other events');
+for (const j of ['build-test', 'office-check']) assert.ok(ciJobs[j] && ciJobs[j].includes('bash .github/scripts/ci-changes.sh') && ciJobs[j].includes('fetch-depth: 2'), `ci.yml ${j} works out what changed inline`);
+const changesSh = fs.readFileSync(path.join(ROOT, '.github', 'scripts', 'ci-changes.sh'), 'utf8');
+const changes = fs.readFileSync(path.join(ROOT, '.github', 'scripts', 'ci-changes.js'), 'utf8');
+assert.ok(changesSh.includes("git show 'HEAD^1:.github/scripts/ci-changes.js'") && changesSh.includes('node "$tmp/.github/scripts/ci-changes.js" --root .'), 'ci-changes.sh runs the base copy of the one decision, ci-changes.js (FR-191; test:cichanges runs it)');
+assert.ok(changes.includes("['diff', '--name-only', '--no-renames', '-z', 'HEAD^1', 'HEAD']") && changes.includes("env.EVENT_NAME !== 'pull_request'"), 'ci-changes.js: diff of the test merge commit on PRs, everything on other events (test:cichanges runs it)');
+// FR-191: on a pull request the office job's steps (office layout and, since FR-194, package smoke) follow `ui`; Build and test keeps `code`
+assert.ok(!ciJobs['office-check'].includes("outputs.code == 'true'") && ciJobs['office-check'].includes("steps.changes.outputs.ui == 'true'"), 'ci.yml office-check runs its steps only when ui=true');
+assert.ok(ciJobs['build-test'].includes("steps.changes.outputs.code == 'true'") && !ciJobs['build-test'].includes('outputs.ui'), 'ci.yml Build and test still runs on every code change');
 // the required check names of the main ruleset still report on every pull request
-for (const name of ['name: Build and test (${{ matrix.os }})', 'name: Package smoke (unpacked Linux app)', 'name: Office layout check (xvfb)']) assert.ok(ci.includes(name), `ci.yml keeps the required check ${name}`);
+for (const name of ['name: Build and test (${{ matrix.os }})', 'name: Office layout check (xvfb)']) assert.ok(ci.includes(name), `ci.yml keeps the required check ${name}`);
+// FR-194: packaging is a step of the office job (the old required check "Package smoke (unpacked Linux app)" is gone), runs even when
+// the layout steps failed, and the job fails when either part failed and says which
+assert.ok(!ciJobs['package-smoke'] && ci.split('name: Package smoke (unpacked Linux app)').length === 2, 'ci.yml: no separate Package smoke job, one step of that name');
+const officeJob = ciJobs['office-check'];
+const B = `steps\\.build\\.outcome == 'success'`;
+const packageRe = new RegExp(`- name: Package smoke \\(unpacked Linux app\\)\\r?\\n\\s+if: \\$\\{\\{ !cancelled\\(\\) && steps\\.changes\\.outputs\\.ui == 'true' && ${B} \\}\\}\\r?\\n\\s+id: package\\r?\\n\\s+run: npm run pack:dir:prebuilt`);
+const layoutRe = new RegExp(`if: \\$\\{\\{ !cancelled\\(\\) && steps\\.changes\\.outputs\\.ui == 'true' && ${B} \\}\\}\\r?\\n\\s+id: layout`);
+const geometryRe = new RegExp(`id: geometry\\r?\\n\\s+if: [^\\r\\n]*&& ${B}\\r?\\n`);
+assert.ok(packageRe.test(officeJob), 'FR-194: the office job packs the app after the layout steps with the wrapped ${{ !cancelled() && ... }} (not always(): a cancel stops the run), only on a successful build');
+assert.ok(layoutRe.test(officeJob), 'FR-194: the layout runs after a failed geometry step (wrapped !cancelled()), only on a successful build');
+assert.ok(geometryRe.test(officeJob), 'FR-194: geometry runs only on a successful build');
+// the dots in steps.build.outcome are literal: the same job with any other character there must fail each guard
+const dotMutant = officeJob.split('steps.build.outcome').join('steps_build_outcome');
+assert.ok(dotMutant !== officeJob && [packageRe, layoutRe, geometryRe].every((re) => !re.test(dotMutant)), 'FR-194: a literal . in steps.build.outcome (an escaped dot, not any character)');
+assert.ok(/id: build\r?\n\s+if: steps\.changes\.outputs\.ui == 'true'\r?\n\s+run: npm run build/.test(officeJob) && /id: install\r?\n\s+if: steps\.changes\.outputs\.ui == 'true'\r?\n\s+uses: \.\/\.github\/actions\/npm-ci/.test(officeJob), 'FR-194: install and build have ids so the summary can name them');
+assert.strictEqual((officeJob.match(/if: .*always\(\)/g) || []).length, 1, 'FR-194: always() only on the summary step');
+assert.ok(officeJob.indexOf('npm run pack:dir:prebuilt') > officeJob.indexOf('node scripts/check-parallel.js') && officeJob.split('npm run build').length === 2, 'FR-194: one build, then layout, then packaging');
+assert.ok(/for part in INSTALL BUILD GEOMETRY LAYOUT PACKAGE/.test(officeJob) && ['install', 'build', 'geometry', 'layout', 'package'].every((x) => officeJob.includes(`steps.${x}.outcome`)) && officeJob.includes('GITHUB_STEP_SUMMARY') && /if: always\(\)\r?\n\s+shell: bash/.test(officeJob), 'FR-194: the last step fails the job and names the failed part (install, build, geometry, layout, package) from the step outcomes');
+// an `if:` that starts with `!` must be wrapped in ${{ }}: unquoted, YAML reads `!cancelled()` as a tag and the whole workflow does not load
+for (const f of fs.readdirSync(WF).filter((x) => /\.ya?ml$/.test(x))) {
+  const txt = fs.readFileSync(path.join(WF, f), 'utf8');
+  assert.ok(!/^\s*(- )?if:\s*!/m.test(txt), `${f}: an if: starting with ! is not wrapped in \${{ }} (invalid YAML)`);
+  // a real parser when one is installed (js-yaml is only a transitive dependency, so it is optional here; the guard above is the floor)
+  let yaml: { load: (s: string) => unknown } | undefined;
+  try { yaml = require('js-yaml'); } catch { yaml = undefined; }
+  if (yaml) assert.doesNotThrow(() => (yaml as { load: (s: string) => unknown }).load(txt), `${f} is not valid YAML`);
+}
 const bt = ciJobs['build-test'];
 for (const os of ['ubuntu-latest', 'windows-latest', 'macos-latest']) assert.ok(bt.includes(`- os: ${os}`), `Build and test reports for ${os}`);
 // FR-106: macOS is a report-only Linux job on pull requests and merge queue entries, the real build and test on every other event
@@ -136,6 +168,16 @@ for (const step of ['check-theme-geometry.js', 'check-office-overlap.js', 'check
 assert.ok(!/part:/.test(wf) && !/OFFICE_SHARD/.test(wf), 'one job per OS: the office layout runs whole, no parts');
 assert.ok(wf.includes(`os: \${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest","macos-latest","windows-latest"]' || '["ubuntu-latest","windows-latest"]') }}`), 'macOS UI checks only nightly and by hand');
 assert.ok(/^ {2}schedule:/m.test(wf), 'ui-platforms.yml runs nightly');
+// FR-191: a cheap decision job; the shards need it and run only on ui=true; "UI suite complete" passes when ui=false, fails when the decision failed
+{
+  const uj = jobsOf(wf);
+  assert.ok(uj.changes && uj.changes.includes('bash .github/scripts/ci-changes.sh') && uj.changes.includes('fetch-depth: 2') && uj.changes.includes('ui: ${{ steps.changes.outputs.ui }}'), 'ui-platforms.yml: a changes job outputs ui');
+  assert.ok(uj.ui.includes('needs: changes') && uj.ui.includes("if: ${{ !github.event.pull_request.draft && needs.changes.outputs.ui == 'true' }}"), 'the UI shards run only when ui=true');
+  const c = uj.complete;
+  assert.ok(c.includes('needs: [changes, ui]') && c.includes('CHANGES: ${{ needs.changes.result }}') && c.includes('UI_NEEDED: ${{ needs.changes.outputs.ui }}'), 'UI suite complete reads the decision');
+  assert.ok(c.indexOf('test "$CHANGES" = "success"') > 0 && c.indexOf('test "$CHANGES" = "success"') < c.indexOf('if [ "$UI_NEEDED" = "false" ]') && c.includes('test "$RESULT" = "success"'), 'a failed decision fails; ui=false passes; otherwise every shard must pass');
+  for (const p of ["'.github/scripts/ci-changes.*'", "'.github/actions/npm-ci/**'", "'tsconfig.json'", "'build/**'"]) assert.ok(wf.split(p).length === 3, `ui-platforms.yml prefilters ${p} on pull requests and pushes`);
+}
 assert.ok(wf.includes("OFFICE_HERE: ${{ (matrix.os != 'ubuntu-latest' || (github.event_name != 'pull_request' && github.event_name != 'push'))"), 'Linux skips the office layout here only for the events where ci.yml runs it');
 // FR-098: every workflow with a required check also runs on merge queue entries
 const sk = fs.readFileSync(path.join(WF, 'spec-kit.yml'), 'utf8');
@@ -158,6 +200,12 @@ for (const p of ['src/main/**', 'src/adapters/**', 'src/shared/**', 'src/preload
 assert.ok(!mpPaths.some((p) => p.startsWith('src/renderer') || p.startsWith('docs') || p.startsWith('specs')), 'macos-pr.yml: UI, docs and specs do not start macOS');
 assert.ok(/runs-on: macos-latest/.test(mp) && mp.includes('npm test') && !/pull_request_target|secrets\./.test(mp) && !/^ {2}push:|schedule:/m.test(mp), 'macos-pr.yml: real macOS npm test on pull requests only, no secrets');
 assert.ok(!/name: Build and test/.test(mp), 'macos-pr.yml does not reuse a required check name');
+{ // FR-191: the macOS job's first step decides; every later step runs only on macos=true (docs and a version-only bump skip them)
+  const mj = jobsOf(mp)['macos-test'];
+  const steps = mj.slice(mj.indexOf('steps:')).split(/\n {6}- /).slice(1);
+  assert.ok(mj.includes('fetch-depth: 2') && steps[1].includes('id: changes') && steps[1].includes('bash .github/scripts/ci-changes.sh'), 'macos-pr.yml: checkout, then the decision');
+  assert.ok(steps.length >= 6 && steps.slice(2).every((st) => st.startsWith("if: steps.changes.outputs.macos == 'true'")), 'macos-pr.yml: every step after the decision needs macos=true');
+}
 // FR-106: macOS runs on pull requests nowhere (installed app, packaged check and install check too) and nightly failures are reported
 for (const f of ['installed-app.yml', 'packaged-check.yml']) {
   const y = fs.readFileSync(path.join(WF, f), 'utf8');
@@ -382,9 +430,9 @@ async function shardMain(): Promise<void> {
       }
       const bare = await go(['--shard'], '2/3');
       assert.ok(bare.err, 'bare --shard is refused even when the env is set');
-      const empty = await go(['--only', DRIVERS[0].name, '--shard', '2/3']);
+      const empty = await go(['--only', DRIVERS[0].name, '--shard', '3/3']);
       assert.ok(empty.err && /selects no driver/.test(empty.err.message), 'an empty shard fails (--only narrowing)');
-      const many = await go([], `${DRIVERS.length + 1}/${DRIVERS.length + 1}`);
+      const many = await go([], `1/${DRIVERS.length + 1}`);
       assert.ok(many.err && /selects no driver/.test(many.err.message), 'an empty shard fails (more shards than drivers)');
       assert.deepStrictEqual((await go(['--list'], '9/9')).ran, [], '--list still works');
     } finally {
@@ -444,13 +492,31 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
 
 // ---- spec 008 FR-182 (issue 839): --shard i/n takes every n-th driver; n shards are disjoint and together hold every driver ----
 {
-  const { shard, DRIVERS } = require(SUITE) as { shard: (l: unknown[], s?: string) => unknown[]; DRIVERS: unknown[] };
-  for (const n of [1, 2, 3, 5]) {
-    const parts = Array.from({ length: n }, (_, i) => shard(DRIVERS, `${i + 1}/${n}`));
+  const { shard, DRIVERS } = require(SUITE) as { shard: (l: unknown[], s?: string, t?: Record<string, number>) => unknown[]; DRIVERS: unknown[] };
+  const times = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'ui-suite-timings.json'), 'utf8')) as Record<string, number>;
+  const names = (DRIVERS as Array<{ name: string }>).map((d) => d.name);
+  assert.ok(Object.keys(times).filter((k) => !k.startsWith('_')).every((k) => names.includes(k)), 'the timing file names only drivers that exist (refresh it when one is renamed)');
+  const wt = (d: { name: string }): number => times[d.name] ?? 0;
+  for (const n of [1, 2, 3, 4, 5]) {
+    const parts = Array.from({ length: n }, (_, i) => shard(DRIVERS, `${i + 1}/${n}`) as Array<{ name: string }>);
     const all = parts.flat();
     assert.strictEqual(all.length, DRIVERS.length, `${n} shards hold every driver once`);
     assert.strictEqual(new Set(all).size, DRIVERS.length, `${n} shards are disjoint`);
-    assert.ok(Math.max(...parts.map((p: unknown[]) => p.length)) - Math.min(...parts.map((p: unknown[]) => p.length)) <= 1, `${n} shards differ by one driver at most`);
+    assert.deepStrictEqual([...all].sort((a, b) => (DRIVERS as unknown[]).indexOf(a) - (DRIVERS as unknown[]).indexOf(b)), DRIVERS, `${n} shards: the union is the full list`);
+    parts.forEach((p) => assert.deepStrictEqual(p, (DRIVERS as Array<{ name: string }>).filter((d) => p.includes(d)), 'a shard keeps the suite order'));
+    assert.deepStrictEqual(parts, Array.from({ length: n }, (_, i) => shard(DRIVERS, `${i + 1}/${n}`)), `${n} shards: the split is deterministic`);
+    if (n > 1) {
+      const secs = parts.map((p) => p.reduce((a, d) => a + wt(d), 0));
+      const total = secs.reduce((a, b) => a + b, 0), top = Math.max(...Object.values(times).filter((v) => typeof v === 'number'));
+      assert.ok(Math.max(...secs) <= total / n + top, `${n} shards: the slowest shard is within one driver of the mean (${secs.join(', ')})`);
+    }
+  }
+  // the unknown driver counts as the median, and a list that is not the suite's still splits into disjoint parts
+  {
+    const odd = [{ name: 'zz-new-a' }, { name: 'zz-new-b' }, { name: 'zz-new-c' }];
+    const got = [1, 2].map((i) => shard(odd, `${i}/2`) as unknown[]);
+    assert.strictEqual(got.flat().length, 3, 'drivers without a timing are all placed once');
+    assert.deepStrictEqual(shard(DRIVERS, '1/2', {}), shard(DRIVERS, '1/2', {}), 'no timing file: still deterministic');
   }
   assert.deepStrictEqual(shard(DRIVERS, undefined), DRIVERS, 'no shard: the whole list');
   for (const bad of ['0/3', '4/3', '3', 'a/b', '1/0']) assert.throws(() => shard(DRIVERS, bad), /--shard wants i\/n/, `"${bad}" is refused`);
@@ -463,21 +529,23 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
     assert.ok(m, 'the matrix has a shard list');
     const list = m[1].split(',').map((x) => Number(x.trim()));
     const n = list.length;
-    assert.ok(n >= 2, 'macOS is sharded');
+    assert.strictEqual(n, 4, 'Linux and Windows run 4 shards');
     assert.deepStrictEqual(list, Array.from({ length: n }, (_, i) => i + 1), 'the matrix shard list is exactly 1..n');
-    const env = text.match(/^\s+UI_SUITE_SHARD:.*format\('\{0\}\/(\d+)', matrix\.shard\)/m);
-    assert.ok(env, 'UI_SUITE_SHARD is format("{0}/N", matrix.shard)');
-    assert.strictEqual(Number(env[1]), n, 'the UI_SUITE_SHARD denominator equals the number of shards');
-    const nm = text.match(/^\s+name: UI checks \(.*format\(' \{0\}\/(\d+)', matrix\.shard\)/m);
-    assert.ok(nm, 'the job name shows i/N');
-    assert.strictEqual(Number(nm[1]), n, 'the job name denominator equals the number of shards');
-    const art = text.match(/name: ui-shots-.*format\('-\{0\}', matrix\.shard\)/);
-    assert.ok(art, 'artifacts are named per shard');
-    for (const os of ['ubuntu-latest', 'windows-latest']) {
-      const ex = [...text.matchAll(new RegExp(`-\\s*\\{\\s*os:\\s*${os},\\s*shard:\\s*(\\d+)\\s*\\}`, 'g'))].map((x) => Number(x[1]));
-      assert.deepStrictEqual(ex, Array.from({ length: n - 1 }, (_, i) => i + 2), `${os} excludes shards 2..${n}`);
+    assert.ok(/UI_SUITE_SHARD: \$\{\{ format\('\{0\}\/\{1\}', matrix\.shard, matrix\.os == 'macos-latest' && 3 \|\| 4\) \}\}/.test(text), 'UI_SUITE_SHARD is i/n with n = 3 on macOS, 4 elsewhere');
+    assert.ok(/name: UI shard \(\$\{\{ matrix\.os \}\} \$\{\{ matrix\.shard \}\}\/\$\{\{ matrix\.os == 'macos-latest' && 3 \|\| 4 \}\}\)/.test(text), 'the job name shows i/n with the same denominators');
+    assert.ok(/name: ui-shots-\$\{\{ matrix\.os \}\}-\$\{\{ matrix\.shard \}\}/.test(text), 'artifacts are named per shard');
+    const ex = [...text.matchAll(/-\s*\{\s*os:\s*([\w-]+),\s*shard:\s*(\d+)\s*\}/g)].map((x) => `${x[1]}:${x[2]}`);
+    assert.deepStrictEqual(ex, ['macos-latest:4'], 'only macOS skips shard 4 (it runs 3)');
+    // FR-183: one aggregate job, named UI suite complete, needs the shards, fails unless all passed, and runs even when a shard failed
+    {
+      const at = text.indexOf('  complete:');
+      assert.ok(at > 0, 'the aggregate job exists');
+      const job = text.slice(at);
+      assert.ok(job.includes('name: UI suite complete') && /^\s+needs: \[changes, ui\]\s*$/m.test(job), 'UI suite complete needs the decision and the shard job (FR-191)');
+      assert.ok(/if: \$\{\{ always\(\) && !github\.event\.pull_request\.draft \}\}/.test(job), 'it runs after a failed shard, and skips drafts');
+      assert.ok(/RESULT: \$\{\{ needs\.ui\.result \}\}/.test(job) && job.includes('test "$RESULT" = "success"'), 'it passes only when every shard succeeded');
+      assert.ok(/permissions: \{\}/.test(job) && !/\$\{\{ github\.event\.(pull_request|issue|head_commit)\.(title|body)/.test(wf), 'no permissions, no PR text in the workflow');
     }
-    assert.strictEqual([...text.matchAll(/-\s*\{\s*os:/g)].length, 2 * (n - 1), 'no other excludes');
     // review on #1257: a step's whole text, from its "- name:" line to the next step
     const step = (title: string): string => {
       const at = text.indexOf(`- name: ${title}`);

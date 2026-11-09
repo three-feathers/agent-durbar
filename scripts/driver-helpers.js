@@ -180,7 +180,7 @@ function helpers(ctx) {
   const clearToasts = () => js(`document.querySelectorAll('#toasts .toast').forEach(t=>t.remove())`);
   /**
    * Size the window, load the renderer with the simulator query and wait until it is ready (default: 15 desks) and has stopped changing.
-   * `query` is added to sim=15 and simfreeze=1 (an undefined value removes one); `ready` is a page expression ('fit': the stage has laid out); `settle: false` skips the
+   * `query` is added to sim=15 and simfreeze=1 (an undefined value removes one); `fastVisits: true` adds `simvisits=fast` (spec 008 FR-190: the lobby's own timers 10x shorter, simulator only; for a driver that never looks at lobby visits or walking and takes no picture of them); `ready` is a page expression ('fit': the stage has laid out); `settle: false` skips the
    * settling wait; `focus` focuses the page afterwards.
    */
   const load = async (o = {}) => {
@@ -188,18 +188,21 @@ function helpers(ctx) {
     // spec 001 FR-084: a pinned simulator clock (main's `simclock`, from DURBAR_SIM_CLOCK) stays pinned across the driver's reloads
     let clock = null;
     try { clock = new URL(wc().getURL()).searchParams.get('simclock'); } catch { clock = null; }
-    const query = { sim: '15', simfreeze: '1', ...(clock && /^\d{1,15}$/.test(clock) ? { simclock: clock } : {}), ...(o.query || {}) };
+    const query = { sim: '15', simfreeze: '1', ...(clock && /^\d{1,15}$/.test(clock) ? { simclock: clock } : {}), ...(o.fastVisits ? { simvisits: 'fast' } : {}), ...(o.query || {}) };
     for (const k of Object.keys(query)) if (query[k] === undefined) delete query[k];
     await ctx.win.loadFile(o.index || INDEX, { query });
     // spec 092: with `simfloors=1` (the 15 agents spread over three floors on) the office shows one floor, so the default "15 desks" would only be met by its timeout
     const ready = o.ready === 'fit' ? `document.getElementById('stage')&&document.getElementById('stage').dataset.fit` : o.ready || `document.querySelectorAll('#stage .desk[data-id]').length>=${query.simfloors === '1' ? 1 : 15}`;
-    await ctx.waitFor(ready, o.readyMs || 15000);
+    if (!(await ctx.waitFor(ready, o.readyMs || 15000))) console.log(`[waits] load: the ready expression never held in ${o.readyMs || 15000} ms (pass \`ready\` for this page): ${String(ready).replace(/\s+/g, ' ').slice(0, 120)}`); // spec 008 FR-190: a timeout here costs the whole wait
+    // spec 008 FR-190: a frozen simulator says when it is steady (every script replayed, no lobby visit waiting to start or end, the frame drawn): wait for that
+    // instead of letting `settle` find it by sampling 200 ms apart (a load used to spend 0.5-1 s there). `settle` still runs after it, so nothing is skipped.
+    if (query.simfreeze === '1' && !o.index && o.settle !== false) await w.until(`!!window.__durbarSimReplayed&&!!window.__durbarSimUi&&window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()&&!document.querySelector('.scene-out')`, 4000);
     if (o.settle !== false) await w.settle();
     if (o.focus) wc().focus();
   };
   /**
    * A screenshot of the page as it is now: `prep` first ('toasts' removes the toasts on screen, 'calm' moves the pointer off the controls (unless `keepHover`) and hides them with a style (`keepActions`, `blur` as in calm),
-   * 'mouse' moves the pointer off the controls, 'none'), then (`settle: true`) the page settles, then `delay` ms for paint (default 150). `file` is the full path.
+   * 'mouse' moves the pointer off the controls, 'none'; a `file` ending .jpg is written as a JPEG, `quality` 1..100, default 60), then (`settle: true`) the page settles, then `delay` ms for paint (default 150). `file` is the full path.
    */
   const shot = async (file, o = {}) => {
     const prep = o.prep || 'none';
@@ -209,7 +212,7 @@ function helpers(ctx) {
     if (o.settle) await w.settle();
     if (prep !== 'calm' && !o.walking) await w.settleWalk(); // FR-085 (calm already waited); `walking: true` keeps a figure mid-walk on purpose
     await ctx.sleep(o.delay === undefined ? 150 : o.delay);
-    await ctx.shot(file); // spec 101: under `npm run shots:docs` main's ctx.shot closes the macOS room for every picture (src/main/docshot.ts)
+    await ctx.shot(file, { quality: o.quality }); // spec 101: under `npm run shots:docs` main's ctx.shot closes the macOS room for every picture (src/main/docshot.ts); a `.jpg` file is written as a JPEG by that same capture (quality 1..100, default 60), for a photo-heavy picture the PNG palette guard (compress-shots) refuses
     if (o.tag) console.log(`[${o.tag}] saved`, o.what !== undefined ? o.what : path.basename(file));
   };
   /**

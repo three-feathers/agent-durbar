@@ -7,7 +7,7 @@ import { McpContextTracker } from '../src/main/mcpcontextop';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { CLAUDE_ENTRYPOINT, ClaudeAdapter, PRE_TOOL_USE_HOOK, budgetText, claudeArgs, claudeForwardsSubagentText, CLAUDE_FORWARD_SUBAGENT_MIN_VERSION, handoffArgs, oneShotArgs, parseHandoffOutput, claudeMdPrompt, claudeModelFlag, claudeModelOptions, cliLaunchArgs, mcpConfigOf, permissionLikeOf, userContentOf } from '../src/adapters/claude';
+import { CLAUDE_ENTRYPOINT, ClaudeAdapter, PRE_TOOL_USE_HOOK, budgetText, claudeArgs, claudeForwardsSubagentText, CLAUDE_FORWARD_SUBAGENT_MIN_VERSION, handoffArgs, oneShotArgs, parseHandoffOutput, claudeMdNodeIo, claudeMdPrompt, claudeModelFlag, claudeModelOptions, cliLaunchArgs, mcpConfigOf, permissionLikeOf, userContentOf } from '../src/adapters/claude';
 import { createCliTransport } from '../src/adapters/claudeTransport';
 import type { AgentEvent } from '../src/adapters/types';
 import { FakeClaudeChild, fakeSpawn, SANDBOX_HOST_OK } from './fakes/claude-cli';
@@ -55,7 +55,7 @@ const okTurn = (c: FakeClaudeChild): void => {
 function make(opts: { turn?: (c: FakeClaudeChild, text: string) => void | Promise<void>; exists?: (id: string) => boolean; claudeMd?: string; claudePath?: string | undefined } = {}) {
   const sp = fakeSpawn();
   sp.next = scripted(opts.turn ?? okTurn);
-  const ad = new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK,
+  const ad = new ClaudeAdapter({ autopilot: { wired: false }, sandboxFacts: SANDBOX_HOST_OK,
     claudePath: async () => ('claudePath' in opts ? opts.claudePath : '/usr/local/bin/claude'),
     makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }),
     sessionExists: opts.exists ?? (() => false),
@@ -74,7 +74,7 @@ async function main(): Promise<void> {
   for (const [version, want] of [['2.1.210', false], [undefined, false], ['2.1.211', true]] as Array<[string | undefined, boolean]>) {
     const sp = fakeSpawn();
     sp.next = scripted(okTurn);
-    const ad = new ClaudeAdapter({ sandboxFacts: async () => ({ platform: 'linux', version, haveBwrap: true, haveSocat: true }), claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
+    const ad = new ClaudeAdapter({ autopilot: { wired: false }, sandboxFacts: async () => ({ platform: 'linux', version, haveBwrap: true, haveSocat: true }), claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
     const ev: AgentEvent[] = [];
     ad.onEvent((e) => ev.push(e));
     const sid = await ad.start({ workspace: WS, permissionMode: 'allow' }); // Allow all: no sandbox floor, so an old CLI still launches
@@ -177,7 +177,8 @@ async function main(): Promise<void> {
       '/r/docs/x.md': 'Doc x.',
       '/outside.md': 'SECRET',
     };
-    const io = { readFile: (p: string) => files[p], realpath: (p: string) => p };
+    const plain = { realpath: (p: string) => p, lstat: () => ({ isSymbolicLink: () => false }), readlink: () => undefined };
+    const io = { ...plain, readFile: (p: string) => files[p] };
     const out = claudeMdPrompt('/r', io, path.posix)!;
     assert.match(out, /^The folder's CLAUDE\.md/);
     assert.match(out, /Agents file\./);
@@ -186,9 +187,115 @@ async function main(): Promise<void> {
     assert.ok(out.includes('@../outside.md') && out.includes('@https://e.com') && out.includes('@~/home.md'), 'refused imports stay as text');
     assert.ok(out.includes('@AGENTS.md in a fence stays'), 'code fences are not expanded');
     assert.strictEqual(out.match(/Rules\./g)!.length, 1, 'a cycle is read once');
-    assert.strictEqual(claudeMdPrompt('/none', { readFile: () => undefined, realpath: (p) => p }, path.posix), undefined);
-    const big = { readFile: (p: string) => (p === '/b/CLAUDE.md' ? 'x'.repeat(200_000) : undefined), realpath: (p: string) => p };
+    assert.strictEqual(claudeMdPrompt('/none', { ...plain, readFile: () => undefined }, path.posix), undefined);
+    const big = { ...plain, readFile: (p: string) => (p === '/b/CLAUDE.md' ? 'x'.repeat(200_000) : undefined) };
     assert.ok(claudeMdPrompt('/b', big, path.posix)!.length < 70_000, 'bounded');
+  }
+  {
+    // Spec 012 FR-177: imports are checked against the folder by their text before any file access, then again once resolved.
+    // `links`: link path -> target as written; `real`: what realpath gives; `fail`: realpath fails.
+    const recIo = (files: Record<string, string>, o: { links?: Record<string, string>; real?: Record<string, string>; fail?: string[] } = {}) => {
+      const calls: string[] = [];
+      return {
+        calls,
+        realpath: (p: string) => (calls.push(`realpath ${p}`), o.fail?.includes(p) ? undefined : (o.real?.[p] ?? p)),
+        readFile: (p: string) => (calls.push(`readFile ${p}`), files[p]),
+        lstat: (p: string) => (calls.push(`lstat ${p}`), { isSymbolicLink: () => o.links?.[p] !== undefined }),
+        readlink: (p: string) => (calls.push(`readlink ${p}`), o.links?.[p]),
+      };
+    };
+    const followed = (calls: string[]) => calls.filter((c) => /^(realpath|readFile) /.test(c));
+    const refs = String.raw`@\\host\share\x.md @//host/x @C:\x.md @..\..\x.md @../../x.md @/etc/passwd @.\AGENTS.md:s`;
+    {
+      const io = recIo({ 'C:\\r\\CLAUDE.md': `Top. ${refs} @AGENTS.md`, 'C:\\r\\AGENTS.md': 'Agents.', 'C:\\x.md': 'OUT', '\\\\host\\share\\x.md': 'OUT', 'C:\\etc\\passwd': 'OUT' });
+      const out = claudeMdPrompt('C:\\r', io, path.win32)!;
+      assert.match(out, /Agents\./, 'FR-177 win32: a normal import still works');
+      assert.ok(!out.includes('OUT') && out.includes(refs), 'FR-177 win32: refs outside the folder stay as text');
+      assert.deepStrictEqual(followed(io.calls), ['realpath C:\\r', 'realpath C:\\r\\CLAUDE.md', 'readFile C:\\r\\CLAUDE.md', 'realpath C:\\r\\AGENTS.md', 'readFile C:\\r\\AGENTS.md'], 'FR-177 win32: realpath and readFile are never asked about a ref outside the folder');
+    }
+    {
+      const io = recIo({ '/r/CLAUDE.md': `Top. ${refs} @AGENTS.md`, '/r/AGENTS.md': 'Agents.', '/x.md': 'OUT', '/host/x': 'OUT', '/etc/passwd': 'OUT' });
+      const out = claudeMdPrompt('/r', io, path.posix)!;
+      assert.match(out, /Agents\./, 'FR-177 posix: a normal import still works');
+      assert.ok(!out.includes('OUT'), 'FR-177 posix: refs outside the folder are not read');
+      for (const c of io.calls) assert.ok(/^\w+ \/r(\/|$)/.test(c), `FR-177 posix: io is asked only about paths inside the folder: ${c}`);
+      for (const bad of ['/x.md', '/host/x', '/etc/passwd']) assert.ok(!io.calls.some((c) => c.endsWith(` ${bad}`)), `FR-177 posix: never asked about ${bad}`);
+    }
+    {
+      // A folder whose own path starts like the ref: the ref stays text even though it would resolve inside.
+      const px = recIo({ '/host/CLAUDE.md': 'Top. @//host/x', '/host/x': 'REMOTE' });
+      assert.ok(!claudeMdPrompt('/host', px, path.posix)!.includes('REMOTE') && !px.calls.includes('realpath /host/x'), 'FR-177 posix: a // ref is not imported');
+      const wx = recIo({ '\\\\host\\share\\CLAUDE.md': 'Top. @\\\\host\\share\\x.md', '\\\\host\\share\\x.md': 'REMOTE' });
+      assert.ok(!claudeMdPrompt('\\\\host\\share', wx, path.win32)!.includes('REMOTE') && !wx.calls.includes('realpath \\\\host\\share\\x.md'), 'FR-177 win32: a \\\\ ref is not imported');
+    }
+    {
+      const io = recIo({ '/r/CLAUDE.md': 'Top. @link.md @docs/x.md', '/outside.md': 'SECRET', '/r/docs/x.md': 'Doc x.' }, { real: { '/r/link.md': '/outside.md' }, fail: ['/r/docs/x.md'] });
+      const out = claudeMdPrompt('/r', io, path.posix)!;
+      assert.ok(!out.includes('SECRET') && !io.calls.includes('readFile /outside.md'), 'FR-177: a path that resolves outside is refused after realpath');
+      assert.ok(!out.includes('Doc x.') && !io.calls.includes('readFile /r/docs/x.md'), 'FR-177: a realpath failure skips the import');
+      const none = recIo({ '/r/CLAUDE.md': 'Top.' }, { fail: ['/r'] });
+      assert.strictEqual(claudeMdPrompt('/r', none, path.posix), undefined, 'FR-177: a folder that cannot be resolved gives nothing');
+      assert.deepStrictEqual(none.calls, ['realpath /r'], 'FR-177: nothing is read when the folder cannot be resolved');
+    }
+    {
+      // Links inside the folder are checked by their text before they are followed.
+      const w = recIo({ 'C:\\r\\CLAUDE.md': 'Top. @l.md @d.md @s.md', '\\\\host\\s\\x': 'REMOTE', 'C:\\r\\docs\\x.md': 'Doc x.', 'C:\\r\\x.md:s': 'STREAM' }, { links: { 'C:\\r\\l.md': '\\\\host\\s\\x', 'C:\\r\\d.md': 'C:\\r\\docs\\x.md', 'C:\\r\\s.md': 'C:\\r\\x.md:s' }, real: { 'C:\\r\\d.md': 'C:\\r\\docs\\x.md' } });
+      const wo = claudeMdPrompt('C:\\r', w, path.win32)!;
+      assert.ok(!wo.includes('REMOTE') && !w.calls.some((c) => c.includes('host')), 'FR-177 win32: a link to a \\\\host path is never followed');
+      assert.ok(!wo.includes('STREAM') && !followed(w.calls).some((c) => c.includes('s.md') || c.includes(':s')), 'FR-177 win32: a link to a stream is never followed');
+      assert.match(wo, /Doc x\./, 'FR-177 win32: a link to a drive path inside the folder still works');
+      const x = recIo({ '/r/CLAUDE.md': 'Top. @l.md', '/etc/x': 'OUT' }, { links: { '/r/l.md': '/etc/x' } });
+      assert.ok(!claudeMdPrompt('/r', x, path.posix)!.includes('OUT') && !followed(x.calls).some((c) => c.includes('/etc') || c.includes('/r/l.md')), 'FR-177 posix: a link outside is never passed to realpath or readFile');
+      const docs = { '/r/docs/x.md': 'Doc x.' };
+      const one = recIo({ ...docs, '/r/CLAUDE.md': 'Top. @in.md' }, { links: { '/r/in.md': 'docs/x.md' }, real: { '/r/in.md': '/r/docs/x.md' } });
+      assert.match(claudeMdPrompt('/r', one, path.posix)!, /Doc x\./, 'FR-177 posix: a link inside the folder still works');
+      const two = recIo({ ...docs, '/r/CLAUDE.md': 'Top. @a.md' }, { links: { '/r/a.md': 'b.md', '/r/b.md': 'docs/x.md' }, real: { '/r/a.md': '/r/docs/x.md' } });
+      assert.match(claudeMdPrompt('/r', two, path.posix)!, /Doc x\./, 'FR-177 posix: a chain of two links still works');
+      const dl = recIo({ ...docs, '/r/CLAUDE.md': 'Top. @dl/x.md' }, { links: { '/r/dl': 'docs' }, real: { '/r/dl/x.md': '/r/docs/x.md' } });
+      assert.match(claudeMdPrompt('/r', dl, path.posix)!, /Doc x\./, 'FR-177 posix: a linked folder inside the folder still works');
+      const dlOut = recIo({ '/r/CLAUDE.md': 'Top. @dl/x.md', '/etc/x.md': 'OUT' }, { links: { '/r/dl': '../../etc' } });
+      assert.ok(!claudeMdPrompt('/r', dlOut, path.posix)!.includes('OUT') && !followed(dlOut.calls).some((c) => c.includes('/etc') || c.includes('/r/dl')), 'FR-177 posix: a linked folder outside is never followed');
+      const loop = recIo({ '/r/CLAUDE.md': 'Top. @l1.md' }, { links: { '/r/l1.md': 'l2.md', '/r/l2.md': 'l1.md' } });
+      assert.ok(!claudeMdPrompt('/r', loop, path.posix)!.includes('<!-- imported'), 'FR-177: a link loop is skipped');
+      assert.strictEqual(loop.calls.filter((c) => c.startsWith('readlink')).length, 40, 'FR-177: a link loop stops at 40 links');
+      assert.ok(!followed(loop.calls).some((c) => c.includes('/r/l')), 'FR-177: a link loop is never passed to realpath');
+      const colon = recIo({ '/r/CLAUDE.md': 'Top. @docs/a:b.md', '/r/docs/a:b.md': 'Colon file.' });
+      assert.match(claudeMdPrompt('/r', colon, path.posix)!, /Colon file\./, 'FR-177 posix: a : in a file name still imports');
+    }
+    {
+      const dir = tmpDir('durbar-claudemd-');
+      assert.strictEqual(claudeMdNodeIo.realpath(path.join(dir, 'missing.md')), undefined, 'FR-177: the node realpath gives undefined on failure');
+      assert.strictEqual(claudeMdNodeIo.realpath(dir), fs.realpathSync(dir));
+      if (process.platform !== 'win32') {
+        // The node io on a real folder: a link inside is followed, a link outside is not.
+        const out = tmpDir('durbar-claudemd-out-');
+        fs.writeFileSync(path.join(out, 'x.md'), 'OUTSIDE');
+        fs.mkdirSync(path.join(dir, 'docs'));
+        fs.writeFileSync(path.join(dir, 'docs', 'x.md'), 'Inside doc.');
+        fs.symlinkSync(path.join(out, 'x.md'), path.join(dir, 'out.md'));
+        fs.symlinkSync(path.join('docs', 'x.md'), path.join(dir, 'in.md'));
+        fs.writeFileSync(path.join(dir, 'CLAUDE.md'), 'Top. @out.md @in.md');
+        const real = claudeMdPrompt(dir)!;
+        assert.ok(real.includes('Inside doc.') && !real.includes('OUTSIDE'), 'FR-177: the node io follows a link inside and not one outside');
+        assert.strictEqual(claudeMdNodeIo.readlink(path.join(dir, 'in.md')), path.join('docs', 'x.md'));
+        assert.ok(claudeMdNodeIo.lstat(path.join(dir, 'in.md'))!.isSymbolicLink() && claudeMdNodeIo.lstat(path.join(dir, 'nope')) === undefined);
+        // `in -> .` then `evil -> in/../etc/s.md`: by text that is `<folder>/etc/s.md`, for the system it is the parent's `etc/s.md`.
+        const base = tmpDir('durbar-claudemd-dots-');
+        const r = path.join(base, 'r');
+        fs.mkdirSync(r);
+        fs.mkdirSync(path.join(base, 'etc'));
+        fs.writeFileSync(path.join(base, 'etc', 's.md'), 'OUTSIDE');
+        fs.symlinkSync('.', path.join(r, 'in'));
+        fs.symlinkSync('in/../etc/s.md', path.join(r, 'evil')); // literal: path.join would drop the ..
+        fs.writeFileSync(path.join(r, 'CLAUDE.md'), 'Top. @evil');
+        assert.ok(!claudeMdPrompt(r)!.includes('OUTSIDE'), 'FR-177: a link through in -> . and .. is refused (no file at its text path)');
+        fs.mkdirSync(path.join(r, 'etc'));
+        fs.writeFileSync(path.join(r, 'etc', 's.md'), 'INSIDE');
+        const dots = claudeMdPrompt(r)!;
+        assert.ok(!dots.includes('OUTSIDE'), 'FR-177: a link through in -> . and .. never reads the file outside');
+        assert.ok(dots.includes('INSIDE'), 'FR-177: claudeMdNodeIo.realpath resolves links by their text, as the walk does (not realpathSync.native)');
+      }
+    }
   }
   {
     assert.strictEqual(userContentOf({ text: 'hi' }), 'hi');
@@ -468,7 +575,7 @@ async function main(): Promise<void> {
     assert.strictEqual(answers.p1.behavior, 'allow');
     await ad.stop(sid);
   }
-  assert.deepStrictEqual(new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => undefined }).setPermMode('nope', 'allow'), { pending: 0 });
+  assert.deepStrictEqual(new ClaudeAdapter({ autopilot: { wired: false }, sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => undefined }).setPermMode('nope', 'allow'), { pending: 0 });
   // ---- model list (FR-118): an initialize-only probe, no prompt, closed, cached; a failure is an empty list ----
   {
     const sp = fakeSpawn();
@@ -480,7 +587,7 @@ async function main(): Promise<void> {
           setTimeout(() => c.send({ type: 'control_response', response: { subtype: 'success', request_id: o.request_id, response: { models: [{ value: 'sonnet', displayName: 'Sonnet', supportedEffortLevels: ['high'] }], account: { email: 'never@read' } } } }), 0);
       };
     };
-    const ad = new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), env: () => ({}) });
+    const ad = new ClaudeAdapter({ autopilot: { wired: false }, sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), env: () => ({}) });
     const list = await ad.listModelOptions();
     assert.deepStrictEqual(list, [{ id: 'sonnet', name: 'Sonnet', efforts: ['high'], disabled: false }]);
     assert.strictEqual(sp.calls[0].args[sp.calls[0].args.indexOf('--permission-mode') + 1], 'dontAsk', 'the probe runs in Read-only');
@@ -489,11 +596,11 @@ async function main(): Promise<void> {
     await until('probe closed', () => (sp.children[0].ended || sp.children[0].killed.length ? true : undefined));
     await ad.listModelOptions();
     assert.strictEqual(probes, 1, 'cached');
-    const none = new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => undefined });
+    const none = new ClaudeAdapter({ autopilot: { wired: false }, sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => undefined });
     assert.deepStrictEqual(await none.listModelOptions(), [], 'no claude: empty list');
     const sp2 = fakeSpawn();
     sp2.next = (c) => { c.onWrite = () => setTimeout(() => c.exit(1, null), 0); };
-    const broken = new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp2.spawn, closeGraceMs: 10, killGraceMs: 10 }), env: () => ({}) });
+    const broken = new ClaudeAdapter({ autopilot: { wired: false }, sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp2.spawn, closeGraceMs: 10, killGraceMs: 10 }), env: () => ({}) });
     assert.deepStrictEqual(await broken.listModelOptions(), [], 'a CLI that exits: empty list, no throw');
     assert.strictEqual(ad.capabilities.models, true);
     assert.strictEqual(ad.capabilities.effort, true);
@@ -624,7 +731,7 @@ async function main(): Promise<void> {
         setTimeout(() => c.send({ type: 'control_response', response: { subtype: 'success', request_id: o.request_id, response } }), 0);
       };
     };
-    const ad = new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
+    const ad = new ClaudeAdapter({ autopilot: { wired: false }, sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
     const ev: AgentEvent[] = [];
     ad.onEvent((e) => ev.push(e));
     const mcp = { notes: { type: 'stdio', command: 'node', args: ['n.js'] }, web: { type: 'stdio', command: 'node', args: ['w.js'] } } as never;
@@ -677,7 +784,7 @@ async function main(): Promise<void> {
         setTimeout(() => c.send({ type: 'control_response', response: { subtype: 'success', request_id: o.request_id, response } }), 0);
       };
     };
-    const ad = new ClaudeAdapter({ mcpContextTimeoutMs: 40, sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
+    const ad = new ClaudeAdapter({ autopilot: { wired: false }, mcpContextTimeoutMs: 40, sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
     assert.deepStrictEqual([ad.capabilities.mcpRestart, ad.capabilities.mcpStart, ad.capabilities.mcpToggleApplies, typeof ad.restartMcpServer], [true, 'next-message', 'live', 'function']);
     const ev: AgentEvent[] = [];
     ad.onEvent((e) => ev.push(e));
@@ -748,13 +855,13 @@ async function main(): Promise<void> {
     await ad.stop(sid);
     assert.deepStrictEqual(await ad.mcpContext(sid), { servers: [], failed: true }, 'a stopped CLI is not started for it');
     // the SDK transport (dev opt-in) sends no mcp_reconnect: no Restart there (C2)
-    const sdk = new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK, sdkTransport: true, claudePath: async () => '/usr/bin/claude', sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) } as never);
+    const sdk = new ClaudeAdapter({ autopilot: { wired: false }, sandboxFacts: SANDBOX_HOST_OK, sdkTransport: true, claudePath: async () => '/usr/bin/claude', sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) } as never);
     assert.deepStrictEqual([sdk.capabilities.mcpRestart, typeof sdk.restartMcpServer], [undefined, 'undefined'], 'SDK transport: no restartMcpServer');
     assert.deepStrictEqual([sdk.capabilities.mcpTools, typeof sdk.listMcpTools], [undefined, 'undefined'], 'SDK transport: no listMcpTools (spec 069)');
     assert.deepStrictEqual([sdk.capabilities.mcpContext, typeof sdk.mcpContext], [undefined, 'undefined'], 'SDK transport: no mcpContext (spec 100)');
     // spec 069 FR-062: the launch carries the turned-off tools into --disallowedTools
     const sp2 = fakeSpawn();
-    const ad2 = new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp2.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
+    const ad2 = new ClaudeAdapter({ autopilot: { wired: false }, sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp2.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
     const sid2 = await ad2.start({ workspace: WS, quiet: true, disabledMcpTools: { notes: ['archive'] } });
     void ad2.send(sid2, { text: 'hi' });
     await until('launch', () => (sp2.calls.length ? true : undefined));
@@ -795,7 +902,7 @@ async function main(): Promise<void> {
         }, 0);
       };
     };
-    const ad = new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
+    const ad = new ClaudeAdapter({ autopilot: { wired: false }, sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
     const ev: AgentEvent[] = [];
     ad.onEvent((e) => ev.push(e));
     const sid = await ad.start({ workspace: WS, quiet: true });
@@ -840,7 +947,7 @@ async function main(): Promise<void> {
         }, 0);
       };
     };
-    const ad = new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
+    const ad = new ClaudeAdapter({ autopilot: { wired: false }, sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
     const ev: AgentEvent[] = [];
     ad.onEvent((e) => ev.push(e));
     type Row = { name: string; status: string };
@@ -901,7 +1008,7 @@ async function main(): Promise<void> {
         }, 0);
       };
     };
-    const ad = new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}), now: () => clock, signInTimeoutMs: 60 });
+    const ad = new ClaudeAdapter({ autopilot: { wired: false }, sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}), now: () => clock, signInTimeoutMs: 60 });
     const debug: string[] = [];
     ad.debug = (m) => debug.push(m);
     const ev: AgentEvent[] = [];
@@ -1015,7 +1122,7 @@ async function main(): Promise<void> {
           if (o.type === 'user') setTimeout(() => { c2.send({ type: 'system', subtype: 'init', session_id: 'x', cwd: WS, tools: [], mcp_servers: [] }); c2.send({ type: 'result', subtype: 'success', is_error: false }); }, 0);
         };
       };
-      const ad2 = new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp2.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
+      const ad2 = new ClaudeAdapter({ autopilot: { wired: false }, sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp2.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
       let idle2 = false;
       ad2.onEvent((e) => { if (e.type === 'status' && (e as { status: string }).status === 'idle') idle2 = true; });
       const s2 = await ad2.start({ workspace: WS, quiet: true });
@@ -1030,7 +1137,7 @@ async function main(): Promise<void> {
       await ad2.stop(s2);
     }
     // the SDK transport sends no mcp_authenticate: no Sign in members, the steps and the note stay (FR-180)
-    const sdk = new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK, sdkTransport: true, claudePath: async () => '/usr/bin/claude', sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) } as never);
+    const sdk = new ClaudeAdapter({ autopilot: { wired: false }, sandboxFacts: SANDBOX_HOST_OK, sdkTransport: true, claudePath: async () => '/usr/bin/claude', sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) } as never);
     assert.deepStrictEqual([sdk.capabilities.mcpSignIn, sdk.capabilities.mcpSignInRestart, typeof sdk.startMcpSignIn, typeof sdk.refreshMcpStatus, !!sdk.capabilities.mcpSignInSteps, !!sdk.capabilities.mcpSignInNote], [undefined, undefined, 'undefined', 'undefined', true, true]);
   }
 
@@ -1055,7 +1162,7 @@ async function main(): Promise<void> {
     fs.writeFileSync(path.join(ws, '.claude', 'agents', 'pirate.md'), '---\nname: pirate\ndescription: Arr\n---\nYou are a pirate.');
     const sp = fakeSpawn();
     sp.next = scripted(okTurn);
-    const ad = new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/bin/claude', configDir: cfg, makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
+    const ad = new ClaudeAdapter({ autopilot: { wired: false }, sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/bin/claude', configDir: cfg, makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => undefined, env: () => ({}) });
     const sid = await ad.start({ workspace: ws, quiet: true });
     assert.deepStrictEqual((await ad.listAgentProfiles(sid)).map((p) => [p.id, p.source]), [['pirate', 'repo']]);
     assert.strictEqual((await ad.selectAgentProfile(sid, 'pirate'))?.id, 'pirate');
@@ -1143,7 +1250,7 @@ async function main(): Promise<void> {
     const capped = claudeArgs({ mode: 'read-only', sessionId: 's', resume: true, maxBudgetUsd: 0.25 });
     assert.strictEqual(at(capped, '--max-budget-usd'), '0.25');
     assert.deepStrictEqual(capped.slice(-2), ['--resume', 's'], 'the session flag stays last');
-    assert.strictEqual(new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => undefined }).capabilities.capUnit, 'usd');
+    assert.strictEqual(new ClaudeAdapter({ autopilot: { wired: false }, sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => undefined }).capabilities.capUnit, 'usd');
 
     const costOf = (c: FakeClaudeChild): number => (c as unknown as { cost?: number }).cost ?? 0;
     const costTurn = (c: FakeClaudeChild, text: string): void => {
@@ -1222,7 +1329,7 @@ async function main(): Promise<void> {
     let reply = { code: 0 as number | null, stdout: JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: '## Goal\nShip it', total_cost_usd: 0.002 }) };
     const sp = fakeSpawn();
     sp.next = scripted(okTurn);
-    const ad = new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK,
+    const ad = new ClaudeAdapter({ autopilot: { wired: false }, sandboxFacts: SANDBOX_HOST_OK,
       claudePath: async () => '/usr/local/bin/claude',
       makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }),
       sessionExists: () => false, claudeMd: () => undefined, env: () => ({}),
@@ -1258,17 +1365,17 @@ async function main(): Promise<void> {
     assert.strictEqual(at('--setting-sources'), '');
     assert.strictEqual(at('--max-budget-usd'), '0.25');
     let seenCwd = '';
-    const ad = new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/local/bin/claude', env: () => ({}),
+    const ad = new ClaudeAdapter({ autopilot: { wired: false }, sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/local/bin/claude', env: () => ({}),
       runOnce: async (_f, _args, o) => { seenCwd = o.cwd; assert.deepStrictEqual(fs.readdirSync(o.cwd), [], 'an empty folder'); return { code: 0, stdout: JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: '{"name":"x"}', total_cost_usd: 0.003 }) }; } });
     assert.strictEqual(ad.capabilities.oneShot, true);
     assert.deepStrictEqual(await ad.generateText('p'), { text: '{"name":"x"}', costUsd: 0.003 });
     assert.ok(seenCwd && !fs.existsSync(seenCwd), 'the temp folder is removed');
-    const bad = new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/local/bin/claude', env: () => ({}), runOnce: async () => ({ code: 1, stdout: '' }) });
+    const bad = new ClaudeAdapter({ autopilot: { wired: false }, sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/local/bin/claude', env: () => ({}), runOnce: async () => ({ code: 1, stdout: '' }) });
     await assert.rejects(bad.generateText('p'), /no answer \(exit 1\)/);
     // spec 040 FR-024 (#903): a theme is data, not a summary: a 30 KB reply (and one of 100 KB) is not cut at the 8,000-character hand-off cap
     for (const size of [30_000, 100_000]) {
       const big = JSON.stringify({ art: 'a'.repeat(size) });
-      const bigAd = new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/local/bin/claude', env: () => ({}), runOnce: async () => ({ code: 0, stdout: JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: big }) }) });
+      const bigAd = new ClaudeAdapter({ autopilot: { wired: false }, sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => '/usr/local/bin/claude', env: () => ({}), runOnce: async () => ({ code: 0, stdout: JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: big }) }) });
       assert.strictEqual((await bigAd.generateText('p')).text, big, `a ${size}-character reply survives intact`);
     }
     assert.strictEqual(parseHandoffOutput(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'x'.repeat(30_000) })).summary.length, 8002, 'the hand-off summary keeps its 8,000-character cap');
@@ -1289,7 +1396,7 @@ async function main(): Promise<void> {
     const envs: NodeJS.ProcessEnv[] = [];
     const sp = fakeSpawn();
     sp.next = scripted(okTurn);
-    const ad = new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK,
+    const ad = new ClaudeAdapter({ autopilot: { wired: false }, sandboxFacts: SANDBOX_HOST_OK,
       claudePath: async () => '/usr/local/bin/claude',
       makeTransport: (x) => { envs.push(x.env); return createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }); },
       sessionExists: () => false,
@@ -1365,7 +1472,7 @@ async function main(): Promise<void> {
         base?.(o);
       };
     };
-    const ad = new ClaudeAdapter({ sandboxFacts: SANDBOX_HOST_OK,
+    const ad = new ClaudeAdapter({ autopilot: { wired: false }, sandboxFacts: SANDBOX_HOST_OK,
       claudePath: async () => '/usr/local/bin/claude',
       makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }),
       sessionExists: () => false, claudeMd: () => undefined, readImage: () => Buffer.from('img'), env: () => ({ PATH: '/usr/bin' }),

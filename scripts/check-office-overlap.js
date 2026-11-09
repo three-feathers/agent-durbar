@@ -376,7 +376,10 @@ async function driver(ctx) {
   /* spec 077 FR-070: OFFICE_CHARACTERS=<value> (theme, minimalist, cheeky, prehistoric, pirate, monster, royal, rebels) puts who sits at the desks in the address too; checked like the theme */
   const wantChars = /^(theme|minimalist|cheeky|prehistoric|pirate|monster|royal|rebels)$/.test(process.env.OFFICE_CHARACTERS || '') ? process.env.OFFICE_CHARACTERS : '';
   if (process.env.OFFICE_CHARACTERS && !wantChars) throw new Error('OFFICE_CHARACTERS must be theme, minimalist, cheeky, prehistoric, pirate, monster, royal or rebels');
-  const themeQuery = (wantTheme ? '&theme=' + encodeURIComponent(wantTheme) : '') + (userTheme ? '&usertheme=' + encodeURIComponent(JSON.stringify(userTheme)) : '') + (wantChars ? '&characters=' + wantChars : '');
+  /* spec 102 T226 (FR-267): OFFICE_WORLD=retro (with OFFICE_VIEW=real) draws the arcade, the one world behind a flag today, in the address like the theme; only a listed value */
+  const wantWorld = process.env.OFFICE_WORLD === 'retro' ? 'retro' : '';
+  if (process.env.OFFICE_WORLD && !wantWorld) throw new Error('OFFICE_WORLD must be retro');
+  const themeQuery = (wantWorld ? '&worldflags=' + wantWorld + '&world=' + wantWorld : '') + (wantTheme ? '&theme=' + encodeURIComponent(wantTheme) : '') + (userTheme ? '&usertheme=' + encodeURIComponent(JSON.stringify(userTheme)) : '') + (wantChars ? '&characters=' + wantChars : '');
   if (wantChars) console.log('check:office: characters ' + wantChars);
   let motionShown = false;
   if (wantTheme) console.log('check:office: theme ' + wantTheme + (userTheme ? ' (user theme from ' + path.basename(process.env.OFFICE_USER_THEME) + ')' : ''));
@@ -470,14 +473,18 @@ async function driver(ctx) {
      outside the floor; no text under 10.5px; no page overflow; no office scroll at the 15-agent scale; the desk face size (SC-002, a ratchet: 30.5px,
      the 40px target is a KNOWN GAP); every plate, sign and chip readable (4.5:1) at the room's dimmest (70%) and full ambient (FR-050); and flat
      mode requests no Real office file (SC-004). */
+  /* spec 102 T276: the arcade is measured only in the Real office view (T226's arcade layout job); the flag itself is T275's */
+  if (wantWorld && process.env.OFFICE_VIEW !== 'real') throw new Error('OFFICE_WORLD=' + wantWorld + ' needs OFFICE_VIEW=real: the flat office would be measured, not the arcade');
   if (process.env.OFFICE_VIEW === 'real') {
     await load('sim=15&simfreeze=1', 1440, 900);
     const flatFiles = await ctx.js(`performance.getEntriesByType('resource').map(e=>e.name).filter(n=>/realoffice|\\/shared\\/(lights|realoffice-layout)\\.js/.test(n))`);
     total++;
     if (flatFiles.length || (await ctx.js(`!!window.DurbarRealOffice||!!document.querySelector('.ro')`))) { failed++; console.log('FAIL real: flat mode loaded Real office files: ' + flatFiles.join(', ')); }
-    const realCheck = (amb) => {
+    const realCheck = (amb, want) => {
       const P = [], ro = document.querySelector('#stage .ro'), L = window.__durbarSimUi.realLayout();
       if (!ro || !L) return { problems: ['no Real office drawn'], info: {} };
+      /* T276: a run that asked for the arcade must have drawn it, or it would pass on the Photo office */
+      if (want && (ro.dataset.world !== want || document.documentElement.dataset.world !== want)) return { problems: ['the ' + want + ' world was asked for but not drawn (office world: ' + (ro.dataset.world || 'none') + ', page: ' + (document.documentElement.dataset.world || 'none') + ')'], info: {} };
       if (amb != null) ro.style.setProperty('--ro-amb', String(1 - amb));
       const o = ro.getBoundingClientRect(), fl = document.getElementById('floor').getBoundingClientRect();
       const R = (e) => { const b = e.getBoundingClientRect(); return { x: b.left, y: b.top, r: b.right, b: b.bottom }; };
@@ -487,6 +494,7 @@ async function driver(ctx) {
       document.querySelectorAll('#stage .ro-sign').forEach((e) => add('sign', e));
       document.querySelectorAll('#stage .ro-lplate').forEach((e) => add('placeplate', e));
       document.querySelectorAll('#stage .ro-chip').forEach((e) => add('chip', e));
+      document.querySelectorAll('#stage .ro-drafttag.on').forEach((e) => add('drafttag', e)); /* spec 097 FR-316 */
       document.querySelectorAll('#stage .ro-away').forEach((e) => add('away', e));
       document.querySelectorAll('#stage .ro-screen .ro-bezel').forEach((e) => add('screen', e));
       for (const z of L.zones) for (const d of z.desks) if (d.person) add('face', null, { x: o.left + d.person.vis.x, y: o.top + d.person.vis.y, r: o.left + d.person.vis.x + d.person.vis.w, b: o.top + d.person.vis.y + Math.min(d.person.vis.h, L.faceH * 1.2) });
@@ -530,7 +538,7 @@ async function driver(ctx) {
       const se = document.scrollingElement;
       if (se.scrollWidth > innerWidth + 1 || se.scrollHeight > innerHeight + 1) P.push('the page overflows');
       if (amb != null) ro.style.removeProperty('--ro-amb');
-      return { problems: P, info: { plates: document.querySelectorAll('#stage .ro-plate').length, face: L.faceH, u: L.u, scroll: L.scroll, minFont, minRatio } };
+      return { problems: P, info: { plates: document.querySelectorAll('#stage .ro-plate').length, face: L.faceH, u: L.u, scroll: L.scroll, minFont, minRatio, drafts: document.querySelectorAll('#stage .ro-drafttag.on').length } };
     };
     /* simrooms=1: one folder of 15, split over rows (its sign repeats); simrooms=solo: 15 folders, past the exhaustive search */
     for (const [sim, rooms] of [[3, ''], [12, ''], [15, ''], [15, '1'], [15, 'solo']]) for (const [w, h] of SIZES) {
@@ -546,9 +554,40 @@ async function driver(ctx) {
       if (process.env.OFFICE_ROOM_ORDER === 'reversed') { /* spec 097 FR-353: a saved room order (the folders reversed) is kept in the rows: the same checks, the same floors for the faces */
         await ctx.js(`(()=>{const U=window.__durbarSimUi,ps=[...document.querySelectorAll('#stage .ro-sign')].filter((s)=>s.querySelector('.ro-sc')).map((s)=>U.order.path('room:'+s.dataset.folder)).reverse();U.order.get().rooms=ps;U.render();return ps.length})()`);
       }
-      await stable(tag);
+      /* spec 097 FR-316 (issue #1149): unsent drafts on four desks (the narrowest plate also has a New reply tag, so both tags sit above it) and on a lounge seat when there is one: the Draft tag's box is checked against plates, tags, faces and screens at every size */
+      const order = await ctx.js(`[...document.querySelectorAll('#stage .ro-plate')].filter(p=>p.getClientRects().length).sort((a,b)=>a.getBoundingClientRect().width-b.getBoundingClientRect().width).map(p=>p.dataset.id)`);
+      const picks = order.slice(0, 4), lounge = await ctx.js(`(()=>{const l=window.__durbarSimUi.realLayout().lounge;return l&&l.desks.length?l.desks[0].id:null})()`);
+      const marks = { narrow: order[0] || null, rest: picks.length - 1, lounge };
+      console.log(`  ${tag}: drafts on ${picks.length} desks${lounge ? ' and the lounge seat ' + lounge : ' (no lounge row)'}, New reply on ${marks.narrow}`);
+      for (const id of lounge ? [...picks, lounge] : picks) {
+        const sel = `#stage .ro-plate[data-id="${id}"]`;
+        await ctx.js(`(document.querySelector(${jsLiteral(sel)})||{click(){}}).click()`);
+        if (!(await H.until(`document.body.classList.contains('panel-open')&&!!document.getElementById('msgInput')`, 8000))) continue;
+        await ctx.js(`(()=>{const m=document.getElementById('msgInput');m.value='half a prompt';m.dispatchEvent(new Event('input',{bubbles:true}));return 1})()`);
+        await ctx.js(`document.getElementById('backBtn').click()`);
+        await H.until(`!document.body.classList.contains('panel-open')&&!!document.querySelector('#stage .ro .ro-plate')`, 8000);
+      }
+      /* a New reply tag on the narrowest plate too (FR-238). unread.mark only sets the mark: nothing draws it, and an unread agent keeps its desk (spec 001 FR-173), so a lounge seat marked here moves to a desk at the NEXT render, which was the chat step's close (CI, Linux, 4 of 4 runs, and 4 of 6 on the Mac). Draw it now (paint) and wait for the tag and for the plates to stop moving, so the baseline below is taken with every seed applied. */
+      if (marks.narrow) {
+        await ctx.js(`window.__durbarSimUi.unread.mark(${jsLiteral(marks.narrow)})`);
+        await ctx.js(`window.__durbarSimUi.paint()`);
+        if (!(await H.until(`!!document.querySelector('#stage .ro-newtag.on[data-for]')&&window.__durbarSimUi.settleNow()`, 8000))) { total++; failed++; console.log(`FAIL ${tag}: no New reply tag showed on ${marks.narrow}`); }
+      }
+      const plateSig = `(async()=>{await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));return [...document.querySelectorAll('#stage .ro-plate')].map(e=>{const r=e.getBoundingClientRect();return e.dataset.id+'@'+Math.round(r.x)+','+Math.round(r.y)}).join(';')})()`;
+      for (let prevSig = null, end = Date.now() + 15000; ;) { /* the plates' own positions: stable() reads Open office's rooms and desks, none of which a Real office has */
+        const sig = await ctx.js(plateSig);
+        if (sig === prevSig) break;
+        if (Date.now() > end) throw new Error(`timed out after 15000 ms waiting for the plates to settle (${tag} with drafts)`);
+        prevSig = sig;
+        await sleep(50);
+      }
+      if (!(await H.until(`document.querySelectorAll('#stage .ro-drafttag.on').length>=${jsLiteral(Math.min(picks.length, 2))}`, 8000))) { total++; failed++; console.log(`FAIL ${tag}: no Draft tag showed for the drafted desks (${JSON.stringify(marks)})`); }
+      /* the seeding opened and closed chats, which takes wall-clock time: a visit that was waiting for its debounce or dwell starts or ends on its own and re-flows the office (CI, Linux, 4 of 4 runs). Seeds are all applied here; wait until nothing is about to start or end, then take the baseline. */
+      if (!(await H.until(`window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()`, 15000))) { total++; failed++; console.log(`FAIL ${tag}: the office did not settle after the drafts were seeded`); continue; }
+      await stable(tag + ' with drafts');
       for (const [step, amb] of [['closed', 0.7], ['closed', 1]]) {
-        const res = await ctx.js(`(${realCheck.toString()})(${amb})`);
+        const res = await ctx.js(`(${realCheck.toString()})(${amb},${jsLiteral(wantWorld)})`);
+        if (!res.info.drafts) res.problems.push('no Draft tag was in the checked layout');
         total++;
         if (sim === 15 && res.info.scroll) res.problems.push('the office scrolls at the 15-agent scale');
         if (sim === 15 && !rooms && res.info.face < 30.5) res.problems.push(`desk face ${res.info.face.toFixed(1)}px (ratchet 30.5px, lowered 2026-11-01 for a room that stays still; SC-002 target 40px is a KNOWN GAP)`);
@@ -557,9 +596,9 @@ async function driver(ctx) {
         console.log(`  ${tag}: face ${res.info.face ? res.info.face.toFixed(1) : '?'}px, u ${res.info.u ? res.info.u.toFixed(0) : '?'}, contrast >= ${res.info.minRatio ? res.info.minRatio.toFixed(2) : '?'}`);
       }
       if (shotsDir) await ctx.shot(path.join(shotsDir, `${prefix}-${tag.replace(/ /g, '-')}.png`));
-      /* chat open: the chat takes the window (spec 001: body.panel-open hides the office); the page must not overflow, and closing it draws the same office */
+      /* (a plate other than the one with the New reply tag: opening that chat reads the reply, and a read finished agent moves to the lounge) chat open: the chat takes the window (spec 001: body.panel-open hides the office); the page must not overflow, and closing it draws the same office */
       const before = await ctx.js(`[...document.querySelectorAll('#stage .ro-plate')].map(e=>{const r=e.getBoundingClientRect();return Math.round(r.x)+','+Math.round(r.y)}).join(';')`);
-      await ctx.js(`document.querySelector('#stage .ro-plate').click()`);
+      await ctx.js(`document.querySelector('#stage .ro-plate'+${jsLiteral(marks.narrow ? ':not([data-id="' + marks.narrow + '"])' : '')}).click()`);
       const open = await H.until(`document.body.classList.contains('panel-open')`, 8000);
       const of = await ctx.js(`(()=>{const se=document.scrollingElement;return se.scrollWidth>innerWidth+1||se.scrollHeight>innerHeight+1})()`);
       await ctx.js(`document.getElementById('backBtn').click()`);
