@@ -76,17 +76,19 @@ const set = (name: string, v: string | null): void => {
 type File = string | { filename: string; previous_filename: string };
 const LOCK = { lockfileVersion: 3, packages: { '': { dependencies: { x: '^1.0.0' } }, 'node_modules/x': { version: '1.0.1', resolved: 'https://registry.npmjs.org/x/-/x-1.0.1.tgz', integrity: 'sha512-AAAA' } } };
 const PKG = { name: 'prereview', scripts: { test: 'node test.js' }, dependencies: { x: '^1.0.0' } };
-const fixture = (o: { codeql?: string | null; checks?: boolean; files?: File[] | null; page2?: File[]; changed?: number; contents?: Record<string, unknown>; base?: Record<string, unknown>; author?: string; merge?: unknown[] | null; head?: unknown[] | null } = {}): void => {
+const fixture = (o: { codeql?: string | null; checks?: boolean; files?: File[] | null; page2?: File[]; changed?: number; contents?: Record<string, unknown>; base?: Record<string, unknown>; baseRef?: string; author?: string; merge?: unknown[] | null; head?: unknown[] | null } = {}): void => {
   const codeql = o.codeql === undefined ? 'skipping' : o.codeql;
   set('checks.txt', o.checks === false ? null : OTHER + (codeql === null ? '' : `CodeQL\t${codeql}\t0\thttps://x\n`));
   const files = o.files ?? ['scripts/prereview/package-lock.json', 'scripts/prereview/package.json'];
   const page = (l: File[]): string => JSON.stringify(l.map((f) => (typeof f === 'string' ? { filename: f } : f)));
   set('files.json', o.files === null ? null : page(files));
   set('files2.json', o.page2 ? page(o.page2) : null);
-  set('pull.json', JSON.stringify({ user: { login: o.author ?? 'dependabot[bot]' }, head: { sha: SHA, repo: { full_name: 'o/r' } }, base: { sha: BASE, repo: { full_name: 'o/r' } }, changed_files: o.changed ?? files.length + (o.page2 ?? []).length }));
+  set('pull.json', JSON.stringify({ user: { login: o.author ?? 'dependabot[bot]' }, head: { sha: SHA, repo: { full_name: 'o/r' } }, base: { sha: BASE, ref: o.baseRef ?? 'main', repo: { full_name: 'o/r' } }, changed_files: o.changed ?? files.length + (o.page2 ?? []).length }));
   fs.rmSync(path.join(fx, 'contents'), { recursive: true, force: true });
   fs.rmSync(path.join(fx, 'base'), { recursive: true, force: true });
-  for (const [f, v] of Object.entries(o.base ?? {})) {
+  // the base commit has the same dependency files as the default head, unless a case says otherwise (null: not on the base)
+  for (const [f, v] of Object.entries({ 'scripts/prereview/package-lock.json': LOCK, 'scripts/prereview/package.json': PKG, 'package-lock.json': LOCK, ...(o.base ?? {}) })) {
+    if (v === null) continue;
     fs.mkdirSync(path.dirname(path.join(fx, 'base', f)), { recursive: true });
     fs.writeFileSync(path.join(fx, 'base', f), JSON.stringify(v));
   }
@@ -162,12 +164,25 @@ const CASES: Record<string, Case> = {
   'dep-resolved: a lockfile entry resolved outside registry.npmjs.org': N({ contents: { 'scripts/prereview/package-lock.json': lock({ version: '1.0.0', resolved: 'https://evil.example/y-1.0.0.tgz' }) } }, refused),
   'dep-installscript-old: an install script the base commit already has': R({ contents: { 'scripts/prereview/package-lock.json': lock({ version: '1.0.1', resolved: 'https://registry.npmjs.org/y/-/y-1.0.1.tgz', hasInstallScript: true }) }, base: { 'scripts/prereview/package-lock.json': lock({ version: '1.0.0', resolved: 'https://registry.npmjs.org/y/-/y-1.0.0.tgz', hasInstallScript: true }) } }),
   'dep-installscript: a new dependency with an install script': N({ contents: { 'scripts/prereview/package-lock.json': lock({ version: '1.0.0', resolved: 'https://registry.npmjs.org/y/-/y-1.0.0.tgz', hasInstallScript: true }) } }, refused),
-  'dep-lifecycle: a preinstall, install, postinstall or prepare script': (g, l) => {
-    for (const k of ['preinstall', 'install', 'postinstall', 'prepare']) {
-      fixture({ contents: { 'scripts/prereview/package.json': { ...PKG, scripts: { [k]: 'node x.js' } } } });
-      notReady(g, `${l}: ${k}`, refused);
+  'dep-scripts-same: a package.json whose scripts match the base commit': R({ files: ['scripts/prereview/package.json'] }),
+  'dep-scripts: any change to package.json scripts against the base commit': (g, l) => {
+    for (const scripts of [{ test: 'node test.js', prepublish: 'node x.js' }, { test: 'node test.js', preprepare: 'node x.js' }, { test: 'node test.js', postprepare: 'node x.js' }, { test: 'node evil.js' }, {}, { test: 'node test.js', postinstall: 'node x.js' }]) {
+      fixture({ contents: { 'scripts/prereview/package.json': { ...PKG, scripts } } });
+      notReady(g, `${l}: ${JSON.stringify(scripts)}`, refused);
+    }
+    fixture({ files: ['scripts/tool/package.json'], contents: { 'scripts/tool/package.json': PKG }, base: { 'scripts/tool/package.json': null } });
+    notReady(g, `${l}: a new package.json with scripts`, refused);
+  },
+  'dep-lockv1: a lockfileVersion 1 lockfile (dependencies map, packages present)': N({ contents: { 'scripts/prereview/package-lock.json': { ...LOCK, lockfileVersion: 1, dependencies: { y: { version: '1.0.0', resolved: 'https://registry.npmjs.org/y/-/y-1.0.0.tgz' } } } } }, refused),
+  'dep-nopackages: a lockfile without a packages map': N({ contents: { 'scripts/prereview/package-lock.json': { lockfileVersion: 3, dependencies: { y: { version: '1.0.0', resolved: 'https://registry.npmjs.org/y/-/y-1.0.0.tgz' } } } } }, refused),
+  'dep-nested-spec: a git, file or URL spec in a lockfile package entry': (g, l) => {
+    for (const spec of ['github:evil/z', 'git+https://evil.example/z.git', 'file:../z', 'https://evil.example/z.tgz', 'evil/z']) {
+      fixture({ contents: { 'scripts/prereview/package-lock.json': lock({ version: '1.0.0', resolved: 'https://registry.npmjs.org/y/-/y-1.0.0.tgz', dependencies: { z: spec } }) } });
+      notReady(g, `${l}: ${spec}`, refused);
     }
   },
+  'dep-no-resolved: a lockfile package entry without a resolved URL (caught by the same check as dep-resolved)': N({ contents: { 'scripts/prereview/package-lock.json': lock({ version: '1.0.0' }) } }, refused),
+  'dep-base-branch: a Dependabot PR whose base is not main': N({ baseRef: 'release' }, refused),
   'dep-spec: a git, file or URL dependency spec': (g, l) => {
     for (const spec of ['github:evil/y', 'git+https://evil.example/y.git', 'file:../y', 'evil/y']) {
       fixture({ contents: { 'scripts/prereview/package.json': { ...PKG, dependencies: { y: spec } } } });
@@ -175,7 +190,7 @@ const CASES: Record<string, Case> = {
     }
   },
   'dep-unreadable: a dependency file that cannot be read at the head commit': N({ contents: { 'scripts/prereview/package-lock.json': null } }, refused),
-  'dep-odd-path: a dependency file path with a space': N({ files: ['scripts/a b/package.json'], contents: { 'scripts/a b/package.json': PKG } }, refused),
+  'dep-odd-path: a dependency file path with a space': N({ files: ['scripts/a b/package.json'], contents: { 'scripts/a b/package.json': PKG }, base: { 'scripts/a b/package.json': PKG } }, refused),
   'alerts-error: the alerts cannot be read': N({ merge: null }, /alerts=unread/),
   'alerts-empty: the alerts call prints no number': N({}, /alerts=unread/, () => set('alerts-merge.json', '')),
   'checks-error: the check list cannot be read': N({ checks: false }, /codeql=missing /),
@@ -203,11 +218,14 @@ try {
     ['--paginate removed from the file list', 'gh api --paginate "repos/$R/pulls/$p/files"', 'gh api "repos/$R/pulls/$p/files"', 'two-pages-docs'],
     ['the count check removed', '[ "$n" = "$total" ] && ', '', 'count-mismatch'],
     ['the 3000-file cap removed', '&& [ "$n" -lt 3000 ] ', '', 'cap-3000'],
-    ['the Dependabot author check removed', '[ "$author" = "dependabot[bot]" ] || return 2', '', 'dep-author'],
-    ['the resolved URL check removed', 'select(startswith("https://registry.npmjs.org/")|not)', 'select(false)', 'dep-resolved'],
+    ['the Dependabot author check removed', '[ "$author" = "dependabot[bot]" ] && ', '', 'dep-author'],
     ['the install-script check removed', '| grep -q . && return 2', '| grep -q . && true', 'dep-installscript'],
     ['every install script refused', 'grep -vxF -f <(printf \'%s\\n\' "$base_i")', 'cat', 'dep-installscript-old'],
-    ['the lifecycle script check removed', 'select(. == "preinstall" or . == "install" or . == "postinstall" or . == "prepare")', 'select(false)', 'dep-lifecycle'],
+    ['the scripts comparison removed', '[ "$head_i" = "$base_i" ] || return 2;;', ';;', 'dep-scripts'],
+    ['the lockfileVersion check removed', '.lockfileVersion >= 2', 'true', 'dep-lockv1'],
+    ['the spec check at the top level only', '[..|objects|(.dependencies?', '[(.dependencies?', 'dep-nested-spec'],
+    ['entries without resolved accepted', 'select((.value.resolved // "")|startswith("https://registry.npmjs.org/")|not)', 'select(false)', 'dep-resolved'],
+    ['the base branch check removed', '&& [ "$baseref" = main ] ', '', 'dep-base-branch'],
     ['the dependency spec check removed', 'select(test("[:/]"))', 'select(false)', 'dep-spec'],
     ['the dependency files not read', '[ ${#deps[@]} = 0 ] && return 0', 'return 0', 'lockfile-skipped'],
     ['the path check removed', 'case $f in *[!A-Za-z0-9._/-]*|*..*) return 2;; esac', '', 'dep-odd-path'],

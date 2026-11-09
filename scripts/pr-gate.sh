@@ -65,30 +65,41 @@ nocode() { case $1 in *.md|*.png|*.jpg|*.jpeg|*.gif|*.webp) return 0;; scripts/*
 # every path the PR touches: added, changed and removed files, and a renamed file's old path too (a rename out of src/ is not a docs change);
 # a name with a control character (a newline would split it into two lines) is a "C" line and blocks.
 # The files API stops at 3000 files without an error, so the listed count must equal the PR's changed_files and be under 3000.
-# Dependency files are not code to CodeQL but run on install: each changed one is read at the head commit and blocks on a `resolved` URL
-# outside https://registry.npmjs.org/, a preinstall/install/postinstall/prepare script, a dependency spec with ":" or "/" (git, file, URL),
-# or, in a lockfile, a package with an install script (hasInstallScript) that the base commit's copy does not have (a missing or unreadable
-# base copy counts as empty); a reviewer still reads the diff (return 2 = a dependency file refused).
+# Dependency files are not code to CodeQL but run on install: each changed one is read at the head commit (the PR's base must be main) and
+# blocks on a dependency spec with ":" or "/" (git, file, URL, user/repo) in any dependency map at any depth, a package.json `scripts`
+# object that differs from the base commit's, a lockfile below lockfileVersion 2 or without a `packages` map, a non-root, non-link lockfile
+# entry whose `resolved` is not on https://registry.npmjs.org/, or a lockfile package with an install script (hasInstallScript) that the
+# base copy does not have (a missing or unreadable base copy counts as empty); a reviewer still reads the diff (return 2 = refused).
 INSTALLS='.packages? // {}|to_entries[]|select(.value.hasInstallScript == true)|.key'
-DEPCHECK='[..|objects|.resolved? // empty|strings|select(startswith("https://registry.npmjs.org/")|not)] + [(.scripts? // {})|objects|keys[]|select(. == "preinstall" or . == "install" or . == "postinstall" or . == "prepare")] + [(.dependencies?, .devDependencies?, .optionalDependencies?, .peerDependencies?)|objects|.[]|strings|select(test("[:/]"))]|length'
-only_nocode() { local f files n pr total sha base author head_i base_i; local -a deps; deps=()
+DEPCHECK='[..|objects|(.dependencies?, .devDependencies?, .optionalDependencies?, .peerDependencies?)|objects|.[]|strings|select(test("[:/]"))]|length'
+LOCKCHECK='if (.lockfileVersion|type) == "number" and .lockfileVersion >= 2 and (.packages|type) == "object" then [.packages|to_entries[]|select(.key != "" and .value.link != true)|select((.value.resolved // "")|startswith("https://registry.npmjs.org/")|not)]|length else "old-or-no-packages" end'
+SCRIPTS='(.scripts // {})|to_entries|sort_by(.key)|tojson'
+# a file of this repo at a commit, through a jq program: depraw <sha> <path> <program>
+depraw() { gh api -H 'Accept: application/vnd.github.raw+json' "repos/$R/contents/$2?ref=$1" --jq "$3"; }
+only_nocode() { local f files n pr total sha base baseref author head_i base_i; local -a deps; deps=()
   files=$(gh api --paginate "repos/$R/pulls/$p/files" --jq '.[]|if ([.filename, (.previous_filename // empty)]|any(test("[\\x00-\\x1f\\x7f]"))) then "C" else "F \(.filename)", (.previous_filename // empty|"P \(.)") end') && [ -n "$files" ] || return 1
-  n=$(grep -c '^F ' <<< "$files"); pr=$(gh api "repos/$R/pulls/$p" --jq '"\(.changed_files) \(.head.sha) \(.base.sha) \(.user.login)"') || return 1
-  read -r total sha base author <<< "$pr"; isnum "$total" && [ "$n" = "$total" ] && [ "$n" -lt 3000 ] || return 1
+  n=$(grep -c '^F ' <<< "$files"); pr=$(gh api "repos/$R/pulls/$p" --jq '"\(.changed_files) \(.head.sha) \(.base.sha) \(.base.ref) \(.user.login)"') || return 1
+  read -r total sha base baseref author <<< "$pr"; isnum "$total" && [ "$n" = "$total" ] && [ "$n" -lt 3000 ] || return 1
   while IFS= read -r f; do
     case $f in 'F '*) f=${f#F }; case $f in *package-lock.json|*package.json) deps+=("$f");; esac;; 'P '*) f=${f#P };; *) return 1;; esac
     nocode "$f" || return 1
   done <<< "$files"
   [ ${#deps[@]} = 0 ] && return 0
-  [ "$author" = "dependabot[bot]" ] || return 2
+  [ "$author" = "dependabot[bot]" ] && [ "$baseref" = main ] || return 2
   for f in "$sha" "$base"; do case $f in *[!0-9a-f]*|'') return 2;; esac; [ ${#f} = 40 ] || return 2; done
   for f in "${deps[@]}"; do
     case $f in *[!A-Za-z0-9._/-]*|*..*) return 2;; esac
-    [ "$(gh api -H 'Accept: application/vnd.github.raw+json' "repos/$R/contents/$f?ref=$sha" --jq "$DEPCHECK")" = 0 ] || return 2
-    case $f in *package-lock.json)
-      head_i=$(gh api -H 'Accept: application/vnd.github.raw+json' "repos/$R/contents/$f?ref=$sha" --jq "$INSTALLS") || return 2
-      base_i=$(gh api -H 'Accept: application/vnd.github.raw+json' "repos/$R/contents/$f?ref=$base" --jq "$INSTALLS" 2>/dev/null) || base_i=
-      printf '%s\n' "$head_i" | grep -vxF -f <(printf '%s\n' "$base_i") | grep -q . && return 2;;
+    [ "$(depraw "$sha" "$f" "$DEPCHECK")" = 0 ] || return 2
+    case $f in
+      *package-lock.json)
+        [ "$(depraw "$sha" "$f" "$LOCKCHECK")" = 0 ] || return 2
+        head_i=$(depraw "$sha" "$f" "$INSTALLS") || return 2
+        base_i=$(depraw "$base" "$f" "$INSTALLS" 2>/dev/null) || base_i=
+        printf '%s\n' "$head_i" | grep -vxF -f <(printf '%s\n' "$base_i") | grep -q . && return 2;;
+      *package.json)
+        head_i=$(depraw "$sha" "$f" "$SCRIPTS") || return 2
+        base_i=$(depraw "$base" "$f" "$SCRIPTS" 2>/dev/null) || base_i='[]'
+        [ "$head_i" = "$base_i" ] || return 2;;
     esac
   done
   depnote="; dependency files changed: CodeQL does not read them, a reviewer reads the diff"; }
