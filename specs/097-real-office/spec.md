@@ -1404,3 +1404,20 @@ An arcade cabinet's plate is the one-line status pill: the name is on the cabine
   - Mutant `PENCIL_MUTANT=plate` (the plates' anchor removed) fails the labelled assert: `arcade 1440x900: each pencil sits just after its name (or at the right end of a plate with no name), inside its plate, over nothing` (`sim-7: covers -, outside true, 457px before the plate's right end`); `PENCIL_MUTANT=anchor` still fails it in the Photo office.
   - Pictures (`SHOTS_OUT`, compressed): [before](../../docs/screenshots/097-plate-pencil-arcade-before-1440x900.png) (the pencil at the floor's top-left, every pencil shown), after at [1440x900](../../docs/screenshots/097-plate-pencil-arcade-1440x900.png) and [1280x800](../../docs/screenshots/097-plate-pencil-arcade-1280x800.png).
 - `[KNOWN GAP]` Not run on Windows or macOS (the Mac reported the bug at 1440x900), nor in a real session.
+
+## Changes 2026-11-08: a Minimalist crew of six new drawn people lands as art, pack-only (issue #1154; T245 art part)
+
+Six invented, calm flat-vector office people (designer, manager, analyst, engineer, writer, support) are in the repository as art only: `src/renderer/realoffice/sets/minimalist/` (72 WebP frames, a measured `set.json`, an `ASSETS.md`) and their 18 portraits `src/renderer/crew/art/minimalist-<id>-{working,waiting,resting}.webp` (rows in that folder's `ASSETS.md`). No `CREWS` entry, no `REAL_SETS` row and no wiring: the Mac session does that in the wiring PR (after #1308).
+
+**Owner messages (Telegram DM, Vikram Gorla, verbatim).**
+1. 2026-11-08 11:03 UTC: "2", the answer to "Invent a fixed cast of drawn Minimalist people like the other crews".
+2. 2026-11-08 11:23 UTC: "Good and good on drawings as well, go full speed" (the look, on the designer and manager sample).
+3. 2026-11-08 11:27 UTC: "I can approve Paco's pictures if you want" (he approves in Paco's place, T238).
+4. 2026-11-08 12:00 UTC: "Look approved and none look like a real person", the approval of the look and the explicit likeness check, answering "1. Approve the look and confirm none resembles a real person you know".
+
+Each frame and each portrait is recorded as approved by Vikram Gorla (owner) in Paco's place with message 4's quote, and every `likeness-check` is that message. It claims no more than the owner's own knowledge, not a search for lookalikes.
+
+**Checks.** `test:realoffice-assets` names `minimalist` in `SETS_PACK_ONLY`, the one allowance for a crew set with no `REAL_SETS` row (it fails once `crew.js` has the row); each crew set has its own entry in `RECORD` (the frame lines' approval time and quote, and the likeness text; the Minimalist one differs from the five crews of the earlier delta), and a set with no entry fails; every frame line must carry its set's recorded time and quote, and every frame goes through the same metadata, alpha, size and approval checks. `test:crew-assets` has a narrow `PENDING_CREWS = ['minimalist']` allowance: its portraits are in `crew/art` without a `crew.js` entry, each with an `ASSETS.md` row and the 352x352, size and metadata checks; the portraits must be exactly one per pose for every person in the set's `set.json` (6 people x 3 poses), and the allowance fails once `crew.js` `CREWS` names the crew (review of #1331, fjcabello, 2026-11-08: no fallback likeness, no stale allowance, no incomplete portraits). The set folder is `minimalist` (the Characters choice id `minimalist` that `crewName` already knows), so `set.json` id is `minimalist`.
+
+- `[KNOWN GAP]` Not wired and not seen in the app: no screenshot of the crew in a world was taken here.
+- `[KNOWN GAP]` Known deviations from the cast text, kept in `ASSETS.md`: the designer's and analyst's sneakers are light grey (visible on a light floor), the envelope is kraft tan, and the designer's three standing frames from one sheet were stretched 12 percent wider after cutting.
