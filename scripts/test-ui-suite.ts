@@ -125,10 +125,16 @@ for (const name of ['name: Build and test (${{ matrix.os }})', 'name: Office lay
 // the layout steps failed, and the job fails when either part failed and says which
 assert.ok(!ciJobs['package-smoke'] && ci.split('name: Package smoke (unpacked Linux app)').length === 2, 'ci.yml: no separate Package smoke job, one step of that name');
 const officeJob = ciJobs['office-check'];
-const B = `steps\.build\.outcome == 'success'`;
-assert.ok(new RegExp(`- name: Package smoke \\(unpacked Linux app\\)\\r?\\n\\s+if: \\$\\{\\{ !cancelled\\(\\) && steps\\.changes\\.outputs\\.code == 'true' && ${B} \\}\\}\\r?\\n\\s+id: package\\r?\\n\\s+run: npm run pack:dir:prebuilt`).test(officeJob), 'FR-194: the office job packs the app after the layout steps with the wrapped ${{ !cancelled() && ... }} (not always(): a cancel stops the run), only on a successful build');
-assert.ok(new RegExp(`if: \\$\\{\\{ !cancelled\\(\\) && steps\\.changes\\.outputs\\.code == 'true' && ${B} \\}\\}\\r?\\n\\s+id: layout`).test(officeJob), 'FR-194: the layout runs after a failed geometry step (wrapped !cancelled()), only on a successful build');
-assert.ok(new RegExp(`id: geometry\\r?\\n\\s+if: [^\\r\\n]*&& ${B}\\r?\\n`).test(officeJob), 'FR-194: geometry runs only on a successful build');
+const B = `steps\\.build\\.outcome == 'success'`;
+const packageRe = new RegExp(`- name: Package smoke \\(unpacked Linux app\\)\\r?\\n\\s+if: \\$\\{\\{ !cancelled\\(\\) && steps\\.changes\\.outputs\\.code == 'true' && ${B} \\}\\}\\r?\\n\\s+id: package\\r?\\n\\s+run: npm run pack:dir:prebuilt`);
+const layoutRe = new RegExp(`if: \\$\\{\\{ !cancelled\\(\\) && steps\\.changes\\.outputs\\.code == 'true' && ${B} \\}\\}\\r?\\n\\s+id: layout`);
+const geometryRe = new RegExp(`id: geometry\\r?\\n\\s+if: [^\\r\\n]*&& ${B}\\r?\\n`);
+assert.ok(packageRe.test(officeJob), 'FR-194: the office job packs the app after the layout steps with the wrapped ${{ !cancelled() && ... }} (not always(): a cancel stops the run), only on a successful build');
+assert.ok(layoutRe.test(officeJob), 'FR-194: the layout runs after a failed geometry step (wrapped !cancelled()), only on a successful build');
+assert.ok(geometryRe.test(officeJob), 'FR-194: geometry runs only on a successful build');
+// the dots in steps.build.outcome are literal: the same job with any other character there must fail each guard
+const dotMutant = officeJob.split('steps.build.outcome').join('steps_build_outcome');
+assert.ok(dotMutant !== officeJob && [packageRe, layoutRe, geometryRe].every((re) => !re.test(dotMutant)), 'FR-194: a literal . in steps.build.outcome (an escaped dot, not any character)');
 assert.ok(/id: build\r?\n\s+if: steps\.changes\.outputs\.code == 'true'\r?\n\s+run: npm run build/.test(officeJob) && /id: install\r?\n\s+if: steps\.changes\.outputs\.code == 'true'\r?\n\s+uses: \.\/\.github\/actions\/npm-ci/.test(officeJob), 'FR-194: install and build have ids so the summary can name them');
 assert.strictEqual((officeJob.match(/if: .*always\(\)/g) || []).length, 1, 'FR-194: always() only on the summary step');
 assert.ok(officeJob.indexOf('npm run pack:dir:prebuilt') > officeJob.indexOf('node scripts/check-parallel.js') && officeJob.split('npm run build').length === 2, 'FR-194: one build, then layout, then packaging');
