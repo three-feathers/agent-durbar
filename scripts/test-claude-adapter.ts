@@ -279,6 +279,21 @@ async function main(): Promise<void> {
         assert.ok(real.includes('Inside doc.') && !real.includes('OUTSIDE'), 'FR-177: the node io follows a link inside and not one outside');
         assert.strictEqual(claudeMdNodeIo.readlink(path.join(dir, 'in.md')), path.join('docs', 'x.md'));
         assert.ok(claudeMdNodeIo.lstat(path.join(dir, 'in.md'))!.isSymbolicLink() && claudeMdNodeIo.lstat(path.join(dir, 'nope')) === undefined);
+        // `in -> .` then `evil -> in/../etc/s.md`: by text that is `<folder>/etc/s.md`, for the system it is the parent's `etc/s.md`.
+        const base = tmpDir('durbar-claudemd-dots-');
+        const r = path.join(base, 'r');
+        fs.mkdirSync(r);
+        fs.mkdirSync(path.join(base, 'etc'));
+        fs.writeFileSync(path.join(base, 'etc', 's.md'), 'OUTSIDE');
+        fs.symlinkSync('.', path.join(r, 'in'));
+        fs.symlinkSync('in/../etc/s.md', path.join(r, 'evil')); // literal: path.join would drop the ..
+        fs.writeFileSync(path.join(r, 'CLAUDE.md'), 'Top. @evil');
+        assert.ok(!claudeMdPrompt(r)!.includes('OUTSIDE'), 'FR-177: a link through in -> . and .. is refused (no file at its text path)');
+        fs.mkdirSync(path.join(r, 'etc'));
+        fs.writeFileSync(path.join(r, 'etc', 's.md'), 'INSIDE');
+        const dots = claudeMdPrompt(r)!;
+        assert.ok(!dots.includes('OUTSIDE'), 'FR-177: a link through in -> . and .. never reads the file outside');
+        assert.ok(dots.includes('INSIDE'), 'FR-177: claudeMdNodeIo.realpath resolves links by their text, as the walk does (not realpathSync.native)');
       }
     }
   }

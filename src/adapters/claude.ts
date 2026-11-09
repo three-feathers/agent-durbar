@@ -394,6 +394,8 @@ export const claudeMdNodeIo: ClaudeMdIo = {
       return undefined;
     }
   },
+  // The JS `fs.realpathSync` resolves link targets by their text, as the link walk in `claudeMdPrompt` does. Do not switch to
+  // `fs.realpathSync.native`: it resolves a `..` after a link the way the system does, and the two would disagree (spec 012 FR-177).
   realpath: (p) => {
     try {
       return fs.realpathSync(p);
