@@ -80,7 +80,7 @@ assert.ok(Object.keys(clean).length > 100, 'all of Clean Office');
   eq('hsl(0, 100%, 50%)', [255, 0, 0, 1]); eq('hsl(120deg 100% 25%)', [0, 128, 0, 1]); eq('hsla(240 100% 50% / .25)', [0, 0, 255, 0.25]); eq('hsl(0 0% 100%)', [255, 255, 255, 1]);
   eq('white', [255, 255, 255, 1]); eq('Rebeccapurple', [102, 51, 153, 1]); eq('transparent', [0, 0, 0, 0]);
   // what it cannot resolve is null: keywords, var(), color-mix(), calc(), an angle unit but deg, malformed
-  for (const bad of ['currentColor', 'inherit', 'initial', 'none', 'notacolour', 'var(--x)', 'color-mix(in srgb, red 50%, blue)', 'rgb(calc(1+1) 0 0)', 'hsl(1turn 50% 50%)', 'hsl(0 50 50)', 'rgb(1 2)', '#12', '#12345', 'rgb(1 2 3 4 5)', '']) assert.strictEqual(parseColor(bad), null, bad);
+  for (const bad of ['currentColor', 'inherit', 'initial', 'none', 'notacolour', 'var(--x)', 'color-mix(in srgb, red 50%, blue)', 'rgb(calc(1+1) 0 0)', 'hsl(1turn 50% 50%)', 'hsl(0 50 50)', 'rgb(.5-50+9)', 'rgb(.5.5.5)', 'rgb(1 2)', '#12', '#12345', 'rgb(1 2 3 4 5)', '']) assert.strictEqual(parseColor(bad), null, bad);
   // all 148 CSS names: the table is pinned by a hash of "name:rrggbb" (sorted) computed from the npm `color-name` 1.1.4 table when this was written
   // (it is only a transitive dev dependency, so the test does not require it), plus values of the CSS Color 4 spec
   assert.strictEqual(Object.keys(NAMED_COLOURS).length, 148);

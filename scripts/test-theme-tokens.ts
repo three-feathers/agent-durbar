@@ -673,7 +673,7 @@ console.log('toggle switch: on track, both knobs pass 3:1 in Clean Office and th
 {
   // theme.js parses exactly as themegen.ts does, on every form and every name
   const forms = ['#fff', '#f008', '#1b2230', '#ff000080', 'rgb(255, 0, 0)', 'rgb(233 241 248 / .93)', 'rgb(100% 0% 0% / 50%)', 'rgba(0,0,255,.5)', 'hsl(120deg 100% 25%)', 'hsla(240 100% 50% / .25)', 'white', 'RebeccaPurple', 'transparent',
-    'currentColor', 'inherit', 'none', 'hsl(1turn 50% 50%)', 'rgb(1 2)', '#12345', 'nope', '', ...Object.keys(T.NAMED_COLOURS)];
+    'currentColor', 'inherit', 'none', 'hsl(1turn 50% 50%)', 'rgb(.5-50+9)', 'rgb(.5.5.5)', 'rgb(1 2)', '#12345', 'nope', '', ...Object.keys(T.NAMED_COLOURS)];
   for (const f of forms) assert.deepStrictEqual(T.parseColor(f), parseColor(f), `theme.js and themegen.ts parse ${JSON.stringify(f)} alike`);
   assert.deepStrictEqual(T.NAMED_COLOURS, NAMED_COLOURS, 'the same named colours');
   for (const [over, f] of [['#ffffff', 'rgba(0,0,0,.5)'], ['#101010', 'rgb(255 255 255 / .2)'], ['#00ff00', '#ff000000'], ['#ffffff', 'currentColor']]) assert.strictEqual(T.colorHex(f, over), resolveColor(f, over), `colorHex ${f}`);
