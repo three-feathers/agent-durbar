@@ -211,6 +211,12 @@ assert.strictEqual(ui(['scripts/new-data.json'], io({ 'scripts/new-data.json': '
     for (const [label, step] of CASES) assert.strictEqual(edited(inOffice(step)), true, `a ci.yml office step written with ${label}: its npm script is reached`);
     const newJob = '  extra:\n    runs-on: ubuntu-latest\n    steps:\n      - id: changes\n        run: bash .github/scripts/ci-changes.sh\n      - if: steps.changes.OUTPUTS.UI == \'true\'\n        run: npm run zz:office\n\n';
     assert.strictEqual(edited(ciText.replace(ANCHOR, newJob + ANCHOR)), true, 'a new ci.yml job that reads outputs.UI in another case is covered whole');
+    // round 7: bracket syntax and spaces; each a new job that reads the ui output only that way
+    for (const ref of ["steps.changes.outputs['ui']", 'steps.changes.outputs["ui"]', "steps.changes.outputs [ 'ui' ]", 'steps.changes.outputs. ui', 'steps.changes.outputs .ui']) {
+      const job = `  extra:\n    runs-on: ubuntu-latest\n    steps:\n      - id: changes\n        run: bash .github/scripts/ci-changes.sh\n      - if: \${{ ${ref} == 'true' }}\n        run: npm run zz:office\n\n`;
+      assert.strictEqual(edited(ciText.replace(ANCHOR, job + ANCHOR)), true, `a new ci.yml job gated on ${ref} is covered whole`);
+    }
+    assert.strictEqual(edited(ciText.replace(ANCHOR, "  extra:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo outputs.uix && npm run zz:office\n\n" + ANCHOR)), false, 'outputs.uix is not the ui output');
     const noUiJob = '  extra:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run zz:office\n\n';
     assert.strictEqual(edited(ciText.replace(ANCHOR, noUiJob + ANCHOR)), false, 'a ci.yml job that never reads outputs.ui is not covered');
     const uncut = ciText.replace(/^jobs:/m, 'jobs_renamed:') + '\n# npm run zz:office\n      - run: npm run zz:office\n';

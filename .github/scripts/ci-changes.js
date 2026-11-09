@@ -188,11 +188,14 @@ function workflowJobs(text) {
   }
   return jobs.length ? jobs.map((j) => j.join('\n')) : null;
 }
+// any reference to the ui output: `outputs.ui`, `outputs. ui`, `outputs['ui']`, `outputs [ "ui" ]`, any case (review round 7). Linear:
+// no nested quantifier, each \s* is bounded by a literal on both sides.
+const UI_OUTPUT_REF = /outputs\s*(\.\s*ui\b|\[\s*['"]ui['"]\s*\])/i;
 /** The workflow text the UI decision covers: all of ui-platforms.yml, and each ci.yml job that reads the ui output (or all of
  *  ci.yml when its jobs cannot be cut). */
 function uiWorkflowText(wfUiText, ciText) {
   const jobs = workflowJobs(ciText);
-  const covered = jobs ? jobs.filter((job) => /outputs\.ui\b/i.test(job)) : [String(ciText || '')];
+  const covered = jobs ? jobs.filter((job) => UI_OUTPUT_REF.test(job)) : [String(ciText || '')];
   return [String(wfUiText || ''), ...covered.flatMap((job) => workflowCommands(job).map((c) => `      - run: ${c}`))].join('\n');
 }
 /** Every file (and folder prefix, ending in /) in scripts/ that the UI run can load, from the roots by string literals. Roots: the
