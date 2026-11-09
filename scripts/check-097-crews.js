@@ -21,6 +21,11 @@
  *   - the line under Office layout (#dsR) is not the true one: "... until <Crew> has Real office poses." for a crew with heads only
  *     and Minimalist, "Real office draws the Prehistoric people." for Prehistoric, empty for the default;
  *   - the room scrolls or a name plate overlaps another (spec 001's 15-agent fit; every pair of plates is compared).
+ *   - a requested file is missing, or did not complete with status 200. A request the browser cancelled because the page swapped a frame's file (net::ERR_ABORTED, no status)
+ *     is not a failure when the file is on disk, and every picture on screen must have a request that completed with status 200;
+ *   - the log is read before the page is quiet (the pictures complete with the same files for 600 ms and no request open).
+ *   CREWS_MUTANT=missing|abortmissing|abort: a request of a file that is not in the pack (completes with an error) / one that is cancelled at once (no such file) / one that is
+ *   cancelled at once (a file in the pack). `missing` and `abortmissing` must fail; `abort` must pass (the tolerated case).
  * Screenshots: <SHOTS_OUT>/097-crews-<value>-<w>x<h>.png.
  */
 const os = require('os');
@@ -29,6 +34,7 @@ const path = require('path');
 const assert = require('assert');
 const { helpers, jsLiteral } = require('./driver-helpers');
 
+const MUTANT = process.env.CREWS_MUTANT || '';
 const OUT = process.env.SHOTS_OUT || fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-097-crews-'));
 const SIZES = [[1440, 900], [1280, 800]];
 /* value, gate open in the simulator, set drawn, Settings line */
@@ -55,9 +61,22 @@ module.exports = async (ctx) => {
      the page cannot report its own requests. Entry: { url, status, error }; a frame counts only with status 200 and no error. */
   const reqs = new Map();
   const ses = ctx.win.webContents.session;
-  ses.webRequest.onBeforeRequest({ urls: ['file://*/*'] }, (d, cb) => { reqs.set(d.id, { url: decodeURIComponent(d.url), status: 0, error: '' }); cb({}); });
+  ses.webRequest.onBeforeRequest({ urls: ['file://*/*'] }, (d, cb) => { reqs.set(d.id, { url: decodeURIComponent(d.url), raw: d.url, status: 0, error: '' }); cb({}); });
   ses.webRequest.onCompleted({ urls: ['file://*/*'] }, (d) => { const e = reqs.get(d.id); if (e) e.status = d.statusCode; });
   ses.webRequest.onErrorOccurred({ urls: ['file://*/*'] }, (d) => { const e = reqs.get(d.id); if (e) e.error = d.error; });
+  /* the page picks a frame's file by srcset and sizes (img() in realoffice.js: the half-size .h.webp or the full one); when `sizes` or `srcset` changes as the layout settles (slow Windows CI),
+     the browser cancels the request in flight and asks for the other file: that request is logged as net::ERR_ABORTED with no status, and the picture still loads. Seen on Windows CI only
+     (#1243, run 42540310573: p02-book.h.webp, p05-book.h.webp, p07-runA.h.webp). It is not a missing file: a missing file is net::ERR_FILE_NOT_FOUND, or a status other than 200. */
+  const onDisk = (e) => { try { return fs.statSync(require('url').fileURLToPath(e.raw)).isFile(); } catch (err) { return false; } };
+  const aborted = (e) => e.status === 0 && e.error === 'net::ERR_ABORTED' && onDisk(e);
+  const pending = () => [...reqs.values()].filter((e) => e.status === 0 && !e.error).length;
+  /* quiet: the pictures are complete with the same files for 600 ms, and no request of the log is still open (so the log is read after the swaps, not during them) */
+  const QUIET = `(()=>{const l=[...document.querySelectorAll('#stage .ro img')],k=l.map(i=>i.currentSrc).join('|');if(window.__crK!==k){window.__crK=k;window.__crAt=Date.now();}return l.length>0&&l.every(i=>i.complete&&i.naturalWidth>0)&&Date.now()-window.__crAt>600})()`;
+  const quiet = async (tag) => {
+    await must(QUIET, `${tag}: the pictures stopped changing`);
+    for (let i = 0; i < 100 && pending(); i++) await ctx.sleep(100);
+    assert.strictEqual(pending(), 0, `${tag}: requests of the page still open`);
+  };
   const q = (gate) => ({ officeview: 'real', simfreeze: '1', ...(gate ? { worldflags: 'cave' } : {}) });
   const pick = async (value, gate) => { // the real path: Settings > Characters
     await js(`window.DurbarScreens.openSettings()`);
@@ -74,6 +93,11 @@ module.exports = async (ctx) => {
     await H.load({ w, h, query: q(gate), ready: REAL, settle: false });
     const note = await pick(value, gate);
     assert.strictEqual(note, line, `${tag}: the line under Office layout: ${JSON.stringify(note)}`);
+    /* the choice loads its set's pack on this page (ensurePack adds set.js); wait until this page draws the set and its pictures, so no
+       request of this page is still in flight when the log is cleared and the page reloads (a reload aborts it: net::ERR_ABORTED, seen on
+       Windows CI only, where the script started after the clear) */
+    await must(`document.querySelector('#stage .ro .ro-plate')&&document.querySelector('#stage .ro').dataset.set===${jsLiteral(set)}`, `${tag}: the chosen set is drawn before the reload`);
+    await must(PICS, `${tag}: the chosen set's pictures loaded before the reload`);
     /* the simulator keeps the choice in memory only, so the new load is given it as a saved choice would give it (`characters=`, spec 077
        FR-070); the page starts on it, and the session's log from here holds every request of that load */
     await ses.clearCache(); /* a picture cached by the last case would not be requested (or logged) again */
@@ -82,6 +106,9 @@ module.exports = async (ctx) => {
     await must(`window.THEME.characters()===${jsLiteral(value)}`, `${tag}: the choice kept across the reload`);
     await must(`document.querySelector('#stage .ro .ro-plate')&&document.querySelector('#stage .ro').dataset.set===${jsLiteral(set)}`, `${tag}: the room draws ${set}`);
     await must(PICS, `${tag}: the pictures loaded (complete and naturalWidth > 0)`);
+    /* the mutants (CREWS_MUTANT, see the header) act here, on this page, before the log is read */
+    if (MUTANT) await js(`(()=>{const b=document.querySelector('#stage .ro img').src.replace(/[^/]*$/,'');const u=${jsLiteral(MUTANT)}==='missing'||${jsLiteral(MUTANT)}==='abortmissing'?b+'no-such-frame.webp':document.querySelector('#stage .ro img').currentSrc+'?q='+Math.random();const i=new Image();i.src=u;if(${jsLiteral(MUTANT)}!=='missing')setTimeout(()=>{i.src=''},0);window.__crMut=i;return 1})()`);
+    await quiet(tag);
     const r = await js(`(()=>{const ro=document.querySelector('#stage .ro'),pics=[...document.querySelectorAll('#stage .ro-person,#stage .ro-visitor')].filter(i=>i.tagName==='IMG'),
       L=window.__durbarSimUi.realLayout(),
       plates=[...document.querySelectorAll('#stage .ro-plate')].map(e=>e.getBoundingClientRect()).filter(b=>b.width>0&&b.height>0),
@@ -97,14 +124,14 @@ module.exports = async (ctx) => {
     const officeReq = webps.filter((e) => /sets\/office\//.test(e.url)).length, setReq = webps.filter((e) => e.url.includes(`/sets/${set}/`)).length;
     assert.deepStrictEqual(r.unloaded, [], `${tag}: pictures of the scene that did not load`);
     /* a requested picture that is missing is a failure, whatever the page does with it (an <img> that fails is `complete` too) */
-    const bad = log.filter((e) => /\.(webp|png|json|js)(\?|$)/.test(e.url) && /realoffice\//.test(e.url) && (e.status !== 200 || e.error)).map((e) => `${e.url.replace(/^.*realoffice\//, '')} ${e.status} ${e.error}`);
+    const bad = log.filter((e) => /\.(webp|png|json|js)(\?|$)/.test(e.url) && /realoffice\//.test(e.url) && (e.status !== 200 || e.error) && !aborted(e)).map((e) => `${e.url.replace(/^.*realoffice\//, '')} ${e.status} ${e.error}`);
     assert.deepStrictEqual(bad, [], `${tag}: requested Real office files that did not load with status 200`);
     /* the independent expectation: every frame the scene shows was requested from the set's folder (so the requests are the pictures on
        screen, none missing from the log), and the Office people's frames are requested for no other set */
     const shownSet = r.shown.filter((u) => u.includes(`sets/${set}/`)).length;
     assert.ok(shownSet >= 6, `${tag}: the scene shows ${shownSet} distinct ${set} frames`);
-    const notAsked = r.shown.filter((u) => !webps.some((e) => e.url === u)); /* shown (the file the img loaded: half-size or full) but never in the log */
-    assert.deepStrictEqual(notAsked, [], `${tag}: pictures on screen that the log has no request for`);
+    const notAsked = r.shown.filter((u) => !webps.some((e) => e.url === u && e.status === 200 && !e.error)); /* shown (the file the img loaded: half-size or full) but never in the log */
+    assert.deepStrictEqual(notAsked, [], `${tag}: pictures on screen that the log has no completed request for`);
     assert.ok(setReq >= shownSet, `${tag}: ${setReq} ${set} frames requested, ${shownSet} shown`);
     if (set !== 'office') assert.strictEqual(officeReq, 0, `${tag}: Office people pictures requested for the ${set} set: ${officeReq}`);
     assert.strictEqual(r.set, set, `${tag}: the room draws the ${set} people, not ${r.set}`);

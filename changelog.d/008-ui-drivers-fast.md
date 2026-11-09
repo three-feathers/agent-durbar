@@ -1,0 +1,1 @@
+- Two slow simulator UI checks run faster because they wait for the page's own word that it is steady instead of guessing: check-office-fill (288 s to 158 s on CI) and shots-017 (77 s to 24 s). The whole suite's total time is not a measured win (4195 s to 4491 s on ubuntu CI, 4161 s to 3922 s on Windows). No check was dropped or loosened (spec 008 FR-190).
