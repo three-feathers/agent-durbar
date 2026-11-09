@@ -206,4 +206,4 @@
 
 ## 2026-11-10: the release clip shows the new features of v0.1.15 (FR-197)
 
-- [ ] T153 (FR-197) `scripts/release-video.js`: scenes `real-crews` (spec 097 FR-335..FR-337) and `real-drag` (spec 097 FR-345..FR-355) with `refs`; `Scene:` fields in `changelog.d/097-crews-real-office.md` and `changelog.d/097-real-drag.md`; `scripts/test-release-video.js`: catalogue, `--list`, the v0.1.15 choice, two mutants
+- [x] T153 (FR-197) `scripts/release-video.js`: scenes `real-crews` (spec 097 FR-335..FR-337) and `real-drag` (spec 097 FR-345..FR-355) with `refs`; `Scene:` fields in `changelog.d/097-crews-real-office.md` and `changelog.d/097-real-drag.md`; `scripts/test-release-video.js`: catalogue, `--list`, the v0.1.15 choice, two mutants
