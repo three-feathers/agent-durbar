@@ -46,6 +46,6 @@
 
 ## G9: owner questions and real checks (not in CI)
 
-- [ ] T016 [G9] Q1..Q5 answered by the owner; spec, plan and tasks updated to the answers (defaults are in the spec until then). Test: `npm run specs:check` [FR-033, FR-040, FR-048, FR-060, FR-022]
+- [x] T016 [G9] Q1..Q5 answered by the owner (all (A), Vikram, 2026-11-09 07:24 UTC); spec, plan and tasks updated to the answers. Test: `npm run specs:check` [FR-033, FR-040, FR-048, FR-060, FR-022]
 - [ ] T017 [G9] Real move between two machines of different OS (macOS to Windows, Linux to macOS) by the machines' owners: mapping, case rules, file modes, dialogs; recorded as `real:` in the spec. No agent session, no credits [FR-114, FR-090, FR-092, FR-093]
 - [ ] T018 [G9] Real screen-reader run (NVDA on Windows, VoiceOver on macOS) of the preview, asked of the machines' owners [FR-081]

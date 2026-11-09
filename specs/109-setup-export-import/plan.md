@@ -51,7 +51,7 @@ Considered and not reused: `mcpimport.ts`'s preview (VS Code `mcp.json` only; it
 - **V Calm UI**: 10.5 px floor, both sizes, words not colours, keyboard and screen reader (FR-080..FR-083). Pass.
 - **VI Platforms**: pure path module with injected platform and home (FR-090); dialog filters and modes per OS; `[KNOWN GAP]` FR-112, FR-114 for real machines. Pass.
 - **VII Quality gates**: tests per group, screenshots in three worlds at both sizes. Pass.
-- **VIII Honest limits**: FR-110..FR-115, Q1..Q5. Pass.
+- **VIII Honest limits**: FR-110..FR-115; Q1..Q5 answered by the owner 2026-11-09 (recommended defaults). Pass.
 
 ## Complexity tracking
 
