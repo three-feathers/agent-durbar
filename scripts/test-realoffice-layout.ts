@@ -5,8 +5,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { placeBox, portraitCrop, PORTRAIT_SIDE, slipAvoid, NOTE_PAPER, NOTE_PAPER_DEFAULT, NOTE_INK, notePaper, screenFit, screenFor, personMotion, zoomRect, realLayout, lobbyWidths, sortDesks, deskOrder, deskBase, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
   type RealModel, type RealMeta, type RealAgent, type RealState, type Rect, type Layout } from '../src/shared/realoffice-layout';
-import { lobbyBand, lobbyScale, visitorScale, HEAD, HEAD_FACE, HELP_FACE_MIN, HELP_GAP, helpH, helpCols, helpShown, headCrop, helperPerson } from '../src/shared/realoffice-layout';
+import { signMin, lobbyBand, lobbyScale, visitorScale, HEAD, HEAD_FACE, HELP_FACE_MIN, HELP_GAP, helpH, helpCols, helpShown, headCrop, helperPerson } from '../src/shared/realoffice-layout';
 import { createHash } from 'crypto';
+import { CHARACTER_CHOICES } from '../src/shared/characters';
 import { lampWords, lightFor, lightState, LIGHT_TABLE, ambientFor, doneTick, fixtureLight, isActive, type LightState } from '../src/shared/lights';
 
 process.exitCode = 1;
@@ -348,7 +349,7 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
   assert.deepStrictEqual(C.WORLD_FLAGS, { cave: false, retro: false }, 'the cave is behind an off-by-default flag until the owner opens it (spec 097 phase 4 gate)');
   assert.deepStrictEqual(C.offeredWorlds().map((w) => w.id), ['photo'], 'flag off: only Photo office is offered');
   assert.deepStrictEqual(C.offeredWorlds({ cave: true }).map((w) => w.id), ['photo', 'cave'], 'flag on: Photo office first, then the cave');
-  assert.deepStrictEqual(C.REAL_SETS.map((s) => s.id), ['office', 'prehistoric', 'retro'], 'the sets with Real office poses');
+  assert.deepStrictEqual(C.REAL_SETS.map((s) => s.id), ['office', 'prehistoric', 'pirate', 'royal', 'rebels', 'monster', 'cheeky', 'retro'], 'the sets with Real office poses (T240..T244: the five crews are wired; Minimalist is not)');
   assert.deepStrictEqual(C.peopleFor('cave', 'theme', { cave: true }), { world: 'cave', set: 'prehistoric', setName: 'Prehistoric', note: '' }, "the cave's default set is Prehistoric");
   assert.deepStrictEqual(C.peopleFor('cave', 'theme', { cave: false }), { world: 'photo', set: 'office', setName: 'Office people', note: '' }, 'flag off: the cave is not drawn');
   assert.strictEqual(C.peopleFor('photo', 'prehistoric', { cave: true }).set, 'prehistoric', 'any set in any world: Prehistoric in the Photo office');
@@ -388,16 +389,16 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
     assert.strictEqual(C.peopleFor('photo', 'pirates', ON).set, 'pirates', 'any set in any world');
     assert.strictEqual(C.peopleFor('photo', 'pirates', OFF).set, 'office', 'flag off: the set is not drawn');
   } finally { C.WORLDS.pop(); C.REAL_SETS.pop(); delete (C.WORLD_FLAGS as Record<string, boolean>).pirate; }
-  // FR-083 / FR-202: the note (peopleFor's), for a crew choice with no Real office poses; the names come from CREWS, so every crew without a REAL_SETS row has one
+  // FR-083 / FR-202 / FR-336: the note (peopleFor's): a crew with a row says it draws its people, one without (Minimalist) has the `heads` line; the names come from CREWS, so every crew has one by construction
   const note = (c: string): string => C.peopleFor('photo', c).note;
-  for (const c of ['minimalist', ...Object.keys(C.CREWS)]) if (!C.REAL_SETS.some((s) => s.choice === c)) assert.strictEqual(note(c), `Real office shows Office people until ${c[0].toUpperCase() + c.slice(1)} has Real office poses.`, `${c}: has its note`);
   for (const c of ['theme', 'mine', '', '__proto__', 'constructor', 'office']) assert.strictEqual(note(c), '', `${c || '(none)'}: no note`);
-  assert.strictEqual(note('prehistoric'), 'Real office draws the Prehistoric people.', 'Q12: Prehistoric draws its own people, and Settings says so');
-  { // FR-336 `closed` stays for any set row whose flag is off (here a crew's, temporarily)
-    C.REAL_SETS.push({ id: 'royals', name: 'Royals', choice: 'royal', flag: 'cave' });
+  for (const c of Object.keys(C.CREWS)) assert.strictEqual(note(c), `Real office draws the ${c[0].toUpperCase() + c.slice(1)} people.`, `${c}: draws its own people, and Settings says so (Q12, T240..T244: the "until <Crew> has Real office poses" line is gone for every wired crew)`);
+  assert.strictEqual(note('minimalist'), 'Real office shows Office people until Minimalist has Real office poses.', 'Minimalist has no set yet (#1331): the true, temporary line stays');
+  { // FR-336 `closed` stays for any set row whose flag is off (here Minimalist's, temporarily)
+    C.REAL_SETS.push({ id: 'minimals', name: 'Minimals', choice: 'minimalist', flag: 'cave' });
     try {
-      assert.strictEqual(C.levelFor('royal', { cave: false }), 'closed'); assert.strictEqual(C.levelFor('royal', { cave: true }), 'full');
-      assert.strictEqual(note('royal'), 'Real office shows Office people until Royal is open in Real office.', 'FR-336: a set with poses behind a closed flag says it is not open');
+      assert.strictEqual(C.levelFor('minimalist', { cave: false }), 'closed'); assert.strictEqual(C.levelFor('minimalist', { cave: true }), 'full');
+      assert.strictEqual(note('minimalist'), 'Real office shows Office people until Minimalist is open in Real office.', 'FR-336: a set with poses behind a closed flag says it is not open');
     } finally { C.REAL_SETS.pop(); }
   }
   // spec 097 FR-335, FR-336: every Characters value resolves to one set, with a level and a true note (issue #1154)
@@ -405,8 +406,8 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
     const CLOSED = { cave: false, retro: false }, OPEN = { cave: true, retro: false };
     const want: Record<string, [string, string, string, string]> = { // choice: [level closed, level open, set closed, set open]
       theme: ['default', 'default', 'office', 'office'], '': ['default', 'default', 'office', 'office'], mine: ['default', 'default', 'office', 'office'],
-      minimalist: ['heads', 'heads', 'office', 'office'], cheeky: ['heads', 'heads', 'office', 'office'], pirate: ['heads', 'heads', 'office', 'office'],
-      monster: ['heads', 'heads', 'office', 'office'], royal: ['heads', 'heads', 'office', 'office'], rebels: ['heads', 'heads', 'office', 'office'],
+      minimalist: ['heads', 'heads', 'office', 'office'], cheeky: ['full', 'full', 'cheeky', 'cheeky'], pirate: ['full', 'full', 'pirate', 'pirate'],
+      monster: ['full', 'full', 'monster', 'monster'], royal: ['full', 'full', 'royal', 'royal'], rebels: ['full', 'full', 'rebels', 'rebels'],
       prehistoric: ['full', 'full', 'prehistoric', 'prehistoric'],
     };
     for (const [c, [lc, lo, sc, so]] of Object.entries(want)) {
@@ -422,10 +423,20 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
   }
   { // FR-337 (issue #1154): the art list's numbers come from the code, so a count in the spec cannot drift (Cheeky has 13 ids, not 15)
     const FRAMES = 12; // FR-337: book, coffee, knock, letter, rest, runA, runB, think, typeA, typeB, waveA, waveB
-    const todo = Object.entries(C.CREWS).filter(([c]) => !C.REAL_SETS.some((x) => x.choice === c)) as [string, string[]][];
-    assert.deepStrictEqual(todo.map(([c]) => c).sort(), ['cheeky', 'monster', 'pirate', 'rebels', 'royal'], 'the crews still without a set are the ones FR-337 lists');
+    const five = ['cheeky', 'monster', 'pirate', 'rebels', 'royal']; // the crews FR-337 lists; T240..T244 wired them, each is one REAL_SETS row
+    for (const c of five) assert.ok(C.REAL_SETS.some((x) => x.choice === c && !x.flag), `${c}: wired by a REAL_SETS row with no flag (Q12)`);
+    const todo = five.map((c) => [c, C.CREWS[c]] as [string, string[]]);
     const per = Object.fromEntries(todo.map(([c, ids]) => [c, ids.length * FRAMES])), total = Object.values(per).reduce((a, b) => a + b, 0);
     assert.strictEqual(per.cheeky, 156, 'Cheeky: 13 people x 12 frames'); assert.strictEqual(total, 444, 'all five crews: 156 + 4 x 72');
+    /* a wired crew's pack has every person of the crew with its 12 frames on disk (a crew with a missing person or frame fails here, before any driver) */
+    for (const [c, ids] of todo) {
+      const dir = path.join(ROOT, 'src', 'renderer', 'realoffice', 'sets', c), sj = JSON.parse(fs.readFileSync(path.join(dir, 'set.json'), 'utf8')) as { seat: Record<string, unknown>; stand: Record<string, unknown> };
+      assert.deepStrictEqual(Object.keys(sj.seat).sort(), [...ids].sort(), `${c}: the set has the crew's people, no more, no fewer`);
+      assert.deepStrictEqual(Object.keys(sj.stand).sort(), [...ids].sort(), `${c}: the standing people are the crew's`);
+      const webps = fs.readdirSync(dir).filter((f) => /\.webp$/.test(f) && !/\.h\.webp$/.test(f));
+      assert.strictEqual(webps.length, ids.length * FRAMES, `${c}: ${ids.length * FRAMES} frames on disk`);
+      for (const id of ids) for (const f of ['book', 'coffee', 'knock', 'letter', 'rest', 'runA', 'runB', 'think', 'typeA', 'typeB', 'waveA', 'waveB']) assert.ok(fs.existsSync(path.join(dir, `${id}-${f}.webp`)), `${c}: ${id}-${f}.webp exists`);
+    }
     const specText = fs.readFileSync(path.join(ROOT, 'specs', '097-real-office', 'spec.md'), 'utf8'), tasksText = fs.readFileSync(path.join(ROOT, 'specs', '097-real-office', 'tasks.md'), 'utf8');
     const n = (c: string): number => (C.CREWS[c] as string[]).length;
     for (const [what, text, want] of [
@@ -435,12 +446,23 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
     ] as [string, string, string][]) assert.ok(text.includes(want), `${what}: the document must say "${want}" (derived from crew.js)`);
     assert.ok(!/\b468\b|\b180 frames/.test(specText + tasksText), 'the old, wrong counts (15 Cheeky people, 468 frames) are gone');
   }
+  { // T249 (spec 097): the parity matrix kept true. Every world x every Characters value has a cell here; a value or world added without one fails
+    const choices = [...CHARACTER_CHOICES] as string[];
+    const ALL = Object.fromEntries(Object.keys(C.WORLD_FLAGS).map((k) => [k, true]));
+    const defaultOf: Record<string, string> = { photo: 'office', cave: 'prehistoric', retro: 'retro' };
+    const own: Record<string, string> = { cheeky: 'cheeky', prehistoric: 'prehistoric', pirate: 'pirate', monster: 'monster', royal: 'royal', rebels: 'rebels' }; // a crew with a row: its own people in every world
+    for (const w of C.WORLDS) assert.ok(w.id in defaultOf, `world ${w.id} has no column in the matrix (T249): add one here and a row in the spec's table`);
+    for (const c of choices) assert.ok(c === 'theme' || c === 'minimalist' || c in own, `Characters value ${c} has no cell in the matrix (T249): add it here and to the spec's table`);
+    assert.ok(!choices.includes('mine'), 'My characters (spec 096) is a KNOWN GAP: when it becomes a value it needs a cell in every world (T246)');
+    for (const w of C.WORLDS) for (const c of choices) {
+      const want = own[c] || defaultOf[w.id];
+      assert.strictEqual(C.peopleFor(w.id, c, ALL).set, want, `${w.id} x ${c}: the cell of the matrix`);
+      assert.strictEqual(C.peopleFor(w.id, c, ALL).world, w.id, `${w.id} x ${c}: the world is kept when open`);
+    }
+    for (const c of Object.keys(C.CREWS)) assert.ok(c in own || c === 'minimalist', `crew ${c} has no cell in the matrix (T249)`);
+  }
   C.CREWS.futurecrew = []; // a future crew (mutant check: a hand list of names would miss it)
   try { assert.strictEqual(note('futurecrew'), 'Real office shows Office people until Futurecrew has Real office poses.', 'a new crew gets its note by construction'); } finally { delete C.CREWS.futurecrew; }
-  assert.strictEqual(note('pirate'), 'Real office shows Office people until Pirate has Real office poses.', 'spec 077 FR-074: the Pirate crew has its Real office note');
-  assert.strictEqual(note('monster'), 'Real office shows Office people until Monster has Real office poses.', 'spec 077 FR-075: the Monster crew has its Real office note');
-  assert.strictEqual(note('royal'), 'Real office shows Office people until Royal has Real office poses.', 'spec 077 FR-076: the Royal crew has its Real office note');
-  assert.strictEqual(note('rebels'), 'Real office shows Office people until Rebels has Real office poses.', 'spec 077 FR-077: the Animal Rebels crew has its Real office note (crewName capitalises the id)');
 }
 
 // ---- FR-037: who sits where ----
@@ -1192,6 +1214,38 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
     assert.ok(stripProblems(tall, 'mutant', m).length > 0, 'mutant: too many rows is caught');
   }
   console.log(`helper heads: ${sc} layouts, ${withStrip} with strips`);
+}
+// ---- spec 097 FR-353 (owner Q31 = 1, 2026-11-08): a saved room order is kept in the rows, left to right, top to bottom, for every split tried ----
+{
+  const mk = (sizes: number[], keepRooms?: boolean): RealModel => ({ keepRooms, places: model(1, 1).places, folders: sizes.map((n, fi) => ({ id: 'r' + fi, agents: Array.from({ length: n }, (_, i) => ({ id: `r${fi}a${i}`, state: 'idle' as RealState, person: PEOPLE[(fi + i) % PEOPLE.length], away: null }) as RealAgent) })) });
+  const rowsOf = (L: ReturnType<typeof realLayout>): string[] => L.zones.slice().sort((a, b) => (Math.abs(a.box.y - b.box.y) > 2 ? a.box.y - b.box.y : a.box.x - b.box.x)).map((z) => z.id).filter((id, i, l) => l.indexOf(id) === i); /* a folder in parts counts once, at its first part */
+  const SPLIT_SIZES: number[][] = [[1, 5, 2, 5, 2], [5, 1, 1, 5, 3], [2, 2, 2, 2, 2, 2, 3], [6, 1, 6, 1, 1], [1, 1, 4, 1, 4, 4]];
+  let differs = 0;
+  for (const [W, H] of SIZES) for (const sz of SPLIT_SIZES) {
+    const m = mk(sz, true), want = m.folders.map((f) => f.id);
+    assert.deepStrictEqual(rowsOf(realLayout(m, { w: W, h: H }, META)), want, `FR-353: ${sz} at ${W}x${H}: rooms stand in the saved order, left to right, top to bottom`);
+    // no saved order: exactly main's layout (the flag false or missing changes nothing)
+    assert.strictEqual(JSON.stringify(realLayout(mk(sz, false), { w: W, h: H }, META)), JSON.stringify(realLayout(mk(sz), { w: W, h: H }, META)), 'FR-353: no saved order, the same layout as before');
+    if (rowsOf(realLayout(mk(sz), { w: W, h: H }, META)).join() !== want.join()) differs++;
+  }
+  assert.ok(differs > 0, `FR-353: best fit alone reorders some of these (so the test can fail when the order is ignored; ${differs})`);
+}
+/* spec 097 FR-356 (bug #1392): a room narrower than the narrowest whole sign (3 letters of the name, no path, counts, cost, + and menu) takes the short sign (name, counts, + and menu), a wide one keeps it whole */
+{
+  const m = model(14, 4, { away: false, states: ['working'] }); /* 15 people: four rooms and a one-desk room, as the cave's lounge scene (#1392) */
+  m.folders.push({ id: 'blog', agents: [{ id: 'c0', state: 'working', away: null, person: PEOPLE[14] }] });
+  const signs: Record<string, { name: string; path: string; counts: number }> = { blog: { name: 'blog', path: '~/work/blog', counts: 3 } }; /* two counts and the cost, as the renderer passes them */
+  for (const f of m.folders.slice(0, 4)) signs[f.id] = { name: 'swisscontract-ai', path: '~/work/swisscontract-ai', counts: 3 };
+  let shortSeen = 0, wholeSeen = 0;
+  for (const [w, h] of [[1280, 748], [1440, 848], [900, 748]] as [number, number][]) {
+    const L = realLayout(m, { w, h }, META, signs);
+    for (const z of L.zones) {
+      const need = signMin(signs[z.id].counts);
+      assert.strictEqual(!!z.signShort, need > z.box.w - 8, `${w}x${h} ${z.id}: short sign exactly when ${need} px does not fit its room ${z.box.w - 8} px`);
+      if (z.signShort) shortSeen++; else wholeSeen++;
+    }
+  }
+  assert.ok(shortSeen > 0 && wholeSeen > 0, `a one-desk room takes the short sign, a wide room keeps it whole (${shortSeen} short, ${wholeSeen} whole)`);
 }
 console.log(`realoffice layout and lights tests passed (${cases} layouts, ${lcases} with a lounge, faces ${JSON.stringify(faces)})`);
 process.exitCode = 0;

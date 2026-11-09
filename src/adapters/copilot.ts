@@ -1645,7 +1645,10 @@ export class CopilotAdapter implements AgentAdapter {
     return live ? reloadAgentsRpc(live.session.rpc.agent as unknown as AgentRpc) : false;
   }
 
-  /** spec 043 FR-002: select a custom agent for the next turns, or the default agent (null). The runtime confirms with an event. */
+  /**
+   * spec 043 FR-002: select a custom agent for the next turns, or the default agent (null). The runtime confirms with an event. The
+   * runtime reads the agent file itself, so main's confirmed bytes (FR-044) are not passed on (a `[KNOWN GAP]` in the spec).
+   */
   async selectAgentProfile(sessionId: string, id: string | null): Promise<AgentProfile | null> {
     const live = this.sessions.get(sessionId);
     if (!live) throw new Error('The session is not running.');

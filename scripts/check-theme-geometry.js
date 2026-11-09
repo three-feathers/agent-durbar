@@ -11,11 +11,11 @@
  *   2. real fonts: the office check's own rules (overlap, clipping, room headers, text at least 10.5px) on the same layouts in
  *      the theme's own fonts, where a wider display font could push header parts. Motion is reduced; a few seconds per theme.
  *
- *   npm run check:geometry                     Retro (dark, its own display font and art) against Clean Office
- *   CHECK_ALL_THEMES=1 npm run check:geometry  the other built-in theme (Clean Office is the baseline), scripts/fixtures/themes/check-user.json and pink-studio.json (nightly CI)
- *   GEOMETRY_THEMES=retro,user npm run check:geometry
+ *   npm run check:geometry                     the dark fixture theme (check-dark.json: dark page, its own display font) against Clean Office
+ *   CHECK_ALL_THEMES=1 npm run check:geometry  the dark fixture, scripts/fixtures/themes/check-user.json and pink-studio.json (nightly CI; Clean Office is the baseline)
+ *   GEOMETRY_THEMES=dark,user npm run check:geometry
  *
- * Spec 008 FR-111 (owner decision 2026-10-22): pull requests check Retro only. The other styles change only colours, borders,
+ * Spec 008 FR-111 (owner decision 2026-10-22; Retro replaced by the dark fixture, spec 102 T226): pull requests check the dark fixture only. The other styles change only colours, borders,
  * art and the display font through themes.css, and test:theme fails the build if themes.css sets any size (spec 035 FR-010) or a
  * manifest carries anything but known tokens and a known UI style; nightly CI runs every theme here.
  *
@@ -23,7 +23,7 @@
  */
 const fs = require('fs');
 const { pageCheck } = require('./check-office-overlap.js');
-const { helpers, jsLiteral } = require('./driver-helpers');
+const { helpers, jsLiteral, CHECK_DARK, darkFixtureProblem } = require('./driver-helpers');
 const os = require('os');
 const path = require('path');
 
@@ -33,11 +33,11 @@ const SIZES = [[1440, 900], [1280, 800]];
 /* spec 001 FR-094 (issue #697): 15 and 12 agents, plus a sparse office that draws expanded helper cards (three parents in one room with two helpers each: `hx`) */
 const SIMS = [15, 12, 'hx'];
 const SIM_QUERY = { hx: { sim: '3', simrooms: '1', simhelpers: '2' } };
-/* user packs by name: `user` (check-user.json) and the sample AI-style pack with fonts, corners, shadows and clothes (spec 070) */
-const FIXTURES = { user: 'check-user.json', 'pink-studio': 'pink-studio.json' };
-const ALL_THEMES = 'retro,user,pink-studio';
+/* user packs by name: `dark` (check-dark.json: a dark page and its own display font, spec 102 T226), `user` (check-user.json) and the sample AI-style pack with fonts, corners, shadows and clothes (spec 070) */
+const FIXTURES = { dark: 'check-dark.json', user: 'check-user.json', 'pink-studio': 'pink-studio.json' };
+const ALL_THEMES = 'dark,user,pink-studio';
 /* spec 070: the Pink Studio pack (fonts, radii, shadows, clothes) runs with every theme (nightly, or GEOMETRY_THEMES=pink-studio) */
-const THEMES = (process.env.GEOMETRY_THEMES || (process.env.CHECK_ALL_THEMES === '1' ? ALL_THEMES : 'retro')).split(',').map((s) => s.trim()).filter(Boolean);
+const THEMES = (process.env.GEOMETRY_THEMES || (process.env.CHECK_ALL_THEMES === '1' ? ALL_THEMES : 'dark')).split(',').map((s) => s.trim()).filter(Boolean);
 
 /* runs in the page: the box of EVERY element of the office, the lobby and the top bar (SVG art inside excluded: scene kits draw
    their own), keyed by order and class, plus the font size of each text element; the DOM must be the same in every theme */
@@ -76,6 +76,8 @@ async function driver(ctx) {
     await ctx.waitFor(`window.THEME&&window.THEME.current().id===${jsLiteral(want)}`, 5000);
     const on = await ctx.js(`window.THEME.current().id`);
     if (on !== want) throw new Error(`theme ${want} was not applied (on screen: ${on})`);
+    /* spec 102 T226 (Paco, PR #1276): "dark" is the dark fixture, not just whatever file the name points at */
+    if (theme === 'dark') { const bad = await darkFixtureProblem(ctx); if (bad) throw new Error(`${theme} sim${sim}-${w}x${h}: ${bad}`); }
     await ctx.js(`document.fonts.ready.then(()=>true)`);
     /* spec 008 FR-113: a steady simulator before every capture, the reference included. PR #535's CI once measured a Clean Office
        page whose agents were added but whose replayed events were never drawn (no animation frame for over 3 s): every theme then
@@ -86,7 +88,7 @@ async function driver(ctx) {
     // agents go to the lobby after about 600 ms (instant with reduced motion): wait until somebody is there
     // (spec 068: not the coffee corner, where an agent on a break stands at once; spec 008 FR-113: on a steady simulator)
     if (!(await ctx.waitFor(`window.__durbarSimUi&&window.__durbarSimUi.settleNow()&&!!document.querySelector('.place.busy:not([data-place="coffee"]):not([data-place="boss"]):not([data-place="bank"])')`, 8000))) throw new Error(`${theme} sim${sim}-${w}x${h}: nobody reached a place in the lobby`);
-    // the pointer of the virtual display rests mid-window: a hover style (retro nudges a card by 1px) is not layout
+    // the pointer of the virtual display rests mid-window: a hover style (a theme may nudge a card by 1px) is not layout
     ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 0, y: 0 });
     await ctx.sleep(300);
     // a settled layout: measure until two snapshots 300 ms apart agree (a slow runner, macOS in CI, once caught the reference

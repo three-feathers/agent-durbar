@@ -198,15 +198,35 @@ for (const wid of worldIds) {
   packs++; biggest = Math.max(biggest, [...all.values()].reduce((n, b) => n + b.length, 0));
   if (wid === 'photo') { for (const [k, v] of all) files.set(k, v); md = mdAll; pj = merged; META = JSON.parse(merged); }
 }
-/* spec 097 Changes 2026-11-08: a set no world uses yet is a pack-only set (the wiring comes later); it still passes every picture and text check, and has its approval on record */
+/* spec 097 Changes 2026-11-08 (T240..T244): a set that is no world's default is a crew set; it is drawn only because crew.js has a `REAL_SETS` row for it
+   (wired). It still passes every picture and text check and has its approval on record. A set with no row is refused, except a set named in SETS_PACK_ONLY
+   (T245 art part: the art lands before its wiring PR); that allowance fails as soon as crew.js gives the set a row, so it cannot go stale. */
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const REAL_SETS = (require(path.join(__dirname, '..', '..', 'src', 'renderer', 'crew.js')) as { REAL_SETS: { id: string }[] }).REAL_SETS;
+const wiredIds = REAL_SETS.map((r) => r.id);
+for (const id of wiredIds) assert.ok(setIds.includes(id), `${id}: a REAL_SETS row has its set folder`);
+const SETS_PACK_ONLY = ['minimalist']; // art landed, wiring PR to come (T245); remove the name when crew.js has its REAL_SETS row
+for (const id of SETS_PACK_ONLY) assert.ok(!wiredIds.includes(id), `${id} is wired: remove it from SETS_PACK_ONLY`);
+/* each crew set's owner approval (date, time and quote of every frame line) and likeness check, one explicit entry per set: a set missing here fails */
+const QUOTE_1143 = 'Vikram Gorla (owner), 2026-11-08 11:43 UTC, Telegram DM: "Yes, I looked at every art carefully and it does not resemble any person I know"';
+const ALL_GOOD = '2026-11-08 11:29 UTC, "They all look good"';
+const RECORD: Record<string, { approval: string; likeness: string }> = {
+  pirate: { approval: '2026-11-08 08:48 UTC, "Ok, looks good"', likeness: QUOTE_1143 },
+  royal: { approval: ALL_GOOD, likeness: QUOTE_1143 },
+  rebels: { approval: ALL_GOOD, likeness: QUOTE_1143 },
+  monster: { approval: ALL_GOOD, likeness: QUOTE_1143 },
+  cheeky: { approval: ALL_GOOD, likeness: QUOTE_1143 },
+  minimalist: { approval: '2026-11-08 12:00 UTC, "Look approved and none look like a real person"', likeness: 'Vikram Gorla (owner), 2026-11-08 12:00 UTC, Telegram DM: "Look approved and none look like a real person"' },
+};
 const packOnly = setIds.filter((sid) => !worldIds.some((w) => (readPack('worlds', w).json as { defaultSet: string }).defaultSet === sid));
-const SETS_NOT_WIRED_OK = ['pirate', 'royal', 'rebels', 'monster', 'cheeky']; // the five crews of this pack; any other unused set is still refused
 for (const sid of packOnly) {
-  assert.ok(SETS_NOT_WIRED_OK.includes(sid), `${sid}: a set the repo ships is the default of a world (so the cap counts it)`);
+  assert.ok(wiredIds.includes(sid) || SETS_PACK_ONLY.includes(sid), `${sid}: a set the repo ships is the default of a world or has a REAL_SETS row (not wired: refused)`);
+  assert.ok(Object.prototype.hasOwnProperty.call(RECORD, sid), `${sid}: the set has its own approval and likeness entry in RECORD (no fallback)`);
+  const rec = RECORD[sid];
   const st = readPack('sets', sid), sj = st.json as { id: string; level: string; formatVersion: number; name: string; seat: Record<string, unknown>; stand: Record<string, { poses: Record<string, number[]> }> };
   assert.strictEqual(sj.id, sid, `${sid}: set.json id is the folder`);
   assert.strictEqual(sj.formatVersion, 1, `${sid}: formatVersion 1`);
-  assert.strictEqual(sj.level, 'full', `${sid}: pack-only crew sets have full poses`);
+  assert.strictEqual(sj.level, 'full', `${sid}: crew sets have full poses`);
   assert.ok(typeof sj.name === 'string' && sj.name.length >= 1 && Array.from(sj.name).length <= 40, `${sid}: name 1-40 characters`);
   assert.deepStrictEqual(Object.keys(sj.seat).sort(), Object.keys(sj.stand).sort(), `${sid}: the same people seated and standing`);
   for (const [pid, s] of Object.entries(sj.stand)) assert.deepStrictEqual(Object.keys(s.poses).sort(), ['book', 'coffee', 'knock', 'letter', 'runA', 'runB'], `${sid} ${pid}: the six standing poses`);
@@ -221,8 +241,8 @@ for (const sid of packOnly) {
   assert.ok(new RegExp(approval.source.slice(1, -1)).test(prefixed), `${sid}: the unanchored regex would accept the prefixed line (mutant is real)`);
 
   assert.deepStrictEqual(frames.map((m) => m[1]).sort(), [...st.files.keys()].sort(), `${sid}: one approval line for every picture`);
-  for (const m of frames) assert.ok(approval.test(m[2]), `${sid} ${m[1]}: approval line names who, in whose place, channel, time and quote (FR-067)`);
-  for (const [n, x] of sections(st.md)) assert.ok(/^(?:Paco|Vikram Gorla)\b/.test(x['approved by'] || '') && /^Vikram Gorla \(owner\), 2026-11-08 11:43 UTC, Telegram DM: "Yes, I looked at every art carefully and it does not resemble any person I know"$/.test(x['likeness-check'] || ''), `${sid} ${n}: approved by and likeness-check recorded`);
+  for (const m of frames) assert.ok(approval.test(m[2]) && m[2].endsWith(`Telegram DM, ${rec.approval}`), `${sid} ${m[1]}: approval line names who, in whose place, channel, time and the set's recorded quote (FR-067)`);
+  for (const [n, x] of sections(st.md)) assert.ok(/^(?:Paco|Vikram Gorla)\b/.test(x['approved by'] || '') && (x['likeness-check'] || '') === rec.likeness, `${sid} ${n}: approved by and likeness-check recorded`);
   packs++;
 }
 assert.strictEqual(Object.keys(META.seat).length, 15, '15 seated people (the Office people)');
