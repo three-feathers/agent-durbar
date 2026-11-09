@@ -125,63 +125,105 @@ const LIST = [
   assert.throws(() => tick(LIST, 1139, 'toggle'), /state/, 'validate: unknown state refused');
   assert.throws(() => PT.tickBody(null, 1, 'tick'), /body/, 'validate: body must be a string');
 }
-// 13 the event mapping: only closed-as-completed ticks; reopened unticks; not planned, duplicate, unknown do nothing
+// 13 the desired state from an issue's live REST object: closed as completed by or for a trusted account ticks; open unticks;
+// not planned, duplicate, no reason, a pull request, an outsider closing their own issue: leave the line as it is
 {
-  assert.strictEqual(PT.stateFor('closed', 'completed'), 'tick', 'event: completed ticks');
-  assert.strictEqual(PT.stateFor('reopened', ''), 'untick', 'event: reopened unticks');
-  for (const [a, r] of [['closed', 'not_planned'], ['closed', 'duplicate'], ['closed', ''], ['edited', 'completed'], ['labeled', '']]) {
-    assert.strictEqual(PT.stateFor(a, r), null, `event: ${a}/${r || 'none'} does nothing`);
+  const T = (l: unknown) => l === 'vikramgorla' || l === 'fjcabello';
+  const ds = (o: unknown) => PT.desiredState(o, T);
+  const me = { login: 'vikramgorla' };
+  const out = { login: 'outsider' };
+  assert.strictEqual(ds({ state: 'closed', state_reason: 'completed', user: me, closed_by: me }), 'tick', 'state: completed ticks');
+  assert.strictEqual(ds({ state: 'open', state_reason: 'reopened', user: me }), 'untick', 'state: open unticks');
+  assert.strictEqual(ds({ state: 'open', state_reason: null, user: out }), 'untick', 'state: an open outsider issue unticks (the truth)');
+  for (const r of ['not_planned', 'duplicate', null, 'reopened']) {
+    assert.strictEqual(ds({ state: 'closed', state_reason: r, user: me, closed_by: me }), null, `state: closed as ${r} stays as is`);
   }
+  assert.strictEqual(ds({ state: 'closed', state_reason: 'completed', user: out, closed_by: out }), null, 'state: an outsider closing their own issue ticks nothing');
+  assert.strictEqual(ds({ state: 'closed', state_reason: 'completed', user: out, closed_by: { login: 'fjcabello' } }), 'tick', 'state: closed by a trusted account ticks');
+  assert.strictEqual(ds({ state: 'closed', state_reason: 'completed', user: me, closed_by: null }), 'tick', 'state: a trusted author with no closer ticks');
+  assert.strictEqual(ds({ state: 'closed', state_reason: 'completed', user: me, pull_request: {} }), null, 'state: a pull request is no item');
+  assert.strictEqual(ds(null), null, 'state: nothing read');
+  assert.deepStrictEqual(PT.itemNumbers('- [ ] #5 a (PR #9)\n- [x] #6 b\n```\n- [ ] #7 code\n```\n- [ ] #5 again\n- [ ] #0 zero\nUpdated: #8'), ['5', '6'], 'items: first #M of checkbox lines outside fences, once each');
 }
-// 13b main(): the trust gates and the GitHub calls, with a fake gh (no network, no shell); the real trusted-authors.txt and trackers file
+// 13b main(): reconciles every line of every tracker with the live states, through a fake gh (no network, no shell);
+// the real trusted-authors.txt and trackers file
 {
   type Call = { args: string[]; input?: string };
-  const run = (env: Record<string, string>, trackers: Record<string, { login: string; body: string | null }>) => {
+  type Iss = { state: string; state_reason?: string | null; user?: { login: string }; closed_by?: { login: string } | null; pull_request?: object; body?: string | null } | 'fail';
+  const me = { login: 'vikramgorla' };
+  const run = (issues: Record<string, Iss>, env: Record<string, string> = {}) => {
     const calls: Call[] = [];
     const fake = (args: string[], input?: string) => {
       calls.push({ args, input });
-      const t = /issues\/([0-9]+)$/.exec(args[args.length - 1] === '-' ? args[3] : args[1]);
-      const tr = t && trackers[t[1]];
-      return args.includes('PATCH') ? '{}' : JSON.stringify({ user: { login: tr ? tr.login : 'vikramgorla' }, body: tr ? tr.body : '' });
+      if (args.includes('PATCH')) { const t = /issues\/([0-9]+)$/.exec(args[3]); const i = t && issues[t[1]]; if (i && i !== 'fail') i.body = JSON.parse(input || '{}').body; return '{}'; }
+      const m = /issues\/([0-9]+)$/.exec(args[1]);
+      const i = m && issues[m[1]];
+      if (!i || i === 'fail') throw new Error('HTTP 404');
+      return JSON.stringify(i);
     };
     const log = console.log; console.log = () => {};
-    try { PT.main({ GITHUB_REPOSITORY: 'three-feathers/agent-durbar', EVENT_ACTION: 'closed', STATE_REASON: 'completed', ISSUE_AUTHOR: 'vikramgorla', ACTOR: 'vikramgorla', ...env }, ROOT, fake); } finally { console.log = log; }
-    return { reads: calls.filter((c) => !c.args.includes('PATCH')), patches: calls.filter((c) => c.args.includes('PATCH')) };
+    let code: number;
+    try { code = PT.main({ GITHUB_REPOSITORY: 'three-feathers/agent-durbar', ...env }, ROOT, fake); } finally { console.log = log; }
+    const reads = calls.filter((c) => !c.args.includes('PATCH'));
+    return { code, reads, patches: calls.filter((c) => c.args.includes('PATCH')), readCount: (n: string) => reads.filter((c) => c.args[1].endsWith('/issues/' + n)).length };
   };
-  const both = { 1147: { login: 'vikramgorla', body: '- [ ] #1139 helpers\n- [ ] #11 x' }, 1404: { login: 'vikramgorla', body: '- [ ] #5 other' } };
-  let r = run({ ISSUE_NUMBER: '1139' }, both);
-  assert.deepStrictEqual(r.reads.map((c) => c.args[1]), ['repos/three-feathers/agent-durbar/issues/1147', 'repos/three-feathers/agent-durbar/issues/1404'], 'main: reads each tracker');
-  assert.strictEqual(r.patches.length, 1, 'main: one edit, only the tracker that lists #1139');
-  assert.deepStrictEqual(r.patches[0].args, ['api', '-X', 'PATCH', 'repos/three-feathers/agent-durbar/issues/1147', '--input', '-'], 'main: PATCH of #1147 with the body on stdin');
-  assert.deepStrictEqual(JSON.parse(r.patches[0].input || '{}'), { body: '- [x] #1139 helpers\n- [ ] #11 x' }, 'main: the edited body');
-  r = run({ ISSUE_NUMBER: '1139', ISSUE_AUTHOR: 'outsider', ACTOR: 'outsider' }, both);
-  assert.strictEqual(r.reads.length + r.patches.length, 0, 'main: an outsider closing their own issue does nothing');
-  r = run({ ISSUE_NUMBER: '1139', ISSUE_AUTHOR: 'outsider', ACTOR: 'fjcabello' }, both);
-  assert.strictEqual(r.patches.length, 1, 'main: a trusted actor closing an outsider-authored listed issue ticks');
-  r = run({ ISSUE_NUMBER: '1139', ISSUE_AUTHOR: 'vikramgorla[bot]x', ACTOR: 'a b' }, both);
-  assert.strictEqual(r.patches.length, 0, 'main: malformed logins are not trusted');
-  r = run({ ISSUE_NUMBER: '1139' }, { 1147: { login: 'outsider', body: '- [ ] #1139 helpers' }, 1404: { login: 'vikramgorla', body: null } });
-  assert.strictEqual(r.patches.length, 0, 'main: a tracker not opened by a trusted account is never edited; a null body is no line');
-  r = run({ ISSUE_NUMBER: '1139', STATE_REASON: 'not_planned' }, both);
-  assert.strictEqual(r.reads.length, 0, 'main: closed as not planned reads nothing');
-  assert.doesNotThrow(() => { r = run({ ISSUE_NUMBER: '1139; rm -rf /' }, both); }, 'main: a non-digit number does nothing');
-  assert.strictEqual(r.reads.length, 0, 'main: a non-digit number reads nothing');
-  r = run({ ISSUE_NUMBER: '1139', GITHUB_REPOSITORY: 'a/b/../c' }, both);
+  const done = (u = me) => ({ state: 'closed', state_reason: 'completed', user: u, closed_by: me });
+  const open = () => ({ state: 'open', state_reason: null, user: me });
+  const world = (): Record<string, Iss> => ({
+    1147: { state: 'open', user: me, body: '- [ ] #1152 drag\n- [ ] #1154 crews\n- [ ] #1171 text (PR #1321)\n- [x] #1146 reading\n- [ ] #1200 dropped\n\nUpdated by the coordinator: #1152' },
+    1404: { state: 'open', user: me, body: '- [ ] #1154 crews\n- [ ] #1500 arcade' },
+    1152: done(), 1154: done(), 1171: done(), 1146: open(), 1200: { state: 'closed', state_reason: 'not_planned', user: me, closed_by: me }, 1500: open(), 1321: done(),
+  });
+  // three closes land within seconds; GitHub cancels the middle pending run: the one run left reconciles all three
+  let w = world();
+  let r = run(w);
+  assert.strictEqual(r.code, 0, 'main: exit 0');
+  assert.strictEqual((w[1147] as { body: string }).body, '- [x] #1152 drag\n- [x] #1154 crews\n- [x] #1171 text (PR #1321)\n- [ ] #1146 reading\n- [ ] #1200 dropped\n\nUpdated by the coordinator: #1152', 'main: three closes ticked, reopened unticked, not planned and the note line as they were');
+  assert.strictEqual((w[1404] as { body: string }).body, '- [x] #1154 crews\n- [ ] #1500 arcade', 'main: the second tracker reconciled too');
+  assert.strictEqual(r.patches.length, 2, 'main: one edit per changed tracker');
+  assert.deepStrictEqual(r.patches[0].args, ['api', '-X', 'PATCH', 'repos/three-feathers/agent-durbar/issues/1147', '--input', '-'], 'main: PATCH with the body on stdin');
+  assert.strictEqual(r.readCount('1154'), 1, 'main: an issue on both trackers is looked up once');
+  assert.strictEqual(r.readCount('1321'), 0, 'main: a later #N on a line is not looked up');
+  // a second run (or the run after a cancelled one) finds nothing to do and writes nothing
+  r = run(w);
+  assert.strictEqual(r.patches.length, 0, 'main: idempotent, no edit when the trackers match');
+  // a cancelled run: its close is still done by a run started for another reason (by hand, the daily backstop)
+  w = world(); (w[1152] as { state: string }).state = 'open';
+  run(w); (w[1152] as { state: string; state_reason: string }).state = 'closed'; (w[1152] as { state_reason: string }).state_reason = 'completed';
+  run(w);
+  assert.match((w[1147] as { body: string }).body, /^- \[x\] #1152 drag/m, 'main: a close whose run was cancelled is ticked by the next run');
+  // an outsider closing their own listed issue ticks nothing; an untrusted tracker is never edited
+  w = world(); w[1171] = { state: 'closed', state_reason: 'completed', user: { login: 'outsider' }, closed_by: { login: 'outsider' } };
+  w[1404] = { state: 'open', user: { login: 'outsider' }, body: '- [ ] #1154 crews' };
+  r = run(w);
+  assert.match((w[1147] as { body: string }).body, /^- \[ \] #1171 /m, 'main: an outsider closing their own issue ticks nothing');
+  assert.strictEqual((w[1404] as { body: string }).body, '- [ ] #1154 crews', 'main: a tracker not opened by a trusted account is never edited');
+  assert.strictEqual(r.patches.length, 1, 'main: only the trusted tracker is edited');
+  // a failed lookup leaves that line, does the rest, and turns the run red
+  w = world(); w[1154] = 'fail';
+  r = run(w);
+  assert.strictEqual(r.code, 1, 'main: a failed lookup makes the run red');
+  assert.match((w[1147] as { body: string }).body, /^- \[ \] #1154 crews\n- \[x\] #1171/m, 'main: a failed lookup leaves its line and does the others');
+  w = world(); w[1147] = 'fail';
+  r = run(w);
+  assert.strictEqual(r.code, 1, 'main: a tracker that cannot be read makes the run red');
+  assert.strictEqual((w[1404] as { body: string }).body, '- [x] #1154 crews\n- [ ] #1500 arcade', 'main: the next tracker is still reconciled');
+  // a bad repository name does nothing
+  r = run(world(), { GITHUB_REPOSITORY: 'a/b/../c' });
   assert.strictEqual(r.reads.length, 0, 'main: a bad repository name does nothing');
-  r = run({ ISSUE_NUMBER: '1139', EVENT_ACTION: 'reopened', STATE_REASON: 'reopened' }, { 1147: { login: 'vikramgorla', body: '- [x] #1139 helpers' }, 1404: { login: 'rubenlupi', body: '' } });
-  assert.deepStrictEqual(JSON.parse(r.patches[0].input || '{}'), { body: '- [ ] #1139 helpers' }, 'main: reopened unticks');
+  assert.strictEqual(r.code, 1, 'main: a bad repository name is red');
 }
-// 14 the workflow's shape: issues closed/reopened only, minimal permissions, pinned checkout without credentials, no PR code,
-// event values only through env (never `${{ }}` inside `run:`), no title/body/label, the trackers file holds only numbers
+// 14 the workflow's shape: issues closed/reopened, by hand and daily; minimal permissions; pinned checkout without credentials;
+// no PR code; no value of the event at all (no `github.event`), no `${{ }}` inside `run:`; the trackers file holds only numbers
 {
   const wf = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'parity-tick.yml'), 'utf8').replace(/\r\n/g, '\n');
   const code = wf.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
-  assert.match(code, /^on:\n  issues:\n    types: \[closed, reopened\]\n\n/m, 'workflow: only issues closed/reopened');
+  assert.match(code, /^on:\n  issues:\n    types: \[closed, reopened\]\n  workflow_dispatch:\n  schedule:\n    - cron: '[0-9]+ [0-9]+ \* \* \*'\n\n/m, 'workflow: issues closed/reopened, by hand, daily');
+  assert.doesNotMatch(code, /workflow_dispatch:\n    inputs:/, 'workflow: no dispatch inputs');
   assert.doesNotMatch(code, /pull_request_target|workflow_run|pull_request:/, 'workflow: no PR trigger');
   assert.match(code, /^permissions:\n  issues: write\n  contents: read\n\n/m, 'workflow: issues write, contents read, nothing else');
   assert.strictEqual((code.match(/permissions:/g) || []).length, 1, 'workflow: no job-level permissions');
   assert.match(code, /concurrency:\n  group: parity-tick\n  cancel-in-progress: false/, 'workflow: serialised');
-  assert.match(code, /if: \$\{\{ !github\.event\.issue\.pull_request \}\}/, 'workflow: skips pull requests');
   assert.match(code, /uses: actions\/checkout@[0-9a-f]{40} #/, 'workflow: checkout pinned by sha');
   assert.match(code, /persist-credentials: false/, 'workflow: no credentials left in the checkout');
   assert.doesNotMatch(code, /^\s+ref:/m, 'workflow: checks out the default branch only');
@@ -189,7 +231,9 @@ const LIST = [
   assert.deepStrictEqual(uses.map((u) => u.split('@')[0]), ['uses: actions/checkout'], 'workflow: no other action');
   const runs = code.match(/run: [^\n]*/g) || [];
   assert.deepStrictEqual(runs, ['run: node scripts/parity-tick.js'], 'workflow: one run line, no expression in it');
-  assert.doesNotMatch(code, /\.(title|body|labels?)\b/, 'workflow: no title, body or label of the event');
+  assert.doesNotMatch(code, /github\.event/, 'workflow: no value of the event');
+  const env = (code.match(/        env:\n((?:          [A-Z_]+: [^\n]*\n)+)/) || [])[1] || '';
+  assert.deepStrictEqual(env.trim().split('\n').map((l) => l.trim().split(':')[0]), ['GH_TOKEN', 'GITHUB_REPOSITORY'], 'workflow: env holds only the token and the repository');
   assert.doesNotMatch(code, /secrets\./, 'workflow: no secret');
   const trackers = JSON.parse(fs.readFileSync(path.join(ROOT, '.github', 'parity-trackers.json'), 'utf8'));
   assert.ok(Array.isArray(trackers.trackers) && trackers.trackers.length > 0, 'trackers: a list');

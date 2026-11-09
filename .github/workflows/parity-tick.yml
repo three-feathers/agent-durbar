@@ -1,13 +1,18 @@
 name: Parity tick
 
-# Spec 021 FR-088 (owner request, Vikram, 2026-11-09): the parity checklists tick themselves. When an issue is closed as completed,
-# `- [ ] #N` becomes `- [x] #N` in each tracker issue listed in .github/parity-trackers.json; when it is reopened, the line is
-# unticked. No AI call, secret or third-party action: scripts/parity-tick.js uses the GITHUB_TOKEN through the preinstalled gh
-# without a shell. An `issues` event always runs main's workflow and code (never a PR's). Event values reach the script only as
-# quoted env values (number, action, close reason, two logins); titles, bodies and labels of the event are never used.
+# Spec 021 FR-088 (owner request, Vikram, 2026-11-09): the parity checklists tick themselves. Every run reconciles each tracker
+# issue in .github/parity-trackers.json with the live state of the issues its `- [ ] #M` lines name: closed as completed by or
+# for a trusted account => `[x]`, open => `[ ]`, anything else unchanged. GitHub keeps only one pending run per concurrency
+# group (a newer one cancels it), so runs do not act on "the issue that triggered me": the next run does a cancelled run's work.
+# Triggers: an issue closed or reopened, by hand, and a daily backstop. No value of the event is used; no AI call, secret or
+# third-party action. An `issues` event always runs main's workflow and code (never a PR's); a PR close is a pull_request
+# event and does not start this workflow. scripts/parity-tick.js uses the GITHUB_TOKEN through the preinstalled gh, no shell.
 on:
   issues:
     types: [closed, reopened]
+  workflow_dispatch:
+  schedule:
+    - cron: '41 4 * * *'
 
 permissions:
   issues: write
@@ -19,21 +24,15 @@ concurrency:
 
 jobs:
   tick:
-    name: Tick the parity checklists
-    if: ${{ !github.event.issue.pull_request }}
+    name: Reconcile the parity checklists
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Tick or untick the line
+      - name: Tick and untick the lines
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
-          EVENT_ACTION: ${{ github.event.action }}
-          STATE_REASON: ${{ github.event.issue.state_reason }}
-          ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
-          ACTOR: ${{ github.event.sender.login }}
         run: node scripts/parity-tick.js
