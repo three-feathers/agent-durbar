@@ -232,6 +232,13 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 - [x] T230 [US2] The Changed fact for lounge agents [FR-329]: `realFacts`, `Changed` wraps. Test: `check-097-hover-card`
 - [x] T231 [US2] Docs and pictures [FR-330]: changelog fragment, `docs/features.md`; no committed picture (round 2: the two crops were linked from nowhere); Q25 resolved (no helpers on the card); round 3 of #1313: the card is never placed over the focused slip (`placeZoom`), the driver's focused-slip step is an Allow button reached by Tab, and its working-desk pick is made again when the person has left
 
+- [x] T250 [US2] Unit tests first: band mapping and dash from the share [FR-322, FR-323] (`test-realoffice-ctx.ts`, run by `test:realoffice-layout`)
+- [x] T251 [US2] The frame line: one svg and rect per desk in `realoffice.js`, world CSS in `realoffice.css`, the cave and arcade rules in their `world.css`; unknown draws none [FR-322..FR-324]
+- [x] T252 [US2] The share from `ctxChip` through `realModel`, the plate's name with `, context N %`, the cheap `DurbarRealOffice.ctx` update on a context event [FR-325, FR-326]
+- [x] T253 [US2] Driver `check-097-ctx-frame` in `ui-suite`, five driver mutants and three source mutants of the cheap path (review of #1299: the node step watches only the desk's frame and plate after a quiet wait; a held-draw step tests FR-326; the cap and rounding of `ctxFrame` and `ctxWords` in `test-realoffice-ctx.ts`) each shown failing; `check-office-overlap`, `check-office-ops`, `check-office-ops-real` green Round 5 (review of #1299, Ruben): a step for the arcade's fallback desk (helpers, no strip) after a context event by the cheap path: the name reads `, context P %. N helpers. Open chat panel.`, and the next full draw writes the same; source mutants `hwdrop`, `hworder`, `oldlabel` each fail it.
+- [x] T254 [US2] Simulator pictures at both sizes in Photo office, cave and arcade, each looked at, and a 2x crop of three desks; kept in `docs/screenshots`, linked from the spec (not from site pages); review of #1299: the six crops at both sizes in all three worlds are linked and retaken, the lone full arcade picture is removed (full PNGs exceed 300 KB)
+- [x] T255 [US2] Docs: changelog fragment, `docs/features.md`, `docs/feature-inventory.md`
+
 ## 2026-11-08: themes in Real office superseded by worlds (issue #1153, FR-350, FR-351; Q34 withdrawn)
 
 - [x] ~~T265~~ [US2] Spec delta 2026-11-08, first version: the measured theme gap table and Q34. Superseded by the owner's decision of 2026-11-08 (a world is the look; themes stay until the Retro flip removes them); the delta now holds FR-350, FR-351 and this decision [FR-350]
