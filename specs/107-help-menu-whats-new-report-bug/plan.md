@@ -4,7 +4,7 @@
 
 ## Summary
 
-Two small Help items, built in three small PRs. The notes are made into `dist/whatsnew.json` at build time from the same output that writes the GitHub release body, so the app never fetches them. The bug report is a dialog of short, masked, editable text; main re-masks it and opens one fixed-base https link in the system browser. Q1..Q5 (spec, Clarifications) are open; this plan follows their proposed defaults and names what changes if the owner answers otherwise.
+Two small Help items, built in three small PRs. The notes are made into `dist/whatsnew.json` at build time from the same output that writes the GitHub release body, so the app never fetches them. The bug report is a dialog of short, masked, editable text; main re-masks it and opens one fixed-base https link in the system browser. Q1..Q5 (spec, Clarifications) were answered by the owner on 2026-11-09 with the proposed defaults; this plan follows them.
 
 ## Technical context
 
@@ -37,10 +37,20 @@ The file is capped (64 KB) and the script fails the build if the cap is passed o
 
 ### D3 Report a bug (T003)
 
-- **Shared, pure**: `src/shared/bugreport.ts`: `bugText({ version, packaged, os, arch, release, apps, error? })` → lines; `osLine(env)` per platform (injected); `bugFormUrl(text, fields)` → URL from `REPO_URL` + `/issues/new`, `template=bug.yml`, `URLSearchParams`, length rule FR-025 (shortens the error, then the app lines; returns what it cut). Masking only through `redact.ts` (`redact`, `maskSecretUrl`, `maskHomePaths`, `maskOutgoing`, `cut`, `unhide`); no local patterns.
-- **Main**: `app:reportBug` (`ipcHandle`, in `src/main/ipc/app.ts` next to `app:openExternal`): validates a string up to 12 KB (`MASK_INPUT_MAX`), masks again, builds the URL with `bugFormUrl`, `shell.openExternal`. Not in `SIM_OPEN_CHANNELS`. Facts the page cannot know (OS release, packaged) come from main through `app:bugFacts`, which returns only the FR-020 fields.
-- **Renderer**: `src/renderer/bugreport.js`: the dialog (text box, the error box per Q2, *Open the bug form*, *Copy text* per Q3 with `copyText`, Cancel). The last error: a small in-memory ring of one entry, set where error toasts and agent error lines are shown (`X.toast(...).classList.add('err')` call sites and the agent error status), never persisted.
-- **Form**: `.github/ISSUE_TEMPLATE/bug.yml` gains the optional `app-info` textarea (Q4). If the owner picks the "no form change" option, `app-info` content goes into `env` and the textarea is not added.
+- **Shared, pure**: `src/shared/bugreport.ts`: `bugFacts({ version, packaged, platform, release, arch })` → `{ release, env, deployment }` (the three values main fills, FR-028; the `deployment` strings are the `bug.yml` option texts); `osLine(env)` per platform (injected); `appInfoText({ apps, error? })` → the editable box's starting text; `maskBugText(text, env)` (FR-029: `unhide`, `redact`, `maskSecretUrl`, `maskHomePaths`, `maskOutgoing`; idempotent); `bugFormUrl(facts, appInfo)` → `{ ok: true, url } | { ok: false, reason: 'too-long', over }` from `REPO_URL` + `/issues/new`, `template=bug.yml` and exactly the four ids of FR-028 through `URLSearchParams`, measuring `url.href.length` (encoded) against `BUG_URL_MAX = 8000` (FR-025); it never cuts. Masking only through `redact.ts`; no local patterns.
+- **Main**: `app:reportBug` (`ipcHandle`, in `src/main/ipc/app.ts` next to `app:openExternal`) takes **one string, the edited `app-info` text**, nothing else. It refuses a non-string or one longer than `MASK_INPUT_MAX` (`{ ok: false, reason: 'too-big' }`, FR-035) before masking; runs `maskBugText`; if that changed the text, returns `{ ok: false, reason: 'remasked', text }` and opens nothing (FR-024); otherwise computes `bugFacts(...)` itself (it never takes them from the page), calls `bugFormUrl`, returns `too-long` without opening when over `BUG_URL_MAX`, else calls `shell.openExternal` once. Not in `SIM_OPEN_CHANNELS`. `app:bugFacts` returns the same `bugFacts(...)` and the agent app list, read-only, only for display.
+- **Renderer**: `src/renderer/bugreport.js`: the dialog (three read-only lines for `release`, `env`, `deployment`; the editable *Agent Durbar details* box; the error box per Q2; a live encoded-length line from `bugFormUrl`, disabling *Open the bug form* over `BUG_URL_MAX` and both buttons over `MASK_INPUT_MAX`; *Open the bug form*; *Copy text* per Q3 with `copyText`; Cancel). It shows main's `remasked` text and `too-long`/`too-big` answers in place. The shared functions reach the page the way `redact.ts` does (`window.DurbarRedact`, `liveact.js`). The last error: a small in-memory ring of one entry, set where error toasts and agent error lines are shown (`X.toast(...).classList.add('err')` call sites and the agent error status), never persisted.
+- **Form (T005, its own PR)**: `.github/ISSUE_TEMPLATE/bug.yml` gains the optional `app-info` textarea (Q4), with no `validations` block (not required) and no other change. `/.github/` is in `CODEOWNERS` (`@vikramgorla @fjcabello @rubenlupi`) and the `main` ruleset requires a Code Owner approval, so this PR needs an owner's review (AGENTS.md, Reviews and merge) and an agent does not merge it on its own or another agent's approval. It lands before T003 so the prefilled `app-info` has a field to fill.
+
+### D4 Tests for the masking path (T003)
+
+`scripts/test-bugreport.ts` (in `npm test`), test first:
+
+- **Stability (FR-029)**: for every fixture (token shapes, secret URL, home paths on all three OS, hidden characters, `[redacted]`, `[redacted:GITHUB_TOKEN]`, `~/x`, mixed), `maskBugText(maskBugText(x)) === maskBugText(x)` (assert text "re-masking changed already-masked text"), and the masked text never holds the original secret ("re-masking revealed a hidden value").
+- **Re-introduced secret (FR-024, FR-029)**: page text masked once, then a token and a home path appended: `app:reportBug` with a fake `shell` returns `remasked`, the returned text holds neither, `shell.openExternal` is not called ("edited secret reached the link").
+- **Fields (FR-028)**: the built URL's query has exactly `template`, `release`, `env`, `deployment`, `app-info`; values for the first three equal `bugFacts(...)` whatever string the page sends, including one shaped like `release=v9&env=x` ("page changed a main-filled field"); every id exists in `bug.yml` and `app-info` has no `required` ("bug.yml app-info must stay optional").
+- **Length (FR-025, FR-035)**: a text whose raw length is under `BUG_URL_MAX` but whose encoded link is over (non-ASCII) is `too-long` ("length counted before encoding"); over the limit nothing is opened and the text is unchanged ("person's text was cut"); over `MASK_INPUT_MAX` is `too-big` with no masking call.
+- **Mutants** (each must fail on its named assert, not on a compile error or a missing script): main skips `maskBugText` (re-introduced secret); a masking step that re-wraps `[redacted]` or re-masks `~` (stability); `bugFormUrl` measures the raw text instead of `href` (encoded length); `bugFormUrl` cuts instead of refusing (person's text cut); main takes `release` from the page (main-filled field).
 
 ## Existing capability check (spec 021 FR-031)
 
@@ -63,14 +73,15 @@ Reused: `appMenuTemplate` and `MenuActions`, `#topMoreMenu`, Settings > About (`
 |---|---|---|---|---|
 | P1 | Notes at build time | T001 | About 120 lines | Q1 default; fold timing checked |
 | P2 | Strip, dialog, entries | T002 | About 250 lines | P1 |
-| P3 | Report a bug | T003 | About 300 lines | Q2..Q4 answered or defaults kept; three-agent security review |
+| P3a | `bug.yml` `app-info` field | T005 | About 5 lines | Owner (Code Owner) review; not merged by an agent alone |
+| P3 | Report a bug | T003 | About 300 lines | T005 merged; three-agent security review |
 | P4 | Docs, pictures, converge | T004 | Small | P2, P3 |
 
 ## Risks
 
 - **Fold timing**: if a tag build does not have its fragments, the shipped notes would be empty. T001 checks `release.yml` first and fails the build loudly rather than shipping empty notes for a tag.
 - **Masking gaps**: names are not secrets to the masker; the defaults (error off, text shown first) carry this.
-- **Form drift**: if someone renames a `bug.yml` field id, the prefill silently drops it. T003 adds a test that reads `bug.yml` and checks every id `bugFormUrl` uses exists.
+- **Form drift**: if someone renames a `bug.yml` field id or a `deployment` option, the prefill silently drops it. T003 adds a test that reads `bug.yml` and checks every id `bugFormUrl` uses exists, every `deployment` string `bugFacts` returns is an option, and `app-info` is not required (D4).
 
 ## Complexity tracking
 
