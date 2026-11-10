@@ -53,7 +53,7 @@ No violation; *Complexity tracking* is empty.
 | Safe export write | `writeNotesExport`, `exportFileName`, `exportDialogOptions` (`src/main/notesexport.ts:56,72,83`) | `what: 'team template'`, the FR-084 filter |
 | Store save | `SettingsStore.save` pattern (`src/main/settings.ts:451`) | same steps in `TeamTemplateStore` |
 | Untrusted JSON envelope | spec 109's file rules FR-050, FR-096 (its own walk, planned) and spec 110 FR-040..FR-042's scanner (`src/shared/jsonscan.ts`, 110 T009, planned) | not on `main`: see *Dependencies* |
-| Lookalike names | `DurbarLookalike.check(text, kind)` and its closed lists `CYRL_LOOK`, `GREK_LOOK`, `LATIN_LOOK` (`src/renderer/lookalike.js`, spec 003 FR-113..FR-116) | run per name for mixed scripts; a new pure `skeleton()` in `src/shared/skeleton.ts` from the same lists (equality test) for name clashes and the frame blocklist |
+| Lookalike names | `DurbarLookalike.check(text, kind)` and its closed lists `CYRL_LOOK`, `GREK_LOOK`, `LATIN_LOOK` (`src/renderer/lookalike.js`, spec 003 FR-113..FR-116) | run per name for mixed scripts; a new hand-written `skeleton()` table in `src/shared/skeleton.ts` keyed on the same lists (equality test, T032; FR-158 gap) for name clashes and the frame blocklist |
 | Dialogs, focus, live region | `askDialog`/`DurbarDialog` (`src/renderer/dialog.js`), `#srAnnounce`, `settingsnav.js` | none |
 | IPC guard and simulator | `ipcHandle`, `fromAppFrame` (`src/main/ipcguard.ts`), `simguard`, `src/renderer/sim.ts` | new `teams:*` channels; sim fakes |
 
@@ -64,7 +64,7 @@ Nothing existing creates several sessions at once or stores reusable agent setup
 | Unit | Kind | Job | Spec |
 |---|---|---|---|
 | `src/shared/teamtemplate.ts` | pure TS, no imports beyond `names.ts`/`effort.ts`/`credits.ts`/`redact.ts` patterns (agent-notes: page-loadable shared modules have no imports; if needed, the renderer gets the limits through a compiled copy, as `profiletemplates.ts`) | Limits (FR-002, FR-003), `checkTeamTemplate(value, level)`, `checkMember`, migrations, the canonical serializer, the file envelope builder and reader on top of the scanner | FR-002..FR-012, FR-080, FR-092..FR-098 |
-| `src/shared/jsonscan.ts` | pure TS, **spec 110's** (110 T009); used here, not built here | Iterative pre-scan with an options object `{ jsonc, maxDepth, maxValues, maxKeyLen, forbidKeys, dupKeys }`: depth, value count, key length, forbidden and duplicate keys, line and column; never returns input text; this spec passes `{ jsonc: false, maxDepth: 8, maxValues: 5000, maxKeyLen: 64, forbidKeys: [...3], dupKeys: 'refuse' }` | FR-090 |
+| `src/shared/jsonscan.ts` | pure TS, **spec 110's** (110 T009); used here, not built here | Iterative pre-scan with spec 110's options `{ comments, maxDepth, maxBytes, duplicateKeys }` plus `maxValues`, `maxKeyLen`, `forbidKeys`; this spec passes `{ comments: false, maxDepth: 8, maxBytes: 262144, maxValues: 5000, maxKeyLen: 64, forbidKeys: [3 keys], duplicateKeys: 'refuse' }` | FR-090 |
 | `src/shared/teamstarters.ts` | pure TS data | The starters | FR-070..FR-073 |
 | `src/main/teamstore.ts` | main, no Electron import | `TeamTemplateStore`: load, set aside a bad file, list, put, duplicate, delete, save (temp, rename, 0600) | FR-001, FR-003, FR-021 |
 | `src/main/teamops.ts` | main, pure logic with injected deps | Create preview (apps, models, org blocks, effort fallback, cost tiers, cap words), token store (10 min), create apply (lazy members, team record), save-room builder, export collect, import read/preview/apply | FR-030..FR-053, FR-084, FR-090..FR-101 |
@@ -84,7 +84,7 @@ Nothing existing creates several sessions at once or stores reusable agent setup
 
 ## Dependencies
 
-- **Spec 110's scanner** (FR-090): `src/shared/jsonscan.ts` belongs to spec 110 (PR #1369, its T009: iterative JSONC scanner, depth 17). This spec is a consumer: it needs 110 T009 built with an options object `{ jsonc, maxDepth, maxValues, maxKeyLen, forbidKeys, dupKeys }`, which 110 takes on in its own PR (its owner's call; a delta there, never an edit of its branch). Spec 109 (PR #1374) has its own walk (`readEnvelope`) and no delta is asked of it for the scanner. **G7 waits for 110 T009.**
+- **Spec 110's scanner** (FR-090): `src/shared/jsonscan.ts` belongs to spec 110 (PR #1369, its T009: iterative JSONC scanner, depth 17). This spec is a consumer: it needs 110 T009 built with spec 110's option names `{ comments, maxDepth, maxBytes, duplicateKeys }` plus `maxValues`, `maxKeyLen`, `forbidKeys` (110 adds them with defaults that keep its behaviour) in its own PR; this spec passes `{ comments: false, maxDepth: 8, maxBytes: 262144, maxValues: 5000, maxKeyLen: 64, forbidKeys: [3 keys], duplicateKeys: 'refuse' }` (its owner's call; a delta there, never an edit of its branch). Spec 109 (PR #1374) has its own walk (`readEnvelope`) and no delta is asked of it for the scanner. **G7 waits for 110 T009.**
 - **Scanner options on our side**: the options object in spec 110's scanner is added to #1369 by its owner (Vikram); this spec only depends on it.
 - **Spec 109's template section**: a template inside a setup file goes through the same `checkTeamTemplate` (same limits, marks, refusals); a dated delta in 109's own PR.
 - **Spec 109's not-exported list**: 109 must name `SavedFolder.team` among what is not exported (FR-140); asked of 109's owner, in 109's PR.
