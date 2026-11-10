@@ -71,6 +71,7 @@ test:mcpsigninrefresh
 test:places
 test:floornav
 test:cuttext
+test:chattrim
 test:grantlabel
 test:floors
 test:mood

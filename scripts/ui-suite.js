@@ -140,6 +140,9 @@ const DRIVERS = [
   { name: 'check-composer-toolbar' }, // spec 005 FR-037..FR-043: chat settings under the message box, one Send / Stop slot
   { name: 'check-slash-suggest' }, // spec 073: the "/" list in the message box (keyboard, ARIA, geometry)
   { name: 'check-notes' }, // spec 083: save a message, the Notes drawer, Insert and notes in the "/" list (US1 scenarios 1..6, SC-001, SC-002)
+  { name: 'check-chat-memory' }, // spec 005 FR-238, FR-239 (issue 1380): a chat's transcript is bounded: 20,000 events after a fill and a warm-up, nodes, listeners and heap flat; caps and budget, waiting and live cards, helpers, note places, the line, a scrolled-up chat keeps its place, the cheap path
+  { name: 'check-chat-memory', label: 'check-chat-memory real', env: { CCM_WORLD: 'real' } }, // the same with the Real office on (FR-078 parity)
+  { name: 'check-chat-memory', label: 'check-chat-memory retro', env: { CCM_WORLD: 'retro' } }, // and with the Retro arcade
   { name: 'check-notes-count' }, // spec 083 T030..T032: the header count, the marker on a saved message, the drawer's search (SC-005)
   { name: 'check-notes-screen' }, // spec 083 T034a: the per-folder Notes screen, its three ways in, Done (FR-044, FR-045)
   { name: 'check-notes-switch' }, // spec 083 T042: the project-file switch, its dialogs and states (FR-050, FR-055)

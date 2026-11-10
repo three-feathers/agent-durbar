@@ -314,8 +314,21 @@ module.exports = async (ctx) => {
     await send(S1, 'hello other');
     await ok(`!document.querySelector('.af-notice')&&!document.body.classList.contains('panel-open')`, `${tag}: the notice, then the office (FR-238)`, 8000);
     await openChat(S2);
-    await js(`(()=>{const c=document.getElementById('chat');const f=document.createElement('div');f.id='afFill';f.style.height='3000px';f.style.flex='none';c.appendChild(f);c.scrollTop=c.scrollHeight;})()`);
-    await js(`document.getElementById('chat').scrollTop=0`); // fixture: scrolled to the top (the page's own scroll handler marks it as being read)
+    // spec 005 FR-238 (review of PR 1431): a line added to the open chat while it is still short (the chat flushes once at its end), then
+    // the fill and both scroll writes in ONE call, so they always reach the page's scroll handler as one event (the old "reset the scroll
+    // baseline after every flush" made the chat look not scrolled up here only when the writes happened to fall in one frame)
+    // and a chat in the background at its message cap, trimmed in that same flush: only a trim of the OPEN chat may reset the baseline
+    const BG = await js(`(()=>{const ids=window.__durbarSimUi.agents().filter(x=>!x.parent).map(x=>x.id).filter(id=>![${jsLiteral(S1)},${jsLiteral(S2)},${jsLiteral(S3)}].includes(id));return ids[ids.length-1];})()`);
+    assert.ok(BG, `${tag}: a fourth top-level agent exists for the background chat (without it the "a trim of any chat" mutant would pass unseen)`);
+    await js(`(()=>{for(let i=0;i<310;i++)window.__durbarSimUi.emit({type:'user',sessionId:${jsLiteral(BG)},timestamp:Date.now(),text:'bg '+i});})()`);
+    await js('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r())))');
+    const bgRuns0 = await js(`(window.__durbarSimUi.chatSizes().find(x=>x.id===${jsLiteral(BG)})||{}).runs||0`);
+    await js(`(()=>{const U=window.__durbarSimUi;U.emit({type:'user',sessionId:${jsLiteral(BG)},timestamp:Date.now(),text:'bg more'});U.emit({type:'compaction',sessionId:${jsLiteral(S2)},timestamp:Date.now(),phase:'complete',trigger:'truncation',tokensBefore:1000,tokensAfter:500});})()`);
+    { const bg = await js(`new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>{const z=window.__durbarSimUi.chatSizes().find(x=>x.id===${jsLiteral(BG)});r(z?{messages:z.messages,trimmed:z.trimmed,runs:z.runs,note:z.note}:null);})))`);
+      assert.ok(bg && bg.runs > bgRuns0 && bg.messages <= 300 && /removed/.test(bg.note), `${tag}: the background chat was trimmed in that flush: ` + JSON.stringify(bg)); }
+    await js('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r())))');
+    await js(`(()=>{const c=document.getElementById('chat');const f=document.createElement('div');f.id='afFill';f.style.height='3000px';f.style.flex='none';c.appendChild(f);c.scrollTop=c.scrollHeight;c.scrollTop=0;})()`); // fixture: scrolled to the top (the page's own scroll handler marks it as being read)
+    await js('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r())))');
     await ok(`document.getElementById('chat').dataset.pin==='0'`, `${tag}: the chat is scrolled up: ` + await js(`(()=>{const c=document.getElementById('chat');return [c.scrollHeight,c.clientHeight,c.scrollTop,c.dataset.pin,getComputedStyle(c).overflowY,!!document.getElementById('afFill')].join(' ')})()`));
     await mclick('#msgInput'); await type('my draft');
     const top0 = await js(`document.getElementById('chat').scrollTop`);
