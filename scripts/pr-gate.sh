@@ -6,7 +6,7 @@
 # Blocks (prints why, exits 1) on:
 #   - a check that is not pass/skipping, or CodeQL not passed; a CodeQL check GitHub skipped on a PR that changes no analysed file counts as
 #     passed only when every changed file is on the no-code list in nocode() and the alerts are 0 (spec 021 FR-089, #1420);
-#   - a CodeQL check that is not exactly one check run from the github-advanced-security app (spec 021 FR-090, #1425);
+#   - a CodeQL check that is not exactly one check run from the github-advanced-security app, the run its line links (spec 021 FR-090, #1425);
 #   - a PR GitHub cannot merge (conflicts): GitHub then runs only CodeQL, so the other checks look absent rather than red;
 #   - a PR that changes src/ without the Spec Kit gate and the Linux build-and-test check present and passing;
 #   - an open code-scanning alert on the PR's merge ref or head ref (a bot line comment can be carried forward after its alert is fixed);
@@ -34,17 +34,22 @@ while [ "$2" = "--wait" ]; do
   sleep 90
   pend || break
 done
-bad=$(gh pr checks $p | awk -F'\t' '$2!="pass" && $2!="skipping"{print $1"="$2}' | tr '\n' ' ')
+# the check list is read once, before the PR's head sha (FR-090): a push in between gives the CodeQL line another run than the head's
+checks_out=$(gh pr checks $p)
+bad=$(printf '%s\n' "$checks_out" | awk -F'\t' 'NF && $2!="pass" && $2!="skipping"{print $1"="$2}' | tr '\n' ' ')
 # GitHub computes mergeability lazily: UNKNOWN means "ask again shortly"
 for _ in 1 2 3 4 5 6; do mergeable=$(gh pr view $p --json mergeable -q .mergeable); [ "$mergeable" = UNKNOWN ] || break; sleep 10; done
 [ "$mergeable" = MERGEABLE ] || bad="$bad mergeable=$mergeable(merge main first)"
 if gh pr view $p --json files -q '.files[].path' | grep -q '^src/'; then
   for need in 'Spec Kit gate' 'Build and test (ubuntu-latest)'; do
-    gh pr checks $p | awk -F'\t' -v n="$need" '$1==n && $2=="pass"{f=1} END{exit !f}' || bad="$bad missing:$need"
+    printf '%s\n' "$checks_out" | awk -F'\t' -v n="$need" '$1==n && $2=="pass"{f=1} END{exit !f}' || bad="$bad missing:$need"
   done
 fi
 # an outside PR: from a fork, or by an account outside the trusted list (dependabot[bot]: its metadata is ours, its body is not read)
-outside_pr=$(gh api repos/$R/pulls/$p --jq "$JQ_TRUST if (.head.repo.full_name // \"\") != .base.repo.full_name then \"fork:\(.head.repo.full_name // \"deleted\")\" elif (.user.login|trusted) or .user.login == \"dependabot[bot]\" then \"\" else \"author:\(.user.login)\" end")
+# the PR is read once (FR-090): changed_files, head and base sha, base branch, author, then the outside verdict (empty for a trusted PR)
+pr_line=$(gh api repos/$R/pulls/$p --jq "$JQ_TRUST \"\(.changed_files) \(.head.sha) \(.base.sha) \(.base.ref) \(.user.login) \" + (if (.head.repo.full_name // \"\") != .base.repo.full_name then \"fork:\(.head.repo.full_name // \"deleted\")\" elif (.user.login|trusted) or .user.login == \"dependabot[bot]\" then \"\" else \"author:\(.user.login)\" end)")
+read -r pr_total head_sha pr_base pr_baseref pr_author outside_pr <<< "$pr_line"
+case $head_sha in *[!0-9a-f]*|'') head_sha=;; esac; [ ${#head_sha} = 40 ] || head_sha=
 [ -n "$outside_pr" ] && bad="$bad outside-pr($outside_pr: a human decides, no checkout or run)"
 # owner hold (FR-079): labels, then the owners' latest hold-or-lift comment; only its date and link are printed, never its text
 for l in $(gh pr view $p --json labels -q '.labels[].name'); do case $l in status:blocked|needs-owner-approval) bad="$bad owner-hold(label $l: not mergeable until an owner removes it)";; esac; done
@@ -55,7 +60,6 @@ PROSE='gsub("```(.|\n)*?```";"") | gsub("(^|\n)[ \t]*>[^\n]*";"\n") | gsub("`[^`
 HOLD_KIND="select((.user.login // \"\")|ascii_downcase|test(\"^($OWNERS_RE)\$\")) | ((.body // \"\") | $PROSE | if test(\"\\\\b(hold lifted|off hold)\\\\b\";\"i\") then \"lift\" elif test(\"\\\\b(on hold|owner hold|do not merge|don['\u2019]t merge)\\\\b\";\"i\") then \"hold\" else empty end) as \$k"
 hold=$( { gh api --paginate repos/$R/issues/$p/comments --jq ".[]|$HOLD_KIND|\"\(.created_at)\t\(.html_url)\t\(\$k)\""; gh api --paginate repos/$R/pulls/$p/reviews --jq ".[]|$HOLD_KIND|\"\(.submitted_at)\t\(.html_url)\t\(\$k)\""; gh api --paginate repos/$R/pulls/$p/comments --jq ".[]|$HOLD_KIND|\"\(.created_at)\t\(.html_url)\t\(\$k)\""; } | sort | tail -1)
 case $hold in *"	hold") bad="$bad owner-hold(owner comment of $(echo "$hold" | cut -f1): $(echo "$hold" | cut -f2); read it, wait for a written lift)";; esac
-checks_out=$(gh pr checks $p 2>/dev/null)
 codeql=$(printf '%s\n' "$checks_out" | awk -F'\t' '$1=="CodeQL"{print $2}')
 codeql_ok=; [ "$codeql" = pass ] && codeql_ok=passed; [ -n "$codeql" ] || codeql=missing
 # FR-089 (#1420): GitHub reports CodeQL as "skipping" on a PR that changes no file it analyses. Only that literal state counts as passed (a
@@ -80,10 +84,10 @@ LOCKCHECK='if (.lockfileVersion|type) == "number" and .lockfileVersion >= 2 and 
 SCRIPTS='(.scripts // {})|to_entries|sort_by(.key)|tojson'
 # a file of this repo at a commit, through a jq program: depraw <sha> <path> <program>
 depraw() { gh api -H 'Accept: application/vnd.github.raw+json' "repos/$R/contents/$2?ref=$1" --jq "$3"; }
-only_nocode() { local f files n pr total sha base baseref author head_i base_i head_l base_l; local -a deps; deps=()
+only_nocode() { local f files n total sha base baseref author head_i base_i head_l base_l; local -a deps; deps=()
   files=$(gh api --paginate "repos/$R/pulls/$p/files" --jq '.[]|if ([.filename, (.previous_filename // empty)]|any(test("[\\x00-\\x1f\\x7f]"))) then "C" else "F \(.filename)", (.previous_filename // empty|"P \(.)") end') && [ -n "$files" ] || return 1
-  n=$(grep -c '^F ' <<< "$files"); pr=$(gh api "repos/$R/pulls/$p" --jq '"\(.changed_files) \(.head.sha) \(.base.sha) \(.base.ref) \(.user.login)"') || return 1
-  read -r total sha base baseref author <<< "$pr"; isnum "$total" && [ "$n" = "$total" ] && [ "$n" -lt 3000 ] || return 1
+  n=$(grep -c '^F ' <<< "$files"); total=$pr_total sha=$head_sha base=$pr_base baseref=$pr_baseref author=$pr_author
+  isnum "$total" && [ "$n" = "$total" ] && [ "$n" -lt 3000 ] || return 1
   while IFS= read -r f; do
     case $f in 'F '*) f=${f#F }; case $f in *package-lock.json|*package.json) deps+=("$f");; esac;; 'P '*) f=${f#P };; *) return 1;; esac
     nocode "$f" || return 1
@@ -117,16 +121,18 @@ if [ -z "$codeql_ok" ] && [ "$codeql" = skipping ] && printf '%s\n' "$checks_out
   elif [ $? = 2 ]; then codeql="skipping(dependency files refused: not a Dependabot PR, a non-registry source, an install script or an unreadable file)"
   else codeql="skipping(analysed or unknown files changed)"; fi
 fi
-# FR-090 (#1425): the check named CodeQL must come from GitHub's code-scanning app. Read the head commit's check runs and take the CodeQL
-# result only when exactly one run is named CodeQL and its app.slug is github-advanced-security; another app's run, a second run or an
-# unreadable list blocks (fail closed). A missing check stays "missing".
+# FR-090 (#1425): the check named CodeQL must come from GitHub's code-scanning app. Its line in `gh pr checks` links
+# https://github.com/<repo>/runs/<id>; the head commit's check runs (head sha read once above) must hold exactly one run named CodeQL, and
+# it must be that same run <id> with app.slug github-advanced-security. Another app's run, a second run, a run of a newer push (another id)
+# or an unreadable list or link blocks (fail closed). A missing check stays "missing".
 if [ -n "$codeql_ok" ]; then
-  head_sha=$(gh api "repos/$R/pulls/$p" --jq .head.sha 2>/dev/null)
-  case $head_sha in *[!0-9a-f]*|'') head_sha=;; esac
-  if [ -z "$head_sha" ] || ! slugs=$(gh api --paginate "repos/$R/commits/$head_sha/check-runs?per_page=100" --jq '.check_runs[]|select(.name=="CodeQL")|.app.slug' 2>/dev/null); then
+  codeql_id=$(printf '%s\n' "$checks_out" | awk -F'\t' '$1=="CodeQL"{print $4}')
+  case $codeql_id in "https://github.com/$R/runs/"*) codeql_id=${codeql_id#"https://github.com/$R/runs/"};; *) codeql_id=;; esac
+  isnum "$codeql_id" || codeql_id=
+  if [ -z "$head_sha" ] || [ -z "$codeql_id" ] || ! runs=$(gh api --paginate "repos/$R/commits/$head_sha/check-runs?per_page=100" --jq '.check_runs[]|select(.name=="CodeQL")|"\(.app.slug) \(.id)"' 2>/dev/null); then
     codeql_ok=; codeql="$codeql(check runs unread: app not verified)"
-  elif [ "$slugs" != "github-advanced-security" ]; then
-    codeql_ok=; codeql="$codeql(not exactly one CodeQL run from github-advanced-security)"
+  elif [ "$runs" != "github-advanced-security $codeql_id" ]; then
+    codeql_ok=; codeql="$codeql(not exactly one CodeQL run from github-advanced-security, run $codeql_id of $head_sha)"
   fi
 fi
 # the open alerts on the merge and head refs, read as two numbers; an API error or a non-number blocks
@@ -155,4 +161,4 @@ if [ -n "$bad" ] || [ -z "$codeql_ok" ] || [ "$alerts" != "0" ] || [ -n "$change
   [ -n "$outside_edits" ] && { echo "comments last edited by an outside account (not shown, for a human):"; echo "$outside_edits"; }
   exit 1
 fi
-echo "#$p ready to merge: checks green, CodeQL $codeql_ok, no open alerts, no requested changes, no open threads, no unanswered comments"
+echo "#$p ready to merge at $head_sha: checks green, CodeQL $codeql_ok, no open alerts, no requested changes, no open threads, no unanswered comments"
