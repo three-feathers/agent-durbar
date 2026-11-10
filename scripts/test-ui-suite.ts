@@ -612,11 +612,12 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
   for (const [sig, code] of [['SIGINT', 130], ['SIGTERM', 143]] as const) {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ui-suite-sig-'));
     const pidFile = path.join(tmp, 'grandchild.pid');
-    const launchJs = `const fs=require('fs'),{spawn}=require('child_process');const g=spawn(process.execPath,['-e','setTimeout(()=>{},300000)'],{stdio:'ignore'});fs.writeFileSync(${JSON.stringify(pidFile)},String(g.pid));setTimeout(()=>{},300000)`;
+    const launchJs = `const fs=require('fs'),{spawn}=require('child_process');const g=spawn(process.execPath,['-e','setTimeout(()=>{},300000)'],{stdio:'ignore'});fs.writeFileSync(${JSON.stringify(pidFile)},String(g.pid));fs.writeFileSync(${JSON.stringify(pidFile + '.launch')},String(process.pid));setTimeout(()=>{},300000)`;
     const runner = `require(${JSON.stringify(SUITE)}).runOne({name:'x',sim:false,timeoutMs:120000},${JSON.stringify(tmp)},{launch:[process.execPath,['-e',${JSON.stringify(launchJs)}]]})`;
     const runnerProc = spawn(process.execPath, ['-e', runner], { env: { ...process.env, TMPDIR: tmp, TMP: tmp, TEMP: tmp }, stdio: 'ignore' });
     const exited = new Promise<{ code: number | null; signal: string | null }>((res) => runnerProc.on('close', (c, s) => res({ code: c, signal: s })));
     let gp = 0;
+    const killPid = (p: number): void => { if (p > 0 && alive(p)) { try { process.kill(p, 'SIGKILL'); } catch { /* gone */ } } };
     try {
       for (let i = 0; i < 100 && !gp; i++) { await sleep(100); try { gp = Number(fs.readFileSync(pidFile, 'utf8')); } catch { /* not yet */ } }
       assert.ok(gp > 0 && alive(gp), 'the runner started a grandchild');
@@ -628,7 +629,8 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
       assert.ok(!alive(gp), `${sig}: no grandchild is left`);
       assert.deepStrictEqual(fs.readdirSync(tmp).filter((f) => f.startsWith('durbar-ui-user-')), [], `${sig}: the user-data folder is removed`);
     } finally {
-      if (gp && alive(gp)) { try { process.kill(gp, 'SIGKILL'); } catch { /* gone */ } }
+      killPid(gp);
+      try { killPid(Number(fs.readFileSync(pidFile + '.launch', 'utf8'))); } catch { /* never written */ }
       if (runnerProc.exitCode === null && runnerProc.signalCode === null) { try { runnerProc.kill('SIGKILL'); } catch { /* gone */ } }
       fs.rmSync(tmp, { recursive: true, force: true });
     }

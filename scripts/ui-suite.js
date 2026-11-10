@@ -317,7 +317,7 @@ function guardTree(child, { proc = process, kill = killTree, cleanup = () => {} 
  * Run one driver. Opt-in for unattended callers (spec 008 FR-175, FR-176; scripts/release-video.js): `d.baseEnv` replaces
  * `process.env` as the base of the child's environment (an allow-list, so no token reaches Electron), `d.timeoutMs` replaces the
  * suite's limit. Every driver (spec 008 FR-199, issue #1417) runs as its own process tree: it ends with the whole tree at the limit and when
- * this process gets SIGINT, SIGTERM or exits (`xvfb-run`'s own cleanup does not run when only its shell is killed). `d.killTree` is no longer read.
+ * this process gets SIGINT, SIGTERM or exits (`xvfb-run`'s own cleanup does not run when only its shell is killed). There is no `d.killTree` flag.
  * `launch` is for tests: `[file, args]` replaces the Electron/xvfb-run command.
  */
 function runOne(d, outDir, { launch } = {}) {
