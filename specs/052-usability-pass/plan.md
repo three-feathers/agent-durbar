@@ -123,3 +123,10 @@ The renderer only: `src/renderer/app.js`, `screens.js`, `index.html`, `styles.cs
 - **Look.** `.dlg-ov.af-notice` in `styles.css`: the overlay is `color-mix(in srgb, var(--surface) 88%, transparent)`, the card is a `.dlg` (worlds restyle it as every dialog), the picture an inline SVG drawn with `currentColor` and `var(--accent)`; `@media (prefers-reduced-motion:reduce)` (the global rule) and `html[data-motion-off]` (its own rule) stop every animation of it, the number still changes.
 - **Driver.** `scripts/check-052-follow-notice.js` in `ui-suite.js` (its own job); `__durbarSimUi.afNotice` sets the length (drivers only) and turns Auto-follow on without Settings in the world loop (`check-auto-follow` keeps the real Settings click). `check-auto-follow` sets 600 ms so its many moves stay quick; the 3 s default is asserted by the new driver.
 - **Constitution.** I (safety): the notice answers nothing; the focus is on Stay, so a key can only cancel a move. V (calm UI): text >= 12 px, fit checked at both sizes in every world. VI: renderer only, no platform path. VIII (honest limits): the `[KNOWN GAP]` above.
+
+## FR-242 (2026-11-10): a completion seen in its own chat, a send replaces a waiting one (issue #1444)
+
+- **Tracker (`autofollow.js`, pure).** `sent(id)`: `retract(id, ['done'])`, `follow(id)`, not quiet (the person acted); replaces `follow()` + `acted()` in `afOnAccepted()`. `seen(id, kind, key)`: for a followed agent, marks the key delivered, drops its waiting arrivals and its follow, `last = id`, no quiet.
+- **Page (`app.js`).** `afOnCompleted()` calls `seen` instead of `arrive` when `chatShownNow(id)` (reused, spec 005 FR-171); the notice to the office moves only if the agent is still followed.
+- **Tests.** `test-autofollow` FR-242 block with mutants; `check-052-follow-notice` waits for the move with a MutationObserver and counts notices, then `stays()` 1 s with no notice and no chat; the strip is not "waiting to open" after the completion in the shown chat.
+- **Constitution.** I: nothing answered; fewer automatic moves. V: no layout change. VI: renderer only. VIII: the `[KNOWN GAP]` in the spec.

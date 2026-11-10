@@ -426,3 +426,6 @@
 
 ## 2026-11-10: `check-052-follow-notice` empties the box on a Mac (test driver only)
 - [x] T277 `check-052-follow-notice`: `emptyBox()` selects all through `webContents.selectAll()`, presses Backspace and asserts the box is empty, in both places that used a synthetic Ctrl/Cmd+A; the failing step passes on a Mac, the Cmd+A key fails it again (mutation) [FR-239, test driver only]
+
+## 2026-11-10: a completion seen in its own chat is never offered after the next send (FR-242, issue #1444)
+- [x] T278 `autofollow.js` `sent()` and `seen()`; `afOnAccepted()` uses `sent()`, `afOnCompleted()` uses `seen()` when `chatShownNow()`, the notice to the office moves only a still-followed agent; `test-autofollow` FR-242 block, six tracker mutants fail it; `check-052-follow-notice` waits for the move by an observer, then 1 s with no notice (counted) and no chat, and the seen completion is not waiting; fails without the app fix [FR-242, FR-184, FR-185]

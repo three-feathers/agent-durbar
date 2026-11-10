@@ -1,1 +1,0 @@
-- **The rename pencil on an arcade cabinet** (spec 097 FR-357, bug #1427): in the Retro arcade, hovering a cabinet's status plate showed the rename pencil at the floor's top-left corner, and a click or F2 did nothing. The pencil now sits at the plate's right end, and the name field opens over the cabinet's marquee, where the name is drawn.
