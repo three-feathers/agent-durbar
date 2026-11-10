@@ -321,7 +321,8 @@ body.has-bridge #topBtns{display:flex}
 .scr-body .ttab.act thead th:first-child{width:auto}
 .ttab.act td{font-size:12px;vertical-align:top}
 .ttab.act .act-t{white-space:nowrap;color:var(--ink-2)}
-.ttab.act .act-a{overflow-wrap:anywhere}
+.ttab.act .act-a{overflow-wrap:anywhere;min-width:24ch} /* narrow window: the table scrolls inside .scr-body, Action never collapses to a sliver */
+.ttab.act .act-w{overflow-wrap:anywhere} /* a long unbroken Agent or Folder value wraps instead of pushing Action and Decision out */
 .ttab.act .act-s{white-space:nowrap} /* 2026-11-10: App, Mode and Decision never break mid-word; Action takes the rest */
 /* the Activity tab uses the window width (usual 24px gutters); the head follows the body (FR-097) */
 .scr-head.scr-wide,.scr-body.scr-wide{--scr-col:100%} /* head and body read the same column width, so the head padding follows (FR-097, FR-138) */

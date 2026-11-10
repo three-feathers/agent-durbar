@@ -62,6 +62,18 @@ module.exports = async (ctx) => {
     assert.ok(t.headPad <= 80, `${tag}: the header follows the wide body (${t.headPad}px)`);
     assert.ok(t.clip <= 1, `${tag}: the Decision column is not cut at the right (${t.clip}px)`);
     assert.ok(!t.wrapShort, `${tag}: Time, App, Mode and Decision do not wrap`);
+    /* a long unbroken Folder (114 characters) and a long Agent name must wrap in their cells, not push Action and Decision out of the window */
+    const lg = await js(`(()=>{const s=document.getElementById('screen'),A=window.DurbarActivityTable,e=x=>String(x).replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
+      const row=(o)=>Object.assign({t:new Date().toISOString(),agent:'Ben',folder:'api',app:'GitHub Copilot',mode:'ask',action:'Run npm test',decision:'allowed-once'},o);
+      const tb=s.querySelector('table.act');
+      tb.outerHTML=A.tableHtml([row({folder:'/Users/someone/Projects/'+'x'.repeat(90),agent:'An-Agent-With-A-Very-Long-Name-That-Has-No-Spaces-At-All-0123456789',action:'git commit -m "a long message that wraps in the Action cell"'}),row({})],e);
+      const b=s.querySelector('.scr-body'),t=s.querySelector('table.act'),a=t.querySelector('.act-a');
+      const dc=[...t.querySelectorAll('tbody tr')[0].children].pop().getBoundingClientRect();
+      return {side:s.scrollWidth-s.clientWidth,bodySide:b.scrollWidth-b.clientWidth,right:t.getBoundingClientRect().right-b.getBoundingClientRect().right,decRight:dc.right,winW:document.documentElement.clientWidth,actW:Math.round(a.getBoundingClientRect().width),title:a.getAttribute('title')};})()`);
+    assert.ok(lg.side <= 1 && lg.bodySide <= 1, `${tag}: a long Folder does not scroll the page or the body sideways: ${jsLiteral(lg)}`);
+    assert.ok(lg.right <= 1 && lg.decRight <= lg.winW, `${tag}: Decision stays inside the window: ${jsLiteral(lg)}`);
+    assert.ok(lg.actW >= 150, `${tag}: Action is not collapsed (${lg.actW}px)`);
+    assert.ok(/commit/.test(lg.title), `${tag}: the Action cell has its text as title`);
     assert.ok(await H.click('#tabCost'), `${tag}: the Cost tab opens`);
     assert.ok(await H.until(`document.querySelector('#screen .scr-body:not(.scr-wide)')`), `${tag}: other Tools tabs keep the 880px column`);
     assert.ok(await H.js(`document.querySelector('#screen .scr-body').getBoundingClientRect().width<=880`), `${tag}: the Cost body is at most 880px`);
