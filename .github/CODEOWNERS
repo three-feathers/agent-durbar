@@ -11,8 +11,12 @@
 # who agents trust to read (AGENTS.md, Untrusted content; spec 021 FR-060): changing it is an owner decision
 /scripts/trusted-authors.txt    @vikramgorla @fjcabello @rubenlupi
 /scripts/trusted-lib.sh    @vikramgorla @fjcabello @rubenlupi
+/scripts/trusted-authors.js    @vikramgorla @fjcabello @rubenlupi
 # the pre-review bot holds a paid API key and can run as a GitHub App (spec 103): its code needs an owner
 /scripts/prereview/    @vikramgorla @fjcabello @rubenlupi
 /scripts/prereview-*.ts    @vikramgorla @fjcabello @rubenlupi
 # the built-in MCP catalog runs vendor commands and opens vendor URLs (spec 110 FR-065): approved by the owner 2026-11-09
 /src/shared/mcpcatalog.json    @vikramgorla @fjcabello @rubenlupi
+/src/shared/mcpcatalog.schema.json    @vikramgorla @fjcabello @rubenlupi
+# the parity tick runs with an issues: write token (spec 021 FR-088); its tracker list is under /.github/ above
+/scripts/parity-tick.js    @vikramgorla @fjcabello @rubenlupi

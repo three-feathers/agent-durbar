@@ -268,7 +268,9 @@ function validateBaseline(raw) {
 /** Cumulative list-price dollars to `date`: the baseline (through its own day) plus every usage-file day after `baseline.through` up to `date`. */
 function cumulative(states, date, baseline) {
   const models = new Map(); const machines = new Map();
-  const add = (m, k, v) => m.set(k, (m.get(k) || 0) + v);
+  // whole cents per machine/day/model, as the daily chart (usage-spread dailyRows) counts them, so the chart and the total agree exactly (FR-198)
+  const addC = (m, k, c) => m.set(k, (m.get(k) || 0) + c);
+  const add = (m, k, v) => addC(m, k, Math.round(v * 100));
   for (const [k, v] of Object.entries(baseline.models)) add(models, k, v);
   for (const [k, v] of Object.entries(baseline.machines)) add(machines, k, v);
   for (const st of states) for (const day of Object.keys(st.days)) {
@@ -276,8 +278,9 @@ function cumulative(states, date, baseline) {
     if ((own(baseline.machines, st.machine) && day <= baseline.through) || day > date) continue;
     for (const model of Object.keys(st.days[day].models)) { const c = st.days[day].models[model].costUsd; add(models, model, c); add(machines, st.machine, c); }
   }
-  let total = 0; for (const v of models.values()) total += v;
-  return { total, models, machines, since: baseline.since };
+  let totalC = 0; for (const v of models.values()) totalC += v;
+  const back = (m) => new Map([...m].map(([k, c]) => [k, c / 100]));
+  return { total: totalC / 100, totalCents: totalC, models: back(models), machines: back(machines), since: baseline.since };
 }
 
 function split(map, total, labelOf = (k) => k) {

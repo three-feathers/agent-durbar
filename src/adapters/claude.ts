@@ -63,9 +63,9 @@ import type { SkipReason } from './questions';
 import { claudeSlashPlaces, cleanBuiltins, mergeSlash, SlashCache, vscodeUserPromptDirs } from './slashcommands';
 import type { SlashPlace } from './slashcommands';
 import { compareVersions } from './detect';
-import { agentsArg, listClaudeAgents } from './claudeAgents';
+import { agentsArg, claudeAgentDirs, claudeAgentOfBytes, listClaudeAgents } from './claudeAgents';
 import type { ClaudeAgentDef } from './claudeAgents';
-import type { AgentProfile, AskedQuestion, ElicitAnswer, SlashCommand, SlashExpansion } from './types';
+import type { AgentFileRead, AgentProfile, AskedQuestion, ElicitAnswer, SlashCommand, SlashExpansion } from './types';
 import { answerElicitation, cancelElicitations, declineElicitation, runElicitation, type ElicitWaiter } from './elicitation';
 import { AUTOPILOT_ANSWER, goalText, isClaudeContinuation } from './autopilot';
 import type { GoalTextResult } from './autopilot';
@@ -377,10 +377,15 @@ export function claudeArgs(i: ClaudeLaunch): string[] {
 
 export interface ClaudeMdIo {
   readFile(p: string): string | undefined;
-  realpath(p: string): string;
+  /** The resolved path, or undefined when it cannot be resolved (the file is then skipped). */
+  realpath(p: string): string | undefined;
+  /** The entry itself, links not followed; undefined when it is missing. */
+  lstat(p: string): { isSymbolicLink(): boolean } | undefined;
+  /** A link's target as written, or undefined. */
+  readlink(p: string): string | undefined;
 }
 
-const nodeIo: ClaudeMdIo = {
+export const claudeMdNodeIo: ClaudeMdIo = {
   readFile: (p) => {
     try {
       const st = fs.statSync(p);
@@ -389,31 +394,79 @@ const nodeIo: ClaudeMdIo = {
       return undefined;
     }
   },
+  // The JS `fs.realpathSync` resolves link targets by their text, as the link walk in `claudeMdPrompt` does. Do not switch to
+  // `fs.realpathSync.native`: it resolves a `..` after a link the way the system does, and the two would disagree (spec 012 FR-177).
   realpath: (p) => {
     try {
       return fs.realpathSync(p);
     } catch {
-      return p;
+      return undefined;
+    }
+  },
+  lstat: (p) => {
+    try {
+      return fs.lstatSync(p);
+    } catch {
+      return undefined;
+    }
+  },
+  readlink: (p) => {
+    try {
+      return fs.readlinkSync(p);
+    } catch {
+      return undefined;
     }
   },
 };
+
+/** At most this many links are followed for one `CLAUDE.md` import. */
+const CLAUDE_MD_MAX_LINKS = 40;
 
 /**
  * The folder's `CLAUDE.md` with its `@path` imports expanded (an import is a whitespace-separated `@relative/path` token
  * outside code spans). Only files inside the folder (symlinks resolved) are read; at most `CLAUDE_MD_MAX_CHARS` in total
  * and `CLAUDE_MD_MAX_DEPTH` levels; each file once. Returns undefined when there is no CLAUDE.md.
+ * Spec 012 FR-177: an import is checked against the folder by its text before any file access (`io` is asked about nothing
+ * outside it); links inside the folder are checked by their text before they are followed; then the resolved path is checked
+ * again. A path that cannot be resolved is skipped.
  */
-export function claudeMdPrompt(folder: string, io: ClaudeMdIo = nodeIo, flavor: Pick<typeof path, 'resolve' | 'relative' | 'isAbsolute' | 'dirname' | 'sep'> = path): string | undefined {
+export function claudeMdPrompt(folder: string, io: ClaudeMdIo = claudeMdNodeIo, flavor: Pick<typeof path, 'resolve' | 'relative' | 'isAbsolute' | 'dirname' | 'sep'> = path): string | undefined {
   const root = io.realpath(flavor.resolve(folder));
+  if (root === undefined) return undefined;
   const inside = (p: string): boolean => {
     const r = flavor.relative(root, p);
     return r === '' || (!r.startsWith('..') && !flavor.isAbsolute(r));
   };
+  const win = flavor.sep === '\\';
+  const notPath = (r: string): boolean => /^[\\/]{2}/.test(r) || (win && r.includes(':'));
+  // The file, and each link on the way from the folder to it, must be inside the folder by its text.
+  const linksInside = (file: string): boolean => {
+    let p = file;
+    for (let hops = 0; ; ) {
+      if (!inside(p)) return false;
+      const parts = flavor.relative(root, p).split(flavor.sep).filter(Boolean);
+      let cur = root;
+      let next: string | undefined;
+      for (let i = 0; i < parts.length && next === undefined; i++) {
+        cur = flavor.resolve(cur, parts[i]);
+        const st = io.lstat(cur);
+        if (!st) return false;
+        if (!st.isSymbolicLink()) continue;
+        if (++hops > CLAUDE_MD_MAX_LINKS) return false;
+        const t = io.readlink(cur);
+        if (t === undefined || notPath(win ? t.replace(/^[A-Za-z]:(?=[\\/])/, '') : t)) return false;
+        next = flavor.resolve(flavor.dirname(cur), t, ...parts.slice(i + 1));
+      }
+      if (next === undefined) return true;
+      p = next;
+    }
+  };
   const seen = new Set<string>();
   let budget = CLAUDE_MD_MAX_CHARS;
   const load = (file: string, depth: number): string | undefined => {
+    if (budget <= 0 || !linksInside(file)) return undefined; // by text, before any file access
     const real = io.realpath(file);
-    if (!inside(real) || seen.has(real) || budget <= 0) return undefined;
+    if (real === undefined || !inside(real) || seen.has(real)) return undefined;
     seen.add(real);
     const text = io.readFile(real);
     if (text === undefined) return undefined;
@@ -427,7 +480,7 @@ export function claudeMdPrompt(folder: string, io: ClaudeMdIo = nodeIo, flavor: 
         if (/^\s*(```|~~~)/.test(line)) inFence = !inFence;
         if (inFence) return line;
         return line.replace(/(^|\s)@([^\s`]+)/g, (whole, pre: string, ref: string) => {
-          if (/^[a-z][a-z0-9+.-]*:/i.test(ref) || ref.startsWith('~')) return whole; // URLs and home paths are not imported
+          if (/^[a-z][a-z0-9+.-]*:/i.test(ref) || ref.startsWith('~') || notPath(ref)) return whole; // URLs, home paths and other refs that are not folder paths are not imported
           const target = flavor.resolve(flavor.dirname(real), ref);
           const sub = load(target, depth + 1);
           return sub === undefined ? whole : `${pre}\n<!-- imported from ${ref} -->\n${sub}\n`;
@@ -896,15 +949,33 @@ export class ClaudeAdapter implements AgentAdapter {
     return listClaudeAgents(s.roots, this.deps.configDir).map((d) => d.profile);
   }
 
+  /** Spec 043 FR-044: the profile these bytes of the listed agent's file define (what the confirmation shows). */
+  agentProfileOfFile(sessionId: string, id: string, file: AgentFileRead): AgentProfile | undefined {
+    const s = this.sessions.get(sessionId);
+    return s ? this.agentOfFile(s, id, file)?.profile : undefined;
+  }
+
+  /**
+   * FR-044: agent `id` parsed from `file.bytes`, only when the file sits directly in one of the session's agent folders (its source
+   * is that folder's) and the bytes define `id`. No new read and no new list: the bytes main read are the ones launched.
+   */
+  private agentOfFile(s: { roots: string[] }, id: string, file: AgentFileRead): ClaudeAgentDef | undefined {
+    const place = claudeAgentDirs(s.roots, this.deps.configDir).find((d) => path.dirname(file.path) === d.dir);
+    const def = place ? claudeAgentOfBytes(file.bytes, file.path, place.source) : undefined;
+    return def && def.profile.id === id ? def : undefined;
+  }
+
   /**
    * spec 043 FR-008: the agent the session starts with (`--agents`/`--agent` on its first launch); null = without. Claude fixes the
    * agent when a session is created and ignores `--agent` on `--resume` (real, 2026-10-19), so a session that already exists refuses.
    */
-  async selectAgentProfile(sessionId: string, id: string | null): Promise<AgentProfile | null> {
+  async selectAgentProfile(sessionId: string, id: string | null, file?: AgentFileRead): Promise<AgentProfile | null> {
     const s = this.sessions.get(sessionId);
     if (!s) throw new Error('Unknown Claude session.');
     if (s.resumable) throw new Error('Claude Code sets the agent when a session starts. Start a new session with this agent (+ New session).');
-    const def = id === null ? undefined : listClaudeAgents(s.roots, this.deps.configDir).find((d) => d.profile.id === id);
+    // FR-044: with the confirmed bytes, the session starts with exactly them (no second read of the file)
+    // without them, never a folder's agent: it needs main's read and confirmation (a folder file could win a name clash after the list)
+    const def = id === null ? undefined : file ? this.agentOfFile(s, id, file) : listClaudeAgents(s.roots, this.deps.configDir).find((d) => d.profile.id === id && d.profile.source !== 'repo');
     if (id !== null && !def) throw new Error('That agent is not available in this session.');
     s.agent = def;
     this.emit(s.id, { type: 'agentProfile', profile: def ? def.profile : null });

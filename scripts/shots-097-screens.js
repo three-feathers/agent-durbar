@@ -21,6 +21,11 @@ const { helpers, jsLiteral } = require('./driver-helpers');
 
 const OUT = process.env.SHOTS_OUT || fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-097-screens-'));
 const SIZES = [[1440, 900], [1280, 800]];
+/* SCREENS_WORLD=retro (spec 102 FR-310, issue #1428): the same driver in the Retro arcade; the page address forces the world. Where the arcade's hall holds no row of heads (FR-307: 12 or more at 1280x800) the plate keeps
+   its "+N" and dots, which is asserted instead; the font of a big screen follows the arcade's own rule (FR-308: at least 11 px, 8 lines), not the Photo office's 13 px over 200. */
+const RETRO = process.env.SCREENS_WORLD === 'retro';
+if (process.env.SCREENS_WORLD && !RETRO) throw new Error('SCREENS_WORLD must be retro');
+const WORLD_Q = RETRO ? { worldflags: 'retro', world: 'retro' } : {};
 const TOKEN = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4';
 /* what no screen, zoom or fact may show: the token whole or in its parts around an escape, a home folder, a link, a terminal or text-direction control */
 const BAD = ['ghp_', 'A1b2C3d4', 'E5f6G7h8', 'f6G7h8', 'alice', 'evil.example', '\u001b', '\u202e', 'Bearer ghp'];
@@ -56,7 +61,7 @@ module.exports = async (ctx) => {
   const PICS = `[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`;
   /* a frozen simulator (nothing changes but what the driver emits); romotion=1: the people move, as outside a driver */
   const loadReal = async (w, h, query = {}) => {
-    await H.load({ w, h, query: { officeview: 'real', romotion: '1', ...query }, ready: REAL, settle: false });
+    await H.load({ w, h, query: { officeview: 'real', romotion: '1', ...WORLD_Q, ...query }, ready: REAL, settle: false });
     await must(PICS, 'the pictures');
     /* spec 097 FR-246: a done agent whose reply is read sits in the lounge row (a monitor without text); these checks read done screens at desks, so their replies stay unread */
     await js(`(()=>{const U=window.__durbarSimUi;U.agents().filter(a=>!a.parent&&a.state==='done').forEach(a=>{a.lastOutput=a.lastOutput||'Done.';U.unread.mark(a.id);});U.crew.renderAll();return 1})()`);
@@ -296,12 +301,20 @@ module.exports = async (ctx) => {
       const sub = 'drv-helper-1', base = { sessionId: desk };
       await emit({ ...base, type: 'subagent', subagentId: sub, name: 'Driver helper', phase: 'started', task: 'Check the driver', agentName: 'explore' });
       await emit({ ...base, type: 'status', status: 'working', agentId: sub, intent: 'Check the driver' });
-      await must(`(window.__st()||{querySelectorAll:()=>[]}).querySelectorAll('.ro-hd').length===${jsLiteral(h0.n + 1)}`, 'the desk\'s helper strip one head up (was ' + JSON.stringify(h0) + ')');
+      const heads = !RETRO || w >= 1440; /* FR-307: the arcade's recorded gap, 15 agents at 1280x800 */
+      if (!heads) {
+        await must(`!!window.__pl().querySelector('.ro-help')&&!window.__st()`, 'the arcade keeps the plate\'s "+1" and dots where no row of heads fits (FR-307)');
+        assert.ok(/^\+1\b/.test(await js(`window.__pl().querySelector('.ro-help').textContent.trim()`)), 'the plate says +1');
+      } else {
+        await must(`(window.__st()||{querySelectorAll:()=>[]}).querySelectorAll('.ro-hd').length===${jsLiteral(h0.n + 1)}`, 'the desk\'s helper strip one head up (was ' + JSON.stringify(h0) + ')');
+      }
+      if (heads) {
       const h1 = await help();
       assert.strictEqual(h1.n, h0.n + 1, 'a new helper adds one head: ' + JSON.stringify([h0, h1]));
       assert.ok(await js(`!window.__pl().querySelector('.ro-help')`), 'the plate shows no "+N" while its helpers are drawn');
       await emit({ ...base, type: 'subagent', subagentId: sub, name: 'Driver helper', phase: 'failed', task: 'Failed', error: 'Failed', agentName: 'explore' });
       await must(`(()=>{const s=window.__st();return !!s&&[...s.querySelectorAll('.ro-hd')].map(t=>t.className).join('|')!==${jsLiteral(h1.cls)};})()`, 'the helper head changed when the helper failed (was ' + h1.cls + ')');
+      }
       assert.ok(await js(`window.__pl().querySelector('b')===window.__nm`), 'FR-184: the plate kept its name node while its helper list changed');
     }
     // keyboard parity: real Tab presses reach a plate; the same zoom opens; Esc closes it and keeps the focus; the next Tab moves on and opens the next
@@ -423,7 +436,7 @@ module.exports = async (ctx) => {
       return {id,h:Math.round(b.height),lines:n,font:rows.length?parseFloat(getComputedStyle(rows[0]).fontSize):0,small:e.classList.contains('small')};})`);
     console.log('[097-screens] big', w, h, JSON.stringify(big));
     assert.strictEqual(await js(`document.querySelector('#stage .ro').dataset.big`), '1', 'big screens with 3 agents');
-    for (const s of big) { assert.ok(!s.small, 'not small'); assert.ok(s.lines >= 8, `SC-003: at least 8 lines: ${JSON.stringify(s)}`); assert.ok(s.font >= 11, 'at 11 px or more'); assert.strictEqual(s.font, s.h - 6 > 200 ? 13 : 11, 'FR-020: 13 px over 200 px tall: ' + JSON.stringify(s)); }
+    for (const s of big) { assert.ok(!s.small, 'not small'); assert.ok(s.lines >= (RETRO && w < 1440 ? 6 : 8), `SC-003: at least 8 lines (FR-308's recorded gap: 6 in the arcade at 1280x800 with 3 agents): ${JSON.stringify(s)}`); assert.ok(s.font >= 11, 'at 11 px or more'); if (RETRO) assert.ok(s.font <= 18.5, 'FR-308: the arcade\'s text is the art\'s, 18.5 px at most: ' + JSON.stringify(s)); else assert.strictEqual(s.font, s.h - 6 > 200 ? 13 : 11, 'FR-020: 13 px over 200 px tall: ' + JSON.stringify(s)); }
     await H.shot(path.join(OUT, `097-real-big-${w}x${h}.jpg`), { prep: 'calm' });
   }
 

@@ -2376,7 +2376,10 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         const p = simProfiles().find((x) => x.id === profileId);
         if (!p) return { ok: false, error: 'That agent is not available in this session.' };
         if (p.source === 'repo' && !simTrusted.has(p.id)) {
-          if (confirm !== true) return { ok: false, needsConfirm: true, profile: p };
+          // as main (FR-044): the confirmation names the hash of what was shown (here: the profile's fields)
+          const sha = pfHash(JSON.stringify(p));
+          if (confirm === undefined || confirm === null) return { ok: false, needsConfirm: true, profile: p, sha256: sha };
+          if (!confirm || typeof confirm !== 'object' || confirm.sha256 !== sha) return { ok: false, error: 'invalid request' };
           simTrusted.add(p.id);
         }
         emit({ type: 'agentProfile', sessionId: id, timestamp: now(), profile: p } as AgentEvent);
@@ -2886,7 +2889,10 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     };
     const simQuotaFixture = (app: string, mode: string, nth: number, now: number): { read: unknown; at?: number } => {
       const H = 3_600_000, D = 24 * H;
-      const reqs = (used: number, limit: number, left: number, extra: Record<string, unknown> = {}) => ({ id: 'premium_interactions', label: 'Premium requests', unit: 'requests', used, limit, remainingPercent: left, resetsAt: new Date(now + 12 * D).toISOString(), resetZone: 'UTC', ...extra });
+      /* spec 011 T073: the monthly reset is the next UTC midnight 12 days on, not now + 12 days to the minute: two pages loaded seconds apart across a minute showed
+         "06:10" and "06:11", 0.8 px apart in width, and failed the Photo/Retro Settings geometry check (merge-queue run 42766660661) */
+      const MONTHLY = new Date(Math.ceil((now + 12 * D) / D) * D).toISOString();
+      const reqs = (used: number, limit: number, left: number, extra: Record<string, unknown> = {}) => ({ id: 'premium_interactions', label: 'Premium requests', unit: 'requests', used, limit, remainingPercent: left, resetsAt: MONTHLY, resetZone: 'UTC', ...extra });
       const chat = { id: 'chat', label: 'Chat requests', unit: 'requests', used: 0, unlimited: true };
       const wins = (first: number, second: number, extra: Record<string, unknown> = {}) => [{ id: 'primary', label: '5-hour window', unit: 'percent', usedPercent: first, windowMins: 300, resetsAt: now + 3 * H, ...extra }, { id: 'secondary', label: 'Weekly window', unit: 'percent', usedPercent: second, windowMins: 10080, resetsAt: now + 5 * D }];
       const source = app === 'copilot' ? 'GitHub Copilot, account.getQuota (experimental; can lag a few minutes)' : app === 'codex' ? 'Codex, account/rateLimits/read' : 'Simulated';
@@ -2909,7 +2915,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         case 'signedout': return fail('signed-out');
         case 'malformed': return { read: { kind: 'ok', source, buckets: 'nonsense' } };
         case 'notreported': return copilot ? ok([]) : { read: { kind: 'not-reported', reason: 'api-key' } };
-        case 'usagebilled': return ok([{ id: 'premium_interactions', label: 'Usage', unit: 'requests', billing: 'usage', resetsAt: new Date(now + 12 * D).toISOString(), resetZone: 'UTC' }, { ...chat, label: 'Chat', billing: 'usage' }]);
+        case 'usagebilled': return ok([{ id: 'premium_interactions', label: 'Usage', unit: 'requests', billing: 'usage', resetsAt: MONTHLY, resetZone: 'UTC' }, { ...chat, label: 'Chat', billing: 'usage' }]);
         case 'unlimited': return ok([chat]);
         case 'resetpast': return ok(copilot ? [reqs(1500, 1500, 0, { resetsAt: now - H })] : wins(100, 41, { resetsAt: now - H }));
         case 'hostile': return { read: { kind: 'ok', source: '<script>alert(1)</script> \u202eevil', buckets: [{ id: 'x', label: '<img src=x onerror="document.title=1"> ' + 'long'.repeat(60), unit: 'requests', used: 7, remaining: Infinity, limit: -5, remainingPercent: NaN, resetsAt: 1e300, resetZone: '<b>zone</b>' }, { id: '__proto__', label: '<b>bold</b>', unit: 'requests', used: 3, limit: 1e300 }, { id: 'bad', label: 'gone', unit: 'dollars', used: 1 }] } };

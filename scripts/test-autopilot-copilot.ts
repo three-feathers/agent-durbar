@@ -20,6 +20,14 @@ const tick = async (n = 6): Promise<void> => { for (let i = 0; i < n; i++) await
 const until = async (ok: () => boolean, what: string): Promise<void> => { for (let i = 0; i < 2000 && !ok(); i++) await new Promise((r) => setTimeout(r, 1)); assert.ok(ok(), what); };
 /** FR-048b: a promise that must settle, waited for with `until`, so a hang fails with `what` instead of stalling the suite. */
 const settles = async <T>(p: Promise<T>, what: string): Promise<T> => { let out: { v: T } | undefined; void p.then((v) => { out = { v }; }, () => undefined); await until(() => out !== undefined, what); return out!.v; };
+/** FR-048b: a promise that must reject with `re`, waited for with `until`, so a hang fails with `what` instead of stalling the suite. */
+const rejectsWithin = async (p: Promise<unknown>, re: RegExp, what: string): Promise<void> => {
+  let out: { ok: true } | { e: unknown } | undefined;
+  void p.then(() => { out = { ok: true }; }, (e: unknown) => { out = { e }; });
+  await until(() => out !== undefined, what);
+  assert.ok(out && 'e' in out, `${what} (it rejects)`);
+  assert.match(out.e instanceof Error ? out.e.message : String(out.e), re, what);
+};
 const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-ap-copilot-'));
 const cont = { type: 'user.message', data: { content: '', source: 'autopilot', agentMode: 'autopilot', isAutopilotContinuation: true } };
 
@@ -1204,6 +1212,43 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(reasons(d), ['done', 'error']);
     assert.strictEqual(d.s.mode, 'interactive');
     valid(d);
+  }
+
+  // FR-059 (#1341): `serial` frees the session's queue place when its step fails, as for a step that succeeds (`finally`, not `then`), so a
+  // failed step never holds the queue for later steps on that session: a rejection after the later step reserved its place (F1), one settled
+  // before it reserved (F2), a step that throws at once (F3); then through the adapter: a late turn-on's queued reset refused (F4) or never
+  // answered (F5, the step's own bound frees it: `serial` has no timer of its own) and a later send still goes
+  {
+    type Q = { serial<T>(live: unknown, step: () => Promise<T>): Promise<T>; sessions: Map<string, unknown>; undoLateTurnOn(sid: string, live: unknown): void };
+    const r = await rig();
+    const ad = r.ad as unknown as Q;
+    const live = ad.sessions.get(r.sid)!;
+    const ran: string[] = [];
+    let fail: (e: Error) => void = () => undefined;
+    const first = ad.serial(live, () => new Promise<void>((_res, rej) => { fail = rej; }));
+    void first.catch(() => undefined);
+    const second = ad.serial(live, async () => { ran.push('F1'); return 'F1'; });
+    await tick();
+    assert.deepStrictEqual(ran, [], 'FR-059 probe F1: the later step waits for the one before it');
+    fail(new Error('step refused'));
+    await rejectsWithin(first, /step refused/, 'FR-059 probe F1: the failed step\'s own caller sees its error');
+    assert.strictEqual(await settles(second, 'FR-059 probe F1: a step that rejects after a later step reserved does not hold the queue'), 'F1', 'probe F1: its result');
+    await rejectsWithin(ad.serial(live, () => Promise.reject(new Error('refused early'))), /refused early/, 'FR-059 probe F2: a step queued after a step that succeeded runs (and its rejection reaches its caller)');
+    assert.strictEqual(await settles(ad.serial(live, async () => 'F2'), 'FR-059 probe F2: a step that rejected before the next one reserved does not hold the queue'), 'F2');
+    await rejectsWithin(ad.serial(live, () => { throw new Error('thrown'); }), /thrown/, 'FR-059 probe F3: a step queued after a step that succeeded runs (and its throw reaches its caller)');
+    assert.strictEqual(await settles(ad.serial(live, async () => 'F3'), 'FR-059 probe F3: a step that throws at once does not hold the queue'), 'F3');
+    for (const how of ['refused', 'silent'] as const) {
+      const q = await rig({ tuning: { waitMs: 20 } });
+      const qa = q.ad as unknown as Q;
+      const set = q.s.rpc.mode.set.bind(q.s.rpc.mode);
+      let called = false;
+      q.s.rpc.mode.set = () => { called = true; q.s.rpc.mode.set = set; return how === 'refused' ? Promise.reject(new Error('mode refused')) : new Promise(() => undefined); };
+      qa.undoLateTurnOn(q.sid, qa.sessions.get(q.sid)); // its queued reset to interactive fails (F4) or never answers (F5)
+      const p = how === 'refused' ? 'F4' : 'F5';
+      await until(() => called, `FR-059 probe ${p}: the queued reset to interactive called the replaced mode.set (the step really ${how === 'refused' ? 'failed' : 'hung'})`);
+      await settles(q.ad.send(q.sid, { text: 'later' }), `FR-059 probe ${p}: a send after a queued step that ${how === 'refused' ? 'was refused' : 'never answered'} still goes`);
+      assert.ok(q.s.calls.some((c) => c.name === 'send'), `probe ${p}: the message reached the runtime`);
+    }
   }
 
   fs.rmSync(ws, { recursive: true, force: true });

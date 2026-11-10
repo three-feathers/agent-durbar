@@ -20,6 +20,10 @@ const OUT = process.env.OUT || require('os').tmpdir();
 module.exports = async (ctx) => {
   const H = helpers(ctx);
   const { js, until } = H;
+  /* spec 052 FR-239: every automatic move here goes through the Auto-follow notice, shortened to 600 ms after each load (simulator only) so this
+     driver's many moves stay quick; its words, the 3 s default, Stay and Escape are check-052-follow-notice's */
+  const load0 = H.load;
+  H.load = async (o) => { await load0(o); assert.strictEqual(await js(`window.__durbarSimUi.afNotice.ms(600)`), 600, 'the notice is shortened for this driver'); };
   /* The whole driver runs with Chromium's focus emulation on (spec 052 delta 2026-11-05, #1179): the return to the office after a send is decided once, at the
      moment the app accepts the message, and is skipped when the window is in the background then; on the shared Windows desktop a neighbour can take the OS focus at
      that moment, and no later wait can bring the return back. The hold steps below stand in for a blur with window.__durbarFocus, not with the OS, so they still test it. */
@@ -67,7 +71,19 @@ module.exports = async (ctx) => {
   const followed = () => js(`[...document.querySelectorAll('.is-followed')].map(n=>n.dataset.id).sort().join(',')`);
   const marks = () => js(`[...document.querySelectorAll('#stage .unread-mark')].map(m=>m.closest('[data-id]').dataset.id).sort().join(',')`);
   /* the desk's picture: the middle of a name or a card can be the rename pencil, which is there on purpose and opens a rename */
-  const openChat = async (id) => { const p = await js(`(()=>{const d=document.querySelector(${jsLiteral(sel(id))});d.scrollIntoView({block:'nearest'});const b=d.getBoundingClientRect(),x=Math.round(b.left+Math.min(24,b.width/4)),y=Math.round(b.top+b.height*0.7),e=document.elementFromPoint(x,y);return {x,y,inside:!!e&&d.contains(e)};})()`); assert.ok(p.inside, id + ': the point on its desk is the desk'); await clickAt(p.x, p.y); await ok(`document.body.classList.contains('panel-open')&&!!document.getElementById('msgInput')`, 'the chat of ' + id + ' opens'); };
+  /* Issue #1343: the office lays out again only some time after the floor changes height (the strip appearing when Auto-follow is turned on: up to
+     2 s here, longer on a loaded runner), and until then its desks overflow the floor. At 1280x800 that layout puts Priya's desk elsewhere, so a
+     point measured before it was a point on another desk by the time of the click (Omar's: the send went to him and nothing was followed). The
+     click waits for the office to fit its floor again, and the chat that opens must be the one asked for. */
+  const officeFits = `document.body.classList.contains('panel-open')||document.getElementById('stage').dataset.fit!=='ok'||document.getElementById('floor').scrollHeight<=document.getElementById('floor').clientHeight+1`;
+  const openChat = async (id) => {
+    if (!(await until(officeFits, 10000))) assert.fail('the office is laid out for its floor before ' + id + ' is clicked (floor scroll/client height: ' + await js(`(()=>{const f=document.getElementById('floor');return f.scrollHeight+'/'+f.clientHeight})()`) + ')');
+    const name = await nameOf(id);
+    const p = await js(`(()=>{const d=document.querySelector(${jsLiteral(sel(id))});d.scrollIntoView({block:'nearest'});const b=d.getBoundingClientRect(),x=Math.round(b.left+Math.min(24,b.width/4)),y=Math.round(b.top+b.height*0.7),e=document.elementFromPoint(x,y);return {x,y,inside:!!e&&d.contains(e)};})()`);
+    assert.ok(p.inside, id + ': the point on its desk is the desk');
+    await clickAt(p.x, p.y);
+    if (!(await until(`document.body.classList.contains('panel-open')&&!!document.getElementById('msgInput')&&(document.getElementById('panelTitle')||{}).textContent===${jsLiteral(name)}`, 8000))) assert.fail('the chat of ' + id + ' (' + name + ') opens (open: ' + await panelOpen() + ', title: ' + JSON.stringify(await title()) + ')');
+  };
   const backToOffice = async () => { await H.key('Escape'); await ok(`!document.body.classList.contains('panel-open')`, 'the chat closes'); };
   const send = async (id, text) => { await openChat(id); await mclick('#msgInput'); await type(text); await H.key('Return'); };
   /* accepted, with no scripted reply after it: the event the step emits is the only arrival (the script's own Done would replace an error) */
@@ -143,7 +159,7 @@ module.exports = async (ctx) => {
     // ---- send -> office and desk -> completion opens the chat on its title
     await sendQuiet(A, 'hello follow');
     const nameA = await nameOf(A);
-    await ok(`!document.body.classList.contains('panel-open')&&!!document.querySelector(${jsLiteral(sel(A) + '.is-followed')})&&document.activeElement&&document.activeElement.dataset.id===${jsLiteral(A)}`, `${tag}: back to the office with ${nameA} followed and focused`);
+    if (!(await until(`!document.body.classList.contains('panel-open')&&!!document.querySelector(${jsLiteral(sel(A) + '.is-followed')})&&document.activeElement&&document.activeElement.dataset.id===${jsLiteral(A)}`, 8000))) assert.fail(`${tag}: back to the office with ${nameA} followed and focused ` + JSON.stringify(await js(`({open:document.body.classList.contains('panel-open'),f:[...document.querySelectorAll('.is-followed')].map(n=>n.dataset.id),act:document.activeElement&&(document.activeElement.id||document.activeElement.className),notice:!!document.querySelector('.af-notice'),strip:document.getElementById('afText').textContent})`)));
     const off = await js(`(()=>{const c=getComputedStyle(document.querySelector(${jsLiteral(sel(A))}));return {ol:c.outlineStyle+' '+c.outlineWidth,tx:document.getElementById('afText').textContent};})()`);
     assert.strictEqual(off.ol, 'dashed 2px', `${tag}: the marker is a dashed 2px outline (not colour alone): ${off.ol}`);
     assert.ok(new RegExp(nameA + ' is working\\. Back to the office\\.').test(off.tx), `${tag}: honest status: ${off.tx}`);
@@ -249,12 +265,15 @@ module.exports = async (ctx) => {
     await setting(true);
     const S1 = A, S2 = B, S3 = C;
 
+    /* The dialog, menu and typing steps make the arrival themselves (sendQuiet, then finish() once the guard is up), as the pointer and popover
+       steps do. They used to send for real and race the simulator's scripted reply (Done about 3 s after the send) against the guard: on a slow
+       runner the reply came first, its chat opened with nothing to hold, and the 25 s wait for "Held: ..." failed (issue #1343). */
     // a dialog holds the switch; closing it delivers
-    await send(S1, 'hello dialog');
+    await sendQuiet(S1, 'hello dialog');
     await H.key('k', MOD, { char: 'never' });
     await ok(`!!document.getElementById('palDlg')`, `${tag}: the palette (a dialog) is open`);
+    await finish(S1);
     await ok(`(document.getElementById('afText').textContent||'').startsWith('Held: a dialog is open')`, `${tag}: held by the dialog, and it says so`, 25000);
-    await settled(S1);
     await stays(`!document.body.classList.contains('panel-open')&&!!document.getElementById('palDlg')`, `${tag}: the dialog and the office stay: nothing was switched while it was open`);
     assert.ok((await strip()).text.includes('1 is waiting to open'), `${tag}: the arrival waits in the count`);
     await H.key('Escape');
@@ -263,37 +282,53 @@ module.exports = async (ctx) => {
     await backToOffice();
 
     // a menu holds it
-    await send(S1, 'hello menu');
-    await ok(`!document.body.classList.contains('panel-open')`, `${tag}: back in the office`);
+    await sendQuiet(S1, 'hello menu');
     await mclick('#topMoreBtn');
     await ok(`document.getElementById('topMoreBtn').getAttribute('aria-expanded')==='true'`, `${tag}: the More menu is open`);
+    await finish(S1);
     await ok(`(document.getElementById('afText').textContent||'').startsWith('Held: a menu is open')`, `${tag}: held by the menu`, 25000);
     await stays(`!document.body.classList.contains('panel-open')`, `${tag}: nothing switched under the open menu`);
     await H.key('Escape');
     await ok(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle').textContent===${jsLiteral(await nameOf(S1))}`, `${tag}: closing the menu delivers it`, 8000);
-    await settled(S1); await backToOffice();
+    await backToOffice();
 
     // typing in a field holds it (renaming a desk in place)
-    await send(S1, 'hello typing');
+    await sendQuiet(S1, 'hello typing');
     await ok(`!document.body.classList.contains('panel-open')&&document.activeElement&&document.activeElement.dataset.id===${jsLiteral(S1)}`, `${tag}: office, desk focused`);
     await H.key('F2');
     await ok(`document.activeElement&&document.activeElement.tagName==='INPUT'`, `${tag}: the rename field is open`);
     await type('zz');
+    await finish(S1);
     await ok(`(document.getElementById('afText').textContent||'').startsWith('Held: you are typing')`, `${tag}: held while typing`, 25000);
-    await stays(`!document.body.classList.contains('panel-open')&&String(document.activeElement.value).endsWith('zz')`, `${tag}: the field keeps its focus and text; no switch`);
+    /* longer than the 2 s a typed key holds it (FR-185), so the field having the focus is what holds it at the end */
+    await stays(`!document.body.classList.contains('panel-open')&&String(document.activeElement.value).endsWith('zz')`, `${tag}: the field keeps its focus and text; no switch`, 2600);
     /* FR-185: out of the field, a key typed in the last 2 s still holds it: a lower bound, so a slow machine cannot fail it */
     await js(`(()=>{window.__keyAt=0;window.__openAt=0;document.addEventListener('keydown',e=>{if(e.key==='q')window.__keyAt=Date.now();},true);clearInterval(window.__op);window.__op=setInterval(()=>{if(!window.__openAt&&document.body.classList.contains('panel-open'))window.__openAt=Date.now();},20);})();0`);
     await type('q');
     await H.key('Escape');
     await ok(`document.body.classList.contains('panel-open')&&window.__openAt>0`, `${tag}: leaving the field delivers it`, 10000);
     { const gap = await js(`clearInterval(window.__op);window.__openAt-window.__keyAt`); assert.ok(gap >= 1900, `${tag}: the last key held it for 2 s, then it came: ${gap} ms`); }
-    await settled(S1); await backToOffice();
+    await backToOffice();
 
     // the user opened another agent by hand: the following has ended (FR-185), so its chat, typed in and scrolled up, is never switched away from
     await send(S1, 'hello other');
+    await ok(`!document.querySelector('.af-notice')&&!document.body.classList.contains('panel-open')`, `${tag}: the notice, then the office (FR-238)`, 8000);
     await openChat(S2);
-    await js(`(()=>{const c=document.getElementById('chat');const f=document.createElement('div');f.id='afFill';f.style.height='3000px';f.style.flex='none';c.appendChild(f);c.scrollTop=c.scrollHeight;})()`);
-    await js(`document.getElementById('chat').scrollTop=0`); // fixture: scrolled to the top (the page's own scroll handler marks it as being read)
+    // spec 005 FR-238 (review of PR 1431): a line added to the open chat while it is still short (the chat flushes once at its end), then
+    // the fill and both scroll writes in ONE call, so they always reach the page's scroll handler as one event (the old "reset the scroll
+    // baseline after every flush" made the chat look not scrolled up here only when the writes happened to fall in one frame)
+    // and a chat in the background at its message cap, trimmed in that same flush: only a trim of the OPEN chat may reset the baseline
+    const BG = await js(`(()=>{const ids=window.__durbarSimUi.agents().filter(x=>!x.parent).map(x=>x.id).filter(id=>![${jsLiteral(S1)},${jsLiteral(S2)},${jsLiteral(S3)}].includes(id));return ids[ids.length-1];})()`);
+    assert.ok(BG, `${tag}: a fourth top-level agent exists for the background chat (without it the "a trim of any chat" mutant would pass unseen)`);
+    await js(`(()=>{for(let i=0;i<310;i++)window.__durbarSimUi.emit({type:'user',sessionId:${jsLiteral(BG)},timestamp:Date.now(),text:'bg '+i});})()`);
+    await js('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r())))');
+    const bgRuns0 = await js(`(window.__durbarSimUi.chatSizes().find(x=>x.id===${jsLiteral(BG)})||{}).runs||0`);
+    await js(`(()=>{const U=window.__durbarSimUi;U.emit({type:'user',sessionId:${jsLiteral(BG)},timestamp:Date.now(),text:'bg more'});U.emit({type:'compaction',sessionId:${jsLiteral(S2)},timestamp:Date.now(),phase:'complete',trigger:'truncation',tokensBefore:1000,tokensAfter:500});})()`);
+    { const bg = await js(`new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>{const z=window.__durbarSimUi.chatSizes().find(x=>x.id===${jsLiteral(BG)});r(z?{messages:z.messages,trimmed:z.trimmed,runs:z.runs,note:z.note}:null);})))`);
+      assert.ok(bg && bg.runs > bgRuns0 && bg.messages <= 300 && /removed/.test(bg.note), `${tag}: the background chat was trimmed in that flush: ` + JSON.stringify(bg)); }
+    await js('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r())))');
+    await js(`(()=>{const c=document.getElementById('chat');const f=document.createElement('div');f.id='afFill';f.style.height='3000px';f.style.flex='none';c.appendChild(f);c.scrollTop=c.scrollHeight;c.scrollTop=0;})()`); // fixture: scrolled to the top (the page's own scroll handler marks it as being read)
+    await js('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r())))');
     await ok(`document.getElementById('chat').dataset.pin==='0'`, `${tag}: the chat is scrolled up: ` + await js(`(()=>{const c=document.getElementById('chat');return [c.scrollHeight,c.clientHeight,c.scrollTop,c.dataset.pin,getComputedStyle(c).overflowY,!!document.getElementById('afFill')].join(' ')})()`));
     await mclick('#msgInput'); await type('my draft');
     const top0 = await js(`document.getElementById('chat').scrollTop`);
@@ -332,7 +367,10 @@ module.exports = async (ctx) => {
     await ok(`document.getElementById('panelTitle').textContent===${jsLiteral(await nameOf(S1))}&&${jsLiteral(S1)}===(document.querySelector('.is-followed')||{dataset:{}}).dataset.id`, `${tag}: its own chat, still followed`);
     await js(`(()=>{const c=document.getElementById('chat');const f=document.createElement('div');f.id='afFill';f.style.height='3000px';f.style.flex='none';c.appendChild(f);c.scrollTop=0;window.__ann=[];})();0`);
     await ok(`document.getElementById('chat').dataset.pin==='0'`, `${tag}: scrolled up`);
-    await mclick('#panelTitle');
+    /* out of the message box with a click on the chat log, not on the title: a click on the title more than 400 ms after the chat opened starts
+       a rename (FR-020 item 1), whose field then holds the arrival as typing for good (issue #1343: seen under load, where the click came late) */
+    await mclick('#chat');
+    await ok(`document.activeElement&&document.activeElement.id!=='msgInput'&&!document.activeElement.closest('input,textarea,[contenteditable="true"]')`, `${tag}: out of the message box, in no field`);
     await ok(`!document.querySelector('.is-followed')`, `${tag}: its arrival was handled: no longer followed, nothing held`, 25000);
     assert.ok(!(await anns()).some((t) => /Its chat is open/.test(t)), `${tag}: already shown: no switch and nothing said: ${JSON.stringify(await anns())}`);
     assert.strictEqual(await js(`document.getElementById('chat').scrollTop`), 0, `${tag}: the chat stays where it was scrolled`);
@@ -497,6 +535,9 @@ module.exports = async (ctx) => {
     await settled(A); await settled(B);
     assert.strictEqual((await anns()).filter((t) => /Back to the office/.test(t)).length, 1, `${tag}: exactly one "Back to the office" for the whole send: ` + JSON.stringify(await anns()));
     // a chat opened by hand while the sends are on their way stays open (the setting off and on forgets the followed ones, and a chat an arrival opened is closed)
+    /* an arrival of the two opens a chat after its notice (FR-238): wait for it, so Settings is not clicked under the notice (no assert: only the order matters here) */
+    await until(`!document.querySelector('.af-notice')&&document.body.classList.contains('panel-open')`, 6000);
+    await ok(`!document.querySelector('.af-notice')`, `${tag}: no notice is up`);
     if (await panelOpen()) await backToOffice();
     await setting(false); await setting(true);
     await js(`(()=>{const b=window.__durbarSimUi.bridge();b.__send=b.send;window.__gate=new Promise(r=>{window.__openGate=r;});b.send=async()=>{await window.__gate;return {ok:true};};})();0`);

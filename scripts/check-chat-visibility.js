@@ -56,7 +56,7 @@ module.exports = async (ctx) => {
 
   /* the chat of an agent, filled with N simulated messages of different heights */
   const open = async (w, h) => {
-    await H.load({ w, h, ready: 'fit', focus: true });
+    await H.load({ w, h, ready: 'fit', focus: true, query: { simchatkeep: '100000' } }); // spec 005 FR-238: this chat is 4,004 messages on purpose, above the 300 a chat keeps
     const o = await H.openSimAgent(`a=>!a.parent&&!a.question&&(a.state==='done'||a.state==='idle')`, '#chat .msg');
     assert.ok(o.ok, `${w}x${h}: a chat is open: ${JSON.stringify(o.seen)}`);
     assert.ok(await until(`!document.querySelector('#chat .typing')`, 20000), 'the first turn is over: '+(await js(`document.querySelector('#chat').innerHTML.slice(0,700)`)));

@@ -1374,6 +1374,7 @@ body.panel-open #panel{flex-direction:row}
 .mm-sbx{max-width:340px;white-space:normal;line-height:1.35}
 .note.perm .pscope{margin:4px 0 0;font-size:11.5px;color:var(--ink);white-space:normal;overflow:visible;text-overflow:clip}
 .note.perm:not(.pending) .pscope{display:none} /* a settled card no longer offers the grant */ /* spec 003 FR-108 */
+.note.perm .plook{overflow-wrap:anywhere} /* spec 003 FR-118: a long marked name wraps inside the card, never cut */
 .note.perm .psbx{margin:4px 0 0;font-size:11.5px;color:var(--amber-ink);white-space:normal;overflow:visible;text-overflow:clip}
 .msg.user.not-sent .bubble{opacity:.75}
 .msg.user.auto .bubble{font-style:italic;border:1px dashed currentColor} /* spec 058 FR-218: Agent Durbar's own automatic message */
@@ -1750,6 +1751,30 @@ html:is(.hl-still,[data-still-highlights]) .desk .pp,html[data-still-highlights]
 .dlg-ov{animation:dlgov .12s ease-out}
 @keyframes dlgin{from{opacity:0;transform:translateY(6px) scale(.985)}}
 @keyframes dlgov{from{opacity:0}}
+/* spec 052 FR-241 (owner, 2026-11-09): the Auto-follow notice. Full screen (the page shows faintly through the theme's surface), a .dlg card in the
+   middle: the picture of the move, the two lines, the countdown ring and Stay. Theme tokens only; :root raises it over the worlds' .dlg-ov tint. */
+:root .dlg-ov.af-notice{background:color-mix(in srgb,var(--surface) 90%,transparent);z-index:70}
+.af-notice .dlg{width:min(460px,calc(100vw - 32px));align-items:center;text-align:center;gap:var(--s-3);padding:var(--s-5)}
+.af-notice .afn-body{display:contents}
+.af-notice .afn-art{order:-1;width:180px;height:60px;color:var(--ink-2);overflow:visible}
+.af-notice .afn-art path{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.af-notice .afn-art .afn-track{stroke:var(--line-2);stroke-dasharray:2 4}
+.af-notice .afn-dot{fill:var(--accent);animation:afn-go 1.2s ease-in-out infinite}
+.af-notice.afn-to-chat .afn-dot{animation-direction:reverse}
+@keyframes afn-go{from{transform:translateX(0)}to{transform:translateX(32px)}}
+.af-notice .dlg h3{font-size:calc(var(--t1-size) * 1.25);line-height:var(--t2-lh);overflow-wrap:anywhere} /* the type scale's T1, a step up for a notice that fills the window */
+.af-notice .dlg .dsub{font-size:var(--t2-size);max-width:38ch}
+.af-notice .afn-count{position:relative;width:64px;height:64px;display:grid;place-items:center}
+.af-notice .afn-ring{position:absolute;inset:0;width:64px;height:64px;transform:rotate(-90deg)}
+.af-notice .afn-ring circle{fill:none;stroke-width:4}
+.af-notice .afn-ring-bg{stroke:var(--line)}
+.af-notice .afn-ring-fg{stroke:var(--accent);stroke-dasharray:100;stroke-dashoffset:0;animation:afn-ring var(--afn-ms,3000ms) linear forwards}
+@keyframes afn-ring{to{stroke-dashoffset:100}}
+.af-notice .afn-n{font-size:calc(var(--t1-size) * 1.5);font-weight:var(--t1-weight);color:var(--ink);font-variant-numeric:tabular-nums}
+.af-notice .dbtn{justify-content:center}
+.af-notice.afn-paused :is(.afn-dot,.afn-ring-fg){animation-play-state:paused}
+/* FR-241: reduced motion (the global rule at the top stops every animation) and the Motion setting off: nothing moves; the text and the number counting down stay */
+html[data-motion-off] .af-notice :is(.afn-dot,.afn-ring-fg,.dlg),html[data-motion-off] .dlg-ov.af-notice{animation:none}
 /* FR-049: room for a copy button at the bottom of the Thinking box */
 .think-body.md{padding-bottom:26px}
 .think-body.md>.cp-msg{bottom:4px} /* FR-092: the box no longer scrolls, so Copy stays at its bottom edge, outside any scroll area */
@@ -1873,7 +1898,7 @@ h2,h3,h4{text-wrap:balance}
 /* spec 066: plan first. The proposed plan scrolls inside its card; the one-shot chip above the composer */
 .note.plan-card .plan-body{max-height:min(42vh,360px);overflow:auto;margin:6px 0 4px;padding:6px 10px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2)}
 .note.plan-card .plan-why{margin:4px 0 0;color:var(--ink-2);font-size:var(--t4-size)}
-.att.plan-chip{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--surface));color:var(--ink)} /* 070 T024: all three come from the world (accent edge, tinted page colour, page ink), so the chip reads in every world; the info tone gave 2.9:1 in the arcade, where --tone-info-soft is a mid grey */
+.att.plan-chip{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--surface));color:var(--ink)} /* 070 T024: all three come from the world (accent edge, tinted page colour, page ink), so the chip reads in every world; the derived info tone gave 2.9:1 in the arcade, so the arcade now sets its own dark --tone-* fills (spec 070 FR-081) */
 
 /* spec 001 FR-028..FR-030: live activity on the desks. The side panel has a fixed size and is reserved next to every main desk while the
    layout uses it (an empty one is invisible), so the office never moves when an agent starts or stops; text changes only. No animation. */

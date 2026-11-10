@@ -63,3 +63,7 @@ Backlog: capability flag (spec 012). (Office and per-folder totals: done 2026-10
 ## 2026-11-04: settings `ok` from the write, no `.tmp` (issues #1094, #1047)
 
 - [x] T072 Setters behind `setting()` return `{ ok, value }` (`Saved<T>`), `ok` from `commit()`; `SettingsStore.save()` removes its `.tmp` in a `finally`; `setChatLinksNewTab` and `setSandboxAlwaysContinue` too, callers in `browser/tabs.ts` and `sandboxops.ts` read `ok`; `scripts/test-credits.ts` unchanged-value, injected partial-write and failed-rename cases [FR-012]
+
+## 2026-11-10: a monthly reset that does not move with the minute (FR-092)
+
+- [x] T073 `sim.ts` `simQuotaFixture`: the request modes' and `usagebilled`'s `resetsAt` is the next UTC midnight 12 days on (`MONTHLY`), so the theme-geometry Photo/Retro Settings comparison cannot see "06:10" against "06:11" (merge-queue run 42766660661).

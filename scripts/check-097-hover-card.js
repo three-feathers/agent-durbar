@@ -11,6 +11,9 @@
  *   (`ZOOM.held !== PT` turned into `true`) fails "a pointermove at the same place does not close the held asleep card"; the `pointerleave` listener in wireZoom deleted ("noleave") fails "a jump straight off the
  *   office closes the held card"; the window's `focus` listener (`addEventListener('focus', replaceZoom)` in openZoom, turned into `0`) removed ("no window focus") fails "the card closes on the window's focus event".
  *   The focus listeners removed (placeZoom's `document.addEventListener('focusin', replaceZoom, true)` and the focusout one turned into `0`) must fail at "the card is placed again off the slip that took the focus".
+ *   The page focus (#1408): the shared focus emulation holds it for the steps that test no blur (a neighbour driver takes the OS focus on Windows CI);
+ *   CHECK_097_STEAL_FOCUS=plate|refill|all blurs the window just before the plate's focus() and/or the 700 ms rest. Mutant: `focusPage({ emulate: 'first' })` in
+ *   ownFocus turned into `focusPage()`, run with `plate`, fails "the asleep agent's plate holds the keyboard focus"; with `refill`, "no window blur during the 700 ms rest".
  *   SHOTS_OUT=<dir>   where its pictures go (097-hover-<what>-<w>x<h>.png; a temporary folder by default)
  *
  * At 1440x900 and 1280x800, 15 agents, by real pointer moves, it fails (exit 1) when:
@@ -51,6 +54,9 @@ module.exports = async (ctx) => {
   const arm = () => js(`(()=>{if(window.__blurs!==undefined)return;window.__blurs=0;window.__mv='';addEventListener('blur',()=>{window.__blurs++;});addEventListener('mousemove',(e)=>{window.__mv=e.clientX+','+e.clientY;},true);window.__zlog=[];new MutationObserver((ms)=>{for(const m of ms){for(const n of m.addedNodes)if(n.id==='roZoom')window.__zlog.push('+'+Math.round(performance.now()));for(const n of m.removedNodes)if(n.id==='roZoom')window.__zlog.push('-'+Math.round(performance.now())+' blurs='+window.__blurs);}}).observe(document.getElementById('stage'),{childList:true,subtree:true});})();0`);
   const moveTo = async (x, y) => { await arm(); const X = Math.round(x), Y = Math.round(y); wc().sendInputEvent({ type: 'mouseMove', x: X, y: Y }); return H.until(`window.__mv===${jsLiteral(X + ',' + Y)}`, 3000); };
   const refocus = async () => { ctx.win.show(); ctx.win.focus(); wc().focus(); await must(`document.hasFocus()&&!document.hidden`, 'the window active', 8000); };
+  /* #1408: three drivers share one Windows desktop and a neighbour takes the OS focus; a script focus() then fires no focusin and a window blur closes the card
+     (FR-034), so a step that tests no blur would test the environment. The shared focus emulation holds the page focus; loseFocus() ends it for the FR-330 blur step */
+  const ownFocus = async (what) => assert.ok(await H.focusPage({ emulate: 'first' }) && await js(`document.hasFocus()`), `${what}: the page holds the focus for the steps that test no blur (focus emulation)`);
   const ZOOM_FOR = (id) => `(document.getElementById('roZoom')||{dataset:{}}).dataset.for===${jsLiteral(id)}`;
   const NONE = `!document.getElementById('roZoom')`;
   /* where a part of one agent is: the middle of its first third (a screen, a person) or of its plate */
@@ -107,6 +113,10 @@ module.exports = async (ctx) => {
     return {bad,slips}})()`).then((r) => { assert.deepStrictEqual(r.bad, [], `${what}: something paints over the card: ${JSON.stringify(r.bad)}`); assert.strictEqual(r.slips, 0, `${what}: a slip lies over the card`); });
   const noBad = (what, c) => { for (const b of BAD) assert.ok(!c.text.includes(b), `${what}: the card shows ${JSON.stringify(b)}: ${c.text}`); };
 
+  /* #1408 fault injection (CHECK_097_STEAL_FOCUS=plate|refill|all): the window loses the OS focus just before the plate's focus() or the 700 ms rest, as a
+     neighbour driver takes it on Windows CI; the emulation is left as it is (a neighbour does not end it) */
+  const THIEF = String(process.env.CHECK_097_STEAL_FOCUS || '');
+  const steal = async () => { ctx.win.blur(); await js(`new Promise(r=>setTimeout(r,300))`); console.log('[hover-card] focus stolen; page hasFocus', await js(`document.hasFocus()`)); };
   const shots = [];
   for (const [w, h] of SIZES) {
     const tag = `${w}x${h}`;
@@ -114,6 +124,7 @@ module.exports = async (ctx) => {
     await must(PICS, 'the pictures');
     await must(`${sim}.visitsSettled()`, `${tag}: no visit about to start or end`);
     await refocus();
+    await ownFocus(tag);
     /* ---- FR-327: any part of a working desk opens its zoom ---- */
     let wk = await js(PICKW([]));
     const desks = await js(`${sim}.realLayout().zones.flatMap(z=>z.desks).map(d=>d.id+':'+d.state+(d.away?'@':''))`);
@@ -191,7 +202,9 @@ module.exports = async (ctx) => {
     }
     /* keyboard: Tab to the asleep agent's plate opens the same card; Esc closes it and the focus stays */
     await js(`(()=>{document.activeElement&&document.activeElement.blur&&document.activeElement.blur();return 1})()`);
-    await js(`(()=>{const p=document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(S)})+'"]');p.focus({focusVisible:true});return document.activeElement===p})()`);
+    if (/plate|all/.test(THIEF)) await steal();
+    assert.ok(await js(`(()=>{const p=document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(S)})+'"]');p.focus({focusVisible:true});return document.activeElement===p&&p.matches(':focus-visible')&&document.hasFocus()})()`),
+      `${tag}: the asleep agent's plate holds the keyboard focus, :focus-visible, in a page with the focus (#1408: a page without it fires no focusin)`);
     await must(ZOOM_FOR(S), `${tag}: keyboard focus on the asleep agent's plate opens the card (FR-328)`);
     wc().sendInputEvent({ type: 'keyDown', keyCode: 'Escape' }); wc().sendInputEvent({ type: 'keyUp', keyCode: 'Escape' });
     await must(NONE, `${tag}: Esc closes it`);
@@ -208,7 +221,10 @@ module.exports = async (ctx) => {
     const after = await card();
     noBad(`${tag} fell asleep`, after);
     assert.ok(after.node === before.node && after.facts.some(([k]) => k === 'Last activity') && after.inside && !after.small.length, `${tag}: the same panel, refilled: ${JSON.stringify(after.facts)}`);
+    const blurs0 = await js(`window.__blurs`);
+    if (/refill|all/.test(THIEF)) await steal();
     await js(`new Promise(r=>setTimeout(r,700))`); /* the agent walks to the lounge row under the resting pointer: that is not the pointer leaving (the card stays) */
+    assert.strictEqual(await js(`window.__blurs`), blurs0, `${tag}: no window blur during the 700 ms rest (a blur closes the card, FR-034; #1408: an environment problem, not the card)`);
     assert.ok(await js(ZOOM_FOR(wk2)) && (await card()).word.startsWith('Asleep'), `${tag}: the asleep card is still open 700 ms after the refill, the pointer has not moved`);
     /* an open menu is above the card: Escape closes the menu (the app's menus stop the key themselves), the card does not take it first (FR-328) */
     await js(`(()=>{const m=document.createElement('div');m.id='modeMenu';m.tabIndex=-1;const b=document.createElement('button');b.textContent='x';m.appendChild(b);m.addEventListener('keydown',(e)=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();m.remove();}});document.body.appendChild(m);b.focus();return document.activeElement===b})()`);
@@ -333,6 +349,7 @@ module.exports = async (ctx) => {
     await js(`window.dispatchEvent(new Event('focus'));0`);
     await must(NONE, `${tag}: the card closes on the window's focus event when no place leaves the focused slip free (FR-330)`, 4000);
     await refocus();
+    await ownFocus(`${tag} after the window-blur step`);
     await js(`for(const e of document.querySelectorAll('#stage .ro .fake-slip'))e.remove();document.activeElement&&document.activeElement.blur&&document.activeElement.blur();0`);
     await moveTo(1, 1);
     /* ---- FR-329: an agent that rested (its numbers are read and kept) and is at a desk again has no Changed line ---- */
@@ -344,6 +361,7 @@ module.exports = async (ctx) => {
     assert.ok(cr.id === R && !/^Asleep/.test(cr.word) && cr.facts.every(([k]) => k !== 'Changed'), `${tag}: a rested agent at a desk again has no Changed line (FR-329): ${JSON.stringify(cr.facts)}`);
     await moveTo(1, 1);
     await must(NONE, `${tag}: closed after the rested-then-working step`);
+    await H.releaseFocus(); /* the next size loads with the real focus, and turns the emulation on again */
     console.log(`[hover-card] ${tag}: ok; working ${wk}, resting ${R}, asleep ${S}`);
   }
   console.log('[hover-card] pictures:', shots.join(' '));
