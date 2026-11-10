@@ -77,7 +77,7 @@
     for(const t of o.tls||[]){
       if(!t||!t.tl||!el.contains(t.tl))continue;
       if(kids.some((k,i)=>gone[i]&&k.contains(t.tl)))continue; /* its message goes whole */
-      const L=live, bl=Array.prototype.slice.call(t.tl.children);
+      const L=t.live?new Set([...live,...t.live]):live, bl=Array.prototype.slice.call(t.tl.children);
       const d=planDrop(bl.length,keep.blocks,i=>isPinned(bl[i],L)).map(i=>bl[i]);
       tlDrop.set(t.tl,d.length);for(const x of d)drops.push(x);
     }
