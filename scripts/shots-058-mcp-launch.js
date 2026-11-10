@@ -45,7 +45,8 @@ module.exports = async (ctx) => {
   /* issue #1424 / FR-230: the Photo Real office, proven by the world itself (a fall back to the flat office fails here, it is not a picture of it) */
   const inReal = async (label, room = true) => {
     await js(`window.__durbarSimUi.setOfficeView('real');0`);
-    assert.ok(await until(`document.documentElement.dataset.world==='photo'&&!!document.getElementById('roWorldCss')&&(${room}?!!document.querySelector('#stage .ro'):true)`, 8000), `${label}: the Photo Real office is shown (html[data-world] photo, its world CSS${room ? ', #stage .ro' : ''})`);
+    const cond = "document.documentElement.dataset.world==='photo'&&!!document.getElementById('roWorldCss')" + (room ? "&&!!document.querySelector('#stage .ro')" : '');
+    assert.ok(await until(cond, 8000), `${label}: the Photo Real office is shown (html[data-world] photo, its world CSS${room ? ', #stage .ro' : ''})`);
     /* Settings covers the room (it is not drawn behind a screen): there the world itself, html[data-world] and the Settings note, is the proof */
     if (room) assert.strictEqual(await js(`document.querySelector('#stage .ro').dataset.world+'/'+document.querySelector('#stage .ro').dataset.set`), 'photo/office', `${label}: the room draws the Photo office`);
     await settle();
