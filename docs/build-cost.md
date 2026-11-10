@@ -17,7 +17,7 @@ The graphs, the split and the total are in **The numbers so far** below (generat
 <!-- build-cost-detail:begin (written by `npm run usage:readme`) -->
 ## The numbers so far
 
-**About US$4,436** (API list-price estimate, not billing), tracked since 2026-10-25, as of 2026-11-09 (release `v0.1.14`).
+**About US$4,753** (API list-price estimate, not billing), tracked since 2026-10-25, as of 2026-11-10 (release `v0.1.15`).
 
 ![Cumulative build cost by model over releases (API list-price estimate, not billing)](build-cost.svg)
 
@@ -25,8 +25,8 @@ The graphs, the split and the total are in **The numbers so far** below (generat
 
 Estimated, not measured: US$3,666 of the total, spent before telemetry could count it per day, is spread over 13 days (2026-10-25 to 2026-11-06) by 50% lines changed and 50% merged PRs of each day (git history); the faded, dashed bars are those estimates, the solid bars are measured. Per-model split of an estimated day: the same mix as the original lump (an assumption).
 
-- By model: Opus 5.5 74% (US$3,261), Sonnet 5.5 26% (US$1,173), Haiku 5.5 0% (US$2).
-- By machine or team: linux 95% (US$4,197), mac 5% (US$236), ruben-server 0% (US$2).
+- By model: Opus 5.5 75% (US$3,559), Sonnet 5.5 25% (US$1,192), Haiku 5.5 0% (US$2).
+- By machine or team: linux 88% (US$4,197), ruben-server 7% (US$319), mac 5% (US$236).
 - Not counted yet: work before 2026-10-25, Copilot and Codex, and machines that publish no usage file yet (Paco's server starts with v0.1.16).
 <!-- build-cost-detail:end -->
 
