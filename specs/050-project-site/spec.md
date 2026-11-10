@@ -53,6 +53,13 @@ A friendly front door at <https://three-feathers.github.io/agent-durbar/>: what 
 
 ## Changes
 
+### 2026-11-10: site headroom restored by palette-reducing 31 pictures to 128 colours (FR-012 unchanged)
+
+*Missing:* the built site was 8,388,304 B against FR-012's 8 MB (8,388,608 B), a 304 B margin, so any docs line failed `test:site` in the merge queue (a docs PR was ejected on Linux and Windows). Every linked picture was already a 256-colour palette PNG (`shots:compress --check`: nothing left to gain). Decided by the coordinator under the owner's delegation; the **budget is not raised**.
+
+*Corrected:* the 31 largest savers among the site's pictures were re-quantised with the repo's own `compressPng` (`scripts/compress-shots.js`) at `maxColors: 128` and a stricter guard (`maxChannel: 40`, the other FR-012 limits unchanged), from the site's 1440x900 and 1280x800 screenshots: 2,581,775 B to 2,296,764 B (285,011 B saved), so the site is 8,103,293 B, **margin 285,315 B**. Mean error 0.14 to 0.46 (of 255), at most 0.137% of pixels off by more than 24. The same-content pair `035-retro` / `site-theme-retro` was left alone. `read:` the worst 240x160 area of each picture, before and after at 2x: no visible change; a first try without the `maxChannel` limit shifted the hue of a small red badge on two office pictures and was dropped.
+- `[KNOWN GAP]` A retake by `shots:docs` writes these pictures back at 256 colours (about 10 KB more each), so the margin shrinks as they are retaken; the 8 MB check still catches it. The Windows CI size was not measured here (files are byte-identical, so it should match Linux).
+
 ### 2026-11-01: a new look, videos and a blog are specified in spec 104 (owner request)
 
 Spec [104](../104-site-story-blog/spec.md) owns the redesign, the videos and the agent blog; nothing is built yet. When its tasks land they supersede FR-008's landing sections, FR-009's visual design and the six-themes strip of FR-007, and widen FR-002's CSP by `media-src 'self'`. FR-001..FR-005, FR-012 and FR-014 stand. Until then this spec describes the live site.
