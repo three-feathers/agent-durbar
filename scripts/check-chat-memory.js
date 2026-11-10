@@ -14,7 +14,8 @@
  * line names a removed chip, when the line is missing, wrong or under 10.5px, when a trim moves what the person reads in an open chat
  * scrolled up (with the page's scroll anchoring on, as people have it, and off), when a chat at its caps takes the slow path on a frame
  * that adds no block, and when a saved note's marker moves to another message with the same text after trims.
- * It does not assert resident memory (noisy, differs by OS). CCM_WORLD=real|retro runs it with the Real office or the Retro arcade on.
+ * It does not assert resident memory (noisy, differs by OS). CCM_WORLD=real|retro runs it with the Real office or the Retro arcade on;
+ * CCM_SIZE=1280x800 in the smaller window.
  * Simulator only, no credits:
  *
  *   npm run build
@@ -36,7 +37,8 @@ module.exports = async (ctx) => {
   const H = helpers(ctx);
   const { js } = H;
   const query = { simtrimtick: '400', ...(WORLD === 'real' ? { officeview: 'real' } : WORLD === 'retro' ? { officeview: 'real', worldflags: 'retro', world: 'retro' } : {}) }; // simtrimtick: the hidden-window timer every 400 ms, not 30 s
-  await H.load({ w: 1440, h: 900, query, ...(WORLD ? { ready: REAL, settle: false } : {}) });
+  const [W, HH] = (process.env.CCM_SIZE || '1440x900').split('x').map(Number); // CCM_SIZE=1280x800: the smaller window
+  await H.load({ w: W, h: HH, query, ...(WORLD ? { ready: REAL, settle: false } : {}) });
   const wc = ctx.win.webContents;
   const d = wc.debugger;
   if (!d.isAttached()) d.attach('1.3');
@@ -91,6 +93,8 @@ module.exports = async (ctx) => {
         if(Math.floor(n/250)>f){f=Math.floor(n/250);await new Promise(r=>requestAnimationFrame(()=>r()));}}}
       await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r())));return n;};})()`);
   const sizes = () => js('window.__durbarSimUi.chatSizes()');
+  // after opening a chat: at its end and following it (a chat that grew before the first scroll event counts as scrolled up, FR-214)
+  const toEnd = async () => { const pin = await js(`new Promise(r=>{const c=document.getElementById('chat');c.scrollTop=c.scrollHeight;c.dispatchEvent(new Event('scroll'));requestAnimationFrame(()=>requestAnimationFrame(()=>r(c.dataset.pin)));})`); assert.strictEqual(pin, '1', 'the open chat follows its end'); };
   const of = (all, id) => all.find((x) => x.id === id) || {};
 
   // set-up: sim-2's tool call that never ends; sim-3's helper that never ends; sim-7's fresh-session note (idle, compacted once, 95% full)
@@ -108,13 +112,14 @@ module.exports = async (ctx) => {
   // mark that note (its chat open for a moment): at the end the same element must still be there, not a new one
   await js(`window.__durbarSimUi.crew.openPanel('sim-7')`);
   assert.ok(await ctx.waitFor(`!!document.querySelector('#chat .note.fresh')`, 5000), 'set-up: the fresh-session note is in the open chat');
+  await toEnd();
   await js(`document.querySelector('#chat .note.fresh').dataset.ccm='first'`);
 
   // fill: every pumped chat first reaches its caps (some need more events than others), so the warm-up and the load see the plateau
   const ids = ['sim-1', 'sim-2', 'sim-3', 'sim-4', 'sim-5', 'sim-6', 'sim-7'];
   let fill = 0;
   // CCM_FILL=0: no fill (the numbers before the fix, where no chat ever reaches a cap)
-  for (; process.env.CCM_FILL !== '0' && fill < 60000; fill += 1000) { const z = await sizes(); if (process.env.CCM_LOG) console.log('[chat-memory] fill ' + fill + ' ' + ids.map((id) => id + ':' + of(z, id).trimmed + '/' + of(z, id).messages + '/' + of(z, id).leaves).join(' ')); if (ids.every((id) => of(z, id).trimmed > 0)) break; await js('window.__ccmPump(1000)'); }
+  for (; process.env.CCM_FILL !== '0' && fill < 60000; fill += 1000) { const z = await sizes(); if (process.env.CCM_LOG) console.log('[chat-memory] fill ' + fill + ' pin=' + (await js(`(document.getElementById('chat')||{dataset:{}}).dataset.pin+'/'+(()=>{const c=document.getElementById('chat');return c?Math.round(c.scrollHeight-c.scrollTop-c.clientHeight)+'/'+c._lastTop:''})()`)) + ' ' + ids.map((id) => id + ':' + of(z, id).trimmed + '/' + of(z, id).messages + '/' + of(z, id).leaves).join(' ')); if (ids.every((id) => of(z, id).trimmed > 0)) break; await js('window.__ccmPump(1000)'); }
   assert.ok(process.env.CCM_FILL === '0' || fill < 60000, 'every pumped chat reached its caps in the fill');
   await js(`window.__ccmPump(${jsLiteral(WARM)})`);
   const a = await sample();
@@ -157,6 +162,7 @@ module.exports = async (ctx) => {
   // a saved note on a reply whose text repeats (sim-4): after more trims its marker is still on that same reply
   { const o = await js(`(()=>{try{return window.__durbarSimUi.crew.openPanel('sim-4')}catch(e){return String(e&&e.stack).slice(0,600)}})()`); assert.strictEqual(o, true, 'the chat of sim-4 opens: ' + o); }
   assert.ok(await ctx.waitFor(`!!document.querySelector('#chat > .chat-inner > .chat-trim')&&document.querySelectorAll('#chat .msg.agent .bubble > .nt-btn').length>20`, 8000), 'sim-4: the open chat shows the line and finished replies');
+  await toEnd();
   const n0 = await js('window.__durbarSimUi.notes.all().length');
   const pick = await js(`(()=>{const bs=[...document.querySelectorAll('#chat .msg.agent .bubble')].filter(b=>b.querySelector(':scope > .nt-btn')&&b.textContent.includes(${jsLiteral('Done, all green.')}));const b=bs[bs.length-5];if(!b)return {at:-1,same:bs.length,btns:document.querySelectorAll('#chat .msg.agent .bubble > .nt-btn').length,sample:[...document.querySelectorAll('#chat .msg.agent .bubble')].slice(-3).map(x=>x.textContent.slice(0,60))};b.dataset.ccmNote='1';
     const all=[...document.querySelectorAll('#chat .chat-inner .msg.agent .bubble')];return {at:all.indexOf(b),same:bs.length};})()`);
@@ -172,28 +178,47 @@ module.exports = async (ctx) => {
   console.log('[chat-memory] note: ' + JSON.stringify({ pick, saved: saved.ord, gone0, gone1, marks }));
   assert.ok(gone1 > gone0, 'sim-4: more replies were trimmed after the save');
   assert.ok(marks.same, `sim-4: the saved note marks the same reply after the trims (${marks.n} marked)`);
+  // review of PR 1431: a message menu open on the oldest reply keeps that reply while it is open; closed, the reply can go
+  const menu0 = await js(`(()=>{const b=[...document.querySelectorAll('#chat .chat-inner > .msg.agent .bubble > .nt-btn')].find(x=>!x.closest('.msg').querySelector('.note.perm:not(.settled) > .note-actions button, .subblk.running'));if(!b)return null;b.closest('.msg').dataset.ccmMenu='1';b.click();const m=document.querySelector('#modeMenu.nt-menu');return {open:!!m,inMenu:!!(m&&m.contains(document.activeElement))};})()`);
+  assert.ok(menu0 && menu0.open && menu0.inMenu, 'sim-4: the oldest reply\'s ⋯ opens its menu, focus in it: ' + JSON.stringify(menu0));
+  await js(`window.__ccmPump(150,['sim-4'])`);
+  const menu1 = await js(`({open:!!document.querySelector('#modeMenu.nt-menu'),kept:!!document.querySelector('#chat [data-ccm-menu="1"]')})`);
+  console.log('[chat-memory] menu on the oldest reply: ' + JSON.stringify(menu1));
+  assert.ok(menu1.open && menu1.kept, 'sim-4: the reply of an open menu stays, and so does its menu');
+  await js(`document.querySelector('#modeMenu.nt-menu').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
+  await js(`(()=>{const i=document.getElementById('msgInput');if(i)i.focus();})()`); // Escape gives the focus back to the ⋯ (in the reply): the person moves on to the message box
+  await toEnd(); // and back to the end (giving the focus back scrolled the chat up to that reply)
+  await js(`window.__ccmPump(150,['sim-4'])`);
+  const menu2 = await js(`({kept:!!document.querySelector('#chat [data-ccm-menu="1"]'),pin:document.getElementById('chat').dataset.pin,focus:document.activeElement&&document.activeElement.id,sel:getSelection().toString().length})`);
+  console.log('[chat-memory] menu closed: ' + JSON.stringify(menu2));
+  assert.strictEqual(menu2.kept, false, 'sim-4: the menu closed, the old reply goes with the next trim');
 
   // an open chat, scrolled up: the line is readable, a trim does not move what the person reads (scroll anchoring on, as people have it,
   // then off: Chromium's anchoring alone would hide a missing keep-the-place step), and a frame that adds no block costs nothing
   assert.ok(await js(`window.__durbarSimUi.crew.openPanel('sim-1')`), 'the chat of sim-1 opens');
   assert.ok(await ctx.waitFor(`!!document.querySelector('#chat > .chat-inner > .chat-trim')`, 5000), 'the open chat shows the line');
+  await toEnd();
   const font = await js(`parseFloat(getComputedStyle(document.querySelector('#chat .chat-trim')).fontSize)`);
   assert.ok(font >= 10.5, `the line's text is at least 10.5px, is ${font}`);
-  for (const anchoring of ['auto', 'none']) {
-    const before = await js(`new Promise(r=>{const c=document.getElementById('chat');c.style.overflowAnchor=${jsLiteral(anchoring)};c.scrollTop=Math.round(c.scrollHeight/2);c.dispatchEvent(new Event('scroll'));
-      requestAnimationFrame(()=>{c.scrollTop=Math.round(c.scrollHeight/2)-1;c.dispatchEvent(new Event('scroll'));requestAnimationFrame(()=>{
-        c.querySelectorAll('[data-ccm-mark]').forEach(x=>delete x.dataset.ccmMark);
-        const top=c.getBoundingClientRect().top,el=[...c.querySelectorAll('.chat-inner .tl > *')].find(x=>x.getBoundingClientRect().bottom>top+40);
-        el.dataset.ccmMark='1';r({pin:c.dataset.pin,y:Math.round(el.getBoundingClientRect().top),scroll:c.scrollTop});});});})`);
-    assert.strictEqual(before.pin, '0', `anchoring ${anchoring}: the chat counts as scrolled up`);
-    await js(`window.__ccmPump(40,['sim-1'])`);
-    const after = await js(`(()=>{const c=document.getElementById('chat'),el=c.querySelector('[data-ccm-mark="1"]');return el?{pin:c.dataset.pin,y:Math.round(el.getBoundingClientRect().top),scroll:c.scrollTop,trim:c.querySelector('.chat-trim').textContent}:null;})()`);
-    console.log('[chat-memory] scrolled up, anchoring ' + anchoring + ': ' + JSON.stringify({ before, after }));
-    assert.ok(after, `anchoring ${anchoring}: the block in view is still in the chat`);
-    assert.ok(after.scroll !== before.scroll, `anchoring ${anchoring}: blocks above it were removed (the chat scrolled to keep it)`);
-    assert.ok(Math.abs(after.y - before.y) <= 2, `anchoring ${anchoring}: the block in view stays where it was: ${before.y} -> ${after.y}`);
-    assert.strictEqual(after.pin, '0', `anchoring ${anchoring}: the chat is still scrolled up (a trim does not jump to the end)`);
-  }
+  // review of PR 1431: while the person reads older messages of the open chat (scrolled up), that chat is not trimmed: what they read
+  // does not move and nothing goes; back at the end, it is trimmed
+  const up0 = of(await sizes(), 'sim-1');
+  const before = await js(`new Promise(r=>{const c=document.getElementById('chat');c.scrollTop=Math.round(c.scrollHeight/2);c.dispatchEvent(new Event('scroll'));
+    requestAnimationFrame(()=>{c.scrollTop=Math.round(c.scrollHeight/2)-1;c.dispatchEvent(new Event('scroll'));requestAnimationFrame(()=>{
+      const top=c.getBoundingClientRect().top,el=[...c.querySelectorAll('.chat-inner .tl > *')].find(x=>x.getBoundingClientRect().bottom>top+40);
+      el.dataset.ccmMark='1';r({pin:c.dataset.pin,y:Math.round(el.getBoundingClientRect().top),scroll:c.scrollTop});});});})`);
+  assert.strictEqual(before.pin, '0', 'the chat counts as scrolled up');
+  await js(`window.__ccmPump(40,['sim-1'])`);
+  const after = await js(`(()=>{const c=document.getElementById('chat'),el=c.querySelector('[data-ccm-mark="1"]');return el?{pin:c.dataset.pin,y:Math.round(el.getBoundingClientRect().top),scroll:c.scrollTop}:null;})()`);
+  const up1 = of(await sizes(), 'sim-1');
+  console.log('[chat-memory] scrolled up: ' + JSON.stringify({ before, after, runs: [up0.runs, up1.runs], deferred: [up0.deferred, up1.deferred], blocks: up1.blocks }));
+  assert.ok(after && Math.abs(after.y - before.y) <= 2 && after.scroll === before.scroll && after.pin === '0', 'scrolled up: what the person reads does not move: ' + JSON.stringify(after));
+  assert.strictEqual(up1.runs, up0.runs, 'scrolled up: the open chat is not trimmed');
+  assert.ok(up1.deferred > up0.deferred && up1.blocks > CAP.blocks, `scrolled up: the trim waits (${up1.blocks} blocks)`);
+  await js(`new Promise(r=>{const c=document.getElementById('chat');c.scrollTop=c.scrollHeight;c.dispatchEvent(new Event('scroll'));requestAnimationFrame(()=>requestAnimationFrame(()=>r()));})`);
+  const up2 = of(await sizes(), 'sim-1');
+  console.log('[chat-memory] back at the end: ' + JSON.stringify({ runs: up2.runs, blocks: up2.blocks }));
+  assert.ok(up2.runs > up1.runs && up2.blocks <= CAP.blocks, `back at the end, the chat is trimmed (${up2.blocks} blocks)`);
   // the waiting line: a tool call that never ends, in a chip row that is no longer the live one, then only new thinking blocks until
   // its row is trimmed: the line must not name the removed chip (tActNext names the next running one, or none)
   await js(`(async()=>{const e=window.__ccmEmit,t=()=>Date.now(),s='sim-1';
@@ -208,6 +233,22 @@ module.exports = async (ctx) => {
   const act1 = of(await sizes(), 'sim-1');
   console.log('[chat-memory] waiting line: ' + JSON.stringify({ before: act0.actId, after: act1.actId, actIn: act1.actIn }));
   assert.ok(act1.actId !== 'sim-1-long2' && act1.actIn, `the long call's chip went: the waiting line no longer names it (${act1.actId})`);
+  // review of PR 1431: a focused button or a text selection in the oldest block keeps that block while it holds them; let go, it can go
+  const f0 = await js(`(()=>{const c=document.getElementById('chat');const tl=[...c.querySelectorAll('.chat-inner > .msg.agent > .tl')].pop(),blk=tl&&[...tl.children].find(x=>x.classList.contains('think')),b=blk&&blk.querySelector('button');if(!b)return null;blk.dataset.ccmFocus='1';b.focus({preventScroll:true});return document.activeElement===b;})()`);
+  assert.ok(f0, 'sim-1: a button in the oldest block has the focus');
+  await js(`window.__ccmPump(40,['sim-1'])`);
+  assert.ok(await js(`!!document.querySelector('#chat [data-ccm-focus="1"]')&&document.activeElement===document.querySelector('#chat [data-ccm-focus="1"] button')`), 'sim-1: the focused block stays, and keeps the focus');
+  await js(`(()=>{const i=document.getElementById('msgInput');if(i)i.focus();else document.activeElement.blur();})()`);
+  await toEnd();
+  await js(`window.__ccmPump(40,['sim-1'])`);
+  assert.strictEqual(await js(`!!document.querySelector('#chat [data-ccm-focus="1"]')`), false, 'sim-1: let go, the block goes with the next trim');
+  const sel0 = await js(`(()=>{const c=document.getElementById('chat');const tl=[...c.querySelectorAll('.chat-inner > .msg.agent > .tl')].pop(),blk=tl&&[...tl.children].find(x=>x.classList.contains('think')&&x.textContent.trim());if(!blk)return false;blk.dataset.ccmSel='1';const r=document.createRange();r.selectNodeContents(blk);const s=getSelection();s.removeAllRanges();s.addRange(r);return s.toString().length>0;})()`);
+  assert.ok(sel0, 'sim-1: text in the oldest block is selected');
+  await js(`window.__ccmPump(40,['sim-1'])`);
+  assert.ok(await js(`!!document.querySelector('#chat [data-ccm-sel="1"]')`), 'sim-1: the selected block stays (the person may be copying it)');
+  await js(`getSelection().removeAllRanges()`);
+  await js(`window.__ccmPump(40,['sim-1'])`);
+  assert.strictEqual(await js(`!!document.querySelector('#chat [data-ccm-sel="1"]')`), false, 'sim-1: the selection cleared, the block goes');
   // FR-238: text streaming into the same thinking block adds no block: a chat at its caps takes the cheap path, nothing measured
   await js(`(()=>{window.__ccmEmit({type:'thinking',sessionId:'sim-1',timestamp:Date.now(),reasoningId:'sim-1-same',delta:'One. '});})()`);
   await js('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r())))');
@@ -219,6 +260,8 @@ module.exports = async (ctx) => {
   assert.strictEqual(s1.slow, s0.slow, `60 frames of streaming in a chat at its caps take the cheap path (slow path ${s1.slow - s0.slow} times)`);
   assert.strictEqual(s1.measured, s0.measured, 'and measure nothing');
   await js(`window.__durbarSimUi.crew.openPanel('sim-4')`);
+  await ctx.waitFor(`!!document.querySelector('#chat > .chat-inner > .chat-trim')`, 5000);
+  await toEnd();
   await js(`(()=>{window.__ccmEmit({type:'thinking',sessionId:'sim-4',timestamp:Date.now(),reasoningId:'sim-4-same',delta:'One. '});})()`);
   await js('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r())))');
   const q0 = of(await sizes(), 'sim-4');

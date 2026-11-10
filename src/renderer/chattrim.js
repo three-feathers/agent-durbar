@@ -68,7 +68,11 @@
     const keep=o.keep||CHAT_KEEP, live=o.live||new Set(), el=o.el, drops=[];
     if(!el)return drops;
     const kids=msgsOf(el), gone=new Uint8Array(kids.length); /* by index: a Set of 200,000 elements cost more than the whole plan */
-    for(const i of planDrop(kids.length,keep.messages,i=>isPinned(kids[i],live))){gone[i]=1;drops.push(kids[i]);}
+    /* the newest `.msg.user` and the newest `.msg.agent` are never removed whole, by the message cap or the budget (notes do not count: with
+       more notes than the cap allows, the oldest notes go first); `kept` marks them */
+    const kept=new Uint8Array(kids.length);
+    for(const role of KEEP_ROLES){for(let i=kids.length-1;i>=0;i--)if(isMsg(kids[i])&&kids[i].classList.contains(role)){kept[i]=1;break;}}
+    for(const i of planDrop(kids.length,keep.messages,i=>kept[i]||isPinned(kids[i],live))){gone[i]=1;drops.push(kids[i]);}
     const tlDrop=new Map();
     for(const t of o.tls||[]){
       if(!t||!t.tl||!el.contains(t.tl))continue;
@@ -83,8 +87,6 @@
     /* the newest `.msg.user` and the newest `.msg.agent` never go whole (the person's last question, the last reply, whatever comes after
        either: queued messages of the person do not push the reply out); notes after them (Stopped by you,
        a dropped switch, a fresh-session note) neither count nor use up that protection: they stay subject to the budget like any child */
-    const kept=new Uint8Array(kids.length);
-    for(const role of KEEP_ROLES){for(let i=kids.length-1;i>=0;i--)if(isMsg(kids[i])&&kids[i].classList.contains(role)){kept[i]=1;break;}}
     if(total>keep.budget){
       for(let i=0;i<kids.length;i++){
         if(total<=keep.budget)break;

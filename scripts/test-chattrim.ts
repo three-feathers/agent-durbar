@@ -160,6 +160,20 @@ function page() {
   assert.strictEqual(CT.over({ el, keep: k2, tls: [], noteIn: false }), true, '(counting the note would put it over)');
 }
 
+// ---- the message cap keeps the newest message of each side too (review on #1431): 400 notes after the question and the reply ----
+{
+  const { doc, div } = page();
+  const el = div('chat-inner', doc.getElementById('chat'));
+  div('msg user', el, 'old Q'); div('msg agent', el, 'old A');
+  const q = div('msg user', el, 'Q'); const r = div('msg agent', el, 'A');
+  const notes: Element[] = []; for (let i = 0; i < 400; i++) notes.push(div('note info', el, 'n' + i));
+  CT.trimChat({ el, T: null, live: new Set(), keep: CT.CHAT_KEEP });
+  assert.ok(el.contains(q) && el.contains(r), 'the newest question and reply stay under the message cap');
+  assert.strictEqual(el.children.length, 300, 'down to the cap');
+  assert.ok(!el.contains(notes[0]) && el.contains(notes[399]), 'the oldest notes went first, the newest stay');
+  assert.strictEqual(CT.trimChat({ el, T: null, live: new Set(), keep: CT.CHAT_KEEP }).removed, 0, 'stable when called again');
+}
+
 // ---- the budget never empties a chat (review round 2): the newest messages stay; one closed message over the budget loses its oldest blocks ----
 {
   const { doc, div } = page();
@@ -327,6 +341,10 @@ assert.strictEqual(CT.isPinned({ matches(sel: string) { if (/mcp-line/.test(sel)
   assert.ok(/if\(document\.hidden\)\{hiddenDirty=true;if\(!hiddenTrimT\)hiddenTrimT=setInterval\(hiddenTrimTick,TRIM_HIDDEN_MS\);\}/.test(src), 'a hidden page (no frames) trims by a slow timer, started by an append');
   assert.ok(/n>=50&&n<=600000\?n:30000/.test(src) && /const n=SIM\?parseInt\(qs\.get\('simtrimtick'\)/.test(src), 'every 30 s; only the simulator may shorten it');
   assert.ok(/if\(!document\.hidden\|\|!hiddenDirty\)\{clearInterval\(hiddenTrimT\);hiddenTrimT=0;return 0;\}/.test(src), 'it stops when shown or when nothing was added');
+  assert.ok(/for\(let x of \[document\.activeElement,sel&&sel\.anchorNode,sel&&sel\.focusNode,mm&&mm\._anchor\]\)/.test(trim) && /for\(;x&&x!==el;x=x\.parentNode\)if\(x\.nodeType===1\)live\.add\(x\);/.test(trim) && /m\._anchor=btn;/.test(src), 'the focus, a selection and an open message menu keep their message (and everything around it) live');
+  assert.ok(/if\(c&&el\.parentNode===c&&c\.dataset\.pin==='0'\)\{st\.deferred=\(st\.deferred\|\|0\)\+1;trimDeferred=chat;return 0;\}/.test(trim), 'the open chat is not trimmed while the person reads its older messages');
+  assert.ok(trim.indexOf('trimDeferred=chat;return 0;') < trim.indexOf('CT.plan('), 'it waits before planning anything');
+  assert.ok(/if\(trimDeferred&&!stickyRaf\)stickyRaf=requestAnimationFrame\(stickyFlush\);/.test(src), 'back at the end, the waiting trim runs');
   assert.ok(/chat\.turn=t;/.test(src) && /t\.T\.chat\.turn===t\)t\.T\.chat\.turn=null/.test(src), 'the chat knows its open turn, and forgets it when the turn closes');
 }
 
