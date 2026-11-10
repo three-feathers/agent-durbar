@@ -1,2 +1,0 @@
-- Real office: drag a desk by its name plate or a room by its folder sign to rearrange (Esc cancels, a tiny press is still a click); your room order is kept in the rows, the arcade swaps cabinets, and a lobby place moves from its visitor's chip or the +N menu (spec 097, #1152).
-  Scene: real-drag

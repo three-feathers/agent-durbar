@@ -1,1 +1,0 @@
-- **Real office: a desk's helper heads stay on one row** (spec 097 FR-338, bug #1384): when the heads do not fit, the last place is **+K**; no head wraps onto a second line any more (it did in the Photo office when finished agents moved to the lounge row).

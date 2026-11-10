@@ -1,1 +1,0 @@
-- **Minimalist Real office crew as art** (spec 097, T245 art part): six new drawn people (72 frames and 18 portraits) are in the repository, approved by the owner. Not selectable yet: wiring follows. Checked by `test:realoffice-assets` and `test:crew-assets`; simulator only.
