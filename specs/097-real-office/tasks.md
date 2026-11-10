@@ -312,3 +312,7 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 ## 2026-11-09: the rename pencil on an arcade cabinet's plate (FR-357, bug #1427)
 
 - [x] T298 [US5] FR-357: the pencil anchored to the plate when the plate does not draw the name (arcade cabinets), the field over the marquee. Test: `sim:` `check-097-plate-pencil` in the Photo office, cave, arcade and one-room arcade, both sizes; mutant `PENCIL_MUTANT=plate` fails the geometry assert
+
+## 2026-11-11: a request slip is measured with its variant's CSS (FR-358, bug #1434)
+
+- [x] T299 [US2] FR-358: `drawSlips` writes `data-variant` before measuring a variant's box (`src/renderer/realoffice.js`). Test: `sim:` `check-097-slip-plates` (new, in `ui-suite`), measured at once after the first draw; fails without the line.
