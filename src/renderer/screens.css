@@ -2,11 +2,12 @@
 #screen{flex:1;min-height:0;min-width:0;display:flex;flex-direction:column;background:var(--bg);overflow:hidden}
 #screen[hidden]{display:none}
 body.screen-open .workspace{display:none}
-.scr-head{flex:none;display:flex;align-items:center;gap:12px;padding:8px max(24px,calc((100% - 880px)/2 + 24px));border-bottom:1px solid var(--line);background:var(--surface)} /* spec 052 FR-097: the title and Close line up with the centred content column */
+:root{--scr-col:880px} /* the content column of the Settings and Tools screens, set once */
+.scr-head{flex:none;display:flex;align-items:center;gap:12px;padding:8px max(24px,calc((100% - var(--scr-col))/2 + 24px));border-bottom:1px solid var(--line);background:var(--surface)} /* spec 052 FR-097: the title and Close line up with the centred content column */
 .scr-head h2{margin:0;font-size:var(--t1-size);font-weight:var(--t1-weight);line-height:var(--t1-lh);letter-spacing:-.01em}
 .scr-head .grow{flex:1}
 .scr-head .per-since{margin-left:-4px;font-size:var(--t5-size);color:var(--muted);white-space:nowrap} /* spec 052 FR-092: the start date of "All time" in Cost */
-.scr-body{flex:1;min-height:0;overflow:auto;padding:16px 24px 24px;max-width:880px;width:100%;margin:0 auto}
+.scr-body{flex:1;min-height:0;overflow:auto;padding:16px 24px 24px;max-width:var(--scr-col);width:100%;margin:0 auto}
 .scr-sec{margin:0 0 var(--sec-gap);padding:var(--sec-pad);background:var(--surface);border:1px solid var(--line);border-radius:var(--r-xl)}
 .scr-sec .seg{width:max-content}
 .scr-sec h3{margin:0 0 4px;font-size:var(--t2-size);font-weight:var(--t2-weight);line-height:var(--t2-lh);letter-spacing:-.01em} /* spec 052 FR-053, FR-098 (T2) */
@@ -323,8 +324,7 @@ body.has-bridge #topBtns{display:flex}
 .ttab.act .act-a{overflow-wrap:anywhere}
 .ttab.act .act-s{white-space:nowrap} /* 2026-11-10: App, Mode and Decision never break mid-word; Action takes the rest */
 /* the Activity tab uses the window width (usual 24px gutters); the head follows the body (FR-097) */
-.scr-body.scr-wide{max-width:none}
-.scr-head.scr-wide{padding-inline:calc(var(--s-1)*6)}
+.scr-head.scr-wide,.scr-body.scr-wide{--scr-col:100%} /* head and body read the same column width, so the head padding follows (FR-097, FR-138) */
 .ttab.act tr.act-denied td:last-child{color:var(--red-ink,var(--ink))}
 /* spec 052 FR-049: install plan cards: radio beside its command (".dlg label" stacks them), the chosen card is outlined */
 .dlg .hs-plan{flex-direction:row;align-items:flex-start;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;cursor:pointer}

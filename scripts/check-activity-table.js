@@ -48,7 +48,7 @@ module.exports = async (ctx) => {
         body:Math.round(s.querySelector('.scr-body').getBoundingClientRect().width), screenW:s.clientWidth,
         headPad:parseFloat(getComputedStyle(s.querySelector('.scr-head')).paddingLeft),
         clip:tb.getBoundingClientRect().right-s.querySelector('.scr-body').getBoundingClientRect().right,
-        wrapShort:rows.some(r=>[...r.querySelectorAll('.act-s,.act-t')].some(c=>getComputedStyle(c).whiteSpace!=='nowrap')), err:window.__actErr||[]};})()`);
+        wrapShort:rows.some(r=>[...r.querySelectorAll('.act-s,.act-t,td:last-child')].some(c=>getComputedStyle(c).whiteSpace!=='nowrap')), err:window.__actErr||[]};})()`);
     assert.strictEqual(t.sel, 'true', `${tag}: the Activity tab is selected`);
     assert.deepStrictEqual(t.head, ['Time', 'Agent', 'Folder', 'App', 'Mode', 'Action', 'Decision'], `${tag}: the table header`);
     assert.ok(t.n >= 7, `${tag}: the simulator's sample rows are shown (${t.n})`);
