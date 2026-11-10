@@ -1,1 +1,0 @@
-- Spec 080 now records, with numbers, that on macOS a page dialog closed by Durbar through the debugger stays drawn as a system sheet and the next navigation holds the app for about 1.4 s. No agent can drive a session browser yet, so nobody sees it today; the options are written down for when agent control is built (issue 1415).

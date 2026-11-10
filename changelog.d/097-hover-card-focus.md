@@ -1,1 +1,0 @@
-- The Real office hover-card check (`check-097-hover-card`) holds the page focus for its steps that test no window blur, and says so when the focus was lost, so it no longer fails its first try on Windows CI when another check takes the window's focus (spec 097, issue #1408; reproduced and checked on Linux with a fault injection, `CHECK_097_STEAL_FOCUS`).
