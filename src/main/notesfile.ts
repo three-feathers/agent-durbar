@@ -467,8 +467,10 @@ export class NotesFile {
       // pinned (an open handle), which Node has no portable call for (no renameat / unlinkat); the choice is with the owners (#1464).
       // The inode check right before the unlink (spec 083 Changes 2026-11-10) closes the deletion of such a file where `mirror.id` exists:
       // an outside file never has the inode Durbar wrote, so it is kept under the random name (moved, not deleted: still [KNOWN GAP]).
-      // The unlink itself is by path: a swap after the last check removes that random name in the other folder, where only Durbar's own
-      // split rename or a process that can write that folder can have put a file.
+      // The unlink itself is by path, and that is a [KNOWN GAP] (#1464): a racing process that can write the project can swap `.durbar`
+      // so this rename goes wholly through the link (the OUTSIDE file gets the random name), put Durbar's own notes.md at that name in the
+      // project (renamed or hard-linked) before the checks read it, and swap `.durbar` once more before the unlink, which then removes
+      // the outside file. Portable Node has no unlinkat / renameat to pin the folder; see spec 083 Changes 2026-11-10.
       const name = `.notes.md.${this.pid}.${this.rand(36 ** 8).toString(36)}.del`;
       const doomed = path.join(pl.p.dir, name);
       try { this.fs.renameSync(pl.p.notes, doomed); } catch (e) { return keep(REMOVE_REFUSED(`it could not be deleted (${errCode(e)})`)); }

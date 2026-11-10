@@ -655,18 +655,21 @@ async function main(): Promise<void> {
       let outName: string | undefined;
       for (const n of nodeFs.readdirSync(outNotes)) {
         const at = path.join(outNotes, n);
-        if (inoOf(at) !== ino) { outOfProject++; nodeFs.unlinkSync(at); continue; } // Durbar's file landed here (old name looked up in the project, new one outside): the test's own bytes, dropped
+        if (nodeFs.lstatSync(at).ino !== ino) { outOfProject++; nodeFs.unlinkSync(at); continue; } // Durbar's file landed here (old name looked up in the project, new one outside): the test's own bytes, dropped
         if (outName === undefined || n === 'notes.md') { if (outName !== undefined) nodeFs.unlinkSync(path.join(outNotes, outName)); outName = n; } else nodeFs.unlinkSync(at); // a second name of the outside file
       }
       if (outName === 'notes.md') { /* untouched */ } else if (outName !== undefined) {
         wholly++; nodeFs.renameSync(path.join(outNotes, outName), outMd); // renamed inside the other folder (both names looked up through the link): put back
       } else {
-        const here = viaReal((d) => nodeFs.readdirSync(d).find((n) => inoOf(path.join(d, n)) === ino));
+        // every lstat throws (never `inoOf`, which turns an error into `undefined`): the swapper can move `real` back to `.durbar` between
+        // the listing and an lstat, and a swallowed ENOENT read as "not here" counted a C as lost, and the cleanup below then deleted it
+        const here = viaReal((d) => nodeFs.readdirSync(d).find((n) => nodeFs.lstatSync(path.join(d, n)).ino === ino));
         if (here !== undefined) { intoProject++; viaReal((d) => nodeFs.renameSync(path.join(d, here), outMd)); } // C: moved into the project: put back
         else { lost++; nodeFs.writeFileSync(outMd, outBytes); ino = nodeFs.statSync(outMd).ino; } // deleted or overwritten: must never happen
       }
       // Durbar's own file left under a random name in the project (a refused delete): dropped, so the next attempt starts clean
-      viaReal((d) => { for (const n of nodeFs.readdirSync(d)) if (n.endsWith('.del')) nodeFs.unlinkSync(path.join(d, n)); });
+      // only a `.del` file that a strict lstat shows is not the outside file (a throw is retried by viaReal); the outside file is never deleted here
+      viaReal((d) => { for (const n of nodeFs.readdirSync(d)) if (n.endsWith('.del') && nodeFs.lstatSync(path.join(d, n)).ino !== ino) nodeFs.unlinkSync(path.join(d, n)); });
       if (i % 50 === 0) await new Promise((res) => setImmediate(res));
     }
     nodeFs.writeFileSync(stop, '');
