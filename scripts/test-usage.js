@@ -148,7 +148,13 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
   assert.ok(!/!\[/.test(block) && /!\[[^\]]*\]\(docs\/build-cost-days\.svg\)/.test(lib.readmeBlock(cum1, '2026-11-10', 'v0.1.13', true)) && !block.includes('docs/build-cost.svg'), 'block: the daily graph only when there is a spread, never the cumulative one');
   const cum0b = lib.cumulative([], '2026-11-07', base);
   const sc = (c, est) => lib.readmeBlock(c, '2026-11-10', 'v0.1.13', true, est);
-  assert.ok(sc(cum1, 0).includes('of work on 2 machines since 2026-10-25, all measured.'), 'scope: the machine count (2), the since date and "all measured" come from the data');
+  assert.ok(sc(cum1, 0).includes('of work on 2 machines, the first since 2026-10-25 and the others from 2026-11-09, all measured.'), 'scope: the machine count (2), the since date and "all measured" come from the data');
+  { // issue 1387: machines that start on different days: the sentence names the later first days (mutant: the old "3 machines since <first day>" fails)
+    const m3 = lib.cumulative([mkst('mac', '2026-11-07T10:00:00Z', 'claude-opus-5-5', 5), mkst('ruben-server', '2026-11-09T10:00:00Z', 'claude-opus-5-5', 5, Date.UTC(2026, 10, 9, 12)), mkst('mac2', '2026-11-09T11:00:00Z', 'claude-opus-5-5', 5, Date.UTC(2026, 10, 9, 12))], '2026-11-10', base);
+    const t = sc(m3, 0);
+    assert.ok(t.includes('work on 4 machines, the first since 2026-10-25 and the others from 2026-11-07 and 2026-11-09, all measured'), 'scope 1387: the later first days are named, from the data: ' + t.split('\n')[3].slice(-170));
+    assert.ok(!/machines since 2026-10-25/.test(t), 'scope 1387: never "N machines since <first day>" when machines joined later');
+  }
   assert.ok(sc(cum0b, 0).includes('work on one machine since 2026-10-25'), 'scope: one machine from a machine count of one');
   assert.ok(sc(cum0b, 3000).includes('mostly spread over earlier days rather than measured'), 'scope: "mostly spread" above 50% estimated (3000 of 3758)');
   assert.ok(sc(cum0b, 1000).includes('27% spread over earlier days') && !sc(cum0b, 1000).includes('mostly'), 'scope: at or below 50% the percentage is given, never "mostly"');
