@@ -5915,7 +5915,7 @@ function chatTrim(chat,c,hidden){
   const K=CHAT_KEEP_SIM||CT.CHAT_KEEP,el=chat.el,t=chat.turn&&chat.turn.T&&chat.turn.T.chat===chat?chat.turn:null,T=t&&t.T;
   const subs=[];
   if(chat.subViews)for(const v of chat.subViews){if(v.s.status==='running'&&v.T&&v.T.tl&&el.contains(v.T.tl))subs.push(v);else chat.subViews.delete(v);} /* a running helper's own timeline grows too */
-  const noteIn=!!chat.trimNote&&chat.trimNote.parentNode===el;
+  const noteIn=(chat.trimNote&&chat.trimNote.parentNode===el?1:0)+(chat.subNote&&chat.subNote.parentNode===el?1:0); /* FR-238's line and FR-240's helper line */
   const tls=(T?[{tl:T.tl}]:[]).concat(subs.map(v=>({tl:v.T.tl})));
   if(!CT.over({el,keep:K,tls,noteIn}))return; /* at or under every cap: counts only, nothing measured (FR-238) */
   const st=chat.trimStats||(chat.trimStats={slow:0,runs:0});st.slow++;
@@ -6258,6 +6258,12 @@ function tEnd(T,opts){
 /* ---- sub-agents: one record per spawning `task` call; the nested block in the parent chat and the helper's own
    read-only transcript are two views of the same event log ---- */
 const SUB_LOG_MAX=3000;
+/* spec 005 FR-240 (issue 1418): a parent keeps its newest finished helpers in full (src/renderer/subretire.js, SUB_KEEP: 50 done, 20
+   failed); the older ones are retired when a helper ends (subRetire): card, record and views go, the block stays as a one-line stub */
+const SR=window.DurbarSubRetire;
+const SUB_KEEP=SR?SR.SUB_KEEP:null; /* without subretire.js nothing is retired (the page still draws) */
+const subIsGone=(a,id)=>!!(a&&a.subGone&&id!=null&&a.subGone.has(id)); /* a late event for a retired helper is ignored, never a new record */
+const SUB_RETIRED_SIM=[]; /* simulator only: the last few retired records (emptied), so a driver can check nothing is left in them */
 const SUBIC='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.2" cy="5" r="2"/><circle cx="11.2" cy="6" r="1.6"/><path d="M1.8 13c0-2.4 1.5-3.8 3.4-3.8s3.4 1.4 3.4 3.8M9.6 12.6c.2-1.6 1.1-2.6 2.6-2.6 1.4 0 2.2 1 2.2 2.6"/></svg>';
 function subRec(a,id,seed){
   if(!a.subs)a.subs=new Map();
@@ -6337,14 +6343,18 @@ function subApply(v,e,replay){
   case 'toolCall':tTool(T,e);return;
   }
 }
+/* a helper's usage adds to its parent's totals (and the usage record), kept or retired (FR-240) */
+function addParentUsage(a,e){const p=a.usage;p.calls++;p.inT+=e.inputTokens||0;p.outT+=e.outputTokens||0;p.nano+=e.nanoAiu||0;p.usd=(p.usd||0)+(e.costUsd>0?e.costUsd:0);a.usageText=usageLong(a);recordUsage(a,e);}
 /* an event with agentId (the spawning task call id) */
 function onSubEvent(a,e){
+  if(subIsGone(a,e.agentId)){ /* FR-240: a retired helper makes no record or card; its late usage still counts for the parent (the parent holds the sum) */
+    if(e.type==='usage'){addParentUsage(a,e);scheduleRender();if(ui.selected===a.id)updatePanelHeader();}
+    return;}
   const s=subRec(a,e.agentId), card=s.card;
   if(e.type==='usage'){
     const u=s.usage;u.calls++;u.inT+=e.inputTokens||0;u.outT+=e.outputTokens||0;u.nano+=e.nanoAiu||0;u.usd=(u.usd||0)+(e.costUsd>0?e.costUsd:0);
     const cu=card.usage;cu.calls=u.calls;cu.inT=u.inT;cu.outT=u.outT;cu.nano=u.nano;cu.usd=u.usd;card.usageText=usageLong(card);
-    const p=a.usage;p.calls++;p.inT+=e.inputTokens||0;p.outT+=e.outputTokens||0;p.nano+=e.nanoAiu||0;p.usd=(p.usd||0)+(e.costUsd>0?e.costUsd:0);a.usageText=usageLong(a);
-    recordUsage(a,e);
+    addParentUsage(a,e);
     scheduleRender();if(ui.selected===card.id||ui.selected===a.id)updatePanelHeader();return;
   }
   if(s.log.length<SUB_LOG_MAX)s.log.push(e);
@@ -6364,6 +6374,7 @@ function onSubEvent(a,e){
   if(ui.selected===card.id)updatePanelHeader();
 }
 function onSubagent(a,e){
+  if(subIsGone(a,e.subagentId))return; /* FR-240: a late event for a retired helper */
   const s=subRec(a,e.subagentId), card=s.card;
   if(e.name)s.name=helperMask(e.name)||s.name; if(e.model)s.model=e.model; if(e.agentName)s.agentName=helperMask(e.agentName)||''; /* spec 041 FR-065; spec 015 FR-021: home folders first, on the raw text */
   if(e.task&&e.phase==='started')s.task=e.task;
@@ -6379,10 +6390,12 @@ function onSubagent(a,e){
     subCollapse(s);
   }
   subPaint(s);scheduleRender();
+  if(e.phase!=='started')subRetireCheck(a); /* FR-240: a helper ended */
 }
 /* tool call of the parent: `task` becomes the sub-agent block, not a chip */
 const isTaskTool=t=>t==='task'||t==='agent';
 function onTaskTool(a,e){
+  if(subIsGone(a,e.callId))return; /* FR-240: a late call event for a retired helper draws neither a block nor a chip */
   const s=subRec(a,e.callId);
   if(e.phase==='start'){
     const g=e.args||{};
@@ -6396,11 +6409,76 @@ function onTaskTool(a,e){
     if(e.phase==='complete'&&e.output)s.result=String(e.output);
     if(e.phase==='failed'){s.status='failed';s.error=String(e.output||'Failed');}
     else if(s.status==='running'){s.status='done';}
+    if(!s.t1)s.t1=Date.now(); /* FR-240: when it ended (the order the retirement keeps) */
     s.views.forEach(v=>tEnd(v.T,{note:false}));
     if(s.card)setState(s.card,s.status==='failed'?'error':'done',s.status==='failed'?null:'Done',safeExcerpt(homeMask(s.result||s.error||s.task),100));
     subCollapse(s);
+    subPaint(s);scheduleRender();
+    subRetireCheck(a); /* FR-240: a helper ended */
+    return;
   }
   subPaint(s);scheduleRender();
+}
+/* spec 005 FR-240: the finished helpers the person holds are never retired: the one whose full activity is open, and the one whose block
+   holds the focus, a text selection or an open message menu (FR-238's rule); the next end retires them once let go */
+function subHeld(a){
+  const held=new Set(),c=$('chat'),ae=document.activeElement,mm=document.getElementById('modeMenu'),anc=mm&&mm._anchor;
+  const sel=typeof getSelection==='function'?getSelection():null,rgs=[];
+  for(let i=0;sel&&i<sel.rangeCount;i++){const rg=sel.getRangeAt(i);if(!rg.collapsed)rgs.push(rg);}
+  for(const s of a.subs.values()){
+    if(s.status==='running')continue;
+    const card=s.card;
+    if(card&&(ui.selected===card.id||(c&&chats[card.id]&&chats[card.id].el&&chats[card.id].el.parentNode===c))){held.add(s.id);continue;}
+    const el=s.block&&s.block.el;
+    if(!el||!el.isConnected)continue;
+    if((ae&&el.contains(ae))||(anc&&el.contains(anc))||rgs.some(rg=>{try{return rg.intersectsNode(el);}catch(e){return true;}}))held.add(s.id);
+  }
+  return held;
+}
+function subRetireCheck(a){
+  if(!SR||!SUB_KEEP||!a||!a.subs||!a.subs.size)return 0;
+  let nd=0,nf=0;for(const s of a.subs.values()){if(s.status==='done')nd++;else if(s.status==='failed')nf++;}
+  if(nd<=SUB_KEEP.done&&nf<=SUB_KEEP.failed)return 0; /* under both limits: nothing to plan (counts only) */
+  const ids=SR.plan({subs:a.subs.values(),keep:SUB_KEEP,held:subHeld(a)});
+  for(const id of ids)subRetire(a,a.subs.get(id));
+  if(ids.length)scheduleRender();
+  return ids.length;
+}
+/* One helper retired (FR-240): its card and own chat go (with the per-id state a removed agent's helpers lose), its record leaves the
+   parent, its views leave their chats, and its block in the parent's chat becomes a one-line stub (name, task or result, status: the
+   texts its block already showed, masked). Tolerates chatTrim having removed the block first. */
+function subRetire(a,s){
+  if(!a||!s||s.status==='running')return false;
+  const id=s.id,card=s.card;
+  if(a.subs&&a.subs.get(id)===s)a.subs.delete(id);
+  for(const v of s.views){if(v.chat&&v.chat.subViews)v.chat.subViews.delete(v);v.paint=null;}
+  const b=s.block;
+  if(b&&b.el&&b.el.parentNode)subStub(s,b.el); /* in the parent's chat, open or not (a closed chat's element is not in the document) */
+  s.views=[];s.log=[];s.block=null;s.card=null;s.parent=null;s.now=null;
+  if(card){
+    for(const list of agents===LIVE.agents?[agents]:[agents,LIVE.agents]){const i=list.indexOf(card);if(i>=0)list.splice(i,1);}
+    const ch=chats[card.id];if(ch&&trimDeferred===ch)trimDeferred=null;
+    forgetCardState(card.id);card.sub=null;
+  }
+  a.subGone=SR.bury(a.subGone,id);a.subsGone=(a.subsGone||0)+1;
+  subGoneNote(a);
+  if(SIM){SUB_RETIRED_SIM.push(s);if(SUB_RETIRED_SIM.length>5)SUB_RETIRED_SIM.shift();}
+  return true;
+}
+function subStub(s,old){
+  const el=document.createElement('div');el.className='subblk stub '+(s.status==='failed'?'failed':'done');el.dataset.sub=s.id;
+  el.innerHTML=`<div class="sub-head"><div class="sub-toggle"><span class="sub-ic">${SUBIC}</span><b class="sub-name"></b><span class="sub-task"></span><span class="sub-st"></span></div></div>`;
+  for(const k of ['.sub-name','.sub-task','.sub-st']){const f=old.querySelector(k);el.querySelector(k).textContent=f?f.textContent:'';} /* what the block showed, already masked (helperMask, safeExcerpt) */
+  old.replaceWith(el);
+}
+/* the line at the top of the parent's chat: one element, created once, its count updated; after FR-238's own line when that is there */
+function subGoneNote(a){
+  const ch=chats[a.id];if(!ch||!ch.el||!SR)return;
+  const el=ch.el;let n=ch.subNote;
+  if(!n||n.parentNode!==el){n=ch.subNote=document.createElement('div');n.className='note info sub-gone'+(CT?' '+CT.NOTE_CLASS:'');n.setAttribute('role','note');}
+  n.textContent=SR.noteText(a.subsGone);
+  const t=ch.trimNote&&ch.trimNote.parentNode===el?ch.trimNote:null;
+  if(t?t.nextElementSibling!==n:el.firstElementChild!==n)el.insertBefore(n,t?t.nextSibling:el.firstChild);
 }
 /* the helper's own full view (opened from a helper card): header + the shared body, read-only */
 function buildSubTranscript(card,chat){
@@ -7241,7 +7319,7 @@ function onLiveEvent(e){
   case 'thinking':{if(a.coffee&&!a.limit)endCoffee(a,'the agent went on');const t=ensureTurn(a);tThink(t.T,e.reasoningId,e.delta);setState(a,'thinking',null);return;}
   case 'output':{const t=ensureTurn(a);const out=tText(t.T,e);if(out!=null)a.lastOutput=out;if(!a.coffee)setState(a,'working',null);return;} /* spec 068: text after a usage limit does not end the break */
   case 'toolCall':{const t=ensureTurn(a);
-    if(isTaskTool(e.tool)||(a.subs&&a.subs.has(e.callId)))onTaskTool(a,e); /* spec 001 FR-095: a call with a sub-agent record goes to onTaskTool in every phase, whatever its tool name or chip (Claude sends `Agent` / `Task` before the subagent event) */
+    if(isTaskTool(e.tool)||(a.subs&&a.subs.has(e.callId))||subIsGone(a,e.callId))onTaskTool(a,e); /* spec 001 FR-095: a call with a sub-agent record goes to onTaskTool in every phase, whatever its tool name or chip (Claude sends `Agent` / `Task` before the subagent event) */
     else tTool(t.T,e);
     if(e.phase==='start')whyAttach(a,t.T,e.callId);
     if(e.phase==='start'&&!isTaskTool(e.tool)&&!a.coffee)setState(a,a.state==='thinking'?'working':a.state,null,intentText(a.intent)||toolTask(e,a.info&&a.info.cwd,90));
@@ -9115,7 +9193,7 @@ async function removeFolder(r){
   if(nb)NT.by.delete(notesKey(nb));
   if(ui.selected&&(byId(ui.selected)||{}).room===r.id)closePanel();
   const gone=new Set(ags.map(x=>x.id));
-  for(let i=agents.length-1;i>=0;i--){if(gone.has(agents[i].id)||gone.has(agents[i].parent)){DRAFTS.delete(agents[i].id);UNREAD.forget(agents[i].id);UNREAD_AT.delete(agents[i].id);UNREAD_SAID.delete(agents[i].id);HL_AT.delete(agents[i].id);delete chats[agents[i].id];delete prev[agents[i].id];agents.splice(i,1);}}
+  for(let i=agents.length-1;i>=0;i--){if(gone.has(agents[i].id)||gone.has(agents[i].parent)){forgetCardState(agents[i].id);agents.splice(i,1);}}
   const ri=ROOMS.indexOf(r); if(ri>=0)ROOMS.splice(ri,1);
   if(ui.ws===r.id)ui.ws='all';
   renderFilter(); renderFolders(); scheduleRender();
@@ -9273,9 +9351,11 @@ function removeLiveAgent(id){
   STATS.forget(id); MOOD.forget(id);
   if(LIVEACT){LIVEACT.drop(id);clearTimeout(liveTimers.get(id));liveTimers.delete(id);} /* spec 001 FR-028 */
   VISITS.leave(id); dropWalker(id); BREAKS.end(id); /* spec 068: a removed agent's break is forgotten */
-  for(let i=agents.length-1;i>=0;i--)if(agents[i].id===id||agents[i].parent===id){DRAFTS.delete(agents[i].id);UNREAD.forget(agents[i].id);UNREAD_AT.delete(agents[i].id);UNREAD_SAID.delete(agents[i].id);HL_AT.delete(agents[i].id);delete chats[agents[i].id];delete prev[agents[i].id];agents.splice(i,1);}
+  for(let i=agents.length-1;i>=0;i--)if(agents[i].id===id||agents[i].parent===id){forgetCardState(agents[i].id);agents.splice(i,1);}
   if(ui.selected&&!byId(ui.selected))closePanel();
 }
+/* the per-id state of a card that leaves the office: a removed agent and its helpers, a retired helper (spec 005 FR-240) */
+function forgetCardState(id){DRAFTS.delete(id);UNREAD.forget(id);UNREAD_AT.delete(id);UNREAD_SAID.delete(id);HL_AT.delete(id);delete chats[id];delete prev[id];}
 
 /* ---------------- previous sessions (Copilot, resumable) + VS Code chat history (read-only) ---------------- */
 const prev={}; let vsViewing=false;
@@ -9786,6 +9866,16 @@ if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentEle
 if(SIM)window.__durbarSimUi={announce,afArrivalPrio,afNotice:{ms:v=>{AF_NOTICE_MS=Math.max(100,Number(v)||3000);return AF_NOTICE_MS;},on:v=>{setAutoFollowOn(!!v);return AF_ON;},shown:()=>!!AF_NOTICE}, /* spec 052 FR-239: drivers only: the notice's length, Auto-follow without Settings */swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
   chatTrimNow:()=>chatTrimPending(false), /* spec 005 FR-238: trim the chats waiting for a frame now (a burst with no frame between) */
   hiddenTrimTimer:()=>({on:!!hiddenTrimT,ms:TRIM_HIDDEN_MS}),
+  helperStats:aid=>{const a=liveById(aid);if(!a)return null;const subs=a.subs?[...a.subs.values()]:[],ids=new Set(subs.map(s=>s.id)),ch=chats[aid];
+    let staleViews=0;for(const k of Object.keys(chats)){const c=chats[k];if(c&&c.subViews)for(const v of c.subViews){const p=v.s&&v.s.parent;if(!p||!p.subs||p.subs.get(v.s.id)!==v.s)staleViews++;}}
+    const pre=aid+':';
+    return {subs:subs.length,done:subs.filter(s=>s.status==='done').length,failed:subs.filter(s=>s.status==='failed').length,running:subs.filter(s=>s.status==='running').map(s=>s.id),doneIds:subs.filter(s=>s.status==='done').map(s=>s.id),ids:subs.map(s=>s.id),
+      helpers:helpersOf(a).length,cards:LIVE.agents.filter(x=>x.parent===aid).length,staleCards:LIVE.agents.filter(x=>x.parent===aid&&!(x.sub&&ids.has(x.sub.id))).length,
+      staleChats:Object.keys(chats).filter(k=>k.startsWith(pre)&&!ids.has(k.slice(pre.length))).length,staleViews,gone:a.subsGone||0,ring:a.subGone?a.subGone.size:0,goneIds:a.subGone?[...a.subGone].slice(-20):[],
+      retiredLeft:SUB_RETIRED_SIM.filter(s=>s.views.length||s.log.length||s.block||s.card||s.parent).length,retiredSeen:SUB_RETIRED_SIM.length,
+      note:ch&&ch.subNote&&ch.subNote.parentNode===ch.el?ch.subNote.textContent:'',notes:ch&&ch.el?ch.el.querySelectorAll(':scope > .sub-gone').length:0,
+      stubs:ch&&ch.el?ch.el.querySelectorAll('.subblk.stub').length:0,stubBodies:ch&&ch.el?ch.el.querySelectorAll('.subblk.stub .sub-in, .subblk.stub .sub-open, .subblk.stub button').length:0,blocks:ch&&ch.el?ch.el.querySelectorAll('.subblk:not(.stub)').length:0,
+      keep:SUB_KEEP?{...SUB_KEEP}:null,usageCalls:a.usage?a.usage.calls:0,orphans:subs.filter(s=>!s.card||agents.indexOf(s.card)<0).map(s=>s.id)};}, /* spec 005 FR-240, FR-241: a parent's helpers for check-helper-retention (simulator only) */
   chatSizes:()=>Object.entries(chats).map(([id,c])=>{const T=c.turn&&c.turn.T,a=c.agent,st=c.trimStats||{};let subViews=0,staleViews=0,subBlockGone=0;
     if(a&&a.subs)for(const s of a.subs.values()){subViews+=s.views.length;staleViews+=s.views.filter(v=>!v.chat||!v.chat.el||!v.chat.el.contains(v.host)).length;if(s.block&&!c.el.contains(s.block.el))subBlockGone++;}
     return {id,messages:c.el.querySelectorAll(':scope > :not(.chat-trim)').length,blocks:T&&T.tl?T.tl.childElementCount:0,leaves:CT?CT.leafTotal(c.el):0,chipRefs:T?Object.values(T.chipEls).filter(Boolean).length:0,chipsInTurn:T&&T.tl?T.tl.querySelectorAll('.chip').length:0,stale:T?Object.values(T.chipEls).filter(x=>x&&!T.tl.contains(x.el)).length+(T.think&&!T.tl.contains(T.think.el)?1:0):0,trimmed:c.trimmed||0,note:c.trimNote&&c.trimNote.parentNode===c.el&&c.el.firstElementChild===c.trimNote?c.trimNote.textContent:'',slow:st.slow||0,runs:st.runs||0,deferred:st.deferred||0,hiddenRuns:st.hiddenRuns||0,lastIsNote:!!(c.el.lastElementChild&&c.el.lastElementChild.classList.contains('note')),lastUser:((x=>x?x.textContent:'')([...c.el.querySelectorAll('.msg.user .bubble')].pop())).slice(0,60),lastAgent:((x=>x?x.textContent:'')([...c.el.querySelectorAll('.msg.agent .bubble')].pop())).slice(0,60),ordGone:c.el._ordGone||{user:0,agent:0},denials:c.el.querySelectorAll('.note.perm:not(.settled):not(.pending)').length,denialButtons:c.el.querySelectorAll('.note.perm:not(.settled) > .note-actions button').length,subViews,staleViews,subBlockGone,subBlocksMax:c.subViews?Math.max(0,...[...c.subViews].map(v=>v.T&&v.T.tl?v.T.tl.childElementCount:0)):0,signCard:!!(a&&a.signCard&&c.el.contains(a.signCard)),freshNote:!!(a&&a.freshNote&&c.el.contains(a.freshNote)),freshMark:a&&a.freshNote&&c.el.contains(a.freshNote)?a.freshNote.dataset.ccm||'':'',actId:T?T.actId||null:null,actIn:T&&T.actId?!!T.chipEls[T.actId]:true};}), /* spec 005 FR-238: each chat's size for check-chat-memory */
@@ -9802,7 +9892,7 @@ if(SIM)window.__durbarSimUi={announce,afArrivalPrio,afNotice:{ms:v=>{AF_NOTICE_M
   removeAgent:(id)=>{removeLiveAgent(id);renderFolders();scheduleRender();return true;},
   /* FR-023 item 4 for folders: a room removed or hidden while its field is open */
   removeRoom:(roomId)=>{const r=ROOMS.find(x=>x.id===roomId);if(!r)return false;const gone=new Set(agents.filter(x=>x.room===r.id).map(x=>x.id));
-    for(let i=agents.length-1;i>=0;i--){if(gone.has(agents[i].id)||gone.has(agents[i].parent)){DRAFTS.delete(agents[i].id);UNREAD.forget(agents[i].id);UNREAD_AT.delete(agents[i].id);UNREAD_SAID.delete(agents[i].id);HL_AT.delete(agents[i].id);delete chats[agents[i].id];delete prev[agents[i].id];agents.splice(i,1);}}
+    for(let i=agents.length-1;i>=0;i--){if(gone.has(agents[i].id)||gone.has(agents[i].parent)){forgetCardState(agents[i].id);agents.splice(i,1);}}
     ROOMS.splice(ROOMS.indexOf(r),1);if(ui.ws===r.id)ui.ws='all';renderFilter();renderFolders();scheduleRender();return true;},
   hideRoom:(roomId,hidden)=>{const r=ROOMS.find(x=>x.id===roomId);if(!r)return false;r.hidden=hidden!==false;if(ui.ws===r.id)ui.ws='all';renderFilter();renderFolders();scheduleRender();return true;},
   hidePrev:(id,pk)=>{const a=byId(id);return a?markPrev(a,'cli',pk,'hide'):false;},
