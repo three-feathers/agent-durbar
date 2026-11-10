@@ -1,6 +1,6 @@
 name: Mac title bar on pull requests
 
-# Spec 008 FR-199 (owner decision, Paco 2026-11-10, issue #1469; job shape confirmed by Vikram's side). #1457 (the rail's resize
+# Spec 008 FR-200 (owner decision, Paco 2026-11-10, issue #1469; job shape confirmed by Vikram's side). #1457 (the rail's resize
 # handle dragged the window on macOS) reached main because the Mac title bar check ran only in the nightly macOS run
 # (ui-platforms.yml, FR-108). This runs that one check, on one macOS runner, on a pull request that changes the renderer's CSS
 # (or the check itself). `paths:` is workflow-level in GitHub Actions, so this is its own workflow file: a PR that does not match

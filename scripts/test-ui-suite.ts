@@ -206,7 +206,7 @@ assert.ok(!/name: Build and test/.test(mp), 'macos-pr.yml does not reuse a requi
   assert.ok(mj.includes('fetch-depth: 2') && steps[1].includes('id: changes') && steps[1].includes('bash .github/scripts/ci-changes.sh'), 'macos-pr.yml: checkout, then the decision');
   assert.ok(steps.length >= 6 && steps.slice(2).every((st) => st.startsWith("if: steps.changes.outputs.macos == 'true'")), 'macos-pr.yml: every step after the decision needs macos=true');
 }
-// FR-199: the Mac title bar check on a pull request that changes the renderer's CSS: its own workflow (`paths:` is workflow-level),
+// FR-200: the Mac title bar check on a pull request that changes the renderer's CSS: its own workflow (`paths:` is workflow-level),
 // that check only, no secrets, not required; the filter is matched here the way GitHub does (glob over the changed paths)
 {
   const mt = fs.readFileSync(path.join(WF, 'mac-titlebar-pr.yml'), 'utf8');
