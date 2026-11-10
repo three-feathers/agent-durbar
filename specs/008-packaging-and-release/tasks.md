@@ -211,4 +211,4 @@
 
 ## 2026-11-10: every UI driver ends with its whole process tree (FR-199)
 
-- [x] T155 (FR-199) `scripts/ui-suite.js` `runOne`: `detached` (POSIX), `guardTree` and `killTree` at the limit for every driver, `launch` option for tests; `scripts/test-ui-suite.ts` grandchild-survival test; `scripts/test-release-video.js` source check follows; `changelog.d/008-uisuite-kill-tree.md`.
+- [x] T155 (FR-199) `scripts/ui-suite.js` `runOne`: `detached` (POSIX), `guardTree` and `killTree` at the limit for every driver, `launch` option for tests; `scripts/test-ui-suite.ts` two cases (time limit leaves no grandchild; SIGINT/SIGTERM end the tree and remove the user-data folder); `d.killTree` removed from `scripts/release-video.js`; `scripts/test-release-video.js` source check follows; `changelog.d/008-uisuite-kill-tree.md`.
