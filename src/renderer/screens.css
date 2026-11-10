@@ -320,7 +320,11 @@ body.has-bridge #topBtns{display:flex}
 .scr-body .ttab.act thead th:first-child{width:auto}
 .ttab.act td{font-size:12px;vertical-align:top}
 .ttab.act .act-t{white-space:nowrap;color:var(--ink-2)}
-.ttab.act .act-a{overflow-wrap:break-word;max-width:48ch}
+.ttab.act .act-a{overflow-wrap:anywhere}
+.ttab.act .act-s{white-space:nowrap} /* 2026-11-10: App, Mode and Decision never break mid-word; Action takes the rest */
+/* the Activity tab uses the window width (usual 24px gutters); the head follows the body (FR-097) */
+.scr-body.scr-wide{max-width:none}
+.scr-head.scr-wide{padding-left:24px;padding-right:24px}
 .ttab.act tr.act-denied td:last-child{color:var(--red-ink,var(--ink))}
 /* spec 052 FR-049: install plan cards: radio beside its command (".dlg label" stacks them), the chosen card is outlined */
 .dlg .hs-plan{flex-direction:row;align-items:flex-start;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;cursor:pointer}

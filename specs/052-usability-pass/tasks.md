@@ -430,3 +430,6 @@
 ## 2026-11-10: a completion seen in its own chat is never offered after the next send (FR-242, issue #1444)
 - [x] T278 `autofollow.js` `sent()` and `seen()`; `afOnAccepted()` uses `sent()`, `afOnCompleted()` uses `seen()` when `chatShownNow()`, the notice to the office moves only a still-followed agent; `test-autofollow` FR-242 block, six tracker mutants fail it; `check-052-follow-notice` waits for the move by an observer, then 1 s with no notice (counted) and no chat, and the seen completion is not waiting; fails without the app fix [FR-242, FR-184, FR-185]; a seen completion leaves the tracker not quiet
 - [x] T279 `afNotice()` takes `still()`: the notice to the office closes at once, silently, when the agent is no longer followed; `check-052-follow-notice` drives it (fails without the close) and drives FR-242 (b) (a held completion, then a send: fails without the `sent()` call in `afOnAccepted`) [FR-242 (b), (c), review on PR 1445, issue #1450]
+
+## 2026-11-10: Tools > Activity uses the window width (FR-071, FR-097, issue #1466)
+- [x] T280 `scr-wide` on `.scr-head`/`.scr-body` for the Activity tab (`screens.js`, `screens.css`, darwin rules in `styles.css`); `.act-s` no-wrap cells in `activitytable.js`; `check-activity-table` asserts the full width, no clipped Decision, no short-column wrap, and the Cost tab keeps 880px.

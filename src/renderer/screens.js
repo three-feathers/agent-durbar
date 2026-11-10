@@ -1763,8 +1763,9 @@
     if(!cur||cur.kind!=='tools')return;
     const actBtns=act?`<button class="btn" type="button" id="actCsv"${act.n?'':' disabled'}>Export CSV</button><button class="btn" type="button" id="actJson"${act.n?'':' disabled'}>Export JSON</button><button class="btn danger" type="button" id="actClear"${act.n?'':' disabled'}>Clear activity</button>`:'';
     const head=act?`${tabs}<span class="grow"></span>${actBtns}`:cost?`${cost.seg}${tabs}<span class="grow"></span><button class="btn" type="button" id="costCsv"${cost.built.rows.length&&!cost.none?'':' disabled'}>Copy as CSV</button>`:`${per}${scopeSel}${tabs}<span class="grow"></span>`;
-    r.innerHTML=`<div class="scr-head"><h2>Tools</h2>${head}<button class="btn" type="button" id="scrClose" title="Close (Esc)">Close</button></div>
-      <div class="scr-body">${body}</div>`;
+    const wide=act?' scr-wide':''; /* spec 052 FR-071 (2026-11-10): the Activity table takes the window width */
+    r.innerHTML=`<div class="scr-head${wide}"><h2>Tools</h2>${head}<button class="btn" type="button" id="scrClose" title="Close (Esc)">Close</button></div>
+      <div class="scr-body${wide}">${body}</div>`;
     wireHead();
     if($('toolScope'))$('toolScope').onchange=e=>{cur.scope=e.target.value||null;paintTools();};
     if($('perSession'))$('perSession').onclick=()=>{if(period==='session')return;period='session';cur.scope=null;paintTools();};

@@ -1567,3 +1567,11 @@ Eight findings, each fixed in the PR. **(1) FR-033 in the panel.** `doorRepaint`
 - The `[waits] timed out after 1500 ms` lines for Priya, Hugo, Maya and Rosa printed before the failure are not part of it: they are `okArrival`'s 1.5 s looks while an arrival is on its way, and passing runs print them too.
 
 `[IMPLEMENTED]` `test: check-auto-follow` (mutation-checked: without the dialog, menu or field guard in `autofollow.js` the driver fails at that step; an `openChat` that measures Omar's desk (sim-11) when asked for Priya's (sim-7) fails at the click with "the chat of sim-7 (Priya) opens (open: true, title: "Omar")", run on this branch merged with main at b375fe24e). `[KNOWN GAP]` The office's late layout after the strip appears (desks overflow the floor for about 2 s) is app behaviour this change does not touch: issue #1362. Windows and macOS not run here.
+
+## Changes 2026-11-10: Tools > Activity uses the window width (FR-071, FR-097, issue #1466)
+
+Symptom: the 7-column Activity table sat in the shared 880px column (`.scr-body{max-width:880px}`); on a wide window Decision was cut at the right and Action wrapped over 3 to 4 lines.
+
+- **FR-071 amended (2026-11-10)** `[IMPLEMENTED]` `test: check-activity-table` `sim:` the Activity tab uses the available width (the usual 24px gutters): `paintToolsNow` adds `scr-wide` to `.scr-head` and `.scr-body` on that tab only. Every column, Decision included, is fully visible with no sideways scroll at 1280x800 and 1440x900. Time, App, Mode and Decision (`.act-t`, `.act-s`) never wrap; Action takes the rest and long commands wrap with `overflow-wrap:anywhere`.
+- **FR-097 amended (2026-11-10)**: the 880px column stays for every other Tools tab and every other screen; the header of the wide tab has flat 24px side padding so it lines up with the wide body, including the macOS rules of FR-138 (78px left of the traffic lights, 24px under a notice strip) in `styles.css`.
+- Not verified: Windows and Linux rendering of the wide tab (CSS has no platform part).

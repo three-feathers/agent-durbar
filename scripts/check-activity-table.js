@@ -44,7 +44,11 @@ module.exports = async (ctx) => {
         times:rows.every(r=>r.firstElementChild.textContent.trim().length>0),
         note:(tb.previousElementSibling||{}).textContent||'',
         btns:['actCsv','actJson','actClear'].map(i=>{const b=document.getElementById(i);return !!b&&!b.disabled}),
-        small, wide:s.scrollWidth-s.clientWidth, err:window.__actErr||[]};})()`);
+        small, wide:s.scrollWidth-s.clientWidth,
+        body:Math.round(s.querySelector('.scr-body').getBoundingClientRect().width), screenW:s.clientWidth,
+        headPad:parseFloat(getComputedStyle(s.querySelector('.scr-head')).paddingLeft),
+        clip:tb.getBoundingClientRect().right-s.querySelector('.scr-body').getBoundingClientRect().right,
+        wrapShort:rows.some(r=>[...r.querySelectorAll('.act-s,.act-t')].some(c=>getComputedStyle(c).whiteSpace!=='nowrap')), err:window.__actErr||[]};})()`);
     assert.strictEqual(t.sel, 'true', `${tag}: the Activity tab is selected`);
     assert.deepStrictEqual(t.head, ['Time', 'Agent', 'Folder', 'App', 'Mode', 'Action', 'Decision'], `${tag}: the table header`);
     assert.ok(t.n >= 7, `${tag}: the simulator's sample rows are shown (${t.n})`);
@@ -54,6 +58,14 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(t.btns, [true, true, true], `${tag}: Export CSV, Export JSON and Clear are enabled`);
     assert.deepStrictEqual(t.small, [], `${tag}: no text under 10.5px`);
     assert.ok(t.wide <= 1, `${tag}: the screen does not scroll sideways (${t.wide}px)`);
+    assert.ok(t.body >= t.screenW - 2, `${tag}: the Activity body uses the window width (${t.body} of ${t.screenW})`);
+    assert.ok(t.headPad <= 80, `${tag}: the header follows the wide body (${t.headPad}px)`);
+    assert.ok(t.clip <= 1, `${tag}: the Decision column is not cut at the right (${t.clip}px)`);
+    assert.ok(!t.wrapShort, `${tag}: Time, App, Mode and Decision do not wrap`);
+    assert.ok(await H.click('#tabCost'), `${tag}: the Cost tab opens`);
+    assert.ok(await H.until(`document.querySelector('#screen .scr-body:not(.scr-wide)')`), `${tag}: other Tools tabs keep the 880px column`);
+    assert.ok(await H.js(`document.querySelector('#screen .scr-body').getBoundingClientRect().width<=880`), `${tag}: the Cost body is at most 880px`);
+    assert.ok(await H.click('#tabActivity') && await H.until(`document.querySelector('#screen table.act tbody tr')`), `${tag}: back on Activity`);
     assert.deepStrictEqual(t.err, [], `${tag}: no page error`);
     assert.deepStrictEqual(errors.filter((m) => /DurbarActivity|tableHtml|NOTE/.test(m)), [], `${tag}: no console error from the table`);
     await H.shot(path.join(OUT, `052-activity-table-${tag}.png`), { prep: 'mouse', delay: 300, tag: 'activity-table' });
