@@ -1,1 +1,2 @@
 - **Real office**: the Characters choice Cheeky, Pirate, Monster, Royal and Rebels (as Prehistoric already did) now draws that crew's own people in every Real office world, and Settings says "Real office draws the <Crew> people." instead of showing the Office people. In the Retro arcade (still closed) another crew's people are scaled to the arcade's people. Minimalist and My characters still show the world's own people (spec 097 FR-335, FR-336, issue #1154).
+  Scene: real-crews
