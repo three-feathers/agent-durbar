@@ -25,7 +25,7 @@ A team template is app-level configuration (members with name, role, brief, cust
 | V Calm UI | 10.5 px floor, `check:office` with two team rooms at both sizes and in every world (FR-063); words, not colour (FR-064). |
 | VI Parity | Pure validator and scanner tested on all three CI runners; main's dialogs; LF out, CRLF in; 0600 on POSIX, Windows gap stated (FR-155). |
 | VII Quality gates | Tests for the validator, scanner, store, restore and IPC handlers; screenshots at both sizes; README and docs in the same PRs. |
-| VIII Honest limits | FR-150..FR-156 as `[KNOWN GAP]` / `read:`; the README and `docs/limits.md` get the same lines in G10. |
+| VIII Honest limits | FR-150..FR-157 as `[KNOWN GAP]` / `read:`; the README and `docs/limits.md` get the same lines in G10. |
 
 No violation; *Complexity tracking* is empty.
 
@@ -67,7 +67,7 @@ Nothing existing creates several sessions at once or stores reusable agent setup
 | `src/shared/teamstarters.ts` | pure TS data | The starters | FR-070..FR-073 |
 | `src/main/teamstore.ts` | main, no Electron import | `TeamTemplateStore`: load, set aside a bad file, list, put, duplicate, delete, save (temp, rename, 0600) | FR-001, FR-003, FR-021 |
 | `src/main/teamops.ts` | main, pure logic with injected deps | Create preview (apps, models, org blocks, effort fallback, cost tiers, cap words), token store (10 min), create apply (lazy members, team record), save-room builder, export collect, import read/preview/apply | FR-030..FR-053, FR-084, FR-090..FR-101 |
-| `src/main/ipc/teams.ts` | IPC | `teams:list`, `teams:put`, `teams:delete`, `teams:duplicate`, `teams:createPreview(target, templateId)`, `teams:create(token, choices)`, `teams:savePreview(folderId)`, `teams:saveRoom(folderId, rows)`, `teams:export(id)`, `teams:importPick()`, `teams:importApply(token, choices)`, `teams:cancel(token)`; all `ipcHandle`, every argument type- and size-checked | FR-010, FR-039, FR-100, FR-101 |
+| `src/main/ipc/teams.ts` | IPC | `teams:list`, `teams:put`, `teams:delete`, `teams:duplicate`, `teams:createPreview(target, templateId)`, `teams:create(token, choices)`, `teams:savePreview(agentId)`, `teams:saveRoom(agentId, rows)` (an agent id of the room, FR-030), `teams:export(id)`, `teams:importPick()`, `teams:importApply(token, choices)`, `teams:cancel(token)`; all `ipcHandle`, every argument type- and size-checked | FR-010, FR-039, FR-100, FR-101 |
 | `src/main/folders.ts` | existing | `SavedFolder.team` (`parseTeamRecord`, at most 8 members), `setTeamRecord`, `setTeamMemberSession`, `dropTeamMember` | FR-040, FR-044 |
 | `src/main/main.ts` | existing | `addLazyMember` (restore path's `infoFor`); `restoreFolders` reads the team record first (latest mode via `modeForSession`, unknown apps skipped); `sendOp` adds the masked, framed brief after `sendWithSlash`'s expansion when the session id has no `briefSent` in the record, and writes `briefSent` after a successful send (nothing in memory only) | FR-034, FR-036, FR-040 |
 | `src/preload/preload.ts`, `src/shared/api.ts` | existing | Typed bridge members `teams*`, `TeamTemplateView`, `TeamPreview` (no brief text for foreign briefs beyond the preview) | FR-010 |
