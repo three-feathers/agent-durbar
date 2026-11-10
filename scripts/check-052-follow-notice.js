@@ -54,7 +54,7 @@ module.exports = async (ctx) => {
     hidden:(b.querySelector('.afn-count')||{getAttribute:()=>null}).getAttribute('aria-hidden'),art:(b.querySelector('.afn-art')||{getAttribute:()=>null}).getAttribute('aria-hidden')}})()`);
   /* every announcement, and what the live region ends on; `__racer` says a status within the notice's own 60 ms window (FR-240's priority) */
   const hooks = () => js(`(()=>{window.__ann=[];new MutationObserver(()=>{const t=document.getElementById('srAnnounce').textContent;if(t)window.__ann.push(t);}).observe(document.getElementById('srAnnounce'),{childList:true,characterData:true,subtree:true});
-    window.__nseq=[];window.__nAt=0;window.__nGone=0;new MutationObserver(()=>{const d=document.querySelector('.dlg-ov.af-notice');if(d&&!d.__seen){d.__seen=1;window.__nAt=performance.now();window.__nGone=0;if(window.__racer)window.__durbarSimUi.announce('Racer status.');
+    window.__nseq=[];window.__nAt=0;window.__nGone=0;new MutationObserver(()=>{const d=document.querySelector('.dlg-ov.af-notice');if(d&&!d.__seen){d.__seen=1;window.__nN=(window.__nN||0)+1;window.__nAt=performance.now();window.__nGone=0;if(window.__racer)window.__durbarSimUi.announce('Racer status.');
       const n=d.querySelector('.afn-n');window.__nseq=[n.textContent];new MutationObserver(()=>{if(window.__nseq[window.__nseq.length-1]!==n.textContent)window.__nseq.push(n.textContent);}).observe(n,{childList:true,characterData:true,subtree:true});}
       if(!d&&window.__nAt&&!window.__nGone)window.__nGone=performance.now();}).observe(document.body,{childList:true});})()`);
   const anns = () => js(`window.__ann.slice()`);
@@ -165,6 +165,9 @@ module.exports = async (ctx) => {
     if (!(await until(`window.__ann.includes('Staying here.')`, 3000))) assert.fail(tag + ': FR-240: the cancel is said: ' + JSON.stringify(await anns()));
     await finish(A, 'Done again.');
     await stays(`document.body.classList.contains('panel-open')&&!document.querySelector('.dlg-ov.af-notice')`, `${tag}: FR-184: an arrival in the chat already shown shows no notice and moves nothing`, 1500);
+    /* FR-242 (2026-11-10): seen in its shown chat, not held behind the empty message box that has the focus (that held one came later, after a send) */
+    const strip = await js(`document.getElementById('afText').textContent`);
+    assert.ok(!/waiting to open/.test(strip), tag + ': FR-242: the completion seen in its chat is not waiting to open: ' + strip);
 
     // ---- Escape cancels the same way
     await sendHere('and again');
@@ -180,8 +183,12 @@ module.exports = async (ctx) => {
     await bg(true);
     await stays(`!!document.querySelector('.dlg-ov.af-notice')&&document.body.classList.contains('panel-open')&&document.querySelector('.af-notice .afn-n').textContent==='3'`, `${tag}: FR-239: in the background the count waits at 3`, 3600);
     assert.strictEqual(await js(`document.querySelector('.dlg-ov.af-notice').classList.contains('afn-paused')`), true, `${tag}: and its motion pauses`);
+    /* FR-242 (2026-11-10, Mac session: 6 of 26 runs failed here): the move is waited for by an observer, not a poll that had to land in the 5-20 ms
+       between the move and a stale "finished" notice; then no notice at all (a counter sees even one that came and went) and no chat, for a fixed second */
+    await js(`window.__closed=0;window.__nN0=window.__nN;new MutationObserver((r,o)=>{if(!document.body.classList.contains('panel-open')){window.__closed=1;o.disconnect();}}).observe(document.body,{attributes:true,attributeFilter:['class']});0`);
     await bg(false);
-    await ok(`!document.querySelector('.dlg-ov.af-notice')&&!document.body.classList.contains('panel-open')`, `${tag}: FR-239: back in front, the count goes on and moves`, 6000);
+    await ok(`window.__closed===1`, `${tag}: FR-239: back in front, the count goes on and moves`, 6000);
+    await stays(`!document.querySelector('.dlg-ov.af-notice')&&!document.body.classList.contains('panel-open')&&window.__nN===window.__nN0`, `${tag}: FR-242: after the move no "finished" notice and no chat: the completion before the send is not offered (${nameA} is working on the new message)`, 1000);
 
     // ---- Stay in the office: no chat, the New marker kept, not offered again
     await js(`window.__ann.length=0;0`);

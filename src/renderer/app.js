@@ -4798,7 +4798,7 @@ function afLeaveChat(a,what,head){
     const nm=deskMask(a.name)||'The agent';
     afNotice({head:head||nm+' is working on this',sub:'Taking you to the office. Auto-follow brings you back when '+(head?'they finish or need you':nm+' finishes or needs you')+'.',stay:'Stay here',
       said:(head||nm+' is working on this')+'. Taking you to the office',toOffice:true})
-      .then(go=>{if(go&&AF_ON&&!AF_PAUSED&&afPanelId()===shown)afBackToOffice(a,what);afTick();});
+      .then(go=>{if(go&&AF_ON&&!AF_PAUSED&&afPanelId()===shown&&AFT.has(a.id))afBackToOffice(a,what);afTick();}); /* FR-242: finished meanwhile in this chat: stay */
   };
   const ready=()=>{
     if(!AF_ON||AF_PAUSED||afPanelId()!==shown||!AFT.has(a.id))return 'gone';
@@ -4816,13 +4816,15 @@ function afOnAccepted(a,shown,several){
   if(!AF_ON||AF_PAUSED||a.state==='idle'||a.state==='done')return; /* the app answered, and no turn is running */
   const now=afPanelId();
   if(now&&now!==shown)return; /* FR-183: you opened another chat while it was on its way */
-  AFT.follow(a.id); AFT.acted();
+  AFT.sent(a.id); /* FR-242: follow again; a completion of its earlier turn still waiting is dropped, never offered after this send */
   if(!several&&now===shown)afLeaveChat(a,a.name+' is working');
   afTick();
 }
 function afOnCompleted(a){
   if(!AF_ON||!AFT.has(a.id))return;
-  const n=(AF_DONE.get(a.id)||0)+1; AF_DONE.set(a.id,n); AFT.arrive(a.id,'done',n);
+  const n=(AF_DONE.get(a.id)||0)+1; AF_DONE.set(a.id,n);
+  if(chatShownNow(a.id)){AFT.seen(a.id,'done',n);afTick();return;} /* FR-242, FR-184: its chat is shown (the same test as the New marker's; under a notice too): seen there, nothing moves, now or later */
+  AFT.arrive(a.id,'done',n);
 }
 /* FR-184: arrivals of the followed agents, delivered when no guard holds */
 function afScan(){
