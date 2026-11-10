@@ -83,7 +83,7 @@ function build(o) {
   if (spread) {
     rows = spreadLib.dailyRows(spread, states, baseline, o.date);
     const shown = rows.reduce((a, r) => a + r.measCents + r.estCents, 0);
-    if (Math.abs(shown / 100 - cum.total) > 0.011) throw new Error(`the daily chart adds up to US$${(shown / 100).toFixed(2)} but the total is US$${cum.total.toFixed(2)}: run "npm run usage:spread -- --write" again`);
+    if (shown !== cum.totalCents) throw new Error(`the daily chart adds up to US$${(shown / 100).toFixed(2)} but the total is US$${cum.total.toFixed(2)}: run "npm run usage:spread -- --write" again`);
     const est = rows.reduce((a, r) => a + r.estCents, 0) / 100; estUsd = est; const n = rows.filter((r) => r.estCents > 0).length;
     if (n) note = lib.DAY_SPREAD_LINE(est, n, rows.find((r) => r.estCents > 0).date, [...rows].reverse().find((r) => r.estCents > 0).date);
   }
