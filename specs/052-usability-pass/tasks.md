@@ -423,3 +423,6 @@
 
 ## 2026-11-09: `check-needs-panel` presses ⇧⌘A on a Mac (issue #1377)
 - [x] T269 `check-needs-panel` step 8 sends the inbox shortcut with Meta on darwin, Control elsewhere (FR-084); the failing step passes on a Mac, Control on darwin fails it again (mutation) [FR-205, issue #1377, test driver only]
+
+## 2026-11-10: `check-052-follow-notice` empties the box on a Mac (test driver only)
+- [x] T277 `check-052-follow-notice`: `emptyBox()` selects all through `webContents.selectAll()`, presses Backspace and asserts the box is empty, in both places that used a synthetic Ctrl/Cmd+A; the failing step passes on a Mac, the Cmd+A key fails it again (mutation) [FR-239, test driver only]
