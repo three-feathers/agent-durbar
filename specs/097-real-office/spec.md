@@ -1442,3 +1442,11 @@ Each frame and each portrait is recorded as approved by Vikram Gorla (owner) in 
 
 - `[KNOWN GAP]` Not wired and not seen in the app: no screenshot of the crew in a world was taken here.
 - `[KNOWN GAP]` Known deviations from the cast text, kept in `ASSETS.md`: the designer's and analyst's sneakers are light grey (visible on a light floor), the envelope is kraft tan, and the designer's three standing frames from one sheet were stretched 12 percent wider after cutting.
+
+## Changes 2026-11-10: the owner's say-so for the Prehistoric cave world is given; the flag stays off (part of #1147; no new FR or task, no behaviour change)
+
+Paco (`fjcabello`, owner), relayed by his bot in the team Telegram group, 2026-11-10 about 21:35 UTC: he approves the Prehistoric cave world as it is on `main` today, after viewing the 1440x900 office and 1280x800 lounge pictures and the wall, boss door, coffee fire, desk and monitor pictures. This is the "owner's say-so" in the cave gate of the *2026-11-01* section above and replaces the `[KNOWN GAP]` line in `src/renderer/realoffice/worlds/cave/ASSETS.md`.
+
+- **Still closed.** `WORLD_FLAGS.cave` stays `false` and the cave keeps `shippable: false`. The rest of the gate is unmet: T156..T159 (T159 is ticked for flat; T156..T158 are not), spec 001's search (#984), spec 098 FR-024, and the nine `missing` world moments.
+- **Scope of the approval.** The world as it is today (the pictures named above). It is not an approval of the nine missing moments or of any later change to the pack.
+- `[KNOWN GAP]` Not verified here: no app run, no test, no screenshot was taken for this change; the approval is read from the relayed message, not re-checked with Paco. No code and no flag changed.
