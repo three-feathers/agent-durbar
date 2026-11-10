@@ -476,11 +476,10 @@ export class NotesFile {
         const where = this.isHere(doomed) ? `the file is kept as ${name} in .durbar/notes` : `the file may be left as ${name}, in .durbar/notes or in another folder`;
         return keep(REMOVE_REFUSED(`${why}; ${where}${exists ? '; another notes.md is there' : ': renaming it back to notes.md restores it'}`));
       };
-      // the way back is a hard link only, which never replaces a notes.md that appeared meanwhile (EEXIST). Never a rename (issue #1463):
+      // the way back is a hard link, which never replaces a notes.md that appeared meanwhile (EEXIST). Never a rename (issue #1463):
       // a rename replaces whatever is at the new name, and through a `.durbar` swapped between its two lookups that can be another
-      // folder's notes.md. When the link fails for any reason (also on a file system without hard links) the file stays under its random
-      // name in .durbar/notes, its bytes kept, and the answer names it.
-      // Where the drive has no hard links (FAT, exFAT, some SMB and NFS) the way back is a copy into a NEW notes.md (`copyBack`).
+      // folder's notes.md. Where the drive has no hard links (FAT, exFAT, some SMB and NFS) it is a copy into a NEW notes.md
+      // (`copyBack`, O_EXCL). When either fails otherwise, the file stays under its random name, its bytes kept, and the answer names it.
       // The link or the copy can split too (review of PR 1465, M1): through a swapped `.durbar` it can make a notes.md in the other folder
       // while the project has none. So the random name goes only when the project's notes.md has the inode Durbar just gave it.
       const putBack = (why: string): RemoveResult => {
