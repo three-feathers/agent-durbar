@@ -18,7 +18,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Unread "New", draft, question marks | works | works, a New reply tag and a green screen (097 FR-236, FR-238), a Draft tag and "unsent draft" in the plate's name (097 FR-316); a question shows as the "?" bubble, the plate's text and "needs you" (FR-038, FR-016) | none | 001 005 097 | test:unread driver:shots-097-realoffice driver:check-097-desk-marks |
 | Hover card | works | works, the zoom opens over the person, desk, table, monitor or plate, also for asleep agents, with the Changed line (097 FR-327..FR-330); helpers stay with the desk's own tiles, as in Open office (Q25 decided, 2026-11-08) | none | 001 097 | test:tooltip driver:check-097-hover-card |
 | Drag to rearrange rooms, desks, places | works | works by dragging a name plate or a folder sign, by keys and the folder menu, a lobby place by a visitor's chip or the +N menu, the same saved order; the arcade drags desks, its rooms keep their cells (PRs 1315 and 1394, 097 Q30..Q33) | none | 033 097 | test:roomorder driver:shots-033-order driver:check-097-order driver:check-097-drag |
-| Rename a session (F2, pencil) | works | works, the pencil beside a plate's name and F2 on a plate (059 FR-170) | none | 059 | test:sessionname driver:check-097-plate-pencil |
+| Rename a session (F2, pencil) | works | works, the pencil beside a plate's name and F2 on a plate (059 FR-170); an arcade cabinet's at its plate's right end, edited over the marquee (097 FR-357) | none | 059 | test:sessionname driver:check-097-plate-pencil |
 | Lobby places, visitors, away at a place | works | works | mock+planned (lobby) | 024 | test:places driver:shots-024 |
 | Boss queue, Bank, Postbox | works | works | mock+planned (boss-bank-post-coffee) | 001 024 | driver:shots-001-lobby read:src/renderer/realoffice.js |
 | Coffee break at a usage limit | works | works | planned (coffee-bar) | 068 | test:coffeebreak driver:shots-068-coffee |
@@ -43,6 +43,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Attachments (pick, drop, paste) | works | works | none | 004 | test:attachments |
 | Browser tab in a chat | works | works | none | 080 | test:browsertabs test:browserpane |
 | Questions and permission cards | works | works | mock+planned (permission-card) | 003 012 | test:elicit test:permissions test:lookalike driver:shots-012-elicit driver:check-permission-lookalike |
+| Auto-follow work (Settings, off by default): back to the office after a send, the agent's chat when it finishes or needs you; a full-screen notice with a 3 s countdown and Stay before each automatic move; Previous and Next over the attention queue | works | works, the same notice in the Photo office, the cave and the arcade | none | 052 | driver:check-auto-follow driver:check-052-follow-notice |
 | Needs-you inbox | works | works | planned (inbox) | 052 | test:attention read:src/renderer/app.js |
 | Modes Read-only, Ask first, Allow all; switch any time | works | works | none | 003 018 | test:permissions driver:shots-018 |
 | Plan first | works | works | none | 066 | test:planmode |

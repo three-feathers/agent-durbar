@@ -80,6 +80,10 @@
 .ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l1{display:flex;flex:none}
 .ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l1>:not(.ro-help){display:none}
 .ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l2{flex:1 1 auto;min-width:0}
+/* spec 097 FR-357 (bug #1427): a cabinet's plate does not draw the name (it is on the marquee), so the rename pencil is anchored to the plate: at its right end,
+   inside it (the 11 px icon ends 6.5 px before the edge); 20 px of padding there end the status and the dots (ellipsis) before the icon. A lounge seat's plate draws the name: FR-170's place */
+.ro[data-world="retro"] .ro-plate.has-ren:not(.lounge){padding-right:calc(var(--s-4) + var(--s-1))}
+.ro[data-world="retro"] .ro-chrome>.ro-plate:not(.lounge)+.ren.ro-ren{position-anchor:var(--ro-ren-pl);left:calc(anchor(right) - 24px);top:calc(anchor(center) - 12px)}
 /* a one-line pill is as tall as a sign, so it fits the free part of a sign row: in the arcade it never covers a screen or a person (owner, 2026-11-03) */
 .ro[data-world="retro"] .ro-slip[data-variant="pill"]{padding:0 10px;line-height:14px;border-radius:4px}
 /* the away note as an arcade ticket (owner, 2026-11-03): a dark card with a neon edge in the place's colour, the words in that colour, mono, no tilt */

@@ -412,5 +412,17 @@
 ## 2026-11-09: `check-auto-follow` waits for the office layout before a click (issue #1343)
 - [x] T268 `check-auto-follow`: `openChat` waits until the office fits its floor and asserts the chat that opened; the dialog, menu and typing hold steps send with `sendQuiet` and emit the arrival with `finish()` once their guard is up; the typing step's no-switch check outlasts the 2 s key hold; the "chat already shown" step leaves the message box by a click on the chat log, not the title (mutation-checked) [issue #1343, test driver only]
 
+## 2026-11-09: the Auto-follow notice (FR-238..FR-241, owner request)
+- [x] T270 `askDialog()` options `overlayClass`, `role` + `label`, `auto(close)`; `test-dialog` cases (a dialog that closes by itself, its cleanup on every close, the role and name, nothing changed without them) [FR-239, FR-240]
+- [x] T271 `afNotice()` in `app.js`: words, mask, countdown that runs only in a visible focused window, Stay and Escape, `ANN_REQUEST` once; before `afBackToOffice()` in `afOnAccepted()` and before `openPanel()` in `afDeliver()` ; `relayout()` runs `afTick()` after drawing the office (found while building) [FR-238, FR-239, FR-240]
+- [x] T272 `styles.css`: the full-screen overlay, the card, the picture and the ring from theme tokens; no motion under reduced motion or Motion off [FR-241]
+- [x] T273 `scripts/check-052-follow-notice.js` in the UI suite (both notices, Stay, Escape, timeout, background pause, announcement and priority, reduced motion, four looks at two sizes, pictures); `check-auto-follow` through the notice; mutants fail on labelled asserts [FR-238..FR-241]
+- [x] T274 Docs: `docs/features.md`, `docs/feature-inventory.md` (an Auto-follow row in every world), a `changelog.d` fragment; both notices in every world and in Open office's Retro Pixel theme at both sizes in `docs/screenshots/`, linked from the spec, looked at [FR-238]
+- [x] T275 Review on #1414: the notice waits while you type and a typed character closes it into the box; a replaced `askDialog` leaves the focus in the new one; a hostile name stays text (driver steps, `test-dialog` cases, mutants) [FR-238, FR-239]
+- [x] T276 `check-052-follow-notice`: motion allowed by media emulation, asserted (a Windows runner asks for reduced motion; CI run 42670456931) [FR-241]
+
 ## 2026-11-09: `check-needs-panel` presses ⇧⌘A on a Mac (issue #1377)
 - [x] T269 `check-needs-panel` step 8 sends the inbox shortcut with Meta on darwin, Control elsewhere (FR-084); the failing step passes on a Mac, Control on darwin fails it again (mutation) [FR-205, issue #1377, test driver only]
+
+## 2026-11-10: `check-052-follow-notice` empties the box on a Mac (test driver only)
+- [x] T277 `check-052-follow-notice`: `emptyBox()` selects all through `webContents.selectAll()`, presses Backspace and asserts the box is empty, in both places that used a synthetic Ctrl/Cmd+A; the failing step passes on a Mac, the Cmd+A key fails it again (mutation) [FR-239, test driver only]

@@ -27,7 +27,17 @@ const SIZES = [[1440, 900], [1280, 800]];
 
 const run = async (ctx, reqs) => {
   const H = helpers(ctx);
-  const js = async (e) => { try { return await H.js(e); } catch (x) { console.log('[102-arcade] this page script failed:', String(e).slice(0, 300)); throw x; } };
+  /* spec 102 T282: a page script that throws a DOMException reached the driver as "[object Object]" (Electron passes no name or message);
+     each script is run inside a catch on the page, so a failure names the page's own error, and the driver throws that */
+  const js = async (e) => {
+    try { new Function(`return (async()=>await (${e}))`); } catch { /* a statement list (`...;0`), not one expression: run as it is */
+      try { return await H.js(e); } catch (x) { console.log('[102-arcade] this page script failed:', String(e).slice(0, 300)); throw x; }
+    }
+    const r = await H.js(`(async()=>{try{return {ok:1,v:await (${e})};}catch(x){return {ok:0,err:String(x&&x.name||'Error')+': '+String(x&&x.message||x)+(x&&x.stack?' | '+String(x.stack).split('\\n').slice(1,3).join(' '):'')};}})()`);
+    if (r && r.ok) return r.v;
+    console.log('[102-arcade] this page script failed:', String(e).slice(0, 300));
+    throw new Error('a page script failed: ' + (r && r.err));
+  };
   const must = async (expr, what, ms = 15000) => assert.ok(await H.until(expr, ms), 'timed out waiting for ' + what);
   const REAL = `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'`;
   const PICS = `[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`;
@@ -72,7 +82,8 @@ const run = async (ctx, reqs) => {
     await ctx.sleep(400); /* a stray day file would be asked for with the first drawing: give it time to show */
     for (const f of ['wall-night', 'floor-night']) assert.ok(roomFetched(f).some((e) => e.status === 200 && !e.error), tag + ': the night room\'s files are fetched: ' + f + '.webp');
     for (const f of ['wall', 'floor', 'welcome']) assert.deepStrictEqual(roomFetched(f).map((e) => e.url), [], tag + ': the day room\'s files are never fetched: ' + f + '.webp');
-    assert.deepStrictEqual(await js(`[...document.querySelectorAll('#stage .ro img')].filter(i=>!i.naturalWidth).map(i=>i.getAttribute('src'))`), [], tag + ': every picture loads');
+    await must(PICS, 'the pictures, after the room is ready'); /* spec 102 T282: a picture still loading is not a failed one; a failed one is complete with no size */
+    assert.deepStrictEqual(await js(`[...document.querySelectorAll('#stage .ro img')].filter(i=>i.complete&&!i.naturalWidth).map(i=>i.getAttribute('src'))`), [], tag + ': every picture loads');
     const art = await js(`(()=>{const L=window.__durbarSimUi.realLayout(),g=L.g,ro=document.querySelector('#stage .ro').getBoundingClientRect(),off=[];
       for(const e of document.querySelectorAll('#stage .ro-person,#stage .ro-cab')){const b=e.getBoundingClientRect(),x=b.left-ro.left,y=b.top-ro.top;if(Math.abs(b.width/g-Math.round(b.width/g))>0.01)off.push(e.className+' w '+b.width);if(e.classList.contains('ro-cab')&&Math.abs(x/g-Math.round(x/g))>0.01)off.push('cab x '+x);}
       const px=getComputedStyle(document.querySelector('#stage .ro-person,#stage .ro-visitor')).imageRendering,cab=getComputedStyle(document.querySelector('#stage .ro-cab')).imageRendering;
@@ -93,13 +104,17 @@ const run = async (ctx, reqs) => {
     if (n <= 15) { assert.strictEqual(art.scroll, false, tag + ': no office scroll'); assert.ok(art.fh <= 1, tag + ': the floor does not scroll: ' + art.fh); }
     await H.until(`${OVER}.length===0`, 5000); /* a font face can arrive after the first drawing */
     assert.deepStrictEqual(await js(OVER), [], tag + ': no overlap');
-    /* owner, 2026-11-03: no person is cut by a cabinet or a screen: none of a person's painted pixels lies on one; a sign stays on the floor */
-    assert.deepStrictEqual(await js(`(async()=>{const out=[],ro=document.querySelector('#stage .ro').getBoundingClientRect(),B=[...document.querySelectorAll('#stage .ro-cab,#stage .ro-screen')].map(e=>e.getBoundingClientRect());
-      for(const p of document.querySelectorAll('#stage .ro-person')){if(p.hidden||!p.getClientRects().length)continue;await p.decode().catch(()=>{});const b=p.getBoundingClientRect(),c=document.createElement('canvas');c.width=Math.round(b.width);c.height=Math.round(b.height);const x=c.getContext('2d');x.imageSmoothingEnabled=false;x.drawImage(p,0,0,c.width,c.height);const d=x.getImageData(0,0,c.width,c.height).data,mir=getComputedStyle(p).scale.startsWith('-');let n=0;
+    /* owner, 2026-11-03: no person is cut by a cabinet or a screen: none of a person's painted pixels lies on one; a sign stays on the floor.
+       spec 102 T282: the simulator is still replaying (`settle: false`), so a person's frame can change while this reads it: a picture in flight is not read
+       (drawing it threw); the check says BUSY and is read again once every picture has loaded, up to 5 s */
+    let whole = ['BUSY'];
+    for (let i = 0; i < 25 && whole[0] === 'BUSY'; i++) { if (i) await ctx.sleep(200); await must(PICS, 'the pictures, before their pixels are read'); whole = await js(`(async()=>{let busy=0;const out=[],ro=document.querySelector('#stage .ro').getBoundingClientRect(),B=[...document.querySelectorAll('#stage .ro-cab,#stage .ro-screen')].map(e=>e.getBoundingClientRect());
+      for(const p of document.querySelectorAll('#stage .ro-person')){if(p.hidden||!p.getClientRects().length)continue;await p.decode().catch(()=>{});if(!p.complete||!p.naturalWidth){busy=1;continue;}const b=p.getBoundingClientRect(),c=document.createElement('canvas');c.width=Math.round(b.width);c.height=Math.round(b.height);const x=c.getContext('2d');x.imageSmoothingEnabled=false;x.drawImage(p,0,0,c.width,c.height);const d=x.getImageData(0,0,c.width,c.height).data,mir=getComputedStyle(p).scale.startsWith('-');let n=0;
         for(const r of B){const L=Math.max(r.left,b.left),R=Math.min(r.right,b.right),T=Math.max(r.top,b.top),Bt=Math.min(r.bottom,b.bottom);for(let yy=Math.floor(T);yy<Bt;yy++)for(let xx=Math.floor(L);xx<R;xx++){const u=Math.floor(xx-b.left),ux=mir?c.width-1-u:u,v=Math.floor(yy-b.top);if(ux>=0&&ux<c.width&&v>=0&&v<c.height&&d[4*(v*c.width+ux)+3]>32)n++;}}
         if(n)out.push(p.dataset.for+': '+n+' px on a cabinet or screen');}
       for(const s of document.querySelectorAll('#stage .ro-sign')){const b=s.getBoundingClientRect();if(b.left<ro.left-0.5||b.right>ro.right+0.5)out.push('a sign leaves the floor: '+s.textContent.slice(0,14));}
-      return out;})()`), [], tag + ': every person whole beside the cabinet, signs on the floor');
+      return busy?['BUSY']:out;})()`); }
+    assert.deepStrictEqual(whole, [], tag + ': every person whole beside the cabinet, signs on the floor');
     /* owner, 2026-11-03: in the lobby nobody stands half behind another (painted pixels), every name chip reads in full, no two chips touch;
        */
     assert.deepStrictEqual(await js(`(async()=>{const out=[],boxes=[];
