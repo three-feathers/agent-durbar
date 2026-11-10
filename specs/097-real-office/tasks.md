@@ -231,6 +231,7 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 - [x] T229 [US2] The zoom opens for an asleep agent [FR-328]: `openZoom`, the layout refresh and `realScreen` (reply lines for the zoom only). Test: `check-097-hover-card`, `shots-097-screens` asleep step (the open card is refilled when its agent falls asleep)
 - [x] T230 [US2] The Changed fact for lounge agents [FR-329]: `realFacts`, `Changed` wraps. Test: `check-097-hover-card`
 - [x] T231 [US2] Docs and pictures [FR-330]: changelog fragment, `docs/features.md`; no committed picture (round 2: the two crops were linked from nowhere); Q25 resolved (no helpers on the card); round 3 of #1313: the card is never placed over the focused slip (`placeZoom`), the driver's focused-slip step is an Allow button reached by Tab, and its working-desk pick is made again when the person has left
+- [x] T296 [US2] The hover-card driver holds the page focus for the steps that test no blur (#1408, 2026-11-09 delta, no new FR): focus emulation after each load and after the FR-330 blur step; labelled asserts that the plate holds the keyboard focus and that no window blur reached the page during the 700 ms rest; `CHECK_097_STEAL_FOCUS=plate|refill` fault injection. Test: `sim:` 20 runs with and 20 without the injection; mutants: no emulation fails at the two labelled asserts
 
 ## 2026-11-08 delta: rearrange rooms, desks and places in Real office (FR-345..FR-349, issue #1152)
 
@@ -305,4 +306,5 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 - [x] T287 [US2] Mutants fail: threshold, Esc, bypassing `reoApply`, arcade room drag, wrong arcade neighbour, menu does nothing, fixed place moves, order ignored. Run 2026-11-09, each failing assert recorded in the PR #1394 comment (also: a fixed place's menu with Move items, the grab cursor removed, order not saved); `order ignored` is `test:realoffice-layout`'s
 - [x] T288 [US2] `shots-033-order`, `check-office-ops`, `check-office-overlap` (real, with a saved room order, arcade) pass
 - [x] T289 [US2] Pictures mid-drag and after the drop read and compressed; spec, plan and changelog fragment match [FR-352]
+- [x] T297 [US2] Bug #1423 (spec delta 2026-11-09): `check-097-drag` waits until the drawn desks match the visit record before it picks a desk, and asserts the drag started before the status change (labelled); mutant `DRAG_MUTANT=away` fails on the label. Test: `sim:` 20 runs under two CPU hogs
 

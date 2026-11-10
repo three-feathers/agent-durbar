@@ -205,6 +205,7 @@
     "test:macos": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-macos.js",
     "test:claim": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-claim.js",
     "test:prgatenotes": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-pr-gate-notes.js",
+    "test:prgatecodeql": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-pr-gate-codeql.js",
     "test:trustedcontent": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-trusted-content.js",
     "test:runtestsreal": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-run-tests-real.js",
     "test:runtests": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-run-tests.js",

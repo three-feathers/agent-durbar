@@ -108,6 +108,8 @@ export function helperPerson(helperId: string, parentPerson: string | null | und
 export const ORDER_SEARCH_MAX = 7;
 /** FR-020: big screens with this many visible agents or fewer. */
 export const BIG_MAX = 4;
+/** SC-003: a big screen shows at least this many lines of 11 px or more */
+export const BIG_ROWS = 8;
 /** FR-024: visitors' activity pose per place, and the fallback when a person has no picture for it. */
 export const FX_POSE: Record<string, string> = { library: 'book', software: 'book', terminal: 'runA', web: 'type', boss: 'knock', coffee: 'counter', bank: 'counter', postbox: 'letter', other: 'type' };
 export const POSE_FALLBACK: Record<string, string> = { wait: 'letter', runA: 'letter' };
@@ -671,7 +673,14 @@ export function screenFit(glass: { w: number; h: number }, g = 0): { small: bool
   }
   /* spec 102 (relayed, 2026-11-03): in the arcade above g = 3 the text grows with the art, 11 px at g = 3 */
   const font = g > 3 ? Math.round(11 * g / 3 * 2) / 2 : glass.h > 200 ? 13 : 11, lh = g > 3 ? Math.round(font * 1.36) : font === 13 ? 17 : 15;
-  const rows = Math.max(1, Math.floor(room / lh));
+  let rows = Math.max(1, Math.floor(room / lh));
+  if (g > 3 && rows < BIG_ROWS && Math.floor(room / 15) >= BIG_ROWS) {
+    /* spec 102 FR-308: the arcade's text grows with the art only while SC-003's lines stay: the largest size, down to 11 px, that still holds BIG_ROWS lines */
+    let f = font; while (f > 11 && Math.floor(room / Math.round(f * 1.36)) < BIG_ROWS) f -= 0.5;
+    const l = f === 11 ? 15 : Math.round(f * 1.36);
+    rows = Math.floor(room / l);
+    return { small: false, font: f, lh: l, rows, bars: 0, whole: rows * l };
+  }
   return { small: false, font, lh, rows, bars: 0, whole: rows * lh };
 }
 /**
