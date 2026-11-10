@@ -213,6 +213,6 @@
 
 - [x] T155 (FR-199) `scripts/ui-suite.js` `runOne`: `detached` (POSIX), `guardTree` and `killTree` at the limit for every driver, `launch` option for tests; `scripts/test-ui-suite.ts` two cases (time limit leaves no grandchild; SIGINT/SIGTERM end the tree and remove the user-data folder); `d.killTree` removed from `scripts/release-video.js`; `scripts/test-release-video.js` source check follows; `changelog.d/008-uisuite-kill-tree.md`.
 
-## 2026-11-10: the Mac title bar check on CSS pull requests (FR-199, issue #1469)
+## 2026-11-10: the Mac title bar check on CSS pull requests (FR-200, issue #1469)
 
-- [ ] T155 (FR-199) `.github/workflows/mac-titlebar-pr.yml` (own file: `paths:` is workflow-level); `scripts/test-ui-suite.ts` (filter, wiring, path matcher, mutants), `scripts/test-electron-cache.ts` (`TYPICAL_MIN`). Blocked on #1458 (the check fails 4 states until it is decided); merge after it, or mark those states `[KNOWN GAP]` in the driver first.
+- [ ] T156 (FR-200) `.github/workflows/mac-titlebar-pr.yml` (own file: `paths:` is workflow-level); `scripts/test-ui-suite.ts` (filter, wiring, path matcher, mutants), `scripts/test-electron-cache.ts` (`TYPICAL_MIN`). Blocked on #1458 (the check fails 4 states until it is decided); merge after it, or mark those states `[KNOWN GAP]` in the driver first.
