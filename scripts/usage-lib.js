@@ -272,11 +272,11 @@ function cumulative(states, date, baseline) {
   const addC = (m, k, c) => m.set(k, (m.get(k) || 0) + c);
   const add = (m, k, v) => addC(m, k, Math.round(v * 100));
   for (const [k, v] of Object.entries(baseline.models)) add(models, k, v);
-  for (const [k, v] of Object.entries(baseline.machines)) { add(machines, k, v); if (v > 0) firstDays.set(k, baseline.since); }
+  for (const [k, v] of Object.entries(baseline.machines)) { add(machines, k, v); if (Math.round(v * 100) > 0) firstDays.set(k, baseline.since); }
   for (const st of states) for (const day of Object.keys(st.days)) {
     // a machine with its own baseline entry is counted after the baseline's day; one without (a teammate's machine) from its first day
     if ((own(baseline.machines, st.machine) && day <= baseline.through) || day > date) continue;
-    for (const model of Object.keys(st.days[day].models)) { const c = st.days[day].models[model].costUsd; add(models, model, c); add(machines, st.machine, c); if (c > 0 && !(firstDays.get(st.machine) <= day)) firstDays.set(st.machine, day); }
+    for (const model of Object.keys(st.days[day].models)) { const c = st.days[day].models[model].costUsd; add(models, model, c); add(machines, st.machine, c); if (Math.round(c * 100) > 0 && !(firstDays.get(st.machine) <= day)) firstDays.set(st.machine, day); }
   }
   let totalC = 0; for (const v of models.values()) totalC += v;
   const back = (m) => new Map([...m].map(([k, c]) => [k, c / 100]));
@@ -288,15 +288,23 @@ function split(map, total, labelOf = (k) => k) {
     .map(([k, v]) => `${labelOf(k)} ${total > 0 ? Math.round((v / total) * 100) : 0}% (US$${group(v)})`).join(', ');
 }
 
+/** The day each machine with spend began, grouped: `first` is the earliest day of all (the baseline's `since`, or earlier when a usage file starts before it) and `groups` is [date, machines starting that day] in date order. */
+function machineStarts(cum) {
+  const days = [...(cum.firstDays || new Map())].filter(([m]) => (cum.machines.get(m) || 0) > 0).map(([, d]) => d);
+  const counts = new Map(); for (const d of days) counts.set(d, (counts.get(d) || 0) + 1);
+  const groups = [...counts].sort((x, y) => (x[0] < y[0] ? -1 : 1));
+  return { first: groups.length && groups[0][0] < cum.since ? groups[0][0] : cum.since, groups };
+}
+
 /** The scope facts in the README sentence, all computed from the data (never typed): machine count, since date, spread share (`estUsd` = the estimated, spread part of the total). */
 const scopeClause = (cum, estUsd) => {
   const n = [...cum.machines.values()].filter((v) => v > 0).length;
   const share = cum.total > 0 ? estUsd / cum.total : 0;
   const how = share <= 0 ? 'all measured' : share > 0.5 ? 'mostly spread over earlier days rather than measured' : `${Math.round(share * 100)}% spread over earlier days rather than measured`;
-  // machines that joined after the first day: say so (computed from each machine's first day with spend), never imply every machine covers the whole period
-  const firsts = [...(cum.firstDays || new Map())].filter(([m]) => (cum.machines.get(m) || 0) > 0).map(([, d]) => d);
-  const joined = [...new Set(firsts.filter((d) => d > cum.since))].sort();
-  const when = joined.length ? `, the first since ${cum.since} and the others from ${joined.join(' and ')}` : ` since ${cum.since}`;
+  // when each machine's spend began (computed from the data, never typed): say so, never imply every machine covers the whole period
+  const { first, groups } = machineStarts(cum);
+  const word = (k) => ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'][k - 1] || String(k);
+  const when = groups.length < 2 ? ` since ${first}` : `: ${groups.map(([d, k], i) => `${word(k)} ${i === 0 ? 'since' : 'from'} ${d}`).join(', ').replace(/, ([^,]*)$/, ' and $1')}`;
   return `work on ${n === 1 ? 'one machine' : `${n} machines`}${when}, ${how}`;
 };
 
@@ -316,7 +324,7 @@ const DETAIL_END = '<!-- build-cost-detail:end -->';
 /** The detail section of docs/build-cost.md, markers included: both graphs, the spread note, the by-model and by-machine lines, what is not counted. */
 function detailBlock(cum, date, release, note, spreadNote) {
   return [DETAIL_BEGIN, '## The numbers so far', '',
-    `**About US$${group(cum.total)}** (${LABEL}), tracked since ${cum.since}, as of ${date} (release \`${release}\`).`, '',
+    `**About US$${group(cum.total)}** (${LABEL}), tracked since ${machineStarts(cum).first}, as of ${date} (release \`${release}\`).`, '',
     '![Cumulative build cost by model over releases (API list-price estimate, not billing)](build-cost.svg)', '',
     '![Daily build cost by model: measured days solid, estimated (spread) days faded and dashed](build-cost-days.svg)', '',
     ...(spreadNote ? [spreadNote, ''] : []),
