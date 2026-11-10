@@ -6,6 +6,7 @@
 # Blocks (prints why, exits 1) on:
 #   - a check that is not pass/skipping, or CodeQL not passed; a CodeQL check GitHub skipped on a PR that changes no analysed file counts as
 #     passed only when every changed file is on the no-code list in nocode() and the alerts are 0 (spec 021 FR-089, #1420);
+#   - a CodeQL check that is not exactly one check run from the github-advanced-security app (spec 021 FR-090, #1425);
 #   - a PR GitHub cannot merge (conflicts): GitHub then runs only CodeQL, so the other checks look absent rather than red;
 #   - a PR that changes src/ without the Spec Kit gate and the Linux build-and-test check present and passing;
 #   - an open code-scanning alert on the PR's merge ref or head ref (a bot line comment can be carried forward after its alert is fixed);
@@ -115,6 +116,18 @@ if [ -z "$codeql_ok" ] && [ "$codeql" = skipping ] && printf '%s\n' "$checks_out
   if only_nocode; then codeql_ok="skipped (no analysed files$depnote)"; codeql="skipping(no analysed files$depnote)"
   elif [ $? = 2 ]; then codeql="skipping(dependency files refused: not a Dependabot PR, a non-registry source, an install script or an unreadable file)"
   else codeql="skipping(analysed or unknown files changed)"; fi
+fi
+# FR-090 (#1425): the check named CodeQL must come from GitHub's code-scanning app. Read the head commit's check runs and take the CodeQL
+# result only when exactly one run is named CodeQL and its app.slug is github-advanced-security; another app's run, a second run or an
+# unreadable list blocks (fail closed). A missing check stays "missing".
+if [ -n "$codeql_ok" ]; then
+  head_sha=$(gh api "repos/$R/pulls/$p" --jq .head.sha 2>/dev/null)
+  case $head_sha in *[!0-9a-f]*|'') head_sha=;; esac
+  if [ -z "$head_sha" ] || ! slugs=$(gh api --paginate "repos/$R/commits/$head_sha/check-runs?per_page=100" --jq '.check_runs[]|select(.name=="CodeQL")|.app.slug' 2>/dev/null); then
+    codeql_ok=; codeql="$codeql(check runs unread: app not verified)"
+  elif [ "$slugs" != "github-advanced-security" ]; then
+    codeql_ok=; codeql="$codeql(not exactly one CodeQL run from github-advanced-security)"
+  fi
 fi
 # the open alerts on the merge and head refs, read as two numbers; an API error or a non-number blocks
 a_merge=$(gh api "repos/$R/code-scanning/alerts?ref=refs/pull/$p/merge&state=open" --jq length) && a_head=$(gh api "repos/$R/code-scanning/alerts?ref=refs/pull/$p/head&state=open" --jq length) && isnum "$a_merge" && isnum "$a_head" && alerts=$((a_merge + a_head)) || alerts="unread(code-scanning API)"

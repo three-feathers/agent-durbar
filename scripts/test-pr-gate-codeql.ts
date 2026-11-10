@@ -53,6 +53,7 @@ case $ep in
   repos/o/r/code-scanning/alerts?ref=refs/pull/1/merge*) f=alerts-merge;;
   repos/o/r/code-scanning/alerts?ref=refs/pull/1/head*) f=alerts-head;;
   repos/o/r/pulls/1) f=pull;;
+  repos/o/r/commits/${SHA}/check-runs*) f=checkruns;;
   repos/o/r/contents/*\?ref=${BASE}) c=\${ep#repos/o/r/contents/}; c=\${c%%\?ref=*}; [ -f "$F/base/$c" ] || { echo "fake gh: 404 $c" >&2; exit 1; }; jq -r "$prog" < "$F/base/$c"; exit;;
   repos/o/r/contents/*\?ref=${SHA}) c=\${ep#repos/o/r/contents/}; c=\${c%%\?ref=*}; [ -f "$F/contents/$c" ] || { echo "fake gh: 404 $c" >&2; exit 1; }; jq -r "$prog" < "$F/contents/$c"; exit;;
   repos/o/r/pulls/1/files) f=files;;
@@ -76,7 +77,7 @@ const set = (name: string, v: string | null): void => {
 type File = string | { filename: string; previous_filename: string };
 const LOCK = { lockfileVersion: 3, packages: { '': { dependencies: { x: '^1.0.0' } }, 'node_modules/x': { version: '1.0.1', resolved: 'https://registry.npmjs.org/x/-/x-1.0.1.tgz', integrity: 'sha512-AAAA' } } };
 const PKG = { name: 'prereview', scripts: { test: 'node test.js' }, dependencies: { x: '^1.0.0' } };
-const fixture = (o: { codeql?: string | null; checks?: boolean; files?: File[] | null; page2?: File[]; changed?: number; contents?: Record<string, unknown>; base?: Record<string, unknown>; baseRef?: string; author?: string; merge?: unknown[] | null; head?: unknown[] | null } = {}): void => {
+const fixture = (o: { codeql?: string | null; checks?: boolean; files?: File[] | null; page2?: File[]; changed?: number; contents?: Record<string, unknown>; base?: Record<string, unknown>; baseRef?: string; author?: string; merge?: unknown[] | null; head?: unknown[] | null; runs?: string[] | null; runs2?: string[] } = {}): void => {
   const codeql = o.codeql === undefined ? 'skipping' : o.codeql;
   set('checks.txt', o.checks === false ? null : OTHER + (codeql === null ? '' : `CodeQL\t${codeql}\t0\thttps://x\n`));
   const files = o.files ?? ['scripts/prereview/package-lock.json', 'scripts/prereview/package.json'];
@@ -101,6 +102,10 @@ const fixture = (o: { codeql?: string | null; checks?: boolean; files?: File[] |
   set('alerts-merge.json', o.merge === null ? null : JSON.stringify(o.merge ?? []));
   set('alerts-head.json', o.head === null ? null : JSON.stringify(o.head ?? []));
   set('files.fail', null);
+  // the head commit's check runs: by default one CodeQL run from GitHub's code-scanning app (null: the call fails)
+  const runs = (l: string[]): string => JSON.stringify({ check_runs: l.map((x) => { const [name, slug] = x.split('@'); return { name, app: { slug } }; }) });
+  set('checkruns.json', o.runs === null ? null : runs(o.runs ?? ['CodeQL@github-advanced-security', 'Spec Kit gate@github-actions']));
+  set('checkruns2.json', o.runs2 ? runs(o.runs2) : null);
 };
 const run = (gatePath: string): { code: number | null; out: string } => {
   const r = spawnSync('bash', [gatePath, '1'], { env, encoding: 'utf8', timeout: 60000 });
@@ -214,6 +219,12 @@ const CASES: Record<string, Case> = {
   'dep-odd-path: a dependency file path with a space': N({ files: ['scripts/a b/package.json'], contents: { 'scripts/a b/package.json': PKG }, base: { 'scripts/a b/package.json': PKG } }, refused),
   'alerts-error: the alerts cannot be read': N({ merge: null }, /alerts=unread/),
   'alerts-empty: the alerts call prints no number': N({}, /alerts=unread/, () => set('alerts-merge.json', '')),
+  'app-other: a CodeQL check run from another app': N({ runs: ['CodeQL@evil-app'] }, /codeql=skipping\(no analysed files[^\n]*not exactly one CodeQL run/),
+  'app-second: a second CodeQL run from another app, on page 2': N({ runs: ['CodeQL@github-advanced-security'], runs2: ['CodeQL@evil-app'] }, /not exactly one CodeQL run/),
+  'app-twice: two CodeQL runs from the code-scanning app': N({ runs: ['CodeQL@github-advanced-security', 'CodeQL@github-advanced-security'] }, /not exactly one CodeQL run/),
+  'app-none: no CodeQL run in the head commit\'s check runs': N({ runs: ['Spec Kit gate@github-actions'] }, /not exactly one CodeQL run/),
+  'app-pass-other: a passed CodeQL from another app': N({ codeql: 'pass', files: ['src/main/a.ts'], runs: ['CodeQL@evil-app'] }, /codeql=pass\(not exactly one CodeQL run/),
+  'app-unread: the check runs cannot be read': N({ codeql: 'pass', files: ['src/main/a.ts'], runs: null }, /check runs unread/),
   'checks-error: the check list cannot be read': N({ checks: false }, /codeql=missing /),
 };
 const runCase = (g: string, name: string): void => {
@@ -254,6 +265,10 @@ try {
     ['the dependency spec check removed', 'select(test("[:/]"))', 'select(false)', 'dep-spec'],
     ['the dependency files not read', '[ ${#deps[@]} = 0 ] && return 0', 'return 0', 'lockfile-skipped'],
     ['the path check removed', 'case $f in *[!A-Za-z0-9._/-]*|*..*) return 2;; esac', '', 'dep-odd-path'],
+    ['the app filter removed', `elif [ "$slugs" != "github-advanced-security" ]; then`, 'elif false; then', 'app-other'],
+    ['only the first CodeQL run read', `--jq '.check_runs[]|select(.name=="CodeQL")|.app.slug'`, `--jq '[.check_runs[]|select(.name=="CodeQL")|.app.slug][0]'`, 'app-twice'],
+    ['an unreadable check-run list accepted', '|| ! slugs=$(', '|| false; slugs=$(', 'app-unread'],
+    ['--paginate removed from the check runs', 'gh api --paginate "repos/$R/commits/', 'gh api "repos/$R/commits/', 'app-second'],
     ['the alerts read without a number check', '&& isnum "$a_merge" && isnum "$a_head" ', '', 'alerts-empty'],
   ];
   for (const [name, from, to, caught] of mutants) {
