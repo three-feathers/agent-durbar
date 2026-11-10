@@ -778,6 +778,42 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(parsed(mir), mir, 'an older version\'s mirror reads, without id');
     for (const bad of ['1:2:3', 'x:1', '', 5, '1:'.padEnd(40, '9')]) assert.deepStrictEqual(parsed({ ...mir, id: bad }), mir, `a malformed id ${JSON.stringify(bad)} is dropped, the mirror kept`);
   });
+  await test('Paco review of PR 1465 (T066): a hard link to the random name made after the read and before the unlink is refused, kept under the random name', async () => {
+    if (!canHardLink) { skip('cannot make hard links here'); return; }
+    // the read (readCapped) refuses a second link on its handle; this one is made right after it, at the realpath of the random name
+    // (the next check), so only the one-link check right before the unlink can see it
+    for (const at of ['notes.md', 'other'] as const) {
+      for (const withId of [true, false]) {
+        const c = countingFs();
+        const { folder, store } = await written();
+        const mirror = await store.getMirror(folder);
+        const m = withId ? mirror : (({ id: _drop, ...rest }) => rest)(mirror as NonNullable<typeof mirror> & { id?: string });
+        const before = nodeFs.readFileSync(md(folder));
+        const other = at === 'notes.md' ? md(folder) : path.join(folder, 'other-name.md');
+        let doomed = '';
+        c.hook.realpathSync = (real, ...a) => { if (String(a[0]).endsWith('.del') && !doomed) { doomed = String(a[0]); nodeFs.linkSync(doomed, other); } return real(...a); };
+        const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, m as typeof mirror, new NotesFile().ignoreId(folder));
+        const tag = `(link at ${at}, mirror ${withId ? 'with' : 'without'} id)`;
+        assert.ok(doomed, `the link was made after the read ${tag}`);
+        assert.ok(!r.removed, `a doomed file with a second link is refused, not deleted ${tag}: ${JSON.stringify(r)}`);
+        assert.ok(nodeFs.readFileSync(other).equals(before), `the other link's file is still there with its bytes ${tag}`);
+        if (at === 'notes.md') {
+          assert.ok(nodeFs.existsSync(doomed) && nodeFs.readFileSync(doomed).equals(before), `kept under the random name ${tag}`);
+          assert.strictEqual(r.why, `Durbar did not delete .durbar/notes/notes.md: it changed while it was being deleted (it has another link); the file is kept as ${path.basename(doomed)} in .durbar/notes; another notes.md is there.`, `the answer names the random name ${tag}`);
+        } else {
+          // the way back links the random name to notes.md (none there now), confirms the inode and drops the random name
+          assert.ok(nodeFs.readFileSync(md(folder)).equals(before) && !nodeFs.existsSync(doomed), `notes.md put back, the random name dropped ${tag}`);
+          assert.strictEqual(r.why, 'Durbar did not delete .durbar/notes/notes.md: it changed while it was being deleted (it has another link).', tag);
+        }
+      }
+    }
+    // a drive that gives no usable link count: only that comparison is skipped (the gap the spec states), the rest still holds
+    const c = countingFs();
+    const { folder, store } = await written();
+    c.hook.lstatSync = (real, ...a) => { const st = real(...a) as object; return String(a[0]).endsWith('.del') ? Object.assign(Object.create(Object.getPrototypeOf(st) as object) as object, st, { nlink: undefined }) : st; };
+    const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder), new NotesFile().ignoreId(folder));
+    assert.ok(r.removed && !nodeFs.existsSync(md(folder)), `no link count and no second link: deleted as before: ${JSON.stringify(r)}`);
+  });
   await test('PR 931 review 2, points 5 and 6: the rename back never replaces a newer notes.md, and the message names the exact file', async () => {
     const c = countingFs();
     const { folder, store } = await written();

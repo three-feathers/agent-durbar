@@ -380,11 +380,15 @@ export class NotesFile {
   }
 
   /** `<dev>:<ino>` of the file at `p` itself (no link followed); `undefined` when there is none, it is a folder, or the drive gives no inode number (0). */
-  private fileId(p: string): string | undefined {
+  private fileId(p: string): string | undefined { return this.fileStat(p).id; }
+  /** `fileId` and the link count from the same `lstat` (`links` is `undefined` where the drive gives no usable number). */
+  private fileStat(p: string): { id?: string; links?: number } {
     try {
-      const st = this.fs.lstatSync(p, { bigint: true }) as unknown as { dev: bigint; ino: bigint; isDirectory(): boolean };
-      return st.isDirectory() || st.ino <= 0n ? undefined : `${st.dev}:${st.ino}`;
-    } catch { return undefined; }
+      const st = this.fs.lstatSync(p, { bigint: true }) as unknown as { dev: bigint; ino: bigint; nlink?: bigint | number; isDirectory(): boolean };
+      if (st.isDirectory()) return {};
+      const links = Number(st.nlink);
+      return { ...(st.ino <= 0n ? {} : { id: `${st.dev}:${st.ino}` }), ...(Number.isFinite(links) ? { links } : {}) };
+    } catch { return {}; }
   }
   /** `<dev>:<ino>` of an open file (its handle, no path); `undefined` where the drive gives no inode number. */
   private fdId(fd: number): string | undefined {
@@ -469,7 +473,8 @@ export class NotesFile {
       // an outside file never has the inode Durbar wrote, so it is kept under the random name (moved, not deleted: still [KNOWN GAP]).
       // The unlink itself is by path, and that is a [KNOWN GAP] (#1464): a racing process that can write the project can swap `.durbar`
       // so this rename goes wholly through the link (the OUTSIDE file gets the random name), put Durbar's own notes.md at that name in the
-      // project (renamed or hard-linked) before the checks read it, and swap `.durbar` once more before the unlink, which then removes
+      // project (renamed; a hard link is refused by readCapped's one-link check and, made after the read, by the one-link check right
+      // before the unlink) before the checks read it, and swap `.durbar` once more before the unlink, which then removes
       // the outside file. Portable Node has no unlinkat / renameat to pin the folder; see spec 083 Changes 2026-11-10.
       const name = `.notes.md.${this.pid}.${this.rand(36 ** 8).toString(36)}.del`;
       const doomed = path.join(pl.p.dir, name);
@@ -517,7 +522,12 @@ export class NotesFile {
       if (!this.same(rp, doomed)) return putBack('.durbar changed while it was being deleted');
       // the inode Durbar wrote, right before the unlink (spec 083 Changes 2026-11-10): an outside file that came in through a split
       // rename with Durbar's exact bytes is never it. Without `mirror.id` or an inode number this is the hash check only ([KNOWN GAP]).
-      if (own && this.fileId(doomed) !== own) return putBack('the file under its random name is not the one Durbar wrote (.durbar changed while it was being deleted)');
+      // One `lstat` gives the inode and the link count: a hard link made to the random name after the read (which refused more than one
+      // link on its handle) and before this check is refused as changed (Paco's review of PR 1465); where the drive gives no usable
+      // count, only that comparison is skipped.
+      const last = this.fileStat(doomed);
+      if (own && last.id !== own) return putBack('the file under its random name is not the one Durbar wrote (.durbar changed while it was being deleted)');
+      if (last.links !== undefined && last.links > 1) return putBack('it changed while it was being deleted (it has another link)');
       try { this.fs.unlinkSync(doomed); } catch (e) { return putBack(`it could not be deleted (${errCode(e)})`); }
       let dirRemoved = false, ignoreDropped = false;
       if (!this.checkPlace(pl.p)) {
