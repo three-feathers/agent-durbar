@@ -414,22 +414,26 @@ export class NotesFile {
       // Review of PR 931: never unlink by the name `notes.md`, which a swapped `.durbar` could point elsewhere. Rename the file to a random
       // name inside `.durbar`, check THAT name (its folder's real path, a regular file with one link, Durbar's hash), and unlink only it.
       // A swap before the rename moves the other file to the random name elsewhere, and the real-path check of that name (last, right
-      // before the unlink) fails; a swap after it finds no file with that random name elsewhere, so the unlink fails. This closes the race
-      // for a process that cannot read the other folder and narrows it otherwise: one that can read it learns the random name, can put a
-      // decoy under it here and swap again before the unlink (Node has no unlinkat). Under attack a file may be left under the random name.
+      // before the unlink) fails; a swap after it finds no file with that random name elsewhere, so the unlink fails.
+      // This narrows the race; it does NOT close it, not even for a process that cannot read the other folder (issue #1463, spec 083
+      // Changes 2026-11-10, [KNOWN GAP]): rename(2) and link(2) look up the old and the new path separately, so a `.durbar` swapped
+      // between the two lookups moves a file ACROSS folders. The other folder's `notes/notes.md` can land here under the random name
+      // (left in the project, or deleted when its bytes are Durbar's), or Durbar's file can land there. Closing it needs the folder
+      // pinned (an open handle), which Node has no portable call for (no renameat / unlinkat); the choice is with the owners (#1464).
+      // A process that can read the other folder can also put a decoy under the random name here and swap again before the unlink.
       const name = `.notes.md.${this.pid}.${this.rand(36 ** 8).toString(36)}.del`;
       const doomed = path.join(pl.p.dir, name);
       try { this.fs.renameSync(pl.p.notes, doomed); } catch (e) { return keep(REMOVE_REFUSED(`it could not be deleted (${errCode(e)})`)); }
       const left = (why: string, newer: boolean): RemoveResult => keep(REMOVE_REFUSED(`${why}; ${newer ? 'a newer notes.md is there, so the old one' : 'the file'} may be left as ${name}, in .durbar/notes or in another folder: renaming it back to notes.md restores it`));
-      // the rename back never replaces a notes.md that appeared meanwhile (a POSIX rename would): a hard link fails with EEXIST instead
+      // the way back is a hard link only, which never replaces a notes.md that appeared meanwhile (EEXIST). Never a rename (issue #1463):
+      // a rename replaces whatever is at the new name, and through a `.durbar` swapped between its two lookups that can be another
+      // folder's notes.md. When the link fails for any reason (also on a file system without hard links) the file stays under its random
+      // name in .durbar/notes, its bytes kept, and the answer names it.
       const putBack = (why: string): RemoveResult => {
         try {
           this.fs.linkSync(doomed, pl.p.notes);
         } catch (e) {
-          if (errCode(e) === 'EEXIST') return left(why, true);
-          // no hard links here (some file systems): rename only when nothing is at notes.md
-          try { this.fs.lstatSync(pl.p.notes); return left(why, true); } catch (e2) { if (errCode(e2) !== 'ENOENT') return left(why, false); }
-          try { this.fs.renameSync(doomed, pl.p.notes); return keep(REMOVE_REFUSED(why)); } catch { return left(why, false); }
+          return left(why, errCode(e) === 'EEXIST');
         }
         // two names for one file now: drop the random one, but only where it really is in this `.durbar` (review 3 of PR 931: an
         // unchecked unlink here could remove a file a swapped link points to). Nothing on this path ever unlinks the name `notes.md`
