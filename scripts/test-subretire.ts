@@ -113,14 +113,19 @@ assert.deepStrictEqual(SR.plan({ subs: mk(3, 'done'), keep: { done: -4, failed: 
 }
 
 // ---- the wiring: app.js, index.html, the build ----
+// a Windows checkout may have CRLF line ends; the regexes and indexOf('\n}') below expect LF
+const lf = (t: string) => t.replace(/\r\n/g, '\n');
+assert.strictEqual(lf('a\r\nb\r\n}'), 'a\nb\n}', 'lf() turns CRLF into LF');
 {
-  const app = fs.readFileSync(path.join(R, 'app.js'), 'utf8');
-  const html = fs.readFileSync(path.join(R, 'index.html'), 'utf8');
-  const copy = fs.readFileSync(path.join(ROOT, 'scripts', 'copy-assets.js'), 'utf8');
+  const app = lf(fs.readFileSync(path.join(R, 'app.js'), 'utf8'));
+  const html = lf(fs.readFileSync(path.join(R, 'index.html'), 'utf8'));
+  const copy = lf(fs.readFileSync(path.join(ROOT, 'scripts', 'copy-assets.js'), 'utf8'));
   assert.ok(/<script src="subretire\.js"><\/script>/.test(html), 'index.html loads subretire.js');
   assert.ok(html.indexOf('<script src="subretire.js">') < html.indexOf('<script src="app.js">'), 'before app.js');
   assert.ok(copy.includes("'subretire.js'"), 'copy-assets copies subretire.js');
   assert.ok(/const SR=window\.DurbarSubRetire;/.test(app), 'app.js reads window.DurbarSubRetire');
+  const bodyOf = (src: string, name: string) => { const i = src.indexOf('function ' + name + '('); assert.ok(i >= 0, name + ' exists'); return src.slice(i, src.indexOf('\n}', i)); };
+  assert.strictEqual(bodyOf(lf(app.replace(/\n/g, '\r\n')), 'subRetire'), bodyOf(app, 'subRetire'), 'a CRLF checkout reads the same function bodies');
   const body = (name: string) => { const i = app.indexOf('function ' + name + '('); assert.ok(i >= 0, name + ' exists'); return app.slice(i, app.indexOf('\n}', i)); };
   assert.ok(body('onSubagent').includes("if(e.phase!=='started')subRetireCheck(a)"), 'onSubagent checks at its end phases');
   assert.ok(body('onTaskTool').includes('subRetireCheck(a)'), 'onTaskTool checks at its end phases');

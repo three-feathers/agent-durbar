@@ -215,9 +215,10 @@ module.exports = async (ctx) => {
   const line = await js(`(()=>{const n=document.querySelector('#chat .sub-gone');if(!n)return null;const cs=getComputedStyle(n),r=n.getBoundingClientRect();return {text:n.textContent,fs:parseFloat(cs.fontSize),w:r.width,h:r.height,shown:cs.display!=='none'&&cs.visibility!=='hidden'};})()`);
   console.log('[helper-retention] line: ' + JSON.stringify(line));
   assert.ok(line && NOTE.test(line.text) && line.fs >= 10.5 && line.w > 0 && line.h > 0 && line.shown, `the line is shown, at least 10.5px: ${JSON.stringify(line)}`);
+  assert.ok(await js(`document.querySelectorAll('#chat .subblk.stub').length>0`), 'the open chat shows at least one #chat .subblk.stub before the stub checks');
   const stubFs = await js(`(()=>{const n=document.querySelector('#chat .subblk.stub .sub-task');return n?parseFloat(getComputedStyle(n).fontSize):0;})()`);
-  assert.ok(stubFs === 0 || stubFs >= 10.5, `a stub's text is at least 10.5px (${stubFs})`);
-  assert.ok(await js(`document.querySelector('#chat .subblk.stub')?document.querySelector('#chat .subblk.stub').getBoundingClientRect().height<60:true`), 'a stub is one line');
+  assert.ok(stubFs >= 10.5, `a stub's text is at least 10.5px (${stubFs})`);
+  assert.ok(await js(`document.querySelector('#chat .subblk.stub')?document.querySelector('#chat .subblk.stub').getBoundingClientRect().height<60:false`), 'a stub is one line');
 
   // the office at both sizes: sim-1's helpers shown are the kept ones; no scroll, nothing outside the window or over another desk
   const closeBtn = `(()=>{const b=document.getElementById('backBtn');if(b)b.click();return true;})()`;

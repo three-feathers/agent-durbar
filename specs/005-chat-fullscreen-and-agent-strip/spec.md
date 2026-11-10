@@ -669,7 +669,7 @@ Limits: 20,000 nodes, 200 listeners, 2 MB. Also checked: every chat within its c
 
 ## Changes 2026-11-10: finished helpers are not kept without limit (issue #1418, the `[KNOWN GAP]` of FR-238)
 
-Request (issue #1418, owner Ruben). Draft by the analyst, decisions to confirm (Q1..Q6 in the PR); proposed by the coordinator under Ruben's delegation.
+Request (issue #1418, owner Ruben). Decisions taken: keep the newest 50 done and 20 failed helpers per agent, remember retired ids in a ring of 500, and leave a one-line stub plus a separate one-line note sibling; decided by the coordinator under Ruben's delegation, 2026-11-10.
 
 `read:` and measured (2026-11-10, Linux, Xvfb, 15 agents at 1440x900, heap collected twice before each sample, `Performance.getMetrics`; one agent's open turn spawns N helpers that each finish, E events each). A helper is three things: its record `s` in `a.subs` (`app.js` `subRec`: `log` up to `SUB_LOG_MAX` 3,000 events, `views`, `block`, `card`), its card in `LIVE.agents` (`parent` is the agent's id; **every** surface reads it through `helpersOf(a)`: Real office's head figures and `+K` (097 FR-306, FR-338), the flat strip and tiles, the List rows, the helper count words), and its `.subblk` in the parent's chat, whose `.sub-in` body is a full copy of the helper's timeline. Nothing removes a finished helper. FR-238's trim drops a `.subblk` only when its whole message goes, and a helper spawned in the **open turn** is never dropped: the open turn is live.
 
