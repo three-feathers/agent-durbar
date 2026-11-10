@@ -42,6 +42,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Attachments (pick, drop, paste) | works | works | none | 004 | test:attachments |
 | Browser tab in a chat | works | works | none | 080 | test:browsertabs test:browserpane |
 | Questions and permission cards | works | works | mock+planned (permission-card) | 003 012 | test:elicit test:permissions test:lookalike driver:shots-012-elicit driver:check-permission-lookalike |
+| Auto-follow work (Settings, off by default): back to the office after a send, the agent's chat when it finishes or needs you; a full-screen notice with a 3 s countdown and Stay before each automatic move; Previous and Next over the attention queue | works | works, the same notice in the Photo office, the cave and the arcade | none | 052 | driver:check-auto-follow driver:check-052-follow-notice |
 | Needs-you inbox | works | works | planned (inbox) | 052 | test:attention read:src/renderer/app.js |
 | Modes Read-only, Ask first, Allow all; switch any time | works | works | none | 003 018 | test:permissions driver:shots-018 |
 | Plan first | works | works | none | 066 | test:planmode |
