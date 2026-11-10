@@ -124,6 +124,16 @@ Four reviewers worked from 17 simulator screenshots: the office at 1440x900 and 
 - *Found while building* `sim:`: the office's relayout after a resize (`relayout()`, spec 024) redrew the desks without the pass that marks the followed one (`afTick()`), so a marker set just before the floor changed size was lost until the next full draw (seen in `check-auto-follow` once the return to the office came 600 ms later, after the chat's own relayout). `relayout()` now runs `afTick()` after it draws the office.
 - `[KNOWN GAP]` (2026-11-09) Simulator only (Linux, xvfb); Windows and macOS not run, no real agent session, no real screen reader (the live region's text and priority are asserted, not heard). A send from a helper's chat is not driven; *Send to several sessions* is driven by `check-auto-follow` from the office only, where no chat is left, so its notice ("<n> followed agents are working on this") is not driven.
 
+### 2026-11-09 (third): FR-205 step 8 presses the inbox shortcut with ⌘ on a Mac (issue #1377, driver only)
+
+*Seen* (`real:` macOS darwin 25, `UI_SUITE_DPR=1 node scripts/ui-suite.js --only check-needs-panel`, `main` at 54e2c97c9): 3 of 3 runs failed at 1440x900 Flat, `Ctrl+Shift+A opens it from a text field, focus on a heading` (`[waits] timed out after 3000 ms`).
+
+*Root cause* (`real:`, an instrumented copy of the driver, the same Mac, both sizes): the driver sent Control+Shift+A on every platform. On a Mac the app's inbox shortcut is ⇧⌘A (FR-084, `KEYS.modDown` needs Meta and no Control), so the page got the key (`isTrusted`, `ctrlKey:true`, `document.hasFocus()` true, the window and its `webContents` focused) and rightly did nothing: no panel, the text field kept its focus and selection. ⇧⌘A sent at the same point opened the panel with focus on a row's `.ib-h` heading at both sizes. Not window activation and not a focus bug in the app; `H.focusPage()` was not involved.
+
+- **The focus step** (FR-205 step 8) `real:` `scripts/check-needs-panel.js`: the shortcut is sent with Meta on darwin and Control elsewhere, and the step's message names the key the platform uses (⇧⌘A or Ctrl+Shift+A). The product is unchanged.
+- *Mutation* `real:`: Control on darwin again fails the same step as on `main`.
+- `[KNOWN GAP]` Windows and Linux are unchanged in what is sent (Control) and not run locally; the GitHub macOS nightly not read.
+
 ### 2026-11-09 (second): FR-237's palette drag, measured on a settled popup, typed after the page saw Ctrl+A, the selection checked at the release (driver only, CI flake)
 
 *Seen* (`read:` `gh run view --log-failed`): the flake survived the change below: ubuntu UI shard runs 42577302353 and 42580052193 (2 of the 15 ui-platforms runs after #1356 merged), the same `command palette: after the drag the text is intact, selected and focused: {"v":"Draft name 42","s":13,"e":13,"focus":true}`; the page saw the press, every move with the button down and the release, so the events did arrive. The trace in the message was cut by the suite after the fifth event (failure tail lines are 240 characters), so what the selection did during the drag is not known. Not reproduced locally (`sim:`, xvfb, palette only and full driver, 20 palette-only runs idle, 20 with 4 CPU hogs, 20 full-driver runs with 2 hogs, 120 palette drags): 0 failures before this change.

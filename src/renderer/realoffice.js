@@ -107,7 +107,7 @@
     if (ro._ready || ro._waiting) return;
     ro._waiting = true;
     setTimeout(() => {
-      ro._ready = true;
+      ro._ready = true; ro.dataset.go = '1'; /* spec 102 FR-309: the arcade's CSS loops (marquee flash, cue dots, caret) start now, not at the first draw */
       if (!CUR || CUR.ro !== ro) return;
       for (const c of SCR.values()) if (c.caret) clock(c.caret, c.caretMs);
       if (onArt) onArt();

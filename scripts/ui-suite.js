@@ -148,7 +148,9 @@ const DRIVERS = [
   { name: 'check-edits' }, // spec 005 FR-020..FR-026: file edits in the chat
   { name: 'shots-068-coffee' }, // spec 068: coffee break (simbreak=8 in its own query)
   { name: 'shots-097-screens' }, // spec 097 P2: live screens and the hover zoom
+  { name: 'shots-097-screens', label: 'shots-097-screens retro', env: { SCREENS_WORLD: 'retro' } }, // spec 102 FR-310 (issue #1428): the arcade's screens, helper heads and big screens
   { name: 'check-097-motion' }, // spec 097 P2: the people's motion and what stops it
+  { name: 'check-097-motion', label: 'check-097-motion retro', env: { MOTION_WORLD: 'retro' } }, // spec 102 FR-309, FR-310 (issue #1428): the arcade's loops start after the calm, on the grid, stepped; its pause, still and scrolled-away rules
   { name: 'check-001-halo' }, // spec 001 FR-210: the waiting halo is a still glow, nothing animates it
   { name: 'check-office-ops-real' }, // spec 097 FR-186: operation counts of Real office, never times (renders, layout reads, nodes, attribute writes, elements recalculated, animations, picture area)
   { name: 'shots-097-realoffice' }, // spec 097 P1: Real office mode (the switch, the scene, the lights, flat loads none of it)
