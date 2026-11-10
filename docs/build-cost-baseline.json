@@ -2,7 +2,7 @@
   "version": 1,
   "since": "2026-10-25",
   "through": "2026-11-07",
-  "note": "work before 2026-10-25, Copilot and Codex, and machines that publish no usage file yet (Paco's server starts with v0.1.15).",
+  "note": "work before 2026-10-25, Copilot and Codex, and machines that publish no usage file yet (Paco's server starts with v0.1.16).",
   "models": { "claude-opus-5-5": 2856, "claude-sonnet-5-5": 902 },
   "machines": { "linux": 3758 }
 }

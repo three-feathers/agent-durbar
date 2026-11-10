@@ -207,3 +207,4 @@
 ## 2026-11-10: the release clip shows the new features of v0.1.15 (FR-197)
 
 - [x] T153 (FR-197) `scripts/release-video.js`: scenes `real-crews` (spec 097 FR-335..FR-337) and `real-drag` (spec 097 FR-345..FR-355) with `refs`; `Scene:` fields in `changelog.d/097-crews-real-office.md` and `changelog.d/097-real-drag.md`; `scripts/test-release-video.js`: catalogue, `--list`, the v0.1.15 choice, two mutants
+- [x] T154 (FR-198) `scripts/usage-lib.js` `cumulative` adds whole cents per machine/day/model like `dailyRows` (and returns `totalCents`); `scripts/usage-readme.js` compares the chart's cents to `totalCents` exactly; `scripts/test-usage.js` three-machine sub-cent case. Issue #1449.

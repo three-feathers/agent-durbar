@@ -1,1 +1,0 @@
-- Docs: the feature inventory now matches the code and the issues for the helpers, themes and chat-look cells, says the chat-level rows were run in the Photo office on macOS, and has rows for auto-follow work, the Failing, Retrying and Compacting words, the logo choice, End of day and Tools > Activity (spec 025 FR-021, #1398).

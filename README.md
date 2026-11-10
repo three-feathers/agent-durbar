@@ -16,7 +16,7 @@ When you run many agent sessions across several windows, you end up watching you
 
 **Works with:** GitHub Copilot, Claude Code and OpenAI Codex ([agent apps](docs/harnesses.md)). **Not yet:** signed builds (your OS warns the first time), auto-update, and Windows tried by hand only once; the spending limit is soft ([known limits](docs/limits.md)).
 
-> **Status:** first stable release, latest [`v0.1.14`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.14), unsigned. What changed: [CHANGELOG](CHANGELOG.md).
+> **Status:** first stable release, latest [`v0.1.15`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.15), unsigned. What changed: [CHANGELOG](CHANGELOG.md).
 
 ## What it does
 

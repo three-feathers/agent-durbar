@@ -259,6 +259,15 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
   assert.strictEqual(lib.cumulative([meas, pv], '2026-10-30', base).total, 1009.03, 'machines: its dollars are added from its first day');
   const rp = S.dailyRows(sp, [meas, pv], base, '2026-10-30');
   assert.strictEqual(rp.reduce((a, r) => a + r.estCents + r.measCents, 0), 100903, 'machines: the chart still equals the total');
+  // FR-198: many sub-cent costs on three machines: the total is the sum of the same whole cents the chart shows, exactly
+  {
+    const dr = ['linux', 'mac', 'ruben-server'].map((mc) => { const st = lib.emptyState(mc); for (const m of ['claude-opus-5-5', 'claude-sonnet-5-5']) for (const d of ['2026-10-31', '2026-11-01', '2026-11-02']) lib.ingest(st, body([], [cost(m, 1.2349, `${d}T10:00:00Z`)]), Date.UTC(2026, 10, 2, 12)); return st; });
+    const cd = lib.cumulative(dr, '2026-11-02', base); const rd = S.dailyRows(S.computeSpread(base, dr, stats), dr, base, '2026-11-02');
+    const shownC = rd.reduce((a, r) => a + r.estCents + r.measCents, 0);
+    assert.strictEqual(shownC, cd.totalCents, 'FR-198: the chart adds up to the total to the cent, with sub-cent costs on three machines');
+    assert.strictEqual(Math.round(cd.total * 100), cd.totalCents, 'FR-198: the total is whole cents');
+    assert.notStrictEqual(shownC + 1, cd.totalCents, 'FR-198: a one-cent difference is a difference (the check is exact, not a tolerance)');
+  }
   // an unlisted model measured inside the lump is deducted, so the total is kept
   const odd = lib.emptyState('linux'); lib.ingest(odd, body([], [cost('claude-haiku-9', 1.5, '2026-10-30T10:00:00Z')]), Date.UTC(2026, 9, 30, 12));
   assert.strictEqual(S.dailyRows(S.computeSpread(base, [odd], stats), [odd], base, '2026-10-30').reduce((a, r) => a + r.estCents + r.measCents, 0), 100003, 'spread: a model the lump does not list keeps the total');
