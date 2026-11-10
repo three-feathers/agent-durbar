@@ -176,6 +176,17 @@ module.exports = async (ctx) => {
     await ok(`!document.querySelector('.dlg-ov.af-notice')`, `${tag}: FR-239: Escape closes the notice`, 2000);
     await stays(`document.body.classList.contains('panel-open')&&!document.querySelector('.dlg-ov.af-notice')`, `${tag}: FR-239: Escape: the chat stays open, past the count`, 3600);
 
+    // ---- FR-242 (c) (review on PR 1445, M2): it finishes in its shown chat while the notice to the office counts: the notice closes at once, moves nothing, says nothing
+    await sendHere('finish under the notice');
+    await ok(NOTICE, `${tag}: the notice`, 4000);
+    await js(`window.__ann.length=0;0`);
+    await finish(A, 'Done under the notice.');
+    await ok(`!document.querySelector('.dlg-ov.af-notice')`, `${tag}: FR-242 (c): a completion seen under the notice closes it before its count ends`, 1500);
+    const seq = await js(`window.__nseq.slice()`);
+    assert.ok(!seq.includes('1'), `${tag}: FR-242 (c): the notice never counted to 1: ${JSON.stringify(seq)}`);
+    await stays(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle').textContent===${jsLiteral(nameA)}&&!document.querySelector('.dlg-ov.af-notice')`, `${tag}: FR-242 (c): the chat stays, past the count`, 3600);
+    assert.ok(!(await anns()).some((t) => /Staying here/.test(t)), `${tag}: FR-242 (c): nothing said for the closed notice: ${JSON.stringify(await anns())}`);
+
     // ---- a window in the background pauses the count; it goes on when the window is back
     await finish(A, 'Done.');
     await sendHere('in the background');
@@ -189,6 +200,19 @@ module.exports = async (ctx) => {
     await bg(false);
     await ok(`window.__closed===1`, `${tag}: FR-239: back in front, the count goes on and moves`, 6000);
     await stays(`!document.querySelector('.dlg-ov.af-notice')&&!document.body.classList.contains('panel-open')&&window.__nN===window.__nN0`, `${tag}: FR-242: after the move no "finished" notice and no chat: the completion before the send is not offered (${nameA} is working on the new message)`, 1000);
+
+    // ---- FR-242 (b) (review on PR 1445, M1): a completion held in the office (window in the background), then its chat opened and a message sent:
+    //      the send drops the waiting completion, so it is never "waiting to open" behind the message box, and the agent stays followed
+    await bg(true);
+    await finish(A, 'Done while away.');
+    await ok(`/waiting to open/.test(document.getElementById('afText').textContent)`, `${tag}: FR-242 (b): the completion is held while the window is in the background`, 4000);
+    await openChatBy(sel(A), nameA);
+    await sendHere('a new task');
+    if (!(await until(`document.getElementById('afText').textContent.includes(${jsLiteral(nameA + ' is working')})&&!/waiting to open/.test(document.getElementById('afText').textContent)`, 4000))) assert.fail(`${tag}: FR-242 (b): the send dropped the waiting completion: ` + JSON.stringify(await js(`document.getElementById('afText').textContent`)));
+    await bg(false);
+    await stays(`!/waiting to open/.test(document.getElementById('afText').textContent)&&!(document.querySelector('.dlg-ov.af-notice h3')&&/finished/.test(document.querySelector('.dlg-ov.af-notice h3').textContent))`, `${tag}: FR-242 (b): back in front, the old completion is never offered`, 1000);
+    await ok(`!document.querySelector('.dlg-ov.af-notice')`, `${tag}: any notice to the office has ended`, 6000);
+    if (await js(OPEN)) { await mclick('#backBtn'); await ok(`!${OPEN}`, `${tag}: back to the office`, 4000); }
 
     // ---- Stay in the office: no chat, the New marker kept, not offered again
     await js(`window.__ann.length=0;0`);

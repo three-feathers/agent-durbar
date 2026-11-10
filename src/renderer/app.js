@@ -4753,7 +4753,7 @@ function afBackToOffice(a,what){
 let AF_NOTICE=null, AF_NOTICE_MS=3000; /* AF_NOTICE_MS: the simulator's drivers may shorten it (__durbarSimUi.afNotice) */
 const AF_ARRIVE={done:' finished',ask:' needs you',error:' has an error',limit:' reached its limit'};
 const AF_NOTICE_ART='<svg class="afn-art" viewBox="0 0 120 40" aria-hidden="true" focusable="false"><path class="afn-bubble" d="M6 8h28a4 4 0 0 1 4 4v12a4 4 0 0 1-4 4H18l-7 6v-6H6a4 4 0 0 1-4-4V12a4 4 0 0 1 4-4z"/><path class="afn-lines" d="M10 15h20M10 21h14"/><path class="afn-track" d="M44 20h32"/><circle class="afn-dot" cx="44" cy="20" r="3.5"/><path class="afn-desk" d="M84 22h34M88 22v12M114 22v12M94 8h22v11H94zM103 19v3"/></svg>';
-function afNotice({head,sub,stay,said,toOffice}){
+function afNotice({head,sub,stay,said,toOffice,still}){ /* still(): false closes it at once, silently, moving nothing (FR-242 (c)) */
   if(AF_NOTICE)return Promise.resolve(false); /* one at a time: a second move while one is shown does not happen */
   const secs=Math.max(1,Math.round(AF_NOTICE_MS/1000));
   const node=document.createElement('div');node.className='afn-body';
@@ -4774,6 +4774,7 @@ function afNotice({head,sub,stay,said,toOffice}){
       document.addEventListener('keydown',onType,true);
       const t=setInterval(()=>{
         if(!d.isConnected){close(null);return;} /* another dialog took its place: nothing moves */
+        if(still&&!still()){close('gone');return;} /* FR-242 (c): the agent is no longer followed (it finished in this chat): no count to a move that will not come */
         const now=performance.now(),run=document.visibilityState!=='hidden'&&schedHasFocus();
         if(run)left-=now-last;last=now;
         if(d.classList.contains('afn-paused')===run)d.classList.toggle('afn-paused',!run);
@@ -4781,7 +4782,7 @@ function afNotice({head,sub,stay,said,toOffice}){
         const n=String(Math.max(1,Math.ceil(left/1000)));if(num.textContent!==n)num.textContent=n;
       },100);
       return ()=>{clearInterval(t);document.removeEventListener('keydown',onType,true);};
-    }}).then(r=>{AF_NOTICE=null;const go=!!r&&r.value==='go';if(!go)announce(toOffice?'Staying here.':'Staying in the office.');return go;});
+    }}).then(r=>{AF_NOTICE=null;const go=!!r&&r.value==='go';if(!go&&!(r&&r.value==='gone'))announce(toOffice?'Staying here.':'Staying in the office.');return go;});
   return AF_NOTICE;
 }
 /* FR-183 with FR-238: the notice, then the return to the office, unless you stayed, Auto-follow was turned off or paused, or another chat is shown */
@@ -4797,7 +4798,7 @@ function afLeaveChat(a,what,head){
   const show=()=>{
     const nm=deskMask(a.name)||'The agent';
     afNotice({head:head||nm+' is working on this',sub:'Taking you to the office. Auto-follow brings you back when '+(head?'they finish or need you':nm+' finishes or needs you')+'.',stay:'Stay here',
-      said:(head||nm+' is working on this')+'. Taking you to the office',toOffice:true})
+      said:(head||nm+' is working on this')+'. Taking you to the office',toOffice:true,still:()=>AFT.has(a.id)})
       .then(go=>{if(go&&AF_ON&&!AF_PAUSED&&afPanelId()===shown&&AFT.has(a.id))afBackToOffice(a,what);afTick();}); /* FR-242: finished meanwhile in this chat: stay */
   };
   const ready=()=>{
