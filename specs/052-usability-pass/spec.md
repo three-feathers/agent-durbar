@@ -124,6 +124,17 @@ Four reviewers worked from 17 simulator screenshots: the office at 1440x900 and 
 - *Found while building* `sim:`: the office's relayout after a resize (`relayout()`, spec 024) redrew the desks without the pass that marks the followed one (`afTick()`), so a marker set just before the floor changed size was lost until the next full draw (seen in `check-auto-follow` once the return to the office came 600 ms later, after the chat's own relayout). `relayout()` now runs `afTick()` after it draws the office.
 - `[KNOWN GAP]` (2026-11-09) Simulator only (Linux, xvfb); Windows and macOS not run, no real agent session, no real screen reader (the live region's text and priority are asserted, not heard). A send from a helper's chat is not driven; *Send to several sessions* is driven by `check-auto-follow` from the office only, where no chat is left, so its notice ("<n> followed agents are working on this") is not driven.
 
+### 2026-11-10: `check-052-follow-notice` empties the message box through the page's own select-all on a Mac (FR-239, driver only)
+
+*Seen* (`real:` macOS darwin 25, `UI_SUITE_DPR=1 node scripts/ui-suite.js --only check-052-follow-notice`, `main` at 4906825153aa): 3 of 3 runs failed at 1440x900 `review 1440x900: FR-239: with the box empty again, the notice comes`.
+
+*Root cause* (`real:`, a temporary log of the box after the keys, the same Mac, 2 of 2 runs): the driver emptied the box with `H.key('a', ['meta'], {char:'never'})` then Backspace. `sendInputEvent` goes straight to the page; on a Mac Cmd+A is the Edit menu's select-all role (`src/main/appmenu.ts`), so a synthetic Cmd+A selects nothing (`selectionStart 5, selectionEnd 5` of a 5-letter draft), Backspace removed one letter (`"draf"`), and the box was not empty, so the notice rightly never came. The app is not at fault: `afLeaveChat`'s `typing()` reads the focused field's value (`afSnapshot().editableText`) on a 200 ms poll, whatever keys emptied it. A real Cmd+A runs the menu role, which is the same editing command as `webContents.selectAll()`; the Backspace key event reaches the page (it removed a letter).
+
+- **Both emptying steps** (the one before the notice, FR-239, and the one before "another dialog replaces the notice", FR-239 F3) `real:` `scripts/check-052-follow-notice.js`: an `emptyBox()` selects all with `webContents.selectAll()`, presses a real Backspace key, and asserts the box is `''` before the driver waits for the notice, so a box that is not empty fails at its own step. The same on every platform. The product is unchanged.
+- *Mutation* `real:`: the Cmd+A key as before fails at `the box is empty` on a Mac.
+- `[KNOWN GAP]` The OS-level Cmd+A (a key sent through the system, not the page) was not run: the simulator refuses `child_process`, and the menu role cannot be clicked from script on macOS (it is a native action).
+- *Seen once, not this fix:* `back in front, the count goes on and moves` (the background step, 1440x900, 28 s in) failed in 2 of 7 runs on this Mac while other agents shared the screen; it passed in the other runs. Not investigated here.
+
 ### 2026-11-09 (third): FR-205 step 8 presses the inbox shortcut with ⌘ on a Mac (issue #1377, driver only)
 
 *Seen* (`real:` macOS darwin 25, `UI_SUITE_DPR=1 node scripts/ui-suite.js --only check-needs-panel`, `main` at 54e2c97c9): 3 of 3 runs failed at 1440x900 Flat, `Ctrl+Shift+A opens it from a text field, focus on a heading` (`[waits] timed out after 3000 ms`).

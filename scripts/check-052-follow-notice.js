@@ -213,8 +213,9 @@ module.exports = async (ctx) => {
   // ======== review on #1414: typing holds the notice and is never eaten (F2), a replacing dialog keeps its focus (F3), a hostile name is text (F1) ========
   {
     const tag = 'review 1440x900';
-    const MOD = process.platform === 'darwin' ? ['meta'] : ['control'];
     const box = () => js(`(document.getElementById('msgInput')||{}).value`);
+    /* Empty the box the way a user does: select all (the editing command Ctrl+A / Cmd+A runs; sendInputEvent would not run it on macOS, where Cmd+A is a menu command), then a real Backspace key. */
+    const emptyBox = async () => { H.wc().selectAll(); await H.key('Backspace'); assert.strictEqual(await box(), '', `${tag}: the box is empty`); };
     await H.load({ w: 1440, h: 900 });
     await H.calm({ blur: true });
     await hooks();
@@ -230,7 +231,7 @@ module.exports = async (ctx) => {
     await stays(`!document.querySelector('.dlg-ov.af-notice')&&document.body.classList.contains('panel-open')&&document.activeElement&&document.activeElement.id==='msgInput'`, `${tag}: FR-239: while you type, no notice, the focus stays in the box`, 3000);
     assert.strictEqual(await js(`window.__nAt`), 0, `${tag}: FR-239: no notice opened at any time while you typed`);
     assert.strictEqual(await box(), 'draft', `${tag}: the draft is whole`);
-    await H.key('a', MOD, { char: 'never' }); await H.key('Backspace');
+    await emptyBox();
     await ok(`!!document.querySelector('.dlg-ov.af-notice')`, `${tag}: FR-239: with the box empty again, the notice comes`, 6000);
     // F2: typing on the notice is writing: it stays, and the text lands in the box
     await type('ok go');
@@ -238,7 +239,7 @@ module.exports = async (ctx) => {
     assert.strictEqual(await box(), 'ok go', `${tag}: FR-239: every typed character landed in the message box`);
     await stays(`!document.querySelector('.dlg-ov.af-notice')&&document.body.classList.contains('panel-open')`, `${tag}: FR-239: and nothing moves`, 3500);
     // F3: another dialog replaces the notice: the focus stays in the new dialog
-    await H.key('a', MOD, { char: 'never' }); await H.key('Backspace');
+    await emptyBox();
     await H.key('Return');
     await sendHere('third');
     await ok(`!!document.querySelector('.dlg-ov.af-notice')`, `${tag}: the notice`, 6000);
