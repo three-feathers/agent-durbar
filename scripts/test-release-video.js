@@ -510,7 +510,7 @@ const { killTree } = require('./ui-suite');
     kt({ pid: 5 }, { platform: 'win32', run: (f, a) => calls.push([f, ...a]) });
     assert.deepStrictEqual(calls, [['taskkill', '/pid', '5', '/T', '/F']], 'Windows: the arguments');
     const uisrc = fs.readFileSync(path.join(__dirname, 'ui-suite.js'), 'utf8').replace(/\r\n/g, '\n');
-    assert.ok(/const releaseGuard = d\.killTree \? guardTree\(child\)/.test(uisrc) && /clearTimeout\(timer\);\s*releaseGuard\(\);/.test(uisrc), 'runOne guards a killTree run and releases when it closes');
+    assert.ok(/const releaseGuard = guardTree\(child[,)]/.test(uisrc) && /clearTimeout\(timer\);\s*releaseGuard\(\);/.test(uisrc), 'runOne guards every run and releases when it closes (FR-199)');
   }
   console.log('release-video: tests passed');
 })().catch((e) => { console.error(e); process.exitCode = 1; });
