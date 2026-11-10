@@ -209,6 +209,10 @@
 - [x] T153 (FR-197) `scripts/release-video.js`: scenes `real-crews` (spec 097 FR-335..FR-337) and `real-drag` (spec 097 FR-345..FR-355) with `refs`; `Scene:` fields in `changelog.d/097-crews-real-office.md` and `changelog.d/097-real-drag.md`; `scripts/test-release-video.js`: catalogue, `--list`, the v0.1.15 choice, two mutants
 - [x] T154 (FR-198) `scripts/usage-lib.js` `cumulative` adds whole cents per machine/day/model like `dailyRows` (and returns `totalCents`); `scripts/usage-readme.js` compares the chart's cents to `totalCents` exactly; `scripts/test-usage.js` three-machine sub-cent case. Issue #1449.
 
+## 2026-11-10: every UI driver ends with its whole process tree (FR-199)
+
+- [x] T155 (FR-199) `scripts/ui-suite.js` `runOne`: `detached` (POSIX), `guardTree` and `killTree` at the limit for every driver, `launch` option for tests; `scripts/test-ui-suite.ts` two cases (time limit leaves no grandchild; SIGINT/SIGTERM end the tree and remove the user-data folder); `d.killTree` removed from `scripts/release-video.js`; `scripts/test-release-video.js` source check follows; `changelog.d/008-uisuite-kill-tree.md`.
+
 ## 2026-11-10: the Mac title bar check on CSS pull requests (FR-199, issue #1469)
 
 - [ ] T155 (FR-199) `.github/workflows/mac-titlebar-pr.yml` (own file: `paths:` is workflow-level); `scripts/test-ui-suite.ts` (filter, wiring, path matcher, mutants), `scripts/test-electron-cache.ts` (`TYPICAL_MIN`). Blocked on #1458 (the check fails 4 states until it is decided); merge after it, or mark those states `[KNOWN GAP]` in the driver first.

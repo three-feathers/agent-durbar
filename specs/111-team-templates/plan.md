@@ -88,7 +88,7 @@ Nothing existing creates several sessions at once or stores reusable agent setup
 - **Scanner options on our side**: the options object in spec 110's scanner is added to #1369 by its owner (Vikram); this spec only depends on it.
 - **Spec 109's template section**: a template inside a setup file goes through the same `checkTeamTemplate` (same limits, marks, refusals); a dated delta in 109's own PR.
 - **Spec 109's not-exported list**: 109 must name `SavedFolder.team` among what is not exported (FR-140); asked of 109's owner, in 109's PR.
-- **Owner confirmation**: Q1 (brief sending) holds T013 in G4; Q3 and Q8 hold G7. Neither starts before an owner confirms.
+- **Owner confirmation**: Q1 (brief sending, T013 in G4), Q3 and Q8 (G7) were confirmed by Ruben and Paco on 2026-11-10 (comments on #1306); both may start.
 - **Spec 109 section** (FR-140, FR-141): after both are built.
 - **Priority** (AGENTS.md FR-081): this is a new feature (level 4); groups are picked after open bugs and parity work.
 
@@ -99,10 +99,10 @@ Nothing existing creates several sessions at once or stores reusable agent setup
 | G1 | Format, limits, `checkTeamTemplate`, migrations, serializer, tests and mutants (the scanner is spec 110's, used in G7) | High: senior | spec committed |
 | G2 | `TeamTemplateStore`, `teams:list/put/delete/duplicate`, preload, sim fakes | High (IPC): senior | G1 |
 | G3 | Settings > Team templates, editor, list actions | Low: junior | G2 |
-| G4 | Create team: preview, choices, lazy members, team record, restore, brief on first send, custom agent, Allow all confirmation | High (main, sessions): senior | G2; T013 does not start before an owner confirms Q1 |
+| G4 | Create team: preview, choices, lazy members, team record, restore, brief on first send, custom agent, Allow all confirmation | High (main, sessions): senior | G2; T013 may start (Q1 confirmed 2026-11-10) |
 | G5 | Save room as template | Medium: junior, senior review of the main builder | G4 |
 | G6 | Role and model on desks, list, Real office, Retro arcade, chat header chip; `check:office` | Low/medium UI: junior | G4 |
-| G7 | Export and import (envelope, preview, briefs, Allow all, caps, names), **security review with Opus** | High: senior; reviewer-senior | G1, G2, spec 110 T009 built; does not start before an owner confirms Q3 and Q8 |
+| G7 | Export and import (envelope, preview, briefs, Allow all, caps, names), **security review with Opus** | High: senior; reviewer-senior | G1, G2, spec 110 T009 built; may start (Q3 and Q8 confirmed 2026-11-10) |
 | G8 | Starter templates | Low: junior | G1, G3 |
 | G9 | Spec 109 section (only if 109 is built) | Medium: senior | G7, spec 109 built |
 | G10 | Docs, feature inventory, changelog, limits, converge | Low: junior | G3..G8 |

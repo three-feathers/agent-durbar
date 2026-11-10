@@ -595,3 +595,68 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
   }
   console.log('ui-suite shards: ok');
 }
+// spec 008 FR-199 (issue #1417): a driver stopped at its time limit leaves no process behind, whether or not it sets killTree.
+// The child is node, which starts a long-lived grandchild (like xvfb-run starting Xvfb and Electron). POSIX only: on Windows taskkill /T does
+// it and is not run here. Only PIDs this test creates are checked or killed.
+(async () => {
+  if (process.platform === 'win32') { console.log('ui-suite kill tree: skipped on Windows (taskkill /T is not exercised here)'); return; }
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { runOne } = require(SUITE) as { runOne: (d: object, out: string, o: { launch: [string, string[]] }) => Promise<{ ok: boolean; why: string; log: string }> };
+  const alive = (pid: number): boolean => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  const parent = "const {spawn}=require('child_process');const g=spawn(process.execPath,['-e','setTimeout(()=>{},300000)'],{stdio:'ignore'});console.log('GRANDCHILD '+g.pid);console.log('DRIVER-OUTPUT-KEPT');setTimeout(()=>{},300000)";
+  const out = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ui-suite-kill-'));
+  const pids: number[] = [];
+  try {
+    for (const d of [{ name: 'x' }, { name: 'x', killTree: true }]) {
+      const r = await runOne({ ...d, timeoutMs: 1500, sim: false }, out, { launch: [process.execPath, ['-e', parent]] });
+      const gp = Number((/GRANDCHILD (\d+)/.exec(r.log) || [])[1]);
+      assert.ok(gp > 0, 'the test child started a grandchild');
+      pids.push(gp);
+      assert.ok(!r.ok && /time limit/.test(r.why), 'the run fails with the time limit as the reason');
+      assert.ok(r.log.includes('DRIVER-OUTPUT-KEPT'), 'the output of a stopped driver is still in the log');
+      await new Promise((res) => setTimeout(res, 500));
+      assert.ok(!alive(gp), `no grandchild is left after the time limit (${JSON.stringify(d)})`);
+    }
+  } finally {
+    for (const p of pids) if (alive(p)) { try { process.kill(p, 'SIGKILL'); } catch { /* gone */ } }
+    fs.rmSync(out, { recursive: true, force: true });
+  }
+  console.log('ui-suite kill tree: ok');
+})().catch((e) => { console.error(e); process.exitCode = 1; });
+// spec 008 FR-199: SIGINT and SIGTERM to a process running `runOne` end the tree and remove the run's user-data folder. The runner is a node
+// child of this test with its own TMPDIR, so the folder it makes (durbar-ui-user-*) is found and nothing else is touched. POSIX only.
+(async () => {
+  if (process.platform === 'win32') { console.log('ui-suite signals: skipped on Windows'); return; }
+  const os = require('os') as typeof import('os');
+  const { spawn } = require('child_process') as typeof import('child_process');
+  const alive = (pid: number): boolean => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  const sleep = (ms: number): Promise<void> => new Promise((res) => setTimeout(res, ms));
+  for (const [sig, code] of [['SIGINT', 130], ['SIGTERM', 143]] as const) {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ui-suite-sig-'));
+    const pidFile = path.join(tmp, 'grandchild.pid');
+    // static code only: the values travel in argv, never inside a code string (CodeQL: improper code sanitization)
+    const launchJs = "const fs=require('fs'),{spawn}=require('child_process');const pf=process.argv[1];const g=spawn(process.execPath,['-e','setTimeout(()=>{},300000)'],{stdio:'ignore'});fs.writeFileSync(pf,String(g.pid));fs.writeFileSync(pf+'.launch',String(process.pid));setTimeout(()=>{},300000)";
+    const runner = "require(process.argv[1]).runOne({name:'x',sim:false,timeoutMs:120000},process.argv[2],{launch:[process.execPath,['-e',process.argv[4],process.argv[3]]]})";
+    const runnerProc = spawn(process.execPath, ['-e', runner, SUITE, tmp, pidFile, launchJs], { env: { ...process.env, TMPDIR: tmp, TMP: tmp, TEMP: tmp }, stdio: 'ignore' });
+    const exited = new Promise<{ code: number | null; signal: string | null }>((res) => runnerProc.on('close', (c, s) => res({ code: c, signal: s })));
+    let gp = 0;
+    const killPid = (p: number): void => { if (p > 0 && alive(p)) { try { process.kill(p, 'SIGKILL'); } catch { /* gone */ } } };
+    try {
+      for (let i = 0; i < 100 && !gp; i++) { await sleep(100); try { gp = Number(fs.readFileSync(pidFile, 'utf8')); } catch { /* not yet */ } }
+      assert.ok(gp > 0 && alive(gp), 'the runner started a grandchild');
+      assert.ok(fs.readdirSync(tmp).some((f) => f.startsWith('durbar-ui-user-')), 'the run made its user-data folder');
+      runnerProc.kill(sig);
+      const r = await exited;
+      assert.ok(r.signal === sig || r.code === code, `${sig}: the runner ends as without the handler (got ${r.signal || r.code})`);
+      await sleep(500);
+      assert.ok(!alive(gp), `${sig}: no grandchild is left`);
+      assert.deepStrictEqual(fs.readdirSync(tmp).filter((f) => f.startsWith('durbar-ui-user-')), [], `${sig}: the user-data folder is removed`);
+    } finally {
+      killPid(gp);
+      try { killPid(Number(fs.readFileSync(pidFile + '.launch', 'utf8'))); } catch { /* never written */ }
+      if (runnerProc.exitCode === null && runnerProc.signalCode === null) { try { runnerProc.kill('SIGKILL'); } catch { /* gone */ } }
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+  console.log('ui-suite signals: ok');
+})().catch((e) => { console.error(e); process.exitCode = 1; });

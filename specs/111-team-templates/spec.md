@@ -4,12 +4,12 @@
 group: 046
 title: Team templates (issue #1306, owner 2026-11-10): a saved team of agents (name, role brief or custom agent, app, model, effort, permission mode, cap, character) that creates a room in one click, lazily; save a room as a template; role and model on desk and chat header in every world; starter templates; export and import as a file, validated in main as untrusted
 status: draft
-note: spec, plan, tasks; Q1, Q3, Q8 proposed defaults pending owner confirmation; design reviews 2026-11-10 and PR #1456 review fixed; nothing built
+note: spec, plan, tasks; Q1, Q3, Q8 confirmed by the owners 2026-11-10; design reviews folded in; nothing built
 -->
 
 **Feature Branch**: `111-team-templates` (spec, plan and tasks only). The build is one small PR per group (G1..G10).
 **Created**: 2026-11-10
-**Status**: Draft. Nothing built. Q1..Q10 carry proposed defaults (*Clarifications*); Q1, Q3 and Q8 wait for an owner's confirmation, and the groups that depend on them do not start before it (plan, tasks). The design review of 2026-11-10 and the review on PR #1456 are folded in (*Changes*).
+**Status**: Draft. Nothing built. Q1..Q10 carry proposed defaults (*Clarifications*); Q1, Q3 and Q8 were confirmed by the owners on 2026-11-10 (Ruben and Paco, comments on #1306), so the groups that depend on them (T013, G7) may start (plan, tasks). The design review of 2026-11-10 and the review on PR #1456 are folded in (*Changes*).
 **Issue**: #1306 (Refs: the issue stays open for the build).
 **Input**: Owner idea and approval on issue #1306, quoted with their dates:
 
@@ -258,20 +258,24 @@ The author of the file is assumed hostile.
 
 ## Clarifications
 
-Proposed defaults, 2026-11-10. Ruben's approval on #1306 covers the scope. **Q1, Q3 and Q8 are pending an owner's confirmation**: G4's brief sending (T013) and G7 (export and import) do not start before it. The others are the coordinator's proposals, open to the owners.
+Proposed defaults, 2026-11-10. Ruben's approval on #1306 covers the scope. **Q1, Q3 and Q8 are confirmed** (2026-11-10, Ruben on #1306 and Paco as recorded there): G4's brief sending (T013) and G7 (export and import) may start. The others are the coordinator's proposals, open to the owners.
 
-- **Q1** (proposed default, pending owner confirmation) How the brief reaches the agent: **(A)** a framed block in front of the person's first typed message of each session (FR-036). Not a custom agent file (an imported brief would become a file the app loads) and not a per-app system-prompt option (unverified; a later spec). Cost: the block adds input tokens to that one message (up to about 1,000 for a 4,000-character brief), which costs real money where the app bills tokens (Claude Code, Codex); on Copilot it adds no request.
+- **Q1** (**confirmed 2026-11-10** by Ruben (comment on #1306) and by Paco (recorded on #1306)) How the brief reaches the agent: **(A)** a framed block in front of the person's first typed message of each session (FR-036). Not a custom agent file (an imported brief would become a file the app loads) and not a per-app system-prompt option (unverified; a later spec). Cost: the block adds input tokens to that one message (up to about 1,000 for a 4,000-character brief), which costs real money where the app bills tokens (Claude Code, Codex); on Copilot it adds no request.
 - **Q2** (proposed default) Allow all: **(A)** `confirmAllow` on every create, naming the members (FR-035).
-- **Q3** (proposed default, pending owner confirmation) Link: **no link**, file only (FR-086): a link means fetching outside-controlled content or a protocol handler, both new ways in.
+- **Q3** (**confirmed 2026-11-10** by Ruben (comment on #1306) and by Paco (recorded on #1306)) Link: **no link**, file only (FR-086): a link means fetching outside-controlled content or a protocol handler, both new ways in.
 - **Q4** (proposed default) **One template per file** (FR-080).
 - **Q5** (proposed default) Starters: Solo + reviewer, Small dev team, Research and build (FR-071).
 - **Q6** (proposed default) **At most 8 members** per template and per room record (FR-002, FR-043).
 - **Q7** (proposed default) Custom agent: exported by **id only** (the `PROFILE_ID` rule), matched on the importing computer at first start; never the file (FR-002, FR-037).
-- **Q8** (proposed default, pending owner confirmation) An imported member with Allow all **always enters as Ask** in v1, with no box to keep Allow all; the person can raise it later with the normal mode switch (FR-096).
+- **Q8** (**confirmed 2026-11-10** by Ruben (comment on #1306) and by Paco (recorded on #1306)) An imported member with Allow all **always enters as Ask** in v1, with no box to keep Allow all; the person can raise it later with the normal mode switch (FR-096).
 - **Q9** (proposed default) Brief limits: **2,000 characters and 40 lines** for imported briefs, **4,000 and 80** for the person's own (FR-002); a test checks that spec 043's eight `SUCCESS_SECTIONS` headings, one line each and the two `SAFETY_LINES` fit the imported limit.
 - **Q10** (proposed default) *Save team as template…* names the custom agent id only and never reads profile files (FR-050).
 
 ## Changes
+
+### 2026-11-10: the owners confirm Q1, Q3 and Q8
+
+Ruben (comment on #1306, 2026-11-10): Q1 option (A) (the role block in front of the first message of each session, FR-036), Q3 (import from a file only, no link) and Q8 (an imported member with Allow all enters as Ask; the person raises it later by hand). Paco (recorded on #1306, 2026-11-10): Q1 the brief as a framed block before the first message, at most about 1,000 input tokens; Q3 import from a file only, through the system dialog; Q8 an imported Allow all comes in as Ask. The two answers agree. T002 is done; T013 and G7 may start. Q2, Q4..Q7, Q9 and Q10 stay the coordinator's proposed defaults.
 
 ### 2026-11-10: review on PR #1456
 
