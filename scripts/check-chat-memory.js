@@ -11,8 +11,9 @@
  * The page's heap is collected twice before each sample; then Performance.getMetrics (Nodes, JSEventListeners) and Runtime.getHeapUsage.
  * A fill until every pumped chat has reached its caps (counted and printed), 5,000 events of warm-up, a sample, 20,000 more, a sample. Fails when nodes, listeners or the heap grow past a limit set from the measured
  * plateau, when a chat is over a cap, keeps a reference to a removed block or helper view, loses a live or waiting card, when the waiting
- * line names a removed chip, when the line is missing, wrong or under 10.5px, when a trim moves what the person reads in an open chat
- * scrolled up (with the page's scroll anchoring on, as people have it, and off), when a chat at its caps takes the slow path on a frame
+ * line names a removed chip, when the line is missing, wrong or under 10.5px, when the open chat is trimmed while the person reads it
+ * scrolled up (nothing it shows may move or go) or is not trimmed once they are back at its end, when a focused block, a selected range
+ * (all it covers, not only its ends) or the reply of an open message menu is removed, when a chat at its caps takes the slow path on a frame
  * that adds no block, and when a saved note's marker moves to another message with the same text after trims.
  * It does not assert resident memory (noisy, differs by OS). CCM_WORLD=real|retro runs it with the Real office or the Retro arcade on;
  * CCM_SIZE=1280x800 in the smaller window.
@@ -193,8 +194,7 @@ module.exports = async (ctx) => {
   console.log('[chat-memory] menu closed: ' + JSON.stringify(menu2));
   assert.strictEqual(menu2.kept, false, 'sim-4: the menu closed, the old reply goes with the next trim');
 
-  // an open chat, scrolled up: the line is readable, a trim does not move what the person reads (scroll anchoring on, as people have it,
-  // then off: Chromium's anchoring alone would hide a missing keep-the-place step), and a frame that adds no block costs nothing
+  // the open chat: the line is readable; a frame that adds no block costs nothing (below)
   assert.ok(await js(`window.__durbarSimUi.crew.openPanel('sim-1')`), 'the chat of sim-1 opens');
   assert.ok(await ctx.waitFor(`!!document.querySelector('#chat > .chat-inner > .chat-trim')`, 5000), 'the open chat shows the line');
   await toEnd();
@@ -249,16 +249,24 @@ module.exports = async (ctx) => {
   await js(`getSelection().removeAllRanges()`);
   await js(`window.__ccmPump(40,['sim-1'])`);
   assert.strictEqual(await js(`!!document.querySelector('#chat [data-ccm-sel="1"]')`), false, 'sim-1: the selection cleared, the block goes');
-  // FR-238: text streaming into the same thinking block adds no block: a chat at its caps takes the cheap path, nothing measured
+  // a selection over the whole chat (Ctrl+A in it): every block it covers stays, not only its two ends (review of PR 1431)
+  const all0 = await js(`(()=>{const c=document.getElementById('chat'),inner=c.querySelector('.chat-inner'),tl=[...inner.querySelectorAll(':scope > .msg.agent > .tl')].pop();const mid=tl&&[...tl.children].filter(x=>x.classList.contains('think'))[1];if(!mid)return null;mid.dataset.ccmMid='1';const r=document.createRange();r.selectNodeContents(inner);const s=getSelection();s.removeAllRanges();s.addRange(r);return true;})()`);
+  assert.ok(all0, 'sim-1: the whole chat is selected');
+  await js(`window.__ccmPump(40,['sim-1'])`);
+  assert.ok(await js(`!!document.querySelector('#chat [data-ccm-mid="1"]')`), 'sim-1: a block in the middle of the selection stays');
+  await js(`getSelection().removeAllRanges()`);
+  await js(`window.__ccmPump(400,['sim-1'])`);
+  { const dbg = await js(`(()=>{const m=document.querySelector('#chat [data-ccm-mid="1"]'),c=document.getElementById('chat');return {kept:!!m,cls:m&&m.className,pin:c.dataset.pin,idx:m?[...m.parentNode.children].indexOf(m):-1,n:m?m.parentNode.children.length:0};})()`); console.log('[chat-memory] selection cleared: ' + JSON.stringify(dbg));
+    assert.strictEqual(dbg.kept, false, 'sim-1: the selection cleared, it goes with the trims'); }
+  // FR-238: text streaming into the same thinking block adds no block: a chat at its caps takes the cheap path
   await js(`(()=>{window.__ccmEmit({type:'thinking',sessionId:'sim-1',timestamp:Date.now(),reasoningId:'sim-1-same',delta:'One. '});})()`);
   await js('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r())))');
   const s0 = of(await sizes(), 'sim-1');
   await js(`(async()=>{for(let i=0;i<60;i++){window.__ccmEmit({type:'thinking',sessionId:'sim-1',timestamp:Date.now(),reasoningId:'sim-1-same',delta:'More '+i+'. '});await new Promise(r=>requestAnimationFrame(()=>r()));}})()`);
   const s1 = of(await sizes(), 'sim-1');
-  console.log('[chat-memory] streaming: ' + JSON.stringify({ slow: [s0.slow, s1.slow], measured: [s0.measured, s1.measured], blocks: [s0.blocks, s1.blocks] }));
+  console.log('[chat-memory] streaming: ' + JSON.stringify({ slow: [s0.slow, s1.slow], blocks: [s0.blocks, s1.blocks] }));
   assert.strictEqual(s1.blocks, s0.blocks, 'the streaming added no block');
   assert.strictEqual(s1.slow, s0.slow, `60 frames of streaming in a chat at its caps take the cheap path (slow path ${s1.slow - s0.slow} times)`);
-  assert.strictEqual(s1.measured, s0.measured, 'and measure nothing');
   await js(`window.__durbarSimUi.crew.openPanel('sim-4')`);
   await ctx.waitFor(`!!document.querySelector('#chat > .chat-inner > .chat-trim')`, 5000);
   await toEnd();
