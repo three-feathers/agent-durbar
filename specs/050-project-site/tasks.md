@@ -29,4 +29,4 @@
 
 ## 2026-11-10: site headroom (FR-012 unchanged)
 
-- [x] T031 Re-quantise the 31 largest-saving site screenshots to 128 colours with `compressPng` (`maxColors: 128`, guard `maxChannel: 40`): site 8,388,304 B to 8,103,293 B, margin 285,315 B under FR-012's 8 MB; each picture looked at before and after [FR-012]
+- [x] T031 Opt-in local guard `maxBlockDelta` (8x8 block mean shift) in `scripts/compress-shots.js` with its `test:compressshots` case; re-quantise the site pictures to 192 colours under it (`maxChannel: 40`, `maxBlockDelta: 6`): 58 written, 48 kept; site 8,388,304 B to 8,198,363 B, margin 190,245 B under FR-012's 8 MB; the worst pictures looked at at 4x [FR-012]
