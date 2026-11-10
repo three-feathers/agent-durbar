@@ -294,12 +294,12 @@ function killTree(child, { platform = process.platform, run = require('child_pro
 /**
  * Spec 008 FR-175 (review on #1083): a detached tree does not get the terminal's Ctrl-C, so while it runs, SIGINT, SIGTERM and the
  * parent's exit end it with `killTree`; a signal is then raised again with its default action (exit 130 / 143, as without the
- * handler). Returns `release()`, called when the run ends, which removes the handlers. `proc` and `kill` are for tests.
+ * handler). `cleanup` (sync, optional) also runs then, for what the run leaves on disk. Returns `release()`, called when the run ends, which removes the handlers. `proc` and `kill` are for tests.
  */
-function guardTree(child, { proc = process, kill = killTree } = {}) {
+function guardTree(child, { proc = process, kill = killTree, cleanup = () => {} } = {}) {
   let done = false;
-  const onSignal = (sig) => { kill(child, { sync: true }); release(); proc.kill(proc.pid, sig); };
-  const onExit = () => kill(child, { sync: true });
+  const onSignal = (sig) => { kill(child, { sync: true }); try { cleanup(); } catch { /* best effort */ } release(); proc.kill(proc.pid, sig); };
+  const onExit = () => { kill(child, { sync: true }); try { cleanup(); } catch { /* best effort */ } };
   const release = () => {
     if (done) return;
     done = true;
@@ -316,9 +316,11 @@ function guardTree(child, { proc = process, kill = killTree } = {}) {
 /**
  * Run one driver. Opt-in for unattended callers (spec 008 FR-175, FR-176; scripts/release-video.js): `d.baseEnv` replaces
  * `process.env` as the base of the child's environment (an allow-list, so no token reaches Electron), `d.timeoutMs` replaces the
- * suite's limit, and `d.killTree` ends the whole process tree at the limit (on Linux `xvfb-run` alone would leave Electron running).
+ * suite's limit. Every driver (spec 008 FR-199, issue #1417) runs as its own process tree: it ends with the whole tree at the limit and when
+ * this process gets SIGINT, SIGTERM or exits (`xvfb-run`'s own cleanup does not run when only its shell is killed). There is no `d.killTree` flag.
+ * `launch` is for tests: `[file, args]` replaces the Electron/xvfb-run command.
  */
-function runOne(d, outDir) {
+function runOne(d, outDir, { launch } = {}) {
   const electron = require('electron'); // the binary's path
   const user = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-ui-user-'));
   const env = { ...(d.baseEnv || process.env), ...(d.sim === false ? {} : SIM), ...(d.env || {}), DURBAR_USER_DATA: user, DURBAR_DRIVER: path.join(__dirname, d.name + '.js') };
@@ -328,16 +330,16 @@ function runOne(d, outDir) {
   const dpr = String(d.dpr || process.env.UI_SUITE_DPR || ''); // d.dpr: a driver that always records at that density (release-video: sharp zooms)
   const argv = [ROOT, '--no-sandbox', ...(/^[1-4]$/.test(dpr) ? ['--force-device-scale-factor=' + dpr] : [])]; // UI_SUITE_DPR=2: a high-density screen (a Retina Mac) on any OS
   const useXvfb = process.platform === 'linux' && (!process.env.DISPLAY || process.env.UI_SUITE_XVFB === '1'); // UI_SUITE_XVFB=1: keep windows off a desktop
-  const [file, list] = useXvfb ? ['xvfb-run', ['-a', electron, ...argv]] : [electron, argv];
+  const [file, list] = launch ? launch : useXvfb ? ['xvfb-run', ['-a', electron, ...argv]] : [electron, argv];
   return new Promise((resolve) => {
     const started = Date.now();
     let log = '';
-    const child = spawn(file, list, { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, shell: false, ...(d.killTree && process.platform !== 'win32' ? { detached: true } : {}) });
+    const child = spawn(file, list, { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, shell: false, ...(process.platform !== 'win32' ? { detached: true } : {}) });
     const keep = (b) => { log += b.toString(); if (log.length > 400_000) log = log.slice(-200_000); };
     child.stdout.on('data', keep);
     child.stderr.on('data', keep);
-    const releaseGuard = d.killTree ? guardTree(child) : () => {};
-    const timer = setTimeout(() => { log += '\n[ui-suite] time limit reached'; if (d.killTree) killTree(child); else child.kill(); }, d.timeoutMs || TIMEOUT_MS);
+    const releaseGuard = guardTree(child, { cleanup: () => fs.rmSync(user, { recursive: true, force: true }) });
+    const timer = setTimeout(() => { log += '\n[ui-suite] time limit reached'; killTree(child); }, d.timeoutMs || TIMEOUT_MS);
     child.on('close', (code) => {
       clearTimeout(timer);
       releaseGuard();
