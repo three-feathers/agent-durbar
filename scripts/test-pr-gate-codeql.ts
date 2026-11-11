@@ -120,6 +120,7 @@ const notReady = (gatePath: string, label: string, want: RegExp): void => {
 type Case = (g: string, label: string) => void;
 const R = (o: Parameters<typeof fixture>[0]): Case => (g, l) => { fixture(o); ready(g, l); };
 const N = (o: Parameters<typeof fixture>[0], want: RegExp, after?: () => void): Case => (g, l) => { fixture(o); after?.(); notReady(g, l, want); };
+const noGates = (): void => set('checks.txt', 'CodeQL\tpass\t0\thttps://x\n');
 const other = /codeql=skipping\(analysed or unknown files changed\)/;
 const refused = /codeql=skipping\(dependency files refused/;
 const lock = (pkg: object): object => ({ ...LOCK, packages: { ...LOCK.packages, 'node_modules/y': pkg } });
@@ -214,6 +215,14 @@ const CASES: Record<string, Case> = {
   'dep-odd-path: a dependency file path with a space': N({ files: ['scripts/a b/package.json'], contents: { 'scripts/a b/package.json': PKG }, base: { 'scripts/a b/package.json': PKG } }, refused),
   'alerts-error: the alerts cannot be read': N({ merge: null }, /alerts=unread/),
   'alerts-empty: the alerts call prints no number': N({}, /alerts=unread/, () => set('alerts-merge.json', '')),
+  // the src/ check at the top of the gate (FR-091, #1422): CodeQL passed and the gates absent, so only src/ makes it block
+  'src-page2: src/a.ts on the second page of the file list': N({ codeql: 'pass', files: ['docs/a.md'], page2: ['src/a.ts'] }, /missing:Spec Kit gate/, noGates),
+  'src-rename: a src/*.ts file renamed to a .md': N({ codeql: 'pass', files: [{ filename: 'docs/a.md', previous_filename: 'src/main/a.ts' }] }, /missing:Spec Kit gate/, noGates),
+  'src-docs-only: docs only, the src gates not needed': (g, l) => { fixture({ codeql: 'pass', files: ['docs/a.md'], page2: ['docs/b.md'] }); noGates(); ready(g, l); },
+  'src-count: the API lists fewer files than the PR changed': N({ codeql: 'pass', files: ['docs/a.md'], changed: 2 }, /src-check-unreadable/),
+  'src-cap: 3000 files, where the files API stops': N({ codeql: 'pass', files: Array.from({ length: 3000 }, (_, i) => `docs/f${i}.md`) }, /src-check-unreadable/),
+  'src-error: the file list cannot be read': N({ codeql: 'pass', files: null }, /src-check-unreadable/),
+  'src-partial: the file list fails after its first page': N({ codeql: 'pass', files: ['docs/a.md'] }, /src-check-unreadable/, () => set('files.fail', '')),
   'checks-error: the check list cannot be read': N({ checks: false }, /codeql=missing /),
 };
 const runCase = (g: string, name: string): void => {
@@ -254,12 +263,18 @@ try {
     ['the dependency spec check removed', 'select(test("[:/]"))', 'select(false)', 'dep-spec'],
     ['the dependency files not read', '[ ${#deps[@]} = 0 ] && return 0', 'return 0', 'lockfile-skipped'],
     ['the path check removed', 'case $f in *[!A-Za-z0-9._/-]*|*..*) return 2;; esac', '', 'dep-odd-path'],
+    ['the src/ check without --paginate', 'src_touched=$(gh api --paginate', 'src_touched=$(gh api', 'src-page2'],
+    ['the src/ check ignoring a rename\'s old path', ', (.previous_filename // empty|"P \\(.)")', '', 'src-rename'],
+    ['the src/ check without the count comparison', ' || [ "$(grep -cE \'^(F |C$)\' <<< "$src_touched")" != "$src_total" ]', '', 'src-count'],
+    ['the src/ check without the 3000 cap', ' || [ "$src_total" -ge 3000 ]', '', 'src-cap'],
+    ['the src/ check blocking on nothing', 'if [ "$src_touched" = ERR ] || [ -z "$src_touched" ] || [ "$(grep -cE \'^(F |C$)\' <<< "$src_touched")" != "$src_total" ] || [ "$src_total" -ge 3000 ]; then', 'if false; then', 'src-error'],
+    ['the src/ check accepting a partly read list', "end') && src_total=", "end'); src_total=", 'src-partial'],
     ['the alerts read without a number check', '&& isnum "$a_merge" && isnum "$a_head" ', '', 'alerts-empty'],
   ];
   for (const [name, from, to, caught] of mutants) {
     assert.ok(gate.includes(from), `mutant "${name}": its anchor is in the gate`);
     const m = path.join(mdir, 'pr-gate.sh');
-    fs.writeFileSync(m, gate.replace(from, to), { mode: 0o755 });
+    fs.writeFileSync(m, gate.split(from).join(to), { mode: 0o755 });
     let msg = '';
     try { runCase(m, caught); } catch (e) { msg = (e as Error).message; }
     assert.ok(msg.startsWith(`CASE ${caught}:`), `mutant "${name}" is caught by CASE ${caught}, got: ${msg.split('\n')[0] || 'no failure'}`);

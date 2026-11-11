@@ -7,6 +7,7 @@
 #   - a check that is not pass/skipping, or CodeQL not passed; a CodeQL check GitHub skipped on a PR that changes no analysed file counts as
 #     passed only when every changed file is on the no-code list in nocode() and the alerts are 0 (spec 021 FR-089, #1420);
 #   - a PR GitHub cannot merge (conflicts): GitHub then runs only CodeQL, so the other checks look absent rather than red;
+#   - a PR whose file list (paginated files API, renames' old paths too, count equal to changed_files, under 3000) is unreadable or incomplete (spec 021 FR-091, #1422);
 #   - a PR that changes src/ without the Spec Kit gate and the Linux build-and-test check present and passing;
 #   - an open code-scanning alert on the PR's merge ref or head ref (a bot line comment can be carried forward after its alert is fixed);
 #   - a reviewer whose latest review is CHANGES_REQUESTED;
@@ -37,7 +38,14 @@ bad=$(gh pr checks $p | awk -F'\t' '$2!="pass" && $2!="skipping"{print $1"="$2}'
 # GitHub computes mergeability lazily: UNKNOWN means "ask again shortly"
 for _ in 1 2 3 4 5 6; do mergeable=$(gh pr view $p --json mergeable -q .mergeable); [ "$mergeable" = UNKNOWN ] || break; sleep 10; done
 [ "$mergeable" = MERGEABLE ] || bad="$bad mergeable=$mergeable(merge main first)"
-if gh pr view $p --json files -q '.files[].path' | grep -q '^src/'; then
+# does the PR touch src/? (FR-091, #1422) From the paginated PR files API, a renamed file's old path too; the listed count must equal the PR's
+# changed_files and be under 3000 (the API stops there without an error), a control character in a name counts as src/, any read error or doubt blocks.
+src_touched=$(gh api --paginate "repos/$R/pulls/$p/files" --jq '.[]|if ([.filename, (.previous_filename // empty)]|any(test("[\\x00-\\x1f\\x7f]"))) then "C" else "F \(.filename)", (.previous_filename // empty|"P \(.)") end') && src_total=$(gh api "repos/$R/pulls/$p" --jq .changed_files) || src_touched=ERR
+case $src_total in ''|*[!0-9]*) src_touched=ERR;; esac
+if [ "$src_touched" = ERR ] || [ -z "$src_touched" ] || [ "$(grep -cE '^(F |C$)' <<< "$src_touched")" != "$src_total" ] || [ "$src_total" -ge 3000 ]; then
+  bad="$bad src-check-unreadable(the PR's file list is incomplete or unreadable: a human checks whether it changes src/)"
+fi
+if grep -qE '^([FP] src/|C$)' <<< "$src_touched"; then
   for need in 'Spec Kit gate' 'Build and test (ubuntu-latest)'; do
     gh pr checks $p | awk -F'\t' -v n="$need" '$1==n && $2=="pass"{f=1} END{exit !f}' || bad="$bad missing:$need"
   done
