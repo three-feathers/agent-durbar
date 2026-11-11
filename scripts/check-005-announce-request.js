@@ -23,6 +23,8 @@ module.exports = async (ctx) => {
       new MutationObserver(()=>{window.__seq.push([Math.round(performance.now()-window.__t0),el.textContent]);}).observe(el,{childList:true,characterData:true,subtree:true});})();0`);
     const seq = () => js(`window.__seq.filter(x=>x[1]).slice()`);
     const trace = async (tag) => { if (process.env.ANNOUNCE_TRACE === '1') console.log(`[announce ${w}] ${tag}: ` + JSON.stringify(await js(`window.__seq.slice()`))); };
+    // settled: something was said and the last change is older than 150 ms (a condition, not a fixed wait)
+    const settled = (src) => until(`(()=>{const q=window.__seq,re=new RegExp(${jsLiteral(src)});return q.some(x=>re.test(x[1]))&&performance.now()-window.__t0-q[q.length-1][0]>150;})()`, 8000);
     const end = () => js(`document.getElementById('srAnnounce').textContent`);
 
     // ---- 1. a permission request: ask first, send a message (the turn starts: "Working…"), the request arrives in the same window ----
@@ -31,7 +33,7 @@ module.exports = async (ctx) => {
     await emit({ type: 'status', status: 'working', intent: 'Working' });
     await emit({ type: 'status', status: 'needs-permission', intent: 'Waiting', permission: { requestId: 'r1-' + w, kind: 'shell', summary: 'Run the first request', state: 'pending' } });
     assert.ok(await until(`!!document.querySelector('#chat .note.perm.pending')`, 8000), `${w}: the permission card is in the chat`);
-    await ctx.sleep(500);
+    assert.ok(await settled('needs your OK'), `${w}: the request is announced and #srAnnounce settles`);
     await trace('permission');
     assert.ok((await seq()).some((x) => /needs your OK/.test(x[1])), `${w}: the request is announced ${jsLiteral(await seq())}`);
     assert.ok(/needs your OK: Run the first request/.test(await end()), `${w}: #srAnnounce ends on the request, not on a status (ends on ${jsLiteral(await end())}; history ${jsLiteral(await seq())})`);
@@ -39,14 +41,27 @@ module.exports = async (ctx) => {
     // ---- 2. the same turn start in one tick with a question ----
     await js(`window.__seq.length=0;0`);
     await emit({ type: 'status', status: 'idle' });
-    await ctx.sleep(300);
+    assert.ok(await until(`document.getElementById('srAnnounce').textContent!==${jsLiteral(await end())}`, 8000), `${w}: the idle status is said`);
     await js(`window.__seq.length=0;0`);
     await emit({ type: 'status', status: 'working', intent: 'Working' });
     await emit({ type: 'question', phase: 'asked', requestId: 'q1-' + w, questions: [{ question: 'Which colour?', multiSelect: false, options: [{ label: 'red' }, { label: 'blue' }].map((o) => ({ label: o.label })) }] });
     assert.ok(await until(`!!document.querySelector('#chat .question')`, 8000), `${w}: the question card is in the chat`);
-    await ctx.sleep(500);
+    assert.ok(await settled('asks: Which colour'), `${w}: the question is announced and #srAnnounce settles`);
     await trace('question');
     assert.ok(/asks: Which colour\?/.test(await end()), `${w}: #srAnnounce ends on the question (ends on ${jsLiteral(await end())}; history ${jsLiteral(await seq())})`);
+
+    // ---- 3. the same turn start in one tick with an MCP elicitation (the card the request text is in) ----
+    await js(`window.__seq.length=0;0`);
+    await emit({ type: 'status', status: 'idle' });
+    await until(`document.getElementById('srAnnounce').textContent!==${jsLiteral(await end())}||window.__seq.length>0`, 8000);
+    await js(`window.__seq.length=0;0`);
+    await emit({ type: 'status', status: 'working', intent: 'Working' });
+    await emit({ type: 'question', phase: 'asked', requestId: 'e1-' + w, questions: [{ question: 'Where should this deploy go?', header: 'deploy-mcp', multiSelect: false, options: [] }],
+      elicitation: { message: 'Where should this deploy go?', source: 'deploy-mcp', fields: [{ name: 'environment', title: 'Which environment?', type: 'enum', required: true, enumValues: ['staging', 'production'] }] } });
+    assert.ok(await until(`!!document.querySelector('#chat .note.elicit')`, 8000), `${w}: the elicitation card is in the chat`);
+    assert.ok(await settled('Where should this deploy go'), `${w}: the elicitation is announced and #srAnnounce settles`);
+    await trace('elicitation');
+    assert.ok(/Where should this deploy go\?/.test(await end()), `${w}: #srAnnounce ends on the elicitation (ends on ${jsLiteral(await end())}; history ${jsLiteral(await seq())})`);
   }
   console.log('[announce-request] PASS');
 };
