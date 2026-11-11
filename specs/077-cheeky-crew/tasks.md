@@ -134,3 +134,7 @@ Q2-Q8 are answered; **Q1 (art format) is open again** (2026-10-23). Tasks are ma
 - [x] T111 18 pictures `crew/art/rebels-*.webp` and their `ASSETS.md` rows; the `test:crew-assets` total cap raised from 4 MiB to 4.5 MiB [FR-077, FR-050, FR-054]
 - [x] T112 Tests: `test:crew`, `test:characters`, `test:crew-assets`, `test:realoffice-layout`; `check-crew`, `check-characters` and `check-office-overlap` cover Animal Rebels [FR-077]
 - [x] T113 Docs: README, `docs/themes.md`, changelog fragment, the linked Settings screenshots retaken; issue #815's five crews are all in [FR-077]
+
+## check-crew waits for the crew scenes (delta 2026-11-11, issue #1460)
+
+- [x] T114 `scripts/check-crew.js`: one bounded wait (`crewDrawn`, 5 s) for the crew scenes after `useCrew()` in the 1920x1080 block and the 1440x900/1280x800 loop, same asserts after, diagnostics on a timeout; `CREW_MUTANT=slow|nowait` (test-only) and a case that runs both mutants and requires them to fail/pass as written [FR-070]
