@@ -1847,8 +1847,10 @@ function renderReal(stage,floor,aw,ah,model,empty){
   }
   if(stage.dataset.d!=='real'){stage.dataset.d='real';stage.textContent='';}
   layoutKey='';GROW=0;setGrow(stage,0);spreadOffice(stage,false);stagePrev=null;
+  const fcs=getComputedStyle(floor), lendPad=(parseFloat(fcs.paddingBottom)||0)+(floor.classList.contains('has-fnote')?0:parseFloat(fcs.paddingTop)||0); /* what #floor.ro-tight gives up (styles.css) */
   RO_LAST=window.DurbarRealOffice.render(stage,Object.assign(realModel(model),empty?{empty}:{}),{w:aw,h:ah},{live:liveOn(),still:REDUCED||!MOTION||STILL_HL,hold:roFrozen(),screenOf:realScreen,factsOf:realFacts,world:pp.world,set:pp.set,remember:rememberOn(), /* FR-071: Settings > Motion (still above) stops the people */
-    rand:CREW&&(SIM||!rememberOn())?CREW.seededRand:Math.random,onArt:()=>scheduleRender()});
+    rand:CREW&&(SIM||!rememberOn())?CREW.seededRand:Math.random,onArt:()=>scheduleRender(),lend:lendPad}); /* spec 102 delta 2026-11-11: the arcade hall may take the floor's padding rather than scroll */
+  floor.classList.toggle('ro-tight',!!RO_LAST.lent);
   stage.style.width=aw+'px';stage.style.height=RO_LAST.height+'px';
   stage.dataset.fit=RO_LAST.scroll?'scroll':'ok';floor.classList.toggle('scrolls',!!RO_LAST.scroll);
   return true;
@@ -1858,6 +1860,7 @@ function renderOffice(){
   if(ui.view!=='office')return;
   const floor=$('floor'), stage=$('stage');
   renderFilterNote(); /* before the padding is read below */
+  floor.classList.remove('ro-tight'); /* the padding lent to the arcade hall is asked for again on every draw (renderReal), so the room below is always measured with the padding the page gives */
   const cs=getComputedStyle(floor);
   const aw=floor.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);
   const ah=floor.clientHeight-parseFloat(cs.paddingTop)-parseFloat(cs.paddingBottom);

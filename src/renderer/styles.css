@@ -200,6 +200,9 @@ body.has-bridge #liveBar{display:flex}
 .workspace{flex:1;display:flex;min-height:0;min-width:0}
 #floor{flex:1;min-width:0;position:relative;overflow:hidden;padding:12px 16px 12px}
 #floor.scrolls{overflow-y:auto}
+/* spec 102 delta 2026-11-11: the arcade hall that fits only without the floor's padding (set by renderReal from the layout, never by hand) */
+#floor.ro-tight{padding-bottom:0}
+#floor.ro-tight:not(.has-fnote){padding-top:0}
 /* spec 092 FR-006..FR-008, FR-015, FR-028, FR-032 (40 px wide: at 47 px the lobby's Bank tile lost its visitor's words at 1440x900): the lift panel at the right edge of the office area (a flex item of .workspace, so its width comes out
    of #floor and the layout counts it); shown only with two or more floors on. Semantic tokens only; text at least 10.5px; buttons at least 28x28. */
 #lift{flex:none;display:flex;flex-direction:column;align-items:stretch;min-height:0;padding:10px 0 8px 2px;border-left:1px solid var(--line);background:var(--surface)}
