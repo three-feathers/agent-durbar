@@ -1,7 +1,7 @@
 /**
  * Spec 097 delta 2026-11-11 (issue #1448, T302): the pointer-event log of the flaky drivers (`npm run test:pointer-log`). No Electron is started: a stand-in
  * page (a vm context with a window that dispatches fake events) runs the helper's own page code. The same cases run on the real helper (all must hold)
- * and on five mutants of its source (each must make a case fail): the print removed, a print on a pass, an unbounded ring, a different error thrown.
+ * and on five mutants of its source (each must make a case fail): print removed, events not printed, prints on a pass, ring unbounded, another error thrown.
  */
 import * as assert from 'assert';
 import * as fs from 'fs';
