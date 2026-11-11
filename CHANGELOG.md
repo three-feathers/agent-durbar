@@ -2,11 +2,41 @@
 
 Agent Durbar `v0.1.0` is the first stable release. Builds are unsigned and not notarized (see "Honest limits" in the README for where each OS has been run). Each entry names the spec that describes the behavior and how it was checked.
 
-## Unreleased (on `main`, after the v0.1.15 tag)
+## Unreleased (on `main`, after the v0.1.16 tag)
 
 Not released yet: each change is a file in [`changelog.d/`](changelog.d/) until the next release folds them in (`npm run changelog:preview` lists them).
 
 <!-- changelog.d: fragments only; a bullet here fails npm run changelog:check -->
+
+## v0.1.16 ([release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.16), 2026-11-11)
+
+**Known issues**
+
+- **Project notes file** (issue #1464): a local process that swaps a folder link at the right instant can still make Durbar move another folder's notes.md into your project under a random name (the message names it), a delete with no inode record (file written by an older version, or on a drive without inode numbers) can still remove it, and a write can still overwrite it. This is recorded in docs/safety.md.
+- **Announcements** (issue #1320): toasts, the chat's label and the notice strips still show an agent or folder name as written.
+
+**Memory and performance**
+
+- **A long chat no longer grows without limit in memory** (spec 005 FR-238, FR-239, issue #1380): every chat kept every message and tool call while the app stayed open, so the window grew by about 35 MB an hour in the simulator. A chat now keeps its newest 300 messages, the newest 300 steps of a turn or helper still running, and at most 2,000 steps in all. Your last question and the last reply are always kept, as are waiting questions and permission cards and the live parts of a turn. One line at the top says how many earlier messages and steps are not kept in this view (the agent app's session keeps its own record). While you are scrolled up in an open chat nothing is removed, and what you focus or select, or a note saved from a message, stays. Checked with `test:chattrim` and the `check-chat-memory` simulator driver (Open office, Real office and Retro arcade); Linux only.
+- **Finished helpers no longer grow without limit in memory** (spec 005 FR-240, FR-241, issue #1418): an agent now keeps its newest 50 finished and 20 failed helpers in full. Older ones leave the office and the helper lists, and their block in the chat becomes one line with the helper's name, result and status. A helper that is still running, the one whose activity you have open, and one you are focused on or selecting text in are never removed. Checked with `test:subretire` and the `check-helper-retention` simulator driver (three worlds, 1440x900 and 1280x800); Linux only.
+
+**Agent follow and chat**
+
+- **Auto-follow no longer brings back an old "finished"** (issue #1444, the known issue of v0.1.15): if an agent finished while its chat was on screen and you then sent it another message, the window could go to the office and then reopen the chat with `<name> finished`, although the agent was already working on your message. A reply you saw in its chat now counts as seen, and a new message replaces a completion still waiting. Checked in the simulator on Linux.
+- **A chat keeps its place across the Browser tab** (spec 005 FR-235, issue #1168): a chat that was following the end is at the end again, and still following, when you come back from Browser to Chat, also when the agent wrote meanwhile. A chat you had scrolled up keeps its position. The chat now keeps its width while collapsed, also where scrollbars take room (Windows, Linux). Checked on macOS only, with a simulated classic scrollbar, at 1440x900 and 1280x800; not on Windows or Linux.
+- **On a Mac, the top of the rail's resize handle resizes the rail** (spec 005 FR-236, issue #1457): its top 40 pixels used to move the window instead. Checked in the simulator; not on a real Mac.
+
+**Safety and privacy**
+
+- **A Claude session's instructions and settings no longer show in the process list** (spec 012 FR-179, issue #1379): the folder's CLAUDE.md text, a chosen agent profile and the folder's accepted hooks and rules used to go to Claude Code on its command line, which other accounts on the same computer can read. They now go through private files that only your account can read and that are removed when the session's Claude process ends. A Claude Code too old to read them (before 2.1.69 for CLAUDE.md, before 2.1.281 for agent profiles) gets a message asking you to update it. Checked with unit tests on a fake Claude process (macOS); not with a real Claude session or on Windows.
+- **Screen-reader announcements no longer read out a token or a home folder** (spec 012 FR-178, issue #1419): lines such as `<name> finished. New reply.` used the name as written. They now go through the same mask the desk already uses. A command or question in a request is said exactly as the card shows it, and "needs your OK" is said even when the request is hidden. When masking is not possible, a fixed line says a line was not read out. Toasts, the chat's label and the notice strips still show the name as written (#1320). Checked with `test:announcemask` and one simulator run; no screen reader run.
+- **Deleting the project notes file deletes only the file Durbar wrote** (spec 083 FR-055, issue #1463): a folder link swapped within microseconds by a local process (for example a sandboxed agent) could make *Delete the file* remove a notes.md in another folder, or make the way back replace one. Durbar now records the inode of the file it writes and deletes only that one (a notes.md with the same text but another inode, after a `git checkout`, is left as changed). The way back is a hard link, or on drives without hard links a copy into a new notes.md that never replaces a file. Part of the problem is still open (see Known issues, #1464). Checked by unit tests with injected file calls and a real swapper process; Linux only.
+
+**Copilot on a Mac**
+
+- **Playwright MCP can start again under Copilot on macOS** (spec 087 FR-024, issue #1173): Copilot's private temp folder is now a short one under /tmp when the system temp folder is too long for a Unix socket (macOS /var/folders). The folder is still private to your account and removed afterwards; Windows is unchanged. Checked on Linux; not on a real Mac.
+
+**Behind the scenes** (nothing changes in the app): the team merge gate reads CodeQL results and a PR's changed files more strictly (FR-090, FR-091, #1422, #1479), the UI check runner now ends a timed-out check's display and window whole (FR-199, #1417), the live-activity UI check re-reads the lobby until it settles (FR-191, #1481), and the README build-cost sentence says how many machines started on each day (#1387). Checked by script tests only; not against live GitHub, not on macOS or Windows.
 
 ## v0.1.15 ([release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.15), 2026-11-10)
 

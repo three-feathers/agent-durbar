@@ -610,7 +610,8 @@ async function driver(ctx) {
         rows.push({ label: `${tag} ${step} ambient ${amb}`, d: 'real', h: '-', rooms: '-', plates: res.info.plates, desks: res.info.plates, stageH: Math.round(res.info.u || 0), floorH: 0, minFont: res.info.minFont, problems: res.problems.length });
         console.log(`  ${tag}: face ${res.info.face ? res.info.face.toFixed(1) : '?'}px, u ${res.info.u ? res.info.u.toFixed(0) : '?'}, contrast >= ${res.info.minRatio ? res.info.minRatio.toFixed(2) : '?'}`);
       }
-      if (shotsDir) await ctx.shot(path.join(shotsDir, `${prefix}-${tag.replace(/ /g, '-')}.png`));
+      /* OFFICE_SHOTS only (spec 102 T281): the draft seeding leaves the last plate hovered and focused, and its tooltip covers cabinets in the picture; take the pointer and the focus away first (the checks above are done) */
+      if (shotsDir) { await H.calm({ blur: true }); await ctx.sleep(300); await ctx.shot(path.join(shotsDir, `${prefix}-${tag.replace(/ /g, '-')}.png`)); }
       /* (a plate other than the one with the New reply tag: opening that chat reads the reply, and a read finished agent moves to the lounge) chat open: the chat takes the window (spec 001: body.panel-open hides the office); the page must not overflow, and closing it draws the same office */
       const before = await ctx.js(`[...document.querySelectorAll('#stage .ro-plate')].map(e=>{const r=e.getBoundingClientRect();return Math.round(r.x)+','+Math.round(r.y)}).join(';')`);
       await ctx.js(`document.querySelector('#stage .ro-plate'+${jsLiteral(marks.narrow ? ':not([data-id="' + marks.narrow + '"])' : '')}).click()`);
