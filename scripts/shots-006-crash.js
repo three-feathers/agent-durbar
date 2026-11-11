@@ -164,6 +164,18 @@ module.exports = async (ctx) => {
       assert.ok(await until(`document.getElementById('crashStrip').hidden`, 10000), `${w}: real: ${how} closes the card`);
       assert.ok(await until(plateFocused, 4000), `${w}: real: after ${how} focus goes to the first session's plate, not the Office button (${await focusedPlate()})`);
     }
+
+    // the first session's plate is not shown (display:none, as a plate that is not drawn or not reachable): focus goes to the next shown plate, and when none is shown to the Office button, never to <body>
+    for (const [what, hide, want] of [['the first plate is hidden', ['sim-1'], 'sim-2'], ['every plate is hidden', ['sim-1', 'sim-2', 'sim-3'], 'vOffice']]) {
+      await H.load({ w, h, query: { simcrash: '3', officeview: 'real' }, ready: REAL, focus: true });
+      await H.calm();
+      assert.ok(await until(`(()=>{const s=document.getElementById('crashStrip');return !!s&&!s.hidden&&!!s.querySelector('[data-cr="all"]')})()`, 10000), `${w}: real: ${what}: the card shows`);
+      await js(`${jsLiteral(hide)}.forEach(id=>{const p=document.querySelector('#stage .ro-plate[data-id="'+id+'"]');if(p)p.style.display='none';})`);
+      await click('#crashStrip [data-cr="close"]');
+      assert.ok(await until(`document.getElementById('crashStrip').hidden`, 10000), `${w}: real: ${what}: Dismiss closes the card`);
+      const ok = `(()=>{const a=document.activeElement;return !!a&&(a.dataset.id===${jsLiteral(want)}||a.id===${jsLiteral(want)})})()`;
+      assert.ok(await until(ok, 4000), `${w}: real: ${what}: focus goes to ${want}, never <body> (${await focusedPlate()})`);
+    }
   }
   console.log('shots-006-crash: PASS');
 };
