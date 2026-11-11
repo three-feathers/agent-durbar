@@ -42,6 +42,21 @@ if (part === 'tokens') {
     assertLinearGrowth(`growth ${k}`, run, input, 100, 16); // 256k vs 16k x 16 runs
   }
 }
+// spec 012 T138 delta 2026-11-11: the retry baseline of `assertLinearGrowth` without timers. A Windows-like reading (PR 1510): one run of the 1/16 input reads one timer step,
+// 16 runs in one timing read the true mean. The old method (no `retryReps`) fails linear code there; the new one passes it and still fails a quadratic cost.
+{
+  const tick = 15.625;
+  const fake = (cost: (n: number) => number) => (x: string, reps = 1): { cpu: number; wall: number } =>
+    ({ cpu: reps === 1 && x.length < 100_000 ? tick : (Math.floor((cost(x.length) * reps) / tick) * tick) / reps, wall: 0 });
+  const big = 'x'.repeat(1_000_000);
+  const linear = fake((n) => 0.7e-3 * n);
+  const quadratic = fake((n) => 2000 * (n / 1e6) ** 2);
+  const worst = { ...worstGrowth };
+  assert.throws(() => assertLinearGrowth('fake linear, one-run baseline', linear, big, 100, 1), /fake linear, one-run baseline: 687\.5 ms CPU .*limit 40/);
+  assertLinearGrowth('fake linear, retry baseline', linear, big, 100, 1, undefined, 16);
+  assert.throws(() => assertLinearGrowth('fake quadratic, retry baseline', quadratic, big, 100, 1, undefined, 16), /fake quadratic, retry baseline: .*\(ratio \d/);
+  Object.assign(worstGrowth, worst);
+}
 }
 
 if (part === 'adversarial' || part === 'adversarial2' || part === 'masks') {
@@ -149,7 +164,7 @@ if (part === 'adversarial' || part === 'adversarial2' || part === 'masks') {
   // guard; a worker that does not answer in time is stopped and the case retried once.
   const mod = require.resolve('../src/shared/redact');
   const code = `const {workerData:w}=require('worker_threads');const flag=new Int32Array(w.sab,0,1),out=new Float64Array(w.sab,8,2);` +
-    `try{const {redact}=require(w.mod);const tc=typeof process.threadCpuUsage==='function';const w0=process.hrtime.bigint(),c0=tc?process.threadCpuUsage():null;redact(w.input,{});const wall=Number(process.hrtime.bigint()-w0)/1e6;let cpu=wall;if(tc){const d=process.threadCpuUsage(c0);cpu=(d.user+d.system)/1000}out[0]=cpu;out[1]=wall;Atomics.store(flag,0,1)}` +
+    `try{const {redact}=require(w.mod);const reps=w.reps||1;redact(w.input.slice(0,4096),{});const tc=typeof process.threadCpuUsage==='function';const w0=process.hrtime.bigint(),c0=tc?process.threadCpuUsage():null;for(let i=0;i<reps;i++)redact(w.input,{});const wall=Number(process.hrtime.bigint()-w0)/1e6/reps;let cpu=wall;if(tc){const d=process.threadCpuUsage(c0);cpu=(d.user+d.system)/1000/reps}out[0]=cpu;out[1]=wall;Atomics.store(flag,0,1)}` +
     `catch(e){Atomics.store(flag,0,2)}Atomics.notify(flag,0)`;
   // two suites, each case in one (over 30 s on Windows as one)
   // the cases of the masking batch of 2026-11-08 (spec 012 FR-173/FR-174, PR 1317) are their own suite, so the two above stay under 30 s
@@ -183,7 +198,20 @@ if (part === 'adversarial' || part === 'adversarial2' || part === 'masks') {
     valueContinuations: 'password=\\\n'.repeat(MB / 11),
     valueContinuationRun: 'password=' + '\\\n'.repeat(MB / 2),
   };
-  for (const [k, v] of part === 'masks' ? Object.entries(maskCases) : Object.entries(adversarial).filter((_e, i) => i % 2 === (part === 'adversarial' ? 0 : 1))) assertLinearGrowth(`adversarial ${k}`, (input) => workerRun(`adversarial ${k}`, code, { mod, input }, 30000), v);
+  for (const [k, v] of part === 'masks' ? Object.entries(maskCases) : Object.entries(adversarial).filter((_e, i) => i % 2 === (part === 'adversarial' ? 0 : 1))) assertLinearGrowth(`adversarial ${k}`, (input, reps) => workerRun(`adversarial ${k}`, code, { mod, input, reps }, 30000), v, 100, 1, undefined, 16);
+  // spec 012 T138 delta 2026-11-11 (PR 1510's Windows run): (1) each worker first masks 4 KB of the same input untimed, so the compile costs of a fresh worker (about 20-30 ms on
+  // Linux) no longer sit in the 1/16 baseline, where they hid a quadratic rule (ratio 29 instead of 65); (2) a try that fails times the baseline again as 16 runs in one worker and
+  // takes the mean (`retryReps`): one run of 62,500 characters read 15.0 ms of thread CPU on Windows (one timer step, clamped to 16), so the check was a fixed 640 ms limit there,
+  // and Node 22 takes 730-920 ms on 1 MB of digits on Linux, linearly. A pass on the first try costs what it did. Mutant: a quadratic scan before the mask fails the same check.
+  if (part === 'masks') {
+    const wrap = 'const {redact}=require(w.mod);';
+    assert.ok(code.includes(wrap), 'mutant applies to the worker source');
+    const quadratic = code.replace(wrap, "const {redact:r0}=require(w.mod);const redact=(s,o)=>{let a=0;for(let i=0;i<s.length;i+=8)for(let j=i;j<s.length;j+=8)a+=s.charCodeAt(j);return a<0?'':r0(s,o)};");
+    const input = '1'.repeat(192_000);
+    const worst = { ...worstGrowth }; // the mutant's ratio is not the code's
+    assert.throws(() => assertLinearGrowth('mutant quadratic', (x, reps) => workerRun('mutant quadratic', quadratic, { mod, input: x, reps }, 30000), input, 100, 1, undefined, 16), /mutant quadratic: .* \(ratio \d/);
+    Object.assign(worstGrowth, worst);
+  }
 }
 
 }
@@ -254,12 +282,34 @@ if (part === 'hashtable') {
   };
   const mod = require.resolve('../src/shared/redact');
   const code = `const {workerData:w}=require('worker_threads');const flag=new Int32Array(w.sab,0,1),out=new Float64Array(w.sab,8,2);` +
-    `try{const {_uncappedForTest:u}=require(w.mod);const go=(x)=>[()=>u.maskSecretArgs([x]),()=>u.maskSecretArgs(['pwsh','-c',x]),()=>u.maskSecretArgs(x.split(' ')),()=>u.maskSecretCommand(x),()=>u.maskSecretCommand('pwsh -c '+JSON.stringify(x))][w.path]();go(w.input.slice(0,5000));const tc=typeof process.threadCpuUsage==='function';const w0=process.hrtime.bigint(),c0=tc?process.threadCpuUsage():null;go(w.input);const wall=Number(process.hrtime.bigint()-w0)/1e6;let cpu=wall;if(tc){const d=process.threadCpuUsage(c0);cpu=(d.user+d.system)/1000}out[0]=cpu;out[1]=wall;Atomics.store(flag,0,1)}` +
+    `try{const {_uncappedForTest:u}=require(w.mod);const go=(x)=>[()=>u.maskSecretArgs([x]),()=>u.maskSecretArgs(['pwsh','-c',x]),()=>u.maskSecretArgs(x.split(' ')),()=>u.maskSecretCommand(x),()=>u.maskSecretCommand('pwsh -c '+JSON.stringify(x))][w.path]();go(w.input.slice(0,5000));const tc=typeof process.threadCpuUsage==='function';const reps=w.reps||1;const w0=process.hrtime.bigint(),c0=tc?process.threadCpuUsage():null;for(let i=0;i<reps;i++)go(w.input);const wall=Number(process.hrtime.bigint()-w0)/1e6/reps;let cpu=wall;if(tc){const d=process.threadCpuUsage(c0);cpu=(d.user+d.system)/1000/reps}out[0]=cpu;out[1]=wall;Atomics.store(flag,0,1)}` +
     `catch(e){Atomics.store(flag,0,2)}Atomics.notify(flag,0)`;
   const cases = Object.entries(adv).flatMap(([k2, v2]) => (/\s/.test(v2) ? [] : [[k2, v2, 0]]).concat([0, 1, 2, 3, 4].map((i) => [k2 + '-50k', v2.slice(0, 50_000), i])) as Array<[string, string, number]>);
+  // a try that fails times the 1/16 baseline as 16 runs (T138 delta 2026-11-11)
+  const r12Grow = (k: string, src: string, v: string, pi: number): void => assertLinearGrowth(k, (input, reps) => workerRun(k, src, { mod, input, path: pi, reps }, 60000), v, 100, 1, undefined, 16);
   for (const [k0, v, pi] of cases) {
     const k = `R12 adversarial ${k0} (path ${pi})`;
-    assertLinearGrowth(k, (input) => workerRun(k, code, { mod, input, path: pi }, 60000), v);
+    r12Grow(k, code, v, pi);
+  }
+  // spec 012 T160: the R12 worker's own checks, deterministic: the worker's masking is replaced by a call that moves a fake clock (`process.hrtime.bigint` and
+  // `process.threadCpuUsage`, which the worker reads) by a set cost, so no real time or machine load enters.
+  // (1) `reps` runs one timing and gives the mean per run: 16 calls of 20 ms read exactly 20 ms (no loop: 1.25; no division: 320);
+  // (2) the retry baseline is used: a worker that costs nothing for a one-run baseline of the short input (as a Windows tick can read) fails the first try,
+  // and passes only when the retry baseline runs 16 times; a quadratic cost still fails.
+  {
+    const wrap = 'const {_uncappedForTest:u}=require(w.mod);';
+    assert.ok(code.includes(wrap), 'R12 mutants apply to the worker source');
+    const fake = (cost: string): string => code.replace(wrap, `const {_uncappedForTest:u0}=require(w.mod);let clock=0;process.hrtime.bigint=()=>BigInt(Math.round(clock*1e6));process.threadCpuUsage=(p)=>({user:Math.round(clock*1000)-(p?p.user:0),system:0});const u={maskSecretArgs:(a)=>{clock+=${cost};return u0.maskSecretArgs(a)}};`);
+    const reads = (src: string, reps: number): number => workerRun('R12 reps', src, { mod, input: 'x'.repeat(5000), path: 0, reps }, 60000).cpu;
+    const fixed = fake('20');
+    assert.strictEqual(reads(fixed, 1), 20, 'R12 worker: one run of 20 ms reads 20 ms');
+    assert.strictEqual(reads(fixed, 16), 20, 'R12 worker: reps=16 must run the work 16 times and give the mean per run (20 ms)');
+    const input = 'x'.repeat(192_000);
+    const worst = { ...worstGrowth };
+    // linear, 4.5 ms per 1000 characters (864 ms in all, above the 640 ms limit of the Windows clamp), but nothing for one run of the short input
+    r12Grow('R12 mutant linear, one-run baseline reads 0', fake('(w.reps===1&&a[0].length<100000?0:a[0].length*0.0045)'), input, 0);
+    assert.throws(() => r12Grow('R12 mutant quadratic', fake('a[0].length*a[0].length*3e-8'), input, 0), /R12 mutant quadratic: .* \(ratio \d/);
+    Object.assign(worstGrowth, worst);
   }
 }
 

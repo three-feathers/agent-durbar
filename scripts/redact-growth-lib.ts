@@ -31,22 +31,27 @@ export const cpuMs = (f: () => void, capMs: number): number => {
 const FACTOR = 16;
 const MAX_RATIO = 40;
 // CPU timers tick in about 15.6 ms on Windows (as in test-browserurl), so a fast 1/16 baseline can read 0: never divide by less than one tick there
-const MIN_BASE_MS = process.platform === 'win32' ? 16 : 2;
+// DURBAR_TEST_WIN_TIMER=1 (test hook, spec 012 T160): the Windows clamp on any platform, so a test can run both clamps
+const MIN_BASE_MS = process.platform === 'win32' || process.env.DURBAR_TEST_WIN_TIMER === '1' ? 16 : 2;
 export const worstGrowth = { ratio: 0, label: '' }; // the highest full/baseline ratio seen, printed at the end
 // `reps` (default 1, so the other callers are unchanged): the baseline is timed as `run(small, reps)`, and `run` must then repeat the work `reps`
 // times inside one timing and give the mean per run, so a baseline of a few ms is read well above the Windows timer tick (a tick-sized baseline
 // caps the ratio near 15 and hides a quadratic rule that stays under the floor).
 // `baseline`: when a prefix is not the same shape (a run with a different tail), the caller builds the 1/16 input itself.
-export const assertLinearGrowth = (label: string, run: (input: string, reps?: number) => { cpu: number; wall: number }, input: string, floorMs = 100, reps = 1, baseline?: string): void => {
+// `retryReps` (default `reps`, so the other callers are unchanged): the baseline repeats of the second and third tries. A caller whose first try times one run (cheap) passes
+// 16, so a try that failed on a one-step baseline (Windows: 15.0 ms for 62,500 characters, PR 1510) measures the baseline again well above the step; that mean replaces the first reading.
+export const assertLinearGrowth = (label: string, run: (input: string, reps?: number) => { cpu: number; wall: number }, input: string, floorMs = 100, reps = 1, baseline?: string, retryReps = reps): void => {
   const small = baseline ?? input.slice(0, Math.ceil(input.length / FACTOR));
   let full = Infinity;
   let base = Infinity;
   let wall = 0;
   for (let i = 0; i < 3; i++) {
+    const r = i === 0 ? reps : retryReps;
+    if (i === 1 && r !== reps) base = Infinity; // a mean of more runs replaces a reading that may be one timer step
     const f = run(input);
     wall = Math.max(wall, f.wall);
     full = Math.min(full, f.cpu);
-    base = Math.min(base, run(small, reps).cpu);
+    base = Math.min(base, run(small, r).cpu);
     if (full < Math.max(floorMs, Math.max(base, MIN_BASE_MS) * MAX_RATIO)) break;
   }
   if (full / Math.max(base, MIN_BASE_MS) > worstGrowth.ratio && full >= floorMs) Object.assign(worstGrowth, { ratio: full / Math.max(base, MIN_BASE_MS), label });
