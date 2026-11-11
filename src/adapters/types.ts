@@ -507,6 +507,12 @@ export interface AgentProfile {
   mcpServers?: string[];
 }
 
+/** Spec 043 FR-044: one read of a profile's definition file by main: its path and the bytes read. */
+export interface AgentFileRead {
+  path: string;
+  bytes: Buffer;
+}
+
 /**
  * Spec 073 FR-001: one entry of the "/" list in the composer: a skill, command or prompt file of the session's folder or of the user,
  * or a built-in of the agent app. Generic across adapters; `where` is a display path (folder-relative or `~/…`), never absolute.
@@ -703,8 +709,16 @@ export interface AgentAdapter {
    * gone) without a restart. Optional: an adapter that reads the files on every list needs none. Resolves false when it could not.
    */
   reloadAgentProfiles?(sessionId: string): Promise<boolean>;
-  /** Select a profile for the next turns, or null for the default agent (spec 043 FR-001). Emits `agentProfile`. */
-  selectAgentProfile?(sessionId: string, id: string | null): Promise<AgentProfile | null>;
+  /**
+   * Spec 043 FR-044: the profile as these exact bytes of its file define it (main read them once; the confirmation shows this profile
+   * and its hash). Undefined when the bytes do not define profile `id` of that file. Optional: without it the listed profile is shown.
+   */
+  agentProfileOfFile?(sessionId: string, id: string, file: AgentFileRead): AgentProfile | undefined;
+  /**
+   * Select a profile for the next turns, or null for the default agent (spec 043 FR-001). Emits `agentProfile`. `file` (FR-044): the
+   * bytes main hashed and the user confirmed; an adapter that passes the agent's text itself uses them, never a later read.
+   */
+  selectAgentProfile?(sessionId: string, id: string | null, file?: AgentFileRead): Promise<AgentProfile | null>;
   /** Spec 073 FR-001: the "/" entries this session's agent app offers (folder, then user, then app built-ins that run when typed). */
   listSlashCommands?(sessionId: string): Promise<SlashCommand[]>;
   /** Spec 073 FR-005: the text to send for a message that starts with a folder or user entry's `/name`, and where it came from; `note`

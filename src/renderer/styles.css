@@ -433,7 +433,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .btn.danger{color:var(--red-ink)}
 .btn.danger:hover{background:var(--tone-bad-soft);border-color:var(--tone-bad-line);color:var(--tone-bad-ink)}
 .btn svg{width:15px;height:15px;flex:none}
-#chat{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:16px;display:flex;flex-direction:column;gap:12px}
+#chat{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:16px;scrollbar-gutter:stable;display:flex;flex-direction:column;gap:12px}
 .chat-inner{display:flex;flex-direction:column;gap:12px;min-width:0}
 /* spec 005 FR-210: when a chat is closed its older messages get .cvo (cvMark), so reopening lays out only the ones near the view; an unseen one keeps the height it last had (auto), 90px before it was ever seen. Nothing is marked while the chat is open: a message the app has just added is measured at once (answer bar, notes) and a class change on a live message makes it jump to its 90px guess for a frame */
 .chat-inner>.cvo{content-visibility:auto;contain-intrinsic-block-size:auto 90px;overflow-clip-margin:14px}
@@ -941,7 +941,7 @@ body.panel-open #panel{flex-direction:row}
 .ptab{height:var(--ptab-h);padding:0 12px;border:0;border-bottom:2px solid transparent;background:none;color:var(--muted);font:inherit;font-size:var(--t4-size);font-weight:var(--t4-weight);cursor:pointer}
 .ptab:hover{color:var(--ink)}
 .ptab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--sage-ink);font-weight:650}
-.panel-in.on-browser #chat{flex:0 0 0;height:0;min-height:0;padding:0;overflow:hidden;visibility:hidden}
+.panel-in.on-browser #chat{flex:0 0 0;height:0;min-height:0;padding-block:0;overflow:hidden;visibility:hidden}
 .panel-in.on-browser .prev{display:none}
 .bpane{flex:1;min-height:0;display:flex;flex-direction:column;background:var(--surface)}
 .bpane[hidden]{display:none}
@@ -1234,6 +1234,7 @@ body.panel-open #panel{flex-direction:row}
 .sub-toggle .chev{width:12px;height:12px;flex:none;transition:transform .2s}.sub-toggle[aria-expanded="true"] .chev{transform:rotate(90deg)}
 .sub-ic{width:16px;height:16px;flex:none;color:var(--blue-ink);display:inline-grid}.sub-ic svg{width:16px;height:16px}
 .sub-name{font-weight:650;white-space:nowrap}
+.subblk.stub .sub-toggle{cursor:default} /* spec 005 FR-240: a retired helper's one-line stub (no body, no Open) */
 .sub-task{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1 1 auto}
 .sub-st{font-size:11px;font-weight:600;color:var(--blue-ink);background:var(--pb-working,#e3ecf4);border-radius:999px;padding:1px 8px;flex:none}
 .subblk.done .sub-st,.sub-st.done{color:var(--tone-ok-ink);background:var(--tone-ok-bg)}.subblk.failed .sub-st,.sub-st.failed{color:var(--red-ink);background:var(--pb-error,#f6e2df)}
@@ -1374,6 +1375,7 @@ body.panel-open #panel{flex-direction:row}
 .mm-sbx{max-width:340px;white-space:normal;line-height:1.35}
 .note.perm .pscope{margin:4px 0 0;font-size:11.5px;color:var(--ink);white-space:normal;overflow:visible;text-overflow:clip}
 .note.perm:not(.pending) .pscope{display:none} /* a settled card no longer offers the grant */ /* spec 003 FR-108 */
+.note.perm .plook{overflow-wrap:anywhere} /* spec 003 FR-118: a long marked name wraps inside the card, never cut */
 .note.perm .psbx{margin:4px 0 0;font-size:11.5px;color:var(--amber-ink);white-space:normal;overflow:visible;text-overflow:clip}
 .msg.user.not-sent .bubble{opacity:.75}
 .msg.user.auto .bubble{font-style:italic;border:1px dashed currentColor} /* spec 058 FR-218: Agent Durbar's own automatic message */
@@ -1750,6 +1752,30 @@ html:is(.hl-still,[data-still-highlights]) .desk .pp,html[data-still-highlights]
 .dlg-ov{animation:dlgov .12s ease-out}
 @keyframes dlgin{from{opacity:0;transform:translateY(6px) scale(.985)}}
 @keyframes dlgov{from{opacity:0}}
+/* spec 052 FR-241 (owner, 2026-11-09): the Auto-follow notice. Full screen (the page shows faintly through the theme's surface), a .dlg card in the
+   middle: the picture of the move, the two lines, the countdown ring and Stay. Theme tokens only; :root raises it over the worlds' .dlg-ov tint. */
+:root .dlg-ov.af-notice{background:color-mix(in srgb,var(--surface) 90%,transparent);z-index:70}
+.af-notice .dlg{width:min(460px,calc(100vw - 32px));align-items:center;text-align:center;gap:var(--s-3);padding:var(--s-5)}
+.af-notice .afn-body{display:contents}
+.af-notice .afn-art{order:-1;width:180px;height:60px;color:var(--ink-2);overflow:visible}
+.af-notice .afn-art path{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.af-notice .afn-art .afn-track{stroke:var(--line-2);stroke-dasharray:2 4}
+.af-notice .afn-dot{fill:var(--accent);animation:afn-go 1.2s ease-in-out infinite}
+.af-notice.afn-to-chat .afn-dot{animation-direction:reverse}
+@keyframes afn-go{from{transform:translateX(0)}to{transform:translateX(32px)}}
+.af-notice .dlg h3{font-size:calc(var(--t1-size) * 1.25);line-height:var(--t2-lh);overflow-wrap:anywhere} /* the type scale's T1, a step up for a notice that fills the window */
+.af-notice .dlg .dsub{font-size:var(--t2-size);max-width:38ch}
+.af-notice .afn-count{position:relative;width:64px;height:64px;display:grid;place-items:center}
+.af-notice .afn-ring{position:absolute;inset:0;width:64px;height:64px;transform:rotate(-90deg)}
+.af-notice .afn-ring circle{fill:none;stroke-width:4}
+.af-notice .afn-ring-bg{stroke:var(--line)}
+.af-notice .afn-ring-fg{stroke:var(--accent);stroke-dasharray:100;stroke-dashoffset:0;animation:afn-ring var(--afn-ms,3000ms) linear forwards}
+@keyframes afn-ring{to{stroke-dashoffset:100}}
+.af-notice .afn-n{font-size:calc(var(--t1-size) * 1.5);font-weight:var(--t1-weight);color:var(--ink);font-variant-numeric:tabular-nums}
+.af-notice .dbtn{justify-content:center}
+.af-notice.afn-paused :is(.afn-dot,.afn-ring-fg){animation-play-state:paused}
+/* FR-241: reduced motion (the global rule at the top stops every animation) and the Motion setting off: nothing moves; the text and the number counting down stay */
+html[data-motion-off] .af-notice :is(.afn-dot,.afn-ring-fg,.dlg),html[data-motion-off] .dlg-ov.af-notice{animation:none}
 /* FR-049: room for a copy button at the bottom of the Thinking box */
 .think-body.md{padding-bottom:26px}
 .think-body.md>.cp-msg{bottom:4px} /* FR-092: the box no longer scrolls, so Copy stays at its bottom edge, outside any scroll area */
@@ -1863,6 +1889,7 @@ html[data-platform="darwin"] body.panel-open :is(#restoreStrip:not([hidden]),#re
 html[data-platform="darwin"] body.panel-open #restoreStrip[hidden]+#awayStrip[hidden]+#crashStrip[hidden]+#followStrip:not([hidden]){min-height:40px}
 html[data-platform="darwin"] .notice-strip:not([hidden]) ~ #screen .scr-head{padding-left:max(24px,calc((100% - 880px)/2 + 24px))}
 html[data-platform="darwin"] :is(.dlg-ov,#foldersPop,#floorsPop,#defaultsPop,.mode-menu,.more-menu){-webkit-app-region:no-drag}
+html[data-platform="darwin"] .rgrip{-webkit-app-region:no-drag}
 
 /* spec 052 (2026-10-21, round 3, accessibility): small controls get a 24px hit area (WCAG 2.2 target size) without changing the layout */
 button.room-aiu,.lsort,.linkbtn{position:relative}
@@ -1873,7 +1900,7 @@ h2,h3,h4{text-wrap:balance}
 /* spec 066: plan first. The proposed plan scrolls inside its card; the one-shot chip above the composer */
 .note.plan-card .plan-body{max-height:min(42vh,360px);overflow:auto;margin:6px 0 4px;padding:6px 10px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2)}
 .note.plan-card .plan-why{margin:4px 0 0;color:var(--ink-2);font-size:var(--t4-size)}
-.att.plan-chip{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--surface));color:var(--ink)} /* 070 T024: all three come from the world (accent edge, tinted page colour, page ink), so the chip reads in every world; the info tone gave 2.9:1 in the arcade, where --tone-info-soft is a mid grey */
+.att.plan-chip{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--surface));color:var(--ink)} /* 070 T024: all three come from the world (accent edge, tinted page colour, page ink), so the chip reads in every world; the derived info tone gave 2.9:1 in the arcade, so the arcade now sets its own dark --tone-* fills (spec 070 FR-081) */
 
 /* spec 001 FR-028..FR-030: live activity on the desks. The side panel has a fixed size and is reserved next to every main desk while the
    layout uses it (an empty one is invisible), so the office never moves when an agent starts or stops; text changes only. No animation. */
@@ -2168,6 +2195,29 @@ h2,h3,h4{text-wrap:balance}
 .mcp-costs{margin:6px 0 10px;padding:0;list-style:none;font-size:12px;color:var(--ink-2)}
 .mcp-costs li{padding:2px 0}
 
+/* spec 099 FR-056: Autopilot: its own glyph and word, in Allow all's warning ink because it includes Allow all */
+.mode-chip.mode-autopilot{color:var(--red-ink);background:var(--pb-error);border-color:var(--tone-bad-line);font-weight:var(--t1-weight);font-variant-numeric:tabular-nums}
+.modeic.mode-autopilot{color:var(--red-ink)}
+.mode-menu .mm-autopilot .mi{color:var(--red-ink)}
+.mm-autopilot{border-top:1px solid var(--line)}
+.ap-noatt{display:inline-grid;place-items:center;opacity:.4;cursor:help}
+.note.ap-line{font-size:var(--t4-size);color:var(--ink-2);background:none;border:0;padding:0;box-shadow:none}
+.note.ap-end{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--s-1);border-left:3px solid var(--tone-info-line)}
+.note.ap-end:not([data-reason="done"]){border-left-color:var(--tone-bad-line)}
+.note.ap-end .ap-ic{font-weight:var(--t1-weight)}
+.note.ap-end .ap-words{font-weight:var(--t1-weight);min-width:0;overflow-wrap:anywhere}
+.note.ap-end .note-actions{flex-basis:100%}
+.note.ap-line,.note.ap-question{flex:0 0 100%;box-sizing:border-box;max-width:100%}
+.note.ap-question b{display:block;font-size:var(--t4-size)}
+.note.ap-question .q-text{margin:var(--s-1) 0 0;overflow-wrap:anywhere}
+.ap-form{display:flex;flex-direction:column;gap:var(--s-1);margin:var(--s-2) 0}
+.dlg .ap-form label.ap-row{display:flex;flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:flex-start;text-align:left;gap:var(--s-1);font-size:var(--t3-size);font-weight:var(--t3-weight);margin:0}
+.ap-form .ap-lbl{flex:none}
+.ap-form input[type=checkbox]{flex:none;width:auto;margin:0}
+.dlg .ap-form .ap-num{flex:none;width:88px;height:28px;padding:0 var(--s-1);font:inherit;margin:0}
+.ap-form .ap-hint{margin:0;font-size:var(--t4-size);color:var(--ink-2)}
+.ap-form .ap-warn{margin:0;font-size:var(--t4-size);font-weight:var(--t1-weight);color:var(--amber-ink)}
+.ap-form [hidden]{display:none}
 
 /* spec 085 FR-009: the day's numbers in the Since you were away strip */
 .aw-brief{display:block;font-size:11px;line-height:15px;color:var(--ink-2);margin-top:2px}
@@ -2186,6 +2236,26 @@ h2,h3,h4{text-wrap:balance}
 .room-head{cursor:grab}
 .room-head :is(button,a,input){cursor:pointer}
 #stage .place[data-reo]{cursor:grab}
+
+/* spec 052 FR-191..FR-196 (T197): Your door, the Needs you panel. Fixed over the room: no layout space, no backdrop, below dialogs (60). Tokens only (the size ratchet counts every literal). */
+.door-panel{position:fixed;z-index:35;display:flex;flex-direction:column;gap:var(--row-pad);box-sizing:border-box;padding:var(--row-pad);border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface);color:var(--ink);box-shadow:var(--shadow-pop)}
+body.panel-open .door-panel,#screen:not([hidden]) ~ .door-panel{display:none}
+.door-panel .inbox-row .ib-ans{flex-wrap:wrap}.door-panel .inbox-row .ib-ans>.btn{white-space:normal;text-align:left}.door-panel .ib-note{font-size:var(--t3-size);line-height:var(--t3-lh);color:var(--ink-2)} /* spec 052 FR-199: option buttons and a limit row wrap inside the panel; the row's own lines */
+.door-head{display:flex;align-items:center;gap:var(--row-pad)}
+.door-head h2{margin:0;flex:1 1 auto;min-width:0;font-size:var(--t2-size);line-height:var(--t2-lh);font-weight:var(--t2-weight)}
+.door-head .btn{flex:none;min-height:28px;min-width:28px}
+.door-line{margin:0;font-size:var(--t4-size);color:var(--muted)}
+.door-faces{display:flex;align-items:center;min-height:0}
+.door-faces:empty{display:none}
+.door-face{width:28px;height:28px;margin-left:calc(-1 * var(--r-sm));border-radius:50%;overflow:hidden;border:2px solid var(--surface);background:var(--surface-2);flex:none}
+.door-face:first-child{margin-left:0}
+.door-face>*{width:100%;height:100%}
+.door-more{margin-left:var(--r-sm);font-size:var(--t4-size);color:var(--muted)}
+.door-body{flex:1 1 auto;min-height:0;overflow:hidden auto;display:flex;flex-direction:column;gap:var(--row-pad);padding-right:var(--r-sm)}
+@media (forced-colors:active){.door-panel{border:1px solid CanvasText}}
+.door-body .inbox-row .ib-ans{flex-wrap:wrap;max-width:100%}
+.door-body .inbox-row .ib-ans>.btn.session{flex:1 1 100%;display:block;height:auto;min-height:28px;padding-top:var(--r-sm);padding-bottom:var(--r-sm);white-space:normal;overflow:visible;text-overflow:clip;text-align:left} /* FR-199 (Q-NY-10): the session grant on its own line, wrapped and never cut */
+.door-body .inbox-row.is-limit .ib-ans>.btn.session{flex:none;display:inline-block;height:28px;min-height:0;padding-top:0;padding-bottom:0;white-space:nowrap;text-align:center} /* the limit row's Remove limit is a plain button like Raise limit and Stop here */
 
 /* ---- spec 070 A14 (FR-061..FR-066, FR-075, FR-076; T034..T036, T044): Flat's modern look, behind html[data-flat-look] (flatlook.js; off by default).
    Only Flat matches: Clean Office has no data-ui and no world is shown, so Real office, Retro, the cave and every other pack are untouched (FR-066).

@@ -42,6 +42,17 @@
 .ro-screen.tint-orange .ro-glass{background:#7a2e00}
 .ro-screen.tint-green .ro-glass{background:#0f4526}
 .ro-screen.off .ro-glass{background:#121314}
+/* spec 097 FR-322..FR-325 (owner, 2026-11-07 20:20 UTC, Q8: "Frame fill and it can go until red as well"): context as a line round the monitor frame, filling clockwise from the
+   top-left as the context fills. One svg and rect per desk (realoffice.js ctxPaint); the dash is the share (pathLength 100); no line until the context is known (no empty track).
+   It lies on the frame, outside the glass (the glass keeps its FR-236 tint), static. Colours (owner, 2026-11-07 21:01 UTC, "2"): soft white (--tint-ink) while the context is ok or warn, red (--red) only above 90 %. */
+.ro-ctx{position:absolute;left:0;top:0;width:var(--ro-cw,100%);height:var(--ro-ch,100%);overflow:visible;pointer-events:none}
+.ro-ctx:not([data-lv]),.ro-screen.ro-lmon .ro-ctx{display:none}
+.ro-ctx rect{x:1px;y:1px;width:calc(var(--ro-cw,2px) - 2px);height:calc(var(--ro-ch,2px) - 2px);stroke-width:4px;stroke-linecap:butt}
+/* a dark keyline 2 px wider each side under the coloured line (soft white on the Photo office's light wall needs it) (the same dash), so a red line round a red error screen or an amber one round an amber needs-you screen reads as its own band */
+.ro-ctx .ro-ck{stroke:rgba(8,10,12,.85);stroke-width:8px}
+.ro-ctx:is([data-lv="ok"],[data-lv="warn"]) rect:not(.ro-ck){stroke:var(--tint-ink)}
+.ro-ctx[data-lv="high"] rect:not(.ro-ck){stroke:var(--red)}
+@media (forced-colors:active){.ro-ctx rect:not(.ro-ck){stroke:Highlight!important}.ro-ctx .ro-ck{stroke:Canvas!important}}
 /* FR-030..FR-033: the text of a monitor, in the chrome over the glass; newest at the bottom, the top scrolls away as in flat's side panel */
 .ro-stext{overflow:hidden;pointer-events:none;border-radius:2px;font:var(--ro-sf,11px)/var(--ro-sl,15px) ui-monospace,"Cascadia Mono",Menlo,Consolas,monospace;color:var(--ro-scr-plain)}
 .ro-chrome>.ro-stext{pointer-events:none}
@@ -61,13 +72,14 @@
 .ro-caret{position:absolute;right:3px;bottom:5px;width:5px;height:9px;background:var(--ro-scr-reply);animation:ro-blink var(--ro-per,1.3s) step-end infinite}
 .ro-chrome>:is(.ro-bub,.ro-bang,.ro-dots){pointer-events:none} /* cues over a screen or a person: a hover or a click goes to what is under them */
 /* FR-034: the zoom, over everything; opaque, no blur (FR-182); the theme colours its frame, the glass stays a screen */
-.ro-zoom{position:absolute;z-index:5;display:flex;flex-direction:column;overflow:hidden;pointer-events:none;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow-pop,0 8px 24px rgba(0,0,0,.3))}
+.ro-zoom{position:absolute;z-index:7;display:flex;flex-direction:column;overflow:hidden;pointer-events:none;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow-pop,0 8px 24px rgba(0,0,0,.3))}
 .ro-zh,.ro-zk{flex:none;display:grid;grid-template-columns:auto auto 1fr;column-gap:7px;align-items:baseline;padding:4px 9px;font-size:11px;line-height:17px}
 .ro-zh{height:44px}
 .ro-zk{grid-template-columns:1fr 1fr;border-top:1px solid var(--line)}
 .ro-zk[hidden]{display:none}
 .ro-zi{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .ro-zw{grid-column:1/-1}
+.ro-zc{white-space:normal;text-overflow:clip}
 .ro-zy{color:var(--muted)}
 .ro-zb{position:relative;flex:1;min-height:0;overflow:hidden;background:#0f1418}
 .ro-zl .ro-sl{flex:none} /* whole lines, the newest in view */
@@ -156,6 +168,7 @@
 .ro-sign b{font-size:12px;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:3ch}
 .ro-sign .ro-path{font:10.5px ui-monospace,"Cascadia Mono",Menlo,Consolas,monospace;color:var(--muted);overflow:hidden;text-overflow:ellipsis;min-width:0;flex:0 1000 auto} /* the path gives way long before the name (a font wider than measured, #1079 on Linux) */
 .ro-sc{display:flex;gap:6px;align-items:center;flex:none}
+.ro-sign.short :is(.ro-path,.ro-cost){display:none} /* the sign's shortest form: name, counts, + and menu; path and cost on the name's hover (FR-256; FR-356, bug #1392: a room too narrow for the whole sign, in every world) */
 .ro-cnt{display:inline-flex;gap:3px;align-items:center}
 .ro-cost{font-weight:600}
 .ro-sb{width:20px;height:16px;padding:0;border-radius:4px;border:1px solid var(--line);background:transparent;color:var(--ink);font-size:11px;line-height:1;cursor:pointer}
@@ -279,11 +292,39 @@ body.ro-chat .ph .avatar{display:none}
 .ro-newtag{display:none;transform:translate(-100%,calc(-100% - 2px));padding:1px 6px;border-radius:7px;font-size:11px;font-weight:700;line-height:15px;white-space:nowrap;color:#fff;background:#1f7a45;box-shadow:0 0 0 2px rgba(255,255,255,.92);pointer-events:none}
 .ro-newtag.on{display:block}
 @media (forced-colors:active){.ro-newtag{color:CanvasText;background:Canvas;border:1px solid CanvasText;box-shadow:none}}
+/* spec 097 FR-316: "Draft" above the plate's left end (New reply is over the right end); chrome layer, made once per desk, shown by class, aria-hidden */
+.ro-drafttag{display:none;transform:translate(0,calc(-100% - 2px));align-items:center;gap:var(--s-1);padding:0 var(--s-1);border-radius:var(--r-md);font-size:var(--t5-size);font-weight:var(--t1-weight);line-height:var(--t5-lh);white-space:nowrap;color:var(--ink);background:var(--surface);border:1px solid var(--line);pointer-events:none}
+.ro-drafttag.on{display:inline-flex}
+.ro-drafttag>svg{width:12px;height:12px;flex:none}
+@media (forced-colors:active){.ro-drafttag{color:CanvasText;background:Canvas;border-color:CanvasText}}
 /* spec 059 FR-170 (#1155): Open office's rename pencil (.ren, styles.css) beside a plate's name. It is the plate's next sibling, anchored by CSS to
    the name (anchor-name and position-anchor are set per desk), so it follows the name with no script. The plate keeps 22px after the name for it,
    so it covers neither the role nor the helper dots; a long name gives way first (ellipsis). It shows on the plate's hover and focus, as on a desk. */
 .ro-plate.has-ren .ro-l1>b{margin-right:22px}
-.ro-chrome>.ren.ro-ren{left:calc(anchor(right) - 1px);top:calc(anchor(center) - 12px)}
+.ro-chrome>.ren.ro-ren{position-anchor:var(--ro-ren-nm);left:calc(anchor(right) - 1px);top:calc(anchor(center) - 12px)} /* spec 097 FR-357: --ro-ren-nm the name, --ro-ren-pl the plate (set per desk) */
 .ro-chrome>.ro-plate:is(:hover,:focus-visible)+.ren.ro-ren{opacity:1}
 .ro-chrome>.ren.ro-ren:is(:hover,:focus-visible){opacity:1} /* on the pencil itself the plate is no longer :hover (a sibling, review of #1200): it stays shown under the pointer */
 
+
+/* spec 097 FR-306..FR-310 (issue #1139, owner "1265 1", 2026-11-08): the helper strip under a desk's plate: small round head figures (HEAD px, set by --ro-head) with the status dot on the corner, in the
+   plate's own surface, ink and line, so every world's plate look carries over. The name is never drawn (accessible name and tooltip only); the strip's height is the layout's (a fixed place, FR-015). */
+.ro-hstrip{--ro-head:30px;display:grid;grid-template-columns:repeat(var(--ro-hc,1),var(--ro-head));grid-auto-rows:var(--ro-head);gap:var(--s-1);justify-content:start;align-content:start;pointer-events:auto}
+.ro-hstrip.open{display:flex;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;padding:0 var(--s-1) 0 0}
+.ro-hstrip.open>*{flex:none}
+.ro-hd,.ro-hmore{margin:0;padding:0;font:inherit;cursor:pointer;color:var(--ink);background:var(--surface);border:1.5px solid var(--line)}
+.ro-hd{--ro-ring:var(--line);position:relative;display:block;box-sizing:border-box;width:var(--ro-head);height:var(--ro-head);border-radius:50%;border:0;outline:1.5px solid var(--ro-ring)} /* the ring is an outline (selected and focus replace it), so the picture fills the whole figure: the face is HEAD * 0.8 px */
+.ro-hd .ro-hp{position:absolute;inset:0;border-radius:50%;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:var(--t4-size);font-weight:var(--t1-weight,600)}
+.ro-hd .ro-hg{position:absolute;inset:0;background:radial-gradient(circle at 50% 36%,var(--muted) 0 22%,transparent 23%),radial-gradient(ellipse at 50% 100%,var(--muted) 0 42%,transparent 43%),var(--surface-2,var(--surface))} /* no picture: a neutral head and shoulders, no letter (the name is drawn nowhere) */
+.ro-hd .ro-hp img{position:absolute;display:block;max-width:none;height:auto;pointer-events:none}
+.ro-hd>.dot{position:absolute;right:-3px;bottom:-3px;outline:2px solid var(--surface)} /* as the chat header's portrait: the same dot, the same ring */
+.ro-hd:is(.st-waiting,.st-limit){--ro-ring:var(--c-waiting)}
+.ro-hd.st-error{--ro-ring:var(--c-error)}
+.ro-hd.sel{outline:2px solid var(--sel-border,var(--focus));outline-offset:1px}
+.ro-hmore{box-sizing:border-box;min-width:var(--ro-head);height:var(--ro-head);padding:0 var(--s-1);border-radius:calc(var(--ro-head) / 2);font-size:var(--t5-size);font-weight:var(--t1-weight,600);white-space:nowrap;color:var(--muted)}
+.ro-hd:focus-visible,.ro-hmore:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.ro-hd:hover{--ro-ring:var(--line-2,var(--line))}
+.ro-hmore:hover{border-color:var(--line-2,var(--line))}
+@media (forced-colors:active){.ro-hd,.ro-hmore{border:1px solid CanvasText;background:Canvas;color:CanvasText}}
+/* spec 097 FR-352 (2026-11-09 delta): the drag shows by pointing, as the flat room head does; only where a drag starts (no lounge seat, away desk or arcade room sign (a "continued" sign shows it without a drag: [KNOWN GAP], cosmetic); the lift's grabbing is reorder.js's) */
+.ro:not([data-world="retro"]) .ro-sign,.ro:not([data-world="retro"]) .ro-plate[data-id]:not(.narrow,[data-surface="lounge"]){cursor:grab}
+.ro-sign :is(button,a,input){cursor:pointer}

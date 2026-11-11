@@ -21,7 +21,7 @@ export const SHIPPED_MAX = 30 * 1024 * 1024;
 export const PERSON_MAX_H = 640;
 const KEYS = ['files', 'source', 'tool', 'date', 'made by', 'approved by', 'reference', 'prompt', 'cut', 'licence'];
 const CLAUSE = /fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named/;
-const kindOf = (f: string): keyof typeof CAPS | null => /^fx-[a-z]+\.webp$/.test(f) ? 'fixture' : /^p\d\d-[\w-]+(\.h)?\.webp$/.test(f) || /^[a-z][a-z0-9]*-\w+\.webp$/.test(f) ? 'person' : f === 'desk.webp' || f === 'desk.h.webp' ? 'desk' : /^floor(-night)?\.webp$/.test(f) ? 'floor' : /^wall(-night)?\.webp$/.test(f) ? 'wall' : /^monitor(-[a-z]+)?\.webp$/.test(f) ? 'monitor' : f === 'glow.webp' ? 'glow' : null;
+const kindOf = (f: string): keyof typeof CAPS | null => /^fx-[a-z]+\.webp$/.test(f) ? 'fixture' : /^p\d\d-[\w-]+(\.h)?\.webp$/.test(f) || /^[a-z][a-z0-9-]*-\w+\.webp$/.test(f) ? 'person' : f === 'desk.webp' || f === 'desk.h.webp' ? 'desk' : /^floor(-night)?\.webp$/.test(f) ? 'floor' : /^wall(-night)?\.webp$/.test(f) ? 'wall' : /^monitor(-[a-z]+)?\.webp$/.test(f) ? 'monitor' : f === 'glow.webp' ? 'glow' : null;
 
 /** ASSETS.md: one section per source sheet (`### name`), each a list of `- key: value` lines */
 export function sections(md: string): Map<string, Record<string, string>> {
@@ -64,7 +64,7 @@ export function problems(files: Map<string, Buffer>, peopleJson: string, md: str
     if (person) {
       if (!CLAUSE.test(s.fictional || '')) out.push(`ASSETS.md ${name}: no fictional-people clause (FR-067)`);
       const lc = s['likeness-check'] || '';
-      if (!/^(?:[A-Z][\w .'-]*[\w.], \d{4}-\d{2}-\d{2}(?: \d{2}:\d{2} UTC)?(?: \([^()]+\))?|pending \([A-Z][\w .'-]*\))$/.test(lc)) out.push(`ASSETS.md ${name}: likeness-check must be "<approver>, <YYYY-MM-DD>[ HH:MM UTC][ (note)]" or "pending (<approver>)", got "${lc}" (FR-068)`);
+      if (!/^(?:[A-Z][\w .'-]*[\w.](?: \(owner\))?, \d{4}-\d{2}-\d{2}(?: \d{2}:\d{2} UTC)?(?: \([^()]+\))?(?:, Telegram DM: "[^"\n]+")?|pending \([A-Z][\w .'-]*\))$/.test(lc)) out.push(`ASSETS.md ${name}: likeness-check must be "<approver>, <YYYY-MM-DD>[ HH:MM UTC][ (note)]" or "pending (<approver>)", got "${lc}" (FR-068)`);
       if (/\b(?:celebrity|famous|actor|actress|singer|politician) (?:named|called)\b/i.test(s.prompt || '')) out.push(`ASSETS.md ${name}: the prompt names a real person`);
     }
     for (const f of (s.files || '').split(/\s+/).filter(Boolean)) { if (listed.has(f)) out.push(`ASSETS.md: ${f} in ${listed.get(f)} and ${name}`); listed.set(f, name); }
@@ -198,7 +198,53 @@ for (const wid of worldIds) {
   packs++; biggest = Math.max(biggest, [...all.values()].reduce((n, b) => n + b.length, 0));
   if (wid === 'photo') { for (const [k, v] of all) files.set(k, v); md = mdAll; pj = merged; META = JSON.parse(merged); }
 }
-for (const sid of setIds) assert.ok(worldIds.some((w) => (readPack('worlds', w).json as { defaultSet: string }).defaultSet === sid), `${sid}: a set the repo ships is the default of a world (so the cap counts it)`);
+/* spec 097 Changes 2026-11-08 (T240..T244): a set that is no world's default is a crew set; it is drawn only because crew.js has a `REAL_SETS` row for it
+   (wired). It still passes every picture and text check and has its approval on record. A set with no row is refused, except a set named in SETS_PACK_ONLY
+   (T245 art part: the art lands before its wiring PR); that allowance fails as soon as crew.js gives the set a row, so it cannot go stale. */
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const REAL_SETS = (require(path.join(__dirname, '..', '..', 'src', 'renderer', 'crew.js')) as { REAL_SETS: { id: string }[] }).REAL_SETS;
+const wiredIds = REAL_SETS.map((r) => r.id);
+for (const id of wiredIds) assert.ok(setIds.includes(id), `${id}: a REAL_SETS row has its set folder`);
+const SETS_PACK_ONLY = ['minimalist']; // art landed, wiring PR to come (T245); remove the name when crew.js has its REAL_SETS row
+for (const id of SETS_PACK_ONLY) assert.ok(!wiredIds.includes(id), `${id} is wired: remove it from SETS_PACK_ONLY`);
+/* each crew set's owner approval (date, time and quote of every frame line) and likeness check, one explicit entry per set: a set missing here fails */
+const QUOTE_1143 = 'Vikram Gorla (owner), 2026-11-08 11:43 UTC, Telegram DM: "Yes, I looked at every art carefully and it does not resemble any person I know"';
+const ALL_GOOD = '2026-11-08 11:29 UTC, "They all look good"';
+const RECORD: Record<string, { approval: string; likeness: string }> = {
+  pirate: { approval: '2026-11-08 08:48 UTC, "Ok, looks good"', likeness: QUOTE_1143 },
+  royal: { approval: ALL_GOOD, likeness: QUOTE_1143 },
+  rebels: { approval: ALL_GOOD, likeness: QUOTE_1143 },
+  monster: { approval: ALL_GOOD, likeness: QUOTE_1143 },
+  cheeky: { approval: ALL_GOOD, likeness: QUOTE_1143 },
+  minimalist: { approval: '2026-11-08 12:00 UTC, "Look approved and none look like a real person"', likeness: 'Vikram Gorla (owner), 2026-11-08 12:00 UTC, Telegram DM: "Look approved and none look like a real person"' },
+};
+const packOnly = setIds.filter((sid) => !worldIds.some((w) => (readPack('worlds', w).json as { defaultSet: string }).defaultSet === sid));
+for (const sid of packOnly) {
+  assert.ok(wiredIds.includes(sid) || SETS_PACK_ONLY.includes(sid), `${sid}: a set the repo ships is the default of a world or has a REAL_SETS row (not wired: refused)`);
+  assert.ok(Object.prototype.hasOwnProperty.call(RECORD, sid), `${sid}: the set has its own approval and likeness entry in RECORD (no fallback)`);
+  const rec = RECORD[sid];
+  const st = readPack('sets', sid), sj = st.json as { id: string; level: string; formatVersion: number; name: string; seat: Record<string, unknown>; stand: Record<string, { poses: Record<string, number[]> }> };
+  assert.strictEqual(sj.id, sid, `${sid}: set.json id is the folder`);
+  assert.strictEqual(sj.formatVersion, 1, `${sid}: formatVersion 1`);
+  assert.strictEqual(sj.level, 'full', `${sid}: crew sets have full poses`);
+  assert.ok(typeof sj.name === 'string' && sj.name.length >= 1 && Array.from(sj.name).length <= 40, `${sid}: name 1-40 characters`);
+  assert.deepStrictEqual(Object.keys(sj.seat).sort(), Object.keys(sj.stand).sort(), `${sid}: the same people seated and standing`);
+  for (const [pid, s] of Object.entries(sj.stand)) assert.deepStrictEqual(Object.keys(s.poses).sort(), ['book', 'coffee', 'knock', 'letter', 'runA', 'runB'], `${sid} ${pid}: the six standing poses`);
+  const bad = problems(st.files, JSON.stringify(sj), st.md).filter((x) => !/^people\.json names (?:desk|floor)\.webp, /.test(x)); // the desk and floor belong to a world
+  assert.deepStrictEqual(bad, [], `${sid} passes: ` + bad.slice(0, 10).join('; '));
+  assert.strictEqual(st.files.size, Object.keys(sj.seat).length * 12, `${sid}: 12 pictures per person`);
+  assert.ok(!/pending|\[ \]/i.test(st.md), `${sid}: no pending approval and no empty approval box in ASSETS.md`);
+  const approval = /^approved by Vikram Gorla \(owner\) in Paco's place, Telegram DM, \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC, "[^"]+"$/;
+  const frames = [...st.md.matchAll(/^- \[x\] (\S+\.webp): (.*)$/gm)];
+  const prefixed = `note: ${(frames[0] || [])[2]}`; // mutant: text before "approved by" must fail (the unanchored regex accepted it)
+  assert.ok(!approval.test(prefixed), `${sid}: approval line with text before "approved by" is rejected (anchored)`);
+  assert.ok(new RegExp(approval.source.slice(1, -1)).test(prefixed), `${sid}: the unanchored regex would accept the prefixed line (mutant is real)`);
+
+  assert.deepStrictEqual(frames.map((m) => m[1]).sort(), [...st.files.keys()].sort(), `${sid}: one approval line for every picture`);
+  for (const m of frames) assert.ok(approval.test(m[2]) && m[2].endsWith(`Telegram DM, ${rec.approval}`), `${sid} ${m[1]}: approval line names who, in whose place, channel, time and the set's recorded quote (FR-067)`);
+  for (const [n, x] of sections(st.md)) assert.ok(/^(?:Paco|Vikram Gorla)\b/.test(x['approved by'] || '') && (x['likeness-check'] || '') === rec.likeness, `${sid} ${n}: approved by and likeness-check recorded`);
+  packs++;
+}
 assert.strictEqual(Object.keys(META.seat).length, 15, '15 seated people (the Office people)');
 assert.ok(Object.values(META.stand as Record<string, { poses: object }>).every((s) => ['book', 'type', 'knock', 'counter', 'letter', 'runA', 'runB'].every((p) => p in s.poses) && !('tread' in s.poses) && Object.keys(s.poses).length === 7), 'every person has exactly the five lobby poses and the two running strides, no treadmill (owner 2026-10-31 11:22), and no old front-facing pose (FR-191)');
 assert.strictEqual(META.facing, 'left', 'the pictures face left (FR-191)');

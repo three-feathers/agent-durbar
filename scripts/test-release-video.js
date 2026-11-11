@@ -94,11 +94,37 @@ const checkChoice = (M) => {
   assert.deepStrictEqual(pick([], ['crews', 'crews']), ['intro', 'crews', 'outro'], 'a Scene: field alone picks its scene, once');
   assert.throws(() => pick([], ['intro', 'nope', 'toString']), /no scene shows/, 'the cards and unknown ids are no scene');
   const six = ['crews', 'mcp', 'org', 'floors', 'refresh', 'needsyou'];
-  assert.strictEqual(M.AUTO_MAX, 5, 'AUTO_MAX is pinned at 5 feature scenes (a clip of 6 would pass LEN_MAX)');
-  assert.deepStrictEqual(pick([], six), ['intro', 'crews', 'mcp', 'org', 'floors', 'refresh', 'outro'], 'six candidates are cut to AUTO_MAX (5) scenes between the cards');
+  assert.strictEqual(M.AUTO_MAX, 4, 'AUTO_MAX is pinned at 4 feature scenes (spec 008 FR-187, issue #1305: with two Real office photo scenes a clip of 5 was 6.2 MB at 640 px and 128 colours, over the 5 MiB cap)');
+  assert.deepStrictEqual(pick([], ['realoffice', 'crews', 'mcp']).slice(1, 3), ['realoffice', 'crews'], 'the realoffice scene is chosen by its Scene: field (spec 008 FR-187)');
+  assert.strictEqual(typeof M.SCENES.realoffice.play, 'function', 'the realoffice scene is in the catalogue');
+  assert.deepStrictEqual(pick([], six), ['intro', 'crews', 'mcp', 'org', 'floors', 'outro'], 'six candidates are cut to AUTO_MAX (4) scenes between the cards');
   assert.ok(!lounge('- x (respec 097 FR-246): a') && !lounge('- x (prespec 097 FR-246): a'), '"respec 097" is not "spec 097" (word boundary)');
 };
 checkChoice(RV);
+// ---- spec 008 FR-197: the v0.1.15 scenes (Real office crews, mouse drag) are in the catalogue and the release picks them ----
+const V15 = [
+  "- **Real office**: the Characters choice Cheeky, Pirate, Monster, Royal and Rebels now draws that crew's own people (spec 097 FR-335, FR-336, issue #1154).",
+  "- Real office: drag a desk by its name plate or a room by its folder sign to rearrange (spec 097, #1152).",
+  "- **Rearrange in Real office, by keyboard and menu** (spec 097 FR-345..FR-348, issue #1152): Alt+arrows on a name plate move desks.",
+];
+const checkNew = (M) => {
+  for (const id of ['real-crews', 'real-drag']) {
+    const sc = M.SCENES[id];
+    assert.ok(sc && typeof sc.play === 'function', `${id} is in the catalogue`);
+    assert.ok((sc.refs || []).length > 0 && sc.refs.every((r) => r.spec === '097' && r.fr), `${id} has refs naming spec 097 FRs`);
+  }
+  assert.ok(M.sceneIdsFor([V15[0]]).includes('real-crews'), 'the v0.1.15 crews bullet picks real-crews');
+  assert.ok(M.sceneIdsFor([V15[2]]).includes('real-drag'), 'the v0.1.15 keyboard bullet picks real-drag');
+  assert.ok(!M.sceneIdsFor([V15[1]]).includes('real-drag'), 'the drag bullet names no FR, so it needs its Scene: field');
+  assert.deepStrictEqual(M.chooseScenes({ bullets: V15, sceneFields: ['real-crews', 'real-drag'] }), ['intro', 'real-crews', 'real-drag', 'outro'], 'the v0.1.15 clip shows its two new scenes');
+  assert.ok(!M.sceneIdsFor(V12).some((id) => id.startsWith('real-')), 'the v0.1.12 bullets pick neither new scene');
+};
+checkNew(RV);
+{
+  const list = require('child_process').spawnSync(process.execPath, [path.join(__dirname, 'release-video.js'), '--list'], { encoding: 'utf8', timeout: 20000 });
+  assert.strictEqual(list.status, 0, '--list exits 0');
+  for (const id of ['real-crews', 'real-drag']) assert.ok(new RegExp(`^${id} +\\S`, 'm').test(list.stdout), `--list names ${id}`);
+}
 for (const [sid, sc] of Object.entries(RV.SCENES)) {
   for (const r of sc.refs || []) {
     assert.ok(/^\d{3}$/.test(r.spec) && fs.readdirSync(path.join(__dirname, '..', 'specs')).some((d) => d.startsWith(r.spec + '-')), `${sid}: its ref names a spec that exists (${r.spec})`);
@@ -185,7 +211,9 @@ assert.ok(5240561 <= RV.GIF_MAX, 'the v0.1.12 GIF is under the cap');
     ['CRLF not normalised', ".replace(/\\r\\n?/g, '\\n').split('\\n');\n    const at", ".split('\\n');\n    const at", /CRLF CHANGELOG/],
     ['an FR list runs to the closing parenthesis (two specs in one)', "((?:(?!\\bspec \\d{3}\\b)[^)])*)", "([^)]*)", /second owns the FR|frsNamed: the second spec/],
     ['spec without a word boundary', "/\\bspec (\\d{3})", "/spec (\\d{3})", /word boundary/],
-    ['AUTO_MAX raised', "const AUTO_MAX = 5;", "const AUTO_MAX = 6;", /AUTO_MAX is pinned|cut to AUTO_MAX/],
+    ['AUTO_MAX raised', "const AUTO_MAX = 4;", "const AUTO_MAX = 5;", /AUTO_MAX is pinned|cut to AUTO_MAX/],
+    ['a new scene without refs', "refs: [{ spec: '097', fr: [335, 337] }],", "", /real-crews has refs/],
+    ['a new scene whose refs match nothing', "refs: [{ spec: '097', fr: [345, 355] }],", "refs: [{ spec: '097', fr: [900, 901] }],", /keyboard bullet picks real-drag/],
     ['spec without FR numbers shows an FR scene', "if (!ref.fr) return true;\n  return got.some", "if (!ref.fr || !got.length) return true;\n  return got.some", /named without FR numbers/],
   ];
   try {
@@ -196,7 +224,7 @@ assert.ok(5240561 <= RV.GIF_MAX, 'the v0.1.12 GIF is under the cap');
       const file = path.join(dir, String(i), 'release-video.js');
       fs.writeFileSync(file, src5.replace(from, to));
       const M = require(file);
-      assert.throws(() => { checkChoice(M); checkSources(M); }, (e) => e && e.message && expect.test(e.message), `mutant "${name}" is killed by its intended assert`);
+      assert.throws(() => { checkChoice(M); checkSources(M); checkNew(M); }, (e) => e && e.message && expect.test(e.message), `mutant "${name}" is killed by its intended assert`);
     });
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 }
@@ -426,7 +454,7 @@ const { killTree } = require('./ui-suite');
       const m2 = await RV.main(['--version', 'v0.1.7', '--out', out], { chooseScenes: () => ['intro', 'outro'], hasFfmpeg: () => true, ensure: () => true, runOne: rec, run: fakeRun });
       delete process.env.RV_TEST_SECRET_TOKEN;
       assert.ok(m2 && m2.gif.bytes === 1);
-      assert.ok(seen.killTree === true && seen.timeoutMs === RV.RECORD_MS && seen.timeoutMs <= 10 * 60 * 1000, 'the recording has a limit and kills its tree');
+      assert.ok(seen.killTree === undefined && seen.timeoutMs === RV.RECORD_MS && seen.timeoutMs <= 10 * 60 * 1000, 'the recording has a limit (runOne ends its tree on every run, FR-199; no killTree flag)');
       assert.ok(seen.baseEnv && !('RV_TEST_SECRET_TOKEN' in seen.baseEnv) && Object.keys(seen.baseEnv).every((k) => RV.ENV_ALLOW.includes(k.toUpperCase())), 'Electron gets the allow-listed environment');
       assert.ok(opts.length >= 2 && opts.every((o) => o.timeout === RV.FFMPEG_MS), 'every encode has a limit');
     }
@@ -482,7 +510,7 @@ const { killTree } = require('./ui-suite');
     kt({ pid: 5 }, { platform: 'win32', run: (f, a) => calls.push([f, ...a]) });
     assert.deepStrictEqual(calls, [['taskkill', '/pid', '5', '/T', '/F']], 'Windows: the arguments');
     const uisrc = fs.readFileSync(path.join(__dirname, 'ui-suite.js'), 'utf8').replace(/\r\n/g, '\n');
-    assert.ok(/const releaseGuard = d\.killTree \? guardTree\(child\)/.test(uisrc) && /clearTimeout\(timer\);\s*releaseGuard\(\);/.test(uisrc), 'runOne guards a killTree run and releases when it closes');
+    assert.ok(/const releaseGuard = guardTree\(child[,)]/.test(uisrc) && /clearTimeout\(timer\);\s*releaseGuard\(\);/.test(uisrc), 'runOne guards every run and releases when it closes (FR-199)');
   }
   console.log('release-video: tests passed');
 })().catch((e) => { console.error(e); process.exitCode = 1; });

@@ -149,6 +149,10 @@ module.exports = async (ctx) => {
   // 4. a hidden session's page dialog
   const viewA = view();
   nativeOwner = viewA;
+  /* A's page shows an alert now, once the scene is set (A hidden, B shown), not on a page timer: on macOS the alerts closed through
+     the debugger stay as sheets on the window (FR-025d KNOWN GAP), and A's next navigation closes them with AppKit animations that hold
+     the main process ~0.8 s, so a timed alert fired while A was still shown (issue #1411). */
+  const alertInA = (text) => viewA.webContents.executeJavaScript(`setTimeout(()=>alert(${jsLiteral(text)}),0);0`, true);
   await typeAddress(SIM_URL('alert?ms=1500&n=2&html=1'));
   await wait(() => viewA.webContents.getURL().startsWith(SIM_URL('alert')), 'the alert page loads');
   const nameA = await js(`document.querySelector('#panelTitle').textContent`);
@@ -180,10 +184,9 @@ module.exports = async (ctx) => {
   await wait(async () => (await selected()) === A, 'A opened by the user');
   await js(`document.getElementById('tabBrowser').click()`);
   await wait(() => views().length === 1, 'A on its Browser tab');
-  await typeAddress(SIM_URL('alert?ms=800&n=1'));
-  await wait(() => view().webContents.getURL().startsWith(SIM_URL('alert')), 'the alert page loads again');
   await clickStrip(B);
   await wait(async () => (await selected()) === B, 'B again');
+  await alertInA('Delete item 3?');
   await wait(async () => (await selected()) === A && (await tabSel()), 'after the user came back, the next dialog brings A forward again', 15000);
   await dismissNative();
   await wait(() => js(`!document.querySelector('.dlg-mark')`), 'marker gone at the end');
@@ -194,11 +197,10 @@ module.exports = async (ctx) => {
   await wait(async () => (await selected()) === A, 'A opened by the user');
   await js(`document.getElementById('tabBrowser').click()`);
   await wait(() => views().length === 1, 'A on its Browser tab');
-  await typeAddress(SIM_URL('alert?ms=1500&n=1'));
-  await wait(() => viewA.webContents.getURL().includes('n=1'), 'the alert page loads for the overlay case');
   await clickStrip(B);
   await wait(async () => (await selected()) === B, 'B for the overlay case');
   await js(`void window.DurbarDialog(document)({title:'Still open',body:'x',buttons:[{label:'Close',value:null}]});0`);
+  await alertInA('Delete item 4?');
   await wait(async () => (await selected()) === A && (await tabSel()), 'the dialog pulls A forward under the open question', 15000);
   await wait(() => views().length === 0, 'the view comes off while the question is open', 6000);
   for (let i = 0; i < 10; i++) { assert.strictEqual(views().length, 0, 'and stays off while the question is open (no flash)'); await ctx.sleep(100); }
