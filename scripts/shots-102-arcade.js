@@ -108,12 +108,16 @@ const run = async (ctx, reqs) => {
        spec 102 T282: the simulator is still replaying (`settle: false`), so a person's frame can change while this reads it: a picture in flight is not read
        (drawing it threw); the check says BUSY and is read again once every picture has loaded, up to 5 s */
     let whole = ['BUSY'];
-    for (let i = 0; i < 25 && whole[0] === 'BUSY'; i++) { if (i) await ctx.sleep(200); await must(PICS, 'the pictures, before their pixels are read'); whole = await js(`(async()=>{let busy=0;const out=[],ro=document.querySelector('#stage .ro').getBoundingClientRect(),B=[...document.querySelectorAll('#stage .ro-cab,#stage .ro-screen')].map(e=>e.getBoundingClientRect());
-      for(const p of document.querySelectorAll('#stage .ro-person')){if(p.hidden||!p.getClientRects().length)continue;await p.decode().catch(()=>{});if(!p.complete||!p.naturalWidth){busy=1;continue;}const b=p.getBoundingClientRect(),c=document.createElement('canvas');c.width=Math.round(b.width);c.height=Math.round(b.height);const x=c.getContext('2d');x.imageSmoothingEnabled=false;x.drawImage(p,0,0,c.width,c.height);const d=x.getImageData(0,0,c.width,c.height).data,mir=getComputedStyle(p).scale.startsWith('-');let n=0;
+    /* spec 102 T304 (issue #1517): a person whose box rounds to 0 px is read again like a picture in flight, and named if it stays so.
+       ARCADE_MUTANT (test only): `zero` makes every person 0 px wide for 1.5 s (must pass), `zero-stuck` for good (must fail naming the person) */
+    const MUT = process.env.ARCADE_MUTANT;
+    if (MUT === 'zero' || MUT === 'zero-stuck') await js('(()=>{const st=document.createElement("style");st.textContent="#stage .ro-person{width:0!important}";document.head.appendChild(st);setTimeout(()=>st.remove(),' + (MUT === 'zero' ? 1500 : 1e9) + ');return 0;})()');
+    for (let i = 0; i < 25 && whole[0] === 'BUSY'; i++) { if (i) await ctx.sleep(200); await must(PICS, 'the pictures, before their pixels are read'); whole = await js(`(async()=>{let busy=0;const zero=[],out=[],ro=document.querySelector('#stage .ro').getBoundingClientRect(),B=[...document.querySelectorAll('#stage .ro-cab,#stage .ro-screen')].map(e=>e.getBoundingClientRect());
+      for(const p of document.querySelectorAll('#stage .ro-person')){if(p.hidden||!p.getClientRects().length)continue;await p.decode().catch(()=>{});if(!p.complete||!p.naturalWidth){busy=1;continue;}const b=p.getBoundingClientRect();if(Math.round(b.width)<1||Math.round(b.height)<1){busy=1;zero.push('zero box: '+p.dataset.for+' '+b.width.toFixed(2)+'x'+b.height.toFixed(2)+' style '+p.style.cssText);continue;}const c=document.createElement('canvas');c.width=Math.round(b.width);c.height=Math.round(b.height);const x=c.getContext('2d');x.imageSmoothingEnabled=false;x.drawImage(p,0,0,c.width,c.height);const d=x.getImageData(0,0,c.width,c.height).data,mir=getComputedStyle(p).scale.startsWith('-');let n=0;
         for(const r of B){const L=Math.max(r.left,b.left),R=Math.min(r.right,b.right),T=Math.max(r.top,b.top),Bt=Math.min(r.bottom,b.bottom);for(let yy=Math.floor(T);yy<Bt;yy++)for(let xx=Math.floor(L);xx<R;xx++){const u=Math.floor(xx-b.left),ux=mir?c.width-1-u:u,v=Math.floor(yy-b.top);if(ux>=0&&ux<c.width&&v>=0&&v<c.height&&d[4*(v*c.width+ux)+3]>32)n++;}}
         if(n)out.push(p.dataset.for+': '+n+' px on a cabinet or screen');}
       for(const s of document.querySelectorAll('#stage .ro-sign')){const b=s.getBoundingClientRect();if(b.left<ro.left-0.5||b.right>ro.right+0.5)out.push('a sign leaves the floor: '+s.textContent.slice(0,14));}
-      return busy?['BUSY']:out;})()`); }
+      return busy?['BUSY',...zero]:out;})()`); }
     assert.deepStrictEqual(whole, [], tag + ': every person whole beside the cabinet, signs on the floor');
     /* owner, 2026-11-03: in the lobby nobody stands half behind another (painted pixels), every name chip reads in full, no two chips touch;
        */

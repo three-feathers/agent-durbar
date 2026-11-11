@@ -90,8 +90,23 @@ async function cases(h: Helpers) {
     } finally { delete process.env.DIAG_FORCE_FAIL; } }
 }
 
+/** the hover-card driver (static, T306): the asleep-card block is a pointer step and its last assert is inside it, so the log prints on that assert */
+function hoverCardCase(d: string) {
+  const open = "await H.pointerStep('check-097-hover-card', `${tag} falls asleep`, async () => {";
+  const i = d.indexOf(open), last = d.indexOf('the asleep card is still open 700 ms after the refill'), end = d.indexOf('\n    });\n', last);
+  assert.ok(i > 0 && last > i && end > last, 'check-097-hover-card wraps the falls-asleep block in H.pointerStep, its last assert inside');
+  assert.ok(!d.slice(i, last).includes('\n    });\n'), 'the step is not closed before that assert');
+  assert.ok(d.indexOf('wk2 = await hoverWork', i) > i && d.slice(0, i).includes('let wk2;'), 'wk2 is declared outside the step for the later steps');
+  const open2 = "await H.pointerStep('check-097-hover-card', `${tag} falls asleep, then leaves`, async () => {";
+  const i2 = d.indexOf(open2), last2 = d.indexOf('the held card of the third agent is still open before the pointer leaves'), end2 = d.indexOf('\n    });\n', last2);
+  assert.ok(i2 > i && last2 > i2 && end2 > last2, 'check-097-hover-card wraps the third-agent step in H.pointerStep, its held-card assert inside');
+  assert.ok(!d.slice(i2, last2).includes('\n    });\n'), 'the third-agent step is not closed before that assert');
+  assert.ok(d.slice(0, i2).includes('let wk4;') && d.indexOf('wk4 = await hoverWork', i2) > i2, 'wk4 is declared outside the third-agent step');
+}
+
 (async () => {
   assert.strictEqual(lf('a\r\nb'), 'a\nb', 'lf() turns CRLF into LF');
+  hoverCardCase(lf(fs.readFileSync(path.join(ROOT, 'scripts', 'check-097-hover-card.js'), 'utf8')));
   await cases(load(SRC));
   await cases(load(lf(SRC.replace(/\n/g, '\r\n')))); // a CRLF checkout gives the same source after lf()
   const mutants: Array<[string, string, string]> = [
