@@ -293,6 +293,15 @@ In the drawer I choose **Open source** on a note: the chat it came from opens an
 
 ## Changes
 
+### 2026-11-11: `test-notesswitch` reads every inode as a bigint (test only; Windows CI run 42932253989, found on PR #1482)
+
+*Found*: `test:notesswitch` failed on Windows (job 130233638727) at *issue 1463: a rename split across folders*, block A: the mirror's `id` ended `:12947848929002475` but the test compared it with the inode read as a plain number, which is `12947848929002476` (an NTFS file ID above 2^53 loses its low bit). **Cause: precision loss in the test**, not a timing flake and not the PR it surfaced on; `src/main/notesfile.ts` already builds `mirror.id` from `{ bigint: true }` reads and was right. No product change.
+
+- The test reads every inode with `{ bigint: true }` (`inoOf`, the `statSync` and `lstatSync` reads), all or none, so comparisons stay bigint to bigint; the id check is one helper, `idHolds`.
+- `test:` `scripts/test-notesswitch.ts`, *mirror.id check on an inode above 2^53*: a stubbed `fstatSync` answers 12947848929002475 for the temp file; the mirror keeps every digit, and `idHolds` is true for it and false for its neighbours that differ only in the low bit. A mutant of `idHolds` that converts with `Number` fails it (run by hand, not in CI).
+- **Not done here:** the same plain-number comparisons in production code are issue #1491.
+- `[KNOWN GAP]`: Windows was not run for this change (no NTFS here); the new case uses a stub, so only the next Windows CI run shows the original failure gone.
+
 ### 2026-11-10: a delete unlinks only the inode Durbar wrote and never renames back over a notes.md; the split-rename race recorded as it is (issue #1463; a fix to FR-053 and FR-055)
 
 *Found* (issue #1463, `test:notesswitch` failed once in CI and once in 40 local runs under CPU load; root cause read in `NotesFile.remove`): `rename(2)` and `link(2)` look up the old and the new path **separately**. A process that swaps `.durbar` for a link between those two lookups makes one call cross folders: in the root-cause analysis of #1463 a raw rename loop moved the outside file into the project 4 times in 50,000 renames (not repeated for this change). The delete checks every name before and after, but each check is by path, so a split call is not caught by a path check. Such a process (for example a sandboxed agent that may write the project but not the other folder) gets Durbar to delete, move or overwrite in a folder it cannot write itself, on the person's *Delete* click or on any write. Outcomes, for a file named `notes.md` in a folder named `notes` that the link points to ("the outside file"):
