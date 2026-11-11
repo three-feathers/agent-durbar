@@ -967,7 +967,8 @@ async function driver(ctx) {
     /** The camera move, drawn from one capture (the page is still while the camera moves) at ZOOM_FPS. */
     async glide(to, secs, img = null) {
       await this.check();
-      if (!img) img = await H.wc().capturePage();
+      /* spec 097 FR-365 (bug 1513): the one capture is taken once no plate, desk or person is still easing to a new layout (a WAAPI move in #stage; the CSS loops keep running), so no still holds a half-moved room */
+      if (!img) { await H.until(`!(document.getElementById('stage')||document.body).getAnimations({subtree:true}).some(a=>!a.animationName&&a.playState==='running')`, 3000); img = await H.wc().capturePage(); }
       for (const c of zoomPath(cam, to, secs)) { cam = c; shoot(img, clipMs); clipMs += 1000 / ZOOM_FPS; }
       cam = to;
     },

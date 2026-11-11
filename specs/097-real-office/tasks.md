@@ -313,6 +313,10 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 
 - [x] T298 [US5] FR-357: the pencil anchored to the plate when the plate does not draw the name (arcade cabinets), the field over the marquee. Test: `sim:` `check-097-plate-pencil` in the Photo office, cave, arcade and one-room arcade, both sizes; mutant `PENCIL_MUTANT=plate` fails the geometry assert
 
+## 2026-11-11: the rename pencil while its plate eases (FR-365, bug #1513)
+
+- [x] T309 [US2] Spec delta 2026-11-11 (FR-365): `realoffice.js` `box()` gives the ease it started; a plate's pencil is not painted (WAAPI opacity 0, no last keyframe) for its plate's ease and fades in over 120 ms at its own spot; `release-video.js` `glide()` waits for no WAAPI move in `#stage` before its one capture. Test: `sim:` new driver `check-097-pencil-ease` (in `ui-suite`): painted-pixel marks in `capturePage` frames over the first ~320 ms of the clip's lounge move, Photo office and arcade, 1440x900 and 1280x800; mutant `PENCIL_EASE_MUTANT=nohide`
+
 ## 2026-11-11: check-097-crews settles the lobby's visits (bug #1459)
 
 - [x] T304 `scripts/check-097-crews.js`: `quiet()` waits at most 5 s for `H.load`'s settle condition, returns the scene, the driver asserts it unchanged before the read; request times and type printed on a `bad` entry; `H.SETTLED` (one expression for `H.load` and the driver); `CREWS_MUTANT=latevisit|latevisit-nowait|failed` [FR-335, FR-336]. Test: `sim:` `check-097-crews`
