@@ -242,9 +242,9 @@ The other 17 cells are the same shared code, in tokens, or a `person`, `fixture`
 | RA5 | Light: night parts and tokens (the group withdrawn, 2026-11-03; T217, T219 closed 2026-11-07, T218 open) | RA3 | T217..T219 |
 | RA6 | UI style, chat, Settings | RA5, #1001 | T220, T221 |
 | RA7 | Nine moments and the registry | RA4, #994 | T222, T223 |
-| RA8 | Set contract and interoperation; `pixel` in Flat, closed | RA2, T111 | T224, T225, T122 |
+| RA8 | Set contract and interoperation; `retro` in Flat, closed | RA2, T111 | T224, T225 and T122 (now T290..T296) |
 | RA9 | Coverage moves off the theme; no behaviour change | nothing | T226 |
-| RA10 | Migration, looks, then **the flip**: the flag, `pixel` value, automatic move, theme removed, code and docs | all, FR-269's gate | T227..T232, T115, spec 035 T089 |
+| RA10 | Migration, looks, then **the flip**: the flag, `retro` value, automatic move, theme removed, code and docs | all, FR-269's gate | T227..T232, T115, spec 035 T089 |
 
 **Risks.**
 
@@ -279,19 +279,19 @@ The other 17 cells are the same shared code, in tokens, or a `person`, `fixture`
 
 **Constitution.** I: spec, plan, tasks here, no `src/`. II: nothing vendor-specific. III: packs stay data; `notePaper` and `noteStyle` are validated (FR-055); the simulator flag exists only under `DURBAR_SIM`. IV: image runs only on the owner's written yes, simulator otherwise. V: 10.5 px, 15 agents at both sizes, no status by colour alone, reduced motion freezes everything. VI: no path or shell difference; packaged runs listed. VII: FR-297's table. VIII: the mock's limits are stated, numbers tagged as arithmetic or measured.
 
-## Delta 2026-11-11: Retro pixel and Office people as Characters choices (T225 split into T290..T295; FR-320..FR-325)
+## Delta 2026-11-11: Retro pixel and Office people as Characters choices (T225 split into T290..T296; FR-320..FR-326)
 
-**Status:** plan only; the build waits for the owner's answers C1..C8 (spec Changes 2026-11-11). No `src/` change in the spec PR.
+**Status:** plan only; every question (C1..C8) answered 2026-11-11 (spec Changes 2026-11-11). No `src/` change in the spec PR. Open: the owner's approval of each new picture (T296).
 
-**Reused (spec 021 FR-031).** `peopleFor`, `levelFor`, `REAL_SETS`, `WORLD_FLAGS` (`crew.js`: the `retro` row with its choice and flag is already there); `CHARACTER_CHOICES`, `parseCharacters`, `kitFor` (`src/shared/characters.ts`) and their copies in `theme.js`; `settings:setCharacters` (main, one place for policy); the Characters list and `charPreview` (`screens.js`, `app.js`, 077 FR-068); `meta.pixelPeople` and 097 T247's scaling of one style of people in another world; `check-097-crews`, `shots-102-arcade`, the request log (T218). Nothing new is needed but two list values, one `REAL_SETS` choice and the pixel-mode split.
+**Reused (spec 021 FR-031).** `peopleFor`, `levelFor`, `REAL_SETS`, `WORLD_FLAGS` (`crew.js`: the `retro` row with its choice and flag is already there); `CHARACTER_CHOICES`, `parseCharacters`, `kitFor` (`src/shared/characters.ts`) and their copies in `theme.js`; `settings:setCharacters` (main, one place for policy); the Characters list and `charPreview` (`screens.js`, `app.js`, 077 FR-068); FR-203's heads by `faceBox`; `meta.pixelPeople` and 097 T247's scaling of one style of people in another world; `check-097-crews`, `check-characters`, the request log (T218); for the art, `scripts/build-arcade-pack.py` and `scripts/build-arcade-sleep.py` (grid snap, own colours, lossless WebP) and `test:realoffice-assets`.
 
-**Where the code changes (at build).** `src/shared/characters.ts` and `theme.js` (the values, equal by `test:characters`); `app.js` (`CHARACTER_NAMES`, preview); `screens.js` (the entries, gated by the flag as C2 says); `crew.js` (Office people's `choice`); `realoffice.js` `render` (the world's `pixelArt` from the world's meta, not the merged one: FR-323's trap, found by reading, not run); `realoffice-layout.ts` only if C6 maps `runA` to `face-runA` for a set (a per-set fallback table, not a change to `POSE_FALLBACK` for every set).
+**Where the code changes (at build).** `src/shared/characters.ts` and `theme.js` (the `retro` and Office people values, equal by `test:characters`); `app.js` (`CHARACTER_NAMES`, preview); `screens.js` (Office people after "World's default"; Retro pixel always listed, disabled and "Not open yet" while the flag is closed; the closed line); `crew.js` (Office people's `choice`); the Flat heads for both sets (FR-203); `realoffice.js` `render` (the world's `pixelArt` from the world's meta, not the merged one: FR-323's trap, found by reading, not run).
 
-**Order.** Tests first (T290's and T292's unit tests, T293's world-rules test), then the code, then the drivers (T295). One PR, behind the `retro` flag; T122 joins it if C4 says so. T230's flip later opens the flag for the value with the world.
+**Order.** After this spec PR merges: tests first (T290's, T292's and T293's unit tests), then the code, then the drivers (T295), in one PR behind the `retro` flag with T122 (T294). The art (T296) runs beside it, one person at a time, each picture approved by the owner before commit; until it lands the `letter` fallback draws and is named. T230's flip later opens the flag for the value with the world.
 
-**Cost.** 0 AI credits: simulator and `npm test` only. Art only if C6 asks for new frames: 30 pictures on the owner's plan, his written OK first.
+**Cost.** Code: 0 AI credits, simulator and `npm test` only. Art: 15 Codex image runs (one per person, both frames) on the owner's plan, under his standing approval of 2026-10-31; retries counted and reported.
 
-**Risks.** A value name chosen now is stored in users' files once the flag opens (C1 before any build). The Photo office's look with pixel people is a style choice (FR-208): the pictures are looked at, not judged against the Photo style. Uneven pixels at Windows scales stay FR-255's gap.
+**Risks.** The value `retro` is stored in users' files once the flag opens (decided, C1). The Photo office's look with pixel people is a style choice (FR-208): pictures are looked at, not judged against the Photo style. Uneven pixels stay FR-255's gap (C7). Generated running frames may not hold a person's look: the per-picture approval is the gate, and the fallback stays meanwhile.
 
 ## Done when
 
