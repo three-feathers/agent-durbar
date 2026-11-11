@@ -7,6 +7,7 @@
 #   - a check that is not pass/skipping, or CodeQL not passed; a CodeQL check GitHub skipped on a PR that changes no analysed file counts as
 #     passed only when every changed file is on the no-code list in nocode() and the alerts are 0 (spec 021 FR-089, #1420);
 #   - a CodeQL check that is not exactly one check run from the github-advanced-security app, the run its line links (spec 021 FR-090, #1425);
+#   - a head commit that changed while the gate ran (read with the PR, read again before the verdict; FR-090): the file lists follow the live head;
 #   - a PR GitHub cannot merge (conflicts): GitHub then runs only CodeQL, so the other checks look absent rather than red;
 #   - a PR that changes src/ without the Spec Kit gate and the Linux build-and-test check present and passing;
 #   - an open code-scanning alert on the PR's merge ref or head ref (a bot line comment can be carried forward after its alert is fixed);
@@ -40,17 +41,18 @@ bad=$(printf '%s\n' "$checks_out" | awk -F'\t' 'NF && $2!="pass" && $2!="skippin
 # GitHub computes mergeability lazily: UNKNOWN means "ask again shortly"
 for _ in 1 2 3 4 5 6; do mergeable=$(gh pr view $p --json mergeable -q .mergeable); [ "$mergeable" = UNKNOWN ] || break; sleep 10; done
 [ "$mergeable" = MERGEABLE ] || bad="$bad mergeable=$mergeable(merge main first)"
-if gh pr view $p --json files -q '.files[].path' | grep -q '^src/'; then
-  for need in 'Spec Kit gate' 'Build and test (ubuntu-latest)'; do
-    printf '%s\n' "$checks_out" | awk -F'\t' -v n="$need" '$1==n && $2=="pass"{f=1} END{exit !f}' || bad="$bad missing:$need"
-  done
-fi
 # an outside PR: from a fork, or by an account outside the trusted list (dependabot[bot]: its metadata is ours, its body is not read)
 # the PR is read once (FR-090): changed_files, head and base sha, base branch, author, then the outside verdict (empty for a trusted PR)
 pr_line=$(gh api repos/$R/pulls/$p --jq "$JQ_TRUST \"\(.changed_files) \(.head.sha) \(.base.sha) \(.base.ref) \(.user.login) \" + (if (.head.repo.full_name // \"\") != .base.repo.full_name then \"fork:\(.head.repo.full_name // \"deleted\")\" elif (.user.login|trusted) or .user.login == \"dependabot[bot]\" then \"\" else \"author:\(.user.login)\" end)")
 read -r pr_total head_sha pr_base pr_baseref pr_author outside_pr <<< "$pr_line"
 case $head_sha in *[!0-9a-f]*|'') head_sha=;; esac; [ ${#head_sha} = 40 ] || head_sha=
 [ -n "$outside_pr" ] && bad="$bad outside-pr($outside_pr: a human decides, no checkout or run)"
+# the file lists follow the live head, not $head_sha: they are read after pr_line, and the head is read again before the verdict (FR-090)
+if gh pr view $p --json files -q '.files[].path' | grep -q '^src/'; then
+  for need in 'Spec Kit gate' 'Build and test (ubuntu-latest)'; do
+    printf '%s\n' "$checks_out" | awk -F'\t' -v n="$need" '$1==n && $2=="pass"{f=1} END{exit !f}' || bad="$bad missing:$need"
+  done
+fi
 # owner hold (FR-079): labels, then the owners' latest hold-or-lift comment; only its date and link are printed, never its text
 for l in $(gh pr view $p --json labels -q '.labels[].name'); do case $l in status:blocked|needs-owner-approval) bad="$bad owner-hold(label $l: not mergeable until an owner removes it)";; esac; done
 OWNERS_RE=$(grep -v '^[[:space:]]*#' "$(dirname "$0")/trusted-authors.txt" | tr -d '\r' | grep -E '^[A-Za-z0-9-]+$' | tr 'A-Z' 'a-z' | paste -sd'|' -)
@@ -155,6 +157,10 @@ notes=$( { gh api --paginate repos/$R/issues/$p/comments --jq "$JQ_TRUST .[]|sel
 approvals=$(gh api --paginate repos/$R/pulls/$p/reviews --jq "$JQ_TRUST .[]|select(.state!=\"COMMENTED\" and .state!=\"PENDING\" and (.user.login|trusted))|\"\(.user.login)\t\(.submitted_at)\t\(.state)\t\(.commit_id[0:8])\"" | sort -k1,1 -k2,2 | awk -F'\t' '{last[$1]=$0} END{for(u in last){split(last[u],f,"\t"); if(f[3]=="APPROVED") print "approved by: " f[1] " at " f[4] " (" f[2] ")"}}' | sort)
 [ -n "$approvals" ] && echo "$approvals"
 [ -n "$notes" ] && { echo "status notes, not counted as asks:"; echo "$notes"; }
+# FR-090: the head is read again after every head-dependent read (the check list, pr_line, the src/ file list, the FR-089 file list): a
+# push since pr_line blocks, so "ready at <sha>" never rests on another commit's file lists. Any new list read goes above this line.
+head_now=$(gh api repos/$R/pulls/$p --jq .head.sha 2>/dev/null) || head_now=; case $head_now in *[!0-9a-f]*) head_now=not-a-sha;; esac
+[ -n "$head_sha" ] && [ "$head_now" = "$head_sha" ] || bad="$bad head-changed(read ${head_sha:-unread} first, ${head_now:-unread} at the end: a push during the gate, run it again)"
 if [ -n "$bad" ] || [ -z "$codeql_ok" ] || [ "$alerts" != "0" ] || [ -n "$changes" ] || [ "$threads" != "0" ] || [ -n "$newer" ] || [ -n "$outside_edits" ]; then
   echo "#$p not ready: checks=[$bad] codeql=$codeql alerts=$alerts changes_requested=[$changes] open_threads=$threads"
   [ -n "$newer" ] && { echo "unanswered human comments (read, answer or fix, then rerun; an outside one goes to your human as its link):"; echo "$newer"; }
