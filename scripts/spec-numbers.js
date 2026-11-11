@@ -178,7 +178,7 @@ function checkDuplicates(found, baselineText) {
   for (const [key, n] of base) if (!seen.has(key)) problems.push(`${printable(key.split(' ')[0])}: ${key.split(' ')[1]} is no longer duplicated (baseline said ${n}): remove its line from scripts/spec-duplicates-baseline.txt (node scripts/spec-numbers.js --write-baseline)`);
   return problems;
 }
-const baselineOf = (found) => `# Spec numbers defined more than once in one file, as they were when scripts/spec-numbers.js --dups was added (issue #1553).\n# file id count. A new duplicate fails; fixing one means lowering or removing its line (--write-baseline). Never raise a count.\n${found.map((f) => `${f.file} ${f.id} ${f.lines.length}`).join('\n')}\n`;
+const baselineOf = (found) => `# Spec numbers defined more than once in one file, as they were when scripts/spec-numbers.js --dups was added (issue #1553).\n# file id count. A new duplicate fails; fixing one means lowering or removing its line (--write-baseline). Never raise a count.\n${[...found].sort((a, b) => a.file.localeCompare(b.file) || a.id.localeCompare(b.id, undefined, { numeric: true })).map((f) => `${f.file} ${f.id} ${f.lines.length}`).join('\n')}\n`;
 
 
 function addsOf(root, base, head, files) {
