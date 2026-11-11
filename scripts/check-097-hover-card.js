@@ -253,15 +253,18 @@ module.exports = async (ctx) => {
     await must(NONE, `${tag}: closed on leaving after the refill`);
     /* a fresh refill, then the pointer jumps straight off the office with no move inside it: only the office's pointerleave lets the held card go (FR-328) */
     await js(`(()=>{const a=${sim}.agents().find(x=>x.id===${jsLiteral(wk2)});a.state='working';a.lastEventAt=Date.now();${sim}.crew.renderAll();return 1})()`); /* the first one goes back to work: a working desk for this step */
-    const wk4 = await hoverWork('person', null, [R, S], `${tag} falls asleep, then leaves`);
-    assert.ok(wk4, `${tag}: the card opens on a third working desk for the leave step`);
-    await js(`(()=>{const a=${sim}.agents().find(x=>x.id===${jsLiteral(wk4)});a.state='done';a.lastOutput='Done and checked.';a.lastEventAt=Date.now()-34*60000;${sim}.crew.renderAll();return 1})()`);
-    await must(`(()=>{const z=document.getElementById('roZoom');return !!z&&z.dataset.for===${jsLiteral(wk4)}&&z.dataset.state==='asleep'&&/^Asleep/.test(z.querySelector('.ro-zs').textContent)})()`, `${tag}: the card of the third agent shows the asleep view`, 8000);
-    await js(`new Promise(r=>setTimeout(r,400))`);
-    assert.ok(await js(ZOOM_FOR(wk4)), `${tag}: the held card of the third agent is still open before the pointer leaves`);
-    assert.strictEqual(await js(`(()=>{const e=document.elementFromPoint(1,1);return !!e&&!document.querySelector('#stage .ro').contains(e)})()`), true, `${tag}: (1,1) is outside the office, so the jump leaves it without a move inside`);
-    await moveTo(1, 1);
-    await must(NONE, `${tag}: a jump straight off the office closes the held card (pointerleave, FR-328)`);
+    let wk4;
+    await H.pointerStep('check-097-hover-card', `${tag} falls asleep, then leaves`, async () => {
+      wk4 = await hoverWork('person', null, [R, S], `${tag} falls asleep, then leaves`);
+      assert.ok(wk4, `${tag}: the card opens on a third working desk for the leave step`);
+      await js(`(()=>{const a=${sim}.agents().find(x=>x.id===${jsLiteral(wk4)});a.state='done';a.lastOutput='Done and checked.';a.lastEventAt=Date.now()-34*60000;${sim}.crew.renderAll();return 1})()`);
+      await must(`(()=>{const z=document.getElementById('roZoom');return !!z&&z.dataset.for===${jsLiteral(wk4)}&&z.dataset.state==='asleep'&&/^Asleep/.test(z.querySelector('.ro-zs').textContent)})()`, `${tag}: the card of the third agent shows the asleep view`, 8000);
+      await js(`new Promise(r=>setTimeout(r,400))`);
+      assert.ok(await js(ZOOM_FOR(wk4)), `${tag}: the held card of the third agent is still open before the pointer leaves`);
+      assert.strictEqual(await js(`(()=>{const e=document.elementFromPoint(1,1);return !!e&&!document.querySelector('#stage .ro').contains(e)})()`), true, `${tag}: (1,1) is outside the office, so the jump leaves it without a move inside`);
+      await moveTo(1, 1);
+      await must(NONE, `${tag}: a jump straight off the office closes the held card (pointerleave, FR-328)`);
+    });
     await js(`(()=>{const a=${sim}.agents().find(x=>x.id===${jsLiteral(wk4)});a.state='working';a.lastEventAt=Date.now();${sim}.crew.renderAll();return 1})()`);
     /* ---- FR-330: no free place: real-shaped slips (they take pointer events, each holds an input) tile the room except round the hovered person, so the card lands over some of them ---- */
     /* a desk that is working now (read again here: an agent may have left on a visit since the first one was chosen) */
