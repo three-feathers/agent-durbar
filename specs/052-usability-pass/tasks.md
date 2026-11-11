@@ -432,4 +432,4 @@
 - [x] T279 `afNotice()` takes `still()`: the notice to the office closes at once, silently, when the agent is no longer followed; `check-052-follow-notice` drives it (fails without the close) and drives FR-242 (b) (a held completion, then a send: fails without the `sent()` call in `afOnAccepted`) [FR-242 (b), (c), review on PR 1445, issue #1450]
 
 ## 2026-11-11: the office lays out in the frame its floor changes size (FR-243, issue #1362)
-- [x] T280 `app.js`: the `ResizeObserver` on `#floor` calls `relayoutNow()` (the redraw, `syncWalkers`, `afTick`, pencils) in its own callback; `relayout()` (window resize) keeps the frame-later call; `check-auto-follow` asserts the floor never overflows at an observer call after Settings closes with the strip and after a 31 px change, both sizes, with the mutant
+- [x] T281 `app.js`: the `ResizeObserver` on `#floor` calls `relayoutNow()` (the redraw, `syncWalkers`, `afTick`, pencils) in its own callback; `relayout()` (window resize) keeps the frame-later call; `check-auto-follow` asserts the floor never overflows at an observer call after Settings closes with the strip and after a 31 px change, both sizes, with the mutant
