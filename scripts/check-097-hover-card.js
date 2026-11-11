@@ -214,21 +214,24 @@ module.exports = async (ctx) => {
     assert.ok(await js(`document.activeElement&&document.activeElement.dataset&&document.activeElement.dataset.id===${jsLiteral(S)}`), `${tag}: the focus stays on the plate`);
     await js(`document.activeElement.blur();0`);
     /* ---- FR-328 (2026-11-08): an agent falls asleep while its card is open: the open card switches to the asleep view (the masked last reply, no tool log) ---- */
-    const wk2 = await hoverWork('person', null, [R, S], `${tag} falls asleep`);
-    assert.ok(wk2, `${tag}: the card opens on a second working desk for the falls-asleep step`);
-    const before = await card();
-    assert.ok(!/^Asleep/.test(before.word), `${tag}: the card starts awake: ${before.word}`);
-    const SAID = 'Wrapped up the fallback and ran the checks. ' + TOKEN;
-    await js(`(()=>{const a=${sim}.agents().find(x=>x.id===${jsLiteral(wk2)});a.state='done';a.lastOutput=${jsLiteral(SAID)};a.lastEventAt=Date.now()-34*60000;${sim}.crew.renderAll();return 1})()`);
-    await must(`(()=>{const z=document.getElementById('roZoom');return !!z&&z.dataset.for===${jsLiteral(wk2)}&&/^Asleep/.test(z.querySelector('.ro-zs').textContent)&&z.dataset.state==='asleep'&&z.querySelector('.ro-zl').textContent.includes('Wrapped up the fallback and ran the checks.')})()`, `${tag}: the open card shows the asleep view after its agent fell asleep (FR-328)`, 8000);
-    const after = await card();
-    noBad(`${tag} fell asleep`, after);
-    assert.ok(after.node === before.node && after.facts.some(([k]) => k === 'Last activity') && after.inside && !after.small.length, `${tag}: the same panel, refilled: ${JSON.stringify(after.facts)}`);
-    const blurs0 = await js(`window.__blurs`);
-    if (/refill|all/.test(THIEF)) await steal();
-    await js(`new Promise(r=>setTimeout(r,700))`); /* the agent walks to the lounge row under the resting pointer: that is not the pointer leaving (the card stays) */
-    assert.strictEqual(await js(`window.__blurs`), blurs0, `${tag}: no window blur during the 700 ms rest (a blur closes the card, FR-034; #1408: an environment problem, not the card)`);
-    assert.ok(await js(ZOOM_FOR(wk2)) && (await card()).word.startsWith('Asleep'), `${tag}: the asleep card is still open 700 ms after the refill, the pointer has not moved`);
+    let wk2; /* used by the steps after this one */
+    await H.pointerStep('check-097-hover-card', `${tag} falls asleep`, async () => {
+      wk2 = await hoverWork('person', null, [R, S], `${tag} falls asleep`);
+      assert.ok(wk2, `${tag}: the card opens on a second working desk for the falls-asleep step`);
+      const before = await card();
+      assert.ok(!/^Asleep/.test(before.word), `${tag}: the card starts awake: ${before.word}`);
+      const SAID = 'Wrapped up the fallback and ran the checks. ' + TOKEN;
+      await js(`(()=>{const a=${sim}.agents().find(x=>x.id===${jsLiteral(wk2)});a.state='done';a.lastOutput=${jsLiteral(SAID)};a.lastEventAt=Date.now()-34*60000;${sim}.crew.renderAll();return 1})()`);
+      await must(`(()=>{const z=document.getElementById('roZoom');return !!z&&z.dataset.for===${jsLiteral(wk2)}&&/^Asleep/.test(z.querySelector('.ro-zs').textContent)&&z.dataset.state==='asleep'&&z.querySelector('.ro-zl').textContent.includes('Wrapped up the fallback and ran the checks.')})()`, `${tag}: the open card shows the asleep view after its agent fell asleep (FR-328)`, 8000);
+      const after = await card();
+      noBad(`${tag} fell asleep`, after);
+      assert.ok(after.node === before.node && after.facts.some(([k]) => k === 'Last activity') && after.inside && !after.small.length, `${tag}: the same panel, refilled: ${JSON.stringify(after.facts)}`);
+      const blurs0 = await js(`window.__blurs`);
+      if (/refill|all/.test(THIEF)) await steal();
+      await js(`new Promise(r=>setTimeout(r,700))`); /* the agent walks to the lounge row under the resting pointer: that is not the pointer leaving (the card stays) */
+      assert.strictEqual(await js(`window.__blurs`), blurs0, `${tag}: no window blur during the 700 ms rest (a blur closes the card, FR-034; #1408: an environment problem, not the card)`);
+      assert.ok(await js(ZOOM_FOR(wk2)) && (await card()).word.startsWith('Asleep'), `${tag}: the asleep card is still open 700 ms after the refill, the pointer has not moved`);
+    });
     /* an open menu is above the card: Escape closes the menu (the app's menus stop the key themselves), the card does not take it first (FR-328) */
     await js(`(()=>{const m=document.createElement('div');m.id='modeMenu';m.tabIndex=-1;const b=document.createElement('button');b.textContent='x';m.appendChild(b);m.addEventListener('keydown',(e)=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();m.remove();}});document.body.appendChild(m);b.focus();return document.activeElement===b})()`);
     wc().sendInputEvent({ type: 'keyDown', keyCode: 'Escape' }); wc().sendInputEvent({ type: 'keyUp', keyCode: 'Escape' });
@@ -250,15 +253,18 @@ module.exports = async (ctx) => {
     await must(NONE, `${tag}: closed on leaving after the refill`);
     /* a fresh refill, then the pointer jumps straight off the office with no move inside it: only the office's pointerleave lets the held card go (FR-328) */
     await js(`(()=>{const a=${sim}.agents().find(x=>x.id===${jsLiteral(wk2)});a.state='working';a.lastEventAt=Date.now();${sim}.crew.renderAll();return 1})()`); /* the first one goes back to work: a working desk for this step */
-    const wk4 = await hoverWork('person', null, [R, S], `${tag} falls asleep, then leaves`);
-    assert.ok(wk4, `${tag}: the card opens on a third working desk for the leave step`);
-    await js(`(()=>{const a=${sim}.agents().find(x=>x.id===${jsLiteral(wk4)});a.state='done';a.lastOutput='Done and checked.';a.lastEventAt=Date.now()-34*60000;${sim}.crew.renderAll();return 1})()`);
-    await must(`(()=>{const z=document.getElementById('roZoom');return !!z&&z.dataset.for===${jsLiteral(wk4)}&&z.dataset.state==='asleep'&&/^Asleep/.test(z.querySelector('.ro-zs').textContent)})()`, `${tag}: the card of the third agent shows the asleep view`, 8000);
-    await js(`new Promise(r=>setTimeout(r,400))`);
-    assert.ok(await js(ZOOM_FOR(wk4)), `${tag}: the held card of the third agent is still open before the pointer leaves`);
-    assert.strictEqual(await js(`(()=>{const e=document.elementFromPoint(1,1);return !!e&&!document.querySelector('#stage .ro').contains(e)})()`), true, `${tag}: (1,1) is outside the office, so the jump leaves it without a move inside`);
-    await moveTo(1, 1);
-    await must(NONE, `${tag}: a jump straight off the office closes the held card (pointerleave, FR-328)`);
+    let wk4;
+    await H.pointerStep('check-097-hover-card', `${tag} falls asleep, then leaves`, async () => {
+      wk4 = await hoverWork('person', null, [R, S], `${tag} falls asleep, then leaves`);
+      assert.ok(wk4, `${tag}: the card opens on a third working desk for the leave step`);
+      await js(`(()=>{const a=${sim}.agents().find(x=>x.id===${jsLiteral(wk4)});a.state='done';a.lastOutput='Done and checked.';a.lastEventAt=Date.now()-34*60000;${sim}.crew.renderAll();return 1})()`);
+      await must(`(()=>{const z=document.getElementById('roZoom');return !!z&&z.dataset.for===${jsLiteral(wk4)}&&z.dataset.state==='asleep'&&/^Asleep/.test(z.querySelector('.ro-zs').textContent)})()`, `${tag}: the card of the third agent shows the asleep view`, 8000);
+      await js(`new Promise(r=>setTimeout(r,400))`);
+      assert.ok(await js(ZOOM_FOR(wk4)), `${tag}: the held card of the third agent is still open before the pointer leaves`);
+      assert.strictEqual(await js(`(()=>{const e=document.elementFromPoint(1,1);return !!e&&!document.querySelector('#stage .ro').contains(e)})()`), true, `${tag}: (1,1) is outside the office, so the jump leaves it without a move inside`);
+      await moveTo(1, 1);
+      await must(NONE, `${tag}: a jump straight off the office closes the held card (pointerleave, FR-328)`);
+    });
     await js(`(()=>{const a=${sim}.agents().find(x=>x.id===${jsLiteral(wk4)});a.state='working';a.lastEventAt=Date.now();${sim}.crew.renderAll();return 1})()`);
     /* ---- FR-330: no free place: real-shaped slips (they take pointer events, each holds an input) tile the room except round the hovered person, so the card lands over some of them ---- */
     /* a desk that is working now (read again here: an agent may have left on a visit since the first one was chosen) */
