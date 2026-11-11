@@ -90,7 +90,11 @@ const mk = (id, over) => ({ formatVersion: 1, id, arrangement: `arr ${id}`, moni
     put('{ nope');
     assert.ok(loadKnown(tmp).problems.some((p) => /not valid JSON.*known-clashes\.json/.test(p)), 'malformed JSON fails, naming the file');
     put('{"clashes":{"pair":["a","b"]}}');
-    assert.ok(loadKnown(tmp).problems.some((p) => /must be a list/.test(p)), 'clashes must be a list');
+    assert.ok(loadKnown(tmp).problems.some((p) => /must be a list.*known-clashes\.json/.test(p)), 'clashes must be a list, naming the file');
+    fs.rmSync(path.join(tmp, 'known-clashes.json'));
+    fs.mkdirSync(path.join(tmp, 'known-clashes.json'));
+    assert.ok(loadKnown(tmp).problems.some((p) => /unreadable \(EISDIR\).*known-clashes\.json/.test(p)), 'known-clashes.json as a folder (EISDIR) fails naming the file; only ENOENT means none');
+    fs.rmdirSync(path.join(tmp, 'known-clashes.json'));
     for (const bad of [{ field: 'arrangement' }, { pair: 'ab', field: 'arrangement' }, { pair: ['a'], field: 'arrangement' }, { pair: ['a', 'a'], field: 'arrangement' }, { pair: ['a', 2], field: 'arrangement' }, { pair: ['a', 'b'] }, { pair: ['a', 'b'], field: 'nonsense' }, null]) {
       put(JSON.stringify({ clashes: [bad] }));
       assert.ok(loadKnown(tmp).problems.some((p) => /entry 0 needs "pair"/.test(p)), `an entry ${JSON.stringify(bad)} fails, naming the file`);
