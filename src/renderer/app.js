@@ -7997,12 +7997,12 @@ document.addEventListener('contextmenu',e=>{
   const r=d.getBoundingClientRect();
   if(openModeMenu(a,e.clientX||r.left+16,e.clientY||r.top+16,d))e.preventDefault();
 });
-/* spec 097 FR-346/FR-347: Shift+F10 or the Menu key on a folder's ⋯ (flat head or Real office sign) opens the one folder menu under the button, from the keydown itself, as the card menu does below */
+/* spec 097 FR-346/FR-347: Shift+F10 or the Menu key on the ⋯ of a Real office folder sign opens the one folder menu under the button, from the keydown itself, as the card menu does below; the flat head keeps its native contextmenu path */
 document.addEventListener('keydown',e=>{
   if(!((e.key==='F10'&&e.shiftKey)||e.key==='ContextMenu'))return;
-  const mb=e.target&&e.target.closest&&e.target.closest('#stage .room-head [data-foldermenu], #stage .ro-sign [data-foldermenu]'); if(!mb||e.target!==mb)return;
+  const mb=e.target&&e.target.closest&&e.target.closest('#stage .ro-sign [data-foldermenu]'); if(!mb||e.target!==mb)return;
   const r=ROOMS.find(x=>x.id===mb.dataset.foldermenu); if(!r||!bridge||!bridge.removeFolder||demoOn)return;
-  const b=mb.getBoundingClientRect(); e.preventDefault(); openFolderMenu(r,b.left,b.bottom,mb);
+  const b=mb.getBoundingClientRect(); e.preventDefault(); openFolderMenu(r,b.left,b.bottom+4,mb); /* the click's anchor */
 });
 /* spec 005 FR-177: the same card menu from the keyboard (Shift+F10 or the Menu key on a focused desk or list row), so Mark as read does not need a mouse */
 document.addEventListener('keydown',e=>{

@@ -24,6 +24,7 @@
  *   ORDER_MUTANT=menu   the menu's Move earlier / later is swallowed (must fail)
  *   ORDER_MUTANT=signmenu   Shift+F10 and the Menu key on a folder sign are swallowed, as when only `.room-head` was matched (must fail: Shift+F10 on the sign's ⋯)
  *   ORDER_MUTANT=signctx   the contextmenu event on a folder sign is swallowed, as with the old selector (must fail: the right-click on the sign's name)
+ *   ORDER_MUTANT=flatctx   the contextmenu event on the flat head is swallowed (must fail: the flat folder menu by the key's event)
  *   ORDER_MUTANT=pinnoop   the simulator's pinAt does nothing but return true (must fail: the pinned desks never go away)
  */
 const assert = require('assert');
@@ -57,33 +58,71 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(ov, [], `${tag}: no two plates overlap`);
   };
 
-  /** spec 097 FR-346/FR-347: the folder menu by Shift+F10 on the sign's ⋯ and by a right-click on the sign's name, as in the flat office; Escape closes it and the focus is back on the ⋯ */
+  /** the folder menu's place: under the button (its click anchors at bottom + 4), as place() clamps it */
+  const menuAt = (btn) => js(`(()=>{const m=document.getElementById('modeMenu');if(!m)return null;const r=m.getBoundingClientRect(),b=document.querySelector(${jsLiteral(btn)}).getBoundingClientRect();return {dx:Math.round(r.left-Math.max(8,Math.min(b.left,innerWidth-r.width-8))),dy:Math.round(r.top-Math.max(8,Math.min(b.bottom+4,innerHeight-r.height-8)))}})()`);
+  const noMenu = (what) => must(`!document.getElementById('modeMenu')`, what);
+  /** spec 097 FR-346/FR-347: the folder menu by Shift+F10 / the Menu key on the sign's ⋯ and by a right-click on the sign's name; Escape closes it and the focus is on the ⋯.
+   *  The native contextmenu event is blocked around the keys (as shots-097-realoffice does), so only the keydown handler can open the menu on every platform. */
   const signMenuKeys = async (tag, A) => {
     if (MUTANT === 'signmenu' || MUTANT === 'signctx') await js(`(()=>{if(!window.__signMut){window.__signMut=1;const m=${jsLiteral(MUTANT)};document.addEventListener('contextmenu',e=>{if(m==='signctx'&&e.target.closest&&e.target.closest('.ro-sign'))e.stopImmediatePropagation()},true);window.addEventListener('keydown',e=>{if(m==='signmenu'&&(e.key==='F10'||e.key==='ContextMenu')&&e.target.closest&&e.target.closest('.ro-sign'))e.stopImmediatePropagation()},true)}return 1})()`);
     const btn = `#stage .ro-sb[data-foldermenu="${A}"]`;
     await js(`document.getElementById('modeMenu')&&document.getElementById('modeMenu').remove()`);
     assert.ok(await focus(btn), `${tag}: the sign's menu button takes the focus`);
+    await js(`window.__noCtx=(e)=>{e.preventDefault();e.stopImmediatePropagation()};window.addEventListener('contextmenu',window.__noCtx,true);window.__f10=[];window.addEventListener('keydown',e=>{if(e.key==='F10')window.__f10.push(e.defaultPrevented)});true`);
+    await key('F10', [], { char: 'never' });
+    await ctx.sleep(300);
+    await noMenu(`${tag}: F10 without Shift does not open the folder menu`);
     await key('F10', ['shift'], { char: 'never' });
-    await must(`!!document.querySelector('#modeMenu [data-fact="rup"]')`, `${tag}: Shift+F10 on the sign's menu button opens the folder menu`);
-    const near = await js(`(()=>{const m=document.getElementById('modeMenu').getBoundingClientRect(),b=document.querySelector(${jsLiteral(btn)}).getBoundingClientRect();return m.left<innerWidth&&m.right>0&&Math.abs(m.top-b.bottom)<120&&m.left<b.right+16&&m.right>b.left-16})()`);
-    assert.ok(near, `${tag}: the folder menu opens beside the sign's button`);
+    await must(`!!document.querySelector('#modeMenu [data-fact="rup"]')`, `${tag}: Shift+F10 on the sign's menu button opens the folder menu (contextmenu blocked)`);
+    assert.deepStrictEqual(await js(`window.__f10`), [false, true], `${tag}: the keydown handler takes Shift+F10 (default prevented) and not plain F10`);
+    const at = await menuAt(btn);
+    assert.ok(at && Math.abs(at.dx) <= 2 && Math.abs(at.dy) <= 2, `${tag}: the folder menu opens under the sign's button, where its click puts it (${JSON.stringify(at)})`);
     await key('Escape', [], { char: 'never' });
-    await must(`!document.getElementById('modeMenu')`, `${tag}: Escape closes the folder menu`);
+    await noMenu(`${tag}: Escape closes the folder menu`);
     await must(`document.activeElement&&document.activeElement.dataset.foldermenu===${jsLiteral(A)}`, `${tag}: and the focus is back on the sign's menu button`);
     await js(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'ContextMenu',bubbles:true,cancelable:true}));true`); /* the Menu key is sent as an event, as the Real office desk driver does */
-    await must(`!!document.querySelector('#modeMenu [data-fact="rup"]')`, `${tag}: the Menu key on the sign's menu button opens the folder menu`);
+    await must(`!!document.querySelector('#modeMenu [data-fact="rup"]')`, `${tag}: the Menu key on the sign's menu button opens the folder menu (contextmenu blocked)`);
     await key('Escape', [], { char: 'never' });
-    await must(`!document.getElementById('modeMenu')`, `${tag}: Escape closes it again`);
-    const at = await js(`(()=>{const e=document.querySelector(${jsLiteral(`#stage .ro-sign[data-folder="${A}"] > b`)});if(!e)return null;const r=e.getBoundingClientRect();return {x:Math.round(r.left+Math.min(r.width/2,20)),y:Math.round(r.top+r.height/2)}})()`);
-    assert.ok(at, `${tag}: the sign has a name`);
+    await noMenu(`${tag}: Escape closes it again`);
+    await js(`window.removeEventListener('contextmenu',window.__noCtx,true);true`);
+    const nm = await js(`(()=>{const e=document.querySelector(${jsLiteral(`#stage .ro-sign[data-folder="${A}"] > b`)});if(!e)return null;const r=e.getBoundingClientRect();return {x:Math.round(r.left+Math.min(r.width/2,20)),y:Math.round(r.top+r.height/2)}})()`);
+    assert.ok(nm, `${tag}: the sign has a name`);
     const wc = H.wc();
-    wc.sendInputEvent({ type: 'mouseMove', x: at.x, y: at.y });
-    wc.sendInputEvent({ type: 'mouseDown', x: at.x, y: at.y, button: 'right', clickCount: 1 });
-    wc.sendInputEvent({ type: 'mouseUp', x: at.x, y: at.y, button: 'right', clickCount: 1 });
+    wc.sendInputEvent({ type: 'mouseMove', x: nm.x, y: nm.y });
+    wc.sendInputEvent({ type: 'mouseDown', x: nm.x, y: nm.y, button: 'right', clickCount: 1 });
+    wc.sendInputEvent({ type: 'mouseUp', x: nm.x, y: nm.y, button: 'right', clickCount: 1 });
     await must(`!!document.querySelector('#modeMenu [data-fact="rup"]')`, `${tag}: a right-click on the sign's name opens the folder menu`);
     await key('Escape', [], { char: 'never' });
-    await must(`!document.getElementById('modeMenu')`, `${tag}: Escape closes the folder menu after the right-click`);
+    await noMenu(`${tag}: Escape closes the folder menu after the right-click`);
     await must(`document.activeElement&&document.activeElement.dataset.foldermenu===${jsLiteral(A)}`, `${tag}: and the focus is back on the sign's menu button after the right-click`);
+    /* the real key events with the native contextmenu NOT blocked: exactly one menu, whether the platform sends the native event after the keydown or not */
+    await js(`window.__ctxN=0;window.addEventListener('contextmenu',()=>{window.__ctxN++},true);true`);
+    await key('F10', ['shift'], { char: 'never' });
+    await must(`!!document.querySelector('#modeMenu [data-fact="rup"]')`, `${tag}: Shift+F10 with the native contextmenu not blocked opens the folder menu`);
+    await ctx.sleep(300);
+    assert.strictEqual(await js(`document.querySelectorAll('#modeMenu').length`), 1, `${tag}: exactly one folder menu after Shift+F10 (native contextmenu events seen: ${await js('window.__ctxN')})`);
+    console.log(`[097-order] ${tag}: Shift+F10, native contextmenu events seen: ${await js('window.__ctxN')}`);
+    await key('Escape', [], { char: 'never' });
+    await noMenu(`${tag}: Escape closes it`);
+  };
+  /** the flat office keeps its own path: the native contextmenu event on the head's ⋯ (what Shift+F10 sends with no pointer: clientX 0) opens the folder menu at the head's left, as before spec 097's sign fix */
+  const flatMenuKey = async (tag, A) => {
+    if (MUTANT === 'flatctx') await js(`(()=>{document.addEventListener('contextmenu',e=>{if(e.target.closest&&e.target.closest('.room-head'))e.stopImmediatePropagation()},true);return 1})()`);
+    const btn = `#stage .room-head [data-foldermenu="${A}"]`;
+    assert.ok(await focus(btn), `${tag}: the flat head's menu button takes the focus`);
+    /* with the native event blocked the key alone opens nothing in the flat head: no keydown handler is on it */
+    await js(`window.__noCtxFlat=(e)=>{e.preventDefault();e.stopImmediatePropagation()};window.addEventListener('contextmenu',window.__noCtxFlat,true);true`);
+    await key('F10', ['shift'], { char: 'never' });
+    await ctx.sleep(300);
+    await noMenu(`${tag}: Shift+F10 on the flat head's menu button, its contextmenu event blocked, opens no menu (the flat office has no keydown path)`);
+    await js(`window.removeEventListener('contextmenu',window.__noCtxFlat,true);true`);
+    await js(`document.activeElement.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:0,clientY:0}));true`);
+    await must(`!!document.querySelector('#modeMenu [data-fact="new"]')||!!document.querySelector('#modeMenu [data-fact="sched"]')`, `${tag}: the flat head's contextmenu (the key's event) opens the folder menu`);
+    const at = await js(`(()=>{const m=document.getElementById('modeMenu').getBoundingClientRect(),h=document.querySelector(${jsLiteral(btn)}).closest('.room-head').getBoundingClientRect();return {dx:Math.round(m.left-Math.max(8,Math.min(h.left+16,innerWidth-m.width-8))),dy:Math.round(m.top-Math.max(8,Math.min(h.bottom,innerHeight-m.height-8)))}})()`);
+    assert.ok(Math.abs(at.dx) <= 2 && Math.abs(at.dy) <= 2, `${tag}: the flat menu stays at the head's left edge, under the head (${JSON.stringify(at)})`);
+    await key('Escape', [], { char: 'never' });
+    await noMenu(`${tag}: Escape closes the flat folder menu`);
+    await must(`document.activeElement&&document.activeElement.dataset.foldermenu===${jsLiteral(A)}`, `${tag}: and the focus is back on the flat head's menu button`);
   };
 
   for (const [w, h] of SIZES) {
@@ -137,6 +176,7 @@ module.exports = async (ctx) => {
     const flat0 = await roomsOf();
     assert.ok(flat0.length >= 3 && flat0[0].desks.length >= 3, `${tag}: three flat rooms, the first with three desks (${JSON.stringify(flat0)})`);
     const A = flat0[0].id;
+    await flatMenuKey(`${tag} flat`, A);
     /* the first desk (the attention order puts the one that waits first) goes to the end: an order that the status sort would undo */
     const n0 = flat0[0].desks.length;
     for (let i = 0; i < n0 - 1; i++) {
