@@ -196,15 +196,15 @@ export type Outcome = { fp: string; title: string; file: string; status: 'filed'
 export type Summary = { mode: 'file' | 'dry-run'; dedupe: 'checked' | 'not checked'; outcomes: Outcome[]; error?: string };
 
 /**
- * The accounts whose issues count as the audit's own (spec 021 FR-060): `scripts/trusted-authors.txt`, next to this file when installed
- * by `install-filer`, or in the checkout's `scripts/` when run from `dist-scripts/`. Throws when the list is missing or empty, so a run
- * never treats an outsider's issue as filed.
+ * The accounts whose issues count as the audit's own (spec 021 FR-060, FR-092): read by the repo's one parser, `scripts/trusted-authors.js`,
+ * from `scripts/trusted-authors.txt`: both next to this file's folder when installed by `install-filer`, or in the checkout's `scripts/` when
+ * run from `dist-scripts/`. Logins are compared in lower case (GitHub logins are case-insensitive). Throws when the list is missing,
+ * unreadable or empty, so a run never treats an outsider's issue as filed.
  */
 export function trustedAuthors(dir: string = __dirname): Set<string> {
-  for (const f of [path.join(dir, 'trusted-authors.txt'), path.join(dir, '..', '..', 'scripts', 'trusted-authors.txt')]) {
-    let text: string;
-    try { text = fs.readFileSync(f, 'utf8'); } catch { continue; }
-    const set = new Set(text.split(/\r?\n/).map((l) => l.trim()).filter((l) => /^[A-Za-z0-9-]+(\[bot\])?$/.test(l)).map((l) => l.toLowerCase()));
+  for (const root of [path.join(dir, '..'), path.join(dir, '..', '..')]) {
+    let set: Set<string>;
+    try { set = new Set(Array.from((require(path.join(root, 'scripts', 'trusted-authors.js')) as { trustedAuthors(r: string): Set<string> }).trustedAuthors(root), (l) => l.toLowerCase())); } catch { continue; }
     if (set.size) return set;
   }
   throw new Error('could not read scripts/trusted-authors.txt');

@@ -12,10 +12,6 @@ export const REPO_REMOTE = `https://github.com/${REPO_SLUG}.git`;
 
 // ---- who may be read (FR-004) ------------------------------------------------------------------------------------------------
 
-/** The logins of scripts/trusted-authors.txt, read the way scripts/trusted-lib.sh reads them (plain logins, an optional [bot]). */
-export function parseTrusted(text: string): string[] {
-  return text.split(/\r?\n/).map((l) => l.trim()).filter((l) => l !== '' && !l.startsWith('#') && /^[A-Za-z0-9-]+(\[bot\])?$/.test(l));
-}
 /** Exact, case-sensitive: `vikramgorla-evil` and `Vikramgorla` are not trusted. */
 export function isTrusted(login: string | null | undefined, trusted: readonly string[]): boolean {
   return typeof login === 'string' && trusted.includes(login);
