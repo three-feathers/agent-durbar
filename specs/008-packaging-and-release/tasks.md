@@ -220,3 +220,7 @@
 ## 2026-11-11: a missing build fails in seconds with its path (FR-211)
 
 - [x] T171 (FR-211) `scripts/ensure-electron.js` `buildProblem`; `scripts/ui-suite.js` `main` and `runOne` and `scripts/check-parallel.js` `main` stop on it before Electron; the other plain-Node Electron launchers (`check-mac-titlebar`, `check-office-overlap`, `check-theme-geometry`, `check-perf`, `world-matrix`, `perf-record`, `release-video`) call it too; `scripts/test-ui-suite.ts` runs every site against a folder with no build (message, failure, fast) and has a mutant per site.
+
+## 2026-11-11: a name given to --only that matches no driver fails the run (FR-212)
+
+- [x] T172 (FR-212) `scripts/ui-suite.js` `unknownOnly` and `editDistance`; `main` throws the unknown names before anything starts; `scripts/test-ui-suite.ts` covers an unknown name, a `NOT_IN_SUITE` name, a near name and a label, with a mutant.

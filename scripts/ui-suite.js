@@ -249,6 +249,32 @@ function args(a = process.argv.slice(2)) {
   return { list: a.includes('--list'), only: i >= 0 ? new Set(String(a[i + 1] || '').split(',').filter(Boolean)) : undefined, shard: j >= 0 ? a[j + 1] : undefined, shardGiven: j >= 0 };
 }
 
+/** Spec 008 FR-212: the edit distance between two names (insert, delete, replace), for the "did you mean" of `unknownOnly`. */
+function editDistance(a, b) {
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+/** Spec 008 FR-212 (issue #1572): the problems with the names given to `--only`, one text per name that matches no driver name and no label ([] when all match).
+ *  A name in NOT_IN_SUITE gets its written reason; any other gets up to 3 near names (a prefix or a part of one, or within 3 edits), the closest first, ties in suite order. */
+function unknownOnly(only, drivers = DRIVERS, notInSuite = NOT_IN_SUITE) {
+  const known = [...new Set(drivers.flatMap((d) => (d.label && d.label !== d.name ? [d.name, d.label] : [d.name])))];
+  const out = [];
+  for (const name of only || []) {
+    if (known.includes(name)) continue;
+    if (Object.prototype.hasOwnProperty.call(notInSuite, name)) { out.push(`${name} is not a ui-suite driver: ${notInSuite[name]}`); continue; }
+    const near = known.map((k, i) => ({ k, i, d: editDistance(name, k) })).filter((x) => x.d <= 3 || x.k.startsWith(name) || x.k.includes(name) || name.includes(x.k))
+      .sort((x, y) => x.d - y.d || x.i - y.i).slice(0, 3).map((x) => x.k);
+    out.push(`${name} matches no driver${near.length ? `; did you mean ${near.join(', ')}?` : ''}`);
+  }
+  return out;
+}
+
 /** Recorded seconds per driver (scripts/ui-suite-timings.json), only to balance shards; a driver with no entry counts as the median. */
 function timings() {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'ui-suite-timings.json'), 'utf8')); } catch { return {}; }
@@ -379,6 +405,9 @@ async function main({ ensure = ensureElectron, run = runOne, argv, shared = shar
   // a bare `--shard` (no value) is refused, never "every driver"; only an empty UI_SUITE_SHARD env value means the whole list (FR-182, review on #1257)
   if (a.shardGiven && !a.shard) throw new Error('ui-suite: --shard wants a value i/n (1 <= i <= n), got none');
   const sh = a.shardGiven ? a.shard : process.env.UI_SUITE_SHARD;
+  // FR-212: a name asked for that matches no driver fails the run (before the shard split and the build check: a user error that costs nothing to say), never dropped because another name matched
+  const unknown = a.list ? [] : unknownOnly(a.only);
+  if (unknown.length) throw new Error(`--only names no driver to run:\n  ${unknown.join('\n  ')}\nno driver was started`);
   const todo = shard(DRIVERS.filter((d) => !a.only || a.only.has(d.name) || a.only.has(d.label || '')), sh);
   if (a.list) { for (const d of DRIVERS) console.log(d.label || d.name); return; }
   // a shard that selects no driver (more shards than drivers, or --only narrowing) must not pass green with "0/0"
@@ -439,5 +468,5 @@ async function main({ ensure = ensureElectron, run = runOne, argv, shared = shar
   if (failed.length) process.exitCode = 1;
 }
 
-module.exports = { dprOk, sharedDesktop, syntaxErrors, main, runOne, killTree, guardTree, shard, DRIVERS, NOT_IN_SUITE }; // runOne: also spec 001 FR-082 (scripts/shots-docs.js)
+module.exports = { dprOk, sharedDesktop, syntaxErrors, main, runOne, killTree, guardTree, shard, unknownOnly, DRIVERS, NOT_IN_SUITE }; // runOne: also spec 001 FR-082 (scripts/shots-docs.js)
 if (require.main === module) main().catch((e) => { console.error('ui-suite:', e.message); process.exitCode = 1; });

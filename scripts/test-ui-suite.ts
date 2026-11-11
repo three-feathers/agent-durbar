@@ -127,6 +127,39 @@ assert.ok(/require\('electron'\)/.test(src), 'it starts the Electron binary dire
   assert.ok(src.indexOf('const noBuild = build()') > src.indexOf('syntaxErrors([...new Set(') && src.indexOf('const noBuild = build()') < src.indexOf('if (!ensure())'), 'the build check sits after the syntax pass and before the Electron install');
   process.stdout.write('ui-suite missing build: ok\n');
 })().catch((e) => { console.error(e); process.exitCode = 1; });
+// spec 008 FR-212 (issue #1572): a name in --only that matches no driver fails the run, even when another name matches
+(async () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const suite = require(SUITE) as { main: (o: object) => Promise<void>; DRIVERS: { name: string; label?: string }[]; NOT_IN_SUITE: Record<string, string> };
+  const labelled = suite.DRIVERS.find((d) => d.label && d.label !== d.name && d.label.includes(' '));
+  assert.ok(labelled, 'the suite has an entry with its own label (for the label case)');
+  const good = suite.DRIVERS[0].name;
+  const [notIn] = Object.keys(suite.NOT_IN_SUITE);
+  const ran: string[] = [];
+  const opts = (only: string[]) => ({ build: () => '', argv: ['--only', only.join(',')], ensure: () => true, run: async (d: { name: string; label?: string }) => { ran.push(d.label || d.name); return { ok: true, secs: 0, why: '', log: '' }; } });
+  const outDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ui-suite-only-'));
+  const prevOut = process.env.UI_SUITE_OUT;
+  process.env.UI_SUITE_OUT = outDir;
+  const realLog = console.log;
+  console.log = () => undefined;
+  try {
+    const t0 = Date.now();
+    await assert.rejects(suite.main(opts([good, 'no-such-driver-zz'])), (e: Error) => /no-such-driver-zz matches no driver/.test(e.message) && /no driver was started/.test(e.message), 'ui-suite --only: an unknown name beside a valid one fails and is named');
+    assert.ok(ran.length === 0 && Date.now() - t0 < 2000, 'ui-suite --only: nothing ran, and it failed at once');
+    await assert.rejects(suite.main(opts([good, notIn])), (e: Error) => e.message.includes(`${notIn} is not a ui-suite driver: ${suite.NOT_IN_SUITE[notIn]}`), 'ui-suite --only: a name that is deliberately not in the suite gets its written reason');
+    await assert.rejects(suite.main(opts([good.slice(0, -1) + 'x', 'qqqq-nothing-like-it'])), (e: Error) => e.message.includes(`${good.slice(0, -1)}x matches no driver; did you mean ${good}`) && /qqqq-nothing-like-it matches no driver\n/.test(e.message + '\n'), 'ui-suite --only: a near name gets "did you mean", a far one none');
+    assert.strictEqual(ran.length, 0, 'ui-suite --only: no driver ran in the failing cases');
+    await suite.main(opts([labelled.label as string]));
+    await suite.main(opts([good, labelled.name]));
+    assert.ok(ran.includes(labelled.label as string) && ran.includes(good), 'ui-suite --only: a label and a driver name still select their entries');
+  } finally {
+    console.log = realLog;
+    if (prevOut === undefined) delete process.env.UI_SUITE_OUT; else process.env.UI_SUITE_OUT = prevOut;
+    fs.rmSync(outDir, { recursive: true, force: true });
+  }
+  assert.ok(src.indexOf('unknownOnly(a.only)') > 0 && src.indexOf('unknownOnly(a.only)') < src.indexOf('const todo = shard('), 'the name check comes before the shard split');
+  process.stdout.write('ui-suite --only unknown names: ok\n');
+})().catch((e) => { console.error(e); process.exitCode = 1; });
 // issue #748 (spec 021 FR-057): no asserting driver sits unrun. Every scripts/check-*.js and shots-*.js that asserts is in the suite, in
 // shots-docs' DOC_SHOTS (retaken by `npm run shots:docs`), or in NOT_IN_SUITE with a written reason
 {
