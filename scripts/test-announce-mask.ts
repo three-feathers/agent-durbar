@@ -12,6 +12,9 @@ import fs from 'fs';
 import path from 'path';
 import vm from 'vm';
 import * as shared from '../src/shared/redact';
+const { JSDOM } = require('jsdom') as { JSDOM: new (html: string) => { window: { document: Document } } };
+
+const DOC = new JSDOM('<!doctype html><body></body>').window.document;
 
 const R_DIR = path.join(__dirname, '..', '..', 'src', 'renderer');
 const app = fs.readFileSync(path.join(R_DIR, 'app.js'), 'utf8');
@@ -27,10 +30,11 @@ const line = (head: string): string => {
 };
 const DEFS = ['const homeMask=', 'const helperMask=', 'const deskMask=', 'const SHORT=', 'const RED=', 'const STX=', 'const SAFE=',
   'const safeExcerpt=', 'let announceT=', 'const ANN_REQUEST=', 'const ANN_UNCHECKED=', 'function annHome(', 'function annPart(', 'function annMask(',
-  'function announce('].map(line).join('\n');
+  'function announce(', 'function requestRaw(', 'function requestText('].map(line).join('\n');
 const UNCHECKED = 'A line was not read out: Durbar could not check it for secrets.';
 
-type Page = { say(text: unknown, prio?: number): string | null; queue(text: unknown, prio?: number): void; fire(): string | null; unchecked: string };
+type Page = { say(text: unknown, prio?: number): string | null; queue(text: unknown, prio?: number): void; fire(): string | null; unchecked: string;
+  requestRaw(n: unknown): string; requestText(n: unknown): string };
 // a page with (or without) the redact module; `say` announces and runs the 60 ms timer, giving what the live region holds (null: untouched).
 // `queue` announces without running the timer, `fire` runs it. 'throws': maskHomePaths throws; 'failed': it gives its own failure text
 // ('[redaction failed]', what the shared module returns when it fails); 'noredact': the simulator's ?noredact=1 (the module loaded, RED off).
@@ -43,19 +47,22 @@ const page = (mode: Mode): Page => {
   const ctx = vm.createContext({
     window: { DurbarRedact: R, DurbarSafeText: require(path.join(R_DIR, 'safetext.js')) },
     DurbarCutText: require(path.join(R_DIR, 'cuttext.js')),
+    document: DOC,
     NO_REDACT: !mode || mode === 'noredact',
     $: (id: string) => (id === 'srAnnounce' ? el : null),
     setTimeout: (f: () => void) => { timer = f; return 1; },
     clearTimeout: () => { timer = null; },
   });
-  vm.runInContext(DEFS + '\nthis.announce=announce;this.unchecked=ANN_UNCHECKED;', ctx);
-  const C = ctx as unknown as { announce(t: unknown, p?: number): void; unchecked: string };
+  vm.runInContext(DEFS + '\nthis.announce=announce;this.unchecked=ANN_UNCHECKED;this.requestRaw=requestRaw;this.requestText=requestText;', ctx);
+  const C = ctx as unknown as { announce(t: unknown, p?: number): void; unchecked: string; requestRaw(n: unknown): string; requestText(n: unknown): string };
   const fire = (): string | null => { if (timer) (timer as () => void)(); timer = null; return el.textContent; };
   return {
     say(text, prio) { el.textContent = null; timer = null; C.announce(text, prio); return fire(); },
     queue(text, prio) { C.announce(text, prio); },
     fire,
     unchecked: C.unchecked,
+    requestRaw: (n) => C.requestRaw(n),
+    requestText: (n) => C.requestText(n),
   };
 };
 
@@ -75,6 +82,8 @@ const NAMES: [string, string][] = [
   ['a Linux home folder with a zero-width space in "home"', '/ho\u200bme/' + USER + '/repo'],
   ['a Linux home folder with a zero-width space after "home"', '/home\u200b/' + USER + '/repo'],
   ['a macOS home folder with a soft hyphen in the user name', '/Users/zqx\u00aduser' + 'name/repo'],
+  // a Markdown escape inside a home user name (review of PR 1484): the home mask as written stops at the backslash
+  ['a Linux home folder with an escape in the user name', '/home/zq\\_' + USER + '/repo'],
 ];
 const NEEDLES = [GHP, GHP.slice(4, 16), SK.slice(8, 20), USER, 'gh' + 'p_A1b2'];
 const clean = (said: string | null, what: string): void => {
@@ -105,8 +114,9 @@ const P = page(true);
 for (const [nm, name] of NAMES) for (const [ln, mk] of LINES) clean(P.say(mk(name)), `${ln} with ${nm}`);
 // the request lines come as parts, [name, rest] (app.js: needs your OK, asks): the name is masked alone
 for (const [nm, name] of NAMES) {
-  clean(P.say([name, ' needs your OK: run tests']), `parts: needs your OK with ${nm}`);
-  clean(P.say([name, ' asks: a question'], 1), `parts: asks with ${nm}`);
+  clean(P.say([name, ' needs your OK: ', 'run tests']), `parts: needs your OK with ${nm}`);
+  clean(P.say([name, ' asks: ', 'a question'], 1), `parts: asks with ${nm}`);
+  clean(P.say(['Ada', ' needs your OK: ', 'cat ' + name]), `parts: a request naming ${nm}`);
 }
 // Durbar's own words stay as they are
 eq(P.say('Ada finished. New reply.'), 'Ada finished. New reply.', 'a plain name is said as it is');
@@ -135,10 +145,50 @@ for (const c of CMDS) {
   // one part with both a secret and an escape: never said with the escapes undone
   // (`\\$` is no Markdown escape: such a part is masked as usual, nothing else changes)
   const esc1 = ST.unesc(c) !== c;
-  eq(P.say(['Ada', ' needs your OK: ' + c + ' --token ' + GHP]), esc1 ? 'Ada[redacted]' : 'Ada needs your OK: ' + c + ' --token [redacted]',
-    `a part with a secret and an escape is hidden whole: ${c}`);
+  eq(P.say(['Ada', ' needs your OK: ', c + ' --token ' + GHP]), 'Ada needs your OK: ' + (esc1 ? '[redacted]' : c + ' --token [redacted]'),
+    `a part with a secret and an escape is hidden whole, the fixed words still said: ${c}`);
 }
-ok(!String(P.say(['Ada', ' needs your OK: run echo ghp\\_' + GHP.slice(4)])).includes(GHP.slice(4, 16)), 'an escaped token in the request is still hidden');
+ok(!String(P.say(['Ada', ' needs your OK: ', 'run echo ghp\\_' + GHP.slice(4)])).includes(GHP.slice(4, 16)), 'an escaped token in the request is still hidden');
+// the fixed words are their own part (review of PR 1484, finding 2): a request hidden whole still says that an OK is waiting
+eq(P.say(['Noor', ' needs your OK: ', 'echo a \\> b ghp\\_' + GHP.slice(4)], 1), 'Noor needs your OK: [redacted]', 'needs your OK is said when the request is hidden whole');
+eq(P.say(['Noor', ' asks: ', 'echo a \\> b ghp\\_' + GHP.slice(4)], 1), 'Noor asks: [redacted]', 'asks is said when the question is hidden whole');
+
+// 3b. a Markdown escape inside a home user name (review of PR 1484, finding 4): the escape-undone copy is masked too; the part is hidden
+// whole, never said with its escapes undone
+eq(P.say('/home/zq\\_' + USER + '/repo'), '[redacted]', 'a home folder with an escape in the user name is hidden whole');
+eq(P.say(['Ada', ' needs your OK: ', 'cat /home/zq\\_' + USER + '/a']), 'Ada needs your OK: [redacted]', 'a request with such a home folder is hidden, the fixed words said');
+eq(P.say(['Ada', ' needs your OK: ', 'cat /home/' + USER + '/a \\> b']), 'Ada needs your OK: cat ~/a \\> b', 'a home folder without an escape in it is masked, the command kept as written');
+eq(P.say('C:\\Users\\' + USER + '\\repo finished.'), '~\\repo finished.', 'a Windows home folder (backslashes, no escape) is masked as before');
+const unc = String(P.say('\\\\host\\share\\' + USER + '\\repo finished.'));
+ok(unc !== '[redacted]' && unc.endsWith('repo finished.') && !unc.includes(USER), `a UNC home folder (a doubled backslash, which the escape copy undoes) is masked as before, not hidden whole: ${unc}`);
+
+// 3c. through the card (review of PR 1484, finding 1): the queue and answer-bar lines read requestRaw, the card's own words before any mask,
+// so the command said is the one on the card; requestText (the bar and the inbox) is the desk-masked copy, which undoes escapes
+const permCard = (cmd: string): Element => {
+  const n = DOC.createElement('div'); n.className = 'note perm';
+  n.innerHTML = '<b>Needs your OK:</b> <span class="psum"></span><span class="pstate"></span><div class="note-actions"><button>Allow once</button><button>Deny</button></div>';
+  (n.querySelector('.psum') as Element).textContent = cmd; return n;
+};
+const qCard = (q: string): Element => {
+  const n = DOC.createElement('div'); n.className = 'note perm question';
+  n.innerHTML = '<b>Question from the agent</b><span class="pstate"></span><div class="q-item"><p class="q-text"></p><div class="q-opts"><button>Yes</button></div></div>';
+  (n.querySelector('.q-text') as Element).textContent = q; return n;
+};
+for (const c of CMDS) {
+  const card = permCard(c), shown = String((card.querySelector('.psum') as Element).textContent);
+  eq(P.requestRaw(card), c, `requestRaw is the card's own text: ${c}`);
+  eq(P.say(['Ada', ' needs your OK: ', P.requestRaw(card)], 1), 'Ada needs your OK: ' + shown, `the queue line says the command as the card shows it: ${c}`);
+  eq(P.say(['Allow once', ': ', P.requestRaw(card)]), 'Allow once: ' + shown, `the answer-bar line says the command as the card shows it: ${c}`);
+  eq(P.say(['Ada', ' asks: ', P.requestRaw(qCard(c))], 1), 'Ada asks: ' + c, `the question line says the question as the card shows it: ${c}`);
+}
+ok(P.requestText(permCard(CMDS[0])) !== CMDS[0], 'requestText (desk-masked) differs from the card for an escaped command: why announce reads requestRaw');
+clean(P.say(['Ada', ' needs your OK: ', P.requestRaw(permCard('run deploy --token ' + GHP))], 1), 'the queue line through the card with a token');
+
+// 3d. a part {text, max} (the MCP request's message) is masked, then cut, and said as written
+eq(P.say(['Ada', ': ', 'an MCP server ', 'asks for input', '', '. ', { text: 'run echo \\\\$(id)', max: 160 }]), 'Ada: an MCP server asks for input. run echo \\\\$(id)', 'the MCP message is said as written');
+const mcp = String(P.say(['Ada', ': ', 'an MCP server ', 'asks for input', '', '. ', { text: 'y'.repeat(150) + ' ' + GHP, max: 160 }]));
+ok(mcp.startsWith('Ada: an MCP server asks for input. ') && mcp.length <= 'Ada: an MCP server asks for input. '.length + 160, `the MCP message is cut at 160: ${mcp.length}`);
+ok(!/ghp|A1b2/.test(mcp), `a token across the 160 cut of the MCP message leaves no piece: ...${mcp.slice(-30)}`);
 
 // 4. fail closed: without the redact module, with a throwing or failing mask, or in the simulator's noredact mode, a fixed line is said, never the text
 eq(page(false).unchecked, UNCHECKED, 'the fixed line');
@@ -181,6 +231,18 @@ const topLevel = (head: string): string => {
 ok(/[{,]\s*announce\s*[,}]/.test(topLevel('window.DurbarScreens.init({')), 'screens.js gets the page\'s announce');
 ok(/[{,]\s*announce\s*[,}]/.test(topLevel('DurbarNewFolder.create({')), 'newfolder.js gets the page\'s announce');
 // the request lines pass the name as its own part (a token-shaped name cannot undo the escapes of the command)
-ok(/announce\(\[a\.name,' needs your OK: '\+\(look/.test(app) && /announce\(\[a\.name,\(c\.classList\.contains\('question'\)/.test(app) && /announce\(\[a\.name,' asks: '/.test(app), 'the request lines pass the name as its own part');
+ok(/announce\(\[a\.name,' needs your OK: ',look,/.test(app), 'the permission card line: name, fixed words and request are their own parts');
+ok(/announce\(\[a\.name,c\.classList\.contains\('question'\)\?' asks: ':' needs your OK: ',requestRaw\(c\)\]/.test(app), 'the queue line: the card\'s own words (requestRaw), fixed words their own part');
+ok(/announce\(\[a\.name,' asks: ',String\(\(qs\[0\]&&qs\[0\]\.question\)\|\|''\)\|\|'a question'\]\)/.test(app), 'the question line: the raw question, fixed words their own part');
+ok(/announce\(\[word,': ',what\]\)/.test(app) && (app.match(/answerPress\(src,requestRaw\((card|c)\)\)/g) || []).length === 2 && !/answerPress\(src,(text|textOf)/.test(app), 'the answer-bar line: the card\'s own words, as parts');
+ok(/\{text:R\.message\|\|'',max:160\}/.test(app), 'the MCP request line: the raw message as a {text,max} part');
+// no announcement reads a desk-masked copy of a request or a question (that copy has its escapes undone)
+// the whole argument of each announce( call in app.js, by matching brackets (string contents kept, so a call is read as written)
+const argAt = (i: number): string => { let d = 0; for (let j = i; j < app.length; j++) { const c = app[j];
+  if (c === "'" || c === '"' || c === '`') { const q = c; j++; while (j < app.length && app[j] !== q) { if (app[j] === '\\') j++; j++; } continue; }
+  if (c === '(') d++; else if (c === ')') { d--; if (d === 0) return app.slice(i, j + 1); } } throw new Error('no end at ' + i); };
+const annArgs: string[] = []; for (let i = app.indexOf('announce('); i >= 0; i = app.indexOf('announce(', i + 1)) { if (/[A-Za-z0-9_$.]/.test(app[i - 1] || '')) continue; annArgs.push(argAt(i + 'announce'.length)); }
+ok(annArgs.length > 80, `every announce( call is read: ${annArgs.length}`);
+for (const a of annArgs) ok(!/requestText\(|safeExcerpt\(|textOf\(|safeMask\(\(qs/.test(a), `no announcement reads a masked request copy: ${a.slice(0, 80)}`);
 
 console.log('test-announce-mask: OK (' + n + ' checks)');
