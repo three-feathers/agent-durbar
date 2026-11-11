@@ -109,12 +109,60 @@ function failDriver(message) {
 }
 
 /**
+ * Spec 097 delta 2026-11-11 (issue #1448): a diagnostic, nothing else. `pointerLog(ctx)` records the pointer events the page receives during a
+ * pointer-dependent step into a ring of the last POINTER_LOG_MAX events (capture-phase listeners on window), and `step(driver, name, fn)` runs the
+ * step: when `fn` fails with an AssertionError the ring is printed (`[pointer-log] <driver> <step>: N events`, one line per event) and the SAME error is
+ * thrown again; a pass prints nothing. It never retries, waits, moves the pointer or changes a limit, and a failed arm or read (a reloaded or closed page)
+ * is ignored, so a driver passes and fails as it did. Only type, position, buttons, isTrusted and the time since the step began are kept: no page text.
+ * `DIAG_FORCE_FAIL=1` (or a part of a step name) makes the first matching step fail once after it ran, to see the output.
+ */
+const POINTER_LOG_MAX = 200;
+const POINTER_TYPES = ['pointermove', 'pointerdown', 'pointerup', 'pointercancel', 'pointerover', 'pointerout', 'pointerenter', 'pointerleave', 'mousemove', 'mousedown', 'mouseup', 'mouseenter', 'mouseleave'];
+const POINTER_SHORT = { pointermove: 'pm', pointerdown: 'pd', pointerup: 'pu', pointercancel: 'pc', pointerover: 'po', pointerout: 'pt', pointerenter: 'pe', pointerleave: 'pl', mousemove: 'mm', mousedown: 'md', mouseup: 'mu', mouseenter: 'me', mouseleave: 'ml' };
+const POINTER_ARM = `(()=>{const w=window,L=w.__ptrLog=w.__ptrLog||{ev:[],t0:0};
+  if(!w.__ptrLogOn){w.__ptrLogOn=1;for(const t of ${JSON.stringify(POINTER_TYPES)})w.addEventListener(t,(e)=>{const E=L.ev;E.push({type:e.type,x:Math.round(e.clientX),y:Math.round(e.clientY),buttons:e.buttons,trusted:e.isTrusted,at:performance.now()});if(E.length>${POINTER_LOG_MAX})E.splice(0,E.length-${POINTER_LOG_MAX});},true);}
+  L.ev.length=0;L.t0=performance.now();return 1})()`;
+const POINTER_READ = `(()=>{const L=window.__ptrLog;return L?JSON.stringify(L.ev.map((e)=>({type:e.type,x:e.x,y:e.y,buttons:e.buttons,trusted:e.trusted,ms:Math.round(e.at-L.t0)}))):'[]'})()`;
+function pointerLog(ctx, out = (l) => console.log(l)) {
+  let forced = false;
+  const forceHit = (name) => {
+    const f = process.env.DIAG_FORCE_FAIL;
+    if (forced || !f) return false;
+    if (f !== '1' && !String(name).includes(f)) return false;
+    forced = true;
+    return true;
+  };
+  const arm = async () => { try { await ctx.js(POINTER_ARM); } catch { /* a diagnostic never changes the verdict */ } };
+  const print = async (driver, name) => {
+    let ev = [];
+    try { ev = JSON.parse(await ctx.js(POINTER_READ)); } catch { return; }
+    out(`[pointer-log] ${driver} ${name}: ${ev.length} events (ms type x,y buttons+T/S; ${Object.entries(POINTER_SHORT).map(([k, v]) => v + '=' + k.replace('pointer', 'p.').replace('mouse', 'm.')).join(' ')}; T=trusted S=script)`);
+    /* the suite shows only the last 25 lines of a failed driver, each cut at 240 characters: 11 short events a line keep 200 events (19 lines) inside that */
+    const tok = ev.map((e) => `${e.ms} ${POINTER_SHORT[e.type] || e.type} ${e.x},${e.y} ${e.buttons}${e.trusted ? 'T' : 'S'}`);
+    for (let i = 0; i < tok.length; i += 11) out('  ' + tok.slice(i, i + 11).join(';'));
+  };
+  const step = async (driver, name, fn) => {
+    await arm();
+    try {
+      const r = await fn();
+      if (forceHit(name)) throw new (require('assert').AssertionError)({ message: `forced failure of ${name} (DIAG_FORCE_FAIL)` });
+      return r;
+    } catch (e) {
+      if (e && (e.name === 'AssertionError' || e.code === 'ERR_ASSERTION')) await print(driver, name);
+      throw e;
+    }
+  };
+  return { arm, step, print };
+}
+
+/**
  * The helpers every driver used to define for itself (FR-097). `H = helpers(ctx)`; it also carries `until`, `settle`, `office`, `chatOf`.
  * Values spliced into page code go through jsLiteral.
  */
 function helpers(ctx) {
   const w = waits(ctx);
   const closeGuard = guardWindow(ctx.win);
+  const ptr = pointerLog(ctx);
   const wc = () => ctx.win.webContents;
   /** Run code in the page. A failure names the code (first 90 chars) and is thrown again, so the driver fails as before. */
   const js = async (code) => { try { return await ctx.js(code); } catch (e) { console.log('JS ERR for', String(code).slice(0, 90)); throw e; } };
@@ -289,7 +337,7 @@ function helpers(ctx) {
     await goToFloor(list[0].id);
     for (let i = 0; i < list.length; i++) { await goToFloor(list[i].id); await w.settle(); await fn(list[i], i); }
   };
-  return { ...w, allowWindowClose: closeGuard.allow, wc, js, click, clickText, exists, text, idOf, key, calm, clearToasts, focusPage, releaseFocus, loseFocus, focusWc, load, shot, openSimAgent, floors, shownFloor, goToFloor, eachFloor, INDEX };
+  return { ...w, pointerStep: ptr.step, allowWindowClose: closeGuard.allow, wc, js, click, clickText, exists, text, idOf, key, calm, clearToasts, focusPage, releaseFocus, loseFocus, focusWc, load, shot, openSimAgent, floors, shownFloor, goToFloor, eachFloor, INDEX };
 }
 
 /**
@@ -316,4 +364,4 @@ async function shotWithView(win, view, file) {
   fs.writeFileSync(file, nativeImage.createFromBitmap(base, { width: size.width, height: size.height }).toPNG());
 }
 
-module.exports = { waits, helpers, guardWindow, jsLiteral, shotWithView, LIMIT, INDEX, CHECK_DARK, CHECK_DARK_QUERY, darkFixtureProblem, darkProblem };
+module.exports = { waits, helpers, pointerLog, POINTER_LOG_MAX, guardWindow, jsLiteral, shotWithView, LIMIT, INDEX, CHECK_DARK, CHECK_DARK_QUERY, darkFixtureProblem, darkProblem };

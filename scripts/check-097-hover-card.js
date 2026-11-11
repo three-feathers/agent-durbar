@@ -129,17 +129,20 @@ module.exports = async (ctx) => {
     let wk = await js(PICKW([]));
     const desks = await js(`${sim}.realLayout().zones.flatMap(z=>z.desks).map(d=>d.id+':'+d.state+(d.away?'@':''))`);
     assert.ok(wk, `${tag}: a working desk: ${JSON.stringify(desks)}`);
-    for (const kind of ['person', 'desk', 'plate', 'screen']) {
-      wk = await hoverWork(kind, wk, [], `${tag} ${kind}`);
-      assert.ok(wk, `${tag}: hovering the ${kind} of a working desk opens its zoom (FR-327)`);
-    }
-    /* from the screen to the person of the same desk: the same panel stays (no close and reopen) */
-    const c0 = await card();
-    const pp = await spot('person', wk);
-    assert.ok(await moveTo(pp.x, pp.y), `${tag}: moved to the person`);
-    await js(`new Promise(r=>setTimeout(r,400))`);
-    const c1 = await card();
-    assert.ok(c1 && c1.id === wk && c1.node === c0.node, `${tag}: moving over the parts of one desk keeps the same panel (${c0 && c0.node} then ${c1 && c1.node})`);
+    let c0, c1, pp;
+    await H.pointerStep('check-097-hover-card', `${tag} hover parts of one desk`, async () => {
+      for (const kind of ['person', 'desk', 'plate', 'screen']) {
+        wk = await hoverWork(kind, wk, [], `${tag} ${kind}`);
+        assert.ok(wk, `${tag}: hovering the ${kind} of a working desk opens its zoom (FR-327)`);
+      }
+      /* from the screen to the person of the same desk: the same panel stays (no close and reopen) */
+      c0 = await card();
+      pp = await spot('person', wk);
+      assert.ok(await moveTo(pp.x, pp.y), `${tag}: moved to the person`);
+      await js(`new Promise(r=>setTimeout(r,400))`);
+      c1 = await card();
+      assert.ok(c1 && c1.id === wk && c1.node === c0.node, `${tag}: moving over the parts of one desk keeps the same panel (${c0 && c0.node} then ${c1 && c1.node})`);
+    });
     assert.ok(!c1.small.length && c1.inside && !c1.coversPlate && c1.w >= 379 && c1.w <= 481, `${tag}: the card: no text under 10.5 px (${c1.small}), inside the window, not over its plate, 380-480 px wide (${c1.w})`);
     await onTop(`${tag} desk`);
     assert.strictEqual(c1.live, null, `${tag}: not a live region`);
