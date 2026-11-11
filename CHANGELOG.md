@@ -34,7 +34,7 @@ Not released yet: each change is a file in [`changelog.d/`](changelog.d/) until 
 
 **Copilot on a Mac**
 
-- **Playwright MCP can start again under Copilot on macOS** (spec 087 FR-024, issue #1173): Copilot's private temp folder is now a short one under /tmp when the system temp folder is too long for a Unix socket (macOS /var/folders). The folder is still private to your account and removed afterwards; Windows is unchanged. Checked on Linux; not on a real Mac, and whether Copilot's sandbox allows writes under /private/tmp is not verified.
+- **Playwright MCP can start again under Copilot on macOS** (spec 087 FR-024, issue #1173): Copilot's private temp folder is now a short one under /tmp when the system temp folder is too long for a Unix socket (macOS /var/folders). The folder is still private to your account and removed afterwards; Windows is unchanged. Checked on Linux; not on a real Mac.
 
 **Behind the scenes** (nothing changes in the app): the team merge gate reads CodeQL results and a PR's changed files more strictly (FR-090, FR-091, #1422, #1479), the UI check runner now ends a timed-out check's display and window whole (FR-199, #1417), the live-activity UI check re-reads the lobby until it settles (FR-191, #1481), and the README build-cost sentence says how many machines started on each day (#1387). Checked by script tests only; not against live GitHub, not on macOS or Windows.
 
