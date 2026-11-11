@@ -1862,7 +1862,7 @@ function renderOffice(){
   const aw=floor.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);
   const ah=floor.clientHeight-parseFloat(cs.paddingTop)-parseFloat(cs.paddingBottom);
   if(aw<=0||ah<=0)return;
-  if(SIM&&!window.__durbarSimReplayed)return; /* spec 097 FR-363 (#1238): simulator only: while its start-up replay is pending the first states are not here, so no layout search and no desks for the early shape; the first render after the replay searches once (the replay sets the flag, then its states schedule that render). Before the render counter so ops() does not count it */
+  if(SIM&&!window.__durbarSimReplayed)return; /* spec 097 FR-363: simulator only: while its start-up replay is pending the first states are not here, so no layout search and no desks for the early shape; the first render after the replay searches once (the replay sets the flag, then its states schedule that render). Before the render counter so ops() does not count it */
   const model=officeModel();
   if(!model.length)$('probe').style.width=aw+'px'; /* spec 092 FR-008: the layout probe is only resized by a layout search; an empty screen has none, so a probe left at a wider width (the lift panel came or went) would overflow the floor */
   /* spec 092 FR-001, edge case "a floor with 0 agents": a floor screen with nothing to show says so and keeps the shared lobby (never a bare empty screen).
