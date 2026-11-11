@@ -233,6 +233,39 @@ module.exports = async (ctx) => {
     assert.ok(await H.until(`!!document.querySelector('#chat .sub-gone')`, 5000), "sim-1's chat is open again");
   }
 
+  // the tile of the Open office and the row of the list (FR-242, review of #1503): the same button per helper; the oldest kept helper's button holds the focus
+  // through 12 more ends, then the next end retires it. The tile is in the flat office (the Real office draws heads, the arcade none); the row in every world.
+  const buttonCase = async (tag, base, view) => {
+    await js(`(()=>{const b=document.getElementById('backBtn');if(b)b.click();return true;})()`);
+    assert.ok(await H.until(`!document.body.classList.contains('panel-open')`, 5000), `${tag}: the office is in view`);
+    await js(`document.getElementById(${jsLiteral(view)}).click()`);
+    await frames();
+    const hd = oldest(await stats());
+    const q = `${base}[data-id=${JSON.stringify(SID + ':' + hd)}]`; // a CSS string, quoted
+    const there = `!!document.querySelector(${jsLiteral(q)})`;
+    let opened = false;
+    if (!(await js(there))) { // the tile may be behind "+K": open the strip
+      opened = await js(`(()=>{const m=document.querySelector('#stage .helpers [data-more]');if(!m)return false;m.click();return true;})()`);
+      await frames();
+    }
+    assert.ok(await H.until(there, 5000), `${tag}: the button of ${hd} is drawn`);
+    const f0 = await js(`(()=>{const b=document.querySelector(${jsLiteral(q)});if(!b)return false;b.focus({preventScroll:true});return document.activeElement===b;})()`);
+    assert.ok(f0, `${tag}: the button of ${hd} holds the focus`);
+    await js('window.__chrPump(12)'); await frames();
+    assert.ok((await stats()).ids.includes(hd), `${tag}: the helper ${hd} whose button holds the focus is not retired`);
+    assert.ok(await js(`document.activeElement===document.querySelector(${jsLiteral(q)})`), `${tag}: and its button keeps the focus`);
+    await js(`(()=>{const i=document.getElementById('msgInput');if(i)i.focus();else document.activeElement.blur();})()`);
+    await js('window.__chrPump(2)');
+    assert.ok(!(await stats()).ids.includes(hd), `${tag}: let go, ${hd} is retired by the next done end`);
+    await checkKept(`after the ${tag}`);
+    if (opened) await js(`(()=>{const m=document.querySelector('#stage .helpers [data-more]');if(m&&/fewer/i.test(m.textContent))m.click();})()`);
+    await js(`document.getElementById('vOffice').click()`);
+    await js(`window.__durbarSimUi.crew.openPanel(${jsLiteral(SID)})`); // the chat again, for the line below
+    assert.ok(await H.until(`!!document.querySelector('#chat .sub-gone')`, 5000), `${tag}: sim-1's chat is open again`);
+  };
+  if (!WORLD) await buttonCase('tile', '#stage .helper', 'vOffice');
+  await buttonCase('list row', '#list .lrow', 'vList');
+
   // the line, readable in the open chat
   await js(`new Promise(r=>{const c=document.getElementById('chat');c.scrollTop=0;requestAnimationFrame(()=>r());})`);
   const line = await js(`(()=>{const n=document.querySelector('#chat .sub-gone');if(!n)return null;const cs=getComputedStyle(n),r=n.getBoundingClientRect();return {text:n.textContent,fs:parseFloat(cs.fontSize),w:r.width,h:r.height,shown:cs.display!=='none'&&cs.visibility!=='hidden'};})()`);
