@@ -172,9 +172,20 @@ module.exports = async (ctx) => {
         mid: async () => {
           const on = await lifted(), awayNow = on ? [] : await js(`window.__durbarSimUi.awayIds()`);
           assert.strictEqual(on, true, `${tag}: the drag started before the status change (dragging ${O2[k2]}; away now: ${awayNow})`);
+          /* diagnostic only: record window blur/focus and read document.hasFocus() around the hold, to name an OS focus loss (a blur cancels a drag by design) */
+          await js(`(()=>{const t0=performance.now(),L=window.__dragFocusLog=[];for(const n of ['blur','focus'])window.addEventListener(n,()=>L.push({n,t:Math.round(performance.now()-t0)}));return 1})()`);
+          const focusBefore = await js(`document.hasFocus()`);
           await js(`window.__durbarSimUi.crowd('library',1,${jsLiteral(0)})`);
           await ctx.sleep(300);
-          assert.strictEqual(await lifted(), true, `${tag}: a status change does not end the drag`);
+          const focusAfter = await js(`document.hasFocus()`), focusEvents = await js(`window.__dragFocusLog||[]`), blurAt = focusEvents.find((e) => e.n === 'blur');
+          try {
+            assert.strictEqual(await lifted(), true, `${tag}: a status change does not end the drag`);
+          } catch (e) {
+            const lost = focusAfter === false || !!blurAt;
+            console.log(`[focus-log] ${tag} status-change hold: hasFocus before=${focusBefore} after=${focusAfter}; window events: ${focusEvents.map((x) => `${x.n}@${x.t}ms`).join(', ') || 'none'}`);
+            if (lost) throw new assert.AssertionError({ message: `the window lost the OS focus during the status-change hold (blur at ${blurAt ? blurAt.t + ' ms' : 'not observed, hasFocus false after'}): an environment problem on a shared desktop, not a repaint that ended the drag (FR-352, issue 1550)\n${e.message}`, actual: e.actual, expected: e.expected, operator: e.operator });
+            throw e;
+          }
           assert.ok(await loose() >= 2, `${tag}: and the plates stay where the drag put them (no repaint under it)`);
         },
       });

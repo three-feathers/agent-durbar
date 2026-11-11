@@ -104,9 +104,24 @@ function hoverCardCase(d: string) {
   assert.ok(d.slice(0, i2).includes('let wk4;') && d.indexOf('wk4 = await hoverWork', i2) > i2, 'wk4 is declared outside the third-agent step');
 }
 
+/** the drag driver (static, issue 1550): the status-change step reads hasFocus around the hold, records blur/focus and labels an OS focus loss; the verdict line is unchanged */
+function dragFocusCase(d: string) {
+  const open = "await H.pointerStep('check-097-drag', `${tag} drag with a status change`, async () => {";
+  const i = d.indexOf(open), hold = d.indexOf('await ctx.sleep(300);', i), verdict = d.indexOf('assert.strictEqual(await lifted(), true, `${tag}: a status change does not end the drag`);', i), end = d.indexOf('\n    });\n', i);
+  assert.ok(i > 0 && hold > i && verdict > hold && end > verdict, 'check-097-drag keeps the status-change hold, then the verdict, inside the pointer step');
+  const body = d.slice(i, end);
+  assert.ok(body.indexOf('document.hasFocus()') > 0 && body.indexOf('document.hasFocus()') < body.indexOf('await ctx.sleep(300);'), 'hasFocus is read before the hold');
+  assert.ok(body.indexOf('document.hasFocus()', body.indexOf('await ctx.sleep(300);')) > body.indexOf('await ctx.sleep(300);') && body.indexOf('document.hasFocus()', body.indexOf('await ctx.sleep(300);')) < body.indexOf('a status change does not end the drag'), 'hasFocus is read after the hold, before the assert');
+  assert.ok(/addEventListener\(n,/.test(body) && body.includes("['blur','focus']"), 'a page-side recorder listens for window blur and focus');
+  assert.ok(body.includes('the window lost the OS focus during the status-change hold (blur at ') && body.includes('an environment problem on a shared desktop, not a repaint that ended the drag (FR-352, issue 1550)'), 'the labelled message is there');
+  assert.strictEqual(d.split('a status change does not end the drag').length - 1, 1, 'the verdict text appears once, as the assert');
+  assert.ok(d.includes('await ctx.sleep(300);\n          const focusAfter'), 'the hold is still 300 ms');
+}
+
 (async () => {
   assert.strictEqual(lf('a\r\nb'), 'a\nb', 'lf() turns CRLF into LF');
   hoverCardCase(lf(fs.readFileSync(path.join(ROOT, 'scripts', 'check-097-hover-card.js'), 'utf8')));
+  dragFocusCase(lf(fs.readFileSync(path.join(ROOT, 'scripts', 'check-097-drag.js'), 'utf8')));
   await cases(load(SRC));
   await cases(load(lf(SRC.replace(/\n/g, '\r\n')))); // a CRLF checkout gives the same source after lf()
   const mutants: Array<[string, string, string]> = [
