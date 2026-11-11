@@ -677,6 +677,10 @@ const bodyOf = (text: string | Buffer, status = 200) => (r: FakeReq) => { const 
     const gone = mk(() => ({ code: null, stdout: '', stderr: '', errorCode: 'ENOENT' }));
     await gone.checker.checkApp('copilot');
     assert.strictEqual(gone.checker.result('copilot')?.reason, 'npm or node was not found');
+    // spec 009 FR-029: a line execFound refused (EUNSAFE) reads like harness setup's refusal, never `exit EUNSAFE`
+    const unsafe = mk(() => ({ code: null, stdout: '', stderr: '', errorCode: 'EUNSAFE' }));
+    await unsafe.checker.checkApp('copilot');
+    assert.deepStrictEqual([unsafe.checker.result('copilot')?.state, unsafe.checker.result('copilot')?.reason], ['could-not-check', 'This command cannot be run safely on this computer.']);
     const other = mk(() => ({ code: 2, stdout: '', stderr: '' }));
     await other.checker.checkApp('copilot');
     assert.strictEqual(other.checker.result('copilot')?.reason, 'exit 2', 'other codes keep their number');
