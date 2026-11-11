@@ -216,7 +216,7 @@ export class WorldStore {
   /** The same with `{ bigint: true }`, for every inode and device comparison (issue #1491: a 64-bit NTFS file ID loses its low bit as a number). */
   private lstatBig(p: string): fs.BigIntStats | null { try { return this.fsx.lstatSync(p, { bigint: true }) ?? null; } catch { return null; } }
 
-  /** A regular file, never a link, with one link only, up to `cap` bytes. Checked by `lstat` before and `fstat` after the open; at most cap + 1 bytes are asked for. `io`: the system failed (too many open files...), which says nothing about the file. */
+  /** A regular file, never a link, with one link only, up to `cap` bytes. Checked by `lstat` before and `fstat` after the open (the same device and inode, as `sameDir`); at most cap + 1 bytes are asked for. `io`: the system failed (too many open files...), which says nothing about the file. */
   private readFile(file: string, cap: number): { ok: true; buf: Buffer } | { ok: false; why: 'bad' | 'io' } {
     const BAD = { ok: false, why: 'bad' } as const;
     const st = this.lstatBig(file);
@@ -227,7 +227,7 @@ export class WorldStore {
       fd = this.fsx.openSync(file, O_RDONLY | (O_NOFOLLOW ?? 0) | (O_NONBLOCK ?? 0));
       const now = this.fsx.fstatSync(fd, { bigint: true });
       const size = Number(now.size);
-      if (!now.isFile() || size > cap || now.ino !== st.ino || Number(now.nlink) > 1) return BAD;
+      if (!now.isFile() || size > cap || now.ino !== st.ino || now.dev !== st.dev || Number(now.nlink) > 1) return BAD;
       const buf = Buffer.alloc(Math.min(size, cap) + 1);
       let got = 0;
       while (got < buf.length) {

@@ -855,15 +855,15 @@ try {
       fsx.fstatSync = (fd: number, o?: unknown) => { const st = fs.fstatSync(fd, o as never) as fs.Stats; const p = fdPath.get(fd); const id = p === undefined ? undefined : ids(p, 'fstat'); return id ? withId(st, o, id) : st; };
       return fsx;
     };
-    // a part: the lstat before the open and the fstat after it
-    {
+    // a part: the lstat before the open and the fstat after it, by inode and by device (same inode on another device: another file)
+    for (const field of ['ino', 'dev'] as const) {
       const e = env();
       const key = saved(e.store.save(goodInput()));
       const part = path.join(e.root, key, 'wall.webp');
-      const same = new WorldStore(e.root, ided((p) => (p === part ? { ino: A } : undefined)) as unknown as FsLike);
-      assert.ok(same.part(key, 'wall.webp').ok, 'issue 1491: a part whose large inode stays the same is served');
-      const swapped = new WorldStore(e.root, ided((p, how) => (p === part ? { ino: how === 'lstat' ? A : B } : undefined)) as unknown as FsLike);
-      assert.deepStrictEqual(swapped.part(key, 'wall.webp'), { ok: false, reason: 'damaged' }, 'issue 1491 world part ino: a descriptor whose inode differs only in bit 0 above 2^53 is refused');
+      const same = new WorldStore(e.root, ided((p) => (p === part ? { [field]: A } : undefined)) as unknown as FsLike);
+      assert.ok(same.part(key, 'wall.webp').ok, `issue 1491: a part whose large ${field} stays the same is served`);
+      const swapped = new WorldStore(e.root, ided((p, how) => (p === part ? { [field]: how === 'lstat' ? A : B } : undefined)) as unknown as FsLike);
+      assert.deepStrictEqual(swapped.part(key, 'wall.webp'), { ok: false, reason: 'damaged' }, `issue 1491 world part ${field}: a descriptor whose ${field} differs only in bit 0 above 2^53 is refused`);
     }
     // removal: the folder re-checked after its own listing (sameDir), by inode and by device
     for (const field of ['ino', 'dev'] as const) {
