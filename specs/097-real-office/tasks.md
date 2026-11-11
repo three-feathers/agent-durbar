@@ -313,6 +313,10 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 
 - [x] T298 [US5] FR-357: the pencil anchored to the plate when the plate does not draw the name (arcade cabinets), the field over the marquee. Test: `sim:` `check-097-plate-pencil` in the Photo office, cave, arcade and one-room arcade, both sizes; mutant `PENCIL_MUTANT=plate` fails the geometry assert
 
+## 2026-11-11: check-097-crews settles the lobby's visits (bug #1459)
+
+- [x] T304 `scripts/check-097-crews.js`: `quiet()` waits at most 5 s for `H.load`'s settle condition, returns the scene, the driver asserts it unchanged before the read; request times and type printed on a `bad` entry; `H.SETTLED` (one expression for `H.load` and the driver); `CREWS_MUTANT=latevisit|latevisit-nowait|failed` [FR-335, FR-336]. Test: `sim:` `check-097-crews`
+
 ## 2026-11-11: a request slip is measured with its variant's CSS (FR-358, bug #1434)
 
 - [x] T299 [US2] FR-358: `drawSlips` writes `data-variant` before measuring a variant's box (`src/renderer/realoffice.js`). Test: `sim:` `check-097-slip-plates` (new, in `ui-suite`), the slips made fresh and measured in the draw's own task, then at once after the page's first draw; fails without the line in every run.
