@@ -139,6 +139,7 @@ Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `tes
 - **A destroyed `WebContentsView` has no `webContents`**: keep the `webContents` before `close()` to check `isDestroyed()` and the OS process (`process.kill(pid, 0)` gives `ESRCH`). `Page.getNavigationHistory` gives each entry a `transitionType` (`form_submit` for a form), so main knows a form page without reading it; `sendInputEvent` (`char`) fires a view's `input-event`. `sim:` spec 080 T013/T018.
 - **The simulator's End session never reaches main**: a driver that checks a browser teardown uses the driver-context hooks `ctx.browserGone` / `ctx.browserStates` (`main.ts`), not the renderer.
 - **No referrer from a custom scheme** (2026-10-31): a `durbar-sim:` `_blank` has `referrer.url === ''`; test referrer rules over loopback http (`check-browser-tabs.js`).
+- **A `TMPDIR` you hand to a child must leave room for Unix sockets**: `sun_path` is 104 bytes on macOS (108 Linux) and macOS's `os.tmpdir()` is already 49; Playwright MCP refused `$TMPDIR/pw-<hash>/…` under `/var/folders/…/T/durbar-cprt-…`. Use `makeSocketSafePrivateDir` (`privatedirs.ts`), not `mkdtemp(os.tmpdir())` (spec 087 FR-024, #1173, `test:copilot-tmpdir`).
 - **CSS anchor positioning** (2026-11-05, #1155, Chromium 125+): `anchor-name`s are document-global, so unique, and precede what they anchor; guard: `check-097-plate-pencil`.
 
 ## Team chat
