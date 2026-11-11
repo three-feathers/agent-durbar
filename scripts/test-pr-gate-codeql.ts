@@ -30,11 +30,13 @@ assert.ok(!/gh pr checks \$p \|/.test(gate), 'every verdict check uses that one 
 const prLineAt = gate.indexOf('pr_line=$(gh api repos/$R/pulls/$p ');
 const headNowAt = gate.indexOf('head_now=$(gh api repos/$R/pulls/$p --jq .head.sha');
 const verdictAt = gate.indexOf('if [ -n "$bad" ] || [ -z "$codeql_ok" ]');
-for (const [read, what] of [["gh pr view $p --json files", 'the src/ file list'], ['repos/$R/pulls/$p/files', 'the FR-089 file list'], ['checks_out=$(gh pr checks $p)', 'the check list']]) {
+for (const [read, what] of [['repos/$R/pulls/$p/files', 'the one file list (src/ check and FR-089, FR-091)'], ['checks_out=$(gh pr checks $p)', 'the check list']]) {
   const at = gate.indexOf(read);
   assert.ok(at > 0 && gate.indexOf(read, at + 1) < 0 && at < headNowAt, `${what} is read once, before the final head read`);
 }
-assert.ok(prLineAt < gate.indexOf('gh pr view $p --json files') && prLineAt < gate.indexOf('only_nocode; then'), 'the file lists are read after pr_line');
+assert.ok(prLineAt < gate.indexOf('src_files=$(gh api --paginate') && prLineAt < gate.indexOf('only_nocode; then'), 'the file list is read after pr_line');
+assert.ok(!gate.includes('--json files') && !/--jq \.changed_files/.test(gate) && gate.includes('src_total=$pr_total;'), 'changed_files comes from pr_line only (FR-091), no gh pr view file list');
+assert.ok(gate.includes('files=$src_files;'), 'only_nocode reuses the one file list (FR-031)');
 assert.ok(headNowAt > 0 && headNowAt < verdictAt && gate.slice(headNowAt, verdictAt).split('\n').length <= 4, 'the head is read again just before the verdict');
 
 const bash = process.platform === 'win32' ? null : spawnSync('bash', ['-c', 'command -v jq'], { encoding: 'utf8' });
@@ -149,6 +151,7 @@ const notReady = (gatePath: string, label: string, want: RegExp): void => {
 type Case = (g: string, label: string) => void;
 const R = (o: Parameters<typeof fixture>[0]): Case => (g, l) => { fixture(o); ready(g, l); };
 const N = (o: Parameters<typeof fixture>[0], want: RegExp, after?: () => void): Case => (g, l) => { fixture(o); after?.(); notReady(g, l, want); };
+const noGates = (): void => set('checks.txt', 'CodeQL\tpass\t0\thttps://github.com/o/r/runs/101\n');
 const other = /codeql=skipping\(analysed or unknown files changed\)/;
 const refused = /codeql=skipping\(dependency files refused/;
 const lock = (pkg: object): object => ({ ...LOCK, packages: { ...LOCK.packages, 'node_modules/y': pkg } });
@@ -264,6 +267,16 @@ const CASES: Record<string, Case> = {
     notReady(g, l, new RegExp(`head-changed\\(read ${SHA} first, c{40} at the end`));
   },
   'head-unread: the final head read fails': N({ codeql: 'pass', files: ['docs/a.md'] }, /head-changed\(read a{40} first, unread at the end/, () => set('pull-later.fail', '')),
+  // the src/ check at the top of the gate (FR-091, #1422): CodeQL passed and the gates absent, so only src/ makes it block
+  'src-page2: src/a.ts on the second page of the file list': N({ codeql: 'pass', files: ['docs/a.md'], page2: ['src/a.ts'] }, /missing:Spec Kit gate/, noGates),
+  'src-rename: a src/*.ts file renamed to a .md': N({ codeql: 'pass', files: [{ filename: 'docs/a.md', previous_filename: 'src/main/a.ts' }] }, /missing:Spec Kit gate/, noGates),
+  'src-docs-only: docs only, the src gates not needed': (g, l) => { fixture({ codeql: 'pass', files: ['docs/a.md'], page2: ['docs/b.md'] }); noGates(); ready(g, l); },
+  'src-count: the API lists fewer files than the PR changed': N({ codeql: 'pass', files: ['docs/a.md'], changed: 2 }, /src-check-unreadable/),
+  'src-cap: 3000 files, where the files API stops': N({ codeql: 'pass', files: Array.from({ length: 3000 }, (_, i) => `docs/f${i}.md`) }, /src-check-unreadable/),
+  'src-error: the file list cannot be read': N({ codeql: 'pass', files: null }, /src-check-unreadable/),
+  'src-partial: the file list fails after its first page': N({ codeql: 'pass', files: ['docs/a.md'] }, /src-check-unreadable/, () => set('files.fail', '')),
+  'src-empty: the files API lists no file (changed_files 0)': N({ codeql: 'pass', files: [], changed: 0 }, /src-check-unreadable/),
+  'src-ctrl: a file name with a newline counts as src/': N({ codeql: 'pass', files: ['src/a\n.ts'] }, /missing:Spec Kit gate/, noGates),
   'checks-error: the check list cannot be read': N({ checks: false }, /codeql=missing /),
 };
 const runCase = (g: string, name: string): void => {
@@ -284,7 +297,7 @@ try {
     ['the file filter removed', 'nocode "$f" || return 1', 'true', 'skipped-with-src'],
     ['lockfiles in any folder', 'scripts/*/*/*) return 1;; package-lock.json|', '*/package-lock.json|package-lock.json|', 'unknown-file'],
     ['the control-character check removed', '|any(test("[\\\\x00-\\\\x1f\\\\x7f]"))', '|any(false)', 'control-name'],
-    ['a partly read file list accepted', `"P \\(.)") end') && [ -n`, `"P \\(.)") end'); [ -n`, 'files-partial'],
+    ['a partly read file list accepted', `"P \\(.)") end') || src_files=ERR`, `"P \\(.)") end')`, 'files-partial'],
     ['a rename\'s old path ignored', ', (.previous_filename // empty|"P \\(.)")', '', 'rename-from-src'],
     ['--paginate removed from the file list', 'gh api --paginate "repos/$R/pulls/$p/files"', 'gh api "repos/$R/pulls/$p/files"', 'two-pages-docs'],
     ['the count check removed', '[ "$n" = "$total" ] && ', '', 'count-mismatch'],
@@ -314,12 +327,20 @@ try {
     ['--paginate removed from the check runs', 'gh api --paginate "repos/$R/commits/', 'gh api "repos/$R/commits/', 'app-second'],
     ['the final head re-check removed', '[ -n "$head_sha" ] && [ "$head_now" = "$head_sha" ] || bad=', 'true || bad=', 'head-moved'],
     ['the final head read error ignored', '--jq .head.sha 2>/dev/null) || head_now=;', '--jq .head.sha 2>/dev/null) || head_now=$head_sha;', 'head-unread'],
+    ['the src/ check without --paginate', 'src_files=$(gh api --paginate', 'src_files=$(gh api', 'src-page2'],
+    ['the src/ check ignoring a rename\'s old path', ', (.previous_filename // empty|"P \\(.)")', '', 'src-rename'],
+    ['the src/ check without the count comparison', ' || [ "$(grep -cE \'^(F |C$)\' <<< "$src_files")" != "$src_total" ]', '', 'src-count'],
+    ['the src/ check without the 3000 cap', ' || [ "$src_total" -ge 3000 ]', '', 'src-cap'],
+    ['the src/ check blocking on nothing', 'if [ "$src_files" = ERR ] || [ -z "$src_files" ] || [ "$(grep -cE \'^(F |C$)\' <<< "$src_files")" != "$src_total" ] || [ "$src_total" -ge 3000 ]; then', 'if false; then', 'src-error'],
+    ['the src/ check accepting a partly read list', `"P \\(.)") end') || src_files=ERR`, `"P \\(.)") end')`, 'src-partial'],
+    ['the src/ check accepting an empty list', ' || [ -z "$src_files" ]', '', 'src-empty'],
+    ['a control-character name not counted as src/', `grep -qE '^([FP] src/|C$)' <<< "$src_files"`, `grep -qE '^([FP] src/)' <<< "$src_files"`, 'src-ctrl'],
     ['the alerts read without a number check', '&& isnum "$a_merge" && isnum "$a_head" ', '', 'alerts-empty'],
   ];
   for (const [name, from, to, caught] of mutants) {
     assert.ok(gate.includes(from), `mutant "${name}": its anchor is in the gate`);
     const m = path.join(mdir, 'pr-gate.sh');
-    fs.writeFileSync(m, gate.replace(from, to), { mode: 0o755 });
+    fs.writeFileSync(m, gate.split(from).join(to), { mode: 0o755 });
     let msg = '';
     try { runCase(m, caught); } catch (e) { msg = (e as Error).message; }
     assert.ok(msg.startsWith(`CASE ${caught}:`), `mutant "${name}" is caught by CASE ${caught}, got: ${msg.split('\n')[0] || 'no failure'}`);

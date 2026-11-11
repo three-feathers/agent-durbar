@@ -9,6 +9,7 @@
 #   - a CodeQL check that is not exactly one check run from the github-advanced-security app, the run its line links (spec 021 FR-090, #1425);
 #   - a head commit that changed while the gate ran (read with the PR, read again before the verdict; FR-090): the file lists follow the live head;
 #   - a PR GitHub cannot merge (conflicts): GitHub then runs only CodeQL, so the other checks look absent rather than red;
+#   - a PR whose file list (paginated files API, renames' old paths too, count equal to changed_files, under 3000) is unreadable or incomplete (spec 021 FR-091, #1422);
 #   - a PR that changes src/ without the Spec Kit gate and the Linux build-and-test check present and passing;
 #   - an open code-scanning alert on the PR's merge ref or head ref (a bot line comment can be carried forward after its alert is fixed);
 #   - a reviewer whose latest review is CHANGES_REQUESTED;
@@ -48,7 +49,16 @@ read -r pr_total head_sha pr_base pr_baseref pr_author outside_pr <<< "$pr_line"
 case $head_sha in *[!0-9a-f]*|'') head_sha=;; esac; [ ${#head_sha} = 40 ] || head_sha=
 [ -n "$outside_pr" ] && bad="$bad outside-pr($outside_pr: a human decides, no checkout or run)"
 # the file lists follow the live head, not $head_sha: they are read after pr_line, and the head is read again before the verdict (FR-090)
-if gh pr view $p --json files -q '.files[].path' | grep -q '^src/'; then
+# the PR's file list, read once (FR-091, #1422; FR-031) for the src/ check and FR-089's only_nocode: the paginated files API, a renamed file's
+# old path too ("P"), a name with a control character as "C" (a newline would split it). The listed count (F and C lines) must equal pr_line's
+# changed_files and be under 3000 (the API stops there without an error); a read error, an empty list or any doubt blocks.
+src_files=$(gh api --paginate "repos/$R/pulls/$p/files" --jq '.[]|if ([.filename, (.previous_filename // empty)]|any(test("[\\x00-\\x1f\\x7f]"))) then "C" else "F \(.filename)", (.previous_filename // empty|"P \(.)") end') || src_files=ERR
+src_total=$pr_total; case $src_total in ''|*[!0-9]*) src_files=ERR;; esac
+if [ "$src_files" = ERR ] || [ -z "$src_files" ] || [ "$(grep -cE '^(F |C$)' <<< "$src_files")" != "$src_total" ] || [ "$src_total" -ge 3000 ]; then
+  bad="$bad src-check-unreadable(the PR's file list is incomplete or unreadable: a human checks whether it changes src/)"
+fi
+# a control-character name counts as src/ (it cannot be checked); an unreadable list blocks above
+if grep -qE '^([FP] src/|C$)' <<< "$src_files"; then
   for need in 'Spec Kit gate' 'Build and test (ubuntu-latest)'; do
     printf '%s\n' "$checks_out" | awk -F'\t' -v n="$need" '$1==n && $2=="pass"{f=1} END{exit !f}' || bad="$bad missing:$need"
   done
@@ -69,7 +79,7 @@ codeql_ok=; [ "$codeql" = pass ] && codeql_ok=passed; [ -n "$codeql" ] || codeql
 # path filter is not readable here); an API error, an empty file list or any other file blocks (fail closed). The alerts must still be 0.
 # Dependency files: the root package-lock.json and scripts/<dir>/package-lock.json or package.json only, and only in a Dependabot PR.
 nocode() { case $1 in *.md|*.png|*.jpg|*.jpeg|*.gif|*.webp) return 0;; scripts/*/*/*) return 1;; package-lock.json|scripts/*/package-lock.json|scripts/*/package.json) return 0;; esac; return 1; }
-# every path the PR touches: added, changed and removed files, and a renamed file's old path too (a rename out of src/ is not a docs change);
+# every path the PR touches (src_files, read once above): added, changed and removed files, and a renamed file's old path too (a rename out of src/ is not a docs change);
 # a name with a control character (a newline would split it into two lines) is a "C" line and blocks.
 # The files API stops at 3000 files without an error, so the listed count must equal the PR's changed_files and be under 3000.
 # Dependency files are not code to CodeQL but run on install: each changed one is read at the head commit (the PR's base must be main) and
@@ -87,7 +97,7 @@ SCRIPTS='(.scripts // {})|to_entries|sort_by(.key)|tojson'
 # a file of this repo at a commit, through a jq program: depraw <sha> <path> <program>
 depraw() { gh api -H 'Accept: application/vnd.github.raw+json' "repos/$R/contents/$2?ref=$1" --jq "$3"; }
 only_nocode() { local f files n total sha base baseref author head_i base_i head_l base_l; local -a deps; deps=()
-  files=$(gh api --paginate "repos/$R/pulls/$p/files" --jq '.[]|if ([.filename, (.previous_filename // empty)]|any(test("[\\x00-\\x1f\\x7f]"))) then "C" else "F \(.filename)", (.previous_filename // empty|"P \(.)") end') && [ -n "$files" ] || return 1
+  files=$src_files; [ "$files" != ERR ] && [ -n "$files" ] || return 1
   n=$(grep -c '^F ' <<< "$files"); total=$pr_total sha=$head_sha base=$pr_base baseref=$pr_baseref author=$pr_author
   isnum "$total" && [ "$n" = "$total" ] && [ "$n" -lt 3000 ] || return 1
   while IFS= read -r f; do
@@ -157,7 +167,7 @@ notes=$( { gh api --paginate repos/$R/issues/$p/comments --jq "$JQ_TRUST .[]|sel
 approvals=$(gh api --paginate repos/$R/pulls/$p/reviews --jq "$JQ_TRUST .[]|select(.state!=\"COMMENTED\" and .state!=\"PENDING\" and (.user.login|trusted))|\"\(.user.login)\t\(.submitted_at)\t\(.state)\t\(.commit_id[0:8])\"" | sort -k1,1 -k2,2 | awk -F'\t' '{last[$1]=$0} END{for(u in last){split(last[u],f,"\t"); if(f[3]=="APPROVED") print "approved by: " f[1] " at " f[4] " (" f[2] ")"}}' | sort)
 [ -n "$approvals" ] && echo "$approvals"
 [ -n "$notes" ] && { echo "status notes, not counted as asks:"; echo "$notes"; }
-# FR-090: the head is read again after every head-dependent read (the check list, pr_line, the src/ file list, the FR-089 file list): a
+# FR-090: the head is read again after every head-dependent read (the check list, pr_line, the one file list for src/ and FR-089): a
 # push since pr_line blocks, so "ready at <sha>" never rests on another commit's file lists. Any new list read goes above this line.
 head_now=$(gh api repos/$R/pulls/$p --jq .head.sha 2>/dev/null) || head_now=; case $head_now in *[!0-9a-f]*) head_now=not-a-sha;; esac
 [ -n "$head_sha" ] && [ "$head_now" = "$head_sha" ] || bad="$bad head-changed(read ${head_sha:-unread} first, ${head_now:-unread} at the end: a push during the gate, run it again)"
