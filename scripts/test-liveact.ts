@@ -530,6 +530,30 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
     eq(L.permText('mcp ' + TK, k, { redact: () => { throw new Error('x'); }, cmd: () => { throw new Error('x'); }, url: () => { throw new Error('x'); } }), { text: w, hidden: true, why: 'unchecked' }, k + ': a throwing mask: neutral words, unchecked');
     eq(L.permText('mcp ' + TK, k, { redact: () => 5 as unknown as string, cmd: () => 5 as unknown as string, url: () => 5 as unknown as string }), { text: w, hidden: true, why: 'unchecked' }, k + ': a mask that gives no string: neutral words, unchecked');
   }
+  // spec 012 FR-180: a Markdown-escaped token (`ghp\_...`) is hidden on the card as the desk mask hides it, and the command is shown as written
+  {
+    const ST = require(path.join(R, 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string; maskLabel(t: string, k: string, m: Record<string, (s: string) => string>): string };
+    const E = TK.replace('_', '\\_'), GP = 'github_pat_' + '11ABCDEFG0' + 'a1B2c3D4e5F6g7H8i9J0k1_' + 'L2m3N4o5P6q7R8s9T0u1V2w3X4y5Z6a7B8c9D0e1F2g3H4i5J6k7L8m9N0', GE = GP.replace(/_/g, '\\_');
+    const SE = 'sk\\-' + 'proj\\-A1b2C3d4E5f6G7h8I9j0K1l2M3n4', SKP = /sk.{0,2}proj|A1b2C3d4|K1l2M3n4/;
+    for (const [what, tok, parts] of [['ghp', E, PARTS], ['github_pat', GE, /11ABCDEFG0|L2m3N4o5|github/], ['sk-', SE, SKP]] as const) {
+      ok(ST.maskRaw(tok, mask.redact) !== tok.replace(/\\/g, ''), what + ': the desk mask hides the escaped token (the baseline)');
+      const r = L.permText('run echo a \\> b ' + tok, 'shell', hm);
+      eq(r, { text: 'run echo a \\> b [redacted]', hidden: true, why: 'secret' }, '#1490 ' + what + ': an escaped token in a shell command is hidden, the command kept as written');
+      ok(!parts.test(r.text), what + ': no part of the escaped token is shown: ' + r.text);
+      const t = L.permText('mcp srv › create ' + tok, 'tool', hm), o = L.permText('fetch https://example.test/x and ' + tok, 'other', hm);
+      ok(!parts.test(t.text) && t.hidden, what + ': tool kind: the escaped token is hidden: ' + t.text);
+      ok(!parts.test(o.text) && o.hidden && /^fetch /.test(o.text), what + ': other kind: the escaped token is hidden: ' + o.text);
+      const p = L.phrase({ kind: 'run', tool: 'Bash', label: 'echo ' + tok }, hm);
+      ok(!parts.test(p) && /^Running /.test(p), what + ': the live readout (phrase) hides the escaped token too: ' + p);
+    }
+    eq(L.permText('run echo a \\> b \\_x', 'shell', hm), { text: 'run echo a \\> b \\_x', hidden: false }, 'an escape without a token is shown as written, not flagged');
+    // the final check: an escaped token the run pass cannot reach (glued after a token the mask already hid) leaves the label empty, so the card is blind
+    eq(L.permText('run echo ' + TK + E, 'shell', hm).text.includes('A1b2'), false, 'a token glued to an escaped one: no part shown');
+    eq(ST.maskLabel('echo ' + E, 'run', { ...mask, cmd: (s: string) => s.replace(/ghp_\w+/, '[redacted]') }), 'echo [redacted]', 'the run pass hides the escaped run');
+    // a mask that hides a token only after `echo ` (context, as a secret name does): no run alone is hidden, the unescaped copy is
+    eq(ST.maskLabel('echo ' + E, 'run', { ...mask, cmd: (s: string) => s.replace(/echo ghp_\w+/, 'echo [redacted]') }), '', 'the unescaped copy still holding a secret gives an empty label (fail closed)');
+    eq(ST.maskLabel('echo ' + E, 'run', { ...mask, cmd: () => '' }), '', 'a mask that gives nothing: empty label');
+  }
   // the page: every permission surface calls the one function; keys, ids and scopes stay raw
   const app = fs.readFileSync(path.join(R, 'app.js'), 'utf8').replace(/\r\n/g, '\n');
   ok(/const shownPerm=\(t,kind\)=>window\.DurbarLiveAct\?window\.DurbarLiveAct\.permText\(t,permKind\(kind\),LIVE_MASK\|\|\{\}\):\{text:'request',hidden:true,why:'unchecked'\}/.test(app), 'the page has one permission-text function, failing closed (unchecked)');
