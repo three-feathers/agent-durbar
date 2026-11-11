@@ -1,5 +1,5 @@
 import { copilotHooksJson } from '../shared/foldersetup';
-import { makePrivateDir } from './privatedirs';
+import { makeSocketSafePrivateDir } from './privatedirs';
 import { readCopilotOrgPolicy, resolveCopilotManaged } from './copilotOrgPolicy';
 import type { CopilotManagedClient } from './copilotOrgPolicy';
 import type { OrgPolicy } from '../shared/orgpolicy';
@@ -523,7 +523,7 @@ export class CopilotAdapter implements AgentAdapter {
    * that client is stopped (`releaseRuntimeTmp`), when its start fails, or by the quit sweep.
    */
   protected async createClient(): Promise<CopilotClient> {
-    const tmp = makePrivateDir('durbar-cprt-');
+    const tmp = makeSocketSafePrivateDir('durbar-cprt-'); // FR-024: room for Unix sockets under it (macOS's temp root is long)
     try {
       // Packaged app: run the runtime from app.asar.unpacked. Dev: the SDK's own runtime, still as a child process: the connection is
       // passed explicitly so an env such as COPILOT_SDK_DEFAULT_CONNECTION=inprocess cannot pick the in-process transport, which takes no env

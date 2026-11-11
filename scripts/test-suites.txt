@@ -71,6 +71,8 @@ test:mcpsigninrefresh
 test:places
 test:floornav
 test:cuttext
+test:chattrim
+test:subretire
 test:grantlabel
 test:floors
 test:mood
@@ -125,6 +127,7 @@ test:planmode
 test:probe
 test:logo-assets
 test:autofollow
+test:announcemask
 test:openwith
 test:liveact
 test:lookalike
@@ -175,9 +178,11 @@ test:shutters
 test:unread
 test:tooltip
 test:simclock
+test:pointer-log
 test:labelsbackfill
 test:claim
 test:prgatenotes
+test:prgatecodeql
 test:trustedcontent
 test:checkparallel
 test:cappedread

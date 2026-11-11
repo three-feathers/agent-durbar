@@ -5,6 +5,7 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { realLayout, sortDesks, type RealMeta, type RealModel, type RealAgent, type RealState, type Rect, type Layout, type DeskBox } from '../src/shared/realoffice-layout';
+import { screenFit } from '../src/shared/realoffice-layout';
 import { aisleStatus, aislesLayout, layoutFor, aisleTabOrder, aisleFace, FACE_FLOOR, AISLE_SIGN_MIN_W, AISLE_PLATE_H, ARRANGEMENTS } from '../src/shared/realoffice-arrangements';
 
 process.exitCode = 1;
@@ -428,13 +429,14 @@ console.log(`floor covered with 4 or fewer: ${covs.join('; ')}`);
 }
 
 /* spec 097 T247: the default arcade is unchanged by the crews' scaling: the Retro pixel people (pixelPeople unset, k 1) give the layout they gave before it. The hash is of every
-   layout below (4, 12, 15 agents, both sizes), taken from the code before the change; a change here moves a pixel-art arcade, which is not what the crews' wiring may do. */
+   layout below (4, 12, 15 agents, both sizes), taken from the code before the change; a change here moves a pixel-art arcade, which is not what the crews' wiring may do.
+   Re-taken on purpose by spec 102 FR-308 (2026-11-09): `big` is now "4 or fewer" (it was the cabinet's kind: true for 12 and 15 agents, false for some groups of 4) (the plans did not move). */
 {
   const h = crypto.createHash('sha256');
   for (const [W, H] of SIZES) for (const n of [4, 12, 15]) h.update(JSON.stringify(aislesLayout(model(n, 4, STATES, n > 4 ? 3 : 0), { w: W, h: H }, META, SIGNS(4))));
   const got = h.digest('hex');
   console.log(`arcade, Retro pixel people layout hash ${got}`);
-  assert.strictEqual(got, '023205d51dcbf9399756cbadf8af0ac0448731a2cd7e725950800feef1f11b97', 'the Retro pixel set lays out differently than before the crews were wired');
+  assert.strictEqual(got, '7c469f199d1ea68917bf09721a2bf96362a5b18a6a40c91d6cada1e5c3cf2349', 'the Retro pixel set lays out differently than before the crews were wired');
 }
 
 /* spec 097 FR-335, T247: the width cap, checked directly (the cut check above has about 6 grid px of slack). For a set that is not pixel art, the widest frame a person can show at a cabinet,
@@ -504,5 +506,26 @@ console.log(`floor covered with 4 or fewer: ${covs.join('; ')}`);
   assert.ok(drawn > 200, `crews in the arcade: ${drawn} players checked`);
   console.log(`arcade, other sets' people: ${drawn} players checked`);
 }
+/* spec 102 FR-308 (issue #1428, SC-003): the arcade's `big` is "4 or fewer" (FR-020), as in every world, and its screens show 8 lines of 11 px or more. The floors the app really draws are
+   1408 and 1248 px wide (the window less its margins; the driver reads them from `realLayout`). 1 to 4 agents at 1408 and 1 to 2 at 1248, with or without helpers, hold 8 lines.
+   [KNOWN GAP] 3 and 4 agents at 1248 (the 1280x800 window): no hall holds a 128 px glass (a big cabinet at g 3 needs 1260 px of 1232 across; at g 4 even the small one needs 1452 or 670 px
+   of height), so the screens are 96 px tall and show 5 lines of 11 px (the driver counts 6 drawn). This fails the day it holds 8, so FR-308's number is changed with it. */
+{
+  const FLOORS: [number, number][] = [[1408, 848], [1248, 748]];
+  const rowsOf = (n: number, f: number, W: number, H: number, hp: number): { rows: number; font: number; big: boolean } => {
+    const m = model(n, f); m.folders.forEach((fo) => fo.agents.forEach((a) => { a.helpers = hp; }));
+    const L = aislesLayout(m, { w: W, h: H }, META, SIGNS(f)), d = L.zones[0].desks[0], fit = screenFit(d.glass, L.g);
+    return { rows: fit.rows, font: fit.font, big: L.big };
+  };
+  for (const [W, H] of FLOORS) for (const hp of [0, 3]) for (const n of [1, 2, 3, 4]) for (const f of [1, n]) {
+    const r = rowsOf(n, f, W, H, hp);
+    assert.ok(r.big, `FR-308: ${n} agents at ${W}x${H}: big`);
+    if (W === 1248 && n >= 3) { assert.ok(r.rows < 8 && r.rows >= 5, `KNOWN GAP changed: ${n} agents at ${W}x${H} show ${r.rows} lines; make FR-308 say so`); continue; }
+    assert.ok(r.rows >= 8 && r.font >= 11, `FR-308: ${n} agents (${f} folders, ${hp} helpers) at ${W}x${H}: ${r.rows} lines of ${r.font} px, 8 of 11 px or more owed`);
+  }
+  for (const [W, H] of FLOORS) for (const n of [5, 8, 12, 15]) assert.ok(!rowsOf(n, 4, W, H, 0).big, `FR-308: ${n} agents at ${W}x${H}: not big`);
+  console.log('arcade big screens: 8 lines at 1 to 4 agents (1408 wide) and 1 to 2 (1248 wide); 3 and 4 at 1248 is the recorded gap');
+}
+
 console.log(`aisles tests passed (${cases} layouts)`);
 process.exitCode = 0;

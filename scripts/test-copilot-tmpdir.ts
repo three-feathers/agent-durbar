@@ -1,13 +1,17 @@
 /**
- * Spec 087 FR-023 (K15, issue #755): the Copilot runtime gets a private temp folder as TMPDIR. Fake client only: no runtime, no account,
+ * Spec 087 FR-023 (K15, issue #755): the Copilot runtime gets a private temp folder as TMPDIR; FR-024 (issue #1173): under a short root
+ * when the OS temp root leaves no room for Unix sockets. Fake client only: no runtime, no account,
  * no credits.
  */
 import * as assert from 'assert';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { CopilotAdapter, copilotRuntimeEnv } from '../src/adapters/copilot';
 import { sweepMcpConfigs } from '../src/adapters/claude';
 import { FakeClient } from './fakes/copilot-sdk';
+import { SOCKET_ROOM_BYTES, socketSafeTmpRoot } from '../src/adapters/privatedirs';
+import { UNIX_SOCKET_MAX_BYTES } from '../src/shared/mcpserver';
 
 type Opts = { env?: Record<string, string | undefined> };
 
@@ -95,7 +99,50 @@ async function main(): Promise<void> {
     const w = copilotRuntimeEnv({ PATH: 'C:\\bin', Temp: 'C:\\old', tmp: 'C:\\old', TmpDir: 'C:\\old' }, 'C:\\t\\durbar-cprt-x', 'win32');
     assert.deepStrictEqual(w, { PATH: 'C:\\bin', TMPDIR: 'C:\\t\\durbar-cprt-x', TEMP: 'C:\\t\\durbar-cprt-x', TMP: 'C:\\t\\durbar-cprt-x' }, 'FR-023: on Windows any spelling of TEMP, TMP or TMPDIR is replaced by ours');
   }
-  console.log('copilot tmpdir (spec 087 FR-023): ok');
+  // FR-024 (issue #1173): the root leaves room for a Unix socket; a short OS temp root is kept; Windows unchanged
+  {
+    const mac = '/var/folders/ab/cdefghijklmnopqrstuvwxyz0123/T'; // 49 bytes, like the Mac in the issue
+    assert.strictEqual(socketSafeTmpRoot('durbar-cprt-', mac, 'darwin', '/private/tmp'), '/private/tmp', 'FR-024: a long macOS temp root is replaced by the short one');
+    assert.strictEqual(socketSafeTmpRoot('durbar-cprt-', '/tmp', 'linux', '/tmp'), '/tmp', 'FR-024: a short root is kept');
+    assert.strictEqual(socketSafeTmpRoot('durbar-cprt-', '/var/tmp/x', 'darwin', '/private/tmp'), '/var/tmp/x', 'FR-024: a short OS temp root is kept, not replaced');
+    assert.strictEqual(socketSafeTmpRoot('durbar-cprt-', `/home/u/${'x'.repeat(60)}`, 'linux', '/tmp'), '/tmp', 'FR-024: Linux with a long TMPDIR too');
+    const winLong = `C:\\Users\\someone\\AppData\\Local\\Temp\\${'x'.repeat(60)}`;
+    assert.strictEqual(socketSafeTmpRoot('durbar-cprt-', winLong, 'win32', '/tmp'), winLong, 'FR-024: Windows is unchanged (named pipes)');
+    const tooLongShort = `/${'y'.repeat(80)}`;
+    assert.strictEqual(socketSafeTmpRoot('durbar-cprt-', mac, 'darwin', tooLongShort), mac, 'FR-024: a short root that does not fit either is not used');
+  }
+  if (posix) {
+    // a real long TMPDIR (os.tmpdir() reads it): the runtime's folder is under the short root, 0700, leaves socket room, and is swept
+    const saved = process.env.TMPDIR;
+    const long = path.join(fs.realpathSync(os.tmpdir()), `durbar-fr024-${'l'.repeat(60)}`);
+    fs.mkdirSync(long, { recursive: true });
+    process.env.TMPDIR = long;
+    try {
+      assert.strictEqual(os.tmpdir(), long);
+      const d = new TmpdirCopilot();
+      await d.client$();
+      const dir = tmpOf(d.opts[0]);
+      assert.ok(!dir.startsWith(long), 'FR-024: the long temp root is not used');
+      assert.strictEqual(path.dirname(dir), fs.realpathSync('/tmp'), 'FR-024: the folder is under the short root');
+      assert.ok(Buffer.byteLength(dir, 'utf8') + SOCKET_ROOM_BYTES <= UNIX_SOCKET_MAX_BYTES, `FR-024: room for a socket under ${dir}`);
+      assert.strictEqual(fs.statSync(dir).mode & 0o777, 0o700, 'FR-024: the folder is 0700');
+      sweepMcpConfigs();
+      assert.ok(!fs.existsSync(dir), 'FR-024: the quit sweep removes the folder');
+      // a short TMPDIR is kept
+      const short = fs.mkdtempSync(path.join(fs.realpathSync('/tmp'), 'dfr24-'));
+      process.env.TMPDIR = short;
+      const k = new TmpdirCopilot();
+      await k.client$();
+      assert.strictEqual(path.dirname(tmpOf(k.opts[0])), short, 'FR-024: a short OS temp root is kept');
+      await k.dispose();
+      fs.rmSync(short, { recursive: true, force: true });
+    } finally {
+      if (saved === undefined) delete process.env.TMPDIR;
+      else process.env.TMPDIR = saved;
+      fs.rmSync(long, { recursive: true, force: true });
+    }
+  }
+  console.log('copilot tmpdir (spec 087 FR-023, FR-024): ok');
   process.exitCode = 0;
 }
 

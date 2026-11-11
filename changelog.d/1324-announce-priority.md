@@ -1,1 +1,0 @@
-- **Accessibility**: a screen reader no longer hears "Working…" instead of "<name> needs your OK" or a question when both are announced in the same instant: a request outranks a status (spec 005 FR-237, #1324).
