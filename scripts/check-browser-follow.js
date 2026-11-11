@@ -26,6 +26,7 @@ module.exports = async (ctx) => {
   const para = (i, n) => Array.from({ length: n }, (_, k) => `Paragraph ${i}.${k}: the quick brown fox jumps over the lazy dog while the build runs the tests and checks every file in the folder for drift, then reports.`).join('\n\n');
   const frames = (n) => js(`new Promise(r=>{let k=0;const f=()=>{if(++k>=${jsLiteral(n)})r(1);else requestAnimationFrame(f)};requestAnimationFrame(f)})`);
   const st = () => js(`(()=>{const c=document.getElementById('chat'),i=c.querySelector(':scope > .chat-inner');return {gap:Math.round(c.scrollHeight-c.scrollTop-c.clientHeight),pin:c.dataset.pin,top:Math.round(c.scrollTop),ch:c.clientHeight,w:i?Math.round(i.getBoundingClientRect().width):0,kids:i?i.children.length:0}})()`);
+  const CARDS = `(()=>{const c=document.getElementById('chat'),cr=c.getBoundingClientRect();return [...c.querySelectorAll('.note.perm')].map(n=>{const r=n.getBoundingClientRect();return {cls:n.className,top:Math.round(r.top-cr.top),h:Math.round(r.height)}}).concat([{ch:c.clientHeight,st:c.scrollTop,sh:c.scrollHeight}])})()`; /* where the waiting cards are, for a failure message */
   const stream = async (i) => { await emit({ type: 'output', delta: para(i, 2) + '\n\n' }); await frames(2); };
   const trip = async (tag, extra) => {
     const w0 = (await st()).w;
@@ -90,7 +91,9 @@ module.exports = async (ctx) => {
     await emit({ type: 'output', delta: '', final: true, text: 'done' }); await emit({ type: 'status', status: 'idle' }); await frames(5); /* the card still waits; the next turn's text goes under it */
     await emit({ type: 'status', status: 'working', intent: 'Working' });
     for (let i = 0; i < 8 && (await js(`document.getElementById('answerBar').hidden`)); i++) { await stream(700 + i); await frames(3); } /* the card scrolls out of view under the followed text: the answer bar appears and the chat gets shorter */
-    assert.ok(await until(`!document.getElementById('answerBar').hidden`), `${tag}: FR-243 the answer bar appears once the card is out of view ${JSON.stringify(await js(`(()=>{const c=document.getElementById('chat'),cr=c.getBoundingClientRect();return [...c.querySelectorAll('.note.perm')].map(n=>{const r=n.getBoundingClientRect();return {cls:n.className,top:Math.round(r.top-cr.top),h:Math.round(r.height),btn:!!n.querySelector(':scope > .note-actions button')}}).concat([{ch:c.clientHeight,st:c.scrollTop,sh:c.scrollHeight}])})()`))}`);
+    const barUp = await until(`!document.getElementById('answerBar').hidden`);
+    const cards = barUp ? '' : JSON.stringify(await js(CARDS));
+    assert.ok(barUp, `${tag}: FR-243 the answer bar appears once the card is out of view ${cards}`);
     await frames(10);
     s = await st();
     assert.ok(s.gap < NEAR && s.pin === '1', `${tag}: FR-243 still at the end when the answer bar makes the chat shorter (no follow of the box: about 58 px): ${JSON.stringify(s)}`);
