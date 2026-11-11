@@ -7,7 +7,7 @@ import { McpContextTracker } from '../src/main/mcpcontextop';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { CLAUDE_ENTRYPOINT, ClaudeAdapter, PRE_TOOL_USE_HOOK, budgetText, claudeArgs, claudeForwardsSubagentText, CLAUDE_FORWARD_SUBAGENT_MIN_VERSION, handoffArgs, oneShotArgs, parseHandoffOutput, claudeMdNodeIo, claudeMdPrompt, claudeModelFlag, claudeModelOptions, cliLaunchArgs, mcpConfigOf, permissionLikeOf, userContentOf } from '../src/adapters/claude';
+import { CLAUDE_AGENTS_FILE_MIN_VERSION, CLAUDE_PROMPT_FILE_MIN_VERSION, claudeLaunchFilesRefusal, CLAUDE_ENTRYPOINT, ClaudeAdapter, PRE_TOOL_USE_HOOK, budgetText, claudeArgs, claudeForwardsSubagentText, CLAUDE_FORWARD_SUBAGENT_MIN_VERSION, handoffArgs, oneShotArgs, parseHandoffOutput, claudeMdNodeIo, claudeMdPrompt, claudeModelFlag, claudeModelOptions, cliLaunchArgs, mcpConfigOf, permissionLikeOf, userContentOf } from '../src/adapters/claude';
 import { createCliTransport } from '../src/adapters/claudeTransport';
 import type { AgentEvent } from '../src/adapters/types';
 import { FakeClaudeChild, fakeSpawn, SANDBOX_HOST_OK } from './fakes/claude-cli';
@@ -70,6 +70,39 @@ function make(opts: { turn?: (c: FakeClaudeChild, text: string) => void | Promis
 const statuses = (ev: AgentEvent[], sid: string): string[] => ev.filter((e) => e.sessionId === sid && e.type === 'status').map((e) => (e as { status: string }).status);
 
 async function main(): Promise<void> {
+  // ---- spec 012 FR-179 (issue #1379): content that needs a file flag this Claude Code lacks is refused, never put on the command line ----
+  {
+    assert.strictEqual(CLAUDE_PROMPT_FILE_MIN_VERSION, '2.1.69');
+    assert.strictEqual(CLAUDE_AGENTS_FILE_MIN_VERSION, '2.1.281');
+    const md = { appendSystemPrompt: 'MD' };
+    const ag = { agent: { name: 'reviewer', json: '{}' } };
+    assert.match(claudeLaunchFilesRefusal('2.1.68', md) ?? '', /needs Claude Code 2\.1\.69 or newer .*CLAUDE\.md/, 'FR-179: old CLI with a CLAUDE.md is refused');
+    assert.strictEqual(claudeLaunchFilesRefusal('2.1.69', md), undefined, 'FR-179: 2.1.69 takes the prompt file');
+    assert.match(claudeLaunchFilesRefusal('2.1.280', ag) ?? '', /needs Claude Code 2\.1\.281 or newer to use an agent profile/, 'FR-179: old CLI with a profile is refused');
+    assert.strictEqual(claudeLaunchFilesRefusal('2.1.281', { ...md, ...ag }), undefined, 'FR-179: 2.1.281 takes both files');
+    assert.strictEqual(claudeLaunchFilesRefusal('2.1.280', md), undefined, 'FR-179: a CLAUDE.md alone needs only the prompt file');
+    assert.strictEqual(claudeLaunchFilesRefusal('1.0.0', {}), undefined, 'FR-179: nothing to pass: any version starts');
+    assert.strictEqual(claudeLaunchFilesRefusal(undefined, { ...md, ...ag }), undefined, 'FR-179: unknown version uses the files');
+    for (const [version, claudeMd, spawns] of [['2.1.68', 'MD', false], ['2.1.68', undefined, true], [undefined, 'MD', true], ['2.1.300', 'MD', true]] as Array<[string | undefined, string | undefined, boolean]>) {
+      const sp = fakeSpawn();
+      sp.next = scripted(okTurn);
+      const ad = new ClaudeAdapter({ autopilot: { wired: false }, sandboxFacts: async () => ({ platform: 'linux', version, haveBwrap: true, haveSocat: true }), claudePath: async () => '/usr/bin/claude', makeTransport: (x) => createCliTransport({ file: x.file, args: claudeArgs(x.launch), cwd: x.cwd, env: x.env, handlers: x.handlers, spawn: sp.spawn, closeGraceMs: 10, killGraceMs: 10 }), sessionExists: () => false, claudeMd: () => claudeMd, env: () => ({}) });
+      const ev: AgentEvent[] = [];
+      ad.onEvent((e) => ev.push(e));
+      const sid = await ad.start({ workspace: WS, permissionMode: 'allow', quiet: true });
+      await ad.send(sid, { text: 'hi' });
+      const label = `FR-179: version ${String(version)}, CLAUDE.md ${String(claudeMd)}`;
+      if (spawns) {
+        await until(label, () => sp.calls[0]);
+      } else {
+        await until(label, () => ev.find((e) => e.type === 'status' && (e as { status: string }).status === 'error'));
+        const err = ev.find((e) => e.type === 'status' && (e as { status: string }).status === 'error') as { intent: string };
+        assert.match(err.intent, /needs Claude Code 2\.1\.69 or newer/, label);
+        assert.strictEqual(sp.calls.length, 0, `${label}: nothing spawned`);
+      }
+      await ad.stop(sid);
+    }
+  }
   // ---- spec 015 FR-016: the flag follows the version the host reports (old and unreadable: never passed) ----
   for (const [version, want] of [['2.1.210', false], [undefined, false], ['2.1.211', true]] as Array<[string | undefined, boolean]>) {
     const sp = fakeSpawn();
