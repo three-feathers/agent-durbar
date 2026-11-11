@@ -9,6 +9,8 @@
  *   2. scrolled up 400 px above the end (near enough that collapsing clamps it): the same trip leaves scrollTop and the pin off as they were,
  *      held over frames, and new text does not move it;
  *   3. the Chat content keeps its width while collapsed (the cause: it re-wrapped wider, shorter, and grew back with no scroll event);
+ *   4. spec 005 FR-243 (issue #1224): "at the end" is 2 px or less, also 1.3 s after new text (the typing row's timer), after a turn whose
+ *      first text is one code block, and when a waiting card's answer bar appears under the chat and makes it shorter;
  *   all of it again with a classic scrollbar (15 px, injected style), where the collapsed chat would lose the scrollbar's width.
  * Waits are conditions or counts of frames, never a fixed sleep. A miss prints DRIVER FAILED.
  */
@@ -19,7 +21,7 @@ module.exports = async (ctx) => {
   const H = helpers(ctx);
   const { js, until } = H;
   const ID = 'sim-1';
-  const NEAR = 24; /* "at the end": a stable offset of about 10 px with the pin on also shows on main (issue #1224, cause unknown; seen on Linux xvfb as 9); losing the place is hundreds of px (the padding:0 mutant sits about 300 px away) */
+  const NEAR = 3; /* "at the end": 2 px or less (spec 005 FR-243, issue #1224: it was 24 for a 10 px offset after new text, the typing row's label); losing the place is hundreds of px (the padding:0 mutant sits about 300 px away) */
   const emit = (e) => js(`window.__durbarSimEmit(Object.assign({timestamp:Date.now(),sessionId:${jsLiteral(ID)}},${jsLiteral(e)}))`);
   const para = (i, n) => Array.from({ length: n }, (_, k) => `Paragraph ${i}.${k}: the quick brown fox jumps over the lazy dog while the build runs the tests and checks every file in the folder for drift, then reports.`).join('\n\n');
   const frames = (n) => js(`new Promise(r=>{let k=0;const f=()=>{if(++k>=${jsLiteral(n)})r(1);else requestAnimationFrame(f)};requestAnimationFrame(f)})`);
@@ -68,7 +70,33 @@ module.exports = async (ctx) => {
     assert.ok(s.gap < NEAR && s.pin === '1', `${tag}: still at the end 10 frames later: ${JSON.stringify(s)}`);
     await emit({ type: 'status', status: 'working', intent: 'Working' }); await stream(300); await stream(301); await frames(10);
     s = await st();
-    assert.ok(s.gap < NEAR && s.pin === '1', `${tag}: new text keeps it at the end (two streamed blocks are 400 px; a stable offset of about 10 px with the pin on also shows after new text on main, cause unknown, not frame lag, so under 24 px passes): ${JSON.stringify(s)}`);
+    assert.ok(s.gap < NEAR && s.pin === '1', `${tag}: new text keeps it at the end (two streamed blocks are 400 px): ${JSON.stringify(s)}`);
+
+    // 4. spec 005 FR-243 (issue #1224): late growth after the follow, each case with its own cause
+    await ctx.sleep(1300); await frames(3); /* the 1 s timer has written the typing row's label */
+    s = await st();
+    assert.ok(s.gap < NEAR && s.pin === '1', `${tag}: FR-243 still at the end after the typing row's 1 s timer (an empty label grew the row by about 9 px): ${JSON.stringify(s)}`);
+    await emit({ type: 'output', delta: '', final: true, text: 'done' }); await emit({ type: 'status', status: 'idle' }); await frames(5);
+    await emit({ type: 'status', status: 'working', intent: 'Working' });
+    await emit({ type: 'output', delta: 'Here is the change:\n\n```js\nfunction add(a, b) {\n  return a + b;\n}\nconsole.log(add(1, 2));\n```\n\n' }); /* the turn's first and only text: nothing asks for a follow after it */
+    await frames(10);
+    s = await st();
+    assert.ok(s.gap < NEAR && s.pin === '1', `${tag}: FR-243 a turn whose first text is one code block is followed (the follow read the height before the Markdown paint: 130 to 160 px): ${JSON.stringify(s)}`);
+    const qid = 'q-1224-' + tag.replace(/\W/g, '');
+    await emit({ type: 'question', phase: 'asked', requestId: qid, questions: [{ question: 'Which colour?', header: 'Colour', multiSelect: false, options: [{ label: 'Sage' }, { label: 'Blue' }] }] });
+    await emit({ type: 'status', status: 'needs-permission', intent: 'Waiting for your answer' });
+    await frames(5);
+    assert.ok(await until(`document.getElementById('answerBar').hidden`), `${tag}: FR-243 the answer bar waits while the card is in view`);
+    await emit({ type: 'output', delta: '', final: true, text: 'done' }); await emit({ type: 'status', status: 'idle' }); await frames(5); /* the card still waits; the next turn's text goes under it */
+    await emit({ type: 'status', status: 'working', intent: 'Working' });
+    for (let i = 0; i < 8 && (await js(`document.getElementById('answerBar').hidden`)); i++) { await stream(700 + i); await frames(3); } /* the card scrolls out of view under the followed text: the answer bar appears and the chat gets shorter */
+    assert.ok(await until(`!document.getElementById('answerBar').hidden`), `${tag}: FR-243 the answer bar appears once the card is out of view ${JSON.stringify(await js(`(()=>{const c=document.getElementById('chat'),cr=c.getBoundingClientRect();return [...c.querySelectorAll('.note.perm')].map(n=>{const r=n.getBoundingClientRect();return {cls:n.className,top:Math.round(r.top-cr.top),h:Math.round(r.height),btn:!!n.querySelector(':scope > .note-actions button')}}).concat([{ch:c.clientHeight,st:c.scrollTop,sh:c.scrollHeight}])})()`))}`);
+    await frames(10);
+    s = await st();
+    assert.ok(s.gap < NEAR && s.pin === '1', `${tag}: FR-243 still at the end when the answer bar makes the chat shorter (no follow of the box: about 58 px): ${JSON.stringify(s)}`);
+    await emit({ type: 'question', phase: 'cancelled', requestId: qid, reason: 'test' });
+    await emit({ type: 'output', delta: '', final: true, text: 'done' }); await emit({ type: 'status', status: 'idle' }); await frames(5);
+    await emit({ type: 'status', status: 'working', intent: 'Working' }); await stream(800); await frames(5); /* a streaming turn again, as case 2 expects */
 
     assert.strictEqual(wd.wc, wd.w0, `${tag}: the messages keep their width while the chat is collapsed (Chat ${wd.w0} px, collapsed ${wd.wc} px)`);
 

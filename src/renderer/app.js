@@ -2663,6 +2663,7 @@ let cvRz=0; const cvSoon=()=>{if(cvRz)return; cvRz=requestAnimationFrame(()=>{cv
   const cr=c.getBoundingClientRect(), pinned=c.dataset.pin!=='0', a=[...el.children].find(e=>{const r=e.getBoundingClientRect();return r.bottom>cr.top+1;}), top=a?a.getBoundingClientRect().top:0;
   cvDrop(el); if(pinned)c.scrollTop=c.scrollHeight; else if(a)c.scrollTop+=a.getBoundingClientRect().top-top;});};
 addEventListener('resize',cvSoon); new MutationObserver(cvSoon).observe(document.documentElement,{attributes:true});
+let chatBoxRO=null; /* spec 005 FR-243: watches the open #chat's own size */
 function openPanel(id,focus){
   const a=byId(id); if(!a)return; if(DOOR_ON)doorStepAside(); /* FR-199: a chat fills the window; the door returns on Back to the office unless dismissed */ if(ui.selected!==id||!document.body.classList.contains('panel-open'))cvMark(); /* after the check: an unknown id leaves the chat on screen unmarked */ if(!pulling)PULLED.delete(id); /* the user came back: this session may bring its chat forward again */
   {const seen=byId(id);if(seen&&seen.apEnded){seen.apEnded=false;scheduleRender();}} /* spec 099 FR-056: an ended run needs you until it is seen */
@@ -2706,6 +2707,7 @@ function openPanel(id,focus){
   const chatEl=$('chat'); chatEl.dataset.pin='1'; chatEl._lastTop=undefined; chatEl.scrollTop=1e6;
   let rs=0; const restick=()=>{if(ui.selected!==a.id){chatEl._rsBusy=0;return;} const un=rs===0&&cvUnmarkIfResized(chat.el); /* marks dropped at this frame (another width or layout): the end moved by what that laid out, not by the person */ if(!un&&chatEl.scrollHeight-chatEl.scrollTop-chatEl.clientHeight>400){chatEl._rsBusy=0;return;} chatEl.scrollTop=chatEl.scrollHeight; if(++rs<4)requestAnimationFrame(restick); else{chatEl._rsBusy=0;chatEl.onscroll();}}; chatEl._rsBusy=0; if(chat.el.childElementCount>4){chatEl._rsBusy=1;requestAnimationFrame(restick);} /* spec 083 FR-046: _rsBusy is on while the re-stick runs, so Open source reveals after it */ /* spec 005 FR-210: the messages at the end get their real height a frame after the first layout, so the end moves; follow it for 4 frames, then read the pin again; a chat of 4 or fewer messages has no skipped one and is left alone */
   chatEl.onscroll=()=>{const t=chatEl.scrollTop; if(chatEl.scrollHeight-t-chatEl.clientHeight<80){chatEl.dataset.pin='1';if(trimDeferred&&!stickyRaf)stickyRaf=requestAnimationFrame(stickyFlush);} else if(chatEl._lastTop===undefined||t<chatEl._lastTop-1)chatEl.dataset.pin='0'; chatEl._lastTop=t;}; /* spec 005 FR-214: the scroll event of the app's own stick-to-bottom write arrives a frame later, when a new block may already have grown the page; that is not the person leaving the end. Only a move up from the position of the last scroll event is (whoever wrote the last position, so no writer has to record it) */
+  if(window.ResizeObserver){if(chatBoxRO)chatBoxRO.disconnect();let h0=-1;chatBoxRO=new ResizeObserver(()=>{const h=chatEl.clientHeight;if(h0>=0&&h!==h0&&chatEl.isConnected&&chatEl.dataset.pin!=='0')chatEl.scrollTop=chatEl.scrollHeight;h0=h;});chatBoxRO.observe(chatEl);} /* spec 005 FR-243: the box got shorter (an answer bar, the coffee bar, the message box) or taller: a chat at the end stays there; only down, only with the pin on (FR-214); the content's growth is stickyFlush's */
   $('panel').querySelector('.panel-in').classList.toggle('helper-ro',!!(a.live&&a.parent)); /* spec 097 Changes 2026-11-04 (issue 1140): not 'ro', the Real office root's class, whose floor picture and corners it took */
   $('backBtn').onclick=closePanel;
   refreshFolderStatus(a); /* spec 063: branch and changed files on the folder chip */
@@ -5908,7 +5910,7 @@ function chatTrimPending(hidden){const c=$('chat');let n=0;stickyChats.forEach(c
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&hiddenTrimT){clearInterval(hiddenTrimT);hiddenTrimT=0;}});
 function stickyScroll(chat){stickyChats.add(chat);if(!stickyRaf)stickyRaf=requestAnimationFrame(stickyFlush);if(document.hidden){hiddenDirty=true;if(!hiddenTrimT)hiddenTrimT=setInterval(hiddenTrimTick,TRIM_HIDDEN_MS);}}
 let trimDeferred=null; /* FR-238: the open chat whose trim waits while the person reads its older messages */
-function stickyFlush(){stickyRaf=0;const c=$('chat');const l=[...stickyChats];stickyChats.clear();
+function stickyFlush(){stickyRaf=0;mdFlush();const c=$('chat'); /* spec 005 FR-243: the text queued this frame is painted before the follow reads the height (a turn's first text asked for the follow before its paint) */const l=[...stickyChats];stickyChats.clear();
   if(trimDeferred&&!(c&&trimDeferred.el.parentNode===c&&c.dataset.pin==='0')){if(!l.includes(trimDeferred))l.push(trimDeferred);trimDeferred=null;} /* back at the end, or another chat is open */
   let openTrimmed=false; l.forEach(chat=>{if(chatTrim(chat,c)>0&&c&&chat.el.parentNode===c)openTrimmed=true;}); /* spec 005 FR-238: before the scroll, so a chat at its end stays there */
   if(c&&c.dataset.pin!=='0'&&l.some(chat=>chat.el.parentNode===c)){c.scrollTop=c.scrollHeight;if(openTrimmed)c._lastTop=c.scrollTop;} /* FR-238: after a trim removed blocks above, the end is lower than before; this write is not the person scrolling up (FR-214). Only then: otherwise the first scroll after opening a chat keeps FR-214's own rule */
@@ -6514,7 +6516,7 @@ function ensureTurn(a){
   chat.el.appendChild(m);
   const T=makeT(m.querySelector('.tl'),chat);T.folder=a.info&&a.info.cwd; /* spec 005 FR-020: edit paths relative to it */
   const ty=document.createElement('div');ty.className='typing';ty.dataset.t0=String(Date.now());ty.innerHTML='<i></i><i></i><i></i><span class="t-l"></span>';
-  T.tl.appendChild(ty);T.typing=ty;
+  T.tl.appendChild(ty);T.typing=ty;typingPaint(ty); /* spec 005 FR-243: labelled now, so the 1 s timer changes its text, not its height (an empty label grew the row by 9 px after the follow) */
   const t=a.turn={m,T};chat.turn=t;chat.agent=a; /* spec 005 FR-238: the open turn's blocks are trimmed, its live ones never */
   stickyScroll(chat);return t;
 }
