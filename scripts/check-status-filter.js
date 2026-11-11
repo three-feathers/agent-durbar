@@ -16,7 +16,7 @@
  */
 const assert = require('assert');
 const path = require('path');
-const { helpers, jsLiteral } = require('./driver-helpers');
+const { helpers, jsLiteral, CHECK_DARK } = require('./driver-helpers');
 const { pageCheck } = require('./check-office-overlap.js');
 const OUT = process.env.OUT || require('os').tmpdir();
 
@@ -122,13 +122,14 @@ module.exports = async (ctx) => {
     console.log(`[statusfilter] ${tag} ok`);
   }
 
-  // Contrast of the note's three texts against their real background, Clean Office (the default) and Retro (its own rule): 12px text needs 4.5:1
+  // Contrast of the note's three texts against their real background, Clean Office (the default) and the dark fixture theme (spec 102 T226): 12px text needs 4.5:1
   const contrast = (sel) => js(`(()=>{const rgb=c=>c.match(/[\\d.]+/g).map(Number);const lum=c=>{const [r,g,b]=c.map(v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);});return 0.2126*r+0.7152*g+0.0722*b;};
     const e=document.querySelector(${jsLiteral(sel)});let bg=null;for(let n=e;n&&!bg;n=n.parentElement){const c=getComputedStyle(n).backgroundColor;const m=rgb(c);if(m.length<4||m[3]>0.99)bg=m.slice(0,3);}
     const fg=rgb(getComputedStyle(e).color).slice(0,3),a=lum(fg),b=lum(bg),r=(Math.max(a,b)+0.05)/(Math.min(a,b)+0.05);return {fg:fg.join(','),bg:bg.join(','),ratio:Math.round(r*100)/100};})()`);
-  for (const theme of ['clean-office', 'retro']) {
+  for (const manifest of ['clean-office', CHECK_DARK]) {
+    const theme = typeof manifest === 'string' ? manifest : manifest.id;
     await H.load({ w: 1440, h: 900 });
-    await js(`window.THEME.setTheme(${jsLiteral(theme)})`);
+    await js(`window.THEME.setTheme(${jsLiteral(manifest)})`);
     await ok(`window.THEME.current().id===${jsLiteral(theme)}`, theme + ' applied');
     await clickPill('idle');
     await ok(`document.getElementById('filterNote')&&!document.getElementById('filterNote').hidden`, theme + ': the notice shows');

@@ -11,7 +11,7 @@
  *     text, or stays after the pointer left; Esc closes it and it stays closed until the pointer has left; Tab to a desk's plate opens the same zoom, Esc closes it
  *     with the focus kept; it is a named region and not a live one (FR-034);
  *   - 3 agents at both sizes: a screen shows fewer than 8 lines of real text at 11 px or more (FR-020, SC-003, T032);
- * Screenshots: <SHOTS_OUT>/097-zoom-<w>x<h>.png, 097-real-big-<w>x<h>.png
+ * Screenshots: <SHOTS_OUT>/097-zoom-<w>x<h>.jpg, 097-real-big-<w>x<h>.jpg
  */
 const os = require('os');
 const fs = require('fs');
@@ -21,6 +21,11 @@ const { helpers, jsLiteral } = require('./driver-helpers');
 
 const OUT = process.env.SHOTS_OUT || fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-097-screens-'));
 const SIZES = [[1440, 900], [1280, 800]];
+/* SCREENS_WORLD=retro (spec 102 FR-310, issue #1428): the same driver in the Retro arcade; the page address forces the world. Where the arcade's hall holds no row of heads (FR-307: 12 or more at 1280x800) the plate keeps
+   its "+N" and dots, which is asserted instead; the font of a big screen follows the arcade's own rule (FR-308: at least 11 px, 8 lines), not the Photo office's 13 px over 200. */
+const RETRO = process.env.SCREENS_WORLD === 'retro';
+if (process.env.SCREENS_WORLD && !RETRO) throw new Error('SCREENS_WORLD must be retro');
+const WORLD_Q = RETRO ? { worldflags: 'retro', world: 'retro' } : {};
 const TOKEN = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4';
 /* what no screen, zoom or fact may show: the token whole or in its parts around an escape, a home folder, a link, a terminal or text-direction control */
 const BAD = ['ghp_', 'A1b2C3d4', 'E5f6G7h8', 'f6G7h8', 'alice', 'evil.example', '\u001b', '\u202e', 'Bearer ghp'];
@@ -56,7 +61,7 @@ module.exports = async (ctx) => {
   const PICS = `[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`;
   /* a frozen simulator (nothing changes but what the driver emits); romotion=1: the people move, as outside a driver */
   const loadReal = async (w, h, query = {}) => {
-    await H.load({ w, h, query: { officeview: 'real', romotion: '1', ...query }, ready: REAL, settle: false });
+    await H.load({ w, h, query: { officeview: 'real', romotion: '1', ...WORLD_Q, ...query }, ready: REAL, settle: false });
     await must(PICS, 'the pictures');
     /* spec 097 FR-246: a done agent whose reply is read sits in the lounge row (a monitor without text); these checks read done screens at desks, so their replies stay unread */
     await js(`(()=>{const U=window.__durbarSimUi;U.agents().filter(a=>!a.parent&&a.state==='done').forEach(a=>{a.lastOutput=a.lastOutput||'Done.';U.unread.mark(a.id);});U.crew.renderAll();return 1})()`);
@@ -223,7 +228,7 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(await js(CHIPS), [], 'no chip on a plate or a chip in the zoom picture ' + w);
     for (let t = 0; t < 5; t++) {
       const was = await blurs();
-      await H.shot(path.join(OUT, `097-zoom-${w}x${h}.png`), { prep: 'calm', keepHover: true });
+      await H.shot(path.join(OUT, `097-zoom-${w}x${h}.jpg`), { prep: 'calm', keepHover: true });
       if (await js(OPENED(mid))) break;
       assert.notStrictEqual(await blurs(), was, 'the picture has the zoom, and the window kept the focus: ' + JSON.stringify(await js(`({focus:document.hasFocus(),blurs:window.__blurs})`)));
       console.log('[097-screens] the window lost the focus during the picture');
@@ -283,24 +288,33 @@ module.exports = async (ctx) => {
       }
       await js(`window.__durbarSimUi.quietHeads([]);window.__oldBtn=null;0`);
     }
-    /* FR-016, FR-184 (review on #969): a plate keeps its nodes on a status change but rebuilds its helper list when the helpers change: a new helper adds one to
-       "+N" and a dot; the helper failing changes that dot. Through the event path, as an agent app reports a helper (a `subagent` event) */
+    /* FR-016, FR-184 (review on #969), spec 097 FR-306 (#1139): a plate keeps its nodes on a status change, and a new helper is one more head in the desk's helper strip (the plate's "+N" is gone while the
+       strip is drawn); the helper failing changes its head's class. Through the event path, as an agent app reports a helper (a `subagent` event) */
     {
-      /* a working desk with fewer than 3 helpers, so the new one's dot is among the 3 shown */
-      const desk = (await js(`window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).filter(d=>d.state==='working').map(d=>d.id).find(id=>{const p=document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(id)+'"]'),h=p&&p.querySelector('.ro-help');return !!p&&(!h||+((/\\+(\\d+)/.exec(h.textContent)||[])[1])<3);})`));
-      assert.ok(desk, 'a working desk with fewer than 3 helpers');
-      await js(`window.__pl=()=>document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(desk)})+'"]');0`);
-      const help = () => js(`(()=>{const h=window.__pl().querySelector('.ro-help');return h?{n:(/\\+(\\d+)/.exec(h.textContent)||[])[1]||'',dots:[...h.querySelectorAll('.dot')].map(d=>d.className).join('|')}:{n:'0',dots:''};})()`);
+      /* a working desk with no helpers yet, so the new one's head is the strip's first */
+      const desk = (await js(`window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).filter(d=>d.state==='working').map(d=>d.id).find(id=>{const p=document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(id)+'"]');if(!p)return false;let e=p.nextElementSibling;if(e&&e.matches('.ren'))e=e.nextElementSibling;return !(e&&e.matches('.ro-hstrip'))&&!p.querySelector('.ro-help');})`));
+      assert.ok(desk, 'a working desk with no helpers');
+      await js(`window.__pl=()=>document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(desk)})+'"]');window.__st=()=>{const p=window.__pl();let e=p&&p.nextElementSibling;if(e&&e.matches('.ren'))e=e.nextElementSibling;return e&&e.matches('.ro-hstrip')?e:null};0`);
+      const help = () => js(`(()=>{const s=window.__st();return s?{n:s.querySelectorAll('.ro-hd').length,cls:[...s.querySelectorAll('.ro-hd')].map(t=>t.className).join('|')}:{n:0,cls:''};})()`);
       const h0 = await help();
       await js(`window.__nm=window.__pl().querySelector('b');0`);
       const sub = 'drv-helper-1', base = { sessionId: desk };
       await emit({ ...base, type: 'subagent', subagentId: sub, name: 'Driver helper', phase: 'started', task: 'Check the driver', agentName: 'explore' });
       await emit({ ...base, type: 'status', status: 'working', agentId: sub, intent: 'Check the driver' });
-      await must(`(window.__pl().querySelector('.ro-help')||{textContent:''}).textContent.includes('+'+${jsLiteral(String(Number(h0.n) + 1))})`, 'the plate\'s helper count one up (was ' + JSON.stringify(h0) + ')');
+      const heads = !RETRO || w >= 1440; /* FR-307: the arcade's recorded gap, 15 agents at 1280x800 */
+      if (!heads) {
+        await must(`!!window.__pl().querySelector('.ro-help')&&!window.__st()`, 'the arcade keeps the plate\'s "+1" and dots where no row of heads fits (FR-307)');
+        assert.ok(/^\+1\b/.test(await js(`window.__pl().querySelector('.ro-help').textContent.trim()`)), 'the plate says +1');
+      } else {
+        await must(`(window.__st()||{querySelectorAll:()=>[]}).querySelectorAll('.ro-hd').length===${jsLiteral(h0.n + 1)}`, 'the desk\'s helper strip one head up (was ' + JSON.stringify(h0) + ')');
+      }
+      if (heads) {
       const h1 = await help();
-      assert.strictEqual(Number(h1.n), Number(h0.n) + 1, 'a new helper adds one: ' + JSON.stringify([h0, h1]));
+      assert.strictEqual(h1.n, h0.n + 1, 'a new helper adds one head: ' + JSON.stringify([h0, h1]));
+      assert.ok(await js(`!window.__pl().querySelector('.ro-help')`), 'the plate shows no "+N" while its helpers are drawn');
       await emit({ ...base, type: 'subagent', subagentId: sub, name: 'Driver helper', phase: 'failed', task: 'Failed', error: 'Failed', agentName: 'explore' });
-      await must(`(()=>{const h=window.__pl().querySelector('.ro-help');return !!h&&[...h.querySelectorAll('.dot')].map(d=>d.className).join('|')!==${jsLiteral(h1.dots)};})()`, 'the plate\'s helper dots changed when the helper failed (were ' + h1.dots + ')');
+      await must(`(()=>{const s=window.__st();return !!s&&[...s.querySelectorAll('.ro-hd')].map(t=>t.className).join('|')!==${jsLiteral(h1.cls)};})()`, 'the helper head changed when the helper failed (was ' + h1.cls + ')');
+      }
       assert.ok(await js(`window.__pl().querySelector('b')===window.__nm`), 'FR-184: the plate kept its name node while its helper list changed');
     }
     // keyboard parity: real Tab presses reach a plate; the same zoom opens; Esc closes it and keeps the focus; the next Tab moves on and opens the next
@@ -349,15 +363,17 @@ module.exports = async (ctx) => {
     assert.ok(await H.until(`(()=>{const e=document.querySelector('#roZoom .ro-zs');return !!e&&e.textContent!==${jsLiteral(zs0)};})()`, 5000), 'the open zoom shows the new status: was ' + zs0);
     await moveTo(1, 1);
     await must(`!document.getElementById('roZoom')`, 'the zoom closed when the pointer left');
-    /* an open zoom of a desk that goes to sleep closes: an asleep screen is off (FR-035) */
+    /* an open zoom of a desk that goes to sleep stays and becomes the asleep card (spec 097 FR-328; the glass is dark, FR-035) */
     const sl = await js(`(()=>{const d=window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).find(x=>(x.state==='done'||x.state==='idle')&&document.querySelector('#stage .ro-person[data-for="'+CSS.escape(x.id)+'"]'));return d&&d.id;})()`);
     assert.ok(sl, 'an idle desk to send to sleep');
     const s0 = await at(sl);
     await hover(sl, s0);
     await js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id===${jsLiteral(sl)});a.state='done';a.lastOutput=a.lastOutput||'done';a.unread=false;a.lastEventAt=Date.now()-30*864e5;window.__durbarSimUi.unread.read(a.id);window.__durbarSimUi.setLive(true);})();0`);
     await must(`(()=>{const L=window.__durbarSimUi.realLayout();return L.zones.flatMap(z=>z.desks).concat(L.lounge?L.lounge.desks:[]).find(x=>x.id===${jsLiteral(sl)}).state==='asleep'})()`, 'the agent asleep (in the lounge row, spec 097 FR-246)');
-    assert.ok(await H.until(`!document.getElementById('roZoom')`, 1000), 'the zoom of a desk gone to sleep closes');
+    /* the card stays and is refilled as the asleep card, never a stale awake one (also check-097-hover-card) */
+    assert.ok(await H.until(`(()=>{const z=document.getElementById('roZoom');return !!z&&z.dataset.for===${jsLiteral(sl)}&&z.dataset.state==='asleep'&&/^Asleep/.test(z.querySelector('.ro-zs').textContent)})()`, 3000), 'the open zoom of a desk gone to sleep is the asleep card, refilled (not closed, not the awake one) - an open zoom of a desk gone to sleep is the asleep card (FR-328)');
     await moveTo(1, 1);
+    await must(`!document.getElementById('roZoom')`, 'the asleep card closed when the pointer left');
   }
 
   /* Ruben's review of #979: a chat opening and closing pauses and resumes at once; leaving Real office leaves no key listener behind */
@@ -420,8 +436,8 @@ module.exports = async (ctx) => {
       return {id,h:Math.round(b.height),lines:n,font:rows.length?parseFloat(getComputedStyle(rows[0]).fontSize):0,small:e.classList.contains('small')};})`);
     console.log('[097-screens] big', w, h, JSON.stringify(big));
     assert.strictEqual(await js(`document.querySelector('#stage .ro').dataset.big`), '1', 'big screens with 3 agents');
-    for (const s of big) { assert.ok(!s.small, 'not small'); assert.ok(s.lines >= 8, `SC-003: at least 8 lines: ${JSON.stringify(s)}`); assert.ok(s.font >= 11, 'at 11 px or more'); assert.strictEqual(s.font, s.h - 6 > 200 ? 13 : 11, 'FR-020: 13 px over 200 px tall: ' + JSON.stringify(s)); }
-    await H.shot(path.join(OUT, `097-real-big-${w}x${h}.png`), { prep: 'calm' });
+    for (const s of big) { assert.ok(!s.small, 'not small'); assert.ok(s.lines >= (RETRO && w < 1440 ? 6 : 8), `SC-003: at least 8 lines (FR-308's recorded gap: 6 in the arcade at 1280x800 with 3 agents): ${JSON.stringify(s)}`); assert.ok(s.font >= 11, 'at 11 px or more'); if (RETRO) assert.ok(s.font <= 18.5, 'FR-308: the arcade\'s text is the art\'s, 18.5 px at most: ' + JSON.stringify(s)); else assert.strictEqual(s.font, s.h - 6 > 200 ? 13 : 11, 'FR-020: 13 px over 200 px tall: ' + JSON.stringify(s)); }
+    await H.shot(path.join(OUT, `097-real-big-${w}x${h}.jpg`), { prep: 'calm' });
   }
 
   mark('facts change');

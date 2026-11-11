@@ -110,6 +110,7 @@
     "--walker-bg": "#19150c",
     "--drop": "#436582",
     "--drop-ink": "#8cafc8",
+    "--drop-bg": "rgb(34 40 46 / .93)",
     "--stat-sel-border": "#436178",
     "--stat-sel-ring": "#172531",
     "--badge-idle": "#565147",

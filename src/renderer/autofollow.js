@@ -94,6 +94,17 @@
         for(const [pk,v] of [...pending])if(v.id===id)pending.delete(pk); /* a newer arrival of the same agent replaces its older one */
         pending.set(k,{id,kind,key:k});return true;
       },
+      /* FR-242: a send to `id` follows it again and drops its completion that was still waiting (held, never shown as a notice): that turn is over,
+         the new message replaces it; its other arrivals (a request, an error, a limit) stay. The person acted. */
+      sent(id){if(typeof id!=='string'||!id)return;this.retract(id,['done']);this.follow(id);quiet=false;},
+      /* FR-242 with FR-184: an arrival that comes while its own chat is shown is delivered there, at once: nothing moves, the key is marked delivered,
+         its waiting arrivals are dropped, it stops being followed; no automatic switch happened, so the tracker does not go quiet */
+      seen(id,kind,key){
+        if(!followed.has(id)||!KINDS.includes(kind))return false;
+        const k=id+'|'+kind+'|'+String(key==null?'':key);
+        for(const [pk,v] of [...pending])if(v.id===id)pending.delete(pk);
+        delivered.add(k);followed.delete(id);last=id;return true;
+      },
       /* an arrival that ended before it was delivered (answered elsewhere, error cleared) */
       retract(id,kinds){for(const [k,v] of [...pending])if(v.id===id&&(!kinds||kinds.includes(v.kind)))pending.delete(k);},
       pendingList(){return [...pending.values()];},
