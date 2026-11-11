@@ -760,7 +760,7 @@
         sig: Q,
         fill: (e, v) => {
           e.setAttribute('role', 'group'); e.setAttribute('aria-label', Q.total + (Q.total === 1 ? ' request needs you' : ' requests need you'));
-          if (v === 'pill') { e.appendChild(btn(Q.total + (Q.total === 1 ? ' needs you' : ' need you') + ' \u00B7 Open the inbox', '', 'ro-pill', { slipact: 'inbox' })); return; }
+          if (v === 'pill') { const t = Q.total + (Q.total === 1 ? ' needs you' : ' need you') + ' \u00B7 Open the inbox'; e.appendChild(btn(t, t, 'ro-pill', { slipact: 'inbox' })); return; }
           const f = Q.first, h = document.createElement('p'); h.className = 'sl-h';
           const nm = document.createElement('b'); nm.textContent = f.name; h.appendChild(nm);
           const w = document.createElement('span'); w.textContent = ' ' + f.what + ' \u00B7 ' + f.folder; h.appendChild(w); e.appendChild(h);
@@ -781,7 +781,7 @@
         sig: [L.id, L.name, L.who, L.text, L.actions, L.input && [L.input.label, L.input.min, L.input.step, L.input.value]],
         fill: (e, v) => {
           e.setAttribute('role', 'group'); e.setAttribute('aria-label', 'Spending limit reached');
-          if (v === 'pill') { e.appendChild(btn(L.name + ': Spending limit reached \u00B7 Show in chat', 'Open the chat', 'ro-pill', { slipact: 'open', slipid: L.id, slipfocus: 'limit' })); return; }
+          if (v === 'pill') { const t = L.name + ': Spending limit reached \u00B7 Show in chat'; e.appendChild(btn(t, t, 'ro-pill', /* spec 097 FR-359: the title is the whole text, for what the ellipsis cuts (the accessible name is the button's text) */ { slipact: 'open', slipid: L.id, slipfocus: 'limit' })); return; }
           e.appendChild(p('sl-h', L.who)); e.appendChild(p('sl-t', L.text));
           const row = document.createElement('div'); row.className = 'sl-act';
           if (L.input) { const i = document.createElement('input'); i.type = 'number'; i.className = 'limit-amt'; i.min = L.input.min; i.step = L.input.step; i.value = L.input.value; i.setAttribute('aria-label', L.input.label); row.appendChild(i); }
