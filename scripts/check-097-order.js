@@ -318,7 +318,7 @@ module.exports = async (ctx) => {
       /* the office order on screen, read apart from the code under test: Real office's own layout (rooms as drawn, desks left to right, lounge seats out), or the flat rooms' desks */
       const ORDER_NOW = real ? `window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).filter(d=>!d.lounge).map(d=>d.id).filter((x,i,l)=>l.indexOf(x)===i)` : `[...document.querySelectorAll('#stage .room .unit > .desk[data-id]')].map(d=>d.dataset.id)`;
       const shown = () => js(ORDER_NOW);
-      const facts = await js(`(()=>{const ag=window.__durbarSimUi.agents().filter(a=>!a.parent);const lay=${real}?window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks):[];return {list:ag.map(a=>a.id),room:Object.fromEntries(ag.map(a=>[a.id,a.room])),busy:ag.filter(a=>a.state==='waiting'||a.state==='error'||a.limit).map(a=>a.id).concat(lay.filter(d=>d.away).map(d=>d.id))}})()`);
+      const facts = await js(`(()=>{const ag=window.__durbarSimUi.agents().filter(a=>!a.parent);const lay=${jsLiteral(real)}?window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks):[];return {list:ag.map(a=>a.id),room:Object.fromEntries(ag.map(a=>[a.id,a.room])),busy:ag.filter(a=>a.state==='waiting'||a.state==='error'||a.limit).map(a=>a.id).concat(lay.filter(d=>d.away).map(d=>d.id))}})()`);
       const s0 = await shown(), free = (id) => !facts.busy.includes(id), li = (id) => facts.list.indexOf(id);
       /* two desks side by side in one room, shown in the session list's order: the later one moves first (Alt+Left), so the office order and the list's differ */
       const k = s0.findIndex((id, i) => i + 1 < s0.length && free(id) && free(s0[i + 1]) && facts.room[id] === facts.room[s0[i + 1]] && li(id) < li(s0[i + 1]));
