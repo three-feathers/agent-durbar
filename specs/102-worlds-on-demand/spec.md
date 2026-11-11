@@ -773,6 +773,10 @@ Agent decisions stand until the owner changes them.
 
 ## Changes
 
+### 2026-11-11: the store's inode and device checks compare bigints (issue #1491; FR-060..FR-062)
+
+`readFile`'s `lstat`/`fstat` inode check and `sameDir`'s device-and-inode re-check before each delete read `{ bigint: true }` (`lstatBig` in `src/main/worlds/store.ts`): an NTFS file ID above 2^53 loses its low bit as a plain number, so a swapped file or folder with a neighbouring ID could pass. Sizes and link counts are compared as before. Details, tests and limits: spec 083 *Changes* 2026-11-11 (`test:worldstore`, *issue 1491 world part ino*, *world folder ino* and *dev*; not run on Windows).
+
 ### 2026-11-07: RA7: the arcade's moments, looked at and booked (FR-264, T222, T223; issue #1268)
 
 - **Light:** T222 said "both lights". The owner withdrew the light choice on 2026-11-03 (night only; the entry of that date below, booked in #1266), so "both lights" is the one night look. No day set is drawn or driven.
@@ -1389,3 +1393,6 @@ Owner, Vikram, 2026-11-09 20:31 UTC, answering "do you want helper heads and dat
 - **Not here.** The card's shape and pair checks (T093's card half, PR #1504); `check-world-distinct.js`; the contact sheet and `distinct-check` (T094); FR-035 (d), (f), (h), which need the matrix, the owner's look and the default set; the catalogue file (T035), which would be the caller that passes `sha256` and `status`.
 - **Tests.** `test:world-pack`: two packs byte-identical, file-system order and file times do not matter, CRLF checkout gives the same pack, one fixture per gate failure, and a mutant run for each gate and each packer rule that must fail that gate's own fixture.
 
+## Changes 2026-11-11: the desk-feature drivers have an arcade case (T283, issue #1399; no new FR)
+
+Issue #1399 lists the Real office's desk-feature drivers that were never run in the arcade. The owner's check of 2026-11-09 (a throwaway wrapper) found five passing and filed the failures (#1427 pencil, #1428 motion and screens; the last is FR-307..FR-310). This change makes the passing five part of `ui-suite` instead of a one-off: `DRIVER_WORLD=retro` (a value other than `retro` throws) makes `driver-helpers`' `load` add `worldflags=retro&world=retro` to every Real office load and fail unless `.ro[data-world=retro]` is drawn (so a driver can never pass on the Photo office by mistake); `ui-suite` lists `check-097-hover-card`, `check-097-desk-marks`, `check-097-one-face`, `check-097-chat-look` and `check-097-chat-contrast` once more, labelled `retro`. Remaining on #1399: the pencil (#1427), `check-auto-follow` in the arcade, T261 and T225 in the layout-check job, and `check-097-chat-contrast`'s Photo-floor background helper (the arcade run is only partly meaningful) `[KNOWN GAP]`.

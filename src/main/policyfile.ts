@@ -23,18 +23,22 @@ export function machinePolicyDir(platform: string): string | undefined {
 }
 
 export interface PolicyStat { uid: number; mode: number; ino: number; dev: number; size: number; nlink: number; isDirectory(): boolean; isFile(): boolean; isSymbolicLink(): boolean }
+/** The same, read with `{ bigint: true }`: `ino` and `dev` are compared only in this form (issue #1491: a 64-bit file ID loses its low bit as a number). */
+export interface PolicyBigStat { uid: bigint; mode: bigint; ino: bigint; dev: bigint; isFile(): boolean; isSymbolicLink(): boolean }
 export interface PolicyFs extends CappedFs {
   readlinkSync(p: string): string;
   lstatSync(p: string): PolicyStat;
+  lstatSync(p: string, opts: { bigint: true }): PolicyBigStat;
   fstatSync(fd: number): PolicyStat;
+  fstatSync(fd: number, opts: { bigint: true }): PolicyBigStat;
 }
 
 /** The real file system. */
 export const nodePolicyFs: PolicyFs = {
   readlinkSync: (p) => nodeFs.readlinkSync(p),
-  lstatSync: (p) => nodeFs.lstatSync(p),
+  lstatSync: ((p: string, o?: { bigint: true }) => nodeFs.lstatSync(p, o)) as PolicyFs['lstatSync'],
   openSync: (p, flags) => nodeFs.openSync(p, flags),
-  fstatSync: (fd) => Object.assign(nodeFs.fstatSync(fd), { isSymbolicLink: () => false }),
+  fstatSync: ((fd: number, o?: { bigint: true }) => Object.assign(nodeFs.fstatSync(fd, o), { isSymbolicLink: () => false })) as PolicyFs['fstatSync'],
   readSync: (fd, buf, off, len, pos) => nodeFs.readSync(fd, buf, off, len, pos),
   closeSync: (fd) => nodeFs.closeSync(fd),
 };
@@ -45,7 +49,7 @@ export type MachinePolicy = { layer: undefined } | { layer: Record<string, unkno
  * FR-005 (POSIX): owned by root and not group- or world-writable. `[KNOWN GAP]` macOS ACLs (`chmod +a`) are not visible in the mode, so a
  * folder whose ACL lets a group write passes (review of #1123).
  */
-const trusted = (st: PolicyStat): boolean => st.uid === 0 && (st.mode & 0o022) === 0;
+const trusted = (st: { uid: number | bigint; mode: number | bigint }): boolean => Number(st.uid) === 0 && (Number(st.mode) & 0o022) === 0;
 const noEnt = (e: unknown): boolean => (e as { code?: string } | null)?.code === 'ENOENT';
 
 /** The most links followed on the way to the policy folder (Linux's own limit is 40). */
@@ -117,9 +121,9 @@ export function readMachinePolicy(platform: string = process.platform, fs: Polic
     if ('missing' in w) return { layer: undefined };
     const realDir = w.real;
     const file = P.join(realDir, 'policy.json');
-    let own: PolicyStat;
+    let own: PolicyBigStat;
     try {
-      own = fs.lstatSync(file); // never followed: a link is refused outright (review of #1123: a link to any root-owned JSON passed)
+      own = fs.lstatSync(file, { bigint: true }); // never followed: a link is refused outright (review of #1123: a link to any root-owned JSON passed)
     } catch (e) {
       return bad(noEnt(e) ? 'policy.json is missing in the policy folder' : 'policy.json cannot be read');
     }
@@ -127,9 +131,11 @@ export function readMachinePolicy(platform: string = process.platform, fs: Polic
     if (!own.isFile()) return bad('policy.json is not a regular file');
     if (!trusted(own)) return bad('policy.json is not owned by root or is writable by others');
     // FR-031: the shared capped, no-follow, one-link read; the opened file must be the checked one and still trusted
-    const r = readCapped(fs, flags, file, POLICY_MAX_BYTES, (st: PolicyStat) =>
-      st.ino !== own.ino || st.dev !== own.dev || !trusted(st) ? 'policy.json changed while it was checked' : undefined,
-    );
+    // the identity as bigints from a second `fstat` of the same descriptor (issue #1491)
+    const r = readCapped(fs, flags, file, POLICY_MAX_BYTES, (st: PolicyStat, fd: number) => {
+      const id = fs.fstatSync(fd, { bigint: true });
+      return id.ino !== own.ino || id.dev !== own.dev || !trusted(st) ? 'policy.json changed while it was checked' : undefined;
+    });
     if (!r.ok) return bad(r.code === 'vetoed' ? r.why : r.code === 'too-big' ? 'policy.json is larger than 256 KiB' : `policy.json cannot be read (${r.code})`);
     let text = r.buf.toString('utf8');
     if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);

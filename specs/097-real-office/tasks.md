@@ -312,3 +312,7 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 ## 2026-11-09: the rename pencil on an arcade cabinet's plate (FR-357, bug #1427)
 
 - [x] T298 [US5] FR-357: the pencil anchored to the plate when the plate does not draw the name (arcade cabinets), the field over the marquee. Test: `sim:` `check-097-plate-pencil` in the Photo office, cave, arcade and one-room arcade, both sizes; mutant `PENCIL_MUTANT=plate` fails the geometry assert
+
+## 2026-11-11: the pointer-event log of three flaky drivers (issue #1448)
+
+- [x] T302 [US2] Spec delta 2026-11-11: `H.pointerStep` in `scripts/driver-helpers.js` records the page's pointer events in a 200-event ring during the pointer steps of `check-097-drag`, `check-097-hover-card` and `shots-097-screens`, prints them only when the step's assertion fails (then rethrows the same error), prints nothing on a pass; diagnostic only, no retry or limit change. Test: `test:pointer-log` (bounded ring, forced failure prints, pass is silent, five mutants killed: print removed, events not printed, prints on a pass, ring unbounded, another error thrown). Run by the author on the Mac lane's own Mac, not reproduced by anyone else: 3 plain runs each of `check-097-drag`, `check-097-hover-card` and `shots-097-screens`, one driver at a time (`UI_SUITE_JOBS=1`), no `[pointer-log]` line

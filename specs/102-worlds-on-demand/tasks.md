@@ -307,3 +307,7 @@ Starts after the next built-in world's stack lands (FR-296, decided Q4). All beh
 - [x] T285 `scripts/world-pack.js` `packWorld`: the reproducible packer (sorted, fixed stamps, text `\r\n` normalised before hashing, no OS leftovers or `card.json`, manifest with hashes). Test: `test:world-pack`: two packs byte-identical, a CRLF checkout gives the same pack, a mutant for each rule fails [FR-085, FR-035] `[IMPLEMENTED]`
 - [x] T286 `readTicks` (097 T156..T159) and `availabilityGate` (ticks, registry, card, provenance, pack-valid, reproducible, hash), reusing `validateWorldFiles` (FR-031). Part of T036; `test-world-catalogue.js` and its pair checks stay T093. Test: `test:world-pack`: one fixture per failure and a mutant for each gate [FR-035, FR-170, FR-269] `[IMPLEMENTED]`
 
+
+## 2026-11-11: the desk-feature drivers in the arcade (issue #1399)
+
+- [x] T283 `DRIVER_WORLD=retro` for `driver-helpers`' `load`, and five `ui-suite` entries (hover card, desk marks, one face, chat look, chat contrast). Test: each passes at both sizes; a mutant that drops the world query fails each with the "arcade not drawn" assert. `[KNOWN GAP]` remaining on #1399: pencil (#1427), auto-follow, T261, T225.
