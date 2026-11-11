@@ -10,6 +10,10 @@
  * file, no network); never a silent pass. The branch is `--head <sha>` (CI passes the PR head: HEAD there is a merge commit, and a number
  * that main took meanwhile would be hidden by the merge); a number defined twice in one file at HEAD, more often than on origin/main, is a clash too.
  *
+ * `--dups` (offline, also run by `npm run specs:check` and the test): a number defined twice inside ONE spec.md / tasks.md fails, naming every
+ * line, for every spec folder, whether or not the branch touched it. Duplicates that were already there are listed in
+ * scripts/spec-duplicates-baseline.txt (a ratchet: a count may only go down); `--write-baseline` rewrites it. (issue #1553)
+ *
  * A number is "added" only by a new DEFINITION line, never a mention (see parseDefinitions); a number that moved to another line in the
  * same file, or a line that was reworded, is not new (set difference of the definitions before and after).
  *
@@ -43,12 +47,14 @@ function boldDefines(rest) {
   return /^\s/.test(rest);
 }
 
-/** Definition lines of a file as Map(id -> count). spec.md: FR and Q; tasks.md: T. Not tables, code fences, prose mentions, nested FR/Q bullets. */
-function definitionCounts(text, kind) {
+/** Definition lines of a file as Map(id -> [line numbers]). spec.md: FR and Q; tasks.md: T. Not tables, code fences, prose mentions, nested FR/Q bullets. */
+function definitionLines(text, kind) {
   const ids = new Map();
-  const add = (id) => ids.set(id, (ids.get(id) || 0) + 1);
+  let lineNo = 0;
+  const add = (id) => { if (!ids.has(id)) ids.set(id, []); ids.get(id).push(lineNo); };
   let fence = false;
   for (const line of String(text || '').split(/\r?\n/)) {
+    lineNo++;
     if (/^\s*(```|~~~)/.test(line)) { fence = !fence; continue; }
     if (fence) continue;
     let m;
@@ -63,6 +69,10 @@ function definitionCounts(text, kind) {
   }
   return ids;
 }
+/** The same as Map(id -> count). */
+function definitionCounts(text, kind) {
+  return new Map([...definitionLines(text, kind)].map(([id, lines]) => [id, lines.length]));
+}
 /** The ids a file defines (a Set). */
 const parseDefinitions = (text, kind) => new Set(definitionCounts(text, kind).keys());
 const kindOf = (file) => (/\/tasks\.md$/.test(file) ? 'tasks' : 'spec');
@@ -73,7 +83,7 @@ const added = (before, after) => new Set([...after].filter((x) => !before.has(x)
  * prs: [{ label, adds: Map(file -> Set(id)) }]  -> [{ file, id, with }] sorted
  */
 function findClashes({ branchAdds, main, prs, twice = [] }) {
-  const out = twice.map(({ file, id }) => ({ file, id, with: 'this branch itself (defined twice in the file; main took it too?)' }));
+  const out = twice.map(({ file, id, lines }) => ({ file, id, with: `this branch itself (defined twice in the file${lines ? `, lines ${lines.join(' and ')}` : ''}; main took it too?)` }));
   for (const [file, ids] of branchAdds) {
     for (const id of ids) {
       if ((main.get(file) || new Set()).has(id)) out.push({ file, id, with: 'origin/main (already defined there)' });
@@ -132,6 +142,44 @@ function specFilesChanged(root, base, head) {
 }
 function definitionsAt(root, rev, file) { return parseDefinitions(show(root, rev, file), kindOf(file)); }
 function countsAt(root, rev, file) { return definitionCounts(show(root, rev, file), kindOf(file)); }
+function linesAt(root, rev, file) { return definitionLines(show(root, rev, file), kindOf(file)); }
+
+// ---------- one number defined twice inside one file (offline, whole tree; issue #1553) ----------
+const baselinePath = (root) => path.join(root, 'scripts', 'spec-duplicates-baseline.txt');
+/** Every spec.md / tasks.md under root/specs: [{ file, id, lines }] for each id defined more than once. Reads ALL spec folders. */
+function scanDuplicates(root) {
+  const out = [];
+  const dir = path.join(root, 'specs');
+  for (const d of fs.readdirSync(dir).sort()) {
+    for (const [name, kind] of [['spec.md', 'spec'], ['tasks.md', 'tasks']]) {
+      const f = path.join(dir, d, name);
+      if (!fs.existsSync(f)) continue;
+      for (const [id, lines] of definitionLines(fs.readFileSync(f, 'utf8'), kind)) if (lines.length > 1) out.push({ file: `specs/${d}/${name}`, id, lines });
+    }
+  }
+  return out;
+}
+/** baselineText: lines `file id count` (the duplicates that existed when this check was added; # comments). Returns problem lines:
+ * a duplicate that is not in the baseline or is more often than it, naming every line; a baseline entry that is now lower or gone (lower it). */
+function checkDuplicates(found, baselineText) {
+  const base = new Map();
+  for (const l of String(baselineText || '').split(/\r?\n/)) {
+    const m = l.match(/^(\S+) (\S+) (\d+)$/);
+    if (m) base.set(`${m[1]} ${m[2]}`, Number(m[3]));
+  }
+  const problems = [];
+  const seen = new Set();
+  for (const { file, id, lines } of found) {
+    const key = `${file} ${id}`; seen.add(key);
+    const allowed = base.get(key) || 1;
+    if (lines.length > allowed) problems.push(`${printable(file)}: ${id} is defined ${lines.length} times (lines ${lines.join(', ')})${allowed > 1 ? `; the baseline allows ${allowed}` : ''}`);
+    else if (lines.length < allowed) problems.push(`${printable(file)}: ${id} is now defined ${lines.length} times: lower its line in scripts/spec-duplicates-baseline.txt (node scripts/spec-numbers.js --write-baseline)`);
+  }
+  for (const [key, n] of base) if (!seen.has(key)) problems.push(`${printable(key.split(' ')[0])}: ${key.split(' ')[1]} is no longer duplicated (baseline said ${n}): remove its line from scripts/spec-duplicates-baseline.txt (node scripts/spec-numbers.js --write-baseline)`);
+  return problems;
+}
+const baselineOf = (found) => `# Spec numbers defined more than once in one file, as they were when scripts/spec-numbers.js --dups was added (issue #1553).\n# file id count. A new duplicate fails; fixing one means lowering or removing its line (--write-baseline). Never raise a count.\n${found.map((f) => `${f.file} ${f.id} ${f.lines.length}`).join('\n')}\n`;
+
 
 function addsOf(root, base, head, files) {
   const m = new Map();
@@ -154,8 +202,8 @@ function collect(root, heads, headRev = 'HEAD') {
   // a number that main took after the merge-base and was merged into HEAD cleanly shows up as a second definition in the file
   const twice = [];
   for (const f of files) {
-    const here = countsAt(root, headRev, f), there = countsAt(root, 'origin/main', f);
-    for (const [id, n] of here) if (n > 1 && n > (there.get(id) || 0)) twice.push({ file: f, id });
+    const here = linesAt(root, headRev, f), there = countsAt(root, 'origin/main', f);
+    for (const [id, lines] of here) if (lines.length > 1 && lines.length > (there.get(id) || 0)) twice.push({ file: f, id, lines });
   }
   const prs = [], skipped = [], noBase = [];
   for (const h of heads) {
@@ -242,12 +290,22 @@ function report({ branchAdds, prs, skipped, noBase = [], base }, clashes) {
   return lines;
 }
 
+function dupsMain(argv, root) {
+  const found = scanDuplicates(root);
+  if (argv.includes('--write-baseline')) { fs.mkdirSync(path.dirname(baselinePath(root)), { recursive: true }); fs.writeFileSync(baselinePath(root), baselineOf(found)); emit(`specs:numbers: wrote ${found.length} baseline line(s)`); return 0; }
+  const problems = checkDuplicates(found, fs.existsSync(baselinePath(root)) ? fs.readFileSync(baselinePath(root), 'utf8') : '');
+  if (!problems.length) { emit(`specs:numbers --dups: ok, no number is defined twice in one file beyond the ${found.length} known (scripts/spec-duplicates-baseline.txt)`); return 0; }
+  emit(problems.map((p) => `  DUPLICATE ${p}`).join('\n') + '\nFix: give the second definition the next free number in that file (and every mention).');
+  return 1;
+}
+
 const argOf = (argv, name) => { const i = argv.indexOf(name); return i >= 0 ? argv[i + 1] : undefined; };
 
 /** deps.openPrs: a stand-in for the PR list (tests). Exit 0 ok, 1 clash, 2 could not check. */
 async function main(argv, env, deps = {}) {
   const say = (t) => emit(t);
   const root = argOf(argv, '--root') ? path.resolve(argOf(argv, '--root')) : path.join(__dirname, '..');
+  if (argv.includes('--dups') || argv.includes('--write-baseline')) return dupsMain(argv, root);
   const noFetch = argv.includes('--no-fetch');
   const exclude = String(argOf(argv, '--exclude') || env.PR_NUMBER || '');
   const headRev = String(argOf(argv, '--head') || env.PR_HEAD_SHA || 'HEAD');
@@ -269,7 +327,7 @@ async function main(argv, env, deps = {}) {
   return clashes.length ? 1 : 0;
 }
 
-module.exports = { openPrs, GH_LIMIT, parseDefinitions, definitionCounts, added, findClashes, scrub, collect, report, restOpenPrs, main, show, SPEC_FILE_RE };
+module.exports = { openPrs, GH_LIMIT, parseDefinitions, definitionCounts, definitionLines, scanDuplicates, checkDuplicates, added, findClashes, scrub, collect, report, restOpenPrs, main, show, SPEC_FILE_RE };
 
 if (require.main === module) {
   main(process.argv.slice(2), process.env).then((c) => process.exit(c), (e) => { emit(`specs:numbers: NOT CHECKED: ${firstLine(e)}`); process.exit(2); });

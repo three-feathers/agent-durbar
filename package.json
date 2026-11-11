@@ -121,7 +121,7 @@
     "changelog:preview": "node scripts/changelog.js preview",
     "changelog:build": "node scripts/changelog.js build",
     "specs:index": "node scripts/specs-index.js",
-    "specs:check": "node scripts/specs-index.js --check",
+    "specs:check": "node scripts/specs-index.js --check && node scripts/spec-numbers.js --dups",
     "rules:check": "node scripts/rules-check.js",
     "test:weeklyretro": "node scripts/test-weekly-retro.js",
     "test:paritytick": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-parity-tick.js",
