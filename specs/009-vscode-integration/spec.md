@@ -84,6 +84,12 @@ In **Previous sessions**, "VS Code chat history" lists chats VS Code saved for t
 
 ## Changes
 
+### 2026-11-11: openInVSCode on Windows takes only a drive or UNC path; an explicit verbatim flag (issue #1255, FR-028, T030)
+
+*Found* (re-check of CodeQL alert #31, a false positive: there is no shell): `openInVSCode` checked `path.isAbsolute`, which on Windows also accepts a root-relative `\dir` or `/dir`. Code.exe (Chromium) reads an argument starting with `/` as a switch, so such a path would be argument injection (not shell injection). Not reachable today: its one caller, `profiles:openInVSCode`, passes a main-owned profile file, and the Open with route (FR-021) hands on a `realpath` result, which on Windows is a drive or UNC path. Separately, `spawnPlan` switched on `windowsVerbatimArguments` when `plan.args[0] === '/d'`, a guess from the arguments.
+
+- **FR-028** `[IMPLEMENTED]` `test:` (1) On win32, `openInVSCode` accepts only a drive path (`C:\dir`, `C:/dir`) or a UNC path (`\\server\share`, also `\\?\C:\dir`); a root-relative path, `//server/share`, a drive-relative `C:dir` or a bare server is refused with *path must start with a drive letter or be a UNC path*, and nothing is spawned. macOS and Linux keep the absolute-path check. `openInVSCode` takes an injected `LaunchEnv` and spawner, so this is tested with the platform forced to `win32`. (2) `LaunchPlan` has an explicit `verbatim` flag, set only by the guarded `.cmd` plan (`planCmd`); `spawnPlan` passes `windowsVerbatimArguments` only for `win32` and `verbatim === true`. The command line is the same as before for every plan this code builds: clarity, not a fix. `npm run test:vscode`; a real launch on Windows was not run (FR-014, T022).
+
 ### 2026-11-03: pre-review of #976: the fall-through, the resolved path, honest texts (FR-021..FR-027, T029)
 
 - **FR-027, fall-through restored** `[IMPLEMENTED]` `test:` **Open in editor** and **Continue in VS Code** use the first edition in FR-015's order that can open the path, as `planVSCodeLaunch` did: on Windows, VS Code found only as `code.cmd` and a folder with `&` in its name now opens in VSCodium (or Insiders) if that is installed as an `.exe`, instead of refusing. Only when no installed edition can open it is the refusal shown. The menu's own items still each name one edition and refuse for that one.

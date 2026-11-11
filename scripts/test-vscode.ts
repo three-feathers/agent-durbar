@@ -1,6 +1,8 @@
 /** Unit test for how VS Code is located and launched (no Electron, no VS Code needed): `npm run test:vscode`. */
 import * as assert from 'assert';
-import { EDITIONS, planVSCodeLaunch } from '../src/main/vscode';
+import * as fs from 'fs';
+import * as path from 'path';
+import { EDITIONS, isWindowsTarget, openInVSCode, planVSCodeLaunch, spawnPlan } from '../src/main/vscode';
 import type { LaunchEnv } from '../src/main/vscode';
 
 const env = (platform: NodeJS.Platform, files: string[], vars: NodeJS.ProcessEnv, homedir: string): LaunchEnv => ({
@@ -74,4 +76,60 @@ assert.deepStrictEqual([p?.edition, p?.command], ['VSCodium', '/Users/a/Applicat
   assert.deepStrictEqual([p?.command, p?.edition], ['C:\\Program Files\\VSCode\\Code.exe', 'VS Code'], 'quoted PATH entry found');
 }
 
-console.log('vscode launcher: all checks passed');
+// spec 009 FR-028 (issue #1255): on Windows only a drive or UNC path is a target; the verbatim flag is explicit on the plan.
+for (const ok of ['C:\\proj', 'c:/proj', 'D:\\', '\\\\srv\\share', '\\\\srv\\share\\p', '\\\\?\\C:\\p', '\\\\srv/share']) assert.strictEqual(isWindowsTarget(ok), true, ok);
+for (const bad of ['/some-switch', '\\proj', '/proj', '//srv/share', '\\\\srv', '\\\\srv\\', 'C:proj', 'C:', '-x', '--x', 'proj', '1:\\p', '']) assert.strictEqual(isWindowsTarget(bad), false, bad);
+{
+  const local = 'C:\\Users\\a\\AppData\\Local';
+  const exe = `${local}\\Programs\\Microsoft VS Code\\Code.exe`;
+  const cmd = `${local}\\Programs\\Microsoft VS Code\\bin\\code.cmd`;
+  assert.strictEqual(planVSCodeLaunch('C:\\p', env('win32', [exe], { LOCALAPPDATA: local }, 'C:\\Users\\a'))?.verbatim, undefined, 'Code.exe plan is not verbatim');
+  assert.strictEqual(planVSCodeLaunch('C:\\p', env('win32', [cmd], { LOCALAPPDATA: local }, 'C:\\Users\\a'))?.verbatim, true, 'the cmd.exe plan says verbatim');
+  assert.strictEqual(planVSCodeLaunch('/x', env('linux', ['/usr/bin/code'], { PATH: '/usr/bin' }, '/home/a'))?.verbatim, undefined);
+
+  type Seen = { cmd: string; args: readonly string[]; opts: Record<string, unknown> };
+  let seen: Seen[] = [];
+  const fake = ((cmd: string, args: readonly string[], opts: Record<string, unknown>) => {
+    seen.push({ cmd, args, opts });
+    const h: Record<string, (x?: unknown) => void> = {};
+    setImmediate(() => h.spawn?.());
+    return { once: (e: string, f: (x?: unknown) => void) => { h[e] = f; }, unref: () => undefined };
+  }) as never;
+  (async () => {
+    const win = env('win32', [exe], { LOCALAPPDATA: local }, 'C:\\Users\\a');
+    // a root-relative path is absolute to path.win32 but Code.exe would read `/some-switch` as a switch: refused, nothing spawned
+    for (const bad of ['/some-switch', '\\proj', '//srv/share', 'C:proj']) {
+      seen = [];
+      const r = await openInVSCode(bad, win, fake);
+      assert.deepStrictEqual([r.ok, r.error, seen.length], [false, 'path must start with a drive letter or be a UNC path', 0], bad);
+    }
+    for (const good of ['C:\\proj', '\\\\srv\\share\\proj']) {
+      seen = [];
+      const r = await openInVSCode(good, win, fake);
+      assert.deepStrictEqual([r.ok, seen.length, seen[0].cmd, seen[0].args], [true, 1, exe, [good]], good);
+      assert.deepStrictEqual([seen[0].opts.shell, seen[0].opts.windowsVerbatimArguments], [false, false], 'Code.exe gets normal quoting');
+    }
+    // only code.cmd: the guarded cmd.exe route, and only there is the command line passed verbatim
+    seen = [];
+    let r = await openInVSCode('C:\\ok\\proj', env('win32', [cmd], { LOCALAPPDATA: local, ComSpec: 'C:\\Windows\\System32\\cmd.exe' }, 'C:\\Users\\a'), fake);
+    assert.deepStrictEqual([r.ok, seen[0].cmd, seen[0].args.slice(0, 3), seen[0].opts.windowsVerbatimArguments], [true, 'C:\\Windows\\System32\\cmd.exe', ['/d', '/s', '/c'], true]);
+    // the flag decides, not the first argument: a plan starting with /d but not marked verbatim gets normal quoting; verbatim is Windows only
+    seen = [];
+    await spawnPlan({ command: 'C:\\x.exe', args: ['/d', 'C:\\p'], via: 'x' }, fake, 'win32');
+    await spawnPlan({ command: 'C:\\x.exe', args: ['C:\\p'], via: 'x', verbatim: true }, fake, 'win32');
+    await spawnPlan({ command: '/usr/bin/x', args: ['/d'], via: 'x', verbatim: true }, fake, 'linux');
+    assert.deepStrictEqual(seen.map((s) => s.opts.windowsVerbatimArguments), [false, true, false]);
+    // macOS and Linux: absolute as before
+    seen = [];
+    r = await openInVSCode('rel/proj', env('linux', ['/usr/bin/code'], { PATH: '/usr/bin' }, '/home/a'), fake);
+    assert.deepStrictEqual([r.ok, r.error, seen.length], [false, 'path must be absolute', 0]);
+    r = await openInVSCode('/home/a/proj', env('linux', ['/usr/bin/code'], { PATH: '/usr/bin' }, '/home/a'), fake);
+    assert.deepStrictEqual([r.ok, seen[0].args], [true, ['/home/a/proj']]);
+    // static: the verbatim switch is read from the plan's flag only
+    const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'vscode.ts'), 'utf8');
+    assert.ok(!/args\[0\]\s*===\s*'\/d'/.test(src), 'no guess from args[0]');
+    assert.strictEqual((src.match(/windowsVerbatimArguments:/g) ?? []).length, 1);
+    assert.ok(/windowsVerbatimArguments: platform === 'win32' && plan\.verbatim === true/.test(src));
+    console.log('vscode launcher: all checks passed');
+  })().catch((e) => { console.error(e); process.exit(1); });
+}

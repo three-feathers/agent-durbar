@@ -11,6 +11,8 @@ export interface LaunchPlan {
   via: string;
   /** Which edition (FR-015): VS Code, VS Code Insiders or VSCodium. */
   edition?: string;
+  /** Windows only (FR-028): `args` is already quoted for cmd.exe (the guarded `.cmd` route), so Node must pass it verbatim. Set by planCmd alone. */
+  verbatim?: boolean;
 }
 
 export interface LaunchEnv {
@@ -125,7 +127,7 @@ export function planEdition(ed: Edition, target: string, e: LaunchEnv): LaunchPl
 function planCmd(cmdFile: string, target: string, e: LaunchEnv): LaunchPlan | undefined {
   if (CMD_UNSAFE.test(target) || CMD_UNSAFE.test(cmdFile)) return undefined;
   const comspec = windowsCmd(e.env); // spec 045 FR-003
-  return { command: comspec, args: ['/d', '/s', '/c', `"${cmdFile}" "${target}"`], via: cmdFile };
+  return { command: comspec, args: ['/d', '/s', '/c', `"${cmdFile}" "${target}"`], via: cmdFile, verbatim: true };
 }
 
 export type OpenResult = { ok: boolean; error?: string; edition?: string; note?: string };
@@ -133,13 +135,13 @@ export type OpenResult = { ok: boolean; error?: string; edition?: string; note?:
 /** Start a plan with no shell: detached, no stdio, hidden window. `spawnFn` is injectable so tests never start an editor (spec 009 FR-022). */
 export function spawnPlan(plan: LaunchPlan, spawnFn: typeof spawn = spawn, platform: NodeJS.Platform = process.platform): Promise<OpenResult> {
   return new Promise((resolve) => {
-    // windowsVerbatimArguments: the /s /c string in planCmd is already quoted for cmd.exe.
+    // windowsVerbatimArguments (FR-028): only a plan that says so (planCmd's /s /c string, already quoted for cmd.exe), never guessed from its args.
     const child = spawnFn(plan.command, plan.args, {
       stdio: 'ignore',
       detached: true,
       shell: false,
       windowsHide: true,
-      windowsVerbatimArguments: platform === 'win32' && plan.args[0] === '/d',
+      windowsVerbatimArguments: platform === 'win32' && plan.verbatim === true,
     });
     child.once('error', (err: NodeJS.ErrnoException) =>
       resolve({ ok: false, error: err.code === 'ENOENT' ? `Could not start ${plan.edition ?? 'VS Code'} (${plan.via})` : err.message }),
@@ -154,18 +156,30 @@ export function spawnPlan(plan: LaunchPlan, spawnFn: typeof spawn = spawn, platf
 export const EDITOR_NOT_FOUND = 'VS Code was not found (also looked for VS Code Insiders and VSCodium). Install it from https://code.visualstudio.com (on macOS, run "Shell Command: Install \'code\' command in PATH" from its command palette, or keep it in /Applications).';
 
 /**
+ * FR-028: on Windows only a drive path (C:\dir, C:/dir) or a UNC path (\\server\share, also \\?\C:\dir) is a target.
+ * path.win32.isAbsolute also accepts a root-relative \dir or /dir, and Code.exe (Chromium) reads an argument starting with / as a switch.
+ */
+export function isWindowsTarget(p: string): boolean {
+  return /^[A-Za-z]:[\\/]/.test(p) || /^\\\\[^\\/]+[\\/][^\\/]/.test(p);
+}
+
+/**
  * Open a folder or .code-workspace file with VS Code.
  * A single absolute path argument; never a shell with user-controlled text (see planCmd for the one guarded exception).
+ * `e` and `spawnFn` are injectable so tests can force a platform and never start an editor.
  */
-export function openInVSCode(target: string): Promise<OpenResult> {
-  if (typeof target !== 'string' || !path.isAbsolute(target)) return Promise.resolve({ ok: false, error: 'path must be absolute' });
+export function openInVSCode(target: string, e: LaunchEnv = defaultEnv(), spawnFn: typeof spawn = spawn): Promise<OpenResult> {
+  if (typeof target !== 'string') return Promise.resolve({ ok: false, error: 'path must be absolute' });
   if (target.includes('\0')) return Promise.resolve({ ok: false, error: 'invalid path' });
-  const plan = planVSCodeLaunch(target);
+  if (e.platform === 'win32' ? !isWindowsTarget(target) : !path.posix.isAbsolute(target)) {
+    return Promise.resolve({ ok: false, error: e.platform === 'win32' ? 'path must start with a drive letter or be a UNC path' : 'path must be absolute' });
+  }
+  const plan = planVSCodeLaunch(target, e);
   if (!plan) {
     return Promise.resolve({
       ok: false,
       error: EDITOR_NOT_FOUND,
     });
   }
-  return spawnPlan(plan);
+  return spawnPlan(plan, spawnFn, e.platform);
 }
