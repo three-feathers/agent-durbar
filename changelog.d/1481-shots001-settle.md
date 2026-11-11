@@ -1,0 +1,1 @@
+- **Fixed: the live-activity UI check reads the lobby through the settled check** (spec 001 FR-191, issue #1481): `shots-001-live-activity` took one read right after the walks and failed once in CI with 'a walking figure is not on a slot'; it now re-reads like `check:office` does. Scripts only. The race is inferred from the code and one CI log, not observed.
