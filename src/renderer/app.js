@@ -5342,7 +5342,7 @@ $('vList').onclick=()=>setView('list');
 let resizeQueued=false;
 const relayoutNow=()=>{resizeQueued=false;if(ui.view==='office'){renderOffice();syncWalkers();afTick();}placePencils();INL().follow();};
 const relayout=()=>{if(resizeQueued)return;resizeQueued=true;requestAnimationFrame(relayoutNow);}; /* spec 024: figures follow a resize */
-new ResizeObserver(relayoutNow).observe($('floor')); /* spec 052 FR-243 (#1362): the floor changed size (the Auto-follow strip came, a bar wrapped): lay out before the next paint, not a frame later; the stage keeps its old height until then and would overflow the shorter floor */
+new ResizeObserver(relayoutNow).observe($('floor')); /* spec 052 FR-243: the floor changed size (the Auto-follow strip came, a bar wrapped): lay out before the next paint, not a frame later; the stage keeps its old height until then and would overflow the shorter floor */
 window.addEventListener('resize',relayout);
 document.addEventListener('scroll',()=>INL().follow(),{capture:true,passive:true}); /* spec 059 FR-023 item 5: the floor, the list or the chat scrolled: the open field follows its name */
 
