@@ -58,7 +58,7 @@
   /* Whether a chat is over any cap: cheap (counts only), so a chat at its caps costs nothing more per frame. `tls`: the growing timelines. */
   function over(o){
     const keep=o.keep||CHAT_KEEP, el=o.el; if(!el)return false;
-    const msgs=(el.childElementCount|0)-(o.noteIn?1:0);
+    const msgs=(el.childElementCount|0)-(o.noteIn===true?1:Math.max(0,Number(o.noteIn)|0)); /* noteIn: the lines at the top (true = one; FR-240 adds the helpers' line) */
     if(msgs>keep.messages)return true;
     for(const t of o.tls||[])if(t&&t.tl&&(t.tl.childElementCount|0)>keep.blocks)return true;
     return leafTotal(el)>keep.budget;

@@ -216,3 +216,7 @@
 ## 2026-11-10: the Mac title bar check on CSS pull requests (FR-200, issue #1469)
 
 - [ ] T156 (FR-200) `.github/workflows/mac-titlebar-pr.yml` (own file: `paths:` is workflow-level); `scripts/test-ui-suite.ts` (filter, wiring, path matcher, mutants), `scripts/test-electron-cache.ts` (`TYPICAL_MIN`). Blocked on #1458 (the check fails 4 states until it is decided); merge after it, or mark those states `[KNOWN GAP]` in the driver first.
+
+## 2026-11-11: a driver that waits on the OS window focus never runs next to another window (FR-210)
+
+- [x] T170 (FR-210) `scripts/ui-suite.js`: `focus: true` on `shots-097-screens` (both entries) and `check-097-hover-card`; `main` runs the other entries at the job count and then the `focus` entries alone when drivers share a desktop; `scripts/test-ui-suite.ts` overlap test and a mutant; `changelog.d/008-uisuite-focus-serial.md`. Issue #1498.

@@ -23,6 +23,8 @@
  * - without simmcplaunch the simulator shows no strip.
  * Shots (in DOC_SHOTS): 058-mcp-launch-closed-<w>x<h>.png (the one-line strip over the office), 058-mcp-launch-settings-<w>x<h>.png
  * (the list open over Settings, Restart where it failed (2 of 4)). Not linked: 058-mcp-launch-<w>x<h>.png (the list open over the office).
+ * Photo Real office (issue #1424, FR-230): the list open and Settings with the list open are shown again there, after a labelled assert that html[data-world]
+ * is photo and #stage .ro is photo/office; shots 058-mcp-launch-real-<w>x<h>.png and 058-mcp-launch-settings-real-<w>x<h>.png (not linked, not committed).
  * Prints "[058] launch PASS".
  */
 const assert = require('assert');
@@ -40,12 +42,27 @@ module.exports = async (ctx) => {
   const done = () => js(`(()=>{const b=[...document.querySelectorAll('#scrDlg .dbtn .btn')].find(b=>b.textContent==='Done');if(b)b.click();})()`);
   const press = (n, id, act) => js(`(()=>{const c=[...document.querySelectorAll('#liveList li.lv-chat')].find(x=>x.dataset.lvs===${jsLiteral(n)}&&x.dataset.lvc===${jsLiteral(id)});const b=c&&c.querySelector(${jsLiteral(`[data-${act}]`)});if(!b)return false;b.focus();b.click();return true})()`);
   const toggle = (n) => js(`(()=>{const b=[...document.querySelectorAll('#liveList button[data-lv]')].find(x=>x.dataset.lv===${jsLiteral(n)});if(!b)return false;b.click();return true})()`);
+  /* issue #1424 / FR-230: the Photo Real office, proven by the world itself (a fall back to the flat office fails here, it is not a picture of it) */
+  const inReal = async (label, room = true) => {
+    await js(`window.__durbarSimUi.setOfficeView('real');0`);
+    const cond = "document.documentElement.dataset.world==='photo'&&!!document.getElementById('roWorldCss')" + (room ? "&&!!document.querySelector('#stage .ro')" : '');
+    assert.ok(await until(cond, 8000), `${label}: the Photo Real office is shown (html[data-world] photo, its world CSS${room ? ', #stage .ro' : ''})`);
+    /* Settings covers the room (it is not drawn behind a screen): there the world itself, html[data-world] and the Settings note, is the proof */
+    if (room) assert.strictEqual(await js(`document.querySelector('#stage .ro').dataset.world+'/'+document.querySelector('#stage .ro').dataset.set`), 'photo/office', `${label}: the room draws the Photo office`);
+    await settle();
+  };
+  const backToFlat = async () => {
+    await js(`window.__durbarSimUi.setOfficeView('flat');0`);
+    assert.ok(await until(`!document.documentElement.dataset.world`, 8000), 'back in the flat office');
+    await settle();
+  };
   const openSettingsMcp = async () => {
     await js(`window.DurbarScreens.openSettings('mcp')`);
     assert.ok(await until(`!!document.getElementById('liveList')&&document.getElementById('advMcp').open`), 'Settings opened at MCP servers');
     await settle();
   };
 
+  const LAY = `(()=>{const s=document.getElementById('mcpStrip').getBoundingClientRect(),f=document.getElementById('floor').getBoundingClientRect(),l=document.getElementById('mcpList');const cols=[...document.querySelectorAll('#mcpStrip [data-mlshow]')].map(b=>Math.round(b.getBoundingClientRect().right));let min=99;document.querySelectorAll('#mcpStrip, #mcpStrip *').forEach(e=>{if(!e.getClientRects().length)return;if(![...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim()))return;min=Math.min(min,parseFloat(getComputedStyle(e).fontSize));});return {below:f.top>=s.bottom-1,min,pageX:document.documentElement.scrollWidth<=innerWidth,pageY:document.documentElement.scrollHeight<=innerHeight+1&&document.scrollingElement.scrollTop===0,capped:getComputedStyle(l).overflowY==='auto'&&l.getBoundingClientRect().height<=Math.min(innerHeight*0.34,210)+1,col:new Set(cols).size===1}})()`;
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     await H.load({ w, h, ready: 'fit', focus: true, query: { simkinds: 'mixed', simmcplaunch: '1', simmcpauth: '1' } });
     const chats = await js(`window.__durbarSimUi.agents().filter(a=>a.live&&!a.parent).map(a=>({id:a.id,name:a.name,kind:a.info&&a.info.adapterId}))`);
@@ -91,9 +108,16 @@ module.exports = async (ctx) => {
     assert.ok(!/401|Unauthorized|ENOENT|could not be read\./.test(all), 'no error text in the strip: ' + all);
     assert.strictEqual(await js(`document.getElementById('mcpStrip').getAttribute('role')`), 'status', 'a status strip, not an alert or a modal');
     // FR-203: its own room, 10.5px, no page overflow
-    const lay = await js(`(()=>{const s=document.getElementById('mcpStrip').getBoundingClientRect(),f=document.getElementById('floor').getBoundingClientRect(),l=document.getElementById('mcpList');const cols=[...document.querySelectorAll('#mcpStrip [data-mlshow]')].map(b=>Math.round(b.getBoundingClientRect().right));let min=99;document.querySelectorAll('#mcpStrip, #mcpStrip *').forEach(e=>{if(!e.getClientRects().length)return;if(![...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim()))return;min=Math.min(min,parseFloat(getComputedStyle(e).fontSize));});return {below:f.top>=s.bottom-1,min,pageX:document.documentElement.scrollWidth<=innerWidth,pageY:document.documentElement.scrollHeight<=innerHeight+1&&document.scrollingElement.scrollTop===0,capped:getComputedStyle(l).overflowY==='auto'&&l.getBoundingClientRect().height<=Math.min(innerHeight*0.34,210)+1,col:new Set(cols).size===1}})()`);
+    const lay = await js(LAY);
     assert.ok(lay.below && lay.min >= 10.5 && lay.pageX && lay.pageY && lay.capped && lay.col, `${w}: the strip takes its own room, 10.5px, no page scroll: ` + JSON.stringify(lay));
     await shot(`058-mcp-launch-${w}x${h}.png`);
+    // FR-230: the same list, open, over the Photo Real office (same layout asserts), then back to the flat office for the rest
+    await inReal(`${w}: list open`);
+    assert.ok(await js(`document.querySelectorAll('#mcpStrip [data-mlk]').length>0&&document.getElementById('mcpStrip').querySelector('[data-ml="list"]').getAttribute('aria-expanded')==='true'`), `${w}: the list is still open in the Real office`);
+    const layR = await js(LAY);
+    assert.ok(layR.below && layR.min >= 10.5 && layR.pageX && layR.pageY && layR.capped && layR.col, `${w}: Real office: the strip takes its own room, 10.5px, no page scroll: ` + JSON.stringify(layR));
+    await shot(`058-mcp-launch-real-${w}x${h}.png`);
+    await backToFlat();
 
     // ---- FR-199 part 2: a server that runs again leaves; a new failure and a policy refusal join ----
     await emit(A.id, [{ name: 'browser', status: 'connected' }, { name: 'my-notes', status: 'connected' }]);
@@ -155,6 +179,13 @@ module.exports = async (ctx) => {
     await toggle('browser');
     await settle();
     await shot(`058-mcp-launch-settings-${w}x${h}.png`);
+    // FR-230: Settings with the list open, over the Photo Real office (the world chrome of the Real office), then back to the flat office
+    await inReal(`${w}: Settings`, false);
+    const nsR = await js(noScroll);
+    assert.ok(nsR.top && nsR.win, `${w}: Real office: Settings with the list open: the top bar is in view and the window does not scroll ` + JSON.stringify(nsR));
+    assert.ok(await js(`!!document.getElementById('liveList')&&!!document.querySelector('#liveList [data-lvall="browser"]')`), `${w}: Real office: Restart where it failed is on the list`);
+    await shot(`058-mcp-launch-settings-real-${w}x${h}.png`);
+    await backToFlat();
     await js(`document.querySelector('#liveList [data-lvall="browser"]').click()`);
     assert.ok(await until(`!!document.querySelector('#liveList [data-lvall="browser"][disabled]')`, 2000), 'disabled while it runs');
     assert.ok(await until(`window.__lvCalls.length===2&&!document.querySelector('#liveList [data-lvall="browser"][disabled]')`, 8000), 'two restarts, then the button is free');
