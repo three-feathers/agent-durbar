@@ -533,7 +533,9 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   // spec 012 FR-180: a Markdown-escaped token (`ghp\_...`) is hidden on the card as the desk mask hides it, and the command is shown as written
   {
     const ST = require(path.join(R, 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string; maskLabel(t: string, k: string, m: Record<string, (s: string) => string>): string };
-    const E = TK.replace('_', '\\_'), GP = 'github_pat_' + '11ABCDEFG0' + 'a1B2c3D4e5F6g7H8i9J0k1_' + 'L2m3N4o5P6q7R8s9T0u1V2w3X4y5Z6a7B8c9D0e1F2g3H4i5J6k7L8m9N0', GE = GP.replace(/_/g, '\\_');
+    // the Markdown-escaped form of a fixture, built on purpose: backslashes first, then each `_` (one helper for every escaped fixture here)
+    const escUnderscore = (x: string) => x.replace(/\\/g, '\\\\').replace(/_/g, '\\_');
+    const E = escUnderscore(TK), GP = 'github_pat_' + '11ABCDEFG0' + 'a1B2c3D4e5F6g7H8i9J0k1_' + 'L2m3N4o5P6q7R8s9T0u1V2w3X4y5Z6a7B8c9D0e1F2g3H4i5J6k7L8m9N0', GE = escUnderscore(GP);
     const SE = 'sk\\-' + 'proj\\-A1b2C3d4E5f6G7h8I9j0K1l2M3n4', SKP = /sk.{0,2}proj|A1b2C3d4|K1l2M3n4/;
     for (const [what, tok, parts] of [['ghp', E, PARTS], ['github_pat', GE, /11ABCDEFG0|L2m3N4o5|github/], ['sk-', SE, SKP]] as const) {
       ok(ST.maskRaw(tok, mask.redact) !== tok.replace(/\\/g, ''), what + ': the desk mask hides the escaped token (the baseline)');
@@ -554,7 +556,7 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
     eq(ST.maskLabel('echo ' + E, 'run', { ...mask, cmd: (s: string) => s.replace(/echo ghp_\w+/, 'echo [redacted]') }), '', 'the unescaped copy still holding a secret gives an empty label (fail closed)');
     eq(ST.maskLabel('echo ' + E, 'run', { ...mask, cmd: () => '' }), '', 'a mask that gives nothing: empty label');
     // an environment secret is hidden as `[redacted:NAME]` (the activity log's redact): the marker count must read that form too (invented value)
-    const ENV = { MY_API_KEY: 'zq7_Fake_Value_9x8w7v6u5' }, EV = ENV.MY_API_KEY.replace(/_/g, '\\_');
+    const ENV = { MY_API_KEY: 'zq7_Fake_Value_9x8w7v6u5' }, EV = escUnderscore(ENV.MY_API_KEY);
     const em = { redact: (s: string) => redact(s, ENV), cmd: (s: string) => maskSecretCommand(s, ENV), url: (s: string) => maskSecretUrl(s, ENV) };
     ok(redact('x ' + ENV.MY_API_KEY, ENV) === 'x [redacted:MY_API_KEY]', 'the env mask names the secret (the baseline)');
     eq(ST.maskLabel('echo ' + EV, 'run', em), 'echo [redacted]', 'an env secret with escapes is hidden (run)');
