@@ -13,6 +13,8 @@
  *   - a clickable element whose box overlaps the traffic-light box (x<78, y<40, by rectangle, not by sampling) outside full screen (an
  *     overlay's own backdrop is not counted: the native traffic lights sit above the page; a control inside a dialog is);
  *   - a screen header over a chat whose title is not on the centred content column (FR-097) at widths above 990px;
+ *   - a screen title that starts under the traffic lights (x<78, y<40, outside full screen), also in the narrow windows (991..1208, 760..990
+ *     and under 760 px wide; spec 052 FR-138 delta 2026-11-11);
  *   - the top bar's rows (one row at wide sizes, two when it wraps): the first row's items start at x>=78, a wrapped row at the normal padding (the room is for the first row only);
  *   - a clickable element over an effective drag region (it could not be clicked on a Mac).
  * It exits non-zero on a failure and also when the driver itself throws or does not finish (a marker file decides, Electron exits 0 after
@@ -29,6 +31,9 @@ const INDEX = path.join(ROOT, 'dist', 'renderer', 'index.html');
 const TL = { x: 78, y: 40 }; /* traffic-light box: the hiddenInset default, not measured on a Mac */
 const MIN_CHAT_GRAB = 32; /* px wide, with 24px of height */
 const SIZES = [[1440, 900], [1280, 800]];
+/* spec 052 FR-138 (2026-11-11, issue #1538): narrower windows, where the Settings title's own padding used to win over the Mac room: the
+   991..1208 range (the title is at max(24, W/2 - 526)), the 760..990 range and the row layout under 760. Only Settings over a chat runs here (the Tools header's own grab width at 760 px and below is a separate matter). */
+const NARROW = [[1208, 800], [1100, 800], [991, 800], [900, 800], [760, 800], [759, 800], [700, 800]];
 
 /* runs in the page */
 function measure(TLX, TLY) {
@@ -98,9 +103,19 @@ function measure(TLX, TLY) {
   /* a screen header over a chat: its title is on the centred column of FR-097 */
   let head = null;
   const h2 = document.querySelector('#screen:not([hidden]) .scr-head h2');
-  if (h2 && document.body.classList.contains('panel-open') && W > 990) head = { left: h2.getBoundingClientRect().left, want: (W - 880) / 2 + 24 };
+  if (h2 && document.body.classList.contains('panel-open') && W > 990) {
+    /* FR-097: a screen with a section list (.scr-nav: Settings) lines the title up with the list-and-page block, max(24, W/2 - 526); the
+       others keep the 880px column. Outside full screen, with no notice strip above (which is the first row), the Mac room comes first: at least 78
+       (FR-138, issue #1538). */
+    const nav = !!document.querySelector('#screen:not([hidden]) .scr-nav');
+    const strip = [...document.querySelectorAll('.notice-strip')].some(vis);
+    head = { left: h2.getBoundingClientRect().left, want: nav ? Math.max(full || strip ? 24 : TLX, W / 2 - 526) : (W - 880) / 2 + 24, nav };
+  }
+  /* a screen title at any width: where it starts, and how high (it is under the traffic lights when it is in the 78x40 box) */
+  const t2 = document.querySelector('#screen:not([hidden]) .scr-head h2');
+  const title = t2 && document.body.classList.contains('panel-open') ? { left: t2.getBoundingClientRect().left, top: t2.getBoundingClientRect().top } : null;
   return {
-    full, bandDrag, grab, topbar, head,
+    full, bandDrag, grab, topbar, head, title,
     drags: drags.filter((d) => !(d.e.parentElement && reg(d.e.parentElement) === 'drag')).map((d) => nm(d.e) + ' ' + JSON.stringify(rr(d.r))),
     clickInDrag: [...inDrag.values()], clickUnderTL: [...underTL.values()],
   };
@@ -135,7 +150,8 @@ async function run(ctx) {
     if (kind === 'chat' ? m.grab < MIN_CHAT_GRAB : kind === 'plain' && m.bandDrag === 0) why.push(`grab block ${m.grab}px wide${kind === 'chat' ? ` (< ${MIN_CHAT_GRAB}, 24px tall needed)` : ' (none)'}`);
     if (m.topbar && !m.full && m.topbar.firstMin < TL.x - 1) why.push(`top bar first row starts at x=${m.topbar.firstMin} (< ${TL.x})`);
     if (m.topbar && m.topbar.rows === 2 && m.topbar.restMin > 30) why.push(`top bar second row starts at x=${m.topbar.restMin} (the room is for the first row only)`);
-    if (m.head && Math.abs(m.head.left - m.head.want) > 1) why.push(`screen title at x=${Math.round(m.head.left)}, the centred column is at x=${Math.round(m.head.want)} (FR-097)`);
+    if (m.head && Math.abs(m.head.left - m.head.want) > 1) why.push(`screen title at x=${Math.round(m.head.left)}, ${m.head.nav ? 'the list-and-page block' : 'the centred column'} is at x=${Math.round(m.head.want)} (FR-097)`);
+    if (m.title && !m.full && m.title.left < TL.x - 1 && m.title.top < TL.y) why.push(`screen title at x=${Math.round(m.title.left)} is under the traffic lights (< ${TL.x}) at ${size}`);
     if (m.clickUnderTL.length) why.push('clickable under the traffic lights: ' + m.clickUnderTL.map((c) => c.el + JSON.stringify(c.rect)).join(', '));
     if (m.clickInDrag.length) why.push('clickable over a drag region: ' + m.clickInDrag.map((c) => c.el + JSON.stringify(c.rect)).join(', '));
     results.push({ name, size, ok: !why.length });
@@ -174,6 +190,17 @@ async function run(ctx) {
     await must('#inboxBtn'); await rec('inbox', size, 'modal'); await reset();
     await js(`(()=>{const d=document.createElement('div');d.className='dlg-ov';d.id='auditDlg';d.innerHTML='<div class="dlg wide" role="dialog" aria-modal="true"><h3>Set up Claude Code</h3><div class="dbody">'+'<p>step line</p>'.repeat(60)+'</div><div class="dbtn"><button class="btn">Cancel</button><button class="btn primary">Next</button></div></div>';document.body.appendChild(d)})()`);
     await rec('tall-dialog', size, 'modal'); await reset();
+  }
+  for (const [w, h] of NARROW) {
+    const size = `${w}x${h}`;
+    await H.load({ w, h, ready: 'fit' });
+    await js(`document.documentElement.dataset.platform='darwin'`);
+    await ctx.sleep(400);
+    await js(`['restoreStrip','awayStrip'].forEach(i=>{document.getElementById(i).hidden=true})`);
+    await openChat();
+    await js(`window.DurbarScreens.openSettings()`); await rec('chat-settings', size, 'chat');
+    await js(`window.DurbarScreens.close()`); await ctx.sleep(300);
+    await showRestore(); await js(`window.DurbarScreens.openSettings()`); await rec('chat-strip-settings', size, 'chat'); await js(`window.DurbarScreens.close()`); await reset();
   }
   const bad = results.filter((r) => !r.ok);
   console.log(`\nmac-titlebar check: ${results.length - bad.length}/${results.length} states passed, ${bad.length} failed`);
