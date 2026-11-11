@@ -31,7 +31,8 @@ export const cpuMs = (f: () => void, capMs: number): number => {
 const FACTOR = 16;
 const MAX_RATIO = 40;
 // CPU timers tick in about 15.6 ms on Windows (as in test-browserurl), so a fast 1/16 baseline can read 0: never divide by less than one tick there
-const MIN_BASE_MS = process.platform === 'win32' ? 16 : 2;
+// DURBAR_TEST_WIN_TIMER=1 (test hook, spec 012 T160): the Windows clamp on any platform, so a test can run both clamps
+const MIN_BASE_MS = process.platform === 'win32' || process.env.DURBAR_TEST_WIN_TIMER === '1' ? 16 : 2;
 export const worstGrowth = { ratio: 0, label: '' }; // the highest full/baseline ratio seen, printed at the end
 // `reps` (default 1, so the other callers are unchanged): the baseline is timed as `run(small, reps)`, and `run` must then repeat the work `reps`
 // times inside one timing and give the mean per run, so a baseline of a few ms is read well above the Windows timer tick (a tick-sized baseline

@@ -306,9 +306,9 @@ if (part === 'hashtable') {
     assert.strictEqual(reads(fixed, 16), 20, 'R12 worker: reps=16 must run the work 16 times and give the mean per run (20 ms)');
     const input = 'x'.repeat(192_000);
     const worst = { ...worstGrowth };
-    // linear, 0.7 ms per 1000 characters, but nothing for one run of the short input
-    r12Grow('R12 mutant linear, one-run baseline reads 0', fake('(w.reps===1&&a[0].length<100000?0:a[0].length*0.0007)'), input, 0);
-    assert.throws(() => r12Grow('R12 mutant quadratic', fake('a[0].length*a[0].length*8e-9'), input, 0), /R12 mutant quadratic: .* \(ratio \d/);
+    // linear, 4.5 ms per 1000 characters (864 ms in all, above the 640 ms limit of the Windows clamp), but nothing for one run of the short input
+    r12Grow('R12 mutant linear, one-run baseline reads 0', fake('(w.reps===1&&a[0].length<100000?0:a[0].length*0.0045)'), input, 0);
+    assert.throws(() => r12Grow('R12 mutant quadratic', fake('a[0].length*a[0].length*3e-8'), input, 0), /R12 mutant quadratic: .* \(ratio \d/);
     Object.assign(worstGrowth, worst);
   }
 }
