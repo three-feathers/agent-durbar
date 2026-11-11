@@ -205,7 +205,7 @@ process.exitCode = 1; // a promise that never settles must not pass (checklist);
     const cmd = 'C:\\tools\\bin\\codium.cmd', ed = EDITIONS.find((e) => e.name === 'VSCodium')!;
     const onPath = (dir: string, file: string): LaunchEnv => launchEnv('win32', [file], { PATH: dir }, 'C:\\Users\\a');
     const le = onPath('C:\\tools\\bin', cmd);
-    assert.deepStrictEqual(planEdition(ed, 'C:\\work\\proj', le)?.args.slice(-1), [`"${cmd}" "C:\\work\\proj"`], 'a safe folder goes through the .cmd');
+    assert.deepStrictEqual(planEdition(ed, 'C:\\work\\proj', le)?.args.slice(-1), [`""${cmd}" C:\\work\\proj"`], 'a safe folder goes through the .cmd (spec 009 FR-029: one outer pair for /s)');
     for (const t of ['C:\\a & calc', 'C:\\%PATH%', 'C:\\a"b', 'C:\\a^b']) {
       assert.strictEqual(planEdition(ed, t, le), undefined, t + ' plans nothing');
       const r = rec(); const res = await openWith({ cwd: t }, 'vscodium', mk(le, r));
