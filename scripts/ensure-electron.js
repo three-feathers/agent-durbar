@@ -10,6 +10,7 @@
  */
 const { spawnSync } = require('child_process');
 const path = require('path');
+const fs = require('fs');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -19,4 +20,16 @@ function ensureElectron({ spawn = spawnSync, cwd = ROOT } = {}) {
   return !!r && r.status === 0;
 }
 
-module.exports = { ensureElectron };
+/**
+ * Spec 008 FR-211: the build the drivers load. Electron starts `package.json` `main` (dist/main/main.js) and the page loads
+ * dist/renderer/index.html; with no `dist/` Electron opens its own "Cannot find module" error box and waits for it, so a driver sat until
+ * its time limit with no output. Returns '' when both files exist, else one plain line naming the first missing path. `exists` is for tests.
+ */
+function buildProblem(root = ROOT, exists = fs.existsSync) {
+  for (const rel of [['dist', 'main', 'main.js'], ['dist', 'renderer', 'index.html']]) {
+    if (!exists(path.join(root, ...rel))) return `the build is missing: ${path.join(root, ...rel)} does not exist; run \`npm run build\` first`;
+  }
+  return '';
+}
+
+module.exports = { ensureElectron, buildProblem };

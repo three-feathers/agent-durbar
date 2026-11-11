@@ -37,6 +37,53 @@ assert.ok(/require\('electron'\)/.test(src), 'it starts the Electron binary dire
   assert.ok(src.indexOf('syntaxErrors([...new Set(') > 0 && src.indexOf('syntaxErrors([...new Set(') < src.indexOf('await Promise.all(Array.from({ length: jobs }, worker))'), 'the syntax pass runs before the first driver starts');
   // the real runner: a broken driver named with --only stops before Electron, at once, with the file and exit 1
 }
+// spec 008 FR-211 (issue #1557): a missing build fails in seconds with its path, before any Electron starts
+(async () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { buildProblem } = require(path.join(ROOT, 'scripts', 'ensure-electron.js')) as { buildProblem: (root: string) => string };
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const suite = require(SUITE) as { main: (o: object) => Promise<void>; runOne: (d: object, out: string, o: object) => Promise<{ ok: boolean; why: string }> };
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const par = require(path.join(ROOT, 'scripts', 'check-parallel.js')) as { main: (o: object) => Promise<number> };
+  const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ui-suite-nobuild-'));
+  const want = path.join(tmp, 'dist', 'main', 'main.js');
+  const msg = buildProblem(tmp);
+  assert.ok(msg.includes(want) && /npm run build/.test(msg), `the problem names the missing path and says to build: ${msg}`);
+  fs.mkdirSync(path.join(tmp, 'dist', 'main'), { recursive: true });
+  fs.writeFileSync(want, '');
+  assert.ok(buildProblem(tmp).includes(path.join(tmp, 'dist', 'renderer', 'index.html')), 'a missing renderer page is named too');
+  fs.mkdirSync(path.join(tmp, 'dist', 'renderer'), { recursive: true });
+  fs.writeFileSync(path.join(tmp, 'dist', 'renderer', 'index.html'), '');
+  assert.strictEqual(buildProblem(tmp), '', 'with both files there is no problem');
+  fs.rmSync(path.join(tmp, 'dist'), { recursive: true, force: true });
+  const missing = () => buildProblem(tmp);
+  const quiet = () => undefined;
+  const calls: string[] = [];
+  const realLog = console.log;
+  console.log = quiet;
+  const outDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ui-suite-nobuild-out-'));
+  const prevOut = process.env.UI_SUITE_OUT;
+  process.env.UI_SUITE_OUT = outDir;
+  try {
+    let t = Date.now();
+    await assert.rejects(suite.main({ build: missing, argv: ['--only', names[1].split(' ')[0]], ensure: () => { calls.push('ensure'); return true; }, run: async () => { calls.push('run'); return { ok: true, secs: 0, why: '', log: '' }; } }), (e: Error) => e.message.includes(want) && /npm run build` first/.test(e.message) && /no driver was started/.test(e.message), 'ui-suite: a missing build stops the runner with its path and "no driver was started"');
+    assert.ok(Date.now() - t < 2000 && calls.length === 0, 'ui-suite: a missing build stops the runner at once, before Electron is fetched or a driver started');
+    t = Date.now();
+    const r = await suite.runOne({ name: names[1].split(' ')[0] }, outDir, { build: missing });
+    assert.ok(!r.ok && r.why.includes(want) && Date.now() - t < 2000, 'ui-suite: runOne returns the missing build as a failed run without spawning');
+    t = Date.now();
+    const lines: string[] = [];
+    const failed = await par.main({ build: missing, ensure: () => { calls.push('ensure'); return true; }, runJob: async () => { calls.push('job'); return 'ok'; }, available: () => Infinity, jobs: [{ label: 'a' }, { label: 'b' }], workers: 2, log: (l: string) => lines.push(l) });
+    assert.ok(failed === 2 && calls.length === 0 && lines.some((l) => l.includes(want)) && Date.now() - t < 2000, 'check-parallel: a missing build starts no part and says which file');
+  } finally {
+    console.log = realLog;
+    if (prevOut === undefined) delete process.env.UI_SUITE_OUT; else process.env.UI_SUITE_OUT = prevOut;
+    fs.rmSync(outDir, { recursive: true, force: true });
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+  assert.ok(src.indexOf('const noBuild = build()') > src.indexOf('syntaxErrors([...new Set(') && src.indexOf('const noBuild = build()') < src.indexOf('if (!ensure())'), 'the build check sits after the syntax pass and before the Electron install');
+  console.log('ui-suite missing build: ok');
+})().catch((e) => { console.error(e); process.exitCode = 1; });
 // issue #748 (spec 021 FR-057): no asserting driver sits unrun. Every scripts/check-*.js and shots-*.js that asserts is in the suite, in
 // shots-docs' DOC_SHOTS (retaken by `npm run shots:docs`), or in NOT_IN_SUITE with a written reason
 {
@@ -385,12 +432,12 @@ process.on('exit', () => { if (!fr114Done) { console.error('FR-114 checks did no
   const fakeJobs = [{ label: 'a' }, { label: 'b' }, { label: 'c' }];
   let order: Step[] = [];
   const quiet = () => undefined;
-  let failed = await par.main({ ensure: () => { order.push('ensure'); return true; }, runJob: async (j: { label: string }) => { order.push('run ' + j.label); return 'ok'; }, available: () => Infinity, jobs: fakeJobs, workers: 3, log: quiet });
+  let failed = await par.main({ build: () => '', ensure: () => { order.push('ensure'); return true; }, runJob: async (j: { label: string }) => { order.push('run ' + j.label); return 'ok'; }, available: () => Infinity, jobs: fakeJobs, workers: 3, log: quiet });
   assert.strictEqual(failed, 0);
   assert.deepStrictEqual(order.filter((x) => x === 'ensure'), ['ensure'], 'check-parallel: Electron installed exactly once');
   assert.ok(order[0] === 'ensure' && order.length === 4, `check-parallel: the install comes before every part (${order.join(', ')})`);
   order = [];
-  failed = await par.main({ ensure: () => { order.push('ensure'); return false; }, runJob: async (j: { label: string }) => { order.push('run ' + j.label); return 'ok'; }, available: () => Infinity, jobs: fakeJobs, workers: 3, log: quiet });
+  failed = await par.main({ build: () => '', ensure: () => { order.push('ensure'); return false; }, runJob: async (j: { label: string }) => { order.push('run ' + j.label); return 'ok'; }, available: () => Infinity, jobs: fakeJobs, workers: 3, log: quiet });
   assert.ok(failed === 3 && order.join() === 'ensure', 'check-parallel: no Electron, no part started, every part counts as failed');
   assert.ok(par.jobs.length >= 2, 'check-parallel still splits the office check into parts');
   // ui-suite.js: the same, after the syntax pass and before the first driver
@@ -402,10 +449,10 @@ process.on('exit', () => { if (!fr114Done) { console.error('FR-114 checks did no
   console.log = quiet;
   try {
     order = [];
-    await suite.main({ argv: ['--only', `${names[1].split(' ')[0]},${names[2].split(' ')[0]}`], ensure: () => { order.push('ensure'); return true; }, run: async (d: { name: string }) => { order.push('run ' + d.name); return { ok: true, secs: 0, why: '', log: '' }; } });
+    await suite.main({ build: () => '', argv: ['--only', `${names[1].split(' ')[0]},${names[2].split(' ')[0]}`], ensure: () => { order.push('ensure'); return true; }, run: async (d: { name: string }) => { order.push('run ' + d.name); return { ok: true, secs: 0, why: '', log: '' }; } });
     assert.ok(order[0] === 'ensure' && order.length === 3 && order.filter((x) => x === 'ensure').length === 1, `ui-suite: Electron installed once, before the drivers (${order.join(', ')})`);
     order = [];
-    await assert.rejects(suite.main({ argv: ['--only', names[1].split(' ')[0]], ensure: () => { order.push('ensure'); return false; }, run: async () => { order.push('run'); return { ok: true, secs: 0, why: '', log: '' }; } }), /no driver was started/);
+    await assert.rejects(suite.main({ build: () => '', argv: ['--only', names[1].split(' ')[0]], ensure: () => { order.push('ensure'); return false; }, run: async () => { order.push('run'); return { ok: true, secs: 0, why: '', log: '' }; } }), /no driver was started/);
     assert.strictEqual(order.join(), 'ensure', 'ui-suite: no Electron, no driver started');
   } finally {
     console.log = realLog;
@@ -668,7 +715,7 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
       };
       process.env.UI_SUITE_JOBS = '3'; process.env.UI_SUITE_OUT = tmp;
       console.log = (): void => undefined;
-      try { await suite.main({ ensure: () => true, run: fake, argv: ['--only', only], shared }); } finally { console.log = was.log; }
+      try { await suite.main({ build: () => '', ensure: () => true, run: fake, argv: ['--only', only], shared }); } finally { console.log = was.log; }
       return { ran, peak, focusNextToOther: clash, peakOthers };
     };
     try {

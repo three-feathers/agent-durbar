@@ -216,3 +216,7 @@
 ## 2026-11-11: a driver that waits on the OS window focus never runs next to another window (FR-210)
 
 - [x] T170 (FR-210) `scripts/ui-suite.js`: `focus: true` on `shots-097-screens` (both entries) and `check-097-hover-card`; `main` runs the other entries at the job count and then the `focus` entries alone when drivers share a desktop; `scripts/test-ui-suite.ts` overlap test and a mutant; `changelog.d/008-uisuite-focus-serial.md`. Issue #1498.
+
+## 2026-11-11: a missing build fails in seconds with its path (FR-211)
+
+- [x] T171 (FR-211) `scripts/ensure-electron.js` `buildProblem`; `scripts/ui-suite.js` `main` and `runOne` and `scripts/check-parallel.js` `main` stop on it before Electron; `scripts/test-ui-suite.ts` runs all three against a folder with no build (message, failure, under 2 s) and has the mutant.

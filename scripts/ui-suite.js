@@ -24,7 +24,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawn, spawnSync } = require('child_process');
-const { ensureElectron } = require('./ensure-electron');
+const { ensureElectron, buildProblem } = require('./ensure-electron');
 
 const ROOT = path.join(__dirname, '..');
 const SIM = { DURBAR_SIM: '15', DURBAR_SIM_FREEZE: '1' };
@@ -48,7 +48,7 @@ const DRIVERS = [
   { name: 'check-serious-motion' }, // spec 052 FR-069 (issue #1182): Serious mode hides only the moods; Motion is its own switch; reduced motion still stops it; Flat and Real office, both sizes
   { name: 'check-settings-nav' }, // spec 052 FR-226 (T219): the Settings section list: built from the headings, jump, aria-current follows the scroll, keys, every world, reduced motion, narrow row
   { name: 'check-settings-save' }, // spec 011 FR-012 (issue #1023): a Settings row whose save fails returns to the value in force and says so
-  { name: 'check-rail' }, // spec 005 FR-190, FR-194, FR-216 and 052 FR-215: the agent rail's List view: fit, order, two heights, folders that collapse, Your door, Mac drag areas
+  { name: 'check-rail' }, // spec 005 FR-190, FR-194, FR-216 and 052 FR-211: the agent rail's List view: fit, order, two heights, folders that collapse, Your door, Mac drag areas
   { name: 'check-rail-resize' }, // spec 005 FR-236 (issue #1223): the agent rail's width: drag, keys, double-click reset, remembered, clamped when the window shrinks, both sizes
   { name: 'check-unread' }, // spec 001 FR-170..FR-177, spec 005 FR-176/FR-177 (issue #691): a finished agent's reply stays marked New until its chat is shown
   { name: 'check-001-lights' }, // spec 001 FR-230, FR-231: Open office's screens tinted by status as Real office's, no card glow or waiting halo, every kit, both sizes
@@ -338,9 +338,12 @@ const dprOk = (v) => /^([1-4]|1\.25|1\.5)$/.test(String(v));
  * `process.env` as the base of the child's environment (an allow-list, so no token reaches Electron), `d.timeoutMs` replaces the
  * suite's limit. Every driver (spec 008 FR-199, issue #1417) runs as its own process tree: it ends with the whole tree at the limit and when
  * this process gets SIGINT, SIGTERM or exits (`xvfb-run`'s own cleanup does not run when only its shell is killed). There is no `d.killTree` flag.
- * `launch` is for tests: `[file, args]` replaces the Electron/xvfb-run command.
+ * `launch` is for tests: `[file, args]` replaces the Electron/xvfb-run command. A missing build (FR-211) is returned as a failed run without starting anything.
  */
-function runOne(d, outDir, { launch } = {}) {
+function runOne(d, outDir, { launch, build = buildProblem } = {}) {
+  // FR-211: no build, no Electron (it would open an error box and wait for it until the time limit)
+  const missing = launch ? '' : build();
+  if (missing) return Promise.resolve({ ok: false, code: 1, secs: 0, why: missing, log: missing });
   const electron = require('electron'); // the binary's path
   const user = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-ui-user-'));
   const env = { ...(d.baseEnv || process.env), ...(d.sim === false ? {} : SIM), ...(d.env || {}), DURBAR_USER_DATA: user, DURBAR_DRIVER: path.join(__dirname, d.name + '.js') };
@@ -371,7 +374,7 @@ function runOne(d, outDir, { launch } = {}) {
 }
 
 /** `ensure`, `run` and `argv` are for tests (scripts/test-ui-suite.ts); the defaults install Electron and start the real drivers. */
-async function main({ ensure = ensureElectron, run = runOne, argv, shared = sharedDesktop() } = {}) {
+async function main({ ensure = ensureElectron, run = runOne, argv, shared = sharedDesktop(), build = buildProblem } = {}) {
   const a = args(argv);
   // a bare `--shard` (no value) is refused, never "every driver"; only an empty UI_SUITE_SHARD env value means the whole list (FR-182, review on #1257)
   if (a.shardGiven && !a.shard) throw new Error('ui-suite: --shard wants a value i/n (1 <= i <= n), got none');
@@ -387,6 +390,9 @@ async function main({ ensure = ensureElectron, run = runOne, argv, shared = shar
     for (const b of bad) console.error(`ui-suite: syntax error in ${b.file}\n${b.error.split(/\r?\n/).map((l) => '      | ' + l).join('\n')}`);
     throw new Error(`${bad.length} file(s) do not parse: ${bad.map((b) => b.file).join(', ')}; no driver was started`);
   }
+  // FR-211: a missing build fails in seconds with its path, before Electron is fetched or started
+  const noBuild = build();
+  if (noBuild) throw new Error(`${noBuild}; no driver was started`);
   // FR-114: install Electron once before the drivers start in parallel (two first runs racing on the same binary fail, PR #546)
   if (!ensure()) throw new Error('the Electron binary is not installed and could not be fetched (see above); no driver was started');
   const outDir = process.env.UI_SUITE_OUT ? path.resolve(process.env.UI_SUITE_OUT) : fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-ui-shots-'));
