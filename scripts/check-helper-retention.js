@@ -210,6 +210,29 @@ module.exports = async (ctx) => {
   assert.ok(!(await stats()).ids.includes(men), `menu closed, ${men} is retired by the next done end`);
   await checkKept('after the held ones');
 
+  // the head with the focus (spec 005 FR-242, issue 1483): in the Real office strip a head button holds the focus; it is not retired, let go it is
+  if (WORLD === 'real') {
+    await js(`(()=>{const b=document.getElementById('backBtn');if(b)b.click();return true;})()`); // the office, not the chat, is in view
+    assert.ok(await H.until(`!document.body.classList.contains('panel-open')`, 5000), 'the office is in view');
+    await frames();
+    await js(`(()=>{const m=document.querySelector('#stage .ro-hstrip [data-more]');if(m&&m.getAttribute('aria-expanded')!=='true')m.click();})()`);
+    assert.ok(await H.until(`document.querySelectorAll('#stage .ro-hstrip button[data-id]').length>10`, 5000), 'the strip is open (all heads)');
+    const hd = oldest(await stats());
+    const hq = `#stage .ro-hstrip button[data-id=${JSON.stringify(SID + ':' + hd)}]`; // a CSS string, quoted
+    const h0 = await js(`(()=>{const b=document.querySelector(${jsLiteral(hq)});if(!b)return false;b.focus({preventScroll:true});return document.activeElement===b;})()`);
+    assert.ok(h0, `the head of ${hd} in the strip holds the focus`);
+    await js('window.__chrPump(12)'); await frames();
+    assert.ok((await stats()).ids.includes(hd), `the helper ${hd} whose head holds the focus is not retired`);
+    assert.ok(await js(`document.activeElement===document.querySelector(${jsLiteral(hq)})`), 'and its head keeps the focus');
+    await js(`(()=>{const i=document.getElementById('msgInput');if(i)i.focus();else document.activeElement.blur();})()`);
+    await js('window.__chrPump(2)');
+    assert.ok(!(await stats()).ids.includes(hd), `let go, ${hd} is retired by the next done end`);
+    await checkKept('after the head');
+    await js(`(()=>{const m=document.querySelector('#stage .ro-hstrip [data-more]');if(m&&m.getAttribute('aria-expanded')==='true')m.click();})()`); // fold the strip again (the office checks below read it closed)
+    await js(`window.__durbarSimUi.crew.openPanel(${jsLiteral(SID)})`); // the chat again, for the line below
+    assert.ok(await H.until(`!!document.querySelector('#chat .sub-gone')`, 5000), "sim-1's chat is open again");
+  }
+
   // the line, readable in the open chat
   await js(`new Promise(r=>{const c=document.getElementById('chat');c.scrollTop=0;requestAnimationFrame(()=>r());})`);
   const line = await js(`(()=>{const n=document.querySelector('#chat .sub-gone');if(!n)return null;const cs=getComputedStyle(n),r=n.getBoundingClientRect();return {text:n.textContent,fs:parseFloat(cs.fontSize),w:r.width,h:r.height,shown:cs.display!=='none'&&cs.visibility!=='hidden'};})()`);

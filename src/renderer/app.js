@@ -6420,7 +6420,7 @@ function onTaskTool(a,e){
   subPaint(s);scheduleRender();
 }
 /* spec 005 FR-240: the finished helpers the person holds are never retired: the one whose full activity is open, and the one whose block
-   holds the focus, a text selection or an open message menu (FR-238's rule); the next end retires them once let go */
+   or Real office head (FR-242) holds the focus, a text selection or an open message menu (FR-238's rule); the next end retires them once let go */
 function subHeld(a){
   const held=new Set(),c=$('chat'),ae=document.activeElement,mm=document.getElementById('modeMenu'),anc=mm&&mm._anchor;
   const sel=typeof getSelection==='function'?getSelection():null,rgs=[];
@@ -6428,6 +6428,7 @@ function subHeld(a){
   for(const s of a.subs.values()){
     if(s.status==='running')continue;
     const card=s.card;
+    if(card&&ae&&ae.dataset&&ae.dataset.id===card.id&&ae.closest&&ae.closest('.ro-hstrip')){held.add(s.id);continue;} /* FR-242: the head in the Real office strip holds the focus */
     if(card&&(ui.selected===card.id||(c&&chats[card.id]&&chats[card.id].el&&chats[card.id].el.parentNode===c))){held.add(s.id);continue;}
     const el=s.block&&s.block.el;
     if(!el||!el.isConnected)continue;
