@@ -348,7 +348,7 @@ try {
       const fake = (st: fs.Stats, size: number): fs.Stats => new Proxy(st, { get: (t, k) => (k === 'size' ? size : typeof (t as never)[k] === 'function' ? ((t as never)[k] as () => unknown).bind(t) : (t as never)[k]) });
       fsx.openSync = (p: string, f: number) => { const fd = fs.openSync(p, f); fdPath.set(fd, p); return fd; };
       fsx.lstatSync = (p: string, o?: unknown) => { const st = fs.lstatSync(p, o as never) as fs.Stats; return p === lie ? fake(st, recorded) : st; };
-      fsx.fstatSync = (fd: number) => { const st = fs.fstatSync(fd); return lie && fdPath.get(fd) === lie ? fake(st, recorded) : st; };
+      fsx.fstatSync = (fd: number, o?: unknown) => { const st = fs.fstatSync(fd, o as never) as fs.Stats; return lie && fdPath.get(fd) === lie ? fake(st, recorded) : st; };
       fsx.readSync = (fd: number, buf: Buffer, off: number, len: number, pos: number) => { if (lie && fdPath.get(fd) === lie) reads.push(len); return fs.readSync(fd, buf, off, len, pos); };
       let recorded = 0;
       const st2 = new WorldStore(root2, fsx as unknown as FsLike);
@@ -813,7 +813,7 @@ try {
     };
     // the lstat check alone: fstat says one link
     const a = base();
-    a.fstatSync = (fd: number) => fake(fs.fstatSync(fd), { nlink: 1 });
+    a.fstatSync = (fd: number, o?: unknown) => fake(fs.fstatSync(fd, o as never) as fs.Stats, { nlink: 1 });
     const ha = hardLinked(a);
     if (ha.key) assert.deepStrictEqual(ha.st.part(ha.key, 'floor.webp'), { ok: false, reason: 'damaged' }, 'the lstat link count refuses a hard link on its own');
     // the fstat check alone: lstat says one link
@@ -830,9 +830,58 @@ try {
       fs.copyFileSync(part, path.join(e.outside, 'wall-copy.webp'));
       fs.rmSync(part);
       if (linkOk(path.join(e.outside, 'wall-copy.webp'), part)) {
-        c.lstatSync = (p: string, o?: unknown) => (p === part ? fs.statSync(p) : fs.lstatSync(p, o as never));
+        c.lstatSync = (p: string, o?: unknown) => (p === part ? fs.statSync(p, o as never) : fs.lstatSync(p, o as never));
         assert.deepStrictEqual(e.store.part(key, 'wall.webp'), { ok: false, reason: 'damaged' }, 'O_NOFOLLOW refuses a link even when the stat was swapped for the target\'s');
       }
+    }
+  }
+
+  // ---- 6b2. issue #1491: inode and device numbers above 2^53 that differ only in bit 0 are two files ----
+  // The stub answers like node: the given id as a bigint only for { bigint: true }, else as the rounded number, so a read that drops
+  // the option (or a comparison of plain numbers) sees one file and fails these cases.
+  {
+    const A = 12947848929002476n;
+    const B = A + 1n;
+    assert.strictEqual(Number(A), Number(B), 'precondition: as plain numbers the two ids are equal');
+    const as = (v: bigint, o?: unknown): bigint | number => ((o as { bigint?: boolean } | undefined)?.bigint ? v : Number(v));
+    const withId = (st: object, o: unknown, id: { ino?: bigint; dev?: bigint }): fs.Stats => new Proxy(st, { get: (t, k) => (k === 'ino' && id.ino !== undefined ? as(id.ino, o) : k === 'dev' && id.dev !== undefined ? as(id.dev, o) : typeof (t as never)[k] === 'function' ? ((t as never)[k] as () => unknown).bind(t) : (t as never)[k]) }) as fs.Stats;
+    /** A real fs whose `lstat` of a path and `fstat` of a descriptor opened from it report the ids `ids` gives. */
+    const ided = (ids: (p: string, how: 'lstat' | 'fstat') => { ino?: bigint; dev?: bigint } | undefined): Record<string, unknown> => {
+      const fsx = { ...(fs as unknown as Record<string, unknown>), constants: fs.constants } as Record<string, unknown>;
+      const fdPath = new Map<number, string>();
+      fsx.openSync = (p: string, f: number) => { const fd = fs.openSync(p, f); fdPath.set(fd, p); return fd; };
+      fsx.closeSync = (fd: number) => { fdPath.delete(fd); fs.closeSync(fd); };
+      fsx.lstatSync = (p: string, o?: unknown) => { const st = fs.lstatSync(p, o as never) as fs.Stats; const id = ids(p, 'lstat'); return id ? withId(st, o, id) : st; };
+      fsx.fstatSync = (fd: number, o?: unknown) => { const st = fs.fstatSync(fd, o as never) as fs.Stats; const p = fdPath.get(fd); const id = p === undefined ? undefined : ids(p, 'fstat'); return id ? withId(st, o, id) : st; };
+      return fsx;
+    };
+    // a part: the lstat before the open and the fstat after it
+    {
+      const e = env();
+      const key = saved(e.store.save(goodInput()));
+      const part = path.join(e.root, key, 'wall.webp');
+      const same = new WorldStore(e.root, ided((p) => (p === part ? { ino: A } : undefined)) as unknown as FsLike);
+      assert.ok(same.part(key, 'wall.webp').ok, 'issue 1491: a part whose large inode stays the same is served');
+      const swapped = new WorldStore(e.root, ided((p, how) => (p === part ? { ino: how === 'lstat' ? A : B } : undefined)) as unknown as FsLike);
+      assert.deepStrictEqual(swapped.part(key, 'wall.webp'), { ok: false, reason: 'damaged' }, 'issue 1491 world part ino: a descriptor whose inode differs only in bit 0 above 2^53 is refused');
+    }
+    // removal: the folder re-checked after its own listing (sameDir), by inode and by device
+    for (const field of ['ino', 'dev'] as const) {
+      const e = env();
+      const k = saved(e.store.save(goodInput()));
+      const dir = path.join(e.root, k);
+      let lists = 0;
+      const fsx = ided((p) => (p === dir ? { [field]: lists >= 3 ? B : A } : undefined));
+      fsx.readdirSync = (p: string, o?: unknown) => { const r = fs.readdirSync(p, o as never); if (p === dir) lists++; return r; };
+      const r = new WorldStore(e.root, fsx as unknown as FsLike).remove(k);
+      assert.strictEqual(lists, 3, `issue 1491 world folder ${field}: the third listing was reached`);
+      assert.ok(!r.ok, `issue 1491 world folder ${field}: a folder whose ${field} differs only in bit 0 above 2^53 stops the removal`);
+      assert.deepStrictEqual(fs.readdirSync(dir).sort(), [...Object.keys(GOOD), INSTALLED_NAME].sort(), `issue 1491 world folder ${field}: nothing in it was deleted`);
+      // control: the same large id all along is removed
+      const c = env();
+      const ck = saved(c.store.save(goodInput()));
+      const cdir = path.join(c.root, ck);
+      assert.ok(new WorldStore(c.root, ided((p) => (p === cdir ? { [field]: A } : undefined)) as unknown as FsLike).remove(ck).ok, `issue 1491 world folder ${field}: the same large id all along is removed`);
     }
   }
 
