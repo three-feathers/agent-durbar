@@ -13,7 +13,7 @@ Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `tes
 - **The Write tool turns a ` ` escape into the raw character**, so `tsc` fails; write them with a Python edit, check with `perl -ne 'print if /[^\x00-\x7f]/'` (2026-10-25, `real:`).
 - **A lock "check, then act" needs a short `wx` guard and an owner token**: re-check under the guard; write or unlink only while the token is yours; move a stale guard aside and check identity (never `lstat` then `unlink`). Test with an injected fs swapping the lock between calls; it narrows the race, not closes it (spec 083 FR-008, `test-notesstore.ts`).
 - **Capture `child_process` functions at call time, not at load**: a function grabbed at module load bypasses the simulator's seal and test spies; pass a wrapper that reads `child_process.execFile` when called (spec 081, `test:simguard`).
-- **Sealing a Node built-in works only on the real module object**: patch `require('child_process')` (`import x = require(...)`, not `import * as`: its `__importStar` copy has getters only; patch `require('fs')` to fake an fs call, PR #489); TS's CommonJS output reads `child_process_1.execFile` at call time, so the seal reaches `src/` (spec 010 FR-030, `test-simguard` §5).
+- **Sealing a Node built-in works only on the real module object**: patch `require('child_process')` (`import x = require(...)`, not `import * as`: its `__importStar` copy has getters only; patch `require('fs')` to fake an fs call, PR #489); TS's CommonJS output reads `child_process_1.execFile` at call time, so the seal reaches `src/` (spec 010 FR-030, `test-simguard` §5). `test:ipcchannels` bans `ipcMain` and `.ipc` outside `ipcguard.ts`.
 - **git rerere can replay a stale resolution and silently drop a rule** (no markers; it twice dropped `.mode-menu` from `styles.css`). After "Resolved ... using previous resolution", rebuild each file with `git merge-file -p ours base theirs` and diff it, or `git rerere forget <file>` during the conflict (PRs #488, #511, `real:`).
 - **Your branch against another open PR**: `diff <(git merge-tree --write-tree --name-only origin/main B | grep ^CONFLICT | sort) <(git merge-tree --write-tree --name-only HEAD B | grep ^CONFLICT | sort)`; empty means you add no conflict for them (spec 074, `real:`).
 - **`node_modules/` in `.gitignore` misses a symlink** (2026-11-05: a worktree's link got committed): use `node_modules`; stage by name.
@@ -42,7 +42,7 @@ Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `tes
 - **A lookup table keyed by event or adapter text needs `hasOwnProperty`** (`'__proto__'`, `toString`), and number helpers need `Number.isFinite` (`Infinity` printed `InfinityM`) (spec 015, #601; spec 007 T038).
 - **A test server that never reads a socket never sees it close**: call `s.resume()` on each accepted socket before awaiting `close`; list processes before blaming the product (PR #847, macOS).
 - **Install Electron once before parallel Electrons** (`ensureElectron()` from `scripts/ensure-electron.js`), or first runs race on `node_modules/electron/dist` (`ETXTBSY`, "Could not find sentinel") (spec 008 FR-114, `sim:`).
-- **Electron checks are heavy**: at most two drivers at once under `nice -n 10`; keep the limits in `run-tests.js` and `check-parallel.js`.
+- **Electron checks are heavy**: at most two drivers at once, `nice -n 10` (limits: `run-tests.js`, `check-parallel.js`).
 
 ## CI, review and merge
 
@@ -139,7 +139,7 @@ Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `tes
 - **A destroyed `WebContentsView` has no `webContents`**: keep the `webContents` before `close()` to check `isDestroyed()` and the OS process (`process.kill(pid, 0)` gives `ESRCH`). `Page.getNavigationHistory` gives each entry a `transitionType` (`form_submit` for a form), so main knows a form page without reading it; `sendInputEvent` (`char`) fires a view's `input-event`. `sim:` spec 080 T013/T018.
 - **The simulator's End session never reaches main**: a driver that checks a browser teardown uses the driver-context hooks `ctx.browserGone` / `ctx.browserStates` (`main.ts`), not the renderer.
 - **No referrer from a custom scheme** (2026-10-31): a `durbar-sim:` `_blank` has `referrer.url === ''`; test referrer rules over loopback http (`check-browser-tabs.js`).
-- **A child's `TMPDIR` needs room for Unix sockets** (macOS `sun_path`: 104 bytes): use `makeSocketSafePrivateDir` (spec 087 FR-024).
+- **A child's `TMPDIR` needs room for Unix sockets** (macOS: 104 bytes): use `makeSocketSafePrivateDir` (spec 087 FR-024).
 - **CSS anchor positioning** (2026-11-05, #1155, Chromium 125+): `anchor-name`s are document-global, so unique, and precede what they anchor; guard: `check-097-plate-pencil`.
 
 ## Team chat
