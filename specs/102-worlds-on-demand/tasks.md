@@ -304,3 +304,7 @@ Starts after the next built-in world's stack lands (FR-296, decided Q4). All beh
 - [ ] T280 FR-310: `check-097-motion retro` and `shots-097-screens retro` in `ui-suite` (no workflow change). Test: both pass at the head; each mutant above fails its driver.
 - [ ] T281 Pictures of every arcade scene (3, 12 and 15 agents, rooms, a solo room, helpers present, big screens) at 1440x900 and 1280x800, looked at, on the pull request.
 - [x] T282 `shots-102-arcade` waits for its pictures before it reads them, counts a picture as failed only when complete with no size, re-reads the painted-pixel check while a picture is in flight, and names a page script's own error (spec Changes 2026-11-10; `main`'s Linux UI shard 3/4 red since 2026-11-10 00:25 UTC). Test: repeated Linux runs pass; a mutant that throws in the pixel check prints the error's name.
+
+## 2026-11-11: the Auto-follow desk mark in the arcade (issue #1399)
+
+- [x] T284 The Auto-follow desk mark (`.ro-plate.is-followed`) checked in the arcade at both sizes: `check-auto-follow` with `AF_WORLD=retro`, one `ui-suite` entry. Test: passes at both sizes; mutants (no `is-followed`, the Photo office drawn) each fail their own labelled assert. `[KNOWN GAP]`: see the 2026-11-11 delta.
