@@ -52,6 +52,7 @@ const DRIVERS = [
   { name: 'check-unread' }, // spec 001 FR-170..FR-177, spec 005 FR-176/FR-177 (issue #691): a finished agent's reply stays marked New until its chat is shown
   { name: 'check-001-lights' }, // spec 001 FR-230, FR-231: Open office's screens tinted by status as Real office's, no card glow or waiting halo, every kit, both sizes
   { name: 'check-auto-follow' }, // spec 052 FR-182..FR-190 (issue #686): opt-in Auto-follow and the attention queue: off by default, send, arrivals, guards, Previous/Next, pause, empty queue, fit
+  { name: 'check-auto-follow', label: 'check-auto-follow retro', env: { AF_WORLD: 'retro' } }, // spec 102 T284 (issue #1399): the followed plate's mark in the Retro arcade, both sizes (only that step; the rest is the Flat desks')
   { name: 'check-052-follow-notice' }, // spec 052 FR-238..FR-241 (owner, 2026-11-09): the Auto-follow notice: both notices, countdown, Stay and Escape, background pause, announcement priority, reduced motion, four looks at two sizes
   { name: 'check-helper-bar' }, // spec 015 FR-020 (issue #1142): the Sub-agent activity / Back to parent chat bar stays at the top of a helper's chat while it scrolls, opaque, both sizes
   { name: 'check-helper-more' }, // spec 005 FR-234 (issue #1145): a helper's chat has no empty More menu (the button is hidden), a main agent's chat keeps it, both sizes
