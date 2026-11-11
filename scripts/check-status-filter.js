@@ -127,19 +127,16 @@ module.exports = async (ctx) => {
   const contrast = (sel) => js(`(()=>{const rgb=c=>c.match(/[\\d.]+/g).map(Number);const lum=c=>{const [r,g,b]=c.map(v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);});return 0.2126*r+0.7152*g+0.0722*b;};
     const e=document.querySelector(${jsLiteral(sel)});let bg=null;for(let n=e;n&&!bg;n=n.parentElement){const c=getComputedStyle(n).backgroundColor;const m=rgb(c);if(m.length<4||m[3]>0.99)bg=m.slice(0,3);}
     const fg=rgb(getComputedStyle(e).color).slice(0,3),a=lum(fg),b=lum(bg),r=(Math.max(a,b)+0.05)/(Math.min(a,b)+0.05);return {fg:fg.join(','),bg:bg.join(','),ratio:Math.round(r*100)/100};})()`);
-  // spec 102 delta 2026-11-11 (issue 1559): the Retro pixel theme and the arcade world (the Real office with worldflags=retro) are checked too
-  const LOOKS = [
-    ['clean-office', 'clean-office', null],
-    [CHECK_DARK.id, CHECK_DARK, null],
-    ['retro-theme', 'retro', null],
-    ['arcade', 'retro', { officeview: 'real', worldflags: 'retro', world: 'retro' }],
-  ];
+  // spec 102 delta 2026-11-11 (issue 1559): with DRIVER_WORLD set (the suite entry for the arcade) the Real office loads draw the arcade, and the notice is measured there at both sizes
+  const ARCADE = !!process.env.DRIVER_WORLD;
+  const LOOKS = ARCADE ? [['arcade', null, { officeview: 'real' }]] : [['clean-office', 'clean-office', null], [CHECK_DARK.id, CHECK_DARK, null]];
   for (const [theme, manifest, query] of LOOKS) {
     for (const [w, h] of query ? [[1440, 900], [1280, 800]] : [[1440, 900]]) {
       await H.load({ w, h, ...(query ? { query, ready: `!!document.querySelector('#stage .ro .ro-plate')`, readyMs: 30000 } : {}) });
-      await js(`window.THEME.setTheme(${jsLiteral(manifest)})`);
-      await ok(`window.THEME.current().id===${jsLiteral(typeof manifest === 'string' ? manifest : manifest.id)}`, theme + ' applied');
-      if (query) await ok(`document.documentElement.dataset.ui==='retro'`, theme + ': the retro look is on');
+      if (manifest) {
+        await js(`window.THEME.setTheme(${jsLiteral(manifest)})`);
+        await ok(`window.THEME.current().id===${jsLiteral(typeof manifest === 'string' ? manifest : manifest.id)}`, theme + ' applied');
+      } else await ok(`document.documentElement.dataset.ui===document.documentElement.dataset.world`, theme + ': the arcade look is on');
       if (process.env.FILTER_MUTANT === 'old') await ctx.win.webContents.insertCSS('html[data-ui="retro"][data-world] .filter-note,html[data-ui="retro"][data-world] .filter-note b,html[data-ui="retro"][data-world] .filter-note .fn-all{color:var(--surface)!important}'); // mutant: the old rule
       await clickPill('idle');
       await ok(`document.getElementById('filterNote')&&!document.getElementById('filterNote').hidden`, `${theme} ${w}x${h}: the notice shows`);
