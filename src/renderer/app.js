@@ -2105,7 +2105,7 @@ function renderAll(){
   if(ui.view==='office')renderOffice(); else{renderFilterNote();renderList();}
   syncWalkers();
   /* spec 052 FR-173: look in the view the focus was in. The office desks stay in the page (hidden) while the list shows, with the same data-id, so a document-wide lookup found the hidden desk and the focus fell to the page. */
-  if(id&&!inPanel){const n=document.querySelector(`${scope}[${key}="${CSS.escape(id)}"]`); if(n&&ae!==n)n.focus({preventScroll:true});}
+  if(id&&!inPanel){const n=document.querySelector(`${scope}[${key}="${CSS.escape(id)}"]`); if(n&&document.activeElement!==n)n.focus({preventScroll:true});} /* not `ae!==n`: the morph can move the very same element, which drops its focus (issue 1483) */
   if(ui.selected){updatePanelHeader();renderStrip();}
   afTick(); /* spec 052 FR-182..FR-190: markers, arrivals and the strip */
   rememberUi();
@@ -6431,7 +6431,7 @@ function onTaskTool(a,e){
   subPaint(s);scheduleRender();
 }
 /* spec 005 FR-240: the finished helpers the person holds are never retired: the one whose full activity is open, and the one whose block
-   holds the focus, a text selection or an open message menu (FR-238's rule); the next end retires them once let go */
+   or its own button (Real office head, Open office tile, list row: FR-242) holds the focus, a text selection or an open message menu (FR-238's rule); the next end retires them once let go */
 function subHeld(a){
   const held=new Set(),c=$('chat'),ae=document.activeElement,mm=document.getElementById('modeMenu'),anc=mm&&mm._anchor;
   const sel=typeof getSelection==='function'?getSelection():null,rgs=[];
@@ -6439,6 +6439,7 @@ function subHeld(a){
   for(const s of a.subs.values()){
     if(s.status==='running')continue;
     const card=s.card;
+    if(card&&ae&&ae.dataset&&ae.dataset.id===card.id&&ae.matches&&ae.matches('.ro-hstrip button, #stage .helper, #list .lrow')){held.add(s.id);continue;} /* FR-242: its own button holds the focus: Real office head, Open office tile or list row */
     if(card&&(ui.selected===card.id||(c&&chats[card.id]&&chats[card.id].el&&chats[card.id].el.parentNode===c))){held.add(s.id);continue;}
     const el=s.block&&s.block.el;
     if(!el||!el.isConnected)continue;
