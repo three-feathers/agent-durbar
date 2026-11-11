@@ -312,3 +312,7 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 ## 2026-11-09: the rename pencil on an arcade cabinet's plate (FR-357, bug #1427)
 
 - [x] T298 [US5] FR-357: the pencil anchored to the plate when the plate does not draw the name (arcade cabinets), the field over the marquee. Test: `sim:` `check-097-plate-pencil` in the Photo office, cave, arcade and one-room arcade, both sizes; mutant `PENCIL_MUTANT=plate` fails the geometry assert
+
+## 2026-11-11: `check-office-ops-real` parks the pointer before every measured update (bug #1448)
+
+- [x] T300 [US2] Bug #1448 (spec delta 2026-11-11): `check-office-ops-real` parks the pointer and waits for no hover card, open or armed, before every measured update, and fails (labelled) when one is open or armed at an update's end; mutant `OPS_MUTANT=unparked` fails on the label, `OPS_MUTANT=late` (CI's late pointer) passes. Test: `sim:` `check-office-ops-real`, plain and both mutants
