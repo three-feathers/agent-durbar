@@ -22,7 +22,7 @@
  *
  * In the Photo office and the arcade (the cave too when asked), at 1440x900 and 1280x800, every pencil shown (body.ren-show, as hover:none shows them),
  * the first mover's pencil focused, it fails (exit 1) when:
- *   - fewer than MIN_CAUGHT frames in the first 200 ms show a plate on its way (measured on the Mac: 10 to 12; a runner whose captures are too slow
+ *   - fewer than MIN_CAUGHT frames in the first 200 ms show a plate on its way (measured on the Mac: 9 to 13; a runner whose captures are too slow
  *     fails here, labelled, never passes with nothing tested);
  *   - not every marked plate's pencil and name (or status) is found in the end frame (a colour that does not come through would drop it silently);
  *   - in any frame a pencil's painted icon overlaps its own plate's painted name, role or status line (the focused one excepted: FR-365's known gap);
@@ -44,7 +44,7 @@ const SIZES = [[1440, 900], [1280, 800]];
 const ALL = { photo: {}, cave: { worldflags: 'cave', world: 'cave' }, arcade: { worldflags: 'retro', world: 'retro' } };
 const WORLDS = (process.env.PENCIL_EASE_WORLDS || 'photo,arcade').split(',').filter((w) => ALL[w]);
 const SPAN = 320; /* ms of frames after the move starts: the ease is 280..520 ms, the displacement was seen in its first ~200..300 ms */
-const MIN_CAUGHT = 3; /* frames in the first 200 ms that must show a plate on its way (Mac: 10..12 of them, one every ~17 ms) */
+const MIN_CAUGHT = 3; /* frames in the first 200 ms that must show a plate on its way (Mac: 9..13 of them, one every ~17 ms) */
 
 /** The painted box of each part of each marked plate in a capture (CSS px), from its exact colour (±2 per channel: a scaled layer's inside stays exact).
  *  Plate i (1..) has v = 8 + 8 i: pencil (255,0,v), name (0,255,v), status (v,0,255), role (0,v,255). A box spans only rows and columns with 2 or more of
