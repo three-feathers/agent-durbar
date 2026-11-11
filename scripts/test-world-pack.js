@@ -16,11 +16,25 @@ const { packWorld, readTicks, availabilityGate, REQUIRED_TICKS } = require(MODUL
 const gen = require(path.join(ROOT, 'dist-scripts', 'scripts', 'fixtures', 'worlds', 'gen.js'));
 const theme = require(path.join(ROOT, 'src', 'renderer', 'theme.js'));
 const sha = (b) => crypto.createHash('sha256').update(b).digest('hex');
+/** Source text with \r\n as \n, so text matched in it is found on a CRLF checkout (Windows CI) too. */
+const lf = (s) => s.replace(/\r\n/g, '\n');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'world-pack-'));
 const failed = [];
 function it(name, fn) { try { fn(); } catch (e) { failed.push(name); console.error(`FAIL ${name}: ${String(e.message).split('\n')[0]}`); } }
 const write = (dir, files) => { fs.mkdirSync(dir, { recursive: true }); for (const [n, d] of Object.entries(files)) fs.writeFileSync(path.join(dir, n), d); };
+/* Can this machine make symlinks? Windows without the right cannot: the link cases are then skipped, said out loud, never a silent pass. */
+const canLink = (() => {
+  try { fs.writeFileSync(path.join(tmp, 'link-target'), 'x'); fs.symlinkSync(path.join(tmp, 'link-target'), path.join(tmp, 'link-probe')); return true; } catch { return false; }
+})();
+if (!canLink) console.log('symlink test skipped: no symlinks here');
+/* Runs fn while fs.readdirSync lists `extra` names as well (names this OS cannot hold, such as con.txt on Windows or A.md beside a.md on a
+   case-folding disk); the name check runs before any file is opened, so the names need not exist. */
+function listing(extra, fn) {
+  const real = fs.readdirSync;
+  fs.readdirSync = (...a) => [...new Set([...real(...a), ...extra])];
+  try { return fn(); } finally { fs.readdirSync = real; }
+}
 
 /* A complete, valid world folder (the synthetic pack of scripts/fixtures/worlds/gen.ts, no art) with ASSETS.md and card.json. */
 let n = 0;
@@ -92,13 +106,85 @@ it('pack: a changed byte changes the hash; pictures are not normalised', () => {
   const d = fs.readFileSync(pic); d[d.length - 1] ^= 1; fs.writeFileSync(pic, d);
   assert.notStrictEqual(packWorld(w.dir).zipSha256, before);
 });
+it('pack: names sort by code unit, not by locale', () => {
+  const dir = path.join(tmp, 'order');
+  write(dir, { 'ab.md': 'x\n', 'a.md': 'x\n', '_x.json': '{}\n', 'B.md': 'x\n', 'a-b.md': 'x\n' });
+  const names = packWorld(dir).manifest.files.map((f) => f.name);
+  assert.deepStrictEqual(names, ['B.md', '_x.json', 'a-b.md', 'a.md', 'ab.md']);
+  assert.notDeepStrictEqual([...names].sort((a, b) => a.localeCompare(b)), names, 'the fixture really tells the two orders apart');
+});
+it('pack: a lone CR in a text file stays; only a CR before an LF goes', () => {
+  const dir = path.join(tmp, 'lonecr');
+  write(dir, { 'note.md': 'a\rb\r\nc\r' });
+  const f = packWorld(dir).files[0];
+  assert.strictEqual(f.data.toString('latin1'), 'a\rb\nc\r');
+});
+/* The cross-OS guarantee (FR-085): this hand-written folder (CRLF, a lone CR, names whose locale and code-unit orders differ, a picture with
+   CRLF bytes that must stay) packs to exactly these bytes. Produced on macOS and pinned; the Windows and Linux CI jobs check the same pins. */
+const GOLDEN_FILES = {
+  'B.md': '# B\r\nline two\r\n',
+  '_x.json': '{\r\n  "x": 1\r\n}\r\n',
+  'a-b.md': 'lone\rcr\n',
+  'a.md': 'a\n',
+  'ab.md': 'ab\r\n',
+  'p.webp': Buffer.from([0x52, 0x49, 0x46, 0x46, 0x0d, 0x0a, 0x00, 0xff]),
+};
+const GOLDEN_ZIP_SHA256 = 'd2f23c054907de49d678988f046041bd3ca12e206d33ea67987874910b606fbe';
+const GOLDEN_MANIFEST_SHA256 = 'dc8c33dc21e44a09ce72264a5eeb6b9e366bb6e466f9d0e1ebde5d7fb4856239';
+it('pack: a pinned folder packs to the pinned bytes (golden zip and manifest)', () => {
+  const dir = path.join(tmp, 'golden');
+  write(dir, GOLDEN_FILES);
+  const p = packWorld(dir);
+  if (process.env.WORLD_PACK_PRINT_GOLDEN) console.log(`golden zip ${p.zipSha256} manifest ${sha(JSON.stringify(p.manifest))}`);
+  assert.strictEqual(p.zipSha256, GOLDEN_ZIP_SHA256, 'zip bytes');
+  assert.strictEqual(sha(JSON.stringify(p.manifest)), GOLDEN_MANIFEST_SHA256, 'manifest');
+});
 it('pack: a folder or a link inside is refused, not followed', () => {
   const w = makeWorld();
   fs.mkdirSync(path.join(w.dir, 'sub'));
-  assert.throws(() => packWorld(w.dir), /not a plain file/);
+  assert.throws(() => packWorld(w.dir), /"sub" is not a plain file/);
   fs.rmdirSync(path.join(w.dir, 'sub'));
-  try { fs.symlinkSync(path.join(w.dir, 'ASSETS.md'), path.join(w.dir, 'link.md')); } catch { return; } // no symlinks here (Windows without rights)
-  assert.throws(() => packWorld(w.dir), /not a plain file/);
+  if (!canLink) return; // said once at the top: symlink test skipped
+  fs.symlinkSync(path.join(w.dir, 'ASSETS.md'), path.join(w.dir, 'link.md'));
+  assert.throws(() => packWorld(w.dir), /"link\.md" is a link/);
+});
+it('pack: a link to a file outside the folder is refused, not followed', () => {
+  if (!canLink) return;
+  const w = makeWorld();
+  const outside = path.join(tmp, 'outside.md');
+  fs.writeFileSync(outside, 'not part of the world\n');
+  fs.symlinkSync(outside, path.join(w.dir, 'out.md'));
+  assert.throws(() => packWorld(w.dir), /"out\.md" is a link/);
+});
+it('pack: a file swapped for a link between lstat and the read is refused', () => {
+  if (!canLink) return;
+  const w = makeWorld();
+  const outside = path.join(tmp, 'outside-race.md');
+  fs.writeFileSync(outside, 'swapped in\n');
+  const real = fs.openSync;
+  fs.openSync = (p, ...a) => {
+    if (path.basename(String(p)) === 'ASSETS.md') { fs.unlinkSync(p); fs.symlinkSync(outside, p); }
+    return real(p, ...a);
+  };
+  try { assert.throws(() => packWorld(w.dir), /"ASSETS\.md" changed while it was read/); } finally { fs.openSync = real; }
+});
+it('pack: a file over the entry limit is refused by name before it is opened', () => {
+  const w = makeWorld();
+  const max = require(path.join(ROOT, 'dist-scripts', 'src', 'shared', 'worldzip.js')).MAX_ENTRY_BYTES;
+  fs.writeFileSync(path.join(w.dir, 'big.webp'), ''); fs.truncateSync(path.join(w.dir, 'big.webp'), max + 1);
+  const real = fs.openSync, opened = [];
+  fs.openSync = (p, ...a) => { opened.push(path.basename(String(p))); return real(p, ...a); };
+  try { assert.throws(() => packWorld(w.dir), /"big\.webp" is too big/); } finally { fs.openSync = real; }
+  assert.ok(!opened.includes('big.webp'), 'the big file was opened');
+});
+it('pack: a Windows device name, a name that differs only by case and a non-ASCII name are refused, by name', () => {
+  const w = makeWorld();
+  assert.throws(() => listing(['con.txt'], () => packWorld(w.dir)), (e) => /"con\.txt": .*reserved Windows device name/.test(e.message));
+  write(w.dir, { 'A.md': 'x\n' });
+  assert.throws(() => listing(['a.md'], () => packWorld(w.dir)), (e) => /"A\.md" and "a\.md" differ only by case|"a\.md" and "A\.md" differ only by case/.test(e.message));
+  fs.unlinkSync(path.join(w.dir, 'A.md'));
+  write(w.dir, { 'caf\u00e9.md': 'x\n' });
+  assert.throws(() => packWorld(w.dir), (e) => /"caf.+\.md": .*not allowed/.test(e.message) && !e.message.includes(os.homedir()) && !e.message.includes(tmp));
 });
 
 /* ---- the tick reader ---- */
@@ -191,6 +277,15 @@ it('gate hash: a wrong or absent catalogue hash refuses available', () => {
   assert.deepStrictEqual(gates(availabilityGate(asked(w, { sha256: '0'.repeat(64) }), ctxOf())), ['hash']);
   assert.deepStrictEqual(gates(availabilityGate(asked(w, { sha256: undefined }), ctxOf())), ['hash']);
 });
+it('gate ctx: no context, or not an object, refuses available and names the problem', () => {
+  const w = makeWorld();
+  for (const bad of [undefined, null, 'ctx']) {
+    const r = availabilityGate(asked(w), bad);
+    assert.strictEqual(r.ok, false);
+    assert.deepStrictEqual(gates(r), ['ctx']);
+    assert.ok(/without its context/.test(r.problems[0].message), r.problems[0].message);
+  }
+});
 it('gate: every failing gate is listed, not only the first', () => {
   const w = makeWorld();
   fs.unlinkSync(path.join(w.dir, 'card.json'));
@@ -200,7 +295,7 @@ it('gate: every failing gate is listed, not only the first', () => {
 
 /* ---- mutants: break each gate, and its own fixture must fail ---- */
 if (!process.env.WORLD_PACK_MODULE) {
-  const src = fs.readFileSync(path.join(__dirname, 'world-pack.js'), 'utf8').replace(/__dirname/g, JSON.stringify(__dirname));
+  const src = lf(fs.readFileSync(path.join(__dirname, 'world-pack.js'), 'utf8')).replace(/__dirname/g, JSON.stringify(__dirname));
   const mutants = [
     ['ticks gate removed', "if (missing.length) fail('ticks'", "if (false) fail('ticks'", ['gate ticks: a missing tick refuses available']],
     ['tick reader counts an unticked box', "const ticked = m[1] !== ' ';", 'const ticked = true;', ['ticks: a missing task, an unticked task and a missing file are not met', 'gate ticks: an unticked task refuses available']],
@@ -218,13 +313,24 @@ if (!process.env.WORLD_PACK_MODULE) {
     ['packer: CRLF not normalised', "TEXT_EXT.has(path.extname(name).toLowerCase()) ? normaliseText(raw) : raw", 'raw', ['pack: a CRLF checkout of the same text files gives the same pack']],
     ['packer: CRLF rule turned into a no-op', "replace(/\\r\\n/g, '\\n')", "replace(/\\r\\n/g, '\\r\\n')", ['pack: a CRLF checkout of the same text files gives the same pack']],
     ['packer: card.json packed', "const NOT_IN_PACK = new Set(['card.json'])", 'const NOT_IN_PACK = new Set()', ['pack: entries are sorted, stamps are fixed, no card.json, no OS leftovers']],
-    ['packer: OS junk packed', 'if (OS_JUNK.test(name) || NOT_IN_PACK.has(name)) continue;', 'if (NOT_IN_PACK.has(name)) continue;', ['pack: entries are sorted, stamps are fixed, no card.json, no OS leftovers']],
+    ['packer: OS junk packed', '.filter((name) => !OS_JUNK.test(name) && !NOT_IN_PACK.has(name))', '.filter((name) => !NOT_IN_PACK.has(name))', ['pack: entries are sorted, stamps are fixed, no card.json, no OS leftovers']],
     ['packer: folders followed', "if (!st.isFile()) throw", 'if (false) throw', ['pack: a folder or a link inside is refused, not followed']],
+    ['packer: every CR stripped', "replace(/\\r\\n/g, '\\n')", "replace(/\\r/g, '')", ['pack: a lone CR in a text file stays; only a CR before an LF goes', 'pack: a pinned folder packs to the pinned bytes (golden zip and manifest)']],
+    ['packer: sorted by localeCompare', 'const byName = (a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);', 'const byName = (a, b) => a.name.localeCompare(b.name);', ['pack: names sort by code unit, not by locale', 'pack: a pinned folder packs to the pinned bytes (golden zip and manifest)']],
+    ['packer: lstat turned into stat', 'const st = fs.lstatSync(full);', 'const st = fs.statSync(full);', ['pack: a folder or a link inside is refused, not followed', 'pack: a link to a file outside the folder is refused, not followed'], 'links'],
+    ['packer: a link swapped in before the read is followed', [['(fs.constants.O_NOFOLLOW || 0)', '0'], ['now.ino !== st.ino || now.dev !== st.dev', 'false']], null, ['pack: a file swapped for a link between lstat and the read is refused'], 'links'],
+    ['packer: size checked only after the read', 'if (st.size > max) throw', 'if (false) throw', ['pack: a file over the entry limit is refused by name before it is opened']],
+    ['packer: names not checked first', 'const why = segmentProblem(name);', "const why = '';", ['pack: a Windows device name, a name that differs only by case and a non-ASCII name are refused, by name']],
+    ['packer: case clash not checked', 'if (seen.has(key)) throw', 'if (false) throw', ['pack: a Windows device name, a name that differs only by case and a non-ASCII name are refused, by name']],
+    ['gate: ctx not checked', "if (!ctx || typeof ctx !== 'object') {", 'if (false) {', ['gate ctx: no context, or not an object, refuses available and names the problem']],
   ];
-  for (const [name, from, to, expect] of mutants) {
-    if (!src.includes(from)) { failed.push(`mutant "${name}": text to break not found`); console.error(`FAIL mutant "${name}": text to break not found`); continue; }
+  for (const [name, from, to, expect, needs] of mutants) {
+    if (needs === 'links' && !canLink) { console.log(`mutant "${name}" skipped: no symlinks here`); continue; }
+    const pairs = Array.isArray(from) ? from : [[from, to]];
+    const missing = pairs.find(([f]) => !src.includes(f));
+    if (missing) { failed.push(`mutant "${name}": text to break not found`); console.error(`FAIL mutant "${name}": text to break not found`); continue; }
     const file = path.join(tmp, `mutant-${++n}.js`);
-    fs.writeFileSync(file, src.replace(from, to));
+    fs.writeFileSync(file, pairs.reduce((t, [f, r]) => t.replace(f, r), src));
     const r = spawnSync(process.execPath, [__filename], { env: { ...process.env, WORLD_PACK_MODULE: file }, encoding: 'utf8' });
     const out = r.stderr + r.stdout;
     for (const f of expect) if (!out.includes(`FAIL ${f}`)) { failed.push(`mutant "${name}" survived: "${f}" did not fail`); console.error(`FAIL mutant "${name}" survived: "${f}" did not fail`); }
