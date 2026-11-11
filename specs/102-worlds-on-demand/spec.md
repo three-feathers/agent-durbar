@@ -773,6 +773,10 @@ Agent decisions stand until the owner changes them.
 
 ## Changes
 
+### 2026-11-11: the store's inode and device checks compare bigints (issue #1491; FR-060..FR-062)
+
+`readFile`'s `lstat`/`fstat` inode check and `sameDir`'s device-and-inode re-check before each delete read `{ bigint: true }` (`lstatBig` in `src/main/worlds/store.ts`): an NTFS file ID above 2^53 loses its low bit as a plain number, so a swapped file or folder with a neighbouring ID could pass. Sizes and link counts are compared as before. Details, tests and limits: spec 083 *Changes* 2026-11-11 (`test:worldstore`, *issue 1491 world part ino*, *world folder ino* and *dev*; not run on Windows).
+
 ### 2026-11-11: T204 measured at 1.25 and 1.5 (FR-255; issue #1403)
 
 - **Tooling:** `UI_SUITE_DPR` now accepts 1.25 and 1.5 besides 1 to 4 (`dprOk` in `scripts/ui-suite.js`, a case in `test:uisuite`; Windows laptops at 125 % and 150 %). Nothing else changes in the app or the drivers.
