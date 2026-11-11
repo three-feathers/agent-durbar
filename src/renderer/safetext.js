@@ -74,15 +74,16 @@
      the mask reads the label (after it, a glued token the mask half hid as written no longer matches the run), and then the mask must leave
      the unescaped copy of the result exactly as it is, or the label is '' (fail closed). "Hides" is any change, never a count of markers:
      the mask can hide by stretching a `[redacted]` already there (`password=[redacted]_<rest>`). A mask that gives no string, '' or
-     `[redaction failed]` on any copy: ''. At most ESC_RUNS distinct escaped runs are looked at (one mask call each), more: '' (the label
-     surfaces have no length cap). A label without an escape is masked as before. */
+     `[redaction failed]` on any copy: ''. On a label longer than ESC_FULL (the permission card's own cut) at most
+     ESC_RUNS distinct escaped runs are looked at (one mask call each), more: '' (`phrase` and the desk tool labels pass it uncut); a shorter
+     label, so every permission card, has every run checked. A label without an escape is masked as before. */
   const ERUN=/(?:[A-Za-z0-9_\-.+\/=:@%]|\\[\\`*_{}\[\]()#+\-.!~|<>])+/g;
-  const ESC_RUNS=64;
-  const escMask=(s,mk)=>{if(unesc(s)===s)return mk(s);
+  const ESC_RUNS=64,ESC_FULL=10000;
+  const escMask=(s,mk)=>{if(unesc(s)===s)return mk(s);const capped=s.length>ESC_FULL;
     const got=t=>{const r=mk(t);if(typeof r!=='string'||!r||/\[redaction failed\]/.test(r))throw new Error('mask');return r;};
     const hit=new Set(),seen=new Set();
     for(const m of s.matchAll(ERUN)){const r=m[0];if(r.indexOf('\\')<0||seen.has(r))continue;
-      seen.add(r);if(seen.size>ESC_RUNS)return '';const u=unesc(r);if(got(u)!==u)hit.add(r);}
+      seen.add(r);if(capped&&seen.size>ESC_RUNS)return '';const u=unesc(r);if(got(u)!==u)hit.add(r);}
     const o=got(hit.size?s.replace(ERUN,r=>hit.has(r)?'[redacted]':r):s); /* one pass: each run is replaced where it stands, so no order is needed */
     const u=unesc(o);return got(u)===u?o:'';};
   const maskLabel=(raw,kind,mask)=>{const s=String(raw==null?'':raw).trim();if(!s)return '';const m=mask||{};

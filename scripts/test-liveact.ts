@@ -572,6 +572,11 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
       ok(!p.includes('Zq9x') && !pr.includes('Zq9x'), 'stretch ' + v.slice(0, 5) + ': phrase hides the rest: ' + p + ' / ' + pr);
       eq(ST.maskLabel('send ' + v, 'other', mask), '', 'stretch ' + v.slice(0, 5) + ': a mask that changes only the unescaped copy gives an empty label');
     }
+    // round 3: the stretch hidden in place, not by blanking the label (escaped brackets make the whole value one run)
+    for (const v of ['password=\\[redacted\\]\\_Zq9xW8vU7tS6rQ5p', 'x\\[redacted\\]\\_Zq9xW8vU7tS6rQ5p', 'token=\\[redacted\\]\\-Zq9xW8vU7tS6rQ5p']) {
+      eq(ST.maskLabel('send ' + v, 'other', mask), 'send [redacted]', 'stretch exact: ' + v.slice(0, 7) + ' is hidden in place');
+      eq(L.permText('send ' + v, 'other', hm), { text: 'send [redacted]', hidden: true, why: 'secret' }, 'stretch exact: ' + v.slice(0, 7) + ' on the card');
+    }
     // review of PR 1540 (2): a mask that fails only on the unescaped copy (no backslash and no mask in it) gives an empty label
     const failOnly = (bad: unknown) => ({ ...mask, cmd: (s: string) => (s.includes('\\') || s.includes('[redacted]') ? maskSecretCommand(s, {}) : bad as string) });
     for (const [what, bad] of [['empty', ''], ['redaction failed', '[redaction failed]'], ['not a string', 5]] as const) {
@@ -582,8 +587,20 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
     assertLinearShape('maskLabel many distinct escaped tokens', (x) => { ST.maskLabel(x, 'other', mask); }, many, 400_000);
     assertLinearShape('maskLabel one escaped token repeated', (x) => { ST.maskLabel(x, 'other', mask); }, (k) => ('x ' + E + ' ').repeat(Math.ceil(k / (E.length + 3))).slice(0, k), 100_000);
     assertLinearShape('maskLabel one long escaped run', (x) => { ST.maskLabel(x, 'other', mask); }, (k) => 'a\\_'.repeat(Math.ceil(k / 3)).slice(0, k), 100_000);
-    eq(ST.maskLabel(many(65 * 30), 'other', mask), '', 'more than 64 distinct escaped runs: empty label (fail closed)');
-    ok(!ST.maskLabel(many(64 * 30), 'other', mask).includes('QQQQ'), '64 distinct escaped runs are each looked at and hidden');
+    const longMany = (n: number) => many(n * 30) + ' ' + 'z'.repeat(10_001);
+    eq(ST.maskLabel(longMany(65), 'other', mask), '', 'more than 64 distinct escaped runs in a label over 10,000 characters: empty label (fail closed)');
+    ok(!ST.maskLabel(longMany(64), 'other', mask).includes('QQQQ') && ST.maskLabel(longMany(64), 'other', mask) !== '', '64 distinct escaped runs in a long label are each looked at and hidden');
+    ok(!ST.maskLabel(many(300 * 30), 'other', mask).includes('QQQQ') && ST.maskLabel(many(300 * 30), 'other', mask) !== '', 'a label of 10,000 characters or fewer has every escaped run checked (300 runs)');
+    // round 3 of the review of PR 1540: real commands with many escaped runs keep their card text and Allow (invented content). A blind `why`
+    // (unchecked, concealed, cut) is what the page's permBlind turns into no Allow.
+    const BLIND = ['unchecked', 'concealed', 'cut'];
+    const heredoc = "run cat > fix.py <<'EOF'\nimport re\n" + Array.from({ length: 70 }, (_, i) => "s = re.sub(r'field" + i + "\\.(\\d+)\\-v', 'f" + i + "', s)").join('\n') + '\nEOF';
+    ok(heredoc.length > 2500 && heredoc.length < 10_000, 'the heredoc is about 3 KB: ' + heredoc.length);
+    const hd = L.permText(heredoc, 'shell', hm);
+    ok(!BLIND.includes(String(hd.why)) && hd.text.includes('field69') && hd.text.includes("r'field0\\.(\\d+)\\-v'"), 'a 3 KB heredoc with 70 distinct escaped runs keeps its text and Allow: ' + hd.why);
+    const grep = "run grep -E '" + Array.from({ length: 65 }, (_, i) => 'host' + i + '\\.example\\.com').join('|') + "' access.log";
+    const gr = L.permText(grep, 'shell', hm);
+    eq(gr, { text: grep, hidden: false }, 'a grep -E with 65 escaped alternatives keeps its text and Allow');
   }
   // the page: every permission surface calls the one function; keys, ids and scopes stay raw
   const app = fs.readFileSync(path.join(R, 'app.js'), 'utf8').replace(/\r\n/g, '\n');
