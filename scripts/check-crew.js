@@ -179,6 +179,20 @@ async function runCrew(ctx, full) {
     await pickChars(CHARS);
     assert.strictEqual(await H.js(`window.THEME.sceneKit()`), 'crew', `${THEME_ID}: Characters = ${CHARS} draws the crew kit`);
   };
+  /* issue #1460: the crew scenes drawn on screen, as survey() will read them (visible, with the crew kit's signature and a picture). A bounded wait, at most 5 s,
+     never a retry: the asserts that follow are the same. On a timeout it prints what the page shows, and the assert after it fails with its own text.
+     CREW_MUTANT (test-only, a one-off in the page): `slow` hides the scenes for 1.5 s after useCrew() (the wait must carry the check through it),
+     `slow-nowait` hides them and skips the wait (the existing assert must fail with its (0)). */
+  const MUTANT = process.env.CREW_MUTANT || '';
+  const crewDrawn = async (n) => {
+    if (MUTANT) await H.js(`(()=>{const s=document.createElement('style');s.id='crew-mutant';s.textContent='#stage svg.scene{display:none!important}';document.head.appendChild(s);setTimeout(()=>s.remove(),1500);return true;})()`);
+    if (MUTANT === 'slow-nowait') return false;
+    const drawn = `[...document.querySelectorAll('#stage .desk[data-id] svg.scene, #stage .helper svg.scene')].filter((s)=>s.getClientRects().length&&/\\|crew\\|/.test(s.dataset.sig||'')&&s.querySelector('image')).length`;
+    if (await H.until(`${drawn}>=${Number(n)}`, 5000)) return true;
+    const d = await H.js(`(()=>{const U=window.__durbarSimUi,q=(x)=>[...document.querySelectorAll(x)];return {characters:window.THEME.characters(),sceneKit:window.THEME.sceneKit(),theme:window.THEME.current().id,scenes:q('#stage svg.scene').length,visible:q('#stage svg.scene').filter((s)=>s.getClientRects().length).length,sigs:q('#stage svg.scene').slice(0,4).map((s)=>s.dataset.sig||''),dragging:document.body.classList.contains('reo-dragging'),bad:U&&U.crew?U.crew.state().bad:null};})()`);
+    console.log(`[crew] ${THEME_ID}: ${n} crew scenes not drawn after 5 s`, JSON.stringify(d));
+    return false;
+  };
   console.log(`[crew] theme ${THEME_ID}, characters ${CHARS}`);
 
   /* FR-060: for each use at this size, the drawn face box is inside what is visible, and the things that must stay readable are not on it */
@@ -240,6 +254,7 @@ async function runCrew(ctx, full) {
     await H.load({ w, h, ready: 'fit', settle: false });
     await H.office(15);
     await useCrew();
+    await crewDrawn(15);
     const nat = await sizes();
     const s = await H.js(`(${survey.toString()})()`);
     assert.strictEqual(s.theme, THEME_ID, 'the theme stays the one under test');
@@ -319,6 +334,7 @@ async function runCrew(ctx, full) {
   {
     await H.load({ w: 1920, h: 1080, query: { sim: '2', simrooms: '1', simhelpers: '0' }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=2&&document.getElementById('stage').dataset.fit` });
     await useCrew();
+    await crewDrawn(2);
     const nat = await sizes();
     const s = await H.js(`(${survey.toString()})()`);
     const imgs = s.scenes.flatMap((x) => x.images);
