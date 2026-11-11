@@ -548,7 +548,7 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
     }
     eq(L.permText('run echo a \\> b \\_x', 'shell', hm), { text: 'run echo a \\> b \\_x', hidden: false }, 'an escape without a token is shown as written, not flagged');
     // the final check: an escaped token the run pass cannot reach (glued after a token the mask already hid) leaves the label empty, so the card is blind
-    eq(L.permText('run echo ' + TK + E, 'shell', hm).text.includes('A1b2'), false, 'a token glued to an escaped one: no part shown');
+    eq(L.permText('run echo ' + TK + E, 'shell', hm), { text: 'run echo [redacted]', hidden: true, why: 'secret' }, 'a token glued to an escaped one: no part shown, the command kept (not a blind card)');
     eq(ST.maskLabel('echo ' + E, 'run', { ...mask, cmd: (s: string) => s.replace(/ghp_\w+/, '[redacted]') }), 'echo [redacted]', 'the run pass hides the escaped run');
     // a mask that hides a token only after `echo ` (context, as a secret name does): no run alone is hidden, the unescaped copy is
     eq(ST.maskLabel('echo ' + E, 'run', { ...mask, cmd: (s: string) => s.replace(/echo ghp_\w+/, 'echo [redacted]') }), '', 'the unescaped copy still holding a secret gives an empty label (fail closed)');
@@ -561,6 +561,29 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
     eq(ST.maskLabel('send ' + EV, 'other', em), 'send [redacted]', 'an env secret with escapes is hidden (other)');
     eq(L.permText('run echo ' + EV, 'shell', em), { text: 'run echo [redacted]', hidden: true, why: 'secret' }, 'an env secret with escapes is hidden on the card (shell)');
     eq(L.permText('send ' + EV, 'other', em), { text: 'send [redacted]', hidden: true, why: 'secret' }, 'an env secret with escapes is hidden on the card (other)');
+    // review of PR 1540 (1): the mask can hide by stretching a `[redacted]` already there, so the marker count does not change: any change counts (invented values)
+    for (const v of ['password=[redacted]\\_Zq9xW8vU7tS6rQ5p', 'token=[redacted]\\-Zq9xW8vU7tS6rQ5p']) {
+      ok(!ST.maskRaw('echo ' + v, mask.redact).includes('Zq9x'), 'stretch ' + v.slice(0, 5) + ': the desk mask hides the rest (the baseline)');
+      const o = L.permText('send ' + v, 'other', hm), t = L.permText('mcp srv › create ' + v, 'tool', hm), sh = L.permText('run echo ' + v, 'shell', hm);
+      ok(!o.text.includes('Zq9x') && o.hidden, 'stretch ' + v.slice(0, 5) + ': other kind hides the rest: ' + o.text);
+      ok(!t.text.includes('Zq9x') && t.hidden, 'stretch ' + v.slice(0, 5) + ': tool kind hides the rest: ' + t.text);
+      ok(!sh.text.includes('Zq9x') && sh.hidden, 'stretch ' + v.slice(0, 5) + ': shell kind hides the rest: ' + sh.text);
+      const p = L.phrase({ kind: 'run', tool: 'Bash', label: 'echo ' + v }, hm), pr = L.phrase({ kind: 'read', tool: 'Read', label: 'notes ' + v }, hm);
+      ok(!p.includes('Zq9x') && !pr.includes('Zq9x'), 'stretch ' + v.slice(0, 5) + ': phrase hides the rest: ' + p + ' / ' + pr);
+      eq(ST.maskLabel('send ' + v, 'other', mask), '', 'stretch ' + v.slice(0, 5) + ': a mask that changes only the unescaped copy gives an empty label');
+    }
+    // review of PR 1540 (2): a mask that fails only on the unescaped copy (no backslash and no mask in it) gives an empty label
+    const failOnly = (bad: unknown) => ({ ...mask, cmd: (s: string) => (s.includes('\\') || s.includes('[redacted]') ? maskSecretCommand(s, {}) : bad as string) });
+    for (const [what, bad] of [['empty', ''], ['redaction failed', '[redaction failed]'], ['not a string', 5]] as const) {
+      eq(ST.maskLabel('echo ' + E, 'run', failOnly(bad)), '', 'a mask failing only on the unescaped copy (' + what + '): empty label');
+    }
+    // review of PR 1540 (3): the work grows linearly with the label (phrase and the desk tool labels pass it uncut); more than 64 distinct escaped runs: empty label
+    const many = (k: number) => Array.from({ length: Math.ceil(k / 30) }, (_, i) => 'ghp\\_' + String(i).padStart(24, 'Q')).join(' ').slice(0, k);
+    assertLinearShape('maskLabel many distinct escaped tokens', (x) => { ST.maskLabel(x, 'other', mask); }, many, 400_000);
+    assertLinearShape('maskLabel one escaped token repeated', (x) => { ST.maskLabel(x, 'other', mask); }, (k) => ('x ' + E + ' ').repeat(Math.ceil(k / (E.length + 3))).slice(0, k), 100_000);
+    assertLinearShape('maskLabel one long escaped run', (x) => { ST.maskLabel(x, 'other', mask); }, (k) => 'a\\_'.repeat(Math.ceil(k / 3)).slice(0, k), 100_000);
+    eq(ST.maskLabel(many(65 * 30), 'other', mask), '', 'more than 64 distinct escaped runs: empty label (fail closed)');
+    ok(!ST.maskLabel(many(64 * 30), 'other', mask).includes('QQQQ'), '64 distinct escaped runs are each looked at and hidden');
   }
   // the page: every permission surface calls the one function; keys, ids and scopes stay raw
   const app = fs.readFileSync(path.join(R, 'app.js'), 'utf8').replace(/\r\n/g, '\n');

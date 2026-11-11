@@ -70,19 +70,21 @@
   const isUrl=s=>/^[a-z][a-z0-9+.-]{1,20}:\/\//i.test(s);
   /* spec 012 FR-180: a Markdown escape inside a token (`ghp\_...`) hides it from a mask that reads the label as written, while the desk mask
      (maskRaw) undoes the escapes first. The label stays as written (undoing them would change a command: `\>` is not `>`), so both forms are
-     masked: each run of token characters holding an escape whose unescaped form the mask hides becomes `[redacted]` BEFORE the mask reads
-     the label (after it, a glued token the mask half hid as written no longer matches the run), and then the unescaped copy of the result
-     must hold nothing the mask hides, or the label is '' (fail closed). A label without an escape is masked as before. */
+     masked: each run of token characters holding an escape whose unescaped form the mask changes in any way becomes `[redacted]` BEFORE
+     the mask reads the label (after it, a glued token the mask half hid as written no longer matches the run), and then the mask must leave
+     the unescaped copy of the result exactly as it is, or the label is '' (fail closed). "Hides" is any change, never a count of markers:
+     the mask can hide by stretching a `[redacted]` already there (`password=[redacted]_<rest>`). A mask that gives no string, '' or
+     `[redaction failed]` on any copy: ''. At most ESC_RUNS distinct escaped runs are looked at (one mask call each), more: '' (the label
+     surfaces have no length cap). A label without an escape is masked as before. */
   const ERUN=/(?:[A-Za-z0-9_\-.+\/=:@%]|\\[\\`*_{}\[\]()#+\-.!~|<>])+/g;
-  const MKS=/\[(?:redacted[^\]]*|redaction failed|secret hidden)\]/g;
-  const nMk=t=>(t.match(MKS)||[]).length;
+  const ESC_RUNS=64;
   const escMask=(s,mk)=>{if(unesc(s)===s)return mk(s);
-    const hides=t=>{const r=mk(t);if(!r||/\[redaction failed\]/.test(r))throw new Error('mask');return nMk(r)>nMk(t);};
-    const found=[];for(const r of new Set(s.match(ERUN)||[])){if(r.indexOf('\\')>=0&&hides(unesc(r)))found.push(r);}
-    found.sort((a,b)=>b.length-a.length);
-    let s2=s;for(const r of found)s2=s2.split(r).join('[redacted]');
-    const o=mk(s2);if(!o)return '';
-    return hides(unesc(o))?'':o;};
+    const got=t=>{const r=mk(t);if(typeof r!=='string'||!r||/\[redaction failed\]/.test(r))throw new Error('mask');return r;};
+    const hit=new Set(),seen=new Set();
+    for(const m of s.matchAll(ERUN)){const r=m[0];if(r.indexOf('\\')<0||seen.has(r))continue;
+      seen.add(r);if(seen.size>ESC_RUNS)return '';const u=unesc(r);if(got(u)!==u)hit.add(r);}
+    const o=got(hit.size?s.replace(ERUN,r=>hit.has(r)?'[redacted]':r):s); /* one pass: each run is replaced where it stands, so no order is needed */
+    const u=unesc(o);return got(u)===u?o:'';};
   const maskLabel=(raw,kind,mask)=>{const s=String(raw==null?'':raw).trim();if(!s)return '';const m=mask||{};
     const f=kind==='run'?m.cmd:isUrl(s)?m.url:m.redact;if(typeof f!=='function')return '';
     try{const one=t=>{const r=f(t);return typeof r==='string'?r:'';};return escMask(s,t=>unhid(t,one,c=>c,''));}catch(e){return '';}};
