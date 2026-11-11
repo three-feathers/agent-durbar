@@ -1,0 +1,1 @@
+- **Pointer log for one more hover-card step** (spec 097, FR-328): the simulator driver `check-097-hover-card` now records the pointer events of its asleep-card step and prints them when that step fails, like its other pointer step. Diagnostics only: no wait, limit or verdict changed. Checked by `test:pointer-log` (the wrapping in the driver's source) and a forced failure.

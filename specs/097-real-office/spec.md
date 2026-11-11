@@ -1461,3 +1461,9 @@ Paco (`fjcabello`, owner), relayed by his bot in the team Telegram group, 2026-1
 - **What it does not do.** It does not retry, change a wait or a limit, or move the pointer, so a driver passes and fails exactly as before. `DIAG_FORCE_FAIL=1` (or a part of a step name) makes the first matching step fail once after it has run, to see the output; the unit test uses it.
 - **Test.** `test:pointer-log` runs the helper against a stand-in page: the ring keeps only the last 200 of 1000 events, a forced failure prints the log and rethrows the same error object, a pass prints nothing, a failing read never hides the assertion; five mutants of the helper (print removed, events not printed, prints on a pass, ring unbounded, another error thrown) each fail it.
 - `[KNOWN GAP]` This change only records. It proves nothing about the cause of #1448 until the next real red prints a log. Linux and Windows were not run.
+
+## Changes 2026-11-11: the asleep-card step of check-097-hover-card is a pointer step too (no new FR, no behaviour change)
+
+The ubuntu job 130431427021 of run 42993326053 failed `check-097-hover-card` at "the asleep card is still open 700 ms after the refill, the pointer has not moved" (FR-328), and the log had no pointer events because that step was not one of the logged steps. The `falls asleep` block now runs inside `H.pointerStep('check-097-hover-card', '<tag> falls asleep', ...)` like `hover parts of one desk`: from the hover on the second working desk to that assert, all inside the step, so the `[pointer-log]` block prints when it fails and the same error is thrown again. No wait, limit, retry or assert text changed. `test:pointer-log` checks the wrapping in the driver's source.
+
+- `[KNOWN GAP]` This only records; the cause of that red is not known until the next one prints a log. Linux and Windows were not run.
