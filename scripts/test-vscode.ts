@@ -84,9 +84,16 @@ for (const bad of ['/some-switch', '\\proj', '/proj', '//srv/share', '\\\\srv', 
   // pipe and mailslot shares, a redirector prefix and DOS device names in any component (review of #1523)
   '\\\\localhost\\pipe\\x', '\\\\127.0.0.1\\pipe\\x', '\\\\?\\UNC\\localhost\\pipe\\x', '\\\\srv\\MAILSLOT\\x', '\\\\*\\mailslot\\x', '\\\\a*b\\c',
   '\\\\;LanmanRedirector\\srv\\share', '\\\\?\\UNC\\;x\\share', 'C:\\NUL', 'C:\\x\\COM1', 'c:\\nul.txt', 'C:\\AUX .x', 'C:\\CON.', 'C:\\x\\LPT\u00b9', 'C:\\conout$', '\\\\?\\C:\\PRN', '\\\\srv\\share\\com9.log',
+  // re-review of #1523: a device name ends at `.` or `:`; a device in any component, not only the last; pipe shares with trailing dots,
+  // spaces or a stream; `.` and `..` components
+  'C:\\NUL:', 'C:\\COM1:', 'C:\\x\\NUL:stream', 'C:\\x\\CON:foo.txt', 'C:\\NUL\\x', '\\\\srv\\share\\COM1\\x', '\\\\?\\C:\\AUX\\p',
+  '\\\\srv\\pipe.', '\\\\srv\\pipe ', '\\\\srv\\pipe.\\x', '\\\\srv\\pipe:x\\y', '\\\\srv\\MailSlot. \\x', '\\\\srv\\.\\pipe\\x', 'C:\\x\\..\\y', 'C:\\.\\x', 'C:\\x\\..',
 ]) assert.strictEqual(isWindowsTarget(bad), false, bad);
 // names that only start like a device or a pipe share are folders
-for (const ok of ['C:\\console', 'C:\\CON1', 'C:\\COM10', 'C:\\x\\nullable.txt', 'C:\\CON foo', '\\\\srv\\pipes', '\\\\pipe\\share', '\\\\srv\\share\\pipe']) assert.strictEqual(isWindowsTarget(ok), true, ok);
+for (const ok of ['C:\\console', 'C:\\CON1', 'C:\\COM10', 'C:\\x\\nullable.txt', 'C:\\CON foo', '\\\\srv\\pipes', '\\\\pipe\\share', '\\\\srv\\share\\pipe',
+  // normal folders stay open after the `.`, `..` and `:` rules
+  'C:\\NULL', 'C:\\x\\COM\u2074', 'C:\\x\\.git', 'C:\\x\\..config', 'C:\\x\\a.b.c', '\\\\10.0.0.1\\c$\\x', 'C:\\Program Files (x86)\\App', 'D:\\work\\app.v2',
+  'C:\\Users\\a\\My Projects\\site', 'C:\\x\\con-app', 'C:\\x\\aux_tools', 'C:\\x\\pipe', '\\\\srv\\pipeline\\x', '\\\\srv\\share\\.vscode', 'C:\\Users\\a\\OneDrive - Org\\repo']) assert.strictEqual(isWindowsTarget(ok), true, ok);
 process.exitCode = 1; // a promise that never settles must not pass (checklist); 0 only after the OK line
 {
   const local = 'C:\\Users\\a\\AppData\\Local';
@@ -96,7 +103,8 @@ process.exitCode = 1; // a promise that never settles must not pass (checklist);
   assert.strictEqual(planVSCodeLaunch('C:\\p', env('win32', [cmd], { LOCALAPPDATA: local }, 'C:\\Users\\a'))?.verbatim, true, 'the cmd.exe plan says verbatim');
   assert.strictEqual(planVSCodeLaunch('/x', env('linux', ['/usr/bin/code'], { PATH: '/usr/bin' }, '/home/a'))?.verbatim, undefined);
   // the cmd.exe route quotes the target: a trailing backslash (a drive root) is doubled so it does not escape the closing quote
-  for (const [t, q] of [['C:\\', 'C:\\\\'], ['\\\\srv\\share\\p\\', '\\\\srv\\share\\p\\\\'], ['C:\\p', 'C:\\p']]) {
+  for (const [t, q] of [['C:\\', 'C:\\\\'], ['\\\\srv\\share\\p\\', '\\\\srv\\share\\p\\\\'], ['C:\\p', 'C:\\p'],
+    ['C:\\p\\\\', 'C:\\p\\\\\\\\'], ['C:\\p\\\\\\', 'C:\\p\\\\\\\\\\\\']]) {
     assert.strictEqual(planVSCodeLaunch(t, env('win32', [cmd], { LOCALAPPDATA: local }, 'C:\\Users\\a'))?.args[3], `"${cmd}" "${q}"`, 'drive root on the cmd.exe route: ' + t);
   }
 

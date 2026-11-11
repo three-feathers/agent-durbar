@@ -167,14 +167,19 @@ export const EDITOR_NOT_FOUND = 'VS Code was not found (also looked for VS Code 
 export function isWindowsTarget(p: string): boolean {
   if (!windowsTargetShape(p)) return false;
   const parts = p.split(/[\\/]/);
-  if (parts.some((c) => DOS_DEVICE.test(c))) return false;
+  // a `.` or `..` component (\\srv\.\pipe\x) is never in a realpath result; Windows would fold it away
+  if (parts.some((c) => DOS_DEVICE.test(c) || c === '.' || c === '..')) return false;
   // the share after the server: \\server\share -> parts[3], \\?\UNC\server\share -> parts[5]
   const share = /^\\\\\?\\UNC\\/i.test(p) ? parts[5] : /^\\\\[^?]/.test(p) ? parts[3] : undefined;
-  return !(share !== undefined && /^(?:pipe|mailslot)$/i.test(share));
+  // Windows drops trailing dots and spaces, so \\srv\pipe. is the pipe root too; `:` starts a stream
+  return !(share !== undefined && /^(?:pipe|mailslot)[ .]*(?::.*)?$/i.test(share));
 }
 
-/** CON, PRN, AUX, NUL, CONIN$, CONOUT$, COM0-9 and LPT0-9 (also with ¹²³), with or without an extension, trailing spaces or dots. */
-const DOS_DEVICE = /^(?:CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|(?:COM|LPT)[0-9\u00b9\u00b2\u00b3]) *(?:\..*)?$/i;
+/**
+ * CON, PRN, AUX, NUL, CONIN$, CONOUT$, COM0-9 and LPT0-9 (also with ¹²³). Windows cuts a name at its first `.` or `:` and drops
+ * trailing spaces, so NUL.txt, NUL , NUL: and NUL:stream are the device too.
+ */
+const DOS_DEVICE = /^(?:CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|(?:COM|LPT)[0-9\u00b9\u00b2\u00b3])[ .]*(?:[.:].*)?$/i;
 
 function windowsTargetShape(p: string): boolean {
   if (/^[A-Za-z]:[\\/]/.test(p)) return true;
