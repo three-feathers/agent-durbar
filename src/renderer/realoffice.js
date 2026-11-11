@@ -65,8 +65,11 @@
   function hideWhile(e, ease) {
     if (e._hide) e._hide.cancel();
     if (!e._hf) { e._hf = true; e.addEventListener('focus', () => { if (e._hide) e._hide.cancel(); }); } /* focused while hidden: shown at once */
-    const ms = Math.max(0, (Number(ease.effect.getTiming().duration) || 0) - (Number(ease.currentTime) || 0)); /* what is left of it: a pencil made mid-ease waits only that long */
-    e._hide = e.animate([{ opacity: 0 }, { opacity: 0, offset: ms / (ms + REN_IN) }], { duration: ms + REN_IN, easing: 'linear' }); /* no last keyframe: it ends on the CSS opacity (hover, focus, ren-show) */
+    /* held until the plate's own ease ends (its `finished`), not for a time of its own: a plate's ease can start a frame after the pencil's hold
+       (measured in the cave, 17 ms), and a timed hold then ended while the plate still moved (review of PR 1555) */
+    const h = e._hide = e.animate([{ opacity: 0 }, { opacity: 0 }], { duration: Infinity });
+    const show = () => { if (e._hide !== h) return; h.cancel(); e._hide = e.animate([{ opacity: 0 }], { duration: REN_IN, easing: 'linear' }); }; /* one keyframe: it ends on the CSS opacity (hover, focus, ren-show) */
+    ease.finished.then(show, show);
   }
   /* the plate's ease still under way (a move on translate or scale), for a pencil made while it runs */
   const easeOf = (el) => el.getAnimations ? el.getAnimations().find((n) => !n.animationName && n.playState === 'running' && n.effect && n.effect.getKeyframes().some((f) => f.translate || f.scale)) || null : null;

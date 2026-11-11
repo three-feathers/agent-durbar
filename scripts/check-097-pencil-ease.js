@@ -8,15 +8,18 @@
  *     nohide     the hide cancelled right after the move starts (the code before the fix): "no pencil is painted over its plate's name, role or status"
  *     late       the frames start 700 ms after the move (a capture slower than the ease): "frames caught the plates on their way"
  *     half       the hold at opacity 0.5, not 0: "each moving plate's pencil is at opacity 0 for as long as its plate eases"
- *     early      the fade starts at 30 % of the ease: the same label
+ *     early      the hold ends at 30 % of the ease: "no pencil is painted over …" (the opacity label when the painted check is skipped)
+ *     skew       the hold a time of its own that ends 40 ms before its plate's ease (the race seen in the cave, review of PR 1555): the opacity label
  *     focushide  the focused pencil hidden too: "the focused pencil stays shown (opacity 1) while its plate eases"
  *   PENCIL_EASE_WORLDS=photo,arcade  only those worlds (photo, cave, arcade)
  *   PENCIL_EASE_SLOW_CAPTURE=<ms>    a pause after each mid-move capture, as a slow (software) compositor: the 3-frame assert is then skipped, printed
+ *   PENCIL_EASE_BLUR=<px>            box-blur every capture first (device px), as a resampling compositor would: the check must still pass and still fail nohide
+ *   PENCIL_EASE_SKIP_PAINTED=1       take the DPR 2 fallback's path (painted checks skipped, printed): shows what the opacity reads alone still fail
  *   PENCIL_EASE_PLAIN=1              no colour marks: only saves the frames (with SHOTS_OUT), to look at; asserts nothing on pixels
  *   SHOTS_OUT=<dir>                  also saves each frame, 097-pencil-ease-<world>-<w>x<h>-<ms>.png, and the driver's log
  *
  * Painted pixels, not boxes: a getBoundingClientRect read forces layout and so shows the pencil where it belongs (issue 1513, Mac evidence). Each
- * plate's name, role and status line and its pencil's icon are painted in their own exact colours (inline styles, no layout change) and found in real
+ * plate's name, role and status line and its pencil's icon are painted in their own marker colours (inline styles, no layout change) and found in real
  * capturePage frames taken from the move's start to ~320 ms in. A pencil drawn half-transparent would blend and match no colour, so the page also
  * samples, every animation frame of the ease, each moving plate's pencil's computed opacity (a style read, no layout); under 0.05 counts as not painted
  * (the plate's last frame and the pencil's fade can share one frame: 0.03 was read there).
@@ -26,6 +29,7 @@
  *   - fewer than MIN_CAUGHT frames in the first 200 ms show a plate on its way (measured on the Mac: 9 to 13). When the captures themselves are slow
  *     (median gap over 40 ms: Linux/Xvfb at DPR 2) it prints "skipped: capture too slow" instead; the opacity reads still hold the hide;
  *   - not every marked plate's pencil and name (or status) is found in the end frame (a colour that does not come through would drop it silently);
+ *     it prints why per missing plate first. At DPR 2 it prints "skipped: DPR 2 painted check (...)" instead and keeps the opacity reads (Linux/Xvfb);
  *   - in any frame a pencil's painted icon overlaps its own plate's painted name, role or status line (the focused one excepted: FR-365's known gap);
  *   - while a plate eases, its pencil's opacity is not 0 (the focused pencil's: not 1), or the focused pencil's plate did not ease;
  *   - when the ease is over: a WAAPI animation still runs in #stage, a pencil is not painted, or it is not just after its name (0..8 px) clear of the
@@ -46,32 +50,65 @@ const ALL = { photo: {}, cave: { worldflags: 'cave', world: 'cave' }, arcade: { 
 const WORLDS = (process.env.PENCIL_EASE_WORLDS || 'photo,arcade').split(',').filter((w) => ALL[w]);
 const SPAN = 320; /* ms of frames after the move starts: the ease is 280..520 ms, the displacement was seen in its first ~200..300 ms */
 const SLOW_CAP = Number(process.env.PENCIL_EASE_SLOW_CAPTURE || 0); /* a pause after each capture (ms): stands in for a slow compositor, to show the skip below */
+const SKIP_PAINTED = process.env.PENCIL_EASE_SKIP_PAINTED === '1';
 const MIN_CAUGHT = 3; /* frames in the first 200 ms that must show a plate on its way (Mac: 9..13 of them, one every ~17 ms) */
 
-/** The painted box of each part of each marked plate in a capture (CSS px), from its exact colour (±2 per channel: a scaled layer's inside stays exact).
- *  Plate i (1..) has v = 8 + 8 i: pencil (255,0,v), name (0,255,v), status (v,0,255), role (0,v,255). A box spans only rows and columns with 2 or more of
- *  its pixels, so one stray picture pixel of a marker's colour cannot grow it into a false overlap. */
+/* the marks: plate i (1..15) has v = 16 i; pencil (255,0,v), name (0,255,v), status (v,0,255), role (0,v,255). A pixel is a mark when its full and empty
+   channels are within TOL of 255 and 0 and its third channel within 6 of a 16 i: wide enough for a resampled or software-composited capture (Linux/Xvfb
+   at DPR 2 lost plates with the earlier exact match, review of PR 1555), still one colour per part. */
+const TOL = 12;
+const famOf = (R, G, B) => {
+  const hi = (c) => c >= 255 - TOL, lo = (c) => c <= TOL;
+  if (hi(R) && lo(G) && !hi(B)) return ['pen', B];
+  if (lo(R) && hi(G) && !hi(B)) return ['name', B];
+  if (hi(B) && lo(G) && !hi(R)) return ['status', R];
+  if (hi(B) && lo(R) && !hi(G)) return ['role', G];
+  return null;
+};
+const EXPECT = { pen: (v) => [255, 0, v], name: (v) => [0, 255, v], status: (v) => [v, 0, 255], role: (v) => [0, v, 255] };
+const BLUR = Number(process.env.PENCIL_EASE_BLUR || 0); /* a box blur of this radius (device px) on every capture first, as a resampling compositor would */
+function bitmapOf(img) {
+  const { width: iw, height: ih } = img.getSize(), b = Buffer.from(img.toBitmap());
+  if (!BLUR) return { iw, ih, b };
+  const tmp = Buffer.alloc(b.length), r = BLUR;
+  for (const [src, dst, horiz] of [[b, tmp, true], [tmp, b, false]]) for (let y = 0; y < ih; y++) for (let x = 0; x < iw; x++) for (let c = 0; c < 3; c++) {
+    let sum = 0, cnt = 0;
+    for (let d = -r; d <= r; d++) { const xx = horiz ? x + d : x, yy = horiz ? y : y + d; if (xx < 0 || yy < 0 || xx >= iw || yy >= ih) continue; sum += src[(yy * iw + xx) * 4 + c]; cnt++; }
+    dst[(y * iw + x) * 4 + c] = Math.round(sum / cnt);
+  }
+  return { iw, ih, b };
+}
+/** The painted box of each part of each marked plate in a capture, measured in device pixels, given in CSS px (device / (capture width / view width)).
+ *  A box spans only rows and columns with 2 or more of its pixels and needs 6 pixels in all, so stray picture pixels cannot make or grow one. */
 function marks(img, vw) {
-  const { width: iw, height: ih } = img.getSize(), b = img.toBitmap(), s = iw / vw, acc = {};
-  const near = (c, t) => Math.abs(c - t) <= 2;
+  const { iw, ih, b } = bitmapOf(img), s = iw / vw, acc = {};
   for (let y = 0; y < ih; y++) for (let x = 0; x < iw; x++) {
-    const i = (y * iw + x) * 4, B = b[i], G = b[i + 1], R = b[i + 2]; /* BGRA */
-    let fam = null, v = 0;
-    if (near(R, 255) && near(G, 0) && B >= 14) { fam = 'pen'; v = B; }
-    else if (near(R, 0) && near(G, 255) && B >= 14) { fam = 'name'; v = B; }
-    else if (near(B, 255) && near(G, 0) && R >= 14) { fam = 'status'; v = R; }
-    else if (near(B, 255) && near(R, 0) && G >= 14) { fam = 'role'; v = G; }
-    if (!fam) continue;
-    const k = Math.round((v - 8) / 8);
-    if (k < 1 || Math.abs(8 + 8 * k - v) > 2) continue;
-    const a = acc[fam + ':' + k] || (acc[fam + ':' + k] = { cols: new Map(), rows: new Map() });
-    a.cols.set(x, (a.cols.get(x) || 0) + 1); a.rows.set(y, (a.rows.get(y) || 0) + 1);
+    const i = (y * iw + x) * 4, f = famOf(b[i + 2], b[i + 1], b[i]); /* BGRA */
+    if (!f) continue;
+    const k = Math.round(f[1] / 16);
+    if (k < 1 || k > 15 || Math.abs(16 * k - f[1]) > 6) continue;
+    const a = acc[f[0] + ':' + k] || (acc[f[0] + ':' + k] = { cols: new Map(), rows: new Map(), n: 0 });
+    a.cols.set(x, (a.cols.get(x) || 0) + 1); a.rows.set(y, (a.rows.get(y) || 0) + 1); a.n++;
   }
   const out = {};
   for (const [key, a] of Object.entries(acc)) {
     const xs = [...a.cols].filter(([, c]) => c >= 2).map(([x]) => x), ys = [...a.rows].filter(([, c]) => c >= 2).map(([y]) => y);
-    if (!xs.length || !ys.length) continue;
-    out[key] = { x: Math.min(...xs) / s, y: Math.min(...ys) / s, r: (Math.max(...xs) + 1) / s, b: (Math.max(...ys) + 1) / s };
+    if (a.n < 6 || !xs.length || !ys.length) continue;
+    out[key] = { x: Math.min(...xs) / s, y: Math.min(...ys) / s, r: (Math.max(...xs) + 1) / s, b: (Math.max(...ys) + 1) / s, n: a.n };
+  }
+  return out;
+}
+/** For a plate the end frame lacks: per part, the closest colour to its mark inside the plate's box (device px), as max channel distance. */
+function nearest(img, box, s, i) {
+  const { iw, ih, b } = bitmapOf(img), out = {};
+  for (const fam of ['pen', 'name', 'status']) {
+    const e = EXPECT[fam](16 * Number(i));
+    let best = 999, at = null;
+    for (let y = Math.max(0, Math.floor(box.y * s) - 30); y < Math.min(ih, Math.ceil((box.y + box.h) * s) + 30); y++) for (let x = Math.max(0, Math.floor(box.x * s) - 30); x < Math.min(iw, Math.ceil((box.x + box.w) * s) + 30); x++) {
+      const j = (y * iw + x) * 4, d = Math.max(Math.abs(b[j + 2] - e[0]), Math.abs(b[j + 1] - e[1]), Math.abs(b[j] - e[2]));
+      if (d < best) { best = d; at = [x, y, b[j + 2], b[j + 1], b[j]]; }
+    }
+    out[fam] = best + (at ? ` at ${at[0]},${at[1]} rgb(${at[2]},${at[3]},${at[4]})` : '');
   }
   return out;
 }
@@ -117,11 +154,11 @@ module.exports = async (ctx) => {
       if(${PLAIN})return document.querySelectorAll('#stage .ren.ro-ren').length;
       const set=(e,c)=>{if(!e)return;e.style.setProperty('background',c,'important');e.style.setProperty('color',c,'important');e.style.setProperty('-webkit-text-fill-color',c,'important');e.style.setProperty('text-shadow','none','important');e.style.setProperty('opacity','1','important');e.style.setProperty('filter','none','important');e.querySelectorAll('*').forEach(x=>{x.style.setProperty('color',c,'important');x.style.setProperty('-webkit-text-fill-color',c,'important');x.style.setProperty('fill',c,'important');x.style.setProperty('stroke',c,'important');x.style.setProperty('background',c,'important')});};
       const rgb=a=>'rgb('+a.join(',')+')';let i=0;
-      for(const b of document.querySelectorAll('#stage .ren.ro-ren')){const p=b.previousElementSibling;if(!p||!p.matches('.ro-plate'))continue;i++;const v=8+8*i;
+      for(const b of document.querySelectorAll('#stage .ren.ro-ren')){const p=b.previousElementSibling;if(!p||!p.matches('.ro-plate'))continue;i++;if(i>15)break;const v=16*i;
         p.dataset.peMark=String(i);b.style.setProperty('background','transparent','important');b.style.setProperty('box-shadow','none','important');
         set(b.querySelector('svg'),rgb([255,0,v]));set(p.querySelector('.ro-l1>b'),rgb([0,255,v]));set(p.querySelector('.ro-l2'),rgb([v,0,255]));set(p.querySelector('.ro-role'),rgb([0,v,255]));}
       return i})()`);
-    assert.ok(n >= 10, `${tag}: pencils to mark (${n})`);
+    assert.ok(n >= 10 && n <= 15, `${tag}: pencils to mark (${n}; the marks hold 15)`);
     /* FR-365's focus rule: the first mover's pencil has the keyboard focus (a plate that goes to the lounge always eases) */
     const focusMark = await js(`(()=>{const b=document.querySelector('#stage .ren.ro-ren[data-ren="'+CSS.escape(${jsLiteral(pick[0])})+'"]');b.focus({preventScroll:true});return document.activeElement===b?(b.previousElementSibling.dataset.peMark||'?'):''})()`);
     assert.ok(focusMark, `${tag}: the first mover's pencil has the focus`);
@@ -132,11 +169,12 @@ module.exports = async (ctx) => {
     const easing = await js(`(()=>{const s=${SIM}.agents().find(x=>x.id===${jsLiteral(pick[1])});s.lastEventAt=Date.now()-34*60000;for(const id of ${jsLiteral(pick)})${SIM}.unread.read(id);${SIM}.crew.renderAll();
       const M=${jsLiteral(MUTANT)},pens=[...document.querySelectorAll('#stage .ren.ro-ren')],foc=document.activeElement;
       if(M==='nohide')pens.forEach(b=>b.getAnimations().forEach(a=>a.cancel()));
-      if(M==='half'||M==='early')pens.forEach(b=>b.getAnimations().filter(a=>!a.animationName).forEach(a=>{const o=a.effect.getKeyframes()[1].offset;a.effect.setKeyframes(M==='half'?[{opacity:.5},{opacity:.5,offset:o}]:[{opacity:0},{opacity:0,offset:.3}])}));
+      if(M==='half')pens.forEach(b=>b._hide&&b._hide.effect.setKeyframes([{opacity:.5},{opacity:.5}]));
+      if(M==='early'||M==='skew')pens.forEach(b=>{const h=b._hide,e=b.previousElementSibling&&${EASE_OF}(b.previousElementSibling);if(h&&e){const d=Number(e.effect.getTiming().duration);setTimeout(()=>h.cancel(),M==='early'?d*0.3:d-40)}});
       if(M==='focushide'&&foc&&foc.matches('.ren')){const e=${EASE_OF}(foc.previousElementSibling);if(e)foc.animate([{opacity:0},{opacity:0,offset:.9}],{duration:Number(e.effect.getTiming().duration)+60})}
       const S=window.__peS={samples:0,bad:[],focusEased:0,moving:0},t0=performance.now();
       const step=()=>{for(const b of pens){const p=b.previousElementSibling;if(!p||!${EASE_OF}(p))continue;S.moving++;const op=getComputedStyle(b).opacity,f=b===document.activeElement;if(f)S.focusEased++;
-        if((f?op!=='1':Number(op)>=0.05)&&S.bad.length<12)S.bad.push(Math.round(performance.now()-t0)+' ms '+(p.dataset.peMark||b.dataset.ren)+(f?' (focused)':'')+' opacity '+op);}
+        if((f?op!=='1':Number(op)>=0.05)&&S.bad.length<12)S.bad.push(Math.round(performance.now()-t0)+' ms '+(p.dataset.peMark||b.dataset.ren)+(f?' (focused)':'')+' opacity '+op+' [plate '+p.getAnimations().filter(a=>!a.animationName).map(a=>Math.round(a.startTime)+'/'+Math.round(a.currentTime)+'/'+a.effect.getTiming().duration+'/'+a.playState).join(',')+' pencil '+b.getAnimations().map(a=>(a.animationName||a.transitionProperty||'waapi')+':'+Math.round(a.startTime)+'/'+Math.round(a.currentTime)+'/'+Math.round(a.effect.getTiming().duration)+'/'+a.playState).join(',')+' cls '+p.className+']');}
         S.samples++;if(performance.now()-t0<900)requestAnimationFrame(step);else S.done=true;};
       step();
       return [...document.querySelectorAll('#stage .ro-plate')].filter(p=>${EASE_OF}(p)).length})()`);
@@ -169,8 +207,27 @@ module.exports = async (ctx) => {
     if (!PLAIN) {
       /* every marked plate came through the capture: its pencil and its name or status (a colour lost would drop the plate from every assert) */
       if (tries > 1) log(tag, 'end frame taken', tries, 'times');
-      assert.deepStrictEqual(lostIn(end), [], `${tag}: every marked plate's pencil and name (or status) is found in the end frame (${tries} captures in 3 s)`);
+      const lost = lostIn(end);
+      let painted = true;
+      if (SKIP_PAINTED && !lost.length) lost.push(...keys.slice(-1)); /* the fallback's path, on demand */
+      if (lost.length) {
+        /* say why, per plate: the parts found anywhere, the closest colour near the plate, the boxes, the pencil's style and what is on top of it */
+        const pg = await js(`(()=>{const r=e=>{const b=e.getBoundingClientRect();return {x:b.left,y:b.top,w:b.width,h:b.height}};return {dpr:devicePixelRatio,view:[innerWidth,innerHeight],screen:[screen.width,screen.height,screen.availWidth,screen.availHeight],
+          plates:Object.fromEntries([...document.querySelectorAll('#stage .ro-plate[data-pe-mark]')].map(p=>{const b=p.nextElementSibling,ic=b&&(b.querySelector('svg')||b),c=ic&&r(ic),cs=b&&getComputedStyle(b),top=c&&document.elementFromPoint(c.x+c.w/2,c.y+c.h/2),nb=p.querySelector('.ro-l1>b'),nc=nb&&nb.getClientRects().length?r(nb):null,ntop=nc&&document.elementFromPoint(nc.x+nc.w/2,nc.y+nc.h/2);
+            return [p.dataset.peMark,{plate:r(p),icon:c,pen:cs&&[cs.opacity,cs.visibility,cs.display].join('/'),onIcon:top?top.tagName+'.'+String(top.className&&top.className.baseVal!==undefined?top.className.baseVal:top.className).split(' ')[0]:'-',name:nc,onName:ntop?ntop.tagName+'.'+String(ntop.className&&ntop.className.baseVal!==undefined?ntop.className.baseVal:ntop.className).split(' ')[0]:'-'}]}))}})()`);
+        const sz = endImg.getSize(), sc = sz.width / w, R = (o) => o && [o.x, o.y, o.w, o.h].map((v) => Math.round(v));
+        log(tag, `end frame: capture ${sz.width}x${sz.height} for a ${pg.view.join('x')} view at devicePixelRatio ${pg.dpr} (screen ${pg.screen.join('x')}); ${keys.length - lost.length} of ${keys.length} plates found`);
+        for (const i of lost) {
+          const q = pg.plates[i] || {}, nr = q.plate ? nearest(endImg, q.plate, sc, i) : {};
+          log(tag, `missing plate ${i}: found pen ${!!end['pen:' + i]} name ${!!end['name:' + i]} status ${!!end['status:' + i]}; nearest colour in its box: pen ${nr.pen}, name ${nr.name}, status ${nr.status}; plate css ${JSON.stringify(R(q.plate))} device ${JSON.stringify(R(q.plate && { x: q.plate.x * sc, y: q.plate.y * sc, w: q.plate.w * sc, h: q.plate.h * sc }))}; icon ${JSON.stringify(R(q.icon))}; pencil opacity/visibility/display ${q.pen}; on the icon ${q.onIcon}, on the name ${q.onName}`);
+        }
+        /* DPR 2 under a software compositor (Linux/Xvfb) loses some marks even in a settled frame (review of PR 1555): the painted checks are skipped there,
+           said in the log, never passed; the opacity reads (capture-free) still fail a pencil shown while its plate eases. At DPR 1 it fails. */
+        if (pg.dpr >= 2 || SKIP_PAINTED) { painted = false; log(tag, `skipped: DPR 2 painted check (marker detection unreliable under software compositing: ${keys.length - lost.length} of ${keys.length} plates found); the opacity reads still apply`); }
+        else assert.deepStrictEqual(lost, [], `${tag}: every marked plate's pencil and name (or status) is found in the end frame (${tries} captures in 3 s)`);
+      }
       /* the frames saw the ease: in the first 200 ms, frames where some plate's painted name or status is away from where it ends */
+      if (painted) {
       const away = (m) => keys.some((i) => ['name', 'status'].some((p) => { const a = m[p + ':' + i], z = end[p + ':' + i]; return a && z && Math.max(Math.abs(a.x - z.x), Math.abs(a.y - z.y), Math.abs(a.r - z.r)) >= 3; }));
       for (const f of frames) f.m = marks(f.img, w);
       const caught = frames.filter((f) => f.t <= 200 && away(f.m));
@@ -188,6 +245,7 @@ module.exports = async (ctx) => {
         for (const p of ['name', 'role', 'status']) if (f.m[p + ':' + i] && overlap(pen, f.m[p + ':' + i])) bad.push(`${f.t} ms plate ${i}: the pencil ${JSON.stringify(rd(pen))} over its ${p} ${JSON.stringify(rd(f.m[p + ':' + i]))}`);
       }
       assert.deepStrictEqual(bad, [], `${tag}: no pencil is painted over its plate's name, role or status while the plates ease`);
+      }
       /* a half-shown pencil blends and matches no colour: the page's opacity reads cover it */
       assert.ok(S.moving > 0 && S.focusEased > 0, `${tag}: the opacity reads saw moving plates, the focused pencil's among them (${JSON.stringify(S)})`);
       const focBad = S.bad.filter((x) => x.includes('(focused)')), restBad = S.bad.filter((x) => !x.includes('(focused)'));
@@ -195,7 +253,7 @@ module.exports = async (ctx) => {
       assert.deepStrictEqual(focBad, [], `${tag}: the focused pencil stays shown (opacity 1) while its plate eases`);
       /* at the end: every pencil painted, just after its painted name, clear of the role and status; and by its boxes */
       const endBad = [];
-      for (const i of keys) {
+      for (const i of painted ? keys : []) {
         const pen = end['pen:' + i], nm = end['name:' + i];
         for (const p of ['name', 'role', 'status']) if (end[p + ':' + i] && overlap(pen, end[p + ':' + i])) endBad.push(`plate ${i}: the pencil over its ${p}`);
         if (nm && (pen.x - nm.r < -1 || pen.x - nm.r > 9)) endBad.push(`plate ${i}: the pencil ${Math.round(pen.x - nm.r)} px after its name`);
