@@ -267,17 +267,20 @@ function validateBaseline(raw) {
 
 /** Cumulative list-price dollars to `date`: the baseline (through its own day) plus every usage-file day after `baseline.through` up to `date`. */
 function cumulative(states, date, baseline) {
-  const models = new Map(); const machines = new Map();
-  const add = (m, k, v) => m.set(k, (m.get(k) || 0) + v);
+  const models = new Map(); const machines = new Map(); const firstDays = new Map();
+  // whole cents per machine/day/model, as the daily chart (usage-spread dailyRows) counts them, so the chart and the total agree exactly (FR-198)
+  const addC = (m, k, c) => m.set(k, (m.get(k) || 0) + c);
+  const add = (m, k, v) => addC(m, k, Math.round(v * 100));
   for (const [k, v] of Object.entries(baseline.models)) add(models, k, v);
-  for (const [k, v] of Object.entries(baseline.machines)) add(machines, k, v);
+  for (const [k, v] of Object.entries(baseline.machines)) { add(machines, k, v); if (Math.round(v * 100) > 0) firstDays.set(k, baseline.since); }
   for (const st of states) for (const day of Object.keys(st.days)) {
     // a machine with its own baseline entry is counted after the baseline's day; one without (a teammate's machine) from its first day
     if ((own(baseline.machines, st.machine) && day <= baseline.through) || day > date) continue;
-    for (const model of Object.keys(st.days[day].models)) { const c = st.days[day].models[model].costUsd; add(models, model, c); add(machines, st.machine, c); }
+    for (const model of Object.keys(st.days[day].models)) { const c = st.days[day].models[model].costUsd; add(models, model, c); add(machines, st.machine, c); if (Math.round(c * 100) > 0 && !(firstDays.get(st.machine) <= day)) firstDays.set(st.machine, day); }
   }
-  let total = 0; for (const v of models.values()) total += v;
-  return { total, models, machines, since: baseline.since };
+  let totalC = 0; for (const v of models.values()) totalC += v;
+  const back = (m) => new Map([...m].map(([k, c]) => [k, c / 100]));
+  return { total: totalC / 100, totalCents: totalC, models: back(models), machines: back(machines), firstDays, since: baseline.since };
 }
 
 function split(map, total, labelOf = (k) => k) {
@@ -285,28 +288,72 @@ function split(map, total, labelOf = (k) => k) {
     .map(([k, v]) => `${labelOf(k)} ${total > 0 ? Math.round((v / total) * 100) : 0}% (US$${group(v)})`).join(', ');
 }
 
-/** The README block, markers included. `release` is a tag such as `v0.1.12` (checked). Same inputs, same text. */
-function readmeBlock(cum, date, release, note, spreadNote) {
+/** The day each machine with spend began, grouped: `first` is the earliest day of all (the baseline's `since`, or earlier when a usage file starts before it) and `groups` is [date, machines starting that day] in date order. */
+function machineStarts(cum) {
+  const days = [...(cum.firstDays || new Map())].filter(([m]) => (cum.machines.get(m) || 0) > 0).map(([, d]) => d);
+  const counts = new Map(); for (const d of days) counts.set(d, (counts.get(d) || 0) + 1);
+  const groups = [...counts].sort((x, y) => (x[0] < y[0] ? -1 : 1));
+  return { first: groups.length ? groups[0][0] : cum.since, groups };
+}
+
+/** The scope facts in the README sentence, all computed from the data (never typed): machine count, since date, spread share (`estUsd` = the estimated, spread part of the total). */
+const scopeClause = (cum, estUsd) => {
+  const n = [...cum.machines.values()].filter((v) => v > 0).length;
+  const share = cum.total > 0 ? estUsd / cum.total : 0;
+  const how = share <= 0 ? 'all measured' : share > 0.5 ? 'mostly spread over earlier days rather than measured' : `${Math.round(share * 100)}% spread over earlier days rather than measured`;
+  // when each machine's spend began (computed from the data, never typed): say so, never imply every machine covers the whole period
+  const { first, groups } = machineStarts(cum);
+  const word = (k) => ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'][k - 1] || String(k);
+  const when = groups.length < 2 ? ` since ${first}` : `: ${groups.map(([d, k], i) => `${word(k)} ${i === 0 ? 'since' : 'from'} ${d}`).join(', ').replace(/, ([^,]*)$/, ' and $1')}`;
+  return `work on ${n === 1 ? 'one machine' : `${n} machines`}${when}, ${how}`;
+};
+
+/** The README block, markers included: one short paragraph and, when there is a spread, the daily graph (owner decisions 2026-11-08; the details live in docs/build-cost.md). `release` is a tag such as `v0.1.12` (checked). Same inputs, same text. */
+function readmeBlock(cum, date, release, withDaily = false, estUsd = 0) {
   if (!DATE_RE.test(date)) throw new Error('--date must be YYYY-MM-DD');
   if (!/^v\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(release)) throw new Error('--release must look like v0.1.12');
   return [BEGIN, '## Build cost so far', '',
-    `**About US$${group(cum.total)}** at API list prices to build this app with AI agents, as of ${date} (release [\`${release}\`](https://github.com/three-feathers/agent-durbar/releases/tag/${release})), tracked since ${cum.since}. `
-    + `This is an **${LABEL}**: Claude Code's own list-price figure, not what anyone was charged. Method and privacy: [docs/build-cost.md](docs/build-cost.md).`, '',
-    ...(spreadNote ? [spreadNote, '', '![Daily build cost by model: measured days solid, estimated (spread) days faded and dashed](docs/build-cost-days.svg)', ''] : []),
+    `**About US$${group(cum.total)}** at API list prices to build this app with AI agents, as of ${date} (release [\`${release}\`](https://github.com/three-feathers/agent-durbar/releases/tag/${release})): an **${LABEL}** of ${scopeClause(cum, estUsd)}. `
+    + `The rest is not counted yet; the split, the spread of the earlier days and the method: [docs/build-cost.md](docs/build-cost.md).`, '',
+    ...(withDaily ? ['![Daily build cost by model: measured days solid, estimated (spread) days faded and dashed](docs/build-cost-days.svg)', ''] : []),
+    END].join('\n').replace(/\n\n<!-- build-cost:end -->$/, '\n' + END);
+}
+
+const DETAIL_BEGIN = '<!-- build-cost-detail:begin (written by `npm run usage:readme`) -->';
+const DETAIL_END = '<!-- build-cost-detail:end -->';
+/** The detail section of docs/build-cost.md, markers included: both graphs, the spread note, the by-model and by-machine lines, what is not counted. */
+function detailBlock(cum, date, release, note, spreadNote) {
+  return [DETAIL_BEGIN, '## The numbers so far', '',
+    `**About US$${group(cum.total)}** (${LABEL}), tracked since ${machineStarts(cum).first}, as of ${date} (release \`${release}\`).`, '',
+    '![Cumulative build cost by model over releases (API list-price estimate, not billing)](build-cost.svg)', '',
+    '![Daily build cost by model: measured days solid, estimated (spread) days faded and dashed](build-cost-days.svg)', '',
+    ...(spreadNote ? [spreadNote, ''] : []),
     `- By model: ${split(cum.models, cum.total, modelName) || 'none yet'}.`,
     `- By machine or team: ${split(cum.machines, cum.total) || 'none yet'}.`,
-    `- Not counted yet: ${note}`, END].join('\n');
+    `- Not counted yet: ${note}`, DETAIL_END].join('\n');
+}
+
+/** `text` with the block between two marker lines replaced; exactly one of each, in order, or it throws and changes nothing. */
+function rewriteBetween(text, begin, end, block, what) {
+  const count = (needle) => text.split(needle).length - 1;
+  const b = text.indexOf(begin); const e = text.indexOf(end);
+  if (count(begin) !== 1 || count(end) !== 1 || b < 0 || e < b) throw new Error(`${what} needs exactly one "${begin}... -->" line followed by one "${end}" line`);
+  const eol = text.includes('\r\n') ? block.replace(/\r?\n/g, '\r\n') : block; // a file checked out with CRLF keeps one line ending
+  return text.slice(0, b) + eol + text.slice(e + end.length);
+}
+const rewriteDetail = (text, block) => rewriteBetween(text, '<!-- build-cost-detail:begin', DETAIL_END, block, 'docs/build-cost.md');
+
+/** The README badge's alt text, from the same total as the block (issue #1351). */
+const badgeAlt = (total) => `Build cost, about US$${group(total)} at API list prices (estimate, not billing)`;
+const BADGE_RE = /(<img src="docs\/build-cost-badge\.svg" alt=")[^"]*(")/;
+function rewriteBadgeAlt(text, total) {
+  if ((text.match(new RegExp(BADGE_RE.source, 'g')) || []).length !== 1) throw new Error('README needs exactly one build-cost badge image (docs/build-cost-badge.svg)');
+  return text.replace(BADGE_RE, (m, a, z) => a + badgeAlt(total) + z);
 }
 
 /** `text` with the block between the markers replaced; exactly one begin line and one end line, in that order, or it throws and changes nothing. */
 function rewriteReadme(text, block) {
-  const count = (needle) => text.split(needle).length - 1;
-  const b = text.indexOf('<!-- build-cost:begin'); const e = text.indexOf(END);
-  if (count('<!-- build-cost:begin') !== 1 || count(END) !== 1 || b < 0 || e < b) {
-    throw new Error('README needs exactly one "<!-- build-cost:begin ... -->" line followed by one "<!-- build-cost:end -->" line');
-  }
-  const eol = text.includes('\r\n') ? block.replace(/\r?\n/g, '\r\n') : block; // a README checked out with CRLF keeps one line ending
-  return text.slice(0, b) + eol + text.slice(e + END.length);
+  return rewriteBetween(text, '<!-- build-cost:begin', END, block, 'README');
 }
 
 // ---- history, badge and chart (FR-181, owner addition 2026-11-07): plain SVG text, no network, no external service ----
@@ -475,6 +522,6 @@ function chartDaysSvg(rows) {
 }
 
 module.exports = {
-  DAY_SPREAD_LINE, chartDaysSvg, TOKEN_METRIC, COST_METRIC, TYPES, SOURCES, MODEL_RE, MACHINE_RE, DATE_RE, MAX_FILE_BYTES, MAX_MODELS_PER_DAY, MAX_DAYS_PER_FILE, MAX_DAYS_PER_REQUEST, FILE_VERSION,
+  DAY_SPREAD_LINE, chartDaysSvg, detailBlock, rewriteDetail, scopeClause, rewriteBadgeAlt, badgeAlt, DETAIL_BEGIN, DETAIL_END, TOKEN_METRIC, COST_METRIC, TYPES, SOURCES, MODEL_RE, MACHINE_RE, DATE_RE, MAX_FILE_BYTES, MAX_MODELS_PER_DAY, MAX_DAYS_PER_FILE, MAX_DAYS_PER_REQUEST, FILE_VERSION,
   SCOPE, DEFAULT_REPOS, REPO_ATTR, parseRepos, normalizeRepo, modelName, MODEL_NAMES, BEGIN, END, LABEL, validateHistory, upsertRow, badgeSvg, chartSvg, esc, validateBaseline, cumulative, readmeBlock, rewriteReadme, emptyState, checkMachine, dayOf, ingest, validateState, firstDay, report, group, usd,
 };

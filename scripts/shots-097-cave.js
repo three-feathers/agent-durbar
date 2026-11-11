@@ -112,9 +112,9 @@ module.exports = async (ctx) => {
   await H.shot(path.join(OUT, 'photo-prehistoric-15-1440x900.png'), { prep: 'calm' });
   await js(`window.DurbarScreens.openSettings()`);
   await must(`!!document.querySelector('#wrGroup')`, 'the World row');
-  await js(`document.querySelector('#chList [data-characters="cheeky"]').click()`);
-  await must(`/until Cheeky has Real office poses/.test(document.getElementById('dsR').textContent)`, 'Cheeky has no Real office poses: one line saying so');
-  await room(RO('photo', 'office'), 'Cheeky: the world\u2019s default set');
+  await js(`document.querySelector('#chList [data-characters="minimalist"]').click()`);
+  await must(`/until Minimalist has Real office poses/.test(document.getElementById('dsR').textContent)`, 'Minimalist has no Real office poses: one line saying so (Cheeky has its own set since T244)');
+  await room(RO('photo', 'office'), 'Minimalist: the world\u2019s default set');
   await js(`document.querySelector('#chList [data-characters="theme"]').click();document.querySelector('#wrGroup [data-world="photo"]').focus()`);
   await H.key('Right');
   await must(`document.documentElement.dataset.world==='cave'`, 'ArrowRight back to the cave');

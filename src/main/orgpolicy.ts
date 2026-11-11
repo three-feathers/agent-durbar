@@ -39,11 +39,11 @@ export class OrgPolicyCache {
   }
 
   /** Read the policy of one agent app now when the cached one is older than the TTL (FR-204); one read at a time per app. */
-  async fresh(id: string | undefined): Promise<OrgPolicy | undefined> {
+  async fresh(id: string | undefined, force = false): Promise<OrgPolicy | undefined> {
     if (!id) return undefined;
     const ad = this.src.adapter(id);
     if (!ad || typeof ad.readOrgPolicy !== 'function') return undefined;
-    if (!this.stale(id)) return this.cache.get(id)?.p;
+    if (!force && !this.stale(id)) return this.cache.get(id)?.p;
     let run = this.pending.get(id);
     if (!run) {
       run = (async () => {
@@ -81,6 +81,20 @@ export class OrgPolicyCache {
   /** FR-203: why a start, resume or switch must be refused (only `blocked` / `fatal`), after a fresh enough read. */
   async refusal(id: string | undefined, ask: OrgAsk): Promise<string | undefined> {
     return OrgPolicyCache.refusalOf(await this.fresh(id), ask);
+  }
+
+  /**
+   * Spec 099 FR-070: why Autopilot must be refused. Stricter than Allow all, which keeps `doubt` as advice: a read that failed, never came, or that Durbar could not read the
+   * vendor's way refuses, here and after the native dialog. A read from before a session, or one that failed, is not kept: it is asked again.
+   */
+  async autopilotRefusal(id: string | undefined): Promise<string | undefined> {
+    const unread = "Durbar could not read your organization's policy for this agent app, so it cannot start Autopilot. Try again in a moment.";
+    let p = await this.fresh(id);
+    if (p?.runtimeUnread) p = await this.fresh(id, true);
+    if (!p || p.runtimeUnread) return unread;
+    const m = modeVerdict(p, 'allow');
+    if (m?.refuse) return `${m.why}: Autopilot runs in Allow all, so it is blocked too.`;
+    return m || (p.unreadable && !p.found) ? unread : undefined;
   }
 
   /** FR-201: the advice words for a start (`doubt` on its mode or model), or undefined; never a refusal. */

@@ -140,12 +140,62 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
   assert.strictEqual(cum1.models.get('claude-opus-5-5'), 2956, 'merge: their dollars are added in that row');
   assert.strictEqual(lib.modelName('claude-sonnet-5-5'), 'Sonnet 5.5', 'names: ids map to display names in one place');
   assert.strictEqual(lib.modelName('__proto__'), '__proto__', 'names: an unlisted id (or a prototype name) shows as itself');
-  const block = lib.readmeBlock(cum1, '2026-11-10', 'v0.1.13', base.note);
+  const block = lib.readmeBlock(cum1, '2026-11-10', 'v0.1.13');
+  const detail = lib.detailBlock(cum1, '2026-11-10', 'v0.1.13', base.note, 'SPREADNOTE');
   assert.ok(block.includes('**API list-price estimate, not billing**'), 'label: the estimate text is in the block');
   assert.ok(/About US\$3,858\*\*/.test(block) && block.includes('as of 2026-11-10') && block.includes('`v0.1.13`'), 'block: total, date and release');
-  assert.ok(block.includes('Opus 5.5 77% (US$2,956)') && !block.includes('claude-opus-5-5') && block.includes('mac 3% (US$100)') && block.includes('linux 97%'), 'block: split by model and by machine');
-  assert.ok(!block.includes('docs/build-cost.svg') && !lib.readmeBlock(cum1, '2026-11-10', 'v0.1.13', base.note, 'x').includes('docs/build-cost.svg'), 'block: the cumulative graph is not in the README block');
-  assert.ok(block.includes('docs/build-cost.md') && block.includes('Not counted yet: older work'), 'block: method link and what is not counted');
+  assert.ok(!block.includes('Opus 5.5') && !block.includes('By model') && !block.includes('By machine') && !block.includes('Not counted') && !block.includes('Estimated, not measured'), 'block: no split, not-counted line or spread paragraph in the README block (spec 008 2026-11-08 delta)');
+  assert.ok(!/!\[/.test(block) && /!\[[^\]]*\]\(docs\/build-cost-days\.svg\)/.test(lib.readmeBlock(cum1, '2026-11-10', 'v0.1.13', true)) && !block.includes('docs/build-cost.svg'), 'block: the daily graph only when there is a spread, never the cumulative one');
+  const cum0b = lib.cumulative([], '2026-11-07', base);
+  const sc = (c, est) => lib.readmeBlock(c, '2026-11-10', 'v0.1.13', true, est);
+  assert.ok(sc(cum1, 0).includes('of work on 2 machines: one since 2026-10-25 and one from 2026-11-09, all measured.'), 'scope: the machine count (2), the since date and "all measured" come from the data');
+  { // issue 1387: machines that start on different days: the sentence names the later first days, counted per date (mutant: the old "3 machines since <first day>" fails)
+    const m3 = lib.cumulative([mkst('mac', '2026-11-07T10:00:00Z', 'claude-opus-5-5', 5), mkst('ruben-server', '2026-11-09T10:00:00Z', 'claude-opus-5-5', 5, Date.UTC(2026, 10, 9, 12)), mkst('mac2', '2026-11-09T11:00:00Z', 'claude-opus-5-5', 5, Date.UTC(2026, 10, 9, 12))], '2026-11-10', base);
+    const t = sc(m3, 0);
+    assert.ok(t.includes('work on 4 machines: one since 2026-10-25, one from 2026-11-07 and two from 2026-11-09, all measured'), 'scope 1387: later first days named with how many started on each: ' + t.split('\n')[3].slice(-170));
+    assert.ok(!/machines since 2026-10-25/.test(t), 'scope 1387: never "N machines since <first day>" when machines joined later');
+    // one late machine: singular, no "the others"
+    assert.ok(sc(cum1, 0).includes('2 machines: one since 2026-10-25 and one from 2026-11-09,'), 'scope 1387: one late machine reads singular');
+    // two baseline machines (both from since) and one late: no wrong "the first"
+    const base2 = lib.validateBaseline({ version: 1, since: '2026-10-25', through: '2026-11-07', note: 'n', models: { 'claude-opus-5-5': 10 }, machines: { linux: 6, other: 4 } });
+    const t2 = sc(lib.cumulative([mkst('mac', '2026-11-09T10:00:00Z', 'claude-opus-5-5', 5, Date.UTC(2026, 10, 9, 12))], '2026-11-10', base2), 0);
+    assert.ok(t2.includes('3 machines: two since 2026-10-25 and one from 2026-11-09,'), 'scope 1387: two baseline machines are "two since", not "the first": ' + t2.split('\n')[3].slice(-150));
+    // no baseline machine at all: nothing claims a first machine since the baseline date
+    const base0 = lib.validateBaseline({ version: 1, since: '2026-10-25', through: '2026-11-07', note: 'n', models: { 'claude-opus-5-5': 10 }, machines: {} });
+    const t0 = sc(lib.cumulative([mkst('mac', '2026-11-09T10:00:00Z', 'claude-opus-5-5', 5, Date.UTC(2026, 10, 9, 12))], '2026-11-10', base0), 0);
+    assert.ok(t0.includes('work on one machine since 2026-11-09,') && !t0.includes('2026-10-25'), 'scope 1387: one machine starting after the baseline date says its own first day, never the baseline date: ' + t0.split('\n')[3].slice(-150));
+    assert.strictEqual(lib.cumulative([mkst('mac', '2026-11-09T10:00:00Z', 'claude-opus-5-5', 5, Date.UTC(2026, 10, 9, 12))], '2026-11-10', base0).firstDays.get('mac'), '2026-11-09');
+    assert.ok(lib.detailBlock(lib.cumulative([mkst('mac', '2026-11-09T10:00:00Z', 'claude-opus-5-5', 5, Date.UTC(2026, 10, 9, 12))], '2026-11-10', base0), '2026-11-10', 'v0.1.1', 'n', '').includes('tracked since 2026-11-09'), 'scope 1387: detail block says the real first day too');
+    // a zero-dollar baseline machine does not start at the baseline date (mutant: dropping the baseline guard)
+    const baseZ = lib.validateBaseline({ version: 1, since: '2026-10-25', through: '2026-11-07', note: 'n', models: { 'claude-opus-5-5': 10 }, machines: { linux: 10, idle: 0 } });
+    assert.strictEqual(lib.cumulative([], '2026-11-07', baseZ).firstDays.has('idle'), false, 'scope 1387: a baseline machine with no spend has no first day');
+    // a machine's first day is its EARLIEST day with spend (mutant: always overwriting the first day gives the last), a zero day before it is not a start (mutant: no c > 0 guard)
+    const two = lib.emptyState('mac'); lib.ingest(two, body([], [cost('claude-opus-5-5', 0, '2026-11-08T10:00:00Z'), cost('claude-opus-5-5', 3, '2026-11-09T10:00:00Z')]), Date.UTC(2026, 10, 10, 0)); lib.ingest(two, body([], [cost('claude-opus-5-5', 4, '2026-11-10T10:00:00Z')]), Date.UTC(2026, 10, 10, 12));
+    assert.strictEqual(lib.cumulative([two], '2026-11-10', base).firstDays.get('mac'), '2026-11-09', 'scope 1387: the first day is the earliest day with spend, a zero day does not count');
+    // a sub-cent first day does not start a machine (the total counts whole cents)
+    const tiny = lib.emptyState('mac'); lib.ingest(tiny, body([], [cost('claude-opus-5-5', 0.004, '2026-11-08T10:00:00Z'), cost('claude-opus-5-5', 3, '2026-11-09T10:00:00Z')]), Date.UTC(2026, 10, 10, 0));
+    assert.strictEqual(lib.cumulative([tiny], '2026-11-10', base).firstDays.get('mac'), '2026-11-09', 'scope 1387: a first day under one cent is not the start');
+    // dates come out oldest first whatever the machine order (mutant: no sort)
+    const tl = sc(lib.cumulative([mkst('late', '2026-11-09T10:00:00Z', 'claude-opus-5-5', 5, Date.UTC(2026, 10, 9, 12)), mkst('mid', '2026-11-08T10:00:00Z', 'claude-opus-5-5', 5, Date.UTC(2026, 10, 9, 12))], '2026-11-10', base), 0);
+    assert.ok(tl.includes('one from 2026-11-08 and one from 2026-11-09'), 'scope 1387: dates are oldest first');
+    // a usage-file machine with no baseline entry that starts before the baseline's since: the sentence and the detail say so
+    const pre = lib.emptyState('old'); lib.ingest(pre, body([], [cost('claude-opus-5-5', 2, '2026-10-20T10:00:00Z')]), Date.UTC(2026, 9, 21, 12));
+    const cp = lib.cumulative([pre], '2026-11-10', base);
+    assert.ok(sc(cp, 0).includes('one since 2026-10-20 and one from 2026-10-25'), 'scope 1387: a machine starting before since is named: ' + sc(cp, 0).split('\n')[3].slice(-150));
+    assert.ok(lib.detailBlock(cp, '2026-11-10', 'v0.1.13', 'n', '').includes('tracked since 2026-10-20'), 'detail 1387: tracked since the earliest start');
+  }
+  assert.ok(sc(cum0b, 0).includes('work on one machine since 2026-10-25'), 'scope: one machine from a machine count of one');
+  assert.ok(sc(cum0b, 3000).includes('mostly spread over earlier days rather than measured'), 'scope: "mostly spread" above 50% estimated (3000 of 3758)');
+  assert.ok(sc(cum0b, 1000).includes('27% spread over earlier days') && !sc(cum0b, 1000).includes('mostly'), 'scope: at or below 50% the percentage is given, never "mostly"');
+  assert.ok(sc(cum0b, 1879).includes('50% spread') && !sc(cum0b, 1879).includes('mostly'), 'scope: exactly half is not "mostly"');
+  const baseSep = lib.validateBaseline({ version: 1, since: '2026-09-01', through: '2026-11-07', note: 'x', models: { 'claude-opus-5-5': 10 }, machines: { linux: 10 } });
+  assert.ok(sc(lib.cumulative([], '2026-11-07', baseSep), 0).includes('work on one machine since 2026-09-01, all measured'), 'scope: the since date is the baseline\'s own (a typed date fails)');
+  assert.ok(block.includes('The rest is not counted yet'), 'scope: the rest is said to be not counted');
+  assert.ok(block.includes('(docs/build-cost.md)'), 'block: link to docs/build-cost.md');
+  assert.ok(detail.includes('Opus 5.5 77% (US$2,956)') && !detail.includes('claude-opus-5-5') && detail.includes('mac 3% (US$100)') && detail.includes('linux 97%') && detail.includes('SPREADNOTE') && detail.includes('Not counted yet: older work') && detail.includes('(build-cost-days.svg)') && detail.includes('(build-cost.svg)'), 'detail: docs/build-cost.md gets both graphs, the spread note, the split and the not-counted line');
+  const badgeReadme = '<p><a href="#x"><img src="docs/build-cost-badge.svg" alt="old"></a></p>';
+  assert.ok(lib.rewriteBadgeAlt(badgeReadme, 3858).includes('alt="Build cost, about US$3,858 at API list prices (estimate, not billing)"'), 'badge: alt text is rewritten from the total');
+  assert.throws(() => lib.rewriteBadgeAlt('no badge', 1), /badge image/, 'badge: a README without the badge fails clearly');
   assert.throws(() => lib.readmeBlock(cum1, '2026-11-10', 'v1', 'x'), /--release/, 'block: a release must look like a tag');
   const readme = `# T\n\nintro\n\n${lib.BEGIN}\nold stuff\n${lib.END}\n\nrest\n`;
   const once = lib.rewriteReadme(readme, block);
@@ -202,13 +252,13 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
   // the command, end to end on temporary files
   const t2 = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-usage-readme-'));
   const P = (n) => path.join(t2, n);
-  fs.writeFileSync(P('README.md'), readme); fs.writeFileSync(P('base.json'), JSON.stringify({ version: 1, since: '2026-10-25', through: '2026-11-07', note: 'older work.', models: { 'claude-opus-5-5': 10 }, machines: { linux: 10 } }));
-  const args = ['--release', 'v0.1.12', '--date', '2026-11-07', '--baseline', P('base.json'), '--readme', P('README.md'), '--history', P('h.json'), '--badge', P('b.svg'), '--chart', P('c.svg'), '--days', P('d.svg'), '--data', P('nodata'), '--spread', P('nospread.json'), '--files', P('none.json')];
+  fs.writeFileSync(P('README.md'), '<img src="docs/build-cost-badge.svg" alt="old">\n' + readme); fs.writeFileSync(P('doc.md'), `${lib.DETAIL_BEGIN}\nold\n${lib.DETAIL_END}\n`); fs.writeFileSync(P('base.json'), JSON.stringify({ version: 1, since: '2026-10-25', through: '2026-11-07', note: 'older work.', models: { 'claude-opus-5-5': 10 }, machines: { linux: 10 } }));
+  const args = ['--release', 'v0.1.12', '--date', '2026-11-07', '--baseline', P('base.json'), '--readme', P('README.md'), '--doc', P('doc.md'), '--history', P('h.json'), '--badge', P('b.svg'), '--chart', P('c.svg'), '--days', P('d.svg'), '--data', P('nodata'), '--spread', P('nospread.json'), '--files', P('none.json')];
   const mk2 = () => R2.build(R2.parseArgs(args.filter((a, i) => args[i - 1] !== '--files' && a !== '--files'), { DURBAR_USAGE_DIR: P('nodir') }, NOW));
   const r1 = mk2();
   assert.ok(r1.text.includes('About US$10**') && r1.history.rows.length === 1 && r1.badge.includes('US$10 ') && r1.chart.includes('<svg'), 'command: block, history, badge and chart from the baseline alone');
   assert.throws(() => R2.parseArgs(['--date', '2026-11-07'], {}, NOW), /--release/, 'command: --release required');
-  fs.writeFileSync(P('README.md'), '# no markers\n');
+  fs.writeFileSync(P('README.md'), '<img src="docs/build-cost-badge.svg" alt="x">\n# no markers\n');
   assert.throws(() => mk2(), /exactly one/, 'command: a README without markers fails');
   fs.rmSync(t2, { recursive: true, force: true });
 }
@@ -244,6 +294,15 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
   assert.strictEqual(lib.cumulative([meas, pv], '2026-10-30', base).total, 1009.03, 'machines: its dollars are added from its first day');
   const rp = S.dailyRows(sp, [meas, pv], base, '2026-10-30');
   assert.strictEqual(rp.reduce((a, r) => a + r.estCents + r.measCents, 0), 100903, 'machines: the chart still equals the total');
+  // FR-198: many sub-cent costs on three machines: the total is the sum of the same whole cents the chart shows, exactly
+  {
+    const dr = ['linux', 'mac', 'ruben-server'].map((mc) => { const st = lib.emptyState(mc); for (const m of ['claude-opus-5-5', 'claude-sonnet-5-5']) for (const d of ['2026-10-31', '2026-11-01', '2026-11-02']) lib.ingest(st, body([], [cost(m, 1.2349, `${d}T10:00:00Z`)]), Date.UTC(2026, 10, 2, 12)); return st; });
+    const cd = lib.cumulative(dr, '2026-11-02', base); const rd = S.dailyRows(S.computeSpread(base, dr, stats), dr, base, '2026-11-02');
+    const shownC = rd.reduce((a, r) => a + r.estCents + r.measCents, 0);
+    assert.strictEqual(shownC, cd.totalCents, 'FR-198: the chart adds up to the total to the cent, with sub-cent costs on three machines');
+    assert.strictEqual(Math.round(cd.total * 100), cd.totalCents, 'FR-198: the total is whole cents');
+    assert.notStrictEqual(shownC + 1, cd.totalCents, 'FR-198: a one-cent difference is a difference (the check is exact, not a tolerance)');
+  }
   // an unlisted model measured inside the lump is deducted, so the total is kept
   const odd = lib.emptyState('linux'); lib.ingest(odd, body([], [cost('claude-haiku-9', 1.5, '2026-10-30T10:00:00Z')]), Date.UTC(2026, 9, 30, 12));
   assert.strictEqual(S.dailyRows(S.computeSpread(base, [odd], stats), [odd], base, '2026-10-30').reduce((a, r) => a + r.estCents + r.measCents, 0), 100003, 'spread: a model the lump does not list keeps the total');
@@ -277,14 +336,18 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
   // the command: a spread file makes the README note, the daily chart and an unchanged total; a spread that does not add up is refused
   const t3 = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-usage-spread-'));
   const Q = (...n) => path.join(t3, ...n);
-  fs.writeFileSync(Q('README.md'), `${lib.BEGIN}\nold\n${lib.END}\n`); fs.writeFileSync(Q('base.json'), JSON.stringify({ version: 1, since: '2026-10-25', through: '2026-10-30', note: 'older work.', models: { 'claude-opus-5-5': 700.01, 'claude-sonnet-5-5': 300.02 }, machines: { linux: 1000.03 } }));
+  fs.writeFileSync(Q('README.md'), `<img src="docs/build-cost-badge.svg" alt="old">\n${lib.BEGIN}\nold\n${lib.END}\n`); fs.writeFileSync(Q('doc.md'), `${lib.DETAIL_BEGIN}\nold\n${lib.DETAIL_END}\n`); fs.writeFileSync(Q('base.json'), JSON.stringify({ version: 1, since: '2026-10-25', through: '2026-10-30', note: 'older work.', models: { 'claude-opus-5-5': 700.01, 'claude-sonnet-5-5': 300.02 }, machines: { linux: 1000.03 } }));
   fs.writeFileSync(Q('spread.json'), JSON.stringify(sp)); fs.mkdirSync(Q('data'));
   fs.writeFileSync(Q('data', 'usage-linux.json'), JSON.stringify(meas));
-  const args3 = ['--release', 'v0.1.12', '--date', '2026-10-30', '--baseline', Q('base.json'), '--readme', Q('README.md'), '--history', Q('h.json'), '--badge', Q('b.svg'), '--chart', Q('c.svg'), '--days', Q('d.svg'), '--data', Q('data'), '--spread', Q('spread.json')];
+  const args3 = ['--release', 'v0.1.12', '--date', '2026-10-30', '--baseline', Q('base.json'), '--readme', Q('README.md'), '--doc', Q('doc.md'), '--history', Q('h.json'), '--badge', Q('b.svg'), '--chart', Q('c.svg'), '--days', Q('d.svg'), '--data', Q('data'), '--spread', Q('spread.json')];
   const r3 = R2.build(R2.parseArgs(args3, { DURBAR_USAGE_DIR: Q('nodir') }, NOW));
-  assert.ok(r3.text.includes('About US$1,000**') && r3.text.includes('Estimated, not measured: US$') && r3.text.includes('docs/build-cost-days.svg') && r3.text.includes('an assumption') && r3.days.includes('<svg'), 'command: the README names the estimate, links the daily chart and states the model-mix assumption; the total is the baseline');
-  assert.strictEqual((r3.text.match(/!\[[^\]]*\]\(docs\/build-cost[^)]*\.svg\)/g) || []).length, 1, 'command: the README block has exactly one graph, the daily one (spec 008 2026-11-08 delta)');
-  assert.ok(!r3.text.includes('docs/build-cost.svg') , 'command: the cumulative graph is not in the README block');
+  assert.ok(r3.text.includes('About US$1,000**') && r3.text.includes('(docs/build-cost.md)') && r3.days.includes('<svg'), 'command: the README block names the total and links docs/build-cost.md');
+  const blk3 = r3.text.slice(r3.text.indexOf('<!-- build-cost:begin'), r3.text.indexOf('<!-- build-cost:end -->'));
+  assert.deepStrictEqual(blk3.match(/!\[[^\]]*\]\([^)]*\)/g).map((m) => m.replace(/^.*\(|\)$/g, '')), ['docs/build-cost-days.svg'], 'command: the README block has exactly one image, the daily graph (spec 008 2026-11-08 deltas)');
+  assert.ok(/ of work on one machine since 2026-10-25, (mostly spread over earlier days rather than measured|\d+% spread over earlier days rather than measured)\. The rest is not counted yet/.test(blk3), 'command: the README sentence says one machine, since 2026-10-25, the spread share and not counted, from the data');
+  assert.ok(!/Estimated, not measured|By model|By machine|Not counted|an assumption/.test(blk3), 'command: the README block has no spread paragraph, split or not-counted line');
+  assert.ok(r3.docText.includes('(build-cost-days.svg)') && r3.docText.includes('Estimated, not measured: US$') && r3.docText.includes('an assumption') && r3.docText.includes('By model:') && r3.docText.includes('Not counted yet:'), 'command: docs/build-cost.md holds the daily graph, the spread paragraph, the split and the not-counted line');
+  assert.ok(r3.text.includes('alt="Build cost, about US$1,000 at API list prices (estimate, not billing)"'), 'command: the badge alt text and the block say the same total (#1351)');
   fs.writeFileSync(Q('bad.json'), JSON.stringify({ ...sp, days: sp.days.map((d, i) => (i ? d : { ...d, cents: { 'claude-opus-5-5': d.cents['claude-opus-5-5'] + 500, 'claude-sonnet-5-5': d.cents['claude-sonnet-5-5'] } })) }));
   assert.throws(() => R2.build(R2.parseArgs(args3.map((a) => (a === Q('spread.json') ? Q('bad.json') : a)), { DURBAR_USAGE_DIR: Q('nodir') }, NOW)), /usage:spread/, 'command: a spread that does not add up to the total is refused');
   // publish: the receiver folder's file is copied (validated fields only) next to a teammate's committed file

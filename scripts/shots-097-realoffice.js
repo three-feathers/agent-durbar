@@ -27,7 +27,7 @@
  *   - a picture that fails to load leaves a broken image instead of the initials disc (FR-065).
  *   - the world chrome (FR-113): in Real office the top bar, More menu, a toast, Settings and a dialog do not use the photo world's
  *     tokens (glass on the menu and toast, bar ink, page ink; FR-182: a dialog has no blur and is the opaque surface, its text at 4.5:1 on computed colours), text under 10.5px, or leaving Real office does not restore the theme exactly; flat has no world.
- * Screenshots: <SHOTS_OUT>/097-world-{menu,toast,settings,dialog}-<w>x<h>.png, 097-real-15-<w>x<h>.png, 097-real-lobby-<w>x<h>.png (the lobby band, with the Terminal runner), 097-real-3-<w>x<h>.png, 097-real-lights-1440x900.png, 097-office-layout-1440x900.png.
+ * Screenshots: <SHOTS_OUT>/097-world-{menu,toast,settings,dialog}-<w>x<h>.png, 097-real-15-<w>x<h>.jpg, 097-real-lobby-<w>x<h>.png (the lobby band, with the Terminal runner), 097-real-3-<w>x<h>.png, 097-real-lights-1440x900.png, 097-office-layout-1440x900.png.
  */
 const os = require('os');
 const fs = require('fs');
@@ -102,8 +102,8 @@ module.exports = async (ctx) => {
   await must(`!!document.querySelector('[data-officelayout="real"]')`, 'Settings');
   assert.strictEqual(await js(`!!document.querySelector('#wrGroup')`), false, 'no World row while only one world is offered');
   assert.ok(/World\u2019s default \(Office people\)/.test(await js(`document.querySelector('#chList [data-characters="theme"]').getAttribute('aria-label')`)), 'Characters starts with the world\u2019s default set');
-  await js(`document.querySelector('#chList [data-characters="cheeky"]').click()`);
-  await must(`document.getElementById('dsR').textContent==='Real office shows Office people until Cheeky has Real office poses.'`, 'Cheeky has no Real office poses: Settings says so under Office layout');
+  await js(`document.querySelector('#chList [data-characters="minimalist"]').click()`);
+  await must(`document.getElementById('dsR').textContent==='Real office shows Office people until Minimalist has Real office poses.'`, 'Minimalist has no Real office poses: Settings says so under Office layout (Cheeky has its own since T244)');
   await js(`document.querySelector('#chList [data-characters="theme"]').click()`);
   await must(`document.getElementById('dsR').textContent===''`, 'the line goes with the default');
   await js(`document.getElementById('scrClose').click()`);
@@ -247,7 +247,7 @@ module.exports = async (ctx) => {
     await park();
     await js(`document.activeElement&&document.activeElement.blur&&document.activeElement.blur();0`);
     await must(`!document.getElementById('roZoom')`, 'no zoom in the picture');
-    await H.shot(path.join(OUT, `097-real-15-${w}x${h}.png`), { prep: 'calm' });
+    await H.shot(path.join(OUT, `097-real-15-${w}x${h}.jpg`), { prep: 'calm' });
     // ---- owner 2026-10-31 ("make a real running pose"): someone at the Terminal jogs in place (stride A in P1), no treadmill; a
     //      close crop of the lobby band shows it ----
     // A simulator visit comes and goes, so wait for one, let its pictures decode, take the crop, and keep the crop only if the runner is still there.
@@ -406,7 +406,7 @@ module.exports = async (ctx) => {
     const sharp3 = await js(SHARP);
     console.log('[097] sharp at 3', w, JSON.stringify(sharp3));
     assert.ok(sharp3.minHalfRatio >= 1.45, 'at 3 agents too: ' + JSON.stringify(sharp3));
-    await H.shot(path.join(OUT, `097-real-3-${w}x${h}.png`), { prep: 'calm' });
+    await H.shot(path.join(OUT, `097-real-3-${w}x${h}.jpg`), { prep: 'calm' });
   }
 
   // ---- FR-006: a click on a person opens its chat ----
@@ -483,7 +483,7 @@ module.exports = async (ctx) => {
     /* amber at the Boss: the empty desk of a waiting agent at the Boss keeps its amber screen, and its plate says Waiting (acceptance 3) */
     await loadReal(1440, 900);
     await installTint();
-    const boss = await js(`(()=>{const p=[...document.querySelectorAll('#stage .ro-plate[data-state="waiting"]')].find(p=>(p.getAttribute('aria-label')||'').includes(', at Boss.'));return p?p.dataset.id:'';})()`);
+    const boss = await js(`(()=>{const p=[...document.querySelectorAll('#stage .ro-plate[data-state="waiting"]')].find(p=>(p.getAttribute('aria-label')||'').includes(', at Boss'));return p?p.dataset.id:'';})()`);
     assert.ok(boss, 'the simulator has an agent waiting at the Boss');
     const b0 = await js(T(boss));
     assert.ok(b0.tint === 'amber' && b0.glass === TINT.amber, `FR-236: the empty desk of an agent waiting at the Boss keeps its amber screen: ${JSON.stringify(b0)}`);

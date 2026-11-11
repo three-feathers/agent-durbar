@@ -5,7 +5,7 @@ Checked by `npm run test:realoffice-assets`. Only the `.webp` files, `world.json
 
 - **Licence:** MIT, like the code.
 - **Tool:** Codex image generation (`codex exec`), codex-cli 0.163.0, on Vikram's ChatGPT plan with his OK, one run at a time, 2026-10-31. Reference for the style only: Paco's Prehistoric crew portrait of Big Beard (`src/renderer/crew/art/`).
-- **Made by:** Vikram's agent (Claude Code), 2026-10-31. **Approved by:** Paco, 2026-10-31 (all 11 images, relayed by his agent in the team chat, 11:41 UTC: "Está bien"); `[KNOWN GAP]` the owner's own approval of the cave world is the gate in the spec's *Changes* (2026-11-01) and is not yet given.
+- **Made by:** Vikram's agent (Claude Code), 2026-10-31. **Approved by:** Paco, 2026-10-31 (all 11 images, relayed by his agent in the team chat, 11:41 UTC: "Está bien"); the owner's say-so for the cave world (the gate in spec 097's *Changes* 2026-11-01) was given by Paco, 2026-11-10 about 21:35 UTC, relayed by his bot in the team chat, for the world as it was on `main` that day. `[KNOWN GAP]` the flag stays off until the rest of that gate is met (T156..T158, spec 001's search, spec 098 FR-024, the nine missing moments); nothing was run for this note.
 - **Cut and re-encoded** by `scripts/build-cave-pack.py` (Pillow): the nine fixtures are the lobby sheet cropped with feathered edges, scaled by one factor (the door is the band's height) and set on a common floor line of 300; the desk is stretched to the engine's one desk shape; the floor tile and wall are resized; the monitor (`monitor.webp`) is the slate frame. WebP with alpha, no metadata.
 - **Not generated:** flames, glows, name plates, lamps, screen text and all words are CSS or the app's own.
 

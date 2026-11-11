@@ -2,6 +2,7 @@
  * Office layout check (spec 001 FR-021, T025): no overlaps, no clipping, no floor overflow.
  *
  *   npm run check:office                       (builds, then runs this file under Electron; xvfb-run on Linux without DISPLAY)
+ *   OFFICE_VIEW=real OFFICE_WORLD=retro|cave      the Real office variant in the arcade or the cave; OFFICE_ROOM_ORDER=reversed saves a room order first (spec 097 FR-353)
  *   OFFICE_SHOTS=/path/dir npm run check:office  also saves a screenshot per combination as <dir>/<prefix>-sim15-1440x900-office.png
  *
  * Runs against the simulator only (no AI credits). For SIM=12 and SIM=15, at 1440x900 and 1280x800, and again after expanding a `+N more` chip,
@@ -48,7 +49,7 @@ const INDEX = path.join(ROOT, 'dist', 'renderer', 'index.html');
 const SIZES = [[1440, 900], [1280, 800]];
 const SIMS = [12, 15];
 const TOL = 0.5;
-const { jsLiteral, helpers } = require('./driver-helpers'); /* jsLiteral lives there (CodeQL js/bad-code-sanitization) */
+const { jsLiteral, helpers, darkFixtureProblem } = require('./driver-helpers'); /* jsLiteral lives there (CodeQL js/bad-code-sanitization) */
 
 /* runs inside the page; returns {problems:[...], info:{...}} */
 function pageCheck(expanded, expectPlaces) {
@@ -310,6 +311,43 @@ function offAttentionCheck() {
   return problems;
 }
 
+/* The settled page check, shared with the drivers that run against a live simulator (spec 001 T197, issue #1481: shots-001-live-activity read the page once and could land between a lobby re-layout and its repaint).
+   `beforeRead(ms)` is an optional async hook called before each read with the ms since the start (measure() uses it for the OFFICE_TEST_STUCK_WALKER cases). */
+/* spec 024 T027 (#406): a figure that is still walking (the renderer marks it `.walking`; under load that mark can end while the CSS transition is still running, so a running transition on the figure counts as walking too) is not on a slot yet, and under load
+   the walk can still be going when the case is measured. Re-measure while a figure is walking, in small steps for up to SETTLE_MS; a figure
+   that has arrived must be on a lit slot (4px), as before. Still walking at the end: "did not reach a slot". No figure walking (motion off): one
+   instant measurement (a figure off its slot: two identical reads, FR-191). OFFICE_TEST_STUCK_WALKER=1 adds a figure that never arrives (proves the failure), =late one that arrives after 1.2 s (proves the wait),
+   =off one that has arrived off any slot and stays still (proves the FR-191 two-read failure), =moved one that has arrived off a slot and keeps moving
+   for 1.2 s, then lands on a lit slot (proves that FR-191 re-measures while the figures or slots move). */
+const SETTLE_MS = 3000, NOT_ON_SLOT = 'a walking figure is not on a slot';
+const WALK_SIG = `(async()=>{await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const f=(e)=>{const r=e.getBoundingClientRect();return Math.round(r.x)+','+Math.round(r.y)+','+Math.round(r.width)+','+Math.round(r.height)};
+  return [...document.querySelectorAll('#walkers .walker')].map(f).join(';')+'|'+[...document.querySelectorAll('.lobby .slot.on')].map(f).join(';')})()`;
+const settledPageCheck = async (ctx, expanded, expectPlaces, beforeRead) => {
+  const sleep = ctx.sleep;
+  const t0 = Date.now();
+  let walkSig = null;
+  for (;;) {
+    if (beforeRead) await beforeRead(Date.now() - t0);
+    const res = await ctx.js(`(${pageCheck.toString()})(${expanded}, ${expectPlaces})`);
+    if (!res.problems.some((p) => p.startsWith(NOT_ON_SLOT))) return res;
+    const walking = await ctx.js(`[...document.querySelectorAll('#walkers .walker')].some(w=>w.classList.contains('walking')||w.getAnimations().some(a=>a.transitionProperty==='transform'))`);
+    if (!walking) {
+      /* spec 001 FR-191: arrived (no walking mark, no transition running) and off its slot. The slots can still move after the figure
+         arrived (the lobby re-lays out as others come and go), so this is a real failure only when two reads in a row, each after two
+         animation frames, see the same figures and the same lit slots; while they differ, re-measure (bounded by SETTLE_MS). */
+      const sig = await ctx.js(WALK_SIG);
+      if (sig === walkSig) return res;
+      walkSig = sig;
+      if (Date.now() - t0 >= SETTLE_MS) { res.problems = res.problems.map((p) => (p.startsWith(NOT_ON_SLOT) ? `${p} (the figures or lit slots still moved after ${SETTLE_MS} ms)` : p)); return res; }
+    } else walkSig = null;
+    if (walking && Date.now() - t0 >= SETTLE_MS) {
+      res.problems = res.problems.map((p) => (p.startsWith(NOT_ON_SLOT) ? `a walking figure did not reach a slot within ${SETTLE_MS} ms${p.slice(NOT_ON_SLOT.length)}` : p));
+      return res;
+    }
+    await sleep(100); /* poll interval of this bounded retry loop (SETTLE_MS), not a wait for a state */
+  }
+};
+
 async function driver(ctx) {
   const H = helpers(ctx); // spec 008 FR-097: shared plumbing
   const shotsDir = process.env.OFFICE_SHOTS || '';
@@ -375,7 +413,12 @@ async function driver(ctx) {
   /* spec 077 FR-070: OFFICE_CHARACTERS=<value> (theme, minimalist, cheeky, prehistoric, pirate, monster, royal, rebels) puts who sits at the desks in the address too; checked like the theme */
   const wantChars = /^(theme|minimalist|cheeky|prehistoric|pirate|monster|royal|rebels)$/.test(process.env.OFFICE_CHARACTERS || '') ? process.env.OFFICE_CHARACTERS : '';
   if (process.env.OFFICE_CHARACTERS && !wantChars) throw new Error('OFFICE_CHARACTERS must be theme, minimalist, cheeky, prehistoric, pirate, monster, royal or rebels');
-  const themeQuery = (wantTheme ? '&theme=' + encodeURIComponent(wantTheme) : '') + (userTheme ? '&usertheme=' + encodeURIComponent(JSON.stringify(userTheme)) : '') + (wantChars ? '&characters=' + wantChars : '');
+  /* spec 102 T226 (FR-267): OFFICE_WORLD=retro (with OFFICE_VIEW=real) draws the arcade, the one world behind a flag today, in the address like the theme; only a listed value */
+  const wantWorld = process.env.OFFICE_WORLD === 'retro' ? 'retro' : '';
+  if (process.env.OFFICE_WORLD && !wantWorld) throw new Error('OFFICE_WORLD must be retro');
+  const expectDark = process.env.CHECK_EXPECT_DARK === '1';
+  if (expectDark && !userTheme) throw new Error('CHECK_EXPECT_DARK=1 needs OFFICE_USER_THEME: the dark fixture is a user theme');
+  const themeQuery = (wantWorld ? '&worldflags=' + wantWorld + '&world=' + wantWorld : '') + (wantTheme ? '&theme=' + encodeURIComponent(wantTheme) : '') + (userTheme ? '&usertheme=' + encodeURIComponent(JSON.stringify(userTheme)) : '') + (wantChars ? '&characters=' + wantChars : '');
   if (wantChars) console.log('check:office: characters ' + wantChars);
   let motionShown = false;
   if (wantTheme) console.log('check:office: theme ' + wantTheme + (userTheme ? ' (user theme from ' + path.basename(process.env.OFFICE_USER_THEME) + ')' : ''));
@@ -388,6 +431,9 @@ async function driver(ctx) {
       try { await ctx.waitFor(`window.THEME&&window.THEME.current().id===${jsLiteral(wantTheme)}`, 5000); } catch (e) { /* reported below */ }
       const on = await ctx.js(`({id:window.THEME.current().id,ui:document.documentElement.dataset.ui||'clean',want:(window.THEME.current().manifest||{}).ui||'clean'})`);
       if (on.id !== wantTheme || on.ui !== on.want) throw new Error(`theme ${wantTheme} was not applied (on screen: ${on.id}, data-ui ${on.ui})`);
+      /* spec 102 T226: the check-parallel "dark theme" jobs and ci.yml's theme-shard `dark` load check-dark.json: it must be the dark fixture, on a dark page */
+      /* CHECK_EXPECT_DARK=1 (set by check-parallel.js and ci.yml's theme-shard for their dark jobs) demands it whatever the file is called; the name check stays for a hand run */
+      if (expectDark || (userTheme && path.basename(process.env.OFFICE_USER_THEME) === 'check-dark.json')) { const bad = await darkFixtureProblem(ctx); if (bad) throw new Error(bad); }
     }
     if (wantChars) {
       try { await ctx.waitFor(`window.THEME.characters()===${jsLiteral(wantChars)}`, 5000); } catch (e) { /* reported below */ }
@@ -406,45 +452,18 @@ async function driver(ctx) {
     /* spec 024: agents go to the lobby after 600 ms and the walk takes about 1 s: wait until somebody is there and nobody is walking */
     try { await ctx.waitFor(`!!document.querySelector('.place.busy:not([data-place="coffee"]):not([data-place="boss"]):not([data-place="bank"])')`, 4000); await ctx.waitFor(`!document.querySelector('.walker.walking')`, 4000); await stable('after the walks'); } catch (e) { /* nobody visits in this layout: the checks below still run */ }
   };
-  /* spec 024 T027 (#406): a figure that is still walking (the renderer marks it `.walking`; under load that mark can end while the CSS transition is still running, so a running transition on the figure counts as walking too) is not on a slot yet, and under load
-     the walk can still be going when the case is measured. Re-measure while a figure is walking, in small steps for up to SETTLE_MS; a figure
-     that has arrived must be on a lit slot (4px), as before. Still walking at the end: "did not reach a slot". No figure walking (motion off): one
-     instant measurement (a figure off its slot: two identical reads, FR-191). OFFICE_TEST_STUCK_WALKER=1 adds a figure that never arrives (proves the failure), =late one that arrives after 1.2 s (proves the wait),
-     =off one that has arrived off any slot and stays still (proves the FR-191 two-read failure), =moved one that has arrived off a slot and keeps moving
-     for 1.2 s, then lands on a lit slot (proves that FR-191 re-measures while the figures or slots move). */
-  const SETTLE_MS = 3000, NOT_ON_SLOT = 'a walking figure is not on a slot';
-  const WALK_SIG = `(async()=>{await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const f=(e)=>{const r=e.getBoundingClientRect();return Math.round(r.x)+','+Math.round(r.y)+','+Math.round(r.width)+','+Math.round(r.height)};
-    return [...document.querySelectorAll('#walkers .walker')].map(f).join(';')+'|'+[...document.querySelectorAll('.lobby .slot.on')].map(f).join(';')})()`;
   const measure = async (expanded) => {
     const hook = process.env.OFFICE_TEST_STUCK_WALKER; /* '1': never arrives; 'late': arrives on a lit slot after 1.2 s; 'off', 'moved': see above */
     const hooked = hook === '1' || hook === 'late' || hook === 'off' || hook === 'moved';
     if (hooked) await ctx.js(`(()=>{const l=document.getElementById('walkers');if(!l)return;l.querySelectorAll('.walker[data-stuck]').forEach(x=>x.remove());const e=document.createElement('span');e.className=${jsLiteral(hook === 'off' || hook === 'moved' ? 'walker' : 'walker walking')};e.dataset.stuck='1';e.style.transform='translate(3px,3px)';l.appendChild(e);})()`);
-    const t0 = Date.now();
-    let arrived = false, walkSig = null, nudge = 0;
-    for (;;) {
-      if (hook === 'moved' && Date.now() - t0 < 1200) await ctx.js(`(()=>{const e=document.querySelector('#walkers .walker[data-stuck]');if(e)e.style.transform='translate('+${jsLiteral(3 + (++nudge % 40))}+'px,3px)';})()`);
-      if ((hook === 'late' || hook === 'moved') && !arrived && Date.now() - t0 >= 1200) {
+    let arrived = false, nudge = 0;
+    return settledPageCheck(ctx, expanded, expectPlaces, async (ms) => {
+      if (hook === 'moved' && ms < 1200) await ctx.js(`(()=>{const e=document.querySelector('#walkers .walker[data-stuck]');if(e)e.style.transform='translate('+${jsLiteral(3 + (++nudge % 40))}+'px,3px)';})()`);
+      if ((hook === 'late' || hook === 'moved') && !arrived && ms >= 1200) {
         arrived = true;
         await ctx.js(`(()=>{const l=document.getElementById('walkers'),e=l&&l.querySelector('.walker[data-stuck]'),s=document.querySelector('.lobby .slot.on');if(!e)return;if(!s){e.remove();return;}const r=s.getBoundingClientRect(),lr=l.getBoundingClientRect();e.style.transform='translate('+Math.round((r.left+r.right)/2-lr.left)+'px,'+Math.round((r.top+r.bottom)/2-lr.top)+'px)';e.classList.remove('walking');})()`);
       }
-      const res = await ctx.js(`(${pageCheck.toString()})(${expanded}, ${expectPlaces})`);
-      if (!res.problems.some((p) => p.startsWith(NOT_ON_SLOT))) return res;
-      const walking = await ctx.js(`[...document.querySelectorAll('#walkers .walker')].some(w=>w.classList.contains('walking')||w.getAnimations().some(a=>a.transitionProperty==='transform'))`);
-      if (!walking) {
-        /* spec 001 FR-191: arrived (no walking mark, no transition running) and off its slot. The slots can still move after the figure
-           arrived (the lobby re-lays out as others come and go), so this is a real failure only when two reads in a row, each after two
-           animation frames, see the same figures and the same lit slots; while they differ, re-measure (bounded by SETTLE_MS). */
-        const sig = await ctx.js(WALK_SIG);
-        if (sig === walkSig) return res;
-        walkSig = sig;
-        if (Date.now() - t0 >= SETTLE_MS) { res.problems = res.problems.map((p) => (p.startsWith(NOT_ON_SLOT) ? `${p} (the figures or lit slots still moved after ${SETTLE_MS} ms)` : p)); return res; }
-      } else walkSig = null;
-      if (walking && Date.now() - t0 >= SETTLE_MS) {
-        res.problems = res.problems.map((p) => (p.startsWith(NOT_ON_SLOT) ? `a walking figure did not reach a slot within ${SETTLE_MS} ms${p.slice(NOT_ON_SLOT.length)}` : p));
-        return res;
-      }
-      await sleep(100); /* poll interval of this bounded retry loop (SETTLE_MS), not a wait for a state */
-    }
+    });
   };
   const run = async (label, query, w, h, shot) => {
     await load(query, w, h);
@@ -469,14 +488,18 @@ async function driver(ctx) {
      outside the floor; no text under 10.5px; no page overflow; no office scroll at the 15-agent scale; the desk face size (SC-002, a ratchet: 30.5px,
      the 40px target is a KNOWN GAP); every plate, sign and chip readable (4.5:1) at the room's dimmest (70%) and full ambient (FR-050); and flat
      mode requests no Real office file (SC-004). */
+  /* spec 102 T276: the arcade is measured only in the Real office view (T226's arcade layout job); the flag itself is T275's */
+  if (wantWorld && process.env.OFFICE_VIEW !== 'real') throw new Error('OFFICE_WORLD=' + wantWorld + ' needs OFFICE_VIEW=real: the flat office would be measured, not the arcade');
   if (process.env.OFFICE_VIEW === 'real') {
     await load('sim=15&simfreeze=1', 1440, 900);
     const flatFiles = await ctx.js(`performance.getEntriesByType('resource').map(e=>e.name).filter(n=>/realoffice|\\/shared\\/(lights|realoffice-layout)\\.js/.test(n))`);
     total++;
     if (flatFiles.length || (await ctx.js(`!!window.DurbarRealOffice||!!document.querySelector('.ro')`))) { failed++; console.log('FAIL real: flat mode loaded Real office files: ' + flatFiles.join(', ')); }
-    const realCheck = (amb) => {
+    const realCheck = (amb, want) => {
       const P = [], ro = document.querySelector('#stage .ro'), L = window.__durbarSimUi.realLayout();
       if (!ro || !L) return { problems: ['no Real office drawn'], info: {} };
+      /* T276: a run that asked for the arcade must have drawn it, or it would pass on the Photo office */
+      if (want && (ro.dataset.world !== want || document.documentElement.dataset.world !== want)) return { problems: ['the ' + want + ' world was asked for but not drawn (office world: ' + (ro.dataset.world || 'none') + ', page: ' + (document.documentElement.dataset.world || 'none') + ')'], info: {} };
       if (amb != null) ro.style.setProperty('--ro-amb', String(1 - amb));
       const o = ro.getBoundingClientRect(), fl = document.getElementById('floor').getBoundingClientRect();
       const R = (e) => { const b = e.getBoundingClientRect(); return { x: b.left, y: b.top, r: b.right, b: b.bottom }; };
@@ -536,12 +559,15 @@ async function driver(ctx) {
     for (const [sim, rooms] of [[3, ''], [12, ''], [15, ''], [15, '1'], [15, 'solo']]) for (const [w, h] of SIZES) {
       if (!mine()) continue;
       const tag = `real sim${sim}${rooms ? '-rooms' + rooms : ''}-${w}x${h}`;
-      await load(`sim=${sim}&simfreeze=1&officeview=real${rooms ? '&simrooms=' + rooms : ''}`, w, h);
+      await load(`sim=${sim}&simfreeze=1&officeview=real${rooms ? '&simrooms=' + rooms : ''}${/^(retro|cave)$/.test(process.env.OFFICE_WORLD || '') ? '&worldflags=' + process.env.OFFICE_WORLD + '&world=' + process.env.OFFICE_WORLD : ''}`, w, h);
       if (!(await H.until(`!!document.querySelector('#stage .ro .ro-plate')&&[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`, 15000))) { total++; failed++; console.log(`FAIL ${tag}: the Real office was not drawn`); continue; }
       /* OFFICE_FONT: the other fonts of other machines (a CI runner's wider sans broke the chips and plates once): every Real office text in that family, drawn again */
       if (process.env.OFFICE_FONT) {
         const css = '.ro,.ro *{font-family:"' + process.env.OFFICE_FONT.replace(/[^A-Za-z0-9 -]/g, '') + '",sans-serif!important}';
         await ctx.js(`(()=>{const st=document.createElement('style');st.textContent=${jsLiteral(css)};document.head.appendChild(st);window.__durbarSimUi.render();return true})()`);
+      }
+      if (process.env.OFFICE_ROOM_ORDER === 'reversed') { /* spec 097 FR-353: a saved room order (the folders reversed) is kept in the rows: the same checks, the same floors for the faces */
+        await ctx.js(`(()=>{const U=window.__durbarSimUi,ps=[...document.querySelectorAll('#stage .ro-sign')].filter((s)=>s.querySelector('.ro-sc')).map((s)=>U.order.path('room:'+s.dataset.folder)).reverse();U.order.get().rooms=ps;U.render();return ps.length})()`);
       }
       /* spec 097 FR-316 (issue #1149): unsent drafts on four desks (the narrowest plate also has a New reply tag, so both tags sit above it) and on a lounge seat when there is one: the Draft tag's box is checked against plates, tags, faces and screens at every size */
       const order = await ctx.js(`[...document.querySelectorAll('#stage .ro-plate')].filter(p=>p.getClientRects().length).sort((a,b)=>a.getBoundingClientRect().width-b.getBoundingClientRect().width).map(p=>p.dataset.id)`);
@@ -575,7 +601,7 @@ async function driver(ctx) {
       if (!(await H.until(`window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()`, 15000))) { total++; failed++; console.log(`FAIL ${tag}: the office did not settle after the drafts were seeded`); continue; }
       await stable(tag + ' with drafts');
       for (const [step, amb] of [['closed', 0.7], ['closed', 1]]) {
-        const res = await ctx.js(`(${realCheck.toString()})(${amb})`);
+        const res = await ctx.js(`(${realCheck.toString()})(${amb},${jsLiteral(wantWorld)})`);
         if (!res.info.drafts) res.problems.push('no Draft tag was in the checked layout');
         total++;
         if (sim === 15 && res.info.scroll) res.problems.push('the office scrolls at the 15-agent scale');
@@ -584,7 +610,8 @@ async function driver(ctx) {
         rows.push({ label: `${tag} ${step} ambient ${amb}`, d: 'real', h: '-', rooms: '-', plates: res.info.plates, desks: res.info.plates, stageH: Math.round(res.info.u || 0), floorH: 0, minFont: res.info.minFont, problems: res.problems.length });
         console.log(`  ${tag}: face ${res.info.face ? res.info.face.toFixed(1) : '?'}px, u ${res.info.u ? res.info.u.toFixed(0) : '?'}, contrast >= ${res.info.minRatio ? res.info.minRatio.toFixed(2) : '?'}`);
       }
-      if (shotsDir) await ctx.shot(path.join(shotsDir, `${prefix}-${tag.replace(/ /g, '-')}.png`));
+      /* OFFICE_SHOTS only (spec 102 T281): the draft seeding leaves the last plate hovered and focused, and its tooltip covers cabinets in the picture; take the pointer and the focus away first (the checks above are done) */
+      if (shotsDir) { await H.calm({ blur: true }); await ctx.sleep(300); await ctx.shot(path.join(shotsDir, `${prefix}-${tag.replace(/ /g, '-')}.png`)); }
       /* (a plate other than the one with the New reply tag: opening that chat reads the reply, and a read finished agent moves to the lounge) chat open: the chat takes the window (spec 001: body.panel-open hides the office); the page must not overflow, and closing it draws the same office */
       const before = await ctx.js(`[...document.querySelectorAll('#stage .ro-plate')].map(e=>{const r=e.getBoundingClientRect();return Math.round(r.x)+','+Math.round(r.y)}).join(';')`);
       await ctx.js(`document.querySelector('#stage .ro-plate'+${jsLiteral(marks.narrow ? ':not([data-id="' + marks.narrow + '"])' : '')}).click()`);
@@ -1249,6 +1276,7 @@ async function driver(ctx) {
 }
 
 module.exports = driver;
+module.exports.settledPageCheck = settledPageCheck; /* reused by shots-001-live-activity.js (spec 001 T197) */
 module.exports.pageCheck = pageCheck; /* reused by check-theme-geometry.js */
 module.exports.jsLiteral = jsLiteral; /* reused by the screenshot drivers */
 

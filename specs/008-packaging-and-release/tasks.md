@@ -188,3 +188,31 @@
 
 - [x] T138 (FR-186) README cut to a 30-second read (owner: clean, no release numbers, no junk): tagline, problem line, download line, the Real office picture, Works with / Not yet, one-line status, short bullets, Install, short Safety lead, Quick start with the clone line, Contributing, Build cost block moved down, short credits; `docs/credits.md` takes the art and app-id history; `scripts/shots-readme-real.js` registered in `ui-suite.js` and `shots-docs.js`; the two pictures through `npm run shots:docs`; both pictures are JPEGs under 170 KB (no budget exception). `[KNOWN GAP]` the About description, Discussions and topics are owner actions.
 - [x] T139 (FR-187) `scripts/release-video.js`: scene `realoffice` (Real office, queue slip, Needs you inbox); fragment `changelog.d/008-readme-refresh.md` with `Scene: realoffice`; `AUTO_MAX` 5 to 4 after the v0.1.13 clip measured 6.23 MB against the 5 MiB cap (#1305); the clip is 4.52 MiB; `test:releasevideo` covers the scene and the new `AUTO_MAX`.
+
+## 2026-11-09: no duplicate typecheck step before build in CI
+
+- [x] T150 (FR-193) Removed `npm run typecheck` before `npm run build` in `ci.yml` and `macos-pr.yml`; `scripts/test-ci-typecheck.js` + suite `test:citypecheck` with three mutants; `release.yml` unchanged (no build before its tests)
+
+## 2026-11-08: faster UI drivers (FR-190)
+
+- [x] T143 (FR-190) Wave 1 of the faster UI drivers: `scripts/driver-helpers.js` (`load` steady wait, ready-timeout line, `fastVisits`), `src/renderer/app.js` (`simvisits=fast`) (simulator-only); drivers check-office-fill, check-crew, check-auto-follow, shots-017, check-sched-top, check-answer-safety. Each changed driver: a mutant that still fails on its own labelled assert, 5 local runs.
+- [x] T147 (FR-194) Fold *Package smoke (unpacked Linux app)* into *Office layout check (xvfb)* in `ci.yml` (`pack:dir:prebuilt` step with `always()`, summary step naming the failed part), `pack:dir` split, required-name pins and mutants in `test-ui-suite.ts` / `test-checknames.ts`, `ruleset-main.json`, docs. The PR waits (`status:blocked`) until an owner removes the old required check.
+- [x] T151 (FR-195) `scripts/electron-cache.js` (plan, seed, warm), `.github/actions/npm-ci` (shared plan, same-Electron `restore-keys`, 4 tries 30/120/300 s, host-naming error, checksum seed), `.github/workflows/electron-cache.yml` (lookup-only warmer on main, schedule and by hand; contents: read), `nightly-watch.yml`, suite `test:electroncache` with 27 mutants (review of #1363: `retry-waits` input, raised limits in `ci.yml` and `macos-pr.yml`, the job-limit guard, `warm()` and seed tests, a hard fail without js-yaml), `test:supplychain` and `test:uisuite` updated, `docs/development.md`. `[KNOWN GAP]` proves itself on CI after the merge.
+- [x] T152 (FR-196) `scripts/test-electron-cache.ts`: the checksums-source assertion compares `fs.realpathSync` of both sides (symlinked or real `node_modules`, junction-safe), plus a decoy-copy case that must fail it. Issue #1391. `[KNOWN GAP]` Windows and Linux via CI.
+
+## 2026-11-08: pull requests skip the CI parts their change cannot affect (FR-191, owner decision)
+
+- [x] T144 (FR-191) `.github/scripts/ci-changes.js` (the one decision: code, themes, ui, macos; derived UI closure; version-only bumps; fail open), `ci-changes.sh` runs it; `ui-platforms.yml` (a `changes` job, shards on ui=true, "UI suite complete" passes on ui=false, prefilter paths), `ci.yml` (office layout and package smoke steps on ui), `macos-pr.yml` (the first step decides, the rest on macos=true); `scripts/test-ci-changes.ts` (`test:cichanges`, in `npm test`), `scripts/test-ui-suite.ts` (wiring); `docs/development.md`, fragment `changelog.d/008-ui-skip-non-ui.md`. Mutation-checked. Review of #1349: base copy of the decision, safe printing, deleted and unreadable names, wider roots, merge-queue wording, more rows.
+
+## 2026-11-10: the release clip shows the new features of v0.1.15 (FR-197)
+
+- [x] T153 (FR-197) `scripts/release-video.js`: scenes `real-crews` (spec 097 FR-335..FR-337) and `real-drag` (spec 097 FR-345..FR-355) with `refs`; `Scene:` fields in `changelog.d/097-crews-real-office.md` and `changelog.d/097-real-drag.md`; `scripts/test-release-video.js`: catalogue, `--list`, the v0.1.15 choice, two mutants
+- [x] T154 (FR-198) `scripts/usage-lib.js` `cumulative` adds whole cents per machine/day/model like `dailyRows` (and returns `totalCents`); `scripts/usage-readme.js` compares the chart's cents to `totalCents` exactly; `scripts/test-usage.js` three-machine sub-cent case. Issue #1449.
+
+## 2026-11-10: every UI driver ends with its whole process tree (FR-199)
+
+- [x] T155 (FR-199) `scripts/ui-suite.js` `runOne`: `detached` (POSIX), `guardTree` and `killTree` at the limit for every driver, `launch` option for tests; `scripts/test-ui-suite.ts` two cases (time limit leaves no grandchild; SIGINT/SIGTERM end the tree and remove the user-data folder); `d.killTree` removed from `scripts/release-video.js`; `scripts/test-release-video.js` source check follows; `changelog.d/008-uisuite-kill-tree.md`.
+
+## 2026-11-11: a driver that waits on the OS window focus never runs next to another window (FR-210)
+
+- [x] T170 (FR-210) `scripts/ui-suite.js`: `focus: true` on `shots-097-screens` (both entries) and `check-097-hover-card`; `main` runs the other entries at the job count and then the `focus` entries alone when drivers share a desktop; `scripts/test-ui-suite.ts` overlap test and a mutant; `changelog.d/008-uisuite-focus-serial.md`. Issue #1498.
