@@ -1,5 +1,5 @@
 # The suites `npm test` runs (scripts/run-tests.js), one `npm run` script name per line, in the order `npm run test:serial` runs them.
-# Add a new suite on its own line in the middle of the list, not at the end (two PRs appending at the end conflict). Blank lines and # comments are ignored.
+# Where a new suite goes: docs/development.md, Adding a test suite. Blank lines and # comments are ignored.
 test:safetext
 test:settingsnav
 test:rendersyntax
@@ -207,6 +207,7 @@ test:supplychain
 test:electroncache
 test:claudecliunit
 test:rules
+test:fragments
 test:weeklyretro
 test:docsscripts
 test:citypecheck
