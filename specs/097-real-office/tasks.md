@@ -328,4 +328,4 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 
 ## 2026-11-11: the drag cancel paths (issue 1550)
 
-- [x] T311 [US2] Spec delta 2026-11-11: `scripts/check-097-drag-cancel.js`: a drag in Real office (Photo office and arcade, both sizes) is ended by a window blur, a wheel, a scroll and Escape, leaving nothing lifted and nothing saved, and a later drag still saves [FR-352]. Test: `sim:` `check-097-drag-cancel`; hand-run mutants: no blur, wheel or scroll listener in `reorder.js` fails its own case
+- [x] T311 [US2] Spec delta 2026-11-11: `scripts/check-097-drag-cancel.js`: a drag in Real office (Photo office and arcade, both sizes) is ended by a window blur, a wheel, a scroll, Escape and a pointercancel, a scroll elsewhere does not end it, nothing is left lifted or saved and a later drag still saves; a `focus: true` entry [FR-352]. Test: `sim:` `check-097-drag-cancel`; hand-run mutants: each cancel listener in `reorder.js` deleted, the wheel and Escape ones without capture and the scroll one without its target filter fail their own case

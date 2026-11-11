@@ -649,7 +649,7 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
     const suite = require(SUITE) as { main: (o: unknown) => Promise<void>; DRIVERS: { name: string; label?: string; focus?: boolean }[]; sharedDesktop: (p: string, e: Record<string, string>) => boolean };
     const label = (d: { name: string; label?: string }): string => d.label || d.name;
     const flagged = suite.DRIVERS.filter((d) => d.focus).map(label).sort();
-    assert.deepStrictEqual(flagged, ['check-097-hover-card', 'shots-097-screens', 'shots-097-screens retro'], 'the focus entries are the ones with a failure on record (#1498, #1408)');
+    assert.deepStrictEqual(flagged, ['check-097-drag-cancel', 'check-097-hover-card', 'shots-097-screens', 'shots-097-screens retro'], 'the focus entries are the ones with a failure on record (#1498, #1408) and the one whose held drags are ended by a real OS blur by design (check-097-drag-cancel, issue 1550)');
     assert.deepStrictEqual([['darwin', {}], ['win32', {}], ['linux', {}], ['linux', { DISPLAY: ':0' }], ['linux', { DISPLAY: ':0', UI_SUITE_XVFB: '1' }]].map(([p, e]) => suite.sharedDesktop(p as string, e as Record<string, string>)), [true, true, false, true, false], 'windows share a desktop on macOS, Windows and Linux with a display; not under xvfb');
     const only = ['shots-097-screens', 'check-097-hover-card', 'shots-017', 'shots-018', 'shots-033', 'check-office-fill'].join(',');
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ui-suite-focus-'));
