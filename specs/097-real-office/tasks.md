@@ -312,3 +312,8 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 ## 2026-11-09: the rename pencil on an arcade cabinet's plate (FR-357, bug #1427)
 
 - [x] T298 [US5] FR-357: the pencil anchored to the plate when the plate does not draw the name (arcade cabinets), the field over the marquee. Test: `sim:` `check-097-plate-pencil` in the Photo office, cave, arcade and one-room arcade, both sizes; mutant `PENCIL_MUTANT=plate` fails the geometry assert
+
+## 2026-11-11: one layout search at start (FR-363, issue #1238)
+
+- [x] T303 [US5] FR-363: `renderOffice` returns before it counts a render while the simulator's replay is pending; `simlate=<ms>` in `src/renderer/sim.ts`; `check-office-ops` rows `searchesAtStart@late15/@late40` (limit 1) and `lateReplayDelay@late15/@late40` (minimum 50). Test: `sim:` check-office-ops 3 runs; mutants `renderOffice` gate removed (the late rows fail: 2 searches) and `simlate` ignored (the delay row fails)
+
