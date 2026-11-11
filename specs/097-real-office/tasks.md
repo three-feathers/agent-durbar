@@ -315,4 +315,4 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 
 ## 2026-11-11: a request slip is measured with its variant's CSS (FR-358, bug #1434)
 
-- [x] T299 [US2] FR-358: `drawSlips` writes `data-variant` before measuring a variant's box (`src/renderer/realoffice.js`). Test: `sim:` `check-097-slip-plates` (new, in `ui-suite`), measured at once after the first draw; fails without the line.
+- [x] T299 [US2] FR-358: `drawSlips` writes `data-variant` before measuring a variant's box (`src/renderer/realoffice.js`). Test: `sim:` `check-097-slip-plates` (new, in `ui-suite`), the slips made fresh and measured in the draw's own task, then at once after the page's first draw; fails without the line in every run.
