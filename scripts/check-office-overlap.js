@@ -41,6 +41,7 @@
  */
 'use strict';
 const fs = require('fs');
+const { buildProblem } = require('./ensure-electron'); // spec 008 FR-211: one shared build check
 const os = require('os');
 const path = require('path');
 
@@ -1282,7 +1283,7 @@ module.exports.jsLiteral = jsLiteral; /* reused by the screenshot drivers */
 
 if (require.main === module) {
   const { spawnSync } = require('child_process');
-  if (!fs.existsSync(INDEX)) { console.error('dist/ missing: run npm run build first'); process.exit(2); }
+  { const noBuild = buildProblem(); if (noBuild) { console.error(noBuild); process.exit(2); } }
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-check-'));
   // one marker per run, so parallel runs (scripts/check-parallel.js) never read each other's result
   const marker = path.join(userData, 'office-check.fail');

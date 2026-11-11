@@ -2,7 +2,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 
 const ROOT = path.join(__dirname, '..', '..');
 const SUITE = path.join(ROOT, 'scripts', 'ui-suite.js');
@@ -69,7 +69,7 @@ assert.ok(/require\('electron'\)/.test(src), 'it starts the Electron binary dire
     await assert.rejects(suite.main({ build: missing, argv: ['--only', names[1].split(' ')[0]], ensure: () => { calls.push('ensure'); return true; }, run: async () => { calls.push('run'); return { ok: true, secs: 0, why: '', log: '' }; } }), (e: Error) => e.message.includes(want) && /npm run build` first/.test(e.message) && /no driver was started/.test(e.message), 'ui-suite: a missing build stops the runner with its path and "no driver was started"');
     assert.ok(Date.now() - t < 2000 && calls.length === 0, 'ui-suite: a missing build stops the runner at once, before Electron is fetched or a driver started');
     t = Date.now();
-    const r = await suite.runOne({ name: names[1].split(' ')[0] }, outDir, { build: missing });
+    const r = await suite.runOne({ name: names[1].split(' ')[0], sim: false }, outDir, { build: missing, launch: [process.execPath, ['-e', 'process.exit(0)']] }); // the launch is a harmless stand-in: with the check gone it would pass, and no Electron starts
     assert.ok(!r.ok && r.why.includes(want) && Date.now() - t < 2000, 'ui-suite: runOne returns the missing build as a failed run without spawning');
     t = Date.now();
     const lines: string[] = [];
@@ -81,8 +81,51 @@ assert.ok(/require\('electron'\)/.test(src), 'it starts the Electron binary dire
     fs.rmSync(outDir, { recursive: true, force: true });
     fs.rmSync(tmp, { recursive: true, force: true });
   }
+  // every other launcher that starts the dev Electron on the repo folder calls the same buildProblem(): a copy of scripts/ in a folder with no build
+  // (spec 008 FR-211). The plain-Node launchers are run as they are started by hand: exit 2 and the message, nothing started.
+  const copy = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ui-suite-nobuild-copy-'));
+  try {
+    fs.cpSync(path.join(ROOT, 'scripts'), path.join(copy, 'scripts'), { recursive: true });
+    fs.copyFileSync(path.join(ROOT, 'package.json'), path.join(copy, 'package.json'));
+    // a stand-in for the electron package: the path it exports is node itself, so a launcher whose guard is gone runs `node .` (no dist: exits 1 at once) and never starts a real Electron
+    fs.mkdirSync(path.join(copy, 'node_modules', 'electron'), { recursive: true });
+    fs.writeFileSync(path.join(copy, 'node_modules', 'electron', 'index.js'), 'module.exports = process.execPath;\n');
+    fs.writeFileSync(path.join(copy, 'node_modules', 'electron', 'package.json'), '{"name":"electron","version":"0.0.0","main":"index.js"}\n');
+    const wantCopy = path.join(copy, 'dist', 'main', 'main.js');
+    for (const f of ['check-mac-titlebar', 'check-office-overlap', 'check-theme-geometry', 'check-perf', 'world-matrix']) {
+      const t0 = Date.now();
+      const r = spawnSync(process.execPath, [path.join(copy, 'scripts', f + '.js')], { encoding: 'utf8', shell: false, windowsHide: true, timeout: 20000 });
+      assert.ok(r.status === 2 && String(r.stderr).includes(wantCopy) && /npm run build` first/.test(String(r.stderr)) && Date.now() - t0 < 5000, `${f}: a missing build exits 2 with the path and \`npm run build\` first (got ${r.status}: ${String(r.stderr).slice(0, 200)})`);
+    }
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const rec = require(path.join(copy, 'scripts', 'perf-record.js')) as { recordAll: (o: object) => Promise<number> };
+    const errs: string[] = [];
+    const realErr = console.error;
+    console.error = (m: string) => { errs.push(String(m)); };
+    let code: number;
+    try { code = await rec.recordAll({ quick: true, runs: 1 }); } finally { console.error = realErr; }
+    assert.ok(code === 2 && errs.some((m) => m.includes(wantCopy)), 'perf-record: a missing build returns 2 with the path before any Electron starts');
+  } finally {
+    fs.rmSync(copy, { recursive: true, force: true });
+  }
+  // release-video asks the same helper (deps.buildProblem is the test's way in), before it checks Electron or starts a recording
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const rv = require(path.join(ROOT, 'scripts', 'release-video.js')) as { main: (a: string[], d: object) => Promise<unknown> };
+  const rvOut = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ui-suite-nobuild-rv-'));
+  try {
+    const rvCalls: string[] = [];
+    await assert.rejects(rv.main(['--version', 'v0.0.1', '--out', rvOut, '--scenes', 'office'], { hasFfmpeg: () => true, chooseScenes: () => ['office'], releaseSources: () => [], buildProblem: () => msg, ensure: () => { rvCalls.push('ensure'); return true; }, runOne: async () => { rvCalls.push('run'); return { ok: true }; } }), (e: Error) => e.message === msg, 'release-video: a missing build stops it with the shared message');
+    assert.strictEqual(rvCalls.length, 0, 'release-video: nothing started');
+  } finally {
+    fs.rmSync(rvOut, { recursive: true, force: true });
+  }
+  for (const f of ['check-mac-titlebar', 'check-office-overlap', 'check-theme-geometry', 'check-perf', 'world-matrix', 'perf-record', 'release-video']) {
+    assert.ok(/buildProblem/.test(fs.readFileSync(path.join(ROOT, 'scripts', f + '.js'), 'utf8')), `${f} calls the shared buildProblem`);
+  }
+  // installed-app-check.js and pack-esm-check.js run inside the PACKAGED app (a different build, resources/app.asar): they must not look for dist/
+  for (const f of ['installed-app-check', 'pack-esm-check']) assert.ok(!/buildProblem/.test(fs.readFileSync(path.join(ROOT, 'scripts', f + '.js'), 'utf8')), `${f} starts or runs in the packaged app and gets no dist guard`);
   assert.ok(src.indexOf('const noBuild = build()') > src.indexOf('syntaxErrors([...new Set(') && src.indexOf('const noBuild = build()') < src.indexOf('if (!ensure())'), 'the build check sits after the syntax pass and before the Electron install');
-  console.log('ui-suite missing build: ok');
+  process.stdout.write('ui-suite missing build: ok\n');
 })().catch((e) => { console.error(e); process.exitCode = 1; });
 // issue #748 (spec 021 FR-057): no asserting driver sits unrun. Every scripts/check-*.js and shots-*.js that asserts is in the suite, in
 // shots-docs' DOC_SHOTS (retaken by `npm run shots:docs`), or in NOT_IN_SUITE with a written reason

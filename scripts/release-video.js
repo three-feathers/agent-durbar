@@ -764,7 +764,8 @@ async function main(argv = process.argv.slice(2), deps = {}) {
   if (a.scenes === null) a.scenes = (deps.chooseScenes || ((v) => chooseScenes((deps.releaseSources || releaseSources)(v))))(a.version); // after the removal: no scene shows this release is a failure like any other, and it leaves no old clip
   fs.mkdirSync(out, { recursive: true });
   if (!(deps.hasFfmpeg || hasFfmpeg)()) throw new Error('ffmpeg was not found (install it, or set FFMPEG=<path>); no clip was made');
-  if (!fs.existsSync(path.join(ROOT, 'dist', 'renderer', 'index.html'))) throw new Error('no build: run `npm run build` first');
+  const noBuild = (deps.buildProblem || require('./ensure-electron').buildProblem)();
+  if (noBuild) throw new Error(noBuild);
   if (!(deps.ensure || require('./ensure-electron').ensureElectron)()) throw new Error('the Electron binary is not installed and could not be fetched');
   const frames = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-release-video-'));
   try {

@@ -340,9 +340,9 @@ const dprOk = (v) => /^([1-4]|1\.25|1\.5)$/.test(String(v));
  * this process gets SIGINT, SIGTERM or exits (`xvfb-run`'s own cleanup does not run when only its shell is killed). There is no `d.killTree` flag.
  * `launch` is for tests: `[file, args]` replaces the Electron/xvfb-run command. A missing build (FR-211) is returned as a failed run without starting anything.
  */
-function runOne(d, outDir, { launch, build = buildProblem } = {}) {
+function runOne(d, outDir, { launch, build = launch ? () => '' : buildProblem } = {}) {
   // FR-211: no build, no Electron (it would open an error box and wait for it until the time limit)
-  const missing = launch ? '' : build();
+  const missing = build();
   if (missing) return Promise.resolve({ ok: false, code: 1, secs: 0, why: missing, log: missing });
   const electron = require('electron'); // the binary's path
   const user = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-ui-user-'));
