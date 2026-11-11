@@ -291,24 +291,24 @@ if (part === 'hashtable') {
     const k = `R12 adversarial ${k0} (path ${pi})`;
     r12Grow(k, code, v, pi);
   }
-  // spec 012 T160: the R12 worker's own checks, with a worker whose masking is a timed busy loop (no timers faked: the worker reads its own clock).
-  // (1) `reps` runs one timing and gives the mean per run: 16 runs of 20 ms read about 20 ms, not 1.3 (no loop) and not 320 (no division);
-  // (2) the retry baseline is used: a worker that does no work for a one-run baseline of the short input (as a Windows tick can read) fails the first try,
+  // spec 012 T160: the R12 worker's own checks, deterministic: the worker's masking is replaced by a call that moves a fake clock (`process.hrtime.bigint` and
+  // `process.threadCpuUsage`, which the worker reads) by a set cost, so no real time or machine load enters.
+  // (1) `reps` runs one timing and gives the mean per run: 16 calls of 20 ms read exactly 20 ms (no loop: 1.25; no division: 320);
+  // (2) the retry baseline is used: a worker that costs nothing for a one-run baseline of the short input (as a Windows tick can read) fails the first try,
   // and passes only when the retry baseline runs 16 times; a quadratic cost still fails.
   {
     const wrap = 'const {_uncappedForTest:u}=require(w.mod);';
     assert.ok(code.includes(wrap), 'R12 mutants apply to the worker source');
-    const busy = (body: string): string => code.replace(wrap, `const {_uncappedForTest:u0}=require(w.mod);const busy=(ms)=>{const t=process.hrtime.bigint();while(Number(process.hrtime.bigint()-t)/1e6<ms);};const u={maskSecretArgs:(a)=>{${body};return u0.maskSecretArgs(a)}};`);
-    const fixed = busy('busy(20)');
-    const cpuOf = (reps: number): number => Math.min(...[0, 1, 2].map(() => workerRun('R12 reps', fixed, { mod, input: 'x'.repeat(5000), path: 0, reps }, 60000).cpu));
-    const one = cpuOf(1);
-    const sixteen = cpuOf(16);
-    assert.ok(one > 15 && one < 60 && sixteen > 15 && sixteen < 60, `R12 worker: reps=1 reads ${one.toFixed(1)} ms and reps=16 reads ${sixteen.toFixed(1)} ms for a 20 ms run each (mean per run expected)`);
+    const fake = (cost: string): string => code.replace(wrap, `const {_uncappedForTest:u0}=require(w.mod);let clock=0;process.hrtime.bigint=()=>BigInt(Math.round(clock*1e6));process.threadCpuUsage=(p)=>({user:Math.round(clock*1000)-(p?p.user:0),system:0});const u={maskSecretArgs:(a)=>{clock+=${cost};return u0.maskSecretArgs(a)}};`);
+    const reads = (src: string, reps: number): number => workerRun('R12 reps', src, { mod, input: 'x'.repeat(5000), path: 0, reps }, 60000).cpu;
+    const fixed = fake('20');
+    assert.strictEqual(reads(fixed, 1), 20, 'R12 worker: one run of 20 ms reads 20 ms');
+    assert.strictEqual(reads(fixed, 16), 20, 'R12 worker: reps=16 must run the work 16 times and give the mean per run (20 ms)');
     const input = 'x'.repeat(192_000);
     const worst = { ...worstGrowth };
     // linear, 0.7 ms per 1000 characters, but nothing for one run of the short input
-    r12Grow('R12 mutant linear, one-run baseline reads 0', busy('if(w.reps===1&&a[0].length<100000)return u0.maskSecretArgs(a);busy(a[0].length*0.0007)'), input, 0);
-    assert.throws(() => r12Grow('R12 mutant quadratic', busy('busy(a[0].length*a[0].length*8e-9)'), input, 0), /R12 mutant quadratic: .* \(ratio \d/);
+    r12Grow('R12 mutant linear, one-run baseline reads 0', fake('(w.reps===1&&a[0].length<100000?0:a[0].length*0.0007)'), input, 0);
+    assert.throws(() => r12Grow('R12 mutant quadratic', fake('a[0].length*a[0].length*8e-9'), input, 0), /R12 mutant quadratic: .* \(ratio \d/);
     Object.assign(worstGrowth, worst);
   }
 }
