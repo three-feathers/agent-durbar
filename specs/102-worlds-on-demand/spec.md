@@ -773,6 +773,10 @@ Agent decisions stand until the owner changes them.
 
 ## Changes
 
+### 2026-11-11: the store's inode and device checks compare bigints (issue #1491; FR-060..FR-062)
+
+`readFile`'s `lstat`/`fstat` inode check and `sameDir`'s device-and-inode re-check before each delete read `{ bigint: true }` (`lstatBig` in `src/main/worlds/store.ts`): an NTFS file ID above 2^53 loses its low bit as a plain number, so a swapped file or folder with a neighbouring ID could pass. Sizes and link counts are compared as before. Details, tests and limits: spec 083 *Changes* 2026-11-11 (`test:worldstore`, *issue 1491 world part ino*, *world folder ino* and *dev*; not run on Windows).
+
 ### 2026-11-07: RA7: the arcade's moments, looked at and booked (FR-264, T222, T223; issue #1268)
 
 - **Light:** T222 said "both lights". The owner withdrew the light choice on 2026-11-03 (night only; the entry of that date below, booked in #1266), so "both lights" is the one night look. No day set is drawn or driven.
@@ -1386,3 +1390,7 @@ Owner, Vikram, 2026-11-09 20:31 UTC, answering "do you want helper heads and dat
 - **Retro has one light.** FR-268 and T228 say "both lights"; the owner withdrew the light choice on 2026-11-03 (night only), so the card has the night 7200 K.
 - **Owner decision wanted: Photo and Cave are both `rows`.** FR-014 and OP-13 say no two project worlds share an arrangement, and `ARRANGEMENTS` has only `rows` and `aisles`, so the pair fails. Until the owner chooses (a named known-clash list for already-built worlds, or Cave gets its own arrangement first, T119), `worlds/known-clashes.json` names that one pair and field; the test prints `[KNOWN GAP]` for it and fails every other clash, so a new world cannot join it. This list is provisional, not a decision.
 - **Not built yet (stays open).** The copied-cutout and recoloured-cutout fixtures and `scripts/check-world-distinct.js` (T093, Electron, under the lock); `scripts/world-pack.js`, the tick reader and the availability gates (T036); the contact sheet and the `distinct-check` field (T094). `worlds/` is not in the app (`package.json` `files` lists only `dist`).
+
+## Changes 2026-11-11: the desk-feature drivers have an arcade case (T283, issue #1399; no new FR)
+
+Issue #1399 lists the Real office's desk-feature drivers that were never run in the arcade. The owner's check of 2026-11-09 (a throwaway wrapper) found five passing and filed the failures (#1427 pencil, #1428 motion and screens; the last is FR-307..FR-310). This change makes the passing five part of `ui-suite` instead of a one-off: `DRIVER_WORLD=retro` (a value other than `retro` throws) makes `driver-helpers`' `load` add `worldflags=retro&world=retro` to every Real office load and fail unless `.ro[data-world=retro]` is drawn (so a driver can never pass on the Photo office by mistake); `ui-suite` lists `check-097-hover-card`, `check-097-desk-marks`, `check-097-one-face`, `check-097-chat-look` and `check-097-chat-contrast` once more, labelled `retro`. Remaining on #1399: the pencil (#1427), `check-auto-follow` in the arcade, T261 and T225 in the layout-check job, and `check-097-chat-contrast`'s Photo-floor background helper (the arcade run is only partly meaningful) `[KNOWN GAP]`.

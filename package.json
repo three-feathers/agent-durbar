@@ -1,6 +1,6 @@
 {
   "name": "agent-durbar",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "description": "Office-style command center to see, chat with and coordinate AI agents across harnesses (GitHub Copilot, Claude Code, OpenAI Codex), for anyone who works with agents.",
   "private": true,
   "desktopName": "agent-durbar.desktop",
@@ -165,6 +165,7 @@
     "test:doormigrate": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-doormigrate.js",
     "test:simversion": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-sim-version.js",
     "test:simclock": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-simclock.js",
+    "test:pointer-log": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-pointer-log.js",
     "test:lookalike": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-lookalike.js",
     "test:liveact": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-liveact.js",
     "test:grantlabel": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-grant-label.js",
