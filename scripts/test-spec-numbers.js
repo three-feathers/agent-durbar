@@ -298,6 +298,42 @@ try {
   assert.strictEqual((nums.match(/GH_TOKEN/g) || []).length, 1, 'the token is in the environment of one step only');
   assert.doesNotMatch(nums, /\$\{\{ github\.event\.pull_request\.(body|title|head\.ref)/);
 
+  // ---- one number defined twice inside one file (issue #1553), whole tree, offline, temp folders
+  assert.strictEqual(sn.checkDuplicates([{ file: 'specs/001-a/spec.md', id: 'FR-001', lines: [1, 3] }], '').length, 1, 'MUTANT-A a number defined twice in one file is a problem');
+  assert.deepStrictEqual(sn.checkDuplicates([{ file: 'specs/001-a/spec.md', id: 'FR-001', lines: [1, 3] }], 'specs/001-a/spec.md FR-001 2'), []);
+  { const dd = path.join(tmp, 'dups'); fs.mkdirSync(dd);
+    const spec = (...ls) => ls.join('\n') + '\n';
+    write(dd, 'specs/001-a/spec.md', spec('# A', '- **FR-001** one', '- **FR-002** two', 'A reference to **FR-001** in prose and "FR-002" in a table:', '| FR-002 | row |', '- see **FR-002, FR-003** (a list)'));
+    write(dd, 'specs/001-a/tasks.md', T('001', '002'));
+    write(dd, 'specs/002-b/spec.md', spec('- **FR-001** one', '- **FR-002** two', '- **FR-001** again'));
+    let r = cli(dd, ['--dups']);
+    assert.strictEqual(r.status, 1, 'MUTANT-C a duplicate in the second spec folder must fail --dups (every folder is read): ' + r.stdout + r.stderr);
+    assert.match(r.stdout, /specs\/002-b\/spec\.md: FR-001 is defined 2 times \(lines 1, 3\)/, 'duplicate named with both lines (second spec folder)');
+    assert.doesNotMatch(r.stdout, /001-a/, 'MUTANT-B references and a list in the first folder are not definitions');
+    // the first folder alone is also checked
+    write(dd, 'specs/002-b/spec.md', spec('- **FR-001** ok'));
+    r = cli(dd, ['--dups']); assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+    write(dd, 'specs/001-a/tasks.md', T('001', '002', '002'));
+    r = cli(dd, ['--dups']); assert.strictEqual(r.status, 1, 'duplicate T in the first spec folder must fail --dups: ' + r.stdout); assert.match(r.stdout, /specs\/001-a\/tasks\.md: T002 is defined 2 times \(lines 2, 3\)/, 'duplicate in the first spec folder');
+    // a baseline allows what was there, never more; a stale line fails
+    r = cli(dd, ['--write-baseline']); assert.strictEqual(r.status, 0, r.stdout);
+    r = cli(dd, ['--dups']); assert.strictEqual(r.status, 0, 'baselined duplicate passes: ' + r.stdout);
+    write(dd, 'specs/001-a/tasks.md', T('001', '002', '002', '002'));
+    r = cli(dd, ['--dups']); assert.strictEqual(r.status, 1); assert.match(r.stdout, /T002 is defined 3 times \(lines 2, 3, 4\); the baseline allows 2/, 'a baselined duplicate may not grow');
+    write(dd, 'specs/001-a/tasks.md', T('001', '002'));
+    r = cli(dd, ['--dups']); assert.strictEqual(r.status, 1); assert.match(r.stdout, /T002 is no longer duplicated/, 'a stale baseline line fails');
+  }
+  // a branch that adds a second definition: the clash names both lines
+  { const d2 = repo();
+    G(d2, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+    G(d2, 'checkout', '-q', '-b', 'mine');
+    write(d2, 'specs/001-a/spec.md', S('001', '002') + '- **FR-001** again\n'); commit(d2, 'dup');
+    const r = cli(d2); assert.strictEqual(r.status, 1, r.stdout);
+    assert.match(r.stdout, /specs\/001-a\/spec\.md: FR-001 is also in this branch itself \(defined twice in the file, lines 1 and 3;/, 'both lines named');
+  }
+  // the repository's own specs: no duplicate beyond the baseline (mutant: references counted as definitions fails here)
+  { const r = cli(path.join(__dirname, '..'), ['--dups']); assert.strictEqual(r.status, 0, 'MUTANT-B the repository specs have no duplicate beyond the baseline: ' + r.stdout + r.stderr); }
+
   // the real repository's own files parse to something sane (the patterns still match the specs)
   const root = path.join(__dirname, '..');
   const s21 = sn.parseDefinitions(fs.readFileSync(path.join(root, 'specs/021-collaboration-harness/spec.md'), 'utf8'), 'spec');

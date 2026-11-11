@@ -96,3 +96,7 @@
 
 - [x] T078 (FR-091) `scripts/pr-gate.sh`: the `src/` check reads `pulls/<N>/files` with `--paginate` (old paths of renames too) once, reused by FR-089's `only_nocode`, compares the listed count with `pr_line`'s `changed_files` and the 3000 cap, treats a control-character name as `src/`, and blocks with `src-check-unreadable` on any doubt. Test `test:prgatecodeql` (cases `src-page2`, `src-rename`, `src-docs-only`, `src-count`, `src-cap`, `src-error`, `src-partial`, `src-empty`, `src-ctrl`; fails on the old gate) with 8 mutants (no `--paginate`, rename's old path ignored, count check removed, 3000 cap removed, the whole check removed, a partly read list accepted, an empty list accepted, a control-character name not counted as `src/`), each caught by its named case; static asserts that the list is read once, after `pr_line` and above the final head re-check, with no other `changed_files` read.
 
+
+## 2026-11-12: a number defined twice in one spec file (FR-093, issue #1553)
+
+- [x] T080 (FR-093) `scripts/spec-numbers.js --dups` (whole tree, offline, line numbers, `scripts/spec-duplicates-baseline.txt` ratchet), run by `specs:check` and `test:specnumbers`; the branch clash names both lines. Test: temp spec folders; mutants: duplicate check removed, references counted as definitions, only the first spec folder read.
