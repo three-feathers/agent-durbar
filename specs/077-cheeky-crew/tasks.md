@@ -137,4 +137,4 @@ Q2-Q8 are answered; **Q1 (art format) is open again** (2026-10-23). Tasks are ma
 
 ## check-crew waits for the crew scenes (delta 2026-11-11, issue #1460)
 
-- [x] T114 `scripts/check-crew.js`: one bounded wait (`crewDrawn`, 5 s) for the crew scenes after `useCrew()` in the 1920x1080 block and the 1440x900/1280x800 loop, same asserts after, diagnostics on a timeout; test-only `CREW_MUTANT=slow` (passes with the wait) and `slow-nowait` (must fail with `(0)`) [FR-070]
+- [x] T114 `scripts/check-crew.js`: one bounded wait (`crewDrawn`, 5 s = `CREW_WAIT_MS`) for the crew scenes after `useCrew()` in the 1920x1080 block and the 1440x900/1280x800 loop, same asserts after, diagnostics on a timeout; test-only `CREW_MUTANT=slow` (passes with the wait) and `slow-nowait` (must fail with `(0)`) [FR-070]
