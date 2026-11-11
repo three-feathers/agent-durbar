@@ -311,6 +311,43 @@ function offAttentionCheck() {
   return problems;
 }
 
+/* The settled page check, shared with the drivers that run against a live simulator (spec 001 T197, issue #1481: shots-001-live-activity read the page once and could land between a lobby re-layout and its repaint).
+   `beforeRead(ms)` is an optional async hook called before each read with the ms since the start (measure() uses it for the OFFICE_TEST_STUCK_WALKER cases). */
+/* spec 024 T027 (#406): a figure that is still walking (the renderer marks it `.walking`; under load that mark can end while the CSS transition is still running, so a running transition on the figure counts as walking too) is not on a slot yet, and under load
+   the walk can still be going when the case is measured. Re-measure while a figure is walking, in small steps for up to SETTLE_MS; a figure
+   that has arrived must be on a lit slot (4px), as before. Still walking at the end: "did not reach a slot". No figure walking (motion off): one
+   instant measurement (a figure off its slot: two identical reads, FR-191). OFFICE_TEST_STUCK_WALKER=1 adds a figure that never arrives (proves the failure), =late one that arrives after 1.2 s (proves the wait),
+   =off one that has arrived off any slot and stays still (proves the FR-191 two-read failure), =moved one that has arrived off a slot and keeps moving
+   for 1.2 s, then lands on a lit slot (proves that FR-191 re-measures while the figures or slots move). */
+const SETTLE_MS = 3000, NOT_ON_SLOT = 'a walking figure is not on a slot';
+const WALK_SIG = `(async()=>{await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const f=(e)=>{const r=e.getBoundingClientRect();return Math.round(r.x)+','+Math.round(r.y)+','+Math.round(r.width)+','+Math.round(r.height)};
+  return [...document.querySelectorAll('#walkers .walker')].map(f).join(';')+'|'+[...document.querySelectorAll('.lobby .slot.on')].map(f).join(';')})()`;
+const settledPageCheck = async (ctx, expanded, expectPlaces, beforeRead) => {
+  const sleep = ctx.sleep;
+  const t0 = Date.now();
+  let walkSig = null;
+  for (;;) {
+    if (beforeRead) await beforeRead(Date.now() - t0);
+    const res = await ctx.js(`(${pageCheck.toString()})(${expanded}, ${expectPlaces})`);
+    if (!res.problems.some((p) => p.startsWith(NOT_ON_SLOT))) return res;
+    const walking = await ctx.js(`[...document.querySelectorAll('#walkers .walker')].some(w=>w.classList.contains('walking')||w.getAnimations().some(a=>a.transitionProperty==='transform'))`);
+    if (!walking) {
+      /* spec 001 FR-191: arrived (no walking mark, no transition running) and off its slot. The slots can still move after the figure
+         arrived (the lobby re-lays out as others come and go), so this is a real failure only when two reads in a row, each after two
+         animation frames, see the same figures and the same lit slots; while they differ, re-measure (bounded by SETTLE_MS). */
+      const sig = await ctx.js(WALK_SIG);
+      if (sig === walkSig) return res;
+      walkSig = sig;
+      if (Date.now() - t0 >= SETTLE_MS) { res.problems = res.problems.map((p) => (p.startsWith(NOT_ON_SLOT) ? `${p} (the figures or lit slots still moved after ${SETTLE_MS} ms)` : p)); return res; }
+    } else walkSig = null;
+    if (walking && Date.now() - t0 >= SETTLE_MS) {
+      res.problems = res.problems.map((p) => (p.startsWith(NOT_ON_SLOT) ? `a walking figure did not reach a slot within ${SETTLE_MS} ms${p.slice(NOT_ON_SLOT.length)}` : p));
+      return res;
+    }
+    await sleep(100); /* poll interval of this bounded retry loop (SETTLE_MS), not a wait for a state */
+  }
+};
+
 async function driver(ctx) {
   const H = helpers(ctx); // spec 008 FR-097: shared plumbing
   const shotsDir = process.env.OFFICE_SHOTS || '';
@@ -415,45 +452,18 @@ async function driver(ctx) {
     /* spec 024: agents go to the lobby after 600 ms and the walk takes about 1 s: wait until somebody is there and nobody is walking */
     try { await ctx.waitFor(`!!document.querySelector('.place.busy:not([data-place="coffee"]):not([data-place="boss"]):not([data-place="bank"])')`, 4000); await ctx.waitFor(`!document.querySelector('.walker.walking')`, 4000); await stable('after the walks'); } catch (e) { /* nobody visits in this layout: the checks below still run */ }
   };
-  /* spec 024 T027 (#406): a figure that is still walking (the renderer marks it `.walking`; under load that mark can end while the CSS transition is still running, so a running transition on the figure counts as walking too) is not on a slot yet, and under load
-     the walk can still be going when the case is measured. Re-measure while a figure is walking, in small steps for up to SETTLE_MS; a figure
-     that has arrived must be on a lit slot (4px), as before. Still walking at the end: "did not reach a slot". No figure walking (motion off): one
-     instant measurement (a figure off its slot: two identical reads, FR-191). OFFICE_TEST_STUCK_WALKER=1 adds a figure that never arrives (proves the failure), =late one that arrives after 1.2 s (proves the wait),
-     =off one that has arrived off any slot and stays still (proves the FR-191 two-read failure), =moved one that has arrived off a slot and keeps moving
-     for 1.2 s, then lands on a lit slot (proves that FR-191 re-measures while the figures or slots move). */
-  const SETTLE_MS = 3000, NOT_ON_SLOT = 'a walking figure is not on a slot';
-  const WALK_SIG = `(async()=>{await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const f=(e)=>{const r=e.getBoundingClientRect();return Math.round(r.x)+','+Math.round(r.y)+','+Math.round(r.width)+','+Math.round(r.height)};
-    return [...document.querySelectorAll('#walkers .walker')].map(f).join(';')+'|'+[...document.querySelectorAll('.lobby .slot.on')].map(f).join(';')})()`;
   const measure = async (expanded) => {
     const hook = process.env.OFFICE_TEST_STUCK_WALKER; /* '1': never arrives; 'late': arrives on a lit slot after 1.2 s; 'off', 'moved': see above */
     const hooked = hook === '1' || hook === 'late' || hook === 'off' || hook === 'moved';
     if (hooked) await ctx.js(`(()=>{const l=document.getElementById('walkers');if(!l)return;l.querySelectorAll('.walker[data-stuck]').forEach(x=>x.remove());const e=document.createElement('span');e.className=${jsLiteral(hook === 'off' || hook === 'moved' ? 'walker' : 'walker walking')};e.dataset.stuck='1';e.style.transform='translate(3px,3px)';l.appendChild(e);})()`);
-    const t0 = Date.now();
-    let arrived = false, walkSig = null, nudge = 0;
-    for (;;) {
-      if (hook === 'moved' && Date.now() - t0 < 1200) await ctx.js(`(()=>{const e=document.querySelector('#walkers .walker[data-stuck]');if(e)e.style.transform='translate('+${jsLiteral(3 + (++nudge % 40))}+'px,3px)';})()`);
-      if ((hook === 'late' || hook === 'moved') && !arrived && Date.now() - t0 >= 1200) {
+    let arrived = false, nudge = 0;
+    return settledPageCheck(ctx, expanded, expectPlaces, async (ms) => {
+      if (hook === 'moved' && ms < 1200) await ctx.js(`(()=>{const e=document.querySelector('#walkers .walker[data-stuck]');if(e)e.style.transform='translate('+${jsLiteral(3 + (++nudge % 40))}+'px,3px)';})()`);
+      if ((hook === 'late' || hook === 'moved') && !arrived && ms >= 1200) {
         arrived = true;
         await ctx.js(`(()=>{const l=document.getElementById('walkers'),e=l&&l.querySelector('.walker[data-stuck]'),s=document.querySelector('.lobby .slot.on');if(!e)return;if(!s){e.remove();return;}const r=s.getBoundingClientRect(),lr=l.getBoundingClientRect();e.style.transform='translate('+Math.round((r.left+r.right)/2-lr.left)+'px,'+Math.round((r.top+r.bottom)/2-lr.top)+'px)';e.classList.remove('walking');})()`);
       }
-      const res = await ctx.js(`(${pageCheck.toString()})(${expanded}, ${expectPlaces})`);
-      if (!res.problems.some((p) => p.startsWith(NOT_ON_SLOT))) return res;
-      const walking = await ctx.js(`[...document.querySelectorAll('#walkers .walker')].some(w=>w.classList.contains('walking')||w.getAnimations().some(a=>a.transitionProperty==='transform'))`);
-      if (!walking) {
-        /* spec 001 FR-191: arrived (no walking mark, no transition running) and off its slot. The slots can still move after the figure
-           arrived (the lobby re-lays out as others come and go), so this is a real failure only when two reads in a row, each after two
-           animation frames, see the same figures and the same lit slots; while they differ, re-measure (bounded by SETTLE_MS). */
-        const sig = await ctx.js(WALK_SIG);
-        if (sig === walkSig) return res;
-        walkSig = sig;
-        if (Date.now() - t0 >= SETTLE_MS) { res.problems = res.problems.map((p) => (p.startsWith(NOT_ON_SLOT) ? `${p} (the figures or lit slots still moved after ${SETTLE_MS} ms)` : p)); return res; }
-      } else walkSig = null;
-      if (walking && Date.now() - t0 >= SETTLE_MS) {
-        res.problems = res.problems.map((p) => (p.startsWith(NOT_ON_SLOT) ? `a walking figure did not reach a slot within ${SETTLE_MS} ms${p.slice(NOT_ON_SLOT.length)}` : p));
-        return res;
-      }
-      await sleep(100); /* poll interval of this bounded retry loop (SETTLE_MS), not a wait for a state */
-    }
+    });
   };
   const run = async (label, query, w, h, shot) => {
     await load(query, w, h);
@@ -1265,6 +1275,7 @@ async function driver(ctx) {
 }
 
 module.exports = driver;
+module.exports.settledPageCheck = settledPageCheck; /* reused by shots-001-live-activity.js (spec 001 T197) */
 module.exports.pageCheck = pageCheck; /* reused by check-theme-geometry.js */
 module.exports.jsLiteral = jsLiteral; /* reused by the screenshot drivers */
 
