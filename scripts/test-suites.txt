@@ -127,6 +127,7 @@ test:planmode
 test:probe
 test:logo-assets
 test:autofollow
+test:announcemask
 test:openwith
 test:liveact
 test:lookalike
