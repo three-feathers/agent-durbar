@@ -107,6 +107,7 @@ const DRIVERS = [
   { name: 'check-inbox-text' }, // spec 052 FR-214: the text of a Needs you card never runs words together
   { name: 'check-inbox-avatar' }, // spec 052 (#1174): no avatar in the Needs you dialog outgrows its box; the first Allow button is in view
   { name: 'check-097-one-face' }, // spec 097 (#1193): the rail row, the chat header and the inbox show one picture per agent, in Real office and in the flat office with two crews
+  { name: 'check-097-one-face', label: 'check-097-one-face retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 T283 (issue #1399): the same driver in the arcade
   { name: 'check-question-visible' },
   { name: 'check-chat-no-scroll' },
   { name: 'check-chat-visibility', label: 'check-chat-visibility 1440', env: { CVONLY: '1440' } }, // one entry per size so each has its own time limit (#1127, FR-063)
@@ -170,15 +171,19 @@ const DRIVERS = [
   { name: 'shots-097-chat' }, // spec 097 FR-106 (T120): the chat in the world: desk-side column, portrait, lamp words, surface and contrast, card tails
   { name: 'shots-097-chat', label: 'shots-097-chat retro', env: { MOMENTS_WORLDS: 'retro' } }, // spec 102 T221: the arcade's chat at three sizes: marquee name, the cards dark (4.5:1, deep), tab order as flat's
   { name: 'check-097-chat-look' }, // spec 097 (#1140, T195): every chat, main or helper, has the same world look and follows the Office layout setting while open
+  { name: 'check-097-chat-look', label: 'check-097-chat-look retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 T283 (issue #1399): the same driver in the arcade
   { name: 'check-097-chat-contrast' }, // spec 097 (#1146, T197): chat text, links, code chips and header text against the real pixels behind them, both sizes; header text inside the window
+  { name: 'check-097-chat-contrast', label: 'check-097-chat-contrast retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 T283 (issue #1399): the same driver in the arcade
   { name: 'check-097-order' }, // spec 097 FR-345..FR-348 (#1152): rooms, desks and places rearranged in Real office by key and folder menu on spec 033's one order; the flat order shows, both sizes
   { name: 'check-097-drag' }, // spec 097 FR-352..FR-355 (#1152, Q30..Q33): drag a plate or folder sign in Real office (Photo, cave, arcade), the lobby by chip button and the +N menu, on the one saved order; both sizes
   { name: 'check-097-plate-pencil' }, // spec 059 FR-170 (#1155): the rename pencil beside a Real office plate's name, F2 on a plate, both sizes
   { name: 'check-097-ctx-frame' }, // spec 097 FR-322..FR-326 (Q8, owner 2026-11-07): the context line round each monitor frame in the Photo office, the cave and the arcade; bands, share, outside the glass, none for unknown, no node per update; CTX_MUTANT=colour|glass|node|unknown
   { name: 'check-097-desk-marks' }, // spec 097 FR-316 (#1149): the Draft tag above a Real office plate for an unsent draft, its words in the plate's name, shown by class, both sizes
+  { name: 'check-097-desk-marks', label: 'check-097-desk-marks retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 T283 (issue #1399): the same driver in the arcade
   { name: 'check-097-helpers' }, // spec 097 FR-306..FR-311 (#1139): a desk's helpers as head figures with a status dot under its plate, Photo office, cave and the arcade at 1440x900, both sizes; where no strip fits (the arcade at 1280x800, the default scene at 1280x800) the plate keeps +N
   { name: 'check-097-helper-row' }, // spec 097 FR-338 (issue #1384), FR-356 (issue #1392: every folder sign whole, its + and menu inside it): a helper strip never wraps a head onto a second line; the last place is +K (6 and 7 helpers, the default scene and the lounge scene, Photo office, cave and arcade, both sizes)
   { name: 'check-097-hover-card' }, // spec 097 FR-327..FR-330 (#1151): the zoom opens over the person, desk and plate, for asleep agents, with the Changed line
+  { name: 'check-097-hover-card', label: 'check-097-hover-card retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 T283 (issue #1399): the same driver in the arcade
   { name: 'check-097-lounge' }, // spec 097 FR-246..FR-249 (#1220): finished, read agents sit in the lounge row in the Photo office and the arcade, unread keeps the desk, the ease back, reduced motion, both sizes
   { name: 'check-097-world-look' }, // spec 097 FR-350, FR-351 (#1153): a world keeps its own colours whatever theme is picked, and the arcade's drop overlay reads
   { name: 'shots-097-cave' }, // spec 097 phase 4: the Prehistoric cave behind its flag (World row, its set, any set in any world, no blend)
