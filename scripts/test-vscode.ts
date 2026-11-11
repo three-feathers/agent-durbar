@@ -77,8 +77,10 @@ assert.deepStrictEqual([p?.edition, p?.command], ['VSCodium', '/Users/a/Applicat
 }
 
 // spec 009 FR-028 (issue #1255): on Windows only a drive or UNC path is a target; the verbatim flag is explicit on the plan.
-for (const ok of ['C:\\proj', 'c:/proj', 'D:\\', '\\\\srv\\share', '\\\\srv\\share\\p', '\\\\?\\C:\\p', '\\\\srv/share']) assert.strictEqual(isWindowsTarget(ok), true, ok);
-for (const bad of ['/some-switch', '\\proj', '/proj', '//srv/share', '\\\\srv', '\\\\srv\\', 'C:proj', 'C:', '-x', '--x', 'proj', '1:\\p', '']) assert.strictEqual(isWindowsTarget(bad), false, bad);
+for (const ok of ['C:\\proj', 'c:/proj', 'D:\\', '\\\\srv\\share', '\\\\srv\\share\\p', '\\\\?\\C:\\p', '\\\\?\\c:\\', '\\\\?\\UNC\\srv\\share', '\\\\?\\unc\\srv\\share\\p', '\\\\srv/share']) assert.strictEqual(isWindowsTarget(ok), true, ok);
+for (const bad of ['/some-switch', '\\proj', '/proj', '//srv/share', '\\\\srv', '\\\\srv\\', 'C:proj', 'C:', '-x', '--x', 'proj', '1:\\p', '',
+  // device and other \\?\ forms are no folder (pre-review of #1523)
+  '\\\\.\\C:\\p', '\\\\.\\pipe\\x', '\\\\.\\PhysicalDrive0', '\\\\?\\GLOBALROOT\\Device\\x', '\\\\?\\x', '\\\\?\\C:', '\\\\?\\C:/p', '\\\\?\\UNC\\srv', '\\\\?\\UNC\\.\\x', '\\\\?/C:\\p', '\\\\..\\x', '\\\\a?b\\c']) assert.strictEqual(isWindowsTarget(bad), false, bad);
 {
   const local = 'C:\\Users\\a\\AppData\\Local';
   const exe = `${local}\\Programs\\Microsoft VS Code\\Code.exe`;
@@ -96,6 +98,7 @@ for (const bad of ['/some-switch', '\\proj', '/proj', '//srv/share', '\\\\srv', 
     return { once: (e: string, f: (x?: unknown) => void) => { h[e] = f; }, unref: () => undefined };
   }) as never;
   (async () => {
+    let r0: { ok: boolean };
     const win = env('win32', [exe], { LOCALAPPDATA: local }, 'C:\\Users\\a');
     // a root-relative path is absolute to path.win32 but Code.exe would read `/some-switch` as a switch: refused, nothing spawned
     for (const bad of ['/some-switch', '\\proj', '//srv/share', 'C:proj']) {
@@ -103,6 +106,14 @@ for (const bad of ['/some-switch', '\\proj', '/proj', '//srv/share', '\\\\srv', 
       const r = await openInVSCode(bad, win, fake);
       assert.deepStrictEqual([r.ok, r.error, seen.length], [false, 'path must start with a drive letter or be a UNC path', 0], bad);
     }
+    // control characters (no Windows name has one) are refused before anything is planned
+    for (const bad of ['C:\\a\nb', 'C:\\a\rb', 'C:\\a\tb', 'C:\\a\x1fb']) {
+      seen = [];
+      const r = await openInVSCode(bad, win, fake);
+      assert.deepStrictEqual([r.ok, r.error, seen.length], [false, 'invalid path', 0], 'control character: ' + JSON.stringify(bad));
+    }
+    r0 = await openInVSCode('/home/a/x\ty', env('linux', ['/usr/bin/code'], { PATH: '/usr/bin' }, '/home/a'), fake);
+    assert.strictEqual(r0.ok, true, 'a tab is a legal POSIX name: not refused on Linux');
     for (const good of ['C:\\proj', '\\\\srv\\share\\proj']) {
       seen = [];
       const r = await openInVSCode(good, win, fake);

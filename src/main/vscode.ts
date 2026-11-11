@@ -156,12 +156,19 @@ export function spawnPlan(plan: LaunchPlan, spawnFn: typeof spawn = spawn, platf
 export const EDITOR_NOT_FOUND = 'VS Code was not found (also looked for VS Code Insiders and VSCodium). Install it from https://code.visualstudio.com (on macOS, run "Shell Command: Install \'code\' command in PATH" from its command palette, or keep it in /Applications).';
 
 /**
- * FR-028: on Windows only a drive path (C:\dir, C:/dir) or a UNC path (\\server\share, also \\?\C:\dir) is a target.
- * path.win32.isAbsolute also accepts a root-relative \dir or /dir, and Code.exe (Chromium) reads an argument starting with / as a switch.
+ * FR-028: on Windows only a drive path (C:\dir, C:/dir) or a UNC path (\\server\share) is a target, and of the \\?\ forms only
+ * \\?\C:\dir and \\?\UNC\server\share. path.win32.isAbsolute also accepts a root-relative \dir or /dir, which Code.exe (Chromium)
+ * would read as a switch; device paths (\\.\pipe\x, \\.\PhysicalDrive0, \\?\GLOBALROOT\...) are no folder either.
  */
 export function isWindowsTarget(p: string): boolean {
-  return /^[A-Za-z]:[\\/]/.test(p) || /^\\\\[^\\/]+[\\/][^\\/]/.test(p);
+  if (/^[A-Za-z]:[\\/]/.test(p)) return true;
+  if (p.startsWith('\\\\?\\')) return /^\\\\\?\\(?:[A-Za-z]:\\|UNC\\[^\\/?.][^\\/?]*\\[^\\/])/i.test(p);
+  // \\server\share: a server name does not start with `.` (\\.\ is the device namespace) and has no `?`
+  return /^\\\\[^\\/?.][^\\/?]*[\\/][^\\/]/.test(p);
 }
+
+/** FR-028: no Windows file name holds a control character, so on Windows a path with one is refused before anything is planned. */
+const CONTROL = /[\x00-\x1f]/;
 
 /**
  * Open a folder or .code-workspace file with VS Code.
@@ -171,6 +178,7 @@ export function isWindowsTarget(p: string): boolean {
 export function openInVSCode(target: string, e: LaunchEnv = defaultEnv(), spawnFn: typeof spawn = spawn): Promise<OpenResult> {
   if (typeof target !== 'string') return Promise.resolve({ ok: false, error: 'path must be absolute' });
   if (target.includes('\0')) return Promise.resolve({ ok: false, error: 'invalid path' });
+  if (e.platform === 'win32' && CONTROL.test(target)) return Promise.resolve({ ok: false, error: 'invalid path' });
   if (e.platform === 'win32' ? !isWindowsTarget(target) : !path.posix.isAbsolute(target)) {
     return Promise.resolve({ ok: false, error: e.platform === 'win32' ? 'path must start with a drive letter or be a UNC path' : 'path must be absolute' });
   }
