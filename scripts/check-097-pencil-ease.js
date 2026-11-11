@@ -77,7 +77,8 @@ module.exports = async (ctx) => {
     /* the OS may ask for reduced motion (then nothing eases, FR-249): this check needs the ease */
     const dbg = wc().debugger; if (!dbg.isAttached()) dbg.attach('1.3');
     await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
-    await must(`${PICS}&&document.querySelector('#stage .ro').dataset.go==='1'`, `${tag}: the pictures, and the office past its first 2 s (FR-228: nothing eases before)`);
+    const READY = PICS + `&&document.querySelector('#stage .ro').dataset.go==='1'`;
+    await must(READY, `${tag}: the pictures, and the office past its first 2 s (FR-228: nothing eases before)`);
     wc().sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
     /* the release clip's lounge scene (scripts/release-video.js): two agents in rooms where others keep working finish, replies unread; then they are read */
     await must(`${SIM}.visitsSettled()`, `${tag}: no visit about to start or end`);
@@ -87,11 +88,10 @@ module.exports = async (ctx) => {
       for(const a of cand){if(out.length===2)break;const next=out.concat(a.id);if(next.every(id=>{const r=A.find(x=>x.id===id).room;return M.some(o=>o.room===r&&!next.includes(o.id)&&!fin(o))}))out.push(a.id);}
       return out})()`);
     assert.strictEqual(pick.length, 2, `${tag}: two agents to finish`);
-    const ids = `[${pick.map(jsLiteral).join(',')}]`;
-    await js(`(()=>{for(const id of ${ids}){const a=${SIM}.agents().find(x=>x.id===id);a.state='done';a.lastOutput=a.lastOutput||'Finished the change and ran the tests.';a.lastEventAt=Date.now();${SIM}.unread.mark(id);}${SIM}.crew.renderAll();return 1})()`);
+    await js(`(()=>{for(const id of ${jsLiteral(pick)}){const a=${SIM}.agents().find(x=>x.id===id);a.state='done';a.lastOutput=a.lastOutput||'Finished the change and ran the tests.';a.lastEventAt=Date.now();${SIM}.unread.mark(id);}${SIM}.crew.renderAll();return 1})()`);
     await must(`document.querySelectorAll('#stage .ro-plate.st-done').length>=2`, `${tag}: the finished desks`);
-    await must(`${PICS}&&${STILL}`, `${tag}: the office still before the move`, 8000);
-    log(tag, 'picked', JSON.stringify(await js(`${ids}.map(id=>{const p=document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(id)+'"]');return p&&p.className})`)));
+    await must(PICS + '&&' + STILL, `${tag}: the office still before the move`, 8000);
+    log(tag, 'picked', JSON.stringify(await js(`${jsLiteral(pick)}.map(id=>{const p=document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(id)+'"]');return p&&p.className})`)));
     /* every pencil shown; the slips hidden (one may lie over a plate); each plate's parts and its pencil's icon marked */
     const n = await js(`(()=>{document.body.classList.add('ren-show');document.querySelectorAll('#stage .ro-slip').forEach(e=>e.style.setProperty('visibility','hidden','important'));
       if(${PLAIN})return document.querySelectorAll('#stage .ren.ro-ren').length;
@@ -105,7 +105,7 @@ module.exports = async (ctx) => {
     await js(`new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(1))))`);
     const before = PLAIN ? null : marks(await wc().capturePage(), w);
     /* the move: both read (the second finished long ago, so it sleeps there); nothing below reads layout until the frames are taken */
-    const easing = await js(`(()=>{const s=${SIM}.agents().find(x=>x.id===${jsLiteral(pick[1])});s.lastEventAt=Date.now()-34*60000;for(const id of ${ids})${SIM}.unread.read(id);${SIM}.crew.renderAll();
+    const easing = await js(`(()=>{const s=${SIM}.agents().find(x=>x.id===${jsLiteral(pick[1])});s.lastEventAt=Date.now()-34*60000;for(const id of ${jsLiteral(pick)})${SIM}.unread.read(id);${SIM}.crew.renderAll();
       if(${jsLiteral(MUTANT === 'nohide')})document.querySelectorAll('#stage .ren.ro-ren').forEach(b=>b.getAnimations().forEach(a=>a.cancel()));
       return [...document.querySelectorAll('#stage .ro-plate')].filter(p=>p.getAnimations().some(a=>!a.animationName&&a.playState==='running')).length+' (office '+document.querySelector('#stage .ro').className+', reduced '+matchMedia('(prefers-reduced-motion: reduce)').matches+', hidden '+document.hidden+')'})()`);
     const t0 = Date.now(), frames = [];
