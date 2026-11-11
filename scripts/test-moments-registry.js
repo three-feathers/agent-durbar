@@ -120,6 +120,8 @@ if (require.main === module) {
   fails('a built cell with no picture (walk)', (i) => { const m = i.reg.moments.find((x) => x.id === 'walk'); m.worlds.retro = 'built'; m.evidence = { retro: { steps: ['inbox'], pictures: [] } }; }, /walk is built with no picture/);
   fails('a picture named that is only text in the driver', (i) => { i.reg.moments.find((x) => x.id === 'lobby').evidence.retro.pictures = ['limitfocus']; }, /picture limitfocus/);
   fails('a picture named 15 (the old every-quoted-word parse would pass it)', (i) => { i.reg.moments.find((x) => x.id === 'lounge').evidence.retro.pictures = ['15']; }, /picture 15/);
+  fails('permission-card built on a picture the driver does not write', (i) => { i.reg.moments.find((m) => m.id === 'permission-card').evidence.retro.pictures = ['retro-cell-chat']; }, /permission-card: evidence picture retro-cell-chat/);
+  fails('permission-card built on a step the driver does not have', (i) => { i.reg.moments.find((m) => m.id === 'permission-card').evidence.retro.steps = ['perm']; }, /permission-card: evidence step perm/);
   fails('empty-office built again with no evidence', (i) => { i.reg.moments.find((m) => m.id === 'empty-office').worlds.retro = 'built'; }, /empty-office is built and names no evidence/);
   fails('a missing cell without a reason', (i) => { delete i.reg.moments.find((m) => m.id === 'empty-office').gap; }, /empty-office is missing and says nothing why/);
   fails('shippable while a cell is missing', (i) => { i.reg.worlds.retro.shippable = true; }, /shippable while a cell is missing/);

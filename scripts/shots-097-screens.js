@@ -455,22 +455,25 @@ module.exports = async (ctx) => {
     const pt = await js(`(()=>{const b=document.querySelector('#stage .ro-screen[data-for="'+CSS.escape(${jsLiteral(id)})+'"]').getBoundingClientRect();
       for(const fy of [.33,.2,.5,.65,.8,.12])for(const fx of [.5,.3,.7,.15,.85]){const x=b.left+b.width*fx,y=b.top+b.height*fy,e=document.elementFromPoint(x,y);if(e&&!e.closest('.ro-slip,.ro-lplate,.ro-chip,.ro-sign'))return {x,y};}return null;})()`);
     assert.ok(pt, 'a point of the working desk\'s screen that nothing covers');
-    await hover(id, pt);
-    const TOOL = `(()=>{const P=document.getElementById('roZoom');return !!P&&[...P.querySelectorAll('.ro-zk .ro-zi')].some(e=>/^(Now|Last tool) /.test(e.textContent));})()`;
-    const z0 = await js(ZS);
-    assert.ok(z0.facts.some((f) => /^(Now|Last tool) /.test(f)), 'the working desk has a tool fact to start from: ' + JSON.stringify(z0));
-    /* the turn ends: the tool fact goes, its line goes with it, and the panel is placed again, shorter */
-    await emit({ type: 'user', sessionId: id });
-    await must('!(' + TOOL + ")&&!!document.getElementById('roZoom')", 'the tool fact gone from the open zoom', 15000);
-    await js(`new Promise(r=>setTimeout(r,250))`); // the placement follows the fill in the same call; a bound on a negative
-    const z1 = await js(ZS);
-    assert.ok(z1.h <= z0.h - 16, 'FR-315: the panel is shorter by the fact line that went (it is placed again): ' + z0.h + ' to ' + z1.h + ' ' + JSON.stringify(z1.facts));
-    /* a tool starts under the pointer: the fact comes and the panel grows by its line */
-    await emit({ type: 'toolCall', sessionId: id, callId: 'drv-f', tool: 'read_file', phase: 'start', args: { path: 'src/facts/one.ts' } });
-    await must(`(()=>{const P=document.getElementById('roZoom');return !!P&&[...P.querySelectorAll('.ro-zk .ro-zi')].some(e=>/^Now /.test(e.textContent));})()`, 'the Now fact in the open zoom', 15000);
-    await js(`new Promise(r=>setTimeout(r,250))`);
-    const z2 = await js(ZS);
-    assert.ok(z2.h >= z1.h + 16, 'FR-315: the panel grew by the new fact line: ' + z1.h + ' to ' + z2.h);
+    let z0, z1, z2;
+    await H.pointerStep('shots-097-screens', 'facts change: hover and the Now fact', async () => {
+      await hover(id, pt);
+      const TOOL = `(()=>{const P=document.getElementById('roZoom');return !!P&&[...P.querySelectorAll('.ro-zk .ro-zi')].some(e=>/^(Now|Last tool) /.test(e.textContent));})()`;
+      z0 = await js(ZS);
+      assert.ok(z0.facts.some((f) => /^(Now|Last tool) /.test(f)), 'the working desk has a tool fact to start from: ' + JSON.stringify(z0));
+      /* the turn ends: the tool fact goes, its line goes with it, and the panel is placed again, shorter */
+      await emit({ type: 'user', sessionId: id });
+      await must('!(' + TOOL + ")&&!!document.getElementById('roZoom')", 'the tool fact gone from the open zoom', 15000);
+      await js(`new Promise(r=>setTimeout(r,250))`); // the placement follows the fill in the same call; a bound on a negative
+      z1 = await js(ZS);
+      assert.ok(z1.h <= z0.h - 16, 'FR-315: the panel is shorter by the fact line that went (it is placed again): ' + z0.h + ' to ' + z1.h + ' ' + JSON.stringify(z1.facts));
+      /* a tool starts under the pointer: the fact comes and the panel grows by its line */
+      await emit({ type: 'toolCall', sessionId: id, callId: 'drv-f', tool: 'read_file', phase: 'start', args: { path: 'src/facts/one.ts' } });
+      await must(`(()=>{const P=document.getElementById('roZoom');return !!P&&[...P.querySelectorAll('.ro-zk .ro-zi')].some(e=>/^Now /.test(e.textContent));})()`, 'the Now fact in the open zoom', 15000);
+      await js(`new Promise(r=>setTimeout(r,250))`);
+      z2 = await js(ZS);
+      assert.ok(z2.h >= z1.h + 16, 'FR-315: the panel grew by the new fact line: ' + z1.h + ' to ' + z2.h);
+    });
     assert.ok(z1.kin && z2.kin && z2.zb >= 4 * 17 - 0.5, 'the facts inside the panel and the 4 lines kept: ' + JSON.stringify(z2));
     await moveTo(1, 1);
     await must(`!document.getElementById('roZoom')`, 'the zoom closed');
