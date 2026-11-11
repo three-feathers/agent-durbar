@@ -732,7 +732,7 @@
       for (const v of order) {
         const sig = JSON.stringify([v, build.sig]);
         if (e._sig !== sig) { e._sig = sig; e._at = null; e.textContent = ''; build.fill(e, v); }
-        e.hidden = false;
+        e.hidden = false; dset(e, 'variant', v); /* spec 097 FR-358 (#1434): the variant's own CSS (the pill's auto width and one line) applies before the box is measured, not after the spot is chosen */
         if (e._at && e._v === v) { e.style.left = px(e._at.x); e.style.top = px(e._at.y); }
         else { e.style.left = '0px'; e.style.top = '0px'; }
         e.style.width = ''; e.style.height = '';
