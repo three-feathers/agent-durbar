@@ -293,6 +293,15 @@ In the drawer I choose **Open source** on a note: the chat it came from opens an
 
 ## Changes
 
+### 2026-11-11: `test-notesswitch` reads every inode as a bigint (test only; Windows CI run 42932253989, found on PR #1482)
+
+*Found*: `test:notesswitch` failed on Windows (job 130233638727) at *issue 1463: a rename split across folders*, block A: the mirror's `id` ended `:12947848929002475` but the test compared it with the inode read as a plain number, which is `12947848929002476` (an NTFS file ID above 2^53 loses its low bit). **Cause: precision loss in the test**, not a timing flake and not the PR it surfaced on; `src/main/notesfile.ts` already builds `mirror.id` from `{ bigint: true }` reads and was right. No product change.
+
+- The test reads every inode with `{ bigint: true }` (`inoOf`, the `statSync` and `lstatSync` reads), all or none, so comparisons stay bigint to bigint; the id check is one helper, `idHolds`.
+- `test:` `scripts/test-notesswitch.ts`, *mirror.id check on an inode above 2^53*: a stubbed `fstatSync` answers 12947848929002475 for the temp file; the mirror keeps every digit, and `idHolds` is true for it and false for its neighbours that differ only in the low bit. A mutant of `idHolds` that converts with `Number` fails it (run by hand, not in CI). The stub honours the options as node does (a bigint `ino` only for `{ bigint: true }`, else the rounded number), so it also fails when the product stops asking: hand-run mutant (PR #1493 review), dropping `{ bigint: true }` from the `fstatSync` in `NotesFile.fdId` (`src/main/notesfile.ts`), failed this case by its own label and no other case, then reverted. Both mutants are hand-run, not automatic suite cases.
+- **Not done here:** the same plain-number comparisons in production code are issue #1491.
+- `[KNOWN GAP]`: Windows was not run for this change (no NTFS here); the new case uses a stub, so only the next Windows CI run shows the original failure gone.
+
 ### 2026-11-11: every same-file check compares inode and device numbers as bigints (issue #1491; a fix to FR-008, T062's shared read, and the sites of specs 043, 076 and 102)
 
 *Found* (issue #1491, while finding the cause of a Windows CI red in `test:notesswitch`): an NTFS file ID is 64 bits (a 16-bit sequence number above a 48-bit record number); a JS number holds 53 bits exactly, so two IDs above 2^53 that differ only in the low bit read as the same number. `src/main/notesfile.ts` and `notesexport.ts` already read `{ bigint: true }`; four modules still compared plain numbers in a same-file decision. Both sides lost precision the same way, so nothing broke, but two different files with neighbouring IDs could pass as one. Checked site by site against the code (`read:`):

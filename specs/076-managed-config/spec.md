@@ -1177,7 +1177,7 @@ All three answered on PR #575 (09:03-09:06 UTC) with option a, the recommended o
 
 ### 2026-11-11: FR-209's same-file check compares bigints (issue #1491)
 
-`policy.json`'s `lstat` is read with `{ bigint: true }` and the opened descriptor is `fstat`ed again with `{ bigint: true }`, so the inode and device are compared as bigints (a 64-bit file ID above 2^53 loses its low bit as a number; XFS and Btrfs can hand out such inode numbers). `PolicyFs` gains the two bigint overloads; the trust check is unchanged. Details, tests and limits: spec 083 *Changes* 2026-11-11 (`test:sandbox-floor`, *issue 1491 policy ino* and *dev*).
+`policy.json`'s `lstat` is read with `{ bigint: true }` and the opened descriptor is `fstat`ed again with `{ bigint: true }`, so the inode and device are compared as bigints (a 64-bit file ID above 2^53 loses its low bit as a number; filesystems with 64-bit file ids (NTFS, possibly others) may hand out such inode numbers). `PolicyFs` gains the two bigint overloads; the trust check is unchanged. Details, tests and limits: spec 083 *Changes* 2026-11-11 (`test:sandbox-floor`, *issue 1491 policy ino* and *dev*).
 
 ### 2026-11-04: P1, first slice: the machine `policy.json` is read for `permissions.requireOsSandbox` (FR-209, issue #734)
 
