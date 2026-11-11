@@ -123,7 +123,9 @@ module.exports = async (ctx) => {
 
     /* ---- Escape in the middle of a drag cancels: nothing lifted, nothing moved, nothing written ---- */
     const before = await saved();
-    await drag(await grab(plateSel(O[k])), await center(plateSel(O[k + 1])), { cancel: true, mid: async () => { assert.strictEqual(await lifted(), true, `${tag}: the drag is on mid-way`); assert.ok(await loose() >= 2, `${tag}: the plate and its neighbours follow the pointer`); } });
+    await H.pointerStep('check-097-drag', `${tag} escape mid-drag`, async () => {
+      await drag(await grab(plateSel(O[k])), await center(plateSel(O[k + 1])), { cancel: true, mid: async () => { assert.strictEqual(await lifted(), true, `${tag}: the drag is on mid-way`); assert.ok(await loose() >= 2, `${tag}: the plate and its neighbours follow the pointer`); } });
+    });
     assert.strictEqual(await lifted(), false, `${tag}: Escape ends the drag`);
     assert.strictEqual(await loose(), 0, `${tag}: and nothing stays lifted or shifted`);
     assert.deepStrictEqual(await orderOf(A), O, `${tag}: the order is as it was`);
@@ -132,12 +134,14 @@ module.exports = async (ctx) => {
 
     /* ---- the drag: the first plate onto the second (the arcade: onto its neighbouring cabinet); shot mid-drag ---- */
     await js(`document.getElementById('srAnnounce').textContent=''`);
-    await drag(await grab(plateSel(O[k])), await center(plateSel(O[k + 1])), {
-      mid: async () => {
-        assert.ok(await loose() >= 2, `${tag}: the plate is lifted and the others slide`);
-        if (world === 'photo') require('fs').writeFileSync(path.join(OUT, `097-drag-crop-${w}x${h}.json`), JSON.stringify(await js(`(()=>{const r=[...document.querySelectorAll('#stage .ro-plate[data-id],#stage .ro-sign[data-folder=${jsLiteral(A)}]')].filter(e=>e.classList.contains('ro-sign')||${jsLiteral(O)}.includes(e.dataset.id)).map(e=>e.getBoundingClientRect());return {x:Math.min(...r.map(b=>b.left))-24,y:Math.min(...r.map(b=>b.top))-150,r:Math.max(...r.map(b=>b.right))+24,b:Math.max(...r.map(b=>b.bottom))+40}})()`)));
-        if (world === 'photo') await H.shot(path.join(OUT, `097-drag-${w}x${h}.png`), { tag: '097-drag', what: `mid-drag ${w}x${h}`, prep: 'none', settle: false });
-      },
+    await H.pointerStep('check-097-drag', `${tag} drag`, async () => {
+      await drag(await grab(plateSel(O[k])), await center(plateSel(O[k + 1])), {
+        mid: async () => {
+          assert.ok(await loose() >= 2, `${tag}: the plate is lifted and the others slide`);
+          if (world === 'photo') require('fs').writeFileSync(path.join(OUT, `097-drag-crop-${w}x${h}.json`), JSON.stringify(await js(`(()=>{const r=[...document.querySelectorAll('#stage .ro-plate[data-id],#stage .ro-sign[data-folder=${jsLiteral(A)}]')].filter(e=>e.classList.contains('ro-sign')||${jsLiteral(O)}.includes(e.dataset.id)).map(e=>e.getBoundingClientRect());return {x:Math.min(...r.map(b=>b.left))-24,y:Math.min(...r.map(b=>b.top))-150,r:Math.max(...r.map(b=>b.right))+24,b:Math.max(...r.map(b=>b.bottom))+40}})()`)));
+          if (world === 'photo') await H.shot(path.join(OUT, `097-drag-${w}x${h}.png`), { tag: '097-drag', what: `mid-drag ${w}x${h}`, prep: 'none', settle: false });
+        },
+      });
     });
     await must(`(window.__durbarSimUi.order.get().desks[${jsLiteral(pa)}]||[]).filter(i=>${jsLiteral(O)}.includes(i)).join()===${jsLiteral(swapAt(O, k).join())}`, `${tag}: the drop saved the swap (order ${await docDesks()}, was ${O})`);
     const sv = await saved(), onScreen = await js(`window.__durbarSimUi.order.get().desks[${jsLiteral(pa)}]`);
@@ -163,15 +167,17 @@ module.exports = async (ctx) => {
     /* ---- a status change in the middle of a drag does not break it ---- */
     const O2 = await orderOf(A), away2 = await awayIds(), k2 = O2.findIndex((id, i) => i + 1 < O2.length && !away2.includes(id)), docBefore = JSON.stringify(await js(`window.__durbarSimUi.order.get().desks[${jsLiteral(pa)}]||null`));
     if (MUTANT === 'away') { await js(`window.__durbarSimUi.pinAt(${jsLiteral(O2[k2])},'library')`); await must(`window.__durbarSimUi.realLayout().zones.some(z=>z.desks.some(d=>d.id===${jsLiteral(O2[k2])}&&d.away))`, 'the mutant desk is drawn away'); }
-    await drag(await grab(plateSel(O2[k2])), await center(plateSel(O2[k2 + 1])), {
-      mid: async () => {
-        const on = await lifted(), awayNow = on ? [] : await js(`window.__durbarSimUi.awayIds()`);
-        assert.strictEqual(on, true, `${tag}: the drag started before the status change (dragging ${O2[k2]}; away now: ${awayNow})`);
-        await js(`window.__durbarSimUi.crowd('library',1,${jsLiteral(0)})`);
-        await ctx.sleep(300);
-        assert.strictEqual(await lifted(), true, `${tag}: a status change does not end the drag`);
-        assert.ok(await loose() >= 2, `${tag}: and the plates stay where the drag put them (no repaint under it)`);
-      },
+    await H.pointerStep('check-097-drag', `${tag} drag with a status change`, async () => {
+      await drag(await grab(plateSel(O2[k2])), await center(plateSel(O2[k2 + 1])), {
+        mid: async () => {
+          const on = await lifted(), awayNow = on ? [] : await js(`window.__durbarSimUi.awayIds()`);
+          assert.strictEqual(on, true, `${tag}: the drag started before the status change (dragging ${O2[k2]}; away now: ${awayNow})`);
+          await js(`window.__durbarSimUi.crowd('library',1,${jsLiteral(0)})`);
+          await ctx.sleep(300);
+          assert.strictEqual(await lifted(), true, `${tag}: a status change does not end the drag`);
+          assert.ok(await loose() >= 2, `${tag}: and the plates stay where the drag put them (no repaint under it)`);
+        },
+      });
     });
     await must(`JSON.stringify(window.__durbarSimUi.order.get().desks[${jsLiteral(pa)}]||null)!==${jsLiteral(docBefore)}`, `${tag}: the drop after the status change saved`);
     const O3 = await orderOf(A);
