@@ -1426,7 +1426,7 @@ An arcade cabinet's plate is the one-line status pill: the name is on the cabine
   - Pictures (`SHOTS_OUT`, compressed): [before](../../docs/screenshots/097-plate-pencil-arcade-before-1440x900.png) (the pencil at the floor's top-left, every pencil shown), after at [1440x900](../../docs/screenshots/097-plate-pencil-arcade-1440x900.png) and [1280x800](../../docs/screenshots/097-plate-pencil-arcade-1280x800.png).
 - `[KNOWN GAP]` Not run on Windows or macOS (the Mac reported the bug at 1440x900), nor in a real session.
 
-## Changes 2026-11-11: the rename pencil is not painted while its plate eases (bug, issue #1513; FR-365, T309; amends FR-170 of spec 059, FR-357 and the ease of spec Changes 2026-11-01)
+## Changes 2026-11-11: the rename pencil is not painted while its plate eases (bug, issue #1513; FR-365, T310; amends FR-170 of spec 059, FR-357 and the ease of spec Changes 2026-11-01)
 
 **Report** (issue #1513): in a still of the release clip's lounge scene the rename pencil sat on the status icon and text of waiting and limit plates. **Reproduced** (`sim:` macOS, DPR 1, the clip's trigger: `simfreeze=1 romotion=1`, two agents done with unread replies, then read, `body.ren-show`): in real `capturePage` frames about 200 ms after the move, Photo office 1440x900, Omar's pencil sits on his "Limit reached" status icon, Lena's on her status line, Sven's on "Failing", and other pencils float above their plates; the arcade's frames show pencils over cabinet status pills. Settled states were already right (Linux and Mac runs on the issue).
 
