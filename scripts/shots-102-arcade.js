@@ -4,6 +4,7 @@
  *
  * It fails (exit 1) when:
  *   - the flag is closed and a stored choice draws the arcade, asks for one of its files or offers it (FR-254);
+ *   - the flag is open and the night room's files (wall-night, floor-night) are not fetched, or the day room's (wall, floor, welcome) are, seen in a session request log (T218, SC-023);
  *   - the flag is open and a file of another world or set is asked for, a picture fails, or the art is not at one integer scale with the nearest pixel (FR-255);
  *   - at 3, 4, 8 and 15 agents, 1440x900 and 1280x800: plates, signs, marquees, cues, chips or fixtures overlap, text is under 10.5 px or a marquee under 12 px,
  *     the office scrolls at 15, or Tab does not follow the seats (FR-229, FR-256, SC-022);
@@ -24,15 +25,29 @@ const { helpers, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.SHOTS_OUT || fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-102-arcade-'));
 const SIZES = [[1440, 900], [1280, 800]];
 
-module.exports = async (ctx) => {
+const run = async (ctx, reqs) => {
   const H = helpers(ctx);
-  const js = async (e) => { try { return await H.js(e); } catch (x) { console.log('[102-arcade] this page script failed:', String(e).slice(0, 300)); throw x; } };
+  /* spec 102 T282: a page script that throws a DOMException reached the driver as "[object Object]" (Electron passes no name or message);
+     each script is run inside a catch on the page, so a failure names the page's own error, and the driver throws that */
+  const js = async (e) => {
+    try { new Function(`return (async()=>await (${e}))`); } catch { /* a statement list (`...;0`), not one expression: run as it is */
+      try { return await H.js(e); } catch (x) { console.log('[102-arcade] this page script failed:', String(e).slice(0, 300)); throw x; }
+    }
+    const r = await H.js(`(async()=>{try{return {ok:1,v:await (${e})};}catch(x){return {ok:0,err:String(x&&x.name||'Error')+': '+String(x&&x.message||x)+(x&&x.stack?' | '+String(x.stack).split('\\n').slice(1,3).join(' '):'')};}})()`);
+    if (r && r.ok) return r.v;
+    console.log('[102-arcade] this page script failed:', String(e).slice(0, 300));
+    throw new Error('a page script failed: ' + (r && r.err));
+  };
   const must = async (expr, what, ms = 15000) => assert.ok(await H.until(expr, ms), 'timed out waiting for ' + what);
   const REAL = `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'`;
   const PICS = `[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`;
   const packs = () => js(`[...new Set([...document.querySelectorAll('script[src],link[href],#stage img[src]')].map(e=>e.getAttribute('src')||e.getAttribute('href')).filter(n=>/realoffice\\/(worlds|sets)\\//.test(n)).map(n=>n.replace(/^.*realoffice\\/(worlds|sets)\\/([^/]+)\\/.*$/,'$1/$2')))].sort().join(' ')`);
   const ARCADE = { worldflags: 'retro', world: 'retro' };
+  /* spec 102 T218 (SC-023): a session request log, as in check-097-crews.js: what the page really requests (a file:// page cannot report its own requests).
+     The arcade's room is the night pair; the day pair (wall.webp, floor.webp) and welcome.webp must never be fetched. */
+  const roomFetched = (name) => [...reqs.values()].filter((e) => new RegExp('/realoffice/worlds/retro/' + name + '\\.webp(\\?|#|$)').test(e.url));
   const loadArcade = async (w, h, n, query = {}) => {
+    reqs.clear();
     await H.load({ w, h, query: { officeview: 'real', ...ARCADE, sim: String(n), ...query }, ready: REAL, settle: false });
     await must(PICS, 'the pictures');
   };
@@ -63,7 +78,12 @@ module.exports = async (ctx) => {
     await loadArcade(w, h, n);
     assert.strictEqual(await js(`(()=>{const r=document.querySelector('#stage .ro');return r.dataset.world+' '+r.dataset.set})()`), 'retro retro', tag + ': the arcade with its set');
     assert.strictEqual(await packs(), 'sets/retro worlds/retro', tag + ': only its own files: ' + await packs());
-    assert.deepStrictEqual(await js(`[...document.querySelectorAll('#stage .ro img')].filter(i=>!i.naturalWidth).map(i=>i.getAttribute('src'))`), [], tag + ': every picture loads');
+    for (let i = 0; i < 50 && !(roomFetched('wall-night').some((e) => e.status === 200) && roomFetched('floor-night').some((e) => e.status === 200)); i++) await ctx.sleep(100);
+    await ctx.sleep(400); /* a stray day file would be asked for with the first drawing: give it time to show */
+    for (const f of ['wall-night', 'floor-night']) assert.ok(roomFetched(f).some((e) => e.status === 200 && !e.error), tag + ': the night room\'s files are fetched: ' + f + '.webp');
+    for (const f of ['wall', 'floor', 'welcome']) assert.deepStrictEqual(roomFetched(f).map((e) => e.url), [], tag + ': the day room\'s files are never fetched: ' + f + '.webp');
+    await must(PICS, 'the pictures, after the room is ready'); /* spec 102 T282: a picture still loading is not a failed one; a failed one is complete with no size */
+    assert.deepStrictEqual(await js(`[...document.querySelectorAll('#stage .ro img')].filter(i=>i.complete&&!i.naturalWidth).map(i=>i.getAttribute('src'))`), [], tag + ': every picture loads');
     const art = await js(`(()=>{const L=window.__durbarSimUi.realLayout(),g=L.g,ro=document.querySelector('#stage .ro').getBoundingClientRect(),off=[];
       for(const e of document.querySelectorAll('#stage .ro-person,#stage .ro-cab')){const b=e.getBoundingClientRect(),x=b.left-ro.left,y=b.top-ro.top;if(Math.abs(b.width/g-Math.round(b.width/g))>0.01)off.push(e.className+' w '+b.width);if(e.classList.contains('ro-cab')&&Math.abs(x/g-Math.round(x/g))>0.01)off.push('cab x '+x);}
       const px=getComputedStyle(document.querySelector('#stage .ro-person,#stage .ro-visitor')).imageRendering,cab=getComputedStyle(document.querySelector('#stage .ro-cab')).imageRendering;
@@ -84,13 +104,21 @@ module.exports = async (ctx) => {
     if (n <= 15) { assert.strictEqual(art.scroll, false, tag + ': no office scroll'); assert.ok(art.fh <= 1, tag + ': the floor does not scroll: ' + art.fh); }
     await H.until(`${OVER}.length===0`, 5000); /* a font face can arrive after the first drawing */
     assert.deepStrictEqual(await js(OVER), [], tag + ': no overlap');
-    /* owner, 2026-11-03: no person is cut by a cabinet or a screen: none of a person's painted pixels lies on one; a sign stays on the floor */
-    assert.deepStrictEqual(await js(`(async()=>{const out=[],ro=document.querySelector('#stage .ro').getBoundingClientRect(),B=[...document.querySelectorAll('#stage .ro-cab,#stage .ro-screen')].map(e=>e.getBoundingClientRect());
-      for(const p of document.querySelectorAll('#stage .ro-person')){if(p.hidden||!p.getClientRects().length)continue;await p.decode().catch(()=>{});const b=p.getBoundingClientRect(),c=document.createElement('canvas');c.width=Math.round(b.width);c.height=Math.round(b.height);const x=c.getContext('2d');x.imageSmoothingEnabled=false;x.drawImage(p,0,0,c.width,c.height);const d=x.getImageData(0,0,c.width,c.height).data,mir=getComputedStyle(p).scale.startsWith('-');let n=0;
+    /* owner, 2026-11-03: no person is cut by a cabinet or a screen: none of a person's painted pixels lies on one; a sign stays on the floor.
+       spec 102 T282: the simulator is still replaying (`settle: false`), so a person's frame can change while this reads it: a picture in flight is not read
+       (drawing it threw); the check says BUSY and is read again once every picture has loaded, up to 5 s */
+    let whole = ['BUSY'];
+    /* spec 102 T304 (issue #1517): a person whose box rounds to 0 px is read again like a picture in flight, and named if it stays so.
+       ARCADE_MUTANT (test only): `zero` makes every person 0 px wide for 1.5 s (must pass), `zero-stuck` for good (must fail naming the person) */
+    const MUT = process.env.ARCADE_MUTANT;
+    if (MUT === 'zero' || MUT === 'zero-stuck') await js('(()=>{const st=document.createElement("style");st.textContent="#stage .ro-person{width:0!important}";document.head.appendChild(st);setTimeout(()=>st.remove(),' + (MUT === 'zero' ? 1500 : 1e9) + ');return 0;})()');
+    for (let i = 0; i < 25 && whole[0] === 'BUSY'; i++) { if (i) await ctx.sleep(200); await must(PICS, 'the pictures, before their pixels are read'); whole = await js(`(async()=>{let busy=0;const zero=[],out=[],ro=document.querySelector('#stage .ro').getBoundingClientRect(),B=[...document.querySelectorAll('#stage .ro-cab,#stage .ro-screen')].map(e=>e.getBoundingClientRect());
+      for(const p of document.querySelectorAll('#stage .ro-person')){if(p.hidden||!p.getClientRects().length)continue;await p.decode().catch(()=>{});if(!p.complete||!p.naturalWidth){busy=1;continue;}const b=p.getBoundingClientRect();if(Math.round(b.width)<1||Math.round(b.height)<1){busy=1;zero.push('zero box: '+p.dataset.for+' '+b.width.toFixed(2)+'x'+b.height.toFixed(2)+' style '+p.style.cssText);continue;}const c=document.createElement('canvas');c.width=Math.round(b.width);c.height=Math.round(b.height);const x=c.getContext('2d');x.imageSmoothingEnabled=false;x.drawImage(p,0,0,c.width,c.height);const d=x.getImageData(0,0,c.width,c.height).data,mir=getComputedStyle(p).scale.startsWith('-');let n=0;
         for(const r of B){const L=Math.max(r.left,b.left),R=Math.min(r.right,b.right),T=Math.max(r.top,b.top),Bt=Math.min(r.bottom,b.bottom);for(let yy=Math.floor(T);yy<Bt;yy++)for(let xx=Math.floor(L);xx<R;xx++){const u=Math.floor(xx-b.left),ux=mir?c.width-1-u:u,v=Math.floor(yy-b.top);if(ux>=0&&ux<c.width&&v>=0&&v<c.height&&d[4*(v*c.width+ux)+3]>32)n++;}}
         if(n)out.push(p.dataset.for+': '+n+' px on a cabinet or screen');}
       for(const s of document.querySelectorAll('#stage .ro-sign')){const b=s.getBoundingClientRect();if(b.left<ro.left-0.5||b.right>ro.right+0.5)out.push('a sign leaves the floor: '+s.textContent.slice(0,14));}
-      return out;})()`), [], tag + ': every person whole beside the cabinet, signs on the floor');
+      return busy?['BUSY',...zero]:out;})()`); }
+    assert.deepStrictEqual(whole, [], tag + ': every person whole beside the cabinet, signs on the floor');
     /* owner, 2026-11-03: in the lobby nobody stands half behind another (painted pixels), every name chip reads in full, no two chips touch;
        */
     assert.deepStrictEqual(await js(`(async()=>{const out=[],boxes=[];
@@ -314,4 +342,20 @@ module.exports = async (ctx) => {
   assert.strictEqual(await js(`document.documentElement.dataset.dark===undefined`), true, 'leaving: the theme\'s light page');
 
   console.log('[102-arcade] PASS');
+};
+
+/* The three listeners are on the session, which Electron keeps one per event: a later driver in the same process would inherit or replace them, and onBeforeRequest
+   must answer every request. So they are installed here and always removed (as check-done-desk-mask.js does), then a probe request proves they are gone (review of #1435). */
+module.exports = async (ctx) => {
+  const reqs = new Map();
+  const wr = ctx.win.webContents.session.webRequest;
+  const remove = () => { wr.onBeforeRequest(null); wr.onCompleted(null); wr.onErrorOccurred(null); };
+  wr.onBeforeRequest({ urls: ['file://*/*'] }, (d, cb) => { reqs.set(d.id, { url: decodeURIComponent(d.url), status: 0, error: '' }); cb({}); });
+  wr.onCompleted({ urls: ['file://*/*'] }, (d) => { const e = reqs.get(d.id); if (e) e.status = d.statusCode; });
+  wr.onErrorOccurred({ urls: ['file://*/*'] }, (d) => { const e = reqs.get(d.id); if (e) e.error = d.error; });
+  try { await run(ctx, reqs); } finally { remove(); }
+  reqs.clear();
+  await helpers(ctx).js(`new Promise((r)=>{const i=new Image();i.onload=i.onerror=()=>r(0);i.src=new URL('realoffice/worlds/retro/floor-night.webp?probe='+Date.now(),location.href).href;})`);
+  await ctx.sleep(200);
+  assert.strictEqual(reqs.size, 0, 'the request log listeners are removed when the driver ends: ' + [...reqs.values()].map((e) => e.url).join(' '));
 };

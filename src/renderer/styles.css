@@ -433,7 +433,7 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .btn.danger{color:var(--red-ink)}
 .btn.danger:hover{background:var(--tone-bad-soft);border-color:var(--tone-bad-line);color:var(--tone-bad-ink)}
 .btn svg{width:15px;height:15px;flex:none}
-#chat{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:16px;display:flex;flex-direction:column;gap:12px}
+#chat{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:16px;scrollbar-gutter:stable;display:flex;flex-direction:column;gap:12px}
 .chat-inner{display:flex;flex-direction:column;gap:12px;min-width:0}
 /* spec 005 FR-210: when a chat is closed its older messages get .cvo (cvMark), so reopening lays out only the ones near the view; an unseen one keeps the height it last had (auto), 90px before it was ever seen. Nothing is marked while the chat is open: a message the app has just added is measured at once (answer bar, notes) and a class change on a live message makes it jump to its 90px guess for a frame */
 .chat-inner>.cvo{content-visibility:auto;contain-intrinsic-block-size:auto 90px;overflow-clip-margin:14px}
@@ -941,7 +941,7 @@ body.panel-open #panel{flex-direction:row}
 .ptab{height:var(--ptab-h);padding:0 12px;border:0;border-bottom:2px solid transparent;background:none;color:var(--muted);font:inherit;font-size:var(--t4-size);font-weight:var(--t4-weight);cursor:pointer}
 .ptab:hover{color:var(--ink)}
 .ptab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--sage-ink);font-weight:650}
-.panel-in.on-browser #chat{flex:0 0 0;height:0;min-height:0;padding:0;overflow:hidden;visibility:hidden}
+.panel-in.on-browser #chat{flex:0 0 0;height:0;min-height:0;padding-block:0;overflow:hidden;visibility:hidden}
 .panel-in.on-browser .prev{display:none}
 .bpane{flex:1;min-height:0;display:flex;flex-direction:column;background:var(--surface)}
 .bpane[hidden]{display:none}
@@ -1234,6 +1234,7 @@ body.panel-open #panel{flex-direction:row}
 .sub-toggle .chev{width:12px;height:12px;flex:none;transition:transform .2s}.sub-toggle[aria-expanded="true"] .chev{transform:rotate(90deg)}
 .sub-ic{width:16px;height:16px;flex:none;color:var(--blue-ink);display:inline-grid}.sub-ic svg{width:16px;height:16px}
 .sub-name{font-weight:650;white-space:nowrap}
+.subblk.stub .sub-toggle{cursor:default} /* spec 005 FR-240: a retired helper's one-line stub (no body, no Open) */
 .sub-task{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1 1 auto}
 .sub-st{font-size:11px;font-weight:600;color:var(--blue-ink);background:var(--pb-working,#e3ecf4);border-radius:999px;padding:1px 8px;flex:none}
 .subblk.done .sub-st,.sub-st.done{color:var(--tone-ok-ink);background:var(--tone-ok-bg)}.subblk.failed .sub-st,.sub-st.failed{color:var(--red-ink);background:var(--pb-error,#f6e2df)}
@@ -1751,6 +1752,30 @@ html:is(.hl-still,[data-still-highlights]) .desk .pp,html[data-still-highlights]
 .dlg-ov{animation:dlgov .12s ease-out}
 @keyframes dlgin{from{opacity:0;transform:translateY(6px) scale(.985)}}
 @keyframes dlgov{from{opacity:0}}
+/* spec 052 FR-241 (owner, 2026-11-09): the Auto-follow notice. Full screen (the page shows faintly through the theme's surface), a .dlg card in the
+   middle: the picture of the move, the two lines, the countdown ring and Stay. Theme tokens only; :root raises it over the worlds' .dlg-ov tint. */
+:root .dlg-ov.af-notice{background:color-mix(in srgb,var(--surface) 90%,transparent);z-index:70}
+.af-notice .dlg{width:min(460px,calc(100vw - 32px));align-items:center;text-align:center;gap:var(--s-3);padding:var(--s-5)}
+.af-notice .afn-body{display:contents}
+.af-notice .afn-art{order:-1;width:180px;height:60px;color:var(--ink-2);overflow:visible}
+.af-notice .afn-art path{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.af-notice .afn-art .afn-track{stroke:var(--line-2);stroke-dasharray:2 4}
+.af-notice .afn-dot{fill:var(--accent);animation:afn-go 1.2s ease-in-out infinite}
+.af-notice.afn-to-chat .afn-dot{animation-direction:reverse}
+@keyframes afn-go{from{transform:translateX(0)}to{transform:translateX(32px)}}
+.af-notice .dlg h3{font-size:calc(var(--t1-size) * 1.25);line-height:var(--t2-lh);overflow-wrap:anywhere} /* the type scale's T1, a step up for a notice that fills the window */
+.af-notice .dlg .dsub{font-size:var(--t2-size);max-width:38ch}
+.af-notice .afn-count{position:relative;width:64px;height:64px;display:grid;place-items:center}
+.af-notice .afn-ring{position:absolute;inset:0;width:64px;height:64px;transform:rotate(-90deg)}
+.af-notice .afn-ring circle{fill:none;stroke-width:4}
+.af-notice .afn-ring-bg{stroke:var(--line)}
+.af-notice .afn-ring-fg{stroke:var(--accent);stroke-dasharray:100;stroke-dashoffset:0;animation:afn-ring var(--afn-ms,3000ms) linear forwards}
+@keyframes afn-ring{to{stroke-dashoffset:100}}
+.af-notice .afn-n{font-size:calc(var(--t1-size) * 1.5);font-weight:var(--t1-weight);color:var(--ink);font-variant-numeric:tabular-nums}
+.af-notice .dbtn{justify-content:center}
+.af-notice.afn-paused :is(.afn-dot,.afn-ring-fg){animation-play-state:paused}
+/* FR-241: reduced motion (the global rule at the top stops every animation) and the Motion setting off: nothing moves; the text and the number counting down stay */
+html[data-motion-off] .af-notice :is(.afn-dot,.afn-ring-fg,.dlg),html[data-motion-off] .dlg-ov.af-notice{animation:none}
 /* FR-049: room for a copy button at the bottom of the Thinking box */
 .think-body.md{padding-bottom:26px}
 .think-body.md>.cp-msg{bottom:4px} /* FR-092: the box no longer scrolls, so Copy stays at its bottom edge, outside any scroll area */
@@ -1864,6 +1889,7 @@ html[data-platform="darwin"] body.panel-open :is(#restoreStrip:not([hidden]),#re
 html[data-platform="darwin"] body.panel-open #restoreStrip[hidden]+#awayStrip[hidden]+#crashStrip[hidden]+#followStrip:not([hidden]){min-height:40px}
 html[data-platform="darwin"] .notice-strip:not([hidden]) ~ #screen .scr-head{padding-left:max(24px,calc((100% - 880px)/2 + 24px))}
 html[data-platform="darwin"] :is(.dlg-ov,#foldersPop,#floorsPop,#defaultsPop,.mode-menu,.more-menu){-webkit-app-region:no-drag}
+html[data-platform="darwin"] .rgrip{-webkit-app-region:no-drag}
 
 /* spec 052 (2026-10-21, round 3, accessibility): small controls get a 24px hit area (WCAG 2.2 target size) without changing the layout */
 button.room-aiu,.lsort,.linkbtn{position:relative}

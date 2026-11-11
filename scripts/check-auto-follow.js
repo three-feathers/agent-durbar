@@ -20,6 +20,10 @@ const OUT = process.env.OUT || require('os').tmpdir();
 module.exports = async (ctx) => {
   const H = helpers(ctx);
   const { js, until } = H;
+  /* spec 052 FR-239: every automatic move here goes through the Auto-follow notice, shortened to 600 ms after each load (simulator only) so this
+     driver's many moves stay quick; its words, the 3 s default, Stay and Escape are check-052-follow-notice's */
+  const load0 = H.load;
+  H.load = async (o) => { await load0(o); assert.strictEqual(await js(`window.__durbarSimUi.afNotice.ms(600)`), 600, 'the notice is shortened for this driver'); };
   /* The whole driver runs with Chromium's focus emulation on (spec 052 delta 2026-11-05, #1179): the return to the office after a send is decided once, at the
      moment the app accepts the message, and is skipped when the window is in the background then; on the shared Windows desktop a neighbour can take the OS focus at
      that moment, and no later wait can bring the return back. The hold steps below stand in for a blur with window.__durbarFocus, not with the OS, so they still test it. */
@@ -155,7 +159,7 @@ module.exports = async (ctx) => {
     // ---- send -> office and desk -> completion opens the chat on its title
     await sendQuiet(A, 'hello follow');
     const nameA = await nameOf(A);
-    await ok(`!document.body.classList.contains('panel-open')&&!!document.querySelector(${jsLiteral(sel(A) + '.is-followed')})&&document.activeElement&&document.activeElement.dataset.id===${jsLiteral(A)}`, `${tag}: back to the office with ${nameA} followed and focused`);
+    if (!(await until(`!document.body.classList.contains('panel-open')&&!!document.querySelector(${jsLiteral(sel(A) + '.is-followed')})&&document.activeElement&&document.activeElement.dataset.id===${jsLiteral(A)}`, 8000))) assert.fail(`${tag}: back to the office with ${nameA} followed and focused ` + JSON.stringify(await js(`({open:document.body.classList.contains('panel-open'),f:[...document.querySelectorAll('.is-followed')].map(n=>n.dataset.id),act:document.activeElement&&(document.activeElement.id||document.activeElement.className),notice:!!document.querySelector('.af-notice'),strip:document.getElementById('afText').textContent})`)));
     const off = await js(`(()=>{const c=getComputedStyle(document.querySelector(${jsLiteral(sel(A))}));return {ol:c.outlineStyle+' '+c.outlineWidth,tx:document.getElementById('afText').textContent};})()`);
     assert.strictEqual(off.ol, 'dashed 2px', `${tag}: the marker is a dashed 2px outline (not colour alone): ${off.ol}`);
     assert.ok(new RegExp(nameA + ' is working\\. Back to the office\\.').test(off.tx), `${tag}: honest status: ${off.tx}`);
@@ -308,9 +312,23 @@ module.exports = async (ctx) => {
 
     // the user opened another agent by hand: the following has ended (FR-185), so its chat, typed in and scrolled up, is never switched away from
     await send(S1, 'hello other');
+    await ok(`!document.querySelector('.af-notice')&&!document.body.classList.contains('panel-open')`, `${tag}: the notice, then the office (FR-238)`, 8000);
     await openChat(S2);
-    await js(`(()=>{const c=document.getElementById('chat');const f=document.createElement('div');f.id='afFill';f.style.height='3000px';f.style.flex='none';c.appendChild(f);c.scrollTop=c.scrollHeight;})()`);
-    await js(`document.getElementById('chat').scrollTop=0`); // fixture: scrolled to the top (the page's own scroll handler marks it as being read)
+    // spec 005 FR-238 (review of PR 1431): a line added to the open chat while it is still short (the chat flushes once at its end), then
+    // the fill and both scroll writes in ONE call, so they always reach the page's scroll handler as one event (the old "reset the scroll
+    // baseline after every flush" made the chat look not scrolled up here only when the writes happened to fall in one frame)
+    // and a chat in the background at its message cap, trimmed in that same flush: only a trim of the OPEN chat may reset the baseline
+    const BG = await js(`(()=>{const ids=window.__durbarSimUi.agents().filter(x=>!x.parent).map(x=>x.id).filter(id=>![${jsLiteral(S1)},${jsLiteral(S2)},${jsLiteral(S3)}].includes(id));return ids[ids.length-1];})()`);
+    assert.ok(BG, `${tag}: a fourth top-level agent exists for the background chat (without it the "a trim of any chat" mutant would pass unseen)`);
+    await js(`(()=>{for(let i=0;i<310;i++)window.__durbarSimUi.emit({type:'user',sessionId:${jsLiteral(BG)},timestamp:Date.now(),text:'bg '+i});})()`);
+    await js('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r())))');
+    const bgRuns0 = await js(`(window.__durbarSimUi.chatSizes().find(x=>x.id===${jsLiteral(BG)})||{}).runs||0`);
+    await js(`(()=>{const U=window.__durbarSimUi;U.emit({type:'user',sessionId:${jsLiteral(BG)},timestamp:Date.now(),text:'bg more'});U.emit({type:'compaction',sessionId:${jsLiteral(S2)},timestamp:Date.now(),phase:'complete',trigger:'truncation',tokensBefore:1000,tokensAfter:500});})()`);
+    { const bg = await js(`new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>{const z=window.__durbarSimUi.chatSizes().find(x=>x.id===${jsLiteral(BG)});r(z?{messages:z.messages,trimmed:z.trimmed,runs:z.runs,note:z.note}:null);})))`);
+      assert.ok(bg && bg.runs > bgRuns0 && bg.messages <= 300 && /removed/.test(bg.note), `${tag}: the background chat was trimmed in that flush: ` + JSON.stringify(bg)); }
+    await js('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r())))');
+    await js(`(()=>{const c=document.getElementById('chat');const f=document.createElement('div');f.id='afFill';f.style.height='3000px';f.style.flex='none';c.appendChild(f);c.scrollTop=c.scrollHeight;c.scrollTop=0;})()`); // fixture: scrolled to the top (the page's own scroll handler marks it as being read)
+    await js('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r())))');
     await ok(`document.getElementById('chat').dataset.pin==='0'`, `${tag}: the chat is scrolled up: ` + await js(`(()=>{const c=document.getElementById('chat');return [c.scrollHeight,c.clientHeight,c.scrollTop,c.dataset.pin,getComputedStyle(c).overflowY,!!document.getElementById('afFill')].join(' ')})()`));
     await mclick('#msgInput'); await type('my draft');
     const top0 = await js(`document.getElementById('chat').scrollTop`);
@@ -517,6 +535,9 @@ module.exports = async (ctx) => {
     await settled(A); await settled(B);
     assert.strictEqual((await anns()).filter((t) => /Back to the office/.test(t)).length, 1, `${tag}: exactly one "Back to the office" for the whole send: ` + JSON.stringify(await anns()));
     // a chat opened by hand while the sends are on their way stays open (the setting off and on forgets the followed ones, and a chat an arrival opened is closed)
+    /* an arrival of the two opens a chat after its notice (FR-238): wait for it, so Settings is not clicked under the notice (no assert: only the order matters here) */
+    await until(`!document.querySelector('.af-notice')&&document.body.classList.contains('panel-open')`, 6000);
+    await ok(`!document.querySelector('.af-notice')`, `${tag}: no notice is up`);
     if (await panelOpen()) await backToOffice();
     await setting(false); await setting(true);
     await js(`(()=>{const b=window.__durbarSimUi.bridge();b.__send=b.send;window.__gate=new Promise(r=>{window.__openGate=r;});b.send=async()=>{await window.__gate;return {ok:true};};})();0`);

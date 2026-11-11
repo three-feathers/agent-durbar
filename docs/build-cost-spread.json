@@ -2,7 +2,7 @@
   "version": 1,
   "method": "weight = 0.5 * share of lines changed + 0.5 * share of merged PRs, over the days without measured data; per-model split = the lump's model mix; whole cents, largest remainder",
   "ref": "origin/main",
-  "commit": "92b4183994ac593c3aa360e99728f714fa4ed793",
+  "commit": "ffbfa8c9205a169c865eb2ad3fcc2ced2129a334",
   "since": "2026-10-25",
   "through": "2026-11-07",
   "weights": {

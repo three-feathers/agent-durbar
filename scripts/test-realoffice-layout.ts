@@ -853,6 +853,10 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
   assert.deepStrictEqual([screenFit({ w: 300, h: 200 }, 4).font, screenFit({ w: 375, h: 250 }, 5).font], [14.5, 18.5], 'g 4: 14.5 px, g 5: 18.5 px');
   assert.deepStrictEqual([screenFit({ w: 300, h: 201 }, 3).font, screenFit({ w: 300, h: 201 }, 0).font], [13, 13], 'g 3 and no g: the size rule');
   for (const g of [4, 5]) { const f = screenFit({ w: 75 * g, h: 50 * g }, g); assert.ok(f.font >= 10.5 && f.lh > f.font && f.rows >= 1, `g ${g}: readable, one row at least`); }
+  /* spec 102 FR-308: the arcade's text grows with the art only while SC-003's 8 lines stay; a glass too short for 8 lines at 11 px (under 128 px) is not touched */
+  { const a = screenFit({ w: 224, h: 128 }, 4); assert.deepStrictEqual([a.font, a.rows >= 8], [11, true], 'g 4, a 128 px glass: 11 px, 8 lines'); }
+  assert.ok(screenFit({ w: 168, h: 96 }, 3).rows < 8 && screenFit({ w: 224, h: 120 }, 4).font === 14.5, 'under 128 px tall there is no room for 8 lines, so the size rule stands');
+  for (const [gw, gh, g] of [[56, 32, 4], [75, 50, 4], [44, 32, 4], [75, 50, 5], [75, 50, 3]]) assert.ok(screenFit({ w: gw * g, h: gh * g }, g).rows >= 8, `FR-308: ${gw}x${gh} at g ${g} holds 8 lines`);
   // FR-030, FR-035: what a state shows
   const log = [{ n: 3, k: 'cmd', t: 'Running x' }, { n: 4, k: 'ok', t: 'Reading y' }];
   const q = [{ k: 'plain', t: 'Allow this?' }], rep = [{ k: 'reply', t: 'All done.' }];

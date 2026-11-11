@@ -2112,7 +2112,7 @@ function renderAll(){
   if(ui.view==='office')renderOffice(); else{renderFilterNote();renderList();}
   syncWalkers();
   /* spec 052 FR-173: look in the view the focus was in. The office desks stay in the page (hidden) while the list shows, with the same data-id, so a document-wide lookup found the hidden desk and the focus fell to the page. */
-  if(id&&!inPanel){const n=document.querySelector(`${scope}[${key}="${CSS.escape(id)}"]`); if(n&&ae!==n)n.focus({preventScroll:true});}
+  if(id&&!inPanel){const n=document.querySelector(`${scope}[${key}="${CSS.escape(id)}"]`); if(n&&document.activeElement!==n)n.focus({preventScroll:true});} /* not `ae!==n`: the morph can move the very same element, which drops its focus (issue 1483) */
   if(ui.selected){updatePanelHeader();renderStrip();}
   afTick(); /* spec 052 FR-182..FR-190: markers, arrivals and the strip */
   rememberUi();
@@ -2468,11 +2468,12 @@ function wireMenu(btnId,menuId){
    of view, a bar above the composer shows it with the same choices; its buttons press the card's own buttons, so there is one code
    path. A question is answered in its card (options and text): the bar takes you there. */
 /* the words of a request card (permission, question, limit), in full: the answer bar and the inbox show exactly this (FR-016, FR-027) */
-function requestText(n){const c=n.cloneNode(true);c.querySelectorAll('.note-actions,.q-opts,.q-form,.q-urlbox,.pstate,.pdiff').forEach(x=>x.remove()); /* spec 052 FR-080: the command never (notifications use this text) */c.querySelectorAll('p,div,pre,ul,ol,li,details,h1,h2,h3,h4,h5,h6').forEach(x=>x.before(' ')); /* FR-214: a space between blocks, textContent joins them ("(search_companies)Allow"); inline code gets none */const qs=[...c.querySelectorAll('.q-text')]; /* a card with 2-4 questions has one .q-text each: read them all */return safeMask((qs.length?qs.map(x=>x.textContent).join(' '):c.textContent).replace(/\s+/g,' ').trim().replace(/^(Needs your OK|Permission|Question from the agent|Questions from the agent):?\s*/,''));} /* spec 041 FR-065: the question is agent text; the answer bar, the inbox and announcements read it from here */let answerObs=null;
+function requestRaw(n){const c=n.cloneNode(true);c.querySelectorAll('.note-actions,.q-opts,.q-form,.q-urlbox,.pstate,.pdiff').forEach(x=>x.remove()); /* spec 052 FR-080: the command never (notifications use this text) */c.querySelectorAll('p,div,pre,ul,ol,li,details,h1,h2,h3,h4,h5,h6').forEach(x=>x.before(' ')); /* FR-214: a space between blocks, textContent joins them ("(search_companies)Allow"); inline code gets none */const qs=[...c.querySelectorAll('.q-text')]; /* a card with 2-4 questions has one .q-text each: read them all */return (qs.length?qs.map(x=>x.textContent).join(' '):c.textContent).replace(/\s+/g,' ').trim().replace(/^(Needs your OK|Permission|Question from the agent|Questions from the agent):?\s*/,'');} /* spec 012 FR-178: the card's own words, unmasked: announce() masks them itself, so a command is said as the card shows it */
+function requestText(n){return safeMask(requestRaw(n));} /* spec 041 FR-065: the question is agent text; the answer bar and the inbox read it from here (announcements read requestRaw, FR-178) */let answerObs=null;
 /* spec 052 FR-060: the key of a permission card's button, and the one click path the bar and the keys share */
 const answerKeyOf=b=>b.dataset.act==='session'?'S':/\bdanger\b/.test(b.className)?'D':/\bprimary\b/.test(b.className)?'A':'';
 const chatKeyText=k=>keyText(KEYS.chatParts(k,IS_MAC)), chatKeyAria=k=>ariaKeys(KEYS.chatParts(k,IS_MAC)); /* FR-084: Alt+A elsewhere, ⌥⌘A on a Mac */
-const answerPress=(src,what)=>()=>{if(src.disabled)return;const word=src.textContent;src.click();announce(word+': '+what);const m=$('msgInput');if(m)focusIn(m);};
+const answerPress=(src,what)=>()=>{if(src.disabled)return;const word=src.textContent;src.click();announce([word,': ',what]);const m=$('msgInput');if(m)focusIn(m);};
 /* spec 052 FR-162: a short question with one choice and a few short options is answered from its option buttons (the answer bar and, from FR-199, a row of Your door):
    they press the card's own controls, so the card's Answer handler sends and settles (one code path) */
 function inboxQFit(c){
@@ -2534,7 +2535,7 @@ function wireAnswerBar(a){
     else if(!long&&!card.classList.contains('limit'))for(const src of card.querySelectorAll(':scope > .note-actions button'))if(!src.dataset.broad){ /* a spending limit has an amount the bar cannot show: only "Show in chat" (review of PR 1004) */
       /* spec 003 FR-095: a Read-only denial's "Switch to Ask first…" opens the mode menu here, anchored to the bar's own button */
       if(src.dataset.act==='ro-ask'){const b=add(src.textContent,'',()=>roAskOpen(a,b),src.title);b.dataset.act='ro-ask';b.setAttribute('aria-haspopup','menu');b.setAttribute('aria-expanded','false');continue;}
-      const k=card.classList.contains('limit')?'':answerKeyOf(src);const ab=add(src.textContent,(src.className.match(/\b(primary|danger|session)\b/)||[''])[0],answerPress(src,text),k?(src.title?src.title+' ':'')+'('+chatKeyText(k)+')':src.title,k?chatKeyAria(k):'');if(src.dataset.blind){ab.disabled=true;ab.title=src.title;}}
+      const k=card.classList.contains('limit')?'':answerKeyOf(src);const ab=add(src.textContent,(src.className.match(/\b(primary|danger|session)\b/)||[''])[0],answerPress(src,requestRaw(card)),k?(src.title?src.title+' ':'')+'('+chatKeyText(k)+')':src.title,k?chatKeyAria(k):'');if(src.dataset.blind){ab.disabled=true;ab.title=src.title;}}
     add(q?'Show question':'Show in chat','ghost',show,q?'Scroll to the question in the chat':'Scroll to the request in the chat');
     bar.hidden=false;
     /* FR-016 (review of PR 1004): a repaint keeps focus on the same control only while the card is the same; a new card or a changed count never puts it on an answering
@@ -2551,7 +2552,7 @@ function wireAnswerBar(a){
     if(c.classList.contains('question')||c.classList.contains('limit')||textOf(c).length>REQ_TEXT_MAX){card=c;show();announce(c.classList.contains('question')?'Answer the question in its card.':c.classList.contains('limit')?'Choose in the spending limit card.':'A long request: read it in the chat before you answer.',ANN_REQUEST);return true;}
     const src=[...c.querySelectorAll(':scope > .note-actions button')].find(b=>!b.dataset.broad&&answerKeyOf(b)===kind);
     if(!src)return false;
-    answerPress(src,textOf(c))();return true;
+    answerPress(src,requestRaw(c))();return true;
   };
   /* spec 052 FR-177: a late title or a rename changes only the name, in place: no repaint, so what you typed in the box and its focus stay */
   const rename=()=>{const nm=bar.querySelector('.ab-n');if(nm&&!bar.hidden){nm.textContent=a.name;nm.title=a.name;}};
@@ -2656,7 +2657,7 @@ function cvDrop(el){delete el.dataset.cvw; delete el.dataset.cvk; for(const e of
 /* FR-215: a marked message that changed while its chat was off screen keeps no stored size: it lays out for real on the next open */
 function cvGrown(el,recs){for(const r of recs){let n=r.target; if(n===el)continue; while(n&&n.parentNode!==el)n=n.parentNode; if(n&&n.classList&&n.classList.contains('cvo')){n.classList.remove('cvo');n.style.containIntrinsicBlockSize='';}}}
 function cvRelease(el){const mo=CV_OBS.get(el); if(!mo)return; cvGrown(el,mo.takeRecords()); mo.disconnect(); CV_OBS.delete(el);}
-function cvMark(){const el=document.querySelector('#chat > .chat-inner'); if(!el||el.closest('.on-browser')||!el.clientWidth)return; /* on the Browser tab the chat is 0 high with no padding: its messages would be measured at the wrong width, so nothing is marked and the older marks stay */
+function cvMark(){const el=document.querySelector('#chat > .chat-inner'); if(!el||el.closest('.on-browser')||!el.clientWidth)return; /* on the Browser tab the chat is 0 high (it keeps its side padding and scrollbar gutter, spec 005 FR-235), but the guard stays: nothing is measured while it is collapsed, and the older marks stay */
   const k=el.children, n=k.length; if(n<=40)return; cvRelease(el); el.dataset.cvw=el.clientWidth; el.dataset.cvk=cvKey(el);
   const h=[]; for(let i=0;i<n-4;i++)h.push(k[i].getBoundingClientRect().height);
   for(let i=0;i<n;i++){const e=k[i], old=i<n-4; e.classList.toggle('cvo',old); e.style.containIntrinsicBlockSize=(old&&h[i]>0)?'auto '+Math.round(h[i]*100)/100+'px':'';}
@@ -2712,7 +2713,7 @@ function openPanel(id,focus){
   updatePanelHeader(); renderGrants();
   const chatEl=$('chat'); chatEl.dataset.pin='1'; chatEl._lastTop=undefined; chatEl.scrollTop=1e6;
   let rs=0; const restick=()=>{if(ui.selected!==a.id){chatEl._rsBusy=0;return;} const un=rs===0&&cvUnmarkIfResized(chat.el); /* marks dropped at this frame (another width or layout): the end moved by what that laid out, not by the person */ if(!un&&chatEl.scrollHeight-chatEl.scrollTop-chatEl.clientHeight>400){chatEl._rsBusy=0;return;} chatEl.scrollTop=chatEl.scrollHeight; if(++rs<4)requestAnimationFrame(restick); else{chatEl._rsBusy=0;chatEl.onscroll();}}; chatEl._rsBusy=0; if(chat.el.childElementCount>4){chatEl._rsBusy=1;requestAnimationFrame(restick);} /* spec 083 FR-046: _rsBusy is on while the re-stick runs, so Open source reveals after it */ /* spec 005 FR-210: the messages at the end get their real height a frame after the first layout, so the end moves; follow it for 4 frames, then read the pin again; a chat of 4 or fewer messages has no skipped one and is left alone */
-  chatEl.onscroll=()=>{const t=chatEl.scrollTop; if(chatEl.scrollHeight-t-chatEl.clientHeight<80)chatEl.dataset.pin='1'; else if(chatEl._lastTop===undefined||t<chatEl._lastTop-1)chatEl.dataset.pin='0'; chatEl._lastTop=t;}; /* spec 005 FR-214: the scroll event of the app's own stick-to-bottom write arrives a frame later, when a new block may already have grown the page; that is not the person leaving the end. Only a move up from the position of the last scroll event is (whoever wrote the last position, so no writer has to record it) */
+  chatEl.onscroll=()=>{const t=chatEl.scrollTop; if(chatEl.scrollHeight-t-chatEl.clientHeight<80){chatEl.dataset.pin='1';if(trimDeferred&&!stickyRaf)stickyRaf=requestAnimationFrame(stickyFlush);} else if(chatEl._lastTop===undefined||t<chatEl._lastTop-1)chatEl.dataset.pin='0'; chatEl._lastTop=t;}; /* spec 005 FR-214: the scroll event of the app's own stick-to-bottom write arrives a frame later, when a new block may already have grown the page; that is not the person leaving the end. Only a move up from the position of the last scroll event is (whoever wrote the last position, so no writer has to record it) */
   $('panel').querySelector('.panel-in').classList.toggle('helper-ro',!!(a.live&&a.parent)); /* spec 097 Changes 2026-11-04 (issue 1140): not 'ro', the Real office root's class, whose floor picture and corners it took */
   $('backBtn').onclick=closePanel;
   refreshFolderStatus(a); /* spec 063: branch and changed files on the folder chip */
@@ -2738,7 +2739,7 @@ function openPanel(id,focus){
   if($('ntCount'))$('ntCount').onclick=e=>toggleNotes(a,e.currentTarget); /* spec 083 FR-040: the header count opens and closes the drawer */
   if($('notesHdrBtn'))$('notesHdrBtn').onclick=()=>openNotes(a,{opener:$('moreBtn')});
   wireAnswerBar(a);paintCoffeeBar.key='';paintCoffeeBar(); /* spec 068 FR-022 */
-  if(needsMe(a)){const c=pendingCardOf(a);if(c)announce(a.name+(c.classList.contains('question')?' asks: ':' needs your OK: ')+requestText(c),ANN_REQUEST);}
+  if(needsMe(a)){const c=pendingCardOf(a);if(c)announce([a.name,c.classList.contains('question')?' asks: ':' needs your OK: ',requestRaw(c)],ANN_REQUEST);} /* spec 012 FR-178: the card's text before any mask (announce masks it), the fixed words their own part */
   $('pauseBtn').onclick=()=>{a.paused=!a.paused;if(a.live&&bridge.setPaused)bridge.setPaused(a.id,a.paused);toast(esc(a.name)+(a.paused?' paused.':' resumed.'));renderAll();};
   $('railDoor').onclick=()=>openInbox(); /* spec 052 FR-216: Your door opens the Needs you queue */
   if($('stopBtn'))$('stopBtn').onclick=e=>{RUN_SAID.stopped=true;if(a.live){const b=e.currentTarget;if(b.getAttribute('aria-busy')==='true')return;b.setAttribute('aria-busy','true');return stopLive(a).catch(failToast('stop')).finally(()=>{b.removeAttribute('aria-busy');syncRunState();});}stopDemoTurn(a);a.paused=false;a.state='idle';a.label=null;a.task='Stopped by you. Ready for a new task.';toast(esc(a.name)+' stopped.');renderAll();};
@@ -2946,7 +2947,7 @@ function msgInfo(btn){
   const bubble=btn&&btn.closest&&btn.closest('.bubble'),msg=bubble&&bubble.closest('.msg'); if(!bubble||!msg)return null;
   const role=msg.classList.contains('user')?'user':'agent', root=bubble.closest('.chat-inner')||$('chat');
   const all=[...root.querySelectorAll(role==='user'?'.msg.user .bubble':'.msg.agent .bubble')];
-  return {bubble,role,text:bubbleText(bubble),ord:Math.max(0,all.indexOf(bubble))};
+  return {bubble,role,text:bubbleText(bubble),ord:ordGone(root,role)+Math.max(0,all.indexOf(bubble))}; /* FR-238: counting the bubbles a trim removed */
 }
 async function msgDigest(text){try{return await DN.digestOf(text,crypto.subtle);}catch(e){return '';}}
 function openMsgMenu(btn,x,y){
@@ -2954,7 +2955,7 @@ function openMsgMenu(btn,x,y){
   const info=msgInfo(btn); if(!info||!info.text.trim())return;
   closeModeMenu();
   const it=(act,label,sub)=>`<button type="button" role="menuitem" data-nact="${act}" title="${esc(sub)}"><span class="mt"><b>${esc(label)}</b><small>${esc(sub)}</small></span></button>`;
-  const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu nt-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Actions for this message');
+  const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu nt-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Actions for this message');m._anchor=btn; /* spec 005 FR-238: a trim keeps the message of an open menu */
   const sel0=selInfo(), selHere=sel0&&sel0.bubble===info.bubble?sel0:null; /* FR-042: a selection inside THIS message adds the item (the keyboard path) */
   m.innerHTML=it('save','Save to notes','Keep it for later in this folder')+(selHere?it('savesel','Save selection to notes','Keep only the selected text'):'')+it('copy','Copy','Copy this message');
   document.body.appendChild(m);
@@ -3195,7 +3196,7 @@ async function notesMarkAll(a){
   if(!notesOn(a))return;
   const root=$('chat'), el=root&&root.querySelector('.chat-inner[data-notes]'); if(!el)return;
   const st0=notesOf(a); if(!st0||!st0.ok)return;
-  const all=[...el.querySelectorAll('.msg.user .bubble')].map((b,i)=>({b,role:'user',ord:i})).concat([...el.querySelectorAll('.msg.agent .bubble')].map((b,i)=>({b,role:'agent',ord:i})))
+  const all=[...el.querySelectorAll('.msg.user .bubble')].map((b,i)=>({b,role:'user',ord:ordGone(el,'user')+i})).concat([...el.querySelectorAll('.msg.agent .bubble')].map((b,i)=>({b,role:'agent',ord:ordGone(el,'agent')+i})))
     .filter(x=>x.b.querySelector(':scope > .nt-btn')); /* finished messages only (they have the ⋯) */
   for(const x of all){const t=bubbleText(x.b);if(!x.b._nd||x.b._nd.t!==t)x.b._nd={t,d:await msgDigest(t)};}
   if(byId(ui.selected)!==a)return;
@@ -3331,9 +3332,10 @@ async function ntSourceBubble(src){
   const root=($('chat')||document).querySelector('.chat-inner')||$('chat'); if(!root)return null;
   const all=[...root.querySelectorAll(src.role==='user'?'.msg.user .bubble':'.msg.agent .bubble')];
   const dig=async b=>{const t=bubbleText(b);if(!b._nd||b._nd.t!==t)b._nd={t,d:await msgDigest(t)};return b._nd.d;};
-  if(all[src.ord]&&await dig(all[src.ord])===src.digest)return all[src.ord];
+  const at=src.ord-ordGone(root,src.role); /* FR-238: the place among the bubbles still in the view */
+  if(all[at]&&await dig(all[at])===src.digest)return all[at];
   let best=null,bd=Infinity;
-  for(let i=0;i<all.length;i++){if(await dig(all[i])===src.digest){const d=Math.abs(i-src.ord);if(d<bd){bd=d;best=all[i];}}}
+  for(let i=0;i<all.length;i++){if(await dig(all[i])===src.digest){const d=Math.abs(i-at);if(d<bd){bd=d;best=all[i];}}}
   return best;
 }
 function ntLeaveNotes(){
@@ -4422,7 +4424,16 @@ function closeInbox(dismiss){if($('needsPanel'))closeDoor(dismiss===true);clearI
 /* spec 052 FR-034: one polite live region for requests and answers (screen readers hear them; nothing visible changes) */
 let announceT=0,announceP=0;
 const ANN_REQUEST=1; /* spec 005 FR-237: a request for the user's OK or an answer outranks a status within the 60 ms window */
-function announce(text,prio){const el=$('srAnnounce');if(!el||!text)return;const p=prio||0;if(announceT&&p<announceP)return;clearTimeout(announceT);announceP=p;el.textContent='';announceT=setTimeout(()=>{announceT=0;announceP=0;el.textContent=String(text).slice(0,300);},60);}
+/* spec 012 FR-178 (issue 1419): every line goes through the helpers' masks here, the one place all announcements pass: home folders on the raw
+   text first (and on its copy without hidden characters), then the desk mask, before the cut (a name can hold a token or a home folder).
+   A line may come as parts (`[name, rest]`), each masked alone. A part the mask finds nothing in is said as written, backslashes included
+   (the desk mask undoes Markdown escapes, and a spoken command must be the one that runs); a part with both a secret and an escape is
+   said as `[redacted]`. When masking is not possible (no module, a throw, a failed mask) a fixed line is said, never the text. */
+const ANN_UNCHECKED='A line was not read out: Durbar could not check it for secrets.';
+function annHome(s){const R=window.DurbarRedact,c=R&&typeof R.unhide==='function'?R.unhide(s):s;let w=s,h=homeMask(s);if(typeof c==='string'&&c!==s){const hc=homeMask(c);if(hc!==c){w=c;h=hc;}} /* the copy without hidden characters, when it holds a home folder */if(typeof h!=='string'||!STX||typeof STX.unesc!=='function')return h;const u=STX.unesc(w),hu=homeMask(u);return typeof hu!=='string'||hu===u||STX.unesc(h)===hu?h:'[redacted]';} /* review of PR 1484: a home folder whose name holds a Markdown escape (/home/a\_b) is cut short by the home mask as written; when the escape-undone copy holds a home folder and masks to something else, the part is said as [redacted] (never with its escapes undone, as annPart) */
+function annPart(t){const s=String(t==null?'':t);if(!s)return '';const h=annHome(s);if(typeof h!=='string'||!h)return null;const m=deskMask(h);if(typeof m!=='string'||!m||m.includes('[redaction failed]')||!STX||typeof STX.unesc!=='function')return null;const u=STX.unesc(h);return m===u?h:u===h?m:'[redacted]';}
+function annMask(t){try{let out='';for(const p of Array.isArray(t)?t:[t]){const o=p&&typeof p==='object',x=annPart(o?p.text:p);if(x===null)return ANN_UNCHECKED;out+=o&&p.max>0?DurbarCutText.cutText(x,p.max):x;}return out.trim()?out:'';}catch(e){return ANN_UNCHECKED;}} /* a part {text,max} is masked, then cut (the MCP request's message) */
+function announce(text,prio){const el=$('srAnnounce');if(!el||!text)return;const said=annMask(text);if(!said)return;const p=prio||0;if(announceT&&p<announceP)return;clearTimeout(announceT);announceP=p;el.textContent='';announceT=setTimeout(()=>{announceT=0;announceP=0;el.textContent=said.slice(0,300);},60);}
 
 /* ---- spec 052 FR-191..FR-196 (T196, T197): Your door, the Needs you queue as a panel beside the office. It reuses paintInbox() for the rows (the
    guards of FR-206..FR-213 are unchanged), needsMeOrder() for the order and NEED_SINCE for the waits. Non-modal: no backdrop, no aria-modal, a
@@ -4755,18 +4766,85 @@ function afBackToOffice(a,what){
     announce(what+(moved&&fname?' on '+fname:'')+'. Back to the office.');
   }
 }
+/* ---- spec 052 FR-238..FR-241 (owner, 2026-11-09): a full-screen notice with a 3 s countdown before each automatic move, every time. It is
+   askDialog() (dialog.js: focus inside, Tab wraps, Escape and the backdrop cancel, focus goes back) with its overlayClass / role / auto options;
+   said once with announce(..., ANN_REQUEST) (spec 005 FR-237); the name through deskMask. Resolves true to move, false to stay. ---- */
+let AF_NOTICE=null, AF_NOTICE_MS=3000; /* AF_NOTICE_MS: the simulator's drivers may shorten it (__durbarSimUi.afNotice) */
+const AF_ARRIVE={done:' finished',ask:' needs you',error:' has an error',limit:' reached its limit'};
+const AF_NOTICE_ART='<svg class="afn-art" viewBox="0 0 120 40" aria-hidden="true" focusable="false"><path class="afn-bubble" d="M6 8h28a4 4 0 0 1 4 4v12a4 4 0 0 1-4 4H18l-7 6v-6H6a4 4 0 0 1-4-4V12a4 4 0 0 1 4-4z"/><path class="afn-lines" d="M10 15h20M10 21h14"/><path class="afn-track" d="M44 20h32"/><circle class="afn-dot" cx="44" cy="20" r="3.5"/><path class="afn-desk" d="M84 22h34M88 22v12M114 22v12M94 8h22v11H94zM103 19v3"/></svg>';
+function afNotice({head,sub,stay,said,toOffice,still}){ /* still(): false closes it at once, silently, moving nothing (FR-242 (c)) */
+  if(AF_NOTICE)return Promise.resolve(false); /* one at a time: a second move while one is shown does not happen */
+  const secs=Math.max(1,Math.round(AF_NOTICE_MS/1000));
+  const node=document.createElement('div');node.className='afn-body';
+  node.innerHTML=AF_NOTICE_ART+'<div class="afn-count" aria-hidden="true"><svg class="afn-ring" viewBox="0 0 48 48" focusable="false"><circle class="afn-ring-bg" cx="24" cy="24" r="21"/><circle class="afn-ring-fg" cx="24" cy="24" r="21" pathLength="100"/></svg><span class="afn-n"></span></div>';
+  node.querySelector('.afn-n').textContent=String(secs);
+  announce(said+' in '+secs+(secs===1?' second':' seconds')+'. Press Escape to '+stay.toLowerCase()+'.',ANN_REQUEST); /* FR-240: once, at request priority */
+  const was=document.activeElement&&document.activeElement!==document.body?document.activeElement:null;
+  AF_NOTICE=askDialog({title:head,body:sub,custom:{node,value:()=>null,valid:()=>true},buttons:[{label:stay,value:null,cls:'primary'}],
+    returnFocus:()=>liveBack(was), /* FR-239: back to where it was; a desk drawn again meanwhile is found by its id */
+    overlayClass:'af-notice '+(toOffice?'afn-to-office':'afn-to-chat'),role:'dialog',label:'Auto-follow',
+    auto:(close,d)=>{ /* FR-239: the count runs only while the window is visible and has the focus */
+      let left=AF_NOTICE_MS,last=performance.now();const num=d.querySelector('.afn-n');
+      d.style.setProperty('--afn-ms',AF_NOTICE_MS+'ms');
+      /* FR-239 (review on PR 1414): opened over a text field, a typed character means you are writing: the notice closes as Stay, the focus goes back to the
+         field during the key press, so the character lands there and nothing typed is lost (Enter and Escape keep their meaning on the notice) */
+      const field=was&&was.matches&&was.matches('input,textarea,[contenteditable]:not([contenteditable="false"])')?was:null;
+      const onType=e=>{if(field&&e.key&&e.key.length===1&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!e.isComposing)close(null);};
+      document.addEventListener('keydown',onType,true);
+      const t=setInterval(()=>{
+        if(!d.isConnected){close(null);return;} /* another dialog took its place: nothing moves */
+        if(still&&!still()){close('gone');return;} /* FR-242 (c): the agent is no longer followed (it finished in this chat): no count to a move that will not come */
+        const now=performance.now(),run=document.visibilityState!=='hidden'&&schedHasFocus();
+        if(run)left-=now-last;last=now;
+        if(d.classList.contains('afn-paused')===run)d.classList.toggle('afn-paused',!run);
+        if(left<=0){close('go');return;}
+        const n=String(Math.max(1,Math.ceil(left/1000)));if(num.textContent!==n)num.textContent=n;
+      },100);
+      return ()=>{clearInterval(t);document.removeEventListener('keydown',onType,true);};
+    }}).then(r=>{AF_NOTICE=null;const go=!!r&&r.value==='go';if(!go&&!(r&&r.value==='gone'))announce(toOffice?'Staying here.':'Staying in the office.');return go;});
+  return AF_NOTICE;
+}
+/* FR-183 with FR-238: the notice, then the return to the office, unless you stayed, Auto-follow was turned off or paused, or another chat is shown */
+let AF_LEAVE_T=0;
+function afLeaveChat(a,what,head){
+  const shown=afPanelId(), room=roomOf(a);
+  clearInterval(AF_LEAVE_T);AF_LEAVE_T=0;
+  if(!shown||!room||!roomShown(room)){afBackToOffice(a,what);return;} /* no move to announce: as before */
+  /* FR-239 (review on PR 1414): while the focused field holds text you are writing (the next message), the notice waits and takes no focus; it comes when the
+     field is empty again, as long as this chat is still shown and the agent still followed. A key typed on the notice itself closes it into the field (afNotice).
+     Any other guard (a dialog, a menu, the window in the background) keeps the move off, as before. */
+  const typing=()=>{const sn=afSnapshot();return sn.editable&&sn.editableText;};
+  const show=()=>{
+    const nm=deskMask(a.name)||'The agent';
+    afNotice({head:head||nm+' is working on this',sub:'Taking you to the office. Auto-follow brings you back when '+(head?'they finish or need you':nm+' finishes or needs you')+'.',stay:'Stay here',
+      said:(head||nm+' is working on this')+'. Taking you to the office',toOffice:true,still:()=>AFT.has(a.id)})
+      .then(go=>{if(go&&AF_ON&&!AF_PAUSED&&afPanelId()===shown&&AFT.has(a.id))afBackToOffice(a,what);afTick();}); /* FR-242: finished meanwhile in this chat: stay */
+  };
+  const ready=()=>{
+    if(!AF_ON||AF_PAUSED||afPanelId()!==shown||!AFT.has(a.id))return 'gone';
+    if(typing())return 'wait';
+    return AF.holdReason(afSnapshot(),{office:true})?'held':'go';
+  };
+  const r=ready();
+  if(r==='go'){show();return;}
+  if(r==='held'){afBackToOffice(a,what);return;} /* moves nothing: the guard holds, as before */
+  if(r==='gone')return;
+  AF_LEAVE_T=setInterval(()=>{const q=ready();if(q==='wait')return;clearInterval(AF_LEAVE_T);AF_LEAVE_T=0;if(q==='go')show();},200);
+}
 /* FR-183: an accepted message follows its agent and returns to the office. `shown` = the chat shown before the send; `several` = one of a Send to several */
 function afOnAccepted(a,shown,several){
   if(!AF_ON||AF_PAUSED||a.state==='idle'||a.state==='done')return; /* the app answered, and no turn is running */
   const now=afPanelId();
   if(now&&now!==shown)return; /* FR-183: you opened another chat while it was on its way */
-  AFT.follow(a.id); AFT.acted();
-  if(!several&&now===shown)afBackToOffice(a,a.name+' is working');
+  AFT.sent(a.id); /* FR-242: follow again; a completion of its earlier turn still waiting is dropped, never offered after this send */
+  if(!several&&now===shown)afLeaveChat(a,a.name+' is working');
   afTick();
 }
 function afOnCompleted(a){
   if(!AF_ON||!AFT.has(a.id))return;
-  const n=(AF_DONE.get(a.id)||0)+1; AF_DONE.set(a.id,n); AFT.arrive(a.id,'done',n);
+  const n=(AF_DONE.get(a.id)||0)+1; AF_DONE.set(a.id,n);
+  if(chatShownNow(a.id)){AFT.seen(a.id,'done',n);afTick();return;} /* FR-242, FR-184: its chat is shown (the same test as the New marker's; under a notice too): seen there, nothing moves, now or later */
+  AFT.arrive(a.id,'done',n);
 }
 /* FR-184: arrivals of the followed agents, delivered when no guard holds */
 function afScan(){
@@ -4788,9 +4866,15 @@ function afDeliver(){
   if(!d){afRender();return;}
   const a=byId(d.id);
   if(a&&!(afPanelId()===d.id)){ /* already shown: nothing moves */
-    AF_AUTO=true; try{openPanel(d.id,'title');}finally{AF_AUTO=false;}
-    AF_OPENED_AT=performance.now();
-    if(d.kind!=='ask')announce(a.name+(d.kind==='done'?' finished':d.kind==='error'?' has an error':' reached its limit')+'. Its chat is open.',afArrivalPrio(d.kind));
+    /* FR-238, FR-239: the notice first; Stay in the office leaves the arrival delivered (in the queue, New kept) and the tracker quiet until you act */
+    const cur=afPanelId(), nm=deskMask(a.name)||'The agent', head=nm+(AF_ARRIVE[d.kind]||AF_ARRIVE.done), see=d.kind==='done'?'See if it is OK. ':'';
+    afNotice({head,sub:see+'Opening its chat.',stay:'Stay in the office',said:head+'. '+see+'Opening its chat',toOffice:false}).then(go=>{
+      if(!go||!AF_ON||AF_PAUSED||afPanelId()!==cur||!byId(d.id)){afTick();return;}
+      AF_AUTO=true; try{openPanel(d.id,'title');}finally{AF_AUTO=false;}
+      AF_OPENED_AT=performance.now();
+      if(d.kind!=='ask')announce(a.name+(d.kind==='done'?' finished':d.kind==='error'?' has an error':' reached its limit')+'. Its chat is open.',afArrivalPrio(d.kind));
+      afTick();
+    });
   }
   afTick();
 }
@@ -5143,7 +5227,7 @@ async function sendToSeveral(anchor){
   const shown0=afPanelId(); /* spec 052 FR-183: the chat shown once, before the first send: a chat opened by hand while the sends go on is not the one to leave */
   for(const id of r.picked){const a=byId(id);if(!a||!a.live){bad.push(a?a.name:id);continue;}
     try{await sendLive(text,id,{fromComposer:false,several:true,afShown:shown0});n++;if(AFT.has(a.id))last=a;}catch(err){bad.push(a.name);}}
-  if(AF_ON&&!AF_PAUSED&&last&&AFT.has(last.id)&&afPanelId()===shown0){afBackToOffice(last,AFT.size>1?AFT.size+' followed agents are working':last.name+' is working');afTick();} /* spec 052 FR-183: one move and one announcement for the whole send */
+  if(AF_ON&&!AF_PAUSED&&last&&AFT.has(last.id)&&afPanelId()===shown0){afLeaveChat(last,AFT.size>1?AFT.size+' followed agents are working':last.name+' is working',AFT.size>1?AFT.size+' followed agents are working on this':'');afTick();} /* spec 052 FR-183: one move and one announcement for the whole send */
   toast(bad.length?'Sent to '+n+'; could not send to '+esc(bad.join(', '))+'.':'Sent to '+n+' session'+(n===1?'':'s')+'.',3600).classList.add(bad.length?'err':'ok');
 }
 const folderOfAgentName=a=>{const r=roomOf(a);const p=r&&r.path?String(r.path).replace(/[\\/]+$/,''):'';return p.split(/[\\/]/).pop()||'';};
@@ -5274,7 +5358,7 @@ function setView(v){ui.view=v;document.body.classList.toggle('list-mode',v==='li
 $('vOffice').onclick=()=>setView('office');
 $('vList').onclick=()=>setView('list');
 let resizeQueued=false;
-const relayout=()=>{if(resizeQueued)return;resizeQueued=true;requestAnimationFrame(()=>{resizeQueued=false;if(ui.view==='office'){renderOffice();syncWalkers();}placePencils();INL().follow();});}; /* spec 024: figures follow a resize */
+const relayout=()=>{if(resizeQueued)return;resizeQueued=true;requestAnimationFrame(()=>{resizeQueued=false;if(ui.view==='office'){renderOffice();syncWalkers();afTick();}placePencils();INL().follow();});}; /* spec 024: figures follow a resize */
 new ResizeObserver(relayout).observe($('floor'));
 window.addEventListener('resize',relayout);
 document.addEventListener('scroll',()=>INL().follow(),{capture:true,passive:true}); /* spec 059 FR-023 item 5: the floor, the list or the chat scrolled: the open field follows its name */
@@ -5373,7 +5457,7 @@ function labelDemo(){const w=$('demoWord');if(w)w.textContent=demoOn?'Turn off d
 function liveChat(a){
   if(chats[a.id])return chats[a.id];
   const el=document.createElement('div');el.className='chat-inner';
-  const chat=chats[a.id]={el,busy:false};
+  const chat=chats[a.id]={el,busy:false,agent:a}; /* agent: spec 005 FR-238, its sign-in and fresh-note cards are never trimmed */
   if(a.live&&!a.parent&&DN&&bridge&&bridge.notesSave)el.dataset.notes='1'; /* spec 083 FR-010/FR-027: only a main, live chat has the message ⋯; a helper's chat, the VS Code view and the canned demo chats have none (it would open nothing) */
   if(a.sub)buildSubTranscript(a,chat);
   return chat;
@@ -5822,11 +5906,75 @@ function mdSet(el,raw,now){
 /* spec 052 (2026-10-21, measured): following the chat to the bottom read scrollHeight (a full layout of the chat) on every event,
    so a long conversation got slower with each message (27 ms per message at 1000). Now one read and one write per frame. */
 let stickyRaf=0; const stickyChats=new Set();
-function stickyScroll(chat){stickyChats.add(chat);if(!stickyRaf)stickyRaf=requestAnimationFrame(stickyFlush);}
+/* spec 005 FR-238: a hidden window draws no frame, so stickyFlush does not run: chats that grow while it is hidden are trimmed by a slow
+   timer instead (30 s; the simulator alone may shorten it with simtrimtick=ms for a driver). It runs only while the page is hidden and
+   something was added since its last pass, and stops when the page shows again (the next frame flushes as usual). */
+const TRIM_HIDDEN_MS=(()=>{const n=SIM?parseInt(qs.get('simtrimtick')||'',10):0;return n>=50&&n<=600000?n:30000;})();
+let hiddenTrimT=0,hiddenDirty=false;
+function hiddenTrimTick(){if(!document.hidden||!hiddenDirty){clearInterval(hiddenTrimT);hiddenTrimT=0;return 0;}hiddenDirty=false;return chatTrimPending(true);}
+function chatTrimPending(hidden){const c=$('chat');let n=0;stickyChats.forEach(chat=>{n+=chatTrim(chat,c,hidden)||0;});return n;} /* the chats waiting for a frame, trimmed now */
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&hiddenTrimT){clearInterval(hiddenTrimT);hiddenTrimT=0;}});
+function stickyScroll(chat){stickyChats.add(chat);if(!stickyRaf)stickyRaf=requestAnimationFrame(stickyFlush);if(document.hidden){hiddenDirty=true;if(!hiddenTrimT)hiddenTrimT=setInterval(hiddenTrimTick,TRIM_HIDDEN_MS);}}
+let trimDeferred=null; /* FR-238: the open chat whose trim waits while the person reads its older messages */
 function stickyFlush(){stickyRaf=0;const c=$('chat');const l=[...stickyChats];stickyChats.clear();
-  if(c&&c.dataset.pin!=='0'&&l.some(chat=>chat.el.parentNode===c))c.scrollTop=c.scrollHeight;
+  if(trimDeferred&&!(c&&trimDeferred.el.parentNode===c&&c.dataset.pin==='0')){if(!l.includes(trimDeferred))l.push(trimDeferred);trimDeferred=null;} /* back at the end, or another chat is open */
+  let openTrimmed=false; l.forEach(chat=>{if(chatTrim(chat,c)>0&&c&&chat.el.parentNode===c)openTrimmed=true;}); /* spec 005 FR-238: before the scroll, so a chat at its end stays there */
+  if(c&&c.dataset.pin!=='0'&&l.some(chat=>chat.el.parentNode===c)){c.scrollTop=c.scrollHeight;if(openTrimmed)c._lastTop=c.scrollTop;} /* FR-238: after a trim removed blocks above, the end is lower than before; this write is not the person scrolling up (FR-214). Only then: otherwise the first scroll after opening a chat keeps FR-214's own rule */
   const bodies=[...thinkScroll];thinkScroll.clear();bodies.forEach(b=>{if(b.isConnected&&b.scrollHeight>b.clientHeight)b.scrollTop=b.scrollHeight;});}
 const thinkScroll=new Set(); /* the open thinking box follows its own text, in the same frame */
+/* spec 005 FR-238 (issue 1380): a chat keeps a bounded transcript (src/renderer/chattrim.js), every chat, open or not, at most once a
+   frame (stickyFlush). The cheap check first: nothing is read or built while a chat is under its caps. The open chat is not trimmed
+   while the person reads it scrolled up (it waits until they are back at the end), so nothing they read ever moves. */
+const CT=window.DurbarChatTrim;
+/* simulator only: `simchatkeep=N` raises both caps for a driver that builds a longer chat on purpose (check-chat-visibility, 4,000 messages) */
+const CHAT_KEEP_SIM=(()=>{const n=SIM?parseInt(qs.get('simchatkeep')||'',10):0;return n>=1&&n<=1e6?{messages:n,blocks:n}:null;})();
+function chatTrim(chat,c,hidden){
+  if(!CT||!chat||!chat.el)return;
+  const K=CHAT_KEEP_SIM||CT.CHAT_KEEP,el=chat.el,t=chat.turn&&chat.turn.T&&chat.turn.T.chat===chat?chat.turn:null,T=t&&t.T;
+  const subs=[];
+  if(chat.subViews)for(const v of chat.subViews){if(v.s.status==='running'&&v.T&&v.T.tl&&el.contains(v.T.tl))subs.push(v);else chat.subViews.delete(v);} /* a running helper's own timeline grows too */
+  const noteIn=(chat.trimNote&&chat.trimNote.parentNode===el?1:0)+(chat.subNote&&chat.subNote.parentNode===el?1:0); /* FR-238's line and FR-240's helper line */
+  const tls=(T?[{tl:T.tl}]:[]).concat(subs.map(v=>({tl:v.T.tl})));
+  if(!CT.over({el,keep:K,tls,noteIn}))return; /* at or under every cap: counts only, nothing measured (FR-238) */
+  const st=chat.trimStats||(chat.trimStats={slow:0,runs:0});st.slow++;
+  /* the open chat while the person reads its older messages (not following the end): not trimmed now; it is when they come back to the
+     end (the scroll handler) or the chat is no longer the open one (the next flush), FR-238 (review of PR 1431) */
+  if(c&&el.parentNode===c&&c.dataset.pin==='0'){st.deferred=(st.deferred||0)+1;trimDeferred=chat;return 0;}
+  const a=chat.agent,live=CT.liveSet(a,t);
+  /* what the person holds stays: the focused element, a text selection and an open message menu's message are kept, with everything
+     that contains them, until they leave it (FR-238, review of PR 1431) */
+  const sel=typeof getSelection==='function'?getSelection():null,mm=document.getElementById('modeMenu');
+  for(let x of [document.activeElement,sel&&sel.anchorNode,sel&&sel.focusNode,mm&&mm._anchor]){
+    if(!x||!el.contains(x))continue;
+    for(;x&&x!==el;x=x.parentNode)if(x.nodeType===1)live.add(x);}
+  /* a selection keeps every message and block it covers, not only its two ends (Ctrl+A in the chat selects them all) */
+  for(let i=0;sel&&i<sel.rangeCount;i++){const rg=sel.getRangeAt(i);if(rg.collapsed||!rg.intersectsNode(el))continue;
+    for(const x of el.querySelectorAll(':scope > *, .tl > *'))if(rg.intersectsNode(x))live.add(x);}
+  const liveOf=x=>new Set([x.T.typing,x.T.think&&x.T.think.el,x.T.bubble,x.T.chipsEl].filter(Boolean));
+  const drops=CT.plan({el,keep:K,live,tls:(T?[{tl:T.tl}]:[]).concat(subs.map(v=>({tl:v.T.tl,live:liveOf(v)})))});
+  if(!drops.length)return 0;
+  const ord=el._ordGone||(el._ordGone={user:0,agent:0});
+  const r=CT.apply(drops,[T].concat(subs.map(v=>v.T)),d=>{
+    /* spec 083: a saved note names its message by role and place among the chat's bubbles; the removed ones still count, so a place stays the same message */
+    const m=d.closest&&d.closest('.msg'),role=m&&m.classList.contains('user')?'user':m&&m.classList.contains('agent')?'agent':'';
+    if(role)ord[role]+=(d.matches('.bubble')?1:0)+d.querySelectorAll('.bubble').length;
+    /* a removed helper block: its view goes from the helper's record, so nothing keeps the element */
+    const sb=[...(d.matches('.subblk')?[d]:[]),...d.querySelectorAll('.subblk')];
+    for(const x of sb){const s=a&&a.subs&&a.subs.get(x.dataset.sub);if(!s)continue;
+      s.views=s.views.filter(v=>{const out=v.el===x||x.contains(v.host);if(out&&chat.subViews)chat.subViews.delete(v);return !out;});
+      if(s.block&&s.block.el===x)s.block=null;}
+  });
+  st.runs++;if(hidden)st.hiddenRuns=(st.hiddenRuns||0)+1;
+  if(r.actGone&&T)tActNext(T);
+  chat.trimmed=(chat.trimmed||0)+r.removed;
+  let n=chat.trimNote;
+  if(!n||n.parentNode!==el){n=chat.trimNote=document.createElement('div');n.className='note info '+CT.NOTE_CLASS;n.setAttribute('role','note');}
+  n.textContent=CT.noteText(chat.trimmed);
+  if(el.firstElementChild!==n)el.insertBefore(n,el.firstChild);
+  return r.removed;
+}
+/* spec 005 FR-238, spec 083: the bubbles of a role a trim removed from this chat, so a note's place (`ord`) counts from the session view's start */
+const ordGone=(root,role)=>(root&&root._ordGone&&root._ordGone[role])||0;
 
 function makeT(tl,chat){return {tl,chat,think:null,thinkN:0,bubble:null,chipsEl:null,chipEls:{},intent:'',typing:null};}
 function tScroll(T){if(T.chat)stickyScroll(T.chat);}
@@ -6128,6 +6276,12 @@ function tEnd(T,opts){
 /* ---- sub-agents: one record per spawning `task` call; the nested block in the parent chat and the helper's own
    read-only transcript are two views of the same event log ---- */
 const SUB_LOG_MAX=3000;
+/* spec 005 FR-240 (issue 1418): a parent keeps its newest finished helpers in full (src/renderer/subretire.js, SUB_KEEP: 50 done, 20
+   failed); the older ones are retired when a helper ends (subRetire): card, record and views go, the block stays as a one-line stub */
+const SR=window.DurbarSubRetire;
+const SUB_KEEP=SR?SR.SUB_KEEP:null; /* without subretire.js nothing is retired (the page still draws) */
+const subIsGone=(a,id)=>!!(a&&a.subGone&&id!=null&&a.subGone.has(id)); /* a late event for a retired helper is ignored, never a new record */
+const SUB_RETIRED_SIM=[]; /* simulator only: the last few retired records (emptied), so a driver can check nothing is left in them */
 const SUBIC='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.2" cy="5" r="2"/><circle cx="11.2" cy="6" r="1.6"/><path d="M1.8 13c0-2.4 1.5-3.8 3.4-3.8s3.4 1.4 3.4 3.8M9.6 12.6c.2-1.6 1.1-2.6 2.6-2.6 1.4 0 2.2 1 2.2 2.6"/></svg>';
 function subRec(a,id,seed){
   if(!a.subs)a.subs=new Map();
@@ -6160,7 +6314,9 @@ function subBody(s,host,chat){
   host.insertAdjacentHTML('beforeend','<div class="sub-prompt"></div><div class="tl"></div><div class="sub-res"></div><div class="sub-err" role="alert" hidden></div><div class="sub-foot"></div>');
   const v={s,host,chat,prompt:host.querySelector('.sub-prompt'),res:host.querySelector('.sub-res'),err:host.querySelector('.sub-err'),foot:host.querySelector('.sub-foot'),T:null};
   v.T=makeT(host.querySelector('.tl'),chat);v.T.folder=s.parent&&s.parent.info&&s.parent.info.cwd;
+  s.views=s.views.filter(x=>!x.chat||!x.chat.el||x.chat.el.contains(x.host)); /* FR-238: a view rebuilt or trimmed away is not kept */
   s.views.push(v); subPaintView(v);
+  if(chat)(chat.subViews||(chat.subViews=new Set())).add(v); /* FR-238: a running helper's timeline is trimmed as the open turn's */
   s.log.forEach(e=>subApply(v,e,true));
   return v;
 }
@@ -6205,14 +6361,18 @@ function subApply(v,e,replay){
   case 'toolCall':tTool(T,e);return;
   }
 }
+/* a helper's usage adds to its parent's totals (and the usage record), kept or retired (FR-240) */
+function addParentUsage(a,e){const p=a.usage;p.calls++;p.inT+=e.inputTokens||0;p.outT+=e.outputTokens||0;p.nano+=e.nanoAiu||0;p.usd=(p.usd||0)+(e.costUsd>0?e.costUsd:0);a.usageText=usageLong(a);recordUsage(a,e);}
 /* an event with agentId (the spawning task call id) */
 function onSubEvent(a,e){
+  if(subIsGone(a,e.agentId)){ /* FR-240: a retired helper makes no record or card; its late usage still counts for the parent (the parent holds the sum) */
+    if(e.type==='usage'){addParentUsage(a,e);scheduleRender();if(ui.selected===a.id)updatePanelHeader();}
+    return;}
   const s=subRec(a,e.agentId), card=s.card;
   if(e.type==='usage'){
     const u=s.usage;u.calls++;u.inT+=e.inputTokens||0;u.outT+=e.outputTokens||0;u.nano+=e.nanoAiu||0;u.usd=(u.usd||0)+(e.costUsd>0?e.costUsd:0);
     const cu=card.usage;cu.calls=u.calls;cu.inT=u.inT;cu.outT=u.outT;cu.nano=u.nano;cu.usd=u.usd;card.usageText=usageLong(card);
-    const p=a.usage;p.calls++;p.inT+=e.inputTokens||0;p.outT+=e.outputTokens||0;p.nano+=e.nanoAiu||0;p.usd=(p.usd||0)+(e.costUsd>0?e.costUsd:0);a.usageText=usageLong(a);
-    recordUsage(a,e);
+    addParentUsage(a,e);
     scheduleRender();if(ui.selected===card.id||ui.selected===a.id)updatePanelHeader();return;
   }
   if(s.log.length<SUB_LOG_MAX)s.log.push(e);
@@ -6232,6 +6392,7 @@ function onSubEvent(a,e){
   if(ui.selected===card.id)updatePanelHeader();
 }
 function onSubagent(a,e){
+  if(subIsGone(a,e.subagentId))return; /* FR-240: a late event for a retired helper */
   const s=subRec(a,e.subagentId), card=s.card;
   if(e.name)s.name=helperMask(e.name)||s.name; if(e.model)s.model=e.model; if(e.agentName)s.agentName=helperMask(e.agentName)||''; /* spec 041 FR-065; spec 015 FR-021: home folders first, on the raw text */
   if(e.task&&e.phase==='started')s.task=e.task;
@@ -6247,10 +6408,12 @@ function onSubagent(a,e){
     subCollapse(s);
   }
   subPaint(s);scheduleRender();
+  if(e.phase!=='started')subRetireCheck(a); /* FR-240: a helper ended */
 }
 /* tool call of the parent: `task` becomes the sub-agent block, not a chip */
 const isTaskTool=t=>t==='task'||t==='agent';
 function onTaskTool(a,e){
+  if(subIsGone(a,e.callId))return; /* FR-240: a late call event for a retired helper draws neither a block nor a chip */
   const s=subRec(a,e.callId);
   if(e.phase==='start'){
     const g=e.args||{};
@@ -6264,11 +6427,77 @@ function onTaskTool(a,e){
     if(e.phase==='complete'&&e.output)s.result=String(e.output);
     if(e.phase==='failed'){s.status='failed';s.error=String(e.output||'Failed');}
     else if(s.status==='running'){s.status='done';}
+    if(!s.t1)s.t1=Date.now(); /* FR-240: when it ended (the order the retirement keeps) */
     s.views.forEach(v=>tEnd(v.T,{note:false}));
     if(s.card)setState(s.card,s.status==='failed'?'error':'done',s.status==='failed'?null:'Done',safeExcerpt(homeMask(s.result||s.error||s.task),100));
     subCollapse(s);
+    subPaint(s);scheduleRender();
+    subRetireCheck(a); /* FR-240: a helper ended */
+    return;
   }
   subPaint(s);scheduleRender();
+}
+/* spec 005 FR-240: the finished helpers the person holds are never retired: the one whose full activity is open, and the one whose block
+   or its own button (Real office head, Open office tile, list row: FR-242) holds the focus, a text selection or an open message menu (FR-238's rule); the next end retires them once let go */
+function subHeld(a){
+  const held=new Set(),c=$('chat'),ae=document.activeElement,mm=document.getElementById('modeMenu'),anc=mm&&mm._anchor;
+  const sel=typeof getSelection==='function'?getSelection():null,rgs=[];
+  for(let i=0;sel&&i<sel.rangeCount;i++){const rg=sel.getRangeAt(i);if(!rg.collapsed)rgs.push(rg);}
+  for(const s of a.subs.values()){
+    if(s.status==='running')continue;
+    const card=s.card;
+    if(card&&ae&&ae.dataset&&ae.dataset.id===card.id&&ae.matches&&ae.matches('.ro-hstrip button, #stage .helper, #list .lrow')){held.add(s.id);continue;} /* FR-242: its own button holds the focus: Real office head, Open office tile or list row */
+    if(card&&(ui.selected===card.id||(c&&chats[card.id]&&chats[card.id].el&&chats[card.id].el.parentNode===c))){held.add(s.id);continue;}
+    const el=s.block&&s.block.el;
+    if(!el||!el.isConnected)continue;
+    if((ae&&el.contains(ae))||(anc&&el.contains(anc))||rgs.some(rg=>{try{return rg.intersectsNode(el);}catch(e){return true;}}))held.add(s.id);
+  }
+  return held;
+}
+function subRetireCheck(a){
+  if(!SR||!SUB_KEEP||!a||!a.subs||!a.subs.size)return 0;
+  let nd=0,nf=0;for(const s of a.subs.values()){if(s.status==='done')nd++;else if(s.status==='failed')nf++;}
+  if(nd<=SUB_KEEP.done&&nf<=SUB_KEEP.failed)return 0; /* under both limits: nothing to plan (counts only) */
+  const ids=SR.plan({subs:a.subs.values(),keep:SUB_KEEP,held:subHeld(a)});
+  for(const id of ids)subRetire(a,a.subs.get(id));
+  if(ids.length)scheduleRender();
+  return ids.length;
+}
+/* One helper retired (FR-240): its card and own chat go (with the per-id state a removed agent's helpers lose), its record leaves the
+   parent, its views leave their chats, and its block in the parent's chat becomes a one-line stub (name, task or result, status: the
+   texts its block already showed, masked). Tolerates chatTrim having removed the block first. */
+function subRetire(a,s){
+  if(!a||!s||s.status==='running')return false;
+  const id=s.id,card=s.card;
+  if(a.subs&&a.subs.get(id)===s)a.subs.delete(id);
+  for(const v of s.views){if(v.chat&&v.chat.subViews)v.chat.subViews.delete(v);v.paint=null;}
+  const b=s.block;
+  if(b&&b.el&&b.el.parentNode)subStub(s,b.el); /* in the parent's chat, open or not (a closed chat's element is not in the document) */
+  s.views=[];s.log=[];s.block=null;s.card=null;s.parent=null;s.now=null;
+  if(card){
+    for(const list of agents===LIVE.agents?[agents]:[agents,LIVE.agents]){const i=list.indexOf(card);if(i>=0)list.splice(i,1);}
+    const ch=chats[card.id];if(ch&&trimDeferred===ch)trimDeferred=null;
+    forgetCardState(card.id);card.sub=null;
+  }
+  a.subGone=SR.bury(a.subGone,id);a.subsGone=(a.subsGone||0)+1;
+  subGoneNote(a);
+  if(SIM){SUB_RETIRED_SIM.push(s);if(SUB_RETIRED_SIM.length>5)SUB_RETIRED_SIM.shift();}
+  return true;
+}
+function subStub(s,old){
+  const el=document.createElement('div');el.className='subblk stub '+(s.status==='failed'?'failed':'done');el.dataset.sub=s.id;
+  el.innerHTML=`<div class="sub-head"><div class="sub-toggle"><span class="sub-ic">${SUBIC}</span><b class="sub-name"></b><span class="sub-task"></span><span class="sub-st"></span></div></div>`;
+  for(const k of ['.sub-name','.sub-task','.sub-st']){const f=old.querySelector(k);el.querySelector(k).textContent=f?f.textContent:'';} /* what the block showed, already masked (helperMask, safeExcerpt) */
+  old.replaceWith(el);
+}
+/* the line at the top of the parent's chat: one element, created once, its count updated; after FR-238's own line when that is there */
+function subGoneNote(a){
+  const ch=chats[a.id];if(!ch||!ch.el||!SR)return;
+  const el=ch.el;let n=ch.subNote;
+  if(!n||n.parentNode!==el){n=ch.subNote=document.createElement('div');n.className='note info sub-gone'+(CT?' '+CT.NOTE_CLASS:'');n.setAttribute('role','note');}
+  n.textContent=SR.noteText(a.subsGone);
+  const t=ch.trimNote&&ch.trimNote.parentNode===el?ch.trimNote:null;
+  if(t?t.nextElementSibling!==n:el.firstElementChild!==n)el.insertBefore(n,t?t.nextSibling:el.firstChild);
 }
 /* the helper's own full view (opened from a helper card): header + the shared body, read-only */
 function buildSubTranscript(card,chat){
@@ -6295,19 +6524,21 @@ function ensureTurn(a){
   const T=makeT(m.querySelector('.tl'),chat);T.folder=a.info&&a.info.cwd; /* spec 005 FR-020: edit paths relative to it */
   const ty=document.createElement('div');ty.className='typing';ty.dataset.t0=String(Date.now());ty.innerHTML='<i></i><i></i><i></i><span class="t-l"></span>';
   T.tl.appendChild(ty);T.typing=ty;
-  const t=a.turn={m,T};
+  const t=a.turn={m,T};chat.turn=t;chat.agent=a; /* spec 005 FR-238: the open turn's blocks are trimmed, its live ones never */
   stickyScroll(chat);return t;
 }
 function closeTurn(a){
   const t=a.turn; if(!t)return;
   tEnd(t.T,{note:true});
+  if(t.T.chat&&t.T.chat.turn===t)t.T.chat.turn=null;
   a.turn=null;
 }
+const TASK_LOG_KEEP=500; /* spec 005 FR-239: the simulator's task log keeps the last 500 lines (check-done-desk-mask reads a few per check) */
 function setState(a,state,label,task){
   if(typeof task==='string')task=taskMask(task); /* spec 041 FR-065: backstop, whatever path built the line (the helper masks before cutting; this one cannot repair a cut token) */
   const ch=a.state!==state||(label!==undefined&&a.label!==label)||(task!==undefined&&a.task!==task);
   a.state=state; if(label!==undefined)a.label=label; if(task!==undefined)a.task=task;
-  if(SIM&&task!==undefined)(window.__taskLog=window.__taskLog||[]).push(a.task); /* simulator only: every task line ever stored, for the FR-065 driver (a line is often replaced at once) */
+  if(SIM&&task!==undefined){const L=(window.__taskLog=window.__taskLog||[]);L.push(a.task);if(L.length>TASK_LOG_KEEP)L.splice(0,L.length-TASK_LOG_KEEP);} /* simulator only: the last task lines stored (FR-239), for the FR-065 driver (a line is often replaced at once) */
   if(state==='working'||state==='thinking'){if(!a.busySince)a.busySince=Date.now();}else if(state==='done'||state==='idle')a.busySince=null; /* spec 001 FR-047: time on task */
   if(ch&&a.live&&a.info&&a.info.modelControl&&a.info.modelControl.compact&&!a.parent)updateCtxChip(a); /* the Compact button is greyed while the agent works */
   if(ch){if(a.parent&&HX)scheduleRenderSoon();else scheduleRender();}
@@ -6501,7 +6732,7 @@ function showQuestion(a,e){
   row.appendChild(ok);row.appendChild(skip);n.appendChild(row);
   a.question={requestId:e.requestId,n,row,st};(a.qs||(a.qs=new Map())).set(e.requestId,a.question); /* spec 052 FR-178: every open question by request id (two can be open at once) */
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
-  announce(a.name+' asks: '+(safeMask((qs[0]&&qs[0].question)||'')||'a question'));renderInboxBtn();
+  announce([a.name,' asks: ',String((qs[0]&&qs[0].question)||'')||'a question']); /* spec 012 FR-178: the question as the card shows it; announce masks it */renderInboxBtn();
 }
 /* ---------- MCP elicitation (spec 012 FR-151): a form in the question card, or an https page opened only after a click.
    Text only, never HTML; values are never logged or shown afterwards. Main checks the answer again before the agent gets it. ---------- */
@@ -6605,7 +6836,7 @@ function showElicitation(a,e){
   n.appendChild(row);
   a.question={requestId:e.requestId,n,row,st,elicit:isUrl?'url':'form'};(a.qs||(a.qs=new Map())).set(e.requestId,a.question);
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
-  announce(a.name+': '+(R.source?R.source+' ':'an MCP server ')+(isUrl?'asks you to open a page on '+(R.host||'the web'):'asks for input')+'. '+safeExcerpt(R.message||'',160,''));renderInboxBtn();
+  announce([a.name,': ',R.source?R.source+' ':'an MCP server ',isUrl?'asks you to open a page on ':'asks for input',isUrl?(R.host||'the web'):'','. ',{text:R.message||'',max:160}]); /* spec 012 FR-178: the message as the card shows it, masked by announce before its 160-character cut */renderInboxBtn();
 }
 /* spec 052 FR-178: why a question ended unanswered, in words for the card's tooltip (codes only, from the adapter's event or this window; never text of the question) */
 const SKIP_WHY={user:'you pressed Skip',stop:'the turn was stopped',interrupt:'the turn was stopped',reconnect:'the agent app was reconnected',exit:'the agent app ended',unreadable:'the agent app ended the question without an answer',aborted:'the agent app reported the turn as aborted'};
@@ -6816,7 +7047,7 @@ function showPerm(a,p){
   }
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
   if(t.T.typing)typingPaint(t.T.typing);
-  if(p.state==='pending')announce(a.name+' needs your OK: '+(look?look+' The request: ':'')+sumS.text+(hwhy?'. '+PERM_WHY[hwhy]+hgrant:'')); /* spec 003 FR-118: the lookalike line first, so the 300-character announcement keeps it */
+  if(p.state==='pending')announce([a.name,' needs your OK: ',look,look?' The request: ':'',sumS.text,hwhy?'. '+PERM_WHY[hwhy]+hgrant:'']); /* spec 003 FR-118: the lookalike line first, so the 300-character announcement keeps it; spec 012 FR-178: the name, the fixed words and the request are masked apart, so the request is said as the card shows it and the fixed words are always said */
   renderInboxBtn();
 }
 /* spec 003 FR-094..FR-096 (owner 2026-10-23, supersedes spec 052 FR-074's button): under a request denied by Read-only, one button
@@ -7107,7 +7338,7 @@ function onLiveEvent(e){
   case 'thinking':{if(a.coffee&&!a.limit)endCoffee(a,'the agent went on');const t=ensureTurn(a);tThink(t.T,e.reasoningId,e.delta);setState(a,'thinking',null);return;}
   case 'output':{const t=ensureTurn(a);const out=tText(t.T,e);if(out!=null)a.lastOutput=out;if(!a.coffee)setState(a,'working',null);return;} /* spec 068: text after a usage limit does not end the break */
   case 'toolCall':{const t=ensureTurn(a);
-    if(isTaskTool(e.tool)||(a.subs&&a.subs.has(e.callId)))onTaskTool(a,e); /* spec 001 FR-095: a call with a sub-agent record goes to onTaskTool in every phase, whatever its tool name or chip (Claude sends `Agent` / `Task` before the subagent event) */
+    if(isTaskTool(e.tool)||(a.subs&&a.subs.has(e.callId))||subIsGone(a,e.callId))onTaskTool(a,e); /* spec 001 FR-095: a call with a sub-agent record goes to onTaskTool in every phase, whatever its tool name or chip (Claude sends `Agent` / `Task` before the subagent event) */
     else tTool(t.T,e);
     if(e.phase==='start')whyAttach(a,t.T,e.callId);
     if(e.phase==='start'&&!isTaskTool(e.tool)&&!a.coffee)setState(a,a.state==='thinking'?'working':a.state,null,intentText(a.intent)||toolTask(e,a.info&&a.info.cwd,90));
@@ -8362,7 +8593,7 @@ async function compactDialog(a,anchor){
 function maybeSuggestFresh(a){
   const c=STATS.agent(a.id).ctx;if(!c||!(c.limit>0))return;
   const pct=Math.round(c.tokens/c.limit*100);
-  if(a.freshNote&&a.freshNote.isConnected){if(pct<80){a.freshNote.remove();a.freshNote=null;}return;}
+  if(a.freshNote&&liveChat(a).el.contains(a.freshNote)){if(pct<80){a.freshNote.remove();a.freshNote=null;}return;} /* in its chat, open or not (isConnected is false for a closed chat: a new note was added at every idle, issue 1380) */
   const idle=!busyNow(a);
   if(!DM.suggestFresh({percent:pct,compactions:a.compactions||0,lastCompactionFailed:!!a.compactFailed,idle,dismissed:a.freshDismissed,canCompact:ctrlOf(a).compact===true}))return;
   const chat=liveChat(a),n=document.createElement('div');n.className='note fresh';n.setAttribute('role','note');
@@ -8981,7 +9212,7 @@ async function removeFolder(r){
   if(nb)NT.by.delete(notesKey(nb));
   if(ui.selected&&(byId(ui.selected)||{}).room===r.id)closePanel();
   const gone=new Set(ags.map(x=>x.id));
-  for(let i=agents.length-1;i>=0;i--){if(gone.has(agents[i].id)||gone.has(agents[i].parent)){DRAFTS.delete(agents[i].id);UNREAD.forget(agents[i].id);UNREAD_AT.delete(agents[i].id);UNREAD_SAID.delete(agents[i].id);HL_AT.delete(agents[i].id);delete chats[agents[i].id];delete prev[agents[i].id];agents.splice(i,1);}}
+  for(let i=agents.length-1;i>=0;i--){if(gone.has(agents[i].id)||gone.has(agents[i].parent)){forgetCardState(agents[i].id);agents.splice(i,1);}}
   const ri=ROOMS.indexOf(r); if(ri>=0)ROOMS.splice(ri,1);
   if(ui.ws===r.id)ui.ws='all';
   renderFilter(); renderFolders(); scheduleRender();
@@ -9029,7 +9260,10 @@ function inlineNameEl(surface,id,pid){
   }
   const list=surface==='list';
   const q='[data-id="'+CSS.escape(id)+'"]';
-  return document.querySelector(list?'#list .lrow'+q+' .lnm':'#stage .desk'+q+' .name, #stage .ro-plate'+q+' .ro-l1>b'); /* spec 059 FR-170: or a Real office plate's name */
+  const n=document.querySelector(list?'#list .lrow'+q+' .lnm':'#stage .desk'+q+' .name, #stage .ro-plate'+q+' .ro-l1>b'); /* spec 059 FR-170: or a Real office plate's name */
+  if(list||!n||n.getClientRects().length)return n;
+  /* spec 097 FR-357 (bug 1427): a plate that does not draw the name (an arcade cabinet's) is edited on the desk's marquee, where the name is drawn */
+  return document.querySelector('#stage .ro-marquee[data-for="'+CSS.escape(id)+'"]')||n;
 }
 /* One session's name edited in place. `from`: what started it ('title', 'pencil', 'card'), so focus goes back there. The save is the
    dialog's own submit part (submitSessionName), not a copy (FR-022). `pid`: the session id of a Previous sessions row. */
@@ -9136,9 +9370,11 @@ function removeLiveAgent(id){
   STATS.forget(id); MOOD.forget(id);
   if(LIVEACT){LIVEACT.drop(id);clearTimeout(liveTimers.get(id));liveTimers.delete(id);} /* spec 001 FR-028 */
   VISITS.leave(id); dropWalker(id); BREAKS.end(id); /* spec 068: a removed agent's break is forgotten */
-  for(let i=agents.length-1;i>=0;i--)if(agents[i].id===id||agents[i].parent===id){DRAFTS.delete(agents[i].id);UNREAD.forget(agents[i].id);UNREAD_AT.delete(agents[i].id);UNREAD_SAID.delete(agents[i].id);HL_AT.delete(agents[i].id);delete chats[agents[i].id];delete prev[agents[i].id];agents.splice(i,1);}
+  for(let i=agents.length-1;i>=0;i--)if(agents[i].id===id||agents[i].parent===id){forgetCardState(agents[i].id);agents.splice(i,1);}
   if(ui.selected&&!byId(ui.selected))closePanel();
 }
+/* the per-id state of a card that leaves the office: a removed agent and its helpers, a retired helper (spec 005 FR-240) */
+function forgetCardState(id){DRAFTS.delete(id);UNREAD.forget(id);UNREAD_AT.delete(id);UNREAD_SAID.delete(id);HL_AT.delete(id);delete chats[id];delete prev[id];}
 
 /* ---------------- previous sessions (Copilot, resumable) + VS Code chat history (read-only) ---------------- */
 const prev={}; let vsViewing=false;
@@ -9646,7 +9882,22 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
-if(SIM)window.__durbarSimUi={announce,afArrivalPrio,swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
+if(SIM)window.__durbarSimUi={announce,afArrivalPrio,afNotice:{ms:v=>{AF_NOTICE_MS=Math.max(100,Number(v)||3000);return AF_NOTICE_MS;},on:v=>{setAutoFollowOn(!!v);return AF_ON;},shown:()=>!!AF_NOTICE}, /* spec 052 FR-239: drivers only: the notice's length, Auto-follow without Settings */swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
+  chatTrimNow:()=>chatTrimPending(false), /* spec 005 FR-238: trim the chats waiting for a frame now (a burst with no frame between) */
+  hiddenTrimTimer:()=>({on:!!hiddenTrimT,ms:TRIM_HIDDEN_MS}),
+  helperStats:aid=>{const a=liveById(aid);if(!a)return null;const subs=a.subs?[...a.subs.values()]:[],ids=new Set(subs.map(s=>s.id)),ch=chats[aid];
+    let staleViews=0;for(const k of Object.keys(chats)){const c=chats[k];if(c&&c.subViews)for(const v of c.subViews){const p=v.s&&v.s.parent;if(!p||!p.subs||p.subs.get(v.s.id)!==v.s)staleViews++;}}
+    const pre=aid+':';
+    return {subs:subs.length,done:subs.filter(s=>s.status==='done').length,failed:subs.filter(s=>s.status==='failed').length,running:subs.filter(s=>s.status==='running').map(s=>s.id),doneIds:subs.filter(s=>s.status==='done').map(s=>s.id),ids:subs.map(s=>s.id),
+      helpers:helpersOf(a).length,cards:LIVE.agents.filter(x=>x.parent===aid).length,staleCards:LIVE.agents.filter(x=>x.parent===aid&&!(x.sub&&ids.has(x.sub.id))).length,
+      staleChats:Object.keys(chats).filter(k=>k.startsWith(pre)&&!ids.has(k.slice(pre.length))).length,staleViews,gone:a.subsGone||0,ring:a.subGone?a.subGone.size:0,goneIds:a.subGone?[...a.subGone].slice(-20):[],
+      retiredLeft:SUB_RETIRED_SIM.filter(s=>s.views.length||s.log.length||s.block||s.card||s.parent).length,retiredSeen:SUB_RETIRED_SIM.length,
+      note:ch&&ch.subNote&&ch.subNote.parentNode===ch.el?ch.subNote.textContent:'',notes:ch&&ch.el?ch.el.querySelectorAll(':scope > .sub-gone').length:0,
+      stubs:ch&&ch.el?ch.el.querySelectorAll('.subblk.stub').length:0,stubBodies:ch&&ch.el?ch.el.querySelectorAll('.subblk.stub .sub-in, .subblk.stub .sub-open, .subblk.stub button').length:0,blocks:ch&&ch.el?ch.el.querySelectorAll('.subblk:not(.stub)').length:0,
+      keep:SUB_KEEP?{...SUB_KEEP}:null,usageCalls:a.usage?a.usage.calls:0,orphans:subs.filter(s=>!s.card||agents.indexOf(s.card)<0).map(s=>s.id)};}, /* spec 005 FR-240, FR-241: a parent's helpers for check-helper-retention (simulator only) */
+  chatSizes:()=>Object.entries(chats).map(([id,c])=>{const T=c.turn&&c.turn.T,a=c.agent,st=c.trimStats||{};let subViews=0,staleViews=0,subBlockGone=0;
+    if(a&&a.subs)for(const s of a.subs.values()){subViews+=s.views.length;staleViews+=s.views.filter(v=>!v.chat||!v.chat.el||!v.chat.el.contains(v.host)).length;if(s.block&&!c.el.contains(s.block.el))subBlockGone++;}
+    return {id,messages:c.el.querySelectorAll(':scope > :not(.chat-trim)').length,blocks:T&&T.tl?T.tl.childElementCount:0,leaves:CT?CT.leafTotal(c.el):0,chipRefs:T?Object.values(T.chipEls).filter(Boolean).length:0,chipsInTurn:T&&T.tl?T.tl.querySelectorAll('.chip').length:0,stale:T?Object.values(T.chipEls).filter(x=>x&&!T.tl.contains(x.el)).length+(T.think&&!T.tl.contains(T.think.el)?1:0):0,trimmed:c.trimmed||0,note:c.trimNote&&c.trimNote.parentNode===c.el&&c.el.firstElementChild===c.trimNote?c.trimNote.textContent:'',slow:st.slow||0,runs:st.runs||0,deferred:st.deferred||0,hiddenRuns:st.hiddenRuns||0,lastIsNote:!!(c.el.lastElementChild&&c.el.lastElementChild.classList.contains('note')),lastUser:((x=>x?x.textContent:'')([...c.el.querySelectorAll('.msg.user .bubble')].pop())).slice(0,60),lastAgent:((x=>x?x.textContent:'')([...c.el.querySelectorAll('.msg.agent .bubble')].pop())).slice(0,60),ordGone:c.el._ordGone||{user:0,agent:0},denials:c.el.querySelectorAll('.note.perm:not(.settled):not(.pending)').length,denialButtons:c.el.querySelectorAll('.note.perm:not(.settled) > .note-actions button').length,subViews,staleViews,subBlockGone,subBlocksMax:c.subViews?Math.max(0,...[...c.subViews].map(v=>v.T&&v.T.tl?v.T.tl.childElementCount:0)):0,signCard:!!(a&&a.signCard&&c.el.contains(a.signCard)),freshNote:!!(a&&a.freshNote&&c.el.contains(a.freshNote)),freshMark:a&&a.freshNote&&c.el.contains(a.freshNote)?a.freshNote.dataset.ccm||'':'',actId:T?T.actId||null:null,actIn:T&&T.actId?!!T.chipEls[T.actId]:true};}), /* spec 005 FR-238: each chat's size for check-chat-memory */
   settleCard:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;c.classList.add('settled');c.classList.remove('pending');return true;}, /* spec 052 FR-197 (the door driver): the agent's pending card is answered elsewhere, as in the chat, so a row painted for it is stale */afPasses:()=>AF_PASSES,railPlans:()=>{renderStrip();return faceMemoPlans;}, /* issue 1193: room plans one rail render worked out */ops:()=>({...OPS}),agents:()=>agents,scene:(a,mini,c)=>scene(a,mini,c), /* a drawn scene's markup, for the drivers (FR-192: the SMIL wave) */cv:{mark:cvMark,release:cvRelease,drop:cvDrop,openPanel,setDensity},setLive:setLiveOn,setOfficeView,needsCount:()=>needsMeOrder().length,clearDetail:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;c.querySelectorAll(':scope > details.pdiff').forEach(x=>x.remove());scheduleRender();return true;},addDetail:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return false;const d=document.createElement('details');d.className='pdiff';d.innerHTML='<summary>Show the change (+1 \u22121)</summary><pre>- a\n+ b</pre>';c.insertBefore(d,c.querySelector(':scope > .note-actions'));scheduleRender();return true;},requestText:s=>{const n=document.createElement('div');n.className='note elicit';n.textContent=String(s);return requestText(n);},setSerious:v=>{SERIOUS=!!v;return SERIOUS;}, setMotion:v=>{MOTION=!!v;markMotion();return MOTION;}, /* spec 097 (the moments driver): a change in the card, the card text's masking, Serious mode */unread:{mark:id=>UNREAD.complete(id,false)==='marked',read:id=>markRead(byId(id))}, /* spec 097 (the moments driver): the New reply mark and Mark as read, as the app sets them */order:{get:()=>ORDER,saved:()=>bridge.getOrder?bridge.getOrder():null,reset:resetOrder,path:id=>(ROOMS.find(r=>'room:'+r.id===id)||{}).path||''}, /* issue 677 (check 033-order): the order held and saved, Reset, a room's key */
   toast:(s,act)=>{const t=act?toastAction(esc(String(s)),String(act),()=>{},8000):toast(esc(String(s)),8000);return !!t;}, /* spec 097 FR-113: a toast for the world-chrome driver (simulator only) */visitsSettled:()=>VISITS.settled(),timerDraw:()=>moodSigNow(drawnAt)!==moodSig||agoSigNow(drawnAt)!==agoSig, /* spec 008 FR-184: a mood or "ago" tick would draw now (a draw shows both; check-office-ops asserts none is due after an update's draw) */ /* spec 097 FR-186: no visit is about to start or end on the wall clock (check-office-ops-real reads a settled lobby) */realLayout:()=>RO_LAST, /* spec 097: the last Real office layout (check-office-overlap's Real office variant) */slips:()=>realSlips(), /* spec 097: what the world draws as slips (the moments driver; simulator only) */uncrowd:()=>{agents.forEach(x=>VISITS.unpin(x.id));scheduleRender();return true;},awayIds:()=>agents.filter(x=>!x.parent&&VISITS.at(x.id)).map(x=>x.id),pinAt:(id,pid)=>{const a=agents.find(x=>x.id===id&&!x.parent);if(!a)return false;VISITS.pin(id,pid,'test');scheduleRender();return true;}, /* spec 097 (order driver, test only): who stands at a place by the visit record itself (the plates follow a render later), and one agent pinned by id (crowd pins by position) */crowd:(pid,n,from)=>{const a=agents.filter(x=>!x.parent).slice(from||0,(from||0)+n);a.forEach(x=>VISITS.pin(x.id,pid,'test'));scheduleRender();return a.length;}, /* spec 097: n main agents stand at a place (a "+N" crowd for the driver; simulator only) */crew:{state:()=>({map:{...CREW_MAP},help:{...CREW_HELP},bad:[...CREW_BAD],hasModule:!!CREW}),renderAll:()=>{renderAll();return true;},probe:()=>{try{crewPreload();syncCrew();return {ok:true,of:agents.map(x=>crewOf(x)).filter(Boolean).length};}catch(e){return {ok:false,err:String(e&&e.message)};}},openInbox:()=>{openInbox();return true;},closeInbox:()=>{closeInbox();return true;},openPanel:id=>{openPanel(id);return true;},fall:c=>{const f0=CREW.file;CREW.file=(i,p)=>i===c?'crew/art/gone.webp':f0(i,p);crewLoaded.clear();crewPreload();CREW.file=f0;return true;}}, /* spec 077 (check-crew): the character map, a render, and one character's pictures failing to load */
   readAll:(quiet)=>{const n=UNREAD.size;UNREAD.ids().forEach(id=>{UNREAD.read(id);UNREAD_AT.delete(id);});if(!quiet)scheduleRender();return n;},notes:{all:()=>[...NT.by.values()].map(x=>x.notes||[]).flat(),boxUsable:()=>boxUsable(),saveMsg:btn=>{const a=byId(ui.selected);return notesSaveMsg(a,msgInfo(btn),btn);},noCommands:()=>{const x=agents.find(q=>q.live&&!q.parent&&!slashSupported(q));return x?x.name:'';},selNow:()=>{showSelButton();const b=document.getElementById('ntSelBtn');return !!b&&!b.hidden;},open:()=>openNotes(byId(ui.selected)),close:()=>closeNotes(false),search:q=>{const f=$('ntSearch');if(!f)return false;f.value=q;f.dispatchEvent(new Event('input'));return true;},marks:{clear:()=>{document.querySelectorAll('#chat .nt-mark').forEach(x=>x.remove());document.querySelectorAll('#chat .bubble').forEach(b=>{b._nd=undefined;});return true;},run:()=>notesMarkAll(byId(ui.selected))},change:(note,patch)=>notesChange(byId(ui.selected),note,patch),rename:note=>renameNote(byId(ui.selected),note,null),plant:n=>{const a=byId(ui.selected),st=a&&notesOf(a);if(!st||!st.ok)return false;st.notes.push(n);notesPaint();if(slashUi)slashUpdate();return true;}}, /* spec 083: the check-notes driver reads the window's notes and takes the paths a click cannot */
@@ -9660,7 +9911,7 @@ if(SIM)window.__durbarSimUi={announce,afArrivalPrio,swapCardOptions:id=>{const c
   removeAgent:(id)=>{removeLiveAgent(id);renderFolders();scheduleRender();return true;},
   /* FR-023 item 4 for folders: a room removed or hidden while its field is open */
   removeRoom:(roomId)=>{const r=ROOMS.find(x=>x.id===roomId);if(!r)return false;const gone=new Set(agents.filter(x=>x.room===r.id).map(x=>x.id));
-    for(let i=agents.length-1;i>=0;i--){if(gone.has(agents[i].id)||gone.has(agents[i].parent)){DRAFTS.delete(agents[i].id);UNREAD.forget(agents[i].id);UNREAD_AT.delete(agents[i].id);UNREAD_SAID.delete(agents[i].id);HL_AT.delete(agents[i].id);delete chats[agents[i].id];delete prev[agents[i].id];agents.splice(i,1);}}
+    for(let i=agents.length-1;i>=0;i--){if(gone.has(agents[i].id)||gone.has(agents[i].parent)){forgetCardState(agents[i].id);agents.splice(i,1);}}
     ROOMS.splice(ROOMS.indexOf(r),1);if(ui.ws===r.id)ui.ws='all';renderFilter();renderFolders();scheduleRender();return true;},
   hideRoom:(roomId,hidden)=>{const r=ROOMS.find(x=>x.id===roomId);if(!r)return false;r.hidden=hidden!==false;if(ui.ws===r.id)ui.ws='all';renderFilter();renderFolders();scheduleRender();return true;},
   hidePrev:(id,pk)=>{const a=byId(id);return a?markPrev(a,'cli',pk,'hide'):false;},

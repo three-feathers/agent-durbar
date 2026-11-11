@@ -25,7 +25,7 @@ import { OrgPolicyCache } from '../src/main/orgpolicy';
 import { emptyOrgPolicy, wholeOrgPolicy } from '../src/shared/orgpolicy';
 import { readCopilotOrgPolicy } from '../src/adapters/copilotOrgPolicy';
 import { claudeHistoryFromText } from '../src/adapters/claudeHistory';
-import { folderFingerprint } from '../src/main/gitstatus';
+import { folderFingerprint, GIT_TIMEOUT_MS } from '../src/main/gitstatus';
 import { Scheduler } from '../src/main/schedules';
 
 type R = Record<string, unknown>;
@@ -671,7 +671,7 @@ async function main(): Promise<void> {
       real.emit({ type: 'autopilot', phase: 'started', runId: 'r1', n: 0, limit: 9 });
       real.emit({ type: 'autopilot', phase: 'continued', runId: 'r1', n: 1, limit: 9 });
       real.emit({ type: 'autopilot', phase: 'continued', runId: 'r1', n: 2, limit: 9 });
-      await until(() => real.fake.autopilotCalls.some((c) => c.reason === 'no-progress'));
+      await until(() => real.fake.autopilotCalls.some((c) => c.reason === 'no-progress'), REAL_GIT_UNTIL_MS);
     } finally {
       fs.rmSync(scratch, { recursive: true, force: true });
     }
@@ -992,8 +992,23 @@ async function main(): Promise<void> {
 const codeOf = (t: string): string => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 const onHold = (go: () => void): boolean => go.toString() !== '() => undefined';
 const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 5));
-async function until(fn: () => boolean): Promise<void> {
-  for (let i = 0; i < 200; i++) { if (fn()) return; await tick(); }
-  assert.fail('until: timed out');
+/** The default budget of `until`: well above the old 200 ticks of 5 ms. A passing wait returns at once, so only a failure pays it. */
+const UNTIL_MS = 5000;
+/**
+ * Three fingerprints of a real repository (the start and two continuations), up to three `git` processes each, one after another
+ * (FR-023), each bounded by the app's own GIT_TIMEOUT_MS: the wait cannot give up before the app would.
+ */
+const REAL_GIT_UNTIL_MS = 3 * 3 * GIT_TIMEOUT_MS;
+/**
+ * Waits for `fn()` by the clock, not by a count of ticks: a 5 ms timer can take about 16 ms on Windows, and a loaded runner adds
+ * more. `ms` is the wall-clock budget; a wait on real `git` processes passes a larger one (spec 099 *Changes*, 2026-11-10).
+ */
+async function until(fn: () => boolean, ms = UNTIL_MS): Promise<void> {
+  const deadline = Date.now() + ms;
+  for (;;) {
+    if (fn()) return;
+    if (Date.now() > deadline) assert.fail(`until: timed out after ${ms} ms`);
+    await tick();
+  }
 }
 void main();

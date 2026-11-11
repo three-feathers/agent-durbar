@@ -231,6 +231,7 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 - [x] T229 [US2] The zoom opens for an asleep agent [FR-328]: `openZoom`, the layout refresh and `realScreen` (reply lines for the zoom only). Test: `check-097-hover-card`, `shots-097-screens` asleep step (the open card is refilled when its agent falls asleep)
 - [x] T230 [US2] The Changed fact for lounge agents [FR-329]: `realFacts`, `Changed` wraps. Test: `check-097-hover-card`
 - [x] T231 [US2] Docs and pictures [FR-330]: changelog fragment, `docs/features.md`; no committed picture (round 2: the two crops were linked from nowhere); Q25 resolved (no helpers on the card); round 3 of #1313: the card is never placed over the focused slip (`placeZoom`), the driver's focused-slip step is an Allow button reached by Tab, and its working-desk pick is made again when the person has left
+- [x] T296 [US2] The hover-card driver holds the page focus for the steps that test no blur (#1408, 2026-11-09 delta, no new FR): focus emulation after each load and after the FR-330 blur step; labelled asserts that the plate holds the keyboard focus and that no window blur reached the page during the 700 ms rest; `CHECK_097_STEAL_FOCUS=plate|refill` fault injection. Test: `sim:` 20 runs with and 20 without the injection; mutants: no emulation fails at the two labelled asserts
 
 ## 2026-11-08 delta: rearrange rooms, desks and places in Real office (FR-345..FR-349, issue #1152)
 
@@ -317,3 +318,20 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 - [x] T289 [US2] Pictures mid-drag and after the drop read and compressed; spec, plan and changelog fragment match [FR-352]
 - [x] T297 [US2] Bug #1423 (spec delta 2026-11-09): `check-097-drag` waits until the drawn desks match the visit record before it picks a desk, and asserts the drag started before the status change (labelled); mutant `DRAG_MUTANT=away` fails on the label. Test: `sim:` 20 runs under two CPU hogs
 
+
+## 2026-11-09: the rename pencil on an arcade cabinet's plate (FR-357, bug #1427)
+
+- [x] T298 [US5] FR-357: the pencil anchored to the plate when the plate does not draw the name (arcade cabinets), the field over the marquee. Test: `sim:` `check-097-plate-pencil` in the Photo office, cave, arcade and one-room arcade, both sizes; mutant `PENCIL_MUTANT=plate` fails the geometry assert
+
+## 2026-11-11: check-097-crews settles the lobby's visits (bug #1459)
+
+- [x] T304 `scripts/check-097-crews.js`: `quiet()` waits at most 5 s for `H.load`'s settle condition, returns the scene, the driver asserts it unchanged before the read; request times and type printed on a `bad` entry; `H.SETTLED` (one expression for `H.load` and the driver); `CREWS_MUTANT=latevisit|latevisit-nowait|failed` [FR-335, FR-336]. Test: `sim:` `check-097-crews`
+
+## 2026-11-11: a request slip is measured with its variant's CSS (FR-358, bug #1434)
+
+- [x] T299 [US2] FR-358: `drawSlips` writes `data-variant` before measuring a variant's box (`src/renderer/realoffice.js`). Test: `sim:` `check-097-slip-plates` (new, in `ui-suite`), the slips made fresh and measured in the draw's own task, then at once after the page's first draw; fails without the line in every run.
+
+## 2026-11-11: the pointer-event log of three flaky drivers (issue #1448)
+
+- [x] T302 [US2] Spec delta 2026-11-11: `H.pointerStep` in `scripts/driver-helpers.js` records the page's pointer events in a 200-event ring during the pointer steps of `check-097-drag`, `check-097-hover-card` and `shots-097-screens`, prints them only when the step's assertion fails (then rethrows the same error), prints nothing on a pass; diagnostic only, no retry or limit change. Test: `test:pointer-log` (bounded ring, forced failure prints, pass is silent, five mutants killed: print removed, events not printed, prints on a pass, ring unbounded, another error thrown). Run by the author on the Mac lane's own Mac, not reproduced by anyone else: 3 plain runs each of `check-097-drag`, `check-097-hover-card` and `shots-097-screens`, one driver at a time (`UI_SUITE_JOBS=1`), no `[pointer-log]` line
+- [x] T306 [US2] Spec delta 2026-11-11: the `falls asleep` block of `check-097-hover-card` (FR-328) runs in `H.pointerStep`, asserts inside, so the pointer log prints when "the asleep card is still open 700 ms after the refill" fails; no wait, limit or text change. Test: `test:pointer-log` asserts the wrapping in the driver source, for the `falls asleep` step and the third-agent `falls asleep, then leaves` step [FR-328]

@@ -1,0 +1,14 @@
+{
+ "formatVersion": 1,
+ "id": "cave",
+ "arrangement": "rows",
+ "monitor": "Slate screen in a frame of stacked rough stones",
+ "light": [2000],
+ "mood": "Warm, flickering and snug, lit by fire",
+ "wall": "Brown rock wall with stalactites and wall torches",
+ "floor": "Earthy stone ground",
+ "desk": "Slab of rough stone on two stone pillars with a stacked stone front",
+ "fixtureStyle": "Hand-drawn cartoon cave things: painted wall, stone shelf, mammoth-tusk door, fire pot, shell-money counter, axe rack",
+ "plants": "No plants: a rope-net globe lamp and a pigeon on a hollow log",
+ "motif": "Torch flames and carved glowing glyphs"
+}

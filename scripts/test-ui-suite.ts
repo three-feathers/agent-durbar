@@ -424,7 +424,7 @@ async function shardMain(): Promise<void> {
       console.log = () => undefined;
       let err: Error | undefined;
       let ensured = false;
-      try { await main({ ensure: () => { ensured = true; return true; }, argv, run: async (d: { name: string }) => { ran.push(d.name); return { ok: true, secs: 0, why: '', log: '' }; } }); } catch (e) { err = e as Error; } finally { console.log = log; }
+      try { await main({ ensure: () => { ensured = true; return true; }, argv, shared: false /* FR-210 reorders focus entries on a shared desktop; this test is about the shard */, run: async (d: { name: string }) => { ran.push(d.name); return { ok: true, secs: 0, why: '', log: '' }; } }); } catch (e) { err = e as Error; } finally { console.log = log; }
       if (err) assert.ok(!ensured && ran.length === 0, 'a refused shard starts nothing, not even the Electron install');
       return { ran, err, code: process.exitCode };
     };
@@ -573,3 +573,112 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
   }
   console.log('ui-suite shards: ok');
 }
+// spec 008 FR-199 (issue #1417): a driver stopped at its time limit leaves no process behind, whether or not it sets killTree.
+// The child is node, which starts a long-lived grandchild (like xvfb-run starting Xvfb and Electron). POSIX only: on Windows taskkill /T does
+// it and is not run here. Only PIDs this test creates are checked or killed.
+(async () => {
+  if (process.platform === 'win32') { console.log('ui-suite kill tree: skipped on Windows (taskkill /T is not exercised here)'); return; }
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { runOne } = require(SUITE) as { runOne: (d: object, out: string, o: { launch: [string, string[]] }) => Promise<{ ok: boolean; why: string; log: string }> };
+  const alive = (pid: number): boolean => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  const parent = "const {spawn}=require('child_process');const g=spawn(process.execPath,['-e','setTimeout(()=>{},300000)'],{stdio:'ignore'});console.log('GRANDCHILD '+g.pid);console.log('DRIVER-OUTPUT-KEPT');setTimeout(()=>{},300000)";
+  const out = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ui-suite-kill-'));
+  const pids: number[] = [];
+  try {
+    for (const d of [{ name: 'x' }, { name: 'x', killTree: true }]) {
+      const r = await runOne({ ...d, timeoutMs: 1500, sim: false }, out, { launch: [process.execPath, ['-e', parent]] });
+      const gp = Number((/GRANDCHILD (\d+)/.exec(r.log) || [])[1]);
+      assert.ok(gp > 0, 'the test child started a grandchild');
+      pids.push(gp);
+      assert.ok(!r.ok && /time limit/.test(r.why), 'the run fails with the time limit as the reason');
+      assert.ok(r.log.includes('DRIVER-OUTPUT-KEPT'), 'the output of a stopped driver is still in the log');
+      await new Promise((res) => setTimeout(res, 500));
+      assert.ok(!alive(gp), `no grandchild is left after the time limit (${JSON.stringify(d)})`);
+    }
+  } finally {
+    for (const p of pids) if (alive(p)) { try { process.kill(p, 'SIGKILL'); } catch { /* gone */ } }
+    fs.rmSync(out, { recursive: true, force: true });
+  }
+  console.log('ui-suite kill tree: ok');
+})().catch((e) => { console.error(e); process.exitCode = 1; });
+// spec 008 FR-199: SIGINT and SIGTERM to a process running `runOne` end the tree and remove the run's user-data folder. The runner is a node
+// child of this test with its own TMPDIR, so the folder it makes (durbar-ui-user-*) is found and nothing else is touched. POSIX only.
+(async () => {
+  if (process.platform === 'win32') { console.log('ui-suite signals: skipped on Windows'); return; }
+  const os = require('os') as typeof import('os');
+  const { spawn } = require('child_process') as typeof import('child_process');
+  const alive = (pid: number): boolean => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  const sleep = (ms: number): Promise<void> => new Promise((res) => setTimeout(res, ms));
+  for (const [sig, code] of [['SIGINT', 130], ['SIGTERM', 143]] as const) {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ui-suite-sig-'));
+    const pidFile = path.join(tmp, 'grandchild.pid');
+    // static code only: the values travel in argv, never inside a code string (CodeQL: improper code sanitization)
+    const launchJs = "const fs=require('fs'),{spawn}=require('child_process');const pf=process.argv[1];const g=spawn(process.execPath,['-e','setTimeout(()=>{},300000)'],{stdio:'ignore'});fs.writeFileSync(pf,String(g.pid));fs.writeFileSync(pf+'.launch',String(process.pid));setTimeout(()=>{},300000)";
+    const runner = "require(process.argv[1]).runOne({name:'x',sim:false,timeoutMs:120000},process.argv[2],{launch:[process.execPath,['-e',process.argv[4],process.argv[3]]]})";
+    const runnerProc = spawn(process.execPath, ['-e', runner, SUITE, tmp, pidFile, launchJs], { env: { ...process.env, TMPDIR: tmp, TMP: tmp, TEMP: tmp }, stdio: 'ignore' });
+    const exited = new Promise<{ code: number | null; signal: string | null }>((res) => runnerProc.on('close', (c, s) => res({ code: c, signal: s })));
+    let gp = 0;
+    const killPid = (p: number): void => { if (p > 0 && alive(p)) { try { process.kill(p, 'SIGKILL'); } catch { /* gone */ } } };
+    try {
+      for (let i = 0; i < 100 && !gp; i++) { await sleep(100); try { gp = Number(fs.readFileSync(pidFile, 'utf8')); } catch { /* not yet */ } }
+      assert.ok(gp > 0 && alive(gp), 'the runner started a grandchild');
+      assert.ok(fs.readdirSync(tmp).some((f) => f.startsWith('durbar-ui-user-')), 'the run made its user-data folder');
+      runnerProc.kill(sig);
+      const r = await exited;
+      assert.ok(r.signal === sig || r.code === code, `${sig}: the runner ends as without the handler (got ${r.signal || r.code})`);
+      await sleep(500);
+      assert.ok(!alive(gp), `${sig}: no grandchild is left`);
+      assert.deepStrictEqual(fs.readdirSync(tmp).filter((f) => f.startsWith('durbar-ui-user-')), [], `${sig}: the user-data folder is removed`);
+    } finally {
+      killPid(gp);
+      try { killPid(Number(fs.readFileSync(pidFile + '.launch', 'utf8'))); } catch { /* never written */ }
+      if (runnerProc.exitCode === null && runnerProc.signalCode === null) { try { runnerProc.kill('SIGKILL'); } catch { /* gone */ } }
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+  // spec 008 FR-210 (issue #1498): an entry with `focus: true` (it waits on the real OS window focus) never runs next to another window
+  // when drivers share a desktop; the others still run `jobs` at a time; with a display of its own per driver (xvfb) nothing changes
+  {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const suite = require(SUITE) as { main: (o: unknown) => Promise<void>; DRIVERS: { name: string; label?: string; focus?: boolean }[]; sharedDesktop: (p: string, e: Record<string, string>) => boolean };
+    const label = (d: { name: string; label?: string }): string => d.label || d.name;
+    const flagged = suite.DRIVERS.filter((d) => d.focus).map(label).sort();
+    assert.deepStrictEqual(flagged, ['check-097-hover-card', 'shots-097-screens', 'shots-097-screens retro'], 'the focus entries are the ones with a failure on record (#1498, #1408)');
+    assert.deepStrictEqual([['darwin', {}], ['win32', {}], ['linux', {}], ['linux', { DISPLAY: ':0' }], ['linux', { DISPLAY: ':0', UI_SUITE_XVFB: '1' }]].map(([p, e]) => suite.sharedDesktop(p as string, e as Record<string, string>)), [true, true, false, true, false], 'windows share a desktop on macOS, Windows and Linux with a display; not under xvfb');
+    const only = ['shots-097-screens', 'check-097-hover-card', 'shots-017', 'shots-018', 'shots-033', 'check-office-fill'].join(',');
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ui-suite-focus-'));
+    const was = { jobs: process.env.UI_SUITE_JOBS, out: process.env.UI_SUITE_OUT, log: console.log };
+    const play = async (shared: boolean): Promise<{ ran: string[]; peak: number; focusNextToOther: string[]; peakOthers: number }> => {
+      const live = new Set<string>(); const ran: string[] = []; const clash: string[] = [];
+      let peak = 0, peakOthers = 0;
+      const fake = async (d: { name: string; label?: string; focus?: boolean }): Promise<{ ok: boolean; secs: number; why: string; log: string }> => {
+        const me = label(d);
+        live.add(me); ran.push(me); peak = Math.max(peak, live.size);
+        if ([...live].some((x) => x !== me && suite.DRIVERS.some((y) => label(y) === x && y.focus)) || (d.focus && live.size > 1)) clash.push(me);
+        peakOthers = Math.max(peakOthers, [...live].filter((x) => !suite.DRIVERS.some((y) => label(y) === x && y.focus)).length);
+        await sleep(40);
+        live.delete(me);
+        return { ok: true, secs: 0, why: '', log: '' };
+      };
+      process.env.UI_SUITE_JOBS = '3'; process.env.UI_SUITE_OUT = tmp;
+      console.log = (): void => undefined;
+      try { await suite.main({ ensure: () => true, run: fake, argv: ['--only', only], shared }); } finally { console.log = was.log; }
+      return { ran, peak, focusNextToOther: clash, peakOthers };
+    };
+    try {
+      const a = await play(true);
+      assert.deepStrictEqual([...a.ran].sort(), ['check-097-hover-card', 'check-097-hover-card retro', 'check-office-fill', 'shots-017','shots-018', 'shots-033', 'shots-097-screens', 'shots-097-screens retro'], 'on a shared desktop every selected entry runs once');
+      assert.deepStrictEqual(a.focusNextToOther, [], 'a focus entry ran next to another window');
+      assert.ok(a.peakOthers >= 2, `the other entries still run in parallel (peak ${a.peakOthers})`);
+      assert.deepStrictEqual(a.ran.slice(-3).sort(), ['check-097-hover-card', 'shots-097-screens', 'shots-097-screens retro'], 'the focus entries run last, alone');
+      const b = await play(false);
+      assert.ok(b.peak >= 3 && b.focusNextToOther.length > 0, 'with a display per driver (xvfb) the focus entries are scheduled as before');
+    } finally {
+      if (was.jobs === undefined) delete process.env.UI_SUITE_JOBS; else process.env.UI_SUITE_JOBS = was.jobs;
+      if (was.out === undefined) delete process.env.UI_SUITE_OUT; else process.env.UI_SUITE_OUT = was.out;
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+    assert.ok(/focus: true/.test(fs.readFileSync(SUITE, 'utf8')), 'ui-suite.js carries the flag');
+  }
+  console.log('ui-suite signals: ok');
+})().catch((e) => { console.error(e); process.exitCode = 1; });

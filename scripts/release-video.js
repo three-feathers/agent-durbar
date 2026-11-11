@@ -404,6 +404,83 @@ const SCENES = {
       await H.js(`clearInterval(window.__ntKeep);0`);
     },
   },
+  /* spec 008 FR-197 (v0.1.15): the five crews' own people in Real office (spec 097 FR-335..FR-337, PR #1396); the Settings path is the `crews` scene's */
+  'real-crews': {
+    title: 'Real office draws every crew', sub: 'Pirate, Royal, Rebels, Monster and Cheeky: Settings > Characters',
+    refs: [{ spec: '097', fr: [335, 337] }],
+    async play(S) {
+      const H = S.H;
+      const REAL = `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'&&[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`;
+      // a crew is drawn when a person picture of its set is on the stage and every picture has loaded (the set name is a fixed id of this list)
+      const drawn = (set) => `[...document.querySelectorAll('#stage .ro img')].some(i=>i.src.includes('/sets/${set}/'))&&[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`;
+      await S.reset({ officeview: 'real', simfreeze: '1', romotion: '1' }, { ready: REAL });
+      await S.openSettings();
+      await S.scrollTo('chH');
+      await S.pickCharacters('pirate');
+      await S.caption('{step}. Settings > Characters: pick a crew', 'Real office now draws that crew\'s own people');
+      await S.zoomTo(await S.rectOf(['#chList'], { pad: 20 }));
+      await S.film(2.2);
+      await S.zoomOut();
+      await S.closeSettings();
+      for (const [id, name] of [['pirate', 'Pirate'], ['royal', 'Royal'], ['rebels', 'Rebels'], ['monster', 'Monster'], ['cheeky', 'Cheeky']]) {
+        if (id !== 'pirate') { await S.openSettings(); await S.pickCharacters(id); await S.closeSettings(); }
+        if (!(await H.until(drawn(id), 15000))) throw new Error(`real-crews: the ${name} people were not drawn`);
+        H.wc().sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
+        await H.settle();
+        await S.caption(`The ${name} crew at their desks`, `Real office, Settings > Characters > ${name}`);
+        await S.film(1.3);
+      }
+      await S.openSettings();
+      await S.pickCharacters('theme');
+      await S.closeSettings();
+    },
+  },
+  /* spec 008 FR-197 (v0.1.15): drag a desk and a room with the mouse in Real office (spec 097 FR-345..FR-355, PRs #1315 and #1394). Picked as
+     scripts/check-097-drag.js picks: visits settled and the drawn desks matching the visit record (#1426), a desk at its seat (not away) with a
+     neighbour after it; the ids stay in the page (window.__rvDrag), nothing from the page is spliced into code. */
+  'real-drag': {
+    title: 'Real office: drag desks and rooms', sub: 'Drag a desk by its name plate, a room by its folder sign',
+    refs: [{ spec: '097', fr: [345, 355] }],
+    async play(S) {
+      const H = S.H, SIM = 'window.__durbarSimUi';
+      const REAL = `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'&&[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`;
+      await S.reset({ officeview: 'real', simrooms: '3', simfreeze: '1', romotion: '1' }, { ready: REAL });
+      if (!(await H.until(`${SIM}.visitsSettled()`, 20000))) throw new Error('real-drag: a visit did not settle');
+      if (!(await H.until(`(()=>{const U=${SIM},v=new Set(U.awayIds());return U.realLayout().zones.flatMap(z=>z.desks).filter(d=>!d.lounge).every(d=>!!d.away===v.has(d.id))})()`, 20000))) throw new Error('real-drag: the drawn desks do not match the visit record');
+      const at = await H.js(`(()=>{const U=${SIM},L=U.realLayout(),away=new Set(L.zones.flatMap(z=>z.desks).filter(d=>d.away&&!d.lounge).map(d=>d.id));let best=null;
+        const by={};for(const z of L.zones)(by[z.id]=by[z.id]||[]).push(...z.desks.filter(d=>!d.lounge).map(d=>d.id));for(const [zid,o] of Object.entries(by)){const z={id:zid};const k=o.findIndex((id,i)=>i+1<o.length&&!away.has(id));if(k>=0&&o.length>=3&&!best)best={z:z.id,o,k};}
+        if(!best)return {none:Object.values(by).map(o=>o.length).join('/')+' away '+away.size};window.__rvDrag=best;const P=id=>document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(id)+'"]');const a=P(best.o[best.k]),b=P(best.o[best.k+1]);if(!a||!b)return null;
+        const ra=a.getBoundingClientRect(),rb=b.getBoundingClientRect();return {a:{x:ra.left+Math.min(14,ra.width/2),y:ra.top+ra.height/2},b:{x:rb.left+rb.width/2,y:rb.top+rb.height/2}}})()`);
+      if (!at || at.none) throw new Error(`real-drag: no room with three desks and a desk at its seat with a neighbour (${at ? at.none : 'no plate'})`);
+      const mouse = (type, p, extra = {}) => H.wc().sendInputEvent({ type, x: Math.round(p.x), y: Math.round(p.y), button: 'left', clickCount: 1, ...extra });
+      const drag = async (a, b, steps) => {
+        mouse('mouseMove', a); await S.film(0.3); mouse('mouseDown', a);
+        for (let i = 1; i <= steps; i++) { mouse('mouseMove', { x: a.x + ((b.x - a.x) * i) / steps, y: a.y + ((b.y - a.y) * i) / steps }, { modifiers: ['leftButtonDown'] }); await S.film(0.25); }
+        mouse('mouseUp', b);
+      };
+      const park = async () => { H.wc().sendInputEvent({ type: 'mouseMove', x: 1, y: 1 }); await H.settle(); };
+      await S.caption('{step}. Drag a desk by its name plate', 'Its neighbours slide aside; a short press still opens the chat');
+      await S.zoomTo(await S.rectOfJs(`(()=>{const d=window.__rvDrag;return d.o.slice(d.k,d.k+2).map(id=>document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(id)+'"]'))})()`, { pad: 60, above: 190 }));
+      await S.film(0.8);
+      await drag(at.a, at.b, 6);
+      if (!(await H.until(`(()=>{const d=window.__rvDrag,o=${SIM}.realLayout().zones.filter(x=>x.id===d.z).flatMap(x=>x.desks.filter(y=>!y.lounge).map(y=>y.id));return o[d.k]===d.o[d.k+1]&&o[d.k+1]===d.o[d.k]&&!document.body.classList.contains('reo-dragging')})()`, 8000))) throw new Error('real-drag: the desk drop did not reorder the room');
+      if (await H.js(`document.body.classList.contains('panel-open')`)) throw new Error('real-drag: the drop opened a chat');
+      await park();
+      await S.caption('{step}. Dropped: the new order is saved', 'The Open office shows the same order');
+      await S.film(1.6);
+      await S.zoomOut();
+      const signs = `[...document.querySelectorAll('#stage .ro-sign')].filter(s=>s.querySelector('.ro-sc')).map(s=>({s,b:s.getBoundingClientRect()})).sort((p,q)=>Math.abs(p.b.top-q.b.top)>4?p.b.top-q.b.top:p.b.left-q.b.left)`;
+      const sg = await H.js(`(()=>{const l=${signs};if(l.length<2)return null;window.__rvSigns=l.map(x=>x.s.dataset.folder);const a=l[0].b,b=l[1].b;return {a:{x:a.left+Math.min(14,a.width/2),y:a.top+a.height/2},b:{x:b.left+b.width/2,y:b.top+b.height/2}}})()`);
+      if (!sg) throw new Error('real-drag: fewer than two folder signs');
+      await S.caption('{step}. Drag a room by its folder sign', 'The whole room moves; Esc cancels a drag');
+      await S.film(0.6);
+      await drag(sg.a, sg.b, 6);
+      if (!(await H.until(`(()=>{const l=(${signs}).map(x=>x.s.dataset.folder);return l[0]!==window.__rvSigns[0]&&!document.body.classList.contains('reo-dragging')})()`, 8000))) throw new Error('real-drag: the room drop did not move the room');
+      await park();
+      await S.caption('{step}. The rooms keep the new order', 'Desks and rooms: one saved order for both offices');
+      await S.film(1.8);
+    },
+  },
   outro: {
     title: '{count} changes in {version}', sub: 'The full list is in the notes below', titleNoCount: 'All changes in {version}',
     async play(S) { await S.reset(); await S.card(true); await S.film(3); await S.card(false); },
@@ -693,7 +770,7 @@ async function main(argv = process.argv.slice(2), deps = {}) {
   try {
     console.log(`release-video: ${a.version}, scenes ${a.scenes.join(', ')}, frames in ${frames}`);
     const runOne = deps.runOne || require('./ui-suite').runOne;
-    const r = await runOne({ name: 'release-video', baseEnv: childEnv(), timeoutMs: RECORD_MS, killTree: true, dpr: 2, env: { DURBAR_SIM_CLOCK: CLOCK, TZ: 'UTC', LANG: 'en_US.UTF-8', RV_VERSION: a.version, RV_SCENES: a.scenes.join(','), RV_COUNT: a.count === null ? '' : String(a.count) } }, frames);
+    const r = await runOne({ name: 'release-video', baseEnv: childEnv(), timeoutMs: RECORD_MS, dpr: 2, env: { DURBAR_SIM_CLOCK: CLOCK, TZ: 'UTC', LANG: 'en_US.UTF-8', RV_VERSION: a.version, RV_SCENES: a.scenes.join(','), RV_COUNT: a.count === null ? '' : String(a.count) } }, frames);
     if (!r.ok) throw new Error(`the recording failed (${r.why || 'exit ' + r.code}):\n${r.log.split(/\r?\n/).filter((l) => l.trim()).slice(-20).join('\n')}`);
     const shot = JSON.parse(fs.readFileSync(path.join(frames, 'frames.json'), 'utf8'));
     fs.writeFileSync(path.join(frames, 'list.ffconcat'), concatList(shot.frames));

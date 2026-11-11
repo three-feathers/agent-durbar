@@ -10,7 +10,7 @@
  */
 const assert = require('assert');
 const path = require('path');
-const { pageCheck } = require('./check-office-overlap.js');
+const { settledPageCheck } = require('./check-office-overlap.js');
 const { helpers, waits, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
 const q = jsLiteral; /* every value spliced into page code goes through jsLiteral (CodeQL js/bad-code-sanitization) */
@@ -38,7 +38,8 @@ module.exports = async (ctx) => {
   const { until } = waits(ctx);
   /* the live simulator sends figures to places at any time: measure once no figure is mid-walk (a walking one is not on a slot yet;
      check-office-overlap re-measures the same way). Found by `npm run shots:docs` (spec 001 FR-082): this driver is not in ui-suite. */
-  const page = async (label) => { await until(`![...document.querySelectorAll('#walkers .walker')].some((w)=>w.classList.contains('walking')||w.getAnimations().some((a)=>a.playState==='running'))`, 3000); const r = await js(`(${pageCheck.toString()})(false, 5)`); assert.deepStrictEqual(r.problems, [], `${label}: office page rules`); return r.info; };
+  const page = async (label) => { await until(`![...document.querySelectorAll('#walkers .walker')].some((w)=>w.classList.contains('walking')||w.getAnimations().some((a)=>a.playState==='running'))`, 3000); /* spec 001 T197 (issue #1481): this driver runs the live simulator (freeze: false), so agents keep arriving and the lobby re-lays out; a single read can land between a figure's jump and the repaint. Same settled check as check:office (FR-191) */
+    const r = await settledPageCheck(ctx, false, 5); assert.deepStrictEqual(r.problems, [], `${label}: office page rules`); return r.info; };
 
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     /* ---- sparse: the side panel ---- */
