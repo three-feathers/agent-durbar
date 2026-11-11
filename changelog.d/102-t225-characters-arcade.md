@@ -1,0 +1,1 @@
+- Spec note only: Retro pixel and Office people as Characters choices in every world (spec 102 T225, split into T290..T295) are specified, with eight questions open for the owner. No code change.

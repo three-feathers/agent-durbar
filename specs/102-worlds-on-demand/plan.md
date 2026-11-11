@@ -279,6 +279,20 @@ The other 17 cells are the same shared code, in tokens, or a `person`, `fixture`
 
 **Constitution.** I: spec, plan, tasks here, no `src/`. II: nothing vendor-specific. III: packs stay data; `notePaper` and `noteStyle` are validated (FR-055); the simulator flag exists only under `DURBAR_SIM`. IV: image runs only on the owner's written yes, simulator otherwise. V: 10.5 px, 15 agents at both sizes, no status by colour alone, reduced motion freezes everything. VI: no path or shell difference; packaged runs listed. VII: FR-297's table. VIII: the mock's limits are stated, numbers tagged as arithmetic or measured.
 
+## Delta 2026-11-11: Retro pixel and Office people as Characters choices (T225 split into T290..T295; FR-320..FR-325)
+
+**Status:** plan only; the build waits for the owner's answers C1..C8 (spec Changes 2026-11-11). No `src/` change in the spec PR.
+
+**Reused (spec 021 FR-031).** `peopleFor`, `levelFor`, `REAL_SETS`, `WORLD_FLAGS` (`crew.js`: the `retro` row with its choice and flag is already there); `CHARACTER_CHOICES`, `parseCharacters`, `kitFor` (`src/shared/characters.ts`) and their copies in `theme.js`; `settings:setCharacters` (main, one place for policy); the Characters list and `charPreview` (`screens.js`, `app.js`, 077 FR-068); `meta.pixelPeople` and 097 T247's scaling of one style of people in another world; `check-097-crews`, `shots-102-arcade`, the request log (T218). Nothing new is needed but two list values, one `REAL_SETS` choice and the pixel-mode split.
+
+**Where the code changes (at build).** `src/shared/characters.ts` and `theme.js` (the values, equal by `test:characters`); `app.js` (`CHARACTER_NAMES`, preview); `screens.js` (the entries, gated by the flag as C2 says); `crew.js` (Office people's `choice`); `realoffice.js` `render` (the world's `pixelArt` from the world's meta, not the merged one: FR-323's trap, found by reading, not run); `realoffice-layout.ts` only if C6 maps `runA` to `face-runA` for a set (a per-set fallback table, not a change to `POSE_FALLBACK` for every set).
+
+**Order.** Tests first (T290's and T292's unit tests, T293's world-rules test), then the code, then the drivers (T295). One PR, behind the `retro` flag; T122 joins it if C4 says so. T230's flip later opens the flag for the value with the world.
+
+**Cost.** 0 AI credits: simulator and `npm test` only. Art only if C6 asks for new frames: 30 pictures on the owner's plan, his written OK first.
+
+**Risks.** A value name chosen now is stored in users' files once the flag opens (C1 before any build). The Photo office's look with pixel people is a style choice (FR-208): the pictures are looked at, not judged against the Photo style. Uneven pixels at Windows scales stay FR-255's gap.
+
 ## Done when
 
 Tasks ticked, `/speckit.converge` run, SC-001..SC-018 read, README *Safety model* lists the new connection, and `real:` rows recorded or left as `[KNOWN GAP]`.

@@ -224,7 +224,7 @@ The new fields go into `worldpack.ts` (T171's list) when #955 lands; until then 
 ### RA8: sets (one PR); needs T207
 
 - [ ] T224 FR-204 and `checkSet` follow 097 FR-191..FR-193; optional `face-*`; `-half` not needed with `pixelArt`. Written into 098 FR-030 by T232. Test: `test:world-packs` or, until #955, `test:realoffice-assets`: Office people and Prehistoric still `full`; a required frame missing refused [FR-259].
-- [ ] T225 Interoperation: Office people and Prehistoric in the arcade (fallback, report line), Retro pixel people in Photo office. Test: `shots-102-arcade` at 15, both sizes; `test:characters` through `peopleFor`; no other pack fetched [FR-200, FR-259, SC-016].
+- [ ] T225 (split 2026-11-11 into T290..T295, owner decision; done when they are) Interoperation: Office people and Prehistoric in the arcade (fallback, report line), Retro pixel people in Photo office. Test: `shots-102-arcade` at 15, both sizes; `test:characters` through `peopleFor`; no other pack fetched [FR-200, FR-259, SC-016].
 
 ### RA9: coverage (one PR, no behaviour change)
 
@@ -308,3 +308,14 @@ Starts after the next built-in world's stack lands (FR-296, decided Q4). All beh
 ## 2026-11-11: the desk-feature drivers in the arcade (issue #1399)
 
 - [x] T283 `DRIVER_WORLD=retro` for `driver-helpers`' `load`, and five `ui-suite` entries (hover card, desk marks, one face, chat look, chat contrast). Test: each passes at both sizes; a mutant that drops the world query fails each with the "arcade not drawn" assert. `[KNOWN GAP]` remaining on #1399: pencil (#1427), auto-follow, T261, T225.
+
+## 2026-11-11: Retro pixel and Office people as Characters choices (T225, owner decision; FR-320..FR-325)
+
+Spec only; nothing built. Each task names the `[NEEDS CLARIFICATION]` items (C1..C8, spec Changes 2026-11-11) that block it; none starts before its answers are in the spec. One PR for T290..T295 (one value must mean one thing in every view), behind the `retro` flag; a dated delta in spec 077 at build for the Characters list (077 FR-064's pattern).
+
+- [ ] T290 [blocked: C1, C3, C8] The Retro pixel value in `CHARACTER_CHOICES` and `theme.js`'s `CHARACTERS` (same order), `CHARACTER_KITS` as C4 says, `CHARACTER_NAMES`; main stores it whatever the flag (FR-322). Test first: `test:characters`: parses in main and renderer, lists equal, a stored value with the flag closed kept; mutants: drop it from one list, drop it in main [FR-320, FR-322, FR-325].
+- [ ] T291 [blocked: C2, C3] Settings > Characters: the entry and its preview, shown as C2 says while the flag is closed, the `closed` line of FR-336 (`levelFor`) for a saved value. Test: `check-characters` (flag open and closed), keyboard and screen-reader names as 077 FR-068; mutant: the entry shown with the flag closed fails [FR-320, FR-322].
+- [ ] T292 [blocked: C5] The Office people value: a `REAL_SETS` choice for the `office` row, the list entry, its Flat meaning. Test first: `test:realoffice-layout` (`peopleFor`): Office people in the arcade, the cave and the Photo office, every flag state; `test:characters`; a stored setting without it draws as before (SC-017) [FR-321].
+- [ ] T293 [blocked: C6, C7] Retro pixel people in the Photo office: the world's pixel mode from the world only (`realoffice.js` reads `pixelArt` from the merged meta today), the people's from the set; the fallbacks and their report line; the pixel size. Test first: a unit test that the Photo office with the Retro pixel set keeps the Photo office's world rules (mutant: the merged `pixelArt`); `test:realoffice-layout` for the fallback; `check-097-crews` world `photo` set `retro` at 15 agents, both sizes, no person cut, request log only `sets/retro` [FR-323, FR-324, SC-016, SC-018].
+- [ ] T294 [blocked: C4] Flat for the new values: with T122 in this PR (heads by FR-203 from the set's frames), or the theme's own figures until T122. Test: `test:crew`, `test:crew-assets`, `check-characters` in Flat [FR-214, FR-320].
+- [ ] T295 Drivers and pictures: `check-097-crews` with `world=retro` and Office people, and with `world=photo` and Retro pixel people, in `ui-suite`; pictures of both at 3 and 15 agents, 1440x900 and 1280x800, looked at on the pull request (`read:`); `docs/feature-inventory.md`'s Characters row; spec 097's parity matrix cells for the two values. Test: each driver fails a mutant that drops the choice (it would draw the world's default) [FR-200, FR-320, FR-321, SC-016].
