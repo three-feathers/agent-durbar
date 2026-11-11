@@ -298,4 +298,4 @@ Starts after the next built-in world's stack lands (FR-296, decided Q4). All beh
 
 ## 2026-11-09: the arcade's chat name has no black block (issue #1429)
 
-- [ ] T277 The arcade chat header's name has no fill and no outline of its own (it sat on `--wb-bg-2`, black, on the dark panel). Test first: `shots-097-chat retro` asserts a transparent background, no background picture and no outline on `#panelTitle` at 1440x900, 1280x800 and 1100x800; mutant: the old fill put back fails it. Pictures: before and after at 1440x900 and 1280x800. [FR-263, T221]
+- [ ] T305 The arcade chat header's name has no fill and no outline of its own (it sat on `--wb-bg-2`, black, on the dark panel). Test first: `shots-097-chat retro` asserts a transparent background, no background picture and no outline on `#panelTitle` at 1440x900, 1280x800 and 1100x800; mutant: the old fill put back fails it. Pictures: before and after at 1440x900 and 1280x800. [FR-263, T221]
