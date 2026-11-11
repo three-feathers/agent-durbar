@@ -12,7 +12,8 @@ const Module = require('module');
 
 const ROOT = path.join(__dirname, '..', '..');
 const FILE = path.join(ROOT, 'scripts', 'driver-helpers.js');
-const SRC = fs.readFileSync(FILE, 'utf8');
+const lf = (t: string) => t.replace(/\r\n/g, '\n'); // a Windows checkout may have CRLF: the mutant anchors below are LF text (as test-subretire's lf)
+const SRC = lf(fs.readFileSync(FILE, 'utf8'));
 
 type Helpers = { pointerLog: (ctx: unknown, out?: (l: string) => void) => { step: (d: string, n: string, fn: () => Promise<unknown>) => Promise<unknown> }; POINTER_LOG_MAX: number };
 function load(src: string): Helpers {
@@ -90,7 +91,9 @@ async function cases(h: Helpers) {
 }
 
 (async () => {
+  assert.strictEqual(lf('a\r\nb'), 'a\nb', 'lf() turns CRLF into LF');
   await cases(load(SRC));
+  await cases(load(lf(SRC.replace(/\n/g, '\r\n')))); // a CRLF checkout gives the same source after lf()
   const mutants: Array<[string, string, string]> = [
     ['print removed', "out(`[pointer-log] ${driver} ${name}: ${ev.length} events (", "void(`[pointer-log] ${driver} ${name}: ${ev.length} events ("],
     ['events not printed', "i += 11) out('  '", "i += 11) void('  '"],
