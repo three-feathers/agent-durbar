@@ -1,7 +1,8 @@
 /**
  * Spec 097 delta 2026-11-11 (issue #1448, T302): the pointer-event log of the flaky drivers (`npm run test:pointer-log`). No Electron is started: a stand-in
  * page (a vm context with a window that dispatches fake events) runs the helper's own page code. The same cases run on the real helper (all must hold)
- * and on five mutants of its source (each must make a case fail): print removed, events not printed, prints on a pass, ring unbounded, another error thrown.
+ * and on eight mutants of its source (each must make a case fail): print removed, events not printed, prints on a pass, ring unbounded, dom block not printed, dom ring unbounded,
+ * dom block printed on a pass, another error thrown (spec 033 delta 2026-11-11, issue #1526: the DOM ring and the static case for shots-033.js).
  */
 import * as assert from 'assert';
 import * as fs from 'fs';
@@ -15,7 +16,7 @@ const FILE = path.join(ROOT, 'scripts', 'driver-helpers.js');
 const lf = (t: string) => t.replace(/\r\n/g, '\n'); // a Windows checkout may have CRLF: the mutant anchors below are LF text (as test-subretire's lf)
 const SRC = lf(fs.readFileSync(FILE, 'utf8'));
 
-type Helpers = { pointerLog: (ctx: unknown, out?: (l: string) => void) => { step: (d: string, n: string, fn: () => Promise<unknown>) => Promise<unknown> }; POINTER_LOG_MAX: number };
+type Helpers = { pointerLog: (ctx: unknown, out?: (l: string) => void) => { step: (d: string, n: string, fn: () => Promise<unknown>, o?: { dom?: string }) => Promise<unknown> }; POINTER_LOG_MAX: number; DOM_LOG_MAX: number };
 function load(src: string): Helpers {
   const m = new Module(FILE, null);
   m.filename = FILE;
@@ -29,13 +30,26 @@ function page() {
   const listeners = new Map<string, Array<(e: unknown) => void>>();
   let now = 1000;
   const win: Record<string, unknown> = { addEventListener: (t: string, f: (e: unknown) => void) => { listeners.set(t, [...(listeners.get(t) || []), f]); } };
-  const cx = vm.createContext({ window: win, performance: { now: () => now }, JSON, Math });
+  /* a MutationObserver stand-in: mutate() delivers records to the observer of the last arm; the element exists only for '#floorsPop' */
+  let cb: ((rs: unknown[]) => void) | null = null, disconnected = 0;
+  class MO { constructor(f: (rs: unknown[]) => void) { cb = f; } observe() { /* stand-in */ } disconnect() { disconnected++; } takeRecords() { return []; } }
+  const doc = { querySelector: (sel: string) => (sel === '#floorsPop' ? {} : null) };
+  const cx = vm.createContext({ window: win, document: doc, MutationObserver: MO, performance: { now: () => now }, JSON, Math, String });
   return {
+    mutate: (type: string, tag: string, cls: string, added = 0, removed = 0) => { if (cb) cb([{ type, target: { tagName: tag.toUpperCase(), classList: [cls] }, addedNodes: { length: added }, removedNodes: { length: removed } }]); },
+    disconnects: () => disconnected,
     ctx: { js: async (code: string) => vm.runInContext(code, cx) },
     fire: (type: string, x: number, y: number, buttons = 0, trusted = true) => { for (const f of listeners.get(type) || []) f({ type, clientX: x, clientY: y, buttons, isTrusted: trusted }); },
     tick: (ms: number) => { now += ms; },
     listenerCount: () => [...listeners.values()].reduce((a, l) => a + l.length, 0),
   };
+}
+
+/** the driver (static): shots-033 wraps the floors-drag step with the dom option and says 'did not start' before the transform text */
+function driverCase(d: string) {
+  assert.ok(/H\.pointerStep\('shots-033', 'floors-drag ' \+ w, async \(\) => \{/.test(d) && d.includes("{ dom: '#floorsPop' }"), 'shots-033 wraps the floors-drag step with the dom option');
+  const i = d.indexOf("'the drag did not start (no lifted floor)'"), j = d.indexOf("'mid-drag the lifted floor only has a transform'");
+  assert.ok(i > 0 && j > i, 'the no-lift text is asserted before the transform text');
 }
 
 async function cases(h: Helpers) {
@@ -71,6 +85,36 @@ async function cases(h: Helpers) {
     assert.ok(out[1].includes(' 800,0 ') && !out[1].includes(' 799,0 ') && out[out.length - 1].includes(' 999,0 '), 'the last 200 are kept, the first 800 dropped');
     assert.ok(out.every((l) => l.length <= 240), 'every line fits what the suite shows (240 characters)'); }
 
+  // the DOM ring (issue #1526): opted in by { dom }, printed before the pointer block, only on a failure, bounded, no text
+  { const p = page(), out: string[] = [], L = h.pointerLog(p.ctx, (l) => out.push(l));
+    await L.step('shots-033', 'floors-drag 1280', async () => { p.fire('pointermove', 1, 1); p.mutate('childList', 'div', 'fl-floor', 1, 1); }, { dom: '#floorsPop' });
+    assert.deepStrictEqual(out, [], 'a clean pass prints neither block');
+    const p2 = page(), o2: string[] = [], L2 = h.pointerLog(p2.ctx, (l) => o2.push(l)), boom = new assert.AssertionError({ message: 'the drag did not start (no lifted floor)' });
+    await assert.rejects(L2.step('shots-033', 'floors-drag 1280', async () => {
+      p2.tick(5); p2.fire('pointerdown', 9, 9, 1); p2.tick(10); p2.fire('pointermove', 10, 9, 0); p2.mutate('childList', 'div', 'fl-floor', 3, 3); p2.mutate('attributes', 'span', 'x'.repeat(40));
+      throw boom; }, { dom: '#floorsPop' }), (e) => e === boom);
+    assert.ok(o2[0].startsWith('[dom-log] shots-033 floors-drag 1280: 2 mutations'), 'the dom block comes first and counts');
+    assert.strictEqual(o2[1], '  15 c div.fl-floor +3-3;15 a span.xxxxxxxxxxxxxxxx +0-0', 'tag, first class cut at 16, counts, no text');
+    assert.ok(o2[2].startsWith('[pointer-log] shots-033 floors-drag 1280: 2 events'), 'the pointer block follows');
+    assert.ok(o2[3].includes('pd 9,9 1T') && o2[3].includes('pm 10,9 0T'), 'the stray pm at buttons 0 after the pd shows');
+    // a step without { dom } never arms the observer and prints no dom block
+    const p3 = page(), o3: string[] = [], L3 = h.pointerLog(p3.ctx, (l) => o3.push(l));
+    await assert.rejects(L3.step('d', 's', async () => { assert.fail('red'); })); assert.ok(!o3.some((l) => l.startsWith('[dom-log]')), 'no dom block without the option');
+    // bounded: 1000 mutations keep the last 100, every line within 240 characters; a re-arm disconnects the previous observer
+    const p4 = page(), o4: string[] = [], L4 = h.pointerLog(p4.ctx, (l) => o4.push(l)), dmax = h.DOM_LOG_MAX;
+    assert.strictEqual(dmax, 100, 'the dom ring keeps 100');
+    await assert.rejects(L4.step('d', 'many', async () => { for (let i = 0; i < 1000; i++) p4.mutate('attributes', 'div', 'c' + i); assert.fail('red'); }, { dom: '#floorsPop' }));
+    assert.ok(o4[0].startsWith(`[dom-log] d many: ${dmax} mutations`), 'the dom ring holds 100');
+    const dl = o4.filter((l) => l.startsWith('  ') && l.includes(' a div.')); assert.strictEqual(dl.length, Math.ceil(dmax / 8), '8 mutations a line');
+    assert.ok(o4.join('\n').includes('div.c999 ') && !o4.join('\n').includes('div.c899 '), 'the last 100 are kept');
+    assert.ok(o4.every((l) => l.length <= 240), 'every line fits what the suite shows');
+    await L4.step('d', 'again', async () => 1, { dom: '#floorsPop' }); assert.ok(p4.disconnects() >= 1, 'the next arm disconnects the earlier observer');
+    // a page without the element or the observer arms nothing and never hides the assertion
+    const p5 = page(), o5: string[] = [], L5 = h.pointerLog(p5.ctx, (l) => o5.push(l)), e5 = new assert.AssertionError({ message: 'x' });
+    await assert.rejects(L5.step('d', 's', async () => { throw e5; }, { dom: '#nothing' }), (e) => e === e5); assert.ok(o5.some((l) => l.startsWith('[dom-log] d s: 0 mutations')) || o5.length >= 1); }
+
+  driverCase(lf(fs.readFileSync(path.join(ROOT, 'scripts', 'shots-033.js'), 'utf8')));
+
   // a non-assertion error is rethrown unchanged and prints nothing; a failed read never hides the assertion
   { const p = page(), out: string[] = [], L = h.pointerLog(p.ctx, (l) => out.push(l)), e1 = new Error('plain');
     await assert.rejects(L.step('d', 's', async () => { throw e1; }), (e) => e === e1); assert.deepStrictEqual(out, []);
@@ -99,8 +143,15 @@ async function cases(h: Helpers) {
     ['events not printed', "i += 11) out('  '", "i += 11) void('  '"],
     ['prints on a pass', 'const r = await fn();', "const r = await fn(); await print(driver, name);"],
     ['ring unbounded', 'if(E.length>${POINTER_LOG_MAX})E.splice(0,E.length-${POINTER_LOG_MAX});', ''],
-    ['another error thrown', "      throw e;\n    }\n  };\n  return { arm, step, print };", "      throw new Error(String(e && e.message));\n    }\n  };\n  return { arm, step, print };"],
+    ['dom block not printed', "out(`[dom-log] ${driver} ${name}: ${ev.length} mutations (", "void(`[dom-log] ${driver} ${name}: ${ev.length} mutations ("],
+    ['dom ring unbounded', 'if(D.ev.length>${DOM_LOG_MAX})D.ev.splice(0,D.ev.length-${DOM_LOG_MAX});', ''],
+    ['dom block prints on a pass', 'const r = await fn();', "const r = await fn(); if (opts && opts.dom) await printDom(driver, name);"],
+    ['another error thrown', "      throw e;\n    }\n  };\n  return { arm, step, print, printDom };", "      throw new Error(String(e && e.message));\n    }\n  };\n  return { arm, step, print, printDom };"],
   ];
+  /* the driver's own text: a lift-less result must say 'did not start' (the scratch stray hook shows it live, see the PR); the mutant removes that assert */
+  { const d = lf(fs.readFileSync(path.join(ROOT, 'scripts', 'shots-033.js'), 'utf8')), line = "      assert.ok(mid.lift, 'the drag did not start (no lifted floor)');\n";
+    assert.ok(d.includes(line), 'mutant "assert text not switched" applies to shots-033.js');
+    assert.throws(() => driverCase(d.replace(line, '')), 'mutant "assert text not switched" is killed'); console.log('test-pointer-log: mutant "assert text not switched" killed'); }
   for (const [name, from, to] of mutants) {
     assert.ok(SRC.includes(from), `mutant "${name}" applies to the source`);
     let killed = false;
