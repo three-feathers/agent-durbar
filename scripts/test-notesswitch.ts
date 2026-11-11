@@ -774,7 +774,8 @@ async function main(): Promise<void> {
     const big = 12947848929002475n;
     assert.notStrictEqual(String(Number(big)), String(big), 'the premise: a number cannot hold it');
     const c = countingFs();
-    c.hook.fstatSync = (real, ...a) => { const st = real(...a) as { ino: bigint }; return new Proxy(st, { get: (t, k) => (k === 'ino' ? big : (t as never)[k]) }); };
+    // honours the options like node does: a bigint ino only for { bigint: true }, else the number it rounds to, so the case fails if the product stops asking for a bigint
+    c.hook.fstatSync = (real, ...a) => { const st = real(...a) as { ino: bigint | number }; const asked = (a[1] as { bigint?: boolean } | undefined)?.bigint === true; return new Proxy(st, { get: (t, k) => (k === 'ino' ? (asked ? big : Number(big)) : (t as never)[k]) }); };
     const { folder, store } = await written(new NotesFile({ fs: c.fs, now: tickClock }));
     const id = (await store.getMirror(folder))?.id;
     assert.ok(id?.endsWith(`:${big}`), `the product keeps every digit: ${id}`);
