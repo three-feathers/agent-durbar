@@ -773,6 +773,13 @@ Agent decisions stand until the owner changes them.
 
 ## Changes
 
+### 2026-11-11: T204 measured at 1.25 and 1.5 (FR-255; issue #1403)
+
+- **Tooling:** `UI_SUITE_DPR` now accepts 1.25 and 1.5 besides 1 to 4 (`dprOk` in `scripts/ui-suite.js`, a case in `test:uisuite`; Windows laptops at 125 % and 150 %). Nothing else changes in the app or the drivers.
+- **Measured, simulator, Linux, `node scripts/ui-suite.js --only shots-102-arcade`:** at 2 the driver passes. At 1.25 and 1.5 it fails at one assert only, the lobby on whole device pixels (FR-255, #1104): the fixtures (coffee, bank, postbox) draw at x3.75 (1.25) and x4.5 (1.5), and sit on half device pixels (`left 1291.25`, `1448.75`). With that one assert switched off by hand (not committed) the rest passes at both ratios, so the cabinets and people (on the 8-grid in CSS pixels) and the 15-agent layout hold. The desk art's `g` is a whole CSS scale, so on screen it is 2.5 or 3.75 device pixels per art pixel at 1.25, 3 or 4.5 at 1.5.
+- **Not decided:** whether that looks bad. The two pictures at 15 agents, 1440x900, were looked at by the agent (clean at that size; unevenness of single pixels cannot be judged in a downscaled view) and are not committed. Owner question: look at the arcade on a 125 % or 150 % screen; if the pixels look uneven, FR-255's rule (a `g` that makes `g x ratio` whole where one exists, else the nearest) is built in `aislesLayout` with a pure case in `test:realoffice-layout`; if not, FR-255 is withdrawn for fractional ratios by a dated delta. Until then the lobby assert is ratio-blind and fails at 1.25 and 1.5 (`[KNOWN GAP]`); the suite runs at 1 and 2 only, as before. T204 stays open.
+- **The other four tasks of #1403:** T218 is built and ticked (#1435). T206's `welcome` picture waits for an owner decision (draw one, or withdraw that part by delta). T224 is blocked on T100 (`checkSet`). T263 needs the owner's look at a recording, after lane B's motion lands.
+
 ### 2026-11-07: RA7: the arcade's moments, looked at and booked (FR-264, T222, T223; issue #1268)
 
 - **Light:** T222 said "both lights". The owner withdrew the light choice on 2026-11-03 (night only; the entry of that date below, booked in #1266), so "both lights" is the one night look. No day set is drawn or driven.
