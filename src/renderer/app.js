@@ -4295,7 +4295,9 @@ const ATT=window.DurbarAttention;
 const DOOR_DEFAULT=false;
 const DOOR_ON=qs.get('door')==='1'||(DOOR_DEFAULT&&qs.get('door')!=='0');
 function needsMeOrder(){
-  const ids=[...document.querySelectorAll('#stage .desk[data-id]')].map(d=>d.dataset.id);
+  /* spec 097 FR-366 (#1571): in a Real office the order of its last layout (rooms as drawn, each room's desks left to right, then the lounge seats), not the plates' node order (a plate keeps its node when it moves) */
+  const lay=RO_LAST&&document.querySelector('#stage .ro')?RO_LAST:null;
+  const ids=[...new Set(lay?lay.zones.flatMap(z=>z.desks).concat(lay.lounge?lay.lounge.desks:[]).map(d=>d.id):[...document.querySelectorAll('#stage .desk[data-id]')].map(d=>d.dataset.id))];
   const list=[...ids,...agents.map(a=>a.id).filter(id=>!ids.includes(id))].map(byId).filter(needsMe), now=Date.now(), live=new Set();
   for(const a of list){live.add(a.id);if(!NEED_SINCE.has(a.id)){const w=MOOD.waitingMs(a.id);NEED_SINCE.set(a.id,w>0?now-w:now);}}
   for(const id of [...NEED_SINCE.keys()])if(!live.has(id))NEED_SINCE.delete(id);
@@ -9288,7 +9290,8 @@ function folderNameEl(surface,r){
   if(!ROOMS.includes(r))return 'gone';
   if(surface==='fp'){const p=$('foldersPop');if(!p||p.hidden)return null;const b=p.querySelector('[data-fp="rename"][data-room="'+CSS.escape(r.id)+'"]');const row=b&&b.closest('.fp-row');return row?row.querySelector('.fpn'):null;}
   if(!roomShown(r))return 'gone';
-  const n=document.querySelector('#stage .room[data-room="'+CSS.escape(r.id)+'"] .room-name'); return n||null;
+  const n=document.querySelector('#stage .room[data-room="'+CSS.escape(r.id)+'"] .room-name'); if(n)return n;
+  const sg=document.querySelector('#stage .ro-sb[data-foldermenu="'+CSS.escape(r.id)+'"]'); return (sg&&sg.closest('.ro-sign')&&sg.closest('.ro-sign').querySelector(':scope>b'))||null; /* spec 097 FR-367 (#1571): a Real office folder sign's name (the sign that holds its menu) */
 }
 function startFolderEdit(r,surface,from){
   if(!canRenameFolder(r)||modalOpen())return false;
@@ -9297,7 +9300,7 @@ function startFolderEdit(r,surface,from){
     label:'Name of folder '+r.name,hint:'Enter saves, Escape cancels. Empty uses the folder name.',
     check:SN().folderError,submit:async t=>{const o=await submitFolderName(r,t);return {ok:o.ok,reason:o.reason};},
     notify:m=>toast(esc(m),5000).classList.add('err'),onClose:focusAfterGone,reanchor:find,
-    maxWidth:360,clip:()=>{const n=find();return n&&n!=='gone'?n.closest('.room-head,.fp-t'):null;},
+    maxWidth:360,clip:()=>{const n=find();return n&&n!=='gone'?n.closest('.room-head,.fp-t,.ro-sign'):null;},
     focusBack:()=>{const sel=from==='pencil'?(surface==='fp'?'#foldersPop':'#stage')+' .ren[data-renfolder="'+CSS.escape(r.id)+'"]':surface==='fp'?'#foldersPop [data-fp="rename"][data-room="'+CSS.escape(r.id)+'"]':'#stage [data-foldermenu="'+CSS.escape(r.id)+'"]';return document.querySelector(sel)||document.querySelector('#stage [data-foldermenu="'+CSS.escape(r.id)+'"]');}});
   return true;
 }

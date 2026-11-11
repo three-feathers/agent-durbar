@@ -16,6 +16,10 @@
  *   - spec 097 FR-357 (bug #1427): on a plate that does not draw the name (an arcade cabinet's), the icon is not at the plate's right end (0..8 px), or the field is not over the marquee;
  *   - a click on the pencil, or F2 on the focused plate, does not open the name field over that plate's name;
  *   - Enter does not put the new name on the plate, or Esc does not keep the old one.
+ *   - spec 097 FR-367 (#1571): F2 on a folder sign's ⋯ button does not open the folder name field over the sign's name, inside the sign and filling its free width,
+ *     Esc does not keep the name and give the focus back to the ⋯ button, or Enter does not put the new name on the sign.
+ *     Source mutants (run by hand): folderNameEl without the sign's name fails "FR-367: F2 on a folder sign's ⋯ button opens the folder name field";
+ *     the edit's clip without `.ro-sign` fails "FR-367: the folder field lies over the sign's name, inside the sign, and fills its free width".
  */
 const path = require('path');
 const assert = require('assert');
@@ -110,7 +114,28 @@ module.exports = async (ctx) => {
     await H.key('Return');
     await must(`!window.__pp.field()&&window.__pp.nameOf().textContent===${jsLiteral(nu)}&&window.__pp.name().textContent===${jsLiteral(nu)}`, `${tag}: Enter puts the new name on the plate`);
     await must(`(window.__pp.pen()||{}).getAttribute&&window.__pp.pen().getAttribute('aria-label')===${jsLiteral('Rename ' + nu)}`, `${tag}: the pencil's name follows`);
-    console.log('[097-plate-pencil]', tag, pairs.pens, 'pencils, gaps', [...new Set(geo.map((g) => g.gap))].join(','), 'px; click, hover, F2, Enter and Esc ok');
+    /* spec 097 FR-367 (#1571): F2 on a folder sign's ⋯ button renames the folder in place (spec 059's item 4): the field over the sign's name, inside the sign */
+    const fid = await js(`(()=>{const b=document.querySelector('#stage .ro-sign .ro-sb[data-foldermenu]');return b?b.dataset.foldermenu:''})()`);
+    assert.ok(fid, `${tag}: a folder sign has its ⋯ button`);
+    const SIGN = `(()=>{const b=document.querySelector('#stage .ro-sb[data-foldermenu="'+CSS.escape(${jsLiteral(fid)})+'"]');return b&&b.closest('.ro-sign')})()`;
+    const fold0 = await js(`${SIGN}.querySelector(':scope>b').textContent`);
+    await js(`${SIGN}.querySelector('.ro-sb[data-foldermenu]').focus()`);
+    await must(`document.activeElement&&document.activeElement.dataset.foldermenu===${jsLiteral(fid)}`, `${tag}: the sign's ⋯ button has focus`);
+    await H.key('F2');
+    await must(`!!document.querySelector('input.inl-input')&&document.activeElement===document.querySelector('input.inl-input')`, `${tag}: FR-367: F2 on a folder sign's ⋯ button opens the folder name field`);
+    const fg = await js(`(()=>{const f=document.querySelector('input.inl-input').getBoundingClientRect(),sg=${SIGN},n=sg.querySelector(':scope>b').getBoundingClientRect(),s=sg.getBoundingClientRect();return {over:f.left<=n.left+1&&f.right>=Math.min(n.right,s.right)-1&&f.top<=n.bottom&&f.bottom>=n.top,inside:f.left>=s.left-1&&f.right<=s.right+1,fills:f.right>=Math.min(f.left+360,s.right-4)-1,f:[f.left,f.right,f.top,f.bottom].map(Math.round),n:[n.left,n.right,n.top,n.bottom].map(Math.round),s:[s.left,s.right,s.top,s.bottom].map(Math.round),value:document.querySelector('input.inl-input').value}})()`);
+    assert.deepStrictEqual({ over: fg.over, inside: fg.inside, fills: fg.fills }, { over: true, inside: true, fills: true }, `${tag}: FR-367: the folder field lies over the sign's name, inside the sign, and fills its free width (spec 059 FR-025) (${JSON.stringify(fg)})`);
+    if (OUT) await H.shot(path.join(OUT, `097-folder-f2-${world}-${w}x${h}.png`), { prep: 'mouse' });
+    await H.key('Escape');
+    await must(`!document.querySelector('input.inl-input')&&document.activeElement&&document.activeElement.dataset.foldermenu===${jsLiteral(fid)}`, `${tag}: Esc closes the folder field and gives the focus back to the ⋯ button`);
+    assert.strictEqual(await js(`${SIGN}.querySelector(':scope>b').textContent`), fold0, `${tag}: Esc keeps the folder's name`);
+    await H.key('F2');
+    await must(`!!document.querySelector('input.inl-input')`, `${tag}: F2 again`);
+    const fnu = `Folder ${w}`;
+    await js(`(()=>{const i=document.querySelector('input.inl-input');i.value=${jsLiteral(fnu)};i.dispatchEvent(new Event('input',{bubbles:true}));return 1})()`);
+    await H.key('Return');
+    await must(`!document.querySelector('input.inl-input')&&${SIGN}.querySelector(':scope>b').textContent===${jsLiteral(fnu)}`, `${tag}: FR-367: Enter puts the new folder name on the sign`);
+    console.log('[097-plate-pencil]', tag, pairs.pens, 'pencils, gaps', [...new Set(geo.map((g) => g.gap))].join(','), 'px; click, hover, F2, Enter and Esc ok; folder F2', JSON.stringify(fg.f), 'in sign', JSON.stringify(fg.s));
   }
   console.log('[097-plate-pencil] ok');
   process.exitCode = 0;
