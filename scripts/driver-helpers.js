@@ -156,6 +156,46 @@ function pointerLog(ctx, out = (l) => console.log(l)) {
 }
 
 /**
+ * Spec 097 delta 2026-11-11 (issue #1460): the timeout diagnostics of check-crew's `crewDrawn` wait. A diagnostic and a verdict, nothing else: the suite keeps the last 25
+ * lines of a failed driver, each cut at 240 characters (scripts/ui-suite.js), so `crewDiagLines` prints SHORT fields first on one line, the render counters on a second, the
+ * last renderer errors (at most 3, 120 characters each) on a third, then each scene signature (first 4, 200 characters) and the crew bad marks on their own lines, and
+ * CUTS every line itself. `crewTimeout` reads the page, prints, runs ONE probe (`__durbarSimUi.render()`, the counters read again 1 s later) and throws an AssertionError:
+ * the wait timed out, so the driver fails, whatever the probe's redraw then shows (the probe could otherwise turn the later asserts green). No wait is longer and no redraw
+ * makes a check pass. `window.__durbarErrLog` is armed by `load` (error and unhandledrejection, last 3, 120 characters each, the message only).
+ */
+const ERR_ARM = `(()=>{const w=window;if(w.__durbarErrOn)return 1;w.__durbarErrOn=1;w.__durbarErrLog=[];const add=(m)=>{w.__durbarErrLog.push(String(m).slice(0,120));if(w.__durbarErrLog.length>3)w.__durbarErrLog.shift();};
+  w.addEventListener('error',(e)=>add(e&&e.message));w.addEventListener('unhandledrejection',(e)=>add(e&&e.reason&&(e.reason.message||e.reason)));return 1})()`;
+const CREW_PROBE_READ = `(()=>{const w=window,U=w.__durbarSimUi,q=(x)=>[...document.querySelectorAll(x)],S=q('#stage svg.scene'),f=document.getElementById('floor'),RO=w.DurbarReorder;
+  const g=(fn)=>{try{return fn();}catch{return null;}};
+  return {chars:g(()=>w.THEME.characters()),kit:g(()=>w.THEME.sceneKit()),theme:g(()=>w.THEME.current().id),tk:g(()=>w.THEME.themeIdForCache&&w.THEME.themeIdForCache()),scenes:S.length,visible:S.filter((s)=>s.getClientRects().length).length,
+  crew:S.filter((s)=>/\\|crew\\|/.test(s.dataset.sig||'')).length,drag:document.body.classList.contains('reo-dragging'),busy:g(()=>RO&&RO.busy?!!RO.busy():null),view:g(()=>typeof ui!=='undefined'?ui.view:(()=>{const st=document.getElementById('stage');return st&&st.getClientRects().length?'stage':'nostage';})()),floorW:f?f.clientWidth:null,
+  hidden:document.hidden,vis:document.visibilityState,focus:g(()=>document.hasFocus()),renders:g(()=>U&&U.ops?U.ops().renders:null),errs:(w.__durbarErrLog||[]).slice(-3),sigs:S.slice(0,4).map((s)=>s.dataset.sig||''),bad:g(()=>U&&U.crew?U.crew.state().bad:null)};})()`;
+const CREW_LINE_MAX = 240;
+function crewDiagLines(tag, n, secs, d, after) {
+  const cut = (s, m) => String(s == null ? '' : s).replace(/[\r\n]+/g, ' ').slice(0, m);
+  const b = (v) => (v == null ? '?' : v ? 1 : 0);
+  const o = [];
+  o.push(cut(`[crew] ${cut(tag, 40)}: ${n} crew scenes not drawn after ${secs} s: chars=${cut(d.chars, 20)} kit=${cut(d.kit, 12)} theme=${cut(d.theme, 30)} tk=${cut(d.tk, 40)} scenes=${d.scenes} visible=${d.visible} crew=${d.crew} drag=${b(d.drag)} busy=${b(d.busy)} view=${cut(d.view, 12)} floorW=${d.floorW} hidden=${b(d.hidden)} vis=${cut(d.vis, 10)} focus=${b(d.focus)}`, CREW_LINE_MAX));
+  o.push(cut(`  [crew] renders=${d.renders == null ? '?' : d.renders} probe: after render() +1 s renders=${after && after.renders != null ? after.renders : '?'} crewScenes=${after ? after.crew : '?'} of ${after ? after.scenes : '?'}`, CREW_LINE_MAX));
+  const E = (d.errs || []).slice(-3);
+  o.push(cut(`  [crew] errs(${E.length}): ${E.map((e) => cut(e, 120)).join(' | ')}`, CREW_LINE_MAX));
+  (d.sigs || []).slice(0, 4).forEach((s, i) => o.push(cut(`  [crew] sig${i} ${cut(s, 200)}`, CREW_LINE_MAX)));
+  o.push(cut(`  [crew] bad ${d.bad == null ? '?' : JSON.stringify(d.bad)}`, CREW_LINE_MAX));
+  return o;
+}
+async function crewTimeout(ctx, tag, n, secs, out = (l) => console.log(l), sleep = (ms) => new Promise((r) => setTimeout(r, ms))) {
+  let d = {}, after = null;
+  try { d = (await ctx.js(CREW_PROBE_READ)) || {}; } catch { /* a diagnostic never replaces the failure */ }
+  try {
+    await ctx.js(`(()=>{const U=window.__durbarSimUi;if(U&&U.render)U.render();return 1})()`);
+    await sleep(1000);
+    after = await ctx.js(CREW_PROBE_READ);
+  } catch { after = null; }
+  for (const l of crewDiagLines(tag, n, secs, d, after)) out(l);
+  throw new (require('assert').AssertionError)({ message: `${tag}: ${n} crew scenes not drawn within ${secs} s (the driver fails here; the probe's redraw does not change that)` });
+}
+
+/**
  * The helpers every driver used to define for itself (FR-097). `H = helpers(ctx)`; it also carries `until`, `settle`, `office`, `chatOf`.
  * Values spliced into page code go through jsLiteral.
  */
@@ -167,6 +207,7 @@ function helpers(ctx) {
   const closeGuard = guardWindow(ctx.win);
   const ptr = pointerLog(ctx);
   const wc = () => ctx.win.webContents;
+  const crewTimeoutH = (tag, n, secs) => crewTimeout(ctx, tag, n, secs);
   /** Run code in the page. A failure names the code (first 90 chars) and is thrown again, so the driver fails as before. */
   const js = async (code) => { try { return await ctx.js(code); } catch (e) { console.log('JS ERR for', String(code).slice(0, 90)); throw e; } };
   /** Click the first element matching `sel`; false when there is none. */
@@ -271,6 +312,7 @@ function helpers(ctx) {
     if (query.simfreeze === '1' && !o.index && o.settle !== false) await w.until(`!!window.__durbarSimReplayed&&!!window.__durbarSimUi&&window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()&&!document.querySelector('.scene-out')`, 4000);
     if (o.settle !== false) await w.settle();
     if (arcade) assert.ok(await w.until(`!!document.querySelector('#stage .ro[data-world="retro"]')`, 5000), 'DRIVER_WORLD=retro: the arcade is not drawn (a pass here would be the Photo office)');
+    try { await ctx.js(ERR_ARM); } catch { /* a diagnostic never changes the verdict */ }
     if (o.focus) wc().focus();
   };
   /**
@@ -343,7 +385,7 @@ function helpers(ctx) {
     await goToFloor(list[0].id);
     for (let i = 0; i < list.length; i++) { await goToFloor(list[i].id); await w.settle(); await fn(list[i], i); }
   };
-  return { ...w, pointerStep: ptr.step, allowWindowClose: closeGuard.allow, wc, js, click, clickText, exists, text, idOf, key, calm, clearToasts, focusPage, releaseFocus, loseFocus, focusWc, load, shot, openSimAgent, floors, shownFloor, goToFloor, eachFloor, INDEX };
+  return { ...w, crewTimeout: crewTimeoutH, pointerStep: ptr.step, allowWindowClose: closeGuard.allow, wc, js, click, clickText, exists, text, idOf, key, calm, clearToasts, focusPage, releaseFocus, loseFocus, focusWc, load, shot, openSimAgent, floors, shownFloor, goToFloor, eachFloor, INDEX };
 }
 
 /**
@@ -370,4 +412,4 @@ async function shotWithView(win, view, file) {
   fs.writeFileSync(file, nativeImage.createFromBitmap(base, { width: size.width, height: size.height }).toPNG());
 }
 
-module.exports = { waits, helpers, pointerLog, POINTER_LOG_MAX, guardWindow, jsLiteral, shotWithView, LIMIT, INDEX, CHECK_DARK, CHECK_DARK_QUERY, darkFixtureProblem, darkProblem };
+module.exports = { waits, helpers, pointerLog, crewDiagLines, crewTimeout, CREW_PROBE_READ, ERR_ARM, CREW_LINE_MAX, POINTER_LOG_MAX, guardWindow, jsLiteral, shotWithView, LIMIT, INDEX, CHECK_DARK, CHECK_DARK_QUERY, darkFixtureProblem, darkProblem };
