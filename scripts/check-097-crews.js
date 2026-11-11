@@ -26,6 +26,7 @@
  *   - the log is read before the page is quiet (the pictures complete with the same files for 600 ms and no request open).
  *   CREWS_MUTANT=missing|abortmissing|abort: a request of a file that is not in the pack (completes with an error) / one that is cancelled at once (no such file) / one that is
  *   cancelled at once (a file in the pack). `missing` and `abortmissing` must fail; `abort` must pass (the tolerated case).
+ *   CREWS_MUTANT=failed (issue #1459): the log gets net::ERR_FAILED for a file that is on disk and in the scene; it must fail at "requested Real office files that did not load with status 200".
  *   CREWS_MUTANT=latevisit|latevisit-nowait (issue #1459): once the scene is quiet, three agents at their desks start a terminal, a web and a library call (each a visit 600 ms later, which
  *   swaps the lobby's visitor pose frames). `latevisit` passes (quiet() first waits for the visits to settle, the condition H.load's settle uses); `latevisit-nowait` skips that wait and must fail
  *   at "the scene changed between the quiet point and the read". ERR_FAILED is not tolerated; a `bad` entry prints its request's times and type.
@@ -84,7 +85,7 @@ module.exports = async (ctx) => {
      the simulator frozen too (places.js, app.js's 250 ms VISITS.tick); H.load's settle waits for that, this driver loads with settle: false. A bounded wait, never a retry:
      the visits settled and the last render drawn (the condition H.load's settle uses), then the quiet point; on a timeout it prints what the lobby holds and fails with its own text. */
   const SETTLE_MS = 5000;
-  const SETTLED = `!!window.__durbarSimReplayed&&!!window.__durbarSimUi&&window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()`;
+  const SETTLED = H.SETTLED; /* driver-helpers' one expression: H.load's settle uses it too */
   const SCENE = `[...document.querySelectorAll('#stage .ro img')].map(i=>i.currentSrc).join('|')`;
   const diag = async (tag, why) => {
     const d = await js(`(()=>{const U=window.__durbarSimUi;return {replayed:!!window.__durbarSimReplayed,visitsSettled:!!(U&&U.visitsSettled()),away:U?U.awayIds().length:null,visitors:[...document.querySelectorAll('#stage .ro-visitor')].map(i=>(i.getAttribute('src')||'').split('realoffice/').pop()+(i.complete&&i.naturalWidth>0?'':' (loading)'))}})()`);
@@ -135,6 +136,9 @@ module.exports = async (ctx) => {
     await must(PICS, `${tag}: the pictures loaded (complete and naturalWidth > 0)`);
     /* the mutants (CREWS_MUTANT, see the header) act here, on this page, before the log is read */
     if (/^(missing|abortmissing|abort)$/.test(MUTANT)) await js(`(()=>{const b=document.querySelector('#stage .ro img').src.replace(/[^/]*$/,'');const u=${jsLiteral(MUTANT)}==='missing'||${jsLiteral(MUTANT)}==='abortmissing'?b+'no-such-frame.webp':document.querySelector('#stage .ro img').currentSrc+'?q='+Math.random();const i=new Image();i.src=u;if(${jsLiteral(MUTANT)}!=='missing')setTimeout(()=>{i.src=''},0);window.__crMut=i;return 1})()`);
+    /* CREWS_MUTANT=failed: the log gets a request of a file that IS on disk and in the scene, ended with net::ERR_FAILED (the error seen on CI; injected into the log, as no
+       way to make the browser itself report it is known): it must fail at 'requested Real office files that did not load with status 200', never be tolerated like ERR_ABORTED */
+    if (MUTANT === 'failed') await js(`document.querySelector('#stage .ro img').currentSrc`).then((u) => reqs.set(-1, { url: decodeURIComponent(u), raw: u, status: 0, error: 'net::ERR_FAILED', t0: 0, t1: 1, type: 'image' }));
     const at = await quiet(tag);
     if (MUTANT === 'latevisit-nowait') await ctx.sleep(1200);
     const r = await js(`(()=>{const ro=document.querySelector('#stage .ro'),pics=[...document.querySelectorAll('#stage .ro-person,#stage .ro-visitor')].filter(i=>i.tagName==='IMG'),
@@ -157,8 +161,9 @@ module.exports = async (ctx) => {
     assert.strictEqual(now, at, `${tag}: the scene changed between the quiet point and the read`);
     assert.deepStrictEqual(r.unloaded, [], `${tag}: pictures of the scene that did not load`);
     /* a requested picture that is missing is a failure, whatever the page does with it (an <img> that fails is `complete` too) */
-    const bad = log.filter((e) => /\.(webp|png|json|js)(\?|$)/.test(e.url) && /realoffice\//.test(e.url) && (e.status !== 200 || e.error) && !aborted(e)).map((e) => `${e.url.replace(/^.*realoffice\//, '')} ${e.status} ${e.error}`);
-    const badWhen = log.filter((e) => /\.(webp|png|json|js)(\?|$)/.test(e.url) && /realoffice\//.test(e.url) && (e.status !== 200 || e.error) && !aborted(e)).map((e) => `${e.url.replace(/^.*realoffice\//, '')} ${e.type} +${e.t0}..+${e.t1} ms, same file: ${log.filter((x) => x.url === e.url).map((x) => (x.error || x.status) + '@+' + x.t0).join(' ')}`);
+    const failed = log.filter((e) => /\.(webp|png|json|js)(\?|$)/.test(e.url) && /realoffice\//.test(e.url) && (e.status !== 200 || e.error) && !aborted(e));
+    const bad = failed.map((e) => `${e.url.replace(/^.*realoffice\//, '')} ${e.status} ${e.error}`);
+    const badWhen = failed.map((e) => `${e.url.replace(/^.*realoffice\//, '')} ${e.type} +${e.t0}..+${e.t1} ms, same file: ${log.filter((x) => x.url === e.url).map((x) => (x.error || x.status) + '@+' + x.t0).join(' ')}`);
     if (badWhen.length) console.log(`[crews] ${tag}: ${badWhen.join('; ')}`);
     if (bad.length) await diag(tag, 'requested files that did not load with status 200 (request t0..t1 ms after the reload, type; net::ERR_FAILED on a file on disk = the load stopped after it began)');
     assert.deepStrictEqual(bad, [], `${tag}: requested Real office files that did not load with status 200`);

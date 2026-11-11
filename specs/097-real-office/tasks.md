@@ -315,7 +315,7 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 
 ## 2026-11-11: check-097-crews settles the lobby's visits (bug #1459)
 
-- [x] T304 `scripts/check-097-crews.js`: `quiet()` waits at most 5 s for `H.load`'s settle condition, returns the scene, the driver asserts it unchanged before the read; request times and type printed on a `bad` entry; `CREWS_MUTANT=latevisit|latevisit-nowait` [FR-335, FR-336]. Test: `sim:` `check-097-crews`
+- [x] T304 `scripts/check-097-crews.js`: `quiet()` waits at most 5 s for `H.load`'s settle condition, returns the scene, the driver asserts it unchanged before the read; request times and type printed on a `bad` entry; `H.SETTLED` (one expression for `H.load` and the driver); `CREWS_MUTANT=latevisit|latevisit-nowait|failed` [FR-335, FR-336]. Test: `sim:` `check-097-crews`
 
 ## 2026-11-11: the pointer-event log of three flaky drivers (issue #1448)
 
