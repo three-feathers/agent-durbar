@@ -102,6 +102,19 @@ async function main(): Promise<void> {
       }
       await ad.stop(sid);
     }
+    // the SDK transport does not use the files, so it is not gated (review of PR #1492)
+    {
+      let made = 0;
+      const ad = new ClaudeAdapter({ autopilot: { wired: false }, sdkTransport: true, sandboxFacts: async () => ({ platform: 'linux', version: '2.1.68', haveBwrap: true, haveSocat: true }), claudePath: async () => '/usr/bin/claude', makeTransport: () => { made++; throw new Error('fake SDK transport'); }, sessionExists: () => false, claudeMd: () => 'MD', env: () => ({}) });
+      const ev: AgentEvent[] = [];
+      ad.onEvent((e) => ev.push(e));
+      const sid = await ad.start({ workspace: WS, permissionMode: 'allow', quiet: true });
+      await ad.send(sid, { text: 'hi' });
+      await until('FR-179: SDK transport launch', () => (made ? true : ev.find((e) => e.type === 'status' && (e as { status: string }).status === 'error')));
+      assert.strictEqual(made, 1, 'FR-179: SDK transport on 2.1.68 with a CLAUDE.md is not refused (the transport is made)');
+      assert.ok(!ev.some((e) => /needs Claude Code/.test(String((e as { intent?: string }).intent ?? ''))), 'FR-179: SDK transport: no version refusal');
+      await ad.stop(sid);
+    }
   }
   // ---- spec 015 FR-016: the flag follows the version the host reports (old and unreadable: never passed) ----
   for (const [version, want] of [['2.1.210', false], [undefined, false], ['2.1.211', true]] as Array<[string | undefined, boolean]>) {

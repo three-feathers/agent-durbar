@@ -146,7 +146,9 @@ export const CLAUDE_PLAN_NOTE = '(Plan first: write the full plan in your reply,
  * as a prompt (`real:` 2026-10-22, spec 073), so Durbar neither starts a goal on it nor sends it a clear. A version it cannot read gets the clear.
  */
 export const CLAUDE_GOAL_MIN_VERSION = '2.1.309';
-const claudeOlderThanGoal = (version: string | undefined): boolean => typeof version === 'string' && /^\d+\.\d+\.\d+/.test(version) && compareVersions(version, CLAUDE_GOAL_MIN_VERSION) < 0;
+/** A readable `x.y.z` Claude Code version below `min`; an unknown or unreadable version is never older (spec 099, spec 012 FR-179). */
+export const claudeKnownOlderThan = (version: string | undefined, min: string): boolean => typeof version === 'string' && /^\d+\.\d+\.\d+/.test(version) && compareVersions(version, min) < 0;
+const claudeOlderThanGoal = (version: string | undefined): boolean => claudeKnownOlderThan(version, CLAUDE_GOAL_MIN_VERSION);
 /** FR-058. */
 export const CLAUDE_GOAL_TYPED = 'Autopilot sets the goal from your message.';
 
@@ -309,11 +311,10 @@ export const CLAUDE_PROMPT_FILE_MIN_VERSION = '2.1.69';
 export const CLAUDE_AGENTS_FILE_MIN_VERSION = '2.1.281';
 /** Spec 012 FR-179: why this launch cannot start on `version` (older than a file flag its content needs), or undefined. An unknown version passes. */
 export function claudeLaunchFilesRefusal(version: string | undefined, launch: Pick<ClaudeLaunch, 'appendSystemPrompt' | 'agent'>): string | undefined {
-  if (typeof version !== 'string' || !/^\d+\.\d+\.\d+/.test(version)) return undefined;
-  if (launch.agent && compareVersions(version, CLAUDE_AGENTS_FILE_MIN_VERSION) < 0) {
+  if (launch.agent && claudeKnownOlderThan(version, CLAUDE_AGENTS_FILE_MIN_VERSION)) {
     return `This session needs Claude Code ${CLAUDE_AGENTS_FILE_MIN_VERSION} or newer to use an agent profile. Update Claude Code in Settings > Agent apps.`;
   }
-  if (launch.appendSystemPrompt && compareVersions(version, CLAUDE_PROMPT_FILE_MIN_VERSION) < 0) {
+  if (launch.appendSystemPrompt && claudeKnownOlderThan(version, CLAUDE_PROMPT_FILE_MIN_VERSION)) {
     return `This session needs Claude Code ${CLAUDE_PROMPT_FILE_MIN_VERSION} or newer to pass the folder's CLAUDE.md privately. Update Claude Code in Settings > Agent apps.`;
   }
   return undefined;
@@ -1619,8 +1620,9 @@ export class ClaudeAdapter implements AgentAdapter {
       ...(claudeNameOk(s.pendingName) ? { name: s.pendingName } : {}),
       ...(claudeForwardsSubagentText((await this.sandboxFactsNow()).version) ? { forwardSubagentText: true } : {}), // spec 015 FR-016
     };
-    // spec 012 FR-179: content that needs a file flag this Claude Code lacks is never sent on the command line instead
-    const refusal = claudeLaunchFilesRefusal((await this.sandboxFactsNow()).version, launch);
+    // spec 012 FR-179: content that needs a file flag this Claude Code lacks is never sent on the command line instead (CLI transport
+    // only: the SDK transport does not use these files)
+    const refusal = this.deps.sdkTransport ? undefined : claudeLaunchFilesRefusal((await this.sandboxFactsNow()).version, launch);
     if (refusal) throw new Error(refusal);
     const handlers: TransportHandlers = {
       message: (m) => this.onMessage(s, m),
