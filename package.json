@@ -176,6 +176,7 @@
     "test:floors": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-floors.js",
     "test:renameadapters": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-rename-adapters.js",
     "test:sessionnames": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-sessionnames.js",
+    "test:skeleton": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-skeleton.js",
     "test:names": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-names.js",
     "test:inlinename": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-inlinename.js",
     "test:sessionname": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-sessionname.js",

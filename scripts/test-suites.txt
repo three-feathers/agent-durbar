@@ -131,6 +131,7 @@ test:announcemask
 test:openwith
 test:liveact
 test:lookalike
+test:skeleton
 test:names
 test:renameadapters
 test:sessionname

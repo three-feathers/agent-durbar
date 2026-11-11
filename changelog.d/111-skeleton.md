@@ -1,0 +1,1 @@
+- **Letter skeleton for team-template names** (spec 111 T032, FR-158): `src/shared/skeleton.ts` maps letters that look Latin (spec 003's closed Cyrillic, Greek and Latin lookalike lists) to their Latin letter, with spec 109's digit folds on request, and `nameKey` builds on it; best effort, not a full confusables set. Pure code, nothing visible yet. Checked by `test:skeleton`.
