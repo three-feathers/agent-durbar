@@ -1389,6 +1389,7 @@ Owner, Vikram, 2026-11-09 20:31 UTC, answering "do you want helper heads and dat
 
 - **Retro has one light.** FR-268 and T228 say "both lights"; the owner withdrew the light choice on 2026-11-03 (night only), so the card has the night 7200 K.
 - **Owner decision wanted: Photo and Cave are both `rows`.** FR-014 and OP-13 say no two project worlds share an arrangement, and `ARRANGEMENTS` has only `rows` and `aisles`, so the pair fails. Until the owner chooses (a named known-clash list for already-built worlds, or Cave gets its own arrangement first, T119), `worlds/known-clashes.json` names that one pair and field; the test prints `[KNOWN GAP]` for it and fails every other clash, so a new world cannot join it. This list is provisional, not a decision.
+- **A malformed `worlds/known-clashes.json` fails by name** (review of #1504): a missing file means none; unreadable, not JSON, `clashes` not a list, or an entry without a pair of two different ids and a card field is a failure naming the file, with fixture cases.
 - **Not built yet (stays open).** The copied-cutout and recoloured-cutout fixtures and `scripts/check-world-distinct.js` (T093, Electron, under the lock); `scripts/world-pack.js`, the tick reader and the availability gates (T036); the contact sheet and the `distinct-check` field (T094). `worlds/` is not in the app (`package.json` `files` lists only `dist`).
 
 ## Changes 2026-11-11: the desk-feature drivers have an arcade case (T283, issue #1399; no new FR)
