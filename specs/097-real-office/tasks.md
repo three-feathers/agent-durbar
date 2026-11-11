@@ -316,3 +316,7 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 ## 2026-11-11: check-097-crews settles the lobby's visits (bug #1459)
 
 - [x] T304 `scripts/check-097-crews.js`: `quiet()` waits at most 5 s for `H.load`'s settle condition, returns the scene, the driver asserts it unchanged before the read; request times and type printed on a `bad` entry; `CREWS_MUTANT=latevisit|latevisit-nowait` [FR-335, FR-336]. Test: `sim:` `check-097-crews`
+
+## 2026-11-11: the pointer-event log of three flaky drivers (issue #1448)
+
+- [x] T302 [US2] Spec delta 2026-11-11: `H.pointerStep` in `scripts/driver-helpers.js` records the page's pointer events in a 200-event ring during the pointer steps of `check-097-drag`, `check-097-hover-card` and `shots-097-screens`, prints them only when the step's assertion fails (then rethrows the same error), prints nothing on a pass; diagnostic only, no retry or limit change. Test: `test:pointer-log` (bounded ring, forced failure prints, pass is silent, five mutants killed: print removed, events not printed, prints on a pass, ring unbounded, another error thrown). Run by the author on the Mac lane's own Mac, not reproduced by anyone else: 3 plain runs each of `check-097-drag`, `check-097-hover-card` and `shots-097-screens`, one driver at a time (`UI_SUITE_JOBS=1`), no `[pointer-log]` line

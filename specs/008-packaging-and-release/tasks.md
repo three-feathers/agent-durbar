@@ -212,3 +212,7 @@
 ## 2026-11-10: every UI driver ends with its whole process tree (FR-199)
 
 - [x] T155 (FR-199) `scripts/ui-suite.js` `runOne`: `detached` (POSIX), `guardTree` and `killTree` at the limit for every driver, `launch` option for tests; `scripts/test-ui-suite.ts` two cases (time limit leaves no grandchild; SIGINT/SIGTERM end the tree and remove the user-data folder); `d.killTree` removed from `scripts/release-video.js`; `scripts/test-release-video.js` source check follows; `changelog.d/008-uisuite-kill-tree.md`.
+
+## 2026-11-11: a driver that waits on the OS window focus never runs next to another window (FR-210)
+
+- [x] T170 (FR-210) `scripts/ui-suite.js`: `focus: true` on `shots-097-screens` (both entries) and `check-097-hover-card`; `main` runs the other entries at the job count and then the `focus` entries alone when drivers share a desktop; `scripts/test-ui-suite.ts` overlap test and a mutant; `changelog.d/008-uisuite-focus-serial.md`. Issue #1498.
