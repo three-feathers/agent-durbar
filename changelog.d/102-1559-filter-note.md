@@ -1,0 +1,1 @@
+- **The arcade's "Showing only … · Show all" notice can be read** (spec 102, issue #1559): in the Retro arcade the line that says a status pill is filtering the office was dark purple on a dark page (1.09:1); it now reads in the arcade's light inks (13:1 and better) and Show all stays underlined. Clean Office, Retro Pixel and the other worlds are unchanged.

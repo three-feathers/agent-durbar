@@ -15,6 +15,7 @@
  *   OUT=docs/screenshots  (optional) also saves 001-status-filter-{1440x900,1280x800}.png
  */
 const assert = require('assert');
+const fs = require('fs');
 const path = require('path');
 const { helpers, jsLiteral, CHECK_DARK } = require('./driver-helpers');
 const { pageCheck } = require('./check-office-overlap.js');
@@ -126,18 +127,35 @@ module.exports = async (ctx) => {
   const contrast = (sel) => js(`(()=>{const rgb=c=>c.match(/[\\d.]+/g).map(Number);const lum=c=>{const [r,g,b]=c.map(v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);});return 0.2126*r+0.7152*g+0.0722*b;};
     const e=document.querySelector(${jsLiteral(sel)});let bg=null;for(let n=e;n&&!bg;n=n.parentElement){const c=getComputedStyle(n).backgroundColor;const m=rgb(c);if(m.length<4||m[3]>0.99)bg=m.slice(0,3);}
     const fg=rgb(getComputedStyle(e).color).slice(0,3),a=lum(fg),b=lum(bg),r=(Math.max(a,b)+0.05)/(Math.min(a,b)+0.05);return {fg:fg.join(','),bg:bg.join(','),ratio:Math.round(r*100)/100};})()`);
-  for (const manifest of ['clean-office', CHECK_DARK]) {
-    const theme = typeof manifest === 'string' ? manifest : manifest.id;
-    await H.load({ w: 1440, h: 900 });
-    await js(`window.THEME.setTheme(${jsLiteral(manifest)})`);
-    await ok(`window.THEME.current().id===${jsLiteral(theme)}`, theme + ' applied');
-    await clickPill('idle');
-    await ok(`document.getElementById('filterNote')&&!document.getElementById('filterNote').hidden`, theme + ': the notice shows');
-    await H.settle();
-    for (const sel of ['#filterNote', '#filterNote b', '#filterNote .fn-all']) {
-      const c = await contrast(sel);
-      console.log(`[statusfilter] ${theme} contrast ${sel}: ${c.fg} on ${c.bg} = ${c.ratio}:1`);
-      assert.ok(c.ratio >= 4.5, `${theme}: ${sel} contrast ${c.ratio}:1 is below 4.5:1`);
+  // spec 102 delta 2026-11-11 (issue 1559): the Retro pixel theme and the arcade world (the Real office with worldflags=retro) are checked too
+  const LOOKS = [
+    ['clean-office', 'clean-office', null],
+    [CHECK_DARK.id, CHECK_DARK, null],
+    ['retro-theme', 'retro', null],
+    ['arcade', 'retro', { officeview: 'real', worldflags: 'retro', world: 'retro' }],
+  ];
+  for (const [theme, manifest, query] of LOOKS) {
+    for (const [w, h] of query ? [[1440, 900], [1280, 800]] : [[1440, 900]]) {
+      await H.load({ w, h, ...(query ? { query, ready: `!!document.querySelector('#stage .ro .ro-plate')`, readyMs: 30000 } : {}) });
+      await js(`window.THEME.setTheme(${jsLiteral(manifest)})`);
+      await ok(`window.THEME.current().id===${jsLiteral(typeof manifest === 'string' ? manifest : manifest.id)}`, theme + ' applied');
+      if (query) await ok(`document.documentElement.dataset.ui==='retro'`, theme + ': the retro look is on');
+      if (process.env.FILTER_MUTANT === 'old') await ctx.win.webContents.insertCSS('html[data-ui="retro"][data-world] .filter-note,html[data-ui="retro"][data-world] .filter-note b,html[data-ui="retro"][data-world] .filter-note .fn-all{color:var(--surface)!important}'); // mutant: the old rule
+      await clickPill('idle');
+      await ok(`document.getElementById('filterNote')&&!document.getElementById('filterNote').hidden`, `${theme} ${w}x${h}: the notice shows`);
+      await H.settle();
+      for (const sel of ['#filterNote', '#filterNote b', '#filterNote .fn-all']) {
+        const c = await contrast(sel);
+        console.log(`[statusfilter] ${theme} ${w}x${h} contrast ${sel}: ${c.fg} on ${c.bg} = ${c.ratio}:1`);
+        fs.appendFileSync(path.join(OUT, 'statusfilter-contrast.txt'), `${theme} ${w}x${h} ${sel}: ${c.fg} on ${c.bg} = ${c.ratio}:1\n`);
+        assert.ok(c.ratio >= 4.5, `${theme} ${w}x${h}: ${sel} contrast ${c.ratio}:1 is below 4.5:1`);
+      }
+      if (query) {
+        assert.ok(await js(`getComputedStyle(document.querySelector('#filterNote .fn-all')).textDecorationLine.includes('underline')`), `${theme}: Show all is underlined (reads as a control)`);
+        const shot = await js(`(()=>{const r=document.getElementById('filterNote').getBoundingClientRect();return {x:Math.max(0,Math.floor(r.x)),y:Math.max(0,Math.floor(r.y)),width:Math.ceil(r.width),height:Math.ceil(r.height)}})()`);
+        const img = await ctx.win.webContents.capturePage(shot);
+        fs.writeFileSync(path.join(OUT, `statusfilter-${theme}-${w}x${h}.png`), img.toPNG());
+      }
     }
   }
   console.log('[statusfilter] all checks passed');
