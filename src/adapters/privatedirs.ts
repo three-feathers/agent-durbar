@@ -1,6 +1,7 @@
 /**
  * Spec 012 FR-165 and spec 087 FR-023: Durbar's private temp folders (Claude Code's `mcp-config.json` folders, the Copilot runtime's
- * TMPDIR, under a short root when the OS one is too long for Unix sockets: FR-024). Each is a new `mkdtemp` folder, 0700 where modes apply; each is removed by its own cleanup, and every folder still live is
+ * TMPDIR, under a short root when the OS one is too long for Unix sockets: FR-024). Each is a new `mkdtemp` folder, 0700 where modes
+ * apply; each is removed by its own cleanup, and every folder still live is
  * removed on the process `exit` event and by `sweepPrivateDirs` (main calls it in `will-quit`), so none outlives the app. Not covered: a
  * SIGKILL or a crash of the app itself, and in Electron's main process `app.exit()`/`process.exit()`, which do not emit Node's `exit`
  * event (probed 2026-11-04; main sweeps in `will-quit` too).
@@ -50,8 +51,9 @@ const MKDTEMP_SUFFIX_BYTES = 6;
  * leaves too little room. So when `<tmpRoot>/<prefix>XXXXXX` plus `SOCKET_ROOM_BYTES` does not fit, the short root (`/tmp`, resolved:
  * `/private/tmp` on macOS) is used instead. Windows is unchanged (named pipes have no such limit).
  */
-export function socketSafeTmpRoot(prefix: string, tmpRoot: string = os.tmpdir(), platform: string = process.platform, shortRoot: string = realShortRoot()): string {
+export function socketSafeTmpRoot(prefix: string, tmpRoot: string = os.tmpdir(), platform: string = process.platform, short?: string): string {
   if (platform === 'win32') return tmpRoot;
+  const shortRoot = short ?? realShortRoot();
   const fits = (root: string) => Buffer.byteLength(path.join(root, prefix), 'utf8') + MKDTEMP_SUFFIX_BYTES + SOCKET_ROOM_BYTES <= UNIX_SOCKET_MAX_BYTES;
   return fits(tmpRoot) || !fits(shortRoot) ? tmpRoot : shortRoot;
 }
