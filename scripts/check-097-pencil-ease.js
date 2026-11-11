@@ -4,22 +4,33 @@
  * for the first ~200 ms. Simulator only (DURBAR_SIM=15, simfreeze=1 romotion=1), no AI credits; every wait is an until().
  *
  *   npm run check:ui -- --only check-097-pencil-ease      (builds first)
- *   PENCIL_EASE_MUTANT=nohide        the pencils' hide during the ease cancelled right after the move starts (the code before the fix; must fail
- *                                    "no pencil is painted over its plate's name, role or status while the plates ease")
+ *   PENCIL_EASE_MUTANT=<name>        each must fail with the label named here:
+ *     nohide     the hide cancelled right after the move starts (the code before the fix): "no pencil is painted over its plate's name, role or status"
+ *     late       the frames start 700 ms after the move (a capture slower than the ease): "frames caught the plates on their way"
+ *     half       the hold at opacity 0.5, not 0: "each moving plate's pencil is at opacity 0 for as long as its plate eases"
+ *     early      the fade starts at 30 % of the ease: the same label
+ *     focushide  the focused pencil hidden too: "the focused pencil stays shown (opacity 1) while its plate eases"
  *   PENCIL_EASE_WORLDS=photo,arcade  only those worlds (photo, cave, arcade)
  *   PENCIL_EASE_PLAIN=1              no colour marks: only saves the frames (with SHOTS_OUT), to look at; asserts nothing on pixels
- *   SHOTS_OUT=<dir>                  also saves each frame, 097-pencil-ease-<world>-<w>x<h>-<ms>.png
+ *   SHOTS_OUT=<dir>                  also saves each frame, 097-pencil-ease-<world>-<w>x<h>-<ms>.png, and the driver's log
  *
  * Painted pixels, not boxes: a getBoundingClientRect read forces layout and so shows the pencil where it belongs (issue 1513, Mac evidence). Each
  * plate's name, role and status line and its pencil's icon are painted in their own exact colours (inline styles, no layout change) and found in real
- * capturePage frames taken from the move's start to ~320 ms in.
+ * capturePage frames taken from the move's start to ~320 ms in. A pencil drawn half-transparent would blend and match no colour, so the page also
+ * samples, every animation frame of the ease, each moving plate's pencil's computed opacity (a style read, no layout); under 0.05 counts as not painted
+ * (the plate's last frame and the pencil's fade can share one frame: 0.03 was read there).
  *
  * In the Photo office and the arcade (the cave too when asked), at 1440x900 and 1280x800, every pencil shown (body.ren-show, as hover:none shows them),
- * it fails (exit 1) when:
- *   - no frame caught a plate on its way (the move did not ease, or the frames came too late: the check would prove nothing);
- *   - in any frame a pencil's painted icon overlaps its own plate's painted name, role or status line;
+ * the first mover's pencil focused, it fails (exit 1) when:
+ *   - fewer than MIN_CAUGHT frames in the first 200 ms show a plate on its way (measured on the Mac: 10 to 12; a runner whose captures are too slow
+ *     fails here, labelled, never passes with nothing tested);
+ *   - not every marked plate's pencil and name (or status) is found in the end frame (a colour that does not come through would drop it silently);
+ *   - in any frame a pencil's painted icon overlaps its own plate's painted name, role or status line (the focused one excepted: FR-365's known gap);
+ *   - while a plate eases, its pencil's opacity is not 0 (the focused pencil's: not 1), or the focused pencil's plate did not ease;
  *   - when the ease is over: a WAAPI animation still runs in #stage, a pencil is not painted, or it is not just after its name (0..8 px) clear of the
- *     role and status (painted, and by its box).
+ *     role and status (painted, and by its box);
+ *   - a status change of a desk (working, thinking, waiting and back) hides a pencil whose plate does not move, or (thinking: no layout change)
+ *     hides any pencil. Measured: thinking eases no plate; waiting and working again reorder the room (3 plates move 228..456 px), so those hide.
  */
 const fs = require('fs');
 const path = require('path');
@@ -33,13 +44,13 @@ const SIZES = [[1440, 900], [1280, 800]];
 const ALL = { photo: {}, cave: { worldflags: 'cave', world: 'cave' }, arcade: { worldflags: 'retro', world: 'retro' } };
 const WORLDS = (process.env.PENCIL_EASE_WORLDS || 'photo,arcade').split(',').filter((w) => ALL[w]);
 const SPAN = 320; /* ms of frames after the move starts: the ease is 280..520 ms, the displacement was seen in its first ~200..300 ms */
-/* the marks: plate i (1..) gets v = 8 + 8 i; each part its own colour family, so an exact pixel says which part of which plate it is */
-const FAM = { pen: (v) => [255, 0, v], name: (v) => [0, 255, v], status: (v) => [v, 0, 255], role: (v) => [0, v, 255] };
+const MIN_CAUGHT = 3; /* frames in the first 200 ms that must show a plate on its way (Mac: 10..12 of them, one every ~17 ms) */
 
-/** The painted box of each part of each marked plate in a capture (CSS px), from its exact colour (±2 per channel: a scaled layer's inside stays exact). */
+/** The painted box of each part of each marked plate in a capture (CSS px), from its exact colour (±2 per channel: a scaled layer's inside stays exact).
+ *  Plate i (1..) has v = 8 + 8 i: pencil (255,0,v), name (0,255,v), status (v,0,255), role (0,v,255). A box spans only rows and columns with 2 or more of
+ *  its pixels, so one stray picture pixel of a marker's colour cannot grow it into a false overlap. */
 function marks(img, vw) {
-  const { width: iw, height: ih } = img.getSize(), b = img.toBitmap(), s = iw / vw, out = {};
-  const put = (key, x, y) => { const o = out[key] || (out[key] = { x: 1e9, y: 1e9, r: -1, b: -1, n: 0 }); o.x = Math.min(o.x, x); o.y = Math.min(o.y, y); o.r = Math.max(o.r, x + 1); o.b = Math.max(o.b, y + 1); o.n++; };
+  const { width: iw, height: ih } = img.getSize(), b = img.toBitmap(), s = iw / vw, acc = {};
   const near = (c, t) => Math.abs(c - t) <= 2;
   for (let y = 0; y < ih; y++) for (let x = 0; x < iw; x++) {
     const i = (y * iw + x) * 4, B = b[i], G = b[i + 1], R = b[i + 2]; /* BGRA */
@@ -51,9 +62,15 @@ function marks(img, vw) {
     if (!fam) continue;
     const k = Math.round((v - 8) / 8);
     if (k < 1 || Math.abs(8 + 8 * k - v) > 2) continue;
-    put(fam + ':' + k, x, y);
+    const a = acc[fam + ':' + k] || (acc[fam + ':' + k] = { cols: new Map(), rows: new Map() });
+    a.cols.set(x, (a.cols.get(x) || 0) + 1); a.rows.set(y, (a.rows.get(y) || 0) + 1);
   }
-  for (const o of Object.values(out)) { o.x /= s; o.y /= s; o.r /= s; o.b /= s; }
+  const out = {};
+  for (const [key, a] of Object.entries(acc)) {
+    const xs = [...a.cols].filter(([, c]) => c >= 2).map(([x]) => x), ys = [...a.rows].filter(([, c]) => c >= 2).map(([y]) => y);
+    if (!xs.length || !ys.length) continue;
+    out[key] = { x: Math.min(...xs) / s, y: Math.min(...ys) / s, r: (Math.max(...xs) + 1) / s, b: (Math.max(...ys) + 1) / s };
+  }
   return out;
 }
 const overlap = (a, c) => Math.min(a.r, c.r) - Math.max(a.x, c.x) > 1 && Math.min(a.b, c.b) - Math.max(a.y, c.y) > 1; /* more than 1 px each way: an edge's blend is not an overlap */
@@ -68,9 +85,11 @@ module.exports = async (ctx) => {
   const REAL = `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'`;
   const PICS = `[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`;
   const STILL = `!document.getElementById('stage').getAnimations({subtree:true}).some(a=>!a.animationName&&a.playState==='running')`; /* no WAAPI move or fade (the CSS loops, a person's bob, keep running) */
+  /* page code: a plate's own move (translate or scale), as realoffice.js starts it */
+  const EASE_OF = `(p=>p.getAnimations().find(a=>!a.animationName&&a.playState==='running'&&a.effect&&a.effect.getKeyframes().some(f=>f.translate||f.scale)))`;
   if (OUT) fs.mkdirSync(OUT, { recursive: true });
   const log = (...a) => { console.log('[097-pencil-ease]', ...a); if (OUT) fs.appendFileSync(path.join(OUT, '097-pencil-ease.log'), a.join(' ') + '\n'); }; /* also beside the frames: the suite prints a driver's log only when it fails */
-  if (MUTANT) console.log('[097-pencil-ease] mutant:', MUTANT);
+  if (MUTANT) log('mutant:', MUTANT);
   for (const world of WORLDS) for (const [w, h] of SIZES) {
     const tag = `${world} ${w}x${h}`;
     await H.load({ w, h, query: { officeview: 'real', simfreeze: '1', romotion: '1', ...ALL[world] }, ready: REAL, settle: false });
@@ -91,7 +110,6 @@ module.exports = async (ctx) => {
     await js(`(()=>{for(const id of ${jsLiteral(pick)}){const a=${SIM}.agents().find(x=>x.id===id);a.state='done';a.lastOutput=a.lastOutput||'Finished the change and ran the tests.';a.lastEventAt=Date.now();${SIM}.unread.mark(id);}${SIM}.crew.renderAll();return 1})()`);
     await must(`document.querySelectorAll('#stage .ro-plate.st-done').length>=2`, `${tag}: the finished desks`);
     await must(PICS + '&&' + STILL, `${tag}: the office still before the move`, 8000);
-    log(tag, 'picked', JSON.stringify(await js(`${jsLiteral(pick)}.map(id=>{const p=document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(id)+'"]');return p&&p.className})`)));
     /* every pencil shown; the slips hidden (one may lie over a plate); each plate's parts and its pencil's icon marked */
     const n = await js(`(()=>{document.body.classList.add('ren-show');document.querySelectorAll('#stage .ro-slip').forEach(e=>e.style.setProperty('visibility','hidden','important'));
       if(${PLAIN})return document.querySelectorAll('#stage .ren.ro-ren').length;
@@ -102,53 +120,91 @@ module.exports = async (ctx) => {
         set(b.querySelector('svg'),rgb([255,0,v]));set(p.querySelector('.ro-l1>b'),rgb([0,255,v]));set(p.querySelector('.ro-l2'),rgb([v,0,255]));set(p.querySelector('.ro-role'),rgb([0,v,255]));}
       return i})()`);
     assert.ok(n >= 10, `${tag}: pencils to mark (${n})`);
+    /* FR-365's focus rule: the first mover's pencil has the keyboard focus (a plate that goes to the lounge always eases) */
+    const focusMark = await js(`(()=>{const b=document.querySelector('#stage .ren.ro-ren[data-ren="'+CSS.escape(${jsLiteral(pick[0])})+'"]');b.focus({preventScroll:true});return document.activeElement===b?(b.previousElementSibling.dataset.peMark||'?'):''})()`);
+    assert.ok(focusMark, `${tag}: the first mover's pencil has the focus`);
+    await must(`[...document.querySelectorAll('#stage .ren.ro-ren')].every(b=>getComputedStyle(b).opacity==='1')`, `${tag}: every pencil shown (ren-show's fade in over)`, 3000);
     await js(`new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(1))))`);
-    const before = PLAIN ? null : marks(await wc().capturePage(), w);
-    /* the move: both read (the second finished long ago, so it sleeps there); nothing below reads layout until the frames are taken */
+    /* the move: both read (the second finished long ago, so it sleeps there). The page then samples, each animation frame, every moving plate's pencil's
+       computed opacity (a style read: no layout); nothing else reads the page until the frames are taken */
     const easing = await js(`(()=>{const s=${SIM}.agents().find(x=>x.id===${jsLiteral(pick[1])});s.lastEventAt=Date.now()-34*60000;for(const id of ${jsLiteral(pick)})${SIM}.unread.read(id);${SIM}.crew.renderAll();
-      if(${jsLiteral(MUTANT === 'nohide')})document.querySelectorAll('#stage .ren.ro-ren').forEach(b=>b.getAnimations().forEach(a=>a.cancel()));
-      return [...document.querySelectorAll('#stage .ro-plate')].filter(p=>p.getAnimations().some(a=>!a.animationName&&a.playState==='running')).length+' (office '+document.querySelector('#stage .ro').className+', reduced '+matchMedia('(prefers-reduced-motion: reduce)').matches+', hidden '+document.hidden+')'})()`);
+      const M=${jsLiteral(MUTANT)},pens=[...document.querySelectorAll('#stage .ren.ro-ren')],foc=document.activeElement;
+      if(M==='nohide')pens.forEach(b=>b.getAnimations().forEach(a=>a.cancel()));
+      if(M==='half'||M==='early')pens.forEach(b=>b.getAnimations().filter(a=>!a.animationName).forEach(a=>{const o=a.effect.getKeyframes()[1].offset;a.effect.setKeyframes(M==='half'?[{opacity:.5},{opacity:.5,offset:o}]:[{opacity:0},{opacity:0,offset:.3}])}));
+      if(M==='focushide'&&foc&&foc.matches('.ren')){const e=${EASE_OF}(foc.previousElementSibling);if(e)foc.animate([{opacity:0},{opacity:0,offset:.9}],{duration:Number(e.effect.getTiming().duration)+60})}
+      const S=window.__peS={samples:0,bad:[],focusEased:0,moving:0},t0=performance.now();
+      const step=()=>{for(const b of pens){const p=b.previousElementSibling;if(!p||!${EASE_OF}(p))continue;S.moving++;const op=getComputedStyle(b).opacity,f=b===document.activeElement;if(f)S.focusEased++;
+        if((f?op!=='1':Number(op)>=0.05)&&S.bad.length<12)S.bad.push(Math.round(performance.now()-t0)+' ms '+(p.dataset.peMark||b.dataset.ren)+(f?' (focused)':'')+' opacity '+op);}
+        S.samples++;if(performance.now()-t0<900)requestAnimationFrame(step);else S.done=true;};
+      step();
+      return [...document.querySelectorAll('#stage .ro-plate')].filter(p=>${EASE_OF}(p)).length})()`);
+    if (MUTANT === 'late') await ctx.sleep(700);
     const t0 = Date.now(), frames = [];
-    while (Date.now() - t0 < SPAN) { const img = await wc().capturePage(); frames.push({ t: Date.now() - t0, img }); }
+    while (Date.now() - t0 < SPAN) { const img = await wc().capturePage(); frames.push({ t: Date.now() - t0 + (MUTANT === 'late' ? 700 : 0), img }); }
     await must(`document.querySelectorAll('#stage .ro-plate.lounge').length>=2`, `${tag}: the lounge row`, 8000);
-    await must(STILL, `${tag}: the ease is over (no WAAPI animation running in #stage)`, 5000);
+    await must(STILL + '&&!!(window.__peS||{}).done', `${tag}: the ease is over (no WAAPI animation running in #stage)`, 5000);
+    const S = await js(`window.__peS`);
     await js(`new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(1))))`);
     const endImg = await wc().capturePage();
     if (OUT) {
       for (const f of frames) fs.writeFileSync(path.join(OUT, `097-pencil-ease-${world}-${w}x${h}-${String(f.t).padStart(3, '0')}.png`), f.img.toPNG());
       fs.writeFileSync(path.join(OUT, `097-pencil-ease-${world}-${w}x${h}-end.png`), endImg.toPNG());
     }
-    log( tag, 'frames at', frames.map((f) => f.t).join(','), 'ms;', n, 'pencils;', easing, 'plates easing at the start');
-    if (PLAIN) continue;
-    const end = marks(endImg, w);
-    /* the frames saw the ease: some plate's painted name or status is away from where it ends (else nothing here would be tested) */
-    const keys = [...new Set(Object.keys(end).map((k) => k.split(':')[1]))];
-    const away = (m) => keys.some((i) => ['name', 'status'].some((p) => { const a = m[p + ':' + i], z = end[p + ':' + i]; return a && z && Math.max(Math.abs(a.x - z.x), Math.abs(a.y - z.y), Math.abs(a.r - z.r)) >= 3; }));
-    const caught = frames.filter((f) => away(f.m = marks(f.img, w)));
-    assert.ok(away(before) || caught.length, `${tag}: a frame caught the plates on their way (frames at ${frames.map((f) => f.t).join(',')} ms)`);
-    /* in every frame: no pencil's painted icon over its own plate's painted name, role or status */
-    const bad = [];
-    for (const f of frames) for (const i of keys) {
-      const pen = f.m['pen:' + i];
-      if (!pen) continue; /* not painted (hidden while its plate eases) */
-      for (const p of ['name', 'role', 'status']) if (f.m[p + ':' + i] && overlap(pen, f.m[p + ':' + i])) bad.push(`${f.t} ms plate ${i}: the pencil ${JSON.stringify(rd(pen))} over its ${p} ${JSON.stringify(rd(f.m[p + ':' + i]))}`);
+    log(tag, 'frames at', frames.map((f) => f.t).join(','), 'ms;', n, 'pencils;', easing, 'plates easing at the start; opacity samples', S.samples, 'frames,', S.moving, 'moving-pencil reads,', S.focusEased, 'of the focused one');
+    if (!PLAIN) {
+      const end = marks(endImg, w);
+      /* every marked plate came through the capture: its pencil and its name or status (a colour lost would drop the plate from every assert) */
+      const keys = [...Array(n)].map((_, i) => String(i + 1));
+      const lost = keys.filter((i) => !end['pen:' + i] || !(end['name:' + i] || end['status:' + i]));
+      assert.deepStrictEqual(lost, [], `${tag}: every marked plate's pencil and name (or status) is found in the end frame`);
+      /* the frames saw the ease: in the first 200 ms, frames where some plate's painted name or status is away from where it ends */
+      const away = (m) => keys.some((i) => ['name', 'status'].some((p) => { const a = m[p + ':' + i], z = end[p + ':' + i]; return a && z && Math.max(Math.abs(a.x - z.x), Math.abs(a.y - z.y), Math.abs(a.r - z.r)) >= 3; }));
+      for (const f of frames) f.m = marks(f.img, w);
+      const caught = frames.filter((f) => f.t <= 200 && away(f.m));
+      log(tag, caught.length, 'frames mid-move in the first 200 ms; painted pencils per frame', frames.map((f) => keys.filter((i) => f.m['pen:' + i]).length).join(','));
+      assert.ok(caught.length >= MIN_CAUGHT, `${tag}: ${MIN_CAUGHT} or more frames caught the plates on their way in the first 200 ms (got ${caught.length}; frames at ${frames.map((f) => f.t).join(',')} ms): too few means the captures are slower than the ease on this machine, so nothing was tested; not a pass`);
+      /* in every frame: no pencil's painted icon over its own plate's painted name, role or status (the focused one may be: FR-365's known gap) */
+      const bad = [];
+      for (const f of frames) for (const i of keys) {
+        const pen = f.m['pen:' + i];
+        if (!pen || i === focusMark) continue; /* not painted (hidden while its plate eases) */
+        for (const p of ['name', 'role', 'status']) if (f.m[p + ':' + i] && overlap(pen, f.m[p + ':' + i])) bad.push(`${f.t} ms plate ${i}: the pencil ${JSON.stringify(rd(pen))} over its ${p} ${JSON.stringify(rd(f.m[p + ':' + i]))}`);
+      }
+      assert.deepStrictEqual(bad, [], `${tag}: no pencil is painted over its plate's name, role or status while the plates ease`);
+      /* a half-shown pencil blends and matches no colour: the page's opacity reads cover it */
+      assert.ok(S.moving > 0 && S.focusEased > 0, `${tag}: the opacity reads saw moving plates, the focused pencil's among them (${JSON.stringify(S)})`);
+      const focBad = S.bad.filter((x) => x.includes('(focused)')), restBad = S.bad.filter((x) => !x.includes('(focused)'));
+      assert.deepStrictEqual(restBad, [], `${tag}: each moving plate's pencil is at opacity 0 (under 0.05) for as long as its plate eases`);
+      assert.deepStrictEqual(focBad, [], `${tag}: the focused pencil stays shown (opacity 1) while its plate eases`);
+      /* at the end: every pencil painted, just after its painted name, clear of the role and status; and by its boxes */
+      const endBad = [];
+      for (const i of keys) {
+        const pen = end['pen:' + i], nm = end['name:' + i];
+        for (const p of ['name', 'role', 'status']) if (end[p + ':' + i] && overlap(pen, end[p + ':' + i])) endBad.push(`plate ${i}: the pencil over its ${p}`);
+        if (nm && (pen.x - nm.r < -1 || pen.x - nm.r > 9)) endBad.push(`plate ${i}: the pencil ${Math.round(pen.x - nm.r)} px after its name`);
+      }
+      assert.deepStrictEqual(endBad, [], `${tag}: once the ease is over every pencil is painted just after its name, over nothing`);
+      const geo = await js(`[...document.querySelectorAll('#stage .ren.ro-ren')].map(b=>{const p=b.previousElementSibling,R=e=>e.getBoundingClientRect(),ic=R(b.querySelector('svg')||b),nb=p.querySelector('.ro-l1>b'),named=!!nb.getClientRects().length,nm=R(nb),st=R(p.querySelector('.ro-l2'));
+        return {k:b.dataset.ren,gap:Math.round(named?ic.left-nm.right:p.getBoundingClientRect().right-ic.right),status:ic.bottom>st.top+0.5&&ic.top<st.bottom-0.5&&ic.left<st.right&&ic.right>st.left}})`);
+      const geoBad = geo.filter((g) => g.gap < 0 || g.gap > 8 || g.status);
+      assert.deepStrictEqual(geoBad, [], `${tag}: once the ease is over each pencil's box is just after its name (or the plate's end), off the status line`);
     }
-    log( tag, caught.length, 'of', frames.length, 'frames mid-move; painted pencils per frame', frames.map((f) => keys.filter((i) => f.m['pen:' + i]).length).join(','));
-    assert.deepStrictEqual(bad, [], `${tag}: no pencil is painted over its plate's name, role or status while the plates ease`);
-    /* at the end: every pencil painted, just after its painted name, clear of the role and status; and by its boxes */
-    const endBad = [];
-    for (const i of keys) {
-      const pen = end['pen:' + i], nm = end['name:' + i];
-      if (!pen) { endBad.push(`plate ${i}: no pencil painted`); continue; }
-      for (const p of ['name', 'role', 'status']) if (end[p + ':' + i] && overlap(pen, end[p + ':' + i])) endBad.push(`plate ${i}: the pencil over its ${p}`);
-      if (nm && (pen.x - nm.r < -1 || pen.x - nm.r > 9)) endBad.push(`plate ${i}: the pencil ${Math.round(pen.x - nm.r)} px after its name`);
+    /* a status change hides only the pencils of plates that move (thinking moves none; waiting puts the desk first in its room, so a few do) */
+    const who = await js(`(()=>{const home=new Set(${SIM}.realLayout().zones.flatMap(z=>z.desks).filter(d=>!d.away).map(d=>d.id)),p=${jsLiteral(pick)};
+      const a=${SIM}.agents().find(a=>!a.parent&&home.has(a.id)&&!p.includes(a.id)&&['working','thinking'].includes(a.state)&&!a.paused&&!a.limit);return a?a.id:null})()`);
+    assert.ok(who, `${tag}: a working agent at its desk`);
+    const blinks = [];
+    for (const st of ['thinking', 'waiting', 'working']) {
+      const r = await js(`(()=>{const a=${SIM}.agents().find(x=>x.id===${jsLiteral(who)});a.state=${jsLiteral(st)};a.lastEventAt=Date.now();${SIM}.crew.renderAll();
+        return {kinds:[...document.querySelectorAll('#stage .ro-plate')].filter(p=>${EASE_OF}(p)).map(p=>{const f=${EASE_OF}(p).effect.getKeyframes()[0];return (p.dataset.id===${jsLiteral(who)}?'self ':'')+'t['+(f.translate||'-')+'] s['+(f.scale||'-')+']'}).join(' | '),plates:[...document.querySelectorAll('#stage .ro-plate')].filter(p=>${EASE_OF}(p)).length,hidden:[...document.querySelectorAll('#stage .ren.ro-ren')].filter(b=>b.getAnimations().some(x=>!x.animationName&&x.playState==='running')).length,
+        still:[...document.querySelectorAll('#stage .ren.ro-ren')].filter(b=>b.getAnimations().some(x=>!x.animationName&&x.playState==='running')&&!${EASE_OF}(b.previousElementSibling)).length}})()`);
+      blinks.push(`${st}: ${r.plates} plates eased, ${r.hidden} pencils hidden, ${r.still} of a still plate`); log(tag, st, r.kinds);
+      await must(STILL, `${tag}: still after the change to ${st}`, 5000);
     }
-    assert.deepStrictEqual(endBad, [], `${tag}: once the ease is over every pencil is painted just after its name, over nothing`);
-    const geo = await js(`[...document.querySelectorAll('#stage .ren.ro-ren')].map(b=>{const p=b.previousElementSibling,R=e=>e.getBoundingClientRect(),ic=R(b.querySelector('svg')||b),nb=p.querySelector('.ro-l1>b'),named=!!nb.getClientRects().length,nm=R(nb),st=R(p.querySelector('.ro-l2'));
-      return {k:b.dataset.ren,gap:Math.round(named?ic.left-nm.right:p.getBoundingClientRect().right-ic.right),status:ic.bottom>st.top+0.5&&ic.top<st.bottom-0.5&&ic.left<st.right&&ic.right>st.left}})`);
-    const geoBad = geo.filter((g) => g.gap < 0 || g.gap > 8 || g.status);
-    assert.deepStrictEqual(geoBad, [], `${tag}: once the ease is over each pencil's box is just after its name (or the plate's end), off the status line`);
-    log( tag, 'ok:', keys.length, 'marked plates; at the end every pencil painted at its spot');
+    log(tag, 'status changes:', blinks.join('; '));
+    assert.ok(blinks.every((b) => / 0 of a still plate$/.test(b)) && /^thinking: 0 plates eased, 0 pencils hidden/.test(blinks[0]), `${tag}: a status change hides only the pencils of plates that move (${blinks.join('; ')})`);
+    log(tag, 'ok');
+    try { await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] }); dbg.detach(); } catch (e) { /* the page went: nothing to undo */ }
   }
   console.log('[097-pencil-ease] ok');
   process.exitCode = 0;

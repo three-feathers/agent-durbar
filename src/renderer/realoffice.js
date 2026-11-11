@@ -59,13 +59,17 @@
     return a; };
   /* spec 097 FR-365 (bug 1513): the rename pencil is placed by CSS anchor only, so its plate's ease (translate and scale on the compositor) does not carry
      its painted icon: in the first ~200 ms it was drawn over the name and the status icon. While the plate eases the pencil is not painted (opacity, so it
-     keeps its focus and its name); it fades in at its own spot when the ease ends. Under reduced motion nothing eases, so nothing hides. */
+     keeps its name and Tab place); it fades in at its own spot when the ease ends. Under reduced motion nothing eases, so nothing hides. A pencil that
+     has the focus is not hidden (its focus ring stays; it may be drawn displaced for the ease, a known gap). */
   const REN_IN = 120;
   function hideWhile(e, ease) {
     if (e._hide) e._hide.cancel();
-    const ms = Number(ease.effect.getTiming().duration) || 0;
+    if (!e._hf) { e._hf = true; e.addEventListener('focus', () => { if (e._hide) e._hide.cancel(); }); } /* focused while hidden: shown at once */
+    const ms = Math.max(0, (Number(ease.effect.getTiming().duration) || 0) - (Number(ease.currentTime) || 0)); /* what is left of it: a pencil made mid-ease waits only that long */
     e._hide = e.animate([{ opacity: 0 }, { opacity: 0, offset: ms / (ms + REN_IN) }], { duration: ms + REN_IN, easing: 'linear' }); /* no last keyframe: it ends on the CSS opacity (hover, focus, ren-show) */
   }
+  /* the plate's ease still under way (a move on translate or scale), for a pencil made while it runs */
+  const easeOf = (el) => el.getAnimations ? el.getAnimations().find((n) => !n.animationName && n.playState === 'running' && n.effect && n.effect.getKeyframes().some((f) => f.translate || f.scale)) || null : null;
   const initials = (name) => String(name || '?').trim().split(/\s+/).slice(0, 2).map((w) => Array.from(w)[0] || '').join('').toUpperCase() || '?';
 
   /* the keyed layers: one Map per layer, elements reused by key; unseen keys are removed at the end of a render */
@@ -475,7 +479,9 @@
           if (rb.type !== 'button') rb.type = 'button'; dset(rb, 'ren', k); attr(rb, 'aria-label', 'Rename ' + a.name); attr(rb, 'title', 'Rename ' + a.name);
           if (rb.style.getPropertyValue('--ro-ren-nm') !== anc) { rb.style.setProperty('--ro-ren-nm', anc); rb.style.setProperty('--ro-ren-pl', ancP); }
           if (!rb.firstChild && model.renIcon) rb.innerHTML = model.renIcon; /* the app's own icon markup (trusted, as alertIcon) */
-          if (plEase) hideWhile(rb, plEase); /* FR-365 */
+          const fresh = !rb._ren; rb._ren = true;
+          const mv = plEase || (fresh ? easeOf(pl) : null); /* FR-365: a pencil made (or come back) while its plate eases waits for the rest of it */
+          if (mv && rb !== document.activeElement) hideWhile(rb, mv); /* FR-365 */
         }
         /* spec 097 FR-306..FR-309 (issue #1139): the helpers' head figures under the plate, right after it and its pencil in the Tab order; a lounge seat and the fallback (no room: the plate keeps +N; the arcade at 1280x800) have no strip box, so no strip */
         if (d.strip && a.subs && a.subs.length) helperStrip(chrome, d, a, k, who, ids, meta);
