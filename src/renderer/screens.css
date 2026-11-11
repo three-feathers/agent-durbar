@@ -539,10 +539,6 @@ body.has-bridge #topBtns{display:flex}
 /* the title and Close line up with the list-and-page block instead of the 880px column alone (880 + list 184 + gutters) */
 #screen:has(.scr-nav) .scr-head,html[data-platform="darwin"] .notice-strip:not([hidden]) ~ #screen:has(.scr-nav) .scr-head{--sn-pad:max(calc(var(--s-1)*6),calc(50% - var(--s-1)*131.5));padding-left:var(--sn-pad);padding-right:var(--sn-pad)}
 @media (max-width:759px){#screen:has(.scr-nav) .scr-head{padding-left:calc(var(--s-1)*6);padding-right:calc(var(--s-1)*6)}}
-/* spec 052 FR-138 (2026-11-11): on a Mac, outside full screen, a screen over a chat keeps the traffic-light room: the two rules above have an id in them and beat the Mac rule in styles.css, so the Mac rule is repeated here with the same weight and the room first. A notice strip above is the first row, so the head then keeps the plain value. */
+/* spec 052 FR-138 (2026-11-11): on a Mac, outside full screen, a screen over a chat keeps the traffic-light room: the two rules above have an id in them and beat the Mac rule in styles.css, so the Mac rule is repeated here with the same weight and the room first. A notice strip above is the first row, so the head then keeps the plain value. Under 760px --sn-pad is already 24px, so the same two rules cover the row layout. */
 html[data-platform="darwin"]:not([data-fullscreen]) body.panel-open.screen-open #screen:has(.scr-nav) .scr-head{--tl-room:78px;padding-left:max(var(--tl-room),var(--sn-pad))}
 html[data-platform="darwin"]:not([data-fullscreen]) body.panel-open.screen-open .notice-strip:not([hidden]) ~ #screen:has(.scr-nav) .scr-head{padding-left:var(--sn-pad)}
-@media (max-width:759px){
-  html[data-platform="darwin"]:not([data-fullscreen]) body.panel-open.screen-open #screen:has(.scr-nav) .scr-head{padding-left:var(--tl-room)}
-  html[data-platform="darwin"]:not([data-fullscreen]) body.panel-open.screen-open .notice-strip:not([hidden]) ~ #screen:has(.scr-nav) .scr-head{padding-left:calc(var(--s-1)*6)}
-}

@@ -103,13 +103,14 @@ function measure(TLX, TLY) {
   /* a screen header over a chat: its title is on the centred column of FR-097 */
   let head = null;
   const h2 = document.querySelector('#screen:not([hidden]) .scr-head h2');
-  if (h2 && document.body.classList.contains('panel-open') && W > 990) {
+  const navNow = !!document.querySelector('#screen:not([hidden]) .scr-nav');
+  if (h2 && document.body.classList.contains('panel-open') && (W > 990 || (full && navNow))) {
     /* FR-097: a screen with a section list (.scr-nav: Settings) lines the title up with the list-and-page block, max(24, W/2 - 526); the
        others keep the 880px column. Outside full screen, with no notice strip above (which is the first row), the Mac room comes first: at least 78
        (FR-138, issue #1538). */
     const nav = !!document.querySelector('#screen:not([hidden]) .scr-nav');
     const strip = [...document.querySelectorAll('.notice-strip')].some(vis);
-    head = { left: h2.getBoundingClientRect().left, want: nav ? Math.max(full || strip ? 24 : TLX, W / 2 - 526) : (W - 880) / 2 + 24, nav };
+    head = { left: h2.getBoundingClientRect().left, want: nav ? (W < 760 ? 24 : Math.max(full || strip ? 24 : TLX, W / 2 - 526)) : (W - 880) / 2 + 24, nav };
   }
   /* a screen title at any width: where it starts, and how high (it is under the traffic lights when it is in the 78x40 box) */
   const t2 = document.querySelector('#screen:not([hidden]) .scr-head h2');
@@ -201,6 +202,7 @@ async function run(ctx) {
     await js(`window.DurbarScreens.openSettings()`); await rec('chat-settings', size, 'chat');
     await js(`window.DurbarScreens.close()`); await ctx.sleep(300);
     await showRestore(); await js(`window.DurbarScreens.openSettings()`); await rec('chat-strip-settings', size, 'chat'); await js(`window.DurbarScreens.close()`); await reset();
+    if (w === 900) { await openChat(); await fullScreen(); await js(`window.DurbarScreens.openSettings()`); await rec('chat-settings-fullscreen', size, 'chat'); await js(`window.DurbarScreens.close()`); await reset(); } /* full screen: no room, the title stays at 24 */
   }
   const bad = results.filter((r) => !r.ok);
   console.log(`\nmac-titlebar check: ${results.length - bad.length}/${results.length} states passed, ${bad.length} failed`);
