@@ -594,6 +594,7 @@ async function checkCli(): Promise<void> {
   fs.writeFileSync(path.join(base, 'gate.key'), crypto.randomBytes(48), { mode: 0o600 }); fs.chmodSync(path.join(base, 'gate.key'), 0o600);
   // the code root the operator trusts: a copy with sound permissions (a developer's checkout may be group-writable, which the bot refuses by design)
   const codeRoot = mk('coderoot'); fs.mkdirSync(path.join(codeRoot, 'scripts'), { recursive: true }); fs.chmodSync(path.join(codeRoot, 'scripts'), 0o755);
+  assert.ok(cli.INSTALL_FILES.some(([src]) => src === 'scripts/trusted-authors.js'), 'the installed copy carries the loader (FR-092)');
   for (const f of ['trusted-authors.txt', 'trusted-authors.js', 'trusted-lib.sh', 'gh-trusted.sh']) { fs.copyFileSync(path.join(ROOT, 'scripts', f), path.join(codeRoot, 'scripts', f)); fs.chmodSync(path.join(codeRoot, 'scripts', f), f.endsWith('.sh') ? 0o755 : 0o644); }
   const env = { PATH: `${bin}${path.delimiter}${process.env.PATH}`, HOME: tmp, PREREVIEW_BASE: base, PREREVIEW_SAME_ACCOUNT: '1' };
   const out: string[] = []; const err: string[] = [];
@@ -699,10 +700,10 @@ async function checkCli(): Promise<void> {
       const orig = fs.readFileSync(f, 'utf8');
       for (const [why, src] of [['returns nobody', "module.exports = { trustedAuthors() { return new Set(); } };"], ['throws', "module.exports = { trustedAuthors() { throw new Error('x'); } };"], ['is missing', null]] as const) {
         delete require.cache[f]; if (src === null) fs.unlinkSync(f); else fs.writeFileSync(f, src);
-        const g = await cli.gate(dep(), a('7', '--diff-only')); assert.ok(!g.ok, `a loader that ${why} refuses the gate`);
+        const g = await cli.gate(dep(), a('7', '--diff-only')); assert.ok(!g.ok && (src === null ? /cannot be resolved/ : src.includes('throw') ? /trusted list is missing/ : /trusted list is empty/).test((g as { why: string }).why), `a loader that ${why} refuses the gate for that reason: ${(g as { why?: string }).why}`);
         delete require.cache[f]; fs.writeFileSync(f, orig); fs.chmodSync(f, keep);
       }
-      const t = path.join(codeRoot, 'scripts', 'trusted-authors.txt'); const tk = fs.readFileSync(t, 'utf8'); delete require.cache[path.join(codeRoot, 'scripts', 'trusted-authors.js')]; fs.writeFileSync(t, '# nobody\n'); { const g = await cli.gate(dep(), a('7', '--diff-only')); assert.ok(!g.ok, 'an empty list refuses the gate'); } fs.writeFileSync(t, tk);
+      const t = path.join(codeRoot, 'scripts', 'trusted-authors.txt'); const tk = fs.readFileSync(t, 'utf8'); delete require.cache[path.join(codeRoot, 'scripts', 'trusted-authors.js')]; fs.writeFileSync(t, '# nobody\n'); { const g = await cli.gate(dep(), a('7', '--diff-only')); assert.ok(!g.ok && /trusted list is empty/.test((g as { why: string }).why), 'an empty list refuses the gate for that reason'); } fs.writeFileSync(t, tk);
     }
     { const g = await cli.gate(dep(), a('7', '--diff-only')); assert.ok(g.ok, 'with every permission restored the gate passes again'); }
     // root-owned and the operator's own both pass; a link is resolved first
@@ -867,7 +868,7 @@ async function checkInstall(): Promise<void> {
   const dep = (): cli.CliDeps => ({ stat: testStat, exec: ex, env: { PATH: process.env.PATH, HOME: tmp }, now: () => new Date(), randomHex: () => 'ab', root: co, nodeBin: 'node', entry: 'x', me: process.getuid!(), isTTY: false, readLine: async () => '', stdin: async () => '', out: (s) => o.push(s), err: (s) => e.push(s) });
   const dest = path.join(tmp, 'inst-dest');
   assert.strictEqual(await cli.installApp(dep(), dest), 0, e.join(''));
-  assert.ok(fs.existsSync(path.join(dest, 'prompts', 'system.md')) && fs.existsSync(path.join(dest, 'docs', 'review-checklist.md')) && fs.existsSync(path.join(dest, 'scripts', 'prereview', 'cli.mts')) && fs.existsSync(path.join(dest, 'scripts', 'trusted-authors.txt')));
+  assert.ok(fs.existsSync(path.join(dest, 'prompts', 'system.md')) && fs.existsSync(path.join(dest, 'docs', 'review-checklist.md')) && fs.existsSync(path.join(dest, 'scripts', 'prereview', 'cli.mts')) && fs.existsSync(path.join(dest, 'scripts', 'trusted-authors.txt')) && fs.existsSync(path.join(dest, 'scripts', 'trusted-authors.js')), 'the install copies the list and its loader');
   assert.strictEqual(seen.length, 1); assert.ok(/npm ci --ignore-scripts/.test(seen[0]) && seen[0].endsWith(path.join(dest, 'scripts', 'prereview')));
   assert.strictEqual(fs.statSync(path.join(dest, 'prompts', 'system.md')).mode & 0o022, 0, 'not writable by others');
   assert.ok(run.loadPrompts(dest).evidence.includes('Pass 2'), 'the installed copy loads');

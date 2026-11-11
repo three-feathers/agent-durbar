@@ -194,7 +194,15 @@ const many = (k: number): Finding[] => Array.from({ length: k }, (_, i) => good(
       put('trusted-authors.js', 'module.exports = { trustedAuthors() { return new Set(); } };'); assert.throws(() => trustedAuthors(path.join(dest, 'scripts')), /trusted-authors/, 'a loader that gives nobody: no run (mutant)');
       put('trusted-authors.js', "module.exports = { trustedAuthors() { throw new Error('x'); } };"); assert.throws(() => trustedAuthors(path.join(dest, 'scripts')), /trusted-authors/, 'a loader that throws: no run (mutant)');
       delete require.cache[path.join(dest, 'scripts', 'trusted-authors.js')]; fs.unlinkSync(path.join(dest, 'scripts', 'trusted-authors.js')); assert.throws(() => trustedAuthors(path.join(dest, 'scripts')), /trusted-authors/, 'no loader: no run, never a second parser');
-      assert.ok(/trusted-authors\.js/.test(fs.readFileSync(path.join(ROOT, 'scripts', 'weekly-test-audit.sh'), 'utf8')), 'install-filer installs the loader');
+      assert.ok(fs.readFileSync(path.join(ROOT, 'scripts', 'weekly-test-audit.sh'), 'utf8').split('\n').includes('  install -m 644 scripts/trusted-authors.js "$dest/scripts/trusted-authors.js"   # spec 021 FR-092: the one parser of the list'), 'install-filer installs the loader');
+      // no second folder: a loader and list planted next to the install folder are never tried (mutant: a fallback root)
+      const outer = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-ta2-')); fs.mkdirSync(path.join(outer, 'inst', 'scripts'), { recursive: true }); fs.mkdirSync(path.join(outer, 'scripts'));
+      fs.writeFileSync(path.join(outer, 'scripts', 'trusted-authors.js'), real); fs.writeFileSync(path.join(outer, 'scripts', 'trusted-authors.txt'), 'vikramgorla\n');
+      const inst = path.join(outer, 'inst', 'scripts');
+      assert.throws(() => trustedAuthors(inst), /trusted-authors/, 'an installed copy without its loader does not fall back to another folder');
+      fs.copyFileSync(path.join(ROOT, 'scripts', 'trusted-authors.js'), path.join(inst, 'trusted-authors.js')); fs.writeFileSync(path.join(inst, 'trusted-authors.txt'), '# emptied\n');
+      assert.throws(() => trustedAuthors(inst), /trusted-authors/, 'an emptied installed list refuses, another folder\'s list is not used');
+      fs.rmSync(outer, { recursive: true, force: true });
       fs.rmSync(dest, { recursive: true, force: true });
     }
   }

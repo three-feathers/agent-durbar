@@ -197,12 +197,13 @@ export type Summary = { mode: 'file' | 'dry-run'; dedupe: 'checked' | 'not check
 
 /**
  * The accounts whose issues count as the audit's own (spec 021 FR-060, FR-092): read by the repo's one parser, `scripts/trusted-authors.js`,
- * from `scripts/trusted-authors.txt`: both next to this file's folder when installed by `install-filer`, or in the checkout's `scripts/` when
+ * from `scripts/trusted-authors.txt`: both beside this file's folder when installed by `install-filer`, or in the checkout's `scripts/` when
  * run from `dist-scripts/`. Logins are compared in lower case (GitHub logins are case-insensitive). Throws when the list is missing,
  * unreadable or empty, so a run never treats an outsider's issue as filed.
  */
 export function trustedAuthors(dir: string = __dirname): Set<string> {
-  for (const root of [path.join(dir, '..'), path.join(dir, '..', '..')]) {
+  // one root only, decided by where this file runs: the checkout (`dist-scripts/scripts`) or an installed copy (`<dest>/scripts`); never a second folder to fall back on
+  for (const root of [path.basename(path.dirname(dir)) === 'dist-scripts' ? path.join(dir, '..', '..') : path.join(dir, '..')]) {
     let set: Set<string>;
     try { set = new Set(Array.from((require(path.join(root, 'scripts', 'trusted-authors.js')) as { trustedAuthors(r: string): Set<string> }).trustedAuthors(root), (l) => l.toLowerCase())); } catch { continue; }
     if (set.size) return set;
