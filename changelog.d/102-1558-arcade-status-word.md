@@ -1,0 +1,1 @@
+- **Retro arcade: a plate's status word is no longer cut** (spec 102, issue #1558): at 1280x800 a plate with 3 helpers read "+3 dots Compacti..."; the helpers' mark now gives way and the status word stays whole.

@@ -189,6 +189,23 @@ const run = async (ctx, reqs) => {
   assert.ok(gone.n > 0, 'looked while it eased');
   assert.deepStrictEqual(gone.wrong, [], 'still mirrored while it eases');
 
+  /* spec 102 (issue 1558, 2026-11-11): a plate's status word is never cut. With helpers and no strip the plate keeps "+N and dots" before the status on its one
+     line (097 FR-308); that strip gives way, the word (the text up to " . ") stays whole: the Range of the word lies inside the line's box (an ellipsis hides what
+     lies past the box; the task after the word may be cut, the word may not). 3 helpers each, one agent compacting, one retrying, one that gave up. */
+  const WORDS = `(()=>{const out=[];let helped=0;for(const p of document.querySelectorAll('#stage .ro-plate')){const l2=p.querySelector('.ro-l2');if(!l2||!l2.getClientRects().length)continue;if(p.classList.contains('has-help'))helped++;
+    const word=l2.textContent.trim().split(' \\u00b7 ')[0],w=document.createTreeWalker(l2,NodeFilter.SHOW_TEXT);let n,at=null;while((n=w.nextNode())){const i=n.data.indexOf(word);if(i>=0){at=[n,i];break;}}
+    if(!at){out.push(p.dataset.id+': no text for "'+word+'"');continue;}const r=document.createRange();r.setStart(at[0],at[1]);r.setEnd(at[0],at[1]+word.length);const a=r.getBoundingClientRect(),b=l2.getBoundingClientRect();
+    if(a.right>b.right+0.5||l2.scrollWidth>l2.clientWidth+1&&a.right>b.right-0.5)out.push((p.dataset.id||'?')+' "'+word+'" ends at '+Math.round(a.right)+' of a line to '+Math.round(b.right)+' (helped '+p.classList.contains('has-help')+')');}return {out,helped};})()`;
+  for (const [w, h, scene] of SIZES.flatMap(([a, b]) => [[a, b, { simcompact: '1' }], [a, b, { simretry: '1' }]])) {
+    await loadArcade(w, h, 15, { simfreeze: '1', simhelpers: '3', ...scene });
+    /* ARCADE_MUTANT=cutword (test only): the line as it was, its helpers' mark of a fixed width and the line free to shrink below its word (must fail: issue 1558) */
+    if (process.env.ARCADE_MUTANT === 'cutword') await js(`(()=>{const s=document.createElement('style');s.textContent='.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l1{flex:none!important}.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l2{display:block!important;flex:1 1 auto!important;min-width:0!important}';document.head.appendChild(s);})();0`);
+    const cut = await js(WORDS);
+    console.log('[102-arcade] plate words', w + 'x' + h, JSON.stringify(scene), JSON.stringify(cut));
+    assert.ok(cut.helped >= 1 || w >= 1440, 'status words ' + w + 'x' + h + ': a plate with helpers is drawn (the case under test)');
+    assert.deepStrictEqual(cut.out, [], 'issue 1558: a plate\'s status word is whole, ' + w + 'x' + h + ' (the strip of helpers gives way)');
+  }
+
   // ---- T213..T215: the status and its motion (FR-260..FR-262); this machine's own setting must not decide them ----
   const media = (features) => { const d = ctx.win.webContents.debugger; if (!d.isAttached()) d.attach('1.3'); return d.sendCommand('Emulation.setEmulatedMedia', { features }); };
   const MOTION = (v) => [{ name: 'prefers-reduced-motion', value: v }];

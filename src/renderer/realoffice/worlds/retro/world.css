@@ -77,9 +77,12 @@
 .ro[data-world="retro"] .ro-plate .ro-l2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
 /* spec 097 FR-308 (review of PR 1322): with no strip, the helpers' "+N and dots" stay in view: on the one line, before the status (the name and role stay on the marquee) */
 .ro[data-world="retro"] .ro-plate.has-help:not(.lounge){flex-direction:row;align-items:center}
-.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l1{display:flex;flex:none}
+/* issue 1558: the status word stays whole: the line is never narrower than its dot and word (min-content, the task has no width of its own), and the helpers' strip gives way (clipped, the dots first) */
+.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l1{display:flex;flex:0 1 auto;min-width:0;overflow:hidden}
+.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l2{display:flex;align-items:center;gap:var(--s-1);flex:1 1 0;min-width:min-content}
+.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l2>.ro-wd{flex:none;white-space:nowrap}
+.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l2>.ro-tk{flex:1 1 auto;width:0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l1>:not(.ro-help){display:none}
-.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l2{flex:1 1 auto;min-width:0}
 /* spec 097 FR-357 (bug #1427): a cabinet's plate does not draw the name (it is on the marquee), so the rename pencil is anchored to the plate: at its right end,
    inside it (the 11 px icon ends 6.5 px before the edge); 20 px of padding there end the status and the dots (ellipsis) before the icon. A lounge seat's plate draws the name: FR-170's place */
 .ro[data-world="retro"] .ro-plate.has-ren:not(.lounge){padding-right:calc(var(--s-4) + var(--s-1))}
