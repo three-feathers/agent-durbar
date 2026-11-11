@@ -535,7 +535,7 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   ok(/const shownPerm=\(t,kind\)=>window\.DurbarLiveAct\?window\.DurbarLiveAct\.permText\(t,permKind\(kind\),LIVE_MASK\|\|\{\}\):\{text:'request',hidden:true,why:'unchecked'\}/.test(app), 'the page has one permission-text function, failing closed (unchecked)');
   const card = app.slice(app.indexOf('function showPerm('), app.indexOf('function roAskHint('));
   ok(/ps\.textContent=sumS\.text/.test(card) && !/ps\.textContent=p\.summary/.test(card), 'card text');
-  ok(/announce\(\[a\.name,' needs your OK: '\+\(look\?look\+' The request: ':''\)\+sumS\.text\+/.test(card), 'screen-reader announcement shows the masked summary (after the lookalike line, spec 003 FR-118)');
+  ok(/announce\(\[a\.name,' needs your OK: ',look,look\?' The request: ':'',sumS\.text,/.test(card), 'screen-reader announcement shows the masked summary (after the lookalike line, spec 003 FR-118)');
   ok(/const keyS=p\.scopeKey\?shownPerm\(grantText\(p\.scopeKey,p\.scopeLabel\),String\(p\.scopeKey\)\):null/.test(card) && /expertScopeLabel\(gt\)/.test(card) && /cutText\(gt,window\.DurbarLookalike&&typeof window\.DurbarLookalike\.tipLen==='function'\?window\.DurbarLookalike\.tipLen\(gt\):240\)/.test(card), 'session button and its tooltip: the raw key through the one mask (spec 003 FR-118)');
   ok(/cutText\(broadS\.text,18\)/.test(card), 'any-arguments tooltip');
   // follow-up of the pre-review of PR 1317 (spec 012 FR-176): the "any arguments" scope label is built by the adapter from the command's first word, unmasked (the grant key needs it raw);
@@ -635,7 +635,7 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   { const c = 'run tool --password abcdefgh12345678'; ok(L.permText(c, 'shell', hm).hidden === true && !/abcdefgh/.test(L.permText(c, 'shell', hm).text) && L.permText(c, 'other', hm).hidden === false && /abcdefgh/.test(L.permText(c, 'other', hm).text), 'N15: the shell kind uses the command mask (redact alone leaves --password K)'); }
   { const c = 'run tool --api-key abcdefgh12345678'; ok(['shell', 'other'].every((k) => L.permText(c, k, hm).hidden === true && !/abcdefgh/.test(L.permText(c, k, hm).text)), 'N15: --api-key K is hidden by both kinds (spec 012 FR-170)'); }
   // item 4: the announcement and a card with no scope
-  ok(/announce\(\[a\.name,' needs your OK: '\+\(look\?look\+' The request: ':''\)\+sumS\.text\+\(hwhy\?'\. '\+PERM_WHY\[hwhy\]\+hgrant:''\)\]\)/.test(card), 'item 4: the announcement carries the hidden-part warning');
+  ok(/announce\(\[a\.name,' needs your OK: ',look,look\?' The request: ':'',sumS\.text,hwhy\?'\. '\+PERM_WHY\[hwhy\]\+hgrant:''\]\)/.test(card), 'item 4: the announcement carries the hidden-part warning');
   // item 5: a request whose text could not be checked: truthful copy, no Allow
   const pw = /const PERM_WHY=\{([^\n]*)\};/.exec(app);
   ok(!!pw && !/unchecked:'[^']*secret/.test(pw![1]) && /unchecked:'Durbar could not check this request/.test(pw![1]), 'item 5: the unchecked copy does not claim a secret');
