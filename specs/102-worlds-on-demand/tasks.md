@@ -311,4 +311,4 @@ Starts after the next built-in world's stack lands (FR-296, decided Q4). All beh
 
 ## 2026-11-11: the painted-pixel check and a zero box (issue #1517)
 
-- [ ] T304 `shots-102-arcade`: the painted-pixel check treats a person whose box rounds to 0 px as BUSY (bounded 5 s re-read) and, if it stays so, fails naming `data-for`, size and style (spec Changes 2026-11-11; issue #1517). Test: `ARCADE_MUTANT=zero` passes, `ARCADE_MUTANT=zero-stuck` fails with the named person, the old code dies with IndexSizeError.
+- [x] T304 `shots-102-arcade`: the painted-pixel check treats a person whose box rounds to 0 px as BUSY (bounded 5 s re-read) and, if it stays so, fails naming `data-for`, size and style (spec Changes 2026-11-11; issue #1517). Test: `ARCADE_MUTANT=zero` passes, `ARCADE_MUTANT=zero-stuck` fails with the named person, the old code plus the same injected style died with IndexSizeError on the author's Mac (declared by the author, not reproduced by the reviewer; the old code has no mutant). The fix is not yet seen on Linux CI (spec Changes 2026-11-11 `[KNOWN GAP]`).
