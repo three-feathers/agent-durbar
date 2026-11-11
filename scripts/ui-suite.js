@@ -7,7 +7,7 @@
  *   node scripts/ui-suite.js --shard 2/3                  shard 2 of 3, balanced by recorded duration (UI_SUITE_SHARD=2/3 too; spec 008 FR-182, FR-183)
  *   UI_SUITE_OUT=<folder>                 where every screenshot goes (default: a new temp folder, printed at the end)
  *   UI_SUITE_XVFB=1                       Linux: run under xvfb-run even when a display is set
- *   UI_SUITE_DPR=<1..4>                   force the device scale factor (2 = a Retina screen) for every driver
+ *   UI_SUITE_DPR=<1..4, or 1.25, 1.5>     force the device scale factor (2 = a Retina screen, 1.25 and 1.5 = a Windows laptop at 125 % and 150 %) for every driver
  *   UI_SUITE_JOBS=<n>                     drivers at once (default 2; each has its own profile and, on Linux, its own xvfb display);
  *                                         an entry with `focus: true` (waits on the OS window focus) runs alone, after the others, when windows share a desktop (FR-210)
  *   UI_SUITE_RETRY=1                      run each failed driver once more, alone, at the end; a pass then is reported as FLAKY
@@ -330,6 +330,9 @@ function guardTree(child, { proc = process, kill = killTree, cleanup = () => {} 
   return release;
 }
 
+/** The device scale factors a run may force: whole 1..4, and Windows' 125 % and 150 % (spec 102 T204, #1403). Anything else is ignored. */
+const dprOk = (v) => /^([1-4]|1\.25|1\.5)$/.test(String(v));
+
 /**
  * Run one driver. Opt-in for unattended callers (spec 008 FR-175, FR-176; scripts/release-video.js): `d.baseEnv` replaces
  * `process.env` as the base of the child's environment (an allow-list, so no token reaches Electron), `d.timeoutMs` replaces the
@@ -345,7 +348,7 @@ function runOne(d, outDir, { launch } = {}) {
   if (d.freeze === false) delete env.DURBAR_SIM_FREEZE; // a driver that needs the live simulator (spec 001 FR-082: shots-docs.js)
   for (const v of OUT_VARS) env[v] = outDir;
   const dpr = String(d.dpr || process.env.UI_SUITE_DPR || ''); // d.dpr: a driver that always records at that density (release-video: sharp zooms)
-  const argv = [ROOT, '--no-sandbox', ...(/^[1-4]$/.test(dpr) ? ['--force-device-scale-factor=' + dpr] : [])]; // UI_SUITE_DPR=2: a high-density screen (a Retina Mac) on any OS
+  const argv = [ROOT, '--no-sandbox', ...(dprOk(dpr) ? ['--force-device-scale-factor=' + dpr] : [])]; // UI_SUITE_DPR=2: a high-density screen (a Retina Mac) on any OS
   const useXvfb = !sharedDesktop(); // UI_SUITE_XVFB=1: keep windows off a desktop
   const [file, list] = launch ? launch : useXvfb ? ['xvfb-run', ['-a', electron, ...argv]] : [electron, argv];
   return new Promise((resolve) => {
@@ -430,5 +433,5 @@ async function main({ ensure = ensureElectron, run = runOne, argv, shared = shar
   if (failed.length) process.exitCode = 1;
 }
 
-module.exports = { sharedDesktop, syntaxErrors, main, runOne, killTree, guardTree, shard, DRIVERS, NOT_IN_SUITE }; // runOne: also spec 001 FR-082 (scripts/shots-docs.js)
+module.exports = { dprOk, sharedDesktop, syntaxErrors, main, runOne, killTree, guardTree, shard, DRIVERS, NOT_IN_SUITE }; // runOne: also spec 001 FR-082 (scripts/shots-docs.js)
 if (require.main === module) main().catch((e) => { console.error('ui-suite:', e.message); process.exitCode = 1; });
