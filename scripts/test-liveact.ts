@@ -553,6 +553,14 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
     // a mask that hides a token only after `echo ` (context, as a secret name does): no run alone is hidden, the unescaped copy is
     eq(ST.maskLabel('echo ' + E, 'run', { ...mask, cmd: (s: string) => s.replace(/echo ghp_\w+/, 'echo [redacted]') }), '', 'the unescaped copy still holding a secret gives an empty label (fail closed)');
     eq(ST.maskLabel('echo ' + E, 'run', { ...mask, cmd: () => '' }), '', 'a mask that gives nothing: empty label');
+    // an environment secret is hidden as `[redacted:NAME]` (the activity log's redact): the marker count must read that form too (invented value)
+    const ENV = { MY_API_KEY: 'zq7_Fake_Value_9x8w7v6u5' }, EV = ENV.MY_API_KEY.replace(/_/g, '\\_');
+    const em = { redact: (s: string) => redact(s, ENV), cmd: (s: string) => maskSecretCommand(s, ENV), url: (s: string) => maskSecretUrl(s, ENV) };
+    ok(redact('x ' + ENV.MY_API_KEY, ENV) === 'x [redacted:MY_API_KEY]', 'the env mask names the secret (the baseline)');
+    eq(ST.maskLabel('echo ' + EV, 'run', em), 'echo [redacted]', 'an env secret with escapes is hidden (run)');
+    eq(ST.maskLabel('send ' + EV, 'other', em), 'send [redacted]', 'an env secret with escapes is hidden (other)');
+    eq(L.permText('run echo ' + EV, 'shell', em), { text: 'run echo [redacted]', hidden: true, why: 'secret' }, 'an env secret with escapes is hidden on the card (shell)');
+    eq(L.permText('send ' + EV, 'other', em), { text: 'send [redacted]', hidden: true, why: 'secret' }, 'an env secret with escapes is hidden on the card (other)');
   }
   // the page: every permission surface calls the one function; keys, ids and scopes stay raw
   const app = fs.readFileSync(path.join(R, 'app.js'), 'utf8').replace(/\r\n/g, '\n');
