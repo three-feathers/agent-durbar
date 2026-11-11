@@ -4415,7 +4415,7 @@ function closeInbox(dismiss){if($('needsPanel'))closeDoor(dismiss===true);clearI
 /* spec 052 FR-034: one polite live region for requests and answers (screen readers hear them; nothing visible changes) */
 let announceT=0,announceP=0;
 const ANN_REQUEST=1; /* spec 005 FR-237: a request for the user's OK or an answer outranks a status within the 60 ms window */
-/* spec 012 FR-178 (issue #1419): every line goes through the helpers' mask here, the one place all announcements pass: home folders on the raw
+/* spec 012 FR-178 (issue 1419): every line goes through the helpers' mask here, the one place all announcements pass: home folders on the raw
    text first, then the desk mask, before the cut (an agent or folder name can hold a token or a home folder). Fails closed: nothing is said. */
 function annMask(t){try{const m=helperMask(String(t));return typeof m==='string'?m:'';}catch(e){return '';}}
 function announce(text,prio){const el=$('srAnnounce');if(!el||!text)return;const said=annMask(text);if(!said)return;const p=prio||0;if(announceT&&p<announceP)return;clearTimeout(announceT);announceP=p;el.textContent='';announceT=setTimeout(()=>{announceT=0;announceP=0;el.textContent=said.slice(0,300);},60);}
