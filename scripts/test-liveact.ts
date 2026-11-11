@@ -601,6 +601,24 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
     const grep = "run grep -E '" + Array.from({ length: 65 }, (_, i) => 'host' + i + '\\.example\\.com').join('|') + "' access.log";
     const gr = L.permText(grep, 'shell', hm);
     eq(gr, { text: grep, hidden: false }, 'a grep -E with 65 escaped alternatives keeps its text and Allow');
+    // round 4: the cap boundary. Exactly 10,000 characters (permText's own cut) with 100 distinct escaped runs is checked whole; 10,001 is the capped case
+    const fill = (pre: string, n: number) => { const h = pre + Array.from({ length: 100 }, (_, i) => 'item' + i + '\\.v').join(' ') + ' '; return h + 'z'.repeat(n - h.length); };
+    for (const [kind, pre] of [['other', 'send '], ['run', 'echo ']] as const) {
+      const at = fill(pre, 10_000), over = fill(pre, 10_001);
+      ok(at.length === 10_000 && over.length === 10_001, kind + ': the boundary labels are 10,000 and 10,001 characters');
+      eq(ST.maskLabel(at, kind, mask), at, kind + ': a 10,000-character label with 100 escaped runs is checked whole and kept');
+      eq(ST.maskLabel(over, kind, mask), '', kind + ': a 10,001-character label with more than 64 escaped runs is the capped case (empty label)');
+    }
+    {
+      const o = fill('send ', 10_000), t = fill('mcp srv › ', 10_000), r = fill('run echo ', 10_000);
+      eq(L.permText(o, 'other', hm), { text: o, hidden: false }, 'an exactly 10,000-character other card with 100 escaped runs keeps its text and Allow');
+      const tc = L.permText(t, 'tool', hm), rc = L.permText(r, 'shell', hm);
+      // the tool kind shows each word through toolName first, which turns any word the mask (escapes undone) changes into `tool`: masked, not blind
+      ok(!BLIND.includes(String(tc.why)) && tc.why === 'secret' && /^mcp srv › tool tool /.test(tc.text), 'an exactly 10,000-character tool card keeps Allow (escaped words read tool): ' + tc.why);
+      eq(rc, { text: r, hidden: false }, 'an exactly 10,000-character shell card with 100 escaped runs keeps its text and Allow');
+      // 10,001 characters: permText cuts at a word first (why cut: blind, as for any text over the cut), so the label cap is never what blinds a card
+      for (const [k, x] of [['other', fill('send ', 10_001)], ['tool', fill('mcp srv › ', 10_001)], ['shell', fill('run echo ', 10_001)]] as const) eq(L.permText(x, k, hm).why, 'cut', k + ': a 10,001-character card is cut by permText');
+    }
   }
   // the page: every permission surface calls the one function; keys, ids and scopes stay raw
   const app = fs.readFileSync(path.join(R, 'app.js'), 'utf8').replace(/\r\n/g, '\n');
