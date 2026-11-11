@@ -285,9 +285,31 @@ if (part === 'hashtable') {
     `try{const {_uncappedForTest:u}=require(w.mod);const go=(x)=>[()=>u.maskSecretArgs([x]),()=>u.maskSecretArgs(['pwsh','-c',x]),()=>u.maskSecretArgs(x.split(' ')),()=>u.maskSecretCommand(x),()=>u.maskSecretCommand('pwsh -c '+JSON.stringify(x))][w.path]();go(w.input.slice(0,5000));const tc=typeof process.threadCpuUsage==='function';const reps=w.reps||1;const w0=process.hrtime.bigint(),c0=tc?process.threadCpuUsage():null;for(let i=0;i<reps;i++)go(w.input);const wall=Number(process.hrtime.bigint()-w0)/1e6/reps;let cpu=wall;if(tc){const d=process.threadCpuUsage(c0);cpu=(d.user+d.system)/1000/reps}out[0]=cpu;out[1]=wall;Atomics.store(flag,0,1)}` +
     `catch(e){Atomics.store(flag,0,2)}Atomics.notify(flag,0)`;
   const cases = Object.entries(adv).flatMap(([k2, v2]) => (/\s/.test(v2) ? [] : [[k2, v2, 0]]).concat([0, 1, 2, 3, 4].map((i) => [k2 + '-50k', v2.slice(0, 50_000), i])) as Array<[string, string, number]>);
+  // a try that fails times the 1/16 baseline as 16 runs (T138 delta 2026-11-11)
+  const r12Grow = (k: string, src: string, v: string, pi: number): void => assertLinearGrowth(k, (input, reps) => workerRun(k, src, { mod, input, path: pi, reps }, 60000), v, 100, 1, undefined, 16);
   for (const [k0, v, pi] of cases) {
     const k = `R12 adversarial ${k0} (path ${pi})`;
-    assertLinearGrowth(k, (input, reps) => workerRun(k, code, { mod, input, path: pi, reps }, 60000), v, 100, 1, undefined, 16); // a try that fails times the 1/16 baseline as 16 runs (T138 delta 2026-11-11)
+    r12Grow(k, code, v, pi);
+  }
+  // spec 012 T160: the R12 worker's own checks, with a worker whose masking is a timed busy loop (no timers faked: the worker reads its own clock).
+  // (1) `reps` runs one timing and gives the mean per run: 16 runs of 20 ms read about 20 ms, not 1.3 (no loop) and not 320 (no division);
+  // (2) the retry baseline is used: a worker that does no work for a one-run baseline of the short input (as a Windows tick can read) fails the first try,
+  // and passes only when the retry baseline runs 16 times; a quadratic cost still fails.
+  {
+    const wrap = 'const {_uncappedForTest:u}=require(w.mod);';
+    assert.ok(code.includes(wrap), 'R12 mutants apply to the worker source');
+    const busy = (body: string): string => code.replace(wrap, `const {_uncappedForTest:u0}=require(w.mod);const busy=(ms)=>{const t=process.hrtime.bigint();while(Number(process.hrtime.bigint()-t)/1e6<ms);};const u={maskSecretArgs:(a)=>{${body};return u0.maskSecretArgs(a)}};`);
+    const fixed = busy('busy(20)');
+    const cpuOf = (reps: number): number => Math.min(...[0, 1, 2].map(() => workerRun('R12 reps', fixed, { mod, input: 'x'.repeat(5000), path: 0, reps }, 60000).cpu));
+    const one = cpuOf(1);
+    const sixteen = cpuOf(16);
+    assert.ok(one > 15 && one < 60 && sixteen > 15 && sixteen < 60, `R12 worker: reps=1 reads ${one.toFixed(1)} ms and reps=16 reads ${sixteen.toFixed(1)} ms for a 20 ms run each (mean per run expected)`);
+    const input = 'x'.repeat(192_000);
+    const worst = { ...worstGrowth };
+    // linear, 0.7 ms per 1000 characters, but nothing for one run of the short input
+    r12Grow('R12 mutant linear, one-run baseline reads 0', busy('if(w.reps===1&&a[0].length<100000)return u0.maskSecretArgs(a);busy(a[0].length*0.0007)'), input, 0);
+    assert.throws(() => r12Grow('R12 mutant quadratic', busy('busy(a[0].length*a[0].length*8e-9)'), input, 0), /R12 mutant quadratic: .* \(ratio \d/);
+    Object.assign(worstGrowth, worst);
   }
 }
 
