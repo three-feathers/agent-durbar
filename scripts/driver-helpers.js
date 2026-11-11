@@ -112,6 +112,9 @@ function failDriver(message) {
  * The helpers every driver used to define for itself (FR-097). `H = helpers(ctx)`; it also carries `until`, `settle`, `office`, `chatOf`.
  * Values spliced into page code go through jsLiteral.
  */
+const DRIVER_WORLD = process.env.DRIVER_WORLD || ''; // spec 102 T283: `retro` runs a driver's Real office loads in the arcade
+if (DRIVER_WORLD && DRIVER_WORLD !== 'retro') throw new Error('DRIVER_WORLD must be retro');
+const assert = require('assert');
 function helpers(ctx) {
   const w = waits(ctx);
   const closeGuard = guardWindow(ctx.win);
@@ -209,6 +212,8 @@ function helpers(ctx) {
     try { clock = new URL(wc().getURL()).searchParams.get('simclock'); } catch { clock = null; }
     const query = { sim: '15', simfreeze: '1', ...(clock && /^\d{1,15}$/.test(clock) ? { simclock: clock } : {}), ...(o.fastVisits ? { simvisits: 'fast' } : {}), ...(o.query || {}) };
     for (const k of Object.keys(query)) if (query[k] === undefined) delete query[k];
+    const arcade = DRIVER_WORLD === 'retro' && query.officeview === 'real'; // spec 102 T283: the Real office loads draw the arcade
+    if (arcade) Object.assign(query, { worldflags: 'retro', world: 'retro' });
     await ctx.win.loadFile(o.index || INDEX, { query });
     // spec 092: with `simfloors=1` (the 15 agents spread over three floors on) the office shows one floor, so the default "15 desks" would only be met by its timeout
     const ready = o.ready === 'fit' ? `document.getElementById('stage')&&document.getElementById('stage').dataset.fit` : o.ready || `document.querySelectorAll('#stage .desk[data-id]').length>=${query.simfloors === '1' ? 1 : 15}`;
@@ -217,6 +222,7 @@ function helpers(ctx) {
     // instead of letting `settle` find it by sampling 200 ms apart (a load used to spend 0.5-1 s there). `settle` still runs after it, so nothing is skipped.
     if (query.simfreeze === '1' && !o.index && o.settle !== false) await w.until(`!!window.__durbarSimReplayed&&!!window.__durbarSimUi&&window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()&&!document.querySelector('.scene-out')`, 4000);
     if (o.settle !== false) await w.settle();
+    if (arcade) assert.ok(await w.until(`!!document.querySelector('#stage .ro[data-world="retro"]')`, 5000), 'DRIVER_WORLD=retro: the arcade is not drawn (a pass here would be the Photo office)');
     if (o.focus) wc().focus();
   };
   /**
