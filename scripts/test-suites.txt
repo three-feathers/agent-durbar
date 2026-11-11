@@ -178,6 +178,7 @@ test:shutters
 test:unread
 test:tooltip
 test:simclock
+test:pointer-log
 test:labelsbackfill
 test:claim
 test:prgatenotes
