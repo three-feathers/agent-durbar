@@ -171,7 +171,7 @@ const DRIVERS = [
   { name: 'shots-097-moments', label: 'shots-097-moments cave', env: { MOMENTS_WORLDS: 'cave' } }, // the same nine moments in the Prehistoric cave (its flag is the simulator's page address)
   { name: 'shots-097-moments', label: 'shots-097-moments retro', env: { MOMENTS_WORLDS: 'retro' } }, // spec 102 FR-264: the same nine moments in the Retro arcade (its flag is the simulator's page address)
   { name: 'shots-097-chat' }, // spec 097 FR-106 (T120): the chat in the world: desk-side column, portrait, lamp words, surface and contrast, card tails
-  { name: 'shots-097-chat', label: 'shots-097-chat retro', env: { MOMENTS_WORLDS: 'retro' } }, // spec 102 T221: the arcade's chat at three sizes: marquee name, the cards dark (4.5:1, deep), tab order as flat's
+  { name: 'shots-097-chat', label: 'shots-097-chat retro', env: { MOMENTS_WORLDS: 'retro' } }, // spec 102 T221: the arcade's chat at three sizes: the name plain on the header (T305), the cards dark (4.5:1, deep), tab order as flat's
   { name: 'check-097-chat-look' }, // spec 097 (#1140, T195): every chat, main or helper, has the same world look and follows the Office layout setting while open
   { name: 'check-097-chat-look', label: 'check-097-chat-look retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 T283 (issue #1399): the same driver in the arcade
   { name: 'check-097-chat-contrast' }, // spec 097 (#1146, T197): chat text, links, code chips and header text against the real pixels behind them, both sizes; header text inside the window

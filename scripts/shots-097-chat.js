@@ -12,7 +12,7 @@
  *   - the panel surface is under 78 % opaque, or any text pair (title, lamp words, cards, hint) is under 4.5:1 against the composited surface (3:1 for large text);
  *   - text under 10.5 px;
  *   - (spec 102 RA6, T221, `retro`) a pending permission card of a waiting agent is not dark, or any text of any card of the chat (title, paragraphs, summary, buttons) is under 4.5:1 (3:1 large);
- *     the header's name is not on the marquee (a fill, the mark's yellow); the tab order differs from the flat office's for the same agent;
+ *     the header's name is not the mark's yellow, mono, or has a fill, picture, outline or shadow of its own (itself or a part inside it), or the most common colour behind it is not the header's rgb(23, 20, 43) (spec 102 T305; it was a marquee before); the tab order differs from the flat office's for the same agent;
  *   - (#1144, FR-245) with Retro Pixel picked as the theme, a header button (.btn) in the Photo office has an offset box-shadow (the arcade's hard 3px shadow); the theme comes back after.
  * Screenshots: <SHOTS_OUT>/<world>-chat-<w>x<h>.png, <world>-chatlimit-<w>x<h>.png.
  */
@@ -78,11 +78,28 @@ module.exports = async (ctx) => {
     const tabsReal = await tabOrder();
     await shot(world, 'chat', w, h);
     if (world === 'retro') {
-      /* spec 102 T221: the name on the marquee; every text of the cards, deep, 4.5:1; a waiting agent's permission card is dark */
-      const mq = await js(`(()=>{const t=document.getElementById('panelTitle'),c=getComputedStyle(t);return {bg:c.backgroundColor,img:c.backgroundImage,outline:c.outlineStyle+' '+c.outlineWidth,ink:c.color,px:parseFloat(c.fontSize),font:c.fontFamily}})()`);
+      /* spec 102 T221, T305: the name in the mark's yellow and mono, on the panel (the marquee's fill and outline went; see the 2026-11-09 delta of spec 102); every text of the cards, deep, 4.5:1; a waiting agent's permission card is dark */
+      /* The title is focused when a chat opens with no usable message box (spec 052 FR-239; tabindex -1), and a focus ring is the UA's `auto`, never a painted block. So read it twice:
+         as found (a ring of style `auto` is allowed, a `solid` outline is not) and again after a blur, when there must be no outline at all. */
+      const mqJs = `(()=>{const t=document.getElementById('panelTitle'),c=getComputedStyle(t),kids=[...t.querySelectorAll('*')].map(k=>{const s=getComputedStyle(k);return {tag:k.tagName,bg:s.backgroundColor,img:s.backgroundImage,sh:s.boxShadow,ol:s.outlineStyle+' '+s.outlineWidth}});return {focused:document.activeElement===t,bg:c.backgroundColor,img:c.backgroundImage,sh:c.boxShadow,outline:c.outlineStyle+' '+c.outlineWidth,kids,ink:c.color,px:parseFloat(c.fontSize),font:c.fontFamily}})()`;
+      const mq0 = await js(mqJs);
+      assert.ok(!/^solid/.test(mq0.outline), `${tag}: the header's name (focused: ${mq0.focused}) has no solid outline as found: ${mq0.outline}`);
+      await js(`document.getElementById('panelTitle').blur()`);
+      const mq = await js(mqJs);
       assert.ok(mq.ink === 'rgb(255, 236, 39)' && /mono/i.test(mq.font) && mq.px >= 10.5, `${tag}: the header's name is the mark's yellow, mono: ${JSON.stringify(mq)}`);
       /* issue #1429 (T305): no black rectangle behind the name: its own fill is none, so it shows the panel's surface (a fill of the bar's black did not match it) */
-      assert.ok(mq.bg === 'rgba(0, 0, 0, 0)' && mq.img === 'none' && /^none/.test(mq.outline), `${tag}: the header's name has no fill of its own, so it sits on the panel's colour: ${JSON.stringify(mq)}`);
+      assert.ok(mq.bg === 'rgba(0, 0, 0, 0)' && mq.img === 'none' && /^none/.test(mq.outline), `${tag}: the header's name has no fill, picture or outline of its own, so it sits on the panel's colour: ${JSON.stringify(mq)}`);
+      /* a shadow spread past the text paints the same block as a fill does, and so does a fill on a child */
+      assert.strictEqual(mq.sh, 'none', `${tag}: the header's name has no box-shadow (a spread shadow is a black block too): ${mq.sh}`);
+      assert.deepStrictEqual(mq.kids.filter((k) => k.bg !== 'rgba(0, 0, 0, 0)' || k.img !== 'none' || k.sh !== 'none' || !/^none/.test(k.ol)), [], `${tag}: no part inside the header's name has a fill, picture, shadow or outline`);
+      /* the pixels: the most common colour in the name's box (plus 6 px around it) is the header's own, not black (what the eye saw; catches any other way of painting the block) */
+      const tr = await js(`(()=>{const r=document.getElementById('panelTitle').getBoundingClientRect(),p=6;return {x:Math.max(0,Math.floor(r.left-p)),y:Math.max(0,Math.floor(r.top-p)),width:Math.ceil(r.width+2*p),height:Math.ceil(r.height+2*p),vw:innerWidth}})()`);
+      const cap = await ctx.win.webContents.capturePage({ x: tr.x, y: tr.y, width: tr.width, height: tr.height });
+      const cs = cap.getSize(), bm = cap.toBitmap(), count = new Map();
+      for (let i = 0; i + 3 < bm.length; i += 4) { const k = (bm[i + 2] >> 2) + ',' + (bm[i + 1] >> 2) + ',' + (bm[i] >> 2); count.set(k, (count.get(k) || 0) + 1); } /* BGRA, 6 bits a channel */
+      const top = [...count.entries()].sort((a, b) => b[1] - a[1])[0], mode = top[0].split(',').map((v) => v * 4 + 2);
+      const near = (a, b) => Math.abs(a - b) <= 6;
+      assert.ok(near(mode[0], 23) && near(mode[1], 20) && near(mode[2], 43), `${tag}: the most common colour behind the header's name is the header's rgb(23, 20, 43), not black: rgb(${mode.join(', ')}) in ${count.size} colours, ${Math.round((100 * top[1]) / (bm.length / 4))} % of ${cs.width}x${cs.height}`);
       const deep = await js(CONTRAST_OF(true));
       assert.deepStrictEqual(deep.bad, [], `${tag}: contrast of ${deep.n} text elements of the header and the cards (deep)`);
       await js(`document.getElementById('backBtn').click()`);
