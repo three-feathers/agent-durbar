@@ -262,7 +262,7 @@ void (async () => {
     const t = mk('win32', ['C:\\Program Files\\nodejs\\npm.cmd']);
     assert.ok(t.setup.run('codex', 'install').ok);
     assert.strictEqual(t.calls[0].file, 'C:\\Windows\\System32\\cmd.exe');
-    assert.deepStrictEqual(t.calls[0].args, ['/d', '/s', '/c', '"C:\\Program Files\\nodejs\\npm.cmd" install -g @openai/codex']);
+    assert.deepStrictEqual(t.calls[0].args, ['/d', '/s', '/c', '""C:\\Program Files\\nodejs\\npm.cmd" install -g @openai/codex"'], 'spec 009 FR-029: an outer pair for /s, so the space in Program Files survives');
     assert.strictEqual(t.calls[0].opts.windowsVerbatimArguments, true);
     assert.strictEqual(t.calls[0].opts.detached, false);
     const u = mk('win32', ['C:\\a&b\\npm.cmd']);

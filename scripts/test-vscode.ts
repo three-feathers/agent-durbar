@@ -38,6 +38,10 @@ const cmd = `${local}\\Programs\\Microsoft VS Code\\bin\\code.cmd`;
 p = planVSCodeLaunch('C:\\ok\\proj', env('win32', [cmd], { LOCALAPPDATA: local, ComSpec: 'C:\\Windows\\System32\\cmd.exe' }, 'C:\\Users\\a'));
 assert.strictEqual(p?.command, 'C:\\Windows\\System32\\cmd.exe');
 assert.deepStrictEqual(p?.args.slice(0, 3), ['/d', '/s', '/c']);
+// spec 009 FR-029: the /c line has one outer pair for /s, so the spaces in "Microsoft VS Code" and in the target survive
+assert.deepStrictEqual(p?.args, ['/d', '/s', '/c', `""${cmd}" C:\\ok\\proj"`]);
+p = planVSCodeLaunch('C:\\my work\\proj', env('win32', [cmd], { LOCALAPPDATA: local }, 'C:\\Users\\a'));
+assert.deepStrictEqual(p?.args, ['/d', '/s', '/c', `""${cmd}" "C:\\my work\\proj""`], 'a target with a space keeps its own quotes');
 for (const bad of ['C:\\a & calc', 'C:\\a"b', 'C:\\%PATH%', 'C:\\a|b', 'C:\\a^b']) {
   assert.strictEqual(planVSCodeLaunch(bad, env('win32', [cmd], { LOCALAPPDATA: local }, 'C:\\Users\\a')), undefined, bad);
 }

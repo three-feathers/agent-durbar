@@ -2,7 +2,7 @@ import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { pathDirs } from '../shared/pathdirs';
-import { CMD_UNSAFE, windowsCmd } from '../shared/wincmd';
+import { cmdShimArgs, windowsCmd } from '../shared/wincmd';
 
 export interface LaunchPlan {
   command: string;
@@ -123,9 +123,9 @@ export function planEdition(ed: Edition, target: string, e: LaunchEnv): LaunchPl
 
 /** Last resort on Windows: run code.cmd through cmd.exe, only when nothing in the arguments can be interpreted. */
 function planCmd(cmdFile: string, target: string, e: LaunchEnv): LaunchPlan | undefined {
-  if (CMD_UNSAFE.test(target) || CMD_UNSAFE.test(cmdFile)) return undefined;
-  const comspec = windowsCmd(e.env); // spec 045 FR-003
-  return { command: comspec, args: ['/d', '/s', '/c', `"${cmdFile}" "${target}"`], via: cmdFile };
+  const args = cmdShimArgs(cmdFile, [target]); // spec 009 FR-029: the one quoting helper; undefined for a CMD_UNSAFE character
+  if (!args) return undefined;
+  return { command: windowsCmd(e.env), args, via: cmdFile }; // spec 045 FR-003
 }
 
 export type OpenResult = { ok: boolean; error?: string; edition?: string; note?: string };

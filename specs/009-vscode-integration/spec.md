@@ -66,6 +66,7 @@ In **Previous sessions**, "VS Code chat history" lists chats VS Code saved for t
 - **FR-012** `[KNOWN GAP]` That sessions this app creates appear in VS Code's session list (with the "External" filter) is **documented by VS Code, not verified** end to end (no signed-in VS Code on the box). The README says so. Pushing our session into the VS Code *Local* chat view is not possible.
 - **FR-013** `[KNOWN GAP]` `code` is not launched with `--reuse-window`/`--new-window` choices; VS Code's own default applies. `read:`
 - **FR-014** `[KNOWN GAP]` The real `spawn` of VS Code on macOS and Windows was never run by a person; only plan construction is tested. (Task T022.)
+- **FR-029** `[IMPLEMENTED]` test: The Windows `.cmd` route (`cmd.exe /d /s /c`) gets its argument list from the one helper `cmdShimArgs` (`src/shared/wincmd.ts`): the line in an outer pair of quotes for `/s`, refused for a `CMD_UNSAFE` character. Used by `planCmd`, `execFound` and harness setup (*Changes*, 2026-11-11). `[KNOWN GAP]` not run on Windows by the author; Windows CI is the proof.
 
 ### Key Entities
 
@@ -83,6 +84,14 @@ In **Previous sessions**, "VS Code chat history" lists chats VS Code saved for t
 - VS Code's chat storage layout is as described in the file header of `vscodeChat.ts` and may change.
 
 ## Changes
+
+### 2026-11-11: the `cmd.exe /d /s /c` line gets its outer pair of quotes; one helper for all three routes (issue #1525, FR-029, T031)
+
+*Found* (pre-review of #1523, read from the code): the `.cmd` route built `cmd.exe /d /s /c "<shim>" "<target>"` with no outer pair of quotes. With `/s`, cmd.exe removes the first and the last quote on the line after `/c` and runs the rest as written, which leaves `<shim>" "<target>`: a shim under `...\Microsoft VS Code\bin\code.cmd` would run `...\Microsoft`. Node's own `shell: true` (cmd.exe as the shell) builds `/d /s /c "<whole line>"` with `windowsVerbatimArguments` for this reason. The same line was built in three places: `planCmd` (`src/main/vscode.ts`, Open in VS Code), `execFound` (`src/adapters/detect.ts`, version and sign-in probes, update checks) and the harness setup job (`src/main/harnesssetup.ts`, `npm.cmd` install and update). It always failed closed (a `CMD_UNSAFE` character was already refused), and it is rare (FR-002 prefers `Code.exe` next to `code.cmd`), but npm's own shim sits under `C:\Program Files\nodejs` by default.
+
+- FR-029 `[IMPLEMENTED]` `test:` One helper, `cmdShimArgs(file, args)` in the existing `src/shared/wincmd.ts` (spec 021 FR-031: an existing capability reused, no second copy), builds the whole argument list `['/d', '/s', '/c', '""<shim>" arg …"']`: the shim always in its own quotes, an argument in quotes only when it holds white space (or is empty), and the whole line in one outer pair for `/s` to remove. It returns nothing (the route is refused) when the shim is empty or the shim or any argument has a `CMD_UNSAFE` character, so the old refusals stay, now in the helper. All three routes use it and none builds a `/c` line of its own; harness setup still refuses white space in an argument as before. `execFound` answers an unsafe line with `errorCode: 'EUNSAFE'` without starting anything.
+- `test:` `npm run test:security` (`scripts/test-wincmd.ts`, on every OS): the exact line for a shim and a target with spaces, the line after `/s` removes its pair (modelled), plain and empty arguments, every `CMD_UNSAFE` character in the shim and in an argument, and a source check that the three files call the helper and build no `/c` line themselves; `test:vscode`, `test:detect` (in `test:runtime-core`) and `test:harnesssetup` expect the new lines. Windows only (`process.platform === 'win32'`): a fake `echo args.cmd` in a temp folder with spaces is run through the real route (`execFound` with the real exec) with a target path with spaces, and must print that path as its first argument; elsewhere the test prints `windows-only case skipped: not win32`. A mutant of the helper without the outer pair is killed by the every-OS unit test.
+- `[KNOWN GAP]` Not run on Windows by the author (macOS only); the Windows CI job of `npm test` is the only run of the real `cmd.exe` case. The detached VS Code launch (`spawnPlan`) is not run for real anywhere (FR-014); it gets the same argument list from the helper.
 
 ### 2026-11-03: pre-review of #976: the fall-through, the resolved path, honest texts (FR-021..FR-027, T029)
 
