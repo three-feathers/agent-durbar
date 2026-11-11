@@ -14,6 +14,7 @@ const LIMITS = {
   readsPerStatus: 110, // T156, PROPOSED: measured 98 at 15 agents and 86 at 40 (650 and 998 before); the floor is the checks a status change needs
   readsPerLivePaint: 1, // review of #1138: one live paint reads its line's height once (measured 1 at 15 and 40 agents); the pencils' names only when it changed
   searchesAtStart: 1, // T157, FR-363: owner decision 2026-11-11 (issue #1238): one layout search at start (the simulator gate)
+  /* the two @late rows equal `searchesAtStart` and are kept only to document that the forced-late loads (which fail every time without the gate) are held to the same one search */
   'searchesAtStart@late15': 1, // T303, FR-363: the replay's first states arrive 50 ms late (`simlate=50`): still one search
   'searchesAtStart@late40': 1,
   'probesAtStart@15': 20, // T157, owner decision 2026-11-11: measured 18
