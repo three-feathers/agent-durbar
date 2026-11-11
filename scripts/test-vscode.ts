@@ -80,7 +80,14 @@ assert.deepStrictEqual([p?.edition, p?.command], ['VSCodium', '/Users/a/Applicat
 for (const ok of ['C:\\proj', 'c:/proj', 'D:\\', '\\\\srv\\share', '\\\\srv\\share\\p', '\\\\?\\C:\\p', '\\\\?\\c:\\', '\\\\?\\UNC\\srv\\share', '\\\\?\\unc\\srv\\share\\p', '\\\\srv/share']) assert.strictEqual(isWindowsTarget(ok), true, ok);
 for (const bad of ['/some-switch', '\\proj', '/proj', '//srv/share', '\\\\srv', '\\\\srv\\', 'C:proj', 'C:', '-x', '--x', 'proj', '1:\\p', '',
   // device and other \\?\ forms are no folder (pre-review of #1523)
-  '\\\\.\\C:\\p', '\\\\.\\pipe\\x', '\\\\.\\PhysicalDrive0', '\\\\?\\GLOBALROOT\\Device\\x', '\\\\?\\x', '\\\\?\\C:', '\\\\?\\C:/p', '\\\\?\\UNC\\srv', '\\\\?\\UNC\\.\\x', '\\\\?/C:\\p', '\\\\..\\x', '\\\\a?b\\c']) assert.strictEqual(isWindowsTarget(bad), false, bad);
+  '\\\\.\\C:\\p', '\\\\.\\pipe\\x', '\\\\.\\PhysicalDrive0', '\\\\?\\GLOBALROOT\\Device\\x', '\\\\?\\x', '\\\\?\\C:', '\\\\?\\C:/p', '\\\\?\\UNC\\srv', '\\\\?\\UNC\\.\\x', '\\\\?/C:\\p', '\\\\..\\x', '\\\\a?b\\c',
+  // pipe and mailslot shares, a redirector prefix and DOS device names in any component (review of #1523)
+  '\\\\localhost\\pipe\\x', '\\\\127.0.0.1\\pipe\\x', '\\\\?\\UNC\\localhost\\pipe\\x', '\\\\srv\\MAILSLOT\\x', '\\\\*\\mailslot\\x', '\\\\a*b\\c',
+  '\\\\;LanmanRedirector\\srv\\share', '\\\\?\\UNC\\;x\\share', 'C:\\NUL', 'C:\\x\\COM1', 'c:\\nul.txt', 'C:\\AUX .x', 'C:\\CON.', 'C:\\x\\LPT\u00b9', 'C:\\conout$', '\\\\?\\C:\\PRN', '\\\\srv\\share\\com9.log',
+]) assert.strictEqual(isWindowsTarget(bad), false, bad);
+// names that only start like a device or a pipe share are folders
+for (const ok of ['C:\\console', 'C:\\CON1', 'C:\\COM10', 'C:\\x\\nullable.txt', 'C:\\CON foo', '\\\\srv\\pipes', '\\\\pipe\\share', '\\\\srv\\share\\pipe']) assert.strictEqual(isWindowsTarget(ok), true, ok);
+process.exitCode = 1; // a promise that never settles must not pass (checklist); 0 only after the OK line
 {
   const local = 'C:\\Users\\a\\AppData\\Local';
   const exe = `${local}\\Programs\\Microsoft VS Code\\Code.exe`;
@@ -88,6 +95,10 @@ for (const bad of ['/some-switch', '\\proj', '/proj', '//srv/share', '\\\\srv', 
   assert.strictEqual(planVSCodeLaunch('C:\\p', env('win32', [exe], { LOCALAPPDATA: local }, 'C:\\Users\\a'))?.verbatim, undefined, 'Code.exe plan is not verbatim');
   assert.strictEqual(planVSCodeLaunch('C:\\p', env('win32', [cmd], { LOCALAPPDATA: local }, 'C:\\Users\\a'))?.verbatim, true, 'the cmd.exe plan says verbatim');
   assert.strictEqual(planVSCodeLaunch('/x', env('linux', ['/usr/bin/code'], { PATH: '/usr/bin' }, '/home/a'))?.verbatim, undefined);
+  // the cmd.exe route quotes the target: a trailing backslash (a drive root) is doubled so it does not escape the closing quote
+  for (const [t, q] of [['C:\\', 'C:\\\\'], ['\\\\srv\\share\\p\\', '\\\\srv\\share\\p\\\\'], ['C:\\p', 'C:\\p']]) {
+    assert.strictEqual(planVSCodeLaunch(t, env('win32', [cmd], { LOCALAPPDATA: local }, 'C:\\Users\\a'))?.args[3], `"${cmd}" "${q}"`, 'drive root on the cmd.exe route: ' + t);
+  }
 
   type Seen = { cmd: string; args: readonly string[]; opts: Record<string, unknown> };
   let seen: Seen[] = [];
@@ -142,5 +153,6 @@ for (const bad of ['/some-switch', '\\proj', '/proj', '//srv/share', '\\\\srv', 
     assert.strictEqual((src.match(/windowsVerbatimArguments:/g) ?? []).length, 1);
     assert.ok(/windowsVerbatimArguments: platform === 'win32' && plan\.verbatim === true/.test(src));
     console.log('vscode launcher: all checks passed');
+    process.exitCode = 0;
   })().catch((e) => { console.error(e); process.exit(1); });
 }

@@ -127,7 +127,9 @@ export function planEdition(ed: Edition, target: string, e: LaunchEnv): LaunchPl
 function planCmd(cmdFile: string, target: string, e: LaunchEnv): LaunchPlan | undefined {
   if (CMD_UNSAFE.test(target) || CMD_UNSAFE.test(cmdFile)) return undefined;
   const comspec = windowsCmd(e.env); // spec 045 FR-003
-  return { command: comspec, args: ['/d', '/s', '/c', `"${cmdFile}" "${target}"`], via: cmdFile, verbatim: true };
+  // a quoted argument ending in backslashes (a drive root C:\) would escape its closing quote for Code.exe's argv parser: double them (FR-028)
+  const quoted = target.replace(/(\\+)$/, '$1$1');
+  return { command: comspec, args: ['/d', '/s', '/c', `"${cmdFile}" "${quoted}"`], via: cmdFile, verbatim: true };
 }
 
 export type OpenResult = { ok: boolean; error?: string; edition?: string; note?: string };
@@ -158,13 +160,27 @@ export const EDITOR_NOT_FOUND = 'VS Code was not found (also looked for VS Code 
 /**
  * FR-028: on Windows only a drive path (C:\dir, C:/dir) or a UNC path (\\server\share) is a target, and of the \\?\ forms only
  * \\?\C:\dir and \\?\UNC\server\share. path.win32.isAbsolute also accepts a root-relative \dir or /dir, which Code.exe (Chromium)
- * would read as a switch; device paths (\\.\pipe\x, \\.\PhysicalDrive0, \\?\GLOBALROOT\...) are no folder either.
+ * would read as a switch; device paths (\\.\pipe\x, \\.\PhysicalDrive0, \\?\GLOBALROOT\...) are no folder either, nor a
+ * pipe or mailslot share (\\localhost\pipe\x, \\*\mailslot\x), a redirector prefix (\\;LanmanRedirector\...) or a
+ * DOS device name in any component (C:\NUL, C:\x\COM1.txt), all refused (review of #1523).
  */
 export function isWindowsTarget(p: string): boolean {
+  if (!windowsTargetShape(p)) return false;
+  const parts = p.split(/[\\/]/);
+  if (parts.some((c) => DOS_DEVICE.test(c))) return false;
+  // the share after the server: \\server\share -> parts[3], \\?\UNC\server\share -> parts[5]
+  const share = /^\\\\\?\\UNC\\/i.test(p) ? parts[5] : /^\\\\[^?]/.test(p) ? parts[3] : undefined;
+  return !(share !== undefined && /^(?:pipe|mailslot)$/i.test(share));
+}
+
+/** CON, PRN, AUX, NUL, CONIN$, CONOUT$, COM0-9 and LPT0-9 (also with ¹²³), with or without an extension, trailing spaces or dots. */
+const DOS_DEVICE = /^(?:CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|(?:COM|LPT)[0-9\u00b9\u00b2\u00b3]) *(?:\..*)?$/i;
+
+function windowsTargetShape(p: string): boolean {
   if (/^[A-Za-z]:[\\/]/.test(p)) return true;
-  if (p.startsWith('\\\\?\\')) return /^\\\\\?\\(?:[A-Za-z]:\\|UNC\\[^\\/?.][^\\/?]*\\[^\\/])/i.test(p);
-  // \\server\share: a server name does not start with `.` (\\.\ is the device namespace) and has no `?`
-  return /^\\\\[^\\/?.][^\\/?]*[\\/][^\\/]/.test(p);
+  if (p.startsWith('\\\\?\\')) return /^\\\\\?\\(?:[A-Za-z]:\\|UNC\\[^\\/?.;*][^\\/?*]*\\[^\\/])/i.test(p);
+  // \\server\share: a server name does not start with `.` (\\.\ is the device namespace) or `;` (a redirector) and has no `?` or `*`
+  return /^\\\\[^\\/?.;*][^\\/?*]*[\\/][^\\/]/.test(p);
 }
 
 /** FR-028: no Windows file name holds a control character, so on Windows a path with one is refused before anything is planned. */
