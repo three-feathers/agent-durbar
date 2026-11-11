@@ -669,9 +669,9 @@
     const hs = strip ? '' : a.helpers.join();
     if (P.hs !== hs) {
       P.hs = hs; if (P.h) { P.h.remove(); P.h = null; }
-      if (hs) { P.h = document.createElement('span'); P.h.className = 'ro-help'; P.h.textContent = '+' + a.helpers.length + ' '; a.helpers.slice(0, 3).forEach((s) => P.h.insertAdjacentHTML('beforeend', dotHTML(s))); P.l1.appendChild(P.h); }
+      if (hs) { P.h = document.createElement('span'); P.h.className = 'ro-help'; const hc = document.createElement('span'); hc.className = 'ro-hc'; hc.textContent = '+' + a.helpers.length + ' '; P.h.appendChild(hc); a.helpers.slice(0, 3).forEach((s) => P.h.insertAdjacentHTML('beforeend', dotHTML(s))); P.l1.appendChild(P.h); }
     }
-    const dc = dotClass(state), word = ' ' + (a.word || ''), task = a.task ? (a.word ? ' · ' : ' ') + a.task : ''; /* word + task read as before: ' Word · task' */
+    const dc = dotClass(state), word = a.word ? ' ' + a.word : '', task = a.task ? (a.word ? ' · ' : ' ') + a.task : ''; /* word + task read as before: ' Word · task' */
     if (P.dot.className !== dc) P.dot.className = dc;
     if (P.wd.textContent !== word) P.wd.textContent = word;
     if (P.tk.textContent !== task) P.tk.textContent = task;
