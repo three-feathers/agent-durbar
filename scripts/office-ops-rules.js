@@ -13,10 +13,11 @@ const LIMITS = {
   floorStyleReadsPerStatus: 1, // T159: `getComputedStyle(#floor)` once per render (it was twice)
   readsPerStatus: 110, // T156, PROPOSED: measured 98 at 15 agents and 86 at 40 (650 and 998 before); the floor is the checks a status change needs
   readsPerLivePaint: 1, // review of #1138: one live paint reads its line's height once (measured 1 at 15 and 40 agents); the pencils' names only when it changed
-  searchesAtStart: 2, // T157: measured 2 at 15 agents, 1 to 2 at 40
+  searchesAtStart: 1, // T157, FR-363: owner decision 2026-11-11 (issue #1238): one layout search at start (the simulator gate)
   'searchesAtStart@late15': 1, // T303, FR-363: the replay's first states arrive 50 ms late (`simlate=50`): still one search
   'searchesAtStart@late40': 1,
-  probesAtStart: 90, // T157: measured 30 at 15, 47 to 85 at 40
+  'probesAtStart@15': 20, // T157, owner decision 2026-11-11: measured 18
+  'probesAtStart@40': 50, // measured 47
   rendersAtStart: 8,
   animationsRunning: 90, // T158: measured 78 at 15 agents
   'animationsRunning@40': 260, // measured 250
