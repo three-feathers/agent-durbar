@@ -77,6 +77,10 @@ html[data-ui]:not([data-ui="clean"]) .btn.primary:not(.warn,.danger,:disabled,[a
 html[data-ui]:not([data-ui="clean"]) .btn.primary:not(.warn,.danger,:disabled,[aria-disabled=true]):hover{background:color-mix(in srgb,var(--brand-bg) 86%,#000)}
 html[data-ui="retro"] .btn.primary:not(.warn,.danger,:disabled,[aria-disabled=true]){border-color:var(--line)}
 html[data-ui="retro"] .btn.primary:not(.warn,.danger,:disabled,[aria-disabled=true]):hover{background:color-mix(in srgb,var(--brand-bg) 88%,#000)}
+/* spec 102 (issue 1565): the red confirm button of a destructive dialog (End all sessions, Reset usage totals, Delete, Remove) keeps its red in every themed style:
+   the rule that gives every themed .btn a surface background outranked styles.css .btn.primary.danger, so the button was its panel's own colour in the arcade and under the pixel theme */
+html[data-ui]:not([data-ui="clean"]) .btn.primary.danger{background:var(--red-ink);border-color:transparent;color:var(--surface)}
+html[data-ui]:not([data-ui="clean"]) .btn.primary.danger:hover:not(:disabled,[aria-disabled=true]){background:color-mix(in srgb,var(--red-ink) 86%,black)}
 
 /* ---------- spec 052 FR-054: a period texture on the rooms, art only (2-4%).
    Gradients and inline SVG only; the room's colour and every size stay; text sits on its own surface above it. ---------- */

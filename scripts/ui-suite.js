@@ -100,6 +100,7 @@ const DRIVERS = [
   { name: 'shots-043-ai' }, // spec 043 FR-026..FR-039: Create with AI (canned generation, Extra tools, Stop waiting, Cancel and reopen)
   { name: 'shots-043-manage' }, // spec 043 FR-040..FR-042: nothing written before Save, the Profile menu refreshes at once, Delete from the menu and Settings
   { name: 'check-dialog-focus' },
+  { name: 'check-102-danger-btn' }, // spec 102 (#1565): the red confirm button of a destructive dialog reads in the arcade and under the pixel theme
   { name: 'check-grant-chips' },
   { name: 'check-sched-sendto' },
   { name: 'check-sched-edit' },
