@@ -1234,6 +1234,7 @@ body.panel-open #panel{flex-direction:row}
 .sub-toggle .chev{width:12px;height:12px;flex:none;transition:transform .2s}.sub-toggle[aria-expanded="true"] .chev{transform:rotate(90deg)}
 .sub-ic{width:16px;height:16px;flex:none;color:var(--blue-ink);display:inline-grid}.sub-ic svg{width:16px;height:16px}
 .sub-name{font-weight:650;white-space:nowrap}
+.subblk.stub .sub-toggle{cursor:default} /* spec 005 FR-240: a retired helper's one-line stub (no body, no Open) */
 .sub-task{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1 1 auto}
 .sub-st{font-size:11px;font-weight:600;color:var(--blue-ink);background:var(--pb-working,#e3ecf4);border-radius:999px;padding:1px 8px;flex:none}
 .subblk.done .sub-st,.sub-st.done{color:var(--tone-ok-ink);background:var(--tone-ok-bg)}.subblk.failed .sub-st,.sub-st.failed{color:var(--red-ink);background:var(--pb-error,#f6e2df)}

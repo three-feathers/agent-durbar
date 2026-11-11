@@ -158,6 +158,12 @@ function page() {
   const k2 = { messages: el.children.length - 1, blocks: 300, budget: 1e9 };
   assert.strictEqual(CT.over({ el, keep: k2, tls: [], noteIn: true }), false, 'a chat at its cap with the note is not over');
   assert.strictEqual(CT.over({ el, keep: k2, tls: [], noteIn: false }), true, '(counting the note would put it over)');
+  // spec 005 FR-240: two lines at the top (FR-238's and the helpers' line, a sibling `.chat-trim` note): `noteIn` is their number
+  const n2 = div('note info sub-gone ' + CT.NOTE_CLASS, el, 'helpers'); el.insertBefore(n2, n.nextSibling);
+  const k3 = { messages: el.children.length - 2, blocks: 300, budget: 1e9 };
+  assert.strictEqual(CT.over({ el, keep: k3, tls: [], noteIn: 2 }), false, 'a chat at its cap with both lines is not over (noteIn 2)');
+  assert.strictEqual(CT.over({ el, keep: k3, tls: [], noteIn: 1 }), true, '(counting one line as a message would put it over)');
+  assert.strictEqual(CT.over({ el, keep: k3, tls: [], noteIn: true }), true, 'true still means one line');
 }
 
 // ---- the message cap keeps the newest message of each side too (review on #1431): 400 notes after the question and the reply ----
