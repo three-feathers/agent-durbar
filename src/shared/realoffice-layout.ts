@@ -21,6 +21,8 @@ export interface StandMeta { figH: number; poses: Record<string, [number, number
 export interface RealMeta {
   /** spec 102 FR-255: a pixel world's art (one integer scale); its lobby keeps people apart */
   pixelArt?: boolean;
+  /** spec 102 FR-255 (T204): the screen's device pixel ratio (default 1); a pixel world's lobby is put on whole device pixels at any ratio */
+  dpr?: number;
   /** spec 097 FR-335 (T247): the people's own art is not pixel art (false); a hi-res crew in a pixel world is scaled to the world's people, not drawn at whole multiples of its pixels */
   pixelPeople?: boolean;
   seat: Record<string, SeatMeta>; stand: Record<string, StandMeta>;
@@ -326,12 +328,19 @@ export const COMPACT_W = 96;
  * Spec 102 FR-255 (#1104): a pixel world's lobby fixture scale (CSS px per art pixel): the nearest whole scale to `raw` when it fits the free
  * floor `room` and its top stays 3 px inside the band (`floorY` is the floor line), else the whole scale below (at least 1).
  */
-export function lobbyScale(raw: number, artW: number, room: number, floorLine: number, floorY: number): number {
-  const up = Math.round(raw), down = Math.max(1, Math.floor(raw + 1e-6));
-  return up > down && artW * up <= room && floorY - floorLine * up >= 3 ? up : down;
+export function lobbyScale(raw: number, artW: number, room: number, floorLine: number, floorY: number, dpr = 1): number {
+  const st = devStep(dpr), r = raw / st;
+  const up = Math.round(r), down = Math.max(1, Math.floor(r + 1e-6));
+  return (up > down && artW * up * st <= room && floorY - floorLine * up * st >= 3 ? up : down) * st;
 }
-/** Spec 102 FR-255 (#1104): a lobby visitor's whole scale: the one below its own (a larger one could cover its name chip), at least 1. */
-export const visitorScale = (k: number): number => Math.max(1, Math.floor(k + 1e-6));
+/** Spec 102 FR-255 (T204, #1403): the smallest CSS length that is a whole number of device pixels: 1 at a whole device pixel ratio (so ratios 1, 2, 3 change nothing), 1/dpr otherwise (1.25: 0.8, 1.5: 2/3). */
+export function devStep(dpr = 1): number {
+  return !(dpr > 0) || Math.abs(dpr - Math.round(dpr)) < 1e-9 ? 1 : 1 / dpr;
+}
+/** Spec 102 FR-255 (T204): `v` (CSS px) rounded to a whole device pixel (to a whole CSS px at a whole ratio); the result times `dpr` is whole. */
+export const snapDevice = (v: number, dpr = 1): number => { const st = devStep(dpr); return Math.round(v / st + 1e-9) * st; };
+/** Spec 102 FR-255 (#1104): a lobby visitor's whole scale: the one below its own (a larger one could cover its name chip), at least 1 (a device pixel at a fractional ratio). */
+export const visitorScale = (k: number, dpr = 1): number => { const st = devStep(dpr); return Math.max(1, Math.floor(k / st + 1e-6)) * st; };
 
 function roLobby(meta: RealMeta, places: RealPlace[], W: number, Lb: number): { fixtures: FixtureBox[]; floorStrip: Rect } {
   const FLOOR = Math.round(Math.max(18, Lb * 0.13)), floorY = Lb - FLOOR + 3;
@@ -352,10 +361,10 @@ function roLobby(meta: RealMeta, places: RealPlace[], W: number, Lb: number): { 
     const raw = fs0 * al.scale[i];
     /* the nearest whole scale when it still fits the free floor before the next place (its visitors kept) and stays inside the band, else the one below (#1104) */
     const room = (i + 1 < places.length ? al.x[i + 1] : W) - al.x[i] - (al.w[i] - al.fw[i]) - al.gap; /* the free floor up to the next place, its visitors kept */
-    const fs = snap ? lobbyScale(raw, artW, room, meta.floorLine, floorY) : raw;
-    const x = snap ? Math.round(al.x[i]) : al.x[i], fw = snap ? artW * fs : al.fw[i], fh = snap ? meta.floorLine * fs : wallH * al.scale[i];
+    const dpr = meta.dpr || 1, fs = snap ? lobbyScale(raw, artW, room, meta.floorLine, floorY, dpr) : raw;
+    const x = snap ? snapDevice(al.x[i], dpr) : al.x[i], fw = snap ? artW * fs : al.fw[i], fh = snap ? meta.floorLine * fs : wallH * al.scale[i];
     const objTop = floorY - fh + (meta.fixtureTop && roOwn(meta.fixtureTop, p.id) && !p.custom ? meta.fixtureTop[p.id] * fs : fh * 0.35);
-    const art: Rect | null = compact ? null : { x, y: floorY - fh, w: fw, h: fh };
+    const art: Rect | null = compact ? null : { x, y: snap ? snapDevice(floorY - fh, dpr) : floorY - fh, w: fw, h: fh };
     const visitors: VisitorBox[] = compact ? [] : p.visitors.slice(0, al.shown[i]).map((v, j) => {
       const cx = x + fw - 0.3 * vw + vw / 2 + j * al.step;
       const sp = standPose(meta, v.person, p.id, !!p.custom);
@@ -365,8 +374,8 @@ function roLobby(meta: RealMeta, places: RealPlace[], W: number, Lb: number): { 
         /* the feet (the picture's lowest opaque row) stand on the front floor plane, in front of the fixture; one scale per person,
            from its upright 'letter' pose, NEAR_SCALE larger than at the wall line. */
         const k0 = nearPx / standHeight(meta, String(v.person));
-        const k = snap && meta.pixelPeople !== false ? visitorScale(k0) : k0, fw2 = sp.size[0] * k, fh2 = sp.size[1] * k; /* FR-255 (#1104): whole scale in a pixel world */
-        const px = (n: number): number => (snap ? Math.round(n) : n);
+        const k = snap && meta.pixelPeople !== false ? visitorScale(k0, dpr) : k0, fw2 = sp.size[0] * k, fh2 = sp.size[1] * k; /* FR-255 (#1104): whole scale in a pixel world */
+        const px = (n: number): number => (snap ? snapDevice(n, dpr) : n);
         const faces = meta.facing || 'left', st = meta.stand[String(v.person)], fb = roOwn(POSE_FRAME_B, sp.pose) && roOwn(st.poses, POSE_FRAME_B[sp.pose]) ? POSE_FRAME_B[sp.pose] : null;
         /* the two running pictures have their own canvases: each in its own box, the feet on one spot, so changing picture moves no foot */
         const b = fb ? (() => { const w = st.poses[fb][0] * k, h = st.poses[fb][1] * k; return { x: px(cx - (st.foot && roOwn(st.foot, fb) ? st.foot[fb] : sp.foot) * w), y: px(frontY - (st.feet && roOwn(st.feet, fb) ? st.feet[fb] : sp.feet) * h), w, h }; })() : null;
