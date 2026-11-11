@@ -163,7 +163,9 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
     // no baseline machine at all: nothing claims a first machine since the baseline date
     const base0 = lib.validateBaseline({ version: 1, since: '2026-10-25', through: '2026-11-07', note: 'n', models: { 'claude-opus-5-5': 10 }, machines: {} });
     const t0 = sc(lib.cumulative([mkst('mac', '2026-11-09T10:00:00Z', 'claude-opus-5-5', 5, Date.UTC(2026, 10, 9, 12))], '2026-11-10', base0), 0);
-    assert.ok(!t0.includes('2026-10-25') || !/one since 2026-10-25/.test(t0), 'scope 1387: no machine is said to start at the baseline date when none has baseline spend: ' + t0.split('\n')[3].slice(-150));
+    assert.ok(t0.includes('work on one machine since 2026-11-09,') && !t0.includes('2026-10-25'), 'scope 1387: one machine starting after the baseline date says its own first day, never the baseline date: ' + t0.split('\n')[3].slice(-150));
+    assert.strictEqual(lib.cumulative([mkst('mac', '2026-11-09T10:00:00Z', 'claude-opus-5-5', 5, Date.UTC(2026, 10, 9, 12))], '2026-11-10', base0).firstDays.get('mac'), '2026-11-09');
+    assert.ok(lib.detailBlock(lib.cumulative([mkst('mac', '2026-11-09T10:00:00Z', 'claude-opus-5-5', 5, Date.UTC(2026, 10, 9, 12))], '2026-11-10', base0), '2026-11-10', 'v0.1.1', 'n', '').includes('tracked since 2026-11-09'), 'scope 1387: detail block says the real first day too');
     // a zero-dollar baseline machine does not start at the baseline date (mutant: dropping the baseline guard)
     const baseZ = lib.validateBaseline({ version: 1, since: '2026-10-25', through: '2026-11-07', note: 'n', models: { 'claude-opus-5-5': 10 }, machines: { linux: 10, idle: 0 } });
     assert.strictEqual(lib.cumulative([], '2026-11-07', baseZ).firstDays.has('idle'), false, 'scope 1387: a baseline machine with no spend has no first day');

@@ -293,7 +293,7 @@ function machineStarts(cum) {
   const days = [...(cum.firstDays || new Map())].filter(([m]) => (cum.machines.get(m) || 0) > 0).map(([, d]) => d);
   const counts = new Map(); for (const d of days) counts.set(d, (counts.get(d) || 0) + 1);
   const groups = [...counts].sort((x, y) => (x[0] < y[0] ? -1 : 1));
-  return { first: groups.length && groups[0][0] < cum.since ? groups[0][0] : cum.since, groups };
+  return { first: groups.length ? groups[0][0] : cum.since, groups };
 }
 
 /** The scope facts in the README sentence, all computed from the data (never typed): machine count, since date, spread share (`estUsd` = the estimated, spread part of the total). */
