@@ -77,7 +77,10 @@ function waits(ctx) {
   /** Spec 001 FR-085: no lobby figure is mid-walk (the 1 s WALK_MS transition of `syncWalkers` marks a figure `.walking`), at most `ms`.
    *  Used by `calm` and every `shot`, so no screenshot catches a figure between two places. */
   const settleWalk = (ms = 6000) => until(`!document.querySelector('.walker.walking')`, ms);
-  return { until, settle, settleWalk, office, chatOf };
+  /** The page is ready after a simulator replay (`simfreeze=1`): replayed, the lobby's visits settled, the last render drawn and no scene transition running. `load`'s settle and
+   *  check-097-crews' wait (issue #1459) use this one expression, so they cannot drift apart. */
+  const SETTLED = `!!window.__durbarSimReplayed&&!!window.__durbarSimUi&&window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()&&!document.querySelector('.scene-out')`;
+  return { until, settle, settleWalk, office, chatOf, SETTLED };
 }
 
 
@@ -268,7 +271,7 @@ function helpers(ctx) {
     if (!(await ctx.waitFor(ready, o.readyMs || 15000))) console.log(`[waits] load: the ready expression never held in ${o.readyMs || 15000} ms (pass \`ready\` for this page): ${String(ready).replace(/\s+/g, ' ').slice(0, 120)}`); // spec 008 FR-190: a timeout here costs the whole wait
     // spec 008 FR-190: a frozen simulator says when it is steady (every script replayed, no lobby visit waiting to start or end, the frame drawn): wait for that
     // instead of letting `settle` find it by sampling 200 ms apart (a load used to spend 0.5-1 s there). `settle` still runs after it, so nothing is skipped.
-    if (query.simfreeze === '1' && !o.index && o.settle !== false) await w.until(`!!window.__durbarSimReplayed&&!!window.__durbarSimUi&&window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()&&!document.querySelector('.scene-out')`, 4000);
+    if (query.simfreeze === '1' && !o.index && o.settle !== false) await w.until(w.SETTLED, 4000);
     if (o.settle !== false) await w.settle();
     if (arcade) assert.ok(await w.until(`!!document.querySelector('#stage .ro[data-world="retro"]')`, 5000), 'DRIVER_WORLD=retro: the arcade is not drawn (a pass here would be the Photo office)');
     if (o.focus) wc().focus();
