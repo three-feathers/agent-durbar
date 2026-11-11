@@ -104,24 +104,43 @@ function hoverCardCase(d: string) {
   assert.ok(d.slice(0, i2).includes('let wk4;') && d.indexOf('wk4 = await hoverWork', i2) > i2, 'wk4 is declared outside the third-agent step');
 }
 
-/** the drag driver (static, issue 1550): the status-change step reads hasFocus around the hold, records blur/focus and labels an OS focus loss; the verdict line is unchanged */
+/** the drag driver (static, issue 1550): the status-change step reads hasFocus around the hold; the catch hands the error to labelFocus and rethrows its result; the verdict line is unchanged */
 function dragFocusCase(d: string) {
   const open = "await H.pointerStep('check-097-drag', `${tag} drag with a status change`, async () => {";
-  const i = d.indexOf(open), hold = d.indexOf('await ctx.sleep(300);', i), verdict = d.indexOf('assert.strictEqual(await lifted(), true, `${tag}: a status change does not end the drag`);', i), end = d.indexOf('\n    });\n', i);
+  const i = d.indexOf(open), hold = d.indexOf('await ctx.sleep(300);', i), verdict = d.indexOf('assert.strictEqual(stillLifted, true, `${tag}: a status change does not end the drag`);', i), end = d.indexOf('\n    });\n', i);
   assert.ok(i > 0 && hold > i && verdict > hold && end > verdict, 'check-097-drag keeps the status-change hold, then the verdict, inside the pointer step');
   const body = d.slice(i, end);
-  assert.ok(body.indexOf('document.hasFocus()') > 0 && body.indexOf('document.hasFocus()') < body.indexOf('await ctx.sleep(300);'), 'hasFocus is read before the hold');
-  assert.ok(body.indexOf('document.hasFocus()', body.indexOf('await ctx.sleep(300);')) > body.indexOf('await ctx.sleep(300);') && body.indexOf('document.hasFocus()', body.indexOf('await ctx.sleep(300);')) < body.indexOf('a status change does not end the drag'), 'hasFocus is read after the hold, before the assert');
-  assert.ok(/addEventListener\(n,/.test(body) && body.includes("['blur','focus']"), 'a page-side recorder listens for window blur and focus');
-  assert.ok(body.includes('the window lost the OS focus during the status-change hold (blur at ') && body.includes('an environment problem on a shared desktop, not a repaint that ended the drag (FR-352, issue 1550)'), 'the labelled message is there');
+  assert.ok(body.indexOf('await js(dragFocus.RECORDER);') > 0 && body.indexOf('await js(dragFocus.RECORDER);') < body.indexOf('await drag('), 'the recorder is installed before the drag starts');
+  const hf1 = body.indexOf('document.hasFocus()'), hf2 = body.indexOf('document.hasFocus()', hf1 + 1), h = body.indexOf('await ctx.sleep(300);');
+  assert.ok(hf1 > 0 && hf1 < h && hf2 > h && hf2 < body.indexOf('assert.strictEqual(stillLifted'), 'hasFocus is read before the hold and after it, before the assert');
+  assert.ok(body.indexOf('const stillLifted = await lifted()') > h && body.indexOf('const stillLifted = await lifted()') < hf2, 'the verdict read comes first after the hold');
+  assert.ok(body.includes('} catch (e) {\n            console.log(dragFocus.focusLine(tag, focus));\n            throw dragFocus.labelFocus(e, focus);\n          }'), 'the catch prints the focus line and throws what labelFocus returns');
   assert.strictEqual(d.split('a status change does not end the drag').length - 1, 1, 'the verdict text appears once, as the assert');
-  assert.ok(d.includes('await ctx.sleep(300);\n          const focusAfter'), 'the hold is still 300 ms');
+}
+
+/** the helper (unit): a non-assertion error is the same object; a focus loss is labelled with the original message; no loss is not labelled as one */
+function dragFocusHelper(src: string) {
+  const m = new Module(path.join(ROOT, 'scripts', 'drag-focus.js'), null);
+  m.filename = path.join(ROOT, 'scripts', 'drag-focus.js'); m.paths = Module._nodeModulePaths(path.join(ROOT, 'scripts')); m._compile(src, m.filename);
+  const F = m.exports as { labelFocus: (e: unknown, f: unknown) => Error; focusLine: (t: string, f: unknown) => string };
+  const mk = () => { try { assert.strictEqual(false, true, 'orig message'); } catch (e) { return e as Error; } throw new Error('unreachable'); };
+  const plain = new Error('boom'); assert.strictEqual(F.labelFocus(plain, { focusBefore: true, focusAfter: false, events: [{ n: 'blur', t: 5 }] }), plain, 'a non-assertion error comes back as the same object');
+  const a = mk(); assert.strictEqual(F.labelFocus(a, { focusBefore: true, focusAfter: true, events: [] }), a, 'focus kept: the same error object');
+  const b = F.labelFocus(mk(), { focusBefore: true, focusAfter: true, events: [{ n: 'blur', t: 12 }] });
+  assert.ok(b instanceof assert.AssertionError && b.message.includes('the window lost the OS focus during the status-change hold (blur at 12 ms)') && b.message.includes('orig message') && b.message.includes('issue 1550'), 'a blur gives the label and keeps the original message');
+  const c = F.labelFocus(mk(), { focusBefore: true, focusAfter: false, events: [] });
+  assert.ok(c.message.includes('the window lost the OS focus during the status-change hold') && c.message.includes('orig message'), 'hasFocus true then false: labelled');
+  const n = F.labelFocus(mk(), { focusBefore: false, focusAfter: false, events: [] });
+  assert.ok(!n.message.includes('lost the OS focus') && n.message.includes('had no OS focus before') && n.message.includes('orig message') && n instanceof assert.AssertionError, 'false before and after, no blur: not the loss label, only the extra text');
+  const g = F.labelFocus(mk(), { focusBefore: false, focusAfter: true, events: [] }); assert.ok(!g.message.includes('lost the OS focus'), 'no loss label without a blur or a true-to-false');
+  assert.ok(F.focusLine('t', { focusBefore: true, focusAfter: false, events: [{ n: 'blur', t: 3 }] }).includes('blur@3ms'), 'the focus line lists the events');
 }
 
 (async () => {
   assert.strictEqual(lf('a\r\nb'), 'a\nb', 'lf() turns CRLF into LF');
   hoverCardCase(lf(fs.readFileSync(path.join(ROOT, 'scripts', 'check-097-hover-card.js'), 'utf8')));
   dragFocusCase(lf(fs.readFileSync(path.join(ROOT, 'scripts', 'check-097-drag.js'), 'utf8')));
+  dragFocusHelper(lf(fs.readFileSync(path.join(ROOT, 'scripts', 'drag-focus.js'), 'utf8')));
   await cases(load(SRC));
   await cases(load(lf(SRC.replace(/\n/g, '\r\n')))); // a CRLF checkout gives the same source after lf()
   const mutants: Array<[string, string, string]> = [
