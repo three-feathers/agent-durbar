@@ -100,8 +100,9 @@ module.exports = async (ctx) => {
     await key('F10', ['shift'], { char: 'never' });
     await must(`!!document.querySelector('#modeMenu [data-fact="rup"]')`, `${tag}: Shift+F10 with the native contextmenu not blocked opens the folder menu`);
     await ctx.sleep(300);
-    assert.strictEqual(await js(`document.querySelectorAll('#modeMenu').length`), 1, `${tag}: exactly one folder menu after Shift+F10 (native contextmenu events seen: ${await js('window.__ctxN')})`);
-    console.log(`[097-order] ${tag}: Shift+F10, native contextmenu events seen: ${await js('window.__ctxN')}`);
+    const nCtx = await js('window.__ctxN'), nMenus = await js(`document.querySelectorAll('#modeMenu').length`);
+    assert.strictEqual(nMenus, 1, `${tag}: exactly one folder menu after Shift+F10 (native contextmenu events seen: ${nCtx})`);
+    console.log(`[097-order] ${tag}: Shift+F10, native contextmenu events seen: ${nCtx}`);
     await key('Escape', [], { char: 'never' });
     await noMenu(`${tag}: Escape closes it`);
   };
