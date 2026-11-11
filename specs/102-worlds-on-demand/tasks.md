@@ -315,4 +315,4 @@ Starts after the next built-in world's stack lands (FR-296, decided Q4). All beh
 
 ## 2026-11-11: the arcade plate's status word (issue #1558)
 
-- [x] T306 The arcade plate with helpers keeps its status word whole (`.ro-wd`/`.ro-tk`, `world.css`); `shots-102-arcade` cut-word check at both sizes; `ARCADE_MUTANT=cutword` fails (spec Changes 2026-11-11, FR-306).
+- [x] T307 The arcade plate with helpers keeps its status word whole (`.ro-wd`/`.ro-tk`, `world.css`); `shots-102-arcade` cut-word check at both sizes; `ARCADE_MUTANT=cutword` fails (spec Changes 2026-11-11, FR-311).
