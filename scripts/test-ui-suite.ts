@@ -424,7 +424,7 @@ async function shardMain(): Promise<void> {
       console.log = () => undefined;
       let err: Error | undefined;
       let ensured = false;
-      try { await main({ ensure: () => { ensured = true; return true; }, argv, run: async (d: { name: string }) => { ran.push(d.name); return { ok: true, secs: 0, why: '', log: '' }; } }); } catch (e) { err = e as Error; } finally { console.log = log; }
+      try { await main({ ensure: () => { ensured = true; return true; }, argv, shared: false /* FR-210 reorders focus entries on a shared desktop; this test is about the shard */, run: async (d: { name: string }) => { ran.push(d.name); return { ok: true, secs: 0, why: '', log: '' }; } }); } catch (e) { err = e as Error; } finally { console.log = log; }
       if (err) assert.ok(!ensured && ran.length === 0, 'a refused shard starts nothing, not even the Electron install');
       return { ran, err, code: process.exitCode };
     };
@@ -635,6 +635,50 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
       if (runnerProc.exitCode === null && runnerProc.signalCode === null) { try { runnerProc.kill('SIGKILL'); } catch { /* gone */ } }
       fs.rmSync(tmp, { recursive: true, force: true });
     }
+  }
+  // spec 008 FR-210 (issue #1498): an entry with `focus: true` (it waits on the real OS window focus) never runs next to another window
+  // when drivers share a desktop; the others still run `jobs` at a time; with a display of its own per driver (xvfb) nothing changes
+  {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const suite = require(SUITE) as { main: (o: unknown) => Promise<void>; DRIVERS: { name: string; label?: string; focus?: boolean }[]; sharedDesktop: (p: string, e: Record<string, string>) => boolean };
+    const label = (d: { name: string; label?: string }): string => d.label || d.name;
+    const flagged = suite.DRIVERS.filter((d) => d.focus).map(label).sort();
+    assert.deepStrictEqual(flagged, ['check-097-hover-card', 'shots-097-screens', 'shots-097-screens retro'], 'the focus entries are the ones with a failure on record (#1498, #1408)');
+    assert.deepStrictEqual([['darwin', {}], ['win32', {}], ['linux', {}], ['linux', { DISPLAY: ':0' }], ['linux', { DISPLAY: ':0', UI_SUITE_XVFB: '1' }]].map(([p, e]) => suite.sharedDesktop(p as string, e as Record<string, string>)), [true, true, false, true, false], 'windows share a desktop on macOS, Windows and Linux with a display; not under xvfb');
+    const only = ['shots-097-screens', 'check-097-hover-card', 'shots-017', 'shots-018', 'shots-033', 'check-office-fill'].join(',');
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ui-suite-focus-'));
+    const was = { jobs: process.env.UI_SUITE_JOBS, out: process.env.UI_SUITE_OUT, log: console.log };
+    const play = async (shared: boolean): Promise<{ ran: string[]; peak: number; focusNextToOther: string[]; peakOthers: number }> => {
+      const live = new Set<string>(); const ran: string[] = []; const clash: string[] = [];
+      let peak = 0, peakOthers = 0;
+      const fake = async (d: { name: string; label?: string; focus?: boolean }): Promise<{ ok: boolean; secs: number; why: string; log: string }> => {
+        const me = label(d);
+        live.add(me); ran.push(me); peak = Math.max(peak, live.size);
+        if ([...live].some((x) => x !== me && suite.DRIVERS.some((y) => label(y) === x && y.focus)) || (d.focus && live.size > 1)) clash.push(me);
+        peakOthers = Math.max(peakOthers, [...live].filter((x) => !suite.DRIVERS.some((y) => label(y) === x && y.focus)).length);
+        await sleep(40);
+        live.delete(me);
+        return { ok: true, secs: 0, why: '', log: '' };
+      };
+      process.env.UI_SUITE_JOBS = '3'; process.env.UI_SUITE_OUT = tmp;
+      console.log = (): void => undefined;
+      try { await suite.main({ ensure: () => true, run: fake, argv: ['--only', only], shared }); } finally { console.log = was.log; }
+      return { ran, peak, focusNextToOther: clash, peakOthers };
+    };
+    try {
+      const a = await play(true);
+      assert.deepStrictEqual([...a.ran].sort(), ['check-097-hover-card', 'check-office-fill', 'shots-017', 'shots-018', 'shots-033', 'shots-097-screens', 'shots-097-screens retro'], 'on a shared desktop every selected entry runs once');
+      assert.deepStrictEqual(a.focusNextToOther, [], 'a focus entry ran next to another window');
+      assert.ok(a.peakOthers >= 2, `the other entries still run in parallel (peak ${a.peakOthers})`);
+      assert.deepStrictEqual(a.ran.slice(-3).sort(), ['check-097-hover-card', 'shots-097-screens', 'shots-097-screens retro'], 'the focus entries run last, alone');
+      const b = await play(false);
+      assert.ok(b.peak >= 3 && b.focusNextToOther.length > 0, 'with a display per driver (xvfb) the focus entries are scheduled as before');
+    } finally {
+      if (was.jobs === undefined) delete process.env.UI_SUITE_JOBS; else process.env.UI_SUITE_JOBS = was.jobs;
+      if (was.out === undefined) delete process.env.UI_SUITE_OUT; else process.env.UI_SUITE_OUT = was.out;
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+    assert.ok(/focus: true/.test(fs.readFileSync(SUITE, 'utf8')), 'ui-suite.js carries the flag');
   }
   console.log('ui-suite signals: ok');
 })().catch((e) => { console.error(e); process.exitCode = 1; });
