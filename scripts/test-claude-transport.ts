@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import { MAX_LINE_BYTES, createCliTransport } from '../src/adapters/claudeTransport';
 import type { ChildLike, ControlAnswer, IncomingControl, TransportHandlers } from '../src/adapters/claudeTransport';
 import { fakeSpawn } from './fakes/claude-cli';
-import { liveMcpConfigCount, makeCliTransportFactory, privateMcpConfig, sweepMcpConfigs } from '../src/adapters/claude';
+import { liveMcpConfigCount, makeCliTransportFactory, privateLaunchFiles, privateMcpConfig, sweepMcpConfigs } from '../src/adapters/claude';
 import type { SpawnFn } from '../src/adapters/claudeTransport';
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
@@ -298,6 +298,11 @@ async function main(): Promise<void> {
       await start(f.spawn);
       f.children[0].fail('spawn EACCES');
       assert.deepStrictEqual(left(), [], 'FR-179: error event: nothing left');
+    }
+    // wx: a file already at a path is refused, never written through or replaced (two names for one path); the folder is removed
+    {
+      assert.throws(() => privateLaunchFiles({ 'x.json': 'first', './x.json': 'second' }, root), /EEXIST/, 'FR-179: wx refuses a file already at the path (a plain write would replace it)');
+      assert.deepStrictEqual(left(), [], 'FR-179: wx refuses: nothing left');
     }
     assert.strictEqual(liveMcpConfigCount(), 0, 'FR-179: nothing live');
     rmTmp(root);
