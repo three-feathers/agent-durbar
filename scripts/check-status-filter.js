@@ -174,7 +174,7 @@ module.exports = async (ctx) => {
         // a pill together with a folder that has no agent of that status leaves the List's empty line
         let found = null;
         for (const k of ['done', 'error', 'waiting', 'idle', 'working']) {
-          if (!(await js(`document.querySelector('.stat[data-k="${k}"]').getAttribute('aria-pressed')`) === 'true')) await clickPill(k);
+          if (!(await js(`document.querySelector(${jsLiteral(pill(k))}).getAttribute('aria-pressed')`) === 'true')) await clickPill(k);
           for (const v of await js(`[...document.getElementById('wsFilter').options].map(o=>o.value).filter(v=>v!=='all')`)) {
             await js(`(()=>{const s=document.getElementById('wsFilter');s.value=${jsLiteral(v)};s.dispatchEvent(new Event('change',{bubbles:true}))})()`);
             if (await until(`!!document.querySelector('#list .list-wrap>.empty')`, 800)) { found = `${k} in folder ${v}`; break; }
