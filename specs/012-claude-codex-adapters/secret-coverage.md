@@ -121,6 +121,8 @@ Checked by reading the code on 2026-11-01 (`read:`), not by a run.
 | Notes | Yes | `maskNoteText` |
 | Desk lines, tooltips, inbox, session titles, helper cards, tool labels, permission lines, "Send failed" | Yes | `DurbarSafeText`, `LIVEACT` (fail closed when the module is missing) |
 | File edit cards | Yes | adapters, and again in the window |
+| Screen-reader announcements (`#srAnnounce`) | Yes (FR-178, issue #1419) | `announce()` in `app.js`: `helperMask` (home folders, then `deskMask`) before the cut; nothing is said when the mask fails |
+| Toasts and the chat's `aria-label` with an agent's or folder's name | **No**, `[KNOWN GAP]` (issue #1320) | `esc(a.name)` only |
 | Folder-setup display (`shownCommand`) | Bare shapes only, on purpose | `maskBareTokenShapes`: no name, header or cookie rule, because those hide to a space or a line's end and would let a repository hide its own shell syntax (spec 061 FR-014). A password in a hook command stays visible, as it did before |
 | Approval card (`.pcmd`, and `p.summary` in Expert) | **No** | Shown as the adapter wrote it (`app.js` `plainAsk`, `pre.textContent`): what a person approves is the whole command. The desk's "Waiting for permission" line and tool labels do go through `maskSecretCommand`, which is why its values must stop at shell syntax |
 | The approval card's "Show the change" (diff) | Yes | Codex: `redact(perm.diff, …)`. Other adapters: `finishEdit`'s `redact`. So a value must stop at shell syntax here too |
