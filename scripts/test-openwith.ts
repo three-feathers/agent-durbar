@@ -345,7 +345,16 @@ process.exitCode = 1; // a promise that never settles must not pass (checklist);
     assert.strictEqual(res.ok, true); assert.strictEqual(seen!.opts.shell, false); assert.strictEqual(seen!.opts.detached, true); assert.deepStrictEqual(seen!.args, [dir]);
     const bad = ((): never => { const h: Record<string, (x?: unknown) => void> = {}; setImmediate(() => h.error?.(Object.assign(new Error('x'), { code: 'ENOENT' }))); return { once: (e: string, f: (x?: unknown) => void) => { h[e] = f; }, unref: () => undefined } as never; }) as never;
     const res2 = await spawnPlan({ command: '/nope', args: [dir], via: '/nope', edition: 'VSCodium' }, bad, 'linux');
-    assert.deepStrictEqual([res2.ok, res2.error], [false, 'Could not start VSCodium (/nope)']); }
+    assert.deepStrictEqual([res2.ok, res2.error], [false, 'Could not start VSCodium (/nope)']);
+    // spec 009 FR-029: on win32 the planCmd plan (/d /s /c, already quoted for cmd.exe) is spawned verbatim; a plain exe plan is not
+    const cmdPlan = planEdition(EDITIONS.find((e) => e.name === 'VSCodium')!, 'C:\\work\\proj', launchEnv('win32', ['C:\\tools\\bin\\codium.cmd'], { PATH: 'C:\\tools\\bin' }, 'C:\\Users\\a'))!;
+    assert.deepStrictEqual(cmdPlan.args, ['/d', '/s', '/c', '""C:\\tools\\bin\\codium.cmd" C:\\work\\proj"'], 'the planCmd route');
+    assert.strictEqual((await spawnPlan(cmdPlan, fake, 'win32')).ok, true);
+    assert.deepStrictEqual([seen!.cmd, seen!.args, seen!.opts.windowsVerbatimArguments, seen!.opts.shell], [cmdPlan.command, cmdPlan.args, true, false], 'the /s /c line is passed verbatim');
+    await spawnPlan({ command: 'C:\\VS Code\\Code.exe', args: ['C:\\work\\proj'], via: 'x', edition: 'VS Code' }, fake, 'win32');
+    assert.strictEqual(seen!.opts.windowsVerbatimArguments, false, 'a plain exe plan lets Node quote its argument');
+    await spawnPlan(cmdPlan, fake, 'linux');
+    assert.strictEqual(seen!.opts.windowsVerbatimArguments, false, 'never verbatim off Windows'); }
 
   fs.rmSync(root, { recursive: true, force: true });
   console.log('test:openwith PASS');

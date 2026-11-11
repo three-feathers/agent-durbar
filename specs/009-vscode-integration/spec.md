@@ -100,6 +100,11 @@ In **Previous sessions**, "VS Code chat history" lists chats VS Code saved for t
     - The update check shows `CMD_REFUSED`.
     - The source check now finds a `/c` switch in any quote style (comments removed first).
     - Each of these was shown to fail when its code was removed (mutants listed on #1542).
+  - **Round 3 of the review of #1542.**
+    - The update check's winget path (`toolWinget`) is tested too: a `winget.cmd` whose path has `&` is refused by `execFound` without a run, and the card shows `CMD_REFUSED`.
+    - `spawnPlan` is tested on win32 with a fake spawner: the `planCmd` plan (`/d /s /c`) is spawned with `windowsVerbatimArguments: true`; a plain `Code.exe` plan, and any plan off Windows, with `false`. Nothing is launched.
+    - Both mutants were run by hand and are killed: the winget `EUNSAFE` line removed (`test:updatecheck`), and `windowsVerbatimArguments` forced to `false` (`test:openwith`).
+    - The trailing-backslash refusal stays (reviewer's call): doubling the backslash instead would change what a batch file's `%~1` reads.
 - `[KNOWN GAP]` Not run on Windows by the author (macOS only); the Windows CI job of `npm test` is the only run of the real `cmd.exe` case. The detached VS Code launch (`spawnPlan`) is not run for real anywhere (FR-014); it gets the same argument list from the helper.
 
 ### 2026-11-03: pre-review of #976: the fall-through, the resolved path, honest texts (FR-021..FR-027, T029)

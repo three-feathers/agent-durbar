@@ -546,6 +546,11 @@ const bodyOf = (text: string | Buffer, status = 200) => (r: FakeReq) => { const 
     const n = mk(fx('winget-none'));
     await n.checker.checkAll();
     assert.strictEqual(n.checker.result('claude')?.state, 'up-to-date');
+    // spec 009 FR-029: a winget.cmd whose path cmd.exe could read is refused by execFound (EUNSAFE, nothing runs); the card says so plainly
+    const u = mk(fx('winget-none'), { tools: { winget: 'C:\\a&b\\winget.cmd' } });
+    await u.checker.checkAll();
+    assert.strictEqual(u.calls.length, 0, 'the refused winget line never reaches the exec');
+    assert.deepStrictEqual([u.checker.result('claude')?.state, u.checker.result('claude')?.reason], ['could-not-check', 'This command cannot be run safely on this computer.'], 'not "exit EUNSAFE"');
   }
   {
     // official installer copies: the lookups, never the app itself
