@@ -12,7 +12,7 @@
  *     from this one: an overlay blocks dragging (FR-138);
  *   - a clickable element whose box overlaps the traffic-light box (x<78, y<40, by rectangle, not by sampling) outside full screen (an
  *     overlay's own backdrop is not counted: the native traffic lights sit above the page; a control inside a dialog is);
- *   - a screen header over a chat whose title is not on the centred content column (FR-097) at widths above 990px;
+ *   - a screen header over a chat whose title is not where FR-097 puts it (the centred content column; for Settings, which has a section list, the list-and-page block, at least 78 outside full screen) at widths above 990px;
  *   - a screen title that starts under the traffic lights (x<78, y<40, outside full screen), also in the narrow windows (991..1208, 760..990
  *     and under 760 px wide; spec 052 FR-138 delta 2026-11-11);
  *   - the top bar's rows (one row at wide sizes, two when it wraps): the first row's items start at x>=78, a wrapped row at the normal padding (the room is for the first row only);
