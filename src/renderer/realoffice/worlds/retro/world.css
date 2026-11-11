@@ -95,6 +95,7 @@
 .ro[data-world="retro"] .ro-plate.lounge{flex-direction:row;align-items:flex-start;gap:6px}
 .ro[data-world="retro"] .ro-plate.lounge .ro-l1{display:block;font-size:var(--t4-size);flex:none;max-width:55%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ro[data-world="retro"] .ro-plate.lounge .ro-role{display:none}
+.ro[data-world="retro"] .ro-plate.lounge.has-ren .ro-l1>b{display:inline-block;max-width:calc(100% - 22px);overflow:hidden;text-overflow:ellipsis;vertical-align:bottom} /* spec 097 FR-364: this l1 is a block (no flex): the name is its own box, cut short of the 22px the pencil needs, so the pencil follows a name that is inside the plate */
 .ro[data-world="retro"] .ro-plate.lounge .ro-l2{display:block;flex:1 1 auto;min-width:0;-webkit-line-clamp:unset}
 /* spec 097 FR-324 (review of #1299): the arcade's line lies in the screen's own frame band, the 4 grid-pixel border between the cabinet body and the glass (the svg is that whole screen box): the line is 2 grid pixels (4 px at g=2) in the band's outer half and its keyline one px wider each side, so every pixel of both stays inside the band: inside the cabinet's body, under the marquee, above the control strip, and clear of the glass and its text bars (the band's inner half stays bare) */
 .ro[data-world="retro"] .ro-ctx rect{x:calc(1.5px*var(--ro-g));y:calc(1.5px*var(--ro-g));width:calc(var(--ro-cw,0px) - 3px*var(--ro-g));height:calc(var(--ro-ch,0px) - 3px*var(--ro-g));stroke-width:max(4px,calc(2px*var(--ro-g)))}
