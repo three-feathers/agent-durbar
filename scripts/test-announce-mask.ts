@@ -233,7 +233,7 @@ ok(/[{,]\s*announce\s*[,}]/.test(topLevel('DurbarNewFolder.create({')), 'newfold
 // the request lines pass the name as its own part (a token-shaped name cannot undo the escapes of the command)
 ok(/announce\(\[a\.name,' needs your OK: ',look,/.test(app), 'the permission card line: name, fixed words and request are their own parts');
 ok(/announce\(\[a\.name,c\.classList\.contains\('question'\)\?' asks: ':' needs your OK: ',requestRaw\(c\)\]/.test(app), 'the queue line: the card\'s own words (requestRaw), fixed words their own part');
-ok(/announce\(\[a\.name,' asks: ',String\(\(qs\[0\]&&qs\[0\]\.question\)\|\|''\)\|\|'a question'\]\)/.test(app), 'the question line: the raw question, fixed words their own part');
+ok(/announce\(\[a\.name,' asks: ',String\(\(qs\[0\]&&qs\[0\]\.question\)\|\|''\)\|\|'a question'\],ANN_REQUEST\)/.test(app), 'the question line: the raw question, fixed words their own part');
 ok(/announce\(\[word,': ',what\]\)/.test(app) && (app.match(/answerPress\(src,requestRaw\((card|c)\)\)/g) || []).length === 2 && !/answerPress\(src,(text|textOf)/.test(app), 'the answer-bar line: the card\'s own words, as parts');
 ok(/\{text:R\.message\|\|'',max:160\}/.test(app), 'the MCP request line: the raw message as a {text,max} part');
 // no announcement reads a desk-masked copy of a request or a question (that copy has its escapes undone)

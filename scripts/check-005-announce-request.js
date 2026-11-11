@@ -5,7 +5,6 @@
  * said at request priority, so the "Working…" that the turn start says in the same 60 ms window never replaces them.
  *
  *   npm run check:ui -- --only check-005-announce-request
- *   ANNOUNCE_REQUEST_REVERT=1  (mutant: the card's announcement goes back to status priority; the checks below must fail)
  *   ANNOUNCE_TRACE=1           prints every value #srAnnounce took, with its time
  */
 const assert = require('assert');
@@ -14,7 +13,6 @@ const { helpers, jsLiteral } = require('./driver-helpers');
 module.exports = async (ctx) => {
   const H = helpers(ctx);
   const { js, until } = H;
-  const REVERT = process.env.ANNOUNCE_REQUEST_REVERT === '1';
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     await H.load({ fastVisits: true, w, h, focus: true });
     const first = await H.openSimAgent(`a=>!a.parent&&a.live&&a.info&&(a.state==='idle'||a.state==='done')`, '#msgInput');
@@ -23,7 +21,6 @@ module.exports = async (ctx) => {
     const emit = (e) => js(`window.__durbarSimUi.emit(${jsLiteral(Object.assign({ timestamp: 1, sessionId: A }, e))})`);
     await js(`(()=>{window.__seq=[];window.__t0=performance.now();const el=document.getElementById('srAnnounce');
       new MutationObserver(()=>{window.__seq.push([Math.round(performance.now()-window.__t0),el.textContent]);}).observe(el,{childList:true,characterData:true,subtree:true});})();0`);
-    if (REVERT) await js(`window.__durbarSimUi.announceRequestRevert(true)`);
     const seq = () => js(`window.__seq.filter(x=>x[1]).slice()`);
     const trace = async (tag) => { if (process.env.ANNOUNCE_TRACE === '1') console.log(`[announce ${w}] ${tag}: ` + JSON.stringify(await js(`window.__seq.slice()`))); };
     const end = () => js(`document.getElementById('srAnnounce').textContent`);
