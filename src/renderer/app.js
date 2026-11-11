@@ -7986,7 +7986,7 @@ async function moveFolderByMenu(r,floorId,anchor){
   },8000); /* the toast area is a polite live region, so the move is announced once */
 }
 document.addEventListener('contextmenu',e=>{
-  const h=e.target.closest('#stage .room-head');
+  const h=e.target.closest('#stage .room-head, #stage .ro-sign'); /* the Real office folder sign is the same head: its name and its ⋯ open the one folder menu */
   if(h&&!e.target.closest('.desk')){const menuBtn=h.querySelector('[data-foldermenu]'),r=menuBtn&&ROOMS.find(x=>x.id===menuBtn.dataset.foldermenu);
     if(r&&bridge&&bridge.removeFolder&&!demoOn){e.preventDefault();const b=h.getBoundingClientRect();openFolderMenu(r,e.clientX||b.left+16,e.clientY||b.bottom,menuBtn);return;}}
   /* spec 033 FR-024: in the List view the Folder cell opens the folder menu of that row's folder; the rest of the row keeps the agent's menu */
@@ -7996,6 +7996,13 @@ document.addEventListener('contextmenu',e=>{
   const a=byId(d.dataset.id),ra=a&&liveRoot(a);if(!ra||!ra.live)return;
   const r=d.getBoundingClientRect();
   if(openModeMenu(a,e.clientX||r.left+16,e.clientY||r.top+16,d))e.preventDefault();
+});
+/* spec 097 FR-346/FR-347: Shift+F10 or the Menu key on a folder's ⋯ (flat head or Real office sign) opens the one folder menu under the button, from the keydown itself, as the card menu does below */
+document.addEventListener('keydown',e=>{
+  if(!((e.key==='F10'&&e.shiftKey)||e.key==='ContextMenu'))return;
+  const mb=e.target&&e.target.closest&&e.target.closest('#stage .room-head [data-foldermenu], #stage .ro-sign [data-foldermenu]'); if(!mb||e.target!==mb)return;
+  const r=ROOMS.find(x=>x.id===mb.dataset.foldermenu); if(!r||!bridge||!bridge.removeFolder||demoOn)return;
+  const b=mb.getBoundingClientRect(); e.preventDefault(); openFolderMenu(r,b.left,b.bottom,mb);
 });
 /* spec 005 FR-177: the same card menu from the keyboard (Shift+F10 or the Menu key on a focused desk or list row), so Mark as read does not need a mouse */
 document.addEventListener('keydown',e=>{

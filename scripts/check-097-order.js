@@ -22,6 +22,8 @@
  *   source mutant (run by hand): the key path's away test back to `pl.classList.contains('narrow')` only: the arcade step fails
  *   ORDER_MUTANT=keys   Alt+arrows on a plate are swallowed before the app sees them (must fail)
  *   ORDER_MUTANT=menu   the menu's Move earlier / later is swallowed (must fail)
+ *   ORDER_MUTANT=signmenu   Shift+F10 and the Menu key on a folder sign are swallowed, as when only `.room-head` was matched (must fail: Shift+F10 on the sign's ⋯)
+ *   ORDER_MUTANT=signctx   the contextmenu event on a folder sign is swallowed, as with the old selector (must fail: the right-click on the sign's name)
  *   ORDER_MUTANT=pinnoop   the simulator's pinAt does nothing but return true (must fail: the pinned desks never go away)
  */
 const assert = require('assert');
@@ -53,6 +55,35 @@ module.exports = async (ctx) => {
     assert.ok(await js(`Math.min(...[...document.querySelectorAll('#stage .ro-plate .ro-l1>b,#stage .ro-plate .ro-l2,#stage .ro-sign>b')].map(e=>parseFloat(getComputedStyle(e).fontSize)).filter(n=>n>0))`) >= 10.5, `${tag}: plate and sign text at least 10.5 px`);
     const ov = await js(`(()=>{const r=[...document.querySelectorAll('#stage .ro-plate[data-id]')].map(p=>{const b=p.getBoundingClientRect();return [p.dataset.id,b.left,b.top,b.right,b.bottom]}),bad=[];for(let i=0;i<r.length;i++)for(let j=i+1;j<r.length;j++){const a=r[i],b=r[j];if(a[1]+1<b[3]&&b[1]+1<a[3]&&a[2]+1<b[4]&&b[2]+1<a[4])bad.push(a[0]+'/'+b[0])}return bad})()`);
     assert.deepStrictEqual(ov, [], `${tag}: no two plates overlap`);
+  };
+
+  /** spec 097 FR-346/FR-347: the folder menu by Shift+F10 on the sign's ⋯ and by a right-click on the sign's name, as in the flat office; Escape closes it and the focus is back on the ⋯ */
+  const signMenuKeys = async (tag, A) => {
+    if (MUTANT === 'signmenu' || MUTANT === 'signctx') await js(`(()=>{if(!window.__signMut){window.__signMut=1;const m=${jsLiteral(MUTANT)};document.addEventListener('contextmenu',e=>{if(m==='signctx'&&e.target.closest&&e.target.closest('.ro-sign'))e.stopImmediatePropagation()},true);window.addEventListener('keydown',e=>{if(m==='signmenu'&&(e.key==='F10'||e.key==='ContextMenu')&&e.target.closest&&e.target.closest('.ro-sign'))e.stopImmediatePropagation()},true)}return 1})()`);
+    const btn = `#stage .ro-sb[data-foldermenu="${A}"]`;
+    await js(`document.getElementById('modeMenu')&&document.getElementById('modeMenu').remove()`);
+    assert.ok(await focus(btn), `${tag}: the sign's menu button takes the focus`);
+    await key('F10', ['shift'], { char: 'never' });
+    await must(`!!document.querySelector('#modeMenu [data-fact="rup"]')`, `${tag}: Shift+F10 on the sign's menu button opens the folder menu`);
+    const near = await js(`(()=>{const m=document.getElementById('modeMenu').getBoundingClientRect(),b=document.querySelector(${jsLiteral(btn)}).getBoundingClientRect();return m.left<innerWidth&&m.right>0&&Math.abs(m.top-b.bottom)<120&&m.left<b.right+16&&m.right>b.left-16})()`);
+    assert.ok(near, `${tag}: the folder menu opens beside the sign's button`);
+    await key('Escape', [], { char: 'never' });
+    await must(`!document.getElementById('modeMenu')`, `${tag}: Escape closes the folder menu`);
+    await must(`document.activeElement&&document.activeElement.dataset.foldermenu===${jsLiteral(A)}`, `${tag}: and the focus is back on the sign's menu button`);
+    await js(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'ContextMenu',bubbles:true,cancelable:true}));true`); /* the Menu key is sent as an event, as the Real office desk driver does */
+    await must(`!!document.querySelector('#modeMenu [data-fact="rup"]')`, `${tag}: the Menu key on the sign's menu button opens the folder menu`);
+    await key('Escape', [], { char: 'never' });
+    await must(`!document.getElementById('modeMenu')`, `${tag}: Escape closes it again`);
+    const at = await js(`(()=>{const e=document.querySelector(${jsLiteral(`#stage .ro-sign[data-folder="${A}"] > b`)});if(!e)return null;const r=e.getBoundingClientRect();return {x:Math.round(r.left+Math.min(r.width/2,20)),y:Math.round(r.top+r.height/2)}})()`);
+    assert.ok(at, `${tag}: the sign has a name`);
+    const wc = H.wc();
+    wc.sendInputEvent({ type: 'mouseMove', x: at.x, y: at.y });
+    wc.sendInputEvent({ type: 'mouseDown', x: at.x, y: at.y, button: 'right', clickCount: 1 });
+    wc.sendInputEvent({ type: 'mouseUp', x: at.x, y: at.y, button: 'right', clickCount: 1 });
+    await must(`!!document.querySelector('#modeMenu [data-fact="rup"]')`, `${tag}: a right-click on the sign's name opens the folder menu`);
+    await key('Escape', [], { char: 'never' });
+    await must(`!document.getElementById('modeMenu')`, `${tag}: Escape closes the folder menu after the right-click`);
+    await must(`document.activeElement&&document.activeElement.dataset.foldermenu===${jsLiteral(A)}`, `${tag}: and the focus is back on the sign's menu button after the right-click`);
   };
 
   for (const [w, h] of SIZES) {
@@ -259,6 +290,7 @@ module.exports = async (ctx) => {
     await must(`window.__durbarSimUi.order.get().rooms.join()===${jsLiteral(swap(r2, i2, to).join())}`, `${tag}: the menu's ${way} moved the room in Real office`);
     assert.deepStrictEqual(await js(`window.__durbarSimUi.order.saved().then(d=>d.rooms)`), await js(`window.__durbarSimUi.order.get().rooms`), `${tag}: and it is the saved document`);
     await checks(`${tag} after the room moves`);
+    await signMenuKeys(`${tag} photo office`, A);
 
     /* ---- 4. places: a movable one moves, a fixed one does not (a lobby plate that is a button; none is at 15 agents, so one is made) ---- */
     await js(`(()=>{for(const id of ['library','boss']){const b=document.createElement('button');b.className='ro-lplate';b.dataset.place=id;b.id='tp-'+id;b.type='button';b.textContent=id;document.querySelector('#stage .ro-chrome').appendChild(b)}return 1})()`);
@@ -304,6 +336,7 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(await plates(arcRoom), arcBefore, `${tag}: and nothing moved`);
     assert.deepStrictEqual(await saved(), arcDoc, `${tag}: and nothing was saved`);
     await js(`window.__durbarSimUi.uncrowd()`);
+    await signMenuKeys(`${tag} arcade`, A);
   }
   console.log('[097-order] ok');
 
