@@ -8,10 +8,12 @@
  *   SHOTS_OUT=<dir>             also saves 097-slip-pills-arcade-long-<w>x<h>.png (the arcade's lane with long names)
  *   SLIPPLATES_QUERY='simnames=long'   extra simulator page parameters
  *
- * FR-359 (bug #1478): no slip lies over another slip, with long names too (the limit pill, 615 px with `simnames=long`, was docked over the queue pill in the arcade at 1280x800).
+ * FR-359 (bug #1478): no slip lies over another slip, with long names too (the limit pill, 617 px with `simnames=long`, was docked over the queue pill in the arcade at 1280x800).
  * Mutant 2: take `;max-width:30%` out of the arcade's pill rule in src/renderer/realoffice/worlds/retro/world.css: `arcade 1280x800 long names` fails "no slip covers another slip".
+ * FR-359: each arcade pill is at most 30% of the floor wide (+1 px). Mutant 4: `max-width:30%` -> `40%` in the arcade's pill rule fails "an arcade pill is at most 30% of the floor wide".
+ * SLIPPLATES_QUERY is spread after the name pass's own query, so `simnames=...` in it overrides both passes (the default-name pass then runs with it too).
  * FR-359: a pill's title is its whole text (what the ellipsis cuts shows on hover). Mutant 3: in `drawSlips` of src/renderer/realoffice.js give the limit pill's `btn(t, t, ...)` the title 'Open the chat' again:
- * fails "a pill's title is its whole text" where the limit pill is a pill (the cave at 1280x800 with long names was the first, 2026-11-12).
+ * fails "a pill's title is its whole text" where the limit pill is a pill (the cave at 1280x800 with long names was the first, 2026-11-11).
  *
  * Mutant (the fix undone): in `put` of src/renderer/realoffice.js, take `dset(e, 'variant', v);` out of the `e.hidden = false;` line (so a pill is measured
  * without its variant's CSS, as it was before the fix): the arcade at 1280x800 fails every run with the limit pill covering Kenji's and Tomas's plates (the fresh-slip case).
@@ -50,7 +52,10 @@ module.exports = async (ctx) => {
     await new Promise((r) => setTimeout(r, 1200));
     /* FR-359: a pill may end in an ellipsis; its title carries the whole text, and the accessible name is the button's text */
     assert.deepStrictEqual(await js(`[...document.querySelectorAll('#stage .ro-slip[data-variant="pill"]:not([hidden]) .ro-pill')].filter(b=>b.title!==b.textContent.trim()).map(b=>b.textContent.trim()+' | title "'+b.title+'"')`), [], `${tag}: a pill's title is its whole text`);
-    assert.ok(await js(`document.querySelectorAll('#stage .ro-slip[data-variant="pill"]:not([hidden]) .ro-pill').length>0`), `${tag}: a pill is drawn to read the title of`);
+    if (world === 'arcade') { /* the arcade draws only pills (Photo and cave may find room for every full slip) */
+      assert.ok(await js(`document.querySelectorAll('#stage .ro-slip[data-variant="pill"]:not([hidden]) .ro-pill').length>0`), `${tag}: a pill is drawn to read the title of`);
+      assert.deepStrictEqual(await js(`(()=>{const f=document.querySelector('#stage .ro').getBoundingClientRect().width;return [...document.querySelectorAll('#stage .ro-slip[data-variant="pill"]:not([hidden])')].filter(e=>e.getBoundingClientRect().width>0.3*f+1).map(e=>e.className+' '+Math.round(e.getBoundingClientRect().width)+' of '+Math.round(f))})()`), [], `${tag}: an arcade pill is at most 30% of the floor wide`);
+    }
     if (process.env.SHOTS_OUT && world === 'arcade' && nq.simnames) await H.shot(path.join(process.env.SHOTS_OUT, `097-slip-pills-arcade-long-${w}x${h}.png`), { prep: 'mouse' });
     assert.deepStrictEqual(await js(COVERS), [], `${tag}: settled, no slip covers another slip, a plate, a sign, a chair label, a chip, a cue or a face`);
   }
