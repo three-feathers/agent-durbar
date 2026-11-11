@@ -2730,7 +2730,7 @@ function openPanel(id,focus){
   if($('ntCount'))$('ntCount').onclick=e=>toggleNotes(a,e.currentTarget); /* spec 083 FR-040: the header count opens and closes the drawer */
   if($('notesHdrBtn'))$('notesHdrBtn').onclick=()=>openNotes(a,{opener:$('moreBtn')});
   wireAnswerBar(a);paintCoffeeBar.key='';paintCoffeeBar(); /* spec 068 FR-022 */
-  if(needsMe(a)){const c=pendingCardOf(a);if(c)announce(a.name+(c.classList.contains('question')?' asks: ':' needs your OK: ')+requestText(c),ANN_REQUEST);}
+  if(needsMe(a)){const c=pendingCardOf(a);if(c)announce([a.name,(c.classList.contains('question')?' asks: ':' needs your OK: ')+requestText(c)],ANN_REQUEST);}
   $('pauseBtn').onclick=()=>{a.paused=!a.paused;if(a.live&&bridge.setPaused)bridge.setPaused(a.id,a.paused);toast(esc(a.name)+(a.paused?' paused.':' resumed.'));renderAll();};
   $('railDoor').onclick=()=>openInbox(); /* spec 052 FR-216: Your door opens the Needs you queue */
   if($('stopBtn'))$('stopBtn').onclick=e=>{RUN_SAID.stopped=true;if(a.live){const b=e.currentTarget;if(b.getAttribute('aria-busy')==='true')return;b.setAttribute('aria-busy','true');return stopLive(a).catch(failToast('stop')).finally(()=>{b.removeAttribute('aria-busy');syncRunState();});}stopDemoTurn(a);a.paused=false;a.state='idle';a.label=null;a.task='Stopped by you. Ready for a new task.';toast(esc(a.name)+' stopped.');renderAll();};
@@ -4415,9 +4415,15 @@ function closeInbox(dismiss){if($('needsPanel'))closeDoor(dismiss===true);clearI
 /* spec 052 FR-034: one polite live region for requests and answers (screen readers hear them; nothing visible changes) */
 let announceT=0,announceP=0;
 const ANN_REQUEST=1; /* spec 005 FR-237: a request for the user's OK or an answer outranks a status within the 60 ms window */
-/* spec 012 FR-178 (issue 1419): every line goes through the helpers' mask here, the one place all announcements pass: home folders on the raw
-   text first, then the desk mask, before the cut (an agent or folder name can hold a token or a home folder). Fails closed: nothing is said. */
-function annMask(t){try{const m=helperMask(String(t));return typeof m==='string'?m:'';}catch(e){return '';}}
+/* spec 012 FR-178 (issue 1419): every line goes through the helpers' masks here, the one place all announcements pass: home folders on the raw
+   text first (and on its copy without hidden characters), then the desk mask, before the cut (a name can hold a token or a home folder).
+   A line may come as parts (`[name, rest]`), each masked alone. A part the mask finds nothing in is said as written, backslashes included
+   (the desk mask undoes Markdown escapes, and a spoken command must be the one that runs); a part with both a secret and an escape is
+   said as `[redacted]`. When masking is not possible (no module, a throw, a failed mask) a fixed line is said, never the text. */
+const ANN_UNCHECKED='A line was not read out: Durbar could not check it for secrets.';
+function annHome(s){const R=window.DurbarRedact,c=R&&typeof R.unhide==='function'?R.unhide(s):s;if(typeof c==='string'&&c!==s){const hc=homeMask(c);if(hc!==c)return hc;}return homeMask(s);}
+function annPart(t){const s=String(t==null?'':t);if(!s)return '';const h=annHome(s);if(typeof h!=='string'||!h)return null;const m=deskMask(h);if(typeof m!=='string'||!m||m.includes('[redaction failed]')||!STX||typeof STX.unesc!=='function')return null;const u=STX.unesc(h);return m===u?h:u===h?m:'[redacted]';}
+function annMask(t){try{let out='';for(const p of Array.isArray(t)?t:[t]){const x=annPart(p);if(x===null)return ANN_UNCHECKED;out+=x;}return out.trim()?out:'';}catch(e){return ANN_UNCHECKED;}}
 function announce(text,prio){const el=$('srAnnounce');if(!el||!text)return;const said=annMask(text);if(!said)return;const p=prio||0;if(announceT&&p<announceP)return;clearTimeout(announceT);announceP=p;el.textContent='';announceT=setTimeout(()=>{announceT=0;announceP=0;el.textContent=said.slice(0,300);},60);}
 
 /* ---- spec 052 FR-191..FR-196 (T196, T197): Your door, the Needs you queue as a panel beside the office. It reuses paintInbox() for the rows (the
@@ -6638,7 +6644,7 @@ function showQuestion(a,e){
   row.appendChild(ok);row.appendChild(skip);n.appendChild(row);
   a.question={requestId:e.requestId,n,row,st};(a.qs||(a.qs=new Map())).set(e.requestId,a.question); /* spec 052 FR-178: every open question by request id (two can be open at once) */
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
-  announce(a.name+' asks: '+(safeMask((qs[0]&&qs[0].question)||'')||'a question'));renderInboxBtn();
+  announce([a.name,' asks: '+(safeMask((qs[0]&&qs[0].question)||'')||'a question')]);renderInboxBtn();
 }
 /* ---------- MCP elicitation (spec 012 FR-151): a form in the question card, or an https page opened only after a click.
    Text only, never HTML; values are never logged or shown afterwards. Main checks the answer again before the agent gets it. ---------- */
@@ -6953,7 +6959,7 @@ function showPerm(a,p){
   }
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
   if(t.T.typing)typingPaint(t.T.typing);
-  if(p.state==='pending')announce(a.name+' needs your OK: '+(look?look+' The request: ':'')+sumS.text+(hwhy?'. '+PERM_WHY[hwhy]+hgrant:'')); /* spec 003 FR-118: the lookalike line first, so the 300-character announcement keeps it */
+  if(p.state==='pending')announce([a.name,' needs your OK: '+(look?look+' The request: ':'')+sumS.text+(hwhy?'. '+PERM_WHY[hwhy]+hgrant:'')]); /* spec 003 FR-118: the lookalike line first, so the 300-character announcement keeps it; spec 012 FR-178: the name and the request are masked apart, so the request is said as the card shows it */
   renderInboxBtn();
 }
 /* spec 003 FR-094..FR-096 (owner 2026-10-23, supersedes spec 052 FR-074's button): under a request denied by Read-only, one button
