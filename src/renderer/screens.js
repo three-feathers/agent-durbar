@@ -306,7 +306,7 @@
       msg.textContent=r&&r.ok?'Saved.':'Not saved.';
     };
   }
-  /* spec 069 FR-069 (issue #1624): the Settings page is rebuilt after a switch (the Copilot CLI list, the Claude Code list, the world, a theme).
+  /* spec 069 FR-069 (issue 1624): the Settings page is rebuilt after a switch (the Copilot CLI list, the Claude Code list, the world, a theme).
      Read the scroll position of the page body and the focused control (its id, or the row's data-amb / data-g / data-place plus its data-act)
      before the rebuild; back() puts both back on the new DOM, and the focus never scrolls (focusIn). */
   function keepPlace(r){
