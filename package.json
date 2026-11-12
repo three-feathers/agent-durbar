@@ -116,6 +116,7 @@
     "test:featureinventory": "node scripts/test-feature-inventory.js && node scripts/feature-inventory.js",
     "test:rendersyntax": "node scripts/test-renderer-syntax.js",
     "test:releasevideo": "node scripts/test-release-video.js",
+    "test:pencilpark": "node scripts/test-pencil-park.js",
     "test:usage": "node scripts/test-usage.js",
     "test:specsindex": "node scripts/test-specs-index.js && node scripts/specs-index.js --check",
     "changelog:check": "node scripts/changelog.js check",

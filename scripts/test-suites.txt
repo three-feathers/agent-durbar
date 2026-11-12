@@ -250,3 +250,4 @@ test:momentsregistry
 test:paritytick
 test:picturebudget
 test:specnumbers
+test:pencilpark
