@@ -1,0 +1,1 @@
+- **Arcade layout test runs at the real room heights** (spec 102, issue #1590): the test used offices 51 px taller than the app's; it now uses the measured 797 and 697 px, and names the one case where a folder of 4 splits (10 agents in 3 or 4 folders at 1280x800, so the hall does not scroll). No app change.

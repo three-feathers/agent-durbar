@@ -24,14 +24,16 @@ const SIGNS = (f: number): Record<string, { name: string; path: string; counts: 
 const inter = (a: Rect, b: Rect, t = 0.5): boolean => a.x + t < b.x + b.w && b.x + t < a.x + a.w && a.y + t < b.y + b.h && b.y + t < a.y + a.h;
 const inside = (a: Rect, b: Rect, t = 0.5): boolean => a.x >= b.x - t && a.y >= b.y - t && a.x + a.w <= b.x + b.w + t && a.y + a.h <= b.y + b.h + t;
 /** the floors the app shows: both sizes with the chat closed; an open chat hides the office (#1001), so no office floor has a chat beside it */
-const SIZES: [number, number][] = [[1440, 848], [1280, 748]];
+/** the measured rooms (spec 102 T309, issue #1590): the floor less its 12 px padding top and bottom, at 1440x900 and 1280x800 */
+const ROOM = { h900: 797, h800: 697 } as const;
+const SIZES: [number, number][] = [[1440, ROOM.h900], [1280, ROOM.h800]];
 const NAMES = ['1440x900', '1280x800'];
 
 // ---- spec 102 delta 2026-11-11 (issue #1566, T308): the measured rooms of the app (the floor less its 12 px padding top and bottom): 1280x800 is 697 px, 666 with a 31 px strip; 1440x900 is 797, 766 with it.
 // The hall for 15 agents needs 682 px: it fits with no strip, scrolls under a strip until the floor's padding is lent (666 + 24 = 690), and the threshold is pinned here, not in a driver
 {
   const m15 = model(15, 4), at = (w: number, h: number): Layout => aislesLayout(m15, { w, h }, META, SIGNS(4));
-  assert.ok(!at(1248, 697).scroll && !at(1408, 797).scroll && !at(1408, 766).scroll, '15 agents fit the measured rooms (1280x800 without a strip, 1440x900 with and without)');
+  assert.ok(!at(1248, ROOM.h800).scroll && !at(1408, ROOM.h900).scroll && !at(1408, ROOM.h900 - 31).scroll, '15 agents fit the measured rooms (1280x800 without a strip, 1440x900 with and without)');
   assert.ok(at(1248, 666).scroll, '15 agents at 1280x800 with the strip shown (666 px) scroll until the padding is lent');
   assert.ok(!at(1248, 690).scroll && !at(1248, 682).scroll, '15 agents fit 690 px (666 + the 24 px lent) and the boundary 682');
   assert.ok(at(1248, 681).scroll, '15 agents scroll at 681 px: the hall needs 682');
@@ -192,7 +194,14 @@ for (const [W, H] of SIZES) for (const dh of [0, 31]) for (const n of [1, 2, 3, 
   for (const z of L.zones) { parts.set(z.id, (parts.get(z.id) || 0) + 1); sizes.set(z.id, (sizes.get(z.id) || 0) + z.desks.length); }
   const cut = [...parts].filter(([id, c]) => c > 1 && (sizes.get(id) || 0) <= 4);
   if (cut.length) split.push(`${n} in ${f} at ${W}x${H - dh}`);
-  if (n <= 10) assert.deepStrictEqual(cut, [], `${n} in ${f} at ${W}x${H - dh}: a folder of 4 or fewer is split`);
+  /* spec 102 T309 (issue #1590): at the measured rooms the one split is 10 agents in 3 or 4 folders at 1280x800 (three rows of the narrowest cabinet need 714 px with the lobby; the room has 697, 666 under a strip): the hall splits before it scrolls */
+  const gap = n === 10 && f >= 3 && W === 1280;
+  if (n <= 10 && !gap) assert.deepStrictEqual(cut, [], `${n} in ${f} at ${W}x${H - dh}: a folder of 4 or fewer is split`);
+  if (n <= 10 && gap) {
+    assert.ok(cut.length > 0 && !L.scroll, `${n} in ${f} at ${W}x${H - dh}: the named gap (a split folder, no scroll) moved: cut ${cut.length}, scroll ${L.scroll}`);
+    const at = (h: number): number => { const M = aislesLayout(model(n, f), { w: W, h }, META, SIGNS(f)), c = new Map<string, number>(); for (const z of M.zones) c.set(z.id, (c.get(z.id) || 0) + 1); return [...c.values()].filter((v) => v > 1).length; };
+    assert.ok(at(713) > 0 && at(714) === 0, `${n} in ${f} at ${W}: the folder is whole from 714 px and split at 713 (the threshold moved: ${at(713)} / ${at(714)})`);
+  }
   /* a small room stands close together: neighbours on a row at most a quarter of a slot apart (1.1 slots a column) */
   if (n <= 4) for (const a of L.zones.flatMap((z) => z.desks)) for (const b of L.zones.flatMap((z) => z.desks)) if (a !== b && Math.abs(a.slot.y - b.slot.y) < 1 && b.slot.x > a.slot.x) {
     const gap = b.slot.x - (a.slot.x + a.slot.w);
@@ -442,10 +451,10 @@ console.log(`floor covered with 4 or fewer: ${covs.join('; ')}`);
 
 /* spec 097 T247: the default arcade is unchanged by the crews' scaling: the Retro pixel people (pixelPeople unset, k 1) give the layout they gave before it. The hash is of every
    layout below (4, 12, 15 agents, both sizes), taken from the code before the change; a change here moves a pixel-art arcade, which is not what the crews' wiring may do.
-   Re-taken on purpose by spec 102 FR-308 (2026-11-09): `big` is now "4 or fewer" (it was the cabinet's kind: true for 12 and 15 agents, false for some groups of 4) (the plans did not move). */
+   Re-taken on purpose by spec 102 FR-308 (2026-11-09): `big` is now "4 or fewer" (it was the cabinet's kind: true for 12 and 15 agents, false for some groups of 4) (the plans did not move). Its two floors stay 848 and 748 px high on purpose (spec 102 T309): the hash pins the layout code, not the app's rooms. */
 {
   const h = crypto.createHash('sha256');
-  for (const [W, H] of SIZES) for (const n of [4, 12, 15]) h.update(JSON.stringify(aislesLayout(model(n, 4, STATES, n > 4 ? 3 : 0), { w: W, h: H }, META, SIGNS(4))));
+  for (const [W, H] of [[1440, 848], [1280, 748]]) for (const n of [4, 12, 15]) h.update(JSON.stringify(aislesLayout(model(n, 4, STATES, n > 4 ? 3 : 0), { w: W, h: H }, META, SIGNS(4))));
   const got = h.digest('hex');
   console.log(`arcade, Retro pixel people layout hash ${got}`);
   assert.strictEqual(got, '7c469f199d1ea68917bf09721a2bf96362a5b18a6a40c91d6cada1e5c3cf2349', 'the Retro pixel set lays out differently than before the crews were wired');
