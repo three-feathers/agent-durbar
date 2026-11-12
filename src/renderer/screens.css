@@ -539,3 +539,10 @@ body.has-bridge #topBtns{display:flex}
 /* the title and Close line up with the list-and-page block instead of the 880px column alone (880 + list 184 + gutters) */
 #screen:has(.scr-nav) .scr-head,html[data-platform="darwin"] .notice-strip:not([hidden]) ~ #screen:has(.scr-nav) .scr-head{--sn-pad:max(calc(var(--s-1)*6),calc(50% - var(--s-1)*131.5));padding-left:var(--sn-pad);padding-right:var(--sn-pad)}
 @media (max-width:759px){#screen:has(.scr-nav) .scr-head{padding-left:calc(var(--s-1)*6);padding-right:calc(var(--s-1)*6)}}
+/* spec 111 T008: Settings > Team templates (teams.js); text stays at least 10.5px, buttons wrap under the name when the column is narrow; spacing from the tokens */
+.tm-list{list-style:none;margin:var(--sec-gap) 0 0;padding:0;display:flex;flex-direction:column;gap:var(--sec-gap)}
+.tm-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--sec-gap);padding:var(--row-pad);border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface)}
+.tm-info{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--sec-gap);min-width:0}
+.tm-name{overflow-wrap:anywhere}
+.tm-sum{font-size:var(--t4-size);color:var(--ink-2)}
+.tm-acts{display:flex;flex-wrap:wrap;gap:var(--sec-gap)}
