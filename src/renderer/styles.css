@@ -2260,19 +2260,6 @@ body.panel-open .door-panel,#screen:not([hidden]) ~ .door-panel{display:none}
 .door-body .inbox-row .ib-ans>.btn.session{flex:1 1 100%;display:block;height:auto;min-height:28px;padding-top:var(--r-sm);padding-bottom:var(--r-sm);white-space:normal;overflow:visible;text-overflow:clip;text-align:left} /* FR-199 (Q-NY-10): the session grant on its own line, wrapped and never cut */
 .door-body .inbox-row.is-limit .ib-ans>.btn.session{flex:none;display:inline-block;height:28px;min-height:0;padding-top:0;padding-bottom:0;white-space:nowrap;text-align:center} /* the limit row's Remove limit is a plain button like Raise limit and Stop here */
 
-/* ---- spec 070 A14 (FR-061..FR-066, FR-075, FR-076; T034..T036, T044): Flat's modern look, behind html[data-flat-look] (flatlook.js; off by default).
-   Only Flat matches: Clean Office has no data-ui and no world is shown, so Real office, Retro, the cave and every other pack are untouched (FR-066).
-   Colours are !important because theme.js writes the pack's values as inline style; sizes and radii are tokens the rules above read. ---- */
-html[data-flat-look]:not([data-ui]):not([data-world]){
-  --bg:var(--flat-page)!important; --surface:var(--flat-page)!important; --raised:var(--flat-page)!important; --card:var(--flat-page)!important; --surface-2:var(--flat-page-2)!important; --note:var(--flat-page-2)!important;
-  --line:var(--flat-line)!important; --line-2:var(--flat-line-2)!important; --line-ctl:var(--flat-line-ctl)!important; --sage-ink:var(--flat-accent)!important;
-  --btn-primary-hover:var(--flat-accent-hover); --send-bg:var(--accent); --send-ink:var(--surface); --send-hover:var(--btn-primary-hover);
-  --r-sm:3px; --r-md:4px; --r-lg:6px; --r-xl:8px;
-  --h-ctl:24px; --h-chip:24px; --btn-pad:8px; --btn-fs:var(--t4-size); --btn-fw:500; --ib-size:24px; --ptab-h:24px; --ct-h:24px; --btn-sm-h:24px;
-  --composer-pad:6px; --inbox-pad:4px;
-}
-html[data-flat-look]:not([data-ui]):not([data-world])[data-density="compact"] :is(#panel,#screen,.dlg,.dlg-ov,.more-menu,.mode-menu,#topMoreMenu){--h-ctl:24px; --h-chip:24px}
-
 /* ---- spec 095 (phase 3): search conversations. FR-001: the field after the view toggle; on a narrow top bar (fitTopbar's tb-search
    step) the magnifier, which opens the field over the bar. FR-050: 10.5px or more, focus rings as elsewhere, the mark has a non-colour
    cue (bold and an underline), every colour from the theme tokens. ---- */
@@ -2307,3 +2294,16 @@ body.has-csearch.cs-demo .cs-box{visibility:hidden} /* the demo office: kept in 
 .cs-who{font-weight:var(--t1-weight);color:var(--ink)}
 .cs-more{font-size:var(--t4-size);color:var(--muted);padding:0 var(--s-1)}
 .cs-wrap mark,.cs-hit mark{background:var(--warn-bg);color:var(--ink);font-weight:var(--t1-weight);text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:2px;padding:0}
+
+/* ---- spec 070 A14 (FR-061..FR-066, FR-075, FR-076; T034..T036, T044): Flat's modern look, behind html[data-flat-look] (flatlook.js; off by default).
+   Only Flat matches: Clean Office has no data-ui and no world is shown, so Real office, Retro, the cave and every other pack are untouched (FR-066).
+   Colours are !important because theme.js writes the pack's values as inline style; sizes and radii are tokens the rules above read. ---- */
+html[data-flat-look]:not([data-ui]):not([data-world]){
+  --bg:var(--flat-page)!important; --surface:var(--flat-page)!important; --raised:var(--flat-page)!important; --card:var(--flat-page)!important; --surface-2:var(--flat-page-2)!important; --note:var(--flat-page-2)!important;
+  --line:var(--flat-line)!important; --line-2:var(--flat-line-2)!important; --line-ctl:var(--flat-line-ctl)!important; --sage-ink:var(--flat-accent)!important;
+  --btn-primary-hover:var(--flat-accent-hover); --send-bg:var(--accent); --send-ink:var(--surface); --send-hover:var(--btn-primary-hover);
+  --r-sm:3px; --r-md:4px; --r-lg:6px; --r-xl:8px;
+  --h-ctl:24px; --h-chip:24px; --btn-pad:8px; --btn-fs:var(--t4-size); --btn-fw:500; --ib-size:24px; --ptab-h:24px; --ct-h:24px; --btn-sm-h:24px;
+  --composer-pad:6px; --inbox-pad:4px;
+}
+html[data-flat-look]:not([data-ui]):not([data-world])[data-density="compact"] :is(#panel,#screen,.dlg,.dlg-ov,.more-menu,.mode-menu,#topMoreMenu){--h-ctl:24px; --h-chip:24px}
