@@ -712,3 +712,11 @@ Owner decisions (Vikram, Telegram DM, 2026-11-08). 05:00 UTC: "there are too man
   - The list is read after FR-090's PR read and above its final head re-check, so a push while the gate runs blocks with `head-changed(...)` rather than leaving a list of another commit (this also answers the head-sha finding in the review of #1479).
   - `[KNOWN GAP]` Not run on macOS or Windows (bash and jq; Linux CI); Windows runs the static checks.
   - Numbers checked 2026-11-11 with `npm run specs:numbers`, open PRs and remote `021-*` branches: PR #1479 takes FR-090 and T077; this takes FR-091 and T078.
+
+### 2026-11-12: a stacked PR is not a second claim of a number (FR-094)
+
+PR #1232 (spec 095) was red with `FR-026, T026 and T027 are also in PR #1240`, but #1240 is stacked on it (base `095-search-window`) and carries the same lines: it inherits them. Renumbering is wrong. FR-085's check is narrowed, not weakened: a genuinely separate PR that takes the same number is still a clash.
+
+- **FR-094** `[IMPLEMENTED]` `test:` `scripts/spec-numbers.js` does not report a clash with an open PR that is **stacked** with the checked branch, in either direction: (a) the PR's head contains the checked head (the checked head is an ancestor of it), or its base branch is the checked branch's head branch, followed transitively along the base chain; (b) the checked branch is itself stacked on that PR: its base branch is that PR's head branch, followed along the chain (a PR whose head the checked branch already contains was skipped before). The branch's own refs come from its PR in the open-PR list (`PR_NUMBER`, so the CI step needs no change) or, on a local run, from the checked-out branch name; `main` is never a stack member. The report counts them as skipped. Everything else (another open PR, `origin/main`) clashes as before.
+  - Not verified until merged: CI runs the base copy of the script, so #1232 and #1240 turn green only after this lands and they are re-run. Limit: a fork PR whose head branch name equals a base name is also read as stacked; the stack check never hides a clash with `origin/main`.
+  - Numbers checked 2026-11-12 with `npm run specs:numbers` and the open PR heads: FR-093 and T080 are #1579's; this takes FR-094 and T081.

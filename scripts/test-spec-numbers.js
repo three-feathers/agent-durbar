@@ -256,6 +256,54 @@ try {
     }
     r = cli(hid, ['--no-fetch', '--head', sha]); assert.notStrictEqual(r.status, 2, r.stdout); }
 
+  // FR-094: stacked PRs inherit numbers. Pure part first.
+  { const H = (label, headRef, baseRef) => ({ label, headRef, baseRef });
+    const stk = (self, heads) => [...sn.stackRelated(self, heads).keys()].sort();
+    assert.deepStrictEqual(stk({ headRef: 'a', baseRef: 'main' }, [H('PR #2', 'b', 'a'), H('PR #3', 'c', 'b'), H('PR #4', 'x', 'main')]), ['PR #2', 'PR #3'], 'stacked on this head branch, also a chain of two');
+    assert.deepStrictEqual(stk({ headRef: 'c', baseRef: 'b' }, [H('PR #1', 'a', 'main'), H('PR #2', 'b', 'a'), H('PR #4', 'x', 'main')]), ['PR #1', 'PR #2'], 'this branch is stacked on them: the base chain');
+    assert.deepStrictEqual(stk({ headRef: 'a', baseRef: 'main' }, [H('PR #4', 'x', 'main'), H('PR #5', 'y', 'main')]), [], 'two PRs on main are not stacked');
+    assert.deepStrictEqual(stk({ headRef: 'main', baseRef: 'main' }, [H('PR #4', 'x', 'main')]), [], 'main is never a stack member');
+    assert.deepStrictEqual(stk(null, [H('PR #4', 'x', 'a')]), []); }
+
+  // FR-094 in a repo: T020 is added by a PR and by the checked branch in the same file
+  const stackRepo = () => {
+    const sd = repo(); G(sd, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+    G(sd, 'checkout', '-q', '-b', 'search-window'); write(sd, 'specs/001-a/tasks.md', T('001', '002', '003', '020')); const win = commit(sd, 'window');
+    return { sd, win };
+  };
+  const names = (sd, args) => cli(sd, args, {});
+  { // separate PR, same number: clash (no refs at all, no ancestry)
+    const { sd } = stackRepo();
+    G(sd, 'checkout', '-q', '-b', 'other', 'main'); write(sd, 'specs/001-a/tasks.md', T('001', '002', '003', '020')); const oth = commit(sd, 'other');
+    G(sd, 'update-ref', 'refs/remotes/pr/9', oth); G(sd, 'checkout', '-q', 'search-window');
+    r = names(sd, ['--no-fetch']); assert.strictEqual(r.status, 1, 'separate PR taking the same number must clash: ' + r.stdout); assert.match(r.stdout, /T020 is also in PR #9/);
+    // unrelated PR with other numbers: no clash
+    write(sd, 'specs/001-a/tasks.md', T('001', '002', '003', '021')); commit(sd, 'renumbered');
+    r = names(sd, ['--no-fetch']); assert.strictEqual(r.status, 0, 'unrelated PR with other numbers: ' + r.stdout);
+  }
+  { // PR whose history contains this head (stacked, no ref names known): no clash
+    const { sd, win } = stackRepo();
+    G(sd, 'checkout', '-q', '-b', 'search-ui'); write(sd, 'specs/001-a/tasks.md', T('001', '002', '003', '020', '030')); const ui = commit(sd, 'ui');
+    G(sd, 'update-ref', 'refs/remotes/pr/10', ui); G(sd, 'checkout', '-q', 'search-window');
+    r = names(sd, ['--no-fetch']); assert.strictEqual(r.status, 0, 'a PR containing the checked head is not a second claim: ' + r.stdout);
+    assert.ok(win);
+    // the reverse: checked on the stacked branch, the base PR's head (an ancestor) is skipped
+    G(sd, 'update-ref', 'refs/remotes/pr/11', win); G(sd, 'checkout', '-q', 'search-ui');
+    r = names(sd, ['--no-fetch']); assert.strictEqual(r.status, 0, 'the reverse direction: ' + r.stdout);
+  }
+  { // by base ref, histories diverged (the base PR moved on after the stack was cut): in-process, with the open-PR list carrying refs
+    const { sd } = stackRepo();
+    G(sd, 'checkout', '-q', '-b', 'search-ui', 'main'); write(sd, 'specs/001-a/tasks.md', T('001', '002', '003', '020')); const ui = commit(sd, 'ui carries the same line');
+    G(sd, 'checkout', '-q', 'search-window'); write(sd, 'specs/001-a/tasks.md', T('001', '002', '003', '020', '025')); commit(sd, 'window moved on');
+    G(sd, 'update-ref', 'refs/remotes/pr/10', ui);
+    // collect with refs, the way main does
+    const heads = [{ label: 'PR #10', sha: ui, headRef: 'search-ui', baseRef: 'search-window' }];
+    const colls = (self) => sn.findClashes(sn.collect(sd, heads, G(sd, 'rev-parse', 'HEAD'), self));
+    assert.deepStrictEqual(colls({ headRef: 'search-window', baseRef: 'main' }), [], 'a PR whose base is this head branch is not a second claim');
+    assert.ok(colls({ headRef: 'zzz', baseRef: 'main' }).length > 0, 'without the base link the same number clashes (diverged histories)');
+    assert.deepStrictEqual(sn.findClashes(sn.collect(sd, [{ label: 'PR #8', sha: G(sd, 'rev-parse', 'HEAD'), headRef: 'search-window', baseRef: 'main' }], ui, { headRef: 'search-ui', baseRef: 'search-window' })), [], 'the reverse: this branch is stacked on that PR (its base chain)');
+  }
+
   // the workflow keeps the token away from PR code (mutant: remove any of these and this fails)
   // a Windows checkout has CRLF line ends (core.autocrlf): the shape checks read the workflow with LF only, and a CRLF copy must give the same jobs
   const wfRaw = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'spec-kit.yml'), 'utf8');

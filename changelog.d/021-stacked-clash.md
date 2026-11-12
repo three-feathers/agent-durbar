@@ -1,0 +1,1 @@
+- **Stacked PRs no longer clash in `npm run specs:numbers`** (spec 021 FR-094): a PR stacked on another, or containing its head, inherits its spec numbers; only a separate PR taking the same number is a clash. Tests: `npm run test:specnumbers`; to check afterwards, re-run the `Spec numbers and picture budget` job on #1232 once this is on main.
