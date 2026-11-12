@@ -63,7 +63,7 @@ const run = async (ctx, reqs) => {
       const ow=p.querySelector('.ro-l2>.dot'),rec0=!!(ow&&ow.getClientRects().length);const rec={ownDot:rec0,pc:p.className.replace(/ro-plate |has-help|has-ren/g,'').trim(),t:l2.textContent.slice(0,40),id,word,helped,narrow:p.classList.contains('cab-narrow'),ren:p.classList.contains('has-ren'),plateW:Math.round(pr.width),shown:0,helpers:0,urgentShown:-1};seen.push(rec);
       const wdE=p.querySelector('.ro-wd'),boxR=helped&&wdE?Math.min(wdE.getBoundingClientRect().right,right):right;rec.l2c=[l2.scrollWidth,l2.clientWidth];rec.label=p.getAttribute('aria-label')||'';rec.title=p.getAttribute('title')||'';
       const lc=getComputedStyle(l2),cx=document.createElement('canvas').getContext('2d');cx.font=lc.fontStyle+' '+lc.fontWeight+' '+lc.fontSize+' '+lc.fontFamily;const ellW=!helped&&l2.scrollWidth>l2.clientWidth+0.5?cx.measureText('\u2026').width:0;rec.ell=+ellW.toFixed(2);rec.spare=+(boxR-a.right-ellW).toFixed(3);rec.room=+(right-a.right-ellW).toFixed(3); /* no helpers: the word's right end to the content box, less the ellipsis; with helpers (below): the content box less the +N! less what the word needs in its own line (the word, and whatever the plate draws before it, such as an own dot and its gap) */ /* a line that runs on past the word ends in an ellipsis, which takes the room of the word's last letters: the word is whole only when it and the ellipsis fit */
-      const cb=helped&&wdE?wdE:l2,ccs=getComputedStyle(cb),wb=cb.getBoundingClientRect(),ellip=ccs.textOverflow==='ellipsis'&&ccs.overflowX==='hidden'&&cb.scrollWidth>cb.clientWidth; /* the allowance of the 1558 work, kept: where the caller says the word may be cut (ell), it must end in an ellipsis of its clipping box (the word's own box with helpers, else the line) and stay inside the content box */
+      const cb=helped&&wdE?wdE:l2,ccs=getComputedStyle(cb),wb=cb.getBoundingClientRect(),ellip=ccs.textOverflow==='ellipsis'&&ccs.overflowX==='hidden'&&cb.scrollWidth>cb.clientWidth;rec.ellip=ellip; /* the allowance of the 1558 work, kept: where the caller says the word may be cut (ell), it must end in an ellipsis of its clipping box (the word's own box with helpers, else the line) and stay inside the content box */
       if(a.right+ellW>boxR+0.02&&!(${jsLiteral(!!ell)}&&ellip&&wb.right<=right+0.5))out.push(id+' "'+word+'" ends at '+Math.round(a.right)+' of a content box to '+Math.round(right)+' (helped '+helped+'; line '+Math.round(b.left)+'..'+Math.round(b.right)+', mark '+(p.querySelector('.ro-l1').getBoundingClientRect().width|0)+' px, plate '+Math.round(pr.left)+'..'+Math.round(pr.right)+', word box '+(((p.querySelector('.ro-wd')||l2).getBoundingClientRect().width)|0)+' px)');
       const h=p.querySelector('.ro-help');if(!helped||!h)continue;const l1=p.querySelector('.ro-l1').getBoundingClientRect(),hr=h.getBoundingClientRect(),hc=h.querySelector('.ro-hc'),hn=hc.firstChild,c=R(hn,0,hn.data.trim().length);
       if(c.left<l1.left-0.5||c.right>l1.right+0.5||c.right>hr.right+0.5)out.push(id+' the +N is cut: ends at '+Math.round(c.right)+' of a box to '+Math.round(Math.min(l1.right,hr.right)));
@@ -171,9 +171,11 @@ const run = async (ctx, reqs) => {
     await must(`(()=>{const P=[...document.querySelectorAll('#stage .ro-plate[data-id]:not(.lounge)')];return P.length>0&&P.every(p=>p.classList.contains('st-limit'));})()`, 'every plate drawn limit (squeeze)', 8000);
     if (MUT === 'noell' || MUT === 'spill') await js(`(()=>{const s=document.createElement('style');s.textContent=${jsLiteral(MUTS[MUT])};document.head.appendChild(s);})();0`);
     await js(`(()=>{const s=document.createElement('style');s.textContent=${jsLiteral('#stage .ro-plate .ro-wd{letter-spacing:1.4px!important}')};document.head.appendChild(s);})();0`);
+    if (MUT === 'squeezefit') await js(`(()=>{const s=document.createElement('style');s.textContent=${jsLiteral('#stage .ro-plate .ro-wd{letter-spacing:0!important}')};document.head.appendChild(s);})();0`); /* the word made to fit: the case must notice it is no longer cut */
     const sq = await js(PLATES(false, true));
     const sn = sq.seen.filter((x) => x.narrow && x.helped && x.word === 'Limit reached');
     assert.ok(sn.length >= 1, 'issue 1558: ' + w + 'x' + h + ' narrow squeezed: a narrow plate with helpers and "Limit reached" is drawn (the case for the ellipsis)');
+    assert.ok(sn.every((x) => x.ellip === true), 'issue 1558: ' + w + 'x' + h + ' narrow squeezed: the word is cut (an ellipsis of its clipping box is really drawn), or this case would not test the ellipsis at all: ' + JSON.stringify(sn.map((x) => x.ellip)));
     assert.deepStrictEqual(sq.out.filter((o) => sn.some((x) => o.startsWith(x.id + ' '))), [], 'issue 1558: ' + w + 'x' + h + ' narrow squeezed: where the word does not fit it ends in an ellipsis inside its own box (not a clip, not a spill under the pencil), and the +N stays whole');
   }
   for (const hv of ['waiting', 'limit']) {
@@ -239,6 +241,7 @@ const run = async (ctx, reqs) => {
   if (process.env.ARCADE_CASES === 'narrow') { /* test only: the wide-font entry runs the narrow cases alone */
     for (const [w, h] of SIZES) await narrowCases(w, h);
     await narrowTail();
+    console.log('[102-arcade] ran narrow cases only (ARCADE_CASES=narrow): ' + SIZES.map(([w, h]) => w + 'x' + h).join(', ') + ' (limit, helper waiting and limit, no pencil, no helpers, Working, squeezed), small window 1100x800, resize, gate (default and cave office at 800x600)');
     return;
   }
 
