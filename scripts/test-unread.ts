@@ -100,7 +100,7 @@ ok(/unread:isUnread\(a\),since:sinceLast\(a\)/.test(app), 'the lounge input carr
 ok(!/a\.state='unread'|setState\(a,'unread'/.test(app) && !/vis\(a\)[^;]*isUnread/.test(app), 'unread is not a state: vis(a) and the counts do not read it');
 const stats = app.slice(app.indexOf('function renderStats()'), app.indexOf('function renderFilter()'));
 ok(!/UNREAD|isUnread/.test(stats), 'the header counts do not read the marker');
-ok((app.match(/UNREAD\.forget\(agents\[i\]\.id\)/g) || []).length === 3, 'a removed session drops its marker in all three removal paths');
+ok((app.match(/forgetCardState\(agents\[i\]\.id\)/g) || []).length === 3 && /function forgetCardState\(id\)\{[^}]*UNREAD\.forget\(id\)/.test(app), 'a removed session drops its marker in all three removal paths (the shared per-id cleanup, spec 005 FR-240)');
 ok(/if\(SIM&&!window\.__durbarSimReplayed\)return;/.test(app), 'the simulator start-up script is not news');
 for (const [what, re] of [['card', /desk card is-\$\{st\}\$\{isUnread\(a\)/], ['desk', /desk is-\$\{st\}\$\{isUnread\(a\)/]] as const) ok(re.test(app), `the ${what} gets is-unread`);
 ok((app.match(/\$\{unreadWords\(/g) || []).length === 4, 'card, desk, list row and strip item names say it');
@@ -118,7 +118,9 @@ console.log(`[unread] ${n} checks passed`);
 
 // review on #774 (Paco): the per-id announcement note and the glow's entry time are dropped wherever the agent is dropped (agent, folder, floor)
 {
-  const sites = app.match(/UNREAD\.forget\(agents\[i\]\.id\);/g) || [];
-  const clean = app.match(/UNREAD\.forget\(agents\[i\]\.id\);UNREAD_AT\.delete\(agents\[i\]\.id\);UNREAD_SAID\.delete\(agents\[i\]\.id\);HL_AT\.delete\(agents\[i\]\.id\);/g) || [];
-  ok(sites.length >= 3 && clean.length === sites.length, 'every removal path clears UNREAD_SAID and HL_AT with the marker (' + clean.length + '/' + sites.length + ')');
+  // spec 005 FR-240: the three paths (agent, folder, floor) and a retired helper share one per-id cleanup, forgetCardState
+  const sites = app.match(/forgetCardState\(agents\[i\]\.id\);/g) || [];
+  const raw = app.match(/UNREAD\.forget\(agents\[i\]\.id\)/g) || [];
+  const clean = /function forgetCardState\(id\)\{[^}]*UNREAD\.forget\(id\);UNREAD_AT\.delete\(id\);UNREAD_SAID\.delete\(id\);HL_AT\.delete\(id\);/.test(app);
+  ok(sites.length >= 3 && raw.length === 0 && clean, 'every removal path clears UNREAD_SAID and HL_AT with the marker (' + sites.length + ' paths through forgetCardState, ' + raw.length + ' copies)');
 }

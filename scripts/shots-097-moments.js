@@ -437,6 +437,9 @@ module.exports = async (ctx) => {
       await H.settle();
       const small = await js(`[...document.querySelectorAll('#panel *')].filter(e=>e.children.length===0&&e.textContent.trim()&&e.getClientRects().length&&parseFloat(getComputedStyle(e).fontSize)<10.5).length`);
       assert.strictEqual(small, 0, `${tag}: the chat has no text under 10.5px`);
+      /* 102 T223 (#1268): the permission card in the arcade's chat is dark (T221 fixed the cream card found in #1279) and every text of it reads at 4.5:1; its buttons are there */
+      const perm = await js(`(()=>{const c=document.querySelector('#chat .note.perm:not(.settled)');if(!c)return null;const P=(s)=>{const m=/rgba?\\(([^)]+)\\)/.exec(s);return m?m[1].split(/[ ,\\/]+/).filter(Boolean).slice(0,3).map(Number):[0,0,0]},Lm=(a)=>{const f=(x)=>{x/=255;return x<=0.03928?x/12.92:Math.pow((x+0.055)/1.055,2.4)};return 0.2126*f(a[0])+0.7152*f(a[1])+0.0722*f(a[2])};const bg=P(getComputedStyle(c).backgroundColor);const worst=[...c.querySelectorAll('*')].filter(e=>e.children.length===0&&e.textContent.trim()&&e.getClientRects().length&&!e.closest('.btn')).map(e=>{const a=Lm(P(getComputedStyle(e).color)),b=Lm(bg);return (Math.max(a,b)+0.05)/(Math.min(a,b)+0.05)});return {lum:Lm(bg),btns:c.querySelectorAll('.btn').length,texts:worst.length,min:worst.length?Math.min(...worst):0}})()`);
+      assert.ok(perm && perm.lum < 0.2 && perm.btns >= 2 && perm.texts > 0 && perm.min >= 4.5, `${tag}: the permission card in the arcade's chat is dark, has its buttons and its text reads at 4.5:1: ${JSON.stringify(perm)}`);
       await shot(world, 'cell-chat', w, h);
       await H.load({ w, h, query: q(world, { sim: '15', simfloors: '1' }), ready: REAL, settle: false });
       await must(PICS, 'the pictures');
