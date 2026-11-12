@@ -209,9 +209,10 @@ const run = async (ctx, reqs) => {
       const hm=h.querySelector('.ro-hm'),hmr=hm&&hm.getClientRects().length?hm.getBoundingClientRect():null,own=p.querySelector('.ro-l2>.dot'),ownr=own&&own.getClientRects().length?own.getBoundingClientRect():null,d0=dots[0]?dots[0].getBoundingClientRect():null;
       rec.hm=hm?{shown:!!hmr,inside:!!hmr&&hmr.left>=l1.left-0.5&&hmr.right<=Math.min(l1.right,hr.right)+0.5,txt:hc.textContent.trim()}:null;rec.urgN=urg.filter(Boolean).length;rec.order=urg.map((u)=>u?'U':'o').join('');rec.ownDot=!!ownr;
       rec.m={word:+a.width.toFixed(1),plus:+c.width.toFixed(1),mark:hmr?+hmr.width.toFixed(1):0,dot:d0?+d0.width.toFixed(1):0,ownDot:ownr?+ownr.width.toFixed(1):0,content:+(right-(pr.left+parseFloat(cs.borderLeftWidth)+parseFloat(cs.paddingLeft))).toFixed(1),lineW:+b.width.toFixed(1),markBox:+l1.width.toFixed(1)};
-      rec.shown=sh.filter((v)=>v===1).length;rec.helpers=dots.length;rec.cls=dots.map((d)=>d.className.replace('dot ','')).join();rec.urgentShown=urg.some((u,i)=>u&&sh[i]===1)?1:urg.some(Boolean)?0:-1;}
+      rec.shown=sh.filter((v)=>v===1).length;{const ls=dots.map((d,i)=>sh[i]===1?d.getBoundingClientRect().right:-1e9).reduce((m,v)=>Math.max(m,v),-1e9);rec.gap=ls>-1e8?+(a.left-ls).toFixed(3):null;}rec.helpers=dots.length;rec.cls=dots.map((d)=>d.className.replace('dot ','')).join();rec.urgentShown=urg.some((u,i)=>u&&sh[i]===1)?1:urg.some(Boolean)?0:-1;}
     return {out,seen};})()`;
   const MUT = process.env.ARCADE_MUTANT || '';
+  const MARK_GAP = 4; /* spec 102 FR-313 (round 4): px between the last helper mark shown and the word on the narrow plate, so a helper's mark never reads as the plate's own state */
   const NARROW_ROOM = 3; /* spec 102 FR-312: the written margin, in px, between the status word's right end and the narrow plate's content box (measured on macOS/Electron in the spec delta); a font 3 px wider than this one still shows the word whole */
   /* ARCADE_MUTANT (test only), each must fail at its own label: cutword = the line as it was (the helpers' mark a fixed width, the line free to shrink below its word); cutplate = a plate narrower than its line
      (the word runs under the pencil); nodots = the mark's line has no room but the +N (no dot shown); sliver = the dots do not wrap, so one is cut in part; clipstate = the dots in creation order (an error dot last) */
@@ -223,6 +224,7 @@ const run = async (ctx, reqs) => {
     nomark: `.ro[data-world="retro"] .ro-plate.cab-narrow.has-ren.has-help:not(.lounge) .ro-hm{display:none!important}`,
     nohelpdot: `.ro[data-world="retro"] .ro-plate.cab-narrow.has-ren:not(.has-help,.lounge) .ro-l2>.dot{display:inline-block!important}`,
     nopenmark: `.ro[data-world="retro"] .ro-plate.cab-narrow:not(.has-ren) .ro-hm{display:none!important}`,
+    nogap: `.ro[data-world="retro"] .ro-plate.cab-narrow.has-help:not(.lounge) .ro-help .dot{margin-right:0!important}`,
     nopendotfull: `.ro[data-world="retro"] .ro-plate.cab-narrow.has-help:not(.has-ren) .ro-l2{gap:0!important}.ro[data-world="retro"] .ro-plate.cab-narrow.has-help:not(.has-ren) .ro-l2>.dot{display:inline-block!important;margin-right:7px!important}`,
     nopendot: `.ro[data-world="retro"] .ro-plate.cab-narrow.has-help:not(.has-ren) .ro-l2>.dot{display:inline-block!important;width:1px!important;height:1px!important;margin:0!important}`,
     sliver: `.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-help{flex-wrap:nowrap!important}.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l1{min-width:0!important}`,
@@ -292,11 +294,17 @@ const run = async (ctx, reqs) => {
       await markCheck(w + 'x' + h + ' narrow limit failed helper no pencil', {}, { states: 'limit', urgent: true, nopencil: true });
     }
     /* a Working plate on the narrow cabinet with a failed helper: the plate draws no own dot, so the picture shows what a reader sees of the state (the word, the border, the marquee) beside the helper's red dot */
-    if (w < 1440 && !MUT) {
+    if (w < 1440) {
       await loadArcade(w, h, 24, { simfreeze: '1', simhelpers: '3' });
       await js(`(()=>{const U=window.__durbarSimUi;U.agents().filter(a=>!a.parent).forEach((a)=>{a.state='working';delete a.label;});U.render();})();0`);
       await must(`(()=>{const P=[...document.querySelectorAll('#stage .ro-plate[data-id]:not(.lounge)')];return P.filter(p=>p.classList.contains('st-working')).length>=10;})()`, 'at least 10 plates drawn working', 8000);
-      await H.shot(path.join(OUT, `102-arcade-narrow-working-${w}x${h}.png`), { prep: 'calm', settle: true, tag: '102-arcade', what: 'narrow-working' });
+      if (MUTS[MUT]) await js(`(()=>{const s=document.createElement('style');s.textContent=${jsLiteral(MUTS[MUT])};document.head.appendChild(s);})();0`);
+      const wk = await js(PLATES());
+      const wp = wk.seen.filter((x) => x.narrow && x.helped && x.word === 'Working' && x.shown >= 1);
+      assert.ok(wp.length >= 1, 'issue 1574: ' + w + 'x' + h + ' narrow working: a narrow plate with helpers, the word "Working" and at least one helper mark shown is drawn (the case for the gap), saw ' + JSON.stringify(wk.seen.filter((x) => x.narrow && x.helped).slice(0, 3).map((x) => [x.word, x.shown, x.gap])));
+      assert.ok(wp.every((x) => x.gap !== null && x.gap >= MARK_GAP - 0.02), 'issue 1574: ' + w + 'x' + h + ' narrow working: the last helper mark shown is at least ' + MARK_GAP + ' px from the word (measured between the mark\'s right edge and the word\'s left edge), so it cannot read as the plate\'s own state: ' + JSON.stringify(wp.map((x) => [x.shown, x.gap])));
+      assert.ok(wp.every((x) => x.urgentShown === 1), 'issue 1574: ' + w + 'x' + h + ' narrow working: the failed helper\'s mark is among those shown: ' + JSON.stringify(wp.map((x) => x.urgentShown)));
+      if (!MUT) await H.shot(path.join(OUT, `102-arcade-narrow-working-${w}x${h}.png`), { prep: 'calm', settle: true, tag: '102-arcade', what: 'narrow-working' });
     }
     /* issue 1600: the same plate with a pencil and no helpers at all */
     if (w < 1440) {
