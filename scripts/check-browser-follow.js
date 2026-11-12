@@ -11,7 +11,8 @@
  *   3. the Chat content keeps its width while collapsed (the cause: it re-wrapped wider, shorter, and grew back with no scroll event);
  *   4. spec 005 FR-243 (issue #1224): "at the end" is 2 px or less, also 1.3 s after new text (the typing row's timer), after a turn whose
  *      first text is one code block, and when a waiting card's answer bar appears under the chat and makes it shorter;
- *   all of it again with a classic scrollbar (15 px, injected style), where the collapsed chat would lose the scrollbar's width.
+ *   closing the chat disconnects the box observer (the disconnects of #chat's observers are counted);
+   all of it again with a classic scrollbar (15 px, injected style), where the collapsed chat would lose the scrollbar's width.
  * Waits are conditions or counts of frames, never a fixed sleep. A miss prints DRIVER FAILED.
  */
 const assert = require('assert');
@@ -46,6 +47,8 @@ module.exports = async (ctx) => {
     await H.load({ w, h, ready: 'fit', focus: true });
     /* a classic scrollbar (Windows, Linux, macOS "always show"; FR-235) takes 15 px that overflow:hidden on the collapsed chat would give back */
     if (sb) await js(`(()=>{const st=document.createElement('style');st.textContent='#chat::-webkit-scrollbar{width:15px;background:#ddd}#chat::-webkit-scrollbar-thumb{background:#888}';document.head.append(st);})()`);
+    /* count the disconnects of the observers of #chat (the box observer is made in openPanel, so the wrappers go in first) */
+    await js(`(()=>{const P=ResizeObserver.prototype,ob=P.observe,dc=P.disconnect;window.__chatDisc=0;P.observe=function(t){if(t&&t.id==='chat')this.__chat=1;return ob.apply(this,arguments)};P.disconnect=function(){if(this.__chat)window.__chatDisc++;return dc.apply(this,arguments)}})()`);
     const o = await H.openSimAgent(`a=>a.id===${jsLiteral(ID)}`, '#panelTabs');
     assert.ok(o.ok, `${tag}: the chat and its tabs are open: ${JSON.stringify(o.seen)}`);
     await H.settle();
@@ -74,7 +77,7 @@ module.exports = async (ctx) => {
     assert.ok(s.gap < NEAR && s.pin === '1', `${tag}: new text keeps it at the end (two streamed blocks are 400 px): ${JSON.stringify(s)}`);
 
     // 4. spec 005 FR-243 (issue #1224): late growth after the follow, each case with its own cause
-    await ctx.sleep(1300); await frames(3); /* the 1 s timer has written the typing row's label */
+    assert.ok(await until(`/· [1-9]\\d*s$/.test(document.querySelector('#chat .typing .t-l').textContent)`, 10000), `${tag}: FR-243 the typing row's timer ran`); await frames(3); /* the 1 s timer has written the typing row's label */
     s = await st();
     assert.ok(s.gap < NEAR && s.pin === '1', `${tag}: FR-243 still at the end after the typing row's 1 s timer (an empty label grew the row by about 9 px): ${JSON.stringify(s)}`);
     await emit({ type: 'output', delta: '', final: true, text: 'done' }); await emit({ type: 'status', status: 'idle' }); await frames(5);
@@ -118,6 +121,10 @@ module.exports = async (ctx) => {
     s = await st();
     assert.ok(s.top === t0 && s.pin === '0', `${tag}: new text does not move a chat scrolled up: ${JSON.stringify(s)}`);
     await emit({ type: 'output', delta: '', final: true, text: 'done' }); await emit({ type: 'status', status: 'idle' });
+    const d0 = await js(`window.__chatDisc`);
+    await js(`document.getElementById('backBtn').click()`);
+    assert.ok(await until(`!document.body.classList.contains('panel-open')`), `${tag}: back to the office`);
+    assert.strictEqual(await js(`window.__chatDisc`), d0 + 1, `${tag}: FR-243 closing the chat disconnects its box observer (disconnects of #chat's observers: ${d0} before Back)`);
     console.log('[browser-follow]', tag, 'ok');
   }
   console.log('all checks passed');

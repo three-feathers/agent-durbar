@@ -3875,6 +3875,7 @@ function wireToolbar(){
 function closePanel(){closeSlash();keepDraft();
   BP.hide(); hideSelButton(); cvMark(); /* spec 080 FR-009: the browser view comes off the window; the page stays loaded */
   if(ctObs){ctObs.res.disconnect();ctObs.mut.disconnect();ctObs=null;} closeCtMore(false); closeCtxMenu();
+  if(chatBoxRO){chatBoxRO.disconnect();chatBoxRO=null;} /* spec 005 FR-243: the box observer ends with its chat */
   const id=ui.selected; ui.selected=null; document.body.classList.remove('panel-open'); $('panel').innerHTML='';
   renderAll(); placeToasts();
   const n=id&&document.querySelector(`[data-id="${CSS.escape(id)}"]`); if(n)focusIn(n);
