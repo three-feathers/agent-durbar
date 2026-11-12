@@ -6639,6 +6639,7 @@ function showLimit(a,e){
   n.appendChild(row);
   a.limit={requestId:e.requestId,n,row,st:n.querySelector('.pstate')};
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
+  if(afPanelId()===a.id)announce([a.name,' reached its spending limit: ',n.querySelector('.psum').textContent,' Choose in its card.'],ANN_REQUEST); /* spec 005 FR-237: only in the open chat; a closed chat's card is said by the open-chat line or the auto-follow notice */
 }
 /* ---------- questions from the agent (spec 012 FR-130): options as buttons, "Other" text, Answer / Skip; text only, never HTML ---------- */
 /* ---------------- plan first (spec 066): the agent's proposed plan, with Approve / Revise… / Reject ---------------- */
@@ -6660,6 +6661,7 @@ function showPlan(a,e){
   n.appendChild(row);
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
   a.plan={requestId:e.requestId,n,st,row};
+  if(afPanelId()===a.id)announce([a.name,' proposes a plan. Approve, revise or reject it in its card.'],ANN_REQUEST); /* spec 005 FR-237: only in the open chat; the plan's text is in the card */
   /* spec 066 (2026-11-01 delta): the plan never takes focus from typing: with text in the message box, or focus in any text field, Approve is left alone */
   const ae=document.activeElement, mb=$('msgInput');
   if(ui.selected===a.id&&!modalOpen()&&!(mb&&mb.value)&&(!ae||ae===document.body||ae===mb))focusIn(ok);

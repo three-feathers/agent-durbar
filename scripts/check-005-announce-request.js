@@ -62,6 +62,53 @@ module.exports = async (ctx) => {
     assert.ok(await settled('Where should this deploy go'), `${w}: the elicitation is announced and #srAnnounce settles`);
     await trace('elicitation');
     assert.ok(/Where should this deploy go\?/.test(await end()), `${w}: #srAnnounce ends on the elicitation (ends on ${jsLiteral(await end())}; history ${jsLiteral(await seq())})`);
+
+    // ---- 4. FR-237 (issue #1582): a spending-limit card and a plan card that arrive in the open chat are said, once each ----
+    const said = (re) => js(`window.__seq.filter(x=>new RegExp(${jsLiteral(re)},'i').test(x[1])).length`);
+    const quiet = async () => { await js(`window.__seq.length=0;0`); await emit({ type: 'status', status: 'idle' }); await until(`document.getElementById('srAnnounce').textContent===''||window.__seq.length>0`, 8000); await js(`window.__seq.length=0;0`); };
+    await quiet();
+    await emit({ type: 'status', status: 'working', intent: 'Working' });
+    await emit({ type: 'limit', phase: 'exhausted', requestId: 'l1-' + w, maxAiCredits: 50, usedAiCredits: 50 });
+    assert.ok(await until(`!!document.querySelector('#chat .note.limit')`, 8000), `${w}: the limit card is in the chat`);
+    assert.ok(await settled('spending limit'), `${w}: the limit is announced and #srAnnounce settles`);
+    assert.ok(/reached its spending limit: .*Choose in its card/.test(await end()), `${w}: limit card in the open chat: #srAnnounce ends on the limit line (ends on ${jsLiteral(await end())}; history ${jsLiteral(await seq())})`);
+    assert.strictEqual(await said('spending limit'), 1, `${w}: limit card in the open chat is said once (history ${jsLiteral(await seq())})`);
+    await emit({ type: 'limit', phase: 'exhausted', requestId: 'l1-' + w, maxAiCredits: 50, usedAiCredits: 50 }); // the same request again: nothing new
+    await emit({ type: 'limit', phase: 'resolved', requestId: 'l1-' + w, action: 'unset' });
+
+    await quiet();
+    await emit({ type: 'status', status: 'working', intent: 'Working' });
+    await emit({ type: 'plan', phase: 'proposed', requestId: 'p1-' + w, text: 'Step one: read the files.' });
+    assert.ok(await until(`!!document.querySelector('#chat .plan-card')`, 8000), `${w}: the plan card is in the chat`);
+    assert.ok(await settled('proposes a plan'), `${w}: the plan is announced and #srAnnounce settles`);
+    assert.ok(/proposes a plan\. Approve, revise or reject it in its card/.test(await end()), `${w}: plan card in the open chat: #srAnnounce ends on the plan line (ends on ${jsLiteral(await end())}; history ${jsLiteral(await seq())})`);
+    assert.strictEqual(await said('proposes a plan'), 1, `${w}: plan card in the open chat is said once (history ${jsLiteral(await seq())})`);
+    await emit({ type: 'plan', phase: 'proposed', requestId: 'p1-' + w, text: 'Step one: read the files.' }); // repeated: no second card, nothing said
+    await emit({ type: 'plan', phase: 'resolved', requestId: 'p1-' + w, action: 'reject' });
+  }
+  // ---- 5. no second line: a limit that arrives with the chat closed says nothing then, and the open-chat line says it once when the chat opens.
+  // A fresh page, so no older request is waiting (the open-chat line says the oldest one). ----
+  for (const [w, h] of [[1440, 900], [1280, 800]]) {
+    await H.load({ fastVisits: true, w, h, focus: true });
+    const first = await H.openSimAgent(`a=>!a.parent&&a.live&&a.info&&(a.state==='idle'||a.state==='done')`, '#msgInput');
+    assert.ok(first.ok, `${w}: opened an idle agent's chat ${jsLiteral(first.seen)}`);
+    const A = first.id;
+    const emit = (e) => js(`window.__durbarSimUi.emit(${jsLiteral(Object.assign({ timestamp: 1, sessionId: A }, e))})`);
+    await js(`(()=>{window.__seq=[];window.__t0=performance.now();const el=document.getElementById('srAnnounce');
+      new MutationObserver(()=>{window.__seq.push([Math.round(performance.now()-window.__t0),el.textContent]);}).observe(el,{childList:true,characterData:true,subtree:true});})();0`);
+    const seq = () => js(`window.__seq.filter(x=>x[1]).slice()`);
+    const settled = (src) => until(`(()=>{const q=window.__seq,re=new RegExp(${jsLiteral(src)});return q.some(x=>re.test(x[1]))&&performance.now()-window.__t0-q[q.length-1][0]>150;})()`, 8000);
+    const said = (re) => js(`window.__seq.filter(x=>new RegExp(${jsLiteral(re)},'i').test(x[1])).length`);
+    await H.key('Escape');
+    assert.ok(await until(`!document.body.classList.contains('panel-open')`, 8000), `${w}: the chat closes`);
+    await js(`window.__seq.length=0;window.__t1=performance.now();0`);
+    await emit({ type: 'limit', phase: 'exhausted', requestId: 'l2-' + w, maxAiCredits: 50, usedAiCredits: 50 });
+    assert.ok(await until(`performance.now()-window.__t1>300`, 8000), `${w}: 300 ms passed`);
+    assert.strictEqual(await said('spending limit'), 0, `${w}: limit card with the chat closed says nothing on arrival (history ${jsLiteral(await seq())})`);
+    const re = await H.openSimAgent(`a=>a.id===${jsLiteral(A)}`, '#msgInput');
+    assert.ok(re.ok, `${w}: the chat opens again ${jsLiteral(re.seen)}`);
+    assert.ok(await settled('[Ss]pending limit'), `${w}: opening the chat says the limit and #srAnnounce settles (history ${jsLiteral(await seq())})`);
+    assert.strictEqual(await said('spending limit'), 1, `${w}: limit card said once in all (arrival and open) (history ${jsLiteral(await seq())})`);
   }
   console.log('[announce-request] PASS');
 };
