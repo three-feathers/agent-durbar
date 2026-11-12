@@ -1,5 +1,5 @@
 /**
- * Spec 058 FR-231 (issue #1621): a server that sends a token itself (a header, or a `${NAME}` reference) and refused it with a 403 is not a
+ * Spec 058 FR-232 (issue #1621): a server that sends a token itself (a header, or a `${NAME}` reference) and refused it with a 403 is not a
  * "needs sign-in" row: an OAuth sign-in cannot change a header. Pure; main only. Header and variable values are read here only to find
  * `${NAME}` references and whether a name is set; no value ever leaves this module (names only, and never a name that looks like a token).
  */
@@ -15,13 +15,13 @@ export interface TokenEntry {
   oauth?: boolean;
 }
 
-/** FR-231 (c): a variable name Durbar may say (letters, digits, `_`, at most 64). */
+/** FR-232 (c): a variable name Durbar may say (letters, digits, `_`, at most 64). */
 const NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 /** `${NAME}`, `${env:NAME}`, `${NAME:-default}`; the body is cut at 200 characters (linear on hostile input). */
 const REF = /\$\{(?:env:)?([^}:]{1,200})(:-[^}]{0,2000})?\}/g;
 const MAX_NAMES = 3;
 
-/** FR-231 (c): the `${NAME}` references without a fallback, in order, once each (names only). */
+/** FR-232 (c): the `${NAME}` references without a fallback, in order, once each (names only). */
 export function refNames(texts: readonly string[]): string[] {
   const out: string[] = [];
   for (const t of texts) {
@@ -34,13 +34,13 @@ export function refNames(texts: readonly string[]): string[] {
   return out;
 }
 
-/** FR-231 (a): a token server: a header or a `${NAME}` reference, and no OAuth settings. */
+/** FR-232 (a): a token server: a header or a `${NAME}` reference, and no OAuth settings. */
 export function isTokenServer(e: TokenEntry | undefined): boolean {
   if (!e || e.oauth) return false;
   return e.headerKeys.length > 0 || e.texts.some((t) => typeof t === 'string' && /\$\{[A-Za-z_]/.test(t.slice(0, 8192)));
 }
 
-/** FR-231 (b): a refusal of the token: `403` or "forbidden", and not `401` / "unauthorized" (those keep "needs sign-in"). */
+/** FR-232 (b): a refusal of the token: `403` or "forbidden", and not `401` / "unauthorized" (those keep "needs sign-in"). */
 export function isTokenRefusal(text: unknown): boolean {
   if (typeof text !== 'string') return false;
   const s = text.slice(0, 2000);
@@ -48,7 +48,7 @@ export function isTokenRefusal(text: unknown): boolean {
 }
 
 /**
- * FR-231 (c): the referenced names whose value in Durbar's own environment is missing or empty (`isSet` reads only presence), at most
+ * FR-232 (c): the referenced names whose value in Durbar's own environment is missing or empty (`isSet` reads only presence), at most
  * three. A name that the session's masking would change (a token shape, a known secret value) is never returned.
  */
 export function unsetVars(e: TokenEntry, isSet: (name: string) => boolean, secrets: readonly string[] = []): string[] {

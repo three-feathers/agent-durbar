@@ -389,7 +389,7 @@ All answered by the owner: option A for each (see *Clarifications*). The options
 
 ## Changes
 
-### 2026-11-12: a 403 from a server that sends a token header is not "needs sign-in" (issue #1621, FR-231)
+### 2026-11-12: a 403 from a server that sends a token header is not "needs sign-in" (issue #1621, FR-232)
 
 **Seen (Paco, owner, v0.1.17, macOS, Copilot):** a remote (HTTP) server in `~/.copilot/mcp-config.json` with a static token in a header (no OAuth) failed with `... unexpected server response: HTTP 403 Forbidden`. Durbar showed **Failed · Refused: needs sign-in**, "This server needs you to sign in. GitHub Copilot keeps the sign-in" and **Sign in again…**, whose OAuth sign-in cannot change a header: the person was sent the wrong way.
 
@@ -397,7 +397,7 @@ All answered by the owner: option A for each (see *Clarifications*). The options
 
 **Decision: is a 403 on a token server ever "needs sign-in"?** No, while Durbar knows the server's entry sends a token itself and Durbar has no sign-in of its own for it: a 403 then means the server refused that token (missing, empty, wrong or without the right access), and an OAuth sign-in cannot change what the header sends. A **401** keeps today's "needs sign-in" (an OAuth server answers 401 to ask for a sign-in, and 401 also covers a token that is merely expired, where the app's own sign-in may apply), and so does any server Durbar has a sign-in record for. Recorded from the issue's proposal (fjcabello, owner); the owner's review of the PR confirms or changes it.
 
-**FR-231.**
+**FR-232.**
 - (a) **A token server** is a server whose entry, as Durbar reads it in the list the chat's agent app uses (a folder extra first, then the Copilot CLI list for Copilot, Durbar's Claude Code list for Claude Code; the same order as `serverUrlFor`), has at least one header or a `${NAME}` reference in its headers or address, and no `oauth` settings (Claude Code's `oauth` object, FR-186). Copilot's list has no OAuth field (`read:` SDK 1.0.24 `MCPHTTPServerConfig`: `url`, `headers`), so there only the headers decide. Codex's list is not read for this (`[KNOWN GAP]`: Codex reports a refused sign-in as `reauthenticationRequired`, FR-091, and its token fields `bearer_token_env_var` / `env_http_headers` are not looked at); a Codex row keeps today's words.
 - (b) **The rule (main, `agentMcpReply`):** a row is *token refused* when the runtime reads it `failed` with no adapter class (an adapter's own class keeps its own reason, FR-090 step 2), its masked error text has `403` or "forbidden" and has neither `401` nor "unauthorized", it is a token server (a), and Durbar has no sign-in for it: no runtime `needs-auth`, no FR-229 block, no open sign-in. The row then gets `tokenRefused: true` and never *Sign in again…* (FR-164's button and *Sign in again to all* skip it). Restart stays.
 - (c) **Variables Durbar does not see:** for a token-refused row, main lists the names referenced as `${NAME}` (also `${env:NAME}`) in the entry's headers and address whose value in Durbar's own environment is missing or empty (`tokenVars`, at most 3, each `[A-Za-z_][A-Za-z0-9_]{0,63}`). A `${NAME:-default}` reference has a fallback and is not listed. A name that the shared token masking (`maskTokenShapes`) would change, or that matches a known secret value of the session, is never listed (a token pasted inside `${...}` must not be echoed). **Never a value**: only whether it is set is read, and no value leaves main.

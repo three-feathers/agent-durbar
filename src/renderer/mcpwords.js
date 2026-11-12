@@ -74,7 +74,7 @@
     'permission':'Allow the command to run (its file permissions), then press Restart.',
     'disconnected':'Press Restart, and check that the server still runs or can be reached.',
     'unknown':'Open Details or Copy diagnostics to see what the agent app reported.',
-    /* spec 058 FR-231 (issue 1621): a 403 from a server that sends its own token; Sign in cannot change a header */
+    /* spec 058 FR-232 (issue 1621): a 403 from a server that sends its own token; Sign in cannot change a header */
     'token':'The server refused the token: check the header or the variable it uses. Sign in does not change it.'
   };
   /* FR-006 hints; since FR-201 (2026-11-03, one wording per failure kind) the fix text of the strip, so the chat dialog, Settings and the
@@ -103,7 +103,7 @@
     [/invalid (config|configuration)|configuration error|misconfigured/i,'config']
   ];
   function textClass(t){const s=String(t==null?'':t).slice(0,2000);for(const [re,c] of TEXT_RULES)if(re.test(s))return c;return '';}
-  /* Spec 058 FR-231 (issue 1621): the refused-token words, with the `${NAME}` variables main found unset in Durbar's own environment
+  /* Spec 058 FR-232 (issue 1621): the refused-token words, with the `${NAME}` variables main found unset in Durbar's own environment
      (names only: main never sends a value, and the names are checked again here). */
   const VAR_NAME=/^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
   function tokenHint(vars){
@@ -119,7 +119,7 @@
     if(status==='disabled'&&o.by==='app')return 'Turn it on in '+(app?plain(app,40)+'’s own':'the agent app’s own')+' MCP settings, then restart the session. Agent Durbar cannot switch it on here.';
     if(status==='needs-auth'||(status==='failed'&&cls==='auth'))return signInHint(app);
     if(status!=='failed')return '';
-    if(o.tokenRefused===true)return tokenHint(o.tokenVars); /* FR-231: main decided (a 403 on a token server it knows) */
+    if(o.tokenRefused===true)return tokenHint(o.tokenVars); /* FR-232: main decided (a 403 on a token server it knows) */
     const c=typeof cls==='string'&&own(CLASS_HINT,cls)?cls:textClass(o&&o.error);
     if(c==='auth')return signInHint(app);
     return c?CLASS_HINT[c]:'';
@@ -145,7 +145,7 @@
     const st=x.status, cls=typeof x.errorClass==='string'?x.errorClass:'';
     if(st==='needs-auth'||(st==='failed'&&cls==='auth'))return {key:'auth',word:REASONS.auth};
     if(st!=='failed')return null;
-    if(x.tokenRefused===true)return {key:'token',word:REASONS.token}; /* FR-231 */
+    if(x.tokenRefused===true)return {key:'token',word:REASONS.token}; /* FR-232 */
     let c=REASON_CLASSES.indexOf(cls)>=0?cls:textClass(x.error);
     if(c==='auth')return {key:'auth',word:REASONS.auth};
     if(c==='exited')c=x.afterRunning===true?'disconnected':'crashed';
@@ -268,7 +268,7 @@
     if(!r)return null;
     return {key:(policy===true?'policy:':'chat:')+JSON.stringify([String(chat.id),x.name]),kind:'chat',chatId:String(chat.id),name:plain(x.name,80),where:plain(chat.name,80)+(chat.app?' ('+plain(chat.app,40)+')':''),reason:r.word,rkey:r.key,fix:fixFor(r.key,r.key==='token'?{vars:x.tokenVars}:undefined)};
   }
-  /* Spec 058 FR-231: the strip learns of a refused token from main's `agents:mcp` reply (an `mcp` event has no entry to judge by): a chat's
+  /* Spec 058 FR-232: the strip learns of a refused token from main's `agents:mcp` reply (an `mcp` event has no entry to judge by): a chat's
      `auth` finding of a server main marked `tokenRefused` becomes the token finding. Returns true when it changed. */
   function launchToken(items,reply,chat){
     if(!(items instanceof Map)||!reply||!Array.isArray(reply.servers)||!chat)return false;

@@ -1,5 +1,5 @@
 /**
- * Spec 058 FR-231 (issue #1621): a 403 from a server whose entry sends its own token (a header, or a `${NAME}` reference) and has no OAuth
+ * Spec 058 FR-232 (issue #1621): a 403 from a server whose entry sends its own token (a header, or a `${NAME}` reference) and has no OAuth
  * reads "Refused: token not accepted", names a variable Durbar's environment does not have (name only, never a value) and offers no
  * Sign in again. A 401, an OAuth server, an unknown entry and a server Durbar has a sign-in record for keep "needs sign-in".
  * Checks, by behaviour: the pure rules (`mcptoken.ts`); `agentMcpReply` with fake entries; the window's words (`mcpwords.js`); the
@@ -49,16 +49,16 @@ process.on('exit', (code) => {
 });
 
 function pure(): void {
-  // FR-231 (b): 403 / forbidden, never with 401 / unauthorized
+  // FR-232 (b): 403 / forbidden, never with 401 / unauthorized
   const refusal: [unknown, boolean][] = [
     [ERR403, true], ['Forbidden', true], ['status 403', true], [ERR401, false], ['403 then 401', false], ['Unauthorized (403)', false],
     ['error 4031', false], ['HTTP 404 Not Found', false], ['', false], [undefined, false], [403, false], ['x'.repeat(3000) + ' 403', false],
   ];
   for (const [t, want] of refusal) assert.strictEqual(isTokenRefusal(t), want, `token refusal of ${String(JSON.stringify(t)).slice(0, 40)}: ${want}`);
-  // FR-231 (c): references without a fallback, names only, once each
+  // FR-232 (c): references without a fallback, names only, once each
   assert.deepStrictEqual(refNames(['Bearer ${A_TOKEN}', '${env:B}', '${C:-fallback}', '${1BAD}', '${A_TOKEN}', 'https://x.example/?k=${D}']), ['A_TOKEN', 'B', 'D'], 'refNames: names without a fallback, valid, once each');
   assert.deepStrictEqual(refNames(['${' + 'N'.repeat(65) + '}']), [], 'a name over 64 characters is never said');
-  // FR-231 (a)
+  // FR-232 (a)
   assert.strictEqual(isTokenServer({ headerKeys: ['Authorization'], texts: ['Bearer x'] }), true, 'a header makes a token server');
   assert.strictEqual(isTokenServer({ headerKeys: [], texts: ['https://x.example/mcp?key=${KEY}'] }), true, 'a ${NAME} in the address makes a token server');
   assert.strictEqual(isTokenServer({ headerKeys: ['Authorization'], texts: [], oauth: true }), false, 'OAuth settings: not a token server');
@@ -66,7 +66,7 @@ function pure(): void {
   assert.strictEqual(isTokenServer(undefined), false, 'no entry: not a token server');
   assert.deepStrictEqual(tokenEntryOfSpec({ url: 'https://x', headers: { Authorization: 'Bearer ${T}' }, oauth: { clientId: 'c' } as never }), { headerKeys: ['Authorization'], texts: ['Bearer ${T}', 'https://x'], oauth: true });
   assert.deepStrictEqual(tokenEntryOfExtra({ headers: [{ key: 'X-Key' }], url: 'https://x' }), { headerKeys: ['X-Key'], texts: ['https://x'] });
-  // FR-231 (c): presence only; empty counts as unset; at most three; never a token-shaped or secret name; a throwing lookup says nothing
+  // FR-232 (c): presence only; empty counts as unset; at most three; never a token-shaped or secret name; a throwing lookup says nothing
   const e: TokenEntry = { headerKeys: ['Authorization', 'X-A', 'X-B', 'X-C'], texts: ['Bearer ${SET}', '${EMPTY}', '${GONE1}', '${GONE2}', '${GONE3}', '${' + TOKEN_REF + '}', '${KNOWN_SECRET_NAME}'] };
   const env: Record<string, string> = { SET: TOKEN_ENV, EMPTY: '' };
   const isSet = (n: string): boolean => typeof env[n] === 'string' && env[n] !== '';
@@ -114,9 +114,9 @@ function reply(): void {
   const r = agentMcpReply(base);
   const by = (n: string): AgentMcpEntry => r.servers.find((x) => x.name === n)!;
   // the issue's case: a 403 on a token server with an unset variable
-  assert.strictEqual(by('tok').tokenRefused, true, 'FR-231: a 403 on a token server is a refused token');
-  assert.deepStrictEqual(by('tok').tokenVars, ['MISSING_VAR'], 'FR-231: the unset variable by name');
-  assert.strictEqual(by('tok').canSignInAgain, undefined, 'FR-231: no Sign in again on a refused token');
+  assert.strictEqual(by('tok').tokenRefused, true, 'FR-232: a 403 on a token server is a refused token');
+  assert.deepStrictEqual(by('tok').tokenVars, ['MISSING_VAR'], 'FR-232: the unset variable by name');
+  assert.strictEqual(by('tok').canSignInAgain, undefined, 'FR-232: no Sign in again on a refused token');
   assert.strictEqual(by('tokset').tokenRefused, true, 'a set variable: still a refused token');
   assert.strictEqual(by('tokset').tokenVars, undefined, 'a set variable is not named');
   assert.strictEqual(by('written').tokenRefused, true, 'a written header: a refused token');
@@ -124,9 +124,9 @@ function reply(): void {
   assert.strictEqual(by('reftok').tokenRefused, true, 'a token pasted inside ${...}: a refused token');
   assert.strictEqual(by('reftok').tokenVars, undefined, 'a token pasted inside ${...} is never named');
   // what keeps today's behaviour
-  assert.strictEqual(by('tok401').tokenRefused, undefined, 'FR-231: a 401 keeps needs sign-in');
-  assert.strictEqual(by('tok401').canSignInAgain, true, 'FR-231: a 401 keeps Sign in again');
-  assert.strictEqual(by('oauth').tokenRefused, undefined, 'FR-231: an OAuth server keeps needs sign-in');
+  assert.strictEqual(by('tok401').tokenRefused, undefined, 'FR-232: a 401 keeps needs sign-in');
+  assert.strictEqual(by('tok401').canSignInAgain, true, 'FR-232: a 401 keeps Sign in again');
+  assert.strictEqual(by('oauth').tokenRefused, undefined, 'FR-232: an OAuth server keeps needs sign-in');
   assert.strictEqual(by('oauth').canSignInAgain, true, 'an OAuth server keeps Sign in again');
   assert.strictEqual(by('plain').tokenRefused, undefined, 'no header and no reference: not a token server');
   assert.strictEqual(by('nolist').tokenRefused, undefined, 'an entry Durbar does not know: today\'s words');
@@ -137,7 +137,7 @@ function reply(): void {
   assert.strictEqual(by('classed').tokenRefused, undefined, 'an adapter class decides its own reason');
   // control: without the entry lookup the same row would offer Sign in again (the rule is what removes it)
   const r0 = agentMcpReply({ ...base, tokenEntry: undefined });
-  assert.strictEqual(r0.servers.find((x) => x.name === 'tok')!.canSignInAgain, true, 'control: without FR-231 the 403 row offers Sign in again');
+  assert.strictEqual(r0.servers.find((x) => x.name === 'tok')!.canSignInAgain, true, 'control: without FR-232 the 403 row offers Sign in again');
   assert.strictEqual(r0.servers.find((x) => x.name === 'tok')!.tokenRefused, undefined, 'control: no entry, no token words');
   // no environment lookup: the row is still a refused token, with no names guessed
   const r1 = agentMcpReply({ ...base, envSet: undefined });

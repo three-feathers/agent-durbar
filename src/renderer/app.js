@@ -763,9 +763,9 @@ function scene(a,mini,c){
   const deskBack=THEME.slot('desk-back'), deskArt=THEME.slot('desk-art'), monitorArt=THEME.slot('monitor-art');
   s+=(deskBack===null?'':`<g class="art-slot" data-slot="desk-back">${deskBack}</g>`)+(deskArt===null?'':`<g class="art-slot" data-slot="desk-art">${deskArt}</g>`);
   const scr={working:T_('--screen-working'),thinking:T_('--screen-thinking'),waiting:T_('--screen-waiting'),idle:T_('--screen-idle'),error:T_('--screen-error'),done:T_('--screen-done')}[st];
-  s+=`<rect x="112" y="32" width="64" height="45" rx="5" fill="${T_('--monitor-frame')}"/><rect class="scr" x="116" y="36" width="56" height="37" rx="3" fill="${scr}"/>`; /* spec 001 FR-231: .scr takes the status tint */
+  s+=`<rect x="112" y="32" width="64" height="45" rx="5" fill="${T_('--monitor-frame')}"/><rect class="scr" x="116" y="36" width="56" height="37" rx="3" fill="${scr}"/>`; /* spec 001 FR-232: .scr takes the status tint */
   s+=monitorArt===null?'':`<g class="art-slot" data-slot="monitor-art">${monitorArt}</g>`;
-  s+='<g class="scr-c">'; /* spec 001 FR-231: the screen's glyphs, recoloured on a tint */
+  s+='<g class="scr-c">'; /* spec 001 FR-232: the screen's glyphs, recoloured on a tint */
   if(st==='working') s+=`<rect class="bar" x="121" y="41" width="34" height="3.6" rx="1.8" fill="${T_('--bar-blue')}"/><rect class="bar" x="121" y="48.5" width="26" height="3.6" rx="1.8" fill="${T_('--bar-sage')}"/><rect class="bar" x="121" y="56" width="42" height="3.6" rx="1.8" fill="${T_('--bar-blue')}"/><rect class="bar" x="121" y="63.5" width="20" height="3.6" rx="1.8" fill="${T_('--bar-blue-2')}"/>`;
   if(st==='thinking') s+=`<rect x="121" y="41" width="30" height="3.6" rx="1.8" fill="${T_('--halo-thinking')}" opacity=".55"/><rect x="121" y="48.5" width="40" height="3.6" rx="1.8" fill="${T_('--halo-thinking')}" opacity=".4"/><rect x="121" y="56" width="22" height="3.6" rx="1.8" fill="${T_('--halo-thinking')}" opacity=".55"/><rect x="121" y="63.5" width="5" height="3.6" rx="1.8" fill="${T_('--halo-thinking')}"${c?' class="cursor"':''}>${REDUCED||c?'':'<animate attributeName="opacity" values="1;.15;1" dur="1.6s" repeatCount="indefinite"/>'}</rect>`;
   if(st==='waiting') s+=`<rect x="121" y="41" width="30" height="3.6" rx="1.8" fill="${T_('--wait-dot')}" opacity=".5"/><rect x="123" y="49" width="42" height="19" rx="5" fill="${T_('--wait-card')}" stroke="${T_('--wait-note-stroke')}" stroke-width="1.2"/><circle cx="131" cy="58.5" r="3" fill="${T_('--wait-dot')}"/><rect x="138" y="54" width="20" height="3" rx="1.5" fill="${T_('--wait-note-line')}"/><rect x="138" y="60" width="14" height="3" rx="1.5" fill="${T_('--wait-note-line-2')}"/>`;
@@ -5321,7 +5321,7 @@ function mcpLaunchSeen(a,e){
   const r=liveRoot(a)||a, W=mcpLW();
   const chat={id:r.id,name:r.name,app:mcpOpts(r).appName};
   if(W.launchUpdate(mcpL.items,e,chat,W.launchYoung(mcpL.t0,performance.now())))paintMcpStrip();
-  /* spec 058 FR-231 (issue 1621): a failed server whose text reads like a refusal may be a refused token; only main's reply knows */
+  /* spec 058 FR-232 (issue 1621): a failed server whose text reads like a refusal may be a refused token; only main's reply knows */
   if(e.type==='mcp'&&bridge.agentMcp&&W.launchToken&&(Array.isArray(e.servers)?e.servers:[]).some(x=>x&&x.status==='failed'&&!x.errorClass&&W.textClass(x.error)==='auth'))
     Promise.resolve(bridge.agentMcp(a.id)).then(rp=>{if(!mcpL.closed&&W.launchToken(mcpL.items,rp,chat))paintMcpStrip();}).catch(()=>{});
 }
@@ -5607,7 +5607,7 @@ function setFloorView(v,id){
 /* ---- spec 092 phase 2: the lift panel (FR-006..FR-008, FR-013..FR-016, FR-028) and its All button (FR-032) ---- */
 /* what an agent shows on its floor's lift button (FR-014): the inbox's predicate (needsMe) plus the unread New reply; each agent one kind */
 const liftKind=a=>{if(!a||a.parent)return null;if(needsMe(a))return a.limit||a.coffee?'limit':vis(a)==='error'?'error':'waiting';return isUnread(a)?'reply':null;};
-/* spec 001 FR-231 (spec 097 FR-236's tint and its precedence, without loading Real office's lights.js: 097 SC-004): the colour of a desk's screen. Green only for a done desk with an unread reply */
+/* spec 001 FR-232 (spec 097 FR-236's tint and its precedence, without loading Real office's lights.js: 097 SC-004): the colour of a desk's screen. Green only for a done desk with an unread reply */
 const deskTint=a=>{if(!a||a.parent)return 'none';const k=liftKind(a);if(k==='limit')return 'orange';if(k==='error')return 'red';if(k==='waiting')return 'amber';if(isFailing(a))return 'red';return k==='reply'&&vis(a)==='done'?'green':'none';};
 function liftCounts(){
   const items=[];

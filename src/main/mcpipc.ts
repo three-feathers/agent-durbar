@@ -74,7 +74,7 @@ export function registerMcpIpc(deps: {
   codexServers?(): Record<string, { url?: string }>;
   /** The agent app of an agent (`copilot`, `claude`, `codex`, ...). */
   appOf?(agentId: string): string | undefined;
-  /** Spec 058 FR-231: whether a variable is set (not empty) in Durbar's own environment (presence only); default `process.env`. Tests inject it. */
+  /** Spec 058 FR-232: whether a variable is set (not empty) in Durbar's own environment (presence only); default `process.env`. Tests inject it. */
   envSet?(name: string): boolean;
   /** Spec 052 activity log row for an MCP restart (spec 058 FR-021). */
   log?(a: AgentInfo, action: string): void;
@@ -462,7 +462,7 @@ export function registerMcpIpc(deps: {
       orgBlocked: deps.orgMcpNow ? (n) => deps.orgMcpNow?.(a.id, serverDefOf(a.id, n)) : undefined,
       global: gn,
       builtin: new Set(all.filter((x) => x.origin === 'builtin').map((x) => x.name)),
-      tokenEntry: (n) => tokenEntryOf(a.id, n), // spec 058 FR-231
+      tokenEntry: (n) => tokenEntryOf(a.id, n), // spec 058 FR-232
       envSet: deps.envSet ?? envIsSet(),
     });
     return { ...reply, servers: reply.servers.map((x) => ({ ...x, costKey: serverKey(x.name) })) }; // spec 100: a row finds its figure whatever masking did to the shown name
@@ -503,7 +503,7 @@ export function registerMcpIpc(deps: {
     }
   };
   /**
-   * Spec 058 FR-231 (issue #1621): the entry of a server in the lists this agent's app uses, in `serverUrlFor`'s order (this folder's
+   * Spec 058 FR-232 (issue #1621): the entry of a server in the lists this agent's app uses, in `serverUrlFor`'s order (this folder's
    * extra, then the Copilot CLI list for Copilot, Durbar's Claude Code list for Claude Code; Codex is not read). Read only for a failed
    * row with a 403; the values stay in main.
    */

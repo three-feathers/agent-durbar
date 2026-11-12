@@ -929,7 +929,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       return /\binteraction_required\b/i.test(t) ? 'policy' : undefined;
     };
     /* mcpcall:end */
-    /* spec 058 FR-231 (issue 1621): src/main/mcptoken.ts `isTokenRefusal`, copied (this file cannot import); test:mcpsession cuts this block out and compares the two */
+    /* spec 058 FR-232 (issue 1621): src/main/mcptoken.ts `isTokenRefusal`, copied (this file cannot import); test:mcpsession cuts this block out and compares the two */
     /* mcptoken:begin */
     const simTokenRefusal = (text: unknown): boolean => {
       if (typeof text !== 'string') return false;
@@ -937,7 +937,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       return /\b403\b|forbidden/i.test(t) && !/\b401\b|unauthori[sz]ed/i.test(t);
     };
     /* mcptoken:end */
-    /* spec 058 FR-231: what main would know of a driver's servers' entries (fixed, names only): `team-api` sends `Authorization: Bearer
+    /* spec 058 FR-232: what main would know of a driver's servers' entries (fixed, names only): `team-api` sends `Authorization: Bearer
        ${TEAM_API_TOKEN}` and the variable is not in Durbar's environment; `docs-api` sends a written `X-Api-Key`; any other name has no
        known entry (an OAuth server keeps "needs sign-in") */
     const SIM_TOKEN_ENTRIES: Record<string, { vars: string[] }> = { 'team-api': { vars: ['TEAM_API_TOKEN'] }, 'docs-api': { vars: [] } };
@@ -2177,7 +2177,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
           ...(live ? (s.mcpLive ?? []).filter((m) => !known.has(m.name)).map((m) => ({ name: m.name, origin: 'runtime' as const, ...reported(m.name), defaultOn: true, off: !!s.mcpOff?.has(m.name), ...toolsOffOf(m.name), ...signOf(m.name, 'runtime'), ...(restartable(m.name, true) && m.status !== 'disabled' ? { canRestart: true } : {}) })) : []),
         ];
         for (const x of servers) { const ob = simOrgServer(s.info.adapterId, x.name); if (ob) Object.assign(x, { orgBlocked: ob }); } // spec 076 FR-205
-        /* spec 058 FR-231: like main's agentMcpReply, a failed row with a 403 on a known token server: the refused-token words, no Sign in again */
+        /* spec 058 FR-232: like main's agentMcpReply, a failed row with a 403 on a known token server: the refused-token words, no Sign in again */
         for (const x of servers as { name: string; status?: string; error?: string; errorClass?: string; signIn?: unknown; canSignInAgain?: boolean }[]) {
           const te = Object.prototype.hasOwnProperty.call(SIM_TOKEN_ENTRIES, x.name) ? SIM_TOKEN_ENTRIES[x.name] : undefined;
           if (!live || !te || x.status !== 'failed' || x.errorClass || x.signIn || !simTokenRefusal(x.error)) continue;

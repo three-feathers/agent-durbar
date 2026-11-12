@@ -69,9 +69,9 @@ export interface McpReplyInput {
   orgBlocked?(name: string): OrgVerdict | undefined;
   /** Spec 058 FR-187 (issue #779 A): the class of this server's last failed tool call (`auth` / `policy`), a word only. */
   lastCall?(name: string): McpCallClass | undefined;
-  /** Spec 058 FR-231 (issue #1621): what Durbar knows of this server's entry in the lists the chat's app uses (main only, values never sent). */
+  /** Spec 058 FR-232 (issue #1621): what Durbar knows of this server's entry in the lists the chat's app uses (main only, values never sent). */
   tokenEntry?(name: string): TokenEntry | undefined;
-  /** Spec 058 FR-231: whether a variable is set (and not empty) in Durbar's own environment; presence only. */
+  /** Spec 058 FR-232: whether a variable is set (and not empty) in Durbar's own environment; presence only. */
   envSet?(name: string): boolean;
 }
 
@@ -125,7 +125,7 @@ export function agentMcpReply(i: McpReplyInput): AgentMcpReply {
     const renewed = isLive && on ? i.renewedAt?.(name) : undefined;
     const canSignIn = needs && typeof ad?.startMcpSignIn === 'function';
     const wantSignIn = needs && (!isLive || !needsSignIn(st)) ? { needsSignIn: true as const } : {};
-    // FR-231 (issue #1621): a 403 on a server that sends its own token, with no sign-in Durbar knows of, is a refused token, not a sign-in
+    // FR-232 (issue #1621): a 403 on a server that sends its own token, with no sign-in Durbar knows of, is a refused token, not a sign-in
     const error = maskMcpError(st?.error, secrets);
     // an open sign-in stays visible whatever the row reads meanwhile (a server signed in again passes through Starting or Needs sign-in)
     const open = isLive && on && typeof ad?.startMcpSignIn === 'function' ? i.signIn?.(name) : undefined;
