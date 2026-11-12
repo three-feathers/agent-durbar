@@ -7,7 +7,7 @@
  * Per look, at 1440x900 and 1280x800: the End all sessions dialog is opened from the keyboard-opened ⋯ menu, its confirm button is cloned without `danger`
  * (a real `.dlg .btn.primary`, the one rule every dialog, the panel, settings and the answer bar share) and measured as RENDERED (the colour as the page
  * paints it, read once the transition has ended): text on its own background at rest, hovered (a real pointer move) and active (a real mouse down).
- * PRIMARY_MUTANT=black puts the old black mix back into the themed primary hover rule (the floor in theme.js and themegen.ts has its own unit tests: scripts/test-themegen.ts, test-userthemes.ts). PRIMARY_REPORT=1 fails at the end on purpose so the suite prints every measured line.
+ * PRIMARY_MUTANT=black puts the old black mix back into the themed primary hover rule, PRIMARY_MUTANT=toward the first version's always-toward-the-text mix (--brand-hover ignored) (the floor in theme.js and themegen.ts has its own unit tests: scripts/test-themegen.ts, test-userthemes.ts). PRIMARY_REPORT=1 fails at the end on purpose so the suite prints every measured line.
  * OUT=dir (optional) saves 052-primary-btn-<look>-<size>-<state>.png
  */
 const assert = require('assert');
@@ -17,6 +17,8 @@ const { helpers, jsLiteral, CHECK_DARK } = require('./driver-helpers');
 const OUT = process.env.OUT || require('os').tmpdir();
 const CHECK_USER = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'themes', 'check-user.json'), 'utf8'));
 
+/* review of PR #1618: a retro-ui user theme with a dark or mid-tone fill; toward the text would drop the hovered text under 4.5:1 (#2a6a9a with white text 4.31, #8a5a28 4.35, #808080 with black text 4.12), the repair hovers away from it */
+const fill = (id, bg, mk) => ({ id, name: id, author: 'Agent Durbar tests', version: '1.0', ui: 'retro', tokens: { '--bg': '#efe9dc', '--brand-bg': bg, '--brand-mark': mk } });
 const LOOKS = [
   ['check-user (retro ui)', {}, CHECK_USER],
   ['flat+pixel theme', {}, 'retro'],
@@ -24,6 +26,9 @@ const LOOKS = [
   ['cave', { officeview: 'real', world: 'cave', worldflags: 'cave' }, null],
   ['photo', { officeview: 'real' }, null], // control: ui is clean
   ['dark fixture', {}, CHECK_DARK], // control: ui is clean
+  ['dark-fill blue 2a6a9a white', {}, fill('fill-blue', '#2a6a9a', '#ffffff')],
+  ['dark-fill brown 8a5a28 white', {}, fill('fill-brown', '#8a5a28', '#ffffff')],
+  ['mid-fill grey 808080 black', {}, fill('fill-grey', '#808080', '#000000')],
 ];
 
 module.exports = async (ctx) => {
@@ -41,9 +46,9 @@ module.exports = async (ctx) => {
     const t=x=>x.map(v=>Math.round(v)).join(',');
     return {css:s.backgroundColor,anim:e.getAnimations().length,bg:t(bg),fg:t(fg),op:Math.round(op*100)/100,ratio:Math.round(r*100)/100};})()`;
   const SEL = '.dlg .btn.primary[data-probe]';
-  /* PRIMARY_MUTANT=black: the old black mix back in every themed primary hover rule (the rule's text names :hover and .btn.primary under data-ui) */
+  /* PRIMARY_MUTANT=black or toward: the old black mix, or the toward-text mix, back in every themed primary hover rule (the rule's text names :hover and .btn.primary under data-ui) */
   const mutate = () => js(`(()=>{let n=0;for(const s of document.styleSheets){let rules;try{rules=s.cssRules}catch(e){continue}for(const r of rules){const t=r.selectorText||'';
-    if(/data-ui/.test(t)&&/\\.btn\\.primary/.test(t)&&/:hover/.test(t)&&!/\\.btn\\.primary\\.danger/.test(t)){r.style.setProperty('background','color-mix(in srgb,var(--brand-bg) 86%,#000)');n++}}}return n})()`);
+    if(/data-ui/.test(t)&&/\\.btn\\.primary/.test(t)&&/:hover/.test(t)&&!/\\.btn\\.primary\\.danger/.test(t)){r.style.setProperty('background','color-mix(in srgb,var(--brand-bg) 86%,'+(${jsLiteral(process.env.PRIMARY_MUTANT === 'toward' ? 'var(--brand-mark)' : '#000')})+')');n++}}}return n})()`);
   for (const [look, query, theme] of LOOKS) {
     for (const [w, h] of [[1440, 900], [1280, 800]]) {
       const tag = `${look} ${w}x${h}`;
