@@ -83,5 +83,24 @@ module.exports = async (ctx) => {
     await H.shot(path.join(OUT, `052-activity-table-${tag}.png`), { prep: 'mouse', delay: 300, tag: 'activity-table' });
     console.log(`[activity-table] ${tag} ok (${t.n} rows)`);
   }
+  /* narrow window (review of #1467): .act-a{min-width:24ch} keeps Action from collapsing; the table scrolls inside .scr-body, not the page. 900 is above the 700px KNOWN GAP of spec 052 */
+  {
+    const tag = '900x800 narrow';
+    await H.load({ w: 900, h: 800, ready: 'fit', settle: false });
+    assert.ok(await H.click('#toolsBtn'), `${tag}: the Tools button`);
+    assert.ok(await H.until(`document.getElementById('tabActivity')`), `${tag}: the Activity tab is there`);
+    assert.ok(await H.click('#tabActivity'), `${tag}: the Activity tab opens`);
+    assert.ok(await H.until(`document.querySelector('#screen table.act tbody tr')`), `${tag}: the activity table renders`);
+    const n = await js(`(()=>{const s=document.getElementById('screen'),A=window.DurbarActivityTable,e=x=>String(x).replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
+      const row=(o)=>Object.assign({t:new Date().toISOString(),agent:'Ben',folder:'api',app:'GitHub Copilot',mode:'ask',action:'Run npm test',decision:'allowed-once'},o);
+      s.querySelector('table.act').outerHTML=A.tableHtml([row({folder:'/Users/someone/Projects/'+'x'.repeat(90),agent:'An-Agent-With-A-Very-Long-Name-That-Has-No-Spaces-At-All-0123456789',action:'git commit -m "a long message that wraps in the Action cell"'}),row({})],e);
+      const a=s.querySelector('table.act .act-a'),cs=getComputedStyle(a),c=document.createElement('canvas').getContext('2d');
+      c.font=cs.fontStyle+' '+cs.fontWeight+' '+cs.fontSize+' '+cs.fontFamily;
+      return {actW:a.getBoundingClientRect().width,ch:c.measureText('0').width,minW:cs.minWidth,bodyRight:Math.round(s.querySelector('.scr-body').getBoundingClientRect().right-s.clientWidth),side:s.scrollWidth-s.clientWidth,doc:document.documentElement.scrollWidth-document.documentElement.clientWidth};})()`);
+    assert.ok(n.ch > 0 && n.actW >= 24 * n.ch - 1, `${tag}: Action keeps its 24ch minimum: ${jsLiteral(n)}`);
+    assert.ok(n.minW !== 'auto' && n.minW !== '0px', `${tag}: Action has a min-width: ${jsLiteral(n)}`);
+    assert.ok(n.bodyRight <= 1 && n.doc <= 1, `${tag}: the page does not scroll sideways, the table scrolls inside the body: ${jsLiteral(n)}`);
+    console.log(`[activity-table] ${tag} ok (Action ${Math.round(n.actW)}px, 24ch = ${Math.round(24 * n.ch)}px)`);
+  }
   console.log('[activity-table] all checks passed');
 };
