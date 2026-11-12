@@ -14,6 +14,7 @@ import type { WebContents } from 'electron';
 import { fromAppFrame as fromApp, ipcHandle } from '../ipcguard';
 import type { ConvSearchEvent, ConvSearchHit, ConvSearchNotes, ConvSearchStart } from '../../shared/api';
 import { startScan } from '../convsearch';
+import { unhide } from '../../shared/redact';
 import type { ScanDeps, ScanHit, ScanNotes } from '../convsearch';
 import { createCodexListCache } from '../convscope';
 import type { CodexListCache, Scope } from '../convscope';
@@ -27,14 +28,15 @@ export const NONE = 'Open a session first; earlier sessions are searched for the
 const ID_RE = /^[0-9a-f]{32}$/;
 
 /**
- * FR-033: the query main searches, or why not. Control characters become spaces (they never glue two words), the query is trimmed,
+ * FR-033: the query main searches, or why not. Control characters become spaces (they never glue two words); hidden format characters
+ * (zero-width, bidi, soft hyphen: `unhide`, the one list) are removed, so they neither hide a word nor reach the echo; the query is trimmed,
  * then cut to 8 words and 200 characters (code points; `cut` says so); it needs at least 3 characters other than spaces ("a bc" is
  * searched, "x y" is not). Always plain text: the scan matches folded words, never a pattern.
  */
 export function cleanQuery(q: unknown): { ok: true; query: string; cut: boolean } | { ok: false; code: 'short' | 'invalid' } {
   if (typeof q !== 'string') return { ok: false, code: 'invalid' };
   const head = q.length > 4 * QUERY.maxChars ? q.slice(0, 4 * QUERY.maxChars) : q; // bounds the work below; still over 200 when cut
-  const words = head.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').trim().split(/\s+/).filter(Boolean);
+  const words = unhide(head.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ')).trim().split(/\s+/).filter(Boolean);
   let query = words.slice(0, QUERY.maxWords).join(' ');
   const cps = [...query];
   if (cps.length > QUERY.maxChars) query = cps.slice(0, QUERY.maxChars).join('').trimEnd();

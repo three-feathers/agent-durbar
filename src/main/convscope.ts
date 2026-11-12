@@ -48,6 +48,8 @@ export interface ScopeDeps {
   claudeDir?: string;
   /** FR-026: the box session's kept Codex lists (absent: list every time). */
   codexLists?: CodexListCache;
+  /** FR-022 (review of phase 2 code): the listings running now, shared across scans (main's one map; absent: no sharing), so quick new starts never pile up readers of the same folder. */
+  listings?: Map<string, Promise<unknown>>;
   /** The clock of the kept lists and of the plan's deadline (ms; default `Date.now`). */
   now?(): number;
   /** The plan's deadline timer (tests inject their own; main: an unref'd `setTimeout`). */
@@ -145,6 +147,16 @@ export async function buildScope(d: ScopeDeps, stop: () => boolean = () => false
   const deadline = clock() + SCOPE_LIST_MS;
   let lateLists = 0;
   const lateApps = new Set<string>();
+  // a listing already running for this folder and app (an earlier scan's) is waited for, not started again; gone when it settles
+  const shared = <T>(k: string, start: () => Promise<T>): Promise<T> => {
+    const m = d.listings;
+    if (!m) return start();
+    const run = m.get(k);
+    if (run) return run as Promise<T>;
+    const p: Promise<T> = start().finally(() => { if (m.get(k) === p) m.delete(k); });
+    m.set(k, p);
+    return p;
+  };
   const inTime = async <T>(p: Promise<T>): Promise<T | typeof LATE> => {
     const left = deadline - clock();
     if (left <= 0) return LATE;
@@ -197,14 +209,14 @@ export async function buildScope(d: ScopeDeps, stop: () => boolean = () => false
             if (clock() >= deadline) { late(d.appName(adapter)); continue; } // past the plan's deadline: not started
             const r = await inTime(d.gate.run(`list\0${key}`, listing, CODEX_LIST_GATE_MS) as Promise<PreviousSession[]>);
             if (r === LATE) { late(d.appName(adapter)); continue; } // given up: not kept
-            list = r;
-            d.codexLists?.set(key, ids, list, at);
+            d.codexLists?.set(key, ids, r, at); // as listed: it holds no scan's open ids, the filter below is this scan's own
+            list = r.filter((s) => !openIds.has(s.id)); // shared with an earlier scan's call: a session resumed since is open now
           }
         } else {
           if (clock() >= deadline) { late(d.appName(adapter)); continue; }
-          const r = await inTime(listing());
+          const r = await inTime(shared(`list\0${k}`, listing));
           if (r === LATE) { late(d.appName(adapter)); continue; }
-          list = r;
+          list = r.filter((s) => !openIds.has(s.id)); // the running listing may be an earlier scan's, with its open ids
         }
       } catch {
         unavailable.add(d.appName(adapter)); // FR-014: "Not searched: Codex (not installed)", once
@@ -223,7 +235,7 @@ export async function buildScope(d: ScopeDeps, stop: () => boolean = () => false
       let chats;
       try {
         if (clock() >= deadline) { late('VS Code'); continue; }
-        const r = await inTime((d.listChats ?? listChats)(d.vsUserDirs(), { folders: a.folders, workspaceFile: a.workspaceFile }));
+        const r = await inTime(shared(`chats\0${key}`, () => (d.listChats ?? listChats)(d.vsUserDirs(), { folders: a.folders, workspaceFile: a.workspaceFile })));
         if (r === LATE) { late('VS Code'); continue; }
         chats = r;
       } catch {

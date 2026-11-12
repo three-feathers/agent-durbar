@@ -45,6 +45,7 @@ async function main(): Promise<void> {
   const { register, cleanQuery, QUERY, SHORT, NONE } = require('../src/main/ipc/convsearch') as typeof import('../src/main/ipc/convsearch');
   const { CODEX_LIST_GATE_MS, CODEX_LIST_TTL_MS, SCOPE_LIST_MS, buildScope, createCodexListCache } = require('../src/main/convscope') as typeof import('../src/main/convscope');
   type Scope = import('../src/main/convscope').Scope;
+  type ScopeDeps = import('../src/main/convscope').ScopeDeps;
   const { DEFAULT_TIMEOUT_MS: CODEX_RPC_TIMEOUT_MS } = require('../src/adapters/codexRpc') as typeof import('../src/adapters/codexRpc');
   const { createReadGate, orderPlan, rendererScript } = require('../src/main/convsearch') as typeof import('../src/main/convsearch');
   const { createMasker } = require('../src/main/convmask') as typeof import('../src/main/convmask');
@@ -87,6 +88,14 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(ok('.* (a|b)+ [x]').query, '.* (a|b)+ [x]', 'the query is plain text, never a pattern');
     for (const v of [undefined, null, 42, ['abc'], { q: 'abc' }]) assert.deepStrictEqual(cleanQuery(v), { ok: false, code: 'invalid' });
     assert.strictEqual(SHORT, 'Type at least 3 characters.');
+    // review of the phase 2 code (FR-033): hidden format characters are control characters too: removed (gluing, not spacing), never echoed
+    short('\u200b\u200b\u200b');
+    short('\u202e\u202e\u202e');
+    short('\u2060\u00ad\ufeff');
+    assert.strictEqual(ok('a\u200bbc').query, 'abc', 'a zero-width space inside a word does not split or hide it');
+    short('a\u200bb'); // "ab": two characters
+    assert.strictEqual(ok('inv\u00adoice').query, 'invoice', 'a soft hyphen is removed');
+    assert.strictEqual(ok('\u202einvoice\u2060 export').query, 'invoice export', 'no bidi override or word joiner in the echo');
   }
 
   // ---- T020: the channels, on the stand-in electron
@@ -179,6 +188,35 @@ async function main(): Promise<void> {
   const all = JSON.stringify(win1.sent);
   for (const bad of [GH, GH.slice(6, 20), MCP_VALUE, HOME, 'alice', 'grep invoice']) assert.ok(!all.includes(bad), `no "${bad}" in any payload`);
   assert.strictEqual(win2.sent.length, 0, 'the other window gets nothing');
+
+  // review of the phase 2 code (FR-031): `toHit` is the only way a hit reaches the window; a hit object that carries more (a folder
+  // key with a home path, an excerpt's file) loses it. The scan builds its hits by hand, so the test stands in for it (restored below).
+  {
+    const scanMod = require('../src/main/convsearch') as { startScan: unknown }; // eslint-disable-line @typescript-eslint/no-require-imports
+    const realScan = scanMod.startScan;
+    const leaky = { adapter: 'claude', sessionId: 'leak1', agentId: 'a1', group: 'office', app: 'Claude Code', folderName: 'demo', title: 'invoice', titleMarks: [[0, 7]], time: 1, more: 0, folderKey: HOME + '/work/demo', file: HOME + '/.claude/projects/x.jsonl', excerpts: [{ text: 'invoice', marks: [[0, 7]], speaker: 'you', anchor: { n: 1, head: 'invoice', path: HOME + '/x' }, raw: MCP_VALUE }] };
+    scanMod.startScan = (_plan: unknown, _q: string, d: { emit(b: unknown): void }) => {
+      d.emit({ hits: [leaky], progress: { done: 1, total: 1 }, groups: { office: 1, earlier: 0 } });
+      return { cancel: () => undefined, done: Promise.resolve({ cancelled: false, failed: false, notes: {}, progress: { done: 1, total: 1 } }) };
+    };
+    try {
+      win1.sent.length = 0;
+      const rl = await start(E1, 'invoice');
+      assert.ok(rl.ok);
+      runDeferred();
+      await settle(100);
+      const got = win1.sent.flatMap(([, p]) => (p.kind === 'batch' ? p.hits : []));
+      assert.strictEqual(got.length, 1);
+      assert.deepStrictEqual(Object.keys(got[0]).sort(), ['adapter', 'agentId', 'app', 'excerpts', 'folderName', 'group', 'more', 'sessionId', 'time', 'title', 'titleMarks']);
+      assert.deepStrictEqual(Object.keys(got[0].excerpts[0]).sort(), ['anchor', 'marks', 'speaker', 'text']);
+      assert.deepStrictEqual(Object.keys(got[0].excerpts[0].anchor).sort(), ['head', 'n']);
+      const wire = JSON.stringify(win1.sent);
+      for (const bad of [HOME, MCP_VALUE, 'folderKey', '.jsonl']) assert.ok(!wire.includes(bad), `no "${bad}" in a payload`);
+    } finally {
+      scanMod.startScan = realScan;
+    }
+    win1.sent.length = 0;
+  }
 
   // two starts back to back: one scan (the first never builds a plan), the second's events only
 
@@ -659,6 +697,66 @@ async function main(): Promise<void> {
     timers.length = 0;
   }
 
+  // review of the phase 2 code (FR-022): quick new starts do not pile up listings of the same folder; the running one is shared
+  stage = 'scope shared listings';
+  {
+    const ag = (id: string, adapterId: string, cwd: string): AgentInfo => ({ id, name: path.basename(cwd), cwd, folders: [cwd], permMode: 'read-only', adapterId } as AgentInfo);
+    const agents = new Map<string, AgentInfo>([['k1', ag('k1', 'claude', '/s/one')], ['x1', ag('x1', 'codex', '/s/two')]]);
+    const calls: string[] = [];
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
+    const adapters: Record<string, unknown> = {
+      claude: { id: 'claude', isLive: () => false, listPreviousSessions: async (cwd: string) => { calls.push('claude ' + cwd); await held; return [{ id: 'kp', title: 'earlier', startTime: 1, modifiedTime: 2 }]; } },
+      codex: { id: 'codex', isLive: () => false, listPreviousSessions: async () => [] },
+    };
+    const listings = new Map<string, Promise<unknown>>();
+    const mk = (): ScopeDeps => ({
+      agents, router: { forAgent: (id: string) => adapters[agents.get(id)!.adapterId] as never, adapterIdOf: (id: string) => agents.get(id)?.adapterId }, wsKey: (a: AgentInfo) => a.cwd, resumeIdFor: (id: string) => id, appName: (id: string) => id, vsUserDirs: () => [],
+      values: { knownSecretValues: () => [], noPrompt: () => true, secretValuesFor: () => [] }, gate: { run: (_k: string, fn: () => Promise<unknown>) => fn() }, listings,
+      listChats: (async () => { calls.push('chats'); await held; return { sessions: [], storesFound: 0, unreadable: 0, tooLarge: 0 }; }) as never,
+    });
+    const scans = [0, 1, 2, 3, 4, 5].map(() => buildScope(mk()));
+    await settle(20);
+    assert.deepStrictEqual(calls, ['chats'], 'six quick starts, the first listing held: one call, not six');
+    release();
+    const done = await Promise.all(scans);
+    assert.deepStrictEqual([...calls].sort(), ['chats', 'chats', 'claude /s/one'], 'one listing per folder and kind in all, not six');
+    assert.ok(done.every((sc) => sc.plan.sessions.some((x) => x.sessionId === 'kp')), 'every scan gets the listing');
+    assert.strictEqual(listings.size, 0, 'a settled listing is not kept');
+    const again = await buildScope(mk());
+    assert.ok(again.plan.sessions.some((x) => x.sessionId === 'kp') && calls.filter((c) => c.startsWith('claude')).length === 2, 'the next scan lists again');
+  }
+
+  // review of the phase 2 code (FR-026): a Codex listing shared through the gate carries the earlier scan's open ids; this scan filters its own
+  stage = 'scope shared Codex listing';
+  {
+    const ag = (id: string, adapterId: string, cwd: string): AgentInfo => ({ id, name: path.basename(cwd), cwd, folders: [cwd], permMode: 'read-only', adapterId } as AgentInfo);
+    const agents = new Map<string, AgentInfo>([['x1', ag('x1', 'codex', '/c/one')]]);
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
+    let started = 0;
+    const adapter = { id: 'codex', isLive: () => false, listPreviousSessions: async (_cwd: string, exclude: ReadonlySet<string>) => { started++; await held; return [{ id: 'th1', title: 'one', startTime: 1, modifiedTime: 2 }, { id: 'th2', title: 'two', startTime: 1, modifiedTime: 3 }].filter((p) => !exclude.has(p.id)); } };
+    const gate = createReadGate<unknown>();
+    const kept = createCodexListCache();
+    const mk = (): ScopeDeps => ({
+      agents, router: { forAgent: () => adapter as never, adapterIdOf: () => 'codex' }, wsKey: (a: AgentInfo) => a.cwd, resumeIdFor: (id: string) => id, appName: () => 'Codex', vsUserDirs: () => [],
+      values: { knownSecretValues: () => [], noPrompt: () => true, secretValuesFor: () => [] }, gate, codexLists: kept,
+      listChats: (async () => ({ sessions: [], storesFound: 0, unreadable: 0, tooLarge: 0 })) as never,
+    });
+    const first = buildScope(mk());
+    await settle(20);
+    agents.set('th2', ag('th2', 'codex', '/c/one')); // th2 is resumed while the listing is held: an open card now
+    const second = buildScope(mk());
+    await settle(20);
+    assert.strictEqual(started, 1, 'the second scan shares the running call');
+    release();
+    const [a, b] = await Promise.all([first, second]);
+    const earlier = (sc: Awaited<ReturnType<typeof buildScope>>): string[] => sc.plan.sessions.filter((x) => x.group === 'earlier').map((x) => x.sessionId).sort();
+    assert.deepStrictEqual(earlier(a), ['th1', 'th2'], 'the first scan listed before the resume');
+    assert.deepStrictEqual(earlier(b), ['th1'], 'the second scan: th2 is open, not earlier');
+    assert.ok(b.plan.sessions.some((x) => x.sessionId === 'th2' && x.group === 'office'));
+  }
+
   // ---- source checks (FR-025, FR-032, FR-033)
 
   stage = 'source checks';
@@ -708,10 +806,13 @@ async function main(): Promise<void> {
     const block = simSrc.slice(simSrc.indexOf('/* convquery:begin */'), simSrc.indexOf('/* convquery:end */'));
     assert.ok(block.includes('const simCleanQuery'), 'the simulator marks its query rule');
     const js = ts.transpileModule(block, { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText;
+    (globalThis as unknown as { window: unknown }).window = { DurbarSafeText: require('../src/shared/redact') }; // eslint-disable-line @typescript-eslint/no-require-imports
     // eslint-disable-next-line @typescript-eslint/no-implied-eval
     const simClean = new Function(js + '\nreturn simCleanQuery;')() as typeof cleanQuery;
     const corpus: unknown[] = ['a bc', 'x y', '', '  ab ', 'invoice export', 'a\u0000b\u0000c', 'one two three four five six seven eight nine', 'x'.repeat(250), '\u{1F600}'.repeat(205), 'word '.repeat(300), 'é ü', 'éx', 42, null];
     for (const q of corpus) assert.deepStrictEqual(simClean(q), cleanQuery(q), `the simulator answers ${JSON.stringify(q)?.slice(0, 40)} as main does`);
+    (globalThis as unknown as { window: unknown }).window = {};
+    assert.deepStrictEqual(simClean('invoice'), { ok: false, code: 'invalid' }, 'the simulator without the shared unhide fails closed');
     assert.ok(/convSearchStart: async/.test(simSrc) && /simsearch/.test(simSrc), 'the simulator fakes the bridge, with a slow mode');
     const fake = simSrc.slice(simSrc.indexOf('function simConvSearchApi'), simSrc.indexOf('\n}\n', simSrc.indexOf('function simConvSearchApi')));
     assert.ok(fake.length > 1000 && !/fetch\(|XMLHttpRequest|localStorage|sessionStorage|indexedDB|bridge\(|agentDurbar/.test(fake), 'the fake does no I/O and calls no real bridge');
@@ -726,7 +827,7 @@ async function main(): Promise<void> {
     const fnAt = simSrc.indexOf('function simConvSearchApi');
     const js = ts.transpileModule(simSrc.slice(from, simSrc.indexOf('\n}\n', fnAt) + 3), { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText;
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    (globalThis as unknown as { window: unknown }).window = { DurbarSessionSearch: search, DurbarRedact: require('../src/shared/redact') };
+    (globalThis as unknown as { window: unknown }).window = { DurbarSessionSearch: search, DurbarRedact: require('../src/shared/redact'), DurbarSafeText: require('../src/shared/redact') };
     // eslint-disable-next-line @typescript-eslint/no-implied-eval
     const make = new Function(js + '\nreturn simConvSearchApi;')() as (qs: URLSearchParams, scope: () => unknown[]) => Required<Pick<import('../src/shared/api').DurbarApi, 'convSearchStart' | 'convSearchCancel' | 'convSearchClear' | 'onConvSearch'>>;
     const s0 = { adapter: 'copilot', app: 'GitHub Copilot', folderName: 'demo', agentId: 'sim-1', time: 0, content: 'read' };
