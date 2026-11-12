@@ -39,6 +39,9 @@ import { createProfileFreshness } from './profilefiles';
 import { register as registerSlashIpc } from './ipc/slash';
 import { nativeConfirm } from './nativeconfirm';
 import { register as registerNotesIpc } from './ipc/notes';
+import { register as registerTeamsIpc } from './ipc/teams';
+import { TeamsOps } from './teamsops';
+import { TeamTemplateStore } from './teamstore';
 import { NotesOps, notesConfirmText } from './notesops';
 import { NotesStore } from './notesstore';
 import { NotesFile } from './notesfile';
@@ -896,6 +899,10 @@ function oneShotFor(id: string): { name: string; generate: (prompt: string) => R
 registerProfilesIpc({ agents, router, getAgentTrust: () => agentTrust, wsKey, ensureLive, oneShot: (id) => oneShotFor(id), profileFreshness });
 registerSlashIpc({ agents, router, ensureLive }); // spec 073
 registerNotesIpc({ getOps: () => notesOps }); // spec 083
+// spec 111 T007: the team templates; the store is opened when first asked (never under the simulator: its channels are refused before this runs)
+let teamsOps: TeamsOps | undefined;
+let teamStore: TeamTemplateStore | undefined;
+registerTeamsIpc({ getOps: () => (SIMULATOR ? undefined : (teamsOps ??= new TeamsOps({ store: () => (teamStore ??= new TeamTemplateStore(path.join(app.getPath('userData'), 'team-templates.json'))) }))) });
 registerModelIpc({ agents, router, registry, getFolderStore: () => folderStore, wsKey, orgModel: (adapterId, model) => orgPolicies.model(adapterId, model) });
 registerOrgPolicyIpc({ view: () => orgPolicies.view() });
 registerAdaptersIpc({ adaptersList });

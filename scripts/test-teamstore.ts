@@ -212,7 +212,7 @@ const sections: Record<string, Section> = {
     ok(a.ok, 'put'); if (!a.ok) return;
     const d1 = s.duplicate(a.template.id); ok(d1.ok, 'duplicate'); if (!d1.ok) return;
     eq(d1.template.name, 'Review crew copy', 'name with copy'); eq(d1.template.origin, 'own', 'origin own'); ok(d1.template.id !== a.template.id, 'new id');
-    eq(d1.template.members[0].briefFrom, 'file', 'briefFrom copied'); ok(d1.template.members.every((x) => x.memberId === undefined), 'no memberId carried over'); eq(d1.template.description, 'd', 'description');
+    eq(d1.template.members[0].briefFrom, 'file', 'briefFrom copied'); ok(d1.template.members.every((x) => /^[0-9a-f]{32}$/.test(x.memberId ?? '') && x.memberId !== 'a'.repeat(32)), 'every member of the copy has a NEW memberId (T007)'); ok(new Set(d1.template.members.map((x) => x.memberId)).size === d1.template.members.length, 'and the copy\'s ids differ from each other'); eq(d1.template.description, 'd', 'description');
     const d2 = s.duplicate(a.template.id); ok(d2.ok && d2.template.name === 'Review crew copy 2', 'second copy gets 2');
     ok(!s.duplicate('nope').ok, 'unknown id');
     // an NFD spelling and a Cyrillic lookalike of the first name take the suffix
