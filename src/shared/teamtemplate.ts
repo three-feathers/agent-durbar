@@ -110,13 +110,13 @@ const HEX_WORD = /^[0-9a-f]{8,}$/;
 const CLOSERS: ReadonlyMap<string, string> = new Map([['(', ')'], ['[', ']'], ['<', '>'], ['{', '}']]);
 const SPAN_RES: readonly RegExp[] = [/\[[^[\]]*\]/gu, /<[^<>]*>/gu, /\([^()]*\)/gu, /\{[^{}]*\}/gu];
 const LEAD_MARK = /(?:\s+|[>\-*+#\\_|\u2022\u2013\u2014]|\d+[.)]|\[[ x]\])/uy;
-const QUOTED_KEY = /^["'\u2018\u2019\u201c\u201d]([^"'\u2018\u2019\u201c\u201d]*)["'\u2018\u2019\u201c\u201d]\s*:/u;
+const QUOTE = '["\'\\u2018\\u2019\\u201a\\u201b\\u201c\\u201d\\u201e\\u201f]';
+const QUOTED_KEY = new RegExp('^' + QUOTE + '([^"\'\\u2018\\u2019\\u201a\\u201b\\u201c\\u201d\\u201e\\u201f]*)' + QUOTE + '\\s*:', 'u');
 /** look-alike brackets to ASCII for detection (fullwidth and small forms are folded by NFKC already) */
 const BRACKET_MAP: ReadonlyMap<string, string> = new Map([
-  ['\u2039', '<'], ['\u27e8', '<'], ['\u3008', '<'], ['\u00ab', '<'], ['\u203a', '>'], ['\u27e9', '>'], ['\u3009', '>'], ['\u00bb', '>'],
-  ['\u3010', '['], ['\u3014', '['], ['\u27e6', '['], ['\u3011', ']'], ['\u3015', ']'], ['\u27e7', ']'],
-]);
-const BRACKET_RE = /[\u2039\u27e8\u3008\u00ab\u203a\u27e9\u3009\u00bb\u3010\u3014\u27e6\u3011\u3015\u27e7]/gu;
+  ['\u27e8', '<'], ['\u3008', '<'], ['\u27e9', '>'], ['\u3009', '>'], ['\u3010', '['], ['\u3014', '['], ['\u27e6', '['], ['\u3011', ']'], ['\u3015', ']'], ['\u27e7', ']'],
+]); // not the guillemets: they are quotes in es, fr and de (2026-11-12)
+const BRACKET_RE = /[\u27e8\u3008\u27e9\u3009\u3010\u3014\u27e6\u3011\u3015\u27e7]/gu;
 const ROLE_FOLDED = skeleton('role', { digits: true });
 const BRIEF_FOLDED = skeleton('brief', { digits: true });
 const PHRASES: readonly string[] = ['end of role brief', 'from a team template'];
@@ -187,19 +187,30 @@ export function frameCheck(text: string, opts: { colonRule?: boolean } = {}): Fr
   return { ok: true };
 }
 
-/** Step 4 (c): each opener after the last closer of its kind, judged to the end of the line (linear: one word list, two pointers). */
+/**
+ * Step 4 (c): every opener that no closer of its kind matches (the span regexes of step 4 are innermost: an opener is matched when the next
+ * bracket character of its kind to its right is the closer), judged from the opener to the end of the line by (a) and (b). One sweep from the
+ * right per kind; one word list, two pointers: linear.
+ */
 function unclosedFrame(s: string): boolean {
   let words: { at: number; w: string }[] | undefined;
   let lastPlain = -1;
   for (const [open, close] of CLOSERS) {
-    let i = s.indexOf(open, s.lastIndexOf(close) + 1);
-    if (i < 0) continue;
+    const unmatched: number[] = [];
+    let closed = false;
+    for (let i = s.length - 1; i >= 0; i--) {
+      const c = s[i];
+      if (c === close) closed = true;
+      else if (c === open) { if (!closed) unmatched.push(i); closed = false; }
+    }
+    if (unmatched.length === 0) continue;
     if (!words) {
       words = [...s.matchAll(/[\p{L}\p{N}]+/gu)].map((m) => ({ at: m.index!, w: m[0] }));
       for (let k = 0; k < words.length; k++) if (!FRAME_WORDS.has(words[k].w)) lastPlain = words[k].at;
     }
     let k = 0;
-    for (; i >= 0; i = s.indexOf(open, i + 1)) {
+    for (let u = unmatched.length - 1; u >= 0; u--) { // ascending positions
+      const i = unmatched[u];
       while (k < words.length && words[k].at < i) k++;
       if (k >= words.length) break; // no word after the opener: nothing to judge
       if (lastPlain < i || FIRST_WORDS.has(words[k].w)) return true;
@@ -211,7 +222,7 @@ function unclosedFrame(s: string): boolean {
 const FRAME_MESSAGE: Readonly<Record<FrameReason, string>> = {
   code: 'it holds the words that open or close an instruction frame', phrase: 'it holds the words that open or close an instruction frame',
   comment: 'it starts a comment marker', fence: 'a code fence names a frame word', key: 'it starts like a chat message',
-  leading: 'a bracket or tag at the start of the line holds a frame word', span: "a bracket or tag with the word 'system'", colon: 'it ends like a frame heading',
+  leading: 'a bracket or tag at the start of the line holds a frame word', span: 'a bracket or tag that looks like a frame marker', colon: 'it ends like a frame heading',
 };
 function frameError(where: string, r: FrameResult, lines: boolean = true): string | undefined {
   if (r.ok) return undefined;
@@ -237,6 +248,7 @@ function displayText(raw: unknown, max: number, where: string, level: Level, joi
   if (raw === undefined && !required) return {};
   if (typeof raw !== 'string') return { error: `${where}: use 1 to ${max} characters of text.` };
   if (raw.length > max * 4) return { error: `${where}: use 1 to ${max} characters.` };
+  if (LONE_SURROGATE.test(raw)) return { error: `${where}: not valid text (a lone surrogate). Remove it.` };
   if (level === 'imported' || joiners) {
     const h = hiddenError(raw, where, joiners, false);
     if (h) return { error: h };
@@ -277,12 +289,10 @@ export function checkMember(value: unknown, level: Level, n: number = 1): Member
     }
     const name = displayText(f.get('name'), LIMITS.name, `${at}, name`, level, false, true);
     if (name.error) errors.push(name.error);
+    let roleBad = false;
     const role = displayText(f.get('role'), LIMITS.role, `${at}, role`, level, true, true, 'role');
     if (role.error) errors.push(role.error);
-    else {
-      if (LONE_SURROGATE.test(role.text!)) errors.push(`${at}, role: not valid text (a lone surrogate). Remove it.`);
-      else { const fe = frameError(`${at}, role`, frameCheck(role.text!), false); if (fe) errors.push(fe); }
-    }
+    else { const fe = frameError(`${at}, role`, frameCheck(role.text!), false); if (fe) { errors.push(fe); roleBad = true; } }
 
     const app = f.get('app');
     if (typeof app !== 'string' || !APP_RE.test(app)) errors.push(`${at}, app: use the id of an app.`);
@@ -337,14 +347,14 @@ export function checkMember(value: unknown, level: Level, n: number = 1): Member
           const masked = maskOutgoing(lf).text;
           const fe = frameError(`${at}, brief`, frameCheck(lf)) ?? (masked === lf ? undefined : frameError(`${at}, brief`, frameCheck(masked)));
           // the text the agent receives: two fields can be joined into one forged marker
-          const joined = fe ?? (role.error ? undefined : frameError(`${at}, role and brief`, frameCheck(`Role: ${role.text}. ${masked}`, { colonRule: false }), false));
+          const joined = fe ?? (role.error || roleBad ? undefined : frameError(`${at}, role and brief`, frameCheck(`Role: ${role.text}. ${masked}`, { colonRule: false }), false));
           if (joined) errors.push(joined);
           else if (tooLong(masked, lim)) errors.push(`${at}, brief: at most ${lim.chars.toLocaleString('en-US')} characters and ${lim.lines} lines.`);
           else if (masked.trim() !== '') brief = masked;
         }
       }
     }
-    if (errors.length === 0 && brief === undefined && role.text !== undefined) {
+    if (errors.length === 0 && brief === undefined && role.text !== undefined && !roleBad) {
       const only = frameError(`${at}, role`, frameCheck(`Role: ${role.text}.`, { colonRule: false }), false); // no brief: the agent still gets the role line
       if (only) errors.push(only);
     }
