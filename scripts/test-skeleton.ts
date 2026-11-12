@@ -9,7 +9,8 @@
  * Third and fourth (2026-11-12, review of #1583): remove the second `mapLetters` pass (the U+0500, U+0423, U+2C6D, U+A7AC names fail); change
  * `/rn/g` to `/rn/` (`rnrn barn` fails). Five golden-table mutants: `[0x51d,'w']` -> 'v', `[0x29f,'L']` -> 'I', `[0x1d20,'V']` -> 'U', `[0x4cf,'l']` -> 'I',
  * and the entry `[0xab53,'x']` removed; the golden comparison fails for each. Sixth (2026-11-12): drop the final `.normalize('NFC')` after the digit folds (the idempotence counterexamples `1` + U+0301 and the like fail).
- * Ten mutants in all, each seen to fail. Combining marks are NOT removed by skeleton(), only composed.
+ * Seventh and eighth (third round): add a leading `.toLowerCase()` before the first table pass (the golden check of U+0412 fails); NFKD
+ * -> NFC in skeleton() (the full-width, ligature and circled-digit names fail). Ninth (trim and white-space folding BEFORE the skeleton in nameKey: the spacing-mark and sweep checks fail). Thirteen mutants in all, each seen to fail. Combining marks are NOT removed by skeleton(), only composed.
  */
 import assert from 'assert';
 import fs from 'fs';
@@ -130,41 +131,80 @@ eq(nameKey('\u041d\u041a'), nameKey('hk'), 'Cyrillic capital H and K');
 // known limit of toLowerCase (documented, FR-158)
 ok(nameKey('Stra\u00dfe') !== nameKey('STRASSE'), 'known limit: sharp s is not unified with SS');
 
-// nameKey is idempotent: every table key x combining marks x case x wrapper, a fixed list (no randomness)
+// the third round: a leading lower case was tried and refused (it loses `\u0412`, `\u041d`, ... whose lower case is not a lookalike), so all-capital
+// Greek and Cyrillic names do NOT equal their small-letter forms: a documented limit (FR-158)
+ok(nameKey('\u039c\u0397\u039d\u0391') !== nameKey('\u03bc\u03b7\u03bd\u03b1'), 'known limit: Greek capitals differ from small letters');
+ok(nameKey('\u041c\u0410\u0420\u0418\u042f') !== nameKey('\u043c\u0430\u0440\u0438\u044f'), 'known limit: Cyrillic capitals differ from small letters');
+eq(nameKey('\u041d\u0435llo'), nameKey('Hello'), 'a Cyrillic capital whose lower case is not on the list still maps');
+// ... without bringing back the first regression: each lookalike capital equals its Latin twin
+for (const [look, twin] of [['\u0423', 'Y'], ['\u0500', 'D'], ['\u0196', 'I'], ['\u01a6', 'R'], ['\u2c6d', 'A'], ['\ua7ac', 'G'], ['\ua7b3', 'X']]) {
+  eq(nameKey(look), nameKey(twin), 'U+' + look.codePointAt(0)!.toString(16) + ' equals ' + twin);
+}
+eq(skeleton('<S\u0423STEM>'), '<system>', 'a Cyrillic U inside a frame word');
+// no NFKC of its own: the skeleton's NFKD folds compatibility forms
+eq(nameKey('\uff32eview'), nameKey('review'), 'full-width capital');
+eq(nameKey('\ufb01x'), nameKey('fix'), 'fi ligature');
+eq(nameKey('\u2460'), nameKey('1'), 'circled digit one');
+
+// nameKey is idempotent: a fixed grid, no randomness. Singles: atoms x 11 marks x 3 case forms x 6 wrappers. Pairs of atoms: one rotating variant each.
 {
+  const specials = ['\u00df', '\u1e9e', '\u0130', '\u0131', '\u03a3', '\u03c3', '\u03c2', 'rn', '0', '1', 'I', 'l', 'i', '\ufb01', '\u2160', '\ud835\udfd9', '\u2460',
+    '\ua7b3', '\u0196', '\u01a6', '\u0500', '\u0423', '\u2c6d', '\ua7ac', '\u03d2', '\u03d3', '\u0401', '\u0457', '\u03ac'];
+  const atoms = [...[...SKELETON_MAP.keys()].map((cp) => String.fromCodePoint(cp)), ...specials];
+  const marks = ['', '\u0300', '\u0301', '\u0302', '\u0303', '\u0307', '\u0308', '\u0323', '\u0327', '\u030a', '\u0301\u0308'];
+  const forms: ((t: string) => string)[] = [(t) => t, (t) => t.toUpperCase(), (t) => t.toLowerCase()];
+  const wraps = ['x%sy', 'Rn%s1I', '%s', '%s%s', ' %s ', 'I%sl'];
   let bad = 0, total = 0;
-  for (const cp of SKELETON_MAP.keys()) {
-    const c = String.fromCodePoint(cp);
-    for (const mark of ['', '\u0301', '\u0308', '\u0323', '\u0301\u0308']) {
-      for (const v of [c, c.toUpperCase(), c.toLowerCase()]) {
-        for (const wrap of ['x%sy', 'Rn%s1I', '%s']) {
-          const k = nameKey(wrap.replace('%s', () => v + mark));
-          total++;
-          if (nameKey(k) !== k) bad++;
-        }
-      }
-    }
-  }
+  const probe = (t: string) => { const k = nameKey(t); total++; if (nameKey(k) !== k) { bad++; if (bad < 4) console.log('not idempotent: ' + JSON.stringify(t)); } };
+  const wrap = (w: string, v: string) => w.split('%s').join(v);
+  for (const a of atoms) for (const mk of marks) for (const f of forms) for (const w of wraps) probe(wrap(w, f(a + mk)));
+  let r = 0;
+  for (const a of atoms) for (const b of atoms) { r++; probe(wrap(wraps[r % 6], forms[r % 3](a + marks[r % 11] + b + marks[(r * 7) % 11]))); }
   // the reviewer's counterexamples: a digit that folds to a letter, then a combining mark (the final NFC composes them)
   for (const t of ['1\u0301', '0\u0301', '0\u0308', '0\u0307', '\ud835\udfd9\u0301']) {
     const k = nameKey(t);
-    total++;
-    if (nameKey(k) !== k) bad++;
+    probe(t);
     ok(k === k.normalize('NFC'), 'key of a digit with a mark is composed');
   }
-  ok(total > 3000, 'idempotence samples: ' + total);
+  ok(total > 30000, 'idempotence samples: ' + total);
   eq(bad, 0, 'nameKey(nameKey(s)) equals nameKey(s) for every sample');
 }
 
+// spacing marks: NFKD makes a space plus a mark, so trim and white-space folding run AFTER the skeleton (2026-11-12)
+{
+  const spacers: number[] = [];
+  for (let cp = 0; cp <= 0x2ffff; cp++) { if (cp >= 0xd800 && cp <= 0xdfff) continue; if (/^ \p{M}/u.test(String.fromCodePoint(cp).normalize('NFKD'))) spacers.push(cp); }
+  ok(spacers.length >= 50, 'the spacing marks found: ' + spacers.length);
+  ok(spacers.includes(0xa8) && spacers.includes(0xaf) && spacers.includes(0x2dd) && spacers.includes(0xffe3), 'known spacing marks are among them');
+  for (const cp of spacers) { const k = nameKey(String.fromCodePoint(cp)); if (nameKey(k) !== k) assert.fail('not idempotent: U+' + cp.toString(16)); }
+  n++;
+  eq(nameKey('a \u00a8'), nameKey('a \u0308'), 'a spacing diaeresis equals the combining one');
+  eq(nameKey('\u00a8'), nameKey(nameKey('\u00a8')), 'a lone spacing diaeresis');
+}
+
+// every code point up to U+2FFFF, alone and between `1` and `rn`: nameKey and skeleton are idempotent (fixed, no randomness)
+{
+  const t = Date.now();
+  const around = (c: string) => [c, '1' + c + 'rn'];
+  for (let cp = 0; cp <= 0x2ffff; cp++) {
+    for (const x of around(String.fromCodePoint(cp))) {
+      const k = nameKey(x), s1 = skeleton(x, { digits: true }), s0 = skeleton(x);
+      if (nameKey(k) !== k || skeleton(s1, { digits: true }) !== s1 || skeleton(s0) !== s0) assert.fail('not idempotent: U+' + cp.toString(16) + ' in ' + JSON.stringify(x));
+    }
+  }
+  n++;
+  ok(Date.now() - t < 60000, 'the whole sweep of U+0000..U+2FFFF ran in ' + (Date.now() - t) + ' ms');
+}
 
 // big input stays fast (loose bound)
 {
   const big = '\u0430b1rn '.repeat(40000);
   const t = Date.now();
   const out = skeleton(big, { digits: true });
-  ok(out.length > 0 && Date.now() - t < 2000, 'a 200,000 character name is folded in under 2 s');
+  eq(out, 'ablm '.repeat(40000), 'the 200,000 character name is folded exactly');
+  ok(Date.now() - t < 2000, 'a 200,000 character name is folded in under 2 s');
   const t2 = Date.now();
-  nameKey(big);
+  eq(nameKey(big), 'ablm '.repeat(39999) + 'ablm', 'nameKey of the big name is exact');
   ok(Date.now() - t2 < 2000, 'nameKey on 200,000 characters under 2 s');
 }
 
