@@ -312,3 +312,10 @@ Starts after the next built-in world's stack lands (FR-296, decided Q4). All beh
 ## 2026-11-11: the painted-pixel check and a zero box (issue #1517)
 
 - [x] T304 `shots-102-arcade`: the painted-pixel check treats a person whose box rounds to 0 px as BUSY (bounded 5 s re-read) and, if it stays so, fails naming `data-for`, size and style (spec Changes 2026-11-11; issue #1517). Test: `ARCADE_MUTANT=zero` passes, `ARCADE_MUTANT=zero-stuck` fails with the named person, the old code plus the same injected style died with IndexSizeError on the author's Mac (declared by the author, not reproduced by the reviewer; the old code has no mutant). The fix is not yet seen on Linux CI (spec Changes 2026-11-11 `[KNOWN GAP]`).
+
+## 2026-11-12: the Postbox, the still highlights and auto-follow in the arcade (issue #1399)
+
+- [x] T318 `check-102-arcade-postbox` (new driver, `ui-suite` entry): the arcade's Postbox plate and its click. Test: passes at both sizes; `POSTBOX_MUTANT=click` fails at "a click on the Postbox opens Settings". `[KNOWN GAP]` macOS only.
+- [x] T319 `ui-suite` entry `check-unread retro`: the still highlights in the arcade (endless animations, since it draws no glow). Test: passes; `UNREAD_MUTANT=still` fails at "no glow breathes". `[KNOWN GAP]` macOS only.
+- [x] T320 `ui-suite` entry `check-auto-follow retro`: auto-follow's return and the plate's mark in the arcade. Test: passes; `AFOLLOW_MUTANT=mark` fails at "FR-183: its plate is marked". `[KNOWN GAP]` macOS only; the entry repeats the driver's flat part (about 215 s).
+
