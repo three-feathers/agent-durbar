@@ -12,6 +12,7 @@
  *     skew       the hold a time of its own that ends 40 ms before its plate's ease (the race seen in the cave, review of PR 1555): the opacity label
  *     focushide  the focused pencil hidden too: "the focused pencil stays shown (opacity 1) while its plate eases"
  *     parkold    the pointer parked at the first version's spot, whatever the screen (with PENCIL_EASE_SCREEN=1280x1024 at DPR 2): "the pointer is parked on the visible screen"
+ *     far        every pencil 14 px further from its name: "once the ease is over every pencil is painted just after its name"
  *     hover      the pointer left on a working plate before the end frame: "no hover card is open over the plates in the end frame"
  *   PENCIL_EASE_WORLDS=photo,arcade  only those worlds (photo, cave, arcade)
  *   PENCIL_EASE_SLOW_CAPTURE=<ms>    a pause after each mid-move capture, as a slow (software) compositor: the 3-frame assert is then skipped, printed
@@ -181,6 +182,7 @@ module.exports = async (ctx) => {
     const focusMark = await js(`(()=>{const b=document.querySelector('#stage .ren.ro-ren[data-ren="'+CSS.escape(${jsLiteral(pick[0])})+'"]');b.focus({preventScroll:true});return document.activeElement===b?(b.previousElementSibling.dataset.peMark||'?'):''})()`);
     assert.ok(focusMark, `${tag}: the first mover's pencil has the focus`);
     await must(`[...document.querySelectorAll('#stage .ren.ro-ren')].every(b=>getComputedStyle(b).opacity==='1')`, `${tag}: every pencil shown (ren-show's fade in over)`, 3000);
+    if (MUTANT === 'far') await js(`(()=>{document.querySelectorAll('#stage .ren.ro-ren').forEach(b=>b.style.setProperty('left','calc(anchor(right) + 13px)','important'));return 1})()`); /* every pencil 14 px further from its name */
     await js(`new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(1))))`);
     /* the move: both read (the second finished long ago, so it sleeps there). The page then samples, each animation frame, every moving plate's pencil's
        computed opacity (a style read: no layout); nothing else reads the page until the frames are taken */
@@ -212,10 +214,14 @@ module.exports = async (ctx) => {
        in the cut part never leaves the plate: Linux/Xvfb at DPR 2, review of PR 1555); PENCIL_EASE_SCREEN stands in for a small screen here as below */
     const pg0 = await js(`(()=>{const d=devicePixelRatio,m=/^(\\d+)x(\\d+)$/.exec(${jsLiteral(SCREEN)});return {dpr:d,view:[innerWidth,innerHeight],top:document.getElementById('stage').getBoundingClientRect().top,screen:m?[+m[1],+m[2]]:[Math.round(screen.width*d),Math.round(screen.height*d)],at:[Math.round((screenX+(outerWidth-innerWidth))*d),Math.round((screenY+(outerHeight-innerHeight))*d)]}})()`);
     const cands = MUTANT === 'parkold' ? [{ x: Math.round(pg0.view[0] / 2), y: Math.max(1, Math.round(pg0.top) - 4) }] : parkCandidates(pg0); /* parkold: the first version's point, whatever the screen */
-    const free = await js(`${jsLiteral(cands)}.filter(c=>{const e=document.elementFromPoint(c.x,c.y);return !e||!document.getElementById('stage').contains(e)})`);
+    /* a spot no hover target is under: not in the office at all (its desk, monitor, person, table, marquee or plate opens the card: FR-327) */
+    const HOVER = '.ro, #stage, .ro-screen, .ro-person, .ro-person2, .ro-rig, .ro-initials, .ro-marquee, .ro-desk, .ro-ltable, .ro-plate, [data-hover-target]';
+    const free = await js(`${jsLiteral(cands)}.filter(c=>{const e=document.elementFromPoint(c.x,c.y);return !e||!e.closest(${jsLiteral(HOVER)})})`);
     const where = `pointer ${free.length ? free[0].x + ',' + free[0].y : 'none'} css px; screen ${pg0.screen.join('x')} device px; window content ${pg0.view.map((v) => v * pg0.dpr).join('x')} device px at ${pg0.at.join(',')}; devicePixelRatio ${pg0.dpr}`;
     assert.ok(free.length > 0, `${tag}: a spot outside the plates on the visible screen to park the pointer (${where})`);
     const park = free[0];
+    const chain = await js(`(()=>{const out=[];for(let e=document.elementFromPoint(${jsLiteral(park.x)},${jsLiteral(park.y)});e&&out.length<6;e=e.parentElement)out.push(e.tagName.toLowerCase()+(e.id?'#'+e.id:'')+(e.className&&typeof e.className==='string'?'.'+e.className.trim().split(/\\s+/).join('.'):''));return out.join(' < ')})()`);
+    assert.ok(!(await js(`(()=>{const e=document.elementFromPoint(${jsLiteral(park.x)},${jsLiteral(park.y)});return !!(e&&e.closest(${jsLiteral(HOVER)}))})()`)), tag + ': the parked pointer is over no hover target (plate, desk, monitor, person, table; ' + where + '; element chain: ' + chain + ')');
     assert.ok(parkVisible(park, pg0), `${tag}: the pointer is parked on the visible screen (${where})`);
     wc().sendInputEvent({ type: 'mouseMove', x: park.x, y: park.y });
     await js(`(()=>{const a=document.activeElement;if(a&&a.closest&&a.closest('#stage'))a.blur();return 1})()`);
@@ -283,7 +289,8 @@ module.exports = async (ctx) => {
       /* a compositor whose captures take over 40 ms each (Linux/Xvfb at DPR 2: ~100 ms) cannot give 3 frames in 200 ms: that assert is then skipped, said
          in the log, never passed; the opacity reads below do not depend on the capture and still fail a pencil shown while its plate eases */
       const gaps = frames.slice(1).map((f, i) => f.t - frames[i].t).sort((a, b) => a - b), gap = gaps.length ? gaps[gaps.length >> 1] : SPAN;
-      if (caught.length < MIN_CAUGHT && gap > 40) log(tag, `skipped: capture too slow (${caught.length} frames mid-move in the first 200 ms, ${frames.length} in ${SPAN} ms, a capture every ${gap} ms): the painted check saw few frames; the opacity reads still apply`);
+      const early = frames.filter((f) => f.t <= 200).length; /* some frames, but sparse (a burst of slow captures at DPR 1: 1 mid-move frame of 5, Linux/Xvfb): too slow too; none at all (the late mutant) is not */
+      if (caught.length < MIN_CAUGHT && (gap > 40 || (early > 0 && early < 2 * MIN_CAUGHT))) log(tag, `skipped: capture too slow (${caught.length} frames mid-move and ${early} frames in the first 200 ms, ${frames.length} in ${SPAN} ms, a capture every ${gap} ms): the painted check saw few frames; the opacity reads still apply`);
       else assert.ok(caught.length >= MIN_CAUGHT, `${tag}: ${MIN_CAUGHT} or more frames caught the plates on their way in the first 200 ms (got ${caught.length}; frames at ${frames.map((f) => f.t).join(',')} ms): too few means the captures are slower than the ease on this machine, so nothing was tested; not a pass`);
       /* in every frame: no pencil's painted icon over its own plate's painted name, role or status (the focused one may be: FR-365's known gap) */
       const bad = [];
@@ -302,11 +309,13 @@ module.exports = async (ctx) => {
       assert.deepStrictEqual(restBad, [], `${tag}: each moving plate's pencil is at opacity 0 (under 0.05) for as long as its plate eases`);
       assert.deepStrictEqual(focBad, [], `${tag}: the focused pencil stays shown (opacity 1) while its plate eases`);
       /* at the end: every pencil painted, just after its painted name, clear of the role and status; and by its boxes */
-      const endBad = [];
+      const endBad = [], dsc = endImg.getSize().width / w;
       for (const i of painted ? keys.filter((k) => !off.has(k)) : []) {
         const pen = end['pen:' + i], nm = end['name:' + i];
         for (const p of ['name', 'role', 'status']) if (end[p + ':' + i] && overlap(pen, end[p + ':' + i])) endBad.push(`plate ${i}: the pencil over its ${p}`);
-        if (nm && (pen.x - nm.r < -1 || pen.x - nm.r > 9)) endBad.push(`plate ${i}: the pencil ${Math.round(pen.x - nm.r)} px after its name`);
+        /* the offset in CSS px (the marks are device px): the DOM's own gap is 0..8 (asserted below); the painted one may differ from the layout's by the
+           icon's own padding and antialiasing, 3 CSS px at most (derived, not a number tuned to one machine: 5 CSS px measured on Linux/Xvfb at DPR 2, 6 on the Mac) */
+        if (nm && (((pen.x - nm.r) / dsc < -1) || ((pen.x - nm.r) / dsc > 8 + 3))) endBad.push(`plate ${i}: the pencil ${Math.round((pen.x - nm.r) / dsc)} CSS px after its name (at most 11)`);
       }
       assert.deepStrictEqual(endBad, [], `${tag}: once the ease is over every pencil is painted just after its name, over nothing`);
       const geo = await js(`[...document.querySelectorAll('#stage .ren.ro-ren')].map(b=>{const p=b.previousElementSibling,R=e=>e.getBoundingClientRect(),ic=R(b.querySelector('svg')||b),nb=p.querySelector('.ro-l1>b'),named=!!nb.getClientRects().length,nm=R(nb),st=R(p.querySelector('.ro-l2'));

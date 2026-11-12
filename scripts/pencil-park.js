@@ -14,7 +14,7 @@ function visibleOf({ view, screen, at, dpr }) {
 }
 function parkVisible(p, o) { const v = visibleOf(o); return p.x >= 0 && p.y >= 0 && p.x < v[0] && p.y < v[1]; }
 function parkCandidates(o) {
-  const v = visibleOf(o), top = Math.max(1, Math.round(o.top) - 4);
+  const v = visibleOf(o), top = Math.max(1, Math.floor(o.top / 2)); /* half way up the bar above the stage: no desk, monitor, table or plate is there (the driver checks the element chain too) */
   const all = [[Math.round(v[0] / 2), top], [1, 1], [v[0] - 2, 1]].map(([x, y]) => ({ x, y }));
   return all.filter((p) => parkVisible(p, o));
 }
