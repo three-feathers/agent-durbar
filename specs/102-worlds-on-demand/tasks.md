@@ -315,5 +315,5 @@ Starts after the next built-in world's stack lands (FR-296, decided Q4). All beh
 
 ## 2026-11-12: the logo's tile and the folder menu in the arcade (issue #1399)
 
-- [ ] T316 `check-logo-family` asserts the arcade's own pair at its Real office seam under `DRIVER_WORLD=retro`; `ui-suite` entry `check-logo-family retro`. Test: it passes at both sizes; `LOGO_MUTANT=arcade` fails at "the arcade's own pair".
-- [ ] T317 `check-102-arcade-menu` (new driver, `ui-suite` entry): the folder menu on an arcade sign lists Move earlier / later, either says the room keeps its place in the arcade, signs and saved order unchanged. Test: passes at both sizes; `ARCMENU_MUTANT=swallow` fails at "the menu's Move earlier says".
+- [x] T316 `check-logo-family` asserts the arcade's own pair (spec 101 FR-034) at its Real office seam under `DRIVER_WORLD=retro`; `ui-suite` entry `check-logo-family retro`. Test: it passes at both sizes; `LOGO_MUTANT=arcade|ink|tokens|size` each fail at their own assert.
+- [x] T317 `check-102-arcade-menu` (new driver, `ui-suite` entry): the folder menu on an arcade sign lists Move earlier / later, either says the room keeps its place (spec 097 FR-354), signs and saved order unchanged. Test: passes at both sizes; `ARCMENU_MUTANT=swallow|move|save` each fail at their own assert. `[KNOWN GAP]` macOS only.
