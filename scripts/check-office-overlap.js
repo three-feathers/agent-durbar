@@ -504,7 +504,7 @@ async function driver(ctx) {
       const o = ro.getBoundingClientRect(), fl = document.getElementById('floor').getBoundingClientRect();
       const R = (e) => { const b = e.getBoundingClientRect(); return { x: b.left, y: b.top, r: b.right, b: b.bottom }; };
       const boxes = [];
-      const add = (kind, e, r) => { if (e && !e.getClientRects().length) return; boxes.push({ kind, id: e ? (e.dataset.id || e.dataset.place || e.dataset.folder || e.textContent.slice(0, 16)) : '', r: r || R(e) }); };
+      const add = (kind, e, r, rid) => { if (e && !e.getClientRects().length) return; boxes.push({ kind, id: e ? (e.dataset.id || e.dataset.place || e.dataset.folder || e.textContent.slice(0, 16)) : (rid || ''), r: r || R(e) }); };
       document.querySelectorAll('#stage .ro-plate').forEach((e) => add('plate', e));
       document.querySelectorAll('#stage .ro-sign').forEach((e) => add('sign', e));
       document.querySelectorAll('#stage .ro-lplate').forEach((e) => add('placeplate', e));
@@ -513,10 +513,13 @@ async function driver(ctx) {
       document.querySelectorAll('#stage .ro-away').forEach((e) => add('away', e));
       document.querySelectorAll('#stage .ro-screen .ro-bezel').forEach((e) => add('screen', e));
       for (const z of L.zones) for (const d of z.desks) if (d.person) add('face', null, { x: o.left + d.person.vis.x, y: o.top + d.person.vis.y, r: o.left + d.person.vis.x + d.person.vis.w, b: o.top + d.person.vis.y + Math.min(d.person.vis.h, L.faceH * 1.2) });
+      /* spec 097 FR-316 (issue #1511): a lounge seat's person (the picture's box from its top to the plate's top, where the plate stands in front of the lap, less 12% of its width at each side where the picture is empty) is a box for the Draft tag only: the tag must not cover the figure. Mutant (a source edit): in src/renderer/realoffice.js the `dr:` tag's box, drop `d.lounge ? { x: d.screen.x, y: d.screen.y } :`, build, run: it must fail "drafttag Draft overlaps figure <id>" at 12 and 15 agents */
+      if (L.lounge) for (const d of L.lounge.desks) if (d.person) { const p = d.person, m = 0.12 * p.w; add('figure', null, { x: o.left + p.x + m, y: o.top + p.y, r: o.left + p.x + p.w - m, b: o.top + Math.min(p.y + p.h, d.plate.y) }, d.id); }
       const hit = (a, b) => a.x + 0.5 < b.r && b.x + 0.5 < a.r && a.y + 0.5 < b.b && b.y + 0.5 < a.b;
       for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
         const a = boxes[i], b = boxes[j];
         if (a.kind === 'face' && b.kind === 'face') continue;
+        if ((a.kind === 'figure' || b.kind === 'figure') && a.kind !== 'drafttag' && b.kind !== 'drafttag') continue; /* a figure is only measured against the Draft tag (the plate stands in front of the lap by design) */
         if (hit(a.r, b.r)) P.push(`${a.kind} ${a.id} overlaps ${b.kind} ${b.id}`);
       }
       for (const b of boxes) if (b.r.x < fl.left - 0.5 || b.r.r > fl.right + 0.5 || b.r.y < o.top - 0.5 || b.r.b > o.bottom + 0.5) P.push(`${b.kind} ${b.id} outside the office`);
