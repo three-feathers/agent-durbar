@@ -319,5 +319,4 @@ Starts after the next built-in world's stack lands (FR-296, decided Q4). All beh
 
 ## 2026-11-12: the narrow cabinet's plate (issue #1574)
 
-- [x] T311 The narrow cabinet's plate with a pencil and helpers: the plate's own dot not drawn, the count marked `+N!` for a failed or waiting helper (`cab-narrow` class, `.ro-hm`, `isUrgent`, `helpWordsOf`), word whole; `shots-102-arcade` narrow case (3 helpers with a failed one, 2 with none) asserts word, `+N`, mark and dot order; mutants `narrowdot`, `nomark`, `markalways`, `narrowclip` each fail at their label (spec Changes 2026-11-12, 102 FR-312).
-
+- [x] T311 The narrow cabinet's plate with a pencil and helpers: own dot not drawn, count marked `+N!` for a failed, waiting or limit helper, extra name words only on that plate (`cab-narrow`, `.ro-hm`, `isUrgent`, `isNarrowPlate`, `helpWordsOf`), 4 px less left padding and no gap for a 3 px written room (7.6 px measured); `shots-102-arcade` narrow case (exact Range check, room, mark, name, order; a wide plate keeps its FR-311 name); mutants `narrowdot`, `wordpx`, `thin`, `nomark`, `markalways`, `narrowclip`, `namescope` each fail at their label (spec Changes 2026-11-12, 102 FR-312).
