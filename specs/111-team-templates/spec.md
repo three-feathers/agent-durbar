@@ -275,10 +275,10 @@ Proposed defaults, 2026-11-10. Ruben's approval on #1306 covers the scope. **Q1,
 
 ### 2026-11-12: joiners after a virama, one mask, two known limits (decided by the coordinator under Ruben's delegation; review of T004)
 
-- **ZWNJ and ZWJ (FR-012, plan *Text rules*)**: a neighbour may be a letter (`\p{L}`) **or a mark** (`\p{M}`) of a script that needs them (Arabic script and the ten Indic scripts), because real Indic text puts ZWJ after a virama (category Mn or Mc: U+0915 U+094D U+200D U+0937, Sinhala U+0DCA U+200D U+0DBA, Malayalam, Bengali). Both neighbours must still be of such a script; `a` + virama + ZWJ + `b`, a joiner next to Latin, a space or another joiner is refused.
+- **ZWNJ and ZWJ** (FR-012, plan *Text rules*): a neighbour may be a letter (`\p{L}`) **or a mark** (`\p{M}`) of a script that needs them (Arabic script and the ten Indic scripts), because real Indic text puts ZWJ after a virama (category Mn or Mc: U+0915 U+094D U+200D U+0937, Sinhala U+0DCA U+200D U+0DBA, Malayalam, Bengali). Both neighbours must still be of such a script; `a` + virama + ZWJ + `b`, a joiner next to Latin, a space or another joiner is refused.
 - **One mask**: `checkMember` masks a brief with `maskOutgoing` (the one function of FR-012 for saving, preview, export, import and send), not `maskTokenShapes`; the frame guard runs on the text as written and on the masked text.
-- **FR-012 [KNOWN GAP]**: at level `own` a member or template name, and a description, pass only `checkDisplayName` (`HIDDEN_RE`); a tag character, a variation selector or U+061C in an own name is accepted (the name never reaches the agent; at `imported` it is refused).
-- **FR-002 note**: `app` is checked by the shape of an adapter id (`^[a-z][a-z0-9-]{0,31}$`, the one in `src/main/folders.ts`, not exported), with no equality test against it; G2 may move it to `src/shared`.
+- Known gap, `[KNOWN GAP]` on FR-012: at level `own` a member or template name, and a description, pass only `checkDisplayName` (`HIDDEN_RE`); a tag character, a variation selector or U+061C in an own name is accepted (the name never reaches the agent; at `imported` it is refused).
+- Note on the `app` field of FR-002: `app` is checked by the shape of an adapter id (`^[a-z][a-z0-9-]{0,31}$`, the one in `src/main/folders.ts`, not exported), with no equality test against it; G2 may move it to `src/shared`.
 
 ### 2026-11-12: skeleton before case folding (decided by the coordinator under Ruben's delegation; review of T032)
 
