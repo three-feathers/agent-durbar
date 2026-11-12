@@ -11,8 +11,10 @@
  *   5 duplicate name compared raw, without nameKey            -> duplicateNames
  *   6 put without checkTeamTemplate                           -> putInvalid
  *   7 load at level 'imported' instead of 'own'               -> importedFileLoads
- *   8..14 (review; 15 entries in all, the duplicate one has two): put takes the value's origin; no fsync; blocked check removed; format not checked; newer schemaVersion accepted;
- *   duplicate cut by UTF-16 length; stale temps not removed.
+ *   8..14 (first review): put takes the value's origin; no fsync; blocked check removed; format not checked; newer schemaVersion accepted; stale temps not removed.
+ *   15..24 (second review, #1602): cut by code point, not grapheme; trailing joiners kept; no second read after a read error; decoder not fatal;
+ *   no Windows rename retry; the retry on every platform; no fingerprint comparison; no pruning of set-aside files; folder mode 0755; isBlocked always false.
+ *   The list below has 24 entries in all (the "no nameKey" mutant of 5 has two variants).
  *   No `trimEnd` before the suffix: the validator already collapses a double space, so the name is the same (the test "no double space" shows it).
  */
 import assert from 'assert';
@@ -30,20 +32,26 @@ const ROOT = path.dirname(F);
 
 /** An in-memory `TeamFs`: files with a mode, a bytes-read counter, a failing rename or write on demand. */
 class MemFs {
-  files = new Map<string, { data: Buffer; mode: number; size?: number }>();
+  files = new Map<string, { data: Buffer; mode: number; size?: number; mt?: number }>();
+  openFails = 0; dirModes: number[] = []; static tick = 0;
   failRename = false; failWrite = false; bytesRead = 0; writes: { file: string; mode: number; flag: string }[] = []; renames: [string, string][] = [];
   private fds = new Map<number, string>(); private nextFd = 3;
-  set(file: string, text: string | Buffer): void { this.files.set(file, { data: Buffer.from(text), mode: 0o644 }); }
+  set(file: string, text: string | Buffer): void { this.files.set(file, { data: Buffer.from(text), mode: 0o644, mt: ++MemFs.tick }); }
   text(file: string): string | undefined { return this.files.get(file)?.data.toString('utf8'); }
   names(): string[] { return [...this.files.keys()].sort(); }
-  mkdirSync(): void { /* directories are implicit */ }
+  mkdirSync(_d: string, o: { mode: number }): void { this.dirModes.push(o.mode); }
+  statSync(file: string): { size: number; mtimeMs: number } {
+    const f = this.files.get(file);
+    if (!f) throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+    return { size: f.size ?? f.data.length, mtimeMs: f.mt ?? 0 };
+  }
   existsSync(p: string): boolean { return this.files.has(p); }
   writeFileSync(file: string, data: string, o: { mode: number; flag: string }): void {
     this.writes.push({ file, mode: o.mode, flag: o.flag });
     if (o.flag === 'wx' && this.files.has(file)) throw Object.assign(new Error('exists'), { code: 'EEXIST' });
     if (this.failWrite) { this.files.set(file, { data: Buffer.from(data.slice(0, 10)), mode: o.mode }); throw Object.assign(new Error('disk'), { code: 'ENOSPC' }); }
     const old = this.files.get(file);
-    this.files.set(file, { data: Buffer.from(data), mode: old ? old.mode : o.mode });
+    this.files.set(file, { data: Buffer.from(data), mode: old ? old.mode : o.mode, mt: ++MemFs.tick });
   }
   fsyncs: string[] = []; log: string[] = [];
   fsyncFile(file: string): void { this.fsyncs.push(file); this.log.push('fsync ' + file); }
@@ -58,6 +66,7 @@ class MemFs {
   rmSync(p: string): void { this.files.delete(p); }
   openSync(file: string): number {
     if (!this.files.has(file)) throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+    if (this.openFails > 0 && file === F) { this.openFails--; throw Object.assign(new Error('held'), { code: 'EBUSY' }); }
     const fd = this.nextFd++; this.fds.set(fd, file); return fd;
   }
   fstatSync(fd: number): { isFile(): boolean; size: number; nlink: number } {
@@ -74,8 +83,9 @@ class MemFs {
 
 const KEYS = { O_RDONLY: 0 };
 let clock = 1_700_000_000_000; let seq = 0;
-const make = (m: MemFs, api: Api, alive: (pid: number) => boolean = () => false): InstanceType<Api['TeamTemplateStore']> =>
-  new api.TeamTemplateStore(F, { fs: m, flags: KEYS, now: () => (clock += 1000), newId: () => 'id' + String(++seq).padStart(4, '0'), pid: 4242, alive });
+let pauses: number[] = [];
+const make = (m: MemFs, api: Api, alive: (pid: number) => boolean = () => false, platform: NodeJS.Platform = 'linux'): InstanceType<Api['TeamTemplateStore']> =>
+  new api.TeamTemplateStore(F, { fs: m, flags: KEYS, now: () => (clock += 1000), newId: () => 'id' + String(++seq).padStart(4, '0'), pid: 4242, alive, pause: (ms) => { pauses.push(ms); }, platform });
 
 const member = (name = 'Architect', extra: Record<string, unknown> = {}): Record<string, unknown> =>
   ({ name, role: 'Designs', app: 'copilot', permMode: 'ask', sendBrief: true, ...extra });
@@ -139,7 +149,7 @@ const sections: Record<string, Section> = {
     ok(m.writes.length >= 2, 'wrote');
     for (const w of m.writes) { eq(w.mode, 0o600, 'mode 0600'); eq(w.flag, 'wx', 'a fresh temp file only'); }
     eq(m.files.get(F)!.mode, 0o600, 'the stored file has 0600'); ok(m.writes.every((w) => w.file !== F), 'never written in place');
-    eq(m.names(), [F], 'no temp left');
+    eq(m.names(), [F], 'no temp left'); ok(m.dirModes.length >= 2 && m.dirModes.every((x) => x === 0o700), 'the folder is made with mode 0700');
   },
   crashBetweenWriteAndRename(api) {
     const m = new MemFs(); const s = make(m, api); const a = s.put(tpl()); ok(a.ok, 'first save');
@@ -207,6 +217,15 @@ const sections: Record<string, Section> = {
     const de = s2.duplicate(emo.template.id); ok(de.ok && Array.from(de.template.name).length <= 40 && de.template.name.endsWith(' copy') && !de.template.name.includes('\uFFFD') && !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(de.template.name), 'emoji name cut by code point: ' + (de.ok ? Array.from(de.template.name).length : ''));
     ok(de.ok && Array.from(de.template.name).length === 40, 'filled to 40 code points');
     const sp = s2.put(tpl('x'.repeat(34) + ' yyyy')); if (sp.ok) { const ds = s2.duplicate(sp.template.id); ok(ds.ok && ds.template.name === 'x'.repeat(34) + ' copy', 'no double space before the suffix: ' + (ds.ok ? ds.template.name : '')); }
+    // by grapheme: a conjunct or an emoji sequence is never split
+    const KSSA = '\u0915\u094D\u0937'; const FAMILY = '\u{1F468}\u200D\u{1F469}\u200D\u{1F467}';
+    const dv = s2.put(tpl(KSSA.repeat(13))); ok(dv.ok, 'devanagari'); if (dv.ok) {
+      const dd = s2.duplicate(dv.template.id); ok(dd.ok && dd.template.name === KSSA.repeat(11) + ' copy', 'conjuncts kept whole, no dangling virama: ' + (dd.ok ? Array.from(dd.template.name).length : ''));
+    }
+    const fm = s2.put(tpl('B'.repeat(32) + FAMILY + 'x')); ok(fm.ok, 'family emoji name'); if (fm.ok) {
+      const df = s2.duplicate(fm.template.id); ok(df.ok && df.template.name === 'B'.repeat(32) + ' copy', 'the family emoji is dropped whole, never cut: ' + (df.ok ? JSON.stringify(df.template.name) : ''));
+    }
+    const zj = s2.put(tpl('C'.repeat(34) + '\u200D' + 'yyy')); if (zj.ok) { const dz = s2.duplicate(zj.template.id); ok(dz.ok && dz.template.name === 'C'.repeat(34) + ' copy', 'a trailing ZWJ is dropped before the suffix'); }
     const dl2 = s2.duplicate(long.template.id); ok(dl2.ok && dl2.template.name.length <= 40 && dl2.template.name.endsWith(' copy 2') && dl2.template.name !== (dl.ok ? dl.template.name : ''), 'and again');
   },
   putInvalid(api) {
@@ -243,6 +262,67 @@ const sections: Record<string, Section> = {
     // a missing file is simply empty
     const m3 = new MemFs(); make(m3, api); eq(m3.names(), [], 'no file, no bad file, nothing written');
   },
+  readRetry(api) {
+    const text = doc(stored('keep1', 'Held for a moment'));
+    const m = new MemFs(); m.set(F, text); m.openFails = 1; const s = make(m, api);
+    eq(s.list().map((t) => t.name), ['Held for a moment'], 'one failed read: the file is read again'); eq(pauses, [200], 'one pause of about 200 ms'); eq(badNames(m).length, 0, 'not set aside'); ok(!s.takeToast(), 'no toast');
+    pauses = []; const m2 = new MemFs(); m2.set(F, text); m2.openFails = 2; const s2 = make(m2, api);
+    eq(s2.list(), [], 'two failed reads: empty'); eq(badNames(m2).length, 1, 'set aside only after the second'); eq(pauses, [200], 'still one pause'); eq(m2.text(badNames(m2)[0]), text, 'kept whole'); ok(s2.takeToast(), 'toast');
+    pauses = []; const m3 = new MemFs(); m3.files.set(F, { data: Buffer.from('x'.repeat(100)), mode: 0o600, size: 10 }); make(m3, api);
+    eq(pauses, [200], 'a changing file is read again once'); eq(badNames(m3).length, 1, 'then set aside');
+    pauses = []; const m4 = new MemFs(); m4.files.set(F, { data: Buffer.from('{}'), mode: 0o600, size: 400 * 1024 * 1024 }); make(m4, api); eq(pauses, [], 'a too-big file is not retried');
+  },
+  badUtf8(api) {
+    const head = Buffer.from('{"format":"agent-durbar-team-templates","schemaVersion":1,"templates":[{"id":"u1","name":"');
+    const tail = Buffer.from('","origin":"own","createdAt":1,"updatedAt":2,"members":[{"name":"A","role":"r","app":"copilot","permMode":"ask","sendBrief":true}]}]}');
+    const bytes = Buffer.concat([head, Buffer.from([0xff, 0xfe, 0xc3]), tail]);
+    const m = new MemFs(); m.set(F, bytes); const s = make(m, api);
+    eq(s.list(), [], 'bad UTF-8 is a bad file'); eq(badNames(m).length, 1, 'set aside'); ok(m.files.get(badNames(m)[0])!.data.equals(bytes), 'bytes kept as they were'); ok(s.takeToast(), 'toast');
+    const good = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(doc(stored('bom1', 'With a BOM')))]);
+    const m2 = new MemFs(); m2.set(F, good); eq(make(m2, api).list().length, 1, 'a BOM is stripped and the file loads');
+  },
+  winRename(api) {
+    const flaky = (m: MemFs, code: string, times: number, dest: (to: string) => boolean): void => {
+      let left = times; const orig = m.renameSync.bind(m);
+      m.renameSync = (a: string, b: string): void => { if (left > 0 && dest(b)) { left--; throw Object.assign(new Error('held'), { code }); } orig(a, b); };
+    };
+    for (const code of ['EPERM', 'EBUSY', 'EACCES']) {
+      const m = new MemFs(); const s = make(m, api, () => false, 'win32'); flaky(m, code, 1, (to) => to === F);
+      ok(s.put(tpl()).ok, 'win32 ' + code + ': the save is retried'); eq(pauses, [200], 'one pause'); pauses = [];
+      const m2 = new MemFs(); m2.set(F, '{broken'); flaky(m2, code, 1, (to) => to.includes('.bad-')); const s2 = make(m2, api, () => false, 'win32');
+      eq(badNames(m2).length, 1, 'win32 ' + code + ': the set-aside is retried'); ok(!s2.isBlocked(), 'not blocked'); eq(pauses, [200], 'one pause'); pauses = [];
+    }
+    const m3 = new MemFs(); const s3 = make(m3, api, () => false, 'win32'); flaky(m3, 'EPERM', 2, (to) => to === F); ok(!s3.put(tpl()).ok, 'only one retry'); eq(m3.names(), [], 'no temp left');
+    pauses = []; const m4 = new MemFs(); const s4 = make(m4, api, () => false, 'linux'); flaky(m4, 'EPERM', 1, (to) => to === F); ok(!s4.put(tpl()).ok, 'no retry off Windows'); eq(pauses, [], 'no pause');
+    const m5 = new MemFs(); const s5 = make(m5, api, () => false, 'win32'); flaky(m5, 'ENOSPC', 1, (to) => to === F); ok(!s5.put(tpl()).ok, 'other errors are not retried');
+  },
+  twoInstances(api) {
+    const m = new MemFs(); const a = make(m, api); const b = make(m, api);
+    ok(a.put(tpl('FromA')).ok, 'A saves');
+    const r = b.put(tpl('FromB')); ok(!r.ok && r.errors[0] === 'changed', 'B, with an old fingerprint, is refused: changed');
+    eq(m.text(F)!.includes('FromB'), false, 'nothing of B written'); ok(m.text(F)!.includes('FromA'), 'A is not lost');
+    eq(b.list().map((t) => t.name), ['FromA'], 'B reloaded what A saved');
+    ok(b.put(tpl('FromB')).ok, 'B saves now'); eq(make(m, api).list().map((t) => t.name), ['FromA', 'FromB'], 'both kept');
+    const aId = a.list()[0].id; const d = a.delete(aId); ok(!d.ok && d.errors[0] === 'changed', 'A is refused too (delete)'); eq(a.list().length, 2, 'A reloaded');
+    ok(a.delete(aId).ok, 'and then deletes'); eq(make(m, api).list().map((t) => t.name), ['FromB'], 'one left');
+    const m2 = new MemFs(); const c = make(m2, api); c.put(tpl('One')); ok(c.put(tpl('Two')).ok && c.put(tpl('Three')).ok, 'one instance saves again and again');
+    // the file removed behind the store's back is a change too
+    m2.files.delete(F); ok(!c.put(tpl('Four')).ok, 'a vanished file is a change');
+  },
+  pruneBad(api) {
+    const m = new MemFs();
+    for (let i = 0; i < 8; i++) { m.set(F, '{bad ' + i); new api.TeamTemplateStore(F, { fs: m, flags: KEYS, now: () => 1_700_000_000_000 + i * 1000, pause: () => undefined }); }
+    const names = badNames(m); eq(names.length, 5, 'only the newest 5 are kept');
+    const texts = names.map((x) => m.text(x)).sort(); eq(texts, ['{bad 3', '{bad 4', '{bad 5', '{bad 6', '{bad 7'], 'the oldest were removed');
+    m.set(`${ROOT}${path.sep}notes.bad-1.json`, 'x'); m.set(F, '{bad 9'); new api.TeamTemplateStore(F, { fs: m, flags: KEYS, now: () => 1_700_000_100_000, pause: () => undefined }); ok(m.files.has(`${ROOT}${path.sep}notes.bad-1.json`), 'other files are not touched');
+  },
+  blockedFlag(api) {
+    const m = new MemFs(); m.set(F, '{broken'); let down = true;
+    const orig = m.renameSync.bind(m); m.renameSync = (a: string, b: string): void => { if (down && a === F) throw Object.assign(new Error('x'), { code: 'EXDEV' }); orig(a, b); };
+    const s = make(m, api); ok(s.isBlocked(), 'blocked while the bad file cannot move'); ok(!s.put(tpl()).ok, 'saves refused'); ok(s.isBlocked(), 'still blocked');
+    down = false; ok(s.put(tpl()).ok, 'saves after the move works'); ok(!s.isBlocked(), 'no longer blocked');
+    ok(!make(new MemFs(), api).isBlocked(), 'a normal store is not blocked');
+  },
   crlf(api) {
     const m = new MemFs(); const text = doc(stored('crlf1', 'Windows file', { members: [member('A', { brief: 'one\r\ntwo' })] }));
     m.set(F, '﻿' + text.replace(/\n/g, '\r\n')); const s = make(m, api);
@@ -256,13 +336,13 @@ const sections: Record<string, Section> = {
 };
 
 const run = (api: Api): string[] => {
-  const failed: string[] = []; seq = 0; clock = 1_700_000_000_000;
-  for (const [name, fn] of Object.entries(sections)) { try { fn(api); } catch { failed.push(name); } } // a mutant may also crash: that is a kill
+  const failed: string[] = []; seq = 0; clock = 1_700_000_000_000; pauses = [];
+  for (const [name, fn] of Object.entries(sections)) { pauses = []; try { fn(api); } catch { failed.push(name); } } // a mutant may also crash: that is a kill
   return failed;
 };
 
-seq = 0; clock = 1_700_000_000_000;
-for (const [name, fn] of Object.entries(sections)) { try { fn(real); } catch (e) { console.error('section ' + name + ' failed'); throw e; } }
+seq = 0; clock = 1_700_000_000_000; pauses = [];
+for (const [name, fn] of Object.entries(sections)) { pauses = []; try { fn(real); } catch (e) { console.error('section ' + name + ' failed'); throw e; } }
 const checks = n;
 
 // ---- mutants ----
@@ -278,10 +358,19 @@ const mutants: { name: string; from: string; to: string; breaks: string }[] = [
   { name: 'put without validation', from: 'const r = (0, teamtemplate_1.checkTeamTemplate)(value, \'own\');', to: 'const r = { ok: true, template: value, ignored: 0 };', breaks: 'putInvalid' },
   { name: 'put takes the origin of the value', from: "origin: cur ? cur.origin : imported ? 'imported' : 'own'", to: "origin: cur ? cur.origin : (t.origin ?? (imported ? 'imported' : 'own'))", breaks: 'basics' },
   { name: 'no fsync before the rename', from: 'this.fs.fsyncFile(tmp);', to: '', breaks: 'fsyncBeforeRename' },
-  { name: 'blocked check removed', from: 'if (this.blocked && !this.setAside())\n            return false;', to: '', breaks: 'brokenSetAside' },
+  { name: 'blocked check removed', from: 'if (this.blocked && !this.setAside())\n            return \'failed\';', to: '', breaks: 'brokenSetAside' },
   { name: 'old version key accepted (format not checked)', from: 'doc.format === FORMAT && ', to: '', breaks: 'brokenSetAside' },
   { name: 'a newer schemaVersion accepted', from: 'v <= exports.SCHEMA_VERSION', to: 'v <= 99', breaks: 'brokenSetAside' },
-  { name: 'duplicate cut by UTF-16 length', from: 'head.length + Array.from(suffix).length > teamtemplate_1.LIMITS.templateName', to: 'head.join(\'\').length + suffix.length > teamtemplate_1.LIMITS.templateName', breaks: 'duplicateNames' },
+  { name: 'duplicate cut by code point, not grapheme', from: 'const base = graphemes(src.name);', to: 'const base = Array.from(src.name);', breaks: 'duplicateNames' },
+  { name: 'trailing joiners kept before the suffix', from: ".replace(TRAILING_JOINERS, '')", to: '', breaks: 'duplicateNames' },
+  { name: 'a read error sets the file aside at once (no second read)', from: "if (!r.ok && (r.code === 'error' || r.code === 'changing'))", to: 'if (false)', breaks: 'readRetry' },
+  { name: 'decoder not fatal (U+FFFD written in)', from: "{ fatal: true }", to: '{ fatal: false }', breaks: 'badUtf8' },
+  { name: 'no Windows rename retry', from: "this.platform === 'win32' && ", to: 'false && ', breaks: 'winRename' },
+  { name: 'Windows retry on every platform', from: "this.platform === 'win32' && ", to: '', breaks: 'winRename' },
+  { name: 'no fingerprint comparison before a save', from: 'if (this.fingerprint() !== this.fp)', to: 'if (false)', breaks: 'twoInstances' },
+  { name: 'old set-aside files not pruned', from: 'names.slice(0, Math.max(0, names.length - exports.KEEP_BAD))', to: '[]', breaks: 'pruneBad' },
+  { name: 'folder made with mode 0755', from: 'recursive: true, mode: 0o700', to: 'recursive: true, mode: 0o755', breaks: 'fileMode' },
+  { name: 'isBlocked always false', from: 'isBlocked() { return this.blocked; }', to: 'isBlocked() { return false; }', breaks: 'blockedFlag' },
   { name: 'stale temps not removed', from: '(0, schedules_1.removeStaleTemps)(this.file,', to: '(() => undefined)(this.file,', breaks: 'staleTemps' },
   { name: 'load at level imported', from: '(0, teamtemplate_1.checkTeamTemplate)(raw, \'own\')', to: '(0, teamtemplate_1.checkTeamTemplate)(raw, \'imported\')', breaks: 'importedFileLoads' },
 ];

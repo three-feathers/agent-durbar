@@ -26,7 +26,7 @@ try {
   }
   assert.deepStrictEqual(new TeamTemplateStore(file).list().map((t) => t.name), ['Second', 'First copy'], 'duplicate and delete on disk'); n++;
   if (process.platform === 'win32') console.log('skipped: 0600 is POSIX only (FR-155)');
-  else { assert.strictEqual(fs.statSync(file).mode & 0o777, 0o600, 'mode 0600'); n++; }
+  else { assert.strictEqual(fs.statSync(file).mode & 0o777, 0o600, 'mode 0600'); assert.strictEqual(fs.statSync(path.dirname(file)).mode & 0o777, 0o700, 'folder mode 0700'); n += 2; }
   assert.deepStrictEqual(fs.readdirSync(path.dirname(file)), ['team-templates.json'], 'no temp after all'); n++;
   // a broken file is moved aside, content identical
   const broken = '{"format": "agent-durbar-team-templates", "schemaV';
@@ -41,6 +41,18 @@ try {
   // a stale temp of a dead process is removed at load (a pid that cannot exist)
   const stale = `${file}.2147483646.tmp`; fs.writeFileSync(stale, 'brief');
   new TeamTemplateStore(file); assert.ok(!fs.existsSync(stale), 'stale temp removed'); n++;
+  // two running instances: the second, with an old fingerprint, is refused and the first one's template is kept
+  const f2 = path.join(root, 'two', 'team-templates.json');
+  const A = new TeamTemplateStore(f2); const B = new TeamTemplateStore(f2);
+  assert.ok(A.put(tpl('FromA')).ok); n++;
+  const rb = B.put(tpl('FromB')); assert.ok(!rb.ok && rb.errors[0] === 'changed'); n++;
+  assert.deepStrictEqual(new TeamTemplateStore(f2).list().map((t) => t.name), ['FromA'], 'A is not lost'); n++;
+  assert.ok(B.put(tpl('FromB')).ok); n++;
+  // bad UTF-8 is a bad file, kept as it was
+  const f3 = path.join(root, 'utf8', 'team-templates.json'); fs.mkdirSync(path.dirname(f3), { recursive: true });
+  const bytes = Buffer.concat([Buffer.from('{"format":"agent-durbar-team-templates","schemaVersion":1,"templates":[{"name":"'), Buffer.from([0xff, 0xfe, 0xc3]), Buffer.from('"}]}')]);
+  fs.writeFileSync(f3, bytes); assert.deepStrictEqual(new TeamTemplateStore(f3).list(), []);
+  const bad3 = fs.readdirSync(path.dirname(f3)).filter((f) => f.includes('.bad-')); assert.strictEqual(bad3.length, 1); assert.ok(fs.readFileSync(path.join(path.dirname(f3), bad3[0])).equals(bytes)); n += 3;
 } finally {
   fs.rmSync(root, { recursive: true, force: true });
 }
