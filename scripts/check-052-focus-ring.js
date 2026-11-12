@@ -52,6 +52,10 @@ module.exports = async (ctx) => {
       if (theme) await js(`window.THEME.setTheme(${jsLiteral(theme)})`);
       await H.settle();
       await js(INSTALL_PX);
+      /* the focusables of the bar (menu = false) or of the open ⋯ menu (true), found again by position each time (a chip may be redrawn between two reads) */
+      await js(`window.__list=()=>{const vis=e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0&&getComputedStyle(e).visibility!=='hidden'};
+        return window.__fm?[...document.querySelectorAll('#topMoreMenu button.more-it, #topMoreMenu input')].filter(vis)
+          :[...document.querySelectorAll('.topbar button, .topbar select, .topbar a[href], .topbar input')].filter(e=>vis(e)&&!e.closest('#topMoreMenu'))};window.__pick=()=>window.__list()[window.__fn];0`);
       if (process.env.FOCUS_MUTANT) console.log(`[focus] mutant ${process.env.FOCUS_MUTANT}: changed ${await mutate(process.env.FOCUS_MUTANT)} rule(s)`);
       const dpr = await js(`window.devicePixelRatio`);
       H.key('Tab'); // keyboard modality: :focus-visible matches on a script focus() only after a key press
@@ -60,18 +64,16 @@ module.exports = async (ctx) => {
           await js(`document.getElementById('topMoreBtn').focus()`); H.key('Down');
           assert.ok(await until(`!document.getElementById('topMoreMenu').hidden`, 5000), `${tag}: the ⋯ menu opened`);
         }
-        /* the focusables of the bar (or of the open menu), found again by position every time: a chip may be redrawn between two reads */
-        const LIST = `(()=>{const vis=e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0&&getComputedStyle(e).visibility!=='hidden'};
-          return [...document.querySelectorAll(${jsLiteral(menu ? '#topMoreMenu button.more-it, #topMoreMenu input' : '.topbar button, .topbar select, .topbar a[href], .topbar input')})].filter(e=>vis(e)&&(${menu}||!e.closest('#topMoreMenu')))})()`;
-        const count = await js(`${LIST}.length`);
+        await js(`window.__fm=${jsLiteral(menu)};0`);
+        const count = await js(`window.__list().length`);
         assert.ok(count >= (menu ? 3 : 8), `${tag}: ${count} focusables found ${menu ? 'in the ⋯ menu' : 'in the bar'}`);
         for (let n = 0; n < count; n++) {
-          const id = await js(`(()=>{const e=${LIST}[${n}];return (e.id||String(e.className)||e.tagName).replace(/\\W+/g,'-').slice(0,30)})()`);
-          const pick = `${LIST}[${n}]`;
-          await js(`${pick}.focus()`);
-          assert.ok(await until(`${pick}.matches(':focus-visible')`, 2000), `${tag}: ${id} is focus-visible`);
+          await js(`window.__fn=${n};0`);
+          const id = await js(`(()=>{const e=window.__pick();return (e.id||String(e.className)||e.tagName).replace(/\\W+/g,'-').slice(0,30)})()`);
+          await js(`window.__pick().focus()`);
+          assert.ok(await until(`window.__pick().matches(':focus-visible')`, 2000), `${tag}: ${id} is focus-visible`);
           await new Promise((r) => setTimeout(r, 120));
-          const m = await js(`(()=>{const e=${pick},s=getComputedStyle(e),r=e.getBoundingClientRect();return {x:r.left+r.width/2,top:r.top,left:r.left,oc:s.outlineColor,ow:parseFloat(s.outlineWidth),oo:parseFloat(s.outlineOffset),os:s.outlineStyle,txt:(e.textContent||e.getAttribute('aria-label')||'').trim().slice(0,18)}})()`);
+          const m = await js(`(()=>{const e=window.__pick(),s=getComputedStyle(e),r=e.getBoundingClientRect();return {x:r.left+r.width/2,top:r.top,left:r.left,oc:s.outlineColor,ow:parseFloat(s.outlineWidth),oo:parseFloat(s.outlineOffset),os:s.outlineStyle,txt:(e.textContent||e.getAttribute('aria-label')||'').trim().slice(0,18)}})()`);
           const img = await H.wc().capturePage();
           const k = dpr || 1, X = Math.round(m.x * k);
           const yRing = Math.round((m.top - m.oo - m.ow / 2) * k), yOut = Math.round((m.top - m.oo - m.ow) * k) - 2, yIn = Math.round((m.top - m.oo) * k);
