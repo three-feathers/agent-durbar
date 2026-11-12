@@ -936,11 +936,12 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       const t = text.slice(0, 2000);
       return /\b403\b|forbidden/i.test(t) && !/\b401\b|unauthori[sz]ed/i.test(t);
     };
-    /* mcptoken:end */
     /* spec 058 FR-232: what main would know of a driver's servers' entries (fixed, names only): `team-api` sends `Authorization: Bearer
-       ${TEAM_API_TOKEN}` and the variable is not in Durbar's environment; `docs-api` sends a written `X-Api-Key`; any other name has no
-       known entry (an OAuth server keeps "needs sign-in") */
-    const SIM_TOKEN_ENTRIES: Record<string, { vars: string[] }> = { 'team-api': { vars: ['TEAM_API_TOKEN'] }, 'docs-api': { vars: [] } };
+       ${TEAM_API_TOKEN}` and the variable is not in Durbar's environment; `docs-api` sends a written `X-Api-Key`; `paste-api` has a (fake)
+       key pasted inside `${...}`, sent as if main had named it, so the window's own re-check (`envVarName`) is what hides it (review of PR
+       #1637); any other name has no known entry (an OAuth server keeps "needs sign-in") */
+    const SIM_TOKEN_ENTRIES: Record<string, { vars: string[] }> = { 'team-api': { vars: ['TEAM_API_TOKEN'] }, 'docs-api': { vars: [] }, 'paste-api': { vars: ['k8Jq2LmZ9xPw4RtY7vBn3HcS6dFg1AeU'] } };
+    /* mcptoken:end */
     const emit = (e: AgentEvent): void => {
       /* like main, which keeps the runtime's list before the window hears of it: the reply a listener asks for at once sees this event (spec 058 FR-094) */
       if (e.type === 'status' && e.status === 'stopped') { const q = sims.find((x) => x.info.id === e.sessionId); if (q) q.mcpHealth = undefined; }

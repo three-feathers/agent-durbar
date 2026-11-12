@@ -104,10 +104,19 @@
   ];
   function textClass(t){const s=String(t==null?'':t).slice(0,2000);for(const [re,c] of TEXT_RULES)if(re.test(s))return c;return '';}
   /* Spec 058 FR-232 (issue 1621): the refused-token words, with the `${NAME}` variables main found unset in Durbar's own environment
-     (names only: main never sends a value, and the names are checked again here). */
-  const VAR_NAME=/^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+     (names only: main never sends a value, and the names are checked again here with main's own rule, `envVarName` of the compiled
+     src/shared/redact.ts: the page's `exports` (redact.js loads after this file, so it is read at call time), or redact.js beside the
+     renderer folder in the built tree; tests of the source tree hand it in with `useShared`. No rule found: no name is shown (fail closed). */
+  let SHARED=null;
+  const useShared=m=>{if(!m||typeof m.envVarName!=='function')return false;SHARED=m;return true;};
+  const varNameRule=()=>{
+    if(SHARED)return SHARED.envVarName;
+    try{const m=typeof module==='object'&&module.exports?require('../shared/redact.js'):(typeof self!=='undefined'?self.exports:null);if(m&&typeof m.envVarName==='function')return m.envVarName;}catch(e){}
+    return null;
+  };
   function tokenHint(vars){
-    const v=(Array.isArray(vars)?vars:[]).filter(n=>typeof n==='string'&&VAR_NAME.test(n)).slice(0,3);
+    const ok=varNameRule();
+    const v=ok?(Array.isArray(vars)?vars:[]).filter(n=>typeof n==='string'&&ok(n)===true).slice(0,3):[];
     if(!v.length)return FIXES.token;
     const list=v.length===1?v[0]:v.slice(0,-1).join(', ')+' and '+v[v.length-1];
     return FIXES.token+' The header uses the variable'+(v.length===1?' ':'s ')+list+', which Agent Durbar does not see: set '+(v.length===1?'it':'them')+' where Agent Durbar starts (an app opened from the Dock, Finder or a desktop menu does not read your terminal\u2019s profile), then quit and open Agent Durbar again.';
@@ -334,5 +343,5 @@
     }
     return 'Could not start the sign-in for '+n+': '+why;
   }
-  return {signInPressNote,stateOf,offBy,iconSvg,hintFor,callWord,callHint,signInHint,plain,aggregate,reasonOf,whenText,renewedWord,diagnostics,fixFor,fileFindings,chatFinding,launchYoung,launchUpdate,launchToken,tokenHint,textClass,restartTargets,LAUNCH_MS,RANK:RANK.slice(),ICON_NAMES:Object.keys(ICONS)};
+  return {signInPressNote,stateOf,offBy,iconSvg,hintFor,callWord,callHint,signInHint,plain,aggregate,reasonOf,whenText,renewedWord,diagnostics,fixFor,fileFindings,chatFinding,launchYoung,launchUpdate,launchToken,tokenHint,useShared,textClass,restartTargets,LAUNCH_MS,RANK:RANK.slice(),ICON_NAMES:Object.keys(ICONS)};
 })());
