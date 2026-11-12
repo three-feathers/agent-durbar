@@ -193,7 +193,7 @@ const run = async (ctx, reqs) => {
      word is whole (the text up to " · "; the task after it may be cut) and inside the plate's content box (not under the rename pencil), and the dots drop out whole,
      the last first, with a waiting or error helper's dot never gone while an other one shows (the dots are in the heads' order). Read from the page's own boxes:
      Ranges of the +N and of the word; a dot is shown when it lies whole inside the mark's box and the line's, and partly in is a fail. */
-  const PLATES = () => `(()=>{const out=[],seen=[];const R=(n,a,b)=>{const r=document.createRange();r.setStart(n,a);r.setEnd(n,b);return r.getBoundingClientRect();};
+  const PLATES = (nopencil) => `(()=>{const out=[],seen=[];if(${!!nopencil}){for(const p of document.querySelectorAll('#stage .ro-plate.cab-narrow')){p.classList.remove('has-ren');const b=p.nextElementSibling;if(b&&b.classList.contains('ro-ren'))b.remove();}} const lum=(c)=>{const m=c.match(/[\\d.]+/g).map(Number);const f=(v)=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);};return 0.2126*f(m[0])+0.7152*f(m[1])+0.0722*f(m[2]);};const R=(n,a,b)=>{const r=document.createRange();r.setStart(n,a);r.setEnd(n,b);return r.getBoundingClientRect();};
     for(const p of document.querySelectorAll('#stage .ro-plate')){const l2=p.querySelector('.ro-l2');if(!l2||!l2.getClientRects().length)continue;const helped=p.classList.contains('has-help'),id=p.dataset.id||'?',cs=getComputedStyle(p),pr=p.getBoundingClientRect();
       const word=l2.textContent.trim().split(' · ')[0],w=document.createTreeWalker(l2,NodeFilter.SHOW_TEXT);let n,at=null;while((n=w.nextNode())){const i=n.data.indexOf(word);if(i>=0){at=[n,i];break;}}
       if(!at){out.push(id+': no text for "'+word+'"');continue;}const a=R(at[0],at[1],at[1]+word.length),b=l2.getBoundingClientRect(),right=Math.min(b.right,pr.right-parseFloat(cs.borderRightWidth)-parseFloat(cs.paddingRight));
@@ -207,11 +207,13 @@ const run = async (ctx, reqs) => {
       if(sh.includes(2))out.push(id+' a dot of the helpers is cut in part: '+sh.join(''));const urg=dots.map((d)=>/\\b(error|waiting)\\b/.test(d.className));
       if(urg.some((u,i)=>u&&!sh[i])&&dots.some((d,i)=>!urg[i]&&sh[i]===1))out.push(id+' a waiting or error helper is gone while an other one shows: '+dots.map((d,i)=>(urg[i]?'U':'o')+sh[i]).join(' '));
       const hm=h.querySelector('.ro-hm'),hmr=hm&&hm.getClientRects().length?hm.getBoundingClientRect():null,own=p.querySelector('.ro-l2>.dot'),ownr=own&&own.getClientRects().length?own.getBoundingClientRect():null,d0=dots[0]?dots[0].getBoundingClientRect():null;
-      rec.hm=hm?{shown:!!hmr,inside:!!hmr&&hmr.left>=l1.left-0.5&&hmr.right<=Math.min(l1.right,hr.right)+0.5,txt:hc.textContent.trim()}:null;rec.urgN=urg.filter(Boolean).length;rec.order=urg.map((u)=>u?'U':'o').join('');rec.ownDot=!!ownr;
+      const bgc=(()=>{let e=p;while(e){const c=getComputedStyle(e).backgroundColor;if(c&&!/rgba?\\(0, 0, 0, 0\\)|transparent/.test(c))return c;e=e.parentElement;}return 'rgb(0, 0, 0)';})(),hmCol=hm?getComputedStyle(hm).color:null,ctr=hmCol?(()=>{const a1=lum(hmCol),b1=lum(bgc);return +((Math.max(a1,b1)+0.05)/(Math.min(a1,b1)+0.05)).toFixed(2);})():null;rec.hm=hm?{aria:hm.getAttribute('aria-hidden'),contrast:ctr,shown:!!hmr,inside:!!hmr&&hmr.left>=l1.left-0.5&&hmr.right<=Math.min(l1.right,hr.right)+0.5,txt:hc.textContent.trim()}:null;rec.urgN=urg.filter(Boolean).length;rec.order=urg.map((u)=>u?'U':'o').join('');rec.ownDot=!!ownr;
       rec.m={word:+a.width.toFixed(1),plus:+c.width.toFixed(1),mark:hmr?+hmr.width.toFixed(1):0,dot:d0?+d0.width.toFixed(1):0,ownDot:ownr?+ownr.width.toFixed(1):0,content:+(right-(pr.left+parseFloat(cs.borderLeftWidth)+parseFloat(cs.paddingLeft))).toFixed(1),lineW:+b.width.toFixed(1),markBox:+l1.width.toFixed(1)};
-      rec.shown=sh.filter((v)=>v===1).length;{const ls=dots.map((d,i)=>sh[i]===1?d.getBoundingClientRect().right:-1e9).reduce((m,v)=>Math.max(m,v),-1e9);rec.gap=ls>-1e8?+(a.left-ls).toFixed(3):null;}rec.helpers=dots.length;rec.cls=dots.map((d)=>d.className.replace('dot ','')).join();rec.urgentShown=urg.some((u,i)=>u&&sh[i]===1)?1:urg.some(Boolean)?0:-1;}
+      rec.shown=sh.filter((v)=>v===1).length;{const ls=dots.map((d,i)=>sh[i]===1?d.getBoundingClientRect().right:-1e9).reduce((m,v)=>Math.max(m,v),-1e9);rec.gap=ls>-1e8?+(a.left-ls).toFixed(3):null;const sd=dots.map((d,i)=>sh[i]===1?d.getBoundingClientRect():null).filter(Boolean);rec.step=sd.slice(1).map((r,i)=>+(r.left-sd[i].right).toFixed(3));}rec.helpers=dots.length;rec.cls=dots.map((d)=>d.className.replace('dot ','')).join();rec.urgentShown=urg.some((u,i)=>u&&sh[i]===1)?1:urg.some(Boolean)?0:-1;}
     return {out,seen};})()`;
   const MUT = process.env.ARCADE_MUTANT || '';
+  /* ARCADE_FONT=wide (test only): the narrow cases run in a font wider than macOS's, so the geometry is not tuned to one font: Verdana where it is installed (macOS, Windows: "Limit reached" 80.5 px bold, 71.6 px regular), else DejaVu Sans (the CI Linux default: 76 px bold). The same driver passes in it with the final CSS; mutant `oldgeometry` (600 weight, 7 px left padding, 20 px right padding) dies in it. */
+  const WIDE = process.env.ARCADE_FONT === 'wide', WIDE_CSS = '#stage .ro-plate,#stage .ro-plate *{font-family:Verdana,"DejaVu Sans",sans-serif!important}';
   const MARK_GAP = 4; /* spec 102 FR-313 (round 4): px between the last helper mark shown and the word on the narrow plate, so a helper's mark never reads as the plate's own state */
   const NARROW_ROOM = 3; /* spec 102 FR-312: the written margin, in px, between the status word's right end and the narrow plate's content box (measured on macOS/Electron in the spec delta); a font 3 px wider than this one still shows the word whole */
   /* ARCADE_MUTANT (test only), each must fail at its own label: cutword = the line as it was (the helpers' mark a fixed width, the line free to shrink below its word); cutplate = a plate narrower than its line
@@ -224,8 +226,11 @@ const run = async (ctx, reqs) => {
     nomark: `.ro[data-world="retro"] .ro-plate.cab-narrow.has-ren.has-help:not(.lounge) .ro-hm{display:none!important}`,
     nohelpdot: `.ro[data-world="retro"] .ro-plate.cab-narrow.has-ren:not(.has-help,.lounge) .ro-l2>.dot{display:inline-block!important}`,
     nopenmark: `.ro[data-world="retro"] .ro-plate.cab-narrow:not(.has-ren) .ro-hm{display:none!important}`,
+    oldgeometry: `.ro[data-world="retro"] .ro-plate.cab-narrow:not(.lounge){padding-left:7px!important;padding-right:20px!important}.ro[data-world="retro"] .ro-plate.cab-narrow .ro-l2{font-weight:600!important}`,
+    dotspace: `.ro[data-world="retro"] .ro-plate.cab-narrow.has-help:not(.lounge) .ro-help .dot+.dot{margin-left:0!important}`,
+    faint: `.ro[data-world="retro"] .ro-plate .ro-hm{color:#757575!important}`,
     nogap: `.ro[data-world="retro"] .ro-plate.cab-narrow.has-help:not(.lounge) .ro-help .dot{margin-right:0!important}`,
-    nopendotfull: `.ro[data-world="retro"] .ro-plate.cab-narrow.has-help:not(.has-ren) .ro-l2{gap:0!important}.ro[data-world="retro"] .ro-plate.cab-narrow.has-help:not(.has-ren) .ro-l2>.dot{display:inline-block!important;margin-right:7px!important}`,
+    nopendotfull: `.ro[data-world="retro"] .ro-plate.cab-narrow.has-help:not(.has-ren) .ro-l2{gap:0!important}.ro[data-world="retro"] .ro-plate.cab-narrow.has-help:not(.has-ren) .ro-l2>.dot{display:inline-block!important;margin-right:10px!important}`,
     nopendot: `.ro[data-world="retro"] .ro-plate.cab-narrow.has-help:not(.has-ren) .ro-l2>.dot{display:inline-block!important;width:1px!important;height:1px!important;margin:0!important}`,
     sliver: `.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-help{flex-wrap:nowrap!important}.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l1{min-width:0!important}`,
   };
@@ -239,9 +244,9 @@ const run = async (ctx, reqs) => {
     if (MUT === 'wordpx' && urgent !== undefined) await js(`(()=>{for(const p of document.querySelectorAll('#stage .ro-plate.cab-narrow.has-help')){const w=p.querySelector('.ro-wd'),t=w.firstChild,r=document.createRange();r.selectNodeContents(t);const cs=getComputedStyle(p),right=p.getBoundingClientRect().right-parseFloat(cs.borderRightWidth)-parseFloat(cs.paddingRight),over=()=>r.getBoundingClientRect().right-Math.min(w.getBoundingClientRect().right,right);let lo=0,hi=3;for(let k=0;k<30;k++){const m=(lo+hi)/2;w.style.letterSpacing=m+'px';if(over()>0.05)hi=m;else lo=m;}w.style.letterSpacing=hi+'px';}})();0`);
     if (MUT === 'thin' && urgent !== undefined) await js(`(()=>{for(const p of document.querySelectorAll('#stage .ro-plate.cab-narrow.has-help')){const w=p.querySelector('.ro-wd'),t=w.firstChild,r=document.createRange();r.selectNodeContents(t);const cs=getComputedStyle(p),right=p.getBoundingClientRect().right-parseFloat(cs.borderRightWidth)-parseFloat(cs.paddingRight),room=right-p.querySelector('.ro-hc').getBoundingClientRect().right-r.getBoundingClientRect().width;w.style.letterSpacing=((room-2)/t.data.length)+'px';}})();0`);
     if (MUT === 'namescope' && urgent === undefined) await js(`(()=>{for(const p of document.querySelectorAll('#stage .ro-plate.has-help:not(.cab-narrow)')){if(p.querySelector('.ro-help .dot.error,.ro-help .dot.waiting'))p.setAttribute('aria-label',p.getAttribute('aria-label').replace(/(\\. \\d+ helpers?)\\./,'$1, 1 failed or waiting.'));}})();0`);
-    /* a plate with no pencil (a session the app cannot rename: no `has-ren`, no pencil button; the simulator's sessions all can be renamed): the same plates as the app draws them for it */
-    if (nopencil) await js(`(()=>{for(const p of document.querySelectorAll('#stage .ro-plate.cab-narrow')){p.classList.remove('has-ren');const b=p.nextElementSibling;if(b&&b.classList.contains('ro-ren'))b.remove();}})();0`);
-    const r = await js(PLATES());
+    if (WIDE && (urgent !== undefined || nohelp)) await js(`(()=>{const s=document.createElement('style');s.textContent=${jsLiteral(WIDE_CSS)};document.head.appendChild(s);})();0`);
+    if (MUT === 'noaria' && urgent !== undefined) await js(`(()=>{for(const m of document.querySelectorAll('#stage .ro-hm'))m.removeAttribute('aria-hidden');})();0`);
+    const r = await js(PLATES(nopencil));
     console.log('[102-arcade] plate marks', tag, JSON.stringify(scene), JSON.stringify(r.seen.filter((x) => x.helped)));
     const helped = r.seen.filter((x) => x.helped);
     if (urgent !== undefined) { /* spec 102 FR-312: the narrow cabinet's plate with a pencil (122 px, content 92 px) */
@@ -252,6 +257,7 @@ const run = async (ctx, reqs) => {
       assert.ok(nm.every((x) => x.room >= NARROW_ROOM), 'issue 1574: ' + tag + ': on the narrow plate the word keeps at least ' + NARROW_ROOM + ' px of room to the content box (a wider font must not eat the margin; the spec records the measured room): ' + JSON.stringify(nm.map((x) => x.room)));
       assert.ok(nm.every((x) => !x.ownDot), 'issue 1574: ' + tag + ': on the narrow plate with helpers the plate\'s own status dot is not drawn (the word, border and marquee say the state): ' + JSON.stringify(nm.map((x) => x.ownDot)));
       if (urgent) assert.ok(nm.every((x) => x.hm && x.hm.shown && x.hm.inside && x.hm.txt === '+' + x.helpers + '!'), 'issue 1574: ' + tag + ': on the narrow plate a failed helper is marked: the count reads "+N!" and the mark is whole in view: ' + JSON.stringify(nm.map((x) => x.hm)));
+      if (urgent) assert.ok(nm.every((x) => x.hm && x.hm.aria === 'true' && x.hm.contrast >= 4.5), 'issue 1574: ' + tag + ': the "!" of the marked count is aria-hidden (the name says it in words) and as readable as the text round it: contrast against the plate at least 4.5:1: ' + JSON.stringify(nm.map((x) => x.hm && [x.hm.aria, x.hm.contrast])));
       else assert.ok(nm.every((x) => !x.hm || !x.hm.shown), 'issue 1574: ' + tag + ': on the narrow plate with no failed or waiting helper the count has no mark: ' + JSON.stringify(nm.map((x) => x.hm)));
       assert.ok(nm.every((x) => x.label.includes(urgent ? '. ' + x.helpers + ' helpers, ' + x.urgN + ' failed or waiting.' : '. ' + x.helpers + ' helpers.') && (urgent || !x.label.includes('failed or waiting'))), 'issue 1574: ' + tag + ': the narrow plate\'s name says how many helpers failed or wait (and only when some did): ' + JSON.stringify(nm.map((x) => x.label)));
       assert.ok(nm.every((x) => /^U*o*$/.test(x.order)), 'issue 1574: ' + tag + ': on the narrow plate a failed or waiting helper\'s dot comes before every OK helper\'s (the dots drop out from the last): ' + JSON.stringify(nm.map((x) => x.order)));
@@ -276,43 +282,59 @@ const run = async (ctx, reqs) => {
     }
     return r;
   };
+  /* the narrow cases at one window size (the narrow cabinet: 24 agents, no strip, plate 122 px) */
+  const narrowCases = async (w, h) => {
+    /* the narrow cabinet's plate (122 px, a pencil: 20+ agents have no strip): the longest word, with a failed helper (simhelpers 3) and with none (simhelpers 2) */
+  for (const [hn, urgent] of [['3', true], ['2', false]]) {
+    await loadArcade(w, h, 24, { simfreeze: '1', simhelpers: hn });
+    await markCheck(w + 'x' + h + ' narrow limit ' + (urgent ? 'failed helper' : 'no failed helper'), {}, { states: 'limit', urgent });
+    if (urgent && !MUT) await H.shot(path.join(OUT, `102-arcade-narrow-plate-${w}x${h}.png`), { prep: 'calm', settle: true, tag: '102-arcade', what: 'narrow-plate' });
+  }
+  /* the narrow plate with helpers and NO pencil (a session that cannot be renamed; the content box is 106 px, not 96): the same word, mark and name */
+  {
+    await loadArcade(w, h, 24, { simfreeze: '1', simhelpers: '3' });
+    await markCheck(w + 'x' + h + ' narrow limit failed helper no pencil', {}, { states: 'limit', urgent: true, nopencil: true });
+  }
+  /* a Working plate on the narrow cabinet with a failed helper: the plate draws no own dot, so the picture shows what a reader sees of the state (the word, the border, the marquee) beside the helper's red dot */
+  {
+    await loadArcade(w, h, 24, { simfreeze: '1', simhelpers: '3' });
+    await js(`(()=>{const U=window.__durbarSimUi;U.agents().filter(a=>!a.parent).forEach((a)=>{a.state='working';delete a.label;});U.render();})();0`);
+    await must(`(()=>{const P=[...document.querySelectorAll('#stage .ro-plate[data-id]:not(.lounge)')];return P.filter(p=>p.classList.contains('st-working')).length>=10;})()`, 'at least 10 plates drawn working', 8000);
+    if (MUTS[MUT]) await js(`(()=>{const s=document.createElement('style');s.textContent=${jsLiteral(MUTS[MUT])};document.head.appendChild(s);})();0`);
+    if (WIDE) await js(`(()=>{const s=document.createElement('style');s.textContent=${jsLiteral(WIDE_CSS)};document.head.appendChild(s);})();0`);
+    const wk = await js(PLATES());
+    const wp = wk.seen.filter((x) => x.narrow && x.helped && x.word === 'Working' && x.shown >= 1);
+    assert.ok(wp.length >= 1, 'issue 1574: ' + w + 'x' + h + ' narrow working: a narrow plate with helpers, the word "Working" and at least one helper mark shown is drawn (the case for the gap), saw ' + JSON.stringify(wk.seen.filter((x) => x.narrow && x.helped).slice(0, 3).map((x) => [x.word, x.shown, x.gap])));
+    assert.ok(wp.every((x) => x.gap !== null && x.gap >= MARK_GAP - 0.02), 'issue 1574: ' + w + 'x' + h + ' narrow working: the last helper mark shown is at least ' + MARK_GAP + ' px from the word (measured between the mark\'s right edge and the word\'s left edge), so it cannot read as the plate\'s own state: ' + JSON.stringify(wp.map((x) => [x.shown, x.gap])));
+    assert.ok(wp.every((x) => x.step.every((d) => Math.abs(d - 2) <= 0.02)), 'issue 1574: ' + w + 'x' + h + ' narrow working: the helper marks are 2 px apart (the gap before the word is the one 4 px): ' + JSON.stringify(wp.map((x) => x.step)));
+    assert.ok(wp.every((x) => x.urgentShown === 1), 'issue 1574: ' + w + 'x' + h + ' narrow working: the failed helper\'s mark is among those shown: ' + JSON.stringify(wp.map((x) => x.urgentShown)));
+    if (!MUT) await H.shot(path.join(OUT, `102-arcade-narrow-working-${w}x${h}.png`), { prep: 'calm', settle: true, tag: '102-arcade', what: 'narrow-working' });
+  }
+  /* issue 1600: the same plate with a pencil and no helpers at all */
+  {
+    await loadArcade(w, h, 24, { simfreeze: '1', simhelpers: '0' });
+    await markCheck(w + 'x' + h + ' narrow limit no helpers', {}, { states: 'limit', nohelp: true });
+  }
+  };
+
   for (const [w, h] of SIZES) {
     await loadArcade(w, h, 15, { simfreeze: '1', simhelpers: '3', simcompact: '1' });
     const a = await markCheck(w + 'x' + h + ' compacting', {}, w < 1440 ? { want: [['Compacting']] } : {});
     if (w < 1440) assert.ok(a.seen.some((x) => x.helped && x.word === 'Compacting' && x.urgentShown === 1), 'issue 1558: 1280x800: the failed (last) helper\'s red mark stays shown on the compacting plate: ' + JSON.stringify(a.seen.filter((x) => x.helped)));
     await loadArcade(w, h, 15, { simfreeze: '1', simhelpers: '3', simretry: '1' });
     await markCheck(w + 'x' + h + ' retrying', {}, w < 1440 ? { want: [['Retrying']] } : {});
-    /* the narrow cabinet's plate (122 px, a pencil: 20+ agents have no strip): the longest word, with a failed helper (simhelpers 3) and with none (simhelpers 2) */
-    if (w < 1440) for (const [hn, urgent] of [['3', true], ['2', false]]) {
-      await loadArcade(w, h, 24, { simfreeze: '1', simhelpers: hn });
-      await markCheck(w + 'x' + h + ' narrow limit ' + (urgent ? 'failed helper' : 'no failed helper'), {}, { states: 'limit', urgent });
-      if (urgent && !MUT) await H.shot(path.join(OUT, `102-arcade-narrow-plate-${w}x${h}.png`), { prep: 'calm', settle: true, tag: '102-arcade', what: 'narrow-plate' });
-    }
-    /* the narrow plate with helpers and NO pencil (a session that cannot be renamed; the content box is 106 px, not 96): the same word, mark and name */
-    if (w < 1440) {
-      await loadArcade(w, h, 24, { simfreeze: '1', simhelpers: '3' });
-      await markCheck(w + 'x' + h + ' narrow limit failed helper no pencil', {}, { states: 'limit', urgent: true, nopencil: true });
-    }
-    /* a Working plate on the narrow cabinet with a failed helper: the plate draws no own dot, so the picture shows what a reader sees of the state (the word, the border, the marquee) beside the helper's red dot */
-    if (w < 1440) {
-      await loadArcade(w, h, 24, { simfreeze: '1', simhelpers: '3' });
-      await js(`(()=>{const U=window.__durbarSimUi;U.agents().filter(a=>!a.parent).forEach((a)=>{a.state='working';delete a.label;});U.render();})();0`);
-      await must(`(()=>{const P=[...document.querySelectorAll('#stage .ro-plate[data-id]:not(.lounge)')];return P.filter(p=>p.classList.contains('st-working')).length>=10;})()`, 'at least 10 plates drawn working', 8000);
-      if (MUTS[MUT]) await js(`(()=>{const s=document.createElement('style');s.textContent=${jsLiteral(MUTS[MUT])};document.head.appendChild(s);})();0`);
-      const wk = await js(PLATES());
-      const wp = wk.seen.filter((x) => x.narrow && x.helped && x.word === 'Working' && x.shown >= 1);
-      assert.ok(wp.length >= 1, 'issue 1574: ' + w + 'x' + h + ' narrow working: a narrow plate with helpers, the word "Working" and at least one helper mark shown is drawn (the case for the gap), saw ' + JSON.stringify(wk.seen.filter((x) => x.narrow && x.helped).slice(0, 3).map((x) => [x.word, x.shown, x.gap])));
-      assert.ok(wp.every((x) => x.gap !== null && x.gap >= MARK_GAP - 0.02), 'issue 1574: ' + w + 'x' + h + ' narrow working: the last helper mark shown is at least ' + MARK_GAP + ' px from the word (measured between the mark\'s right edge and the word\'s left edge), so it cannot read as the plate\'s own state: ' + JSON.stringify(wp.map((x) => [x.shown, x.gap])));
-      assert.ok(wp.every((x) => x.urgentShown === 1), 'issue 1574: ' + w + 'x' + h + ' narrow working: the failed helper\'s mark is among those shown: ' + JSON.stringify(wp.map((x) => x.urgentShown)));
-      if (!MUT) await H.shot(path.join(OUT, `102-arcade-narrow-working-${w}x${h}.png`), { prep: 'calm', settle: true, tag: '102-arcade', what: 'narrow-working' });
-    }
-    /* issue 1600: the same plate with a pencil and no helpers at all */
-    if (w < 1440) {
-      await loadArcade(w, h, 24, { simfreeze: '1', simhelpers: '0' });
-      await markCheck(w + 'x' + h + ' narrow limit no helpers', {}, { states: 'limit', nohelp: true });
-    }
+    await narrowCases(w, h);
   }
 
+  /* a small window (the narrow cabinet at 24 agents is drawn there too) */
+  await narrowCases(1100, 800);
+  /* a resize: plates drawn wide (15 agents at 1280x800: 146 px, a fallback plate with helpers) become the narrow cabinet's when the window shrinks, and the count gains its mark and the plate its name's words at once (the helpers' markup is keyed by their states and by the plate being the narrow one; a key without the narrow flag would leave the old count) */
+  await loadArcade(1280, 800, 15, { simfreeze: '1', simhelpers: '3' });
+  await must(`document.querySelectorAll('#stage .ro-plate.has-help').length>=10`, 'the 15 agents\' plates with helpers at 1280x800', 15000);
+  assert.strictEqual(await js(`document.querySelectorAll('#stage .ro-plate.cab-narrow').length`), 0, 'issue 1574: resize: no narrow plate at 15 agents and 1280x800 (the starting point)');
+  ctx.win.setContentSize(1100, 800);
+  await must(`document.querySelectorAll('#stage .ro-plate.cab-narrow.has-help').length>=5`, 'the plates become the narrow cabinet\'s after the window shrinks to 1100x800', 15000);
+  await must(`[...document.querySelectorAll('#stage .ro-plate.cab-narrow.has-help')].every(p=>!p.querySelector('.ro-help .dot.error')||(p.querySelector('.ro-hm')&&p.querySelector('.ro-hc').textContent.includes('!')))`, 'issue 1574: resize: every narrow plate with a failed helper has the marked count after the resize (a stale count has no mark)', 8000);
   /* spec 102 FR-312, the gate (second read of #1599): the narrow-plate rules (the "+N!" mark, the name's failed-or-waiting words) are the arcade's alone. The default and the cave Real office draw plates as narrow as 122 px too (a strip-less fallback, 097 FR-308, at 800x600 with 20 agents the narrowest plate is 86 px): such a plate with a failed helper keeps FR-308's name ". N helpers. Open chat panel." and has no mark. Mutant ARCADE_MUTANT=worldgate: the arcade's rules on every plate of that width (the gate removed). */
   for (const world of ['photo', 'cave']) {
     await H.load({ w: 800, h: 600, query: { officeview: 'real', simfreeze: '1', simhelpers: '3', sim: '20', ...(world === 'cave' ? { worldflags: 'cave', world: 'cave' } : {}) }, ready: `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'`, settle: false });

@@ -586,8 +586,9 @@
   }
   /* FR-325: the plate's name with the context in the flat office's words, before "Open chat panel."; a lounge seat's name is the model's */
   const OPEN_WORDS = '. Open chat panel.';
-  const isUrgent = (st) => st === 'error' || st === 'waiting' || st === 'limit'; /* a helper that failed or waits for the user (the heads' first group, spec 001 FR-089) */
-  const isNarrowPlate = (d) => ARC && !!d && !d.lounge && !!d.plate && d.plate.w <= 122.5; /* the arcade's narrow cabinet plate (122 px at g = 2; spec 102 FR-312): the only plate whose count is marked and whose name says the failed helpers; never a plate of another world, whatever its width (a default or cave desk's plate of the same width keeps FR-308's name) */
+  const isUrgent = (st) => st === 'error' || st === 'waiting'; /* a helper that failed or waits for the user: the same two states `prio` in app.js puts first in the helpers' order (spec 001 FR-089), so the mark and the first dots say the same */
+  const NARROW_CAB_PLATE_W = 122.5; /* the narrow cabinet's plate at the smallest scale (CABINETS.narrow at g = 2 is 122 px in realoffice-arrangements.ts; the next cabinet's plate is 146) */
+  const isNarrowPlate = (d) => ARC && !!d && !d.lounge && !!d.plate && d.plate.w <= NARROW_CAB_PLATE_W; /* the arcade's narrow cabinet plate (122 px at g = 2; spec 102 FR-312): the only plate whose count is marked and whose name says the failed helpers; never a plate of another world, whatever its width (a default or cave desk's plate of the same width keeps FR-308's name) */
   function helpWordsOf(a, d) { if (!(d && !d.strip && a.helpWords && a.helpers && a.helpers.length)) return ''; const u = isNarrowPlate(d) ? a.helpers.filter(isUrgent).length : 0; return a.helpWords + (u ? ', ' + u + ' failed or waiting' : ''); } /* FR-308: the fallback plate's helper count, in the flat desk's words; on the narrow plate (no dot fits) also how many failed or wait (FR-312), nowhere else */
   function labelOf(a, d) {
     const w = d && d.lounge ? '' : X().ctxWords(a.ctx && a.ctx.pct), hw = helpWordsOf(a, d), l = String(a.label || '');
