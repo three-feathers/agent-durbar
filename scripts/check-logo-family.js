@@ -26,6 +26,9 @@ const PLATE = { 1: '#10141E', 2: '#03183A', 3: '#061C4A', 5: '#07111F' };
 const rgb = (hex) => { const n = parseInt(hex.slice(1), 16); return `rgb(${n >> 16}, ${(n >> 8) & 255}, ${n & 255})`; };
 const WORLDS = { photo: { plate: '#5C3312', gold: '#FFD45E', bot: '#BFE0FF' }, cave: { plate: '#2A1710', gold: '#F2B46E', bot: '#A3AFC0' }, loft: { plate: '#2C0A5E', gold: '#FFE81F', bot: '#2EE6F2' } };
 const UI_THEMES = ['retro']; // the one other built-in UI style since spec 035 FR-017 removed Corporate and the courts; `GENERATED` below holds FR-034's "any other UI style"
+const ARCADE = process.env.DRIVER_WORLD === 'retro'; // spec 102 T283: the Real office seam loads the arcade; its tile is the retro UI pair BY DESIGN (logo.css has no block for it), not Photo's plate
+const ARCADE_PAIR = { plate: '#FFEC27', mark: '#111122' }; // the arcade's --brand-bg and --brand-mark (theme.js WORLD_SETS.retro); written here, not read back from the page, so a changed token fails
+const MUTANT = process.env.LOGO_MUTANT || ''; // arcade: the arcade's tile painted with Photo's plate (must fail at "the arcade's own pair")
 const GENERATED = { id: 'logo-gen-test', name: 'Logo generated test', extends: 'clean-office', ui: 'retro', tokens: { '--brand-mark': '#ffffff', '--brand-bg': '#7a1fa2' } };
 
 module.exports = async (ctx) => {
@@ -183,8 +186,16 @@ module.exports = async (ctx) => {
 
     // ---- the real seam, now on main: Real office sets the world, and the bar follows it there and back (FR-033) ----
     await H.load({ w, h, query: { officeview: 'real' }, ready: `!!document.querySelector('#stage .ro .ro-plate')`, settle: false });
-    assert.ok(await H.until(`document.documentElement.dataset.world==='photo'`, 8000), `${tag}: Real office sets the world`);
-    assert.strictEqual(await js(`getComputedStyle(document.querySelector('.brand-mark')).backgroundColor`), rgb(WORLDS.photo.plate), `${tag}: the bar has the world's plate`);
+    const seam = ARCADE ? 'retro' : 'photo';
+    assert.ok(await H.until(`document.documentElement.dataset.world===${jsLiteral(seam)}`, 8000), `${tag}: Real office sets the world ${seam}`);
+    if (ARCADE) {
+      if (MUTANT === 'arcade') await js(`(()=>{const s=document.createElement('style');s.textContent='html[data-world="retro"]{--logo-plate-1:#5C3312!important;--logo-plate:#5C3312!important}';document.head.appendChild(s);return 1})()`);
+      const a = await bar();
+      assert.strictEqual(a.bg, rgb(ARCADE_PAIR.plate), `${tag}: the arcade's own pair: the tile is the arcade's yellow ${ARCADE_PAIR.plate}, not Photo's plate, got ${a.bg}`);
+      assert.deepStrictEqual([a.gold, a.bot].filter((x) => x !== null), [a.gold, a.bot].filter((x) => x !== null).map(() => rgb(ARCADE_PAIR.mark)), `${tag}: the arcade's own pair: the drawing is the arcade's dark ink ${ARCADE_PAIR.mark}: ${JSON.stringify(a)}`);
+      assert.deepStrictEqual([a.brandBg.toUpperCase(), a.brandMark.toUpperCase()], [ARCADE_PAIR.plate, ARCADE_PAIR.mark], `${tag}: the arcade's own pair: the page's brand tokens are the pair the tile is painted from`);
+      assert.deepStrictEqual([a.w, a.h], [32, 32], `${tag}: the arcade's own pair: the tile is 32 px`);
+    } else assert.strictEqual(await js(`getComputedStyle(document.querySelector('.brand-mark')).backgroundColor`), rgb(WORLDS.photo.plate), `${tag}: the bar has the world's plate`);
     await js(`window.__durbarSimUi.setOfficeView('flat');0`);
     assert.ok(await H.until(`!document.documentElement.dataset.world`, 8000), `${tag}: leaving Real office clears the world`);
     assert.strictEqual(await js(`getComputedStyle(document.querySelector('.brand-mark')).backgroundColor`), rgb(PLATE[await js(`document.documentElement.dataset.logo`)]), `${tag}: the bar has the chosen icon's base plate again`);
