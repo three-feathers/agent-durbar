@@ -402,19 +402,19 @@
     "2026-11-12": {
       "models": {
         "claude-opus-5-5": {
-          "input": 844,
-          "output": 320734,
-          "cacheRead": 46538269,
-          "cacheCreation": 2159261,
-          "costUsd": 26.5220148,
+          "input": 1012,
+          "output": 363704,
+          "cacheRead": 56075285,
+          "cacheCreation": 2392105,
+          "costUsd": 30.453710000000004,
           "bySource": {
             "main": {
               "tokens": 0,
               "costUsd": 0
             },
             "subagent": {
-              "tokens": 49019108,
-              "costUsd": 26.5220148
+              "tokens": 58832106,
+              "costUsd": 30.453710000000004
             },
             "auxiliary": {
               "tokens": 0,
@@ -427,11 +427,11 @@
           }
         },
         "claude-haiku-5-5": {
-          "input": 1011879,
-          "output": 62483,
+          "input": 1127276,
+          "output": 71383,
           "cacheRead": 0,
           "cacheCreation": 0,
-          "costUsd": 0.13242939999999992,
+          "costUsd": 0.1484190999999999,
           "bySource": {
             "main": {
               "tokens": 0,
@@ -442,8 +442,8 @@
               "costUsd": 0
             },
             "auxiliary": {
-              "tokens": 1074362,
-              "costUsd": 0.13242939999999992
+              "tokens": 1198659,
+              "costUsd": 0.1484190999999999
             },
             "other": {
               "tokens": 0,
@@ -452,19 +452,19 @@
           }
         },
         "claude-sonnet-5-5": {
-          "input": 1866,
-          "output": 336001,
-          "cacheRead": 218087222,
-          "cacheCreation": 2673334,
-          "costUsd": 32.48783919999997,
+          "input": 2078,
+          "output": 402891,
+          "cacheRead": 254279372,
+          "cacheCreation": 2971317,
+          "costUsd": 37.60436669999996,
           "bySource": {
             "main": {
-              "tokens": 196137904,
-              "costUsd": 23.341486999999994
+              "tokens": 228218170,
+              "costUsd": 27.029049099999995
             },
             "subagent": {
-              "tokens": 23782326,
-              "costUsd": 9.022757
+              "tokens": 28259295,
+              "costUsd": 10.4517224
             },
             "auxiliary": {
               "tokens": 1178193,

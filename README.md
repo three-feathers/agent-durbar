@@ -6,7 +6,7 @@
 
 <p align="center"><em>A calm command center for your AI agents</em></p>
 
-<p align="center"><a href="#build-cost-so-far"><img src="docs/build-cost-badge.svg" alt="Build cost, about US$5,346 at API list prices (estimate, not billing)"></a></p>
+<p align="center"><a href="#build-cost-so-far"><img src="docs/build-cost-badge.svg" alt="Build cost, about US$5,398 at API list prices (estimate, not billing)"></a></p>
 
 When you run many agent sessions across several windows, you end up watching your digital agents instead of working. Agent Durbar puts them in one office and shows you only the ones that need you. It is for anyone who works with agents, not only developers: a room is any folder an agent works in.
 
@@ -84,7 +84,7 @@ How we work (spec-driven, with [GitHub Spec Kit](https://github.com/github/spec-
 <!-- build-cost:begin (written by `npm run usage:readme`; method in docs/build-cost.md) -->
 ## Build cost so far
 
-**About US$5,346** at API list prices to build this app with AI agents, as of 2026-11-12 (release [`v0.1.17`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.17)): an **API list-price estimate, not billing** of work on 3 machines: one since 2026-10-25, one from 2026-11-07 and one from 2026-11-09, mostly spread over earlier days rather than measured. The rest is not counted yet; the split, the spread of the earlier days and the method: [docs/build-cost.md](docs/build-cost.md).
+**About US$5,398** at API list prices to build this app with AI agents, as of 2026-11-12 (release [`v0.1.17`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.17)): an **API list-price estimate, not billing** of work on 3 machines: one since 2026-10-25, one from 2026-11-07 and one from 2026-11-09, mostly spread over earlier days rather than measured. The rest is not counted yet; the split, the spread of the earlier days and the method: [docs/build-cost.md](docs/build-cost.md).
 
 ![Daily build cost by model: measured days solid, estimated (spread) days faded and dashed](docs/build-cost-days.svg)
 <!-- build-cost:end -->
