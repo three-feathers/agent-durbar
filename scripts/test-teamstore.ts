@@ -1,0 +1,304 @@
+/**
+ * Unit tests, spec 111 T006 (FR-001, FR-003, FR-021): `TeamTemplateStore` on an injected in-memory file system. No disk, no credits.
+ * Non-ASCII is written as \u escapes; token-like data is built at run time.
+ *
+ * Mutants (2026-11-12, each applied to the COMPILED module `dist-scripts/src/main/teamstore.js` as a text replacement, written beside it
+ * as a temporary file; the sections run again and the named section must fail; an anchor that no longer matches fails loudly):
+ *   1 write straight to the file (no temp, no rename)        -> crashBetweenWriteAndRename
+ *   2 file mode other than 0600                               -> fileMode
+ *   3 bad file set aside without the toast flag               -> brokenSetAside
+ *   4 the cap of 50 off by one                                -> cap
+ *   5 duplicate name compared raw, without nameKey            -> duplicateNames
+ *   6 put without checkTeamTemplate                           -> putInvalid
+ *   7 load at level 'imported' instead of 'own'               -> importedFileLoads
+ *   8..14 (review; 15 entries in all, the duplicate one has two): put takes the value's origin; no fsync; blocked check removed; format not checked; newer schemaVersion accepted;
+ *   duplicate cut by UTF-16 length; stale temps not removed.
+ *   No `trimEnd` before the suffix: the validator already collapses a double space, so the name is the same (the test "no double space" shows it).
+ */
+import assert from 'assert';
+import fs from 'fs';
+import path from 'path';
+import * as real from '../src/main/teamstore';
+
+type Api = typeof real;
+let n = 0;
+const ok = (c: unknown, m: string): void => { n++; assert.ok(c, m); };
+const eq = <T>(a: T, b: T, m: string): void => { n++; assert.deepStrictEqual(a, b, m); };
+
+const F = path.join('userData', 'team-templates.json');
+const ROOT = path.dirname(F);
+
+/** An in-memory `TeamFs`: files with a mode, a bytes-read counter, a failing rename or write on demand. */
+class MemFs {
+  files = new Map<string, { data: Buffer; mode: number; size?: number }>();
+  failRename = false; failWrite = false; bytesRead = 0; writes: { file: string; mode: number; flag: string }[] = []; renames: [string, string][] = [];
+  private fds = new Map<number, string>(); private nextFd = 3;
+  set(file: string, text: string | Buffer): void { this.files.set(file, { data: Buffer.from(text), mode: 0o644 }); }
+  text(file: string): string | undefined { return this.files.get(file)?.data.toString('utf8'); }
+  names(): string[] { return [...this.files.keys()].sort(); }
+  mkdirSync(): void { /* directories are implicit */ }
+  existsSync(p: string): boolean { return this.files.has(p); }
+  writeFileSync(file: string, data: string, o: { mode: number; flag: string }): void {
+    this.writes.push({ file, mode: o.mode, flag: o.flag });
+    if (o.flag === 'wx' && this.files.has(file)) throw Object.assign(new Error('exists'), { code: 'EEXIST' });
+    if (this.failWrite) { this.files.set(file, { data: Buffer.from(data.slice(0, 10)), mode: o.mode }); throw Object.assign(new Error('disk'), { code: 'ENOSPC' }); }
+    const old = this.files.get(file);
+    this.files.set(file, { data: Buffer.from(data), mode: old ? old.mode : o.mode });
+  }
+  fsyncs: string[] = []; log: string[] = [];
+  fsyncFile(file: string): void { this.fsyncs.push(file); this.log.push('fsync ' + file); }
+  readdirSync(dir: string): string[] { return this.names().filter((x) => path.dirname(x) === dir).map((x) => path.basename(x)); }
+  renameSync(from: string, to: string): void {
+    this.renames.push([from, to]); this.log.push('rename ' + from);
+    if (this.failRename && to === F) throw Object.assign(new Error('rename'), { code: 'EPERM' });
+    const f = this.files.get(from);
+    if (!f) throw Object.assign(new Error('gone'), { code: 'ENOENT' });
+    this.files.delete(from); this.files.set(to, f);
+  }
+  rmSync(p: string): void { this.files.delete(p); }
+  openSync(file: string): number {
+    if (!this.files.has(file)) throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+    const fd = this.nextFd++; this.fds.set(fd, file); return fd;
+  }
+  fstatSync(fd: number): { isFile(): boolean; size: number; nlink: number } {
+    const f = this.files.get(this.fds.get(fd)!)!;
+    return { isFile: () => true, size: f.size ?? f.data.length, nlink: 1 };
+  }
+  readSync(fd: number, buf: Buffer, off: number, len: number, pos: number): number {
+    const f = this.files.get(this.fds.get(fd)!)!;
+    const k = Math.max(0, Math.min(len, f.data.length - pos));
+    f.data.copy(buf, off, pos, pos + k); this.bytesRead += k; return k;
+  }
+  closeSync(fd: number): void { this.fds.delete(fd); }
+}
+
+const KEYS = { O_RDONLY: 0 };
+let clock = 1_700_000_000_000; let seq = 0;
+const make = (m: MemFs, api: Api, alive: (pid: number) => boolean = () => false): InstanceType<Api['TeamTemplateStore']> =>
+  new api.TeamTemplateStore(F, { fs: m, flags: KEYS, now: () => (clock += 1000), newId: () => 'id' + String(++seq).padStart(4, '0'), pid: 4242, alive });
+
+const member = (name = 'Architect', extra: Record<string, unknown> = {}): Record<string, unknown> =>
+  ({ name, role: 'Designs', app: 'copilot', permMode: 'ask', sendBrief: true, ...extra });
+const tpl = (name = 'Review crew', extra: Record<string, unknown> = {}): Record<string, unknown> => ({ name, members: [member()], ...extra });
+const stored = (id: string, name: string, extra: Record<string, unknown> = {}): Record<string, unknown> =>
+  ({ id, name, origin: 'own', createdAt: 1, updatedAt: 2, members: [member()], ...extra });
+const doc = (...t: unknown[]): string => JSON.stringify({ format: 'agent-durbar-team-templates', schemaVersion: 1, templates: t }, null, 1);
+const badNames = (m: MemFs): string[] => m.names().filter((x) => x.includes('.bad-'));
+
+type Section = (api: Api) => void;
+const sections: Record<string, Section> = {
+  basics(api) {
+    const m = new MemFs(); const s = make(m, api);
+    eq(s.list(), [], 'empty at first'); ok(!s.takeToast(), 'no toast');
+    const a = s.put(tpl()); ok(a.ok, 'put ok');
+    if (!a.ok) return;
+    eq(a.template.id, 'id0001', 'main gives the id'); eq(a.template.origin, 'own', 'origin own'); eq(a.template.createdAt, a.template.updatedAt, 'times set');
+    const b = s.put({ ...a.template, name: 'Review crew 2' }); ok(b.ok && b.template.id === a.template.id && b.template.createdAt === a.template.createdAt && b.template.updatedAt > a.template.createdAt, 'update keeps id and createdAt');
+    ok(s.put(tpl('Forged', { origin: 'imported' })).ok && s.list().find((t) => t.name === 'Forged')!.origin === 'own', 'put ignores the origin of the value on create');
+    const forged = s.put({ ...a.template, origin: 'imported' }); ok(forged.ok && forged.template.origin === 'own', 'an update cannot change the origin');
+    ok(!s.put({ ...tpl(), id: 'nosuchid' }).ok, 'an unknown id is refused');
+    eq(make(m, api).list().length, 2, 'a second load reads it back'); eq(make(m, api).list()[0].name, 'Review crew', 'with its name');
+    ok(m.text(F)!.endsWith('\n') && !m.text(F)!.includes('\r'), 'LF written');
+    const e = s.putImported(tpl('Import')); ok(e.ok && e.template.origin === 'imported', 'the import path creates imported');
+    ok(!s.putImported({ ...tpl('Import 2'), id: 'id0001' }).ok, 'putImported refuses an id'); ok(!s.putImported({ name: '', members: [] }).ok, 'putImported validates');
+    const up = s.put({ ...(e.ok ? e.template : {}), name: 'Import edited' }); ok(up.ok && up.template.origin === 'imported', 'an update keeps imported');
+    eq(s.get(a.template.id)?.name, 'Review crew', 'get'); eq(s.get('zzz'), undefined, 'get unknown');
+    const copyOfList = s.list(); copyOfList[0].name = 'changed'; eq(s.list()[0].name, 'Review crew', 'list returns copies');
+  },
+  brokenSetAside(api) {
+    for (const bad of ['{"version":1,"templates":[', 'null', '[]', '{"version":1,"templates":[]}', '{"format":"agent-durbar-team-templates","schemaVersion":2,"templates":[]}', '{"format":"agent-durbar-team-template","schemaVersion":1,"templates":[]}', '{"format":"agent-durbar-team-templates","schemaVersion":1.5,"templates":[]}', '{"format":"agent-durbar-team-templates","schemaVersion":1}']) {
+      const m = new MemFs(); m.set(F, bad);
+      const s = make(m, api);
+      eq(s.list(), [], 'starts empty: ' + bad.slice(0, 12));
+      const aside = badNames(m); eq(aside.length, 1, 'set aside once');
+      ok(/team-templates\.bad-[0-9T-]+Z\.json$/.test(aside[0]), 'name team-templates.bad-<time>.json: ' + aside[0]);
+      eq(m.text(aside[0]), bad, 'the bad file is kept whole'); ok(!m.files.has(F), 'the original is gone');
+      ok(s.takeToast(), 'one toast flag'); ok(!s.takeToast(), 'the flag is taken once');
+      const again = make(m, api); ok(!again.takeToast(), 'no toast on the next load'); eq(badNames(m).length, 1, 'not set aside again');
+      ok(s.put(tpl()).ok, 'saving works after the set-aside'); eq(badNames(m).length, 1, 'still one bad file'); eq(m.text(aside[0]), bad, 'bad file untouched by the save');
+    }
+    // one invalid template among valid ones: the valid ones stay (and are saved), the whole old file is kept aside
+    const m = new MemFs(); const text = doc(stored('aaa1', 'Good one'), { ...stored('bbb2', 'Bad one'), members: [] });
+    m.set(F, text); const s = make(m, api);
+    eq(s.list().map((t) => t.name), ['Good one'], 'valid template kept'); eq(badNames(m).length, 1, 'aside'); eq(m.text(badNames(m)[0]), text, 'old file whole');
+    eq(make(m, api).list().map((t) => t.name), ['Good one'], 'and saved'); ok(s.takeToast(), 'toast');
+    // a template without an id, a duplicate id
+    const m2 = new MemFs(); m2.set(F, doc({ name: 'No id', members: [member()] }, stored('x1', 'A'), stored('x1', 'B')));
+    eq(make(m2, api).list().map((t) => t.name), ['A'], 'no id and duplicate id are bad'); eq(badNames(m2).length, 1, 'aside');
+    // a bad file that cannot be moved: nothing is written over it
+    const m3 = new MemFs(); m3.set(F, '{broken'); let down = true;
+    const orig = m3.renameSync.bind(m3); m3.renameSync = (a: string, b: string): void => { if (down && a === F) throw Object.assign(new Error('x'), { code: 'EPERM' }); orig(a, b); };
+    const s3 = make(m3, api); ok(!s3.put(tpl()).ok, 'refused while the bad file is in the way'); eq(m3.text(F), '{broken', 'bad file intact'); eq(badNames(m3).length, 0, 'not moved yet');
+    down = false; ok(s3.put(tpl()).ok, 'the set-aside is retried and the save then works'); eq(badNames(m3).length, 1, 'bad file moved'); eq(m3.text(badNames(m3)[0]), '{broken', 'whole'); ok(m3.text(F)!.includes('agent-durbar-team-templates'), 'new file written'); ok(s3.takeToast(), 'toast after the retry');
+    // the same bad name in the same second
+    const m4 = new MemFs(); m4.set(F, '{x'); const f4 = new api.TeamTemplateStore(F, { fs: m4, flags: KEYS, now: () => 5000 });
+    ok(f4.takeToast(), 'first'); m4.set(F, '{y'); new api.TeamTemplateStore(F, { fs: m4, flags: KEYS, now: () => 5000 }); eq(badNames(m4).length, 2, 'two bad files, none overwritten');
+  },
+  fileMode(api) {
+    const m = new MemFs(); const s = make(m, api); s.put(tpl()); s.put(tpl('Second'));
+    ok(m.writes.length >= 2, 'wrote');
+    for (const w of m.writes) { eq(w.mode, 0o600, 'mode 0600'); eq(w.flag, 'wx', 'a fresh temp file only'); }
+    eq(m.files.get(F)!.mode, 0o600, 'the stored file has 0600'); ok(m.writes.every((w) => w.file !== F), 'never written in place');
+    eq(m.names(), [F], 'no temp left');
+  },
+  crashBetweenWriteAndRename(api) {
+    const m = new MemFs(); const s = make(m, api); const a = s.put(tpl()); ok(a.ok, 'first save');
+    const before = m.text(F); ok(before !== undefined, 'file exists');
+    m.failRename = true;
+    ok(!s.put(tpl('Second')).ok, 'put reports the failure'); eq(m.text(F), before, 'old file intact after a failed rename'); eq(m.names(), [F], 'temp removed');
+    eq(s.list().length, 1, 'memory unchanged'); m.failRename = false;
+    m.failWrite = true; ok(!s.put(tpl('Third')).ok, 'failed write'); eq(m.text(F), before, 'old file intact after a failed write'); eq(m.names(), [F], 'partial temp removed');
+    ok(!s.delete(a.ok ? a.template.id : '').ok, 'failed delete'); eq(s.list().length, 1, 'still there'); m.failWrite = false;
+    ok(s.put(tpl('Fourth')).ok, 'works again'); eq(make(m, api).list().length, 2, 'both on disk');
+    // a leftover temp of an older run does not block the save
+    m.set(`${F}.4242.tmp`, 'stale'); ok(s.put(tpl('Fifth')).ok, 'stale temp replaced'); eq(m.names(), [F], 'and gone');
+  },
+  fsyncBeforeRename(api) {
+    const m = new MemFs(); const s = make(m, api); s.put(tpl());
+    const i = m.log.findIndex((x) => x.startsWith('fsync')); const j = m.log.findIndex((x) => x.startsWith('rename'));
+    ok(i >= 0 && j > i, 'the temp file is flushed before the rename'); eq(m.fsyncs[0], `${F}.4242.tmp`, 'the temp file');
+    const m2 = new MemFs(); m2.fsyncFile = (): void => { throw new Error('no fsync here'); }; ok(make(m2, api).put(tpl()).ok, 'a failing fsync does not fail the save');
+  },
+  staleTemps(api) {
+    const m = new MemFs(); const dead = `${F}.9001.tmp`, own = `${F}.4242.tmp`, live = `${F}.9002.tmp`, other = `${ROOT}${path.sep}other.9001.tmp`, odd = `${F}.abc.tmp`;
+    for (const f of [dead, own, live, other, odd]) m.set(f, 'brief text');
+    make(m, api, (pid) => pid === 9002);
+    ok(!m.files.has(dead), 'a dead process temp is removed'); ok(m.files.has(own), 'our own pid is kept'); ok(m.files.has(live), 'a live process temp is kept');
+    ok(m.files.has(other) && m.files.has(odd), 'other names are kept');
+  },
+  format(api) {
+    const m = new MemFs(); const s = make(m, api); s.put(tpl());
+    const j = JSON.parse(m.text(F)!) as Record<string, unknown>; eq(j.format, 'agent-durbar-team-templates', 'format'); eq(j.schemaVersion, 1, 'schemaVersion'); ok(!('version' in j), 'no old version key');
+    ok(Array.isArray(j.templates), 'templates'); eq(typeof api.MIGRATIONS, 'object', 'migrations table exists'); eq(api.SCHEMA_VERSION, 1, 'current version');
+  },
+  cap(api) {
+    const m = new MemFs(); const s = make(m, api);
+    for (let i = 0; i < 50; i++) ok(s.put(tpl('Team ' + i)).ok, 'put ' + i);
+    eq(s.list().length, 50, '50 stored'); const w = m.writes.length;
+    const r = s.put(tpl('One too many')); ok(!r.ok, 'the 51st is refused'); eq(s.list().length, 50, 'still 50'); eq(m.writes.length, w, 'nothing written');
+    ok(!s.duplicate(s.list()[0].id).ok, 'duplicate at 50 refused');
+    const first = s.list()[0]; ok(s.put({ ...first, name: 'Renamed' }).ok, 'an update at 50 is fine');
+    ok(s.delete(first.id).ok, 'delete'); ok(s.put(tpl('Fits again')).ok, 'room again');
+    // a file with 51: the first 50 are kept, the file is set aside
+    const m2 = new MemFs(); m2.set(F, doc(...Array.from({ length: 51 }, (_, i) => stored('t' + i, 'N' + i))));
+    const s2 = make(m2, api); eq(s2.list().length, 50, 'a file of 51 loads 50'); eq(badNames(m2).length, 1, 'and is kept aside');
+  },
+  duplicateNames(api) {
+    const m = new MemFs(); const s = make(m, api);
+    const a = s.putImported(tpl('Review crew', { description: 'd', members: [member('A', { memberId: 'a'.repeat(32), brief: 'Check it.', briefFrom: 'file' }), member('B')] }));
+    ok(a.ok, 'put'); if (!a.ok) return;
+    const d1 = s.duplicate(a.template.id); ok(d1.ok, 'duplicate'); if (!d1.ok) return;
+    eq(d1.template.name, 'Review crew copy', 'name with copy'); eq(d1.template.origin, 'own', 'origin own'); ok(d1.template.id !== a.template.id, 'new id');
+    eq(d1.template.members[0].briefFrom, 'file', 'briefFrom copied'); ok(d1.template.members.every((x) => x.memberId === undefined), 'no memberId carried over'); eq(d1.template.description, 'd', 'description');
+    const d2 = s.duplicate(a.template.id); ok(d2.ok && d2.template.name === 'Review crew copy 2', 'second copy gets 2');
+    ok(!s.duplicate('nope').ok, 'unknown id');
+    // an NFD spelling and a Cyrillic lookalike of the first name take the suffix
+    const m2 = new MemFs(); const s2 = make(m2, api);
+    const nfd = s2.put(tpl('Café copy')); ok(nfd.ok, 'nfd');
+    const caf = s2.put(tpl('Café')); ok(caf.ok, 'nfc'); if (!caf.ok) return;
+    const dn = s2.duplicate(caf.template.id); ok(dn.ok && dn.template.name === 'Café copy 2', 'NFD twin takes the suffix: ' + (dn.ok ? dn.template.name : ''));
+    const cy = s2.put(tpl('Arсhitect copy')); ok(cy.ok, 'cyrillic es'); // U+0441 looks like c
+    const lat = s2.put(tpl('Architect')); ok(lat.ok, 'latin'); if (!lat.ok) return;
+    const dc = s2.duplicate(lat.template.id); ok(dc.ok && dc.template.name === 'Architect copy 2', 'Cyrillic twin takes the suffix: ' + (dc.ok ? dc.template.name : ''));
+    // a 40-character name keeps the suffix inside the limit
+    const long = s2.put(tpl('L'.repeat(40))); ok(long.ok, 'long'); if (!long.ok) return;
+    const dl = s2.duplicate(long.template.id); ok(dl.ok && dl.template.name.length <= 40 && dl.template.name.endsWith(' copy'), 'long name truncated');
+    const emo = s2.put(tpl('\u{1F600}'.repeat(40))); ok(emo.ok, 'forty emoji'); if (!emo.ok) return;
+    const de = s2.duplicate(emo.template.id); ok(de.ok && Array.from(de.template.name).length <= 40 && de.template.name.endsWith(' copy') && !de.template.name.includes('\uFFFD') && !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(de.template.name), 'emoji name cut by code point: ' + (de.ok ? Array.from(de.template.name).length : ''));
+    ok(de.ok && Array.from(de.template.name).length === 40, 'filled to 40 code points');
+    const sp = s2.put(tpl('x'.repeat(34) + ' yyyy')); if (sp.ok) { const ds = s2.duplicate(sp.template.id); ok(ds.ok && ds.template.name === 'x'.repeat(34) + ' copy', 'no double space before the suffix: ' + (ds.ok ? ds.template.name : '')); }
+    const dl2 = s2.duplicate(long.template.id); ok(dl2.ok && dl2.template.name.length <= 40 && dl2.template.name.endsWith(' copy 2') && dl2.template.name !== (dl.ok ? dl.template.name : ''), 'and again');
+  },
+  putInvalid(api) {
+    const m = new MemFs(); const s = make(m, api);
+    ok(s.put(tpl()).ok, 'one valid'); const w = m.writes.length; const before = m.text(F);
+    const secret = 'sk-' + 'test-' + 'PLANTEDSECRET0123456789';
+    for (const bad of [null, 'x', 42, [], {}, { name: '', members: [member()] }, { name: 'X', members: [] }, { name: 'X', members: [member('A', { app: 7 })] }, { name: 'X', members: [member('A', { shell: secret })] }, { name: 'X', members: [member('A', { memberId: 'nothex' })] }, { name: 'X', members: [member('A'), member('A')] }]) {
+      const r = api === undefined ? undefined : s.put(bad);
+      ok(r !== undefined && !r.ok, 'refused: ' + JSON.stringify(bad)?.slice(0, 30));
+      if (r && !r.ok) ok(r.errors.length > 0 && !r.errors.join(' ').includes(secret), 'errors name fields, not values');
+    }
+    eq(m.writes.length, w, 'no write for any refused put'); eq(m.text(F), before, 'disk untouched'); eq(s.list().length, 1, 'memory untouched');
+    ok(!s.put({ name: 'X', members: [member('A', { brief: 'x'.repeat(4001) })] }).ok, 'brief too long');
+  },
+  deleteAndMissing(api) {
+    const m = new MemFs(); const s = make(m, api); const a = s.put(tpl()); if (!a.ok) return ok(false, 'put');
+    const w = m.writes.length;
+    const none = s.delete('doesnotexist'); ok(none.ok && !none.removed, 'unknown id: nothing removed'); eq(m.writes.length, w, 'no write'); eq(s.list().length, 1, 'kept');
+    const del = s.delete(a.template.id); ok(del.ok && del.removed, 'removed'); eq(s.list(), [], 'empty'); eq(make(m, api).list(), [], 'and on disk');
+  },
+  importedFileLoads(api) {
+    const m = new MemFs();
+    const t = stored('imp1', 'From a file', { origin: 'imported', members: [member('A', { memberId: 'b'.repeat(32), brief: 'x'.repeat(1990), briefFrom: 'file' })] });
+    m.set(F, doc(t)); const s = make(m, api);
+    const l = s.list(); eq(l.length, 1, 'loaded'); eq(badNames(m).length, 0, 'not set aside'); ok(!s.takeToast(), 'no toast');
+    eq(l[0].origin, 'imported', 'origin kept'); eq(l[0].members[0].briefFrom, 'file', 'briefFrom kept'); eq(l[0].members[0].memberId, 'b'.repeat(32), 'memberId kept');
+    ok(s.put({ ...l[0], name: 'Edited' }).ok, 'and can be edited'); eq(s.get('imp1')!.origin, 'imported', 'stays imported');
+  },
+  boundedRead(api) {
+    const m = new MemFs(); m.files.set(F, { data: Buffer.from('{"version":1,"templates":['), mode: 0o600, size: 400 * 1024 * 1024 });
+    const s = make(m, api); eq(s.list(), [], 'empty'); eq(m.bytesRead, 0, 'nothing of a huge file is read'); eq(badNames(m).length, 1, 'set aside'); ok(s.takeToast(), 'toast');
+    // a file that grows while it is read
+    const m2 = new MemFs(); m2.files.set(F, { data: Buffer.from('x'.repeat(100)), mode: 0o600, size: 10 }); make(m2, api); eq(badNames(m2).length, 1, 'a changing file is set aside');
+    // a missing file is simply empty
+    const m3 = new MemFs(); make(m3, api); eq(m3.names(), [], 'no file, no bad file, nothing written');
+  },
+  crlf(api) {
+    const m = new MemFs(); const text = doc(stored('crlf1', 'Windows file', { members: [member('A', { brief: 'one\r\ntwo' })] }));
+    m.set(F, '﻿' + text.replace(/\n/g, '\r\n')); const s = make(m, api);
+    eq(s.list().length, 1, 'CRLF (and a BOM) read'); eq(badNames(m).length, 0, 'not set aside');
+    const b = s.list()[0].members[0].brief; ok(b !== undefined && !b.includes('\r'), 'a CRLF inside a brief is read as LF'); eq(b, 'one\ntwo', 'brief lines');
+  },
+  speed(api) {
+    const m = new MemFs(); m.set(F, '{"version":1,"templates":[' + '[' .repeat(190000)); const t0 = Date.now(); make(m, api); ok(Date.now() - t0 < 2000, 'a deeply nested 190k file is refused in time');
+    const m2 = new MemFs(); m2.set(F, doc(stored('s1', 'N'.repeat(200000)))); const t1 = Date.now(); make(m2, api); ok(Date.now() - t1 < 2000, 'a 200k name is refused in time');
+  },
+};
+
+const run = (api: Api): string[] => {
+  const failed: string[] = []; seq = 0; clock = 1_700_000_000_000;
+  for (const [name, fn] of Object.entries(sections)) { try { fn(api); } catch { failed.push(name); } } // a mutant may also crash: that is a kill
+  return failed;
+};
+
+seq = 0; clock = 1_700_000_000_000;
+for (const [name, fn] of Object.entries(sections)) { try { fn(real); } catch (e) { console.error('section ' + name + ' failed'); throw e; } }
+const checks = n;
+
+// ---- mutants ----
+const dir = path.join(__dirname, '..', 'src', 'main');
+const compiled = fs.readFileSync(path.join(dir, 'teamstore.js'), 'utf8');
+const mutants: { name: string; from: string; to: string; breaks: string }[] = [
+  { name: 'write straight to the file, no temp and no rename', from: 'const tmp = `${this.file}.${this.pid}.tmp`;', to: 'const tmp = this.file;', breaks: 'crashBetweenWriteAndRename' },
+  { name: 'file mode 0644', from: '{ mode: 0o600, flag: \'wx\' }', to: '{ mode: 0o644, flag: \'wx\' }', breaks: 'fileMode' },
+  { name: 'bad file set aside without the toast flag', from: 'this.toast = true;', to: '', breaks: 'brokenSetAside' },
+  { name: 'the cap of 50 off by one', from: '!cur && this.items.length >= teamtemplate_1.LIMITS.templates)', to: '!cur && this.items.length > teamtemplate_1.LIMITS.templates)', breaks: 'cap' },
+  { name: 'duplicate name compared without nameKey', from: 'new Set(this.items.map((x) => (0, skeleton_1.nameKey)(x.name)))', to: 'new Set(this.items.map((x) => x.name))', breaks: 'duplicateNames' },
+  { name: 'duplicate name tested without nameKey (candidate)', from: 'if (!taken.has((0, skeleton_1.nameKey)(name)))', to: 'if (!taken.has(name))', breaks: 'duplicateNames' },
+  { name: 'put without validation', from: 'const r = (0, teamtemplate_1.checkTeamTemplate)(value, \'own\');', to: 'const r = { ok: true, template: value, ignored: 0 };', breaks: 'putInvalid' },
+  { name: 'put takes the origin of the value', from: "origin: cur ? cur.origin : imported ? 'imported' : 'own'", to: "origin: cur ? cur.origin : (t.origin ?? (imported ? 'imported' : 'own'))", breaks: 'basics' },
+  { name: 'no fsync before the rename', from: 'this.fs.fsyncFile(tmp);', to: '', breaks: 'fsyncBeforeRename' },
+  { name: 'blocked check removed', from: 'if (this.blocked && !this.setAside())\n            return false;', to: '', breaks: 'brokenSetAside' },
+  { name: 'old version key accepted (format not checked)', from: 'doc.format === FORMAT && ', to: '', breaks: 'brokenSetAside' },
+  { name: 'a newer schemaVersion accepted', from: 'v <= exports.SCHEMA_VERSION', to: 'v <= 99', breaks: 'brokenSetAside' },
+  { name: 'duplicate cut by UTF-16 length', from: 'head.length + Array.from(suffix).length > teamtemplate_1.LIMITS.templateName', to: 'head.join(\'\').length + suffix.length > teamtemplate_1.LIMITS.templateName', breaks: 'duplicateNames' },
+  { name: 'stale temps not removed', from: '(0, schedules_1.removeStaleTemps)(this.file,', to: '(() => undefined)(this.file,', breaks: 'staleTemps' },
+  { name: 'load at level imported', from: '(0, teamtemplate_1.checkTeamTemplate)(raw, \'own\')', to: '(0, teamtemplate_1.checkTeamTemplate)(raw, \'imported\')', breaks: 'importedFileLoads' },
+];
+let killed = 0;
+for (const m of mutants) {
+  assert.ok(compiled.includes(m.from), 'mutant anchor not found: ' + m.name);
+  const file = path.join(dir, 'teamstore.mutant.js');
+  fs.writeFileSync(file, compiled.split(m.from).join(m.to));
+  try {
+    delete require.cache[file];
+    const api = require(file) as Api;
+    const failed = run(api);
+    assert.ok(failed.includes(m.breaks), `mutant NOT killed by section ${m.breaks}: ${m.name} (failed: ${failed.join(',') || 'none'})`);
+    killed++;
+  } finally {
+    fs.rmSync(file, { force: true });
+  }
+}
+assert.strictEqual(killed, mutants.length);
+console.log(`test-teamstore: ${checks} checks passed, ${killed} mutants killed`);
