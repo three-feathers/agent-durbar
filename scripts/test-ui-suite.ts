@@ -15,6 +15,12 @@ for (const n of names) {
 const src = fs.readFileSync(SUITE, 'utf8');
 assert.ok(/shell: false/.test(src) && !/shell: true/.test(src) && !/execSync\(|exec\(/.test(src), 'the runner spawns without a shell');
 assert.ok(/require\('electron'\)/.test(src), 'it starts the Electron binary directly');
+{ // spec 102 T204 (#1403): UI_SUITE_DPR takes 1.25 and 1.5 besides 1..4; nothing else reaches the command line
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { dprOk } = require(SUITE) as { dprOk: (v: string) => boolean };
+  for (const v of ['1', '2', '4', '1.25', '1.5']) assert.ok(dprOk(v), `UI_SUITE_DPR=${v} is passed on`);
+  for (const v of ['', '0', '5', '1.3', '1.50', '1.5;x', '--x', '1.25 ']) assert.ok(!dprOk(v), `UI_SUITE_DPR=${JSON.stringify(v)} is ignored`);
+}
 // spec 008 FR-112: a syntax error fails at once (node --check, no shell) before any Electron starts
 {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
