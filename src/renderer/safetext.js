@@ -77,7 +77,7 @@
      `[redaction failed]` on any copy: ''. On a label longer than ESC_FULL (the permission card's own cut) at most
      ESC_RUNS distinct escaped runs are looked at (one mask call each), more: '' (`phrase` and the desk tool labels pass it uncut); a shorter
      label, so every permission card, has every run checked. A label without an escape is masked as before. */
-  const ERUN=/(?:[A-Za-z0-9_\-.+\/=:@%]|\\[\\`*_{}\[\]()#+\-.!~|<>])+/g;
+  const ERUN=/(?:[A-Za-z0-9_\-.+\/=:@%]|\\[\\`*_{}\[\]()#+\-.!~|<>A-Za-z0-9=:@%\/])+/g; /* spec 012 FR-181 (review of PR 1585, round 4): a backslash before a token character joins a run too (`\n` of a JSON line break, `\h` of a shell escape), as in the shared step, so a run is judged whole by the mask */
   const ESC_RUNS=64,ESC_FULL=10000;
   const escMask=(s,mk)=>{if(unesc(s)===s)return mk(s);const capped=s.length>ESC_FULL;
     const got=t=>{const r=mk(t);if(typeof r!=='string'||!r||/\[redaction failed\]/.test(r))throw new Error('mask');return r;};

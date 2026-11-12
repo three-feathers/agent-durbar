@@ -5,7 +5,7 @@ import assert from 'assert';
 import { assertLinearShape } from './redact-growth-lib';
 import fs from 'fs';
 import path from 'path';
-import { redact, maskSecretCommand, maskSecretUrl, maskHomePaths } from '../src/shared/redact';
+import { redact, maskSecretCommand, maskSecretUrl, maskHomePaths, maskBareTokenShapes } from '../src/shared/redact';
 import { grantScope } from '../src/adapters/permissions';
 
 const ROOT = path.join(__dirname, '..', '..');
@@ -544,6 +544,14 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
     for (const [what, tok] of [['g\\hp_', 'g\\hp_' + B], ['ghp_\\A', 'ghp_\\' + B]] as const) {
       eq(L.permText('run echo ' + tok, 'shell', mask), { text: 'run echo [redacted]', hidden: true, why: 'secret' }, '#1585 permText shell: ' + what + ' is hidden, the command kept as written');
     }
+  }
+  // spec 012 FR-180, kept alive after FR-181 (review of PR 1585, round 4): the shared masks now hide an escaped run themselves, so the window's order (runs BEFORE the mask) is
+  // pinned with a mask that reads text only as written (`maskBareTokenShapes`): a token glued to an escaped one is hidden in place, not blinded by the final check
+  {
+    const ST = require(path.join(R, 'safetext.js')) as { maskLabel(t: string, k: string, m: Record<string, (s: string) => string>): string };
+    const B = 'A1b2C3d4E5f6' + 'G7h8I9j0K1l2M3n4O5p6Q7r8';
+    const asWritten = { cmd: (s: string) => maskBareTokenShapes(s, '[redacted]'), redact: (s: string) => maskBareTokenShapes(s, '[redacted]') }; // the bare shapes: no escaped-run step and no glued rest
+    eq(ST.maskLabel('run echo ghp_' + B + 'ghp\\_' + B, 'run', asWritten), 'run echo [redacted]', 'FR-180 order: a token glued to an escaped one is hidden in place by a mask that reads text as written');
   }
   // spec 012 FR-180: a Markdown-escaped token (`ghp\_...`) is hidden on the card as the desk mask hides it, and the command is shown as written
   {

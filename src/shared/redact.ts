@@ -675,9 +675,12 @@ function maskEscapedRuns(s: string, mask: string): string {
         any = true;
         // review of PR 1585 (round 3): a break escape inside a body (`ghp\_<20>\n<16>`) is a shell escape of a letter there; once a piece with an escape hides, the rest of the run after it
         // is its tail when it holds FR-173's count (8 letters and digits, the letters of the breaks included): hidden with it. Fail closed: a long word on the next line glued to it is hidden too.
+        // review of PR 1585 (round 4): the pieces before it (no piece of them hid alone) are read as one stretch with the whole-run check, so a token whose later piece hides does not show
+        // its earlier pieces (`ghp_<20>\n<16>\tg\hp_<36>`); one check per run: after the first hidden piece the rest is its tail or holds fewer than 8 letters and digits
+        const lead = out !== '' && hides(out) ? '' : out + br;
         const rest = parts.slice(i + 1).join('');
-        if (glueCount(rest)) return out + br + mask;
-        out += br + mask;
+        if (glueCount(rest)) return lead + mask;
+        out = lead + mask;
       }
       if (any) return out;
     }

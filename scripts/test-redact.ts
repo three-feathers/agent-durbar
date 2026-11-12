@@ -43,7 +43,10 @@ const env = {
     return undefined;
   };
   /** The desk's mask (`DurbarSafeText.maskRaw`: Markdown escapes undone, then `redact`): the activity row's last line and the desk read the same text, so they must agree on whether a secret shows. */
-  const ST = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string };
+  const ST = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string; maskLabel(t: string, k: string, m: Record<string, (s: string) => string>): string };
+  /** The approval card (`DurbarLiveAct.permText`, shell kind) and its label mask (`maskLabel`, run kind): the window's own escaped-run step (FR-180) in front of the shared masks. */
+  const LA = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'liveact.js')) as { permText(t: string, k: string, m: Record<string, (s: string) => string>): { text: string } };
+  const cardMask = (env: Record<string, string>) => ({ redact: (t: string) => redact(t, env), cmd: (t: string) => maskSecretCommand(t, env), url: (t: string) => maskSecretUrl(t, env) });
   let diffCases = 0;
   /** Both `redact` and `maskRaw` hide every body (the review of PR 1585: a future change to one path must not reopen a leak the other closes). */
   const agree = (text: string, bodies: string[], env: Record<string, string>, label: string): void => {
@@ -51,6 +54,12 @@ const env = {
     const m = ST.maskRaw(text, (t) => redact(t, env));
     assert.strictEqual(shows(r, bodies), undefined, `${label}: redact shows no part: ${JSON.stringify(text)} gave ${r}`);
     assert.strictEqual(shows(m, bodies), undefined, `${label}: maskRaw shows no part: ${JSON.stringify(text)} gave ${m}`);
+    // review of PR 1585 (round 4): the card and its label mask hide what redact hides (the same input)
+    const cm = cardMask(env);
+    const card = LA.permText(text, 'shell', cm).text;
+    const lab = ST.maskLabel(text, 'run', cm);
+    assert.strictEqual(shows(card, bodies), undefined, `${label}: the card (permText shell) shows no part: ${JSON.stringify(text)} gave ${card}`);
+    assert.strictEqual(shows(lab, bodies), undefined, `${label}: maskLabel (run) shows no part: ${JSON.stringify(text)} gave ${lab}`);
     diffCases++;
   };
   for (const [what, tok, bodies] of FORMS) {
@@ -186,7 +195,7 @@ const env = {
             // the first piece hides alone: its tail goes with it from 8 letters and digits on, the break's own letter counted (a tail of 6 stays, FR-173's count); else the whole run is read; no token: as written
             const want = firstHides ? (l2 + 1 >= 8 ? 'echo [redacted] done' : `echo [redacted]\\${br}${tl} done`) : wholeTok ? 'echo [redacted] done' : text;
             assert.strictEqual(redact(text, {}), want, `#1585 round 3 break tail (${what} \\${br}, ${l1} before, ${l2} after): ${redact(text, {})}`);
-            if (want !== text && l2 >= 8) agree(text, [BODY.slice(0, l1), tl], {}, `#1585 round 3 differential (${what} \\${br}, ${l1}/${l2})`);
+            if (want !== text && l2 + 1 >= 8) agree(text, [BODY.slice(0, l1), tl], {}, `#1585 round 3 differential (${what} \\${br}, ${l1}/${l2})`);
             pinned++;
           }
         }
@@ -200,6 +209,32 @@ const env = {
     assert.strictEqual(redact(FORMS[0][1] + '\\nAllTestsPassedSuccessfully', {}), '[redacted]', '#1585 round 3: accepted over-mask, a long next-line word glued to an escaped token');
     assert.strictEqual(redact(FORMS[0][1] + '\\nok1234', {}), '[redacted]\\nok1234', '#1585 round 3: a short next-line word stays');
     assert.strictEqual(redact('x [redacted]\\nAllTestsPassedSuccessfully', {}), 'x [redacted]\\nAllTestsPassedSuccessfully', '#1585 round 3: a mask already in the text and a line break: the next line stays');
+    // round 4: the pieces before the first hidden piece are read as one stretch (a token whose later piece hides shows no earlier piece), through redact, the card and maskLabel
+    const R4: Array<[string, string, string[]]> = [
+      ['a plain token before a break, an escaped token after', 'echo ghp_' + B36.slice(0, 20) + '\\n' + B36.slice(20) + '\\tg\\hp_' + B40.slice(0, 36), [B36.slice(0, 20), B36.slice(20), B40.slice(0, 36)]],
+      ['sk-proj cut by breaks, an AWS key after', 'echo sk-proj-j4n70RjNC9r2t\\rvp1UsC_ZnMA1t4Ar86crLzI5g\\AsnDor7nGT\\nAKIAJT7GCMIE74\\KF2TP0', ['j4n70RjNC9r2t', 'vp1UsC_ZnMA1t4Ar86crLzI5g', 'AsnDor7nGT', 'AKIAJT7GCMIE74']],
+    ];
+    for (const [what, text, bodies] of R4) {
+      assert.strictEqual(redact(text, {}), 'echo [redacted]', `#1585 round 4 stretch (${what}): redact hides every piece: ${redact(text, {})}`);
+      agree(text, bodies, {}, `#1585 round 4 stretch (${what})`);
+    }
+    // round 4: the reviewer's five card inputs, hidden on the card and in maskLabel (run and other) as in redact
+    const B20 = B36.slice(0, 20);
+    const CARD5 = [
+      'echo ghp\\_' + B20 + '\\nK1l2M3n4O5p6Q7r8',
+      'echo sk\\-proj\\-' + B20 + '\\tK1l2M3n4O5p6Q7r8S9',
+      'echo sk-proj-LztkxXshTHh5XIQLnZsJ\\_rgtAnNtf6Al\\nTBFkUgyOipgTnnR6 done',
+      'echo ghp\\_' + B20 + '\\nK1l2\\rM3n4\\tO5p6Q7r8S9',
+      'echo github_pat_' + B22 + '\\_' + B59.slice(0, 30) + '\\nr8S9t0U1v2W3',
+    ];
+    for (const t of CARD5) {
+      const want = redact(t, {});
+      assert.ok(/^echo \[redacted\]( done)?$/.test(want), `#1585 round 4 card input: redact hides it whole: ${want}`);
+      const cm = cardMask({});
+      assert.strictEqual(LA.permText(t, 'shell', cm).text, want, `#1585 round 4 card input: the card shows what redact shows: ${t.slice(0, 30)}`);
+      assert.strictEqual(ST.maskLabel(t, 'run', cm), want, `#1585 round 4 card input: maskLabel (run) as redact: ${t.slice(0, 30)}`);
+      assert.strictEqual(ST.maskLabel(t, 'other', cm), want, `#1585 round 4 card input: maskLabel (other) as redact: ${t.slice(0, 30)}`);
+    }
   }
 
   // growth: linear in the text (FR-180 did the same for maskLabel)
@@ -209,6 +244,8 @@ const env = {
   assertLinearShape('#1541 redact one long escaped run', (x) => { redact(x, {}); }, (k) => 'a\\_'.repeat(Math.ceil(k / 3)).slice(0, k), 400_000);
   assertLinearShape('#1541 redact many escaped letters', (x) => { redact(x, {}); }, (k) => 'a\\b '.repeat(Math.ceil(k / 4)).slice(0, k), 400_000);
   assertLinearShape('#1541 redact many escaped line breaks', (x) => { redact(x, {}); }, (k) => 'a\\nb\\_c'.repeat(Math.ceil(k / 7)).slice(0, k), 400_000);
+  assertLinearShape('#1585 round 4 redact one run of alternating hiding and other pieces', (x) => { redact(x, {}); }, (k) => ('ab\\n' + FORMS[0][1] + '\\ncd\\_ef\\t').repeat(Math.ceil(k / (FORMS[0][1].length + 14))).slice(0, k), 400_000);
+  assertLinearShape('#1585 round 4 redact one run of breaks with an escaped token at the end', (x) => { redact(x, {}); }, (k) => 'ab\\ncd\\_ef\\t'.repeat(Math.ceil(k / 13)).slice(0, k - FORMS[0][1].length - 2) + '\\n' + FORMS[0][1], 400_000);
   assertLinearShape('#1544 redact many named markers', (x) => { redact(x, { FOO_TOKEN: 'Vq7Wx8Ec9Rv0Tb1Yn2Um3Ik4' }); }, (k) => 'Vq7Wx8Ec9Rv0Tb1Yn2Um3Ik4_ab '.repeat(Math.ceil(k / 28)).slice(0, k), 400_000);
 
   // a seeded randomized fixture: four token types, random escapes at random cut points, the run and other kinds, masks present or not
