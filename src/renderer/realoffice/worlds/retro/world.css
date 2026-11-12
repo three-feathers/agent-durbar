@@ -86,20 +86,20 @@
 .ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l2>.ro-tk{display:inline;flex:1 1 auto;width:0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l2>.ro-tk:empty{display:none}
 .ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l1>:not(.ro-help){display:none}
-/* issue 1574 (spec 102 FR-312): on the narrow cabinet's plate with its pencil (content 92 px) the word, the +N and one dot do not fit: the plate's own status dot is not drawn (the word and the plate's border carry the state) and the +N is marked "+3!" when a helper failed or waits; the helpers' dots stay in the plate's markup, in the heads' order, and show whenever the line has room */
+/* issue 1574 (spec 102 FR-312): on the narrow cabinet's plate with its pencil (content 99 px after round 5: 92 to 96 px before) the word, the +N and one dot do not fit: the plate's own status dot is not drawn (the word and the plate's border carry the state) and the +N is marked "+3!" when a helper failed or waits; the helpers' dots stay in the plate's markup, in the heads' order, and show whenever the line has room */
 .ro[data-world="retro"] .ro-plate.cab-narrow.has-help:not(.lounge) .ro-hm{display:inline;color:var(--c-waiting)}
 .ro[data-world="retro"] .ro-plate.cab-narrow:is(.has-ren,.has-help):not(.lounge) .ro-l2>.dot{display:none}
 .ro[data-world="retro"] .ro-plate.cab-narrow.has-ren.has-help:not(.lounge) .ro-l2{gap:0} /* the task run (width 0 here) must not take the 4 px gap from the word; its text starts with the " · " */
-/* margin (spec 102 FR-312): 3 px less padding at the left and no 1 px gap between the count and the word win 4 px of the 93 px; the pencil (right end, 20 px of padding) is not moved */
+/* margin (spec 102 FR-312): 3 px less padding at the left and no 1 px gap between the count and the word win 4 px of the first versions' 93 px; the pencil is not moved (its reserve is 18 px, below) */
 .ro[data-world="retro"] .ro-plate.cab-narrow.has-ren:not(.lounge){padding-left:calc(var(--s-1)*.75);padding-right:calc(var(--s-4)*1.125)}
-/* fonts (spec 102 FR-312, round 5): the word is regular weight on this plate (the 600 of a needs-you or limit plate is 10 px wider in a bold-wide font such as DejaVu Sans or Verdana; the amber border and fill carry the emphasis), the left padding 3 px, the pencil's reserve 18 px (its icon starts 17.5 px from the plate's edge, 097 FR-357 said 20): the word keeps its room in a font up to 12 px wider than macOS's */
+/* fonts (spec 102 FR-312, round 5): the word is regular weight on this plate (the 600 of a needs-you or limit plate is 10 px wider in a bold-wide font such as DejaVu Sans or Verdana; the amber border and fill carry the emphasis), the left padding 3 px, the pencil's reserve 18 px (its icon starts 17.5 px from the plate's edge and the content box ends 19 px from it, 1 px border + 18: 1.5 px clear, asserted; 097 FR-357 said 20): the word keeps its room in a font up to 12 px wider than macOS's */
 .ro[data-world="retro"] .ro-plate.cab-narrow:is(.has-ren,.has-help):not(.lounge) .ro-l2{font-weight:inherit}
 /* spec 102 FR-313 (round 4 of #1574): a helper mark must never read as the plate's own state, so the last mark SHOWN has 4 px of margin after it, before the word: on the margin of each mark (a mark that wraps out of sight takes its margin with it, so a plate that shows no mark, as "Limit reached" does, keeps its room), with the marks 2 px apart as before */
 .ro[data-world="retro"] .ro-plate.cab-narrow.has-help:not(.lounge) .ro-help .dot{margin-right:var(--s-1)}
 .ro[data-world="retro"] .ro-plate.cab-narrow.has-help:not(.lounge) .ro-help .dot+.dot{margin-left:calc(-1*var(--s-1))}
 .ro[data-world="retro"] .ro-plate.cab-narrow.has-ren.has-help:not(.lounge){gap:0}
 /* spec 097 FR-357 (bug #1427): a cabinet's plate does not draw the name (it is on the marquee), so the rename pencil is anchored to the plate: at its right end,
-   inside it (the 11 px icon ends 6.5 px before the edge); 20 px of padding there end the status and the dots (ellipsis) before the icon. A lounge seat's plate draws the name: FR-170's place */
+   inside it (the 11 px icon ends 6.5 px before the edge); 20 px of padding there end the status and the dots (ellipsis) before the icon (18 px on the arcade's narrow cabinet plate: spec 102 FR-312). A lounge seat's plate draws the name: FR-170's place */
 .ro[data-world="retro"] .ro-plate.has-ren:not(.lounge){padding-right:calc(var(--s-4) + var(--s-1))}
 .ro[data-world="retro"] .ro-chrome>.ro-plate:not(.lounge)+.ren.ro-ren{position-anchor:var(--ro-ren-pl);left:calc(anchor(right) - 24px);top:calc(anchor(center) - 12px)}
 /* a one-line pill is as tall as a sign, so it fits the free part of a sign row: in the arcade it never covers a screen or a person (owner, 2026-11-03) */
