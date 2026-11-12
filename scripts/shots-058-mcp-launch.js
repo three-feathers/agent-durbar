@@ -25,7 +25,9 @@
  * (the list open over Settings, Restart where it failed (2 of 4)). Not linked: 058-mcp-launch-<w>x<h>.png (the list open over the office).
  * Photo Real office (issue #1424, FR-230): the list open and Settings with the list open are shown again there, after a labelled assert that html[data-world]
  * is photo and #stage .ro is photo/office; shots 058-mcp-launch-real-<w>x<h>.png and 058-mcp-launch-settings-real-<w>x<h>.png (not linked, not committed).
- * Prints "[058] launch PASS".
+ * Issue #1566: first, in the Real office look (Photo; the arcade with DRIVER_WORLD=retro, which then runs only this part), at 1280x800 and 1440x900 with 15 agents: the office does
+ * not scroll while the strip is shown (list closed) and after Dismiss, and the floor's lent padding (ro-tight) is gone with the strip.
+ * Prints "[058] launch PASS" ("[058] launch arcade office PASS" under DRIVER_WORLD=retro).
  */
 const assert = require('assert');
 const path = require('path');
@@ -63,6 +65,74 @@ module.exports = async (ctx) => {
   };
 
   const LAY = `(()=>{const s=document.getElementById('mcpStrip').getBoundingClientRect(),f=document.getElementById('floor').getBoundingClientRect(),l=document.getElementById('mcpList');const cols=[...document.querySelectorAll('#mcpStrip [data-mlshow]')].map(b=>Math.round(b.getBoundingClientRect().right));let min=99;document.querySelectorAll('#mcpStrip, #mcpStrip *').forEach(e=>{if(!e.getClientRects().length)return;if(![...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim()))return;min=Math.min(min,parseFloat(getComputedStyle(e).fontSize));});return {below:f.top>=s.bottom-1,min,pageX:document.documentElement.scrollWidth<=innerWidth,pageY:document.documentElement.scrollHeight<=innerHeight+1&&document.scrollingElement.scrollTop===0,capped:getComputedStyle(l).overflowY==='auto'&&l.getBoundingClientRect().height<=Math.min(innerHeight*0.34,210)+1,col:new Set(cols).size===1}})()`;
+  /* issue #1566: the strip over the Real office (Photo; the arcade under DRIVER_WORLD=retro, which H.load draws and proves) never makes 15 agents scroll,
+     at either size, with the strip shown (list closed) and after Dismiss; the arcade's hall takes the floor's padding rather than scroll (spec 102 delta 2026-11-11) */
+  const REAL = process.env.DRIVER_WORLD === 'retro' ? 'arcade' : 'Photo';
+  /* review of 2026-11-12 (T308, tests only): the three rules of the lend that the 15-agent loop below cannot show, each at 1280x800 with the strip shown:
+     DRIVER_CASE=16 (16 agents: the lent layout still scrolls, so it is refused: ro-tight off, the office scrolls as before);
+     DRIVER_CASE=filter (a status filter showing 11 to 15 agents: ro-tight is never set while the floor scrolls, and the note keeps its top padding);
+     DRIVER_CASE=photo (18 agents in Photo at 1280x760 (DRIVER_H), where the strip leaves 636 px, Photo scrolls and the lend would rescue it: a world that is not `aisles` is never lent the padding) */
+  const CASE = process.env.DRIVER_CASE || '';
+  if (CASE) {
+    await H.load({ w: 1280, h: Number(process.env.DRIVER_H || 800), ready: 'fit', focus: true, query: { sim: String(Number(process.env.DRIVER_AGENTS || 15)), simkinds: 'mixed', simmcplaunch: '1', simmcpauth: '1', officeview: 'real' } });
+    assert.strictEqual(await js(`document.documentElement.dataset.world`), REAL === 'arcade' ? 'retro' : 'photo', `${CASE}: the world is the one asked for`);
+    const CNT = Number(process.env.DRIVER_AGENTS || 15); /* the case's agent count, passed as ?sim= */
+    assert.strictEqual(await js(`window.__durbarSimUi.agents().filter(a=>!a.parent).length`), CNT, `${CASE}: the simulator shows ${CNT} main agents`);
+    const A1 = await js(`window.__durbarSimUi.agents().filter(a=>a.live&&!a.parent&&a.info&&a.info.adapterId==='copilot')[0].id`);
+    await emit(A1, [{ name: 'my-notes', status: 'needs-auth', error: 'The server answered 401 Unauthorized: sign in to use its tools.', errorClass: 'auth' }]);
+    assert.ok(await until(`!document.getElementById('mcpStrip').hidden`, 6000), `${CASE}: the strip shows over the Real office`);
+    await settle();
+    if (CASE === 'filter') {
+      assert.ok(await js(`(()=>{const b=document.querySelector('.stat[data-k=${jsLiteral(process.env.DRIVER_STATUS || 'working')}]');if(!b)return false;b.click();return true})()`), 'filter: the status pill is there');
+      assert.ok(await until(`document.getElementById('floor').classList.contains('has-fnote')&&!document.getElementById('filterNote').hidden`, 6000), 'filter: the filter note shows');
+      await settle();
+    }
+    const S = JSON.parse(JSON.stringify(await js(`(()=>{const f=document.getElementById('floor'),r=document.querySelector('#stage .ro'),L=window.__durbarSimUi.realLayout();return {sh:f.scrollHeight,ch:f.clientHeight,roBottom:r?Math.round(r.getBoundingClientRect().bottom):0,fb:Math.round(f.getBoundingClientRect().bottom),tight:f.classList.contains('ro-tight'),note:f.classList.contains('has-fnote'),scroll:!!(L&&L.scroll),lent:!!(L&&L.lent),desks:document.querySelectorAll('#stage .ro .ro-plate:not(.lounge)').length,pt:getComputedStyle(f).paddingTop,pb:getComputedStyle(f).paddingBottom}})()`)));
+    const tell = JSON.stringify(S);
+    if (CASE === '16') {
+      assert.ok(S.scroll && !S.lent && !S.tight, `arcade 16 agents MCP strip 1280: the lent layout still scrolls, so it is refused (ro-tight off, the layout not lent): ${tell}`);
+      assert.ok(S.sh > S.ch + 1, `arcade 16 agents MCP strip 1280: the office scrolls as before (scrollHeight ${S.sh} against ${S.ch}): ${tell}`);
+    } else if (CASE === 'filter') {
+      assert.ok(S.note && S.desks >= 11 && S.desks <= 15, `arcade filter MCP strip 1280: the filter shows 11 to 15 agents under the note (${S.desks} drawn): ${tell}`);
+      assert.ok(!(S.tight && S.sh > S.ch + 1), `arcade filter MCP strip 1280: the lent padding is not taken while the floor still scrolls (ro-tight with scrollHeight ${S.sh} against ${S.ch}): ${tell}`);
+      assert.ok(S.pt !== '0px', `arcade filter MCP strip 1280: the note keeps its top padding (${S.pt}): ${tell}`);
+    } else {
+      assert.ok(!S.tight && !S.lent, `Photo 18 agents MCP strip 1280x760: the padding is lent to the arcade only (ro-tight ${S.tight}, lent ${S.lent}): ${tell}`);
+    }
+    console.log(`[058] launch ${REAL} ${CASE} PASS ${tell}`);
+    return;
+  }
+  for (const [w, h] of [[1280, 800], [1440, 900]]) {
+    await H.load({ w, h, ready: 'fit', focus: true, query: { simkinds: 'mixed', simmcplaunch: '1', simmcpauth: '1', officeview: 'real' } });
+    assert.strictEqual(await js(`document.documentElement.dataset.world`), REAL === 'arcade' ? 'retro' : 'photo', `${REAL} MCP strip ${w}: the world is the one asked for`);
+    const A0 = await js(`window.__durbarSimUi.agents().filter(a=>a.live&&!a.parent&&a.info&&a.info.adapterId==='copilot')[0].id`);
+    const FIT = `(()=>{const f=document.getElementById('floor'),r=document.querySelector('#stage .ro');return {sh:f.scrollHeight,ch:f.clientHeight,ro:r?Math.round(r.getBoundingClientRect().height):0,roBottom:r?Math.round(r.getBoundingClientRect().bottom):0,fb:Math.round(f.getBoundingClientRect().bottom),fit:document.getElementById('stage').dataset.fit,strip:!document.getElementById('mcpStrip').hidden,tight:f.classList.contains('ro-tight'),lay:(l=>l?[Math.round(l.height),!!l.scroll,!!l.lent]:null)(window.__durbarSimUi.realLayout())}})()`;
+    const nofit = (f) => !(f.sh <= f.ch + 1 && f.fit === 'ok' && f.roBottom <= f.fb + 1);
+    let fit;
+    await emit(A0, [{ name: 'my-notes', status: 'needs-auth', error: 'The server answered 401 Unauthorized: sign in to use its tools.', errorClass: 'auth' }]);
+    assert.ok(await until(`!document.getElementById('mcpStrip').hidden`, 6000), `${REAL} MCP strip ${w}: the strip shows over the Real office`);
+    await settle();
+    /* the office stays put: five reads 100 ms apart are the same VALUES (floor, room, ro-tight, the layout's height, scroll and lent; not the layout object, which every legitimate draw replaces) (a floor that grows and shrinks again, as when the lent padding is not given back before the next measure, redraws for ever; settle() cannot see that) */
+    await js(`(()=>{const w=window;w.__ro1566={n:0,last:w.__durbarSimUi.realLayout(),on:true};const t=()=>{if(!w.__ro1566.on)return;const l=w.__durbarSimUi.realLayout();if(l!==w.__ro1566.last){w.__ro1566.n++;w.__ro1566.last=l;}requestAnimationFrame(t);};requestAnimationFrame(t);return 0})()`); /* counts draws (a legitimate one, an art load or a status tick, replaces the layout object: a few are fine) */
+    const reads = [];
+    for (let i = 0; i < 5; i++) { reads.push(JSON.stringify(await js(FIT))); await ctx.sleep(100); }
+    assert.ok(reads.every((r) => r === reads[0]), `${REAL} MCP strip ${w}: the office is steady while the strip is shown: ` + reads.join(' | '));
+    const draws = await js(`(()=>{const r=window.__ro1566;r.on=false;return r.n})()`);
+    assert.ok(draws <= 3, `${REAL} MCP strip ${w}: the office is drawn at most 3 times in 500 ms while the strip is shown (${draws}; a floor that changes size at every draw is a redraw loop)`);
+    fit = JSON.parse(reads[0]);
+    assert.ok(fit.strip && !nofit(fit), `${REAL} MCP strip ${w}: the strip is shown and the office does not scroll (scrollHeight ${fit.sh} against clientHeight ${fit.ch}, room ends ${fit.roBottom} of ${fit.fb}): ` + JSON.stringify(fit));
+    const tight = await js(`document.getElementById('floor').classList.contains('ro-tight')`);
+    assert.strictEqual(tight, REAL === 'arcade' && w === 1280, `${REAL} MCP strip ${w}: the floor's padding is lent only to the arcade at 1280x800 (ro-tight ${tight})`);
+    await js(`document.querySelector('#mcpStrip [data-ml="close"]').click()`);
+    assert.ok(await until(`document.getElementById('mcpStrip').hidden`, 6000), `${REAL} MCP strip ${w}: Dismiss hides the strip`);
+    await settle();
+    fit = await js(FIT);
+    assert.ok(!fit.strip && !nofit(fit), `${REAL} MCP strip ${w}: after the strip closes the office does not scroll: ` + JSON.stringify(fit));
+    assert.strictEqual(await js(`document.getElementById('floor').className.includes('ro-tight')`), false, `${REAL} MCP strip ${w}: the floor's padding is back once the strip is gone`);
+  }
+  console.log(`[058] launch ${REAL} office PASS`);
+  if (REAL === 'arcade') return; /* DRIVER_WORLD=retro runs the Real office check only: the rest is the flat strip's and the same in every world */
+
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     await H.load({ w, h, ready: 'fit', focus: true, query: { simkinds: 'mixed', simmcplaunch: '1', simmcpauth: '1' } });
     const chats = await js(`window.__durbarSimUi.agents().filter(a=>a.live&&!a.parent).map(a=>({id:a.id,name:a.name,kind:a.info&&a.info.adapterId}))`);
