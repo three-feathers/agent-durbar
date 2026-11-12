@@ -205,7 +205,7 @@ loading, empty ("This server lists no tools"), not running ("Start the session t
 - **FR-009** `[IMPLEMENTED]` **Claude Code's user list in Durbar's Claude sessions** (Q1 A): main reads `mcpServers` of the Claude file (values in main
   only) and adds the switched-on entries to the `mcpServers` of a Claude agent's start options (only for agents whose adapter is
   `claude`); a name that is also a folder extra keeps the folder extra (compared without case). The values also mask that session's
-  MCP errors (`secretValuesFor`). Settings has a switch per Claude entry for new Durbar sessions,
+  MCP errors (`secretValuesFor`; since change 2026-11-13, FR-070, the Copilot CLI list's values too). Settings has a switch per Claude entry for new Durbar sessions,
   kept with the Copilot switches (`disabledAmbient`). `${NAME}` references are passed as written (Claude Code expands them, `read:` docs).
   (change 2026-10-22, review 6 on #489) The CLI transport no longer puts the MCP JSON (values included) on the command line, where
   `ps` shows it: it is written to `mcp-config.json` (mode 0600) in a new private temp folder (`mkdtemp`, 0700), `--mcp-config` gets that
@@ -537,6 +537,24 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
   restore dropped, the re-set on growth dropped and the focus restore dropped each fail it at its labelled assertion). Not verified on macOS
   or Windows. `[KNOWN GAP]` the *World* choice (it repaints Settings through the same path) is shown only in the Real office with two or more
   worlds, which the simulator does not offer on main, so it is not driven.
+
+- **2026-11-13 (issue #1639, found in the review of #1637; FR-070, T072; security-relevant):** the Copilot CLI list's values were not in the
+  mask list.
+  - **FR-070, every value a session's servers were given masks that session's text.** `secretValuesFor` (FR-009) built the list of
+    values that mask a session's MCP errors, failed tool cards, edits, resumed history and the other callers of `secretValuesFor` (notes,
+    conversation search) from the folder extras and Claude Code's user list only. The Copilot CLI list (`~/.copilot/mcp-config.json`, which
+    the Copilot runtime loads itself) was read only for names and addresses, so a header or env value of a server there was hidden only
+    when it had a known token shape; a server that echoed a shape-less key in its error showed it under *Details* and in *Copy diagnostics*
+    (spec 058 FR-006, FR-093). Now the env and header values of every server of that list go into the same list, through
+    `mcpSecretValues`, so its rule holds for them too: a value under 4 characters is skipped (it would mangle every string). Read the
+    same way `serverUrlFor` reads the list (`cli()`, again on every call, so an edit of the file counts at once), in the same single read
+    that already gave the list's names: no extra file read per event. All servers of the file count, also one switched off in Settings,
+    and for every agent, not only Copilot ones (masking more is safe, FR-009's note). The values stay in main: never in a reply, a log
+    line or the view `cliServers` returns (still names, transports, commands, arguments and addresses only).
+  `test:` `test:mcpglobal` *FR-070* (planted shape-less values in a Copilot-list header and env, through `registerMcpIpc`'s `agents:mcp`
+  reply and spec 058's `diagnostics` text; mutants: the new source removed, the env values forgotten, the 4-character rule bypassed for
+  the new source: each fails at its labelled assertion). Not verified with a real Copilot session or server (no AI credits), nor on macOS
+  or Windows (the read is the same `path.join` code `cliServers` already uses).
 
 ## Relationship to other specs
 
