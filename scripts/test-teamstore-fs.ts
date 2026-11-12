@@ -72,6 +72,19 @@ try {
       assert.ok(St.put(tpl('Next')).ok, op + ': the next save works'); assert.ok(fs.lstatSync(f).isFile(), op + ': a regular file again'); n += 4;
     }
   }
+  // the folder has no search permission at the start (real chmod): blocked; when it is back, the good file is reloaded, never set aside
+  if (process.platform === 'win32' || (typeof process.getuid === 'function' && process.getuid() === 0)) console.log('skipped: folder chmod test needs POSIX and a user that is not root');
+  else {
+    const f5 = path.join(root, 'perm', 'team-templates.json'); const P = new TeamTemplateStore(f5); assert.ok(P.put(tpl('Good1')).ok);
+    const dir5 = path.dirname(f5);
+    try {
+      fs.chmodSync(dir5, 0o600);
+      const Q = new TeamTemplateStore(f5, { pause: () => undefined }); assert.ok(Q.isBlocked(), 'blocked'); assert.ok(!Q.takeToast()); assert.ok(!Q.put(tpl('After')).ok); n += 3;
+      fs.chmodSync(dir5, 0o700);
+      const r = Q.put(tpl('After')); assert.ok(!r.ok && r.errors[0] === 'changed', 'changed'); assert.deepStrictEqual(Q.list().map((t) => t.name), ['Good1']);
+      assert.strictEqual(fs.readdirSync(dir5).filter((x) => x.includes('.bad-')).length, 0, 'no set-aside file'); assert.ok(!Q.takeToast()); assert.ok(Q.put(tpl('After')).ok); n += 5;
+    } finally { try { fs.chmodSync(dir5, 0o700); } catch { /* gone */ } }
+  }
 } finally {
   fs.rmSync(root, { recursive: true, force: true });
 }

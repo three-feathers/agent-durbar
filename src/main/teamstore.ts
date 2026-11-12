@@ -208,20 +208,12 @@ export class TeamTemplateStore {
     return r;
   }
 
-  private loadFile(): void {
-    removeStaleTemps(this.file, { fs: this.fs, pid: this.pid, alive: this.alive }); // a dead process's temp may hold briefs
-    const r = this.readFile(); // only a second failure sets the file aside
-    const seen = this.seen(r);
-    this.fp = seen.kind === 'hash' ? seen.hash : undefined; // `undefined` equals nothing
-    if (!r.ok) {
-      if (r.code === 'missing') return;
-      this.setAside(); // too big, a link, a directory, unreadable twice: out of the way, the store starts empty
-      return;
-    }
+  /** The templates a file's bytes hold, and whether anything in it was bad (so the file must go aside). */
+  private parseDoc(buf: Buffer): { good: StoredTemplate[]; bad: boolean } {
     const good: StoredTemplate[] = [];
     let bad = false;
     try {
-      const text = new TextDecoder('utf-8', { fatal: true }).decode(r.buf); // bad UTF-8 throws: a bad file, never rewritten with U+FFFD; a BOM is stripped
+      const text = new TextDecoder('utf-8', { fatal: true }).decode(buf); // bad UTF-8 throws: a bad file, never rewritten with U+FFFD; a BOM is stripped
       let doc = JSON.parse(text) as Record<string, unknown> | null;
       // another format, a version that is not an integer, or a newer one: refused and set aside whole (FR-004, FR-093)
       const v = doc && typeof doc === 'object' ? doc.schemaVersion : undefined;
@@ -242,6 +234,20 @@ export class TeamTemplateStore {
     } catch {
       bad = true;
     }
+    return { good, bad };
+  }
+
+  private loadFile(): void {
+    removeStaleTemps(this.file, { fs: this.fs, pid: this.pid, alive: this.alive }); // a dead process's temp may hold briefs
+    const r = this.readFile(); // only a second failure sets the file aside
+    const seen = this.seen(r);
+    this.fp = seen.kind === 'hash' ? seen.hash : undefined; // `undefined` equals nothing
+    if (!r.ok) {
+      if (r.code === 'missing') return;
+      this.setAside(); // too big, a link, a directory, unreadable twice: out of the way, the store starts empty
+      return;
+    }
+    const { good, bad } = this.parseDoc(r.buf);
     if (!bad) { this.items = good; return; }
     this.items = good;
     if (this.setAside() && good.length > 0) this.commit(good); // the valid ones go on; the bad file keeps the rest
@@ -326,7 +332,14 @@ export class TeamTemplateStore {
    * the store reloads and answers `changed`, so that instance's templates are not lost, except two saves in the very same instant (no lock).
    */
   private commit(next: StoredTemplate[]): 'ok' | 'changed' | 'failed' {
-    if (this.blocked && !this.setAside()) return 'failed';
+    if (this.blocked) {
+      // blocked (a file that could not be read at the load, or a bad file that could not be moved): read it again BEFORE moving anything: a file that is
+      // readable and valid now (a folder permission came back) is reloaded and the save answers `changed`; only a file that is still bad is set aside
+      const r = this.readFile();
+      if (!r.ok && this.seen(r).kind === 'busy') return 'failed';
+      if (r.ok && !this.parseDoc(r.buf).bad) { this.blocked = false; this.load(); return 'changed'; }
+      if (!this.setAside()) return 'failed';
+    }
     const now = this.seenNow();
     if (now.kind === 'busy') return 'failed'; // still unreadable after the retry: an ordinary failed save; the file is left as it is, nothing is reloaded or set aside
     if (now.kind !== 'hash' || now.hash !== this.fp) { this.load(); return 'changed'; } // other bytes, or created, removed, a link, a folder, too big

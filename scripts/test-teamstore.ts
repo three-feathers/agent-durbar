@@ -15,9 +15,9 @@
  *   15..24 (second review, #1602): cut by code point, not grapheme; trailing joiners kept; no second read after a read error; decoder not fatal;
  *   no Windows rename retry; the retry on every platform; no fingerprint comparison; no pruning of set-aside files; folder mode 0755; isBlocked always false.
  *   25..27 (third review): prune filter loose; prune order by text; fingerprint taken after the read (since replaced by the hash mutant).
- *   27 became "hash taken after the read"; 28..31 (fourth review; 32, 33 fifth: the read before a save is not retried; the retry has no pause; 34, 35 sixth: a persistent read error still reloads; two unreadable reads compare as one hash; 36 seventh: a dangling link not seen, `existsSync` instead of `lstat`): size only, not the content; the file just set aside may be pruned; prune counts folders;
+ *   27 became "hash taken after the read"; 28..31 (fourth review; 32, 33 fifth: the read before a save is not retried; the retry has no pause; 34, 35 sixth: a persistent read error still reloads; two unreadable reads compare as one hash; 36 seventh: a dangling link not seen, `existsSync` instead of `lstat`; 37, 38 eighth: any lstat error counts as absent; a blocked store sets aside without reading again): size only, not the content; the file just set aside may be pruned; prune counts folders;
  *   one huge grapheme leaves only the suffix. (A fingerprint of size and mtime was replaced by a SHA-256 of the bytes: it missed a write in the same mtime tick.)
- *   The list below has 36 entries in all (the "no nameKey" mutant of 5 has two variants).
+ *   The list below has 38 entries in all (the "no nameKey" mutant of 5 has two variants).
  *   No `trimEnd` before the suffix: the validator already collapses a double space, so the name is the same (the test "no double space" shows it).
  */
 import assert from 'assert';
@@ -43,8 +43,10 @@ class MemFs {
   text(file: string): string | undefined { return this.files.get(file)?.data.toString('utf8'); }
   names(): string[] { return [...this.files.keys()].sort(); }
   mkdirSync(_d: string, o: { mode: number }): void { this.dirModes.push(o.mode); }
-  dirs = new Set<string>();
+  dirs = new Set<string>(); denied = false;
+  private deny(): void { if (this.denied) throw Object.assign(new Error('no permission'), { code: 'EACCES' }); }
   lstatSync(p: string): { isFile(): boolean } {
+    this.deny();
     if (this.dirs.has(p) || this.dangling.has(p)) return { isFile: () => false };
     if (!this.files.has(p)) throw Object.assign(new Error('missing'), { code: 'ENOENT' });
     return { isFile: () => true };
@@ -61,7 +63,7 @@ class MemFs {
   }
   fsyncs: string[] = []; log: string[] = [];
   fsyncFile(file: string): void { this.fsyncs.push(file); this.log.push('fsync ' + file); }
-  readdirSync(dir: string): string[] { return [...this.names(), ...this.dirs, ...this.dangling].filter((x) => path.dirname(x) === dir).map((x) => path.basename(x)); }
+  readdirSync(dir: string): string[] { this.deny(); return [...this.names(), ...this.dirs, ...this.dangling].filter((x) => path.dirname(x) === dir).map((x) => path.basename(x)); }
   renameSync(from: string, to: string): void {
     this.renames.push([from, to]); this.log.push('rename ' + from);
     if (this.failRename && to === F) throw Object.assign(new Error('rename'), { code: 'EPERM' });
@@ -73,6 +75,7 @@ class MemFs {
   }
   rmSync(p: string): void { this.files.delete(p); this.dirs.delete(p); this.dangling.delete(p); }
   openSync(file: string): number {
+    this.deny();
     if (this.dangling.has(file)) throw Object.assign(new Error('loop'), { code: 'ELOOP' });
     if (!this.files.has(file)) throw Object.assign(new Error('missing'), { code: 'ENOENT' });
     if (this.openFails > 0 && file === F) { this.openFails--; throw Object.assign(new Error('held'), { code: 'EBUSY' }); }
@@ -400,6 +403,22 @@ const sections: Record<string, Section> = {
     const m3 = new MemFs(); const s3 = make(m3, api); s3.put(tpl()); m3.files.delete(F); m3.dangling.add(F);
     const r = s3.put(tpl('Two')); ok(!r.ok && r.errors[0] === 'changed', 'a link under a running store: changed'); ok(!m3.dangling.has(F), 'link set aside'); ok(s3.put(tpl('Three')).ok, 'then saves');
   },
+  blockedReread(api) {
+    // the folder has no search permission at the start: the store is blocked, no toast; when the permission is back, the GOOD file is reloaded, never set aside
+    const text = doc(stored('good1', 'Good1'));
+    const m = new MemFs(); m.set(F, text); m.denied = true; const s = make(m, api);
+    ok(s.isBlocked(), 'blocked at the start'); ok(!s.takeToast(), 'no toast'); eq(s.list(), [], 'nothing listed'); ok(!s.put(tpl('After')).ok, 'put fails while the permission is out'); eq(m.text(F), text, 'file untouched');
+    m.denied = false;
+    const r = s.put(tpl('After')); ok(!r.ok && r.errors[0] === 'changed', 'the first save after the permission is back answers changed'); eq(s.list().map((t) => t.name), ['Good1'], 'Good1 is in the list');
+    eq(badNames(m).length, 0, 'no set-aside file'); ok(!s.takeToast(), 'no toast'); ok(!s.isBlocked(), 'no longer blocked'); eq(m.text(F), text, 'file untouched');
+    ok(s.put(tpl('After')).ok, 'the second save works'); eq(make(m, api).list().map((t) => t.name), ['Good1', 'After'], 'both on disk');
+    // a bad file that could not be moved and is still bad when the move works: set aside, then the save goes through (as before)
+    const m2 = new MemFs(); m2.set(F, '{broken'); m2.denied = false; let down = true; const orig = m2.renameSync.bind(m2);
+    m2.renameSync = (a: string, b: string): void => { if (down && a === F) throw Object.assign(new Error('x'), { code: 'EXDEV' }); orig(a, b); };
+    const s2 = make(m2, api); ok(s2.isBlocked(), 'blocked'); down = false; ok(s2.put(tpl('Fresh')).ok, 'still-bad file is set aside and the save works'); eq(badNames(m2).length, 1, 'one bad file');
+    // while the file stays unreadable the save just fails
+    const m3 = new MemFs(); m3.set(F, text); m3.denied = true; const s3 = make(m3, api); ok(!s3.put(tpl('X')).ok, 'fails'); ok(!s3.put(tpl('Y')).ok, 'fails again'); m3.denied = false; eq(badNames(m3).length, 0, 'nothing set aside meanwhile');
+  },
   longGrapheme(api) {
     const m = new MemFs(); const s = make(m, api); const name = 'a' + '\u0301'.repeat(39);
     const t = s.put(tpl(name)); ok(t.ok, 'a name that is one grapheme'); if (!t.ok) return;
@@ -455,7 +474,7 @@ const mutants: { name: string; from: string; to: string; breaks: string }[] = [
   { name: 'put without validation', from: 'const r = (0, teamtemplate_1.checkTeamTemplate)(value, \'own\');', to: 'const r = { ok: true, template: value, ignored: 0 };', breaks: 'putInvalid' },
   { name: 'put takes the origin of the value', from: "origin: cur ? cur.origin : imported ? 'imported' : 'own'", to: "origin: cur ? cur.origin : (t.origin ?? (imported ? 'imported' : 'own'))", breaks: 'basics' },
   { name: 'no fsync before the rename', from: 'this.fs.fsyncFile(tmp);', to: '', breaks: 'fsyncBeforeRename' },
-  { name: 'blocked check removed', from: 'if (this.blocked && !this.setAside())\n            return \'failed\';', to: '', breaks: 'brokenSetAside' },
+  { name: 'blocked check removed', from: 'if (!this.setAside())\n                return \'failed\';', to: '', breaks: 'brokenSetAside' },
   { name: 'old version key accepted (format not checked)', from: 'doc.format === FORMAT && ', to: '', breaks: 'brokenSetAside' },
   { name: 'a newer schemaVersion accepted', from: 'v <= exports.SCHEMA_VERSION', to: 'v <= 99', breaks: 'brokenSetAside' },
   { name: 'duplicate cut by code point, not grapheme', from: 'const base = graphemes(src.name);', to: 'const base = Array.from(src.name);', breaks: 'duplicateNames' },
@@ -478,6 +497,8 @@ const mutants: { name: string; from: string; to: string; breaks: string }[] = [
   { name: 'a persistent read error still reloads (and sets the good file aside)', from: "if (now.kind === 'busy')\n            return 'failed';", to: '', breaks: 'unreadableSave' },
   { name: 'two unreadable reads compare as one hash', from: "{ kind: 'busy' }", to: "{ kind: 'hash', hash: 'unreadable' }", breaks: 'unreadableSave' },
   { name: 'existsSync (follows a link) instead of lstat', from: 'this.fs.lstatSync(p);\n            return true;', to: 'this.fs.statSync(p);\n            return true;', breaks: 'danglingLink' },
+  { name: 'any lstat error counts as absent', from: "if (e?.code === 'ENOENT')\n                return false;\n            throw e;", to: 'return false;', breaks: 'blockedReread' },
+  { name: 'a blocked store sets the file aside without reading it again', from: 'if (r.ok && !this.parseDoc(r.buf).bad) {', to: 'if (false) {', breaks: 'blockedReread' },
   { name: 'one huge grapheme leaves only the suffix', from: 'head.length === 0)', to: 'false)', breaks: 'longGrapheme' },
   { name: 'isBlocked always false', from: 'isBlocked() { return this.blocked; }', to: 'isBlocked() { return false; }', breaks: 'blockedFlag' },
   { name: 'stale temps not removed', from: '(0, schedules_1.removeStaleTemps)(this.file,', to: '(() => undefined)(this.file,', breaks: 'staleTemps' },
