@@ -14,7 +14,8 @@
  *   8..14 (first review): put takes the value's origin; no fsync; blocked check removed; format not checked; newer schemaVersion accepted; stale temps not removed.
  *   15..24 (second review, #1602): cut by code point, not grapheme; trailing joiners kept; no second read after a read error; decoder not fatal;
  *   no Windows rename retry; the retry on every platform; no fingerprint comparison; no pruning of set-aside files; folder mode 0755; isBlocked always false.
- *   The list below has 24 entries in all (the "no nameKey" mutant of 5 has two variants).
+ *   25..27 (third review): prune filter loose; prune order by text; fingerprint taken after the read.
+ *   The list below has 27 entries in all (the "no nameKey" mutant of 5 has two variants).
  *   No `trimEnd` before the suffix: the validator already collapses a double space, so the name is the same (the test "no double space" shows it).
  */
 import assert from 'assert';
@@ -78,7 +79,8 @@ class MemFs {
     const k = Math.max(0, Math.min(len, f.data.length - pos));
     f.data.copy(buf, off, pos, pos + k); this.bytesRead += k; return k;
   }
-  closeSync(fd: number): void { this.fds.delete(fd); }
+  afterRead: (() => void) | undefined;
+  closeSync(fd: number): void { const f = this.fds.get(fd); this.fds.delete(fd); if (f === F && this.afterRead) { const h = this.afterRead; this.afterRead = undefined; h(); } }
 }
 
 const KEYS = { O_RDONLY: 0 };
@@ -316,6 +318,24 @@ const sections: Record<string, Section> = {
     const texts = names.map((x) => m.text(x)).sort(); eq(texts, ['{bad 3', '{bad 4', '{bad 5', '{bad 6', '{bad 7'], 'the oldest were removed');
     m.set(`${ROOT}${path.sep}notes.bad-1.json`, 'x'); m.set(F, '{bad 9'); new api.TeamTemplateStore(F, { fs: m, flags: KEYS, now: () => 1_700_000_100_000, pause: () => undefined }); ok(m.files.has(`${ROOT}${path.sep}notes.bad-1.json`), 'other files are not touched');
   },
+  pruneStrict(api) {
+    const m = new MemFs(); const S = new Date(1_700_000_000_000).toISOString().replace(/[:.]/g, '-'); const nm = (suffix: string): string => path.join(ROOT, `team-templates.bad-${S}${suffix}.json`);
+    for (const x of ['', '-2', '-3', '-4', '-5', '-6', '-10']) m.set(nm(x), 'old' + x);
+    const near = ['team-templates.bad-.json', 'team-templates.bad-notes.json', 'team-templates.badger.json', `team-templates.bad-${S}.json.keep`, 'team-templates.bad-x.txt', 'team-templates.bad-9999-99-99T99-99-99-999Z.json.bak'].map((x) => path.join(ROOT, x));
+    for (const x of near) m.set(x, 'keep');
+    m.set(F, '{bad now'); new api.TeamTemplateStore(F, { fs: m, flags: KEYS, now: () => 1_700_000_000_000, pause: () => undefined });
+    for (const x of near) ok(m.files.has(x), 'untouched: ' + path.basename(x));
+    const left = badNames(m).filter((x) => /Z(-\d+)?\.json$/.test(x)).map((x) => path.basename(x).slice(`team-templates.bad-${S}`.length, -5)).sort();
+    eq(left, ['-10', '-4', '-5', '-6', '-7'], 'newest 5 by time then number: -10 comes after -2 and -7; names that only look alike do not count');
+  },
+  lateWrite(api) {
+    // another instance writes the file after this one has read it (before the fingerprint would be taken, if it were taken after the read)
+    const m = new MemFs(); m.set(F, doc(stored('late0', 'Before')));
+    m.afterRead = (): void => { m.set(F, doc(stored('late0', 'Before'), stored('late1', 'Late from the other'))); };
+    const s = make(m, api); eq(s.list().map((t) => t.name), ['Before'], 'read what was there');
+    const r = s.put(tpl('Mine')); ok(!r.ok && r.errors[0] === 'changed', 'a write between the read and the fingerprint is seen: changed');
+    ok(m.text(F)!.includes('Late from the other') && !m.text(F)!.includes('Mine'), 'the other one is not lost'); eq(s.list().map((t) => t.name), ['Before', 'Late from the other'], 'reloaded');
+  },
   blockedFlag(api) {
     const m = new MemFs(); m.set(F, '{broken'); let down = true;
     const orig = m.renameSync.bind(m); m.renameSync = (a: string, b: string): void => { if (down && a === F) throw Object.assign(new Error('x'), { code: 'EXDEV' }); orig(a, b); };
@@ -368,8 +388,11 @@ const mutants: { name: string; from: string; to: string; breaks: string }[] = [
   { name: 'no Windows rename retry', from: "this.platform === 'win32' && ", to: 'false && ', breaks: 'winRename' },
   { name: 'Windows retry on every platform', from: "this.platform === 'win32' && ", to: '', breaks: 'winRename' },
   { name: 'no fingerprint comparison before a save', from: 'if (this.fingerprint() !== this.fp)', to: 'if (false)', breaks: 'twoInstances' },
-  { name: 'old set-aside files not pruned', from: 'names.slice(0, Math.max(0, names.length - exports.KEEP_BAD))', to: '[]', breaks: 'pruneBad' },
+  { name: 'old set-aside files not pruned', from: 'found.slice(0, Math.max(0, found.length - exports.KEEP_BAD))', to: '[]', breaks: 'pruneBad' },
   { name: 'folder made with mode 0755', from: 'recursive: true, mode: 0o700', to: 'recursive: true, mode: 0o755', breaks: 'fileMode' },
+  { name: 'prune filter loose (prefix and extension only)', from: 're.exec(name)', to: "(name.startsWith('team-templates.bad-') && name.endsWith('.json') ? [name, name.slice(19, -5), undefined] : null)", breaks: 'pruneStrict' },
+  { name: 'prune order by text, -10 before -2', from: 'x.n - y.n', to: '(String(x.n) < String(y.n) ? -1 : 1)', breaks: 'pruneStrict' },
+  { name: 'fingerprint taken after the read', from: 'this.fp = this.fingerprint();\n        this.loadFile();', to: 'this.loadFile();\n        this.fp = this.fingerprint();', breaks: 'lateWrite' },
   { name: 'isBlocked always false', from: 'isBlocked() { return this.blocked; }', to: 'isBlocked() { return false; }', breaks: 'blockedFlag' },
   { name: 'stale temps not removed', from: '(0, schedules_1.removeStaleTemps)(this.file,', to: '(() => undefined)(this.file,', breaks: 'staleTemps' },
   { name: 'load at level imported', from: '(0, teamtemplate_1.checkTeamTemplate)(raw, \'own\')', to: '(0, teamtemplate_1.checkTeamTemplate)(raw, \'imported\')', breaks: 'importedFileLoads' },

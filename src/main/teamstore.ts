@@ -177,9 +177,13 @@ export class TeamTemplateStore {
 
   // ------------------------------------------------------------------------------------------------------------------ disk
 
+  /**
+   * The fingerprint is taken BEFORE the read: a file another instance writes while this one reads it is then seen as changed at the next save
+   * (`setAside` and `commit` set it again themselves, after their own change).
+   */
   private load(): void {
-    this.loadFile();
     this.fp = this.fingerprint();
+    this.loadFile();
   }
 
   /** `size:mtimeMs` of the file, `none` when it is not there. */
@@ -256,12 +260,19 @@ export class TeamTemplateStore {
     }
   }
 
-  /** Each set-aside file may hold briefs: the newest `KEEP_BAD` stay (the time in the name sorts), the older ones are removed. */
+  /**
+   * Each set-aside file may hold briefs: the newest `KEEP_BAD` stay, the older ones are removed. Only names `setAside` makes are
+   * touched (`<name>.bad-<UTC time as YYYY-MM-DDTHH-MM-SS-mmmZ>[-<n>]<ext>`); the order is the time, then `n` as a number (-10 after -2).
+   */
   private pruneBad(stem: string, ext: string): void {
     try {
-      const dir = path.dirname(this.file), head = path.basename(stem) + '.bad-';
-      const names = this.fs.readdirSync(dir).filter((n) => n.startsWith(head) && n.endsWith(ext)).sort((a, b) => (a.slice(0, a.length - ext.length) < b.slice(0, b.length - ext.length) ? -1 : 1));
-      for (const n of names.slice(0, Math.max(0, names.length - KEEP_BAD))) { try { this.fs.rmSync(path.join(dir, n), { force: true }); } catch { /* next time */ } }
+      const esc = (t: string): string => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const re = new RegExp(`^${esc(path.basename(stem))}\\.bad-(\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}-\\d{3}Z)(?:-(\\d+))?${esc(ext)}$`);
+      const dir = path.dirname(this.file);
+      const found: { name: string; at: string; n: number }[] = [];
+      for (const name of this.fs.readdirSync(dir)) { const m = re.exec(name); if (m) found.push({ name, at: m[1], n: m[2] ? Number(m[2]) : 1 }); }
+      found.sort((x, y) => (x.at < y.at ? -1 : x.at > y.at ? 1 : x.n - y.n));
+      for (const f of found.slice(0, Math.max(0, found.length - KEEP_BAD))) { try { this.fs.rmSync(path.join(dir, f.name), { force: true }); } catch { /* next time */ } }
     } catch { /* best effort */ }
   }
 
