@@ -196,7 +196,8 @@ export async function buildScope(d: ScopeDeps, stop: () => boolean = () => false
       if (!ad?.listPreviousSessions) continue;
       let list: PreviousSession[];
       try {
-        const listing = (): Promise<PreviousSession[]> => previousSessionsOf(ad, a.cwd, openIds);
+        let started = false; // this scan's call ran (it was not shared): only then is the list excluding this scan's open ids kept
+        const listing = (): Promise<PreviousSession[]> => { started = true; return previousSessionsOf(ad, a.cwd, openIds); };
         if (adapter === 'codex') {
           // owner answer C: a folder on a floor that is off starts no app-server; it is counted instead
           if (off) { floorOffFolders++; continue; }
@@ -209,7 +210,8 @@ export async function buildScope(d: ScopeDeps, stop: () => boolean = () => false
             if (clock() >= deadline) { late(d.appName(adapter)); continue; } // past the plan's deadline: not started
             const r = await inTime(d.gate.run(`list\0${key}`, listing, CODEX_LIST_GATE_MS) as Promise<PreviousSession[]>);
             if (r === LATE) { late(d.appName(adapter)); continue; } // given up: not kept
-            d.codexLists?.set(key, ids, r, at); // as listed: it holds no scan's open ids, the filter below is this scan's own
+            // a listing leaves out the open ids of the scan that started it, so only that scan keeps it, under its own ids (review of PR 1232, round 2)
+            if (started) d.codexLists?.set(key, ids, r, at);
             list = r.filter((s) => !openIds.has(s.id)); // shared with an earlier scan's call: a session resumed since is open now
           }
         } else {

@@ -89,6 +89,7 @@ async function main(): Promise<void> {
     for (const v of [undefined, null, 42, ['abc'], { q: 'abc' }]) assert.deepStrictEqual(cleanQuery(v), { ok: false, code: 'invalid' });
     assert.strictEqual(SHORT, 'Type at least 3 characters.');
     // review of the phase 2 code (FR-033): hidden format characters are control characters too: removed (gluing, not spacing), never echoed
+    for (const sp of ['\u202f', '\u2009', '\u2028', '\u2029', '\u200a', '\u205f', '\u2006', '\u2008', '\n', '\u00a0']) assert.strictEqual(ok(`invoice${sp}export`).query, 'invoice export', `U+${sp.charCodeAt(0).toString(16)} between two words is a space, not nothing`);
     short('\u200b\u200b\u200b');
     short('\u202e\u202e\u202e');
     short('\u2060\u00ad\ufeff');
@@ -757,6 +758,65 @@ async function main(): Promise<void> {
     assert.ok(b.plan.sessions.some((x) => x.sessionId === 'th2' && x.group === 'office'));
   }
 
+  // round 2 (FR-026): a scan that only shared a listing keeps nothing; the kept list is the starting scan's, under its own ids
+  stage = 'scope kept list after a shared call';
+  {
+    const ag = (id: string, cwd: string): AgentInfo => ({ id, name: path.basename(cwd), cwd, folders: [cwd], permMode: 'read-only', adapterId: 'codex' } as AgentInfo);
+    const agents = new Map<string, AgentInfo>([['x1', ag('x1', '/c')], ['s1', ag('s1', '/c')]]);
+    let release!: () => void;
+    let held: Promise<void> | undefined = new Promise<void>((r) => { release = r; });
+    let started = 0;
+    const all = [{ id: 'th1', title: 'one', startTime: 1, modifiedTime: 2 }, { id: 's1', title: 'was open', startTime: 1, modifiedTime: 3 }];
+    const adapter = { id: 'codex', isLive: () => false, listPreviousSessions: async (_cwd: string, exclude: ReadonlySet<string>) => { started++; await held; return all.filter((p) => !exclude.has(p.id)); } };
+    const gate = createReadGate<unknown>();
+    const kept = createCodexListCache();
+    const mk = (): ScopeDeps => ({
+      agents, router: { forAgent: () => adapter as never, adapterIdOf: () => 'codex' }, wsKey: (a: AgentInfo) => a.cwd, resumeIdFor: (id: string) => id, appName: () => 'Codex', vsUserDirs: () => [],
+      values: { knownSecretValues: () => [], noPrompt: () => true, secretValuesFor: () => [] }, gate, codexLists: kept,
+      listChats: (async () => ({ sessions: [], storesFound: 0, unreadable: 0, tooLarge: 0 })) as never,
+    });
+    const earlier = (sc: Awaited<ReturnType<typeof buildScope>>): string[] => sc.plan.sessions.filter((x) => x.group === 'earlier').map((x) => x.sessionId).sort();
+    const one = buildScope(mk()); // open: x1, s1
+    await settle(20);
+    agents.delete('s1'); // s1 leaves the office while the listing is held
+    kept.clear();
+    const two = buildScope(mk()); // shares the call
+    await settle(20);
+    assert.strictEqual(started, 1);
+    release();
+    held = undefined;
+    await Promise.all([one, two]);
+    const three = await buildScope(mk());
+    assert.deepStrictEqual(earlier(three), ['s1', 'th1'], 'the session that left shows as earlier: the list kept by the sharing scan did not hide it');
+  }
+
+  // round 2 (FR-026): the same filter for a shared non-Codex listing: a session resumed while the listing is held is open, not earlier
+  stage = 'scope shared Claude listing';
+  {
+    const ag = (id: string): AgentInfo => ({ id, name: 'one', cwd: '/cl', folders: ['/cl'], permMode: 'read-only', adapterId: 'claude' } as AgentInfo);
+    const agents = new Map<string, AgentInfo>([['k1', ag('k1')]]);
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
+    let started = 0;
+    const adapter = { id: 'claude', isLive: () => false, listPreviousSessions: async (_cwd: string, exclude: ReadonlySet<string>) => { started++; await held; return [{ id: 'cp1', title: 'a', startTime: 1, modifiedTime: 2 }, { id: 'cp2', title: 'b', startTime: 1, modifiedTime: 3 }].filter((p) => !exclude.has(p.id)); } };
+    const listings = new Map<string, Promise<unknown>>();
+    const mk = (): ScopeDeps => ({
+      agents, router: { forAgent: () => adapter as never, adapterIdOf: () => 'claude' }, wsKey: (a: AgentInfo) => a.cwd, resumeIdFor: (id: string) => id, appName: () => 'Claude Code', vsUserDirs: () => [], listings,
+      values: { knownSecretValues: () => [], noPrompt: () => true, secretValuesFor: () => [] }, gate: { run: (_k: string, fn: () => Promise<unknown>) => fn() },
+      listChats: (async () => ({ sessions: [], storesFound: 0, unreadable: 0, tooLarge: 0 })) as never,
+    });
+    const first = buildScope(mk());
+    await settle(20);
+    agents.set('cp2', ag('cp2')); // cp2 is resumed while the listing is held
+    const second = buildScope(mk());
+    await settle(20);
+    assert.strictEqual(started, 1, 'shared');
+    release();
+    const [a, b] = await Promise.all([first, second]);
+    const earlier = (sc: Awaited<ReturnType<typeof buildScope>>): string[] => sc.plan.sessions.filter((x) => x.group === 'earlier').map((x) => x.sessionId).sort();
+    assert.deepStrictEqual([earlier(a), earlier(b)], [['cp1', 'cp2'], ['cp1']], 'the second scan filters its own open ids');
+  }
+
   // ---- source checks (FR-025, FR-032, FR-033)
 
   stage = 'source checks';
@@ -783,6 +843,7 @@ async function main(): Promise<void> {
     // main.ts hands over main's own state and stops the scan on window close and quit
     const mainSrc = read('src/main/main.ts');
     assert.ok(/registerConvSearchIpc\(\{/.test(mainSrc) && /hasSessions: \(\) => agents\.size > 0/.test(mainSrc), 'main.ts registers the search with its own agents');
+    assert.ok(/const convListings = new Map<string, Promise<unknown>>\(\)/.test(mainSrc) && /gate: convGate, codexLists, listings: convListings,/.test(mainSrc), 'main.ts passes its one map of running listings to every scan (FR-022)');
     assert.ok(/noPrompt: \(\) => !mcpStore \|\| mcpStore\.noPrompt\(\)/.test(mainSrc) && /knownSecretValues: \(key\) => mcpStore\?\.knownSecretValues\(key\) \?\? \[\]/.test(mainSrc), 'MCP values without a prompt, as NotesOps; no store yet means nothing is locked (review of PR 1232, Q1: as valuesPending, `!!mcpStore && ...`)');
     {
       // Q1: the wiring's own expression, run: no store yet is "nothing locked" (the note says nothing), a store that would prompt is locked
@@ -809,7 +870,7 @@ async function main(): Promise<void> {
     (globalThis as unknown as { window: unknown }).window = { DurbarSafeText: require('../src/shared/redact') }; // eslint-disable-line @typescript-eslint/no-require-imports
     // eslint-disable-next-line @typescript-eslint/no-implied-eval
     const simClean = new Function(js + '\nreturn simCleanQuery;')() as typeof cleanQuery;
-    const corpus: unknown[] = ['a bc', 'x y', '', '  ab ', 'invoice export', 'a\u0000b\u0000c', 'one two three four five six seven eight nine', 'x'.repeat(250), '\u{1F600}'.repeat(205), 'word '.repeat(300), 'é ü', 'éx', 42, null, '\u200b\u200b\u200b', '\u202e\u202e\u202e', 'a\u200bb', 'a\u200bbc', 'inv\u00adoice', '\u202einvoice\u2060 export'];
+    const corpus: unknown[] = ['a bc', 'x y', '', '  ab ', 'invoice export', 'a\u0000b\u0000c', 'one two three four five six seven eight nine', 'x'.repeat(250), '\u{1F600}'.repeat(205), 'word '.repeat(300), 'é ü', 'éx', 42, null, '\u200b\u200b\u200b', '\u202e\u202e\u202e', 'a\u200bb', 'a\u200bbc', 'inv\u00adoice', '\u202einvoice\u2060 export', 'invoice\u202fexport', 'invoice\u2009export', 'invoice\u2028export', 'invoice\nexport'];
     for (const q of corpus) assert.deepStrictEqual(simClean(q), cleanQuery(q), `the simulator answers ${JSON.stringify(q)?.slice(0, 40)} as main does`);
     (globalThis as unknown as { window: unknown }).window = {};
     assert.deepStrictEqual(simClean('invoice'), { ok: false, code: 'invalid' }, 'the simulator without the shared unhide fails closed');
