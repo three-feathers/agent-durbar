@@ -79,7 +79,8 @@ function bitmapOf(img) {
   return { iw, ih, b };
 }
 /** The painted box of each part of each marked plate in a capture, measured in device pixels, given in CSS px (device / (capture width / view width)).
- *  A box spans only rows and columns with 2 or more of its pixels and needs 6 pixels in all, so stray picture pixels cannot make or grow one. */
+ *  A part is its 4-connected blobs of its colour that hold at least a tenth of its largest blob's pixels (and 6 pixels): a marked box is one solid
+ *  block, so picture pixels of a near colour cannot grow it (review of PR 1555: two neon-cyan arcade pixels 130 px away had stretched a name by 9 px). */
 function marks(img, vw) {
   const { iw, ih, b } = bitmapOf(img), s = iw / vw, acc = {};
   for (let y = 0; y < ih; y++) for (let x = 0; x < iw; x++) {
@@ -87,14 +88,25 @@ function marks(img, vw) {
     if (!f) continue;
     const k = Math.round(f[1] / 16);
     if (k < 1 || k > 15 || Math.abs(16 * k - f[1]) > 6) continue;
-    const a = acc[f[0] + ':' + k] || (acc[f[0] + ':' + k] = { cols: new Map(), rows: new Map(), n: 0 });
-    a.cols.set(x, (a.cols.get(x) || 0) + 1); a.rows.set(y, (a.rows.get(y) || 0) + 1); a.n++;
+    (acc[f[0] + ':' + k] || (acc[f[0] + ':' + k] = [])).push(y * iw + x);
   }
   const out = {};
-  for (const [key, a] of Object.entries(acc)) {
-    const xs = [...a.cols].filter(([, c]) => c >= 2).map(([x]) => x), ys = [...a.rows].filter(([, c]) => c >= 2).map(([y]) => y);
-    if (a.n < 6 || !xs.length || !ys.length) continue;
-    out[key] = { x: Math.min(...xs) / s, y: Math.min(...ys) / s, r: (Math.max(...xs) + 1) / s, b: (Math.max(...ys) + 1) / s, n: a.n };
+  for (const [key, list] of Object.entries(acc)) {
+    const left = new Set(list), blobs = [];
+    for (const p0 of list) {
+      if (!left.has(p0)) continue;
+      left.delete(p0);
+      const q = [p0], blob = { x: 1e9, y: 1e9, r: -1, b: -1, n: 0 };
+      while (q.length) {
+        const p = q.pop(), x = p % iw, y = (p - x) / iw;
+        blob.n++; if (x < blob.x) blob.x = x; if (y < blob.y) blob.y = y; if (x + 1 > blob.r) blob.r = x + 1; if (y + 1 > blob.b) blob.b = y + 1;
+        for (const nb of [x > 0 ? p - 1 : -1, x < iw - 1 ? p + 1 : -1, p - iw, p + iw]) if (nb >= 0 && left.has(nb)) { left.delete(nb); q.push(nb); }
+      }
+      blobs.push(blob);
+    }
+    const big = Math.max(...blobs.map((o) => o.n)), keep = blobs.filter((o) => o.n >= big / 10 && o.n >= 6);
+    if (!keep.length) continue;
+    out[key] = { x: Math.min(...keep.map((o) => o.x)) / s, y: Math.min(...keep.map((o) => o.y)) / s, r: Math.max(...keep.map((o) => o.r)) / s, b: Math.max(...keep.map((o) => o.b)) / s, n: keep.reduce((t, o) => t + o.n, 0) };
   }
   return out;
 }
@@ -244,6 +256,7 @@ module.exports = async (ctx) => {
         if (!pen || i === focusMark) continue; /* not painted (hidden while its plate eases) */
         for (const p of ['name', 'role', 'status']) if (f.m[p + ':' + i] && overlap(pen, f.m[p + ':' + i])) bad.push(`${f.t} ms plate ${i}: the pencil ${JSON.stringify(rd(pen))} over its ${p} ${JSON.stringify(rd(f.m[p + ':' + i]))}`);
       }
+      if (bad.length) log(tag, 'painted over:', bad.slice(0, 8).join('; '));
       assert.deepStrictEqual(bad, [], `${tag}: no pencil is painted over its plate's name, role or status while the plates ease`);
       }
       /* a half-shown pencil blends and matches no colour: the page's opacity reads cover it */
