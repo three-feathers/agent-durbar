@@ -513,7 +513,8 @@ async function driver(ctx) {
       document.querySelectorAll('#stage .ro-away').forEach((e) => add('away', e));
       document.querySelectorAll('#stage .ro-screen .ro-bezel').forEach((e) => add('screen', e));
       for (const z of L.zones) for (const d of z.desks) if (d.person) add('face', null, { x: o.left + d.person.vis.x, y: o.top + d.person.vis.y, r: o.left + d.person.vis.x + d.person.vis.w, b: o.top + d.person.vis.y + Math.min(d.person.vis.h, L.faceH * 1.2) });
-      /* spec 097 FR-316 (issue #1511): a lounge seat's person (the picture's box from its top to the plate's top, where the plate stands in front of the lap, less 12% of its width at each side where the picture is empty) is a box for the Draft tag only: the tag must not cover the figure. Mutant (a source edit): in src/renderer/realoffice.js the `dr:` tag's box, drop `d.lounge ? { x: d.screen.x, y: d.screen.y } :`, build, run: it must fail "drafttag Draft overlaps figure <id>" at 12 and 15 agents */
+      /* spec 097 FR-316 (issue #1511): a lounge seat's person (the picture's box from its top to the plate's top, where the plate stands in front of the lap, less 12% of its width at each side where the picture is empty) is a box for the Draft tag only: the tag must not cover the figure. Mutant (a source edit): in src/renderer/realoffice.js the `dr:` tag's box, drop `d.lounge ? { x: d.screen.x, y: d.screen.y } :`, build, run: it must fail "drafttag Draft overlaps figure <id>" at 12 and 15 agents; second mutant (every seat but the first): `d.lounge ? ` becomes `d.lounge && lay.lounge.desks[0].id === k ? `, it must fail the same label at 15 agents only */
+      if (L.lounge) for (const d of L.lounge.desks) if (!document.querySelector('#stage .ro-drafttag.on[data-for="' + d.id + '"]')) P.push('lounge seat ' + d.id + ' has no Draft tag'); /* every seat is drafted by the seeding: the check below would otherwise pass for a seat with no tag */
       if (L.lounge) for (const d of L.lounge.desks) if (d.person) { const p = d.person, m = 0.12 * p.w; add('figure', null, { x: o.left + p.x + m, y: o.top + p.y, r: o.left + p.x + p.w - m, b: o.top + Math.min(p.y + p.h, d.plate.y) }, d.id); }
       const hit = (a, b) => a.x + 0.5 < b.r && b.x + 0.5 < a.r && a.y + 0.5 < b.b && b.y + 0.5 < a.b;
       for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
@@ -556,7 +557,7 @@ async function driver(ctx) {
       const se = document.scrollingElement;
       if (se.scrollWidth > innerWidth + 1 || se.scrollHeight > innerHeight + 1) P.push('the page overflows');
       if (amb != null) ro.style.removeProperty('--ro-amb');
-      return { problems: P, info: { plates: document.querySelectorAll('#stage .ro-plate').length, face: L.faceH, u: L.u, scroll: L.scroll, minFont, minRatio, drafts: document.querySelectorAll('#stage .ro-drafttag.on').length } };
+      return { problems: P, info: { plates: document.querySelectorAll('#stage .ro-plate').length, face: L.faceH, u: L.u, scroll: L.scroll, minFont, minRatio, drafts: document.querySelectorAll('#stage .ro-drafttag.on').length, seats: L.lounge ? L.lounge.desks.length : 0 } };
     };
     /* simrooms=1: one folder of 15, split over rows (its sign repeats); simrooms=solo: 15 folders, past the exhaustive search */
     for (const [sim, rooms] of [[3, ''], [12, ''], [15, ''], [15, '1'], [15, 'solo']]) for (const [w, h] of SIZES) {
@@ -574,10 +575,10 @@ async function driver(ctx) {
       }
       /* spec 097 FR-316 (issue #1149): unsent drafts on four desks (the narrowest plate also has a New reply tag, so both tags sit above it) and on a lounge seat when there is one: the Draft tag's box is checked against plates, tags, faces and screens at every size */
       const order = await ctx.js(`[...document.querySelectorAll('#stage .ro-plate')].filter(p=>p.getClientRects().length).sort((a,b)=>a.getBoundingClientRect().width-b.getBoundingClientRect().width).map(p=>p.dataset.id)`);
-      const picks = order.slice(0, 4), lounge = await ctx.js(`(()=>{const l=window.__durbarSimUi.realLayout().lounge;return l&&l.desks.length?l.desks[0].id:null})()`);
+      const picks = order.slice(0, 4), lounge = await ctx.js(`(()=>{const l=window.__durbarSimUi.realLayout().lounge;return l?l.desks.map((d)=>d.id):[]})()`); /* every lounge seat (spec 097 FR-316, issue #1511), not only the first */
       const marks = { narrow: order[0] || null, rest: picks.length - 1, lounge };
-      console.log(`  ${tag}: drafts on ${picks.length} desks${lounge ? ' and the lounge seat ' + lounge : ' (no lounge row)'}, New reply on ${marks.narrow}`);
-      for (const id of lounge ? [...picks, lounge] : picks) {
+      console.log(`  ${tag}: drafts on ${picks.length} desks${lounge.length ? ' and ' + lounge.length + ' lounge seat' + (lounge.length > 1 ? 's ' : ' ') + lounge.join(', ') : ' (no lounge row)'}, New reply on ${marks.narrow}`);
+      for (const id of new Set([...picks, ...lounge])) {
         const sel = `#stage .ro-plate[data-id="${id}"]`;
         await ctx.js(`(document.querySelector(${jsLiteral(sel)})||{click(){}}).click()`);
         if (!(await H.until(`document.body.classList.contains('panel-open')&&!!document.getElementById('msgInput')`, 8000))) continue;
@@ -605,6 +606,7 @@ async function driver(ctx) {
       await stable(tag + ' with drafts');
       for (const [step, amb] of [['closed', 0.7], ['closed', 1]]) {
         const res = await ctx.js(`(${realCheck.toString()})(${amb},${jsLiteral(wantWorld)})`);
+        if (amb === 1 && res.info.seats) console.log(`  ${tag}: ${res.info.seats} lounge seat${res.info.seats > 1 ? 's' : ''}, each with its Draft tag measured against its own figure`);
         if (!res.info.drafts) res.problems.push('no Draft tag was in the checked layout');
         total++;
         if (sim === 15 && res.info.scroll) res.problems.push('the office scrolls at the 15-agent scale');
