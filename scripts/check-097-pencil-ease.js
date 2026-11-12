@@ -11,10 +11,13 @@
  *     early      the hold ends at 30 % of the ease: "no pencil is painted over …" (the opacity label when the painted check is skipped)
  *     skew       the hold a time of its own that ends 40 ms before its plate's ease (the race seen in the cave, review of PR 1555): the opacity label
  *     focushide  the focused pencil hidden too: "the focused pencil stays shown (opacity 1) while its plate eases"
+ *     hover      the pointer left on a working plate before the end frame: "no hover card is open over the plates in the end frame"
  *   PENCIL_EASE_WORLDS=photo,arcade  only those worlds (photo, cave, arcade)
  *   PENCIL_EASE_SLOW_CAPTURE=<ms>    a pause after each mid-move capture, as a slow (software) compositor: the 3-frame assert is then skipped, printed
  *   PENCIL_EASE_BLUR=<px>            box-blur every capture first (device px), as a resampling compositor would: the check must still pass and still fail nohide
  *   PENCIL_EASE_SKIP_PAINTED=1       take the DPR 2 fallback's path (painted checks skipped, printed): shows what the opacity reads alone still fail
+ *   PENCIL_EASE_SCREEN=<W>x<H>       an X screen of that many device px: plates beyond it are skipped by the painted checks, printed ("skipped: painted
+ *                                    end-state check: N of M plates are off the X screen ...")
  *   PENCIL_EASE_PLAIN=1              no colour marks: only saves the frames (with SHOTS_OUT), to look at; asserts nothing on pixels
  *   SHOTS_OUT=<dir>                  also saves each frame, 097-pencil-ease-<world>-<w>x<h>-<ms>.png, and the driver's log
  *
@@ -51,6 +54,7 @@ const WORLDS = (process.env.PENCIL_EASE_WORLDS || 'photo,arcade').split(',').fil
 const SPAN = 320; /* ms of frames after the move starts: the ease is 280..520 ms, the displacement was seen in its first ~200..300 ms */
 const SLOW_CAP = Number(process.env.PENCIL_EASE_SLOW_CAPTURE || 0); /* a pause after each capture (ms): stands in for a slow compositor, to show the skip below */
 const SKIP_PAINTED = process.env.PENCIL_EASE_SKIP_PAINTED === '1';
+const SCREEN = process.env.PENCIL_EASE_SCREEN || ''; /* <W>x<H> device px: treat plates beyond it as off the X screen (as a small Xvfb screen leaves them) */
 const MIN_CAUGHT = 3; /* frames in the first 200 ms that must show a plate on its way (Mac: 9..13 of them, one every ~17 ms) */
 
 /* the marks: plate i (1..15) has v = 16 i; pencil (255,0,v), name (0,255,v), status (v,0,255), role (0,v,255). A pixel is a mark when its full and empty
@@ -200,15 +204,31 @@ module.exports = async (ctx) => {
        capture that shows every marked plate; a slow (software) compositor can hand back an older frame, so it is taken again, up to 3 s (review of PR 1555:
        Linux/Xvfb at DPR 2 lost 4..6 plates in the one end capture) */
     await must(STILL + `&&[...document.querySelectorAll('#stage .ren.ro-ren')].every(b=>getComputedStyle(b).opacity==='1')`, `${tag}: every pencil back at its CSS opacity (1 under ren-show)`, 5000);
+    /* no hover card over the plates in the end frame: the pointer parked on a spot outside the office (an X server's own pointer may rest mid-window:
+       Linux/Xvfb showed Ada's card over two plates, review of PR 1555) and the focus taken off the pencil */
+    const park = await js(`(()=>{const st=document.getElementById('stage'),t=st.getBoundingClientRect().top;for(const [x,y] of [[Math.round(innerWidth/2),Math.max(1,Math.round(t)-4)],[1,1],[innerWidth-2,1]]){const e=document.elementFromPoint(x,y);if(!e||!st.contains(e))return {x,y}}return {x:1,y:1}})()`);
+    wc().sendInputEvent({ type: 'mouseMove', x: park.x, y: park.y });
+    await js(`(()=>{const a=document.activeElement;if(a&&a.closest&&a.closest('#stage'))a.blur();return 1})()`);
+    if (MUTANT === 'hover') { /* a pointer left on a working desk's plate: its card opens over the room */
+      const c = await js(`(()=>{const r=document.querySelector('#stage .ro-plate.st-working').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
+      wc().sendInputEvent({ type: 'mouseMove', x: c.x, y: c.y }); await H.until(`!!document.getElementById('roZoom')`, 3000);
+    } else await must(`!document.getElementById('roZoom')`, `${tag}: the hover card closed after the pointer left`, 3000);
     const keys = [...Array(n)].map((_, i) => String(i + 1));
     const lostIn = (m) => keys.filter((i) => !m['pen:' + i] || !(m['name:' + i] || m['status:' + i]));
+    /* the plates off the X screen: an Xvfb screen smaller than the window (1280x1024 device px for a 2880x1800 window at DPR 2) leaves them unpainted;
+       PENCIL_EASE_SCREEN=<W>x<H> (device px) stands in for such a screen */
+    const scr = await js(`(()=>{const d=devicePixelRatio,want=${jsLiteral(SCREEN)},m=/^(\\d+)x(\\d+)$/.exec(want),sw=m?+m[1]/d:screen.width,sh=m?+m[2]/d:screen.height,ox=screenX+(outerWidth-innerWidth),oy=screenY+(outerHeight-innerHeight);
+      return {dpr:d,screen:[Math.round(sw*d),Math.round(sh*d)],win:[Math.round(innerWidth*d),Math.round(innerHeight*d)],at:[Math.round(ox*d),Math.round(oy*d)],
+        off:[...document.querySelectorAll('#stage .ro-plate[data-pe-mark]')].filter(p=>{const r=p.getBoundingClientRect();return ox+r.right>sw||oy+r.bottom>sh}).map(p=>p.dataset.peMark)}})()`);
+    log(tag, `screen ${scr.screen.join('x')} device px, window content ${scr.win.join('x')} device px at ${scr.at.join(',')}; ${scr.off.length} of ${n} plates off the screen${scr.off.length ? ' (' + scr.off.join(',') + ')' : ''}`);
+    const off = new Set(scr.off);
     let endImg = null, end = null, tries = 0;
     for (const until = Date.now() + 3000; ;) {
       await js(`new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(1))))`);
       endImg = await wc().capturePage(); tries++;
       if (PLAIN) break;
       end = marks(endImg, w);
-      if (!lostIn(end).length || Date.now() > until) break;
+      if (!lostIn(end).filter((i) => !off.has(i)).length || Date.now() > until) break;
       await ctx.sleep(100);
     }
     if (OUT) {
@@ -219,7 +239,9 @@ module.exports = async (ctx) => {
     if (!PLAIN) {
       /* every marked plate came through the capture: its pencil and its name or status (a colour lost would drop the plate from every assert) */
       if (tries > 1) log(tag, 'end frame taken', tries, 'times');
-      const lost = lostIn(end);
+      assert.ok(!(await js(`!!document.getElementById('roZoom')`)), `${tag}: no hover card is open over the plates in the end frame`);
+      if (off.size) log(tag, `skipped: painted end-state check: ${off.size} of ${n} plates are off the X screen (screen ${scr.screen.join('x')} device px, window ${scr.win.join('x')} at ${scr.at.join(',')}): plates ${[...off].join(',')}; their opacity reads still apply`);
+      const lost = lostIn(end).filter((i) => !off.has(i));
       let painted = true;
       if (SKIP_PAINTED && !lost.length) lost.push(...keys.slice(-1)); /* the fallback's path, on demand */
       if (lost.length) {
@@ -252,6 +274,7 @@ module.exports = async (ctx) => {
       /* in every frame: no pencil's painted icon over its own plate's painted name, role or status (the focused one may be: FR-365's known gap) */
       const bad = [];
       for (const f of frames) for (const i of keys) {
+        if (off.has(i)) continue; /* off the X screen: skipped, said above */
         const pen = f.m['pen:' + i];
         if (!pen || i === focusMark) continue; /* not painted (hidden while its plate eases) */
         for (const p of ['name', 'role', 'status']) if (f.m[p + ':' + i] && overlap(pen, f.m[p + ':' + i])) bad.push(`${f.t} ms plate ${i}: the pencil ${JSON.stringify(rd(pen))} over its ${p} ${JSON.stringify(rd(f.m[p + ':' + i]))}`);
@@ -266,7 +289,7 @@ module.exports = async (ctx) => {
       assert.deepStrictEqual(focBad, [], `${tag}: the focused pencil stays shown (opacity 1) while its plate eases`);
       /* at the end: every pencil painted, just after its painted name, clear of the role and status; and by its boxes */
       const endBad = [];
-      for (const i of painted ? keys : []) {
+      for (const i of painted ? keys.filter((k) => !off.has(k)) : []) {
         const pen = end['pen:' + i], nm = end['name:' + i];
         for (const p of ['name', 'role', 'status']) if (end[p + ':' + i] && overlap(pen, end[p + ':' + i])) endBad.push(`plate ${i}: the pencil over its ${p}`);
         if (nm && (pen.x - nm.r < -1 || pen.x - nm.r > 9)) endBad.push(`plate ${i}: the pencil ${Math.round(pen.x - nm.r)} px after its name`);
