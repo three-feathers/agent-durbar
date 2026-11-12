@@ -51,4 +51,4 @@
 - [x] T069 FR-067 (change 2026-11-03): a *Tools* button with icon and count per row; tool rows inside the card, description clamped to 2 lines; driver `shots-069-mcp-tools` (25 long tools, contrast, size, keyboard, overflow)
 - [x] T070 FR-068 (change 2026-11-03): per-tool "about" sizes and the row figure over the ticked tools; driver step and mutations
 - [x] T071 FR-069 (change 2026-11-12, issue #1624): Settings keeps its scroll and focus when a switch repaints it; `check-069-toggle-scroll` with mutations
-- [ ] T072 FR-070 (change 2026-11-13, issue #1639): the Copilot CLI list's env and header values join `secretValuesFor` (one read with the names, through `mcpSecretValues`); `test:mcpglobal` plants shape-less values and checks *Details* and *Copy diagnostics*, with mutations
+- [x] T072 FR-070 (change 2026-11-13, issue #1639): the Copilot CLI list's env and header values join `secretValuesFor` (one read with the names, through `mcpSecretValues`); `test:mcpglobal` plants shape-less values and checks *Details* and *Copy diagnostics*, with mutations
