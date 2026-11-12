@@ -90,6 +90,9 @@
 .ro[data-world="retro"] .ro-plate.cab-narrow.has-ren.has-help:not(.lounge) .ro-hm{display:inline}
 .ro[data-world="retro"] .ro-plate.cab-narrow.has-ren.has-help:not(.lounge) .ro-l2>.dot{display:none}
 .ro[data-world="retro"] .ro-plate.cab-narrow.has-ren.has-help:not(.lounge) .ro-l2{gap:0} /* the task run (width 0 here) must not take the 4 px gap from the word; its text starts with the " · " */
+/* margin (spec 102 FR-312): 3 px less padding at the left and no 1 px gap between the count and the word win 4 px of the 93 px; the pencil (right end, 20 px of padding) is not moved */
+.ro[data-world="retro"] .ro-plate.cab-narrow.has-ren:not(.lounge){padding-left:var(--s-1)}
+.ro[data-world="retro"] .ro-plate.cab-narrow.has-ren.has-help:not(.lounge){gap:0}
 /* spec 097 FR-357 (bug #1427): a cabinet's plate does not draw the name (it is on the marquee), so the rename pencil is anchored to the plate: at its right end,
    inside it (the 11 px icon ends 6.5 px before the edge); 20 px of padding there end the status and the dots (ellipsis) before the icon. A lounge seat's plate draws the name: FR-170's place */
 .ro[data-world="retro"] .ro-plate.has-ren:not(.lounge){padding-right:calc(var(--s-4) + var(--s-1))}
