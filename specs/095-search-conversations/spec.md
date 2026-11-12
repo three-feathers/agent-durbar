@@ -350,3 +350,7 @@ No new FR or task number.
 
 - **One snapshot of the agents (FR-026)**: `buildScope` took `openIds` at the start of the folder loop but a folder's Codex `ids` (the key of the kept list) later, after awaiting earlier folders' listings, so a Codex session closed in between was left out of the listing yet the list was kept under ids without it, and the session was missing from search for up to the 5 minutes of the cache. Both now come from one copy of the agents taken before the folder loop. This replaces the round 2 sentence "a session that leaves the office then drops it, as `get` already does", which was false for that path: the list is kept under the ids it was made with, so `get` drops it as soon as one of them has left. Test: a held VS Code listing in an earlier folder, a Codex session closing meanwhile, then a second scan lists it as earlier.
 - **U+FEFF in the query (FR-033)**: it is both `Cf` and `\s`, so round 2 turned it into a space inside a word ("inv\ufeffoice" gave "inv oice"). It is removed like the other hidden format characters: the space step is `\s` except U+FEFF, in both copies. FR-033 names the exception.
+
+## Changes 2026-11-12 (phase 3 window, known gap)
+
+- **[KNOWN GAP]** An open Codex agent that starts a new thread in place changes its resume id while the kept Codex list (FR-026) is keyed by agent id and excludes by resume id: for at most the kept list's 5 minutes the old thread may be missing from Earlier sessions or the new one listed there (review of PR 1232, round 3 question). Bounded and nothing leaks.
