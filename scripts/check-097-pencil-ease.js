@@ -12,7 +12,7 @@
  *     skew       the hold a time of its own that ends 40 ms before its plate's ease (the race seen in the cave, review of PR 1555): the opacity label
  *     focushide  the focused pencil hidden too: "the focused pencil stays shown (opacity 1) while its plate eases"
  *     parkold    the pointer parked at the first version's spot, whatever the screen (with PENCIL_EASE_SCREEN=1280x1024 at DPR 2): "the pointer is parked on the visible screen"
- *     far        every pencil 14 px further from its name: "once the ease is over every pencil is painted just after its name"
+ *     far        every pencil 6 px further from its name: "once the ease is over every pencil is painted just after its name"
  *     hover      the pointer left on a working plate before the end frame: "no hover card is open over the plates in the end frame"
  *   PENCIL_EASE_WORLDS=photo,arcade  only those worlds (photo, cave, arcade)
  *   PENCIL_EASE_SLOW_CAPTURE=<ms>    a pause after each mid-move capture, as a slow (software) compositor: the 3-frame assert is then skipped, printed
@@ -182,7 +182,7 @@ module.exports = async (ctx) => {
     const focusMark = await js(`(()=>{const b=document.querySelector('#stage .ren.ro-ren[data-ren="'+CSS.escape(${jsLiteral(pick[0])})+'"]');b.focus({preventScroll:true});return document.activeElement===b?(b.previousElementSibling.dataset.peMark||'?'):''})()`);
     assert.ok(focusMark, `${tag}: the first mover's pencil has the focus`);
     await must(`[...document.querySelectorAll('#stage .ren.ro-ren')].every(b=>getComputedStyle(b).opacity==='1')`, `${tag}: every pencil shown (ren-show's fade in over)`, 3000);
-    if (MUTANT === 'far') await js(`(()=>{document.querySelectorAll('#stage .ren.ro-ren').forEach(b=>b.style.setProperty('left','calc(anchor(right) + 13px)','important'));return 1})()`); /* every pencil 14 px further from its name */
+    if (MUTANT === 'far') await js(`(()=>{document.querySelectorAll('#stage .ren.ro-ren').forEach(b=>b.style.setProperty('left','calc(anchor(right) + 5px)','important'));return 1})()`); /* every pencil 6 px further from its name: 12 CSS px painted, over nothing */
     await js(`new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(1))))`);
     /* the move: both read (the second finished long ago, so it sleeps there). The page then samples, each animation frame, every moving plate's pencil's
        computed opacity (a style read: no layout); nothing else reads the page until the frames are taken */
