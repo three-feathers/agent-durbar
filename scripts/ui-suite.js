@@ -112,8 +112,8 @@ const DRIVERS = [
   { name: 'check-097-one-face', label: 'check-097-one-face retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 T283 (issue #1399): the same driver in the arcade
   { name: 'check-question-visible' },
   { name: 'check-chat-no-scroll' },
-  { name: 'check-chat-visibility', label: 'check-chat-visibility 1440', env: { CVONLY: '1440' }, timeoutMs: 900_000 }, // spec 005 T226 (issue 1610): 900 s is a stated margin, not a fix: Linux frame cost is about 3.4x a Mac's; one entry per size so each has its own time limit (#1127, FR-063)
-  { name: 'check-chat-visibility', label: 'check-chat-visibility 1280', env: { CVONLY: '1280' }, timeoutMs: 900_000 }, // spec 005 T226: the same margin; FR-210: a long chat is laid out only near the view; scroll, find, copy, focus and the pinned end are as before
+  { name: 'check-chat-visibility', label: 'check-chat-visibility 1440', env: { CVONLY: '1440' }, timeoutMs: 900_000 }, // spec 005 T227 (issue 1610): 900 s is a stated margin, not a fix: Linux frame cost is about 3.4x a Mac's; one entry per size so each has its own time limit (#1127, FR-063)
+  { name: 'check-chat-visibility', label: 'check-chat-visibility 1280', env: { CVONLY: '1280' }, timeoutMs: 900_000 }, // spec 005 T227: the same margin; FR-210: a long chat is laid out only near the view; scroll, find, copy, focus and the pinned end are as before
   { name: 'check-chat-title' }, // spec 052 FR-180 (#789): the chat header's title uses the free room up to the buttons
   { name: 'check-no-demo-badge' }, // spec 052 FR-181: no Demo / Live badge in the top bar; the demo cues remain
   { name: 'check-logo-family' }, // spec 101 FR-072: Settings > Logo, the top-bar icon on every theme, world and forced colours, tile and name unchanged
@@ -126,7 +126,7 @@ const DRIVERS = [
   { name: 'check-codex-file-card' }, // spec 052 FR-172: a Codex write card names the files and shows the change
   { name: 'check-theme-art' }, // spec 040 FR-023: a picked theme's characters and gadgets on desks, walkers, places and chips
   { name: 'check-crew' }, // spec 077: Cheeky portraits (Characters = Cheeky on Clean Office): box vs protected zones, pose, sharpness, the fallback with a picture removed
-  { name: 'check-crew', label: 'check-crew dark fixture', env: { CREW_THEME: 'check-dark' } }, // spec 077 FR-070: the same with Characters = Cheeky on the dark fixture user theme (spec 102 T226: it took Retro Pixel's place)
+  { name: 'check-crew', label: 'check-crew dark fixture', env: { CREW_THEME: 'check-dark' } }, // spec 077 FR-070: the same with Characters = Cheeky on the dark fixture user theme (spec 102 T227: it took Retro Pixel's place)
   { name: 'check-floor-repaint', env: { DURBAR_SIM_FLOORS: '1' } }, // spec 033 FR-088 (#787): the office repaints after a floor switch although a side panel throws
   { name: 'check-office-ops' }, // spec 097 FR-185, FR-186 (T142, T148): operation counts of the flat office, never times: elements recalculated by one text change at 15 and 40 agents
   { name: 'check-characters' }, // spec 077 FR-064..FR-069: Settings > Characters on Retro Pixel (Cheeky, Minimalist, the theme's own)
