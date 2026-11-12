@@ -1,0 +1,1 @@
+- A failed server's row in the MCP list keeps a readable text column: the name and the help text no longer get squeezed by the buttons, which wrap below the text when they do not fit beside it.
