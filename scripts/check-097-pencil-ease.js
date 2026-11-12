@@ -11,6 +11,7 @@
  *     early      the hold ends at 30 % of the ease: "no pencil is painted over …" (the opacity label when the painted check is skipped)
  *     skew       the hold a time of its own that ends 40 ms before its plate's ease (the race seen in the cave, review of PR 1555): the opacity label
  *     focushide  the focused pencil hidden too: "the focused pencil stays shown (opacity 1) while its plate eases"
+ *     parkold    the pointer parked at the first version's spot, whatever the screen (with PENCIL_EASE_SCREEN=1280x1024 at DPR 2): "the pointer is parked on the visible screen"
  *     hover      the pointer left on a working plate before the end frame: "no hover card is open over the plates in the end frame"
  *   PENCIL_EASE_WORLDS=photo,arcade  only those worlds (photo, cave, arcade)
  *   PENCIL_EASE_SLOW_CAPTURE=<ms>    a pause after each mid-move capture, as a slow (software) compositor: the 3-frame assert is then skipped, printed
@@ -44,6 +45,7 @@ const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
 const { helpers, jsLiteral } = require('./driver-helpers');
+const { parkCandidates, parkVisible } = require('./pencil-park');
 
 const MUTANT = process.env.PENCIL_EASE_MUTANT || '';
 const PLAIN = process.env.PENCIL_EASE_PLAIN === '1';
@@ -206,13 +208,21 @@ module.exports = async (ctx) => {
     await must(STILL + `&&[...document.querySelectorAll('#stage .ren.ro-ren')].every(b=>getComputedStyle(b).opacity==='1')`, `${tag}: every pencil back at its CSS opacity (1 under ren-show)`, 5000);
     /* no hover card over the plates in the end frame: the pointer parked on a spot outside the office (an X server's own pointer may rest mid-window:
        Linux/Xvfb showed Ada's card over two plates, review of PR 1555) and the focus taken off the pencil */
-    const park = await js(`(()=>{const st=document.getElementById('stage'),t=st.getBoundingClientRect().top;for(const [x,y] of [[Math.round(innerWidth/2),Math.max(1,Math.round(t)-4)],[1,1],[innerWidth-2,1]]){const e=document.elementFromPoint(x,y);if(!e||!st.contains(e))return {x,y}}return {x:1,y:1}})()`);
+    /* the spot is on the part of the page that is on the screen too (scripts/pencil-park.js: a window taller than a small X screen is cut by it, and a pointer put
+       in the cut part never leaves the plate: Linux/Xvfb at DPR 2, review of PR 1555); PENCIL_EASE_SCREEN stands in for a small screen here as below */
+    const pg0 = await js(`(()=>{const d=devicePixelRatio,m=/^(\\d+)x(\\d+)$/.exec(${jsLiteral(SCREEN)});return {dpr:d,view:[innerWidth,innerHeight],top:document.getElementById('stage').getBoundingClientRect().top,screen:m?[+m[1],+m[2]]:[Math.round(screen.width*d),Math.round(screen.height*d)],at:[Math.round((screenX+(outerWidth-innerWidth))*d),Math.round((screenY+(outerHeight-innerHeight))*d)]}})()`);
+    const cands = MUTANT === 'parkold' ? [{ x: Math.round(pg0.view[0] / 2), y: Math.max(1, Math.round(pg0.top) - 4) }] : parkCandidates(pg0); /* parkold: the first version's point, whatever the screen */
+    const free = await js(`${jsLiteral(cands)}.filter(c=>{const e=document.elementFromPoint(c.x,c.y);return !e||!document.getElementById('stage').contains(e)})`);
+    const where = `pointer ${free.length ? free[0].x + ',' + free[0].y : 'none'} css px; screen ${pg0.screen.join('x')} device px; window content ${pg0.view.map((v) => v * pg0.dpr).join('x')} device px at ${pg0.at.join(',')}; devicePixelRatio ${pg0.dpr}`;
+    assert.ok(free.length > 0, `${tag}: a spot outside the plates on the visible screen to park the pointer (${where})`);
+    const park = free[0];
+    assert.ok(parkVisible(park, pg0), `${tag}: the pointer is parked on the visible screen (${where})`);
     wc().sendInputEvent({ type: 'mouseMove', x: park.x, y: park.y });
     await js(`(()=>{const a=document.activeElement;if(a&&a.closest&&a.closest('#stage'))a.blur();return 1})()`);
     if (MUTANT === 'hover') { /* a pointer left on a working desk's plate: its card opens over the room */
       const c = await js(`(()=>{const r=document.querySelector('#stage .ro-plate.st-working').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
       wc().sendInputEvent({ type: 'mouseMove', x: c.x, y: c.y }); await H.until(`!!document.getElementById('roZoom')`, 3000);
-    } else await must(`!document.getElementById('roZoom')`, `${tag}: the hover card closed after the pointer left`, 3000);
+    } else assert.ok(await H.until(`!document.getElementById('roZoom')`, 3000), `${tag}: the hover card closed after the pointer left (${where}; a card over: ${await js(`(()=>{const z=document.getElementById('roZoom');return z?z.textContent.slice(0,40):'-'})()`)})`);
     const keys = [...Array(n)].map((_, i) => String(i + 1));
     const lostIn = (m) => keys.filter((i) => !m['pen:' + i] || !(m['name:' + i] || m['status:' + i]));
     /* the plates off the X screen: an Xvfb screen smaller than the window (1280x1024 device px for a 2880x1800 window at DPR 2) leaves them unpainted;

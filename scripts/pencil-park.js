@@ -1,0 +1,21 @@
+/*
+ * Where a driver may park the pointer so that it is off the plates AND on the visible screen (spec 097 FR-365, review of the Linux run of the pencil-ease driver).
+ * A window taller or wider than its X screen (Xvfb 1280x1024 device px, a 2880x1800 window at devicePixelRatio 2) is cut by the screen: a point in the part of
+ * the window that is off the screen gets no pointer, so a hover card never closes. Pure numbers in, candidate points out (CSS px of the page), in order of
+ * preference; the caller takes the first one with no plate under it.
+ *
+ *   parkCandidates({ view: [innerWidth, innerHeight], top: <the stage's top, CSS px>, screen: [W, H] device px, at: [x, y] device px of the page's top-left on the screen, dpr })
+ *
+ * visible = the part of the page inside the screen: floor((screen - at) / dpr) per axis, at most the view. A candidate is kept only when 0 <= x < visible width and
+ * 0 <= y < visible height. `parkVisible` is the same test, for a driver's own assert. Tested by scripts/test-pencil-park.js.
+ */
+function visibleOf({ view, screen, at, dpr }) {
+  return [Math.max(0, Math.min(view[0], Math.floor((screen[0] - at[0]) / dpr))), Math.max(0, Math.min(view[1], Math.floor((screen[1] - at[1]) / dpr)))];
+}
+function parkVisible(p, o) { const v = visibleOf(o); return p.x >= 0 && p.y >= 0 && p.x < v[0] && p.y < v[1]; }
+function parkCandidates(o) {
+  const v = visibleOf(o), top = Math.max(1, Math.round(o.top) - 4);
+  const all = [[Math.round(v[0] / 2), top], [1, 1], [v[0] - 2, 1]].map(([x, y]) => ({ x, y }));
+  return all.filter((p) => parkVisible(p, o));
+}
+module.exports = { visibleOf, parkVisible, parkCandidates };
