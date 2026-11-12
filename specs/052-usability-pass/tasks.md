@@ -352,10 +352,10 @@
 ## FR-191..FR-205: the Needs you panel (2026-11-01, owner). Not before the Retro world
 - [x] T195 Q-NY-1..Q-NY-16 recorded as agent decisions of 2026-11-01, told to the owner and reversible by him [FR-191..FR-204]
 - [x] T267 Owner answers of 2026-11-07 recorded: Q-NY-2..Q-NY-16 are owner decisions; Q-NY-3, Q-NY-12, Q-NY-15 and Q-NY-16 changed; FR-193, FR-194, FR-199, FR-203, FR-205 and T196, T197, T199, T201, T202 updated; T224 and T225 unchanged by the answers (spec 052's 2026-11-07 delta)
-- [ ] T196 Tests first: `createArrivals()` in `attention.js`, `test-attention` with its mutants; an app-start case: what waits at arming opens the panel once, and *Later* closes it (Q-NY-3, owner 2026-11-07, changed) [FR-193, FR-205]
-- [ ] T197 Panel in place of the modal: non-modal region, no layout effect, automatic opening with no focus change, dismiss and reopen, app-start opening with the *Later* button (Q-NY-3), no Settings switch (Q-NY-16: removed from the plan, decide after use), keys; `scripts/check-needs-panel.js` steps 1, 2, 3, 8, 9a [FR-191, FR-192, FR-194, FR-195]
-- [ ] T198 Request binding and guards in rows, by the mechanism on `main` (#994, #1004): stale press, `RISE_GUARD_MS`, `e.repeat`, the word from the card's real outcome; driver steps 5, 6 and mutants [FR-197, FR-198, FR-200]
-- [ ] T199 What a row offers, per the agent decisions: limit, long request, question, form, error, usage window, Read-only; simulator hooks; **option buttons in the row by request id (Q-NY-12, owner 2026-11-07, changed)**; driver steps 7, 9b [FR-196, FR-199]
+- [x] T196 Tests first: `createArrivals()` in `attention.js`, `test-attention` with its mutants; an app-start case: what waits at arming opens the panel once, and *Later* closes it (Q-NY-3, owner 2026-11-07, changed) [FR-193, FR-205] (built behind the `door` flag, off by default; `createDoorGate()` added for the open, hold, dismissal and throttle rules; 7 mutants; review of #1273: 9 more mutants, see the spec delta of 2026-11-08)
+- [x] T197 Panel in place of the modal (behind the `door` flag, default off; the modal stays while it is off; with a chat open the modal still serves until T201's push): non-modal region, no layout effect, automatic opening with no focus change, dismiss and reopen, app-start opening with the *Later* button (Q-NY-3), no Settings switch (Q-NY-16: removed from the plan, decide after use), keys; `scripts/check-needs-panel.js` steps 1, 2, 3, 8, 9a [FR-191, FR-192, FR-194, FR-195] (review of #1273 fixed: repaint focus never on a button, answer keys wait after a repaint, desk-click handler no longer opens a chat from a panel row, aria-controls only while mounted; driver steps for the stale press, held keys, dismissal, focus hold, step aside; pictures wait for T202)
+- [x] T198 Request binding and guards in rows, by the mechanism on `main` (#994, #1004): stale press, `RISE_GUARD_MS`, `e.repeat`, the word from the card's real outcome; driver steps 5, 6 and mutants [FR-197, FR-198, FR-200]
+- [x] T199 What a row offers, per the agent decisions: limit, long request, question, form, error, usage window, Read-only; simulator hooks; **option buttons in the row by request id (Q-NY-12, owner 2026-11-07, changed)**; driver steps 7, 9b [FR-196, FR-199]
 - [ ] T200 Announcements and the burst; keyed row updates; one slide, reduced motion, `check:perf`; driver step 4 [FR-201, FR-204]
 - [ ] T201 Chat, other views, sizes, Flat and Real office, tokens; **slips stay visible while the panel is open (Q-NY-15, owner 2026-11-07, changed)**; driver steps 9, 10 [FR-202, FR-203]
 - [ ] T224 Your door: faces in a line, "N outside your door, oldest first", the control's name, below notices. Measure first the rows at 1280 with a notice. Test: `check-needs-panel` step 11 [FR-191, FR-196, FR-203]
@@ -373,7 +373,7 @@
 - [ ] T216 [PR K1] The toggle rule in `docs/design-rules.md` and `docs/review-checklist.md`; immediate checkboxes become `.swt` through `sw()`. Test: `check-ui-text`; existing screen drivers [FR-222]
 - [ ] T217 [PR K3] `accent-color`, `.inbox:focus-within`, `.send` from tokens (`.send` green in 070 A14, by whichever lands first), 3:1 and 4.5:1 in every set. Test: `check-ui-text`, ratchet lowered [FR-224]
 - [ ] T218 [PR K4] Information notes neutral, amber kept for what waits for you. Test: `check-ui-text` reads `.note.info` and a waiting card; mutant: amber default back [FR-225]
-- [ ] T219 [PR S, after spec 102 removes themes] Measure first, 7238 px and 22 headings. Section list and one row layout. Test: new `check-settings-nav` at both sizes, keyboard, jump to each section [FR-226]
+- [x] T219 [PR S] (owner decision 2026-11-07: the section list ships before 102 T266; it is built from the rendered sections so T266's removals need no list edit) Measure first, 7238 px and 22 headings. Section list (`settingsnav.js`, `<nav>` with `aria-current`) built from the rendered headings; the one row layout stays `[KNOWN GAP]` until the page is re-measured after 102. Tests: `test:settingsnav` (unit), new `check-settings-nav` at both sizes, keyboard, jump to each section [FR-226]
 
 ## FR-206..FR-208: the Needs you inbox cannot answer a request by accident (2026-11-01)
 - [x] T203 `check-inbox-safety.js` first (on `main` it fails: a stale button re-answers a request, a held A answers, key A sends a limit's hidden amount), then `reqOf` and the live-card check in `paintInbox` [FR-206]; UI-suite entry
@@ -408,3 +408,25 @@
 
 ## 2026-11-05: Windows UI drivers wait for the focus (issue #1179)
 - [x] T266 Windows flakes: `check-auto-follow` waits for arrivals with the real focus asked again at each look; `H.focusPage({emulate:'first'})` emulates from the start (`check-edit-popups`, `check-auto-follow`), `emulate:true` stays fallback-only (`check-list-columns`) [issue #1179, test driver only]
+
+## 2026-11-09: `check-auto-follow` waits for the office layout before a click (issue #1343)
+- [x] T268 `check-auto-follow`: `openChat` waits until the office fits its floor and asserts the chat that opened; the dialog, menu and typing hold steps send with `sendQuiet` and emit the arrival with `finish()` once their guard is up; the typing step's no-switch check outlasts the 2 s key hold; the "chat already shown" step leaves the message box by a click on the chat log, not the title (mutation-checked) [issue #1343, test driver only]
+
+## 2026-11-09: the Auto-follow notice (FR-238..FR-241, owner request)
+- [x] T270 `askDialog()` options `overlayClass`, `role` + `label`, `auto(close)`; `test-dialog` cases (a dialog that closes by itself, its cleanup on every close, the role and name, nothing changed without them) [FR-239, FR-240]
+- [x] T271 `afNotice()` in `app.js`: words, mask, countdown that runs only in a visible focused window, Stay and Escape, `ANN_REQUEST` once; before `afBackToOffice()` in `afOnAccepted()` and before `openPanel()` in `afDeliver()` ; `relayout()` runs `afTick()` after drawing the office (found while building) [FR-238, FR-239, FR-240]
+- [x] T272 `styles.css`: the full-screen overlay, the card, the picture and the ring from theme tokens; no motion under reduced motion or Motion off [FR-241]
+- [x] T273 `scripts/check-052-follow-notice.js` in the UI suite (both notices, Stay, Escape, timeout, background pause, announcement and priority, reduced motion, four looks at two sizes, pictures); `check-auto-follow` through the notice; mutants fail on labelled asserts [FR-238..FR-241]
+- [x] T274 Docs: `docs/features.md`, `docs/feature-inventory.md` (an Auto-follow row in every world), a `changelog.d` fragment; both notices in every world and in Open office's Retro Pixel theme at both sizes in `docs/screenshots/`, linked from the spec, looked at [FR-238]
+- [x] T275 Review on #1414: the notice waits while you type and a typed character closes it into the box; a replaced `askDialog` leaves the focus in the new one; a hostile name stays text (driver steps, `test-dialog` cases, mutants) [FR-238, FR-239]
+- [x] T276 `check-052-follow-notice`: motion allowed by media emulation, asserted (a Windows runner asks for reduced motion; CI run 42670456931) [FR-241]
+
+## 2026-11-09: `check-needs-panel` presses ⇧⌘A on a Mac (issue #1377)
+- [x] T269 `check-needs-panel` step 8 sends the inbox shortcut with Meta on darwin, Control elsewhere (FR-084); the failing step passes on a Mac, Control on darwin fails it again (mutation) [FR-205, issue #1377, test driver only]
+
+## 2026-11-10: `check-052-follow-notice` empties the box on a Mac (test driver only)
+- [x] T277 `check-052-follow-notice`: `emptyBox()` selects all through `webContents.selectAll()`, presses Backspace and asserts the box is empty, in both places that used a synthetic Ctrl/Cmd+A; the failing step passes on a Mac, the Cmd+A key fails it again (mutation) [FR-239, test driver only]
+
+## 2026-11-10: a completion seen in its own chat is never offered after the next send (FR-242, issue #1444)
+- [x] T278 `autofollow.js` `sent()` and `seen()`; `afOnAccepted()` uses `sent()`, `afOnCompleted()` uses `seen()` when `chatShownNow()`, the notice to the office moves only a still-followed agent; `test-autofollow` FR-242 block, six tracker mutants fail it; `check-052-follow-notice` waits for the move by an observer, then 1 s with no notice (counted) and no chat, and the seen completion is not waiting; fails without the app fix [FR-242, FR-184, FR-185]; a seen completion leaves the tracker not quiet
+- [x] T279 `afNotice()` takes `still()`: the notice to the office closes at once, silently, when the agent is no longer followed; `check-052-follow-notice` drives it (fails without the close) and drives FR-242 (b) (a held completion, then a send: fails without the `sent()` call in `afOnAccepted`) [FR-242 (b), (c), review on PR 1445, issue #1450]

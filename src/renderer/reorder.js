@@ -83,7 +83,7 @@
   const busy=()=>!!live;
   /* attach(host, kinds, hooks): `kinds` = [{kind, item:(target)=>el|null, group:(el)=>[el,...] (the items it can swap with, in shown order),
      key:(el)=>string, handle?:(target)=>boolean}]; `hooks.commit(kind, el, groupEls, fromIndex, toIndex)` is called once on a drop that changed
-     the order; `hooks.end()` after every drag (drop or cancel); `hooks.disabled()` true = no drag now. A press that moves less than 6 px is a click. */
+     the order; `hooks.end()` after every drag (drop or cancel); `hooks.disabled()` true = no drag now; `hooks.still()` true = no ease on the slots. A press that moves less than 6 px is a click. */
   function attach(host,kinds,hooks){
     let down=null, swallow=false;
     const me={}; // one drag at a time overall (`live`), but each attach owns only the drags it began: a second attach (the floors list) never ends the first one's
@@ -133,7 +133,7 @@
       try{host.setPointerCapture(d.id);}catch(_){}
       doc.body.classList.add('reo-dragging');
       d.el.classList.add('reo-lift');
-      els.forEach(x=>{if(x!==d.el)x.classList.add('reo-slot');});
+      els.forEach(x=>{if(x!==d.el){x.classList.add('reo-slot');if(hooks.still&&hooks.still())x.style.transition='none';}}); // spec 097 FR-352: under reduced motion or Motion off the slots jump, no ease
     }
     function move(e){
       const l=live;
@@ -152,7 +152,7 @@
       try{host.releasePointerCapture(l.id);}catch(_){}
       doc.body.classList.remove('reo-dragging');
       l.el.classList.remove('reo-lift');
-      l.els.forEach(x=>{x.classList.remove('reo-slot');x.style.transform='';});
+      l.els.forEach(x=>{x.classList.remove('reo-slot');x.style.transform='';x.style.transition='';});
       if(drop&&l.to!==l.from&&hooks.commit)hooks.commit(l.k.kind,l.el,l.els,l.from,l.to);
       if(hooks.end)hooks.end();
     }

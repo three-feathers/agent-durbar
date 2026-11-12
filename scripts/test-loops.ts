@@ -1163,7 +1163,7 @@ async function wiring(): Promise<void> {
       register({ getScheduler: () => h2, getFolderStore: () => ({ get: () => ({}) }) as never });
       const agents = new Map([['s1', { id: 's1' }]]);
       const router = { forAgent: () => undefined };
-      agentsIpc.register({ agents, router, agentState: new AgentStateTracker(), opsDeps: { agents, router }, remoteOps: { release: async () => undefined }, getScheduler: () => h2, getCheckpointStore: () => undefined, vsChatRefs: new Map(), continued: new Map() } as never);
+      agentsIpc.register({ agents, router, agentState: new AgentStateTracker(), opsDeps: { agents, router }, remoteOps: { release: async () => undefined }, autopilot: { setAutopilot: async () => ({ ok: false }), forget: () => undefined, stopSeen: () => undefined }, getScheduler: () => h2, getCheckpointStore: () => undefined, vsChatRefs: new Map(), continued: new Map() } as never);
       const frame = { url: require('url').pathToFileURL(path.join(__dirname, '..', 'src', 'renderer', 'index.html')).href };
       const win = { senderFrame: frame, sender: { mainFrame: frame } };
       const call = (ch: string, ...a: unknown[]): unknown => handlers.get(ch)!(win, ...a);

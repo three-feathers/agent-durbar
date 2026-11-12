@@ -45,6 +45,7 @@ async function main(): Promise<void> {
   const { register, cleanQuery, QUERY, SHORT, NONE } = require('../src/main/ipc/convsearch') as typeof import('../src/main/ipc/convsearch');
   const { CODEX_LIST_GATE_MS, CODEX_LIST_TTL_MS, SCOPE_LIST_MS, buildScope, createCodexListCache } = require('../src/main/convscope') as typeof import('../src/main/convscope');
   type Scope = import('../src/main/convscope').Scope;
+  type ScopeDeps = import('../src/main/convscope').ScopeDeps;
   const { DEFAULT_TIMEOUT_MS: CODEX_RPC_TIMEOUT_MS } = require('../src/adapters/codexRpc') as typeof import('../src/adapters/codexRpc');
   const { createReadGate, orderPlan, rendererScript } = require('../src/main/convsearch') as typeof import('../src/main/convsearch');
   const { createMasker } = require('../src/main/convmask') as typeof import('../src/main/convmask');
@@ -87,6 +88,16 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(ok('.* (a|b)+ [x]').query, '.* (a|b)+ [x]', 'the query is plain text, never a pattern');
     for (const v of [undefined, null, 42, ['abc'], { q: 'abc' }]) assert.deepStrictEqual(cleanQuery(v), { ok: false, code: 'invalid' });
     assert.strictEqual(SHORT, 'Type at least 3 characters.');
+    // review of the phase 2 code (FR-033): hidden format characters are control characters too: removed (gluing, not spacing), never echoed
+    for (const sp of ['\u202f', '\u2009', '\u2028', '\u2029', '\u200a', '\u205f', '\u2006', '\u2008', '\n', '\u00a0']) assert.strictEqual(ok(`invoice${sp}export`).query, 'invoice export', `U+${sp.charCodeAt(0).toString(16)} between two words is a space, not nothing`);
+    assert.strictEqual(ok('inv\ufeffoice export').query, 'invoice export', 'U+FEFF is removed, not made a space');
+    short('\u200b\u200b\u200b');
+    short('\u202e\u202e\u202e');
+    short('\u2060\u00ad\ufeff');
+    assert.strictEqual(ok('a\u200bbc').query, 'abc', 'a zero-width space inside a word does not split or hide it');
+    short('a\u200bb'); // "ab": two characters
+    assert.strictEqual(ok('inv\u00adoice').query, 'invoice', 'a soft hyphen is removed');
+    assert.strictEqual(ok('\u202einvoice\u2060 export').query, 'invoice export', 'no bidi override or word joiner in the echo');
   }
 
   // ---- T020: the channels, on the stand-in electron
@@ -179,6 +190,35 @@ async function main(): Promise<void> {
   const all = JSON.stringify(win1.sent);
   for (const bad of [GH, GH.slice(6, 20), MCP_VALUE, HOME, 'alice', 'grep invoice']) assert.ok(!all.includes(bad), `no "${bad}" in any payload`);
   assert.strictEqual(win2.sent.length, 0, 'the other window gets nothing');
+
+  // review of the phase 2 code (FR-031): `toHit` is the only way a hit reaches the window; a hit object that carries more (a folder
+  // key with a home path, an excerpt's file) loses it. The scan builds its hits by hand, so the test stands in for it (restored below).
+  {
+    const scanMod = require('../src/main/convsearch') as { startScan: unknown }; // eslint-disable-line @typescript-eslint/no-require-imports
+    const realScan = scanMod.startScan;
+    const leaky = { adapter: 'claude', sessionId: 'leak1', agentId: 'a1', group: 'office', app: 'Claude Code', folderName: 'demo', title: 'invoice', titleMarks: [[0, 7]], time: 1, more: 0, folderKey: HOME + '/work/demo', file: HOME + '/.claude/projects/x.jsonl', excerpts: [{ text: 'invoice', marks: [[0, 7]], speaker: 'you', anchor: { n: 1, head: 'invoice', path: HOME + '/x' }, raw: MCP_VALUE }] };
+    scanMod.startScan = (_plan: unknown, _q: string, d: { emit(b: unknown): void }) => {
+      d.emit({ hits: [leaky], progress: { done: 1, total: 1 }, groups: { office: 1, earlier: 0 } });
+      return { cancel: () => undefined, done: Promise.resolve({ cancelled: false, failed: false, notes: {}, progress: { done: 1, total: 1 } }) };
+    };
+    try {
+      win1.sent.length = 0;
+      const rl = await start(E1, 'invoice');
+      assert.ok(rl.ok);
+      runDeferred();
+      await settle(100);
+      const got = win1.sent.flatMap(([, p]) => (p.kind === 'batch' ? p.hits : []));
+      assert.strictEqual(got.length, 1);
+      assert.deepStrictEqual(Object.keys(got[0]).sort(), ['adapter', 'agentId', 'app', 'excerpts', 'folderName', 'group', 'more', 'sessionId', 'time', 'title', 'titleMarks']);
+      assert.deepStrictEqual(Object.keys(got[0].excerpts[0]).sort(), ['anchor', 'marks', 'speaker', 'text']);
+      assert.deepStrictEqual(Object.keys(got[0].excerpts[0].anchor).sort(), ['head', 'n']);
+      const wire = JSON.stringify(win1.sent);
+      for (const bad of [HOME, MCP_VALUE, 'folderKey', '.jsonl']) assert.ok(!wire.includes(bad), `no "${bad}" in a payload`);
+    } finally {
+      scanMod.startScan = realScan;
+    }
+    win1.sent.length = 0;
+  }
 
   // two starts back to back: one scan (the first never builds a plan), the second's events only
 
@@ -659,6 +699,155 @@ async function main(): Promise<void> {
     timers.length = 0;
   }
 
+  // review of the phase 2 code (FR-022): quick new starts do not pile up listings of the same folder; the running one is shared
+  stage = 'scope shared listings';
+  {
+    const ag = (id: string, adapterId: string, cwd: string): AgentInfo => ({ id, name: path.basename(cwd), cwd, folders: [cwd], permMode: 'read-only', adapterId } as AgentInfo);
+    const agents = new Map<string, AgentInfo>([['k1', ag('k1', 'claude', '/s/one')], ['x1', ag('x1', 'codex', '/s/two')]]);
+    const calls: string[] = [];
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
+    const adapters: Record<string, unknown> = {
+      claude: { id: 'claude', isLive: () => false, listPreviousSessions: async (cwd: string) => { calls.push('claude ' + cwd); await held; return [{ id: 'kp', title: 'earlier', startTime: 1, modifiedTime: 2 }]; } },
+      codex: { id: 'codex', isLive: () => false, listPreviousSessions: async () => [] },
+    };
+    const listings = new Map<string, Promise<unknown>>();
+    const mk = (): ScopeDeps => ({
+      agents, router: { forAgent: (id: string) => adapters[agents.get(id)!.adapterId] as never, adapterIdOf: (id: string) => agents.get(id)?.adapterId }, wsKey: (a: AgentInfo) => a.cwd, resumeIdFor: (id: string) => id, appName: (id: string) => id, vsUserDirs: () => [],
+      values: { knownSecretValues: () => [], noPrompt: () => true, secretValuesFor: () => [] }, gate: { run: (_k: string, fn: () => Promise<unknown>) => fn() }, listings,
+      listChats: (async () => { calls.push('chats'); await held; return { sessions: [], storesFound: 0, unreadable: 0, tooLarge: 0 }; }) as never,
+    });
+    const scans = [0, 1, 2, 3, 4, 5].map(() => buildScope(mk()));
+    await settle(20);
+    assert.deepStrictEqual(calls, ['chats'], 'six quick starts, the first listing held: one call, not six');
+    release();
+    const done = await Promise.all(scans);
+    assert.deepStrictEqual([...calls].sort(), ['chats', 'chats', 'claude /s/one'], 'one listing per folder and kind in all, not six');
+    assert.ok(done.every((sc) => sc.plan.sessions.some((x) => x.sessionId === 'kp')), 'every scan gets the listing');
+    assert.strictEqual(listings.size, 0, 'a settled listing is not kept');
+    const again = await buildScope(mk());
+    assert.ok(again.plan.sessions.some((x) => x.sessionId === 'kp') && calls.filter((c) => c.startsWith('claude')).length === 2, 'the next scan lists again');
+  }
+
+  // review of the phase 2 code (FR-026): a Codex listing shared through the gate carries the earlier scan's open ids; this scan filters its own
+  stage = 'scope shared Codex listing';
+  {
+    const ag = (id: string, adapterId: string, cwd: string): AgentInfo => ({ id, name: path.basename(cwd), cwd, folders: [cwd], permMode: 'read-only', adapterId } as AgentInfo);
+    const agents = new Map<string, AgentInfo>([['x1', ag('x1', 'codex', '/c/one')]]);
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
+    let started = 0;
+    const adapter = { id: 'codex', isLive: () => false, listPreviousSessions: async (_cwd: string, exclude: ReadonlySet<string>) => { started++; await held; return [{ id: 'th1', title: 'one', startTime: 1, modifiedTime: 2 }, { id: 'th2', title: 'two', startTime: 1, modifiedTime: 3 }].filter((p) => !exclude.has(p.id)); } };
+    const gate = createReadGate<unknown>();
+    const kept = createCodexListCache();
+    const mk = (): ScopeDeps => ({
+      agents, router: { forAgent: () => adapter as never, adapterIdOf: () => 'codex' }, wsKey: (a: AgentInfo) => a.cwd, resumeIdFor: (id: string) => id, appName: () => 'Codex', vsUserDirs: () => [],
+      values: { knownSecretValues: () => [], noPrompt: () => true, secretValuesFor: () => [] }, gate, codexLists: kept,
+      listChats: (async () => ({ sessions: [], storesFound: 0, unreadable: 0, tooLarge: 0 })) as never,
+    });
+    const first = buildScope(mk());
+    await settle(20);
+    agents.set('th2', ag('th2', 'codex', '/c/one')); // th2 is resumed while the listing is held: an open card now
+    const second = buildScope(mk());
+    await settle(20);
+    assert.strictEqual(started, 1, 'the second scan shares the running call');
+    release();
+    const [a, b] = await Promise.all([first, second]);
+    const earlier = (sc: Awaited<ReturnType<typeof buildScope>>): string[] => sc.plan.sessions.filter((x) => x.group === 'earlier').map((x) => x.sessionId).sort();
+    assert.deepStrictEqual(earlier(a), ['th1', 'th2'], 'the first scan listed before the resume');
+    assert.deepStrictEqual(earlier(b), ['th1'], 'the second scan: th2 is open, not earlier');
+    assert.ok(b.plan.sessions.some((x) => x.sessionId === 'th2' && x.group === 'office'));
+  }
+
+  // round 2 (FR-026): a scan that only shared a listing keeps nothing; the kept list is the starting scan's, under its own ids
+  stage = 'scope kept list after a shared call';
+  {
+    const ag = (id: string, cwd: string): AgentInfo => ({ id, name: path.basename(cwd), cwd, folders: [cwd], permMode: 'read-only', adapterId: 'codex' } as AgentInfo);
+    const agents = new Map<string, AgentInfo>([['x1', ag('x1', '/c')], ['s1', ag('s1', '/c')]]);
+    let release!: () => void;
+    let held: Promise<void> | undefined = new Promise<void>((r) => { release = r; });
+    let started = 0;
+    const all = [{ id: 'th1', title: 'one', startTime: 1, modifiedTime: 2 }, { id: 's1', title: 'was open', startTime: 1, modifiedTime: 3 }];
+    const adapter = { id: 'codex', isLive: () => false, listPreviousSessions: async (_cwd: string, exclude: ReadonlySet<string>) => { started++; await held; return all.filter((p) => !exclude.has(p.id)); } };
+    const gate = createReadGate<unknown>();
+    const kept = createCodexListCache();
+    const mk = (): ScopeDeps => ({
+      agents, router: { forAgent: () => adapter as never, adapterIdOf: () => 'codex' }, wsKey: (a: AgentInfo) => a.cwd, resumeIdFor: (id: string) => id, appName: () => 'Codex', vsUserDirs: () => [],
+      values: { knownSecretValues: () => [], noPrompt: () => true, secretValuesFor: () => [] }, gate, codexLists: kept,
+      listChats: (async () => ({ sessions: [], storesFound: 0, unreadable: 0, tooLarge: 0 })) as never,
+    });
+    const earlier = (sc: Awaited<ReturnType<typeof buildScope>>): string[] => sc.plan.sessions.filter((x) => x.group === 'earlier').map((x) => x.sessionId).sort();
+    const one = buildScope(mk()); // open: x1, s1
+    await settle(20);
+    agents.delete('s1'); // s1 leaves the office while the listing is held
+    kept.clear();
+    const two = buildScope(mk()); // shares the call
+    await settle(20);
+    assert.strictEqual(started, 1);
+    release();
+    held = undefined;
+    await Promise.all([one, two]);
+    const three = await buildScope(mk());
+    assert.deepStrictEqual(earlier(three), ['s1', 'th1'], 'the session that left shows as earlier: the list kept by the sharing scan did not hide it');
+  }
+
+  // round 3 (FR-026): a Codex session that closes while an earlier folder is listed is in the listing's exclusions and in the kept list's ids alike
+  stage = 'scope one snapshot';
+  {
+    const ag = (id: string, adapterId: string, cwd: string): AgentInfo => ({ id, name: path.basename(cwd), cwd, folders: [cwd], permMode: 'read-only', adapterId } as AgentInfo);
+    const agents = new Map<string, AgentInfo>([['k1', ag('k1', 'claude', '/a')], ['x1', ag('x1', 'codex', '/c')], ['s1', ag('s1', 'codex', '/c')]]);
+    let release!: () => void;
+    let held: Promise<void> | undefined = new Promise<void>((r) => { release = r; });
+    const all = [{ id: 'th1', title: 'one', startTime: 1, modifiedTime: 2 }, { id: 's1', title: 'was open', startTime: 1, modifiedTime: 3 }];
+    const adapters: Record<string, unknown> = {
+      claude: { id: 'claude', isLive: () => false },
+      codex: { id: 'codex', isLive: () => false, listPreviousSessions: async (_cwd: string, exclude: ReadonlySet<string>) => all.filter((p) => !exclude.has(p.id)) },
+    };
+    const kept = createCodexListCache();
+    const mk = (): ScopeDeps => ({
+      agents, router: { forAgent: (id: string) => adapters[agents.get(id)!.adapterId] as never, adapterIdOf: (id: string) => agents.get(id)?.adapterId }, wsKey: (a: AgentInfo) => a.cwd, resumeIdFor: (id: string) => id, appName: (id: string) => id, vsUserDirs: () => [],
+      values: { knownSecretValues: () => [], noPrompt: () => true, secretValuesFor: () => [] }, gate: createReadGate<unknown>(), codexLists: kept,
+      listChats: (async () => { await held; return { sessions: [], storesFound: 0, unreadable: 0, tooLarge: 0 }; }) as never,
+    });
+    const earlier = (sc: Awaited<ReturnType<typeof buildScope>>): string[] => sc.plan.sessions.filter((x) => x.group === 'earlier').map((x) => x.sessionId).sort();
+    const one = buildScope(mk());
+    await settle(20);
+    agents.delete('s1'); // closes while folder /a is still listed
+    kept.clear();
+    release();
+    held = undefined;
+    await one;
+    const two = await buildScope(mk());
+    assert.deepStrictEqual(earlier(two), ['s1', 'th1'], 'the session that closed meanwhile shows as earlier in the next scan');
+  }
+
+  // round 2 (FR-026): the same filter for a shared non-Codex listing: a session resumed while the listing is held is open, not earlier
+  stage = 'scope shared Claude listing';
+  {
+    const ag = (id: string): AgentInfo => ({ id, name: 'one', cwd: '/cl', folders: ['/cl'], permMode: 'read-only', adapterId: 'claude' } as AgentInfo);
+    const agents = new Map<string, AgentInfo>([['k1', ag('k1')]]);
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
+    let started = 0;
+    const adapter = { id: 'claude', isLive: () => false, listPreviousSessions: async (_cwd: string, exclude: ReadonlySet<string>) => { started++; await held; return [{ id: 'cp1', title: 'a', startTime: 1, modifiedTime: 2 }, { id: 'cp2', title: 'b', startTime: 1, modifiedTime: 3 }].filter((p) => !exclude.has(p.id)); } };
+    const listings = new Map<string, Promise<unknown>>();
+    const mk = (): ScopeDeps => ({
+      agents, router: { forAgent: () => adapter as never, adapterIdOf: () => 'claude' }, wsKey: (a: AgentInfo) => a.cwd, resumeIdFor: (id: string) => id, appName: () => 'Claude Code', vsUserDirs: () => [], listings,
+      values: { knownSecretValues: () => [], noPrompt: () => true, secretValuesFor: () => [] }, gate: { run: (_k: string, fn: () => Promise<unknown>) => fn() },
+      listChats: (async () => ({ sessions: [], storesFound: 0, unreadable: 0, tooLarge: 0 })) as never,
+    });
+    const first = buildScope(mk());
+    await settle(20);
+    agents.set('cp2', ag('cp2')); // cp2 is resumed while the listing is held
+    const second = buildScope(mk());
+    await settle(20);
+    assert.strictEqual(started, 1, 'shared');
+    release();
+    const [a, b] = await Promise.all([first, second]);
+    const earlier = (sc: Awaited<ReturnType<typeof buildScope>>): string[] => sc.plan.sessions.filter((x) => x.group === 'earlier').map((x) => x.sessionId).sort();
+    assert.deepStrictEqual([earlier(a), earlier(b)], [['cp1', 'cp2'], ['cp1']], 'the second scan filters its own open ids');
+  }
+
   // ---- source checks (FR-025, FR-032, FR-033)
 
   stage = 'source checks';
@@ -685,6 +874,7 @@ async function main(): Promise<void> {
     // main.ts hands over main's own state and stops the scan on window close and quit
     const mainSrc = read('src/main/main.ts');
     assert.ok(/registerConvSearchIpc\(\{/.test(mainSrc) && /hasSessions: \(\) => agents\.size > 0/.test(mainSrc), 'main.ts registers the search with its own agents');
+    assert.ok(/const convListings = new Map<string, Promise<unknown>>\(\)/.test(mainSrc) && /gate: convGate, codexLists, listings: convListings,/.test(mainSrc), 'main.ts passes its one map of running listings to every scan (FR-022)');
     assert.ok(/noPrompt: \(\) => !mcpStore \|\| mcpStore\.noPrompt\(\)/.test(mainSrc) && /knownSecretValues: \(key\) => mcpStore\?\.knownSecretValues\(key\) \?\? \[\]/.test(mainSrc), 'MCP values without a prompt, as NotesOps; no store yet means nothing is locked (review of PR 1232, Q1: as valuesPending, `!!mcpStore && ...`)');
     {
       // Q1: the wiring's own expression, run: no store yet is "nothing locked" (the note says nothing), a store that would prompt is locked
@@ -708,10 +898,13 @@ async function main(): Promise<void> {
     const block = simSrc.slice(simSrc.indexOf('/* convquery:begin */'), simSrc.indexOf('/* convquery:end */'));
     assert.ok(block.includes('const simCleanQuery'), 'the simulator marks its query rule');
     const js = ts.transpileModule(block, { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText;
+    (globalThis as unknown as { window: unknown }).window = { DurbarSafeText: require('../src/shared/redact') }; // eslint-disable-line @typescript-eslint/no-require-imports
     // eslint-disable-next-line @typescript-eslint/no-implied-eval
     const simClean = new Function(js + '\nreturn simCleanQuery;')() as typeof cleanQuery;
-    const corpus: unknown[] = ['a bc', 'x y', '', '  ab ', 'invoice export', 'a\u0000b\u0000c', 'one two three four five six seven eight nine', 'x'.repeat(250), '\u{1F600}'.repeat(205), 'word '.repeat(300), 'é ü', 'éx', 42, null];
+    const corpus: unknown[] = ['a bc', 'x y', '', '  ab ', 'invoice export', 'a\u0000b\u0000c', 'one two three four five six seven eight nine', 'x'.repeat(250), '\u{1F600}'.repeat(205), 'word '.repeat(300), 'é ü', 'éx', 42, null, '\u200b\u200b\u200b', '\u202e\u202e\u202e', 'a\u200bb', 'a\u200bbc', 'inv\u00adoice', '\u202einvoice\u2060 export', 'invoice\u202fexport', 'invoice\u2009export', 'invoice\u2028export', 'invoice\nexport', 'inv\ufeffoice export', 'a\ufeffbc'];
     for (const q of corpus) assert.deepStrictEqual(simClean(q), cleanQuery(q), `the simulator answers ${JSON.stringify(q)?.slice(0, 40)} as main does`);
+    (globalThis as unknown as { window: unknown }).window = {};
+    assert.deepStrictEqual(simClean('invoice'), { ok: false, code: 'invalid' }, 'the simulator without the shared unhide fails closed');
     assert.ok(/convSearchStart: async/.test(simSrc) && /simsearch/.test(simSrc), 'the simulator fakes the bridge, with a slow mode');
     const fake = simSrc.slice(simSrc.indexOf('function simConvSearchApi'), simSrc.indexOf('\n}\n', simSrc.indexOf('function simConvSearchApi')));
     assert.ok(fake.length > 1000 && !/fetch\(|XMLHttpRequest|localStorage|sessionStorage|indexedDB|bridge\(|agentDurbar/.test(fake), 'the fake does no I/O and calls no real bridge');
@@ -726,7 +919,7 @@ async function main(): Promise<void> {
     const fnAt = simSrc.indexOf('function simConvSearchApi');
     const js = ts.transpileModule(simSrc.slice(from, simSrc.indexOf('\n}\n', fnAt) + 3), { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText;
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    (globalThis as unknown as { window: unknown }).window = { DurbarSessionSearch: search, DurbarRedact: require('../src/shared/redact') };
+    (globalThis as unknown as { window: unknown }).window = { DurbarSessionSearch: search, DurbarRedact: require('../src/shared/redact'), DurbarSafeText: require('../src/shared/redact') };
     // eslint-disable-next-line @typescript-eslint/no-implied-eval
     const make = new Function(js + '\nreturn simConvSearchApi;')() as (qs: URLSearchParams, scope: () => unknown[]) => Required<Pick<import('../src/shared/api').DurbarApi, 'convSearchStart' | 'convSearchCancel' | 'convSearchClear' | 'onConvSearch'>>;
     const s0 = { adapter: 'copilot', app: 'GitHub Copilot', folderName: 'demo', agentId: 'sim-1', time: 0, content: 'read' };

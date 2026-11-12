@@ -65,7 +65,10 @@ jobs:
           echo "worlds=$ids" >> "$GITHUB_OUTPUT"
           echo "worlds: ${ids:-all}"
       - run: sudo apt-get update && sudo apt-get install -y xvfb
-      - run: npm ci
+      # spec 008 FR-195: this job's 12-minute limit (spec 098 SC-003) cannot hold the default 8 minutes of retry waits
+      - uses: ./.github/actions/npm-ci
+        with:
+          retry-waits: '15 45 90'
       - run: npm run build
       # the page checks themselves, on fixture pages: a matrix with no present moment checks no cell, so this is what proves them
       - name: World matrix selftest
@@ -104,7 +107,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: sudo apt-get update && sudo apt-get install -y xvfb
-      - run: npm ci
+      - uses: ./.github/actions/npm-ci
       - run: npm run build
       # the page checks themselves, on fixture pages: a matrix with no present moment checks no cell, so this is what proves them
       - name: World matrix selftest

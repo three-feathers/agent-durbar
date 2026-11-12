@@ -6,7 +6,7 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { contrast } from '../src/shared/themegen';
-import { captureWithoutRoom } from '../src/main/docshot';
+import { captureWithoutRoom, PAINTED } from '../src/main/docshot';
 
 const ROOT = path.join(__dirname, '..', '..');
 const LOGO = path.join(ROOT, 'build', 'logo');
@@ -224,11 +224,14 @@ for (const rel of ['scripts', 'src', 'package.json', 'README.md']) {
   const run = async (code: string) => { calls.push(code); if (/h\.dataset\.fullscreen=''/.test(code)) { const w = state; state = true; return w; } if (/delete /.test(code)) state = false; return undefined; };
   void (async () => {
     let during = false;
-    const r = await captureWithoutRoom(run, async () => { during = state; return 'png'; }, true);
+    let before: string[] = [];
+    const r = await captureWithoutRoom(run, async () => { during = state; before = calls.slice(); return 'png'; }, true);
     assert.ok(r === 'png' && during && !state, 'DURBAR_DOC_SHOTS: fullscreen set during the capture, put back after');
+    /* review of #1322: capturePage takes the last painted frame, so the closed room must have painted before the capture */
+    assert.ok(before.length === 2 && before[1] === PAINTED && /requestAnimationFrame/.test(PAINTED), 'the capture waits for the closed room to paint (two animation frames) after setting it');
     state = true; calls.length = 0;
     await captureWithoutRoom(run, async () => 1, true);
-    assert.ok(state && calls.length === 1, 'an app already in full screen stays so');
+    assert.ok(state && calls.length === 2, 'an app already in full screen stays so');
     state = false; calls.length = 0;
     await assert.rejects(captureWithoutRoom(run, async () => { throw new Error('x'); }, true), /x/);
     assert.ok(!state, 'put back even when the capture fails');
@@ -237,8 +240,32 @@ for (const rel of ['scripts', 'src', 'package.json', 'README.md']) {
     assert.strictEqual(calls.length, 0, 'off outside shots:docs');
   })().catch((e) => { console.error(e); process.exit(1); });
   const mainSrc = fs.readFileSync(path.join(ROOT, 'src', 'main', 'main.ts'), 'utf8');
-  assert.match(mainSrc, /shot: \(file: string\) => captureWithoutRoom\(/, 'the driver ctx.shot (every picture) goes through captureWithoutRoom');
-  assert.ok(!/closes the room|dataset\.fullscreen/.test(fs.readFileSync(path.join(ROOT, 'scripts', 'driver-helpers.js'), 'utf8')), 'helpers().shot has no copy of the fix');
+  const helpersSrc = fs.readFileSync(path.join(ROOT, 'scripts', 'driver-helpers.js'), 'utf8');
+  /* spec 008 FR-186 (review of #1326): a PNG and a JPEG go through the one capture function; the JPEG is written inside captureWithoutRoom, and the helpers never capture a picture themselves */
+  const shotProblems = (main: string, helpers: string): string[] => {
+    const out: string[] = [];
+    const m = /shot: \(file: string, o\?: \{ quality\?: number \}\) => captureWithoutRoom\(([\s\S]*?)dev\.DURBAR_DOC_SHOTS === '1'\),/.exec(main);
+    if (!m) out.push('ctx.shot does not go through captureWithoutRoom with a quality option');
+    else {
+      if (!/async \(\) => \{[\s\S]*toJPEG\([\s\S]*toPNG\(\)/.test(m[1])) out.push('ctx.shot writes the JPEG and the PNG inside the captureWithoutRoom callback');
+    }
+    if (/closes the room|dataset\.fullscreen/.test(helpers)) out.push('helpers().shot has a copy of the fix');
+    if (/toJPEG\(|capturePage\(\)\)\.toPNG/.test(helpers.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, ''))) out.push('helpers().shot captures a picture itself (it must call ctx.shot)');
+    if (!/await ctx\.shot\(file, \{ quality: o\.quality \}\)/.test(helpers)) out.push('helpers().shot does not pass the quality to ctx.shot');
+    return out;
+  };
+  assert.deepStrictEqual(shotProblems(mainSrc, helpersSrc), [], 'every picture, PNG or JPEG, goes through ctx.shot and captureWithoutRoom');
+  const mutants: Array<[string, string, string]> = [
+    ['helpers write the JPEG themselves (the bypass)', helpersSrc.replace('await ctx.shot(file, { quality: o.quality });', "if (/\\.jpe?g$/i.test(file)) require('fs').writeFileSync(file, (await wc().capturePage()).toJPEG(60)); else await ctx.shot(file, { quality: o.quality });"), 'main'],
+    ['ctx.shot takes no quality (a JPEG falls back to a PNG or is skipped)', mainSrc.replace('shot: (file: string, o?: { quality?: number }) =>', 'shot: (file: string) =>'), 'helpers'],
+    ['ctx.shot no longer goes through captureWithoutRoom', mainSrc.replace('o?: { quality?: number }) => captureWithoutRoom(', 'o?: { quality?: number }) => (async (_r: unknown, c: () => Promise<unknown>) => c())('), 'helpers'],
+    ['the JPEG branch is dropped from the capture', mainSrc.replace('img.toJPEG(', 'img.toBMP('), 'helpers'],
+  ];
+  for (const [why, mutated, which] of mutants) {
+    assert.notStrictEqual(mutated, which === 'main' ? helpersSrc : mainSrc, `the mutant "${why}" changed the source`);
+    const probs = which === 'main' ? shotProblems(mainSrc, mutated) : shotProblems(mutated, helpersSrc);
+    assert.ok(probs.length > 0, `the shot check goes red on: ${why}`);
+  }
 }
 
 // ---- the check itself: each rule goes red on its broken case ----

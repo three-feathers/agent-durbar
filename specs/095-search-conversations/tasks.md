@@ -4,7 +4,7 @@
 
 **Tests**: required (constitution VII.3; SC-001..SC-005). Node tests and the simulator only; 0 AI credits; no network. Driver waits use `until()`.
 
-**Format**: `- [ ] Tnnn [P?] [USn?] description (file) [requirements]`. `[P]` = can run in parallel. One task = one small testable step; a phase = one PR. Numbers taken: spec 095, FR-001..FR-052 (sparse by group; FR-016 added in review), T001..T064 (T064 added in review; T026, T027 owner answers C and D, 2026-11-06).
+**Format**: `- [ ] Tnnn [P?] [USn?] description (file) [requirements]`. `[P]` = can run in parallel. One task = one small testable step; a phase = one PR. Numbers taken: spec 095, FR-001..FR-052 (sparse by group; FR-016 added in review), T001..T065 (T064 added in review; T026, T027 owner answers C and D, 2026-11-06; T065 for issue 1234).
 
 ## Phase 0: Spec (this PR)
 
@@ -39,11 +39,11 @@
 
 ## Phase 3: The window (PR 3)
 
-- [x] T030 [US1] `src/renderer/convsearch.js` (pure builders: group rows, excerpt HTML with `<mark>` from offsets and `esc()`, state lines, accessible names) + `scripts/test-convsearchui.ts`; load order in `index.html`. Test line: at `search:done` each group is re-sorted newest first while the focused or hovered row keeps its place (FR-015) [FR-010, FR-011, FR-015]
+- [x] T030 [US1] `src/renderer/convsearch.js` (pure builders: group rows, excerpt HTML with `<mark>` from offsets and `esc()`, the excerpt text first through the safe-text path so bidi and other hidden format characters are neutralised, never rendered (review of PR 1232, question a: an RLO before a masked token), state lines, accessible names) + `scripts/test-convsearchui.ts`; load order in `index.html`. Test line: at `search:done` each group is re-sorted newest first while the focused or hovered row keeps its place (FR-015) [FR-010, FR-011, FR-015]
 - [x] T031 [US1] Top-bar box `#convSearch` (and the collapsed magnifier per Q1), 250 ms pause, `setView('list')` remembering the view, clear restores it; styles in the existing CSS files, no size under 10.5px [FR-001, FR-002, FR-050]
 - [x] T032 [US1] Results view in `#list`: In the office / Earlier sessions groups, List row cells reused from `renderList()`, Resume / View buttons, sort headers, "load more" order rule, 200-session cap note [FR-004, FR-010, FR-015]
 - [x] T033 [US3] Keyboard: Ctrl+Shift+F (⌘⇧F), configurable (keyboard sheet, Settings > Keyboard, palette action "Search conversations" that only focuses the box); `['mod+shift+KeyF','Search conversations']` added to `TAKEN` in `src/renderer/navigator.js` with a case in `scripts/test-navigator.ts` (the recorder refuses it); `mod+shift+KeyF` is also added to `SAVED_BEFORE` (`navigator.js`, today KeyM only), because `loadCombo` resets a saved combo that is now in `TAKEN` unless it is there: a saved Go to Ctrl+Shift+F is kept, the search shortcut is then not bound and Settings > Keyboard says so (tests: the recorder refuses a new Ctrl+Shift+F; a saved one survives `loadCombo`); Escape clears and returns, Down/J/K/Enter/Shift+F10 on results [FR-003, US3]
-- [x] T034 [US3] Live region: "Searching, N of M sessions" every 2 s at most, final "N results in M sessions" / "No conversation matches"; accessible names; Stop button [FR-015, US3.4]
+- [x] T034 [US3] Live region: "Searching, N of M sessions" every 2 s at most, final "N results in M sessions" / "No conversation matches"; accessible names; Stop button [FR-015, US3.4] The simulator test's fixed waits (900 ms, 600 ms: nothing arrives after a cancel or clear) become a fake timer (review of PR 1232, round 2).
 - [x] T040 [US2] Find out how the chat and the replay mark messages (read `app.js` chat build and replay; note in `plan.md`); decide the anchor's DOM hook; confirm against the rendered chat that `anchorKey` of the rendered text equals `anchorKey` of the masked source text (Markdown, entities, masked spans); update FR-013 [FR-013]
 - [x] T041 [US2] Open a result: open-session select, `sessions:resume` + history for previous, `vschat:read` for VS Code; refusal texts reused; no new resume path [FR-012]
 - [x] T042 [US2] `jumpToAnchor({n, head})` with `innerscroll.js`, mark for 2 s (reduced motion: no flash), head mismatch or cap shows the "older than the chat shows" note; unit test on a fake DOM list [FR-013; US2.4]
@@ -59,6 +59,7 @@
 
 - [x] T064 Other docs and website pages the change touches (not the README feature line, *Safety model* or keyboard sheet, which ship in Phase 3 with T060)
 
+- [x] T065 Issue 1234 (2026-11-07 *Changes*): `hiddenCanHide` in `redact.ts`; `maskKeepingMarkdown` skips the copy pass and `maskWork` prices x1 when every hidden character is inert; cost, strength and differential-fuzz tests, mutants (`src/shared/redact.ts`, `src/main/convmask.ts`, `scripts/test-convmask.ts`, `scripts/test-maskoutgoing.ts`, `scripts/test-livehead.ts`, `scripts/livehead-walk.ts`, `scripts/test-maskoutgoing-fuzz.ts`; review of PR 1244: marks in the head, walker, mutants, pricing per hidden run, suite split into two, walker for `?`, `*`, `+`) [FR-030, FR-063]
 - [x] T062 Mutation check of plan *Testing* 6, each listed in the PR; `docs/agent-notes.md` entries learned (fold length changes, mask-before-cut windows, Copilot and Codex reader gap)
 - [ ] T063 Spec housekeeping: tick tasks, `[IMPLEMENTED]` tags, specs-index status, `/speckit-converge`; owner `real:` checks on a real store (timings, Windows and macOS paths)
 

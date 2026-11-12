@@ -18,6 +18,31 @@ async function main(): Promise<void> {
     assert.strictEqual(grantScope({ kind: 'shell', fullCommandText: c }).broad, undefined, `no any-arguments scope for: ${c}`);
   assert.strictEqual(grantScope({ kind: 'shell', fullCommandText: 'git push origin main' }).broad?.key, 'shell:git');
   assert.strictEqual(grantScope({ kind: 'url', url: 'https://example.com/x?y=1' }).key, 'url:example.com');
+  // spec 012 FR-176 (issue #1296): the exact-command label is masked first, then cut (values made up at run time, never real)
+  {
+    const body = 'aB3dE6gH9jK2mN5pQ8sT1vW4yZ7aB3dE6gH9jK2';
+    const tok = 'gh' + 'p_' + body.slice(0, 36);
+    // the token starts at character 21 of the command, so the old cut at 27 characters kept `ghp_` and 2 characters of it
+    const cmd = 'curl -sS --data xxxx ' + tok + ' https://example.test/a';
+    const g = grantScope({ kind: 'shell', fullCommandText: cmd });
+    assert.ok(!g.label.includes('ghp_') && !g.label.includes(body.slice(0, 8)), `#1296: no part of a token straddling the cut is in the label: ${g.label}`);
+    assert.strictEqual(g.label, 'run curl -sS --data xxxx…', '#1296: masked, then cut at a word');
+    assert.strictEqual(g.key, 'shell-exact:' + cmd, '#1296: the grant key is the full raw command, unchanged');
+    // a token that ends right at the cut, and a secret flag value
+    const g2 = grantScope({ kind: 'shell', fullCommandText: 'run-tool --token ' + body.slice(0, 12) + ' --verbose=1 --name=abc' });
+    assert.ok(!g2.label.includes(body.slice(0, 6)), `#1296: a secret flag value is not in the label: ${g2.label}`);
+    // a secret in a word that is whole before the cut (a word-boundary cut of the raw text keeps it): only the mask hides it
+    assert.strictEqual(grantScope({ kind: 'shell', fullCommandText: 'export TOKEN=' + body.slice(0, 9) + ' && echo done' }).label, 'run export TOKEN=[redacted] &&…', '#1296: a secret whole before the cut is masked, not shown');
+    // a marker is never cut in two; a first word longer than the cut is cut as it is (it holds nothing the mask found)
+    const g3 = grantScope({ kind: 'shell', fullCommandText: 'echo pass' + 'word=' + body.slice(0, 12) + ' && echo done' });
+    assert.ok(!/\[redac[^\]]*…/.test(g3.label), `#1296: no half marker: ${g3.label}`);
+    // pre-review of PR 1317: the marker guard has its own case: a marker that starts inside a first word longer than the cut (no space to cut at) is dropped whole, never `[redacte…`
+    assert.strictEqual(grantScope({ kind: 'shell', fullCommandText: 'MY_SERVICE_' + 'PASS' + 'WORD=' + body.slice(0, 12) }).label, 'run MY_SERVICE_' + 'PASS' + 'WORD=…', '#1296: a marker in a long first word is shown whole or not at all');
+    // review of PR 1317 (Ruben, item 3): the word cut has its own case: the cut at 27 falls inside a plain word after a space, so the label ends at the word before it, never inside a word
+    assert.strictEqual(grantScope({ kind: 'shell', fullCommandText: 'echo hello wonderfully-long-word more' }).label, 'run echo hello…', '#1296: the cut is at a word: the cut lands inside a plain word after a space');
+    assert.strictEqual(grantScope({ kind: 'shell', fullCommandText: 'x'.repeat(60) }).label, 'run ' + 'x'.repeat(27) + '…', '#1296: a long plain word is cut as before');
+    assert.strictEqual(grantScope({ kind: 'shell', fullCommandText: 'npm test' }).label, 'run npm test', 'a short command is unchanged');
+  }
   assert.strictEqual(grantScope({ kind: 'mcp', toolName: 'search' }).key, 'mcp:search');
   assert.strictEqual(grantScope({ kind: 'mcp', serverName: 'github', toolName: 'search' }).key, 'mcp:github/search', 'MCP grants are scoped to the server');
   assert.notStrictEqual(grantScope({ kind: 'mcp', serverName: 'a', toolName: 'search' }).key, grantScope({ kind: 'mcp', serverName: 'b', toolName: 'search' }).key);
@@ -636,6 +661,15 @@ const mkRoots2 = (m: { ask?: boolean; allow?: boolean }, roots?: string[]) => {
       assert.strictEqual(W.describe(bad, live), null, `no tag for ${JSON.stringify(bad)}`);
   }
 
+  // spec 012 FR-181 (issue #1541): the "Approve for this session" label (`shortCmd`) hides an escaped token (`ghp\_<body>`) as the first word and quoted (was half a token)
+  {
+    const esc = 'ghp' + '\\_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
+    for (const cmd of [esc + ' --x', 'echo "' + esc + '"', 'echo ' + esc]) {
+      const label = grantScope({ kind: 'shell', fullCommandText: cmd }).label;
+      assert.ok(!label.replace(/\\/g, '').includes('A1b2C3d4') && !/ghp/.test(label), `#1541 shortCmd: the grant label hides an escaped token: ${label}`);
+    }
+    assert.strictEqual(grantScope({ kind: 'shell', fullCommandText: esc + ' --x' }).label, 'run [redacted] --x', '#1541 shortCmd: the label as written around the mask');
+  }
   console.log('permissions: all checks passed');
 }
 main().catch((e) => {

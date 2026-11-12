@@ -71,7 +71,8 @@ export interface Note {
 }
 
 export interface Tombstone { id: string; deletedAt: string }
-export interface NotesMirror { sha256: string; bytes: number; at: string }
+/** `id`: `<dev>:<ino>` of the file Durbar wrote (from `fstat` of the temp file's handle; spec 083 Changes 2026-11-10), optional: an older version's mirror has none. */
+export interface NotesMirror { sha256: string; bytes: number; at: string; id?: string }
 
 export interface NotesDoc {
   version: 1;
@@ -258,7 +259,7 @@ export function parseNotesDoc(raw: string): ParseResult {
   }
   const m = d.mirror as Record<string, unknown> | undefined;
   const mirror = m && typeof m === 'object' && typeof m.sha256 === 'string' && /^[0-9a-f]{64}$/.test(m.sha256) && intIn(m.bytes, 0, NOTES_LIMITS.mdBytes) && isoOk(m.at)
-    ? { sha256: m.sha256, bytes: m.bytes as number, at: m.at as string } : undefined;
+    ? { sha256: m.sha256, bytes: m.bytes as number, at: m.at as string, ...(typeof m.id === 'string' && /^[0-9]{1,24}:[0-9]{1,24}$/.test(m.id) ? { id: m.id } : {}) } : undefined;
   const ff = d.fileFolder as Record<string, unknown> | undefined;
   const fileFolder = ff && typeof ff === 'object' && typeof ff.id === 'string' && /^[0-9]{1,24}:[0-9]{1,24}(?::[0-9]{1,24})?$/.test(ff.id) && isoOk(ff.at) ? { id: ff.id, at: ff.at as string } : undefined;
   const fi = d.fileImport as Record<string, unknown> | undefined;

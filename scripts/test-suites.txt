@@ -1,6 +1,7 @@
 # The suites `npm test` runs (scripts/run-tests.js), one `npm run` script name per line, in the order `npm run test:serial` runs them.
 # Add a new suite on its own line in the middle of the list, not at the end (two PRs appending at the end conflict). Blank lines and # comments are ignored.
 test:safetext
+test:settingsnav
 test:rendersyntax
 test:perfrecord
 test:permissions
@@ -8,6 +9,9 @@ test:attachments
 test:vscode
 test:runtime-core
 test:runtime-redact
+test:livehead
+test:maskoutgoing-fuzz
+test:maskoutgoing-fuzz-b
 test:maskoutgoing
 test:contactlinks
 test:runtime-mcp
@@ -69,6 +73,8 @@ test:mcpsigninrefresh
 test:places
 test:floornav
 test:cuttext
+test:chattrim
+test:subretire
 test:grantlabel
 test:floors
 test:mood
@@ -85,6 +91,7 @@ test:claudetransport
 test:claudeadapter
 test:claudesdk
 test:agentprofiles
+test:agentconfirm
 test:claudehistory
 test:broadfolder
 test:remote
@@ -98,6 +105,8 @@ test:autopilot-copilot
 test:autopilot-claude
 test:autopilot-codex
 test:autopilot-reach
+test:autopilot-ipc
+test:autopilot-window
 test:elicit
 test:macos
 test:profiledir
@@ -109,6 +118,7 @@ test:copilotshared
 test:gitstatus
 test:officeops
 test:uisuite
+test:cichanges
 test:pathdirs
 test:officialinstall
 test:checknames
@@ -119,8 +129,10 @@ test:planmode
 test:probe
 test:logo-assets
 test:autofollow
+test:announcemask
 test:openwith
 test:liveact
+test:lookalike
 test:names
 test:renameadapters
 test:sessionname
@@ -147,6 +159,8 @@ test:mcpservertools
 test:navigator
 test:crew
 test:characters
+test:chargen
+test:imagecheck
 test:crew-assets
 test:realoffice-layout
 test:realoffice-assets
@@ -166,9 +180,11 @@ test:shutters
 test:unread
 test:tooltip
 test:simclock
+test:pointer-log
 test:labelsbackfill
 test:claim
 test:prgatenotes
+test:prgatecodeql
 test:trustedcontent
 test:checkparallel
 test:cappedread
@@ -190,14 +206,19 @@ test:newfolderop
 test:newfolderipc
 test:newfoldergit
 test:supplychain
+test:electroncache
 test:claudecliunit
 test:rules
 test:weeklyretro
 test:docsscripts
+test:citypecheck
 test:worldmatrix
+test:world-catalogue
 test:worldzip
 test:worldpack
 test:world-packs
+test:worldstore
+test:worldipc
 test:consolemask
 test:redact-growth-tokens
 test:redact-growth-adversarial
@@ -210,6 +231,7 @@ test:redact-growth-hashtable
 test:redact-growth-hashtablegrowth
 test:redact-growth-shapes
 test:redact-growth-shapes2
+test:redact-growth-masks
 test:redact-images-whole
 test:redact-images-forms
 test:doormigrate
@@ -221,3 +243,7 @@ test:mcpcontextipc
 test:quota
 test:featureinventory
 test:simversion
+test:momentsregistry
+test:paritytick
+test:picturebudget
+test:specnumbers

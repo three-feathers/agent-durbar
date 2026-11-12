@@ -37,11 +37,139 @@
     for(let i=pool.length-2;i>=0&&!one;i--){const next=pool[i]+' '+out;if(Array.from(next).length>max)break;out=next;}
     return cutOf(out,max);
   }
+  const openStr=raw=>{const t=String(raw==null?'':raw),i=Math.max(t.lastIndexOf('\x1b]'),t.lastIndexOf('\x1bP'),t.lastIndexOf('\x1b^'),t.lastIndexOf('\x1b_'),t.lastIndexOf('\x1bX'),t.lastIndexOf('\x90'),t.lastIndexOf('\x98'),t.lastIndexOf('\x9d'),t.lastIndexOf('\x9e'),t.lastIndexOf('\x9f'));return i>=0&&!/[\x07\x9c]|\x1b\\/.test(t.slice(i+1));};
   /* spec 097 FR-317 (issue #1284): a tool NAME is shown through the same mask as a label (MCP servers choose names). Control codes out first, then the mask;
      a name the mask changed in ANY way is shown as the generic word `tool`, never half hidden. No mask or a failing one: `tool` too. Every surface that shows a name calls this. */
+  /* spec 012 FR-181 (review of PR 1585, round 7): a tool name longer than this is the neutral word before any mask runs (fail closed); the longest real names are under 30 characters, and an
+     uncapped name was the one input that let a backslash-dense or `[redacted:`-dense text reach maskRaw at up to 1,000,000 characters (issue #1593) */
+  const TOOL_CAP=256;
   const toolName=(raw,mask)=>{const m=mask||{};try{if(typeof m.redact!=='function')return 'tool'; /* no mask: fail closed, as a label */
+    if(String(raw==null?'':raw).length>TOOL_CAP)return 'tool';
+    if(openStr(raw))return 'tool'; /* an escape string left open at the end swallows what follows it, and what is shown would be the start of a token (ghp_ and four characters): fail closed (review of PR 1292) */
     const t=String(clearIn(raw==null?'':raw,m.redact)).trim();if(!t)return 'tool';
     const x=ST.maskRaw(t,m.redact);return x===t?t:'tool';}catch(e){return 'tool';}}; /* shown only when the mask left it exactly as it was: any change, a failed or cut mask ("[redaction failed]", the 1,000,000-character cut), a throw: `tool` */
+  /* spec 097 FR-318 (issue #1290; review of PR 1292): the words of a permission request (its summary, the scope labels of its buttons, a grant chip, the "why allowed" label)
+     through the same masks as the chat. Returns {text, hidden, why}: why is `secret` (a part was replaced), `control` (control characters were turned into visible markers
+     such as ⟦ESC⟧) or `unchecked` (the mask is missing or failed: neutral words, no text). NEVER deletes a visible character: the grant key is the full raw text, so the card must
+     show all of it. Control characters (escapes, C1, bidi, zero-width) become a visible marker each and hidden is true. A token an escape splits would slip past the mask once marked,
+     so the text is also read three other ways (escape sequences out, introducers out, control characters out): when the mask changes any of them, the neutral words are shown
+     (why `secret`). By kind: `shell` the command after `run ` through the command mask (maskLabel 'run'); `tool` each word of `server › tool` through toolName, then one redact; any other
+     kind: redact (a URL by the URL mask). Empty text stays empty. Only shown text: ids, keys, scopes are untouched. */
+  const PERM_FB={shell:'a command',tool:'tool',other:'request'};
+  /* every character that can make a shown command differ from the real one: C0/C1 controls, any whitespace that is not a plain space (LF, CR, TAB, NBSP, U+2028...), every Cf and
+     Default_Ignorable_Code_Point (ZWJ, ZWNJ, U+2060, variation selectors, tags, soft hyphen, bidi) and the blank fillers (U+2800, U+3164, U+115F, U+1160, U+FFA0) */
+  const PCTRL_T=/[^\S ]|[\x00-\x1f\x7f-\x9f\p{Cf}\p{Default_Ignorable_Code_Point}\u2800\u3164\u115f\u1160\uffa0]/u;
+  const PCTRL=new RegExp(PCTRL_T.source,'gu');
+  const PMARK={'\x1b':'ESC','\n':'LF','\r':'CR','\t':'TAB'};
+  const pmark=c=>'⟦'+(PMARK[c]||'U+'+c.codePointAt(0).toString(16).toUpperCase().padStart(4,'0'))+'⟧';
+  const PERM_CAP=10000; /* characters looked at: more is cut (at a word) before any heavy work, and marked */
+  /* review of PR 1292, round 3: a masked shell command is `lost` (shown text cannot be trusted to say what runs) when the mask blanked the whole command or failed, changed it without
+     a [redacted] marker, or replaced a span that holds command substitution or a shell operator ($( ` ; | & < > or a line break marker): the visible pieces are matched back into the
+     raw command, so every character that is not visible lies in a span that is checked */
+  const REDACTED=/\[redacted[^\]]*\]/, SPANBAD=/\$\(|`|[;|&<>({\n\r]|\u27e6(?:LF|CR)\u27e7/;
+  function shellLost(cmd,x){
+    if(x===cmd)return false;
+    if(/redaction failed/.test(x)||/^\s*\[redacted[^\]]*\]\s*$/.test(x))return true;
+    const parts=x.split(new RegExp(REDACTED.source,'g'));if(parts.length<2)return true;
+    if(!cmd.startsWith(parts[0]))return true;
+    let pos=parts[0].length;
+    for(let i=1;i<parts.length;i++){
+      const p=parts[i],last=i===parts.length-1;let idx;
+      if(last){if(!cmd.endsWith(p)||cmd.length-p.length<pos)return true;idx=cmd.length-p.length;}
+      else{idx=cmd.indexOf(p,pos);if(idx<0)return true;}
+      if(SPANBAD.test(cmd.slice(pos,idx)))return true;
+      pos=idx+p.length;
+    }
+    return false;
+  }
+  function permCore(raw,k,m){ /* {s, out} (out null: the mask gave nothing) for a text without control characters */
+    const s=String(raw).replace(/\s+/g,' ').trim();if(!s)return {s:'',out:''};
+    if(k==='shell'){const mm=/^(run )([\s\S]*)$/.exec(s),pre=mm?mm[1]:'',cmd=mm?mm[2]:s;if(!cmd)return {s,out:s};
+      const x=ST.maskLabel(cmd,'run',m);return {s,out:x?pre+x:null,lost:x?shellLost(cmd,x):false};}
+    if(k==='tool'){const j=s.split(/( › |\s+)/).map((w,i)=>i%2||!w?w:toolName(w,m)).join('');const x=ST.maskLabel(j,'other',m);return {s,out:x||null};}
+    const x=ST.maskLabel(s,'other',m);return {s,out:x||null};
+  }
+  function permBase(raw,kind,mask){
+    const m=mask||{}, k=kind==='shell'||kind==='tool'?kind:'other', fb=why=>({text:PERM_FB[k],hidden:true,why});
+    try{
+      if(raw==null||raw==='')return {text:'',hidden:false};
+      if(typeof m.redact!=='function')return fb('unchecked');
+      let r0=String(raw),cut=false;
+      if(r0.length>PERM_CAP){cut=true;r0=r0.slice(0,PERM_CAP);const i=r0.search(/\s\S*$/);r0=i>0?r0.slice(0,i):'';} /* cut at a word: never half a token */
+      const tail=t=>cut?{text:t.text,hidden:true,why:'cut'}:t, suf=cut?' ⟦cut⟧':'';
+      if(!PCTRL_T.test(r0)){
+        const c=permCore(r0,k,m);if(c.out===null)return fb('unchecked');if(c.lost)return fb('concealed');return tail(c.out===c.s?{text:c.out+suf,hidden:false}:{text:c.out+suf,hidden:true,why:'secret'});}
+      for(const v of [stripAnsi(r0),introOut(r0),r0.replace(PCTRL,'')]){ /* a token the controls split: the mask must find nothing in any reading */
+        const c=permCore(v,k,m);if(c.out===null)return fb('unchecked');if(c.out!==c.s)return fb('concealed');} /* a secret behind controls: no text, and the card offers no Allow */
+      let mk=r0.replace(PCTRL,pmark),mcut=false;
+      if(mk.length>PERM_CAP){mcut=true;mk=mk.slice(0,PERM_CAP);const i=mk.search(/\s\S*$/);mk=i>0?mk.slice(0,i):'';} /* the markers grow the text: the cap counts the marked length too */
+      const c=permCore(mk,k,m);if(c.out===null)return fb('unchecked');if(c.lost)return fb('concealed');
+      if(mcut)return {text:c.out+' \u27e6cut\u27e7',hidden:true,why:'cut'};
+      return tail({text:c.out+suf,hidden:true,why:c.out!==c.s?'secret':'control'});
+    }catch(e){return fb('unchecked');}
+  }
+  /* spec 003 FR-117, FR-119 (issue #1300): lookalike letters. The check reads the raw text (controls out, before the mask: so a letter the mask hid is still
+     counted, `inHidden`) and the shown text (FR-318 markers out); only what is shown gets a marker after each flagged letter, never a letter of a hidden part.
+     The text keeps every character: the markers only add. No lookalike.js, or a throw: `look.unchecked` when the text has a non-ASCII letter, digit or mark. */
+  const LK=()=>{try{return typeof module==='object'&&module.exports?require('./lookalike.js'):self.DurbarLookalike;}catch(e){return null;}}; /* read on each call: a page without it fails safe */
+  const FRMARK=/\u27e6(?:ESC|LF|CR|TAB|cut|U\+([0-9A-F]{4,6}))\u27e7/g;
+  /* the shown text without the FR-318 markers (a whitespace one as a line break, as the check reads a control), and where each character is in the shown text */
+  function unmark(t){
+    let out='';const at=[];let last=0,m;FRMARK.lastIndex=0;
+    const put=(s,from)=>{for(let i=0;i<s.length;i++){out+=s[i];at.push(from+i);}};
+    while((m=FRMARK.exec(t))){put(t.slice(last,m.index),last);
+      const w=m[1]?/\s/.test(String.fromCodePoint(parseInt(m[1],16))):/^\u27e6(?:LF|CR|TAB)\u27e7$/.test(m[0]); /* only a whitespace control separates words, as clean() reads it (ESC is dropped: fix round 2) */if(w){out+='\n';at.push(m.index);}last=m.index+m[0].length;}
+    put(t.slice(last),last);at.push(t.length);return {s:out,at};
+  }
+  const NONASCII_W=/(?![\x00-\x7f])[\p{L}\p{M}\p{N}]/u;
+  const MARK_MAX=20; /* at most this many lookalike markers in one text, then one "and N more" (fix round 1: the text stays near its own length) */
+  const PLACEHOLDER=/\[(?:redacted[^\]]*|redaction failed|secret hidden)\]/g;
+  /* Which characters of the raw text are shown (fix round 1 of #1300's review: inHidden is decided per finding, not by counting). Both texts read with the
+     controls out and whitespace runs as one space; the shown text's parts between mask placeholders are found in order in the raw one, and what lies
+     between them is hidden. Returns a function rawIndex -> shown?, or null when the shown text cannot be matched back (then everything counts as hidden). */
+  function shownRaw(r0,shown){
+    const R=[],rawToR=new Int32Array(r0.length+1).fill(-1);let sp=true;
+    for(let i=0;i<r0.length;){const cp=r0.codePointAt(i),c=String.fromCodePoint(cp);
+      if(/\s/.test(c)){if(!sp){R.push(' ');sp=true;}}
+      else if(!PCTRL_T.test(c)){for(let j=0;j<c.length;j++){rawToR[i+j]=R.length;R.push(c[j]);}sp=false;}
+      i+=c.length;}
+    while(R.length&&R[R.length-1]===' ')R.pop();
+    const Rs=R.join(''), S=shown.replace(/\s+/g,' ').trim(), vis=new Uint8Array(Rs.length+1);
+    let pos=0,last=0,m,parts=0;PLACEHOLDER.lastIndex=0;
+    const take=p=>{if(!p)return true;const i=Rs.indexOf(p,pos);if(i<0||(parts===0&&i!==0))return false;vis.fill(1,i,i+p.length);pos=i+p.length;return true;};
+    while((m=PLACEHOLDER.exec(S))){if(!take(S.slice(last,m.index)))return null;parts++;last=m.index+m[0].length;}
+    const tail=S.slice(last);
+    if(parts===0)return S===Rs?(i=>rawToR[i]>=0?1:-1):null;
+    if(tail){const i=Rs.lastIndexOf(tail);if(i<pos||i+tail.length!==Rs.length)return null;vis.fill(1,i,i+tail.length);}
+    return i=>rawToR[i]<0?-1:vis[rawToR[i]]===1?1:0; /* 1 shown, 0 hidden, -1 a control left out of both */
+  }
+  function permLook(b,raw,k){
+    const L=LK();
+    const r0=String(raw).slice(0,PERM_CAP);
+    if(!L||typeof L.check!=='function')return NONASCII_W.test(r0)?Object.assign({},b,{look:{unchecked:true}}):b;
+    try{
+      const rc=L.check(r0,k), u=unmark(b.text), sc=L.check(u.s,k), vis=shownRaw(r0,u.s);
+      const seenRaw=i=>vis?vis(i)===1:false;
+      const spanSeen=(a,e)=>{if(!vis||!(e>a))return false;for(let i=a;i<e;i++)if(vis(i)===0)return false;return true;}; /* every character of a host shown (fix round 2: a token masked inside a host never reaches the line) */
+      /* hosts and unreadable hosts come from the raw text, only where it is shown (a host the mask made, `[redacted]x.invalid`, is never one) */
+      const hosts=rc.hosts.filter(h=>L.hostOdd(h)&&spanSeen(h.index,h.end));
+      const fs=sc.findings.filter(f=>f.rule!=='host').concat(rc.findings.filter(f=>f.rule==='host'&&spanSeen(f.index,f.end)));
+      const inHidden=rc.findings.some(f=>f.rule==='host'?!spanSeen(f.index,f.end):!seenRaw(f.index))||rc.hosts.some(h=>L.hostOdd(h)&&!spanSeen(h.index,h.end));
+      if(!fs.length&&!hosts.length&&!inHidden)return b;
+      /* one pass, in order: a marker after each of the first MARK_MAX flagged letters, then one "and N more" */
+      const at=[],done=new Set();for(const f of sc.findings){if(f.rule==='host'||done.has(f.index))continue;done.add(f.index);at.push(f);}
+      at.sort((x,y)=>x.index-y.index);
+      const out=[];let from=0;const m=Math.min(at.length,MARK_MAX);
+      for(let i=0;i<m;i++){const f=at[i],p=u.at[f.index]+f.char.length;out.push(b.text.slice(from,p),L.marker(f));if(i===m-1&&at.length>m)out.push('⟦and '+(at.length-m)+' more lookalike letters⟧');from=p;}
+      out.push(b.text.slice(from));
+      return Object.assign({},b,{text:out.join(''),look:{n:fs.length,findings:fs,hosts,inHidden}});
+    }catch(e){return NONASCII_W.test(r0)?Object.assign({},b,{look:{unchecked:true}}):b;}
+  }
+  function permText(raw,kind,mask){
+    const b=permBase(raw,kind,mask), k=kind==='shell'||kind==='tool'?kind:'other';
+    if(!b||!b.text||raw==null||(b.hidden&&(b.why==='unchecked'||b.why==='concealed'||b.why==='cut')))return b; /* a blind card shows no text, so no lookalike line (FR-118) */
+    return permLook(b,raw,k);
+  }
   /* A tool start as a verb phrase. kind: read | edit | run | search | tool (the chat's toolKind); label: the chat's toolLabel. */
   function phrase(o,mask){
     const m=mask||{}, cl=x=>m.redact?clearIn(x,m.redact):stripAnsi(x); /* control codes out first, the way the monitor line does (a token split by an escape must be whole for the mask) */
@@ -68,7 +196,9 @@
   /* the same text with only the escape's introducer gone: what `gh<ESC>[p_...` or `gh<U+009B>p_...` is if the letter after it belongs to a token, not to the escape */
   const INTRO=/\x1b\[|\x1b\]|\x1b[P^_X]|\x1b|[\x90\x98\x9b\x9d\x9e\x9f]/g;
   const introOut=t=>String(t==null?'':t).replace(INTRO,'').replace(/\r\n?/g,'\n').replace(CTRL,'');
-  const clearIn=(raw,redact)=>{const a=stripAnsi(raw);try{const b=introOut(raw),p=ST.unhide?ST.unhide(b):b;if(b!==a&&redact(p)!==p)return b;}catch(e){return '';}return a;};
+  /* spec 097 FR-318: the escape-free text wins when the mask already finds a token in it (an OSC or CSI cut out of the middle of one leaves it whole); the introducer-only text is
+     for a token whose own letter the escape would swallow (`gh<ESC>[p_...`), which the escape-free text no longer shows. Taking it first left the tail of a token after an OSC. */
+  const clearIn=(raw,redact)=>{const a=stripAnsi(raw);try{const b=introOut(raw),u=ST.unhide?ST.unhide:x=>x;if(b!==a&&redact(u(a))===u(a)&&redact(u(b))!==u(b))return b;}catch(e){return '';}return a;};
   /* A sentence over SCREEN_CHARS goes on as more lines, cut at a word where there is one */
   const chunks=t=>{const c=Array.from(t),out=[];let i=0;
     while(c.length-i>SCREEN_CHARS){let j=i+SCREEN_CHARS;for(let k=j;k>i+SCREEN_CHARS/2;k--)if(c[k]===' '){j=k;break;}out.push(c.slice(i,j).join('').trim());i=j;}
@@ -177,5 +307,5 @@
     };
   }
   const KIND_WORD={think:'Thinking',tool:'Working',reply:'Replying'};
-  return {create,phrase,toolName,lastSentences,plain,excerpt,stripAnsi,KIND_WORD,PAINT_MS,LINE_MAX,PANEL_MAX,STREAM_MAX,SCREEN_LINES,SCREEN_CHARS};
+  return {create,phrase,toolName,permText,lastSentences,plain,excerpt,stripAnsi,KIND_WORD,PAINT_MS,LINE_MAX,PANEL_MAX,STREAM_MAX,SCREEN_LINES,SCREEN_CHARS};
 })());

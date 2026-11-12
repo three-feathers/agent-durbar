@@ -4,7 +4,15 @@
  * macOS itself is not run here (the checks use text samples and fakes): read: vm_stat output format.
  */
 const assert = require('assert');
-const { parseVmStat, darwinAvailable, makeAvailable, waitForMemory, main } = require('./check-parallel');
+const { parseVmStat, darwinAvailable, makeAvailable, waitForMemory, main, jobs } = require('./check-parallel');
+
+/* spec 102 T276 (review of PR #1310): the office checks keep an arcade run: a job with the Real office view AND the retro world. Without
+   OFFICE_WORLD the job would quietly be a second Real office run and the arcade would leave CI. */
+{
+  const arcade = jobs.filter((j) => j.env.OFFICE_VIEW === 'real' && j.env.OFFICE_WORLD === 'retro');
+  assert.ok(arcade.length > 0 && arcade.every((j) => /^arcade \d+\/\d+$/.test(j.label)), `an arcade job (OFFICE_VIEW=real, OFFICE_WORLD=retro) is in the office checks: ${JSON.stringify(jobs.map((j) => j.label))}`);
+  assert.ok(jobs.filter((j) => /^arcade /.test(j.label)).every((j) => j.env.OFFICE_WORLD === 'retro' && j.env.OFFICE_VIEW === 'real'), 'every arcade job sets both OFFICE_VIEW=real and OFFICE_WORLD=retro');
+}
 
 const SAMPLE_4K = `Mach Virtual Memory Statistics: (page size of 4096 bytes)
 Pages free:                               10000.

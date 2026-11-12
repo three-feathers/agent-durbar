@@ -2,11 +2,118 @@
 
 Agent Durbar `v0.1.0` is the first stable release. Builds are unsigned and not notarized (see "Honest limits" in the README for where each OS has been run). Each entry names the spec that describes the behavior and how it was checked.
 
-## Unreleased (on `main`, after the v0.1.11 tag)
+## Unreleased (on `main`, after the v0.1.16 tag)
 
 Not released yet: each change is a file in [`changelog.d/`](changelog.d/) until the next release folds them in (`npm run changelog:preview` lists them).
 
 <!-- changelog.d: fragments only; a bullet here fails npm run changelog:check -->
+
+## v0.1.16 ([release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.16), 2026-11-11)
+
+**Known issues**
+
+- **Project notes file** (issue #1464): a local process that swaps a folder link at the right instant can still make Durbar move another folder's notes.md into your project under a random name (the message names it), a delete with no inode record (file written by an older version, or on a drive without inode numbers) can still remove it, and a write can still overwrite it. This is recorded in docs/safety.md.
+- **Announcements** (issue #1320): toasts, the chat's label and the notice strips still show an agent or folder name as written.
+
+**Memory and performance**
+
+- **A long chat no longer grows without limit in memory** (spec 005 FR-238, FR-239, issue #1380): every chat kept every message and tool call while the app stayed open, so the window grew by about 35 MB an hour in the simulator. A chat now keeps its newest 300 messages, the newest 300 steps of a turn or helper still running, and at most 2,000 steps in all. Your last question and the last reply are always kept, as are waiting questions and permission cards and the live parts of a turn. One line at the top says how many earlier messages and steps are not kept in this view (the agent app's session keeps its own record). While you are scrolled up in an open chat nothing is removed, and what you focus or select, or a note saved from a message, stays. Checked with `test:chattrim` and the `check-chat-memory` simulator driver (Open office, Real office and Retro arcade); Linux only.
+- **Finished helpers no longer grow without limit in memory** (spec 005 FR-240, FR-241, issue #1418): an agent now keeps its newest 50 finished and 20 failed helpers in full. Older ones leave the office and the helper lists, and their block in the chat becomes one line with the helper's name, result and status. A helper that is still running, the one whose activity you have open, and one you are focused on or selecting text in are never removed. Checked with `test:subretire` and the `check-helper-retention` simulator driver (three worlds, 1440x900 and 1280x800); Linux only.
+
+**Agent follow and chat**
+
+- **Auto-follow no longer brings back an old "finished"** (issue #1444, the known issue of v0.1.15): if an agent finished while its chat was on screen and you then sent it another message, the window could go to the office and then reopen the chat with `<name> finished`, although the agent was already working on your message. A reply you saw in its chat now counts as seen, and a new message replaces a completion still waiting. Checked in the simulator on Linux.
+- **A chat keeps its place across the Browser tab** (spec 005 FR-235, issue #1168): a chat that was following the end is at the end again, and still following, when you come back from Browser to Chat, also when the agent wrote meanwhile. A chat you had scrolled up keeps its position. The chat now keeps its width while collapsed, also where scrollbars take room (Windows, Linux). Checked on macOS only, with a simulated classic scrollbar, at 1440x900 and 1280x800; not on Windows or Linux.
+- **On a Mac, the top of the rail's resize handle resizes the rail** (spec 005 FR-236, issue #1457): its top 40 pixels used to move the window instead. Checked in the simulator; not on a real Mac.
+
+**Safety and privacy**
+
+- **A Claude session's instructions and settings no longer show in the process list** (spec 012 FR-179, issue #1379): the folder's CLAUDE.md text, a chosen agent profile and the folder's accepted hooks and rules used to go to Claude Code on its command line, which other accounts on the same computer can read. They now go through private files that only your account can read and that are removed when the session's Claude process ends. A Claude Code too old to read them (before 2.1.69 for CLAUDE.md, before 2.1.281 for agent profiles) gets a message asking you to update it. Checked with unit tests on a fake Claude process (macOS); not with a real Claude session or on Windows.
+- **Screen-reader announcements no longer read out a token or a home folder** (spec 012 FR-178, issue #1419): lines such as `<name> finished. New reply.` used the name as written. They now go through the same mask the desk already uses. A command or question in a request is said exactly as the card shows it, and "needs your OK" is said even when the request is hidden. When masking is not possible, a fixed line says a line was not read out. Toasts, the chat's label and the notice strips still show the name as written (#1320). Checked with `test:announcemask` and one simulator run; no screen reader run.
+- **Deleting the project notes file deletes only the file Durbar wrote** (spec 083 FR-055, issue #1463): a folder link swapped within microseconds by a local process (for example a sandboxed agent) could make *Delete the file* remove a notes.md in another folder, or make the way back replace one. Durbar now records the inode of the file it writes and deletes only that one (a notes.md with the same text but another inode, after a `git checkout`, is left as changed). The way back is a hard link, or on drives without hard links a copy into a new notes.md that never replaces a file. Part of the problem is still open (see Known issues, #1464). Checked by unit tests with injected file calls and a real swapper process; Linux only.
+
+**Copilot on a Mac**
+
+- **Playwright MCP can start again under Copilot on macOS** (spec 087 FR-024, issue #1173): Copilot's private temp folder is now a short one under /tmp when the system temp folder is too long for a Unix socket (macOS /var/folders). The folder is still private to your account and removed afterwards; Windows is unchanged. Checked on Linux; not on a real Mac.
+
+**Behind the scenes** (nothing changes in the app): the team merge gate reads CodeQL results and a PR's changed files more strictly (FR-090, FR-091, #1422, #1479), the UI check runner now ends a timed-out check's display and window whole (FR-199, #1417), the live-activity UI check re-reads the lobby until it settles (FR-191, #1481), and the README build-cost sentence says how many machines started on each day (#1387). Checked by script tests only; not against live GitHub, not on macOS or Windows.
+
+## v0.1.15 ([release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.15), 2026-11-10)
+
+**Agent follow and chat**
+
+- **Auto-follow tells you before it moves you** (spec 052, PR #1414): with Auto-follow on, a full-screen notice now says where it is taking you and why ("Priya is working on this", "Priya finished. See if it is OK.") and counts down 3 seconds before the window goes to the office or opens a chat. **Stay here** / **Stay in the office** or Esc cancels the move. Screen readers hear it once; with reduced motion nothing in it moves. Checked in the simulator in Open office, the Photo office, the cave and the arcade at 1440x900 and 1280x800. On macOS only its check script was run after it landed; that run found the script needed a Mac fix (PR #1443, merged). Known issue (#1444): a "finished" that arrived while its chat was open can reopen the chat after the notice; the fix, PR #1445, is for v0.1.16.
+- **Accessibility** (spec 005 FR-237, issue #1324): a screen reader no longer hears "Working…" instead of "<name> needs your OK" or a question when both are announced in the same instant: a request outranks a status.
+
+**Safety**
+
+- **Lookalike letters on approval cards** (spec 003 FR-113..FR-119, issue #1300): a host, program or MCP tool name that mixes scripts (a Cyrillic letter in a Latin word), uses a styled or fullwidth form or mixes digit systems keeps every letter and gets a visible marker after the odd one, and the card adds one plain line saying so, with an address's host as the network reads it (`xn--…`). *Allow for this session* now names exactly what it grants: the whole command, the punycode host, the server and tool. Grant chips and the *Why was this allowed?* sentence say *Has lookalike letters*. A warning only: every button stays. Checked in the simulator at 1440x900 and 1280x800; not on a real session.
+- **`CLAUDE.md` imports checked by their text first** (spec 012 FR-177): the Claude adapter checks each `@path` import of the folder's `CLAUDE.md` against the folder by its text before any file is read, checks links inside the folder before they are followed, then checks again once resolved; a path that cannot be resolved is skipped. Checked by tests with Windows and POSIX path cases; not run on a real Windows machine.
+- **A tool name that looks like a secret is not kept in the usage file** (spec 020 FR-033, issue #1291): it is counted under `[hidden tool]` (a server name under `[hidden server]`), and an existing file is cleaned when the app starts, with its counts kept. Checked with unit tests, no real session.
+- **Profile confirmation matches what you saw** (spec 043 FR-044): a profile from a folder's repository is trusted only for the exact file text shown in its confirmation; if the file changes before you confirm, the dialog is shown again with a note, and Claude Code sessions start with exactly the text that was confirmed. Linked agent files are not used. Checked by tests; not in the simulator window or on a real session.
+
+**Real office**
+
+- **Every crew in Real office** (spec 097 FR-335, FR-336, issue #1154): the Characters choice Cheeky, Pirate, Monster, Royal and Rebels now draws that crew's own people in every Real office world, and Settings says "Real office draws the <Crew> people.". Minimalist and My characters still show the world's own people.
+- **Rearrange desks and rooms** (spec 097 FR-345..FR-348, issue #1152): drag a desk by its name plate or a room by its folder sign (Esc cancels, a tiny press is still a click); Alt+arrows on a name plate (Alt+Shift+arrows for its room) and the folder menu's Move earlier / Move later work too, on the same saved order as the Open office.
+- **Helper heads stay on one row** (spec 097 FR-338, bug #1384): when the heads do not fit, the last place is **+K**; no head wraps onto a second line any more (the known issue of v0.1.14).
+- **A narrow room's sign keeps its + and menu** (spec 097 FR-356, issue #1392): in the cave at 1280x800, a one-desk room cut off its sign's + and ⋯ buttons; it now shows the short sign, with the path and cost on the name's tooltip.
+- **The rename pencil on an arcade cabinet** (spec 097 FR-357, bug #1427): it showed at the floor's top-left corner and did nothing; it now sits at the plate's right end and the name field opens over the cabinet's marquee.
+- **Retro arcade follows the other worlds' rules** (spec 102 FR-307..FR-310, issue #1428): big screens with 4 or fewer agents, and its blinking and typing motion starts 2 seconds after the room is drawn. The arcade is not offered yet, so nothing changes for anyone today.
+- Minimalist crew art (spec 097, T245): six new drawn people are in the repository, owner-approved; not selectable yet.
+
+**Looks and contrast**
+
+- **Theme contrast checks every colour form** (spec 070 FR-080, issue #1259): colours written as `rgb()`, `hsl()`, a name or with transparency are now measured and repaired like hex ones; one that cannot be measured is reported as unmeasured. Checked by unit tests and the dark-fixture UI check.
+- **Readable chips and badges in the Retro arcade** (spec 070 FR-081, issue #1278): attachment chips, ask tags, selected rows and tone-coloured badges were 1.2 to 2.7:1 on dark fills; they are now at least 5.9:1. Badges coloured by the status pair are not part of this fix.
+
+**Build, CI and team tools** (nothing changes in the app)
+
+- A GitHub outage of the Electron download no longer fails every CI job: a workflow keeps the download cache filled for all three systems and builds check the Electron zip offline against the lockfile (spec 008 FR-195).
+- Pull requests that change no UI code no longer start the three-system UI checks; `main`, the nightly and the merge queue still run them (spec 008 FR-191).
+- Parity checklists (#1147, #1404) tick themselves when a listed issue closes as completed (spec 021 FR-088).
+- The merge gate accepts a CodeQL check that GitHub skips on a PR with no code (spec 021 FR-089, issue #1420).
+- Test fixes: the colour parser growth check on Windows (spec 070, T049) and the Real office hover-card check's window focus (spec 097, issue #1408).
+- Docs: the feature inventory matches the code (spec 025 FR-021, #1398); spec 080 records a macOS dialog behaviour with numbers for later agent browser control (issue #1415).
+
+- **Known issue: auto-follow notice** (issue #1444): if the agent whose chat you are in finishes while you are typing, then after the notice moves you to the office a "finished" notice can reopen that chat after 3 seconds (it already happened as a quick flicker in v0.1.14); Escape cancels it; fix is in review for v0.1.16.
+
+## v0.1.14 ([release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.14), 2026-11-09)
+
+- **Context on the monitor frame** (issue #1148): in Real office a thin line round each desk's monitor frame fills clockwise from the top-left as the agent's context fills. It is soft white up to 90 % and red above 90 % (the same steps as the chat header's ring); it draws nothing while the context is unknown, never tints the screen, and does not move. A screen reader hears "context N %" with the desk's name. In the Photo office, the cave and the arcade; 15 agents still fit at 1440x900 and 1280x800.
+- **Helpers at the desk** (issue #1139): each desk's sub-agents show as small round heads with a status dot under the name plate in the Photo office, the cave and the Retro arcade (at 1440x900); click one to open its activity view, **+K** shows the rest, and the name is in the tooltip. Where there is no room the plate keeps its "+N". 15 agents still fit both window sizes. Known issue (issue #1384): a desk with six or more helpers can wrap the sixth head onto a second line instead of showing **+K**.
+- **The arcade's drag-a-file overlay is readable** (issue #1153): it had light text on a light fill; it now uses the page surface, and a new check keeps each world's own colours whatever theme is picked.
+- **The arcade's name plates show their whole line** (issue #1303): a lounge plate's text was cut at 12 and 15 agents; the plates now have room for the full name.
+- **More secrets masked** (issue #1227): short passwords (4 to 7 characters with a letter and a digit) after a secret name, several-word passwords, `Bearer` values after a short first word, `mysql -pPASSWORD` (also across continued lines), AWS secret key names written with spaces, `Cookie` values without `=`, and unfinished key starts are hidden; ids, versions and algorithm names (`HS256`, `tls13`, `v1.2.3`) stay readable. Checked by tests only; no real service was called.
+- **Network home folders hidden in helper names**: a home folder on a network share (`\\server\share\name`, also with extra backslashes, or `//server/homes/name`) no longer shows its user name in a helper's name, task or tooltip, in Real office and the flat office.
+- Coming next, not visible yet: the code for a fourth agent mode, Autopilot, is in place behind a switch that stays off, so the mode menu has no new item and nothing changes for anyone. One stricter check applies today: remote control checks its mode again after its own dialog. Tested on fakes only, not in a real session.
+- For contributors: a pull request builds the unpacked Linux app once, inside the required *Office layout check* job, and two slow UI checks wait for the page to be steady instead of guessing (no check was dropped or loosened).
+
+## v0.1.13 ([release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.13), 2026-11-08)
+
+- **Model, tokens, cost, context and the last tool in the zoom** (issue #1148): hovering a monitor (or tabbing to its desk) shows, under the agent's name, the same facts the Open office desk shows: Model, Now or Last tool, Usage, Cost, Context and time on the task. Unknown facts are left out, and every line is masked like a screen line.
+- **The hover card opens over the whole desk** (issue #1151): hover a person, desk or name plate, not only the monitor. An asleep agent has its card too, with its last reply; a resting agent's card shows the session's changes ("6 files changed, +120 −35, 1 commit, 40 min · counted by Agent Durbar"), as in Open office.
+- **A desk's unsent draft** (issue #1149): a small Draft tag sits on the name plate while a chat has text you have not sent, and the plate's name says "unsent draft", as in Open office.
+- **The Characters crews, said honestly** (issue #1154): Real office draws the Office people for every Characters crew that has no Real office pictures yet, and the line under Office layout says why. Prehistoric now draws its own people in the Photo office.
+- **A section list in Settings**: a list on the left jumps within the page, marks the section you're in as you scroll, works with the keyboard and in every world, and becomes a row in a narrow window.
+- **Masking fixes** (issues #1237, #1298, #1295, #1296): two tokens of different kinds written back to back are hidden whole; a secret name split by quotes (`'pass'"word"=...`) is hidden; the activity log hides a command, tool name or token split by an escape the way the chat does; the chip of an "approve this exact command" scope is masked before it is shortened.
+- **A permission request never shows a secret-looking tool name or command** (issue #1290): the *Needs your OK* card, its buttons and tooltips, the grant chips and list, and the "why was this allowed" text show a name like a token as `tool`, and a command keeps its shape with the secret hidden. A card offering "Allow for this session" says when a part is hidden and that the grant covers it. Escape codes are shown as visible markers, and a request Durbar cannot check has no Allow button. What you approve is unchanged.
+- **A tool named like a secret is hidden** (issue #1284) on the chat, desk, helper card and Settings screens; the chip keeps its icon and label.
+- **A helper's task no longer shows a token or a home folder** in the Sub-agent activity panel (issue #1330), its title or the office helper tile (also network `\\server\share\user` paths).
+- Conversation search no longer drops a long message because it holds an emoji.
+- The Retro arcade's plan chip is readable (contrast 2.99:1 to 13.14:1) and follows the world's colours.
+- **README for first-time visitors** (issue #1256): the Real office leads the page, with a one-line problem statement, a download line, "Works with / Not yet" and a shorter safety lead. The release clip films the Real office.
+- **Build cost**: the README shows an estimate of what building Durbar with AI agents has cost so far (API list prices, not billing), with a daily chart. Method and privacy: `docs/build-cost.md`.
+- Coming next, not visible yet: the Needs you panel ("Your door") is built behind a switch that is off; five new Real office crews (Pirate, Royal, Rebels, Monster, Cheeky) are in, approved, and wait to be wired up; the first piece of the AI character maker is in the code.
+
+## v0.1.12 ([release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.12), 2026-11-07)
+
+- **Drag the agent list's width** (spec 005 FR-236, issue #1223): the right edge of the rail beside a chat is a splitter. Drag it, or focus it and use the arrow keys (Shift or PageUp/PageDown for bigger steps, Home and End for the smallest and largest); double-click goes back to 220 px. It stays between 180 px and 40% of the window, is remembered on this computer and is never part of a session. Checked in the simulator at 1440x900 and 1280x800.
+- The release clip's step captions are numbered 1, 2, 3... in the order they are shown (spec 008; the v0.1.11 clip read "3." then "2."). Checked by `test:releasevideo` with a mutant; the clip was not re-filmed.
+- **Agent rules split** (spec 021 FR-081, FR-082): `AGENTS.md` is now a shorter core every agent loads, and task-only rules (incident triage, merge mechanics, review rounds and pace, chat and decisions, keeping docs in sync) moved word for word to `docs/rules/`, each linked from `AGENTS.md`; a new priority order (bugs, existing-world parity, the Retro world, new features, other worlds) is in the core. Checked with `npm run rules:check` (per-file budgets, every task file linked) and a line-by-line verbatim check.
+- MCP: the chat's *Sign in...* button now starts the sign-in (it used to only open the MCP list and showed nothing when the row had no button), also in an idle chat, and the MCP row shows Sign in for a server whose automatic renewal gave up even while Copilot still says it is connected (spec 058 FR-229, issue #1229). Checked with fake-adapter tests; not on a real server yet.
+- **Notes: Open source** (spec 083 FR-046, [issue 699](https://github.com/three-feathers/agent-durbar/issues/699)): a note's `⋯` has **Open source**. It opens the chat the note came from (a past session through Previous sessions, sending nothing), scrolls to the message inside the chat and outlines it for a moment; if the session is gone or the message is not found, a toast says so and the note stays.
+- **Real office: finished agents sit in a lounge row** (spec 097 FR-246..FR-249, issue #1220): an agent that is done and whose reply you have read leaves its full desk for a compact row under the desks, seated on their chair beside a small desk and monitor with their name plate; asleep agents too, lamp and screen off. An unread reply keeps the full desk until read. The freed room goes to the working and waiting desks; in the Retro arcade the seats are stools beside a small console. Moving back to work eases (none with reduced motion). Who moves is the flat office's lounge rule. Simulator-checked at 1440x900 and 1280x800.
 
 ## v0.1.11 ([release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.11), 2026-11-06)
 
