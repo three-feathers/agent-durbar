@@ -68,7 +68,7 @@ function simSandboxFor(i: number, kind: string, mode: string): SandboxState | un
 }
 /**
  * Spec 111 T007: the simulator's team templates, in memory (nothing is written anywhere), with main's identity rules in miniature
- * (`src/main/teamsops.ts`): ids are the simulator's, a `memberId` from the window is refused on a new template, kept by `memberId` on an update
+ * (`src/main/teamsipc.ts`): ids are the simulator's, a `memberId` from the window is refused on a new template, kept by `memberId` on an update
  * (unknown or repeated: refused), `briefFrom` is kept by `memberId` and only `teamsMarkMine` clears it, `origin` is always `own` for a window put.
  * Not the real validator: that is shared code the page does not load yet (the form's own checks come with spec 111 T008), so a field's value is
  * not checked here. A page address `simteams=imported` seeds one imported template with two marked briefs. Errors name fields, never values.
@@ -90,7 +90,7 @@ function simTeamsApi(qs: URLSearchParams): Pick<DurbarApi, 'teamsList' | 'teamsP
   const okOne = (t: T) => ({ ok: true as const, template: copy(t) as unknown as import('../shared/api').TeamTemplateInfo });
   const idOk = (id: unknown): id is string => typeof id === 'string' && id.length > 0 && id.length <= 64;
   return {
-    teamsList: async () => ({ ok: true as const, templates: list.map(copy) as unknown as import('../shared/api').TeamTemplateInfo[], blocked: false }),
+    teamsList: async () => ({ ok: true as const, templates: list.map(copy) as unknown as import('../shared/api').TeamTemplateInfo[], blocked: false, setAside: false }),
     teamsPut: async (value) => {
       if (!plain(value)) return no(['Template: send an object.']);
       const cur = value.id === undefined ? undefined : idOk(value.id) ? list.find((x) => x.id === value.id) : undefined;

@@ -20,12 +20,24 @@
  *  13 the store does not give ids at the load                                 -> storedIds
  *  14 putImported gives no ids                                                -> storedIds
  *  15 the argument is copied with a spread (getters run)                      -> ownDataOnly
+ *  16 the members count is judged after the copy, not before                  -> limitsAndShapes
+ *  17 the memberId format is not checked                                     -> limitsAndShapes (the error words differ)
+ *  18, 19 the id length cap raised to 1000, lowered to 63                    -> limitsAndShapes
+ *  20, 21 the array cap of the copy raised to 100,000, lowered to 9,999      -> limitsAndShapes
+ *  22, 23 the nesting cap raised to 9, lowered to 7                          -> limitsAndShapes
+ *  24 a handler lets a throw out                                             -> handlersNeverThrow (the real handlers on a fake Electron)
+ *  25, 26 `setAside` always false / always true                              -> listSetAside
+ *  27 putImported keeps the ids the caller passed                            -> storedIds
+ *  EQUIVALENT (survives, on purpose): 28 the second `members.length > 8` check, after the copy: the first check (before the copy) already
+ *  refuses every list that is too long, and the copy keeps its length; the second is defence in depth only. Mutants were run on COPIES of the
+ *  compiled JS (a throwaway runner under the scratchpad). The review of #1640 reported surviving mutants without naming them, so the ones above
+ *  (format, id length, 10,000, members count, nesting) were rebuilt from the code's own limits.
  */
 import assert from 'assert';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { TeamsOps } from '../src/main/teamsops';
+import { TeamsOps } from '../src/main/teamsipc';
 import { TeamTemplateStore, type TeamFs } from '../src/main/teamstore';
 
 let n = 0;
@@ -36,6 +48,7 @@ let failed = 0;
 const section = (name: string, fn: () => void): void => { try { fn(); } catch (e) { failed++; console.error(`SECTION ${name} FAILED`); console.error(e instanceof Error ? e.message.slice(0, 200) : 'failed'); } };
 
 const HEX = /^[0-9a-f]{32}$/;
+const F32 = 'f'.repeat(32);
 /** a 32-hex value nobody else uses, built at run time: it must never come back in a result */
 const HEXVAL = ('9a' + '4c').repeat(8);
 const TOKEN = 'ghp' + '_' + 'A1b2C3d4'.repeat(5); // 40 chars, built at run time
@@ -45,7 +58,7 @@ const real: TeamFs = {
   renameSync: (a, b) => fs.renameSync(a, b), rmSync: (p, o) => fs.rmSync(p, o), readdirSync: (d) => fs.readdirSync(d),
   fsyncFile: (f) => { const fd = fs.openSync(f, 'r+'); try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); } },
 };
-const root = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-teamops-'));
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-teamsipc-'));
 let dirN = 0;
 function setup(over: Partial<TeamFs> = {}, pre?: string): { ops: TeamsOps; store: TeamTemplateStore; file: string } {
   const dir = path.join(root, `d${++dirN}`);
@@ -58,11 +71,13 @@ function setup(over: Partial<TeamFs> = {}, pre?: string): { ops: TeamsOps; store
   return { ops: new TeamsOps({ store: () => store, newMemberId: mint }), store, file };
 }
 const mem = (name: string, extra: Record<string, unknown> = {}): Record<string, unknown> => ({ name, role: 'Dev', app: 'claude', permMode: 'read-only', sendBrief: false, ...extra });
-const A = 'a'.repeat(32), B = 'b'.repeat(32), C = 'd'.repeat(32);
+/** the three member ids of `seedImported`: `putImported` gives FRESH ids, so they are read back from its result */
+let A = 'a'.repeat(32), B = 'b'.repeat(32), C = 'd'.repeat(32);
 /** An imported template with marked briefs, seeded through the store's own import path (main only). */
 function seedImported(s: { store: TeamTemplateStore }, brief = 'Check it.'): { id: string; ids: string[] } {
   const r = s.store.putImported({ name: 'Crew', members: [mem('A', { memberId: A, brief, briefFrom: 'file' }), mem('B', { memberId: B, brief: 'plain' }), mem('C', { memberId: C, brief: 'Test it.', briefFrom: 'file' })] });
   assert.ok(r.ok);
+  if (r.ok) [A, B, C] = r.template.members.map((m) => m.memberId as string);
   return { id: r.ok ? r.template.id : '', ids: [A, B, C] };
 }
 const members = (r: { ok: boolean }): Record<string, unknown>[] => (r as unknown as { template: { members: Record<string, unknown>[] } }).template.members;
@@ -102,10 +117,10 @@ section('storedIds', () => {
   const r = g.ops.put({ id: 't1', name: 'Crew', members: t.members.map((m) => mem(m.name, { memberId: m.memberId })) });
   eq(members(r).map((m) => m.briefFrom), ['file', 'file', undefined, undefined], 'a window put (no marks sent) keeps them: the id-less member did not lose its mark');
   ok(g.ops.markMine('t1', ids[0]).ok, 'markMine works on the member that had no id');
-  // putImported: every member gets one, a given one is kept when unique
-  const p = g.store.putImported({ name: 'Imp', members: [mem('A', { briefFrom: 'file' }), mem('B', { memberId: A }), mem('C', { memberId: A })] });
+  // putImported: a fresh id for every member, the mark stays
+  const p = g.store.putImported({ name: 'Imp', members: [mem('A', { briefFrom: 'file' }), mem('B', { memberId: A }), mem('C', { memberId: F32 })] });
   const pi = p.ok ? p.template.members.map((m) => m.memberId as string) : [];
-  ok(pi.length === 3 && pi.every((i) => HEX.test(i)) && new Set(pi).size === 3 && pi[1] === A, 'putImported gives every member its own id');
+  ok(p.ok && p.template.members[0].briefFrom === 'file', 'the mark stays on import'); ok(pi.length === 3 && pi.every((i) => HEX.test(i)) && new Set(pi).size === 3 && !pi.includes(A) && !pi.includes(F32), 'putImported gives every member a FRESH id and drops the ones the caller passed');
   // defence in depth: a store that holds a stored template with an id-less or repeated member (a fake, the real store prevents it)
   const bad = (members: unknown[]): TeamsOps => {
     const t0 = { id: 'x1', name: 'Crew', origin: 'imported', createdAt: 1, updatedAt: 1, members };
@@ -297,7 +312,7 @@ section('markMine', () => {
 
 section('listDeleteAndLimits', () => {
   const { ops, store } = setup();
-  eq(ops.list(), { ok: true, templates: [], blocked: false }, 'an empty list');
+  eq(ops.list(), { ok: true, templates: [], blocked: false, setAside: false }, 'an empty list');
   const a = ops.put({ name: 'One', members: [mem('A')] });
   ok(a.ok, 'created');
   const id = a.ok ? a.template.id : '';
@@ -311,6 +326,92 @@ section('listDeleteAndLimits', () => {
   ok(refused(huge) && Date.now() - t0 < 2000, 'a huge value is refused quickly');
   ok(refused(ops.put({ name: 'T', members: [mem('A', { brief: 'a\n'.repeat(500000) })] })), 'a million-line brief is refused');
   ok(store.list().length === 50, 'nothing extra stored');
+});
+
+section('listSetAside', () => {
+  const g = setup();
+  eq(g.ops.list(), { ok: true, templates: [], blocked: false, setAside: false }, 'no file: no toast');
+  const b = setup({}, 'this is not a template file ' + TOKEN);
+  const l1 = b.ops.list();
+  ok(l1.setAside === true && l1.templates.length === 0 && !text(l1).includes(TOKEN), 'a bad file set aside: true once, nothing of it in the answer');
+  eq(b.ops.list().setAside, false, 'and false after that');
+  eq(b.ops.list().setAside, false, 'still false');
+});
+
+section('limitsAndShapes', () => {
+  const { ops, store } = setup();
+  const errOf = (r: { ok: boolean }): string => ((r as unknown as { errors?: string[] }).errors ?? ['(ok)'])[0];
+  const s = seedImported({ store });
+  // the members count is judged BEFORE the copy: nine members that are accessors would be "not plain data" if the copy came first
+  const acc = (): Record<string, unknown> => { const o: Record<string, unknown> = {}; Object.defineProperty(o, 'name', { enumerable: true, get() { return 'x'; } }); return o; };
+  eq(errOf(ops.put({ name: 'T', members: Array.from({ length: 9 }, acc) })), 'Members: at most 8.', 'nine members: refused by count, before any copy');
+  eq(errOf(ops.put({ name: 'T', members: new Array(10000).fill(0) })), 'Members: at most 8.', '10,000 members: refused by count');
+  eq(errOf(ops.put({ name: 'T', members: Array.from({ length: 8 }, acc) })), 'Template: send plain data.', 'eight is under the cap (the copy then refuses the accessors)');
+  // ids: the format and the length are judged first, with their own words
+  eq(errOf(ops.put({ id: s.id, name: 'T', members: [mem('A', { memberId: 'g'.repeat(32) })] })), 'Member 1, memberId: not valid.', 'a memberId that is not 32 hex: the format is checked');
+  eq(errOf(ops.put({ id: s.id, name: 'T', members: [mem('A', { memberId: 'A'.repeat(32) })] })), 'Member 1, memberId: not valid.', 'upper case is not the format');
+  eq(errOf(ops.put({ id: s.id, name: 'T', members: [mem('A', { memberId: 'e'.repeat(32) })] })), 'Member 1, memberId: not a member of this template.', 'a well-formed unknown one is said so');
+  eq(errOf(ops.markMine(s.id, 'g'.repeat(32))), 'Member id: not valid.', 'markMine: the format is checked');
+  eq(errOf(ops.markMine(s.id, 'e'.repeat(32))), 'Member: not found.', 'markMine: a well-formed unknown member');
+  const id64 = 'x'.repeat(64), id65 = 'x'.repeat(65);
+  eq(errOf(ops.put({ id: id65, name: 'T', members: [mem('A')] })), 'Template id: not valid.', 'put: a 65-character id is refused by length');
+  eq(errOf(ops.put({ id: id64, name: 'T', members: [mem('A')] })), 'Template: not found.', 'put: 64 characters is within the length');
+  eq(errOf(ops.duplicate(id65)), 'Template id: not valid.', 'duplicate: 65');
+  eq(errOf(ops.duplicate(id64)), 'Template: not found.', 'duplicate: 64');
+  eq(errOf(ops.delete(id65)), 'Template id: not valid.', 'delete: 65');
+  eq(ops.delete(id64), { ok: true, removed: false }, 'delete: 64');
+  eq(errOf(ops.markMine(id65, A)), 'Template id: not valid.', 'markMine: 65');
+  eq(errOf(ops.markMine(id64, A)), 'Template: not found.', 'markMine: 64');
+  eq(errOf(ops.markMine('', A)), 'Template id: not valid.', 'markMine: empty id');
+  // the copy: 10,000 items in an array, nesting of 8 levels
+  const base = (extra: Record<string, unknown>): Record<string, unknown> => ({ name: 'Deep', members: [mem('A')], ...extra });
+  ok(ops.put(base({ junk: new Array(10000).fill(0) })).ok, 'an array of 10,000 in an ignored key is copied');
+  eq(errOf(ops.put(base({ junk: new Array(10001).fill(0) }))), 'Template: send plain data.', 'one more than 10,000 is refused');
+  const nest = (k: number): Record<string, unknown> => { let o: Record<string, unknown> = {}; for (let i = 1; i < k; i++) o = { o }; return o; };
+  ok(ops.put(base({ junk: nest(8) })).ok, 'eight levels of nesting are copied');
+  eq(errOf(ops.put(base({ junk: nest(9) }))), 'Template: send plain data.', 'nine are refused');
+  ok(ops.put(Object.assign(Object.create(null) as Record<string, unknown>, base({ name: 'NullProto' }))).ok, 'an object with no prototype is plain data');
+  eq(errOf(ops.put(Object.create({ name: 'x', members: [] }))), 'Template: send plain data.', 'an inherited shape is not plain');
+  eq(errOf(ops.put('x')), 'Template: send an object.', 'a string is not an object');
+  eq(errOf(ops.put([])), 'Template: send an object.', 'an array is not an object');
+});
+
+section('handlersNeverThrow', () => {
+  // the real handlers of src/main/ipc/teams.ts, registered on a fake Electron: any throw answers one fixed `failed`
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const Mod = require('module') as { _load: (r: string, ...a: unknown[]) => unknown };
+  const handlers = new Map<string, (e: unknown, ...a: unknown[]) => unknown>();
+  const orig = Mod._load;
+  Mod._load = function (r: string, ...a: unknown[]): unknown { return r === 'electron' ? { ipcMain: { handle: (c: string, f: (e: unknown, ...x: unknown[]) => unknown) => void handlers.set(c, f), on: () => undefined } } : orig.call(this, r, ...a); };
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const g = require('../src/main/ipcguard') as typeof import('../src/main/ipcguard');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const t = require('../src/main/ipc/teams') as typeof import('../src/main/ipc/teams');
+    g.initSimGuard(false);
+    const boom = (): never => { throw new Error('secret ' + TOKEN); };
+    const throwing = { list: boom, put: boom, delete: boom, duplicate: boom, markMine: boom } as unknown as TeamsOps;
+    t.register({ getOps: () => throwing });
+    eq([...handlers.keys()].sort(), ['teams:delete', 'teams:duplicate', 'teams:list', 'teams:markMine', 'teams:put'], 'the five channels');
+    const frame = { url: require('url').pathToFileURL(path.join(__dirname, '..', 'src', 'renderer', 'index.html')).href };
+    const sender = { mainFrame: frame };
+    const good = { senderFrame: frame, sender };
+    for (const [c, args] of [['teams:list', []], ['teams:put', [{}]], ['teams:delete', ['x']], ['teams:duplicate', ['x']], ['teams:markMine', ['x', 'y']]] as [string, unknown[]][]) {
+      let r: unknown; let threw = false;
+      try { r = handlers.get(c)!(good, ...args); } catch { threw = true; }
+      ok(!threw, `${c}: a throw is answered, not rethrown`);
+      eq(Object.keys(r as object).sort(), ['blocked', 'code', 'errors', 'ok'], `${c}: the answer has the fixed shape`);
+      ok((r as { ok: boolean; code: string }).ok === false && (r as { code: string }).code === 'failed' && !text(r).includes(TOKEN) && !/secret|Error|stack/.test(text(r)), `${c}: failed, with no message, value or stack`);
+    }
+    // a foreign frame never reaches the ops (ipcHandle refuses it before the handler)
+    let reached = false;
+    handlers.clear();
+    t.register({ getOps: () => { reached = true; return undefined; } });
+    const other = { url: 'https://example.invalid/' };
+    let refusedFrame = false;
+    try { handlers.get('teams:list')!({ senderFrame: other, sender: { mainFrame: other } }); } catch { refusedFrame = true; }
+    ok(refusedFrame && !reached, 'a call from another page is refused and never reaches the ops');
+  } finally { Mod._load = orig; }
 });
 
 section('changedFailedBlocked', () => {
@@ -334,5 +435,5 @@ section('changedFailedBlocked', () => {
 });
 
 fs.rmSync(root, { recursive: true, force: true });
-if (failed > 0) { console.error(`test-teamops: ${failed} section(s) failed`); process.exit(1); }
-console.log(`test-teamops: ${n} checks passed`);
+if (failed > 0) { console.error(`test-teamsipc: ${failed} section(s) failed`); process.exit(1); }
+console.log(`test-teamsipc: ${n} checks passed`);

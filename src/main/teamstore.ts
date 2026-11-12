@@ -150,7 +150,7 @@ export class TeamTemplateStore {
     const r = checkTeamTemplate(value, 'own');
     if (!r.ok) return { ok: false, errors: r.errors };
     const t = r.template;
-    if (imported) this.ensureMemberIds(t.members); // T010 does not have to remember it
+    if (imported) for (const m of t.members) m.memberId = this.newMember(); // a FRESH id for every member, whatever the caller passed (spec 111, review of #1640); the mark stays
     if (imported && t.id !== undefined) return { ok: false, errors: ['Template: an imported template has no id yet.'] };
     const cur = t.id !== undefined ? this.items.find((x) => x.id === t.id) : undefined;
     if (t.id !== undefined && !cur) return { ok: false, errors: ['Template: not found.'] };

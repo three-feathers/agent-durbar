@@ -932,7 +932,8 @@ export type TeamTemplateInfo = TeamTemplate & { id: string; origin: 'own' | 'imp
  * `blocked`: the store file cannot be read or moved aside, so saves may keep failing (show a notice).
  */
 export type TeamsRefused = { ok: false; code: 'invalid' | 'changed' | 'failed'; errors: string[]; blocked: boolean; templates?: TeamTemplateInfo[] };
-export type TeamsList = { ok: true; templates: TeamTemplateInfo[]; blocked: boolean };
+/** `setAside`: true once after the store set a bad file aside at the load (show one toast, no content; the answer after that is false). */
+export type TeamsList = { ok: true; templates: TeamTemplateInfo[]; blocked: boolean; setAside: boolean };
 export type TeamsOne = { ok: true; template: TeamTemplateInfo } | TeamsRefused;
 export type TeamsRemoved = { ok: true; removed: boolean } | TeamsRefused;
 

@@ -40,7 +40,7 @@ import { register as registerSlashIpc } from './ipc/slash';
 import { nativeConfirm } from './nativeconfirm';
 import { register as registerNotesIpc } from './ipc/notes';
 import { register as registerTeamsIpc } from './ipc/teams';
-import { TeamsOps } from './teamsops';
+import { TeamsOps } from './teamsipc';
 import { TeamTemplateStore } from './teamstore';
 import { NotesOps, notesConfirmText } from './notesops';
 import { NotesStore } from './notesstore';

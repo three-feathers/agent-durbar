@@ -1,6 +1,6 @@
 /**
  * Spec 111 T007 (FR-010, FR-023, FR-100, FR-133): what the window may ask of the team-template store, as pure functions of an injected store
- * (no Electron, no disk here): `scripts/test-teamops.ts` drives them. `src/main/ipc/teams.ts` is only the `ipcHandle` wiring.
+ * (no Electron, no disk here): `scripts/test-teamsipc.ts` drives them. `src/main/ipc/teams.ts` is only the `ipcHandle` wiring.
  *
  * The window is partly untrusted (FR-023 trust model), so every argument is checked here and any doubt refuses:
  *  - a value that is not a plain object, too many members, a wrong type: refused with a fixed sentence naming the field, NEVER its value
@@ -98,10 +98,15 @@ export class TeamsOps {
   }
 
   list(): TeamsList {
-    return { ok: true, templates: this.store.list(), blocked: this.store.isBlocked() };
+    return { ok: true, templates: this.store.list(), blocked: this.store.isBlocked(), setAside: this.store.takeToast() };
   }
 
   put(valueIn: unknown): TeamsOne {
+    // the members count first: a list of 9 or 10,000 members is refused before anything is copied (the copy costs as much as the list)
+    try {
+      const raw = isPlain(valueIn) ? Object.getOwnPropertyDescriptor(valueIn, 'members') : undefined;
+      if (raw && 'value' in raw && Array.isArray(raw.value) && raw.value.length > LIMITS.members) return this.bad([`Members: at most ${LIMITS.members}.`]);
+    } catch { return this.bad(['Template: send plain data.']); }
     let value: unknown;
     try { value = snap(valueIn); } catch { return this.bad(['Template: send plain data.']); }
     if (!isPlain(value)) return this.bad(['Template: send an object.']);
