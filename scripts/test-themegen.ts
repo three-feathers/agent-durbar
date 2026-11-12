@@ -145,21 +145,28 @@ assert.ok(Object.keys(clean).length > 100, 'all of Clean Office');
     const [rest, hovd] = restHov(bg, mk);
     assert.ok(rest >= 4.5 && hovd >= 4.5, `fixture ${mk} on ${bg}: rest ${rest.toFixed(3)}, hovered ${hovd.toFixed(3)}`);
   }
-  // a seeded random grid (mulberry32), 4000 pairs, rest and hovered both at 4.5:1
-  {
-    let seed = 20261112;
+  // the review's third-round pair: the toward-text hover reads 4.61 but the rest only 4.197, so the repair has to run on EITHER reading under 4.5:1 (an `&&` skipped it), in both orders
+  for (const [bg, mk] of [['#9a0155', '#00d51a'], ['#00d51a', '#9a0155']]) {
+    const [rest, hovd] = restHov(bg, mk);
+    assert.ok(rest >= 4.5 && hovd >= 4.5, `fixture ${mk} on ${bg}: rest ${rest.toFixed(3)}, hovered ${hovd.toFixed(3)} (repair when either reading is under 4.5:1)`);
+  }
+  // seeded random sweeps (mulberry32), 20000 pairs each: rest and hovered both at 4.5:1, and the written --brand-hover is the target of the FINAL --brand-mark (the one the page uses)
+  for (const sd of [7, 20261112]) {
+    let seed = sd;
     const rnd = (): number => { seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
     const hx = (): string => '#' + [0, 0, 0].map(() => Math.floor(rnd() * 256).toString(16).padStart(2, '0')).join('');
-    let n = 0, underRest = 0, underHov = 0, minRest = 99, minHov = 99;
-    for (; n < 4000; n++) {
+    let n = 0, underRest = 0, underHov = 0, minRest = 99, minHov = 99, badTarget = '';
+    for (; n < 20000; n++) {
       const bg = hx(), mk = hx(), [rest, hovd] = restHov(bg, mk);
       minRest = Math.min(minRest, rest); minHov = Math.min(minHov, hovd);
       if (rest < 4.5) underRest++;
       if (hovd < 4.5) underHov++;
+      if (!badTarget && T.token('--brand-hover') !== brandHoverTarget(T.token('--brand-mark'), T.token('--brand-bg'))) badTarget = `${mk} on ${bg}`;
     }
-    assert.strictEqual(underRest, 0, `random grid: ${underRest} of ${n} pairs under 4.5:1 at rest (min ${minRest.toFixed(3)})`);
-    assert.strictEqual(underHov, 0, `random grid: ${underHov} of ${n} pairs under 4.5:1 hovered (min ${minHov.toFixed(3)})`);
-    console.log(`themegen random grid: ${n} pairs (seed 20261112), under 4.5:1 at rest ${underRest} (min ${minRest.toFixed(3)}), hovered ${underHov} (min ${minHov.toFixed(3)})`);
+    assert.strictEqual(underRest, 0, `random sweep seed ${sd}: ${underRest} of ${n} pairs under 4.5:1 at rest (min ${minRest.toFixed(3)})`);
+    assert.strictEqual(underHov, 0, `random sweep seed ${sd}: ${underHov} of ${n} pairs under 4.5:1 hovered (min ${minHov.toFixed(3)})`);
+    assert.strictEqual(badTarget, '', `random sweep seed ${sd}: --brand-hover is not brandHoverTarget of the final --brand-mark (first: ${badTarget})`);
+    console.log(`themegen random sweep: ${n} pairs (seed ${sd}), under 4.5:1 at rest ${underRest} (min ${minRest.toFixed(3)}), hovered ${underHov} (min ${minHov.toFixed(3)}), --brand-hover = target of the final mark for all`);
   }
   // review round 2 (findings 4 and 5): --brand-hover on <html> follows the theme and the world (a stub document; theme.js only needs documentElement.style and .dataset)
   {

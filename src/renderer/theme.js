@@ -589,7 +589,7 @@
           const low=m=>ratio(m,mixHex(bg,m,BRAND_HOVER_MIX).slice(0,7));
           /* mark = the resolved hex of the text (a name, rgb() or hsl() token is measured, never passed raw to mixHex, which reads hex only); never throws */
           let mark=mk;
-          if(low(mk)<4.5&&ratio(mk,bg)<4.5){
+          if(low(mk)<4.5||ratio(mk,bg)<4.5){ /* either reading under 4.5:1 (review of PR #1618, round 3) */
             const to=ratio('#ffffff',bg)>=ratio('#000000',bg)?'#ffffff':'#000000';
             const ok=m=>low(m)>=4.5&&ratio(m,bg)>=4.5; /* the repaired text holds at rest as well as hovered (review of PR #1618, finding 2) */
             let v=mixHex(mk,to,1);
