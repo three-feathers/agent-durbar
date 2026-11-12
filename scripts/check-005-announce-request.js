@@ -149,6 +149,8 @@ module.exports = async (ctx) => {
       assert.ok(await until(`!!document.getElementById('notesHdrBtn')&&!document.getElementById('moreMenu').hidden`, 8000), `${w}: More has Notes`);
       await js(`document.getElementById('notesHdrBtn').click()`);
       assert.ok(await until(`!!document.getElementById('notesDrawer')&&!document.getElementById('notesDrawer').hidden`, 8000), `${w}: the Notes drawer is open`);
+      // the drawer says "Notes. N notes." (a status) only after its fetch: wait for that line, so it cannot land after the limit's line
+      assert.ok(await until(`window.__seq.some(x=>/^Notes\\./.test(x[1]))`, 8000), `${w}: the Notes drawer said its own line (history ${jsLiteral(await seq())})`);
     }, async () => {
       await H.key('Escape');
       assert.ok(await until(`document.getElementById('notesDrawer').hidden`, 8000), `${w}: the Notes drawer closes`);

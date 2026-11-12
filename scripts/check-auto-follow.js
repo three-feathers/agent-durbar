@@ -252,14 +252,20 @@ module.exports = async (ctx) => {
     await stays(`!!document.querySelector('#chat .q-opts')&&!document.querySelector('#chat .q-opts button[disabled]')`, `${tag}: Enter and Space on the title answered nothing`);
     await E(Q, { type: 'question', phase: 'cancelled', requestId: 'q-af', reason: 'stop' });
     await mclick('#backBtn'); await ok(`!document.body.classList.contains('panel-open')`, `${tag}: the Office button closes the chat`);
-    // ---- a limit for a followed agent while another chat is open by hand: Auto-follow holds the arrival (nothing acted since the switch), so the card says its own line once and no notice follows (spec 005 FR-237)
-    await sendQuiet(Q, 'hello limit elsewhere');
-    await openChat(B);
+    // ---- a limit for a followed agent while a chat that Auto-follow itself opened is open (spec 005 FR-237, spec 052 FR-185): the tracker is quiet,
+    // so the arrival is held; the card says its own line once, no notice follows. A hand open would end the following (FR-185) and prove nothing here.
+    await sendQuiet(Q, 'hello limit held');
+    await sendQuiet(A, 'hello follow again');
+    await finish(A, 'All done.');
+    await okArrival(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle').textContent===${jsLiteral(nameA)}`, `${tag}: Auto-follow opens ${nameA}'s chat when it finishes`, 25000);
+    await ok(`window.__ann.includes(${jsLiteral(nameA + ' finished. Its chat is open.')})`, `${tag}: the arrival was the completion`);
     await E(Q, { type: 'limit', phase: 'exhausted', requestId: 'lim-af2', maxAiCredits: 30, usedAiCredits: 30 });
-    const nameBnow = await nameOf(B);
-    await ok(`window.__ann.includes(${jsLiteral(nameQ + ' reached its spending limit. Open its chat to choose.')})`, `${tag}: a limit in another chat is said, naming the chat to open`);
-    await stays(`document.getElementById('panelTitle').textContent===${jsLiteral(nameBnow)}&&!window.__ann.some(t=>/reached its limit\\. Its chat is open/.test(t)&&t.indexOf(${jsLiteral(nameQ)})===0)`, `${tag}: held: the chat does not move and no notice follows`, 1500);
-    assert.strictEqual((await anns()).filter((t) => t === nameQ + ' reached its spending limit. Open its chat to choose.').length, 1, `${tag}: said once: ${JSON.stringify(await anns())}`);
+    const cardLine = nameQ + ' reached its spending limit. Open its chat to choose.', noticeLine = nameQ + ' reached its limit. Its chat is open.'; // the arrival line a delivery would say
+    await ok(`window.__ann.includes(${jsLiteral(cardLine)})`, `${tag}: a limit in another chat is said, naming the chat to open`);
+    assert.strictEqual(await js(`window.__durbarSimUi.afNotice.shown()`), false, `${tag}: no notice is up for the held arrival`);
+    await stays(`document.getElementById('panelTitle').textContent===${jsLiteral(nameA)}&&!window.__ann.includes(${jsLiteral(noticeLine)})`, `${tag}: held: the chat does not move and no notice follows`, 1500);
+    assert.strictEqual((await anns()).filter((t) => t === cardLine).length, 1, `${tag}: the card said its line once: ${JSON.stringify(await anns())}`);
+    // what happens when the held arrival is later delivered (a second line, its notice) is argued from the code in the spec delta, not driven here: after a send Auto-follow goes quiet again
     await mclick('#backBtn'); await ok(`!document.body.classList.contains('panel-open')`, `${tag}: the Office button closes the chat`);
     console.log(`[follow] ${tag} on, send, arrivals, queue ok`);
   }
