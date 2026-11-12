@@ -383,7 +383,8 @@ module.exports = async (ctx) => {
     const F = await js(`window.__peF`);
     log(tag, `focus during the hold: pencil ${F.k}, ${F.n} frames, lowest opacity ${F.min} ${F.at}`);
     assert.ok(F.min >= 0.99, `${tag}: a pencil focused while hidden stays at opacity 1 through the end of its plate's ease (lowest ${F.min} at ${F.at}, ${F.n} frames)`);
-    await js(`(()=>{const a=${SIM}.agents().find(x=>x.id===${jsLiteral(who)});a.state='working';a.lastEventAt=Date.now();${SIM}.crew.renderAll();document.activeElement&&document.activeElement.blur&&document.activeElement.blur();return 1})()`);
+    await js(`(()=>{const a=${SIM}.agents().find(x=>x.id===${jsLiteral(who)});a.state='working';a.lastEventAt=Date.now();${SIM}.crew.renderAll();return 1})()`);
+    await js(`(()=>{const a=document.activeElement;if(a&&a.blur)a.blur();return 1})()`);
     await must(STILL, `${tag}: still after the focus case`, 5000);
     log(tag, 'status changes:', blinks.join('; '));
     assert.ok(blinks.every((b) => / 0 of a still plate$/.test(b)) && /^thinking: 0 plates eased, 0 pencils hidden/.test(blinks[0]), `${tag}: a status change hides only the pencils of plates that move (${blinks.join('; ')})`);
