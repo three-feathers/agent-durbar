@@ -452,7 +452,7 @@ module.exports = async (ctx) => {
       await H.click('#stillSw');
       await ok(`document.getElementById('stillSw').getAttribute('aria-checked')==='false'`, 'Real office: the switch is off again');
       await H.click('#scrClose');
-      await ok(`!document.querySelector('#stage .ro').classList.contains('still')&&(${BREATHING})`, 'Real office: the motion is back with the switch off', 30000);
+      await ok("!document.querySelector('#stage .ro').classList.contains('still')&&(" + BREATHING + ')', 'Real office: the motion is back with the switch off', 30000);
       console.log('[unread] real office ok');
     } finally {
       await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] });
