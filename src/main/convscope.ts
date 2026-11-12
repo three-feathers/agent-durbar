@@ -182,7 +182,9 @@ export async function buildScope(d: ScopeDeps, stop: () => boolean = () => false
   }
 
   // 2. per folder, the earlier sessions of each app with an agent there, then its VS Code chats
-  const openIds = openIdsOf(d);
+  // one copy of the agents for the folder loop: the open ids and a folder's Codex ids (key of the kept list) must agree, whatever closes while a listing is awaited
+  const snapshot = new Map(d.agents);
+  const openIds = openIdsOf({ agents: snapshot, resumeIdFor: d.resumeIdFor });
   for (const [k, a] of firstOf) {
     if (stop()) break;
     const key = d.wsKey(a);
@@ -202,7 +204,7 @@ export async function buildScope(d: ScopeDeps, stop: () => boolean = () => false
           // owner answer C: a folder on a floor that is off starts no app-server; it is counted instead
           if (off) { floorOffFolders++; continue; }
           // FR-026: the box session's kept list, else `thread/list` through a short-lived app-server, behind the gate (one at a time)
-          const ids = [...d.agents.values()].filter((x) => d.wsKey(x) === key && adapterOf(x) === 'codex').map((x) => x.id);
+          const ids = [...snapshot.values()].filter((x) => d.wsKey(x) === key && adapterOf(x) === 'codex').map((x) => x.id);
           const at = (d.now ?? Date.now)();
           const kept = d.codexLists?.get(key, ids, at);
           if (kept) list = kept.filter((s) => !openIds.has(s.id)); // a session resumed since: open now, not earlier

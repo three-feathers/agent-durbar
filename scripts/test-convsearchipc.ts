@@ -90,6 +90,7 @@ async function main(): Promise<void> {
     assert.strictEqual(SHORT, 'Type at least 3 characters.');
     // review of the phase 2 code (FR-033): hidden format characters are control characters too: removed (gluing, not spacing), never echoed
     for (const sp of ['\u202f', '\u2009', '\u2028', '\u2029', '\u200a', '\u205f', '\u2006', '\u2008', '\n', '\u00a0']) assert.strictEqual(ok(`invoice${sp}export`).query, 'invoice export', `U+${sp.charCodeAt(0).toString(16)} between two words is a space, not nothing`);
+    assert.strictEqual(ok('inv\ufeffoice export').query, 'invoice export', 'U+FEFF is removed, not made a space');
     short('\u200b\u200b\u200b');
     short('\u202e\u202e\u202e');
     short('\u2060\u00ad\ufeff');
@@ -790,6 +791,36 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(earlier(three), ['s1', 'th1'], 'the session that left shows as earlier: the list kept by the sharing scan did not hide it');
   }
 
+  // round 3 (FR-026): a Codex session that closes while an earlier folder is listed is in the listing's exclusions and in the kept list's ids alike
+  stage = 'scope one snapshot';
+  {
+    const ag = (id: string, adapterId: string, cwd: string): AgentInfo => ({ id, name: path.basename(cwd), cwd, folders: [cwd], permMode: 'read-only', adapterId } as AgentInfo);
+    const agents = new Map<string, AgentInfo>([['k1', ag('k1', 'claude', '/a')], ['x1', ag('x1', 'codex', '/c')], ['s1', ag('s1', 'codex', '/c')]]);
+    let release!: () => void;
+    let held: Promise<void> | undefined = new Promise<void>((r) => { release = r; });
+    const all = [{ id: 'th1', title: 'one', startTime: 1, modifiedTime: 2 }, { id: 's1', title: 'was open', startTime: 1, modifiedTime: 3 }];
+    const adapters: Record<string, unknown> = {
+      claude: { id: 'claude', isLive: () => false },
+      codex: { id: 'codex', isLive: () => false, listPreviousSessions: async (_cwd: string, exclude: ReadonlySet<string>) => all.filter((p) => !exclude.has(p.id)) },
+    };
+    const kept = createCodexListCache();
+    const mk = (): ScopeDeps => ({
+      agents, router: { forAgent: (id: string) => adapters[agents.get(id)!.adapterId] as never, adapterIdOf: (id: string) => agents.get(id)?.adapterId }, wsKey: (a: AgentInfo) => a.cwd, resumeIdFor: (id: string) => id, appName: (id: string) => id, vsUserDirs: () => [],
+      values: { knownSecretValues: () => [], noPrompt: () => true, secretValuesFor: () => [] }, gate: createReadGate<unknown>(), codexLists: kept,
+      listChats: (async () => { await held; return { sessions: [], storesFound: 0, unreadable: 0, tooLarge: 0 }; }) as never,
+    });
+    const earlier = (sc: Awaited<ReturnType<typeof buildScope>>): string[] => sc.plan.sessions.filter((x) => x.group === 'earlier').map((x) => x.sessionId).sort();
+    const one = buildScope(mk());
+    await settle(20);
+    agents.delete('s1'); // closes while folder /a is still listed
+    kept.clear();
+    release();
+    held = undefined;
+    await one;
+    const two = await buildScope(mk());
+    assert.deepStrictEqual(earlier(two), ['s1', 'th1'], 'the session that closed meanwhile shows as earlier in the next scan');
+  }
+
   // round 2 (FR-026): the same filter for a shared non-Codex listing: a session resumed while the listing is held is open, not earlier
   stage = 'scope shared Claude listing';
   {
@@ -870,7 +901,7 @@ async function main(): Promise<void> {
     (globalThis as unknown as { window: unknown }).window = { DurbarSafeText: require('../src/shared/redact') }; // eslint-disable-line @typescript-eslint/no-require-imports
     // eslint-disable-next-line @typescript-eslint/no-implied-eval
     const simClean = new Function(js + '\nreturn simCleanQuery;')() as typeof cleanQuery;
-    const corpus: unknown[] = ['a bc', 'x y', '', '  ab ', 'invoice export', 'a\u0000b\u0000c', 'one two three four five six seven eight nine', 'x'.repeat(250), '\u{1F600}'.repeat(205), 'word '.repeat(300), 'é ü', 'éx', 42, null, '\u200b\u200b\u200b', '\u202e\u202e\u202e', 'a\u200bb', 'a\u200bbc', 'inv\u00adoice', '\u202einvoice\u2060 export', 'invoice\u202fexport', 'invoice\u2009export', 'invoice\u2028export', 'invoice\nexport'];
+    const corpus: unknown[] = ['a bc', 'x y', '', '  ab ', 'invoice export', 'a\u0000b\u0000c', 'one two three four five six seven eight nine', 'x'.repeat(250), '\u{1F600}'.repeat(205), 'word '.repeat(300), 'é ü', 'éx', 42, null, '\u200b\u200b\u200b', '\u202e\u202e\u202e', 'a\u200bb', 'a\u200bbc', 'inv\u00adoice', '\u202einvoice\u2060 export', 'invoice\u202fexport', 'invoice\u2009export', 'invoice\u2028export', 'invoice\nexport', 'inv\ufeffoice export', 'a\ufeffbc'];
     for (const q of corpus) assert.deepStrictEqual(simClean(q), cleanQuery(q), `the simulator answers ${JSON.stringify(q)?.slice(0, 40)} as main does`);
     (globalThis as unknown as { window: unknown }).window = {};
     assert.deepStrictEqual(simClean('invoice'), { ok: false, code: 'invalid' }, 'the simulator without the shared unhide fails closed');

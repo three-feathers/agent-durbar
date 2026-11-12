@@ -236,7 +236,7 @@ const simCleanQuery = (q: unknown): { ok: true; query: string; cut: boolean } | 
   const head = q.length > 4 * maxChars ? q.slice(0, 4 * maxChars) : q;
   const uh = (window as unknown as { DurbarSafeText?: { unhide?: (t: string) => string } }).DurbarSafeText?.unhide;
   if (typeof uh !== 'function') return { ok: false, code: 'invalid' }; // fails closed, as the masks do
-  const words = uh(head.replace(/[\u0000-\u001f\u007f-\u009f]|\s/g, ' ')).trim().split(/\s+/).filter(Boolean);
+  const words = uh(head.replace(/[\u0000-\u001f\u007f-\u009f]|[^\S\ufeff]/g, ' ')).trim().split(/\s+/).filter(Boolean);
   let query = words.slice(0, maxWords).join(' ');
   const cps = [...query];
   if (cps.length > maxChars) query = cps.slice(0, maxChars).join('').trimEnd();
