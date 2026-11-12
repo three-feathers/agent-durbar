@@ -116,7 +116,7 @@ Nothing existing creates several sessions at once or stores reusable agent setup
 
 The nonce of FR-036 is the real protection; this guard is best effort and **closed** (no more rules). One function `frameCheck(text)` in `src/shared/teamtemplate.ts`, run on every role and brief, own or imported; T004 tests it, T032 gives it `skeleton()`.
 
-**Normalisation** `norm(t)`: NFKC, then the letter part of `skeleton()` (FR-158: NFKD, the letter table, lower case, the letter table again, NFC; 2026-11-12). No digit folds here.
+**Normalisation** `norm(t)`: NFKC, then the letter part of `skeleton()` (FR-158: NFKD, the letter table, lower case, the letter table again, lower case again, NFC; 2026-11-12). No digit folds here.
 
 **Pass 1, whole text.** `t = norm(text)` with every run of white space (LF and TAB included) **and punctuation** (anything that is not `\p{L}` or `\p{N}`) replaced by one space, so `End of role-brief 1a2b3c4d` reads `end of role brief 1a2b3c4d`.
 1. Before any digit fold: refuse when the words `role brief` are followed by a hex-like word (`^[0-9a-f]{8,}$`).
