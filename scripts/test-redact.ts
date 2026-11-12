@@ -244,6 +244,9 @@ const env = {
       ['an escaped / after a ghp body', 'echo ghp\\_' + B36 + '\\/' + B40.slice(0, 30)],
       ['an escaped = after a ghp body', 'echo ghp\\_' + B36 + '\\=' + B40.slice(0, 16)],
       ['an escaped : and % after a ghp body', 'echo ghp\\_' + B36 + '\\:' + B40.slice(0, 10) + '\\%' + B40.slice(10, 20)],
+      // round 6 (review of PR 1585): each of `\\:` and `\\%` followed by an escaped `@` and more body, so a run without that escape is cut before the `@`
+      ['an escaped :, then an escaped @, after a ghp body', 'echo ghp\\_' + B36 + '\\:' + B40.slice(0, 10) + '\\@' + B40.slice(10, 22)],
+      ['an escaped %, then an escaped @, after a ghp body', 'echo ghp\\_' + B36 + '\\%' + B40.slice(0, 10) + '\\@' + B40.slice(10, 22)],
     ];
     for (const [what, t] of ESC_SET) {
       const want = redact(t, {});
@@ -252,6 +255,24 @@ const env = {
       assert.strictEqual(LA.permText(t, 'shell', cm).text, want, `#1585 round 5 escape set (${what}): the card as redact`);
       assert.strictEqual(ST.maskLabel(t, 'run', cm), want, `#1585 round 5 escape set (${what}): maskLabel (run) as redact`);
       assert.strictEqual(ST.maskLabel(t, 'other', cm), want, `#1585 round 5 escape set (${what}): maskLabel (other) as redact`);
+    }
+    // round 6 (review of PR 1585): the desk's maskRaw masks a text with a backslash as written first, so the tail glued to an escaped head goes with it, as in redact
+    for (const [what, t] of [
+      ['@ after an escaped ghp head', 'echo ghp\\_' + B36 + '@' + B40.slice(0, 16)],
+      ['/ after an escaped ghp head', 'echo ghp\\_' + B36 + '/' + B40.slice(0, 16)],
+      ['= after an escaped ghp head', 'echo ghp\\_' + B36 + '=' + B40.slice(0, 16)],
+      ['\\/ after an escaped ghp head', 'echo ghp\\_' + B36 + '\\/' + B40.slice(0, 16)],
+      ['\\= after an escaped ghp head', 'echo ghp\\_' + B36 + '\\=' + B40.slice(0, 16)],
+      ['\\+ after an escaped ghp head', 'echo ghp\\_' + B36 + '\\+' + B40.slice(0, 16)],
+      ['the review\'s sk-proj shape', 'echo sk\\-proj\\-F8NOjdESu6\\-XEgGYm\\@wQUhx\\0wQWPqf9THhMnxFC'],
+    ] as const) {
+      assert.strictEqual(redact(t, {}), 'echo [redacted]', `#1585 round 6 maskRaw (${what}): redact hides it`);
+      assert.strictEqual(ST.maskRaw(t, (x) => redact(x, {})), 'echo [redacted]', `#1585 round 6 maskRaw (${what}): maskRaw hides the tail too`);
+    }
+    {
+      const t = '[redacted]\\=ghp\\_QwsVGBRd4beVAmTRtEBcz0lYUNK\\@XPHikoiuV';
+      const m = ST.maskRaw(t, (x) => redact(x, {}));
+      assert.ok(!/QwsVGBRd|XPHikoiu/.test(m), `#1585 round 6 maskRaw: the review's [redacted]\\=ghp\\_…\\@… shape is hidden: ${m}`);
     }
   }
 
@@ -264,6 +285,7 @@ const env = {
   assertLinearShape('#1541 redact many escaped line breaks', (x) => { redact(x, {}); }, (k) => 'a\\nb\\_c'.repeat(Math.ceil(k / 7)).slice(0, k), 400_000);
   assertLinearShape('#1585 round 4 redact one run of alternating hiding and other pieces', (x) => { redact(x, {}); }, (k) => ('ab\\n' + FORMS[0][1] + '\\ncd\\_ef\\t').repeat(Math.ceil(k / (FORMS[0][1].length + 14))).slice(0, k), 400_000);
   assertLinearShape('#1585 round 4 redact one run of breaks with an escaped token at the end', (x) => { redact(x, {}); }, (k) => 'ab\\ncd\\_ef\\t'.repeat(Math.ceil(k / 13)).slice(0, k - FORMS[0][1].length - 2) + '\\n' + FORMS[0][1], 400_000);
+  assertLinearShape('#1585 round 6 maskRaw many escaped heads with tails', (x) => { ST.maskRaw(x, (t) => redact(t, {})); }, (k) => ('echo ghp\\_' + B36 + '@' + B40.slice(0, 16) + ' ').repeat(Math.ceil(k / 64)).slice(0, k), 400_000);
   assertLinearShape('#1544 redact many named markers', (x) => { redact(x, { FOO_TOKEN: 'Vq7Wx8Ec9Rv0Tb1Yn2Um3Ik4' }); }, (k) => 'Vq7Wx8Ec9Rv0Tb1Yn2Um3Ik4_ab '.repeat(Math.ceil(k / 28)).slice(0, k), 400_000);
 
   // a seeded randomized fixture: four token types, random escapes at random cut points, the run and other kinds, masks present or not
@@ -292,12 +314,15 @@ const env = {
     let cases = 0;
     let breaks = 0;
     let tails = 0;
+    let heads = 0;
+    let tailHidden = 0;
     for (let i = 0; i < 3000; i++) {
       const [tok, b0] = kinds[i % 4]();
       let bodies = b0;
       let e = escape(tok);
       const m = MASKS[rnd(MASKS.length)];
-      const ctx = rnd(8);
+      const ctx = rnd(9);
+      let tailOf = '';
       let text: string;
       if (ctx === 6) {
         // an escaped rest glued to a plain or named mask (the second piece of a secret whose head was masked); a break escape right after the mask ends the rest, so not at the first place
@@ -306,6 +331,13 @@ const env = {
         e = escape(rest, sep === '' ? 1 : 0);
         text = (rnd(2) ? 'x ' + FV : 'x[redacted]') + sep + e;
         bodies = [rest];
+      } else if (ctx === 8) {
+        // an escaped head, then a separator and an unescaped tail (round 6 of the review of PR 1585: maskRaw showed the tail; the differential never drew this)
+        const tail = body(16);
+        e = escape(tok) + ['@', '/', '=', '\\/', '\\=', '\\+'][rnd(6)] + tail;
+        text = `echo ${e}`;
+        tailOf = tail; // the tail is not part of the token: a plain head keeps it (`ghp_<36>=<16>`, as on `main`); every surface must agree with redact on it
+        heads++;
       } else if (ctx === 7) {
         // two escapes, then a break escape (a shell escape of n, r or t) inside the body after at least 20 of its characters, then a tail of 8 or more (round 3 of the review of PR 1585)
         const pre = (tok.match(/^(?:ghp_|github_pat_|sk-proj-|sk-ant-api03-)/) ?? [''])[0].length;
@@ -322,8 +354,16 @@ const env = {
         assert.strictEqual(leak, undefined, `#1541 fuzz case ${i} (${fn}): ${JSON.stringify(text)} shows ${leak}: ${out}`);
       }
       agree(text, bodies, FE, `#1585 differential fuzz case ${i}`);
+      if (tailOf && shows(redact(text, FE), [tailOf]) === undefined) {
+        const cm = cardMask(FE);
+        for (const [where, out] of [['maskRaw', ST.maskRaw(text, (t) => redact(t, FE))], ['card', LA.permText(text, 'shell', cm).text], ['maskLabel run', ST.maskLabel(text, 'run', cm)]] as const) {
+          assert.strictEqual(shows(out, [tailOf]), undefined, `#1585 round 6 fuzz case ${i}: ${where} hides the tail redact hides: ${JSON.stringify(text)} gave ${out}`);
+        }
+        tailHidden++;
+      }
       cases++;
     }
+    assert.ok(heads > 100, `#1585 round 6 fuzz: the escaped-head kind is reached (${heads} cases)`);
     assert.ok(tails > 100, `#1585 round 3 fuzz: the kind with a break escape after two escapes is reached (${tails} cases)`);
     assert.ok(breaks > 50, `#1585 fuzz: the escapes reach n, r and t (${breaks} cases with a break escape)`);
     // text with escapes and no secret is returned as written
@@ -334,7 +374,7 @@ const env = {
       cases++;
     }
     const ms = Date.now() - t0;
-    console.log(`#1541 fuzz: ${cases} cases in ${ms} ms (${breaks} with a backslash before n, r or t, ${tails} of them a break after two escapes with a tail; ${diffCases} redact/maskRaw differential cases in all)`);
+    console.log(`#1541 fuzz: ${cases} cases in ${ms} ms (${breaks} with a backslash before n, r or t, ${tails} of them a break after two escapes with a tail, ${heads} an escaped head with an unescaped tail, ${tailHidden} of them with the tail hidden by redact and checked on every surface; ${diffCases} differential cases on redact, maskRaw, the card and the label in all)`);
   }
 }
 
