@@ -251,13 +251,12 @@ function helpers(ctx) {
   const calm = async (o = {}) => { await js(`(()=>{if(!document.getElementById('shotCalm')){const s=document.createElement('style');s.id='shotCalm';s.textContent='#toasts${o.keepActions ? ' .toast:not(.with-act)' : ''}{display:none!important}';document.head.append(s);}${o.blur ? 'if(document.activeElement&&document.activeElement!==document.body)document.activeElement.blur();' : ''}})()`); await w.settleWalk(); };
   /**
    * Spec 008 FR-214: the real pointer rests where the window lies on the screen (script clicks never move it), so a control under it reads in its :hover colours.
-   * Moves the pointer to 0,0, waits until nothing under `scope` (a selector list) matches :hover, and returns what still does (descriptions; empty = fine). A colour read goes after this and asserts the list is empty.
+   * Moves the pointer to 0,0, waits until nothing under `scope` (a selector list) matches :hover, and returns what still does (descriptions; empty = fine); `controls` (a selector list) limits the list to those elements, `{ stay: true }` only lists (a mutant that put the pointer there itself). A colour read goes after this and asserts the list is empty.
    */
-  const pointerOff = async (scope) => {
+  const pointerOff = async (scope, controls, o = {}) => {
     const sel = scope.split(',').map((x) => x.trim() + ' :hover').join(',');
-    wc().sendInputEvent({ type: 'mouseMove', x: 0, y: 0 });
-    await w.until(`!document.querySelector(${jsLiteral(sel)})`, 2000);
-    return js(`[...document.querySelectorAll(${jsLiteral(sel)})].map(e=>(e.id?'#'+e.id:e.tagName.toLowerCase()+'.'+String(e.className).trim().replace(/ +/g,'.'))+' "'+(e.textContent||'').trim().slice(0,30)+'"')`);
+    if (!o.stay) { wc().sendInputEvent({ type: 'mouseMove', x: 0, y: 0 }); await w.until(`!document.querySelector(${jsLiteral(sel)})`, 2000); }
+    return js(`[...document.querySelectorAll(${jsLiteral(sel)})].filter(e=>${controls ? 'e.matches(' + jsLiteral(controls) + ')&&e.getClientRects().length' : 'true'}).map(e=>(e.id?'#'+e.id:e.tagName.toLowerCase()+'.'+String(e.className).trim().replace(/ +/g,'.'))+' "'+(e.textContent||e.value||'').trim().slice(0,30)+'"')`);
   };
   /** Remove the toasts that are on screen now. */
   const clearToasts = () => js(`document.querySelectorAll('#toasts .toast').forEach(t=>t.remove())`);

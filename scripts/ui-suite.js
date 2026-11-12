@@ -8,6 +8,7 @@
  *   UI_SUITE_OUT=<folder>                 where every screenshot goes (default: a new temp folder, printed at the end)
  *   UI_SUITE_XVFB=1                       Linux: run under xvfb-run even when a display is set
  *   UI_SUITE_DPR=<1..4, or 1.25, 1.5>     force the device scale factor (2 = a Retina screen, 1.25 and 1.5 = a Windows laptop at 125 % and 150 %) for every driver
+ *   UI_SUITE_XVFB_SCREEN=WxHxD            Linux/xvfb: replace the screen (default 1920x1100 times the density, depth 24; a malformed value is ignored; spec 008 FR-213)
  *   UI_SUITE_JOBS=<n>                     drivers at once (default 2; each has its own profile and, on Linux, its own xvfb display);
  *                                         an entry with `focus: true` (waits on the OS window focus) runs alone, after the others, when windows share a desktop (FR-210)
  *   UI_SUITE_RETRY=1                      run each failed driver once more, alone, at the end; a pass then is reported as FLAKY
