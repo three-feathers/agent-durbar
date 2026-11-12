@@ -252,20 +252,25 @@ module.exports = async (ctx) => {
     await stays(`!!document.querySelector('#chat .q-opts')&&!document.querySelector('#chat .q-opts button[disabled]')`, `${tag}: Enter and Space on the title answered nothing`);
     await E(Q, { type: 'question', phase: 'cancelled', requestId: 'q-af', reason: 'stop' });
     await mclick('#backBtn'); await ok(`!document.body.classList.contains('panel-open')`, `${tag}: the Office button closes the chat`);
-    // ---- a limit for a followed agent while a chat that Auto-follow itself opened is open (spec 005 FR-237, spec 052 FR-185): the tracker is quiet,
-    // so the arrival is held; the card says its own line once, no notice follows. A hand open would end the following (FR-185) and prove nothing here.
-    await sendQuiet(Q, 'hello limit held');
+    // ---- a followed agent's limit while a chat that Auto-follow itself opened is open (spec 005 FR-237, spec 052 FR-184, FR-185). A hand open drops every other
+    // followed agent, so Rosa is followed through the tracker's sim hook after Priya's send; Priya finishing makes Auto-follow open her chat (the tracker goes quiet),
+    // and Rosa's limit then arrives: held (pending, no notice, no move), the card says its line once.
+    const trk = () => js(`({ids:window.__durbarSimUi.afTracker.ids(),pending:window.__durbarSimUi.afTracker.pending(),quiet:window.__durbarSimUi.afTracker.quiet()})`);
     await sendQuiet(A, 'hello follow again');
+    await js(`window.__durbarSimUi.afTracker.follow(${jsLiteral(Q)})`);
     await finish(A, 'All done.');
     await okArrival(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle').textContent===${jsLiteral(nameA)}`, `${tag}: Auto-follow opens ${nameA}'s chat when it finishes`, 25000);
     await ok(`window.__ann.includes(${jsLiteral(nameA + ' finished. Its chat is open.')})`, `${tag}: the arrival was the completion`);
+    const before = await trk();
+    assert.deepStrictEqual(before, { ids: [Q], pending: [], quiet: true }, `${tag}: before the limit the tracker follows ${nameQ}, holds nothing and is quiet: ${JSON.stringify(before)}`);
     await E(Q, { type: 'limit', phase: 'exhausted', requestId: 'lim-af2', maxAiCredits: 30, usedAiCredits: 30 });
-    const cardLine = nameQ + ' reached its spending limit. Open its chat to choose.', noticeLine = nameQ + ' reached its limit. Its chat is open.'; // the arrival line a delivery would say
+    const cardLine = nameQ + ' reached its spending limit. Open its chat to choose.', noticeLine = nameQ + ' reached its limit. Its chat is open.';
+    await ok(`window.__durbarSimUi.afTracker.pending().includes(${jsLiteral(Q + '|limit')})`, `${tag}: the tracker holds ${nameQ}'s limit as an arrival`);
     await ok(`window.__ann.includes(${jsLiteral(cardLine)})`, `${tag}: a limit in another chat is said, naming the chat to open`);
-    assert.strictEqual(await js(`window.__durbarSimUi.afNotice.shown()`), false, `${tag}: no notice is up for the held arrival`);
-    await stays(`document.getElementById('panelTitle').textContent===${jsLiteral(nameA)}&&!window.__ann.includes(${jsLiteral(noticeLine)})`, `${tag}: held: the chat does not move and no notice follows`, 1500);
+    await stays(`document.getElementById('panelTitle').textContent===${jsLiteral(nameA)}&&!window.__durbarSimUi.afNotice.shown()&&!window.__ann.includes(${jsLiteral(noticeLine)})&&window.__durbarSimUi.afTracker.pending().includes(${jsLiteral(Q + '|limit')})`, `${tag}: held: the chat does not move, no notice is up and the arrival stays pending`, 1500);
+    assert.deepStrictEqual(await trk(), { ids: [Q], pending: [Q + '|limit'], quiet: true }, `${tag}: after the limit the tracker still follows ${nameQ}, holds its limit and is quiet`);
     assert.strictEqual((await anns()).filter((t) => t === cardLine).length, 1, `${tag}: the card said its line once: ${JSON.stringify(await anns())}`);
-    // what happens when the held arrival is later delivered (a second line, its notice) is argued from the code in the spec delta, not driven here: after a send Auto-follow goes quiet again
+    // what a later delivery says (a second line) is argued from the code in the spec delta, not driven here
     await mclick('#backBtn'); await ok(`!document.body.classList.contains('panel-open')`, `${tag}: the Office button closes the chat`);
     console.log(`[follow] ${tag} on, send, arrivals, queue ok`);
   }
