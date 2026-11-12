@@ -538,6 +538,13 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
     for (const sep of ['_', '-', '']) eq(ST.maskRaw('secret=' + V + sep + REST, red), 'secret=[redacted:FOO_TOKEN]', '#1544 named marker: maskRaw hides the rest glued to a named marker (' + (sep || 'no separator') + ')');
     eq(ST.maskRaw('cp ' + V + '_backup', red), 'cp [redacted:FOO_TOKEN]_backup', '#1544 named marker: maskRaw keeps a short suffix');
   }
+  // spec 012 FR-181 (review of PR 1585): a shell escape of a letter (`g\hp_`, `ghp_\A…`) is hidden on the card too, because the shell kind's mask is maskSecretCommand
+  {
+    const B = 'A1b2C3d4E5f6' + 'G7h8I9j0K1l2M3n4O5p6Q7r8';
+    for (const [what, tok] of [['g\\hp_', 'g\\hp_' + B], ['ghp_\\A', 'ghp_\\' + B]] as const) {
+      eq(L.permText('run echo ' + tok, 'shell', mask), { text: 'run echo [redacted]', hidden: true, why: 'secret' }, '#1585 permText shell: ' + what + ' is hidden, the command kept as written');
+    }
+  }
   // spec 012 FR-180: a Markdown-escaped token (`ghp\_...`) is hidden on the card as the desk mask hides it, and the command is shown as written
   {
     const ST = require(path.join(R, 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string; maskLabel(t: string, k: string, m: Record<string, (s: string) => string>): string };
@@ -580,7 +587,9 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
       ok(!sh.text.includes('Zq9x') && sh.hidden, 'stretch ' + v.slice(0, 5) + ': shell kind hides the rest: ' + sh.text);
       const p = L.phrase({ kind: 'run', tool: 'Bash', label: 'echo ' + v }, hm), pr = L.phrase({ kind: 'read', tool: 'Read', label: 'notes ' + v }, hm);
       ok(!p.includes('Zq9x') && !pr.includes('Zq9x'), 'stretch ' + v.slice(0, 5) + ': phrase hides the rest: ' + p + ' / ' + pr);
-      eq(ST.maskLabel('send ' + v, 'other', mask), '', 'stretch ' + v.slice(0, 5) + ': a mask that changes only the unescaped copy gives an empty label');
+      // the shared mask now hides the escaped rest as written (spec 012 FR-181, review of PR 1585), so the label keeps its text; a mask that reads only text without a backslash still fails closed
+      eq(ST.maskLabel('send ' + v, 'other', mask), 'send ' + v.slice(0, v.indexOf(']') + 1), 'stretch ' + v.slice(0, 5) + ': the shared mask hides the escaped rest in place');
+      eq(ST.maskLabel('send ' + v, 'other', { ...mask, redact: (x: string) => (x.includes('\\') ? x : redact(x, {})) }), '', 'stretch ' + v.slice(0, 5) + ': a mask that changes only the unescaped copy gives an empty label');
     }
     // round 3: the stretch hidden in place, not by blanking the label (escaped brackets make the whole value one run)
     for (const v of ['password=\\[redacted\\]\\_Zq9xW8vU7tS6rQ5p', 'x\\[redacted\\]\\_Zq9xW8vU7tS6rQ5p', 'token=\\[redacted\\]\\-Zq9xW8vU7tS6rQ5p']) {

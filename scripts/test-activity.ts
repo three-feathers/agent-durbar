@@ -38,6 +38,14 @@ try {
     assert.strictEqual(sanitizeActivityRow({ ...base, t: new Date().toISOString(), folder: 'C:\\Users\\u\\proj\\' })!.folder, 'proj', 'Windows path: base name');
     // spec 012 FR-181 (issue #1541): the row's last redact() hides an escaped token (`ghp\_<body>`), so the log and its export never hold it
     assert.strictEqual(sanitizeActivityRow({ ...base, t: new Date().toISOString(), action: 'echo ' + 'ghp' + '\\_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8' }, {})!.action, 'echo [redacted]', '#1541 activity: the row hides an escaped token');
+    // review of PR 1585: an escaped rest glued to a mask (an env value's named marker, or a plain mask) is hidden by the row's last redact() too
+    {
+      const V = 'Vq7Wx8Ec9Rv0' + 'Tb1Yn2Um3Ik4', REST = 'abcdefghij' + '0123456789xy';
+      for (const [what, action] of [['named \\_<rest>', 'secret=' + V + '\\_' + REST], ['named _<4>\\<18>', 'secret=' + V + '_' + REST.slice(0, 4) + '\\' + REST.slice(4)], ['plain \\_<rest>', 'send x[redacted]\\_' + REST]] as const) {
+        const got = sanitizeActivityRow({ ...base, t: new Date().toISOString(), action }, { FOO_TOKEN: V })!.action;
+        assert.ok(!got.replace(/\\/g, '').includes(REST.slice(10, 18)) && !got.includes(V), `#1585 activity: an escaped rest after a mask is hidden (${what}): ${got}`);
+      }
+    }
     st.flush();
     const disk = fs.readFileSync(file, 'utf8');
     for (const bad of ['secret prompt', 'model reply', 'tool output', 'file body', '/home/u']) assert.ok(!disk.includes(bad), `not on disk: ${bad}`);

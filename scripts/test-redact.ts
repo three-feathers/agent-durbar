@@ -6,6 +6,7 @@ import { Worker } from 'worker_threads';
 import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, maskNoteText, maskOutgoing, redact, shQuote, splitCommand } from '../src/shared/redact';
 
 import { assertLinearShape, cpuMs } from './redact-growth-lib';
+import './safetext-shared'; // the desk's maskRaw (src/renderer/safetext.js) reads the compiled redact.ts, for the FR-181 differential below
 // Growth and adversarial runs: `test-redact-growth.ts` (split by spec 012 T137, issue #1009; the helpers are in `redact-growth-lib.ts`).
 const GH = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
 const env = {
@@ -41,6 +42,17 @@ const env = {
     for (const b of bodies) for (let i = 0; i + 8 <= b.length; i++) if (o.includes(b.slice(i, i + 8))) return b.slice(i, i + 8);
     return undefined;
   };
+  /** The desk's mask (`DurbarSafeText.maskRaw`: Markdown escapes undone, then `redact`): the activity row's last line and the desk read the same text, so they must agree on whether a secret shows. */
+  const ST = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string };
+  let diffCases = 0;
+  /** Both `redact` and `maskRaw` hide every body (the review of PR 1585: a future change to one path must not reopen a leak the other closes). */
+  const agree = (text: string, bodies: string[], env: Record<string, string>, label: string): void => {
+    const r = redact(text, env);
+    const m = ST.maskRaw(text, (t) => redact(t, env));
+    assert.strictEqual(shows(r, bodies), undefined, `${label}: redact shows no part: ${JSON.stringify(text)} gave ${r}`);
+    assert.strictEqual(shows(m, bodies), undefined, `${label}: maskRaw shows no part: ${JSON.stringify(text)} gave ${m}`);
+    diffCases++;
+  };
   for (const [what, tok, bodies] of FORMS) {
     // the baseline: the same token without its backslashes is a token to the rules
     assert.notStrictEqual(redact(tok.replace(/\\/g, ''), {}), tok.replace(/\\/g, ''), `#1541 ${what}: the unescaped token is a token (baseline)`);
@@ -51,6 +63,7 @@ const env = {
       assert.strictEqual(shows(c, bodies), undefined, `#1541 ${what} ${ctx}: maskSecretCommand shows no part: ${c}`);
       assert.ok(r.includes('[redacted]') && c.includes('[redacted]'), `#1541 ${what} ${ctx}: a mask is shown`);
     }
+    for (const t of [tok, 'echo ' + tok, `echo "${tok}"`, 'echo ghp_' + B36 + tok]) agree(t, bodies, {}, `#1541 differential ${what}`);
     const a = maskSecretArgs(['run', tok, '--verbose'], {});
     assert.deepStrictEqual(a, ['run', '[redacted]', '--verbose'], `#1541 ${what}: maskSecretArgs hides the argument, the others stay`);
   }
@@ -95,6 +108,56 @@ const env = {
     assert.strictEqual(redact('see ' + V + '.', NE), 'see [redacted:FOO_TOKEN].', '#1544 named marker: a full stop stays');
     assert.strictEqual(redact('see ' + V + '_' + REST + '.', NE), 'see [redacted:FOO_TOKEN].', '#1544 named marker: the rest is hidden, the full stop stays');
     assert.strictEqual(redact('a ' + V + ' and ' + V + REST + ' and [redacted] ' + REST, NE), 'a [redacted:FOO_TOKEN] and [redacted:FOO_TOKEN] and [redacted] ' + REST, '#1544 named marker: plain and named markers in one text, each read once');
+    // review of PR 1585 (2): every mask takes its own rest, not only the first plain one (FR-173), also in the order plain, named, plain
+    const R21 = 'k1L2m3N4o5P6q7R8s9T0u';
+    const G = 'ghp_' + B36;
+    assert.strictEqual(redact('a ' + G + '_' + R21 + ' b ' + G + '_' + R21 + ' c ' + G + '_' + R21, {}), 'a [redacted] b [redacted] c [redacted]', '#1585 glued rest: each of three plain masks takes its rest');
+    assert.strictEqual(redact('a ' + G + '_' + R21 + ' b ' + V + '_' + R21 + ' c ' + G + '_' + R21, NE), 'a [redacted] b [redacted:FOO_TOKEN] c [redacted]', '#1585 glued rest: plain, named, plain each take their rest');
+    // review of PR 1585 (1): an escaped rest glued to a mask is that mask's rest, named or plain, through redact, maskSecretCommand and the desk's maskRaw
+    const R17 = REST.slice(5);
+    const ESC_RESTS: Array<[string, string, string[]]> = [
+      ['named \\_<rest>', 'secret=' + V + '\\_' + REST, [REST]],
+      ['named _<4>\\<18>', 'secret=' + V + '_' + REST.slice(0, 4) + '\\' + REST.slice(4), [REST.slice(4)]],
+      ['named <3>\\<19>', 'x ' + V + REST.slice(0, 3) + '\\' + REST.slice(3), [REST.slice(3)]],
+      ['named _<3>\\n<18>', 'x ' + V + '_' + REST.slice(0, 3) + '\\n' + REST.slice(3, 21), [REST.slice(3, 21)]],
+      ['plain \\_<rest>', 'send x[redacted]\\_' + REST, [REST]],
+      ['plain _<5>\\<17>', 'x[redacted]_' + REST.slice(0, 5) + '\\' + R17, [R17]],
+      ['plain _AIza<14>\\<21>', 'x[redacted]_AIza' + B36.slice(0, 14) + '\\' + R21, [R21]],
+      ['token then \\_<rest>', 'x ' + G + '\\_' + REST, [B36, REST]],
+      ['password= named \\_<rest>', 'password=' + V + '\\_' + REST, [REST]],
+      ['token= plain \\-<rest>', 'token=[redacted]\\-' + REST, [REST]],
+    ];
+    for (const [what, text, bodies] of ESC_RESTS) {
+      assert.strictEqual(shows(redact(text, NE), bodies), undefined, `#1585 escaped rest after a mask (${what}): redact hides it: ${redact(text, NE)}`);
+      assert.strictEqual(shows(maskSecretCommand(text, NE), bodies), undefined, `#1585 escaped rest after a mask (${what}): maskSecretCommand hides it`);
+      agree(text, bodies, NE, `#1585 differential escaped rest (${what})`);
+    }
+    assert.strictEqual(redact('x [redacted]\\nNextlinehere', {}), 'x [redacted]\\nNextlinehere', '#1585 a JSON line break after a mask ends the rest');
+    assert.strictEqual(redact('see ' + V + '\\.', NE), 'see [redacted:FOO_TOKEN]\\.', '#1585 an escaped full stop after a mask stays');
+    assert.strictEqual(redact('see ' + V + '_' + REST + '\\.', NE), 'see [redacted:FOO_TOKEN]\\.', '#1585 the rest is hidden, an escaped full stop stays with its backslash');
+    // the rule itself (FR-173's glued rest), as callers that run maskTokenShapes alone read it (the brain view's maskText)
+    assert.strictEqual(maskTokenShapes('x[redacted]\\_' + REST, '[redacted]'), 'x[redacted]', '#1585 maskTokenShapes: an escaped rest after a plain mask is glued');
+    assert.strictEqual(maskTokenShapes('x [redacted:FOO_TOKEN]_' + REST.slice(0, 4) + '\\' + REST.slice(4), '[redacted]'), 'x [redacted:FOO_TOKEN]', '#1585 maskTokenShapes: an escaped rest after a named marker is glued');
+    // the reverse: the escaped token before a mask, glued to it
+    for (const [what, tok, bodies] of FORMS) {
+      for (const [where, text] of [['before a plain mask', tok + '[redacted]'], ['before a named marker', tok + V], ['before a named marker after a word', 'x ' + tok + V + ' y']] as const) {
+        assert.strictEqual(shows(redact(text, NE), bodies), undefined, `#1585 reverse ${what} ${where}: redact hides it`);
+        agree(text, bodies, NE, `#1585 differential reverse ${what} ${where}`);
+      }
+    }
+  }
+  // review of PR 1585 (3): \n, \r, \t inside a body are shell escapes of a letter there: the whole run is read when no piece between the breaks hides
+  for (const br of ['n', 'r', 't']) {
+    for (const [what, text, bodies] of [
+      ['ghp', 'echo ghp_' + B36.slice(0, 10) + '\\' + br + B36.slice(10), [B36.slice(0, 10), B36.slice(10)]],
+      ['ghp with a second escape', 'echo ghp\\_' + B36.slice(0, 10) + '\\' + br + B36.slice(10), [B36.slice(0, 10), B36.slice(10)]],
+      ['sk-proj', 'echo sk-proj-' + B40.slice(0, 10) + '\\' + br + B40.slice(10), [B40.slice(0, 10), B40.slice(10)]],
+    ] as const) {
+      const r = redact(text, {});
+      assert.strictEqual(r, 'echo [redacted]', `#1585 a \\${br} inside a body (${what}): the whole run is hidden: ${r}`);
+      assert.strictEqual(shows(maskSecretCommand(text, {}), [...bodies]), undefined, `#1585 a \\${br} inside a body (${what}): maskSecretCommand hides it`);
+      agree(text, [...bodies], {}, `#1585 differential \\${br} inside a body (${what})`);
+    }
   }
 
   // growth: linear in the text (FR-180 did the same for maskLabel)
@@ -109,7 +172,7 @@ const env = {
   // a seeded randomized fixture: four token types, random escapes at random cut points, the run and other kinds, masks present or not
   {
     let seed = 0x1541;
-    const rnd = (n: number): number => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed % n; };
+    const rnd = (n: number): number => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return (seed >>> 16) % n; }; // the high bits: the low bits of this generator repeat with a short period (review of PR 1585: `seed % n` never put a backslash before n, r or t)
     const AN = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
     const body = (n: number): string => Array.from({ length: n }, () => AN[rnd(AN.length)]).join('');
     const kinds: Array<() => [string, string[]]> = [
@@ -118,28 +181,45 @@ const env = {
       () => { const b = body(40); return ['sk-proj-' + b, [b]]; },
       () => { const b = body(93); return ['sk-ant-api03-' + b, [b]]; },
     ];
-    /** 1 to 3 backslashes at random cut points, before a character (a letter, a digit, `_` or `-`). */
-    const escape = (t: string): string => {
+    /** 1 to 3 backslashes at random cut points (from `min` on), before a character (a letter, a digit, `_` or `-`). */
+    const escape = (t: string, min = 0): string => {
       const at = new Set<number>();
       const n = 1 + rnd(3);
-      while (at.size < n) at.add(rnd(t.length));
+      while (at.size < n) at.add(min + rnd(t.length - min));
       return [...t].map((c, i) => (at.has(i) ? '\\' + c : c)).join('');
     };
-    const MASKS = ['', '[redacted] ', '[redacted:FOO_TOKEN] ', 'x[redacted]_y '];
+    const FV = 'Vq7Wx8Ec9Rv0Tb1Yn2Um3Ik4';
+    const FE = { FOO_TOKEN: FV };
+    const MASKS = ['', '[redacted] ', FV + ' ', 'x[redacted]_y '];
     const t0 = Date.now();
     let cases = 0;
+    let breaks = 0;
     for (let i = 0; i < 3000; i++) {
-      const [tok, bodies] = kinds[i % 4]();
-      const e = escape(tok);
+      const [tok, b0] = kinds[i % 4]();
+      let bodies = b0;
+      let e = escape(tok);
       const m = MASKS[rnd(MASKS.length)];
-      const ctx = rnd(5);
-      const text = ctx === 0 ? e : ctx === 1 ? `${m}echo ${e} done` : ctx === 2 ? `run "${e}" ${m}` : ctx === 3 ? `${m}${tok}${e}` : `curl -d x=1 ${e}`;
-      for (const [fn, out] of [['redact', redact(text, {})], ['maskSecretCommand', maskSecretCommand(text, {})], ['maskSecretArgs', maskSecretArgs(['srv', text, e], {}).join(' ')]] as const) {
+      const ctx = rnd(7);
+      let text: string;
+      if (ctx === 6) {
+        // an escaped rest glued to a plain or named mask (the second piece of a secret whose head was masked); a break escape right after the mask ends the rest, so not at the first place
+        const rest = body(22);
+        const sep = ['', '_', '-'][rnd(3)];
+        e = escape(rest, sep === '' ? 1 : 0);
+        text = (rnd(2) ? 'x ' + FV : 'x[redacted]') + sep + e;
+        bodies = [rest];
+      } else {
+        text = ctx === 0 ? e : ctx === 1 ? `${m}echo ${e} done` : ctx === 2 ? `run "${e}" ${m}` : ctx === 3 ? `${m}${tok}${e}` : ctx === 4 ? `curl -d x=1 ${e}` : `x ${e}${['[redacted]', FV][rnd(2)]} y`;
+      }
+      if (/\\[nrt]/.test(e)) breaks++;
+      for (const [fn, out] of [['redact', redact(text, FE)], ['maskSecretCommand', maskSecretCommand(text, FE)], ['maskSecretArgs', maskSecretArgs(ctx === 6 ? ['srv', text] : ['srv', text, e], FE).join(' ')]] as const) {
         const leak = shows(out, bodies);
         assert.strictEqual(leak, undefined, `#1541 fuzz case ${i} (${fn}): ${JSON.stringify(text)} shows ${leak}: ${out}`);
       }
+      agree(text, bodies, FE, `#1585 differential fuzz case ${i}`);
       cases++;
     }
+    assert.ok(breaks > 50, `#1585 fuzz: the escapes reach n, r and t (${breaks} cases with a break escape)`);
     // text with escapes and no secret is returned as written
     const WORDS = ['a\\>b', 'C:\\Users\\me', 'foo\\_bar', 'x\\-y', '\\n', 'echo', 'grep', '"q\\.r"', 'it\\\'s', 'path\\to\\file.txt', 'a\\*b', '\\~', 'k\\=v'];
     for (let i = 0; i < 1000; i++) {
@@ -148,7 +228,7 @@ const env = {
       cases++;
     }
     const ms = Date.now() - t0;
-    console.log(`#1541 fuzz: ${cases} cases in ${ms} ms`);
+    console.log(`#1541 fuzz: ${cases} cases in ${ms} ms (${breaks} with a backslash before n, r or t; ${diffCases} redact/maskRaw differential cases in all)`);
   }
 }
 
