@@ -60,7 +60,9 @@
   /* the masked text, not made plain or cut: masked as it is, and again on the plain-kept text when Markdown that can split a token is
      present (otherwise the text is shown as it is). '' when masking is not possible. */
   const maskRaw=(raw,redact)=>{if(typeof redact!=='function')return '';return unhid(raw,t=>maskRaw0(t,redact),c=>unesc(c),'');};
-  const maskRaw0=(raw,redact)=>{try{const u=unesc(raw),m1=redact(u);if(typeof m1!=='string')return '';
+  /* spec 012 FR-181 (review of PR 1585, round 6): a text with a backslash is masked as written first, then unescaped and masked again, so the tail glued to an escaped head
+     (`ghp\_<body>@<rest>`) goes with it as in redact; a text without one is masked as before (byte for byte) */
+  const maskRaw0=(raw,redact)=>{try{const r0=raw.indexOf('\\')<0?raw:redact(raw);if(typeof r0!=='string')return '';const u=unesc(r0),m1=redact(u);if(typeof m1!=='string')return '';
     if(!SPLIT.test(u))return m1; /* no Markdown that can split a token: one pass is enough (and keeps the live readout cheap) */
     const k=plainKeep(u),m2=both(u,k,redact);return m2!==k?m2:m1;}catch(e){return '';}}; /* m2 holds what either pass found (both) */
   /* raw agent text -> masked, plain, at most n characters (no n: not cut). '' when masking is not possible. */
@@ -77,7 +79,7 @@
      `[redaction failed]` on any copy: ''. On a label longer than ESC_FULL (the permission card's own cut) at most
      ESC_RUNS distinct escaped runs are looked at (one mask call each), more: '' (`phrase` and the desk tool labels pass it uncut); a shorter
      label, so every permission card, has every run checked. A label without an escape is masked as before. */
-  const ERUN=/(?:[A-Za-z0-9_\-.+\/=:@%]|\\[\\`*_{}\[\]()#+\-.!~|<>])+/g;
+  const ERUN=/(?:[A-Za-z0-9_\-.+\/=:@%]|\\[\\`*_{}\[\]()#+\-.!~|<>A-Za-z0-9=:@%\/])+/g; /* spec 012 FR-181 (review of PR 1585, round 4): a backslash before a token character joins a run too (`\n` of a JSON line break, `\h` of a shell escape), as in the shared step, so a run is judged whole by the mask */
   const ESC_RUNS=64,ESC_FULL=10000;
   const escMask=(s,mk)=>{if(unesc(s)===s)return mk(s);const capped=s.length>ESC_FULL;
     const got=t=>{const r=mk(t);if(typeof r!=='string'||!r||/\[redaction failed\]/.test(r))throw new Error('mask');return r;};

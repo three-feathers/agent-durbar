@@ -940,4 +940,18 @@ ok('FR-186: a Claude entry\'s oauth is copied through the allow-list, all or not
   assert.ok(cop.valid && cop.valid.oauth === undefined, 'only a Claude entry carries it');
 });
 
+// spec 012 FR-181 (issue #1541): an escaped token (`ghp\_<body>`) in another app's command or args is hidden in the window's view (`shown`, through `readGlobal`) and in the copy preview
+ok('an escaped token in a command or args: hidden in the view and the preview', () => {
+  const esc = 'ghp' + '\\_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
+  const r = readGlobal('claude', JSON.stringify({ mcpServers: { e: { command: 'srv ' + esc, args: ['--x', esc] } } }));
+  assert.ok(r.ok);
+  if (!r.ok) return;
+  assert.strictEqual(r.servers[0].command, 'srv [redacted]', '#1541 mcpglobal shown: the command hides an escaped token');
+  assert.deepStrictEqual(r.servers[0].args, ['--x', '[redacted]'], '#1541 mcpglobal shown: the args hide an escaped token');
+  for (const app of ['copilot', 'claude', 'codex'] as const) {
+    const p = previewText(app, { name: 'e', transport: 'stdio', command: 'srv ' + esc, args: ['--x', esc], env: [], headers: [] }, 'plain');
+    assert.ok(!p.includes('A1b2C3d4') && p.includes('[redacted]'), `#1541 mcpglobal previewText (${app}): an escaped token is hidden: ${p}`);
+  }
+});
+
 console.log(`test-mcp-global: ${n} checks passed`);
