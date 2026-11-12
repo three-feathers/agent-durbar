@@ -78,7 +78,15 @@ module.exports = async (ctx) => {
     await emit(A0, [{ name: 'my-notes', status: 'needs-auth', error: 'The server answered 401 Unauthorized: sign in to use its tools.', errorClass: 'auth' }]);
     assert.ok(await until(`!document.getElementById('mcpStrip').hidden`, 6000), `${REAL} MCP strip ${w}: the strip shows over the Real office`);
     await settle();
-    fit = await js(FIT);
+    /* the office stays put: five reads 100 ms apart are the same (a floor that grows and shrinks again, as when the lent padding is not given back before the next measure, redraws for ever; settle() cannot see that) */
+    await js(`window.__ro1566=window.__durbarSimUi.realLayout();0`);
+    const reads = [];
+    for (let i = 0; i < 5; i++) { reads.push(JSON.stringify(await js(FIT))); await ctx.sleep(100); }
+    assert.ok(reads.every((r) => r === reads[0]), `${REAL} MCP strip ${w}: the office is steady while the strip is shown: ` + reads.join(' | '));
+    assert.ok(await js(`window.__durbarSimUi.realLayout()===window.__ro1566`), `${REAL} MCP strip ${w}: the office was not drawn again in 500 ms (a layout that changes every frame is a redraw loop)`);
+    fit = JSON.parse(reads[0]);
+    const tight = await js(`document.getElementById('floor').classList.contains('ro-tight')`);
+    assert.strictEqual(tight, REAL === 'arcade' && w === 1280, `${REAL} MCP strip ${w}: the floor's padding is lent only to the arcade at 1280x800 (ro-tight ${tight})`);
     assert.ok(fit.strip && !nofit(fit), `${REAL} MCP strip ${w}: the strip is shown and the office does not scroll (scrollHeight ${fit.sh} against clientHeight ${fit.ch}, room ends ${fit.roBottom} of ${fit.fb}): ` + JSON.stringify(fit));
     await js(`document.querySelector('#mcpStrip [data-ml="close"]').click()`);
     assert.ok(await until(`document.getElementById('mcpStrip').hidden`, 6000), `${REAL} MCP strip ${w}: Dismiss hides the strip`);
