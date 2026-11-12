@@ -273,6 +273,14 @@ Proposed defaults, 2026-11-10. Ruben's approval on #1306 covers the scope. **Q1,
 
 ## Changes
 
+### 2026-11-12: the template channels (T007; decided by the coordinator under Ruben's delegation after the review of the first build; Ruben may overrule)
+
+- **Results**: every `teams:*` call that does not succeed answers `{ ok: false, code: 'invalid' | 'changed' | 'failed', errors, blocked, templates? }`: `invalid` (a field refused, the errors name the field and never its value), `changed` (the file moved under the store; the reloaded list comes back so the window can offer the save again), `failed` (the save could not be done; the typed text is kept by the window); `list` also returns `blocked` (T006's notice). Nothing in a result holds a path, a brief or a value.
+- **The window cannot touch the marks**: a `memberId` or `briefFrom` from the window on a create refuses the whole put; on an update a `memberId` must belong to that template and appear once; the mark comes from the stored member found by `memberId`; `teams:markMine` is the only way to remove it. A put from the window always creates `own`; an update keeps the stored `origin`.
+- **A stored member always has one `memberId`** (a gap found by the reviewer): the store gives a new `memberId` to a stored member that has none or whose `memberId` another member of the same template already holds (at the load, in memory, written by the next save; the member keeps its mark), and `putImported` gives one to every member (T010 does not have to remember it); `put` and `markMine` still refuse, as `invalid` ("reload the template"), when a stored template somehow has a member without one or a repeated one, so a mark can never be lost or inherited.
+- **Copies only of own data properties**: the ops build their output from the own data properties of the arguments, never with a spread (a getter must not run, and an error must not carry a value).
+- **The simulator's fake** keeps the identity rules only; T008 and T009 make it use the shared validator (`checkTeamTemplate`) so the form does not learn rules the real store refuses; its duplicate naming and member limit follow the real store's.
+
 ### 2026-11-12: the template store, second review (decided by the coordinator under Ruben's delegation; Vikram's review of #1602; Ruben may overrule)
 
 - **A read error is not a bad file** (FR-001): when the first read fails with an error or the file is changing, the store pauses about 200 ms and reads once more before it sets the file aside (a held file on Windows, an indexer, must not hide a person's templates), as `loadSchedules` does; the pause is injected in the tests.
