@@ -82,8 +82,8 @@
 .ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-help{flex:0 1 auto;min-width:0;margin-left:0;flex-wrap:wrap;align-content:flex-start;height:var(--arc-plate-line);overflow:hidden}
 .ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-hc{flex:none}
 .ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l2{display:flex;align-items:center;gap:var(--s-1);flex:1 1 auto;min-width:0}
-.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l2>.ro-wd{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l2>.ro-tk{flex:1 1 auto;width:0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l2>.ro-wd{display:inline;flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l2>.ro-tk{display:inline;flex:1 1 auto;width:0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l2>.ro-tk:empty{display:none}
 .ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l1>:not(.ro-help){display:none}
 /* spec 097 FR-357 (bug #1427): a cabinet's plate does not draw the name (it is on the marquee), so the rename pencil is anchored to the plate: at its right end,
