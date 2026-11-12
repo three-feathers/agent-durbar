@@ -273,6 +273,18 @@ Proposed defaults, 2026-11-10. Ruben's approval on #1306 covers the scope. **Q1,
 
 ## Changes
 
+### 2026-11-12: the template store, second review (decided by the coordinator under Ruben's delegation; Vikram's review of #1602; Ruben may overrule)
+
+- **A read error is not a bad file** (FR-001): when the first read fails with an error or the file is changing, the store pauses about 200 ms and reads once more before it sets the file aside (a held file on Windows, an indexer, must not hide a person's templates), as `loadSchedules` does; the pause is injected in the tests.
+- **Invalid UTF-8 is a bad file**: the file is decoded with `TextDecoder('utf-8', { fatal: true })` (a BOM is stripped), as the world store does; a decode error sets the file aside, it is never rewritten with U+FFFD.
+- **Windows rename**: a rename that fails with EPERM, EBUSY or EACCES on win32 is retried once after a pause, in the save and in the set-aside (`saveSchedules` and the notes store do the same); platform and pause are injected.
+- **Two running instances** (the "single instance is assumed" claim was wrong: the app takes no single-instance lock): the store keeps a fingerprint of the file (size and modified time) from the load or the last save; before each save it compares; when the file changed on disk the save is **refused** with the error `changed` and the store reloads, so a template saved by the other instance is never lost silently; the person sees the error through T007.
+- **Duplicate name**: cut by grapheme (`Intl.Segmenter`), so a conjunct or an emoji sequence is never split, and a trailing ZWJ, ZWNJ or virama is dropped before ` copy`; this replaces "by code point".
+- **Set-aside files**: only the newest 5 `team-templates.bad-<time>.json` are kept (each may hold briefs); older ones are removed when a new one is made.
+- **A blocked store** (a bad file that cannot be set aside): the list shows the valid part, every save is refused, and the store exposes `isBlocked()` so T007 shows a notice (not a toast: it stays until it is fixed).
+- **Folder mode**: the folder is created with mode 0700 where the store creates it (POSIX). A dangling symlink as the store file is replaced by the next save: intended, harmless.
+- **Follow-up**: the fourth copy of the atomic-write pattern; a shared helper is a separate issue, not in this PR.
+
 ### 2026-11-12: the template store (decided by the coordinator under Ruben's delegation; review of T006)
 
 - **Level**: the store reads and writes at level `own` (it is the person's own file): a template with `origin: 'imported'` keeps its `origin`, `briefFrom: 'file'` and `memberId`, and an imported brief keeps its 2,000/40 limit. Level `imported` is only for a file that comes from outside (the FR-090..FR-098 rules).
