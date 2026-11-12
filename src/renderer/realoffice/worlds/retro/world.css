@@ -87,7 +87,7 @@
 .ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l2>.ro-tk:empty{display:none}
 .ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l1>:not(.ro-help){display:none}
 /* issue 1574 (spec 102 FR-312): on the narrow cabinet's plate with its pencil (content 92 px) the word, the +N and one dot do not fit: the plate's own status dot is not drawn (the word and the plate's border carry the state) and the +N is marked "+3!" when a helper failed or waits; the helpers' dots stay in the plate's markup, in the heads' order, and show whenever the line has room */
-.ro[data-world="retro"] .ro-plate.cab-narrow.has-ren.has-help:not(.lounge) .ro-hm{display:inline;font-weight:700}
+.ro[data-world="retro"] .ro-plate.cab-narrow.has-ren.has-help:not(.lounge) .ro-hm{display:inline}
 .ro[data-world="retro"] .ro-plate.cab-narrow.has-ren.has-help:not(.lounge) .ro-l2>.dot{display:none}
 .ro[data-world="retro"] .ro-plate.cab-narrow.has-ren.has-help:not(.lounge) .ro-l2{gap:0} /* the task run (width 0 here) must not take the 4 px gap from the word; its text starts with the " · " */
 /* spec 097 FR-357 (bug #1427): a cabinet's plate does not draw the name (it is on the marquee), so the rename pencil is anchored to the plate: at its right end,
