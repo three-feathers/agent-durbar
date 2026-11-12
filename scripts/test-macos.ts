@@ -8,6 +8,8 @@ import { shouldBounce, shouldFlash } from '../src/main/badge';
 import { NATIVE_ZOOM_WINDOW_MS, handleTitleDoubleClick, noteWindowZoom, resetWindowZoom, titleDoubleClickAction } from '../src/main/titledblclick';
 
 const ROOT = path.join(__dirname, '..', '..');
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { JSDOM } = require('jsdom') as { JSDOM: new (html: string) => { window: { document: Document } } };
 type Ev = Partial<{ key: string; code: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean; shiftKey: boolean; isComposing: boolean }>;
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const K = require(path.join(ROOT, 'src', 'renderer', 'keys.js')) as {
@@ -180,6 +182,16 @@ assert.ok(css.includes(':root{color-scheme:light}') && css.includes(':root[data-
 for (const v of ['Maximize', 'Fill', 'maximize', 'FILL', ' Maximize ', '', undefined, null, 42, 'Zoom', 'something else']) assert.strictEqual(titleDoubleClickAction(v), 'zoom', `double-click "${String(v)}" zooms`);
 for (const v of ['Minimize', 'minimize', 'MINIMIZE', ' Minimize\n']) assert.strictEqual(titleDoubleClickAction(v), 'minimize', `double-click "${v}" minimizes`);
 for (const v of ['None', 'none', 'NONE']) assert.strictEqual(titleDoubleClickAction(v), 'none', `double-click "${v}" does nothing`);
+// the same filter on a real DOM: a screen header's title (h2, tabindex -1) is a bare drag area; other tab stops still block
+{
+  const { window } = new JSDOM('<div class="scr-head"><h2 id="t" tabindex="-1">Tools</h2><span id="g">gap</span><button id="b">Close</button><span id="z" tabindex="0">x</span></div><div class="topbar"><span id="o" tabindex="-1">o</span></div>');
+  const d = window.document, at = (id: string) => d.getElementById(id) as unknown as Element;
+  assert.ok(K.shouldSendTitleDoubleClick(at('t')), 'a double-click on a screen title zooms');
+  assert.ok(K.shouldSendTitleDoubleClick(at('g')), 'a double-click on a gap in a screen header zooms');
+  assert.ok(!K.shouldSendTitleDoubleClick(at('b')), 'a button in a screen header does not zoom');
+  assert.ok(!K.shouldSendTitleDoubleClick(at('z')), 'a tabindex=0 element in a screen header does not zoom');
+  assert.ok(!K.shouldSendTitleDoubleClick(at('o')), 'a tabindex=-1 element that is not the title does not zoom');
+}
 assert.ok(preload.includes("ipcRenderer.send('window:titleDoubleClick')"), 'preload sends the title double-click');
 // the main handler, with a fake window and a fake system setting
 {
@@ -230,7 +242,7 @@ assert.ok(preload.includes("ipcRenderer.send('window:titleDoubleClick')"), 'prel
   assert.ok(!should(node(['.ph [title]'], ph)) && !should(node(['span'], node(['.ph [title]'], ph))), 'a tooltip in the chat header is no-drag: nothing');
   assert.ok(!should(node(['.grants'], ph)), 'the session grants: nothing');
   assert.ok(should(node(['span'], topbar)) && should(node(['div'], node(['div'], head))), 'plain text inside a drag area sends');
-  for (const c of ['button', 'a', 'input', 'select', 'textarea', 'label', 'summary', '[role="button"]', '[role="menu"]', '[role="group"]', '[tabindex]', '.more-menu', '[data-id]']) {
+  for (const c of ['button', 'a', 'input', 'select', 'textarea', 'label', 'summary', '[role="button"]', '[role="menu"]', '[role="group"]', '[tabindex]:not(.scr-head>h2)', '.more-menu', '[data-id]']) { // the fake tree matches the part as written; the tabindex arm is tested on a real DOM below
     assert.ok(!should(node([c], topbar)), `a double-click on ${c} sends nothing`);
     assert.ok(!should(node(['svg'], node([c], topbar))), `a double-click inside ${c} sends nothing`);
   }
