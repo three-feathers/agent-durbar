@@ -8,6 +8,7 @@
  */
 import * as path from 'path';
 import { execFound } from '../adapters/detect';
+import { CMD_REFUSED } from '../shared/wincmd';
 import type { DetectEnv, Exec } from '../adapters/detect';
 import { SETUP_NAMES } from '../shared/harnesssetup';
 import type { SetupKind } from '../shared/harnesssetup';
@@ -243,6 +244,8 @@ export class UpdateChecker {
     const childEnv = c.tool === 'npm' && trusted ? { ...c.env, ...pathWithToolDir(env.env, file, env.platform, env.loginPath ?? []) } : c.env;
     const r = await execFound(file, c.args, env, this.d.exec, { timeoutMs: CHECK_LIMIT_MS, env: childEnv });
     if (r.timedOut) throw new Error('timed out');
+    // spec 009 FR-029: execFound refused the cmd.exe line; say so in the harness setup's words, not `exit EUNSAFE`
+    if (r.errorCode === 'EUNSAFE') throw new Error(CMD_REFUSED);
     // 127 = the shell could not find a program, ENOENT = the file itself is gone: say what to do, not a bare number (FR-042)
     if (r.errorCode === 'ENOENT' || r.code === 127) throw new Error(`${c.tool === 'npm' ? 'npm or node' : c.tool} was not found${trusted ? '' : ', and the npm folder is not trusted'}`);
     // `brew outdated` exits 1 when something IS outdated, and still prints its JSON (#1081): only that command, only code 1, only JSON that names the cask
@@ -317,6 +320,7 @@ export class UpdateChecker {
   private async toolWinget(c: CheckCmd, file: string): Promise<string> {
     const r = await execFound(file, c.args, this.d.detectEnv, this.d.exec, { timeoutMs: CHECK_LIMIT_MS, env: c.env });
     if (r.timedOut) throw new Error('timed out');
+    if (r.errorCode === 'EUNSAFE') throw new Error(CMD_REFUSED); // spec 009 FR-029
     const text = `${r.stdout}\n${r.stderr}`;
     if (r.errorCode) throw new Error(`exit ${r.errorCode}`);
     // "No installed package found" and the terms answer arrive on a non-zero exit; parseWingetList reads both
