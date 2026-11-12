@@ -112,8 +112,8 @@ const DRIVERS = [
   { name: 'check-097-one-face', label: 'check-097-one-face retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 T283 (issue #1399): the same driver in the arcade
   { name: 'check-question-visible' },
   { name: 'check-chat-no-scroll' },
-  { name: 'check-chat-visibility', label: 'check-chat-visibility 1440', env: { CVONLY: '1440' } }, // one entry per size so each has its own time limit (#1127, FR-063)
-  { name: 'check-chat-visibility', label: 'check-chat-visibility 1280', env: { CVONLY: '1280' } }, // spec 005 FR-210: a long chat is laid out only near the view; scroll, find, copy, focus and the pinned end are as before
+  { name: 'check-chat-visibility', label: 'check-chat-visibility 1440', env: { CVONLY: '1440' }, timeoutMs: 900_000 }, // spec 005 T226 (issue 1610): 900 s is a stated margin, not a fix: Linux frame cost is about 3.4x a Mac's; one entry per size so each has its own time limit (#1127, FR-063)
+  { name: 'check-chat-visibility', label: 'check-chat-visibility 1280', env: { CVONLY: '1280' }, timeoutMs: 900_000 }, // spec 005 T226: the same margin; FR-210: a long chat is laid out only near the view; scroll, find, copy, focus and the pinned end are as before
   { name: 'check-chat-title' }, // spec 052 FR-180 (#789): the chat header's title uses the free room up to the buttons
   { name: 'check-no-demo-badge' }, // spec 052 FR-181: no Demo / Live badge in the top bar; the demo cues remain
   { name: 'check-logo-family' }, // spec 101 FR-072: Settings > Logo, the top-bar icon on every theme, world and forced colours, tile and name unchanged
