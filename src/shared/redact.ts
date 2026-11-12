@@ -487,29 +487,54 @@ const GLUE_MIN = 8;
 const GLUE_MIN_UNDERSCORE = 16;
 /** After a `/` or `+` it is 32: `[redacted]/v1/chat/completions` is a path, the rest of a base64 token (`ABSK` + 100 or more characters) is long. */
 const GLUE_MIN_B64 = 32;
+/** A backslash before a character of the rest (not `\n`, `\r`, `\t`: a JSON-escaped line break ends it): the rest goes on after it (spec 012 FR-181, review of PR 1585). */
+const glueEsc = (s: string, i: number): boolean => s[i] === '\\' && i + 1 < s.length && GLUE_REST.test(s[i + 1]) && s[i + 1] !== 'n' && s[i + 1] !== 'r' && s[i + 1] !== 't';
+/** The named marker `redact` writes for an env value (`[redacted:NAME]`). */
+const NAMED_MARKER = /\[redacted:[^\]\r\n]{1,128}\]/g;
 /**
  * Existing capability checked (FR-031, pre-review of PR 1317): `maskGluedTail` (spec 106 FR-021, the brain state's streamed pieces) also folds what is glued to a mask into it, but takes any one glued
  * character, because there the next piece of a secret arrives raw after a mask. In a whole text that would hide `.git`, `:8080` and `_backup`, so this rule needs the count below; the two are not one.
  * Issue #1237 (spec 012 FR-173): what is glued to a mask and still holds 8 or more letters and digits (16 after a `_`) is the rest of a second token whose head the first one swallowed; it goes into the mask. A single scan. */
 function maskGluedRest(s: string, mask: string): string {
   if (!mask) return s; // an empty mask is found at every place, and the scan would not advance
-  let at = s.indexOf(mask);
+  // spec 012 FR-181 (T163): a named marker `[redacted:NAME]` (an env value `redact` replaced) takes its glued rest too, with the same counts and end rule; the next plain mask and the next
+  // named marker are each found once and looked for again only when the scan has passed them, so this stays one scan
+  const named = s.includes('[redacted:');
+  let plainAt = s.indexOf(mask);
+  let namedAt = -1;
+  let namedLen = 0;
+  const findNamed = (from: number): void => {
+    NAMED_MARKER.lastIndex = from;
+    const m = named ? NAMED_MARKER.exec(s) : null;
+    namedAt = m ? m.index : -1;
+    namedLen = m ? m[0].length : 0;
+  };
+  findNamed(0);
+  const next = (): [number, number] => (plainAt >= 0 && (namedAt < 0 || plainAt <= namedAt) ? [plainAt, mask.length] : [namedAt, namedLen]);
+  let [at, len] = next();
   if (at < 0) return s;
   let out = '';
   let from = 0;
   while (at >= 0) {
-    const start = at + mask.length;
+    const start = at + len;
     let end = start;
     let alnum = 0;
-    if (start < s.length && GLUE_START.test(s[start])) {
-      while (end < s.length && GLUE_REST.test(s[end])) {
+    const first = glueEsc(s, start) ? s[start + 1] : s[start];
+    if (start < s.length && GLUE_START.test(first)) {
+      while (end < s.length) {
+        if (glueEsc(s, end)) { if (/[A-Za-z0-9]/.test(s[end + 1])) alnum++; end += 2; continue; } // spec 012 FR-181 (review of PR 1585): an escaped character of the rest is glued too (`[redacted]\_<rest>`)
+        if (!GLUE_REST.test(s[end])) break;
         if (/[A-Za-z0-9]/.test(s[end])) alnum++;
         end++;
       }
     }
-    while (end > start && (s[end - 1] === '.' || s[end - 1] === ':')) end--; // a full stop or a colon that ends the run is the sentence's (spec 106 FR-021: "[redacted]." keeps its full stop)
-    if (alnum >= (s[start] === '_' ? GLUE_MIN_UNDERSCORE : s[start] === '/' || s[start] === '+' ? GLUE_MIN_B64 : GLUE_MIN)) { out += s.slice(from, start); from = end; }
-    at = s.indexOf(mask, Math.max(end, start));
+    // a full stop or a colon that ends the run is the sentence's (spec 106 FR-021: "[redacted]." keeps its full stop), with its escape (`[redacted]\.`)
+    while (end > start && (s[end - 1] === '.' || s[end - 1] === ':')) { end--; if (end > start && s[end - 1] === '\\') end--; }
+    if (alnum >= (first === '_' ? GLUE_MIN_UNDERSCORE : first === '/' || first === '+' ? GLUE_MIN_B64 : GLUE_MIN)) { out += s.slice(from, start); from = end; }
+    const after = Math.max(end, start);
+    if (plainAt >= 0 && plainAt < after) plainAt = s.indexOf(mask, after);
+    if (namedAt >= 0 && namedAt < after) findNamed(after);
+    [at, len] = next();
   }
   return from === 0 ? s : out + s.slice(from);
 }
@@ -590,6 +615,79 @@ function snapshot(env?: Env): Env {
   return e;
 }
 
+/** A run of token characters and backslash escapes (spec 012 FR-181): an escape of a token character or of a Markdown-escapable one. */
+const ESC_RUN = /(?:[A-Za-z0-9_\-.~+/=:@%]|\\[A-Za-z0-9_\-.~+/=:@%\\`*{}[\]()#!|<>])+/g;
+const ESC_BREAK = /\\[nrt]/;
+const ESC_BREAK_KEEP = /(\\[nrt])/;
+const ESC_BREAK_START = /^\\[nrt]/;
+/** Whether the rest of a run after a hidden piece (it starts with a break escape, whose letter counts) holds FR-173's count of letters and digits: 8. */
+function glueCount(rest: string): boolean {
+  let n = 0;
+  for (let i = 0; i < rest.length && n < GLUE_MIN; i++) if (/[A-Za-z0-9]/.test(rest[i])) n++;
+  return n >= GLUE_MIN;
+}
+/** A mask (plain or named) that ends right where a run starts. */
+const MASK_BEFORE = /\[redacted(?::[^\]\r\n]{1,128})?\]$/;
+/** A shell escape of a token character that is not a Markdown escape (`\h`, `\0`, `\=`). */
+const TOKEN_ESC = /\\[A-Za-z0-9=:@%/]/;
+/**
+ * Spec 012 FR-181 (issue #1541): each run of token characters with a backslash escape in it (`ghp\_<body>`, `g\hp_<body>`) that one of
+ * its unescaped readings shows as a secret becomes `mask` in the text as written, before the rules read the text (a token glued to an
+ * escaped one is half hidden by the rules as written, and that output no longer holds the run). The readings are taken of the run once
+ * the rules have read it as written (`w`), so a run the rules already hide (`password=a\b`, `\\nsk-<body>`) is left to them: the
+ * Markdown escapes removed (`withoutMarks`, the marks kept: in a command they are shell syntax), through every rule; every escape of a
+ * token character removed too (`g\hp_`), through the token shapes and the glued rest only (`C:\keys\server.pem` read so is no path any
+ * more, and a named rule would hide it); and `\n`, `\r`, `\t` as a break (a JSON-escaped line break before a token): a piece between
+ * breaks that holds an escape and hides is masked alone, and only when none does is the whole run read. The text is never shown
+ * unescaped (`\>` is not `>`). `maskTokenShapes`, never `redact`: no recursion. A run glued straight after a mask is also read with the mask in front, so an escaped rest is that mask's
+ * glued rest (FR-173 counts). A fixed number of calls per distinct run, so linear; a
+ * text without a backslash is returned as it is.
+ */
+function maskEscapedRuns(s: string, mask: string): string {
+  if (!s.includes('\\')) return s;
+  const seen = new Map<string, boolean>();
+  const hides = (r: string): boolean => {
+    let hit = seen.get(r);
+    if (hit === undefined) {
+      const w = maskTokenShapes(r, mask);
+      const md = withoutMarks(w, true).k;
+      const sh = TOKEN_ESC.test(w) ? withoutMarks(w, true, true).k : '';
+      hit = maskTokenShapes(md, mask) !== md || (sh !== '' && maskGluedRest(maskBareTokenShapes(sh, mask), mask) !== sh);
+      seen.set(r, hit);
+    }
+    return hit;
+  };
+  return s.replace(ESC_RUN, (r: string, at: number) => {
+    if (!r.includes('\\')) return r;
+    // a run glued straight after a mask (plain, or the named marker of an env value written before this step) is read as that mask's rest (review of PR 1585): `[redacted:NAME]_ab\<rest>`;
+    // not when it starts with a line break escape, which ends the rest (`[redacted]\nNext line`)
+    if (at > 0 && s[at - 1] === ']' && !ESC_BREAK_START.test(r) && MASK_BEFORE.test(s.slice(Math.max(0, at - 140), at)) && hides(mask + r)) return mask;
+    if (ESC_BREAK.test(r)) {
+      // the pieces between breaks first, so `a\n<escaped token>\tb` keeps `a\n` and `\tb`; when no piece hides, the whole run is read (a `\n` that is a shell escape inside a token)
+      let any = false;
+      let out = '';
+      const parts = r.split(ESC_BREAK_KEEP);
+      for (let i = 0; i < parts.length; i += 2) {
+        const p = parts[i];
+        const br = i > 0 ? parts[i - 1] : '';
+        const h = p.includes('\\') && hides(p);
+        if (!h) { out += br + p; continue; }
+        any = true;
+        // review of PR 1585 (round 3): a break escape inside a body (`ghp\_<20>\n<16>`) is a shell escape of a letter there; once a piece with an escape hides, the rest of the run after it
+        // is its tail when it holds FR-173's count (8 letters and digits, the letters of the breaks included): hidden with it. Fail closed: a long word on the next line glued to it is hidden too.
+        // review of PR 1585 (round 4): the pieces before it (no piece of them hid alone) are read as one stretch with the whole-run check (`ghp_<20>\n<16>\tg\hp_<36>`), without the start of
+        // this piece: a second token glued inside it by `.`, `=`, `/` or `:` is a known gap (spec 012 FR-181, round 5); one check per run: after the first hidden piece the rest is its tail or holds fewer than 8 letters and digits
+        const lead = out !== '' && hides(out) ? '' : out + br;
+        const rest = parts.slice(i + 1).join('');
+        if (glueCount(rest)) return lead + mask;
+        out = lead + mask;
+      }
+      if (any) return out;
+    }
+    return hides(r) ? mask : r;
+  });
+}
+
 /** Replace secret environment values and key-like strings. Never throws; keeps line structure. */
 export function redact(text: unknown, env?: Env): string {
   try {
@@ -600,7 +698,7 @@ export function redact(text: unknown, env?: Env): string {
       if (s.includes(value)) s = s.split(value).join(`[redacted:${name}]`);
     }
     s = cut(s, REDACT_MAX_CHARS);
-    return maskTokenShapes(s, '[redacted]');
+    return maskTokenShapes(maskEscapedRuns(s, '[redacted]'), '[redacted]');
   } catch {
     return '[redaction failed]';
   }
@@ -1843,18 +1941,22 @@ export const NOTE_MARK = /[*`~[\]\\]/;
 const NOTE_ESCAPABLE = '\\`*_{}[]()#+-.!~|<>';
 export const NOTE_RUN = /[A-Za-z0-9_\-.+/=:@%]{12,}/g;
 
-/** `s` without its split marks, and for each kept character its index in `s` (plus a final entry, `s.length`). */
-function withoutMarks(s: string): { k: string; at: number[] } {
+/**
+ * `s` without its split marks, and for each kept character its index in `s` (plus a final entry, `s.length`). For the escaped-run step
+ * of `redact` (spec 012 FR-181): `keepMarks`, the marks stay (in a command they are shell syntax); `tokenEsc`, a backslash before any
+ * token character is an escape too (`g\hp_`: a shell drops it).
+ */
+function withoutMarks(s: string, keepMarks = false, tokenEsc = false): { k: string; at: number[] } {
   const keep: string[] = [];
   const at: number[] = [];
   for (let i = 0; i < s.length; i++) {
     const c = s[i];
     if (c === '\\') {
-      if (i + 1 < s.length && NOTE_ESCAPABLE.includes(s[i + 1])) { keep.push(s[i + 1]); at.push(i + 1); i++; }
+      if (i + 1 < s.length && (NOTE_ESCAPABLE.includes(s[i + 1]) || (tokenEsc && TOKEN_CHAR.test(s[i + 1])))) { keep.push(s[i + 1]); at.push(i + 1); i++; }
       else { keep.push(c); at.push(i); } // a Windows path's backslash is a character
       continue;
     }
-    if (NOTE_MARK.test(c)) continue;
+    if (!keepMarks && NOTE_MARK.test(c)) continue;
     keep.push(c);
     at.push(i);
   }

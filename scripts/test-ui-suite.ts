@@ -160,6 +160,27 @@ assert.ok(/require\('electron'\)/.test(src), 'it starts the Electron binary dire
   assert.ok(src.indexOf('unknownOnly(a.only)') > 0 && src.indexOf('unknownOnly(a.only)') < src.indexOf('const todo = shard('), 'the name check comes before the shard split');
   process.stdout.write('ui-suite --only unknown names: ok\n');
 })().catch((e) => { console.error(e); process.exitCode = 1; });
+// spec 008 FR-213 (issue #1591): under xvfb-run the screen is as big as the window at the requested density (Xvfb's default 1280x1024 left a DPR 2 window mostly off screen)
+{
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { xvfbScreenArgs, launchCommand } = require(SUITE) as { xvfbScreenArgs: (dpr: string, env?: Record<string, string>) => string[]; launchCommand: (x: boolean, e: string, a: string[], dpr: string, env?: Record<string, string>) => [string, string[]] };
+  const screen = (dpr: string, env: Record<string, string> = {}): string => xvfbScreenArgs(dpr, env)[1];
+  assert.strictEqual(screen('1'), '-screen 0 1920x1100x24', 'DPR 1: 1920x1100, colour depth 24 (more than the old 1280x1024)');
+  assert.strictEqual(screen('2'), '-screen 0 3840x2200x24', 'xvfb screen: DPR 2 holds a 1440x900 window at 2880x1800 device pixels');
+  assert.strictEqual(screen('1.5'), '-screen 0 2880x1650x24', 'DPR 1.5 is scaled the same way');
+  assert.strictEqual(screen(''), screen('1'), 'an unset density counts as 1');
+  assert.strictEqual(screen('7;rm'), screen('1'), 'a bad density counts as 1');
+  assert.strictEqual(screen('2', { UI_SUITE_XVFB_SCREEN: '3000x2000x24' }), '-screen 0 3000x2000x24', 'UI_SUITE_XVFB_SCREEN replaces the computed screen');
+  assert.strictEqual(screen('2', { UI_SUITE_XVFB_SCREEN: '3000x2000; rm -rf' }), '-screen 0 3840x2200x24', 'a malformed override is ignored');
+  for (const dpr of ['1', '2', '4']) {
+    const m = /^-screen 0 (\d+)x(\d+)x24$/.exec(screen(dpr));
+    assert.ok(m && Number(m[1]) >= 1440 * Number(dpr) && Number(m[2]) >= 900 * Number(dpr), `the screen is at least a 1440x900 window at DPR ${dpr}`);
+  }
+  const [file, list] = launchCommand(true, '/e/electron', ['/repo', '--no-sandbox', '--force-device-scale-factor=2'], '2', {});
+  assert.ok(file === 'xvfb-run' && list[0] === '-a' && list[1] === '-s' && list[2] === '-screen 0 3840x2200x24' && list[3] === '/e/electron' && list.slice(4).join() === '/repo,--no-sandbox,--force-device-scale-factor=2', 'xvfb launch: -a kept, -s and its screen as separate entries before the binary and its arguments');
+  assert.ok(src.includes('launchCommand(useXvfb, electron, argv, dpr)') && !src.includes("['xvfb-run', ['-a', electron"), 'runOne starts a driver through launchCommand, not an inline xvfb-run call without a screen');
+  assert.deepStrictEqual(launchCommand(false, '/e/electron', ['/repo'], '2', {}), ['/e/electron', ['/repo']], 'without xvfb the binary is started as before');
+}
 // issue #748 (spec 021 FR-057): no asserting driver sits unrun. Every scripts/check-*.js and shots-*.js that asserts is in the suite, in
 // shots-docs' DOC_SHOTS (retaken by `npm run shots:docs`), or in NOT_IN_SUITE with a written reason
 {
