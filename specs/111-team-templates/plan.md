@@ -109,7 +109,7 @@ Nothing existing creates several sessions at once or stores reusable agent setup
 
 ## Text rules (FR-012)
 
-- **ZWJ/ZWNJ** are allowed in role and brief only when both neighbours are letters of a script that needs them: Arabic script (Persian included) and the Indic scripts Devanagari, Bengali, Gurmukhi, Gujarati, Oriya, Tamil, Telugu, Kannada, Malayalam, Sinhala, checked with `\p{scx=...}`.
+- **ZWJ/ZWNJ** are allowed in role and brief only when both neighbours are letters or marks (`\p{L}` or `\p{M}`: real Indic text puts ZWJ after a virama, a mark; 2026-11-12) of a script that needs them: Arabic script (Persian included) and the Indic scripts Devanagari, Bengali, Gurmukhi, Gujarati, Oriya, Tamil, Telugu, Kannada, Malayalam, Sinhala, checked with `\p{scx=...}`.
 - **Characters people type on purpose**: the narrow no-break space (U+202F, used before `:` and `?` in French), thin and hair spaces (U+2009, U+200A, U+2006, U+2008) and emoji built with ZWJ or the emoji variation selector (VS16, U+FE0F). These are refused in role and brief too, because the person cannot see them and neither can a reviewer of an imported file. The error names the character, where it is and how to fix it, never the character itself, for example: "Member 2, role: a narrow no-break space (U+202F) at character 14. Replace it with a normal space." or "Member 3, brief, line 4: an emoji joiner (U+200D). Remove it or use a simpler emoji." A brief also gets *Replace with normal spaces* for space-like characters (it changes only those).
 
 ## Frame guard algorithm (FR-012)
