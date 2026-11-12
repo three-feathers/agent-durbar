@@ -219,7 +219,6 @@
 
 ## 2026-11-12: the Xvfb screen is as big as the window at the requested density (FR-213)
 
-- [x] T173 (FR-213) `scripts/ui-suite.js` `xvfbScreenArgs` and `launchCommand` (the xvfb path of `runOne`); `scripts/test-ui-suite.ts` checks the argument and the argv shape with two mutants. Linux/Xvfb run not done.
-
-- [x] T174 (FR-214) `scripts/check-ui-text.js` `run()`: pointer to 0,0, wait for no `:hover` under the roots, `hovered` finding, `UITEXT_MUTANT=hover`; `changelog.d/008-1591-xvfb-screen.md`. Linux/Xvfb run not done by the Mac lane.
+- [x] T173 (FR-213) `scripts/ui-suite.js` `xvfbScreenArgs` and `launchCommand` (the xvfb path of `runOne`); `scripts/test-ui-suite.ts` checks the argument and the argv shape with two mutants. Linux/Xvfb run by the coordinator, see the PR.
+- [x] T174 (FR-214) `scripts/check-ui-text.js` `run()`: pointer to 0,0, wait for no `:hover` under the roots, `hovered` finding, `UITEXT_MUTANT=hover`; `changelog.d/008-1591-xvfb-screen.md`. Linux/Xvfb run by the coordinator, see the PR.
 - [x] T175 (FR-214, round 2) `scripts/driver-helpers.js` `pointerOff`; `scripts/check-097-chat-contrast.js` and `scripts/shots-102-arcade.js` reset the pointer and assert no `:hover` at the colour read, mutants `CONTRAST_MUTANT=hover`, `ARCADE_MUTANT=hover`.
