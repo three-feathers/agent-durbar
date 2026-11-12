@@ -14,7 +14,7 @@
  *     parkold    the pointer parked at the first version's spot, whatever the screen (with PENCIL_EASE_SCREEN=1280x1024 at DPR 2): "the pointer is parked on the visible screen"
  *     far        every pencil 6 px further from its name: "once the ease is over every pencil is painted just after its name"
  *     noease     the OS asks for reduced motion (nothing eases): with PENCIL_EASE_SCREEN smaller than the window the labelled "skipped: no plate eased ... the window is larger than the X screen";
- *                with the window inside the screen it fails "the opacity reads saw moving plates"
+ *                with the window inside the screen it fails "3 or more frames caught the plates on their way"
  *     oldfocus   the focus listener as it was (the cancelled hold stays the current one): a pencil focused while hidden fades in from 0 at the end of the ease:
  *                "a pencil focused while hidden stays at opacity 1 through the end of its plate's ease"
  *     pin        the pointer back on a working plate after parking (it did not leave): fails "the hover card closed after the pointer left"; with PENCIL_EASE_SCREEN smaller than the
