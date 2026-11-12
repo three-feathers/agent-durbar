@@ -273,6 +273,16 @@ Proposed defaults, 2026-11-10. Ruben's approval on #1306 covers the scope. **Q1,
 
 ## Changes
 
+### 2026-11-12: the template store (decided by the coordinator under Ruben's delegation; review of T006)
+
+- **Level**: the store reads and writes at level `own` (it is the person's own file): a template with `origin: 'imported'` keeps its `origin`, `briefFrom: 'file'` and `memberId`, and an imported brief keeps its 2,000/40 limit. Level `imported` is only for a file that comes from outside (the FR-090..FR-098 rules).
+- **Origin**: `put` from the window always creates `own` (a value's `origin` is ignored) and an update keeps the stored `origin` and `createdAt`; only the import path of main, a method apart from `put`, creates `imported`.
+- **Format on disk**: as FR-004 says (`format` and `schemaVersion`), so older files can be migrated and a file of another format is refused and set aside.
+- **A file that is only partly valid** (FR-001, FR-003): the valid templates are kept and saved again, the whole old file is set aside as `team-templates.bad-<time>.json`, one toast; a template without an `id`, with an `id` already seen, or beyond the 50th counts as invalid. While a bad file cannot be set aside, saves are refused: it is never overwritten.
+- **Names**: the store does not require a unique name on `put`; `duplicate` avoids a collision by `nameKey` against the stored templates and cuts the name by code point to fit 40 with its suffix. Uniqueness against the starters and on import is FR-097 and belongs to T007 and G8.
+- **Leftovers and power loss**: a temp file of a process that is gone (`<file>.<pid>.tmp`, with a brief in it) is removed at load by the helper schedules already has (reused, not copied); the temp file is flushed to disk before the rename, as schedules does.
+- **Known limits**: the 0600 mode is POSIX only (FR-155); the lookups, the rename over an existing file and the mode are tested with the real file system in a temporary folder, not only with the in-memory fake; Windows and macOS were not run.
+
 ### 2026-11-12: joiners after a virama, one mask, two known limits (decided by the coordinator under Ruben's delegation; review of T004)
 
 - **ZWNJ and ZWJ** (FR-012, plan *Text rules*): a neighbour may be a letter (`\p{L}`) **or a mark** (`\p{M}`) of a script that needs them (Arabic script and the ten Indic scripts), because real Indic text puts ZWJ after a virama (category Mn or Mc: U+0915 U+094D U+200D U+0937, Sinhala U+0DCA U+200D U+0DBA, Malayalam, Bengali). Both neighbours must still be of such a script; `a` + virama + ZWJ + `b`, a joiner next to Latin, a space or another joiner is refused.
