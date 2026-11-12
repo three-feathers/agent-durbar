@@ -1847,7 +1847,7 @@ function renderReal(stage,floor,aw,ah,model,empty){
   }
   if(stage.dataset.d!=='real'){stage.dataset.d='real';stage.textContent='';}
   layoutKey='';GROW=0;setGrow(stage,0);spreadOffice(stage,false);stagePrev=null;
-  const fcs=getComputedStyle(floor), lendPad=(parseFloat(fcs.paddingBottom)||0)+(floor.classList.contains('has-fnote')?0:parseFloat(fcs.paddingTop)||0); /* what #floor.ro-tight gives up (styles.css) */
+  const fcs=getComputedStyle(floor), lendPad=(parseFloat(fcs.paddingBottom)||0)+Math.max(0,(parseFloat(fcs.paddingTop)||0)-(floor.classList.contains('has-fnote')?parseFloat(fcs.getPropertyValue('--fnote-keep'))||0:0)); /* what #floor.ro-tight gives up (styles.css) */
   RO_LAST=window.DurbarRealOffice.render(stage,Object.assign(realModel(model),empty?{empty}:{}),{w:aw,h:ah},{live:liveOn(),still:REDUCED||!MOTION||STILL_HL,hold:roFrozen(),screenOf:realScreen,factsOf:realFacts,world:pp.world,set:pp.set,remember:rememberOn(), /* FR-071: Settings > Motion (still above) stops the people */
     rand:CREW&&(SIM||!rememberOn())?CREW.seededRand:Math.random,onArt:()=>scheduleRender(),lend:lendPad}); /* spec 102 delta 2026-11-11: the arcade hall may take the floor's padding rather than scroll */
   floor.classList.toggle('ro-tight',!!RO_LAST.lent);
