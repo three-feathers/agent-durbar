@@ -3,6 +3,8 @@
  *
  *   npm run check:ui -- --only check-auto-follow
  *   OUT=<folder>  (optional) saves the pictures (052-auto-follow-{1440x900,1280x800}.png and the steps)
+ *   DRIVER_WORLD=retro (ui-suite entry `check-auto-follow retro`, spec 102 T320): the Real office step in the arcade (about 215 s alone on macOS; 600 s is the suite's limit per driver)
+ *   AFOLLOW_MUTANT=mark   the followed plate loses its mark at once (Real office step; must fail at "FR-183: its plate is marked")
  *
  * At 1440x900 and 1280x800 (15 agents): off by default (no strip, `[` / `]` do nothing, a send leaves the chat open); Settings' switch turns it on
  * (a real click); a send returns to the office with the desk marked and the focus on it; a completion, a permission request, an error and a limit open
@@ -608,6 +610,7 @@ module.exports = async (ctx) => {
       const REAL = `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'`;
       await H.load({ w: 1440, h: 900, query: { officeview: 'real' }, ready: REAL }); /* the Real office has plates, not desks: the default ready never held (spec 008 FR-190) */
       await ok(REAL, 'the Real office');
+      if (process.env.AFOLLOW_MUTANT === 'mark') await js(`(()=>{new MutationObserver(()=>document.querySelectorAll('#stage .ro-plate.is-followed').forEach(e=>e.classList.remove('is-followed'))).observe(document.getElementById('stage'),{attributes:true,subtree:true,attributeFilter:['class']});return 1})()`);
       await setting(true);
       await ok(REAL, 'the Real office after Settings');
       const plate = `#stage .ro-plate[data-id="${A}"]`;
