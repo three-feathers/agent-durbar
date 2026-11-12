@@ -373,7 +373,7 @@ const env = {
       assert.strictEqual(redact(text, {}), text, `#1541 fuzz: text without a secret stays as written: ${JSON.stringify(text)}`);
       cases++;
     }
-    const ms = Date.now() - t0;
+    const ms = Date.now() - t0; // printed only, never asserted: a slow runner cannot fail the fixture on time (the growth asserts above are ratio-based)
     console.log(`#1541 fuzz: ${cases} cases in ${ms} ms (${breaks} with a backslash before n, r or t, ${tails} of them a break after two escapes with a tail, ${heads} an escaped head with an unescaped tail, ${tailHidden} of them with the tail hidden by redact and checked on every surface; ${diffCases} differential cases on redact, maskRaw, the card and the label in all)`);
   }
 }
