@@ -63,6 +63,7 @@ const TRAILING_JOINERS = /[\u200C\u200D\u094D\u09CD\u0A4D\u0ACD\u0B4D\u0BCD\u0C4
 const SAVE_FAILED = 'The team templates could not be saved.';
 const graphemes = (t: string): string[] => [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(t)].map((x) => x.segment);
 const sha = (b: Buffer | string): string => crypto.createHash('sha256').update(b).digest('hex');
+type Seen = { kind: 'hash'; hash: string } | { kind: 'busy' } | { kind: 'bad' };
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
 export class TeamTemplateStore {
@@ -76,7 +77,7 @@ export class TeamTemplateStore {
   private readonly pause: (ms: number) => void;
   private readonly platform: NodeJS.Platform;
   /** SHA-256 of the file's bytes as this store last read or wrote them (`none`: no file); a save that finds other bytes (another running instance) is refused */
-  private fp = 'none';
+  private fp: string | undefined = 'none';
   private toast = false;
   /** a bad file that could not be moved: nothing is written over it until the move works */
   private blocked = false;
@@ -187,9 +188,18 @@ export class TeamTemplateStore {
     this.loadFile();
   }
 
-  /** What the file is now: the SHA-256 of its bytes, `none` when it is not there, `unreadable:<why>` when it cannot be read. */
-  private hashNow(): string {
-    return this.hashOf(this.readFile()); // read again once after a pause, as the load: a held file must not turn an honest save into `changed`
+  /** What the file is now (after the one retry of `readFile`). */
+  private seenNow(): Seen {
+    return this.seen(this.readFile());
+  }
+  /**
+   * `hash`: the SHA-256 of its bytes, or `none` when the file is not there. `busy`: it could not be read (an error that stays, a changing
+   * file, no permission): that is NOT a hash and never compares equal to anything. `bad`: a link, a folder, too big: a change.
+   */
+  private seen(r: ReturnType<typeof readCapped>): Seen {
+    if (r.ok) return { kind: 'hash', hash: sha(r.buf) };
+    if (r.code === 'missing') return { kind: 'hash', hash: 'none' };
+    return r.code === 'error' || r.code === 'changing' ? { kind: 'busy' } : { kind: 'bad' };
   }
 
   /** One capped read; a read that fails with an error or a changing file is tried once more after a short pause (an antivirus or an indexer holding it). */
@@ -198,14 +208,12 @@ export class TeamTemplateStore {
     if (!r.ok && (r.code === 'error' || r.code === 'changing')) { this.pause(200); r = readCapped(this.fs, this.flags, this.file, MAX_STORE_BYTES); }
     return r;
   }
-  private hashOf(r: ReturnType<typeof readCapped>): string {
-    return r.ok ? sha(r.buf) : r.code === 'missing' ? 'none' : 'unreadable:' + r.code;
-  }
 
   private loadFile(): void {
     removeStaleTemps(this.file, { fs: this.fs, pid: this.pid, alive: this.alive }); // a dead process's temp may hold briefs
     const r = this.readFile(); // only a second failure sets the file aside
-    this.fp = this.hashOf(r);
+    const seen = this.seen(r);
+    this.fp = seen.kind === 'hash' ? seen.hash : undefined; // `undefined` equals nothing
     if (!r.ok) {
       if (r.code === 'missing') return;
       this.setAside(); // too big, a link, a directory, unreadable twice: out of the way, the store starts empty
@@ -255,7 +263,8 @@ export class TeamTemplateStore {
       this.rename(this.file, dest);
       this.blocked = false;
       this.toast = true;
-      this.fp = this.hashNow();
+      const h = this.seenNow();
+      this.fp = h.kind === 'hash' ? h.hash : undefined;
       this.pruneBad(stem, ext, dest);
       return true;
     } catch {
@@ -308,7 +317,9 @@ export class TeamTemplateStore {
    */
   private commit(next: StoredTemplate[]): 'ok' | 'changed' | 'failed' {
     if (this.blocked && !this.setAside()) return 'failed';
-    if (this.hashNow() !== this.fp) { this.load(); return 'changed'; } // created, removed or rewritten behind our back, whatever its size and time
+    const now = this.seenNow();
+    if (now.kind === 'busy') return 'failed'; // still unreadable after the retry: an ordinary failed save; the file is left as it is, nothing is reloaded or set aside
+    if (now.kind !== 'hash' || now.hash !== this.fp) { this.load(); return 'changed'; } // other bytes, or created, removed, a link, a folder, too big
     const tmp = `${this.file}.${this.pid}.tmp`;
     try {
       this.fs.mkdirSync(path.dirname(this.file), { recursive: true, mode: 0o700 }); // POSIX; Windows ignores the mode

@@ -15,9 +15,9 @@
  *   15..24 (second review, #1602): cut by code point, not grapheme; trailing joiners kept; no second read after a read error; decoder not fatal;
  *   no Windows rename retry; the retry on every platform; no fingerprint comparison; no pruning of set-aside files; folder mode 0755; isBlocked always false.
  *   25..27 (third review): prune filter loose; prune order by text; fingerprint taken after the read (since replaced by the hash mutant).
- *   27 became "hash taken after the read"; 28..31 (fourth review; 32, 33 fifth: the read before a save is not retried; the retry has no pause): size only, not the content; the file just set aside may be pruned; prune counts folders;
+ *   27 became "hash taken after the read"; 28..31 (fourth review; 32, 33 fifth: the read before a save is not retried; the retry has no pause; 34, 35 sixth: a persistent read error still reloads; two unreadable reads compare as one hash): size only, not the content; the file just set aside may be pruned; prune counts folders;
  *   one huge grapheme leaves only the suffix. (A fingerprint of size and mtime was replaced by a SHA-256 of the bytes: it missed a write in the same mtime tick.)
- *   The list below has 33 entries in all (the "no nameKey" mutant of 5 has two variants).
+ *   The list below has 35 entries in all (the "no nameKey" mutant of 5 has two variants).
  *   No `trimEnd` before the suffix: the validator already collapses a double space, so the name is the same (the test "no double space" shows it).
  */
 import assert from 'assert';
@@ -363,8 +363,24 @@ const sections: Record<string, Section> = {
   hashRetry(api) {
     const m = new MemFs(); const s = make(m, api); ok(s.put(tpl('One')).ok, 'first save'); pauses = [];
     m.openFails = 1; ok(s.put(tpl('Two')).ok, 'one EBUSY on the read before a save: the save passes'); eq(pauses, [200], 'after one pause'); eq(make(m, api).list().length, 2, 'both saved');
-    pauses = []; const before = m.text(F); m.openFails = 2; const r = s.put(tpl('Three')); ok(!r.ok && r.errors[0] === 'changed', 'two in a row: changed'); eq(pauses, [200], 'one pause'); eq(badNames(m).length, 0, 'the good file is NOT set aside'); eq(m.text(F), before, 'and is untouched'); eq(s.list().length, 2, 'the store reloaded it');
+    pauses = []; const before = m.text(F); m.openFails = 2; const r = s.put(tpl('Three')); ok(!r.ok && r.errors[0] === 'The team templates could not be saved.', 'two in a row: an ordinary failed save, not `changed`'); eq(pauses, [200], 'one pause'); eq(badNames(m).length, 0, 'the good file is NOT set aside'); eq(m.text(F), before, 'and is untouched'); eq(s.list().length, 2, 'memory as it was');
     ok(s.put(tpl('Four')).ok, 'and the next save works');
+  },
+  unreadableSave(api) {
+    // four failed reads in a row, or a file with no permission (a persistent error on the injected fs): the save fails like any failed save;
+    // nothing is reloaded, set aside or toasted, the file is byte for byte as it was, and the next save works once the fault is gone
+    for (const fails of [4, 99]) {
+      const m = new MemFs(); const s = make(m, api); ok(s.put(tpl('One')).ok, 'first save'); ok(s.takeToast() === false, 'no toast yet');
+      const before = m.text(F); const mt = m.files.get(F)!.mt; pauses = [];
+      m.openFails = fails; const r = s.put(tpl('Two')); ok(!r.ok && r.errors[0] !== 'changed' && r.errors.length > 0, 'the save fails, as an ordinary failed save: ' + fails);
+        ok(!r.ok && r.errors[0] === 'The team templates could not be saved.', 'with the usual error');
+      eq(m.text(F), before, 'file byte for byte the same'); eq(m.files.get(F)!.mt, mt, 'not even rewritten'); eq(badNames(m).length, 0, 'no set-aside file'); ok(!s.takeToast(), 'no toast'); ok(!s.isBlocked(), 'not blocked');
+      eq(s.list().map((t) => t.name), ['One'], 'memory unchanged'); eq(m.names(), [F], 'no temp left');
+      m.openFails = 0; ok(s.put(tpl('Three')).ok, 'the next save works'); eq(make(m, api).list().map((t) => t.name), ['One', 'Three'], 'both on disk');
+    }
+    // a link or a folder in place of the file is a change, not a read failure
+    const m2 = new MemFs(); const s2 = make(m2, api); s2.put(tpl('One'));
+    m2.files.set(F, { data: Buffer.from('x'), mode: 0o600, size: 400 * 1024 * 1024, mt: 99 }); const r2 = s2.put(tpl('Two')); ok(!r2.ok && r2.errors[0] === 'changed', 'a too-big file in its place: changed');
   },
   longGrapheme(api) {
     const m = new MemFs(); const s = make(m, api); const name = 'a' + '\u0301'.repeat(39);
@@ -430,17 +446,19 @@ const mutants: { name: string; from: string; to: string; breaks: string }[] = [
   { name: 'decoder not fatal (U+FFFD written in)', from: "{ fatal: true }", to: '{ fatal: false }', breaks: 'badUtf8' },
   { name: 'no Windows rename retry', from: "this.platform === 'win32' && ", to: 'false && ', breaks: 'winRename' },
   { name: 'Windows retry on every platform', from: "this.platform === 'win32' && ", to: '', breaks: 'winRename' },
-  { name: 'no fingerprint comparison before a save', from: 'if (this.hashNow() !== this.fp)', to: 'if (false)', breaks: 'twoInstances' },
+  { name: 'no fingerprint comparison before a save', from: 'now.kind !== \'hash\' || now.hash !== this.fp', to: 'false', breaks: 'twoInstances' },
   { name: 'old set-aside files not pruned', from: 'found.slice(0, Math.max(0, found.length - (exports.KEEP_BAD - 1)))', to: '[]', breaks: 'pruneBad' },
   { name: 'folder made with mode 0755', from: 'recursive: true, mode: 0o700', to: 'recursive: true, mode: 0o755', breaks: 'fileMode' },
   { name: 'prune filter loose (prefix and extension only)', from: 're.exec(name)', to: "(name.startsWith('team-templates.bad-') && name.endsWith('.json') ? [name, name.slice(19, -5), undefined] : null)", breaks: 'pruneStrict' },
   { name: 'prune order by text, -10 before -2', from: 'x.n - y.n', to: '(String(x.n) < String(y.n) ? -1 : 1)', breaks: 'pruneStrict' },
-  { name: 'hash taken after the read (a second read)', from: 'this.fp = this.hashOf(r);', to: 'this.fp = this.hashNow();', breaks: 'lateWrite' },
+  { name: 'hash taken after the read (a second read)', from: 'const seen = this.seen(r);', to: 'const seen = this.seenNow();', breaks: 'lateWrite' },
   { name: 'compares size only, not the content', from: "crypto.createHash('sha256').update(b).digest('hex')", to: 'String(b.length)', breaks: 'sameSizeSameTime' },
   { name: 'the file just set aside may be pruned', from: 'name !== path.basename(dest) && ', to: '', breaks: 'pruneKeepsNew' },
   { name: 'prune counts and removes folders', from: 'this.isRegular(path.join(dir, name))', to: 'true', breaks: 'pruneRegularOnly' },
-  { name: 'the read before a save is not retried', from: 'return this.hashOf(this.readFile());', to: 'return this.hashOf((0, cappedread_1.readCapped)(this.fs, this.flags, this.file, exports.MAX_STORE_BYTES));', breaks: 'hashRetry' },
+  { name: 'the read before a save is not retried', from: 'return this.seen(this.readFile());', to: 'return this.seen((0, cappedread_1.readCapped)(this.fs, this.flags, this.file, exports.MAX_STORE_BYTES));', breaks: 'hashRetry' },
   { name: 'the read retry has no pause', from: 'this.pause(200);\n            r = (0, cappedread_1.readCapped)', to: 'r = (0, cappedread_1.readCapped)', breaks: 'hashRetry' },
+  { name: 'a persistent read error still reloads (and sets the good file aside)', from: "if (now.kind === 'busy')\n            return 'failed';", to: '', breaks: 'unreadableSave' },
+  { name: 'two unreadable reads compare as one hash', from: "{ kind: 'busy' }", to: "{ kind: 'hash', hash: 'unreadable' }", breaks: 'unreadableSave' },
   { name: 'one huge grapheme leaves only the suffix', from: 'head.length === 0)', to: 'false)', breaks: 'longGrapheme' },
   { name: 'isBlocked always false', from: 'isBlocked() { return this.blocked; }', to: 'isBlocked() { return false; }', breaks: 'blockedFlag' },
   { name: 'stale temps not removed', from: '(0, schedules_1.removeStaleTemps)(this.file,', to: '(() => undefined)(this.file,', breaks: 'staleTemps' },
