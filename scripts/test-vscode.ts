@@ -40,6 +40,10 @@ const cmd = `${local}\\Programs\\Microsoft VS Code\\bin\\code.cmd`;
 p = planVSCodeLaunch('C:\\ok\\proj', env('win32', [cmd], { LOCALAPPDATA: local, ComSpec: 'C:\\Windows\\System32\\cmd.exe' }, 'C:\\Users\\a'));
 assert.strictEqual(p?.command, 'C:\\Windows\\System32\\cmd.exe');
 assert.deepStrictEqual(p?.args.slice(0, 3), ['/d', '/s', '/c']);
+// spec 009 FR-029: the /c line has one outer pair for /s, so the spaces in "Microsoft VS Code" and in the target survive
+assert.deepStrictEqual(p?.args, ['/d', '/s', '/c', `""${cmd}" C:\\ok\\proj"`]);
+p = planVSCodeLaunch('C:\\my work\\proj', env('win32', [cmd], { LOCALAPPDATA: local }, 'C:\\Users\\a'));
+assert.deepStrictEqual(p?.args, ['/d', '/s', '/c', `""${cmd}" "C:\\my work\\proj""`], 'a target with a space keeps its own quotes');
 for (const bad of ['C:\\a & calc', 'C:\\a"b', 'C:\\%PATH%', 'C:\\a|b', 'C:\\a^b']) {
   assert.strictEqual(planVSCodeLaunch(bad, env('win32', [cmd], { LOCALAPPDATA: local }, 'C:\\Users\\a')), undefined, bad);
 }
@@ -102,11 +106,16 @@ process.exitCode = 1; // a promise that never settles must not pass (checklist);
   assert.strictEqual(planVSCodeLaunch('C:\\p', env('win32', [exe], { LOCALAPPDATA: local }, 'C:\\Users\\a'))?.verbatim, undefined, 'Code.exe plan is not verbatim');
   assert.strictEqual(planVSCodeLaunch('C:\\p', env('win32', [cmd], { LOCALAPPDATA: local }, 'C:\\Users\\a'))?.verbatim, true, 'the cmd.exe plan says verbatim');
   assert.strictEqual(planVSCodeLaunch('/x', env('linux', ['/usr/bin/code'], { PATH: '/usr/bin' }, '/home/a'))?.verbatim, undefined);
-  // the cmd.exe route quotes the target: a trailing backslash (a drive root) is doubled so it does not escape the closing quote
-  for (const [t, q] of [['C:\\', 'C:\\\\'], ['\\\\srv\\share\\p\\', '\\\\srv\\share\\p\\\\'], ['C:\\p', 'C:\\p'],
-    ['C:\\p\\\\', 'C:\\p\\\\\\\\'], ['C:\\p\\\\\\', 'C:\\p\\\\\\\\\\\\']]) {
-    assert.strictEqual(planVSCodeLaunch(t, env('win32', [cmd], { LOCALAPPDATA: local }, 'C:\\Users\\a'))?.args[3], `"${cmd}" "${q}"`, 'drive root on the cmd.exe route: ' + t);
+  // spec 009 FR-029 (merge with FR-028): the cmd.exe route takes its line from cmdShimArgs. A target without white space stays bare, so a
+  // trailing backslash (a drive root) is never before a quote and is not doubled; a target with white space that ends in \ is refused.
+  for (const t of ['C:\\', '\\\\srv\\share\\p\\', 'C:\\p', 'C:\\p\\\\', 'C:\\p\\\\\\']) {
+    assert.strictEqual(planVSCodeLaunch(t, env('win32', [cmd], { LOCALAPPDATA: local }, 'C:\\Users\\a'))?.args[3], `""${cmd}" ${t}"`, 'bare on the cmd.exe route: ' + t);
   }
+  assert.strictEqual(planVSCodeLaunch('C:\\', env('win32', [cmd], { LOCALAPPDATA: local }, 'C:\\Users\\a'))?.args[3], '""C:\\Users\\a\\AppData\\Local\\Programs\\Microsoft VS Code\\bin\\code.cmd" C:\\"', 'the drive root, exactly');
+  for (const t of ['\\\\srv\\my share\\', 'C:\\my dir\\', 'C:\\my dir\\\\']) {
+    assert.strictEqual(planVSCodeLaunch(t, env('win32', [cmd], { LOCALAPPDATA: local }, 'C:\\Users\\a')), undefined, 'a spaced target ending in \\ is refused: ' + t);
+  }
+  assert.strictEqual(planVSCodeLaunch('C:\\my dir', env('win32', [cmd], { LOCALAPPDATA: local }, 'C:\\Users\\a'))?.args[3], `""${cmd}" "C:\\my dir""`, 'a spaced target is quoted');
 
   type Seen = { cmd: string; args: readonly string[]; opts: Record<string, unknown> };
   let seen: Seen[] = [];
