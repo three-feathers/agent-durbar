@@ -13,8 +13,9 @@
  *     focushide  the focused pencil hidden too: "the focused pencil stays shown (opacity 1) while its plate eases"
  *     parkold    the pointer parked at the first version's spot, whatever the screen (with PENCIL_EASE_SCREEN=1280x1024 at DPR 2): "the pointer is parked on the visible screen"
  *     far        every pencil 6 px further from its name: "once the ease is over every pencil is painted just after its name"
- *     noease     the OS asks for reduced motion for the whole run (nothing eases): the labelled "skipped: this runner reports prefers-reduced-motion: reduce, the ease is not drawn"
+ *     noease     the OS asks for reduced motion for the whole run (nothing eases): the labelled "skipped: prefers-reduced-motion: reduce was asked for and the page reports it, the ease is not drawn" (the only run that asks for reduce)
  *     hold       the simulator's frozen people kept (no romotion=1): the office holds still, the query says nothing about it: fails "the plates ease in the lounge move (0 of N easing ...)"
+ *     emufail    the debugger override does not apply (the page reports the OS's reduce although no-preference was asked): fails "emulated no-preference but the page reports reduce: the emulation did not apply"
  *     latemedia  reduce at the page's load, no-preference after (the old order): the office is drawn still for good; fails "the plates ease in the lounge move (0 of N easing ...)" with the numbers
  *     oldfocus   the focus listener as it was (the cancelled hold stays the current one): a pencil focused while hidden fades in from 0 at the end of the ease:
  *                "a pencil focused while hidden stays at opacity 1 through the end of its plate's ease"
@@ -171,7 +172,8 @@ module.exports = async (ctx) => {
        "animate controls and elements" off) has already drawn the office still. `noease` keeps reduce for the whole run; `latemedia` is the old order (reduce at the
        load, no-preference after), which draws no ease whatever the query says later. */
     const dbg = wc().debugger; if (!dbg.isAttached()) dbg.attach('1.3');
-    const media = (v) => dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: v }] });
+    const ASKED_REDUCE = MUTANT === 'noease'; /* the one run in which the driver itself asks for reduce */
+    const media = (v) => dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: MUTANT === 'emufail' ? 'reduce' : v }] }); /* emufail: the override does not apply, the page reports the OS's value (reduce) */
     await media(MUTANT === 'noease' || MUTANT === 'latemedia' ? 'reduce' : 'no-preference');
     await H.load({ w, h, query: { officeview: 'real', simfreeze: '1', ...(MUTANT === 'hold' ? {} : { romotion: '1' }), ...ALL[world] }, ready: REAL, settle: false });
     await media(MUTANT === 'noease' ? 'reduce' : 'no-preference');
@@ -227,9 +229,11 @@ module.exports = async (ctx) => {
     const mo = await js(`(()=>({reduce:matchMedia('(prefers-reduced-motion: reduce)').matches,motionOff:document.documentElement.hasAttribute('data-motion-off'),hidden:document.hidden,focus:document.hasFocus()}))()`);
     const motionLine = `matchMedia(prefers-reduced-motion: reduce) ${mo.reduce}, Settings > Motion off ${mo.motionOff}, document hidden ${mo.hidden}, focused ${mo.focus}`;
     log(tag, `motion: ${motionLine}; ${easing} of ${n} plates easing at the start`);
+    /* the driver emulates no-preference before and after the load: a page that still reports reduce means the emulation did not apply (a runner where the debugger override fails): a failure, never a skip */
+    assert.ok(!mo.reduce || ASKED_REDUCE, `${tag}: emulated no-preference but the page reports reduce: the emulation did not apply (${motionLine}; ${easing} of ${n} plates easing at the start)`);
     if (easing === 0 && mo.reduce) {
-      /* the product honours the OS's reduced motion (realoffice.js `moving`; app.js `REDUCED` is read once at load and gives `still: true`): no plate eases on this runner, which is its correct behaviour; nothing below can be shown */
-      log(tag, `skipped: this runner reports prefers-reduced-motion: reduce, the ease is not drawn (0 of ${n} plates easing; ${motionLine}): the frames, opacity reads and status changes are not run for this size`);
+      /* only reached when the driver asked for reduce (`noease`): the product honours reduced motion (realoffice.js `moving`; app.js `REDUCED` is read once at load and gives `still: true`): no plate eases on this runner, which is its correct behaviour; nothing below can be shown */
+      log(tag, `skipped: prefers-reduced-motion: reduce was asked for and the page reports it, the ease is not drawn (0 of ${n} plates easing; ${motionLine}): the frames, opacity reads and status changes are not run for this size`);
       try { await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] }); dbg.detach(); } catch (e) { /* the page went */ }
       continue;
     }
