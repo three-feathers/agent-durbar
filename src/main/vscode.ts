@@ -2,7 +2,7 @@ import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { pathDirs } from '../shared/pathdirs';
-import { CMD_UNSAFE, windowsCmd } from '../shared/wincmd';
+import { cmdShimArgs, windowsCmd } from '../shared/wincmd';
 
 export interface LaunchPlan {
   command: string;
@@ -125,11 +125,11 @@ export function planEdition(ed: Edition, target: string, e: LaunchEnv): LaunchPl
 
 /** Last resort on Windows: run code.cmd through cmd.exe, only when nothing in the arguments can be interpreted. */
 function planCmd(cmdFile: string, target: string, e: LaunchEnv): LaunchPlan | undefined {
-  if (CMD_UNSAFE.test(target) || CMD_UNSAFE.test(cmdFile)) return undefined;
-  const comspec = windowsCmd(e.env); // spec 045 FR-003
-  // a quoted argument ending in backslashes (a drive root C:\) would escape its closing quote for Code.exe's argv parser: double them (FR-028)
-  const quoted = target.replace(/(\\+)$/, '$1$1');
-  return { command: comspec, args: ['/d', '/s', '/c', `"${cmdFile}" "${quoted}"`], via: cmdFile, verbatim: true };
+  // spec 009 FR-029: the one quoting helper (outer pair for /s); undefined for a CMD_UNSAFE character or a spaced target ending in \.
+  // A target without white space (a drive root C:\) stays bare, so FR-028's doubling of a trailing backslash is not needed on this line.
+  const args = cmdShimArgs(cmdFile, [target]);
+  if (!args) return undefined;
+  return { command: windowsCmd(e.env), args, via: cmdFile, verbatim: true }; // spec 045 FR-003; FR-028: passed verbatim
 }
 
 export type OpenResult = { ok: boolean; error?: string; edition?: string; note?: string };
