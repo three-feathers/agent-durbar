@@ -313,7 +313,7 @@
     const sc=r.querySelector('.scr-body'), top=sc?sc.scrollTop:0, f=document.activeElement;
     let sel=null;
     if(f&&r.contains(f)&&f!==document.body){
-      if(f.id)sel='#'+CSS.escape(f.id);
+      if(f.id)sel='[id="'+CSS.escape(f.id)+'"]';
       else{const li=f.closest('li[data-amb],li[data-g],li[data-place]');
         if(li&&f.dataset.act){const k=li.dataset.amb!==undefined?'amb':li.dataset.g!==undefined?'g':'place';sel='li[data-'+k+'="'+CSS.escape(li.dataset[k])+'"] [data-act="'+CSS.escape(f.dataset.act)+'"]';}}
     }
