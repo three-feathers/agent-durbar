@@ -26,7 +26,7 @@ body.screen-open .workspace{display:none}
 
 /* server rows */
 .srvs{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:8px}
-.srv{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
+.srv{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
 .srv.amb{background:var(--tone-neutral-faint)}
 .srv-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
 .srv:has(.srv-why,.srv-hint,.srv-det) .srv-main{flex-basis:240px} /* spec 058 FR-231 (#1622): a row with a reason, help or details text keeps 240px for it; the buttons wrap below when they do not fit beside it. A row with only a name and a state stays on one line */
