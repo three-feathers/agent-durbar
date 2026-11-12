@@ -74,7 +74,7 @@
     'permission':'Allow the command to run (its file permissions), then press Restart.',
     'disconnected':'Press Restart, and check that the server still runs or can be reached.',
     'unknown':'Open Details or Copy diagnostics to see what the agent app reported.',
-    /* spec 058 FR-231 (issue #1621): a 403 from a server that sends its own token; Sign in cannot change a header */
+    /* spec 058 FR-231 (issue 1621): a 403 from a server that sends its own token; Sign in cannot change a header */
     'token':'The server refused the token: check the header or the variable it uses. Sign in does not change it.'
   };
   /* FR-006 hints; since FR-201 (2026-11-03, one wording per failure kind) the fix text of the strip, so the chat dialog, Settings and the
@@ -103,7 +103,7 @@
     [/invalid (config|configuration)|configuration error|misconfigured/i,'config']
   ];
   function textClass(t){const s=String(t==null?'':t).slice(0,2000);for(const [re,c] of TEXT_RULES)if(re.test(s))return c;return '';}
-  /* Spec 058 FR-231 (issue #1621): the refused-token words, with the `${NAME}` variables main found unset in Durbar's own environment
+  /* Spec 058 FR-231 (issue 1621): the refused-token words, with the `${NAME}` variables main found unset in Durbar's own environment
      (names only: main never sends a value, and the names are checked again here). */
   const VAR_NAME=/^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
   function tokenHint(vars){

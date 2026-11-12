@@ -929,7 +929,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       return /\binteraction_required\b/i.test(t) ? 'policy' : undefined;
     };
     /* mcpcall:end */
-    /* spec 058 FR-231 (issue #1621): src/main/mcptoken.ts `isTokenRefusal`, copied (this file cannot import); test:mcpsession cuts this block out and compares the two */
+    /* spec 058 FR-231 (issue 1621): src/main/mcptoken.ts `isTokenRefusal`, copied (this file cannot import); test:mcpsession cuts this block out and compares the two */
     /* mcptoken:begin */
     const simTokenRefusal = (text: unknown): boolean => {
       if (typeof text !== 'string') return false;
