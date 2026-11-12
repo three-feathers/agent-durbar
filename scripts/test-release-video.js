@@ -512,5 +512,28 @@ const { killTree } = require('./ui-suite');
     const uisrc = fs.readFileSync(path.join(__dirname, 'ui-suite.js'), 'utf8').replace(/\r\n/g, '\n');
     assert.ok(/const releaseGuard = guardTree\(child[,)]/.test(uisrc) && /clearTimeout\(timer\);\s*releaseGuard\(\);/.test(uisrc), 'runOne guards every run and releases when it closes (FR-199)');
   }
+  /* spec 097 FR-365: the clip's one capture waits for the office to be still (no WAAPI move or fade in #stage) first, and the wait is the one text the pencil-ease driver uses */
+  {
+    const { STILL_STAGE } = require('./driver-helpers');
+    const problems = (expr) => {
+      const still = (anims) => new Function('document', 'return ' + expr)({ getElementById: () => ({ getAnimations: () => anims }), body: { getAnimations: () => anims } });
+      const out = [];
+      if (still([]) !== true) out.push('no animation is still');
+      if (still([{ animationName: 'bob', playState: 'running' }]) !== true) out.push('a CSS loop (a person\'s bob) keeps running and is still');
+      if (still([{ animationName: '', playState: 'running' }]) !== false) out.push('a running WAAPI move is not still');
+      if (still([{ animationName: '', playState: 'finished' }]) !== true) out.push('a finished WAAPI move is still');
+      return out;
+    };
+    assert.deepStrictEqual(problems(STILL_STAGE), [], 'STILL_STAGE: true for no animation, a CSS loop and a finished move; false for a running WAAPI move');
+    assert.notDeepStrictEqual(problems(STILL_STAGE.replace('!a.animationName&&', '')), [], 'mutant: a stillness test that counts the CSS loops is caught');
+    assert.notDeepStrictEqual(problems(STILL_STAGE.replace("a.playState==='running'", "a.playState==='finished'")), [], 'mutant: a stillness test on the wrong play state is caught');
+    const rvsrc = fs.readFileSync(path.join(__dirname, 'release-video.js'), 'utf8').replace(/\r\n/g, '\n');
+    const waitFirst = (src) => /if \(!img\) \{ await H\.until\(STILL_STAGE, \d+\); img = await H\.wc\(\)\.capturePage\(\); \}/.test(src);
+    assert.ok(waitFirst(rvsrc), 'glide waits until STILL_STAGE (3 s at most) before its one capturePage');
+    assert.ok(!waitFirst(rvsrc.replace('await H.until(STILL_STAGE, 3000); img = await', 'img = await')), 'mutant: a glide with no wait before the capture is caught');
+    assert.ok(!/getAnimations\(\{subtree:true\}\)/.test(rvsrc), 'release-video.js has no copy of the stillness expression (FR-031: one helper)');
+    const pesrc = fs.readFileSync(path.join(__dirname, 'check-097-pencil-ease.js'), 'utf8').replace(/\r\n/g, '\n');
+    assert.ok(/const STILL = STILL_STAGE;/.test(pesrc) && !/getAnimations\(\{subtree:true\}\)/.test(pesrc), 'check-097-pencil-ease uses the same STILL_STAGE');
+  }
   console.log('release-video: tests passed');
 })().catch((e) => { console.error(e); process.exitCode = 1; });
