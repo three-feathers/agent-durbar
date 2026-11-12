@@ -249,6 +249,16 @@ function helpers(ctx) {
   };
   /** Hide the start-up toasts with a style (once). `keepActions`: keep the ones with a button. `blur`: also drop the focus ring. */
   const calm = async (o = {}) => { await js(`(()=>{if(!document.getElementById('shotCalm')){const s=document.createElement('style');s.id='shotCalm';s.textContent='#toasts${o.keepActions ? ' .toast:not(.with-act)' : ''}{display:none!important}';document.head.append(s);}${o.blur ? 'if(document.activeElement&&document.activeElement!==document.body)document.activeElement.blur();' : ''}})()`); await w.settleWalk(); };
+  /**
+   * Spec 008 FR-214: the real pointer rests where the window lies on the screen (script clicks never move it), so a control under it reads in its :hover colours.
+   * Moves the pointer to 0,0, waits until nothing under `scope` (a selector list) matches :hover, and returns what still does (descriptions; empty = fine). A colour read goes after this and asserts the list is empty.
+   */
+  const pointerOff = async (scope) => {
+    const sel = scope.split(',').map((x) => x.trim() + ' :hover').join(',');
+    wc().sendInputEvent({ type: 'mouseMove', x: 0, y: 0 });
+    await w.until(`!document.querySelector(${jsLiteral(sel)})`, 2000);
+    return js(`[...document.querySelectorAll(${jsLiteral(sel)})].map(e=>(e.id?'#'+e.id:e.tagName.toLowerCase()+'.'+String(e.className).trim().replace(/ +/g,'.'))+' "'+(e.textContent||'').trim().slice(0,30)+'"')`);
+  };
   /** Remove the toasts that are on screen now. */
   const clearToasts = () => js(`document.querySelectorAll('#toasts .toast').forEach(t=>t.remove())`);
   /**
@@ -346,7 +356,7 @@ function helpers(ctx) {
     await goToFloor(list[0].id);
     for (let i = 0; i < list.length; i++) { await goToFloor(list[i].id); await w.settle(); await fn(list[i], i); }
   };
-  return { ...w, pointerStep: ptr.step, allowWindowClose: closeGuard.allow, wc, js, click, clickText, exists, text, idOf, key, calm, clearToasts, focusPage, releaseFocus, loseFocus, focusWc, load, shot, openSimAgent, floors, shownFloor, goToFloor, eachFloor, INDEX };
+  return { ...w, pointerStep: ptr.step, allowWindowClose: closeGuard.allow, wc, js, click, clickText, exists, text, idOf, key, calm, pointerOff, clearToasts, focusPage, releaseFocus, loseFocus, focusWc, load, shot, openSimAgent, floors, shownFloor, goToFloor, eachFloor, INDEX };
 }
 
 /**
