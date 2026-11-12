@@ -187,6 +187,7 @@ const DRIVERS = [
   { name: 'check-097-chat-contrast', label: 'check-097-chat-contrast retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 T283 (issue #1399): the same driver in the arcade
   { name: 'check-097-order' }, // spec 097 FR-345..FR-348 (#1152): rooms, desks and places rearranged in Real office by key and folder menu on spec 033's one order; the flat order shows, both sizes
   { name: 'check-097-drag' }, // spec 097 FR-352..FR-355 (#1152, Q30..Q33): drag a plate or folder sign in Real office (Photo, cave, arcade), the lobby by chip button and the +N menu, on the one saved order; both sizes
+  { name: 'check-097-drag-cancel', focus: true }, // spec 097 FR-352 (issue 1550): focus: true because its held drags end on a real OS blur from a neighbour window, which is what it tests. A drag in Real office ends on a window blur, a wheel, a scroll, Escape and pointercancel: nothing lifted, nothing saved; a later drag works; Photo office and arcade, both sizes
   { name: 'check-097-slip-plates' }, // spec 097 (bug 1434): no request slip covers a plate, sign, chair label, chip, cue or face; 15 agents, both sizes, three worlds
   { name: 'check-097-plate-pencil' }, // spec 059 FR-170 (#1155): the rename pencil beside a Real office plate's name, F2 on a plate, both sizes
   { name: 'check-097-pencil-ease' }, // spec 097 FR-365 (bug 1513): no rename pencil painted over its plate's name or status while plates ease to the lounge (capturePage frames), Photo office and arcade, both sizes; PENCIL_EASE_MUTANT=nohide
