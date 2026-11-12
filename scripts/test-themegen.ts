@@ -161,6 +161,9 @@ assert.ok(Object.keys(clean).length > 100, 'all of Clean Office');
       minRest = Math.min(minRest, rest); minHov = Math.min(minHov, hovd);
       if (rest < 4.5) underRest++;
       if (hovd < 4.5) underHov++;
+      // mutant N3 (the hover target computed from the UNREPAIRED mark, `mark=mk`) is an EQUIVALENT mutant through setTheme: contrastFix's `pass<4` loop rewrites
+      // --brand-hover unconditionally on the next pass from the repaired mark, so the final value is the same. Cut the loop to one pass and the grid's
+      // 'theme.js and themegen choose the same target' assert kills it. Do not hunt for a sweep that kills it.
       if (!badTarget && T.token('--brand-hover') !== brandHoverTarget(T.token('--brand-mark'), T.token('--brand-bg'))) badTarget = `${mk} on ${bg}`;
     }
     assert.strictEqual(underRest, 0, `random sweep seed ${sd}: ${underRest} of ${n} pairs under 4.5:1 at rest (min ${minRest.toFixed(3)})`);
