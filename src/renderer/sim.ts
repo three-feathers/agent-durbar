@@ -217,6 +217,127 @@ function simNotesApi(qs: URLSearchParams, folderOf: (id: string) => { key: strin
   };
 }
 
+type ConvSearchEvent = import('../shared/api').ConvSearchEvent;
+type ConvSearchHit = import('../shared/api').ConvSearchHit;
+type ConvSearchNotes = import('../shared/api').ConvSearchNotes;
+/** One session the simulator's search can find: what main's plan holds, plus its canned text messages (no I/O). */
+interface SimConvSession {
+  adapter: string; app: string; folderName: string; sessionId: string; agentId: string; group: 'office' | 'earlier'; title: string; time: number;
+  /** `title`: earlier Copilot and Codex sessions (Q4, review question B). */
+  content: 'read' | 'title';
+  hidden?: boolean;
+  messages: Array<{ speaker: 'you' | 'agent' | 'tool'; text: string }>;
+}
+/* convquery:begin */
+/* Spec 095 FR-033: main's `cleanQuery` (src/main/ipc/convsearch.ts), copied for the simulator; test:convsearchipc compiles this block and compares. */
+const simCleanQuery = (q: unknown): { ok: true; query: string; cut: boolean } | { ok: false; code: 'short' | 'invalid' } => {
+  const maxChars = 200, maxWords = 8, minChars = 3;
+  if (typeof q !== 'string') return { ok: false, code: 'invalid' };
+  const head = q.length > 4 * maxChars ? q.slice(0, 4 * maxChars) : q;
+  const uh = (window as unknown as { DurbarSafeText?: { unhide?: (t: string) => string } }).DurbarSafeText?.unhide;
+  if (typeof uh !== 'function') return { ok: false, code: 'invalid' }; // fails closed, as the masks do
+  const words = uh(head.replace(/[\u0000-\u001f\u007f-\u009f]|[^\S\ufeff]/g, ' ')).trim().split(/\s+/).filter(Boolean);
+  let query = words.slice(0, maxWords).join(' ');
+  const cps = [...query];
+  if (cps.length > maxChars) query = cps.slice(0, maxChars).join('').trimEnd();
+  const cut = head !== q || words.length > maxWords || cps.length > maxChars;
+  if ([...query.replace(/\s+/g, '')].length < minChars) return { ok: false, code: 'short' };
+  return { ok: true, query, cut };
+};
+/* convquery:end */
+
+/**
+ * Spec 095 T025 (US1, US4): the simulator's conversation search over a canned corpus of the open sessions and the earlier ones the
+ * simulator lists (no I/O, no channel of main). The rules of main in miniature: the same query bounds (`simCleanQuery`), titles masked
+ * then matched first, earlier Copilot and Codex sessions by title only, tool lines never searched, hidden earlier sessions not searched
+ * (counted), every word in any order, at most 3 excerpts masked before they are cut (the page's own `maskNoteText`, failing closed), a
+ * random `searchId`, one live search (a new start or a cancel ends the old one), events only for the live id. `simsearch=slow`: one
+ * session every 400 ms, for the "Searching, N of M sessions" state; `simsearch=locked`: the end state says saved MCP values were locked.
+ */
+function simConvSearchApi(qs: URLSearchParams, scope: () => SimConvSession[]): Pick<DurbarApi, 'convSearchStart' | 'convSearchCancel' | 'convSearchClear' | 'onConvSearch'> {
+  type Search = { fold(s: unknown): string; terms(q: string): string[]; locate(t: unknown, q: string): Array<{ start: number; end: number; term: number }>; anchorKey(t: unknown): string };
+  const lib = (): Search | undefined => (window as unknown as { DurbarSessionSearch?: Search }).DurbarSessionSearch;
+  const mask = (t: string): string | undefined => {
+    const r = (window as unknown as { DurbarRedact?: { maskNoteText?: (t: string) => { text: string } } }).DurbarRedact;
+    try { const m = r && typeof r.maskNoteText === 'function' ? r.maskNoteText(t).text : undefined; return typeof m === 'string' ? m : undefined; } catch { return undefined; }
+  };
+  const slow = qs.get('simsearch') === 'slow';
+  const subs: Array<(e: ConvSearchEvent) => void> = [];
+  let live: { id: string; timer?: ReturnType<typeof setTimeout> } | undefined;
+  const stop = (): void => { if (live?.timer !== undefined) clearTimeout(live.timer); live = undefined; };
+  const emit = (e: ConvSearchEvent): void => { for (const cb of subs.slice()) { try { cb(e); } catch { /* one listener's error does not stop the others */ } } };
+  const newId = (): string => { const b = new Uint8Array(16); crypto.getRandomValues(b); return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join(''); };
+  const marks = (S: Search, t: string, q: string): Array<[number, number]> => S.locate(t, q).map((r) => [r.start, r.end] as [number, number]);
+  const match = (S: Search, s: SimConvSession, q: string, notes: ConvSearchNotes): ConvSearchHit | undefined => {
+    const words = [...new Set(S.terms(q))];
+    const title = mask(s.title);
+    if (title === undefined) { notes.maskFailed++; return undefined; }
+    const found = new Set(S.locate(title, q).map((r) => r.term));
+    const base = { adapter: s.adapter, sessionId: s.sessionId, agentId: s.agentId, group: s.group, app: s.app, folderName: s.folderName, title, titleMarks: marks(S, title, q), time: s.time };
+    if (found.size === words.length) return { ...base, excerpts: [], more: 0 };
+    if (s.content === 'title') return undefined;
+    const excerpts: ConvSearchHit['excerpts'] = [];
+    let total = 0;
+    let n = -1;
+    for (const m of s.messages) {
+      if (m.speaker === 'tool') continue; // D2: tool output is never searched
+      n++;
+      const t = mask(m.text);
+      if (t === undefined) { notes.maskFailed++; continue; }
+      const terms = new Set(S.locate(t, q).map((r) => r.term));
+      if (!terms.size) continue;
+      for (const x of terms) found.add(x);
+      total++;
+      const text = t.length > 178 ? t.slice(0, 178) + '…' : t;
+      if (excerpts.length < 3) excerpts.push({ text, marks: marks(S, text, q), speaker: m.speaker, anchor: { n, head: [...S.anchorKey(t)].slice(0, 60).join('') } });
+    }
+    return found.size === words.length ? { ...base, excerpts, more: total - excerpts.length } : undefined;
+  };
+  return {
+    convSearchStart: async (query) => {
+      stop();
+      const q = simCleanQuery(query);
+      if (!q.ok) return q.code === 'short' ? { ok: false, code: 'short', error: 'Type at least 3 characters.' } : { ok: false, code: 'invalid', error: 'That is not a search.' };
+      const all = scope();
+      if (!all.some((s) => s.group === 'office')) return { ok: false, code: 'none', error: 'Open a session first; earlier sessions are searched for the apps and folders you have open.' };
+      const S = lib();
+      if (!S) return { ok: false, code: 'invalid', error: 'That is not a search.' };
+      const me: { id: string; timer?: ReturnType<typeof setTimeout> } = { id: newId() };
+      live = me;
+      const notes: ConvSearchNotes = { searched: 0, folders: 0, notInstalled: [], tooLarge: 0, unreadable: 0, titleOnly: { count: 0, apps: [] }, hidden: 0, floorsOff: 0, capped: { sessions: false, perFolder: false, results: false }, timedOut: false, cut: 0, bounded: 0, maskFailed: 0, queryCut: q.cut, floorOffFolders: 0, mcpValuesLocked: qs.get('simsearch') === 'locked', lateLists: 0, lateApps: [] };
+      const list = all.filter((s) => { if (s.hidden) notes.hidden++; return !s.hidden; });
+      notes.folders = new Set(list.map((s) => s.folderName)).size;
+      const groups = { office: 0, earlier: 0 };
+      let i = 0;
+      const step = (): void => {
+        if (live !== me) return;
+        const hits: ConvSearchHit[] = [];
+        for (let k = 0; i < list.length && k < (slow ? 1 : list.length); k++) {
+          const s = list[i++];
+          notes.searched++;
+          if (s.content === 'title') { notes.titleOnly.count++; if (!notes.titleOnly.apps.includes(s.app)) notes.titleOnly.apps.push(s.app); }
+          const h = match(S, s, q.query, notes);
+          if (h) { hits.push(h); groups[h.group]++; }
+        }
+        const progress = { done: i, total: list.length };
+        emit({ kind: 'batch', searchId: me.id, hits, progress, groups: { ...groups } });
+        if (i < list.length) { me.timer = setTimeout(step, 400); return; }
+        live = undefined;
+        emit({ kind: 'done', searchId: me.id, notes, progress, failed: false });
+      };
+      me.timer = setTimeout(step, slow ? 400 : 30); // after the answer: the window knows the id before the first event
+      return { ok: true, searchId: me.id, query: q.query, cut: q.cut };
+    },
+    convSearchCancel: async (searchId) => {
+      if (!live || live.id !== searchId) return { ok: false }; // a stale or unknown id is ignored
+      stop();
+      return { ok: true };
+    },
+    convSearchClear: async () => { stop(); return { ok: true }; }, // FR-026: the simulator keeps no titles; the search stops without a done
+    onConvSearch: (cb) => { subs.push(cb); return () => { const k = subs.indexOf(cb); if (k >= 0) subs.splice(k, 1); }; },
+  };
+}
+
 /** Spec 005 FR-026: a simulated diff (removed lines, then added lines) with its counts. */
 function simDiffOf(oldL: string[], newL: string[], at: number): { diff: string; added: number; removed: number } {
   const head = `@@ -${oldL.length ? at : 0},${oldL.length} +${newL.length ? at : 0},${newL.length} @@`;
@@ -2279,6 +2400,30 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     } catch {
       /* no saved theme */
     }
+    // spec 095 T025: the canned corpus of the conversation search: each open session gets one of these conversations (tool lines are
+    // never searched); the earlier sessions are the ones Previous sessions lists (Claude Code: content; Copilot and Codex: title only)
+    const SIM_CONV: Array<Array<{ speaker: 'you' | 'agent' | 'tool'; text: string }>> = [
+      [{ speaker: 'you', text: 'Fix the invoice export to CSV when the totals are empty.' }, { speaker: 'tool', text: 'grep -rn invoice src/' }, { speaker: 'agent', text: 'Done: the invoice export now writes a header row even when the list is empty.' }],
+      [{ speaker: 'you', text: 'Una explicación del error de la cuenta, por favor.' }, { speaker: 'agent', text: 'The error comes from the canton lookup returning duplicates for merged municipalities.' }],
+      [{ speaker: 'you', text: 'Add a retry with backoff to the registry client.' }, { speaker: 'agent', text: 'Added a retry with exponential backoff, capped at five tries; the export job uses it too.' }],
+      [{ speaker: 'you', text: 'Why is the Windows build slow?' }, { speaker: 'tool', text: 'cat .github/workflows/build.yml (invoice)' }, { speaker: 'agent', text: 'The cache step runs twice; the second one can be dropped.' }],
+    ];
+    const simConvSearchCalls = simConvSearchApi(simQuery, () => {
+      const room = (s: SimAgent): string => (s.info as AgentInfo & { roomName?: string }).roomName ?? s.info.name;
+      const open: SimConvSession[] = sims.map((s, i) => ({
+        adapter: s.info.adapterId ?? 'copilot', app: SIM_APP[s.info.adapterId ?? 'copilot'] ?? 'Agent', folderName: room(s), sessionId: s.info.id, agentId: s.info.id, group: 'office',
+        title: s.info.alias || s.info.title || 'Untitled session', time: 0, content: 'read', messages: SIM_CONV[i % SIM_CONV.length],
+      }));
+      const owner = sims.find(hasPrev);
+      const earlier: SimConvSession[] = owner ? simPrevList(owner.info.adapterId ?? 'copilot').map((p, i) => {
+        const adapter = owner.info.adapterId ?? 'copilot';
+        return {
+          adapter, app: SIM_APP[adapter] ?? 'Agent', folderName: room(owner), sessionId: p.id, agentId: owner.info.id, group: 'earlier', title: simPrevNames.get(p.id) || p.title, time: p.modifiedTime,
+          content: adapter === 'claude' ? 'read' : 'title', hidden: prevMarksOf(adapter, [p.id]).hidden.length > 0, messages: SIM_CONV[(i + 1) % SIM_CONV.length],
+        };
+      }) : [];
+      return [...open, ...earlier];
+    });
     const { forgetFolder: simNotesForget, ...simNotesCalls } = simNotesApi(simQuery, (id) => { const s = sims.find((x) => x.info.id === id); return s ? { key: s.info.workspaceFile || s.info.cwd, name: (s.info as AgentInfo & { roomName?: string }).roomName ?? s.info.name, session: simQuery.get('simresumeid') ? 'resume-' + s.info.id : s.info.id } : undefined; }); // spec 083 FR-060 (simresumeid=1: the saved session id is not the agent's id, as with a Codex thread id)
     const capApi: Partial<DurbarApi> = {
       usageTotals: async () => ({ ok: true, since: savedSince, office: saved.office, folders: saved.folders }),
@@ -2361,6 +2506,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         return { ok: true, entries: simSlashFor(s.info.adapterId ?? 'copilot', simQuery).map((e) => { const c = { ...e }; delete c.note; return c; }) }; // the note is the send's, not the list's
       },
       ...simNotesCalls, // spec 083 FR-060
+      ...simConvSearchCalls, // spec 095 T025
       listProfiles: async (id) => {
         const s = sims.find((x) => x.info.id === id);
         if (!s || (s.info.adapterId && s.info.adapterId !== 'copilot')) return { ok: false, error: 'This agent app has no profiles.', profiles: [] };
@@ -2861,6 +3007,17 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     const prevDeleted = new Set<string>();
     const simSessionModes = new Map<string, AgentInfo['permMode']>([['prev-1', 'allow']]); // spec 003 (2026-10-21): the mode last chosen per earlier session
     const hasPrev = (x: SimAgent): boolean => x.info.cwd === '~/work/mcp-swiss' || (!!opts.solo && x.info.name === 'Ada'); // earlier sessions live in mcp-swiss (or in Ada's own folder with `simrooms=solo`)
+    /* the simulated earlier sessions of mcp-swiss (Previous sessions and the conversation search, spec 095 T025) */
+    const simPrevList = (adapter = 'copilot'): Array<{ id: string; title: string; startTime: number; modifiedTime: number; branch: string }> => {
+      const t = Date.now();
+      return [
+        { id: 'prev-1', title: (opts.reply === 'secrets' ? SECRETS_TEXT + ' ' : '') + 'Rename the filings handler and update its tests', startTime: t - 3 * 3600e3, modifiedTime: t - 2 * 3600e3, branch: 'refactor/filings' },
+        { id: 'prev-2', title: 'Why does the canton lookup return duplicates?', startTime: t - 30 * 3600e3, modifiedTime: t - 29 * 3600e3, branch: 'main' },
+        { id: 'prev-3', title: 'Add a retry with backoff to the registry client', startTime: t - 50 * 3600e3, modifiedTime: t - 49 * 3600e3, branch: 'feature/retry' },
+        { id: 'prev-4', title: 'Explain why the release workflow failed on the Windows runner and how to fix the path handling', startTime: t - 80 * 3600e3, modifiedTime: t - 79 * 3600e3, branch: 'fix/windows-paths' },
+      ].map((x) => (simQuery.get('simprevkinds') && adapter !== 'copilot' ? { ...x, id: adapter + '-' + x.id } : x)) // simprevkinds=1: another app lists its own sessions (Open source from another app's chat, FR-046)
+        .filter((x) => !prevDeleted.has(x.id));
+    };
     const prevMarksOf = (src: string, present: string[]): { pinned: string[]; hidden: string[] } => {
       const m = prevMarks.get(src);
       return { pinned: (m?.pinned ?? []).filter((k) => present.includes(k)), hidden: (m?.hidden ?? []).filter((k) => present.includes(k)) };
@@ -3637,14 +3794,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         await prevWait();
         const src = sims.find((x) => x.info.id === id);
         if (!src || !hasPrev(src)) return { ok: true, sessions: [], pinned: [], hidden: [] };
-        const t = Date.now();
-        const all = [
-          { id: 'prev-1', title: (opts.reply === 'secrets' ? SECRETS_TEXT + ' ' : '') + 'Rename the filings handler and update its tests', startTime: t - 3 * 3600e3, modifiedTime: t - 2 * 3600e3, branch: 'refactor/filings' },
-          { id: 'prev-2', title: 'Why does the canton lookup return duplicates?', startTime: t - 30 * 3600e3, modifiedTime: t - 29 * 3600e3, branch: 'main' },
-          { id: 'prev-3', title: 'Add a retry with backoff to the registry client', startTime: t - 50 * 3600e3, modifiedTime: t - 49 * 3600e3, branch: 'feature/retry' },
-          { id: 'prev-4', title: 'Explain why the release workflow failed on the Windows runner and how to fix the path handling', startTime: t - 80 * 3600e3, modifiedTime: t - 79 * 3600e3, branch: 'fix/windows-paths' },
-        ].map((x) => (simQuery.get('simprevkinds') && (src.info.adapterId ?? 'copilot') !== 'copilot' ? { ...x, id: (src.info.adapterId ?? 'copilot') + '-' + x.id } : x)) // simprevkinds=1: another app lists its own sessions (Open source from another app's chat, FR-046)
-          .filter((x) => !prevDeleted.has(x.id));
+        const all = simPrevList(src.info.adapterId ?? 'copilot');
         return { ok: true, sessions: all, names: Object.fromEntries(simPrevNames), ...prevMarksOf(src.info.adapterId ?? 'copilot', all.map((x) => x.id)) };
       },
       // Spec 006 FR-026: pins and hides kept in memory for this run (the real ones are ids in durbar-folders.json), same exclusive rule and id shape as main.
