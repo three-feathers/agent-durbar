@@ -222,9 +222,11 @@ const run = async (ctx, reqs) => {
     narrowdot: `.ro[data-world="retro"] .ro-plate.cab-narrow.has-ren.has-help:not(.lounge) .ro-l2>.dot{display:inline-block!important}`,
     nomark: `.ro[data-world="retro"] .ro-plate.cab-narrow.has-ren.has-help:not(.lounge) .ro-hm{display:none!important}`,
     nohelpdot: `.ro[data-world="retro"] .ro-plate.cab-narrow.has-ren:not(.has-help,.lounge) .ro-l2>.dot{display:inline-block!important}`,
+    nopenmark: `.ro[data-world="retro"] .ro-plate.cab-narrow:not(.has-ren) .ro-hm{display:none!important}`,
+    nopendot: `.ro[data-world="retro"] .ro-plate.cab-narrow.has-help:not(.has-ren) .ro-l2>.dot{display:inline-block!important;width:1px!important;height:1px!important;margin:0!important}`,
     sliver: `.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-help{flex-wrap:nowrap!important}.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l1{min-width:0!important}`,
   };
-  const markCheck = async (tag, scene, { want, states, urgent, nohelp } = {}) => { /* urgent (the narrow plates): true = a helper failed (a mark "+N!" is due), false = none did (no mark) */
+  const markCheck = async (tag, scene, { want, states, urgent, nohelp, nopencil } = {}) => { /* urgent (the narrow plates): true = a helper failed (a mark "+N!" is due), false = none did (no mark) */
     if (states) await js(`(()=>{const U=window.__durbarSimUi;U.agents().filter(a=>!a.parent).forEach((a)=>{a.state=${jsLiteral(states)};delete a.label;});U.render();})();0`);
     if (states) await must(`(()=>{const P=[...document.querySelectorAll('#stage .ro-plate[data-id]:not(.lounge)')];return P.length>0&&P.every(p=>p.classList.contains('st-' + ${jsLiteral(states)}));})()`, 'every plate drawn ' + states, 8000);
     if (MUTS[MUT] && !(MUT === 'nohelpdot' && !nohelp)) await js(`(()=>{const s=document.createElement('style');s.textContent=${jsLiteral(MUTS[MUT])};document.head.appendChild(s);})();0`);
@@ -234,24 +236,21 @@ const run = async (ctx, reqs) => {
     if (MUT === 'wordpx' && urgent !== undefined) await js(`(()=>{for(const p of document.querySelectorAll('#stage .ro-plate.cab-narrow.has-help')){const w=p.querySelector('.ro-wd'),t=w.firstChild,r=document.createRange();r.selectNodeContents(t);const cs=getComputedStyle(p),right=p.getBoundingClientRect().right-parseFloat(cs.borderRightWidth)-parseFloat(cs.paddingRight),over=()=>r.getBoundingClientRect().right-Math.min(w.getBoundingClientRect().right,right);let lo=0,hi=3;for(let k=0;k<30;k++){const m=(lo+hi)/2;w.style.letterSpacing=m+'px';if(over()>0.05)hi=m;else lo=m;}w.style.letterSpacing=hi+'px';}})();0`);
     if (MUT === 'thin' && urgent !== undefined) await js(`(()=>{for(const p of document.querySelectorAll('#stage .ro-plate.cab-narrow.has-help')){const w=p.querySelector('.ro-wd'),t=w.firstChild,r=document.createRange();r.selectNodeContents(t);const cs=getComputedStyle(p),right=p.getBoundingClientRect().right-parseFloat(cs.borderRightWidth)-parseFloat(cs.paddingRight),room=right-p.querySelector('.ro-hc').getBoundingClientRect().right-r.getBoundingClientRect().width;w.style.letterSpacing=((room-2)/t.data.length)+'px';}})();0`);
     if (MUT === 'namescope' && urgent === undefined) await js(`(()=>{for(const p of document.querySelectorAll('#stage .ro-plate.has-help:not(.cab-narrow)')){if(p.querySelector('.ro-help .dot.error,.ro-help .dot.waiting'))p.setAttribute('aria-label',p.getAttribute('aria-label').replace(/(\\. \\d+ helpers?)\\./,'$1, 1 failed or waiting.'));}})();0`);
+    /* a plate with no pencil (a session the app cannot rename: no `has-ren`, no pencil button; the simulator's sessions all can be renamed): the same plates as the app draws them for it */
+    if (nopencil) await js(`(()=>{for(const p of document.querySelectorAll('#stage .ro-plate.cab-narrow')){p.classList.remove('has-ren');const b=p.nextElementSibling;if(b&&b.classList.contains('ro-ren'))b.remove();}})();0`);
     const r = await js(PLATES());
     console.log('[102-arcade] plate marks', tag, JSON.stringify(scene), JSON.stringify(r.seen.filter((x) => x.helped)));
     const helped = r.seen.filter((x) => x.helped);
-    if (process.env.ARCADE_PROBE_FILE) fs.appendFileSync(process.env.ARCADE_PROBE_FILE, tag + ' ' + JSON.stringify({ out: r.out.slice(0, 3), narrow: r.seen.filter((x) => x.narrow).slice(0, 2).map((x) => ({ helped: x.helped, room: x.room, spare: x.spare, m: x.m, ell: x.ell, label: x.label })) }) + '\n'); /* test-only: the numbers of a run, as the suite's log cuts long lines */
     if (urgent !== undefined) { /* spec 102 FR-312: the narrow cabinet's plate with a pencil (122 px, content 92 px) */
-      const nm = helped.filter((x) => x.narrow && x.ren && x.word === 'Limit reached');
+      const nm = helped.filter((x) => x.narrow && !!x.ren === !nopencil && x.word === 'Limit reached');
       assert.ok(nm.length >= 1, 'issue 1574: ' + tag + ': a narrow plate with a pencil, helpers and the word "Limit reached" is drawn (the case under test), saw ' + JSON.stringify(helped.map((x) => x.word + ' ' + x.pc + ' ' + x.plateW + ' ' + x.ren)));
       assert.deepStrictEqual(r.out.filter((o) => o.includes('"Limit reached"') && nm.some((x) => o.startsWith(x.id + ' '))), [], 'issue 1574: ' + tag + ': on the narrow plate the status word "Limit reached" is whole, inside the content box and not cut by an ellipsis');
       assert.deepStrictEqual(r.out.filter((o) => o.includes('the +N is cut') && nm.some((x) => o.startsWith(x.id + ' '))), [], 'issue 1574: ' + tag + ': on the narrow plate the "+N" is whole');
       assert.ok(nm.every((x) => x.room >= NARROW_ROOM), 'issue 1574: ' + tag + ': on the narrow plate the word keeps at least ' + NARROW_ROOM + ' px of room to the content box (a wider font must not eat the margin; the spec records the measured room): ' + JSON.stringify(nm.map((x) => x.room)));
+      assert.ok(nm.every((x) => !x.ownDot), 'issue 1574: ' + tag + ': on the narrow plate with helpers the plate\'s own status dot is not drawn (the word, border and marquee say the state): ' + JSON.stringify(nm.map((x) => x.ownDot)));
       if (urgent) assert.ok(nm.every((x) => x.hm && x.hm.shown && x.hm.inside && x.hm.txt === '+' + x.helpers + '!'), 'issue 1574: ' + tag + ': on the narrow plate a failed helper is marked: the count reads "+N!" and the mark is whole in view: ' + JSON.stringify(nm.map((x) => x.hm)));
       else assert.ok(nm.every((x) => !x.hm || !x.hm.shown), 'issue 1574: ' + tag + ': on the narrow plate with no failed or waiting helper the count has no mark: ' + JSON.stringify(nm.map((x) => x.hm)));
       assert.ok(nm.every((x) => x.label.includes(urgent ? '. ' + x.helpers + ' helpers, ' + x.urgN + ' failed or waiting.' : '. ' + x.helpers + ' helpers.') && (urgent || !x.label.includes('failed or waiting'))), 'issue 1574: ' + tag + ': the narrow plate\'s name says how many helpers failed or wait (and only when some did): ' + JSON.stringify(nm.map((x) => x.label)));
-      if (process.env.ARCADE_PROBE === 'nopencil') { /* the same plates with no pencil (class and padding as a plate that cannot be renamed): what fits in the wider content box */
-        await js(`(()=>{for(const p of document.querySelectorAll('#stage .ro-plate.cab-narrow'))p.classList.remove('has-ren');})();0`);
-        const q = await js(PLATES());
-        assert.fail('ARCADE_PROBE nopencil ' + JSON.stringify({ out: q.out, rec: q.seen.filter((x) => x.narrow && x.helped).map((x) => ({ m: x.m, shown: x.shown, spare: x.spare, own: x.ownDot, hm: x.hm })), withPencil: nm.map((x) => ({ m: x.m, spare: x.spare })) }));
-      }
       assert.ok(nm.every((x) => /^U*o*$/.test(x.order)), 'issue 1574: ' + tag + ': on the narrow plate a failed or waiting helper\'s dot comes before every OK helper\'s (the dots drop out from the last): ' + JSON.stringify(nm.map((x) => x.order)));
     }
     if (urgent === undefined && !nohelp) { /* spec 102 FR-312: a plate that is not the narrow one keeps FR-311's name: the count of helpers, no words for the failed ones */
@@ -264,7 +263,6 @@ const run = async (ctx, reqs) => {
       assert.ok(np.every((x) => x.room >= NARROW_ROOM), 'issue 1600: ' + tag + ': on the narrow plate with no helpers the word keeps at least ' + NARROW_ROOM + ' px of room (the ellipsis of the line taken in): ' + JSON.stringify(np.map((x) => x.room)));
       assert.ok(np.length >= 1, 'issue 1600: ' + tag + ': a narrow plate with a pencil, no helpers and the word "Limit reached" is drawn (the case under test), saw ' + JSON.stringify(r.seen.map((x) => x.word + ' ' + x.pc + ' ' + x.plateW + ' ' + x.ren + ' ' + x.helped)));
       assert.deepStrictEqual(r.out.filter((o) => o.includes('"Limit reached"')), [], 'issue 1600: ' + tag + ': on the narrow plate with a pencil and no helpers the status word "Limit reached" is whole (its right end inside the content box, exact to 0.02 px)');
-      if (process.env.ARCADE_PROBE === 'nohelp') assert.fail('ARCADE_PROBE nohelp ' + JSON.stringify(np.map((x) => ({ spare: x.spare, l2c: x.l2c, id: x.id }))));
     }
     assert.deepStrictEqual(r.out, [], 'issue 1558: ' + tag + ': a plate\'s +N, status word and dots are whole (the strip of helpers gives way): ' + JSON.stringify(r.out));
     if (want) for (const [word, ...rest] of want) {
@@ -286,11 +284,27 @@ const run = async (ctx, reqs) => {
       await markCheck(w + 'x' + h + ' narrow limit ' + (urgent ? 'failed helper' : 'no failed helper'), {}, { states: 'limit', urgent });
       if (urgent && !MUT) await H.shot(path.join(OUT, `102-arcade-narrow-plate-${w}x${h}.png`), { prep: 'calm', settle: true, tag: '102-arcade', what: 'narrow-plate' });
     }
+    /* the narrow plate with helpers and NO pencil (a session that cannot be renamed; the content box is 106 px, not 96): the same word, mark and name */
+    if (w < 1440) {
+      await loadArcade(w, h, 24, { simfreeze: '1', simhelpers: '3' });
+      await markCheck(w + 'x' + h + ' narrow limit failed helper no pencil', {}, { states: 'limit', urgent: true, nopencil: true });
+    }
     /* issue 1600: the same plate with a pencil and no helpers at all */
     if (w < 1440) {
       await loadArcade(w, h, 24, { simfreeze: '1', simhelpers: '0' });
       await markCheck(w + 'x' + h + ' narrow limit no helpers', {}, { states: 'limit', nohelp: true });
     }
+  }
+
+  /* spec 102 FR-312, the gate (second read of #1599): the narrow-plate rules (the "+N!" mark, the name's failed-or-waiting words) are the arcade's alone. The default and the cave Real office draw plates as narrow as 122 px too (a strip-less fallback, 097 FR-308, at 800x600 with 20 agents the narrowest plate is 86 px): such a plate with a failed helper keeps FR-308's name ". N helpers. Open chat panel." and has no mark. Mutant ARCADE_MUTANT=worldgate: the arcade's rules on every plate of that width (the gate removed). */
+  for (const world of ['photo', 'cave']) {
+    await H.load({ w: 800, h: 600, query: { officeview: 'real', simfreeze: '1', simhelpers: '3', sim: '20', ...(world === 'cave' ? { worldflags: 'cave', world: 'cave' } : {}) }, ready: `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'`, settle: false });
+    await must(`document.querySelectorAll('#stage .ro .ro-plate.has-help').length>=10`, world + ' 800x600: the strip-less plates with helpers are drawn', 15000);
+    if (MUT === 'worldgate') await js(`(()=>{for(const p of document.querySelectorAll('#stage .ro-plate.has-help')){if(p.getBoundingClientRect().width>122.5||!p.querySelector('.ro-help .dot.error,.ro-help .dot.waiting'))continue;p.setAttribute('aria-label',p.getAttribute('aria-label').replace(/(\\. \\d+ helpers?)\\./,'$1, 1 failed or waiting.'));const m=document.createElement('span');m.className='ro-hm';m.textContent='!';p.querySelector('.ro-help').appendChild(m);}})();0`);
+    const g = await js(`[...document.querySelectorAll('#stage .ro-plate.has-help')].filter(p=>p.getBoundingClientRect().width<=122.5&&p.querySelector('.ro-help .dot.error,.ro-help .dot.waiting')).map(p=>({id:p.dataset.id,w:Math.round(p.getBoundingClientRect().width),n:p.querySelectorAll('.ro-help .dot').length,label:p.getAttribute('aria-label')||'',title:p.getAttribute('title')||'',mark:!!p.querySelector('.ro-hm')}))`);
+    assert.ok(g.length >= 1, 'issue 1574: ' + world + ' 800x600: a plate of 122.5 px or less with helpers and a failed helper is drawn (the case for the gate), saw none');
+    assert.ok(g.every((x) => !x.mark && !x.label.includes('failed or waiting') && !x.title.includes('failed or waiting') && /\. \d+ helpers?\. Open chat panel\.$/.test(x.label)), 'issue 1574: ' + world + ' 800x600: a default or cave plate that is as narrow as the arcade\'s keeps FR-308\'s name "N helpers" and has no mark (the narrow-plate rules are the arcade\'s alone): ' + JSON.stringify(g.slice(0, 3)));
+    console.log('[102-arcade] ' + world + ' 800x600 narrow plates with a failed helper', g.length, 'narrowest', Math.min(...g.map((x) => x.w)));
   }
 
   // ---- T213..T215: the status and its motion (FR-260..FR-262); this machine's own setting must not decide them ----

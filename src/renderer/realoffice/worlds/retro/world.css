@@ -87,8 +87,8 @@
 .ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l2>.ro-tk:empty{display:none}
 .ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l1>:not(.ro-help){display:none}
 /* issue 1574 (spec 102 FR-312): on the narrow cabinet's plate with its pencil (content 92 px) the word, the +N and one dot do not fit: the plate's own status dot is not drawn (the word and the plate's border carry the state) and the +N is marked "+3!" when a helper failed or waits; the helpers' dots stay in the plate's markup, in the heads' order, and show whenever the line has room */
-.ro[data-world="retro"] .ro-plate.cab-narrow.has-ren.has-help:not(.lounge) .ro-hm{display:inline}
-.ro[data-world="retro"] .ro-plate.cab-narrow.has-ren:not(.lounge) .ro-l2>.dot{display:none}
+.ro[data-world="retro"] .ro-plate.cab-narrow.has-help:not(.lounge) .ro-hm{display:inline}
+.ro[data-world="retro"] .ro-plate.cab-narrow:is(.has-ren,.has-help):not(.lounge) .ro-l2>.dot{display:none}
 .ro[data-world="retro"] .ro-plate.cab-narrow.has-ren.has-help:not(.lounge) .ro-l2{gap:0} /* the task run (width 0 here) must not take the 4 px gap from the word; its text starts with the " · " */
 /* margin (spec 102 FR-312): 3 px less padding at the left and no 1 px gap between the count and the word win 4 px of the 93 px; the pencil (right end, 20 px of padding) is not moved */
 .ro[data-world="retro"] .ro-plate.cab-narrow.has-ren:not(.lounge){padding-left:var(--s-1)}
