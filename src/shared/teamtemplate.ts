@@ -109,20 +109,36 @@ const FIRST_WORDS: ReadonlySet<string> = new Set(['system', 'developer', 'assist
 const HEX_WORD = /^[0-9a-f]{8,}$/;
 const CLOSERS: ReadonlyMap<string, string> = new Map([['(', ')'], ['[', ']'], ['<', '>'], ['{', '}']]);
 const SPAN_RES: readonly RegExp[] = [/\[[^[\]]*\]/gu, /<[^<>]*>/gu, /\([^()]*\)/gu, /\{[^{}]*\}/gu];
-const LEAD_MARK = /(?:\s+|[>\-*+#]|\d+[.)]|\[[ x]\])/uy;
+const LEAD_MARK = /(?:\s+|[>\-*+#\\_|\u2022\u2013\u2014]|\d+[.)]|\[[ x]\])/uy;
+const QUOTED_KEY = /^["'\u2018\u2019\u201c\u201d]([^"'\u2018\u2019\u201c\u201d]*)["'\u2018\u2019\u201c\u201d]\s*:/u;
+/** look-alike brackets to ASCII for detection (fullwidth and small forms are folded by NFKC already) */
+const BRACKET_MAP: ReadonlyMap<string, string> = new Map([
+  ['\u2039', '<'], ['\u27e8', '<'], ['\u3008', '<'], ['\u00ab', '<'], ['\u203a', '>'], ['\u27e9', '>'], ['\u3009', '>'], ['\u00bb', '>'],
+  ['\u3010', '['], ['\u3014', '['], ['\u27e6', '['], ['\u3011', ']'], ['\u3015', ']'], ['\u27e7', ']'],
+]);
+const BRACKET_RE = /[\u2039\u27e8\u3008\u00ab\u203a\u27e9\u3009\u00bb\u3010\u3014\u27e6\u3011\u3015\u27e7]/gu;
+const ROLE_FOLDED = skeleton('role', { digits: true });
+const BRIEF_FOLDED = skeleton('brief', { digits: true });
 const PHRASES: readonly string[] = ['end of role brief', 'from a team template'];
 
 const wordsOf = (s: string): string[] => s.match(/[\p{L}\p{N}]+/gu) ?? [];
-/** NFKC, the letter part of `skeleton()` (FR-158), then case (2026-11-12: the table maps capitals, so it runs before case is folded); no digit folds */
-const norm = (t: string): string => skeleton(t.normalize('NFKC')).toLowerCase();
+/**
+ * NFKC, then (detection only) the combining marks dropped (NFKD, remove `\p{M}`) and look-alike brackets mapped to ASCII, then the letter part
+ * of `skeleton()` (FR-158: always lower case), then case; no digit folds. NFKC before the mark drop is redundant (NFKD folds the same forms).
+ */
+const norm = (t: string): string => skeleton(t.normalize('NFKC').normalize('NFKD').replace(/\p{M}/gu, '').replace(BRACKET_RE, (c) => BRACKET_MAP.get(c)!)).toLowerCase();
 const refuse = (line: number, reason: FrameReason): FrameResult => ({ ok: false, line, reason });
 
-/** FR-012's frame guard, exactly the plan's algorithm: closed, best effort, behind the nonce of FR-036. Linear in the text. */
-export function frameCheck(text: string): FrameResult {
+/**
+ * FR-012's frame guard, as the plan's algorithm: best effort, behind the nonce of FR-036. Linear in the text, but somewhat MORE than linear on
+ * inputs such as `[a` or `(` + LF repeated (5 MB takes seconds): a caller that does not go through `checkMember` (G7, a setup file) must bound
+ * the text before calling it.
+ */
+export function frameCheck(text: string, opts: { colonRule?: boolean } = {}): FrameResult {
   // pass 1, the whole text: white space and punctuation to one space
   const flat = norm(text).replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
   const w = flat === '' ? [] : flat.split(' ');
-  for (let i = 0; i + 2 < w.length; i++) if (w[i] === 'role' && w[i + 1] === 'brief' && HEX_WORD.test(w[i + 2])) return refuse(0, 'code'); // before any digit fold
+  for (let i = 0; i + 2 < w.length; i++) if (skeleton(w[i], { digits: true }) === ROLE_FOLDED && skeleton(w[i + 1], { digits: true }) === BRIEF_FOLDED && HEX_WORD.test(w[i + 2])) return refuse(0, 'code'); // the hex word is tested unfolded; `role` and `brief` fold on their own
   const folded = ' ' + skeleton(flat, { digits: true }) + ' ';
   for (const p of PHRASES) if (folded.includes(' ' + skeleton(p, { digits: true }) + ' ')) return refuse(0, 'phrase');
 
@@ -141,7 +157,7 @@ export function frameCheck(text: string): FrameResult {
     // 2. comment, code fence, quoted frame key
     if (s.startsWith('<!--')) return refuse(n + 1, 'comment');
     if (s.startsWith('```') || s.startsWith('~~~')) for (const x of wordsOf(s.slice(3))) if (FRAME_WORDS.has(x) || HEX_WORD.test(x)) return refuse(n + 1, 'fence');
-    const key = /^"([^"]*)":/u.exec(s);
+    const key = QUOTED_KEY.exec(s);
     if (key && FRAME_WORDS.has(key[1])) return refuse(n + 1, 'key');
     // 3. leading spans, each to the first closer of its kind, judged one by one
     let q = 0;
@@ -162,11 +178,34 @@ export function frameCheck(text: string): FrameResult {
         if (ws.length > 0 && (ws.every((x) => FRAME_WORDS.has(x)) || FIRST_WORDS.has(ws[0]))) return refuse(n + 1, 'span');
       }
     }
+    // 4 (c). an opener with no closer of its kind before the end of the line is judged from the opener to the end of the line by (a) and (b)
+    if (unclosedFrame(s)) return refuse(n + 1, 'span');
     // 5. a line ending in ':' with two frame words
     const tail = s.trimEnd();
-    if (tail.endsWith(':') && wordsOf(tail).filter((x) => FRAME_WORDS.has(x)).length >= 2) return refuse(n + 1, 'colon');
+    if (opts.colonRule !== false && tail.endsWith(':') && wordsOf(tail).filter((x) => FRAME_WORDS.has(x)).length >= 2) return refuse(n + 1, 'colon');
   }
   return { ok: true };
+}
+
+/** Step 4 (c): each opener after the last closer of its kind, judged to the end of the line (linear: one word list, two pointers). */
+function unclosedFrame(s: string): boolean {
+  let words: { at: number; w: string }[] | undefined;
+  let lastPlain = -1;
+  for (const [open, close] of CLOSERS) {
+    let i = s.indexOf(open, s.lastIndexOf(close) + 1);
+    if (i < 0) continue;
+    if (!words) {
+      words = [...s.matchAll(/[\p{L}\p{N}]+/gu)].map((m) => ({ at: m.index!, w: m[0] }));
+      for (let k = 0; k < words.length; k++) if (!FRAME_WORDS.has(words[k].w)) lastPlain = words[k].at;
+    }
+    let k = 0;
+    for (; i >= 0; i = s.indexOf(open, i + 1)) {
+      while (k < words.length && words[k].at < i) k++;
+      if (k >= words.length) break; // no word after the opener: nothing to judge
+      if (lastPlain < i || FIRST_WORDS.has(words[k].w)) return true;
+    }
+  }
+  return false;
 }
 
 const FRAME_MESSAGE: Readonly<Record<FrameReason, string>> = {
@@ -174,10 +213,10 @@ const FRAME_MESSAGE: Readonly<Record<FrameReason, string>> = {
   comment: 'it starts a comment marker', fence: 'a code fence names a frame word', key: 'it starts like a chat message',
   leading: 'a bracket or tag at the start of the line holds a frame word', span: "a bracket or tag with the word 'system'", colon: 'it ends like a frame heading',
 };
-function frameError(where: string, r: FrameResult): string | undefined {
+function frameError(where: string, r: FrameResult, lines: boolean = true): string | undefined {
   if (r.ok) return undefined;
-  const at = r.line === 0 ? where : `${where}, line ${r.line}`;
-  return `${at}: this ${r.line === 0 ? 'text' : 'line'} looks like the start or end of an instruction frame (${FRAME_MESSAGE[r.reason]}). Reword it.`;
+  const at = r.line === 0 || !lines ? where : `${where}, line ${r.line}`;
+  return `${at}: this ${r.line === 0 || !lines ? 'text' : 'line'} looks like the start or end of an instruction frame (${FRAME_MESSAGE[r.reason]}). Reword it.`;
 }
 
 // ---------------------------------------------------------------------------------------------------------------- member
@@ -187,10 +226,14 @@ type Fields = Map<string, unknown>;
 function fieldsOf(v: unknown): Fields | undefined {
   return typeof v === 'object' && v !== null && !Array.isArray(v) ? new Map(Object.entries(v)) : undefined;
 }
-const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+/** a whole number a clock can hold (createdAt, updatedAt) */
+const isTime = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= Number.MAX_SAFE_INTEGER;
+/** a lone surrogate (not valid text); no `u` flag on purpose */
+const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
 
 /** A required or optional display string (name, role): hidden characters first (`joiners`: role only), then `checkDisplayName`, never empty. */
-function displayText(raw: unknown, max: number, where: string, level: Level, joiners: boolean, required: boolean): { text?: string; error?: string } {
+function displayText(raw: unknown, max: number, where: string, level: Level, joiners: boolean, required: boolean, noun: string = 'name'): { text?: string; error?: string } {
   if (raw === undefined && !required) return {};
   if (typeof raw !== 'string') return { error: `${where}: use 1 to ${max} characters of text.` };
   if (raw.length > max * 4) return { error: `${where}: use 1 to ${max} characters.` };
@@ -199,7 +242,7 @@ function displayText(raw: unknown, max: number, where: string, level: Level, joi
     if (h) return { error: h };
   }
   const c = checkDisplayName(raw, max);
-  if (!c.ok) return { error: `${where}: ${c.error}` };
+  if (!c.ok) return { error: `${where}: ${noun !== 'name' && c.error.startsWith('That looks like a secret') ? `remove the secret from the ${noun}.` : c.error}` };
   if (c.name === '' && required) return { error: `${where}: it cannot be empty.` };
   return c.name === '' ? {} : { text: c.name };
 }
@@ -214,7 +257,11 @@ const lineCount = (s: string): number => {
 };
 const tooLong = (s: string, lim: { chars: number; lines: number }): boolean => s.length > lim.chars * 2 ? true : [...s].length > lim.chars || lineCount(s) > lim.lines;
 
-/** Validates one member and returns a copy with known keys only. `n` is its number (1-based) in messages. */
+/**
+ * Validates one member and returns a copy with known keys only. `n` is its number (1-based) in messages. Lengths are judged before any
+ * costly step (`frameCheck` is linear but somewhat more than linear on `[a` or `(` + LF runs: 5 MB takes seconds); a caller that does not
+ * come through here must bound the text first.
+ */
 export function checkMember(value: unknown, level: Level, n: number = 1): MemberResult {
   const at = `Member ${n}`;
   try {
@@ -230,9 +277,12 @@ export function checkMember(value: unknown, level: Level, n: number = 1): Member
     }
     const name = displayText(f.get('name'), LIMITS.name, `${at}, name`, level, false, true);
     if (name.error) errors.push(name.error);
-    const role = displayText(f.get('role'), LIMITS.role, `${at}, role`, level, true, true);
+    const role = displayText(f.get('role'), LIMITS.role, `${at}, role`, level, true, true, 'role');
     if (role.error) errors.push(role.error);
-    else { const fe = frameError(`${at}, role`, frameCheck(role.text!)); if (fe) errors.push(fe); }
+    else {
+      if (LONE_SURROGATE.test(role.text!)) errors.push(`${at}, role: not valid text (a lone surrogate). Remove it.`);
+      else { const fe = frameError(`${at}, role`, frameCheck(role.text!), false); if (fe) errors.push(fe); }
+    }
 
     const app = f.get('app');
     if (typeof app !== 'string' || !APP_RE.test(app)) errors.push(`${at}, app: use the id of an app.`);
@@ -257,7 +307,7 @@ export function checkMember(value: unknown, level: Level, n: number = 1): Member
       const c = fieldsOf(capRaw);
       const unit = c?.get('unit');
       const amount = c?.get('amount');
-      if (!c || c.size !== 2 || typeof unit !== 'string' || !CAP_UNITS.has(unit) || !isInt(amount)) errors.push(`${at}, cap: use { unit, amount }.`);
+      if (!c || c.size !== 2 || typeof unit !== 'string' || !CAP_UNITS.has(unit) || !isNum(amount)) errors.push(`${at}, cap: use { unit, amount }.`);
       else {
         const a = parseCapIn(unit as 'aiu' | 'usd', amount);
         if (a === undefined) errors.push(`${at}, cap: the amount is outside the allowed range.`);
@@ -280,17 +330,23 @@ export function checkMember(value: unknown, level: Level, n: number = 1): Member
       else if (rawBrief.length > lim.chars * 2) errors.push(`${at}, brief: at most ${lim.chars.toLocaleString('en-US')} characters and ${lim.lines} lines.`);
       else {
         const lf = rawBrief.replace(/\r\n?/g, '\n');
-        const h = hiddenError(lf, `${at}, brief`, true, true);
+        const h = LONE_SURROGATE.test(lf) ? `${at}, brief: not valid text (a lone surrogate). Remove it.` : hiddenError(lf, `${at}, brief`, true, true);
         if (h) errors.push(h);
         else if (tooLong(lf, lim)) errors.push(`${at}, brief: at most ${lim.chars.toLocaleString('en-US')} characters and ${lim.lines} lines.`);
         else {
           const masked = maskOutgoing(lf).text;
           const fe = frameError(`${at}, brief`, frameCheck(lf)) ?? (masked === lf ? undefined : frameError(`${at}, brief`, frameCheck(masked)));
-          if (fe) errors.push(fe);
+          // the text the agent receives: two fields can be joined into one forged marker
+          const joined = fe ?? (role.error ? undefined : frameError(`${at}, role and brief`, frameCheck(`Role: ${role.text}. ${masked}`, { colonRule: false }), false));
+          if (joined) errors.push(joined);
           else if (tooLong(masked, lim)) errors.push(`${at}, brief: at most ${lim.chars.toLocaleString('en-US')} characters and ${lim.lines} lines.`);
           else if (masked.trim() !== '') brief = masked;
         }
       }
+    }
+    if (errors.length === 0 && brief === undefined && role.text !== undefined) {
+      const only = frameError(`${at}, role`, frameCheck(`Role: ${role.text}.`, { colonRule: false }), false); // no brief: the agent still gets the role line
+      if (only) errors.push(only);
     }
     if (errors.length > 0) return { ok: false, errors };
 
@@ -324,15 +380,15 @@ export function checkTeamTemplate(value: unknown, level: Level): TemplateResult 
     const errors: string[] = [];
     const name = displayText(f.get('name'), LIMITS.templateName, 'Template name', level, false, true);
     if (name.error) errors.push(name.error);
-    const desc = displayText(f.get('description'), LIMITS.description, 'Description', level, false, false);
+    const desc = displayText(f.get('description'), LIMITS.description, 'Description', level, false, false, 'description');
     if (desc.error) errors.push(desc.error);
     let id: string | undefined; let origin: 'own' | 'imported' | undefined; let createdAt: number | undefined; let updatedAt: number | undefined;
     if (!imported) {
       const i = f.get('id'); const o = f.get('origin'); const c = f.get('createdAt'); const u = f.get('updatedAt');
       if (i !== undefined) { if (typeof i === 'string' && TEMPLATE_ID_RE.test(i)) id = i; else errors.push('Template id: not valid.'); }
       if (o !== undefined) { if (o === 'own' || o === 'imported') origin = o; else errors.push('Template origin: use own or imported.'); }
-      if (c !== undefined) { if (isInt(c) && c >= 0) createdAt = c; else errors.push('Template createdAt: not valid.'); }
-      if (u !== undefined) { if (isInt(u) && u >= 0) updatedAt = u; else errors.push('Template updatedAt: not valid.'); }
+      if (c !== undefined) { if (isTime(c)) createdAt = c; else errors.push('Template createdAt: not valid.'); }
+      if (u !== undefined) { if (isTime(u)) updatedAt = u; else errors.push('Template updatedAt: not valid.'); }
     }
     const list = f.get('members');
     if (!Array.isArray(list) || list.length < 1) { errors.push('Members: add at least one member.'); return none(errors, [], ignored); }
