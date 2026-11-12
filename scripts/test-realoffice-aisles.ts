@@ -220,10 +220,16 @@ for (const [W, H] of SIZES) for (const dh of [0, 31]) for (const n of [1, 2, 3, 
   const cut = [...parts].filter(([id, c]) => c > 1 && (sizes.get(id) || 0) <= 4);
   if (cut.length) split.push(`${n} in ${f} at ${W}x${H - dh}`);
   /* spec 102 T309 (issue #1590): three rows of the narrowest cabinet need 558 px under the lowest lobby (96 + 20 lane) and 8 px of padding: 682 px. 10 agents in 3 or 4 folders at 1280x800 are whole from 682 (the lobby then
-     under its 128 px, owner question on the PR) and no longer split at the measured 697. The one gap left is the 31 px strip at 1280x800 (666 px, no layout-only fix: the lend runs only for a plan that scrolls, a split plan does not). */
+     under its 128 px, owner decision, spec 102 2026-11-12) and no longer split at the measured 697. The one gap left is the 31 px strip at 1280x800 (666 px, no layout-only fix: the lend runs only for a plan that scrolls, a split plan does not). */
   const gap = n === 10 && f >= 3 && W === 1280 && dh === 31;
   if (n <= 10 && !gap) assert.deepStrictEqual(cut, [], `${n} in ${f} at ${W}x${H - dh}: a folder of 4 or fewer is split`);
   if (n <= 10 && gap) assert.ok(cut.length > 0 && !L.scroll, `${n} in ${f} at ${W}x${H - dh}: the named gap (a split folder, no scroll) moved: cut ${cut.length}, scroll ${L.scroll}`);
+  if (n <= 10 && gap) {
+    /* the strip stays where dropping it would not keep the folders whole (the lowest-lobby hall needs 682 px, this room has 666): a helper each keeps the strip row */
+    const mg = model(n, f); for (const fo of mg.folders) for (const a of fo.agents) a.helpers = 1;
+    const G1 = aislesLayout(mg, { w: W, h: H - dh }, META, SIGNS(f));
+    assert.ok(G1.helpRows === 1 && !G1.scroll, `${n} in ${f} at ${W}x${H - dh} with a helper each: the strip stays where dropping it would not keep the folders whole (strip rows ${G1.helpRows}, scroll ${G1.scroll})`);
+  }
   if (n === 10 && f >= 3 && W === 1280 && dh === 0) {
     const whole = (h: number): boolean => { const M = aislesLayout(model(n, f), { w: W, h }, META, SIGNS(f)), c = new Map<string, number>(); for (const z of M.zones) c.set(z.id, (c.get(z.id) || 0) + 1); return ![...c.values()].some((v) => v > 1) && !M.scroll; };
     assert.ok(!whole(681) && whole(682), `${n} in ${f} at ${W}: the folders are whole from 682 px and not at 681 (the threshold moved)`);
