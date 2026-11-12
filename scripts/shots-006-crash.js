@@ -15,7 +15,7 @@
  * The simulator bridge counts what the card makes it do (window.__durbarSimCrash, simcrash only): no prompt is ever sent and no
  * permission mode is changed (FR-043/FR-044), each session keeps its mode (a Read-only and an Ask first one among them), only the pressed rows
  * wake, Resume all wakes one session at a time (each simulated wake takes 150 ms), Dismiss wakes nothing, and when the card goes
- * focus moves to the desk of its first session, not to <body>.
+ * focus moves to the desk of its first session, not to <body>. In the Real office (DRIVER_WORLD=retro: the arcade) it moves to that session's plate (issue #1567).
  * Screenshots: 006-crash-{card,pick}-<w>x<h>.png
  */
 const assert = require('assert');
@@ -151,6 +151,31 @@ module.exports = async (ctx) => {
     assert.ok(['sim-1', 'sim-2'].every((id) => sess(p, id).lazy && sess(p, id).resumeLast), `${w}: the dismissed sessions are still lazy and resumable`);
     nothingSent(p, w, 'Dismiss');
     assert.ok(await noNoteIn('sim-1'), `${w}: a dismissed session was not resumed by the card (no crash note)`);
+
+    // ---- spec 097 (issue #1567): the Real office draws plates, not desks; after the card closes focus goes to the first session's plate
+    const REAL = `!!document.querySelector('#stage .ro .ro-plate[data-id="sim-1"]')&&document.getElementById('stage').dataset.d==='real'`;
+    const focusedPlate = () => js(`(()=>{const a=document.activeElement;return a&&a.classList&&a.classList.contains('ro-plate')?a.dataset.id:(a===document.body?'body':String(a&&(a.tagName+'#'+a.id)))})()`);
+    const plateFocused = `(()=>{const a=document.activeElement;return !!a&&a.classList.contains('ro-plate')&&a.dataset.id==='sim-1'})()`;
+    for (const [how, sel, count] of [['Resume all', '#crashStrip [data-cr="all"]', '3'], ['Dismiss', '#crashStrip [data-cr="close"]', '2']]) {
+      await H.load({ w, h, query: { simcrash: count, officeview: 'real' }, ready: REAL, focus: true });
+      await H.calm();
+      assert.ok(await until(`(()=>{const s=document.getElementById('crashStrip');return !!s&&!s.hidden&&!!s.querySelector('[data-cr="all"]')})()`, 10000), `${w}: real: the card shows`);
+      await click(sel);
+      assert.ok(await until(`document.getElementById('crashStrip').hidden`, 10000), `${w}: real: ${how} closes the card`);
+      assert.ok(await until(plateFocused, 4000), `${w}: real: after ${how} focus goes to the first session's plate, not the Office button (${await focusedPlate()})`);
+    }
+
+    // the first session's plate is not shown (display:none, as a plate that is not drawn or not reachable): focus goes to the next shown plate, and when none is shown to the Office button, never to <body>
+    for (const [what, hide, want] of [['the first plate is hidden', ['sim-1'], 'sim-2'], ['every plate is hidden', ['sim-1', 'sim-2', 'sim-3'], 'vOffice']]) {
+      await H.load({ w, h, query: { simcrash: '3', officeview: 'real' }, ready: REAL, focus: true });
+      await H.calm();
+      assert.ok(await until(`(()=>{const s=document.getElementById('crashStrip');return !!s&&!s.hidden&&!!s.querySelector('[data-cr="all"]')})()`, 10000), `${w}: real: ${what}: the card shows`);
+      await js(`${jsLiteral(hide)}.forEach(id=>{const p=document.querySelector('#stage .ro-plate[data-id="'+id+'"]');if(p)p.style.display='none';})`);
+      await click('#crashStrip [data-cr="close"]');
+      assert.ok(await until(`document.getElementById('crashStrip').hidden`, 10000), `${w}: real: ${what}: Dismiss closes the card`);
+      const ok = `(()=>{const a=document.activeElement;return !!a&&(a.dataset.id===${jsLiteral(want)}||a.id===${jsLiteral(want)})})()`;
+      assert.ok(await until(ok, 4000), `${w}: real: ${what}: focus goes to ${want}, never <body> (${await focusedPlate()})`);
+    }
   }
   console.log('shots-006-crash: PASS');
 };
