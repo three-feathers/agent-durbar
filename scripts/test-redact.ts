@@ -43,7 +43,7 @@ const env = {
     return undefined;
   };
   /** The desk's mask (`DurbarSafeText.maskRaw`: Markdown escapes undone, then `redact`): the activity row's last line and the desk read the same text, so they must agree on whether a secret shows. */
-  const ST = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string; maskLabel(t: string, k: string, m: Record<string, (s: string) => string>): string };
+  const ST = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string; maskLabel(t: string, k: string, m: Record<string, (s: string) => string>): string; plainKeep(t: string, codeWord?: string): string };
   /** The approval card (`DurbarLiveAct.permText`, shell kind) and its label mask (`maskLabel`, run kind): the window's own escaped-run step (FR-180) in front of the shared masks. */
   const LA = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'liveact.js')) as { permText(t: string, k: string, m: Record<string, (s: string) => string>): { text: string } };
   const cardMask = (env: Record<string, string>) => ({ redact: (t: string) => redact(t, env), cmd: (t: string) => maskSecretCommand(t, env), url: (t: string) => maskSecretUrl(t, env) });
@@ -268,6 +268,50 @@ const env = {
     ] as const) {
       assert.strictEqual(redact(t, {}), 'echo [redacted]', `#1585 round 6 maskRaw (${what}): redact hides it`);
       assert.strictEqual(ST.maskRaw(t, (x) => redact(x, {})), 'echo [redacted]', `#1585 round 6 maskRaw (${what}): maskRaw hides the tail too`);
+    }
+    // round 7 (review of PR 1585): a backslash-free text is masked as in round 5, byte for byte; a frozen reference of that path (unescape is a no-op without a backslash: mask, and the
+    // Markdown-split second pass with plainKeep and the run check), so the gate in maskRaw0 cannot be dropped silently (always masking the raw text first changes these outputs)
+    {
+      const SPLIT5 = /[*`~[\]]/;
+      const RUN5 = /[A-Za-z0-9_\-.+/=:@%]{12,}/g;
+      const reEsc5 = (t: string): string => t.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+      const round5 = (u: string, red: (t: string) => string): string => {
+        const m1 = red(u);
+        if (!SPLIT5.test(u)) return m1;
+        const k = ST.plainKeep(u);
+        let m = red(k);
+        const seen = new Set<string>(), found: string[] = [];
+        for (const r of u.match(RUN5) ?? []) { if (seen.has(r)) continue; seen.add(r); if (red(r) !== r) found.push(r); }
+        found.sort((a, b) => b.length - a.length);
+        for (const r of found) m = m.replace(new RegExp(reEsc5(r) + '[A-Za-z0-9_-]*', 'g'), () => '[redacted]');
+        return m !== k ? m : m1;
+      };
+      const red0 = (t: string) => redact(t, {});
+      const G = 'ghp_' + B36;
+      for (const [t, want] of [
+        ['**bold**\necho\n' + G + '\n[link](u)', 'bold echo [redacted] link'],
+        ['see `' + G + '` and ~x~', 'see [redacted] and x'],
+        ['Token=' + G + ' [redacted] *done*', 'Token=[redacted] [redacted] done'],
+        ['plain ' + G + ' text', 'plain [redacted] text'],
+      ] as const) {
+        assert.strictEqual(round5(t, red0), want, `#1585 round 7 gate: the frozen reference gives the round-5 output (${t.slice(0, 12)})`);
+        assert.strictEqual(ST.maskRaw(t, red0), want, `#1585 round 7 gate: a backslash-free text is masked as in round 5 (${t.slice(0, 12)})`);
+      }
+      let seed5 = 0x1585, split = 0;
+      const rnd5 = (n: number): number => { seed5 = (Math.imul(seed5, 1103515245) + 12345) & 0x7fffffff; return (seed5 >>> 16) % n; };
+      const AN5 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+      const b5 = (n: number): string => Array.from({ length: n }, () => AN5[rnd5(62)]).join('');
+      const toks5 = [() => 'ghp_' + b5(36), () => 'sk-proj-' + b5(40), () => 'github_pat_' + b5(22) + '_' + b5(59), () => 'xoxb-' + b5(12) + '-' + b5(24)];
+      const words5 = ['echo', 'printf', '"x"', 'token=', 'Authorization: Bearer', '**bold**', '`code`', '[link](u)', '_em_', 'a/b/c', 'k=v', '--token', 'Done.', '{"a":1}', 'x~y', '*', '[redacted]'];
+      for (let i = 0; i < 2000; i++) {
+        const parts: string[] = [];
+        const k = 1 + rnd5(8);
+        for (let j = 0; j < k; j++) parts.push(rnd5(3) === 0 ? toks5[rnd5(toks5.length)]() : words5[rnd5(words5.length)]);
+        const t = parts.join([' ', '', '\n', ', '][rnd5(4)]);
+        if (SPLIT5.test(t) && round5(t, red0) !== red0(t)) split++;
+        assert.strictEqual(ST.maskRaw(t, red0), round5(t, red0), `#1585 round 7 gate: a backslash-free text is masked as in round 5 (fixture case ${i}: ${JSON.stringify(t).slice(0, 80)})`);
+      }
+      assert.ok(split > 300, `#1585 round 7 gate: the fixture reaches the plain-kept second pass (${split} cases)`);
     }
     {
       const t = '[redacted]\\=ghp\\_QwsVGBRd4beVAmTRtEBcz0lYUNK\\@XPHikoiuV';

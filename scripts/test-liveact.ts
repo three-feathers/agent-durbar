@@ -473,6 +473,15 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   eq(L.toolName(TK, { redact: () => TK + ' ' }), 'tool', 'any change at all: tool');
   eq(L.toolName(TK, { redact: () => undefined as unknown as string }), 'tool', 'a mask answering no string: tool');
   eq(L.toolName('x'.repeat(1000001) + TK, hm), 'tool', 'over the 1,000,000-character cut of redact: tool, never the raw token');
+  // spec 012 FR-181 (review of PR 1585, round 7): a name over 256 characters is the neutral word before any mask runs (fail closed; real names are under 30 characters)
+  eq(L.toolName('\\a'.repeat(150), hm), 'tool', '#1585 round 7 toolName: a name over 256 characters is the neutral word');
+  eq(L.toolName('a'.repeat(256), hm), 'a'.repeat(256), '#1585 round 7 toolName: a name of 256 characters is still shown');
+  eq(L.toolName('[redacted:'.repeat(4000) + ']a\\b', hm), 'tool', '#1585 round 7 toolName: a 40,000-character [redacted: name is the neutral word');
+  {
+    const t0 = Date.now(), r = L.toolName('\\a'.repeat(500_000), hm), ms = Date.now() - t0;
+    eq(r, 'tool', '#1585 round 7 toolName: a 1 MB backslash-dense name is the neutral word');
+    ok(ms < 1000, '#1585 round 7 toolName: a 1 MB backslash-dense name is answered before any mask runs (generous limit 1,000 ms; took ' + ms + ' ms)');
+  }
   eq(L.phrase({ kind: 'tool', tool: TK, label: '' }, { redact: () => '[redaction failed]' }), 'Using tool', 'phrase with a failed mask: Using tool');
   // the chat: every surface that names a tool calls the one function
   const app = fs.readFileSync(path.join(R, 'app.js'), 'utf8').replace(/\r\n/g, '\n');
