@@ -31,6 +31,7 @@
 const assert = require('assert');
 const path = require('path');
 const { helpers, waits, jsLiteral } = require('./driver-helpers');
+const dragFocus = require('./drag-focus');
 
 const MUTANT = process.env.DRAG_MUTANT || '';
 const SIZES = [[1440, 900], [1280, 800]];
@@ -168,13 +169,22 @@ module.exports = async (ctx) => {
     const O2 = await orderOf(A), away2 = await awayIds(), k2 = O2.findIndex((id, i) => i + 1 < O2.length && !away2.includes(id)), docBefore = JSON.stringify(await js(`window.__durbarSimUi.order.get().desks[${jsLiteral(pa)}]||null`));
     if (MUTANT === 'away') { await js(`window.__durbarSimUi.pinAt(${jsLiteral(O2[k2])},'library')`); await must(`window.__durbarSimUi.realLayout().zones.some(z=>z.desks.some(d=>d.id===${jsLiteral(O2[k2])}&&d.away))`, 'the mutant desk is drawn away'); }
     await H.pointerStep('check-097-drag', `${tag} drag with a status change`, async () => {
+      await js(dragFocus.RECORDER);
       await drag(await grab(plateSel(O2[k2])), await center(plateSel(O2[k2 + 1])), {
         mid: async () => {
           const on = await lifted(), awayNow = on ? [] : await js(`window.__durbarSimUi.awayIds()`);
           assert.strictEqual(on, true, `${tag}: the drag started before the status change (dragging ${O2[k2]}; away now: ${awayNow})`);
+          /* diagnostic only (scripts/drag-focus.js): hasFocus before and after the hold; the recorder was installed before the drag started */
+          const focusBefore = await js(`document.hasFocus()`);
           await js(`window.__durbarSimUi.crowd('library',1,${jsLiteral(0)})`);
           await ctx.sleep(300);
-          assert.strictEqual(await lifted(), true, `${tag}: a status change does not end the drag`);
+          const stillLifted = await lifted(), focusAfter = await js(`document.hasFocus()`), focus = { focusBefore, focusAfter, events: await js(`window.__dragFocusLog||[]`) };
+          try {
+            assert.strictEqual(stillLifted, true, `${tag}: a status change does not end the drag`);
+          } catch (e) {
+            console.log(dragFocus.focusLine(tag, focus));
+            throw dragFocus.labelFocus(e, focus);
+          }
           assert.ok(await loose() >= 2, `${tag}: and the plates stay where the drag put them (no repaint under it)`);
         },
       });
