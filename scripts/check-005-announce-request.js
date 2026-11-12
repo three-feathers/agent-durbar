@@ -66,6 +66,14 @@ module.exports = async (ctx) => {
     // ---- 4. FR-237 (issue #1582): a spending-limit card and a plan card that arrive in the open chat are said, once each ----
     const said = (re) => js(`window.__seq.filter(x=>new RegExp(${jsLiteral(re)},'i').test(x[1])).length`);
     const quiet = async () => { await js(`window.__seq.length=0;0`); await emit({ type: 'status', status: 'idle' }); await until(`document.getElementById('srAnnounce').textContent===''||window.__seq.length>0`, 8000); await js(`window.__seq.length=0;0`); };
+    // After a repeated event: one card, one line. A status-priority sentinel is dropped while a request line waits in the 60 ms window and written
+    // when none does, so the wait ends on the sentinel (nothing was waiting) or on a second request line (the repeat said it again): no fixed delay.
+    const repeatSaysNothing = async (re, card, what) => {
+      await js(`window.__durbarSimUi.announce('sentinel-after-repeat')`);
+      assert.ok(await until(`window.__seq.some(x=>x[1]==='sentinel-after-repeat')||window.__seq.filter(x=>new RegExp(${jsLiteral(re)},'i').test(x[1])).length>1`, 8000), `${w}: after the repeated ${what} event #srAnnounce took the sentinel or a second line`);
+      assert.strictEqual(await js(`document.querySelectorAll(${jsLiteral(card)}).length`), 1, `${w}: a repeated ${what} event builds no second card`);
+      assert.strictEqual(await said(re), 1, `${w}: a repeated ${what} event says nothing again (history ${jsLiteral(await seq())})`);
+    };
     await quiet();
     await emit({ type: 'status', status: 'working', intent: 'Working' });
     await emit({ type: 'limit', phase: 'exhausted', requestId: 'l1-' + w, maxAiCredits: 50, usedAiCredits: 50 });
@@ -74,6 +82,7 @@ module.exports = async (ctx) => {
     assert.ok(/reached its spending limit: .*Choose in its card/.test(await end()), `${w}: limit card in the open chat: #srAnnounce ends on the limit line (ends on ${jsLiteral(await end())}; history ${jsLiteral(await seq())})`);
     assert.strictEqual(await said('spending limit'), 1, `${w}: limit card in the open chat is said once (history ${jsLiteral(await seq())})`);
     await emit({ type: 'limit', phase: 'exhausted', requestId: 'l1-' + w, maxAiCredits: 50, usedAiCredits: 50 }); // the same request again: nothing new
+    await repeatSaysNothing('spending limit', '#chat .note.limit', 'limit');
     await emit({ type: 'limit', phase: 'resolved', requestId: 'l1-' + w, action: 'unset' });
 
     await quiet();
@@ -84,6 +93,7 @@ module.exports = async (ctx) => {
     assert.ok(/proposes a plan\. Approve, revise or reject it in its card/.test(await end()), `${w}: plan card in the open chat: #srAnnounce ends on the plan line (ends on ${jsLiteral(await end())}; history ${jsLiteral(await seq())})`);
     assert.strictEqual(await said('proposes a plan'), 1, `${w}: plan card in the open chat is said once (history ${jsLiteral(await seq())})`);
     await emit({ type: 'plan', phase: 'proposed', requestId: 'p1-' + w, text: 'Step one: read the files.' }); // repeated: no second card, nothing said
+    await repeatSaysNothing('proposes a plan', '#chat .plan-card', 'plan');
     await emit({ type: 'plan', phase: 'resolved', requestId: 'p1-' + w, action: 'reject' });
   }
   // ---- 5. no second line: a limit that arrives with the chat closed says nothing then, and the open-chat line says it once when the chat opens.
@@ -99,16 +109,33 @@ module.exports = async (ctx) => {
     const seq = () => js(`window.__seq.filter(x=>x[1]).slice()`);
     const settled = (src) => until(`(()=>{const q=window.__seq,re=new RegExp(${jsLiteral(src)});return q.some(x=>re.test(x[1]))&&performance.now()-window.__t0-q[q.length-1][0]>150;})()`, 8000);
     const said = (re) => js(`window.__seq.filter(x=>new RegExp(${jsLiteral(re)},'i').test(x[1])).length`);
+    const end = () => js(`document.getElementById('srAnnounce').textContent`);
     await H.key('Escape');
     assert.ok(await until(`!document.body.classList.contains('panel-open')`, 8000), `${w}: the chat closes`);
-    await js(`window.__seq.length=0;window.__t1=performance.now();0`);
+    await js(`window.__seq.length=0;0`);
     await emit({ type: 'limit', phase: 'exhausted', requestId: 'l2-' + w, maxAiCredits: 50, usedAiCredits: 50 });
-    assert.ok(await until(`performance.now()-window.__t1>300`, 8000), `${w}: 300 ms passed`);
+    // the limit card's break line is a status said right after the card is built (startCoffee): once it is in, a request line said on arrival would be in too
+    assert.ok(await until(`window.__seq.some(x=>x[1])`, 8000), `${w}: the arrival said its break line`);
     assert.strictEqual(await said('spending limit'), 0, `${w}: limit card with the chat closed says nothing on arrival (history ${jsLiteral(await seq())})`);
     const re = await H.openSimAgent(`a=>a.id===${jsLiteral(A)}`, '#msgInput');
     assert.ok(re.ok, `${w}: the chat opens again ${jsLiteral(re.seen)}`);
     assert.ok(await settled('[Ss]pending limit'), `${w}: opening the chat says the limit and #srAnnounce settles (history ${jsLiteral(await seq())})`);
     assert.strictEqual(await said('spending limit'), 1, `${w}: limit card said once in all (arrival and open) (history ${jsLiteral(await seq())})`);
+    // ---- 5b. ANOTHER agent's chat is open (Auto-follow off): the card is named, not "in its card", said once ----
+    await emit({ type: 'limit', phase: 'resolved', requestId: 'l2-' + w, action: 'unset' });
+    const B = await H.openSimAgent(`a=>!a.parent&&a.live&&a.info&&a.id!==${jsLiteral(A)}&&(a.state==='idle'||a.state==='done')`, '#msgInput');
+    assert.ok(B.ok, `${w}: another idle agent's chat opens ${jsLiteral(B.seen)}`);
+    await js(`window.__seq.length=0;0`);
+    await emit({ type: 'limit', phase: 'exhausted', requestId: 'l3-' + w, maxAiCredits: 50, usedAiCredits: 50 });
+    assert.ok(await settled('reached its spending limit'), `${w}: another chat open: the limit is announced and #srAnnounce settles (history ${jsLiteral(await seq())})`);
+    assert.ok(/reached its spending limit\. Open its chat to choose\.$/.test(await end()) && !/in its card/.test(await end()), `${w}: another chat open: the limit line sends you to its chat, never "in its card" (ends on ${jsLiteral(await end())})`);
+    assert.strictEqual(await said('spending limit'), 1, `${w}: another chat open: the limit is said once (history ${jsLiteral(await seq())})`);
+    await js(`window.__seq.length=0;0`);
+    await emit({ type: 'plan', phase: 'proposed', requestId: 'p3-' + w, text: 'Step one: read the files.' });
+    assert.ok(await settled('proposes a plan'), `${w}: another chat open: the plan is announced and #srAnnounce settles (history ${jsLiteral(await seq())})`);
+    assert.ok(/proposes a plan\. Open its chat to review it\.$/.test(await end()) && !/in its card/.test(await end()), `${w}: another chat open: the plan line sends you to its chat, never "in its card" (ends on ${jsLiteral(await end())})`);
+    assert.strictEqual(await said('proposes a plan'), 1, `${w}: another chat open: the plan is said once (history ${jsLiteral(await seq())})`);
   }
+  // Auto-follow on with another chat open is driven in check-auto-follow (the notice says it, the arrival adds no line).
   console.log('[announce-request] PASS');
 };

@@ -252,6 +252,15 @@ module.exports = async (ctx) => {
     await stays(`!!document.querySelector('#chat .q-opts')&&!document.querySelector('#chat .q-opts button[disabled]')`, `${tag}: Enter and Space on the title answered nothing`);
     await E(Q, { type: 'question', phase: 'cancelled', requestId: 'q-af', reason: 'stop' });
     await mclick('#backBtn'); await ok(`!document.body.classList.contains('panel-open')`, `${tag}: the Office button closes the chat`);
+    // ---- a limit for a followed agent while another chat is open by hand: Auto-follow holds the arrival (nothing acted since the switch), so the card says its own line once and no notice follows (spec 005 FR-237)
+    await sendQuiet(Q, 'hello limit elsewhere');
+    await openChat(B);
+    await E(Q, { type: 'limit', phase: 'exhausted', requestId: 'lim-af2', maxAiCredits: 30, usedAiCredits: 30 });
+    const nameBnow = await nameOf(B);
+    await ok(`window.__ann.includes(${jsLiteral(nameQ + ' reached its spending limit. Open its chat to choose.')})`, `${tag}: a limit in another chat is said, naming the chat to open`);
+    await stays(`document.getElementById('panelTitle').textContent===${jsLiteral(nameBnow)}&&!window.__ann.some(t=>/reached its limit\\. Its chat is open/.test(t)&&t.indexOf(${jsLiteral(nameQ)})===0)`, `${tag}: held: the chat does not move and no notice follows`, 1500);
+    assert.strictEqual((await anns()).filter((t) => t === nameQ + ' reached its spending limit. Open its chat to choose.').length, 1, `${tag}: said once: ${JSON.stringify(await anns())}`);
+    await mclick('#backBtn'); await ok(`!document.body.classList.contains('panel-open')`, `${tag}: the Office button closes the chat`);
     console.log(`[follow] ${tag} on, send, arrivals, queue ok`);
   }
 
