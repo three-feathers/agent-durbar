@@ -116,11 +116,11 @@ Nothing existing creates several sessions at once or stores reusable agent setup
 
 The nonce of FR-036 is the real protection; this guard is best effort and **closed** (no more rules). One function `frameCheck(text)` in `src/shared/teamtemplate.ts`, run on every role and brief, own or imported; T004 tests it, T032 gives it `skeleton()`.
 
-**Normalisation** `norm(t)`: NFKC, then the letter part of `skeleton()` (FR-158), then case folding (2026-11-12: the table maps capitals, so it runs before case is folded). No digit folds here.
+**Normalisation** `norm(t)`: NFKC, then the letter part of `skeleton()` (FR-158: NFKD, the letter table, lower case, the letter table again, lower case again, NFC; 2026-11-12). No digit folds here.
 
 **Pass 1, whole text.** `t = norm(text)` with every run of white space (LF and TAB included) **and punctuation** (anything that is not `\p{L}` or `\p{N}`) replaced by one space, so `End of role-brief 1a2b3c4d` reads `end of role brief 1a2b3c4d`.
 1. Before any digit fold: refuse when the words `role brief` are followed by a hex-like word (`^[0-9a-f]{8,}$`).
-2. Then spec 109 FR-076's folds (`0`->`o`, `1`->`l`, `rn`->`m`; `I` is already `i`, then `l` by the table) on the text and on each phrase alike; refuse when the text holds the phrase `end of role brief` or `from a team template` as whole words. No other phrase: `keep this role brief short` and `Tests written by you must pass.` pass.
+2. Then spec 109 FR-076's folds (`0`->`o`, `1`->`l`, `rn`->`m`, and `i`->`l`, which is a digit fold, not part of the table) on the text and on each phrase alike; refuse when the text holds the phrase `end of role brief` or `from a team template` as whole words. No other phrase: `keep this role brief short` and `Tests written by you must pass.` pass.
 
 **Pass 2, each line** (line breaks kept; `l = norm(line)`; line number reported):
 1. Strip leading marks, repeatedly: white space (TAB included), `>`, `-`, `*`, `+`, `#`, a list number (`1.`, `1)`), a checkbox `[ ]` or `[x]`.
