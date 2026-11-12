@@ -9,7 +9,7 @@
  * read once the colour has stopped changing) text is >= 4.5:1 on its own background and the background is not the panel's; hovered differs from rest;
  * a clone with the disabled attribute keeps the disabled look of every primary (a background that is not the rest red, dashed border), and its rendered
  * contrast is printed, not asserted (a disabled control is exempt and the dialog fades it).
- * DANGER_MUTANT=flash adds a hover animation that goes through black; =old deletes the themed danger rules (main's cascade); =unguard drops the `:not(:disabled...)` guard from the rest rule (a disabled
+ * DANGER_MUTANT=pointer leaves the pointer over the button (the pointerOff call is skipped); =flash adds a hover animation that goes through black; =old deletes the themed danger rules (main's cascade); =unguard drops the `:not(:disabled...)` guard from the rest rule (a disabled
  * button turns red); =nohover deletes only the hover rule; =blackmix puts the old black mix back into every hover rule. Each must fail with its own label.
  * DANGER_REPORT=1 fails at the end on purpose, so the suite prints every measured line.
  * OUT=dir (optional) also saves 052-danger-btn-<look>-<size>.png
@@ -60,6 +60,15 @@ module.exports = async (ctx) => {
       await js(`document.getElementById('endAllBtn').click()`);
       assert.ok(await until(`!!document.querySelector(${jsLiteral(SEL)})`, 8000), `${tag}: the End all sessions dialog opened`);
       assert.strictEqual(await js(`document.querySelector(${jsLiteral(SEL)}).textContent.trim()`), 'End all sessions', `${tag}: the red button is the confirm button`);
+      // the pointer of the previous pass can still be over the new dialog's button: the rest is measured with it moved off (spec 008 FR-031: the shared helper)
+      if (process.env.DANGER_MUTANT === 'pointer') {
+        const q = await js(`(()=>{const r=document.querySelector(${jsLiteral(SEL)}).getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
+        H.wc().sendInputEvent({ type: 'mouseMove', x: q.x, y: q.y });
+        await until(`document.querySelector(${jsLiteral(SEL)}).matches(':hover')`, 3000);
+        console.log('[danger] mutant pointer: the pointerOff call is skipped, the pointer stays over the button');
+      }
+      const hoveredBefore = await H.pointerOff('.dlg', '.btn', { stay: process.env.DANGER_MUTANT === 'pointer' });
+      assert.deepStrictEqual(hoveredBefore, [], `${tag}: the pointer is off the button before rest is measured: still hovered ${JSON.stringify(hoveredBefore)}`);
       await H.settle();
       const line = (state, m) => console.log(`[danger] ${tag} ${state}: text rgb(${m.fg}) on rgb(${m.bg}) = ${m.ratio}:1 rendered (opacity ${m.op}, ${m.border} border; ${m.css}), panel rgb(${m.panel})`);
       const check = (state, m) => {
