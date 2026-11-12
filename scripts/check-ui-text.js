@@ -412,6 +412,18 @@ module.exports = async (ctx) => {
     opened.add(s.name);
     await settle(3000);
     await until(`[...document.querySelectorAll('.dlg,.dlg-ov,.toast')].every(e=>e.getAnimations().every(a=>a.playState!=='running'))`, 2000); // the open animation (dlgin scales the box)
+    /* spec 008 FR-214: the real pointer rests where the window sits on the screen (the helpers click by script and never move it), so a control under it reads in its :hover colours. Move it off the page before the read,
+     * wait until no control of the surface matches :hover, and report one that still does. UITEXT_MUTANT=hover leaves the pointer on the first control instead (it must fail with "is hovered at the read"). */
+    const CONTROLS = s.roots.map((r) => `${jsLiteral(r)}`).join(',');
+    const hovered = () => js(`(()=>{const out=[];for(const r of [${CONTROLS}]){for(const root of document.querySelectorAll(r))for(const e of root.querySelectorAll('button,a,input,select,textarea,[role=button],[role=menuitem]'))if(e.matches(':hover')&&e.getClientRects().length)out.push((e.id?'#'+e.id:e.tagName.toLowerCase()+'.'+String(e.className).trim().replace(/ +/g,'.'))+' "'+(e.textContent||e.value||'').trim().slice(0,30)+'"')}return out})()`);
+    if (process.env.UITEXT_MUTANT === 'hover') {
+      const at = await js(`(()=>{for(const r of [${CONTROLS}])for(const root of document.querySelectorAll(r))for(const e of root.querySelectorAll('button,a,[role=button]')){const b=e.getBoundingClientRect();if(b.width>4&&b.height>4&&e.getClientRects().length)return {x:Math.round(b.left+b.width/2),y:Math.round(b.top+b.height/2)}}return null})()`);
+      if (at) { H.wc().sendInputEvent({ type: 'mouseMove', x: at.x, y: at.y }); await until(`!!document.querySelector(':hover:is(button,a,[role=button])')`, 2000); }
+    } else {
+      H.wc().sendInputEvent({ type: 'mouseMove', x: 0, y: 0 });
+      await until(`!document.querySelector(${jsLiteral(s.roots.map((r) => r + ' :hover').join(','))})`, 2000);
+    }
+    for (const el of await hovered()) found.push({ ...tag, rule: 'hovered', el: s.name, detail: `${el} is hovered at the read (the pointer is on the surface: its colours are the :hover ones)` });
     const dark = theme === 'dark' || !!s.contrast;
     const darkAll = theme === 'dark' && !s.contrast; // the dark fixture: every text element, not only the FR-169 controls
     const call = () => js(`window.__uitext.check(${jsLiteral(s.kind)},${jsLiteral(s.roots)},{dark:${jsLiteral(dark)},darkAll:${jsLiteral(darkAll)}})`);
