@@ -10,7 +10,7 @@
  * a clone with the disabled attribute keeps the disabled look of every primary (a background that is not the rest red, dashed border), and its rendered
  * contrast is printed, not asserted (a disabled control is exempt and the dialog fades it).
  * DANGER_MUTANT=pointer leaves the pointer over the button (the pointerOff call is skipped); =flash adds a hover animation that goes through black; =old deletes the themed danger rules (main's cascade); =unguard drops the `:not(:disabled...)` guard from the rest rule (a disabled
- * button turns red); =nohover deletes only the hover rule; =blackmix puts the old black mix back into every hover rule; =blackmix-styles only into the one in styles.css (the rule without data-ui: it governs the looks whose ui style is clean, e.g. the dark fixture; in the arcade themes.css wins, so there it changes nothing). Each must fail with its own label.
+ * button turns red); =nohover deletes only the hover rule; =blackmix puts the old black mix back into every hover rule; =slowfade makes the dialog's entrance animation 6 s; =blackmix-styles only into the one in styles.css (the rule without data-ui: it governs the looks whose ui style is clean, e.g. the dark fixture; in the arcade themes.css wins, so there it changes nothing). Each must fail with its own label.
  * DANGER_REPORT=1 fails at the end on purpose, so the suite prints every measured line.
  * OUT=dir (optional) also saves 052-danger-btn-<look>-<size>.png
  */
@@ -43,7 +43,7 @@ module.exports = async (ctx) => {
     const t=x=>x.map(v=>Math.round(v)).join(',');
     return {css:s.backgroundColor,raw:t(B.slice(0,3)),alpha:B[3],anim:e.getAnimations().length,bg:t(bg),fg:t(fg),panel:t(panel),op:Math.round(op*100)/100,border:s.borderTopStyle,ratio:Math.round(r*100)/100};})()`;
   const SEL = '.dlg .btn.primary.danger:not([data-probe])', PROBE = '.dlg .btn.primary.danger[data-probe]';
-  const mutate = (kind) => js(`(()=>{let n=0;if(${jsLiteral(kind)}==='blackmix'||${jsLiteral(kind)}==='blackmix-styles'){for(const s of document.styleSheets){let rules;try{rules=s.cssRules}catch(e){continue}for(const r of rules){if(/btn\\.primary\\.danger/.test(r.selectorText||'')&&/:hover/.test(r.selectorText)&&(${jsLiteral(kind)}==='blackmix'||!/data-ui/.test(r.selectorText))){r.style.setProperty('background','color-mix(in srgb,var(--red-ink) 86%,#000)');n++}}}return n}if(${jsLiteral(kind)}==='flash'){const st=document.createElement('style');st.textContent='@keyframes dflash{50%{background:#000}}.dlg .btn.primary.danger:hover{animation:dflash .3s}';document.head.appendChild(st);return 1}for(const s of document.styleSheets){let rules;try{rules=s.cssRules}catch(e){continue}
+  const mutate = (kind) => js(`(()=>{let n=0;if(${jsLiteral(kind)}==='slowfade'){const st=document.createElement('style');st.textContent='.dlg,.dlg-ov{animation-duration:6s!important}';document.head.appendChild(st);return 1}if(${jsLiteral(kind)}==='blackmix'||${jsLiteral(kind)}==='blackmix-styles'){for(const s of document.styleSheets){let rules;try{rules=s.cssRules}catch(e){continue}for(const r of rules){if(/btn\\.primary\\.danger/.test(r.selectorText||'')&&/:hover/.test(r.selectorText)&&(${jsLiteral(kind)}==='blackmix'||!/data-ui/.test(r.selectorText))){r.style.setProperty('background','color-mix(in srgb,var(--red-ink) 86%,#000)');n++}}}return n}if(${jsLiteral(kind)}==='flash'){const st=document.createElement('style');st.textContent='@keyframes dflash{50%{background:#000}}.dlg .btn.primary.danger:hover{animation:dflash .3s}';document.head.appendChild(st);return 1}for(const s of document.styleSheets){let rules;try{rules=s.cssRules}catch(e){continue}
     for(let i=rules.length-1;i>=0;i--){const t=rules[i].selectorText||'';if(!/btn\\.primary\\.danger/.test(t)||!/data-ui/.test(t))continue;const hover=/:hover/.test(t);
       if(${jsLiteral(kind)}==='old'||(${jsLiteral(kind)}==='nohover'&&hover)){s.deleteRule(i);n++;}
       else if(${jsLiteral(kind)}==='unguard'&&!hover){const body=rules[i].style.cssText;s.deleteRule(i);s.insertRule(t.replace(/:not\\(:disabled[^)]*\\)/,'')+'{'+body+'}',i);n++;}}}return n})()`);
@@ -70,7 +70,12 @@ module.exports = async (ctx) => {
       const hoveredBefore = await H.pointerOff('.dlg', '.btn', { stay: process.env.DANGER_MUTANT === 'pointer' });
       assert.deepStrictEqual(hoveredBefore, [], `${tag}: the pointer is off the button before rest is measured: still hovered ${JSON.stringify(hoveredBefore)}`);
       await H.settle();
-      const line = (state, m) => console.log(`[danger] ${tag} ${state}: text rgb(${m.fg}) on rgb(${m.bg}) = ${m.ratio}:1 rendered (opacity ${m.op}, ${m.border} border; ${m.css}), panel rgb(${m.panel})`);
+      // the dialog eases in (dlgin 160 ms, dlgov 120 ms): rest is read only once no animation runs under it and the overlay, dialog and button are opaque
+      const FADE = `(()=>{const d=document.querySelector('.dlg'),o=document.querySelector('.dlg-ov'),b=document.querySelector(${jsLiteral(SEL)});return {n:d.getAnimations({subtree:true}).length+(o?o.getAnimations().length:0),dlg:+getComputedStyle(d).opacity,btn:+getComputedStyle(b).opacity,ov:o?+getComputedStyle(o).opacity:1}})()`;
+      const fadeDone = await until(`(()=>{const f=${FADE};return f.n===0&&f.dlg===1&&f.btn===1&&f.ov===1})()`, 3000);
+      const fade = await js(FADE);
+      assert.ok(fadeDone, `${tag}: the dialog's entrance fade ended before rest is measured: still ${fade.n} running animation(s), opacity overlay ${fade.ov}, dialog ${fade.dlg}, button ${fade.btn}`);
+      const line = (state, m) => console.log(`[danger] ${tag} ${state}: text rgb(${m.fg}) on rgb(${m.bg}) = ${m.ratio}:1 rendered (opacity ${m.op}, dialog opacity ${fade.dlg}, ${fade.n} animations, ${m.border} border; ${m.css}), panel rgb(${m.panel})`);
       const check = (state, m) => {
         line(state, m);
         assert.ok(m.ratio >= 4.5, `${tag}: danger button ${state} contrast ${m.ratio}:1 is below 4.5:1`);
