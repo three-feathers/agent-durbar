@@ -1,1 +1,1 @@
-- **A screen reader now hears a spending-limit or plan card that arrives in an open chat** (spec 005 FR-237, issue #1582): it was built but not said. Checked in the simulator by reading the live region; not heard with a real screen reader.
+- **A screen reader now hears a spending-limit or plan card that arrives while a chat is open** (spec 005 FR-237, issue #1582): it was built but not said; in another agent's chat it says to open that agent's chat. Checked in the simulator by reading the live region; not heard with a real screen reader.
