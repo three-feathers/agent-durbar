@@ -29,7 +29,6 @@ export interface TeamFs extends CappedFs {
   mkdirSync(dir: string, opts: { recursive: true; mode: number }): unknown;
   /** a link, a folder or a file: set-aside files are counted and removed only when they are regular files */
   lstatSync(p: string): { isFile(): boolean };
-  existsSync(p: string): boolean;
   writeFileSync(file: string, data: string, opts: { mode: number; flag: string }): void;
   /** flushes the temp file to disk before the rename (power loss); best effort */
   fsyncFile(file: string): void;
@@ -48,7 +47,7 @@ export type StoreResult<T> = ({ ok: true } & T) | { ok: false; errors: string[] 
 
 const realFs: TeamFs = {
   openSync: (f, fl) => nodeFs.openSync(f, fl), fstatSync: (fd) => nodeFs.fstatSync(fd), readSync: (fd, b, o, l, p) => nodeFs.readSync(fd, b, o, l, p), closeSync: (fd) => nodeFs.closeSync(fd),
-  mkdirSync: (d, o) => nodeFs.mkdirSync(d, o), lstatSync: (p) => nodeFs.lstatSync(p), existsSync: (p) => nodeFs.existsSync(p), writeFileSync: (f, d, o) => nodeFs.writeFileSync(f, d, o),
+  mkdirSync: (d, o) => nodeFs.mkdirSync(d, o), lstatSync: (p) => nodeFs.lstatSync(p), writeFileSync: (f, d, o) => nodeFs.writeFileSync(f, d, o),
   renameSync: (a, b) => nodeFs.renameSync(a, b), rmSync: (p, o) => nodeFs.rmSync(p, o), readdirSync: (d) => nodeFs.readdirSync(d),
   fsyncFile: (f) => { const fd = nodeFs.openSync(f, 'r+'); try { nodeFs.fsyncSync(fd); } finally { nodeFs.closeSync(fd); } },
 };
@@ -194,7 +193,7 @@ export class TeamTemplateStore {
   }
   /**
    * `hash`: the SHA-256 of its bytes, or `none` when the file is not there. `busy`: it could not be read (an error that stays, a changing
-   * file, no permission): that is NOT a hash and never compares equal to anything. `bad`: a link, a folder, too big: a change.
+   * file, no permission): that is NOT a hash and never compares equal to anything. `bad`: a link (a dangling one too), a folder, too big: a change.
    */
   private seen(r: ReturnType<typeof readCapped>): Seen {
     if (r.ok) return { kind: 'hash', hash: sha(r.buf) };
@@ -251,12 +250,12 @@ export class TeamTemplateStore {
   /** Moves the file to `<name>.bad-<UTC time>.json` once, and asks for one toast; only the newest `KEEP_BAD` such files stay. False when the move failed: saves are refused until it works. */
   private setAside(): boolean {
     try {
-      if (!this.fs.existsSync(this.file)) { this.blocked = false; return true; }
+      if (!this.exists(this.file)) { this.blocked = false; return true; }
       const ext = path.extname(this.file);
       const stem = ext ? this.file.slice(0, -ext.length) : this.file;
       const stamp = new Date(this.now()).toISOString().replace(/[:.]/g, '-');
       let dest = `${stem}.bad-${stamp}${ext}`;
-      for (let i = 2; this.fs.existsSync(dest); i++) {
+      for (let i = 2; this.exists(dest); i++) {
         if (i > 100) throw new Error('no free name');
         dest = `${stem}.bad-${stamp}-${i}${ext}`;
       }
@@ -293,6 +292,17 @@ export class TeamTemplateStore {
     } catch { /* best effort */ }
   }
 
+  /** Whether something is at `p`, a link included: `lstat`, never following it (a dangling link is there, `existsSync` would say it is not); only ENOENT means no. */
+  private exists(p: string): boolean {
+    try {
+      this.fs.lstatSync(p);
+      return true;
+    } catch (e) {
+      if ((e as { code?: unknown } | null)?.code === 'ENOENT') return false;
+      throw e;
+    }
+  }
+
   private isRegular(p: string): boolean {
     try { return this.fs.lstatSync(p).isFile(); } catch { return false; }
   }
@@ -327,6 +337,7 @@ export class TeamTemplateStore {
       const text = JSON.stringify({ format: FORMAT, schemaVersion: SCHEMA_VERSION, templates: next }, null, 1) + '\n';
       this.fs.writeFileSync(tmp, text, { mode: 0o600, flag: 'wx' });
       try { this.fs.fsyncFile(tmp); } catch { /* best effort, as schedules */ }
+      // KNOWN GAP (spec 111): the folder is not flushed after the rename (as `saveSchedules`, see #1620); after a power cut the new name may be lost and the old file stays
       this.rename(tmp, this.file);
       this.items = next;
       this.fp = sha(text);

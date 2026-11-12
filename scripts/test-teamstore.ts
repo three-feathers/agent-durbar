@@ -15,9 +15,9 @@
  *   15..24 (second review, #1602): cut by code point, not grapheme; trailing joiners kept; no second read after a read error; decoder not fatal;
  *   no Windows rename retry; the retry on every platform; no fingerprint comparison; no pruning of set-aside files; folder mode 0755; isBlocked always false.
  *   25..27 (third review): prune filter loose; prune order by text; fingerprint taken after the read (since replaced by the hash mutant).
- *   27 became "hash taken after the read"; 28..31 (fourth review; 32, 33 fifth: the read before a save is not retried; the retry has no pause; 34, 35 sixth: a persistent read error still reloads; two unreadable reads compare as one hash): size only, not the content; the file just set aside may be pruned; prune counts folders;
+ *   27 became "hash taken after the read"; 28..31 (fourth review; 32, 33 fifth: the read before a save is not retried; the retry has no pause; 34, 35 sixth: a persistent read error still reloads; two unreadable reads compare as one hash; 36 seventh: a dangling link not seen, `existsSync` instead of `lstat`): size only, not the content; the file just set aside may be pruned; prune counts folders;
  *   one huge grapheme leaves only the suffix. (A fingerprint of size and mtime was replaced by a SHA-256 of the bytes: it missed a write in the same mtime tick.)
- *   The list below has 35 entries in all (the "no nameKey" mutant of 5 has two variants).
+ *   The list below has 36 entries in all (the "no nameKey" mutant of 5 has two variants).
  *   No `trimEnd` before the suffix: the validator already collapses a double space, so the name is the same (the test "no double space" shows it).
  */
 import assert from 'assert';
@@ -45,11 +45,13 @@ class MemFs {
   mkdirSync(_d: string, o: { mode: number }): void { this.dirModes.push(o.mode); }
   dirs = new Set<string>();
   lstatSync(p: string): { isFile(): boolean } {
-    if (this.dirs.has(p)) return { isFile: () => false };
+    if (this.dirs.has(p) || this.dangling.has(p)) return { isFile: () => false };
     if (!this.files.has(p)) throw Object.assign(new Error('missing'), { code: 'ENOENT' });
     return { isFile: () => true };
   }
-  existsSync(p: string): boolean { return this.files.has(p); }
+  /** dangling symlinks: `lstat` sees them, `stat` and `exists` (which follow) do not, `open` with O_NOFOLLOW says ELOOP */
+  dangling = new Set<string>();
+  statSync(p: string): { isFile(): boolean } { if (!this.files.has(p)) throw Object.assign(new Error('missing'), { code: 'ENOENT' }); return { isFile: () => true }; }
   writeFileSync(file: string, data: string, o: { mode: number; flag: string }): void {
     this.writes.push({ file, mode: o.mode, flag: o.flag });
     if (o.flag === 'wx' && this.files.has(file)) throw Object.assign(new Error('exists'), { code: 'EEXIST' });
@@ -59,16 +61,19 @@ class MemFs {
   }
   fsyncs: string[] = []; log: string[] = [];
   fsyncFile(file: string): void { this.fsyncs.push(file); this.log.push('fsync ' + file); }
-  readdirSync(dir: string): string[] { return [...this.names(), ...this.dirs].filter((x) => path.dirname(x) === dir).map((x) => path.basename(x)); }
+  readdirSync(dir: string): string[] { return [...this.names(), ...this.dirs, ...this.dangling].filter((x) => path.dirname(x) === dir).map((x) => path.basename(x)); }
   renameSync(from: string, to: string): void {
     this.renames.push([from, to]); this.log.push('rename ' + from);
     if (this.failRename && to === F) throw Object.assign(new Error('rename'), { code: 'EPERM' });
+    if (this.dangling.has(from)) { this.dangling.delete(from); this.dangling.add(to); return; }
     const f = this.files.get(from);
     if (!f) throw Object.assign(new Error('gone'), { code: 'ENOENT' });
+    this.dangling.delete(to);
     this.files.delete(from); this.files.set(to, f);
   }
-  rmSync(p: string): void { this.files.delete(p); this.dirs.delete(p); }
+  rmSync(p: string): void { this.files.delete(p); this.dirs.delete(p); this.dangling.delete(p); }
   openSync(file: string): number {
+    if (this.dangling.has(file)) throw Object.assign(new Error('loop'), { code: 'ELOOP' });
     if (!this.files.has(file)) throw Object.assign(new Error('missing'), { code: 'ENOENT' });
     if (this.openFails > 0 && file === F) { this.openFails--; throw Object.assign(new Error('held'), { code: 'EBUSY' }); }
     const fd = this.nextFd++; this.fds.set(fd, file); return fd;
@@ -382,6 +387,19 @@ const sections: Record<string, Section> = {
     const m2 = new MemFs(); const s2 = make(m2, api); s2.put(tpl('One'));
     m2.files.set(F, { data: Buffer.from('x'), mode: 0o600, size: 400 * 1024 * 1024, mt: 99 }); const r2 = s2.put(tpl('Two')); ok(!r2.ok && r2.errors[0] === 'changed', 'a too-big file in its place: changed');
   },
+  danglingLink(api) {
+    // a dangling symlink as the store file: it is a bad file (a link), set aside by a rename of the link itself; the next save works
+    const S = new Date(1_700_000_000_000).toISOString().replace(/[:.]/g, '-'); const bad1 = path.join(ROOT, `team-templates.bad-${S}.json`); const bad2 = path.join(ROOT, `team-templates.bad-${S}-2.json`);
+    const m = new MemFs(); m.dangling.add(F); const s = make(m, api); eq(s.list(), [], 'empty');
+    ok(!m.dangling.has(F), 'the link is moved away'); eq([...m.dangling].filter((x) => x.includes('.bad-')).length, 1, 'the link itself is set aside'); ok(s.takeToast(), 'one toast'); ok(!s.isBlocked(), 'not blocked');
+    ok(s.put(tpl()).ok, 'the next save works'); eq(make(m, api).list().length, 1, 'and is on disk');
+    // the first set-aside name is itself a dangling link: the next free name is taken, the link there is not replaced
+    const m2 = new MemFs(); m2.dangling.add(F); m2.dangling.add(bad1); const s2 = new api.TeamTemplateStore(F, { fs: m2, flags: KEYS, now: () => 1_700_000_000_000, pause: () => undefined });
+    ok(m2.dangling.has(bad1), 'a link at the set-aside name is kept'); ok(m2.dangling.has(bad2), 'and the file went to the next name'); ok(!m2.dangling.has(F), 'link moved'); ok(s2.put(tpl()).ok, 'saves');
+    // the link appears under a running store: the save is a change, the link is set aside, the next save works
+    const m3 = new MemFs(); const s3 = make(m3, api); s3.put(tpl()); m3.files.delete(F); m3.dangling.add(F);
+    const r = s3.put(tpl('Two')); ok(!r.ok && r.errors[0] === 'changed', 'a link under a running store: changed'); ok(!m3.dangling.has(F), 'link set aside'); ok(s3.put(tpl('Three')).ok, 'then saves');
+  },
   longGrapheme(api) {
     const m = new MemFs(); const s = make(m, api); const name = 'a' + '\u0301'.repeat(39);
     const t = s.put(tpl(name)); ok(t.ok, 'a name that is one grapheme'); if (!t.ok) return;
@@ -459,6 +477,7 @@ const mutants: { name: string; from: string; to: string; breaks: string }[] = [
   { name: 'the read retry has no pause', from: 'this.pause(200);\n            r = (0, cappedread_1.readCapped)', to: 'r = (0, cappedread_1.readCapped)', breaks: 'hashRetry' },
   { name: 'a persistent read error still reloads (and sets the good file aside)', from: "if (now.kind === 'busy')\n            return 'failed';", to: '', breaks: 'unreadableSave' },
   { name: 'two unreadable reads compare as one hash', from: "{ kind: 'busy' }", to: "{ kind: 'hash', hash: 'unreadable' }", breaks: 'unreadableSave' },
+  { name: 'existsSync (follows a link) instead of lstat', from: 'this.fs.lstatSync(p);\n            return true;', to: 'this.fs.statSync(p);\n            return true;', breaks: 'danglingLink' },
   { name: 'one huge grapheme leaves only the suffix', from: 'head.length === 0)', to: 'false)', breaks: 'longGrapheme' },
   { name: 'isBlocked always false', from: 'isBlocked() { return this.blocked; }', to: 'isBlocked() { return false; }', breaks: 'blockedFlag' },
   { name: 'stale temps not removed', from: '(0, schedules_1.removeStaleTemps)(this.file,', to: '(() => undefined)(this.file,', breaks: 'staleTemps' },
