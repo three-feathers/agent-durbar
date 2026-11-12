@@ -12,6 +12,10 @@
  *     approved palette;
  *   - every icon on every one of those, tile size and name position unchanged; pictures of the top bar go to LOGO_OUT.
  * A miss prints DRIVER FAILED; the npm script exits non-zero unless "all checks passed" is printed.
+ *   DRIVER_WORLD=retro   (ui-suite entry `check-logo-family retro`, spec 102 T316) the Real office seam loads the arcade and asserts its own pair:
+ *                        the tile --brand-bg and the drawing --brand-mark of the retro UI style (spec 101 FR-034: data-ui is set, a world's own)
+ *   LOGO_MUTANT=arcade|ink|tokens|size   (with DRIVER_WORLD=retro; each must fail at its own assert) the arcade's tile painted with Photo's plate /
+ *                        the drawing in another colour / the page's --brand-bg is not the pair's yellow / the tile is 40 px wide
  *
  *   npm run check:ui -- --only check-logo-family
  */
@@ -26,15 +30,15 @@ const PLATE = { 1: '#10141E', 2: '#03183A', 3: '#061C4A', 5: '#07111F' };
 const rgb = (hex) => { const n = parseInt(hex.slice(1), 16); return `rgb(${n >> 16}, ${(n >> 8) & 255}, ${n & 255})`; };
 const WORLDS = { photo: { plate: '#5C3312', gold: '#FFD45E', bot: '#BFE0FF' }, cave: { plate: '#2A1710', gold: '#F2B46E', bot: '#A3AFC0' }, loft: { plate: '#2C0A5E', gold: '#FFE81F', bot: '#2EE6F2' } };
 const UI_THEMES = ['retro']; // the one other built-in UI style since spec 035 FR-017 removed Corporate and the courts; `GENERATED` below holds FR-034's "any other UI style"
-const ARCADE = process.env.DRIVER_WORLD === 'retro'; // spec 102 T283: the Real office seam loads the arcade; its tile is the retro UI pair BY DESIGN (logo.css has no block for it), not Photo's plate
-const ARCADE_PAIR = { plate: '#FFEC27', mark: '#111122' }; // the arcade's --brand-bg and --brand-mark (theme.js WORLD_SETS.retro); written here, not read back from the page, so a changed token fails
-const MUTANT = process.env.LOGO_MUTANT || ''; // arcade: the arcade's tile painted with Photo's plate (must fail at "the arcade's own pair")
+const ARCADE = process.env.DRIVER_WORLD === 'retro'; // spec 102 T316: the Real office seam loads the arcade. Spec 101 FR-034: the arcade sets data-ui=retro (theme.js WORLD_SETS.ui), so its tile takes --brand-bg and the drawing --brand-mark; FR-033's fall-back to the base palette is for a world with NO data-ui, and logo.css has no block for the arcade, so Photo's plate is wrong here
+const ARCADE_PAIR = { plate: '#FFEC27', mark: '#111122' }; // today's tokens through FR-034's wiring (theme.js WORLD_SETS.retro --brand-bg and --brand-mark; no spec names the values); written here, not read back from the page, so a changed token fails
+const MUTANT = process.env.LOGO_MUTANT || ''; // arcade | ink | tokens | size: see the header
 const GENERATED = { id: 'logo-gen-test', name: 'Logo generated test', extends: 'clean-office', ui: 'retro', tokens: { '--brand-mark': '#ffffff', '--brand-bg': '#7a1fa2' } };
 
 module.exports = async (ctx) => {
   const H = helpers(ctx);
   const { until, js } = H;
-  const out = process.env.LOGO_OUT || path.join(os.tmpdir(), 'logo-family-shots');
+  const out = process.env.LOGO_OUT || path.join(os.tmpdir(), ARCADE ? 'logo-family-shots-retro' : 'logo-family-shots');
   fs.mkdirSync(out, { recursive: true });
 
   /* the top bar as the page shows it now: the tile, the drawing, the name, the paint of the slots */
@@ -189,10 +193,16 @@ module.exports = async (ctx) => {
     const seam = ARCADE ? 'retro' : 'photo';
     assert.ok(await H.until(`document.documentElement.dataset.world===${jsLiteral(seam)}`, 8000), `${tag}: Real office sets the world ${seam}`);
     if (ARCADE) {
-      if (MUTANT === 'arcade') await js(`(()=>{const s=document.createElement('style');s.textContent='html[data-world="retro"]{--logo-plate-1:#5C3312!important;--logo-plate:#5C3312!important}';document.head.appendChild(s);return 1})()`);
+      const mut = (css) => js(`(()=>{const s=document.createElement('style');s.textContent=${jsLiteral(css)};document.head.appendChild(s);return 1})()`);
+      if (MUTANT === 'arcade') await mut('html[data-world="retro"]{--logo-plate-1:#5C3312!important;--logo-plate:#5C3312!important}');
+      if (MUTANT === 'ink') await mut('html[data-world="retro"]{--logo-gold:#ff0000!important;--logo-bot:#ff0000!important}');
+      if (MUTANT === 'tokens') { await mut('html[data-world="retro"]{--logo-plate-1:#FFEC27!important;--logo-plate:#FFEC27!important;--logo-gold:#111122!important;--logo-bot:#111122!important}'); await js(`document.documentElement.style.setProperty('--brand-bg','#ffec28');1`); }
+      if (MUTANT === 'size') await mut('.brand-mark{width:40px!important}');
       const a = await bar();
       assert.strictEqual(a.bg, rgb(ARCADE_PAIR.plate), `${tag}: the arcade's own pair: the tile is the arcade's yellow ${ARCADE_PAIR.plate}, not Photo's plate, got ${a.bg}`);
-      assert.deepStrictEqual([a.gold, a.bot].filter((x) => x !== null), [a.gold, a.bot].filter((x) => x !== null).map(() => rgb(ARCADE_PAIR.mark)), `${tag}: the arcade's own pair: the drawing is the arcade's dark ink ${ARCADE_PAIR.mark}: ${JSON.stringify(a)}`);
+      const inks = [a.gold, a.bot].filter((x) => x !== null);
+      assert.ok(inks.length > 0, `${tag}: the arcade's own pair: the drawing has a light part to measure: ${JSON.stringify(a)}`);
+      assert.deepStrictEqual(inks, inks.map(() => rgb(ARCADE_PAIR.mark)), `${tag}: the arcade's own pair: the drawing is the arcade's dark ink ${ARCADE_PAIR.mark}: ${JSON.stringify(a)}`);
       assert.deepStrictEqual([a.brandBg.toUpperCase(), a.brandMark.toUpperCase()], [ARCADE_PAIR.plate, ARCADE_PAIR.mark], `${tag}: the arcade's own pair: the page's brand tokens are the pair the tile is painted from`);
       assert.deepStrictEqual([a.w, a.h], [32, 32], `${tag}: the arcade's own pair: the tile is 32 px`);
     } else assert.strictEqual(await js(`getComputedStyle(document.querySelector('.brand-mark')).backgroundColor`), rgb(WORLDS.photo.plate), `${tag}: the bar has the world's plate`);
