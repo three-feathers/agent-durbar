@@ -13,6 +13,8 @@
  *     focushide  the focused pencil hidden too: "the focused pencil stays shown (opacity 1) while its plate eases"
  *     parkold    the pointer parked at the first version's spot, whatever the screen (with PENCIL_EASE_SCREEN=1280x1024 at DPR 2): "the pointer is parked on the visible screen"
  *     far        every pencil 6 px further from its name: "once the ease is over every pencil is painted just after its name"
+ *     pin        the pointer back on a working plate after parking (it did not leave): fails "the hover card closed after the pointer left"; with PENCIL_EASE_SCREEN smaller than the
+ *                window it is the labelled "skipped: the pointer-dependent checks ... need the window inside the screen" instead
  *     hover      the pointer left on a working plate before the end frame: "no hover card is open over the plates in the end frame"
  *   PENCIL_EASE_WORLDS=photo,arcade  only those worlds (photo, cave, arcade)
  *   PENCIL_EASE_SLOW_CAPTURE=<ms>    a pause after each mid-move capture, as a slow (software) compositor: the 3-frame assert is then skipped, printed
@@ -46,7 +48,7 @@ const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
 const { helpers, jsLiteral } = require('./driver-helpers');
-const { parkCandidates, parkVisible } = require('./pencil-park');
+const { parkCandidates, parkVisible, windowOutsideScreen } = require('./pencil-park');
 
 const MUTANT = process.env.PENCIL_EASE_MUTANT || '';
 const PLAIN = process.env.PENCIL_EASE_PLAIN === '1';
@@ -213,6 +215,8 @@ module.exports = async (ctx) => {
     /* the spot is on the part of the page that is on the screen too (scripts/pencil-park.js: a window taller than a small X screen is cut by it, and a pointer put
        in the cut part never leaves the plate: Linux/Xvfb at DPR 2, review of PR 1555); PENCIL_EASE_SCREEN stands in for a small screen here as below */
     const pg0 = await js(`(()=>{const d=devicePixelRatio,m=/^(\\d+)x(\\d+)$/.exec(${jsLiteral(SCREEN)});return {dpr:d,view:[innerWidth,innerHeight],top:document.getElementById('stage').getBoundingClientRect().top,screen:m?[+m[1],+m[2]]:[Math.round(screen.width*d),Math.round(screen.height*d)],at:[Math.round((screenX+(outerWidth-innerWidth))*d),Math.round((screenY+(outerHeight-innerHeight))*d)]}})()`);
+    let cardStays = false;
+    const outside = windowOutsideScreen({ win: pg0.view.map((v) => v * pg0.dpr), screen: pg0.screen, at: pg0.at }); /* the real pointer cannot be trusted to leave the plates then */
     const cands = MUTANT === 'parkold' ? [{ x: Math.round(pg0.view[0] / 2), y: Math.max(1, Math.round(pg0.top) - 4) }] : parkCandidates(pg0); /* parkold: the first version's point, whatever the screen */
     /* a spot no hover target is under: not in the office at all (its desk, monitor, person, table, marquee or plate opens the card: FR-327) */
     const HOVER = '.ro, #stage, .ro-screen, .ro-person, .ro-person2, .ro-rig, .ro-initials, .ro-marquee, .ro-desk, .ro-ltable, .ro-plate, [data-hover-target]';
@@ -229,9 +233,16 @@ module.exports = async (ctx) => {
       const c = await js(`(()=>{const r=document.querySelector('#stage .ro-plate.st-working').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
       wc().sendInputEvent({ type: 'mouseMove', x: c.x, y: c.y }); await H.until(`!!document.getElementById('roZoom')`, 3000);
     } else {
+      if (MUTANT === 'pin') { /* the pointer that did not leave (an X server that does not move it): back on a working plate, its card open */
+        const c = await js(`(()=>{const r=document.querySelector('#stage .ro-plate.st-working').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
+        wc().sendInputEvent({ type: 'mouseMove', x: c.x, y: c.y }); await H.until(`!!document.getElementById('roZoom')`, 3000);
+      }
       const closed = await H.until(`!document.getElementById('roZoom')`, 3000);
       const cardText = closed ? '-' : await js(`(()=>{const z=document.getElementById('roZoom');return z?z.textContent.slice(0,40):'-'})()`);
-      assert.ok(closed, tag + ': the hover card closed after the pointer left (' + where + '; a card over: ' + cardText + ')');
+      /* a window larger than the X screen (Linux/Xvfb 1280x1024): the real pointer is not trusted to leave the plates, so a card that stays is a labelled skip,
+         never a timeout; a card that closed is checked as everywhere */
+      if (!closed && outside) { cardStays = true; log(tag, `skipped: the pointer-dependent checks (the hover card closing, none open in the end frame) need the window inside the screen: the card over ${cardText} stayed open; screen ${pg0.screen.join('x')} device px, window content ${pg0.view.map((v) => v * pg0.dpr).join('x')} at ${pg0.at.join(',')}, devicePixelRatio ${pg0.dpr}: land the screen sizing first (spec 097 FR-365); the opacity reads, the box checks and the end state still apply`); }
+      else assert.ok(closed, tag + ': the hover card closed after the pointer left (' + where + '; a card over: ' + cardText + ')');
     }
     const keys = [...Array(n)].map((_, i) => String(i + 1));
     const lostIn = (m) => keys.filter((i) => !m['pen:' + i] || !(m['name:' + i] || m['status:' + i]));
@@ -259,7 +270,7 @@ module.exports = async (ctx) => {
     if (!PLAIN) {
       /* every marked plate came through the capture: its pencil and its name or status (a colour lost would drop the plate from every assert) */
       if (tries > 1) log(tag, 'end frame taken', tries, 'times');
-      assert.ok(!(await js(`!!document.getElementById('roZoom')`)), `${tag}: no hover card is open over the plates in the end frame`);
+      if (!cardStays) assert.ok(!(await js(`!!document.getElementById('roZoom')`)), `${tag}: no hover card is open over the plates in the end frame`);
       if (off.size) log(tag, `skipped: painted end-state check: ${off.size} of ${n} plates are off the X screen (screen ${scr.screen.join('x')} device px, window ${scr.win.join('x')} at ${scr.at.join(',')}): plates ${[...off].join(',')}; their opacity reads still apply`);
       const lost = lostIn(end).filter((i) => !off.has(i));
       let painted = true;
@@ -289,8 +300,8 @@ module.exports = async (ctx) => {
       /* a compositor whose captures take over 40 ms each (Linux/Xvfb at DPR 2: ~100 ms) cannot give 3 frames in 200 ms: that assert is then skipped, said
          in the log, never passed; the opacity reads below do not depend on the capture and still fail a pencil shown while its plate eases */
       const gaps = frames.slice(1).map((f, i) => f.t - frames[i].t).sort((a, b) => a - b), gap = gaps.length ? gaps[gaps.length >> 1] : SPAN;
-      const early = frames.filter((f) => f.t <= 200).length; /* some frames, but sparse (a burst of slow captures at DPR 1: 1 mid-move frame of 5, Linux/Xvfb): too slow too; none at all (the late mutant) is not */
-      if (caught.length < MIN_CAUGHT && (gap > 40 || (early > 0 && early < 2 * MIN_CAUGHT))) log(tag, `skipped: capture too slow (${caught.length} frames mid-move and ${early} frames in the first 200 ms, ${frames.length} in ${SPAN} ms, a capture every ${gap} ms): the painted check saw few frames; the opacity reads still apply`);
+      const early = frames.filter((f) => f.t <= 200).length; /* some frames, but sparse (a burst of slow captures at DPR 1: 1 mid-move frame of 5, Linux/Xvfb): too slow too; none at all (the late mutant: the capture did not run in time) is a failure, slow or not */
+      if (caught.length < MIN_CAUGHT && early > 0 && (gap > 40 || early < 2 * MIN_CAUGHT)) log(tag, `skipped: capture too slow (${caught.length} frames mid-move and ${early} frames in the first 200 ms, ${frames.length} in ${SPAN} ms, a capture every ${gap} ms): the painted check saw few frames; the opacity reads still apply`);
       else assert.ok(caught.length >= MIN_CAUGHT, `${tag}: ${MIN_CAUGHT} or more frames caught the plates on their way in the first 200 ms (got ${caught.length}; frames at ${frames.map((f) => f.t).join(',')} ms): too few means the captures are slower than the ease on this machine, so nothing was tested; not a pass`);
       /* in every frame: no pencil's painted icon over its own plate's painted name, role or status (the focused one may be: FR-365's known gap) */
       const bad = [];

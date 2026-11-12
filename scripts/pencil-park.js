@@ -18,4 +18,6 @@ function parkCandidates(o) {
   const all = [[Math.round(v[0] / 2), top], [1, 1], [v[0] - 2, 1]].map(([x, y]) => ({ x, y }));
   return all.filter((p) => parkVisible(p, o));
 }
-module.exports = { visibleOf, parkVisible, parkCandidates };
+/* true when the window's content is not whole inside the screen (device px, on either axis): the real pointer cannot be trusted to leave the plates there (Linux/Xvfb 1280x1024 under a 2880x1800 window at DPR 2) */
+function windowOutsideScreen({ win, screen, at }) { return at[0] < 0 || at[1] < 0 || at[0] + win[0] > screen[0] || at[1] + win[1] > screen[1]; }
+module.exports = { visibleOf, parkVisible, parkCandidates, windowOutsideScreen };
