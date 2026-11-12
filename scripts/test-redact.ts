@@ -235,6 +235,24 @@ const env = {
       assert.strictEqual(ST.maskLabel(t, 'run', cm), want, `#1585 round 4 card input: maskLabel (run) as redact: ${t.slice(0, 30)}`);
       assert.strictEqual(ST.maskLabel(t, 'other', cm), want, `#1585 round 4 card input: maskLabel (other) as redact: ${t.slice(0, 30)}`);
     }
+    // round 5: the window's run takes an escape of every token character (digits, `@`, `=`, `/`, `:`, `%` too); each shape through the card and both label kinds gives what redact gives
+    const ESC_SET: Array<[string, string]> = [
+      ['an escaped @ and digit inside an sk-proj body', 'echo sk\\-proj\\-K7mPqR2sT4\\-vWxYzA\\@bCdEf\\3gHiJkLmNoPqRsTu'],
+      ['an escaped = before an escaped token, an escaped @ inside', '[redacted]\\=ghp\\_' + B36.slice(0, 32) + '\\@Q7r8S9t0U'],
+      ['an escaped digit inside a ghp body', 'echo ghp\\_' + B36.slice(0, 20) + '\\5' + B36.slice(20)],
+      ['an escaped digit, then an escaped @, after a ghp body', 'echo ghp\\_' + B36 + '\\5ab\\@' + B40.slice(0, 14)],
+      ['an escaped / after a ghp body', 'echo ghp\\_' + B36 + '\\/' + B40.slice(0, 30)],
+      ['an escaped = after a ghp body', 'echo ghp\\_' + B36 + '\\=' + B40.slice(0, 16)],
+      ['an escaped : and % after a ghp body', 'echo ghp\\_' + B36 + '\\:' + B40.slice(0, 10) + '\\%' + B40.slice(10, 20)],
+    ];
+    for (const [what, t] of ESC_SET) {
+      const want = redact(t, {});
+      assert.ok(!/[A-Za-z0-9]{8}/.test(want.replace(/\[redacted\]/g, ' ').replace(/^echo /, '')), `#1585 round 5 escape set (${what}): redact shows no body: ${want}`);
+      const cm = cardMask({});
+      assert.strictEqual(LA.permText(t, 'shell', cm).text, want, `#1585 round 5 escape set (${what}): the card as redact`);
+      assert.strictEqual(ST.maskLabel(t, 'run', cm), want, `#1585 round 5 escape set (${what}): maskLabel (run) as redact`);
+      assert.strictEqual(ST.maskLabel(t, 'other', cm), want, `#1585 round 5 escape set (${what}): maskLabel (other) as redact`);
+    }
   }
 
   // growth: linear in the text (FR-180 did the same for maskLabel)
