@@ -149,8 +149,9 @@ module.exports = async (ctx) => {
       assert.ok(await until(`!!document.getElementById('notesHdrBtn')&&!document.getElementById('moreMenu').hidden`, 8000), `${w}: More has Notes`);
       await js(`document.getElementById('notesHdrBtn').click()`);
       assert.ok(await until(`!!document.getElementById('notesDrawer')&&!document.getElementById('notesDrawer').hidden`, 8000), `${w}: the Notes drawer is open`);
-      // the drawer says "Notes. N notes." (a status) only after its fetch: wait for that line, so it cannot land after the limit's line
-      assert.ok(await until(`window.__seq.some(x=>/^Notes\\./.test(x[1]))`, 8000), `${w}: the Notes drawer said its own line (history ${jsLiteral(await seq())})`);
+      // openNotes paints the drawer after its fetch and then, in the same continuation, says "Notes. N notes." (a status): once the notes are painted that call has been made,
+      // so it cannot land after the limit's line (a status is dropped while a request waits in its window)
+      assert.ok(await until(`/This session|No notes yet/.test(document.getElementById('notesDrawer').textContent)`, 8000), `${w}: the Notes drawer painted its notes (drawer ${jsLiteral(await js(`document.getElementById('notesDrawer').textContent.slice(0,80)`))})`);
     }, async () => {
       await H.key('Escape');
       assert.ok(await until(`document.getElementById('notesDrawer').hidden`, 8000), `${w}: the Notes drawer closes`);
