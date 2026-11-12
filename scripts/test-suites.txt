@@ -133,6 +133,9 @@ test:openwith
 test:liveact
 test:lookalike
 test:skeleton
+test:teamtemplate
+test:teamstore
+test:teamstore-fs
 test:names
 test:renameadapters
 test:sessionname

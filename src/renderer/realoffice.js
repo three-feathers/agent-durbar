@@ -312,7 +312,12 @@
     };
     const signs = {};
     for (const f of model.folders) signs[f.id] = { name: f.name, path: f.path, counts: f.counts.length + (f.cost ? 1 : 0) };
-    const lay = meta.arrangement && meta.arrangement !== 'rows' && L.layoutFor ? L.layoutFor(meta.arrangement, engine, view, meta, signs) : L.realLayout(engine, view, meta, signs); /* spec 102 FR-228: the one seam */
+    let lay = meta.arrangement && meta.arrangement !== 'rows' && L.layoutFor ? L.layoutFor(meta.arrangement, engine, view, meta, signs) : L.realLayout(engine, view, meta, signs); /* spec 102 FR-228: the one seam */
+    /* spec 102 delta 2026-11-11 (issue 1566): an arcade hall that would scroll takes the floor's own padding (`opts.lend`, px) when that makes it fit, so a strip over the floor does not make 15 agents scroll at 1280x800; `lent` tells the host to drop that padding */
+    if (lay.scroll && opts.lend > 0 && meta.arrangement === 'aisles' && L.layoutFor) {
+      const v2 = { w: view.w, h: view.h + opts.lend }, l2 = L.layoutFor(meta.arrangement, engine, v2, meta, signs);
+      if (!l2.scroll) { lay = l2; view = v2; lay.lent = true; }
+    }
 
     let ro = stage.querySelector(':scope > .ro');
     if (!ro) { stage.textContent = ''; ro = document.createElement('div'); ro.className = 'ro'; stage.appendChild(ro); ro.addEventListener('click', forward); wireZoom(ro); }
@@ -660,20 +665,21 @@
   function plateFill(pl, a, state, strip) {
     let P = pl._parts;
     if (!P) {
-      P = pl._parts = { l1: document.createElement('span'), nm: document.createElement('b'), rl: document.createElement('span'), l2: document.createElement('span'), dot: document.createElement('span'), tn: document.createTextNode(''), h: null, hs: '' };
+      P = pl._parts = { l1: document.createElement('span'), nm: document.createElement('b'), rl: document.createElement('span'), l2: document.createElement('span'), dot: document.createElement('span'), wd: document.createElement('span'), tk: document.createElement('span'), h: null, hs: '' };
       P.l1.className = 'ro-l1'; P.rl.className = 'ro-role'; P.l1.append(P.nm, P.rl);
-      P.l2.className = 'ro-l2'; P.dot.setAttribute('aria-hidden', 'true'); P.l2.append(P.dot, P.tn);
+      P.l2.className = 'ro-l2'; P.dot.setAttribute('aria-hidden', 'true'); P.wd.className = 'ro-wd'; P.tk.className = 'ro-tk'; P.l2.append(P.dot, P.wd, P.tk); /* the status word and the task are two runs: where the line is a flex row (the arcade's plate with helpers) only the task gives way */
       pl.textContent = ''; pl.append(P.l1, P.l2);
     }
     text(P.nm, a.name); text(P.rl, a.role);
     const hs = strip ? '' : a.helpers.join();
     if (P.hs !== hs) {
       P.hs = hs; if (P.h) { P.h.remove(); P.h = null; }
-      if (hs) { P.h = document.createElement('span'); P.h.className = 'ro-help'; P.h.textContent = '+' + a.helpers.length + ' '; a.helpers.slice(0, 3).forEach((s) => P.h.insertAdjacentHTML('beforeend', dotHTML(s))); P.l1.appendChild(P.h); }
+      if (hs) { P.h = document.createElement('span'); P.h.className = 'ro-help'; const hc = document.createElement('span'); hc.className = 'ro-hc'; hc.textContent = '+' + a.helpers.length + ' '; P.h.appendChild(hc); a.helpers.slice(0, 3).forEach((s) => P.h.insertAdjacentHTML('beforeend', dotHTML(s))); P.l1.appendChild(P.h); }
     }
-    const dc = dotClass(state), line = ' ' + [a.word, a.task].filter(Boolean).join(' · ');
+    const dc = dotClass(state), word = a.word ? ' ' + a.word : '', task = a.task ? (a.word ? ' · ' : ' ') + a.task : ''; /* word + task read as before: ' Word · task' */
     if (P.dot.className !== dc) P.dot.className = dc;
-    if (P.tn.data !== line) P.tn.data = line;
+    if (P.wd.textContent !== word) P.wd.textContent = word;
+    if (P.tk.textContent !== task) P.tk.textContent = task;
   }
 
 

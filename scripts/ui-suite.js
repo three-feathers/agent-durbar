@@ -8,6 +8,7 @@
  *   UI_SUITE_OUT=<folder>                 where every screenshot goes (default: a new temp folder, printed at the end)
  *   UI_SUITE_XVFB=1                       Linux: run under xvfb-run even when a display is set
  *   UI_SUITE_DPR=<1..4, or 1.25, 1.5>     force the device scale factor (2 = a Retina screen, 1.25 and 1.5 = a Windows laptop at 125 % and 150 %) for every driver
+ *   UI_SUITE_XVFB_SCREEN=WxHxD            Linux/xvfb: replace the screen (default 1920x1100 times the density, depth 24; a malformed value is ignored; spec 008 FR-213)
  *   UI_SUITE_JOBS=<n>                     drivers at once (default 2; each has its own profile and, on Linux, its own xvfb display);
  *                                         an entry with `focus: true` (waits on the OS window focus) runs alone, after the others, when windows share a desktop (FR-210)
  *   UI_SUITE_RETRY=1                      run each failed driver once more, alone, at the end; a pass then is reported as FLAKY
@@ -86,6 +87,10 @@ const DRIVERS = [
   { name: 'shots-058-mcp-words' }, // spec 058 T113-T115: state words, hints, Details and live refresh in the MCP dialog
   { name: 'shots-058-mcp-settings' }, // spec 058 FR-080..FR-086 (#596): live MCP state over the running chats in Settings
   { name: 'shots-058-mcp-launch' }, // spec 058 FR-195..FR-203: MCP health strip at launch; Sign in, Sign in again and Restart where it failed in Settings
+  { name: 'shots-058-mcp-launch', label: 'shots-058-mcp-launch retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 (issue #1566): the strip over the arcade at 15 agents, 1280x800 and 1440x900: no office scroll while shown and after Dismiss
+  { name: 'shots-058-mcp-launch', label: 'shots-058-mcp-launch retro 16', env: { DRIVER_WORLD: 'retro', DRIVER_CASE: '16', DRIVER_AGENTS: '16' } }, // spec 102 T308: 16 agents under the strip: the lent layout still scrolls, so it is refused (ro-tight off)
+  { name: 'shots-058-mcp-launch', label: 'shots-058-mcp-launch retro filter', env: { DRIVER_WORLD: 'retro', DRIVER_CASE: 'filter', DRIVER_AGENTS: '24' } }, // spec 102 T308: a status filter under the strip: ro-tight never set while the floor scrolls, the note keeps its top padding
+  { name: 'shots-058-mcp-launch', label: 'shots-058-mcp-launch photo 18', env: { DRIVER_CASE: 'photo', DRIVER_AGENTS: '18', DRIVER_H: '760' } }, // spec 102 T308: a world that is not aisles is never lent the padding
   { name: 'shots-058-mcp-signin-refresh' }, // spec 058 FR-208..FR-216: the sign-in refresh lines, Stop during the wait, the Settings switch
   { name: 'shots-076-orgpolicy' }, // spec 076 FR-202..FR-205 (#602): what the agent app's own organization policy blocks, greyed with the reason
   { name: 'shots-058-mcp-health' }, // spec 058 FR-090..FR-096 (#603): failure reason, when, Copy diagnostics (masked), the MCP chip dot
@@ -101,6 +106,7 @@ const DRIVERS = [
   { name: 'shots-043-manage' }, // spec 043 FR-040..FR-042: nothing written before Save, the Profile menu refreshes at once, Delete from the menu and Settings
   { name: 'check-dialog-focus' },
   { name: 'check-052-primary-btn' }, // spec 052 FR-053 (#1614): the themed primary button reads at 4.5:1 at rest, hovered and pressed in every themed look
+  { name: 'check-052-focus-ring' }, // spec 052 FR-052 (#1615): the keyboard ring of the top bar controls and of the ⋯ menu items reads at 3:1 beside the bar, in the retro looks
   { name: 'check-grant-chips' },
   { name: 'check-sched-sendto' },
   { name: 'check-sched-edit' },
@@ -113,8 +119,8 @@ const DRIVERS = [
   { name: 'check-097-one-face', label: 'check-097-one-face retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 T283 (issue #1399): the same driver in the arcade
   { name: 'check-question-visible' },
   { name: 'check-chat-no-scroll' },
-  { name: 'check-chat-visibility', label: 'check-chat-visibility 1440', env: { CVONLY: '1440' } }, // one entry per size so each has its own time limit (#1127, FR-063)
-  { name: 'check-chat-visibility', label: 'check-chat-visibility 1280', env: { CVONLY: '1280' } }, // spec 005 FR-210: a long chat is laid out only near the view; scroll, find, copy, focus and the pinned end are as before
+  { name: 'check-chat-visibility', label: 'check-chat-visibility 1440', env: { CVONLY: '1440' }, timeoutMs: 900_000 }, // spec 005 T227 (issue 1610): 900 s is a stated margin, not a fix: Linux frame cost is about 3.4x a Mac's; one entry per size so each has its own time limit (#1127, FR-063)
+  { name: 'check-chat-visibility', label: 'check-chat-visibility 1280', env: { CVONLY: '1280' }, timeoutMs: 900_000 }, // spec 005 T227: the same margin; FR-210: a long chat is laid out only near the view; scroll, find, copy, focus and the pinned end are as before
   { name: 'check-chat-title' }, // spec 052 FR-180 (#789): the chat header's title uses the free room up to the buttons
   { name: 'check-no-demo-badge' }, // spec 052 FR-181: no Demo / Live badge in the top bar; the demo cues remain
   { name: 'check-logo-family' }, // spec 101 FR-072: Settings > Logo, the top-bar icon on every theme, world and forced colours, tile and name unchanged
@@ -335,6 +341,25 @@ function guardTree(child, { proc = process, kill = killTree, cleanup = () => {} 
 const dprOk = (v) => /^([1-4]|1\.25|1\.5)$/.test(String(v));
 
 /**
+ * Spec 008 FR-213 (issue #1591): the `xvfb-run` options that give Xvfb a screen as big as the biggest window at the requested density. Xvfb's default screen
+ * is 1280x1024 device pixels, so at UI_SUITE_DPR=2 a 1440x900 window (2880x1800 device pixels) was mostly off screen: nothing real was painted below
+ * device y 1024 and painted-pixel checks could not see the lower rooms. The screen is 1920x1100 logical (the 1920x1080 view of the widest driver and a margin)
+ * times the density, colour depth 24: DPR 1 is 1920x1100, DPR 2 is 3840x2200. A bad or unset density counts as 1.
+ * `UI_SUITE_XVFB_SCREEN=WxHxD` replaces it (checked; a malformed value is ignored). Returned as separate argv entries (`-s` and one value), never a shell string.
+ */
+function xvfbScreenArgs(dpr, env = process.env) {
+  const want = String(env.UI_SUITE_XVFB_SCREEN || '');
+  if (/^[1-9]\d{2,4}x[1-9]\d{2,4}x(8|16|24|30|32)$/.test(want)) return ['-s', `-screen 0 ${want}`];
+  const f = dprOk(dpr) ? Number(dpr) : 1;
+  return ['-s', `-screen 0 ${Math.ceil(1920 * f)}x${Math.ceil(1100 * f)}x24`];
+}
+
+/** The command that starts Electron for a driver: the binary itself, or under `xvfb-run -a` (a display of its own) with the screen of `xvfbScreenArgs`. Separate argv entries, no shell. */
+function launchCommand(useXvfb, electron, argv, dpr, env = process.env) {
+  return useXvfb ? ['xvfb-run', ['-a', ...xvfbScreenArgs(dpr, env), electron, ...argv]] : [electron, argv];
+}
+
+/**
  * Run one driver. Opt-in for unattended callers (spec 008 FR-175, FR-176; scripts/release-video.js): `d.baseEnv` replaces
  * `process.env` as the base of the child's environment (an allow-list, so no token reaches Electron), `d.timeoutMs` replaces the
  * suite's limit. Every driver (spec 008 FR-199, issue #1417) runs as its own process tree: it ends with the whole tree at the limit and when
@@ -351,7 +376,7 @@ function runOne(d, outDir, { launch } = {}) {
   const dpr = String(d.dpr || process.env.UI_SUITE_DPR || ''); // d.dpr: a driver that always records at that density (release-video: sharp zooms)
   const argv = [ROOT, '--no-sandbox', ...(dprOk(dpr) ? ['--force-device-scale-factor=' + dpr] : [])]; // UI_SUITE_DPR=2: a high-density screen (a Retina Mac) on any OS
   const useXvfb = !sharedDesktop(); // UI_SUITE_XVFB=1: keep windows off a desktop
-  const [file, list] = launch ? launch : useXvfb ? ['xvfb-run', ['-a', electron, ...argv]] : [electron, argv];
+  const [file, list] = launch ? launch : launchCommand(useXvfb, electron, argv, dpr);
   return new Promise((resolve) => {
     const started = Date.now();
     let log = '';
@@ -434,5 +459,5 @@ async function main({ ensure = ensureElectron, run = runOne, argv, shared = shar
   if (failed.length) process.exitCode = 1;
 }
 
-module.exports = { dprOk, sharedDesktop, syntaxErrors, main, runOne, killTree, guardTree, shard, DRIVERS, NOT_IN_SUITE }; // runOne: also spec 001 FR-082 (scripts/shots-docs.js)
+module.exports = { dprOk, xvfbScreenArgs, launchCommand, sharedDesktop, syntaxErrors, main, runOne, killTree, guardTree, shard, DRIVERS, NOT_IN_SUITE }; // runOne: also spec 001 FR-082 (scripts/shots-docs.js)
 if (require.main === module) main().catch((e) => { console.error('ui-suite:', e.message); process.exitCode = 1; });
