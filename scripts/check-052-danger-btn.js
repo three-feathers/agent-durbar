@@ -10,19 +10,21 @@
  * a clone with the disabled attribute keeps the disabled look of every primary (a background that is not the rest red, dashed border), and its rendered
  * contrast is printed, not asserted (a disabled control is exempt and the dialog fades it).
  * DANGER_MUTANT=flash adds a hover animation that goes through black; =old deletes the themed danger rules (main's cascade); =unguard drops the `:not(:disabled...)` guard from the rest rule (a disabled
- * button turns red); =nohover deletes only the hover rule. Each must fail with its own label.
+ * button turns red); =nohover deletes only the hover rule; =blackmix puts the old black mix back into every hover rule. Each must fail with its own label.
  * DANGER_REPORT=1 fails at the end on purpose, so the suite prints every measured line.
  * OUT=dir (optional) also saves 052-danger-btn-<look>-<size>.png
  */
 const assert = require('assert');
 const path = require('path');
-const { helpers, jsLiteral } = require('./driver-helpers');
+const { helpers, jsLiteral, CHECK_DARK } = require('./driver-helpers');
 const OUT = process.env.OUT || require('os').tmpdir();
 
 const LOOKS = [
   ['arcade', { officeview: 'real', world: 'retro', worldflags: 'retro' }, null],
   ['flat+pixel theme', {}, 'retro'],
   ['photo', { officeview: 'real' }, null], // the control: ui is clean, the button was always red
+  ['dark fixture', {}, CHECK_DARK], // a light fill with dark text: the hover must not darken it (4.14:1 with a black mix)
+  ['cave', { officeview: 'real', world: 'cave', worldflags: 'cave' }, null],
 ];
 
 module.exports = async (ctx) => {
@@ -41,7 +43,7 @@ module.exports = async (ctx) => {
     const t=x=>x.map(v=>Math.round(v)).join(',');
     return {css:s.backgroundColor,raw:t(B.slice(0,3)),alpha:B[3],anim:e.getAnimations().length,bg:t(bg),fg:t(fg),panel:t(panel),op:Math.round(op*100)/100,border:s.borderTopStyle,ratio:Math.round(r*100)/100};})()`;
   const SEL = '.dlg .btn.primary.danger:not([data-probe])', PROBE = '.dlg .btn.primary.danger[data-probe]';
-  const mutate = (kind) => js(`(()=>{let n=0;if(${jsLiteral(kind)}==='flash'){const st=document.createElement('style');st.textContent='@keyframes dflash{50%{background:#000}}.dlg .btn.primary.danger:hover{animation:dflash .3s}';document.head.appendChild(st);return 1}for(const s of document.styleSheets){let rules;try{rules=s.cssRules}catch(e){continue}
+  const mutate = (kind) => js(`(()=>{let n=0;if(${jsLiteral(kind)}==='blackmix'){for(const s of document.styleSheets){let rules;try{rules=s.cssRules}catch(e){continue}for(const r of rules){if(/btn\\.primary\\.danger/.test(r.selectorText||'')&&/:hover/.test(r.selectorText)){r.style.setProperty('background','color-mix(in srgb,var(--red-ink) 86%,#000)');n++}}}return n}if(${jsLiteral(kind)}==='flash'){const st=document.createElement('style');st.textContent='@keyframes dflash{50%{background:#000}}.dlg .btn.primary.danger:hover{animation:dflash .3s}';document.head.appendChild(st);return 1}for(const s of document.styleSheets){let rules;try{rules=s.cssRules}catch(e){continue}
     for(let i=rules.length-1;i>=0;i--){const t=rules[i].selectorText||'';if(!/btn\\.primary\\.danger/.test(t)||!/data-ui/.test(t))continue;const hover=/:hover/.test(t);
       if(${jsLiteral(kind)}==='old'||(${jsLiteral(kind)}==='nohover'&&hover)){s.deleteRule(i);n++;}
       else if(${jsLiteral(kind)}==='unguard'&&!hover){const body=rules[i].style.cssText;s.deleteRule(i);s.insertRule(t.replace(/:not\\(:disabled[^)]*\\)/,'')+'{'+body+'}',i);n++;}}}return n})()`);
@@ -84,6 +86,7 @@ module.exports = async (ctx) => {
       assert.strictEqual(flash.length, 0, `${tag}: the hover fade flashes: ${flash.length} frame(s) transparent or darker than both rest and hover, first rgba(${flash[0]})`);
       check('hover', hov);
       assert.notStrictEqual(hov.bg, rest.bg, `${tag}: danger button hover looks the same as rest (rgb(${hov.bg})): no hover state`);
+      await H.shot(path.join(OUT, `052-danger-btn-${look.replace(/\W+/g, '-')}-${w}x${h}-hover.png`), { prep: 'none', settle: false, tag: 'danger' });
       await js(`(()=>{const b=document.querySelector(${jsLiteral(SEL)}),k=b.cloneNode(true);k.setAttribute('data-probe','1');k.id='';k.disabled=true;b.parentNode.appendChild(k)})()`);
       H.wc().sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
       await new Promise((r) => setTimeout(r, 400));

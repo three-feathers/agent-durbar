@@ -433,3 +433,6 @@
 
 ## 2026-11-11: the red confirm button of a destructive dialog in the arcade and under the pixel theme (FR-053, FR-076, issue #1565)
 - [x] T314 `themes.css`: `html[data-ui]:not([data-ui="clean"]) .btn.primary.danger:not(:disabled,[aria-disabled=true])` and its hover, after the FR-053 primary rules; new driver `check-052-danger-btn` (listed in `ui-suite.js`) measures the End all sessions confirm button as rendered at rest, focus and hover (>= 4.5:1, background not the panel's, hover differs from rest) and the disabled look of a clone, in the arcade, the Flat office under the pixel theme and Photo, at both sizes; the hover fade is sampled per frame (opaque, never darker than both ends) and waited for with `getAnimations()`; `DANGER_MUTANT=old|unguard|nohover|flash` each fail with their own label [FR-053, FR-076, no new FR, issue #1565; same class: #1570]
+
+## 2026-11-12: the danger hover keeps its contrast on a light fill (FR-053, FR-076, issue #1565)
+- [x] T315 `styles.css` and `themes.css`: the `.btn.primary.danger:hover` mix is `--red-ink` 86% with `--ink` (was black: 4.14:1 in a dark theme); `check-052-danger-btn` adds the dark fixture and the Cave world and asserts the hovered contrast >= 4.5:1, `DANGER_MUTANT=blackmix` fails at the dark fixture's hover [FR-053, FR-076, no new FR]
