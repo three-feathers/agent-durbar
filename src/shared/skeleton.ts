@@ -5,9 +5,10 @@
  * Pure: no Electron, no DOM, no import. Keys: every letter of `CYRL_LOOK` and `GREK_LOOK` (`src/renderer/lookalike.js`, spec 003
  * FR-113..FR-116; `test:skeleton` checks the keys EQUAL those lists) and the part of `LATIN_LOOK` (a range test over about 580 code
  * points) that has an obvious Latin letter (the test checks the keys are a SUBSET of it). Code points without an entry stay as they are.
- * Honest limits: a name made only of lookalike letters (`\u041e\u0441\u0430`, `\u0391\u039d\u0391`) gets the same key as a Latin one (accepted); combining marks are not removed, only composed (NFKD, then NFC); `skeleton()` does not
- * normalise with NFKC itself (callers do first); zero-width, bidi and other HIDDEN_CHARS characters stay where they are (it is not a sanitiser:
- * `Te\u200bam` differs from `Team`); case is lowered with `toLowerCase`, not full case folding (`Stra\u00dfe` is not `STRASSE`). Pure code.
+ * Honest limits: a name made only of lookalike letters (`\u041e\u0441\u0430`, `\u0391\u039d\u0391`) gets the same key as a Latin one (accepted); combining
+ * marks are not removed, only composed (NFKD, then NFC); `skeleton()` itself applies NFKD (it folds compatibility forms: full-width letters,
+ * ligatures, circled digits) but no other normalisation; zero-width, bidi and other HIDDEN_CHARS characters stay where they are (it is not a
+ * sanitiser: `Te\u200bam` differs from `Team`); case is lowered with `toLowerCase`, not full case folding (`Stra\u00dfe` is not `STRASSE`). Pure code.
  */
 
 /** Code point -> the Latin letter it resembles (an upper-case look gives an upper-case letter). */
@@ -43,10 +44,13 @@ const mapLetters = (t: string): string => {
 };
 
 /**
- * `map(lower(map(x)))` (FR-158, 2026-11-12): NFKD (so a letter with a mark maps its base), the letter table, lower case, the table AGAIN (a
- * capital that the table maps to a lower-case letter, such as U+0500 or U+2C6D, only matches after lowering), lower case once more (the table's
- * values for small capitals are capitals, and U+01A6 lowers to U+0280, which the table maps to `R`: without it the result is not stable), NFC. With `digits` on (spec 109
- * FR-076) `0`, `1`, `i` -> `o`, `l`, `l` and every `rn` -> `m` follow, in one pass each. Linear in the length.
+ * The order (FR-158): NFKD (a letter with a mark maps its base; compatibility forms fold), the letter table, lower case, the table AGAIN, lower
+ * case, NFC. The table runs BEFORE any lower case because it holds capitals whose lower case it does not hold (`\u0412`, `\u041d`, `\u041a`, `\u041c`, `\u0422`,
+ * Greek `\u039c`, `\u0397`, `\u039a`): lowering first would lose them. The second pass catches what only a lowered table value matches (U+0500,
+ * U+0423, U+2C6D, U+A7AC, via their lower case); the last lower case keeps the result stable (the table's small-capital values are capitals,
+ * and U+01A6 lowers to U+0280, which maps to `R`). Known limit that follows: an all-capital Greek or Cyrillic name (`\u039c\u0397\u039d\u0391`) does NOT
+ * equal its small-letter form (`\u03bc\u03b7\u03bd\u03b1`), because the small letters are not lookalikes and stay as they are. With `digits` on (spec 109 FR-076)
+ * `0`, `1`, `i` -> `o`, `l`, `l` and every `rn` -> `m` follow, then a final NFC. Linear in the length.
  */
 export function skeleton(text: string, opts: { digits?: boolean } = {}): string {
   const letters = mapLetters(mapLetters(text.normalize('NFKD')).toLowerCase()).toLowerCase().normalize('NFC');
@@ -57,10 +61,14 @@ export function skeleton(text: string, opts: { digits?: boolean } = {}): string 
 }
 
 /**
- * The one key names are compared on (FR-012): NFKC, trim, white-space runs to one space, then `skeleton(.., { digits: true })` (letters, lower case, letters again, digit folds). Limits: case is folded with `toLowerCase`, not full case
- * folding, so `Stra\u00dfe` and `STRASSE`, a dotted capital I and a final sigma are not unified; a real name made only of lookalike
- * letters gets the same key as its Latin twin (accepted). Pure code.
+ * The one key names are compared on (FR-012): `skeleton(.., { digits: true })` (NFKD, table, lower case, table, lower case, NFC, digit folds,
+ * final NFC), THEN trim and white-space runs to one space. The trim comes after because NFKD turns some "spacing" marks (U+00A8, U+00AF,
+ * U+00B4, U+02D8..U+02DD and about 40 more) into a space plus a combining mark: trimming first left that space in the key, and a second run
+ * trimmed it (not idempotent; `a \u00a8` and `a \u0308` differ). No separate NFKC: the skeleton's NFKD already folds compatibility forms
+ * (`\uff32eview` = `review`, `\ufb01x` = `fix`, `\u2460` = `1`). Limits: case is folded with `toLowerCase`, not full case folding, so
+ * `Stra\u00dfe` and `STRASSE`, and a dotted capital I, are not unified; a real name made only of lookalike letters gets the same key as its
+ * Latin twin (accepted). Pure code.
  */
 export function nameKey(name: string): string {
-  return skeleton(name.normalize('NFKC').trim().replace(/\s+/gu, ' '), { digits: true });
+  return skeleton(name, { digits: true }).trim().replace(/\s+/gu, ' ');
 }
