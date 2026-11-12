@@ -191,7 +191,7 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
     return first.fits && (first.keep || !low.keep) ? first : low;
   };
   let sh = hasHelpers ? helpH(1) : 0, plan = planAt(sh);
-  if (sh && !plan.fits) { sh = 0; plan = planAt(0); }
+  if (sh && (!plan.fits || !plan.keep)) { const p0 = planAt(0); if (!plan.fits || p0.keep) { sh = 0; plan = p0; } } /* spec 102 delta 2026-11-12 (issue 1590): also no strip when it is what splits a folder of 4 or fewer that the hall keeps whole without it */
   const { g, cols, rows, sl } = plan, pk = packSeats(sizes, cols, plan.keep, nCells), cab = cabGrid(plan.gw, plan.gh), cabW = cab.w * g, cabH = cab.h * g, pw = PW * g, ph = AISLE_PERSON.h * g;
   const bend = 2 * sl, used = rows * (plan.rowH + bend);
   const Lb0 = Math.round(plan.fits ? Math.max(lobbyMin, Math.min(Ho - used - AISLE_PAD - AISLE_LANE, lobbyT)) : lobbyMin);
