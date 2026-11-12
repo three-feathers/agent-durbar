@@ -99,7 +99,7 @@ module.exports = async (ctx) => {
   // ---- 5. no second line: a limit that arrives with the chat closed says nothing then, and the open-chat line says it once when the chat opens.
   // A fresh page, so no older request is waiting (the open-chat line says the oldest one). ----
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
-    await H.load({ fastVisits: true, w, h, focus: true });
+    await H.load({ fastVisits: true, w, h, focus: true, query: { simnotes: 'some' } });
     const first = await H.openSimAgent(`a=>!a.parent&&a.live&&a.info&&(a.state==='idle'||a.state==='done')`, '#msgInput');
     assert.ok(first.ok, `${w}: opened an idle agent's chat ${jsLiteral(first.seen)}`);
     const A = first.id;
@@ -121,6 +121,38 @@ module.exports = async (ctx) => {
     assert.ok(re.ok, `${w}: the chat opens again ${jsLiteral(re.seen)}`);
     assert.ok(await settled('[Ss]pending limit'), `${w}: opening the chat says the limit and #srAnnounce settles (history ${jsLiteral(await seq())})`);
     assert.strictEqual(await said('spending limit'), 1, `${w}: limit card said once in all (arrival and open) (history ${jsLiteral(await seq())})`);
+    // ---- 5a. the card's own chat is open but the card is hidden (the Browser tab, the Notes drawer): the line sends you to the chat, never "in its card" ----
+    const hiddenCase = async (what, open, close, id, plan) => {
+      const [ev, re, hear, word] = plan
+        ? [{ type: 'plan', phase: 'proposed', requestId: id + '-' + w, text: 'Step one.' }, /proposes a plan\. Open its chat to review it\.$/, 'proposes a plan', 'plan']
+        : [{ type: 'limit', phase: 'exhausted', requestId: id + '-' + w, maxAiCredits: 50, usedAiCredits: 50 }, /reached its spending limit\. Open its chat to choose\.$/, 'spending limit', 'limit'];
+      await open();
+      await js(`window.__seq.length=0;0`);
+      await emit(ev);
+      assert.ok(await settled(plan ? 'proposes a plan' : 'reached its spending limit'), `${w}: ${what}: the ${word} is announced and #srAnnounce settles (history ${jsLiteral(await seq())})`);
+      assert.ok(re.test(await end()) && !/in its card/.test(await end()), `${w}: ${what}: the ${word} card is hidden, so the line never says "in its card" (ends on ${jsLiteral(await end())})`);
+      assert.strictEqual(await said(hear), 1, `${w}: ${what}: the ${word} is said once (history ${jsLiteral(await seq())})`);
+      await emit(plan ? { type: 'plan', phase: 'resolved', requestId: id + '-' + w, action: 'reject' } : { type: 'limit', phase: 'resolved', requestId: id + '-' + w, action: 'unset' });
+      await close();
+    };
+    const browserTab = [async () => {
+      await js(`document.getElementById('tabBrowser').click()`);
+      assert.ok(await until(`document.getElementById('tabBrowser').getAttribute('aria-selected')==='true'`, 8000), `${w}: the Browser tab is selected`);
+    }, async () => {
+      await js(`document.getElementById('tabChat').click()`);
+      assert.ok(await until(`document.getElementById('tabChat').getAttribute('aria-selected')==='true'`, 8000), `${w}: the Chat tab is selected again`);
+    }];
+    await hiddenCase('the Browser tab is showing', ...browserTab, 'l5');
+    await hiddenCase('the Browser tab is showing', ...browserTab, 'p5', true);
+    await hiddenCase('the Notes drawer is open', async () => {
+      await js(`document.getElementById('moreBtn').click()`);
+      assert.ok(await until(`!!document.getElementById('notesHdrBtn')&&!document.getElementById('moreMenu').hidden`, 8000), `${w}: More has Notes`);
+      await js(`document.getElementById('notesHdrBtn').click()`);
+      assert.ok(await until(`!!document.getElementById('notesDrawer')&&!document.getElementById('notesDrawer').hidden`, 8000), `${w}: the Notes drawer is open`);
+    }, async () => {
+      await H.key('Escape');
+      assert.ok(await until(`document.getElementById('notesDrawer').hidden`, 8000), `${w}: the Notes drawer closes`);
+    }, 'l6');
     // ---- 5b. ANOTHER agent's chat is open (Auto-follow off): the card is named, not "in its card", said once ----
     await emit({ type: 'limit', phase: 'resolved', requestId: 'l2-' + w, action: 'unset' });
     const B = await H.openSimAgent(`a=>!a.parent&&a.live&&a.info&&a.id!==${jsLiteral(A)}&&(a.state==='idle'||a.state==='done')`, '#msgInput');
