@@ -143,19 +143,20 @@ module.exports = async (ctx) => {
       assert.ok(await until(`document.getElementById('tabChat').getAttribute('aria-selected')==='true'`, 8000), `${w}: the Chat tab is selected again`);
     }];
     await hiddenCase('the Browser tab is showing', ...browserTab, 'l5');
-    await hiddenCase('the Browser tab is showing', ...browserTab, 'p5', true);
     await hiddenCase('the Notes drawer is open', async () => {
+      // Opening the drawer says "Notes. N notes." at status priority, and a status said in the same 60 ms window by something else replaces it (the latest of equal
+      // priority wins): let #srAnnounce go quiet first, then wait for the drawer's own line, so it is in before the limit's line is emitted
+      assert.ok(await until(`window.__seq.length>0&&performance.now()-window.__t0-window.__seq[window.__seq.length-1][0]>400`, 8000), `${w}: #srAnnounce is quiet before the Notes drawer opens`);
       await js(`document.getElementById('moreBtn').click()`);
       assert.ok(await until(`!!document.getElementById('notesHdrBtn')&&!document.getElementById('moreMenu').hidden`, 8000), `${w}: More has Notes`);
       await js(`document.getElementById('notesHdrBtn').click()`);
       assert.ok(await until(`!!document.getElementById('notesDrawer')&&!document.getElementById('notesDrawer').hidden`, 8000), `${w}: the Notes drawer is open`);
-      // openNotes paints the drawer after its fetch and then, in the same continuation, says "Notes. N notes." (a status): once the notes are painted that call has been made,
-      // so it cannot land after the limit's line (a status is dropped while a request waits in its window)
-      assert.ok(await until(`/This session|No notes yet/.test(document.getElementById('notesDrawer').textContent)`, 8000), `${w}: the Notes drawer painted its notes (drawer ${jsLiteral(await js(`document.getElementById('notesDrawer').textContent.slice(0,80)`))})`);
+      assert.ok(await until(`window.__seq.some(x=>/^Notes\\. /.test(x[1]))`, 8000), `${w}: the Notes drawer said its own line (history ${jsLiteral(await seq())})`);
     }, async () => {
       await H.key('Escape');
       assert.ok(await until(`document.getElementById('notesDrawer').hidden`, 8000), `${w}: the Notes drawer closes`);
     }, 'l6');
+    await hiddenCase('the Browser tab is showing', ...browserTab, 'p5', true);
     // ---- 5b. ANOTHER agent's chat is open (Auto-follow off): the card is named, not "in its card", said once ----
     await emit({ type: 'limit', phase: 'resolved', requestId: 'l2-' + w, action: 'unset' });
     const B = await H.openSimAgent(`a=>!a.parent&&a.live&&a.info&&a.id!==${jsLiteral(A)}&&(a.state==='idle'||a.state==='done')`, '#msgInput');
