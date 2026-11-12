@@ -217,4 +217,18 @@ assert.strictEqual(STOP_SHARING_TO_ANSWER, 'Stop sharing to answer'); assert.str
   assert.ok(!sentenceFor(state, ctx({ sharing: true })).includes('CANARY') && !sentenceFor(state, ctx({ sharing: true })).includes('Ada'), 'sharing: the sentence holds no file name');
 }
 
+// spec 012 FR-181 (issue #1541): a step target holding an escaped token (`ghp\_<body>`), built by a mask that masks nothing, is hidden by each surface's own mask (`cleanTarget`)
+{
+  const esc = 'ghp' + '\\_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
+  const identity: BrainMask = { ...mask, redact: (t) => String(t ?? ''), maskSecretCommand: (c) => String(c ?? ''), maskSecretArgs: (a) => [...a], maskTokenShapes: (t) => t, maskHomePaths: (t) => String(t ?? '') };
+  for (const [kind, tool, args] of [['command', 'bash', { command: 'echo ' + esc }], ['query', 'grep', { pattern: 'x ' + esc }]] as const) {
+    const { step } = stepFrom(tool, args, identity);
+    assert.ok(JSON.stringify(step).includes('A1b2C3d4'), `#1541 brainsurface ${kind}: the unmasked fixture holds the token (else this proves nothing)`);
+    for (const surface of SURFACES) {
+      const cell = formatStep(surface, step, ctx());
+      assert.ok(!cell.replace(/\\/g, '').includes('A1b2C3d4'), `#1541 brainsurface ${kind} on ${surface}: an escaped token is hidden: ${cell}`);
+    }
+  }
+}
+
 console.log('brainsurface: all checks passed');
