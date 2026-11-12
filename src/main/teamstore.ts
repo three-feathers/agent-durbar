@@ -189,7 +189,14 @@ export class TeamTemplateStore {
 
   /** What the file is now: the SHA-256 of its bytes, `none` when it is not there, `unreadable:<why>` when it cannot be read. */
   private hashNow(): string {
-    return this.hashOf(readCapped(this.fs, this.flags, this.file, MAX_STORE_BYTES));
+    return this.hashOf(this.readFile()); // read again once after a pause, as the load: a held file must not turn an honest save into `changed`
+  }
+
+  /** One capped read; a read that fails with an error or a changing file is tried once more after a short pause (an antivirus or an indexer holding it). */
+  private readFile(): ReturnType<typeof readCapped> {
+    let r = readCapped(this.fs, this.flags, this.file, MAX_STORE_BYTES);
+    if (!r.ok && (r.code === 'error' || r.code === 'changing')) { this.pause(200); r = readCapped(this.fs, this.flags, this.file, MAX_STORE_BYTES); }
+    return r;
   }
   private hashOf(r: ReturnType<typeof readCapped>): string {
     return r.ok ? sha(r.buf) : r.code === 'missing' ? 'none' : 'unreadable:' + r.code;
@@ -197,9 +204,7 @@ export class TeamTemplateStore {
 
   private loadFile(): void {
     removeStaleTemps(this.file, { fs: this.fs, pid: this.pid, alive: this.alive }); // a dead process's temp may hold briefs
-    let r = readCapped(this.fs, this.flags, this.file, MAX_STORE_BYTES);
-    // a read can fail for a moment on a good file (an antivirus or an indexer holding it): once more after a short pause; only a second failure sets it aside
-    if (!r.ok && (r.code === 'error' || r.code === 'changing')) { this.pause(200); r = readCapped(this.fs, this.flags, this.file, MAX_STORE_BYTES); }
+    const r = this.readFile(); // only a second failure sets the file aside
     this.fp = this.hashOf(r);
     if (!r.ok) {
       if (r.code === 'missing') return;
@@ -299,7 +304,7 @@ export class TeamTemplateStore {
   /**
    * Writes `next` (temp file, rename); memory changes only when the write worked, and a failure leaves the old file as it was. When the file
    * is not the one this store last read or wrote (another running instance saved: the app takes no single-instance lock) nothing is written:
-   * the store reloads and answers `changed`, so that instance's templates are never lost silently.
+   * the store reloads and answers `changed`, so that instance's templates are not lost, except two saves in the very same instant (no lock).
    */
   private commit(next: StoredTemplate[]): 'ok' | 'changed' | 'failed' {
     if (this.blocked && !this.setAside()) return 'failed';

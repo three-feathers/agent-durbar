@@ -15,9 +15,9 @@
  *   15..24 (second review, #1602): cut by code point, not grapheme; trailing joiners kept; no second read after a read error; decoder not fatal;
  *   no Windows rename retry; the retry on every platform; no fingerprint comparison; no pruning of set-aside files; folder mode 0755; isBlocked always false.
  *   25..27 (third review): prune filter loose; prune order by text; fingerprint taken after the read (since replaced by the hash mutant).
- *   27 became "hash taken after the read"; 28..31 (fourth review): size only, not the content; the file just set aside may be pruned; prune counts folders;
+ *   27 became "hash taken after the read"; 28..31 (fourth review; 32, 33 fifth: the read before a save is not retried; the retry has no pause): size only, not the content; the file just set aside may be pruned; prune counts folders;
  *   one huge grapheme leaves only the suffix. (A fingerprint of size and mtime was replaced by a SHA-256 of the bytes: it missed a write in the same mtime tick.)
- *   The list below has 31 entries in all (the "no nameKey" mutant of 5 has two variants).
+ *   The list below has 33 entries in all (the "no nameKey" mutant of 5 has two variants).
  *   No `trimEnd` before the suffix: the validator already collapses a double space, so the name is the same (the test "no double space" shows it).
  */
 import assert from 'assert';
@@ -360,6 +360,12 @@ const sections: Record<string, Section> = {
     // an unchanged file is saved, again and again
     const m4 = new MemFs(); m4.set(F, a); const s4 = make(m4, api); ok(s4.put(tpl('One')).ok && s4.put(tpl('Two')).ok, 'no change, no refusal');
   },
+  hashRetry(api) {
+    const m = new MemFs(); const s = make(m, api); ok(s.put(tpl('One')).ok, 'first save'); pauses = [];
+    m.openFails = 1; ok(s.put(tpl('Two')).ok, 'one EBUSY on the read before a save: the save passes'); eq(pauses, [200], 'after one pause'); eq(make(m, api).list().length, 2, 'both saved');
+    pauses = []; const before = m.text(F); m.openFails = 2; const r = s.put(tpl('Three')); ok(!r.ok && r.errors[0] === 'changed', 'two in a row: changed'); eq(pauses, [200], 'one pause'); eq(badNames(m).length, 0, 'the good file is NOT set aside'); eq(m.text(F), before, 'and is untouched'); eq(s.list().length, 2, 'the store reloaded it');
+    ok(s.put(tpl('Four')).ok, 'and the next save works');
+  },
   longGrapheme(api) {
     const m = new MemFs(); const s = make(m, api); const name = 'a' + '\u0301'.repeat(39);
     const t = s.put(tpl(name)); ok(t.ok, 'a name that is one grapheme'); if (!t.ok) return;
@@ -433,6 +439,8 @@ const mutants: { name: string; from: string; to: string; breaks: string }[] = [
   { name: 'compares size only, not the content', from: "crypto.createHash('sha256').update(b).digest('hex')", to: 'String(b.length)', breaks: 'sameSizeSameTime' },
   { name: 'the file just set aside may be pruned', from: 'name !== path.basename(dest) && ', to: '', breaks: 'pruneKeepsNew' },
   { name: 'prune counts and removes folders', from: 'this.isRegular(path.join(dir, name))', to: 'true', breaks: 'pruneRegularOnly' },
+  { name: 'the read before a save is not retried', from: 'return this.hashOf(this.readFile());', to: 'return this.hashOf((0, cappedread_1.readCapped)(this.fs, this.flags, this.file, exports.MAX_STORE_BYTES));', breaks: 'hashRetry' },
+  { name: 'the read retry has no pause', from: 'this.pause(200);\n            r = (0, cappedread_1.readCapped)', to: 'r = (0, cappedread_1.readCapped)', breaks: 'hashRetry' },
   { name: 'one huge grapheme leaves only the suffix', from: 'head.length === 0)', to: 'false)', breaks: 'longGrapheme' },
   { name: 'isBlocked always false', from: 'isBlocked() { return this.blocked; }', to: 'isBlocked() { return false; }', breaks: 'blockedFlag' },
   { name: 'stale temps not removed', from: '(0, schedules_1.removeStaleTemps)(this.file,', to: '(() => undefined)(this.file,', breaks: 'staleTemps' },
