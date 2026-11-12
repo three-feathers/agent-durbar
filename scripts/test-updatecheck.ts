@@ -685,7 +685,7 @@ const bodyOf = (text: string | Buffer, status = 200) => (r: FakeReq) => { const 
     // spec 009 FR-029: a line execFound refused (EUNSAFE) reads like harness setup's refusal, never `exit EUNSAFE`
     const unsafe = mk(() => ({ code: null, stdout: '', stderr: '', errorCode: 'EUNSAFE' }));
     await unsafe.checker.checkApp('copilot');
-    assert.deepStrictEqual([unsafe.checker.result('copilot')?.state, unsafe.checker.result('copilot')?.reason], ['could-not-check', 'This command cannot be run safely on this computer.']);
+    assert.deepStrictEqual([unsafe.checker.result('copilot')?.state, unsafe.checker.result('copilot')?.reason], ['could-not-check', 'This command cannot be run safely on this computer.'], 'npm: the card reads CMD_REFUSED, not "exit EUNSAFE"');
     const other = mk(() => ({ code: 2, stdout: '', stderr: '' }));
     await other.checker.checkApp('copilot');
     assert.strictEqual(other.checker.result('copilot')?.reason, 'exit 2', 'other codes keep their number');
