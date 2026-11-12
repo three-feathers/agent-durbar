@@ -10,7 +10,7 @@
  * a clone with the disabled attribute keeps the disabled look of every primary (a background that is not the rest red, dashed border), and its rendered
  * contrast is printed, not asserted (a disabled control is exempt and the dialog fades it).
  * DANGER_MUTANT=pointer leaves the pointer over the button (the pointerOff call is skipped); =flash adds a hover animation that goes through black; =old deletes the themed danger rules (main's cascade); =unguard drops the `:not(:disabled...)` guard from the rest rule (a disabled
- * button turns red); =nohover deletes only the hover rule; =blackmix puts the old black mix back into every hover rule. Each must fail with its own label.
+ * button turns red); =nohover deletes only the hover rule; =blackmix puts the old black mix back into every hover rule; =blackmix-styles only into the one in styles.css (the rule without data-ui: it governs the looks whose ui style is clean, e.g. the dark fixture; in the arcade themes.css wins, so there it changes nothing). Each must fail with its own label.
  * DANGER_REPORT=1 fails at the end on purpose, so the suite prints every measured line.
  * OUT=dir (optional) also saves 052-danger-btn-<look>-<size>.png
  */
@@ -43,7 +43,7 @@ module.exports = async (ctx) => {
     const t=x=>x.map(v=>Math.round(v)).join(',');
     return {css:s.backgroundColor,raw:t(B.slice(0,3)),alpha:B[3],anim:e.getAnimations().length,bg:t(bg),fg:t(fg),panel:t(panel),op:Math.round(op*100)/100,border:s.borderTopStyle,ratio:Math.round(r*100)/100};})()`;
   const SEL = '.dlg .btn.primary.danger:not([data-probe])', PROBE = '.dlg .btn.primary.danger[data-probe]';
-  const mutate = (kind) => js(`(()=>{let n=0;if(${jsLiteral(kind)}==='blackmix'){for(const s of document.styleSheets){let rules;try{rules=s.cssRules}catch(e){continue}for(const r of rules){if(/btn\\.primary\\.danger/.test(r.selectorText||'')&&/:hover/.test(r.selectorText)){r.style.setProperty('background','color-mix(in srgb,var(--red-ink) 86%,#000)');n++}}}return n}if(${jsLiteral(kind)}==='flash'){const st=document.createElement('style');st.textContent='@keyframes dflash{50%{background:#000}}.dlg .btn.primary.danger:hover{animation:dflash .3s}';document.head.appendChild(st);return 1}for(const s of document.styleSheets){let rules;try{rules=s.cssRules}catch(e){continue}
+  const mutate = (kind) => js(`(()=>{let n=0;if(${jsLiteral(kind)}==='blackmix'||${jsLiteral(kind)}==='blackmix-styles'){for(const s of document.styleSheets){let rules;try{rules=s.cssRules}catch(e){continue}for(const r of rules){if(/btn\\.primary\\.danger/.test(r.selectorText||'')&&/:hover/.test(r.selectorText)&&(${jsLiteral(kind)}==='blackmix'||!/data-ui/.test(r.selectorText))){r.style.setProperty('background','color-mix(in srgb,var(--red-ink) 86%,#000)');n++}}}return n}if(${jsLiteral(kind)}==='flash'){const st=document.createElement('style');st.textContent='@keyframes dflash{50%{background:#000}}.dlg .btn.primary.danger:hover{animation:dflash .3s}';document.head.appendChild(st);return 1}for(const s of document.styleSheets){let rules;try{rules=s.cssRules}catch(e){continue}
     for(let i=rules.length-1;i>=0;i--){const t=rules[i].selectorText||'';if(!/btn\\.primary\\.danger/.test(t)||!/data-ui/.test(t))continue;const hover=/:hover/.test(t);
       if(${jsLiteral(kind)}==='old'||(${jsLiteral(kind)}==='nohover'&&hover)){s.deleteRule(i);n++;}
       else if(${jsLiteral(kind)}==='unguard'&&!hover){const body=rules[i].style.cssText;s.deleteRule(i);s.insertRule(t.replace(/:not\\(:disabled[^)]*\\)/,'')+'{'+body+'}',i);n++;}}}return n})()`);
@@ -82,11 +82,13 @@ module.exports = async (ctx) => {
       check('focus', await js(MEASURE(SEL)));
       const c = await js(`(()=>{const r=document.querySelector(${jsLiteral(SEL)}).getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
       // every frame of the hover fade is sampled (from before the pointer moves): rest -> hover must stay opaque and never go darker than both ends (a flash)
-      await js(`(()=>{const px=window.__px;window.__fr=[];const b=document.querySelector(${jsLiteral(SEL)}),t0=performance.now();const f=()=>{window.__fr.push(px(getComputedStyle(b).backgroundColor));if(performance.now()-t0<900)requestAnimationFrame(f)};requestAnimationFrame(f)})()`);
+      await js(`(()=>{const px=window.__px;window.__fr=[];window.__frDone=false;const b=document.querySelector(${jsLiteral(SEL)}),t0=performance.now();const f=()=>{window.__fr.push(px(getComputedStyle(b).backgroundColor));if(performance.now()-t0<900)requestAnimationFrame(f);else window.__frDone=true};requestAnimationFrame(f)})()`);
       await new Promise((r) => setTimeout(r, 60));
       H.wc().sendInputEvent({ type: 'mouseMove', x: c.x, y: c.y });
       assert.ok(await until(`document.querySelector(${jsLiteral(SEL)}).matches(':hover')`, 3000), `${tag}: the pointer is over the button`);
-      assert.ok(await until(`document.querySelector(${jsLiteral(SEL)}).getAnimations().length===0&&window.__fr.length>20`, 5000), `${tag}: the hover transition ended (no running animation)`);
+      assert.ok(await until(`document.querySelector(${jsLiteral(SEL)}).getAnimations().length===0&&window.__frDone`, 5000), `${tag}: the hover transition ended (no running animation) and the 900 ms frame sampling finished`);
+      const nfr = await js(`window.__fr.length`);
+      assert.ok(nfr >= 5, `${tag}: only ${nfr} animation frame(s) were sampled in 900 ms: too few to see the hover fade (a slow or starved renderer, not a colour result)`);
       const hov = await js(MEASURE(SEL));
       const fr = await js(`window.__fr`);
       const L = (x) => 0.2126 * x[0] + 0.7152 * x[1] + 0.0722 * x[2], ends = [L(fr[0]), L(fr[fr.length - 1])], lo = Math.min(...ends) - 2;
