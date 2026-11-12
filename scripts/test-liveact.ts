@@ -5,7 +5,7 @@ import assert from 'assert';
 import { assertLinearShape } from './redact-growth-lib';
 import fs from 'fs';
 import path from 'path';
-import { redact, maskSecretCommand, maskSecretUrl, maskHomePaths } from '../src/shared/redact';
+import { redact, maskSecretCommand, maskSecretUrl, maskHomePaths, maskBareTokenShapes } from '../src/shared/redact';
 import { grantScope } from '../src/adapters/permissions';
 
 const ROOT = path.join(__dirname, '..', '..');
@@ -473,6 +473,15 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   eq(L.toolName(TK, { redact: () => TK + ' ' }), 'tool', 'any change at all: tool');
   eq(L.toolName(TK, { redact: () => undefined as unknown as string }), 'tool', 'a mask answering no string: tool');
   eq(L.toolName('x'.repeat(1000001) + TK, hm), 'tool', 'over the 1,000,000-character cut of redact: tool, never the raw token');
+  // spec 012 FR-181 (review of PR 1585, round 7): a name over 256 characters is the neutral word before any mask runs (fail closed; real names are under 30 characters)
+  eq(L.toolName('\\a'.repeat(150), hm), 'tool', '#1585 round 7 toolName: a name over 256 characters is the neutral word');
+  eq(L.toolName('a'.repeat(256), hm), 'a'.repeat(256), '#1585 round 7 toolName: a name of 256 characters is still shown');
+  eq(L.toolName('[redacted:'.repeat(4000) + ']a\\b', hm), 'tool', '#1585 round 7 toolName: a 40,000-character [redacted: name is the neutral word');
+  {
+    const t0 = Date.now(), r = L.toolName('\\a'.repeat(500_000), hm), ms = Date.now() - t0;
+    eq(r, 'tool', '#1585 round 7 toolName: a 1 MB backslash-dense name is the neutral word');
+    ok(ms < 1000, '#1585 round 7 toolName: a 1 MB backslash-dense name is answered before any mask runs (generous limit 1,000 ms; took ' + ms + ' ms)');
+  }
   eq(L.phrase({ kind: 'tool', tool: TK, label: '' }, { redact: () => '[redaction failed]' }), 'Using tool', 'phrase with a failed mask: Using tool');
   // the chat: every surface that names a tool calls the one function
   const app = fs.readFileSync(path.join(R, 'app.js'), 'utf8').replace(/\r\n/g, '\n');
@@ -530,6 +539,29 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
     eq(L.permText('mcp ' + TK, k, { redact: () => { throw new Error('x'); }, cmd: () => { throw new Error('x'); }, url: () => { throw new Error('x'); } }), { text: w, hidden: true, why: 'unchecked' }, k + ': a throwing mask: neutral words, unchecked');
     eq(L.permText('mcp ' + TK, k, { redact: () => 5 as unknown as string, cmd: () => 5 as unknown as string, url: () => 5 as unknown as string }), { text: w, hidden: true, why: 'unchecked' }, k + ': a mask that gives no string: neutral words, unchecked');
   }
+  // spec 012 FR-181 (T163): the desk's maskRaw (redact underneath) hides the rest glued to a named marker `[redacted:NAME]`, as it does after a plain `[redacted]`
+  {
+    const ST = require(path.join(R, 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string };
+    const V = 'Vq7Wx8Ec9Rv0Tb1Yn2Um3Ik4', REST = 'abcdefghij0123456789xy';
+    const red = (t: string) => redact(t, { FOO_TOKEN: V });
+    for (const sep of ['_', '-', '']) eq(ST.maskRaw('secret=' + V + sep + REST, red), 'secret=[redacted:FOO_TOKEN]', '#1544 named marker: maskRaw hides the rest glued to a named marker (' + (sep || 'no separator') + ')');
+    eq(ST.maskRaw('cp ' + V + '_backup', red), 'cp [redacted:FOO_TOKEN]_backup', '#1544 named marker: maskRaw keeps a short suffix');
+  }
+  // spec 012 FR-181 (review of PR 1585): a shell escape of a letter (`g\hp_`, `ghp_\A…`) is hidden on the card too, because the shell kind's mask is maskSecretCommand
+  {
+    const B = 'A1b2C3d4E5f6' + 'G7h8I9j0K1l2M3n4O5p6Q7r8';
+    for (const [what, tok] of [['g\\hp_', 'g\\hp_' + B], ['ghp_\\A', 'ghp_\\' + B]] as const) {
+      eq(L.permText('run echo ' + tok, 'shell', mask), { text: 'run echo [redacted]', hidden: true, why: 'secret' }, '#1585 permText shell: ' + what + ' is hidden, the command kept as written');
+    }
+  }
+  // spec 012 FR-180, kept alive after FR-181 (review of PR 1585, round 4): the shared masks now hide an escaped run themselves, so the window's order (runs BEFORE the mask) is
+  // pinned with a mask that reads text only as written (`maskBareTokenShapes`): a token glued to an escaped one is hidden in place, not blinded by the final check
+  {
+    const ST = require(path.join(R, 'safetext.js')) as { maskLabel(t: string, k: string, m: Record<string, (s: string) => string>): string };
+    const B = 'A1b2C3d4E5f6' + 'G7h8I9j0K1l2M3n4O5p6Q7r8';
+    const asWritten = { cmd: (s: string) => maskBareTokenShapes(s, '[redacted]'), redact: (s: string) => maskBareTokenShapes(s, '[redacted]') }; // the bare shapes: no escaped-run step and no glued rest
+    eq(ST.maskLabel('run echo ghp_' + B + 'ghp\\_' + B, 'run', asWritten), 'run echo [redacted]', 'FR-180 order: a token glued to an escaped one is hidden in place by a mask that reads text as written');
+  }
   // spec 012 FR-180: a Markdown-escaped token (`ghp\_...`) is hidden on the card as the desk mask hides it, and the command is shown as written
   {
     const ST = require(path.join(R, 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string; maskLabel(t: string, k: string, m: Record<string, (s: string) => string>): string };
@@ -572,7 +604,9 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
       ok(!sh.text.includes('Zq9x') && sh.hidden, 'stretch ' + v.slice(0, 5) + ': shell kind hides the rest: ' + sh.text);
       const p = L.phrase({ kind: 'run', tool: 'Bash', label: 'echo ' + v }, hm), pr = L.phrase({ kind: 'read', tool: 'Read', label: 'notes ' + v }, hm);
       ok(!p.includes('Zq9x') && !pr.includes('Zq9x'), 'stretch ' + v.slice(0, 5) + ': phrase hides the rest: ' + p + ' / ' + pr);
-      eq(ST.maskLabel('send ' + v, 'other', mask), '', 'stretch ' + v.slice(0, 5) + ': a mask that changes only the unescaped copy gives an empty label');
+      // the shared mask now hides the escaped rest as written (spec 012 FR-181, review of PR 1585), so the label keeps its text; a mask that reads only text without a backslash still fails closed
+      eq(ST.maskLabel('send ' + v, 'other', mask), 'send ' + v.slice(0, v.indexOf(']') + 1), 'stretch ' + v.slice(0, 5) + ': the shared mask hides the escaped rest in place');
+      eq(ST.maskLabel('send ' + v, 'other', { ...mask, redact: (x: string) => (x.includes('\\') ? x : redact(x, {})) }), '', 'stretch ' + v.slice(0, 5) + ': a mask that changes only the unescaped copy gives an empty label');
     }
     // round 3: the stretch hidden in place, not by blanking the label (escaped brackets make the whole value one run)
     for (const v of ['password=\\[redacted\\]\\_Zq9xW8vU7tS6rQ5p', 'x\\[redacted\\]\\_Zq9xW8vU7tS6rQ5p', 'token=\\[redacted\\]\\-Zq9xW8vU7tS6rQ5p']) {
