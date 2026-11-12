@@ -70,18 +70,33 @@ module.exports = async (ctx) => {
       const check = (state, m) => { line(state, m); if (!process.env.PRIMARY_REPORT) assert.ok(m.ratio >= 4.5, `${tag}: primary button ${state} contrast ${m.ratio}:1 is below 4.5:1`); };
       const still = async () => assert.ok(await until(`document.querySelector(${jsLiteral(SEL)}).getAnimations().length===0`, 5000), `${tag}: the transition ended`);
       await still();
-      const rest = await js(MEASURE(SEL));
+      /* review of PR #1618: a read can land mid-fade on the fresh clone even when getAnimations() is empty (the CSS value was already final); so read only once two reads
+         100 ms and two animation frames apart give the same computed and painted colours, no animation runs, and the pointer state is the one asked for (bounded, then fails by name) */
+      const stable = async (state, want) => {
+        let prev = null, m = null;
+        for (let i = 0; i < 40; i++) {
+          await js(`window.__raf=0;requestAnimationFrame(()=>requestAnimationFrame(()=>{window.__raf=2}));0`);
+          await until(`window.__raf===2`, 2000);
+          await new Promise((r) => setTimeout(r, 100));
+          m = await js(MEASURE(SEL));
+          const key = m && `${m.css}|${m.bg}|${m.fg}`;
+          if (m && prev === key && m.anim === 0 && (!want || await js(`document.querySelector(${jsLiteral(SEL)}).matches(${jsLiteral(want)})`))) return m;
+          prev = key;
+        }
+        assert.fail(`${tag}: the ${state} colours never settled (last read ${m && m.css} text rgb(${m && m.fg}) on rgb(${m && m.bg}))`);
+      };
+      const rest = await stable('rest', ':not(:hover):not(:active)');
       check('rest', rest);
       const c = await js(`(()=>{const r=document.querySelector(${jsLiteral(SEL)}).getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
       H.wc().sendInputEvent({ type: 'mouseMove', x: c.x, y: c.y });
       assert.ok(await until(`document.querySelector(${jsLiteral(SEL)}).matches(':hover')`, 3000), `${tag}: the pointer is over the button`);
       await still();
-      check('hover', await js(MEASURE(SEL)));
+      check('hover', await stable('hover', ':hover'));
       await H.shot(path.join(OUT, `052-primary-btn-${look.replace(/\W+/g, '-')}-${w}x${h}-hover.png`), { prep: 'none', settle: false, tag: 'primary' });
       H.wc().sendInputEvent({ type: 'mouseDown', x: c.x, y: c.y, button: 'left', clickCount: 1 });
       assert.ok(await until(`document.querySelector(${jsLiteral(SEL)}).matches(':active')`, 3000), `${tag}: the button is pressed (:active)`);
       await still();
-      check('active', await js(MEASURE(SEL)));
+      check('active', await stable('active', ':active'));
       H.wc().sendInputEvent({ type: 'mouseUp', x: c.x, y: c.y, button: 'left', clickCount: 1 });
       await H.shot(path.join(OUT, `052-primary-btn-${look.replace(/\W+/g, '-')}-${w}x${h}.png`), { prep: 'none', settle: false, tag: 'primary' });
       await js(`document.querySelector(${jsLiteral(SEL)}).remove()`);

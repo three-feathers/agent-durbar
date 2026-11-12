@@ -587,14 +587,18 @@
         const bg=hexOf('--brand-bg'),mk=bg&&hexOf('--brand-mark',bg);
         if(bg&&mk){
           const low=m=>ratio(m,mixHex(bg,m,BRAND_HOVER_MIX).slice(0,7));
+          /* mark = the resolved hex of the text (a name, rgb() or hsl() token is measured, never passed raw to mixHex, which reads hex only); never throws */
+          let mark=mk;
           if(low(mk)<4.5&&ratio(mk,bg)<4.5){
             const to=ratio('#ffffff',bg)>=ratio('#000000',bg)?'#ffffff':'#000000';
+            const ok=m=>low(m)>=4.5&&ratio(m,bg)>=4.5; /* the repaired text holds at rest as well as hovered (review of PR #1618, finding 2) */
             let v=mixHex(mk,to,1);
-            if(low(v)>=4.5){let lo=0,hi=1;for(let i=0;i<12;i++){const mid=(lo+hi)/2;if(low(mixHex(mk,to,mid))>=4.5)hi=mid;else lo=mid;}v=mixHex(mk,to,hi);}
+            if(ok(v)){let lo=0,hi=1;for(let i=0;i<12;i++){const mid=(lo+hi)/2;if(ok(mixHex(mk,to,mid)))hi=mid;else lo=mid;}v=mixHex(mk,to,hi);}
             else v=readableOn(mk,bg,4.5); /* a toward-text hover cannot hold: the text reads at rest, the hover goes away from it */
+            mark=v;
             if(v!==t['--brand-mark']){t['--brand-mark']=v;changed=true;if(!back.includes('--brand-mark'))back.push('--brand-mark');}
           }
-          t['--brand-hover']=brandHover(t['--brand-mark'],bg);
+          t['--brand-hover']=brandHover(mark,bg);
         }
       }
       if(!changed)break;
@@ -893,6 +897,7 @@
     const el=document.documentElement;
     if(currentWorld){
       applyTokens(worldResolved);
+      el.style.removeProperty('--brand-hover'); /* a user theme's repair target (issue #1614) is not the world's; leaving the world re-applies the theme's tokens */
       for(const [k,v] of Object.entries(WORLD_SETS[currentWorld].shadow))el.style.setProperty(k,v);
       el.dataset.world=currentWorld;
       if(WORLD_SETS[currentWorld].dark)el.dataset.dark='';else delete el.dataset.dark; /* a light world's bar is dark by its own rules */

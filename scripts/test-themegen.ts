@@ -7,7 +7,7 @@ import { BRAND_HOVER_MIX, brandHoverTarget, COLOUR_HUE_RE, COLOUR_NUM_RE, CONTRA
 import { TOKEN_VALUE_MAX } from '../src/shared/themes';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const T = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'theme.js')) as { _tokens(): Record<string, string>; setTheme(m: unknown): string; token(k: string): string; contrastCheck(m: unknown): string[]; fallbacks(id: string): { contrast: string[] } };
+const T = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'theme.js')) as { _tokens(): Record<string, string>; setTheme(m: unknown): string; setWorld(id: string | null): string | null; token(k: string): string; contrastCheck(m: unknown): string[]; fallbacks(id: string): { contrast: string[] } };
 const clean = T._tokens(); // a fresh module: Clean Office's full token set
 assert.ok(Object.keys(clean).length > 100, 'all of Clean Office');
 
@@ -125,6 +125,69 @@ assert.ok(Object.keys(clean).length > 100, 'all of Clean Office');
   assert.strictEqual(T.token('--brand-hover'), null, 'a clean-ui theme gets no hover target');
   const rc = repaired('clean');
   assert.ok(!rc.fixed.includes('--brand-mark') && rc.mark === clean['--brand-mark'], 'a clean-ui theme keeps Clean Office\'s own pale pair');
+  // review round 2 of PR #1618 (finding 1): a --brand-mark written as a name, rgb() or hsl() is resolved before the hover target is chosen; setTheme never throws, and a value that is no colour is left (listed unmeasured)
+  for (const mk of ['white', 'rgb(255,255,255)', 'hsl(0,0%,100%)', 'rgb(255 255 255 / 1)', 'WHITE', 'not-a-colour', 'currentColor', '']) {
+    const man = { id: 'form-' + mk, name: 'F', version: '1.0', author: 't', ui: 'retro', tokens: { '--brand-bg': '#2a6a9a', '--brand-mark': mk } };
+    assert.doesNotThrow(() => { T.setTheme(man); T.contrastCheck(man); T.fallbacks('form-' + mk); }, `a retro-ui theme with --brand-mark "${mk}" does not throw`);
+    if (parseColor(mk)) {
+      const h = T.token('--brand-hover'), m = T.token('--brand-mark');
+      assert.strictEqual(h, '#000000', `"${mk}" on #2a6a9a: the resolved white hovers toward black (got ${h})`);
+      assert.ok(contrast(resolveColor(m, '#2a6a9a') as string, '#2a6a9a') >= 4.5, `"${mk}" on #2a6a9a reads 4.5:1 at rest`);
+    }
+  }
+  // review round 2 (finding 2): the least-mix search keeps the text at 4.5:1 at rest too (the review's pair: #ffa243 was 4.30 at rest, 4.51 hovered)
+  const restHov = (bg: string, mk: string): [number, number] => {
+    T.setTheme({ id: `rh-${bg}-${mk}`, name: 'R', version: '1.0', author: 't', ui: 'retro', tokens: { '--brand-bg': bg, '--brand-mark': mk } });
+    const m = T.token('--brand-mark'), b = T.token('--brand-bg'), h = T.token('--brand-hover');
+    return [contrast(m, b), contrast(m, mixHex(b, h, BRAND_HOVER_MIX))];
+  };
+  for (const [bg, mk] of [['#0000ff', '#ff8000'], ['#b20513', '#0dd89f']]) {
+    const [rest, hovd] = restHov(bg, mk);
+    assert.ok(rest >= 4.5 && hovd >= 4.5, `fixture ${mk} on ${bg}: rest ${rest.toFixed(3)}, hovered ${hovd.toFixed(3)}`);
+  }
+  // a seeded random grid (mulberry32), 4000 pairs, rest and hovered both at 4.5:1
+  {
+    let seed = 20261112;
+    const rnd = (): number => { seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    const hx = (): string => '#' + [0, 0, 0].map(() => Math.floor(rnd() * 256).toString(16).padStart(2, '0')).join('');
+    let n = 0, underRest = 0, underHov = 0, minRest = 99, minHov = 99;
+    for (; n < 4000; n++) {
+      const bg = hx(), mk = hx(), [rest, hovd] = restHov(bg, mk);
+      minRest = Math.min(minRest, rest); minHov = Math.min(minHov, hovd);
+      if (rest < 4.5) underRest++;
+      if (hovd < 4.5) underHov++;
+    }
+    assert.strictEqual(underRest, 0, `random grid: ${underRest} of ${n} pairs under 4.5:1 at rest (min ${minRest.toFixed(3)})`);
+    assert.strictEqual(underHov, 0, `random grid: ${underHov} of ${n} pairs under 4.5:1 hovered (min ${minHov.toFixed(3)})`);
+    console.log(`themegen random grid: ${n} pairs (seed 20261112), under 4.5:1 at rest ${underRest} (min ${minRest.toFixed(3)}), hovered ${underHov} (min ${minHov.toFixed(3)})`);
+  }
+  // review round 2 (findings 4 and 5): --brand-hover on <html> follows the theme and the world (a stub document; theme.js only needs documentElement.style and .dataset)
+  {
+    const props = new Map<string, string>();
+    const stub = { documentElement: { style: { setProperty: (k: string, v: string) => { props.set(k, v); }, removeProperty: (k: string) => { props.delete(k); } }, dataset: {} as Record<string, string> } };
+    const g = globalThis as unknown as { document?: unknown };
+    const had = g.document;
+    g.document = stub;
+    try {
+      const user = (id: string, ui: string, tokens: Record<string, string>) => ({ id, name: id, version: '1.0', author: 't', ui, tokens });
+      T.setTheme(user('st-retro', 'retro', { '--brand-bg': '#2a6a9a', '--brand-mark': '#ffffff' }));
+      assert.strictEqual(props.get('--brand-hover'), '#000000', 'a retro-ui user theme sets --brand-hover on the root');
+      T.setTheme(user('st-clean', 'clean', { '--brand-bg': '#2a6a9a' }));
+      assert.strictEqual(props.has('--brand-hover'), false, 'a theme without --brand-hover after one with it clears the property');
+      T.setTheme(user('st-retro2', 'retro', { '--brand-bg': '#2a6a9a', '--brand-mark': '#ffffff' }));
+      T.setTheme('retro');
+      assert.strictEqual(props.has('--brand-hover'), false, 'a built-in theme after a user theme clears it');
+      T.setTheme(user('st-retro3', 'retro', { '--brand-bg': '#2a6a9a', '--brand-mark': '#ffffff' }));
+      const W = T as unknown as { setWorld(id: string | null): string | null };
+      W.setWorld('cave');
+      assert.strictEqual(props.has('--brand-hover'), false, 'a world shown over a user theme removes its --brand-hover');
+      W.setWorld(null);
+      assert.strictEqual(props.get('--brand-hover'), '#000000', 'leaving the world brings the user theme\'s --brand-hover back');
+      W.setWorld('retro');
+      assert.strictEqual(props.has('--brand-hover'), false, 'the arcade over a user theme removes it too');
+      W.setWorld(null);
+    } finally { if (had === undefined) delete g.document; else g.document = had; }
+  }
   // paths, muted text and ink on each room tint, not only --bg
   for (const t of ['sage', 'blue', 'sand', 'clay']) for (const fg of ['--room-path', '--muted', '--ink']) {
     assert.ok(CONTRAST_PAIRS.some(([a, b, m]) => a === fg && b === `--tint-${t}` && m === 4.5), `${fg} on --tint-${t}`);
