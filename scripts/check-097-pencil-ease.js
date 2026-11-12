@@ -6,19 +6,24 @@
  *   npm run check:ui -- --only check-097-pencil-ease      (builds first)
  *   PENCIL_EASE_MUTANT=<name>        each must fail with the label named here:
  *     nohide     the hide cancelled right after the move starts (the code before the fix): "no pencil is painted over its plate's name, role or status"
- *     late       the frames start 700 ms after the move (a capture slower than the ease): "frames caught the plates on their way"
+ *     late       the frames are requested 700 ms after the move (a harness that started late; zero requests in the first 200 ms): "frames caught the plates on their way"
  *     half       the hold at opacity 0.5, not 0: "each moving plate's pencil is at opacity 0 for as long as its plate eases"
  *     early      the hold ends at 30 % of the ease: "no pencil is painted over …" (the opacity label when the painted check is skipped)
  *     skew       the hold a time of its own that ends 40 ms before its plate's ease (the race seen in the cave, review of PR 1555): the opacity label
  *     focushide  the focused pencil hidden too: "the focused pencil stays shown (opacity 1) while its plate eases"
  *     parkold    the pointer parked at the first version's spot, whatever the screen (with PENCIL_EASE_SCREEN=1280x1024 at DPR 2): "the pointer is parked on the visible screen"
  *     far        every pencil 6 px further from its name: "once the ease is over every pencil is painted just after its name"
+ *     noease     the OS asks for reduced motion (nothing eases): with PENCIL_EASE_SCREEN smaller than the window the labelled "skipped: no plate eased ... the window is larger than the X screen";
+ *                with the window inside the screen it fails "the opacity reads saw moving plates"
+ *     oldfocus   the focus listener as it was (the cancelled hold stays the current one): a pencil focused while hidden fades in from 0 at the end of the ease:
+ *                "a pencil focused while hidden stays at opacity 1 through the end of its plate's ease"
  *     pin        the pointer back on a working plate after parking (it did not leave): fails "the hover card closed after the pointer left"; with PENCIL_EASE_SCREEN smaller than the
  *                window it is the labelled "skipped: the pointer-dependent checks ... need the window inside the screen" instead
  *     hover      the pointer left on a working plate before the end frame: "no hover card is open over the plates in the end frame"
  *   PENCIL_EASE_SIZE=1280x800        only that size
  *   PENCIL_EASE_WORLDS=photo,arcade  only those worlds (photo, cave, arcade)
  *   PENCIL_EASE_SLOW_CAPTURE=<ms>    a pause after each mid-move capture, as a slow (software) compositor: the 3-frame assert is then skipped, printed
+ *   PENCIL_EASE_CAPTURE_DELAY=<ms>   each capture is requested on time and answered that late: the 3-frame rule is skipped, printed, never failed (`late` is a request made late)
  *   PENCIL_EASE_BLUR=<px>            box-blur every capture first (device px), as a resampling compositor would: the check must still pass and still fail nohide
  *   PENCIL_EASE_SKIP_PAINTED=1       take the DPR 2 fallback's path (painted checks skipped, printed): shows what the opacity reads alone still fail
  *   PENCIL_EASE_SCREEN=<W>x<H>       an X screen of that many device px: plates beyond it are skipped by the painted checks, printed ("skipped: painted
@@ -48,7 +53,7 @@
 const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
-const { helpers, jsLiteral } = require('./driver-helpers');
+const { helpers, jsLiteral, STILL_STAGE } = require('./driver-helpers');
 const { parkCandidates, parkVisible, windowOutsideScreen } = require('./pencil-park');
 
 const MUTANT = process.env.PENCIL_EASE_MUTANT || '';
@@ -59,6 +64,7 @@ const ALL = { photo: {}, cave: { worldflags: 'cave', world: 'cave' }, arcade: { 
 const WORLDS = (process.env.PENCIL_EASE_WORLDS || 'photo,arcade').split(',').filter((w) => ALL[w]);
 const SPAN = 320; /* ms of frames after the move starts: the ease is 280..520 ms, the displacement was seen in its first ~200..300 ms */
 const SLOW_CAP = Number(process.env.PENCIL_EASE_SLOW_CAPTURE || 0); /* a pause after each capture (ms): stands in for a slow compositor, to show the skip below */
+const CAPTURE_DELAY = Number(process.env.PENCIL_EASE_CAPTURE_DELAY || 0); /* ms between a capture's request and its image: a compositor that answers late (a first image at 250 ms is not a late harness) */
 const SKIP_PAINTED = process.env.PENCIL_EASE_SKIP_PAINTED === '1';
 const SCREEN = process.env.PENCIL_EASE_SCREEN || ''; /* <W>x<H> device px: treat plates beyond it as off the X screen (as a small Xvfb screen leaves them) */
 const MIN_CAUGHT = 3; /* frames in the first 200 ms that must show a plate on its way (Mac: 9..13 of them, one every ~17 ms) */
@@ -145,18 +151,20 @@ module.exports = async (ctx) => {
   const SIM = 'window.__durbarSimUi';
   const REAL = `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'`;
   const PICS = `[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`;
-  const STILL = `!document.getElementById('stage').getAnimations({subtree:true}).some(a=>!a.animationName&&a.playState==='running')`; /* no WAAPI move or fade (the CSS loops, a person's bob, keep running) */
+  const STILL = STILL_STAGE; /* no WAAPI move or fade (the CSS loops, a person's bob, keep running): the one text the release clip's capture waits on too */
   /* page code: a plate's own move (translate or scale), as realoffice.js starts it */
   const EASE_OF = `(p=>p.getAnimations().find(a=>!a.animationName&&a.playState==='running'&&a.effect&&a.effect.getKeyframes().some(f=>f.translate||f.scale)))`;
   if (OUT) fs.mkdirSync(OUT, { recursive: true });
   const log = (...a) => { console.log('[097-pencil-ease]', ...a); if (OUT) fs.appendFileSync(path.join(OUT, '097-pencil-ease.log'), a.join(' ') + '\n'); }; /* also beside the frames: the suite prints a driver's log only when it fails */
   if (MUTANT) log('mutant:', MUTANT);
+  /* the X screen and the window in device px (PENCIL_EASE_SCREEN stands in for a smaller screen), as the page sees them now */
+  const screenInfo = () => js(`(()=>{const d=devicePixelRatio,m=/^(\\d+)x(\\d+)$/.exec(${jsLiteral(SCREEN)});return {dpr:d,view:[innerWidth,innerHeight],top:document.getElementById('stage').getBoundingClientRect().top,screen:m?[+m[1],+m[2]]:[Math.round(screen.width*d),Math.round(screen.height*d)],at:[Math.round((screenX+(outerWidth-innerWidth))*d),Math.round((screenY+(outerHeight-innerHeight))*d)]}})()`);
   for (const world of WORLDS) for (const [w, h] of SIZES) {
     const tag = `${world} ${w}x${h}`;
     await H.load({ w, h, query: { officeview: 'real', simfreeze: '1', romotion: '1', ...ALL[world] }, ready: REAL, settle: false });
     /* the OS may ask for reduced motion (then nothing eases, FR-249): this check needs the ease */
     const dbg = wc().debugger; if (!dbg.isAttached()) dbg.attach('1.3');
-    await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+    await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: MUTANT === 'noease' ? 'reduce' : 'no-preference' }] });
     const READY = PICS + `&&document.querySelector('#stage .ro').dataset.go==='1'`;
     await must(READY, `${tag}: the pictures, and the office past its first 2 s (FR-228: nothing eases before)`);
     wc().sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
@@ -201,9 +209,21 @@ module.exports = async (ctx) => {
         S.samples++;if(performance.now()-t0<900)requestAnimationFrame(step);else S.done=true;};
       step();
       return [...document.querySelectorAll('#stage .ro-plate')].filter(p=>${EASE_OF}(p)).length})()`);
+    /* nothing eased and the window is larger than the X screen (a Windows runner's 1024x768 under a 1440x900 window printed 0 plates easing): every check below
+       needs plates on their way, so the run ends here, labelled, with the numbers; with the window inside the screen it goes on and fails as before */
+    if (easing === 0) {
+      const sc0 = await screenInfo(), win0 = sc0.view.map((v) => v * sc0.dpr);
+      if (windowOutsideScreen({ win: win0, screen: sc0.screen, at: sc0.at })) {
+        log(tag, `skipped: no plate eased (0 of ${n} plates easing at the start) and the window is larger than the X screen (screen ${sc0.screen.join('x')} device px, window content ${win0.join('x')} at ${sc0.at.join(',')}, devicePixelRatio ${sc0.dpr}): the checks that need plates on their way, the opacity reads, the frames and the status changes, are not run for this size; the product's ease under a clipped window is not shown here`);
+        try { await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] }); dbg.detach(); } catch (e) { /* the page went */ }
+        continue;
+      }
+    }
     if (MUTANT === 'late') await ctx.sleep(700);
     const t0 = Date.now(), frames = [];
-    while (Date.now() - t0 < SPAN) { const img = await wc().capturePage(); frames.push({ t: Date.now() - t0 + (MUTANT === 'late' ? 700 : 0), img }); if (SLOW_CAP) await ctx.sleep(SLOW_CAP); }
+    /* a frame's time is when its capture was REQUESTED (a slow compositor hands the image back later, which says nothing about whether the harness started on time:
+       a first request 700 ms late is the late mutant, a first request on time whose image arrives 250 ms later is a slow capture, skipped below) */
+    while (Date.now() - t0 < SPAN) { const req = Date.now() - t0; if (CAPTURE_DELAY) await ctx.sleep(CAPTURE_DELAY); const img = await wc().capturePage(); frames.push({ t: req + (MUTANT === 'late' ? 700 : 0), img }); if (SLOW_CAP) await ctx.sleep(SLOW_CAP); }
     await must(`document.querySelectorAll('#stage .ro-plate.lounge').length>=2`, `${tag}: the lounge row`, 8000);
     await must(STILL + '&&!!(window.__peS||{}).done', `${tag}: the ease is over (no WAAPI animation running in #stage)`, 5000);
     const S = await js(`window.__peS`);
@@ -215,7 +235,7 @@ module.exports = async (ctx) => {
        Linux/Xvfb showed Ada's card over two plates, review of PR 1555) and the focus taken off the pencil */
     /* the spot is on the part of the page that is on the screen too (scripts/pencil-park.js: a window taller than a small X screen is cut by it, and a pointer put
        in the cut part never leaves the plate: Linux/Xvfb at DPR 2, review of PR 1555); PENCIL_EASE_SCREEN stands in for a small screen here as below */
-    const pg0 = await js(`(()=>{const d=devicePixelRatio,m=/^(\\d+)x(\\d+)$/.exec(${jsLiteral(SCREEN)});return {dpr:d,view:[innerWidth,innerHeight],top:document.getElementById('stage').getBoundingClientRect().top,screen:m?[+m[1],+m[2]]:[Math.round(screen.width*d),Math.round(screen.height*d)],at:[Math.round((screenX+(outerWidth-innerWidth))*d),Math.round((screenY+(outerHeight-innerHeight))*d)]}})()`);
+    const pg0 = await screenInfo();
     let cardStays = false;
     const outside = windowOutsideScreen({ win: pg0.view.map((v) => v * pg0.dpr), screen: pg0.screen, at: pg0.at }); /* the real pointer cannot be trusted to leave the plates then */
     const cands = MUTANT === 'parkold' ? [{ x: Math.round(pg0.view[0] / 2), y: Math.max(1, Math.round(pg0.top) - 4) }] : parkCandidates(pg0); /* parkold: the first version's point, whatever the screen */
@@ -347,6 +367,24 @@ module.exports = async (ctx) => {
       blinks.push(`${st}: ${r.plates} plates eased, ${r.hidden} pencils hidden, ${r.still} of a still plate`); log(tag, st, r.kinds);
       await must(STILL, `${tag}: still after the change to ${st}`, 5000);
     }
+    /* a pencil that gets the focus while it is hidden (its plate eases): its opacity is 1 from the focus on, through the end of the ease and the 120 ms after it:
+       its focus ring never vanishes (FR-365); the old listener left the cancelled hold as the pencil's current one, and the end of the ease faded it in from 0 */
+    const fr = await js(`(()=>{const a=${SIM}.agents().find(x=>x.id===${jsLiteral(who)});a.state='waiting';a.lastEventAt=Date.now();${SIM}.crew.renderAll();
+      const b=[...document.querySelectorAll('#stage .ren.ro-ren')].find(b=>b!==document.activeElement&&${EASE_OF}(b.previousElementSibling)&&Number(getComputedStyle(b).opacity)<0.05);
+      if(!b)return null;
+      if(${jsLiteral(MUTANT)}==='oldfocus'){const h=b._hide;b.addEventListener('focus',()=>{b._hide=h},{once:true})} /* the old listener: the cancelled hold stays the current one */
+      b.focus();if(!document.hasFocus())b.dispatchEvent(new FocusEvent('focus')); /* a window the OS has not focused sets the active element but fires no focus event */
+      const F=window.__peF={min:1,n:0,at:'',done:false,k:b.dataset.ren},p=b.previousElementSibling,t0=performance.now();let end=0;
+      const step=()=>{const now=performance.now(),o=Number(getComputedStyle(b).opacity);F.n++;if(o<F.min){F.min=o;F.at=Math.round(now-t0)+' ms'+(${EASE_OF}(p)?' (easing)':' (ease over)')}
+        if(!${EASE_OF}(p)&&!end)end=now;if((end&&now-end>300)||now-t0>3000)F.done=true;else requestAnimationFrame(step)};
+      step();return b.dataset.ren})()`);
+    assert.ok(fr, `${tag}: a hidden mover's pencil to focus mid-ease (waiting puts the desk first in its room)`);
+    await must(`!!(window.__peF||{}).done`, `${tag}: the focused pencil sampled to 300 ms past its plate's ease`, 6000);
+    const F = await js(`window.__peF`);
+    log(tag, `focus during the hold: pencil ${F.k}, ${F.n} frames, lowest opacity ${F.min} ${F.at}`);
+    assert.ok(F.min >= 0.99, `${tag}: a pencil focused while hidden stays at opacity 1 through the end of its plate's ease (lowest ${F.min} at ${F.at}, ${F.n} frames)`);
+    await js(`(()=>{const a=${SIM}.agents().find(x=>x.id===${jsLiteral(who)});a.state='working';a.lastEventAt=Date.now();${SIM}.crew.renderAll();document.activeElement&&document.activeElement.blur&&document.activeElement.blur();return 1})()`);
+    await must(STILL, `${tag}: still after the focus case`, 5000);
     log(tag, 'status changes:', blinks.join('; '));
     assert.ok(blinks.every((b) => / 0 of a still plate$/.test(b)) && /^thinking: 0 plates eased, 0 pencils hidden/.test(blinks[0]), `${tag}: a status change hides only the pencils of plates that move (${blinks.join('; ')})`);
     log(tag, 'ok');

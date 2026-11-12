@@ -64,7 +64,7 @@
   const REN_IN = 120;
   function hideWhile(e, ease) {
     if (e._hide) e._hide.cancel();
-    if (!e._hf) { e._hf = true; e.addEventListener('focus', () => { if (e._hide) e._hide.cancel(); }); } /* focused while hidden: shown at once */
+    if (!e._hf) { e._hf = true; e.addEventListener('focus', () => { if (e._hide) { e._hide.cancel(); e._hide = null; } }); } /* focused while hidden: shown at once, and no fade from 0 when the ease ends (`show` stops at its guard) */
     /* held until the plate's own ease ends (its `finished`), not for a time of its own: a plate's ease can start a frame after the pencil's hold
        (measured in the cave, 17 ms), and a timed hold then ended while the plate still moved (review of PR 1555) */
     const h = e._hide = e.animate([{ opacity: 0 }, { opacity: 0 }], { duration: Infinity });

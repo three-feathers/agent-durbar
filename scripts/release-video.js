@@ -812,7 +812,7 @@ async function main(argv = process.argv.slice(2), deps = {}) {
 /* ---------------------------------------------------------------- the driver (Electron main) ---------------------------------------------------------------- */
 
 async function driver(ctx) {
-  const { helpers, jsLiteral } = require('./driver-helpers');
+  const { helpers, jsLiteral, STILL_STAGE } = require('./driver-helpers');
   const { nativeImage } = require('electron');
   const H = helpers(ctx);
   const out = process.env.OUT;
@@ -968,7 +968,7 @@ async function driver(ctx) {
     async glide(to, secs, img = null) {
       await this.check();
       /* spec 097 FR-365 (bug 1513): the one capture is taken once no plate, desk or person is still easing to a new layout (a WAAPI move in #stage; the CSS loops keep running), so no still holds a half-moved room */
-      if (!img) { await H.until(`!(document.getElementById('stage')||document.body).getAnimations({subtree:true}).some(a=>!a.animationName&&a.playState==='running')`, 3000); img = await H.wc().capturePage(); }
+      if (!img) { await H.until(STILL_STAGE, 3000); img = await H.wc().capturePage(); }
       for (const c of zoomPath(cam, to, secs)) { cam = c; shoot(img, clipMs); clipMs += 1000 / ZOOM_FPS; }
       cam = to;
     },
