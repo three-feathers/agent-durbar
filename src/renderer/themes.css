@@ -70,13 +70,12 @@ html[data-ui="retro"] .empty,html[data-ui="retro"] .filter-note,html[data-ui="re
 
 
 /* ---------- spec 052 FR-053: the primary action is solid in every theme, in the theme's own accent: --brand-bg with
-   --brand-mark text (retro 15:1; a generated theme with a
-   themed style is only checked at 3:1 for this pair in themegen.ts). The rule above gives every themed .btn a surface background; these outrank it.
+   --brand-mark text (retro 15:1; a user theme with a
+   themed style is held to 4.5:1 for this pair, and for the hovered fill, by theme.js contrastFix, issue 1614). The rule above gives every themed .btn a surface background; these outrank it.
    Disabled and warn buttons keep their own look. ---------- */
 html[data-ui]:not([data-ui="clean"]) .btn.primary:not(.warn,.danger,:disabled,[aria-disabled=true]){background:var(--brand-bg);border-color:transparent;color:var(--brand-mark)}
-html[data-ui]:not([data-ui="clean"]) .btn.primary:not(.warn,.danger,:disabled,[aria-disabled=true]):hover{background:color-mix(in srgb,var(--brand-bg) 86%,#000)}
+html[data-ui]:not([data-ui="clean"]) .btn.primary:not(.warn,.danger,:disabled,[aria-disabled=true]):hover{background:color-mix(in srgb,var(--brand-bg) 86%,var(--brand-mark))} /* toward its own text, never black: black lowered the contrast of a pale fill (3.83 -> 2.79:1, issue 1614); the 14% is theme.js BRAND_HOVER_MIX, which holds the text at 4.5:1 on it */
 html[data-ui="retro"] .btn.primary:not(.warn,.danger,:disabled,[aria-disabled=true]){border-color:var(--line)}
-html[data-ui="retro"] .btn.primary:not(.warn,.danger,:disabled,[aria-disabled=true]):hover{background:color-mix(in srgb,var(--brand-bg) 88%,#000)}
 
 /* ---------- spec 052 FR-054: a period texture on the rooms, art only (2-4%).
    Gradients and inline SVG only; the room's colour and every size stay; text sits on its own surface above it. ---------- */

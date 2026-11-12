@@ -2,11 +2,12 @@
 import * as assert from 'assert';
 import * as path from 'path';
 import { createHash } from 'crypto';
-import { COLOUR_HUE_RE, COLOUR_NUM_RE, CONTRAST_PAIRS, NAMED_COLOURS, contrast, parseColor, resolveColor, themeIssues } from '../src/shared/themegen';
+import { readFileSync } from 'fs';
+import { BRAND_HOVER_MIX, COLOUR_HUE_RE, COLOUR_NUM_RE, CONTRAST_PAIRS, NAMED_COLOURS, contrast, mixHex, parseColor, resolveColor, themeIssues } from '../src/shared/themegen';
 import { TOKEN_VALUE_MAX } from '../src/shared/themes';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const T = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'theme.js')) as { _tokens(): Record<string, string> };
+const T = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'theme.js')) as { _tokens(): Record<string, string>; setTheme(m: unknown): string; token(k: string): string; contrastCheck(m: unknown): string[]; fallbacks(id: string): { contrast: string[] } };
 const clean = T._tokens(); // a fresh module: Clean Office's full token set
 assert.ok(Object.keys(clean).length > 100, 'all of Clean Office');
 
@@ -56,7 +57,35 @@ assert.ok(Object.keys(clean).length > 100, 'all of Clean Office');
   // the primary button text, 4.5:1 (it was 3:1)
   const btn = themeIssues({ '--brand-bg': '#9a5b00', '--brand-mark': '#d9c7a8' }, clean, 'retro');
   assert.ok(btn.some((i) => /^--brand-mark \(#d9c7a8\) on --brand-bg \(#9a5b00\) has contrast 3\.3:1, needs 4\.5:1/.test(i)), btn.join('|'));
-  assert.ok(!themeIssues({ '--brand-bg': '#9a5b00', '--brand-mark': '#ffffff' }, clean, 'retro').some((i) => /--brand-mark/.test(i)));
+  assert.ok(!themeIssues({ '--brand-bg': '#6e3d00', '--brand-mark': '#ffffff' }, clean, 'retro').some((i) => /--brand-mark/.test(i)));
+  // spec 052 FR-053 (issue #1614): the hovered primary button (--brand-bg with BRAND_HOVER_MIX of --brand-mark mixed in) keeps 4.5:1 too, in every ui that paints with --brand-bg
+  assert.strictEqual(BRAND_HOVER_MIX, 0.14, 'the share themes.css and theme.js use');
+  const hov = (mark: string, bg: string): number => contrast(mark, mixHex(bg, mark, BRAND_HOVER_MIX));
+  // Clean Office's pale pair, inherited by a retro-ui user theme with no brand tokens (the check-user fixture): 3.83 at rest, 2.8 hovered with black, under 4.5 either way
+  assert.ok(contrast(clean['--brand-mark'], clean['--brand-bg']) < 4.5, 'the pair a retro-ui theme inherits is under 4.5:1 at rest');
+  const inherited = themeIssues({}, clean, 'retro');
+  assert.ok(inherited.some((i) => /^--brand-mark .* on --brand-bg .* has contrast 3\.8:1, needs 4\.5:1/.test(i)), 'inherited pair at rest: ' + inherited.join('|'));
+  assert.ok(inherited.some((i) => /^--brand-mark \(#[0-9a-f]{6}\) on the hovered --brand-bg \(#[0-9a-f]{6}\) has contrast [0-9.]+:1, needs 4\.5:1/.test(i)), 'inherited pair hovered: ' + inherited.join('|'));
+  assert.ok(!themeIssues({}, clean, 'clean').some((i) => /hovered/.test(i)), 'ui clean does not paint a primary button with --brand-bg: no hover pair (Clean Office is pale on purpose)');
+  // a pair that passes at rest and fails only hovered: found by walking the mark's lightness on the pale fill
+  let edge = '';
+  for (let v = 0x40; v <= 0x90 && !edge; v++) { const m = '#' + v.toString(16).padStart(2, '0').repeat(3), r = contrast(m, '#e4ece6'); if (r >= 4.5 && hov(m, '#e4ece6') < 4.5) edge = m; }
+  assert.ok(edge, 'a mark that reads at rest (>= 4.5) and not hovered exists on the pale fill');
+  const e = themeIssues({ '--brand-bg': '#e4ece6', '--brand-mark': edge }, clean, 'retro');
+  assert.ok(!e.some((i) => /^--brand-mark .* on --brand-bg/.test(i)) && e.some((i) => /on the hovered --brand-bg/.test(i)), 'passes at rest, reported hovered: ' + e.join('|'));
+  assert.ok(!themeIssues({ '--brand-bg': '#e4ece6', '--brand-mark': '#244634' }, clean, 'retro').some((i) => /^--brand-mark/.test(i)), 'a dark enough mark passes both');
+  // theme.js (the user-theme repair, the renderer's copy): a retro-ui theme with no brand tokens is repaired to 4.5:1 hovered, a clean-ui one is left alone, a built-in is never repaired
+  const repaired = (ui: string): { fixed: string[]; mark: string; bg: string } => { T.setTheme({ id: 'hov-' + ui, name: 'H', version: '1.0', author: 't', ui, tokens: { '--bg': '#efe9dc' } }); return { fixed: T.contrastCheck({ id: 'hov-' + ui, name: 'H', version: '1.0', author: 't', ui, tokens: { '--bg': '#efe9dc' } }), mark: T.token('--brand-mark'), bg: T.token('--brand-bg') }; };
+  const rr = repaired('retro');
+  assert.ok(rr.fixed.includes('--brand-mark'), 'theme.js repairs --brand-mark in a retro-ui theme: ' + rr.fixed.join());
+  assert.ok(contrast(rr.mark, rr.bg) >= 4.5 && hov(rr.mark, rr.bg) >= 4.5, `the repaired pair ${rr.mark} on ${rr.bg}: rest ${contrast(rr.mark, rr.bg).toFixed(2)}, hovered ${hov(rr.mark, rr.bg).toFixed(2)}`);
+  assert.strictEqual(rr.bg, clean['--brand-bg'], 'the fill (a base surface) is not moved');
+  assert.deepStrictEqual(themeIssues({ '--brand-bg': rr.bg, '--brand-mark': rr.mark }, clean, 'retro').filter((i) => /^--brand-mark/.test(i)), [], 'themegen agrees with the repair');
+  // the fixture the simulator driver measures (check-user.json, ui retro, no brand tokens): the same repair
+  T.setTheme(JSON.parse(readFileSync(path.join(__dirname, '..', '..', 'scripts', 'fixtures', 'themes', 'check-user.json'), 'utf8')));
+  assert.ok(contrast(T.token('--brand-mark'), T.token('--brand-bg')) >= 4.5 && hov(T.token('--brand-mark'), T.token('--brand-bg')) >= 4.5, 'check-user.json: the primary button text is repaired to 4.5:1, rest and hovered');
+  const rc = repaired('clean');
+  assert.ok(!rc.fixed.includes('--brand-mark') && rc.mark === clean['--brand-mark'], 'a clean-ui theme keeps Clean Office\'s own pale pair');
   // paths, muted text and ink on each room tint, not only --bg
   for (const t of ['sage', 'blue', 'sand', 'clay']) for (const fg of ['--room-path', '--muted', '--ink']) {
     assert.ok(CONTRAST_PAIRS.some(([a, b, m]) => a === fg && b === `--tint-${t}` && m === 4.5), `${fg} on --tint-${t}`);
