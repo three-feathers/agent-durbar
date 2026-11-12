@@ -15,6 +15,12 @@ for (const n of names) {
 const src = fs.readFileSync(SUITE, 'utf8');
 assert.ok(/shell: false/.test(src) && !/shell: true/.test(src) && !/execSync\(|exec\(/.test(src), 'the runner spawns without a shell');
 assert.ok(/require\('electron'\)/.test(src), 'it starts the Electron binary directly');
+{ // spec 102 T204 (#1403): UI_SUITE_DPR takes 1.25 and 1.5 besides 1..4; nothing else reaches the command line
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { dprOk } = require(SUITE) as { dprOk: (v: string) => boolean };
+  for (const v of ['1', '2', '4', '1.25', '1.5']) assert.ok(dprOk(v), `UI_SUITE_DPR=${v} is passed on`);
+  for (const v of ['', '0', '5', '1.3', '1.50', '1.5;x', '--x', '1.25 ']) assert.ok(!dprOk(v), `UI_SUITE_DPR=${JSON.stringify(v)} is ignored`);
+}
 // spec 008 FR-112: a syntax error fails at once (node --check, no shell) before any Electron starts
 {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -30,6 +36,27 @@ assert.ok(/require\('electron'\)/.test(src), 'it starts the Electron binary dire
   assert.deepStrictEqual(syntaxErrors(names.map((n) => path.join(ROOT, 'scripts', n.split(' ')[0] + '.js')).concat(path.join(ROOT, 'scripts', 'driver-helpers.js'))), [], 'every listed driver and the helpers parse');
   assert.ok(src.indexOf('syntaxErrors([...new Set(') > 0 && src.indexOf('syntaxErrors([...new Set(') < src.indexOf('await Promise.all(Array.from({ length: jobs }, worker))'), 'the syntax pass runs before the first driver starts');
   // the real runner: a broken driver named with --only stops before Electron, at once, with the file and exit 1
+}
+// spec 008 FR-213 (issue #1591): under xvfb-run the screen is as big as the window at the requested density (Xvfb's default 1280x1024 left a DPR 2 window mostly off screen)
+{
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { xvfbScreenArgs, launchCommand } = require(SUITE) as { xvfbScreenArgs: (dpr: string, env?: Record<string, string>) => string[]; launchCommand: (x: boolean, e: string, a: string[], dpr: string, env?: Record<string, string>) => [string, string[]] };
+  const screen = (dpr: string, env: Record<string, string> = {}): string => xvfbScreenArgs(dpr, env)[1];
+  assert.strictEqual(screen('1'), '-screen 0 1920x1100x24', 'DPR 1: 1920x1100, colour depth 24 (more than the old 1280x1024)');
+  assert.strictEqual(screen('2'), '-screen 0 3840x2200x24', 'xvfb screen: DPR 2 holds a 1440x900 window at 2880x1800 device pixels');
+  assert.strictEqual(screen('1.5'), '-screen 0 2880x1650x24', 'DPR 1.5 is scaled the same way');
+  assert.strictEqual(screen(''), screen('1'), 'an unset density counts as 1');
+  assert.strictEqual(screen('7;rm'), screen('1'), 'a bad density counts as 1');
+  assert.strictEqual(screen('2', { UI_SUITE_XVFB_SCREEN: '3000x2000x24' }), '-screen 0 3000x2000x24', 'UI_SUITE_XVFB_SCREEN replaces the computed screen');
+  assert.strictEqual(screen('2', { UI_SUITE_XVFB_SCREEN: '3000x2000; rm -rf' }), '-screen 0 3840x2200x24', 'a malformed override is ignored');
+  for (const dpr of ['1', '2', '4']) {
+    const m = /^-screen 0 (\d+)x(\d+)x24$/.exec(screen(dpr));
+    assert.ok(m && Number(m[1]) >= 1440 * Number(dpr) && Number(m[2]) >= 900 * Number(dpr), `the screen is at least a 1440x900 window at DPR ${dpr}`);
+  }
+  const [file, list] = launchCommand(true, '/e/electron', ['/repo', '--no-sandbox', '--force-device-scale-factor=2'], '2', {});
+  assert.ok(file === 'xvfb-run' && list[0] === '-a' && list[1] === '-s' && list[2] === '-screen 0 3840x2200x24' && list[3] === '/e/electron' && list.slice(4).join() === '/repo,--no-sandbox,--force-device-scale-factor=2', 'xvfb launch: -a kept, -s and its screen as separate entries before the binary and its arguments');
+  assert.ok(src.includes('launchCommand(useXvfb, electron, argv, dpr)') && !src.includes("['xvfb-run', ['-a', electron"), 'runOne starts a driver through launchCommand, not an inline xvfb-run call without a screen');
+  assert.deepStrictEqual(launchCommand(false, '/e/electron', ['/repo'], '2', {}), ['/e/electron', ['/repo']], 'without xvfb the binary is started as before');
 }
 // issue #748 (spec 021 FR-057): no asserting driver sits unrun. Every scripts/check-*.js and shots-*.js that asserts is in the suite, in
 // shots-docs' DOC_SHOTS (retaken by `npm run shots:docs`), or in NOT_IN_SUITE with a written reason
@@ -424,7 +451,7 @@ async function shardMain(): Promise<void> {
       console.log = () => undefined;
       let err: Error | undefined;
       let ensured = false;
-      try { await main({ ensure: () => { ensured = true; return true; }, argv, run: async (d: { name: string }) => { ran.push(d.name); return { ok: true, secs: 0, why: '', log: '' }; } }); } catch (e) { err = e as Error; } finally { console.log = log; }
+      try { await main({ ensure: () => { ensured = true; return true; }, argv, shared: false /* FR-210 reorders focus entries on a shared desktop; this test is about the shard */, run: async (d: { name: string }) => { ran.push(d.name); return { ok: true, secs: 0, why: '', log: '' }; } }); } catch (e) { err = e as Error; } finally { console.log = log; }
       if (err) assert.ok(!ensured && ran.length === 0, 'a refused shard starts nothing, not even the Electron install');
       return { ran, err, code: process.exitCode };
     };
@@ -573,3 +600,112 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
   }
   console.log('ui-suite shards: ok');
 }
+// spec 008 FR-199 (issue #1417): a driver stopped at its time limit leaves no process behind, whether or not it sets killTree.
+// The child is node, which starts a long-lived grandchild (like xvfb-run starting Xvfb and Electron). POSIX only: on Windows taskkill /T does
+// it and is not run here. Only PIDs this test creates are checked or killed.
+(async () => {
+  if (process.platform === 'win32') { console.log('ui-suite kill tree: skipped on Windows (taskkill /T is not exercised here)'); return; }
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { runOne } = require(SUITE) as { runOne: (d: object, out: string, o: { launch: [string, string[]] }) => Promise<{ ok: boolean; why: string; log: string }> };
+  const alive = (pid: number): boolean => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  const parent = "const {spawn}=require('child_process');const g=spawn(process.execPath,['-e','setTimeout(()=>{},300000)'],{stdio:'ignore'});console.log('GRANDCHILD '+g.pid);console.log('DRIVER-OUTPUT-KEPT');setTimeout(()=>{},300000)";
+  const out = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ui-suite-kill-'));
+  const pids: number[] = [];
+  try {
+    for (const d of [{ name: 'x' }, { name: 'x', killTree: true }]) {
+      const r = await runOne({ ...d, timeoutMs: 1500, sim: false }, out, { launch: [process.execPath, ['-e', parent]] });
+      const gp = Number((/GRANDCHILD (\d+)/.exec(r.log) || [])[1]);
+      assert.ok(gp > 0, 'the test child started a grandchild');
+      pids.push(gp);
+      assert.ok(!r.ok && /time limit/.test(r.why), 'the run fails with the time limit as the reason');
+      assert.ok(r.log.includes('DRIVER-OUTPUT-KEPT'), 'the output of a stopped driver is still in the log');
+      await new Promise((res) => setTimeout(res, 500));
+      assert.ok(!alive(gp), `no grandchild is left after the time limit (${JSON.stringify(d)})`);
+    }
+  } finally {
+    for (const p of pids) if (alive(p)) { try { process.kill(p, 'SIGKILL'); } catch { /* gone */ } }
+    fs.rmSync(out, { recursive: true, force: true });
+  }
+  console.log('ui-suite kill tree: ok');
+})().catch((e) => { console.error(e); process.exitCode = 1; });
+// spec 008 FR-199: SIGINT and SIGTERM to a process running `runOne` end the tree and remove the run's user-data folder. The runner is a node
+// child of this test with its own TMPDIR, so the folder it makes (durbar-ui-user-*) is found and nothing else is touched. POSIX only.
+(async () => {
+  if (process.platform === 'win32') { console.log('ui-suite signals: skipped on Windows'); return; }
+  const os = require('os') as typeof import('os');
+  const { spawn } = require('child_process') as typeof import('child_process');
+  const alive = (pid: number): boolean => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  const sleep = (ms: number): Promise<void> => new Promise((res) => setTimeout(res, ms));
+  for (const [sig, code] of [['SIGINT', 130], ['SIGTERM', 143]] as const) {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ui-suite-sig-'));
+    const pidFile = path.join(tmp, 'grandchild.pid');
+    // static code only: the values travel in argv, never inside a code string (CodeQL: improper code sanitization)
+    const launchJs = "const fs=require('fs'),{spawn}=require('child_process');const pf=process.argv[1];const g=spawn(process.execPath,['-e','setTimeout(()=>{},300000)'],{stdio:'ignore'});fs.writeFileSync(pf,String(g.pid));fs.writeFileSync(pf+'.launch',String(process.pid));setTimeout(()=>{},300000)";
+    const runner = "require(process.argv[1]).runOne({name:'x',sim:false,timeoutMs:120000},process.argv[2],{launch:[process.execPath,['-e',process.argv[4],process.argv[3]]]})";
+    const runnerProc = spawn(process.execPath, ['-e', runner, SUITE, tmp, pidFile, launchJs], { env: { ...process.env, TMPDIR: tmp, TMP: tmp, TEMP: tmp }, stdio: 'ignore' });
+    const exited = new Promise<{ code: number | null; signal: string | null }>((res) => runnerProc.on('close', (c, s) => res({ code: c, signal: s })));
+    let gp = 0;
+    const killPid = (p: number): void => { if (p > 0 && alive(p)) { try { process.kill(p, 'SIGKILL'); } catch { /* gone */ } } };
+    try {
+      for (let i = 0; i < 100 && !gp; i++) { await sleep(100); try { gp = Number(fs.readFileSync(pidFile, 'utf8')); } catch { /* not yet */ } }
+      assert.ok(gp > 0 && alive(gp), 'the runner started a grandchild');
+      assert.ok(fs.readdirSync(tmp).some((f) => f.startsWith('durbar-ui-user-')), 'the run made its user-data folder');
+      runnerProc.kill(sig);
+      const r = await exited;
+      assert.ok(r.signal === sig || r.code === code, `${sig}: the runner ends as without the handler (got ${r.signal || r.code})`);
+      await sleep(500);
+      assert.ok(!alive(gp), `${sig}: no grandchild is left`);
+      assert.deepStrictEqual(fs.readdirSync(tmp).filter((f) => f.startsWith('durbar-ui-user-')), [], `${sig}: the user-data folder is removed`);
+    } finally {
+      killPid(gp);
+      try { killPid(Number(fs.readFileSync(pidFile + '.launch', 'utf8'))); } catch { /* never written */ }
+      if (runnerProc.exitCode === null && runnerProc.signalCode === null) { try { runnerProc.kill('SIGKILL'); } catch { /* gone */ } }
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+  // spec 008 FR-210 (issue #1498): an entry with `focus: true` (it waits on the real OS window focus) never runs next to another window
+  // when drivers share a desktop; the others still run `jobs` at a time; with a display of its own per driver (xvfb) nothing changes
+  {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const suite = require(SUITE) as { main: (o: unknown) => Promise<void>; DRIVERS: { name: string; label?: string; focus?: boolean }[]; sharedDesktop: (p: string, e: Record<string, string>) => boolean };
+    const label = (d: { name: string; label?: string }): string => d.label || d.name;
+    const flagged = suite.DRIVERS.filter((d) => d.focus).map(label).sort();
+    assert.deepStrictEqual(flagged, ['check-097-hover-card', 'shots-097-screens', 'shots-097-screens retro'], 'the focus entries are the ones with a failure on record (#1498, #1408)');
+    assert.deepStrictEqual([['darwin', {}], ['win32', {}], ['linux', {}], ['linux', { DISPLAY: ':0' }], ['linux', { DISPLAY: ':0', UI_SUITE_XVFB: '1' }]].map(([p, e]) => suite.sharedDesktop(p as string, e as Record<string, string>)), [true, true, false, true, false], 'windows share a desktop on macOS, Windows and Linux with a display; not under xvfb');
+    const only = ['shots-097-screens', 'check-097-hover-card', 'shots-017', 'shots-018', 'shots-033', 'check-office-fill'].join(',');
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ui-suite-focus-'));
+    const was = { jobs: process.env.UI_SUITE_JOBS, out: process.env.UI_SUITE_OUT, log: console.log };
+    const play = async (shared: boolean): Promise<{ ran: string[]; peak: number; focusNextToOther: string[]; peakOthers: number }> => {
+      const live = new Set<string>(); const ran: string[] = []; const clash: string[] = [];
+      let peak = 0, peakOthers = 0;
+      const fake = async (d: { name: string; label?: string; focus?: boolean }): Promise<{ ok: boolean; secs: number; why: string; log: string }> => {
+        const me = label(d);
+        live.add(me); ran.push(me); peak = Math.max(peak, live.size);
+        if ([...live].some((x) => x !== me && suite.DRIVERS.some((y) => label(y) === x && y.focus)) || (d.focus && live.size > 1)) clash.push(me);
+        peakOthers = Math.max(peakOthers, [...live].filter((x) => !suite.DRIVERS.some((y) => label(y) === x && y.focus)).length);
+        await sleep(40);
+        live.delete(me);
+        return { ok: true, secs: 0, why: '', log: '' };
+      };
+      process.env.UI_SUITE_JOBS = '3'; process.env.UI_SUITE_OUT = tmp;
+      console.log = (): void => undefined;
+      try { await suite.main({ ensure: () => true, run: fake, argv: ['--only', only], shared }); } finally { console.log = was.log; }
+      return { ran, peak, focusNextToOther: clash, peakOthers };
+    };
+    try {
+      const a = await play(true);
+      assert.deepStrictEqual([...a.ran].sort(), ['check-097-hover-card', 'check-097-hover-card retro', 'check-office-fill', 'shots-017','shots-018', 'shots-033', 'shots-097-screens', 'shots-097-screens retro'], 'on a shared desktop every selected entry runs once');
+      assert.deepStrictEqual(a.focusNextToOther, [], 'a focus entry ran next to another window');
+      assert.ok(a.peakOthers >= 2, `the other entries still run in parallel (peak ${a.peakOthers})`);
+      assert.deepStrictEqual(a.ran.slice(-3).sort(), ['check-097-hover-card', 'shots-097-screens', 'shots-097-screens retro'], 'the focus entries run last, alone');
+      const b = await play(false);
+      assert.ok(b.peak >= 3 && b.focusNextToOther.length > 0, 'with a display per driver (xvfb) the focus entries are scheduled as before');
+    } finally {
+      if (was.jobs === undefined) delete process.env.UI_SUITE_JOBS; else process.env.UI_SUITE_JOBS = was.jobs;
+      if (was.out === undefined) delete process.env.UI_SUITE_OUT; else process.env.UI_SUITE_OUT = was.out;
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+    assert.ok(/focus: true/.test(fs.readFileSync(SUITE, 'utf8')), 'ui-suite.js carries the flag');
+  }
+  console.log('ui-suite signals: ok');
+})().catch((e) => { console.error(e); process.exitCode = 1; });

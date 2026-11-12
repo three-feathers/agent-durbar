@@ -770,7 +770,7 @@ async function main(argv = process.argv.slice(2), deps = {}) {
   try {
     console.log(`release-video: ${a.version}, scenes ${a.scenes.join(', ')}, frames in ${frames}`);
     const runOne = deps.runOne || require('./ui-suite').runOne;
-    const r = await runOne({ name: 'release-video', baseEnv: childEnv(), timeoutMs: RECORD_MS, killTree: true, dpr: 2, env: { DURBAR_SIM_CLOCK: CLOCK, TZ: 'UTC', LANG: 'en_US.UTF-8', RV_VERSION: a.version, RV_SCENES: a.scenes.join(','), RV_COUNT: a.count === null ? '' : String(a.count) } }, frames);
+    const r = await runOne({ name: 'release-video', baseEnv: childEnv(), timeoutMs: RECORD_MS, dpr: 2, env: { DURBAR_SIM_CLOCK: CLOCK, TZ: 'UTC', LANG: 'en_US.UTF-8', RV_VERSION: a.version, RV_SCENES: a.scenes.join(','), RV_COUNT: a.count === null ? '' : String(a.count) } }, frames);
     if (!r.ok) throw new Error(`the recording failed (${r.why || 'exit ' + r.code}):\n${r.log.split(/\r?\n/).filter((l) => l.trim()).slice(-20).join('\n')}`);
     const shot = JSON.parse(fs.readFileSync(path.join(frames, 'frames.json'), 'utf8'));
     fs.writeFileSync(path.join(frames, 'list.ffconcat'), concatList(shot.frames));
@@ -812,7 +812,7 @@ async function main(argv = process.argv.slice(2), deps = {}) {
 /* ---------------------------------------------------------------- the driver (Electron main) ---------------------------------------------------------------- */
 
 async function driver(ctx) {
-  const { helpers, jsLiteral } = require('./driver-helpers');
+  const { helpers, jsLiteral, STILL_STAGE } = require('./driver-helpers');
   const { nativeImage } = require('electron');
   const H = helpers(ctx);
   const out = process.env.OUT;
@@ -967,7 +967,8 @@ async function driver(ctx) {
     /** The camera move, drawn from one capture (the page is still while the camera moves) at ZOOM_FPS. */
     async glide(to, secs, img = null) {
       await this.check();
-      if (!img) img = await H.wc().capturePage();
+      /* spec 097 FR-365 (bug 1513): the one capture is taken once no plate, desk or person is still easing to a new layout (a WAAPI move in #stage; the CSS loops keep running), so no still holds a half-moved room */
+      if (!img) { await H.until(STILL_STAGE, 3000); img = await H.wc().capturePage(); }
       for (const c of zoomPath(cam, to, secs)) { cam = c; shoot(img, clipMs); clipMs += 1000 / ZOOM_FPS; }
       cam = to;
     },

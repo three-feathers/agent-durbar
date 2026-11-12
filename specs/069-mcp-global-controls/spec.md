@@ -519,6 +519,25 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
   `sim:` `shots-069-mcp-tools` (25 tools with very long names and descriptions, both sizes, Clean Office and Retro Pixel; mutations: no clamp,
   no `min-width`, off list ignored each fail it). The Stone look is not on main. Not verified on macOS or Windows.
 
+- **2026-11-12 (owner Vikram, from the real app; FR-069, T071, issue #1624):** switching an MCP server off in Settings scrolled the page back
+  to the top.
+  - **FR-069, a switch in Settings keeps the page where it is.** The switches of the *From the Copilot CLI list* rows and the *Claude Code* list
+    rebuild the whole Settings page after they are saved, and the rebuilt page started at its top with the focus
+    on nothing. Now a repaint of Settings (every call of it except the opening) keeps the body's scroll position and the focused control (its
+    id, or its row's server name and action), as spec 058's live list repaint (FR-083) already does for its own box; the open or closed state
+    of *Advanced: MCP servers* was already kept. Parts above the switch that arrive after the paint (agent app accounts,
+    quota, sandbox, policy rows) make the page shorter at first, so the position is set again as the page grows until the person scrolls, presses a
+    key or clicks (or 4 s have passed); the browser's scroll anchoring is off meanwhile. Only a person's own action (a search, a section
+    jump, scrolling) moves the page; spec 112 FR-004 says the same of its search. *Acceptance:* with the page scrolled well below its top,
+    each of these Settings switches is turned off and on again, at 1440x900 and 1280x800: the Copilot CLI list switch, the Claude Code list switch,
+    Serious mode, Motion, Notifications, Coffee break resume, Still highlights, MCP sign-in refresh, Auto-follow, Live activity, Diagnostics
+    and the Lounge switch; the scroll position is unchanged (within 1 px), the focus is on the same control and the Advanced block is open.
+    Before the change only the first two jumped (to 0, with the focus lost); the others change themselves in place.
+  `sim:` `check-069-toggle-scroll` (read once two frames have passed and the page height has not changed for ten frames; mutations: the
+  restore dropped, the re-set on growth dropped and the focus restore dropped each fail it at its labelled assertion). Not verified on macOS
+  or Windows. `[KNOWN GAP]` the *World* choice (it repaints Settings through the same path) is shown only in the Real office with two or more
+  worlds, which the simulator does not offer on main, so it is not driven.
+
 ## Relationship to other specs
 
 - **019 / 020**: the Copilot CLI list stays the source of Copilot's servers; Durbar now also *writes* it (only after confirmation), which

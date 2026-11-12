@@ -208,3 +208,17 @@
 
 - [x] T153 (FR-197) `scripts/release-video.js`: scenes `real-crews` (spec 097 FR-335..FR-337) and `real-drag` (spec 097 FR-345..FR-355) with `refs`; `Scene:` fields in `changelog.d/097-crews-real-office.md` and `changelog.d/097-real-drag.md`; `scripts/test-release-video.js`: catalogue, `--list`, the v0.1.15 choice, two mutants
 - [x] T154 (FR-198) `scripts/usage-lib.js` `cumulative` adds whole cents per machine/day/model like `dailyRows` (and returns `totalCents`); `scripts/usage-readme.js` compares the chart's cents to `totalCents` exactly; `scripts/test-usage.js` three-machine sub-cent case. Issue #1449.
+
+## 2026-11-10: every UI driver ends with its whole process tree (FR-199)
+
+- [x] T155 (FR-199) `scripts/ui-suite.js` `runOne`: `detached` (POSIX), `guardTree` and `killTree` at the limit for every driver, `launch` option for tests; `scripts/test-ui-suite.ts` two cases (time limit leaves no grandchild; SIGINT/SIGTERM end the tree and remove the user-data folder); `d.killTree` removed from `scripts/release-video.js`; `scripts/test-release-video.js` source check follows; `changelog.d/008-uisuite-kill-tree.md`.
+
+## 2026-11-11: a driver that waits on the OS window focus never runs next to another window (FR-210)
+
+- [x] T170 (FR-210) `scripts/ui-suite.js`: `focus: true` on `shots-097-screens` (both entries) and `check-097-hover-card`; `main` runs the other entries at the job count and then the `focus` entries alone when drivers share a desktop; `scripts/test-ui-suite.ts` overlap test and a mutant; `changelog.d/008-uisuite-focus-serial.md`. Issue #1498.
+
+## 2026-11-12: the Xvfb screen is as big as the window at the requested density (FR-213)
+
+- [x] T173 (FR-213) `scripts/ui-suite.js` `xvfbScreenArgs` and `launchCommand` (the xvfb path of `runOne`); `scripts/test-ui-suite.ts` checks the argument and the argv shape with two mutants. Linux/Xvfb run by the coordinator, see the PR.
+- [x] T174 (FR-214) `scripts/check-ui-text.js` `run()`: pointer to 0,0, wait for no `:hover` under the roots, `hovered` finding, `UITEXT_MUTANT=hover`; `changelog.d/008-1591-xvfb-screen.md`. Linux/Xvfb run by the coordinator, see the PR.
+- [x] T175 (FR-214, round 2) `scripts/driver-helpers.js` `pointerOff`; `scripts/check-097-chat-contrast.js` and `scripts/shots-102-arcade.js` reset the pointer and assert no `:hover` at the colour read, mutants `CONTRAST_MUTANT=hover`, `ARCADE_MUTANT=hover`.
