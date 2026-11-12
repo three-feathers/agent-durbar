@@ -13,8 +13,9 @@
  *     focushide  the focused pencil hidden too: "the focused pencil stays shown (opacity 1) while its plate eases"
  *     parkold    the pointer parked at the first version's spot, whatever the screen (with PENCIL_EASE_SCREEN=1280x1024 at DPR 2): "the pointer is parked on the visible screen"
  *     far        every pencil 6 px further from its name: "once the ease is over every pencil is painted just after its name"
- *     noease     the OS asks for reduced motion (nothing eases): with PENCIL_EASE_SCREEN smaller than the window the labelled "skipped: no plate eased ... the window is larger than the X screen";
- *                with the window inside the screen it fails "3 or more frames caught the plates on their way"
+ *     noease     the OS asks for reduced motion for the whole run (nothing eases): the labelled "skipped: this runner reports prefers-reduced-motion: reduce, the ease is not drawn"
+ *     hold       the simulator's frozen people kept (no romotion=1): the office holds still, the query says nothing about it: fails "the plates ease in the lounge move (0 of N easing ...)"
+ *     latemedia  reduce at the page's load, no-preference after (the old order): the office is drawn still for good; fails "the plates ease in the lounge move (0 of N easing ...)" with the numbers
  *     oldfocus   the focus listener as it was (the cancelled hold stays the current one): a pencil focused while hidden fades in from 0 at the end of the ease:
  *                "a pencil focused while hidden stays at opacity 1 through the end of its plate's ease"
  *     pin        the pointer back on a working plate after parking (it did not leave): fails "the hover card closed after the pointer left"; with PENCIL_EASE_SCREEN smaller than the
@@ -165,10 +166,15 @@ module.exports = async (ctx) => {
   for (let qi = 0; qi < queue.length; qi++) {
     const [w, h, fits] = queue[qi];
     const tag = `${world} ${w}x${h}${fits ? ' (a window that fits the screen)' : ''}`;
-    await H.load({ w, h, query: { officeview: 'real', simfreeze: '1', romotion: '1', ...ALL[world] }, ready: REAL, settle: false });
-    /* the OS may ask for reduced motion (then nothing eases, FR-249): this check needs the ease */
+    /* the OS may ask for reduced motion (then nothing eases, FR-249): this check needs the ease. The product reads the query ONCE at load (`REDUCED` in app.js: the
+       office is drawn `still` for good when it is true), so the media is emulated BEFORE the page loads; emulated after, a runner whose OS says reduce (Windows with
+       "animate controls and elements" off) has already drawn the office still. `noease` keeps reduce for the whole run; `latemedia` is the old order (reduce at the
+       load, no-preference after), which draws no ease whatever the query says later. */
     const dbg = wc().debugger; if (!dbg.isAttached()) dbg.attach('1.3');
-    await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: MUTANT === 'noease' ? 'reduce' : 'no-preference' }] });
+    const media = (v) => dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: v }] });
+    await media(MUTANT === 'noease' || MUTANT === 'latemedia' ? 'reduce' : 'no-preference');
+    await H.load({ w, h, query: { officeview: 'real', simfreeze: '1', ...(MUTANT === 'hold' ? {} : { romotion: '1' }), ...ALL[world] }, ready: REAL, settle: false });
+    await media(MUTANT === 'noease' ? 'reduce' : 'no-preference');
     if (!fits && !SIZE_ENV) { /* the screen is smaller than this window (a Windows runner's 1024x768 under 1440x900): one more size, the largest that fits it, runs the same checks with the plates on the screen */
       const sc1 = await screenInfo(), want = windowOutsideScreen({ win: sc1.view.map((v) => v * sc1.dpr), screen: sc1.screen, at: sc1.at }) ? fitWindow({ win: sc1.view, screen: sc1.screen, dpr: sc1.dpr }) : null;
       if (want && !queue.some((z) => z[2])) queue.push([want[0], want[1], true]);
@@ -217,16 +223,18 @@ module.exports = async (ctx) => {
         S.samples++;if(performance.now()-t0<900)requestAnimationFrame(step);else S.done=true;};
       step();
       return [...document.querySelectorAll('#stage .ro-plate')].filter(p=>${EASE_OF}(p)).length})()`);
-    /* nothing eased and the window is larger than the X screen (a Windows runner's 1024x768 under a 1440x900 window printed 0 plates easing): every check below
-       needs plates on their way, so the run ends here, labelled, with the numbers; with the window inside the screen it goes on and fails as before */
-    if (easing === 0) {
-      const sc0 = await screenInfo(), win0 = sc0.view.map((v) => v * sc0.dpr);
-      if (windowOutsideScreen({ win: win0, screen: sc0.screen, at: sc0.at })) {
-        log(tag, `skipped: no plate eased (0 of ${n} plates easing at the start) and the window is larger than the X screen (screen ${sc0.screen.join('x')} device px, window content ${win0.join('x')} at ${sc0.at.join(',')}, devicePixelRatio ${sc0.dpr}): the checks that need plates on their way, the opacity reads, the frames and the status changes, are not run for this size; the product's ease under a clipped window is not shown here`);
-        try { await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] }); dbg.detach(); } catch (e) { /* the page went */ }
-        continue;
-      }
+    /* the motion state, always printed: the product draws no ease under the OS's reduced motion (read once at load) or Settings > Motion off */
+    const mo = await js(`(()=>({reduce:matchMedia('(prefers-reduced-motion: reduce)').matches,motionOff:document.documentElement.hasAttribute('data-motion-off'),hidden:document.hidden,focus:document.hasFocus()}))()`);
+    const motionLine = `matchMedia(prefers-reduced-motion: reduce) ${mo.reduce}, Settings > Motion off ${mo.motionOff}, document hidden ${mo.hidden}, focused ${mo.focus}`;
+    log(tag, `motion: ${motionLine}; ${easing} of ${n} plates easing at the start`);
+    if (easing === 0 && mo.reduce) {
+      /* the product honours the OS's reduced motion (realoffice.js `moving`; app.js `REDUCED` is read once at load and gives `still: true`): no plate eases on this runner, which is its correct behaviour; nothing below can be shown */
+      log(tag, `skipped: this runner reports prefers-reduced-motion: reduce, the ease is not drawn (0 of ${n} plates easing; ${motionLine}): the frames, opacity reads and status changes are not run for this size`);
+      try { await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] }); dbg.detach(); } catch (e) { /* the page went */ }
+      continue;
     }
+    const sc0 = await screenInfo();
+    assert.ok(easing > 0, `${tag}: the plates ease in the lounge move (0 of ${n} easing at the start; ${motionLine}; screen ${sc0.screen.join('x')} device px, window content ${sc0.view.map((v) => v * sc0.dpr).join('x')} at ${sc0.at.join(',')}, devicePixelRatio ${sc0.dpr}: the media query does not say reduce, so the product's ease did not run)`);
     if (MUTANT === 'late') await ctx.sleep(700);
     const t0 = Date.now(), frames = [];
     /* a frame's time is when its capture was REQUESTED (a slow compositor hands the image back later, which says nothing about whether the harness started on time:
