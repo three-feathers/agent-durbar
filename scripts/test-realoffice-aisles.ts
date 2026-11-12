@@ -217,13 +217,19 @@ for (const [W, H] of SIZES) for (const dh of [0, 31]) for (const n of [1, 2, 3, 
   for (const z of L.zones) { parts.set(z.id, (parts.get(z.id) || 0) + 1); sizes.set(z.id, (sizes.get(z.id) || 0) + z.desks.length); }
   const cut = [...parts].filter(([id, c]) => c > 1 && (sizes.get(id) || 0) <= 4);
   if (cut.length) split.push(`${n} in ${f} at ${W}x${H - dh}`);
-  /* spec 102 T309 (issue #1590): at the measured rooms the one split is 10 agents in 3 or 4 folders at 1280x800 (three rows of the narrowest cabinet need 714 px with the lobby; the room has 697, 666 under a strip): the hall splits before it scrolls */
-  const gap = n === 10 && f >= 3 && W === 1280;
+  /* spec 102 T309 (issue #1590): three rows of the narrowest cabinet need 558 px under the lowest lobby (96 + 20 lane) and 8 px of padding: 682 px. 10 agents in 3 or 4 folders at 1280x800 are whole from 682 (the lobby then
+     under its 128 px, owner question on the PR) and no longer split at the measured 697. The one gap left is the 31 px strip at 1280x800 (666 px, no layout-only fix: the lend runs only for a plan that scrolls, a split plan does not). */
+  const gap = n === 10 && f >= 3 && W === 1280 && dh === 31;
   if (n <= 10 && !gap) assert.deepStrictEqual(cut, [], `${n} in ${f} at ${W}x${H - dh}: a folder of 4 or fewer is split`);
-  if (n <= 10 && gap) {
-    assert.ok(cut.length > 0 && !L.scroll, `${n} in ${f} at ${W}x${H - dh}: the named gap (a split folder, no scroll) moved: cut ${cut.length}, scroll ${L.scroll}`);
-    const at = (h: number): number => { const M = aislesLayout(model(n, f), { w: W, h }, META, SIGNS(f)), c = new Map<string, number>(); for (const z of M.zones) c.set(z.id, (c.get(z.id) || 0) + 1); return [...c.values()].filter((v) => v > 1).length; };
-    assert.ok(at(713) > 0 && at(714) === 0, `${n} in ${f} at ${W}: the folder is whole from 714 px and split at 713 (the threshold moved: ${at(713)} / ${at(714)})`);
+  if (n <= 10 && gap) assert.ok(cut.length > 0 && !L.scroll, `${n} in ${f} at ${W}x${H - dh}: the named gap (a split folder, no scroll) moved: cut ${cut.length}, scroll ${L.scroll}`);
+  if (n === 10 && f >= 3 && W === 1280 && dh === 0) {
+    const whole = (h: number): boolean => { const M = aislesLayout(model(n, f), { w: W, h }, META, SIGNS(f)), c = new Map<string, number>(); for (const z of M.zones) c.set(z.id, (c.get(z.id) || 0) + 1); return ![...c.values()].some((v) => v > 1) && !M.scroll; };
+    assert.ok(!whole(681) && whole(682), `${n} in ${f} at ${W}: the folders are whole from 682 px and not at 681 (the threshold moved)`);
+    /* the app's agents have helpers: the strip under every plate (FR-306) is what split the folder in the picture; it is dropped when that keeps the folders whole */
+    const mh = model(n, f); for (const fo of mh.folders) for (const a of fo.agents) a.helpers = 1;
+    const H1 = aislesLayout(mh, { w: W, h: H }, META, SIGNS(f)), c1 = new Map<string, number>(); for (const z of H1.zones) c1.set(z.id, (c1.get(z.id) || 0) + 1);
+    assert.ok(![...c1.values()].some((v) => v > 1) && !H1.scroll && H1.helpRows === 0, `${n} in ${f} at ${W}x${H} with a helper each: the folders are whole, no scroll, and the strip is dropped (split ${[...c1.values()].some((v) => v > 1)}, scroll ${H1.scroll}, strip rows ${H1.helpRows})`);
+    assert.ok(L.lobbyH < 128 && L.lobbyH >= 96, `${n} in ${f} at ${W}x${H}: the lobby is ${L.lobbyH} px (between its lowest, 96, and the set 128)`);
   }
   /* a small room stands close together: neighbours on a row at most a quarter of a slot apart (1.1 slots a column) */
   if (n <= 4) for (const a of L.zones.flatMap((z) => z.desks)) for (const b of L.zones.flatMap((z) => z.desks)) if (a !== b && Math.abs(a.slot.y - b.slot.y) < 1 && b.slot.x > a.slot.x) {
