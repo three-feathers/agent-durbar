@@ -222,7 +222,11 @@ module.exports = async (ctx) => {
     if (MUTANT === 'hover') { /* a pointer left on a working desk's plate: its card opens over the room */
       const c = await js(`(()=>{const r=document.querySelector('#stage .ro-plate.st-working').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
       wc().sendInputEvent({ type: 'mouseMove', x: c.x, y: c.y }); await H.until(`!!document.getElementById('roZoom')`, 3000);
-    } else assert.ok(await H.until(`!document.getElementById('roZoom')`, 3000), `${tag}: the hover card closed after the pointer left (${where}; a card over: ${await js(`(()=>{const z=document.getElementById('roZoom');return z?z.textContent.slice(0,40):'-'})()`)})`);
+    } else {
+      const closed = await H.until(`!document.getElementById('roZoom')`, 3000);
+      const cardText = closed ? '-' : await js(`(()=>{const z=document.getElementById('roZoom');return z?z.textContent.slice(0,40):'-'})()`);
+      assert.ok(closed, tag + ': the hover card closed after the pointer left (' + where + '; a card over: ' + cardText + ')');
+    }
     const keys = [...Array(n)].map((_, i) => String(i + 1));
     const lostIn = (m) => keys.filter((i) => !m['pen:' + i] || !(m['name:' + i] || m['status:' + i]));
     /* the plates off the X screen: an Xvfb screen smaller than the window (1280x1024 device px for a 2880x1800 window at DPR 2) leaves them unpainted;
