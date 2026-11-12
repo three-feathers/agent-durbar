@@ -73,7 +73,9 @@
     'timeout':'Press Restart. If it times out again, check your network or how long the server takes to start.',
     'permission':'Allow the command to run (its file permissions), then press Restart.',
     'disconnected':'Press Restart, and check that the server still runs or can be reached.',
-    'unknown':'Open Details or Copy diagnostics to see what the agent app reported.'
+    'unknown':'Open Details or Copy diagnostics to see what the agent app reported.',
+    /* spec 058 FR-231 (issue #1621): a 403 from a server that sends its own token; Sign in cannot change a header */
+    'token':'The server refused the token: check the header or the variable it uses. Sign in does not change it.'
   };
   /* FR-006 hints; since FR-201 (2026-11-03, one wording per failure kind) the fix text of the strip, so the chat dialog, Settings and the
      launch strip say the same. `config` stays its own: a wrong entry, not an unreadable list. */
@@ -101,6 +103,15 @@
     [/invalid (config|configuration)|configuration error|misconfigured/i,'config']
   ];
   function textClass(t){const s=String(t==null?'':t).slice(0,2000);for(const [re,c] of TEXT_RULES)if(re.test(s))return c;return '';}
+  /* Spec 058 FR-231 (issue #1621): the refused-token words, with the `${NAME}` variables main found unset in Durbar's own environment
+     (names only: main never sends a value, and the names are checked again here). */
+  const VAR_NAME=/^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+  function tokenHint(vars){
+    const v=(Array.isArray(vars)?vars:[]).filter(n=>typeof n==='string'&&VAR_NAME.test(n)).slice(0,3);
+    if(!v.length)return FIXES.token;
+    const list=v.length===1?v[0]:v.slice(0,-1).join(', ')+' and '+v[v.length-1];
+    return FIXES.token+' The header uses the variable'+(v.length===1?' ':'s ')+list+', which Agent Durbar does not see: set '+(v.length===1?'it':'them')+' where Agent Durbar starts (an app opened from the Dock, Finder or a desktop menu does not read your terminal\u2019s profile), then quit and open Agent Durbar again.';
+  }
   function signInHint(app){return 'This server needs you to sign in. '+(app?app:'Your agent app')+' keeps the sign-in; Agent Durbar never sees it.';}
   function hintFor(o){
     const status=o&&o.status, cls=o&&o.errorClass, app=o&&o.app?String(o.app):'';
@@ -108,6 +119,7 @@
     if(status==='disabled'&&o.by==='app')return 'Turn it on in '+(app?plain(app,40)+'’s own':'the agent app’s own')+' MCP settings, then restart the session. Agent Durbar cannot switch it on here.';
     if(status==='needs-auth'||(status==='failed'&&cls==='auth'))return signInHint(app);
     if(status!=='failed')return '';
+    if(o.tokenRefused===true)return tokenHint(o.tokenVars); /* FR-231: main decided (a 403 on a token server it knows) */
     const c=typeof cls==='string'&&own(CLASS_HINT,cls)?cls:textClass(o&&o.error);
     if(c==='auth')return signInHint(app);
     return c?CLASS_HINT[c]:'';
@@ -125,7 +137,7 @@
   /* Spec 058 FR-090 (issue 603): one plain reason for a failed or needs-sign-in server, else null. Order: sign-in; the adapter's class
      (FR-091); the masked text (the hint's rules); "Disconnected later" when it was seen Running first (FR-092); otherwise "reason unknown".
      `x` = an `agents:mcp` entry: {status, errorClass, error (masked), afterRunning}. */
-  const REASONS={'auth':'Refused: needs sign-in','not-found':'Not installed (command not found)','crashed':'Crashed on start','disconnected':'Disconnected later',
+  const REASONS={'auth':'Refused: needs sign-in','token':'Refused: token not accepted','not-found':'Not installed (command not found)','crashed':'Crashed on start','disconnected':'Disconnected later',
     'timeout':'Timed out','refused':'Refused the connection','permission':'Permission denied','config':'Settings look wrong','unknown':'Failed (reason unknown)'};
   const REASON_CLASSES=['not-found','exited','disconnected','timeout','refused','permission','config'];
   function reasonOf(x){
@@ -133,6 +145,7 @@
     const st=x.status, cls=typeof x.errorClass==='string'?x.errorClass:'';
     if(st==='needs-auth'||(st==='failed'&&cls==='auth'))return {key:'auth',word:REASONS.auth};
     if(st!=='failed')return null;
+    if(x.tokenRefused===true)return {key:'token',word:REASONS.token}; /* FR-231 */
     let c=REASON_CLASSES.indexOf(cls)>=0?cls:textClass(x.error);
     if(c==='auth')return {key:'auth',word:REASONS.auth};
     if(c==='exited')c=x.afterRunning===true?'disconnected':'crashed';
@@ -222,6 +235,7 @@
   }
   function fixFor(key,ctx){
     if(key==='config'){const f=ctx&&ctx.file?plain(ctx.file,120):'';return 'Fix the entry in '+(f||'the agent app’s MCP list')+'. Agent Durbar reads it again when Settings opens.';}
+    if(key==='token')return tokenHint(ctx&&ctx.vars);
     return typeof key==='string'&&own(FIXES,key)?FIXES[key]:FIXES.unknown;
   }
   /* Spec 058 FR-199 part 1: findings from `mcp:globalState` alone (no session): a list that could not be read, and a stdio server whose
@@ -252,7 +266,20 @@
     if(!x||!okName(x.name)||!chat)return null;
     const r=policy===true?{key:'policy',word:'Blocked by your organization’s access policy'}:reasonOf(x);
     if(!r)return null;
-    return {key:(policy===true?'policy:':'chat:')+JSON.stringify([String(chat.id),x.name]),kind:'chat',chatId:String(chat.id),name:plain(x.name,80),where:plain(chat.name,80)+(chat.app?' ('+plain(chat.app,40)+')':''),reason:r.word,rkey:r.key,fix:fixFor(r.key)};
+    return {key:(policy===true?'policy:':'chat:')+JSON.stringify([String(chat.id),x.name]),kind:'chat',chatId:String(chat.id),name:plain(x.name,80),where:plain(chat.name,80)+(chat.app?' ('+plain(chat.app,40)+')':''),reason:r.word,rkey:r.key,fix:fixFor(r.key,r.key==='token'?{vars:x.tokenVars}:undefined)};
+  }
+  /* Spec 058 FR-231: the strip learns of a refused token from main's `agents:mcp` reply (an `mcp` event has no entry to judge by): a chat's
+     `auth` finding of a server main marked `tokenRefused` becomes the token finding. Returns true when it changed. */
+  function launchToken(items,reply,chat){
+    if(!(items instanceof Map)||!reply||!Array.isArray(reply.servers)||!chat)return false;
+    let ch=false;
+    for(const x of reply.servers){
+      if(!x||x.tokenRefused!==true||x.status!=='failed'||!okName(x.name))continue;
+      const k='chat:'+JSON.stringify([String(chat.id),x.name]), f=items.get(k);
+      if(!f||f.rkey!=='auth')continue;
+      items.set(k,chatFinding(x,chat));ch=true;
+    }
+    return ch;
   }
   /* Spec 058 FR-199 part 2: the 10-minute window, on a monotonic clock (`performance.now()` in the page); a clock that went back, or a bad
      value, counts as outside (nothing new is added). */
@@ -307,5 +334,5 @@
     }
     return 'Could not start the sign-in for '+n+': '+why;
   }
-  return {signInPressNote,stateOf,offBy,iconSvg,hintFor,callWord,callHint,signInHint,plain,aggregate,reasonOf,whenText,renewedWord,diagnostics,fixFor,fileFindings,chatFinding,launchYoung,launchUpdate,restartTargets,LAUNCH_MS,RANK:RANK.slice(),ICON_NAMES:Object.keys(ICONS)};
+  return {signInPressNote,stateOf,offBy,iconSvg,hintFor,callWord,callHint,signInHint,plain,aggregate,reasonOf,whenText,renewedWord,diagnostics,fixFor,fileFindings,chatFinding,launchYoung,launchUpdate,launchToken,tokenHint,textClass,restartTargets,LAUNCH_MS,RANK:RANK.slice(),ICON_NAMES:Object.keys(ICONS)};
 })());

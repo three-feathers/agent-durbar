@@ -929,6 +929,18 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       return /\binteraction_required\b/i.test(t) ? 'policy' : undefined;
     };
     /* mcpcall:end */
+    /* spec 058 FR-231 (issue #1621): src/main/mcptoken.ts `isTokenRefusal`, copied (this file cannot import); test:mcpsession cuts this block out and compares the two */
+    /* mcptoken:begin */
+    const simTokenRefusal = (text: unknown): boolean => {
+      if (typeof text !== 'string') return false;
+      const t = text.slice(0, 2000);
+      return /\b403\b|forbidden/i.test(t) && !/\b401\b|unauthori[sz]ed/i.test(t);
+    };
+    /* mcptoken:end */
+    /* spec 058 FR-231: what main would know of a driver's servers' entries (fixed, names only): `team-api` sends `Authorization: Bearer
+       ${TEAM_API_TOKEN}` and the variable is not in Durbar's environment; `docs-api` sends a written `X-Api-Key`; any other name has no
+       known entry (an OAuth server keeps "needs sign-in") */
+    const SIM_TOKEN_ENTRIES: Record<string, { vars: string[] }> = { 'team-api': { vars: ['TEAM_API_TOKEN'] }, 'docs-api': { vars: [] } };
     const emit = (e: AgentEvent): void => {
       /* like main, which keeps the runtime's list before the window hears of it: the reply a listener asks for at once sees this event (spec 058 FR-094) */
       if (e.type === 'status' && e.status === 'stopped') { const q = sims.find((x) => x.info.id === e.sessionId); if (q) q.mcpHealth = undefined; }
@@ -2165,6 +2177,13 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
           ...(live ? (s.mcpLive ?? []).filter((m) => !known.has(m.name)).map((m) => ({ name: m.name, origin: 'runtime' as const, ...reported(m.name), defaultOn: true, off: !!s.mcpOff?.has(m.name), ...toolsOffOf(m.name), ...signOf(m.name, 'runtime'), ...(restartable(m.name, true) && m.status !== 'disabled' ? { canRestart: true } : {}) })) : []),
         ];
         for (const x of servers) { const ob = simOrgServer(s.info.adapterId, x.name); if (ob) Object.assign(x, { orgBlocked: ob }); } // spec 076 FR-205
+        /* spec 058 FR-231: like main's agentMcpReply, a failed row with a 403 on a known token server: the refused-token words, no Sign in again */
+        for (const x of servers as { name: string; status?: string; error?: string; errorClass?: string; signIn?: unknown; canSignInAgain?: boolean }[]) {
+          const te = Object.prototype.hasOwnProperty.call(SIM_TOKEN_ENTRIES, x.name) ? SIM_TOKEN_ENTRIES[x.name] : undefined;
+          if (!live || !te || x.status !== 'failed' || x.errorClass || x.signIn || !simTokenRefusal(x.error)) continue;
+          delete x.canSignInAgain;
+          Object.assign(x, { tokenRefused: true, ...(te.vars.length ? { tokenVars: [...te.vars] } : {}) });
+        }
         /* spec 058 FR-188: a Running (connected), switched-on server in a running session says how its last call failed (the class only) */
         for (const x of servers) { const c = s.mcpCalls?.get(x.name); if (live && c && !s.mcpOff?.has(x.name) && (x as { status?: string }).status === 'connected') Object.assign(x, { lastCall: c }); }
         /* spec 058 FR-220: "Renewed 12:40" on a connected, switched-on server Durbar renewed in the background */

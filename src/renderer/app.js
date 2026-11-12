@@ -5319,7 +5319,11 @@ async function mcpLaunchStart(){
 function mcpLaunchSeen(a,e){
   if(!mcpL.on||mcpL.closed||!a||e.agentId)return;
   const r=liveRoot(a)||a, W=mcpLW();
-  if(W.launchUpdate(mcpL.items,e,{id:r.id,name:r.name,app:mcpOpts(r).appName},W.launchYoung(mcpL.t0,performance.now())))paintMcpStrip();
+  const chat={id:r.id,name:r.name,app:mcpOpts(r).appName};
+  if(W.launchUpdate(mcpL.items,e,chat,W.launchYoung(mcpL.t0,performance.now())))paintMcpStrip();
+  /* spec 058 FR-231 (issue #1621): a failed server whose text reads like a refusal may be a refused token; only main's reply knows */
+  if(e.type==='mcp'&&bridge.agentMcp&&W.launchToken&&(Array.isArray(e.servers)?e.servers:[]).some(x=>x&&x.status==='failed'&&!x.errorClass&&W.textClass(x.error)==='auth'))
+    Promise.resolve(bridge.agentMcp(a.id)).then(rp=>{if(!mcpL.closed&&W.launchToken(mcpL.items,rp,chat))paintMcpStrip();}).catch(()=>{});
 }
 function paintMcpStrip(){
   const el=$('mcpStrip');if(!el)return;
