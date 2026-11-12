@@ -18,6 +18,34 @@ const read = (f: string): string => fs.readFileSync(path.join(ROOT, 'scripts', f
 const list = read('trusted-authors.txt').split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
 assert.deepStrictEqual(list, ['vikramgorla', 'fjcabello', 'rubenlupi', 'github-actions[bot]', 'github-advanced-security[bot]'], 'the trusted list');
 
+// ---- one parser (FR-092, #1407): scripts/trusted-authors.js; no second copy in code, and every consumer of it fails closed
+{
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const TA = require(path.join(ROOT, 'scripts', 'trusted-authors.js')) as { trustedAuthors(r: string): Set<string>; parseTrusted(t: string): string[] };
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const CC = require(path.join(ROOT, 'scripts', 'check-trusted-copies.js')) as { copyProblems(t: string): string[]; strayCopies(r: string): string[] };
+  assert.deepStrictEqual(Array.from(TA.trustedAuthors(ROOT)), list, 'the loader and the txt file agree (same set, same order)');
+  assert.deepStrictEqual(CC.strayCopies(ROOT), [], 'no second parser or hard-coded list in the repository');
+  // the check itself, each mutant caught by its own case
+  assert.ok(CC.copyProblems("const ok = /^[A-Za-z0-9-]+(\\[bot\\])?$/.test(l);").some((p) => /parser/.test(p)), 'a copied login pattern is refused');
+  assert.ok(CC.copyProblems("const re = '^[A-Za-z0-9-]+(\\\\[bot\\\\])?$';").some((p) => /parser/.test(p)), 'a copied login pattern in a string is refused');
+  assert.ok(CC.copyProblems("const t = fs.readFileSync(path.join(root, 'scripts', 'trusted-authors.txt'), 'utf8');").some((p) => /reads/.test(p)), 'a second reader of the txt file is refused');
+  assert.ok(CC.copyProblems("const T = new Set(['vikramgorla', 'github-actions[bot]']);").some((p) => /hard-codes/.test(p)), 'a hard-coded list is refused');
+  assert.deepStrictEqual(CC.copyProblems("// the list is scripts/trusted-authors.txt, read with readFileSync\n * ['vikramgorla', 'github-actions[bot]']\nconst BOT = 'github-actions[bot]';"), [], 'comments and a lone bot name are not copies');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-copies-')); fs.mkdirSync(path.join(root, 'scripts'));
+  fs.writeFileSync(path.join(root, 'scripts', 'trusted-authors.js'), "const LOGIN_LINE = /^[A-Za-z0-9-]+(\\[bot\\])?$/;");
+  assert.deepStrictEqual(CC.strayCopies(root), [], 'the loader itself is the one allowed parser');
+  fs.writeFileSync(path.join(root, 'scripts', 'copy.ts'), "export const T = ['vikramgorla', 'fjcabello', 'github-actions[bot]'];");
+  assert.deepStrictEqual(CC.strayCopies(root), ['scripts/copy.ts: hard-codes trusted logins'], 'a copy added anywhere in scripts/ is found');
+  fs.rmSync(root, { recursive: true, force: true });
+  // fail closed: a consumer given an empty list or an unreadable one trusts nobody
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-ta-')); fs.mkdirSync(path.join(empty, 'scripts'));
+  fs.writeFileSync(path.join(empty, 'scripts', 'trusted-authors.txt'), '# nobody\n');
+  assert.strictEqual(TA.trustedAuthors(empty).size, 0, 'an empty list is nobody');
+  assert.throws(() => TA.trustedAuthors(path.join(empty, 'missing')), 'an unreadable list throws, never a default list');
+  fs.rmSync(empty, { recursive: true, force: true });
+}
+
 // ---- static: pr-gate prints no raw body of anyone else; every list it prints goes through the trust defs
 const gate = read('pr-gate.sh');
 assert.ok(gate.includes('trusted-lib.sh'), 'pr-gate.sh sources the trust helpers');

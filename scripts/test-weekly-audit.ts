@@ -182,6 +182,29 @@ const many = (k: number): Finding[] => Array.from({ length: k }, (_, i) => good(
     assert.ok(/\bauthor\b/.test(search[search.indexOf('--json') + 1]), 'the search asks for the author');
     assert.ok(trustedAuthors().has('fjcabello') && !trustedAuthors().has('fjcabello-x'), 'the trusted list is read from scripts/trusted-authors.txt');
     assert.throws(() => trustedAuthors('/nonexistent-dir-for-test'), /trusted-authors/, 'no list, no run');
+    // FR-092: one parser. An installed layout (<dest>/scripts/{trusted-authors.js,.txt}) is read by the loader; a loader or list that gives nobody, or throws, means no run
+    {
+      const dest = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-ta-')); fs.mkdirSync(path.join(dest, 'scripts'));
+      const put = (f: string, t: string): void => { delete require.cache[path.join(dest, 'scripts', 'trusted-authors.js')]; fs.writeFileSync(path.join(dest, 'scripts', f), t); }; // a fresh load each time
+      const real = fs.readFileSync(path.join(ROOT, 'scripts', 'trusted-authors.js'), 'utf8');
+      put('trusted-authors.js', real); put('trusted-authors.txt', 'VikramGorla\r\n# c\nGithub-Actions[bot]\nbad login\n');
+      assert.deepStrictEqual(Array.from(trustedAuthors(path.join(dest, 'scripts'))), ['vikramgorla', 'github-actions[bot]'], 'installed copy: the shared parser, compared in lower case');
+      put('trusted-authors.txt', '# nobody\n'); assert.throws(() => trustedAuthors(path.join(dest, 'scripts')), /trusted-authors/, 'an empty list: no run');
+      put('trusted-authors.txt', 'vikramgorla\n');
+      put('trusted-authors.js', 'module.exports = { trustedAuthors() { return new Set(); } };'); assert.throws(() => trustedAuthors(path.join(dest, 'scripts')), /trusted-authors/, 'a loader that gives nobody: no run (mutant)');
+      put('trusted-authors.js', "module.exports = { trustedAuthors() { throw new Error('x'); } };"); assert.throws(() => trustedAuthors(path.join(dest, 'scripts')), /trusted-authors/, 'a loader that throws: no run (mutant)');
+      delete require.cache[path.join(dest, 'scripts', 'trusted-authors.js')]; fs.unlinkSync(path.join(dest, 'scripts', 'trusted-authors.js')); assert.throws(() => trustedAuthors(path.join(dest, 'scripts')), /trusted-authors/, 'no loader: no run, never a second parser');
+      assert.ok(fs.readFileSync(path.join(ROOT, 'scripts', 'weekly-test-audit.sh'), 'utf8').split('\n').includes('  install -m 644 scripts/trusted-authors.js "$dest/scripts/trusted-authors.js"   # spec 021 FR-092: the one parser of the list'), 'install-filer installs the loader');
+      // no second folder: a loader and list planted next to the install folder are never tried (mutant: a fallback root)
+      const outer = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-ta2-')); fs.mkdirSync(path.join(outer, 'inst', 'scripts'), { recursive: true }); fs.mkdirSync(path.join(outer, 'scripts'));
+      fs.writeFileSync(path.join(outer, 'scripts', 'trusted-authors.js'), real); fs.writeFileSync(path.join(outer, 'scripts', 'trusted-authors.txt'), 'vikramgorla\n');
+      const inst = path.join(outer, 'inst', 'scripts');
+      assert.throws(() => trustedAuthors(inst), /trusted-authors/, 'an installed copy without its loader does not fall back to another folder');
+      fs.copyFileSync(path.join(ROOT, 'scripts', 'trusted-authors.js'), path.join(inst, 'trusted-authors.js')); fs.writeFileSync(path.join(inst, 'trusted-authors.txt'), '# emptied\n');
+      assert.throws(() => trustedAuthors(inst), /trusted-authors/, 'an emptied installed list refuses, another folder\'s list is not used');
+      fs.rmSync(outer, { recursive: true, force: true });
+      fs.rmSync(dest, { recursive: true, force: true });
+    }
   }
   // the cap of 5
   {
