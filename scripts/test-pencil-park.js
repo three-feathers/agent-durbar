@@ -2,10 +2,12 @@
  * scripts/pencil-park.js (spec 097 FR-365): where the pencil-ease driver parks the pointer. Made-up screen and window numbers, no Electron, no simulator.
  *   PARK_MUTANT=old   the points of the first version (the page's middle above the stage, whatever the screen): must fail "every candidate is on the visible screen"
  *   PARK_MUTANT=inverted  windowOutsideScreen inverted: must fail "the window is outside the screen" / "inside" labels
+ *   PARK_MUTANT=nofit     fitWindow returns the window asked for: must fail "the window that fits ..."
  *   PARK_MUTANT=stage the spots a bar and a half lower, in the stage: must fail "every candidate is above the stage"
  */
 const assert = require('assert');
-const { visibleOf, parkVisible, parkCandidates, windowOutsideScreen: realOutside } = require('./pencil-park');
+const { fitWindow: realFit, visibleOf, parkVisible, parkCandidates, windowOutsideScreen: realOutside } = require('./pencil-park');
+const fitWindow = (o) => process.env.PARK_MUTANT === 'nofit' ? o.win : realFit(o);
 const windowOutsideScreen = (o) => process.env.PARK_MUTANT === 'inverted' ? !realOutside(o) : realOutside(o);
 const OLD = process.env.PARK_MUTANT === 'old';
 const IN_STAGE = process.env.PARK_MUTANT === 'stage';
@@ -38,4 +40,9 @@ assert.strictEqual(windowOutsideScreen({ win: [1440, 900], screen: [1280, 1024],
 assert.strictEqual(windowOutsideScreen({ win: [2880, 1800], screen: [3840, 2200], at: [0, 0] }), false, 'a 3840x2200 screen holds the 2880x1800 window: the window is inside the screen');
 assert.strictEqual(windowOutsideScreen({ win: [2880, 1800], screen: [3456, 2234], at: [480, 52] }), false, 'a large Mac screen, the window inside it: the window is inside the screen');
 assert.strictEqual(windowOutsideScreen({ win: [2880, 1800], screen: [3456, 2234], at: [800, 52] }), true, 'a window moved right until it leaves the screen: outside');
+/* the window that fits a small screen (the pencil-ease driver's extra size) */
+assert.deepStrictEqual(fitWindow({ win: [1440, 900], screen: [1024, 768], dpr: 1 }), [976, 658], 'the window that fits a 1024x768 screen under a 1440x900 window (the Windows CI case)');
+assert.deepStrictEqual(fitWindow({ win: [1440, 900], screen: [1280, 1024], dpr: 1 }), [1232, 900], 'the window that fits a 1280x1024 screen at DPR 1');
+assert.strictEqual(fitWindow({ win: [1440, 900], screen: [1280, 1024], dpr: 2 }), null, 'at DPR 2 on a 1280x1024 screen nothing useful fits (640x512 CSS px): null');
+assert.strictEqual(fitWindow({ win: [1280, 800], screen: [3840, 2200], dpr: 2 }) && fitWindow({ win: [1280, 800], screen: [3840, 2200], dpr: 2 })[0], 1280, 'a big screen: the window asked for');
 console.log('test-pencil-park: ok' + (OLD ? ' (mutant old: should not get here)' : ''));

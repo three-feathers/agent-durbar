@@ -20,4 +20,10 @@ function parkCandidates(o) {
 }
 /* true when the window's content is not whole inside the screen (device px, on either axis): the real pointer cannot be trusted to leave the plates there (Linux/Xvfb 1280x1024 under a 2880x1800 window at DPR 2) */
 function windowOutsideScreen({ win, screen, at }) { return at[0] < 0 || at[1] < 0 || at[0] + win[0] > screen[0] || at[1] + win[1] > screen[1]; }
-module.exports = { visibleOf, parkVisible, parkCandidates, windowOutsideScreen };
+/* a window that fits the screen when the screen is smaller than the window: the screen in CSS px less a margin for the window's frame and place (48 across, 110 down: a title bar,
+   a task bar), at most the window asked for; null when that is under 800x520 (too small for the office's 15 desks to be a layout worth testing) */
+function fitWindow({ win, screen, dpr }) {
+  const w = Math.min(win[0], Math.floor(screen[0] / dpr) - 48), h = Math.min(win[1], Math.floor(screen[1] / dpr) - 110);
+  return w >= 800 && h >= 520 ? [w, h] : null;
+}
+module.exports = { fitWindow, visibleOf, parkVisible, parkCandidates, windowOutsideScreen };

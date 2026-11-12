@@ -54,12 +54,13 @@ const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
 const { helpers, jsLiteral, STILL_STAGE } = require('./driver-helpers');
-const { parkCandidates, parkVisible, windowOutsideScreen } = require('./pencil-park');
+const { parkCandidates, parkVisible, windowOutsideScreen, fitWindow } = require('./pencil-park');
 
 const MUTANT = process.env.PENCIL_EASE_MUTANT || '';
 const PLAIN = process.env.PENCIL_EASE_PLAIN === '1';
 const OUT = process.env.SHOTS_OUT || '';
-const SIZES = [[1440, 900], [1280, 800]].filter(([w, h]) => !process.env.PENCIL_EASE_SIZE || process.env.PENCIL_EASE_SIZE === w + 'x' + h); /* PENCIL_EASE_SIZE=1280x800: only that size (a mutant is otherwise caught at the first) */
+const SIZE_ENV = /^(\d+)x(\d+)$/.exec(process.env.PENCIL_EASE_SIZE || '');
+const SIZES = SIZE_ENV ? [[Number(SIZE_ENV[1]), Number(SIZE_ENV[2])]] : [[1440, 900], [1280, 800]]; /* PENCIL_EASE_SIZE=<W>x<H>: only that window size, any size (a mutant is otherwise caught at the first size) */
 const ALL = { photo: {}, cave: { worldflags: 'cave', world: 'cave' }, arcade: { worldflags: 'retro', world: 'retro' } };
 const WORLDS = (process.env.PENCIL_EASE_WORLDS || 'photo,arcade').split(',').filter((w) => ALL[w]);
 const SPAN = 320; /* ms of frames after the move starts: the ease is 280..520 ms, the displacement was seen in its first ~200..300 ms */
@@ -159,12 +160,19 @@ module.exports = async (ctx) => {
   if (MUTANT) log('mutant:', MUTANT);
   /* the X screen and the window in device px (PENCIL_EASE_SCREEN stands in for a smaller screen), as the page sees them now */
   const screenInfo = () => js(`(()=>{const d=devicePixelRatio,m=/^(\\d+)x(\\d+)$/.exec(${jsLiteral(SCREEN)});return {dpr:d,view:[innerWidth,innerHeight],top:document.getElementById('stage').getBoundingClientRect().top,screen:m?[+m[1],+m[2]]:[Math.round(screen.width*d),Math.round(screen.height*d)],at:[Math.round((screenX+(outerWidth-innerWidth))*d),Math.round((screenY+(outerHeight-innerHeight))*d)]}})()`);
-  for (const world of WORLDS) for (const [w, h] of SIZES) {
-    const tag = `${world} ${w}x${h}`;
+  for (const world of WORLDS) {
+  const queue = SIZES.map((z) => [...z, false]); /* [w, h, fits]: a window that fits the screen is queued once when the screen is smaller than a window */
+  for (let qi = 0; qi < queue.length; qi++) {
+    const [w, h, fits] = queue[qi];
+    const tag = `${world} ${w}x${h}${fits ? ' (a window that fits the screen)' : ''}`;
     await H.load({ w, h, query: { officeview: 'real', simfreeze: '1', romotion: '1', ...ALL[world] }, ready: REAL, settle: false });
     /* the OS may ask for reduced motion (then nothing eases, FR-249): this check needs the ease */
     const dbg = wc().debugger; if (!dbg.isAttached()) dbg.attach('1.3');
     await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: MUTANT === 'noease' ? 'reduce' : 'no-preference' }] });
+    if (!fits && !SIZE_ENV) { /* the screen is smaller than this window (a Windows runner's 1024x768 under 1440x900): one more size, the largest that fits it, runs the same checks with the plates on the screen */
+      const sc1 = await screenInfo(), want = windowOutsideScreen({ win: sc1.view.map((v) => v * sc1.dpr), screen: sc1.screen, at: sc1.at }) ? fitWindow({ win: sc1.view, screen: sc1.screen, dpr: sc1.dpr }) : null;
+      if (want && !queue.some((z) => z[2])) queue.push([want[0], want[1], true]);
+    }
     const READY = PICS + `&&document.querySelector('#stage .ro').dataset.go==='1'`;
     await must(READY, `${tag}: the pictures, and the office past its first 2 s (FR-228: nothing eases before)`);
     wc().sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
@@ -271,7 +279,7 @@ module.exports = async (ctx) => {
        PENCIL_EASE_SCREEN=<W>x<H> (device px) stands in for such a screen */
     const scr = await js(`(()=>{const d=devicePixelRatio,want=${jsLiteral(SCREEN)},m=/^(\\d+)x(\\d+)$/.exec(want),sw=m?+m[1]/d:screen.width,sh=m?+m[2]/d:screen.height,ox=screenX+(outerWidth-innerWidth),oy=screenY+(outerHeight-innerHeight);
       return {dpr:d,screen:[Math.round(sw*d),Math.round(sh*d)],win:[Math.round(innerWidth*d),Math.round(innerHeight*d)],at:[Math.round(ox*d),Math.round(oy*d)],
-        off:[...document.querySelectorAll('#stage .ro-plate[data-pe-mark]')].filter(p=>{const r=p.getBoundingClientRect();return ox+r.right>sw||oy+r.bottom>sh}).map(p=>p.dataset.peMark)}})()`);
+        off:[...document.querySelectorAll('#stage .ro-plate[data-pe-mark]')].filter(p=>{const r=p.getBoundingClientRect();return ox+r.right>sw||oy+r.bottom>sh||r.bottom>innerHeight||r.right>innerWidth||r.top<0||r.left<0}).map(p=>p.dataset.peMark)}})()`);
     log(tag, `screen ${scr.screen.join('x')} device px, window content ${scr.win.join('x')} device px at ${scr.at.join(',')}; ${scr.off.length} of ${n} plates off the screen${scr.off.length ? ' (' + scr.off.join(',') + ')' : ''}`);
     const off = new Set(scr.off);
     let endImg = null, end = null, tries = 0;
@@ -292,7 +300,7 @@ module.exports = async (ctx) => {
       /* every marked plate came through the capture: its pencil and its name or status (a colour lost would drop the plate from every assert) */
       if (tries > 1) log(tag, 'end frame taken', tries, 'times');
       if (!cardStays) assert.ok(!(await js(`!!document.getElementById('roZoom')`)), `${tag}: no hover card is open over the plates in the end frame`);
-      if (off.size) log(tag, `skipped: painted end-state check: ${off.size} of ${n} plates are off the X screen (screen ${scr.screen.join('x')} device px, window ${scr.win.join('x')} at ${scr.at.join(',')}): plates ${[...off].join(',')}; their opacity reads still apply`);
+      if (off.size) log(tag, `skipped: painted end-state check: ${off.size} of ${n} plates are off the X screen or outside the window's view (screen ${scr.screen.join('x')} device px, window ${scr.win.join('x')} at ${scr.at.join(',')}): plates ${[...off].join(',')}; their opacity reads still apply`);
       const lost = lostIn(end).filter((i) => !off.has(i));
       let painted = true;
       if (SKIP_PAINTED && !lost.length) lost.push(...keys.slice(-1)); /* the fallback's path, on demand */
@@ -390,6 +398,7 @@ module.exports = async (ctx) => {
     assert.ok(blinks.every((b) => / 0 of a still plate$/.test(b)) && /^thinking: 0 plates eased, 0 pencils hidden/.test(blinks[0]), `${tag}: a status change hides only the pencils of plates that move (${blinks.join('; ')})`);
     log(tag, 'ok');
     try { await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] }); dbg.detach(); } catch (e) { /* the page went: nothing to undo */ }
+  }
   }
   console.log('[097-pencil-ease] ok');
   process.exitCode = 0;
