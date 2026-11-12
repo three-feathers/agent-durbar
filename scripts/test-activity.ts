@@ -36,6 +36,8 @@ try {
     assert.deepStrictEqual(Object.keys(r!).sort(), [...ACTIVITY_FIELDS].sort(), 'a row has exactly the listed fields');
     assert.strictEqual(r!.folder, 'web-shop', 'folder base name, not the full path');
     assert.strictEqual(sanitizeActivityRow({ ...base, t: new Date().toISOString(), folder: 'C:\\Users\\u\\proj\\' })!.folder, 'proj', 'Windows path: base name');
+    // spec 012 FR-181 (issue #1541): the row's last redact() hides an escaped token (`ghp\_<body>`), so the log and its export never hold it
+    assert.strictEqual(sanitizeActivityRow({ ...base, t: new Date().toISOString(), action: 'echo ' + 'ghp' + '\\_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8' }, {})!.action, 'echo [redacted]', '#1541 activity: the row hides an escaped token');
     st.flush();
     const disk = fs.readFileSync(file, 'utf8');
     for (const bad of ['secret prompt', 'model reply', 'tool output', 'file body', '/home/u']) assert.ok(!disk.includes(bad), `not on disk: ${bad}`);

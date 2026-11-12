@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Worker } from 'worker_threads';
-import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, redact, shQuote, splitCommand } from '../src/shared/redact';
+import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, maskNoteText, maskOutgoing, redact, shQuote, splitCommand } from '../src/shared/redact';
 
 import { assertLinearShape, cpuMs } from './redact-growth-lib';
 // Growth and adversarial runs: `test-redact-growth.ts` (split by spec 012 T137, issue #1009; the helpers are in `redact-growth-lib.ts`).
@@ -17,6 +17,141 @@ const env = {
   HOME: '/Users/somebody/very/long/home/directory',
   SPACED: 'this value is long but has spaces in it',
 };
+
+// spec 012 FR-181 (issue #1541, T162): a token written with a backslash escape inside (`ghp\_<body>`, `g\hp_<body>`) is hidden by
+// redact, maskSecretCommand and maskSecretArgs, in the text as written. Every token here is invented and built in code from pieces.
+{
+  const B36 = 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
+  const B22 = 'Z9y8X7w6V5u4T3s2R1q0P9';
+  const B59 = 'o8N7m6L5k4J3i2H1g0F9e8D7c6B5a4Z3y2X1w0V9u8T7s6R5q4P3o2N1m0L';
+  const B40 = 'K1l2M3n4O5p6Q7r8S9t0U1v2W3x4Y5z6A7b8C9d0';
+  const B93 = (B40 + B40 + B40).slice(0, 93);
+  // [form, escaped token, the bodies that must not show]
+  const FORMS: Array<[string, string, string[]]> = [
+    ['ghp\\_', 'ghp' + '\\_' + B36, [B36]],
+    ['github\\_pat\\_', 'github' + '\\_pat\\_' + B22 + '\\_' + B59, [B22, B59]],
+    ['sk\\-proj\\-', 'sk' + '\\-proj\\-' + B40, [B40]],
+    ['sk\\-ant\\-api03\\-', 'sk' + '\\-ant\\-api03\\-' + B93, [B93]],
+    ['g\\hp_', 'g' + '\\hp_' + B36, [B36]],
+    ['gh\\p\\_ mixed', 'gh' + '\\p\\_' + B36.slice(0, 10) + '\\' + B36.slice(10), [B36]],
+  ];
+  /** Any 8 characters of a body in `out` (backslashes dropped first: `AB\CD…` is `ABCD…` to a shell). */
+  const shows = (out: string, bodies: string[]): string | undefined => {
+    const o = out.replace(/\\/g, '');
+    for (const b of bodies) for (let i = 0; i + 8 <= b.length; i++) if (o.includes(b.slice(i, i + 8))) return b.slice(i, i + 8);
+    return undefined;
+  };
+  for (const [what, tok, bodies] of FORMS) {
+    // the baseline: the same token without its backslashes is a token to the rules
+    assert.notStrictEqual(redact(tok.replace(/\\/g, ''), {}), tok.replace(/\\/g, ''), `#1541 ${what}: the unescaped token is a token (baseline)`);
+    for (const [ctx, text] of [['alone', tok], ['after echo', 'echo ' + tok], ['double quotes', `echo "${tok}"`], ['single quotes', `echo '${tok}'`], ['glued to a plain token', 'echo ghp_' + B36 + tok], ['before a word', tok + ' done']] as const) {
+      const r = redact(text, {});
+      const c = maskSecretCommand(text, {});
+      assert.strictEqual(shows(r, bodies), undefined, `#1541 ${what} ${ctx}: redact shows no part: ${r}`);
+      assert.strictEqual(shows(c, bodies), undefined, `#1541 ${what} ${ctx}: maskSecretCommand shows no part: ${c}`);
+      assert.ok(r.includes('[redacted]') && c.includes('[redacted]'), `#1541 ${what} ${ctx}: a mask is shown`);
+    }
+    const a = maskSecretArgs(['run', tok, '--verbose'], {});
+    assert.deepStrictEqual(a, ['run', '[redacted]', '--verbose'], `#1541 ${what}: maskSecretArgs hides the argument, the others stay`);
+  }
+  // the text is kept as written around the run (never shown unescaped), and the run is hidden before the rules (glued: no rest)
+  assert.strictEqual(redact('echo a \\> b ' + FORMS[0][1] + ' \\| c', {}), 'echo a \\> b [redacted] \\| c', '#1541 ghp: the command stays as written around the mask');
+  assert.strictEqual(redact('ghp_' + B36 + FORMS[0][1], {}), '[redacted]', '#1541 glued: a token glued to an escaped one is hidden whole, before the rules');
+  assert.strictEqual(redact('x ' + FORMS[2][1], {}), 'x [redacted]', '#1541 sk-proj: the run set holds sk too');
+  assert.strictEqual(redact('x ' + FORMS[1][1], {}), 'x [redacted]', '#1541 github_pat: the run set holds github_pat too');
+  assert.strictEqual(redact('x ' + FORMS[4][1], {}), 'x [redacted]', '#1541 g\\hp_: the shell reading of a backslash before a letter');
+  // a JSON-escaped line break before an escaped token: only the piece after the break is hidden
+  assert.strictEqual(redact('"a\\n' + FORMS[0][1] + '\\tb"', {}), '"a\\n[redacted]\\tb"', '#1541 an escaped token after an escaped line break');
+  // a backslash without a token: unchanged
+  for (const t of ['a \\> b', 'C:\\Users\\me\\notes', 'private_key=C:\\keys\\server_2026.pem', 'grep -E "a\\.b\\|c"', 'printf "x\\ty\\n"', 'sed s/\\_x/\\-y/', '\\\\server\\share\\dir', 'ab\\_cd ef\\-gh']) {
+    assert.strictEqual(redact(t, {}), t, `#1541 no token: unchanged: ${t}`);
+    if (!t.startsWith('private_key=')) assert.strictEqual(maskSecretCommand(t, {}), t, `#1541 no token: maskSecretCommand unchanged: ${t}`); // the command mask hides any `private_key=` value (its name rule, with or without a backslash)
+  }
+  // maskOutgoing and maskNoteText get the shell form through their own redact calls (FR-181 asked whether they do)
+  for (const f of [maskOutgoing, maskNoteText]) {
+    const r = f('echo ' + FORMS[4][1]);
+    assert.ok(r.changed && shows(r.text, [B36]) === undefined, `#1541 g\\hp_: ${f.name} hides it: ${r.text}`);
+  }
+  // never throws, never longer than the input plus its masks: a backslash at the end, alone, many
+  for (const t of ['\\', 'ghp\\', '\\\\\\\\', 'a\\'.repeat(1000), FORMS[0][1] + '\\']) assert.strictEqual(typeof redact(t, {}), 'string', `#1541 odd input is a string: ${t.slice(0, 12)}`);
+
+  // T163: a named marker `[redacted:NAME]` takes its glued rest with the counts of FR-173 (8, 16 after `_`, 32 after `/` or `+`) and the same end rule
+  {
+    const V = 'Vq7Wx8Ec9Rv0Tb1Yn2Um3Ik4';
+    const NE = { FOO_TOKEN: V };
+    const REST = 'abcdefghij0123456789xy';
+    for (const [sep, what] of [['_', 'after _'], ['-', 'after -'], ['', 'no separator']] as const) {
+      const r = redact('secret=' + V + sep + REST, NE);
+      assert.strictEqual(r, 'secret=[redacted:FOO_TOKEN]', `#1544 named marker: the rest glued to a named marker is hidden (${what}): ${r}`);
+      assert.strictEqual(redact('x ' + V + sep + REST + ' y', NE), 'x [redacted:FOO_TOKEN] y', `#1544 named marker: hidden without a name before it (${what})`);
+    }
+    assert.strictEqual(redact('cp ' + V + '_backup', NE), 'cp [redacted:FOO_TOKEN]_backup', '#1544 named marker: a short suffix after _ stays');
+    assert.strictEqual(redact('x ' + V + '_' + 'a'.repeat(15), NE), 'x [redacted:FOO_TOKEN]_' + 'a'.repeat(15), '#1544 named marker: 15 after _ stay');
+    assert.strictEqual(redact('x ' + V + '_' + 'a'.repeat(16), NE), 'x [redacted:FOO_TOKEN]', '#1544 named marker: 16 after _ are hidden');
+    assert.strictEqual(redact('x ' + V + 'a'.repeat(7), NE), 'x [redacted:FOO_TOKEN]' + 'a'.repeat(7), '#1544 named marker: 7 glued stay');
+    assert.strictEqual(redact('x ' + V + '-' + 'a'.repeat(8), NE), 'x [redacted:FOO_TOKEN]', '#1544 named marker: 8 after - are hidden');
+    assert.strictEqual(redact('x ' + V + '/' + 'a'.repeat(31), NE), 'x [redacted:FOO_TOKEN]/' + 'a'.repeat(31), '#1544 named marker: 31 after / stay');
+    assert.strictEqual(redact('x ' + V + '/' + 'a'.repeat(32), NE), 'x [redacted:FOO_TOKEN]', '#1544 named marker: 32 after / are hidden');
+    assert.strictEqual(redact('see ' + V + '.', NE), 'see [redacted:FOO_TOKEN].', '#1544 named marker: a full stop stays');
+    assert.strictEqual(redact('see ' + V + '_' + REST + '.', NE), 'see [redacted:FOO_TOKEN].', '#1544 named marker: the rest is hidden, the full stop stays');
+    assert.strictEqual(redact('a ' + V + ' and ' + V + REST + ' and [redacted] ' + REST, NE), 'a [redacted:FOO_TOKEN] and [redacted:FOO_TOKEN] and [redacted] ' + REST, '#1544 named marker: plain and named markers in one text, each read once');
+  }
+
+  // growth: linear in the text (FR-180 did the same for maskLabel)
+  const many = (k: number) => Array.from({ length: Math.ceil(k / 30) }, (_, i) => 'ghp\\_' + String(i).padStart(24, 'Q')).join(' ').slice(0, k);
+  assertLinearShape('#1541 redact many distinct escaped tokens', (x) => { redact(x, {}); }, many, 400_000);
+  assertLinearShape('#1541 redact one escaped token repeated', (x) => { redact(x, {}); }, (k) => ('x ' + FORMS[0][1] + ' ').repeat(Math.ceil(k / (FORMS[0][1].length + 3))).slice(0, k), 400_000);
+  assertLinearShape('#1541 redact one long escaped run', (x) => { redact(x, {}); }, (k) => 'a\\_'.repeat(Math.ceil(k / 3)).slice(0, k), 400_000);
+  assertLinearShape('#1541 redact many escaped letters', (x) => { redact(x, {}); }, (k) => 'a\\b '.repeat(Math.ceil(k / 4)).slice(0, k), 400_000);
+  assertLinearShape('#1541 redact many escaped line breaks', (x) => { redact(x, {}); }, (k) => 'a\\nb\\_c'.repeat(Math.ceil(k / 7)).slice(0, k), 400_000);
+  assertLinearShape('#1544 redact many named markers', (x) => { redact(x, { FOO_TOKEN: 'Vq7Wx8Ec9Rv0Tb1Yn2Um3Ik4' }); }, (k) => 'Vq7Wx8Ec9Rv0Tb1Yn2Um3Ik4_ab '.repeat(Math.ceil(k / 28)).slice(0, k), 400_000);
+
+  // a seeded randomized fixture: four token types, random escapes at random cut points, the run and other kinds, masks present or not
+  {
+    let seed = 0x1541;
+    const rnd = (n: number): number => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed % n; };
+    const AN = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    const body = (n: number): string => Array.from({ length: n }, () => AN[rnd(AN.length)]).join('');
+    const kinds: Array<() => [string, string[]]> = [
+      () => { const b = body(36); return ['ghp_' + b, [b]]; },
+      () => { const a = body(22), b = body(59); return ['github_pat_' + a + '_' + b, [a, b]]; },
+      () => { const b = body(40); return ['sk-proj-' + b, [b]]; },
+      () => { const b = body(93); return ['sk-ant-api03-' + b, [b]]; },
+    ];
+    /** 1 to 3 backslashes at random cut points, before a character (a letter, a digit, `_` or `-`). */
+    const escape = (t: string): string => {
+      const at = new Set<number>();
+      const n = 1 + rnd(3);
+      while (at.size < n) at.add(rnd(t.length));
+      return [...t].map((c, i) => (at.has(i) ? '\\' + c : c)).join('');
+    };
+    const MASKS = ['', '[redacted] ', '[redacted:FOO_TOKEN] ', 'x[redacted]_y '];
+    const t0 = Date.now();
+    let cases = 0;
+    for (let i = 0; i < 3000; i++) {
+      const [tok, bodies] = kinds[i % 4]();
+      const e = escape(tok);
+      const m = MASKS[rnd(MASKS.length)];
+      const ctx = rnd(5);
+      const text = ctx === 0 ? e : ctx === 1 ? `${m}echo ${e} done` : ctx === 2 ? `run "${e}" ${m}` : ctx === 3 ? `${m}${tok}${e}` : `curl -d x=1 ${e}`;
+      for (const [fn, out] of [['redact', redact(text, {})], ['maskSecretCommand', maskSecretCommand(text, {})], ['maskSecretArgs', maskSecretArgs(['srv', text, e], {}).join(' ')]] as const) {
+        const leak = shows(out, bodies);
+        assert.strictEqual(leak, undefined, `#1541 fuzz case ${i} (${fn}): ${JSON.stringify(text)} shows ${leak}: ${out}`);
+      }
+      cases++;
+    }
+    // text with escapes and no secret is returned as written
+    const WORDS = ['a\\>b', 'C:\\Users\\me', 'foo\\_bar', 'x\\-y', '\\n', 'echo', 'grep', '"q\\.r"', 'it\\\'s', 'path\\to\\file.txt', 'a\\*b', '\\~', 'k\\=v'];
+    for (let i = 0; i < 1000; i++) {
+      const text = Array.from({ length: 1 + rnd(8) }, () => WORDS[rnd(WORDS.length)]).join(' ');
+      assert.strictEqual(redact(text, {}), text, `#1541 fuzz: text without a secret stays as written: ${JSON.stringify(text)}`);
+      cases++;
+    }
+    const ms = Date.now() - t0;
+    console.log(`#1541 fuzz: ${cases} cases in ${ms} ms`);
+  }
+}
+
 
 // 1. env values by name and by length are gone; excluded names stay
 {

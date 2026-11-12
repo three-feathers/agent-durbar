@@ -530,6 +530,14 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
     eq(L.permText('mcp ' + TK, k, { redact: () => { throw new Error('x'); }, cmd: () => { throw new Error('x'); }, url: () => { throw new Error('x'); } }), { text: w, hidden: true, why: 'unchecked' }, k + ': a throwing mask: neutral words, unchecked');
     eq(L.permText('mcp ' + TK, k, { redact: () => 5 as unknown as string, cmd: () => 5 as unknown as string, url: () => 5 as unknown as string }), { text: w, hidden: true, why: 'unchecked' }, k + ': a mask that gives no string: neutral words, unchecked');
   }
+  // spec 012 FR-181 (T163): the desk's maskRaw (redact underneath) hides the rest glued to a named marker `[redacted:NAME]`, as it does after a plain `[redacted]`
+  {
+    const ST = require(path.join(R, 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string };
+    const V = 'Vq7Wx8Ec9Rv0Tb1Yn2Um3Ik4', REST = 'abcdefghij0123456789xy';
+    const red = (t: string) => redact(t, { FOO_TOKEN: V });
+    for (const sep of ['_', '-', '']) eq(ST.maskRaw('secret=' + V + sep + REST, red), 'secret=[redacted:FOO_TOKEN]', '#1544 named marker: maskRaw hides the rest glued to a named marker (' + (sep || 'no separator') + ')');
+    eq(ST.maskRaw('cp ' + V + '_backup', red), 'cp [redacted:FOO_TOKEN]_backup', '#1544 named marker: maskRaw keeps a short suffix');
+  }
   // spec 012 FR-180: a Markdown-escaped token (`ghp\_...`) is hidden on the card as the desk mask hides it, and the command is shown as written
   {
     const ST = require(path.join(R, 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string; maskLabel(t: string, k: string, m: Record<string, (s: string) => string>): string };
