@@ -42,20 +42,38 @@
   const easeFrom = (el, dx, dy, sx, sy) => {
     if (!el.animate || (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5 && sx === 1 && sy === 1)) return;
     const ms = Math.max(280, Math.min(520, Math.hypot(dx, dy) * 1.2)), ease = { duration: ms, easing: 'cubic-bezier(.25,.1,.25,1)' };
-    if (sx === 1 && sy === 1) { el.animate([{ translate: `${dx}px ${dy}px` }, { translate: '0 0' }], ease); return; }
+    if (sx === 1 && sy === 1) return el.animate([{ translate: `${dx}px ${dy}px` }, { translate: '0 0' }], ease);
     /* scaled about the element's own origin: the translate brings its top left to where it was */
     const o = getComputedStyle(el).transformOrigin.split(' '), ox = parseFloat(o[0]) || 0, oy = parseFloat(o[1]) || 0;
     const flip = el.classList.contains('mir') ? -1 : 1; /* a mirrored picture stays mirrored while it eases (spec 102 FR-256) */
-    el.animate([{ translate: `${dx - ox * (1 - sx)}px ${dy - oy * (1 - sy)}px`, scale: `${flip * sx} ${sy}` }, { translate: '0 0', scale: `${flip} 1` }], ease);
+    return el.animate([{ translate: `${dx - ox * (1 - sx)}px ${dy - oy * (1 - sy)}px`, scale: `${flip * sx} ${sy}` }, { translate: '0 0', scale: `${flip} 1` }], ease);
   };
-  const box = (el, r) => {
+  const box = (el, r) => { /* gives the ease it started, if any */
+    let a = null;
     if (SLIDE && el._x !== undefined && !el.classList.contains('ro-chip') && !el.classList.contains('ro-lplate')) {
       const sw = r.w != null && el._bw > 0 && Math.abs(el._bw - r.w) >= 1 && r.w > 0 ? el._bw / r.w : 1, sh = r.h != null && el._bh > 0 && Math.abs(el._bh - r.h) >= 1 && r.h > 0 ? el._bh / r.h : 1;
-      easeFrom(el, el._x - r.x, el._y - r.y, sw, sh);
+      a = easeFrom(el, el._x - r.x, el._y - r.y, sw, sh) || null;
     }
     if (r.w != null) el._bw = r.w;
     if (r.h != null) el._bh = r.h;
-    el._x = r.x; el._y = r.y; sty(el, 'left', px(r.x)); sty(el, 'top', px(r.y)); if (r.w != null) sty(el, 'width', px(r.w)); if (r.h != null) sty(el, 'height', px(r.h)); };
+    el._x = r.x; el._y = r.y; sty(el, 'left', px(r.x)); sty(el, 'top', px(r.y)); if (r.w != null) sty(el, 'width', px(r.w)); if (r.h != null) sty(el, 'height', px(r.h));
+    return a; };
+  /* spec 097 FR-365 (bug 1513): the rename pencil is placed by CSS anchor only, so its plate's ease (translate and scale on the compositor) does not carry
+     its painted icon: in the first ~200 ms it was drawn over the name and the status icon. While the plate eases the pencil is not painted (opacity, so it
+     keeps its name and Tab place); it fades in at its own spot when the ease ends. Under reduced motion nothing eases, so nothing hides. A pencil that
+     has the focus is not hidden (its focus ring stays; it may be drawn displaced for the ease, a known gap). */
+  const REN_IN = 120;
+  function hideWhile(e, ease) {
+    if (e._hide) e._hide.cancel();
+    if (!e._hf) { e._hf = true; e.addEventListener('focus', () => { if (e._hide) { e._hide.cancel(); e._hide = null; } }); } /* focused while hidden: shown at once, and no fade from 0 when the ease ends (`show` stops at its guard) */
+    /* held until the plate's own ease ends (its `finished`), not for a time of its own: a plate's ease can start a frame after the pencil's hold
+       (measured in the cave, 17 ms), and a timed hold then ended while the plate still moved (review of PR 1555) */
+    const h = e._hide = e.animate([{ opacity: 0 }, { opacity: 0 }], { duration: Infinity });
+    const show = () => { if (e._hide !== h) return; h.cancel(); e._hide = e.animate([{ opacity: 0 }], { duration: REN_IN, easing: 'linear' }); }; /* one keyframe: it ends on the CSS opacity (hover, focus, ren-show) */
+    ease.finished.then(show, show);
+  }
+  /* the plate's ease still under way (a move on translate or scale), for a pencil made while it runs */
+  const easeOf = (el) => el.getAnimations ? el.getAnimations().find((n) => !n.animationName && n.playState === 'running' && n.effect && n.effect.getKeyframes().some((f) => f.translate || f.scale)) || null : null;
   const initials = (name) => String(name || '?').trim().split(/\s+/).slice(0, 2).map((w) => Array.from(w)[0] || '').join('').toUpperCase() || '?';
 
   /* the keyed layers: one Map per layer, elements reused by key; unseen keys are removed at the end of a render */
@@ -452,7 +470,7 @@
         /* FR-120: a static "z z" over a sleeping person (carved in the cave); aria-hidden, the plate and the name carry the meaning */
         if (a.asleep && d.person) { const z = el(chrome, 'z:' + k, 'div', 'ro-zz'); box(z, { x: d.person.x + d.person.w * 0.62, y: Math.max(d.slot.y + 2, d.person.y + d.person.h * 0.04) }); attr(z, 'aria-hidden', 'true'); text(z, 'z z'); }
         /* FR-016, FR-090: the name plate is the desk's one focusable button; the app's click handler opens the chat ([data-id]) */
-        const pl = el(chrome, 'n:' + k, 'button', 'ro-plate st-' + d.state + (a.selected ? ' sel' : '') + (d.narrow ? ' narrow' : '') + (a.asleep ? ' asleep' : '') + (d.lounge ? ' lounge' : '') + (isNarrowPlate(d) ? ' cab-narrow' : '') + (a.ren ? ' has-ren' : '') + (!d.strip && a.helpers && a.helpers.length ? ' has-help' : '')); box(pl, d.plate); /* has-help: the plate carries the +N (FR-308); a class, not :has(), so one text change does not re-match the arcade's whole tree */
+        const pl = el(chrome, 'n:' + k, 'button', 'ro-plate st-' + d.state + (a.selected ? ' sel' : '') + (d.narrow ? ' narrow' : '') + (a.asleep ? ' asleep' : '') + (d.lounge ? ' lounge' : '') + (isNarrowPlate(d) ? ' cab-narrow' : '') + (a.ren ? ' has-ren' : '') + (!d.strip && a.helpers && a.helpers.length ? ' has-help' : '')); const plEase = box(pl, d.plate); /* has-help: the plate carries the +N (FR-308); a class, not :has(), so one text change does not re-match the arcade's whole tree */
         if (pl.type !== 'button') pl.type = 'button'; dset(pl, 'id', k); dset(pl, 'state', d.state); if (d.lounge) dset(pl, 'surface', 'lounge'); else if (pl.dataset.surface) delete pl.dataset.surface; /* spec 098 FR-010: the moment's marker (spec 097 FR-246: every lounge seat) */
         /* spec 097 FR-308 (review of PR 1322): helpers with no strip (the fallback: the plate's +N and dots) are said in the plate's name and tooltip, in the flat desk's words (`helpWords`); FR-325: so is the context (`labelOf`) */
         const hw = helpWordsOf(a, d);
@@ -470,6 +488,9 @@
           if (rb.type !== 'button') rb.type = 'button'; dset(rb, 'ren', k); attr(rb, 'aria-label', 'Rename ' + a.name); attr(rb, 'title', 'Rename ' + a.name);
           if (rb.style.getPropertyValue('--ro-ren-nm') !== anc) { rb.style.setProperty('--ro-ren-nm', anc); rb.style.setProperty('--ro-ren-pl', ancP); }
           if (!rb.firstChild && model.renIcon) rb.innerHTML = model.renIcon; /* the app's own icon markup (trusted, as alertIcon) */
+          const fresh = !rb._ren; rb._ren = true;
+          const mv = plEase || (fresh ? easeOf(pl) : null); /* FR-365: a pencil made (or come back) while its plate eases waits for the rest of it */
+          if (mv && rb !== document.activeElement) hideWhile(rb, mv); /* FR-365 */
         }
         /* spec 097 FR-306..FR-309 (issue #1139): the helpers' head figures under the plate, right after it and its pencil in the Tab order; a lounge seat and the fallback (no room: the plate keeps +N; the arcade at 1280x800) have no strip box, so no strip */
         if (d.strip && a.subs && a.subs.length) helperStrip(chrome, d, a, k, who, ids, meta);
