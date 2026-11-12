@@ -17,7 +17,7 @@ The graphs, the split and the total are in **The numbers so far** below (generat
 <!-- build-cost-detail:begin (written by `npm run usage:readme`) -->
 ## The numbers so far
 
-**About US$4,753** (API list-price estimate, not billing), tracked since 2026-10-25, as of 2026-11-10 (release `v0.1.15`).
+**About US$5,398** (API list-price estimate, not billing), tracked since 2026-10-25, as of 2026-11-12 (release `v0.1.17`).
 
 ![Cumulative build cost by model over releases (API list-price estimate, not billing)](build-cost.svg)
 
@@ -25,9 +25,9 @@ The graphs, the split and the total are in **The numbers so far** below (generat
 
 Estimated, not measured: US$3,666 of the total, spent before telemetry could count it per day, is spread over 13 days (2026-10-25 to 2026-11-06) by 50% lines changed and 50% merged PRs of each day (git history); the faded, dashed bars are those estimates, the solid bars are measured. Per-model split of an estimated day: the same mix as the original lump (an assumption).
 
-- By model: Opus 5.5 75% (US$3,559), Sonnet 5.5 25% (US$1,192), Haiku 5.5 0% (US$2).
-- By machine or team: linux 88% (US$4,197), ruben-server 7% (US$319), mac 5% (US$236).
-- Not counted yet: work before 2026-10-25, Copilot and Codex, and machines that publish no usage file yet (Paco's server starts with v0.1.16).
+- By model: Opus 5.5 73% (US$3,935), Sonnet 5.5 27% (US$1,460), Haiku 5.5 0% (US$3).
+- By machine or team: linux 86% (US$4,636), ruben-server 10% (US$525), mac 4% (US$236).
+- Not counted yet: work before 2026-10-25, Copilot and Codex, and machines that publish no usage file yet (Paco's server has none yet; the Mac's file ends 2026-11-09 for now; Ruben's server file and the Linux file end on 2026-11-12, a partial day, so a late-day total may be a little higher).
 <!-- build-cost-detail:end -->
 
 ## 1. Point Claude Code at the receiver
@@ -115,7 +115,7 @@ Paste the printed table into the release notes next to the clip (`changelog.d/RE
 - adds the release's row (date, version, cumulative dollars per model and per machine) to `docs/build-cost-history.json` (the same version replaces its row);
 - regenerates `docs/build-cost-badge.svg`, `docs/build-cost.svg` (local plain SVG, no external service, a few KB; the chart stacks the models over release dates) and `docs/build-cost-days.svg` (US$ per day by model: measured solid, estimated faded and dashed).
 - **Every machine publishes its own file at each release.** Every team machine runs the same receiver and, at each daily release, runs `npm run usage:readme -- --release vX.Y.Z --publish` (copies its `usage-<machine>.json` into `docs/build-cost/data/` through the same validation and merges days into what is committed) or commits its file there by hand. The release step reads **all** `docs/build-cost/data/usage-*.json` plus the local folder, so the README block, chart and badge come from every machine's committed file. A file whose machine label is not in the baseline's `machines` counts in full from its first day (it adds to the total); `test:usage` fails on a malformed committed file, so another side's PR cannot break the release.
-- **Which label is which machine** (first day in the committed data in brackets): the baseline (`linux` in its `machines`, from 2026-10-25) and `usage-linux.json` (from 2026-11-07) are Vikram's Linux machine, `usage-mac.json` (from 2026-11-07) is the Mac, `usage-ruben-server.json` (from 2026-11-09) is Ruben's server, and `paco-vps` (Paco's server) starts with v0.1.16, when its first file lands. So "work on 3 machines since 2026-10-25" in the README means one machine from 2026-10-25 and the other two from these later days.
+- **Which label is which machine** (first day in the committed data in brackets): the baseline (`linux` in its `machines`, from 2026-10-25) and `usage-linux.json` (from 2026-11-07) are Vikram's Linux machine, `usage-mac.json` (from 2026-11-07) is the Mac, `usage-ruben-server.json` (from 2026-11-09) is Ruben's server, and `paco-vps` (Paco's server) has no file yet (it is counted from the release after its first file lands). The README sentence is computed from each machine's first day with spend (whole cents), so with these files it reads like "work on 3 machines: one since 2026-10-25, one from 2026-11-07 and one from 2026-11-09" (counts per date, oldest first); it says "since <date>" only when every machine starts together, and that date is the machines' real first day (not the baseline's `since` when they all start later).
 - **The spread** (`npm run usage:spread -- --write`, `scripts/usage-spread.js`) reads the git history on `origin/main` (pinned to the commit recorded in `docs/build-cost-spread.json`, so a later merge cannot change it) and writes the per-day weights and cents. It spreads only the baseline's remainder: the lump minus what telemetry measured per day on the baseline's machines (a measured day is not spread over; a model measured but not listed in the lump is taken from the largest model so the total holds). Whole cents by largest remainder; `test:usage` checks that the weights sum to 1, the total is kept to the cent, measured days are unchanged, the result is deterministic and the committed file equals what the pinned history gives (skipped in a shallow clone). Another machine's measured days are its own: they never remove a day from the spread.
 `--check` prints the block and writes nothing. It runs in the doc-only fold PR after each release (`changelog.d/README.md`). The baseline is keyed by the model ids the telemetry sends (`claude-opus-5-5`), so a baseline and a usage file for one model are one row; `MODEL_NAMES` in `scripts/usage-lib.js` is the one place that maps ids to the display names shown in the README, the badge and the chart (an id not listed shows as itself). When a machine's usage starts, raise nothing by hand: its files are summed from the day after the baseline's `through`.
 

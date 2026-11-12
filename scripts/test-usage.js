@@ -148,7 +148,42 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
   assert.ok(!/!\[/.test(block) && /!\[[^\]]*\]\(docs\/build-cost-days\.svg\)/.test(lib.readmeBlock(cum1, '2026-11-10', 'v0.1.13', true)) && !block.includes('docs/build-cost.svg'), 'block: the daily graph only when there is a spread, never the cumulative one');
   const cum0b = lib.cumulative([], '2026-11-07', base);
   const sc = (c, est) => lib.readmeBlock(c, '2026-11-10', 'v0.1.13', true, est);
-  assert.ok(sc(cum1, 0).includes('of work on 2 machines since 2026-10-25, all measured.'), 'scope: the machine count (2), the since date and "all measured" come from the data');
+  assert.ok(sc(cum1, 0).includes('of work on 2 machines: one since 2026-10-25 and one from 2026-11-09, all measured.'), 'scope: the machine count (2), the since date and "all measured" come from the data');
+  { // issue 1387: machines that start on different days: the sentence names the later first days, counted per date (mutant: the old "3 machines since <first day>" fails)
+    const m3 = lib.cumulative([mkst('mac', '2026-11-07T10:00:00Z', 'claude-opus-5-5', 5), mkst('ruben-server', '2026-11-09T10:00:00Z', 'claude-opus-5-5', 5, Date.UTC(2026, 10, 9, 12)), mkst('mac2', '2026-11-09T11:00:00Z', 'claude-opus-5-5', 5, Date.UTC(2026, 10, 9, 12))], '2026-11-10', base);
+    const t = sc(m3, 0);
+    assert.ok(t.includes('work on 4 machines: one since 2026-10-25, one from 2026-11-07 and two from 2026-11-09, all measured'), 'scope 1387: later first days named with how many started on each: ' + t.split('\n')[3].slice(-170));
+    assert.ok(!/machines since 2026-10-25/.test(t), 'scope 1387: never "N machines since <first day>" when machines joined later');
+    // one late machine: singular, no "the others"
+    assert.ok(sc(cum1, 0).includes('2 machines: one since 2026-10-25 and one from 2026-11-09,'), 'scope 1387: one late machine reads singular');
+    // two baseline machines (both from since) and one late: no wrong "the first"
+    const base2 = lib.validateBaseline({ version: 1, since: '2026-10-25', through: '2026-11-07', note: 'n', models: { 'claude-opus-5-5': 10 }, machines: { linux: 6, other: 4 } });
+    const t2 = sc(lib.cumulative([mkst('mac', '2026-11-09T10:00:00Z', 'claude-opus-5-5', 5, Date.UTC(2026, 10, 9, 12))], '2026-11-10', base2), 0);
+    assert.ok(t2.includes('3 machines: two since 2026-10-25 and one from 2026-11-09,'), 'scope 1387: two baseline machines are "two since", not "the first": ' + t2.split('\n')[3].slice(-150));
+    // no baseline machine at all: nothing claims a first machine since the baseline date
+    const base0 = lib.validateBaseline({ version: 1, since: '2026-10-25', through: '2026-11-07', note: 'n', models: { 'claude-opus-5-5': 10 }, machines: {} });
+    const t0 = sc(lib.cumulative([mkst('mac', '2026-11-09T10:00:00Z', 'claude-opus-5-5', 5, Date.UTC(2026, 10, 9, 12))], '2026-11-10', base0), 0);
+    assert.ok(t0.includes('work on one machine since 2026-11-09,') && !t0.includes('2026-10-25'), 'scope 1387: one machine starting after the baseline date says its own first day, never the baseline date: ' + t0.split('\n')[3].slice(-150));
+    assert.strictEqual(lib.cumulative([mkst('mac', '2026-11-09T10:00:00Z', 'claude-opus-5-5', 5, Date.UTC(2026, 10, 9, 12))], '2026-11-10', base0).firstDays.get('mac'), '2026-11-09');
+    assert.ok(lib.detailBlock(lib.cumulative([mkst('mac', '2026-11-09T10:00:00Z', 'claude-opus-5-5', 5, Date.UTC(2026, 10, 9, 12))], '2026-11-10', base0), '2026-11-10', 'v0.1.1', 'n', '').includes('tracked since 2026-11-09'), 'scope 1387: detail block says the real first day too');
+    // a zero-dollar baseline machine does not start at the baseline date (mutant: dropping the baseline guard)
+    const baseZ = lib.validateBaseline({ version: 1, since: '2026-10-25', through: '2026-11-07', note: 'n', models: { 'claude-opus-5-5': 10 }, machines: { linux: 10, idle: 0 } });
+    assert.strictEqual(lib.cumulative([], '2026-11-07', baseZ).firstDays.has('idle'), false, 'scope 1387: a baseline machine with no spend has no first day');
+    // a machine's first day is its EARLIEST day with spend (mutant: always overwriting the first day gives the last), a zero day before it is not a start (mutant: no c > 0 guard)
+    const two = lib.emptyState('mac'); lib.ingest(two, body([], [cost('claude-opus-5-5', 0, '2026-11-08T10:00:00Z'), cost('claude-opus-5-5', 3, '2026-11-09T10:00:00Z')]), Date.UTC(2026, 10, 10, 0)); lib.ingest(two, body([], [cost('claude-opus-5-5', 4, '2026-11-10T10:00:00Z')]), Date.UTC(2026, 10, 10, 12));
+    assert.strictEqual(lib.cumulative([two], '2026-11-10', base).firstDays.get('mac'), '2026-11-09', 'scope 1387: the first day is the earliest day with spend, a zero day does not count');
+    // a sub-cent first day does not start a machine (the total counts whole cents)
+    const tiny = lib.emptyState('mac'); lib.ingest(tiny, body([], [cost('claude-opus-5-5', 0.004, '2026-11-08T10:00:00Z'), cost('claude-opus-5-5', 3, '2026-11-09T10:00:00Z')]), Date.UTC(2026, 10, 10, 0));
+    assert.strictEqual(lib.cumulative([tiny], '2026-11-10', base).firstDays.get('mac'), '2026-11-09', 'scope 1387: a first day under one cent is not the start');
+    // dates come out oldest first whatever the machine order (mutant: no sort)
+    const tl = sc(lib.cumulative([mkst('late', '2026-11-09T10:00:00Z', 'claude-opus-5-5', 5, Date.UTC(2026, 10, 9, 12)), mkst('mid', '2026-11-08T10:00:00Z', 'claude-opus-5-5', 5, Date.UTC(2026, 10, 9, 12))], '2026-11-10', base), 0);
+    assert.ok(tl.includes('one from 2026-11-08 and one from 2026-11-09'), 'scope 1387: dates are oldest first');
+    // a usage-file machine with no baseline entry that starts before the baseline's since: the sentence and the detail say so
+    const pre = lib.emptyState('old'); lib.ingest(pre, body([], [cost('claude-opus-5-5', 2, '2026-10-20T10:00:00Z')]), Date.UTC(2026, 9, 21, 12));
+    const cp = lib.cumulative([pre], '2026-11-10', base);
+    assert.ok(sc(cp, 0).includes('one since 2026-10-20 and one from 2026-10-25'), 'scope 1387: a machine starting before since is named: ' + sc(cp, 0).split('\n')[3].slice(-150));
+    assert.ok(lib.detailBlock(cp, '2026-11-10', 'v0.1.13', 'n', '').includes('tracked since 2026-10-20'), 'detail 1387: tracked since the earliest start');
+  }
   assert.ok(sc(cum0b, 0).includes('work on one machine since 2026-10-25'), 'scope: one machine from a machine count of one');
   assert.ok(sc(cum0b, 3000).includes('mostly spread over earlier days rather than measured'), 'scope: "mostly spread" above 50% estimated (3000 of 3758)');
   assert.ok(sc(cum0b, 1000).includes('27% spread over earlier days') && !sc(cum0b, 1000).includes('mostly'), 'scope: at or below 50% the percentage is given, never "mostly"');

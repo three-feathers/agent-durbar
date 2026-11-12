@@ -2291,3 +2291,15 @@ order** (review item 12): this delta lands **after PR #1073**, whose FR-195..FR-
   1.0.26-only API (`rpc.mcp.config.list()` is only in the `docs/agent-apps.md` probe note). Probes written with 1.0.26 stay as dated history.
   `[KNOWN GAP]` A real Entra sign-in is not run here; the owner checks it on his Mac after the patch release. Follow-ups, both owner decisions:
   sign in through the Copilot CLI route, or Durbar's own Entra app registration (`entra.clientId`); the Dependabot hold is lifted once one exists.
+
+### 2026-11-11: the open list and Settings are shown in the Photo Real office (issue #1424, item 1 of 3; related #1172)
+
+Closing #1172 left a gap: `shots-058-mcp-launch` checks the strip in the Real office only while the list is closed, then returns to the flat
+Open office, so the list-open and Settings pictures are not evidence for the Photo Real office. **Numbers taken** (checked on `origin/main`
+and open PRs, 2026-11-11): **FR-230** and **T212**.
+
+- **FR-230** (evidence): `shots-058-mcp-launch` shows the list open (FR-199..FR-203) and Settings with the list open (FR-196) in the Photo
+  Real office at 1440x900 and 1280x800, with the same layout asserts as in the flat office (strip above the office, own room, no page
+  scroll, top bar in view), and pictures of both. A labelled assert fails the run unless the world really is the Real office (`html[data-world]`
+  is `photo`, `#stage .ro` is `photo/office`), so a fall back to the flat office is a failure and not a picture of the wrong office.
+  `[KNOWN GAP]` still not run (issue #1424): streaming end-follow as a picture (item 2), dark theme, density, DPR 2, Windows, Linux.

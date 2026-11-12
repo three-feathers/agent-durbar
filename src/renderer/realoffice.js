@@ -312,7 +312,12 @@
     };
     const signs = {};
     for (const f of model.folders) signs[f.id] = { name: f.name, path: f.path, counts: f.counts.length + (f.cost ? 1 : 0) };
-    const lay = meta.arrangement && meta.arrangement !== 'rows' && L.layoutFor ? L.layoutFor(meta.arrangement, engine, view, meta, signs) : L.realLayout(engine, view, meta, signs); /* spec 102 FR-228: the one seam */
+    let lay = meta.arrangement && meta.arrangement !== 'rows' && L.layoutFor ? L.layoutFor(meta.arrangement, engine, view, meta, signs) : L.realLayout(engine, view, meta, signs); /* spec 102 FR-228: the one seam */
+    /* spec 102 delta 2026-11-11 (issue 1566): an arcade hall that would scroll takes the floor's own padding (`opts.lend`, px) when that makes it fit, so a strip over the floor does not make 15 agents scroll at 1280x800; `lent` tells the host to drop that padding */
+    if (lay.scroll && opts.lend > 0 && meta.arrangement === 'aisles' && L.layoutFor) {
+      const v2 = { w: view.w, h: view.h + opts.lend }, l2 = L.layoutFor(meta.arrangement, engine, v2, meta, signs);
+      if (!l2.scroll) { lay = l2; view = v2; lay.lent = true; }
+    }
 
     let ro = stage.querySelector(':scope > .ro');
     if (!ro) { stage.textContent = ''; ro = document.createElement('div'); ro.className = 'ro'; stage.appendChild(ro); ro.addEventListener('click', forward); wireZoom(ro); }
@@ -732,7 +737,7 @@
       for (const v of order) {
         const sig = JSON.stringify([v, build.sig]);
         if (e._sig !== sig) { e._sig = sig; e._at = null; e.textContent = ''; build.fill(e, v); }
-        e.hidden = false;
+        e.hidden = false; dset(e, 'variant', v); /* spec 097 FR-358 (#1434): the variant's own CSS (the pill's auto width and one line) applies before the box is measured, not after the spot is chosen */
         if (e._at && e._v === v) { e.style.left = px(e._at.x); e.style.top = px(e._at.y); }
         else { e.style.left = '0px'; e.style.top = '0px'; }
         e.style.width = ''; e.style.height = '';

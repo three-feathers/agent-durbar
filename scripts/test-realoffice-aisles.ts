@@ -27,6 +27,20 @@ const inside = (a: Rect, b: Rect, t = 0.5): boolean => a.x >= b.x - t && a.y >= 
 const SIZES: [number, number][] = [[1440, 848], [1280, 748]];
 const NAMES = ['1440x900', '1280x800'];
 
+// ---- spec 102 delta 2026-11-11 (issue #1566, T308): the measured rooms of the app (the floor less its 12 px padding top and bottom): 1280x800 is 697 px, 666 with a 31 px strip; 1440x900 is 797, 766 with it.
+// The hall for 15 agents needs 682 px: it fits with no strip, scrolls under a strip until the floor's padding is lent (666 + 24 = 690), and the threshold is pinned here, not in a driver
+{
+  const m15 = model(15, 4), at = (w: number, h: number): Layout => aislesLayout(m15, { w, h }, META, SIGNS(4));
+  assert.ok(!at(1248, 697).scroll && !at(1408, 797).scroll && !at(1408, 766).scroll, '15 agents fit the measured rooms (1280x800 without a strip, 1440x900 with and without)');
+  assert.ok(at(1248, 666).scroll, '15 agents at 1280x800 with the strip shown (666 px) scroll until the padding is lent');
+  assert.ok(!at(1248, 690).scroll && !at(1248, 682).scroll, '15 agents fit 690 px (666 + the 24 px lent) and the boundary 682');
+  assert.ok(at(1248, 681).scroll, '15 agents scroll at 681 px: the hall needs 682');
+  assert.ok(at(1248, 666).height > 666 && at(1248, 666).height <= 700, 'the scroll fallback is taller than the room it was given');
+  const m16 = model(16, 4);
+  assert.ok(aislesLayout(m16, { w: 1248, h: 666 }, META, SIGNS(4)).scroll && aislesLayout(m16, { w: 1248, h: 690 }, META, SIGNS(4)).scroll, '16 agents scroll at 666 px and still at 690 (666 + the 24 px lent): the lend must be refused for them (shots-058-mcp-launch retro 16 drives that)');
+}
+
+
 /* spec 102 T276 (issue #1303): a one-line arcade plate fits its line. The plate box is AISLE_PLATE_H tall; what its CSS asks for (border, padding, one line) must fit in it, at the dense levels too
  * (12 and 15 agents, both sizes), where every cabinet and lounge plate has that height; text never under 10.5 px. check-office-overlap.js (OFFICE_WORLD=retro) measures the drawn plate; this holds the numbers. */
 {

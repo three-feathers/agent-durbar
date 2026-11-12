@@ -143,6 +143,13 @@ Animations are subtle, CSS-only in compact densities and stop under reduced-moti
 
 ## Changes
 
+### 2026-11-11: `shots-001-live-activity` reads the lobby through the settled check (issue #1481, FR-191)
+
+`read:` CI run 42924505740, job 130207522830 failed `shots-001-live-activity: 1440 sparse: office page rules` with the only problem "a walking figure is not on a slot (566,329)". That driver is the only one in `ui-suite.js` with `freeze: false`: the live simulator keeps sending agents to the lobby, and its `page()` waited once for no figure walking and then made one `pageCheck`. A figure also jumps without walking when the lobby re-lays out (`move(w, pos, null, true)` in `app.js`) and the next frame repaints, so one read can land between the two. `check:office` already handles this (spec 024 T027, FR-191: re-read for up to 3 s, fail only when two reads two animation frames apart show the same figures and lit slots), but only inside its own `measure()`.
+
+- **Change:** that loop moves into an exported `settledPageCheck(ctx, expanded, expectPlaces, beforeRead)` in `scripts/check-office-overlap.js`; `measure()` keeps its `OFFICE_TEST_STUCK_WALKER` hooks (as `beforeRead`) and calls it, and `shots-001-live-activity.js` `page()` calls it too (FR-031: one copy). Scripts only; no change to `src/`.
+- **`[KNOWN GAP]`** The race is inferred from the code and that one CI log. It did not reproduce locally (5 of 5 passes), so it was not observed, and this change is not shown to remove the failure; it makes the driver tolerate the one cause found.
+
 ### 2026-11-09: `check-001-lights` picks its four desks from a settled office (issue #1342, FR-231)
 
 `sim:` The driver waited for 8 desks, then took four desks whose screen was off and whose person was at the desk. The frozen simulator's replay leaves some working agents' tool calls open; each shows as a visit to a place once the lobby's 600 ms debounce has passed, and stays. Read before the debounce, 7 desks qualified; read after it, 3 (sim-1, -5, -12 and -14 away), so the driver failed with `four desks with their light off (3)` whenever the read came late: under load, and on CI (15 of the last 100 failed `ui-platforms.yml` runs, Linux and Windows, every kit and both sizes). The tint rule and the app are not wrong. The driver now waits until the office has settled (`visitsSettled()`, `settleNow()`, no figure walking) and picks from every desk whose screen is off, wherever its person stands: its check reads an away desk's screen like any other (sim-3, amber and away, was already checked on every run). Nothing in the app changes.
