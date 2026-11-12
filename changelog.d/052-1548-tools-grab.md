@@ -1,0 +1,1 @@
+- **The Tools header over a chat can drag the window in narrow macOS windows** (spec 052 FR-138, issue #1548): in a Mac window 760 px wide or narrower the Tools header left only 18 px to grab, because its title counted as a control. The title now drags with the header; nothing moves and every control stays clickable. Windows and Linux are unchanged.

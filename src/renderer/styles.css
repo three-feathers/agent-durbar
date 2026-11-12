@@ -1861,7 +1861,9 @@ html[data-platform="darwin"] :is(.topbar,.rail-top,body.panel-open .ph,body.pane
 html[data-platform="darwin"]:not([data-fullscreen]) .rail-top{padding-left:78px}
 html[data-platform="darwin"]:not([data-fullscreen]) body.panel-open .notice-strip{padding-left:78px}
 html[data-platform="darwin"]:not([data-fullscreen]) body.panel-open.screen-open .scr-head{padding-left:max(78px,calc((100% - 880px)/2 + 24px))} /* FR-138: keeps the FR-097 alignment */
-html[data-platform="darwin"] :is(.topbar,body.panel-open .notice-strip,body.panel-open.screen-open .scr-head) :is(button,a,input,select,textarea,label,summary,[role="button"],[role="menu"],[role="group"],[tabindex],.more-menu){-webkit-app-region:no-drag}
+html[data-platform="darwin"] :is(.topbar,body.panel-open .notice-strip) :is(button,a,input,select,textarea,label,summary,[role="button"],[role="menu"],[role="group"],[tabindex],.more-menu){-webkit-app-region:no-drag}
+/* spec 052 FR-138 (issue 1548): in a screen header the title (h2, tabindex -1, a focus target) is not a control and drags with the header */
+html[data-platform="darwin"] :is(body.panel-open.screen-open .scr-head) :is(button,a,input,select,textarea,label,summary,[role="button"],[role="menu"],[role="group"],[tabindex]:not([tabindex="-1"]),.more-menu){-webkit-app-region:no-drag}
 html[data-platform="darwin"] :is(.rail-top,body.panel-open .ph) :is(button,a,input,select,textarea,label,summary,[role="button"],[role="menu"],[role="group"],[tabindex],[title],.more-menu,.grants){-webkit-app-region:no-drag}
 /* spec 052 FR-138: with a chat open a visible notice strip is the first row (the drag row with the room); the row below drops the room. A
    second visible strip drops it too (spec 052 FR-215: the rail's top row too). An
