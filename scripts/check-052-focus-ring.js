@@ -72,16 +72,21 @@ module.exports = async (ctx) => {
           const id = await js(`(()=>{const e=window.__pick();return (e.id||String(e.className)||e.tagName).replace(/\\W+/g,'-').slice(0,30)})()`);
           await js(`window.__pick().focus()`);
           assert.ok(await until(`window.__pick().matches(':focus-visible')`, 2000), `${tag}: ${id} is focus-visible`);
-          await new Promise((r) => setTimeout(r, 120));
-          const m = await js(`(()=>{const e=window.__pick(),s=getComputedStyle(e),r=e.getBoundingClientRect();return {x:r.left+r.width/2,top:r.top,left:r.left,oc:s.outlineColor,ow:parseFloat(s.outlineWidth),oo:parseFloat(s.outlineOffset),os:s.outlineStyle,txt:(e.textContent||e.getAttribute('aria-label')||'').trim().slice(0,18)}})()`);
-          const img = await H.wc().capturePage();
-          const k = dpr || 1, X = Math.round(m.x * k);
-          const yRing = Math.round((m.top - m.oo - m.ow / 2) * k), yOut = Math.round((m.top - m.oo - m.ow) * k) - 2, yIn = Math.round((m.top - m.oo) * k);
-          const rp = await pixel(img, X, yRing), po = await pixel(img, X, yOut), pi = await pixel(img, X, yIn);
-          const oc = (await js(`window.__px(${jsLiteral(m.oc)})`)).slice(0, 3);
+          // capturePage can return an older frame (the previous control's ring, a frame inside the 0.12s transition of .btn,.more-it): wait two animation frames and the transition, and retake while the ring pixel is not the computed outline colour, bounded (the ratio is never retried)
+          let m, img, rp, po, pi, oc, geo = false;
+          for (let attempt = 0; attempt <= 6 && !geo; attempt++) {
+            await js(`new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)))`);
+            await new Promise((r) => setTimeout(r, attempt ? 200 : 150));
+            m = await js(`(()=>{const e=window.__pick(),s=getComputedStyle(e),r=e.getBoundingClientRect();return {x:r.left+r.width/2,top:r.top,left:r.left,oc:s.outlineColor,ow:parseFloat(s.outlineWidth),oo:parseFloat(s.outlineOffset),os:s.outlineStyle,txt:(e.textContent||e.getAttribute('aria-label')||'').trim().slice(0,18)}})()`);
+            img = await H.wc().capturePage();
+            const k = dpr || 1, X = Math.round(m.x * k);
+            const yRing = Math.round((m.top - m.oo - m.ow / 2) * k), yOut = Math.round((m.top - m.oo - m.ow) * k) - 2, yIn = Math.round((m.top - m.oo) * k);
+            rp = await pixel(img, X, yRing); po = await pixel(img, X, yOut); pi = await pixel(img, X, yIn);
+            oc = (await js(`window.__px(${jsLiteral(m.oc)})`)).slice(0, 3);
+            geo = Math.max(...rp.map((v, i) => Math.abs(v - oc[i]))) <= 12;
+          }
           // an outside ring (offset > 0) is read against what is behind it only: its inner side is the control's own 1px border or shadow line, never a surface; an inset ring has both neighbours
           const ro = ratio(rp, po), ri = ratio(rp, pi), min = m.oo > 0 ? ro : Math.min(ro, ri);
-          const geo = Math.max(...rp.map((v, i) => Math.abs(v - oc[i]))) <= 12;
           const line = `${tag} ${menu ? 'menu' : 'bar'} ${id} "${m.txt}": ring rgb(${rp}) (outline rgb(${oc}), ${m.ow}px at ${m.oo}), outside rgb(${po}) ${ro.toFixed(2)}:1, inside rgb(${pi}) ${ri.toFixed(2)}:1${geo ? '' : ' [ring pixel is not the outline colour: geometry guard]'}`;
           lines.push(line);
           const bad = m.os === 'none' || !geo || min < 3;
