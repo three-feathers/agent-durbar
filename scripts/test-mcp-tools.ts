@@ -612,6 +612,12 @@ async function main(): Promise<void> {
       const r2 = await mk(2, 2, { mcpCli: () => ({ cli: [{ name: 'b', origin: 'copilot-config', transport: 'stdio', command: 'srv --auth Bearer ' + bearer, enabled: true }] as any, file: { label: 'x', found: true, skipped: 0 }, secretsPersist: false }) }).call('durbar_mcp_state');
       assert.ok(!r2.raw.includes(bearer), '12f3: --auth Bearer <token> in a command is masked (R8)');
       assert.strictEqual(r2.data.copilotCli.servers[0].command, 'srv --auth [redacted]');
+      // spec 012 FR-181 (issue #1541): an escaped token (`ghp\_<body>`) in a config's command and args is hidden in the read tools' output
+      const esc = 'ghp' + '\\_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
+      const r3 = await mk(2, 2, { mcpCli: () => ({ cli: [{ name: 'e', origin: 'copilot-config', transport: 'stdio', command: 'srv ' + esc, args: ['--x', esc], enabled: true }] as any, file: { label: 'x', found: true, skipped: 0 }, secretsPersist: false }) }).call('durbar_mcp_state');
+      assert.ok(!r3.raw.includes('A1b2C3d4'), '#1541 read tools: no part of an escaped token in the output');
+      assert.strictEqual(r3.data.copilotCli.servers[0].command, 'srv [redacted]', '#1541 read tools: the command hides an escaped token');
+      assert.deepStrictEqual(r3.data.copilotCli.servers[0].args, ['--x', '[redacted]'], '#1541 read tools: the args hide an escaped token');
     }
 
     // 12g. usage: baseline plus this run for the same events
