@@ -138,6 +138,15 @@ const env = {
     // the rule itself (FR-173's glued rest), as callers that run maskTokenShapes alone read it (the brain view's maskText)
     assert.strictEqual(maskTokenShapes('x[redacted]\\_' + REST, '[redacted]'), 'x[redacted]', '#1585 maskTokenShapes: an escaped rest after a plain mask is glued');
     assert.strictEqual(maskTokenShapes('x [redacted:FOO_TOKEN]_' + REST.slice(0, 4) + '\\' + REST.slice(4), '[redacted]'), 'x [redacted:FOO_TOKEN]', '#1585 maskTokenShapes: an escaped rest after a named marker is glued');
+    // round 3: every escaped character counts toward the rest (16 after `_`, with two escaped characters)
+    assert.strictEqual(maskTokenShapes('x[redacted]_Kp3Lm\\4Nq5Rs\\6Tu7V', '[redacted]'), 'x[redacted]', '#1585 round 3 maskTokenShapes: 16 after _ with two escaped characters are hidden');
+    assert.strictEqual(maskTokenShapes('x[redacted]_Kp3Lm\\4Nq5Rs\\6Tu7', '[redacted]'), 'x[redacted]_Kp3Lm\\4Nq5Rs\\6Tu7', '#1585 round 3 maskTokenShapes: 15 after _ stay');
+    // round 3: a long env name (the marker `redact` writes is read up to a name of 128 characters)
+    for (const len of [13, 32, 128]) {
+      const name = ('MY_VERY_LONG_GITHUB_DEPLOY_TOKEN_' + 'X'.repeat(128)).slice(0, len);
+      const out = redact('secret=' + V + '_abc\\nKp3Lm4Nq5Rs6Tu7Vw8', { [name]: V });
+      assert.ok(!out.includes('Kp3Lm4Nq') && out.startsWith(`secret=[redacted:${name}]`), `#1585 round 3: a ${len}-character env name, the rest after a break escape is hidden: ${out.slice(0, 60)}…`);
+    }
     // the reverse: the escaped token before a mask, glued to it
     for (const [what, tok, bodies] of FORMS) {
       for (const [where, text] of [['before a plain mask', tok + '[redacted]'], ['before a named marker', tok + V], ['before a named marker after a word', 'x ' + tok + V + ' y']] as const) {
@@ -150,7 +159,7 @@ const env = {
   for (const br of ['n', 'r', 't']) {
     for (const [what, text, bodies] of [
       ['ghp', 'echo ghp_' + B36.slice(0, 10) + '\\' + br + B36.slice(10), [B36.slice(0, 10), B36.slice(10)]],
-      ['ghp with a second escape', 'echo ghp\\_' + B36.slice(0, 10) + '\\' + br + B36.slice(10), [B36.slice(0, 10), B36.slice(10)]],
+      ['ghp with a second escape, 10 before the break', 'echo ghp\\_' + B36.slice(0, 10) + '\\' + br + B36.slice(10), [B36.slice(0, 10), B36.slice(10)]],
       ['sk-proj', 'echo sk-proj-' + B40.slice(0, 10) + '\\' + br + B40.slice(10), [B40.slice(0, 10), B40.slice(10)]],
     ] as const) {
       const r = redact(text, {});
@@ -158,6 +167,39 @@ const env = {
       assert.strictEqual(shows(maskSecretCommand(text, {}), [...bodies]), undefined, `#1585 a \\${br} inside a body (${what}): maskSecretCommand hides it`);
       agree(text, [...bodies], {}, `#1585 differential \\${br} inside a body (${what})`);
     }
+  }
+  // review of PR 1585 (round 3): a break escape after a piece that hides alone (another escape in front of it): the piece after the break is its tail when it holds FR-173's count (8)
+  {
+    const BODY = B36 + B40;
+    const shell = (t: string): string => t.replace(/\\(.)/g, '$1');
+    let pinned = 0;
+    for (const [what, pre, plain] of [['g\\hp_', 'g\\hp_', 'ghp_'], ['ghp\\_', 'ghp\\_', 'ghp_'], ['sk\\-proj\\-', 'sk\\-proj\\-', 'sk-proj-'], ['github\\_pat\\_', 'github\\_pat\\_', 'github_pat_']] as const) {
+      for (const br of ['n', 'r', 't']) {
+        for (const l1 of [10, 20, 30]) {
+          for (const l2 of [6, 7, 8, 9, 20]) {
+            const head = pre + BODY.slice(0, l1), tl = BODY.slice(l1, l1 + l2);
+            const text = 'echo ' + head + '\\' + br + tl + ' done';
+            const hu = plain + BODY.slice(0, l1);
+            const firstHides = maskTokenShapes(hu, '[redacted]') !== hu;
+            const whole = hu + br + tl;
+            const wholeTok = maskTokenShapes(whole, '[redacted]') !== whole;
+            // the first piece hides alone: its tail goes with it from 8 letters and digits on, the break's own letter counted (a tail of 6 stays, FR-173's count); else the whole run is read; no token: as written
+            const want = firstHides ? (l2 + 1 >= 8 ? 'echo [redacted] done' : `echo [redacted]\\${br}${tl} done`) : wholeTok ? 'echo [redacted] done' : text;
+            assert.strictEqual(redact(text, {}), want, `#1585 round 3 break tail (${what} \\${br}, ${l1} before, ${l2} after): ${redact(text, {})}`);
+            if (want !== text && l2 >= 8) agree(text, [BODY.slice(0, l1), tl], {}, `#1585 round 3 differential (${what} \\${br}, ${l1}/${l2})`);
+            pinned++;
+          }
+        }
+      }
+    }
+    assert.strictEqual(pinned, 180, '#1585 round 3: every combination pinned');
+    // the leak inputs of the review, exactly
+    assert.strictEqual(redact('echo g\\hp_' + B36.slice(0, 20) + '\\n' + B36.slice(20), {}), 'echo [redacted]', '#1585 round 3: g\\hp_ with a \\n tail');
+    assert.strictEqual(redact('echo sk\\-proj\\-' + B36.slice(0, 20) + '\\t' + B36.slice(20) + 'S9', {}), 'echo [redacted]', '#1585 round 3: sk-proj with a \\t tail');
+    // accepted over-masking (fail closed): a long word on the next line of a JSON-escaped text, glued to an escaped token, is hidden with it; a short one stays
+    assert.strictEqual(redact(FORMS[0][1] + '\\nAllTestsPassedSuccessfully', {}), '[redacted]', '#1585 round 3: accepted over-mask, a long next-line word glued to an escaped token');
+    assert.strictEqual(redact(FORMS[0][1] + '\\nok1234', {}), '[redacted]\\nok1234', '#1585 round 3: a short next-line word stays');
+    assert.strictEqual(redact('x [redacted]\\nAllTestsPassedSuccessfully', {}), 'x [redacted]\\nAllTestsPassedSuccessfully', '#1585 round 3: a mask already in the text and a line break: the next line stays');
   }
 
   // growth: linear in the text (FR-180 did the same for maskLabel)
@@ -172,7 +214,7 @@ const env = {
   // a seeded randomized fixture: four token types, random escapes at random cut points, the run and other kinds, masks present or not
   {
     let seed = 0x1541;
-    const rnd = (n: number): number => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return (seed >>> 16) % n; }; // the high bits: the low bits of this generator repeat with a short period (review of PR 1585: `seed % n` never put a backslash before n, r or t)
+    const rnd = (n: number): number => { seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff; return (seed >>> 16) % n; }; // Math.imul: a plain `*` here is a float above 2^53 and loses the low bits (so `seed % n` never put a backslash before n, r or t, and some kinds were never drawn: reviews of PR 1585); the high bits of the 31
     const AN = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
     const body = (n: number): string => Array.from({ length: n }, () => AN[rnd(AN.length)]).join('');
     const kinds: Array<() => [string, string[]]> = [
@@ -182,9 +224,9 @@ const env = {
       () => { const b = body(93); return ['sk-ant-api03-' + b, [b]]; },
     ];
     /** 1 to 3 backslashes at random cut points (from `min` on), before a character (a letter, a digit, `_` or `-`). */
-    const escape = (t: string, min = 0): string => {
+    const escape = (t: string, min = 0, count = 0): string => {
       const at = new Set<number>();
-      const n = 1 + rnd(3);
+      const n = count || 1 + rnd(3);
       while (at.size < n) at.add(min + rnd(t.length - min));
       return [...t].map((c, i) => (at.has(i) ? '\\' + c : c)).join('');
     };
@@ -194,12 +236,13 @@ const env = {
     const t0 = Date.now();
     let cases = 0;
     let breaks = 0;
+    let tails = 0;
     for (let i = 0; i < 3000; i++) {
       const [tok, b0] = kinds[i % 4]();
       let bodies = b0;
       let e = escape(tok);
       const m = MASKS[rnd(MASKS.length)];
-      const ctx = rnd(7);
+      const ctx = rnd(8);
       let text: string;
       if (ctx === 6) {
         // an escaped rest glued to a plain or named mask (the second piece of a secret whose head was masked); a break escape right after the mask ends the rest, so not at the first place
@@ -208,6 +251,13 @@ const env = {
         e = escape(rest, sep === '' ? 1 : 0);
         text = (rnd(2) ? 'x ' + FV : 'x[redacted]') + sep + e;
         bodies = [rest];
+      } else if (ctx === 7) {
+        // two escapes, then a break escape (a shell escape of n, r or t) inside the body after at least 20 of its characters, then a tail of 8 or more (round 3 of the review of PR 1585)
+        const pre = (tok.match(/^(?:ghp_|github_pat_|sk-proj-|sk-ant-api03-)/) ?? [''])[0].length;
+        const at = pre + 20 + rnd(Math.max(1, tok.length - pre - 28));
+        e = escape(tok.slice(0, at), 0, 2) + '\\' + ['n', 'r', 't'][rnd(3)] + tok.slice(at);
+        text = `echo ${e} done`;
+        tails++;
       } else {
         text = ctx === 0 ? e : ctx === 1 ? `${m}echo ${e} done` : ctx === 2 ? `run "${e}" ${m}` : ctx === 3 ? `${m}${tok}${e}` : ctx === 4 ? `curl -d x=1 ${e}` : `x ${e}${['[redacted]', FV][rnd(2)]} y`;
       }
@@ -219,6 +269,7 @@ const env = {
       agree(text, bodies, FE, `#1585 differential fuzz case ${i}`);
       cases++;
     }
+    assert.ok(tails > 100, `#1585 round 3 fuzz: the kind with a break escape after two escapes is reached (${tails} cases)`);
     assert.ok(breaks > 50, `#1585 fuzz: the escapes reach n, r and t (${breaks} cases with a break escape)`);
     // text with escapes and no secret is returned as written
     const WORDS = ['a\\>b', 'C:\\Users\\me', 'foo\\_bar', 'x\\-y', '\\n', 'echo', 'grep', '"q\\.r"', 'it\\\'s', 'path\\to\\file.txt', 'a\\*b', '\\~', 'k\\=v'];
@@ -228,7 +279,7 @@ const env = {
       cases++;
     }
     const ms = Date.now() - t0;
-    console.log(`#1541 fuzz: ${cases} cases in ${ms} ms (${breaks} with a backslash before n, r or t; ${diffCases} redact/maskRaw differential cases in all)`);
+    console.log(`#1541 fuzz: ${cases} cases in ${ms} ms (${breaks} with a backslash before n, r or t, ${tails} of them a break after two escapes with a tail; ${diffCases} redact/maskRaw differential cases in all)`);
   }
 }
 

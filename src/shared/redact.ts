@@ -620,6 +620,12 @@ const ESC_RUN = /(?:[A-Za-z0-9_\-.~+/=:@%]|\\[A-Za-z0-9_\-.~+/=:@%\\`*{}[\]()#!|
 const ESC_BREAK = /\\[nrt]/;
 const ESC_BREAK_KEEP = /(\\[nrt])/;
 const ESC_BREAK_START = /^\\[nrt]/;
+/** Whether the rest of a run after a hidden piece (it starts with a break escape, whose letter counts) holds FR-173's count of letters and digits: 8. */
+function glueCount(rest: string): boolean {
+  let n = 0;
+  for (let i = 0; i < rest.length && n < GLUE_MIN; i++) if (/[A-Za-z0-9]/.test(rest[i])) n++;
+  return n >= GLUE_MIN;
+}
 /** A mask (plain or named) that ends right where a run starts. */
 const MASK_BEFORE = /\[redacted(?::[^\]\r\n]{1,128})?\]$/;
 /** A shell escape of a token character that is not a Markdown escape (`\h`, `\0`, `\=`). */
@@ -659,7 +665,20 @@ function maskEscapedRuns(s: string, mask: string): string {
     if (ESC_BREAK.test(r)) {
       // the pieces between breaks first, so `a\n<escaped token>\tb` keeps `a\n` and `\tb`; when no piece hides, the whole run is read (a `\n` that is a shell escape inside a token)
       let any = false;
-      const out = r.split(ESC_BREAK_KEEP).map((p, i) => { const h = i % 2 === 0 && p.includes('\\') && hides(p); any ||= h; return h ? mask : p; }).join('');
+      let out = '';
+      const parts = r.split(ESC_BREAK_KEEP);
+      for (let i = 0; i < parts.length; i += 2) {
+        const p = parts[i];
+        const br = i > 0 ? parts[i - 1] : '';
+        const h = p.includes('\\') && hides(p);
+        if (!h) { out += br + p; continue; }
+        any = true;
+        // review of PR 1585 (round 3): a break escape inside a body (`ghp\_<20>\n<16>`) is a shell escape of a letter there; once a piece with an escape hides, the rest of the run after it
+        // is its tail when it holds FR-173's count (8 letters and digits, the letters of the breaks included): hidden with it. Fail closed: a long word on the next line glued to it is hidden too.
+        const rest = parts.slice(i + 1).join('');
+        if (glueCount(rest)) return out + br + mask;
+        out += br + mask;
+      }
       if (any) return out;
     }
     return hides(r) ? mask : r;
