@@ -107,8 +107,10 @@ process.exitCode = 1; // a promise that never settles must not pass (checklist);
     const t = listTargets({ cwd: dir }, mk(le, rec()));
     assert.deepStrictEqual(t.map((x) => x.id), ['vscode', 'vscode-insiders', 'vscodium', 'folder'], `${plat}: all installed editions then the folder`);
     for (const id of ['vscode', 'vscode-insiders', 'vscodium']) {
-      /* this machine's real folders, or on Windows, for the POSIX rows, made-up ones (fakeLstat): D:\\x is not absolute by POSIX rules */
-      for (const folder of ON_WIN && plat !== 'win32' ? ['/w/proj', '/w/-rf', '/w/with space'] : [dir, dashDir, spaced]) {
+      /* this machine's real folders for its own platform's row; made-up ones (fakeLstat) for the other kind: D:\\x is not absolute by
+         POSIX rules, and a POSIX temp folder is no drive or UNC path for the Windows row (spec 009 FR-028) */
+      const madeUp = plat === 'win32' ? ['C:\\w\\proj', 'C:\\w\\-rf', 'C:\\w\\a b & c'] : ['/w/proj', '/w/-rf', '/w/with space'];
+      for (const folder of (plat === 'win32') === ON_WIN ? [dir, dashDir, spaced] : madeUp) {
         const r = rec();
         const res = await openWith({ cwd: folder }, id, mk(le, r));
         assert.strictEqual(res.ok, true, `${plat} ${id}`);
@@ -118,6 +120,22 @@ process.exitCode = 1; // a promise that never settles must not pass (checklist);
         assert.strictEqual(res.edition, listTargets({ cwd: dir }, mk(le, rec())).find((x) => x.id === id)?.label);
       }
     }
+  }
+  // spec 009 FR-028: on Windows an editor gets only a drive or UNC path, also after realpath; Show in folder is not an argv and is unchanged
+  {
+    const le = launchEnv('win32', [WIN_ALL[0]], { LOCALAPPDATA: 'C:\\L' }, 'C:\\Users\\a');
+    for (const real of ['\\x', '/x', '\\\\.\\C:\\x', '\\\\.\\pipe\\x', '\\\\?\\GLOBALROOT\\Device\\x']) {
+      const r = rec();
+      const res = await openWith({ cwd: 'C:\\x' }, 'vscode', mk(le, r, { realpath: () => real }));
+      assert.deepStrictEqual([res.ok, res.error, r.started.length], [false, 'This folder is not on a drive or a network share, so it was not opened.', 0], real);
+      const res2 = await openInFirstEditor({ cwd: 'C:\\x' }, mk(le, r, { realpath: () => real }));
+      assert.deepStrictEqual([res2.ok, r.started.length], [false, 0], 'Open in editor too: ' + real);
+    }
+    { const r = rec(); const res = await openWith({ cwd: 'C:\\x', workspaceFile: 'C:\\x\\p.code-workspace' }, 'vscode', mk(le, r, { realpath: () => '\\x\\p.code-workspace' }));
+      assert.deepStrictEqual([res.ok, res.error, r.started.length], [false, 'This workspace file is not on a drive or a network share, so it was not opened.', 0], 'a workspace file too'); }
+    for (const real of ['C:\\x', '\\\\srv\\share\\x']) { const r = rec(); const res = await openWith({ cwd: 'C:\\x' }, 'vscode', mk(le, r, { realpath: () => real })); assert.deepStrictEqual([res.ok, r.started[0]?.args], [true, [real]], real); }
+    { const r = rec(); const res = await openWith({ cwd: 'C:\\x' }, 'folder', mk(le, r, { realpath: () => '\\x' })); assert.deepStrictEqual([res.ok, r.opened], [true, ['\\x']], 'Show in folder unchanged'); }
+    { const r = rec(); const res = await openWith({ cwd: '/x/proj' }, 'vscode', mk(launchEnv('linux', LINUX_ALL), r)); assert.deepStrictEqual([res.ok, r.started[0]?.args], [true, ['/x/proj']], 'not on Linux'); }
   }
   // Windows with only code.cmd: a folder cmd.exe could misread is refused honestly; the editor stays listed
   { const cmd = 'C:\\L\\Programs\\Microsoft VS Code\\bin\\code.cmd';
