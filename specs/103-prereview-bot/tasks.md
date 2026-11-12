@@ -4,7 +4,7 @@
 
 **Tests**: required (constitution VII). Node tests with fakes; 0 credits, no network. Only T011, T012 spend, and only after the owner's ask.
 
-**Format**: `- [ ] Tnnn [P?] description [requirements]`, then its test. Numbers taken: spec 103, FR-001..FR-025, SC-001..SC-004, T001..T014; in spec 021, FR-069. Delta 2026-11-12: FR-048..FR-074, SC-005..SC-007, Q6..Q15, T025..T048.
+**Format**: `- [ ] Tnnn [P?] description [requirements]`, then its test. Numbers taken: spec 103, FR-001..FR-025, SC-001..SC-004, T001..T014; in spec 021, FR-069. Delta 2026-11-12: FR-048..FR-075, SC-005..SC-007, Q6..Q15, T025..T049.
 
 ## Phase 0: Spec (this PR)
 
@@ -81,3 +81,4 @@ Order is the dependency order. No task here starts before the owners' answers it
 - [ ] T046 Red-team step before switch 3: an owner-account reviewer from another side (Paco's or Ruben's) tries to get an approval out of the shadow bot with new disguises not in T044; each success becomes a T044 fixture and a fix. Test: `real:` findings recorded in the T035 delta [FR-067]
 - [ ] T047 **Owner:** create the private scratch repository `three-feathers/samikshak-scratch` (a repository is a settings action, Needs approval): private, no Actions secrets, the same ruleset as `main` for T026, the App installed there for the tests. Test: `read:` its settings by an owner [FR-067, Q12]
 - [ ] T048 After the owners answer Q9: if switch 3 is dropped, mark T026, T036's APPROVE path, T038, T041 and FR-063/FR-069's switch-3 parts `[REMOVED]` with the date, and keep switches 1 and 2. Test: `specs:check`, `/speckit.converge` [FR-049, Q9]
+- [ ] T049 Reviewer playbook (FR-075): write `docs/review-playbook.md` from the draft in the delta, one real example per entry from #1551's record and this week's trusted-author reviews (each *to fill* found and checked, or the entry kept without an example and said so); no secrets, no outside text; add its `CODEOWNERS` line (three owners) in the same PR; the bot's installed prompts include it (T030). Spec first is this delta; the docs PR needs owner review. Test: `rules:check`, `test:docsscripts`, `test:prereview` (the installed copy holds the playbook from `main`, not from the PR) [FR-075, FR-051]
