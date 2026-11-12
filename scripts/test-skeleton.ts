@@ -4,13 +4,21 @@
  * (spec 109 FR-076) only when `digits` is on; code points without an entry are left as they are. `npm run test:skeleton`. No credits.
  * Every non-ASCII character is a \u escape.
  *
- * Mutants (must fail, by hand, 2026-11-11): delete one entry of CYRL_LOOK from SKELETON_MAP in src/shared/skeleton.ts (for example
- * `[0x430, 'a']`); "table keys equal CYRL_LOOK" then fails. Second (2026-11-12): in nameKey, lower-case BEFORE skeleton() (`.toLowerCase()` back in its argument); the capital Cyrillic and Greek checks then fail.
- * Third and fourth (2026-11-12, review of #1583): remove the second `mapLetters` pass (the U+0500, U+0423, U+2C6D, U+A7AC names fail); change
- * `/rn/g` to `/rn/` (`rnrn barn` fails). Five golden-table mutants: `[0x51d,'w']` -> 'v', `[0x29f,'L']` -> 'I', `[0x1d20,'V']` -> 'U', `[0x4cf,'l']` -> 'I',
- * and the entry `[0xab53,'x']` removed; the golden comparison fails for each. Sixth (2026-11-12): drop the final `.normalize('NFC')` after the digit folds (the idempotence counterexamples `1` + U+0301 and the like fail).
- * Seventh and eighth (third round): add a leading `.toLowerCase()` before the first table pass (the golden check of U+0412 fails); NFKD
- * -> NFC in skeleton() (the full-width, ligature and circled-digit names fail). Ninth (trim and white-space folding BEFORE the skeleton in nameKey: the spacing-mark and sweep checks fail). Thirteen mutants in all, each seen to fail. Combining marks are NOT removed by skeleton(), only composed.
+ * Thirteen mutants, by hand (2026-11-11 and 2026-11-12, reviews of #1583), each must fail and each was seen to fail:
+ *  1. delete one entry of CYRL_LOOK from SKELETON_MAP in src/shared/skeleton.ts (`[0x430, 'a']`): "table keys equal CYRL_LOOK".
+ *  2. in nameKey, lower-case BEFORE skeleton(): the capital Cyrillic check fails.
+ *  3. remove the second `mapLetters` pass: the U+0500, U+0423, U+2C6D, U+A7AC names fail.
+ *  4. change `/rn/g` to `/rn/`: `rnrn barn` fails.
+ *  5. golden table: `[0x51d,'w']` -> 'v'.
+ *  6. golden table: `[0x29f,'L']` -> 'I'.
+ *  7. golden table: `[0x1d20,'V']` -> 'U'.
+ *  8. golden table: `[0x4cf,'l']` -> 'I'.
+ *  9. golden table: the entry `[0xab53,'x']` removed.
+ * 10. drop the final `.normalize('NFC')` after the digit folds: the idempotence counterexamples (`1` + U+0301 and the like) fail.
+ * 11. add a leading `.toLowerCase()` before the first table pass: the golden check of U+0412 fails.
+ * 12. NFKD -> NFC in skeleton(): the full-width, ligature and circled-digit names fail.
+ * 13. trim and white-space folding BEFORE the skeleton in nameKey: the spacing-mark and sweep checks fail.
+ * Combining marks are NOT removed by skeleton(), only composed.
  */
 import assert from 'assert';
 import fs from 'fs';
@@ -193,7 +201,8 @@ eq(nameKey('\u2460'), nameKey('1'), 'circled digit one');
     }
   }
   n++;
-  ok(Date.now() - t < 60000, 'the whole sweep of U+0000..U+2FFFF ran in ' + (Date.now() - t) + ' ms');
+  // the bound is a safety net for slow CI machines (Windows), not a performance claim
+  ok(Date.now() - t < 120000, 'the whole sweep of U+0000..U+2FFFF ran in ' + (Date.now() - t) + ' ms');
 }
 
 // big input stays fast (loose bound)
