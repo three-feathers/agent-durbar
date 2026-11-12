@@ -216,3 +216,7 @@
 ## 2026-11-11: a driver that waits on the OS window focus never runs next to another window (FR-210)
 
 - [x] T170 (FR-210) `scripts/ui-suite.js`: `focus: true` on `shots-097-screens` (both entries) and `check-097-hover-card`; `main` runs the other entries at the job count and then the `focus` entries alone when drivers share a desktop; `scripts/test-ui-suite.ts` overlap test and a mutant; `changelog.d/008-uisuite-focus-serial.md`. Issue #1498.
+
+## 2026-11-12: the Xvfb screen is as big as the window at the requested density (FR-213)
+
+- [x] T173 (FR-213) `scripts/ui-suite.js` `xvfbScreenArgs` and `launchCommand` (the xvfb path of `runOne`); `scripts/test-ui-suite.ts` checks the argument and the argv shape with two mutants. Linux/Xvfb run not done.

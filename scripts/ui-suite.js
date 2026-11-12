@@ -334,6 +334,25 @@ function guardTree(child, { proc = process, kill = killTree, cleanup = () => {} 
 const dprOk = (v) => /^([1-4]|1\.25|1\.5)$/.test(String(v));
 
 /**
+ * Spec 008 FR-213 (issue #1591): the `xvfb-run` options that give Xvfb a screen as big as the biggest window at the requested density. Xvfb's default screen
+ * is 1280x1024 device pixels, so at UI_SUITE_DPR=2 a 1440x900 window (2880x1800 device pixels) was mostly off screen: nothing real was painted below
+ * device y 1024 and painted-pixel checks could not see the lower rooms. The screen is 1920x1100 logical (the 1920x1080 view of the widest driver and a margin)
+ * times the density, colour depth 24: DPR 1 is 1920x1100, DPR 2 is 3840x2200. A bad or unset density counts as 1.
+ * `UI_SUITE_XVFB_SCREEN=WxHxD` replaces it (checked; a malformed value is ignored). Returned as separate argv entries (`-s` and one value), never a shell string.
+ */
+function xvfbScreenArgs(dpr, env = process.env) {
+  const want = String(env.UI_SUITE_XVFB_SCREEN || '');
+  if (/^[1-9]\d{2,4}x[1-9]\d{2,4}x(8|16|24|30|32)$/.test(want)) return ['-s', `-screen 0 ${want}`];
+  const f = dprOk(dpr) ? Number(dpr) : 1;
+  return ['-s', `-screen 0 ${Math.ceil(1920 * f)}x${Math.ceil(1100 * f)}x24`];
+}
+
+/** The command that starts Electron for a driver: the binary itself, or under `xvfb-run -a` (a display of its own) with the screen of `xvfbScreenArgs`. Separate argv entries, no shell. */
+function launchCommand(useXvfb, electron, argv, dpr, env = process.env) {
+  return useXvfb ? ['xvfb-run', ['-a', ...xvfbScreenArgs(dpr, env), electron, ...argv]] : [electron, argv];
+}
+
+/**
  * Run one driver. Opt-in for unattended callers (spec 008 FR-175, FR-176; scripts/release-video.js): `d.baseEnv` replaces
  * `process.env` as the base of the child's environment (an allow-list, so no token reaches Electron), `d.timeoutMs` replaces the
  * suite's limit. Every driver (spec 008 FR-199, issue #1417) runs as its own process tree: it ends with the whole tree at the limit and when
@@ -350,7 +369,7 @@ function runOne(d, outDir, { launch } = {}) {
   const dpr = String(d.dpr || process.env.UI_SUITE_DPR || ''); // d.dpr: a driver that always records at that density (release-video: sharp zooms)
   const argv = [ROOT, '--no-sandbox', ...(dprOk(dpr) ? ['--force-device-scale-factor=' + dpr] : [])]; // UI_SUITE_DPR=2: a high-density screen (a Retina Mac) on any OS
   const useXvfb = !sharedDesktop(); // UI_SUITE_XVFB=1: keep windows off a desktop
-  const [file, list] = launch ? launch : useXvfb ? ['xvfb-run', ['-a', electron, ...argv]] : [electron, argv];
+  const [file, list] = launch ? launch : launchCommand(useXvfb, electron, argv, dpr);
   return new Promise((resolve) => {
     const started = Date.now();
     let log = '';
@@ -433,5 +452,5 @@ async function main({ ensure = ensureElectron, run = runOne, argv, shared = shar
   if (failed.length) process.exitCode = 1;
 }
 
-module.exports = { dprOk, sharedDesktop, syntaxErrors, main, runOne, killTree, guardTree, shard, DRIVERS, NOT_IN_SUITE }; // runOne: also spec 001 FR-082 (scripts/shots-docs.js)
+module.exports = { dprOk, xvfbScreenArgs, launchCommand, sharedDesktop, syntaxErrors, main, runOne, killTree, guardTree, shard, DRIVERS, NOT_IN_SUITE }; // runOne: also spec 001 FR-082 (scripts/shots-docs.js)
 if (require.main === module) main().catch((e) => { console.error('ui-suite:', e.message); process.exitCode = 1; });
