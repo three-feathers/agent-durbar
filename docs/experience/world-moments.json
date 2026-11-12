@@ -48,6 +48,14 @@
       ],
       "shippable": false,
       "pack": "src/renderer/realoffice/worlds/loft"
+    },
+    "retro": {
+      "name": "Retro arcade",
+      "crews": [
+        "retro"
+      ],
+      "shippable": false,
+      "pack": "src/renderer/realoffice/worlds/retro"
     }
   },
   "moments": [
@@ -65,9 +73,20 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "built"
       },
-      "nonNegotiables": "TFMKPC"
+      "nonNegotiables": "TFMKPC",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "asleep"
+          ],
+          "pictures": [
+            "asleep"
+          ]
+        }
+      }
     },
     {
       "id": "lobby",
@@ -83,9 +102,20 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "built"
       },
-      "nonNegotiables": "TFMKC"
+      "nonNegotiables": "TFMKC",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "asleep"
+          ],
+          "pictures": [
+            "asleep"
+          ]
+        }
+      }
     },
     {
       "id": "boss-bank-post-coffee",
@@ -101,9 +131,22 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "built"
       },
-      "nonNegotiables": "TAMKC"
+      "nonNegotiables": "TAMKC",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "coffee",
+            "notes"
+          ],
+          "pictures": [
+            "coffee",
+            "notes"
+          ]
+        }
+      }
     },
     {
       "id": "desk-card",
@@ -119,9 +162,20 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "built"
       },
-      "nonNegotiables": "TFMKCR"
+      "nonNegotiables": "TFMKCR",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "asleep"
+          ],
+          "pictures": [
+            "asleep"
+          ]
+        }
+      }
     },
     {
       "id": "desk-lights",
@@ -136,9 +190,20 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "built"
       },
-      "nonNegotiables": "MCT"
+      "nonNegotiables": "MCT",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "asleep"
+          ],
+          "pictures": [
+            "asleep"
+          ]
+        }
+      }
     },
     {
       "id": "live-screen",
@@ -152,9 +217,20 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "built"
       },
-      "nonNegotiables": "RTKM"
+      "nonNegotiables": "RTKM",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "asleep"
+          ],
+          "pictures": [
+            "asleep"
+          ]
+        }
+      }
     },
     {
       "id": "lounge",
@@ -170,9 +246,20 @@
       "worlds": {
         "photo": "built",
         "cave": "built",
-        "loft": "missing"
+        "loft": "missing",
+        "retro": "built"
       },
-      "nonNegotiables": "FMK"
+      "nonNegotiables": "FMK",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "asleep"
+          ],
+          "pictures": [
+            "asleep"
+          ]
+        }
+      }
     },
     {
       "id": "walk",
@@ -187,7 +274,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "missing"
+        "loft": "missing",
+        "retro": "designed"
       },
       "nonNegotiables": "M"
     },
@@ -203,9 +291,13 @@
       "worlds": {
         "photo": "built",
         "cave": "built",
-        "loft": "missing"
+        "loft": "missing",
+        "retro": "missing"
       },
-      "nonNegotiables": "TK"
+      "nonNegotiables": "TK",
+      "gap": {
+        "retro": "the arcade stage ends about y=410 at 1280x800 and the window below it is blank dark page (retro-empty-1280x800 and 1440x900, looked at 2026-11-07); photo and cave fill the window. Words, three desks and lift are right; the layout is not built"
+      }
     },
     {
       "id": "first-run",
@@ -220,7 +312,8 @@
       "worlds": {
         "photo": "built",
         "cave": "built",
-        "loft": "missing"
+        "loft": "missing",
+        "retro": "fallback-flat"
       },
       "nonNegotiables": "TKS"
     },
@@ -236,7 +329,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "fallback-flat"
       },
       "nonNegotiables": "TKMCF"
     },
@@ -252,9 +346,21 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "built"
       },
-      "nonNegotiables": "MK"
+      "nonNegotiables": "MK",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "jumps"
+          ],
+          "pictures": [
+            "jump-f1",
+            "jump-f2"
+          ]
+        }
+      }
     },
     {
       "id": "floor-indicator",
@@ -268,7 +374,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "fallback-flat"
       },
       "nonNegotiables": "TKC"
     },
@@ -286,9 +393,13 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "missing"
       },
-      "nonNegotiables": "TFKM"
+      "nonNegotiables": "TFKM",
+      "gap": {
+        "retro": "looked at (retro-cell-allfloors, 2026-11-08): the window is full but every folder stands on one floor with no floor names or storeys, while the lift says All; the other worlds' All view shows three floor tags (shots-092-lift). Not the building view yet"
+      }
     },
     {
       "id": "building-preview",
@@ -302,7 +413,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "designed"
       },
       "nonNegotiables": "TK"
     },
@@ -318,9 +430,21 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "missing"
+        "loft": "missing",
+        "retro": "built"
       },
-      "nonNegotiables": "KM"
+      "nonNegotiables": "KM",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "jumps"
+          ],
+          "pictures": [
+            "jump-f1",
+            "jump-f2"
+          ]
+        }
+      }
     },
     {
       "id": "inbox",
@@ -335,9 +459,20 @@
       "worlds": {
         "photo": "built",
         "cave": "built",
-        "loft": "missing"
+        "loft": "missing",
+        "retro": "built"
       },
-      "nonNegotiables": "AKTS"
+      "nonNegotiables": "AKTS",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "inbox"
+          ],
+          "pictures": [
+            "inbox"
+          ]
+        }
+      }
     },
     {
       "id": "chat-open",
@@ -352,7 +487,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "fallback-flat"
       },
       "nonNegotiables": "MK"
     },
@@ -371,7 +507,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "fallback-flat"
       },
       "nonNegotiables": "TKF"
     },
@@ -389,7 +526,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "fallback-flat"
       },
       "nonNegotiables": "TKSC"
     },
@@ -407,9 +545,21 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "missing"
+        "loft": "missing",
+        "retro": "built"
       },
-      "nonNegotiables": "ATSK"
+      "nonNegotiables": "ATSK",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "inbox",
+            "limitfocus"
+          ],
+          "pictures": [
+            "inbox"
+          ]
+        }
+      }
     },
     {
       "id": "permission-card",
@@ -425,9 +575,20 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "built"
       },
-      "nonNegotiables": "ASKTC"
+      "nonNegotiables": "ASKTC",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "cells"
+          ],
+          "pictures": [
+            "cell-chat"
+          ]
+        }
+      }
     },
     {
       "id": "question-card",
@@ -443,7 +604,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "designed"
       },
       "nonNegotiables": "AKT"
     },
@@ -461,7 +623,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "missing"
+        "loft": "missing",
+        "retro": "fallback-flat"
       },
       "nonNegotiables": "AKS"
     },
@@ -478,7 +641,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "designed"
       },
       "nonNegotiables": "AKT"
     },
@@ -496,9 +660,20 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "missing"
+        "loft": "missing",
+        "retro": "built"
       },
-      "nonNegotiables": "TK"
+      "nonNegotiables": "TK",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "coffee"
+          ],
+          "pictures": [
+            "coffee"
+          ]
+        }
+      }
     }
   ]
 }

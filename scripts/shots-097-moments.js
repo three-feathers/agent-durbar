@@ -29,7 +29,7 @@ module.exports = async (ctx) => {
   const must = async (expr, what, ms = 15000) => assert.ok(await H.until(expr, ms), 'timed out waiting for ' + what);
   const REAL = `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'`;
   const PICS = `[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`;
-  const q = (world, extra = {}) => ({ officeview: 'real', ...(world === 'cave' ? { worldflags: 'cave', world: 'cave' } : {}), ...extra });
+  const q = (world, extra = {}) => ({ officeview: 'real', ...(world === 'cave' || world === 'retro' ? { worldflags: world, world } : {}), ...extra });
   const run = (id) => !ONLY.length || ONLY.includes(id);
   const shot = (world, name, w, h) => H.shot(path.join(OUT, `${world}-${name}-${w}x${h}.png`), { prep: 'calm', settle: true, tag: 'moments', what: `${world}-${name}-${w}x${h}` });
   /* CDP media emulation (reduced motion, forced colours), always undone */
@@ -58,8 +58,8 @@ module.exports = async (ctx) => {
     const tag = `${world} ${w}x${h}`;
     // ---- FR-118 first run ----
     if (run('first-run')) {
-      if (world === 'cave') {
-        /* the cave is behind a flag the simulator's page address switches on, so its first run is a simulator page whose agents are all gone (no real folder, no agent) */
+      if (world === 'cave' || world === 'retro') {
+        /* the cave and the arcade are behind a flag the simulator's page address switches on, so its first run is a simulator page whose agents are all gone (no real folder, no agent) */
         await H.load({ w, h, query: q(world), ready: REAL, settle: false });
         await js(`window.__durbarSimUi.agents().splice(0);window.__durbarSimUi.crew.renderAll()`);
         await must(`!!document.querySelector('#stage .welcome')`, 'the first-run card');
@@ -92,6 +92,25 @@ module.exports = async (ctx) => {
         }
       }
       await shot(world, 'firstrun', w, h);
+    }
+    // ---- 102 RA7 (review of #1279): the arcade's first-run rule is scoped to the arcade. The photo and cave rules hide the counts too, so the check takes the world off the page (a Real office without a world draws them) and adds retro's world.css read from dist ----
+    if (run('scope') && world !== 'retro') {
+      if (world === 'cave') await H.load({ w, h, query: q(world), ready: REAL, settle: false });
+      else {
+        await H.load({ w, h, query: q(world), settle: false });
+        await js(`localStorage.setItem('durbar.officeview','real');localStorage.setItem('durbar.world',${jsLiteral(world)})`);
+        await H.load({ w, h, query: q(world, { sim: undefined, officeview: undefined }), ready: `!!document.querySelector('#stage .welcome')`, settle: false });
+      }
+      if (world === 'cave') { await js(`window.__durbarSimUi.agents().splice(0);window.__durbarSimUi.crew.renderAll()`); }
+      await must(`!!document.querySelector('#stage .welcome')`, 'the first-run card');
+      await must(`!!document.getElementById('roWorldCss-'+${jsLiteral(world)})&&document.documentElement.dataset.world===${jsLiteral(world)}`, `the ${world} stylesheet`);
+      assert.strictEqual(await js(`!!document.getElementById('roWorldCss-retro')`), false, `${tag}: the arcade's stylesheet is not loaded in ${world}`);
+      assert.strictEqual(await js(`getComputedStyle(document.getElementById('stats')).visibility`), 'hidden', `${tag}: ${world} hides its own counts on a first run`);
+      const css = fs.readFileSync(path.join(__dirname, '..', 'dist', 'renderer', 'realoffice', 'worlds', 'retro', 'world.css'), 'utf8');
+      assert.ok(/body:has\(#stage > \.welcome\) #stats\{visibility:hidden\}/.test(css), "the arcade's first-run rule is in its world.css (the check below would prove nothing without it)");
+      await js(`(()=>{document.documentElement.removeAttribute('data-world');const s=document.createElement('style');s.id='scopeProbe';s.textContent=${jsLiteral(css)};document.head.appendChild(s)})()`);
+      assert.strictEqual(await js(`getComputedStyle(document.getElementById('stats')).visibility`), 'visible', `${tag}: with the arcade's CSS present on a page that is not the arcade, the counts stay: the rule is scoped to html[data-world="retro"]`);
+      await js(`document.getElementById('scopeProbe').remove()`);
     }
     // ---- FR-119 empty office ----
     if (run('empty-office')) {
@@ -144,7 +163,7 @@ module.exports = async (ctx) => {
         return {seat:a.map(d=>!!d.lounge&&!!d.table),pose:a.map(d=>d.person&&d.person.pose),shades:document.querySelectorAll('#stage .ro-lamp.lamp-off').length,asleep:a.length,screensOff:document.querySelectorAll('#stage .ro-screen.asleep.off').length,
           chair:a.filter(d=>d.away).length,small:[...document.querySelectorAll('#stage .ro-plate.asleep *,#stage .ro-zz')].filter(e=>parseFloat(getComputedStyle(e).fontSize)<10.5).length}})()`);
       assert.ok(geo.seat.length >= 1 && geo.seat.every(Boolean), `${tag}: each sleeper has a lounge seat with its small desk: ${geo.seat}`);
-      assert.deepStrictEqual(geo.pose, geo.pose.map(() => 'rest'), `${tag}: the person is in rest`);
+      assert.deepStrictEqual(geo.pose, geo.pose.map(() => (world === 'retro' ? 'sit' : 'rest')), `${tag}: the person is in ${world === 'retro' ? 'sit (the arcade draws it beside the cabinet, 102 FR-264)' : 'rest'}`);
       assert.strictEqual(geo.shades, geo.asleep, `${tag}: a lamp-off marker on each asleep desk only`);
       /* review 2026-11-02: no dark oval over the room behind a sleeper; the person dims instead */
       const dim = await js(`(()=>{const L=[...document.querySelectorAll('#stage .ro-lights .ro-lamp.lamp-off')].map(e=>{const c=getComputedStyle(e);return [c.backgroundImage,c.backgroundColor]});const P=[...document.querySelectorAll('#stage .ro-person.asleep')].map(e=>getComputedStyle(e).filter);const A=[...document.querySelectorAll('#stage .ro-person:not(.asleep)')].map(e=>getComputedStyle(e).filter);return {L,P,A}})()`);
@@ -323,11 +342,13 @@ module.exports = async (ctx) => {
       const cf = await js(`(()=>{const p=[...document.querySelectorAll('#stage .ro-plate')].find(p=>/Tomas/.test(p.textContent));return {plate:p.textContent,label:p.getAttribute('aria-label'),title:p.getAttribute('title'),state:p.dataset.state,away:[...document.querySelectorAll('#stage .ro-away')].map(e=>e.textContent),
         chips:[...document.querySelectorAll('#stage .ro-chip')].filter(c=>c.dataset.coffeeid).map(c=>[c.textContent,c.getAttribute('aria-label')])}})()`);
       assert.ok(new RegExp(`^TomasPrompt tuner Coffee break \\u00B7 Coffee break \\u2014 ${RESUMES}`).test(cf.plate) && cf.state === 'waiting', `${tag}: the plate and the status (Waiting, never Error): ${cf.plate} ${cf.state}`);
-      assert.ok(/^Tomas, Prompt tuner, Coffee break, .*at Coffee corner\. Open chat panel\.$/.test(cf.label), `${tag}: the name: ${cf.label}`);
+      assert.ok(/^Tomas, Prompt tuner, Coffee break, .*at Coffee corner(, context \d+ %)?\. Open chat panel\.$/.test(cf.label), `${tag}: the name (spec 097 FR-325: the context words, when the context is known, come before "Open chat panel."): ${cf.label}`);
       assert.ok(cf.away.some((t) => /^at Coffee corner until /.test(t)), `${tag}: the coffee-break post-it says where and until when (owner 2026-11-02): ${JSON.stringify(cf.away)}`);
       assert.strictEqual(await js(`document.querySelectorAll('#stage .ro-tent').length`), 0, `${tag}: no tent card (replaced by the post-it)`);
       assert.deepStrictEqual(await js(`(()=>{const R=e=>e.getBoundingClientRect(),N=[...document.querySelectorAll('#stage .ro-away')],o=[];for(let i=0;i<N.length;i++)for(let j=i+1;j<N.length;j++){const a=R(N[i]),b=R(N[j]);if(a.left<b.right-0.5&&b.left<a.right-0.5&&a.top<b.bottom-0.5&&b.top<a.bottom-0.5)o.push([N[i].textContent,N[j].textContent])}return o})()`), [], `${tag}: no post-it overlaps another, a wide font included`);
-      assert.ok(await js(`getComputedStyle(document.querySelector('#stage .ro-away[data-place="coffee"]')).backgroundColor`) !== await js(`getComputedStyle(document.querySelector('#stage .ro-away:not([data-place="coffee"])')||document.body).backgroundColor`), `${tag}: the coffee post-it has its own colour`);
+      /* the arcade's ticket is a dark card with a neon edge (102 FR-264, owner 2026-11-03): its own colour is the edge and the words, not the paper */
+      const NOTE_PROP = world === 'retro' ? 'borderTopColor' : 'backgroundColor';
+      assert.ok(await js(`getComputedStyle(document.querySelector('#stage .ro-away[data-place="coffee"]'))[${jsLiteral(NOTE_PROP)}]`) !== await js(`getComputedStyle(document.querySelector('#stage .ro-away:not([data-place="coffee"])')||document.body)[${jsLiteral(NOTE_PROP)}]`), `${tag}: the coffee post-it has its own colour`);
       assert.strictEqual(cf.chips.length, 1, `${tag}: only the agent on a coffee break stands at the corner (FR-128): ${JSON.stringify(cf.chips)}`);
       assert.ok(/^Tomas \(until .* back in \d+ min\)\. Open the chat\.$/.test(cf.chips[0][1]), `${tag}: the corner chip's name: ${cf.chips[0][1]}`);
       await shot(world, 'coffee', w, h);
@@ -336,7 +357,18 @@ module.exports = async (ctx) => {
       assert.strictEqual(await js(`[...document.querySelectorAll('#stage .ro-chip')].filter(c=>c.dataset.coffeeid).length`), 0, `${tag}: with no coffee break nobody stands at the corner `);
     }
     // ---- review on #994 (2026-11-02): a slip never offers Allow without the change or command the inbox row shows; other approve rules ----
-    if (run('review')) {
+    if (run('review') && world === 'retro') {
+      /* the arcade shows one-line pills only (102 FR-257, T273): the slip's Allow and Review buttons are not drawn, the pill opens the inbox, which holds the words and buttons */
+      await H.load({ w, h, query: q(world, { sim: '3', simfloors: '1' }), ready: REAL, settle: false });
+      await must(PICS, 'the pictures');
+      await must(`!!document.querySelector('#stage .ro-slip.ro-queue[data-variant="pill"]')`, 'the queue pill');
+      const pill = await js(`(()=>{const e=document.querySelector('#stage .ro-slip.ro-queue');return {btns:[...e.querySelectorAll('button')].map(b=>b.textContent.trim()),perm:e.querySelectorAll('[data-slipact="perm"]').length,lines:e.getBoundingClientRect().height}})()`);
+      assert.ok(pill.perm === 0 && pill.btns.length === 1 && /^\d+ needs? you \u00B7 Open the inbox$|^\d+ need you \u00B7 Open the inbox$/.test(pill.btns[0]), `${tag}: the arcade's queue is one pill that opens the inbox: ${JSON.stringify(pill)}`);
+      await js(`document.querySelector('#stage .ro-slip.ro-queue [data-slipact="inbox"]').click()`);
+      await must(`!!document.querySelector('#inboxDlg .inbox-row')`, 'the pill opens the inbox');
+      await js(`document.getElementById('inboxClose').click()`);
+    }
+    if (run('review') && world !== 'retro') {
       await H.load({ w, h, query: q(world, { sim: '3', simfloors: '1' }), ready: REAL, settle: false });
       await must(PICS, 'the pictures');
       await must(`!!document.querySelector('#stage .ro-slip.ro-queue[data-variant="full"]')`, 'the full queue slip');
@@ -379,11 +411,12 @@ module.exports = async (ctx) => {
       const PL = ['boss', 'bank', 'coffee', 'library', 'software', 'terminal', 'web', 'other'];
       await js('window.__durbarSimUi.uncrowd();' + PL.filter((id) => id !== 'boss').map((id, i) => 'window.__durbarSimUi.crowd(' + jsLiteral(id) + ',1,' + (8 + i) + ')').join(';'));
       const CONTRAST = `const P=s=>{const m=/rgba?\\(([^)]+)\\)/.exec(s);return m?m[1].split(/[ ,\\/]+/).filter(Boolean).slice(0,3).map(Number):[0,0,0]},Lm=c=>{const f=x=>{x/=255;return x<=0.03928?x/12.92:Math.pow((x+0.055)/1.055,2.4)};return 0.2126*f(c[0])+0.7152*f(c[1])+0.0722*f(c[2])},K=(a,b)=>{const x=Lm(P(a)),y=Lm(P(b));return (Math.max(x,y)+0.05)/(Math.min(x,y)+0.05)};`;
-      const readNotes = () => js('(()=>{' + CONTRAST + "return [...document.querySelectorAll('#stage .ro-away')].map(e=>{const c=getComputedStyle(e);return {place:e.dataset.place,text:e.textContent,bg:c.backgroundColor,ink:c.color,ratio:K(c.color,c.backgroundColor),size:parseFloat(c.fontSize)}})})()");
+      const readNotes = () => js('(()=>{' + CONTRAST + "const ARC=" + jsLiteral(world === 'retro') + ";return [...document.querySelectorAll('#stage .ro-away')].map(e=>{const c=getComputedStyle(e);return {place:e.dataset.place,text:e.textContent,bg:c.backgroundColor,key:ARC?c.color:c.backgroundColor,ink:c.color,ratio:K(c.color,c.backgroundColor),size:parseFloat(c.fontSize)}})})()");
       await must(`document.querySelectorAll('#stage .ro-away').length>=8`, 'a post-it for each place');
       const ns = await readNotes();
       assert.deepStrictEqual([...new Set(ns.map((x) => x.place))].sort(), PL.slice().sort(), `${tag}: one post-it for each place: ${JSON.stringify(ns.map((x) => [x.place, x.text]))}`);
-      assert.strictEqual(new Set(ns.map((x) => x.bg)).size, PL.length, `${tag}: one colour per place, all different: ${JSON.stringify(ns.map((x) => [x.place, x.bg]))}`);
+      /* the arcade's ticket is a dark card whose edge and words carry the place's colour (102 FR-264, owner 2026-11-03) */
+      assert.strictEqual(new Set(ns.map((x) => x.key)).size, PL.length, `${tag}: one colour per place, all different: ${JSON.stringify(ns.map((x) => [x.place, x.key]))}`);
       for (const x of ns) {
         assert.ok(x.ratio >= 4.5 && x.size >= 10.5, `${tag}: ${x.place} ink contrast ${x.ratio.toFixed(2)}:1 at ${x.size}px`);
         assert.ok(/^at [A-Z]/.test(x.text), `${tag}: the words stay: ${x.text}`);
@@ -394,6 +427,29 @@ module.exports = async (ctx) => {
         assert.ok(fc.length >= 8 && fc.every((x) => x.ratio >= 4.5), `${tag}: forced colours keep the post-it text readable: ${JSON.stringify(fc.map((x) => [x.place, x.ratio.toFixed(1)]))}`);
       });
       console.log('[moments] notes ok', ns.length);
+    }
+    // ---- 102 T223: the cells that are not one of the nine, looked at in the arcade (chat with a request, the All floors view): pictures and no text under 10.5px ----
+    if (run('cells') && world === 'retro') {
+      await H.load({ w, h, query: q(world, { sim: '15', simfloors: '1' }), ready: REAL, settle: false });
+      await must(PICS, 'the pictures');
+      await js(`(()=>{const p=[...document.querySelectorAll('#stage .ro-plate')].find(x=>x.textContent.startsWith('Jonas'));p.click()})()`);
+      await must(`document.body.classList.contains('panel-open')&&!!document.querySelector('#chat .note.perm')`, 'the chat of Jonas with its request');
+      await H.settle();
+      const small = await js(`[...document.querySelectorAll('#panel *')].filter(e=>e.children.length===0&&e.textContent.trim()&&e.getClientRects().length&&parseFloat(getComputedStyle(e).fontSize)<10.5).length`);
+      assert.strictEqual(small, 0, `${tag}: the chat has no text under 10.5px`);
+      /* 102 T223 (#1268): the permission card in the arcade's chat is dark (T221 fixed the cream card found in #1279) and every text of it reads at 4.5:1; its buttons are there */
+      const perm = await js(`(()=>{const c=document.querySelector('#chat .note.perm:not(.settled)');if(!c)return null;const P=(s)=>{const m=/rgba?\\(([^)]+)\\)/.exec(s);return m?m[1].split(/[ ,\\/]+/).filter(Boolean).slice(0,3).map(Number):[0,0,0]},Lm=(a)=>{const f=(x)=>{x/=255;return x<=0.03928?x/12.92:Math.pow((x+0.055)/1.055,2.4)};return 0.2126*f(a[0])+0.7152*f(a[1])+0.0722*f(a[2])};const bg=P(getComputedStyle(c).backgroundColor);const worst=[...c.querySelectorAll('*')].filter(e=>e.children.length===0&&e.textContent.trim()&&e.getClientRects().length&&!e.closest('.btn')).map(e=>{const a=Lm(P(getComputedStyle(e).color)),b=Lm(bg);return (Math.max(a,b)+0.05)/(Math.min(a,b)+0.05)});return {lum:Lm(bg),btns:c.querySelectorAll('.btn').length,texts:worst.length,min:worst.length?Math.min(...worst):0}})()`);
+      assert.ok(perm && perm.lum < 0.2 && perm.btns >= 2 && perm.texts > 0 && perm.min >= 4.5, `${tag}: the permission card in the arcade's chat is dark, has its buttons and its text reads at 4.5:1: ${JSON.stringify(perm)}`);
+      await shot(world, 'cell-chat', w, h);
+      await H.load({ w, h, query: q(world, { sim: '15', simfloors: '1' }), ready: REAL, settle: false });
+      await must(PICS, 'the pictures');
+      await js(`document.querySelector('#lift [data-lift="*all"]').click()`);
+      /* review of #1279: no silent skip. The same condition shots-092-lift uses for the All floors view; if it never comes, the run fails, so no picture is ever quietly missing */
+      await must(`document.querySelector('#lift [data-lift="*all"]').getAttribute('aria-current')==='true'`, 'the All floors view (the lift says All)');
+      await must(PICS, 'the pictures');
+      await shot(world, 'cell-allfloors', w, h);
+      for (const f of ['cell-chat', 'cell-allfloors']) assert.ok(fs.existsSync(path.join(OUT, `${world}-${f}-${w}x${h}.png`)), `${tag}: the picture ${f} was written`);
+      await js(`localStorage.removeItem('durbar.floor');localStorage.removeItem('durbar.floorView')`); /* the next size starts on one floor */
     }
   }
 };

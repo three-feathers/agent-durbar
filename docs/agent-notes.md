@@ -2,16 +2,16 @@
 
 Pitfalls agents on this repo learned the hard way. Rules live in [AGENTS.md](../AGENTS.md); the review checklist is [review-checklist.md](review-checklist.md); checked facts about Copilot, Claude Code, Codex and `git` are in [agent-apps.md](agent-apps.md). This file is guidance and never overrides AGENTS.md.
 
-Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `test:`, `sim:`, a PR or issue), at most three lines. Add one in the PR where you learned it; fix or delete one that turns out wrong; delete one a script or test now enforces. **Never** secrets, tokens, personal data or chat contents. Entries pruned 2026-10-29 (retro #854 B2); old text: `git log -p docs/agent-notes.md`.
+Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `test:`, `sim:`, a PR or issue), at most three lines. Add one in the PR where you learned it; fix or delete one that turns out wrong; delete one a script or test now enforces. **Never** secrets, tokens, personal data or chat contents. Push: `npm run specs:numbers`; pictures over 300 KB fail `npm test`/CI `spec-numbers`.
 
 ## Shell, git and processes
 
 - **`pkill -f` / `pgrep -f` match their own shell**. Select by field (`ps -eo pid,args | awk ...`) or keep the PIDs you started (2026-10-20).
 - **Plain Node 22.18+ can `require()` an erasable `src/shared/*.ts`** (no `enum`, `namespace`, parameter properties): a no-build script can reuse `redact.ts`; wrap it, fail closed on a throw; `process.features.typescript` tells a test (spec 008 FR-122, `real:` Node 22.23).
-- **`npm test -- --bail`** stops at the first failing suite (ignored under `CI`); not for the final run (spec 008 FR-115).
+- **`npm test -- --bail`** stops at the first failure (not under `CI`), not for final runs (spec 008 FR-115).
 - **systemd user units do not sandbox on an Ubuntu 24.04 VPS** (`apparmor_restrict_unprivileged_userns=1`): `InaccessiblePaths`, `ProtectHome`, `PrivateUsers` drop silently. Probe a setting with `systemd-run --user --wait --pipe -p <x> cat <file>`; use a separate unix user for isolation (FR-058, `real:` systemd 255).
 - **The Write tool turns a ` ` escape into the raw character**, so `tsc` fails; write them with a Python edit, check with `perl -ne 'print if /[^\x00-\x7f]/'` (2026-10-25, `real:`).
-- **A lock "check, then act" needs a short `wx` guard and an owner token**: re-check under the guard; write or unlink only while the token is yours; move a stale guard aside and check identity (never `lstat` then `unlink`). Test with an injected fs swapping the lock between calls; it narrows the race, not closes it (spec 083 FR-008, #723, `test:` `test-notesstore.ts`).
+- **A lock "check, then act" needs a short `wx` guard and an owner token**: re-check under the guard; write or unlink only while the token is yours; move a stale guard aside and check identity (never `lstat` then `unlink`). Test with an injected fs swapping the lock between calls; it narrows the race, not closes it (spec 083 FR-008, `test-notesstore.ts`).
 - **Capture `child_process` functions at call time, not at load**: a function grabbed at module load bypasses the simulator's seal and test spies; pass a wrapper that reads `child_process.execFile` when called (spec 081, `test:simguard`).
 - **Sealing a Node built-in works only on the real module object**: patch `require('child_process')` (`import x = require(...)`, not `import * as`: its `__importStar` copy has getters only; patch `require('fs')` to fake an fs call, PR #489); TS's CommonJS output reads `child_process_1.execFile` at call time, so the seal reaches `src/` (spec 010 FR-030, `test-simguard` §5). `test:ipcchannels` bans `ipcMain` and `.ipc` outside `ipcguard.ts`.
 - **git rerere can replay a stale resolution and silently drop a rule** (no markers; it twice dropped `.mode-menu` from `styles.css`). After "Resolved ... using previous resolution", rebuild each file with `git merge-file -p ours base theirs` and diff it, or `git rerere forget <file>` during the conflict (PRs #488, #511, `real:`).
@@ -40,9 +40,9 @@ Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `tes
 - **A contrast fallback must not touch shared surfaces** (`--surface`, `--bg`): fix only the text side, test a dark theme with one failing pair. A list copied between `src/renderer` and `src/shared` needs an equality test (#500, `test:theme-tokens`).
 - **A send gate's busy check reads main's `lastStatus`, not `agentState`**: `agents:send` sets Thinking first (spec 058 FR-209).
 - **A lookup table keyed by event or adapter text needs `hasOwnProperty`** (`'__proto__'`, `toString`), and number helpers need `Number.isFinite` (`Infinity` printed `InfinityM`) (spec 015, #601; spec 007 T038).
-- **A test server that never reads a socket never sees it close**: call `s.resume()` on every accepted socket when waiting for `close`; list processes before blaming the product. It blocked v0.1.1 on macOS (PR #847, `real:` test builds).
+- **A test server that never reads a socket never sees it close**: call `s.resume()` on each accepted socket before awaiting `close`; list processes before blaming the product (PR #847, macOS).
 - **Install Electron once before parallel Electrons** (`ensureElectron()` from `scripts/ensure-electron.js`), or first runs race on `node_modules/electron/dist` (`ETXTBSY`, "Could not find sentinel") (spec 008 FR-114, `sim:`).
-- **Electron checks are heavy**: at most two drivers at once under `nice -n 10`; keep the limits in `run-tests.js` and `check-parallel.js`.
+- **Electron checks are heavy**: at most two drivers at once, `nice -n 10` (limits: `run-tests.js`, `check-parallel.js`).
 
 ## CI, review and merge
 
@@ -139,6 +139,7 @@ Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `tes
 - **A destroyed `WebContentsView` has no `webContents`**: keep the `webContents` before `close()` to check `isDestroyed()` and the OS process (`process.kill(pid, 0)` gives `ESRCH`). `Page.getNavigationHistory` gives each entry a `transitionType` (`form_submit` for a form), so main knows a form page without reading it; `sendInputEvent` (`char`) fires a view's `input-event`. `sim:` spec 080 T013/T018.
 - **The simulator's End session never reaches main**: a driver that checks a browser teardown uses the driver-context hooks `ctx.browserGone` / `ctx.browserStates` (`main.ts`), not the renderer.
 - **No referrer from a custom scheme** (2026-10-31): a `durbar-sim:` `_blank` has `referrer.url === ''`; test referrer rules over loopback http (`check-browser-tabs.js`).
+- **A child's `TMPDIR` needs room for Unix sockets** (macOS: 104 bytes): use `makeSocketSafePrivateDir` (spec 087 FR-024).
 - **CSS anchor positioning** (2026-11-05, #1155, Chromium 125+): `anchor-name`s are document-global, so unique, and precede what they anchor; guard: `check-097-plate-pencil`.
 
 ## Team chat

@@ -90,7 +90,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - uses: ./.github/actions/npm-ci
       - run: npm run typecheck
       - run: npm test
       - name: Package (unsigned, no publishing)

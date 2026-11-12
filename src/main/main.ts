@@ -16,6 +16,7 @@ import { register as registerBrowserIpc } from './ipc/browser';
 import { noteWindowZoom } from './titledblclick';
 import { register as registerAttachmentsIpc } from './ipc/attachments';
 import { register as registerCheckpointsIpc } from './ipc/checkpoints';
+import { register as registerWorldsIpc } from './ipc/worlds';
 import { register as registerFloorsIpc } from './ipc/floors';
 import { register as registerFoldersIpc } from './ipc/folders';
 import { register as registerNewFolderIpc } from './ipc/newfolder';
@@ -104,11 +105,15 @@ import type { SchedulerDeps } from './schedules';
 import { loopActivity, loopPrompt, loopPush, loopStillWanted, loopWaitOf, routeLoopEvent } from './loopwiring';
 import { UsageTotalsStore } from './usagetotalsstore';
 import { ActivityStore } from './activitystore';
+import { maskActivityAction } from './activitymask';
 import { decisionOf } from '../shared/activity';
 import type { ActivityDecision } from '../shared/activity';
 import { folderKeyOf, folderNameOf } from '../shared/usagedoc';
 import { agentLabel } from '../shared/toolusage';
-import { devEnv, devWarning } from './devhooks';
+import { autopilotTestGate, devEnv, devWarning } from './devhooks';
+import { AUTOPILOT_WIRED } from '../adapters/autopilotHost';
+import { bothGuards, createAutopilotOps, windowAdapters } from './autopilotops';
+import { folderFingerprint } from './gitstatus';
 import { isSimBlocked, sealChildProcess, simDetectorFor, simGuardDescriptors, simulatorCount, simulatorOn } from './simguard';
 import childProcess = require('child_process');
 import { initSimGuard, simRefusedChannels } from './ipcguard';
@@ -193,7 +198,9 @@ for (const [name, value] of simClock.switches) app.commandLine.appendSwitch(name
 // spec 010 FR-024: under the simulator every descriptor creates an inert stand-in, never the real adapter
 const registry = createRegistry(simGuardDescriptors([...PRODUCTION_DESCRIPTORS, ...offeredDescriptors(dev)], SIMULATOR)); // Copilot, then Claude Code (spec 012 FR-135); detection decides what is ready
 const router = createRouter(registry);
-router.setEventGuard(eventGate((line) => console.warn(redact(line)))); // spec 010 FR-035: every event checked before any listener; a bad one is dropped
+/** Spec 010 FR-035: the shape check of every event, one instance for the run (its drop-line count is per run); spec 099 FR-082 adds Autopilot's check to it below. */
+const eventShape = eventGate((line) => console.warn(redact(line)));
+router.setEventGuard(eventShape); // spec 010 FR-035: every event checked before any listener; a bad one is dropped
 /** Spec 076 section O (issue #602): each agent app's own organization policy, read by its adapter, cached 60 s. */
 const orgPolicies = new OrgPolicyCache({ ids: () => registry.list().map((d) => d.id), adapter: (id) => (registry.has(id) ? router.instance(id) : undefined) });
 /** Spec 076 FR-203: the start guard's deps; advice is shown once the session has started (a toast in the window). */
@@ -267,6 +274,34 @@ const toRenderer = (channel: string, payload: unknown): void => {
 /** An MCP status event carries server error text: masked here, once, before the window sees it (spec 019 FR-021). */
 /** Spec 019 FR-022: the masked copy of an `mcp` event, built once per event; every path out of main (window, debug sink) uses it. */
 const outward = (e: AgentEvent): AgentEvent => maskMcpEvent(e, e.type === 'mcp' || (e.type === 'toolCall' && ((e.phase !== 'start' && e.mcpServer) || e.edit)) ? mcp.secretValuesFor(e.sessionId) : []); // spec 005 FR-024: edits too
+/**
+ * Spec 099: main's Autopilot. `AUTOPILOT_WIRED` is false, so in the default build it refuses to turn on and no surface offers it (spec *Changes*, Phase 3 gate).
+ * The other half is the test-only switch, which a packaged build cannot open.
+ */
+const autopilotOn = (): boolean => AUTOPILOT_WIRED || autopilotTestGate(process.env, app.isPackaged);
+const autopilotOps = createAutopilotOps({
+  agents,
+  router,
+  get ops() { return opsDeps; },
+  enabled: autopilotOn,
+  remoteOn: (id) => remoteOps.engaged(id),
+  org: (a) => orgPolicies.autopilotRefusal(appIdOf(a.id)),
+  confirm: (o) => nativeConfirm(win, o), // D12: the page cannot answer it; Cancel is the default and Escape's answer
+  ensureLive: (a) => ensureLive(a),
+  appName: (a) => registry.get(a.adapterId)?.displayName ?? a.adapterId ?? 'The agent app',
+  folderLabel: (a) => a.workspaceFile ?? a.cwd,
+  fingerprint: async (a) => { // FR-023: read-only, the spec 063 runner
+    const prints = await Promise.all(rootsOf(a).map((r) => folderFingerprint(r)));
+    return prints.every((p) => p === null) ? null : prints.join('|');
+  },
+  log: (a, decision, action) => logActivity(a, decision, action),
+  say: (a, line) => toRenderer('agents:orgNote', { id: a.id, text: line }),
+  changed: (a) => toRenderer('agents:autopilot', { id: a.id, autopilot: a.autopilot ?? null }),
+  rememberLimit: (limit) => settingsStore?.setAutopilotLimit(limit),
+  warn: (line) => console.warn(redact(line)), // T095: the masked log line (check-console-mask)
+});
+router.setEventGuard(bothGuards(eventShape, autopilotOps.accepts)); // spec 099 FR-082, T095 with spec 010 FR-035: both checks, the shape first, before any listener, so nothing uses or forwards a bad one
+router.onEvent((e) => autopilotOps.onEvent(e));
 router.onEvent((e) => { if (!mcp.hidesEvent(e)) toRenderer('agent:event', toWindowEvent(e, outward)); }); // spec 087 (review rounds 7-8): the sandbox event cleaned too; spec 058 FR-215: an elicitation main declined is not shown
 // Spec 087 FR-011: the OS sandbox state is kept on the agent's info (cleaned: own known fields, reason masked and cut), so a reloaded
 // window gets it from agents:list; never saved
@@ -322,8 +357,9 @@ router.onEvent((e) => {
   if (a) usageTotalsStore?.record(folderKeyOf(a), folderNameOf(a), e);
 });
 /** One activity row for agent `a` (spec 052 FR-071): names, the folder's base name, the adapter's display name and a short summary. */
-const logActivity = (a: AgentInfo, decision: ActivityDecision, action: string, mode: string = a.permMode): void => {
-  activityStore?.record({ agent: a.alias || a.label || a.name, folder: folderNameOf(a), app: registry.get(a.adapterId)?.displayName ?? a.adapterId, mode, action, decision });
+const logActivity = (a: AgentInfo, decision: ActivityDecision, action: string, mode: string = a.permMode, kind?: string): void => {
+  // the action is masked as the chat masks a permission request (spec 012 FR-175, issue #1295): the command mask, tool names, escape-split tokens
+  activityStore?.record({ agent: a.alias || a.label || a.name, folder: folderNameOf(a), app: registry.get(a.adapterId)?.displayName ?? a.adapterId, mode, action: maskActivityAction(action, kind), decision });
 };
 // The answer to a permission request, or an automatic approval (Allow all, a session permission), arrives as a `permission` event;
 // it is logged here, in main, so the window cannot add or change rows. Pending requests, plain reads and stopped sessions are not logged.
@@ -331,7 +367,7 @@ router.onEvent((e) => {
   if (e.type !== 'permission') return;
   const a = agents.get(e.sessionId);
   const decision = decisionOf(e.permission);
-  if (a && decision) logActivity(a, decision, e.permission.summary);
+  if (a && decision) logActivity(a, decision, e.permission.summary, undefined, e.permission.kind);
 });
 // The runtime confirms the cap now in force (also after a change made by another client): keep AgentInfo and the folder's saved cap in step.
 router.onEvent((e) => {
@@ -641,7 +677,7 @@ const scheduleDeps = (file: string): SchedulerDeps => ({
 });
 
 // The handler bodies that refuse a setting a live session cannot take live in agentops.ts (spec 012 FR-054); `store` is read when a handler runs.
-const opsDeps: OpsDeps = { agents, router, get store() { return folderStore; }, wsKey, sessionKey: (a) => resumeIdFor(a.id), log: (a, decision, action) => logActivity(a, decision, action), orgRefusal: (a, mode) => orgPolicies.refusalNow(appIdOf(a.id), { mode }) };
+const opsDeps: OpsDeps = { agents, router, get store() { return folderStore; }, wsKey, sessionKey: (a) => resumeIdFor(a.id), log: (a, decision, action) => logActivity(a, decision, action), orgRefusal: (a, mode) => orgPolicies.refusalNow(appIdOf(a.id), { mode }), endAutopilot: (a) => autopilotOps.endForMode(a), autopilotStopSeen: (id) => autopilotOps.stopSeen(id) };
 
 /* DURBAR_THEME (spec 040 FR-008): a theme for this run only, never saved; a pick in Settings replaces it and is saved as usual. */
 let runTheme: string | undefined;
@@ -673,7 +709,7 @@ const loginPathReady = (): Promise<void> => {
 };
 const adaptersList = (refresh: boolean): Promise<AdapterInfo[]> => {
   // spec 012 FR-156: after the probes, each agent app that can tell is asked whether its sign-in works; cached until Check again
-  if (!adaptersInfo || refresh) adaptersInfo = loginPathReady().then(() => detectAll(registry, simDetectorFor(SIMULATOR, detectorFor))).then((infos) => withSignIn(infos, signInCheck));
+  if (!adaptersInfo || refresh) adaptersInfo = loginPathReady().then(() => detectAll(registry, simDetectorFor(SIMULATOR, detectorFor))).then((infos) => withSignIn(infos, signInCheck)).then((infos) => windowAdapters(infos, autopilotOn())); // spec 099: no surface offers it while it is off
   return adaptersInfo;
 };
 /** Spec 012 FR-157: a session refused because of the sign-in marks its agent app `not-signed-in` in the cached list and tells the window. */
@@ -773,7 +809,7 @@ const renameSessionOpFor = (openIds: () => ReadonlySet<string>) => renameOp({
 
 // ---- IPC (spec 045 FR-060): every handler lives in src/main/ipc/<area>.ts, registered here through ipcHandle / ipcOn (ipcguard.ts). ----
 // Stores created in whenReady, and state that changes, are passed as getters so a handler reads them when it runs.
-const remoteOps = registerRemoteIpc({ agents, router, toRenderer, getWin: () => win, logActivity });
+const remoteOps = registerRemoteIpc({ agents, router, toRenderer, getWin: () => win, logActivity, autopilotOn: (id) => autopilotOps.engaged(id) });
 registerHeldMigIpc({ held: () => heldBefore, router });
 registerAppIpc({
   getSinceAway: () => (sinceAway ? { ...sinceAway, briefing: summaryDays?.recent() } : null), // spec 085 FR-009: yesterday's and today's ended sessions, numbers only
@@ -792,7 +828,7 @@ const browser = registerBrowserIpc({ agents, getWin: () => win, toRenderer, simu
 const browserGone = (id: string): void => void browser.destroy(id).catch(() => undefined);
 /** Spec 043 FR-041: which profile file changes each session has seen (shared by ipc/agents.ts and ipc/profiles.ts). */
 const profileFreshness = createProfileFreshness();
-registerAgentsIpc({ browserGone, agents, router, agentState, opsDeps, remoteOps, mcpGate: (id) => mcp.signInRefresh.beforeSend(id), mcpStopWait: (id) => mcp.signInRefresh.stopWait(id), mcpBusy: (id) => chatBusy(id), mcpForget: (id) => mcp.signInRefresh.forget(id), mcpStopped: (id) => mcp.signInRefresh.noteStop(id), mcpSecrets: (id) => mcp.secretValuesFor(id), logMcp: (a, action) => logActivity(a, 'mcp-restart', action), getScheduler: () => scheduler, getCheckpointStore: () => checkpointStore, profileFreshness, vsChatRefs, continued, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, maskHistory, forgetSandboxNote: (id) => sandboxOps.forget(id), getSummaryDays: () => summaryDays }); // spec 087: sandboxOps is set below, before any IPC call
+registerAgentsIpc({ browserGone, autopilot: autopilotOps, agents, router, agentState, opsDeps, remoteOps, mcpGate: (id) => mcp.signInRefresh.beforeSend(id), mcpStopWait: (id) => mcp.signInRefresh.stopWait(id), mcpBusy: (id) => chatBusy(id), mcpForget: (id) => mcp.signInRefresh.forget(id), mcpStopped: (id) => mcp.signInRefresh.noteStop(id), mcpSecrets: (id) => mcp.secretValuesFor(id), logMcp: (a, action) => logActivity(a, 'mcp-restart', action), getScheduler: () => scheduler, getCheckpointStore: () => checkpointStore, profileFreshness, vsChatRefs, continued, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, maskHistory, forgetSandboxNote: (id) => sandboxOps.forget(id), getSummaryDays: () => summaryDays }); // spec 087: sandboxOps is set below, before any IPC call
 registerAttachmentsIpc({ dev, pickedFiles, getStageDir, sizeOf });
 registerPreviousIpc({ browserGone, sessionsChanged: () => convSearch.dropKept(), renameSessionOpFor, dev, agents, router, registry, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, wsKey, resumeIdFor, forgetOpenSession, logActivity, addWorkspace, vsChatRefs, maskHistory });
 // spec 095 (T022): the conversation search. Scope from main's own agents and folder store; MCP values without a keychain prompt (as
@@ -810,6 +846,7 @@ const convSearch = registerConvSearchIpc({
   matcher: () => (convMatcher ??= { masker: createMasker({ unhide: (s) => rendererScript<{ unhide(s: string): string }>('safetext.js').unhide(s) }), search: rendererScript<SessionSearchApi>('sessionsearch.js') }),
 });
 registerCheckpointsIpc({ agents, getCheckpointStore: () => checkpointStore, busyStatus });
+const worldsIpc = registerWorldsIpc({ simulator: SIMULATOR }); // spec 102 T022: installed worlds, read from disk after a re-check; no network
 registerSchedulesIpc({ getScheduler: () => scheduler, getFolderStore: () => folderStore });
 registerUsageIpc({ agents, getUsageStore: () => usageStore, getUsageTotalsStore: () => usageTotalsStore, usageLabel });
 const newFolderIpc = registerNewFolderIpc({ addMany, getSettingsStore: () => settingsStore, asEffort, toRenderer }); // spec 093: create a folder from + Folder (clone, new repository, empty folder)
@@ -973,6 +1010,7 @@ function createWindow(): void {
   const query: Record<string, string> = {};
   if (SIMULATOR) {
     query.sim = String(simulatorCount(dev));
+    if (autopilotOn()) query.simautopilot = '1'; // spec 099: the simulator offers Autopilot only when main says it is on
     if (dev.DURBAR_SIM_FREEZE === '1') query.simfreeze = '1';
     if (dev.DURBAR_SIM_ROOMS) query.simrooms = dev.DURBAR_SIM_ROOMS;
     if (dev.DURBAR_SIM_FLOORS === '1' || dev.DURBAR_SIM_FLOORS === 'ground') query.simfloors = dev.DURBAR_SIM_FLOORS; // spec 092 T010: 'ground' = the same three floors with every folder on the Ground floor
@@ -983,6 +1021,7 @@ function createWindow(): void {
     if (dev.DURBAR_SIM_FLOORS_OFF) query.floorsoff = dev.DURBAR_SIM_FLOORS_OFF.slice(0, 200);
     if (simClock.query) query.simclock = simClock.query; // spec 001 FR-084: a pinned page clock for screenshots
   }
+  if (dev.DURBAR_DOOR === '1') query.door = '1'; // spec 052 FR-191: Your door (the Needs you panel) is behind a flag until the owner's look
   win.on('focus', () => win?.flashFrame(false)); // spec 052 FR-059: the taskbar flash stops when you come back
   {
     // spec 052 FR-085 / FR-087 / FR-090: on macOS closing the window hides it (the agents keep running; ⌘Q quits);
@@ -1152,7 +1191,7 @@ app.whenReady().then(() => {
   if (open.length && SIMULATOR) console.warn('[simguard] DURBAR_SIM: DURBAR_OPEN is ignored (it would start real sessions)'); // spec 010 FR-025
   else if (open.length) void addMany(open, validMode(dev.DURBAR_PERM));
   // Dev/test: DURBAR_DRIVER=/path/driver.js runs a UI-driving script against the real window + adapter.
-  // The module exports async (ctx) => void with ctx = { win, addMany, shot(file), js(code), sleep(ms), waitFor(expr, ms) }.
+  // The module exports async (ctx) => void with ctx = { win, addMany, shot(file, { quality }?), js(code), sleep(ms), waitFor(expr, ms) }.
   if (dev.DURBAR_DRIVER) {
     const ctx = {
       get win() {
@@ -1172,7 +1211,8 @@ app.whenReady().then(() => {
       browserTabs: (id: string) => browser.tabsOf(id),
       js: <T>(code: string): Promise<T> => (win as BrowserWindow).webContents.executeJavaScript(code, true) as Promise<T>,
       sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, ms)),
-      shot: (file: string) => captureWithoutRoom((code) => (win as BrowserWindow).webContents.executeJavaScript(code, true), async () => fs.writeFileSync(file, (await (win as BrowserWindow).webContents.capturePage()).toPNG()), dev.DURBAR_DOC_SHOTS === '1'),
+      /** One capture path for every picture (spec 101: the macOS room is closed under `shots:docs`): a `.jpg` file is written as a JPEG, `quality` 1..100 (default 60), anything else as a PNG. */
+      shot: (file: string, o?: { quality?: number }) => captureWithoutRoom((code) => (win as BrowserWindow).webContents.executeJavaScript(code, true), async () => { const img = await (win as BrowserWindow).webContents.capturePage(); fs.writeFileSync(file, /\.jpe?g$/i.test(file) ? img.toJPEG(Math.min(100, Math.max(1, Math.round(o?.quality || 60)))) : img.toPNG()); }, dev.DURBAR_DOC_SHOTS === '1'),
       waitFor: async (expr: string, ms = 120000) => {
         const end = Date.now() + ms;
         while (Date.now() < end) {
@@ -1247,6 +1287,7 @@ app.on('before-quit', (ev) => {
     .finally(() => app.quit());
 });
 app.on('will-quit', () => {
+  worldsIpc.shutdown(); // spec 102: no read starts after quit
   scheduler?.flush(); // spec 044 FR-037: a fold counted during the 3 s dispose window of before-quit
   void destroyAllViews(); // spec 080 FR-023: the session browsers (none exist until the browser pane lands)
   usageStore?.flush();

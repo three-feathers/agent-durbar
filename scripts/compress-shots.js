@@ -277,7 +277,7 @@ function mapPixels(rgba, width, height, palette, dither) {
 }
 
 /** Error of `indices`+`palette` against the original: mean per-channel error, largest channel error, share of pixels whose largest channel error exceeds badAbove. */
-function measure(rgba, indices, palette, badAbove = GUARD.badAbove) {
+function measure(rgba, indices, palette, badAbove = GUARD.badAbove, width = 0) {
   const n = indices.length;
   let sum = 0, max = 0, bad = 0;
   for (let i = 0; i < n; i++) {
@@ -288,14 +288,40 @@ function measure(rgba, indices, palette, badAbove = GUARD.badAbove) {
     if (m > max) max = m;
     if (m > badAbove) bad++;
   }
-  return { mean: sum / (3 * n), max, badFraction: bad / n };
+  const out = { mean: sum / (3 * n), max, badFraction: bad / n };
+  if (width > 0) Object.assign(out, blockShift(rgba, indices, palette, width));
+  return out;
 }
 
-/** null when the numbers are within the guard, else the first limit that is broken (a sentence). */
+/**
+ * The local check (2026-11-10): the largest shift of an 8x8 block's MEAN colour, per channel (0..255), and where it is. The global numbers
+ * above cannot see a small area moved by a few levels on every pixel (a soft glow banded, an error tint turned beige); this does.
+ */
+function blockShift(rgba, indices, palette, width, size = 8) {
+  const height = indices.length / width;
+  let blockMax = 0, blockAt = [0, 0];
+  for (let by = 0; by < height; by += size) {
+    for (let bx = 0; bx < width; bx += size) {
+      let r = 0, g = 0, b = 0, k = 0;
+      for (let y = by; y < Math.min(by + size, height); y++) {
+        for (let x = bx; x < Math.min(bx + size, width); x++) {
+          const i = y * width + x, p = palette[indices[i]];
+          r += rgba[i * 4] - p[0]; g += rgba[i * 4 + 1] - p[1]; b += rgba[i * 4 + 2] - p[2]; k++;
+        }
+      }
+      const m = Math.max(Math.abs(r), Math.abs(g), Math.abs(b)) / k;
+      if (m > blockMax) { blockMax = m; blockAt = [bx, by]; }
+    }
+  }
+  return { blockMax, blockAt };
+}
+
+/** null when the numbers are within the guard, else the first limit that is broken (a sentence). `maxBlockDelta` is opt-in. */
 function guardFailure(stats, guard = GUARD) {
   if (stats.mean > guard.mean) return `mean error ${stats.mean.toFixed(2)} > ${guard.mean}`;
   if (stats.max > guard.maxChannel) return `largest channel error ${stats.max} > ${guard.maxChannel}`;
   if (stats.badFraction > guard.badFraction) return `${(stats.badFraction * 100).toFixed(2)}% of pixels off by more than ${guard.badAbove} > ${(guard.badFraction * 100).toFixed(2)}%`;
+  if (guard.maxBlockDelta !== undefined && stats.blockMax !== undefined && stats.blockMax > guard.maxBlockDelta) return `8x8 block at ${stats.blockAt.join(',')} shifted by ${stats.blockMax.toFixed(1)} > ${guard.maxBlockDelta}`;
   return null;
 }
 
@@ -311,7 +337,7 @@ function quantise(rgba, width, height, { maxColors = 256, dither = false } = {})
 /**
  * Compress one PNG. status: 'compressed' | 'kept' (with a reason: smaller not enough, guard refused, alpha, unsupported) -- `buffer` is
  * always a valid picture to write (the new one, or the original untouched).
- * opts: { guard, quantise, dither, maxColors }
+ * opts: { guard (adds to GUARD; maxBlockDelta = the local 8x8 check), quantise, dither, maxColors }
  */
 function compressPng(input, opts = {}) {
   const before = input.length;
@@ -335,12 +361,12 @@ function compressPng(input, opts = {}) {
     return out.length < before * (1 - GUARD.minSaving) ? { status: 'compressed', buffer: out, before, after: out.length, exact: true, stats: { mean: 0, max: 0, badFraction: 0 } } : keep('no smaller');
   }
   const guard = { ...GUARD, ...(opts.guard || {}) };
-  let stats = measure(rgba, attempt.indices, attempt.palette, guard.badAbove);
+  let stats = measure(rgba, attempt.indices, attempt.palette, guard.badAbove, width);
   let fail = guardFailure(stats, guard);
   if (fail && opts.dither !== false && !attempt.exact && !opts.quantise) {
     // flat colours stay exact either way; dithering only helps smooth gradients, so it is the second try
     const dithered = quantise(rgba, width, height, { maxColors: opts.maxColors || 256, dither: true });
-    const s2 = measure(rgba, dithered.indices, dithered.palette, guard.badAbove);
+    const s2 = measure(rgba, dithered.indices, dithered.palette, guard.badAbove, width);
     if (!guardFailure(s2, guard)) { attempt = dithered; stats = s2; fail = null; }
   }
   if (fail) return keep(`quality guard refused: ${fail}`, stats);
@@ -418,5 +444,5 @@ function main(argv = process.argv.slice(2)) {
   if (check && big) { console.error(`compress-shots: ${big} linked picture(s) could still shrink by 10% or more: run node scripts/compress-shots.js`); process.exitCode = 1; }
 }
 
-module.exports = { confinement, GUARD, decodePng, encodePalettePng, quantise, medianCut, measure, guardFailure, compressPng, compressFile, histogram };
+module.exports = { confinement, GUARD, decodePng, encodePalettePng, quantise, medianCut, measure, blockShift, guardFailure, compressPng, compressFile, histogram };
 if (require.main === module) main();
