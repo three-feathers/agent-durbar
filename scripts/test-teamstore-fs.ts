@@ -84,6 +84,17 @@ try {
       const r = Q.put(tpl('After')); assert.ok(!r.ok && r.errors[0] === 'changed', 'changed'); assert.deepStrictEqual(Q.list().map((t) => t.name), ['Good1']);
       assert.strictEqual(fs.readdirSync(dir5).filter((x) => x.includes('.bad-')).length, 0, 'no set-aside file'); assert.ok(!Q.takeToast()); assert.ok(Q.put(tpl('After')).ok); n += 5;
     } finally { try { fs.chmodSync(dir5, 0o700); } catch { /* gone */ } }
+    // a file with mode 0000 (real) in a folder that cannot be written: blocked (it can be neither read nor moved); the folder is fixed, the file is not:
+    // a save fails and moves nothing; when the file is readable again it is reloaded
+    const f6 = path.join(root, 'perm-file', 'team-templates.json'); assert.ok(new TeamTemplateStore(f6).put(tpl('Good2')).ok);
+    const dir6 = path.dirname(f6); const before6 = fs.readFileSync(f6, 'utf8');
+    try {
+      fs.chmodSync(f6, 0o000); fs.chmodSync(dir6, 0o500);
+      const U = new TeamTemplateStore(f6, { pause: () => undefined }); assert.ok(U.isBlocked(), 'blocked'); fs.chmodSync(dir6, 0o700);
+      assert.ok(!U.put(tpl('X')).ok, 'fails'); assert.strictEqual(fs.readdirSync(dir6).filter((x) => x.includes('.bad-')).length, 0, 'nothing moved'); assert.ok(!U.takeToast(), 'no toast'); n += 4;
+      fs.chmodSync(f6, 0o600); assert.strictEqual(fs.readFileSync(f6, 'utf8'), before6, 'file intact');
+      const r6 = U.put(tpl('X')); assert.ok(!r6.ok && r6.errors[0] === 'changed'); assert.deepStrictEqual(U.list().map((t) => t.name), ['Good2']); assert.ok(!U.isBlocked()); n += 4;
+    } finally { try { fs.chmodSync(dir6, 0o700); fs.chmodSync(f6, 0o600); } catch { /* gone */ } }
   }
 } finally {
   fs.rmSync(root, { recursive: true, force: true });

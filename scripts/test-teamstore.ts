@@ -15,9 +15,9 @@
  *   15..24 (second review, #1602): cut by code point, not grapheme; trailing joiners kept; no second read after a read error; decoder not fatal;
  *   no Windows rename retry; the retry on every platform; no fingerprint comparison; no pruning of set-aside files; folder mode 0755; isBlocked always false.
  *   25..27 (third review): prune filter loose; prune order by text; fingerprint taken after the read (since replaced by the hash mutant).
- *   27 became "hash taken after the read"; 28..31 (fourth review; 32, 33 fifth: the read before a save is not retried; the retry has no pause; 34, 35 sixth: a persistent read error still reloads; two unreadable reads compare as one hash; 36 seventh: a dangling link not seen, `existsSync` instead of `lstat`; 37, 38 eighth: any lstat error counts as absent; a blocked store sets aside without reading again): size only, not the content; the file just set aside may be pruned; prune counts folders;
+ *   27 became "hash taken after the read"; 28..31 (fourth review; 32, 33 fifth: the read before a save is not retried; the retry has no pause; 34, 35 sixth: a persistent read error still reloads; two unreadable reads compare as one hash; 36 seventh: a dangling link not seen, `existsSync` instead of `lstat`; 37, 38 eighth: any lstat error counts as absent; a blocked store sets aside without reading again; 39 ninth: no busy check in a blocked save): size only, not the content; the file just set aside may be pruned; prune counts folders;
  *   one huge grapheme leaves only the suffix. (A fingerprint of size and mtime was replaced by a SHA-256 of the bytes: it missed a write in the same mtime tick.)
- *   The list below has 38 entries in all (the "no nameKey" mutant of 5 has two variants).
+ *   The list below has 39 entries in all (the "no nameKey" mutant of 5 has two variants).
  *   No `trimEnd` before the suffix: the validator already collapses a double space, so the name is the same (the test "no double space" shows it).
  */
 import assert from 'assert';
@@ -416,6 +416,12 @@ const sections: Record<string, Section> = {
     const m2 = new MemFs(); m2.set(F, '{broken'); m2.denied = false; let down = true; const orig = m2.renameSync.bind(m2);
     m2.renameSync = (a: string, b: string): void => { if (down && a === F) throw Object.assign(new Error('x'), { code: 'EXDEV' }); orig(a, b); };
     const s2 = make(m2, api); ok(s2.isBlocked(), 'blocked'); down = false; ok(s2.put(tpl('Fresh')).ok, 'still-bad file is set aside and the save works'); eq(badNames(m2).length, 1, 'one bad file');
+    // only the OPEN is denied (the lstat works): blocked because the move failed, and the file is good but unreadable: a save fails, nothing is moved
+    const m4 = new MemFs(); m4.set(F, text); m4.openFails = 99; let down4 = true; const o4 = m4.renameSync.bind(m4);
+    m4.renameSync = (a: string, b: string): void => { if (down4 && a === F) throw Object.assign(new Error('x'), { code: 'EXDEV' }); o4(a, b); };
+    const s4 = make(m4, api); ok(s4.isBlocked(), 'blocked: the file could not be read and could not be moved'); down4 = false;
+    const r4 = s4.put(tpl('X')); ok(!r4.ok && r4.errors[0] === 'The team templates could not be saved.', 'a good but unreadable file: the save fails'); eq(badNames(m4).length, 0, 'not moved aside'); ok(!s4.takeToast(), 'no toast'); eq(m4.text(F), text, 'file intact'); ok(s4.isBlocked(), 'still blocked');
+    m4.openFails = 0; const r4b = s4.put(tpl('X')); ok(!r4b.ok && r4b.errors[0] === 'changed', 'readable again: reloaded, changed'); eq(s4.list().map((t) => t.name), ['Good1'], 'Good1 listed'); ok(!s4.isBlocked(), 'the notice is lifted'); eq(badNames(m4).length, 0, 'never moved');
     // while the file stays unreadable the save just fails
     const m3 = new MemFs(); m3.set(F, text); m3.denied = true; const s3 = make(m3, api); ok(!s3.put(tpl('X')).ok, 'fails'); ok(!s3.put(tpl('Y')).ok, 'fails again'); m3.denied = false; eq(badNames(m3).length, 0, 'nothing set aside meanwhile');
   },
@@ -498,6 +504,7 @@ const mutants: { name: string; from: string; to: string; breaks: string }[] = [
   { name: 'two unreadable reads compare as one hash', from: "{ kind: 'busy' }", to: "{ kind: 'hash', hash: 'unreadable' }", breaks: 'unreadableSave' },
   { name: 'existsSync (follows a link) instead of lstat', from: 'this.fs.lstatSync(p);\n            return true;', to: 'this.fs.statSync(p);\n            return true;', breaks: 'danglingLink' },
   { name: 'any lstat error counts as absent', from: "if (e?.code === 'ENOENT')\n                return false;\n            throw e;", to: 'return false;', breaks: 'blockedReread' },
+  { name: 'a blocked store whose file is still unreadable moves it aside (no busy check)', from: "if (!r.ok && this.seen(r).kind === 'busy')\n                return 'failed';", to: '', breaks: 'blockedReread' },
   { name: 'a blocked store sets the file aside without reading it again', from: 'if (r.ok && !this.parseDoc(r.buf).bad) {', to: 'if (false) {', breaks: 'blockedReread' },
   { name: 'one huge grapheme leaves only the suffix', from: 'head.length === 0)', to: 'false)', breaks: 'longGrapheme' },
   { name: 'isBlocked always false', from: 'isBlocked() { return this.blocked; }', to: 'isBlocked() { return false; }', breaks: 'blockedFlag' },

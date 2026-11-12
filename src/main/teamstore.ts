@@ -78,7 +78,7 @@ export class TeamTemplateStore {
   /** SHA-256 of the file's bytes as this store last read or wrote them (`none`: no file); a save that finds other bytes (another running instance) is refused */
   private fp: string | undefined = 'none';
   private toast = false;
-  /** a bad file that could not be moved: nothing is written over it until the move works */
+  /** blocked: a file that could not be read at the load, or a bad file that could not be moved, and is still there; nothing is written over it. A save reads it again and may lift this (see `commit`). */
   private blocked = false;
 
   constructor(private readonly file: string, deps: TeamStoreDeps = {}) {
@@ -100,7 +100,11 @@ export class TeamTemplateStore {
     return t;
   }
 
-  /** True while a bad file could not be set aside: the list shows the valid part and every save is refused (T007 shows a notice, not a toast). */
+  /**
+   * True while a file that could not be read at the load, or a bad file that could not be moved, is still in the way: the list shows the valid part and
+   * a save reads the file again and either lifts this (readable and valid: reloaded, the save answers `changed`) or fails. Nothing re-checks between
+   * saves, so the notice stays until a save finds the file readable (T007 shows a notice, not a toast).
+   */
   isBlocked(): boolean { return this.blocked; }
 
   list(): StoredTemplate[] { return clone(this.items); }
