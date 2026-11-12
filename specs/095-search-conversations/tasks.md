@@ -4,7 +4,7 @@
 
 **Tests**: required (constitution VII.3; SC-001..SC-005). Node tests and the simulator only; 0 AI credits; no network. Driver waits use `until()`.
 
-**Format**: `- [ ] Tnnn [P?] [USn?] description (file) [requirements]`. `[P]` = can run in parallel. One task = one small testable step; a phase = one PR. Numbers taken: spec 095, FR-001..FR-052 (sparse by group; FR-016 added in review), T001..T065 (T064 added in review, T065 for issue 1234).
+**Format**: `- [ ] Tnnn [P?] [USn?] description (file) [requirements]`. `[P]` = can run in parallel. One task = one small testable step; a phase = one PR. Numbers taken: spec 095, FR-001..FR-052 (sparse by group; FR-016 added in review), T001..T065 (T064 added in review; T026, T027 owner answers C and D, 2026-11-06; T065 for issue 1234).
 
 ## Phase 0: Spec (this PR)
 
@@ -26,21 +26,24 @@
 
 ## Phase 2: IPC and main wiring (PR 2)
 
-- [ ] T020 `src/main/ipc/convsearch.ts`: `search:start` / `search:cancel` with `fromApp`, query bounds (≤ 200 characters, ≤ 8 words, control characters out, minimum 3 characters after trim counted in code points, enforced in main: "a bc" allowed, "x y" refused), random `searchId`, one live scan, stale id ignored; `search:batch` / `search:done` to the starting window only [FR-033]
-- [ ] T021 Scope builder from main state: open agents (floors on, helper agents left out), `previousSessionsOf` per folder deduplicated by (adapter, folder, session id), `listChats` per folder, names per spec 059, hidden previous sessions not searched (Q5's note), floors off skipped (Q9), the top-bar folder filter ignored, Copilot and Codex earlier sessions title only; the window names nothing [FR-016, FR-020, FR-033; US5]
-- [ ] T022 Wiring in `main.ts`; scan stops on window close and quit [FR-023]
+- [x] T020 `src/main/ipc/convsearch.ts`: `search:start` / `search:cancel` with `fromApp`, query bounds (≤ 200 characters, ≤ 8 words, control characters out, minimum 3 characters after trim counted in code points, enforced in main: "a bc" allowed, "x y" refused), random `searchId`, one live scan, stale id ignored; `search:batch` / `search:done` to the starting window only [FR-033]
+- [x] T021 Scope builder from main state: open agents (floors on, helper agents left out), `previousSessionsOf` per folder deduplicated by (adapter, folder, session id), `listChats` per folder, names per spec 059, hidden previous sessions not searched (Q5's note), floors off skipped (Q9), the top-bar folder filter ignored, Copilot and Codex earlier sessions title only; the window names nothing [FR-016, FR-020, FR-033; US5]
+- [x] T022 Wiring in `main.ts`; scan stops on window close and quit [FR-023]
   - Also in T022 (review of PR 1098): the Codex read gate (`createReadGate`, `src/main/convsearch.ts`) gets a timeout, so a hung `thread/read` cannot block later reads, with a test (a read that never settles; the next scan's read still runs) [FR-023]
-- [ ] T023 IPC tests on a stand-in `electron`: not-`fromApp` refused, bounds, stale id, two starts = one scan, no folder/path accepted; MCP tools and remote control have no search; `test-ipcchannels.ts` owner-only list [FR-032, FR-033]
-- [ ] T024 Preload, `DurbarApi` (`src/shared/api.ts`) types: `convSearchStart`, `convSearchCancel`, `onConvSearch`; no channel on `SIM_OPEN_CHANNELS`, `test:simguard` green [FR-033]
-- [ ] T025 Simulator fake in `src/renderer/sim.ts`: canned corpus over open and earlier sessions, a slow mode for the progress state, no I/O [US1, US4]
+- [x] T023 IPC tests on a stand-in `electron`: not-`fromApp` refused, bounds, stale id, two starts = one scan, no folder/path accepted; MCP tools and remote control have no search; `test-ipcchannels.ts` owner-only list [FR-032, FR-033]
+- [x] T024 Preload, `DurbarApi` (`src/shared/api.ts`) types: `convSearchStart`, `convSearchCancel`, `onConvSearch`; no channel on `SIM_OPEN_CHANNELS`, `test:simguard` green [FR-033]
+- [x] T025 Simulator fake in `src/renderer/sim.ts`: canned corpus over open and earlier sessions, a slow mode for the progress state, no I/O [US1, US4]
+
+- [x] T026 Owner answer C (2026-11-06): no Codex `thread/list` for a folder on a floor that is off (counted, `notes.floorOffFolders`); the box session's Codex titles kept in memory (`createCodexListCache`), dropped as FR-026 says; `search:clear` + `convSearchClear`; tests in `test-convsearchipc.ts` [FR-014, FR-026, FR-033]
+- [x] T027 Owner answer D (2026-11-06): `notes.mcpValuesLocked` when `mcpStore.noPrompt()` is false; the window's note is phase 3 (T043) [FR-014, FR-030]
 
 ## Phase 3: The window (PR 3)
 
-- [ ] T030 [US1] `src/renderer/convsearch.js` (pure builders: group rows, excerpt HTML with `<mark>` from offsets and `esc()`, state lines, accessible names) + `scripts/test-convsearchui.ts`; load order in `index.html`. Test line: at `search:done` each group is re-sorted newest first while the focused or hovered row keeps its place (FR-015) [FR-010, FR-011, FR-015]
+- [ ] T030 [US1] `src/renderer/convsearch.js` (pure builders: group rows, excerpt HTML with `<mark>` from offsets and `esc()`, the excerpt text first through the safe-text path so bidi and other hidden format characters are neutralised, never rendered (review of PR 1232, question a: an RLO before a masked token), state lines, accessible names) + `scripts/test-convsearchui.ts`; load order in `index.html`. Test line: at `search:done` each group is re-sorted newest first while the focused or hovered row keeps its place (FR-015) [FR-010, FR-011, FR-015]
 - [ ] T031 [US1] Top-bar box `#convSearch` (and the collapsed magnifier per Q1), 250 ms pause, `setView('list')` remembering the view, clear restores it; styles in the existing CSS files, no size under 10.5px [FR-001, FR-002, FR-050]
 - [ ] T032 [US1] Results view in `#list`: In the office / Earlier sessions groups, List row cells reused from `renderList()`, Resume / View buttons, sort headers, "load more" order rule, 200-session cap note [FR-004, FR-010, FR-015]
 - [ ] T033 [US3] Keyboard: Ctrl+Shift+F (⌘⇧F), configurable (keyboard sheet, Settings > Keyboard, palette action "Search conversations" that only focuses the box); `['mod+shift+KeyF','Search conversations']` added to `TAKEN` in `src/renderer/navigator.js` with a case in `scripts/test-navigator.ts` (the recorder refuses it); `mod+shift+KeyF` is also added to `SAVED_BEFORE` (`navigator.js`, today KeyM only), because `loadCombo` resets a saved combo that is now in `TAKEN` unless it is there: a saved Go to Ctrl+Shift+F is kept, the search shortcut is then not bound and Settings > Keyboard says so (tests: the recorder refuses a new Ctrl+Shift+F; a saved one survives `loadCombo`); Escape clears and returns, Down/J/K/Enter/Shift+F10 on results [FR-003, US3]
-- [ ] T034 [US3] Live region: "Searching, N of M sessions" every 2 s at most, final "N results in M sessions" / "No conversation matches"; accessible names; Stop button [FR-015, US3.4]
+- [ ] T034 [US3] Live region: "Searching, N of M sessions" every 2 s at most, final "N results in M sessions" / "No conversation matches"; accessible names; Stop button [FR-015, US3.4] The simulator test's fixed waits (900 ms, 600 ms: nothing arrives after a cancel or clear) become a fake timer (review of PR 1232, round 2).
 - [ ] T040 [US2] Find out how the chat and the replay mark messages (read `app.js` chat build and replay; note in `plan.md`); decide the anchor's DOM hook; confirm against the rendered chat that `anchorKey` of the rendered text equals `anchorKey` of the masked source text (Markdown, entities, masked spans); update FR-013 [FR-013]
 - [ ] T041 [US2] Open a result: open-session select, `sessions:resume` + history for previous, `vschat:read` for VS Code; refusal texts reused; no new resume path [FR-012]
 - [ ] T042 [US2] `jumpToAnchor({n, head})` with `innerscroll.js`, mark for 2 s (reduced motion: no flash), head mismatch or cap shows the "older than the chat shows" note; unit test on a fake DOM list [FR-013; US2.4]
