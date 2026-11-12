@@ -27,8 +27,8 @@ export const MAX_STORE_BYTES = 16 * 1024 * 1024;
 /** The calls used; `node:fs` fits. */
 export interface TeamFs extends CappedFs {
   mkdirSync(dir: string, opts: { recursive: true; mode: number }): unknown;
-  /** size and modified time: the file's fingerprint (two running instances) */
-  statSync(file: string): { size: number; mtimeMs: number };
+  /** a link, a folder or a file: set-aside files are counted and removed only when they are regular files */
+  lstatSync(p: string): { isFile(): boolean };
   existsSync(p: string): boolean;
   writeFileSync(file: string, data: string, opts: { mode: number; flag: string }): void;
   /** flushes the temp file to disk before the rename (power loss); best effort */
@@ -48,7 +48,7 @@ export type StoreResult<T> = ({ ok: true } & T) | { ok: false; errors: string[] 
 
 const realFs: TeamFs = {
   openSync: (f, fl) => nodeFs.openSync(f, fl), fstatSync: (fd) => nodeFs.fstatSync(fd), readSync: (fd, b, o, l, p) => nodeFs.readSync(fd, b, o, l, p), closeSync: (fd) => nodeFs.closeSync(fd),
-  mkdirSync: (d, o) => nodeFs.mkdirSync(d, o), statSync: (f) => nodeFs.statSync(f), existsSync: (p) => nodeFs.existsSync(p), writeFileSync: (f, d, o) => nodeFs.writeFileSync(f, d, o),
+  mkdirSync: (d, o) => nodeFs.mkdirSync(d, o), lstatSync: (p) => nodeFs.lstatSync(p), existsSync: (p) => nodeFs.existsSync(p), writeFileSync: (f, d, o) => nodeFs.writeFileSync(f, d, o),
   renameSync: (a, b) => nodeFs.renameSync(a, b), rmSync: (p, o) => nodeFs.rmSync(p, o), readdirSync: (d) => nodeFs.readdirSync(d),
   fsyncFile: (f) => { const fd = nodeFs.openSync(f, 'r+'); try { nodeFs.fsyncSync(fd); } finally { nodeFs.closeSync(fd); } },
 };
@@ -62,6 +62,7 @@ export const KEEP_BAD = 5;
 const TRAILING_JOINERS = /[\u200C\u200D\u094D\u09CD\u0A4D\u0ACD\u0B4D\u0BCD\u0C4D\u0CCD\u0D4D\u0DCA\u1039\u17D2\u1B44\uA8C4\uA9C0]+$/u;
 const SAVE_FAILED = 'The team templates could not be saved.';
 const graphemes = (t: string): string[] => [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(t)].map((x) => x.segment);
+const sha = (b: Buffer | string): string => crypto.createHash('sha256').update(b).digest('hex');
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
 export class TeamTemplateStore {
@@ -74,8 +75,8 @@ export class TeamTemplateStore {
   private readonly alive: (pid: number) => boolean;
   private readonly pause: (ms: number) => void;
   private readonly platform: NodeJS.Platform;
-  /** size and modified time of the file at the load or the last save; a save finds the file changed (another running instance) and is refused */
-  private fp = '';
+  /** SHA-256 of the file's bytes as this store last read or wrote them (`none`: no file); a save that finds other bytes (another running instance) is refused */
+  private fp = 'none';
   private toast = false;
   /** a bad file that could not be moved: nothing is written over it until the move works */
   private blocked = false;
@@ -157,9 +158,10 @@ export class TeamTemplateStore {
     const base = graphemes(src.name);
     for (let i = 1; ; i++) {
       const suffix = i === 1 ? ' copy' : ` copy ${i}`;
-      const head = base.slice();
+      let head = base.slice();
       const len = (g: string[]): number => g.reduce((t, x) => t + Array.from(x).length, 0);
       while (len(head) + Array.from(suffix).length > LIMITS.templateName && head.length > 0) head.pop(); // by grapheme: a conjunct or an emoji sequence is never split
+      if (head.length === 0) { head = Array.from(src.name); while (head.length + Array.from(suffix).length > LIMITS.templateName && head.length > 0) head.pop(); } // one grapheme too long to fit: by code point, the name is not lost
       const name = head.join('').replace(TRAILING_JOINERS, '') + suffix;
       if (!taken.has(nameKey(name))) { copy.name = name; break; }
       if (i > LIMITS.templates + 2) return { ok: false, errors: ['Template: no free name.'] };
@@ -178,23 +180,19 @@ export class TeamTemplateStore {
   // ------------------------------------------------------------------------------------------------------------------ disk
 
   /**
-   * The fingerprint is taken BEFORE the read: a file another instance writes while this one reads it is then seen as changed at the next save
-   * (`setAside` and `commit` set it again themselves, after their own change).
+   * `loadFile` hashes the very bytes it parses (one read, so the hash and the templates cannot differ: a file another instance writes
+   * after that read is seen as changed at the next save). `setAside` and `commit` set it again themselves, after their own change.
    */
   private load(): void {
-    this.fp = this.fingerprint();
     this.loadFile();
   }
 
-  /** `size:mtimeMs` of the file, `none` when it is not there. */
-  private fingerprint(): string {
-    try {
-      const st = this.fs.statSync(this.file);
-      return `${st.size}:${st.mtimeMs}`;
-    } catch (e) {
-      const c = (e as { code?: unknown } | null)?.code;
-      return c === 'ENOENT' ? 'none' : 'error';
-    }
+  /** What the file is now: the SHA-256 of its bytes, `none` when it is not there, `unreadable:<why>` when it cannot be read. */
+  private hashNow(): string {
+    return this.hashOf(readCapped(this.fs, this.flags, this.file, MAX_STORE_BYTES));
+  }
+  private hashOf(r: ReturnType<typeof readCapped>): string {
+    return r.ok ? sha(r.buf) : r.code === 'missing' ? 'none' : 'unreadable:' + r.code;
   }
 
   private loadFile(): void {
@@ -202,6 +200,7 @@ export class TeamTemplateStore {
     let r = readCapped(this.fs, this.flags, this.file, MAX_STORE_BYTES);
     // a read can fail for a moment on a good file (an antivirus or an indexer holding it): once more after a short pause; only a second failure sets it aside
     if (!r.ok && (r.code === 'error' || r.code === 'changing')) { this.pause(200); r = readCapped(this.fs, this.flags, this.file, MAX_STORE_BYTES); }
+    this.fp = this.hashOf(r);
     if (!r.ok) {
       if (r.code === 'missing') return;
       this.setAside(); // too big, a link, a directory, unreadable twice: out of the way, the store starts empty
@@ -251,8 +250,8 @@ export class TeamTemplateStore {
       this.rename(this.file, dest);
       this.blocked = false;
       this.toast = true;
-      this.fp = this.fingerprint();
-      this.pruneBad(stem, ext);
+      this.fp = this.hashNow();
+      this.pruneBad(stem, ext, dest);
       return true;
     } catch {
       this.blocked = true;
@@ -261,19 +260,27 @@ export class TeamTemplateStore {
   }
 
   /**
-   * Each set-aside file may hold briefs: the newest `KEEP_BAD` stay, the older ones are removed. Only names `setAside` makes are
-   * touched (`<name>.bad-<UTC time as YYYY-MM-DDTHH-MM-SS-mmmZ>[-<n>]<ext>`); the order is the time, then `n` as a number (-10 after -2).
+   * Each set-aside file may hold briefs: at most `KEEP_BAD` stay, `dest` (the file just moved aside, never removed) and the newest others;
+   * the older ones are removed. Only regular files named as `setAside` names them are counted or touched
+   * (`<name>.bad-<UTC time as YYYY-MM-DDTHH-MM-SS-mmmZ>[-<n>]<ext>`); the order is the time, then `n` as a number (-10 after -2).
    */
-  private pruneBad(stem: string, ext: string): void {
+  private pruneBad(stem: string, ext: string, dest: string): void {
     try {
       const esc = (t: string): string => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const re = new RegExp(`^${esc(path.basename(stem))}\\.bad-(\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}-\\d{3}Z)(?:-(\\d+))?${esc(ext)}$`);
       const dir = path.dirname(this.file);
       const found: { name: string; at: string; n: number }[] = [];
-      for (const name of this.fs.readdirSync(dir)) { const m = re.exec(name); if (m) found.push({ name, at: m[1], n: m[2] ? Number(m[2]) : 1 }); }
+      for (const name of this.fs.readdirSync(dir)) {
+        const m = re.exec(name);
+        if (m && name !== path.basename(dest) && this.isRegular(path.join(dir, name))) found.push({ name, at: m[1], n: m[2] ? Number(m[2]) : 1 });
+      }
       found.sort((x, y) => (x.at < y.at ? -1 : x.at > y.at ? 1 : x.n - y.n));
-      for (const f of found.slice(0, Math.max(0, found.length - KEEP_BAD))) { try { this.fs.rmSync(path.join(dir, f.name), { force: true }); } catch { /* next time */ } }
+      for (const f of found.slice(0, Math.max(0, found.length - (KEEP_BAD - 1)))) { try { this.fs.rmSync(path.join(dir, f.name), { force: true }); } catch { /* next time */ } }
     } catch { /* best effort */ }
+  }
+
+  private isRegular(p: string): boolean {
+    try { return this.fs.lstatSync(p).isFile(); } catch { return false; }
   }
 
   /** Windows: an antivirus or indexer may hold the file for a moment, so a rename that fails with EPERM, EBUSY or EACCES is tried once more after a pause (as `saveSchedules`). */
@@ -296,16 +303,17 @@ export class TeamTemplateStore {
    */
   private commit(next: StoredTemplate[]): 'ok' | 'changed' | 'failed' {
     if (this.blocked && !this.setAside()) return 'failed';
-    if (this.fingerprint() !== this.fp) { this.load(); return 'changed'; }
+    if (this.hashNow() !== this.fp) { this.load(); return 'changed'; } // created, removed or rewritten behind our back, whatever its size and time
     const tmp = `${this.file}.${this.pid}.tmp`;
     try {
       this.fs.mkdirSync(path.dirname(this.file), { recursive: true, mode: 0o700 }); // POSIX; Windows ignores the mode
       this.fs.rmSync(tmp, { force: true });
-      this.fs.writeFileSync(tmp, JSON.stringify({ format: FORMAT, schemaVersion: SCHEMA_VERSION, templates: next }, null, 1) + '\n', { mode: 0o600, flag: 'wx' });
+      const text = JSON.stringify({ format: FORMAT, schemaVersion: SCHEMA_VERSION, templates: next }, null, 1) + '\n';
+      this.fs.writeFileSync(tmp, text, { mode: 0o600, flag: 'wx' });
       try { this.fs.fsyncFile(tmp); } catch { /* best effort, as schedules */ }
       this.rename(tmp, this.file);
       this.items = next;
-      this.fp = this.fingerprint();
+      this.fp = sha(text);
       return 'ok';
     } catch {
       try { this.fs.rmSync(tmp, { force: true }); } catch { /* best effort */ }

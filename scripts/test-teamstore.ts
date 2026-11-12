@@ -14,8 +14,10 @@
  *   8..14 (first review): put takes the value's origin; no fsync; blocked check removed; format not checked; newer schemaVersion accepted; stale temps not removed.
  *   15..24 (second review, #1602): cut by code point, not grapheme; trailing joiners kept; no second read after a read error; decoder not fatal;
  *   no Windows rename retry; the retry on every platform; no fingerprint comparison; no pruning of set-aside files; folder mode 0755; isBlocked always false.
- *   25..27 (third review): prune filter loose; prune order by text; fingerprint taken after the read.
- *   The list below has 27 entries in all (the "no nameKey" mutant of 5 has two variants).
+ *   25..27 (third review): prune filter loose; prune order by text; fingerprint taken after the read (since replaced by the hash mutant).
+ *   27 became "hash taken after the read"; 28..31 (fourth review): size only, not the content; the file just set aside may be pruned; prune counts folders;
+ *   one huge grapheme leaves only the suffix. (A fingerprint of size and mtime was replaced by a SHA-256 of the bytes: it missed a write in the same mtime tick.)
+ *   The list below has 31 entries in all (the "no nameKey" mutant of 5 has two variants).
  *   No `trimEnd` before the suffix: the validator already collapses a double space, so the name is the same (the test "no double space" shows it).
  */
 import assert from 'assert';
@@ -41,10 +43,11 @@ class MemFs {
   text(file: string): string | undefined { return this.files.get(file)?.data.toString('utf8'); }
   names(): string[] { return [...this.files.keys()].sort(); }
   mkdirSync(_d: string, o: { mode: number }): void { this.dirModes.push(o.mode); }
-  statSync(file: string): { size: number; mtimeMs: number } {
-    const f = this.files.get(file);
-    if (!f) throw Object.assign(new Error('missing'), { code: 'ENOENT' });
-    return { size: f.size ?? f.data.length, mtimeMs: f.mt ?? 0 };
+  dirs = new Set<string>();
+  lstatSync(p: string): { isFile(): boolean } {
+    if (this.dirs.has(p)) return { isFile: () => false };
+    if (!this.files.has(p)) throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+    return { isFile: () => true };
   }
   existsSync(p: string): boolean { return this.files.has(p); }
   writeFileSync(file: string, data: string, o: { mode: number; flag: string }): void {
@@ -56,7 +59,7 @@ class MemFs {
   }
   fsyncs: string[] = []; log: string[] = [];
   fsyncFile(file: string): void { this.fsyncs.push(file); this.log.push('fsync ' + file); }
-  readdirSync(dir: string): string[] { return this.names().filter((x) => path.dirname(x) === dir).map((x) => path.basename(x)); }
+  readdirSync(dir: string): string[] { return [...this.names(), ...this.dirs].filter((x) => path.dirname(x) === dir).map((x) => path.basename(x)); }
   renameSync(from: string, to: string): void {
     this.renames.push([from, to]); this.log.push('rename ' + from);
     if (this.failRename && to === F) throw Object.assign(new Error('rename'), { code: 'EPERM' });
@@ -64,7 +67,7 @@ class MemFs {
     if (!f) throw Object.assign(new Error('gone'), { code: 'ENOENT' });
     this.files.delete(from); this.files.set(to, f);
   }
-  rmSync(p: string): void { this.files.delete(p); }
+  rmSync(p: string): void { this.files.delete(p); this.dirs.delete(p); }
   openSync(file: string): number {
     if (!this.files.has(file)) throw Object.assign(new Error('missing'), { code: 'ENOENT' });
     if (this.openFails > 0 && file === F) { this.openFails--; throw Object.assign(new Error('held'), { code: 'EBUSY' }); }
@@ -328,6 +331,40 @@ const sections: Record<string, Section> = {
     const left = badNames(m).filter((x) => /Z(-\d+)?\.json$/.test(x)).map((x) => path.basename(x).slice(`team-templates.bad-${S}`.length, -5)).sort();
     eq(left, ['-10', '-4', '-5', '-6', '-7'], 'newest 5 by time then number: -10 comes after -2 and -7; names that only look alike do not count');
   },
+  pruneKeepsNew(api) {
+    // five old set-aside files dated far in the future and a broken store loaded now: the new one is the oldest by name, and still stays
+    const m = new MemFs(); const old = [1, 2, 3, 4, 5].map((k) => path.join(ROOT, `team-templates.bad-2030-01-0${k}T00-00-00-000Z.json`));
+    for (const x of old) m.set(x, 'old');
+    m.set(F, '{bad new'); const s = make(m, api);
+    const now = badNames(m); eq(now.length, 5, 'five set-aside files in all'); ok(now.some((x) => m.text(x) === '{bad new'), 'the file just set aside is not removed');
+    ok(!m.files.has(old[0]), 'the oldest of the others went'); ok(s.takeToast(), 'toast');
+  },
+  pruneRegularOnly(api) {
+    const m = new MemFs(); const S = (k: number): string => path.join(ROOT, `team-templates.bad-2020-01-0${k}T00-00-00-000Z.json`);
+    for (const k of [1, 2, 3, 4]) m.set(S(k), 'file ' + k);
+    const dir = path.join(ROOT, 'team-templates.bad-2019-01-01T00-00-00-000Z.json'); m.dirs.add(dir); // a folder with a set-aside name: not counted, not removed
+    m.set(F, '{bad'); make(m, api);
+    ok(m.dirs.has(dir), 'a folder is not removed'); eq(badNames(m).filter((x) => m.files.has(x)).length, 5, 'four old files and the new one, all kept: the folder does not count');
+    m.set(F, '{bad 2'); new api.TeamTemplateStore(F, { fs: m, flags: KEYS, now: () => 1_800_000_000_000, pause: () => undefined });
+    ok(!m.files.has(S(1)), 'the oldest regular file went'); ok(m.dirs.has(dir), 'the folder is still there');
+  },
+  sameSizeSameTime(api) {
+    // another instance writes other bytes of the same size in the same mtime tick: size and time cannot tell, the content does
+    const a = doc(stored('s1', 'AAAA')); const b = doc(stored('s1', 'BBBB')); eq(a.length, b.length, 'same size');
+    const m = new MemFs(); m.set(F, a); const mt = m.files.get(F)!.mt; const s = make(m, api); eq(s.list()[0].name, 'AAAA', 'loaded');
+    m.files.set(F, { data: Buffer.from(b), mode: 0o644, mt });
+    const r = s.put(tpl('Mine')); ok(!r.ok && r.errors[0] === 'changed', 'same size, same mtime, other bytes: changed'); eq(s.list()[0].name, 'BBBB', 'reloaded'); ok(!m.text(F)!.includes('Mine'), 'not overwritten');
+    // a file created or removed between is a change too
+    const m2 = new MemFs(); const s2 = make(m2, api); m2.set(F, doc(stored('c1', 'Created'))); ok(!s2.put(tpl('X')).ok, 'a file that appeared is a change'); eq(s2.list().map((t) => t.name), ['Created'], 'and is read');
+    const m3 = new MemFs(); m3.set(F, doc(stored('d1', 'Gone'))); const s3 = make(m3, api); m3.files.delete(F); const r3 = s3.put(tpl('Y')); ok(!r3.ok && r3.errors[0] === 'changed', 'a file that vanished is a change');
+    // an unchanged file is saved, again and again
+    const m4 = new MemFs(); m4.set(F, a); const s4 = make(m4, api); ok(s4.put(tpl('One')).ok && s4.put(tpl('Two')).ok, 'no change, no refusal');
+  },
+  longGrapheme(api) {
+    const m = new MemFs(); const s = make(m, api); const name = 'a' + '\u0301'.repeat(39);
+    const t = s.put(tpl(name)); ok(t.ok, 'a name that is one grapheme'); if (!t.ok) return;
+    const d = s.duplicate(t.template.id); ok(d.ok && d.template.name.endsWith(' copy') && d.template.name.length > ' copy'.length + 3 && d.template.name.startsWith('a'), 'one huge grapheme: cut by code point, the name is not lost: ' + (d.ok ? d.template.name.length : ''));
+  },
   lateWrite(api) {
     // another instance writes the file after this one has read it (before the fingerprint would be taken, if it were taken after the read)
     const m = new MemFs(); m.set(F, doc(stored('late0', 'Before')));
@@ -387,12 +424,16 @@ const mutants: { name: string; from: string; to: string; breaks: string }[] = [
   { name: 'decoder not fatal (U+FFFD written in)', from: "{ fatal: true }", to: '{ fatal: false }', breaks: 'badUtf8' },
   { name: 'no Windows rename retry', from: "this.platform === 'win32' && ", to: 'false && ', breaks: 'winRename' },
   { name: 'Windows retry on every platform', from: "this.platform === 'win32' && ", to: '', breaks: 'winRename' },
-  { name: 'no fingerprint comparison before a save', from: 'if (this.fingerprint() !== this.fp)', to: 'if (false)', breaks: 'twoInstances' },
-  { name: 'old set-aside files not pruned', from: 'found.slice(0, Math.max(0, found.length - exports.KEEP_BAD))', to: '[]', breaks: 'pruneBad' },
+  { name: 'no fingerprint comparison before a save', from: 'if (this.hashNow() !== this.fp)', to: 'if (false)', breaks: 'twoInstances' },
+  { name: 'old set-aside files not pruned', from: 'found.slice(0, Math.max(0, found.length - (exports.KEEP_BAD - 1)))', to: '[]', breaks: 'pruneBad' },
   { name: 'folder made with mode 0755', from: 'recursive: true, mode: 0o700', to: 'recursive: true, mode: 0o755', breaks: 'fileMode' },
   { name: 'prune filter loose (prefix and extension only)', from: 're.exec(name)', to: "(name.startsWith('team-templates.bad-') && name.endsWith('.json') ? [name, name.slice(19, -5), undefined] : null)", breaks: 'pruneStrict' },
   { name: 'prune order by text, -10 before -2', from: 'x.n - y.n', to: '(String(x.n) < String(y.n) ? -1 : 1)', breaks: 'pruneStrict' },
-  { name: 'fingerprint taken after the read', from: 'this.fp = this.fingerprint();\n        this.loadFile();', to: 'this.loadFile();\n        this.fp = this.fingerprint();', breaks: 'lateWrite' },
+  { name: 'hash taken after the read (a second read)', from: 'this.fp = this.hashOf(r);', to: 'this.fp = this.hashNow();', breaks: 'lateWrite' },
+  { name: 'compares size only, not the content', from: "crypto.createHash('sha256').update(b).digest('hex')", to: 'String(b.length)', breaks: 'sameSizeSameTime' },
+  { name: 'the file just set aside may be pruned', from: 'name !== path.basename(dest) && ', to: '', breaks: 'pruneKeepsNew' },
+  { name: 'prune counts and removes folders', from: 'this.isRegular(path.join(dir, name))', to: 'true', breaks: 'pruneRegularOnly' },
+  { name: 'one huge grapheme leaves only the suffix', from: 'head.length === 0)', to: 'false)', breaks: 'longGrapheme' },
   { name: 'isBlocked always false', from: 'isBlocked() { return this.blocked; }', to: 'isBlocked() { return false; }', breaks: 'blockedFlag' },
   { name: 'stale temps not removed', from: '(0, schedules_1.removeStaleTemps)(this.file,', to: '(() => undefined)(this.file,', breaks: 'staleTemps' },
   { name: 'load at level imported', from: '(0, teamtemplate_1.checkTeamTemplate)(raw, \'own\')', to: '(0, teamtemplate_1.checkTeamTemplate)(raw, \'imported\')', breaks: 'importedFileLoads' },
