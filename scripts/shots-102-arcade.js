@@ -177,8 +177,9 @@ const run = async (ctx, reqs) => {
     await js(`(()=>{const U=window.__durbarSimUi;U.agents().filter(a=>!a.parent).forEach((a)=>{a.state='limit';delete a.label;});U.render();})();0`);
     await must(`(()=>{const P=[...document.querySelectorAll('#stage .ro-plate[data-id]:not(.lounge)')];return P.length>0&&P.every(p=>p.classList.contains('st-limit'));})()`, 'every plate drawn limit (squeeze)', 8000);
     if (MUT === 'noell' || MUT === 'spill') await js(`(()=>{const s=document.createElement('style');s.textContent=${jsLiteral(MUTS[MUT])};document.head.appendChild(s);})();0`);
-    await js(`(()=>{const s=document.createElement('style');s.textContent=${jsLiteral('#stage .ro-plate .ro-wd{letter-spacing:1.4px!important}')};document.head.appendChild(s);})();0`);
-    if (MUT === 'squeezefit') await js(`(()=>{const s=document.createElement('style');s.textContent=${jsLiteral('#stage .ro-plate .ro-wd{letter-spacing:0!important}')};document.head.appendChild(s);})();0`); /* the word made to fit: the case must notice it is no longer cut */
+    /* the word is made 8 px wider than the room it has, whatever the font (a fixed spacing cut it in Verdana and DejaVu but not in Segoe UI on Windows CI, round 9 of #1599) */
+    await js(`(()=>{for(const p of document.querySelectorAll('#stage .ro-plate.cab-narrow.has-help')){const w=p.querySelector('.ro-wd'),t=w.firstChild,r=document.createRange();r.selectNodeContents(t);const cs=getComputedStyle(p),right=p.getBoundingClientRect().right-parseFloat(cs.borderRightWidth)-parseFloat(cs.paddingRight),room=right-p.querySelector('.ro-hc').getBoundingClientRect().right-r.getBoundingClientRect().width;w.style.setProperty('letter-spacing',((room+8)/t.data.length)+'px','important');}})();0`);
+    if (MUT === 'squeezefit') await js(`(()=>{for(const w of document.querySelectorAll('#stage .ro-plate .ro-wd'))w.style.setProperty('letter-spacing','0px','important');})();0`); /* the word made to fit: the case must notice it is no longer cut */
     const sq = await js(PLATES(false, true));
     const sn = sq.seen.filter((x) => x.narrow && x.helped && x.word === 'Limit reached');
     assert.ok(sn.length >= 1, 'issue 1558: ' + w + 'x' + h + ' narrow squeezed: a narrow plate with helpers and "Limit reached" is drawn (the case for the ellipsis)');
@@ -368,14 +369,18 @@ const run = async (ctx, reqs) => {
   }
 
   // ---- FR-259: the frame by state; FR-257: hostile text stays text ----
-  await loadArcade(1440, 900, 15);
-  /* FR-259 (round 8 of #1599: it failed once on another machine with "people at cabinets: 4", read once while agents were still away at a place): wait, with a labelled timeout, until at least 5 people stand at cabinets and each is drawn with its pose by state; then read and assert */
+  /* Round 9 of #1599: the scene used to load 15 agents with the sim running and read the people at cabinets once. Measured (20 loads, idle: n0 9 at the load, 4 from 2.5 s on, the same 6 + 3 agents away every time): the sim's agents leave their cabinets within seconds (waiting and done ones go to places; the roster's visitors, Ada, Elif, Sven, Omar, Clara, Rosa, are away at their places), so "at least 5" held only while the first draw was fresh, and on a slower machine the read came after the people had left (n 4 for ever). The scene now sets what it needs: the sim frozen, one state of six per agent in turn (working, thinking, error, limit, idle, asleep: the states that keep a person at the cabinet), and waits, with a labelled timeout, until the layout shows exactly POSE_N people (15 agents less the 6 visitors who are away at places), each drawn with its pose by state. A mix that seats nobody (mutant poseempty: every agent done, they go to the lounge) fails at that label. */
+  const POSE_N = 9;
+  await loadArcade(1440, 900, 15, { simfreeze: '1' });
+  await js(`(()=>{const U=window.__durbarSimUi,S=${jsLiteral(MUT === 'poseempty' ? ['done'] : ['working', 'thinking', 'error', 'limit', 'idle', 'asleep'])};window.__poseWant={};U.agents().filter(a=>!a.parent).forEach((a,i)=>{a.state=S[i%S.length];if(!a.limit)window.__poseWant[a.id]=a.state;delete a.label;});U.render();})();0`);
   const POSEQ = `(()=>{const T={working:'type',thinking:'book',error:'knock',waiting:'face-knock',limit:'face-knock',done:'face-coffee',idle:'face-book',asleep:'sit'}/* FR-259's table, written out: not read from the code it checks */,L=window.__durbarSimUi.realLayout(),bad=[];let n=0;for(const d of L.zones.flatMap(z=>z.desks)){if(!d.person)continue;n++;const want=T[d.state],got=d.person.pose;if(got!==want&&got!=={'face-knock':'knock','face-coffee':'counter','face-book':'book'}[want])bad.push(d.id+' '+d.state+' '+got);const e=document.querySelector('#stage .ro-person[data-for="'+CSS.escape(d.id)+'"]');if(!e||e.dataset.pose!==got)bad.push(d.id+' not drawn');}return {n,bad};})()`;
-  const poseOK = await H.until(`(()=>{const r=${POSEQ};return r.n>=5&&r.bad.length===0;})()`, 15000);
+  /* the read must come after the layout shows the states that were set (right after the set it still shows the old ones, and a mix that seats nobody would pass for a moment); an agent that carries the limit flag (the sim's Omar) shows the limit light whatever state is set, so it is left out of the comparison */
+  const poseOK = await H.until(`(()=>{const w=window.__poseWant||{},same=window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).every(d=>w[d.id]===undefined||d.state===w[d.id]),r=${POSEQ};return same&&r.n===${POSE_N}&&r.bad.length===0;})()`, 15000);
   const pose = await js(POSEQ);
-  assert.ok(poseOK, 'FR-259: within 15 s at least 5 people stand at cabinets, each drawn with its pose by state (last read: ' + JSON.stringify(pose) + ')');
-  assert.ok(pose.n >= 5, 'people at cabinets: ' + pose.n);
+  assert.ok(poseOK, 'FR-259: within 15 s exactly ' + POSE_N + ' people stand at cabinets (15 agents, the states set, the sim frozen), each drawn with its pose by state (last read: ' + JSON.stringify(pose) + ')');
+  assert.strictEqual(pose.n, POSE_N, 'people at cabinets: ' + pose.n);
   assert.deepStrictEqual(pose.bad, [], 'the frame by state');
+  await loadArcade(1440, 900, 15); /* the scenes below start from the sim running, as before */
 
   const victim = await js(`window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).find(d=>d.person).id`);
   const HOSTILE = '<img src=x onerror=window.__pwned=1>' + 'very long name '.repeat(6);
