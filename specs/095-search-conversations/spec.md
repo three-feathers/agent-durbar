@@ -354,3 +354,9 @@ No new FR or task number.
 ## Changes 2026-11-12 (phase 3 window, known gap)
 
 - **[KNOWN GAP]** An open Codex agent that starts a new thread in place changes its resume id while the kept Codex list (FR-026) is keyed by agent id and excludes by resume id: for at most the kept list's 5 minutes the old thread may be missing from Earlier sessions or the new one listed there (review of PR 1232, round 3 question). Bounded and nothing leaks.
+
+## Changes 2026-11-12 (CI of PR 1240: site size, stylesheet order, pictures)
+
+- The search box rules (`.cs-*`, `#convSearchBtn`) sit before Flat's gated section in `styles.css`: spec 070's test requires everything from the first `html[data-flat-look]` rule to the end of the file to start with that gate. No rule changed, only its place.
+- The retaken pictures went through `compress-shots` at 192 colours under the local guard of spec 050 (`maxChannel` 40, `maxBlockDelta` 6, `minSaving` 0.02): 90 pictures, 201,762 B saved; the built site is 8,227,199 B against the unchanged 8 MB budget (8,388,608 B; main is 8,206,151 B). The four `097-real-*.png` that the retake commit added next to main's `.jpg` files are removed.
+- `[KNOWN GAP]` `picture-budget` still lists seven 097 pictures (four removed `097-real-*.png`, plus `097-real-lights`, `097-world-menu`, `097-world-toast`, restored to main's bytes) because the retake commit `a6f59fa35` of this branch added them to history; the check reads history, so only a fresh branch from `origin/main` carrying the compressed files clears it.
