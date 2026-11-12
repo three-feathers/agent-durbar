@@ -16,6 +16,7 @@
  *     pin        the pointer back on a working plate after parking (it did not leave): fails "the hover card closed after the pointer left"; with PENCIL_EASE_SCREEN smaller than the
  *                window it is the labelled "skipped: the pointer-dependent checks ... need the window inside the screen" instead
  *     hover      the pointer left on a working plate before the end frame: "no hover card is open over the plates in the end frame"
+ *   PENCIL_EASE_SIZE=1280x800        only that size
  *   PENCIL_EASE_WORLDS=photo,arcade  only those worlds (photo, cave, arcade)
  *   PENCIL_EASE_SLOW_CAPTURE=<ms>    a pause after each mid-move capture, as a slow (software) compositor: the 3-frame assert is then skipped, printed
  *   PENCIL_EASE_BLUR=<px>            box-blur every capture first (device px), as a resampling compositor would: the check must still pass and still fail nohide
@@ -53,7 +54,7 @@ const { parkCandidates, parkVisible, windowOutsideScreen } = require('./pencil-p
 const MUTANT = process.env.PENCIL_EASE_MUTANT || '';
 const PLAIN = process.env.PENCIL_EASE_PLAIN === '1';
 const OUT = process.env.SHOTS_OUT || '';
-const SIZES = [[1440, 900], [1280, 800]];
+const SIZES = [[1440, 900], [1280, 800]].filter(([w, h]) => !process.env.PENCIL_EASE_SIZE || process.env.PENCIL_EASE_SIZE === w + 'x' + h); /* PENCIL_EASE_SIZE=1280x800: only that size (a mutant is otherwise caught at the first) */
 const ALL = { photo: {}, cave: { worldflags: 'cave', world: 'cave' }, arcade: { worldflags: 'retro', world: 'retro' } };
 const WORLDS = (process.env.PENCIL_EASE_WORLDS || 'photo,arcade').split(',').filter((w) => ALL[w]);
 const SPAN = 320; /* ms of frames after the move starts: the ease is 280..520 ms, the displacement was seen in its first ~200..300 ms */
