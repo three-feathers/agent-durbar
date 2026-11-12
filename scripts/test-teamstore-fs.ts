@@ -53,22 +53,26 @@ try {
   const bytes = Buffer.concat([Buffer.from('{"format":"agent-durbar-team-templates","schemaVersion":1,"templates":[{"name":"'), Buffer.from([0xff, 0xfe, 0xc3]), Buffer.from('"}]}')]);
   fs.writeFileSync(f3, bytes); assert.deepStrictEqual(new TeamTemplateStore(f3).list(), []);
   const bad3 = fs.readdirSync(path.dirname(f3)).filter((f) => f.includes('.bad-')); assert.strictEqual(bad3.length, 1); assert.ok(fs.readFileSync(path.join(path.dirname(f3), bad3[0])).equals(bytes)); n += 3;
-  // a REAL dangling symlink as the store file: set aside as a link (never followed), and the next save works, whichever call meets it first
+  // a REAL dangling symlink as the store file. POSIX (`O_NOFOLLOW`): a bad file, set aside as a link (never followed) with one toast, and the next save works.
+  // Windows (`O_NOFOLLOW` is undefined there, so the open follows the link and finds no file): no file, no set-aside, no toast; the next save REPLACES the link and
+  // the link's target is untouched (spec 111, 'A dangling symlink as the store file...').
+  const win = process.platform === 'win32';
   let linked = true;
   const link = (f: string): boolean => { try { fs.mkdirSync(path.dirname(f), { recursive: true }); try { fs.rmSync(f, { force: true }); } catch { /* none */ } fs.symlinkSync(path.join(root, 'nowhere', 'target.json'), f); return true; } catch { return false; } };
   const f4 = path.join(root, 'link-load', 'team-templates.json');
   if (!link(f4)) { linked = false; console.log('skipped: no permission to make a symlink here (Windows without developer mode)'); }
   if (linked) {
-    const L = new TeamTemplateStore(f4); assert.deepStrictEqual(L.list(), []); assert.ok(L.takeToast(), 'toast'); assert.ok(!L.isBlocked()); n += 3;
+    const L = new TeamTemplateStore(f4); assert.deepStrictEqual(L.list(), []); assert.strictEqual(L.takeToast(), !win, win ? 'Windows: no toast' : 'toast'); assert.ok(!L.isBlocked()); n += 3;
     const asideLinks = (d: string): string[] => fs.readdirSync(d).filter((x) => x.includes('.bad-') && fs.lstatSync(path.join(d, x)).isSymbolicLink());
-    assert.strictEqual(asideLinks(path.dirname(f4)).length, 1, 'the link itself was moved, not followed'); n++;
-    assert.ok(L.put(tpl('After the link')).ok); assert.ok(fs.lstatSync(f4).isFile()); n += 2;
+    assert.strictEqual(asideLinks(path.dirname(f4)).length, win ? 0 : 1, win ? 'Windows: nothing set aside' : 'the link itself was moved, not followed'); n++;
+    assert.ok(L.put(tpl('After the link')).ok); assert.ok(fs.lstatSync(f4).isFile(), 'a regular file now (the link is gone or replaced)'); n += 2;
+    assert.ok(!fs.existsSync(path.join(root, 'nowhere', 'target.json')) && !fs.existsSync(path.join(root, 'nowhere')), 'the link target is untouched (nothing created there)'); n++;
     for (const op of ['put', 'duplicate', 'delete'] as const) {
       const f = path.join(root, 'link-' + op, 'team-templates.json');
       const St = new TeamTemplateStore(f); const t = St.put(tpl('Mine')); assert.ok(t.ok); if (!t.ok) continue;
       fs.rmSync(f); assert.ok(link(f)); // the file becomes a dangling link under the running store
       const r = op === 'put' ? St.put(tpl('Other')) : op === 'duplicate' ? St.duplicate(t.template.id) : St.delete(t.template.id);
-      assert.ok(!r.ok && r.errors[0] === 'changed', op + ': changed'); assert.strictEqual(asideLinks(path.dirname(f)).length, 1, op + ': the link is set aside');
+      assert.ok(!r.ok && r.errors[0] === 'changed', op + ': changed'); assert.strictEqual(asideLinks(path.dirname(f)).length, win ? 0 : 1, op + (win ? ': Windows: nothing set aside' : ': the link is set aside'));
       assert.ok(St.put(tpl('Next')).ok, op + ': the next save works'); assert.ok(fs.lstatSync(f).isFile(), op + ': a regular file again'); n += 4;
     }
   }
@@ -91,7 +95,7 @@ try {
     try {
       fs.chmodSync(f6, 0o000); fs.chmodSync(dir6, 0o500);
       const U = new TeamTemplateStore(f6, { pause: () => undefined }); assert.ok(U.isBlocked(), 'blocked'); fs.chmodSync(dir6, 0o700);
-      assert.ok(!U.put(tpl('X')).ok, 'fails'); assert.strictEqual(fs.readdirSync(dir6).filter((x) => x.includes('.bad-')).length, 0, 'nothing moved'); assert.ok(!U.takeToast(), 'no toast'); n += 4;
+      { const f = U.put(tpl('X')); assert.ok(!f.ok && f.errors[0] === 'The team templates could not be saved.', 'fails with the usual error, not changed'); } assert.strictEqual(fs.readdirSync(dir6).filter((x) => x.includes('.bad-')).length, 0, 'nothing moved'); assert.ok(!U.takeToast(), 'no toast'); n += 4;
       fs.chmodSync(f6, 0o600); assert.strictEqual(fs.readFileSync(f6, 'utf8'), before6, 'file intact');
       const r6 = U.put(tpl('X')); assert.ok(!r6.ok && r6.errors[0] === 'changed'); assert.deepStrictEqual(U.list().map((t) => t.name), ['Good2']); assert.ok(!U.isBlocked()); n += 4;
     } finally { try { fs.chmodSync(dir6, 0o700); fs.chmodSync(f6, 0o600); } catch { /* gone */ } }

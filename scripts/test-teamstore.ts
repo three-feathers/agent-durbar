@@ -15,9 +15,9 @@
  *   15..24 (second review, #1602): cut by code point, not grapheme; trailing joiners kept; no second read after a read error; decoder not fatal;
  *   no Windows rename retry; the retry on every platform; no fingerprint comparison; no pruning of set-aside files; folder mode 0755; isBlocked always false.
  *   25..27 (third review): prune filter loose; prune order by text; fingerprint taken after the read (since replaced by the hash mutant).
- *   27 became "hash taken after the read"; 28..31 (fourth review; 32, 33 fifth: the read before a save is not retried; the retry has no pause; 34, 35 sixth: a persistent read error still reloads; two unreadable reads compare as one hash; 36 seventh: a dangling link not seen, `existsSync` instead of `lstat`; 37, 38 eighth: any lstat error counts as absent; a blocked store sets aside without reading again; 39 ninth: no busy check in a blocked save): size only, not the content; the file just set aside may be pruned; prune counts folders;
+ *   27 became "hash taken after the read"; 28..31 (fourth review; 32, 33 fifth: the read before a save is not retried; the retry has no pause; 34, 35 sixth: a persistent read error still reloads; two unreadable reads compare as one hash; 36 seventh: a dangling link not seen, `existsSync` instead of `lstat`; 37, 38 eighth: any lstat error counts as absent; a blocked store sets aside without reading again; 39 ninth: no busy check in a blocked save; 40, 41 tenth: a busy read answers changed (at a save, in a blocked save); 42 a missing file treated as bad; the store has no platform branch for links, readCapped gives ENOENT without O_NOFOLLOW): size only, not the content; the file just set aside may be pruned; prune counts folders;
  *   one huge grapheme leaves only the suffix. (A fingerprint of size and mtime was replaced by a SHA-256 of the bytes: it missed a write in the same mtime tick.)
- *   The list below has 39 entries in all (the "no nameKey" mutant of 5 has two variants).
+ *   The list below has 42 entries in all (the "no nameKey" mutant of 5 has two variants).
  *   No `trimEnd` before the suffix: the validator already collapses a double space, so the name is the same (the test "no double space" shows it).
  */
 import assert from 'assert';
@@ -43,7 +43,7 @@ class MemFs {
   text(file: string): string | undefined { return this.files.get(file)?.data.toString('utf8'); }
   names(): string[] { return [...this.files.keys()].sort(); }
   mkdirSync(_d: string, o: { mode: number }): void { this.dirModes.push(o.mode); }
-  dirs = new Set<string>(); denied = false;
+  dirs = new Set<string>(); denied = false; /** Windows: no `O_NOFOLLOW`, so the open follows a dangling link and finds no file (ENOENT) */ followLinks = false;
   private deny(): void { if (this.denied) throw Object.assign(new Error('no permission'), { code: 'EACCES' }); }
   lstatSync(p: string): { isFile(): boolean } {
     this.deny();
@@ -76,7 +76,7 @@ class MemFs {
   rmSync(p: string): void { this.files.delete(p); this.dirs.delete(p); this.dangling.delete(p); }
   openSync(file: string): number {
     this.deny();
-    if (this.dangling.has(file)) throw Object.assign(new Error('loop'), { code: 'ELOOP' });
+    if (this.dangling.has(file)) throw Object.assign(new Error(this.followLinks ? 'missing' : 'loop'), { code: this.followLinks ? 'ENOENT' : 'ELOOP' });
     if (!this.files.has(file)) throw Object.assign(new Error('missing'), { code: 'ENOENT' });
     if (this.openFails > 0 && file === F) { this.openFails--; throw Object.assign(new Error('held'), { code: 'EBUSY' }); }
     const fd = this.nextFd++; this.fds.set(fd, file); return fd;
@@ -425,6 +425,14 @@ const sections: Record<string, Section> = {
     // while the file stays unreadable the save just fails
     const m3 = new MemFs(); m3.set(F, text); m3.denied = true; const s3 = make(m3, api); ok(!s3.put(tpl('X')).ok, 'fails'); ok(!s3.put(tpl('Y')).ok, 'fails again'); m3.denied = false; eq(badNames(m3).length, 0, 'nothing set aside meanwhile');
   },
+  danglingLinkWindows(api) {
+    // as Windows reads it (the open follows the link): no file, no set-aside, no toast; the next save replaces the link; a link under a running store is a change
+    const m = new MemFs(); m.followLinks = true; m.dangling.add(F); const s = make(m, api);
+    eq(s.list(), [], 'empty'); ok(!s.takeToast(), 'no toast'); ok(!s.isBlocked(), 'not blocked'); eq([...m.dangling].filter((x) => x.includes('.bad-')).length, 0, 'nothing set aside'); ok(m.dangling.has(F), 'the link is still there');
+    ok(s.put(tpl()).ok, 'the first save replaces it'); ok(!m.dangling.has(F) && m.files.has(F), 'a regular file where the link was'); eq(badNames(m).length, 0, 'no bad file');
+    const m2 = new MemFs(); m2.followLinks = true; const s2 = make(m2, api); s2.put(tpl()); m2.files.delete(F); m2.dangling.add(F);
+    const r = s2.put(tpl('Two')); ok(!r.ok && r.errors[0] === 'changed', 'a link under a running store: changed'); ok(s2.put(tpl('Three')).ok, 'then the save replaces it'); ok(!m2.dangling.has(F), 'link replaced');
+  },
   longGrapheme(api) {
     const m = new MemFs(); const s = make(m, api); const name = 'a' + '\u0301'.repeat(39);
     const t = s.put(tpl(name)); ok(t.ok, 'a name that is one grapheme'); if (!t.ok) return;
@@ -506,6 +514,9 @@ const mutants: { name: string; from: string; to: string; breaks: string }[] = [
   { name: 'any lstat error counts as absent', from: "if (e?.code === 'ENOENT')\n                return false;\n            throw e;", to: 'return false;', breaks: 'blockedReread' },
   { name: 'a blocked store whose file is still unreadable moves it aside (no busy check)', from: "if (!r.ok && this.seen(r).kind === 'busy')\n                return 'failed';", to: '', breaks: 'blockedReread' },
   { name: 'a blocked store sets the file aside without reading it again', from: 'if (r.ok && !this.parseDoc(r.buf).bad) {', to: 'if (false) {', breaks: 'blockedReread' },
+  { name: 'a busy read at a save answers changed', from: "if (now.kind === 'busy')\n            return 'failed';", to: "if (now.kind === 'busy')\n            return 'changed';", breaks: 'unreadableSave' },
+  { name: 'a busy read in a blocked save answers changed', from: "if (!r.ok && this.seen(r).kind === 'busy')\n                return 'failed';", to: "if (!r.ok && this.seen(r).kind === 'busy')\n                return 'changed';", breaks: 'blockedReread' },
+  { name: 'a missing file (what Windows reads for a dangling link) is treated as a bad file', from: "r.code === 'missing'", to: "(r.code === 'missing' && !this.fs.lstatSync)", breaks: 'danglingLinkWindows' },
   { name: 'one huge grapheme leaves only the suffix', from: 'head.length === 0)', to: 'false)', breaks: 'longGrapheme' },
   { name: 'isBlocked always false', from: 'isBlocked() { return this.blocked; }', to: 'isBlocked() { return false; }', breaks: 'blockedFlag' },
   { name: 'stale temps not removed', from: '(0, schedules_1.removeStaleTemps)(this.file,', to: '(() => undefined)(this.file,', breaks: 'staleTemps' },
