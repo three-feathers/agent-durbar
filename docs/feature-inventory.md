@@ -54,7 +54,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Resume after restart, Since you were away, crash card | works | works | none | 006 | test:crashmarker driver:shots-006-crash |
 | Previous sessions, search | works | works | none | 006 | test:sessionsearch driver:shots-006-prevmarks |
 | Notes per folder | works | works | none | 083 | test:notes |
-| Scheduled prompts, loops | works | works | none | 044 072 | test:schedules test:loops |
+| Scheduled prompts, loops | works | works, except the letter that flies from the Postbox to the desk when a schedule fires (001 FR-038, #1587) | none | 044 072 | test:schedules test:loops |
 | Custom agents and profile files | works | works | none | 043 | test:agentprofiles test:profileeditor |
 | Folder status (branch, changes), session summary | works | works | none | 063 085 | test:gitstatus test:sessionsummary |
 | Continue in another app, VS Code chat history | works | works | none | 009 030 | test:handoff test:vscodechat |

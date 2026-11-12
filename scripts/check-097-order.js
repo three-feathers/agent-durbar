@@ -21,7 +21,8 @@
  *   - spec 097 FR-366 (#1571): in the flat office, the Photo office and the arcade, three sessions that start needing you at one moment (a tie, oldest first), where
  *     the office order on screen differs from the session list's (one desk moved with Alt+Left), are not in the office order in the inbox or under the N key.
  *     Source mutants (run by hand): needsMeOrder reading `#stage .desk[data-id]` only, or the plates' node order (`#stage .ro-plate[data-id]`): the Photo office step fails
- *     ("FR-366: three that need you since one moment are in the office order on screen in the inbox"); the layout's order skipped in the arcade only: the arcade step fails the same way.
+ *     ("FR-366: three that need you since one moment are in the office order on screen in the inbox"); the layout's order skipped in the arcade only: the arcade step fails the same way;
+ *     the layout read without its "a Real office is drawn" guard (`const lay=RO_LAST`): the "photo, then flat" step (Photo office switched to Open office in the page) fails the same text.
  *   SHOTS_OUT=docs/screenshots writes the two full pictures (097-order-<w>x<h>.png; the crops in docs are made from them).
  *   source mutant (run by hand): the key path's away test back to `pl.classList.contains('narrow')` only: the arcade step fails
  *   ORDER_MUTANT=keys   Alt+arrows on a plate are swallowed before the app sees them (must fail)
@@ -310,11 +311,19 @@ module.exports = async (ctx) => {
     await js(`window.__durbarSimUi.uncrowd()`);
 
     /* ---- 6. spec 097 FR-366 (#1571): sessions that start needing you at one moment (a tie, oldest first) keep the office order on screen, in every world ---- */
-    for (const [world, q] of [['flat', { simrooms: '3' }], ['photo', { officeview: 'real', simrooms: '3', sim: '15' }], ['arcade', { officeview: 'real', simrooms: '3', sim: '15', worldflags: 'retro', world: 'retro' }]]) {
-      const t = `${tag} ${world}`, real = world !== 'flat', card = real ? '.ro-plate' : '.desk';
+    /* 'photo, then flat': the Photo office switched to Open office in the same page (Settings, Office layout; no reload), where Real office's last layout is still held: the flat desks' order must win */
+    for (const [world, q] of [['flat', { simrooms: '3' }], ['photo', { officeview: 'real', simrooms: '3', sim: '15' }], ['arcade', { officeview: 'real', simrooms: '3', sim: '15', worldflags: 'retro', world: 'retro' }], ['photo, then flat', { officeview: 'real', simrooms: '3', sim: '15' }]]) {
+      const switched = world === 'photo, then flat', loadReal = world !== 'flat', real = loadReal && !switched;
+      const t = `${tag} ${world}`, card = real ? '.ro-plate' : '.desk';
       await js(`try{sessionStorage.removeItem('durbar.simorder')}catch(e){}`);
-      await H.load({ w, h, query: q, ...(real ? { ready: `document.querySelectorAll('#stage .ro-plate').length>=10`, readyMs: 30000, settle: false } : {}), focus: true });
-      if (real) assert.strictEqual(await js(`document.querySelector('#stage .ro').dataset.world||'photo'`), world === 'arcade' ? 'retro' : 'photo', `${t}: the world is shown`);
+      await H.load({ w, h, query: q, ...(loadReal ? { ready: `document.querySelectorAll('#stage .ro-plate').length>=10`, readyMs: 30000, settle: false } : {}), focus: true });
+      if (loadReal) assert.strictEqual(await js(`document.querySelector('#stage .ro').dataset.world||'photo'`), world === 'arcade' ? 'retro' : 'photo', `${t}: the world is shown`);
+      if (switched) {
+        await js(`window.DurbarScreens.openSettings();true`);
+        await must(`!!document.querySelector('[data-officelayout="open"]')`, `${t}: Settings shows the office layout choice`);
+        await js(`(()=>{document.querySelector('[data-officelayout="open"]').click();const c=document.getElementById('scrClose');if(c)c.click();return 1})()`);
+        await must(`!document.querySelector('#stage .ro')&&document.querySelectorAll('#stage .desk[data-id]').length>=10&&!!window.__durbarSimUi.realLayout()`, `${t}: the flat office is drawn in the same page, Real office's last layout still held`);
+      }
       /* the office order on screen, read apart from the code under test: Real office's own layout (rooms as drawn, desks left to right, lounge seats out), or the flat rooms' desks */
       const ORDER_NOW = real ? `window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).filter(d=>!d.lounge).map(d=>d.id).filter((x,i,l)=>l.indexOf(x)===i)` : `[...document.querySelectorAll('#stage .room .unit > .desk[data-id]')].map(d=>d.dataset.id)`;
       const shown = () => js(ORDER_NOW);
@@ -342,6 +351,12 @@ module.exports = async (ctx) => {
       for (let i = 0; i < 20 && !group.every((id) => now.includes(id)); i++) now = await inbox();
       const s1 = await shown();
       const want = group.slice().sort((x, y) => s1.indexOf(x) - s1.indexOf(y));
+      if (real) { /* the same order read from the picture alone, not from the layout the app reads: rooms by their folder sign (row band, then left), a room's desks by their plate (row band, then left) */
+        const geo = await js(`(()=>{const ag=new Map(window.__durbarSimUi.agents().map(a=>[a.id,a.room])),band=y=>Math.round(y/40),pos=e=>{const r=e.getBoundingClientRect();return [band(r.top),r.left]},cmp=(p,q)=>p[0]-q[0]||p[1]-q[1];
+          const sign=id=>pos([...document.querySelectorAll('#stage .ro-sign')].find(s=>s.dataset.folder===ag.get(id)));
+          return ${jsLiteral(group)}.slice().sort((x,y)=>{const a=sign(x),b=sign(y);if(ag.get(x)!==ag.get(y))return cmp(a,b);return cmp(pos(document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(x)+'"]')),pos(document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(y)+'"]')));})})()`);
+        assert.deepStrictEqual(geo, want, `${t}: the drawn plates and signs give the same office order as the layout (${geo} vs ${want})`);
+      }
       assert.notDeepStrictEqual(want, group.slice().sort((x, y) => li(x) - li(y)), `${t}: the office order (${want}) differs from the session list's, so the step tells them apart`);
       assert.deepStrictEqual(now.filter((id) => !group.includes(id)), old, `${t}: the earlier ones keep their order`);
       assert.deepStrictEqual(now.slice(-3), want, `${t}: FR-366: three that need you since one moment are in the office order on screen in the inbox (${now.slice(-3)} vs ${want})`);

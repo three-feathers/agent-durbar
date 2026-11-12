@@ -126,6 +126,21 @@ module.exports = async (ctx) => {
     const fg = await js(`(()=>{const f=document.querySelector('input.inl-input').getBoundingClientRect(),sg=window.__fsign(),n=sg.querySelector(':scope>b').getBoundingClientRect(),s=sg.getBoundingClientRect();return {over:f.left<=n.left+1&&f.right>=Math.min(n.right,s.right)-1&&f.top<=n.bottom&&f.bottom>=n.top,inside:f.left>=s.left-1&&f.right<=s.right+1,fills:f.right>=Math.min(f.left+360,s.right-4)-1,f:[f.left,f.right,f.top,f.bottom].map(Math.round),n:[n.left,n.right,n.top,n.bottom].map(Math.round),s:[s.left,s.right,s.top,s.bottom].map(Math.round),value:document.querySelector('input.inl-input').value}})()`);
     assert.deepStrictEqual({ over: fg.over, inside: fg.inside, fills: fg.fills }, { over: true, inside: true, fills: true }, `${tag}: FR-367: the folder field lies over the sign's name, inside the sign, and fills its free width (spec 059 FR-025) (${JSON.stringify(fg)})`);
     if (OUT) await H.shot(path.join(OUT, `097-folder-f2-${world}-${w}x${h}.png`), { prep: 'mouse' });
+    { /* the field follows its sign through a live repaint (spec 059 FR-023 item 5): status updates repaint the office, a window resize moves the sign */
+      const OVER = `(()=>{const i=document.querySelector('input.inl-input'),sg=window.__fsign();if(!i||!sg)return false;const f=i.getBoundingClientRect(),n=sg.querySelector(':scope>b').getBoundingClientRect();return Math.abs(f.left-n.left)<=2&&f.top<=n.bottom&&f.bottom>=n.top})()`;
+      const ids = await js(`window.__durbarSimUi.agents().filter(a=>!a.parent).slice(0,4).map(a=>a.id)`);
+      for (const id of ids) await js(`window.__durbarSimEmit({type:'status',status:'working',intent:'Live repaint',timestamp:Date.now(),sessionId:${jsLiteral(id)}});true`);
+      await must(`${OVER}&&document.activeElement===document.querySelector('input.inl-input')`, `${tag}: FR-367: the folder field stays open over the sign's name through a live repaint`);
+      const [ow, oh] = w === 1440 ? [1280, 800] : [1440, 900];
+      ctx.win.setContentSize(ow, oh);
+      await must(`innerWidth===${jsLiteral(ow)}`, `${tag}: the window is resized`);
+      await H.settle();
+      await must(OVER, `${tag}: FR-367: the folder field follows the sign after a resize moves it (${await js(`(()=>{const i=document.querySelector('input.inl-input'),sg=window.__fsign();return JSON.stringify({f:i&&[i.getBoundingClientRect().left,i.getBoundingClientRect().top],n:sg&&[sg.querySelector(':scope>b').getBoundingClientRect().left,sg.querySelector(':scope>b').getBoundingClientRect().top]})})()`)})`);
+      ctx.win.setContentSize(w, h);
+      await must(`innerWidth===${jsLiteral(w)}`, `${tag}: the window size is back`);
+      await H.settle();
+      await must(OVER, `${tag}: FR-367: and again after the size is back`);
+    }
     await H.key('Escape');
     await must(`!document.querySelector('input.inl-input')&&document.activeElement&&document.activeElement.dataset.foldermenu===${jsLiteral(fid)}`, `${tag}: Esc closes the folder field and gives the focus back to the ⋯ button`);
     assert.strictEqual(await js(`window.__fsign().querySelector(':scope>b').textContent`), fold0, `${tag}: Esc keeps the folder's name`);
