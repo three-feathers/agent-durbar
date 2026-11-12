@@ -9,7 +9,7 @@ import { setMcpOp } from './agentops';
 import type { AdapterRouter } from '../adapters/router';
 import type { McpServerSpec } from '../shared/mcp';
 import type { DevEnv } from './devhooks';
-import { BUILTIN_SERVERS, cliServers, copilotDir } from './mcpfiles';
+import { BUILTIN_SERVERS, cliServers, cliServersWithValues, copilotDir } from './mcpfiles';
 import { applyFolderImport, MAX_IMPORT_FOLDERS, previewFolderImport } from './mcpimport';
 import { mcpSecretValues } from './mcpmask';
 import { claudeOffKey, mergeSessionServers, offOf } from './mcpglobal';
@@ -130,7 +130,10 @@ export function registerMcpIpc(deps: {
     if (!a) return [];
     try {
       // Spec 069 FR-009: the user list's values too (all of them, also one a folder extra shadows: masking more is safe).
-      return mcpSecretValues(deps.globalFor?.(agentId), store().forSession(keyOf(a), off.get(agentId) ?? [], cliNames()).mcpServers);
+      // FR-070 (issue #1639): and the Copilot CLI list's env and header values, from the one read that also gives its names (as `serverUrlOf`
+      // reads it, `cli()`), for every agent and every server of the file; through `mcpSecretValues`, so its 4-character rule holds too.
+      const c = cliWithValues();
+      return mcpSecretValues(deps.globalFor?.(agentId), store().forSession(keyOf(a), off.get(agentId) ?? [], c.servers.map((x) => x.name)).mcpServers, Object.fromEntries(c.values.map((v, i) => [String(i), v])));
     } catch {
       return []; // store not ready or unreadable: the shape-based masking still runs, and the event is not lost
     }
@@ -348,6 +351,8 @@ export function registerMcpIpc(deps: {
 
   /** The Copilot CLI list is read again on every call, so edits of the file show up the next time a screen opens. */
   const cli = () => cliServers(copilotDir(dev), new Set(store().ambientDisabled()));
+  /** Spec 069 FR-070: the same read with the values (main only: for `secretValuesFor`'s masking, never for a reply or a log line). */
+  const cliWithValues = () => cliServersWithValues(copilotDir(dev), new Set(store().ambientDisabled()));
   const cliNames = (): string[] => cli().servers.map((x) => x.name);
   /** A folder key is only accepted when an agent of that folder exists (the renderer cannot invent keys). */
   const knownKey = (key: unknown): key is string => typeof key === 'string' && !!key && [...agents.values()].some((a) => keyOf(a) === key);

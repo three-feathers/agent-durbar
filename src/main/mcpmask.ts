@@ -7,8 +7,11 @@ import { cut, maskHomePaths, maskSecretUrl, redact, secretFlag } from '../shared
 
 export const MCP_ERROR_MAX_CHARS = 300;
 
-/** The secret values a session was given (env and header values of its extra servers), longest first; under 4 characters are skipped since they would mangle every string. */
-export function mcpSecretValues(...lists: (Record<string, McpServerSpec> | undefined)[]): string[] {
+/**
+ * The secret values a session was given (env and header values of its servers: folder extras, Claude Code's user list, and since spec 069
+ * FR-070 the Copilot CLI list), longest first; under 4 characters are skipped since they would mangle every string.
+ */
+export function mcpSecretValues(...lists: (Readonly<Record<string, McpServerSpec | Pick<McpServerSpec, 'env' | 'headers'>>> | undefined)[]): string[] {
   const out = new Set<string>();
   for (const s of lists.flatMap((l) => Object.values(l ?? {}))) for (const v of [...Object.values(s.env ?? {}), ...Object.values(s.headers ?? {})]) if (typeof v === 'string' && v.length >= 4) out.add(v);
   return [...out].sort((a, b) => b.length - a.length);
