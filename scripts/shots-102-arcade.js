@@ -197,13 +197,13 @@ const run = async (ctx, reqs) => {
     for(const p of document.querySelectorAll('#stage .ro-plate')){const l2=p.querySelector('.ro-l2');if(!l2||!l2.getClientRects().length)continue;const helped=p.classList.contains('has-help'),id=p.dataset.id||'?',cs=getComputedStyle(p),pr=p.getBoundingClientRect();
       const word=l2.textContent.trim().split(' · ')[0],w=document.createTreeWalker(l2,NodeFilter.SHOW_TEXT);let n,at=null;while((n=w.nextNode())){const i=n.data.indexOf(word);if(i>=0){at=[n,i];break;}}
       if(!at){out.push(id+': no text for "'+word+'"');continue;}const a=R(at[0],at[1],at[1]+word.length),b=l2.getBoundingClientRect(),right=Math.min(b.right,pr.right-parseFloat(cs.borderRightWidth)-parseFloat(cs.paddingRight));
-      const rec={pc:p.className.replace(/ro-plate |has-help|has-ren/g,'').trim(),t:l2.textContent.slice(0,40),id,word,helped,narrow:p.classList.contains('cab-narrow'),ren:p.classList.contains('has-ren'),plateW:Math.round(pr.width),shown:0,helpers:0,urgentShown:-1};seen.push(rec);
+      const ow=p.querySelector('.ro-l2>.dot'),rec0=!!(ow&&ow.getClientRects().length);const rec={ownDot:rec0,pc:p.className.replace(/ro-plate |has-help|has-ren/g,'').trim(),t:l2.textContent.slice(0,40),id,word,helped,narrow:p.classList.contains('cab-narrow'),ren:p.classList.contains('has-ren'),plateW:Math.round(pr.width),shown:0,helpers:0,urgentShown:-1};seen.push(rec);
       const wdE=p.querySelector('.ro-wd'),boxR=helped&&wdE?Math.min(wdE.getBoundingClientRect().right,right):right;rec.l2c=[l2.scrollWidth,l2.clientWidth];rec.label=p.getAttribute('aria-label')||'';rec.title=p.getAttribute('title')||'';
-      const lc=getComputedStyle(l2),cx=document.createElement('canvas').getContext('2d');cx.font=lc.fontStyle+' '+lc.fontWeight+' '+lc.fontSize+' '+lc.fontFamily;const ellW=!helped&&l2.scrollWidth>l2.clientWidth+0.5?cx.measureText('\u2026').width:0;rec.ell=+ellW.toFixed(2);rec.spare=+(boxR-a.right-ellW).toFixed(3);rec.room=+(right-a.right-ellW).toFixed(3); /* no helpers: the word's right end to the content box, less the ellipsis; with helpers (below): the room between the +N and the content box, less the word */ /* a line that runs on past the word ends in an ellipsis, which takes the room of the word's last letters: the word is whole only when it and the ellipsis fit */
+      const lc=getComputedStyle(l2),cx=document.createElement('canvas').getContext('2d');cx.font=lc.fontStyle+' '+lc.fontWeight+' '+lc.fontSize+' '+lc.fontFamily;const ellW=!helped&&l2.scrollWidth>l2.clientWidth+0.5?cx.measureText('\u2026').width:0;rec.ell=+ellW.toFixed(2);rec.spare=+(boxR-a.right-ellW).toFixed(3);rec.room=+(right-a.right-ellW).toFixed(3); /* no helpers: the word's right end to the content box, less the ellipsis; with helpers (below): the content box less the +N! less what the word needs in its own line (the word, and whatever the plate draws before it, such as an own dot and its gap) */ /* a line that runs on past the word ends in an ellipsis, which takes the room of the word's last letters: the word is whole only when it and the ellipsis fit */
       if(a.right+ellW>boxR+0.02)out.push(id+' "'+word+'" ends at '+Math.round(a.right)+' of a content box to '+Math.round(right)+' (helped '+helped+'; line '+Math.round(b.left)+'..'+Math.round(b.right)+', mark '+(p.querySelector('.ro-l1').getBoundingClientRect().width|0)+' px, plate '+Math.round(pr.left)+'..'+Math.round(pr.right)+', word box '+(((p.querySelector('.ro-wd')||l2).getBoundingClientRect().width)|0)+' px)');
       const h=p.querySelector('.ro-help');if(!helped||!h)continue;const l1=p.querySelector('.ro-l1').getBoundingClientRect(),hr=h.getBoundingClientRect(),hc=h.querySelector('.ro-hc'),hn=hc.firstChild,c=R(hn,0,hn.data.trim().length);
       if(c.left<l1.left-0.5||c.right>l1.right+0.5||c.right>hr.right+0.5)out.push(id+' the +N is cut: ends at '+Math.round(c.right)+' of a box to '+Math.round(Math.min(l1.right,hr.right)));
-      rec.room=+(right-hc.getBoundingClientRect().right-a.width).toFixed(3);const dots=[...h.querySelectorAll('.dot')],sh=dots.map((d)=>{const r=d.getBoundingClientRect(),inn=r.left>=Math.max(l1.left,hr.left)-0.5&&r.right<=Math.min(l1.right,hr.right)+0.5&&r.top>=hr.top-0.5&&r.bottom<=hr.bottom+0.5,hit=r.left<Math.min(l1.right,hr.right)-0.5&&r.right>Math.max(l1.left,hr.left)+0.5&&r.top<hr.bottom-0.5&&r.bottom>hr.top+0.5;return inn?1:hit?2:0;});
+      rec.room=+(right-hc.getBoundingClientRect().right-(a.right-l2.getBoundingClientRect().left)).toFixed(3);const dots=[...h.querySelectorAll('.dot')],sh=dots.map((d)=>{const r=d.getBoundingClientRect(),inn=r.left>=Math.max(l1.left,hr.left)-0.5&&r.right<=Math.min(l1.right,hr.right)+0.5&&r.top>=hr.top-0.5&&r.bottom<=hr.bottom+0.5,hit=r.left<Math.min(l1.right,hr.right)-0.5&&r.right>Math.max(l1.left,hr.left)+0.5&&r.top<hr.bottom-0.5&&r.bottom>hr.top+0.5;return inn?1:hit?2:0;});
       if(sh.includes(2))out.push(id+' a dot of the helpers is cut in part: '+sh.join(''));const urg=dots.map((d)=>/\\b(error|waiting)\\b/.test(d.className));
       if(urg.some((u,i)=>u&&!sh[i])&&dots.some((d,i)=>!urg[i]&&sh[i]===1))out.push(id+' a waiting or error helper is gone while an other one shows: '+dots.map((d,i)=>(urg[i]?'U':'o')+sh[i]).join(' '));
       const hm=h.querySelector('.ro-hm'),hmr=hm&&hm.getClientRects().length?hm.getBoundingClientRect():null,own=p.querySelector('.ro-l2>.dot'),ownr=own&&own.getClientRects().length?own.getBoundingClientRect():null,d0=dots[0]?dots[0].getBoundingClientRect():null;
@@ -223,6 +223,7 @@ const run = async (ctx, reqs) => {
     nomark: `.ro[data-world="retro"] .ro-plate.cab-narrow.has-ren.has-help:not(.lounge) .ro-hm{display:none!important}`,
     nohelpdot: `.ro[data-world="retro"] .ro-plate.cab-narrow.has-ren:not(.has-help,.lounge) .ro-l2>.dot{display:inline-block!important}`,
     nopenmark: `.ro[data-world="retro"] .ro-plate.cab-narrow:not(.has-ren) .ro-hm{display:none!important}`,
+    nopendotfull: `.ro[data-world="retro"] .ro-plate.cab-narrow.has-help:not(.has-ren) .ro-l2{gap:0!important}.ro[data-world="retro"] .ro-plate.cab-narrow.has-help:not(.has-ren) .ro-l2>.dot{display:inline-block!important;margin-right:7px!important}`,
     nopendot: `.ro[data-world="retro"] .ro-plate.cab-narrow.has-help:not(.has-ren) .ro-l2>.dot{display:inline-block!important;width:1px!important;height:1px!important;margin:0!important}`,
     sliver: `.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-help{flex-wrap:nowrap!important}.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l1{min-width:0!important}`,
   };
@@ -243,7 +244,7 @@ const run = async (ctx, reqs) => {
     const helped = r.seen.filter((x) => x.helped);
     if (urgent !== undefined) { /* spec 102 FR-312: the narrow cabinet's plate with a pencil (122 px, content 92 px) */
       const nm = helped.filter((x) => x.narrow && !!x.ren === !nopencil && x.word === 'Limit reached');
-      assert.ok(nm.length >= 1, 'issue 1574: ' + tag + ': a narrow plate with a pencil, helpers and the word "Limit reached" is drawn (the case under test), saw ' + JSON.stringify(helped.map((x) => x.word + ' ' + x.pc + ' ' + x.plateW + ' ' + x.ren)));
+      assert.ok(nm.length >= 1, 'issue 1574: ' + tag + ': a narrow plate with ' + (nopencil ? 'NO pencil' : 'a pencil') + ', helpers and the word "Limit reached" is drawn (the case under test), saw ' + JSON.stringify(helped.map((x) => x.word + ' ' + x.pc + ' ' + x.plateW + ' ' + x.ren)));
       assert.deepStrictEqual(r.out.filter((o) => o.includes('"Limit reached"') && nm.some((x) => o.startsWith(x.id + ' '))), [], 'issue 1574: ' + tag + ': on the narrow plate the status word "Limit reached" is whole, inside the content box and not cut by an ellipsis');
       assert.deepStrictEqual(r.out.filter((o) => o.includes('the +N is cut') && nm.some((x) => o.startsWith(x.id + ' '))), [], 'issue 1574: ' + tag + ': on the narrow plate the "+N" is whole');
       assert.ok(nm.every((x) => x.room >= NARROW_ROOM), 'issue 1574: ' + tag + ': on the narrow plate the word keeps at least ' + NARROW_ROOM + ' px of room to the content box (a wider font must not eat the margin; the spec records the measured room): ' + JSON.stringify(nm.map((x) => x.room)));
@@ -260,6 +261,7 @@ const run = async (ctx, reqs) => {
     }
     if (nohelp) { /* issue 1600 (with FR-312): the narrow plate with a pencil and NO helpers keeps its word whole too: its own dot is not drawn */
       const np = r.seen.filter((x) => x.narrow && x.ren && !x.helped && x.word === 'Limit reached');
+      assert.ok(np.every((x) => !x.ownDot), 'issue 1600: ' + tag + ': on the narrow plate with a pencil and no helpers the plate\'s own status dot is not drawn (asserted directly, so no font can hide it): ' + JSON.stringify(np.map((x) => x.ownDot)));
       assert.ok(np.every((x) => x.room >= NARROW_ROOM), 'issue 1600: ' + tag + ': on the narrow plate with no helpers the word keeps at least ' + NARROW_ROOM + ' px of room (the ellipsis of the line taken in): ' + JSON.stringify(np.map((x) => x.room)));
       assert.ok(np.length >= 1, 'issue 1600: ' + tag + ': a narrow plate with a pencil, no helpers and the word "Limit reached" is drawn (the case under test), saw ' + JSON.stringify(r.seen.map((x) => x.word + ' ' + x.pc + ' ' + x.plateW + ' ' + x.ren + ' ' + x.helped)));
       assert.deepStrictEqual(r.out.filter((o) => o.includes('"Limit reached"')), [], 'issue 1600: ' + tag + ': on the narrow plate with a pencil and no helpers the status word "Limit reached" is whole (its right end inside the content box, exact to 0.02 px)');
@@ -288,6 +290,13 @@ const run = async (ctx, reqs) => {
     if (w < 1440) {
       await loadArcade(w, h, 24, { simfreeze: '1', simhelpers: '3' });
       await markCheck(w + 'x' + h + ' narrow limit failed helper no pencil', {}, { states: 'limit', urgent: true, nopencil: true });
+    }
+    /* a Working plate on the narrow cabinet with a failed helper: the plate draws no own dot, so the picture shows what a reader sees of the state (the word, the border, the marquee) beside the helper's red dot */
+    if (w < 1440 && !MUT) {
+      await loadArcade(w, h, 24, { simfreeze: '1', simhelpers: '3' });
+      await js(`(()=>{const U=window.__durbarSimUi;U.agents().filter(a=>!a.parent).forEach((a)=>{a.state='working';delete a.label;});U.render();})();0`);
+      await must(`(()=>{const P=[...document.querySelectorAll('#stage .ro-plate[data-id]:not(.lounge)')];return P.filter(p=>p.classList.contains('st-working')).length>=10;})()`, 'at least 10 plates drawn working', 8000);
+      await H.shot(path.join(OUT, `102-arcade-narrow-working-${w}x${h}.png`), { prep: 'calm', settle: true, tag: '102-arcade', what: 'narrow-working' });
     }
     /* issue 1600: the same plate with a pencil and no helpers at all */
     if (w < 1440) {
