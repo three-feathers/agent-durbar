@@ -82,8 +82,8 @@
 .ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-help{flex:0 1 auto;min-width:0;margin-left:0;flex-wrap:wrap;align-content:flex-start;height:var(--arc-plate-line);overflow:hidden}
 .ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-hc{flex:none}
 .ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l2{display:flex;align-items:center;gap:var(--s-1);flex:1 1 auto;min-width:0}
-.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l2>.ro-wd{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l2>.ro-tk{flex:1 1 auto;width:0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l2>.ro-wd{display:inline;flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l2>.ro-tk{display:inline;flex:1 1 auto;width:0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l2>.ro-tk:empty{display:none}
 .ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l1>:not(.ro-help){display:none}
 /* issue 1574 (spec 102 FR-312): on the narrow cabinet's plate with its pencil (content 92 px) the word, the +N and one dot do not fit: the plate's own status dot is not drawn (the word and the plate's border carry the state) and the +N is marked "+3!" when a helper failed or waits; the helpers' dots stay in the plate's markup, in the heads' order, and show whenever the line has room */
