@@ -8,7 +8,8 @@
  *  - `memberId` and `briefFrom` are store-only. The window cannot set them: a `memberId` on a NEW template is refused; on an update it must be
  *    one the stored template has, once (a lookup by `Map`, never by position, never by a property of the argument); a member without one is new
  *    and main gives it one. `briefFrom: 'file'` is kept by `memberId` from the STORED member on every save; the window may echo it back
- *    (it reads it from `teams:list`) but never set it or clear it. `teams:markMine` is the only way to clear it;
+ *    (it reads it from `teams:list`) but never set it or clear it. `teams:markMine` is the only way to clear it for a member that keeps its
+ *    `memberId`; a member sent as new loses it (FR-023 [KNOWN GAP]);
  *  - `origin`, `createdAt`, `updatedAt` are main's (the store ignores the window's): a window `put` always creates `own`.
  *    `putImported` of the store is not exposed here (spec 111 T010 builds the import in main).
  *
@@ -51,20 +52,35 @@ const hasOwn = (o: Record<string, unknown>, k: string): boolean => Object.protot
  * properties, so an own `__proto__` key stays data and sets no prototype.
  */
 const SNAP_DEPTH = 8;
-function snap(v: unknown, depth = 0): unknown {
+/** bounds judged BEFORE any copy (spec 111, second read of #1640): own keys of the template, of a member, of any nested object; the total values of the copy */
+export const MAX_TEMPLATE_KEYS = 32;
+export const MAX_MEMBER_KEYS = 64;
+export const MAX_VALUES = 5000;
+class TooLarge extends Error {}
+/** True when `o` has more than `max` own keys. A counting loop that stops at the limit (`Object.keys` would build the whole list first); a `for...in` also walks inherited enumerable keys, so only own ones count. */
+function moreKeysThan(o: object, max: number): boolean {
+  let n = 0;
+  for (const k in o) if (Object.prototype.hasOwnProperty.call(o, k) && ++n > max) return true;
+  return false;
+}
+/** `b.left` is ONE budget for the whole copy: every value visited (a string, number, boolean, null, undefined, array or object) takes one. */
+function snap(v: unknown, b: { left: number }, depth = 0): unknown {
+  if (--b.left < 0) throw new TooLarge();
   if (v === null || typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') return v;
   if (v === undefined) return undefined;
   if (typeof v !== 'object' || depth > SNAP_DEPTH) throw new Error('not data');
   if (Array.isArray(v)) {
     const len = v.length;
     if (len > 10000) throw new Error('not data');
+    if (len > b.left) throw new TooLarge(); // refused before the first element is read
     const a: unknown[] = [];
-    for (let i = 0; i < len; i++) a.push(snap(dataAt(v, String(i)), depth + 1));
+    for (let i = 0; i < len; i++) a.push(snap(dataAt(v, String(i)), b, depth + 1));
     return a;
   }
   if (!isPlain(v)) throw new Error('not data');
+  if (moreKeysThan(v, MAX_MEMBER_KEYS)) throw new TooLarge();
   const entries: [string, unknown][] = [];
-  for (const k of Object.keys(v)) entries.push([k, snap(dataAt(v, k), depth + 1)]);
+  for (const k of Object.keys(v)) entries.push([k, snap(dataAt(v, k), b, depth + 1)]);
   return Object.fromEntries(entries);
 }
 function dataAt(o: object, k: string): unknown {
@@ -102,13 +118,23 @@ export class TeamsIpcOps {
   }
 
   put(valueIn: unknown): TeamsOne {
-    // the members count first: a list of 9 or 10,000 members is refused before anything is copied (the copy costs as much as the list)
+    // judged BEFORE any copy, from the argument's own data properties (no getter runs): the members count, the keys of the template and of each member
+    // (fixed sentences naming no key), then `snap` keeps one total budget of values. Each step is bounded work, whatever the window sent.
     try {
-      const raw = isPlain(valueIn) ? Object.getOwnPropertyDescriptor(valueIn, 'members') : undefined;
-      if (raw && 'value' in raw && Array.isArray(raw.value) && raw.value.length > LIMITS.members) return this.bad([`Members: at most ${LIMITS.members}.`]);
+      if (isPlain(valueIn)) {
+        const raw = Object.getOwnPropertyDescriptor(valueIn, 'members');
+        if (raw && 'value' in raw && Array.isArray(raw.value) && raw.value.length > LIMITS.members) return this.bad([`Members: at most ${LIMITS.members}.`]);
+        if (moreKeysThan(valueIn, MAX_TEMPLATE_KEYS)) return this.bad(['Template: too many fields.']);
+        if (raw && 'value' in raw && Array.isArray(raw.value)) {
+          for (let i = 0; i < raw.value.length; i++) {
+            const d = Object.getOwnPropertyDescriptor(raw.value, String(i));
+            if (d && 'value' in d && isPlain(d.value) && moreKeysThan(d.value, MAX_MEMBER_KEYS)) return this.bad(['Member: too many fields.']);
+          }
+        }
+      }
     } catch { return this.bad(['Template: send plain data.']); }
     let value: unknown;
-    try { value = snap(valueIn); } catch { return this.bad(['Template: send plain data.']); }
+    try { value = snap(valueIn, { left: MAX_VALUES }); } catch (e) { return this.bad([e instanceof TooLarge ? 'Template: too large.' : 'Template: send plain data.']); }
     if (!isPlain(value)) return this.bad(['Template: send an object.']);
     const idv = own(value, 'id');
     if (idv !== undefined && (typeof idv !== 'string' || idv.length === 0 || idv.length > ID_MAX)) return this.bad(['Template id: not valid.']);

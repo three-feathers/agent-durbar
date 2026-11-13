@@ -28,7 +28,14 @@
  *  24 a handler lets a throw out                                             -> handlersNeverThrow (the real handlers on a fake Electron)
  *  25, 26 `setAside` always false / always true                              -> listSetAside
  *  27 putImported keeps the ids the caller passed                            -> storedIds
- *  EQUIVALENT (survives, on purpose): 28 the second `members.length > 8` check, after the copy: the first check (before the copy) already
+ *  29, 30 the template-key / member-key bound removed                         -> bounds
+ *  31..34 each key bound one more / one fewer (32 and 64)                    -> bounds
+ *  35 the key bound of nested objects removed                                -> bounds
+ *  36 the value budget counted per array instead of in total                  -> bounds
+ *  37, 38 the budget 5,001 / 4,999 (the 5,000 boundary is exact)               -> bounds
+ *  39 primitives not counted in the budget                                   -> bounds
+ *  EQUIVALENT (survives, on purpose): 40 the `len > b.left` refusal before an array's items are read (the loop would hit the budget after at most
+ *  5,000 reads: the same answer, the check only saves those reads); 28 the second `members.length > 8` check, after the copy: the first check (before the copy) already
  *  refuses every list that is too long, and the copy keeps its length; the second is defence in depth only. Mutants were run on COPIES of the
  *  compiled JS (a throwaway runner under the scratchpad). The review of #1640 reported surviving mutants without naming them, so the ones above
  *  (format, id length, 10,000, members count, nesting) were rebuilt from the code's own limits.
@@ -365,8 +372,8 @@ section('limitsAndShapes', () => {
   eq(errOf(ops.markMine('', A)), 'Template id: not valid.', 'markMine: empty id');
   // the copy: 10,000 items in an array, nesting of 8 levels
   const base = (extra: Record<string, unknown>): Record<string, unknown> => ({ name: 'Deep', members: [mem('A')], ...extra });
-  ok(ops.put(base({ junk: new Array(10000).fill(0) })).ok, 'an array of 10,000 in an ignored key is copied');
-  eq(errOf(ops.put(base({ junk: new Array(10001).fill(0) }))), 'Template: send plain data.', 'one more than 10,000 is refused');
+  eq(errOf(ops.put(base({ junk: new Array(10000).fill(0) }))), 'Template: too large.', 'an array of 10,000 is over the total budget (the per-array cap is judged after it)');
+  eq(errOf(ops.put(base({ junk: new Array(10001).fill(0) }))), 'Template: send plain data.', 'one more than 10,000 is refused by the per-array cap');
   const nest = (k: number): Record<string, unknown> => { let o: Record<string, unknown> = {}; for (let i = 1; i < k; i++) o = { o }; return o; };
   ok(ops.put(base({ junk: nest(8) })).ok, 'eight levels of nesting are copied');
   eq(errOf(ops.put(base({ junk: nest(9) }))), 'Template: send plain data.', 'nine are refused');
@@ -374,6 +381,50 @@ section('limitsAndShapes', () => {
   eq(errOf(ops.put(Object.create({ name: 'x', members: [] }))), 'Template: send plain data.', 'an inherited shape is not plain');
   eq(errOf(ops.put('x')), 'Template: send an object.', 'a string is not an object');
   eq(errOf(ops.put([])), 'Template: send an object.', 'an array is not an object');
+});
+
+section('bounds', () => {
+  const { ops, store } = setup();
+  const errOf = (r: { ok: boolean }): string => ((r as unknown as { errors?: string[] }).errors ?? ['(ok)'])[0];
+  const full = (i: number): Record<string, unknown> => mem('M' + i, { role: 'Dev ' + i, brief: 'x'.repeat(4000), profile: 'agent-' + i, model: 'model-x', effort: 'high', cap: { unit: 'usd', amount: 5 }, character: 'bob-glasses', sendBrief: true });
+  // a real template is far below every bound
+  const real = ops.put({ name: 'Real', description: 'd', members: Array.from({ length: 8 }, (_, i) => full(i)) });
+  ok(real.ok, 'eight full members (about 100 values) pass every bound: ' + errOf(real));
+  const wide = Object.fromEntries(Array.from({ length: 35 }, (_, i) => ['k' + i, i]));
+  const m35 = ops.put({ name: 'Wide', members: Array.from({ length: 8 }, (_, i) => ({ ...mem('W' + i), ...wide })) });
+  ok(!['Template: too many fields.', 'Member: too many fields.', 'Template: too large.'].includes(errOf(m35)), 'eight members of 35+ keys pass the bounds (the validator then refuses the unknown keys): ' + errOf(m35));
+  // template keys: 32 pass, 33 refused, no key named
+  const keys = (n: number): Record<string, unknown> => ({ name: 'K', members: [mem('A')], ...Object.fromEntries(Array.from({ length: n - 2 }, (_, i) => ['extra' + i, 1])) });
+  ok(ops.put(keys(32)).ok, 'a template with 32 own keys passes');
+  eq(errOf(ops.put(keys(33))), 'Template: too many fields.', 'a template with 33 keys is refused');
+  ok(!text(ops.put(keys(33))).includes('extra'), 'and no key is named');
+  // member keys: 64 pass the bound, 65 refused
+  const mk = (n: number): Record<string, unknown> => ({ ...mem('A'), ...Object.fromEntries(Array.from({ length: n - 5 }, (_, i) => ['f' + i, 1])) });
+  ok(errOf(ops.put({ name: 'M', members: [mk(64)] })) !== 'Member: too many fields.', 'a member with 64 keys is past the bound (the validator refuses its unknown keys)');
+  eq(errOf(ops.put({ name: 'M', members: [mk(65)] })), 'Member: too many fields.', 'a member with 65 keys is refused');
+  ok(!text(ops.put({ name: 'M', members: [mk(65)] })).includes('f1'), 'no key named');
+  // nested objects are bounded too
+  eq(errOf(ops.put({ name: 'N', members: [mem('A')], junk: Object.fromEntries(Array.from({ length: 65 }, (_, i) => ['n' + i, 1])) })), 'Template: too large.', 'a nested object of 65 keys is refused by the copy');
+  // the total budget: base = top 1 + name 1 + members 1 + member 1 + 5 fields = 9 values, the junk key's array 1, then its items
+  const withJunk = (n: number): Record<string, unknown> => ({ name: 'T', members: [mem('A')], junk: new Array(n).fill(0) });
+  ok(ops.put(withJunk(4990)).ok, 'exactly 5,000 values pass');
+  eq(errOf(ops.put(withJunk(4991))), 'Template: too large.', 'one more is refused');
+  // the budget is ONE for the whole copy, not one per array
+  eq(errOf(ops.put({ name: 'T', members: [mem('A')], junk: Array.from({ length: 17 }, () => new Array(300).fill(0)) })), 'Template: too large.', '17 arrays of 300 (each far under the per-array cap) are over the total');
+  // the cost: both cases of the second read, with invented data, refused in milliseconds
+  const many: Record<string, unknown> = { name: 'T', members: [mem('A')] };
+  for (let i = 0; i < 800000; i++) many['x' + i] = 1;
+  let t0 = Date.now();
+  const r1 = ops.put(many);
+  const ms1 = Date.now() - t0;
+  eq(errOf(r1), 'Template: too many fields.', '800,000 own keys: refused by the key bound');
+  const arrays = Array.from({ length: 9999 }, () => new Array(300).fill(0));
+  t0 = Date.now();
+  const r2 = ops.put({ name: 'T', members: [mem('A')], extra: arrays });
+  const ms2 = Date.now() - t0;
+  eq(errOf(r2), 'Template: too large.', '9,999 arrays of 300: refused by the budget');
+  console.log(`bounds: 800,000 keys refused in ${ms1} ms; 9,999 arrays of 300 refused in ${ms2} ms`);
+  ok(ms1 < 8000 && ms2 < 1500, "both are refused, the second in milliseconds (the first is the engine listing 800,000 keys once: about a second here, below the IPC clone of the same object; generous limit)");
 });
 
 section('handlersNeverThrow', () => {
