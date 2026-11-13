@@ -154,14 +154,13 @@ module.exports = async (ctx) => {
   for (const [w, h] of SIZES) await flight(w, h, false);
   if (FLIGHT) return;
   if (KEY === 'photo') await flight(1280, 800, true);
-  const plates = `[...document.querySelectorAll('#stage .ro-plate[data-id]')]`;
   await endCase({ label: 'no letter when the plate is off screen', css: '#stage .ro-plate[data-id]{position:fixed!important;left:-9000px!important;top:0!important}',
-    hold: `${plates}.length>0&&${plates}.every(p=>p.getBoundingClientRect().right<0)`, letters: 0 });
+    hold: `[...document.querySelectorAll('#stage .ro-plate[data-id]')].length>0&&[...document.querySelectorAll('#stage .ro-plate[data-id]')].every(p=>p.getBoundingClientRect().right<0)`, letters: 0 });
   if (KEY === 'photo') {
     await endCase({ label: 'no letter when the Postbox is off screen', css: '#stage .ro-lplate[data-post]{position:fixed!important;left:-9000px!important;top:0!important}',
       hold: `document.querySelector('#stage .ro-lplate[data-post]').getBoundingClientRect().right<0`, letters: 0 });
     await endCase({ label: 'a letter when the plate is partly on screen', css: '#stage .ro-plate[data-id]{position:fixed!important;left:calc(FLOORLEFTpx - 20px)!important;top:FLOORTOPpx!important}',
-      hold: `${plates}.length>0&&${plates}.every(p=>{const r=p.getBoundingClientRect(),f=document.getElementById('floor').getBoundingClientRect();return r.left<f.left&&r.right>f.left&&r.top>=f.top&&r.bottom<=f.bottom})`, letters: 1 });
+      hold: `[...document.querySelectorAll('#stage .ro-plate[data-id]')].length>0&&[...document.querySelectorAll('#stage .ro-plate[data-id]')].every(p=>{const r=p.getBoundingClientRect(),f=document.getElementById('floor').getBoundingClientRect();return r.left<f.left&&r.right>f.left&&r.top>=f.top&&r.bottom<=f.bottom})`, letters: 1 });
     await endCase({ label: 'no letter when the desk is off screen in the flat office', flat: true, css: '#stage .desk[data-id]{position:fixed!important;left:-9000px!important;top:0!important}',
       hold: `document.querySelectorAll('#stage .desk[data-id]').length>0&&[...document.querySelectorAll('#stage .desk[data-id]')].every(p=>p.getBoundingClientRect().right<0)`, letters: 0 });
   }
