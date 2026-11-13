@@ -29,6 +29,8 @@ const INDEX = path.join(ROOT, 'dist', 'renderer', 'index.html');
 const TL = { x: 78, y: 40 }; /* traffic-light box: the hiddenInset default, not measured on a Mac */
 const MIN_CHAT_GRAB = 32; /* px wide, with 24px of height */
 const SIZES = [[1440, 900], [1280, 800]];
+/* spec 052 FR-138 (issue 1635): narrow windows, down to the app's minimum width (640, main.ts minWidth): a screen header must fit the window */
+const NARROW = [[760, 800], [700, 800], [640, 800]];
 
 /* runs in the page */
 function measure(TLX, TLY) {
@@ -111,6 +113,22 @@ function measure(TLX, TLY) {
   };
 }
 
+/* runs in the page: the header of the open screen against the window */
+function measureHead() {
+  const h = document.querySelector('#screen:not([hidden]) .scr-head');
+  if (!h) return null;
+  const rr = (r) => [Math.round(r.left), Math.round(r.right)];
+  const close = document.getElementById('scrClose');
+  return {
+    W: document.documentElement.clientWidth,
+    closeRight: close ? close.getBoundingClientRect().right : null,
+    headScroll: h.scrollWidth - h.clientWidth,
+    title: rr(h.querySelector('h2').getBoundingClientRect()),
+    kids: [...h.children].map((e) => rr(e.getBoundingClientRect())),
+    nav: !!document.querySelector('#screen:not([hidden]) .scr-nav'),
+  };
+}
+
 async function run(ctx) {
   const SHOTS = process.env.MAC_TITLEBAR_SHOTS;
   if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
@@ -180,6 +198,40 @@ async function run(ctx) {
     await must('#inboxBtn'); await rec('inbox', size, 'modal'); await reset();
     await js(`(()=>{const d=document.createElement('div');d.className='dlg-ov';d.id='auditDlg';d.innerHTML='<div class="dlg wide" role="dialog" aria-modal="true"><h3>Set up Claude Code</h3><div class="dbody">'+'<p>step line</p>'.repeat(60)+'</div><div class="dbtn"><button class="btn">Cancel</button><button class="btn primary">Next</button></div></div>';document.body.appendChild(d)})()`);
     await rec('tall-dialog', size, 'modal'); await reset();
+  }
+  /* spec 052 FR-138: the Close button of every screen header stays inside a narrow window, the title keeps its place under the traffic lights */
+  const closeIn = async (name, size, W) => {
+    await ctx.sleep(600);
+    const m = await js(`(${measureHead.toString()})()`);
+    const why = [];
+    if (!m) why.push('no screen header');
+    else {
+      if (m.closeRight === null) why.push('no Close button');
+      else if (m.closeRight > W + 0.5) why.push(`Close right edge at x=${Math.round(m.closeRight)}, past the ${W}px window`);
+      if (m.headScroll > 0) why.push(`header is ${m.headScroll}px wider than its box`);
+      /* Settings (a section list) is left out of the title test: its title under the traffic lights in narrow windows is the open issues 1538 and 1539 */
+      if (!m.nav && m.title[0] < TL.x - 1) why.push(`title at x=${m.title[0]} is under the traffic lights`);
+    }
+    results.push({ name, size, ok: !why.length });
+    console.log(`[mac-titlebar] ${why.length ? 'FAIL' : 'ok  '} ${size} ${name.padEnd(20)} close.right=${m && m.closeRight !== null ? Math.round(m.closeRight) : '-'} kids=${m ? JSON.stringify(m.kids) : '-'}${why.length ? '\n    ' + why.join('\n    ') : ''}`);
+    if (SHOTS) { await ctx.shot(path.join(SHOTS, `052-mac-${name}-${size}.png`)); }
+  };
+  for (const [w, h] of NARROW) {
+    const size = `${w}x${h}`;
+    await H.load({ w, h, ready: 'fit' });
+    await js(`document.documentElement.dataset.platform='darwin'`);
+    await ctx.sleep(400);
+    await js(`['restoreStrip','awayStrip'].forEach(i=>{document.getElementById(i).hidden=true})`);
+    /* mutant (proves the check can fail): MAC_TITLEBAR_MUTANT=nowrap puts the header back to one row */
+    if (process.env.MAC_TITLEBAR_MUTANT === 'nowrap') await js(`(()=>{const st=document.createElement('style');st.textContent='.scr-head{flex-wrap:nowrap !important}';document.head.appendChild(st)})()`);
+    const W = await js(`document.documentElement.clientWidth`);
+    if (W > w + 1 || W < w - 1) throw new Error(`the window is ${W}px wide, not ${w}`);
+    await openChat();
+    for (const [name, open] of [['chat-tools', `window.DurbarScreens.openTools(null)`], ['chat-tools-cost', `window.DurbarScreens.openTools(null,'cost')`], ['chat-tools-activity', `window.DurbarScreens.openTools(null,'activity')`], ['chat-settings', `window.DurbarScreens.openSettings()`]]) {
+      await js(open); await closeIn(name, size, W);
+      await js(`window.DurbarScreens.close()`); await ctx.sleep(300);
+    }
+    await reset();
   }
   const bad = results.filter((r) => !r.ok);
   console.log(`\nmac-titlebar check: ${results.length - bad.length}/${results.length} states passed, ${bad.length} failed`);

@@ -2,9 +2,10 @@
 #screen{flex:1;min-height:0;min-width:0;display:flex;flex-direction:column;background:var(--bg);overflow:hidden}
 #screen[hidden]{display:none}
 body.screen-open .workspace{display:none}
-.scr-head{flex:none;display:flex;align-items:center;gap:12px;padding:8px max(24px,calc((100% - 880px)/2 + 24px));border-bottom:1px solid var(--line);background:var(--surface)} /* spec 052 FR-097: the title and Close line up with the centred content column */
+.scr-head{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:calc(var(--s-1)*1.5) 12px;padding:8px max(24px,calc((100% - 880px)/2 + 24px));border-bottom:1px solid var(--line);background:var(--surface)} /* spec 052 FR-097: the title and Close line up with the centred content column */
 .scr-head h2{margin:0;font-size:var(--t1-size);font-weight:var(--t1-weight);line-height:var(--t1-lh);letter-spacing:-.01em}
 .scr-head .grow{flex:1}
+.scr-head #scrClose{margin-left:auto;flex:none} /* spec 052 FR-138: a header wider than the window wraps its controls onto a second row; Close stays at the end of the last row, inside the window */
 .scr-head .per-since{margin-left:-4px;font-size:var(--t5-size);color:var(--muted);white-space:nowrap} /* spec 052 FR-092: the start date of "All time" in Cost */
 .scr-body{flex:1;min-height:0;overflow:auto;padding:16px 24px 24px;max-width:880px;width:100%;margin:0 auto}
 .scr-sec{margin:0 0 var(--sec-gap);padding:var(--sec-pad);background:var(--surface);border:1px solid var(--line);border-radius:var(--r-xl)}

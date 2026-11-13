@@ -108,6 +108,15 @@ Four reviewers worked from 17 simulator screenshots: the office at 1440x900 and 
 
 ## Changes
 
+### 2026-11-13: a screen header fits a narrow window (FR-138, bug, issue #1635)
+
+*Bug* (simulator with the macOS title bar emulation, also on `main`; not seen on a real Mac): over a chat, in a window 640 to 760 px wide (640 is the app's `minWidth`), the Tools header is wider than the window: at 700 px the Close button's right edge is at x=860 (Cost view 871, Activity view 928), at 760 px the same, so Close cannot be reached by the mouse. Cause (read): `.scr-head` (`screens.css`) is a one-row flex box without wrap, and its children (period buttons, agent select, tab strip, Close) do not shrink (`.seg button` is `white-space:nowrap`).
+
+- `[IMPLEMENTED]` **FR-138 (a screen header fits the window).** `.scr-head` wraps (`flex-wrap:wrap`, 6px between rows): when the title, the period buttons, the select and the tab strip do not fit on one row, the tab strip moves to the next row, and Close stays at the end of the last row (`margin-left:auto`), so its right edge is inside the window at every width from 640 up. No change to the title's place (x=78 under the traffic lights, FR-097) or to a header that already fits (one row). A wrapped row starts at the header's left padding, as the title does.
+- `[IMPLEMENTED]` `check-mac-titlebar` also opens, at 760x800, 700x800 and 640x800 over a chat, Tools (tool usage, Cost and Activity views) and Settings and fails if the Close button's right edge is past the window, the header is wider than its box, or (outside Settings) the title starts under the traffic lights. `sim:` before, on `main`: 12 of the 12 narrow states fail (Close at x=860, 871 and 928; Settings on the title assert, see the KNOWN GAP); after: see the PR. Mutant: `MAC_TITLEBAR_MUTANT=nowrap` (the header back to one row) fails with "Close right edge at x=860, past the 700px window".
+- `[KNOWN GAP]` (not decided here) a double-click on a screen title sends no zoom: `keys.js` TITLE_CONTROLS still lists `[tabindex]` and the title has tabindex -1. Whether it should zoom (the macOS convention) is an owner question, filed as issue #1659; no behaviour changed here.
+- `[KNOWN GAP]` the Settings title at x=24 (under the traffic lights) in windows narrower than about 1208 px is the open issues #1538 and #1539; the new check leaves the Settings title out. Not run on a real Mac, Windows or Linux (their headers may wrap differently with other fonts).
+
 ### 2026-11-11: the Settings title lines up with the list-and-page block (FR-097, bug, issue #1458)
 
 *Bug*: the macOS "UI on three OSes" check (`check-mac-titlebar`, spec 052 FR-138) fails in `chat-settings` and `chat-strip-settings` at both sizes: "screen title at x=194, the centred column is at x=304 (FR-097)" (x=114 against 224 at 1280x800). Cause (read): the Settings section list (FR-226, PR #1249) moved `.scr-head` on purpose (`screens.css`: `#screen:has(.scr-nav) .scr-head`, `--sn-pad`), and the check and FR-097 still named the 880px column. The other asserts of the check pass (the grab block is 920 px or more, nothing clickable sits under the traffic lights or in a drag region).
