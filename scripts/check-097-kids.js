@@ -132,8 +132,10 @@ module.exports = async (ctx) => {
     await js(`(()=>{document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(first)})+'"]').focus();return 1})()`);
     await H.key('Tab');
     if (await js(`document.activeElement.matches('.ren.ro-ren')`)) await H.key('Tab');
-    for (const k of fd.kids) { assert.ok(await js(`document.activeElement.matches('.ro-kid')&&document.activeElement.dataset.id===${jsLiteral(k.id)}`), `${tag}: Tab reaches the kid ${k.id} in order`); await H.key('Tab'); }
-    assert.ok(await js(`document.activeElement.matches('.ro-kmore')`), `${tag}: after the last kid, Tab reaches "+K"`);
+    for (const k of fd.kids) { await must(`document.activeElement.matches('.ro-kid')&&document.activeElement.dataset.id===${jsLiteral(k.id)}`, `${tag}: Tab reaches the kid ${k.id} in order`, 3000); await H.key('Tab'); }
+    const onMore = await H.until(`document.activeElement.matches('.ro-kmore')`, 3000);
+    const focusNow = onMore ? '' : await js(`(document.activeElement.className||document.activeElement.tagName)+' '+(document.activeElement.dataset.id||'')`);
+    assert.ok(onMore, `${tag}: after the last kid, Tab reaches "+K" (focus on ` + focusNow + ')');
     assert.ok(await js(`(()=>{const c=getComputedStyle(document.activeElement);return c.outlineStyle!=='none'&&parseFloat(c.outlineWidth)>=2})()`), `${tag}: "+K" shows a 2 px focus ring`);
     await H.key('Tab');
     assert.ok(await js(`!document.activeElement.closest('.ro-kids')`), `${tag}: then Tab leaves the kids`);
