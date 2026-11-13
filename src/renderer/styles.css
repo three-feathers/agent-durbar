@@ -1313,6 +1313,8 @@ body.browser-big #panel .bpane :is(.bstrip,.bbar,.bstat){padding-left:var(--s-4)
 .letter{position:absolute;left:0;top:0;width:16px;height:12px;margin:-6px 0 0 -8px;color:var(--ink-2);pointer-events:none;z-index:3}
 .letter svg{display:block}
 .letter.flying{transition:transform .9s cubic-bezier(.3,.1,.3,1)}
+.letter.real{color:var(--ink);background:var(--surface);box-shadow:var(--shadow-card)} /* spec 097 FR-377: a chip of the world's own surface and ink over a floor photo or the arcade's floor */
+html[data-world="retro"] .letter.real{box-shadow:none;outline:1px solid var(--ink)} /* the arcade: square, no blur, a 1 px ink outline, as its pixel art */
 @media (prefers-reduced-motion:reduce){.letter{display:none}}
 .place-add{flex:none;align-self:center;width:26px;height:26px;box-sizing:border-box;padding:0;border-radius:50%;border:1.5px dashed var(--line-2);background:color-mix(in srgb,var(--raised) 55%,transparent);color:var(--ink-2);font:inherit;font-size:16px;line-height:1;cursor:pointer}
 .place-add:hover{background:var(--raised);border-style:solid}

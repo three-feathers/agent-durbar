@@ -411,6 +411,14 @@ Spec [024](../024-office-places/spec.md) adds a one-row **lobby** band between t
 - Docs: `postNext` (not `postLines`) in the plan and tasks; `lobbyFit(aw, places, addButton, post)` in FR-039 and the plan.
 - *Result (2026-10-23, Linux, Xvfb, simulator only):* `sim:` `shots-001-lobby.js` hostile pass at 1440x900: four agents (the Boss's first entry, one inside "+N", Omar at the Bank, a coffee-corner visitor) get a title like `<img src=x onerror=…><b>Mal1</b>`, and a schedule prompt with the same markup is saved through the simulator bridge; no `img` and no injected `b` in `#stage`, `#walkers` or `#modeMenu`, `window.__pwn` stays unset, and the entries, tile labels and tooltips, the "+N" list and the Postbox line show the literal text. Mutation: `esc(a.name)` dropped from the lobby entry fails it. Token: a bare `ghp_` token placed across the desk title's 200th character leaves no `ghp_` and no piece of it in the title or the accessible name; mutation (cut, then mask) fails it with `ghp_Q7Q7Q7…` in the title. (A token after `Authorization: token` is masked even when cut, by the header rule, so the check uses a bare token.) `test:` `test:places` `every: null` cases; mutation back to `every==null` fails it.
 
+### 2026-11-13: the letter also flies in the Real office (issue #1587)
+
+*Found:* the Postbox's letter rule looked for the flat office's `.place.postbox` and `.desk[data-id]` only, so in the Real office (Photo office, Prehistoric cave, Retro arcade) it never flew.
+
+*Changed:*
+- Amendment to the Postbox's letter rule (FR-038): **the letter also flies in the Real office:** from the Postbox plate (`.ro-lplate[data-post]`) to the agent's name plate (`.ro-plate[data-id]`), skipped only when either end is off screen (in the flat office too: a desk scrolled out of view got a letter flying to nowhere). Rules, driver and mutants: [spec 097](../097-real-office/spec.md) FR-377.
+- *Result (2026-11-13, Linux, Xvfb, simulator only):* see spec 097 FR-377 (`sim:` `check-097-letter`).
+
 ### 2026-10-22: a long unbroken name on a full desk card (issue #536)
 
 The full card's name (`.who .name`) wraps to two lines and ends in "…"; a token with no spaces may break anywhere. The rule is spec 059 FR-019 (it owns where names are shown); card widths do not change, and a full card with a long name can only get shorter.

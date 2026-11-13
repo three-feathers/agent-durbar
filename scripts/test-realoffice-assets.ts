@@ -23,6 +23,36 @@ const KEYS = ['files', 'source', 'tool', 'date', 'made by', 'approved by', 'refe
 const CLAUSE = /fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named/;
 const kindOf = (f: string): keyof typeof CAPS | null => /^fx-[a-z]+\.webp$/.test(f) ? 'fixture' : /^p\d\d-[\w-]+(\.h)?\.webp$/.test(f) || /^[a-z][a-z0-9-]*-\w+\.webp$/.test(f) ? 'person' : f === 'desk.webp' || f === 'desk.h.webp' ? 'desk' : /^floor(-night)?\.webp$/.test(f) ? 'floor' : /^wall(-night)?\.webp$/.test(f) ? 'wall' : /^monitor(-[a-z]+)?\.webp$/.test(f) ? 'monitor' : f === 'glow.webp' ? 'glow' : null;
 
+/** Spec 102 FR-302 (T265a): the world previews in `realoffice/previews/`: one WebP per built-in world and Plain, 640 px wide, each at most 48 KB with no metadata chunk,
+ *  and `previews.json` naming exactly those, each with its own size and a zoom origin of 0..100 percent (FR-301). Sentences, empty = fine. */
+export const PREVIEW_MAX = 48 * 1024, PREVIEW_W = 640;
+export function previewProblems(files: Map<string, Buffer>, json: string, ids: string[]): string[] {
+  const out: string[] = [];
+  let doc: { formatVersion?: unknown; previews?: Record<string, { file?: unknown; width?: unknown; height?: unknown; bytes?: unknown; origin?: { x?: unknown; y?: unknown } }> };
+  try { doc = JSON.parse(json); } catch { return ['previews.json is not JSON']; }
+  if (doc.formatVersion !== 1) out.push('previews.json: formatVersion 1');
+  const prev = doc.previews || {};
+  if (JSON.stringify(Object.keys(prev).sort()) !== JSON.stringify([...ids].sort())) out.push(`previews.json names ${Object.keys(prev).sort().join(', ')}; the built-in worlds are ${[...ids].sort().join(', ')}`);
+  for (const id of ids) {
+    const e = prev[id], name = id + '.webp';
+    const buf = files.get(name);
+    if (!buf) { out.push(`${name}: no picture for ${id}`); continue; }
+    if (!e || e.file !== name) out.push(`previews.json ${id}: file is ${name}`);
+    if (buf.length > PREVIEW_MAX) out.push(`${name}: ${buf.length} bytes, over the 48 KB preview cap (FR-302)`);
+    let info: { chunks: string[]; width: number; height: number } | null = null;
+    try { info = webpInfo(buf); } catch { out.push(`${name}: not a WebP file`); }
+    if (info) {
+      for (const c of info.chunks) if (!['VP8 ', 'VP8L', 'VP8X', 'ALPH'].includes(c)) out.push(`${name}: metadata or unexpected chunk "${c}"`);
+      if (info.width !== PREVIEW_W) out.push(`${name}: ${info.width} px wide, not ${PREVIEW_W}`);
+      if (e && (e.width !== info.width || e.height !== info.height || e.bytes !== buf.length)) out.push(`previews.json ${id}: says ${e.width}x${e.height}, ${e.bytes} bytes; the picture is ${info.width}x${info.height}, ${buf.length} bytes (retake with npm run shots:docs)`);
+    }
+    const o = e && e.origin;
+    if (!o || typeof o.x !== 'number' || typeof o.y !== 'number' || o.x < 0 || o.x > 100 || o.y < 0 || o.y > 100) out.push(`previews.json ${id}: a zoom origin x and y of 0..100 percent`);
+  }
+  for (const f of files.keys()) if (!ids.includes(f.replace(/\.webp$/, ''))) out.push(`${f}: a picture for no built-in world`);
+  return out;
+}
+
 /** ASSETS.md: one section per source sheet (`### name`), each a list of `- key: value` lines */
 export function sections(md: string): Map<string, Record<string, string>> {
   const out = new Map<string, Record<string, string>>();
@@ -427,6 +457,33 @@ if (fs.existsSync(path.join(ROOT, 'dist', 'renderer', 'index.html'))) {
     assert.deepStrictEqual(JSON.parse((m as RegExpExecArray)[1]), src.json, `${json}.js carries ${json}.json unchanged`);
   }
   for (const f of ['realoffice.js', 'realoffice.css', 'realoffice-world.css']) assert.ok(fs.existsSync(path.join(ROOT, 'dist', 'renderer', f)), f + ' is built');
+}
+
+// ---- the world previews (spec 102 FR-302, T265a): shipped with the app, one per built-in world and Plain ----
+{
+  const dir = path.join(RO, 'previews'), pf = new Map<string, Buffer>();
+  assert.ok(fs.existsSync(dir), 'realoffice/previews exists (FR-302)');
+  for (const f of fs.readdirSync(dir)) { if (f.endsWith('.webp')) pf.set(f, fs.readFileSync(path.join(dir, f))); else assert.ok(f === 'previews.json', 'only pictures and previews.json in previews/: ' + f); }
+  const ids = ['plain', ...(require(path.join(__dirname, '..', '..', 'src', 'renderer', 'crew.js')) as { WORLDS: { id: string }[] }).WORLDS.map((x) => x.id)]; // eslint-disable-line @typescript-eslint/no-var-requires
+  const pj = fs.readFileSync(path.join(dir, 'previews.json'), 'utf8');
+  assert.deepStrictEqual(previewProblems(pf, pj, ids), [], 'the previews pass (FR-302)');
+  const good = pf.get('photo.webp') as Buffer, doc = JSON.parse(pj);
+  const red = (m: (f: Map<string, Buffer>, d: typeof doc) => void, re: RegExp, why: string): void => { const f = new Map(pf), d = JSON.parse(pj); m(f, d); assert.ok(previewProblems(f, JSON.stringify(d), ids).some((x) => re.test(x)), 'red: ' + why); };
+  red((f) => f.set('photo.webp', Buffer.concat([good, Buffer.alloc(PREVIEW_MAX)])), /over the 48 KB/, 'a preview of 49 KB or more');
+  red((f) => f.delete('cave.webp'), /no picture for cave/, 'a world without its preview');
+  red((f) => f.set('extra.webp', good), /no built-in world/, 'a picture for no world');
+  red((_f, d) => { delete d.previews.retro; }, /previews.json names/, 'previews.json missing a world');
+  red((_f, d) => { d.previews.plain.origin.x = 140; }, /zoom origin/, 'a zoom origin outside the picture');
+  red((_f, d) => { delete d.previews.plain.origin; }, /zoom origin/, 'a preview with no zoom origin');
+  red((_f, d) => { d.previews.photo.bytes = 1; }, /retake with npm run shots:docs/, 'a stale size in previews.json');
+  red((f) => f.set('photo.webp', Buffer.from('not an image at all, just some text')), /not a WebP/, 'a file that is no WebP');
+  const withChunk = (tag: string): Buffer => { const c = Buffer.concat([Buffer.from(tag), Buffer.from([4, 0, 0, 0]), Buffer.from('abcd')]); const b = Buffer.concat([good, c]); b.writeUInt32LE(b.length - 8, 4); return b; }; // a chunk appended, RIFF size fixed up
+  red((f) => f.set('photo.webp', withChunk('EXIF')), /photo\.webp: metadata or unexpected chunk "EXIF"/, 'a preview with an EXIF chunk');
+  red((f) => f.set('photo.webp', withChunk('ICCP')), /photo\.webp: metadata or unexpected chunk "ICCP"/, 'a preview with an ICC profile chunk');
+  assert.ok(Object.keys(doc.previews).length === ids.length, 'one preview per world');
+  const dist = path.join(ROOT, 'dist', 'renderer', 'realoffice', 'previews');
+  if (fs.existsSync(path.join(ROOT, 'dist', 'renderer', 'index.html'))) assert.deepStrictEqual(fs.readdirSync(dist).sort(), [...pf.keys(), 'previews.js'].sort(), 'dist previews/ holds the pictures and previews.js, not previews.json');
+  assert.ok(/previews/.test(copy) && /DurbarWorldPreviews/.test(copy), 'copy-assets.js copies realoffice/previews');
 }
 const index = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'index.html'), 'utf8');
 const csp = /Content-Security-Policy" content="([^"]*)"/.exec(index);
