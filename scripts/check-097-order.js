@@ -327,14 +327,23 @@ module.exports = async (ctx) => {
       /* the office order on screen, read apart from the code under test: Real office's own layout (rooms as drawn, desks left to right, lounge seats out), or the flat rooms' desks */
       const ORDER_NOW = real ? `window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).filter(d=>!d.lounge).map(d=>d.id).filter((x,i,l)=>l.indexOf(x)===i)` : `[...document.querySelectorAll('#stage .room .unit > .desk[data-id]')].map(d=>d.dataset.id)`;
       const shown = () => js(ORDER_NOW);
-      const facts = await js(`(()=>{const ag=window.__durbarSimUi.agents().filter(a=>!a.parent);const lay=${jsLiteral(real)}?window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks):[];return {list:ag.map(a=>a.id),room:Object.fromEntries(ag.map(a=>[a.id,a.room])),busy:ag.filter(a=>a.state==='waiting'||a.state==='error'||a.limit).map(a=>a.id).concat(lay.filter(d=>d.away).map(d=>d.id))}})()`);
+      /* the simulator's mix of states differs from run to run and under load, so no pair is assumed: a desk is free when it is not waiting, in error, at its limit or, in Real office, away (those need you already, so they would not tie with the others, or they do not move), and the pair is chosen from the desks that are really free */
+      const facts = await js(`(()=>{const ag=window.__durbarSimUi.agents().filter(a=>!a.parent);const away=${jsLiteral(real)}?window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).filter(d=>d.away).map(d=>d.id):[];return {list:ag.map(a=>a.id),room:Object.fromEntries(ag.map(a=>[a.id,a.room])),state:Object.fromEntries(ag.map(a=>[a.id,a.state+(a.limit?'+limit':'')])),away,busy:ag.filter(a=>a.state==='waiting'||a.state==='error'||a.limit).map(a=>a.id).concat(away)}})()`);
       const s0 = await shown(), free = (id) => !facts.busy.includes(id), li = (id) => facts.list.indexOf(id);
-      /* two desks side by side in one room, shown in the session list's order: the later one moves first (Alt+Left), so the office order and the list's differ */
-      const k = s0.findIndex((id, i) => i + 1 < s0.length && free(id) && free(s0[i + 1]) && facts.room[id] === facts.room[s0[i + 1]] && li(id) < li(s0[i + 1]));
-      assert.ok(k >= 0, `${t}: two free desks side by side in one room in the list's order (${s0}; busy ${facts.busy})`);
-      const [b, a] = [s0[k], s0[k + 1]];
+      /* two free desks of one room, the later in the session list shown after the earlier one with no away desk between them: the later one moves left past the others (Alt+Left), so the office order and the list's differ. The nearest such pair is taken; the first one found among equals */
+      let k = -1, m = -1;
+      for (let i = 0; i < s0.length; i++) for (let j = i + 1; j < s0.length; j++) {
+        if (facts.room[s0[j]] !== facts.room[s0[i]]) break;
+        if (facts.away.includes(s0[j])) break;
+        if (free(s0[i]) && free(s0[j]) && li(s0[i]) < li(s0[j]) && (k < 0 || j - i < m - k)) { k = i; m = j; }
+      }
+      assert.ok(k >= 0, `${t}: two free desks of one room, the later in the list shown after the earlier, no away desk between (${s0}; state ${JSON.stringify(facts.state)}; away ${facts.away})`);
+      const [b, a] = [s0[k], s0[m]];
       assert.ok(await focus(`#stage ${card}[data-id="${a}"]`), `${t}: ${a}'s card takes the focus`);
-      await key('Left', ['alt'], { char: 'never' });
+      for (let step = m - 1; step >= k; step--) {
+        await key('Left', ['alt'], { char: 'never' });
+        await must(`(${ORDER_NOW}).indexOf(${jsLiteral(a)})===${step}`, `${t}: Alt+Left moved ${a} to place ${step} (before ${b}); shown ${await shown()}`);
+      }
       await must(`(${ORDER_NOW}).indexOf(${jsLiteral(a)})>=0&&(${ORDER_NOW}).indexOf(${jsLiteral(a)})<(${ORDER_NOW}).indexOf(${jsLiteral(b)})`, `${t}: Alt+Left put ${a} before ${b}`);
       if (real) { /* and on the picture: the moved desk's plate is now before the other's (left of it on its row, or a row higher) */
         const g = await js(`[${jsLiteral(a)},${jsLiteral(b)}].map(id=>{const r=document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(id)+'"]').getBoundingClientRect();return [Math.round(r.top/20),r.left]})`);
