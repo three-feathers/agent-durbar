@@ -60,6 +60,7 @@ const DRIVERS = [
   { name: 'check-helper-more' }, // spec 005 FR-234 (issue #1145): a helper's chat has no empty More menu (the button is hidden), a main agent's chat keeps it, both sizes
   { name: 'check-browser-follow' }, // spec 005 FR-235 (issue #1168): a chat that followed the end still follows after Chat, Browser, Chat (a turn writing meanwhile); one scrolled up keeps its place; both sizes
   { name: 'check-status-filter' }, // spec 001 FR-180 (issue #790): a status pill says what it hides, and Show all
+  { name: 'check-status-filter', label: 'check-status-filter retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 delta 2026-11-11 (issue 1559): the notice's contrast in the arcade, both sizes
   { name: 'check-status-tooltip' }, // spec 001 FR-187 (issue #875): the instant tooltip on the status counts: hover, keyboard focus, Escape, wording with the filter on and off, inside the window, clear of the pill, every theme, Serious mode
   { name: 'check-list-columns' }, // spec 001 FR-182..FR-184 (issues #812, #813): List columns follow their content and every cut cell keeps its text; the room's whole bottom wall; the header pencil without a tile
   { name: 'shots-001-live-activity', freeze: false }, // spec 001 FR-028 live activity, and spec 059 (issue #1135): after a live paint no pencil stays on the line under its name
@@ -130,6 +131,7 @@ const DRIVERS = [
   { name: 'shots-069-harmonize' }, // spec 069 part 2: copy servers between the agent apps' lists
   { name: 'shots-069-mcp-tools' }, // spec 069 part 3: tools on expand, Remove in the agent dialog (058's state words and Details stay)
   { name: 'shots-059-long-url' }, // spec 059 FR-019: a long unbroken name stays in its card, the inbox and the Schedules rows
+  { name: 'check-mcp-row-width' }, // spec 058 delta 2026-11-12 (#1622): a failed server's row keeps a readable text column; the buttons wrap below it
   { name: 'check-activity-table' }, // spec 052 FR-071 delta 2026-10-21 (#474): Tools > Activity renders its rows
   { name: 'check-codex-file-card' }, // spec 052 FR-172: a Codex write card names the files and shows the change
   { name: 'check-theme-art' }, // spec 040 FR-023: a picked theme's characters and gadgets on desks, walkers, places and chips
