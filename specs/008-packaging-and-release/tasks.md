@@ -226,4 +226,4 @@
 
 ## 2026-11-13: the launchers with a window wider than 1280 get the sized Xvfb screen (FR-269)
 
-- [ ] T178 (FR-269) `launchCommand` of `scripts/ui-suite.js` in `check-office-overlap.js`, `check-theme-geometry.js`, `check-mac-titlebar.js`, `world-matrix.js`, `installed-app-ci.js`; `scripts/test-ui-suite.ts` source check with a mutant; `changelog.d/008-1628-xvfb-screen.md`. The decision table and the DPR 2 CI numbers are in the spec.
+- [x] T178 (FR-269) `launchCommand` of `scripts/ui-suite.js` in `check-office-overlap.js`, `check-theme-geometry.js`, `check-mac-titlebar.js`, `world-matrix.js`, `installed-app-ci.js`; `scripts/test-ui-suite.ts` source check with a mutant; `changelog.d/008-1628-xvfb-screen.md`. The decision table and the DPR 2 CI numbers are in the spec.

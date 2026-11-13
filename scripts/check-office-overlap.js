@@ -1292,7 +1292,8 @@ if (require.main === module) {
   // OFFICE_REDUCED_MOTION=1: Chromium reports prefers-reduced-motion, so walks are instant and nothing animates (spec 008 FR-030).
   // The plain check keeps motion on, so walking and animated states are still checked there once.
   const args = ['.', '--no-sandbox', ...(process.env.OFFICE_REDUCED_MOTION === '1' ? ['--force-prefers-reduced-motion'] : [])];
-  const r = useXvfb ? spawnSync('xvfb-run', ['-a', electron, ...args], { cwd: ROOT, env, stdio: 'inherit' }) : spawnSync(electron, args, { cwd: ROOT, env, stdio: 'inherit' });
+  const [file, argv] = require('./ui-suite.js').launchCommand(useXvfb, electron, args, ''); // spec 008 FR-269: the sized Xvfb screen of the suite, no screen change elsewhere
+  const r = spawnSync(file, argv, { cwd: ROOT, env, stdio: 'inherit' });
   if (r.error) { console.error(r.error.message); process.exit(2); }
   process.exit(fs.existsSync(marker) ? 1 : r.status === 0 ? 0 : r.status || 1);
 }

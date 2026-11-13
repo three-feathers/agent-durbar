@@ -87,7 +87,7 @@ function launch(exe, extraArgs = []) {
   const env = { ...process.env, DURBAR_DEV: '1', DURBAR_SIM: '15', DURBAR_SIM_FREEZE: '1', DURBAR_DRIVER: path.join(__dirname, 'installed-app-check.js'), DURBAR_USER_DATA: udDir, INSTALLED_OUT: res, INSTALLED_SHOT: shotFile };
   // The AppImage is started without --no-sandbox so its AppRun probe (`unshare -Ur true`) decides, as for a user (spec 008 FR-041); `app.noSandbox` records what it did.
   const args = [...extraArgs];
-  const [file, argv] = process.platform === 'linux' && !process.env.DISPLAY ? ['xvfb-run', ['-a', exe, ...args]] : [exe, args];
+  const [file, argv] = require('./ui-suite.js').launchCommand(process.platform === 'linux' && !process.env.DISPLAY, exe, args, ''); // spec 008 FR-269: the sized Xvfb screen of the suite (window 1440x900, a picture)
   const r = run(file, argv, { env, timeout: 180000 });
   try {
     assert.ok(fs.existsSync(res), `the installed app wrote no result (exit ${r.status}): ${(r.stderr || '').slice(-600)}`);

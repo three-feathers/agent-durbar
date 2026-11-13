@@ -258,7 +258,8 @@ if (require.main === module) {
   const electron = require('electron');
   const args = ['.', '--no-sandbox', '--force-prefers-reduced-motion'];
   const useXvfb = process.platform === 'linux' && !process.env.DISPLAY;
-  const r = useXvfb ? spawnSync('xvfb-run', ['-a', electron, ...args], { cwd: ROOT, env, stdio: 'inherit' }) : spawnSync(electron, args, { cwd: ROOT, env, stdio: 'inherit' });
+  const [file, runArgs] = require('./ui-suite.js').launchCommand(useXvfb, electron, args, ''); // spec 008 FR-269: the sized Xvfb screen of the suite, no screen change elsewhere
+  const r = spawnSync(file, runArgs, { cwd: ROOT, env, stdio: 'inherit' });
   if (r.error) { console.error(r.error.message); process.exit(2); }
   process.exit(fs.existsSync(marker) ? 1 : r.status === 0 ? 0 : r.status || 1);
 }

@@ -187,7 +187,8 @@ if (require.main === module) {
   const env = { ...process.env, DURBAR_DRIVER: __filename, DURBAR_USER_DATA: userData, OFFICE_FAIL_MARKER: marker, DURBAR_SIM: '15', DURBAR_SIM_FREEZE: '1' };
   const args = ['.', '--no-sandbox', '--force-prefers-reduced-motion'];
   const useXvfb = process.platform === 'linux' && !process.env.DISPLAY;
-  const r = useXvfb ? spawnSync('xvfb-run', ['-a', electron, ...args], { cwd: ROOT, env, stdio: 'inherit' }) : spawnSync(electron, args, { cwd: ROOT, env, stdio: 'inherit' });
+  const [file, argv] = require('./ui-suite.js').launchCommand(useXvfb, electron, args, ''); // spec 008 FR-269: the sized Xvfb screen of the suite, no screen change elsewhere
+  const r = spawnSync(file, argv, { cwd: ROOT, env, stdio: 'inherit' });
   if (r.error) { console.error(r.error.message); process.exit(2); }
   process.exit(fs.existsSync(marker) ? 1 : r.status === 0 ? 0 : r.status || 1);
 }
