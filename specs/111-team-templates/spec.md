@@ -274,6 +274,17 @@ Proposed defaults, 2026-11-10. Ruben's approval on #1306 covers the scope. **Q1,
 
 ## Changes
 
+### 2026-11-13: the member editor (T009; decided by the coordinator under Ruben's delegation, from the implementer's proposals; Ruben may overrule)
+
+- **Changing the app** clears the limit, the model and the effort (the old ones may not exist for the new app); changing the model keeps the effort only if the new model offers it.
+- **The limit** is in the app's unit: an empty AIU limit means the person's default limit (FR-002), an empty dollar limit means no limit, an app without a limit capability has no row and sends none; an amount out of range is a field error (*New session* is unchanged).
+- **Fields refused by main** are marked by reading only the `Member N, <field>` start of each line of `errors`, with a fixed sentence per field; no value is shown.
+- **"Looks like <name>"** compares names after NFKC, trim, collapsing spaces and lower case in the page (it does not load the 250 KB skeleton table); "Mixed letters" comes from `DurbarLookalike`; *Save* refuses a clash with "Two members cannot have names that look the same."; a clash found only by the skeleton is refused by main as "not accepted" (`[KNOWN GAP]`).
+- **Esc** with unsaved changes asks "Discard changes?" (Cancel focused); without changes it closes at once. (The implementer proposed closing without asking; a team of eight members is too much typing to lose to one key.)
+- **Mark as mine** only on a saved member (one with a `memberId`) of a saved template, with the FR-023 confirmation.
+- **Not ready to ship**: the section stays **simulator-only until T010** (the create preview, *Use…*), not until T009. With T009 alone a person could save templates but not use them (*Use…* still says it comes later), a half feature in a daily stable release. T010 turns `DurbarTeams.shown()` on for everyone and drops "simulator only" from the docs and the changelog. (Replaces the 2026-11-13 hand-over at T009.)
+
+
 ### 2026-11-13: review of #1661 (T008; decided by the coordinator under Ruben's delegation; Ruben may overrule)
 
 Required by the two reads (Vikram's and Paco's Opus readers). Decisions:
