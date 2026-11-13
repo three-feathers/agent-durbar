@@ -271,6 +271,7 @@
     "test:gitstatus": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-gitstatus.js",
     "test:newfolder": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-newfolder.js",
     "test:newfolderop": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-newfolderop.js",
+    "test:addkey": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-addkey.js",
     "test:newfolderipc": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-newfolderipc.js",
     "test:newfoldergit": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-newfolder-git.js",
     "test:platforms": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-platforms.js",

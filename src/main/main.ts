@@ -73,6 +73,7 @@ import type { AgentAdapter, AgentEvent } from '../adapters/types';
 import type { AdapterInfo } from '../shared/adapters';
 import { startOptionsOf } from './startopts';
 import { resolveWorkspaceCwd } from '../adapters/workspace';
+import { findAdded } from './addkey';
 import { MAX_ATTACH_BYTES, MAX_ATTACH_FILES, fmtSize, kindOfFile, sweepStaleStageDirs, sweepStaleTempDirs } from '../shared/attachments';
 import { ACCOUNT_TEMP_PREFIXES } from '../shared/account';
 import type { AddResult, AgentInfo, PermMode, PickedFile, SessionOptions } from '../shared/api';
@@ -527,8 +528,8 @@ async function addMany(paths: string[], permMode: PermMode, opts: SessionOptions
     try {
       // Spec 033 FR-090: a folder that is already in the office is not started a second time; the window says where it is.
       const key = ((w) => w.workspaceFile ?? w.cwd)(resolveWorkspaceCwd(p));
-      const have = [...agents.values()].find((x) => wsKey(x) === key);
-      if (have) { existing.push({ id: have.id, name: path.basename(p) || p, floor: folderStore?.floorOfFolder(key) ?? have.floor ?? GROUND }); continue; }
+      const have = findAdded(key, agents.values(), wsKey);
+      if (have) { existing.push({ id: have.id, name: have.name, floor: folderStore?.floorOfFolder(wsKey(have)) ?? have.floor ?? GROUND }); continue; }
       added.push(await addWorkspace(p, permMode, { model: opts.model, effort: opts.effort, persist: opts.persist, maxAiCredits: opts.maxAiCredits, floor: opts.floor, adapterId: opts.adapterId, readyIds }));
     } catch (err) {
       errors.push(`${path.basename(p)}: ${err instanceof Error ? err.message : String(err)}`);

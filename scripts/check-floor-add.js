@@ -65,6 +65,22 @@ module.exports = async (ctx) => {
   assert.ok(await js(`window.__ann.some(a=>/already added on the floor "Personal"/.test(a))`), 'a repeat says it is already added, on which floor');
   assert.strictEqual(await desks(), n, 'no second desk for a folder that is already there');
   await shot('shown');
+  // switching the floor on fails: the folder is still reported, with the reason, and the floor stays off (this was issue 1709 again)
+  await js(`window.__simAddFolderSame=undefined;window.__ann=[]`);
+  if (await js(`document.getElementById('floorsPop').hidden`)) await js(`document.getElementById('floorsBtn').click()`);
+  await until(`!document.getElementById('floorsPop').hidden`);
+  await js(`document.querySelector('#floorsPop [data-fl="on"][data-floor="f-personal"]').click()`);
+  await until(`document.querySelector('#floorsBtn .fl-cnt').textContent.trim()==='2/3'`, 4000);
+  await js(`document.getElementById('floorsBtn').click();window.__simSetFloorOnFail=true`);
+  await js(`document.getElementById('addFolder').click()`);
+  await until(`!!document.getElementById('addFloorSel')`, 4000);
+  await js(`(()=>{const s=document.getElementById('addFloorSel');s.value='f-personal';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+  await js(`[...document.querySelectorAll('#modeDlg .btn')].find(b=>/Add existing/.test(b.textContent)).click()`);
+  await until(`window.__ann.some(a=>/could not be switched on/.test(a))`, 6000);
+  assert.ok(await js(`window.__ann.some(a=>/Added .* on the floor "Personal".*could not be switched on.*Show/.test(a))`), 'a failed switch-on is still said, with the reason');
+  assert.ok(/could not be switched on/.test(await js(`[...document.querySelectorAll('.toast.with-act')].map(t=>t.textContent).join('|')`)), 'the toast says it too, with a Show button');
+  assert.strictEqual(await js(`document.querySelector('#floorsBtn .fl-cnt').textContent.trim()`), '2/3', 'the floor stayed off');
+  await js(`window.__simSetFloorOnFail=false`);
   console.log(`[033 add] ${w}x${h}: floor named in the dialog, off floor switched on, Show goes there, a repeat says already added`);
   }
 };

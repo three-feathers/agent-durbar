@@ -10026,7 +10026,6 @@ function applyAddResult(r,okText){
    hidden, so the person added it again); a floor that is not the one shown gets a toast naming it with Show; a folder that was already there says so
    and on which floor (main started nothing for it). Reuses toastAction, goToFloor, announce and the floors calls. */
 async function addFloorNote(r){
-  const st=window.DurbarFloorNav;
   let state=null;
   try{state=bridge.floorsState?await bridge.floorsState():null;}catch(e){state=null;}
   if(state)applyFloors(state);
@@ -10035,18 +10034,19 @@ async function addFloorNote(r){
   for(const it of items){
     if(!floorsLive()||FLOORS.floors.length<2){if(it.dup){const t=it.name+' is already added.';toast(esc(t),5000);announce(t);}continue;}
     const f=floorById(it.floor); if(!f)continue;
-    let switched=false;
+    let switched=false, failed=false;
     if(!f.on){
       const res=await floorCall(bridge.setFloorOn(f.id,true));
-      if(res&&res.ok)switched=true; else continue;
+      if(res&&res.ok)switched=true; else failed=true; /* still say where it is: it is on a floor that stays off */
     }
-    const nm=floorById(f.id).name, shown=!oneFloorView()||f.id===curFloorId();
+    const nm=floorById(f.id).name, shown=failed?false:(!oneFloorView()||f.id===curFloorId());
     if(shown&&!switched&&!it.dup)continue; /* it is on the floor the person is looking at: the room is there */
-    const text=(it.dup?it.name+' is already added on the floor "'+nm+'".':'Added '+it.name+' on the floor "'+nm+'".')+(switched?' The floor was off, so it is switched on.':'');
+    const text=(it.dup?it.name+' is already added on the floor "'+nm+'".':'Added '+it.name+' on the floor "'+nm+'".')+(switched?' The floor was off, so it is switched on.':'')+(failed?' The floor is off and could not be switched on.':'');
     const html=esc(text);
     if(shown){toast(html,6000);}
+    else if(failed)toastAction(html,'Show',async()=>{const r=await floorCall(bridge.setFloorOn(f.id,true));if(r&&r.ok)goToFloor(f.id);},12000); /* Show tries the switch again, then goes there */
     else toastAction(html,'Show',()=>goToFloor(f.id),12000);
-    announce(text+(shown?'':' Press Show to go there.'));
+    announce(text+(shown?'':' Press Show to '+(failed?'try again.':'go there.')));
   }
 }
 /* spec 093 FR-001, Q1 = a: Ctrl+O, File > Add Folder… and the palette's Add folder keep opening the system picker (Add existing) */

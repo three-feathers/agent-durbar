@@ -3085,6 +3085,8 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       setFloorOn: async (id, on) => {
         const f = floorsList.find((x) => x.id === id);
         if (!f) return fres('Unknown floor.');
+        /* a driver's probe (check-floor-add): switching a floor on fails, as when main cannot save the floors */
+        if (on === true && typeof window !== 'undefined' && (window as unknown as { __simSetFloorOnFail?: boolean }).__simSetFloorOnFail) return fres('The floors could not be saved.');
         f.on = on === true;
         return fres();
       },

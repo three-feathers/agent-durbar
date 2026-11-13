@@ -159,3 +159,5 @@
 - [x] T063 `applyAddResult` calls `addFloorNote`: switch an off floor on, toast with Show (`toastAction`, `goToFloor`), announce, "already added on the floor" [FR-089, FR-091]
 - [x] T064 The Add a folder / New folder dialog has the **Put it on floor** list (`custom` slot of `askDialog`), same `INTO` as the Floors panel [FR-092]
 - [x] T065 `scripts/check-floor-add.js` in `ui-suite.js` and the timings file; mutant run; docs (`features.md`, `feature-inventory.md`), changelog fragment, screenshots at both sizes [FR-089..FR-092]
+- [x] T066 Review of #1713: `src/main/addkey.ts` (canonical key, `findAdded`) used by `addMany`, `scripts/test-addkey.ts` with mutants, the name from `have.name` [FR-093]
+- [x] T067 `newfolderop.ts` handles `existing` (message, nothing removed) with a test and a mutant; the failed switch-on toast (`app.js`, `sim.ts` probe, driver case, mutant); unused `st` removed [FR-093, FR-094]
