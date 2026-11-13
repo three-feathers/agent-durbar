@@ -313,6 +313,10 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 
 - [x] T298 [US5] FR-357: the pencil anchored to the plate when the plate does not draw the name (arcade cabinets), the field over the marquee. Test: `sim:` `check-097-plate-pencil` in the Photo office, cave, arcade and one-room arcade, both sizes; mutant `PENCIL_MUTANT=plate` fails the geometry assert
 
+## 2026-11-11: `check-office-ops-real` parks the pointer before every measured update (bug #1448)
+
+- [x] T300 [US2] Bug #1448 (spec delta 2026-11-11): `check-office-ops-real` parks the pointer and waits for no hover card, open or armed, before every measured update, and fails (labelled) when one is open or armed at an update's end; mutant `OPS_MUTANT=unparked` fails on the label, `OPS_MUTANT=late` (CI's late pointer) passes. Test: `sim:` `check-office-ops-real`, plain and both mutants; Mac: 16 runs (8 `main` + 8 branch, 4 idle + 4 loaded each) all read 11, so the fix has no demonstrable before/after there
+
 ## 2026-11-11: the rename pencil while its plate eases (FR-365, bug #1513)
 
 - [x] T310 [US2] Spec delta 2026-11-11 (FR-365): `realoffice.js` `box()` gives the ease it started; a plate's pencil is not painted (WAAPI opacity 0) until its plate's ease ends (`finished`), a pencil made mid-ease too, and fades in over 120 ms; a focused pencil is not hidden (shown at once if focused while hidden); `release-video.js` `glide()` waits for no WAAPI move in `#stage` before its one capture. Test: `sim:` new driver `check-097-pencil-ease` (in `ui-suite`): painted-pixel marks in `capturePage` frames over the first ~320 ms of the clip's lounge move plus per-frame opacity reads, a focused pencil, and status changes, Photo office and arcade, 1440x900 and 1280x800; mutants `nohide`, `late`, `half`, `early`, `skew`, `focushide`; marks with a tolerance (`PENCIL_EASE_BLUR`), missing-plate diagnostics, a printed skip of the painted check at DPR 2 when marks are lost
