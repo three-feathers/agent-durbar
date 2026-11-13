@@ -45,13 +45,13 @@
     return st;
   }
   /* sort headers (FR-004): by name, app, folder or when; ascending or descending, inside each group; null = the search's own order */
-  function sorted(st,sort,timeOf){
+  function sorted(st,sort,timeOf,sortBy){
     const out={office:st.order.office.map(k=>st.hits.get(k)),earlier:st.order.earlier.map(k=>st.hits.get(k))};
     if(!sort)return out;
     const val={name:h=>String(h.title||'').toLowerCase(),app:h=>String(h.app||'').toLowerCase(),folder:h=>String(h.folderName||'').toLowerCase(),ago:h=>-(typeof timeOf==='function'?timeOf(h):h.time||0)}[sort.key];
-    if(!val)return out;
-    const dir=sort.dir==='desc'?-1:1;
-    for(const g of ['office','earlier'])out[g]=out[g].map((h,i)=>({h,i})).sort((a,b)=>{const x=val(a.h),y=val(b.h);return (x<y?-1:x>y?1:0)*dir||a.i-b.i;}).map(x=>x.h);
+    if(!val||typeof sortBy!=='function')return out;
+    /* FR-031: the List's own stable sort (ACT.sortBy, passed in: this file is pure); a tie keeps the search's order */
+    for(const g of ['office','earlier'])out[g]=sortBy(out[g],val,sort.dir);
     return out;
   }
   const count=st=>st.order.office.length+st.order.earlier.length;

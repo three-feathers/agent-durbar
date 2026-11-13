@@ -2040,7 +2040,8 @@ if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>{const s=d
 /* spec 052 FR-164: the top bar is one row. When its parts do not fit (a narrow window, a wide theme or system font, the Mac traffic
    lights), the brand name moves to screen readers only (the mark and the Live/Demo pill stay; the name is also the window's and the Mac
    menu bar's). Measured, not guessed by width: the class is removed, the row measured, and set again only if the parts still wrap. */
-function fitTopbar(){
+function fitTopbar(){fitTopbar0();csClearUnder();} /* the opened search field covers what the bar now holds (review of PR 1684) */
+function fitTopbar0(){
   const bar=document.querySelector('.topbar');if(!bar||!bar.getClientRects().length)return;
   /* spec 044 FR-034: the steps, in order, each only if the row still wraps: the folder filter's padding, its short value "All", then the brand name */
   const sel=$('wsFilter'), first=sel&&sel.options[0];
@@ -2120,7 +2121,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('#list [data-lsor
    the message (csJump: the same reveal as Notes' Open source). Clearing or closing the box calls convSearchClear (FR-026); the pure parts
    are in convsearch.js (window.DurbarConvSearch). Nothing is stored. */
 const CSU=window.DurbarConvSearch;
-const CS={active:false,q:'',id:null,st:null,from:null,back:null,timer:0,lastAnn:undefined,sort:null,paintT:0,ending:false};
+const CS={panel:null,active:false,q:'',id:null,st:null,from:null,back:null,timer:0,lastAnn:undefined,sort:null,paintT:0,ending:false};
 const CS_OLDER='That message is older than the chat shows.', CS_NONE='Open a session first; earlier sessions are searched for the apps and folders you have open.';
 const csAvailable=()=>!!bridge&&typeof bridge.convSearchStart==='function'&&!demoOn&&!!CSU;
 /* the office rows have no time from main (FR-010): the window orders them by their own last activity */
@@ -2135,6 +2136,7 @@ function csInput(){
 }
 async function csRun(v){
   if(!csAvailable())return;
+  if(CSU.longEnough(v))CS.panel=null; /* a search starts: the chat is not coming back */
   if(!CSU.longEnough(v)){
     if(CS.id){const id=CS.id;CS.id=null;bridge.convSearchCancel(id).catch(()=>{});}
     /* review of phase 3 (R2): a scan cut short this way ends as Stop ends it, never left on "Searching, N of M sessions" */
@@ -2182,7 +2184,7 @@ const CS_COLS=[['name','Session'],['app','Agent app'],['role','Kind',false],['fo
 function renderConvResults(){
   const L=$('list'), st=CS.st; if(!L)return;
   const ae=document.activeElement, fk=ae&&ae.dataset&&ae.dataset.csf, scrollTop=L.scrollTop; /* re-rendered on every repaint: the focus and the scroll stay */
-  const view=st?CSU.sorted(st,CS.sort,csTime):{office:[],earlier:[]};
+  const view=st?CSU.sorted(st,CS.sort,csTime,ACT.sortBy):{office:[],earlier:[]};
   const head=CS_COLS.map(([k,t,sortable])=>{
     if(sortable===false)return `<span role="columnheader"${k==='folder'?' class="lfold"':k==='ago'||k==='cost'?' class="num"':''}>${esc(t)}</span>`;
     const on=CS.sort&&CS.sort.key===k,dir=on?(CS.sort.dir==='asc'?'ascending':'descending'):'none';
@@ -2269,8 +2271,8 @@ function csOpenBox(){const w=$('convSearchWrap');if(!w)return;w.classList.add('o
 function csCloseBox(){const w=$('convSearchWrap');if(!w)return;w.classList.remove('open');csClearUnder();const b=$('convSearchBtn');b.setAttribute('aria-expanded','false');const q=$('convSearch').value.trim();b.setAttribute('aria-label',q?'Search conversations: '+q:'Search conversations');w.classList.toggle('has-q',!!q);}
 function csFocusBox(){
   if(!csAvailable())return;
-  if(ui.selected)closePanel();
   const s=$('convSearch'); if(!s)return;
+  if(ui.selected){CS.panel=ui.selected;closePanel();} /* remembered: Escape with nothing typed opens it again */
   if(!CS.active&&!CS.back){const ae=document.activeElement;if(ae&&ae!==document.body&&ae!==s&&!ae.closest('#convSearchWrap'))CS.back=ae;}
   csOpenBox(); focusIn(s); s.select();
 }
@@ -2282,8 +2284,11 @@ function csWire(){
   s.addEventListener('input',csInput);
   s.addEventListener('keydown',e=>{
     if(e.key==='Escape'&&!e.ctrlKey&&!e.metaKey&&!e.altKey){
-      if(s.value||CS.active){e.preventDefault();e.stopPropagation();s.value='';csEnd({restore:true,clearBox:true});if(!CS.back)csCloseBox();return;}
-      csCloseBox(); s.blur(); return; /* FR-003: with the query empty already, Escape behaves as before */
+      const p=CS.panel, idle=!CS.active&&!CS.id; /* nothing searched yet: the chat the shortcut closed comes back (review of PR 1684) */
+      const reopen=()=>{CS.panel=null;if(p&&idle&&!ui.selected&&byId(p)){e.preventDefault();e.stopPropagation();openPanel(p,true);}}; /* this Escape is spent: the page's own Escape must not close the chat at once */
+      if(s.value||CS.active){e.preventDefault();e.stopPropagation();s.value='';csEnd({restore:true,clearBox:true});if(!CS.back)csCloseBox();reopen();return;}
+      csCloseBox(); s.blur(); reopen();
+      return; /* FR-003: with the query empty already, Escape behaves as before */
     }
     if(e.key==='Enter'&&!e.isComposing){e.preventDefault();clearTimeout(CS.timer);csRun(s.value);return;}
     if((e.key==='ArrowDown'||(e.key==='Tab'&&!e.shiftKey))&&CS.active&&!e.altKey&&!e.ctrlKey&&!e.metaKey){const f=$('list').querySelector('[data-csnav]');if(f){e.preventDefault();focusIn(f);}}

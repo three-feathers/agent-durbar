@@ -81,6 +81,16 @@ module.exports = async (ctx) => {
     assert.strictEqual(bar.label, 'Search conversations');
     assert.ok(bar.font >= 10.5, `${w}: box text ${bar.font}px`);
 
+    {
+      // review of PR 1684 (Q1): the shortcut closes an open chat; Escape with nothing typed opens it again
+      const was = await js(`(()=>{const d=document.querySelector('#stage .desk[data-id]');d.click();return (d.querySelector('.name')||d).textContent.trim()})()`);
+      await ok(`document.body.classList.contains('panel-open')&&document.getElementById('panel').textContent.includes(${jsLiteral(was)})`, `${w}: a chat is open`);
+      await shortcut();
+      await ok(`!document.body.classList.contains('panel-open')&&document.activeElement&&document.activeElement.id==='convSearch'`, `${w}: the shortcut closes the chat and focuses the box`);
+      await key('Escape', [], { char: 'never' });
+      await ok(`document.body.classList.contains('panel-open')&&document.getElementById('panel').textContent.includes(${jsLiteral(was)})`, `${w}: Escape with nothing typed opens the same chat again`);
+      await closeChat();
+    }
     // ---- FR-003, FR-033: from a desk, the shortcut; "ab" is too short and keeps the Office view ----
     const desk = await js(`(()=>{const d=document.querySelector('#stage .desk[data-id]');d.focus();return d.dataset.id})()`);
     await shortcut();
@@ -90,8 +100,10 @@ module.exports = async (ctx) => {
       // review of PR 1240 (Q3): the opened field never covers the banner row under the bar, also with a long banner text
       const cover = await js(`(()=>{const st=document.getElementById('restoreStrip'),t=st&&st.querySelector('.ns-t'),was=t&&t.textContent;if(t)t.textContent='Five folders (alpha-service, beta-gateway, gamma-ledger, delta-reports, epsilon-tools) let agents change files without asking.';
         const s=document.getElementById('convSearch').getBoundingClientRect(),b=document.querySelector('.topbar').getBoundingClientRect(),r=st&&st.getClientRects().length?st.getBoundingClientRect():null;
-        const out={banner:!!r,inBar:s.top>=b.top-0.5&&s.bottom<=b.bottom+0.5,over:!!r&&s.left<r.right&&r.left<s.right&&s.top<r.bottom&&r.top<s.bottom};if(t)t.textContent=was;return out;})()`);
-      assert.ok(cover.banner && cover.inBar && !cover.over, `${w}: the open field stays in the bar, clear of the banner: ${JSON.stringify(cover)}`);
+        const cs=getComputedStyle(document.getElementById('convSearch')),lay=(cs.boxShadow==='none'?[]:cs.boxShadow.split(/,(?![^(]*\\))/)).map(l=>{const n=(l.match(/-?\\d+(?:\\.\\d+)?px/g)||[]).map(parseFloat);return (n[1]||0)+(n[2]||0)+(n[3]||0);}),
+          halo=Math.max(0,...lay,parseFloat(cs.outlineWidth)+parseFloat(cs.outlineOffset)); /* the extent of the shadow and the focus ring below the field */
+        const out={banner:!!r,inBar:s.top>=b.top-0.5&&s.bottom<=b.bottom+0.5,haloIn:s.bottom+halo<=b.bottom+0.5&&s.top-halo>=b.top-0.5,halo,over:!!r&&s.left<r.right&&r.left<s.right&&s.top<r.bottom&&r.top<s.bottom};if(t)t.textContent=was;return out;})()`);
+      assert.ok(cover.banner && cover.inBar && cover.haloIn && !cover.over, `${w}: the open field stays in the bar, clear of the banner: ${JSON.stringify(cover)}`);
     }
     {
       // review of PR 1684: no top-bar control lies under the open field (a hidden one is not shown, so it is not covered)
@@ -100,6 +112,25 @@ module.exports = async (ctx) => {
           const r=c.getBoundingClientRect();if(r.width&&r.left<f.right&&f.left<r.right&&r.top<f.bottom&&f.top<r.bottom)out.push((c.id||c.className||c.tagName)+'@'+Math.round(r.left));}
         return {open:w.classList.contains('open'),field:Math.round(f.left)+'-'+Math.round(f.right),out};})()`);
       assert.ok(under.open && under.out.length === 0, `${w}: the open field covers no top-bar control: ${JSON.stringify(under)}`);
+      // review of PR 1684: the window is resized while the field is open; the hidden controls follow (fitTopbar re-marks them)
+      const probe = () => js(`(()=>{const f=document.getElementById('convSearch').getBoundingClientRect(),bar=document.querySelector('.topbar'),w=document.getElementById('convSearchWrap'),hit=r=>r.width&&r.left<f.right&&f.left<r.right&&r.top<f.bottom&&f.top<r.bottom;
+        const uncovered=[],stale=[];for(const c of bar.querySelectorAll('button,select,input,.stats,.brand')){if(w.contains(c)||c.closest('.more-menu'))continue;if(getComputedStyle(c).visibility!=='hidden'&&c.getClientRects().length&&hit(c.getBoundingClientRect()))uncovered.push(c.id||c.className);}
+        for(const k of bar.querySelectorAll('.cs-under')){if(!hit(k.getBoundingClientRect()))stale.push(k.id||k.className);}
+        return {open:w.classList.contains('open'),narrow:bar.classList.contains('tb-search'),uncovered,stale};})()`);
+      for (const [rw, rh] of [[1900, 900], [1500, 900], [w, h]]) {
+        ctx.win.setContentSize(rw, rh); await ctx.sleep(500);
+        const p = await probe();
+        assert.ok(p.open && p.uncovered.length === 0 && p.stale.length === 0, `${w}: after a resize to ${rw}x${rh} no control is under the open field and none stays hidden: ${JSON.stringify(p)}`);
+      }
+      // a control that grows while the field is open (a counter, a late font): the bar's observer refits and the marks follow
+      await js(`document.querySelector('[aria-label="View"]').style.minWidth='420px'`);
+      await ctx.sleep(500);
+      const grown = await probe();
+      await js(`document.querySelector('[aria-label="View"]').style.minWidth=''`);
+      await ctx.sleep(500);
+      assert.ok(grown.open && grown.uncovered.length === 0 && grown.stale.length === 0, `${w}: after a control grows no control is under the open field and none stays hidden: ${JSON.stringify(grown)}`);
+      const back = await probe();
+      assert.ok(back.open && back.uncovered.length === 0 && back.stale.length === 0, `${w}: and after it shrinks again: ${JSON.stringify(back)}`);
     }
     await type('re');
     await ok(`(document.getElementById('convSearchHint').textContent||'')==='Type at least 3 characters'&&!document.getElementById('convSearchHint').hidden`, `${w}: "Type at least 3 characters"`);

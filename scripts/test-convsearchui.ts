@@ -19,10 +19,12 @@ type St = { hits: Map<string, Hit>; order: { office: string[]; earlier: string[]
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const C = require(path.join(ROOT, 'src', 'renderer', 'convsearch.js')) as {
   keyOf(h: Hit): string; longEnough(q: string): boolean; create(): St; addBatch(st: St, b: unknown): St; finish(st: St, d: unknown, timeOf?: (h: Hit) => number): St;
-  sorted(st: St, sort: { key: string; dir: string } | null, timeOf?: (h: Hit) => number): { office: Hit[]; earlier: Hit[] }; count(st: St): number;
+  sorted(st: St, sort: { key: string; dir: string } | null, timeOf?: (h: Hit) => number, sortBy?: unknown): { office: Hit[]; earlier: Hit[] }; count(st: St): number;
   moreOf(h: unknown): number; markedHTML(t: string, m: unknown, esc: (s: string) => string): string; excerptHTML(x: unknown, esc: (s: string) => string): string; accName(h: Hit): string;
   stateText(st: St): string; notesText(st: St): string; LOCKED: string; announceDue(last: number | undefined, now: number): boolean; pickAnchor(keys: string[], a: unknown): number;
 };
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const ACT = require(path.join(ROOT, 'src', 'renderer', 'activity.js')) as { sortBy: unknown };
 const esc = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const hit = (over: Partial<Hit>): Hit => ({ adapter: 'copilot', sessionId: 's', group: 'office', app: 'GitHub Copilot', folderName: 'demo', title: 'Untitled session', titleMarks: [], time: 0, excerpts: [], more: 0, ...over });
 
@@ -49,11 +51,13 @@ assert.ok(C.longEnough('a bc') && !C.longEnough('x y') && !C.longEnough('  ab ')
   assert.strictEqual(C.count(st), 4);
   assert.strictEqual(C.stateText(st), '4 results in 4 sessions');
   // sort headers (FR-004): by name, app, folder or when, inside each group
-  const byName = C.sorted(st, { key: 'name', dir: 'asc' });
+  const byName = C.sorted(st, { key: 'name', dir: 'asc' }, undefined, ACT.sortBy);
   assert.deepStrictEqual(byName.office.map((h) => h.title), ['renamed', 'Untitled session']);
-  assert.deepStrictEqual(C.sorted(st, { key: 'ago', dir: 'asc' }, (h) => (h.group === 'office' ? lastActive[h.sessionId] : h.time)).earlier.map((h) => h.sessionId), ['p2', 'p1'], 'when: newest first ascending');
+  assert.deepStrictEqual(C.sorted(st, { key: 'ago', dir: 'asc' }, (h) => (h.group === 'office' ? lastActive[h.sessionId] : h.time), ACT.sortBy).earlier.map((h) => h.sessionId), ['p2', 'p1'], 'when: newest first ascending');
+  assert.deepStrictEqual(C.sorted(st, { key: 'name', dir: 'desc' }, undefined, ACT.sortBy).office.map((h) => h.title), ['Untitled session', 'renamed'], 'descending');
+  assert.deepStrictEqual(C.sorted(st, { key: 'name', dir: 'asc' }).office.map((h) => h.sessionId), ['b', 'a'], 'without the shared sort the search\'s order is kept');
   assert.deepStrictEqual(C.sorted(st, null).office.map((h) => h.sessionId), ['b', 'a'], 'no sort: the search\'s order');
-  assert.deepStrictEqual(C.sorted(st, { key: 'bogus', dir: 'asc' }).office.map((h) => h.sessionId), ['b', 'a']);
+  assert.deepStrictEqual(C.sorted(st, { key: 'bogus', dir: 'asc' }, undefined, ACT.sortBy).office.map((h) => h.sessionId), ['b', 'a']);
   const empty = C.create();
   C.finish(empty, { notes: { searched: 3, folders: 1 } });
   assert.strictEqual(C.stateText(empty), 'No conversation matches');
