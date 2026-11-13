@@ -477,6 +477,9 @@ if (fs.existsSync(path.join(ROOT, 'dist', 'renderer', 'index.html'))) {
   red((_f, d) => { delete d.previews.plain.origin; }, /zoom origin/, 'a preview with no zoom origin');
   red((_f, d) => { d.previews.photo.bytes = 1; }, /retake with npm run shots:docs/, 'a stale size in previews.json');
   red((f) => f.set('photo.webp', Buffer.from('not an image at all, just some text')), /not a WebP/, 'a file that is no WebP');
+  const withChunk = (tag: string): Buffer => { const c = Buffer.concat([Buffer.from(tag), Buffer.from([4, 0, 0, 0]), Buffer.from('abcd')]); const b = Buffer.concat([good, c]); b.writeUInt32LE(b.length - 8, 4); return b; }; // a chunk appended, RIFF size fixed up
+  red((f) => f.set('photo.webp', withChunk('EXIF')), /photo\.webp: metadata or unexpected chunk "EXIF"/, 'a preview with an EXIF chunk');
+  red((f) => f.set('photo.webp', withChunk('ICCP')), /photo\.webp: metadata or unexpected chunk "ICCP"/, 'a preview with an ICC profile chunk');
   assert.ok(Object.keys(doc.previews).length === ids.length, 'one preview per world');
   const dist = path.join(ROOT, 'dist', 'renderer', 'realoffice', 'previews');
   if (fs.existsSync(path.join(ROOT, 'dist', 'renderer', 'index.html'))) assert.deepStrictEqual(fs.readdirSync(dist).sort(), [...pf.keys(), 'previews.js'].sort(), 'dist previews/ holds the pictures and previews.js, not previews.json');
