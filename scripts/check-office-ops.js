@@ -3,7 +3,7 @@
  * DURBAR_SIM_FREEZE=1), no AI credits, no timing assert: every wait is an until(), every row a count, judged by `office-ops-rules.js` (its unit test shows the
  * judge can fail). At 15 and 40 agents, desks as scenes:
  *   - at start: renders, layout searches and probes (a probe is one trial office laid out into the hidden #probe, a forced layout) the page made by the time the office is drawn;
- *   - animations: the infinite ones running, how many animate a property other than transform and opacity (FR-180), and the positions a compact desk's tapping hand shows;
+ *   - animations: every infinite one running steps at most 10 changes a second (computed from its steps and duration; the max and the count are printed), the infinite ones running, how many animate a property other than transform and opacity (FR-180), and the positions a compact desk's tapping hand shows;
  *   - elements recalculated by one replaced text node (the `elementCount` of every UpdateLayoutTree on the main thread in a short contentTracing, animations
  *     off; a calibration (a new element in a desk) must show at least one event, so a renamed thread or category cannot read as 0 and pass; the text change itself may recalculate 0);
  *   - one status event of one agent, 8 times, each a real change (every sample must draw, none may search; renders, style reads of the floor and layout reads are the median): renders and searches are the app's own counters (`__durbarSimUi.ops()`), reads are offset*, client*, scroll*, getBoundingClientRect and
@@ -27,6 +27,11 @@ const { contentTracing } = require('electron');
 const { helpers, waits, jsLiteral } = require('./driver-helpers');
 const { judge } = require('./office-ops-rules');
 
+const MAX_CHANGES = 10; // spec 097 T158: SVG animations step at under 10 changes a second (per animation)
+const ANIM_MUTANT = process.env.OPS_ANIM_MUTANT || '';
+/* the two infinite animations that are continuous today (a KNOWN GAP of spec 097 T158, issue to be cited in the spec): the walkers' bob while a visitor walks, and the dizzy spin.
+   Every other infinite animation must be stepped; a third unstepped one fails at its own label. */
+const UNSTEPPED_KNOWN = ['wkbob', 'dizzyspin'];
 const FLAT = `document.querySelectorAll('#stage .desk[data-id]').length>=1&&!document.querySelector('#stage .ro')`;
 
 async function trace(fn) {
@@ -120,6 +125,31 @@ module.exports = async (ctx) => {
     rows[`animatedOtherProperties@${n}`] = anim.other;
     rows[`animationsRunning@${n}`] = anim.running;
     console.log('[ops]', n, 'agents:', anim.running, 'infinite animations running,', anim.other, 'animate a property other than transform and opacity', JSON.stringify(anim.names));
+    /* every infinite animation steps at most MAX_CHANGES changes a second (spec 097 T158, FR-178; owner reading 2026-11-13, issue 1401: per animation, not a total). The rate is read from the
+       animation's own timing, with no clock: a CSS animation-timing-function applies between each pair of keyframes, so changes per iteration = the sum over the intervals of the steps of
+       each (steps(n) gives n; step-start and step-end 1), divided by the iteration's duration. Any other easing (ease, linear, a cubic-bezier) changes on every frame: Infinity. The sum over
+       the office (about 172 a second at 15 agents) is NOT asserted, by the owner's reading. OPS_ANIM_MUTANT=ease|steps60|third adds one such animation (ease, steps(60) over 1 s, a third continuous linear one: each must fail at its own label below). */
+    const stepRates = async (size) => {
+    if (ANIM_MUTANT) {
+      const fn = ANIM_MUTANT === 'ease' ? 'ease' : ANIM_MUTANT === 'third' ? 'linear' : 'steps(60,end)';
+      const css = `@keyframes ops-mutant{from{transform:translateX(0)}to{transform:translateX(9px)}}.ops-mutant{position:fixed;left:0;top:0;width:4px;height:4px;animation:ops-mutant 1s ${fn} infinite}`;
+      await js(`(()=>{const s=document.createElement('style');s.textContent=${jsLiteral(css)};document.head.append(s);const d=document.createElement('div');d.className='ops-mutant';document.body.append(d);})()`);
+    }
+    const rate = await js(`(()=>{const known=new Set(${JSON.stringify(UNSTEPPED_KNOWN)});const per=(e)=>{const m=/^steps\\(\\s*(\\d+)\\s*(?:,\\s*([a-z-]+)\\s*)?\\)$/.exec(e);if(m)return Number(m[1]);if(e==='step-start'||e==='step-end')return 1;return Infinity;};
+      const list=[],skipped={};for(const a of document.getAnimations()){if(a.playState!=='running'||!a.effect||a.effect.getComputedTiming().iterations!==Infinity)continue;
+        const kf=a.effect.getKeyframes(),dur=a.effect.getComputedTiming().duration;let steps=0;
+        for(let i=0;i<kf.length-1;i++)steps+=per(kf[i].easing);
+        const name=a.animationName||'unnamed';if(known.has(name)){skipped[name]=(skipped[name]||0)+1;continue;}
+        const t=a.effect.target;list.push({name,svg:!!(t&&t.closest&&t.closest('svg')),rate:steps/(dur/1000)});}
+      list.sort((x,y)=>y.rate-x.rate);const fin=list.filter(x=>Number.isFinite(x.rate));
+      return {count:list.length,svg:list.filter(x=>x.svg).length,max:fin.length?fin[0].rate:0,maxName:fin.length?fin[0].name:'',skipped,over:list.filter(x=>!(x.rate<=${MAX_CHANGES})).slice(0,5)};})()`);
+    console.log('[ops]', n, 'agents', size + ':', rate.count, 'stepped infinite animations (', rate.svg, 'in SVG ), the fastest', rate.maxName, rate.max.toFixed(2), 'changes a second (limit', MAX_CHANGES + '); known continuous, not counted:', JSON.stringify(rate.skipped));
+    assert.ok(rate.count > 0 && rate.over.length === 0, `${n} agents ${size}: every infinite animation steps at most ${MAX_CHANGES} changes a second (only ${UNSTEPPED_KNOWN.join(' and ')} may be continuous); over: ${rate.over.map((x) => `${x.name} ${x.rate}`).join(', ') || 'none (no animation was running)'}`);
+    };
+    await stepRates('1440x900');
+    await load(1280, 800); // the smaller size lays out other rooms and may start other walkers: the same rule
+    await stepRates('1280x800');
+    await load();
     /* a tapping hand of a compact desk: the positions it shows, sampled by setting the animation's time (two cycles, forward and back), so no clock is involved */
     const hand = await js(`(()=>{for(const h of document.querySelectorAll('#stage svg.sc-c .hand-l')){const a=h.getAnimations()[0];if(!a)continue;
       const d=a.effect.getComputedTiming().duration;a.pause();const seen=new Set();
