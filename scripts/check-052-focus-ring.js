@@ -7,7 +7,7 @@
  * Per look, at 1440x900 and 1280x800: a Tab key press puts the page in keyboard modality, then each visible focusable of the top bar (and, with the ⋯ menu open, each of its
  * items) is focused, the window is captured (`capturePage`, real pixels), and the ring is read from the picture: its own colour at the middle of its band on the element's
  * top edge, the pixel just outside the band and the first pixel past its inner edge. An outside ring (outline-offset > 0) is judged by the first only (its inner side is the control's own 1px border line), an inset ring (offset <= 0) by both: each must be >= 3:1 against the ring; the ring pixel must also be
- * the computed outline colour (a guard on the geometry). The halo box-shadow is not counted (the outline alone). FOCUS_NO_TAB=1 sends no Tab (dies at the Tab label). FOCUS_MUTANT=old puts main's rule back (yellow over the whole bar, the segment rules deleted); =menu gives the menu items the yellow back; =seg gives the segment buttons the yellow back. Each fails with its own element names. FOCUS_REPORT=1 does not assert and writes every line to
+ * the computed outline colour (a guard on the geometry). The halo box-shadow is not counted (the outline alone). FOCUS_NO_TAB=1 sends no Tab (dies at the Tab label). FOCUS_MUTANT=old puts main's rule back (yellow over the whole bar, the segment rules deleted); =menu gives the menu items the yellow back; =seg gives the segment buttons the yellow back; =chip puts back the inset --brand-mark ring on the pressed segment chip (T341: dies at 'pressed segment'). Each fails with its own element names. FOCUS_REPORT=1 does not assert and writes every line to
  * $OUT/focus-report.txt. OUT=dir (optional) also saves focus-<look>-<size>-<element>.png of the elements that fail or are named in FOCUS_SHOTS (comma list of ids).
  */
 const assert = require('assert');
@@ -21,7 +21,7 @@ const SHOTS = new Set((process.env.FOCUS_SHOTS || '').split(',').filter(Boolean)
 const LOOKS = [
   ['flat+pixel theme', {}, 'retro'],
   ['check-user (retro ui)', {}, CHECK_USER],
-  ['arcade', { officeview: 'real', world: 'retro', worldflags: 'retro' }, null, 'print'], // printed, not asserted: its pressed segment is a dark ring on yellow on a dark strip (issue #1615 files it apart)
+  ['arcade', { officeview: 'real', world: 'retro', worldflags: 'retro' }, null], // spec 102 T341 (issue #1666): asserted; its pressed segment chip has an outside ring (realoffice-world.css), labelled 'pressed segment' below
   ['photo', { officeview: 'real' }, null], // control: ui is clean
   ['dark fixture', {}, CHECK_DARK], // control: ui is clean
 ];
@@ -38,8 +38,9 @@ module.exports = async (ctx) => {
   /* FOCUS_MUTANT=old: main's rule (yellow over the whole bar, no segment rules); =menu: the menu items back to yellow; =seg: the segment buttons back to yellow */
   const mutate = (kind) => js(`(()=>{let n=0;const kind=${jsLiteral(kind)};for(const s of document.styleSheets){let rules;try{rules=s.cssRules}catch(e){continue}
     for(let i=rules.length-1;i>=0;i--){const t=rules[i].selectorText||'';
+      if(kind==='chip'&&/data-world.*\\.seg button\\[aria-pressed="true"\\]:focus-visible/.test(t)){s.deleteRule(i);n++;continue}
       if(/\\.topbar \\.seg button(\\[aria-pressed="true"\\])?:focus-visible/.test(t)){if(kind==='old'){s.deleteRule(i);n++}continue}
-      if(!/\\.topbar :focus-visible/.test(t))continue;const body=rules[i].style.cssText;s.deleteRule(i);
+      if(kind==='chip'||!/\\.topbar :focus-visible/.test(t))continue;const body=rules[i].style.cssText;s.deleteRule(i);
       s.insertRule('html[data-ui="retro"] .topbar :focus-visible'+(kind==='menu'?':not(.seg button)':kind==='seg'?':not(.more-menu *)':'')+'{'+body+'}',i);n++}
     if(kind==='seg'){s.insertRule('html[data-ui="retro"] .topbar .seg button:focus-visible{outline-color:#ffec27}',s.cssRules.length);n++}}return n})()`);
   const pixel = async (img, x, y) => { const { width, height } = img.getSize(); x = Math.max(0, Math.min(width - 1, x)); y = Math.max(0, Math.min(height - 1, y)); const b = img.toBitmap(); const o = (y * width + x) * 4; return [b[o + 2], b[o + 1], b[o]]; }; // BGRA
@@ -79,7 +80,7 @@ module.exports = async (ctx) => {
           for (let attempt = 0; attempt <= 6 && !geo; attempt++) {
             await js(`new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)))`);
             await new Promise((r) => setTimeout(r, attempt ? 200 : 150));
-            m = await js(`(()=>{const e=window.__pick(),s=getComputedStyle(e),r=e.getBoundingClientRect();return {x:r.left+r.width/2,top:r.top,left:r.left,oc:s.outlineColor,ow:parseFloat(s.outlineWidth),oo:parseFloat(s.outlineOffset),os:s.outlineStyle,txt:(e.textContent||e.getAttribute('aria-label')||'').trim().slice(0,18)}})()`);
+            m = await js(`(()=>{const e=window.__pick(),s=getComputedStyle(e),r=e.getBoundingClientRect();return {x:r.left+r.width/2,top:r.top,left:r.left,oc:s.outlineColor,ow:parseFloat(s.outlineWidth),oo:parseFloat(s.outlineOffset),os:s.outlineStyle,pr:e.getAttribute('aria-pressed')==='true'&&!!e.closest('.seg'),txt:(e.textContent||e.getAttribute('aria-label')||'').trim().slice(0,18)}})()`);
             img = await H.wc().capturePage();
             const k = dpr || 1, X = Math.round(m.x * k);
             const yRing = Math.round((m.top - m.oo - m.ow / 2) * k), yOut = Math.round((m.top - m.oo - m.ow) * k) - 2, yIn = Math.round((m.top - m.oo) * k);
@@ -89,12 +90,14 @@ module.exports = async (ctx) => {
           }
           // an outside ring (offset > 0) is read against what is behind it only: its inner side is the control's own 1px border or shadow line, never a surface; an inset ring has both neighbours
           const ro = ratio(rp, po), ri = ratio(rp, pi), min = m.oo > 0 ? ro : Math.min(ro, ri);
-          const line = `${tag} ${menu ? 'menu' : 'bar'} ${id} "${m.txt}": ring rgb(${rp}) (outline rgb(${oc}), ${m.ow}px at ${m.oo}), outside rgb(${po}) ${ro.toFixed(2)}:1, inside rgb(${pi}) ${ri.toFixed(2)}:1${geo ? '' : ' [ring pixel is not the outline colour: geometry guard]'}`;
+          const what = m.pr ? 'pressed segment ' : '';
+          const line = `${tag} ${menu ? 'menu' : 'bar'} ${what}${id} "${m.txt}": ring rgb(${rp}) (outline rgb(${oc}), ${m.ow}px at ${m.oo}), outside rgb(${po}) ${ro.toFixed(2)}:1, inside rgb(${pi}) ${ri.toFixed(2)}:1${geo ? '' : ' [ring pixel is not the outline colour: geometry guard]'}`;
           lines.push(line);
           const bad = m.os === 'none' || !geo || min < 3;
-          if (bad && mode !== 'print') fails.push(`${tag} ${id} "${m.txt}": min ${min.toFixed(2)}:1`);
+          if (bad && mode !== 'print') fails.push(`${tag} ${what}${id} "${m.txt}": min ${min.toFixed(2)}:1`);
           if ((bad && mode !== 'print') || SHOTS.has(id) || SHOTS.has(`${menu ? 'menu' : 'bar'}${n}`)) await H.shot(path.join(OUT, `focus-${look.replace(/\W+/g, '-')}-${w}x${h}-${menu ? 'menu' : 'bar'}${n}-${id}.png`), { prep: 'none', settle: false, tag: 'focus' });
         }
+        if (!menu) assert.ok(lines.some((l) => l.startsWith(`${tag} bar pressed segment `)), `${tag}: no pressed segment button (the Office/List chip) was read: the pressed-chip case is not covered`);
         if (menu) { await H.key('Escape'); await until(`document.getElementById('topMoreMenu').hidden`, 3000); }
       }
     }

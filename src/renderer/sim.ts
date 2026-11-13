@@ -1081,6 +1081,19 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       return /\binteraction_required\b/i.test(t) ? 'policy' : undefined;
     };
     /* mcpcall:end */
+    /* spec 058 FR-232 (issue 1621): src/main/mcptoken.ts `isTokenRefusal`, copied (this file cannot import); test:mcpsession cuts this block out and compares the two */
+    /* mcptoken:begin */
+    const simTokenRefusal = (text: unknown): boolean => {
+      if (typeof text !== 'string') return false;
+      const t = text.slice(0, 2000);
+      return /\b403\b|forbidden/i.test(t) && !/\b401\b|unauthori[sz]ed/i.test(t);
+    };
+    /* spec 058 FR-232: what main would know of a driver's servers' entries (fixed, names only): `team-api` sends `Authorization: Bearer
+       ${TEAM_API_TOKEN}` and the variable is not in Durbar's environment; `docs-api` sends a written `X-Api-Key`; `paste-api` has a (fake)
+       key pasted inside `${...}`, sent as if main had named it, so the window's own re-check (`envVarName`) is what hides it (review of PR
+       #1637); any other name has no known entry (an OAuth server keeps "needs sign-in") */
+    const SIM_TOKEN_ENTRIES: Record<string, { vars: string[] }> = { 'team-api': { vars: ['TEAM_API_TOKEN'] }, 'docs-api': { vars: [] }, 'paste-api': { vars: ['k8Jq2LmZ9xPw4RtY7vBn3HcS6dFg1AeU'] } };
+    /* mcptoken:end */
     const emit = (e: AgentEvent): void => {
       /* like main, which keeps the runtime's list before the window hears of it: the reply a listener asks for at once sees this event (spec 058 FR-094) */
       if (e.type === 'status' && e.status === 'stopped') { const q = sims.find((x) => x.info.id === e.sessionId); if (q) q.mcpHealth = undefined; }
@@ -2317,6 +2330,13 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
           ...(live ? (s.mcpLive ?? []).filter((m) => !known.has(m.name)).map((m) => ({ name: m.name, origin: 'runtime' as const, ...reported(m.name), defaultOn: true, off: !!s.mcpOff?.has(m.name), ...toolsOffOf(m.name), ...signOf(m.name, 'runtime'), ...(restartable(m.name, true) && m.status !== 'disabled' ? { canRestart: true } : {}) })) : []),
         ];
         for (const x of servers) { const ob = simOrgServer(s.info.adapterId, x.name); if (ob) Object.assign(x, { orgBlocked: ob }); } // spec 076 FR-205
+        /* spec 058 FR-232: like main's agentMcpReply, a failed row with a 403 on a known token server: the refused-token words, no Sign in again */
+        for (const x of servers as { name: string; status?: string; error?: string; errorClass?: string; signIn?: unknown; canSignInAgain?: boolean }[]) {
+          const te = Object.prototype.hasOwnProperty.call(SIM_TOKEN_ENTRIES, x.name) ? SIM_TOKEN_ENTRIES[x.name] : undefined;
+          if (!live || !te || x.status !== 'failed' || x.errorClass || x.signIn || !simTokenRefusal(x.error)) continue;
+          delete x.canSignInAgain;
+          Object.assign(x, { tokenRefused: true, ...(te.vars.length ? { tokenVars: [...te.vars] } : {}) });
+        }
         /* spec 058 FR-188: a Running (connected), switched-on server in a running session says how its last call failed (the class only) */
         for (const x of servers) { const c = s.mcpCalls?.get(x.name); if (live && c && !s.mcpOff?.has(x.name) && (x as { status?: string }).status === 'connected') Object.assign(x, { lastCall: c }); }
         /* spec 058 FR-220: "Renewed 12:40" on a connected, switched-on server Durbar renewed in the background */
@@ -3546,7 +3566,11 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         if (!started) {
           started = true;
           // After the renderer has registered the infos, replay each agent's script.
+          /* simlate=<ms> (spec 097 FR-363, issue #1238): the replay starts that much later, so the first states arrive after the page's first frame (a check's forced race); absent = 0, unchanged */
+          const late = Math.max(0, Math.min(2000, Number(typeof location !== 'undefined' ? new URLSearchParams(location.search).get('simlate') : null) || 0));
+          const listedAt = typeof performance !== 'undefined' ? performance.now() : 0;
           setTimeout(() => {
+            if (late > 0) (window as unknown as { __durbarSimReplayDelay?: number }).__durbarSimReplayDelay = Math.round(performance.now() - listedAt); // the check reads it: a simlate that is ignored shows 0
             sims.forEach(play);
             if (opts.edits && sims[0]) simEdits(sims[0]); // spec 005 FR-026
             /* spec 008 FR-113: every script has run (a frozen simulator emits nothing more); the page's settleNow() test hook reads it */
@@ -3558,7 +3582,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
               const screenTimer = window.setInterval(screenTick, Math.round(1300 / speed));
               if (typeof window.addEventListener === 'function') window.addEventListener('pagehide', () => { window.clearInterval(screenTimer); if (timer) window.clearInterval(timer); }, { once: true });
             }
-          }, 0);
+          }, late);
         }
         /* simresume=1 (spec 006 FR-021): Priya's folder came back after a restart as its last session, not started yet */
         if (typeof location !== 'undefined' && new URLSearchParams(location.search).get('simresume') === '1') {

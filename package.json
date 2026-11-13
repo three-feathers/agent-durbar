@@ -294,7 +294,7 @@
     "test:mcpcontextop": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-mcp-contextop.js",
     "test:mcpcontextipc": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-mcp-contextipc.js",
     "test:mcpcall": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-mcpcall.js",
-    "test:mcpsession": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-mcp-session.js",
+    "test:mcpsession": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-mcp-session.js && node dist-scripts/scripts/test-mcp-token.js",
     "test:mcpsignin": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-mcp-signin.js",
     "test:mcpsigninrefresh": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-mcp-signinrefresh.js && node dist-scripts/scripts/test-mcp-signinwiring.js && node dist-scripts/scripts/test-mcp-renew.js && node dist-scripts/scripts/test-mcp-presend.js",
     "test:dialog": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-dialog.js",
