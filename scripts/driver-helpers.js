@@ -249,6 +249,28 @@ function helpers(ctx) {
   };
   /** Hide the start-up toasts with a style (once). `keepActions`: keep the ones with a button. `blur`: also drop the focus ring. */
   const calm = async (o = {}) => { await js(`(()=>{if(!document.getElementById('shotCalm')){const s=document.createElement('style');s.id='shotCalm';s.textContent='#toasts${o.keepActions ? ' .toast:not(.with-act)' : ''}{display:none!important}';document.head.append(s);}${o.blur ? 'if(document.activeElement&&document.activeElement!==document.body)document.activeElement.blur();' : ''}})()`); await w.settleWalk(); };
+  /**
+   * Spec 008 FR-214, FR-215: the real pointer rests where the window lies on the screen (script clicks never move it), so a control under it reads in its :hover colours.
+   * Moves the pointer to 0,0 and re-sends the move every `retry` ms (250) until nothing under `scope` (a selector list) matches :hover, at most `ms` (3000; a slow first run drops or delays the first move).
+   * Returns what still is hovered (descriptions; empty = fine); `controls` (a selector list) limits the list to those elements. When the bound ends with such an element still hovered it throws, labelled, so a real leak is told from a slow start.
+   * `{ stay: true }` only lists (a mutant that put the pointer there itself): no move, no wait, no failure. A colour read goes after this and asserts the list is empty.
+   */
+  const pointerOff = async (scope, controls, o = {}) => {
+    const sel = scope.split(',').map((x) => x.trim() + ' :hover').join(',');
+    const list = () => js(`[...document.querySelectorAll(${jsLiteral(sel)})].filter(e=>${controls ? 'e.matches(' + jsLiteral(controls) + ')&&e.getClientRects().length' : 'true'}).map(e=>(e.id?'#'+e.id:e.tagName.toLowerCase()+'.'+String(e.className).trim().replace(/ +/g,'.'))+' "'+(e.textContent||e.value||'').trim().slice(0,30)+'"')`);
+    if (o.stay) return list();
+    const ms = o.ms || 3000, retry = o.retry || 250, end = Date.now() + ms;
+    let moves = 0, last = 0, clear = false;
+    for (;;) {
+      if (Date.now() - last >= retry || moves === 0) { wc().sendInputEvent({ type: 'mouseMove', x: 0, y: 0 }); moves++; last = Date.now(); }
+      if (await ctx.js(`(()=>{try{return !document.querySelector(${jsLiteral(sel)})}catch(e){return false}})()`)) { clear = true; break; }
+      if (Date.now() > end) break;
+      await ctx.sleep(50);
+    }
+    const hot = await list();
+    if (!clear && hot.length) throw new assert.AssertionError({ message: `pointerOff: the pointer did not leave ${scope} after ${ms} ms and ${moves} move(s): ${JSON.stringify(hot)}` });
+    return hot;
+  };
   /** Remove the toasts that are on screen now. */
   const clearToasts = () => js(`document.querySelectorAll('#toasts .toast').forEach(t=>t.remove())`);
   /**
@@ -346,7 +368,7 @@ function helpers(ctx) {
     await goToFloor(list[0].id);
     for (let i = 0; i < list.length; i++) { await goToFloor(list[i].id); await w.settle(); await fn(list[i], i); }
   };
-  return { ...w, pointerStep: ptr.step, allowWindowClose: closeGuard.allow, wc, js, click, clickText, exists, text, idOf, key, calm, clearToasts, focusPage, releaseFocus, loseFocus, focusWc, load, shot, openSimAgent, floors, shownFloor, goToFloor, eachFloor, INDEX };
+  return { ...w, pointerStep: ptr.step, allowWindowClose: closeGuard.allow, wc, js, click, clickText, exists, text, idOf, key, calm, pointerOff, clearToasts, focusPage, releaseFocus, loseFocus, focusWc, load, shot, openSimAgent, floors, shownFloor, goToFloor, eachFloor, INDEX };
 }
 
 /**
@@ -373,4 +395,8 @@ async function shotWithView(win, view, file) {
   fs.writeFileSync(file, nativeImage.createFromBitmap(base, { width: size.width, height: size.height }).toPNG());
 }
 
-module.exports = { waits, helpers, pointerLog, POINTER_LOG_MAX, guardWindow, jsLiteral, shotWithView, LIMIT, INDEX, CHECK_DARK, CHECK_DARK_QUERY, darkFixtureProblem, darkProblem };
+/* Spec 097 FR-365: a page expression, true once no WAAPI move or fade runs in #stage (a plate's ease, a pencil's hold and fade; the CSS loops, a person's bob,
+   keep running and do not count). One text for the pencil-ease driver's waits and the release clip's one capture (scripts/release-video.js `glide`). */
+const STILL_STAGE = `!(document.getElementById('stage')||document.body).getAnimations({subtree:true}).some(a=>!a.animationName&&a.playState==='running')`;
+
+module.exports = { STILL_STAGE, waits, helpers, pointerLog, POINTER_LOG_MAX, guardWindow, jsLiteral, shotWithView, LIMIT, INDEX, CHECK_DARK, CHECK_DARK_QUERY, darkFixtureProblem, darkProblem };
