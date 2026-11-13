@@ -17,6 +17,7 @@ const BP = require(path.join(ROOT, 'src', 'renderer', 'browserpane.js')) as {
   boundsOf(r: unknown): { x: number; y: number; width: number; height: number } | null;
   tabsHTML(): string;
   paneHTML(): string;
+  bigModel(on: boolean): { icon: string; label: string; title: string; said: string };
 };
 
 // the tablist's keys (WAI-ARIA): arrows wrap, Home and End, nothing else
@@ -65,6 +66,18 @@ for (const id of ['bBack', 'bFwd', 'bReload']) assert.ok(new RegExp(`id="${id}"[
 assert.ok(/id="bAddr"[^>]*aria-label="Address"/.test(pane) && /<span>Open in system browser<\/span>/.test(pane), 'the address field and Open in system browser');
 assert.ok(/id="bNote" role="status" aria-live="polite"/.test(pane), 'loading and error are announced');
 assert.ok(!/<img|<iframe|<webview|<script/i.test(pane + tabs), 'the page area is a native view: no frame in the window');
+// spec 080 FR-134 (issue #1691): the Expand button is the bar's last control; one button whose name changes, never aria-pressed too
+{
+  const bar = /<div class="bbar" role="toolbar" aria-label="Browser controls">([\s\S]*?)<\/div>/.exec(pane)?.[1] ?? '';
+  const ids = [...bar.matchAll(/<(?:button|input)[^>]* id="([^"]+)"/g)].map((m) => m[1]);
+  assert.strictEqual(ids[ids.length - 1], 'bBig', 'Expand is the last control of the browser toolbar: ' + ids.join(','));
+  assert.ok(/id="bBig" type="button" aria-label="Expand browser" title="Expand browser: fill the window"><svg/.test(pane), 'small: named Expand browser, an SVG icon');
+  assert.ok(!/aria-pressed/.test(pane), 'no aria-pressed: the name says the state');
+  const small = BP.bigModel(false), big = BP.bigModel(true);
+  assert.deepStrictEqual([small.label, small.icon, big.label, big.icon], ['Expand browser', 'expand', 'Back to small browser', 'shrink']);
+  assert.ok(/\(Esc\)$/.test(big.title) && !/Esc/.test(small.title), 'the big state\'s tooltip names Escape');
+  assert.ok(/Escape/.test(big.said) && /small/.test(small.said) && big.said !== small.said, 'each change is announced with its own words');
+}
 
 // the wiring in app.js, index.html, copy-assets
 const app = src('src/renderer/app.js');

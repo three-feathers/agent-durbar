@@ -1745,7 +1745,7 @@ function realModel(model){
         return {id:a.id,name:a.name,role:a.role,state:st,word:stWord(a),task,ctx:realCtx(a),tip:deskTip(a),selected:ui.selected===a.id,ren:canRenameSession(a),unread:isUnread(a),draft:hasDraft(a),away:v?v.place:null,awayLabel:place+(br?' '+br:''),
           label:[a.name+draftWords(a)+unreadWords(a),a.role,stWord(a)].concat(task?[task]:[],needs?['needs you']:[],place?['at '+place]:[]).join(', ')+'. Open chat panel.', /* FR-090: text for setAttribute, not markup */
           helpWords:helperCountWords(helpersOf(a).length), /* spec 097 FR-308: what the plate adds when its helpers have no strip (the flat desk's words) */
-          helpers:orderedHelpers(a).map(h=>stOf(h,false)),subs:realSubs(a,stOf),subsOpen:!!ui.expanded[a.id]};})};
+          helpers:orderedHelpers(a).map(h=>stOf(h,false)),helpUrgent:helpersOf(a).filter(h=>prio(h)<2).length, /* spec 102 FR-312: how many helpers the heads put first (waiting or error by `prio`, which reads the raw state: a helper whose light is limit counts, its raw state is waiting): the one predicate for the order, the plate's "+N!" and its name */subs:realSubs(a,stOf),subsOpen:!!ui.expanded[a.id]};})};
   });
   const places=lobbyPlaces().map(p=>{
     const ids=p.id===D.POSTBOX?[]:placeVisitors(p.id), custom=CUSTOM.some(q=>q.id===p.id);
@@ -1847,7 +1847,7 @@ function renderReal(stage,floor,aw,ah,model,empty){
   }
   if(stage.dataset.d!=='real'){stage.dataset.d='real';stage.textContent='';}
   layoutKey='';GROW=0;setGrow(stage,0);spreadOffice(stage,false);stagePrev=null;
-  const fcs=getComputedStyle(floor), lendPad=(parseFloat(fcs.paddingBottom)||0)+(floor.classList.contains('has-fnote')?0:parseFloat(fcs.paddingTop)||0); /* what #floor.ro-tight gives up (styles.css) */
+  const fcs=getComputedStyle(floor), lendPad=(parseFloat(fcs.paddingBottom)||0)+Math.max(0,(parseFloat(fcs.paddingTop)||0)-(floor.classList.contains('has-fnote')?parseFloat(fcs.getPropertyValue('--fnote-keep'))||0:0)); /* what #floor.ro-tight gives up (styles.css) */
   RO_LAST=window.DurbarRealOffice.render(stage,Object.assign(realModel(model),empty?{empty}:{}),{w:aw,h:ah},{live:liveOn(),still:REDUCED||!MOTION||STILL_HL,hold:roFrozen(),screenOf:realScreen,factsOf:realFacts,world:pp.world,set:pp.set,remember:rememberOn(), /* FR-071: Settings > Motion (still above) stops the people */
     rand:CREW&&(SIM||!rememberOn())?CREW.seededRand:Math.random,onArt:()=>scheduleRender(),lend:lendPad}); /* spec 102 delta 2026-11-11: the arcade hall may take the floor's padding rather than scroll */
   floor.classList.toggle('ro-tight',!!RO_LAST.lent);
@@ -1865,6 +1865,7 @@ function renderOffice(){
   const aw=floor.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);
   const ah=floor.clientHeight-parseFloat(cs.paddingTop)-parseFloat(cs.paddingBottom);
   if(aw<=0||ah<=0)return;
+  if(SIM&&!window.__durbarSimReplayed)return; /* spec 097 FR-363: simulator only: while its start-up replay is pending the first states are not here, so no layout search and no desks for the early shape; the first render after the replay searches once (the replay sets the flag, then its states schedule that render). Before the render counter so ops() does not count it */
   const model=officeModel();
   if(!model.length)$('probe').style.width=aw+'px'; /* spec 092 FR-008: the layout probe is only resized by a layout search; an empty screen has none, so a probe left at a wider width (the lift panel came or went) would overflow the floor */
   /* spec 092 FR-001, edge case "a floor with 0 agents": a floor screen with nothing to show says so and keeps the shared lobby (never a bare empty screen).
@@ -2098,8 +2099,8 @@ function renderAll(){
   drawnAt=Date.now(); moodSig=moodSigNow(drawnAt); agoSig=agoSigNow(drawnAt); /* what this draw shows (after AMB_ID, which the mood reads): the two ticks above compare against it (spec 008 FR-184) */
   syncDesks(); /* spec 001 FR-034: who walks to the Boss and who comes back */
   prepareWalkers();
-  const ae=document.activeElement, id=ae&&ae.dataset&&(ae.dataset.id||ae.dataset.more||ae.dataset.foldermenu||ae.dataset.newsess||ae.dataset.lsort||ae.dataset.ren), inPanel=ae&&ae.closest&&ae.closest('#panel'), scope=ae&&ae.closest?(ae.closest('#list')?'#list ':ae.closest('#stage')?'#stage ':''):''; /* FR-173: read before the render detaches it */
-  const key=ae&&ae.dataset&&(ae.dataset.id?'data-id':ae.dataset.more?'data-more':ae.dataset.foldermenu?'data-foldermenu':ae.dataset.newsess?'data-newsess':ae.dataset.lsort?'data-lsort':ae.dataset.ren?'data-ren':''); /* spec 052 FR-064: a sort header keeps focus too; spec 017: so does a room's ⋯ button (it was the door button's place); spec 097 FR-230: and its + */
+  const ae=document.activeElement, id=ae&&ae.dataset&&(ae.dataset.id||ae.dataset.kmore||ae.dataset.more||ae.dataset.foldermenu||ae.dataset.newsess||ae.dataset.lsort||ae.dataset.ren), inPanel=ae&&ae.closest&&ae.closest('#panel'), scope=ae&&ae.closest?(ae.closest('#list')?'#list ':ae.closest('#stage')?'#stage ':''):''; /* FR-173: read before the render detaches it */
+  const key=ae&&ae.dataset&&(ae.dataset.id?'data-id':ae.dataset.kmore?'data-kmore':ae.dataset.more?'data-more':ae.dataset.foldermenu?'data-foldermenu':ae.dataset.newsess?'data-newsess':ae.dataset.lsort?'data-lsort':ae.dataset.ren?'data-ren':''); /* spec 052 FR-064: a sort header keeps focus too; spec 017: so does a room's ⋯ button (it was the door button's place); spec 097 FR-230: and its + */
   renderStats();
   updateFloorAttention();
   renderLift(); /* spec 092 FR-006, FR-008: before the office measures its width */
@@ -3974,6 +3975,7 @@ document.addEventListener('click',e=>{
   const sc=e.target.closest('[data-schedroom]'); if(sc){const r=ROOMS.find(x=>x.id===sc.dataset.schedroom);if(r)openSchedules(r);return;}
   const fm=e.target.closest('[data-foldermenu]'); if(fm){const r=ROOMS.find(x=>x.id===fm.dataset.foldermenu),b=fm.getBoundingClientRect();openFolderMenu(r,b.left,b.bottom+4,fm);return;}
   const ns=e.target.closest('[data-newsess]'); if(ns){const r=ROOMS.find(x=>x.id===ns.dataset.newsess),ag=r&&agents.find(x=>!x.parent&&x.room===r.id);if(ag)newSession(ag);return;}
+  const km=e.target.closest('[data-kmore]'); if(km&&km.closest('#stage')){openPanel(km.dataset.kmore,true);return;} /* spec 097 FR-370 (issue 1642): the desk-top +K opens the parent's chat; its own attribute, so a redraw gives the focus back to it, not to the plate with the same id */
   const t=e.target.closest('[data-id]'); if(t&&!t.closest('#panel,#inboxDlg,#needsPanel')){openPanel(t.dataset.id,true);} /* spec 074 FR-019: mouse or keyboard, desk or list row */
 });
 
@@ -4227,6 +4229,7 @@ document.addEventListener('keydown',e=>{
     if(window.DurbarScreens&&window.DurbarScreens.isOpen()&&!document.getElementById('scrDlg')&&!document.getElementById('modeDlg')){window.DurbarScreens.close();return;}
     if(!$('foldersPop').hidden){toggleFolders(false);return;}
     if(!$('floorsPop').hidden){toggleFloors(false);return;}
+    if(BP.expanded()){BP.restore({focus:true});return;} /* spec 080 FR-136 (issue 1691): the big browser goes small first, never the chat closing; a key in the page never gets here */
     if(e.target&&e.target.id==='ntSearch'&&e.target.value){e.target.value='';notesPaint();return;} /* spec 083 FR-043: Esc clears the search first */
     if(notesIsOpen()){closeNotes(true);return;} /* spec 083 FR-020: the drawer closes first, a second Esc closes the chat */
     if(vsViewing){leaveVsView();return;}
@@ -5319,7 +5322,11 @@ async function mcpLaunchStart(){
 function mcpLaunchSeen(a,e){
   if(!mcpL.on||mcpL.closed||!a||e.agentId)return;
   const r=liveRoot(a)||a, W=mcpLW();
-  if(W.launchUpdate(mcpL.items,e,{id:r.id,name:r.name,app:mcpOpts(r).appName},W.launchYoung(mcpL.t0,performance.now())))paintMcpStrip();
+  const chat={id:r.id,name:r.name,app:mcpOpts(r).appName};
+  if(W.launchUpdate(mcpL.items,e,chat,W.launchYoung(mcpL.t0,performance.now())))paintMcpStrip();
+  /* spec 058 FR-232 (issue 1621): a failed server whose text reads like a refusal may be a refused token; only main's reply knows */
+  if(e.type==='mcp'&&bridge.agentMcp&&W.launchToken&&(Array.isArray(e.servers)?e.servers:[]).some(x=>x&&x.status==='failed'&&!x.errorClass&&W.textClass(x.error)==='auth'))
+    Promise.resolve(bridge.agentMcp(a.id)).then(rp=>{if(!mcpL.closed&&W.launchToken(mcpL.items,rp,chat))paintMcpStrip();}).catch(()=>{});
 }
 function paintMcpStrip(){
   const el=$('mcpStrip');if(!el)return;
@@ -9882,6 +9889,7 @@ if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentEle
 if(SIM)window.__durbarSimUi={announce,afArrivalPrio,afTracker:{ids:()=>AFT.ids(),pending:()=>AFT.pendingList().map(v=>v.id+'|'+v.kind),quiet:()=>AFT.isQuiet,follow:id=>AFT.follow(id)}, /* spec 005 FR-237: drivers only: what Auto-follow follows, holds and whether it is quiet; follow() makes an agent followed without a hand open (which would drop the others, spec 052 FR-185) */ afNotice:{ms:v=>{AF_NOTICE_MS=Math.max(100,Number(v)||3000);return AF_NOTICE_MS;},on:v=>{setAutoFollowOn(!!v);return AF_ON;},shown:()=>!!AF_NOTICE}, /* spec 052 FR-239: drivers only: the notice's length, Auto-follow without Settings */swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
   chatTrimNow:()=>chatTrimPending(false), /* spec 005 FR-238: trim the chats waiting for a frame now (a burst with no frame between) */
   hiddenTrimTimer:()=>({on:!!hiddenTrimT,ms:TRIM_HIDDEN_MS}),
+  helperState:(id,st)=>{const h=agents.find(x=>x.id===id&&x.parent);if(!h||!['working','thinking','waiting','error','limit','done','idle'].includes(st))return false;h.state=st==='limit'?'waiting':st;h.limit=st==='limit';h.paused=false;layoutKey='';renderAll();return true;}, /* spec 097 T335 (issue 1642): drivers only: a helper's state the simulator never sends (waiting, limit), for the kids on the desk */
   helperStats:aid=>{const a=liveById(aid);if(!a)return null;const subs=a.subs?[...a.subs.values()]:[],ids=new Set(subs.map(s=>s.id)),ch=chats[aid];
     let staleViews=0;for(const k of Object.keys(chats)){const c=chats[k];if(c&&c.subViews)for(const v of c.subViews){const p=v.s&&v.s.parent;if(!p||!p.subs||p.subs.get(v.s.id)!==v.s)staleViews++;}}
     const pre=aid+':';
