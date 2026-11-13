@@ -374,6 +374,7 @@ const NOT_IN_FAKE = [
   'authStatus', 'verifySignIn', 'accountInfo', 'accountQuota', 'refreshAuth', 'resumeIdOf', 'listSlashCommands', 'expandSlashCommand', 'readOrgPolicy',
   'continueWithoutSandbox', 'sandboxHost', // spec 087: real adapters only (C2 below)
   'mcpContext', // spec 100: real adapters only (C2 below)
+  'setSignInApp', // spec 058 FR-238: real adapters only (C2 below)
 ];
 
 /** The optional members of `interface AgentAdapter`, read from `src/adapters/types.ts` with the TypeScript parser (no hand-kept copy). */
