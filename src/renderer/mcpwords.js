@@ -75,7 +75,7 @@
     'disconnected':'Press Restart, and check that the server still runs or can be reached.',
     'unknown':'Open Details or Copy diagnostics to see what the agent app reported.',
     /* spec 058 FR-232 (issue 1621): a 403 from a server that sends its own token; Sign in cannot change a header */
-    'token':'The server refused the token: check the header or the variable it uses. Sign in does not change it.'
+    'token':'The server refused the token. Check the header or its variable; Sign in does not change it.'
   };
   /* FR-006 hints; since FR-201 (2026-11-03, one wording per failure kind) the fix text of the strip, so the chat dialog, Settings and the
      launch strip say the same. `config` stays its own: a wrong entry, not an unreadable list. */
@@ -119,7 +119,7 @@
     const v=ok?(Array.isArray(vars)?vars:[]).filter(n=>typeof n==='string'&&ok(n)===true).slice(0,3):[];
     if(!v.length)return FIXES.token;
     const list=v.length===1?v[0]:v.slice(0,-1).join(', ')+' and '+v[v.length-1];
-    return FIXES.token+' The header uses the variable'+(v.length===1?' ':'s ')+list+', which Agent Durbar does not see: set '+(v.length===1?'it':'them')+' where Agent Durbar starts (an app opened from the Dock, Finder or a desktop menu does not read your terminal\u2019s profile), then quit and open Agent Durbar again.';
+    return FIXES.token+' Agent Durbar does not see '+list+': set '+(v.length===1?'it':'them')+' where Agent Durbar starts, then open the app again.';
   }
   function signInHint(app){return 'This server needs you to sign in. '+(app?app:'Your agent app')+' keeps the sign-in; Agent Durbar never sees it.';}
   function hintFor(o){

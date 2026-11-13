@@ -63,7 +63,7 @@ const TOKEN_ENV = 'ghp_' + 'Z9y8X7w6V5u4T3s2R1q0P9o8N7m6L5k4J3i2';
 const TOKEN_REF = 'ghp_' + 'Q1w2E3r4T5y6U7i8O9p0A1s2D3f4G5h6J7k8';
 const ERR403 = 'failed to initialize MCP client: transport failure during send initialize request: unexpected server response: HTTP 403 Forbidden';
 const ERR401 = 'failed to initialize MCP client: transport failure during send initialize request: unexpected server response: HTTP 401 Unauthorized';
-const TOKEN_WORDS = 'The server refused the token: check the header or the variable it uses.';
+const TOKEN_WORDS = 'The server refused the token. Check the header or its variable; Sign in does not change it.';
 
 let done = false;
 process.on('exit', (code) => {
@@ -219,16 +219,16 @@ function reply(): void {
   assert.deepStrictEqual(W.reasonOf(by('tok401')), { key: 'auth', word: 'Refused: needs sign-in' }, 'WORDS: a 401 keeps needs sign-in');
   const hTok = W.hintFor({ status: 'failed', error: by('tok').error, tokenRefused: by('tok').tokenRefused, tokenVars: by('tok').tokenVars, app: 'GitHub Copilot' });
   assert.ok(hTok.startsWith(TOKEN_WORDS), 'WORDS: the token hint');
-  assert.ok(hTok.includes('The header uses the variable MISSING_VAR, which Agent Durbar does not see'), 'WORDS: the unset variable by name');
+  assert.ok(hTok === TOKEN_WORDS + ' Agent Durbar does not see MISSING_VAR: set it where Agent Durbar starts, then open the app again.' && !/Dock|Finder/.test(hTok), 'WORDS: the unset variable by name');
   assert.ok(!/needs you to sign in|keeps the sign-in/.test(hTok), 'WORDS: no sign-in hint on a refused token');
   assert.ok(W.hintFor({ status: 'failed', error: ERR401, app: 'GitHub Copilot' }).startsWith('This server needs you to sign in.'), 'WORDS: a 401 keeps the sign-in hint');
 }
 
 function words(): void {
   const h2 = W.hintFor({ status: 'failed', tokenRefused: true, tokenVars: ['A_TOKEN', 'B_TOKEN'] });
-  assert.ok(h2.includes('the variables A_TOKEN and B_TOKEN, which Agent Durbar does not see: set them'), 'WORDS: two names');
+  assert.ok(h2.includes('does not see A_TOKEN and B_TOKEN: set them'), 'WORDS: two names');
   const h3 = W.hintFor({ status: 'failed', tokenRefused: true, tokenVars: ['A', 'B', 'C', 'D'] });
-  assert.ok(h3.includes('the variables A, B and C,') && !h3.includes('and D') && !h3.includes('C, D'), 'WORDS: at most three names');
+  assert.ok(h3.includes('does not see A, B and C:') && !h3.includes('and D') && !h3.includes('C, D') && !h3.includes('D:'), 'WORDS: at most three names');
   const bad = W.hintFor({ status: 'failed', tokenRefused: true, tokenVars: ['<img src=x>', 'a b', 5, TOKEN_REF.slice(0, 70) + '-'] });
   assert.strictEqual(bad, W.fixFor('token'), 'WORDS: a name that is not a plain variable name is never shown');
   assert.strictEqual(W.hintFor({ status: 'needs-auth', tokenRefused: true }).startsWith('This server needs you to sign in.'), true, 'WORDS: only a failed row reads the token flag');
@@ -249,7 +249,7 @@ function words(): void {
     assert.ok(!W.diagnostics({ server: 'team', entry: x, app: 'GitHub Copilot' }, redact).includes(v), `RECHECK: Copy diagnostics never holds a pasted ${what}`);
     assert.ok(!JSON.stringify(W.reasonOf(x)).includes(v), `RECHECK: the reason never holds a pasted ${what}`);
   }
-  for (const n of LEGIT) assert.ok(W.hintFor({ status: 'failed', tokenRefused: true, tokenVars: [n] }).includes('the variable ' + n + ','), `RECHECK: the window names ${n}`);
+  for (const n of LEGIT) assert.ok(W.hintFor({ status: 'failed', tokenRefused: true, tokenVars: [n] }).includes('does not see ' + n + ':'), `RECHECK: the window names ${n}`);
   // fail closed: a window copy that has no shared rule names nothing
   const file = require.resolve(path.join(__dirname, '..', '..', 'src', 'renderer', 'mcpwords.js'));
   const keep = require.cache[file];
@@ -260,7 +260,7 @@ function words(): void {
   } finally {
     require.cache[file] = keep;
   }
-  assert.ok(W.fixFor('token', { vars: ['X_KEY'] }).includes('the variable X_KEY'), 'WORDS: the strip fix names the variable');
+  assert.ok(W.fixFor('token', { vars: ['X_KEY'] }).includes('does not see X_KEY:'), 'WORDS: the strip fix names the variable');
   const chat = { id: 'c1', name: 'Ana', app: 'GitHub Copilot' };
   const f = W.chatFinding({ name: 'team', status: 'failed', error: ERR403, tokenRefused: true, tokenVars: ['X_KEY'] }, chat)!;
   assert.deepStrictEqual([f.rkey, f.reason], ['token', 'Refused: token not accepted'], 'STRIP: a token finding');
@@ -291,7 +291,7 @@ function simCopy(): void {
   // eslint-disable-next-line @typescript-eslint/no-implied-eval
   const [sim, entries] = new Function(js + '\nreturn [simTokenRefusal, SIM_TOKEN_ENTRIES];')() as [(t: unknown) => boolean, Record<string, { vars: string[] }>];
   // the simulator's rows reach the same window words: a name the shared rule refuses (paste-api) is never shown, TEAM_API_TOKEN is
-  assert.ok(W.hintFor({ status: 'failed', tokenRefused: true, tokenVars: entries['team-api'].vars }).includes('the variable TEAM_API_TOKEN,'), 'SIM: team-api names TEAM_API_TOKEN');
+  assert.ok(W.hintFor({ status: 'failed', tokenRefused: true, tokenVars: entries['team-api'].vars }).includes('does not see TEAM_API_TOKEN:'), 'SIM: team-api names TEAM_API_TOKEN');
   for (const [n, e] of Object.entries(entries)) {
     const said = [W.hintFor({ status: 'failed', tokenRefused: true, tokenVars: e.vars }), W.fixFor('token', { vars: e.vars }), JSON.stringify(W.chatFinding({ name: n, status: 'failed', error: ERR403, tokenRefused: true, tokenVars: e.vars }, { id: 'c', name: 'Ana' }))].join('\n');
     for (const v of e.vars) if (!envVarName(v)) assert.ok(!said.includes(v), `SIM: ${n}'s pasted key never reaches the window's words`);

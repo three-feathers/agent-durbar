@@ -205,7 +205,7 @@ module.exports = async (ctx) => {
     const team = tr.find((x) => x.n === 'team-api'), docs = tr.find((x) => x.n === 'docs-api'), sso = tr.find((x) => x.n === 'sso-api');
     assert.match(team.why, /^Reason: Refused: token not accepted/, `${w}: FR-232 team-api reads a refused token`);
     assert.strictEqual(team.reason, 'token', `${w}: FR-232 the reason key`);
-    assert.ok(team.hint.startsWith('The server refused the token: check the header or the variable it uses.') && team.hint.includes('the variable TEAM_API_TOKEN, which Agent Durbar does not see'), `${w}: FR-232 the token hint names the variable: ${team.hint}`);
+    assert.ok(team.hint.startsWith('The server refused the token. Check the header or its variable;') && team.hint.includes('does not see TEAM_API_TOKEN:'), `${w}: FR-232 the token hint names the variable: ${team.hint}`);
     assert.ok(!team.btns.some((b) => /Sign in/.test(b)), `${w}: FR-232 no Sign in on a refused token ${JSON.stringify(team.btns)}`);
     assert.match(docs.why, /^Reason: Refused: token not accepted/, `${w}: FR-232 a written header reads a refused token`);
     assert.ok(!/does not see/.test(docs.hint), `${w}: FR-232 no variable named for a written header`);
