@@ -306,6 +306,39 @@
       msg.textContent=r&&r.ok?'Saved.':'Not saved.';
     };
   }
+  /* spec 069 FR-069 (issue 1624): the Settings page is rebuilt after a switch (the Copilot CLI list, the Claude Code list, the world, a theme).
+     Read the scroll position of the page body and the focused control (its id, or the row's data-amb / data-g / data-place plus its data-act)
+     before the rebuild; back() puts both back on the new DOM, and the focus never scrolls (focusIn). */
+  function keepPlace(r){
+    const sc=r.querySelector('.scr-body'), top=sc?sc.scrollTop:0, f=document.activeElement;
+    let sel=null;
+    if(f&&r.contains(f)&&f!==document.body){
+      if(f.id)sel='[id="'+CSS.escape(f.id)+'"]';
+      else{const li=f.closest('li[data-amb],li[data-g],li[data-place]');
+        if(li&&f.dataset.act){const k=li.dataset.amb!==undefined?'amb':li.dataset.g!==undefined?'g':'place';sel='li[data-'+k+'="'+CSS.escape(li.dataset[k])+'"] [data-act="'+CSS.escape(f.dataset.act)+'"]';}}
+    }
+    return {back(){
+      const nb=r.querySelector('.scr-body');
+      if(nb&&top){
+        /* parts above the switch arrive after the paint (agent app accounts, quota, sandbox, the policy rows): the page is shorter at first and
+           the browser's scroll anchoring would then add their height to the restored position. So anchoring is off here and the position is
+           set again whenever the page grows, until anything else moves it (the person, a jump to a section), the person presses a key or
+           clicks, or 4 s have passed. */
+        let ro=null,mo=null,t=0,last=0;
+        const put=()=>{nb.scrollTop=top;last=nb.scrollTop;}; /* last: where the browser kept it (a short page clamps) */
+        put();nb.style.overflowAnchor='none';
+        const evs=['wheel','keydown','pointerdown','touchstart'];
+        const end=()=>{clearTimeout(t);if(ro)ro.disconnect();if(mo)mo.disconnect();evs.forEach(n=>nb.removeEventListener(n,end,true));nb.removeEventListener('scroll',moved);nb.style.overflowAnchor='';};
+        const moved=()=>{const y=nb.scrollTop,clamped=y<last&&y>=nb.scrollHeight-nb.clientHeight-1; /* a page that got shorter clamps it: not a move */
+          if(!clamped&&Math.abs(y-last)>1)end();else last=y;};
+        if(typeof ResizeObserver==='function'){ro=new ResizeObserver(()=>{if(!nb.isConnected)return end();put();});[...nb.children].forEach(c=>ro.observe(c));}
+        if(typeof MutationObserver==='function'){mo=new MutationObserver(()=>{if(nb.isConnected)put();});mo.observe(nb,{childList:true,subtree:true,characterData:true});} /* a part that arrives, or a line that grows */
+        evs.forEach(n=>nb.addEventListener(n,end,true));nb.addEventListener('scroll',moved);
+        t=setTimeout(end,4000);
+      }
+      const el=sel&&r.querySelector(sel);if(el)focusIn(el);
+    }};
+  }
   async function paintSettings(focus){
     const first=!mcp;
     if(first)root().innerHTML=head('Settings')+'<div class="scr-body"><p class="scr-note">Loading…</p></div>';
@@ -471,6 +504,7 @@
         <li>It does not see your bill; costs are estimates.</li>
         <li>It sends nothing to any server of its own.</li>
         <li>Rooms you hide or switch off still run and cost money.</li></ul></section>`;
+    const keep=focus?null:keepPlace(r); /* spec 069 FR-069: a repaint (not the opening) keeps the scroll and the focused control */
     r.innerHTML=head('Settings')+`<div class="scr-wrap"><div class="scr-cols"><nav class="scr-nav" id="scrNav" aria-label="Settings sections" hidden></nav><div class="scr-body">${hsSec}${pfSec}${detailSec}${keySec}${notSec}${themeSec}${charSec}${logoSec}${motionSec}${stillSec}${capSec}${moodSec}${breakSec}${linksSec}${notifySec}${followSec}${schedSec}${floorsSec}${orgSec}${placesSec}
       <details class="scr-adv" id="advMcp"${advOpen?' open':''}><summary><h3 class="scr-adv-h">Advanced: MCP servers (extra tools for agents)</h3><span class="mtag warn" id="advMcpAtt"${live&&live.agg.attention?'':' hidden'}>${esc(attText(live?live.agg.attention:0))}</span></summary>
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH" tabindex="-1">MCP servers</h3>
@@ -490,6 +524,7 @@
         <p class="scr-note">Agent Durbar can add its own servers, but <b>only per folder or workspace</b>: open the <b>MCP</b> button in a room's header.</p>
         <details class="scr-more"><summary>More</summary><p class="scr-note small"><b>Folder extras…</b> in an agent's MCP menu opens the same list. Extras apply only to agents in that folder and are never shared with other folders. Switching one on shows its exact command first, and asks again if the command changes.</p></details>
       </section></details>${aboutSec}</div></div></div>`;
+    if(keep)keep.back();
     if(window.DurbarHarnesses&&window.DurbarHarnesses.shown)window.DurbarHarnesses.shown(!!hsSec); /* spec 081 FR-016: the card is the announcement while it is on screen */
     if(hsSec)window.DurbarHarnesses.loadAccounts(acctAgain); /* spec 051 FR-014: the account lines fill in after the paint (Codex takes about 2 s) */
     if(orgSec){(async()=>{ /* FR-208: a failed read is "unknown", never "no policy"; an empty view hides the section */
