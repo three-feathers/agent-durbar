@@ -152,3 +152,10 @@
 ## Phase 18: Change 2026-11-11 (floors-drag diagnostics, issue #1526)
 
 - [x] T061 The floors-drag step of `scripts/shots-033.js` runs in `H.pointerStep` with a DOM-mutation ring on `#floorsPop`, printed only when its assert fails; the assert says "the drag did not start (no lifted floor)" when nothing is lifted; `scripts/test-pointer-log.ts` covers it with mutants [FR-004, FR-022]
+
+## Phase 18: Change 2026-11-13 (adding a folder says where it went, issue #1709)
+
+- [x] T062 `addMany` skips a folder already in the office and returns it in `AddResult.existing`; the simulator's `addFolder` has the same stand-in (`window.__simAddFolderSame`) [FR-090]
+- [x] T063 `applyAddResult` calls `addFloorNote`: switch an off floor on, toast with Show (`toastAction`, `goToFloor`), announce, "already added on the floor" [FR-089, FR-091]
+- [x] T064 The Add a folder / New folder dialog has the **Put it on floor** list (`custom` slot of `askDialog`), same `INTO` as the Floors panel [FR-092]
+- [x] T065 `scripts/check-floor-add.js` in `ui-suite.js` and the timings file; mutant run; docs (`features.md`, `feature-inventory.md`), changelog fragment, screenshots at both sizes [FR-089..FR-092]

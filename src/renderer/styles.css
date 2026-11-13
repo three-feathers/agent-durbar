@@ -1439,6 +1439,8 @@ html[data-world="retro"] .letter.real{box-shadow:none;outline:1px solid var(--in
 .dlg .derr{margin:0;font-size:var(--t3-size);color:var(--red-ink)}
 .dlg .derr[hidden]{display:none}
 .dlg .dinput input{height:var(--h-ctl);border:1px solid var(--line-ctl);border-radius:var(--r-md);background:var(--raised);padding:0 10px;font:inherit;font-size:13px;color:var(--ink);font-weight:400}
+.dlg .fl-pick{display:flex;flex-direction:column;gap:4px;margin:8px 0 0;font-size:12px;color:var(--ink)}
+.dlg .fl-pick select{height:var(--h-ctl);font:inherit;font-size:13px}
 
 /* ---- agent mood (spec 034, issue #20): small, flat, inside the scene box; nothing moves under reduced motion ---- */
 .amb-light{animation:ambblink 1.6s ease-in-out 6} /* spec 052 FR-069: the red light breathes slowly for about 10 s, then stays on (was a red/blue strobe) */

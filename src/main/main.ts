@@ -522,8 +522,13 @@ async function addMany(paths: string[], permMode: PermMode, opts: SessionOptions
   const added: AgentInfo[] = [];
   const errors: string[] = [];
   const readyIds = opts.adapterId !== undefined ? await readyAdapterIds() : undefined; // a kind the user picked must be ready (FR-058)
+  const existing: NonNullable<AddResult['existing']> = [];
   for (const p of paths) {
     try {
+      // Spec 033 FR-090: a folder that is already in the office is not started a second time; the window says where it is.
+      const key = ((w) => w.workspaceFile ?? w.cwd)(resolveWorkspaceCwd(p));
+      const have = [...agents.values()].find((x) => wsKey(x) === key);
+      if (have) { existing.push({ id: have.id, name: path.basename(p) || p, floor: folderStore?.floorOfFolder(key) ?? have.floor ?? GROUND }); continue; }
       added.push(await addWorkspace(p, permMode, { model: opts.model, effort: opts.effort, persist: opts.persist, maxAiCredits: opts.maxAiCredits, floor: opts.floor, adapterId: opts.adapterId, readyIds }));
     } catch (err) {
       errors.push(`${path.basename(p)}: ${err instanceof Error ? err.message : String(err)}`);
@@ -541,7 +546,7 @@ async function addMany(paths: string[], permMode: PermMode, opts: SessionOptions
       }
     }
   }
-  return { ok: errors.length === 0, agents: added, error: errors.join('; ') || undefined, ...(warnings.length ? { warnings } : {}) };
+  return { ok: errors.length === 0, agents: added, error: errors.join('; ') || undefined, ...(warnings.length ? { warnings } : {}), ...(existing.length ? { existing } : {}) };
 }
 
 /** Folders remembered from earlier runs come back as "not started" agents: nothing runs until the first message. */

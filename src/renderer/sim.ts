@@ -3475,6 +3475,10 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         /* a driver's probe (shots-074): count the call and add nothing, so a shortcut check has no side effect */
         const probe = typeof window !== 'undefined' ? (window as unknown as { __simAddFolderProbe?: { n: number } }).__simAddFolderProbe : undefined;
         if (probe) { probe.n++; return { ok: true, agents: [] }; }
+        /* spec 033 FR-090: a driver sets window.__simAddFolderSame to the cwd the picker "chose": a folder already in the office is not added again */
+        const same = typeof window !== 'undefined' ? (window as unknown as { __simAddFolderSame?: string }).__simAddFolderSame : undefined;
+        const have = same ? sims.find((x) => x.info.cwd === same) : undefined;
+        if (have) return { ok: true, agents: [], existing: [{ id: have.info.id, name: have.info.name, floor: folderFloor.get(have.info.cwd) ?? 'ground' }] };
         const bad = o && o.adapterId !== undefined ? notReady(o.adapterId) : undefined;
         if (bad) return { ok: false, agents: [], error: bad }; // like main: nothing starts, nothing is written
         extra++;
@@ -3488,7 +3492,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         info.renameCap = caps(info.adapterId ?? 'copilot').renameSession;
         sims.push({ info, room: info.name, state: 'idle', intent: 'Ready', prompt: '', helpers: 0, tool: 0, think: 0, files: [], grants: new Map() });
         addedListeners.forEach((l) => l(info));
-        return { ok: true, agents: [], ...(home ? { warnings: [{ name: 'home', kind: 'home' as const }] } : {}) };
+        return { ok: true, agents: [info], ...(home ? { warnings: [{ name: 'home', kind: 'home' as const }] } : {}) };
       },
       addWorkspaceFile: async () => ({ ok: true, agents: [] }),
       /* spec 093 FR-081: create a folder, faked in the window: no process, nothing on disk, main's channels stay closed. The parent is
