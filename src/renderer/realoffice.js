@@ -21,6 +21,7 @@
   const REPAINT_MS = 2000; /* FR-033 */
   const SCR = new Map(); /* desk id -> {box, last, timer, dirty, away, fit, sig} */
   const OFF = new Set(); /* keys of desks whose motion stands still: scrolled away or under the zoom */
+  let ARC = false; /* the arcade is drawn (the Retro world on a cabinet layout): the narrow cabinet's plate rules of spec 102 FR-312 apply to it alone */
   let LAY_G = 0; const CUR_G = () => LAY_G; /* the arcade's scale, for its screen text (0 in other worlds) */
   let CUR = null; /* {ro, screenOf, still, hold, desks: Map id -> desk, agents: Map id -> model agent, folders: Map, drawn} */
   let ZOOM = null; /* {id, hover, focus, panel, plate} */
@@ -332,15 +333,17 @@
     for (const f of model.folders) signs[f.id] = { name: f.name, path: f.path, counts: f.counts.length + (f.cost ? 1 : 0) };
     let lay = meta.arrangement && meta.arrangement !== 'rows' && L.layoutFor ? L.layoutFor(meta.arrangement, engine, view, meta, signs) : L.realLayout(engine, view, meta, signs); /* spec 102 FR-228: the one seam */
     /* spec 102 delta 2026-11-11 (issue 1566): an arcade hall that would scroll takes the floor's own padding (`opts.lend`, px) when that makes it fit, so a strip over the floor does not make 15 agents scroll at 1280x800; `lent` tells the host to drop that padding */
-    if (lay.scroll && opts.lend > 0 && meta.arrangement === 'aisles' && L.layoutFor) {
+    /* spec 102 delta 2026-11-13 (issue 1598): the same when the hall fits only by cutting a folder of 4 or fewer across rows (no scroll, so the test above never ran): the lent layout is used when it keeps them whole */
+    const cutSmall = (l) => { const parts = {}, size = {}; for (const z of l.zones || []) { parts[z.id] = (parts[z.id] || 0) + 1; size[z.id] = (size[z.id] || 0) + z.desks.length; } return Object.keys(parts).some((id) => parts[id] > 1 && size[id] <= 4); };
+    if ((lay.scroll || cutSmall(lay)) && opts.lend > 0 && meta.arrangement === 'aisles' && L.layoutFor) {
       const v2 = { w: view.w, h: view.h + opts.lend }, l2 = L.layoutFor(meta.arrangement, engine, v2, meta, signs);
-      if (!l2.scroll) { lay = l2; view = v2; lay.lent = true; }
+      if (!l2.scroll && (lay.scroll || !cutSmall(l2))) { lay = l2; view = v2; lay.lent = true; }
     }
 
     let ro = stage.querySelector(':scope > .ro');
     if (!ro) { stage.textContent = ''; ro = document.createElement('div'); ro.className = 'ro'; stage.appendChild(ro); ro.addEventListener('click', forward); wireZoom(ro); }
     sty(ro, 'width', px(lay.width)); sty(ro, 'height', px(lay.height));
-    LAY_G = lay.cabinet ? lay.g || 0 : 0;
+    LAY_G = lay.cabinet ? lay.g || 0 : 0; ARC = !!lay.cabinet && world === 'retro';
     if (lay.g) setVar(ro, '--ro-g', String(lay.g)); /* spec 102 FR-255: one integer scale for the world's art */
     dset(ro, 'set', set); dset(ro, 'world', world); dset(ro, 'u', String(Math.round(lay.u))); dset(ro, 'face', String(Math.round(lay.faceH * 10) / 10)); dset(ro, 'big', lay.big ? '1' : '0');
     ro.classList.toggle('still', !!opts.still);
@@ -386,7 +389,7 @@
       for (const d of lay.lounge.desks) deskOne(d); /* spec 097 FR-247: after the desks */
       /* FR-249: keyboard order is the desks', then the seats': a plate that was a desk's keeps its element, so it is moved after the last desk's plate (and its pencil), unless it has the focus */
       const last = lay.zones.length ? lay.zones[lay.zones.length - 1].desks.slice(-1)[0] : null;
-      let at = last ? chrome._k.get('h:' + last.id) || chrome._k.get('rn:' + last.id) || chrome._k.get('n:' + last.id) : null;
+      let at = last ? chrome._k.get('h:' + last.id) || chrome._k.get('kz:' + last.id) || chrome._k.get('rn:' + last.id) || chrome._k.get('n:' + last.id) : null;
       for (const d of lay.lounge.desks) {
         const pl = chrome._k.get('n:' + d.id), rb = chrome._k.get('rn:' + d.id);
         if (!pl || pl.contains(document.activeElement) || (rb && rb.contains(document.activeElement))) { at = rb || pl || at; continue; }
@@ -469,12 +472,12 @@
         /* FR-120: a static "z z" over a sleeping person (carved in the cave); aria-hidden, the plate and the name carry the meaning */
         if (a.asleep && d.person) { const z = el(chrome, 'z:' + k, 'div', 'ro-zz'); box(z, { x: d.person.x + d.person.w * 0.62, y: Math.max(d.slot.y + 2, d.person.y + d.person.h * 0.04) }); attr(z, 'aria-hidden', 'true'); text(z, 'z z'); }
         /* FR-016, FR-090: the name plate is the desk's one focusable button; the app's click handler opens the chat ([data-id]) */
-        const pl = el(chrome, 'n:' + k, 'button', 'ro-plate st-' + d.state + (a.selected ? ' sel' : '') + (d.narrow ? ' narrow' : '') + (a.asleep ? ' asleep' : '') + (d.lounge ? ' lounge' : '') + (a.ren ? ' has-ren' : '') + (!d.strip && a.helpers && a.helpers.length ? ' has-help' : '')); const plEase = box(pl, d.plate); /* has-help: the plate carries the +N (FR-308); a class, not :has(), so one text change does not re-match the arcade's whole tree */
+        const pl = el(chrome, 'n:' + k, 'button', 'ro-plate st-' + d.state + (a.selected ? ' sel' : '') + (d.narrow ? ' narrow' : '') + (a.asleep ? ' asleep' : '') + (d.lounge ? ' lounge' : '') + (isNarrowPlate(d) ? ' cab-narrow' : '') + (a.ren ? ' has-ren' : '') + (!d.strip && !d.kids && a.helpers && a.helpers.length ? ' has-help' : '')); const plEase = box(pl, d.plate); /* has-help: the plate carries the +N (FR-308); a class, not :has(), so one text change does not re-match the arcade's whole tree */
         if (pl.type !== 'button') pl.type = 'button'; dset(pl, 'id', k); dset(pl, 'state', d.state); if (d.lounge) dset(pl, 'surface', 'lounge'); else if (pl.dataset.surface) delete pl.dataset.surface; /* spec 098 FR-010: the moment's marker (spec 097 FR-246: every lounge seat) */
         /* spec 097 FR-308 (review of PR 1322): helpers with no strip (the fallback: the plate's +N and dots) are said in the plate's name and tooltip, in the flat desk's words (`helpWords`); FR-325: so is the context (`labelOf`) */
         const hw = helpWordsOf(a, d);
         attr(pl, 'aria-pressed', a.selected ? 'true' : 'false'); attr(pl, 'aria-label', labelOf(a, d)); attr(pl, 'title', hw ? a.tip + ' · ' + hw.slice(2) : a.tip);
-        plateFill(pl, a, d.state, !!d.strip);
+        plateFill(pl, a, d.state, !!(d.strip || d.kids), isNarrowPlate(d));
         /* spec 059 FR-170 (#1155): Open office's rename pencil (.ren[data-ren]: the app's own click and F2 handlers, the same in-place edit), right
            after its plate (a button cannot sit inside one) so the plate's hover and focus show it; CSS anchors it just after the name: no layout read */
         if (a.ren) {
@@ -494,6 +497,9 @@
         /* spec 097 FR-306..FR-309 (issue #1139): the helpers' head figures under the plate, right after it and its pencil in the Tab order; a lounge seat and the fallback (no room: the plate keeps +N; the arcade at 1280x800) have no strip box, so no strip */
         if (d.strip && a.subs && a.subs.length) helperStrip(chrome, d, a, k, who, ids, meta);
         else if (chrome._k.get('h:' + k)) { chrome._k.get('h:' + k).remove(); chrome._k.delete('h:' + k); }
+        /* spec 097 FR-368..FR-372 (#1642): at the big level the helpers are kids on the desk top, in the same place of the Tab order (a desk has kids or a strip, never both) */
+        if (d.kids && a.subs && a.subs.length) kidsOnDesk(chrome, d, a, k, meta, lay.u);
+        else if (chrome._k.get('kz:' + k)) { chrome._k.get('kz:' + k).remove(); chrome._k.delete('kz:' + k); }
     }
     /* the lobby band: fixtures, their lights, visitors and chips, place plates (FR-023..FR-027, FR-045) */
     const byPlace = new Map(model.places.map((p) => [p.id, p]));
@@ -611,7 +617,10 @@
   }
   /* FR-325: the plate's name with the context in the flat office's words, before "Open chat panel."; a lounge seat's name is the model's */
   const OPEN_WORDS = '. Open chat panel.';
-  function helpWordsOf(a, d) { return d && !d.strip && a.helpWords && a.helpers && a.helpers.length ? a.helpWords : ''; } /* FR-308: the fallback plate's helper count, in the flat desk's words */
+  /* a helper that failed or waits for the user is counted by the model (`helpUrgent`, from `prio` in app.js, the order of the heads and of the dots: spec 001 FR-089), not guessed here from the light states */
+  const NARROW_CAB_PLATE_W = 122.5; /* the narrow cabinet's plate at the smallest scale (CABINETS.narrow at g = 2 is 122 px in realoffice-arrangements.ts; the next cabinet's plate is 146) */
+  const isNarrowPlate = (d) => ARC && !!d && !d.lounge && !!d.plate && d.plate.w <= NARROW_CAB_PLATE_W; /* the arcade's narrow cabinet plate (122 px at g = 2; spec 102 FR-312): the only plate whose count is marked and whose name says the failed helpers; never a plate of another world, whatever its width (a default or cave desk's plate of the same width keeps FR-308's name) */
+  function helpWordsOf(a, d) { if (!(d && !d.strip && !d.kids && a.helpWords && a.helpers && a.helpers.length)) return ''; const u = isNarrowPlate(d) ? (a.helpUrgent | 0) : 0; return a.helpWords + (u ? ', ' + u + ' failed or waiting' : ''); } /* FR-308: the fallback plate's helper count, in the flat desk's words; on the narrow plate (no dot fits) also how many failed or wait (FR-312), nowhere else */
   function labelOf(a, d) {
     const w = d && d.lounge ? '' : X().ctxWords(a.ctx && a.ctx.pct), hw = helpWordsOf(a, d), l = String(a.label || '');
     return l.endsWith(OPEN_WORDS) ? l.slice(0, -OPEN_WORDS.length) + w + hw + OPEN_WORDS : l + hw; /* the context words, then the helpers' (". 6 helpers" stays one phrase) */
@@ -654,13 +663,13 @@
       const cls = 'ro-hd st-' + h.state + (h.selected ? ' sel' : '');
       if (b.className !== cls) b.className = cls;
       const dc = dotClass(h.state); if (b._dot.className !== dc) b._dot.className = dc;
-      const person = L.helperPerson ? L.helperPerson(h.id, who[a.id], ids) : null, sm = person && has(seat, person) ? seat[person] : null, file = person ? person + '-rest.webp' : '';
-      if (sm && !BAD.has(SD + file) && L.headCrop) {
-        const c = L.headCrop(sm), f = L.HEAD / c.s;
+      const hd = L.helperHead ? L.helperHead(h.id, who[a.id], meta) : null; /* spec 097 FR-370: the kid's face in a world with kids, else FR-307's adult of the set (never the parent) */
+      if (hd && !BAD.has((hd.world ? WD : SD) + hd.file)) {
+        const c = hd.crop, f = L.HEAD / c.s;
         let im = b._img;
         if (!im) { im = b._img = document.createElement('img'); b._pic.textContent = ''; b._pic.appendChild(im); }
-        sty(im, 'width', px(sm.w * f)); sty(im, 'left', px(-c.x * f)); sty(im, 'top', px(-c.y * f));
-        img(im, file, true, sm.w * f);
+        sty(im, 'width', px(hd.w * f)); sty(im, 'left', px(-c.x * f)); sty(im, 'top', px(-c.y * f));
+        img(im, hd.file, !hd.world, hd.w * f);
       } else {
         if (b._img) { b._img = null; b._pic.textContent = ''; }
         if (!b._pic.firstChild || b._pic.firstChild.className !== 'ro-hg') { b._pic.textContent = ''; const g = document.createElement('span'); g.className = 'ro-hg'; b._pic.appendChild(g); } /* FR-065: no picture, a neutral silhouette (CSS), never a letter of the name: the name is drawn nowhere */
@@ -681,9 +690,60 @@
     for (const e of want) { if (e === next) next = next.nextSibling; else bx.insertBefore(e, next); }
   }
 
+  /* spec 097 FR-368..FR-373 (#1642): one desk's helpers as clay-toy kids on its desk top (the big level). The group (key kz:<id>) lies over the desk top and lets the pointer through; each
+     kid is one button (data-id: the app's own click opens its Sub-agent activity view) kept by id, so a status change writes the picture, the classes, the box and the labels, never a node
+     (FR-184). The kid is the world's (`kidOf`, stable, nothing stored), its pose the state's (`kidPose`: idle holds done, a resting parent rests them all), its box `kidBox` (one scale per
+     kid, the sole on the feet line). The marks are CSS on the state class (thinking dots, the red !, an amber or red glow at the feet) and the status dot is `dotClass`'s (shape and colour);
+     nothing moves. The name is only in the accessible name and tooltip (`helperWords`, masked). `+K` is a toy block button with `data-kmore=<parent id>` (not the plate's data-id): app.js opens the parent's chat on its click and gives it the focus back after a redraw. */
+  function kidsOnDesk(chrome, d, a, k, meta, u) {
+    const L = X(), kz = d.kids, subs = a.subs, kids = meta.kids || {};
+    const shown = subs.slice(0, kz.shown), hidden = subs.slice(kz.shown);
+    const top = Math.min(...kz.places.map((p) => p.y), kz.more ? kz.more.y : Infinity), x0 = d.desk.x;
+    const gx = el(chrome, 'kz:' + k, 'div', 'ro-kids');
+    box(gx, { x: x0, y: top, w: d.desk.w, h: kz.feet - top });
+    attr(gx, 'role', 'group'); attr(gx, 'aria-label', 'Helpers of ' + a.name);
+    const anchor = chrome._k.get('rn:' + k) || chrome._k.get('n:' + k);
+    if (anchor && anchor.nextElementSibling !== gx && !gx.contains(document.activeElement)) anchor.after(gx); /* FR-309: plate, pencil, the kids, +K, the next desk */
+    if (!gx._b) gx._b = new Map();
+    const want = [], at = (e, r) => { sty(e, 'left', px(r.x)); sty(e, 'top', px(r.y)); sty(e, 'width', px(r.w)); sty(e, 'height', px(r.h)); };
+    shown.forEach((h, i) => {
+      let b = gx._b.get(h.id);
+      if (!b) {
+        b = document.createElement('button'); b.type = 'button'; gx._b.set(h.id, b);
+        b._im = document.createElement('img'); b._im.className = 'ro-kp';
+        b._dot = document.createElement('span'); b._dot.setAttribute('aria-hidden', 'true');
+        b.append(b._im, b._dot);
+      }
+      const kid = L.kidOf(h.id, kids), km = kids[kid], pose = L.kidPose(h.state, !!a.asleep), file = kid + '-' + pose + '.webp';
+      const r = L.kidBox(km, pose, kz.places[i], kz.feet, u);
+      at(b, { x: r.x - x0, y: r.y - top, w: r.w, h: r.h }); /* a pose swap is a still picture: no ease (FR-371) */
+      const bad = BAD.has(WD + file), cls = 'ro-kid st-' + h.state + (h.selected ? ' sel' : '') + (bad ? ' nopic' : '');
+      if (b.className !== cls) b.className = cls;
+      const dc = dotClass(h.state); if (b._dot.className !== dc) b._dot.className = dc;
+      if (!bad) img(b._im, file, false, r.w);
+      if (bad && !b._g) { b._g = document.createElement('span'); b._g.className = 'ro-hg'; b._g.setAttribute('aria-hidden', 'true'); b.insertBefore(b._g, b._dot); } /* FR-065: a neutral silhouette, never a letter */
+      else if (!bad && b._g) { b._g.remove(); b._g = null; }
+      dset(b, 'id', h.id); dset(b, 'kid', kid); dset(b, 'pose', pose);
+      attr(b, 'aria-pressed', h.selected ? 'true' : 'false'); attr(b, 'aria-label', h.label); attr(b, 'title', h.title);
+      want.push(b);
+    });
+    for (const [id, b] of gx._b) if (!shown.some((h) => h.id === id)) { b.remove(); gx._b.delete(id); }
+    if (kz.more && hidden.length) {
+      let m = gx._more;
+      if (!m) { m = gx._more = document.createElement('button'); m.type = 'button'; m.className = 'ro-kmore'; }
+      at(m, { x: kz.more.x - x0, y: kz.more.y - top, w: kz.more.w, h: kz.more.h });
+      dset(m, 'kmore', a.id); /* FR-370: the parent's chat, where its helpers are listed (app.js [data-kmore]); not data-id, which the plate has: a redraw gives focus back by attribute */
+      text(m, '+' + hidden.length);
+      attr(m, 'aria-label', hidden.length + ' more helper' + (hidden.length > 1 ? 's' : '') + ' of ' + a.name); attr(m, 'title', hidden.map((h) => h.name).slice(0, 8).join(', ') + (hidden.length > 8 ? ', ...' : ''));
+      want.push(m);
+    } else if (gx._more) { gx._more.remove(); gx._more = null; }
+    let next = gx.firstChild;
+    for (const e of want) { if (e === next) next = next.nextSibling; else gx.insertBefore(e, next); }
+  }
+
   /* FR-016, FR-184: the plate keeps its nodes on a status change: only the text and the dot that changed are written (a helper's list is rebuilt when it changes) */
   /* `strip`: the desk's helpers are drawn as head figures (spec 097 FR-306), so the plate keeps no +N and dots; they stay when the strip cannot be drawn (FR-308's last step, the arcade) */
-  function plateFill(pl, a, state, strip) {
+  function plateFill(pl, a, state, strip, narrow) {
     let P = pl._parts;
     if (!P) {
       P = pl._parts = { l1: document.createElement('span'), nm: document.createElement('b'), rl: document.createElement('span'), l2: document.createElement('span'), dot: document.createElement('span'), wd: document.createElement('span'), tk: document.createElement('span'), h: null, hs: '' };
@@ -692,10 +752,10 @@
       pl.textContent = ''; pl.append(P.l1, P.l2);
     }
     text(P.nm, a.name); text(P.rl, a.role);
-    const hs = strip ? '' : a.helpers.join();
+    const hs = strip ? '' : a.helpers.join() + (narrow ? '|n' + (a.helpUrgent | 0) : '');
     if (P.hs !== hs) {
       P.hs = hs; if (P.h) { P.h.remove(); P.h = null; }
-      if (hs) { P.h = document.createElement('span'); P.h.className = 'ro-help'; const hc = document.createElement('span'); hc.className = 'ro-hc'; hc.textContent = '+' + a.helpers.length + ' '; P.h.appendChild(hc); a.helpers.slice(0, 3).forEach((s) => P.h.insertAdjacentHTML('beforeend', dotHTML(s))); P.l1.appendChild(P.h); }
+      if (hs) { P.h = document.createElement('span'); P.h.className = 'ro-help'; const hc = document.createElement('span'); hc.className = 'ro-hc'; const urg = narrow ? (a.helpUrgent | 0) : 0; hc.textContent = '+' + a.helpers.length + (urg ? '' : ' '); if (urg) { const hm = document.createElement('span'); hm.className = 'ro-hm'; hm.setAttribute('aria-hidden', 'true'); hm.textContent = '!'; hc.appendChild(hm); } /* 102 FR-312: the marked count: "+3!" says a helper failed or waits; drawn only on the narrow cabinet's plate (CSS), where no dot fits */ P.h.appendChild(hc); a.helpers.slice(0, 3).forEach((s) => P.h.insertAdjacentHTML('beforeend', dotHTML(s))); P.l1.appendChild(P.h); }
     }
     const dc = dotClass(state), word = a.word ? ' ' + a.word : '', task = a.task ? (a.word ? ' · ' : ' ') + a.task : ''; /* word + task read as before: ' Word · task' */
     if (P.dot.className !== dc) P.dot.className = dc;
@@ -992,7 +1052,7 @@
     let wait = 0;
     /* spec 097 FR-327: the agent a pointer is over: its monitor, person, desk (or lounge table) or name plate, never a visitor, chip or lobby plate */
     const hid = (n) => { const t = n && n.closest && n.closest('.ro-screen, .ro-person, .ro-person2, .ro-rig, .ro-initials, .ro-marquee, .ro-desk, .ro-ltable, .ro-plate'); return t ? (t.classList.contains('ro-plate') ? t.dataset.id : t.dataset.for) || '' : ''; };
-    const arm = (id) => { clearTimeout(wait); ARMED = true; wait = setTimeout(() => { ARMED = false; openZoom(id, 'hover'); }, 120); };
+    const arm = (id) => { clearTimeout(wait); ARMED = true; wait = setTimeout(() => { ARMED = false; if (ZOOM && ZOOM.held) return; openZoom(id, 'hover'); }, 120); }; /* a card held under a resting pointer is not replaced by a timer the layout armed (#1536) */
     /* FR-328: the agent changed state under a resting pointer (it walked to the lounge): the browser's pointerout is not the person leaving; the next real move is */
     ro.addEventListener('pointermove', (e) => {
       PT = e.clientX + ',' + e.clientY;
@@ -1013,6 +1073,7 @@
       if (QUIET_POINTER && !QUIET_AT) QUIET_AT = e.clientX + ',' + e.clientY;
       if (QUIET_POINTER || !id || e.pointerType === 'touch') return;
       if ((ZOOM && ZOOM.hover && ZOOM.id === id) || DISMISSED === id) return; /* Esc holds until the pointer has left */
+      if (ZOOM && ZOOM.held && ZOOM.held === e.clientX + ',' + e.clientY) return; /* FR-328 (#1536): the layout put this agent under the held point, the pointer did not move: an over with no move arms nothing */
       arm(id); /* crossing the room opens nothing */
     });
     ro.addEventListener('pointerout', (e) => {

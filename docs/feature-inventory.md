@@ -12,7 +12,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 |---|---|---|---|---|---|
 | Desk: name, role, status word, task | works | works | mock+planned (desk-card) | 001 034 097 | test:mood driver:shots-097-realoffice |
 | Moods and trouble signs (heavy, monster, siren); Serious mode hides them and only them (not motion, spec 052 FR-069) | works | works pose, dots and lights only; heavy, monster and siren missing (#1171) | mock+planned (desk-lights) | 034 097 | test:mood read:src/renderer/realoffice.js |
-| Helpers (sub-agents): card, tree, own chat, needs you | works | works, small head figures with a status dot under each desk plate (Photo office, cave, Retro arcade at 1440x900); where the room is too small for a strip (15 agents in 5 folders at 1280x800, the arcade at 1280x800, 20 or more agents) the plate keeps `+N` and dots by design (spec 097 FR-308, FR-338) | planned | 001 015 097 | test:helpercard test:realoffice-layout driver:check-097-helpers |
+| Helpers (sub-agents): card, tree, own chat, needs you | works | works, in the Photo office clay-toy kids on the desk top at 1 to 4 agents (up to 6, then `+K`; 097 FR-368..FR-373) and kid faces in the head row at 5 to 15; small adult head figures with a status dot under each desk plate in the cave and Retro arcade at 1440x900; where the room is too small for a strip (15 agents in 5 folders at 1280x800, the arcade at 1280x800, 20 or more agents) the plate keeps `+N` and dots by design (spec 097 FR-308, FR-338) | planned | 001 015 097 | test:helpercard test:realoffice-layout driver:check-097-helpers driver:check-097-kids |
 | Live activity on the desk | works | works, monitors show the newest output (PR 979) | mock+planned (live-screen) | 001 097 | test:liveact driver:shots-001-live-activity |
 | Model, tokens, cost, context, last tool on the desk | works | works in the hover zoom (PR 1272, 097 FR-312..FR-315), and a line round the monitor frame that fills clockwise as the context fills, soft white up to 90 % and red above (097 FR-322..FR-326, owner Q8) | none | 019 097 | test:ctxbreakdown driver:shots-097-screens driver:check-097-ctx-frame |
 | Unread "New", draft, question marks | works | works, a New reply tag and a green screen (097 FR-236, FR-238), a Draft tag and "unsent draft" in the plate's name (097 FR-316); a question shows as the "?" bubble, the plate's text and "needs you" (FR-038, FR-016) | none | 001 005 097 | test:unread driver:shots-097-realoffice driver:check-097-desk-marks |
@@ -43,6 +43,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | File edits as they happen, Undo these changes | works | works | none | 065 | test:edits test:checkpoints |
 | Attachments (pick, drop, paste) | works | works | none | 004 | test:attachments |
 | Browser tab in a chat | works | works | none | 080 | test:browsertabs test:browserpane |
+| Expand the chat's browser to fill the window, and back (Esc) | works | works, Photo office and Retro arcade checked | none | 080 | test:browserpane driver:check-080-browser-expand |
 | Questions and permission cards | works | works | mock+planned (permission-card) | 003 012 | test:elicit test:permissions test:lookalike driver:shots-012-elicit driver:check-permission-lookalike |
 | Auto-follow work (Settings, off by default): back to the office after a send, the agent's chat when it finishes or needs you; a full-screen notice with a 3 s countdown and Stay before each automatic move; Previous and Next over the attention queue | works | works, the same notice in the Photo office, the cave and the arcade | none | 052 | driver:check-auto-follow driver:check-052-follow-notice |
 | Needs-you inbox | works | works | planned (inbox) | 052 | test:attention read:src/renderer/app.js |
@@ -53,6 +54,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Add folder or workspace, create or clone a folder | works | works | none | 006 093 | test:newfolder driver:shots-093 |
 | Resume after restart, Since you were away, crash card | works | works | none | 006 | test:crashmarker driver:shots-006-crash |
 | Previous sessions, search | works | works | none | 006 | test:sessionsearch driver:shots-006-prevmarks |
+| Search conversations (top-bar box, results in the List view, open at the message) | works | works | none | 095 | test:convsearchui driver:shots-095 |
 | Notes per folder | works | works | none | 083 | test:notes |
 | Scheduled prompts, loops | works | works | none | 044 072 | test:schedules test:loops |
 | Custom agents and profile files | works | works | none | 043 | test:agentprofiles test:profileeditor |
