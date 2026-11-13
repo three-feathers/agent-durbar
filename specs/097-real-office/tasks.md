@@ -313,9 +313,27 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 
 - [x] T298 [US5] FR-357: the pencil anchored to the plate when the plate does not draw the name (arcade cabinets), the field over the marquee. Test: `sim:` `check-097-plate-pencil` in the Photo office, cave, arcade and one-room arcade, both sizes; mutant `PENCIL_MUTANT=plate` fails the geometry assert
 
+## 2026-11-11: `check-office-ops-real` parks the pointer before every measured update (bug #1448)
+
+- [x] T300 [US2] Bug #1448 (spec delta 2026-11-11): `check-office-ops-real` parks the pointer and waits for no hover card, open or armed, before every measured update, and fails (labelled) when one is open or armed at an update's end; mutant `OPS_MUTANT=unparked` fails on the label, `OPS_MUTANT=late` (CI's late pointer) passes. Test: `sim:` `check-office-ops-real`, plain and both mutants; Mac: 16 runs (8 `main` + 8 branch, 4 idle + 4 loaded each) all read 11, so the fix has no demonstrable before/after there
+
+## 2026-11-11: the rename pencil while its plate eases (FR-365, bug #1513)
+
+- [x] T310 [US2] Spec delta 2026-11-11 (FR-365): `realoffice.js` `box()` gives the ease it started; a plate's pencil is not painted (WAAPI opacity 0) until its plate's ease ends (`finished`), a pencil made mid-ease too, and fades in over 120 ms; a focused pencil is not hidden (shown at once if focused while hidden); `release-video.js` `glide()` waits for no WAAPI move in `#stage` before its one capture. Test: `sim:` new driver `check-097-pencil-ease` (in `ui-suite`): painted-pixel marks in `capturePage` frames over the first ~320 ms of the clip's lounge move plus per-frame opacity reads, a focused pencil, and status changes, Photo office and arcade, 1440x900 and 1280x800; mutants `nohide`, `late`, `half`, `early`, `skew`, `focushide`; marks with a tolerance (`PENCIL_EASE_BLUR`), missing-plate diagnostics, a printed skip of the painted check at DPR 2 when marks are lost
+- [x] T316 [US2] Spec delta 2026-11-11 (FR-365): the driver `check-097-pencil-ease` and its helpers state what they prove and skip: `scripts/pencil-park.js` (parking spots on the visible screen outside every hover target, `windowOutsideScreen`; `test:pencilpark`), requests timed by when they are made (`late` fails with no request in 200 ms, a slow answer is a printed skip), the painted offset in CSS px (`far`), the media emulated before the page loads, a failure when the page reports reduce after no-preference was emulated (`emufail`), the one skip only when the driver asks for reduce (`noease`), a failure with the numbers when 0 plates ease otherwise (`hold`, `latemedia`), a pencil focused while hidden stays at opacity 1 (`oldfocus`; `realoffice.js` `hideWhile` clears the hold when the focus cancels it), one `STILL_STAGE` for the driver and `glide()` with a test in `test-release-video`; an extra size that fits the screen when the screen is smaller than the window (`fitWindow`, mutant `PARK_MUTANT=nofit`), plates outside the window's view skipped by the painted checks.
+
+## 2026-11-11: check-097-crews settles the lobby's visits (bug #1459)
+
+- [x] T304 `scripts/check-097-crews.js`: `quiet()` waits at most 5 s for `H.load`'s settle condition, returns the scene, the driver asserts it unchanged before the read; request times and type printed on a `bad` entry; `H.SETTLED` (one expression for `H.load` and the driver); `CREWS_MUTANT=latevisit|latevisit-nowait|failed` [FR-335, FR-336]. Test: `sim:` `check-097-crews`
+
+## 2026-11-11: a request slip is measured with its variant's CSS (FR-358, bug #1434)
+
+- [x] T299 [US2] FR-358: `drawSlips` writes `data-variant` before measuring a variant's box (`src/renderer/realoffice.js`). Test: `sim:` `check-097-slip-plates` (new, in `ui-suite`), the slips made fresh and measured in the draw's own task, then at once after the page's first draw; fails without the line in every run.
+
 ## 2026-11-11: the pointer-event log of three flaky drivers (issue #1448)
 
 - [x] T302 [US2] Spec delta 2026-11-11: `H.pointerStep` in `scripts/driver-helpers.js` records the page's pointer events in a 200-event ring during the pointer steps of `check-097-drag`, `check-097-hover-card` and `shots-097-screens`, prints them only when the step's assertion fails (then rethrows the same error), prints nothing on a pass; diagnostic only, no retry or limit change. Test: `test:pointer-log` (bounded ring, forced failure prints, pass is silent, five mutants killed: print removed, events not printed, prints on a pass, ring unbounded, another error thrown). Run by the author on the Mac lane's own Mac, not reproduced by anyone else: 3 plain runs each of `check-097-drag`, `check-097-hover-card` and `shots-097-screens`, one driver at a time (`UI_SUITE_JOBS=1`), no `[pointer-log]` line
+- [x] T306 [US2] Spec delta 2026-11-11: the `falls asleep` block of `check-097-hover-card` (FR-328) runs in `H.pointerStep`, asserts inside, so the pointer log prints when "the asleep card is still open 700 ms after the refill" fails; no wait, limit or text change. Test: `test:pointer-log` asserts the wrapping in the driver source, for the `falls asleep` step and the third-agent `falls asleep, then leaves` step [FR-328]
 
 ## 2026-11-11: readable check-crew timeout diagnostics (issue #1460)
 

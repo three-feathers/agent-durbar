@@ -140,23 +140,52 @@
     "2026-11-11": {
       "models": {
         "claude-sonnet-5-5": {
-          "input": 31853,
-          "output": 72690,
-          "cacheRead": 23693169,
-          "cacheCreation": 1207445,
-          "costUsd": 6.278502900000002,
+          "input": 198809,
+          "output": 396563,
+          "cacheRead": 151548226,
+          "cacheCreation": 4678991,
+          "costUsd": 31.70623259999998,
           "bySource": {
             "main": {
-              "tokens": 19703866,
-              "costUsd": 2.5492126
+              "tokens": 130521765,
+              "costUsd": 15.971028600000006
             },
             "subagent": {
-              "tokens": 3444864,
-              "costUsd": 3.4404698
+              "tokens": 16616376,
+              "costUsd": 14.039177100000005
             },
             "auxiliary": {
-              "tokens": 1856427,
-              "costUsd": 0.28882050000000015
+              "tokens": 9684448,
+              "costUsd": 1.6960269000000006
+            },
+            "other": {
+              "tokens": 0,
+              "costUsd": 0
+            }
+          }
+        }
+      }
+    },
+    "2026-11-12": {
+      "models": {
+        "claude-sonnet-5-5": {
+          "input": 90526,
+          "output": 194702,
+          "cacheRead": 74532332,
+          "cacheCreation": 2983835,
+          "costUsd": 17.182677200000004,
+          "bySource": {
+            "main": {
+              "tokens": 50384745,
+              "costUsd": 5.849663700000001
+            },
+            "subagent": {
+              "tokens": 17745908,
+              "costUsd": 9.576621199999998
+            },
+            "auxiliary": {
+              "tokens": 9670742,
+              "costUsd": 1.7563923000000001
             },
             "other": {
               "tokens": 0,

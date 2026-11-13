@@ -2291,3 +2291,24 @@ order** (review item 12): this delta lands **after PR #1073**, whose FR-195..FR-
   1.0.26-only API (`rpc.mcp.config.list()` is only in the `docs/agent-apps.md` probe note). Probes written with 1.0.26 stay as dated history.
   `[KNOWN GAP]` A real Entra sign-in is not run here; the owner checks it on his Mac after the patch release. Follow-ups, both owner decisions:
   sign in through the Copilot CLI route, or Durbar's own Entra app registration (`entra.clientId`); the Dependabot hold is lifted once one exists.
+
+### 2026-11-11: the open list and Settings are shown in the Photo Real office (issue #1424, item 1 of 3; related #1172)
+
+Closing #1172 left a gap: `shots-058-mcp-launch` checks the strip in the Real office only while the list is closed, then returns to the flat
+Open office, so the list-open and Settings pictures are not evidence for the Photo Real office. **Numbers taken** (checked on `origin/main`
+and open PRs, 2026-11-11): **FR-230** and **T212**.
+
+- **FR-230** (evidence): `shots-058-mcp-launch` shows the list open (FR-199..FR-203) and Settings with the list open (FR-196) in the Photo
+  Real office at 1440x900 and 1280x800, with the same layout asserts as in the flat office (strip above the office, own room, no page
+  scroll, top bar in view), and pictures of both. A labelled assert fails the run unless the world really is the Real office (`html[data-world]`
+  is `photo`, `#stage .ro` is `photo/office`), so a fall back to the flat office is a failure and not a picture of the wrong office.
+  `[KNOWN GAP]` still not run (issue #1424): streaming end-follow as a picture (item 2), dark theme, density, DPR 2, Windows, Linux.
+
+### 2026-11-12: a server row keeps a readable text column; the buttons wrap below it (issue #1622, FR-231)
+
+**Seen (Paco, v0.1.17, macOS, Copilot, a server Failed, Refused: needs sign-in):** the row's text column (name, app chip, state, reason, help text, Details, Copy diagnostics) was squeezed to about 120 px, so the name broke mid-word and the help took one or two words a line, while Tools, Restart, Sign in again..., Remove... and the switch kept one line.
+
+**Cause (read in code, then measured in the simulator):** `.srv` is a non-wrapping flex row (`screens.css`), `.srv-act` is `flex:none` and `.srv-main` takes only what is left. With the widest button set (Tools, Restart, Sign in again..., Remove...) the buttons are about 306 to 310 px of a 478 px row, so the text column was 134 px and the help text 6 lines (measured in the chat's MCP dialog at 1440x900, 1280x800 and 800x700, flat office and Retro: the dialog is the same width at every window size). The same `.srv` row is used by the Settings lists of the agent apps' servers.
+
+- **FR-231 (2026-11-12)** `[IMPLEMENTED]` `test: check-mcp-row-width` `sim:` the text column of a server row never gets narrower than 240 px of the row's room (`flex-basis:240px` on a row that has reason, help or details text); when the buttons do not fit beside it the row wraps and the buttons (Tools, Restart, Sign in again..., Remove..., the switch) sit on their own line below, right aligned. A row with only a name and a state (no text under it), or where everything fits, stays on one line as before. Text stays at 11px or more (10.5px floor), nothing overlaps, no page scroll, the dialog still scrolls inside itself. The same approach as the Tools > Activity width fix (#1466, FR-071: a minimum width for the text-bearing column and wrapping instead of squeezing).
+- `[KNOWN GAP]` Windows and macOS font widths are not measured (Linux fonts in the simulator): a different font changes the line counts, not the rule.
