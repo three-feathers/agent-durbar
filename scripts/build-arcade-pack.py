@@ -388,12 +388,18 @@ def screen_art(c, x, y, w, h, kind):
                 col = (P['lime'], P['yellow'], P['pink'], P['blue'])[r]; X, Y = x + 5 + q * ((w - 10) // 7), y + 5 + r * 7
                 R(col, X, Y, 6, 4); R('#05060f', X + 1, Y + 1, 1, 1); R('#05060f', X + 4, Y + 1, 1, 1)
         R(P['cream'], x + w // 2 - 1, y + h - 14, 2, 5); R(P['lime'], x + w // 2 - 4, y + h - 9, 9, 3); R(P['lime'], x + w // 2 - 2, y + h - 11, 5, 2)
-    elif kind == 1:                                                   # a road running to a horizon
-        R(P['navy'], x, y, w, h // 3); R(P['pink'], x, y + h // 3 - 2, w, 2)
-        for i, Y in enumerate(range(y + h // 3, y + h)):
-            half = 2 + (Y - y - h // 3 + 1) * (w // 2 - 4) // (h - h // 3)
-            R(P['dg'] if (Y // 3) % 2 else P['lg'], x + w // 2 - half, Y, 2 * half, 1); R(P['red'] if (Y // 3) % 2 else P['cream'], x + w // 2 - half, Y, 2, 1); R(P['red'] if (Y // 3) % 2 else P['cream'], x + w // 2 + half - 2, Y, 2, 1)
-        R(P['yellow'], x + w // 2 - 5, y + h - 9, 10, 5); R(P['red'], x + w // 2 - 4, y + h - 12, 8, 3)
+    elif kind == 1:                                                   # a road running to a horizon: dark sky, a horizon line, a two-edged road in perspective, a dashed centre line, two cars
+        hz = y + max(8, h * 2 // 5); cx = x + w // 2; rows = y + h - hz
+        for X in range(x + 3, x + w - 3, 9): R(P['cream'], X + (X // 9) % 3, y + 2 + (X // 9) % 3 * 2, 1, 1)          # a few stars
+        R(P['plum'], x, hz - 3, w, 2); R(P['pink'], x, hz - 1, w, 1)                                                    # the glow on the horizon
+        R(P['green'], x, hz, w, rows); R('#05060f', x, hz + 1, w, 1)                                                    # the verge, dark at the horizon
+        for Y in range(hz, y + h):
+            t = (Y - hz + 1) / rows; half = max(2, round(2 + t * (w // 2 - 4))); band = int(t * 7) % 2                  # the road widens to the foot of the glass
+            R(P['dg'] if band else '#3b3550', cx - half, Y, 2 * half, 1)
+            R(P['red'] if band else P['cream'], cx - half - 1, Y, 2, 1); R(P['red'] if band else P['cream'], cx + half - 1, Y, 2, 1)
+            if int(t * 9) % 2 == 0: R(P['yellow'], cx - (1 if t > .5 else 0), Y, 1 + (1 if t > .5 else 0), 1)           # dashes, longer near us
+        R(P['k'], cx - 2, hz + 5, 5, 1); R(P['blue'], cx - 2, hz + 3, 5, 2); R(P['cream'], cx - 1, hz + 2, 3, 1)       # a far car, going away
+        R(P['k'], cx - 6, y + h - 4, 12, 1); R(P['red'], cx - 6, y + h - 7, 12, 3); R(P['pink'], cx - 4, y + h - 9, 8, 2); R(P['k'], cx - 3, y + h - 8, 6, 1); R(P['yellow'], cx - 5, y + h - 6, 2, 1); R(P['yellow'], cx + 3, y + h - 6, 2, 1)   # our car from behind, its lights on
     elif kind == 2:                                                   # two bats and a ball
         for Y in range(y + 2, y + h - 2, 4): R(P['lg'], x + w // 2, Y, 1, 2)
         R(P['blue'], x + 4, y + h // 3, 2, 10); R(P['pink'], x + w - 6, y + h // 2, 2, 10); R(P['cream'], x + w // 2 + 8, y + h // 2 - 3, 3, 3)
