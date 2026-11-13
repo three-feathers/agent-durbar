@@ -205,7 +205,7 @@ loading, empty ("This server lists no tools"), not running ("Start the session t
 - **FR-009** `[IMPLEMENTED]` **Claude Code's user list in Durbar's Claude sessions** (Q1 A): main reads `mcpServers` of the Claude file (values in main
   only) and adds the switched-on entries to the `mcpServers` of a Claude agent's start options (only for agents whose adapter is
   `claude`); a name that is also a folder extra keeps the folder extra (compared without case). The values also mask that session's
-  MCP errors (`secretValuesFor`; since change 2026-11-13, FR-070, the Copilot CLI list's values too). Settings has a switch per Claude entry for new Durbar sessions,
+  MCP errors (`secretValuesFor`; since change 2026-11-13, FR-070, a Copilot agent's are masked with the Copilot CLI list's values too). Settings has a switch per Claude entry for new Durbar sessions,
   kept with the Copilot switches (`disabledAmbient`). `${NAME}` references are passed as written (Claude Code expands them, `read:` docs).
   (change 2026-10-22, review 6 on #489) The CLI transport no longer puts the MCP JSON (values included) on the command line, where
   `ps` shows it: it is written to `mcp-config.json` (mode 0600) in a new private temp folder (`mkdtemp`, 0700), `--mcp-config` gets that
@@ -538,23 +538,48 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
   or Windows. `[KNOWN GAP]` the *World* choice (it repaints Settings through the same path) is shown only in the Real office with two or more
   worlds, which the simulator does not offer on main, so it is not driven.
 
-- **2026-11-13 (issue #1639, found in the review of #1637; FR-070, T072; security-relevant):** the Copilot CLI list's values were not in the
+- **2026-11-13 (issue #1639, found in the review of #1637; FR-070, T072; security-relevant; scope, plain values and kept values from the review of #1650):** the Copilot CLI list's values were not in the
   mask list.
-  - **FR-070, every value a session's servers were given masks that session's text.** `secretValuesFor` (FR-009) built the list of
+  - **FR-070, a Copilot session's text is masked with the Copilot CLI list's values.** `secretValuesFor` (FR-009) built the list of
     values that mask a session's MCP errors, failed tool cards, edits, resumed history and the other callers of `secretValuesFor` (notes,
     conversation search) from the folder extras and Claude Code's user list only. The Copilot CLI list (`~/.copilot/mcp-config.json`, which
     the Copilot runtime loads itself) was read only for names and addresses, so a header or env value of a server there was hidden only
     when it had a known token shape; a server that echoed a shape-less key in its error showed it under *Details* and in *Copy diagnostics*
-    (spec 058 FR-006, FR-093). Now the env and header values of every server of that list go into the same list, through
-    `mcpSecretValues`, so its rule holds for them too: a value under 4 characters is skipped (it would mangle every string). Read the
-    same way `serverUrlFor` reads the list (`cli()`, again on every call, so an edit of the file counts at once), in the same single read
-    that already gave the list's names: no extra file read per event. All servers of the file count, also one switched off in Settings,
-    and for every agent, not only Copilot ones (masking more is safe, FR-009's note). The values stay in main: never in a reply, a log
-    line or the view `cliServers` returns (still names, transports, commands, arguments and addresses only).
+    (spec 058 FR-006, FR-093). Now the env and header values of the servers of that list join the list, with these rules:
+    - **Copilot agents only** (`appOf` is `copilot`, or unknown: then masked too), since only the Copilot runtime gives those servers
+      the values; a Claude or Codex agent's text is not masked with them (their servers were never given them).
+    - **Plain setting values are left out** (`plainSettingValue` in `src/main/mcpmask.ts`), since the mask is a plain substring replace and
+      such a value would turn that word into `[redacted]` everywhere in the agent's edits, history and notes: a number or dotted version
+      of up to 15 digits, a single word of up to 16 letters in one case (`true`, `info`, `DEBUG`, `Production`) and a media type
+      (`application/json`). Any other value of 4 or more characters counts (`mcpSecretValues`' rule: under 4 is skipped). These rules
+      apply to this list only; the folder extras and Claude Code's list are masked as before. `[KNOWN GAP]` a real secret of one of these
+      plain forms (a letters-only password, a numeric PIN) in the Copilot list is hidden only by the shape rules, as before this change.
+    - **Read on every call and kept for the run**: the list is read again on every call (as `serverUrlOf` reads it, `cli()`), in one
+      read that also gives the list's names (no second read of the file per call), and every value read for an agent, also at its
+      session start (`optionsFor`), is kept for that agent until Durbar quits: a value the user rotated or removed, or a file half-written
+      or briefly invalid, does not drop a value the running server may still echo. Kept in main memory only, never written.
+    - **Independent of the folder store**: the file is read outside the folder store's `try`, so a store that cannot be read (or a
+      Claude list read that fails) still leaves the Copilot values in the list.
+    - All servers of the file count, also one switched off in Settings (the runtime still has the value in its file).
+    The values stay in main: never in a reply, a log line or the view `cliServers` returns (still names, transports, commands, arguments
+    and addresses only). `[KNOWN GAP]`s, not changed here:
+    - Only entries `parseMcpConfig` accepts give values: an entry it skips (a name that is empty once cleaned, an unknown `type`, an
+      `http` entry without `url`), a non-string value, a stdio entry's `headers` and an http entry's `env` add nothing.
+    - A `${VAR}` reference masks only its literal text; if the Copilot runtime expands it, the expanded value is not in the list (not
+      checked in the Copilot docs).
+    - `copilotDir` ignores `COPILOT_HOME` (only `DURBAR_COPILOT_DIR` in dev and tests): with `COPILOT_HOME` set, the runtime's file is not
+      the one read, so its values are not masked (the same holds for the Settings list, spec 019).
+    - Notes (spec 083) and conversation search get these values only through `secretValuesFor`, which main calls only when the vault needs
+      no prompt and, in search, only for an open agent; a past session in search, a note saved with a vault value still locked, or a note
+      with no agent is masked without them.
+    - Codex: the values of Codex's own `config.toml` servers (which the Codex runtime starts itself) are not in the list either
+      (`sessionGlobalFor` gives Claude's list only); a Codex server that echoes a shape-less value still shows it.
   `test:` `test:mcpglobal` *FR-070* (planted shape-less values in a Copilot-list header and env, through `registerMcpIpc`'s `agents:mcp`
-  reply and spec 058's `diagnostics` text; mutants: the new source removed, the env values forgotten, the 4-character rule bypassed for
-  the new source: each fails at its labelled assertion). Not verified with a real Copilot session or server (no AI credits), nor on macOS
-  or Windows (the read is the same `path.join` code `cliServers` already uses).
+  reply and spec 058's `diagnostics` text; a Claude agent does not get them; `true`, `production`, `1234`, `application/json` are left
+  out, `correct-horse-battery-staple` is not; a rewritten file adds the new value and keeps the old one; a throwing folder store keeps
+  the Copilot values; one read of the file per call; an injected `log` and `console` see no value; mutants listed in the PR comment, each
+  failing at its labelled assertion). Not verified with a real Copilot session or server (no AI credits), nor on macOS or Windows (the
+  read is the same `path.join` code `cliServers` already uses).
 
 ## Relationship to other specs
 
