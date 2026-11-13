@@ -116,6 +116,24 @@ export function problems(files: Map<string, Buffer>, peopleJson: string, md: str
     if (!meta.fixtureTop || !(meta.fixtureTop[id] >= 0 && meta.fixtureTop[id] < (meta.floorLine || 0))) out.push(`people.json fixture ${id}: no fixtureTop in range`);
   }
   want.add('desk.webp'); want.add('floor.webp');
+  /* spec 097 FR-369, FR-371 (T328): the kids of a world, six clay-toy kids with one picture per state; every number is in shipped pixels */
+  for (const [kid, km] of Object.entries((meta as { kids?: Record<string, { bodyH: number; w: number; h: number; headTop: number; face: number[]; ref: string; widest: string; poses: Record<string, number[]> }> }).kids || {})) {
+    const states = ['working', 'thinking', 'waiting', 'error', 'limit', 'done', 'asleep'];
+    if (!/^kid\d$/.test(kid)) out.push(`world.json kids: "${kid}" is not kidN`);
+    for (const st of states) {
+      want.add(`${kid}-${st}.webp`);
+      const wh = km.poses && km.poses[st], buf = files.get(`${kid}-${st}.webp`);
+      if (!Array.isArray(wh) || !(wh[0] > 0 && wh[1] > 0)) { out.push(`world.json kids ${kid}: no size for ${st}`); continue; }
+      if (buf) { try { const i = webpInfo(buf); if (i.width !== wh[0] || i.height !== wh[1]) out.push(`world.json kids ${kid} ${st}: says ${wh[0]}x${wh[1]}, the picture is ${i.width}x${i.height}`); } catch (e) { /* reported above */ } }
+    }
+    for (const k of Object.keys(km.poses || {})) if (!states.includes(k)) out.push(`world.json kids ${kid}: "${k}" is not a state`);
+    const ref = km.poses && km.poses[km.ref];
+    if (!ref || km.w !== ref[0] || km.h !== ref[1] || km.bodyH !== km.h) out.push(`world.json kids ${kid}: w, h and bodyH are the reference pose's (${km.ref})`);
+    const f = km.face;
+    if (!Array.isArray(f) || f.length !== 4 || !(f[2] > 0 && f[3] > 0) || f[0] < 0 || f[1] < 0 || f[0] + f[2] > km.w || f[1] + f[3] > km.h || km.headTop !== f[1]) out.push(`world.json kids ${kid}: the face box is inside the reference picture and starts at headTop`);
+    const wid = Math.max(...Object.values(km.poses || {}).map((v) => v[0]));
+    if (!km.poses || !km.poses[km.widest] || km.poses[km.widest][0] !== wid) out.push(`world.json kids ${kid}: widest is not the widest pose (FR-369's place)`);
+  }
   for (const [pid, parts] of Object.entries((meta as { rig?: Record<string, Record<string, unknown>> }).rig || {})) for (const key of Object.keys(parts)) want.add(`${pid}-rig${key}.webp`); /* spec Changes 2026-11-01 */
   for (const k of ['wall', 'monitor'] as const) { const v = (meta as Record<string, unknown>)[k]; if (typeof v === 'string') want.add(v); } // optional parts a world names (spec 102 FR-220)
   /* the arcade names its parts in objects (spec 102 FR-252, FR-257, FR-260): three cabinets, the night room, the glow strip */
@@ -286,6 +304,20 @@ const total = [...files.values()].reduce((s, b) => s + b.length, 0);
   assert.ok(only(problems(one('p01-book.webp', book), pj1, okMd.replace('- licence: MIT\n', ''))).some((p) => /no "licence"/.test(p)), 'red: a section without its licence');
   assert.ok(only(problems(one('p01-book.webp', book), JSON.stringify({ seat: {}, stand: { p01: { figH: 700, poses: { book: [300, 9999] } } }, fixtures: {}, floorLine: 276 }), okMd)).some((p) => /size out of range/.test(p)), 'red: people.json numbers out of range');
   assert.ok(problems(one('p01-book.webp', Buffer.from('not an image at all, just some text')), pj1, okMd).some((p) => /not a WebP/.test(p)), 'red: not a picture');
+  { /* kids (spec 097 T328): the metadata names exactly the pictures, in their sizes */
+    const kidFiles = new Map([...files].filter(([n]) => /^kid\d-/.test(n)));
+    assert.ok(kidFiles.size === 42, 'the Photo office ships 6 kids x 7 states');
+    const km = JSON.parse(pj) as { kids: Record<string, { poses: Record<string, number[]>; face: number[]; widest: string }> };
+    const bad = (mut: (k: typeof km) => void, drop?: string): string[] => { const c = JSON.parse(pj); mut(c); const f = new Map(files); if (drop) f.delete(drop); return problems(f, JSON.stringify(c), md).filter((x) => /kid/.test(x)); };
+    assert.deepStrictEqual(bad(() => undefined), [], 'the shipped kids pass');
+    assert.ok(bad(() => undefined, 'kid2-error.webp').length > 0, 'red: a missing kid picture');
+    assert.ok(bad((c) => { c.kids.kid1.poses.error = [1, 1]; }).some((x) => /the picture is/.test(x)), 'red: a size that is not the picture\'s');
+    assert.ok(bad((c) => { c.kids.kid1.face = [0, 0, 9999, 9]; }).some((x) => /face box/.test(x)), 'red: a face box outside the picture');
+    assert.ok(bad((c) => { c.kids.kid1.widest = 'thinking'; }).some((x) => /widest/.test(x)), 'red: the wrong widest pose');
+    assert.ok(bad((c) => { delete c.kids.kid1.poses.done; }).some((x) => /no size for done/.test(x)), 'red: a state without a size');
+    assert.ok(problems(new Map([...files, ['kid9-working.webp', files.get('kid1-working.webp') as Buffer]]), pj, md).some((x) => /kid9-working.webp/.test(x)), 'red: a kid picture the metadata does not name');
+    assert.ok(problems(new Map([...files, ['kid1-working.webp', Buffer.concat([files.get('kid1-working.webp') as Buffer, Buffer.alloc(90 * 1024)])]]), pj, md).some((x) => /over the person cap/.test(x)), 'red: a kid picture over the cap');
+  }
   const big = new Map(files); big.set('p01-typeA.webp', Buffer.concat([good, Buffer.alloc(CAPS.total)]));
   assert.ok(problems(big, pj, md).some((p) => /over 10485760/.test(p)), 'red: a pack over 10 MB');
 }
