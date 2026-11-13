@@ -2529,7 +2529,7 @@ facts below that this delta relies on, unless tagged otherwise):
 
 #### Build record: PR 2, the SDK bump (T216, 2026-11-13)
 
-- **FR-244** `[IMPLEMENTED]` `@github/copilot-sdk` 1.0.32 (exact), runtimes per the lockfile (`copilot-sdk-<platform>` 1.0.32, runtime 1.0.110),
+- Built for FR-244: `[IMPLEMENTED]` `@github/copilot-sdk` 1.0.32 (exact), runtimes per the lockfile (`copilot-sdk-<platform>` 1.0.32, runtime 1.0.110),
   Dependabot's `ignore` for the SDK removed, the `zod` override raised to 4.6.7 (Q26 (a), **the recommended default, reversible**: Q26 is still
   pending). Lockfile changes: `lossless-json` 4.3.3 (new, MIT), `vscode-jsonrpc` 8.2.1 to 10.0.0, `koffi` and its `@koromix/koffi-*` 3.2.1 to
   3.3.6 (two new optional platform packages, `linux-ppc64` and `openbsd-arm64`), `zod` 4.6.6 to 4.6.7; every `resolved` is
@@ -2539,22 +2539,27 @@ facts below that this delta relies on, unless tagged otherwise):
   owner's ask) and run locally it leaves a sign-in in this machine's keychain. `[KNOWN GAP]` Windows and macOS: not packaged or started with
   1.0.32 (installer growth `read:` npm unpacked sizes above); the macOS build re-signs the new OneAuth and MSAL libraries ad hoc like every
   Mach-O (`mac.identity "-"`), not checked on a Mac (T221).
-- **FR-242** `[IMPLEMENTED]` `isReplayedRecord` (`src/adapters/history.ts`): `eventsToHistory` skips `checkpoint: true` records, and it is the
+- Built for FR-242: `[IMPLEMENTED]` `isReplayedRecord` (`src/adapters/history.ts`): `eventsToHistory` skips `checkpoint: true` records, and it is the
   one reader of Copilot history (resume replay, Previous sessions, conversation search); the live handler drops a replayed record before
   the mapper and the cap count (no chat line, usage call, `usage_checkpoint` total, title or idle from it), except a
   `session_limits_exhausted.*` record (fail safe: a waiting agent keeps its card). `src/main/prevsessions.ts` reads session metadata only and
   `src/main/convsearch.ts` reads through the adapter's history, so neither changed. `test: history` (each message once; search reads none),
   `test: copilot-cap` (no output, usage, held send or limit from replayed records; a replayed limit request still shows). Mutants: the history
   filter removed ("FR-242 replayed records skipped: each message once"), the live filter removed ("FR-242 live replay skipped: no second chat
-  line or usage call"), the limit exception dropped ("FR-242: a replayed limit request is still shown"). `[KNOWN GAP]` synthetic events: no
-  real replayed record was seen.
-- **FR-243** `[IMPLEMENTED]` `copilotShellGuard()` (`src/adapters/copilot.ts`), spread into the one session config used for create, resume and
+  line or usage call"), the limit exception dropped ("FR-242: a replayed limit request is still shown"). `trackCap` (review of #1669): own
+  records 20 + 2 counted, then a replayed older `usage_checkpoint` (5) and a replayed usage (9) leave the used total at 22 (`test:
+  copilot-cap`); mutant: replayed `usage_checkpoint` let through to `trackCap` ("FR-242 live replay skipped: a replayed total over the cap
+  holds nothing"; with that earlier check taken out, "FR-242 trackCap: a replayed older usage_checkpoint and a replayed usage leave the used
+  total unchanged"). `[KNOWN GAP]` synthetic events: no real replayed record was seen, nor whether they reach the live stream.
+- Built for FR-243: `[IMPLEMENTED]` `copilotShellGuard()` (`src/adapters/copilot.ts`), spread into the one session config used for create, resume and
   the FR-158 re-resume; the field names are those of the installed SDK 1.0.32 types (`SessionConfigBase.managedSettings`,
   `ManagedSettingsPermissions.ask` / `disableAssistedPermissionsMode`, `permissionMode`), and the SDK sends both on `session.create` and
   `session.resume` (`read:` `client.js`). Not in the tool-free one-shot or rename configs (no tools, every request rejected). `test:
   copilot-model` (create, resume by id, `resumeSessionId`), `test: authcheck` (refreshAuth re-resume). Mutants: resume without the guard
   ("spec 058 FR-243 guard on resume (session id)"), `permissionMode` left out ("spec 058 FR-243 guard on create"), the reconnect without it
-  ("spec 058 FR-243 guard on the refreshAuth re-resume"). **T220** `real:` 2026-11-13, Linux, runtime 1.0.110, `claude-haiku-5.5` (the
+  ("spec 058 FR-243 guard on the refreshAuth re-resume"), `disableAssistedPermissionsMode` dropped ("spec 058 FR-243 guard on create"; on
+  the re-resume only: "spec 058 FR-243 guard on the refreshAuth re-resume"). Each test compares all three keys (`permissions.ask`,
+  `disableAssistedPermissionsMode`, `permissionMode`) exactly on create, on both resumes and on the re-resume. **T220** `real:` 2026-11-13, Linux, runtime 1.0.110, `claude-haiku-5.5` (the
   cheapest listed by token price), one session, 2 prompts, `scripts/shell-guard-real.ts --spend`, the guard seen in the create config:
   **Read-only: `ls` reached the broker** (`shell` "run ls", denied; the tool call failed with Durbar's read-only text; nothing ran). **Ask
   first: not shown**: after the switch the model answered from the denial in its history with no tool call, so no request was made
@@ -2563,7 +2568,7 @@ facts below that this delta relies on, unless tagged otherwise):
   the Ask first path is expected to behave the same (`read:` reasoning, not a run). `[KNOWN GAP]` Ask first on a real session, and whether the
   runtime would have run `ls` without the guard (no unguarded control run). The script's second prompt now names the mode change and a
   different command (`ls -1`) for the next run.
-- **Spec 011 FR-096** `[IMPLEMENTED]` see spec 011's delta of 2026-11-13.
+- Built for spec 011 FR-096: `[IMPLEMENTED]` see spec 011's delta of 2026-11-13.
 
 #### Later, not in this plan
 

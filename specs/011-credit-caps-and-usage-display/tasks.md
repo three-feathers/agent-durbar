@@ -70,4 +70,4 @@ Backlog: capability flag (spec 012). (Office and per-folder totals: done 2026-10
 
 ## 2026-11-13: the runtime's limit prompt at 90% (FR-096; spec 058 FR-244, issue #1667)
 
-- [ ] T074 With the SDK 1.0.32 bump (spec 058 T216): `map.ts` marks a runtime limit request with `used < max` as near; the window's note, card state and office signs say "Close to the spending limit" for it, "reached" otherwise (also for a missing or non-finite number); mapper, window and card tests with the `<=`, finite-check and card-sign mutants [FR-096]
+- [x] T074 With the SDK 1.0.32 bump (spec 058 T216): `map.ts` marks a runtime limit request with `used < max` as near; the window's note, card state and office signs say "Close to the spending limit" for it, "reached" otherwise (also for a missing or non-finite number); mapper, window and card tests with the `<=`, finite-check and card-sign mutants [FR-096]

@@ -280,6 +280,10 @@ const run = (events: RawEvent[]): EventBody[] => {
   assert.ok(!('near' in ex(90, undefined)), 'FR-096 reached: max missing');
   assert.ok(!('near' in ex(90, Infinity)), 'FR-096 reached: a non-finite max');
   assert.ok(!('near' in ex('90', 100)), 'FR-096 reached: a string used');
+  assert.ok(!('near' in ex(50, undefined)), 'FR-096 reached: max missing, used 50');
+  assert.ok(!('near' in ex(50, Infinity)), 'FR-096 reached: an Infinity max, used 50 (the finite check)');
+  assert.ok(!('near' in ex(NaN, 100)), 'FR-096 reached: used NaN');
+  assert.ok(!('near' in ex(50, NaN)), 'FR-096 reached: max NaN');
 }
 
 // Model and compaction events (spec 030). SYNTHETIC: shapes follow the SDK 1.0.22 type definitions (session-events.d.ts), NOT recorded from a real session (provenance: synthetic).

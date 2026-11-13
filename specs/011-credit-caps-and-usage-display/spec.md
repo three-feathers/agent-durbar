@@ -4,7 +4,7 @@
 group: 011-014
 title: AI-credit caps and usage display
 status: building
-note: exhausted flow unverified on a real account; FR-096 (near-limit words, SDK 1.0.32) specified, not built
+note: exhausted flow unverified on a real account; FR-096 (near-limit words, SDK 1.0.32) built on the bump branch
 -->
 
 **Feature Branch**: `011-credit-caps-and-usage-display`
@@ -331,7 +331,9 @@ remove or stop only); if the prompt shows on Durbar caps in real use, a later de
   max are finite and `used < max`; Durbar's own cap request never carries it. The window: `DurbarCoffee.limitWords` (`coffeebreak.js`) gives
   the card's head and accessible name; the agent's state and the Bank's word say "Close to spending limit" (`app.js` `breakWord`), the OS
   notification "Is close to its spending limit.", the inbox row "is close to its spending limit", the Real office slip the card's name.
-  `test: events` (90/100 near; 100/100, 101/100, missing used or max, a non-finite max, a string: reached), `test: coffeebreak` (the words; only
-  `true` is near). Mutants: `<=` for `<` ("FR-096 reached: used 100 of 100 is reached, not near"), `near` read as truthy ("FR-096 window:
-  \"true\" reads reached"). `sim:` `simlimitnear` (Omar asks at 28.5 of 30), `scripts/shots-011-limit-near.js` at 1440x900 and 1280x800: the card,
+  `test: events` (90/100 near; 100/100, 101/100, missing used, missing or `Infinity` or `NaN` max with used 50, used `NaN`, a string:
+  reached), `test: coffeebreak` (the words; only `true` is near), the driver below (card and sign). Mutants: `<=` for `<` ("FR-096 reached:
+  used 100 of 100 is reached, not near"), the finite check dropped ("FR-096 reached: a non-finite max"), `near` read as truthy ("FR-096
+  window: \"true\" reads reached"), the card ignoring `near` (driver: "1440: FR-096 near words on the card"), the state and Bank sign ignoring
+  `near` (driver: "1440: FR-096 the state says Close to spending limit"). `sim:` `simlimitnear` (Omar asks at 28.5 of 30), `scripts/shots-011-limit-near.js` at 1440x900 and 1280x800: the card,
   its name, the state, no "Limit reached" anywhere (pictures looked at, not linked).
