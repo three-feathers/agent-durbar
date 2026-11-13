@@ -3,7 +3,7 @@
    fixture lights) < .ro-chrome (signs, plates, chips, cues: never dimmed, FR-044). The art keeps its own colours; everything that
    is UI uses the theme's tokens (D2). Light colours are fixed for meaning (FR-049). Lights are opacity and transforms only, with
    no blur filter and no script per frame (FR-048). */
-.ro{position:relative;overflow:hidden;border-radius:var(--r-lg,10px);background:#c9a77c url(realoffice/worlds/photo/floor.webp) center/cover;
+.ro{position:relative;overflow:hidden;border-radius:var(--r-lg,10px);background:#c9a77c;
   --ro-warm:255,214,150;--ro-lamp:255,228,184;--ro-fx-lamp:255,232,192;--ro-amber:240,160,48;--ro-red:217,68,58;--ro-orange:240,122,32;--ro-green:63,170,99;--ro-screen:150,190,235;--ro-lit:255,194,122;--ro-ring:255,255,255;
   --ro-scr-plain:#c8d1da;--ro-scr-think:#a9c3dc;--ro-scr-reply:#dfe6ec;--ro-scr-cmd:#8fc4f0;--ro-scr-ok:#9fdcae;--ro-scr-err:#ff9d8f;--ro-scr-ask:#ffc27a}
 .ro *{box-sizing:border-box}
@@ -15,7 +15,9 @@
 
 /* the lobby band: the back wall (the art's own colours) with the fixtures, a strip of floor in front */
 .ro-lobby{background:linear-gradient(#cbbdb3,#c6b6aa 80%,#bdab9e);border-bottom:1px solid rgba(0,0,0,.18)}
-.ro-strip{background:url(realoffice/worlds/photo/floor.webp) center top/100% auto;box-shadow:inset 0 3px 4px -2px rgba(0,0,0,.25)}
+.ro[data-world="photo"]{background:#c9a77c url(realoffice/worlds/photo/floor.webp) center/cover} /* spec 097 FR-363 (T320): the Photo floor only under the Photo world's own selector, so a late world stylesheet never makes another world request it */
+.ro[data-world="photo"] .ro-strip{background:url(realoffice/worlds/photo/floor.webp) center top/100% auto}
+.ro-strip{box-shadow:inset 0 3px 4px -2px rgba(0,0,0,.25)}
 .ro-fx{object-fit:fill}
 .ro-kiosk{display:flex;align-items:center;justify-content:center;border-radius:8px 8px 3px 3px;background:linear-gradient(#3b3f45,#24272b);border:2px solid #15171a;color:#dfe8f2}
 .ro-kiosk svg{width:45%;height:auto}
@@ -177,6 +179,7 @@
 .ro-l1{display:flex;gap:5px;align-items:baseline;white-space:nowrap;overflow:hidden;min-width:0}
 .ro-l1 b{font-size:12px;overflow:hidden;text-overflow:ellipsis;flex:0 0 auto;max-width:100%;min-width:2ch} /* the name never gives way to the role; it is cut only when it alone is wider than the plate */
 .ro-role{font-size:10.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1 1000 auto} /* the name has priority: in a narrow plate the role shrinks first (review 2026-11-02), the name is cut only when it alone is wider than the plate */
+.ro-hm{display:none} /* the marked count's "!" (spec 102 FR-312): drawn only where a world's CSS says so (the arcade's narrow plate) */
 .ro-help{font-size:10.5px;color:var(--muted);margin-left:auto;flex:none;display:inline-flex;gap:2px;align-items:center}
 .ro-l2{font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ro-plate:is(.st-waiting,.st-limit,.asleep,.lounge) .ro-l2>:is(.ro-wd,.ro-tk){display:contents} /* spec 102 FR-311: the status word and the task are two spans for the arcade's plate with helpers; where this line is a -webkit-box (the clamp to 2 lines) a span would be a box of its own and the two would overlap, so they dissolve into one run of text, as the single text node they replaced */
