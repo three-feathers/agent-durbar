@@ -33,7 +33,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Still highlights (no motion): Settings > Highlights | works | works, the whole room stands still | none | 001 | test:stillhighlights driver:check-unread |
 | Simple / Expert switch and the "Do you write code?" question | missing, removed by owner decision (#1060) | missing, removed | none | 052 | driver:shots-052-ux |
 | Old app-level MCP servers in the folder extras dialog | missing, removed (#1058) | missing, removed | none | 020 | driver:shots-m10 |
-| Room menu: New session, Schedules, Rename, Cost, Move | works | works, the app's own room menu on the folder sign | none | 001 006 | driver:shots-005-cardmenu read:src/renderer/realoffice.js |
+| Room menu: New session, Schedules, Rename, Cost, Move | works | works, the app's own room menu on the folder sign; F2 on the sign's ⋯ renames the folder in place (097 FR-367) | none | 001 006 | driver:shots-005-cardmenu driver:check-097-plate-pencil read:src/renderer/realoffice.js |
 | Full-screen chat, other agents in the rail (List, folders collapse) | works | works, the world's own frame is merged (PR 1001); the rail beside a full-screen chat (List, folders collapse) was run in the Photo office at 1440x900 and 1280x800 on macOS, 2026-11-09, simulator, with a throwaway driver wrapper; dark theme and DPR 2 were not run (#1424) | mock+planned (chat-open) | 005 | test:innerscroll test:railorder driver:check-rail driver:check-rail-resize test:composersize driver:shots-005-cardmenu |
 | Reopening a long chat is fast: older messages are skipped until near the view; the end is followed while a turn streams | works, simulator only | works, chat only (window chrome, no office drawing); run in the Photo office at 1440x900 and 1280x800 on macOS, 2026-11-09 (4003 of 4004 messages skipped on reopen at 1440, simulator); the end followed while a turn streams is asserted by the driver, with no picture; dark theme and DPR 2 were not run (#1424) | none | 005 | driver:check-chat-visibility |
 | A long chat stays light: its newest 300 messages are kept | works, simulator only | works, simulator | none | 005 | test:chattrim driver:check-chat-memory |
@@ -55,7 +55,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Resume after restart, Since you were away, crash card | works | works | none | 006 | test:crashmarker driver:shots-006-crash |
 | Previous sessions, search | works | works | none | 006 | test:sessionsearch driver:shots-006-prevmarks |
 | Notes per folder | works | works | none | 083 | test:notes |
-| Scheduled prompts, loops | works | works | none | 044 072 | test:schedules test:loops |
+| Scheduled prompts, loops | works | works, except the letter that flies from the Postbox to the desk when a schedule fires (001 FR-038, #1587) | none | 044 072 | test:schedules test:loops |
 | Custom agents and profile files | works | works | none | 043 | test:agentprofiles test:profileeditor |
 | Folder status (branch, changes), session summary | works | works | none | 063 085 | test:gitstatus test:sessionsummary |
 | Continue in another app, VS Code chat history | works | works | none | 009 030 | test:handoff test:vscodechat |
