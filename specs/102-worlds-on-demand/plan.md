@@ -271,13 +271,13 @@ The other 17 cells are the same shared code, in tokens, or a `person`, `fixture`
 | T244, T247's scene, T248 | The next built-in world's stack on `main` | 0 AI credits; about 3 shared PRs, landing alone |
 | T240..T243, T245, T249, T258 | T093 for T240; on a branch until the first world's art is approved | 0 AI credits; about 200 lines of plan code plus tests and small shared rules, inside the per-world PRs |
 | T246 | The plans pass T241 | The owner's look |
-| T250..T253, T259 | Q1, T240, T246 | 36 to 54 images on the owner's plan, check its usage first; about 0.75 MB a pack (estimate); 3 per-world PRs, each with its table, pack, flag and cells |
+| T250..T253, T259 | Q1, T240, T246 | 36 to 54 images on the owner's plan, until Codex's own limits (standing yes, 2026-11-13); usage noted before and after each round; about 0.75 MB a pack (estimate); 3 per-world PRs, each with its table, pack, flag and cells |
 | T254, T255 | FR-035, with 097 FR-179; T254 lands in its world's PR | Owner's look per world, `real:` run on a Mac; over 30 days behind the flag, the owner chooses: open or remove |
 | T257 | #955, #966, T043, T190 | Two PRs per world |
 
 **Risk: the plans are arithmetic.** `bays` has the tightest numbers, since 8 seats at 156 px have no room for a bust beside the screen; hence the stacked back bank. T241 comes before any art so that a plan can fail cheaply. **Risk: repo growth,** an estimated 2.25 MB that stays in history after T257 (Q2).
 
-**Constitution.** I: spec, plan, tasks here, no `src/`. II: nothing vendor-specific. III: packs stay data; `notePaper` and `noteStyle` are validated (FR-055); the simulator flag exists only under `DURBAR_SIM`. IV: image runs only on the owner's written yes, simulator otherwise. V: 10.5 px, 15 agents at both sizes, no status by colour alone, reduced motion freezes everything. VI: no path or shell difference; packaged runs listed. VII: FR-297's table. VIII: the mock's limits are stated, numbers tagged as arithmetic or measured.
+**Constitution.** I: spec, plan, tasks here, no `src/`. II: nothing vendor-specific. III: packs stay data; `notePaper` and `noteStyle` are validated (FR-055); the simulator flag exists only under `DURBAR_SIM`. IV: image runs only inside the owner's standing yes until Codex's own limits (2026-11-13; before it, a written yes per run), simulator otherwise. V: 10.5 px, 15 agents at both sizes, no status by colour alone, reduced motion freezes everything. VI: no path or shell difference; packaged runs listed. VII: FR-297's table. VIII: the mock's limits are stated, numbers tagged as arithmetic or measured.
 
 ## Done when
 
