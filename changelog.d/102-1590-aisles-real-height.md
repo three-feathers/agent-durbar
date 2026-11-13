@@ -1,0 +1,1 @@
+- **Arcade keeps small folders whole at 1280x800** (spec 102, issue #1590): 10 agents in 3 or 4 folders no longer have a folder cut across two rows at 1280x800; the hall takes a lower lobby (106 px) to keep them together, and does not scroll. The arcade layout test now runs at the real room heights. With the MCP strip shown the split remains.
