@@ -2317,7 +2317,7 @@ and open PRs, 2026-11-11): **FR-230** and **T212**.
 
 ### 2026-11-13: "App mode": choose the Microsoft Entra app Copilot's MCP sign-in uses, with the SDK 1.0.32 bump and a test build (issue #1667; FR-233..FR-245, Q25..Q27)
 
-**Status**: specified 2026-11-13; PR 2 (T216) and PR 3 (T217) built, see their *Build record*s (PR 1 of 5 of issue #1667: this spec delta, with a spec 011 delta, notes in specs 002, 099 and 076,
+**Status**: specified 2026-11-13; PR 2 (T216), PR 3 (T217) and PR 4 (T218) built, see their *Build record*s (PR 1 of 5 of issue #1667: this spec delta, with a spec 011 delta, notes in specs 002, 099 and 076,
 and the plan and tasks below). **Numbers taken** (`npm run specs:numbers` against `origin/main`, remote branches and open PRs; open PR #1637 holds
 FR-232 and T214): **FR-233..FR-245**, **Q25**, **Q26**, **Q27** (added in review, 2026-11-13), **T215..T221**; spec 011 **FR-096**, **T074**. **Security-relevant** (sign-in identity,
 logging, permissions): an **Opus** review on PR 1 (this spec), PR 2 (the bump and the shell guard: the permission boundary) and PR 3 (the
@@ -2618,6 +2618,46 @@ facts below that this delta relies on, unless tagged otherwise):
   read as `auth`, check dropped, order swapped ("FR-240 order: refusal before auth (unauthorized_client)"), Off and set words swapped.
 - **Not verified**: no real sign-in with any mode (no runtime started; 0 AI credits); `client.start()` with `entra` on a real runtime; Linux
   (FR-241: Entra is Windows and macOS only in the runtime, `read:`), macOS ad-hoc re-signing of the OneAuth/MSAL libraries, Windows; T221.
+
+#### Build record: PR 4, the Settings UI (T218, 2026-11-13)
+
+- Built for FR-239: `[IMPLEMENTED]` `signInAppSection` (`src/renderer/screens.js`, in `paintSettings` under *Refresh MCP sign-ins automatically*): a
+  labelled radio group (`role="radiogroup"`, each choice's line named by `aria-describedby`), Visual Studio Code's app (default), Off, Custom app, and
+  the *App (client) ID* field only for Custom; Copilot CLI's app is not offered (Q25). The heading and all words are the delta's, as written
+  ("Copilot sign-in app for Microsoft (experimental)"). Reused: the `.scr-sub`, `.scr-note`, `.scr-note.warn`, `.capf`, `.btn` and `.scr-tools` classes
+  and tokens (`screens.css` has one small block, tokens only), `window.DurbarDialog` (`askDialog`) as the Sign in again and Remove flows do,
+  `saveFailText` for a failed save, `focusIn`, the `agentDurbar.platform` value the Mac title bar uses, `parseClientId` and `SIGN_IN_APP_REFUSED`
+  (`src/shared/signinapp.ts`, now loaded in the page). The change is made **in place** (no repaint), so the page keeps its scroll; a repaint from elsewhere
+  keeps the unsaved pick (`siDraft`). Save is off until the pick differs from the app in force and, for Custom, the ID passes `parseClientId`; the
+  inline refusal is the fixed text and never repeats the typed value.
+- Built for FR-237 (window side): `[IMPLEMENTED]` Save asks with `askDialog` (Cancel, Reconnect; body "Copilot reconnects to use the new sign-in app.
+  A running turn stops; its history stays."), Cancel saves nothing and keeps the pick; Reconnect calls `settings:setCopilotSignInApp`; the row says
+  "Reconnecting Copilot…", then "Saved. ..." or FR-012's "Could not save this setting. It stays ..." (a refused value shows main's fixed text).
+  **Discrepancy**: the brief for this PR quoted the dialog text "Restart the Copilot connection? Running sessions resume."; the delta's FR-237 text above
+  is the one built (the delta wins).
+- Built for FR-239's notice: `[IMPLEMENTED]` `copilotSignInAppNoticeSeen` (`AppSettings`, `parseSettings`: only `true` is kept, anything else reads as not
+  seen; `SettingsStore.copilotSignInAppNoticeSeen` / `setCopilotSignInAppNoticeSeen` returning `Saved<boolean>`; `settings:get`; `settings:setCopilotSignInAppNoticeSeen`
+  via `ipcHandle` + `setting(...)`; preload; the simulator's stand-in). Saving any choice (`setCopilotSignInApp`, also `null`) writes the flag in the same
+  commit. *Got it* stores it; a failed save keeps the notice. `test: signinapp` (fresh file, Got it, on disk after a restart, saving a choice, six
+  malformed flags, a failed save). Mutants for the notice are in the driver (below).
+- Built for FR-240 (row): `[IMPLEMENTED]` the row's reason line and hint (Settings' live rows and a chat's MCP dialog) ask `isSignInAppRefusal` first
+  (`mcpwords.hintFor` `refusalText`, `reasonOf` `refusal`: "Refused: the sign-in app"), worded by `signInAppRefusalText` with the app in force (`siSaved`:
+  Visual Studio Code's app, Custom app, or Off with `/mcp auth <name>`). `test: mcpwords` (refusal before the sign-in words, only failed or needs-sign-in rows,
+  unchanged without a refusal). **`[KNOWN GAP]`** the failed tool call's own line in the chat still uses the old words: it is main's `mcpCall` class word
+  (`auth` | `policy`) with a simulator copy compared by `test:mcpcall`; a third class needs a main, simulator and test change of its own.
+- Built for FR-241: `[IMPLEMENTED]` the Linux line shows only where `agentDurbar.platform === 'linux'`; nothing is hidden or refused. macOS redirect: in
+  `docs/limits.md` as unverified, not in the Settings line.
+- Driver `scripts/check-058-appmode.js` (in the ui-suite; simulator only, 0 credits; 1440x900 and 1280x800, Flat and Real office, DPR 1): the default
+  (Visual Studio Code's app selected, the choices in order, every line's words, the notice with its words and Got it, the field hidden, Save off, the
+  Linux line only on Linux), text at least 10.5px, no overlap, nothing outside the page, keyboard order; Got it hides the notice and it stays hidden when
+  Settings opens again; Custom shows the field, refuses a bad ID inline with the fixed text (the typed value not repeated), a valid ID enables Save; Save
+  asks first, Cancel saves nothing and keeps the pick, Reconnect stores the lower-case ID and the page keeps its scroll; Off and back; the refusal words on
+  a failed server's row for Off and for Visual Studio Code's app, and a plain sign-in failure keeping the sign-in words. `APPMODE_MUTANT=` (each dies at its
+  assertion): `notice-always` ("notice: stays hidden when Settings is opened again"), `default-off` ("default: Visual Studio Code's app is selected when
+  nothing is stored"), `field-always` ("field hidden in Visual Studio Code's mode"), `cancel-applies` ("Cancel changes nothing (nothing saved)"),
+  `scroll-reset` ("scroll kept: the page does not jump to the top on a change"). `docs/screenshots/058-mcp-refresh-settings-*` retaken (they show the new group
+  under the refresh line); the other linked 058 pictures of those drivers differ from `main`'s by unrelated drift and were not committed. **Not verified**: a real sign-in with any mode; the real reconnect (the simulator starts no client); Windows and
+  macOS pictures; dark theme; DPR 2; the activity-log row "Copilot sign-in app changed to <label>" (left to a later delta, as PR 3 said).
 
 #### Later, not in this plan
 

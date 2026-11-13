@@ -104,6 +104,7 @@
   function signInHint(app){return 'This server needs you to sign in. '+(app?app:'Your agent app')+' keeps the sign-in; Agent Durbar never sees it.';}
   function hintFor(o){
     const status=o&&o.status, cls=o&&o.errorClass, app=o&&o.app?String(o.app):'';
+    if(o&&typeof o.refusalText==='string'&&o.refusalText&&(status==='failed'||status==='needs-auth'))return plain(o.refusalText,300); /* spec 058 FR-240: Microsoft refused the sign-in app; asked before the sign-in words (a refusal is not fixed by signing in again) */
     if(status==='disabled'&&o.by==='start')return 'It was off when this session started. Use Restart session with these servers to start it.';
     if(status==='disabled'&&o.by==='app')return 'Turn it on in '+(app?plain(app,40)+'’s own':'the agent app’s own')+' MCP settings, then restart the session. Agent Durbar cannot switch it on here.';
     if(status==='needs-auth'||(status==='failed'&&cls==='auth'))return signInHint(app);
@@ -126,11 +127,12 @@
      (FR-091); the masked text (the hint's rules); "Disconnected later" when it was seen Running first (FR-092); otherwise "reason unknown".
      `x` = an `agents:mcp` entry: {status, errorClass, error (masked), afterRunning}. */
   const REASONS={'auth':'Refused: needs sign-in','not-found':'Not installed (command not found)','crashed':'Crashed on start','disconnected':'Disconnected later',
-    'timeout':'Timed out','refused':'Refused the connection','permission':'Permission denied','config':'Settings look wrong','unknown':'Failed (reason unknown)'};
+    'app-refused':'Refused: the sign-in app','timeout':'Timed out','refused':'Refused the connection','permission':'Permission denied','config':'Settings look wrong','unknown':'Failed (reason unknown)'};
   const REASON_CLASSES=['not-found','exited','disconnected','timeout','refused','permission','config'];
   function reasonOf(x){
     if(!x||typeof x!=='object')return null;
     const st=x.status, cls=typeof x.errorClass==='string'?x.errorClass:'';
+    if((x.refusal==='app'||x.refusal==='redirect')&&(st==='failed'||st==='needs-auth'))return {key:'app-refused',word:REASONS['app-refused']}; /* spec 058 FR-240: before the sign-in reason */
     if(st==='needs-auth'||(st==='failed'&&cls==='auth'))return {key:'auth',word:REASONS.auth};
     if(st!=='failed')return null;
     let c=REASON_CLASSES.indexOf(cls)>=0?cls:textClass(x.error);

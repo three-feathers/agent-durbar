@@ -146,7 +146,7 @@
     const cw=x.status==='connected'?W.callWord(x.lastCall):'';
     const stat=`<span class="mst ${esc(c.state.cls)}"${c.state.key.startsWith('unknown')?` title="${esc(W.plain(x.status,120))}"`:''}>${W.iconSvg(c.state.icon)}<span class="mst-w">${esc(c.state.word)}</span>${cw?`<span class="mst-call">\u00b7 ${esc(cw)}</span>`:''}</span>`;
     /* FR-082: the chat dialog's own hint (FR-006) with the agent app's name; Details shows the masked text main sent (FR-007, FR-086) */
-    const hint=W.hintFor({status:x.status,errorClass:x.errorClass,error:x.error,app:rp.app||(m&&m.o.appName)})||(cw?W.callHint(x.lastCall,rp.app||(m&&m.o.appName)):'');
+    const hint=W.hintFor({status:x.status,errorClass:x.errorClass,error:x.error,app:rp.app||(m&&m.o.appName),refusalText:siRefusalText(x,r.name)})||(cw?W.callHint(x.lastCall,rp.app||(m&&m.o.appName)):'');
     const detOpen=!!x.error&&liveDet.has(k);
     const det=x.error?`<button class="btn sm srv-detbtn" type="button" data-lvdet="1" aria-expanded="${detOpen}" aria-label="${esc((detOpen?'Hide':'Show')+' details of '+r.name+' for '+c.name)}">Details</button>`:'';
     const detBox=detOpen?`<div class="srv-det"><pre class="srv-err" tabindex="0" data-lverr="1" aria-label="${esc('Error text of '+r.name+' for '+c.name)}">${esc(x.error)}</pre><button class="btn sm" type="button" data-lvcopy="1" aria-label="${esc('Copy the error text of '+r.name+' for '+c.name)}">Copy</button></div>`:'';
@@ -270,6 +270,102 @@
       void agentMcp(m.a,sg?Object.assign({},m.o,{signIn:{name:n,again:sg.dataset.lvagain!==undefined}}):m.o); /* FR-195: the dialog runs its own Sign in */
     }
   }
+  /* ---------------- spec 058 FR-233..FR-241 (issue 1667, T218): Settings > MCP servers: the Microsoft Entra app Copilot's MCP sign-in uses.
+     A choice list (Visual Studio Code's app = the default, Off, Custom app + its ID field); nothing is applied until Save and the confirm (FR-237),
+     all in place (no repaint, so the page never jumps); the words are FR-239's. `siSaved` is the choice in force, `siDraft` the unsaved pick (kept over a repaint). ---------------- */
+  const SI_OFF_CODE='/mcp auth <name>';
+  const SI_MODES=[
+    {id:'vscode',label:"Visual Studio Code's app",tag:'default',line:"Experimental. Uses Visual Studio Code's Microsoft Entra app ID, as Copilot did before version 1.0.26. Durbar is not Visual Studio Code. Your organization or Microsoft may refuse this, and sign-ins show as Visual Studio Code in your organization's logs."},
+    {id:'off',label:'Off',line:"Agent Durbar does not set an app. Copilot's sign-in to Microsoft Entra MCP servers may fail; then use "+SI_OFF_CODE+" in the Copilot CLI."},
+    {id:'custom',label:'Custom app',line:"Your organization's own Microsoft Entra app (client) ID. It needs the MCP server's permissions, admin consent and the sign-in redirect address for this computer, which Agent Durbar has not confirmed yet: ask your administrator. An app ID is not a secret. Never enter a client secret here."}];
+  const SI_NOTICE="Experimental: Copilot now signs in to Microsoft Entra MCP servers with Visual Studio Code's app ID by default, as it did before. Sign-ins show as Visual Studio Code in your organization's logs. Choose Off or your own app below.";
+  const SI_LINUX='On Linux this Copilot version cannot use the system sign-in; this setting may have no effect.';
+  let siSaved={mode:'vscode'}, siDraft=null;
+  const siX=()=>window.exports||{};
+  const siChoiceOf=a=>{const f=siX().effectiveSignInApp;return f?f(a&&a.copilotSignInApp):{mode:'vscode'};};
+  const siLabelOf=c=>c&&c.mode==='off'?undefined:c&&c.mode==='custom'?'Custom app':SI_MODES[0].label;
+  /* FR-240: the refusal words for a row's masked error text, or null; the label is the sign-in app in force (Off: no label and the CLI steps) */
+  function siRefusal(error,name){
+    const sx=siX();if(!sx.isSignInAppRefusal||typeof error!=='string'||!error)return null;
+    const kind=sx.isSignInAppRefusal(error);if(!kind)return null;
+    const label=siLabelOf(siSaved);
+    const text=sx.signInAppRefusalText(kind,label)+(label?'':' Use '+SI_OFF_CODE.replace('<name>',(window.DurbarMcpWords?window.DurbarMcpWords.plain(name,64):String(name||'')).trim()||'<name>')+' in the Copilot CLI.');
+    return {kind,text};
+  }
+  const siRefusalText=(x,name)=>{if(!x||(x.status!=='failed'&&x.status!=='needs-auth'))return '';const r=siRefusal(x.error,name);return r?r.text:'';};
+  function siPrime(){try{if(X&&X.bridge&&X.bridge.getSettings)X.bridge.getSettings().then(a=>{if(!siDraft)siSaved=siChoiceOf(a);}).catch(()=>{});}catch(e){}}
+  function signInAppSection(app){
+    if(!X.bridge.setCopilotSignInApp)return '';
+    siSaved=siChoiceOf(app);
+    const d=siDraft||{mode:siSaved.mode,id:siSaved.clientId||''}, linux=(window.agentDurbar&&window.agentDurbar.platform)==='linux';
+    const radios=SI_MODES.map(m=>{
+      const line=esc(m.line).replace(esc(SI_OFF_CODE),'<code>'+esc(SI_OFF_CODE)+'</code>');
+      return `<div class="siapp-opt"><input type="radio" name="siMode" id="siM_${m.id}" value="${m.id}"${d.mode===m.id?' checked':''} aria-describedby="siD_${m.id}"><div class="siapp-t"><label for="siM_${m.id}"><b>${esc(m.label)}</b>${m.tag?` <small>(${esc(m.tag)})</small>`:''}</label><p class="scr-note small" id="siD_${m.id}">${line}</p></div></div>`;
+    }).join('');
+    const notice=app&&app.copilotSignInAppNoticeSeen===true?'':`<div class="scr-note warn siapp-notice" id="siNotice" role="note"><span>${esc(SI_NOTICE)}</span><button class="btn sm" type="button" id="siGotIt">Got it</button></div>`;
+    return `<h4 class="scr-sub" id="siH">Copilot sign-in app for Microsoft (experimental)</h4>
+        ${notice}
+        <div class="siapp" role="radiogroup" aria-labelledby="siH" id="siGroup">${radios}
+          <label class="capf siapp-id" id="siIdRow"${d.mode==='custom'?'':' hidden'}><span>App (client) ID</span><input id="siId" type="text" inputmode="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="200" value="${esc(d.mode==='custom'?d.id:'')}" aria-describedby="siErr"></label>
+          <p class="scr-note small siapp-err" id="siErr" role="alert" hidden></p>
+        </div>
+        ${linux?`<p class="scr-note small" id="siLinux">${esc(SI_LINUX)}</p>`:''}
+        <div class="scr-tools"><button class="btn primary" type="button" id="siSave" disabled>Save</button><span class="scr-note small" id="siMsg" role="status"></span></div>`;
+  }
+  /* reads the choice off the page, validates the ID inline (the refused text is fixed: never the typed value), enables Save only for a real change */
+  function siSync(){
+    const g=$('siGroup');if(!g)return null;
+    const mode=(g.querySelector('input[name=siMode]:checked')||{}).value||siSaved.mode;
+    const idEl=$('siId'), row=$('siIdRow'), err=$('siErr'), save=$('siSave'), sx=siX();
+    if(row)row.hidden=mode!=='custom';
+    const raw=idEl?idEl.value:'';
+    let choice=null, bad=false;
+    if(mode==='custom'){
+      const id=raw.trim()===''?undefined:(sx.parseClientId?sx.parseClientId(raw):undefined);
+      bad=raw.trim()!==''&&!id;
+      if(id&&!(siSaved.mode==='custom'&&siSaved.clientId===id))choice={mode:'custom',clientId:id};
+    }else if(mode!==siSaved.mode)choice={mode};
+    if(err){err.hidden=!bad;err.textContent=bad?(sx.SIGN_IN_APP_REFUSED||'Not an app (client) ID.'):'';}
+    if(idEl){if(bad)idEl.setAttribute('aria-invalid','true');else idEl.removeAttribute('aria-invalid');}
+    if(save)save.disabled=!choice;
+    siDraft=mode===siSaved.mode&&(mode!=='custom'||raw.trim()===(siSaved.clientId||''))?null:{mode,id:raw};
+    return choice;
+  }
+  function wireSignInApp(){
+    const g=$('siGroup');if(!g)return;
+    siSync();
+    g.addEventListener('change',()=>{const m=$('siMsg');if(m)m.textContent='';siSync();});
+    const idEl=$('siId');if(idEl)idEl.addEventListener('input',()=>{const m=$('siMsg');if(m)m.textContent='';siSync();});
+    const got=$('siGotIt');
+    if(got)got.onclick=async()=>{
+      let res=null;try{res=await X.bridge.setCopilotSignInAppNoticeSeen();}catch(e){res=null;}
+      const m=$('siMsg');
+      if(res&&res.ok){const n=$('siNotice');if(n)n.remove();const c=g.querySelector('input[name=siMode]:checked');if(c)focusIn(c);if(m)m.textContent='';}
+      else if(m)m.textContent=saveFailText('shown'); /* a failed save keeps the notice */
+    };
+    const save=$('siSave');
+    if(save)save.onclick=async()=>{
+      const choice=siSync();if(!choice)return;
+      const ask=window.DurbarDialog&&window.DurbarDialog(document);
+      const body='Copilot reconnects to use the new sign-in app. A running turn stops; its history stays.';
+      const ok=ask?!!(await ask({title:'Reconnect Copilot?',body,returnFocus:()=>$('siSave'),buttons:[{label:'Cancel',value:null},{label:'Reconnect',value:'ok',cls:'primary'}]})):window.confirm(body);
+      if(!ok)return; /* Cancel saves nothing and changes nothing */
+      const b=$('siSave'),m=$('siMsg');if(b)b.disabled=true;if(m)m.textContent='Reconnecting Copilot…';
+      let res=null;try{res=await X.bridge.setCopilotSignInApp(choice);}catch(e){res=null;}
+      const m2=$('siMsg');
+      if(res&&res.ok){
+        siSaved=siChoiceOf({copilotSignInApp:res.copilotSignInApp});siDraft=null;
+        const n=$('siNotice');if(n)n.remove(); /* saving any choice counts as seeing the notice (main stores it) */
+        if(m2)m2.textContent='Saved. '+(siSaved.mode==='off'?'Copilot does not set an app.':'Copilot reconnected with '+siLabelOf(siSaved)+'.');
+        siSync();
+      }else{
+        siSync();
+        const err=$('siErr');
+        if(res&&typeof res.error==='string'&&res.error&&err){err.hidden=false;err.textContent=res.error;if(m2)m2.textContent='';} /* main's fixed refusal text, after the sync (which only knows the window's check) */
+        else if(m2)m2.textContent=saveFailText('set to '+(siLabelOf(siSaved)||'Off'));
+      }
+    };
+  }
   /* ---------------- spec 058 FR-213: Settings > MCP servers: Refresh MCP sign-ins automatically (on unless turned off), and what it does,
      no more than what runs ---------------- */
   /* the reconnect before a message (T178..T181, T184..T186) and the renewal after a failed call and its one automatic note (T190..T199, FR-218); the launch check (T182)
@@ -280,6 +376,7 @@
     const on=!app||app.mcpSignInRefresh!==false;
     return `<div class="scr-tools mcp-refresh"><span class="swrow" style="display:flex;align-items:center;gap:10px"><b>Refresh MCP sign-ins automatically</b>${sw(on,'Refresh MCP sign-ins automatically','id="mcpRefreshSw"')}</span><span class="scr-note small" id="mcpRefreshMsg" role="status"></span></div>
         <p class="scr-note small" id="mcpRefreshLine">${esc(SIGNIN_REFRESH_LINE)}</p>
+        ${signInAppSection(app)}
         ${X.bridge.setDiagnostics?`<div class="scr-tools mcp-diag"><span class="swrow" style="display:flex;align-items:center;gap:10px"><b>Diagnostics</b>${sw(!!(app&&app.diagnostics),'Diagnostics','id="diagSw"')}</span><span class="scr-note small" id="diagMsg" role="status"></span></div>
         <p class="scr-note small">Off by default. On, the activity log also gets a row when Agent Durbar renews an MCP sign-in in the background.</p>`:''}`;
   }
@@ -553,6 +650,7 @@
     /* spec 044 FR-030: the top-bar Schedules button, Ctrl+Shift+S and Ctrl+K open Settings at the Schedules heading (also when Settings is open already) */
     if(cur.section==='schedules'){cur.section=null;const h=$('schH');if(h){scrollInBody(h);h.focus({preventScroll:true});atSec=true;}}
     wireMcpLevels();
+    wireSignInApp();
     if($('capMsg')&&Array.isArray(app.unsaved)&&app.unsaved.includes('defaultMaxAiCredits'))$('capMsg').textContent='This limit is in force for this run only: it could not be saved and may be lost when Agent Durbar restarts.'; /* told again when Settings is reopened */
     if($('capSave'))$('capSave').onclick=async()=>{
       const v=parseFloat($('capDef').value),msg=$('capMsg');
@@ -1327,7 +1425,7 @@
      diagnostics button of a failed or needs-sign-in row, shared by a chat's MCP dialog and the Settings live rows. `x` = the agents:mcp
      entry (main masked its error); `attr` = the button's data attribute. Nothing for other states. */
   function healthHTML(x,attr,label){
-    const W=window.DurbarMcpWords, rs=W&&W.reasonOf?W.reasonOf(x):null;
+    const W=window.DurbarMcpWords, rs=W&&W.reasonOf?W.reasonOf(Object.assign({},x,{refusal:(siRefusal(x.error,x.name)||{}).kind})):null; /* FR-240: the refusal words come first */
     if(!rs)return {why:'',diag:''};
     const when=W.whenText(x.since);
     return {why:`<span class="srv-why" data-reason="${esc(rs.key)}"><b>Reason:</b> ${esc(rs.word)}${when?`<span class="srv-when"> · seen ${esc(when)}</span>`:''}</span>`,
@@ -1470,7 +1568,7 @@
         const rnw=x.status==='connected'&&typeof x.renewedAt==='number'&&W.renewedWord?W.renewedWord(x.renewedAt):''; /* spec 058 FR-221: "Renewed 12:40", a quiet note, no chat line */
         const ckU=x.status==='connected'&&x.checkUnknown===true; /* spec 058 FR-225: the last check before a message got no answer in 30 s */
         const stat=`<span class="mst ${esc(sv.cls)}"${x.status&&sv.cls==='unknown'?` title="${esc(W.plain(x.status,120))}"`:''}>${W.iconSvg(sv.icon)}<span class="mst-w">${esc(sv.word)}</span>${cw?`<span class="mst-call">\u00b7 ${esc(cw)}</span>`:''}${rnw?`<span class="mst-call mst-renew">\u00b7 ${esc(rnw)}</span>`:''}${ckU?`<span class="mst-call mst-unk">\u00b7 Did not answer a check</span>`:''}</span>`;
-        const hint=W.hintFor({status:x.status,errorClass:x.errorClass,error:x.error,app,by})||(cw?W.callHint(x.lastCall,app):'');
+        const hint=W.hintFor({status:x.status,errorClass:x.errorClass,error:x.error,app,by,refusalText:siRefusalText(x,x.name)})||(cw?W.callHint(x.lastCall,app):'');
         const detOpen=x.error&&openDet.has(x.name);
         /* FR-007: the masked text (main masked it; never the runtime's raw text) behind Details, and Copy copies exactly that */
         const det=x.error?`<button class="btn sm srv-detbtn" type="button" data-det="${esc(x.name)}" aria-expanded="${detOpen?'true':'false'}" aria-label="${esc((detOpen?'Hide':'Show')+' details of '+x.name)}">Details</button>`:'';
@@ -1957,7 +2055,7 @@
   }
 
   window.DurbarScreens={saveFailText,oneShotCostLine,aiCredits,
-    init(ctx){X=ctx;if(window.DurbarHarnesses)window.DurbarHarnesses.init({bridge:ctx.bridge,mask:ctx.mask,handover:ctx.handover,toast:(t)=>ctx.toast(ctx.esc(t),3600),onAccounts:(a)=>{if(ctx.setAccounts)ctx.setAccounts(a);},onBadge:setUpdBadge,onChange:(again)=>{X._hsRefresh=true;X._acctRefresh='check';if(ctx.refreshKinds)ctx.refreshKinds();if(cur&&cur.kind==='settings')paint();}});},
+    init(ctx){X=ctx;siPrime();if(window.DurbarHarnesses)window.DurbarHarnesses.init({bridge:ctx.bridge,mask:ctx.mask,handover:ctx.handover,toast:(t)=>ctx.toast(ctx.esc(t),3600),onAccounts:(a)=>{if(ctx.setAccounts)ctx.setAccounts(a);},onBadge:setUpdBadge,onChange:(again)=>{X._hsRefresh=true;X._acctRefresh='check';if(ctx.refreshKinds)ctx.refreshKinds();if(cur&&cur.kind==='settings')paint();}});},
     folderMcp:openFolder,
     folderNotes:openNotes, /* spec 083 T034a: {key, name, render(focus), onClose()} */
     notesKey:()=>cur&&cur.kind==='notes'?cur.key:null,

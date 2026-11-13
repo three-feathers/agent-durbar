@@ -313,7 +313,18 @@ export class SettingsStore {
     const doc: AppSettings = { ...this.s };
     if (next) doc.copilotSignInApp = next;
     else delete doc.copilotSignInApp;
+    doc.copilotSignInAppNoticeSeen = true; // FR-239: saving any choice counts as seeing the notice
     return this.commit(doc) ? { ok: true, value: next ? { ...next } : undefined } : { ok: false, value: this.copilotSignInApp };
+  }
+
+  /** Spec 058 FR-239: the default sign-in app's once-shown notice was dismissed or a choice was saved. A missing or malformed flag reads as not seen. */
+  get copilotSignInAppNoticeSeen(): boolean {
+    return this.s.copilotSignInAppNoticeSeen === true;
+  }
+
+  /** Spec 058 FR-239: *Got it*. `ok` only when the write reached disk (a failed save keeps the notice, so it shows again). */
+  setCopilotSignInAppNoticeSeen(): Saved<boolean> {
+    return this.commit({ ...this.s, copilotSignInAppNoticeSeen: true }) ? { ok: true, value: true } : { ok: false, value: this.copilotSignInAppNoticeSeen };
   }
 
   /** Spec 081 FR-016: the last announced version per agent app, a copy. */
