@@ -218,7 +218,8 @@ if (require.main === module) {
   const args = ['.', '--no-sandbox'];
   const win = process.platform === 'win32';
   // its own process group (outside Windows), so a timeout stops xvfb-run, Electron and its helpers, and only those
-  const child = useXvfb ? spawn('xvfb-run', ['-a', electron, ...args], { cwd: ROOT, env, stdio: 'inherit', detached: !win }) : spawn(electron, args, { cwd: ROOT, env, stdio: 'inherit', detached: !win });
+  const [file, argv] = require('./ui-suite.js').launchCommand(useXvfb, electron, args, ''); // spec 008 FR-269: the sized Xvfb screen of the suite
+  const child = spawn(file, argv, { cwd: ROOT, env, stdio: 'inherit', detached: !win });
   const stop = (sig) => { try { win ? child.kill(sig) : process.kill(-child.pid, sig); } catch (e) { /* already gone */ } };
   let timedOut = false;
   const timer = setTimeout(() => { timedOut = true; stop('SIGTERM'); setTimeout(() => stop('SIGKILL'), 5000).unref(); }, 5 * 60 * 1000);

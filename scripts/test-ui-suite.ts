@@ -58,6 +58,21 @@ assert.ok(/require\('electron'\)/.test(src), 'it starts the Electron binary dire
   assert.ok(src.includes('launchCommand(useXvfb, electron, argv, dpr)') && !src.includes("['xvfb-run', ['-a', electron"), 'runOne starts a driver through launchCommand, not an inline xvfb-run call without a screen');
   assert.deepStrictEqual(launchCommand(false, '/e/electron', ['/repo'], '2', {}), ['/e/electron', ['/repo']], 'without xvfb the binary is started as before');
 }
+// spec 008 FR-269 (issue #1628): the launchers whose window is wider than Xvfb's default 1280x1024 start Electron through launchCommand (the sized screen);
+// the three that read no pixels and no pointer keep the plain call, on purpose (the reasons are in the spec's table), so a change there has to decide again
+{
+  const read = (n: string): string => fs.readFileSync(path.join(ROOT, 'scripts', n), 'utf8');
+  for (const n of ['check-office-overlap.js', 'check-theme-geometry.js', 'check-mac-titlebar.js', 'world-matrix.js', 'installed-app-ci.js']) {
+    const s = read(n);
+    assert.ok(s.includes("require('./ui-suite.js').launchCommand("), `xvfb launcher: ${n} starts Electron through launchCommand (the sized Xvfb screen)`);
+    assert.ok(!/'xvfb-run',\s*\['-a'/.test(s), `xvfb launcher: ${n} has no plain xvfb-run -a call (it would get Xvfb's 1280x1024 default for a 1440x900 window)`);
+  }
+  const { syntaxErrors: syn } = require(SUITE) as { syntaxErrors: (f: string[]) => { file: string; error: string }[] }; // eslint-disable-line @typescript-eslint/no-require-imports
+  assert.deepStrictEqual(syn(['check-office-overlap.js', 'check-theme-geometry.js', 'check-mac-titlebar.js', 'world-matrix.js', 'installed-app-ci.js'].map((n) => path.join(ROOT, 'scripts', n))), [], 'xvfb launcher: the five changed launchers still parse');
+  for (const n of ['check-perf.js', 'perf-record.js', 'pack-esm-ci.js']) {
+    assert.ok(/'xvfb-run',\s*\['-a'/.test(read(n)) && !read(n).includes('launchCommand('), `xvfb launcher: ${n} keeps its plain xvfb-run -a on purpose (no pixels, no pointer; spec 008 FR-269)`);
+  }
+}
 // issue #748 (spec 021 FR-057): no asserting driver sits unrun. Every scripts/check-*.js and shots-*.js that asserts is in the suite, in
 // shots-docs' DOC_SHOTS (retaken by `npm run shots:docs`), or in NOT_IN_SUITE with a written reason
 {
