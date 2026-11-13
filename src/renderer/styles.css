@@ -971,7 +971,7 @@ body.panel-open #panel{flex-direction:row}
 /* spec 080 FR-135 (issue 1691): the big browser fills the chat panel. The rest of the chat is hidden, not removed (a draft, the scroll
    position and the message box's size stay); the notice strips above the panel and this session's answer bars stay in view. */
 body.browser-big #panel>.rail,body.browser-big #panel .panel-in>.ph,body.browser-big #panel #panelTabs,body.browser-big #panel #prev,body.browser-big #panel #notesDrawer,body.browser-big #panel .panel-in>.composer{display:none}
-body.browser-big #panel .bpane :is(.bstrip,.bbar,.bstat){padding-left:16px;padding-right:16px} /* the bar lines up with the page's edges, not a centred column */
+body.browser-big #panel .bpane :is(.bstrip,.bbar,.bstat){padding-left:var(--s-4);padding-right:var(--s-4)} /* the bar lines up with the page's edges, not a centred column */
 .bnote[data-kind="dialog"] svg{color:var(--ink-2)}
 .dlg-mark{flex:none;display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;margin-right:5px;border:1px solid var(--tone-warn-line);border-radius:4px;background:var(--warn-bg);color:var(--amber-ink);font-size:var(--t5-size);font-weight:700;line-height:1}
 .stage .desk.card .dlg-mark,.stage .desk.shut .dlg-mark{position:absolute;left:2px;top:40px;margin:0;z-index:4}
