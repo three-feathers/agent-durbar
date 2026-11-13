@@ -825,10 +825,6 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     let rows = ROSTER.slice(0, Math.min(n, ROSTER.length));
     if (n < 12) rows = ROSTER.filter((r) => r[0] !== 'Hugo' && r[0] !== 'Priya' && r[0] !== 'Noor' && r[0] !== 'Omar').slice(0, n);
     while (rows.length < n) rows.push(['Agent' + (rows.length + 1), 'Worker', 'blog', 'working', 'Working through a queued task', 0, ['src/index.ts']]);
-    // spec 102 FR-302 (T265): simscene=preview is the preview scene of the Settings World cards: three people in one folder, every one idle at its own
-    // desk (done people leave theirs in the flat office's lounge), Ask first so no restore notice shows, no helper; the driver that takes the previews uses it
-    const previewScene = !!simQs && simQs.get('simscene') === 'preview';
-    if (previewScene) rows = ROSTER.filter((r) => r[0] === 'Ada' || r[0] === 'Mira' || r[0] === 'Clara').map((r) => [r[0], r[1], 'mcp-swiss', 'idle', 'Ready. Send a message to start.', 0, r[6]] as Row);
 
     const simSbxAlways = new Set<string>(); // spec 087 FR-007c: the simulated stored Always continue choice (memory only)
     const crashIds = new Set<string>(); // spec 006 FR-046 (simcrash=N): the sessions the faked crash left mid-turn
@@ -846,7 +842,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       const info: AgentInfo = { id: 'sim-' + (i + 1), name, cwd, folders: [cwd], adapterId: mixed ? SIM_KIND_BY_AGENT[i] ?? 'copilot' : 'copilot', permMode: i % 3 === 1 ? 'ask' : i % 3 === 2 ? 'allow' : 'read-only', model: SIM_MODEL_BY_AGENT[i] ?? 'auto', maxAiCredits: SIM_CAPS[name], permRestored: i % 3 === 2 && i < 6 ? true : undefined, modelControl: { switch: 'next-message', effort: true, contextTier: true, compact: true, windowKnown: true }, profiles: true, slash: !(simQs && simQs.get('simslash') === 'none' && mixed && SIM_KIND_BY_AGENT[i] === 'basic'), ...(opts.reply === 'secrets' && i === 7 ? { title: SECRETS_TEXT } : {}) } as AgentInfo; // FR-065: one agent starts with a runtime title that holds the planted secrets (it becomes its name)
       // Spec 052 FR-046: a pending permission card only happens in Ask first, so a waiting agent starts in Ask first (Jonas was Allow all
       // and restored, Lena Read-only); the restored Allow-all folder the restore strip names is then Tomas's (swisscontract-ai).
-      if ((state === 'waiting' || previewScene) && info.permMode !== 'ask') { info.permMode = 'ask'; info.permRestored = undefined; }
+      if (state === 'waiting' && info.permMode !== 'ask') { info.permMode = 'ask'; info.permRestored = undefined; }
       if (mixed && info.adapterId !== 'copilot') {
         const k = caps(info.adapterId ?? 'copilot');
         if (!k.caps) info.maxAiCredits = undefined; // no credit cap on a kind that has none
