@@ -88,7 +88,7 @@ function simTeamsApi(qs: URLSearchParams): Pick<DurbarApi, 'teamsList' | 'teamsP
       { name: 'Reviewer', role: 'Reviewer', brief: 'Read the change and list the risks.', app: 'claude', permMode: 'read-only', sendBrief: false, memberId: hex(), briefFrom: 'file' },
       { name: 'Tester', role: 'Tester', brief: 'Run the tests.', app: 'claude', permMode: 'read-only', sendBrief: false, memberId: hex(), briefFrom: 'file' }] });
   }
-  type Check = { CHANGED_TEXT: string; LIMITS: { members: number; templates: number }; checkTeamTemplate: (v: unknown, level: 'own' | 'imported') => { ok: true; template: { members: unknown[] } & Record<string, unknown> } | { ok: false; errors: string[] }; copyName: (n: string, taken: ReadonlySet<string>) => string | null; nameKey: (n: string) => string };
+  type Check = { CHANGED_TEXT: string; MEMBER_ID_RE: RegExp; LIMITS: { members: number; templates: number }; checkTeamTemplate: (v: unknown, level: 'own' | 'imported') => { ok: true; template: { members: unknown[] } & Record<string, unknown> } | { ok: false; errors: string[] }; copyName: (n: string, taken: ReadonlySet<string>) => string | null; nameKey: (n: string) => string };
   // the shared validator is a 250 KB generated script (`teamcheck.js`, scripts/copy-assets.js): only the simulator needs it, so it is loaded here at the first call, never by the real page
   let loading: Promise<Check | undefined> | undefined;
   const loadCheck = (): Promise<Check | undefined> => {
@@ -167,7 +167,7 @@ function simTeamsApi(qs: URLSearchParams): Pick<DurbarApi, 'teamsList' | 'teamsP
           next.memberId = hex();
         } else {
           if (!cur) return no([at + ', memberId: the window cannot set it.']);
-          if (typeof memberId !== 'string' || !/^[0-9a-f]{32}$/.test(memberId)) return no([at + ', memberId: not valid.']); // main's order: shape first, then "not a member"
+          if (typeof memberId !== 'string' || !check.MEMBER_ID_RE.test(memberId)) return no([at + ', memberId: not valid.']); // main's order: shape first, then "not a member"
           const was = stored.get(memberId);
           if (!was) return no([at + ', memberId: not a member of this template.']);
           if (used.has(memberId)) return no([at + ', memberId: used twice.']);

@@ -15,7 +15,7 @@
  *
  * Reused, not rebuilt (FR-031): `TeamTemplateStore` (T006: validation at level `own`, the 50 cap, the save), `checkTeamTemplate` inside it, `LIMITS`.
  */
-import { CHANGED_TEXT, LIMITS } from '../shared/teamtemplate';
+import { CHANGED_TEXT, LIMITS, MEMBER_ID_RE } from '../shared/teamtemplate';
 import type { TeamMember } from '../shared/teamtemplate';
 import type { TeamsList, TeamsOne, TeamsRemoved, TeamTemplateInfo } from '../shared/api';
 import { CHANGED, SAVE_FAILED, newMemberId, type StoredTemplate, type TeamTemplateStore } from './teamstore';
@@ -26,7 +26,6 @@ export interface TeamsIpcOpsDeps {
   newMemberId?: () => string;
 }
 
-const MEMBER_ID_RE = /^[0-9a-f]{32}$/;
 /** the longest template id the validator accepts (`TEMPLATE_ID_RE`: 1..64); a longer string is refused before any lookup */
 const ID_MAX = 64;
 

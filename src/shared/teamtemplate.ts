@@ -46,7 +46,8 @@ const CHARACTER_RE = /^[a-z][a-z0-9-]{0,23}$/;
 const PROFILE_ID_RE = /^[A-Za-z0-9._:@/-]{1,100}$/;
 /** the shape of an adapter id (`ADAPTER_ID`, `folders.ts`, not exported, so no equality test; G2 may move it here); main checks the id against the ready apps at create (FR-031) */
 const APP_RE = /^[a-z][a-z0-9-]{0,31}$/;
-const MEMBER_ID_RE = /^[0-9a-f]{32}$/;
+/** a store-only member id: 128 random bits as hex; the validator, main's channels and the simulator's fake all test it with this one expression */
+export const MEMBER_ID_RE = /^[0-9a-f]{32}$/;
 const TEMPLATE_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const PERM_MODES: ReadonlySet<string> = new Set(['read-only', 'ask', 'allow']);
 const CAP_UNITS: ReadonlySet<string> = new Set(['aiu', 'usd']);

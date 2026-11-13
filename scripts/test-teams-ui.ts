@@ -119,6 +119,15 @@ win.self = win;
 vm.runInNewContext(fs.readFileSync(file, 'utf8'), win);
 const C = win.DurbarTeamCheck as { checkTeamTemplate: (v: unknown, l: 'own' | 'imported') => { ok: boolean; errors?: string[] }; nameKey: (n: string) => string; LIMITS: { members: number } };
 ok(C && typeof C.checkTeamTemplate === 'function', 'the page has the validator');
+const pageApi = win.DurbarTeamCheck as unknown as { MEMBER_ID_RE: RegExp; copyName: unknown; CHANGED_TEXT: string };
+eq(typeof pageApi.copyName, 'function', 'the page has copyName');
+eq(pageApi.CHANGED_TEXT, shared.CHANGED_TEXT, 'the page has the same changed sentence');
+// one member-id expression: main imports it, the page bundle carries it, nobody keeps a copy (a copy with another {32} would not be caught by the value alone)
+eq(pageApi.MEMBER_ID_RE.source, '^[0-9a-f]{32}$', 'the member id expression');
+ok(pageApi.MEMBER_ID_RE.test('a'.repeat(32)) && !pageApi.MEMBER_ID_RE.test('a'.repeat(31)) && !pageApi.MEMBER_ID_RE.test('A'.repeat(32)), 'it takes 32 lower-case hex digits only');
+for (const f of ['src/main/teamsipc.ts', 'src/renderer/sim.ts', 'src/main/teamstore.ts']) ok(!/\/\^\[0-9a-f\]\{\d+\}\$\//.test(fs.readFileSync(path.join(ROOT, f), 'utf8')), f + ' keeps no copy of the member id expression');
+ok(/MEMBER_ID_RE\b[^;]*\} from '\.\.\/shared\/teamtemplate'/.test(fs.readFileSync(path.join(ROOT, 'src', 'main', 'teamsipc.ts'), 'utf8')), 'teamsipc.ts imports MEMBER_ID_RE');
+ok(/check\.MEMBER_ID_RE\.test/.test(sim), 'the fake uses the shared one');
 const member = (i: number): Record<string, unknown> => ({ name: 'M' + i, role: 'Dev', app: 'x', permMode: 'read-only', sendBrief: false });
 const real = require(path.join(ROOT, 'dist', 'shared', 'teamtemplate.js')) as typeof C & { LIMITS: { members: number } };
 const skel = require(path.join(ROOT, 'dist', 'shared', 'skeleton.js')) as { nameKey: (n: string) => string };
