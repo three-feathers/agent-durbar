@@ -1177,7 +1177,7 @@ All three answered on PR #575 (09:03-09:06 UTC) with option a, the recommended o
 
 ### 2026-11-13: a later policy key for Copilot's sign-in app (pointer; spec 058 FR-233, issue #1667)
 
-Spec 058 FR-233 adds a person's setting, `copilotSignInApp` (which Microsoft Entra app Copilot's MCP sign-in uses; off by default). An
+Spec 058 FR-233 adds a person's setting, `copilotSignInApp` (which Microsoft Entra app Copilot's MCP sign-in uses; Visual Studio Code's app by default, owner decision spec 058 Q27). An
 organization key in `policy.json` that sets or locks it is **later**, not part of issue #1667: it would be its own delta here (machine file,
 fail closed, the lock line in Settings), after the setting has been tested. No requirement of this spec changes now.
 
