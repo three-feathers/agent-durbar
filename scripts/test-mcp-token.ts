@@ -50,6 +50,9 @@ const PASTED: [string, string][] = [
   ['GHP_ upper mixed', 'GHP_' + 'A1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6Q7R8'],
   ['32 upper alnum', 'K8JQ2LMZ9XPW4RTY7VBN3HCS6DFG1AEU'],
   ['upper hex pieces', 'ABCDEF12_34567890_ABCDEF12'],
+  // second read of PR #1637: each refused by one guard only (the per-piece rule; the 5-digit cap)
+  ['40-letter upper key', 'QWERTYUIOPASDFGHJKLZXCVBNMQWERTYUIOPASDF'],
+  ['short pieces with 8 digits', 'AB12_CD34_EF56_GH78'],
 ];
 /* legit names that must stay named */
 const LEGIT = ['GITHUB_TOKEN', 'MY_API_KEY', 'AWS_SECRET_ACCESS_KEY'];
@@ -98,6 +101,10 @@ function pure(): void {
   assert.deepStrictEqual(tokenEntryOfSpec({ url: 'https://x', headers: { Authorization: 'Bearer ${T}' }, oauth: { clientId: 'c' } as never }), { headers: [['Authorization', 'Bearer ${T}']], texts: ['Bearer ${T}', 'https://x'], oauth: true });
   assert.deepStrictEqual(tokenEntryOfExtra({ headers: [{ key: 'X-Key' }], url: 'https://x' }), { headers: [['X-Key', undefined]], texts: ['https://x'] });
   // FR-232 (c), review of PR #1637: the shared name rule
+  // second read of PR #1637: one assert per guard of envVarName
+  assert.strictEqual(envVarName('QWERTYUIOPASDFGHJKLZXCVBNMQWERTYUIOPASDF'), false, 'NAME: PIECE a 40-letter upper-case key (one piece of 16 or more) is not a name');
+  assert.strictEqual(envVarName('AB12_CD34_EF56_GH78'), false, 'NAME: DIGITS a name with more than 5 digits is not a name');
+  assert.strictEqual(envVarName('AZURE_OPENAI_API_KEY_2'), true, 'NAME: AZURE_OPENAI_API_KEY_2 (one digit) is still a name');
   for (const [what, v] of PASTED) {
     assert.strictEqual(envVarName(v), false, `NAME: a pasted ${what} is not a variable name`);
     assert.deepStrictEqual(unsetVars({ headers: [['Authorization', 'Bearer ${' + v + '}']], texts: ['Bearer ${' + v + '}'] }, () => false), [], `NAME: a pasted ${what} inside \${...} is never listed`);
