@@ -92,9 +92,9 @@ const run = async (ctx, reqs) => {
     assert.ok(Number.isInteger(art.g) && art.g >= 2, tag + ': an integer scale: ' + art.g);
     assert.deepStrictEqual(art.off, [], tag + ': the art on the grid');
     /* spec 102 FR-255 (owner 2026-11-04, #1104): the lobby too: every fixture and visitor at a whole scale, on a whole device pixel */
-    const lobby = await js(`(()=>{const d=devicePixelRatio,off=[];let n=0;
+    const lobby = await js(`(()=>{const d=devicePixelRatio,off=[],tol=Math.max(0.01,d/64+0.001);let n=0; /* tol: the engine keeps a position in 1/64 CSS px, which is up to d/64 device px (T204, fractional ratios) */
       for(const i of document.querySelectorAll('#stage img.ro-fx,#stage img.ro-visitor')){if(i.hidden||!i.getClientRects().length||!i.naturalWidth)continue;n++;const b=i.getBoundingClientRect(),s=b.width*d/i.naturalWidth,s2=b.height*d/i.naturalHeight,x=b.left*d;
-        if(Math.abs(s-Math.round(s))>0.01||Math.abs(s2-Math.round(s2))>0.01||Math.round(s)<1)off.push((i.dataset.place||i.className)+' x'+s.toFixed(3));if(Math.abs(x-Math.round(x))>0.01)off.push((i.dataset.place||i.className)+' left '+x.toFixed(2));}
+        if(Math.abs(s-Math.round(s))>0.01||Math.abs(s2-Math.round(s2))>0.01||Math.round(s)<1)off.push((i.dataset.place||i.className)+' x'+s.toFixed(3));if(Math.abs(x-Math.round(x))>tol)off.push((i.dataset.place||i.className)+' left '+x.toFixed(2));}
       return {n,d,off};})()`);
     console.log('[102-arcade]', tag, 'lobby', JSON.stringify({ n: lobby.n, dpr: lobby.d }));
     assert.ok(lobby.n > 0, tag + ': the lobby has pictures');

@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { placeBox, portraitCrop, PORTRAIT_SIDE, slipAvoid, NOTE_PAPER, NOTE_PAPER_DEFAULT, NOTE_INK, notePaper, screenFit, screenFor, personMotion, zoomRect, realLayout, lobbyWidths, sortDesks, deskOrder, deskBase, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
   type RealModel, type RealMeta, type RealAgent, type RealState, type Rect, type Layout } from '../src/shared/realoffice-layout';
-import { signMin, lobbyBand, lobbyScale, visitorScale, HEAD, HEAD_FACE, HELP_FACE_MIN, HELP_GAP, helpH, helpCols, helpShown, headCrop, helperPerson } from '../src/shared/realoffice-layout';
+import { signMin, lobbyBand, lobbyScale, visitorScale, snapDevice, devStep, HEAD, HEAD_FACE, HELP_FACE_MIN, HELP_GAP, helpH, helpCols, helpShown, headCrop, helperPerson } from '../src/shared/realoffice-layout';
 import { createHash } from 'crypto';
 import { CHARACTER_CHOICES } from '../src/shared/characters';
 import { lampWords, lightFor, lightState, LIGHT_TABLE, ambientFor, doneTick, fixtureLight, isActive, type LightState } from '../src/shared/lights';
@@ -968,6 +968,44 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
     }
   }
   assert.ok(checked > 50, `FR-255 lobby: enough pictures checked (${checked})`);
+  // 7. spec 102 FR-255 (T204, #1403): at a fractional device pixel ratio every edge and size is a whole number of DEVICE pixels; at a whole ratio nothing changes
+  {
+    const whole = (v: number, d: number): boolean => Math.abs(v * d - Math.round(v * d)) < 1e-6;
+    assert.deepStrictEqual([1, 2, 3, 4].map((d) => devStep(d)), [1, 1, 1, 1], 'FR-255 device: a whole ratio keeps the whole CSS px step');
+    assert.ok(Math.abs(devStep(1.25) - 0.8) < 1e-12 && Math.abs(devStep(1.5) - 2 / 3) < 1e-12, 'FR-255 device: the step at 1.25 and 1.5');
+    for (const d of [1, 1.25, 1.5, 2, 3]) for (const v of [3.2, 37.5, 55.05, 289.94, 1448.75, 0.3]) assert.ok(whole(snapDevice(v, d), d), `FR-255 device ${d}: ${v} snaps to a whole device px (${snapDevice(v, d)})`);
+    assert.deepStrictEqual([1, 2].map((d) => snapDevice(37.5, d)), [38, 38], 'FR-255 device: at ratio 1 and 2 the edge is the whole CSS px of before');
+    assert.deepStrictEqual([1, 2, 3].map((d) => lobbyScale(1.9, 44, 100, 48, 200, d)), [2, 2, 2], 'FR-255 device: whole ratios give the scale of before');
+    assert.deepStrictEqual([1, 2].map((d) => visitorScale(2.64, d)), [2, 2], 'FR-255 device: whole ratios give the visitor scale of before');
+    for (const d of [1.25, 1.5]) {
+      for (const raw of [1.9, 2.3, 3, 3.6, 4.709]) {
+        const sc = lobbyScale(raw, 44, 400, 48, 400, d);
+        assert.ok(whole(sc, d) && sc > 0, `FR-255 device ${d}: lobby scale ${raw} is a whole device scale (${sc})`);
+        assert.ok(Math.abs(sc - raw) <= devStep(d) / 2 + 1e-9, `FR-255 device ${d}: lobby scale ${raw} stays the nearest (${sc})`);
+        assert.ok(whole(visitorScale(raw, d), d) && visitorScale(raw, d) <= raw + 1e-9, `FR-255 device ${d}: visitor scale ${raw} whole and not above its own`);
+      }
+      assert.ok(lobbyScale(3.7, 44, 160, 48, 400, d) * 44 <= 160 + 1e-9, `FR-255 device ${d}: no room: the device scale below`);
+      const retro7 = { ...readJson('worlds', 'retro', 'world.json'), ...readJson('sets', 'retro', 'set.json'), dpr: d } as unknown as RealMeta;
+      const crowd7 = Object.keys(retro7.stand);
+      let n7 = 0;
+      for (const [W, Lb] of [[1408, 150], [1248, 128], [1408, 196], [1000, 140]]) for (const busy of [0, 3]) {
+        const places = PLACES.map((id, i) => ({ id, visitors: i % 3 === 0 ? Array.from({ length: busy }, (_, j) => ({ id: id + j, person: crowd7[(i + j) % crowd7.length], needsYou: false })) : [] }));
+        for (const f of lobbyBand(retro7, places as never, W, Lb).fixtures) {
+          if (f.art) {
+            assert.ok([f.art.x, f.art.y, f.art.w, f.art.h, f.art.x + f.art.w, f.art.y + f.art.h].every((v) => whole(v, d)), `FR-255 device ${d} ${W}x${Lb}: fixture ${f.id} on whole device px ${JSON.stringify(f.art)}`);
+            const sc = f.art.w / retro7.fixtures[f.id][0];
+            assert.ok(whole(sc, d), `FR-255 device ${d} ${W}x${Lb}: fixture ${f.id} at a whole device scale (${sc})`);
+            n7++;
+          }
+          for (const v of f.visitors) if (v.fig) {
+            assert.ok([v.fig.x, v.fig.y, v.fig.w, v.fig.h].every((x) => whole(x, d)), `FR-255 device ${d} ${W}x${Lb}: visitor ${v.id} on whole device px`);
+            n7++;
+          }
+        }
+      }
+      assert.ok(n7 > 30, `FR-255 device ${d}: enough pictures checked (${n7})`);
+    }
+  }
   // 6. a world without pixelArt is unchanged: the photo world's band is byte-identical to main's (sha computed with main's code, 2026-11-04)
   const P = ['library', 'software', 'terminal', 'web', 'other', 'coffee', 'boss', 'bank', 'postbox'].map((id, i) => ({ id, visitors: i % 3 === 0 ? [{ id: 'v' + i, person: PEOPLE[i], needsYou: false }] : [] }));
   assert.strictEqual(createHash('sha256').update(JSON.stringify(lobbyBand(META, P, 1408, 150))).digest('hex').slice(0, 16), 'fad790c1536fb4f8', 'FR-255 lobby: the photo world is unchanged');

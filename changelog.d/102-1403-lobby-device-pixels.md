@@ -1,0 +1,1 @@
+- **Retro arcade: the lobby sits on whole screen pixels at 125 % and 150 % scaling** (spec 102, issue #1403): the coffee corner, bank and postbox pictures no longer land on half a screen pixel on Windows laptops at 125 % or 150 %; nothing changes at 100 % or 200 %. The desks still use whole CSS scales.

@@ -31,7 +31,8 @@
   function quietFocus(fn) { QUIET_FOCUS = true; QUIET_POINTER = true; QUIET_AT = ''; try { fn(); } finally { QUIET_FOCUS = false; } }
 
   const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
-  const px = (n) => Math.round(n * 10) / 10 + 'px';
+  let FRAC = false; /* spec 102 FR-255 (T204): a pixel world at a fractional device pixel ratio keeps 3 decimals, so a lobby edge stays on its whole device pixel (0.1 px would move it by up to 0.075 device px) */
+  const px = (n) => FRAC ? Math.round(n * 1000) / 1000 + 'px' : Math.round(n * 10) / 10 + 'px';
   /* FR-184: nothing rewrites what did not change: a style or dataset value is written only when it differs */
   const sty = (e, k, v) => { if (e.style[k] !== v) e.style[k] = v; };
   const dset = (e, k, v) => { if (e.dataset[k] !== v) e.dataset[k] = v; };
@@ -320,6 +321,7 @@
     onArt = opts.onArt || null;
     meta.pixelPeople = !!root.DurbarRealOfficeSets[set].pixelArt; /* spec 097 T247: a crew's hi-res people in a pixel world are scaled to its people */
     PIXEL = !!meta.pixelArt;
+    meta.dpr = root.devicePixelRatio || 1; FRAC = PIXEL && Math.abs(meta.dpr - Math.round(meta.dpr)) > 1e-9; /* spec 102 FR-255 (T204): the lobby's pictures sit on whole device pixels at any ratio */
     const ids = Object.keys(meta.seat).sort();
     const who = people(model, ids, opts.rand, !!opts.remember);
     const seatOk = (p) => !!p && !['typeA', 'think', 'waveA', 'rest'].some((f) => BAD.has(SD + p + '-' + f + '.webp'));
