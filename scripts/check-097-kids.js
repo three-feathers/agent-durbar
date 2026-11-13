@@ -45,16 +45,15 @@ module.exports = async (ctx) => {
   const PICS = `[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`;
   const emit = (e) => js(`void window.__durbarSimEmit(Object.assign({timestamp:Date.now()},${jsLiteral(e)}));0`);
   const hit = (a, b, t = 0.5) => a.x + t < b.x + b.w && b.x + t < a.x + a.w && a.y + t < b.y + b.h && b.y + t < a.y + a.h;
-  const sel = (id) => `document.querySelector('#stage .ro-kid[data-id="'+CSS.escape(${jsLiteral(id)})+'"]')`;
   const mutate = async () => {
-    const watch = (body) => js(`(()=>{const f=()=>{${body}};f();new MutationObserver(f).observe(document.getElementById('stage'),{childList:true,subtree:true,attributes:true,attributeFilter:['class','src']});return 1})()`);
+    const watch = (body) => js(`(()=>{const f=new Function(${jsLiteral(body)});f();new MutationObserver(f).observe(document.getElementById('stage'),{childList:true,subtree:true,attributes:true,attributeFilter:['class','src']});return 1})()`);
     if (MUTANT === 'nokids') await watch(`document.querySelectorAll('#stage .ro-kids').forEach(e=>e.remove())`);
     if (MUTANT === 'name') await watch(`document.querySelectorAll('#stage .ro-kid').forEach(b=>{if(!b.querySelector('.ro-kn')){const n=document.createElement('span');n.className='ro-kn';n.style.cssText='position:absolute;left:0;top:100%;font-size:11px;white-space:nowrap';n.textContent=(b.getAttribute('title')||'').split(' · ')[0];b.appendChild(n);}})`);
     if (MUTANT === 'overlap') await watch(`document.querySelectorAll('#stage .ro-kids').forEach(b=>{if(b.style.transform!=='translateY(30px)')b.style.transform='translateY(30px)'})`);
     if (MUTANT === 'adulthead') await watch(`const s=document.querySelector('#stage .ro').dataset.set;document.querySelectorAll('#stage .ro-hd img').forEach(i=>{const w='realoffice/sets/'+s+'/p01-rest.webp';if(i.getAttribute('src')!==w)i.setAttribute('src',w)})`);
   };
   /* what the layout says and what the page drew, per desk; kid boxes in floor pixels (relative to the office) */
-  const read = () => js(`(()=>{const L=${SIM}.realLayout(),A=${SIM}.agents(),E=window.exports,ro=document.querySelector('#stage .ro'),o=ro.getBoundingClientRect();
+  const read = () => js(`(()=>{const L=window.__durbarSimUi.realLayout(),A=window.__durbarSimUi.agents(),E=window.exports,ro=document.querySelector('#stage .ro'),o=ro.getBoundingClientRect();
     const meta=Object.assign({},window.DurbarRealOfficeWorlds[ro.dataset.world],window.DurbarRealOfficeSets[ro.dataset.set]);
     const R=e=>{const r=e.getBoundingClientRect();return {x:r.left-o.left,y:r.top-o.top,w:r.width,h:r.height}};
     const desks=L.zones.flatMap(z=>z.desks);
@@ -145,19 +144,19 @@ module.exports = async (ctx) => {
     assert.ok(target, `${tag}: a kid to change`);
     await must(`${SIM}.visitsSettled()&&${SIM}.settleNow()`, `${tag}: the office settled`);
     /* a node moved for the new order (waiting and error first, orderedHelpers) is the same node; only a node made or dropped counts */
-    await js(`(()=>{window.__kNode=${sel(target.id)};window.__kBefore=new Set(document.querySelectorAll('#stage .ro *'));return 1})()`);
-    const label0 = await js(`${sel(target.id)}.getAttribute('aria-label')`), s1 = await read(); /* after the settle: the boxes a status change must keep */
+    await js(`(()=>{window.__kNode=document.querySelector('#stage .ro-kid[data-id="'+CSS.escape(${jsLiteral(target.id)})+'"]');window.__kBefore=new Set(document.querySelectorAll('#stage .ro *'));return 1})()`);
+    const label0 = await js(`document.querySelector('#stage .ro-kid[data-id="'+CSS.escape(${jsLiteral(target.id)})+'"]').getAttribute('aria-label')`), s1 = await read(); /* after the settle: the boxes a status change must keep */
     /* states of the same rank, so the kid keeps its place (a waiting or error helper moves nearer the person, plan A11, and may then fall behind "+K" on a small desk) */
     const seq = /working|thinking|done|idle/.test(target.state) ? ['thinking', 'done', target.state] : target.state === 'limit' ? ['waiting', 'limit'] : ['limit', target.state];
     for (const st of seq) {
       assert.ok(await js(`${SIM}.helperState(${jsLiteral(target.id)},${jsLiteral(st)})`), `${tag}: set ${st}`);
-      if (MUTANT === 'status') await js(`(()=>{const n=${sel(target.id)};if(n)n.replaceWith(n.cloneNode(true));return 1})()`);
-      await must(`(()=>{const b=${sel(target.id)};return !!b&&b.classList.contains('st-${st}')&&b.querySelector('img').getAttribute('src').endsWith('-'+window.exports.kidPose(${jsLiteral(st)},false)+'.webp')&&(${jsLiteral(st)}===${jsLiteral(target.state)}||${jsLiteral(st)}==='limit'||b.getAttribute('aria-label')!==${jsLiteral(label0)}) /* a helper's words have no limit of their own (helperWords): limit reads as waiting */})()`, `${tag}: the kid shows ${st}`);
+      if (MUTANT === 'status') await js(`(()=>{const n=document.querySelector('#stage .ro-kid[data-id="'+CSS.escape(${jsLiteral(target.id)})+'"]');if(n)n.replaceWith(n.cloneNode(true));return 1})()`);
+      await must(`(()=>{const b=document.querySelector('#stage .ro-kid[data-id="'+CSS.escape(${jsLiteral(target.id)})+'"]');return !!b&&b.classList.contains('st-'+${jsLiteral(st)})&&b.querySelector('img').getAttribute('src').endsWith('-'+window.exports.kidPose(${jsLiteral(st)},false)+'.webp')&&(${jsLiteral(st)}===${jsLiteral(target.state)}||${jsLiteral(st)}==='limit'||b.getAttribute('aria-label')!==${jsLiteral(label0)}) /* a helper's words have no limit of their own (helperWords): limit reads as waiting */})()`, `${tag}: the kid shows ${st}`);
       await must(PICS, `${tag}: the ${st} picture`);
     }
     const nodes = await js(`(()=>{const b=window.__kBefore,now=new Set(document.querySelectorAll('#stage .ro *')),out=[];for(const e of now)if(!b.has(e)&&!e.closest('.ro-slip'))out.push('+'+(typeof e.className==='string'?e.className:e.tagName));for(const e of b)if(!e.isConnected&&!(e.closest&&e.closest('.ro-slip')))out.push('-'+(typeof e.className==='string'?e.className:e.tagName));return out})()`);
     assert.deepStrictEqual(nodes, [], `${tag}: nodes made or dropped under the office over the kid's status changes`);
-    assert.ok(await js(`window.__kNode&&window.__kNode.isConnected&&window.__kNode===${sel(target.id)}`), `${tag}: the kid keeps its node`);
+    assert.ok(await js(`window.__kNode&&window.__kNode.isConnected&&window.__kNode===document.querySelector('#stage .ro-kid[data-id="'+CSS.escape(${jsLiteral(target.id)})+'"]')`), `${tag}: the kid keeps its node`);
     const s2 = await read();
     for (const d of s1.desks) {
       const d2 = s2.desks.find((x) => x.id === d.id);
@@ -170,7 +169,7 @@ module.exports = async (ctx) => {
     ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: cx, y: cy });
     await H.until(`false`, 900);
     assert.ok(await js(`(()=>{const z=document.getElementById('roZoom');return !z||z.hidden||getComputedStyle(z).display==='none'||getComputedStyle(z).visibility==='hidden'||parseFloat(getComputedStyle(z).opacity)===0})()`), `${tag}: pointing at a kid opens no zoom`);
-    assert.ok(await js(`(()=>{const e=document.elementFromPoint(${cx},${cy});return !!e&&!!e.closest('.ro-kid')})()`), `${tag}: the kid is what the pointer hits at its centre`);
+    assert.ok(await js(`(()=>{const e=document.elementFromPoint(${jsLiteral(cx)},${jsLiteral(cy)});return !!e&&!!e.closest('.ro-kid')})()`), `${tag}: the kid is what the pointer hits at its centre`);
     /* a real click on a kid opens that helper's Sub-agent activity view */
     const kname = await js(`${SIM}.agents().find(x=>x.id===${jsLiteral(fd.kids[0].id)}).name`);
     for (const type of ['mouseDown', 'mouseUp']) ctx.win.webContents.sendInputEvent({ type, x: cx, y: cy, button: 'left', clickCount: 1 });
@@ -190,10 +189,10 @@ module.exports = async (ctx) => {
     await H.shot(path.join(OUT, `097-kids-${n}-${w}x${h}.jpg`), { prep: 'calm', tag: 'kids', what: tag });
     shots.push(`097-kids-${n}-${w}x${h}.jpg`);
     /* a picture that fails: the kid keeps its button and name and shows the silhouette, never a letter */
-    const gone = fd.kids[0].id, nm = await js(`${sel(gone)}.getAttribute('aria-label')`);
-    await js(`(()=>{${sel(gone)}.querySelector('img').dispatchEvent(new Event('error'));return 1})()`);
-    await must(`(()=>{const b=${sel(gone)};return !!b&&!!b.querySelector('.ro-hg')&&b.classList.contains('nopic')&&b.textContent.trim()===''})()`, `${tag}: a failed kid picture shows the silhouette, no letter`);
-    assert.strictEqual(await js(`${sel(gone)}.getAttribute('aria-label')`), nm, `${tag}: the name stays without the picture`);
+    const gone = fd.kids[0].id, nm = await js(`document.querySelector('#stage .ro-kid[data-id="'+CSS.escape(${jsLiteral(gone)})+'"]').getAttribute('aria-label')`);
+    await js(`(()=>{document.querySelector('#stage .ro-kid[data-id="'+CSS.escape(${jsLiteral(gone)})+'"]').querySelector('img').dispatchEvent(new Event('error'));return 1})()`);
+    await must(`(()=>{const b=document.querySelector('#stage .ro-kid[data-id="'+CSS.escape(${jsLiteral(gone)})+'"]');return !!b&&!!b.querySelector('.ro-hg')&&b.classList.contains('nopic')&&b.textContent.trim()===''})()`, `${tag}: a failed kid picture shows the silhouette, no letter`);
+    assert.strictEqual(await js(`document.querySelector('#stage .ro-kid[data-id="'+CSS.escape(${jsLiteral(gone)})+'"]').getAttribute('aria-label')`), nm, `${tag}: the name stays without the picture`);
   }
 
   /* 15 agents: no desk top has room; the head row's heads are the kids' faces (FR-370) */
