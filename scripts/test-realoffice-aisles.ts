@@ -224,6 +224,10 @@ for (const [W, H] of SIZES) for (const dh of [0, 31]) for (const n of [1, 2, 3, 
   const gap = n === 10 && f >= 3 && W === 1280 && dh === 31;
   if (n <= 10 && !gap) assert.deepStrictEqual(cut, [], `${n} in ${f} at ${W}x${H - dh}: a folder of 4 or fewer is split`);
   if (n <= 10 && gap) assert.ok(cut.length > 0 && !L.scroll, `${n} in ${f} at ${W}x${H - dh}: the named gap (a split folder, no scroll) moved: cut ${cut.length}, scroll ${L.scroll}`);
+  if (n <= 10 && gap) { /* issue #1598 (T342): the renderer's lend (the floor's 24 px) is what keeps them whole: the layout at that height has no cut folder and no scroll */
+    const Ll = aislesLayout(model(n, f), { w: W, h: H - dh + 24 }, META, SIGNS(f)), pl = new Map<string, number>(); for (const z of Ll.zones) pl.set(z.id, (pl.get(z.id) || 0) + 1);
+    assert.ok(![...pl.values()].some((v) => v > 1) && !Ll.scroll, `${n} in ${f} at ${W}x${H - dh} + 24 lent: the folders are whole and the hall does not scroll`);
+  }
   if (n <= 10 && gap) {
     /* the strip stays where dropping it would not keep the folders whole (the lowest-lobby hall needs 682 px, this room has 666): a helper each keeps the strip row */
     const mg = model(n, f); for (const fo of mg.folders) for (const a of fo.agents) a.helpers = 1;
