@@ -18,7 +18,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const assert = require('assert');
-const { helpers } = require('./driver-helpers');
+const { helpers, jsLiteral } = require('./driver-helpers');
 
 const SIZES = [[1440, 900], [1280, 800]];
 const MUTANT = process.env.WELCOME_MUTANT || '';
@@ -52,7 +52,7 @@ const CARD_READ = `(()=>{
   return {cardAlpha:cs[3],lines:lines.length,worst,translucent,floor:{l:f.left,t:f.top,r:f.right,b:f.bottom},card:{l:r.left,t:r.top,r:r.right,b:r.bottom},dpr:devicePixelRatio};
 })()`;
 
-const addStyle = (css) => `(()=>{const s=document.createElement('style');s.textContent=${JSON.stringify(css)};document.head.appendChild(s)})()`;
+const addStyle = (css) => `(()=>{const s=document.createElement('style');s.textContent=${jsLiteral(css)};document.head.appendChild(s)})()`;
 const MUTANT_CSS = {
   blank: 'html[data-world="retro"] #floor:has(> #stage > .welcome){background:#0c0816!important}',
   veil: '#floor:has(> #stage > .welcome){position:relative}#floor:has(> #stage > .welcome)::before{content:"";position:absolute;inset:0;background:#0c0816;z-index:0;pointer-events:none}#stage > .welcome{position:relative;z-index:1}',
