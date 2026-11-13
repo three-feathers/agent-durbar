@@ -10,7 +10,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
-import { CHARACTER_CHOICES, CHARACTER_KITS, LEGACY_CREW_THEME, kitFor, migrateLegacyTheme, parseCharacters } from '../src/shared/characters';
+import { CHARACTER_CHOICES, CHARACTER_KITS, SET_CHOICES, LEGACY_CREW_THEME, kitFor, migrateLegacyTheme, parseCharacters } from '../src/shared/characters';
 import { parseSettings } from '../src/shared/credits';
 import { SCENE_KITS } from '../src/shared/themes';
 
@@ -20,7 +20,8 @@ const T = require(path.join(ROOT, 'src', 'renderer', 'theme.js'));
 
 // --- the two copies of the rule (agent notes: two copies, one corpus) ---
 assert.deepStrictEqual(T.CHARACTERS, [...CHARACTER_CHOICES], 'theme.js lists the same Characters values, in the same order');
-assert.deepStrictEqual([...CHARACTER_CHOICES], ['theme', 'minimalist', 'cheeky', 'prehistoric', 'pirate', 'monster', 'royal', 'rebels'], 'new crews are appended: the old values never move (FR-064, FR-072)');
+assert.deepStrictEqual([...CHARACTER_CHOICES], ['theme', 'office', 'minimalist', 'cheeky', 'prehistoric', 'pirate', 'monster', 'royal', 'rebels', 'retro'], 'Office people right after the default (spec 102 FR-321), Retro pixel last (FR-320); the crews keep their order (FR-064, FR-072)');
+assert.deepStrictEqual(T.SET_CHOICES, [...SET_CHOICES], 'theme.js names the same set values (spec 102 FR-320, FR-321)');
 assert.deepStrictEqual(T.CHARACTER_KITS, { ...CHARACTER_KITS }, 'theme.js maps each choice to the same kit');
 assert.strictEqual(T.LEGACY_CREW_THEME, LEGACY_CREW_THEME);
 for (const k of Object.values(CHARACTER_KITS)) assert.ok(SCENE_KITS.includes(k) && T.SCENE_KITS.includes(k), `${k} is a scene kit`);
@@ -65,6 +66,13 @@ for (const [id, own] of Object.entries(OWN)) {
   assert.strictEqual(T.characters(), 'theme', `${id}: an unknown value is the default`);
   assert.strictEqual(T.sceneKit(), own, `${id}: and draws the theme's own`);
 }
+// spec 102 FR-320, FR-321 (T290): the two set values parse in main and in the renderer, are kept whatever the flag, and draw the theme's own flat figures until Flat has their heads (T294)
+for (const v of ['office', 'retro']) {
+  assert.strictEqual(parseCharacters(v), v, `main keeps ${v}`); assert.strictEqual(T.parseCharacters(v), v, `the renderer keeps ${v}`);
+  assert.deepStrictEqual(parseSettings(JSON.stringify({ characters: v })), { characters: v }, `a stored ${v} is read back (main knows no flag: FR-322)`);
+  for (const [id, own] of Object.entries(OWN)) { T.setTheme(id); T.setCharacters(v); assert.strictEqual(T.characters(), v, `${id}: ${v} applies`); assert.strictEqual(T.sceneKit(), own, `${id}: ${v} draws the theme's own flat figures for now`); }
+}
+T.setCharacters('theme'); T.setTheme('clean-office');
 // a choice applies on top of a user pack too (FR-065)
 T.registerUserThemes({ 'my-pixels': { id: 'my-pixels', name: 'My pixels', scene: 'pixel' } });
 T.setCharacters('theme');
@@ -220,6 +228,8 @@ async function main(): Promise<void> {
     }
     assert.strictEqual(new SettingsStore(file).load().characters, 'cheeky', 'a refused value changes nothing on disk');
     assert.deepStrictEqual(await call('settings:setCharacters', 'prehistoric'), { ok: true, characters: 'prehistoric' }, 'FR-072');
+    for (const v of ['office', 'retro']) assert.deepStrictEqual(await call('settings:setCharacters', v), { ok: true, characters: v }, `spec 102 FR-320, FR-321, FR-322: main stores ${v} whatever the retro flag (it knows no flags)`);
+    assert.deepStrictEqual(await call('settings:setCharacters', 'prehistoric'), { ok: true, characters: 'prehistoric' }, 'and the next pick replaces it');
     assert.strictEqual(new SettingsStore(file).load().characters, 'prehistoric', 'Prehistoric survives a restart');
     assert.deepStrictEqual(await call('settings:setCharacters', 'pirate'), { ok: true, characters: 'pirate' }, 'FR-074');
     assert.strictEqual(new SettingsStore(file).load().characters, 'pirate', 'Pirate survives a restart');

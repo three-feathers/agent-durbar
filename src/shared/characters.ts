@@ -5,11 +5,15 @@
  */
 
 /** The Characters values, in the order Settings lists them. `theme` = the theme's own kit (the default, never written). */
-export const CHARACTER_CHOICES = ['theme', 'minimalist', 'cheeky', 'prehistoric', 'pirate', 'monster', 'royal', 'rebels'] as const;
+export const CHARACTER_CHOICES = ['theme', 'office', 'minimalist', 'cheeky', 'prehistoric', 'pirate', 'monster', 'royal', 'rebels', 'retro'] as const;
 export type CharacterChoice = (typeof CHARACTER_CHOICES)[number];
 
+/** Spec 102 FR-320, FR-321: the values that name a Real office people set (Office people, Retro pixel), not a flat kit. Until Flat draws their heads (FR-203, T294) they draw the theme's own figures. */
+export type SetChoice = 'office' | 'retro';
+export const SET_CHOICES: readonly SetChoice[] = ['office', 'retro'];
+
 /** The scene kit (spec 035 FR-013) each explicit choice draws. */
-export const CHARACTER_KITS: Readonly<Record<Exclude<CharacterChoice, 'theme'>, string>> = { minimalist: 'office', cheeky: 'crew', prehistoric: 'crew', pirate: 'crew', monster: 'crew', royal: 'crew', rebels: 'crew' };
+export const CHARACTER_KITS: Readonly<Record<Exclude<CharacterChoice, 'theme' | SetChoice>, string>> = { minimalist: 'office', cheeky: 'crew', prehistoric: 'crew', pirate: 'crew', monster: 'crew', royal: 'crew', rebels: 'crew' };
 
 /** The theme id that was Cheeky Crew before FR-066; kept reserved, migrated by FR-067. */
 export const LEGACY_CREW_THEME = 'cheeky-crew';
@@ -22,7 +26,7 @@ export function parseCharacters(v: unknown): CharacterChoice | undefined {
 /** FR-065: the kit drawn for a theme's own kit and a choice. An unknown choice is the default (the theme's own). */
 export function kitFor(themeKit: string | undefined, choice: unknown): string {
   const c = parseCharacters(choice);
-  if (c && c !== 'theme') return CHARACTER_KITS[c];
+  if (c && c !== 'theme' && !(SET_CHOICES as readonly string[]).includes(c)) return CHARACTER_KITS[c as Exclude<CharacterChoice, 'theme' | SetChoice>];
   return themeKit || 'office';
 }
 

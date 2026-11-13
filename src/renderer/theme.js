@@ -348,12 +348,13 @@
   const SCENE_KITS=['office','pixel','crew'];
   /* Characters, separate from themes (spec 077 FR-064, FR-065): who sits at the desks. 'theme' is the theme's own kit (the default);
      the others name a kit that is drawn on top of any theme. The same list and rule as src/shared/characters.ts (test:characters). */
-  const CHARACTERS=['theme','minimalist','cheeky','prehistoric','pirate','monster','royal','rebels'];
+  const CHARACTERS=['theme','office','minimalist','cheeky','prehistoric','pirate','monster','royal','rebels','retro'];
+  const SET_CHOICES=['office','retro']; /* spec 102 FR-320, FR-321: Real office people sets; Flat draws the theme's own figures until T294 */
   const CHARACTER_KITS={minimalist:'office',cheeky:'crew',prehistoric:'crew',pirate:'crew',monster:'crew',royal:'crew',rebels:'crew'};
   const REMOVED_THEMES=['corporate','durbar-indian','durbar-european','durbar-japanese']; /* spec 035 FR-017: removed built-ins; FR-018 maps them to Clean Office, same list as src/shared/themes.ts (test:theme) */
   const LEGACY_CREW_THEME='cheeky-crew'; /* FR-066: no longer a theme; FR-067 maps it to Clean Office with Characters = Cheeky */
   function parseCharacters(v){return typeof v==='string'&&CHARACTERS.includes(v)?v:undefined;}
-  function kitFor(themeKit,choice){const c=parseCharacters(choice);if(c&&c!=='theme')return CHARACTER_KITS[c];return themeKit||'office';}
+  function kitFor(themeKit,choice){const c=parseCharacters(choice);if(c&&c!=='theme'&&!SET_CHOICES.includes(c))return CHARACTER_KITS[c];return themeKit||'office';}
 
   function validateManifest(m){
     if(!m || typeof m!=='object') return null;
@@ -1103,6 +1104,7 @@
     kitFor,
     parseCharacters,
     CHARACTERS:CHARACTERS.slice(),
+    SET_CHOICES:SET_CHOICES.slice(),
     CHARACTER_KITS:Object.assign({},CHARACTER_KITS),
     LEGACY_CREW_THEME,
     REMOVED_THEMES:REMOVED_THEMES.slice(),

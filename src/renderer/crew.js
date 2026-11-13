@@ -185,7 +185,7 @@
     { id: 'retro', name: 'Retro arcade', defaultSet: 'retro', flag: 'retro' },
   ];
   const REAL_SETS = [
-    { id: 'office', name: 'Office people', choice: '' },
+    { id: 'office', name: 'Office people', choice: 'office' }, /* spec 102 FR-321: an explicit value, so any world can draw them by choice */
     { id: 'prehistoric', name: 'Prehistoric', choice: 'prehistoric' }, /* owner 2026-11-08 (097 Q12): a set with full poses needs no flag; only the cave WORLD is gated */
     /* spec 097 FR-335/FR-336 (issue #1154; T240..T244): the five crews' own Real office people, full poses, no flag (Q12); a crew's note is the line "Real office draws the <Crew> people." */
     { id: 'pirate', name: 'Pirate', choice: 'pirate' },
@@ -211,7 +211,7 @@
     if (byChoice) return { world: w.id, set: byChoice.id, setName: byChoice.name, note: crewName(c) ? `Real office draws the ${crewName(c)} people.` : '' }; /* 097 Q12: say that the crew's own people are drawn */
     const d = rowOf(REAL_SETS, w.defaultSet);
     const def = d && on(d, flags) ? d : REAL_SETS[0];
-    const lv = levelFor(c, flags), n = crewName(c);
+    const lv = levelFor(c, flags), row = c && c !== 'theme' ? REAL_SETS.find((s) => s.choice === c) : null, n = crewName(c) || (row && row.flag ? row.name : ''); /* FR-322: a set behind a closed flag says so by its own name */
     /* FR-336: say the true reason: a set with poses behind a closed flag is "not open", a crew with only heads "has no poses" */
     return { world: w.id, set: def.id, setName: def.name, note: !n ? '' : lv === 'closed' ? `Real office shows ${def.name} until ${n} is open in Real office.` : `Real office shows ${def.name} until ${n} has Real office poses.` };
   }
