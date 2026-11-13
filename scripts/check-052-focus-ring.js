@@ -7,7 +7,7 @@
  * Per look, at 1440x900 and 1280x800: a Tab key press puts the page in keyboard modality, then each visible focusable of the top bar (and, with the ⋯ menu open, each of its
  * items) is focused, the window is captured (`capturePage`, real pixels), and the ring is read from the picture: its own colour at the middle of its band on the element's
  * top edge, the pixel just outside the band and the first pixel past its inner edge. An outside ring (outline-offset > 0) is judged by the first only (its inner side is the control's own 1px border line), an inset ring (offset <= 0) by both: each must be >= 3:1 against the ring; the ring pixel must also be
- * the computed outline colour (a guard on the geometry). The halo box-shadow is not counted (the outline alone). FOCUS_MUTANT=old puts main's rule back (yellow over the whole bar, the segment rules deleted); =menu gives the menu items the yellow back; =seg gives the segment buttons the yellow back. Each fails with its own element names. FOCUS_REPORT=1 does not assert and writes every line to
+ * the computed outline colour (a guard on the geometry). The halo box-shadow is not counted (the outline alone). FOCUS_NO_TAB=1 sends no Tab (dies at the Tab label). FOCUS_MUTANT=old puts main's rule back (yellow over the whole bar, the segment rules deleted); =menu gives the menu items the yellow back; =seg gives the segment buttons the yellow back. Each fails with its own element names. FOCUS_REPORT=1 does not assert and writes every line to
  * $OUT/focus-report.txt. OUT=dir (optional) also saves focus-<look>-<size>-<element>.png of the elements that fail or are named in FOCUS_SHOTS (comma list of ids).
  */
 const assert = require('assert');
@@ -58,10 +58,12 @@ module.exports = async (ctx) => {
           :[...document.querySelectorAll('.topbar button, .topbar select, .topbar a[href], .topbar input')].filter(e=>vis(e)&&!e.closest('#topMoreMenu'))};window.__pick=()=>window.__list()[window.__fn];0`);
       if (process.env.FOCUS_MUTANT) console.log(`[focus] mutant ${process.env.FOCUS_MUTANT}: changed ${await mutate(process.env.FOCUS_MUTANT)} rule(s)`);
       const dpr = await js(`window.devicePixelRatio`);
-      H.key('Tab'); // keyboard modality: :focus-visible matches on a script focus() only after a key press
+      // keyboard modality: :focus-visible matches on a script focus() only after a key press. sendInputEvent returns before the page handles the key, so wait until the Tab has moved focus: a late Tab would move focus off control 0 after the first focus() below (#1651). FOCUS_NO_TAB=1 (mutant) sends none.
+      if (!process.env.FOCUS_NO_TAB) await H.key('Tab');
+      assert.ok(await until(`!!document.activeElement&&document.activeElement!==document.body`, 3000), `${tag}: the Tab key press did not move focus off the body: the key event was not handled in 3000 ms`);
       for (const menu of [false, true]) {
         if (menu) {
-          await js(`document.getElementById('topMoreBtn').focus()`); H.key('Down');
+          await js(`document.getElementById('topMoreBtn').focus()`); await H.key('Down');
           assert.ok(await until(`!document.getElementById('topMoreMenu').hidden`, 5000), `${tag}: the ⋯ menu opened`);
         }
         await js(`window.__fm=${jsLiteral(menu)};0`);
@@ -93,7 +95,7 @@ module.exports = async (ctx) => {
           if (bad && mode !== 'print') fails.push(`${tag} ${id} "${m.txt}": min ${min.toFixed(2)}:1`);
           if ((bad && mode !== 'print') || SHOTS.has(id) || SHOTS.has(`${menu ? 'menu' : 'bar'}${n}`)) await H.shot(path.join(OUT, `focus-${look.replace(/\W+/g, '-')}-${w}x${h}-${menu ? 'menu' : 'bar'}${n}-${id}.png`), { prep: 'none', settle: false, tag: 'focus' });
         }
-        if (menu) { H.key('Escape'); await until(`document.getElementById('topMoreMenu').hidden`, 3000); }
+        if (menu) { await H.key('Escape'); await until(`document.getElementById('topMoreMenu').hidden`, 3000); }
       }
     }
   }
