@@ -81,7 +81,10 @@ module.exports = async (ctx) => {
       if (theme) await js(`window.THEME.setTheme(${jsLiteral(theme)})`);
       await H.settle();
       await js(INSTALL_PX);
-      if (process.env.DANGER_MUTANT === 'hover') console.log(`[danger-dlgs] mutant hover: --red-hover was ${JSON.stringify(await js(`(()=>{const e=document.documentElement,v=e.style.getPropertyValue('--red-hover');e.style.removeProperty('--red-hover');return v})()`))}`);
+      if (process.env.DANGER_MUTANT === 'hover') {
+        const was = await js("(()=>{const e=document.documentElement,v=e.style.getPropertyValue('--red-hover');e.style.removeProperty('--red-hover');return v})()");
+        console.log('[danger-dlgs] mutant hover: --red-hover was ' + JSON.stringify(was));
+      }
       if (process.env.DANGER_MUTANT === 'old') console.log(`[danger-dlgs] mutant old: changed ${await mutate('old')} themed danger rule(s)`);
       let shot = false;
       for (const site of SITES) {
