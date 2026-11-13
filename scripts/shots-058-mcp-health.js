@@ -19,7 +19,11 @@
  *   planted token (FR-093); the same in Settings > MCP servers (the chat's row in the expander);
  * - the needs-sign-in row keeps its sign-in hint first; Copy diagnostics is a small button after Details (FR-095);
  * - text >= 10.5px, the dialog fits the window and its body scrolls (FR-096);
- * - after a report with no failure the dot goes.
+ * - after a report with no failure the dot goes;
+ * - spec 058 FR-232 (issue #1621): a 403 from a server the simulator knows sends its own token reads "Refused: token not accepted" with
+ *   the token hint and the unset variable by name, and no Sign in again; a 403 from a server with no known entry keeps "Refused: needs
+ *   sign-in"; a pasted key the simulator sends as a name is never shown (the window's re-check, review of PR #1637); no piece of the planted token in the rows' words (picture 058-mcp-token-<w>x<h>.png in TOKEN_OUT, default the temp folder:
+ *   not a docs picture).
  * Shots: 058-mcp-health-<w>x<h>.png (the dialog), 058-mcp-health-chip-<w>x<h>.png (the composer with the dot),
  * 058-mcp-health-settings-<w>x<h>.png (Settings, one server open). Prints "[058] health PASS".
  */
@@ -44,6 +48,17 @@ const WANT = {
   playwright: 'Not installed (command not found)', 'markitdown-mcp': 'Crashed on start', linkcheck: 'Disconnected later', slowpoke: 'Timed out',
   refuser: 'Refused the connection', mystery: 'Failed (reason unknown)', linear: 'Refused: needs sign-in',
 };
+/* spec 058 FR-232: the simulator's SIM_TOKEN_ENTRIES know `team-api` (a header with ${TEAM_API_TOKEN}, unset) and `docs-api` (a written header) */
+const ERR403 = 'failed to initialize MCP client: transport failure during send initialize request: unexpected server response: HTTP 403 Forbidden';
+const TOKEN_REPORT = [
+  { name: 'team-api', status: 'failed', transport: 'http', source: 'user', error: `${ERR403} (Authorization: Bearer ${TOKEN})` },
+  { name: 'docs-api', status: 'failed', transport: 'http', source: 'user', error: ERR403 },
+  { name: 'sso-api', status: 'failed', transport: 'http', source: 'user', error: ERR403 },
+  { name: 'paste-api', status: 'failed', transport: 'http', source: 'user', error: ERR403 },
+];
+/* the simulator sends paste-api's (fake) pasted key as if main had named it: the window's own re-check must hide it (review of PR #1637) */
+const PASTED_KEY = 'k8Jq2LmZ9xPw4RtY7vBn3HcS6dFg1AeU';
+const TOKEN_OUT = process.env.TOKEN_OUT || require('os').tmpdir();
 const RUNNING = FAILED.map((x) => ({ name: x.name, status: x.name === 'linkcheck' || x.name === 'tidy' ? 'connected' : 'pending', transport: x.transport, source: 'user' }));
 
 module.exports = async (ctx) => {
@@ -180,6 +195,36 @@ module.exports = async (ctx) => {
     assert.ok(await until(`!!document.getElementById('mcpBtn')&&!document.querySelector('#mcpBtn .ct-dot')`), `${w}: the dot goes when nothing failed`);
     c = await chip();
     assert.ok(!/failed/.test(c.label), `${w}: the chip's name no longer says failed ${JSON.stringify(c)}`);
+
+    // ---- spec 058 FR-232 (issue #1621): a refused token is not a sign-in ----
+    await emit(id, TOKEN_REPORT);
+    await js(`document.getElementById('mcpBtn').click()`);
+    assert.ok(await until(`['team-api','docs-api','sso-api','paste-api'].every(n=>[...document.querySelectorAll('#agMcp li.srv')].some(li=>li.dataset.n===n&&li.querySelector('.srv-why')))`), `${w}: the token rows show their reasons`);
+    await settle();
+    const tr = await rows();
+    const team = tr.find((x) => x.n === 'team-api'), docs = tr.find((x) => x.n === 'docs-api'), sso = tr.find((x) => x.n === 'sso-api');
+    assert.match(team.why, /^Reason: Refused: token not accepted/, `${w}: FR-232 team-api reads a refused token`);
+    assert.strictEqual(team.reason, 'token', `${w}: FR-232 the reason key`);
+    assert.ok(team.hint.startsWith('The server refused the token. Check the header or its variable;') && team.hint.includes('does not see TEAM_API_TOKEN:'), `${w}: FR-232 the token hint names the variable: ${team.hint}`);
+    assert.ok(!team.btns.some((b) => /Sign in/.test(b)), `${w}: FR-232 no Sign in on a refused token ${JSON.stringify(team.btns)}`);
+    assert.match(docs.why, /^Reason: Refused: token not accepted/, `${w}: FR-232 a written header reads a refused token`);
+    assert.ok(!/does not see/.test(docs.hint), `${w}: FR-232 no variable named for a written header`);
+    assert.match(sso.why, /^Reason: Refused: needs sign-in/, `${w}: FR-232 a server with no known entry keeps needs sign-in`);
+    const paste = tr.find((x) => x.n === 'paste-api');
+    assert.match(paste.why, /^Reason: Refused: token not accepted/, `${w}: FR-232 a pasted key row reads a refused token`);
+    assert.ok(!/does not see/.test(paste.hint) && !paste.hint.includes(PASTED_KEY.slice(0, 8)), `${w}: FR-232 the window's re-check never names a pasted key: ${paste.hint}`);
+    const rowText = await js(`[...document.querySelectorAll('#agMcp li.srv')].map(li=>[...li.childNodes].filter(n=>!(n.classList&&n.classList.contains('srv-det'))).map(n=>n.textContent).join(' ')+' '+[...li.querySelectorAll('[aria-label],[title]')].map(e=>(e.getAttribute('aria-label')||'')+' '+(e.getAttribute('title')||'')).join(' ')).join(' | ')`);
+    assert.ok(!rowText.includes(TOKEN) && !rowText.includes(TOKEN.slice(4, 16)), `${w}: SECRET no piece of the planted token in the rows' words`);
+    assert.ok(!rowText.includes(PASTED_KEY.slice(0, 8)), `${w}: SECRET no piece of the pasted key in the rows' words`);
+    const mf3 = await minFont('#scrDlg .dlg, #scrDlg .dlg *');
+    assert.ok(mf3.min >= 10.5, `${w}: token rows text >= 10.5px ${JSON.stringify(mf3)}`);
+    const fit3 = await js(`(()=>{const d=document.querySelector('#scrDlg .dlg').getBoundingClientRect();const li=[...document.querySelectorAll('#agMcp li.srv')].find(x=>x.dataset.n==='team-api');const r=li.getBoundingClientRect();return {fits:d.top>=0&&d.bottom<=innerHeight+1&&d.right<=innerWidth+1,pageX:document.documentElement.scrollWidth<=innerWidth,rowIn:r.left>=d.left-0.5&&r.right<=d.right+0.5,hintIn:[...li.querySelectorAll('.srv-hint')].every(h=>h.scrollWidth<=h.clientWidth+1)}})()`);
+    assert.ok(fit3.fits && fit3.pageX && fit3.rowIn && fit3.hintIn, `${w}: the token hint wraps inside the dialog ${JSON.stringify(fit3)}`);
+    await js(`(()=>{const li=[...document.querySelectorAll('#agMcp li.srv')].find(x=>x.dataset.n==='team-api');li.scrollIntoView({block:'center'});document.activeElement.blur();document.querySelectorAll('#toasts .toast').forEach(t=>t.remove());})()`);
+    await settle();
+    await H.shot(path.join(TOKEN_OUT, `058-mcp-token-${w}x${h}.png`), { prep: 'mouse', tag: '058' });
+    await closeDlg();
+    await emit(id, TOKEN_REPORT.map((x) => ({ name: x.name, status: 'connected', transport: x.transport, source: 'user' })));
     await closePanel();
   }
   console.log('[058] health PASS');

@@ -1,0 +1,1 @@
+- **Arcade no longer scrolls with a status filter set** (spec 102, issue #1588): at 1280x800 with 11 to 15 agents and a status pill on, the arcade's bottom row was cut off; the hall now also takes the filter note's spare top padding (keeping the note clear). Checked in the simulator by `check-102-arcade-filter-note`; macOS only.

@@ -290,6 +290,24 @@ Owner decisions (Vikram, 2026-10-31 05:17 UTC): *Open chat links in a new tab* i
 
 ---
 
+## Phase 1c: expand the browser (spec delta 2026-11-13, issue #1691)
+
+Owner request (Vikram, 2026-11-13): see the browser big, make it small before going back to the chat. Renderer only; no main-process change.
+
+- [x] T080 [US1] Pure model first: `bigModel(on)` in `src/renderer/browserpane.js` (name, tooltip, icon, announcement) and `#bBig` in `paneHTML`, tested in `scripts/test-browserpane.ts`. [FR-134]
+  - AC1: small: *Expand browser*; big: *Back to small browser*, tooltip with *(Esc)*; SVG icons; no `aria-pressed`; the button is the last child of the bar's toolbar (test).
+- [x] T081 [US1] The big state: `setBig`, `expanded`, `restore` in `browserpane.js`; `body.browser-big` rules in `styles.css`; the Escape line in `app.js`; ends on Chat tab, `hide`, another chat; kept on a rebuild of the same chat; memory only. [FR-135, FR-136, FR-137, FR-138, FR-139]
+  - AC1: the pane fills `#panel` (window content with no notice and no answer bar) within 1 px; the view's bounds equal `#bView` within 2 px; restore gives back the small rectangle within 1 px.
+  - AC2: Escape on the button, the bar, the address field (not typing) and the body restores and focuses *Expand browser*; Escape in the page reaches the page and the browser stays big; a Durbar dialog over the big page closes first with Escape, the browser stays big.
+  - AC3: Chat tab, another chat, closing the chat and a reload all end it; nothing in `localStorage`.
+- [x] T082 [US1] Driver `scripts/check-080-browser-expand.js`, registered in `scripts/ui-suite.js` for Flat, Real office and the Retro arcade, at 1440x900 and 1280x800: AC1-AC3 of T081, an overlay over the big page (FR-008), text at least 10.5 px, no page or panel scroll; pictures small and big. Mutants: *expand does not fill*, *restore forgets*, *focus not returned*, *Escape steals from the page*, *state persisted*, each failing at its labelled assertion (the PR lists them). [FR-134..FR-139]
+- [x] T083 Docs: `docs/features.md`, `docs/feature-inventory.md` (the Browser tab row), a `changelog.d/080-1691-browser-expand.md` fragment, the spec's tags, the `specs-index` note. [FR-134..FR-139]
+  - Done 2026-11-13 (T080-T083): `test:` `test:browserpane` (T080 AC1); `sim:` `check-080-browser-expand` in Flat, the Photo office and the Retro arcade at 1440x900 and 1280x800 (T081 AC1-AC3, T082); the five named mutants each failed at their labelled assertion at 1280x800 in Flat (the PR lists them); docs pictures `080-browser-expand-{small,big}-flat-{1440x900,1280x800}.png` through `shots:docs`, and `080-browser-tabs-*.png` retaken (the bar has the new button). Not run on macOS or Windows by hand; DPR 2 not checked.
+
+**Checkpoint**: the browser can be made big and small again; nothing about the page changes.
+
+---
+
 ## Phase 2: US3 + US4, the agent drives its session's browser
 
 **Depends on**: Phase 1 merged; 041 T018's `bridgecore.ts` merged (the shared relay); T030 merges with `BROWSER_READONLY_READS = false`; flipping it to `true` waits for T006.
@@ -487,6 +505,7 @@ Owner decisions (Vikram, 2026-10-31 05:17 UTC): *Open chat links in a new tab* i
   - T017 needs T014 and T015;
   - T018 can start after T012 and must pass before T019.
 - **Phase 1b (tabs, 2026-10-31):** needs T012-T017; T020 and T021 first (tests), then T022 → T023 → T024; T025 and T026 after T023; T027 last. Independent of Phase 2.
+- **Phase 1c (expand, 2026-11-13):** needs Phase 1 (T015, T016); T080 → T081 → T082 → T083. Independent of Phase 1b's open work and of Phase 2.
 - **Phase 2:** needs Phase 1 and **041 T018 `bridgecore.ts`** (shared with 072 T033; proposed on #556).
   - T031 → T032 → T033 → T035 (T030, T034 and T043 run in parallel) → T044 → T036 → T037 → T038 → T039 → T040 → T042;
   - T041 any time after T037.
@@ -512,6 +531,7 @@ Owner decisions (Vikram, 2026-10-31 05:17 UTC): *Open chat links in a new tab* i
 | FR-110..FR-113 | T070, T071, T072 (later) |
 | FR-120..FR-130, FR-132, FR-133 | T020, T021, T022, T023, T024, T025, T026, T027 |
 | FR-131 | T028 |
+| FR-134..FR-139 | T080, T081, T082, T083 |
 | SC-001 | T015, T038 |
 | SC-002, SC-004 | T018 |
 | SC-003 | T033 |
