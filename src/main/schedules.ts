@@ -1323,7 +1323,7 @@ function setAside(file: string, now: number, io: { fs: Pick<typeof fs, 'existsSy
 }
 
 /** Temp files of a process that died mid-save may hold prompt text: removed at load. Exact name `<file>.<pid>.tmp`, never our own pid, never a running process. */
-function removeStaleTemps(file: string, io: LoadIo): void {
+export function removeStaleTemps(file: string, io: Pick<LoadIo, 'pid' | 'alive'> & { fs: { readdirSync(dir: string): string[]; rmSync(p: string, o: { force: true }): void } }): void {
   try {
     const dir = path.dirname(file), base = path.basename(file);
     for (const name of io.fs.readdirSync(dir)) {

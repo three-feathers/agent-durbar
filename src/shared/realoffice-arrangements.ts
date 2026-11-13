@@ -186,10 +186,12 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
   const planAt = (sh: number): Plan => {
     let first = planFor(sizes, W, Ho - lobbyT - AISLE_LANE - AISLE_PAD, PW, nCells, sh);
     if (kc <= 4 && AISLE_LOW_LOBBY) for (let L = lobbyT - 4; L >= Math.min(lobbyMin + AISLE_LANE, AISLE_LOBBY_LOW); L -= 2) { const p = planFor(sizes, W, Ho - L - AISLE_LANE - AISLE_PAD, PW, nCells, sh); if (covered(p) > covered(first)) first = p; }
-    return first.fits ? first : planFor(sizes, W, Ho - lobbyMin - AISLE_LANE - AISLE_PAD, PW, nCells, sh);
+    /* spec 102 delta 2026-11-12 (issue 1590): the lowest lobby is also tried when the plan at the set lobby fits only by cutting a folder of 4 or fewer across rows (keep: false) and the lowest lobby keeps them whole */
+    const low = planFor(sizes, W, Ho - lobbyMin - AISLE_LANE - AISLE_PAD, PW, nCells, sh);
+    return first.fits && (first.keep || !low.keep) ? first : low;
   };
   let sh = hasHelpers ? helpH(1) : 0, plan = planAt(sh);
-  if (sh && !plan.fits) { sh = 0; plan = planAt(0); }
+  if (sh && (!plan.fits || !plan.keep)) { const p0 = planAt(0); if (!plan.fits || p0.keep) { sh = 0; plan = p0; } } /* spec 102 delta 2026-11-12 (issue 1590): also no strip when it is what splits a folder of 4 or fewer that the hall keeps whole without it */
   const { g, cols, rows, sl } = plan, pk = packSeats(sizes, cols, plan.keep, nCells), cab = cabGrid(plan.gw, plan.gh), cabW = cab.w * g, cabH = cab.h * g, pw = PW * g, ph = AISLE_PERSON.h * g;
   const bend = 2 * sl, used = rows * (plan.rowH + bend);
   const Lb0 = Math.round(plan.fits ? Math.max(lobbyMin, Math.min(Ho - used - AISLE_PAD - AISLE_LANE, lobbyT)) : lobbyMin);
