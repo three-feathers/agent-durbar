@@ -18,7 +18,9 @@ function gitRun(dir, args, { input, env, encoding = 'utf8', gitCmd = ['git'], ti
     if (e && e.code === 'ETIMEDOUT') {
       let i = 0;
       while (i < args.length && (args[i] === '-c' || args[i - 1] === '-c')) i++;
-      throw new Error(`git ${args[i] || ''} timed out after ${timeoutMs} ms (killed)`.replace('git  ', 'git '));
+      const t = new Error(`git ${args[i] || ''} timed out after ${timeoutMs} ms (killed)`.replace('git  ', 'git '));
+      t.code = 'ETIMEDOUT'; // a caller that treats an ordinary git failure as "no answer" can still let a hang fail
+      throw t;
     }
     throw e;
   }

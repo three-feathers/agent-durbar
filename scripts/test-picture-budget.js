@@ -183,6 +183,12 @@ try {
   assert.strictEqual(helper.GIT_TIMEOUT_MS, 60000, 'FR-095 timeout: the default is 60 s');
   const sleeper = path.join(tmp, 'sleeping-git.js'); fs.writeFileSync(sleeper, 'setTimeout(() => process.exit(0), 8000);\n');
   const hangs = (fn) => { const t0 = Date.now(); let err = null; try { fn(); } catch (e) { err = e; } return { err, ms: Date.now() - t0 }; };
+  // the signal is pinned: this stand-in ignores SIGTERM and sleeps 8 s, so only SIGKILL stops it early (a helper that sends the default SIGTERM returns after 8 s).
+  // On Windows kill() is TerminateProcess and a SIGTERM handler is never run, so there the stand-in dies on either signal: the check holds on Linux and macOS only.
+  const stubborn = path.join(tmp, 'stubborn-git.js'); fs.writeFileSync(stubborn, "process.on('SIGTERM', () => {});\nsetTimeout(() => process.exit(0), 8000);\n");
+  const viaKill = hangs(() => gitRun(tmp, ['hash-object', '-w', '--stdin'], { input: 'x', gitCmd: [process.execPath, stubborn], timeoutMs: 1000 }));
+  assert.ok(viaKill.err && /timed out after 1000 ms/.test(viaKill.err.message), 'FR-095 sigkill: a child that ignores SIGTERM is still reported as timed out');
+  assert.ok(viaKill.ms < 6000, `FR-095 sigkill: a child that ignores SIGTERM lived ${viaKill.ms} ms: the kill signal is not SIGKILL`);
   const viaRun = hangs(() => gitRun(tmp, ['hash-object', '-w', '--stdin'], { input: 'x', gitCmd: [process.execPath, sleeper], timeoutMs: 1000 }));
   assert.ok(viaRun.err, 'FR-095 timeout: gitRun did not fail on a hung child');
   assert.strictEqual(viaRun.err.message, 'git hash-object timed out after 1000 ms (killed)', 'FR-095 timeout: message names the command and the timeout');
@@ -191,7 +197,8 @@ try {
   const viaPlumb = hangs(() => plumbCommit(d, 'HEAD', { 'a.txt': 'a' }, 'm', null, { gitCmd: [process.execPath, sleeper], timeoutMs: 1000 }));
   assert.match(String(viaPlumb.err && viaPlumb.err.message), /^git read-tree timed out after 1000 ms/, 'FR-095 timeout: plumbCommit fails with the timeout message');
   assert.ok(viaPlumb.ms < 6000, 'FR-095 timeout: plumbCommit failed within a few seconds');
-  assert.throws(() => gitRun(tmp, ['-c', 'a=b', 'rev-parse', 'nope-not-a-ref'], {}), (e) => e.code !== 'ETIMEDOUT' && !/timed out/.test(e.message), 'FR-095 timeout: an ordinary git failure is not reported as a timeout');
+  assert.throws(() => gitRun(d, ['-c', 'a=b', 'rev-parse', '--verify', 'nope-not-a-ref'], {}), (e) => e.code !== 'ETIMEDOUT' && !/timed out/.test(e.message), 'FR-095 timeout: an ordinary git failure is not reported as a timeout');
+  assert.throws(() => gitRun(d, ['rev-parse', 'nope-not-a-ref']), (e) => e.status === 128 && /ambiguous argument 'nope-not-a-ref'/.test(String(e.stderr)), 'FR-095 failure: an ordinary git failure keeps its exit status (128) and stderr');
 
   // the real allow-list of this repository parses clean
   const real = pb.parseAllow(fs.readFileSync(path.join(__dirname, 'picture-budget-allow.txt'), 'utf8'));

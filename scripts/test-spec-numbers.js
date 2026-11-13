@@ -9,7 +9,7 @@ const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
 const modPath = process.env.SN_MODULE ? path.resolve(process.env.SN_MODULE) : path.join(__dirname, 'spec-numbers.js');
 const sn = require(modPath);
-const { plumbCommit } = require('./git-index-helper.js');
+const { plumbCommit, gitRun } = require('./git-index-helper.js');
 const { printable } = require('./safe-print.js');
 const ids = (t, k) => [...sn.parseDefinitions(t, k)].sort();
 
@@ -105,7 +105,7 @@ assert.strictEqual(sn.scrub('has MyValue99 inside', { MY_API_KEY: 'MyValue99', P
 
 // ---- git repos, --no-fetch
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-sn-'));
-const G = (cwd, ...a) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false', ...a], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+const G = (cwd, ...a) => gitRun(cwd, ['-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false', ...a]).trim();
 const write = (d, f, t) => { fs.mkdirSync(path.dirname(path.join(d, f)), { recursive: true }); fs.writeFileSync(path.join(d, f), t); };
 const commit = (d, m) => { G(d, 'add', '--all'); G(d, 'commit', '-q', '-m', m); return G(d, 'rev-parse', 'HEAD'); }; // throwaway repo
 const cli = (d, args = ['--no-fetch'], env = {}) => spawnSync(process.execPath, [modPath, '--root', d, ...args], { encoding: 'utf8', env: { ...process.env, ...env } });
