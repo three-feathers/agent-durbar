@@ -279,6 +279,45 @@ module.exports = async (ctx) => {
         await drawn(pill(k)); await compare(`status filter ${k} cleared`);
       }
 
+      /* the header fit memo (T156, 2026-11-14): each input of its key is changed on one header, in a way no other input shows (a rule in a style sheet that keys on it), and the fit must be
+         asked again (a miss), give the full fit's answer, and, for a rule that changes the layout, a different answer from the base. A mutant that leaves the input out of the key serves the base's
+         answer and fails its own label. The base is asked twice first: the second must be a hit, so a memo that remembers nothing cannot pass. */
+      await js(`window.__opsHd=()=>document.querySelector('#stage .room-head:has(.room-name)');true`); // the header the cases use, fetched again each time (a render may replace it)
+      const NONNAME = `#stage .room-head > :not(.room-name){min-width:80px!important}`;
+      const fitOnce = () => js(`window.__durbarSimUi.fitHead(window.__opsHd())`);
+      const memoStats = () => js(`(()=>{const o=window.__durbarSimUi.ops();return {h:o.fitHits,m:o.fitMisses};})()`);
+      const fullFit = () => js(`(()=>{window.DurbarFit();return window.__opsHd().className;})()`);
+      const sheet = (css) => js(`(()=>{let s=document.getElementById('ops-memo-css');if(!s){s=document.createElement('style');s.id='ops-memo-css';document.head.append(s);}s.textContent=${jsLiteral(css)};return true;})()`);
+      const memoCases = [
+        { name: 'header text', css: '', apply: `(()=>{const n=window.__opsHd().querySelector('.room-name');n.dataset.zz=n.textContent;n.textContent='x'.repeat(90);})()`, undo: `(()=>{const n=window.__opsHd().querySelector('.room-name');if(n.dataset.zz!==undefined){n.textContent=n.dataset.zz;delete n.dataset.zz;}})()`, change: true },
+        { name: 'header width', css: '', apply: `window.__opsHd().style.width='90px'`, undo: `window.__opsHd().style.width=''`, change: true },
+        { name: 'name font', css: `#stage .room-name{font-size:34px!important}`, apply: `window.__opsHd().setAttribute('data-zz-font','1')`, undo: `window.__opsHd().removeAttribute('data-zz-font')`, change: false },
+        { name: 'header class', css: `#stage .room-head.zz-base > :not(.room-name){min-width:80px!important}`, apply: `window.__opsHd().classList.add('zz-base')`, undo: `window.__opsHd().classList.remove('zz-base')`, change: true },
+        { name: 'root attribute', css: `html[data-zz] ${NONNAME}`, apply: `document.documentElement.setAttribute('data-zz','1')`, undo: `document.documentElement.removeAttribute('data-zz')`, change: true },
+        { name: 'body class', css: `body.zz ${NONNAME}`, apply: `document.body.classList.add('zz')`, undo: `document.body.classList.remove('zz')`, change: true },
+        { name: 'fonts loaded', css: '', apply: `document.fonts.dispatchEvent(new Event('loadingdone'))`, undo: `0`, change: false },
+      ];
+      const memoStale = [];
+      for (const c of memoCases) {
+        await sheet(''); await js(c.undo); await fullFit();
+        await fitOnce();
+        const s0 = await memoStats();
+        const base = await fitOnce();
+        const s1 = await memoStats();
+        if (s1.h !== s0.h + 1 || s1.m !== s0.m) memoStale.push(`${c.name}: the base was not served from memory the second time`);
+        await sheet(c.css); await js(c.apply); // the rule is inert until the input it keys on changes (the font rule is the input itself)
+        const got = await fitOnce();
+        const s2 = await memoStats();
+        if (s2.m !== s1.m + 1) memoStale.push(`${c.name}: served from memory after the input changed`);
+        const full = await fullFit();
+        if (got !== full) memoStale.push(`${c.name}: the memo's answer is not the full fit's`);
+        if (c.change && base === full) memoStale.push(`${c.name}: the setup does not change the answer (${base})`);
+        await sheet(''); await js(c.undo); await fullFit();
+      }
+      assert.deepStrictEqual(memoStale, [], `${n} agents: the header fit memo went stale: ${memoStale.join('; ')}`);
+      rows[`fitMemoStale@${n}`] = memoStale.length;
+      console.log('[ops]', n, 'agents, header fit memo cases', memoCases.length, memoStale.length ? 'STALE: ' + memoStale.join('; ') : 'none stale');
+
       /* A neighbour's width (the widthMoved guard): rooms share a line by --w. A status filter is on, so the rooms draw only the matching desks while the layout key (sized on every
          agent) does not change: when an agent starts to match, its room gains a desk and a wider --w, the layout is reused, and a neighbour whose HTML does not change gets narrower.
          No real header is near its limit at this size, so make one so: measure each room's header (its width and the width its parts use) before and after, pick a room the render
