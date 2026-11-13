@@ -727,6 +727,10 @@ export interface AgentMcpEntry {
   needsSignIn?: true;
   /** Spec 058 FR-164: **Sign in again** is offered: the agent app can redo the sign-in itself, the session runs, and this server is on and not waiting for a first sign-in. */
   canSignInAgain?: boolean;
+  /** Spec 058 FR-232 (issue #1621): failed with a 403 on a server whose entry sends its own token (a header or `${NAME}`, no OAuth): not a sign-in. */
+  tokenRefused?: true;
+  /** Spec 058 FR-232: the `${NAME}` names that entry uses and Durbar's own environment does not have (names only, never a value; at most 3). */
+  tokenVars?: string[];
   /** Spec 058 FR-065: a sign-in is open for this server. The host only, never the address; `expiresInMs` is what is left of the 10 minutes. */
   signIn?: { host: string; opened: boolean; expiresInMs: number; otherSite?: string };
   /** Spec 058 FR-068: the terminal steps for this needs-sign-in server, the agent app's plain text with the name filled in (commands in backticks). */
