@@ -13,7 +13,7 @@ import { SettingsStore } from '../src/main/settings';
 import { CopilotAdapter, VSCODE_ENTRA_CLIENT_ID, copilotEntraOption } from '../src/adapters/copilot';
 import { FakeClient } from './fakes/copilot-sdk';
 import { MCP_ERROR_MAX_CHARS, maskMcpError, maskMcpEvent, maskMcpStatuses, maskMcpText, maskSignInAppText, setSignInAppMaskId } from '../src/main/mcpmask';
-import { classifyMcpCall, signInAppRefusal, signInAppRefusalText } from '../src/shared/mcpcall';
+import { classifyMcpCall, isSignInAppRefusal, mcpFailureVerdict, signInAppRefusalText } from '../src/shared/mcpcall';
 import { refreshAdapterAuth } from '../src/main/remoteops';
 import type { AgentAdapter, AgentEvent } from '../src/adapters/types';
 import { tmpDir } from './test-tmp';
@@ -31,8 +31,11 @@ const noGuid = (s: string, what: string): void => {
 class OptsCopilot extends CopilotAdapter {
   opts: Record<string, unknown>[] = [];
   clients: FakeClient[] = [];
+  /** FR-237 test: while set, `newClient` waits for it (a slow reconnect whose client already took its options). */
+  hold: Promise<void> | undefined;
   protected async newClient(o: Record<string, unknown>): Promise<never> {
     this.opts.push(o);
+    if (this.hold) await this.hold;
     const c = new FakeClient();
     this.clients.push(c);
     return c as never;
@@ -48,7 +51,9 @@ async function main(): Promise<void> {
   // ---- FR-235: the ID check ----
   assert.strictEqual(parseClientId(CUSTOM), CUSTOM);
   assert.strictEqual(parseClientId(CUSTOM_UP), CUSTOM, 'FR-235 lower-cased: upper case is stored lower case');
-  assert.strictEqual(parseClientId(`  ${CUSTOM}\t\n`), CUSTOM, 'outer white space is trimmed');
+  assert.strictEqual(parseClientId(`  ${CUSTOM}\n`), CUSTOM, 'FR-235 trim: a padded ID ("  <id>\\n") is accepted and stored trimmed');
+  assert.strictEqual(parseClientId(`\t${CUSTOM}\r\n`), CUSTOM, 'FR-235 trim: tabs and line breaks');
+  assert.strictEqual(parseClientId(`\u00a0${CUSTOM}`), undefined, 'FR-235 trim: only spaces, tabs and line breaks (not NBSP)');
   const refused: [string, unknown][] = [
     ['zero GUID', '00000000-0000-0000-0000-000000000000'],
     ['braces', `{${CUSTOM}}`],
@@ -152,7 +157,13 @@ async function main(): Promise<void> {
       steps.length = 0;
       assert.deepStrictEqual(await call('settings:setCopilotSignInApp', { mode: 'off' }), { ok: true, copilotSignInApp: { mode: 'off' } });
       assert.deepStrictEqual(steps, [], 'FR-237: the same value again restarts nothing');
+      const fileOf = path.join(dir, 'ipc', 'durbar-settings.json');
+      const onDisk = fs.readFileSync(fileOf, 'utf8');
+      const mtime = fs.statSync(fileOf).mtimeMs;
       const r = await call('settings:setCopilotSignInApp', { mode: 'custom', clientId: SECRETISH });
+      assert.strictEqual(fs.readFileSync(fileOf, 'utf8'), onDisk, 'FR-235 handler check: a bad ID through IPC stores nothing');
+      assert.strictEqual(fs.statSync(fileOf).mtimeMs, mtime, 'FR-235 handler check: the settings file is not written');
+      assert.deepStrictEqual(st.copilotSignInApp, { mode: 'off' }, 'FR-235 handler check: the stored value is unchanged');
       assert.deepStrictEqual(r, { ok: false, error: SIGN_IN_APP_REFUSED, copilotSignInApp: { mode: 'off' } }, 'FR-235: the fixed text and the value in force');
       assert.ok(!JSON.stringify(r).includes(SECRETISH), 'FR-235 not echoed: the refused value is not in the reply');
       assert.deepStrictEqual(steps, [], 'a refused value restarts nothing');
@@ -235,7 +246,42 @@ async function main(): Promise<void> {
     for (const m of dbg) noGuid(m, 'the adapter debug line');
     assert.ok(dbg.includes('sign-in app: custom (set)') && dbg.includes('sign-in app: vscode') && dbg.includes('sign-in app: off') && dbg.includes('sign-in app: vscode (default)'), 'FR-236: the debug line says the mode');
     assert.ok(dbg.includes('sign-in app: vscode (copilot-cli is not available in this build)'));
+    // FR-235 adapter check: a bad custom ID handed straight to the adapter never reaches entra (the default instead)
+    assert.strictEqual(ad.setSignInApp({ mode: 'custom', clientId: 'x' }), VSCODE_ENTRA_CLIENT_ID, 'FR-235 adapter check: a bad ID is the default');
+    await ad.refreshAuth();
+    assert.deepStrictEqual(ad.opts[ad.opts.length - 1].entra, { clientId: VSCODE_ENTRA_CLIENT_ID }, 'FR-235 adapter check: entra carries the default, not "x"');
     await ad.dispose();
+
+    // FR-237: changes during a running (slow) reconnect: the client ends on the latest choice, with one more reconnect (two, not three)
+    const slow = new OptsCopilot();
+    slow.setSignInApp({ mode: 'off' });
+    await slow.client$();
+    let release!: () => void;
+    slow.hold = new Promise<void>((r) => { release = r; });
+    slow.setSignInApp({ mode: 'vscode' });
+    const first = slow.refreshAuth();
+    for (let i = 0; i < 200 && slow.opts.length < 2; i++) await new Promise((r) => setImmediate(r));
+    assert.strictEqual(slow.opts.length, 2, 'the first reconnect is starting its client (with vscode)');
+    slow.setSignInApp({ mode: 'custom', clientId: VSCODE_ENTRA_CLIENT_ID.replace('aebc', '1234') });
+    const second = slow.refreshAuth();
+    slow.setSignInApp({ mode: 'custom', clientId: CUSTOM });
+    const third = slow.refreshAuth();
+    slow.hold = undefined;
+    release();
+    await Promise.all([first, second, third]);
+    assert.strictEqual(slow.opts.length, 3, 'FR-237 in-flight change: one more reconnect after the running one (two, not three)');
+    assert.deepStrictEqual(slow.opts[2].entra, { clientId: CUSTOM }, 'FR-237 in-flight change: the client ends on the latest saved choice');
+    // a plain sign-in refresh (no app change) still joins the one in flight (spec 012 FR-158)
+    let rel2!: () => void;
+    slow.hold = new Promise<void>((r) => { rel2 = r; });
+    const a1 = slow.refreshAuth();
+    for (let i = 0; i < 200 && slow.opts.length < 4; i++) await new Promise((r) => setImmediate(r));
+    const a2 = slow.refreshAuth();
+    slow.hold = undefined;
+    rel2();
+    await Promise.all([a1, a2]);
+    assert.strictEqual(slow.opts.length, 4, 'FR-158: a refresh without an app change joins the running one');
+    await slow.dispose();
   }
 
   // ---- FR-236: the masks ----
@@ -248,9 +294,14 @@ async function main(): Promise<void> {
     noGuid(m, 'a masked MCP error');
     assert.ok(m.includes(SIGN_IN_APP_ID_MASK), FR236('the masked error shows the placeholder'));
     // mask before the cut: an ID straddling the 300-character cut leaves no part of it
-    const straddle = 'x'.repeat(MCP_ERROR_MAX_CHARS - 10) + ' ' + CUSTOM;
+    // mask, then cut: a 400-character error with the upper-case ID starting at character 290 (across the 300-character cut)
+    const straddle = ('x'.repeat(290) + CUSTOM_UP + ' ').padEnd(400, 'y');
+    assert.strictEqual(straddle.length, 400);
     const sm = maskMcpError(straddle) ?? '';
-    assert.ok(!sm.includes(CUSTOM.slice(0, 8)), FR236('no head of the ID is left at the cut'));
+    assert.strictEqual(MCP_ERROR_MAX_CHARS, 300);
+    const hex = CUSTOM.replace(/-/g, '');
+    const leaked = [...Array(hex.length - 7).keys()].some((i) => sm.toLowerCase().replace(/-/g, '').includes(hex.slice(i, i + 8)));
+    assert.ok(!leaked, FR236(`mask before the cut: no 8 hex digits of the ID are left (${sm.slice(280)})`));
     noGuid(maskMcpText(`tool failed: ${CUSTOM}`) ?? '', 'a masked tool output');
     // Copy diagnostics is built in the window from the reply's masked `error` (FR-093): the reply's statuses go through maskMcpStatuses
     noGuid(JSON.stringify(maskMcpStatuses([{ name: 'srv', status: 'failed', error: err } as never])), 'the status error Copy diagnostics copies');
@@ -281,7 +332,13 @@ async function main(): Promise<void> {
       ['XENTRA_CLIENT_NOT_PREAUTHORIZED', undefined],
       ['401 Unauthorized', undefined],
       [undefined, undefined],
-    ] as [unknown, string | undefined][]) assert.strictEqual(signInAppRefusal(t), want, `FR-240: ${String(t)}`);
+    ] as [unknown, string | undefined][]) assert.strictEqual(isSignInAppRefusal(t), want, `FR-240: ${String(t)}`);
+    // FR-240 order: the refusal check runs before the auth class (classifyMcpCall says auth for these)
+    assert.strictEqual(classifyMcpCall('AADSTS65002: unauthorized_client'), 'auth', 'the auth class alone reads unauthorized_client as a sign-in');
+    assert.deepStrictEqual(mcpFailureVerdict('AADSTS65002: unauthorized_client'), { refused: 'app' }, 'FR-240 order: refusal before auth (unauthorized_client)');
+    assert.deepStrictEqual(mcpFailureVerdict('ENTRA_CLIENT_NOT_PREAUTHORIZED', true), { refused: 'app' }, 'FR-240 order: refusal before auth (mcpAuth: true)');
+    assert.deepStrictEqual(mcpFailureVerdict('401 Unauthorized'), { cls: 'auth' }, 'other texts keep their class');
+    assert.deepStrictEqual(mcpFailureVerdict('AADSTS53003 conditional access'), { cls: 'policy' });
     assert.strictEqual(classifyMcpCall('error AADSTS65002 for this resource'), undefined, 'FR-240: 65002 is not read as auth (signing in again does not fix it)');
     assert.strictEqual(classifyMcpCall('AADSTS65001 consent'), 'auth', '65001 stays auth');
     assert.strictEqual(signInAppRefusalText('app', "Visual Studio Code's app"), "Microsoft refused the sign-in app chosen in Settings > MCP servers (Visual Studio Code's app): this server does not accept that app. Choose another app or Off.");
@@ -297,8 +354,10 @@ async function main(): Promise<void> {
     const walk = (d: string): void => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) walk(p); else if (/\.(ts|js|json)$/.test(e.name)) files.push(p); } };
     walk(path.join(root, 'src'));
     assert.ok(files.length > 200, 'the scan read src/');
-    const hits = files.filter((f) => fs.readFileSync(f, 'utf8').toLowerCase().includes(UNLABELED));
-    assert.deepStrictEqual(hits, [], 'FR-234: the unlabeled 1.0.32 ID is not hard-coded as Copilot CLI\'s');
+    assert.ok(files.some((f) => f.endsWith(path.join('src', 'adapters', 'copilot.ts'))), 'the scan read src/adapters/copilot.ts');
+    const forms = [UNLABELED, UNLABELED.replace(/-/g, ''), UNLABELED.slice(0, 8)];
+    const hits = files.filter((f) => { const t = fs.readFileSync(f, 'utf8').toLowerCase(); return forms.some((x) => t.includes(x)); });
+    assert.deepStrictEqual(hits, [], 'FR-234: the unlabeled 1.0.32 ID (dashed, bare hex or its first group, any case) is not in src/');
     assert.ok(files.some((f) => fs.readFileSync(f, 'utf8').includes(VSCODE_ENTRA_CLIENT_ID)), 'the scan sees the one constant');
     assert.strictEqual(files.filter((f) => fs.readFileSync(f, 'utf8').includes(VSCODE_ENTRA_CLIENT_ID)).length, 1, 'FR-234: one constant, in one file');
   }

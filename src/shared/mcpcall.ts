@@ -55,10 +55,10 @@ export function isCheckUnauthorized(text: unknown): boolean {
  * `app`: this server does not accept that app (`ENTRA_CLIENT_NOT_PREAUTHORIZED`, the runtime's word, or `AADSTS65002`); `redirect`: the
  * app does not list this computer's sign-in address (`AADSTS50011`). Whole words, any case, input cut first; read from the masked text.
  * Not `auth` and not `classifyMcpCall`'s business (which stays as it is): signing in again with the same app does not fix these
- * (AADSTS65001, consent, stays `auth`). Returns undefined for anything else.
+ * (AADSTS65001, consent, stays `auth`). Returns undefined for anything else. Callers ask it first (`mcpFailureVerdict`).
  */
 export type SignInAppRefusal = 'app' | 'redirect';
-export function signInAppRefusal(text: unknown): SignInAppRefusal | undefined {
+export function isSignInAppRefusal(text: unknown): SignInAppRefusal | undefined {
   const t = typeof text === 'string' ? text.slice(0, MAX) : '';
   if (/\bENTRA_CLIENT_NOT_PREAUTHORIZED\b|\bAADSTS65002\b/i.test(t)) return 'app';
   if (/\bAADSTS50011\b/i.test(t)) return 'redirect';
@@ -73,4 +73,13 @@ export function signInAppRefusalText(kind: SignInAppRefusal, label: string | und
   if (!label) return "Microsoft refused Copilot's sign-in app for this server.";
   const reason = kind === 'redirect' ? "the app does not list this computer's sign-in address" : 'this server does not accept that app';
   return `Microsoft refused the sign-in app chosen in Settings > MCP servers (${label}): ${reason}. Choose another app or Off.`;
+}
+
+/**
+ * FR-240's order for the sign-in row and a failed call's line: the refusal check first, then `classifyMcpCall`, which answers `auth` for
+ * a bare "unauthorized" (`unauthorized_client` too) and for `mcpAuth === true` before it reads any code.
+ */
+export function mcpFailureVerdict(text: unknown, mcpAuth?: boolean): { refused: SignInAppRefusal } | { cls: McpCallClass | undefined } {
+  const refused = isSignInAppRefusal(text);
+  return refused ? { refused } : { cls: classifyMcpCall(text, mcpAuth) };
 }

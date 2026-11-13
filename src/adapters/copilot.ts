@@ -504,6 +504,9 @@ export class CopilotAdapter implements AgentAdapter {
   private refreshing: Promise<void> | undefined;
   /** Spec 058 FR-233: the stored sign-in app value the next client starts with (undefined = none stored: the default, VS Code's app). */
   private signInApp: SignInAppChoice | undefined;
+  /** Spec 058 FR-237: counts `setSignInApp` calls; `refreshSignInSeq` is the count when the running refresh began. */
+  private signInAppSeq = 0;
+  private refreshSignInSeq = 0;
   private sessions = new Map<string, Live>();
   /** Spec 011 FR-071: ids of Durbar-raised limit requests. */
   private capSeq = 0;
@@ -594,6 +597,7 @@ export class CopilotAdapter implements AgentAdapter {
    */
   setSignInApp(choice: SignInAppChoice | undefined): string | undefined {
     this.signInApp = choice ? { ...choice } : undefined;
+    this.signInAppSeq++;
     const clientId = copilotSignInClientId(this.signInApp);
     this.debug?.(`sign-in app: ${signInAppLogLabel(this.signInApp)}`);
     return clientId;
@@ -623,8 +627,14 @@ export class CopilotAdapter implements AgentAdapter {
    */
   async refreshAuth(): Promise<void> {
     this.planCache = undefined; // spec 051 FR-022: a new sign-in may have a new plan
-    if (this.refreshing) return this.refreshing;
+    if (this.refreshing) {
+      if (this.refreshSignInSeq === this.signInAppSeq) return this.refreshing; // FR-158: a sign-in refresh joins the one in flight
+      // spec 058 FR-237: the sign-in app changed after this refresh began (its client may hold the old app): wait, then one more
+      await this.refreshing.catch(() => undefined);
+      return this.refreshAuth(); // several changes during one refresh: the first waiter starts one reconnect, the rest join it
+    }
     if (!this.client && !this.starting) return;
+    this.refreshSignInSeq = this.signInAppSeq;
     const run = this.reconnect().finally(() => {
       if (this.refreshing === run) this.refreshing = undefined;
     });

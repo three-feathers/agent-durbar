@@ -29,13 +29,23 @@ export const SIGN_IN_APP_ID_MASK = '<sign-in app ID>';
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const ZERO_GUID = '00000000-0000-0000-0000-000000000000';
 
+/** FR-235: outer spaces, tabs and line breaks only (not NBSP or other Unicode spaces); a loop, not an end-anchored regex (linear). */
+function trimOuter(v: string): string {
+  const ws = (c: string): boolean => c === ' ' || c === '\t' || c === '\n' || c === '\r';
+  let a = 0;
+  let b = v.length;
+  while (a < b && ws(v[a])) a++;
+  while (b > a && ws(v[b - 1])) b--;
+  return v.slice(a, b);
+}
+
 /**
- * FR-235: a client ID, or undefined. Outer white space trimmed, matched case-insensitively, returned lower case; never the zero GUID.
+ * FR-235: a client ID, or undefined. Outer spaces, tabs and line breaks trimmed, matched case-insensitively, returned lower case; never the zero GUID.
  * Braces, `urn:uuid:`, inner spaces, 32 bare hex digits and anything longer are refused. Linear: a long input is refused by length first.
  */
 export function parseClientId(v: unknown): string | undefined {
   if (typeof v !== 'string' || v.length > 200) return undefined;
-  const s = v.trim().toLowerCase();
+  const s = trimOuter(v).toLowerCase();
   if (!GUID.test(s) || s === ZERO_GUID) return undefined;
   return s;
 }
