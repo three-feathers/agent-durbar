@@ -6,7 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const helper = require(process.env.GIT_HELPER_MODULE ? path.resolve(process.env.GIT_HELPER_MODULE) : './git-index-helper.js'); // GIT_HELPER_MODULE swaps it (mutant runs)
-const { plumbCommit, gitRun } = helper;
+const { plumbCommit, gitRun, gitTry } = helper;
 const pb = require(process.env.PB_MODULE ? path.resolve(process.env.PB_MODULE) : './picture-budget.js');
 
 const KB = 1024;
@@ -201,10 +201,16 @@ try {
   assert.throws(() => gitRun(d, ['-c', 'a=b', 'rev-parse', '--verify', 'nope-not-a-ref'], {}), (e) => e.code !== 'ETIMEDOUT' && !/timed out/.test(e.message), 'FR-095 timeout: an ordinary git failure is not reported as a timeout');
   assert.throws(() => gitRun(d, ['rev-parse', 'nope-not-a-ref']), (e) => e.status === 128 && /ambiguous argument 'nope-not-a-ref'/.test(String(e.stderr)), 'FR-095 failure: an ordinary git failure keeps its exit status (128) and stderr');
 
+  // gitTry (readMain in test-moments-registry, the pinned-commit probe in test-usage): an ordinary failure is "no answer" (null), a hang is NOT
+  assert.strictEqual(gitTry(d, ['rev-parse', 'nope-not-a-ref']), null, 'FR-095 gitTry: an ordinary git failure is null, not a throw');
+  assert.ok(/^[0-9a-f]{40}/.test(gitTry(d, ['rev-parse', 'HEAD'])), 'FR-095 gitTry: a success returns stdout');
+  const tryHang = hangs(() => gitTry(tmp, ['cat-file', '-e', 'HEAD'], { gitCmd: [process.execPath, sleeper], timeoutMs: 1000 }));
+  assert.ok(tryHang.err && tryHang.err.code === 'ETIMEDOUT', 'FR-095 gitTry: a hung child throws (ETIMEDOUT) instead of reporting "no answer"');
+  assert.ok(tryHang.ms < 6000, 'FR-095 gitTry: the hang failed within a few seconds');
   // the other test scripts' git children go through gitRun, the one place with the timeout (FR-031): none starts git by hand
   for (const f of ['test-changelog.js', 'test-check-posts.js', 'test-moments-registry.js', 'test-spec-numbers.js', 'test-usage.js']) {
     const src = fs.readFileSync(path.join(__dirname, f), 'utf8');
-    assert.ok(/\bgitRun\(|\bplumbCommit\(/.test(src), `FR-095 routed: ${f} does not use gitRun`);
+    assert.ok(/\b(gitRun|gitTry)\(|\bplumbCommit\(/.test(src), `FR-095 routed: ${f} does not use gitRun`);
     assert.ok(!/(execFileSync|spawnSync|execFile|spawn)\(\s*'git'/.test(src) && !/killSignal/.test(src), `FR-095 routed: ${f} starts git by hand instead of through gitRun`);
   }
 

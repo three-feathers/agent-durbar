@@ -12,7 +12,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
-const { gitRun } = require('./git-index-helper.js');
+const { gitTry } = require('./git-index-helper.js');
 
 const ROOT = path.join(__dirname, '..');
 const STATES = ['built', 'designed', 'fallback-flat', 'missing'];
@@ -82,7 +82,7 @@ function check({ reg, main, driver, css }) {
 
 function readMain() {
   /* the registry at the merge-base with origin/main, not at whatever origin/main is now; null in a shallow checkout (CI fetches depth 2), where the comparison is skipped and says so */
-  const git = (args) => { try { return gitRun(ROOT, args).trim(); } catch (e) { if (e.code === 'ETIMEDOUT') throw e; return ''; } }; // an ordinary git failure is "no answer"; a hang fails
+  const git = (args) => (gitTry(ROOT, args) || '').trim(); // an ordinary git failure is "no answer"; a hang throws (gitTry)
   const mb = git(['merge-base', 'HEAD', 'origin/main']);
   if (!mb) return null;
   const r = git(['show', mb + ':docs/experience/world-moments.json']);

@@ -26,6 +26,11 @@ function gitRun(dir, args, { input, env, encoding = 'utf8', gitCmd = ['git'], ti
   }
 }
 
+/** `gitRun`, but an ordinary git failure (non-zero exit) gives null ("no answer"); a timeout still throws (FR-095: a hang must fail, not look like "no answer"). */
+function gitTry(dir, args, opts) {
+  try { return gitRun(dir, args, opts); } catch (e) { if (e && e.code === 'ETIMEDOUT') throw e; return null; }
+}
+
 let n = 0;
 /** files: { path: content (string or Buffer) | { content, mode } }. Returns the new commit sha; `ref` (a full ref name) is moved to it. */
 function plumbCommit(dir, parent, files, message, ref, opts = {}) {
@@ -41,4 +46,4 @@ function plumbCommit(dir, parent, files, message, ref, opts = {}) {
   if (ref) g(['update-ref', ref, commit]);
   return commit;
 }
-module.exports = { plumbCommit, gitRun, GIT_TIMEOUT_MS };
+module.exports = { plumbCommit, gitRun, gitTry, GIT_TIMEOUT_MS };
