@@ -1745,7 +1745,7 @@ function realModel(model){
         return {id:a.id,name:a.name,role:a.role,state:st,word:stWord(a),task,ctx:realCtx(a),tip:deskTip(a),selected:ui.selected===a.id,ren:canRenameSession(a),unread:isUnread(a),draft:hasDraft(a),away:v?v.place:null,awayLabel:place+(br?' '+br:''),
           label:[a.name+draftWords(a)+unreadWords(a),a.role,stWord(a)].concat(task?[task]:[],needs?['needs you']:[],place?['at '+place]:[]).join(', ')+'. Open chat panel.', /* FR-090: text for setAttribute, not markup */
           helpWords:helperCountWords(helpersOf(a).length), /* spec 097 FR-308: what the plate adds when its helpers have no strip (the flat desk's words) */
-          helpers:helpersOf(a).map(h=>stOf(h,false)),subs:realSubs(a,stOf),subsOpen:!!ui.expanded[a.id]};})};
+          helpers:orderedHelpers(a).map(h=>stOf(h,false)),subs:realSubs(a,stOf),subsOpen:!!ui.expanded[a.id]};})};
   });
   const places=lobbyPlaces().map(p=>{
     const ids=p.id===D.POSTBOX?[]:placeVisitors(p.id), custom=CUSTOM.some(q=>q.id===p.id);
@@ -1847,8 +1847,10 @@ function renderReal(stage,floor,aw,ah,model,empty){
   }
   if(stage.dataset.d!=='real'){stage.dataset.d='real';stage.textContent='';}
   layoutKey='';GROW=0;setGrow(stage,0);spreadOffice(stage,false);stagePrev=null;
+  const fcs=getComputedStyle(floor), lendPad=(parseFloat(fcs.paddingBottom)||0)+(floor.classList.contains('has-fnote')?0:parseFloat(fcs.paddingTop)||0); /* what #floor.ro-tight gives up (styles.css) */
   RO_LAST=window.DurbarRealOffice.render(stage,Object.assign(realModel(model),empty?{empty}:{}),{w:aw,h:ah},{live:liveOn(),still:REDUCED||!MOTION||STILL_HL,hold:roFrozen(),screenOf:realScreen,factsOf:realFacts,world:pp.world,set:pp.set,remember:rememberOn(), /* FR-071: Settings > Motion (still above) stops the people */
-    rand:CREW&&(SIM||!rememberOn())?CREW.seededRand:Math.random,onArt:()=>scheduleRender()});
+    rand:CREW&&(SIM||!rememberOn())?CREW.seededRand:Math.random,onArt:()=>scheduleRender(),lend:lendPad}); /* spec 102 delta 2026-11-11: the arcade hall may take the floor's padding rather than scroll */
+  floor.classList.toggle('ro-tight',!!RO_LAST.lent);
   stage.style.width=aw+'px';stage.style.height=RO_LAST.height+'px';
   stage.dataset.fit=RO_LAST.scroll?'scroll':'ok';floor.classList.toggle('scrolls',!!RO_LAST.scroll);
   return true;
@@ -1858,6 +1860,7 @@ function renderOffice(){
   if(ui.view!=='office')return;
   const floor=$('floor'), stage=$('stage');
   renderFilterNote(); /* before the padding is read below */
+  floor.classList.remove('ro-tight'); /* the padding lent to the arcade hall is asked for again on every draw (renderReal), so the room below is always measured with the padding the page gives */
   const cs=getComputedStyle(floor);
   const aw=floor.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);
   const ah=floor.clientHeight-parseFloat(cs.paddingTop)-parseFloat(cs.paddingBottom);
@@ -2104,7 +2107,7 @@ function renderAll(){
   if(ui.view==='office')renderOffice(); else{renderFilterNote();renderList();}
   syncWalkers();
   /* spec 052 FR-173: look in the view the focus was in. The office desks stay in the page (hidden) while the list shows, with the same data-id, so a document-wide lookup found the hidden desk and the focus fell to the page. */
-  if(id&&!inPanel){const n=document.querySelector(`${scope}[${key}="${CSS.escape(id)}"]`); if(n&&ae!==n)n.focus({preventScroll:true});}
+  if(id&&!inPanel){const n=document.querySelector(`${scope}[${key}="${CSS.escape(id)}"]`); if(n&&document.activeElement!==n)n.focus({preventScroll:true});} /* not `ae!==n`: the morph can move the very same element, which drops its focus (issue 1483) */
   if(ui.selected){updatePanelHeader();renderStrip();}
   afTick(); /* spec 052 FR-182..FR-190: markers, arrivals and the strip */
   rememberUi();
@@ -2460,11 +2463,12 @@ function wireMenu(btnId,menuId){
    of view, a bar above the composer shows it with the same choices; its buttons press the card's own buttons, so there is one code
    path. A question is answered in its card (options and text): the bar takes you there. */
 /* the words of a request card (permission, question, limit), in full: the answer bar and the inbox show exactly this (FR-016, FR-027) */
-function requestText(n){const c=n.cloneNode(true);c.querySelectorAll('.note-actions,.q-opts,.q-form,.q-urlbox,.pstate,.pdiff').forEach(x=>x.remove()); /* spec 052 FR-080: the command never (notifications use this text) */c.querySelectorAll('p,div,pre,ul,ol,li,details,h1,h2,h3,h4,h5,h6').forEach(x=>x.before(' ')); /* FR-214: a space between blocks, textContent joins them ("(search_companies)Allow"); inline code gets none */const qs=[...c.querySelectorAll('.q-text')]; /* a card with 2-4 questions has one .q-text each: read them all */return safeMask((qs.length?qs.map(x=>x.textContent).join(' '):c.textContent).replace(/\s+/g,' ').trim().replace(/^(Needs your OK|Permission|Question from the agent|Questions from the agent):?\s*/,''));} /* spec 041 FR-065: the question is agent text; the answer bar, the inbox and announcements read it from here */let answerObs=null;
+function requestRaw(n){const c=n.cloneNode(true);c.querySelectorAll('.note-actions,.q-opts,.q-form,.q-urlbox,.pstate,.pdiff').forEach(x=>x.remove()); /* spec 052 FR-080: the command never (notifications use this text) */c.querySelectorAll('p,div,pre,ul,ol,li,details,h1,h2,h3,h4,h5,h6').forEach(x=>x.before(' ')); /* FR-214: a space between blocks, textContent joins them ("(search_companies)Allow"); inline code gets none */const qs=[...c.querySelectorAll('.q-text')]; /* a card with 2-4 questions has one .q-text each: read them all */return (qs.length?qs.map(x=>x.textContent).join(' '):c.textContent).replace(/\s+/g,' ').trim().replace(/^(Needs your OK|Permission|Question from the agent|Questions from the agent):?\s*/,'');} /* spec 012 FR-178: the card's own words, unmasked: announce() masks them itself, so a command is said as the card shows it */
+function requestText(n){return safeMask(requestRaw(n));} /* spec 041 FR-065: the question is agent text; the answer bar and the inbox read it from here (announcements read requestRaw, FR-178) */let answerObs=null;
 /* spec 052 FR-060: the key of a permission card's button, and the one click path the bar and the keys share */
 const answerKeyOf=b=>b.dataset.act==='session'?'S':/\bdanger\b/.test(b.className)?'D':/\bprimary\b/.test(b.className)?'A':'';
 const chatKeyText=k=>keyText(KEYS.chatParts(k,IS_MAC)), chatKeyAria=k=>ariaKeys(KEYS.chatParts(k,IS_MAC)); /* FR-084: Alt+A elsewhere, ⌥⌘A on a Mac */
-const answerPress=(src,what)=>()=>{if(src.disabled)return;const word=src.textContent;src.click();announce(word+': '+what);const m=$('msgInput');if(m)focusIn(m);};
+const answerPress=(src,what)=>()=>{if(src.disabled)return;const word=src.textContent;src.click();announce([word,': ',what]);const m=$('msgInput');if(m)focusIn(m);};
 /* spec 052 FR-162: a short question with one choice and a few short options is answered from its option buttons (the answer bar and, from FR-199, a row of Your door):
    they press the card's own controls, so the card's Answer handler sends and settles (one code path) */
 function inboxQFit(c){
@@ -2526,7 +2530,7 @@ function wireAnswerBar(a){
     else if(!long&&!card.classList.contains('limit'))for(const src of card.querySelectorAll(':scope > .note-actions button'))if(!src.dataset.broad){ /* a spending limit has an amount the bar cannot show: only "Show in chat" (review of PR 1004) */
       /* spec 003 FR-095: a Read-only denial's "Switch to Ask first…" opens the mode menu here, anchored to the bar's own button */
       if(src.dataset.act==='ro-ask'){const b=add(src.textContent,'',()=>roAskOpen(a,b),src.title);b.dataset.act='ro-ask';b.setAttribute('aria-haspopup','menu');b.setAttribute('aria-expanded','false');continue;}
-      const k=card.classList.contains('limit')?'':answerKeyOf(src);const ab=add(src.textContent,(src.className.match(/\b(primary|danger|session)\b/)||[''])[0],answerPress(src,text),k?(src.title?src.title+' ':'')+'('+chatKeyText(k)+')':src.title,k?chatKeyAria(k):'');if(src.dataset.blind){ab.disabled=true;ab.title=src.title;}}
+      const k=card.classList.contains('limit')?'':answerKeyOf(src);const ab=add(src.textContent,(src.className.match(/\b(primary|danger|session)\b/)||[''])[0],answerPress(src,requestRaw(card)),k?(src.title?src.title+' ':'')+'('+chatKeyText(k)+')':src.title,k?chatKeyAria(k):'');if(src.dataset.blind){ab.disabled=true;ab.title=src.title;}}
     add(q?'Show question':'Show in chat','ghost',show,q?'Scroll to the question in the chat':'Scroll to the request in the chat');
     bar.hidden=false;
     /* FR-016 (review of PR 1004): a repaint keeps focus on the same control only while the card is the same; a new card or a changed count never puts it on an answering
@@ -2543,7 +2547,7 @@ function wireAnswerBar(a){
     if(c.classList.contains('question')||c.classList.contains('limit')||textOf(c).length>REQ_TEXT_MAX){card=c;show();announce(c.classList.contains('question')?'Answer the question in its card.':c.classList.contains('limit')?'Choose in the spending limit card.':'A long request: read it in the chat before you answer.',ANN_REQUEST);return true;}
     const src=[...c.querySelectorAll(':scope > .note-actions button')].find(b=>!b.dataset.broad&&answerKeyOf(b)===kind);
     if(!src)return false;
-    answerPress(src,textOf(c))();return true;
+    answerPress(src,requestRaw(c))();return true;
   };
   /* spec 052 FR-177: a late title or a rename changes only the name, in place: no repaint, so what you typed in the box and its focus stay */
   const rename=()=>{const nm=bar.querySelector('.ab-n');if(nm&&!bar.hidden){nm.textContent=a.name;nm.title=a.name;}};
@@ -2648,7 +2652,7 @@ function cvDrop(el){delete el.dataset.cvw; delete el.dataset.cvk; for(const e of
 /* FR-215: a marked message that changed while its chat was off screen keeps no stored size: it lays out for real on the next open */
 function cvGrown(el,recs){for(const r of recs){let n=r.target; if(n===el)continue; while(n&&n.parentNode!==el)n=n.parentNode; if(n&&n.classList&&n.classList.contains('cvo')){n.classList.remove('cvo');n.style.containIntrinsicBlockSize='';}}}
 function cvRelease(el){const mo=CV_OBS.get(el); if(!mo)return; cvGrown(el,mo.takeRecords()); mo.disconnect(); CV_OBS.delete(el);}
-function cvMark(){const el=document.querySelector('#chat > .chat-inner'); if(!el||el.closest('.on-browser')||!el.clientWidth)return; /* on the Browser tab the chat is 0 high with no padding: its messages would be measured at the wrong width, so nothing is marked and the older marks stay */
+function cvMark(){const el=document.querySelector('#chat > .chat-inner'); if(!el||el.closest('.on-browser')||!el.clientWidth)return; /* on the Browser tab the chat is 0 high (it keeps its side padding and scrollbar gutter, spec 005 FR-235), but the guard stays: nothing is measured while it is collapsed, and the older marks stay */
   const k=el.children, n=k.length; if(n<=40)return; cvRelease(el); el.dataset.cvw=el.clientWidth; el.dataset.cvk=cvKey(el);
   const h=[]; for(let i=0;i<n-4;i++)h.push(k[i].getBoundingClientRect().height);
   for(let i=0;i<n;i++){const e=k[i], old=i<n-4; e.classList.toggle('cvo',old); e.style.containIntrinsicBlockSize=(old&&h[i]>0)?'auto '+Math.round(h[i]*100)/100+'px':'';}
@@ -2730,7 +2734,7 @@ function openPanel(id,focus){
   if($('ntCount'))$('ntCount').onclick=e=>toggleNotes(a,e.currentTarget); /* spec 083 FR-040: the header count opens and closes the drawer */
   if($('notesHdrBtn'))$('notesHdrBtn').onclick=()=>openNotes(a,{opener:$('moreBtn')});
   wireAnswerBar(a);paintCoffeeBar.key='';paintCoffeeBar(); /* spec 068 FR-022 */
-  if(needsMe(a)){const c=pendingCardOf(a);if(c)announce(a.name+(c.classList.contains('question')?' asks: ':' needs your OK: ')+requestText(c),ANN_REQUEST);}
+  if(needsMe(a)){const c=pendingCardOf(a);if(c)announce([a.name,c.classList.contains('question')?' asks: ':' needs your OK: ',requestRaw(c)],ANN_REQUEST);} /* spec 012 FR-178: the card's text before any mask (announce masks it), the fixed words their own part */
   $('pauseBtn').onclick=()=>{a.paused=!a.paused;if(a.live&&bridge.setPaused)bridge.setPaused(a.id,a.paused);toast(esc(a.name)+(a.paused?' paused.':' resumed.'));renderAll();};
   $('railDoor').onclick=()=>openInbox(); /* spec 052 FR-216: Your door opens the Needs you queue */
   if($('stopBtn'))$('stopBtn').onclick=e=>{RUN_SAID.stopped=true;if(a.live){const b=e.currentTarget;if(b.getAttribute('aria-busy')==='true')return;b.setAttribute('aria-busy','true');return stopLive(a).catch(failToast('stop')).finally(()=>{b.removeAttribute('aria-busy');syncRunState();});}stopDemoTurn(a);a.paused=false;a.state='idle';a.label=null;a.task='Stopped by you. Ready for a new task.';toast(esc(a.name)+' stopped.');renderAll();};
@@ -4415,7 +4419,16 @@ function closeInbox(dismiss){if($('needsPanel'))closeDoor(dismiss===true);clearI
 /* spec 052 FR-034: one polite live region for requests and answers (screen readers hear them; nothing visible changes) */
 let announceT=0,announceP=0;
 const ANN_REQUEST=1; /* spec 005 FR-237: a request for the user's OK or an answer outranks a status within the 60 ms window */
-function announce(text,prio){const el=$('srAnnounce');if(!el||!text)return;const p=prio||0;if(announceT&&p<announceP)return;clearTimeout(announceT);announceP=p;el.textContent='';announceT=setTimeout(()=>{announceT=0;announceP=0;el.textContent=String(text).slice(0,300);},60);}
+/* spec 012 FR-178 (issue 1419): every line goes through the helpers' masks here, the one place all announcements pass: home folders on the raw
+   text first (and on its copy without hidden characters), then the desk mask, before the cut (a name can hold a token or a home folder).
+   A line may come as parts (`[name, rest]`), each masked alone. A part the mask finds nothing in is said as written, backslashes included
+   (the desk mask undoes Markdown escapes, and a spoken command must be the one that runs); a part with both a secret and an escape is
+   said as `[redacted]`. When masking is not possible (no module, a throw, a failed mask) a fixed line is said, never the text. */
+const ANN_UNCHECKED='A line was not read out: Durbar could not check it for secrets.';
+function annHome(s){const R=window.DurbarRedact,c=R&&typeof R.unhide==='function'?R.unhide(s):s;let w=s,h=homeMask(s);if(typeof c==='string'&&c!==s){const hc=homeMask(c);if(hc!==c){w=c;h=hc;}} /* the copy without hidden characters, when it holds a home folder */if(typeof h!=='string'||!STX||typeof STX.unesc!=='function')return h;const u=STX.unesc(w),hu=homeMask(u);return typeof hu!=='string'||hu===u||STX.unesc(h)===hu?h:'[redacted]';} /* review of PR 1484: a home folder whose name holds a Markdown escape (/home/a\_b) is cut short by the home mask as written; when the escape-undone copy holds a home folder and masks to something else, the part is said as [redacted] (never with its escapes undone, as annPart) */
+function annPart(t){const s=String(t==null?'':t);if(!s)return '';const h=annHome(s);if(typeof h!=='string'||!h)return null;const m=deskMask(h);if(typeof m!=='string'||!m||m.includes('[redaction failed]')||!STX||typeof STX.unesc!=='function')return null;const u=STX.unesc(h);return m===u?h:u===h?m:'[redacted]';}
+function annMask(t){try{let out='';for(const p of Array.isArray(t)?t:[t]){const o=p&&typeof p==='object',x=annPart(o?p.text:p);if(x===null)return ANN_UNCHECKED;out+=o&&p.max>0?DurbarCutText.cutText(x,p.max):x;}return out.trim()?out:'';}catch(e){return ANN_UNCHECKED;}} /* a part {text,max} is masked, then cut (the MCP request's message) */
+function announce(text,prio){const el=$('srAnnounce');if(!el||!text)return;const said=annMask(text);if(!said)return;const p=prio||0;if(announceT&&p<announceP)return;clearTimeout(announceT);announceP=p;el.textContent='';announceT=setTimeout(()=>{announceT=0;announceP=0;el.textContent=said.slice(0,300);},60);}
 
 /* ---- spec 052 FR-191..FR-196 (T196, T197): Your door, the Needs you queue as a panel beside the office. It reuses paintInbox() for the rows (the
    guards of FR-206..FR-213 are unchanged), needsMeOrder() for the order and NEED_SINCE for the waits. Non-modal: no backdrop, no aria-modal, a
@@ -6420,7 +6433,7 @@ function onTaskTool(a,e){
   subPaint(s);scheduleRender();
 }
 /* spec 005 FR-240: the finished helpers the person holds are never retired: the one whose full activity is open, and the one whose block
-   holds the focus, a text selection or an open message menu (FR-238's rule); the next end retires them once let go */
+   or its own button (Real office head, Open office tile, list row: FR-242) holds the focus, a text selection or an open message menu (FR-238's rule); the next end retires them once let go */
 function subHeld(a){
   const held=new Set(),c=$('chat'),ae=document.activeElement,mm=document.getElementById('modeMenu'),anc=mm&&mm._anchor;
   const sel=typeof getSelection==='function'?getSelection():null,rgs=[];
@@ -6428,6 +6441,7 @@ function subHeld(a){
   for(const s of a.subs.values()){
     if(s.status==='running')continue;
     const card=s.card;
+    if(card&&ae&&ae.dataset&&ae.dataset.id===card.id&&ae.matches&&ae.matches('.ro-hstrip button, #stage .helper, #list .lrow')){held.add(s.id);continue;} /* FR-242: its own button holds the focus: Real office head, Open office tile or list row */
     if(card&&(ui.selected===card.id||(c&&chats[card.id]&&chats[card.id].el&&chats[card.id].el.parentNode===c))){held.add(s.id);continue;}
     const el=s.block&&s.block.el;
     if(!el||!el.isConnected)continue;
@@ -6713,7 +6727,7 @@ function showQuestion(a,e){
   row.appendChild(ok);row.appendChild(skip);n.appendChild(row);
   a.question={requestId:e.requestId,n,row,st};(a.qs||(a.qs=new Map())).set(e.requestId,a.question); /* spec 052 FR-178: every open question by request id (two can be open at once) */
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
-  announce(a.name+' asks: '+(safeMask((qs[0]&&qs[0].question)||'')||'a question'));renderInboxBtn();
+  announce([a.name,' asks: ',String((qs[0]&&qs[0].question)||'')||'a question']); /* spec 012 FR-178: the question as the card shows it; announce masks it */renderInboxBtn();
 }
 /* ---------- MCP elicitation (spec 012 FR-151): a form in the question card, or an https page opened only after a click.
    Text only, never HTML; values are never logged or shown afterwards. Main checks the answer again before the agent gets it. ---------- */
@@ -6817,7 +6831,7 @@ function showElicitation(a,e){
   n.appendChild(row);
   a.question={requestId:e.requestId,n,row,st,elicit:isUrl?'url':'form'};(a.qs||(a.qs=new Map())).set(e.requestId,a.question);
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
-  announce(a.name+': '+(R.source?R.source+' ':'an MCP server ')+(isUrl?'asks you to open a page on '+(R.host||'the web'):'asks for input')+'. '+safeExcerpt(R.message||'',160,''));renderInboxBtn();
+  announce([a.name,': ',R.source?R.source+' ':'an MCP server ',isUrl?'asks you to open a page on ':'asks for input',isUrl?(R.host||'the web'):'','. ',{text:R.message||'',max:160}]); /* spec 012 FR-178: the message as the card shows it, masked by announce before its 160-character cut */renderInboxBtn();
 }
 /* spec 052 FR-178: why a question ended unanswered, in words for the card's tooltip (codes only, from the adapter's event or this window; never text of the question) */
 const SKIP_WHY={user:'you pressed Skip',stop:'the turn was stopped',interrupt:'the turn was stopped',reconnect:'the agent app was reconnected',exit:'the agent app ended',unreadable:'the agent app ended the question without an answer',aborted:'the agent app reported the turn as aborted'};
@@ -7028,7 +7042,7 @@ function showPerm(a,p){
   }
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
   if(t.T.typing)typingPaint(t.T.typing);
-  if(p.state==='pending')announce(a.name+' needs your OK: '+(look?look+' The request: ':'')+sumS.text+(hwhy?'. '+PERM_WHY[hwhy]+hgrant:'')); /* spec 003 FR-118: the lookalike line first, so the 300-character announcement keeps it */
+  if(p.state==='pending')announce([a.name,' needs your OK: ',look,look?' The request: ':'',sumS.text,hwhy?'. '+PERM_WHY[hwhy]+hgrant:'']); /* spec 003 FR-118: the lookalike line first, so the 300-character announcement keeps it; spec 012 FR-178: the name, the fixed words and the request are masked apart, so the request is said as the card shows it and the fixed words are always said */
   renderInboxBtn();
 }
 /* spec 003 FR-094..FR-096 (owner 2026-10-23, supersedes spec 052 FR-074's button): under a request denied by Read-only, one button

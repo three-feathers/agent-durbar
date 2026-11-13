@@ -13,8 +13,8 @@ import { HOME_SECRETS, leftOutFields, normalizeRoot, sandboxRoots, splitFolders 
 import * as os from 'os';
 import { cleanSandboxState, outwardSandboxEvent, sandboxReason } from '../src/shared/sandbox';
 import { requireOsSandbox, requireOsSandboxFrom } from '../src/main/sandboxpolicy';
-import { machinePolicyDir, readMachinePolicy, POLICY_MAX_BYTES } from '../src/main/policyfile';
-import type { PolicyFs, PolicyStat } from '../src/main/policyfile';
+import { machinePolicyDir, nodePolicyFs, readMachinePolicy, POLICY_MAX_BYTES } from '../src/main/policyfile';
+import type { PolicyBigStat, PolicyFs, PolicyStat } from '../src/main/policyfile';
 import { parseSettings } from '../src/shared/credits';
 
 const ok = (m: string): void => console.log('ok - ' + m);
@@ -698,7 +698,7 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
 
 // spec 076 FR-209 (issue #734): the machine policy.json, read for requireOsSandbox, failing closed
 {
-  type Node = { kind: 'dir' | 'file' | 'link'; uid?: number; mode?: number; ino?: number; dev?: number; nlink?: number; to?: string; text?: string; size?: number };
+  type Node = { kind: 'dir' | 'file' | 'link'; uid?: number; mode?: number; ino?: number | bigint; dev?: number | bigint; nlink?: number; to?: string; text?: string; size?: number };
   const D = '/Library/Application Support/AgentDurbar/managed';
   const F = D + '/policy.json';
   const root = (): Map<string, Node> => {
@@ -711,13 +711,17 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
   const ENOENT = (): Error => Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
   /** A fake file system over `m` (POSIX paths); `onOpen` may change the tree between the checks and the open (a swap). */
   const fakeFs = (m: Map<string, Node>, onOpen: () => void = () => undefined): PolicyFs => {
-    const st = (n: Node): PolicyStat => ({ uid: n.uid ?? 0, mode: n.mode ?? 0o644, ino: n.ino ?? 0, dev: n.dev ?? 1, nlink: n.nlink ?? 1, size: n.size ?? Buffer.byteLength(n.text ?? ''), isDirectory: () => n.kind === 'dir', isFile: () => n.kind === 'file', isSymbolicLink: () => n.kind === 'link' });
+    // like node: every number a bigint only for `{ bigint: true }`, else a plain number (a 64-bit id rounded), so a read that drops the option fails (issue #1491)
+    const st = (n: Node, o?: { bigint?: boolean }): PolicyStat & PolicyBigStat => {
+      const v = (x: number | bigint): never => (o?.bigint ? BigInt(x) : Number(x)) as never;
+      return { uid: v(n.uid ?? 0), mode: v(n.mode ?? 0o644), ino: v(n.ino ?? 0), dev: v(n.dev ?? 1), nlink: v(n.nlink ?? 1), size: v(n.size ?? Buffer.byteLength(n.text ?? '')), isDirectory: () => n.kind === 'dir', isFile: () => n.kind === 'file', isSymbolicLink: () => n.kind === 'link' };
+    };
     const fds = new Map<number, Node>();
     return {
       readlinkSync: (p) => { const n = m.get(p); if (!n) throw ENOENT(); if (n.kind !== 'link') throw Object.assign(new Error('EINVAL'), { code: 'EINVAL' }); return n.to!; },
-      lstatSync: (p) => { const n = m.get(p); if (!n) throw ENOENT(); return st(n); },
+      lstatSync: ((p: string, o?: { bigint?: boolean }) => { const n = m.get(p); if (!n) throw ENOENT(); return st(n, o); }) as PolicyFs['lstatSync'],
       openSync: (p) => { onOpen(); const n = m.get(p); if (!n) throw ENOENT(); if (n.kind === 'link') throw Object.assign(new Error('ELOOP'), { code: 'ELOOP' }); const fd = fds.size + 10; fds.set(fd, n); return fd; },
-      fstatSync: (fd) => st(fds.get(fd)!),
+      fstatSync: ((fd: number, o?: { bigint?: boolean }) => st(fds.get(fd)!, o)) as PolicyFs['fstatSync'],
       readSync: (fd, buf, off, len, pos) => { const n = fds.get(fd)!; const b = n.size !== undefined ? Buffer.alloc(n.size, 0x20) : Buffer.from(n.text ?? ''); return b.copy(buf, off, pos, Math.min(b.length, pos + len)); },
       closeSync: (fd) => void fds.delete(fd),
     };
@@ -809,6 +813,28 @@ ok('SC-001: 27 app × OS × mode cells match FR-001..FR-005; no auto-approve, by
     const m3 = root();
     const r3 = read(m3, () => { m3.set(F, { kind: 'file', uid: 0, mode: 0o644, ino: 99, dev: 2, text: '{"version":1}' }); });
     assert.ok(r3.layer === 'unreadable' && /changed while it was checked/.test(r3.problem), 'FR-209: swapped for a file with the same inode on another device: unreadable');
+  }
+  // issue #1491: 64-bit ids above 2^53 that differ only in the low bit are two files (as plain numbers they are one)
+  {
+    // the real file system passes the option on to node (else the ids above would be compared as rounded numbers)
+    const real = nodePolicyFs.lstatSync(__filename, { bigint: true });
+    const fd = fs.openSync(__filename, 'r');
+    try {
+      const realF = nodePolicyFs.fstatSync(fd, { bigint: true });
+      assert.ok(typeof real.ino === 'bigint' && typeof real.dev === 'bigint' && typeof realF.ino === 'bigint' && typeof realF.dev === 'bigint', 'issue 1491 policy node fs: lstat and fstat with { bigint: true } answer bigints');
+      assert.strictEqual(typeof nodePolicyFs.fstatSync(fd).ino, 'number', 'and plain numbers without it');
+    } finally { fs.closeSync(fd); }
+    const A = 12947848929002476n;
+    const B = A + 1n;
+    assert.strictEqual(Number(A), Number(B), 'precondition: as plain numbers the two ids are equal');
+    const same = root(); same.get(F)!.ino = A; same.get(F)!.dev = A;
+    assert.deepStrictEqual(read(same), { layer: { version: 1, permissions: { requireOsSandbox: true } } }, 'issue 1491: a large id that stays the same is read');
+    const ino = root(); ino.get(F)!.ino = A;
+    const ri = read(ino, () => { ino.set(F, { kind: 'file', uid: 0, mode: 0o644, ino: B, text: '{"version":1}' }); });
+    assert.ok(ri.layer === 'unreadable' && /changed while it was checked/.test(ri.problem), `issue 1491 policy ino: swapped for a file whose inode differs only in bit 0 above 2^53: unreadable (${JSON.stringify(ri)})`);
+    const dev = root(); dev.get(F)!.dev = A;
+    const rd = read(dev, () => { dev.set(F, { kind: 'file', uid: 0, mode: 0o644, ino: 99, dev: B, text: '{"version":1}' }); });
+    assert.ok(rd.layer === 'unreadable' && /changed while it was checked/.test(rd.problem), `issue 1491 policy dev: swapped for a file whose device differs only in bit 0 above 2^53: unreadable (${JSON.stringify(rd)})`);
   }
   // the reason is logged, once per distinct problem (nobody is locked out without one)
   const lines: string[] = [];

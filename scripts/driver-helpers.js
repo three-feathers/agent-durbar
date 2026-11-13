@@ -77,7 +77,10 @@ function waits(ctx) {
   /** Spec 001 FR-085: no lobby figure is mid-walk (the 1 s WALK_MS transition of `syncWalkers` marks a figure `.walking`), at most `ms`.
    *  Used by `calm` and every `shot`, so no screenshot catches a figure between two places. */
   const settleWalk = (ms = 6000) => until(`!document.querySelector('.walker.walking')`, ms);
-  return { until, settle, settleWalk, office, chatOf };
+  /** The page is ready after a simulator replay (`simfreeze=1`): replayed, the lobby's visits settled, the last render drawn and no scene transition running. `load`'s settle and
+   *  check-097-crews' wait (issue #1459) use this one expression, so they cannot drift apart. */
+  const SETTLED = `!!window.__durbarSimReplayed&&!!window.__durbarSimUi&&window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()&&!document.querySelector('.scene-out')`;
+  return { until, settle, settleWalk, office, chatOf, SETTLED };
 }
 
 
@@ -109,12 +112,63 @@ function failDriver(message) {
 }
 
 /**
+ * Spec 097 delta 2026-11-11 (issue #1448): a diagnostic, nothing else. `pointerLog(ctx)` records the pointer events the page receives during a
+ * pointer-dependent step into a ring of the last POINTER_LOG_MAX events (capture-phase listeners on window), and `step(driver, name, fn)` runs the
+ * step: when `fn` fails with an AssertionError the ring is printed (`[pointer-log] <driver> <step>: N events`, one line per event) and the SAME error is
+ * thrown again; a pass prints nothing. It never retries, waits, moves the pointer or changes a limit, and a failed arm or read (a reloaded or closed page)
+ * is ignored, so a driver passes and fails as it did. Only type, position, buttons, isTrusted and the time since the step began are kept: no page text.
+ * `DIAG_FORCE_FAIL=1` (or a part of a step name) makes the first matching step fail once after it ran, to see the output.
+ */
+const POINTER_LOG_MAX = 200;
+const POINTER_TYPES = ['pointermove', 'pointerdown', 'pointerup', 'pointercancel', 'pointerover', 'pointerout', 'pointerenter', 'pointerleave', 'mousemove', 'mousedown', 'mouseup', 'mouseenter', 'mouseleave'];
+const POINTER_SHORT = { pointermove: 'pm', pointerdown: 'pd', pointerup: 'pu', pointercancel: 'pc', pointerover: 'po', pointerout: 'pt', pointerenter: 'pe', pointerleave: 'pl', mousemove: 'mm', mousedown: 'md', mouseup: 'mu', mouseenter: 'me', mouseleave: 'ml' };
+const POINTER_ARM = `(()=>{const w=window,L=w.__ptrLog=w.__ptrLog||{ev:[],t0:0};
+  if(!w.__ptrLogOn){w.__ptrLogOn=1;for(const t of ${JSON.stringify(POINTER_TYPES)})w.addEventListener(t,(e)=>{const E=L.ev;E.push({type:e.type,x:Math.round(e.clientX),y:Math.round(e.clientY),buttons:e.buttons,trusted:e.isTrusted,at:performance.now()});if(E.length>${POINTER_LOG_MAX})E.splice(0,E.length-${POINTER_LOG_MAX});},true);}
+  L.ev.length=0;L.t0=performance.now();return 1})()`;
+const POINTER_READ = `(()=>{const L=window.__ptrLog;return L?JSON.stringify(L.ev.map((e)=>({type:e.type,x:e.x,y:e.y,buttons:e.buttons,trusted:e.trusted,ms:Math.round(e.at-L.t0)}))):'[]'})()`;
+function pointerLog(ctx, out = (l) => console.log(l)) {
+  let forced = false;
+  const forceHit = (name) => {
+    const f = process.env.DIAG_FORCE_FAIL;
+    if (forced || !f) return false;
+    if (f !== '1' && !String(name).includes(f)) return false;
+    forced = true;
+    return true;
+  };
+  const arm = async () => { try { await ctx.js(POINTER_ARM); } catch { /* a diagnostic never changes the verdict */ } };
+  const print = async (driver, name) => {
+    let ev = [];
+    try { ev = JSON.parse(await ctx.js(POINTER_READ)); } catch { return; }
+    out(`[pointer-log] ${driver} ${name}: ${ev.length} events (ms type x,y buttons+T/S; ${Object.entries(POINTER_SHORT).map(([k, v]) => v + '=' + k.replace('pointer', 'p.').replace('mouse', 'm.')).join(' ')}; T=trusted S=script)`);
+    /* the suite shows only the last 25 lines of a failed driver, each cut at 240 characters: 11 short events a line keep 200 events (19 lines) inside that */
+    const tok = ev.map((e) => `${e.ms} ${POINTER_SHORT[e.type] || e.type} ${e.x},${e.y} ${e.buttons}${e.trusted ? 'T' : 'S'}`);
+    for (let i = 0; i < tok.length; i += 11) out('  ' + tok.slice(i, i + 11).join(';'));
+  };
+  const step = async (driver, name, fn) => {
+    await arm();
+    try {
+      const r = await fn();
+      if (forceHit(name)) throw new (require('assert').AssertionError)({ message: `forced failure of ${name} (DIAG_FORCE_FAIL)` });
+      return r;
+    } catch (e) {
+      if (e && (e.name === 'AssertionError' || e.code === 'ERR_ASSERTION')) await print(driver, name);
+      throw e;
+    }
+  };
+  return { arm, step, print };
+}
+
+/**
  * The helpers every driver used to define for itself (FR-097). `H = helpers(ctx)`; it also carries `until`, `settle`, `office`, `chatOf`.
  * Values spliced into page code go through jsLiteral.
  */
+const DRIVER_WORLD = process.env.DRIVER_WORLD || ''; // spec 102 T283: `retro` runs a driver's Real office loads in the arcade
+if (DRIVER_WORLD && DRIVER_WORLD !== 'retro') throw new Error('DRIVER_WORLD must be retro');
+const assert = require('assert');
 function helpers(ctx) {
   const w = waits(ctx);
   const closeGuard = guardWindow(ctx.win);
+  const ptr = pointerLog(ctx);
   const wc = () => ctx.win.webContents;
   /** Run code in the page. A failure names the code (first 90 chars) and is thrown again, so the driver fails as before. */
   const js = async (code) => { try { return await ctx.js(code); } catch (e) { console.log('JS ERR for', String(code).slice(0, 90)); throw e; } };
@@ -195,6 +249,28 @@ function helpers(ctx) {
   };
   /** Hide the start-up toasts with a style (once). `keepActions`: keep the ones with a button. `blur`: also drop the focus ring. */
   const calm = async (o = {}) => { await js(`(()=>{if(!document.getElementById('shotCalm')){const s=document.createElement('style');s.id='shotCalm';s.textContent='#toasts${o.keepActions ? ' .toast:not(.with-act)' : ''}{display:none!important}';document.head.append(s);}${o.blur ? 'if(document.activeElement&&document.activeElement!==document.body)document.activeElement.blur();' : ''}})()`); await w.settleWalk(); };
+  /**
+   * Spec 008 FR-214, FR-215: the real pointer rests where the window lies on the screen (script clicks never move it), so a control under it reads in its :hover colours.
+   * Moves the pointer to 0,0 and re-sends the move every `retry` ms (250) until nothing under `scope` (a selector list) matches :hover, at most `ms` (3000; a slow first run drops or delays the first move).
+   * Returns what still is hovered (descriptions; empty = fine); `controls` (a selector list) limits the list to those elements. When the bound ends with such an element still hovered it throws, labelled, so a real leak is told from a slow start.
+   * `{ stay: true }` only lists (a mutant that put the pointer there itself): no move, no wait, no failure. A colour read goes after this and asserts the list is empty.
+   */
+  const pointerOff = async (scope, controls, o = {}) => {
+    const sel = scope.split(',').map((x) => x.trim() + ' :hover').join(',');
+    const list = () => js(`[...document.querySelectorAll(${jsLiteral(sel)})].filter(e=>${controls ? 'e.matches(' + jsLiteral(controls) + ')&&e.getClientRects().length' : 'true'}).map(e=>(e.id?'#'+e.id:e.tagName.toLowerCase()+'.'+String(e.className).trim().replace(/ +/g,'.'))+' "'+(e.textContent||e.value||'').trim().slice(0,30)+'"')`);
+    if (o.stay) return list();
+    const ms = o.ms || 3000, retry = o.retry || 250, end = Date.now() + ms;
+    let moves = 0, last = 0, clear = false;
+    for (;;) {
+      if (Date.now() - last >= retry || moves === 0) { wc().sendInputEvent({ type: 'mouseMove', x: 0, y: 0 }); moves++; last = Date.now(); }
+      if (await ctx.js(`(()=>{try{return !document.querySelector(${jsLiteral(sel)})}catch(e){return false}})()`)) { clear = true; break; }
+      if (Date.now() > end) break;
+      await ctx.sleep(50);
+    }
+    const hot = await list();
+    if (!clear && hot.length) throw new assert.AssertionError({ message: `pointerOff: the pointer did not leave ${scope} after ${ms} ms and ${moves} move(s): ${JSON.stringify(hot)}` });
+    return hot;
+  };
   /** Remove the toasts that are on screen now. */
   const clearToasts = () => js(`document.querySelectorAll('#toasts .toast').forEach(t=>t.remove())`);
   /**
@@ -209,14 +285,17 @@ function helpers(ctx) {
     try { clock = new URL(wc().getURL()).searchParams.get('simclock'); } catch { clock = null; }
     const query = { sim: '15', simfreeze: '1', ...(clock && /^\d{1,15}$/.test(clock) ? { simclock: clock } : {}), ...(o.fastVisits ? { simvisits: 'fast' } : {}), ...(o.query || {}) };
     for (const k of Object.keys(query)) if (query[k] === undefined) delete query[k];
+    const arcade = DRIVER_WORLD === 'retro' && query.officeview === 'real'; // spec 102 T283: the Real office loads draw the arcade
+    if (arcade) Object.assign(query, { worldflags: 'retro', world: 'retro' });
     await ctx.win.loadFile(o.index || INDEX, { query });
     // spec 092: with `simfloors=1` (the 15 agents spread over three floors on) the office shows one floor, so the default "15 desks" would only be met by its timeout
     const ready = o.ready === 'fit' ? `document.getElementById('stage')&&document.getElementById('stage').dataset.fit` : o.ready || `document.querySelectorAll('#stage .desk[data-id]').length>=${query.simfloors === '1' ? 1 : 15}`;
     if (!(await ctx.waitFor(ready, o.readyMs || 15000))) console.log(`[waits] load: the ready expression never held in ${o.readyMs || 15000} ms (pass \`ready\` for this page): ${String(ready).replace(/\s+/g, ' ').slice(0, 120)}`); // spec 008 FR-190: a timeout here costs the whole wait
     // spec 008 FR-190: a frozen simulator says when it is steady (every script replayed, no lobby visit waiting to start or end, the frame drawn): wait for that
     // instead of letting `settle` find it by sampling 200 ms apart (a load used to spend 0.5-1 s there). `settle` still runs after it, so nothing is skipped.
-    if (query.simfreeze === '1' && !o.index && o.settle !== false) await w.until(`!!window.__durbarSimReplayed&&!!window.__durbarSimUi&&window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()&&!document.querySelector('.scene-out')`, 4000);
+    if (query.simfreeze === '1' && !o.index && o.settle !== false) await w.until(w.SETTLED, 4000);
     if (o.settle !== false) await w.settle();
+    if (arcade) assert.ok(await w.until(`!!document.querySelector('#stage .ro[data-world="retro"]')`, 5000), 'DRIVER_WORLD=retro: the arcade is not drawn (a pass here would be the Photo office)');
     if (o.focus) wc().focus();
   };
   /**
@@ -289,7 +368,7 @@ function helpers(ctx) {
     await goToFloor(list[0].id);
     for (let i = 0; i < list.length; i++) { await goToFloor(list[i].id); await w.settle(); await fn(list[i], i); }
   };
-  return { ...w, allowWindowClose: closeGuard.allow, wc, js, click, clickText, exists, text, idOf, key, calm, clearToasts, focusPage, releaseFocus, loseFocus, focusWc, load, shot, openSimAgent, floors, shownFloor, goToFloor, eachFloor, INDEX };
+  return { ...w, pointerStep: ptr.step, allowWindowClose: closeGuard.allow, wc, js, click, clickText, exists, text, idOf, key, calm, pointerOff, clearToasts, focusPage, releaseFocus, loseFocus, focusWc, load, shot, openSimAgent, floors, shownFloor, goToFloor, eachFloor, INDEX };
 }
 
 /**
@@ -316,4 +395,8 @@ async function shotWithView(win, view, file) {
   fs.writeFileSync(file, nativeImage.createFromBitmap(base, { width: size.width, height: size.height }).toPNG());
 }
 
-module.exports = { waits, helpers, guardWindow, jsLiteral, shotWithView, LIMIT, INDEX, CHECK_DARK, CHECK_DARK_QUERY, darkFixtureProblem, darkProblem };
+/* Spec 097 FR-365: a page expression, true once no WAAPI move or fade runs in #stage (a plate's ease, a pencil's hold and fade; the CSS loops, a person's bob,
+   keep running and do not count). One text for the pencil-ease driver's waits and the release clip's one capture (scripts/release-video.js `glide`). */
+const STILL_STAGE = `!(document.getElementById('stage')||document.body).getAnimations({subtree:true}).some(a=>!a.animationName&&a.playState==='running')`;
+
+module.exports = { STILL_STAGE, waits, helpers, pointerLog, POINTER_LOG_MAX, guardWindow, jsLiteral, shotWithView, LIMIT, INDEX, CHECK_DARK, CHECK_DARK_QUERY, darkFixtureProblem, darkProblem };

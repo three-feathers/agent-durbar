@@ -51,6 +51,34 @@
         "mac": 236.4,
         "ruben-server": 319.36
       }
+    },
+    {
+      "date": "2026-11-11",
+      "version": "v0.1.16",
+      "models": {
+        "claude-opus-5-5": 3850.85,
+        "claude-sonnet-5-5": 1333.61,
+        "claude-haiku-5-5": 2.36
+      },
+      "machines": {
+        "linux": 4468.1,
+        "mac": 236.4,
+        "ruben-server": 482.32
+      }
+    },
+    {
+      "date": "2026-11-12",
+      "version": "v0.1.17",
+      "models": {
+        "claude-opus-5-5": 3934.71,
+        "claude-sonnet-5-5": 1460.26,
+        "claude-haiku-5-5": 2.71
+      },
+      "machines": {
+        "linux": 4636.35,
+        "mac": 236.4,
+        "ruben-server": 524.93
+      }
     }
   ]
 }
