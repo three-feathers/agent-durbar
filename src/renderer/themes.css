@@ -71,6 +71,10 @@ html[data-ui="retro"] .lobby .place .pn{text-transform:uppercase;letter-spacing:
 html[data-ui="retro"] .slot,html[data-ui="retro"] .walker .wk{border-radius:0}
 html[data-ui="retro"] .walker .wk{border-color:var(--line);box-shadow:2px 2px 0 #000}
 html[data-ui="retro"] .empty,html[data-ui="retro"] .filter-note,html[data-ui="retro"] .filter-note b{color:var(--surface)}
+/* spec 102 delta 2026-11-11 (issue 1559): the line above is the Retro Pixel theme (cream --surface on its navy page). The arcade's page is dark and its --surface is dark too (1.09:1), so its notice takes the light inks, and Show all is underlined (styles.css) */
+html[data-world="retro"][data-ui="retro"] .filter-note{color:var(--ink-2)}
+html[data-world="retro"][data-ui="retro"] .empty{color:var(--muted)} /* the same cause: the List's "No agents match these filters." was --surface on --surface, "Opening the Real office…" --surface on --bg */
+html[data-world="retro"][data-ui="retro"] .filter-note b,html[data-world="retro"][data-ui="retro"] .filter-note .fn-all{color:var(--ink)}
 
 
 /* ---------- spec 052 FR-053: the primary action is solid in every theme, in the theme's own accent: --brand-bg with

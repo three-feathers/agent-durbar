@@ -81,6 +81,7 @@ const DOC_SHOTS = [
   { name: 'shots-074-navigator', files: ['074-navigator-start-1440x900.png'] },
   { name: 'check-browser-tabs', files: ['080-browser-tabs-1440x900.png'] }, // spec 080 FR-122 (US6): the page tab strip with 10 tabs
   { label: 'check-browser-tabs 1280', name: 'check-browser-tabs', env: { BROWSER_TABS_SIZE: '1280x800' }, files: ['080-browser-tabs-1280x800.png'] },
+  { name: 'check-080-browser-expand', files: ['080-browser-expand-small-flat-1440x900.png', '080-browser-expand-big-flat-1440x900.png', '080-browser-expand-small-flat-1280x800.png', '080-browser-expand-big-flat-1280x800.png'] }, // spec 080 FR-134, FR-135 (issue #1691): the browser small and expanded
   { name: 'shots-058-mcp-settings', files: ['058-mcp-settings-1440x900.png'] },
   { name: 'shots-076-orgpolicy', files: ['076-orgpolicy-mode-1440x900.png', '076-orgpolicy-server-1440x900.png', '076-orgpolicy-organization-1440x900.png'] },
   { name: 'shots-058-mcp-health', files: ['058-mcp-health-1440x900.png'] },

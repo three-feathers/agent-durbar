@@ -146,7 +146,7 @@
     const cw=x.status==='connected'?W.callWord(x.lastCall):'';
     const stat=`<span class="mst ${esc(c.state.cls)}"${c.state.key.startsWith('unknown')?` title="${esc(W.plain(x.status,120))}"`:''}>${W.iconSvg(c.state.icon)}<span class="mst-w">${esc(c.state.word)}</span>${cw?`<span class="mst-call">\u00b7 ${esc(cw)}</span>`:''}</span>`;
     /* FR-082: the chat dialog's own hint (FR-006) with the agent app's name; Details shows the masked text main sent (FR-007, FR-086) */
-    const hint=W.hintFor({status:x.status,errorClass:x.errorClass,error:x.error,app:rp.app||(m&&m.o.appName)})||(cw?W.callHint(x.lastCall,rp.app||(m&&m.o.appName)):'');
+    const hint=W.hintFor({status:x.status,errorClass:x.errorClass,error:x.error,tokenRefused:x.tokenRefused,tokenVars:x.tokenVars,app:rp.app||(m&&m.o.appName)})||(cw?W.callHint(x.lastCall,rp.app||(m&&m.o.appName)):'');
     const detOpen=!!x.error&&liveDet.has(k);
     const det=x.error?`<button class="btn sm srv-detbtn" type="button" data-lvdet="1" aria-expanded="${detOpen}" aria-label="${esc((detOpen?'Hide':'Show')+' details of '+r.name+' for '+c.name)}">Details</button>`:'';
     const detBox=detOpen?`<div class="srv-det"><pre class="srv-err" tabindex="0" data-lverr="1" aria-label="${esc('Error text of '+r.name+' for '+c.name)}">${esc(x.error)}</pre><button class="btn sm" type="button" data-lvcopy="1" aria-label="${esc('Copy the error text of '+r.name+' for '+c.name)}">Copy</button></div>`:'';
@@ -1476,7 +1476,7 @@
         const rnw=x.status==='connected'&&typeof x.renewedAt==='number'&&W.renewedWord?W.renewedWord(x.renewedAt):''; /* spec 058 FR-221: "Renewed 12:40", a quiet note, no chat line */
         const ckU=x.status==='connected'&&x.checkUnknown===true; /* spec 058 FR-225: the last check before a message got no answer in 30 s */
         const stat=`<span class="mst ${esc(sv.cls)}"${x.status&&sv.cls==='unknown'?` title="${esc(W.plain(x.status,120))}"`:''}>${W.iconSvg(sv.icon)}<span class="mst-w">${esc(sv.word)}</span>${cw?`<span class="mst-call">\u00b7 ${esc(cw)}</span>`:''}${rnw?`<span class="mst-call mst-renew">\u00b7 ${esc(rnw)}</span>`:''}${ckU?`<span class="mst-call mst-unk">\u00b7 Did not answer a check</span>`:''}</span>`;
-        const hint=W.hintFor({status:x.status,errorClass:x.errorClass,error:x.error,app,by})||(cw?W.callHint(x.lastCall,app):'');
+        const hint=W.hintFor({status:x.status,errorClass:x.errorClass,error:x.error,tokenRefused:x.tokenRefused,tokenVars:x.tokenVars,app,by})||(cw?W.callHint(x.lastCall,app):'');
         const detOpen=x.error&&openDet.has(x.name);
         /* FR-007: the masked text (main masked it; never the runtime's raw text) behind Details, and Copy copies exactly that */
         const det=x.error?`<button class="btn sm srv-detbtn" type="button" data-det="${esc(x.name)}" aria-expanded="${detOpen?'true':'false'}" aria-label="${esc((detOpen?'Hide':'Show')+' details of '+x.name)}">Details</button>`:'';
@@ -1804,8 +1804,9 @@
     if(!cur||cur.kind!=='tools')return;
     const actBtns=act?`<button class="btn" type="button" id="actCsv"${act.n?'':' disabled'}>Export CSV</button><button class="btn" type="button" id="actJson"${act.n?'':' disabled'}>Export JSON</button><button class="btn danger" type="button" id="actClear"${act.n?'':' disabled'}>Clear activity</button>`:'';
     const head=act?`${tabs}<span class="grow"></span>${actBtns}`:cost?`${cost.seg}${tabs}<span class="grow"></span><button class="btn" type="button" id="costCsv"${cost.built.rows.length&&!cost.none?'':' disabled'}>Copy as CSV</button>`:`${per}${scopeSel}${tabs}<span class="grow"></span>`;
-    r.innerHTML=`<div class="scr-head"><h2>Tools</h2>${head}<button class="btn" type="button" id="scrClose" title="Close (Esc)">Close</button></div>
-      <div class="scr-body">${body}</div>`;
+    const wide=act?' scr-wide':''; /* spec 052 FR-071 (2026-11-10): the Activity table takes the window width */
+    r.innerHTML=`<div class="scr-head${wide}"><h2>Tools</h2>${head}<button class="btn" type="button" id="scrClose" title="Close (Esc)">Close</button></div>
+      <div class="scr-body${wide}">${body}</div>`;
     wireHead();
     if($('toolScope'))$('toolScope').onchange=e=>{cur.scope=e.target.value||null;paintTools();};
     if($('perSession'))$('perSession').onclick=()=>{if(period==='session')return;period='session';cur.scope=null;paintTools();};
