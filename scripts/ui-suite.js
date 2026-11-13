@@ -50,7 +50,7 @@ const DRIVERS = [
   { name: 'check-settings-nav' }, // spec 052 FR-226 (T219): the Settings section list: built from the headings, jump, aria-current follows the scroll, keys, every world, reduced motion, narrow row
   { name: 'check-069-toggle-scroll' }, // spec 069 FR-069 (issue #1624): a Settings switch that repaints the page keeps the scroll, the focus and the open Advanced block
   { name: 'check-settings-save' }, // spec 011 FR-012 (issue #1023): a Settings row whose save fails returns to the value in force and says so
-  { name: 'check-rail' }, // spec 005 FR-190, FR-194, FR-216 and 052 FR-211: the agent rail's List view: fit, order, two heights, folders that collapse, Your door, Mac drag areas
+  { name: 'check-rail' }, // spec 005 FR-190, FR-194, FR-216 and 052 FR-215: the agent rail's List view: fit, order, two heights, folders that collapse, Your door, Mac drag areas
   { name: 'check-rail-resize' }, // spec 005 FR-236 (issue #1223): the agent rail's width: drag, keys, double-click reset, remembered, clamped when the window shrinks, both sizes
   { name: 'check-unread' }, // spec 001 FR-170..FR-177, spec 005 FR-176/FR-177 (issue #691): a finished agent's reply stays marked New until its chat is shown
   { name: 'check-001-lights' }, // spec 001 FR-230, FR-231: Open office's screens tinted by status as Real office's, no card glow or waiting halo, every kit, both sizes

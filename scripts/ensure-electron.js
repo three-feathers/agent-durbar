@@ -27,7 +27,7 @@ function ensureElectron({ spawn = spawnSync, cwd = ROOT } = {}) {
  */
 function buildProblem(root = ROOT, exists = fs.existsSync) {
   for (const rel of [['dist', 'main', 'main.js'], ['dist', 'renderer', 'index.html']]) {
-    if (!exists(path.join(root, ...rel))) return `the build is missing: ${path.join(root, ...rel)} does not exist; run \`npm run build\` first`;
+    if (!exists(path.join(root, ...rel))) return `the build is missing: ${path.relative(root, path.join(root, ...rel))} does not exist; run \`npm run build\` first`; // relative to the repo folder (no home path in a pasted log), as the platform prints it
   }
   return '';
 }

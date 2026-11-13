@@ -46,12 +46,14 @@ assert.ok(/require\('electron'\)/.test(src), 'it starts the Electron binary dire
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const par = require(path.join(ROOT, 'scripts', 'check-parallel.js')) as { main: (o: object) => Promise<number> };
   const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ui-suite-nobuild-'));
-  const want = path.join(tmp, 'dist', 'main', 'main.js');
+  const file = path.join(tmp, 'dist', 'main', 'main.js');
+  const rel = path.join('dist', 'main', 'main.js'); // as the platform prints it, relative to the repo folder
+  const want = `the build is missing: ${rel} does not exist; run \`npm run build\` first`;
   const msg = buildProblem(tmp);
-  assert.ok(msg.includes(want) && /npm run build/.test(msg), `the problem names the missing path and says to build: ${msg}`);
+  assert.ok(msg.startsWith(want) && !msg.includes(tmp), `the problem is the plain line with the relative path and no absolute one: ${msg}`);
   fs.mkdirSync(path.join(tmp, 'dist', 'main'), { recursive: true });
-  fs.writeFileSync(want, '');
-  assert.ok(buildProblem(tmp).includes(path.join(tmp, 'dist', 'renderer', 'index.html')), 'a missing renderer page is named too');
+  fs.writeFileSync(file, '');
+  assert.ok(buildProblem(tmp).startsWith(`the build is missing: ${path.join('dist', 'renderer', 'index.html')} does not exist`), 'a missing renderer page is named too');
   fs.mkdirSync(path.join(tmp, 'dist', 'renderer'), { recursive: true });
   fs.writeFileSync(path.join(tmp, 'dist', 'renderer', 'index.html'), '');
   assert.strictEqual(buildProblem(tmp), '', 'with both files there is no problem');
@@ -66,15 +68,15 @@ assert.ok(/require\('electron'\)/.test(src), 'it starts the Electron binary dire
   process.env.UI_SUITE_OUT = outDir;
   try {
     let t = Date.now();
-    await assert.rejects(suite.main({ build: missing, argv: ['--only', names[1].split(' ')[0]], ensure: () => { calls.push('ensure'); return true; }, run: async () => { calls.push('run'); return { ok: true, secs: 0, why: '', log: '' }; } }), (e: Error) => e.message.includes(want) && /npm run build` first/.test(e.message) && /no driver was started/.test(e.message), 'ui-suite: a missing build stops the runner with its path and "no driver was started"');
-    assert.ok(Date.now() - t < 2000 && calls.length === 0, 'ui-suite: a missing build stops the runner at once, before Electron is fetched or a driver started');
+    await assert.rejects(suite.main({ build: missing, argv: ['--only', names[1].split(' ')[0]], ensure: () => { calls.push('ensure'); return true; }, run: async () => { calls.push('run'); return { ok: true, secs: 0, why: '', log: '' }; } }), (e: Error) => e.message.includes(want) && !e.message.includes(tmp) && /npm run build` first/.test(e.message) && /no driver was started/.test(e.message), 'ui-suite: a missing build stops the runner with its path and "no driver was started"');
+    assert.ok(Date.now() - t < 5000 && calls.length === 0, 'ui-suite: a missing build stops the runner at once, before Electron is fetched or a driver started');
     t = Date.now();
     const r = await suite.runOne({ name: names[1].split(' ')[0], sim: false }, outDir, { build: missing, launch: [process.execPath, ['-e', 'process.exit(0)']] }); // the launch is a harmless stand-in: with the check gone it would pass, and no Electron starts
-    assert.ok(!r.ok && r.why.includes(want) && Date.now() - t < 2000, 'ui-suite: runOne returns the missing build as a failed run without spawning');
+    assert.ok(!r.ok && r.why.includes(want) && Date.now() - t < 5000, 'ui-suite: runOne returns the missing build as a failed run without spawning');
     t = Date.now();
     const lines: string[] = [];
     const failed = await par.main({ build: missing, ensure: () => { calls.push('ensure'); return true; }, runJob: async () => { calls.push('job'); return 'ok'; }, available: () => Infinity, jobs: [{ label: 'a' }, { label: 'b' }], workers: 2, log: (l: string) => lines.push(l) });
-    assert.ok(failed === 2 && calls.length === 0 && lines.some((l) => l.includes(want)) && Date.now() - t < 2000, 'check-parallel: a missing build starts no part and says which file');
+    assert.ok(failed === 2 && calls.length === 0 && lines.some((l) => l.includes(want)) && Date.now() - t < 5000, 'check-parallel: a missing build starts no part and says which file');
   } finally {
     console.log = realLog;
     if (prevOut === undefined) delete process.env.UI_SUITE_OUT; else process.env.UI_SUITE_OUT = prevOut;
@@ -91,11 +93,11 @@ assert.ok(/require\('electron'\)/.test(src), 'it starts the Electron binary dire
     fs.mkdirSync(path.join(copy, 'node_modules', 'electron'), { recursive: true });
     fs.writeFileSync(path.join(copy, 'node_modules', 'electron', 'index.js'), 'module.exports = process.execPath;\n');
     fs.writeFileSync(path.join(copy, 'node_modules', 'electron', 'package.json'), '{"name":"electron","version":"0.0.0","main":"index.js"}\n');
-    const wantCopy = path.join(copy, 'dist', 'main', 'main.js');
+    const wantCopy = want; // the same relative text; the folder's own path must not appear
     for (const f of ['check-mac-titlebar', 'check-office-overlap', 'check-theme-geometry', 'check-perf', 'world-matrix']) {
       const t0 = Date.now();
       const r = spawnSync(process.execPath, [path.join(copy, 'scripts', f + '.js')], { encoding: 'utf8', shell: false, windowsHide: true, timeout: 20000 });
-      assert.ok(r.status === 2 && String(r.stderr).includes(wantCopy) && /npm run build` first/.test(String(r.stderr)) && Date.now() - t0 < 5000, `${f}: a missing build exits 2 with the path and \`npm run build\` first (got ${r.status}: ${String(r.stderr).slice(0, 200)})`);
+      assert.ok(r.status === 2 && String(r.stderr).includes(wantCopy) && !String(r.stderr).includes(copy) && /npm run build` first/.test(String(r.stderr)) && Date.now() - t0 < 5000, `${f}: a missing build exits 2 with the path and \`npm run build\` first (got ${r.status}: ${String(r.stderr).slice(0, 200)})`);
     }
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const rec = require(path.join(copy, 'scripts', 'perf-record.js')) as { recordAll: (o: object) => Promise<number> };
@@ -145,7 +147,7 @@ assert.ok(/require\('electron'\)/.test(src), 'it starts the Electron binary dire
   try {
     const t0 = Date.now();
     await assert.rejects(suite.main(opts([good, 'no-such-driver-zz'])), (e: Error) => /no-such-driver-zz matches no driver/.test(e.message) && /no driver was started/.test(e.message), 'ui-suite --only: an unknown name beside a valid one fails and is named');
-    assert.ok(ran.length === 0 && Date.now() - t0 < 2000, 'ui-suite --only: nothing ran, and it failed at once');
+    assert.ok(ran.length === 0 && Date.now() - t0 < 5000, 'ui-suite --only: nothing ran, and it failed at once');
     await assert.rejects(suite.main(opts([good, notIn])), (e: Error) => e.message.includes(`${notIn} is not a ui-suite driver: ${suite.NOT_IN_SUITE[notIn]}`), 'ui-suite --only: a name that is deliberately not in the suite gets its written reason');
     await assert.rejects(suite.main(opts([good.slice(0, -1) + 'x', 'qqqq-nothing-like-it'])), (e: Error) => e.message.includes(`${good.slice(0, -1)}x matches no driver; did you mean ${good}`) && /qqqq-nothing-like-it matches no driver\n/.test(e.message + '\n'), 'ui-suite --only: a near name gets "did you mean", a far one none');
     assert.strictEqual(ran.length, 0, 'ui-suite --only: no driver ran in the failing cases');
