@@ -10,8 +10,9 @@ import type { AdapterRouter } from '../adapters/router';
 import type { McpServerSpec } from '../shared/mcp';
 import type { DevEnv } from './devhooks';
 import { BUILTIN_SERVERS, cliServers, cliServersWithValues, copilotDir } from './mcpfiles';
+import type { McpCliValues } from './mcpfiles';
 import { applyFolderImport, MAX_IMPORT_FOLDERS, previewFolderImport } from './mcpimport';
-import { mcpSecretValues } from './mcpmask';
+import { copilotListValues, mcpSecretValues } from './mcpmask';
 import { claudeOffKey, mergeSessionServers, offOf } from './mcpglobal';
 import { agentMcpReply, mcpRefreshOp, mcpRestartOp } from './mcpsession';
 import { McpCallTracker } from './mcpcall';
@@ -124,19 +125,45 @@ export function registerMcpIpc(deps: {
   const off = new Map<string, Set<string>>();
   /** Latest MCP state the runtime reported per session. */
   const live = new Map<string, McpServerStatus[]>();
-  /** The secret values handed to one session (its folder's extras), used to mask server errors. */
+  /**
+   * Spec 069 FR-070: per Copilot agent, every Copilot CLI list value read for it this run (at its session start and on every mask call),
+   * so a value the user rotated or removed, or a half-written file, does not drop one the running server may still echo. Main memory only.
+   */
+  const copilotSeen = new Map<string, Set<string>>();
+  /** FR-070: the Copilot CLI list's values join only a Copilot agent's list (an unknown app: masked too); the others' servers never got them. */
+  const copilotApp = (agentId: string): boolean => { const app = deps.appOf?.(agentId); return app === undefined || app === 'copilot'; };
+  const keepCopilotValues = (agentId: string, c: { values: McpCliValues[] } | undefined): string[] => {
+    if (!copilotApp(agentId)) return [];
+    for (const k of copilotSeen.keys()) if (!agents.has(k)) copilotSeen.delete(k); // a removed agent's values go
+    const seen = copilotSeen.get(agentId) ?? new Set<string>();
+    for (const v of copilotListValues(c?.values ?? [])) seen.add(v);
+    copilotSeen.set(agentId, seen);
+    return [...seen];
+  };
+  /**
+   * The secret values one session is masked with: its folder's extras, Claude Code's user list (FR-009) and, for a Copilot agent, the
+   * Copilot CLI list (FR-070); used to mask server errors, tool cards, edits, history, notes and search.
+   */
   const secretValuesFor = (agentId: string): string[] => {
     const a = agents.get(agentId);
     if (!a) return [];
+    // FR-070 (issue #1639): the Copilot CLI list, read once per call (as `serverUrlOf` reads it, `cli()`; the names come from the same read)
+    // and outside the store's `try`, so a store that cannot be read keeps these values. No Settings off-list: every server's values count.
+    let c: ReturnType<typeof cliWithValues> | undefined;
+    try {
+      c = cliWithValues();
+    } catch {
+      c = undefined; // the values kept from earlier reads still count
+    }
+    const copilot = keepCopilotValues(agentId, c);
+    let rest: string[] = [];
     try {
       // Spec 069 FR-009: the user list's values too (all of them, also one a folder extra shadows: masking more is safe).
-      // FR-070 (issue #1639): and the Copilot CLI list's env and header values, from the one read that also gives its names (as `serverUrlOf`
-      // reads it, `cli()`), for every agent and every server of the file; through `mcpSecretValues`, so its 4-character rule holds too.
-      const c = cliWithValues();
-      return mcpSecretValues(deps.globalFor?.(agentId), store().forSession(keyOf(a), off.get(agentId) ?? [], c.servers.map((x) => x.name)).mcpServers, Object.fromEntries(c.values.map((v, i) => [String(i), v])));
+      if (c) rest = mcpSecretValues(deps.globalFor?.(agentId), store().forSession(keyOf(a), off.get(agentId) ?? [], c.servers.map((x) => x.name)).mcpServers);
     } catch {
-      return []; // store not ready or unreadable: the shape-based masking still runs, and the event is not lost
+      rest = []; // store not ready or unreadable: the shape-based masking still runs, and the event is not lost
     }
+    return [...new Set([...rest, ...copilot])].sort((x, y) => y.length - x.length);
   };
   /** Spec 058 FR-092: per session, when each server's state started and whether a failure came after Running (dropped when it stops). */
   const health = new Map<string, Map<string, McpHealthMark>>();
@@ -351,8 +378,11 @@ export function registerMcpIpc(deps: {
 
   /** The Copilot CLI list is read again on every call, so edits of the file show up the next time a screen opens. */
   const cli = () => cliServers(copilotDir(dev), new Set(store().ambientDisabled()));
-  /** Spec 069 FR-070: the same read with the values (main only: for `secretValuesFor`'s masking, never for a reply or a log line). */
-  const cliWithValues = () => cliServersWithValues(copilotDir(dev), new Set(store().ambientDisabled()));
+  /**
+   * Spec 069 FR-070: the same read with the values (main only: for `secretValuesFor`'s masking, never for a reply or a log line). No
+   * Settings off-list (no store read): the names do not depend on it, and every server's values count.
+   */
+  const cliWithValues = () => cliServersWithValues(copilotDir(dev), new Set());
   const cliNames = (): string[] => cli().servers.map((x) => x.name);
   /** A folder key is only accepted when an agent of that folder exists (the renderer cannot invent keys). */
   const knownKey = (key: unknown): key is string => typeof key === 'string' && !!key && [...agents.values()].some((a) => keyOf(a) === key);
@@ -575,7 +605,9 @@ export function registerMcpIpc(deps: {
       const a = agents.get(agentId);
       if (!a) return { mcpServers: {}, disabledMcpServers: [...(off.get(agentId) ?? [])] };
       // Only this agent's own folder's extras are passed (spec 020 FR-012).
-      const r = store().forSession(keyOf(a), off.get(agentId) ?? [], cliNames());
+      const c = cliWithValues();
+      keepCopilotValues(agentId, c); // FR-070: the values this session starts with are kept for the run
+      const r = store().forSession(keyOf(a), off.get(agentId) ?? [], c.servers.map((x) => x.name));
       launched.set(agentId, new Set(r.disabledMcpServers));
       touched.delete(agentId);
       // Spec 069 FR-009: the agent app's own user list that Durbar passes itself (Claude Code); a folder extra of the same name wins.

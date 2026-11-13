@@ -9,12 +9,30 @@ export const MCP_ERROR_MAX_CHARS = 300;
 
 /**
  * The secret values a session was given (env and header values of its servers: folder extras, Claude Code's user list, and since spec 069
- * FR-070 the Copilot CLI list), longest first; under 4 characters are skipped since they would mangle every string.
+ * FR-070 a Copilot agent's Copilot CLI list, after `plainSettingValue`), longest first; under 4 characters are skipped since they would
+ * mangle every string.
  */
 export function mcpSecretValues(...lists: (Readonly<Record<string, McpServerSpec | Pick<McpServerSpec, 'env' | 'headers'>>> | undefined)[]): string[] {
   const out = new Set<string>();
   for (const s of lists.flatMap((l) => Object.values(l ?? {}))) for (const v of [...Object.values(s.env ?? {}), ...Object.values(s.headers ?? {})]) if (typeof v === 'string' && v.length >= 4) out.add(v);
   return [...out].sort((a, b) => b.length - a.length);
+}
+
+/**
+ * Spec 069 FR-070 (review of #1650): a value of the Copilot CLI list that is a plain setting, not a secret, so it does not join the mask
+ * list (a plain substring replace would turn that word into `[redacted]` everywhere): a number or dotted version of up to 15 digits, one
+ * word of up to 16 letters in one case (`true`, `info`, `DEBUG`, `Production`), a media type (`application/json`). Used for
+ * that list only; the folder extras and Claude Code's list keep every value of 4+ characters.
+ */
+export function plainSettingValue(v: string): boolean {
+  return (/^[+-]?\d+(?:\.\d+)*$/.test(v) && v.replace(/\D/g, '').length <= 15)
+    || /^(?:[a-z]{1,16}|[A-Z]{1,16}|[A-Z][a-z]{1,15})$/.test(v)
+    || /^[a-z]{1,20}\/[a-z0-9][a-z0-9.+-]{0,60}$/.test(v);
+}
+
+/** Spec 069 FR-070: the mask values of the Copilot CLI list's env and header maps (4+ characters, plain setting values left out). */
+export function copilotListValues(maps: readonly Pick<McpServerSpec, 'env' | 'headers'>[]): string[] {
+  return mcpSecretValues(Object.fromEntries(maps.map((m, i) => [String(i), m]))).filter((v) => !plainSettingValue(v));
 }
 
 /** `--token value`, `--api-key=value` and `API_KEY=value` in free text (a failed spawn message can quote the command line). */

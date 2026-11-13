@@ -716,10 +716,14 @@ ok('FR-009 wiring: Claude agents only, Settings off-list, folder extra wins, val
   }
 });
 
-ok('FR-070 (issue #1639): the Copilot CLI list\'s header and env values mask Details and Copy diagnostics (through registerMcpIpc)', () => {
+ok('FR-070 (issue #1639): the Copilot CLI list\'s header and env values mask a Copilot agent\'s Details and Copy diagnostics (through registerMcpIpc)', () => {
   const electronPath = require.resolve('electron');
   const saved = require.cache[electronPath];
   require.cache[electronPath] = { id: electronPath, filename: electronPath, loaded: true, exports: fake } as unknown as NodeJS.Module;
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const realFs = require('fs') as typeof import('fs');
+  const realRead = realFs.readFileSync;
+  const consoleSaved = { log: console.log, warn: console.warn, error: console.error, info: console.info, debug: console.debug };
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { registerMcpIpc } = require('../src/main/mcpipc') as typeof import('../src/main/mcpipc');
@@ -735,64 +739,113 @@ ok('FR-070 (issue #1639): the Copilot CLI list\'s header and env values mask Det
     const SHORT = 'q7z'; // 3 characters: under mcpSecretValues' 4-character minimum
     const FOUR = 'w8k4'; // exactly 4 characters: kept
     const MCP = 'mcp-planted-SECRET-from-copilot-list';
+    const PASS = 'correct-horse-battery-staple'; // lowercase words with hyphens: not a plain setting value, kept
+    const PLAIN = ['true', 'production', '1234', 'application/json', 'DEBUG', 'Info'];
+    const ROTATED = 'rotatedvalue-not-a-token-shape-9012';
     for (const v of [HDR, ENV]) assert.strictEqual(redact(`server said ${v}`), `server said ${v}`, `precondition: the shape rules alone leave ${v} (so the test needs the value list)`);
     const d = tmp();
     const cop = path.join(d, 'copilot');
     fs.mkdirSync(cop);
-    fs.writeFileSync(
-      path.join(cop, 'mcp-config.json'),
+    const cfgFile = path.join(cop, 'mcp-config.json');
+    const writeCfg = (hdr: string): void => fs.writeFileSync(
+      cfgFile,
       JSON.stringify({
         mcpServers: {
-          remote: { type: 'http', url: 'https://mcp.example.com/mcp', headers: { 'X-Thing': HDR } },
-          local: { type: 'local', command: 'node', args: ['s.js'], env: { THING: ENV, TINY: SHORT, FOURS: FOUR } },
+          remote: { type: 'http', url: 'https://mcp.example.com/mcp', headers: { 'X-Thing': hdr, Accept: 'application/json' } },
+          local: { type: 'local', command: 'node', args: ['s.js'], env: { THING: ENV, TINY: SHORT, FOURS: FOUR, PASS, DEBUG: 'true', NODE_ENV: 'production', PORT: '1234', LEVEL: 'DEBUG', LOG: 'Info' } },
           offone: { type: 'http', url: 'https://off.example.com/mcp', headers: { 'X-Off': MCP } },
         },
       }),
     );
+    writeCfg(HDR);
     const store = new McpStore(path.join(d, 'm.json'));
     store.load();
-    store.setAmbientDisabled('offone', true); // switched off in Settings: its values still mask (masking more is safe)
+    store.setAmbientDisabled('offone', true); // switched off in Settings: its values still mask (the runtime still has them in its file)
     const folder = path.join(d, 'proj');
     const agent = (id: string, adapterId: string): AgentInfo => ({ id, name: 'proj', cwd: folder, folders: [folder], permMode: 'read-only', adapterId }) as unknown as AgentInfo;
-    const agents = new Map<string, AgentInfo>([['p1', agent('p1', 'copilot')], ['c1', agent('c1', 'claude')]]);
+    const agents = new Map<string, AgentInfo>([['p1', agent('p1', 'copilot')], ['c1', agent('c1', 'claude')], ['x1', agent('x1', 'codex')]]);
     let emit: (e: unknown) => void = () => undefined;
+    let storeThrows = false;
+    const logs: string[] = [];
+    const out: string[] = [];
+    for (const k of Object.keys(consoleSaved) as (keyof typeof consoleSaved)[]) console[k] = (...a: unknown[]) => { out.push(a.map(String).join(' ')); };
     handlers.clear();
     const mcp = registerMcpIpc({
-      store: () => store,
+      store: () => { if (storeThrows) throw new Error('store not ready'); return store; },
       agents,
       router: { onEvent: (fn: (e: unknown) => void) => { emit = fn; }, forAgent: () => undefined } as never,
       dev: { DURBAR_COPILOT_DIR: cop } as never,
       appOf: (id) => agents.get(id)?.adapterId,
       globalFor: () => ({}),
+      log: (_a, action) => { logs.push(action); },
     });
+    // One read of the file per call (the names and the values come from the same read).
+    let reads = 0;
+    realFs.readFileSync = ((f: unknown, ...rest: unknown[]) => { if (String(f) === cfgFile) reads++; return (realRead as (...x: unknown[]) => unknown)(f, ...rest); }) as typeof realFs.readFileSync;
     const vals = mcp.secretValuesFor('p1');
+    assert.strictEqual(reads, 1, `FR-070 one read: secretValuesFor reads mcp-config.json once per call (got ${reads})`);
+    realFs.readFileSync = realRead;
     assert.ok(vals.includes(HDR), 'FR-070 header: a Copilot-list header value is in the mask list');
     assert.ok(vals.includes(ENV), 'FR-070 env: a Copilot-list env value is in the mask list');
     assert.ok(vals.includes(MCP), 'FR-070 off: a server switched off in Settings still gives its values');
     assert.ok(vals.includes(FOUR), 'FR-070 min length: a 4-character value is kept');
     assert.ok(!vals.includes(SHORT), 'FR-070 min length: a value under 4 characters is skipped (mcpSecretValues rule, also for the Copilot list)');
-    assert.ok(mcp.secretValuesFor('c1').includes(HDR), 'FR-070 every agent: a Claude agent masks the Copilot-list values too');
+    assert.ok(vals.includes(PASS), 'FR-070 plain kept: lowercase words joined by hyphens are not a plain setting value');
+    for (const v of PLAIN) assert.ok(!vals.includes(v), `FR-070 plain: the plain setting value ${v} is not in the mask list`);
+    assert.ok([...vals].every((v, i, a) => i === 0 || a[i - 1].length >= v.length), 'FR-070 order: longest first');
+    // A Claude or Codex agent's servers were never given these values: their text is not masked with them.
+    for (const id of ['c1', 'x1']) {
+      const o = mcp.secretValuesFor(id);
+      assert.ok(!o.includes(HDR) && !o.includes(ENV) && !o.includes(MCP), `FR-070 scope: ${id} (not Copilot) does not get the Copilot-list values: ${o.length}`);
+    }
     // The error path of the issue: a server echoes the values in its error; Details shows the reply's `error`, Copy diagnostics builds its text from it.
-    const raw = `401 from upstream: header X-Thing=${HDR} rejected; env THING ${ENV} unknown`;
+    const raw = `401 from upstream: header X-Thing=${HDR} rejected; env THING ${ENV} unknown; DEBUG true production 1234`;
     emit({ type: 'mcp', sessionId: 'p1', servers: [{ name: 'remote', status: 'failed', error: raw }, { name: 'local', status: 'failed', error: raw }] });
     const frame = { url: require('url').pathToFileURL(path.join(__dirname, '..', 'src', 'renderer', 'index.html')).href };
     const reply = (handlers.get('agents:mcp') as (e: unknown, id: unknown) => { servers: { name: string; error?: string }[] })({ senderFrame: frame, sender: { mainFrame: frame } }, 'p1');
     const rows = reply.servers.filter((x) => x.name === 'remote' || x.name === 'local');
     assert.strictEqual(rows.length, 2, `both Copilot-list rows are in the reply: ${JSON.stringify(reply.servers.map((x) => x.name))}`);
+    const rendererMask = (t: string): string => maskHomePaths(maskSecretUrl(t));
     for (const r of rows) {
       assert.ok(typeof r.error === 'string' && r.error.includes('[redacted]'), `FR-070 Details: ${r.name}'s error is there, masked: ${r.error}`);
       assert.ok(!r.error?.includes(HDR), `FR-070 Details header: ${r.name}'s error does not show the header value`);
       assert.ok(!r.error?.includes(ENV), `FR-070 Details env: ${r.name}'s error does not show the env value`);
-      const text = W.diagnostics({ server: r.name, entry: r, app: 'copilot', appVersion: '1.0.0' }, (t: string) => maskHomePaths(maskSecretUrl(t)));
-      assert.ok(text.includes('Error (masked): '), `Copy diagnostics built a text for ${r.name}`);
-      assert.ok(!text.includes(HDR), `FR-070 Copy diagnostics header: ${r.name}'s text does not hold the header value`);
-      assert.ok(!text.includes(ENV), `FR-070 Copy diagnostics env: ${r.name}'s text does not hold the env value`);
+      assert.ok(/DEBUG true production 1234/.test(r.error ?? ''), `FR-070 Details plain: plain words stay readable: ${r.error}`);
+      // Copy diagnostics: the renderer's own mask knows no session value (control: the raw error keeps the value), so it is the reply's
+      // masked `error` that the text carries (checked as the exact string), not a second mask.
+      const control = W.diagnostics({ server: r.name, entry: { ...r, error: raw }, app: 'copilot', appVersion: '1.0.0' }, rendererMask);
+      assert.ok(control.includes(HDR), 'control: Copy diagnostics alone does not hide a shape-less value (main\'s reply masking does)');
+      const text = W.diagnostics({ server: r.name, entry: r, app: 'copilot', appVersion: '1.0.0' }, rendererMask);
+      assert.ok(text.includes(`Error (masked): ${rendererMask(String(r.error))}`), `FR-070 Copy diagnostics: ${r.name}'s text carries the reply's masked error: ${text}`);
     }
     assert.ok(!JSON.stringify(reply).includes(HDR) && !JSON.stringify(reply).includes(ENV), 'FR-070: no Copilot-list value anywhere in the agents:mcp reply');
     const view = (handlers.get('mcp:state') as (e: unknown) => unknown)({ senderFrame: frame, sender: { mainFrame: frame } });
     assert.ok(JSON.stringify(view).includes('remote'), 'the window\'s Copilot-list view lists the servers');
     assert.ok(!JSON.stringify(view).includes(HDR) && !JSON.stringify(view).includes(ENV), 'FR-070: the window\'s Copilot-list view holds no value');
+    // Re-read on every call, and kept for the run: a rotated value joins, the old one stays (the running server may still echo it).
+    writeCfg(ROTATED);
+    const after = mcp.secretValuesFor('p1');
+    assert.ok(after.includes(ROTATED), 'FR-070 re-read: a value written to the file after registration is in the next list');
+    assert.ok(after.includes(HDR), 'FR-070 kept: the value before the rotation stays in the list for the run');
+    fs.writeFileSync(cfgFile, '{ "mcpServers": { half'); // half-written
+    assert.ok(mcp.secretValuesFor('p1').includes(ROTATED), 'FR-070 kept: a half-written file does not drop the values');
+    writeCfg(ROTATED);
+    // A store that cannot be read: the folder values go (as before), the Copilot values stay.
+    storeThrows = true;
+    const noStore = mcp.secretValuesFor('p1');
+    storeThrows = false;
+    assert.ok(noStore.includes(ROTATED) && noStore.includes(ENV), `FR-070 store: a throwing folder store keeps the Copilot values: ${noStore.length}`);
+    // Session start (optionsFor) keeps the values a fresh agent starts with, though no mask call ran before the file changed.
+    agents.set('p2', agent('p2', 'copilot'));
+    mcp.optionsFor('p2');
+    writeCfg(HDR);
+    assert.ok(mcp.secretValuesFor('p2').includes(ROTATED), 'FR-070 start: the value p2 started with stays after the file changed');
+    // No value in a log line: the injected activity log and the console saw none.
+    const seen = [...logs, ...out].join('\n');
+    for (const v of [HDR, ENV, MCP, ROTATED]) assert.ok(!seen.includes(v), 'FR-070 log: no Copilot-list value in a log line');
   } finally {
+    realFs.readFileSync = realRead;
+    Object.assign(console, consoleSaved);
     if (saved) require.cache[electronPath] = saved;
     else delete require.cache[electronPath];
   }

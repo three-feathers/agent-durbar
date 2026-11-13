@@ -59,8 +59,8 @@ export function cliServers(dir: string, disabled: ReadonlySet<string>): { server
 export type McpCliValues = { env: Record<string, string>; headers: Record<string, string> };
 
 /**
- * Spec 069 FR-070 (issue #1639): `cliServers` plus, per server of the file (also a duplicate name and one switched off), its env and
- * header values, in the same single read. Main only: the values are for `mcpSecretValues` (the masking of the session's text) and must
+ * Spec 069 FR-070 (issue #1639): `cliServers` plus, per server the parser accepts (also one switched off), its env and header values, in
+ * the same single read. Main only: the values are for `mcpSecretValues` (the masking of the session's text) and must
  * never reach a reply, the window or a log line; `cliServers`, the view the window gets, drops them.
  */
 export function cliServersWithValues(dir: string, disabled: ReadonlySet<string>): { servers: McpAmbientView[]; file: McpCliFile; values: McpCliValues[] } {
@@ -68,7 +68,7 @@ export function cliServersWithValues(dir: string, disabled: ReadonlySet<string>)
   const values: McpCliValues[] = [];
   const r = readCandidates(path.join(dir, 'mcp-config.json'));
   for (const c of r?.candidates ?? []) {
-    values.push({ env: c.env, headers: c.headers }); // masking more is safe: a duplicate name's values too
+    values.push({ env: c.env, headers: c.headers });
     if (out.some((o) => o.name === c.originalName)) continue;
     out.push({ name: c.originalName, origin: 'copilot-config', transport: c.transport, command: c.command, args: c.args, url: c.url, enabled: !disabled.has(c.originalName) });
   }
