@@ -38,7 +38,7 @@ module.exports = async (ctx) => {
   const { until } = waits(ctx);
   const reduced = await js(`matchMedia('(prefers-reduced-motion: reduce)').matches`);
   const ready = `document.querySelectorAll('#stage .ro-plate[data-id]').length>=10&&!!document.querySelector('#stage .ro-lplate[data-post]')`;
-  const watch = `(()=>{window.__lt={n:0,first:null,last:null,el:null,hold:${FLIGHT}};const lay=document.getElementById('walkers');
+  const watch = `(()=>{window.__lt={n:0,first:null,last:null,el:null,hold:${jsLiteral(FLIGHT)}};const lay=document.getElementById('walkers');
     new MutationObserver(m=>m.forEach(r=>r.addedNodes.forEach(n=>{if(n.classList&&n.classList.contains('letter')){window.__lt.n++;window.__lt.el=n;window.__lt.for=n.dataset.for;const b=n.getBoundingClientRect();window.__lt.first={x:b.left+b.width/2,y:b.top+b.height/2};const q=document.querySelector('#stage .ro-lplate[data-post]').getBoundingClientRect();window.__lt.post={x:q.left+q.width/2,y:q.top+q.height/2};}}))).observe(lay,{childList:true});
     const rect=e=>{const b=e.getBoundingClientRect();return {x:b.left+b.width/2,y:b.top+b.height/2,l:b.left,t:b.top,r:b.right,b:b.bottom,w:b.width,h:b.height};};
     const tick=()=>{const e=window.__lt.el;if(e&&e.isConnected){const r=rect(e);window.__lt.last=r;
@@ -67,7 +67,9 @@ module.exports = async (ctx) => {
       await shot(path.join(OUT, `097-letter-${WORLD === 'Photo office' ? 'photo' : 'retro'}-${tag}-flight.jpg`));
       continue; // the picture only: the held letter is not the one the checks below read
     }
-    assert.ok(await until(`window.__lt.held`, 3000), `the letter reaches the plate (${tag}): no frame had it at the centre of its plate: ${JSON.stringify(await js('({last:window.__lt.last,for:window.__lt.for})'))}`);
+    const reached = await until(`window.__lt.held`, 3000);
+    const where = JSON.stringify(await js('({last:window.__lt.last,for:window.__lt.for})'));
+    assert.ok(reached, `the letter reaches the plate (${tag}): no frame had it at the centre of its plate: ${where}`);
     const lt = await js(`(()=>{const L=window.__lt,p=document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(L.for||'')+'"]'),b=p&&p.getBoundingClientRect();
       return {n:L.n,post:L.post,first:L.first,last:L.last,for:L.for,plate:b?{l:b.left,t:b.top,r:b.right,b:b.bottom,x:b.left+b.width/2,y:b.top+b.height/2}:null,ink:getComputedStyle(L.el).color,real:L.el.classList.contains('real'),
         agent:window.__durbarSimUi.agents().some(a=>a.id===L.for)}})()`);
