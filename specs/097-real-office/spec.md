@@ -335,6 +335,18 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 
 ## Changes
 
+### 2026-11-13: T156 by site: the lobby figures read the floor's scroll once (issue #1401; FR-184, T156 stays open)
+
+**Owner reading** (issue #1401, comment 6845758119, 2026-11-13): the target is layout reads under 40 **per status update**; build T156 to T158. This change is the first step and does not tick T156.
+
+**Sites named** (`sim:` stack of every read in one status update of one agent, 15 agents, desks as scenes, median sample, the driver's own counter; main at `24a5f087e`): 97 reads at 1440x900 and 89 at 1280x800, 1 render, 0 searches. By site: the two rewritten room heads' fit (`fitHead`, `headHolds`, `nameCut`, `nameSqueezed`) 31 and 31; the lobby figures (`syncWalkers`, `center`) 27 and 21; the pencils (`placePencils`) 17 and 15; the spare-height spread 13 and 13; `sceneSwap` 6 and 6; the floor's size 2 and 2; the floor's rect 1 and 1.
+
+**The change**: `center` read `floor.scrollLeft` and `floor.scrollTop` again for each lobby slot (2 of its 3 reads), with nothing written between the slots. The scroll is now read once for the slots' loop; the figures' desk lookups, which run after style writes, read their own. Nothing is stored, so there is no key and no stale answer; the figure's position still includes the floor's scroll. Look unchanged, no search or render change.
+
+**Measured after** (same method): 81 reads at 1440x900 (was 97) and 77 at 1280x800 (was 89). `readsPerStatus` is asserted at both sizes and at 15 and 40 agents in `check-office-ops` at the measured number plus a stated margin; a mutant that reads the scroll per slot fails its row. With the floor scrolled 120 px (40 agents, 1280x800) every lobby figure's target must still be a slot's centre in the floor's content coordinates (`walkersOffSlot`, limit 0); a mutant that drops the scroll puts all 7 figures off their slot. The limits are the measured median plus 2: 83 and 75 at 1440x900, 79 and 62 at 1280x800 (15 and 40 agents), measured 81, 73, 77, 60 (all 8 samples equal). A scroll read after a clean layout does not force one: this lowers the counted reads, not milliseconds.
+
+**Next sites** (plan in the PR, each its own spec delta and PR): the head fit memo (about 29 fewer), the pencils (about 14), then the spread and `sceneSwap` if needed: under 40 at both sizes is expected after the first two. The memo keys and their stale-layout mutants are written there.
+
 ### 2026-11-09: a folder sign in a narrow room keeps its + and menu whole (bug #1392; FR-356, T292..T294; extends FR-018 and FR-256)
 
 **Report** (issue #1392, opened by the owner's account from the Mac session, 2026-11-09, main at `82da90970`, simulator): in the Prehistoric cave at 1280x800, in the release clip's lounge scene (two agents moved to the lounge row), the fourth folder's sign ("blog", a room of one desk) reads "bl…  1 1 <$0.01" and its **+** and **⋯** buttons are cut off by the room's edge. The other signs are whole. `check-097-helper-row` passed: it checked strips against signs, not the signs themselves.

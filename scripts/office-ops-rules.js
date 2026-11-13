@@ -11,7 +11,13 @@ const LIMITS = {
   rendersPerStatus: 1, // T159, FR-184
   searchesPerStatus: 0, // a status change of one agent runs no layout search
   floorStyleReadsPerStatus: 1, // T159: `getComputedStyle(#floor)` once per render (it was twice)
-  readsPerStatus: 110, // T156, PROPOSED: measured 98 at 15 agents and 86 at 40 (650 and 998 before); the floor is the checks a status change needs
+  /* T156 (issue 1401), reads per status update of one agent, per size and agent count: measured 81 / 73 at 1440x900 (15 / 40 agents) and 77 / 60 at 1280x800 (97 / 85 and 89 / 72 before
+     the lobby figures read the floor's scroll once); each limit is the measured median plus 2 (all 8 samples were equal, the median drops a render's outlier). The target is under 40 (owner reading 2026-11-13): lowered by each site's change */
+  walkersOffSlot: 0, // T156: with the floor scrolled, every lobby figure's target is a slot's centre in the floor's content coordinates
+  'readsPerStatus@15': 83,
+  'readsPerStatus@40': 75,
+  'readsPerStatus1280@15': 79,
+  'readsPerStatus1280@40': 62,
   readsPerLivePaint: 1, // review of #1138: one live paint reads its line's height once (measured 1 at 15 and 40 agents); the pencils' names only when it changed
   searchesAtStart: 1, // T157, FR-363: owner decision 2026-11-11 (issue #1238): one layout search at start (the simulator gate)
   /* the two @late rows equal `searchesAtStart` and are kept only to document that the forced-late loads (which fail every time without the gate) are held to the same one search */

@@ -44,4 +44,9 @@ assert.ok(R.judge({ 'searchesAtStart@40': 2 }).failed.length === 1 && R.judge({ 
 assert.ok(R.judge({ 'probesAtStart@40': 51 }).failed.length === 1 && R.judge({ 'probesAtStart@40': 50 }).failed.length === 0 && R.judge({ 'probesAtStart@15': 21 }).failed.length === 1 && R.judge({ 'probesAtStart@15': 20 }).failed.length === 0, 'start probes: at most 50 at 40 agents and 20 at 15');
 assert.ok(R.judge({ 'lateReplayDelay@late15': 0 }).failed.length === 1 && R.judge({ 'lateReplayDelay@late15': 50 }).failed.length === 0, 'a simlate that was ignored (delay 0) fails');
 assert.ok(R.judge({ 'handPositions@15': 1 }).failed.length === 1, 'a hand that never moves fails');
+// T156 (issue 1401): the reads of a status update are held at both sizes and both agent counts; the numbers before the lobby figures read the scroll once fail
+for (const [row, before] of [['readsPerStatus@15', 97], ['readsPerStatus@40', 85], ['readsPerStatus1280@15', 89], ['readsPerStatus1280@40', 72]] as const) {
+  assert.ok(R.judge({ [row]: before }).failed.length === 1, `${row} = ${before} (the count before the scroll was read once) fails`);
+}
+assert.ok(R.judge({ 'readsPerStatus@15': 81, 'readsPerStatus@40': 73, 'readsPerStatus1280@15': 77, 'readsPerStatus1280@40': 60 }).failed.length === 0, 'the measured numbers pass');
 console.log('test-office-ops: ok');
