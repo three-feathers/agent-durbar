@@ -246,7 +246,7 @@ Numbers taken: T167..T183. Each phase one small PR, after #950 and #959 land (#9
 
 **Phase 0: measure, then decide (nothing in `src/` changes)**
 
-- [ ] T167 Spike on an instrumented copy: parts × trials distinct by the FR-195 key; parts FR-197 could skip; start split into renders (script, style, layout, paint) and the rest; the about 27 unnamed reads by call site. 15 and 40 agents, both sizes, 3 runs. Record in a dated delta; set the limits of FR-200; **stop and ask the owner if under half of today's search time at 40 agents is projected.** Test: `sim:` [FR-200, FR-201, FR-202]
+- [ ] T167 Spike on an instrumented copy: parts × trials distinct by the FR-195 key; parts FR-197 could skip; start split into renders (script, style, layout, paint) and the rest; the about 27 unnamed reads by call site. 15 and 40 agents, both sizes, 3 runs. Record in a dated delta; set the limits of FR-200; **stop and ask the owner if under half of today's search time at 40 agents is projected.** Test: `sim:` [FR-200, FR-201, FR-202] First slice (2026-11-13, issue #1401): search time, counts and first frame by `scripts/spike-office-search.js`, protocol in the dated delta; parts x trials, the render split and the read sites stay open
 - [ ] T168 On the same copy: does a class left by `fitHead` ever change a later trial's size answer, and does a giving chip ever lower a room? Record yes or no with the case. Test: `sim:` [FR-196, FR-197]
 
 **Phase 1: the proof, before the change**

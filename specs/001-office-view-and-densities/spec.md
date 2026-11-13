@@ -800,3 +800,18 @@ The rule is spec 097 FR-236 (#1202); this delta is Open office's half, so world 
 - `check-unread`, `check-crew` and `test:unread` assert the tint where they asserted the glow.
 
 **Tasks:** T192..T196 in `tasks.md`. Numbers taken here: FR-230..FR-232 and T192..T196, checked on 2026-11-05 against `main` (FR-229, T191), the remote branches and the open PRs.
+
+### 2026-11-13: the search-time spike, protocol (T167, issue #1401; branch `001-167-search-time-spike`)
+
+Spec first; the measurement PR follows in the next commits. No FR or task number is taken: this fixes how part of T167 is measured.
+
+*Owner decisions (Vikram, 2026-11-13, [#1401 comment 6845758119](https://github.com/three-feathers/agent-durbar/issues/1401#issuecomment-6845758119); build T156..T158 first recorded on #1400):* (a) "under 10 changes a second" (097 T158) means per animation, and "under 40 reads" (FR-202) means per status update, as measured, not totals; (b) the 1500 ms start goal (FR-200, SC-007) binds at 15 agents, not 40; (c) if T167 projects under half of today's search time at 40 agents, the work stops and goes to the owner; (d) the first paint does not wait: FR-201 (d) is not taken, the look stays the same.
+
+*Protocol (what T167 records in this first slice).* Simulator only, 0 AI credits, flat office, desks as scenes, one Electron launch per run, nothing in `src/` changed: `scripts/spike-office-search.js` installs a timer in the page before its scripts run (the debugger of the driver's own window), so the shipped app has no hook for it.
+- **Search time:** wall ms of each layout search (`chooseLayout`), from its entry (it sets the width of `#probe`) to the last access of `#probe` or of a node in it (a trial written, a style set in place, a size read; the reads force the layout, so a trial's layout is inside it). The hooks add a small cost per access, so the times are upper bounds of today's search and are compared only with each other.
+- **Counts:** the app's own counters (`__durbarSimUi.ops()`): renders, searches and probes at the end of the start, and over each of 8 status updates of one agent (the median probes, every search count).
+- **Start:** page time (ms from the navigation) of the first desk in `#stage`, of the frame after it, and of the last change of `#stage` seen by then. Process start to first paint is not measured here (the window is loaded again at the cell's size): `check-perf --record` (FR-203) has it, at 1440x900 only.
+- **Cells:** 15 and 40 agents at 1440x900 and 1280x800, 3 runs each (12 launches), `uptime` load under 3 before each run, load and machine recorded beside each number; a run taken above 3 is invalid and is waited out, not kept.
+- **The rule applied:** T167's stop rule is judged on the 40-agent search time. The cheaper search (FR-193..FR-198) is not built, so its time is a projection, and the delta says from what.
+- **Not measured by this slice:** parts x trials by the FR-195 key, what FR-197 could skip, the split of a render into script, style, layout and paint, the read sites (the about 27 unnamed reads), T168. T167 stays open for them.
+- **Checks of the instrument:** the driver asserts only that the timer works (every counted search was timed, each took time and made a trial, the first frame was seen); `SPIKE_MUTANT=notimer` removes the timer and must fail the first of these by its label. No assert on any time.
