@@ -222,4 +222,4 @@
 - [x] T173 (FR-213) `scripts/ui-suite.js` `xvfbScreenArgs` and `launchCommand` (the xvfb path of `runOne`); `scripts/test-ui-suite.ts` checks the argument and the argv shape with two mutants. Linux/Xvfb run by the coordinator, see the PR.
 - [x] T174 (FR-214) `scripts/check-ui-text.js` `run()`: pointer to 0,0, wait for no `:hover` under the roots, `hovered` finding, `UITEXT_MUTANT=hover`; `changelog.d/008-1591-xvfb-screen.md`. Linux/Xvfb run by the coordinator, see the PR.
 - [x] T175 (FR-214, round 2) `scripts/driver-helpers.js` `pointerOff`; `scripts/check-097-chat-contrast.js` and `scripts/shots-102-arcade.js` reset the pointer and assert no `:hover` at the colour read, mutants `CONTRAST_MUTANT=hover`, `ARCADE_MUTANT=hover`.
-- [ ] T177 (FR-268) await every `H.key` call and wrapper call in `scripts/*.js`; `checkKeyAwait` in `scripts/test-ui-suite.ts` with a sample, wrapper and mutant test; `changelog.d/008-1653-await-key.md`.
+- [x] T177 (FR-268) await every `H.key` call and wrapper call in `scripts/*.js`; `checkKeyAwait` in `scripts/test-ui-suite.ts` with a sample, wrapper and mutant test; `changelog.d/008-1653-await-key.md`.
