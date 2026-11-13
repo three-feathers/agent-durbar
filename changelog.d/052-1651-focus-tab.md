@@ -1,0 +1,1 @@
+- **The focus-ring check no longer fails on a busy runner** (spec 052, issue #1651): `check-052-focus-ring` now waits until its first Tab press has moved focus before it focuses the first control, instead of racing it. Test driver only, nothing changes in the app.
