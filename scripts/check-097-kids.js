@@ -8,6 +8,11 @@
  *   KIDS_MUTANT=nokids|status|name|overlap|adulthead   no kid is drawn / a status change rebuilds a kid's node / a kid's name is drawn / a kid lies over its plate /
  *     the head row shows an adult at 15 agents (each must fail)
  *
+ *   Three source mutants (edit, `npm run build`, run this driver, undo; each must fail at its own assertion; review of #1694):
+ *     hashelp:    realoffice.js, the plate class `(!d.strip && !d.kids && a.helpers ...` -> `(!d.strip && a.helpers ...`   -> "its plate has no has-help class"
+ *     helpwords:  realoffice.js helpWordsOf `!(d && !d.strip && !d.kids && a.helpWords` -> `!(d && !d.strip && a.helpWords` -> "no helper count in its plate's name or tooltip"
+ *     kmorefocus: app.js renderAll `ae.dataset.id||ae.dataset.kmore||` -> `ae.dataset.id||`                             -> "the new \"+K\" keeps the focus (data-kmore)"
+ *
  * At 1, 2, 3 and 4 agents (simhelpers=6, plus 2 more helpers and a hostile one on the first desk through the event path, so it overflows) at 1440x900 and 1280x800 it fails (exit 1) when:
  *   - the office scrolls; a desk the layout gives kids has no kid group right after its plate and pencil, draws a head strip too, or its plate keeps "+N";
  *   - a kid is not a button (data-id) of a helper of that desk, its picture is not the kid `kidOf` gives in the pose `kidPose` gives (loaded), its box is not `kidBox`'s (one scale per kid,
@@ -66,7 +71,7 @@ module.exports = async (ctx) => {
           return {id:b.dataset.id,parent:h&&h.parent,state:st,kid,pose,src:im&&im.getAttribute('src'),nat:im?im.naturalWidth:0,done:!!im&&im.complete,box:R(b),label:b.getAttribute('aria-label')||'',title:b.getAttribute('title')||'',
             text:[...b.childNodes].filter(n=>n.nodeType===3).map(n=>n.textContent).join('').trim()+[...b.querySelectorAll('*')].map(n=>[...n.childNodes].filter(x=>x.nodeType===3).map(x=>x.textContent).join('')).join('').trim(),
             dot:(b.querySelector('.dot')||{}).className||'',hg:!!b.querySelector('.ro-hg'),want:d.kids?E.kidBox(meta.kids[kid],pose,d.kids.places[[...g.querySelectorAll('.ro-kid')].indexOf(b)],d.kids.feet,L.u):null,bodyH:meta.kids[kid].bodyH,poseH:meta.kids[kid].poses[pose][1]}}):[];
-        return {id:d.id,name:a&&a.name,helpers:subs.length,kz:d.kids||null,strip:!!strip,lstrip:!!d.strip,person:d.person?d.person.vis:null,plate:R(plate),plateHelp:!!(plate&&plate.querySelector('.ro-help')),
+        return {id:d.id,name:a&&a.name,helpers:subs.length,kz:d.kids||null,strip:!!strip,lstrip:!!d.strip,person:d.person?d.person.vis:null,plate:R(plate),plateHelp:!!(plate&&plate.querySelector('.ro-help')),plateCls:plate?plate.className:'',plateLabel:plate?plate.getAttribute('aria-label')||'':'',plateTitle:plate?plate.getAttribute('title')||'':'',
           group:g?R(g):null,kids,more:more?{text:more.textContent.trim(),fs:parseFloat(getComputedStyle(more).fontSize),label:more.getAttribute('aria-label')||'',title:more.getAttribute('title')||'',id:more.dataset.kmore,box:R(more)}:null};})};})()`);
   const shots = [];
 
@@ -95,6 +100,9 @@ module.exports = async (ctx) => {
       if (!d.kz) { assert.ok(d.strip || d.plateHelp, `${tag}: ${d.id} without kid room keeps a head row or "+N"`); continue; }
       assert.ok(d.group, `${tag}: ${d.id} has its kids group right after its plate and pencil`);
       assert.ok(!d.strip && !d.lstrip && !d.plateHelp, `${tag}: ${d.id} with kids has no head strip and no "+N" on its plate`);
+      /* review of #1694: the plate of a desk with kids is not the fallback (FR-016, FR-308): no has-help class, no helper count in its name or tooltip */
+      assert.ok(!/\bhas-help\b/.test(d.plateCls), `${tag}: ${d.id} with kids: its plate has no has-help class (${d.plateCls})`);
+      assert.ok(!/\d+ helpers?\b/.test(d.plateLabel) && !/\d+ helpers?\b/.test(d.plateTitle), `${tag}: ${d.id} with kids: no helper count in its plate's name or tooltip (${d.plateLabel} | ${d.plateTitle})`);
       assert.strictEqual(d.kids.length, d.kz.shown, `${tag}: ${d.id} draws ${d.kz.shown} kids (${d.kids.length})`);
       const rank = (st) => (st === 'waiting' || st === 'limit' ? 0 : st === 'error' ? 1 : 2);
       d.kids.forEach((k, i) => {
@@ -139,6 +147,8 @@ module.exports = async (ctx) => {
     if (!onMore && process.env.KIDS_TRACE) console.log('[097-kids] focus calls', JSON.stringify(await js('window.__fT')));
     assert.ok(onMore, `${tag}: after the last kid, Tab reaches "+K" (focus on ` + focusNow + ')');
     assert.ok(await js(`(()=>{const c=getComputedStyle(document.activeElement);return c.outlineStyle!=='none'&&parseFloat(c.outlineWidth)>=2})()`), `${tag}: "+K" shows a 2 px focus ring`);
+    /* review of #1694: a redraw that makes the focused "+K" anew (its node replaced) gives the focus to the new one by its own data-kmore (app.js renderAll), not to the plate */
+    assert.ok(await js(`(()=>{const m=document.activeElement;if(!m.matches('.ro-kmore'))return false;const g=m.parentNode;g._more=null;window.__durbarSimUi.crew.renderAll();const now=document.activeElement;m.remove();return now===g._more&&g._more!==m&&document.activeElement===g._more})()`), `${tag}: after a redraw that makes "+K" anew, the new "+K" keeps the focus (data-kmore)`);
     await H.key('Tab');
     assert.ok(await js(`!document.activeElement.closest('.ro-kids')`), `${tag}: then Tab leaves the kids`);
     await js(`document.activeElement.blur();0`);

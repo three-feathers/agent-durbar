@@ -692,7 +692,7 @@
      kid is one button (data-id: the app's own click opens its Sub-agent activity view) kept by id, so a status change writes the picture, the classes, the box and the labels, never a node
      (FR-184). The kid is the world's (`kidOf`, stable, nothing stored), its pose the state's (`kidPose`: idle holds done, a resting parent rests them all), its box `kidBox` (one scale per
      kid, the sole on the feet line). The marks are CSS on the state class (thinking dots, the red !, an amber or red glow at the feet) and the status dot is `dotClass`'s (shape and colour);
-     nothing moves. The name is only in the accessible name and tooltip (`helperWords`, masked). `+K` is a toy block button with the parent's data-id: its click opens the parent's chat. */
+     nothing moves. The name is only in the accessible name and tooltip (`helperWords`, masked). `+K` is a toy block button with `data-kmore=<parent id>` (not the plate's data-id): app.js opens the parent's chat on its click and gives it the focus back after a redraw. */
   function kidsOnDesk(chrome, d, a, k, meta, u) {
     const L = X(), kz = d.kids, subs = a.subs, kids = meta.kids || {};
     const shown = subs.slice(0, kz.shown), hidden = subs.slice(kz.shown);
