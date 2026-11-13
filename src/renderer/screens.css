@@ -27,16 +27,17 @@ body.screen-open .workspace{display:none}
 
 /* server rows */
 .srvs{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:8px}
-.srv{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
+.srv{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
 .srv.amb{background:var(--tone-neutral-faint)}
 .srv-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.srv:has(.srv-why,.srv-hint,.srv-det) .srv-main{flex-basis:240px} /* spec 058 FR-231 (#1622): a row with a reason, help or details text keeps 240px for it; the buttons wrap below when they do not fit beside it. A row with only a name and a state stays on one line */
 .srv-top{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
 .srv-name{font-size:13px}
 .srv-cmd{font:11px/1.35 var(--font-mono);color:var(--ink-2);overflow-wrap:anywhere;white-space:pre-wrap}
 .srv-secrets{display:flex;flex-wrap:wrap;gap:5px}
 .sec{display:inline-flex;gap:6px;align-items:center;height:20px;padding:0 8px;border-radius:var(--r-sm);background:var(--surface-2);border:1px solid var(--line);font:11px var(--font-mono);color:var(--ink-2)}
 .sec i{font-style:normal;letter-spacing:.06em;color:var(--muted)}
-.srv-act{display:flex;align-items:center;gap:8px;flex:none}
+.srv-act{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px;flex:none;max-width:100%;margin-left:auto} /* spec 058 FR-231 (#1622): the text column keeps 240px; the buttons wrap below it when they do not fit beside it */
 .mtag{display:inline-block;font-size:10.5px;font-weight:650;padding:1px 7px;border-radius:999px;background:var(--tone-info-faint);border:1px solid var(--tone-info-line);color:var(--tone-info-ink)}
 .mtag.warn{background:var(--tone-warn-bg);border-color:var(--tone-warn-line);color:var(--tone-warn-ink)}
 .swt{--switch-on:var(--accent);--switch-off:var(--tone-neutral-track);position:relative;width:38px;height:22px;border-radius:999px;border:1px solid var(--line-2);background:var(--switch-off);cursor:pointer;padding:0;flex:none;transition:background .15s}
