@@ -117,7 +117,7 @@ Checked by reading the code on 2026-11-01 (`read:`), not by a run.
 |---|---|---|
 | Debug log (`DURBAR_LOG`, dev and test only) | Yes | `createDebugSink`: every record, once, after `JSON.stringify` |
 | Codex stderr tail in that log | Yes | `redact` in `src/adapters/codex.ts` |
-| MCP status, errors and failed tool cards | Yes | `src/main/mcpmask.ts`, also session secret values |
+| MCP status, errors and failed tool cards | Yes | `src/main/mcpmask.ts`, also session secret values (folder extras, Claude Code's user list and, since 2026-11-13, the Copilot CLI list for Copilot agents: every value under a secret-looking name, plain setting values such as numbers, one-case words, media types, plain URLs, paths and regions left out under other names; notes and search get the Copilot values also while the vault is locked: spec 069 FR-070; `[KNOWN GAP]` a plain-form secret under a name with no secret word) |
 | MCP read tools (Durbar's own server) | Yes | `src/main/mcp/readtools.ts` |
 | Activity log | Yes | `src/main/activitymask.ts` (the permission card's `permText`: command mask, tool names, escape-split tokens), then `src/shared/activity.ts` (`redact`; a one-line summary only) |
 | Notes | Yes | `maskNoteText` |
