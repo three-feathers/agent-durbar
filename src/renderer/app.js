@@ -2099,8 +2099,8 @@ function renderAll(){
   drawnAt=Date.now(); moodSig=moodSigNow(drawnAt); agoSig=agoSigNow(drawnAt); /* what this draw shows (after AMB_ID, which the mood reads): the two ticks above compare against it (spec 008 FR-184) */
   syncDesks(); /* spec 001 FR-034: who walks to the Boss and who comes back */
   prepareWalkers();
-  const ae=document.activeElement, id=ae&&ae.dataset&&(ae.dataset.id||ae.dataset.more||ae.dataset.foldermenu||ae.dataset.newsess||ae.dataset.lsort||ae.dataset.ren), inPanel=ae&&ae.closest&&ae.closest('#panel'), scope=ae&&ae.closest?(ae.closest('#list')?'#list ':ae.closest('#stage')?'#stage ':''):''; /* FR-173: read before the render detaches it */
-  const key=ae&&ae.dataset&&(ae.dataset.id?'data-id':ae.dataset.more?'data-more':ae.dataset.foldermenu?'data-foldermenu':ae.dataset.newsess?'data-newsess':ae.dataset.lsort?'data-lsort':ae.dataset.ren?'data-ren':''); /* spec 052 FR-064: a sort header keeps focus too; spec 017: so does a room's ⋯ button (it was the door button's place); spec 097 FR-230: and its + */
+  const ae=document.activeElement, id=ae&&ae.dataset&&(ae.dataset.id||ae.dataset.kmore||ae.dataset.more||ae.dataset.foldermenu||ae.dataset.newsess||ae.dataset.lsort||ae.dataset.ren), inPanel=ae&&ae.closest&&ae.closest('#panel'), scope=ae&&ae.closest?(ae.closest('#list')?'#list ':ae.closest('#stage')?'#stage ':''):''; /* FR-173: read before the render detaches it */
+  const key=ae&&ae.dataset&&(ae.dataset.id?'data-id':ae.dataset.kmore?'data-kmore':ae.dataset.more?'data-more':ae.dataset.foldermenu?'data-foldermenu':ae.dataset.newsess?'data-newsess':ae.dataset.lsort?'data-lsort':ae.dataset.ren?'data-ren':''); /* spec 052 FR-064: a sort header keeps focus too; spec 017: so does a room's ⋯ button (it was the door button's place); spec 097 FR-230: and its + */
   renderStats();
   updateFloorAttention();
   renderLift(); /* spec 092 FR-006, FR-008: before the office measures its width */
@@ -3975,6 +3975,7 @@ document.addEventListener('click',e=>{
   const sc=e.target.closest('[data-schedroom]'); if(sc){const r=ROOMS.find(x=>x.id===sc.dataset.schedroom);if(r)openSchedules(r);return;}
   const fm=e.target.closest('[data-foldermenu]'); if(fm){const r=ROOMS.find(x=>x.id===fm.dataset.foldermenu),b=fm.getBoundingClientRect();openFolderMenu(r,b.left,b.bottom+4,fm);return;}
   const ns=e.target.closest('[data-newsess]'); if(ns){const r=ROOMS.find(x=>x.id===ns.dataset.newsess),ag=r&&agents.find(x=>!x.parent&&x.room===r.id);if(ag)newSession(ag);return;}
+  const km=e.target.closest('[data-kmore]'); if(km&&km.closest('#stage')){openPanel(km.dataset.kmore,true);return;} /* spec 097 FR-370 (issue 1642): the desk-top +K opens the parent's chat; its own attribute, so a redraw gives the focus back to it, not to the plate with the same id */
   const t=e.target.closest('[data-id]'); if(t&&!t.closest('#panel,#inboxDlg,#needsPanel')){openPanel(t.dataset.id,true);} /* spec 074 FR-019: mouse or keyboard, desk or list row */
 });
 
@@ -9888,6 +9889,7 @@ if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentEle
 if(SIM)window.__durbarSimUi={announce,afArrivalPrio,afNotice:{ms:v=>{AF_NOTICE_MS=Math.max(100,Number(v)||3000);return AF_NOTICE_MS;},on:v=>{setAutoFollowOn(!!v);return AF_ON;},shown:()=>!!AF_NOTICE}, /* spec 052 FR-239: drivers only: the notice's length, Auto-follow without Settings */swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
   chatTrimNow:()=>chatTrimPending(false), /* spec 005 FR-238: trim the chats waiting for a frame now (a burst with no frame between) */
   hiddenTrimTimer:()=>({on:!!hiddenTrimT,ms:TRIM_HIDDEN_MS}),
+  helperState:(id,st)=>{const h=agents.find(x=>x.id===id&&x.parent);if(!h||!['working','thinking','waiting','error','limit','done','idle'].includes(st))return false;h.state=st==='limit'?'waiting':st;h.limit=st==='limit';h.paused=false;layoutKey='';renderAll();return true;}, /* spec 097 T335 (issue 1642): drivers only: a helper's state the simulator never sends (waiting, limit), for the kids on the desk */
   helperStats:aid=>{const a=liveById(aid);if(!a)return null;const subs=a.subs?[...a.subs.values()]:[],ids=new Set(subs.map(s=>s.id)),ch=chats[aid];
     let staleViews=0;for(const k of Object.keys(chats)){const c=chats[k];if(c&&c.subViews)for(const v of c.subViews){const p=v.s&&v.s.parent;if(!p||!p.subs||p.subs.get(v.s.id)!==v.s)staleViews++;}}
     const pre=aid+':';

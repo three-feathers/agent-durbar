@@ -1402,7 +1402,7 @@ body.browser-big #panel .bpane :is(.bstrip,.bbar,.bstat){padding-left:var(--s-4)
 .btn.primary.warn:hover{background:var(--tone-warn-hover)}
 /* spec 052 FR-076: red means it deletes or ends (End session, Remove, Delete floor, Clear); amber .primary.warn only grants more power (Allow all, Turn on remote) */
 .btn.primary.danger{background:var(--red-ink);border-color:transparent;color:var(--surface)}
-.btn.primary.danger:hover{background:color-mix(in srgb,var(--red-ink) 86%,#000);border-color:transparent}
+.btn.primary.danger:hover{background:color-mix(in srgb,var(--red-ink) 86%,var(--ink));border-color:transparent} /* toward the page ink: darker on a dark fill (light themes), lighter on a light fill (dark themes), so the text keeps its contrast (issue 1565) */
 
 /* ---- switch model and context, compact (spec 030) ---- */
 .mchip-btn{cursor:pointer;font-family:inherit;gap:5px}
