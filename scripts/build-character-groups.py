@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Character group pictures (spec 102 FR-303, T265b): one picture per character set showing many of its people, for the Settings cards.
+"""Character group pictures (spec 102 FR-303, T343): one picture per character set showing many of its people, for the Settings cards.
 
     python3 scripts/build-character-groups.py [--write | --check] [set-id ...]
     python3 scripts/build-character-groups.py --selftest
