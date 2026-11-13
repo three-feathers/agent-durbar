@@ -5,7 +5,7 @@
  *
  * What it records (one Electron launch is one run of one cell; `SPIKE_N` agents, `SPIKE_W` x `SPIKE_H` window, one JSON line `[spike] {...}`):
  *   - per layout search (chooseLayout): wall ms from the search's entry (it sets the width of #probe) to the last access of #probe or of anything inside it (a trial's
- *     HTML written, a style set in place, a size read: reads force the layout, so a trial's layout is in it), the trials (writes) and size reads it made;
+ *     HTML written, a style set in place, a size read: reads force the layout, so a trial's layout is in it), the writes (a trial's HTML, or a style attribute set in place: more than the app's probe count) and size reads it made;
  *   - the app's own counters (`__durbarSimUi.ops()`): renders, searches, probes at the end of the start and over each of 8 status updates;
  *   - page time (ms since the navigation began) of the first desk in #stage and of the first frame after it, and the time of every later change to #stage.
  * It does not record: process start (the window is loaded again at the cell's size, so the first page of the process is not the measured one; `check-perf --record`
@@ -30,8 +30,13 @@ const TIMER = `(()=>{ const S=window.__spike;
   let cur=null,P=null; const probe=()=>P||(P=document.getElementById('probe'));
   const touch=()=>{if(cur)cur.last=performance.now();};
   const inProbe=(e)=>{const p=probe();return !!p&&(e===p||p.contains(e));};
-  const wd=Object.getOwnPropertyDescriptor(CSSStyleDeclaration.prototype,'width');
-  Object.defineProperty(CSSStyleDeclaration.prototype,'width',{...wd,set(v){const p=probe();if(p&&p.style===this){const t=performance.now();cur={t0:t,last:t,writes:0,reads:0};S.searches.push(cur);}return wd.set.call(this,v);}});
+  /* this Chromium keeps the CSS properties as own data properties of each style object, so the width of #probe is hooked on its own style object, the first time the page asks for it */
+  const hooked=new WeakSet();
+  const sd=Object.getOwnPropertyDescriptor(HTMLElement.prototype,'style');
+  if(sd&&sd.get)Object.defineProperty(HTMLElement.prototype,'style',{...sd,get(){const st=sd.get.call(this);
+    if(this.id==='probe'&&!hooked.has(st)){hooked.add(st);const wd=Object.getOwnPropertyDescriptor(st,'width');
+      if(wd&&wd.configurable)Object.defineProperty(st,'width',{configurable:true,enumerable:true,get(){return st.getPropertyValue('width');},set(v){const t=performance.now();cur={t0:t,last:t,writes:0,reads:0};S.searches.push(cur);st.setProperty('width',v);}});}
+    return st;}});
   const ih=Object.getOwnPropertyDescriptor(Element.prototype,'innerHTML');
   Object.defineProperty(Element.prototype,'innerHTML',{...ih,set(v){const r=ih.set.call(this,v);if(cur&&this===probe()){cur.writes++;touch();}return r;}});
   const sa=Element.prototype.setAttribute;
@@ -63,11 +68,13 @@ module.exports = async (ctx) => {
   const loadBefore = os.loadavg()[0];
   await H.load({ w: W, h: HGT, query: { sim: String(N) }, ready: FLAT, readyMs: 30000 });
   assert.ok(await js(`!!window.__spike`), 'the instrument was installed in the page before its scripts ran');
-  const start = await js(`(()=>{const S=window.__spike;return {ops:window.__durbarSimUi.ops(),searches:S.searches.map(s=>({ms:s.last-s.t0,at:s.t0,writes:s.writes,reads:s.reads})),firstDesk:S.firstDesk,firstPaint:S.firstPaint,stage:S.stage,
-    size:[innerWidth,innerHeight],dpr:devicePixelRatio,desks:document.querySelectorAll('#stage .desk[data-id]').length};})()`);
+  assert.ok(await until(`!!window.__durbarSimUi&&typeof window.__durbarSimUi.ops==='function'`, 10000), 'the simulator hooks are on the page');
+  const start = await js(`(()=>{try{const S=window.__spike;return {ops:window.__durbarSimUi.ops(),searches:S.searches.filter(s=>s.writes>0).map(s=>({ms:s.last-s.t0,at:s.t0,writes:s.writes,reads:s.reads})),widthSetsWithoutTrial:S.searches.filter(s=>s.writes===0).length,firstDesk:S.firstDesk,firstPaint:S.firstPaint,stage:S.stage,
+    size:[innerWidth,innerHeight],dpr:devicePixelRatio,desks:document.querySelectorAll('#stage .desk[data-id]').length};}catch(e){return {err:String(e&&e.stack)};}})()`);
+  assert.ok(!start.err, `reading the start failed in the page: ${start.err}`);
   assert.ok(await until(`window.__spike.firstPaint!==null`, 5000), 'the first frame with a desk was seen');
   const paint = await js(`({firstDesk:window.__spike.firstDesk,firstPaint:window.__spike.firstPaint,lastStageChange:window.__spike.stage[window.__spike.stage.length-1]})`);
-  assert.strictEqual(start.searches.length, start.ops.searches, `every layout search the app counted was timed (timed ${start.searches.length}, counted ${start.ops.searches}): the timer is live`);
+  assert.strictEqual(start.searches.length, start.ops.searches, `every layout search the app counted was timed (timed ${start.searches.length}, counted ${start.ops.searches}): the timer is live: ${JSON.stringify(start.searches)}`);
   assert.ok(start.searches.every((s) => s.ms > 0 && s.writes >= 1), `every timed search took time and made a trial (${JSON.stringify(start.searches)})`);
 
   /* one status event of one agent, 8 times, each a real change: renders, searches and probes by the app's own counters, and the searches the timer saw */
@@ -89,9 +96,11 @@ module.exports = async (ctx) => {
     const b = await js(`({o:window.__durbarSimUi.ops(),t:window.__spike.searches.length})`);
     per.renders.push(b.o.renders - a.o.renders); per.searches.push(b.o.searches - a.o.searches); per.probes.push(b.o.probes - a.o.probes); per.timed.push(b.t - a.t);
   }
+  /* what one hooked access costs on top of the real one: a contains() and a clock read, run as often as the search accessed the probe; subtracted by nobody, printed so the reader can */
+  const hookUs = await js(`(()=>{const p=document.getElementById('probe'),c=p.firstElementChild||p,N=20000,t=performance.now();let k=0;for(let i=0;i<N;i++){if(p.contains(c))k++;performance.now();}return (performance.now()-t)/N*1000;})()`);
   const rec = {
     n: N, requested: [W, HGT], page: start.size, dpr: start.dpr, desks: start.desks, loadavgBefore: r1(loadBefore), loadavgAfter: r1(os.loadavg()[0]), cpu: os.cpus()[0].model, cores: os.cpus().length, mutant: MUTANT || undefined,
-    start: { renders: start.ops.renders, searches: start.ops.searches, probes: start.ops.probes, searchMs: start.searches.map((s) => r1(s.ms)), searchAtMs: start.searches.map((s) => r1(s.at)), trialsWritten: start.searches.map((s) => s.writes), sizeReads: start.searches.map((s) => s.reads), firstDeskMs: r1(paint.firstDesk), firstPaintMs: r1(paint.firstPaint), lastStageChangeMs: r1(paint.lastStageChange), stageChangesAtStart: start.stage.length },
+    start: { widthSetsWithoutTrial: start.widthSetsWithoutTrial, renders: start.ops.renders, searches: start.ops.searches, probes: start.ops.probes, searchMs: start.searches.map((s) => r1(s.ms)), searchAtMs: start.searches.map((s) => r1(s.at)), probeWrites: start.searches.map((s) => s.writes), sizeReads: start.searches.map((s) => s.reads), hookMsEstimate: start.searches.map((s) => r1((s.reads + s.writes) * hookUs / 1000)), hookUsPerCall: Math.round(hookUs * 1000) / 1000, firstDeskMs: r1(paint.firstDesk), firstPaintMs: r1(paint.firstPaint), lastStageChangeMs: r1(paint.lastStageChange), stageChangesAtStart: start.stage.length },
     perStatus: { renders: per.renders, searches: per.searches, probes: per.probes, timedSearches: per.timed, medianProbes: med(per.probes) },
   };
   console.log('[spike] ' + JSON.stringify(rec));
