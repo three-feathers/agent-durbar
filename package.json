@@ -182,7 +182,7 @@
     "test:teamtemplate": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-teamtemplate.js",
     "test:teamstore": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-teamstore.js",
     "test:teams-ui": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-teams-ui.js",
-    "test:teamops": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-teamops.js",
+    "test:teamsipc": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-teamsipc.js",
     "test:teamstore-fs": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-teamstore-fs.js",
     "test:names": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-names.js",
     "test:inlinename": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-inlinename.js",

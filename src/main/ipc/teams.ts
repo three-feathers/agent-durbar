@@ -5,19 +5,24 @@
  * `teams:markMine` takes the rest arguments only to refuse them: the call can change nothing but that one mark.
  */
 import { fromAppFrame as fromApp, ipcHandle } from '../ipcguard';
-import type { TeamsOps } from '../teamsops';
+import type { TeamsOps } from '../teamsipc';
 
 export interface TeamsIpcDeps {
   getOps(): TeamsOps | undefined;
 }
 
 const NO = { ok: false as const, code: 'invalid' as const, errors: ['Team templates are not available.'], blocked: false };
+/** Any throw (a store that breaks, a bug) answers one fixed `failed`: no message, no value, no stack (spec 111, review of #1640). */
+const FAILED = { ok: false as const, code: 'failed' as const, errors: ['The team templates could not be used.'], blocked: false };
+function guard(fn: () => unknown): unknown {
+  try { return fn(); } catch { return FAILED; }
+}
 
 export function register(deps: TeamsIpcDeps): void {
   const ops = deps.getOps;
-  ipcHandle('teams:list', (e) => (!fromApp(e) ? NO : ops()?.list() ?? NO));
-  ipcHandle('teams:put', (e, value: unknown) => (!fromApp(e) ? NO : ops()?.put(value) ?? NO));
-  ipcHandle('teams:delete', (e, id: unknown) => (!fromApp(e) ? NO : ops()?.delete(id) ?? NO));
-  ipcHandle('teams:duplicate', (e, id: unknown) => (!fromApp(e) ? NO : ops()?.duplicate(id) ?? NO));
-  ipcHandle('teams:markMine', (e, templateId: unknown, memberId: unknown, ...extra: unknown[]) => (!fromApp(e) ? NO : ops()?.markMine(templateId, memberId, ...extra) ?? NO));
+  ipcHandle('teams:list', (e) => (!fromApp(e) ? NO : guard(() => ops()?.list() ?? NO)));
+  ipcHandle('teams:put', (e, value: unknown) => (!fromApp(e) ? NO : guard(() => ops()?.put(value) ?? NO)));
+  ipcHandle('teams:delete', (e, id: unknown) => (!fromApp(e) ? NO : guard(() => ops()?.delete(id) ?? NO)));
+  ipcHandle('teams:duplicate', (e, id: unknown) => (!fromApp(e) ? NO : guard(() => ops()?.duplicate(id) ?? NO)));
+  ipcHandle('teams:markMine', (e, templateId: unknown, memberId: unknown, ...extra: unknown[]) => (!fromApp(e) ? NO : guard(() => ops()?.markMine(templateId, memberId, ...extra) ?? NO)));
 }

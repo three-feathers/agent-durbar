@@ -136,8 +136,8 @@ test:skeleton
 test:teamtemplate
 test:teamstore
 test:teamstore-fs
-test:teamops
 test:teams-ui
+test:teamsipc
 test:names
 test:renameadapters
 test:sessionname
