@@ -10,7 +10,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
-import { CHARACTER_CHOICES, CHARACTER_KITS, LEGACY_CREW_THEME, kitFor, migrateLegacyTheme, parseCharacters } from '../src/shared/characters';
+import { CHARACTER_CHOICES, CHARACTER_KITS, LEGACY_CREW_THEME, PIXEL_CHARACTERS, RETRO_MIGRATION_OPEN, kitFor, migrateLegacyTheme, migrateRetroTheme, parseCharacters } from '../src/shared/characters';
 import { parseSettings } from '../src/shared/credits';
 import { SCENE_KITS } from '../src/shared/themes';
 
@@ -127,6 +127,32 @@ assert.deepStrictEqual(parseSettings('{"characters":"rebels"}'), { characters: '
 assert.deepStrictEqual(migrateLegacyTheme({ theme: 'cheeky-crew', characters: 'prehistoric' }), { settings: { characters: 'prehistoric' }, changed: true }, 'a stored Prehistoric is kept by the migration');
 for (const bad of ['"theme"', '"crew"', '"CHEEKY"', '42', '{}', '["cheeky"]', 'null']) assert.deepStrictEqual(parseSettings(`{"characters":${bad}}`), {}, 'dropped: ' + bad);
 
+// --- spec 102 T227 / FR-266: the Retro Pixel migration, pure ---
+assert.strictEqual(RETRO_MIGRATION_OPEN, false, 'T227: the migration is closed until T230 flips the flag');
+{
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const CREW = require(path.join(ROOT, 'src', 'renderer', 'crew.js'));
+  assert.strictEqual(CREW.WORLD_FLAGS.retro, RETRO_MIGRATION_OPEN, 'T227: the two copies of the retro flag agree');
+}
+assert.deepStrictEqual(migrateRetroTheme({ theme: 'retro' }, true), { settings: { characters: PIXEL_CHARACTERS }, changed: true }, 'T227: theme to pixel, theme gone');
+for (const c of CHARACTER_CHOICES.filter((v) => v !== 'theme')) {
+  const once = migrateRetroTheme({ theme: 'retro', characters: c, seriousMode: true } as { theme?: string; characters?: string }, true);
+  assert.deepStrictEqual(once, { settings: { characters: c, seriousMode: true }, changed: true }, `T227: an explicit ${c} is untouched (not overwritten)`);
+  const twice = migrateRetroTheme(once.settings, true);
+  assert.deepStrictEqual(twice, { settings: once.settings, changed: false }, `T227: a repeat changes nothing for ${c}`);
+}
+{
+  const once = migrateRetroTheme({ theme: 'retro' }, true);
+  assert.deepStrictEqual(migrateRetroTheme(once.settings, true), { settings: once.settings, changed: false }, 'T227: a repeat changes nothing');
+}
+for (const s of [{}, { theme: 'clean-office' }, { theme: 'Retro' }, { theme: 'retro-2' }, { theme: 'my-retro' }, { theme: 'retro ' }, { characters: 'cheeky' }]) {
+  assert.deepStrictEqual(migrateRetroTheme(s, true), { settings: s, changed: false }, 'T227: only the built-in id retro migrates, not a theme named like it: ' + JSON.stringify(s));
+}
+assert.deepStrictEqual(migrateRetroTheme({ theme: 'retro' }, false), { settings: { theme: 'retro' }, changed: false }, 'T227: flag closed, nothing migrates');
+for (const bad of [undefined, null, 0, '', {}, 'nope']) assert.deepStrictEqual(migrateRetroTheme({ theme: 'retro', characters: bad as unknown as string }, true).settings.characters, bad === 'nope' ? 'nope' : PIXEL_CHARACTERS, 'T227: a missing or empty Characters gets pixel');
+const frozen = Object.freeze({ theme: 'retro' });
+migrateRetroTheme(frozen, true);
+
 async function main(): Promise<void> {
   // --- the store and the IPC handlers, with a stand-in electron ---
   const electronPath = require.resolve('electron');
@@ -166,6 +192,38 @@ async function main(): Promise<void> {
     // an old file with a stored choice keeps it
     fs.writeFileSync(file, JSON.stringify({ version: 1, theme: 'cheeky-crew', characters: 'minimalist' }));
     assert.strictEqual(new SettingsStore(file).load().characters, 'minimalist', 'a stored choice is kept');
+    // spec 102 T227 / FR-266: the Retro Pixel migration through the store, flag closed and open (test-only override)
+    {
+      const rfile = path.join(dir, 'retro-settings.json');
+      const body = (extra: Record<string, unknown>): string => JSON.stringify({ version: 1, theme: 'retro', seriousMode: true, ...extra });
+      fs.writeFileSync(rfile, body({}));
+      const closed = new SettingsStore(rfile).load();
+      assert.strictEqual(closed.theme, 'retro', 'T227: flag closed, the stored theme stays');
+      assert.strictEqual(closed.characters, undefined, 'T227: flag closed, Characters stays unset');
+      assert.strictEqual(JSON.parse(fs.readFileSync(rfile, 'utf8')).theme, 'retro', 'T227: flag closed, the file is not written');
+      for (const c of [undefined, ...CHARACTER_CHOICES.filter((v) => v !== 'theme')]) {
+        fs.writeFileSync(rfile, body(c ? { characters: c } : {}));
+        const open1 = new SettingsStore(rfile, undefined, true).load();
+        assert.strictEqual(open1.theme, undefined, 'T227: the theme is cleared ' + String(c));
+        assert.strictEqual(open1.characters, c ?? PIXEL_CHARACTERS, 'T227: an explicit choice is untouched, an unset one becomes pixel: ' + String(c));
+        assert.strictEqual(open1.seriousMode, true, 'T227: the other settings are untouched');
+        const disk = JSON.parse(fs.readFileSync(rfile, 'utf8'));
+        assert.ok(!('theme' in disk), 'T227: written at once');
+        assert.strictEqual(disk.characters, c ?? PIXEL_CHARACTERS, 'T227: the file holds the explicit choice, or pixel');
+        const text = fs.readFileSync(rfile, 'utf8');
+        fs.utimesSync(rfile, new Date(0), new Date(0));
+        new SettingsStore(rfile, undefined, true).load();
+        assert.strictEqual(fs.statSync(rfile).mtimeMs, 0, 'T227: the second load writes nothing');
+        assert.strictEqual(fs.readFileSync(rfile, 'utf8'), text, 'T227: and the file is the same');
+      }
+      // malformed files read safely and write nothing
+      for (const raw of ['', '{', 'null', '[]', '{"theme":42}', '{"theme":["retro"]}', '{"theme":"RETRO"}']) {
+        fs.writeFileSync(rfile, raw);
+        fs.utimesSync(rfile, new Date(0), new Date(0));
+        assert.strictEqual(new SettingsStore(rfile, undefined, true).load().theme, undefined, 'T227: a bad file reads safely: ' + raw);
+        assert.strictEqual(fs.statSync(rfile).mtimeMs, 0, 'T227: a bad file is not rewritten: ' + raw);
+      }
+    }
     // unknown values fall back safely
     fs.writeFileSync(file, JSON.stringify({ version: 1, theme: 'gone-theme', characters: 'pirates' }));
     const s2 = new SettingsStore(file);
