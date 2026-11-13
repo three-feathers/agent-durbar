@@ -576,11 +576,18 @@
         "photo": "designed",
         "cave": "designed",
         "loft": "designed",
-        "retro": "missing"
+        "retro": "built"
       },
       "nonNegotiables": "ASKTC",
-      "gap": {
-        "retro": "cream card with pale unreadable text in the arcade chat (retro-cell-chat); fix with T221's dark chat"
+      "evidence": {
+        "retro": {
+          "steps": [
+            "cells"
+          ],
+          "pictures": [
+            "cell-chat"
+          ]
+        }
       }
     },
     {
@@ -598,12 +605,9 @@
         "photo": "designed",
         "cave": "designed",
         "loft": "designed",
-        "retro": "missing"
+        "retro": "designed"
       },
-      "nonNegotiables": "AKT",
-      "gap": {
-        "retro": "same cream card as the permission card (retro-cell-chat); fix with T221's dark chat"
-      }
+      "nonNegotiables": "AKT"
     },
     {
       "id": "elicitation",
