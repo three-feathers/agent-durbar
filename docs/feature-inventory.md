@@ -53,6 +53,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Add folder or workspace, create or clone a folder | works | works | none | 006 093 | test:newfolder driver:shots-093 |
 | Resume after restart, Since you were away, crash card | works | works | none | 006 | test:crashmarker driver:shots-006-crash |
 | Previous sessions, search | works | works | none | 006 | test:sessionsearch driver:shots-006-prevmarks |
+| Search conversations (top-bar box, results in the List view, open at the message) | works | works | none | 095 | test:convsearchui driver:shots-095 |
 | Notes per folder | works | works | none | 083 | test:notes |
 | Scheduled prompts, loops | works | works | none | 044 072 | test:schedules test:loops |
 | Custom agents and profile files | works | works | none | 043 | test:agentprofiles test:profileeditor |

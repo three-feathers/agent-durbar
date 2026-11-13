@@ -22,6 +22,7 @@ When you run many agent sessions across several windows, you end up watching you
 
 - **An office, not a log:** every agent is a person at a desk in its folder's room; you see who is working, waiting for you or in trouble.
 - **Needs you:** one inbox of every agent waiting for an answer or a permission, oldest first.
+- **Search conversations:** a box in the top bar (Ctrl+Shift+F) finds what you said in any open or earlier session and opens the chat at that message.
 - **Full-screen chat** with tool calls, diffs, questions and files, and the other agents always in view.
 - **Three agent apps side by side:** Copilot, Claude Code and Codex, with the same permission modes and spending controls.
 - **Sessions that last:** resume after a restart, scheduled prompts, undo file changes, notes.
@@ -52,6 +53,8 @@ Every file, the Windows and Mac notes, verifying a download and the requirements
 - **Read-only** (the default): reads inside the session's folders only; everything else is denied.
 - **Ask first**: writes, shell commands, URLs and tools wait for *Allow once*, *Allow for this session* or *Deny*.
 - **Allow all**: no prompts. Use it only in folders you trust; it asks once to confirm.
+
+**Search conversations** runs on your computer only: Durbar reads the sessions' text through the agent apps' own files and sessions, masks every excerpt before you see it, stores nothing (no index; the earlier Codex session titles are kept in memory until you clear the box) and sends nothing. Tool output, hidden earlier sessions and the content of earlier Copilot and Codex sessions (their titles only) are not searched; when saved MCP values are locked in the vault, the results say excerpts may show them.
 
 An approval card marks lookalike letters in a host, program or tool name (a Cyrillic letter in a Latin word, a fullwidth form) and names an address's host as the network reads it; it warns and never blocks, with small closed lists rather than the full confusables table ([docs/safety.md](docs/safety.md)).
 

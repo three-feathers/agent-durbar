@@ -94,6 +94,7 @@
     "test:sessionsearch": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-sessionsearch.js",
     "test:convsearch": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-convsearch.js && node dist-scripts/scripts/test-convsearch-corpus.js",
     "test:convmask": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-convmask.js",
+    "test:convsearchui": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-convsearchui.js",
     "test:convsearchipc": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-convsearchipc.js",
     "test:url": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-url.js",
     "test:elicit": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-elicit.js",
