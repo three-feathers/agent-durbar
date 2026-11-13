@@ -4,6 +4,7 @@
  *
  *   npm run check:ui -- --only check-097-desk-marks      (builds first)
  *   DESK_MARKS_MUTANT=lounge-pick   the picker takes lounge seats (must fail with "the picked desk is not a lounge seat")
+ *   DESK_MARKS_MUTANT=unsettled   the page is not awaited before the picks (the old driver: a desk picked while its place visit is still pending goes away and its tag moves to the post-it; must fail with "is the tag above its plate's left end")
  *   DESK_MARKS_MUTANT=moving   a picked plate eases for a minute (must fail with "timed out waiting for the plates and Draft tags to stop moving (settled layout)")
  *   DESK_MARKS_MUTANT=stale   the tag's class is not removed when the draft goes (must fail with "an emptied draft loses its tag"; the observer adds `on` only when it is missing: a bare add() of a class already set still fires an attribute mutation, so the old mutant looped in a microtask and froze the page until the suite's 601 s limit)
  *
@@ -26,7 +27,7 @@ module.exports = async (ctx) => {
   const OUT = process.env.SHOTS_OUT || fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-097-desk-marks-'));
   const H = helpers(ctx);
   const { js } = H;
-  const { until } = waits(ctx);
+  const { until, SETTLED } = waits(ctx);
   const must = async (expr, what, ms = 8000) => assert.ok(await until(expr, ms), 'timed out waiting for ' + what);
   const INSTALL = `window.__dm={plate:k=>document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(k)+'"]'),tag:k=>document.querySelector('#stage .ro-drafttag[data-for="'+CSS.escape(k)+'"]')};true`;
   const shown = () => js(`[...document.querySelectorAll('#stage .ro-drafttag.on')].map(e=>e.dataset.for).sort()`);
@@ -34,6 +35,8 @@ module.exports = async (ctx) => {
     const tag = `${w}x${h}`;
     await H.load({ w, h, query: { officeview: 'real', sim: '15', simfreeze: '1' }, ready: `document.querySelectorAll('#stage .ro-plate').length>=10`, readyMs: 30000, settle: false });
     await js(INSTALL);
+    /* the lobby's visits settle some time after the replay (the debounce of a place call): a desk picked before that can go away afterwards, and an away desk's tag stands on its post-it, not over its plate. Settled first, then picked. */
+    if (MUTANT !== 'unsettled') await must(SETTLED, `${tag}: the page replayed, its visits settled and drawn`, 15000);
     /* DESK_MARKS_FONT=wide (a developer aid): Verdana / DejaVu Sans with 0.1 px letter spacing in the stage, the widths CI's Linux fonts give, so a Mac run takes the wide-font path */
     if (process.env.DESK_MARKS_FONT === 'wide') await js(`(()=>{const s=document.createElement('style');s.textContent='#stage .ro,#stage .ro *{font-family:Verdana,"DejaVu Sans",sans-serif!important;letter-spacing:.1px!important}';document.head.appendChild(s);return 1})()`);
     assert.deepStrictEqual(await shown(), [], `${tag}: no Draft tag before a draft`);
