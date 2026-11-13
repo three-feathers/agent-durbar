@@ -416,7 +416,7 @@ Spec [024](../024-office-places/spec.md) adds a one-row **lobby** band between t
 *Found:* FR-038's letter looked for the flat office's `.place.postbox` and `.desk[data-id]` only, so in the Real office (Photo office, Prehistoric cave, Retro arcade) it never flew.
 
 *Changed:*
-- **FR-038** (amendment) **The letter also flies in the Real office:** from the Postbox plate (`.ro-lplate[data-post]`) to the agent's name plate (`.ro-plate[data-id]`), skipped only when either end is off screen (in the flat office too: a desk scrolled out of view got a letter flying to nowhere). Rules, driver and mutants: [spec 097](../097-real-office/spec.md) FR-377.
+- Amendment to the Postbox's letter rule (FR-038): **the letter also flies in the Real office:** from the Postbox plate (`.ro-lplate[data-post]`) to the agent's name plate (`.ro-plate[data-id]`), skipped only when either end is off screen (in the flat office too: a desk scrolled out of view got a letter flying to nowhere). Rules, driver and mutants: [spec 097](../097-real-office/spec.md) FR-377.
 - *Result (2026-11-13, Linux, Xvfb, simulator only):* see spec 097 FR-377 (`sim:` `check-097-letter`).
 
 ### 2026-10-22: a long unbroken name on a full desk card (issue #536)
