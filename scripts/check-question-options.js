@@ -59,7 +59,7 @@ module.exports = async (ctx) => {
       await shot(`052-question-options-${w}x${h}.png`);
       // the inbox row: the question text in full, nothing clipped
       await js(`document.activeElement&&document.activeElement.blur()`);
-      H.key('I', [], { char: 'always', pause: 0 });
+      await H.key('I', [], { char: 'always', pause: 0 });
       await until(`[...document.querySelectorAll('#inboxDlg .inbox-row .ib-t')].some(p=>/Before I change/.test(p.textContent))`); await settle();
       const ib = await js(`(()=>{const d=document.getElementById('inboxDlg');if(!d)return null;const t=[...d.querySelectorAll('.inbox-row .ib-t')].find(p=>/Before I change/.test(p.textContent));if(!t)return {found:false};
         const br=t.getBoundingClientRect(),rr=t.closest('.inbox-row').getBoundingClientRect();return {found:true,text:t.textContent,clipped:t.scrollWidth>t.clientWidth+1||t.scrollHeight>t.clientHeight+1,inside:br.right<=rr.right+0.5}})()`);

@@ -1,0 +1,1 @@
+- Internal: the UI drivers now await every keyboard press (`H.key`) and a check in `npm test` fails on one that is not awaited, so a key can no longer land after the next step.

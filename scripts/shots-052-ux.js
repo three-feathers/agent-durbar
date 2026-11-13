@@ -22,7 +22,7 @@ const MOD = process.platform === 'darwin' ? 'meta' : 'control';
 module.exports = async (ctx) => {
   const H = helpers(ctx); // spec 008 FR-096/097: shared plumbing, waits for the page instead of a fixed time
   const { until, settle, office, chatOf, js } = H;
-  const key = (k) => H.key(k, [], { char: 'always' }); // not awaited: the events are sent at once
+  const key = (k) => H.key(k, [], { char: 'always' });
   const shot = (name) => H.shot(path.join(OUT, name), { prep: 'mouse', tag: '052' });
   const load = async (w, h) => {
     await H.load({ w, h, query: { simkinds: 'mixed' }, ready: 'fit', settle: false });
@@ -52,16 +52,16 @@ module.exports = async (ctx) => {
     await shot(`052-office-${w}x${h}.png`);
     // #308: the defaults are one group; the demo lives under ⋯
     assert.ok(await js(`!!document.querySelector('.defaults-grp #permMode')&&!!document.querySelector('.defaults-grp #modelSel')`), 'defaults grouped');
-    await js(`document.getElementById('topMoreBtn').focus()`); key('Down'); await until(`!document.getElementById('topMoreMenu').hidden`);
+    await js(`document.getElementById('topMoreBtn').focus()`); await key('Down'); await until(`!document.getElementById('topMoreMenu').hidden`);
     const tm = await js(`({open:!document.getElementById('topMoreMenu').hidden,ids:['demoToggle','endAllBtn'].map(i=>!!document.querySelector('#topMoreMenu #'+i))})`);
     assert.ok(tm.open && tm.ids.every(Boolean), 'the ⋯ menu holds the demo and End all sessions (FR-090): ' + JSON.stringify(tm));
     await shot(`052-topbar-more-${w}x${h}.png`);
-    key('Escape'); await until(`document.getElementById('topMoreMenu').hidden&&document.activeElement.id==='topMoreBtn'`);
+    await key('Escape'); await until(`document.getElementById('topMoreMenu').hidden&&document.activeElement.id==='topMoreBtn'`);
     assert.ok(await js(`document.getElementById('topMoreMenu').hidden&&document.activeElement.id==='topMoreBtn'`), '⋯ closes on Esc');
 
     // FR-027 (#305): the inbox lists every agent that needs you; a row's Allow once settles that agent's card
     await js(`document.activeElement&&document.activeElement.blur()`);
-    key('I'); await until(`!!document.getElementById('inboxDlg')&&document.activeElement&&document.activeElement.classList.contains('ib-h')`);
+    await key('I'); await until(`!!document.getElementById('inboxDlg')&&document.activeElement&&document.activeElement.classList.contains('ib-h')`);
     const ib = await js(`(()=>{const d=document.getElementById('inboxDlg');if(!d)return null;return {rows:[...d.querySelectorAll('.inbox-row')].map(r=>r.querySelector('.ib-h b').textContent),btn:document.getElementById('inboxBtn').innerText}})()`);
     assert.ok(ib && ib.rows.length >= 3, 'the inbox lists the agents that need you: ' + JSON.stringify(ib));
     // FR-033: it opens on the first request's heading, never on a button
@@ -73,7 +73,7 @@ module.exports = async (ctx) => {
       const target = await js(`(()=>{const rows=[...document.querySelectorAll('#inboxDlg .inbox-row')];const i=rows.findIndex(x=>x.querySelector('.ib-h b').textContent!=='Jonas'&&x.querySelector('[data-k="approve"]'));if(i<0)return null;rows[i].querySelector('.ib-h').focus();return rows[i].querySelector('.ib-h b').textContent;})()`);
       if (target) {
         const n0 = await js(`document.querySelectorAll('#inboxDlg .inbox-row').length`);
-        key('A');
+        await key('A');
         // the answered row shows its answer (600ms) and folds (200ms) before the list repaints: wait for it, up to 4 s
         let n1 = n0;
         for (let t = 0; t < 40 && n1 === n0; t++) { await ctx.sleep(100); n1 = await js(`document.querySelectorAll('#inboxDlg .inbox-row').length`); }
@@ -89,13 +89,13 @@ module.exports = async (ctx) => {
       if (who) assert.ok(after === before2 - 1, `approving ${who} from the inbox removes the row (${before2} -> ${after})`);
       else console.log('[052] note: no second permission request in the simulator; inbox approval checked only by its buttons');
     }
-    key('Escape'); await until(`!document.getElementById('inboxDlg')`);
+    await key('Escape'); await until(`!document.getElementById('inboxDlg')`);
     assert.ok(await js(`!document.getElementById('inboxDlg')`), 'Esc closes the inbox');
     // FR-035: Ctrl+Shift+A opens the inbox even from a text field
     await js(`(()=>{const i=document.createElement('input');i.id='tmpIn';document.body.appendChild(i);i.focus();})()`);
-    const mod = MOD; H.key('A', [mod, 'shift'], { char: 'never', pause: 0 }); await until(`!!document.getElementById('inboxDlg')`);
+    const mod = MOD; await H.key('A', [mod, 'shift'], { char: 'never', pause: 0 }); await until(`!!document.getElementById('inboxDlg')`);
     assert.ok(await js(`!!document.getElementById('inboxDlg')`), 'Ctrl+Shift+A opens the inbox from a text field');
-    key('Escape'); await until(`!document.getElementById('inboxDlg')`); await js(`document.getElementById('tmpIn').remove()`);
+    await key('Escape'); await until(`!document.getElementById('inboxDlg')`); await js(`document.getElementById('tmpIn').remove()`);
 
     // waiting agent's chat
     const jonas = await deskId('Jonas');
@@ -123,12 +123,12 @@ module.exports = async (ctx) => {
     assert.ok(await js(`document.getElementById('answerBar').hidden`), 'answered: the bar goes away');
     assert.ok(await js(`!!document.querySelector('#chat .note.perm.settled.approved')`), 'the card shows it was approved');
     // FR-003: More by keyboard
-    await js(`document.getElementById('moreBtn').focus()`); key('Down'); await until(`!document.getElementById('moreMenu').hidden&&document.activeElement&&document.activeElement.getAttribute('role')==='menuitem'`);
+    await js(`document.getElementById('moreBtn').focus()`); await key('Down'); await until(`!document.getElementById('moreMenu').hidden&&document.activeElement&&document.activeElement.getAttribute('role')==='menuitem'`);
     const mm = await js(`({open:!document.getElementById('moreMenu').hidden,focus:document.activeElement&&document.activeElement.getAttribute('role'),items:[...document.querySelectorAll('#moreMenu [role=menuitem]')].map(b=>b.textContent.trim())})`);
     assert.ok(mm.open && mm.focus === 'menuitem', 'Down opens the menu on its first item');
     assert.ok(/Remove|End session/.test(mm.items[mm.items.length - 1]), 'destructive items last: ' + mm.items.join(' | '));
     await shot(`052-more-menu-${w}x${h}.png`);
-    key('Escape'); await until(`document.getElementById('moreMenu').hidden&&document.activeElement.id==='moreBtn'`);
+    await key('Escape'); await until(`document.getElementById('moreMenu').hidden&&document.activeElement.id==='moreBtn'`);
     assert.ok(await js(`document.getElementById('moreMenu').hidden&&document.activeElement.id==='moreBtn'`), 'Esc closes and returns focus to More');
     await js(`document.getElementById('backBtn').click()`); await office(15);
 
@@ -161,9 +161,9 @@ module.exports = async (ctx) => {
     const redrawn = await until(`(()=>{const r=document.querySelector('#list button.lrow[data-id="'+CSS.escape(${jsLiteral(fid)})+'"]');return !!r&&!r.__before})()`); // the list was drawn again
     const kept = await js(`(()=>{const a=document.activeElement;return {tag:a.tagName,cls:a.className,id:a.dataset&&a.dataset.id||'',inList:!!a.closest('#list')}})()`);
     assert.ok(redrawn && kept.inList && kept.id === fid, `a re-render keeps the focus on the list row ${fid}: ${JSON.stringify({ redrawn, ...kept })}`);
-    await js(`document.querySelector('#list button.lrow').focus()`); key('J'); await until(`document.activeElement===document.querySelectorAll('#list button.lrow')[1]`);
+    await js(`document.querySelector('#list button.lrow').focus()`); await key('J'); await until(`document.activeElement===document.querySelectorAll('#list button.lrow')[1]`);
     assert.ok(await js(`document.activeElement===document.querySelectorAll('#list button.lrow')[1]`), 'J moves to the next row');
-    key('K'); await until(`document.activeElement===document.querySelectorAll('#list button.lrow')[0]`);
+    await key('K'); await until(`document.activeElement===document.querySelectorAll('#list button.lrow')[0]`);
     assert.ok(await js(`document.activeElement===document.querySelectorAll('#list button.lrow')[0]`), 'K moves back');
     await js(`document.querySelector('#list [data-lsort="name"]').click()`); await until(`document.querySelector('#list [data-lsort="name"]').parentNode.getAttribute('aria-sort')==='ascending'`); await settle(); /* back to ascending for the picture */
     await js(`document.activeElement&&document.activeElement.blur()`);
@@ -183,9 +183,9 @@ module.exports = async (ctx) => {
 
     // FR-014: N opens the next agent that needs you, and the next
     await js(`document.activeElement&&document.activeElement.blur()`);
-    key('N'); await until(`document.body.classList.contains('panel-open')&&!!(document.getElementById('panelTitle')||{}).textContent`); await settle();
+    await key('N'); await until(`document.body.classList.contains('panel-open')&&!!(document.getElementById('panelTitle')||{}).textContent`); await settle();
     const first = await js(`(document.getElementById('panelTitle')||{}).textContent||''`);
-    key('N'); await until(`(document.getElementById('panelTitle')||{}).textContent!==${jsLiteral(first)}`); await settle();
+    await key('N'); await until(`(document.getElementById('panelTitle')||{}).textContent!==${jsLiteral(first)}`); await settle();
     const second = await js(`(document.getElementById('panelTitle')||{}).textContent||''`);
     assert.ok(first && second && first !== second, `N moves between agents that need you: ${first} -> ${second}`);
     // FR-031 (removed 2026-11-02): nothing renders the Simple / Expert switch, and a value the old switch stored is dropped once
@@ -205,7 +205,7 @@ module.exports = async (ctx) => {
       await js(`document.getElementById('backBtn')&&document.getElementById('backBtn').click()`); await office(15); }
     // FR-042 (#316): Ctrl+K opens the palette; typing filters it; Enter opens the agent's chat
     await js(`document.activeElement&&document.activeElement.blur()`);
-    H.key('K', [MOD], { char: 'never', pause: 0 }); await until(`!!document.getElementById('palDlg')&&document.activeElement&&document.activeElement.id==='palIn'`);
+    await H.key('K', [MOD], { char: 'never', pause: 0 }); await until(`!!document.getElementById('palDlg')&&document.activeElement&&document.activeElement.id==='palIn'`);
     assert.ok(await js(`!!document.getElementById('palDlg')&&document.activeElement&&document.activeElement.id==='palIn'`), 'Ctrl+K opens the palette with focus in its input');
     await js(`(()=>{const i=document.getElementById('palIn');i.value=${jsLiteral('lena')};i.dispatchEvent(new Event('input',{bubbles:true}));})()`); await until(`(document.querySelector('#palList [role="option"] .pal-l')||{}).textContent==='Lena'`);
     const pal = await js(`({opts:[...document.querySelectorAll('#palList [role="option"]')].map(o=>o.querySelector('.pal-l').textContent),active:document.getElementById('palIn').getAttribute('aria-activedescendant'),said:document.getElementById('srAnnounce').textContent})`);
@@ -213,17 +213,17 @@ module.exports = async (ctx) => {
     assert.strictEqual(pal.opts[0], 'Lena', 'prefix matches first: ' + pal.opts.join(' | '));
     assert.ok(pal.active === 'palO0', 'the first option is active');
     await shot(`052-palette-${w}x${h}.png`);
-    key('Return'); await until(`!document.getElementById('palDlg')`); await chatOf('Lena');
+    await key('Return'); await until(`!document.getElementById('palDlg')`); await chatOf('Lena');
     assert.ok(await js(`!document.getElementById('palDlg')`), 'Enter closes the palette');
     assert.strictEqual(await js(`(document.getElementById('panelTitle')||{}).textContent||''`), 'Lena', 'Enter opens Lena\'s chat');
     await js(`document.getElementById('backBtn').click()`); await office(15);
     // FR-091 (round 8): with an empty search the palette starts with Recent (Lena, just opened); Ctrl+` goes back to her chat
-    H.key('K', [MOD], { char: 'never', pause: 0 }); await until(`!!document.querySelector('#palList [role="option"]')`);
+    await H.key('K', [MOD], { char: 'never', pause: 0 }); await until(`!!document.querySelector('#palList [role="option"]')`);
     const rec = await js(`({g:(document.querySelector('#palList .pal-g')||{}).textContent,first:(document.querySelector('#palList [role="option"] .pal-l')||{}).textContent,end:[...document.querySelectorAll('#palList .pal-l')].some(x=>x.textContent==='End all sessions')})`);
     assert.ok(rec.g === 'Recent' && rec.first === 'Lena', 'the palette lists recent chats first: ' + JSON.stringify(rec));
-    key('Escape'); await until(`!document.getElementById('palDlg')`);
+    await key('Escape'); await until(`!document.getElementById('palDlg')`);
     await js(`document.activeElement&&document.activeElement.blur()`);
-    H.key('`', ['control'], { char: 'never', pause: 0 }); await chatOf('Lena');
+    await H.key('`', ['control'], { char: 'never', pause: 0 }); await chatOf('Lena');
     assert.strictEqual(await js(`(document.getElementById('panelTitle')||{}).textContent||''`), 'Lena', 'Ctrl+` opens the previous chat');
     await js(`document.getElementById('backBtn').click()`); await office(15);
     // FR-043: ? opens the shortcut sheet; Esc closes it
@@ -239,7 +239,7 @@ module.exports = async (ctx) => {
     }
     assert.ok(await js(`/Ctrl.*K|⌘.*K|Cmd.*K/.test(document.getElementById('kbdDlg').innerText)`), 'the shortcut sheet lists the palette shortcut');
     await shot(`052-shortcuts-${w}x${h}.png`);
-    key('Escape'); await until(`!document.getElementById('kbdDlg')`);
+    await key('Escape'); await until(`!document.getElementById('kbdDlg')`);
     assert.ok(await js(`!document.getElementById('kbdDlg')`), 'Esc closes the shortcut sheet');
     // FR-015: the strip's two actions (last, so the chat checks above see the agents as they started)
     await js(`document.getElementById('backBtn')&&document.getElementById('backBtn').click()`); await office(15);
