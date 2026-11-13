@@ -480,12 +480,17 @@ function syncDesks(){
    end is not on screen). One element in the walkers layer, removed when it lands. */
 function flyLetter(agentId){
   if(REDUCED||reducedMotion()||ui.view!=='office')return;
-  const layer=$('walkers'), floor=$('floor'), pb=document.querySelector('#stage .place.postbox'), d=document.querySelector(`#stage .desk[data-id="${CSS.escape(String(agentId))}"]`);
+  /* spec 097 FR-377: the Real office draws the Postbox as a lobby plate and the desk as a name plate (the pair the focus and follow flows look for) */
+  const layer=$('walkers'), floor=$('floor'), pb=document.querySelector('#stage .place.postbox, #stage .ro-lplate[data-post]'), d=document.querySelector(`#stage .desk[data-id="${CSS.escape(String(agentId))}"], #stage .ro-plate[data-id="${CSS.escape(String(agentId))}"]`);
   if(!layer||!floor||!pb||!d)return;
   const fr=floor.getBoundingClientRect(); if(!fr.width)return;
-  const c=el=>{const r=el.getBoundingClientRect();return {x:Math.round(r.left-fr.left+floor.scrollLeft+r.width/2),y:Math.round(r.top-fr.top+floor.scrollTop+r.height/2)};};
-  const from=c(pb.querySelector('.pic')||pb), to=c(d.querySelector('.scene')||d);
-  const el=document.createElement('span');el.className='letter';el.setAttribute('aria-hidden','true');
+  const real=pb.classList.contains('ro-lplate')||d.classList.contains('ro-plate');
+  const rb=pb.querySelector('.pic')||pb, rd=d.querySelector('.scene')||d, a=rb.getBoundingClientRect(), b=rd.getBoundingClientRect();
+  const seen=r=>r.width>0&&r.height>0&&r.right>fr.left&&r.left<fr.right&&r.bottom>fr.top&&r.top<fr.bottom; /* FR-377: skipped only when an end is off screen */
+  if(!seen(a)||!seen(b))return;
+  const c=r=>({x:Math.round(r.left-fr.left+floor.scrollLeft+r.width/2),y:Math.round(r.top-fr.top+floor.scrollTop+r.height/2)});
+  const from=c(a), to=c(b);
+  const el=document.createElement('span');el.className='letter'+(real?' real':'');el.dataset.for=String(agentId);el.setAttribute('aria-hidden','true');
   el.innerHTML='<svg viewBox="0 0 16 12" width="16" height="12" aria-hidden="true" focusable="false"><rect x=".75" y=".75" width="14.5" height="10.5" rx="1.5" fill="var(--surface)" stroke="currentColor" stroke-width="1.3"/><path d="M1.5 1.8L8 6.6l6.5-4.8" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>';
   el.style.transform=`translate(${from.x}px,${from.y}px)`;layer.appendChild(el);void el.offsetWidth;
   let done=false;const end=()=>{if(done)return;done=true;el.remove();};

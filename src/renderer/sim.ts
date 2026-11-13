@@ -1307,7 +1307,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       if (s) { simSched.list.push({ id: 'sched-fire', folder: s.info.workspaceFile ?? s.info.cwd ?? '', prompt: 'Scheduled check-in: summarise what changed', at: Date.now() + opts.schedFire * 1000, target: { session: s.info.id, agent: s.info.id, name: s.info.title ?? '' } }); simSched.n += 1; }
     }
     /* spec 044 FR-033 (check-sched-top): a driver makes a schedule's run fail now, as if the app had sent it and the send had failed */
-    const simSchedProbe = { runsCalls: 0 }; // a driver counts how often the window asks for a log (spec 044 FR-043: only while a list is shown)
+    const simSchedProbe = { runsCalls: 0, ranCalls: 0 }; // a driver counts how often the window asks for a log (spec 044 FR-043: only while a list is shown) and how many runs the page was told of (spec 097 FR-377: `ranCalls`, the positive control of the letter's "no letter" checks)
     (window as unknown as { __durbarSimSched?: unknown }).__durbarSimSched = {
       probe: simSchedProbe,
       fail: (id: string): boolean => {
@@ -1391,7 +1391,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         simHeld.items = simHeld.items.filter((x) => x.id !== r.id);
         simHeld.chosen.delete(r.id);
         emit({ type: 'user', sessionId: s.info.id, timestamp: now, text: r.prompt } as AgentEvent);
-        simSched.ran.forEach((f) => f({ agentId: s.info.id, scheduleId: sc.id, every: sc.every, at: sc.at, rule: sc.rule }));
+        simSchedProbe.ranCalls++; simSched.ran.forEach((f) => f({ agentId: s.info.id, scheduleId: sc.id, every: sc.every, at: sc.at, rule: sc.rule }));
         simSched.attrib.set(s.info.id, sc.id);
         simRecord(sc, simSched.runs, 'sent', now, { session: s.info.id });
         void api.send(s.info.id, r.prompt, []);
@@ -1410,7 +1410,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         const outcome = sc.prompt.length > simPromptMax() ? 'skipped-review' : simSched.pausedAll ? 'skipped-paused' : sc.cap && (sc.spent ?? 0) >= sc.cap.amount ? 'skipped-cap' : !s ? 'failed' : busy ? 'skipped-busy' : 'sent';
         if (outcome === 'sent' && s) {
           emit({ type: 'user', sessionId: s.info.id, timestamp: now, text: sc.prompt } as AgentEvent);
-          simSched.ran.forEach((f) => f({ agentId: s.info.id, scheduleId: sc.id, every: sc.every, at: sc.at, rule: sc.rule }));
+          simSchedProbe.ranCalls++; simSched.ran.forEach((f) => f({ agentId: s.info.id, scheduleId: sc.id, every: sc.every, at: sc.at, rule: sc.rule }));
           simSched.attrib.set(s.info.id, sc.id);
           void api.send(s.info.id, sc.prompt, []);
         }
