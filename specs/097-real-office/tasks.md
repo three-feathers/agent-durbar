@@ -337,4 +337,4 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 
 ## 2026-11-12: a Draft tag does not cover a lounge seat's person (FR-316, issue #1511)
 
-- [x] T326 [US2] Spec delta 2026-11-12 (decided by the coordinator under the owner's standing authority, the owner may overrule): the Draft tag of a lounge seat sits on top of the seat's small screen, not over the person's stool and foot (`realoffice.js`, the `dr:` tag's box); `check-office-overlap` fails a Draft tag that overlaps a lounge person's body box (`figure`), killed by a mutant that restores the old placement [FR-316]
+- [x] T326 [US2] Spec delta 2026-11-12 (decided by the coordinator under the owner's standing authority, the owner may overrule): the Draft tag of a lounge seat sits on top of the seat's small screen, not over the person's stool and foot (`realoffice.js`, the `dr:` tag's box); `check-office-overlap` fails a Draft tag that overlaps a lounge person's body box (`figure`), killed by a mutant that restores the old placement [FR-316] The desk-marks driver picks plain desks, not lounge seats, killed by mutant `lounge-pick` [FR-316]
