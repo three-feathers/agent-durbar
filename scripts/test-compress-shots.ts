@@ -343,6 +343,17 @@ try {
   assert.deepStrictEqual(res!.copied, ['005-card-menu-stop-end-1440x900.png']);
   assert.ok(fs.statSync(path.join(outDir, '005-card-menu-stop-end-1440x900.png')).size < original.length * 0.7, 'shots-docs wrote a compressed picture');
   assert.ok(logs.some((l) => /KB smaller/.test(l)), 'and says how much it saved');
+  // spec 102 FR-302 (T265a): the world previews are shipped files: written as the driver made them (a WebP is never palette-compressed), into --out here, and exempt from the linked-picture check
+  const previewFiles = ['plain.webp', 'photo.webp', 'cave.webp', 'retro.webp', 'previews.json'];
+  const fakePrev = async (_d: unknown, dir: string) => { for (const f of previewFiles) fs.writeFileSync(path.join(dir, f), 'x:' + f); return { ok: true, secs: 0, log: '', why: '' }; };
+  const prevOut = path.join(tmp, 'prev');
+  console.log = (...a: unknown[]) => { logs.push(a.join(' ')); };
+  let prev;
+  try { prev = await docs.main({ argv: ['--out', prevOut, '--only', 'shots-102-previews'], run: fakePrev, ensure: () => true, clockQuery: () => 'x' }); } finally { console.log = realLog; }
+  assert.deepStrictEqual(prev!.copied, previewFiles, 'shots-docs copies every preview file');
+  for (const f of previewFiles) assert.strictEqual(fs.readFileSync(path.join(prevOut, f), 'utf8'), 'x:' + f, `${f} is written as the driver made it`);
+  const cov = (docs as unknown as { coverage: () => { unlinked: string[] } }).coverage();
+  assert.ok(!cov.unlinked.some((f) => previewFiles.includes(f)), 'a shipped preview needs no link in the docs');
 } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 
 }
