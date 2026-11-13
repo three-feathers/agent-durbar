@@ -927,6 +927,29 @@ ok('FR-070 (second review of #1650): the Copilot list\'s name and value rules, b
     ['ZONE', 'us-east'], // no number: not a region
   ];
   for (const [k, v] of keptCases) assert.deepStrictEqual(list({ [k]: v }), [v], `FR-070 kept: ${k}=${v} is masked`);
+  // Third review of #1650: capability URLs, tunnel hosts and passphrase shapes under plain names; webhook-like names.
+  for (const n of ['WEBHOOK_URL', 'SLACK_WEBHOOK', 'SLACKWEBHOOK', 'HOOK', 'SENTRY_DSN', 'DSN', 'SEED', 'SALT', 'TOTP', 'MFA', 'mfaCode']) {
+    assert.ok(secretSettingName(n), `FR-070 names hook: ${n} is secret-looking`);
+    assert.deepStrictEqual(list({ [n]: 'https://api.github.com' }), ['https://api.github.com'], `FR-070 names hook: any URL under ${n} is masked`);
+  }
+  for (const n of ['SEEDING', 'SALTY', 'HOOKUP', 'DSNX']) assert.ok(!secretSettingName(n), `FR-070 names hook: ${n} is not secret-looking (whole words only)`);
+  const capCases: [string, string][] = [
+    ['ENDPOINT', 'https://hooks.zapier.com/hooks/catch/1234567/abc9xyz/'], // 7 digits and a lower+digit id
+    ['ENDPOINT', 'https://example.com/hook/3f9a1c2b7d'], // a 10-character lower+digit id
+    ['ENDPOINT', 'https://example.com/i/AbCdEfGhIjKlMnOp'], // a mixed-case letters id
+    ['ENDPOINT', 'https://example.com/repos/Owner/repo'], // upper case in a segment (over-masking accepted)
+    ['ENDPOINT', 'https://abc123.ngrok.io'], ['ENDPOINT', 'https://abc123.ngrok.io/api'], // the left-most host label is an id
+    ['HOST', 'abc123.ngrok.io:443'], // the same in host:port
+    ['PHRASE', 'bad-staple-horse-7'], ['CHAT', 'ab-cdefgh-12'], ['ZONE', 'xx-east-1'], ['ZONE', 'us-upward-1'], // not a real region
+  ];
+  for (const [k, v] of capCases) assert.deepStrictEqual(list({ [k]: v }), [v], `FR-070 url words: ${k}=${v} is masked`);
+  const stillPlain: [string, string][] = [
+    ['API_URL', 'https://api.github.com/v3'], ['API_URL', 'https://api.github.com/repos/'], ['API_URL', 'https://example.com/.well-known/openid-configuration'],
+    ['API_URL', 'https://example.com/api/v2/items/123456'], ['API_URL', 'http://127.0.0.1:8080/mcp'],
+    ['AWS_REGION', 'eu-west-3'], ['AWS_REGION', 'cn-north-1'], ['AWS_REGION', 'ca-central-1'], ['AWS_REGION', 'us-iso-east-1'],
+  ];
+  for (const [k, v] of stillPlain) assert.deepStrictEqual(list({ [k]: v }), [], `FR-070 url words plain: ${k}=${v} is left out`);
+  assert.deepStrictEqual(list({ API_URL: 'https://example.com/i/qwhzmtrbvkpdlsfn' }), [], '[KNOWN GAP] a letters-only path word of up to 16 letters under a plain name is left out (named in FR-070)');
   assert.ok(!plainSettingValue('/ab'.repeat(90)), 'FR-070 length: a value over 256 characters is never plain (here a path of short segments)');
   assert.ok(plainSettingValue('/a/b'), 'control: a short path is plain');
 });

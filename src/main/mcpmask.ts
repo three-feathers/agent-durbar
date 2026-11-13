@@ -22,8 +22,10 @@ export function mcpSecretValues(...lists: (Readonly<Record<string, McpServerSpec
 const NEVER_SECRET = /^(?:true|false|none|null)$/i;
 /** FR-070 (second review of #1650): a media type with a registered top-level type only (`admin/s3cr3t-passw0rd` is not one). */
 const MEDIA_TYPE = /^(?:application|audio|font|haptics|image|message|model|multipart|text|video)\/[a-z0-9][a-z0-9.+-]{0,60}$/;
-/** FR-070: a cloud region (`us-east-1`, `ap-southeast-2`, `us-gov-west-1`). */
-const REGION = /^[a-z]{2,4}(?:-[a-z]{2,12}){1,2}-\d{1,2}$/;
+/** FR-070 (third review of #1650): a cloud region on its real prefixes and directions (`us-east-1`, `ap-southeast-2`, `us-gov-west-1`), not a passphrase shape. */
+const REGION = /^(?:us|eu|ap|sa|ca|me|af|il|mx|cn)(?:-gov|-iso[a-z]?)?-(?:north|south|east|west|central|northeast|northwest|southeast|southwest)-\d{1,2}$/;
+/** FR-070 (third review of #1650): a URL path segment or left-most host label that is a plain word: lower-case words, `v3`, up to 6 digits. */
+const PLAIN_WORD = /^(?:\.?[a-z]{1,16}(?:[-_.][a-z]{1,16})*|v\d{1,3}|\d{1,6})$/;
 const URL_SEGMENT = /^[A-Za-z0-9._~-]{0,40}$/;
 const PATH_SEGMENT = /^[A-Za-z0-9._~ -]{0,40}$/;
 /** A host label or path segment that looks like a key: upper case, lower case and digits together, or letters and digits in 16+ characters. */
@@ -33,11 +35,12 @@ function tokenLike(seg: string): boolean {
 }
 const plainSegments = (segs: readonly string[], shape: RegExp): boolean => segs.every((x) => shape.test(x) && !tokenLike(x));
 /** `localhost`, or a dotted host name or IPv4 address, each label plain. */
-const plainHost = (h: string): boolean => (h.toLowerCase() === 'localhost' || /^[A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63})+$/.test(h)) && plainSegments(h.split('.'), URL_SEGMENT);
-/** An http(s) URL with no user-info, query or fragment, a plain host (optional port) and plain path segments. */
+const plainHost = (h: string): boolean => (h.toLowerCase() === 'localhost' || /^[A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63})+$/.test(h)) && plainSegments(h.split('.'), URL_SEGMENT)
+  && PLAIN_WORD.test(h.split('.')[0]); // the left-most label, where tunnel and function ids sit (`abc123.ngrok.io`)
+/** An http(s) URL with no user-info, query or fragment, a plain host (optional port) and every path segment a plain word (or empty). */
 function plainUrl(v: string): boolean {
   const m = /^https?:\/\/([^/?#@\s:]+)(?::\d{1,5})?(\/[^?#@\s]*)?$/i.exec(v);
-  return !!m && plainHost(m[1]) && plainSegments((m[2] ?? '').split('/'), URL_SEGMENT);
+  return !!m && plainHost(m[1]) && (m[2] ?? '').split('/').every((x) => x === '' || PLAIN_WORD.test(x));
 }
 /** `localhost:3000`, `db.internal:5432` (a one-word host like `admin:12345` is not one: it reads as a user and a PIN). */
 function plainHostPort(v: string): boolean {
@@ -68,14 +71,17 @@ export function plainSettingValue(v: string): boolean {
     || REGION.test(v);
 }
 
+/** FR-070: name words `secretFlag` does not know whose value is a secret (a capability URL is the secret itself); this list only. */
+const SETTING_SECRET_WORDS = new Set(['pin', 'otp', 'totp', 'mfa', 'hook', 'webhook', 'dsn', 'seed', 'salt']);
+
 /**
  * FR-070: an env or header name whose value is always masked: `secretFlag` (`SMTP_PASSWORD`, `X-Api-Key`, `Authorization`, `Cookie`),
- * or the word `pin` or `otp` (`PIN_CODE`), which `secretFlag` does not know; this list only, so `secretFlag` itself is unchanged.
+ * or one of `SETTING_SECRET_WORDS` (`PIN_CODE`, `SLACK_WEBHOOK`, `SENTRY_DSN`; `webhook` also inside a word); `secretFlag` is unchanged.
  */
 export function secretSettingName(name: string): boolean {
   if (secretFlag(name)) return true;
   const words = String(name ?? '').slice(0, 256).replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().split(/[\s\-_.]+/);
-  return words.some((w) => w === 'pin' || w === 'otp');
+  return words.some((w) => SETTING_SECRET_WORDS.has(w)) || words.join('').includes('webhook');
 }
 
 /**
