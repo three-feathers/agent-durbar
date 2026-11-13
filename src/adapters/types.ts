@@ -14,7 +14,7 @@ import type { OrgPolicy } from '../shared/orgpolicy';
 import type { HandoffResult } from './handoff';
 import type { VendorStats } from './vendorstats';
 export type { VendorStats };
-import type { HistoryResult, PreviousSession } from './history';
+import type { HistoryLimits, HistoryResult, PreviousSession } from './history';
 import type { RemoteState } from '../shared/remote';
 import type { EditInfo } from '../shared/edits';
 import type { AccountIdentity, AccountInfoOptions } from '../shared/account';
@@ -827,8 +827,11 @@ export interface AgentAdapter {
   listModelOptions?(): Promise<ModelOption[]>;
   /** Earlier sessions of a folder, newest first; `excludeIds` are left out. Optional (`capabilities.history`). */
   listPreviousSessions?(cwd: string, excludeIds?: ReadonlySet<string>): Promise<PreviousSession[]>;
-  /** Persisted messages and tool calls of a live session, for replay. Optional (`capabilities.history`). */
-  history?(sessionId: string): Promise<HistoryResult>;
+  /**
+   * Persisted messages and tool calls of a live session, for replay. Optional (`capabilities.history`). `limits` (spec 095 FR-024, the
+   * conversation search only): text items only and no 300-item cap; the replay never passes it.
+   */
+  history?(sessionId: string, limits?: Partial<HistoryLimits>): Promise<HistoryResult>;
   /** Change the permission mode of a live session; returns how many requests stay pending. Optional (`capabilities.permModeSwitch` is not `none`). */
   setPermMode?(sessionId: string, mode: PermissionMode, opts?: { clearGrants?: boolean; approvePending?: boolean }): { pending: number };
   /**

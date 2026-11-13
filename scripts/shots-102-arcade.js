@@ -108,12 +108,16 @@ const run = async (ctx, reqs) => {
        spec 102 T282: the simulator is still replaying (`settle: false`), so a person's frame can change while this reads it: a picture in flight is not read
        (drawing it threw); the check says BUSY and is read again once every picture has loaded, up to 5 s */
     let whole = ['BUSY'];
-    for (let i = 0; i < 25 && whole[0] === 'BUSY'; i++) { if (i) await ctx.sleep(200); await must(PICS, 'the pictures, before their pixels are read'); whole = await js(`(async()=>{let busy=0;const out=[],ro=document.querySelector('#stage .ro').getBoundingClientRect(),B=[...document.querySelectorAll('#stage .ro-cab,#stage .ro-screen')].map(e=>e.getBoundingClientRect());
-      for(const p of document.querySelectorAll('#stage .ro-person')){if(p.hidden||!p.getClientRects().length)continue;await p.decode().catch(()=>{});if(!p.complete||!p.naturalWidth){busy=1;continue;}const b=p.getBoundingClientRect(),c=document.createElement('canvas');c.width=Math.round(b.width);c.height=Math.round(b.height);const x=c.getContext('2d');x.imageSmoothingEnabled=false;x.drawImage(p,0,0,c.width,c.height);const d=x.getImageData(0,0,c.width,c.height).data,mir=getComputedStyle(p).scale.startsWith('-');let n=0;
+    /* spec 102 T304 (issue #1517): a person whose box rounds to 0 px is read again like a picture in flight, and named if it stays so.
+       ARCADE_MUTANT (test only): `zero` makes every person 0 px wide for 1.5 s (must pass), `zero-stuck` for good (must fail naming the person) */
+    const MUT = process.env.ARCADE_MUTANT;
+    if (MUT === 'zero' || MUT === 'zero-stuck') await js('(()=>{const st=document.createElement("style");st.textContent="#stage .ro-person{width:0!important}";document.head.appendChild(st);setTimeout(()=>st.remove(),' + (MUT === 'zero' ? 1500 : 1e9) + ');return 0;})()');
+    for (let i = 0; i < 25 && whole[0] === 'BUSY'; i++) { if (i) await ctx.sleep(200); await must(PICS, 'the pictures, before their pixels are read'); whole = await js(`(async()=>{let busy=0;const zero=[],out=[],ro=document.querySelector('#stage .ro').getBoundingClientRect(),B=[...document.querySelectorAll('#stage .ro-cab,#stage .ro-screen')].map(e=>e.getBoundingClientRect());
+      for(const p of document.querySelectorAll('#stage .ro-person')){if(p.hidden||!p.getClientRects().length)continue;await p.decode().catch(()=>{});if(!p.complete||!p.naturalWidth){busy=1;continue;}const b=p.getBoundingClientRect();if(Math.round(b.width)<1||Math.round(b.height)<1){busy=1;zero.push('zero box: '+p.dataset.for+' '+b.width.toFixed(2)+'x'+b.height.toFixed(2)+' style '+p.style.cssText);continue;}const c=document.createElement('canvas');c.width=Math.round(b.width);c.height=Math.round(b.height);const x=c.getContext('2d');x.imageSmoothingEnabled=false;x.drawImage(p,0,0,c.width,c.height);const d=x.getImageData(0,0,c.width,c.height).data,mir=getComputedStyle(p).scale.startsWith('-');let n=0;
         for(const r of B){const L=Math.max(r.left,b.left),R=Math.min(r.right,b.right),T=Math.max(r.top,b.top),Bt=Math.min(r.bottom,b.bottom);for(let yy=Math.floor(T);yy<Bt;yy++)for(let xx=Math.floor(L);xx<R;xx++){const u=Math.floor(xx-b.left),ux=mir?c.width-1-u:u,v=Math.floor(yy-b.top);if(ux>=0&&ux<c.width&&v>=0&&v<c.height&&d[4*(v*c.width+ux)+3]>32)n++;}}
         if(n)out.push(p.dataset.for+': '+n+' px on a cabinet or screen');}
       for(const s of document.querySelectorAll('#stage .ro-sign')){const b=s.getBoundingClientRect();if(b.left<ro.left-0.5||b.right>ro.right+0.5)out.push('a sign leaves the floor: '+s.textContent.slice(0,14));}
-      return busy?['BUSY']:out;})()`); }
+      return busy?['BUSY',...zero]:out;})()`); }
     assert.deepStrictEqual(whole, [], tag + ': every person whole beside the cabinet, signs on the floor');
     /* owner, 2026-11-03: in the lobby nobody stands half behind another (painted pixels), every name chip reads in full, no two chips touch;
        */
@@ -150,6 +154,10 @@ const run = async (ctx, reqs) => {
     const LANE = `(()=>{const L=window.__durbarSimUi.realLayout().lane,ro=document.querySelector('#stage .ro').getBoundingClientRect();return [...document.querySelectorAll('#stage .ro-slip[data-variant="pill"]')].filter(e=>!e.hidden).filter(e=>{const b=e.getBoundingClientRect(),t=b.top-ro.top;return !L||t<L.y-0.5||t+b.height>L.y+L.h+0.5;}).map(e=>e.textContent.slice(0,24));})()`;
     await H.until(`${LANE}.length===0`, 4000);
     assert.deepStrictEqual(await js(LANE), [], tag + ': the pills in their lane');
+    /* spec 008 FR-214: the pointer off the page before the colours below are read; ARCADE_MUTANT=hover leaves it on the first top bar button (must fail with 'is hovered at the read') */
+    if (process.env.ARCADE_MUTANT === 'hover') { const at = await js(`(()=>{const b=document.querySelector('.topbar .seg button').getBoundingClientRect();return {x:Math.round(b.left+b.width/2),y:Math.round(b.top+b.height/2)}})()`); H.wc().sendInputEvent({ type: 'mouseMove', x: at.x, y: at.y }); await H.until(`!!document.querySelector('.topbar .seg button:hover')`, 2000); }
+    const hot = process.env.ARCADE_MUTANT === 'hover' ? await js(`[...document.querySelectorAll('.topbar :hover,#stage :hover')].map(e=>e.tagName.toLowerCase()+'.'+String(e.className).trim())`) : await H.pointerOff('.topbar,#stage');
+    assert.deepStrictEqual(hot, [], `${tag}: ${JSON.stringify(hot)} is hovered at the read (the pointer is on the page: its colours are the :hover ones)`);
     /* FR-263: the top bar's text keeps 4.5:1 on its own button fill in the arcade's style (the pressed one is yellow) */
     assert.deepStrictEqual(await js('(()=>{' + LUM + `const out=[];for(const b of document.querySelectorAll('.topbar .seg button')){const c=getComputedStyle(b).color,f=getComputedStyle(b).backgroundColor;if(/rgba\\([^)]*, 0\\)|transparent/.test(f))continue;const r=(Math.max(lum(c),lum(f))+0.05)/(Math.min(lum(c),lum(f))+0.05);if(r<4.5)out.push(b.textContent.trim()+' '+r.toFixed(2));}return out;})()`), [], tag + ': top bar buttons readable');
     assert.deepStrictEqual(await js(TEXT), { small: [], low: [] }, tag + ': text size and contrast');
@@ -184,6 +192,66 @@ const run = async (ctx, reqs) => {
   const gone = await js(`(()=>{const L=window.__durbarSimUi.agents();const ids=L.filter(a=>!a.parent).slice(-12).map(a=>a.id);/* 15 to 3: another scale, so sizes ease too */for(const g of ids)window.__durbarSimUi.removeAgent(g);return new Promise((done)=>{let n=0,wrong=[];const t0=performance.now();const look=()=>{for(const e of document.querySelectorAll('#stage .ro-person.mir,#stage .ro-cab.mir')){n++;const v=getComputedStyle(e).scale.split(' ')[0];if(!(parseFloat(v)<0))wrong.push(v);}if(performance.now()-t0<800)requestAnimationFrame(look);else done({n,wrong:wrong.slice(0,4)});};requestAnimationFrame(look);});})()`);
   assert.ok(gone.n > 0, 'looked while it eased');
   assert.deepStrictEqual(gone.wrong, [], 'still mirrored while it eases');
+
+  /* spec 102 FR-311 (issue 1558, 2026-11-11): on a plate with helpers and no strip (097 FR-308: "+N and dots" before the status, one line) the +N is whole, the status
+     word is whole (the text up to " · "; the task after it may be cut) and inside the plate's content box (not under the rename pencil), and the dots drop out whole,
+     the last first, with a waiting or error helper's dot never gone while an other one shows (the dots are in the heads' order). Read from the page's own boxes:
+     Ranges of the +N and of the word; a dot is shown when it lies whole inside the mark's box and the line's, and partly in is a fail. */
+  const PLATES = (ell) => `(()=>{const out=[],seen=[];const R=(n,a,b)=>{const r=document.createRange();r.setStart(n,a);r.setEnd(n,b);return r.getBoundingClientRect();};
+    for(const p of document.querySelectorAll('#stage .ro-plate')){const l2=p.querySelector('.ro-l2');if(!l2||!l2.getClientRects().length)continue;const helped=p.classList.contains('has-help'),id=p.dataset.id||'?',cs=getComputedStyle(p),pr=p.getBoundingClientRect();
+      const word=l2.textContent.trim().split(' · ')[0],w=document.createTreeWalker(l2,NodeFilter.SHOW_TEXT);let n,at=null;while((n=w.nextNode())){const i=n.data.indexOf(word);if(i>=0){at=[n,i];break;}}
+      if(!at){out.push(id+': no text for "'+word+'"');continue;}const a=R(at[0],at[1],at[1]+word.length),b=l2.getBoundingClientRect(),right=Math.min(b.right,pr.right-parseFloat(cs.borderRightWidth)-parseFloat(cs.paddingRight));
+      const rec={pc:p.className.replace(/ro-plate |has-help|has-ren/g,'').trim(),t:l2.textContent.slice(0,40),id,word,helped,narrow:p.classList.contains('narrow'),ren:p.classList.contains('has-ren'),plateW:Math.round(pr.width),shown:0,helpers:0,urgentShown:-1};seen.push(rec);
+      const cb=helped?p.querySelector('.ro-wd'):l2,ccs=getComputedStyle(cb),wb=cb.getBoundingClientRect(),ellip=ccs.textOverflow==='ellipsis'&&ccs.overflowX==='hidden'&&cb.scrollWidth>cb.clientWidth;if(a.right>right+0.5&&!(${ell}&&ellip&&wb.right<=right+0.5))out.push(id+' "'+word+'" ends at '+Math.round(a.right)+' of a content box to '+Math.round(right)+' (helped '+helped+'; line '+Math.round(b.left)+'..'+Math.round(b.right)+', mark '+(p.querySelector('.ro-l1').getBoundingClientRect().width|0)+' px, plate '+Math.round(pr.left)+'..'+Math.round(pr.right)+', word box '+(((p.querySelector('.ro-wd')||l2).getBoundingClientRect().width)|0)+' px)');
+      const h=p.querySelector('.ro-help');if(!helped||!h)continue;const l1=p.querySelector('.ro-l1').getBoundingClientRect(),hr=h.getBoundingClientRect(),hc=h.querySelector('.ro-hc'),hn=hc.firstChild,c=R(hn,0,hn.data.trim().length);
+      if(c.left<l1.left-0.5||c.right>l1.right+0.5||c.right>hr.right+0.5)out.push(id+' the +N is cut: ends at '+Math.round(c.right)+' of a box to '+Math.round(Math.min(l1.right,hr.right)));
+      const dots=[...h.querySelectorAll('.dot')],sh=dots.map((d)=>{const r=d.getBoundingClientRect(),inn=r.left>=Math.max(l1.left,hr.left)-0.5&&r.right<=Math.min(l1.right,hr.right)+0.5&&r.top>=hr.top-0.5&&r.bottom<=hr.bottom+0.5,hit=r.left<Math.min(l1.right,hr.right)-0.5&&r.right>Math.max(l1.left,hr.left)+0.5&&r.top<hr.bottom-0.5&&r.bottom>hr.top+0.5;return inn?1:hit?2:0;});
+      if(sh.includes(2))out.push(id+' a dot of the helpers is cut in part: '+sh.join(''));const urg=dots.map((d)=>/\\b(error|waiting)\\b/.test(d.className));
+      if(urg.some((u,i)=>u&&!sh[i])&&dots.some((d,i)=>!urg[i]&&sh[i]===1))out.push(id+' a waiting or error helper is gone while an other one shows: '+dots.map((d,i)=>(urg[i]?'U':'o')+sh[i]).join(' '));
+      rec.shown=sh.filter((v)=>v===1).length;rec.helpers=dots.length;rec.cls=dots.map((d)=>d.className.replace('dot ','')).join();rec.urgentShown=urg.some((u,i)=>u&&sh[i]===1)?1:urg.some(Boolean)?0:-1;}
+    return {out,seen};})()`;
+  const MUT = process.env.ARCADE_MUTANT || '';
+  /* ARCADE_FONT=wide (test only): the plates in a font wider than macOS's (Verdana, else DejaVu Sans, the CI Linux default) and 0.1 px of letter spacing: on the narrow plate (content 93 px) "Limit reached" in Verdana fits by under 1 px, with the spacing it is cut by the ellipsis (the case that failed on Linux CI at 1 px), so the ellipsis exemption below is exercised on every machine */
+  const WIDE = process.env.ARCADE_FONT === 'wide', WIDE_CSS = '#stage .ro-plate,#stage .ro-plate *{font-family:Verdana,"DejaVu Sans",sans-serif!important;letter-spacing:.1px!important}';
+  /* ARCADE_MUTANT (test only), each must fail at its own label: cutword = the line as it was (the helpers' mark a fixed width, the line free to shrink below its word); cutplate = a plate narrower than its line
+     (the word runs under the pencil); nodots = the mark's line has no room but the +N (no dot shown); sliver = the dots do not wrap, so one is cut in part; clipstate = the dots in creation order (an error dot last); with ARCADE_FONT=wide: noell = the word cut with no ellipsis (a bare cut), spill = the word runs past its box under the pencil */
+  const MUTS = {
+    cutword: `.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l1{flex:none!important;min-width:0!important}.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l2{display:block!important;flex:1 1 auto!important;min-width:0!important}.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-help{flex:none!important;flex-wrap:nowrap!important;height:auto!important}`,
+    cutplate: `.ro[data-world="retro"] .ro-plate.has-help:not(.lounge){width:90px!important}`,
+    nodots: `.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l1{flex-basis:0!important}`,
+    noell: `.ro[data-world="retro"] .ro-plate .ro-l2,.ro[data-world="retro"] .ro-plate .ro-wd{text-overflow:clip!important}`,
+    spill: `.ro[data-world="retro"] .ro-plate .ro-l2,.ro[data-world="retro"] .ro-plate .ro-wd{overflow:visible!important;text-overflow:clip!important}`,
+    sliver: `.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-help{flex-wrap:nowrap!important}.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l1{min-width:0!important}`,
+  };
+  const markCheck = async (tag, scene, { want, states, ell } = {}) => { /* ell: the word may end in an ellipsis inside its box (the last resort: +N, a dot and the word do not fit; a KNOWN GAP of spec 102 FR-311) */
+    if (states) await js(`(()=>{const U=window.__durbarSimUi;U.agents().filter(a=>!a.parent).forEach((a)=>{a.state=${jsLiteral(states)};delete a.label;});U.render();})();0`);
+    if (states) await must(`(()=>{const P=[...document.querySelectorAll('#stage .ro-plate[data-id]:not(.lounge)')];return P.length>0&&P.every(p=>p.classList.contains('st-' + ${jsLiteral(states)}));})()`, 'every plate drawn ' + states, 8000);
+    if (WIDE) await js(`(()=>{const s=document.createElement('style');s.textContent=${jsLiteral(WIDE_CSS)};document.head.appendChild(s);})();0`);
+    if (MUTS[MUT]) await js(`(()=>{const s=document.createElement('style');s.textContent=${jsLiteral(MUTS[MUT])};document.head.appendChild(s);})();0`);
+    if (MUT === 'clipstate') await js(`(()=>{for(const h of document.querySelectorAll('#stage .ro-help')){const e=[...h.querySelectorAll('.dot.error,.dot.waiting')];for(const d of e)h.appendChild(d);}})();0`);
+    const r = await js(PLATES(!!ell));
+    console.log('[102-arcade] plate marks', tag, JSON.stringify(scene), JSON.stringify(r.seen.filter((x) => x.helped)));
+    const helped = r.seen.filter((x) => x.helped);
+    assert.deepStrictEqual(r.out, [], 'issue 1558: ' + tag + ': a plate\'s +N, status word and dots are whole (the strip of helpers gives way): ' + JSON.stringify(r.out));
+    if (want) for (const [word, ...rest] of want) {
+      const m = helped.filter((x) => x.word === word && (rest[0] !== 'narrow' || (x.plateW <= 122 && x.ren)));
+      assert.ok(m.length >= 1, 'issue 1558: ' + tag + ': a ' + (rest[0] === 'narrow' ? 'narrow plate with a pencil and ' : 'plate with helpers and ') + 'the word "' + word + '" is drawn (the case under test), saw ' + JSON.stringify(helped.map((x) => x.word + ' ' + x.pc + ' ' + x.plateW + ' ' + x.t)));
+      if (rest[0] !== 'narrow') assert.ok(m.some((x) => x.shown >= 1), 'issue 1558: ' + tag + ': the helpers\' mark keeps a dot on the plate with "' + word + '" (the dots give way last): ' + JSON.stringify(m));
+    }
+    return r;
+  };
+  for (const [w, h] of SIZES) {
+    await loadArcade(w, h, 15, { simfreeze: '1', simhelpers: '3', simcompact: '1' });
+    const a = await markCheck(w + 'x' + h + ' compacting', {}, w < 1440 ? { want: [['Compacting']] } : {});
+    if (w < 1440) assert.ok(a.seen.some((x) => x.helped && x.word === 'Compacting' && x.urgentShown === 1), 'issue 1558: 1280x800: the failed (last) helper\'s red mark stays shown on the compacting plate: ' + JSON.stringify(a.seen.filter((x) => x.helped)));
+    await loadArcade(w, h, 15, { simfreeze: '1', simhelpers: '3', simretry: '1' });
+    await markCheck(w + 'x' + h + ' retrying', {}, w < 1440 ? { want: [['Retrying']] } : {});
+    /* the narrow cabinet's plate (122 px, a pencil: 20+ agents have no strip): the longest words */
+    if (w < 1440) for (const st of ['limit']) {
+      await loadArcade(w, h, 24, { simfreeze: '1', simhelpers: '3' });
+      await markCheck(w + 'x' + h + ' narrow ' + st, {}, { want: [['Limit reached', 'narrow']], states: st, ell: true });
+    }
+  }
 
   // ---- T213..T215: the status and its motion (FR-260..FR-262); this machine's own setting must not decide them ----
   const media = (features) => { const d = ctx.win.webContents.debugger; if (!d.isAttached()) d.attach('1.3'); return d.sendCommand('Emulation.setEmulatedMedia', { features }); };
