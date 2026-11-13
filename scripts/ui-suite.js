@@ -213,6 +213,7 @@ const DRIVERS = [
   { name: 'check-ui-text', label: 'check-ui-text dark', env: { UITEXT_PART: 'dark' } },
   { name: 'shots-006-crash' }, // spec 006 FR-038..FR-046 (#606): the crash card (Resume all, Pick…, Dismiss), per-row resume, the lost-turn note
   { name: 'shots-074-navigator', env: { DURBAR_SIM_FLOORS: '1' } }, // spec 074: Go to (keyboard navigator), chat numbers, the shortcut in Settings
+  { name: 'shots-095' }, // spec 095 phase 3: search conversations: the box, the results in the List view, open and jump, keyboard, live region, end-state notes, the shortcut in Settings
   { name: 'check-browser-scenarios' }, // spec 080 T018 AC2/AC4: US1 scenarios 1-5 and US2 scenarios 1-3 incl. SC-002 and SC-004; confirm, prompt, sensitive fields, sliding element, redirect, basic-auth pages
   { name: 'check-browser-cap' }, // spec 080 T013 AC3: six pages, four stay loaded, the two least recent reload with the note
   { name: 'check-browser-cap', label: 'check-browser-cap typing', env: { BROWSER_CAP_MODE: 'typing' } }, // AC4: typing in a page protects it; the sixth says too many are open
