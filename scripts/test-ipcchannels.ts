@@ -122,6 +122,7 @@ const FROM_APP = [
   'profiles:create', 'profiles:delete', 'profiles:generate', 'profiles:save', // spec 043 FR-011, FR-040: writes to (or deletes) profile files
   'world:list', 'world:part', 'world:remove', // spec 102 FR-064: installed worlds, by key and part name; never open to the simulator
   'schedules:remove', 'schedules:runNow', 'schedules:runs', 'schedules:save',
+  'search:cancel', 'search:clear', 'search:start', // spec 095 FR-033: the conversation search reads the text of every session
   'schedules:restartLoop', 'schedules:stopLoop', // spec 072 FR-007, FR-008 (T007): Stop loop and Start again
 ];
 assert.strictEqual(new Set(FROM_APP).size, FROM_APP.length, 'no channel twice in the list');

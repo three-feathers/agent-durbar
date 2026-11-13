@@ -212,3 +212,14 @@
 ## 2026-11-10: every UI driver ends with its whole process tree (FR-199)
 
 - [x] T155 (FR-199) `scripts/ui-suite.js` `runOne`: `detached` (POSIX), `guardTree` and `killTree` at the limit for every driver, `launch` option for tests; `scripts/test-ui-suite.ts` two cases (time limit leaves no grandchild; SIGINT/SIGTERM end the tree and remove the user-data folder); `d.killTree` removed from `scripts/release-video.js`; `scripts/test-release-video.js` source check follows; `changelog.d/008-uisuite-kill-tree.md`.
+
+## 2026-11-11: a driver that waits on the OS window focus never runs next to another window (FR-210)
+
+- [x] T170 (FR-210) `scripts/ui-suite.js`: `focus: true` on `shots-097-screens` (both entries) and `check-097-hover-card`; `main` runs the other entries at the job count and then the `focus` entries alone when drivers share a desktop; `scripts/test-ui-suite.ts` overlap test and a mutant; `changelog.d/008-uisuite-focus-serial.md`. Issue #1498.
+
+## 2026-11-12: the Xvfb screen is as big as the window at the requested density (FR-213)
+
+- [x] T173 (FR-213) `scripts/ui-suite.js` `xvfbScreenArgs` and `launchCommand` (the xvfb path of `runOne`); `scripts/test-ui-suite.ts` checks the argument and the argv shape with two mutants. Linux/Xvfb run by the coordinator, see the PR.
+- [x] T174 (FR-214) `scripts/check-ui-text.js` `run()`: pointer to 0,0, wait for no `:hover` under the roots, `hovered` finding, `UITEXT_MUTANT=hover`; `changelog.d/008-1591-xvfb-screen.md`. Linux/Xvfb run by the coordinator, see the PR.
+- [x] T175 (FR-214, round 2) `scripts/driver-helpers.js` `pointerOff`; `scripts/check-097-chat-contrast.js` and `scripts/shots-102-arcade.js` reset the pointer and assert no `:hover` at the colour read, mutants `CONTRAST_MUTANT=hover`, `ARCADE_MUTANT=hover`.
+- [x] T176 (FR-215) `scripts/driver-helpers.js` `pointerOff` (re-sent move, labelled failure); `scripts/test-ui-suite.ts` fake-page test with two mutants; `changelog.d/008-1648-pointeroff-wait.md`.

@@ -77,7 +77,10 @@ function waits(ctx) {
   /** Spec 001 FR-085: no lobby figure is mid-walk (the 1 s WALK_MS transition of `syncWalkers` marks a figure `.walking`), at most `ms`.
    *  Used by `calm` and every `shot`, so no screenshot catches a figure between two places. */
   const settleWalk = (ms = 6000) => until(`!document.querySelector('.walker.walking')`, ms);
-  return { until, settle, settleWalk, office, chatOf };
+  /** The page is ready after a simulator replay (`simfreeze=1`): replayed, the lobby's visits settled, the last render drawn and no scene transition running. `load`'s settle and
+   *  check-097-crews' wait (issue #1459) use this one expression, so they cannot drift apart. */
+  const SETTLED = `!!window.__durbarSimReplayed&&!!window.__durbarSimUi&&window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()&&!document.querySelector('.scene-out')`;
+  return { until, settle, settleWalk, office, chatOf, SETTLED };
 }
 
 
@@ -262,6 +265,28 @@ function helpers(ctx) {
   };
   /** Hide the start-up toasts with a style (once). `keepActions`: keep the ones with a button. `blur`: also drop the focus ring. */
   const calm = async (o = {}) => { await js(`(()=>{if(!document.getElementById('shotCalm')){const s=document.createElement('style');s.id='shotCalm';s.textContent='#toasts${o.keepActions ? ' .toast:not(.with-act)' : ''}{display:none!important}';document.head.append(s);}${o.blur ? 'if(document.activeElement&&document.activeElement!==document.body)document.activeElement.blur();' : ''}})()`); await w.settleWalk(); };
+  /**
+   * Spec 008 FR-214, FR-215: the real pointer rests where the window lies on the screen (script clicks never move it), so a control under it reads in its :hover colours.
+   * Moves the pointer to 0,0 and re-sends the move every `retry` ms (250) until nothing under `scope` (a selector list) matches :hover, at most `ms` (3000; a slow first run drops or delays the first move).
+   * Returns what still is hovered (descriptions; empty = fine); `controls` (a selector list) limits the list to those elements. When the bound ends with such an element still hovered it throws, labelled, so a real leak is told from a slow start.
+   * `{ stay: true }` only lists (a mutant that put the pointer there itself): no move, no wait, no failure. A colour read goes after this and asserts the list is empty.
+   */
+  const pointerOff = async (scope, controls, o = {}) => {
+    const sel = scope.split(',').map((x) => x.trim() + ' :hover').join(',');
+    const list = () => js(`[...document.querySelectorAll(${jsLiteral(sel)})].filter(e=>${controls ? 'e.matches(' + jsLiteral(controls) + ')&&e.getClientRects().length' : 'true'}).map(e=>(e.id?'#'+e.id:e.tagName.toLowerCase()+'.'+String(e.className).trim().replace(/ +/g,'.'))+' "'+(e.textContent||e.value||'').trim().slice(0,30)+'"')`);
+    if (o.stay) return list();
+    const ms = o.ms || 3000, retry = o.retry || 250, end = Date.now() + ms;
+    let moves = 0, last = 0, clear = false;
+    for (;;) {
+      if (Date.now() - last >= retry || moves === 0) { wc().sendInputEvent({ type: 'mouseMove', x: 0, y: 0 }); moves++; last = Date.now(); }
+      if (await ctx.js(`(()=>{try{return !document.querySelector(${jsLiteral(sel)})}catch(e){return false}})()`)) { clear = true; break; }
+      if (Date.now() > end) break;
+      await ctx.sleep(50);
+    }
+    const hot = await list();
+    if (!clear && hot.length) throw new assert.AssertionError({ message: `pointerOff: the pointer did not leave ${scope} after ${ms} ms and ${moves} move(s): ${JSON.stringify(hot)}` });
+    return hot;
+  };
   /** Remove the toasts that are on screen now. */
   const clearToasts = () => js(`document.querySelectorAll('#toasts .toast').forEach(t=>t.remove())`);
   /**
@@ -284,7 +309,7 @@ function helpers(ctx) {
     if (!(await ctx.waitFor(ready, o.readyMs || 15000))) console.log(`[waits] load: the ready expression never held in ${o.readyMs || 15000} ms (pass \`ready\` for this page): ${String(ready).replace(/\s+/g, ' ').slice(0, 120)}`); // spec 008 FR-190: a timeout here costs the whole wait
     // spec 008 FR-190: a frozen simulator says when it is steady (every script replayed, no lobby visit waiting to start or end, the frame drawn): wait for that
     // instead of letting `settle` find it by sampling 200 ms apart (a load used to spend 0.5-1 s there). `settle` still runs after it, so nothing is skipped.
-    if (query.simfreeze === '1' && !o.index && o.settle !== false) await w.until(`!!window.__durbarSimReplayed&&!!window.__durbarSimUi&&window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()&&!document.querySelector('.scene-out')`, 4000);
+    if (query.simfreeze === '1' && !o.index && o.settle !== false) await w.until(w.SETTLED, 4000);
     if (o.settle !== false) await w.settle();
     if (arcade) assert.ok(await w.until(`!!document.querySelector('#stage .ro[data-world="retro"]')`, 5000), 'DRIVER_WORLD=retro: the arcade is not drawn (a pass here would be the Photo office)');
     if (o.focus) wc().focus();
@@ -359,7 +384,7 @@ function helpers(ctx) {
     await goToFloor(list[0].id);
     for (let i = 0; i < list.length; i++) { await goToFloor(list[i].id); await w.settle(); await fn(list[i], i); }
   };
-  return { ...w, pointerStep: ptr.step, allowWindowClose: closeGuard.allow, wc, js, click, clickText, exists, text, idOf, key, calm, clearToasts, focusPage, releaseFocus, loseFocus, focusWc, load, shot, openSimAgent, floors, shownFloor, goToFloor, eachFloor, INDEX };
+  return { ...w, pointerStep: ptr.step, allowWindowClose: closeGuard.allow, wc, js, click, clickText, exists, text, idOf, key, calm, pointerOff, clearToasts, focusPage, releaseFocus, loseFocus, focusWc, load, shot, openSimAgent, floors, shownFloor, goToFloor, eachFloor, INDEX };
 }
 
 /**
@@ -386,4 +411,8 @@ async function shotWithView(win, view, file) {
   fs.writeFileSync(file, nativeImage.createFromBitmap(base, { width: size.width, height: size.height }).toPNG());
 }
 
-module.exports = { waits, helpers, pointerLog, POINTER_LOG_MAX, DOM_LOG_MAX, guardWindow, jsLiteral, shotWithView, LIMIT, INDEX, CHECK_DARK, CHECK_DARK_QUERY, darkFixtureProblem, darkProblem };
+/* Spec 097 FR-365: a page expression, true once no WAAPI move or fade runs in #stage (a plate's ease, a pencil's hold and fade; the CSS loops, a person's bob,
+   keep running and do not count). One text for the pencil-ease driver's waits and the release clip's one capture (scripts/release-video.js `glide`). */
+const STILL_STAGE = `!(document.getElementById('stage')||document.body).getAnimations({subtree:true}).some(a=>!a.animationName&&a.playState==='running')`;
+
+module.exports = { STILL_STAGE, waits, helpers, pointerLog, POINTER_LOG_MAX, DOM_LOG_MAX, guardWindow, jsLiteral, shotWithView, LIMIT, INDEX, CHECK_DARK, CHECK_DARK_QUERY, darkFixtureProblem, darkProblem };
