@@ -434,7 +434,7 @@ const graphemes = (t: string): string[] => [...new Intl.Segmenter(undefined, { g
 /**
  * FR-021: the name of a duplicate, "<name> copy", then " copy 2", " copy 3" until its `nameKey` is not in `takenKeys` (the `nameKey` of every stored name).
  * Cut by grapheme to the name limit (a conjunct or an emoji sequence is never split; a trailing joiner or virama is dropped before the suffix; one grapheme
- * too long to fit is cut by code point). `null` when no free name is found. The simulator's fake calls it; the store's `duplicate` has its own code (its mutants are anchored there) and `test:teamstore` checks both give the same name.
+ * too long to fit is cut by code point). `null` when no free name is found. The one copy of the rule: the store's `duplicate` and the simulator's fake both call it (test:teamstore anchors its mutants here).
  */
 export function copyName(name: string, takenKeys: ReadonlySet<string>): string | null {
   const base = graphemes(name);
