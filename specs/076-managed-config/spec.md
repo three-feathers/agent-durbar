@@ -1175,6 +1175,12 @@ All three answered on PR #575 (09:03-09:06 UTC) with option a, the recommended o
 
 ## Changes
 
+### 2026-11-13: a later policy key for Copilot's sign-in app (pointer; spec 058 FR-233, issue #1667)
+
+Spec 058 FR-233 adds a person's setting, `copilotSignInApp` (which Microsoft Entra app Copilot's MCP sign-in uses; Visual Studio Code's app by default, owner decision spec 058 Q27). An
+organization key in `policy.json` that sets or locks it is **later**, not part of issue #1667: it would be its own delta here (machine file,
+fail closed, the lock line in Settings), after the setting has been tested. No requirement of this spec changes now.
+
 ### 2026-11-11: FR-209's same-file check compares bigints (issue #1491)
 
 `policy.json`'s `lstat` is read with `{ bigint: true }` and the opened descriptor is `fstat`ed again with `{ bigint: true }`, so the inode and device are compared as bigints (a 64-bit file ID above 2^53 loses its low bit as a number; filesystems with 64-bit file ids (NTFS, possibly others) may hand out such inode numbers). `PolicyFs` gains the two bigint overloads; the trust check is unchanged. Details, tests and limits: spec 083 *Changes* 2026-11-11 (`test:sandbox-floor`, *issue 1491 policy ino* and *dev*).

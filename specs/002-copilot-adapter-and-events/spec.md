@@ -100,6 +100,14 @@ A developer adds another agent runtime by implementing `AgentAdapter` and emitti
 
 ## Changes
 
+### 2026-11-13: SDK 1.0.32 bump: replayed records and the shell permission guard (pointer; owned by spec 058, issue #1667)
+
+The Copilot SDK bump to 1.0.32 (spec 058 delta 2026-11-13) changes this adapter in two places, specified there, not here: history and
+search readers skip events marked `checkpoint: true` (spec 058 FR-242), and every session is created **and resumed** with
+`managedSettings.permissions.ask: ['Shell(*)']`, assisted permissions off and `permissionMode: 'manual'`, so the runtime's new auto-approval of
+read-only shell commands does not bypass this adapter's `onPermissionRequest` broker (spec 058 FR-243; `[KNOWN GAP]` not verified until the
+`real:` probe there). The client may also get the `entra` option (spec 058 FR-233..FR-238). No requirement of this spec changes.
+
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):

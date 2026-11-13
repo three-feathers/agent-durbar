@@ -3,8 +3,8 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 011-014
 title: AI-credit caps and usage display
-status: built
-note: exhausted flow unverified on a real account
+status: building
+note: exhausted flow unverified on a real account; FR-096 (near-limit words, SDK 1.0.32) specified, not built
 -->
 
 **Feature Branch**: `011-credit-caps-and-usage-display`
@@ -302,3 +302,28 @@ What is kept for the run is listed per setting (`isUnsaved(key)`, `unsavedKeys`,
 ### 2026-11-10: the simulator's monthly reset does not move with the minute (FR-092)
 
 - The FR-092 Copilot fixtures' monthly reset (`current` and the other request modes, `usagebilled`) is the next UTC midnight 12 days on, not `now + 12 days` to the minute. Settings shows it to the minute, so two pages loaded seconds apart across a minute boundary read "06:10" and "06:11"; in the sans-serif the geometry check forces they are 182.8 and 182.0 px wide, and the Photo/Retro Settings comparison (spec 102 T220) failed on merge-queue run 42766660661 (PR #1440, unrelated to the change). The reset text now changes only at a UTC midnight. `[IMPLEMENTED]` `read:` the two widths measured in Electron on Linux xvfb with the Resets text set to each minute; `test: check:geometry` passes.
+
+### 2026-11-13: the runtime's limit prompt can come at 90% (SDK 1.0.32; spec 058 delta 2026-11-13, issue #1667; FR-096)
+
+**Status**: specified, not built; lands with the SDK bump (spec 058 FR-244, task T216 there, T074 here). Numbers checked with `npm run specs:numbers`.
+
+**Why.** SDK 1.0.32's notes say interactive clients with a session-limits listener "are offered a top-up at 90% of the limit" (`read:`
+bot-written release notes, data). It arrives as the same `session_limits_exhausted.requested` event with `usedAiCredits < maxAiCredits`; today
+the mapper (`src/adapters/map.ts`, `case 'session_limits_exhausted.requested'`) turns every such event into `limit` `phase: 'exhausted'`, so the
+window would say *Spending limit reached* while 10% is left. **Durbar's own cap is affected too** (`read:` code): Durbar sends the person's
+cap to the runtime as `sessionLimits.maxAiCredits` (`setCap`, and on resume) and registers interest in `session_limits_exhausted.requested`
+(`src/adapters/copilot.ts`), so on 1.0.32 the runtime's 90% offer most likely comes for a cap set in Durbar too: the agent waits at about 90%
+of the person's cap with FR-096's words, where today it waits when used reaches the cap. Durbar's own `durbar-cap-<n>` request at 100%
+(FR-071/FR-072) is unchanged. `[KNOWN GAP]` not seen on a real session; there is no "go on to the cap" choice at the 90% prompt (raise,
+remove or stop only); if the prompt shows on Durbar caps in real use, a later delta adds one.
+
+- **FR-096** **Close to the limit, not reached.** A runtime limit request whose used credits are below the cap (`used < max`, both finite
+  numbers) is shown as **close to the limit**: the note reads "Close to the spending limit: used X of Y AIU. The agent waits for you." with the
+  same choices (FR-014: raise, remove, stop here) and the same answer path (`resolveLimit`, `handlePendingSessionLimitsExhausted`); the card state
+  and the office signs say "Close to spending limit" where they say "Spending limit reached" today. `used >= max`, or a missing or non-finite
+  number, keeps today's *reached* words (fail safe: the stronger words). The normalized event gains one vendor-free field (`near?: true`) or an
+  equivalent the plan picks; no new phase, so every consumer of `exhausted` still pauses the agent. `test:` the mapper with used 90/100 (near),
+  100/100 and 101/100 (reached), missing used (reached), a missing or `Infinity` max with used 50 (reached), used `NaN` (reached); the window's
+  note, the card state and the office sign for both. **Mutants:** `<=` for `<` (100/100 reads near); the finite check dropped (an `Infinity` max
+  reads near); the card sign ignoring `near` (it says reached at 90/100).
+  `[KNOWN GAP]` the runtime's 90% offer was not seen (no real session reached a cap; FR-015 stays unverified).
