@@ -85,6 +85,7 @@ module.exports = async (ctx) => {
   await loadReal(1440, 900, CAVE);
   await js(`window.DurbarScreens.openSettings()`);
   await must(`!!document.querySelector('#wrGroup')`, 'the World row');
+  await must(`document.querySelectorAll('#wrGroup .wpic img').length>=2`, 'the cards show their previews (the page is painted again once the previews script has loaded)');
   const row = await js(`(()=>{const g=document.querySelector('#wrGroup');return {role:g.getAttribute('role'),radios:[...g.querySelectorAll('[role=radio]')].map(b=>b.dataset.world+':'+b.getAttribute('aria-checked')+':'+b.tabIndex).join(' '),label:document.getElementById('worldH').textContent}})()`);
   assert.deepStrictEqual(row, { role: 'radiogroup', radios: 'plain:false:-1 photo:false:-1 cave:true:0', label: 'World' }, 'a radio group with the cave checked and one tab stop: ' + JSON.stringify(row));
   assert.ok(/World’s default \(Prehistoric\)/.test(await js(`document.querySelector('#chList [data-characters="theme"]').getAttribute('aria-label')`)), 'Characters names the cave’s default set');

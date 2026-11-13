@@ -283,6 +283,7 @@ module.exports = async (ctx) => {
       await H.load({ w, h, query: q(world), ready: REAL, settle: false, focus: true });
       await js(`window.DurbarScreens.openSettings()`);
       await must(`!!document.querySelector('#wrGroup [data-world="plain"]')`, 'Settings');
+      await must(`document.querySelectorAll('#wrGroup .wpic img').length>=2`, 'the cards show their previews (the page is painted again once, when the previews script has loaded)');
       await js(`document.querySelector('#wrGroup [data-world="plain"]').focus()`);
       await H.key('Return');
       await must(`document.querySelector('#wrGroup [data-world="plain"]').getAttribute('aria-checked')==='true'`, 'Open office chosen');

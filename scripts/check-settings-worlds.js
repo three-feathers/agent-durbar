@@ -38,6 +38,7 @@ module.exports = async (ctx) => {
     await H.load({ w, h, query: { sim: '3', ...query }, ready: query.officeview === 'real' ? `!!document.querySelector('#stage .ro .ro-plate')` : `document.querySelectorAll('#stage .desk[data-id]').length>=3`, focus: true });
     await js(`document.getElementById('settingsBtn').click();0`);
     await ok(`!!document.querySelector(${jsLiteral(CARDS)})`, 'Settings opens with the World cards');
+    await ok(`document.querySelectorAll('#wrGroup .wpic img').length>=2`, 'the previews script has loaded and the cards show their pictures (the page is painted again once)');
     await ctx.sleep(0);
   };
   const names = () => js(`[...document.querySelectorAll(${jsLiteral(CARDS)})].map(b=>b.dataset.world)`);
@@ -150,8 +151,8 @@ module.exports = async (ctx) => {
     await open(w, h, { officeview: 'real', worldflags: 'cave,retro', world: 'retro' });
     assert.deepStrictEqual(await names(), ['plain', 'photo', 'cave', 'retro'], `${w}x${h}: with their flags open the cave and the arcade are listed, in order`);
     assert.deepStrictEqual(await checked(), ['retro'], `${w}x${h}: the arcade is in use`);
-    assert.ok(await js(`document.querySelectorAll('#wrGroup .wpic img').length===4&&document.querySelectorAll('#wrGroup .wnone').length===0`), `${w}x${h}: every listed world shows its preview picture`);
-    await js(`delete window.DurbarWorldPreviews.previews.cave;0`);
+    await ok(`document.querySelectorAll('#wrGroup .wpic img').length===4&&document.querySelectorAll('#wrGroup .wnone').length===0`, `${w}x${h}: every listed world shows its preview picture (the script loads on the first draw)`);
+    await js(`delete window['DurbarWorldPreviews'].previews.cave;0`);
     await js(`document.getElementById('scrClose').click();0`);
     await js(`document.getElementById('settingsBtn').click();0`);
     await ok(`document.querySelectorAll('#wrGroup .wnone').length===1`, `${w}x${h}: a world without a preview shows a plain tile with its name`);
