@@ -661,6 +661,15 @@ const mkRoots2 = (m: { ask?: boolean; allow?: boolean }, roots?: string[]) => {
       assert.strictEqual(W.describe(bad, live), null, `no tag for ${JSON.stringify(bad)}`);
   }
 
+  // spec 012 FR-181 (issue #1541): the "Approve for this session" label (`shortCmd`) hides an escaped token (`ghp\_<body>`) as the first word and quoted (was half a token)
+  {
+    const esc = 'ghp' + '\\_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
+    for (const cmd of [esc + ' --x', 'echo "' + esc + '"', 'echo ' + esc]) {
+      const label = grantScope({ kind: 'shell', fullCommandText: cmd }).label;
+      assert.ok(!label.replace(/\\/g, '').includes('A1b2C3d4') && !/ghp/.test(label), `#1541 shortCmd: the grant label hides an escaped token: ${label}`);
+    }
+    assert.strictEqual(grantScope({ kind: 'shell', fullCommandText: esc + ' --x' }).label, 'run [redacted] --x', '#1541 shortCmd: the label as written around the mask');
+  }
   console.log('permissions: all checks passed');
 }
 main().catch((e) => {

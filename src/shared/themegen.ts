@@ -145,6 +145,25 @@ export const UI_PAIRS: Array<[string, string, number, string]> = [
 export const BRAND_UIS = UI_STYLES.filter((u) => u !== 'clean');
 
 /**
+ * The share of `--brand-mark` mixed into the hovered (and pressed) primary button's fill (themes.css, spec 052 FR-053, issue #1614): 14%, so the fill
+ * moves toward its own text and the text keeps 4.5:1 on it where the old mix with black lowered it. theme.js `BRAND_HOVER_MIX` is the same number (test:theme-tokens).
+ */
+export const BRAND_HOVER_MIX = 0.14;
+/**
+ * The colour the hovered primary fill is mixed toward (theme.js `brandHover` is the same, written to `--brand-hover` for a user theme): the text where that keeps 4.5:1 with it,
+ * else away from the text (black under lighter text, white under darker), which can only raise the contrast.
+ */
+export function brandHoverTarget(mark: string, bg: string): string {
+  if (contrast(mark, mixHex(bg, mark, BRAND_HOVER_MIX)) >= 4.5) return mark;
+  return luminance(mark) > luminance(bg) ? '#000000' : '#ffffff';
+}
+/** `a` with `w` of `b` mixed in (sRGB, as CSS color-mix does); both opaque. */
+export function mixHex(a: string, b: string, w: number): string {
+  const x = hex6(a).slice(1), y = hex6(b).slice(1);
+  return '#' + [0, 2, 4].map((i) => Math.round(parseInt(x.slice(i, i + 2), 16) * (1 - w) + parseInt(y.slice(i, i + 2), 16) * w).toString(16).padStart(2, '0')).join('');
+}
+
+/**
  * The top bar of some UI styles has fixed light text on a theme colour (themes.css): retro paints it with --ink.
  * [token behind the text, the fixed text colour].
  */
@@ -181,6 +200,13 @@ export function themeIssues(tokens: Record<string, string>, clean: Record<string
       if (!p) continue;
       const r = contrast(p[0], p[1]);
       if (r < min) out.push(`${fg} (${p[0]}) on ${bg} (${p[1]}) has contrast ${r.toFixed(1)}:1, needs ${min}:1 (with ui "${ui}", ${why}); change ${fg === '--brand-mark' ? '--brand-mark' : '--brand-bg'}`);
+    }
+  }
+  if (BRAND_UIS.includes(ui)) {
+    const p = pair('--brand-mark', '--brand-bg');
+    if (p) {
+      const hov = mixHex(p[1], brandHoverTarget(p[0], p[1]), BRAND_HOVER_MIX), r = contrast(p[0], hov);
+      if (r < 4.5) out.push(`--brand-mark (${p[0]}) on the hovered --brand-bg (${hov}) has contrast ${r.toFixed(1)}:1, needs 4.5:1 (with ui "${ui}", the hovered primary button mixes ${Math.round(BRAND_HOVER_MIX * 100)}% of --brand-mark or, where that is worse, of black or white into --brand-bg); change --brand-mark`);
     }
   }
   const tb = TOP_BAR[ui];
