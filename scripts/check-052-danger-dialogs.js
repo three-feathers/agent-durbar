@@ -13,6 +13,7 @@
  * every transition ended: text >= 4.5:1 on its own background, a background that is not the panel's, hover differs from rest.
  * DANGER_MUTANT=old deletes the themed danger rules (main's cascade before #1576); =one blanks only the button of the "Revoke all" dialog (its label must be
  * the one named); =sites drops one call site from the list the driver parsed (the count assert fails); =screens moves the button row out of screens.js's dialog (fails at "the dialog opened" for the first screens.js site). Each fails with its own label.
+ * DANGER_MUTANT=hover removes the --red-hover target theme.js wrote (issue #1700): the partial dark user theme's hover falls under 4.5:1 and the check fails with its label.
  * DANGER_REPORT=1 fails at the end on purpose, so the suite prints every measured line. OUT=dir (optional) saves 052-danger-dialogs-<look>-<size>.png
  */
 const assert = require('assert');
@@ -31,6 +32,7 @@ const LOOKS = [
   ['check-user (retro ui)', {}, CHECK_USER],
   ['dark user theme (retro ui)', {}, { ...CHECK_DARK, id: 'dark-retro-user', ui: 'retro' }], // the dark fixture's complete token set, as a retro-ui theme
   ['mid-fill user theme (retro ui)', {}, user('mid-user', { '--bg': '#efe9dc', '--brand-bg': '#808080', '--brand-mark': '#000000' })],
+  ['partial dark user theme (retro ui)', {}, user('partial-dark', { '--bg': '#14121f', '--surface': '#1e1b2e', '--ink': '#f0eaff' })], // issue #1700: --ink set, no --raised/--card: theme.js repairs --ink to a mid grey; the hover would read 4.33:1 without --red-hover
   ['photo', { officeview: 'real' }, null], // control: ui is clean
   ['dark fixture', {}, CHECK_DARK], // control: ui is clean
 ];
@@ -79,6 +81,7 @@ module.exports = async (ctx) => {
       if (theme) await js(`window.THEME.setTheme(${jsLiteral(theme)})`);
       await H.settle();
       await js(INSTALL_PX);
+      if (process.env.DANGER_MUTANT === 'hover') console.log(`[danger-dlgs] mutant hover: --red-hover was ${JSON.stringify(await js(`(()=>{const e=document.documentElement,v=e.style.getPropertyValue('--red-hover');e.style.removeProperty('--red-hover');return v})()`))}`);
       if (process.env.DANGER_MUTANT === 'old') console.log(`[danger-dlgs] mutant old: changed ${await mutate('old')} themed danger rule(s)`);
       let shot = false;
       for (const site of SITES) {
