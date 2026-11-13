@@ -173,6 +173,10 @@ module.exports = async (ctx) => {
       assert.strictEqual(geo.chair + geo.small, 0, `${tag}: no empty-chair marker on an asleep desk; no text under 10.5px`);
       console.log('[moments] asleep ok', sl.length);
       await shot(world, 'asleep', w, h);
+      /* spec 097 FR-364: a lounge seat with a pencil has a line of 55% of the plate plus the 22 px the pencil keeps, so the capped name is not cut. Font-independent: the name is forced wide, so the line is at its cap, whatever the font */
+      if (process.env.MOMENTS_MUTANT === 'lounge22') await js(`(()=>{document.querySelectorAll('#stage .ro-plate.lounge.has-ren .ro-l1').forEach(l=>l.style.setProperty('max-width','55%','important'));return 1})()`);
+      const cap = await js(`(()=>{const o=[];for(const p of document.querySelectorAll('#stage .ro-plate.lounge.has-ren')){const l=p.querySelector('.ro-l1'),b=l&&l.querySelector(':scope>b');if(!b)continue;const old=b.style.cssText;b.style.cssText+=';width:1000px';const cs=getComputedStyle(p),w=l.getBoundingClientRect().width,c=p.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);b.style.cssText=old;o.push({want:+(c*0.55+22).toFixed(2),got:+w.toFixed(2)})}return o})()`);
+      if (world === 'retro') assert.ok(cap.length >= 1 && cap.every((c) => Math.abs(c.got - c.want) <= 0.5), `${tag}: a lounge seat's line keeps 22 px more than 55% of the plate for the pencil: ${JSON.stringify(cap)}`);
       /* the name has priority in a narrow plate: no name is cut, at any desk (review 2026-11-02) */
       const CUT = `[...document.querySelectorAll('#stage .ro-plate .ro-l1 b')].filter(b=>{const r=document.createRange();r.selectNodeContents(b);return r.getBoundingClientRect().width>b.getBoundingClientRect().width+0.01}).map(b=>b.textContent)`;
       await H.until(CUT + '.length===0', 4000).catch(() => undefined); /* plates are fitted after the draw */
