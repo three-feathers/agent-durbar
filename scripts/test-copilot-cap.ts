@@ -563,6 +563,19 @@ async function main(): Promise<void> {
     replay('session_limits_exhausted.requested', { requestId: 'rq', maxAiCredits: 30, usedAiCredits: 31 });
     await tick();
     assert.ok(evs.some((e) => e.type === 'limit' && (e as { requestId?: string }).requestId === 'rq'), 'FR-242: a replayed limit request is still shown');
+    // spec 058 FR-242 (trackCap): a replayed OLDER usage_checkpoint and a replayed usage leave the live used total unchanged
+    {
+      const live = (ca as unknown as { sessions: Map<string, { usedCheckpointNano?: number; usedSinceNano?: number }> }).sessions.get(cid)!;
+      const usedNow = (): number => ((live.usedCheckpointNano ?? 0) + (live.usedSinceNano ?? 0)) / NANO;
+      cs.handler?.({ type: 'session.usage_checkpoint', data: { totalNanoAiu: 20 * NANO } }); // the session's own total
+      cs.handler?.({ type: 'assistant.usage', data: usage(2).data }); // and its own call since
+      await tick();
+      assert.strictEqual(usedNow(), 22, 'FR-242 trackCap: own records counted (20 + 2)');
+      replay('session.usage_checkpoint', { totalNanoAiu: 5 * NANO });
+      replay('assistant.usage', usage(9).data);
+      await tick();
+      assert.strictEqual(usedNow(), 22, 'FR-242 trackCap: a replayed older usage_checkpoint and a replayed usage leave the used total unchanged');
+    }
     // the session's own records still count
     cs.handler?.({ type: 'assistant.message', data: { messageId: 'new', content: 'said now' } });
     await tick();
