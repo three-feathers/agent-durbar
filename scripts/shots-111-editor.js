@@ -20,7 +20,29 @@ const path = require('path');
 const { helpers, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
 
+const fs = require('fs');
+/* TEAMS_EDITOR_MUTANT=<name>: the driver rewrites the built dist/renderer/teameditor.js for the run (restored at the end, also on a failure), so a mutant must die at
+   its own label. nostate: the status words of a member are not painted; noappstate: the app select shows no state word; nodescribe: no aria-describedby. */
+const MUTANTS = {
+  nostate: ["v.status.textContent=stateWords(m,st).join(' · ');", "v.status.textContent='';"],
+  noappstate: ["(k.shortName||k.name||k.id)+' ('+(k.stateText||'ready')+')'", "(k.shortName||k.name||k.id)"],
+  nodescribe: ["if(ids2.length)f.control.setAttribute('aria-describedby',ids2.join(' '));", ''],
+};
+
 module.exports = async (ctx) => {
+  const MUT = process.env.TEAMS_EDITOR_MUTANT || '';
+  const file = path.join(__dirname, '..', 'dist', 'renderer', 'teameditor.js');
+  const good = fs.readFileSync(file, 'utf8');
+  if (MUT) {
+    assert.ok(Object.prototype.hasOwnProperty.call(MUTANTS, MUT), `TEAMS_EDITOR_MUTANT=${MUT} is not one of ${Object.keys(MUTANTS).join('|')}`);
+    assert.ok(good.includes(MUTANTS[MUT][0]), `TEAMS_EDITOR_MUTANT=${MUT}: the anchor is not in teameditor.js any more`);
+    fs.writeFileSync(file, good.split(MUTANTS[MUT][0]).join(MUTANTS[MUT][1]));
+    console.log('[111] TEAMS_EDITOR_MUTANT=' + MUT + ': teameditor.js rewritten for this run');
+  }
+  try { await body(ctx); } finally { if (MUT) fs.writeFileSync(file, good); }
+};
+
+async function body(ctx) {
   const H = helpers(ctx);
   const { js, until } = H;
   const tab = (shift) => H.key('Tab', shift ? ['shift'] : []);
@@ -81,7 +103,12 @@ module.exports = async (ctx) => {
     await js(`(()=>{const s=document.querySelector(${jsLiteral(fieldOf(1, '-app'))});s.value=${jsLiteral(withCap)};s.dispatchEvent(new Event('change',{bubbles:true}))})()`);
 
     // the limit of 8 by keyboard: Enter on Add member
-    for (let i = 0; i < 7; i++) { await focusSel('#modeDlg button[data-act="add"]'); await H.key('Enter'); }
+    for (let i = 0; i < 7; i++) {
+      await focusSel('#modeDlg button[data-act="add"]'); await H.key('Enter');
+      const n = i + 2;
+      // each Enter repaints the members: wait for the new row, and for the focus to reach its name (the next Enter must find Add member again)
+      assert.ok(await until(`document.querySelectorAll('#modeDlg fieldset.tm-mem').length===${n}&&!!document.activeElement&&document.activeElement===document.querySelector('#modeDlg fieldset.tm-mem:nth-of-type(${n}) [id$="-name"]')`), `${w}: Add member #${i + 1} made member ${i + 2} and moved the focus to it`);
+    }
     assert.ok(await until(`document.querySelectorAll('#modeDlg fieldset.tm-mem').length===8`), `${w}: eight members`);
     assert.strictEqual(await js(`document.querySelector('#modeDlg button[data-act="add"]').disabled`), true, `${w}: Add member is disabled at 8`);
     assert.strictEqual(await H.text('#tmEdAddNote'), 'A team has at most 8 members.', `${w}: and says why`);
@@ -146,6 +173,24 @@ module.exports = async (ctx) => {
     assert.ok(await until(`!document.getElementById('modeDlg')`), `${w}: Discard closes the editor`);
   }
 
+  // the app's state in words: an app that is not installed or too old says so in the select and in the member's description (simkinds=solo seeds both)
+  for (const [w, h] of [[1440, 900], [1280, 800]]) {
+    await H.load({ w, h, query: { simteams: 'imported', simkinds: 'solo' } });
+    const put = await call('teamsPut', { name: 'State team', members: [{ ...member(1, 'claude'), role: 'Writer' }, { ...member(2, 'copilot'), role: 'Tester' }] });
+    assert.strictEqual(put.ok, true, `${w}: a template with a member on an app that is not installed`);
+    await openSettings();
+    await focusSel('#teamsBox .tm-row[data-origin="own"] button[data-act="edit"]'); await H.key('Enter');
+    assert.ok(await until(`!!document.querySelector('#modeDlg .tm-ed')`), `${w}: the editor opens`);
+    const opts = await js(`[...document.querySelector('#modeDlg fieldset.tm-mem [id$="-app"]').options].map(o=>o.textContent)`);
+    assert.deepStrictEqual(opts, ['Copilot (ready)', 'Claude Code (not installed)', 'Codex (too old)'], `${w}: each app says its state in words: ${JSON.stringify(opts)}`);
+    const st = await js(`[...document.querySelectorAll('#modeDlg fieldset.tm-mem [id$="-st"]')].map(e=>e.textContent)`);
+    assert.deepStrictEqual(st, ['App not installed', ''], `${w}: the member on the missing app says so, the ready one says nothing: ${JSON.stringify(st)}`);
+    assert.strictEqual(await js(`document.querySelector('#modeDlg fieldset.tm-mem').getAttribute('aria-describedby')===document.querySelector('#modeDlg fieldset.tm-mem [id$="-st"]').id`), true, `${w}: the fieldset is described by its state`);
+    await H.shot(path.join(OUT, `111-editor-state-${w}x${h}.png`), { prep: 'calm', blur: false, delay: 300 });
+    await H.key('Escape');
+    assert.ok(await until(`!document.getElementById('modeDlg')`), `${w}: Escape closes (nothing changed)`);
+  }
+
   // a hostile name is text
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     await H.load({ w, h, query: { simteams: 'hostile', simkinds: 'mixed' } });
@@ -164,10 +209,12 @@ module.exports = async (ctx) => {
     await openSettings();
     await focusSel('#tmNew'); await H.key('Enter');
     assert.ok(await until(`!!document.querySelector('#modeDlg .tm-ed')`), `${seed}: editor open`);
-    await type('Keep me'); await tab(); await tab(); await tab(); await tab(); await tab(); await tab(); await tab();
+    assert.ok(await until(`document.activeElement&&document.activeElement.id==='tmEd-tname'`), `${seed}: the focus starts on the template name`);
+    await type('Keep me');
+    assert.ok(await until(`document.getElementById('tmEd-tname').value==='Keep me'`), `${seed}: the template name was typed`);
     await js(`(()=>{const f=document.querySelector('#modeDlg fieldset.tm-mem');for(const [s,v] of [['-name','Ana'],['-role','Lead']]){const e=f.querySelector('[id$="'+s+'"]');e.value=v;e.dispatchEvent(new Event('input',{bubbles:true}))}})()`);
     await focusSel('#modeDlg .dbtn .primary'); await H.key('Enter');
-    assert.ok(await until(`/What you typed is kept/.test(document.getElementById('tmEdErr').textContent)`), `${seed}: words, the dialog stays`);
+    assert.ok(await until(`/What you typed is kept/.test(document.getElementById('tmEdErr').textContent)`), `${seed}: words, the dialog stays (note: ${await H.text('#tmEdErr')})`);
     assert.strictEqual(await js(`document.querySelector('#modeDlg fieldset.tm-mem [id$="-name"]').value`), 'Ana', `${seed}: what was typed is kept`);
     assert.ok(!/errors/.test(await H.text('#tmEdErr')), `${seed}: words only`);
     await H.shot(path.join(OUT, `111-editor-${seed}-${w}x${h}.png`), { prep: 'calm', blur: false, delay: 300 });
@@ -204,5 +251,4 @@ module.exports = async (ctx) => {
       assert.ok(await js(`document.documentElement.scrollHeight<=innerHeight&&document.documentElement.scrollWidth<=innerWidth`), `${world} ${w}: the office does not scroll`);
     }
   }
-  console.log('[111] editor PASS');
-};
+  console.log('[111] editor PASS');}
