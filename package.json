@@ -373,6 +373,7 @@
     "files": [
       "dist/**/*",
       "!dist/**/*.map",
+      "!dist/renderer/teamcheck.js",
       "package.json"
     ],
     "asar": true,

@@ -414,8 +414,8 @@
         <p class="scr-note">Groups of folders: a floor that is <b>off</b> is hidden from the office, but <b>its agents keep running</b> and can spend credits.</p>
         <details class="scr-more"><summary>More</summary><p class="scr-note small">An off floor is not counted in Working, Waiting, Idle, Errors and Done. The office credit total still counts its agents, and an agent there that waits for you or has an error is shown <b>only here</b>, on its floor's row (for example "Off, 1 waiting"). With two or more floors, the same controls are also in the <b>Floors</b> button of the top bar.</p></details>
         <div class="floors-ui floors-set" id="floorsSet" tabindex="-1"></div></section>`:'';
-    /* spec 111 FR-020 (T008): Settings > Team templates, painted by teams.js into #teamsBox */
-    const teamsSec=window.DurbarTeams&&X.bridge.teamsList?`<section class="scr-sec" aria-labelledby="tmH"><h3 id="tmH">Team templates</h3>
+    /* spec 111 FR-020 (T008): Settings > Team templates, painted by teams.js into #teamsBox; only under the simulator until the member editor (T009) exists */
+    const teamsSec=window.DurbarTeams&&window.DurbarTeams.shown()&&X.bridge.teamsList?`<section class="scr-sec" aria-labelledby="tmH"><h3 id="tmH">Team templates</h3>
         <p class="scr-note">A template is a saved team: its members, roles and settings. <b>Use…</b> adds that team to a folder. Starting a team does not start any member.</p>
         <div id="teamsBox"></div></section>`:'';
     /* Schedules (spec 044 FR-011): every folder's schedules, painted by app.js into #schedSet */

@@ -37,6 +37,9 @@ export const LIMITS = {
   ownBrief: { chars: 4000, lines: 80 }, importedBrief: { chars: 2000, lines: 40 },
 } as const;
 
+/** what a `teams:*` call says when the store file moved under it (code `changed`): main and the simulator's fake say it the same way */
+export const CHANGED_TEXT = 'The team templates file changed while you were editing. It was read again; save once more.';
+
 const MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}$/;
 const CHARACTER_RE = /^[a-z][a-z0-9-]{0,23}$/;
 /** `PROFILE_ID` of `src/main/folders.ts` (a test checks it is the same source) */

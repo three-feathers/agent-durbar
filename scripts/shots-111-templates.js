@@ -19,7 +19,35 @@ const path = require('path');
 const { helpers, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
 
+const fs = require('fs');
+/* TEAMS_MUTANT=<name>: the driver rewrites the built dist/renderer/teams.js for the run (restored at the end, also on a failure), so a mutant must die at its own
+   label. editstarter: a starter shows Edit; exportenabled: Export is enabled; rawerrors: the refusal shows the error text; innerhtml: a name is set as markup;
+   nolabel: no button is named with its template; cancelorder: Delete before Cancel; noask: Delete without the question; nofocus: no focus after a change. */
+const MUTANTS = {
+  editstarter: ["if(starter)return [{id:'use',label:'Use…'},dup];", "if(starter)return [{id:'use',label:'Use…'},{id:'edit',label:'Edit…'},dup];"],
+  exportenabled: ["label:'Export…',disabled:true,why:EXPORT_WHY}", "label:'Export…',disabled:false,why:EXPORT_WHY}"],
+  rawerrors: ["else t=w+' was not accepted. Nothing was changed.';", "else t=w+' was not accepted: '+(res.errors||[]).join(' ');"],
+  innerhtml: ["nm.id='tmN-'+row.id;", "nm.id='tmN-'+row.id;nm.innerHTML=row.name;"],
+  nolabel: ["b.setAttribute('aria-label',a.label.replace('…','')+' '+row.name+(a.disabled?' ('+(a.id==='export'?'not available yet':a.why)+')':''));", ''],
+  cancelorder: ["buttons:[{label:'Cancel',value:null},{label:'Delete',value:'del',cls:'primary danger'}]", "buttons:[{label:'Delete',value:'del',cls:'primary danger'},{label:'Cancel',value:null}]"],
+  noask: ['const ans=await X.askDialog({', "const ans=await (async function(o){return {value:'del'};})({"],
+  nofocus: ['function focusEl(t){', 'function focusEl(t){return;'],
+};
+
 module.exports = async (ctx) => {
+  const MUT = process.env.TEAMS_MUTANT || '';
+  const file = path.join(__dirname, '..', 'dist', 'renderer', 'teams.js');
+  const good = fs.readFileSync(file, 'utf8');
+  if (MUT) {
+    assert.ok(Object.prototype.hasOwnProperty.call(MUTANTS, MUT), `TEAMS_MUTANT=${MUT} is not one of ${Object.keys(MUTANTS).join('|')}`);
+    assert.ok(good.includes(MUTANTS[MUT][0]), `TEAMS_MUTANT=${MUT}: the anchor is not in teams.js any more`);
+    fs.writeFileSync(file, good.split(MUTANTS[MUT][0]).join(MUTANTS[MUT][1]));
+    console.log('[111] TEAMS_MUTANT=' + MUT + ': teams.js rewritten for this run');
+  }
+  try { await body(ctx); } finally { if (MUT) fs.writeFileSync(file, good); }
+};
+
+async function body(ctx) {
   const H = helpers(ctx);
   const { js, until } = H;
   const member = (i) => ({ name: 'Member ' + i, role: 'Dev', app: i % 2 ? 'claude' : 'codex', permMode: 'read-only', sendBrief: false });
@@ -159,5 +187,112 @@ module.exports = async (ctx) => {
     assert.strictEqual(await js(`document.querySelectorAll('#modeDlg img').length+':'+typeof window.__tmXss`), '0:undefined', `${w}: the question holds the name as text too`);
     await H.key('Escape');
   }
+
+  const reopen = async () => { // Settings closed and opened again: a new mount of the section (module state is what survives)
+    if (await H.exists('#scrClose')) await H.click('#scrClose');
+    await H.office(15);
+    await H.click('#settingsBtn');
+    assert.ok(await until(`!!document.querySelector('#teamsBox #tmNew')`), 'Settings is open again');
+  };
+  const rect = () => js(`(()=>{const e=document.activeElement,b=document.querySelector('.scr-body').getBoundingClientRect();if(!e)return 'none';const r=e.getBoundingClientRect();return r.top>=b.top-1&&r.bottom<=b.bottom+1?'in':'out '+Math.round(r.top)+'/'+Math.round(r.bottom)+' in '+Math.round(b.top)+'/'+Math.round(b.bottom)})()`);
+  const MAIN_CHANGED = 'The team templates file changed while you were editing. It was read again; save once more.';
+  for (const [w, h] of [[1440, 900], [1280, 800]]) {
+    // review of 1661, 1: the set-aside note is said once as a toast, kept inline across a repaint of Settings, and dismissed on purpose
+    await H.load({ w, h, query: { simteams: 'blocked' } });
+    await H.click('#settingsBtn');
+    const ASIDE = await js(`window.DurbarTeams.ASIDE_WORDS`);
+    assert.strictEqual(ASIDE, 'The team templates file could not be read, so it was kept aside; templates that could not be read are not in the list.', `${w}: the set-aside words`);
+    assert.ok(await until(`(document.getElementById('tmAside')||{}).textContent&&document.getElementById('tmAside').textContent.startsWith(${jsLiteral(ASIDE)})`), `${w}: the inline set-aside note`);
+    assert.ok(await until(`[...document.querySelectorAll('#toasts .toast')].some(t=>t.textContent.includes('kept aside'))`), `${w}: and the same words as a toast`);
+    await reopen();
+    assert.ok(await until(`!!document.getElementById('tmAside')`), `${w}: Settings repainted and the set-aside note is still there (module state)`);
+    assert.strictEqual(await js(`document.getElementById('tmNotice').hasAttribute('role')`), false, `${w}: #tmNotice has no role (#srAnnounce speaks)`);
+    await js(`document.getElementById('tmAsideX').focus()`);
+    await H.key('Enter');
+    assert.ok(await until(`!document.getElementById('tmAside')`), `${w}: Dismiss removes the note`);
+    await reopen();
+    assert.strictEqual(await js(`!!document.getElementById('tmAside')`), false, `${w}: and it stays dismissed`);
+
+    // 2: a list that did not come back is not "no templates"
+    await H.load({ w, h, query: { simteams: 'listfail' } });
+    await H.click('#settingsBtn');
+    assert.ok(await until(`!!document.getElementById('tmFailed')`), `${w}: a failed list says so`);
+    assert.ok((await H.text('#tmFailed')).startsWith('The team templates could not be loaded. Try again.'), `${w}: in words`);
+    assert.strictEqual(await js(`document.getElementById('tmNew').disabled`), true, `${w}: New is disabled`);
+    assert.ok(!/No team templates yet/.test(await H.text('#teamsBox')), `${w}: never "No team templates yet"`);
+    await js(`document.getElementById('tmRetry').focus()`);
+    await H.key('Enter');
+    assert.ok(await until(`!!document.getElementById('tmFailed')&&document.activeElement&&document.activeElement.id==='tmRetry'`), `${w}: Try again asks again and keeps the focus`);
+    await H.shot(path.join(OUT, `111-templates-listfail-${w}x${h}.png`), { prep: 'calm', blur: true, delay: 300 });
+    // a reload that fails after a change does not say "Copied as"
+    await H.load({ w, h, query: { simteams: 'listfail2' } });
+    await H.click('#settingsBtn');
+    assert.ok(await until(`document.querySelectorAll('#teamsBox .tm-row').length===1`), `${w}: the first list comes back`);
+    await js(`document.querySelector('#teamsBox .tm-row button[data-act="duplicate"]').focus()`);
+    await H.key('Enter');
+    assert.ok(await until(`!!document.getElementById('tmFailed')`), `${w}: the reload after the copy failed`);
+    const failedNote = await H.text('#tmNotice');
+    assert.ok(/could not be loaded/.test(failedNote) && !/Copied as/.test(failedNote), `${w}: no "Copied as" over a failed reload: ${failedNote}`);
+
+    // 3: after Duplicate or Delete near the end of 40 templates the focus is in view in the Settings scroller
+    await H.load({ w, h, query: { simteams: 'many' } });
+    await H.click('#settingsBtn');
+    assert.ok(await until(`document.querySelectorAll('#teamsBox .tm-row').length===40`), `${w}: 40 templates`);
+    await js(`(()=>{const r=[...document.querySelectorAll('#teamsBox .tm-row')].find(x=>x.querySelector('.tm-name').textContent==='Team 40');const b=document.querySelector('.scr-body');b.scrollTop+=r.getBoundingClientRect().bottom-b.getBoundingClientRect().bottom+4;r.querySelector('button[data-act="duplicate"]').focus({preventScroll:true})})()`);
+    await H.key('Enter');
+    assert.ok(await until(`document.querySelectorAll('#teamsBox .tm-row').length===41`), `${w}: the copy is added at the end`);
+    assert.strictEqual(await js(`(document.activeElement.closest&&document.activeElement.closest('.tm-row')||{querySelector(){return {textContent:''}}}).querySelector('.tm-name').textContent`), 'Team 40 copy', `${w}: the focus went to the new row`);
+    assert.strictEqual(await rect(), 'in', `${w}: the focused control of the new row is inside the Settings scroller's view`);
+    await js(`document.querySelector('#teamsBox .tm-row:last-child button[data-act="delete"]').focus({preventScroll:true})`);
+    await H.key('Enter');
+    assert.ok(await until(`!!document.getElementById('modeDlg')`), `${w}: the delete question`);
+    await js(`[...document.querySelectorAll('#modeDlg button')].find(b=>b.textContent==='Delete').focus()`);
+    await H.key('Enter');
+    assert.ok(await until(`!document.getElementById('modeDlg')&&document.querySelectorAll('#teamsBox .tm-row').length===40`), `${w}: the last copy is deleted`);
+    assert.strictEqual(await active(), 'tmNew//', `${w}: the focus went to New template…`);
+    assert.strictEqual(await rect(), 'in', `${w}: and New is in view`);
+
+    // 4: at the store's limit, Duplicate and New say why in words
+    await H.load({ w, h, query: { simteams: 'full' } });
+    await H.click('#settingsBtn');
+    assert.ok(await until(`document.querySelectorAll('#teamsBox .tm-row').length===50`), `${w}: 50 templates`);
+    const WHY = 'At most 50 templates: delete one first.';
+    assert.strictEqual(await js(`document.getElementById('tmNew').disabled`), true, `${w}: New is disabled at 50`);
+    assert.ok((await js(`document.getElementById('tmNew').getAttribute('aria-label')`)).includes(WHY), `${w}: and says why in its name`);
+    assert.strictEqual(await H.text('#tmFull'), WHY, `${w}: and in a visible note`);
+    assert.strictEqual(await js(`[...document.querySelectorAll('#teamsBox button[data-act="duplicate"]')].every(b=>b.disabled&&b.getAttribute('aria-label').includes(${jsLiteral(WHY)}))`), true, `${w}: every Duplicate is disabled with the reason`);
+    // Export's reason is a visible line, not only a title
+    assert.ok((await H.text('#tmExportNote')).includes('Export comes with import and export, in a later step.'), `${w}: the reason of Export is visible`);
+    await js(`document.querySelector('#teamsBox .tm-row button[data-act="delete"]').focus()`);
+    await H.key('Enter');
+    assert.ok(await until(`!!document.getElementById('modeDlg')`), `${w}: the delete question at 50`);
+    await js(`[...document.querySelectorAll('#modeDlg button')].find(b=>b.textContent==='Delete').focus()`);
+    await H.key('Enter');
+    assert.ok(await until(`document.querySelectorAll('#teamsBox .tm-row').length===49&&!document.getElementById('tmNew').disabled&&!document.getElementById('tmFull')`), `${w}: one fewer and New is open again`);
+    await js(`document.getElementById('tmH').scrollIntoView({block:'start'})`);
+    await H.shot(path.join(OUT, `111-templates-full-${w}x${h}.png`), { prep: 'calm', blur: true, delay: 300 });
+
+    // a refusal with a value in it shows words only
+    await H.load({ w, h, query: { simteams: 'invalid' } });
+    await H.click('#settingsBtn');
+    assert.ok(await until(`document.querySelectorAll('#teamsBox .tm-row').length===1`), `${w}: invalid seed listed`);
+    await js(`document.querySelector('#teamsBox .tm-row button[data-act="duplicate"]').focus()`);
+    await H.key('Enter');
+    assert.ok(await until(`/not accepted/.test(document.getElementById('tmNotice').textContent)`), `${w}: invalid is said as "not accepted"`);
+    const inv = await H.text('#teamsBox');
+    assert.ok(!/Member 1|sk-|PLANTED/.test(inv), `${w}: no error text and no value on the page: ${inv.slice(0, 80)}`);
+
+    // 5: the fake follows main
+    await H.load({ w, h, query: { simteams: 'changed' } });
+    const changed = await js(`window.__durbarSimUi.bridge().teamsDelete('sim-example').then(r=>JSON.stringify([r.ok,r.code,r.errors,Array.isArray(r.templates)]))`);
+    assert.strictEqual(changed, JSON.stringify([false, 'changed', [MAIN_CHANGED], true]), `${w}: changed answers main's sentence: ${changed}`);
+    await H.load({ w, h, query: { simteams: 'imported' } });
+    const mk = (id) => js(`(async()=>{const b=window.__durbarSimUi.bridge();const t=(await b.teamsList()).templates[0];const m=Object.assign({},t.members[0],{memberId:${jsLiteral(id)}});const r=await b.teamsPut({id:t.id,name:t.name,members:[m]});return JSON.stringify(r.errors)})()`);
+    assert.strictEqual(await mk('zzz'), JSON.stringify(['Member 1, memberId: not valid.']), `${w}: a malformed memberId is "not valid" first`);
+    assert.strictEqual(await mk('a'.repeat(32)), JSON.stringify(['Member 1, memberId: not a member of this template.']), `${w}: a well-formed unknown one is "not a member"`);
+    const tooMany = await js(`window.__durbarSimUi.bridge().teamsPut(${jsLiteral({ name: 'X', members: Array.from({ length: 9 }, (_, i) => member(i)) })}).then(r=>JSON.stringify(r.errors))`);
+    const limit = await js('window.DurbarTeamCheck.LIMITS.members');
+    assert.strictEqual(tooMany, JSON.stringify([`Members: at most ${limit}.`]), `${w}: the member limit is the validator's`);
+  }
   console.log('[111] templates PASS');
-};
+}

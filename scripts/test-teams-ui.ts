@@ -10,9 +10,11 @@ type Row = { id: string; name: string; origin: 'starter' | 'own' | 'imported'; o
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const T = require(path.join(ROOT, 'src', 'renderer', 'teams.js')) as {
   rowsOf: (l: unknown, s?: unknown) => Row[];
-  actionsOf: (r: Partial<Row>) => { id: string; label: string; disabled?: boolean; why?: string }[];
+  actionsOf: (r: Partial<Row>, o?: { full?: boolean }) => { id: string; label: string; disabled?: boolean; why?: string }[];
   summaryText: (r: Partial<Row>) => string;
   refusalText: (r: unknown, what?: string) => string;
+  ASIDE_WORDS: string; LOAD_FAILED_WORDS: string; FULL_WORDS: string; EXPORT_WHY: string; MAX_TEMPLATES: number;
+  shown: () => boolean;
 };
 let checks = 0;
 const ok = (c: unknown, m: string): void => { assert.ok(c, m); checks++; };
@@ -36,6 +38,19 @@ const exp = T.actionsOf({ origin: 'own' }).find((a) => a.id === 'export');
 ok(exp && exp.disabled === true && !!exp.why, 'Export is disabled and says why');
 eq(T.actionsOf({ origin: 'own' }).filter((a) => a.disabled).length, 1, 'only Export is disabled');
 
+// at the store's limit (review of #1661): Duplicate says why, in the control's own words
+const fullActs = T.actionsOf({ origin: 'own' }, { full: true });
+const dupF = fullActs.find((a) => a.id === 'duplicate');
+ok(dupF && dupF.disabled === true && dupF.why === 'At most 50 templates: delete one first.', 'full: Duplicate is disabled with its reason');
+eq(T.actionsOf({ origin: 'starter' }, { full: true }).map((a) => a.id + (a.disabled ? '|off' : '')), ['use', 'duplicate|off'], 'full: a starter keeps Use, loses Duplicate');
+eq(T.actionsOf({ origin: 'own' }, { full: false }).filter((a) => a.disabled).length, 1, 'not full: only Export is off');
+eq(T.EXPORT_WHY, 'Export comes with import and export, in a later step.', 'the reason of Export');
+
+// the set-aside notice says what happened and no more (the store keeps the valid templates)
+eq(T.ASIDE_WORDS, 'The team templates file could not be read, so it was kept aside; templates that could not be read are not in the list.', 'the set-aside words');
+eq(T.LOAD_FAILED_WORDS, 'The team templates could not be loaded. Try again.', 'the failed-load words');
+ok(!T.shown(), 'the section is not shown before init (and, in the page, only under the simulator)');
+
 // words
 eq(T.summaryText({ count: 1, apps: ['x'] }), '1 member · x', 'one member');
 eq(T.summaryText({ count: 4, apps: ['a', 'b', 'c', 'd', 'e'] }), '4 members · a, b, c and 2 more', 'a long app list is cut');
@@ -55,6 +70,23 @@ for (const [res, re] of [
 // the names are text, never markup: no way to run a string from teams.js (a name is the person's, or a file's)
 const code = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'teams.js'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 for (const bad of [/innerHTML/, /outerHTML/, /insertAdjacentHTML/, /\beval\b/, /\bFunction\s*\(/, /document\.write/]) ok(!bad.test(code), 'teams.js has no ' + bad.source);
+
+// the page's constant is the store's limit
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const shared = require(path.join(ROOT, 'dist', 'shared', 'teamtemplate.js')) as { LIMITS: { templates: number }; CHANGED_TEXT: string };
+eq(T.MAX_TEMPLATES, shared.LIMITS.templates, 'the page limit of templates is the store limit');
+eq(T.FULL_WORDS, `At most ${shared.LIMITS.templates} templates: delete one first.`, 'the words of the limit follow it');
+// main and the simulator say `changed` with one sentence (a shared constant, not a copy)
+ok(/import \{[^}]*\bCHANGED_TEXT\b[^}]*\} from '\.\.\/shared\/teamtemplate'/.test(fs.readFileSync(path.join(ROOT, 'src', 'main', 'teamsipc.ts'), 'utf8')), 'teamsipc.ts imports CHANGED_TEXT from the shared module');
+ok(!/const CHANGED_TEXT/.test(fs.readFileSync(path.join(ROOT, 'src', 'main', 'teamsipc.ts'), 'utf8')), 'and keeps no copy');
+eq(shared.CHANGED_TEXT, 'The team templates file changed while you were editing. It was read again; save once more.', 'the sentence');
+// the section is a simulator thing until T009, in both places that decide it
+ok(/shown\(\)\{return !!\(X&&X\.sim\)/.test(fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'teams.js'), 'utf8')), 'teams.js shows only under X.sim');
+ok(/DurbarTeams\.shown\(\)/.test(fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.js'), 'utf8')), 'screens.js asks shown()');
+ok(/DurbarTeams\.init\(\{bridge,sim:!!SIM/.test(fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'app.js'), 'utf8')), 'app.js passes the simulator flag');
+// the big validator copy is not packaged
+ok(JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).build.files.includes('!dist/renderer/teamcheck.js'), 'teamcheck.js is left out of the packaged app');
+ok(!/role="status"|setAttribute\('role','status'\)[^;]*tmNotice|tmNotice[^;]*role/.test(fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'teams.js'), 'utf8')), '#tmNotice has no role (#srAnnounce speaks)');
 
 // wiring: the script is copied, loaded, and the section is in Settings
 ok(/'teams\.js'/.test(fs.readFileSync(path.join(ROOT, 'scripts', 'copy-assets.js'), 'utf8')), 'copy-assets copies teams.js');
