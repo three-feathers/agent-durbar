@@ -336,6 +336,7 @@
       const v2 = { w: view.w, h: view.h + opts.lend }, l2 = L.layoutFor(meta.arrangement, engine, v2, meta, signs);
       if (!l2.scroll) { lay = l2; view = v2; lay.lent = true; }
     }
+    lay.aisles = meta.arrangement === 'aisles'; /* spec 102 T340: the host yields its notice strips only for this arrangement */
 
     let ro = stage.querySelector(':scope > .ro');
     if (!ro) { stage.textContent = ''; ro = document.createElement('div'); ro.className = 'ro'; stage.appendChild(ro); ro.addEventListener('click', forward); wireZoom(ro); }

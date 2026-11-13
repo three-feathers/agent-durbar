@@ -1855,11 +1855,66 @@ function renderReal(stage,floor,aw,ah,model,empty){
   stage.dataset.fit=RO_LAST.scroll?'scroll':'ok';floor.classList.toggle('scrolls',!!RO_LAST.scroll);
   return true;
 }
+/* spec 102 T340 (issue 1589, owner decision 8 on 1400): in the arcade the notice strips yield before the office scrolls. When the hall still scrolls with the strips in the flow,
+   they leave it: one bar (#stripBar, one line) counts them and Show/Hide opens them as an overlay that takes no office height. Measured with the strips in the flow first (as ro-tight),
+   kept only if it removes the scroll. */
+const STRIP_IDS=['restoreStrip','awayStrip','crashStrip','followStrip','mcpStrip'];
+const STRIP_NAME={restoreStrip:'Allow all restored',awayStrip:'Since you were away',crashStrip:'Interrupted sessions',followStrip:'Auto-follow',mcpStrip:'MCP servers'};
+let stripsOpen=false;
+const stripsShown=()=>STRIP_IDS.map($).filter(e=>e&&!e.hidden);
+const roomOf2=floor=>{const c=getComputedStyle(floor);return floor.clientHeight-parseFloat(c.paddingTop)-parseFloat(c.paddingBottom);};
+function stripsYield(on){
+  const was=document.body.classList.contains('strips-yield');
+  document.body.classList.toggle('strips-yield',!!on);
+  if(!on){const bar=$('stripBar');if(bar&&!bar.hidden)bar.hidden=true;document.body.classList.remove('strips-open');STRIP_IDS.forEach(i=>{const e=$(i);if(e)e.style.top='';});}
+  return was;
+}
+function stripsPaint(fresh){
+  const bar=$('stripBar'),sh=stripsShown(),n=sh.length;if(!bar)return;
+  const ae=document.activeElement,inStrip=!!(ae&&sh.some(e=>e.contains(ae)));
+  if(fresh)stripsOpen=sh.some(e=>e.querySelector('[aria-expanded="true"]')); /* a list the person just opened stays in view */
+  if(!bar.dataset.built){
+    bar.dataset.built='1';
+    bar.innerHTML='<span class="ns-ic" aria-hidden="true">i</span><span class="ns-t" id="sbText"></span><span class="ns-act"><button class="btn" type="button" id="sbBtn"></button></span>';
+    $('sbBtn').onclick=()=>{stripsOpen=!stripsOpen;stripsPaint(false);if(stripsOpen){const b=stripsShown().map(e=>e.querySelector('button')).find(Boolean);if(b)focusIn(b,{reveal:false});}};
+  }
+  const t=$('sbText'),b=$('sbBtn'),txt=n+(n===1?' notice':' notices')+': '+sh.map(e=>STRIP_NAME[e.id]).join(', ')+'.';
+  if(t.textContent!==txt)t.textContent=txt;
+  const w=stripsOpen?'Hide':'Show';
+  if(b.textContent!==w)b.textContent=w;
+  b.setAttribute('aria-label',w+(n===1?' the notice':' '+n+' notices'));b.setAttribute('aria-expanded',stripsOpen?'true':'false');
+  bar.hidden=false;
+  stripsPlace();
+  if(inStrip&&!stripsOpen)b.focus({preventScroll:true}); /* the strip the focus was in is out of sight: it goes to the bar's button */
+}
+function stripsPlace(){
+  const bar=$('stripBar');if(!bar||bar.hidden)return;
+  document.body.classList.toggle('strips-open',stripsOpen);
+  let y=Math.round(bar.getBoundingClientRect().bottom);
+  for(const e of stripsShown()){if(stripsOpen){e.style.top=y+'px';y+=Math.round(e.getBoundingClientRect().height);}else e.style.top='';}
+}
+document.addEventListener('keydown',e=>{
+  if(e.key!=='Escape'||!stripsOpen||!document.body.classList.contains('strips-yield'))return;
+  const t=e.target;if(!(t&&t.closest&&t.closest('#stripBar,.notice-strip')))return;
+  e.preventDefault();e.stopPropagation();stripsOpen=false;stripsPaint(false);const b=$('sbBtn');if(b)b.focus({preventScroll:true});
+},true);
+function renderRealYield(stage,floor,model,aw,ah,yieldWas){
+  if(!renderReal(stage,floor,aw,ah,model))return false;
+  if(!(RO_LAST&&RO_LAST.aisles&&RO_LAST.scroll&&stripsShown().length))return true;
+  stripsYield(true);stripsPaint(!yieldWas);
+  floor.classList.remove('ro-tight');
+  renderReal(stage,floor,aw,roomOf2(floor),model);
+  if(RO_LAST&&RO_LAST.scroll){ /* it did not help (more agents than fit): the strips stay as they were, the office scrolls as before */
+    stripsYield(false);floor.classList.remove('ro-tight');renderReal(stage,floor,aw,roomOf2(floor),model);
+  }
+  return true;
+}
 function renderOffice(){
   PLACE_ONLY=null; PLACE_DIRTY=null;
   if(ui.view!=='office')return;
   const floor=$('floor'), stage=$('stage');
   renderFilterNote(); /* before the padding is read below */
+  const yieldWas=stripsYield(false); /* spec 102 T340: strips that gave way go back in the flow, so the room is measured with them, as ro-tight below */
   floor.classList.remove('ro-tight'); /* the padding lent to the arcade hall is asked for again on every draw (renderReal), so the room below is always measured with the padding the page gives */
   const cs=getComputedStyle(floor);
   const aw=floor.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);
@@ -1889,7 +1944,7 @@ function renderOffice(){
     stage.innerHTML='<div class="empty">'+EMPTY_DESK+(!agents.length&&!demoOn?'No agents yet. Use "+ Folder" at the top left to add a folder'+' (or "+ Workspace" for a VS Code .code-workspace file).':(agents.length&&ROOMS.every(r=>r.hidden)?'All folders are hidden. Open Manage folders (next to the folder filter) to show them again.':agents.length&&floorsLive()&&!floorsOnList().length?(FLOORS.floors.length>1?'All floors are off. Open "Floors" above or Settings > Floors to switch one on.':'Your only floor is off. Switch it on in Settings > Floors.'):agents.length&&ROOMS.every(r=>!roomShown(r))?('Nothing to show: every folder is hidden or on a floor that is off. Open '+(floorsLive()&&FLOORS.floors.length>1?'"Floors" or "Folders" above, or ':'"Folders" above, or ')+'Settings > Floors.'):'No agents match these filters.'))+'</div>';
     floor.classList.remove('scrolls'); return;
   }
-  if(officeView()==='real'&&renderReal(stage,floor,aw,ah,model))return; /* spec 097: Real office draws the same model; flat below is unchanged */
+  if(officeView()==='real'&&renderRealYield(stage,floor,model,aw,ah,yieldWas))return; /* spec 097: Real office draws the same model; flat below is unchanged */
   /* Density is chosen from the unfiltered set so cards do not change shape when a status pill filters. */
   OPS.renders++;
   const sizing=lastSizing=sizingModel(model); /* what chooseLayout is given (the hook below reads it) */
