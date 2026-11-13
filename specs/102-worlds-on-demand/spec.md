@@ -1417,6 +1417,8 @@ The review of the packer and gates at `3880b2c54` asked for six fixes (FR-030); 
 - **The gate's context.** `availabilityGate` with no `ctx`, or one that is not an object, returns `{ ok: false }` with a `ctx` problem naming what is missing, instead of throwing a `TypeError`.
 - `test:` `test:world-pack` (new mutants, each must fail its own case: every CR stripped, `localeCompare` order, `lstat` turned into `stat`, a swapped-in link followed (no `O_NOFOLLOW` and no inode check), the size checked only after the read, names not checked, the case pair not checked, `ctx` not checked).
 - `[KNOWN GAP]` The golden pins and every case were run on macOS only; Windows and Linux are checked by CI, not by hand. On Windows there is no `O_NOFOLLOW`, so the inode comparison is the only race check, and a file system that reports no inode would not catch a swap; the race case itself needs links, so it is skipped where links cannot be made.
+- `[KNOWN GAP]` The `ino`/`dev` equality between `fstat` and `lstat`, and `O_NOFOLLOW`, were not run on Windows (second review, 2026-11-11): there `ino` can be 0 or a very large number and `O_NOFOLLOW` does not exist, so the inode comparison is the only race check and may not see a swap; macOS (author) and Linux (reviewer) ran them.
+- **The size check on the open file is tested.** `now.size > max` after `fstat` only matters when a file grows between `lstat` and the read; `test:world-pack` stubs `fs.fstatSync` to report `MAX_ENTRY_BYTES + 1` and fails if the file is read; the mutant `packer: size not checked again on the open file (fstat)` must fail that case.
 
 ## Changes 2026-11-11: T261 is done on `main` (chat open in the arcade, `check:office` with a world id); T225 is decided on PR #1528 (issue #1399, no new FR)
 
