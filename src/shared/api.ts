@@ -234,6 +234,8 @@ export interface AppSettingsView {
   mcpSignInRefresh?: boolean;
   /** Spec 058 FR-233: the stored Copilot sign-in app; missing = the default (VS Code's app). The custom ID is sent only for its own Settings field (FR-236). */
   copilotSignInApp?: SignInAppChoice;
+  /** Spec 058 FR-239: the once-shown notice was dismissed or a choice saved (a malformed stored flag reads false). */
+  copilotSignInAppNoticeSeen?: boolean;
   /** Spec 058 FR-227 (issue #1205): *Diagnostics*, off by default: extra activity rows (a renewal that worked). */
   diagnostics?: boolean;
 }
@@ -1068,6 +1070,8 @@ export interface DurbarApi {
   setMcpSignInRefresh?(on: boolean): Promise<{ ok: boolean; mcpSignInRefresh?: boolean }>;
   /** Spec 058 FR-233..FR-237: the Copilot sign-in app (`null` = back to the default, `{ mode: 'off' }` = Off); main checks it again, saves it and reconnects Copilot. `error` is FR-235's fixed text. */
   setCopilotSignInApp?(choice: SignInAppChoice | null): Promise<{ ok: boolean; error?: string; unsaved?: true; copilotSignInApp?: SignInAppChoice }>;
+  /** Spec 058 FR-239: *Got it* on the once-shown sign-in app notice. */
+  setCopilotSignInAppNoticeSeen?(): Promise<{ ok: boolean; copilotSignInAppNoticeSeen?: boolean }>;
   /** Spec 058 FR-227: Settings > Diagnostics (off by default). */
   setDiagnostics?(on: boolean): Promise<{ ok: boolean; diagnostics?: boolean }>;
   harnessPaste?(text: string): Promise<{ ok: boolean; error?: string }>;

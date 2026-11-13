@@ -188,6 +188,8 @@
 <script src="../shared/quota.js"></script><!-- spec 011 FR-090: read at call time through window.exports by harnesses.js, app.js and the simulator, the same rules as main -->
 <script src="../shared/mcpcost.js"></script><!-- spec 100: the MCP figures' rules and words, read through window.exports at call time by app.js and screens.js -->
 <script src="../shared/mcphealth.js"></script><!-- spec 058 FR-092: the simulator reads mcpHealthUpdate at call time, the same rule as main -->
+<script src="../shared/signinapp.js"></script><!-- spec 058 FR-235, FR-239: parseClientId and the fixed words, read through window.exports by screens.js (the window checks the ID; main checks it again) and the simulator -->
+<script src="../shared/mcpcall.js"></script><!-- spec 058 FR-240: isSignInAppRefusal and signInAppRefusalText, read through window.exports by screens.js -->
 <script src="renderer.js"></script>
 </body>
 </html>

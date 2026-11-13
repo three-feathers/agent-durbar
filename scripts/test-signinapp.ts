@@ -183,6 +183,38 @@ async function main(): Promise<void> {
       setup(bad);
       assert.deepStrictEqual(await call('settings:setCopilotSignInApp', { mode: 'off' }), { ok: false, copilotSignInApp: undefined });
       assert.deepStrictEqual(steps, [], 'FR-237: a failed save restarts nothing');
+      // FR-239: the once-shown notice. A fresh file shows it; Got it, or saving any choice, ends it, on disk; a malformed flag shows it again
+      {
+        const nf = path.join(dir, 'notice', 'durbar-settings.json');
+        const n1 = new SettingsStore(nf);
+        n1.load();
+        setup(n1);
+        assert.strictEqual((await call('settings:get')).copilotSignInAppNoticeSeen, false, 'FR-239 notice shown: a fresh settings file has not seen it');
+        assert.deepStrictEqual(await call('settings:setCopilotSignInAppNoticeSeen'), { ok: true, copilotSignInAppNoticeSeen: true });
+        assert.deepStrictEqual(steps, [], 'Got it restarts nothing and changes no app');
+        assert.strictEqual((await call('settings:get')).copilotSignInAppNoticeSeen, true, 'FR-239 notice gone after Got it');
+        const n2 = new SettingsStore(nf);
+        n2.load();
+        assert.strictEqual(n2.copilotSignInAppNoticeSeen, true, 'FR-239 notice stays gone after a restart (on disk)');
+        assert.strictEqual(n2.copilotSignInApp, undefined, 'Got it saves no choice: the default stays the default');
+        const n3 = new SettingsStore(path.join(dir, 'notice3', 'durbar-settings.json'));
+        n3.load();
+        setup(n3);
+        await call('settings:setCopilotSignInApp', { mode: 'off' });
+        assert.strictEqual((await call('settings:get')).copilotSignInAppNoticeSeen, true, 'FR-239 notice gone after a save');
+        fs.mkdirSync(path.join(dir, 'notice4'), { recursive: true });
+        for (const bad of ['"yes"', '1', 'null', '{}', '[true]', '"true"']) {
+          fs.writeFileSync(path.join(dir, 'notice4', 'durbar-settings.json'), `{"copilotSignInAppNoticeSeen":${bad}}`);
+          const n4 = new SettingsStore(path.join(dir, 'notice4', 'durbar-settings.json'));
+          n4.load();
+          assert.strictEqual(n4.copilotSignInAppNoticeSeen, false, 'FR-239 malformed flag ' + bad + ' reads as not seen (the notice shows again)');
+        }
+        const nb = new SettingsStore(path.join(dir, 'blocker', 'n.json'));
+        nb.load();
+        setup(nb);
+        assert.strictEqual((await call('settings:setCopilotSignInAppNoticeSeen')).ok, false, 'a failed save: not ok, the notice stays');
+        assert.strictEqual(nb.copilotSignInAppNoticeSeen, false);
+      }
       setup(undefined);
       assert.strictEqual((await call('settings:setCopilotSignInApp', { mode: 'off' })).ok, false, 'no store: not ok');
       assert.deepStrictEqual(steps, []);

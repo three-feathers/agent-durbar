@@ -9,7 +9,7 @@ interface Words {
   stateOf: (s: unknown, ctx?: { off?: boolean; defaultOn?: boolean; origin?: string; app?: string; launchedOff?: boolean; switchedHere?: boolean }) => { word: string; icon: string; cls: string };
   offBy: (ctx?: { off?: boolean; defaultOn?: boolean; launchedOff?: boolean; switchedHere?: boolean }) => string;
   iconSvg: (n: string) => string;
-  hintFor: (o: { by?: string; status?: string; errorClass?: string; error?: string; app?: string }) => string;
+  hintFor: (o: { by?: string; status?: string; errorClass?: string; error?: string; app?: string; refusalText?: string }) => string;
   plain: (t: unknown, n: number) => string;
   ICON_NAMES: string[];
   aggregate: (sessions: unknown[], configured?: unknown) => Agg;
@@ -403,5 +403,17 @@ assert.ok(Date.now() - t0 < 500, 'a long text is read in linear time');
   assert.deepStrictEqual(r.skipped.map((k) => k.chat.id + ':' + k.why), ['c:session', 'd:auth', 'e:auth']);
   assert.deepStrictEqual(W.restartTargets([row('a', { status: 'failed', canRestart: true })], () => false).targets, [], 'a chat the window cannot reach');
   assert.deepStrictEqual(W.restartTargets(null).targets, []);
+}
+// spec 058 FR-240 (T218): a refused sign-in app has its own words in the row; they come before the sign-in words (signing in again does not fix them)
+{
+  const T = "Microsoft refused the sign-in app chosen in Settings > MCP servers (Custom app): this server does not accept that app. Choose another app or Off.";
+  assert.strictEqual(W.hintFor({ status: 'failed', errorClass: 'auth', error: 'unauthorized_client', refusalText: T }), T, 'FR-240 order: the refusal words win over the sign-in words (failed, auth class)');
+  assert.strictEqual(W.hintFor({ status: 'needs-auth', refusalText: T }), T, 'FR-240 order: the refusal words win on a Needs sign-in row');
+  assert.match(W.hintFor({ status: 'needs-auth' }), /^This server needs you to sign in\./, 'no refusal: the sign-in words as before');
+  assert.strictEqual(W.hintFor({ status: 'connected', refusalText: T }), '', 'a refusal text on a Running row says nothing');
+  assert.strictEqual(W.reasonOf({ status: 'failed', errorClass: 'auth', refusal: 'app' })?.word, 'Refused: the sign-in app', 'FR-240: the reason line');
+  assert.strictEqual(W.reasonOf({ status: 'failed', errorClass: 'auth', refusal: 'redirect' })?.key, 'app-refused');
+  assert.strictEqual(W.reasonOf({ status: 'failed', errorClass: 'auth' })?.word, 'Refused: needs sign-in', 'no refusal: unchanged');
+  assert.strictEqual(W.reasonOf({ status: 'connected', refusal: 'app' }), null, 'only failed or needs-sign-in rows');
 }
 console.log('[058] mcpwords: PASS');

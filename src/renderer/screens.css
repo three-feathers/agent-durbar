@@ -540,3 +540,19 @@ body.has-bridge #topBtns{display:flex}
 /* the title and Close line up with the list-and-page block instead of the 880px column alone (880 + list 184 + gutters) */
 #screen:has(.scr-nav) .scr-head,html[data-platform="darwin"] .notice-strip:not([hidden]) ~ #screen:has(.scr-nav) .scr-head{--sn-pad:max(calc(var(--s-1)*6),calc(50% - var(--s-1)*131.5));padding-left:var(--sn-pad);padding-right:var(--sn-pad)}
 @media (max-width:759px){#screen:has(.scr-nav) .scr-head{padding-left:calc(var(--s-1)*6);padding-right:calc(var(--s-1)*6)}}
+/* spec 058 FR-239 (issue 1667, T218): Settings > MCP servers > the Copilot sign-in app: a choice list, one ID field, tokens only */
+.siapp{display:flex;flex-direction:column;gap:var(--s-2);margin:var(--s-1) 0}
+.siapp-opt{display:flex;align-items:flex-start;gap:var(--s-2)}
+.siapp-opt>input{flex:none;margin:var(--s-1) 0 0;width:auto}
+.siapp-t{min-width:0}
+.siapp-t label{font-size:var(--t3-size);color:var(--ink)}
+.siapp-t label small{color:var(--muted)}
+.siapp-t .scr-note{margin:var(--s-1) 0 0}
+.siapp-id{margin:0 0 0 var(--s-5);flex-wrap:wrap}
+.siapp-id[hidden],.siapp-err[hidden]{display:none}
+.siapp-id input{width:min(100%,340px);font-family:var(--font-mono)}
+.siapp-id input[aria-invalid="true"]{border-color:var(--tone-bad-ink)}
+.scr-note.siapp-err{margin:0 0 0 var(--s-5);color:var(--tone-bad-ink)}
+.siapp-notice{display:flex;align-items:center;gap:var(--s-3);flex-wrap:wrap;margin:var(--s-2) 0}
+.siapp-notice span{flex:1 1 260px;min-width:0}
+#siLinux{margin-top:var(--s-2)}
