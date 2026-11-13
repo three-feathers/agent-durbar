@@ -1,0 +1,1 @@
+- **Hover card no longer lost when a neighbour's desk slides under a resting pointer** (spec 097, issue #1536): in the Retro arcade, when an agent fell asleep and the layout moved another desk under a still pointer, the held card could close. A held card is now let go only by a real pointer move. Checked in the simulator on Linux (`check-097-hover-card`).
