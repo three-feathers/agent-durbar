@@ -5,19 +5,38 @@
 const path = require('path');
 const { execFileSync } = require('child_process');
 
+/** Spec 021 FR-095: no test-helper git child may hang for ever (issue #1631: a `git hash-object` held the heavy test lock for 37 minutes). */
+const GIT_TIMEOUT_MS = 60000;
+
+/** `git <args>` in `dir`, killed after `timeoutMs` (SIGKILL). On a timeout it throws an Error naming the git subcommand and the timeout (never the
+ * arguments or the input). `gitCmd` is the binary and its leading arguments (default `['git']`): a test passes a sleeping stand-in
+ * (`[process.execPath, script]`), which runs the same on Windows. Returns stdout (a string, or a Buffer when `encoding` is null). */
+function gitRun(dir, args, { input, env, encoding = 'utf8', gitCmd = ['git'], timeoutMs = GIT_TIMEOUT_MS } = {}) {
+  try {
+    return execFileSync(gitCmd[0], [...gitCmd.slice(1), ...args], { cwd: dir, env, input, encoding, stdio: ['pipe', 'pipe', 'pipe'], timeout: timeoutMs, killSignal: 'SIGKILL', windowsHide: true });
+  } catch (e) {
+    if (e && e.code === 'ETIMEDOUT') {
+      let i = 0;
+      while (i < args.length && (args[i] === '-c' || args[i - 1] === '-c')) i++;
+      throw new Error(`git ${args[i] || ''} timed out after ${timeoutMs} ms (killed)`.replace('git  ', 'git '));
+    }
+    throw e;
+  }
+}
+
 let n = 0;
 /** files: { path: content (string or Buffer) | { content, mode } }. Returns the new commit sha; `ref` (a full ref name) is moved to it. */
-function plumbCommit(dir, parent, files, message, ref) {
+function plumbCommit(dir, parent, files, message, ref, opts = {}) {
   const env = { ...process.env, GIT_INDEX_FILE: path.join(dir, '.git', `plumb-index-${n++}`), GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.com', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.com' };
-  const g = (args, input) => execFileSync('git', ['-c', 'core.protectNTFS=false', '-c', 'commit.gpgsign=false', ...args], { cwd: dir, env, input, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+  const g = (args, input) => gitRun(dir, ['-c', 'core.protectNTFS=false', '-c', 'commit.gpgsign=false', ...args], { env, input, ...opts }).trim();
   g(['read-tree', parent]);
   for (const [p, v] of Object.entries(files)) {
     const { content, mode = '100644' } = typeof v === 'string' || Buffer.isBuffer(v) ? { content: v } : v;
-    const sha = execFileSync('git', ['hash-object', '-w', '--stdin'], { cwd: dir, env, input: content, encoding: 'utf8' }).trim();
+    const sha = g(['hash-object', '-w', '--stdin'], content);
     g(['update-index', '--add', '--cacheinfo', `${mode},${sha},${p}`]);
   }
   const commit = g(['commit-tree', g(['write-tree']), '-p', parent, '-m', message]);
   if (ref) g(['update-ref', ref, commit]);
   return commit;
 }
-module.exports = { plumbCommit };
+module.exports = { plumbCommit, gitRun, GIT_TIMEOUT_MS };

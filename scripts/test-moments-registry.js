@@ -13,6 +13,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { GIT_TIMEOUT_MS } = require('./git-index-helper.js');
 
 const ROOT = path.join(__dirname, '..');
 const STATES = ['built', 'designed', 'fallback-flat', 'missing'];
@@ -82,9 +83,9 @@ function check({ reg, main, driver, css }) {
 
 function readMain() {
   /* the registry at the merge-base with origin/main, not at whatever origin/main is now; null in a shallow checkout (CI fetches depth 2), where the comparison is skipped and says so */
-  const mb = spawnSync('git', ['merge-base', 'HEAD', 'origin/main'], { cwd: ROOT, encoding: 'utf8' });
+  const mb = spawnSync('git', ['merge-base', 'HEAD', 'origin/main'], { cwd: ROOT, encoding: 'utf8', timeout: GIT_TIMEOUT_MS, killSignal: 'SIGKILL' });
   if (mb.status !== 0 || !mb.stdout.trim()) return null;
-  const r = spawnSync('git', ['show', mb.stdout.trim() + ':docs/experience/world-moments.json'], { cwd: ROOT, encoding: 'utf8' });
+  const r = spawnSync('git', ['show', mb.stdout.trim() + ':docs/experience/world-moments.json'], { cwd: ROOT, encoding: 'utf8', timeout: GIT_TIMEOUT_MS, killSignal: 'SIGKILL' });
   return r.status === 0 ? JSON.parse(r.stdout) : null;
 }
 

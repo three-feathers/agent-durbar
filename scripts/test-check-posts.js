@@ -9,13 +9,14 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
+const { GIT_TIMEOUT_MS } = require('./git-index-helper.js');
 const cp = require('./check-posts.js');
 
 process.exitCode = 1; // set to 0 only after the last line (a promise that never settles must not pass)
 const ROOT = path.join(__dirname, '..');
 const T = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-blogcheck-'));
 process.on('exit', () => { try { fs.rmSync(T, { recursive: true, force: true }); } catch { /* best effort */ } }); // a failed assert leaves nothing behind
-const g = (...a) => execFileSync('git', a, { cwd: T, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+const g = (...a) => execFileSync('git', a, { cwd: T, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: GIT_TIMEOUT_MS, killSignal: 'SIGKILL' }).trim();
 const w = (rel, text) => { fs.mkdirSync(path.dirname(path.join(T, rel)), { recursive: true }); fs.writeFileSync(path.join(T, rel), text); };
 
 // a small repository: the files the check reads, one commit on main
