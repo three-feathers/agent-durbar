@@ -53,6 +53,10 @@ A friendly front door at <https://three-feathers.github.io/agent-durbar/>: what 
 
 ## Changes
 
+### 2026-11-13: the site budget met again after spec 095's pictures: one duplicate picture served once, six pictures at 192 colours (FR-012 budget unchanged)
+
+*Missing:* with spec 095's two search pictures (85,063 B) the built site was 8,460,990 B against 8,388,608 B (merge-queue `test:site` failed on Linux and Windows, PR 1684); main alone had about 20 KB of margin. *Corrected:* the landing theme card pointed at `site-theme-retro-1440x900.png`, byte-identical to `035-retro-1440x900.png` (the docs page and gallery already use that one), so the landing now links `035-retro` and the copy is removed (85,496 B); the pictures the 2026-11-10 pass could still shrink under the same guard (`maxColors: 192`, `maxChannel: 40`, `maxBlockDelta: 6`, `minSaving: 0.02`, plain `compressPng`) were written: the two 095 pictures and `058-mcp-health`, `080-browser-expand-big-flat` (two), `080-browser-expand-small-flat-1280x800`, `080-browser-tabs` (two), 18,213 B. The site is **8,357,267 B, margin 31,341 B**. The budget is not raised. `[KNOWN GAP]` the margin is thin: the next picture needs a similar saving.
+
 ### 2026-11-10: site headroom restored by palette-reducing 58 pictures to 192 colours under a local guard (FR-012 budget unchanged)
 
 *Missing:* the built site was 8,388,304 B against FR-012's 8 MB (8,388,608 B), a 304 B margin, so any docs line failed `test:site` in the merge queue (a docs PR was ejected on Linux and Windows). Every linked picture was already a 256-colour palette PNG (`shots:compress --check`: nothing left to gain). Decided by the coordinator under the owner's delegation; the **budget is not raised**. A first try (31 pictures at 128 colours, 285 KB) was refused in review: at 4x, office glows were banded and an error card's pink tint turned beige. FR-012's global limits (mean error, worst channel, share of pixels off by more than 24) cannot see a small area moved a few levels on every pixel.
