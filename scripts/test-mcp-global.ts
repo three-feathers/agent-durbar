@@ -921,6 +921,7 @@ ok('FR-070 (second review of #1650): the Copilot list\'s name and value rules, b
     ['API_URL', 'https://user:pw@api.example.com'], ['API_URL', 'https://api.example.com/x?key=abc'], ['API_URL', 'https://api.example.com/#frag'], // user-info, query, fragment
     ['API_URL', 'https://hooks.example.com/T0AB12CD/aB3dE5fG7h'], // a short mixed path segment (upper, lower, digits)
     ['BIN', '/srv/keys/aB3dE5fG7h'], // the same in a path
+    ['BIN', '/opt/ab12cd34ef56gh78ij'], // letters and digits in 16+ characters in a path
     ['API_URL', 'https://hooks.example.com/services/ab12cd34ef56gh78ij90'], // letters and digits in 16+ characters
     ['API_URL', 'https://intranet/x'], // a one-label host
     ['BIN', '/Hk3j9aBc2Lm8Qp4Rs6Tu'], ['BIN', '/opt/' + 'a'.repeat(41)], // a token-like or too long path segment
@@ -936,6 +937,7 @@ ok('FR-070 (second review of #1650): the Copilot list\'s name and value rules, b
   const capCases: [string, string][] = [
     ['ENDPOINT', 'https://hooks.zapier.com/hooks/catch/1234567/abc9xyz/'], // 7 digits and a lower+digit id
     ['ENDPOINT', 'https://example.com/hook/3f9a1c2b7d'], // a 10-character lower+digit id
+    ['ENDPOINT', 'https://example.com/catch/1234567'], // a 7-digit run
     ['ENDPOINT', 'https://example.com/i/AbCdEfGhIjKlMnOp'], // a mixed-case letters id
     ['ENDPOINT', 'https://example.com/repos/Owner/repo'], // upper case in a segment (over-masking accepted)
     ['ENDPOINT', 'https://abc123.ngrok.io'], ['ENDPOINT', 'https://abc123.ngrok.io/api'], // the left-most host label is an id
