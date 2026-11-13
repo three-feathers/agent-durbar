@@ -87,11 +87,10 @@ const DOC_SHOTS = [
   { name: 'shots-058-mcp-health', files: ['058-mcp-health-1440x900.png'] },
   { name: 'shots-058-mcp-launch', files: ['058-mcp-launch-closed-1440x900.png', '058-mcp-launch-closed-1280x800.png', '058-mcp-launch-settings-1440x900.png', '058-mcp-launch-settings-1280x800.png'] }, // spec 058 FR-195..FR-203
   { name: 'shots-058-mcp-signin-refresh', files: ['058-mcp-refresh-waiting-1440x900.png', '058-mcp-refresh-waiting-1280x800.png', '058-mcp-refresh-signin-1440x900.png', '058-mcp-refresh-signin-1280x800.png', '058-mcp-refresh-settings-1440x900.png', '058-mcp-refresh-settings-1280x800.png'] }, // spec 058 FR-208..FR-216
-  // one office per theme (shots-themes.js, the Settings path); the README (035-*) and the landing page (site-theme-*) show the same
+  // one office per theme (shots-themes.js, the Settings path); the README and the landing page show the same Retro picture (035-retro); the other themes' landing pictures are site-theme-*
   ...THEMES.map(([id, short]) => ({
     label: `shots-themes ${id}`, name: 'shots-themes', env: { DURBAR_THEME: id, SHOTS_SIZE: '1440x900', SHOTS_PREFIX: '' },
-    files: [{ to: `site-theme-${short || id}-1440x900.png`, from: `${id}-1440x900.png` }]
-      .concat(['retro'].includes(id) ? [{ to: `035-${id}-1440x900.png`, from: `${id}-1440x900.png` }] : []),
+    files: [{ to: id === 'retro' ? `035-${id}-1440x900.png` : `site-theme-${short || id}-1440x900.png`, from: `${id}-1440x900.png` }],
   })),
 ];
 
