@@ -121,6 +121,72 @@ module.exports = async (ctx) => {
   const fonts = (ids) => js(`${jsLiteral(ids)}.map(i=>{const e=document.getElementById(i);return e?parseFloat(getComputedStyle(e).fontSize):0})`);
   const hooks = () => js(`(()=>{window.__ann=[];new MutationObserver(()=>{const t=document.getElementById('srAnnounce').textContent;if(t)window.__ann.push(t);}).observe(document.getElementById('srAnnounce'),{childList:true,characterData:true,subtree:true});})()`);
 
+  /* Spec 102 T284 (issue #1399): AF_WORLD=retro runs only the arcade's followed-plate mark, at both sizes (the rest of this driver is the Flat desks' and
+     the Photo office's, and runs in its own ui-suite entry). A fall back to the Photo office fails at once (data-world). */
+  if (process.env.AF_WORLD) {
+    assert.strictEqual(process.env.AF_WORLD, 'retro', 'AF_WORLD must be retro');
+    const PLATE = (id) => `#stage .ro-plate[data-id="${id}"]`;
+    const ARCADE = `!!document.querySelector('#stage .ro[data-world="retro"] .ro-plate')&&document.getElementById('stage').dataset.d==='real'`;
+    /* the plate's mark (a dashed 2 px outline, 4 px inside its edge: styles.css .ro-plate.is-followed) measured in the page: its box, its colour against the plate's
+       own paint (the plate's background laid over its parents', WCAG 1.4.11 wants 3:1 for a mark), and what of the plate's contents reaches into the ring's band */
+    const markOf = (id) => js(`(()=>{const p=document.querySelector(${jsLiteral(PLATE(id))});if(!p)return null;const cs=getComputedStyle(p),r=p.getBoundingClientRect(),st=document.getElementById('stage').getBoundingClientRect();
+      const px=(s)=>{const m=String(s).match(/rgba?\\(([^)]+)\\)/);if(!m)return [255,255,255,1];const v=m[1].split(/[ ,\\/]+/).filter(Boolean).map(Number);return [v[0],v[1],v[2],v.length>3?v[3]:1];};
+      const over=(top,bot)=>[0,1,2].map(i=>top[i]*top[3]+bot[i]*(1-top[3])).concat([1]);
+      let bg=[255,255,255,1];const chain=[];for(let n=p;n;n=n.parentElement)chain.push(n);for(const n of chain.reverse())bg=over(px(getComputedStyle(n).backgroundColor),bg);
+      const lum=(c)=>{const f=(v)=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4)};return 0.2126*f(c[0])+0.7152*f(c[1])+0.0722*f(c[2]);};
+      const ink=px(cs.outlineColor),a=lum(ink),b=lum(bg),ratio=(Math.max(a,b)+0.05)/(Math.min(a,b)+0.05);
+      const W=parseFloat(cs.outlineWidth),O=parseFloat(cs.outlineOffset),inner=-O-W,outer=-O; /* the band, in px inside the plate's edge: its inner edge is outlineOffset (-4) in, it grows outward by its width (2): from 2 to 4 */
+      const shown=(c)=>{let l=-1e9,t=-1e9,rr=1e9,bb=1e9;const q=c.getBoundingClientRect();l=q.left;t=q.top;rr=q.right;bb=q.bottom;for(let n=c.parentElement;n&&n!==p;n=n.parentElement){const o=getComputedStyle(n);if(o.overflowX==='visible'&&o.overflowY==='visible')continue;const k=n.getBoundingClientRect();l=Math.max(l,k.left);t=Math.max(t,k.top);rr=Math.min(rr,k.right);bb=Math.min(bb,k.bottom);}return {left:l,top:t,right:rr,bottom:bb,width:rr-l,height:bb-t};}; /* what a clipping line (overflow not visible) between the element and the plate shows of it */
+      const reach=[];for(const c of p.querySelectorAll('*')){const q=shown(c);if(!(q.width>0)||!(q.height>0))continue;const cc=getComputedStyle(c);if(cc.visibility==='hidden'||cc.display==='none')continue;
+        const into=Math.max(0,(q.left-r.left)<outer?outer-(q.left-r.left):0,(r.right-q.right)<outer?outer-(r.right-q.right):0,(q.top-r.top)<outer?outer-(q.top-r.top):0,(r.bottom-q.bottom)<outer?outer-(r.bottom-q.bottom):0);
+        if(into>1)reach.push((c.className&&String(c.className)||c.tagName)+' '+Math.round(into*10)/10+'px');}
+      const cx=Math.round(r.left+r.width/2),cy=Math.round(r.top+r.height/2),top=document.elementFromPoint(r.left+3,r.top+3);
+      return {followed:p.classList.contains('is-followed'),following:p.getAttribute('data-following'),style:cs.outlineStyle,w:W,off:O,inner,outer,color:cs.outlineColor,bg:'rgb('+bg.slice(0,3).map(Math.round)+')',ratio:Math.round(ratio*100)/100,
+        box:{l:r.left+inner,t:r.top+inner,w:r.width-2*inner,h:r.height-2*inner},plate:{l:r.left,t:r.top,w:r.width,h:r.height},inStage:r.left>=st.left&&r.top>=st.top&&r.right<=st.right&&r.bottom<=st.bottom,reach,onTop:!!top&&p.contains(top),cx,cy,world:p.closest('.ro').dataset.world};})()`);
+    const toPlate = async (id, tag) => {
+      await ok(`!!document.querySelector(${jsLiteral(PLATE(id))})`, `${tag}: the plate of ${id} is drawn`);
+      await mclick(PLATE(id));
+      await ok(`document.body.classList.contains('panel-open')&&!!document.getElementById('msgInput')`, `${tag}: the chat of ${id} opens`);
+    };
+    for (const [w, h] of SIZES) {
+      const tag = `arcade ${w}x${h}`;
+      await H.load({ w, h, query: { officeview: 'real', worldflags: 'retro', world: 'retro' }, ready: ARCADE });
+      await ok(`!!document.querySelector('#stage .ro[data-world="retro"]')&&!document.querySelector('#stage .ro[data-world="photo"]')`, `${tag}: data-world is retro (a pass on the Photo office would prove nothing)`);
+      await setting(true);
+      await ok(ARCADE, `${tag}: the arcade after Settings`);
+      await toPlate(A, tag); await mclick('#msgInput'); await type('hello arcade'); await H.key('Return');
+      await ok(`!document.body.classList.contains('panel-open')`, `${tag}: back in the office after the send`);
+      await ok(`!!document.querySelector(${jsLiteral(PLATE(A) + '.is-followed')})`, `${tag}: FR-183: the followed plate carries is-followed`);
+      await js(`document.activeElement&&document.activeElement.blur();0`); /* a focused plate shows the focus ring instead of the mark */
+      wc.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
+      await until(`!document.getElementById('roZoom')`, 2000);
+      const mA = await markOf(A);
+      await shotTo(`102-arcade-follow-mark-${w}x${h}-first.png`); /* taken before the asserts: a failing step leaves its picture */
+      assert.strictEqual(mA.world, 'retro', `${tag}: the followed plate is in the arcade`);
+      assert.strictEqual(mA.following, '1', `${tag}: the followed plate says data-following`);
+      assert.deepStrictEqual([mA.style, mA.w], ['dashed', 2], `${tag}: the mark is a dashed 2 px outline (not colour alone): ${JSON.stringify([mA.style, mA.w])}`);
+      assert.ok(mA.box.w > 20 && mA.box.h > 10, `${tag}: the mark has a size: ${JSON.stringify(mA.box)}`);
+      assert.ok(mA.inStage, `${tag}: the marked plate is inside the stage: ${JSON.stringify(mA.plate)}`);
+      assert.ok(mA.onTop, `${tag}: nothing covers the marked plate's corner`);
+      assert.ok(mA.ratio >= 3, `${tag}: the mark is readable on the plate: ${mA.color} on ${mA.bg} is ${mA.ratio}:1 (at least 3:1)`);
+      assert.deepStrictEqual(mA.reach, [], `${tag}: no text, pencil or status chip of the plate reaches more than 1 px into the ring's band (a line box's leading is 1 px in: the glyphs are clear, read in the picture): ${JSON.stringify(mA.reach)}`);
+      /* it moves with the follow: the next agent sent a message gets the mark on its own plate, which is elsewhere, and only followed plates carry it */
+      await toPlate(B, tag); await mclick('#msgInput'); await type('hello again'); await H.key('Return');
+      await ok(`!document.body.classList.contains('panel-open')`, `${tag}: back in the office after the second send`);
+      await ok(`!!document.querySelector(${jsLiteral(PLATE(B) + '.is-followed')})`, `${tag}: the second agent's plate carries is-followed`);
+      await js(`document.activeElement&&document.activeElement.blur();0`);
+      wc.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
+      const mB = await markOf(B);
+      assert.ok(Math.abs(mB.cx - mA.cx) + Math.abs(mB.cy - mA.cy) > 20, `${tag}: the mark is on another plate, ${JSON.stringify([mA.cx, mA.cy])} then ${JSON.stringify([mB.cx, mB.cy])}`);
+      assert.deepStrictEqual([mB.ratio >= 3, mB.reach, mB.inStage, mB.box.w > 20], [true, [], true, true], `${tag}: the second mark reads and fits too: ${JSON.stringify([mB.ratio, mB.reach, mB.inStage])}`);
+      assert.strictEqual(await followed(), B, `${tag}: the mark moved: it is on the second agent's plate only, not the first's`);
+      await shotTo(`102-arcade-follow-mark-${w}x${h}.png`);
+      console.log(`[follow] ${tag}: ratio ${mA.ratio}:1 (${mA.color} on ${mA.bg}), plate ${Math.round(mA.plate.w)}x${Math.round(mA.plate.h)}, second ${mB.ratio}:1`);
+    }
+    console.log('[follow] arcade mark passed');
+    return;
+  }
+
   for (const [w, h] of SIZES) {
     const tag = `${w}x${h}`;
     await H.load({ w, h });
