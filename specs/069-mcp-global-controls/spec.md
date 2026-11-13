@@ -538,7 +538,7 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
   or Windows. `[KNOWN GAP]` the *World* choice (it repaints Settings through the same path) is shown only in the Real office with two or more
   worlds, which the simulator does not offer on main, so it is not driven.
 
-- **2026-11-13 (issue #1639, found in the review of #1637; FR-070, T072; security-relevant; scope, plain values and kept values from the review of #1650; name rule, vault-free notes and search from its second review):** the Copilot CLI list's values were not in the
+- **2026-11-13 (issue #1639, found in the review of #1637; FR-070, T072; security-relevant; scope, plain values and kept values from the review of #1650; name rule, vault-free notes and search from its second review; URL words and real regions from its third):** the Copilot CLI list's values were not in the
   mask list.
   - **FR-070, a Copilot session's text is masked with the Copilot CLI list's values.** `secretValuesFor` (FR-009) built the list of
     values that mask a session's MCP errors, failed tool cards, edits, resumed history and the other callers of `secretValuesFor` (notes,
@@ -552,24 +552,35 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
       `src/main/mcpmask.ts`; second review of #1650), since the mask is a plain substring replace and such a value would turn that
       text into `[redacted]` everywhere in the agent's edits, history and notes:
       - **A secret-looking name masks every value**: when the env or header name is secret by `secretFlag` (the rule the flag,
-        query and `NAME=` masks use: `SMTP_PASSWORD`, `DB_PASS`, `GITHUB_TOKEN`, `X-Api-Key`, `Authorization`, `Cookie`) or has the
-        word `pin` or `otp` (`PIN_CODE`, `SMTP_OTP`; this list only, `secretFlag` itself is unchanged), every value of 4 or more
-        characters joins the list whatever its form (16 letters, a 6-digit PIN, `admin/s3cr3t-passw0rd`), except the words `true`,
-        `false`, `none` and `null` (any case), which cannot be a secret (`AUTH_ENABLED: true` stays readable).
+        query and `NAME=` masks use: `SMTP_PASSWORD`, `DB_PASS`, `GITHUB_TOKEN`, `X-Api-Key`, `Authorization`, `Cookie`) or has one
+        of this list's own words `pin`, `otp`, `totp`, `mfa`, `hook`, `webhook` (also inside a word: `SLACKWEBHOOK`), `dsn`, `seed`
+        or `salt` (`PIN_CODE`, `SLACK_WEBHOOK`, `SENTRY_DSN`; a capability URL is the secret itself; `secretFlag` itself is
+        unchanged), every value of 4 or more characters joins the list whatever its form (16 letters, a 6-digit PIN,
+        `admin/s3cr3t-passw0rd`, any URL), except the words `true`, `false`, `none` and `null` (any case), which cannot be a secret
+        (`AUTH_ENABLED: true` stays readable).
       - **Under any other name** (`NODE_ENV`, `PORT`, `Accept`, `API_URL`, `AWS_REGION`), a plain setting value is left out: a number
         or dotted version of up to 15 digits; one word of up to 16 letters in one case (`true`, `info`, `DEBUG`, `Production`); a media
         type whose top-level type is registered (`application`, `audio`, `font`, `haptics`, `image`, `message`, `model`, `multipart`,
         `text`, `video`: `application/json`, not `admin/x`); an `http`/`https` URL with no user-info, query or fragment
-        (`https://api.github.com/repos`); `localhost` or a dotted host name or IPv4 address with a port (`localhost:3000`,
-        `db.internal:5432`; not `admin:12345`); an absolute path (`/usr/local/bin`, `C:\Program Files\nodejs`, `~/bin`); a region
-        form (`us-east-1`, `ap-southeast-2`, `us-gov-west-1`). The host labels and the path segments of a URL or path must each look
-        plain: at most 40 characters of letters, digits, `.`, `_`, `-`, `~` (and spaces in a path), and not token-like (not upper case,
-        lower case and digits together, and not letters and digits together in 16 or more characters), so a URL or path carrying a
-        mixed key is masked. A value over 256 characters is never plain.
+        (`https://api.github.com/v3/repos`); `localhost` or a dotted host name or IPv4 address with a port (`localhost:3000`,
+        `db.internal:5432`; not `admin:12345`); an absolute path (`/usr/local/bin`, `C:\Program Files\nodejs`, `~/bin`); a cloud
+        region (third review of #1650: a real prefix `us`, `eu`, `ap`, `sa`, `ca`, `me`, `af`, `il`, `mx` or `cn`, optionally `-gov` or
+        `-iso`, then a direction `north`, `south`, `east`, `west`, `central`, `northeast`, `northwest`, `southeast` or `southwest`, then
+        `-` and one or two digits: `us-east-1`, `eu-west-3`, `ap-southeast-2`, `cn-north-1`, `us-gov-west-1`; not a passphrase shape
+        like `bad-staple-horse-7`).
+      - **A URL is plain only when every path segment and the left-most host label is a plain word** (third review of #1650):
+        lower-case words of up to 16 letters joined by `-`, `_` or `.` (`repos`, `well-known`), `v` and up to 3 digits (`v3`), or
+        up to 6 digits; an empty segment (a trailing `/`) is fine. Upper case, letters mixed with digits, or a longer digit run masks
+        the whole URL (`https://hooks.zapier.com/hooks/catch/1234567/abc9xyz/`, `https://example.com/hook/3f9a1c2b7d`,
+        `https://abc123.ngrok.io`, `/repos/Owner/Repo`: over-masking accepted). The left-most host label of a `host:port` value
+        follows the same rule. The other host labels, and the segments of a file path, must each be at most 40 characters of letters,
+        digits, `.`, `_`, `-`, `~` (and spaces in a path) and not token-like (not upper case, lower case and digits together, and
+        not letters and digits together in 16 or more characters). A value over 256 characters is never plain.
       - Any other value of 4 or more characters counts (`mcpSecretValues`' rule: under 4 is skipped). These rules apply to this list
         only; the folder extras and Claude Code's list keep every value of 4 or more characters, as on `main`.
-      - `[KNOWN GAP]` a secret of one of those plain forms under a name with neither a secret word nor `pin`/`otp` (`MY_VALUE: 482913`,
-        `SEED: qwhzmtrbvkpdlsfn`, a URL whose path has a letters-only key) is not in the list, and the shape rules (`redact`) do not
+      - `[KNOWN GAP]` a secret of one of those plain forms under a name with neither a secret word nor one of the words above
+        (`MY_VALUE: 482913`, `KEYWORD: qwhzmtrbvkpdlsfn`, a URL whose secret path part is one lower-case letters-only word of up to
+        16 letters, `https://example.com/i/qwhzmtrbvkpdlsfn`, a file path with a letters-only segment) is not in the list, and the shape rules (`redact`) do not
         catch it either: it shows in clear if the server echoes it. The other way, an ordinary value under a secret-looking name
         (`TOKEN_URL: https://auth.example.com/token`, `AUTH_MODE: oauth`) is masked everywhere in that agent's text (over-masking
         accepted, as `secretFlag` accepts it).
@@ -604,7 +615,8 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
   reply and spec 058's `diagnostics` text; a Claude agent does not get them, an agent of unknown app does; under non-secret names `true`,
   `production`, `1234`, `application/json`, a plain URL, path, region and `localhost:3000` are left out, and `correct-horse-battery-staple`,
   `admin/s3cr3t-passw0rd`, a 17-letter word and a 16-digit number are not; under `SMTP_PASSWORD`, `PIN_CODE` and `X-Api-Key` plain forms
-  are masked, `true` is not; a rewritten file adds the new value and keeps the old one; a throwing folder store keeps the Copilot values
+  are masked, `true` is not; webhook-style URLs with a short id, `abc123.ngrok.io` and `bad-staple-horse-7` are masked under a plain
+  name, and any URL under `WEBHOOK_URL`, `SLACK_WEBHOOK`, `HOOK`, `DSN`, `SEED`, `SALT`, `TOTP` or `MFA`; a rewritten file adds the new value and keeps the old one; a throwing folder store keeps the Copilot values
   and a throwing Copilot read keeps the folder and Claude values; a store value inside a Copilot value leaves one `[redacted]` (final
   sort); `copilotValuesFor` never reads the store; one read of the file per call; an injected `log` and `console` see no value);
   `test:convmask` *FR-070* (`sessionMaskValues` and `scanSecretValues` with a locked vault give the Copilot values and never call
