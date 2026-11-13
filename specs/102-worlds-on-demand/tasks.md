@@ -313,6 +313,12 @@ Starts after the next built-in world's stack lands (FR-296, decided Q4). All beh
 
 - [x] T304 `shots-102-arcade`: the painted-pixel check treats a person whose box rounds to 0 px as BUSY (bounded 5 s re-read) and, if it stays so, fails naming `data-for`, size and style (spec Changes 2026-11-11; issue #1517). Test: `ARCADE_MUTANT=zero` passes, `ARCADE_MUTANT=zero-stuck` fails with the named person, the old code plus the same injected style died with IndexSizeError on the author's Mac (declared by the author, not reproduced by the reviewer; the old code has no mutant). The fix is not yet seen on Linux CI (spec Changes 2026-11-11 `[KNOWN GAP]`).
 
+
+## 2026-11-12: the logo's tile and the folder menu in the arcade (issue #1399)
+
+- [x] T316 `check-logo-family` asserts the arcade's own pair (spec 101 FR-034) at its Real office seam under `DRIVER_WORLD=retro`; `ui-suite` entry `check-logo-family retro`. Test: it passes at both sizes; `LOGO_MUTANT=arcade|ink|tokens|size` each fail at their own assert.
+- [x] T317 `check-102-arcade-menu` (new driver, `ui-suite` entry): the folder menu on an arcade sign lists Move earlier / later, either says the room keeps its place (spec 097 FR-354), signs and saved order unchanged. Test: passes at both sizes; `ARCMENU_MUTANT=swallow|move|save` each fail at their own assert. `[KNOWN GAP]` macOS only.
+
 ## 2026-11-11: the arcade plate's status word and helper dots (issue #1558)
 
 - [x] T307 The arcade plate with helpers: +N whole, then the status word whole, then dots that drop out whole in the heads' order (`.ro-wd`/`.ro-tk`/`.ro-hc`, `world.css`, `orderedHelpers` for the plate); `shots-102-arcade` marks case at both sizes and on the 122 px plate; mutants `cutword`, `cutplate`, `nodots`, `sliver`, `clipstate` each fail at their label (spec Changes 2026-11-11, 102 FR-311). **Round 3, 2026-11-12:** `.ro-wd`/`.ro-tk` are `display:contents` on the clamped (lounge, waiting, limit, asleep) plates, so the World matrix's `lounge` cells pass again; the narrow plate's ellipsis exemption in the driver tests the clipping box, `ARCADE_FONT=wide` runs it in Verdana with letter spacing; mutants `noell`, `spill` (with `ARCADE_FONT=wide`) fail at the narrow limit label (spec Changes 2026-11-12).
