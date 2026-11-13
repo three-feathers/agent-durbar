@@ -334,19 +334,19 @@ body.ro-chat .ph .avatar{display:none}
    an amber (waiting, limit) or red (error) glow at its feet; the status dot (shape and colour) on its shoulder; the name is drawn nowhere (accessible name and tooltip only) */
 .ro-chrome>.ro-kids{pointer-events:none}
 .ro-kid,.ro-kmore{position:absolute;margin:0;padding:0;font:inherit;cursor:pointer;pointer-events:auto}
-.ro-kid{background:none;border:0;border-radius:6px;overflow:visible}
-.ro-kid .ro-kp{display:block;width:100%;height:100%;pointer-events:none;filter:drop-shadow(0 2px 2px rgba(0,0,0,.28))}
+.ro-kid{background:none;border:0;border-radius:var(--r-sm);overflow:visible}
+.ro-kid .ro-kp{display:block;width:100%;height:100%;pointer-events:none}
 .ro-kid.nopic .ro-kp{display:none}
-.ro-kid .ro-hg{position:absolute;inset:0;border-radius:40% 40% 8px 8px;background:radial-gradient(circle at 50% 22%,var(--muted) 0 18%,transparent 19%),radial-gradient(ellipse at 50% 100%,var(--muted) 0 40%,transparent 41%)} /* FR-065: no picture, a neutral figure, never a letter */
+.ro-kid .ro-hg{position:absolute;inset:0;border-radius:var(--r-xl);background:radial-gradient(circle at 50% 22%,var(--muted) 0 18%,transparent 19%),radial-gradient(ellipse at 50% 100%,var(--muted) 0 40%,transparent 41%)} /* FR-065: no picture, a neutral figure, never a letter */
 .ro-kid>.dot{position:absolute;right:-2px;top:-2px;outline:2px solid var(--surface)}
 .ro-kid::before,.ro-kid::after{content:none;position:absolute;pointer-events:none}
-.ro-kid.st-thinking::before{content:'\2022\2022\2022';left:50%;top:-13px;transform:translateX(-50%);font-size:12px;line-height:10px;letter-spacing:1px;color:var(--c-thinking);text-shadow:0 0 2px var(--surface)}
-.ro-kid.st-error::before{content:'!';left:-4px;top:-4px;width:15px;height:15px;border-radius:50%;background:var(--c-error);color:var(--surface);font-size:11px;font-weight:800;line-height:15px;text-align:center;box-shadow:0 0 0 2px var(--surface)}
+.ro-kid.st-thinking::before{content:'\2022\2022\2022';left:50%;top:-14px;transform:translateX(-50%);font-size:var(--t4-size);line-height:var(--t5-lh);letter-spacing:1px;color:var(--c-thinking)}
+.ro-kid.st-error::before{content:'!';left:-4px;top:-4px;width:15px;height:15px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:var(--c-error);color:var(--surface);font-size:var(--t5-size);font-weight:var(--t1-weight);outline:2px solid var(--surface)}
 .ro-kid:is(.st-waiting,.st-limit,.st-error)::after{content:'';left:8%;right:8%;bottom:-4px;height:7px;border-radius:50%;background:var(--c-waiting);opacity:.75;filter:blur(1.5px)}
 .ro-kid.st-error::after{background:var(--c-error)}
 .ro-kid.sel{outline:2px solid var(--sel-border,var(--focus));outline-offset:2px}
 .ro-kid:focus-visible,.ro-kmore:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
-.ro-kmore{box-sizing:border-box;display:flex;align-items:center;justify-content:center;border-radius:6px;font-size:11px;font-weight:var(--t1-weight,700);line-height:1;white-space:nowrap;color:var(--ink);background:var(--surface);border:1.5px solid var(--line);box-shadow:0 2px 3px rgba(0,0,0,.22)} /* a toy block: "+K", 11 px */
+.ro-kmore{box-sizing:border-box;display:flex;align-items:center;justify-content:center;border-radius:var(--r-sm);font-size:var(--t5-size);font-weight:var(--t1-weight);white-space:nowrap;color:var(--ink);background:var(--surface);border:1.5px solid var(--line)} /* a toy block: "+K", 11 px */
 .ro-kmore:hover{border-color:var(--line-2,var(--line))}
-@media (forced-colors:active){.ro-kid{outline:1px solid CanvasText}.ro-kid .ro-kp{filter:none}.ro-kmore{border:1px solid CanvasText;background:Canvas;color:CanvasText;box-shadow:none}.ro-kid::after{background:CanvasText}}
+@media (forced-colors:active){.ro-kid{outline:1px solid CanvasText}.ro-kmore{border:1px solid CanvasText;background:Canvas;color:CanvasText}.ro-kid::after{background:CanvasText}}
 .ro-newtag,.ro-drafttag{z-index:1} /* spec 097 plan A5 (#1642): a "New reply" or "Draft" tag at a plate's end stays over a kid standing there */
