@@ -81,7 +81,7 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(effectiveSignInApp(v), { mode: 'vscode' }, `owner default 2026-11-13: ${what} reads as VS Code's app`);
   }
   assert.deepStrictEqual(effectiveSignInApp({ mode: 'copilot-cli' }), { mode: 'vscode' }, 'FR-234 pending Q25: copilot-cli reads as the default');
-  assert.deepStrictEqual(effectiveSignInApp({ mode: 'off' }), { mode: 'off' });
+  assert.deepStrictEqual(effectiveSignInApp({ mode: 'off' }), { mode: 'off' }, 'FR-233: an explicit Off stays Off (not the default)');
   assert.deepStrictEqual(effectiveSignInApp({ mode: 'custom', clientId: CUSTOM }), { mode: 'custom', clientId: CUSTOM });
   assert.ok(sameSignInApp(undefined, undefined) && sameSignInApp({ mode: 'custom', clientId: CUSTOM }, { mode: 'custom', clientId: CUSTOM }));
   assert.ok(sameSignInApp(undefined, { mode: 'vscode' }) && sameSignInApp({ mode: 'copilot-cli' }, { mode: 'vscode' }), 'the same app in force');
@@ -212,7 +212,7 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(copilotEntraOption({ mode: 'off' }), {}, 'FR-237: no entra key for an explicit Off');
     assert.deepStrictEqual(copilotEntraOption({ mode: 'copilot-cli' }), { entra: { clientId: VSCODE_ENTRA_CLIENT_ID } }, 'FR-234 copilot-cli pending: the default');
     assert.deepStrictEqual(copilotEntraOption({ mode: 'vscode' }), { entra: { clientId: VSCODE_ENTRA_CLIENT_ID } }, 'FR-236: entra is exactly { clientId } (no matsAppName, no tokenProvider)');
-    assert.deepStrictEqual(copilotEntraOption({ mode: 'custom', clientId: CUSTOM_UP }), { entra: { clientId: CUSTOM } });
+    assert.deepStrictEqual(copilotEntraOption({ mode: 'custom', clientId: CUSTOM_UP }), { entra: { clientId: CUSTOM } }, 'FR-235 adapter check: the custom ID reaches entra checked and lower case');
     assert.deepStrictEqual(copilotEntraOption({ mode: 'custom', clientId: SECRETISH }), { entra: { clientId: VSCODE_ENTRA_CLIENT_ID } }, 'FR-235 adapter check: an invalid custom ID never reaches entra (the default)');
     assert.deepStrictEqual(copilotEntraOption({ mode: 'custom' }), { entra: { clientId: VSCODE_ENTRA_CLIENT_ID } });
     assert.strictEqual(VSCODE_ENTRA_CLIENT_ID, 'aebc6443-996d-45c2-90f0-388ff96faa56');
@@ -341,9 +341,9 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(mcpFailureVerdict('AADSTS53003 conditional access'), { cls: 'policy' });
     assert.strictEqual(classifyMcpCall('error AADSTS65002 for this resource'), undefined, 'FR-240: 65002 is not read as auth (signing in again does not fix it)');
     assert.strictEqual(classifyMcpCall('AADSTS65001 consent'), 'auth', '65001 stays auth');
-    assert.strictEqual(signInAppRefusalText('app', "Visual Studio Code's app"), "Microsoft refused the sign-in app chosen in Settings > MCP servers (Visual Studio Code's app): this server does not accept that app. Choose another app or Off.");
-    assert.strictEqual(signInAppRefusalText('redirect', 'Custom app'), "Microsoft refused the sign-in app chosen in Settings > MCP servers (Custom app): the app does not list this computer's sign-in address. Choose another app or Off.");
-    assert.strictEqual(signInAppRefusalText('app', undefined), "Microsoft refused Copilot's sign-in app for this server.");
+    assert.strictEqual(signInAppRefusalText('app', "Visual Studio Code's app"), "Microsoft refused the sign-in app chosen in Settings > MCP servers (Visual Studio Code's app): this server does not accept that app. Choose another app or Off.", 'FR-240: the words with a sign-in app set');
+    assert.strictEqual(signInAppRefusalText('redirect', 'Custom app'), "Microsoft refused the sign-in app chosen in Settings > MCP servers (Custom app): the app does not list this computer's sign-in address. Choose another app or Off.", 'FR-240: the redirect reason');
+    assert.strictEqual(signInAppRefusalText('app', undefined), "Microsoft refused Copilot's sign-in app for this server.", 'FR-240: the words with Off');
   }
 
   // ---- FR-234: the unlabeled runtime ID is not in src/ (a source scan that cannot pass empty) ----
