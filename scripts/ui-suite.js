@@ -180,6 +180,7 @@ const DRIVERS = [
   { name: 'check-097-crews' }, // spec 097 FR-335, FR-336 (issue #1154): Real office with each Characters value draws its set or the Office people, no crew picture, the true note
   { name: 'shots-readme-real' }, // spec 008 delta 2026-11-08 (issue #1256): the README's lead pictures, Real office and its Needs you inbox
   { name: 'shots-070-flat-look' }, // spec 070 A14: Flat's modern look behind html[data-flat-look] (24 px controls on, today's off; Retro and Real office equal with it on)
+  { name: 'shots-102-previews' }, // spec 102 T265a (FR-302): one preview per built-in world in simscene=preview, 640 px WebP under 48 KB, with its zoom origin
   { name: 'shots-102-arcade' }, // spec 102 RA3: the Retro arcade behind its flag: only its files, cabinets, marquee, no overlap at 3, 4, 8 and 15 at both sizes
   { name: 'shots-102-arcade', label: 'shots-102-arcade wide font', env: { ARCADE_FONT: 'wide', ARCADE_CASES: 'narrow' } }, // spec 102 FR-312 (round 5 of #1599, issue #1574): the narrow plate's cases alone (ARCADE_CASES=narrow) in a font wider than macOS's (Verdana, else DejaVu Sans; the run fails if neither is installed), so the geometry is not tuned to one font
   { name: 'shots-097-moments' }, // spec 097 FR-118..FR-129: the nine world moments (first run, empty office, asleep at the desk, walk, inbox, limit, elicitation, coffee, jumps) in the Photo office and the cave
