@@ -110,6 +110,7 @@ const DRIVERS = [
   { name: 'check-dialog-focus' },
   { name: 'check-052-primary-btn' }, // spec 052 FR-053 (#1614): the themed primary button reads at 4.5:1 at rest, hovered and pressed in every themed look
   { name: 'check-052-focus-ring' }, // spec 052 FR-052 (#1615): the keyboard ring of the top bar controls and of the ⋯ menu items reads at 3:1 beside the bar, in the retro looks
+  { name: 'check-052-danger-btn' }, // spec 052 FR-053, FR-076 (#1565): the red confirm button of a destructive dialog reads in the arcade and under the pixel theme
   { name: 'check-grant-chips' },
   { name: 'check-sched-sendto' },
   { name: 'check-sched-edit' },
