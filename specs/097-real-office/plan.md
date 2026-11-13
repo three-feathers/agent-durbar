@@ -236,6 +236,7 @@ Existing capability reused (FR-031): the arcade's short sign (FR-256, `ZoneBox.s
 | A7 | Coverage | FR-374's T338 (props in every world) needs the art audit; it is art, not this code. | Out of #1642; stays open under #1641. |
 | A8 | Coverage | The row keeps the strip's height on a desk that draws kids (FR-373: `u` and rows never change), so the band under its plate is empty. | Accepted (FR-373's rule); recorded. |
 | A10 | Coverage | FR-371's `asleep` pose (the parent desk asleep) cannot show on a desk today: an asleep agent sits in the lounge row (FR-246), which has no kids. | `kidPose` maps it (pure, tested); the renderer passes the desk's `asleep`; no simulator or driver can show it until a desk can be asleep. Recorded as a `[KNOWN GAP]` (`read:`). |
+| A11 | Inconsistency (found building, 2026-11-13) | FR-372 says a status change writes classes, the picture and labels only, and FR-368 orders kids by `orderedHelpers` (waiting and error first): a helper that turns waiting or error moves to a place nearer the person. | The order wins (FR-368, as the head row does): the kid's node is kept and moved (Tab order follows the places), no node is made or dropped; `check-097-kids` counts made or dropped nodes, not moves. |
 | A9 | Terminology | "the call light" in FR-368 is no longer drawn (FR-236); its point `call` still exists. | The right span ends at `call.x - 6` as written. |
 
 No CRITICAL finding; the constitution's principles hold (no new dependency, no credits, pure layout, no Copilot types in the renderer).
