@@ -396,6 +396,24 @@ if (worldIds.includes('retro')) {
   else { const r = spawnSync('python3', ['-I', script, '--selftest'], { encoding: 'utf8' }); assert.strictEqual(r.status, 0, 'build-arcade-pack.py --selftest: ' + r.stdout + r.stderr); }
 }
 
+{
+  /* spec 097 FR-371 (issue #1641 review): no kid picture is clipped by a side border. A tight crop of a whole cube or stool may rest on the
+   * edge (the most in the shipped 42 is 47 rows of 220, a stool's flat side), a clipped figure runs far more: the count is of rows with
+   * alpha > 128 in the first and the last column (scripts/kid-edge-rows.py decodes the WebP; plain Node cannot): needs python3 with Pillow. */
+  const MAX_EDGE_ROWS = 48;
+  const have = spawnSync('python3', ['-I', '-c', 'import PIL'], { encoding: 'utf8' });
+  if (have.error || have.status !== 0) console.log('kid edge check skipped: needs python3 with Pillow (not on this machine)');
+  else {
+    const dir = path.join(RO, 'worlds', 'photo'), names = fs.readdirSync(dir).filter((f) => /^kid\d-\w+\.webp$/.test(f)).sort();
+    assert.strictEqual(names.length, 42, 'the edge check sees all 42 kid pictures');
+    const run = (args: string[]) => { const r = spawnSync('python3', ['-I', path.join(ROOT, 'scripts', 'kid-edge-rows.py'), ...args], { encoding: 'utf8' }); assert.strictEqual(r.status, 0, 'kid-edge-rows.py: ' + r.stderr); return r.stdout.trim().split('\n').map((l) => l.split(' ')); };
+    const bad = run(names.map((n) => path.join(dir, n))).filter(([, l, r]) => Number(l) > MAX_EDGE_ROWS || Number(r) > MAX_EDGE_ROWS).map(([n, l, r]) => `${n}: ${l} rows on the left edge, ${r} on the right`);
+    assert.deepStrictEqual(bad, [], `kid pictures clipped by a side border (more than ${MAX_EDGE_ROWS} opaque rows on an edge): re-cut with a margin`);
+    const red = run(['--red'])[0];
+    assert.ok(Number(red[1]) > MAX_EDGE_ROWS && Number(red[2]) === 0, 'red: a picture cut flat on its left edge (90 opaque rows) is over the limit');
+  }
+}
+
 // ---- packaging (FR-060, FR-061, T012): the build ships each pack's pictures and its script, never ASSETS.md or the JSON; the CSP is unchanged ----
 const copy = fs.readFileSync(path.join(ROOT, 'scripts', 'copy-assets.js'), 'utf8');
 assert.ok(/'worlds', 'world', 'DurbarRealOfficeWorlds'/.test(copy) && /'sets', 'set', 'DurbarRealOfficeSets'/.test(copy), 'copy-assets.js copies realoffice/worlds and realoffice/sets');
