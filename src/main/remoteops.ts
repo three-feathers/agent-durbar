@@ -127,3 +127,16 @@ export function createRemoteOps(deps: RemoteOpsDeps) {
     },
   };
 }
+
+/**
+ * Spec 012 FR-158: make an agent app's adapter pick up a change of its sign-in, if that adapter was already created (none is created
+ * here): its remote sessions are said to be off (FR-011 here: a reconnected session is not remote any more), then `refreshAuth()`
+ * restarts the shared client and resumes every live session. Used after a sign-in (`afterSignIn`) and after a sign-in app change
+ * (spec 058 FR-237).
+ */
+export async function refreshAdapterAuth(d: { router: { created(): readonly AgentAdapter[]; adapterIdOf(agentId: string): string | undefined }; remoteOps: { ids(): Iterable<string>; forget(id: string): void }; toRenderer(channel: string, payload: unknown): void }, kind: string): Promise<void> {
+  const ad = d.router.created().find((x) => x.id === kind);
+  if (!ad?.refreshAuth) return;
+  for (const id of [...d.remoteOps.ids()]) if (d.router.adapterIdOf(id) === kind) { d.remoteOps.forget(id); d.toRenderer('agents:remoteOff', id); }
+  await ad.refreshAuth();
+}

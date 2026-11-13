@@ -4,7 +4,7 @@
 group: 046
 title: MCP servers in a session (issue #349): plain state words and how servers start per agent app, the masked failure reason with a hint, per-server Restart where the agent app has one (Copilot, Claude Code), Restart session with these servers, Open log folder (reveal only)
 status: building
-note: restart, logs and sign-in tasks open; masking and state words built; App mode (#1667): SDK 1.0.32 bump built (PR 2), setting not built
+note: restart, logs and sign-in tasks open; masking and state words built; App mode (#1667): SDK 1.0.32 bump (PR 2) and the setting and adapter (PR 3) built, Settings UI not built
 -->
 
 **Feature Branch**: `058-mcp-session-controls`
@@ -2317,7 +2317,7 @@ and open PRs, 2026-11-11): **FR-230** and **T212**.
 
 ### 2026-11-13: "App mode": choose the Microsoft Entra app Copilot's MCP sign-in uses, with the SDK 1.0.32 bump and a test build (issue #1667; FR-233..FR-245, Q25..Q27)
 
-**Status**: specified 2026-11-13, nothing built (PR 1 of 5 of issue #1667: this spec delta, with a spec 011 delta, notes in specs 002, 099 and 076,
+**Status**: specified 2026-11-13; PR 2 (T216) and PR 3 (T217) built, see their *Build record*s (PR 1 of 5 of issue #1667: this spec delta, with a spec 011 delta, notes in specs 002, 099 and 076,
 and the plan and tasks below). **Numbers taken** (`npm run specs:numbers` against `origin/main`, remote branches and open PRs; open PR #1637 holds
 FR-232 and T214): **FR-233..FR-245**, **Q25**, **Q26**, **Q27** (added in review, 2026-11-13), **T215..T221**; spec 011 **FR-096**, **T074**. **Security-relevant** (sign-in identity,
 logging, permissions): an **Opus** review on PR 1 (this spec), PR 2 (the bump and the shell guard: the permission boundary) and PR 3 (the
@@ -2569,6 +2569,55 @@ facts below that this delta relies on, unless tagged otherwise):
   runtime would have run `ls` without the guard (no unguarded control run). The script's second prompt now names the mode change and a
   different command (`ls -1`) for the next run.
 - Built for spec 011 FR-096: `[IMPLEMENTED]` see spec 011's delta of 2026-11-13.
+
+#### Build record: PR 3, the setting and the adapter (T217, 2026-11-13)
+
+- Built for FR-233: `[IMPLEMENTED]` `copilotSignInApp` (`src/shared/signinapp.ts`: `parseSignInApp`, `effectiveSignInApp`, `SIGN_IN_APP_DEFAULT`;
+  `AppSettings` and `parseSettings` in `src/shared/credits.ts`; `SettingsStore.copilotSignInApp` / `setCopilotSignInApp` returning `Saved<T>`
+  in `src/main/settings.ts`; `settings:get`; `settings:setCopilotSignInApp` via `ipcHandle` + the `setting(...)` helper, the `mcpSignInRefresh`
+  (FR-213) path copied; preload `setCopilotSignInApp`). Missing or malformed reads as `vscode` (Q27); an explicit `{ mode: 'off' }` is stored
+  and kept; over IPC `null` removes the stored value (the default again). `test: signinapp`. Mutants: default flipped to `off` ("owner
+  default 2026-11-13: missing reads as VS Code's app"), malformed read as `off` (same assertion), explicit `off` read as the default
+  ("FR-233: an explicit Off stays Off (not the default)").
+- Built for FR-234: `[IMPLEMENTED]` `VSCODE_ENTRA_CLIENT_ID` (one constant with its source comment, `src/adapters/copilot.ts`); `copilot-cli` is
+  parsed and kept but reads as the default (`effectiveSignInApp`). Source scan (root found through `package.json`, more than 200 `src/` files
+  including `copilot.ts`, case-insensitive, the dashed id, its bare hex and its first group). Mutants: the unlabeled id as `copilot-cli`
+  ("FR-234 pending Q25: copilot-cli reads as the default"), the same in upper case and the scan of an empty folder ("FR-234: the unlabeled
+  1.0.32 ID ... is not in src/", "the scan read src/").
+- Built for FR-235: `[IMPLEMENTED]` `parseClientId` (outer spaces, tabs and line breaks only, by a loop; lower case; zero GUID out; inputs over 200
+  characters refused first), used by `parseSettings`, the setter, the IPC handler (checked again before the store; fixed reply text, value
+  not echoed, file not written) and the adapter (`copilotSignInClientId` re-parses through `effectiveSignInApp`, so a bad custom id there is
+  the default, as FR-235's text says; the delta's test line "no `entra` key" for that case contradicts it: the build follows the text and the
+  coordinator's brief, the default). Mutants: check removed, zero GUID allowed, lower-casing dropped, trim dropped, refused value echoed,
+  setter skipping the check ("a refused value keeps the one in force"), handler skipping it ("FR-235: the fixed text and the value in
+  force"), adapter skipping it ("FR-235 adapter check: the custom ID reaches entra checked and lower case").
+- Built for FR-236: `[IMPLEMENTED]` with one gap. `entra` is exactly `{ clientId }` (no `matsAppName`, no `tokenProvider`, no client secret
+  anywhere). The adapter's debug line says `sign-in app: <mode>` (`vscode (default)`, `off`, `vscode`, `custom (set)`, `vscode (copilot-cli is
+  not available in this build)`), never the id. Masking: `setSignInAppMaskId` in `src/main/mcpmask.ts` holds the id in force (main sets it
+  at launch and after each change, from the value `setSignInApp` returns, so VS Code's id is masked too); `maskMcpText` replaces it, any
+  case, with `<sign-in app ID>` after the session values and **before** `redact` and any cut (so `maskMcpError`, `maskMcpStatuses`, Copy
+  diagnostics, tool outputs and history get it); `maskMcpEvent` also masks an error `status` text; the `DURBAR_LOG` debug sink masks each
+  line (`maskSignInAppText` on the sink's append). Why a module value in a shared mask helper: every caller of these masks would otherwise
+  need a new argument, and a missed one would leak; a value that is not a valid GUID never becomes a pattern. Mutants: clientId logged, id
+  left in a masked error, replace after the cut, case-sensitive replace ("any case"), `matsAppName` passed. **`[KNOWN GAP]`** the
+  activity-log row "Copilot sign-in app changed to <label>" is not built (an app-wide row has no agent or folder and needs a new decision
+  label in the window's activity table): left to T218; chat output text (`output` events) is not masked (only errors, MCP texts and logs).
+- Built for FR-237: `[IMPLEMENTED]` (main side; the confirm is T218): the handler saves, then `hand` (`setSignInApp` through `handSignInApp` in
+  `main.ts`), then `reconnect` = `refreshAdapterAuth` (moved from `afterSignIn` in `src/main/ipc/harness.ts` to `src/main/remoteops.ts`,
+  used by both: spec 012 FR-158's `refreshAuth` with the remote-off notes); the same app in force (also `vscode` while it is the default), a
+  refused value and a failed save restart nothing. Launch: `handSignInApp(settingsStore.copilotSignInApp)` right after the settings load,
+  before folders are restored. A change during a running refresh: `CopilotAdapter.refreshAuth` counts `setSignInApp` calls and, when the
+  count moved since the running refresh began, waits for it and runs one more (several changes: one extra, latest value); a plain sign-in
+  refresh still joins. Mutants: change without `refreshAuth`, handed before the save, same value restarts, `entra: {}` for off, the
+  in-flight refresh joined ("FR-237 in-flight change: one more reconnect after the running one (two, not three)").
+- Built for FR-238: `[IMPLEMENTED]` with one change: `setSignInApp?(choice)` returns the client id the adapter will use (or undefined for Off)
+  instead of `void`, so main can mask it without knowing the mode-to-id table (which stays in the adapter); `signInAppChoice` capability
+  (only Copilot), contract C2 line; the simulator stand-in has no `setSignInApp` (`SIM_OPTIONAL_MEMBERS`: `null`).
+- Built for FR-240: `[IMPLEMENTED]` (pure part; the row and the failed call's line use it in T218): `isSignInAppRefusal`, `mcpFailureVerdict`
+  (refusal first, then `classifyMcpCall`), `signInAppRefusalText` in `src/shared/mcpcall.ts`; `classifyMcpCall` unchanged. Mutants: 65002
+  read as `auth`, check dropped, order swapped ("FR-240 order: refusal before auth (unauthorized_client)"), Off and set words swapped.
+- **Not verified**: no real sign-in with any mode (no runtime started; 0 AI credits); `client.start()` with `entra` on a real runtime; Linux
+  (FR-241: Entra is Windows and macOS only in the runtime, `read:`), macOS ad-hoc re-signing of the OneAuth/MSAL libraries, Windows; T221.
 
 #### Later, not in this plan
 

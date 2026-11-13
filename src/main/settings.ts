@@ -9,6 +9,8 @@ import { randomInt } from 'crypto';
 import { parseNewFolderParent } from '../shared/newfolder';
 import { ANNOUNCE_APPS, parseAnnounced, parseCap, parseSandboxAlways, parseSettings, parseThemeId } from '../shared/credits';
 import type { AppSettings } from '../shared/credits';
+import { parseSignInApp } from '../shared/signinapp';
+import type { SignInAppChoice } from '../shared/signinapp';
 import { mcpWarnDefaults, parseWarnLevels } from '../shared/mcpcost';
 import type { McpWarnLevels } from '../shared/mcpcost';
 import { MCP_SIGNIN_REFRESH_DEFAULT } from './mcpsigninrefresh';
@@ -292,6 +294,26 @@ export class SettingsStore {
   setMcpSignInRefresh(v: unknown): Saved<boolean> {
     if (typeof v !== 'boolean') return { ok: false, value: this.mcpSignInRefresh };
     return this.commit({ ...this.s, mcpSignInRefresh: v }) ? { ok: true, value: v } : { ok: false, value: this.mcpSignInRefresh }; // issue #1023: a failed save keeps the old value
+  }
+
+  /** Spec 058 FR-233: the stored Copilot sign-in app; undefined = none stored (the default, VS Code's app). A copy, so a caller cannot change the stored one. */
+  get copilotSignInApp(): SignInAppChoice | undefined {
+    const c = this.s.copilotSignInApp;
+    return c ? { ...c } : undefined;
+  }
+
+  /**
+   * Spec 058 FR-233, FR-235: `null` removes it (the default again; `{ mode: 'off' }` is Off); anything else must pass `parseSignInApp` (stored as parsed: a custom ID lower case).
+   * A refused value is not stored (and never echoed: the reply carries the value in force). `ok` only when the write reached disk;
+   * a failed save keeps the old value (issue #1023).
+   */
+  setCopilotSignInApp(v: unknown): Saved<SignInAppChoice | undefined> {
+    const next = v === null ? undefined : parseSignInApp(v);
+    if (v !== null && !next) return { ok: false, value: this.copilotSignInApp };
+    const doc: AppSettings = { ...this.s };
+    if (next) doc.copilotSignInApp = next;
+    else delete doc.copilotSignInApp;
+    return this.commit(doc) ? { ok: true, value: next ? { ...next } : undefined } : { ok: false, value: this.copilotSignInApp };
   }
 
   /** Spec 081 FR-016: the last announced version per agent app, a copy. */

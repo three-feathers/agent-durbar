@@ -150,6 +150,8 @@ export async function runContract(name: string, make: () => ContractTarget, hook
     assert.strictEqual(has('sandboxHost'), !!cap.osSandbox, M('C2', 'sandboxHost() <=> capabilities.osSandbox (spec 087 FR-012)'));
     if (has('continueWithoutSandbox')) assert.ok(cap.osSandbox, M('C2', 'continueWithoutSandbox() only with capabilities.osSandbox (spec 087 FR-007a)'));
     assert.strictEqual(has('startMcpSignIn'), !!cap.mcpSignIn, M('C2', 'startMcpSignIn() <=> capabilities.mcpSignIn (spec 058 FR-064)'));
+    assert.strictEqual(has('setSignInApp'), !!cap.signInAppChoice, M('C2', 'setSignInApp() <=> capabilities.signInAppChoice (spec 058 FR-238)'));
+    if (cap.signInAppChoice !== undefined) assert.strictEqual(cap.signInAppChoice, true, M('C2', 'signInAppChoice is true or missing (spec 058 FR-238)'));
     if (has('cancelMcpSignIn')) assert.ok(cap.mcpSignIn, M('C2', 'cancelMcpSignIn() only with capabilities.mcpSignIn'));
     if (has('refreshMcpStatus')) assert.ok(cap.mcpSignIn, M('C2', 'refreshMcpStatus() only with capabilities.mcpSignIn (spec 058 FR-064)'));
     if (cap.mcpSignInAgain !== undefined) assert.ok(typeof cap.mcpSignInAgain === 'boolean' && (!cap.mcpSignInAgain || cap.mcpSignIn), M('C2', 'mcpSignInAgain is a boolean, and only with mcpSignIn (spec 058 FR-164)'));
@@ -372,6 +374,7 @@ const NOT_IN_FAKE = [
   'authStatus', 'verifySignIn', 'accountInfo', 'accountQuota', 'refreshAuth', 'resumeIdOf', 'listSlashCommands', 'expandSlashCommand', 'readOrgPolicy',
   'continueWithoutSandbox', 'sandboxHost', // spec 087: real adapters only (C2 below)
   'mcpContext', // spec 100: real adapters only (C2 below)
+  'setSignInApp', // spec 058 FR-238: real adapters only (C2 below)
 ];
 
 /** The optional members of `interface AgentAdapter`, read from `src/adapters/types.ts` with the TypeScript parser (no hand-kept copy). */

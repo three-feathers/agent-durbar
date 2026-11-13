@@ -4,8 +4,23 @@ import type { McpServerSpec } from '../shared/mcp';
 import { classifyMcpCall } from '../shared/mcpcall';
 import type { EditInfo } from '../shared/edits';
 import { cut, maskHomePaths, maskSecretUrl, redact, secretFlag } from '../shared/redact';
+import { maskSignInAppId, parseClientId } from '../shared/signinapp';
 
 export const MCP_ERROR_MAX_CHARS = 300;
+
+/**
+ * Spec 058 FR-236 (issue #1667): the sign-in app (client) ID in force, or undefined. Main sets it at launch and after each saved change
+ * (`setSignInAppMaskId`), so every MCP text below shows `<sign-in app ID>` in its place, whichever session or path it comes from. One
+ * module value instead of a parameter: every caller of these masks would otherwise need a new argument, and a missed one would leak.
+ */
+let signInAppId: string | undefined;
+export function setSignInAppMaskId(id: string | undefined): void {
+  signInAppId = parseClientId(id);
+}
+/** FR-236: `text` with the sign-in app ID in force (any case) replaced; the same text when none is set. For texts outside these masks (the debug log). */
+export function maskSignInAppText(text: string): string {
+  return maskSignInAppId(text, signInAppId);
+}
 
 /** The secret values a session was given (env and header values of its extra servers), longest first; under 4 characters are skipped since they would mangle every string. */
 export function mcpSecretValues(...lists: (Record<string, McpServerSpec> | undefined)[]): string[] {
@@ -33,6 +48,7 @@ export function maskMcpText(text: unknown, values: readonly string[] = [], max?:
   if (text === undefined || text === null) return undefined;
   let s = typeof text === 'string' ? text : String(text);
   for (const v of values) if (v.length >= 4 && s.includes(v)) s = s.split(v).join('[redacted]');
+  s = maskSignInAppId(s, signInAppId); // spec 058 FR-236: before any cut, so no part of the ID is left
   s = redact(s); // env values and token shapes on the whole text: linear, about 7 ms per MB
   s = maskHomePaths(s); // spec 058 FR-093 (review on PR #630): `/home/<user>`, `C:\\Users\\<user>` -> `~`, so no user name leaves main
   if (max !== undefined) s = cut(s, max);
@@ -69,12 +85,17 @@ export function maskEditInfo(edit: EditInfo, values: readonly string[] = []): Ed
 }
 
 /**
- * Spec 019 FR-022: the copy of an event that may leave main (window, debug sink): an `mcp` event with its errors masked; any other event
- * unchanged (same object). Spec 058 FR-067: every `toolCall` (update, complete or failed) that names an `mcpServer` has its `output` masked too, cut to `MCP_CARD_MAX_CHARS`.
+ * Spec 019 FR-022: the copy of an event that may leave main (window, debug sink): an `mcp` event with its errors masked; a `status` whose
+ * text holds the sign-in app ID with it replaced (spec 058 FR-236); any other event unchanged (same object). Spec 058 FR-067: every `toolCall` (update, complete or failed) that names an `mcpServer` has its `output` masked too, cut to `MCP_CARD_MAX_CHARS`.
  * Spec 005 FR-024: a `toolCall` with an `edit` (any phase) has its paths and diffs masked with the session values (`maskEditInfo`).
  */
 export function maskMcpEvent<E extends AgentEvent>(e: E, values: readonly string[] = []): E {
   if (e.type === 'mcp') return { ...e, servers: maskMcpStatuses(e.servers, values) };
+  // spec 058 FR-236: an error status quotes the runtime's text (a failed client start, a refused sign-in): the sign-in app ID never shows
+  if (e.type === 'status' && typeof e.intent === 'string' && signInAppId) {
+    const intent = maskSignInAppId(e.intent, signInAppId);
+    return intent === e.intent ? e : { ...e, intent };
+  }
   if (e.type !== 'toolCall') return e;
   let out = e;
   if (e.phase !== 'start' && e.mcpServer && e.output !== undefined) out = { ...out, output: maskMcpText(e.output, values, MCP_CARD_MAX_CHARS) };

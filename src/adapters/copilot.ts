@@ -77,6 +77,8 @@ import type { CopilotHostSupport } from './copilotSandbox';
 import { CREDENTIAL_FOLDER_REFUSAL, leftOutFields, sandboxRoots, splitFolders } from './sandboxRoots';
 import { pathDirs as envPathDirs } from '../shared/pathdirs';
 import type { SandboxHostView, SandboxState } from '../shared/api';
+import { effectiveSignInApp, parseClientId, signInAppLogLabel } from '../shared/signinapp';
+import type { SignInAppChoice } from '../shared/signinapp';
 
 const IMAGE_MIME: Record<string, string> = {
   '.png': 'image/png',
@@ -280,6 +282,35 @@ export function copilotTaskEnd(d: { outcome?: unknown; success?: unknown } | und
   return 'done';
 }
 
+/**
+ * Spec 058 FR-234: Visual Studio Code's public Microsoft Entra app (client) ID, the one constant for the `vscode` sign-in app mode.
+ * Source (`read:` 2026-11-13): the Elastic detection rule "Entra ID OAuth Flow by Visual Studio Code" (app ID with the display name
+ * "Visual Studio Code") and VS Code's default Microsoft sign-in client; `real:` a byte grep of the shipped SDK 1.0.24 runtime finds it
+ * (it borrowed this app by default, issue #1084). Not from a Microsoft page. Copilot CLI's app has no source yet (Q25): no constant.
+ */
+export const VSCODE_ENTRA_CLIENT_ID = 'aebc6443-996d-45c2-90f0-388ff96faa56';
+
+/**
+ * Spec 058 FR-234, FR-237: the client ID the runtime gets for a stored sign-in app value, or undefined for an explicit `off`. The value
+ * in force comes from `effectiveSignInApp` (owner, 2026-11-13 06:22 UTC: missing, malformed and the pending `copilot-cli` read as the
+ * default, Visual Studio Code's app); `custom` gives its own ID (checked again by FR-235's parser).
+ */
+export function copilotSignInClientId(choice: SignInAppChoice | undefined): string | undefined {
+  const e = effectiveSignInApp(choice);
+  if (e.mode === 'off') return undefined;
+  if (e.mode === 'custom') return parseClientId(e.clientId); // always valid here: effectiveSignInApp only keeps a valid custom ID
+  return VSCODE_ENTRA_CLIENT_ID; // 'vscode' (also the default)
+}
+
+/**
+ * Spec 058 FR-236, FR-237: the `CopilotClient` option for a choice: `{ entra: { clientId } }`, or no `entra` key at all for Off. Never
+ * `matsAppName` (no Microsoft sign-in telemetry in Durbar's name) and never `tokenProvider` (Entra tokens never pass through Durbar).
+ */
+export function copilotEntraOption(choice: SignInAppChoice | undefined): { entra?: { clientId: string } } {
+  const clientId = copilotSignInClientId(choice);
+  return clientId ? { entra: { clientId } } : {};
+}
+
 const COPILOT_ID = 'copilot';
 const COPILOT_NAME = 'GitHub Copilot';
 /** From the code (spec 012 FR-009); not newly verified on a real account. Deeply frozen. */
@@ -310,6 +341,7 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpSignIn: true, // spec 058 FR-064: rpc.mcp.oauth.login (@experimental; read: SDK 1.0.22-1.0.26 rpc.d.ts; real: worked once, macOS 2026-10-23, one server; the rest in T105)
   mcpSignInSteps: 'If Sign in is not available, sign in from the Copilot CLI: run `copilot`, type `/mcp auth {name}` and finish in your browser. Then use Restart session with these servers. This may not carry over to this session (seen on 2026-10-23).', // FR-068
   mcpSignInNote: 'Checked once on a real account; other servers and systems not yet.', // FR-074/FR-180: the row's honest note
+  signInAppChoice: true, // spec 058 FR-238: CopilotClient `entra.clientId` (@experimental, SDK 1.0.26+; read: SDK 1.0.32 types; no real sign-in run)
   sessionStats: true, // spec 085 FR-012: rpc.usage.getMetrics (@experimental; read: SDK 1.0.24; not run on a real session)
   handoff: true, // spec 030 FR-034: rpc.history.summarizeForHandoff (cost unverified)
   modelSwitch: Object.freeze({ verified: true, contextTier: true }), // spec 030 Phase 3 (real 2026-10-20, Copilot Pro): switch, effort, long tier, confirmation and compact-and-switch (T041, T044, T045)
@@ -470,6 +502,11 @@ export class CopilotAdapter implements AgentAdapter {
   private starting: Promise<CopilotClient> | undefined;
   /** Spec 012 FR-158: a running `refreshAuth` (calls that use a session wait for it). */
   private refreshing: Promise<void> | undefined;
+  /** Spec 058 FR-233: the stored sign-in app value the next client starts with (undefined = none stored: the default, VS Code's app). */
+  private signInApp: SignInAppChoice | undefined;
+  /** Spec 058 FR-237: counts `setSignInApp` calls; `refreshSignInSeq` is the count when the running refresh began. */
+  private signInAppSeq = 0;
+  private refreshSignInSeq = 0;
   private sessions = new Map<string, Live>();
   /** Spec 011 FR-071: ids of Durbar-raised limit requests. */
   private capSeq = 0;
@@ -544,13 +581,26 @@ export class CopilotAdapter implements AgentAdapter {
       const runtimePath = unpackedRuntimePath();
       this.debug?.(`runtime: ${runtimePath ?? 'sdk default'}`);
       const env = copilotRuntimeEnv(process.env, tmp.dir, process.platform);
-      const c = await this.newClient(runtimePath ? { connection: RuntimeConnection.forStdio({ path: runtimePath }), workingDirectory: os.homedir(), env } : { connection: RuntimeConnection.forStdio(), env });
+      const entra = copilotEntraOption(this.signInApp); // spec 058 FR-237: the app in force (default VS Code's), or no `entra` key for Off
+      const c = await this.newClient(runtimePath ? { connection: RuntimeConnection.forStdio({ path: runtimePath }), workingDirectory: os.homedir(), env, ...entra } : { connection: RuntimeConnection.forStdio(), env, ...entra });
       this.runtimeTmps.set(c, tmp.cleanup);
       return c;
     } catch (e) {
       tmp.cleanup();
       throw e;
     }
+  }
+
+  /**
+   * Spec 058 FR-238: store the sign-in app choice for the next client (a running client keeps its app: the runtime refuses to change it
+   * on a live connection, so main calls `refreshAuth()` after a change, FR-237). The debug line says the mode only (FR-236).
+   */
+  setSignInApp(choice: SignInAppChoice | undefined): string | undefined {
+    this.signInApp = choice ? { ...choice } : undefined;
+    this.signInAppSeq++;
+    const clientId = copilotSignInClientId(this.signInApp);
+    this.debug?.(`sign-in app: ${signInAppLogLabel(this.signInApp)}`);
+    return clientId;
   }
 
   /** Construct and start the SDK client (a test overrides this to see the options without a runtime). */
@@ -577,8 +627,14 @@ export class CopilotAdapter implements AgentAdapter {
    */
   async refreshAuth(): Promise<void> {
     this.planCache = undefined; // spec 051 FR-022: a new sign-in may have a new plan
-    if (this.refreshing) return this.refreshing;
+    if (this.refreshing) {
+      if (this.refreshSignInSeq === this.signInAppSeq) return this.refreshing; // FR-158: a sign-in refresh joins the one in flight
+      // spec 058 FR-237: the sign-in app changed after this refresh began (its client may hold the old app): wait, then one more
+      await this.refreshing.catch(() => undefined);
+      return this.refreshAuth(); // several changes during one refresh: the first waiter starts one reconnect, the rest join it
+    }
     if (!this.client && !this.starting) return;
+    this.refreshSignInSeq = this.signInAppSeq;
     const run = this.reconnect().finally(() => {
       if (this.refreshing === run) this.refreshing = undefined;
     });
