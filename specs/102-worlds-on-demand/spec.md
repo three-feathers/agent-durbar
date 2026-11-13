@@ -1530,3 +1530,15 @@ The `[KNOWN GAP]` of 2026-11-11 above about `SIZES` is closed by this change. Lo
 - `[KNOWN GAP]` Nothing here is built; `helpers` is not yet a registered moment in `docs/experience/world-moments.json` (T235, #1644).
 
 **Numbers** (checked 2026-11-12, `npm run specs:numbers`, `origin/main` `c4e1f7ebe`, every remote branch and 49 open PR heads): spec 102 reaches T310 on `main` and T325 on open PR #1599; this entry takes **T326, T327** and no FR.
+
+## Changes 2026-11-13: the arcade's pressed segment button shows its keyboard focus (FR-263, T341, issue #1666, no new FR)
+
+Measured in the simulator (`check-052-focus-ring`, Retro arcade, real pixels from `capturePage`, DPR 1, both sizes, and a picture read; issue #1616 sweep): the pressed segment button (the active Office or List chip, `.topbar .seg button[aria-pressed="true"]`) in the arcade has a focus ring of `outline: 3px solid rgb(17,17,34)` at offset -3px, drawn inside its yellow fill (spec 052 FR-052's rule from #1615: `--brand-mark` inset, written for a chip on a cream strip). In the arcade the strip around the chip is the dark `--surface` of the world's top bar, so the ring reads 15.33:1 against the chip and **1.03:1 against the strip outside it**: in the 4x crop the focused chip is a plain yellow chip, no visible ring.
+
+**Decision.** In the arcade (`html[data-world][data-ui="retro"]`) the pressed segment button's focus ring is **outside the chip**: `outline-color: var(--focus)` (the world's own focus token, the yellow #ffec27 of the retro set that the other top-bar buttons already ring in, 14.87:1 on the dark bar) and `outline-offset: 1px`, so a 1px gap of the dark strip separates the ring from the yellow fill. The unfocused pressed chip keeps its yellow fill and dark ink (FR-263), so it still reads as selected, and a focused one adds the ring. Tokens only; the rule lives in `realoffice-world.css` beside FR-263's pressed-chip colour. The unpressed segment buttons (a light inset ring on the dark strip, 15.9:1) and the Flat office, Photo office and user themes are not changed: the Flat retro theme's pressed chip is on a cream strip and reads 16.86:1 and 15.33:1; Photo (ui clean) reads 7.26:1 outside and 6.05:1 inside (both measured, `check-052-focus-ring`, 2026-11-13).
+
+**Test.** `check-052-focus-ring` asserts the arcade look (it printed it only): each bar control, the pressed chip included, is at least 3:1 against the first pixel outside its ring, and the pressed chip's line is labelled `pressed segment`. Mutant `FOCUS_MUTANT=chip` restores the inset `--brand-mark` rule and dies at that label.
+
+- `[KNOWN GAP]` Not verified: Windows, macOS, Linux with a real window manager, DPR 2, a user theme in the arcade whose `--focus` is not yellow (themegen pairs `--wb-focus` with the world's bar surface at 3:1; the driver does not load such a theme in the arcade).
+
+**Numbers** (checked 2026-11-13, `npm run specs:numbers`, `origin/main`, every remote branch and open PR head): this entry takes **T341** and no FR.
