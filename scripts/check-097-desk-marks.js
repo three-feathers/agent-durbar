@@ -43,9 +43,9 @@ module.exports = async (ctx) => {
        property this driver asserts, asked of the DOM: an active desk (working, thinking or error: never rolled into the lounge, which only finished or idle agents are), no lounge, asleep or narrow plate,
        a plate wide enough that the tag fits over its left end, a desk of the layout (not a lounge seat, not an empty seat). Mutant lounge-pick takes the lounge seats. */
     const PLATE_MIN = 80;
-    const cands = await js(`(()=>{const L=window.__durbarSimUi.realLayout(),lg=new Set(((L.lounge||{}).desks||[]).map(d=>d.id)),aw=new Set(L.zones.flatMap(z=>z.desks).filter(d=>d.away).map(d=>d.id)),bad=${MUTANT === 'lounge-pick'};
+    const cands = await js(`(()=>{const L=window.__durbarSimUi.realLayout(),lg=new Set(((L.lounge||{}).desks||[]).map(d=>d.id)),aw=new Set(L.zones.flatMap(z=>z.desks).filter(d=>d.away).map(d=>d.id)),bad=${jsLiteral(MUTANT === 'lounge-pick')};
       return [...document.querySelectorAll('#stage .ro-plate')].map(p=>{const c=p.classList,w=p.getBoundingClientRect().width,k=p.dataset.id,
-        ok=/(^| )st-(working|thinking|error)( |$)/.test(p.className)&&!c.contains('lounge')&&!c.contains('asleep')&&!c.contains('narrow')&&w>=${PLATE_MIN}&&!lg.has(k)&&!aw.has(k);return {k,ok,cls:p.className,w:Math.round(w)}}).filter(x=>bad?lg.has(x.k):x.ok)})()`);
+        ok=/(^| )st-(working|thinking|error)( |$)/.test(p.className)&&!c.contains('lounge')&&!c.contains('asleep')&&!c.contains('narrow')&&w>=${jsLiteral(PLATE_MIN)}&&!lg.has(k)&&!aw.has(k);return {k,ok,cls:p.className,w:Math.round(w)}}).filter(x=>bad?lg.has(x.k):x.ok)})()`);
     assert.ok(cands.length >= 2, `${tag}: at least two desks with the property (an active desk, no lounge/asleep/narrow plate, a plate of ${PLATE_MIN}px or more) to draft; found ${JSON.stringify(cands)}`);
     const picks = [cands[0].k, cands[cands.length - 1].k];
     const loungeNow = () => js(`((window.__durbarSimUi.realLayout().lounge||{}).desks||[]).map(d=>d.id)`);
