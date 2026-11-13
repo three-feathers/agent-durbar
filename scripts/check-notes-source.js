@@ -92,7 +92,7 @@ module.exports = async (ctx) => {
     /* a long chat: several turns with the simulator (two of them the same line), so the reveal has to scroll */
     const DUP = 'Please repeat this exact line, it is sent twice.';
     const TURNS = ['Please list the open items, number 1, with one line each.', 'Please list the open items, number 2, with one line each.', 'Please list the open items, number 3, with one line each.', 'Please list the open items, number 4, with one line each.', 'Please list the open items, number 5, with one line each.', 'Please list the open items, number 6, with one line each.', DUP, DUP];
-    for (const text of TURNS) await turn(text, `!!document.querySelector('#chat .msg.agent .bubble > .nt-btn')`);
+    for (const [i, text] of TURNS.entries()) check(await turn(text, `!!document.querySelector('#chat .msg.agent .bubble > .nt-btn')`), `${tag}: turn ${i + 1}: Noor answered and went idle`);
     await until(`!!document.querySelector('#chat .chat-inner .msg.agent .bubble > .nt-btn')`, 15000);
     const reply = await firstReply();
     check(reply && reply.text, `${tag}: Noor has a finished reply to save`);
@@ -152,7 +152,7 @@ module.exports = async (ctx) => {
     const nearJs = `(()=>{const c=document.getElementById('chat'),all=[...c.querySelectorAll('.chat-inner .msg.agent .bubble')],ch=c.clientHeight,L=[];for(let i=all.length-1;i>=0;i--){const b=all[i];if(!b._raw)continue;const cb=b.getBoundingClientRect(),cr=c.getBoundingClientRect();const centre=c.scrollTop+(cb.top-cr.top)+cb.height/2;const left=c.scrollHeight-centre-ch/2;L.push(Math.round(left));if(left>=130&&left<=360)return {ord:i,text:b._raw,L};}return {L};})()`;
     let NEAR = await js(nearJs);
     for (let k = 1; k <= 6 && !(NEAR && NEAR.text); k++) { /* the heights vary with the window and the fonts: one more turn at a time until a reply sits in the band */
-      await turn('One more question, number ' + k + ': what is next?');
+      check(await turn('One more question, number ' + k + ': what is next?'), `${tag}: extra turn ${k}: Noor answered and went idle`);
       await open('Noor');
       NEAR = await js(nearJs);
     }
