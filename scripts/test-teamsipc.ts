@@ -1,5 +1,5 @@
 /**
- * Unit tests, spec 111 T007 (FR-010, FR-023, FR-100, FR-133): `TeamsOps`, the handlers of `teams:list`, `teams:put`, `teams:delete`,
+ * Unit tests, spec 111 T007 (FR-010, FR-023, FR-100, FR-133): `TeamsIpcOps`, the handlers of `teams:list`, `teams:put`, `teams:delete`,
  * `teams:duplicate` and `teams:markMine`, on the real `TeamTemplateStore` over a temporary folder (and a failing file system for `failed`).
  * No Electron, no credits. Non-ASCII is written as \u escapes; token-like data is built at run time.
  *
@@ -37,7 +37,7 @@ import assert from 'assert';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { TeamsOps } from '../src/main/teamsipc';
+import { TeamsIpcOps } from '../src/main/teamsipc';
 import { TeamTemplateStore, type TeamFs } from '../src/main/teamstore';
 
 let n = 0;
@@ -60,7 +60,7 @@ const real: TeamFs = {
 };
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-teamsipc-'));
 let dirN = 0;
-function setup(over: Partial<TeamFs> = {}, pre?: string): { ops: TeamsOps; store: TeamTemplateStore; file: string } {
+function setup(over: Partial<TeamFs> = {}, pre?: string): { ops: TeamsIpcOps; store: TeamTemplateStore; file: string } {
   const dir = path.join(root, `d${++dirN}`);
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, 'team-templates.json');
@@ -68,7 +68,7 @@ function setup(over: Partial<TeamFs> = {}, pre?: string): { ops: TeamsOps; store
   let k = 0;
   const mint = (): string => (0x1000 + ++k + dirN * 100000).toString(16).padStart(32, 'c'); // 32 hex digits, never 'a' or 'b' repeated
   const store = new TeamTemplateStore(file, { fs: { ...real, ...over } as TeamFs, newMemberId: mint, pause: () => undefined });
-  return { ops: new TeamsOps({ store: () => store, newMemberId: mint }), store, file };
+  return { ops: new TeamsIpcOps({ store: () => store, newMemberId: mint }), store, file };
 }
 const mem = (name: string, extra: Record<string, unknown> = {}): Record<string, unknown> => ({ name, role: 'Dev', app: 'claude', permMode: 'read-only', sendBrief: false, ...extra });
 /** the three member ids of `seedImported`: `putImported` gives FRESH ids, so they are read back from its result */
@@ -122,10 +122,10 @@ section('storedIds', () => {
   const pi = p.ok ? p.template.members.map((m) => m.memberId as string) : [];
   ok(p.ok && p.template.members[0].briefFrom === 'file', 'the mark stays on import'); ok(pi.length === 3 && pi.every((i) => HEX.test(i)) && new Set(pi).size === 3 && !pi.includes(A) && !pi.includes(F32), 'putImported gives every member a FRESH id and drops the ones the caller passed');
   // defence in depth: a store that holds a stored template with an id-less or repeated member (a fake, the real store prevents it)
-  const bad = (members: unknown[]): TeamsOps => {
+  const bad = (members: unknown[]): TeamsIpcOps => {
     const t0 = { id: 'x1', name: 'Crew', origin: 'imported', createdAt: 1, updatedAt: 1, members };
     const fake = { get: (id: string) => (id === 'x1' ? JSON.parse(JSON.stringify(t0)) : undefined), isBlocked: () => false, list: () => [], put: () => { throw new Error('must not save'); } };
-    return new TeamsOps({ store: () => fake as unknown as TeamTemplateStore });
+    return new TeamsIpcOps({ store: () => fake as unknown as TeamTemplateStore });
   };
   for (const ms of [[mem('A', { briefFrom: 'file' }), mem('B', { memberId: B })], [mem('A', { memberId: A, briefFrom: 'file' }), mem('B', { memberId: A })], [mem('A', { memberId: A, briefFrom: 'file' }), mem('B')]]) {
     const o = bad(ms);
@@ -217,7 +217,7 @@ section('windowCannotImport', () => {
 section('keepsMarkOnEdit', () => {
   const { ops, store } = setup();
   const s = seedImported({ store }, 'x'.repeat(1999));
-  const one = (b: string, extra: Record<string, unknown> = {}): ReturnType<TeamsOps['put']> => ops.put({ id: s.id, name: 'Crew', members: [mem('A', { memberId: A, brief: b, ...extra }), mem('B', { memberId: B, brief: 'plain' }), mem('C', { memberId: C, brief: 'Test it.' })] });
+  const one = (b: string, extra: Record<string, unknown> = {}): ReturnType<TeamsIpcOps['put']> => ops.put({ id: s.id, name: 'Crew', members: [mem('A', { memberId: A, brief: b, ...extra }), mem('B', { memberId: B, brief: 'plain' }), mem('C', { memberId: C, brief: 'Test it.' })] });
   let r = one('x'.repeat(1999) + 'y');
   ok(r.ok, 'a one-character edit is saved');
   eq(members(r).map((m) => m.briefFrom), ['file', undefined, 'file'], 'the window sent no mark: both marks stay');
@@ -390,7 +390,7 @@ section('handlersNeverThrow', () => {
     const t = require('../src/main/ipc/teams') as typeof import('../src/main/ipc/teams');
     g.initSimGuard(false);
     const boom = (): never => { throw new Error('secret ' + TOKEN); };
-    const throwing = { list: boom, put: boom, delete: boom, duplicate: boom, markMine: boom } as unknown as TeamsOps;
+    const throwing = { list: boom, put: boom, delete: boom, duplicate: boom, markMine: boom } as unknown as TeamsIpcOps;
     t.register({ getOps: () => throwing });
     eq([...handlers.keys()].sort(), ['teams:delete', 'teams:duplicate', 'teams:list', 'teams:markMine', 'teams:put'], 'the five channels');
     const frame = { url: require('url').pathToFileURL(path.join(__dirname, '..', 'src', 'renderer', 'index.html')).href };

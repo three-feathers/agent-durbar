@@ -19,7 +19,7 @@ import type { TeamMember } from '../shared/teamtemplate';
 import type { TeamsList, TeamsOne, TeamsRemoved, TeamTemplateInfo } from '../shared/api';
 import { CHANGED, SAVE_FAILED, newMemberId, type StoredTemplate, type TeamTemplateStore } from './teamstore';
 
-export interface TeamsOpsDeps {
+export interface TeamsIpcOpsDeps {
   store(): TeamTemplateStore;
   /** a test injects a counter */
   newMemberId?: () => string;
@@ -83,8 +83,8 @@ function storedById(members: TeamMember[]): Map<string, TeamMember> | undefined 
 }
 const RELOAD = 'Template: reload it and try again.';
 
-export class TeamsOps {
-  constructor(private readonly deps: TeamsOpsDeps) {}
+export class TeamsIpcOps {
+  constructor(private readonly deps: TeamsIpcOpsDeps) {}
   private get store(): TeamTemplateStore { return this.deps.store(); }
   private mint(): string { return (this.deps.newMemberId ?? newMemberId)(); }
 

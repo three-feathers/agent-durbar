@@ -1,14 +1,14 @@
 /**
  * IPC for the person's team templates (spec 111 T007, FR-010, FR-023, FR-100): window-only channels, each checked with `fromApp(e)`. The window
- * sends a template object or an id, never a path. Every check is in `TeamsOps` (unit tested without Electron). The ops are created when first
+ * sends a template object or an id, never a path. Every check is in `TeamsIpcOps` (unit tested without Electron). The ops are created when first
  * asked, so a simulator run (which refuses these channels before this code) never opens the profile's store.
  * `teams:markMine` takes the rest arguments only to refuse them: the call can change nothing but that one mark.
  */
 import { fromAppFrame as fromApp, ipcHandle } from '../ipcguard';
-import type { TeamsOps } from '../teamsipc';
+import type { TeamsIpcOps } from '../teamsipc';
 
 export interface TeamsIpcDeps {
-  getOps(): TeamsOps | undefined;
+  getOps(): TeamsIpcOps | undefined;
 }
 
 const NO = { ok: false as const, code: 'invalid' as const, errors: ['Team templates are not available.'], blocked: false };
