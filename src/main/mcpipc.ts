@@ -118,7 +118,7 @@ export function registerMcpIpc(deps: {
     checkFreshMs?: number;
     checkTimeoutMs?: number;
   };
-}): { optionsFor(agentId: string): { mcpServers: Record<string, McpServerSpec>; disabledMcpServers: string[]; disabledMcpTools?: Record<string, string[]> }; secretValuesFor(agentId: string): string[]; signInRefresh: McpSignInRefresher; hidesEvent(e: { type: string; requestId?: unknown }): boolean } {
+}): { optionsFor(agentId: string): { mcpServers: Record<string, McpServerSpec>; disabledMcpServers: string[]; disabledMcpTools?: Record<string, string[]> }; secretValuesFor(agentId: string): string[]; copilotValuesFor(agentId: string): string[]; signInRefresh: McpSignInRefresher; hidesEvent(e: { type: string; requestId?: unknown }): boolean } {
   const { agents, router, dev } = deps;
   const store = deps.store;
   /** Per agent id, this run only: servers the user switched off for that agent. */
@@ -158,12 +158,27 @@ export function registerMcpIpc(deps: {
     const copilot = keepCopilotValues(agentId, c);
     let rest: string[] = [];
     try {
-      // Spec 069 FR-009: the user list's values too (all of them, also one a folder extra shadows: masking more is safe).
-      if (c) rest = mcpSecretValues(deps.globalFor?.(agentId), store().forSession(keyOf(a), off.get(agentId) ?? [], c.servers.map((x) => x.name)).mcpServers);
+      // Spec 069 FR-009: the user list's values too (all of them, also one a folder extra shadows: masking more is safe). FR-070 (second
+      // review of #1650): asked also when the Copilot read failed, with no reserved names then (an extra of a Copilot server's name counts too).
+      rest = mcpSecretValues(deps.globalFor?.(agentId), store().forSession(keyOf(a), off.get(agentId) ?? [], (c?.servers ?? []).map((x) => x.name)).mcpServers);
     } catch {
       rest = []; // store not ready or unreadable: the shape-based masking still runs, and the event is not lost
     }
     return [...new Set([...rest, ...copilot])].sort((x, y) => y.length - x.length);
+  };
+  /**
+   * FR-070 (second review of #1650): a Copilot agent's Copilot CLI list values on their own (the same read and per-agent keep as
+   * `secretValuesFor`), never the folder store, so it can never unlock the vault: for notes and search while the vault would prompt.
+   */
+  const copilotValuesFor = (agentId: string): string[] => {
+    if (!agents.has(agentId)) return [];
+    let c: ReturnType<typeof cliWithValues> | undefined;
+    try {
+      c = cliWithValues();
+    } catch {
+      c = undefined; // the values kept from earlier reads still count
+    }
+    return keepCopilotValues(agentId, c).sort((x, y) => y.length - x.length);
   };
   /** Spec 058 FR-092: per session, when each server's state started and whether a failure came after Running (dropped when it stops). */
   const health = new Map<string, Map<string, McpHealthMark>>();
@@ -594,6 +609,7 @@ export function registerMcpIpc(deps: {
 
   return {
     secretValuesFor,
+    copilotValuesFor,
     signInRefresh: refresher,
     /** Spec 058 FR-215: an elicitation main declined during an automatic reconnect is not passed to the window. */
     hidesEvent(e) {

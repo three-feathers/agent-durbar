@@ -18,21 +18,79 @@ export function mcpSecretValues(...lists: (Readonly<Record<string, McpServerSpec
   return [...out].sort((a, b) => b.length - a.length);
 }
 
-/**
- * Spec 069 FR-070 (review of #1650): a value of the Copilot CLI list that is a plain setting, not a secret, so it does not join the mask
- * list (a plain substring replace would turn that word into `[redacted]` everywhere): a number or dotted version of up to 15 digits, one
- * word of up to 16 letters in one case (`true`, `info`, `DEBUG`, `Production`), a media type (`application/json`). Used for
- * that list only; the folder extras and Claude Code's list keep every value of 4+ characters.
- */
-export function plainSettingValue(v: string): boolean {
-  return (/^[+-]?\d+(?:\.\d+)*$/.test(v) && v.replace(/\D/g, '').length <= 15)
-    || /^(?:[a-z]{1,16}|[A-Z]{1,16}|[A-Z][a-z]{1,15})$/.test(v)
-    || /^[a-z]{1,20}\/[a-z0-9][a-z0-9.+-]{0,60}$/.test(v);
+/** Spec 069 FR-070: words that cannot be a secret, left out under any name (`AUTH_ENABLED: true` stays readable). */
+const NEVER_SECRET = /^(?:true|false|none|null)$/i;
+/** FR-070 (second review of #1650): a media type with a registered top-level type only (`admin/s3cr3t-passw0rd` is not one). */
+const MEDIA_TYPE = /^(?:application|audio|font|haptics|image|message|model|multipart|text|video)\/[a-z0-9][a-z0-9.+-]{0,60}$/;
+/** FR-070: a cloud region (`us-east-1`, `ap-southeast-2`, `us-gov-west-1`). */
+const REGION = /^[a-z]{2,4}(?:-[a-z]{2,12}){1,2}-\d{1,2}$/;
+const URL_SEGMENT = /^[A-Za-z0-9._~-]{0,40}$/;
+const PATH_SEGMENT = /^[A-Za-z0-9._~ -]{0,40}$/;
+/** A host label or path segment that looks like a key: upper case, lower case and digits together, or letters and digits in 16+ characters. */
+function tokenLike(seg: string): boolean {
+  const digit = /\d/.test(seg);
+  return (digit && /[A-Z]/.test(seg) && /[a-z]/.test(seg)) || (digit && seg.length >= 16 && /[A-Za-z]/.test(seg));
+}
+const plainSegments = (segs: readonly string[], shape: RegExp): boolean => segs.every((x) => shape.test(x) && !tokenLike(x));
+/** `localhost`, or a dotted host name or IPv4 address, each label plain. */
+const plainHost = (h: string): boolean => (h.toLowerCase() === 'localhost' || /^[A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63})+$/.test(h)) && plainSegments(h.split('.'), URL_SEGMENT);
+/** An http(s) URL with no user-info, query or fragment, a plain host (optional port) and plain path segments. */
+function plainUrl(v: string): boolean {
+  const m = /^https?:\/\/([^/?#@\s:]+)(?::\d{1,5})?(\/[^?#@\s]*)?$/i.exec(v);
+  return !!m && plainHost(m[1]) && plainSegments((m[2] ?? '').split('/'), URL_SEGMENT);
+}
+/** `localhost:3000`, `db.internal:5432` (a one-word host like `admin:12345` is not one: it reads as a user and a PIN). */
+function plainHostPort(v: string): boolean {
+  const m = /^([^:\s]+):\d{1,5}$/.exec(v);
+  return !!m && plainHost(m[1]);
+}
+/** An absolute path (`/usr/local/bin`, `C:\Program Files\nodejs`, `~/bin`) with plain segments. */
+function plainPath(v: string): boolean {
+  const m = /^(?:\/|~[\\/]|[A-Za-z]:[\\/])(.*)$/.exec(v);
+  return !!m && plainSegments(m[1].split(/[\\/]/), PATH_SEGMENT);
 }
 
-/** Spec 069 FR-070: the mask values of the Copilot CLI list's env and header maps (4+ characters, plain setting values left out). */
+/**
+ * Spec 069 FR-070 (reviews of #1650): a value of the Copilot CLI list that is a plain setting, not a secret, so under a name with no
+ * secret word it does not join the mask list (a plain substring replace would turn it into `[redacted]` everywhere): a number or dotted
+ * version of up to 15 digits, one word of up to 16 letters in one case (`true`, `info`, `DEBUG`, `Production`), a media type of a
+ * registered top-level type (`application/json`), a plain http(s) URL, a `host:port`, an absolute path, a region (`us-east-1`). Value
+ * only: `copilotListValues` applies it only when the name is not secret-looking.
+ */
+export function plainSettingValue(v: string): boolean {
+  if (v.length > 256) return false;
+  return (/^[+-]?\d+(?:\.\d+)*$/.test(v) && v.replace(/\D/g, '').length <= 15)
+    || /^(?:[a-z]{1,16}|[A-Z]{1,16}|[A-Z][a-z]{1,15})$/.test(v)
+    || MEDIA_TYPE.test(v)
+    || plainUrl(v)
+    || plainHostPort(v)
+    || plainPath(v)
+    || REGION.test(v);
+}
+
+/**
+ * FR-070: an env or header name whose value is always masked: `secretFlag` (`SMTP_PASSWORD`, `X-Api-Key`, `Authorization`, `Cookie`),
+ * or the word `pin` or `otp` (`PIN_CODE`), which `secretFlag` does not know; this list only, so `secretFlag` itself is unchanged.
+ */
+export function secretSettingName(name: string): boolean {
+  if (secretFlag(name)) return true;
+  const words = String(name ?? '').slice(0, 256).replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().split(/[\s\-_.]+/);
+  return words.some((w) => w === 'pin' || w === 'otp');
+}
+
+/**
+ * Spec 069 FR-070: the mask values of the Copilot CLI list's env and header maps, longest first: 4+ characters (`mcpSecretValues`' rule),
+ * never `true`/`false`/`none`/`null`, and a plain setting value only under a secret-looking name.
+ */
 export function copilotListValues(maps: readonly Pick<McpServerSpec, 'env' | 'headers'>[]): string[] {
-  return mcpSecretValues(Object.fromEntries(maps.map((m, i) => [String(i), m]))).filter((v) => !plainSettingValue(v));
+  const out = new Set<string>();
+  for (const m of maps) {
+    for (const [k, v] of [...Object.entries(m.env ?? {}), ...Object.entries(m.headers ?? {})]) {
+      if (typeof v !== 'string' || v.length < 4 || NEVER_SECRET.test(v)) continue;
+      if (secretSettingName(k) || !plainSettingValue(v)) out.add(v);
+    }
+  }
+  return [...out].sort((a, b) => b.length - a.length);
 }
 
 /** `--token value`, `--api-key=value` and `API_KEY=value` in free text (a failed spawn message can quote the command line). */

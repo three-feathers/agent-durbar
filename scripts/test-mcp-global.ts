@@ -10,7 +10,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { stripTomlComment, tomlStringArray, tomlUnquote } from '../src/main/codextoml';
 import { readCodexMcpToml } from '../src/main/foldersetup';
-import { mcpSecretValues } from '../src/main/mcpmask';
+import { copilotListValues, maskMcpError, mcpSecretValues, plainSettingValue, secretSettingName } from '../src/main/mcpmask';
+import { secretFlag } from '../src/shared/redact';
 import { addToText, claudeOffKey, codexBlock, differences, mergeSessionServers, neededVars, neutralFrom, uncopyable, globalFiles, headerVar, jsonEntry, MASK, offOf, previewText, readGlobal, removeFromText, sourcesFor, textHash, tomlStr } from '../src/main/mcpglobal';
 import { backupAndWrite, COPILOT_REF_NOTE, GlobalLists, KEEP_BACKUPS, ownerOnlyMode, pruneBackups, readFileSafe, sessionGlobalFor, TOKEN_MS, writeTarget } from '../src/main/mcpglobalio';
 import type { AgentInfo } from '../src/shared/api';
@@ -742,6 +743,13 @@ ok('FR-070 (issue #1639): the Copilot CLI list\'s header and env values mask a C
     const PASS = 'correct-horse-battery-staple'; // lowercase words with hyphens: not a plain setting value, kept
     const PLAIN = ['true', 'production', '1234', 'application/json', 'DEBUG', 'Info'];
     const ROTATED = 'rotatedvalue-not-a-token-shape-9012';
+    const SMTP = 'qwhzmtrbvkpdlsfn'; // 16 lower-case letters (~75 bits) under a secret name: masked (second review of #1650)
+    const W17 = 'abcdefghijklmnopq'; // one word of 17 letters: over the 16-letter cap, masked
+    const W16 = 'abcdefghijklmnop'; // 16 letters: a plain word, left out
+    const N16 = '1234567890123456'; // 16 digits: over the 15-digit cap, masked
+    const N15 = '123456789012345'; // 15 digits: a plain number, left out
+    const SUB = 'not-a-token-shape'; // a Claude-list value inside the Copilot values: the final longest-first sort must mask the longer one first
+    const FOLDERV = 'folder-extra-value-not-a-shape-3344';
     for (const v of [HDR, ENV]) assert.strictEqual(redact(`server said ${v}`), `server said ${v}`, `precondition: the shape rules alone leave ${v} (so the test needs the value list)`);
     const d = tmp();
     const cop = path.join(d, 'copilot');
@@ -752,7 +760,7 @@ ok('FR-070 (issue #1639): the Copilot CLI list\'s header and env values mask a C
       JSON.stringify({
         mcpServers: {
           remote: { type: 'http', url: 'https://mcp.example.com/mcp', headers: { 'X-Thing': hdr, Accept: 'application/json' } },
-          local: { type: 'local', command: 'node', args: ['s.js'], env: { THING: ENV, TINY: SHORT, FOURS: FOUR, PASS, DEBUG: 'true', NODE_ENV: 'production', PORT: '1234', LEVEL: 'DEBUG', LOG: 'Info' } },
+          local: { type: 'local', command: 'node', args: ['s.js'], env: { THING: ENV, TINY: SHORT, FOURS: FOUR, PHRASE: PASS, DEBUG: 'true', NODE_ENV: 'production', PORT: '1234', LEVEL: 'DEBUG', LOG: 'Info', SMTP_PASSWORD: SMTP, WORD17: W17, WORD16: W16, NUM16: N16, NUM15: N15 } },
           offone: { type: 'http', url: 'https://off.example.com/mcp', headers: { 'X-Off': MCP } },
         },
       }),
@@ -762,21 +770,26 @@ ok('FR-070 (issue #1639): the Copilot CLI list\'s header and env values mask a C
     store.load();
     store.setAmbientDisabled('offone', true); // switched off in Settings: its values still mask (the runtime still has them in its file)
     const folder = path.join(d, 'proj');
+    const up = store.upsert(folder, { name: 'xtra', transport: 'stdio', command: 'node', args: ['x.js'], env: [{ key: 'XTRA', value: FOLDERV }], headers: [] });
+    assert.ok(up.ok, JSON.stringify(up));
+    store.setEnabled(folder, 'xtra', true, true);
     const agent = (id: string, adapterId: string): AgentInfo => ({ id, name: 'proj', cwd: folder, folders: [folder], permMode: 'read-only', adapterId }) as unknown as AgentInfo;
-    const agents = new Map<string, AgentInfo>([['p1', agent('p1', 'copilot')], ['c1', agent('c1', 'claude')], ['x1', agent('x1', 'codex')]]);
+    const agents = new Map<string, AgentInfo>([['p1', agent('p1', 'copilot')], ['c1', agent('c1', 'claude')], ['x1', agent('x1', 'codex')], ['u1', agent('u1', undefined as unknown as string)]]);
     let emit: (e: unknown) => void = () => undefined;
     let storeThrows = false;
+    let storeCalls = 0;
+    let cliThrows = false;
     const logs: string[] = [];
     const out: string[] = [];
     for (const k of Object.keys(consoleSaved) as (keyof typeof consoleSaved)[]) console[k] = (...a: unknown[]) => { out.push(a.map(String).join(' ')); };
     handlers.clear();
     const mcp = registerMcpIpc({
-      store: () => { if (storeThrows) throw new Error('store not ready'); return store; },
+      store: () => { storeCalls++; if (storeThrows) throw new Error('store not ready'); return store; },
       agents,
       router: { onEvent: (fn: (e: unknown) => void) => { emit = fn; }, forAgent: () => undefined } as never,
-      dev: { DURBAR_COPILOT_DIR: cop } as never,
+      dev: { get DURBAR_COPILOT_DIR() { if (cliThrows) throw new Error('copilot read failed'); return cop; } } as never,
       appOf: (id) => agents.get(id)?.adapterId,
-      globalFor: () => ({}),
+      globalFor: () => ({ g: { type: 'stdio', command: 'x', env: { G: SUB } } }),
       log: (_a, action) => { logs.push(action); },
     });
     // One read of the file per call (the names and the values come from the same read).
@@ -792,7 +805,17 @@ ok('FR-070 (issue #1639): the Copilot CLI list\'s header and env values mask a C
     assert.ok(!vals.includes(SHORT), 'FR-070 min length: a value under 4 characters is skipped (mcpSecretValues rule, also for the Copilot list)');
     assert.ok(vals.includes(PASS), 'FR-070 plain kept: lowercase words joined by hyphens are not a plain setting value');
     for (const v of PLAIN) assert.ok(!vals.includes(v), `FR-070 plain: the plain setting value ${v} is not in the mask list`);
+    assert.ok(vals.includes(SMTP), 'FR-070 name: a 16-letter value under SMTP_PASSWORD is in the mask list');
+    assert.ok(vals.includes(W17), 'FR-070 cap letters: a 17-letter word is in the mask list');
+    assert.ok(!vals.includes(W16), 'FR-070 cap letters: a 16-letter word is a plain setting value');
+    assert.ok(vals.includes(N16), 'FR-070 cap digits: a 16-digit number is in the mask list');
+    assert.ok(!vals.includes(N15), 'FR-070 cap digits: a 15-digit number is a plain setting value');
+    assert.ok(vals.includes(SUB) && vals.includes(FOLDERV), 'precondition: the Claude-list and folder values are in the list');
     assert.ok([...vals].every((v, i, a) => i === 0 || a[i - 1].length >= v.length), 'FR-070 order: longest first');
+    assert.strictEqual(maskMcpError(`echo ${HDR} end`, vals), 'echo [redacted] end', 'FR-070 sort: a Claude-list value inside a Copilot value leaves one [redacted], no part of the longer value');
+    // An agent whose app is unknown is masked with them too (fail closed).
+    const u = mcp.secretValuesFor('u1');
+    assert.ok(u.includes(HDR) && u.includes(ENV), `FR-070 scope unknown: an agent of unknown app gets the Copilot-list values: ${u.length}`);
     // A Claude or Codex agent's servers were never given these values: their text is not masked with them.
     for (const id of ['c1', 'x1']) {
       const o = mcp.secretValuesFor(id);
@@ -835,6 +858,22 @@ ok('FR-070 (issue #1639): the Copilot CLI list\'s header and env values mask a C
     const noStore = mcp.secretValuesFor('p1');
     storeThrows = false;
     assert.ok(noStore.includes(ROTATED) && noStore.includes(ENV), `FR-070 store: a throwing folder store keeps the Copilot values: ${noStore.length}`);
+    // The other way: a throwing Copilot read keeps the folder extras and Claude's list (and the Copilot values kept from earlier reads).
+    cliThrows = true;
+    let noCli: string[] = [];
+    try { noCli = mcp.secretValuesFor('p1'); } finally { cliThrows = false; }
+    assert.ok(noCli.includes(FOLDERV), `FR-070 cli: a throwing Copilot read keeps the folder extra's value: ${noCli.length}`);
+    assert.ok(noCli.includes(SUB), `FR-070 cli: a throwing Copilot read keeps Claude's list value: ${noCli.length}`);
+    assert.ok(noCli.includes(ROTATED), 'FR-070 cli: a throwing Copilot read keeps the values read before');
+    // Notes and search with a locked vault: copilotValuesFor gives the Copilot-list values and never asks the folder store.
+    storeCalls = 0;
+    const cv = mcp.copilotValuesFor('p1');
+    assert.ok(cv.includes(ROTATED) && cv.includes(ENV) && cv.includes(SMTP), `FR-070 vault-free: copilotValuesFor gives the Copilot-list values: ${cv.length}`);
+    assert.strictEqual(storeCalls, 0, 'FR-070 vault-free: copilotValuesFor never asks the folder store (which could unlock the vault)');
+    assert.ok(!cv.includes(FOLDERV) && !cv.includes(SUB), 'FR-070 vault-free: copilotValuesFor gives the Copilot list only');
+    assert.ok(cv.every((v, i, a) => i === 0 || a[i - 1].length >= v.length), 'FR-070 vault-free: longest first');
+    assert.deepStrictEqual(mcp.copilotValuesFor('c1'), [], 'FR-070 vault-free: a Claude agent gets no Copilot-list value');
+    assert.deepStrictEqual(mcp.copilotValuesFor('nobody'), [], 'FR-070 vault-free: an unknown agent id gets nothing');
     // Session start (optionsFor) keeps the values a fresh agent starts with, though no mask call ran before the file changed.
     agents.set('p2', agent('p2', 'copilot'));
     mcp.optionsFor('p2');
@@ -842,13 +881,53 @@ ok('FR-070 (issue #1639): the Copilot CLI list\'s header and env values mask a C
     assert.ok(mcp.secretValuesFor('p2').includes(ROTATED), 'FR-070 start: the value p2 started with stays after the file changed');
     // No value in a log line: the injected activity log and the console saw none.
     const seen = [...logs, ...out].join('\n');
-    for (const v of [HDR, ENV, MCP, ROTATED]) assert.ok(!seen.includes(v), 'FR-070 log: no Copilot-list value in a log line');
+    for (const v of [HDR, ENV, MCP, ROTATED, SMTP]) assert.ok(!seen.includes(v), 'FR-070 log: no Copilot-list value in a log line');
   } finally {
     realFs.readFileSync = realRead;
     Object.assign(console, consoleSaved);
     if (saved) require.cache[electronPath] = saved;
     else delete require.cache[electronPath];
   }
+});
+
+ok('FR-070 (second review of #1650): the Copilot list\'s name and value rules, both ways', () => {
+  // The names: secretFlag already classifies these (the rule is reused, not copied); pin and otp are this list's own additions.
+  for (const n of ['SMTP_PASSWORD', 'DB_PASS', 'GITHUB_TOKEN', 'X-Api-Key', 'Authorization', 'Cookie']) assert.ok(secretFlag(n) && secretSettingName(n), `FR-070 names: ${n} is secret-looking`);
+  for (const n of ['NODE_ENV', 'LOG_LEVEL', 'PORT', 'Accept', 'Content-Type', 'API_URL', 'AWS_REGION', 'BIN', 'HOST', 'SPINNER', 'PINNED']) assert.ok(!secretSettingName(n), `FR-070 names: ${n} is not secret-looking`);
+  assert.ok(!secretFlag('PIN_CODE') && secretSettingName('PIN_CODE'), 'FR-070 names pin: PIN_CODE is secret-looking here (secretFlag does not know pin)');
+  assert.ok(secretSettingName('smtpOtp'), 'FR-070 names otp: smtpOtp is secret-looking (camelCase word otp)');
+  const list = (env: Record<string, string>, headers: Record<string, string> = {}): string[] => copilotListValues([{ env, headers }]);
+  // Secret-looking names: every plain form is masked (Paco's probes), except the never-secret words.
+  const secretCases: [string, string][] = [
+    ['SMTP_PASSWORD', 'qwhzmtrbvkpdlsfn'], ['SMTP_PASSWORD', 'QWHZMTRBVKPDLSFN'], ['SMTP_PASSWORD', 'Qwhzmtrbvkpdlsfn'], ['PIN_CODE', '482913'],
+    ['DB_PASS', 'https://api.github.com'], ['DB_PASS', 'us-east-1'], ['DB_PASS', '/usr/local/bin'], ['DB_PASS', 'localhost:3000'], ['DB_PASS', 'application/json'], ['DB_PASS', 'production'],
+  ];
+  for (const [k, v] of secretCases) assert.deepStrictEqual(list({ [k]: v }), [v], `FR-070 name rule: ${k}=${v} is masked`);
+  assert.deepStrictEqual(list({}, { 'X-Api-Key': 'admin/s3cr3t-passw0rd' }), ['admin/s3cr3t-passw0rd'], 'FR-070 name rule: an X-Api-Key header admin/... is masked');
+  for (const v of ['true', 'FALSE', 'None', 'null']) assert.deepStrictEqual(list({ AUTH_ENABLED: v }), [], `FR-070 never secret: AUTH_ENABLED=${v} is left out`);
+  // Non-secret names: the plain forms are left out.
+  const plainCases: [string, string][] = [
+    ['NODE_ENV', 'production'], ['DEBUG', 'true'], ['PORT', '1234'], ['API_URL', 'https://api.github.com'], ['API_URL', 'https://api.example.com:8443/v2/repos/'],
+    ['AWS_REGION', 'us-east-1'], ['AWS_REGION', 'ap-southeast-2'], ['AWS_REGION', 'us-gov-west-1'], ['BIN', '/usr/local/bin'], ['BIN', 'C:\\Program Files\\nodejs'], ['BIN', '~/bin'],
+    ['HOST', 'localhost:3000'], ['HOST', 'db.internal:5432'], ['HOST', '127.0.0.1'],
+  ];
+  for (const [k, v] of plainCases) assert.deepStrictEqual(list({ [k]: v }), [], `FR-070 plain: ${k}=${v} is left out`);
+  assert.deepStrictEqual(list({}, { Accept: 'application/json' }), [], 'FR-070 plain: Accept: application/json is left out');
+  assert.deepStrictEqual(list({}, { Accept: 'text/event-stream' }), [], 'FR-070 plain: Accept: text/event-stream is left out');
+  // Non-secret names: forms that are not plain stay masked (no secret under an innocent name loses more than it must).
+  const keptCases: [string, string][] = [
+    ['CONFIG', 'admin/s3cr3t-passw0rd'], // not a registered media type
+    ['HOST', 'admin:12345'], // a one-word host with a port reads as a user and a PIN
+    ['API_URL', 'https://user:pw@api.example.com'], ['API_URL', 'https://api.example.com/x?key=abc'], ['API_URL', 'https://api.example.com/#frag'], // user-info, query, fragment
+    ['API_URL', 'https://hooks.example.com/T0AB12CD/aB3dE5fG7hJ9kL1m'], // a mixed path segment (upper, lower, digits)
+    ['API_URL', 'https://hooks.example.com/services/ab12cd34ef56gh78ij90'], // letters and digits in 16+ characters
+    ['API_URL', 'https://intranet/x'], // a one-label host
+    ['BIN', '/Hk3j9aBc2Lm8Qp4Rs6Tu'], ['BIN', '/opt/' + 'a'.repeat(41)], // a token-like or too long path segment
+    ['ZONE', 'us-east'], // no number: not a region
+  ];
+  for (const [k, v] of keptCases) assert.deepStrictEqual(list({ [k]: v }), [v], `FR-070 kept: ${k}=${v} is masked`);
+  assert.ok(!plainSettingValue('/ab'.repeat(90)), 'FR-070 length: a value over 256 characters is never plain (here a path of short segments)');
+  assert.ok(plainSettingValue('/a/b'), 'control: a short path is plain');
 });
 
 // ---------------------------------------------------------------- review on #492 (spec 069 change 2026-10-22)

@@ -7,7 +7,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { maskNoteText } from '../src/shared/redact';
-import { HIDDEN_RUN_WORK, MASK_CALL_WORK, MaskBudgetError, WINDOW_CHARS, cleanValues, createMasker, maskWork, scanSecretValues } from '../src/main/convmask';
+import { HIDDEN_RUN_WORK, MASK_CALL_WORK, MaskBudgetError, WINDOW_CHARS, cleanValues, createMasker, maskWork, scanSecretValues, sessionMaskValues } from '../src/main/convmask';
 import { rendererScript } from '../src/main/convsearch';
 
 process.exitCode = 1;
@@ -303,6 +303,21 @@ assert.throws(() => M.maskText('already [redaction failed] here', []), 'a failed
   assert.ok(!calls.some((c) => c.startsWith('session:')));
   assert.throws(() => scanSecretValues({ ...src(true), knownSecretValues: () => { throw new Error('store'); } }, { folderKey: 'F', open: false }), 'a failing store throws (the scan then searches nothing of it)');
   assert.deepStrictEqual(cleanValues(['abcd', 'abcd', 7, 'xyz', 'longer-one']), ['longer-one', 'abcd']);
+  // Spec 069 FR-070 (second review of #1650): with a locked vault the Copilot CLI list values still come (they never need the vault).
+  calls.length = 0;
+  const withCopilot = (noPrompt: boolean) => ({ ...src(noPrompt), copilotValuesFor: (id: string) => { calls.push(`copilot:${id}`); return ['copilot-list-value-333', 'xy']; } });
+  assert.deepStrictEqual(scanSecretValues(withCopilot(false), { folderKey: 'F', agentId: 'a1', open: true }), ['copilot-list-value-333', 'folder-value-1'], 'FR-070 search locked: the Copilot-list values join the folder values');
+  assert.ok(!calls.some((c) => c.startsWith('session:')), 'FR-070 search locked: secretValuesFor is still never called while it could prompt');
+  calls.length = 0;
+  assert.deepStrictEqual(scanSecretValues(withCopilot(false), { folderKey: 'F', agentId: 'a1', open: false }), ['folder-value-1'], 'FR-070 search past session: no Copilot-list values (no agent to key on)');
+  assert.ok(!calls.some((c) => c.startsWith('copilot:')));
+  calls.length = 0;
+  assert.deepStrictEqual(sessionMaskValues(withCopilot(false), 'a1'), ['copilot-list-value-333'], 'FR-070 notes locked: sessionMaskValues gives the Copilot-list values');
+  assert.deepStrictEqual(calls, ['noPrompt', 'copilot:a1'], 'FR-070 notes locked: secretValuesFor is never called while it could prompt');
+  calls.length = 0;
+  assert.deepStrictEqual(sessionMaskValues(withCopilot(true), 'a1'), ['session-value-22'], 'FR-070 notes open vault: all session values (secretValuesFor already holds the Copilot list)');
+  assert.deepStrictEqual(calls, ['noPrompt', 'session:a1']);
+  assert.deepStrictEqual(sessionMaskValues(src(false), 'a1'), [], 'a source without copilotValuesFor: nothing while locked');
 }
 
 console.log('convmask tests passed');

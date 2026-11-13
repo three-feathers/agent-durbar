@@ -33,7 +33,7 @@ import { register as registerConvSearchIpc } from './ipc/convsearch';
 import { buildScope } from './convscope';
 import { createReadGate, rendererScript } from './convsearch';
 import type { SessionSearchApi } from './convsearch';
-import { createMasker } from './convmask';
+import { createMasker, sessionMaskValues } from './convmask';
 import { register as registerProfilesIpc } from './ipc/profiles';
 import { createProfileFreshness } from './profilefiles';
 import { register as registerSlashIpc } from './ipc/slash';
@@ -841,7 +841,7 @@ const convSearch = registerConvSearchIpc({
   scope: (stop, codexLists) => buildScope({
     agents, router, store: folderStore, wsKey, resumeIdFor, appName: (id) => registry.get(id)?.displayName ?? id, vsUserDirs: () => vsUserDirsOf(dev),
     rememberChat: (agentId, ref) => { const m = vsChatRefs.get(agentId) ?? new Map<string, ChatFileRef>(); m.set(ref.summary.key, ref); vsChatRefs.set(agentId, m); }, // FR-012: View opens it
-    values: { knownSecretValues: (key) => mcpStore?.knownSecretValues(key) ?? [], noPrompt: () => !mcpStore || mcpStore.noPrompt(), secretValuesFor: (id) => mcp.secretValuesFor(id) },
+    values: { knownSecretValues: (key) => mcpStore?.knownSecretValues(key) ?? [], noPrompt: () => !mcpStore || mcpStore.noPrompt(), secretValuesFor: (id) => mcp.secretValuesFor(id), copilotValuesFor: (id) => mcp.copilotValuesFor(id) },
     gate: convGate, codexLists, listings: convListings, // FR-026: the box session's Codex titles, memory only
   }, stop),
   matcher: () => (convMatcher ??= { masker: createMasker({ unhide: (s) => rendererScript<{ unhide(s: string): string }>('safetext.js').unhide(s) }), search: rendererScript<SessionSearchApi>('sessionsearch.js') }),
@@ -1125,7 +1125,7 @@ app.whenReady().then(() => {
   notesOps = new NotesOps({
     agents, store: () => notesStore, resumeIdFor, adapterIdOf: (id) => router.adapterIdOf(id),
     folderValues: (key) => mcpStore?.knownSecretValues(key) ?? [], // FR-005: never decrypts, so no keychain prompt from a notes save
-    sessionValues: (id) => (mcpStore?.noPrompt() ? mcp.secretValuesFor(id) : []), // forSession could unlock the vault: only when it cannot
+    sessionValues: (id) => sessionMaskValues({ noPrompt: () => mcpStore?.noPrompt() === true, secretValuesFor: (x) => mcp.secretValuesFor(x), copilotValuesFor: (x) => mcp.copilotValuesFor(x) }, id), // forSession could unlock the vault: only when it cannot; else the Copilot-list values alone (spec 069 FR-070)
     // FR-050..FR-055 (T041, T042): the .durbar/notes/notes.md mirror, only for a folder whose switch (`notesProject` in folders.json) is on
     file: () => notesFile, fileOn: (key) => !!folderStore?.get(key)?.notesProject, fileGit: (key) => folderStore?.get(key)?.notesProject === 'git', setFileOn: (key, on, git) => folderStore?.setNotesFile(key, on, git) === true,
     ignoreOwn: (key) => folderStore?.get(key)?.notesIgnoreOwn, setIgnoreOwn: (key, id) => folderStore?.setNotesIgnoreOwn(key, id) === true,
