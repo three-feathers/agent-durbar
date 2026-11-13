@@ -569,7 +569,7 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
         `-` and one or two digits: `us-east-1`, `eu-west-3`, `ap-southeast-2`, `cn-north-1`, `us-gov-west-1`; not a passphrase shape
         like `bad-staple-horse-7`).
       - **A URL is plain only when every path segment and the left-most host label is a plain word** (third review of #1650):
-        lower-case words of up to 16 letters joined by `-`, `_` or `.` (`repos`, `well-known`), `v` and up to 3 digits (`v3`), or
+        lower-case words of up to 16 letters joined by `-`, `_` or `.`, with an optional leading `.` (`repos`, `.well-known`), `v` and up to 3 digits (`v3`), or
         up to 6 digits; an empty segment (a trailing `/`) is fine. Upper case, letters mixed with digits, or a longer digit run masks
         the whole URL (`https://hooks.zapier.com/hooks/catch/1234567/abc9xyz/`, `https://example.com/hook/3f9a1c2b7d`,
         `https://abc123.ngrok.io`, `/repos/Owner/Repo`: over-masking accepted). The left-most host label of a `host:port` value
