@@ -934,6 +934,7 @@ ok('FR-070 (second review of #1650): the Copilot list\'s name and value rules, b
     assert.deepStrictEqual(list({ [n]: 'https://api.github.com' }), ['https://api.github.com'], `FR-070 names hook: any URL under ${n} is masked`);
   }
   for (const n of ['SEEDING', 'SALTY', 'HOOKUP', 'DSNX']) assert.ok(!secretSettingName(n), `FR-070 names hook: ${n} is not secret-looking (whole words only)`);
+  for (const n of ['WEBHOOKURL', 'SLACKWEBHOOKURL']) assert.ok(secretSettingName(n), `FR-070 names inside: ${n} is secret-looking (webhook inside a word)`);
   for (const n of ['SENTRYDSN', 'SLACKHOOK', 'HOOKS_URL', 'ZapierHooks', 'x-hooks']) assert.ok(secretSettingName(n), `FR-070 names ending: ${n} is secret-looking (a word ending in hook, hooks or dsn)`);
   for (const n of ['HOOKUP', 'HOOKED', 'SPINNER', 'SEEDING', 'SEEDS', 'SALTED', 'NOTIFY_URL', 'DSNAME']) assert.ok(!secretSettingName(n), `FR-070 names ending: ${n} is not secret-looking`);
   const capCases: [string, string][] = [
