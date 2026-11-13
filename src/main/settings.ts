@@ -91,6 +91,19 @@ export class SettingsStore {
   }
 
   /** Spec 080 FR-025d (Q2): the session browser's one-time note was accepted. */
+  /** Spec 102 FR-266 (T227): true from the save that moved a Retro Pixel theme until `ackRetroMove`; T230's renderer half reads it, also after a crash. */
+  get retroMovePending(): boolean {
+    return this.s.retroMovePending === true;
+  }
+
+  /** The renderer half has applied the move: clears the marker (it stays when the file cannot be written, so the next run asks again). */
+  ackRetroMove(): void {
+    if (this.s.retroMovePending !== true) return;
+    const next: AppSettings = { ...this.s };
+    delete next.retroMovePending;
+    this.commit(next);
+  }
+
   get browserNoteAccepted(): boolean {
     return this.s.browserNoteAccepted === true;
   }

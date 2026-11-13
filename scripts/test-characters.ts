@@ -134,10 +134,10 @@ assert.strictEqual(RETRO_MIGRATION_OPEN, false, 'T227: the migration is closed u
   const CREW = require(path.join(ROOT, 'src', 'renderer', 'crew.js'));
   assert.strictEqual(CREW.WORLD_FLAGS.retro, RETRO_MIGRATION_OPEN, 'T227: the two copies of the retro flag agree');
 }
-assert.deepStrictEqual(migrateRetroTheme({ theme: 'retro' }, true), { settings: { characters: PIXEL_CHARACTERS }, changed: true }, 'T227: theme to pixel, theme gone');
+assert.deepStrictEqual(migrateRetroTheme({ theme: 'retro' }, true), { settings: { characters: PIXEL_CHARACTERS, retroMovePending: true }, changed: true }, 'T227: theme to pixel, theme gone, the marker set');
 for (const c of CHARACTER_CHOICES.filter((v) => v !== 'theme')) {
-  const once = migrateRetroTheme({ theme: 'retro', characters: c, seriousMode: true } as { theme?: string; characters?: string }, true);
-  assert.deepStrictEqual(once, { settings: { characters: c, seriousMode: true }, changed: true }, `T227: an explicit ${c} is untouched (not overwritten)`);
+  const once = migrateRetroTheme({ theme: 'retro', characters: c, seriousMode: true } as { theme?: string; characters?: string; retroMovePending?: true }, true);
+  assert.deepStrictEqual(once, { settings: { characters: c, seriousMode: true, retroMovePending: true as const }, changed: true }, `T227: an explicit ${c} is untouched (not overwritten)`);
   const twice = migrateRetroTheme(once.settings, true);
   assert.deepStrictEqual(twice, { settings: once.settings, changed: false }, `T227: a repeat changes nothing for ${c}`);
 }
@@ -197,10 +197,23 @@ async function main(): Promise<void> {
       const rfile = path.join(dir, 'retro-settings.json');
       const body = (extra: Record<string, unknown>): string => JSON.stringify({ version: 1, theme: 'retro', seriousMode: true, ...extra });
       fs.writeFileSync(rfile, body({}));
-      const closed = new SettingsStore(rfile).load();
-      assert.strictEqual(closed.theme, 'retro', 'T227: flag closed, the stored theme stays');
-      assert.strictEqual(closed.characters, undefined, 'T227: flag closed, Characters stays unset');
-      assert.strictEqual(JSON.parse(fs.readFileSync(rfile, 'utf8')).theme, 'retro', 'T227: flag closed, the file is not written');
+      for (const odd of [body({}), body({ characters: 'rebels', future: { keep: 1 } }), '{"theme":"retro","__proto__":{"x":1}, "notes": "kept"}']) {
+        fs.writeFileSync(rfile, odd, { mode: 0o644 });
+        fs.chmodSync(rfile, 0o644);
+        fs.utimesSync(rfile, new Date(0), new Date(0));
+        const bytes = fs.readFileSync(rfile);
+        const ino = fs.statSync(rfile).ino;
+        const closed = new SettingsStore(rfile).load();
+        assert.strictEqual(closed.theme, 'retro', 'T227: flag closed, the stored theme stays');
+        assert.strictEqual(closed.retroMovePending, undefined, 'T227: flag closed, no marker');
+        const st = fs.statSync(rfile);
+        assert.strictEqual(st.mtimeMs, 0, 'T227: flag closed, the file is not written (mtime)');
+        assert.ok(fs.readFileSync(rfile).equals(bytes), 'T227: flag closed, the file bytes are the same');
+        assert.strictEqual(st.ino, ino, 'T227: flag closed, the file is not replaced (inode)');
+        if (process.platform !== 'win32') assert.strictEqual(st.mode & 0o777, 0o644, 'T227: flag closed, the mode is the same');
+        assert.deepStrictEqual(fs.readdirSync(path.dirname(rfile)).filter((n) => n.startsWith('retro-settings.json.')), [], 'T227: flag closed, no temp file');
+      }
+      fs.writeFileSync(rfile, body({}));
       for (const c of [undefined, ...CHARACTER_CHOICES.filter((v) => v !== 'theme')]) {
         fs.writeFileSync(rfile, body(c ? { characters: c } : {}));
         const open1 = new SettingsStore(rfile, undefined, true).load();
@@ -210,12 +223,25 @@ async function main(): Promise<void> {
         const disk = JSON.parse(fs.readFileSync(rfile, 'utf8'));
         assert.ok(!('theme' in disk), 'T227: written at once');
         assert.strictEqual(disk.characters, c ?? PIXEL_CHARACTERS, 'T227: the file holds the explicit choice, or pixel');
+        assert.strictEqual(disk.retroMovePending, true, 'T227: the marker is in the same save as the theme removal');
+        const again = new SettingsStore(rfile, undefined, true);
+        assert.strictEqual(again.load().retroMovePending, true, 'T227: the marker survives a restart (a crash before the renderer half)');
+        assert.strictEqual(again.retroMovePending, true);
         const text = fs.readFileSync(rfile, 'utf8');
         fs.utimesSync(rfile, new Date(0), new Date(0));
         new SettingsStore(rfile, undefined, true).load();
         assert.strictEqual(fs.statSync(rfile).mtimeMs, 0, 'T227: the second load writes nothing');
         assert.strictEqual(fs.readFileSync(rfile, 'utf8'), text, 'T227: and the file is the same');
+        const ack = new SettingsStore(rfile, undefined, true);
+        ack.load();
+        ack.ackRetroMove();
+        assert.strictEqual(ack.retroMovePending, false, 'T227: the acknowledgement clears the marker');
+        const after = JSON.parse(fs.readFileSync(rfile, 'utf8'));
+        assert.ok(!('retroMovePending' in after) && !('theme' in after) && after.characters === c, 'T227: cleared on disk, an explicit choice kept (an unset one reads back without pixel until T122 lists it: the reader drops it)');
+        assert.strictEqual(new SettingsStore(rfile, undefined, true).load().retroMovePending, undefined, 'T227: and it does not come back');
       }
+      assert.deepStrictEqual(parseSettings('{"retroMovePending":true}'), { retroMovePending: true }, 'T227: a reader keeps the marker');
+      for (const bad of ['"yes"', '1', 'false', 'null']) assert.deepStrictEqual(parseSettings(`{"retroMovePending":${bad}}`), {}, 'T227: only true counts: ' + bad);
       // malformed files read safely and write nothing
       for (const raw of ['', '{', 'null', '[]', '{"theme":42}', '{"theme":["retro"]}', '{"theme":"RETRO"}']) {
         fs.writeFileSync(rfile, raw);

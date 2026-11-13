@@ -52,10 +52,11 @@ export const PIXEL_CHARACTERS = 'pixel';
  * Removing the theme is the write that makes it run once: the result never holds `retro`, so a repeat changes nothing. `open` false
  * (the flag closed) changes nothing. Pure; reads and logs no value. `changed` says to write the file.
  */
-export function migrateRetroTheme<T extends { theme?: string; characters?: string }>(s: T, open: boolean): { settings: T; changed: boolean } {
+export function migrateRetroTheme<T extends { theme?: string; characters?: string; retroMovePending?: true }>(s: T, open: boolean): { settings: T; changed: boolean } {
   if (!open || s.theme !== 'retro') return { settings: s, changed: false };
   const next = { ...s };
   delete next.theme;
+  next.retroMovePending = true; // durable in the same save: the renderer half (T230) clears it once it has moved world, layout and light
   if (typeof s.characters !== 'string' || !s.characters) next.characters = PIXEL_CHARACTERS as T['characters'];
   return { settings: next, changed: true };
 }
