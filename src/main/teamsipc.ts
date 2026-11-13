@@ -57,7 +57,12 @@ export const MAX_TEMPLATE_KEYS = 32;
 export const MAX_MEMBER_KEYS = 64;
 export const MAX_VALUES = 5000;
 class TooLarge extends Error {}
-/** True when `o` has more than `max` own keys. A counting loop that stops at the limit (`Object.keys` would build the whole list first); a `for...in` also walks inherited enumerable keys, so only own ones count. */
+/**
+ * True when `o` has more than `max` own keys. The engine still lists all the keys of the object before `for...in` starts (measured here: about 1 s
+ * for 800,000 keys, the same as `Object.keys`; `[KNOWN GAP]` of spec 111, below the cost of the IPC clone of the same object), so this does NOT cut that
+ * listing short. What it saves: no array of keys is built and no copy of the object is kept, and the loop stops at the limit. Only own keys count
+ * (`for...in` also visits inherited enumerable ones).
+ */
 function moreKeysThan(o: object, max: number): boolean {
   let n = 0;
   for (const k in o) if (Object.prototype.hasOwnProperty.call(o, k) && ++n > max) return true;

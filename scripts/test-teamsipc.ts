@@ -34,8 +34,10 @@
  *  36 the value budget counted per array instead of in total                  -> bounds
  *  37, 38 the budget 5,001 / 4,999 (the 5,000 boundary is exact)               -> bounds
  *  39 primitives not counted in the budget                                   -> bounds
- *  EQUIVALENT (survives, on purpose): 40 the `len > b.left` refusal before an array's items are read (the loop would hit the budget after at most
- *  5,000 reads: the same answer, the check only saves those reads); 28 the second `members.length > 8` check, after the copy: the first check (before the copy) already
+ *  40 the `len > b.left` refusal before an array's items are read removed    -> bounds (a sparse `new Array(6000)` says "too large" with it, "send plain data" without)
+ *  41, 47 null / undefined not counted in the budget                          -> bounds
+ *  46 `moreKeysThan` without the own-key filter                              -> inheritedKeys
+ *  EQUIVALENT (survives, on purpose): 28 the second `members.length > 8` check, after the copy: the first check (before the copy) already
  *  refuses every list that is too long, and the copy keeps its length; the second is defence in depth only. Mutants were run on COPIES of the
  *  compiled JS (a throwaway runner under the scratchpad). The review of #1640 reported surviving mutants without naming them, so the ones above
  *  (format, id length, 10,000, members count, nesting) were rebuilt from the code's own limits.
@@ -409,6 +411,22 @@ section('bounds', () => {
   const withJunk = (n: number): Record<string, unknown> => ({ name: 'T', members: [mem('A')], junk: new Array(n).fill(0) });
   ok(ops.put(withJunk(4990)).ok, 'exactly 5,000 values pass');
   eq(errOf(ops.put(withJunk(4991))), 'Template: too large.', 'one more is refused');
+  // null and undefined take a unit too (an array of them must not escape the budget)
+  for (const [label, fillv] of [['null', null], ['undefined', undefined]] as [string, unknown][]) {
+    ok(ops.put({ name: 'T', members: [mem('A')], junk: new Array(4990).fill(fillv) }).ok, `4,990 ${label} items are exactly 5,000 values`);
+    eq(errOf(ops.put({ name: 'T', members: [mem('A')], junk: new Array(4991).fill(fillv) })), 'Template: too large.', `one more ${label} is refused`);
+  }
+  // small arrays each pass the per-array refusal, so only the total can stop them: 100 arrays of 60 are 6,100 values
+  for (const [label, fillv] of [['null', null], ['undefined', undefined]] as [string, unknown][]) {
+    eq(errOf(ops.put({ name: 'T', members: [mem('A')], junk: Array.from({ length: 100 }, () => new Array(60).fill(fillv)) })), 'Template: too large.', `100 arrays of 60 ${label}: over the total`);
+    eq(errOf(ops.put({ name: 'T', members: [mem('A')], junk: Array.from({ length: 90 }, () => Object.fromEntries(Array.from({ length: 60 }, (_, i) => ['k' + i, fillv]))) })), 'Template: too large.', `90 objects of 60 ${label} fields: over the total`);
+  }
+  const nulls = new Array(4000).fill(null);
+  const t1 = Date.now();
+  eq(errOf(ops.put({ name: 'T', members: [mem('A')], extra: Array.from({ length: 4000 }, () => nulls) })), 'Template: too large.', '4,000 arrays of 4,000 nulls: refused by the total');
+  ok(Date.now() - t1 < 1500, 'and quickly');
+  // a sparse array is judged by its length first (the budget), not by its first hole
+  eq(errOf(ops.put({ name: 'T', members: [mem('A')], junk: new Array(6000) })), 'Template: too large.', 'a sparse array of 6,000 is "too large"');
   // the budget is ONE for the whole copy, not one per array
   eq(errOf(ops.put({ name: 'T', members: [mem('A')], junk: Array.from({ length: 17 }, () => new Array(300).fill(0)) })), 'Template: too large.', '17 arrays of 300 (each far under the per-array cap) are over the total');
   // the cost: both cases of the second read, with invented data, refused in milliseconds
@@ -425,6 +443,18 @@ section('bounds', () => {
   eq(errOf(r2), 'Template: too large.', '9,999 arrays of 300: refused by the budget');
   console.log(`bounds: 800,000 keys refused in ${ms1} ms; 9,999 arrays of 300 refused in ${ms2} ms`);
   ok(ms1 < 8000 && ms2 < 1500, "both are refused, the second in milliseconds (the first is the engine listing 800,000 keys once: about a second here, below the IPC clone of the same object; generous limit)");
+});
+
+section('inheritedKeys', () => {
+  // a polluted Object.prototype (more than 32 enumerable inherited keys) must not make an honest put fail: only own keys count. Synchronous, cleaned in `finally`.
+  const { ops } = setup();
+  const names = Array.from({ length: 70 }, (_, i) => 'polluted' + i);
+  try {
+    for (const k of names) Object.defineProperty(Object.prototype, k, { value: 1, enumerable: true, configurable: true, writable: true });
+    const r = ops.put({ name: 'Honest', members: [mem('A')] });
+    ok(r.ok, 'an honest put is accepted with 70 inherited enumerable keys on Object.prototype: ' + text(r).slice(0, 80));
+  } finally { for (const k of names) delete (Object.prototype as unknown as Record<string, unknown>)[k]; }
+  ok(!('polluted0' in {}), 'Object.prototype is clean again');
 });
 
 section('handlersNeverThrow', () => {
