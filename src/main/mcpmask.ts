@@ -25,7 +25,9 @@ const MEDIA_TYPE = /^(?:application|audio|font|haptics|image|message|model|multi
 /** FR-070 (third review of #1650): a cloud region on its real prefixes and directions (`us-east-1`, `ap-southeast-2`, `us-gov-west-1`), not a passphrase shape. */
 const REGION = /^(?:us|eu|ap|sa|ca|me|af|il|mx|cn)(?:-gov|-iso[a-z]?)?-(?:north|south|east|west|central|northeast|northwest|southeast|southwest)-\d{1,2}$/;
 /** FR-070 (third review of #1650): a URL path segment or left-most host label that is a plain word: lower-case words, `v3`, up to 6 digits. */
-const PLAIN_WORD = /^(?:\.?[a-z]{1,16}(?:[-_.][a-z]{1,16})*|v\d{1,3}|\d{1,6})$/;
+const PLAIN_WORD = /^(?:\.?[a-z]{1,16}(?:[-_.][a-z]{1,16}){0,3}|v\d{1,3}|\d{1,6})$/;
+/** FR-070 (fourth review of #1650): `PLAIN_WORD` within the 40-character cap of a segment or label (a long letters-only chain is masked). */
+const plainWord = (x: string): boolean => x.length <= 40 && PLAIN_WORD.test(x);
 const URL_SEGMENT = /^[A-Za-z0-9._~-]{0,40}$/;
 const PATH_SEGMENT = /^[A-Za-z0-9._~ -]{0,40}$/;
 /** A host label or path segment that looks like a key: upper case, lower case and digits together, or letters and digits in 16+ characters. */
@@ -36,11 +38,11 @@ function tokenLike(seg: string): boolean {
 const plainSegments = (segs: readonly string[], shape: RegExp): boolean => segs.every((x) => shape.test(x) && !tokenLike(x));
 /** `localhost`, or a dotted host name or IPv4 address, each label plain. */
 const plainHost = (h: string): boolean => (h.toLowerCase() === 'localhost' || /^[A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63})+$/.test(h)) && plainSegments(h.split('.'), URL_SEGMENT)
-  && PLAIN_WORD.test(h.split('.')[0]); // the left-most label, where tunnel and function ids sit (`abc123.ngrok.io`)
+  && plainWord(h.split('.')[0]); // the left-most label, where tunnel and function ids sit (`abc123.ngrok.io`)
 /** An http(s) URL with no user-info, query or fragment, a plain host (optional port) and every path segment a plain word (or empty). */
 function plainUrl(v: string): boolean {
   const m = /^https?:\/\/([^/?#@\s:]+)(?::\d{1,5})?(\/[^?#@\s]*)?$/i.exec(v);
-  return !!m && plainHost(m[1]) && (m[2] ?? '').split('/').every((x) => x === '' || PLAIN_WORD.test(x));
+  return !!m && plainHost(m[1]) && (m[2] ?? '').split('/').every((x) => x === '' || plainWord(x));
 }
 /** `localhost:3000`, `db.internal:5432` (a one-word host like `admin:12345` is not one: it reads as a user and a PIN). */
 function plainHostPort(v: string): boolean {
@@ -72,7 +74,7 @@ export function plainSettingValue(v: string): boolean {
 }
 
 /** FR-070: name words `secretFlag` does not know whose value is a secret (a capability URL is the secret itself); this list only. */
-const SETTING_SECRET_WORDS = new Set(['pin', 'otp', 'totp', 'mfa', 'hook', 'webhook', 'dsn', 'seed', 'salt']);
+const SETTING_SECRET_WORDS = new Set(['pin', 'otp', 'totp', 'mfa', 'hook', 'webhook', 'dsn', 'seed', 'salt']); // `hooks`: by the ending rule below
 
 /**
  * FR-070: an env or header name whose value is always masked: `secretFlag` (`SMTP_PASSWORD`, `X-Api-Key`, `Authorization`, `Cookie`),
@@ -81,7 +83,8 @@ const SETTING_SECRET_WORDS = new Set(['pin', 'otp', 'totp', 'mfa', 'hook', 'webh
 export function secretSettingName(name: string): boolean {
   if (secretFlag(name)) return true;
   const words = String(name ?? '').slice(0, 256).replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().split(/[\s\-_.]+/);
-  return words.some((w) => SETTING_SECRET_WORDS.has(w)) || words.join('').includes('webhook');
+  // a word ending in hook, hooks or dsn (`SLACKHOOK`, `SENTRYDSN`; fourth review of #1650), never a word starting so (`HOOKUP`)
+  return words.some((w) => SETTING_SECRET_WORDS.has(w) || /(?:hooks?|dsn)$/.test(w)) || words.join('').includes('webhook');
 }
 
 /**

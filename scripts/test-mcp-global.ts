@@ -934,6 +934,8 @@ ok('FR-070 (second review of #1650): the Copilot list\'s name and value rules, b
     assert.deepStrictEqual(list({ [n]: 'https://api.github.com' }), ['https://api.github.com'], `FR-070 names hook: any URL under ${n} is masked`);
   }
   for (const n of ['SEEDING', 'SALTY', 'HOOKUP', 'DSNX']) assert.ok(!secretSettingName(n), `FR-070 names hook: ${n} is not secret-looking (whole words only)`);
+  for (const n of ['SENTRYDSN', 'SLACKHOOK', 'HOOKS_URL', 'ZapierHooks', 'x-hooks']) assert.ok(secretSettingName(n), `FR-070 names ending: ${n} is secret-looking (a word ending in hook, hooks or dsn)`);
+  for (const n of ['HOOKUP', 'HOOKED', 'SPINNER', 'SEEDING', 'SEEDS', 'SALTED', 'NOTIFY_URL', 'DSNAME']) assert.ok(!secretSettingName(n), `FR-070 names ending: ${n} is not secret-looking`);
   const capCases: [string, string][] = [
     ['ENDPOINT', 'https://hooks.zapier.com/hooks/catch/1234567/abc9xyz/'], // 7 digits and a lower+digit id
     ['ENDPOINT', 'https://example.com/hook/3f9a1c2b7d'], // a 10-character lower+digit id
@@ -951,6 +953,17 @@ ok('FR-070 (second review of #1650): the Copilot list\'s name and value rules, b
     ['AWS_REGION', 'eu-west-3'], ['AWS_REGION', 'cn-north-1'], ['AWS_REGION', 'ca-central-1'], ['AWS_REGION', 'us-iso-east-1'],
   ];
   for (const [k, v] of stillPlain) assert.deepStrictEqual(list({ [k]: v }), [], `FR-070 url words plain: ${k}=${v} is left out`);
+  // Fourth review: a word chain is capped at four words and 40 characters (path segment and left-most host label).
+  const CHAIN = 'https://example.com/i/qwhzmtrbvkpdlsfn-xkcdtrbvkpdlsfnq-pwhzmtrbvkpdlsfn'; // 48 letters in three groups, 50 characters
+  assert.deepStrictEqual(list({ ENDPOINT: CHAIN }), [CHAIN], 'FR-070 chain length: a 50-character letters-only chain segment is masked');
+  const FIVE = 'https://example.com/i/abc-def-ghi-jkl-mno'; // five short words, 19 characters
+  assert.deepStrictEqual(list({ ENDPOINT: FIVE }), [FIVE], 'FR-070 chain words: a segment of five joined words is masked');
+  const HOSTCHAIN = 'https://qwhzmtrbvkpdlsfn-xkcdtrbvkpdlsfnq-pwhzmtrbv.example.com'; // left-most label of 43 characters, three words
+  assert.deepStrictEqual(list({ ENDPOINT: HOSTCHAIN }), [HOSTCHAIN], 'FR-070 chain length: a left-most host label over 40 characters is masked');
+  assert.deepStrictEqual(list({ API_URL: 'https://example.com/.well-known/openid-configuration' }), [], 'FR-070 chain plain: openid-configuration stays left out');
+  assert.deepStrictEqual(list({ API_URL: 'https://example.com/a-b-c-d' }), [], 'FR-070 chain plain: four joined words stay left out');
+  for (const v of ['https://qwhzmtrbvkpdlsfn.example.com/', 'https://qwhz-mtrb-vkpd-lsfn.example.com']) assert.deepStrictEqual(list({ ENDPOINT: v }), [], `[KNOWN GAP] a letters-only left-most host label is left out (named in FR-070): ${v}`);
+  assert.deepStrictEqual(list({ HOST: 'qwhzmtrbvkpdlsfn.internal:5432' }), [], '[KNOWN GAP] a letters-only host label with a port is left out (named in FR-070)');
   assert.deepStrictEqual(list({ API_URL: 'https://example.com/i/qwhzmtrbvkpdlsfn' }), [], '[KNOWN GAP] a letters-only path word of up to 16 letters under a plain name is left out (named in FR-070)');
   assert.ok(!plainSettingValue('/ab'.repeat(90)), 'FR-070 length: a value over 256 characters is never plain (here a path of short segments)');
   assert.ok(plainSettingValue('/a/b'), 'control: a short path is plain');
