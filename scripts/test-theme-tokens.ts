@@ -13,7 +13,7 @@ import * as assert from 'node:assert';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { BAR_TOKENS, FONT_ALLOW, HOSTILE_RE, TYPED_TOKENS, typedValue } from '../src/shared/themetokens';
-import { BAR_PAIRS, COLOUR_HUE_RE, COLOUR_NUM_RE, CONTRAST_PAIRS, NAMED_COLOURS, UI_PAIRS, BRAND_UIS, WORLD_GLASS, contrast, glassOver, luminance, parseColor, resolveColor, themeIssues } from '../src/shared/themegen';
+import { BAR_PAIRS, BRAND_HOVER_MIX, brandHoverTarget, mixHex, COLOUR_HUE_RE, COLOUR_NUM_RE, CONTRAST_PAIRS, NAMED_COLOURS, UI_PAIRS, BRAND_UIS, WORLD_GLASS, contrast, glassOver, luminance, parseColor, resolveColor, themeIssues } from '../src/shared/themegen';
 import { ART_SLOTS, TOKEN_VALUE_MAX, checkUserManifest } from '../src/shared/themes';
 
 const ROOT = process.cwd();
@@ -28,6 +28,16 @@ assert.deepStrictEqual(T.BAR_TOKENS, BAR_TOKENS, 'theme.js and themetokens.ts re
 assert.deepStrictEqual(T.BAR_PAIRS, BAR_PAIRS, 'the bar pairs of WORLD_PAIRS are the shared contrast check\'s');
 assert.strictEqual(T.WORLD_GLASS, WORLD_GLASS, 'the same glass share');
 assert.deepStrictEqual(T.CONTRAST_PAIRS, CONTRAST_PAIRS, 'theme.js checks the same text pairs as the AI maker');
+assert.strictEqual(T.BRAND_HOVER_MIX, BRAND_HOVER_MIX, 'the same hover share of --brand-mark in the primary button (issue #1614)');
+assert.deepStrictEqual(T.BRAND_UIS, BRAND_UIS, 'the same UI styles that paint with --brand-bg');
+// the two copies of the hover target and of the sRGB mix (issue #1614, review of PR #1618): equal on fills x texts, light, mid and dark, the dark-fill fixtures (#2a6a9a, #8a5a28 white text; #808080 black text) among them
+for (const bg of ['#ffffff', '#e4ece6', '#d9c7a8', '#808080', '#8a5a28', '#2a6a9a', '#244634', '#000000']) for (const mk of ['#ffffff', '#000000', '#4f7f65', '#3f6551', '#909090', '#ffd24a', '#2a6a9a']) {
+  assert.strictEqual(T._mixHex(bg, mk, 0.14).slice(0, 7), mixHex(bg, mk, 0.14), `mixHex ${bg} toward ${mk}: the same colour in theme.js and themegen`);
+  assert.strictEqual(T._brandHover(mk, bg), brandHoverTarget(mk, bg), `hover target of ${mk} on ${bg}: the same in theme.js and themegen`);
+}
+assert.strictEqual(T._brandHover('#ffffff', '#2a6a9a'), '#000000', 'dark-fill fixture: white text on #2a6a9a hovers toward black');
+assert.strictEqual(T._brandHover('#ffffff', '#8a5a28'), '#000000', 'dark-fill fixture: white text on #8a5a28 hovers toward black');
+assert.strictEqual(T._brandHover('#000000', '#808080'), '#ffffff', 'dark-fill fixture: black text on #808080 hovers toward white');
 assert.deepStrictEqual(T.ART_SLOTS, ART_SLOTS, 'the same art slots');
 assert.strictEqual(T._HOSTILE_RE.source + '/' + T._HOSTILE_RE.flags, HOSTILE_RE.source + '/' + HOSTILE_RE.flags, 'the same hostile-value rule (FR-020)');
 const corpus = [
@@ -244,7 +254,8 @@ for (const f of FILES) {
   const hex = (v: string): boolean => resolveColor(v) !== null;
   for (const [fg, bg, min] of CONTRAST_PAIRS) { assert.ok(hex(t[fg]) && hex(t[bg]), `${fg} and ${bg} are measurable colours`); const b = px(bg); assert.ok(contrast(px(fg, b), b) >= min, `${fg} on ${bg}: themegen agrees`); }
   for (const [fg, bg, min, why] of UI_PAIRS) assert.ok(contrast(t[fg], t[bg]) >= min, `${fg} on ${bg} (${why}): ${contrast(t[fg], t[bg]).toFixed(2)}:1`);
-  for (const ui of ['clean', ...BRAND_UIS]) assert.deepStrictEqual(themeIssues(t, clean, ui).filter((x) => !/the top bar/.test(x)), [], `no contrast issue with ui ${ui}`);
+  // the hovered primary fill (issue #1614) is left out: the Photo office's chrome is ui clean (#1144), which never paints a primary button with --brand-bg (its hover is measured by check-052-primary-btn)
+  for (const ui of ['clean', ...BRAND_UIS]) assert.deepStrictEqual(themeIssues(t, clean, ui).filter((x) => !/the top bar|on the hovered --brand-bg/.test(x)), [], `no contrast issue with ui ${ui}`);
   const worst = Math.min(...rows.map((r) => r.ratio / r.min));
   // spec 102 FR-263 (owner, 2026-11-03): the arcade is dark everywhere. Complete; every status hue unchanged; the three status -ink shades
   // lightened in the same hue (070 FR-050, amended for dark worlds); every pair AA, panels' glass composited over white
