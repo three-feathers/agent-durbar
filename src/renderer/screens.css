@@ -552,3 +552,25 @@ body.has-bridge #topBtns{display:flex}
 .tm-name{overflow-wrap:anywhere}
 .tm-sum{font-size:var(--t4-size);color:var(--ink-2)}
 .tm-acts{display:flex;flex-wrap:wrap;gap:var(--sec-gap)}
+/* spec 111 T009: the team member editor (teameditor.js), a form inside the shared askDialog (size l); tokens only, so every world keeps its own look */
+.tm-ed{display:flex;flex-direction:column;gap:var(--dlg-gap);min-width:0}
+.tm-ed .tm-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--dlg-gap)}
+.tm-ed .tm-f{display:flex;flex-direction:column;gap:var(--sec-gap);min-width:0}
+.tm-ed .tm-f[hidden]{display:none}
+.tm-ed .tm-wide{grid-column:1/-1}
+.tm-ed .tm-f>label{font-size:var(--t4-size)}
+.tm-ed .tm-f label.chk{flex-direction:row;align-items:center;gap:var(--sec-gap);font-weight:inherit}
+.tm-ed .dhint,.tm-ed .tm-st{font-size:var(--t5-size);color:var(--ink-2);margin:0}
+.tm-ed .tm-err{font-size:var(--t5-size);color:var(--tone-bad-ink);margin:0}
+.tm-ed .tm-err[hidden]{display:none}
+.tm-ed .tm-members{display:flex;flex-direction:column;gap:var(--dlg-gap)}
+.tm-ed .tm-mem{display:flex;flex-direction:column;gap:var(--dlg-gap);margin:0;min-width:0;padding:var(--row-pad);border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface-2)}
+.tm-ed .tm-mem legend{padding:0 var(--sec-gap);font-size:var(--t3-size);font-weight:var(--t2-weight);overflow-wrap:anywhere}
+.tm-ed .tm-mh,.tm-ed .tm-addbar{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sec-gap)}
+.tm-ed .tm-marks{display:flex;flex-wrap:wrap;gap:var(--sec-gap)}
+.tm-ed .tm-marks:empty{display:none}
+.tm-ed .tm-marks .mtag{overflow-wrap:anywhere}
+.tm-ed .tm-f>.btn{align-self:flex-start}
+.tm-ed-ov .dlg{padding-bottom:0}
+.tm-ed-ov .dlg .dbtn{position:sticky;bottom:0;z-index:2;background:var(--surface);padding:var(--sec-gap) 0} /* the buttons stay in view while the members scroll */
+@media (max-width:900px){.tm-ed .tm-grid{grid-template-columns:minmax(0,1fr)}}
