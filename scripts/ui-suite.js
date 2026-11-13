@@ -165,6 +165,7 @@ const DRIVERS = [
   { name: 'check-notes-export' }, // spec 083 T034b: Export…, Delete all… and Remove folder's Also delete its notes (FR-048)
   { name: 'check-edits' }, // spec 005 FR-020..FR-026: file edits in the chat
   { name: 'shots-068-coffee' }, // spec 068: coffee break (simbreak=8 in its own query)
+  { name: 'shots-011-limit-near' }, // spec 011 FR-096: a runtime limit request below the cap reads "Close to the spending limit" (simlimitnear in its own query)
   { name: 'shots-097-screens', focus: true }, // spec 097 P2: live screens and the hover zoom
   { name: 'shots-097-screens', label: 'shots-097-screens retro', focus: true, env: { SCREENS_WORLD: 'retro' } }, // spec 102 FR-310 (issue #1428): the arcade's screens, helper heads and big screens
   { name: 'check-097-motion' }, // spec 097 P2: the people's motion and what stops it
