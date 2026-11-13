@@ -302,3 +302,22 @@ What is kept for the run is listed per setting (`isUnsaved(key)`, `unsavedKeys`,
 ### 2026-11-10: the simulator's monthly reset does not move with the minute (FR-092)
 
 - The FR-092 Copilot fixtures' monthly reset (`current` and the other request modes, `usagebilled`) is the next UTC midnight 12 days on, not `now + 12 days` to the minute. Settings shows it to the minute, so two pages loaded seconds apart across a minute boundary read "06:10" and "06:11"; in the sans-serif the geometry check forces they are 182.8 and 182.0 px wide, and the Photo/Retro Settings comparison (spec 102 T220) failed on merge-queue run 42766660661 (PR #1440, unrelated to the change). The reset text now changes only at a UTC midnight. `[IMPLEMENTED]` `read:` the two widths measured in Electron on Linux xvfb with the Resets text set to each minute; `test: check:geometry` passes.
+
+### 2026-11-13: the runtime's limit prompt can come at 90% (SDK 1.0.32; spec 058 delta 2026-11-13, issue #1667; FR-096)
+
+**Status**: specified, not built; lands with the SDK bump (spec 058 FR-244, task T216 there, T074 here). Numbers checked with `npm run specs:numbers`.
+
+**Why.** SDK 1.0.32's notes say interactive clients with a session-limits listener "are offered a top-up at 90% of the limit" (`read:`
+bot-written release notes, data). It arrives as the same `session_limits_exhausted.requested` event with `usedAiCredits < maxAiCredits`; today
+the mapper (`src/adapters/map.ts`, `case 'session_limits_exhausted.requested'`) turns every such event into `limit` `phase: 'exhausted'`, so the
+window would say *Spending limit reached* while 10% is left. Durbar's own cap (FR-070..FR-074) is not affected: it raises its own
+`durbar-cap-<n>` request when used reaches the cap.
+
+- **FR-096** **Close to the limit, not reached.** A runtime limit request whose used credits are below the cap (`used < max`, both finite
+  numbers) is shown as **close to the limit**: the note reads "Close to the spending limit: used X of Y AIU. The agent waits for you." with the
+  same choices (FR-014: raise, remove, stop here) and the same answer path (`resolveLimit`, `handlePendingSessionLimitsExhausted`); the card state
+  and the office signs say "Close to spending limit" where they say "Spending limit reached" today. `used >= max`, or a missing or non-finite
+  number, keeps today's *reached* words (fail safe: the stronger words). The normalized event gains one vendor-free field (`near?: true`) or an
+  equivalent the plan picks; no new phase, so every consumer of `exhausted` still pauses the agent. `test:` the mapper with used 90/100 (near),
+  100/100 and 101/100 (reached), missing used (reached); the window's words for both. **Mutant:** `<=` for `<` (100/100 reads near).
+  `[KNOWN GAP]` the runtime's 90% offer was not seen (no real session reached a cap; FR-015 stays unverified).

@@ -598,6 +598,13 @@ Each recommendation is the reviewer's (rubenlupi, review of PR #923 at `dfe6428e
 
 ## Changes
 
+### 2026-11-13: SDK 1.0.32: "Assisted Autopilot no longer asks a human" (pointer; spec 058 FR-243, issue #1667)
+
+Runtime 1.0.30/1.0.31 notes say assisted Autopilot no longer asks a human and read-only shell commands no longer ask (`read:` release notes,
+data). The SDK bump turns the runtime's assisted permissions mode off for every Copilot session (`disableAssistedPermissionsMode`,
+`permissionMode: 'manual'`, on create and resume; spec 058 FR-243), so Durbar's broker keeps answering. Autopilot is not wired in any build
+(`AUTOPILOT_WIRED` false); when it is, this spec checks that guard against its own continuation rules. No requirement of this spec changes now.
+
 ### 2026-11-01: a scheduled prompt runs in its session's mode, Autopilot included (owner decision, Vikram; replaces the entries of 2026-10-31 on schedules)
 
 Owner decision of Vikram, 2026-10-31 and restated 2026-11-01 (matching Paco; first written on PR #965's thread): **schedules take their session's mode, and a session can be in any mode, including Autopilot.** No per-schedule mode, no popup, no Allow all or Autopilot on a schedule.

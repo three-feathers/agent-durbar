@@ -420,3 +420,57 @@ and one Settings switch (default on). Builds on PR #1073's launch strip and Sett
 T176 and T177 done (2026-11-03). T178 -> T179 -> T180 -> T181 -> T184 -> T185 -> T183 -> T182 -> T186 -> T187; T188, T189 last. G5
 is settled (A); G6 may change one constant or FR-207's Copilot line; G3 (and the macOS launch check) waits for a Mac check; G7 is a
 later delta.
+
+## Delta: "App mode", the Copilot sign-in app, with the SDK 1.0.32 bump and a test build (FR-233..FR-245, issue #1667, 2026-11-13)
+
+### Summary
+
+A setting picks which Microsoft Entra app (client) id Copilot's runtime uses for its built-in Entra MCP sign-in (`entra.clientId`, SDK
+1.0.26+): Off (default, today), Visual Studio Code's app, Copilot CLI's app (pending Q25) or a custom app. It needs the SDK bump to 1.0.32, which
+brings three other changes we must handle first (replayed `checkpoint` records, the runtime's read-only shell auto-approval, the 90% limit
+prompt in spec 011). The owner tests it in a test build on his managed Mac before anything merges.
+
+### Constitution check (delta)
+
+- I: this spec delta, plan and tasks first (PR 1); each later PR ticks its task.
+- II: one optional member `setSignInApp?` and the flag `signInAppChoice`; `SignInAppChoice` is plain data in `src/shared`; the id table, the
+  `entra` option and runtime words stay in `src/adapters/copilot.ts`. The setting's stored key names the agent app (`copilotSignInApp`) because
+  it applies to that app only; it carries no vendor type.
+- III: default off; no client secret anywhere; no GUID in any log, copy or event; `matsAppName` and `tokenProvider` never set; the shell guard
+  keeps Read-only and Ask first behind Durbar's broker (T220 proves it before the bump merges). Opus security review on PRs 2 and 3.
+- IV: fakes, unit tests and the simulator; T216's local-server probe and T220's few-prompt probe within the standing OKs; T221 is the owner's.
+- V: one radio group and one field in Settings > MCP servers, 10.5px, both sizes.
+- VI: Linux and Windows gaps stated (FR-241); one shared GUID check, no paths.
+- VIII: the rows say Durbar is not that app, that it is experimental, and that sign-ins show as that app; every `read:` fact is tagged.
+
+### Design
+
+- **Settings** (FR-233, FR-235): `parseSignInApp(v)` (pure, `src/shared/signinapp.ts`, no imports; GUID check, lower case, zero GUID out)
+  used by `parseSettings` (`src/shared/credits.ts`), `SettingsStore.setCopilotSignInApp` (`Saved<T>`, rolls back on a failed save),
+  `settings:setCopilotSignInApp` via `ipcHandle` + `setting(...)` (`src/main/ipc/settings.ts`), `settings:get`, one preload member: the
+  `mcpSignInRefresh` path (FR-213) copied.
+- **Adapter** (FR-234, FR-237, FR-238): `CopilotAdapter.setSignInApp(choice)` stores it; `createClient()` adds `entra: { clientId }` to the
+  `newClient(opts)` options only for `vscode` (constant) and a valid `custom`; nothing for off and the pending `copilot-cli`. Main's settings
+  handler, after a saved change, calls `setSignInApp` then `refreshAuth()` (spec 012 FR-158); at launch main calls `setSignInApp` before the first
+  `getClient()`.
+- **Logs and masking** (FR-236): a debug line with the mode only; one activity row; the configured id replaced by `<sign-in app ID>` after
+  `maskMcpError` in error text, Copy diagnostics and logs.
+- **Errors** (FR-240): `isSignInAppRefusal(text)` in `src/shared/mcpcall.ts` (whole words, before the generic failure text), used by the
+  sign-in row and the failed call's line; `classifyMcpCall` unchanged.
+- **Window** (FR-239): the radio group in `screens.js` under the FR-213 switch, confirm through `askDialog` (`src/renderer/dialog.js`), the
+  failed-save words of spec 011 FR-012 (`saveFailed`); the simulator answers the setting without a restart.
+- **Bump** (FR-242..FR-244): `package.json` exact 1.0.32, lockfile, `.github/dependabot.yml` ignore removed, the `zod` override per Q26;
+  `checkpoint` filter in `prevsessions.ts`, `convsearch.ts` and the replay mapping; the `managedSettings` / `permissionMode` options in the
+  session config on create and resume; spec 011 FR-096 in `map.ts` and the window.
+- **Test build** (FR-245): tag `v0.1.17-test.1` (or the version then) on the top of the PR 2..4 stack; `release.yml` makes the draft.
+
+### Order (5 PRs, small, spec first)
+
+1. **T215** this spec delta (S; Opus review: auth, logging, permissions).
+2. **T216** SDK bump 1.0.32 + FR-242..FR-244 + spec 011 FR-096 (M; Opus security review; T220's probe before merge). Stacked under PR 3;
+   never merged alone.
+3. **T217** the setting and adapter, FR-233..FR-238, FR-240 (M; Sonnet build, Opus review of auth and logging).
+4. **T218** the Settings UI and words, FR-239, FR-241's line (S; Sonnet; screenshots both sizes).
+5. **T219** the test build, FR-245 (S), then **T221** the owner's Mac test; results recorded here; PRs 2..4 merge after it (or after the owner
+   says to).
+Q25 changes only T217's table and T218's choices; Q26 only T216's `overrides`. The 076 policy key and the per-server client id are later deltas.

@@ -2312,3 +2312,192 @@ and open PRs, 2026-11-11): **FR-230** and **T212**.
 
 - **FR-231 (2026-11-12)** `[IMPLEMENTED]` `test: check-mcp-row-width` `sim:` the text column of a server row never gets narrower than 240 px of the row's room (`flex-basis:240px` on a row that has reason, help or details text); when the buttons do not fit beside it the row wraps and the buttons (Tools, Restart, Sign in again..., Remove..., the switch) sit on their own line below, right aligned. A row with only a name and a state (no text under it), or where everything fits, stays on one line as before. Text stays at 11px or more (10.5px floor), nothing overlaps, no page scroll, the dialog still scrolls inside itself. The same approach as the Tools > Activity width fix (#1466, FR-071: a minimum width for the text-bearing column and wrapping instead of squeezing).
 - `[KNOWN GAP]` Windows and macOS font widths are not measured (Linux fonts in the simulator): a different font changes the line counts, not the rule.
+
+### 2026-11-13: "App mode": choose the Microsoft Entra app Copilot's MCP sign-in uses, with the SDK 1.0.32 bump and a test build (issue #1667; FR-233..FR-245, Q25, Q26)
+
+**Status**: specified 2026-11-13, nothing built (PR 1 of 5 of issue #1667: this spec delta, with a spec 011 delta, notes in specs 002, 099 and 076,
+and the plan and tasks below). **Numbers taken** (`npm run specs:numbers` against `origin/main`, remote branches and open PRs; open PR #1637 holds
+FR-232 and T214): **FR-233..FR-245**, **Q25**, **Q26**, **T215..T221**; spec 011 **FR-096**, **T074**. **Security-relevant** (sign-in identity,
+logging, permissions): every PR of this plan gets an Opus review.
+
+**Input.** Owner (Vikram), Telegram DM, **2026-11-13 05:12 UTC** (quoted in issue #1667): "create an experimental release where you add a setting to
+select client id to use (call it, app mode and have visual studio code, copilot cli and custom app where user entered custom client id). I will
+test vs code and copilot cli mode and tell you if it works ok including this system broker which should solve my constant MCP auth issues."
+Background: incident #1084 (the 2026-11-03 delta above: since SDK 1.0.26 Copilot's built-in Entra sign-in fails with "Microsoft Entra
+authentication requires the host to configure an Entra client ID"; we pin SDK 1.0.24 and Dependabot ignores newer versions). The owner's request
+puts this plan ahead of the backlog order (issue #1667).
+
+**What the SDK offers** (`read:` the free probe of 2026-11-13: `npm pack` of `@github/copilot-sdk` 1.0.24 and 1.0.32 and runtimes
+`copilot-sdk-linux-x64` 1.0.24/1.0.32 and `copilot-sdk-darwin-arm64` 1.0.32, types read and strings grepped, nothing run, 0 AI credits; the
+facts below that this delta relies on, unless tagged otherwise):
+- `new CopilotClient({ entra: { clientId, matsAppName? } })` (`@experimental`, SDK 1.0.26+): **the host app's** Microsoft Entra registration,
+  used by the runtime's built-in Entra sign-in through the operating system's account broker and for silent renewal. A client option, sent
+  once in the connection handshake: not a session option, no environment variable. "The runtime does not supply a default application."
+  The runtime refuses to change it on a live connection ("Entra provider cannot change on an existing connection"), so a change needs a new
+  client. `matsAppName` turns on Microsoft's sign-in telemetry; left out, it stays off.
+- The runtime pre-authorizes clients per resource: a foreign or wrong app id can fail with `ENTRA_CLIENT_NOT_PREAUTHORIZED` or "has not
+  authorized Copilot CLI to request tokens for it (AADSTS65002)"; a redirect address the app does not list fails at Microsoft with
+  AADSTS50011 (no runtime string: Entra's own text).
+- Linux: "Microsoft Entra accounts are supported only on Windows and macOS in this beta" and "Entra broker not eligible; using the browser
+  OAuth flow".
+- Visual Studio Code's public app id `aebc6443-996d-45c2-90f0-388ff96faa56`: `read:` the Elastic detection rule "Entra ID OAuth Flow by Visual
+  Studio Code" (app id with display name "Visual Studio Code") and VS Code's default Microsoft sign-in client; `real:` 2026-11-13, a byte grep
+  of the shipped runtime (SDK 1.0.24, `copilot-sdk-linux-x64` `runtime.node`) finds this id and not the #1084 error text, which fits the
+  #1084 reading that 1.0.24 borrowed VS Code's app by default. Not from a Microsoft page read today.
+- Copilot CLI's app id: **no public source found**. Runtime 1.0.32 holds one unlabeled id, `5ecc71bb-0fa6-4d6b-a31b-de12184c4b1a`, next to
+  "native Entra client is not pre-authorized" (`read:` 1.0.32 strings; `real:` absent from the shipped 1.0.24 runtime, same grep; no web hits).
+  Nothing says whose app it is: **this spec does not name it Copilot CLI's id** (Q25).
+- Per-server OAuth client (MCP config `oauthClientId` / `oauth.login({ clientId })`, already in 1.0.24): a browser PKCE sign-in, not the
+  broker. A later lever (below), not this plan.
+
+#### Requirements (delta)
+
+- **FR-233** **The setting, off by default.** `copilotSignInApp` in Durbar's app settings (`AppSettings`, `src/shared/credits.ts`; stored by
+  `SettingsStore` in `durbar-settings.json`), shape `{ mode: 'vscode' | 'copilot-cli' | 'custom', clientId?: string }`; `clientId` only with
+  `custom`. **Missing = off = today's behaviour**: no `entra` client option, the #1084 runtime error text on a failed Entra sign-in and the
+  existing CLI steps (`mcpSignInSteps`, FR-068: `/mcp auth <name>`, then Restart session). `parseSettings` keeps it only when it passes
+  FR-235; anything else (wrong type, unknown mode, a `custom` without a valid id, an id on another mode, extra keys) reads **off** (fail
+  closed, as FR-213's malformed switch reads off). It is written through the existing path: one `settings:setCopilotSignInApp` handler made
+  with `ipcHandle` and the `setting(...)` helper in `src/main/ipc/settings.ts`, a `SettingsStore` setter returning `Saved<T>` (spec 011
+  FR-012: a truth value, so a failed save rolls back and the reply is `ok: false`), the value in `settings:get` (`AppSettingsView`) and one
+  preload member, exactly as `mcpSignInRefresh` (FR-213) does. `test:` `test-credits` style cases: missing, `null`, string, unknown mode,
+  `custom` without an id, an id on `vscode`, a failed save. **Mutant:** the default flipped to `vscode` (the missing case must read off and pass
+  no `entra`).
+- **FR-234** **Three modes.**
+  - `vscode`, **Visual Studio Code's app**: the client id is `aebc6443-996d-45c2-90f0-388ff96faa56` (sources above), held as one constant inside
+    the Copilot adapter, never typed by the person.
+  - `copilot-cli`, **Copilot CLI's app**: **`[PENDING OWNER DECISION: id source]`** (Q25). The value is accepted by the parser and kept, so a
+    later answer needs no migration, but until Q25 is answered the adapter treats it as **off** (no `entra`) and the Settings choice is not
+    offered (a stored value shows as "Copilot CLI's app: not available in this build, so Off is used"). The unlabeled 1.0.32 id is **not**
+    hard-coded as Copilot CLI's id anywhere (a test greps `src/` for it). **Mutant:** the unlabeled id added as the `copilot-cli` constant.
+  - `custom`, **Custom app**: the person's organization's own Entra app (client) id, typed in Settings.
+  The `copilot-cli` and `vscode` modes present Durbar to Microsoft and to the organization as another vendor's app; FR-239's words say so.
+- **FR-235** **The id check.** A client id is accepted only as a GUID: `^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`
+  matched case-insensitively after trimming outer white space, **stored lower case**, never the zero GUID (`00000000-0000-0000-0000-000000000000`);
+  braces, `urn:uuid:`, inner spaces, 32 bare hex digits and anything longer are refused. One pure function in `src/shared` (no import, no vendor
+  name) used by `parseSettings`, the IPC handler (main checks again; the window's check is a convenience) and the Copilot adapter before it
+  builds the client option (a bad value there is off). A refused value is **not stored, not echoed and not logged**: the reply is
+  `{ ok: false }` with a fixed text "Not an app (client) ID. It looks like 00000000-0000-0000-0000-000000000000 with your app's digits." (a
+  pasted client secret goes nowhere). `test:` upper case stored lower, the zero GUID, each refused shape, a 40-character secret-like string not
+  present in any log line or reply. **Mutants:** the check removed (any string reaches `entra.clientId`), the zero GUID allowed, the
+  lower-casing dropped, the refused value echoed in the reply.
+- **FR-236** **No secret, no id in logs** (constitution III). A client id is not a secret, but Durbar **never asks for, stores, logs or passes a
+  client secret** (no such field, no `clientSecret` anywhere; FR-064's rule for `oauth.login` stands) and never passes `matsAppName` (no
+  Microsoft sign-in telemetry in Durbar's name) or `entra.tokenProvider` (that would route Entra tokens through Durbar). Logs say only the mode
+  and set or unset: the debug log `sign-in app: off | vscode | copilot-cli | custom (set)` and one activity-log row "Copilot sign-in app changed
+  to <label>" (fixed words); **never the GUID**, also not VS Code's. Any text Durbar logs, copies (Copy diagnostics, FR-093) or shows in an
+  error that contains the configured id (any case) shows `<sign-in app ID>` instead (one replace in the masking path, after `maskMcpError`).
+  The window receives the custom id only for its own Settings field (`settings:get`), never in an event, a chat line, a crash marker or a
+  tooltip. `test:` a fake debug sink, the activity log and Copy diagnostics with a custom id and an error text containing it: no GUID (either
+  case). **Mutants:** the clientId logged in the change line; the id left in a masked error; `matsAppName` passed.
+- **FR-237** **Applying a change.** A change of mode or id (Off counts) asks first, with the existing `askDialog`: "Copilot reconnects to use
+  the new sign-in app. A running turn stops; its history stays." buttons **Reconnect** and **Cancel** (Cancel keeps the old value and
+  saves nothing). On Reconnect main saves the value; only when the save worked (`ok`) it hands the new choice to the adapter (FR-238) and calls
+  the adapter's `refreshAuth()` (spec 012 FR-158: the client is stopped, the next one starts with the new `entra` option, every live session is
+  resumed on it with its handlers, broker and grants; the "Reconnecting Copilot…" status shows meanwhile). No Copilot client running yet:
+  nothing restarts and the first client reads the value. The same value again does nothing (no restart). A save that fails restarts nothing
+  and the row says FR-012's "Could not save this setting." At launch the stored choice is given to the adapter before its first client
+  starts. `test:` fake adapter: Reconnect saves then calls `setSignInApp` then `refreshAuth` once; Cancel and same value call neither; a failed
+  save calls neither; the client options of the next fake client carry `entra: { clientId }` for `vscode` and `custom` and **no `entra` key**
+  for off and the pending `copilot-cli`. **Mutants:** a change without `refreshAuth` (the old client keeps the old app); `refreshAuth` before the
+  save; `entra: {}` or `entra: { clientId: undefined }` sent for off.
+- **FR-238** **Adapter boundary** (constitution II). One optional `AgentAdapter` member, `setSignInApp?(choice: SignInAppChoice | undefined):
+  void` (store only; the restart is FR-237's `refreshAuth`), and one capability flag, `signInAppChoice?: boolean`, true only for Copilot.
+  `SignInAppChoice` is the plain data type of FR-233 in `src/shared` (no SDK import, no Copilot type); the mode-to-id table, the `entra`
+  option and the runtime's error words stay in `src/adapters/copilot.ts` (`createClient` / `newClient`). The window shows the row only when
+  the Copilot adapter is present with the flag; Claude Code and Codex never get it. `test:` the capability matrix; no `@github/copilot-sdk`
+  import outside `src/adapters` (existing check).
+- **FR-239** **Settings words** (Settings > MCP servers, under *Refresh MCP sign-ins automatically*; a radio group plus one text field, text
+  at least 10.5px, words not colour alone, both window sizes; `sim:` a driver at 1440x900 and 1280x800). Heading: **Copilot sign-in app for
+  Microsoft (experimental)**. Choices and the line under each:
+  - **Off** (default): "Agent Durbar does not set an app. Copilot's sign-in to Microsoft Entra MCP servers may fail; then use `/mcp auth <name>`
+    in the Copilot CLI."
+  - **Visual Studio Code's app**: "Experimental. Uses Visual Studio Code's Microsoft Entra app ID. Durbar is not Visual Studio Code. Your
+    organization or Microsoft may refuse this, and sign-ins show as Visual Studio Code in your organization's logs."
+  - **Copilot CLI's app** (only after Q25): "Experimental. Uses Copilot CLI's Microsoft Entra app ID. Durbar is not Copilot CLI. Your
+    organization or Microsoft may refuse this, and sign-ins show as Copilot CLI in your organization's logs."
+  - **Custom app** + field *App (client) ID*: "Your organization's own Microsoft Entra app (client) ID. It needs the MCP server's permissions,
+    admin consent and the sign-in redirect addresses for this computer (on macOS `msauth.com.msauth.unsignedapp://auth`). An app ID is not a
+    secret. Never enter a client secret here."
+  - On Linux, one more line: "On Linux this Copilot version cannot use the system sign-in; this setting may have no effect." (FR-241)
+  The words are fixed strings in the window (no vendor type; the labels are display text). Constitution VIII: an independent project, no
+  implied affiliation: the lines say Durbar is not that app.
+- **FR-240** **"App mode refused" errors.** A sign-in or tool-call error text (after masking) that holds `ENTRA_CLIENT_NOT_PREAUTHORIZED`,
+  `AADSTS65002` or `AADSTS50011` (whole words, any case) shows, in the row and on the failed call: with a sign-in app set, "Microsoft refused
+  the sign-in app chosen in Settings > MCP servers (<label>): <reason>. Choose another app or Off." where <reason> is "this server does not
+  accept that app" (the first two) or "the app does not list this computer's sign-in address" (50011); with Off, "Microsoft refused Copilot's
+  sign-in app for this server." plus the existing CLI steps. One pure check in `src/shared/mcpcall.ts` beside `classifyMcpCall`, which stays
+  as it is (these codes are not `auth`: signing in again with the same app does not fix them; AADSTS65001, consent, stays `auth`). The #1084
+  text with Off is unchanged. `test:` each code, case, inside a longer masked text, and a near miss (`AADSTS650020`); `auth` and `policy` texts
+  unchanged. **Mutants:** 65002 read as `auth`; the check dropped (the plain failure text shows).
+- **FR-241** **Platforms** (constitution VI). **`[KNOWN GAP]` Linux:** runtime 1.0.32 says Entra accounts are supported "only on Windows and
+  macOS in this beta"; most likely the setting has no effect and sign-in falls back to the browser OAuth flow (`read:` strings only, **not
+  verified**). The row shows the Linux line of FR-239; nothing is hidden or refused. **`[KNOWN GAP]` macOS:** the darwin runtime ships Microsoft's
+  OneAuth and MSAL libraries and uses the redirect `msauth.com.msauth.unsignedapp://auth` (`read:`); our ad-hoc re-signing of every Mach-O
+  (`docs/agent-apps.md`, #623) may matter to the Enterprise SSO broker: unknown until the owner's Mac test (T221). **`[KNOWN GAP]` Windows:** the
+  broker redirect address and the win32 runtime strings were not read (package not unpacked). No real sign-in with either id was run anywhere.
+- **FR-242** **Bump prerequisite: replayed `checkpoint` records.** SDK 1.0.32 adds `checkpoint?: boolean` to 158 event shapes ("record belongs
+  to a replay checkpoint rather than original session history", `read:`). Every reader of session history (previous sessions, history
+  conversion on resume, conversation search: `src/main/prevsessions.ts`, `src/main/convsearch.ts` and the mapper's replay) skips records with
+  `checkpoint: true`, and usage totals do not count a `usage_checkpoint` twice. `test:` fixtures with a replayed record and a duplicated
+  usage total. **Mutant:** the filter removed (a message shows twice).
+- **FR-243** **Bump prerequisite: Ask first and Read-only keep asking for shell** (constitution III). Runtime 1.0.30/1.0.31 notes: "Read-only
+  shell commands no longer ask for permission", "`enableScriptSafety` is deprecated and ignored", "Assisted Autopilot no longer asks a human"
+  (`read:` bot-written release notes, data). Durbar never sets `enableScriptSafety` (`read:` grep). The guard, on **create and resume** of every
+  Copilot session (the runtime says these settings are "startup-only, not persisted, must be re-supplied on resume"): `managedSettings:
+  { permissions: { ask: ['Shell(*)'], disableAssistedPermissionsMode: true } }` (placement as the probe read the 1.0.32 types; PR 2 checks it
+  against the installed types) and `permissionMode: 'manual'`, so shell requests still reach
+  Durbar's `onPermissionRequest` broker (Read-only denies, Ask first asks, Allow all approves as today; spec 087's OS sandbox floor still
+  applies). **`[KNOWN GAP]` not verified** that an `ask` rule overrides the runtime's own read-only auto-approval (`read:` types only): the bump
+  does not merge before an **Opus security review** and a small `real:` probe (T220) within the small-credits standing OK (Vikram, 2026-11-03:
+  free probes and few-prompt real checks without asking, report after): in Read-only and Ask first, one prompt asking for `ls` must reach the
+  broker (denied, or a pending card). If the probe shows the guard does not hold, the bump stops and the owner decides. `test:` fake client:
+  both options on create and resume. **Mutants:** the guard only on create; `permissionMode` left out.
+- **FR-244** **Bump prerequisite: dependencies and the hold.** The bump PR (PR 2) moves `@github/copilot-sdk` from 1.0.24 to 1.0.32 (exact pin)
+  and lifts the Dependabot `ignore` above 1.0.24 (`.github/dependabot.yml`, #1084) in the same PR; it lands **with or after** FR-233..FR-238
+  (PR 3), never alone (a bump without the setting keeps #1084's failure, now also without VS Code's borrowed app). What the PR names (supply
+  chain, `docs/review-checklist.md`): new `lossless-json` 4.3.3 (MIT), `vscode-jsonrpc` 8.2.1 to 10.0.0 (major), `koffi` 3.3.6 (`read:` `npm ls`
+  in the probe); the `zod` override (Q26); installer growth of about 28 MB (Linux), 40 MB (Windows) and 50 MB (macOS, with the OneAuth/MSAL
+  libraries) (`read:` npm unpacked sizes). **`lossless-json`: agent reading, owner may revoke**: the owner's go-ahead of 2026-11-13 05:12 UTC
+  for the experimental release that needs the bump is taken as the OK for this new dependency; the owner may revoke it. The review checklist's
+  "free `real:` MCP sign-in probe before an SDK bump" (#1084) is T216's local-server probe (0 credits). `test:` `npm run typecheck` and the
+  fake-client tests (the probe ran them green on 1.0.32: `test-supplychain`, `copilot-*`, `mcp-signin`, `runtime-sign`; full `npm test` not run).
+- **FR-245** **The experimental build is a test build** (spec 008 FR-121..FR-124, `changelog.d/README.md` *Test builds*). Tag
+  `v<package.json version>-test.M` (today `v0.1.17-test.1`) on the top of the PR 2..PR 4 stack **before** they merge: a draft pre-release, never
+  latest, notes = the branch's commits not on `main`; delete the draft and tag when done. The owner's OK for the tag: Vikram's DM of
+  2026-11-13 05:12 UTC (above). The daily stable release does not carry this until it is merged on `main` (then the setting ships **off**). "Experimental"
+  means: this test build, and the setting labelled experimental; there is no other release kind. **What the owner tests** on his managed Mac,
+  each with his own Entra MCP servers (`real:`, T221): (1) Off reproduces today's failure text and steps; (2) Visual Studio Code's app: Sign in
+  through the system broker, no browser if the broker answers, servers connect, and the hourly expiry renews (FR-218) without a new
+  sign-in; (3) Copilot CLI's app only if Q25 puts it in the build; (4) Custom app, if he has a tenant app; (5) a change reconnects and keeps
+  live chats; (6) the debug log shows no GUID. Results are recorded in this spec as `real:` with the date and build.
+
+#### Later, not in this plan
+
+- **Org policy key** (spec 076): an organization's `policy.json` may later set or lock the sign-in app (the tenant decides); a later delta in
+  076, not now.
+- **Per-server OAuth client id** (MCP config `oauthClientId` / `oauth.login({ clientId })`): the browser PKCE route that also works on Linux
+  (redirect `http://127.0.0.1:<port>` on the app); it would change FR-064's "never sends `clientId`" and is a separate delta (related: Q22 for
+  Claude Code).
+- `permissionMode` at create for every mode (spec 002/099), the MCP token breakdown (spec 100), URL domain approvals: each its own delta.
+- Never: `entra.tokenProvider` (tokens through Durbar).
+
+#### Open questions
+
+- **Q25** **Copilot CLI's app: where does its id come from?** (asked 2026-11-13; **pending**). (a) **[recommended]** The first build has Visual
+  Studio Code's app and Custom app only; *Copilot CLI's app* is added when its id has a public source (or the owner reads it from his own
+  Entra sign-in logs, "Application ID", which is a `real:` source for his tenant). (b) Include it with the unlabeled id found in runtime 1.0.32
+  (`5ecc71bb-0fa6-4d6b-a31b-de12184c4b1a`), labelled "unverified" in the row and the spec. (c) Wait: no build until the source is known.
+  Until answered, FR-234's pending rule holds (stored, not offered, treated as off). Note: under (a) the owner can still try any id himself
+  through Custom app.
+- **Q26** **The `zod` override** (`package.json` `overrides.zod` 4.6.6, set 2026-10-23 for Dependabot alert 2; SDK 1.0.32 asks for 4.6.7;
+  **pending**). (a) **[recommended]** Raise the override to 4.6.7: one copy, the version the SDK was built with, still past the alert's fix. (b)
+  Keep 4.6.6: the SDK runs one patch below what it asks for (untested upstream). (c) Drop the override: the SDK's own pin decides (and any
+  other package's zod with it).
+
+#### Docs (delta)
+
+Each build PR updates what it changes (`docs/rules/docs-sync.md`): `docs/features.md` and `docs/feature-inventory.md` (the Settings row),
+`docs/limits.md` (experimental; Linux; not verified on a real sign-in), `docs/safety.md` (another app's identity, logs show it; no client secret;
+the shell guard), `docs/agent-apps.md` (the `entra` facts, once checked), a `changelog.d/` fragment per build PR. This spec-only PR has no docs
+or changelog impact (no behaviour change).
