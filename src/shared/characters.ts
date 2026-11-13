@@ -38,3 +38,25 @@ export function migrateLegacyTheme<T extends { theme?: string; characters?: Char
   next.characters = keep && keep !== 'theme' ? keep : 'cheeky'; // 'theme' is the default and never written: it does not count as a choice
   return { settings: next, changed: true };
 }
+
+/**
+ * Spec 102 FR-266 (T227): the second copy of `WORLD_FLAGS.retro` (src/renderer/crew.js; `test:characters` fails when they differ). While
+ * closed, `SettingsStore.load` leaves a stored Retro Pixel theme alone. T230 removes both.
+ */
+export const RETRO_MIGRATION_OPEN = false;
+/** The Characters value a Retro Pixel user gets (FR-266); it joins CHARACTER_CHOICES with T122. */
+export const PIXEL_CHARACTERS = 'pixel';
+
+/**
+ * FR-266: a stored theme `retro` is removed (Clean Office) and Characters becomes `pixel` unless a choice is stored (kept, FR-202).
+ * Removing the theme is the write that makes it run once: the result never holds `retro`, so a repeat changes nothing. `open` false
+ * (the flag closed) changes nothing. Pure; reads and logs no value. `changed` says to write the file.
+ */
+export function migrateRetroTheme<T extends { theme?: string; characters?: string; retroMovePending?: true }>(s: T, open: boolean): { settings: T; changed: boolean } {
+  if (!open || s.theme !== 'retro') return { settings: s, changed: false };
+  const next = { ...s };
+  delete next.theme;
+  next.retroMovePending = true; // durable in the same save: the renderer half (T230) clears it once it has moved world, layout and light
+  if (typeof s.characters !== 'string' || !s.characters) next.characters = PIXEL_CHARACTERS as T['characters'];
+  return { settings: next, changed: true };
+}

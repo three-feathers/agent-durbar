@@ -163,6 +163,7 @@
     ['mod+shift+KeyA','the Needs you inbox'],['mod+shift+KeyN','the next agent that needs you'],['mod+shift+KeyH','Previous sessions'],
     ['mod+shift+KeyS','Schedules'], /* spec 044 FR-031: the top-bar Schedules button */
     ['mod+shift+KeyM','the Notes drawer'], /* spec 083 FR-026 (spec 074 FR-085): Ctrl+Shift+M, ⇧⌘M on a Mac */
+    ['mod+shift+KeyF','Search conversations'], /* spec 095 FR-003 (Q2): Ctrl+Shift+F, ⇧⌘F on a Mac (its default; Settings > Keyboard can change it) */
     ['mod+Backquote','Back to the previous chat','other'],['ctrl+Backquote','Back to the previous chat','mac'],['mod+Comma','Settings','mac'],
     ['alt+KeyA','Allow once in a waiting chat','other'],['alt+KeyS','Allow for this session in a waiting chat','other'],['alt+KeyD','Deny in a waiting chat','other'],['alt+KeyN','the next agent that needs you','other'],
     ['mod+alt+KeyA','Allow once in a waiting chat','mac'],['mod+alt+KeyS','Allow for this session in a waiting chat','mac'],['mod+alt+KeyD','Deny in a waiting chat (and the Dock)','mac'],['mod+alt+KeyN','the next agent that needs you','mac'],
@@ -213,7 +214,27 @@
     if(clashOf(c,mac)&&!SAVED_BEFORE.some(x=>sameCombo(c,x)))return Object.assign({},DEFAULT_COMBO);
     return c;
   }
-  const SAVED_BEFORE=[{mod:true,ctrl:false,alt:false,shift:true,code:'KeyM'}];
+  /* spec 095 FR-003: Ctrl+Shift+F too: a Go to saved on it before the search existed is kept, and the search key is then not bound */
+  const SAVED_BEFORE=[{mod:true,ctrl:false,alt:false,shift:true,code:'KeyM'},{mod:true,ctrl:false,alt:false,shift:true,code:'KeyF'}];
+
+  /* ---------------- the Search conversations shortcut (spec 095 FR-003, Q2) ---------------- */
+  const SEARCH_COMBO=Object.freeze({mod:true,ctrl:false,alt:false,shift:true,code:'KeyF'});
+  /* '' when the search may use the combination: the same rules as Go to, its own row of TAKEN aside, and never the Go to key */
+  function searchClashOf(combo,mac,goTo){
+    const c=combo||{};
+    if(goTo&&sameCombo(c,goTo))return 'Already used for Go to.';
+    const own=validCode(c.code)&&(takenBy(c,mac)||[])[1]==='Search conversations';
+    if(!own)return clashOf(c,mac);
+    if(c.typed&&c.typed!==c.code){const why=clashOf(Object.assign({},c,{code:c.typed,typed:''}),mac);if(why)return 'On this keyboard layout it types '+keyName(c.typed)+'. '+why;}
+    return '';
+  }
+  /* saved JSON -> the search combination, or its default when it is missing, damaged or no longer allowed */
+  function loadSearchCombo(json,mac){
+    let o=null; try{o=typeof json==='string'?JSON.parse(json):json;}catch(e){o=null;}
+    if(!o||typeof o!=='object')return Object.assign({},SEARCH_COMBO);
+    const c={mod:o.mod===true,ctrl:o.ctrl===true&&!!mac,alt:o.alt===true,shift:o.shift===true,code:String(o.code||'')};
+    return searchClashOf(c,mac)?Object.assign({},SEARCH_COMBO):c;
+  }
   const sameCombo=(a,b)=>!!a&&!!b&&sig(a)===sig(b);
 
   /* ---------------- Ctrl+A and Ctrl+Backspace outside text (issue 587, spec 074 FR-020, FR-021) ---------------- */
@@ -235,5 +256,6 @@
   }
 
   return {rank,assignNumbers,pruneNumbers,loadNumbers,levelItems,parseStart,pickNumber,view,pick,push,back,crumbs,
-    DEFAULT_COMBO,comboFromEvent,comboMatches,comboParts,clashOf,loadCombo,sameCombo,validCode,takenBy,textSafeKey};
+    DEFAULT_COMBO,comboFromEvent,comboMatches,comboParts,clashOf,loadCombo,sameCombo,validCode,takenBy,textSafeKey,
+    SEARCH_COMBO,searchClashOf,loadSearchCombo};
 })());

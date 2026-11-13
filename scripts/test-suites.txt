@@ -30,6 +30,7 @@ test:sessionsearch
 test:convsearch
 test:convmask
 test:convsearchipc
+test:convsearchui
 test:url
 test:mcp
 test:toolstats
@@ -136,6 +137,7 @@ test:skeleton
 test:teamtemplate
 test:teamstore
 test:teamstore-fs
+test:teamsipc
 test:names
 test:renameadapters
 test:sessionname

@@ -146,7 +146,7 @@
     const cw=x.status==='connected'?W.callWord(x.lastCall):'';
     const stat=`<span class="mst ${esc(c.state.cls)}"${c.state.key.startsWith('unknown')?` title="${esc(W.plain(x.status,120))}"`:''}>${W.iconSvg(c.state.icon)}<span class="mst-w">${esc(c.state.word)}</span>${cw?`<span class="mst-call">\u00b7 ${esc(cw)}</span>`:''}</span>`;
     /* FR-082: the chat dialog's own hint (FR-006) with the agent app's name; Details shows the masked text main sent (FR-007, FR-086) */
-    const hint=W.hintFor({status:x.status,errorClass:x.errorClass,error:x.error,app:rp.app||(m&&m.o.appName)})||(cw?W.callHint(x.lastCall,rp.app||(m&&m.o.appName)):'');
+    const hint=W.hintFor({status:x.status,errorClass:x.errorClass,error:x.error,tokenRefused:x.tokenRefused,tokenVars:x.tokenVars,app:rp.app||(m&&m.o.appName)})||(cw?W.callHint(x.lastCall,rp.app||(m&&m.o.appName)):'');
     const detOpen=!!x.error&&liveDet.has(k);
     const det=x.error?`<button class="btn sm srv-detbtn" type="button" data-lvdet="1" aria-expanded="${detOpen}" aria-label="${esc((detOpen?'Hide':'Show')+' details of '+r.name+' for '+c.name)}">Details</button>`:'';
     const detBox=detOpen?`<div class="srv-det"><pre class="srv-err" tabindex="0" data-lverr="1" aria-label="${esc('Error text of '+r.name+' for '+c.name)}">${esc(x.error)}</pre><button class="btn sm" type="button" data-lvcopy="1" aria-label="${esc('Copy the error text of '+r.name+' for '+c.name)}">Copy</button></div>`:'';
@@ -496,6 +496,8 @@
         <p class="scr-note">Go to (the navigator) opens from anywhere: a floor, a folder, an agent, or a chat by its number (C and the number).</p>
         <div class="scr-row"><span class="scr-row-l" id="navKeyL">Go to shortcut</span><kbd class="navkey-now" id="navKeyNow">${esc(X.navKey.text())}</kbd><button class="btn" type="button" id="navKeyRec" aria-describedby="navKeyL">Change…</button><button class="btn" type="button" id="navKeyReset"${X.navKey.isDefault()?' disabled':''}>Reset to ${esc(X.navKey.defText())}</button></div>
         <p class="scr-note small" id="navKeyMsg" role="status"></p>
+        ${X.searchKey?`<div class="scr-row"><span class="scr-row-l" id="csKeyL">Search conversations shortcut</span><kbd class="navkey-now" id="csKeyNow">${esc(X.searchKey.bound()?X.searchKey.text():'None')}</kbd><button class="btn" type="button" id="csKeyRec" aria-describedby="csKeyL">Change…</button><button class="btn" type="button" id="csKeyReset"${X.searchKey.isDefault()&&X.searchKey.bound()?' disabled':''}>Reset to ${esc(X.searchKey.defText())}</button></div>
+        <p class="scr-note small" id="csKeyMsg" role="status">${X.searchKey.bound()?'':esc(X.searchKey.text()+' is your Go to shortcut, so Search conversations has none. Change one of them.')}</p>`:''}
         <p class="scr-note small">Shortcuts the app, text editing or your operating system already use are refused. The list of operating system shortcuts is a known list, not every one there is. The shortcut follows the key's position, so on a Dvorak layout ${esc(X.navKey.defText())} is the key that types U. On a Mac with Dvorak, ⌘J types H and macOS keeps ⌘H for Hide, so do not pick ⌘J there.</p></section>`:'';
     /* spec 052 FR-066, FR-093: what Durbar does not do, in calm plain words (checked against the README's Safety model and Costs and caps) */
     const notSec=`<section class="scr-sec" aria-labelledby="notH"><h3 id="notH">What Durbar does not do</h3><ul class="scr-not">
@@ -548,7 +550,8 @@
     if($('advMcp')){$('advMcp').ontoggle=()=>{advOpen=$('advMcp').open;if(advOpen&&liveStale){liveStale=false;void repaintLive(true);}};if(cur.section==='mcp'){cur.section=null;const h=$('mcpH');if(h){scrollInBody(h);h.focus({preventScroll:true});atSec=true;}}}
     if($('pfSec'))wireProfiles();
     if(X.floors&&$('floorsSet'))X.floors.render();
-    if($('navKeyRec'))wireNavKey();
+    if($('navKeyRec'))wireKeyRec({rec:'navKeyRec',msg:'navKeyMsg',now:'navKeyNow',reset:'navKeyReset'},X.navKey,'opens Go to');
+    if($('csKeyRec'))wireKeyRec({rec:'csKeyRec',msg:'csKeyMsg',now:'csKeyNow',reset:'csKeyReset'},X.searchKey,'focuses Search conversations'); /* spec 095 FR-003 */
     if(X.sched&&$('schedSet'))X.sched.render();
     /* spec 044 FR-030: the top-bar Schedules button, Ctrl+Shift+S and Ctrl+K open Settings at the Schedules heading (also when Settings is open already) */
     if(cur.section==='schedules'){cur.section=null;const h=$('schH');if(h){scrollInBody(h);h.focus({preventScroll:true});atSec=true;}}
@@ -934,28 +937,31 @@
     await paintSettings();
     const nb=document.querySelector('#myPlaces ~ .scr-tools [data-pl-act="add"], .scr-tools [data-pl-act="add"]')||document.getElementById('plH'); if(nb)focusIn(nb); /* the Add button, or the Places heading */
   }
-  /* spec 074 FR-013 / FR-014: Change… records the next key combination; Escape cancels; a refused one says why */
-  function wireNavKey(){
-    const rec=$('navKeyRec'),msg=$('navKeyMsg'),now=$('navKeyNow'),reset=$('navKeyReset');
+  /* spec 074 FR-013 / FR-014: Change… records the next key combination; Escape cancels; a refused one says why. One recorder for the Go to
+     key and (spec 095 FR-003) the Search conversations key: `K` is X.navKey or X.searchKey; `did` ends "Saved: <keys> …". */
+  function wireKeyRec(ids,K,did){
+    const rec=$(ids.rec),msg=$(ids.msg),now=$(ids.now),reset=$(ids.reset);
     let onKey=null;
-    const stop=()=>{if(onKey)window.removeEventListener('keydown',onKey,true);onKey=null;X.navKey.recording(false);rec.textContent='Change…';rec.setAttribute('aria-pressed','false');};
-    const show=t=>{now.textContent=X.navKey.text();reset.disabled=X.navKey.isDefault();msg.textContent=t;};
+    const stop=()=>{if(onKey)window.removeEventListener('keydown',onKey,true);onKey=null;K.recording(false);rec.textContent='Change…';rec.setAttribute('aria-pressed','false');};
+    /* both rows: a change of one can free or take the other (the search has no key while it equals Go to's) */
+    const showRow=(KK,n,r)=>{if(!KK||!$(n))return;const b=!KK.bound||KK.bound();$(n).textContent=b?KK.text():'None';if($(r))$(r).disabled=KK.isDefault()&&b;};
+    const show=t=>{showRow(X.navKey,'navKeyNow','navKeyReset');showRow(X.searchKey,'csKeyNow','csKeyReset');msg.textContent=t;if(K===X.navKey&&X.searchKey&&$('csKeyMsg'))$('csKeyMsg').textContent=X.searchKey.bound()?'':X.searchKey.text()+' is your Go to shortcut, so Search conversations has none. Change one of them.';};
     rec.onclick=()=>{
       if(onKey){stop();msg.textContent='Not changed.';return;}
-      X.navKey.recording(true);rec.textContent='Press the keys… (Esc to cancel)';rec.setAttribute('aria-pressed','true');msg.textContent='Press the new shortcut now.';
+      K.recording(true);rec.textContent='Press the keys… (Esc to cancel)';rec.setAttribute('aria-pressed','true');msg.textContent='Press the new shortcut now.';
       onKey=e=>{
         if(e.key==='Escape'&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!e.shiftKey){e.preventDefault();e.stopPropagation();stop();msg.textContent='Not changed.';focusIn(rec);return;}
         if(e.key==='Tab'&&!e.ctrlKey&&!e.metaKey&&!e.altKey)return; /* Tab still leaves the button */
-        const c=X.navKey.fromEvent(e); if(!c)return; /* a modifier alone: wait for the key */
+        const c=K.fromEvent(e); if(!c)return; /* a modifier alone: wait for the key */
         e.preventDefault();e.stopPropagation();
-        const why=X.navKey.clash(c);
-        if(why){msg.textContent=X.navKey.textOf(c)+' cannot be used. '+why+' Try another, or press Esc.';return;}
-        stop();X.navKey.set(c);show('Saved: '+X.navKey.text()+' opens Go to.');focusIn(rec);
+        const why=K.clash(c);
+        if(why){msg.textContent=K.textOf(c)+' cannot be used. '+why+' Try another, or press Esc.';return;}
+        stop();K.set(c);show('Saved: '+K.text()+' '+did+'.');focusIn(rec);
       };
       window.addEventListener('keydown',onKey,true);
     };
     rec.onblur=()=>{if(onKey){stop();msg.textContent='Not changed.';}};
-    reset.onclick=()=>{X.navKey.set(null);show('Back to '+X.navKey.text()+'.');focusIn(rec);};
+    reset.onclick=()=>{K.set(null);show('Back to '+K.text()+'.');focusIn(rec);};
   }
   async function onSettingsClick(e){
     if(e.target.closest('#liveBox')){await onLiveClick(e);return;} /* spec 058 FR-082 */
@@ -1470,7 +1476,7 @@
         const rnw=x.status==='connected'&&typeof x.renewedAt==='number'&&W.renewedWord?W.renewedWord(x.renewedAt):''; /* spec 058 FR-221: "Renewed 12:40", a quiet note, no chat line */
         const ckU=x.status==='connected'&&x.checkUnknown===true; /* spec 058 FR-225: the last check before a message got no answer in 30 s */
         const stat=`<span class="mst ${esc(sv.cls)}"${x.status&&sv.cls==='unknown'?` title="${esc(W.plain(x.status,120))}"`:''}>${W.iconSvg(sv.icon)}<span class="mst-w">${esc(sv.word)}</span>${cw?`<span class="mst-call">\u00b7 ${esc(cw)}</span>`:''}${rnw?`<span class="mst-call mst-renew">\u00b7 ${esc(rnw)}</span>`:''}${ckU?`<span class="mst-call mst-unk">\u00b7 Did not answer a check</span>`:''}</span>`;
-        const hint=W.hintFor({status:x.status,errorClass:x.errorClass,error:x.error,app,by})||(cw?W.callHint(x.lastCall,app):'');
+        const hint=W.hintFor({status:x.status,errorClass:x.errorClass,error:x.error,tokenRefused:x.tokenRefused,tokenVars:x.tokenVars,app,by})||(cw?W.callHint(x.lastCall,app):'');
         const detOpen=x.error&&openDet.has(x.name);
         /* FR-007: the masked text (main masked it; never the runtime's raw text) behind Details, and Copy copies exactly that */
         const det=x.error?`<button class="btn sm srv-detbtn" type="button" data-det="${esc(x.name)}" aria-expanded="${detOpen?'true':'false'}" aria-label="${esc((detOpen?'Hide':'Show')+' details of '+x.name)}">Details</button>`:'';
@@ -1798,8 +1804,9 @@
     if(!cur||cur.kind!=='tools')return;
     const actBtns=act?`<button class="btn" type="button" id="actCsv"${act.n?'':' disabled'}>Export CSV</button><button class="btn" type="button" id="actJson"${act.n?'':' disabled'}>Export JSON</button><button class="btn danger" type="button" id="actClear"${act.n?'':' disabled'}>Clear activity</button>`:'';
     const head=act?`${tabs}<span class="grow"></span>${actBtns}`:cost?`${cost.seg}${tabs}<span class="grow"></span><button class="btn" type="button" id="costCsv"${cost.built.rows.length&&!cost.none?'':' disabled'}>Copy as CSV</button>`:`${per}${scopeSel}${tabs}<span class="grow"></span>`;
-    r.innerHTML=`<div class="scr-head"><h2>Tools</h2>${head}<button class="btn" type="button" id="scrClose" title="Close (Esc)">Close</button></div>
-      <div class="scr-body">${body}</div>`;
+    const wide=act?' scr-wide':''; /* spec 052 FR-071 (2026-11-10): the Activity table takes the window width */
+    r.innerHTML=`<div class="scr-head${wide}"><h2>Tools</h2>${head}<button class="btn" type="button" id="scrClose" title="Close (Esc)">Close</button></div>
+      <div class="scr-body${wide}">${body}</div>`;
     wireHead();
     if($('toolScope'))$('toolScope').onchange=e=>{cur.scope=e.target.value||null;paintTools();};
     if($('perSession'))$('perSession').onclick=()=>{if(period==='session')return;period='session';cur.scope=null;paintTools();};
