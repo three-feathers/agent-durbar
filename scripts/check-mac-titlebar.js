@@ -244,7 +244,10 @@ if (require.main === module) {
   const child = useXvfb ? spawn('xvfb-run', ['-a', electron, ...args], { cwd: ROOT, env, stdio: 'inherit', detached: !win }) : spawn(electron, args, { cwd: ROOT, env, stdio: 'inherit', detached: !win });
   const stop = (sig) => { try { win ? child.kill(sig) : process.kill(-child.pid, sig); } catch (e) { /* already gone */ } };
   let timedOut = false;
-  const timer = setTimeout(() => { timedOut = true; stop('SIGTERM'); setTimeout(() => stop('SIGKILL'), 5000).unref(); }, 5 * 60 * 1000);
+  /* 20 min (spec 052 FR-138, review of the narrow states): 57 states took 3m19s on a Mac at load 3 to 6 (about 3.5 s a state, start included)
+     and 6m03s on a loaded Linux simulator; a hang is what this stops, not a slow run. It was 5 min for 42 states. */
+  const LIMIT_MS = 20 * 60 * 1000;
+  const timer = setTimeout(() => { timedOut = true; stop('SIGTERM'); setTimeout(() => stop('SIGKILL'), 5000).unref(); }, LIMIT_MS);
   const done = (code) => {
     clearTimeout(timer);
     const passed = fs.existsSync(path.join(userData, 'pass')), failed = fs.existsSync(path.join(userData, 'fail'));
