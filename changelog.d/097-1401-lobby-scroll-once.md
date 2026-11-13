@@ -1,0 +1,1 @@
+- **Fewer layout reads on a status update** (spec 097 T156, issue 1401): the lobby figures read the floor's scroll once for all their slots instead of once per slot. One status update of one agent reads 97 to 81 times at 1440x900 and 89 to 77 at 1280x800 (15 agents); the look is unchanged. `check-office-ops` now holds the reads at both sizes. T156 (under 40) stays open.

@@ -566,12 +566,13 @@ function syncWalkers(){
   if(ui.view!=='office'||!lobbyOn()){[...walkers.keys()].forEach(dropBack);return;}
   const fr=floor.getBoundingClientRect();
   if(!fr.width||!fr.height)return; /* office hidden (full-screen chat open): leave the figures as they are until it is shown again */
-  const center=el=>{const r=el.getBoundingClientRect();return {x:Math.round(r.left-fr.left+floor.scrollLeft+r.width/2),y:Math.round(r.top-fr.top+floor.scrollTop+r.height/2)};};
+  let sc0=null; /* spec 097 T156 (2026-11-13): the floor's scroll is read once for the slots below, which are measured one after another with nothing written between */
+  const center=(el,same)=>{const r=el.getBoundingClientRect(),sc=same?(sc0||(sc0={x:floor.scrollLeft,y:floor.scrollTop})):{x:floor.scrollLeft,y:floor.scrollTop};return {x:Math.round(r.left-fr.left+sc.x+r.width/2),y:Math.round(r.top-fr.top+sc.y+r.height/2)};};
   const want=new Map(); /* agent id -> slot centre of the place it is visiting (only those that fit; the rest are the "+N") */
   lobbyPlaces().forEach(p=>{
     const tile=document.querySelector(`#stage .place[data-place="${p.id}"]`); if(!tile)return;
     const ids=placeVisitors(p.id), shown=tile.querySelectorAll('.slot.on').length; /* the entries drawn (the "+N" circle is not one) */
-    ids.slice(0,shown).forEach((id,i)=>{const sl=tile.querySelector(`.slot[data-slot="${i}"]`);if(sl)want.set(id,center(sl));});
+    ids.slice(0,shown).forEach((id,i)=>{const sl=tile.querySelector(`.slot[data-slot="${i}"]`);if(sl)want.set(id,center(sl,true));});
   });
   const deskPos=id=>{const d=document.querySelector(`#stage [data-id="${CSS.escape(id)}"]`);const sc=d&&(d.querySelector('.scene')||d);return sc?center(sc):null;};
   const move=(w,pos,after,instant)=>{ /* instant: a layout change moved the slot under a resting figure: put it back, no walk */

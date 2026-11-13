@@ -227,6 +227,40 @@ module.exports = async (ctx) => {
     assert.ok(quiet.length >= 4, `${n} agents: at least 4 live paints without a render (${live.renders})`);
     rows[`readsPerLivePaint@${n}`] = med(quiet);
 
+    /* the same status update at 1280x800 (T156, issue 1401): the reads differ with the width, so the limit is held at both sizes */
+    await load(1280, 800);
+    await js(INSTRUMENT);
+    const ids80 = await js(`window.__durbarSimUi.agents().filter(a=>!a.parent).map(a=>a.id)`);
+    const emit80 = (st) => `window.__durbarSimEmit({type:'status',sessionId:${jsLiteral(ids80[3])},timestamp:Date.now(),status:${jsLiteral(st)}})`;
+    await drawn(emit80('working'));
+    const per80 = { renders: [], searches: [], reads: [] };
+    for (let i = 0; i < 8; i++) {
+      assert.ok(await until(`window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()`, 15000), `${n} agents at 1280x800: the office settled before update ${i}`);
+      await js(TWO_FRAMES);
+      await js(`window.__ops.start()`);
+      await drawn(emit80(i % 2 ? 'working' : 'idle'));
+      const o = await js(`window.__ops.stop()`);
+      for (const k of Object.keys(per80)) per80[k].push(o[k]);
+    }
+    console.log('[ops]', n, 'agents at 1280x800, per status update (8): renders', per80.renders.join(','), 'searches', per80.searches.join(','), 'reads', per80.reads.join(','));
+    assert.ok(per80.renders.every((r) => r >= 1 && r <= 2), `${n} agents at 1280x800: every status update is one render, two at most with a timer's (${per80.renders})`);
+    rows[`readsPerStatus1280@${n}`] = med(per80.reads);
+    /* the figures' places stay right (the scroll is read once for all slots, not once per slot): with the floor scrolled, a status update draws, and every walker's target is the centre of a lobby slot in
+       the floor's content coordinates (the rect less the floor's rect plus its scroll). A mutant that drops the scroll moves every figure by it. At 40 agents the floor does scroll at this size. */
+    const room = await js(`(()=>{const f=document.getElementById('floor');return f.scrollHeight-f.clientHeight;})()`);
+    if (n === 40) assert.ok(room > 40, `${n} agents at 1280x800: the floor scrolls (${room} px), so the scroll case is real`);
+    await js(`document.getElementById('floor').scrollTop=${jsLiteral(Math.min(room, 120))}`);
+    await drawn(emit80('idle')); await drawn(emit80('working'));
+    const SLOTS = `(()=>{const f=document.getElementById('floor'),fr=f.getBoundingClientRect(),c=e=>{const r=e.getBoundingClientRect();return Math.round(r.left-fr.left+f.scrollLeft+r.width/2)+','+Math.round(r.top-fr.top+f.scrollTop+r.height/2);};
+      const slots=new Set([...document.querySelectorAll('#stage .place .slot.on')].map(c));
+      const ws=[...document.querySelectorAll('.walker')].map(w=>(/translate\\(([-\\d.]+)px,\\s*([-\\d.]+)px\\)/.exec(w.style.transform)||[]).slice(1,3).map(Math.round).join(','));
+      return {scrolled:f.scrollTop,walkers:ws.length,off:ws.filter(x=>!slots.has(x)).length};})()`;
+    const fig = await js(SLOTS);
+    console.log('[ops]', n, 'agents at 1280x800, floor scrolled', fig.scrolled, 'px:', fig.walkers, 'walkers,', fig.off, 'off their slot');
+    assert.ok(fig.walkers > 0, `${n} agents: the lobby has figures to place`);
+    if (n === 40) assert.ok(fig.scrolled > 0, `${n} agents: the floor stayed scrolled (${fig.scrolled} px)`);
+    rows[`walkersOffSlot@${n}`] = fig.off;
+
     if (n === 15) {
       /* stale fits (T156): what an incremental fit leaves must equal a full fit, after a status filter and its clearing, at 1280x800 */
       const stale = [];
