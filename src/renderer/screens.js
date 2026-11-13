@@ -777,8 +777,8 @@
   }
   /* spec 102 FR-300, FR-301 (owner, 2026-11-03; T266, first step): the World section, picture cards in one radio group. Plain is today's flat office
      (officeview flat); the other cards are Real office in that world (officeview real + the world), both kept where they always were. A world
-     behind a closed flag is not offered by crew.js, so it is not listed here, zoom or not. Previews are the app's own pictures (world-previews/,
-     taken by shots-102-world-previews.js); a world without one shows a plain tile with its name. */
+     behind a closed flag is not offered by crew.js, so it is not listed here, zoom or not. Previews are the app's own pictures (realoffice/previews/,
+     taken by shots-102-previews.js); a world without one shows a plain tile with its name. */
   const PLAIN_CARD={id:'plain',name:'Plain',line:'Desks in coloured rooms, one person each, status in words.'};
   const worldCards=()=>{
     const V=X.view, W=V&&V.world;
@@ -788,10 +788,10 @@
   function worldSection(){
     const list=worldCards();
     if(!list.length)return '';
-    const cur=worldCur(), P=window.DurbarWorldPreviews||{};
+    const cur=worldCur(), P=(window.DurbarWorldPreviews&&window.DurbarWorldPreviews.previews)||{};
     const card=w=>{
       const on=w.id===cur, pv=Object.prototype.hasOwnProperty.call(P,w.id)?P[w.id]:null;
-      const pic=pv?`<span class="wpic" aria-hidden="true"><img src="world-previews/${esc(w.id)}.webp" alt="" width="640" height="400" draggable="false" style="--zx:${Number(pv.x)||50}%;--zy:${Number(pv.y)||50}%"></span>`:`<span class="wpic wnone" aria-hidden="true"><b>${esc(w.name)}</b></span>`;
+      const pic=pv?`<span class="wpic" aria-hidden="true"><img src="realoffice/previews/${esc(String(pv.file||'').replace(/[^\w.-]/g,''))}" alt="" width="${Number(pv.width)||640}" height="${Number(pv.height)||400}" draggable="false" style="--zx:${Number(pv.origin&&pv.origin.x)||50}%;--zy:${Number(pv.origin&&pv.origin.y)||50}%"></span>`:`<span class="wpic wnone" aria-hidden="true"><b>${esc(w.name)}</b></span>`;
       return `<li class="throw"><button type="button" class="wcard" role="radio" data-world="${esc(w.id)}" aria-checked="${on}" tabindex="${on?'0':'-1'}" aria-labelledby="wn-${esc(w.id)}" aria-describedby="wl-${esc(w.id)}">${pic}<span class="wtx"><b id="wn-${esc(w.id)}">${esc(w.name)}</b><small id="wl-${esc(w.id)}">${esc(w.line)} Built in.</small></span>${on?'<span class="wuse">In use</span>':''}</button></li>`;
     };
     return `<section class="scr-sec" aria-labelledby="worldH"><h3 id="worldH">World</h3>

@@ -145,12 +145,16 @@ module.exports = async (ctx) => {
       }
     }
 
-    // ---- a flag open lists its world, after the Photo office, with a tile when it has no picture; the checked one is still the one in use ----
+    // ---- a flag open lists its world, after the Photo office, with its preview, or a tile when it has none; the checked one is still the one in use ----
     await emulate([{ name: 'forced-colors', value: 'none' }]);
     await open(w, h, { officeview: 'real', worldflags: 'cave,retro', world: 'retro' });
     assert.deepStrictEqual(await names(), ['plain', 'photo', 'cave', 'retro'], `${w}x${h}: with their flags open the cave and the arcade are listed, in order`);
     assert.deepStrictEqual(await checked(), ['retro'], `${w}x${h}: the arcade is in use`);
-    assert.ok(await js(`document.querySelectorAll('#wrGroup .wnone').length===2`), `${w}x${h}: a world without a picture shows a plain tile with its name`);
+    assert.ok(await js(`document.querySelectorAll('#wrGroup .wpic img').length===4&&document.querySelectorAll('#wrGroup .wnone').length===0`), `${w}x${h}: every listed world shows its preview picture`);
+    await js(`delete window.DurbarWorldPreviews.previews.cave;0`);
+    await js(`document.getElementById('scrClose').click();0`);
+    await js(`document.getElementById('settingsBtn').click();0`);
+    await ok(`document.querySelectorAll('#wrGroup .wnone').length===1`, `${w}x${h}: a world without a preview shows a plain tile with its name`);
   }
   console.log('[check-settings-worlds] all checks passed');
 };
