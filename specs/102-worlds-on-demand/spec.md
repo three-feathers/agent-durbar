@@ -773,6 +773,10 @@ Agent decisions stand until the owner changes them.
 
 ## Changes
 
+### 2026-11-13: T227, the Retro Pixel migration is built, inert behind the flag (FR-266; issue #1400)
+
+The settings-file half of FR-266 lands before the flip, in `migrateRetroTheme` (`src/shared/characters.ts`) and `SettingsStore.load`. **Rules:** a stored `theme` of `retro` is removed (Clean Office, as 035 FR-018 does for a removed built-in); `characters` becomes `pixel` when none is stored (the file never writes `theme`), and any stored value stays untouched, FR-202 deciding later what a world does with it. **Once, with no marker:** removing `theme` is the write that makes a repeat change nothing (the 077 FR-067 pattern), no value is logged and no request is made. **Behind the flag:** `RETRO_MIGRATION_OPEN` in `src/shared/characters.ts` is a second copy of `WORLD_FLAGS.retro` (`crew.js`, closed), and `test:characters` fails when the two differ; while closed `load` leaves a stored `retro` alone, so nothing a user sees changes. T230 removes both. **Left for T230 and T266:** `pixel` is not in `CHARACTER_CHOICES` until T122, so a reader drops the written value until then (nothing runs before the flip); world `retro`, Office layout Real office and Light Day are renderer state (`durbar.world` and the layout live in `localStorage` until FR-201, T266) and move with the flip; `shots-102-arcade` (no dialog, toast or notice) needs the arcade drawn and is T230's.
+
 ### 2026-11-11: the store's inode and device checks compare bigints (issue #1491; FR-060..FR-062)
 
 `readFile`'s `lstat`/`fstat` inode check and `sameDir`'s device-and-inode re-check before each delete read `{ bigint: true }` (`lstatBig` in `src/main/worlds/store.ts`): an NTFS file ID above 2^53 loses its low bit as a plain number, so a swapped file or folder with a neighbouring ID could pass. Sizes and link counts are compared as before. Details, tests and limits: spec 083 *Changes* 2026-11-11 (`test:worldstore`, *issue 1491 world part ino*, *world folder ino* and *dev*; not run on Windows).
