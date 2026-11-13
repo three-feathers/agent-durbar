@@ -378,6 +378,49 @@ export function checkDriverSource(f: string, t: string): string[] {
 }
 const allBad = drivers.flatMap((f) => checkDriverSource(f, fs.readFileSync(path.join(ROOT, 'scripts', f), 'utf8')));
 assert.deepStrictEqual(allBad, [], '\n' + allBad.join('\n'));
+// ---- spec 008 FR-268: H.key only queues the key (sendInputEvent), so a call nobody awaits can land after the next step ----
+/** Calls of `H.key` and of a wrapper of it (a name whose definition line holds `H.key(`) that start a statement and are not awaited, returned or passed on. */
+export function checkKeyAwait(f: string, t: string): string[] {
+  const lines = t.split('\n');
+  const code = (l: string) => l.replace(/\/\/.*$/, '').replace(/^\s*\*.*$/, '');
+  const names = new Set<string>(['H.key']);
+  for (const l of lines) { const m = /\b(?:const|let|var|function)\s+(\w+)\s*=.*\bH\.key\(/.exec(code(l)); if (m) names.add(m[1]); }
+  const bad: string[] = [];
+  lines.forEach((raw, n) => {
+    const l = code(raw);
+    for (const name of names) {
+      const re = new RegExp('(^|[^\\w.$])' + name.replace('.', '\\.') + '\\(', 'g');
+      for (let m = re.exec(l); m; m = re.exec(l)) {
+        const at = m.index + m[1].length;
+        const before = l.slice(0, at).trimEnd();
+        if (!(before === '' || /(;|\{|\}|\)|\belse|\bdo)$/.test(before))) continue; // awaited, returned, `=>`, an argument or a value
+        let depth = 0, k = at + name.length;
+        for (; k < l.length; k++) { if (l[k] === '(') depth++; else if (l[k] === ')' && --depth === 0) break; }
+        if (/^\s*\.(then|catch)\(/.test(l.slice(k + 1))) continue;
+        bad.push(`${f}:${n + 1}: ${name}(...) is not awaited: its key can land after the next step (await it, then wait for its effect)`);
+      }
+    }
+  });
+  return bad;
+}
+const keyFiles = fs.readdirSync(path.join(ROOT, 'scripts')).filter((x) => /\.js$/.test(x) && x !== 'driver-helpers.js');
+const keyBad = keyFiles.flatMap((f) => checkKeyAwait(f, fs.readFileSync(path.join(ROOT, 'scripts', f), 'utf8')));
+assert.deepStrictEqual(keyBad, [], '\n' + keyBad.join('\n'));
+const keyDef = "const key = (k) => H.key(k, [], { char: 'always' });\n";
+assert.deepStrictEqual(checkKeyAwait('x.js', keyDef + "await key('A'); await H.key('B'); return key('C'); H.key('D').then(() => 1);\nawait x(() => H.key('E'));\nawait Promise.all([key('F')]);\n// H.key('G');\n"), [], 'the key check passes awaited, returned, passed-on and .then forms');
+for (const [what, line] of [
+  ['a bare H.key call', "H.key('Escape');"],
+  ['a bare H.key call after a statement', "await js('x'); H.key('Escape', [], { pause: 0 });"],
+  ['a bare wrapper call', "await js('x'); key('Down');"],
+  ['a bare wrapper call after an if', "if (a) key('Down');"],
+]) assert.ok(checkKeyAwait('x.js', keyDef + line + '\n').length > 0, `the key check catches ${what}`);
+// a mutant: an un-awaited call planted in a copy of a real driver must be caught, by the assert below, not by a crash
+{
+  const real = fs.readFileSync(path.join(ROOT, 'scripts', 'check-052-primary-btn.js'), 'utf8');
+  const planted = real.replace(/await H\.key\('Escape'\)/, "H.key('Escape')");
+  assert.notStrictEqual(planted, real, 'the key-check mutant found its call to change');
+  assert.ok(checkKeyAwait('check-052-primary-btn.js', planted).length > 0, 'the key check catches a bare H.key call planted in a real driver');
+}
 // the guard itself catches what it is for (a mutation of a clean driver must fail)
 const clean = "const { helpers, jsLiteral } = require('./driver-helpers');\nmodule.exports = async (ctx) => { await ctx.js(`document.title=${jsLiteral(1)}`); };\n";
 assert.deepStrictEqual(checkDriverSource('x.js', clean), []);

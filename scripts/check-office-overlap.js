@@ -1254,7 +1254,7 @@ async function driver(ctx) {
       await type('explicacion');
       if (shotsDir) await ctx.shot(path.join(shotsDir, `${prefix}-prevsearch-${w}x${h}.png`));
       await ctx.js(`document.getElementById('prevQ').focus()`);
-      H.key('Escape', [], { pause: 0 });
+      await H.key('Escape', [], { pause: 0 });
       await must(`(document.getElementById('prevQ')||{value:'x'}).value===''`, 'Escape to clear the search box');
       await stable('after Escape');
       const cleared = await ctx.js(`({v:document.getElementById('prevQ')&&document.getElementById('prevQ').value,rows:document.querySelectorAll('#prevLists .prev-row').length})`);
