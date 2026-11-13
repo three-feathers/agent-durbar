@@ -15,13 +15,13 @@ const ROOT = (() => { let d = __dirname; while (!fs.existsSync(path.join(d, 'pac
 const RO = path.join(ROOT, 'src', 'renderer', 'realoffice');
 
 /** FR-062 caps, in bytes, by kind of picture */
-export const CAPS = { person: 80 * 1024, fixture: 120 * 1024, desk: 60 * 1024, floor: 40 * 1024, wall: 120 * 1024, monitor: 30 * 1024, glow: 20 * 1024, total: 10 * 1024 * 1024 };
+export const CAPS = { person: 80 * 1024, fixture: 120 * 1024, desk: 60 * 1024, floor: 40 * 1024, wall: 120 * 1024, monitor: 30 * 1024, glow: 20 * 1024, welcome: 150 * 1024, total: 10 * 1024 * 1024 };
 /** spec 102 FR-213: all shipped art (every world and every set) at most this many bytes */
 export const SHIPPED_MAX = 30 * 1024 * 1024;
 export const PERSON_MAX_H = 640;
 const KEYS = ['files', 'source', 'tool', 'date', 'made by', 'approved by', 'reference', 'prompt', 'cut', 'licence'];
 const CLAUSE = /fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named/;
-const kindOf = (f: string): keyof typeof CAPS | null => /^fx-[a-z]+\.webp$/.test(f) ? 'fixture' : /^p\d\d-[\w-]+(\.h)?\.webp$/.test(f) || /^[a-z][a-z0-9-]*-\w+\.webp$/.test(f) ? 'person' : f === 'desk.webp' || f === 'desk.h.webp' ? 'desk' : /^floor(-night)?\.webp$/.test(f) ? 'floor' : /^wall(-night)?\.webp$/.test(f) ? 'wall' : /^monitor(-[a-z]+)?\.webp$/.test(f) ? 'monitor' : f === 'glow.webp' ? 'glow' : null;
+const kindOf = (f: string): keyof typeof CAPS | null => /^fx-[a-z]+\.webp$/.test(f) ? 'fixture' : /^p\d\d-[\w-]+(\.h)?\.webp$/.test(f) || /^[a-z][a-z0-9-]*-\w+\.webp$/.test(f) ? 'person' : f === 'desk.webp' || f === 'desk.h.webp' ? 'desk' : /^floor(-night)?\.webp$/.test(f) ? 'floor' : /^wall(-night)?\.webp$/.test(f) ? 'wall' : /^monitor(-[a-z]+)?\.webp$/.test(f) ? 'monitor' : f === 'glow.webp' ? 'glow' : f === 'welcome.webp' ? 'welcome' : null;
 
 /** ASSETS.md: one section per source sheet (`### name`), each a list of `- key: value` lines */
 export function sections(md: string): Map<string, Record<string, string>> {
@@ -82,6 +82,7 @@ export function problems(files: Map<string, Buffer>, peopleJson: string, md: str
     /* spec 102 FR-254, SC-025: a pixel-art picture is lossless (VP8L), one file pixel per grid pixel, and never animated */
     if (pixelArt && !(info.chunks.includes('VP8L') && !info.chunks.includes('VP8 ') && !info.chunks.includes('ALPH'))) out.push(`${name}: a pixel-art picture must be lossless (VP8L only)`);
     if (kind !== 'floor' && kind !== 'wall' && !info.chunks.includes('ALPH') && !info.chunks.includes('VP8L')) out.push(`${name}: no alpha channel`);
+    if (kind === 'welcome' && (info.width > 1920 || info.height > 1200)) out.push(`${name}: ${info.width}x${info.height}, over 1920x1200 (spec 102 FR-042)`);
     if (kind === 'monitor' && info.height > 300) out.push(`${name}: ${info.height} px tall, over 300 (spec 102 FR-220)`);
     if (kind === 'person' && info.height > PERSON_MAX_H) out.push(`${name}: ${info.height} px tall, over ${PERSON_MAX_H}`);
   }
@@ -117,7 +118,7 @@ export function problems(files: Map<string, Buffer>, peopleJson: string, md: str
   }
   want.add('desk.webp'); want.add('floor.webp');
   for (const [pid, parts] of Object.entries((meta as { rig?: Record<string, Record<string, unknown>> }).rig || {})) for (const key of Object.keys(parts)) want.add(`${pid}-rig${key}.webp`); /* spec Changes 2026-11-01 */
-  for (const k of ['wall', 'monitor'] as const) { const v = (meta as Record<string, unknown>)[k]; if (typeof v === 'string') want.add(v); } // optional parts a world names (spec 102 FR-220)
+  for (const k of ['wall', 'monitor', 'welcome'] as const) { const v = (meta as Record<string, unknown>)[k]; if (typeof v === 'string') want.add(v); } // optional parts a world names (spec 102 FR-220)
   /* the arcade names its parts in objects (spec 102 FR-252, FR-257, FR-260): three cabinets, the night room, the glow strip */
   const objs = meta as unknown as { monitor?: Record<string, { file: string; cells: number; bodies?: number; screenRect: number[]; marqueeRect: number[] }>; night?: { wall: string; floor: string }; glow?: { file: string; cells: string[] } };
   if (objs.monitor && typeof objs.monitor === 'object') for (const [k, mv] of Object.entries(objs.monitor)) {
@@ -333,6 +334,11 @@ if (worldIds.includes('retro')) {
   assert.strictEqual(heights.length, 15, 'a faceBox per person (T201)');
   assert.ok(Math.min(...heights) >= FACE_GRID, `the smallest measured face (${Math.min(...heights)} grid px) is at least the layout's FACE_GRID (${FACE_GRID}): the layout never promises more than the art has`);
   assert.ok(Math.min(...heights) * 2 >= FACE_FLOOR, 'at g = 2 the smallest face is at least the 24 px floor (FR-229)');
+  /* spec 102 FR-352 (T206): the first-run picture is in the pack, named by world.json, lossless, in the part's size and cap, and is the hall (not a blank) */
+  const wel = w.files.get('welcome.webp') as Buffer, welInfo = webpInfo(wel);
+  assert.strictEqual((w.json as { welcome?: string }).welcome, 'welcome.webp', 'world.json names welcome.webp (FR-352)');
+  assert.ok(wel.length <= CAPS.welcome && welInfo.width <= 1920 && welInfo.height <= 1200 && welInfo.width * 10 === welInfo.height * 16, `welcome.webp is 16:10, at most 1920x1200 and ${CAPS.welcome} bytes: ${welInfo.width}x${welInfo.height}, ${wel.length}`);
+  assert.ok(wel.length > 8 * 1024, 'welcome.webp is a drawn hall, not a flat fill (over 8 KB lossless)');
   // T208: the sizes of the committed files, against the caps
   const wBytes = [...w.files.values()].reduce((n, b) => n + b.length, 0), sBytes = [...st.files.values()].reduce((n, b) => n + b.length, 0);
   console.log(`retro arcade: world ${(wBytes / 1024).toFixed(1)} KB (${w.files.size} files), people ${(sBytes / 1024).toFixed(1)} KB (${st.files.size} files), together ${((wBytes + sBytes) / 1024).toFixed(1)} KB`);
@@ -345,7 +351,7 @@ if (worldIds.includes('retro')) {
   assert.deepStrictEqual(rel(problems(new Map([['p01-book.webp', lossless]]), mini, sec)), [], 'a lossless pixel picture passes');
   assert.ok(rel(problems(new Map([['p01-book.webp', lossy]]), mini, sec)).some((x) => /must be lossless/.test(x)), 'red: a lossy picture in a pixel-art pack');
   assert.ok(rel(problems(new Map([['p01-book.webp', lossless]]), mini.replace('"p01":', '"p01":{"figH":72,"poses":{"book":[32,71],"coffee":[30,71]},"feet":{"book":1,"coffee":1},"top":{"book":0,"coffee":0}},"p02":'), sec)).some((x) => /not in the folder/.test(x)), 'red: a person missing a frame it names');
-  for (const [name, kind] of [['fx-bank.webp', 'fixture'], ['desk.webp', 'desk'], ['floor.webp', 'floor'], ['wall.webp', 'wall'], ['monitor.webp', 'monitor'], ['glow.webp', 'glow'], ['p01-book.webp', 'person']] as const) {
+  for (const [name, kind] of [['fx-bank.webp', 'fixture'], ['desk.webp', 'desk'], ['floor.webp', 'floor'], ['wall.webp', 'wall'], ['monitor.webp', 'monitor'], ['glow.webp', 'glow'], ['welcome.webp', 'welcome'], ['p01-book.webp', 'person']] as const) {
     const over = Buffer.concat([lossless, Buffer.alloc(CAPS[kind])]);
     assert.ok(problems(new Map([[name, over]]), mini, sec).some((x) => new RegExp(`${name.replace('.', '\\.')}: \\d+ bytes, over the ${kind} cap`).test(x)), `red: a planted ${kind} over its cap`);
   }

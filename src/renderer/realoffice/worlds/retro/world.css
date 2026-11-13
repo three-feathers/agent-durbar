@@ -106,5 +106,9 @@
 .ro[data-world="retro"] .ro-ctx rect{x:calc(1.5px*var(--ro-g));y:calc(1.5px*var(--ro-g));width:calc(var(--ro-cw,0px) - 3px*var(--ro-g));height:calc(var(--ro-ch,0px) - 3px*var(--ro-g));stroke-width:max(4px,calc(2px*var(--ro-g)))}
 .ro[data-world="retro"] .ro-ctx .ro-ck{stroke-width:calc(max(4px,2px*var(--ro-g)) + 2px)}
 
+/* spec 102 FR-352, 097 FR-118 first run: the hall is the page behind the card (welcome.webp, drawn in code), nearest pixel; the card keeps the app's own opaque surface, so its text is read against the app's token, never against the picture */
+html[data-world="retro"] #floor:has(> #stage > .welcome){background:#0c0816 url(welcome.webp) center/cover no-repeat;image-rendering:pixelated}
+html[data-world="retro"] #stage > .welcome{background:var(--surface);border-color:var(--line-2);box-shadow:var(--shadow-pop)}
+@media (forced-colors:active){html[data-world="retro"] #floor:has(> #stage > .welcome){background:Canvas}}
 /* spec 102 FR-264, 097 FR-118 first run: no counts in the top bar (all zero); the space stays, so the bar does not move */
 html[data-world="retro"] body:has(#stage > .welcome) #stats{visibility:hidden}
