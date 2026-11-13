@@ -177,6 +177,15 @@ it('pack: a file over the entry limit is refused by name before it is opened', (
   try { assert.throws(() => packWorld(w.dir), /"big\.webp" is too big/); } finally { fs.openSync = real; }
   assert.ok(!opened.includes('big.webp'), 'the big file was opened');
 });
+it('pack: a file that grows past the entry limit between lstat and the read is refused by name, not read', () => {
+  const w = makeWorld();
+  const max = require(path.join(ROOT, 'dist-scripts', 'src', 'shared', 'worldzip.js')).MAX_ENTRY_BYTES;
+  const realF = fs.fstatSync, realR = fs.readFileSync, read = [];
+  fs.fstatSync = (fd, ...a) => { const st = realF(fd, ...a); return Object.assign(Object.create(Object.getPrototypeOf(st)), st, { size: max + 1 }); };
+  fs.readFileSync = (p, ...a) => { if (typeof p === 'number') read.push(p); return realR(p, ...a); };
+  try { assert.throws(() => packWorld(w.dir), /is too big \(\d+ bytes, the most is \d+\)/); } finally { fs.fstatSync = realF; fs.readFileSync = realR; }
+  assert.deepStrictEqual(read, [], 'a file was read after fstat said it was too big');
+});
 it('pack: a Windows device name, a name that differs only by case and a non-ASCII name are refused, by name', () => {
   const w = makeWorld();
   assert.throws(() => listing(['con.txt'], () => packWorld(w.dir)), (e) => /"con\.txt": .*reserved Windows device name/.test(e.message));
@@ -320,6 +329,7 @@ if (!process.env.WORLD_PACK_MODULE) {
     ['packer: lstat turned into stat', 'const st = fs.lstatSync(full);', 'const st = fs.statSync(full);', ['pack: a folder or a link inside is refused, not followed', 'pack: a link to a file outside the folder is refused, not followed'], 'links'],
     ['packer: a link swapped in before the read is followed', [['(fs.constants.O_NOFOLLOW || 0)', '0'], ['now.ino !== st.ino || now.dev !== st.dev', 'false']], null, ['pack: a file swapped for a link between lstat and the read is refused'], 'links'],
     ['packer: size checked only after the read', 'if (st.size > max) throw', 'if (false) throw', ['pack: a file over the entry limit is refused by name before it is opened']],
+    ['packer: size not checked again on the open file (fstat)', 'if (now.size > max) throw', 'if (false) throw', ['pack: a file that grows past the entry limit between lstat and the read is refused by name, not read']],
     ['packer: names not checked first', 'const why = segmentProblem(name);', "const why = '';", ['pack: a Windows device name, a name that differs only by case and a non-ASCII name are refused, by name']],
     ['packer: case clash not checked', 'if (seen.has(key)) throw', 'if (false) throw', ['pack: a Windows device name, a name that differs only by case and a non-ASCII name are refused, by name']],
     ['gate: ctx not checked', "if (!ctx || typeof ctx !== 'object') {", 'if (false) {', ['gate ctx: no context, or not an object, refuses available and names the problem']],
