@@ -283,6 +283,19 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
 
 - `[IMPLEMENTED]` sim: 2026-11-01 (issue #1010): `scripts/shots-033.js` does a real mouse drag of a floor's handle (only a transform changes mid-drag), checks the persisted order, that a press on the name does not drag, the controls' names, 32x32 icon buttons and the Up/Down save; mutant: dropping the `reorderFloors` call in the drop fails it. Not run on macOS or Windows.
 - `[KNOWN GAP]` 2026-11-01 (issue #1010): the toggle switch's forced-colours rule (`screens.css`, Highlight track, HighlightText knob) and the floor row's pointer drag with a touch screen or pen were not seen in a real session; only a mouse drag in the simulator and the contrast numbers are tested. The icon buttons (Up, Down, Focus mode, Rename, Delete) and the drag handle were not used by hand with the keyboard beyond the simulator's focus and click checks, and nothing was run by hand on macOS or Windows (CI runs the suite there).
+## Changes 2026-11-11: the floors-drag step of `shots-033` logs what it saw when it fails (issue #1526)
+
+One red on Linux CI (run 42963491407, job 130337622490, ubuntu 4/4, 1280x800): `mid-drag the lifted floor only has a transform` with `{lift:false, other:'x', tf:false}`, which means no `.reo-lift` existed at that moment: the drag did not start, or the lifted row was gone. It was not a lifted floor with extra inline styles, which is what the assert text says. Two things in `reorder.js` / `app.js` give exactly that result: (1) a pointermove with no left button between the press and the 6 px threshold clears the press, so nothing lifts; (2) a re-render of the panel (`paintFloors` sets `innerHTML`) replaces the grip or the lifted row.
+
+Evidence (macOS, main 9526269d2, simulator): `shots-033` 5 of 5 passed alone and 5 of 5 with six busy CPU loops; with a scratch hook that sends one button-less move 10 ms after the press it failed 3 of 3 with the identical text. So a stray move is sufficient. It was not seen in CI (the log has no pointer events), and a re-render is not excluded.
+
+Delta, diagnostic only (the verdict, the limits, the waits and the moves of the driver do not change; no retry, no added wait):
+- The floors-drag step of `scripts/shots-033.js` runs inside `H.pointerStep` (spec 097 T302), with its assert inside. When the step's assert fails, the pointer log is printed as before and, next to it, a ring (last 100) of the DOM mutations of `#floorsPop` during the step: milliseconds since the step began, the kind (`childList` or `attributes`), the target tag and class, and counts of added and removed nodes. No page text. A pass prints nothing.
+- The assert text says `the drag did not start (no lifted floor)` when no `.reo-lift` exists, and keeps `mid-drag the lifted floor only has a transform` for a lifted floor with extra inline styles.
+- The mutation ring is an option of the shared helper (`pointerStep(driver, name, fn, { dom: '#floorsPop' })`), tested in `scripts/test-pointer-log.ts` with mutants.
+
+`[KNOWN GAP]` 2026-11-11 (issue #1526): the cause of the CI red is not known. The next red of this step prints the pointer events and the mutations; until one does, a stray move and a re-render are both possible. Linux and Windows were not run for this change.
+
 ## Changes 2026-10-31: doors removed (pointer, spec 017 T024)
 
 Spec 017 FR-029 (owner decision, no doors) removed the Office with cabins layout, the desk door button, meeting-room signs, room door plates, **Close all** / **Open all**, door-held schedules and the door refusal of remote control, and `door-art`, `--door-*` and the door words of the theme contract. Any requirement in this spec about those (door plates, plate totals or siren, door signs, collapse, Close all / Open all, the `door` field) no longer applies and is kept as a record; Hide folder, floors and the plain status word stay. See spec 017's table of what was lost and what remains.

@@ -66,6 +66,97 @@ function simSandboxFor(i: number, kind: string, mode: string): SandboxState | un
   if (i === 12) return { state: 'unknown', mechanism: 'bubblewrap', covers, writes, verified: false, reason: 'Waiting for the app to confirm its sandbox at the start.' }; // · Sandbox: checking
   return { state: 'on', mechanism: i === 13 ? 'processcontainer' : i % 2 ? 'seatbelt' : 'bubblewrap', covers, writes, ...(kind === 'copilot' && mode === 'ask' ? { approvedMayLeave: true } : {}), ...(kind === 'copilot' ? { heldFloor: true } : {}), verified: false }; // FR-021a (K15); FR-022c: Copilot's floor is lowered at a switch to Allow all
 }
+/**
+ * Spec 111 T007: the simulator's team templates, in memory (nothing is written anywhere), with main's identity rules in miniature
+ * (`src/main/teamsipc.ts`): ids are the simulator's, a `memberId` from the window is refused on a new template, kept by `memberId` on an update
+ * (unknown or repeated: refused), `briefFrom` is kept by `memberId` and only `teamsMarkMine` clears it, `origin` is always `own` for a window put.
+ * Not the real validator: that is shared code the page does not load yet (the form's own checks come with spec 111 T008), so a field's value is
+ * not checked here. A page address `simteams=imported` seeds one imported template with two marked briefs. Errors name fields, never values.
+ */
+function simTeamsApi(qs: URLSearchParams): Pick<DurbarApi, 'teamsList' | 'teamsPut' | 'teamsDelete' | 'teamsDuplicate' | 'teamsMarkMine'> {
+  type M = { name?: unknown; memberId?: string; briefFrom?: 'file' } & Record<string, unknown>;
+  type T = { id: string; name: string; description?: string; origin: 'own' | 'imported'; createdAt: number; updatedAt: number; members: M[] } & Record<string, unknown>;
+  const hex = (): string => Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+  const list: T[] = [];
+  if (qs.get('simteams') === 'imported') {
+    const at = Date.now();
+    list.push({ id: 'sim-imported', name: 'Review crew', origin: 'imported', createdAt: at, updatedAt: at, members: [
+      { name: 'Reviewer', role: 'Reviewer', brief: 'Read the change and list the risks.', app: 'claude', permMode: 'read-only', sendBrief: false, memberId: hex(), briefFrom: 'file' },
+      { name: 'Tester', role: 'Tester', brief: 'Run the tests.', app: 'claude', permMode: 'read-only', sendBrief: false, memberId: hex(), briefFrom: 'file' }] });
+  }
+  const plain = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+  const copy = (t: T): T => JSON.parse(JSON.stringify(t)) as T;
+  const no = (errors: string[]) => ({ ok: false as const, code: 'invalid' as const, errors, blocked: false });
+  const okOne = (t: T) => ({ ok: true as const, template: copy(t) as unknown as import('../shared/api').TeamTemplateInfo });
+  const idOk = (id: unknown): id is string => typeof id === 'string' && id.length > 0 && id.length <= 64;
+  return {
+    teamsList: async () => ({ ok: true as const, templates: list.map(copy) as unknown as import('../shared/api').TeamTemplateInfo[], blocked: false, setAside: false }),
+    teamsPut: async (value) => {
+      if (!plain(value)) return no(['Template: send an object.']);
+      const cur = value.id === undefined ? undefined : idOk(value.id) ? list.find((x) => x.id === value.id) : undefined;
+      if (value.id !== undefined && !cur) return no(['Template: not found.']);
+      if (!Array.isArray(value.members)) return no(['Members: send a list.']);
+      if (value.members.length > 8) return no(['Members: at most 8.']);
+      if (!cur && list.length >= 50) return no(['Templates: at most 50.']);
+      const stored = new Map<string, M>((cur?.members ?? []).flatMap((m): [string, M][] => (m.memberId ? [[m.memberId, m]] : [])));
+      const used = new Set<string>();
+      const members: M[] = [];
+      for (let i = 0; i < value.members.length; i++) {
+        const m: unknown = value.members[i];
+        const at = 'Member ' + (i + 1);
+        if (!plain(m)) return no([at + ': send an object.']);
+        const { memberId, briefFrom, ...rest } = m as M;
+        const next: M = { ...rest } as M;
+        if (memberId === undefined && !('memberId' in m)) {
+          if ('briefFrom' in m) return no([at + ', briefFrom: the window cannot set it.']);
+          next.memberId = hex();
+        } else {
+          if (!cur) return no([at + ', memberId: the window cannot set it.']);
+          const was = typeof memberId === 'string' ? stored.get(memberId) : undefined;
+          if (!was || typeof memberId !== 'string') return no([at + ', memberId: not a member of this template.']);
+          if (used.has(memberId)) return no([at + ', memberId: used twice.']);
+          used.add(memberId);
+          next.memberId = memberId;
+          if (briefFrom !== undefined && !(briefFrom === 'file' && was.briefFrom === 'file')) return no([at + ', briefFrom: the window cannot change it.']);
+          if (was.briefFrom === 'file') next.briefFrom = 'file';
+        }
+        members.push(next);
+      }
+      const now = Date.now();
+      const t = { ...(value as Record<string, unknown>), id: cur ? cur.id : 'sim-' + hex().slice(0, 12), origin: cur ? cur.origin : 'own' as const, createdAt: cur ? cur.createdAt : now, updatedAt: now, members } as T;
+      if (cur) list[list.indexOf(cur)] = t; else list.push(t);
+      return okOne(t);
+    },
+    teamsDelete: async (id) => {
+      if (!idOk(id)) return no(['Template id: not valid.']);
+      const i = list.findIndex((x) => x.id === id);
+      if (i >= 0) list.splice(i, 1);
+      return { ok: true as const, removed: i >= 0 };
+    },
+    teamsDuplicate: async (id) => {
+      const src = idOk(id) ? list.find((x) => x.id === id) : undefined;
+      if (!src) return no(['Template: not found.']);
+      if (list.length >= 50) return no(['Templates: at most 50.']);
+      const t = copy(src);
+      const now = Date.now();
+      t.id = 'sim-' + hex().slice(0, 12); t.origin = 'own'; t.createdAt = now; t.updatedAt = now; t.name = src.name + ' copy';
+      for (const m of t.members) m.memberId = hex();
+      list.push(t);
+      return okOne(t);
+    },
+    teamsMarkMine: async (templateId, memberId, ...extra: unknown[]) => {
+      if (extra.length > 0) return no(['Mark as mine: send a template id and a member id only.']);
+      const t = idOk(templateId) ? list.find((x) => x.id === templateId) : undefined;
+      if (!t) return no(['Template: not found.']);
+      const m = typeof memberId === 'string' ? t.members.find((x) => x.memberId === memberId) : undefined;
+      if (!m) return no(['Member: not found.']);
+      if (m.briefFrom !== 'file') return no(['Member: its brief is not marked as from a file.']);
+      delete m.briefFrom;
+      t.updatedAt = Date.now();
+      return okOne(t);
+    },
+  };
+}
 type SimNote = import('../shared/notes').Note;
 type SimNotesWrote = import('../shared/notes').NotesWrote;
 type SimNotesView = import('../shared/notes').NotesView;
@@ -252,7 +343,9 @@ const simCleanQuery = (q: unknown): { ok: true; query: string; cut: boolean } | 
  * then matched first, earlier Copilot and Codex sessions by title only, tool lines never searched, hidden earlier sessions not searched
  * (counted), every word in any order, at most 3 excerpts masked before they are cut (the page's own `maskNoteText`, failing closed), a
  * random `searchId`, one live search (a new start or a cancel ends the old one), events only for the live id. `simsearch=slow`: one
- * session every 400 ms, for the "Searching, N of M sessions" state; `simsearch=locked`: the end state says saved MCP values were locked.
+ * session every 400 ms, for the "Searching, N of M sessions" state; `simsearch=locked`: the end state says saved MCP values were locked;
+ * `simsearch=older`: each open session also has a message its chat does not show, for "That message is older than the chat shows".
+ * `simsearch=delayed`: the start answers after 700 ms, for a query that changes while it is pending.
  */
 function simConvSearchApi(qs: URLSearchParams, scope: () => SimConvSession[]): Pick<DurbarApi, 'convSearchStart' | 'convSearchCancel' | 'convSearchClear' | 'onConvSearch'> {
   type Search = { fold(s: unknown): string; terms(q: string): string[]; locate(t: unknown, q: string): Array<{ start: number; end: number; term: number }>; anchorKey(t: unknown): string };
@@ -295,6 +388,7 @@ function simConvSearchApi(qs: URLSearchParams, scope: () => SimConvSession[]): P
   };
   return {
     convSearchStart: async (query) => {
+      if (qs.get('simsearch') === 'delayed') await new Promise((r) => setTimeout(r, 700)); // review of PR 1240 (R2): a start that answers late
       stop();
       const q = simCleanQuery(query);
       if (!q.ok) return q.code === 'short' ? { ok: false, code: 'short', error: 'Type at least 3 characters.' } : { ok: false, code: 'invalid', error: 'That is not a search.' };
@@ -929,6 +1023,19 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       return /\binteraction_required\b/i.test(t) ? 'policy' : undefined;
     };
     /* mcpcall:end */
+    /* spec 058 FR-232 (issue 1621): src/main/mcptoken.ts `isTokenRefusal`, copied (this file cannot import); test:mcpsession cuts this block out and compares the two */
+    /* mcptoken:begin */
+    const simTokenRefusal = (text: unknown): boolean => {
+      if (typeof text !== 'string') return false;
+      const t = text.slice(0, 2000);
+      return /\b403\b|forbidden/i.test(t) && !/\b401\b|unauthori[sz]ed/i.test(t);
+    };
+    /* spec 058 FR-232: what main would know of a driver's servers' entries (fixed, names only): `team-api` sends `Authorization: Bearer
+       ${TEAM_API_TOKEN}` and the variable is not in Durbar's environment; `docs-api` sends a written `X-Api-Key`; `paste-api` has a (fake)
+       key pasted inside `${...}`, sent as if main had named it, so the window's own re-check (`envVarName`) is what hides it (review of PR
+       #1637); any other name has no known entry (an OAuth server keeps "needs sign-in") */
+    const SIM_TOKEN_ENTRIES: Record<string, { vars: string[] }> = { 'team-api': { vars: ['TEAM_API_TOKEN'] }, 'docs-api': { vars: [] }, 'paste-api': { vars: ['k8Jq2LmZ9xPw4RtY7vBn3HcS6dFg1AeU'] } };
+    /* mcptoken:end */
     const emit = (e: AgentEvent): void => {
       /* like main, which keeps the runtime's list before the window hears of it: the reply a listener asks for at once sees this event (spec 058 FR-094) */
       if (e.type === 'status' && e.status === 'stopped') { const q = sims.find((x) => x.info.id === e.sessionId); if (q) q.mcpHealth = undefined; }
@@ -2165,6 +2272,13 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
           ...(live ? (s.mcpLive ?? []).filter((m) => !known.has(m.name)).map((m) => ({ name: m.name, origin: 'runtime' as const, ...reported(m.name), defaultOn: true, off: !!s.mcpOff?.has(m.name), ...toolsOffOf(m.name), ...signOf(m.name, 'runtime'), ...(restartable(m.name, true) && m.status !== 'disabled' ? { canRestart: true } : {}) })) : []),
         ];
         for (const x of servers) { const ob = simOrgServer(s.info.adapterId, x.name); if (ob) Object.assign(x, { orgBlocked: ob }); } // spec 076 FR-205
+        /* spec 058 FR-232: like main's agentMcpReply, a failed row with a 403 on a known token server: the refused-token words, no Sign in again */
+        for (const x of servers as { name: string; status?: string; error?: string; errorClass?: string; signIn?: unknown; canSignInAgain?: boolean }[]) {
+          const te = Object.prototype.hasOwnProperty.call(SIM_TOKEN_ENTRIES, x.name) ? SIM_TOKEN_ENTRIES[x.name] : undefined;
+          if (!live || !te || x.status !== 'failed' || x.errorClass || x.signIn || !simTokenRefusal(x.error)) continue;
+          delete x.canSignInAgain;
+          Object.assign(x, { tokenRefused: true, ...(te.vars.length ? { tokenVars: [...te.vars] } : {}) });
+        }
         /* spec 058 FR-188: a Running (connected), switched-on server in a running session says how its last call failed (the class only) */
         for (const x of servers) { const c = s.mcpCalls?.get(x.name); if (live && c && !s.mcpOff?.has(x.name) && (x as { status?: string }).status === 'connected') Object.assign(x, { lastCall: c }); }
         /* spec 058 FR-220: "Renewed 12:40" on a connected, switched-on server Durbar renewed in the background */
@@ -2400,29 +2514,28 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     } catch {
       /* no saved theme */
     }
-    // spec 095 T025: the canned corpus of the conversation search: each open session gets one of these conversations (tool lines are
-    // never searched); the earlier sessions are the ones Previous sessions lists (Claude Code: content; Copilot and Codex: title only)
-    const SIM_CONV: Array<Array<{ speaker: 'you' | 'agent' | 'tool'; text: string }>> = [
-      [{ speaker: 'you', text: 'Fix the invoice export to CSV when the totals are empty.' }, { speaker: 'tool', text: 'grep -rn invoice src/' }, { speaker: 'agent', text: 'Done: the invoice export now writes a header row even when the list is empty.' }],
-      [{ speaker: 'you', text: 'Una explicación del error de la cuenta, por favor.' }, { speaker: 'agent', text: 'The error comes from the canton lookup returning duplicates for merged municipalities.' }],
-      [{ speaker: 'you', text: 'Add a retry with backoff to the registry client.' }, { speaker: 'agent', text: 'Added a retry with exponential backoff, capped at five tries; the export job uses it too.' }],
-      [{ speaker: 'you', text: 'Why is the Windows build slow?' }, { speaker: 'tool', text: 'cat .github/workflows/build.yml (invoice)' }, { speaker: 'agent', text: 'The cache step runs twice; the second one can be dropped.' }],
-    ];
+    // spec 095 T025: the conversation search over what the simulator shows: an open session's first message, a resumed session's replay
+    // (Claude Code; earlier Copilot and Codex sessions by title only) and the VS Code chats of mcp-swiss; tool lines are never searched
     const simConvSearchCalls = simConvSearchApi(simQuery, () => {
       const room = (s: SimAgent): string => (s.info as AgentInfo & { roomName?: string }).roomName ?? s.info.name;
       const open: SimConvSession[] = sims.map((s, i) => ({
         adapter: s.info.adapterId ?? 'copilot', app: SIM_APP[s.info.adapterId ?? 'copilot'] ?? 'Agent', folderName: room(s), sessionId: s.info.id, agentId: s.info.id, group: 'office',
-        title: s.info.alias || s.info.title || 'Untitled session', time: 0, content: 'read', messages: SIM_CONV[i % SIM_CONV.length],
+        title: s.info.alias || s.info.title || 'Untitled session', time: 0, content: 'read', messages: [...(simQuery.get('simsearch') === 'older' ? [{ speaker: 'you' as const, text: 'An older message about the pipeline that this chat no longer shows.' }] : []), { speaker: 'you', text: s.prompt }],
       }));
       const owner = sims.find(hasPrev);
-      const earlier: SimConvSession[] = owner ? simPrevList(owner.info.adapterId ?? 'copilot').map((p, i) => {
+      const asMsg = (it: { type: string; text?: string; label?: string }): SimConvSession['messages'][number] => ({ speaker: it.type === 'user' ? 'you' : it.type === 'tool' ? 'tool' : 'agent', text: String(it.text ?? it.label ?? '') });
+      const earlier: SimConvSession[] = owner ? simPrevList(owner.info.adapterId ?? 'copilot').map((p) => {
         const adapter = owner.info.adapterId ?? 'copilot';
         return {
           adapter, app: SIM_APP[adapter] ?? 'Agent', folderName: room(owner), sessionId: p.id, agentId: owner.info.id, group: 'earlier', title: simPrevNames.get(p.id) || p.title, time: p.modifiedTime,
-          content: adapter === 'claude' ? 'read' : 'title', hidden: prevMarksOf(adapter, [p.id]).hidden.length > 0, messages: SIM_CONV[(i + 1) % SIM_CONV.length],
+          content: adapter === 'claude' ? 'read' : 'title', hidden: prevMarksOf(adapter, [p.id]).hidden.length > 0, messages: simResumeItems(p.modifiedTime).map(asMsg),
         };
       }) : [];
-      return [...open, ...earlier];
+      const vs: SimConvSession[] = owner ? simVsChats().map((c) => ({
+        adapter: 'vscode', app: 'VS Code', folderName: room(owner), sessionId: c.key, agentId: owner.info.id, group: 'earlier' as const, title: simPrevNames.get(c.key) || c.title, time: c.updated ?? 0,
+        content: 'read' as const, hidden: prevMarksOf('vscode', [c.key]).hidden.length > 0, messages: simVsTranscript().blocks.filter((b) => b.type !== 'note').map((b) => asMsg({ type: b.type === 'assistant' ? 'output' : b.type, text: 'text' in b ? b.text : undefined, label: 'label' in b ? b.label : undefined })),
+      })) : [];
+      return [...open, ...earlier, ...vs];
     });
     const { forgetFolder: simNotesForget, ...simNotesCalls } = simNotesApi(simQuery, (id) => { const s = sims.find((x) => x.info.id === id); return s ? { key: s.info.workspaceFile || s.info.cwd, name: (s.info as AgentInfo & { roomName?: string }).roomName ?? s.info.name, session: simQuery.get('simresumeid') ? 'resume-' + s.info.id : s.info.id } : undefined; }); // spec 083 FR-060 (simresumeid=1: the saved session id is not the agent's id, as with a Codex thread id)
     const capApi: Partial<DurbarApi> = {
@@ -2506,6 +2619,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         return { ok: true, entries: simSlashFor(s.info.adapterId ?? 'copilot', simQuery).map((e) => { const c = { ...e }; delete c.note; return c; }) }; // the note is the send's, not the list's
       },
       ...simNotesCalls, // spec 083 FR-060
+      ...simTeamsApi(simQuery), // spec 111 T007: team templates in memory
       ...simConvSearchCalls, // spec 095 T025
       listProfiles: async (id) => {
         const s = sims.find((x) => x.info.id === id);
@@ -3007,6 +3121,29 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     const prevDeleted = new Set<string>();
     const simSessionModes = new Map<string, AgentInfo['permMode']>([['prev-1', 'allow']]); // spec 003 (2026-10-21): the mode last chosen per earlier session
     const hasPrev = (x: SimAgent): boolean => x.info.cwd === '~/work/mcp-swiss' || (!!opts.solo && x.info.name === 'Ada'); // earlier sessions live in mcp-swiss (or in Ada's own folder with `simrooms=solo`)
+    /* what a resumed earlier session replays, and the VS Code chat the viewer shows (one source for those and the conversation search, spec 095 T025) */
+    const simResumeItems = (t: number): import('../shared/api').HistoryItem[] => [
+      { type: 'user', text: 'Rename the filings handler to filingsSearch and update its tests.', ts: t },
+      { type: 'tool', callId: 'c1', tool: 'grep', label: 'grep filingsHandler', output: '6 matches in 3 files' },
+      { type: 'output', text: 'Renamed the handler and updated the three tests that import it. The test run passes.' },
+    ];
+    const simVsChats = (): import('../shared/api').VsChatSummary[] => [
+      { key: 'h1/c1', title: 'Explain the registry design', updated: Date.now() - 5 * 86400e3, requests: 2, format: 'jsonl' },
+      { key: 'h1/c2', title: 'Explicación del diseño de la caché', updated: Date.now() - 9 * 86400e3, requests: 3, format: 'jsonl' },
+    ];
+    const simVsTranscript = (): import('../shared/api').VsChatTranscript => ({ title: 'Explain the registry design', totalRequests: 346, shownRequests: 26,
+        notes: ['Only the last 26 of 346 messages are shown.', '1 kind(s) of content were not recognised and skipped (futureThing2027). VS Code\'s format may have changed.'],
+        blocks: [
+          { type: 'user' as const, text: 'Explain how the tool registry is organised.' },
+          { type: 'assistant' as const, text: 'Tools are registered in registry.ts and looked up by name. Each domain exports a list that the registry concatenates.' },
+          { type: 'tool' as const, label: 'Read src/tools/registry.ts' },
+          ...Array.from({ length: 23 }, (_, i) => [
+            { type: 'user' as const, text: `Follow-up ${i + 1}: how does the registry handle name clashes between two domains?` },
+            { type: 'assistant' as const, text: `Answer ${i + 1}: the last domain wins and a warning is logged at startup.\n\nThe registry keeps one map from name to handler, so a clash replaces the earlier entry.` },
+          ]).flat(),
+          { type: 'user' as const, text: 'Thanks. This is the latest message in the chat.' },
+          { type: 'assistant' as const, text: 'You are welcome. This is the last reply.' },
+        ] });
     /* the simulated earlier sessions of mcp-swiss (Previous sessions and the conversation search, spec 095 T025) */
     const simPrevList = (adapter = 'copilot'): Array<{ id: string; title: string; startTime: number; modifiedTime: number; branch: string }> => {
       const t = Date.now();
@@ -3393,7 +3530,11 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         if (!started) {
           started = true;
           // After the renderer has registered the infos, replay each agent's script.
+          /* simlate=<ms> (spec 097 FR-363, issue #1238): the replay starts that much later, so the first states arrive after the page's first frame (a check's forced race); absent = 0, unchanged */
+          const late = Math.max(0, Math.min(2000, Number(typeof location !== 'undefined' ? new URLSearchParams(location.search).get('simlate') : null) || 0));
+          const listedAt = typeof performance !== 'undefined' ? performance.now() : 0;
           setTimeout(() => {
+            if (late > 0) (window as unknown as { __durbarSimReplayDelay?: number }).__durbarSimReplayDelay = Math.round(performance.now() - listedAt); // the check reads it: a simlate that is ignored shows 0
             sims.forEach(play);
             if (opts.edits && sims[0]) simEdits(sims[0]); // spec 005 FR-026
             /* spec 008 FR-113: every script has run (a frozen simulator emits nothing more); the page's settleNow() test hook reads it */
@@ -3405,7 +3546,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
               const screenTimer = window.setInterval(screenTick, Math.round(1300 / speed));
               if (typeof window.addEventListener === 'function') window.addEventListener('pagehide', () => { window.clearInterval(screenTimer); if (timer) window.clearInterval(timer); }, { once: true });
             }
-          }, 0);
+          }, late);
         }
         /* simresume=1 (spec 006 FR-021): Priya's folder came back after a restart as its last session, not started yet */
         if (typeof location !== 'undefined' && new URLSearchParams(location.search).get('simresume') === '1') {
@@ -3839,35 +3980,16 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         const resumedTitle = opts.names === 'long' ? SIM_LONG_RESUMED_TITLE : undefined; // #451: the runtime sends the title of a resumed session (as askTitle does), so the desk's name is that title
         if (resumedTitle) window.setTimeout(() => emit({ type: 'title', sessionId: info.id, timestamp: now(), title: resumedTitle }), 300);
         return { ok: true, ...(modeWas ? { modeWas } : {}), agent: info, title: resumedTitle ?? (opts.reply === 'secrets' ? FILL(83) + SECRETS_TEXT + ' ' : '') + (sessionId === 'prev-1' ? 'Rename the filings handler and update its tests' : 'Why does the canton lookup return duplicates?'),
-          history: { total: 4, truncated: false, items: [
-            { type: 'user', text: 'Rename the filings handler to filingsSearch and update its tests.', ts: t },
-            { type: 'tool', callId: 'c1', tool: 'grep', label: 'grep filingsHandler', output: '6 matches in 3 files' },
-            { type: 'output', text: 'Renamed the handler and updated the three tests that import it. The test run passes.' },
-          ] } };
+          history: { total: 4, truncated: false, items: simResumeItems(t) } };
       },
       listVsChats: async (id) => {
         await prevWait();
         const src = sims.find((x) => x.info.id === id);
         if (!src || !hasPrev(src)) return { ok: true, sessions: [], storesFound: 0, unreadable: 0, tooLarge: 0, formatNote: '' };
         return { ok: true, storesFound: 1, unreadable: 0, tooLarge: 0, formatNote: 'VS Code does not document this format; unknown parts are skipped.',
-          sessions: [
-            { key: 'h1/c1', title: 'Explain the registry design', updated: Date.now() - 5 * 86400e3, requests: 2, format: 'jsonl' },
-            { key: 'h1/c2', title: 'Explicación del diseño de la caché', updated: Date.now() - 9 * 86400e3, requests: 3, format: 'jsonl' },
-          ], ...prevMarksOf('vscode', ['h1/c1', 'h1/c2']) };
+          sessions: simVsChats(), ...prevMarksOf('vscode', ['h1/c1', 'h1/c2']) };
       },
-      readVsChat: async () => ({ ok: true, transcript: { title: 'Explain the registry design', totalRequests: 346, shownRequests: 26,
-        notes: ['Only the last 26 of 346 messages are shown.', '1 kind(s) of content were not recognised and skipped (futureThing2027). VS Code\'s format may have changed.'],
-        blocks: [
-          { type: 'user' as const, text: 'Explain how the tool registry is organised.' },
-          { type: 'assistant' as const, text: 'Tools are registered in registry.ts and looked up by name. Each domain exports a list that the registry concatenates.' },
-          { type: 'tool' as const, label: 'Read src/tools/registry.ts' },
-          ...Array.from({ length: 23 }, (_, i) => [
-            { type: 'user' as const, text: `Follow-up ${i + 1}: how does the registry handle name clashes between two domains?` },
-            { type: 'assistant' as const, text: `Answer ${i + 1}: the last domain wins and a warning is logged at startup.\n\nThe registry keeps one map from name to handler, so a clash replaces the earlier entry.` },
-          ]).flat(),
-          { type: 'user' as const, text: 'Thanks. This is the latest message in the chat.' },
-          { type: 'assistant' as const, text: 'You are welcome. This is the last reply.' },
-        ] } }),
+      readVsChat: async () => ({ ok: true, transcript: simVsTranscript() }),
       openInVSCode: async () => ({ ok: true }),
       // spec 009 FR-019 (issue #685): fixed stand-ins; nothing is launched in the simulator
       openWithTargets: async () => [

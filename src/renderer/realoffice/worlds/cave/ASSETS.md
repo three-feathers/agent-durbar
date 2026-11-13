@@ -48,7 +48,7 @@ Checked by `npm run test:realoffice-assets`. Only the `.webp` files, `world.json
 - approved by: Paco, 2026-10-31 (relayed by his agent)
 - reference: Paco's Big Beard portrait, style only
 - prompt: One prehistoric stone desk seen straight from the front, centred, on a fully TRANSPARENT background (PNG with alpha channel, no floor, no shadow plane, no backdrop). A long flat grey-brown stone slab desktop resting on two chunky rough rock legs, with a front panel of stacked flat stones. The desktop is completely empty except one small UNLIT clay oil lamp (a little round clay bowl with a spout, no flame) at the far right end. No screen, no tablet, no person, no chair. The desk is wide, about four times wider than it is tall. Use the attached image ONLY as the reference for the illustration style: the same hand-drawn cartoon look, bold dark brown outlines, warm cel-shaded painting with soft gradients, rich earthy colours, like a modern animated prehistoric comedy. Warm torchlight. Any people are fictional and resemble no real person. No text, no letters, no numbers, no logos, no watermark.
-- cut: cropped to its alpha box, resized to the engine's desk shape
+- cut: cropped to its alpha box, resized to the engine's desk shape; patched 2026-11-12 with Pillow (no new generation): the small unlit oil lamp painted out (columns 630 to 705, rows 0 to 49 replaced by the columns 70 px to the left, the back outline re-shaped into the right corner, feathered, the steep corner outline re-stroked anti-aliased; `remove_lamp` in `scripts/build-cave-pack.py`; owner, Telegram DM, 2026-11-12 21:19:57 UTC, "Ok and remove useless props in all worlds and generate images you need", shown to him before it ships; spec 097 FR-374, T337)
 - licence: MIT
 
 
