@@ -102,6 +102,18 @@ module.exports = async (ctx) => {
   };
   for (const n of [15, 40]) {
     const load = (w = 1440, h = 900) => H.load({ w, h, index: process.env.OPS_INDEX || undefined, query: { sim: String(n) }, ready: FLAT, readyMs: 30000 });
+    /* the start with the first states late (spec 097 FR-363, issue #1238): `simlate=50` makes the replay start 50 ms after the agents are listed, so a render that comes first (the race) is
+       forced in every load; 3 loads, the most searches counted. The page's own record of the delay proves the option was honoured (an ignored one reads 0 and the loads would test nothing). */
+    {
+      const late = { searches: 0, probes: 0, delay: Infinity };
+      for (let i = 0; i < 3; i++) {
+        await H.load({ w: 1440, h: 900, index: process.env.OPS_INDEX || undefined, query: { sim: String(n), simlate: '50' }, ready: FLAT, readyMs: 30000 });
+        const o = await js(`({...window.__durbarSimUi.ops(), delay: window.__durbarSimReplayDelay||0})`);
+        late.searches = Math.max(late.searches, o.searches); late.probes = Math.max(late.probes, o.probes); late.delay = Math.min(late.delay, o.delay);
+      }
+      rows[`searchesAtStart@late${n}`] = late.searches; rows[`lateReplayDelay@late${n}`] = late.delay;
+      console.log('[ops]', n, 'agents, first states 50 ms late (3 loads): most layout searches', late.searches, 'most probes', late.probes, 'least replay delay', late.delay, 'ms');
+    }
     await load();
     await js(`localStorage.setItem('durbar.doorsigns','off')`); // desks as scenes, not doors: every working desk animates (the doors and signs are going)
     await load();
