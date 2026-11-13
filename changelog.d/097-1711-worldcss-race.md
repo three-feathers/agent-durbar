@@ -1,0 +1,1 @@
+- **The Retro and cave offices no longer draw before their own stylesheet has loaded** (spec 097): on a slow start a role could be measured with the wrong style and kept at 0 px. A world is now drawn once its stylesheet has loaded (or failed), and what was measured is measured again after it. Nothing changes on screen when the sheet loads at once.

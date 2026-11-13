@@ -131,6 +131,20 @@ module.exports = async (ctx) => {
       await shot(world, 'empty', w, h);
     }
     // ---- FR-120 asleep ----
+    // ---- spec 097 2026-11-14: a world is drawn only once its stylesheet has loaded (the stylesheet answers 400 ms late, the hook of check-097-crews, T320) ----
+    if (run('worldcss-late') && world !== 'photo') {
+      const ses = ctx.win.webContents.session;
+      ses.webRequest.onBeforeRequest({ urls: ['file://*/*'] }, (d, cb) => { if (/\/realoffice\/worlds\/[a-z0-9-]+\/world\.css$/.test(d.url)) setTimeout(() => cb({}), 400); else cb({}); });
+      await H.load({ w, h, query: q(world), ready: REAL, settle: false });
+      const sheetAtDraw = await js(`!!(document.getElementById('roWorldCss-${world}')||{}).sheet`);
+      await must(`!!(document.getElementById('roWorldCss-${world}')||{}).sheet`, 'the world stylesheet');
+      await H.until(`document.getElementById('stage').dataset.fit`, 2000).catch(() => undefined);
+      const sliver = await js(`[...document.querySelectorAll('#stage .ro-plate .ro-role')].filter(r=>!r.hidden&&getComputedStyle(r).display!=='none'&&r.getBoundingClientRect().width<19).map(r=>[r.textContent,Math.round(r.getBoundingClientRect().width)])`);
+      ses.webRequest.onBeforeRequest(null);
+      assert.deepStrictEqual(sliver, [], `${tag}: a role is shown as a sliver: ${JSON.stringify(sliver)}`);
+      assert.strictEqual(sheetAtDraw, true, `${tag}: the office is drawn only after the ${world} stylesheet has loaded`);
+      console.log('[moments] worldcss-late ok', sheetAtDraw);
+    }
     if (run('asleep')) {
       await H.load({ w, h, query: q(world), ready: REAL, settle: false });
       await must(PICS, 'the pictures');
