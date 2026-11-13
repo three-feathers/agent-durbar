@@ -791,8 +791,8 @@
     const cur=worldCur(), P=(window.DurbarWorldPreviews&&window.DurbarWorldPreviews.previews)||{};
     const card=w=>{
       const on=w.id===cur, pv=Object.prototype.hasOwnProperty.call(P,w.id)?P[w.id]:null;
-      const pic=pv?`<span class="wpic" aria-hidden="true"><img src="realoffice/previews/${esc(String(pv.file||'').replace(/[^\w.-]/g,''))}" alt="" width="${Number(pv.width)||640}" height="${Number(pv.height)||400}" draggable="false" style="--zx:${Number(pv.origin&&pv.origin.x)||50}%;--zy:${Number(pv.origin&&pv.origin.y)||50}%"></span>`:`<span class="wpic wnone" aria-hidden="true"><b>${esc(w.name)}</b></span>`;
-      return `<li class="throw"><button type="button" class="wcard" role="radio" data-world="${esc(w.id)}" aria-checked="${on}" tabindex="${on?'0':'-1'}" aria-labelledby="wn-${esc(w.id)}" aria-describedby="wl-${esc(w.id)}">${pic}<span class="wtx"><b id="wn-${esc(w.id)}">${esc(w.name)}</b><small id="wl-${esc(w.id)}">${esc(w.line)} Built in.</small></span>${on?'<span class="wuse">In use</span>':''}</button></li>`;
+      const pic=pv?`<span class="chsw wpic" aria-hidden="true"><img src="realoffice/previews/${esc(String(pv.file||'').replace(/[^\w.-]/g,''))}" alt="" width="${Number(pv.width)||640}" height="${Number(pv.height)||400}" draggable="false" style="--zx:${Number(pv.origin&&pv.origin.x)||50}%;--zy:${Number(pv.origin&&pv.origin.y)||50}%"></span>`:`<span class="chsw wpic wnone" aria-hidden="true"><b>${esc(w.name)}</b></span>`;
+      return `<li class="throw"><button type="button" class="thpick" role="radio" data-world="${esc(w.id)}" aria-checked="${on}" tabindex="${on?'0':'-1'}" aria-labelledby="wn-${esc(w.id)}" aria-describedby="wl-${esc(w.id)}">${pic}<span class="thtx"><b id="wn-${esc(w.id)}">${esc(w.name)}</b><small id="wl-${esc(w.id)}">${esc(w.line)} Built in.</small></span>${on?'<b class="wuse">In use</b>':''}</button></li>`;
     };
     return `<section class="scr-sec" aria-labelledby="worldH"><h3 id="worldH">World</h3>
         <p class="scr-note">Where your agents work. The choice applies at once and is kept on this computer. Characters, below, say who sits there.</p>

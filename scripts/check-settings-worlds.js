@@ -42,7 +42,7 @@ module.exports = async (ctx) => {
   };
   const names = () => js(`[...document.querySelectorAll(${jsLiteral(CARDS)})].map(b=>b.dataset.world)`);
   const checked = () => js(`[...document.querySelectorAll(${jsLiteral(CARDS)})].filter(b=>b.getAttribute('aria-checked')==='true').map(b=>b.dataset.world)`);
-  const rects = () => js(`[...document.querySelectorAll('#wrGroup, #wrGroup .wcard, #wrGroup .wcard .wpic, #wrGroup .wcard .wtx')].map(e=>{const r=e.getBoundingClientRect();return [Math.round(r.left*10),Math.round(r.top*10),Math.round(r.width*10),Math.round(r.height*10)].join(',')}).join('|')`);
+  const rects = () => js(`[...document.querySelectorAll('#wrGroup, #wrGroup [data-world], #wrGroup [data-world] .wpic, #wrGroup [data-world] .thtx')].map(e=>{const r=e.getBoundingClientRect();return [Math.round(r.left*10),Math.round(r.top*10),Math.round(r.width*10),Math.round(r.height*10)].join(',')}).join('|')`);
 
   for (const [w, h] of SIZES) {
     for (const [wname, query] of [['flat', { officeview: 'flat' }], ['real', { officeview: 'real' }]]) {
@@ -66,7 +66,7 @@ module.exports = async (ctx) => {
       assert.deepStrictEqual(await checked(), [want], `${tag}: exactly one card is checked, the one in use`);
       const look = await js(`(()=>{const probe=document.createElement('i');probe.style.color='var(--accent)';document.body.appendChild(probe);const acc=getComputedStyle(probe).color;probe.remove();
         return [...document.querySelectorAll(${jsLiteral(CARDS)})].map(b=>{const cs=getComputedStyle(b),r=b.getBoundingClientRect(),use=b.querySelector('.wuse');
-          const t=[...b.querySelectorAll('.wtx b,.wtx small,.wuse')].map(e=>parseFloat(getComputedStyle(e).fontSize));
+          const t=[...b.querySelectorAll('.thtx b,.thtx small,.wuse')].map(e=>parseFloat(getComputedStyle(e).fontSize));
           return {id:b.dataset.world,on:b.getAttribute('aria-checked')==='true',tab:b.tabIndex,bw:parseFloat(cs.borderTopWidth),bc:cs.borderTopColor,acc,use:use?use.textContent:'',h:r.height,w:r.width,minText:Math.min(...t),name:(document.getElementById(b.getAttribute('aria-labelledby'))||{}).textContent}})})()`);
       assert.strictEqual(look.filter((c) => c.tab === 0).length, 1, `${tag}: one Tab stop`);
       for (const c of look) {
@@ -105,7 +105,7 @@ module.exports = async (ctx) => {
 
       // ---- the zoom: transform only, about 1.6, nothing around it moves ----
       await js(`document.activeElement.blur();0`);
-      await ok(`!document.querySelector('#wrGroup .wcard:focus-visible')`, `${tag}: no card has focus`);
+      await ok(`!document.querySelector('#wrGroup [data-world]:focus-visible')`, `${tag}: no card has focus`);
       const before = await rects();
       const pos = await js(`(()=>{const r=document.querySelector(${jsLiteral(CARDS + '[data-world="photo"] .wpic')}).getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
       wc.sendInputEvent({ type: 'mouseMove', x: pos.x, y: pos.y });
