@@ -67,7 +67,7 @@ module.exports = async (ctx) => {
             text:[...b.childNodes].filter(n=>n.nodeType===3).map(n=>n.textContent).join('').trim()+[...b.querySelectorAll('*')].map(n=>[...n.childNodes].filter(x=>x.nodeType===3).map(x=>x.textContent).join('')).join('').trim(),
             dot:(b.querySelector('.dot')||{}).className||'',hg:!!b.querySelector('.ro-hg'),want:d.kids?E.kidBox(meta.kids[kid],pose,d.kids.places[[...g.querySelectorAll('.ro-kid')].indexOf(b)],d.kids.feet,L.u):null,bodyH:meta.kids[kid].bodyH,poseH:meta.kids[kid].poses[pose][1]}}):[];
         return {id:d.id,name:a&&a.name,helpers:subs.length,kz:d.kids||null,strip:!!strip,lstrip:!!d.strip,person:d.person?d.person.vis:null,plate:R(plate),plateHelp:!!(plate&&plate.querySelector('.ro-help')),
-          group:g?R(g):null,kids,more:more?{text:more.textContent.trim(),fs:parseFloat(getComputedStyle(more).fontSize),label:more.getAttribute('aria-label')||'',title:more.getAttribute('title')||'',id:more.dataset.id,box:R(more)}:null};})};})()`);
+          group:g?R(g):null,kids,more:more?{text:more.textContent.trim(),fs:parseFloat(getComputedStyle(more).fontSize),label:more.getAttribute('aria-label')||'',title:more.getAttribute('title')||'',id:more.dataset.kmore,box:R(more)}:null};})};})()`);
   const shots = [];
 
   for (const [w, h] of SIZES) for (const n of COUNTS) {
@@ -129,12 +129,14 @@ module.exports = async (ctx) => {
 
     const fd = s.desks.find((d) => d.id === first);
     /* Tab order (FR-309, FR-372): the plate, its pencil, the kids in order, "+K", then out of the group */
+    if (process.env.KIDS_TRACE) await js(`(()=>{if(!window.__fT){window.__fT=[];const o=HTMLElement.prototype.focus;HTMLElement.prototype.focus=function(...a){window.__fT.push((this.className||this.tagName)+' '+String(new Error().stack).split('\\n').slice(2,6).join(' | '));return o.apply(this,a)};}return 1})()`);
     await js(`(()=>{document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(first)})+'"]').focus();return 1})()`);
     await H.key('Tab');
     if (await js(`document.activeElement.matches('.ren.ro-ren')`)) await H.key('Tab');
     for (const k of fd.kids) { await must(`document.activeElement.matches('.ro-kid')&&document.activeElement.dataset.id===${jsLiteral(k.id)}`, `${tag}: Tab reaches the kid ${k.id} in order`, 3000); await H.key('Tab'); }
     const onMore = await H.until(`document.activeElement.matches('.ro-kmore')`, 3000);
     const focusNow = onMore ? '' : await js(`(document.activeElement.className||document.activeElement.tagName)+' '+(document.activeElement.dataset.id||'')`);
+    if (!onMore && process.env.KIDS_TRACE) console.log('[097-kids] focus calls', JSON.stringify(await js('window.__fT')));
     assert.ok(onMore, `${tag}: after the last kid, Tab reaches "+K" (focus on ` + focusNow + ')');
     assert.ok(await js(`(()=>{const c=getComputedStyle(document.activeElement);return c.outlineStyle!=='none'&&parseFloat(c.outlineWidth)>=2})()`), `${tag}: "+K" shows a 2 px focus ring`);
     await H.key('Tab');

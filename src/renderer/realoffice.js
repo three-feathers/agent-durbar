@@ -726,7 +726,7 @@
       let m = gx._more;
       if (!m) { m = gx._more = document.createElement('button'); m.type = 'button'; m.className = 'ro-kmore'; }
       at(m, { x: kz.more.x - x0, y: kz.more.y - top, w: kz.more.w, h: kz.more.h });
-      dset(m, 'id', a.id); /* FR-370: the parent's chat, where its helpers are listed */
+      dset(m, 'kmore', a.id); /* FR-370: the parent's chat, where its helpers are listed (app.js [data-kmore]); not data-id, which the plate has: a redraw gives focus back by attribute */
       text(m, '+' + hidden.length);
       attr(m, 'aria-label', hidden.length + ' more helper' + (hidden.length > 1 ? 's' : '') + ' of ' + a.name); attr(m, 'title', hidden.map((h) => h.name).slice(0, 8).join(', ') + (hidden.length > 8 ? ', ...' : ''));
       want.push(m);
