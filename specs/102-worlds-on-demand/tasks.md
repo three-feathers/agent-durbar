@@ -291,6 +291,7 @@ Starts after the next built-in world's stack lands (FR-296, decided Q4). All beh
 
 - [ ] T265 Previews: `simscene=preview` in the simulator; a driver takes one per built-in world with its zoom origin, under 48 KB each, and the character groups by a pure script from shipped pictures, under 64 KB each; `shots:docs` retakes them. Test: the driver at 1440x900 finds three people at desks and no slip, notice or bubble in each; `test:realoffice-assets` lists them [FR-302, FR-303]
 - [ ] T266 The World section, Characters under it, Theme and Office layout removed, the migration; with or after T230. Test first: the migration table once and twice; `check-settings-worlds` at both sizes, keyboard, focus against choice, forced colours, a flagged world absent, a catalogue world greyed with no fetch on opening Settings; zoom by `transform` with no layout shift and none under Reduced motion, the catalogue thumbnail or the placeholder, character cards as big as world cards with no face under 24 px, the changelog line; mutants: a fetch on open, focus drawn like choice, a zoom that moves the grid [FR-300, FR-301, FR-303..FR-305]
+- [x] T265b FR-303 (issue #1703, split from T265 on 2026-11-13): the character groups by a pure script from the sets' shipped `-rest.webp` pictures, one per set, under 64 KB each, written to `src/renderer/realoffice/groups/`. Test: `test:chargroups` (selftest, rebuild comparison, mutants `unsorted`, `uncentred`, `unclamped`, `nobudget`). Not wired into the app: T266 [FR-303]
 
 ## 2026-11-08: the arcade's plates fit their line (issue #1303)
 
