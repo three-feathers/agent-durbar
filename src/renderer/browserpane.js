@@ -89,7 +89,7 @@
     const i=Math.max(0,ids.indexOf(id));
     return ids[(i+step+ids.length)%ids.length];
   }
-  /* Spec 080 FR-134 (issue #1691): what the Expand button says and shows in each state, and what is announced on entering it. One button whose
+  /* Spec 080 FR-134 (issue 1691): what the Expand button says and shows in each state, and what is announced on entering it. One button whose
      name changes (never aria-pressed as well). */
   function bigModel(on){
     return on?{icon:'shrink',label:'Back to small browser',title:'Back to small browser (Esc)',said:'Browser expanded. Press Escape to make it small.'}
@@ -341,7 +341,7 @@
     });
   }
 
-  /* Spec 080 FR-134..FR-138 (issue #1691): the big browser. Memory only (FR-137): `cur.big`, gone with `cur`. Only the pane's box changes; the
+  /* Spec 080 FR-134..FR-138 (issue 1691): the big browser. Memory only (FR-137): `cur.big`, gone with `cur`. Only the pane's box changes; the
      view gets its new bounds through the same checked path (the size watcher, and one send queued here for a move without a resize), and the
      overlay rule (FR-008) is checked again for the new rectangle. Returns whether it changed. */
   function setBig(on,o){

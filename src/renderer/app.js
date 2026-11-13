@@ -4228,7 +4228,7 @@ document.addEventListener('keydown',e=>{
     if(window.DurbarScreens&&window.DurbarScreens.isOpen()&&!document.getElementById('scrDlg')&&!document.getElementById('modeDlg')){window.DurbarScreens.close();return;}
     if(!$('foldersPop').hidden){toggleFolders(false);return;}
     if(!$('floorsPop').hidden){toggleFloors(false);return;}
-    if(BP.expanded()){BP.restore({focus:true});return;} /* spec 080 FR-136 (issue #1691): the big browser goes small first, never the chat closing; a key in the page never gets here */
+    if(BP.expanded()){BP.restore({focus:true});return;} /* spec 080 FR-136 (issue 1691): the big browser goes small first, never the chat closing; a key in the page never gets here */
     if(e.target&&e.target.id==='ntSearch'&&e.target.value){e.target.value='';notesPaint();return;} /* spec 083 FR-043: Esc clears the search first */
     if(notesIsOpen()){closeNotes(true);return;} /* spec 083 FR-020: the drawer closes first, a second Esc closes the chat */
     if(vsViewing){leaveVsView();return;}
