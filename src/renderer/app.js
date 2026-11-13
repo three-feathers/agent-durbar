@@ -294,7 +294,7 @@ const SIREN=()=>'<span class="siren" aria-hidden="true"><svg viewBox="0 0 14 14"
 /* spec 008 FR-184: a draw takes the signature it drew (`renderAll`), so a tick redraws only for a change no draw has shown (the clock, a limit), never again for the status change the last draw already showed */
 let moodSig='';
 const moodSigNow=at=>agents.map(x=>{if(!x.live||x.parent)return '';const m=moodFor(x,at);return m.trouble+'/'+m.body;}).join('|'); /* `at`: the signature as of that time (a draw's own, spec 008 FR-184) */
-setInterval(()=>{if(SERIOUS||demoOn)return;if(moodSigNow()!==moodSig){moodSig=moodSigNow();scheduleRender();}},5000);
+setInterval(()=>{if(SERIOUS||demoOn||document.hidden)return;if(moodSigNow()!==moodSig){moodSig=moodSigNow();scheduleRender();}},5000); /* spec 097 FR-074 (2026-11-09 later): no mood draw while hidden; the return draws it (RO_MOOD_LATE) or the next tick */
 /* spec 052 FR-062: "Last activity" labels follow the clock through the normal render, every 30 s and only when a label changed */
 let agoSig='';
 const agoSigNow=(at=Date.now())=>agents.map(x=>(x.lastEventAt?ACT.agoShort(at-x.lastEventAt):'')+(x.busySince?'/'+ACT.agoShort(at-x.busySince):'')).join('|');
@@ -1709,8 +1709,14 @@ function realCtx(a){
 }
 /* FR-326: a new context figure reaches the drawn desk's line and name without a draw (the draw writes the same) */
 function realCtxPush(a){
-  if(OFFICE_VIEW==='real'&&a&&!a.parent&&window.DurbarRealOffice&&window.DurbarRealOffice.ctx)window.DurbarRealOffice.ctx(a.id,realCtx(a));
+  if(OFFICE_VIEW==='real'&&a&&!a.parent&&window.DurbarRealOffice&&window.DurbarRealOffice.ctx){
+    const mo=moodFor(a); /* FR-360: the context decides the heavy and monster looks and their words, so the cheap path carries them; a changed look needs the signs drawn */
+    if(window.DurbarRealOffice.ctx(a.id,realCtx(a),realMood(mo),mo.words||'')==='mood'){if(document.hidden)RO_MOOD_LATE=true;else scheduleRender();} /* FR-074: no draw while hidden; the name has the words already */
+  }
 }
+let RO_MOOD_LATE=false; /* spec 097 FR-074, FR-361 (2026-11-09 later): a look changed while hidden; its signs are drawn once visible again */
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&RO_MOOD_LATE){RO_MOOD_LATE=false;scheduleRender();}});
+function realMood(mo){return {body:mo.body,siren:mo.trouble==='ambulance'||mo.trouble==='faint'};}
 /* spec 097 FR-306, FR-307 (issue 1139): a desk's helpers for the Real office head figures, in orderedHelpers' order. The name is only in the accessible name and the tooltip (the flat tile's words: helperTileHTML), masked */
 /* spec 015 FR-021 (issue 1330): the one mask of a helper's (sub-agent's) name and task, for every surface that shows them (the Sub-agent
    activity panel's title, task line and error, the chat block, the flat helper tile and its tooltip and aria-label, the expanded helper card).
@@ -1742,7 +1748,9 @@ function realModel(model){
             label:a.name+draftWords(a)+unreadWords(a)+', '+who+', folder '+deskMask(showPath(r.path))+(asleep?', asleep in the lounge':', resting in the lounge')+(said?', finished '+said:'')+': '+line+(/[.!?…]$/.test(line)?'':'.')+' Open chat panel.',helpers:helpersOf(a).map(h=>stOf(h,false))};
         }
         const br=v&&v.place===D.COFFEE&&BREAKS.get(a.id)&&BREAKS.get(a.id).kind!=='cap'?coffeeUntilWords(a):''; /* owner 2026-11-02: the post-it of a coffee break says until when (an app's usage window), never of Durbar's cap at the Bank */
+        const mo=moodFor(a); /* spec 097 FR-360: Open office's own decision (context window, ambulance, faint; none in Serious mode) */
         return {id:a.id,name:a.name,role:a.role,state:st,word:stWord(a),task,ctx:realCtx(a),tip:deskTip(a),selected:ui.selected===a.id,ren:canRenameSession(a),unread:isUnread(a),draft:hasDraft(a),away:v?v.place:null,awayLabel:place+(br?' '+br:''),
+          mood:realMood(mo),moodWords:mo.words||'',
           label:[a.name+draftWords(a)+unreadWords(a),a.role,stWord(a)].concat(task?[task]:[],needs?['needs you']:[],place?['at '+place]:[]).join(', ')+'. Open chat panel.', /* FR-090: text for setAttribute, not markup */
           helpWords:helperCountWords(helpersOf(a).length), /* spec 097 FR-308: what the plate adds when its helpers have no strip (the flat desk's words) */
           helpers:orderedHelpers(a).map(h=>stOf(h,false)),helpUrgent:helpersOf(a).filter(h=>prio(h)<2).length, /* spec 102 FR-312: how many helpers the heads put first (waiting or error by `prio`, which reads the raw state: a helper whose light is limit counts, its raw state is waiting): the one predicate for the order, the plate's "+N!" and its name */subs:realSubs(a,stOf),subsOpen:!!ui.expanded[a.id]};})};
@@ -1754,7 +1762,7 @@ function realModel(model){
       title:p.id===D.POSTBOX?placeLabelFull(p.id)+': the next scheduled runs. Open Settings > Schedules.':placeTip(p.id,ids,wait),
       visitors:ids.map(id=>{const a=byId(id),v=VISITS.at(id);return {id,name:a.name,needsYou:vis(a)==='waiting'||!!a.limit,title:visitorWords(a,v,true)};})};
   });
-  return {folders,places,keepRooms:model.some(m=>ORDER.rooms.includes(m.r.path)),slips:realSlips(),alertIcon:ALERT_ICON,renIcon:ICON('rename'),draftIcon:ICON('edit'),sessions:agents.filter(a=>!a.parent).map(a=>({id:a.id,folder:a.room}))};
+  return {folders,places,keepRooms:model.some(m=>ORDER.rooms.includes(m.r.path)),slips:realSlips(),alertIcon:ALERT_ICON,sirenIcon:SIREN(),renIcon:ICON('rename'),draftIcon:ICON('edit'),sessions:agents.filter(a=>!a.parent).map(a=>({id:a.id,folder:a.room}))};
 }
 /* spec 097 FR-121, FR-122, FR-124 (Real office): the requests the world draws as slips at the Boss door and the Bank, and as a bubble at the desk. Plain data
    from the very cards the chat and the inbox already hold (pendingCardOf, inboxActs, requestText), so the words, the buttons, their order and their tooltips are

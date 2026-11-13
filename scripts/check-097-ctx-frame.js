@@ -10,6 +10,14 @@
  *     push        delete the realCtxPush(a) call after STATS.setContext in the 'context' branch of the event handler (app.js)  -> "a context event reaches the line and the name without a draw"
  *     compaction  delete the realCtxPush(a) call in onCompaction (app.js)                                                     -> "a finished compaction reaches the line and the name without a draw"
  *     noop        make ctx() in realoffice.js return false at once                                                          -> both of the above
+ *     moodask     `ctx` returns true instead of 'mood' (realoffice.js), or realCtxPush skips scheduleRender (app.js)  -> "asks for one draw (the mood redraw)"
+ *     moodwords   `labelOf` drops a.moodWords, or joins the context words before them (realoffice.js)       -> "reads the mood words, then the context words, then Open chat panel"
+ *     ctxnomood   in ctx() (realoffice.js) do not store `a.mood = mo`                                                     -> "a second context event with the same look (monster) asks for no draw"
+ *     ctxnowords  in ctx() do not store `a.moodWords`                                                                       -> "name takes the mood words by the cheap path alone"
+ *     ctxtrue     `ctx` returns true instead of 'mood'                                                                      -> "ctx answers 'mood'" (and "asks for one draw")
+ *     hiddraw     realCtxPush calls scheduleRender on 'mood' even while document.hidden (app.js)                            -> "FR-074: a context event that changes ...'s look while the document is hidden runs no draw"
+ *     hidtick     the 5 s mood tick (app.js, moodSig) runs while document.hidden too                                        -> "runs no draw" when the tick lands in the hidden window (timing-dependent: read, not a reliable kill)
+ *     hidlate     the visibilitychange listener that draws RO_MOOD_LATE is removed (app.js)                                 -> "once visible again, the draw asked for while hidden draws ...'s horns and ring within three frames"
  *     hwdrop      in labelOf (realoffice.js) return `l.slice(0, -OPEN_WORDS.length) + w + OPEN_WORDS` without `hw`            -> "a context event keeps the helper words, in order"
  *     hworder     in labelOf swap `w + hw` to `hw + w`                                                                       -> "a context event keeps the helper words, in order"
  *     oldlabel    in ctx() write `a.label` (not labelOf(a, d)) as the plate's aria-label                                      -> the cheap step of every world, and the helper words
@@ -63,6 +71,8 @@ module.exports = async (ctx) => {
     if (MUTANT === 'rebuild') await js(`(()=>{const o=window.DurbarRealOffice.ctx;window.DurbarRealOffice.ctx=(id,c)=>{const r=o(id,c);const s=document.querySelector('#stage .ro-screen[data-for='+JSON.stringify(id)+'] > .ro-ctx');if(s)s.replaceWith(s.cloneNode(true));return r};return 1})()`);
     /* every draw of the office is counted; while __roHold is set a draw is skipped (the last layout is handed back), so only DurbarRealOffice.ctx can write (FR-326) */
     await js(`(()=>{const R=window.DurbarRealOffice;if(!R.__render){R.__render=R.render;R.render=function(){window.__roDraws=(window.__roDraws||0)+1;if(window.__roHold&&window.__roRet){window.__roHeld=(window.__roHeld||0)+1;return window.__roRet;}return window.__roRet=R.__render.apply(this,arguments);};}window.__roDraws=0;window.__roHold=false;return 1})()`);
+    /* what DurbarRealOffice.ctx answers, per agent, in order: 'mood' is its request for one draw (the look changed), true a plain update (FR-326, FR-362) */
+    await js(`(()=>{const R=window.DurbarRealOffice;if(!R.__ctx){R.__ctx=R.ctx;R.ctx=function(id){const r=R.__ctx.apply(this,arguments);(window.__ctxRet=window.__ctxRet||[]).push([id,r]);return r;};}window.__ctxRet=[];return 1})()`);
 
     /* the agents with a desk (a main session), in the simulator's order; the unknown ones wait for the next message (the chat header's "Context: waiting") */
     const ids = await js(`window.__durbarSimUi.agents().filter(a=>!a.parent).map(a=>a.id)`);
@@ -153,6 +163,59 @@ module.exports = async (ctx) => {
     assert.strictEqual(await js(`window.__ctxObs.takeRecords().length+window.__ctxMut`), 0, `${tag}: a context event adds or removes no node in the desk's frame or plate`);
     assert.ok(await js(`window.__ctxNodes.every(n=>n.isConnected)&&window.__scr(${jsLiteral(pick)}).querySelector(':scope > .ro-ctx')===window.__ctxSvg`), `${tag}: a context event keeps the desk's frame and plate nodes (none replaced)`);
     await js(`window.__ctxObs.disconnect();1`);
+    /* spec 097 FR-360, FR-362 (merge of #1171 with #1299): the same context-only event moved this desk into the monster look (93 %); the cheap path writes the name, and the signs, which only a draw
+       writes, must follow (`ctx` says 'mood' and the app schedules one draw). The name reads the mood's words, then the context's, then the helpers', then ". Open chat panel.". */
+    await must(`/, Context almost full \\(93%\\), context 93 %(\\. \\d+ helpers?)?\\. Open chat panel\\.$/.test(window.__cl(${jsLiteral(pick)}))`, `${tag}: the name of ${pick} reads the mood words, then the context words, then Open chat panel (mood, context, helpers order)`);
+    if (world !== 'arcade') {
+      /* a desk that is seated (a face), shows no sign and is not in trouble: the event makes it a monster */
+      const mp = await js(`(()=>{const L=window.__durbarSimUi.realLayout();for(const d of L.zones.flatMap(z=>z.desks)){if(d.lounge||!d.face||d.away||!d.person)continue;if(document.querySelector('#stage .ro-mood[data-for='+JSON.stringify(d.id)+']'))continue;return d.id}return null})()`);
+      assert.ok(mp, `${tag}: a seated desk with no sign is on show for the mood redraw step`);
+      assert.strictEqual(await js(`document.querySelectorAll('#stage .ro-mood[data-for=${jsLiteral(mp)}]').length`), 0, `${tag}: ${mp} has no sign before the event`);
+      await must(`(()=>{const n=window.__roDraws;if(window.__roLast!==n){window.__roLast=n;window.__roAt=Date.now();}return Date.now()-window.__roAt>600})()`, `${tag}: no draw running (mood redraw step)`);
+      /* the event's own request: every draw held (a skipped draw is counted in __roHeld and draws nothing), the event emitted, three frames. While the draws are held only
+         DurbarRealOffice.ctx writes, so what the cheap path stored (the look and its words) is all the page shows; the hold is released afterwards and one real draw is asked for
+         (__durbarSimUi.render, the app's own scheduleRender), so the signs never wait for a lucky natural redraw (review of #1321, item 1) */
+      const ret = (id) => js(`(window.__ctxRet||[]).filter(x=>x[0]===${jsLiteral(id)}).map(x=>x[1]).pop()`);
+      await js(`window.__roHold=true;window.__roHeld=0;window.__ctxRet=[];1`);
+      let asked = 0, said = '', said2 = '', back = null, back2 = null;
+      try {
+        asked = await js(`(()=>{window.__durbarSimEmit({type:'context',sessionId:${jsLiteral(mp)},timestamp:Date.now(),tokens:930,limit:1000});return new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(window.__roHeld)))))})()`);
+        back = await ret(mp); said = await js(`window.__cl(${jsLiteral(mp)})`);
+        /* a second event, the same look (monster) with new words: the look the cheap path stored is the one compared, so no new request; the name takes the new words */
+        await js(`window.__durbarSimEmit({type:'context',sessionId:${jsLiteral(mp)},timestamp:Date.now(),tokens:950,limit:1000});1`);
+        back2 = await ret(mp); said2 = await js(`window.__cl(${jsLiteral(mp)})`);
+      } finally { await js(`window.__roHold=false;1`); }
+      assert.strictEqual(back, 'mood', `${tag}: ctx answers 'mood' for the event that makes ${mp} a monster (its request for one draw)`);
+      assert.ok(asked >= 1, `${tag}: a context-only event that makes ${mp} a monster asks for one draw (the mood redraw), none was asked`);
+      assert.ok(/, Context almost full \(93%\), context 93 %(\. \d+ helpers?)?\. Open chat panel\.$/.test(said), `${tag}: ${mp}'s name takes the mood words by the cheap path alone, draws held (the stored moodWords): "${said}"`);
+      assert.strictEqual(back2, true, `${tag}: a second context event with the same look (monster) asks for no draw: the cheap path stored the look (a.mood) it compares with`);
+      assert.ok(/, Context almost full \(95%\), context 95 %(\. \d+ helpers?)?\. Open chat panel\.$/.test(said2), `${tag}: ${mp}'s name takes the second event's mood words, draws held: "${said2}"`);
+      await js(`window.__durbarSimUi.render();1`);
+      await must(`!!document.querySelector('#stage .ro-horns[data-for=${jsLiteral(mp)}]')&&!!document.querySelector('#stage .ro-ring[data-for=${jsLiteral(mp)}]')`, `${tag}: the draw after the context-only events draws ${mp}'s horns and ring (the mood redraw)`);
+      await must(`/, Context almost full \\(95%\\), context 95 %(\\. \\d+ helpers?)?\\. Open chat panel\\.$/.test(window.__cl(${jsLiteral(mp)}))`, `${tag}: ${mp}'s name reads the mood words, then the context words, then Open chat panel, once the signs are drawn (the full draw writes what the cheap path wrote)`);
+
+      /* FR-074 (2026-11-09 later, T295): the document hidden (its own signal, as check-097-motion where the window manager gives no real hide), a context event that makes another
+         seated desk a monster runs no draw and draws no horns or ring, while its name has the words by the cheap path; once visible, one draw draws the horns and the ring, the name the same */
+      const hp = await js(`(()=>{const L=window.__durbarSimUi.realLayout();for(const d of L.zones.flatMap(z=>z.desks)){if(d.lounge||!d.face||d.away||!d.person||d.id===${jsLiteral(mp)})continue;if(document.querySelector('#stage :is(.ro-horns,.ro-ring)[data-for='+JSON.stringify(d.id)+']'))continue;return d.id}return null})()`);
+      assert.ok(hp, `${tag}: a second seated desk that is no monster yet, for the hidden step`);
+      await js(`(()=>{Object.defineProperty(document,'hidden',{configurable:true,get:()=>true});document.dispatchEvent(new Event('visibilitychange'));return 1})()`);
+      let hid = null, back3 = false;
+      try {
+        await must(`(()=>{const n=window.__roDraws;if(window.__roLast!==n){window.__roLast=n;window.__roAt=Date.now();}return Date.now()-window.__roAt>600})()`, `${tag}: no draw running (hidden step)`);
+        await js(`window.__ctxRet=[];window.__roDrawsH=window.__roDraws;1`);
+        /* the event, then three frames and a bound (longer than a frame of a scheduled draw, which runs on the next frame): no draw may run */
+        hid = await js(`(()=>{window.__durbarSimEmit({type:'context',sessionId:${jsLiteral(hp)},timestamp:Date.now(),tokens:930,limit:1000});return new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>requestAnimationFrame(()=>setTimeout(()=>r({draws:window.__roDraws-window.__roDrawsH,signs:document.querySelectorAll('#stage :is(.ro-horns,.ro-ring)[data-for='+JSON.stringify(${jsLiteral(hp)})+']').length,name:window.__cl(${jsLiteral(hp)}),back:(window.__ctxRet.filter(x=>x[0]===${jsLiteral(hp)}).pop()||[])[1]}),400)))))})()`);
+      } finally {
+        /* back: the draw asked for while hidden runs on the next frame, so the signs are there within three frames (the app's 5 s mood tick cannot stand in for it) */
+        back3 = await js(`(()=>{delete document.hidden;document.dispatchEvent(new Event('visibilitychange'));return new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(!!document.querySelector('#stage .ro-horns[data-for='+JSON.stringify(${jsLiteral(hp)})+']')&&!!document.querySelector('#stage .ro-ring[data-for='+JSON.stringify(${jsLiteral(hp)})+']'))))))})()`);
+      }
+      assert.strictEqual(hid.back, 'mood', `${tag}: ctx answers 'mood' for the hidden event that makes ${hp} a monster`);
+      assert.strictEqual(hid.draws, 0, `${tag}: FR-074: a context event that changes ${hp}'s look while the document is hidden runs no draw`);
+      assert.strictEqual(hid.signs, 0, `${tag}: FR-074: no horns or ring drawn for ${hp} while hidden`);
+      assert.ok(/, Context almost full \(93%\)(, [^,.]+)*, context 93 %(\. \d+ helpers?)?\. Open chat panel\.$/.test(hid.name), `${tag}: ${hp}'s name has the mood words while hidden, by the cheap path: "${hid.name}"`);
+      assert.ok(back3, `${tag}: once visible again, the draw asked for while hidden draws ${hp}'s horns and ring within three frames (no stale look)`);
+      await must(`window.__cl(${jsLiteral(hp)})===${jsLiteral(hid.name)}`, `${tag}: ${hp}'s name once visible again (after the draw) is the one the cheap path wrote while hidden`);
+    }
 
     /* FR-326, the cheap path alone: every draw held, so an ordinary redraw cannot write the same attributes. A context event and a finished compaction must still move the
        line and the name, and no draw runs for them. */
@@ -171,7 +234,7 @@ module.exports = async (ctx) => {
     const fb = world === 'arcade' ? await js(`(()=>{for(const p of document.querySelectorAll('#stage .ro-plate[data-id]')){if(p.classList.contains('lounge'))continue;const h=p.querySelector('.ro-help');if(h){const n=parseInt(h.textContent.replace('+',''),10);if(n>0)return {id:p.dataset.id,n}}}return null})()`) : null;
     if (world === 'arcade' && w === 1280) assert.ok(fb, `${tag}: an arcade desk with helpers and no strip is on show (the fallback plate)`);
     if (fb) {
-      const words = `${fb.n} helper${fb.n > 1 ? 's' : ''}`, tail = `, context 93 %. ${words}. Open chat panel.`;
+      const words = `${fb.n} helper${fb.n > 1 ? 's' : ''}`, tail = `, context 93 %. ${words}. Open chat panel.`, order = new RegExp(`, Context almost full \\(93%\\)${tail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`);
       await must(`(()=>{const n=window.__roDraws;if(window.__roLast!==n){window.__roLast=n;window.__roAt=Date.now();}return Date.now()-window.__roAt>400})()`, `${tag}: no draw running (helpers step)`);
       await js(`window.__roHold=true;window.__roHeld=0;window.__roDraws0=window.__roDraws;1`);
       let cheap = '';
@@ -179,6 +242,7 @@ module.exports = async (ctx) => {
         await js(`window.__durbarSimEmit({type:'context',sessionId:${jsLiteral(fb.id)},timestamp:Date.now(),tokens:930,limit:1000})`);
         await must(`/context 93 %/.test(window.__cl(${jsLiteral(fb.id)}))`, `${tag}: a context event reaches the name of ${fb.id}, an arcade desk with ${words}, without a draw`);
         cheap = await js(`window.__cl(${jsLiteral(fb.id)})`);
+        assert.ok(order.test(cheap), `${tag}: ${fb.id}: the name reads the mood words, then the context words, then the helpers', then Open chat panel: "${cheap}"`);
         assert.ok(cheap.endsWith(tail), `${tag}: ${fb.id}: a context event keeps the helper words, in order (context, helpers, Open chat panel): "...${tail}" vs "${cheap}"`);
         assert.strictEqual((cheap.match(/helpers?/g) || []).length, 1, `${tag}: ${fb.id}: the helper words are said once (${cheap})`);
         assert.strictEqual(await js(`window.__roDraws-window.__roDraws0-window.__roHeld`), 0, `${tag}: no draw ran while ${fb.id}'s name moved`);
