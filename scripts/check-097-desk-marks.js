@@ -4,6 +4,7 @@
  *
  *   npm run check:ui -- --only check-097-desk-marks      (builds first)
  *   DESK_MARKS_MUTANT=lounge-pick   the picker takes lounge seats (must fail with "the picked desk is not a lounge seat")
+ *   DESK_MARKS_MUTANT=moving   a picked plate eases for a minute (must fail with "timed out waiting for the plates and Draft tags to stop moving (settled layout)")
  *   DESK_MARKS_MUTANT=stale   the tag's class is not removed when the draft goes (must fail with "an emptied draft loses its tag"; the observer adds `on` only when it is missing: a bare add() of a class already set still fires an attribute mutation, so the old mutant looped in a microtask and froze the page until the suite's 601 s limit)
  *
  * At 1440x900 and 1280x800 in Real office it fails (exit 1) when:
@@ -68,17 +69,21 @@ module.exports = async (ctx) => {
       if (has) assert.ok(/^[^,]+, unsent draft/.test(lab), `${tag}: the words come right after the name (Open office's order): ${lab}`);
     }
     /* geometry and look */
+    /* settled first, by a condition on the layout (not a re-read until the assertion passes): no plate or Draft tag is still easing (a draw eases what the layout moved) and every plate's and tag's rect is the same as at the previous poll */
+    await js(`window.__dmSig=null;true`);
+    if (MUTANT === 'moving') await js(`document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(picks[0])})+'"]').animate([{translate:'0 0'},{translate:'40px 0'}],{duration:60000});true`);
+    await must(`(()=>{const els=[...document.querySelectorAll('#stage .ro-plate,#stage .ro-drafttag.on')],busy=els.some(e=>e.getAnimations().some(a=>a.effect&&a.effect.getTiming().iterations!==Infinity&&a.playState==='running')),sig=els.map(e=>{const r=e.getBoundingClientRect();return [e.dataset.id||e.dataset.for,r.left,r.top,r.right,r.bottom].join(':')}).join('|'),same=sig===window.__dmSig;window.__dmSig=sig;return !busy&&same})()`, `${tag}: the plates and Draft tags to stop moving (settled layout)`, 10000);
     const geo = await js(`(()=>{const R=e=>{const r=e.getBoundingClientRect();return {x:r.left,y:r.top,r:r.right,b:r.bottom}},hit=(a,c)=>a.x+0.5<c.r&&c.x+0.5<a.r&&a.y+0.5<c.b&&c.y+0.5<a.b,fl=R(document.getElementById('floor')),
       rgb=c=>(c.match(/[\\d.]+/g)||[]).map(Number),lum=([r,g,b])=>{const f=v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4)};return 0.2126*f(r)+0.7152*f(g)+0.0722*f(b)},
       bgOf=e=>{for(let n=e;n;n=n.parentElement){const c=rgb(getComputedStyle(n).backgroundColor);if(c.length>=3&&(c.length<4||c[3]>0.95))return c}return [255,255,255]};
       const plates=[...document.querySelectorAll('#stage .ro-plate')],tags=[...document.querySelectorAll('#stage .ro-drafttag.on')];
       return tags.map(t=>{const r=R(t),p=R(document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(t.dataset.for)+'"]')),a=lum(rgb(getComputedStyle(t).color)),b=lum(bgOf(t));
-        return {k:t.dataset.for,tr:[r.x,r.y,r.r,r.b].map(Math.round),pr:[p.x,p.y,p.r,p.b].map(Math.round),cls:document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(t.dataset.for)+'"]').className,above:r.b<=p.y+0.5,left:Math.abs(r.x-p.x)<=1,outFloor:r.x<fl.x-0.5||r.r>fl.r+0.5||r.y<fl.y-0.5||r.b>fl.b+0.5,
+        return {k:t.dataset.for,dx:+(r.x-p.x).toFixed(2),tr:[r.x,r.y,r.r,r.b].map(Math.round),pr:[p.x,p.y,p.r,p.b].map(Math.round),cls:document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(t.dataset.for)+'"]').className,above:r.b<=p.y+0.5,left:Math.abs(r.x-p.x)<=1,outFloor:r.x<fl.x-0.5||r.r>fl.r+0.5||r.y<fl.y-0.5||r.b>fl.b+0.5,
           touches:plates.filter(q=>hit(r,R(q))).map(q=>q.dataset.id),others:tags.filter(o=>o!==t&&hit(r,R(o))).map(o=>o.dataset.for),font:parseFloat(getComputedStyle(t).fontSize),ratio:(Math.max(a,b)+0.05)/(Math.min(a,b)+0.05),hid:t.getAttribute('aria-hidden'),text:t.textContent.trim(),svg:!!t.querySelector('svg')}})})()`);
     assert.strictEqual(geo.length, 2, `${tag}: both tags measured`);
     assert.deepStrictEqual((await loungeNow()).filter(k => picks.includes(k)), [], `${tag}: the drafted desks are still desks when measured (none moved into the lounge)`);
     for (const g of geo) {
-      assert.ok(g.above && g.left, `${tag}: ${g.k}: the tag is above its plate's left end ${JSON.stringify(g)}`);
+      assert.ok(g.above && g.left, `${tag}: ${g.k}: the tag is above its plate's left end (tag left ${g.tr[0]}, plate left ${g.pr[0]}, delta ${g.dx}px, font ${g.font}px, plate classes: ${g.cls}) ${JSON.stringify(g)}`);
       assert.ok(!g.outFloor, `${tag}: ${g.k}: the tag is inside the floor`);
       assert.deepStrictEqual([g.touches, g.others], [[], []], `${tag}: ${g.k}: the tag touches no plate or tag`);
       assert.ok(g.font >= 10.5 && g.ratio >= 4.5, `${tag}: ${g.k}: ${g.font}px, ${g.ratio.toFixed(2)}:1`);
