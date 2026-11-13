@@ -317,6 +317,16 @@ assert.ok(dh.darkProblem({ id: 'check-user', bg: 'rgb(20, 18, 43)' }).includes('
   await D.releaseFocus(); cmds.length = 0; let real = 0; dbgCtx.js = async (c: string) => (c.includes('hasFocus') ? (cmds.length > 0 || real++ > 0) : true);
   assert.strictEqual(await D.focusPage({ ms: 50, emulate: 'first' }), true, "emulate: 'first' emulates before any real attempt"); assert.deepStrictEqual(cmds[0], ['Emulation.setFocusEmulationEnabled', true]); assert.strictEqual(real, 0, 'with no real-focus look first');
   await D.releaseFocus(); assert.deepStrictEqual(cmds[cmds.length - 1], ['Emulation.setFocusEmulationEnabled', false], 'releaseFocus turns it off'); assert.strictEqual(attached, false, 'and detaches the debugger');
+  // spec 008 FR-215: pointerOff re-sends the move until the hover clears, and fails (labelled) when it never does; stay only lists
+  const po = (clearsAfter: number) => {
+    const moves: any[] = []; const pctx: any = { ...ctx, win: { ...ctx.win, webContents: { ...ctx.win.webContents, sendInputEvent: (e: any) => moves.push(e) } }, sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, Math.min(ms, 5))) };
+    const hovered = () => moves.length < clearsAfter;
+    pctx.js = async (c: string) => (c.includes('.map(') ? (hovered() ? ['button.x "Go"'] : []) : !hovered());
+    return { moves, P: dh.helpers(pctx) };
+  };
+  { const { moves, P } = po(4); assert.deepStrictEqual(await P.pointerOff('#panel', 'button', { ms: 2000, retry: 20 }).catch((e: Error) => assert.fail('pointerOff: a hover that clears after 3 moves passes: ' + e.message)), [], 'pointerOff: a hover that clears after 3 moves passes'); assert.ok(moves.length >= 4 && moves.every((e) => e.type === 'mouseMove' && e.x === 0 && e.y === 0), 'pointerOff: the move is re-sent to 0,0 until the hover clears'); }
+  { const { moves, P } = po(1e9); await assert.rejects(() => P.pointerOff('#panel', 'button', { ms: 150, retry: 20 }), /pointerOff: the pointer did not leave #panel after 150 ms and \d+ move\(s\): \["button\.x \\"Go\\""\]/, 'pointerOff: a hover that never clears fails with its label'); assert.ok(moves.length > 1, 'the failing wait kept re-sending the move'); }
+  { const { moves, P } = po(1e9); assert.deepStrictEqual(await P.pointerOff('#panel', 'button', { stay: true }), ['button.x "Go"'], 'pointerOff stay: lists what is hovered'); assert.strictEqual(moves.length, 0, 'pointerOff stay: never moves the pointer'); }
   console.log('driver-helpers: key, load, escaping and shot behave');
 })().catch((e) => { console.error(e); process.exit(1); });
 
