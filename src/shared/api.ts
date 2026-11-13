@@ -1275,7 +1275,7 @@ export interface DurbarApi {
   /**
    * Spec 111 T007 (FR-010, FR-023, FR-100): the person's team templates, window only; main checks every argument and keeps `memberId` and `briefFrom` itself.
    * `teamsPut`: no `id` creates (always `own`, no `memberId` or `briefFrom` allowed), an `id` updates (a member keeps its brief mark by `memberId`).
-   * `teamsMarkMine(templateId, memberId)` is the only way to remove a brief's file mark; ask the person first (`askDialog`).
+   * `teamsMarkMine(templateId, memberId)` is the only way to clear a brief's file mark for a member that keeps its `memberId` (a member sent as new loses it, FR-023 `[KNOWN GAP]`); ask the person first (`askDialog`).
    */
   teamsList?(): Promise<TeamsList>;
   teamsPut?(template: unknown): Promise<TeamsOne>;
