@@ -109,3 +109,7 @@ specs/008-packaging-and-release/
 ## 2026-11-10: the build-cost total uses the chart's rounded cents (T154, FR-198, issue #1449)
 
 One rounding rule for both: whole cents per machine/day/model. `cumulative` (usage-lib) sums those cents and `usage:readme` checks the chart against `totalCents` exactly. Considered and rejected: widening the 1.1-cent tolerance (the drift grows with every machine and day, and the check would stop meaning anything).
+
+## 2026-11-10: the Mac title bar check on CSS pull requests (T156, FR-200, issue #1469)
+
+A separate workflow, `.github/workflows/mac-titlebar-pr.yml`, because `paths:` filters a whole workflow and a second job in `macos-pr.yml` would either start `npm test` on every CSS PR or start a macOS runner to skip. Same pins, `npm-ci` Electron cache, concurrency group and `contents: read` as `macos-pr.yml`; one job runs `npm run build` and `node scripts/check-mac-titlebar.js`. Not required. Lands after #1458.
