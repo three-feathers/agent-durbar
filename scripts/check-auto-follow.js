@@ -136,7 +136,8 @@ module.exports = async (ctx) => {
       const lum=(c)=>{const f=(v)=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4)};return 0.2126*f(c[0])+0.7152*f(c[1])+0.0722*f(c[2]);};
       const ink=px(cs.outlineColor),a=lum(ink),b=lum(bg),ratio=(Math.max(a,b)+0.05)/(Math.min(a,b)+0.05);
       const W=parseFloat(cs.outlineWidth),O=parseFloat(cs.outlineOffset),inner=-O-W,outer=-O; /* the band, in px inside the plate's edge: its inner edge is outlineOffset (-4) in, it grows outward by its width (2): from 2 to 4 */
-      const reach=[];for(const c of p.querySelectorAll('*')){const q=c.getBoundingClientRect();if(!q.width||!q.height)continue;const cc=getComputedStyle(c);if(cc.visibility==='hidden'||cc.display==='none')continue;
+      const shown=(c)=>{let l=-1e9,t=-1e9,rr=1e9,bb=1e9;const q=c.getBoundingClientRect();l=q.left;t=q.top;rr=q.right;bb=q.bottom;for(let n=c.parentElement;n&&n!==p;n=n.parentElement){const o=getComputedStyle(n);if(o.overflowX==='visible'&&o.overflowY==='visible')continue;const k=n.getBoundingClientRect();l=Math.max(l,k.left);t=Math.max(t,k.top);rr=Math.min(rr,k.right);bb=Math.min(bb,k.bottom);}return {left:l,top:t,right:rr,bottom:bb,width:rr-l,height:bb-t};}; /* what a clipping line (overflow not visible) between the element and the plate shows of it */
+      const reach=[];for(const c of p.querySelectorAll('*')){const q=shown(c);if(!(q.width>0)||!(q.height>0))continue;const cc=getComputedStyle(c);if(cc.visibility==='hidden'||cc.display==='none')continue;
         const into=Math.max(0,(q.left-r.left)<outer?outer-(q.left-r.left):0,(r.right-q.right)<outer?outer-(r.right-q.right):0,(q.top-r.top)<outer?outer-(q.top-r.top):0,(r.bottom-q.bottom)<outer?outer-(r.bottom-q.bottom):0);
         if(into>1)reach.push((c.className&&String(c.className)||c.tagName)+' '+Math.round(into*10)/10+'px');}
       const cx=Math.round(r.left+r.width/2),cy=Math.round(r.top+r.height/2),top=document.elementFromPoint(r.left+3,r.top+3);
