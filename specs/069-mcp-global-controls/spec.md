@@ -538,7 +538,7 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
   or Windows. `[KNOWN GAP]` the *World* choice (it repaints Settings through the same path) is shown only in the Real office with two or more
   worlds, which the simulator does not offer on main, so it is not driven.
 
-- **2026-11-13 (issue #1639, found in the review of #1637; FR-070, T072; security-relevant; scope, plain values and kept values from the review of #1650; name rule, vault-free notes and search from its second review; URL words and real regions from its third):** the Copilot CLI list's values were not in the
+- **2026-11-13 (issue #1639, found in the review of #1637; FR-070, T072; security-relevant; scope, plain values and kept values from the review of #1650; name rule, vault-free notes and search from its second review; URL words and real regions from its third; word and length caps, `hook`/`dsn` name endings from its fourth):** the Copilot CLI list's values were not in the
   mask list.
   - **FR-070, a Copilot session's text is masked with the Copilot CLI list's values.** `secretValuesFor` (FR-009) built the list of
     values that mask a session's MCP errors, failed tool cards, edits, resumed history and the other callers of `secretValuesFor` (notes,
@@ -553,8 +553,9 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
       text into `[redacted]` everywhere in the agent's edits, history and notes:
       - **A secret-looking name masks every value**: when the env or header name is secret by `secretFlag` (the rule the flag,
         query and `NAME=` masks use: `SMTP_PASSWORD`, `DB_PASS`, `GITHUB_TOKEN`, `X-Api-Key`, `Authorization`, `Cookie`) or has one
-        of this list's own words `pin`, `otp`, `totp`, `mfa`, `hook`, `webhook` (also inside a word: `SLACKWEBHOOK`), `dsn`, `seed`
-        or `salt` (`PIN_CODE`, `SLACK_WEBHOOK`, `SENTRY_DSN`; a capability URL is the secret itself; `secretFlag` itself is
+        of this list's own words `pin`, `otp`, `totp`, `mfa`, `hook`, `hooks`, `webhook` (also inside a word: `SLACKWEBHOOK`), `dsn`,
+        `seed` or `salt`, or a word that ends in `hook`, `hooks` or `dsn` (`SLACKHOOK`, `SENTRYDSN`; fourth review of #1650; not
+        `HOOKUP`, `SEEDING` or `SPINNER`) (`PIN_CODE`, `SLACK_WEBHOOK`, `SENTRY_DSN`, `HOOKS_URL`; a capability URL is the secret itself; `secretFlag` itself is
         unchanged), every value of 4 or more characters joins the list whatever its form (16 letters, a 6-digit PIN,
         `admin/s3cr3t-passw0rd`, any URL), except the words `true`, `false`, `none` and `null` (any case), which cannot be a secret
         (`AUTH_ENABLED: true` stays readable).
@@ -569,8 +570,9 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
         `-` and one or two digits: `us-east-1`, `eu-west-3`, `ap-southeast-2`, `cn-north-1`, `us-gov-west-1`; not a passphrase shape
         like `bad-staple-horse-7`).
       - **A URL is plain only when every path segment and the left-most host label is a plain word** (third review of #1650):
-        lower-case words of up to 16 letters joined by `-`, `_` or `.`, with an optional leading `.` (`repos`, `.well-known`), `v` and up to 3 digits (`v3`), or
-        up to 6 digits; an empty segment (a trailing `/`) is fine. Upper case, letters mixed with digits, or a longer digit run masks
+        one to four lower-case words of up to 16 letters joined by `-`, `_` or `.`, with an optional leading `.` (`repos`,
+        `.well-known`, `openid-configuration`), and at most 40 characters (fourth review of #1650: a long letters-only chain is
+        masked); `v` and up to 3 digits (`v3`); or up to 6 digits; an empty segment (a trailing `/`) is fine. Upper case, letters mixed with digits, or a longer digit run masks
         the whole URL (`https://hooks.zapier.com/hooks/catch/1234567/abc9xyz/`, `https://example.com/hook/3f9a1c2b7d`,
         `https://abc123.ngrok.io`, `/repos/Owner/Repo`: over-masking accepted). The left-most host label of a `host:port` value
         follows the same rule. The other host labels, and the segments of a file path, must each be at most 40 characters of letters,
@@ -579,8 +581,10 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
       - Any other value of 4 or more characters counts (`mcpSecretValues`' rule: under 4 is skipped). These rules apply to this list
         only; the folder extras and Claude Code's list keep every value of 4 or more characters, as on `main`.
       - `[KNOWN GAP]` a secret of one of those plain forms under a name with neither a secret word nor one of the words above
-        (`MY_VALUE: 482913`, `KEYWORD: qwhzmtrbvkpdlsfn`, a URL whose secret path part is one lower-case letters-only word of up to
-        16 letters, `https://example.com/i/qwhzmtrbvkpdlsfn`, a file path with a letters-only segment) is not in the list, and the shape rules (`redact`) do not
+        (`MY_VALUE: 482913`, `KEYWORD: qwhzmtrbvkpdlsfn`; a URL whose secret path part, or whose left-most host label, is lower-case
+        letters only in the plain-word form above, at most 40 characters: `https://example.com/i/qwhzmtrbvkpdlsfn`,
+        `https://qwhzmtrbvkpdlsfn.example.com/`, `https://qwhz-mtrb-vkpd-lsfn.example.com`, `HOST: qwhzmtrbvkpdlsfn.internal:5432`;
+        a file path with a letters-only segment) is not in the list, and the shape rules (`redact`) do not
         catch it either: it shows in clear if the server echoes it. The other way, an ordinary value under a secret-looking name
         (`TOKEN_URL: https://auth.example.com/token`, `AUTH_MODE: oauth`) is masked everywhere in that agent's text (over-masking
         accepted, as `secretFlag` accepts it).
