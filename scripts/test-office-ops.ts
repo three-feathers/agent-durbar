@@ -40,4 +40,9 @@ assert.ok(R.judge({ 'animatedOtherProperties@15': 0 }).failed.length === 0, 'non
 assert.ok(R.judge({ 'searchesPerStatus@15': 1 }).failed.length === 1, 'a layout search per status change fails');
 assert.ok(R.judge({ 'elementsRecalculated@15': 1401 }).failed.length === 1, 'the :has() rule (1401 elements) fails');
 assert.ok(R.judge({ 'handPositions@15': 1 }).failed.length === 1, 'a hand that never moves fails');
+// T156 (issue 1401): the reads of a status update are held at both sizes and both agent counts; the numbers before the lobby figures read the scroll once fail
+for (const [row, before] of [['readsPerStatus@15', 97], ['readsPerStatus@40', 85], ['readsPerStatus1280@15', 89], ['readsPerStatus1280@40', 72]] as const) {
+  assert.ok(R.judge({ [row]: before }).failed.length === 1, `${row} = ${before} (the count before the scroll was read once) fails`);
+}
+assert.ok(R.judge({ 'readsPerStatus@15': 81, 'readsPerStatus@40': 73, 'readsPerStatus1280@15': 77, 'readsPerStatus1280@40': 60 }).failed.length === 0, 'the measured numbers pass');
 console.log('test-office-ops: ok');
