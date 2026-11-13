@@ -90,7 +90,6 @@ export class SettingsStore {
     this.commit({ ...this.s, newFolderParent: p }, 'newFolderParent');
   }
 
-  /** Spec 080 FR-025d (Q2): the session browser's one-time note was accepted. */
   /** Spec 102 FR-266 (T227): true from the save that moved a Retro Pixel theme until `ackRetroMove`; T230's renderer half reads it, also after a crash. */
   get retroMovePending(): boolean {
     return this.s.retroMovePending === true;
@@ -104,6 +103,7 @@ export class SettingsStore {
     this.commit(next);
   }
 
+  /** Spec 080 FR-025d (Q2): the session browser's one-time note was accepted. */
   get browserNoteAccepted(): boolean {
     return this.s.browserNoteAccepted === true;
   }

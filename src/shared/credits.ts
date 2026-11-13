@@ -97,7 +97,7 @@ export interface AppSettings {
   breakResume?: 'ask';
   /** Spec 080 FR-025d (Q2): the user accepted the one-time note of the session browser. Asked once per app profile; only `true` is kept. */
   browserNoteAccepted?: true;
-  /** Spec 102 FR-266 (T227): written in the same save that moves a Retro Pixel theme; the flip's renderer half (T230) applies the move to world, layout and light, then clears it. Never written while the flag is closed. */
+  /** Spec 102 FR-266 (T227): written in the same save that moves a Retro Pixel theme; the flip's renderer half (T230) applies the move to world, layout and light, then clears it. Never written by the app while the flag is closed; a hand-written one is kept and moves that user at the flip (accepted). */
   retroMovePending?: true;
   /** Spec 080 FR-031: where a click on a chat link opens. The default (the session browser) is not written; only `'system'` is kept. */
   chatLinksIn?: 'system';
