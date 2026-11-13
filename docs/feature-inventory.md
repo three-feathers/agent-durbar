@@ -20,7 +20,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Drag to rearrange rooms, desks, places | works | works by dragging a name plate or a folder sign, by keys and the folder menu, a lobby place by a visitor's chip or the +N menu, the same saved order; the arcade drags desks, its rooms keep their cells (PRs 1315 and 1394, 097 Q30..Q33) | none | 033 097 | test:roomorder driver:shots-033-order driver:check-097-order driver:check-097-drag |
 | Rename a session (F2, pencil) | works | works, the pencil beside a plate's name and F2 on a plate (059 FR-170); an arcade cabinet's at its plate's right end, edited over the marquee (097 FR-357) | none | 059 | test:sessionname driver:check-097-plate-pencil |
 | Lobby places, visitors, away at a place | works | works | mock+planned (lobby) | 024 | test:places driver:shots-024 |
-| Boss queue, Bank, Postbox | works | works | mock+planned (boss-bank-post-coffee) | 001 024 | driver:shots-001-lobby read:src/renderer/realoffice.js |
+| Boss queue, Bank, Postbox | works | works | mock+planned (boss-bank-post-coffee) | 001 024 | driver:shots-001-lobby driver:check-097-letter read:src/renderer/realoffice.js |
 | Coffee break at a usage limit | works | works | planned (coffee-bar) | 068 | test:coffeebreak driver:shots-068-coffee |
 | Finished agents rest in the lounge | works | works, a lounge row under the desks: done and read agents seated beside a small monitor, asleep after 10 minutes (097 FR-246..FR-249, owner decision 2026-11-06) | built (lounge) | 001 097 | test:realoffice-layout driver:check-097-lounge |
 | Floors, lift, All floors, Focus mode | works | works | mock+planned (lift-panel) | 033 092 | test:floors test:floornav driver:shots-092-lift |
@@ -54,7 +54,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Resume after restart, Since you were away, crash card | works | works | none | 006 | test:crashmarker driver:shots-006-crash |
 | Previous sessions, search | works | works | none | 006 | test:sessionsearch driver:shots-006-prevmarks |
 | Notes per folder | works | works | none | 083 | test:notes |
-| Scheduled prompts, loops | works | works | none | 044 072 | test:schedules test:loops |
+| Scheduled prompts, loops | works | works (the schedule letter flies to the plate, #1587) | none | 044 072 097 | test:schedules test:loops driver:check-097-letter |
 | Custom agents and profile files | works | works | none | 043 | test:agentprofiles test:profileeditor |
 | Folder status (branch, changes), session summary | works | works | none | 063 085 | test:gitstatus test:sessionsummary |
 | Continue in another app, VS Code chat history | works | works | none | 009 030 | test:handoff test:vscodechat |
