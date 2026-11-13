@@ -180,7 +180,7 @@ async function runCrew(ctx, full) {
     assert.strictEqual(await H.js(`window.THEME.sceneKit()`), 'crew', `${THEME_ID}: Characters = ${CHARS} draws the crew kit`);
   };
   /* issue #1460: the crew scenes drawn on screen, as survey() will read them (visible, with the crew kit's signature and a picture). A bounded wait (CREW_WAIT_MS),
-     never a retry: the asserts that follow are the same. On a timeout it prints what the page shows, and the assert after it fails with its own text.
+     never a retry: the asserts that follow are the same. On a timeout it prints what the page shows (driver-helpers `crewTimeout`) and the driver fails there.
      CREW_MUTANT (test-only, a one-off in the page): `slow` hides the scenes for 1.5 s after useCrew() (the wait must carry the check through it),
      `slow-nowait` hides them and skips the wait (the existing assert must fail with its (0)). */
   const CREW_WAIT_MS = 5000; // the one cap: the wait and its message both read it
@@ -190,8 +190,7 @@ async function runCrew(ctx, full) {
     if (MUTANT === 'slow-nowait') return false;
     const drawn = `[...document.querySelectorAll('#stage .desk[data-id] svg.scene, #stage .helper svg.scene')].filter((s)=>s.getClientRects().length&&/\\|crew\\|/.test(s.dataset.sig||'')&&s.querySelector('image')).length`;
     if (await H.until(`${drawn}>=${Number(n)}`, CREW_WAIT_MS)) return true;
-    const d = await H.js(`(()=>{const U=window.__durbarSimUi,q=(x)=>[...document.querySelectorAll(x)];return {characters:window.THEME.characters(),sceneKit:window.THEME.sceneKit(),theme:window.THEME.current().id,scenes:q('#stage svg.scene').length,visible:q('#stage svg.scene').filter((s)=>s.getClientRects().length).length,sigs:q('#stage svg.scene').slice(0,4).map((s)=>s.dataset.sig||''),dragging:document.body.classList.contains('reo-dragging'),bad:U&&U.crew?U.crew.state().bad:null};})()`);
-    console.log(`[crew] ${THEME_ID}: ${n} crew scenes not drawn after ${CREW_WAIT_MS / 1000} s`, JSON.stringify(d));
+    await H.crewTimeout(THEME_ID, n, CREW_WAIT_MS / 1000); // prints the diagnostics (short fields first, each line under the suite's 240-character cap), then fails: no redraw, no longer wait
     return false;
   };
   console.log(`[crew] theme ${THEME_ID}, characters ${CHARS}`);
