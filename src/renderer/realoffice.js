@@ -996,7 +996,7 @@
     let wait = 0;
     /* spec 097 FR-327: the agent a pointer is over: its monitor, person, desk (or lounge table) or name plate, never a visitor, chip or lobby plate */
     const hid = (n) => { const t = n && n.closest && n.closest('.ro-screen, .ro-person, .ro-person2, .ro-rig, .ro-initials, .ro-marquee, .ro-desk, .ro-ltable, .ro-plate'); return t ? (t.classList.contains('ro-plate') ? t.dataset.id : t.dataset.for) || '' : ''; };
-    const arm = (id) => { clearTimeout(wait); ARMED = true; wait = setTimeout(() => { ARMED = false; openZoom(id, 'hover'); }, 120); };
+    const arm = (id) => { clearTimeout(wait); ARMED = true; wait = setTimeout(() => { ARMED = false; if (ZOOM && ZOOM.held) return; openZoom(id, 'hover'); }, 120); }; /* a card held under a resting pointer is not replaced by a timer the layout armed (#1536) */
     /* FR-328: the agent changed state under a resting pointer (it walked to the lounge): the browser's pointerout is not the person leaving; the next real move is */
     ro.addEventListener('pointermove', (e) => {
       PT = e.clientX + ',' + e.clientY;
@@ -1017,6 +1017,7 @@
       if (QUIET_POINTER && !QUIET_AT) QUIET_AT = e.clientX + ',' + e.clientY;
       if (QUIET_POINTER || !id || e.pointerType === 'touch') return;
       if ((ZOOM && ZOOM.hover && ZOOM.id === id) || DISMISSED === id) return; /* Esc holds until the pointer has left */
+      if (ZOOM && ZOOM.held && ZOOM.held === e.clientX + ',' + e.clientY) return; /* FR-328 (#1536): the layout put this agent under the held point, the pointer did not move: an over with no move arms nothing */
       arm(id); /* crossing the room opens nothing */
     });
     ro.addEventListener('pointerout', (e) => {
