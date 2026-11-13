@@ -2303,3 +2303,12 @@ and open PRs, 2026-11-11): **FR-230** and **T212**.
   scroll, top bar in view), and pictures of both. A labelled assert fails the run unless the world really is the Real office (`html[data-world]`
   is `photo`, `#stage .ro` is `photo/office`), so a fall back to the flat office is a failure and not a picture of the wrong office.
   `[KNOWN GAP]` still not run (issue #1424): streaming end-follow as a picture (item 2), dark theme, density, DPR 2, Windows, Linux.
+
+### 2026-11-12: a server row keeps a readable text column; the buttons wrap below it (issue #1622, FR-231)
+
+**Seen (Paco, v0.1.17, macOS, Copilot, a server Failed, Refused: needs sign-in):** the row's text column (name, app chip, state, reason, help text, Details, Copy diagnostics) was squeezed to about 120 px, so the name broke mid-word and the help took one or two words a line, while Tools, Restart, Sign in again..., Remove... and the switch kept one line.
+
+**Cause (read in code, then measured in the simulator):** `.srv` is a non-wrapping flex row (`screens.css`), `.srv-act` is `flex:none` and `.srv-main` takes only what is left. With the widest button set (Tools, Restart, Sign in again..., Remove...) the buttons are about 306 to 310 px of a 478 px row, so the text column was 134 px and the help text 6 lines (measured in the chat's MCP dialog at 1440x900, 1280x800 and 800x700, flat office and Retro: the dialog is the same width at every window size). The same `.srv` row is used by the Settings lists of the agent apps' servers.
+
+- **FR-231 (2026-11-12)** `[IMPLEMENTED]` `test: check-mcp-row-width` `sim:` the text column of a server row never gets narrower than 240 px of the row's room (`flex-basis:240px` on a row that has reason, help or details text); when the buttons do not fit beside it the row wraps and the buttons (Tools, Restart, Sign in again..., Remove..., the switch) sit on their own line below, right aligned. A row with only a name and a state (no text under it), or where everything fits, stays on one line as before. Text stays at 11px or more (10.5px floor), nothing overlaps, no page scroll, the dialog still scrolls inside itself. The same approach as the Tools > Activity width fix (#1466, FR-071: a minimum width for the text-bearing column and wrapping instead of squeezing).
+- `[KNOWN GAP]` Windows and macOS font widths are not measured (Linux fonts in the simulator): a different font changes the line counts, not the rule.
