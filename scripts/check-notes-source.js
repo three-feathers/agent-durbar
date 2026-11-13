@@ -48,7 +48,7 @@ module.exports = async (ctx) => {
     const n0 = await js(`document.querySelectorAll('#chat .msg.user').length`);
     const a0 = await js(`document.querySelectorAll('#chat .msg.agent .bubble').length`);
     await js(`(()=>{const m=document.getElementById('msgInput');m.focus();m.value=${jsLiteral(text)};m.dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('sendBtn').click();})()`);
-    return until(`document.querySelectorAll('#chat .msg.user').length>${jsLiteral(n0)}&&document.querySelectorAll('#chat .msg.agent .bubble').length>${jsLiteral(a0)}&&${extra || 'true'}&&${IDLE}`, 20000);
+    return until(`document.querySelectorAll('#chat .msg.user').length>${jsLiteral(n0)}&&document.querySelectorAll('#chat .msg.agent .bubble').length>${jsLiteral(a0)}&&` + (extra || 'true') + '&&' + IDLE, 20000);
   };
   const calls = (k) => js(`window.__calls.filter(c=>c===${jsLiteral(k)}).length`);
   const open = async (name) => {
@@ -109,7 +109,9 @@ module.exports = async (ctx) => {
     check(f1 && f1.inside && f1.page === 0, `${tag}: the message is inside #chat and the page did not scroll (${JSON.stringify(f1)})`);
     check(await js(`document.getElementById('notesDrawer').hidden`), `${tag}: the drawer closed so the chat is uncovered`);
     check(await until(`document.activeElement&&document.activeElement.id==='chat'`, 4000), `${tag}: the focus is on the chat log, not <body> (${JSON.stringify(await activeDesc())})`);
-    check(await wasAnnounced('Message shown.'), `${tag}: Message shown. is announced (heard: ${JSON.stringify(await js(`window.__ann`))})`);
+    const shown = await wasAnnounced('Message shown.');
+    const heard = JSON.stringify(await js(`window.__ann`));
+    check(shown, `${tag}: Message shown. is announced (heard: ${heard})`);
     await H.shot(path.join(OUT, `083-notes-source-${w}x${h}.png`), { prep: 'calm', tag: 'notes-source', keepActions: false });
     await js(`document.getElementById('ntShotStyle').remove()`);
     check(await until(`!document.querySelector('#chat .bubble.nt-found')`, 4000), `${tag}: the outline ends`);
