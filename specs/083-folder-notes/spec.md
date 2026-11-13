@@ -293,6 +293,14 @@ In the drawer I choose **Open source** on a note: the chat it came from opens an
 
 ## Changes
 
+### 2026-11-13: `check-notes-source` no longer races Noor's last reply (test only; CI run 43387311919 on PR #1561, issue #1697; a fix to the driver of FR-046, T050)
+
+*Found*: `UI shard (ubuntu-latest 2/4)` failed at 1440x900 with `Message shown. is announced`, on a PR that changes no notes code. **Cause: a race in the driver.** The per-turn wait (no caret, Send visible) can pass before Noor's reply has started, because the chat is idle before the turn and again after it. The last reply then still runs during *Open source*; when it ends, the chat announces *Reply finished*, which replaces *Message shown.* in `#srAnnounce` (`announce()` keeps only the last text, FR-172), and the exact-text poll fails. `Open source` itself is not at fault.
+
+- Each turn records the agent-bubble count before it sends and waits until it grew **and** Noor is idle (`#runSlot` not `.running`, no caret, Send back); the driver asserts idle again before *Open source*.
+- A `MutationObserver` on `#srAnnounce`, started when the page loads and cleared before each *Open source*, records every text; the three announcement checks (*Message shown.*, *the missing message*, *the gone session*) ask whether the text was announced, not whether it is the one showing.
+- Mutant: with `announce('Message shown.')` removed from `openNoteSource` in the built `dist/renderer/app.js`, the driver fails with `FAIL 1440x900: Message shown. is announced (heard: ...)` (an assert text, not a compile error); run by hand and recorded in the PR, no new script. The app is unchanged.
+
 ### 2026-11-11: `test-notesswitch` reads every inode as a bigint (test only; Windows CI run 42932253989, found on PR #1482)
 
 *Found*: `test:notesswitch` failed on Windows (job 130233638727) at *issue 1463: a rename split across folders*, block A: the mirror's `id` ended `:12947848929002475` but the test compared it with the inode read as a plain number, which is `12947848929002476` (an NTFS file ID above 2^53 loses its low bit). **Cause: precision loss in the test**, not a timing flake and not the PR it surfaced on; `src/main/notesfile.ts` already builds `mirror.id` from `{ bigint: true }` reads and was right. No product change.
