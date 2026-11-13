@@ -1457,3 +1457,28 @@ The test's `SIZES` were the floors 1440x848 and 1280x748, taller than the rooms 
 Facts for the answer: this goes beyond option A, which covers 4 or fewer agents with the lobby down to 116 px (spec `:843`); the rule now reaches 8 to 10 agents (and 6 agents in 3 or 4 folders at floor widths 860 to 885, 8 in 3 folders at 890 to 1100) and a lobby of 96 px. the owner's 2026-11-03 rule that the lobby is no smaller at 1280x800 than at 1440x900 is checked by `test-realoffice-aisles` at 748 and 848 px floors, not at the measured rooms; at the measured rooms 10 agents get a 106 px lobby at 1280x800 and 128 px at 1440x900. With the 31 px notice strip shown (666 px) 10 agents with helpers keep the head strip and split a folder, so the layout changes when the strip is shown or dismissed (a trade-off, not a loop).
 
 The `[KNOWN GAP]` of 2026-11-11 above about `SIZES` is closed by this change. Lobby by room, 10 agents in 3 folders at floor width 1248: 682 px 96, 697 px 106, 713 px 110, 714 px and above 128 (with helpers the same up to 713; 104 at 797). The strip is kept where dropping it would not keep the folders whole: pinned by `test-realoffice-aisles` with 10 agents in 3 or 4 folders, a helper each, at 666 px (strip rows stay 1; the folder splits, the named gap below), which fails when the strip is dropped whatever the plan (round 5 review, rubenlupi). **Remaining gap:** 10 agents in 3 or 4 folders at 1280x800 with the 31 px MCP strip shown (666 px): the folder is split and the hall does not scroll (whole needs 682). No layout-only fix: the #1566 lend (T308) runs only when the plan scrolls, and a split plan does not scroll. `test-realoffice-aisles` names it. Every other count of 1 to 10 agents (1, 3 and 4 folders) at both rooms, with and without the strip, is whole. Not run: Linux, Windows; 13 agents as 4/3/3/3 at floor widths 885 to 905 and 7 agents as 2/3/2 at floor width 900 (named by a second read) did not change in this sweep's models.
+
+## Changes 2026-11-13: Codex image runs for world art are a standing yes until Codex's own limits (owner decision, issue #1400; a standing yes for three named items only; FR-292 and Q1 stay as written for the packs; no new FR, T or Q)
+
+**Owner decision.** Vikram, Telegram DM, 2026-11-13 05:43:25 UTC, asked by the Linux coordinator session whether Codex image generation on his ChatGPT plan may also draw the arcade's default pixel character art, the welcome picture and the Cave fire focus picture, under the same rules as the helper kids (small batches, every picture shown to him first). His answer, in his words: "Ok to use codex until it's limits". Recorded by the coordinator as a comment on issue #1400: https://github.com/three-feathers/agent-durbar/issues/1400#issuecomment-6845249857 . He chose option (i), the same rules as the kids; the fixed 8-image budget no longer applies.
+
+**What changes.** FR-292 and Q1 say each image run waits for his written yes. For these three items only, that becomes **a standing yes**, until Codex's own limits, for art drawn by Codex image generation:
+- the arcade's default pixel character art: T225 as split into T290..T296 on PR #1528 (not on `main` when this delta was written), including the 30 running pictures `runA` and `runB` (T296);
+- the welcome picture, if it is drawn by Codex (T206's `welcome` part, open for his decision whether to draw one);
+- the Cave `circle`'s fire `focus.webp` (T242).
+
+**The pack runs T250..T253 (and T259) are NOT covered.** FR-292, Q1 and their task lines stand as written: each of those image runs still waits for his written yes, with FR-292's gates and the stop at 18 images a pack, until he says otherwise.
+
+**Rules that stay, unchanged:**
+1. One `codex exec` at a time, from an EMPTY folder, machine-wide.
+2. Invented fictional figures, with no likeness to any real person (097 FR-067).
+3. Provenance for every picture in the world's `ASSETS.md` (FR-170): tool and version, date, the exact prompt, the approver.
+4. Every picture is shown to Vikram before it ships; nothing is committed before he has seen it. The standing yes covers running Codex, not shipping a picture.
+5. Small batches.
+6. If Codex reports a limit, stop and tell the coordinator. Nothing is retried past it and no other tool takes over.
+
+**The usage check stays, and is written down.** Before and after each round the Codex plan usage is noted. **Where:** the round note in that world's `ASSETS.md` (`sets/retro/ASSETS.md` for the people), beside the provenance lines it belongs to: one line "usage before: ..., after: ..., pictures drawn, retries" per round. It is not left to a PR body, which is not kept with the art; a PR may quote it. A round is one batch run between two notes.
+
+**Not touched.** FR-326 (on PR #1528) keeps its rule that the running frames are drawn, never mirrored, tinted or reused; that PR's wording "under his standing approval of 2026-10-31" is read with this delta (the 2026-10-31 approval was office and character art; this one adds the world art above and the limit). FR-292 and Q1 are unchanged in text. 0 AI credits in `npm test` and CI is unchanged (FR-154, SC-010): this is only about real runs on the owner's plan.
+
+**Still repeating the old rule, left as written:** `spec.md` FR-182's `real:` list (names the owner's look, not a per-run yes); FR-170 (the provenance fields, which this delta uses); the line under the real-run table ("check the plan's usage first (Q1)" is still true, now before and after each round). Specs 096 and 097 have their own Q1 (animation route, where to choose the mode): unrelated, unchanged.
