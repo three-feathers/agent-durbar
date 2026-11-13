@@ -333,6 +333,7 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 ## 2026-11-11: one layout search at start (FR-363, issue #1238)
 
 - [x] T303 [US5] FR-363: `renderOffice` returns before it counts a render while the simulator's replay is pending; `simlate=<ms>` in `src/renderer/sim.ts`; `check-office-ops` rows `searchesAtStart@late15/@late40` (limit 1) and `lateReplayDelay@late15/@late40` (minimum 50). Test: `sim:` check-office-ops 3 runs; mutants `renderOffice` gate removed (the late rows fail: 2 searches) and `simlate` ignored (the delay row fails)
+- [x] T320 [US5] FR-363 (World stylesheet start order): the Photo floor moves from the base `.ro` / `.ro-strip` rules of `src/renderer/realoffice.css` to the `[data-world="photo"]` selector; `check-097-crews` delays `world.css` by 400 ms in every load. Test: `sim:` check-097-crews 'packs requested'; mutant: the base rule naming the Photo floor again fails at that label
 
 ## 2026-11-11: the pointer-event log of three flaky drivers (issue #1448)
 
