@@ -4,22 +4,22 @@
  * pixel theme, the Cave world, and retro-ui USER themes: the fixture check-user, a dark one and a mid-tone-fill one) with Photo and the dark fixture as the
  * controls (ui `clean`). Simulator only (DURBAR_SIM=15, frozen), no AI credits; every wait is an until(). Run: `npm run check:ui -- --only check-052-danger-dialogs`.
  *
- * The call sites are READ from the source (`cls:'primary danger'` in app.js, screens.js and profileeditor.js): the driver asserts it found every one
+ * The call sites are READ from the source (`danger-sites.js`: every src/renderer/*.js, any spelling of the two class words): the driver asserts it found
  * (the count of the literal string equals the count it parsed, and the known number), so a new destructive dialog fails here until it is measured.
  * Per look and size each site's dialog is built with its own label: the app.js and profileeditor.js sites through the app's own builder
- * (`DurbarDialog(document)`, dialog.js), the screens.js sites in the markup of screens.js's private `dialog()` (read from its source: the driver asserts
- * the three class names it copies are still there). Both builders give `.dlg-ov > .dlg > .dbtn > .btn.primary.danger`, which is all the CSS sees. The
- * dialogs are not reached through their menus and screens: that is a [KNOWN GAP] stated in the spec delta.
+ * (`DurbarDialog(document)`, dialog.js), the screens.js sites through screens.js's own `dialog()` (exposed as `DurbarScreens.dialog`), so a markup change
+ * in either shows here. The dialogs are not reached through their menus and screens: that is a [KNOWN GAP] stated in the spec delta.
  * The button is measured as RENDERED (the colour as the page paints it, opacity folded in over the dialog panel), after the dialog's entrance fade and
  * every transition ended: text >= 4.5:1 on its own background, a background that is not the panel's, hover differs from rest.
  * DANGER_MUTANT=old deletes the themed danger rules (main's cascade before #1576); =one blanks only the button of the "Revoke all" dialog (its label must be
- * the one named); =sites drops one call site from the list the driver parsed (the count assert fails). Each fails with its own label.
+ * the one named); =sites drops one call site from the list the driver parsed (the count assert fails); =screens moves the button row out of screens.js's dialog (fails at "the dialog opened" for the first screens.js site). Each fails with its own label.
  * DANGER_REPORT=1 fails at the end on purpose, so the suite prints every measured line. OUT=dir (optional) saves 052-danger-dialogs-<look>-<size>.png
  */
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const { helpers, jsLiteral, CHECK_DARK } = require('./driver-helpers');
+const { findSites } = require('./danger-sites');
 const OUT = process.env.OUT || require('os').tmpdir();
 const CHECK_USER = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'themes', 'check-user.json'), 'utf8'));
 const user = (id, tokens) => ({ id, name: id, author: 'Agent Durbar tests', version: '1.0', ui: 'retro', tokens });
@@ -36,19 +36,9 @@ const LOOKS = [
 ];
 const KNOWN_SITES = 19; // End all sessions and the 18 others of issue #1647
 
-/* the call sites, read from the source */
+/* the call sites, read from the source (danger-sites.js: every src/renderer/*.js, any spelling; test-danger-sites.js proves the reader) */
 function sites() {
-  const dir = path.join(__dirname, '..', 'src', 'renderer');
-  const out = [];
-  for (const f of ['app.js', 'screens.js', 'profileeditor.js']) {
-    const src = fs.readFileSync(path.join(dir, f), 'utf8');
-    const total = (src.match(/cls:'primary danger'/g) || []).length;
-    const found = [...src.matchAll(/label:'([^']+)',value:'[^']*',cls:'primary danger'/g)].map((m) => ({ file: f, label: m[1], screens: f === 'screens.js' }));
-    assert.strictEqual(found.length, total, `${f}: ${total} 'primary danger' call site(s) but ${found.length} parsed: a site has a shape the driver does not read`);
-    out.push(...found);
-  }
-  const scr = fs.readFileSync(path.join(dir, 'screens.js'), 'utf8');
-  for (const needle of ["d.className='dlg-ov'", '<div class="dlg${', "el.className='btn'+(b.cls?' '+b.cls:'')", "<div class=\"dbtn\">"]) assert.ok(scr.includes(needle), `screens.js dialog() markup changed (${needle}): update the markup this driver builds for its call sites`);
+  const out = findSites(path.join(__dirname, '..', 'src', 'renderer'));
   if (process.env.DANGER_MUTANT === 'sites') out.pop();
   assert.strictEqual(out.length, KNOWN_SITES, `${out.length} destructive-dialog call sites, ${KNOWN_SITES} known: measure the new one (add it to the spec delta) and update KNOWN_SITES`);
   return out;
@@ -70,11 +60,14 @@ module.exports = async (ctx) => {
     const bg=mix(B,op*B[3]/255),fg=mix(F,op*F[3]/255),a=lum(fg),b=lum(bg),r=(Math.max(a,b)+0.05)/(Math.min(a,b)+0.05);
     const t=x=>x.map(v=>Math.round(v)).join(',');
     return {css:s.backgroundColor,bg:t(bg),fg:t(fg),panel:t(panel),op:Math.round(op*100)/100,ratio:Math.round(r*100)/100};})()`;
-  const OPEN = (site) => site.screens
-    ? `(()=>{const d=document.createElement('div');d.id='scrDlg';d.className='dlg-ov';d.innerHTML='<div class="dlg" role="dialog" aria-modal="true"><h3>Check</h3><div class="dbody"><p class="dsub">A destructive confirmation.</p></div><div class="dbtn"></div></div>';
-      const row=d.querySelector('.dbtn');for(const [l,c] of [['Cancel',''],[${jsLiteral(site.label)},' primary danger']]){const b=document.createElement('button');b.type='button';b.className='btn'+c;b.textContent=l;row.appendChild(b)}
-      d.addEventListener('keydown',e=>{if(e.key==='Escape')d.remove()});document.body.appendChild(d);d.querySelector('.btn').focus();return 1})()`
-    : `(()=>{window.DurbarDialog(document)({title:'Check',body:'A destructive confirmation.',buttons:[{label:'Cancel',value:null},{label:${jsLiteral(site.label)},value:'ok',cls:'primary danger'}]});return 1})()`;
+  /* both builders are the app's own: dialog.js's askDialog for app.js and profileeditor.js, and screens.js's `dialog()` (exposed as DurbarScreens.dialog for the folder-setup list) for screens.js */
+  const OPEN = (site) => {
+    const btns = `[{label:'Cancel',value:null},{label:${jsLiteral(site.label)},value:'ok',cls:'primary danger'}]`;
+    if (!site.screens) return `(()=>{window.DurbarDialog(document)({title:'Check',body:'A destructive confirmation.',buttons:${btns}});return 1})()`;
+    /* DANGER_MUTANT=screens: screens.js's markup changed, the button row left the dialog; the driver must fail at "the dialog opened" for this label */
+    return `(()=>{window.DurbarScreens.dialog({title:'Check',html:'<p class="dsub">A destructive confirmation.</p>',buttons:${btns}});
+      ${process.env.DANGER_MUTANT === 'screens' ? `const o=document.getElementById('scrDlg');o.appendChild(o.querySelector('.dbtn'));` : ''}return 1})()`;
+  };
   const mutate = (kind) => js(`(()=>{let n=0;for(const s of document.styleSheets){let rules;try{rules=s.cssRules}catch(e){continue}
     for(let i=rules.length-1;i>=0;i--){const t=rules[i].selectorText||'';if(/btn\\.primary\\.danger/.test(t)&&/data-ui/.test(t)&&${jsLiteral(kind)}==='old'){s.deleteRule(i);n++}}}return n})()`);
   const DONE = `(()=>{const d=document.querySelector('.dlg'),o=document.querySelector('.dlg-ov'),b=document.querySelector(${jsLiteral(SEL)});return !!b&&d.getAnimations({subtree:true}).length+(o?o.getAnimations().length:0)+b.getAnimations().length===0&&+getComputedStyle(d).opacity===1&&+getComputedStyle(b).opacity===1&&(!o||+getComputedStyle(o).opacity===1)})()`;

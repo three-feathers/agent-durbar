@@ -128,6 +128,7 @@
     "test:weeklyretro": "node scripts/test-weekly-retro.js",
     "test:paritytick": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-parity-tick.js",
     "test:picturebudget": "node scripts/test-picture-budget.js && node scripts/picture-budget.js",
+    "test:dangersites": "node scripts/test-danger-sites.js",
     "test:specnumbers": "node scripts/test-spec-numbers.js",
     "specs:numbers": "node scripts/spec-numbers.js",
     "test:rules": "node scripts/test-rules-check.js && node scripts/rules-check.js",
