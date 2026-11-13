@@ -1,8 +1,8 @@
 /**
  * Spec 097 delta 2026-11-11 (issue #1448, T302): the pointer-event log of the flaky drivers (`npm run test:pointer-log`). No Electron is started: a stand-in
  * page (a vm context with a window that dispatches fake events) runs the helper's own page code. The same cases run on the real helper (all must hold)
- * and on eight mutants of its source (each must make a case fail): print removed, events not printed, prints on a pass, ring unbounded, dom block not printed, dom ring unbounded,
- * dom block printed on a pass, another error thrown (spec 033 delta 2026-11-11, issue #1526: the DOM ring and the static case for shots-033.js).
+ * and on nine mutants of its source (each must make a case fail): print removed, events not printed, prints on a pass, ring unbounded, dom block not printed, dom ring unbounded,
+ * dom block printed on a pass, another error thrown, dom selector not escaped (spec 033 delta 2026-11-11, issue #1526: the DOM ring and the static case for shots-033.js).
  */
 import * as assert from 'assert';
 import * as fs from 'fs';
@@ -113,6 +113,15 @@ async function cases(h: Helpers) {
     const p5 = page(), o5: string[] = [], L5 = h.pointerLog(p5.ctx, (l) => o5.push(l)), e5 = new assert.AssertionError({ message: 'x' });
     await assert.rejects(L5.step('d', 's', async () => { throw e5; }, { dom: '#nothing' }), (e) => e === e5); assert.ok(o5.some((l) => l.startsWith('[dom-log] d s: 0 mutations')) || o5.length >= 1); }
 
+  // the selector is spliced into page code through jsLiteral (CodeQL js/bad-code-sanitization, PR 1529): a hostile one never reaches the code raw
+  { const evil = `x');alert(1);//</script>\u2028\u2029"\\'`, codes: string[] = [], rec = { js: async (c: string) => { codes.push(c); return '[]'; } };
+    await h.pointerLog(rec).step('d', 's', async () => 1, { dom: evil });
+    const dom = codes.find((c) => c.includes('__domLog') && c.includes('querySelector(')) || '';
+    assert.ok(dom && !dom.includes(evil), 'the raw selector is never in the page code');
+    assert.ok(!/[\u2028\u2029]|<\/script>/.test(dom), 'no raw line separator or closing tag in the page code');
+    const lit = dom.slice(dom.indexOf('querySelector(') + 14, dom.indexOf(');if(!el'));
+    assert.strictEqual(vm.runInNewContext(lit), evil, 'the selector is one escaped string literal that reads back as the same text'); }
+
   driverCase(lf(fs.readFileSync(path.join(ROOT, 'scripts', 'shots-033.js'), 'utf8')));
 
   // a non-assertion error is rethrown unchanged and prints nothing; a failed read never hides the assertion
@@ -161,6 +170,7 @@ function hoverCardCase(d: string) {
     ['dom block not printed', "out(`[dom-log] ${driver} ${name}: ${ev.length} mutations (", "void(`[dom-log] ${driver} ${name}: ${ev.length} mutations ("],
     ['dom ring unbounded', 'if(D.ev.length>${DOM_LOG_MAX})D.ev.splice(0,D.ev.length-${DOM_LOG_MAX});', ''],
     ['dom block prints on a pass', 'const r = await fn();', "const r = await fn(); if (opts && opts.dom) await printDom(driver, name);"],
+    ['dom selector not escaped', 'document.querySelector(${jsLiteral(sel)})', 'document.querySelector(${JSON.stringify(sel)})'],
     ['another error thrown', "      throw e;\n    }\n  };\n  return { arm, step, print, printDom };", "      throw new Error(String(e && e.message));\n    }\n  };\n  return { arm, step, print, printDom };"],
   ];
   /* the driver's own text: a lift-less result must say 'did not start' (the scratch stray hook shows it live, see the PR); the mutant removes that assert */

@@ -129,8 +129,8 @@ const POINTER_SHORT = { pointermove: 'pm', pointerdown: 'pd', pointerup: 'pu', p
 const POINTER_ARM = `(()=>{const w=window,L=w.__ptrLog=w.__ptrLog||{ev:[],t0:0};
   if(!w.__ptrLogOn){w.__ptrLogOn=1;for(const t of ${JSON.stringify(POINTER_TYPES)})w.addEventListener(t,(e)=>{const E=L.ev;E.push({type:e.type,x:Math.round(e.clientX),y:Math.round(e.clientY),buttons:e.buttons,trusted:e.isTrusted,at:performance.now()});if(E.length>${POINTER_LOG_MAX})E.splice(0,E.length-${POINTER_LOG_MAX});},true);}
   L.ev.length=0;L.t0=performance.now();return 1})()`;
-/** The mutation ring of one element (`sel` is spliced through JSON.stringify); a missing element or MutationObserver arms nothing. */
-const domArm = (sel) => `(()=>{const w=window;if(w.__domLog&&w.__domLog.obs)w.__domLog.obs.disconnect();w.__domLog=null;const el=document.querySelector(${JSON.stringify(sel)});if(!el||typeof MutationObserver!=='function')return 0;
+/** The mutation ring of one element (`sel` is spliced through jsLiteral, the helper every driver uses for page code); a missing element or MutationObserver arms nothing. */
+const domArm = (sel) => `(()=>{const w=window;if(w.__domLog&&w.__domLog.obs)w.__domLog.obs.disconnect();w.__domLog=null;const el=document.querySelector(${jsLiteral(sel)});if(!el||typeof MutationObserver!=='function')return 0;
   const D=w.__domLog={ev:[],t0:performance.now(),obs:null};D.obs=new MutationObserver((rs)=>{const now=performance.now();for(const r of rs){const t=r.target,c=String((t.classList&&t.classList[0])||'').slice(0,16);D.ev.push({k:r.type==='childList'?'c':'a',tag:String(t.tagName||'').toLowerCase(),cls:c,add:r.addedNodes?r.addedNodes.length:0,rem:r.removedNodes?r.removedNodes.length:0,at:now});}if(D.ev.length>${DOM_LOG_MAX})D.ev.splice(0,D.ev.length-${DOM_LOG_MAX});});
   D.obs.observe(el,{childList:true,subtree:true,attributes:true});return 1})()`;
 const DOM_READ = `(()=>{const D=window.__domLog;if(!D)return '[]';const q=D.obs.takeRecords();void q;return JSON.stringify(D.ev.map((e)=>({k:e.k,tag:e.tag,cls:e.cls,add:e.add,rem:e.rem,ms:Math.round(e.at-D.t0)})))})()`;
