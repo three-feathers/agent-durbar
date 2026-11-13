@@ -4,7 +4,7 @@
 group: 046
 title: Session browser (issue #556): a Browser tab per session with its own in-memory profile, wiped at session end; chat links open there; later the agent drives it through a per-session durbar-browser server (no debugging port), gated per mode; per-folder login opt-in last
 status: building
-note: Browser tab, chat links and page tabs (#910) built on the simulator; 28 tasks open
+note: Browser tab, chat links, page tabs (#910) and Expand (#1691) built on the simulator; 28 tasks open
 -->
 
 **Feature Branch**: `080-session-browser` (touches 005 chat panel, 008 fuses (Phase 3), 045 window hardening, 003/018 permission broker, 041 Durbar MCP, 072 per-session server pattern, 058/069 MCP lists, 001 office desks, 010 simulator)
@@ -790,6 +790,8 @@ Spec 084 (contacts, issue 701) opens `https://teams.microsoft.com/l/chat/0/0?`, 
 - **FR-137** **Not remembered.** The big state lives only in the window's memory, for the chat that is open. It ends (the browser is small again) when the user picks the Chat tab, closes the chat, opens another chat (the rail, a shortcut, a hidden session's dialog bringing its chat forward, FR-025d), when the session's browser goes, and on a reload or restart. A rebuild of the same chat (a rename) keeps it. Nothing is written to settings, `localStorage` or disk.
 - **FR-138** **The page is the same page.** Expanding changes only the view's bounds through the existing checked `browser:bounds` path: the same view, partition, `webPreferences`, permission handlers (HTML fullscreen stays refused, FR-025), navigation rules, sound state (FR-012, no autoplay change) and tabs. FR-008 holds as before: a Durbar menu, dialog, toast or list over the big page takes the view off and shows the still picture until it closes.
 - **FR-139** **Looks and sizes.** Theme tokens only (every world and look: Flat, Photo office, Retro arcade, Cave, user themes); text at least 10.5 px; no page or panel scroll at 1440x900 and 1280x800. On macOS, while no notice strip is above it, the big pane's top row (the page tabs) keeps clear of the window buttons (78 px, as `.notice-strip` does, not in native full screen) and is the window's drag region, with its buttons excluded.
+
+- `[IMPLEMENTED]` FR-134..FR-139 on the simulator (`sim:` `check-080-browser-expand`, Flat, Photo office and Retro arcade, 1440x900 and 1280x800; `test:` `test:browserpane`). Pictures: [small](../../docs/screenshots/080-browser-expand-small-flat-1440x900.png), [expanded](../../docs/screenshots/080-browser-expand-big-flat-1440x900.png), [expanded, Photo office](../../docs/screenshots/080-browser-expand-big-photo-1440x900.png), [expanded, Retro arcade](../../docs/screenshots/080-browser-expand-big-retro-1440x900.png).
 
 **Mutants a driver must kill** (`scripts/check-080-browser-expand.js`, each by its labelled assertion): *expand does not fill* (the CSS rule or the class dropped), *restore forgets* (the class kept after Restore), *focus not returned* (no focus move on restore), *Escape steals from the page* (main's tab-key table also takes Escape), *state persisted* (the state written to `localStorage` and read on mount).
 

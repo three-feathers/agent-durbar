@@ -120,10 +120,15 @@ module.exports = async (ctx) => {
     await calm();
     await shot(`080-browser-expand-small-${file}.png`);
 
-    // FR-135: Expand fills the chat panel; the panel is the window's content below the notice strips
+    // FR-135: Expand fills the chat panel; the panel is the window's content below the notice strips. FR-137: around this first click
+    // nothing else runs, so any localStorage entry that appears or changes is the big state being remembered
+    const snap = () => js(`(()=>{try{return Object.keys(localStorage).sort().map(k=>k+'='+localStorage.getItem(k));}catch(e){return ['unreadable']}})()`);
+    const before = await snap();
     await js(`document.getElementById('bBig').click()`);
     await soft(async () => (await big()) && !sameRect((await geo()).view, small.view, 1));
     const g1 = await geo();
+    const added = (await snap()).filter((x) => !before.includes(x)).map((x) => x.slice(0, 120));
+    assert.deepStrictEqual(added, [], tag + ': state persisted: Expand writes nothing to localStorage');
     const bottom = g1.answerTop === null ? g1.Hh : g1.answerTop;
     assert.ok(sameRect(g1.pane, { x: g1.panel.x, y: g1.panel.y, w: g1.panel.w, h: bottom - g1.panel.y }, 1), `${tag}: expanded: the pane fills the panel: ${JSON.stringify({ pane: g1.pane, panel: g1.panel, bottom })}`);
     assert.ok(sameRect(g1.panel, { x: 0, y: g1.noticeBottom, w: g1.W, h: g1.Hh - g1.noticeBottom }, 1), `${tag}: expanded: the panel is the window's content below the notice strips: ${JSON.stringify({ panel: g1.panel, W: g1.W, H: g1.Hh, notices: g1.noticeBottom })}`);
@@ -211,12 +216,8 @@ module.exports = async (ctx) => {
     await openChat(idA);
     await toBrowser();
     assert.strictEqual(await big(), false, `${tag}: back in the first chat the browser is small`);
-    const snap = () => js(`(()=>{try{return Object.keys(localStorage).sort().map(k=>k+'='+localStorage.getItem(k));}catch(e){return ['unreadable']}})()`);
-    const before = await snap();
     await js(`document.getElementById('bBig').click()`);
     await wait(big, `${tag}: big before the reload`);
-    const added = (await snap()).filter((x) => !before.includes(x)).map((x) => x.slice(0, 120));
-    assert.deepStrictEqual(added, [], tag + ': state persisted: Expand writes nothing to localStorage');
     await H.load({ w, h, ready: WORLD === 'flat' ? 'fit' : REAL, settle: WORLD === 'flat', focus: true, query: WORLD === 'flat' ? undefined : { officeview: 'real' } });
     await openChat(idA);
     await toBrowser();
