@@ -4,7 +4,7 @@
 group: 046
 title: MCP servers in a session (issue #349): plain state words and how servers start per agent app, the masked failure reason with a hint, per-server Restart where the agent app has one (Copilot, Claude Code), Restart session with these servers, Open log folder (reveal only)
 status: building
-note: restart, logs and sign-in tasks open; masking and state words built; App mode (#1667) specified, not built
+note: restart, logs and sign-in tasks open; masking and state words built; App mode (#1667): SDK 1.0.32 bump built (PR 2), setting not built
 -->
 
 **Feature Branch**: `058-mcp-session-controls`
@@ -2471,6 +2471,44 @@ facts below that this delta relies on, unless tagged otherwise):
   through the system broker, no browser if the broker answers, servers connect, and the hourly expiry renews (FR-218) without a new
   sign-in; (3) Copilot CLI's app only if Q25 puts it in the build; (4) Custom app, if he has a tenant app; (5) a change reconnects and keeps
   live chats; (6) the debug log shows no GUID. Results are recorded in this spec as `real:` with the date and build.
+
+#### Build record: PR 2, the SDK bump (T216, 2026-11-13)
+
+- **FR-244** `[IMPLEMENTED]` `@github/copilot-sdk` 1.0.32 (exact), runtimes per the lockfile (`copilot-sdk-<platform>` 1.0.32, runtime 1.0.110),
+  Dependabot's `ignore` for the SDK removed, the `zod` override raised to 4.6.7 (Q26 (a), **the recommended default, reversible**: Q26 is still
+  pending). Lockfile changes: `lossless-json` 4.3.3 (new, MIT), `vscode-jsonrpc` 8.2.1 to 10.0.0, `koffi` and its `@koromix/koffi-*` 3.2.1 to
+  3.3.6 (two new optional platform packages, `linux-ppc64` and `openbsd-arm64`), `zod` 4.6.6 to 4.6.7; every `resolved` is
+  `registry.npmjs.org`. `npm ci` warns that `koffi`'s install script is not run (as for 3.2.1: its prebuilt platform packages load; `real:`
+  `require('koffi')` on Linux). `test: typecheck` (no cast had to change), the fake-client suites and full `npm test`. The review checklist's
+  free MCP sign-in probe (#1084) was **not run**: `scripts/mcp-oauth-real.ts` is a CI-runner check (its workflow is an Actions run, which needs the
+  owner's ask) and run locally it leaves a sign-in in this machine's keychain. `[KNOWN GAP]` Windows and macOS: not packaged or started with
+  1.0.32 (installer growth `read:` npm unpacked sizes above); the macOS build re-signs the new OneAuth and MSAL libraries ad hoc like every
+  Mach-O (`mac.identity "-"`), not checked on a Mac (T221).
+- **FR-242** `[IMPLEMENTED]` `isReplayedRecord` (`src/adapters/history.ts`): `eventsToHistory` skips `checkpoint: true` records, and it is the
+  one reader of Copilot history (resume replay, Previous sessions, conversation search); the live handler drops a replayed record before
+  the mapper and the cap count (no chat line, usage call, `usage_checkpoint` total, title or idle from it), except a
+  `session_limits_exhausted.*` record (fail safe: a waiting agent keeps its card). `src/main/prevsessions.ts` reads session metadata only and
+  `src/main/convsearch.ts` reads through the adapter's history, so neither changed. `test: history` (each message once; search reads none),
+  `test: copilot-cap` (no output, usage, held send or limit from replayed records; a replayed limit request still shows). Mutants: the history
+  filter removed ("FR-242 replayed records skipped: each message once"), the live filter removed ("FR-242 live replay skipped: no second chat
+  line or usage call"), the limit exception dropped ("FR-242: a replayed limit request is still shown"). `[KNOWN GAP]` synthetic events: no
+  real replayed record was seen.
+- **FR-243** `[IMPLEMENTED]` `copilotShellGuard()` (`src/adapters/copilot.ts`), spread into the one session config used for create, resume and
+  the FR-158 re-resume; the field names are those of the installed SDK 1.0.32 types (`SessionConfigBase.managedSettings`,
+  `ManagedSettingsPermissions.ask` / `disableAssistedPermissionsMode`, `permissionMode`), and the SDK sends both on `session.create` and
+  `session.resume` (`read:` `client.js`). Not in the tool-free one-shot or rename configs (no tools, every request rejected). `test:
+  copilot-model` (create, resume by id, `resumeSessionId`), `test: authcheck` (refreshAuth re-resume). Mutants: resume without the guard
+  ("spec 058 FR-243 guard on resume (session id)"), `permissionMode` left out ("spec 058 FR-243 guard on create"), the reconnect without it
+  ("spec 058 FR-243 guard on the refreshAuth re-resume"). **T220** `real:` 2026-11-13, Linux, runtime 1.0.110, `claude-haiku-5.5` (the
+  cheapest listed by token price), one session, 2 prompts, `scripts/shell-guard-real.ts --spend`, the guard seen in the create config:
+  **Read-only: `ls` reached the broker** (`shell` "run ls", denied; the tool call failed with Durbar's read-only text; nothing ran). **Ask
+  first: not shown**: after the switch the model answered from the denial in its history with no tool call, so no request was made
+  (inconclusive, not a bypass). Usage: 3 model calls, **0.35 AI credits** (0.316 + 0.032), 67,597 input and 372 output tokens; the session was
+  deleted. The runtime sees the same config in Read-only and Ask first (Durbar's mode lives in its broker; only the sandbox floor differs), so
+  the Ask first path is expected to behave the same (`read:` reasoning, not a run). `[KNOWN GAP]` Ask first on a real session, and whether the
+  runtime would have run `ls` without the guard (no unguarded control run). The script's second prompt now names the mode change and a
+  different command (`ls -1`) for the next run.
+- **Spec 011 FR-096** `[IMPLEMENTED]` see spec 011's delta of 2026-11-13.
 
 #### Later, not in this plan
 

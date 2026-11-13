@@ -181,6 +181,8 @@ void (async () => {
     assert.strictEqual(rb.enableFileHooks, false, 'refreshAuth re-resume: repository file hooks stay off (FR-017)');
     // spec 058 FR-070: the re-resume keeps MCP sign-ins in the OS keychain too
     assert.strictEqual(ra.mcpOAuthTokenStorage, 'persistent', 'refreshAuth re-resume: persistent MCP token storage (058 FR-070)');
+    // spec 058 FR-243: the shell guard goes with the re-resume too (the runtime keeps none of it across a resume)
+    for (const r of [ra, rb]) assert.deepStrictEqual({ managedSettings: r.managedSettings, permissionMode: r.permissionMode }, { managedSettings: { permissions: { ask: ['Shell(*)'], disableAssistedPermissionsMode: true } }, permissionMode: 'manual' }, 'spec 058 FR-243 guard on the refreshAuth re-resume');
     assert.ok(c2.sessions.get(b)!.calls.some((x) => x.name === 'mcp.disable'), 'an MCP server switched off stays off');
     const intents = (sid: string) => events.filter((e) => e.sessionId === sid && e.type === 'status').map((e) => (e as { intent?: string }).intent);
     assert.ok(intents(a).includes('Reconnecting Copilot…'));

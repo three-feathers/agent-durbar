@@ -409,6 +409,11 @@ export interface LimitEvent extends BaseEvent {
   maxAiCredits?: number | null;
   /** Credits used in the current accounting window (exhausted only). */
   usedAiCredits?: number;
+  /**
+   * Spec 011 FR-096 (exhausted only): the agent app asks before its cap is reached (Copilot SDK 1.0.32 offers a top-up at 90%): set only
+   * when both numbers are finite and used < max. Still `exhausted` (the agent waits for the same answer); only the words change.
+   */
+  near?: true;
   /** The chosen action (resolved only): add | set | unset | cancel. */
   action?: string;
 }

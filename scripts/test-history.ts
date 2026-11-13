@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { SEARCH_HISTORY_LIMITS, cleanSessionTitle, cleanTitle, eventsToHistory, normDir, previousSessionsFor, sameDir } from '../src/adapters/history';
+import { SEARCH_HISTORY_LIMITS, cleanSessionTitle, cleanTitle, eventsToHistory, isReplayedRecord, normDir, previousSessionsFor, sameDir } from '../src/adapters/history';
 import { MAX_FILE_BYTES, claudeHistoryFromText, claudeProjectSlug } from '../src/adapters/claudeHistory';
 import { readClaudeHistoryStream } from '../src/adapters/claudeStream';
 import { codexHistory } from '../src/adapters/codexHistory';
@@ -97,6 +97,17 @@ assert.ok(capped.items[0].type === 'user' && capped.items[0].text === 'm40', 'th
 const long = eventsToHistory([ev('assistant.message', { content: 'y'.repeat(50_000) })]);
 assert.ok(long.items[0].type === 'output' && long.items[0].text.length === 20_001);
 assert.deepStrictEqual(eventsToHistory([]).items, []);
+
+// spec 058 FR-242: SDK 1.0.32 journal records of a replay checkpoint (`checkpoint: true`) repeat the history; replay, previous sessions and
+// search (all through eventsToHistory) show each message once. SYNTHETIC: the field as SDK 1.0.32 session-events.d.ts declares it.
+{
+  const own = [ev('user.message', { content: 'fix it' }), ev('tool.execution_start', { toolCallId: 'k1', toolName: 'bash', arguments: { command: 'ls' } }), ev('tool.execution_complete', { toolCallId: 'k1', success: true, result: { content: 'a' } }), ev('assistant.message', { content: 'done' })];
+  const replay = own.map((e) => ({ ...(e as object), checkpoint: true }));
+  const r = eventsToHistory([...replay, ...own, ev('user.message', { content: 'next' }, { checkpoint: false })]);
+  assert.deepStrictEqual(r.items.map((i) => (i.type === 'tool' ? 'tool:' + i.tool : i.type + ':' + (i as { text: string }).text)), ['user:fix it', 'tool:bash', 'output:done', 'user:next'], 'FR-242 replayed records skipped: each message once');
+  assert.strictEqual(eventsToHistory(replay, SEARCH_HISTORY_LIMITS).items.length, 0, 'FR-242: the search reads no replayed record');
+  assert.ok(isReplayedRecord({ type: 'x', checkpoint: true }) && !isReplayedRecord({ type: 'x', checkpoint: 'true' }) && !isReplayedRecord({ type: 'x' }) && !isReplayedRecord(null), 'FR-242: only checkpoint === true');
+}
 
 // Issue #126: session titles (spec 002 delta 2026-10-18)
 assert.strictEqual(cleanSessionTitle(undefined), undefined);

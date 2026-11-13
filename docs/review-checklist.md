@@ -68,7 +68,7 @@ On 2026-10-23 Vikram's agent grouped the ~1,100 *Required fixes* in reviews of ~
 - [ ] **Text guards that emulate a parser** (YAML, shell) use its whitespace (`[ \t]`, not JS `\s`, which matches NBSP) and refuse non-ASCII. [#700](https://github.com/three-feathers/agent-durbar/pull/700)
 - [ ] **One limit, end to end**: every layer that accepts or keys a value (renderer, IPC, adapter) uses the same named constant; a smaller middle cap refuses loudly. Display-only cuts are fine. Grep the old number; test just over the smallest cap. [#693](https://github.com/three-feathers/agent-durbar/pull/693)
 - [ ] **Unusable input never gets a permissive default**: unreadable IPC input is refused with a reason; a security decision on a bad value fails closed; untrusted files are still parsed tolerantly (constitution III). [#693](https://github.com/three-feathers/agent-durbar/pull/693)
-- [ ] **Outside and Dependabot PRs: a human decides** (FR-062) on lockfile changes (new packages, `resolved`, `integrity`) and binaries; new dependencies only as a spec or plan names them; `test:supplychain`'s allow-list widens only by owner decision. Agent-runtime SDK bumps need a free `real:` MCP sign-in probe (#1084).
+- [ ] **Outside and Dependabot PRs: a human decides** (FR-062) on lockfile changes (new packages, `resolved`, `integrity`) and binaries; new dependencies only per spec or plan; `BINARY_ALLOW` grows by owner decision. SDK bumps: a free `real:` MCP sign-in probe (#1084); Copilot also: spec 058 FR-243's shell guard.
 
 ## Tests
 

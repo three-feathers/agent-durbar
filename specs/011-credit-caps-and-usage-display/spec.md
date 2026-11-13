@@ -305,7 +305,7 @@ What is kept for the run is listed per setting (`isUnsaved(key)`, `unsavedKeys`,
 
 ### 2026-11-13: the runtime's limit prompt can come at 90% (SDK 1.0.32; spec 058 delta 2026-11-13, issue #1667; FR-096)
 
-**Status**: specified, not built; lands with the SDK bump (spec 058 FR-244, task T216 there, T074 here). Numbers checked with `npm run specs:numbers`.
+**Status**: built 2026-11-13 with the SDK bump (spec 058 FR-244, task T216 there, T074 here). Numbers checked with `npm run specs:numbers`.
 
 **Why.** SDK 1.0.32's notes say interactive clients with a session-limits listener "are offered a top-up at 90% of the limit" (`read:`
 bot-written release notes, data). It arrives as the same `session_limits_exhausted.requested` event with `usedAiCredits < maxAiCredits`; today
@@ -321,3 +321,11 @@ window would say *Spending limit reached* while 10% is left. Durbar's own cap (F
   equivalent the plan picks; no new phase, so every consumer of `exhausted` still pauses the agent. `test:` the mapper with used 90/100 (near),
   100/100 and 101/100 (reached), missing used (reached); the window's words for both. **Mutant:** `<=` for `<` (100/100 reads near).
   `[KNOWN GAP]` the runtime's 90% offer was not seen (no real session reached a cap; FR-015 stays unverified).
+- `[IMPLEMENTED]` 2026-11-13: `map.ts` adds `near: true` to the `limit` event (`LimitEvent.near`, phase stays `exhausted`) only when used and
+  max are finite and `used < max`; Durbar's own cap request never carries it. The window: `DurbarCoffee.limitWords` (`coffeebreak.js`) gives
+  the card's head and accessible name; the agent's state and the Bank's word say "Close to spending limit" (`app.js` `breakWord`), the OS
+  notification "Is close to its spending limit.", the inbox row "is close to its spending limit", the Real office slip the card's name.
+  `test: events` (90/100 near; 100/100, 101/100, missing used or max, a non-finite max, a string: reached), `test: coffeebreak` (the words; only
+  `true` is near). Mutants: `<=` for `<` ("FR-096 reached: used 100 of 100 is reached, not near"), `near` read as truthy ("FR-096 window:
+  \"true\" reads reached"). `sim:` `simlimitnear` (Omar asks at 28.5 of 30), `scripts/shots-011-limit-near.js` at 1440x900 and 1280x800: the card,
+  its name, the state, no "Limit reached" anywhere (pictures looked at, not linked).

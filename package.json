@@ -337,12 +337,12 @@
     "node": "^20.19.0 || >=22.12.0"
   },
   "dependencies": {
-    "@github/copilot-sdk": "1.0.24",
+    "@github/copilot-sdk": "1.0.32",
     "dompurify": "3.4.17",
     "marked": "18.1.2"
   },
   "overrides": {
-    "zod": "4.6.6",
+    "zod": "4.6.7",
     "minimatch@^9.0.3": "11.0.5",
     "minimatch@^10.2.5": "11.0.5"
   },
