@@ -9,8 +9,10 @@ import { setMcpOp } from './agentops';
 import type { AdapterRouter } from '../adapters/router';
 import type { McpServerSpec } from '../shared/mcp';
 import type { DevEnv } from './devhooks';
-import { BUILTIN_SERVERS, cliServers, cliServersWithValues, copilotDir } from './mcpfiles';
+import { BUILTIN_SERVERS, cliServers, cliServersWithValues, copilotDir, readCandidates } from './mcpfiles';
 import type { McpCliValues } from './mcpfiles';
+import { envIsSet, tokenEntryOfExtra, tokenEntryOfSpec } from './mcptoken';
+import type { TokenEntry } from './mcptoken';
 import { applyFolderImport, MAX_IMPORT_FOLDERS, previewFolderImport } from './mcpimport';
 import { copilotListValues, mcpSecretValues } from './mcpmask';
 import { claudeOffKey, mergeSessionServers, offOf } from './mcpglobal';
@@ -73,6 +75,8 @@ export function registerMcpIpc(deps: {
   codexServers?(): Record<string, { url?: string }>;
   /** The agent app of an agent (`copilot`, `claude`, `codex`, ...). */
   appOf?(agentId: string): string | undefined;
+  /** Spec 058 FR-232: whether a variable is set (not empty) in Durbar's own environment (presence only); default `process.env`. Tests inject it. */
+  envSet?(name: string): boolean;
   /** Spec 052 activity log row for an MCP restart (spec 058 FR-021). */
   log?(a: AgentInfo, action: string): void;
   /** Spec 058 FR-229 (issue #1229): starts (resumes) a chat's session the way a send does, without a message: the Sign in of an idle chat. */
@@ -508,6 +512,8 @@ export function registerMcpIpc(deps: {
       orgBlocked: deps.orgMcpNow ? (n) => deps.orgMcpNow?.(a.id, serverDefOf(a.id, n)) : undefined,
       global: gn,
       builtin: new Set(all.filter((x) => x.origin === 'builtin').map((x) => x.name)),
+      tokenEntry: (n) => tokenEntryOf(a.id, n), // spec 058 FR-232
+      envSet: deps.envSet ?? envIsSet(),
     });
     return { ...reply, servers: reply.servers.map((x) => ({ ...x, costKey: serverKey(x.name) })) }; // spec 100: a row finds its figure whatever masking did to the shown name
   });
@@ -542,6 +548,28 @@ export function registerMcpIpc(deps: {
     if (!a) return undefined;
     try {
       return serverUrlFor(deps.appOf?.(agentId), name, { extras: () => store().list(keyOf(a)), copilot: () => cli().servers, claude: () => deps.globalFor?.(agentId) ?? {}, codex: () => deps.codexServers?.() ?? {} });
+    } catch {
+      return undefined;
+    }
+  };
+  /**
+   * Spec 058 FR-232 (issue #1621): the entry of a server in the lists this agent's app uses, in `serverUrlFor`'s order (this folder's
+   * extra, then the Copilot CLI list for Copilot, Durbar's Claude Code list for Claude Code; Codex is not read). Read only for a failed
+   * row with a 403; the values stay in main.
+   */
+  const tokenEntryOf = (agentId: string, name: string): TokenEntry | undefined => {
+    const a = agents.get(agentId);
+    if (!a) return undefined;
+    try {
+      const extra = store().list(keyOf(a)).find((v) => v.name === name);
+      if (extra) return tokenEntryOfExtra(extra);
+      const app = deps.appOf?.(agentId);
+      if (app === 'copilot') return tokenEntryOfSpec(readCandidates(path.join(copilotDir(dev), 'mcp-config.json'))?.candidates.find((c) => c.originalName === name));
+      if (app === 'claude') {
+        const g = deps.globalFor?.(agentId) ?? {};
+        return Object.prototype.hasOwnProperty.call(g, name) ? tokenEntryOfSpec(g[name]) : undefined;
+      }
+      return undefined;
     } catch {
       return undefined;
     }

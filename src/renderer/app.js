@@ -4229,6 +4229,7 @@ document.addEventListener('keydown',e=>{
     if(window.DurbarScreens&&window.DurbarScreens.isOpen()&&!document.getElementById('scrDlg')&&!document.getElementById('modeDlg')){window.DurbarScreens.close();return;}
     if(!$('foldersPop').hidden){toggleFolders(false);return;}
     if(!$('floorsPop').hidden){toggleFloors(false);return;}
+    if(BP.expanded()){BP.restore({focus:true});return;} /* spec 080 FR-136 (issue 1691): the big browser goes small first, never the chat closing; a key in the page never gets here */
     if(e.target&&e.target.id==='ntSearch'&&e.target.value){e.target.value='';notesPaint();return;} /* spec 083 FR-043: Esc clears the search first */
     if(notesIsOpen()){closeNotes(true);return;} /* spec 083 FR-020: the drawer closes first, a second Esc closes the chat */
     if(vsViewing){leaveVsView();return;}
@@ -5321,7 +5322,11 @@ async function mcpLaunchStart(){
 function mcpLaunchSeen(a,e){
   if(!mcpL.on||mcpL.closed||!a||e.agentId)return;
   const r=liveRoot(a)||a, W=mcpLW();
-  if(W.launchUpdate(mcpL.items,e,{id:r.id,name:r.name,app:mcpOpts(r).appName},W.launchYoung(mcpL.t0,performance.now())))paintMcpStrip();
+  const chat={id:r.id,name:r.name,app:mcpOpts(r).appName};
+  if(W.launchUpdate(mcpL.items,e,chat,W.launchYoung(mcpL.t0,performance.now())))paintMcpStrip();
+  /* spec 058 FR-232 (issue 1621): a failed server whose text reads like a refusal may be a refused token; only main's reply knows */
+  if(e.type==='mcp'&&bridge.agentMcp&&W.launchToken&&(Array.isArray(e.servers)?e.servers:[]).some(x=>x&&x.status==='failed'&&!x.errorClass&&W.textClass(x.error)==='auth'))
+    Promise.resolve(bridge.agentMcp(a.id)).then(rp=>{if(!mcpL.closed&&W.launchToken(mcpL.items,rp,chat))paintMcpStrip();}).catch(()=>{});
 }
 function paintMcpStrip(){
   const el=$('mcpStrip');if(!el)return;
