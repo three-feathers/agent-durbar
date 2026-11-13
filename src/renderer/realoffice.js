@@ -21,6 +21,7 @@
   const REPAINT_MS = 2000; /* FR-033 */
   const SCR = new Map(); /* desk id -> {box, last, timer, dirty, away, fit, sig} */
   const OFF = new Set(); /* keys of desks whose motion stands still: scrolled away or under the zoom */
+  let ARC = false; /* the arcade is drawn (the Retro world on a cabinet layout): the narrow cabinet's plate rules of spec 102 FR-312 apply to it alone */
   let LAY_G = 0; const CUR_G = () => LAY_G; /* the arcade's scale, for its screen text (0 in other worlds) */
   let CUR = null; /* {ro, screenOf, still, hold, desks: Map id -> desk, agents: Map id -> model agent, folders: Map, drawn} */
   let ZOOM = null; /* {id, hover, focus, panel, plate} */
@@ -340,7 +341,7 @@
     let ro = stage.querySelector(':scope > .ro');
     if (!ro) { stage.textContent = ''; ro = document.createElement('div'); ro.className = 'ro'; stage.appendChild(ro); ro.addEventListener('click', forward); wireZoom(ro); }
     sty(ro, 'width', px(lay.width)); sty(ro, 'height', px(lay.height));
-    LAY_G = lay.cabinet ? lay.g || 0 : 0;
+    LAY_G = lay.cabinet ? lay.g || 0 : 0; ARC = !!lay.cabinet && world === 'retro';
     if (lay.g) setVar(ro, '--ro-g', String(lay.g)); /* spec 102 FR-255: one integer scale for the world's art */
     dset(ro, 'set', set); dset(ro, 'world', world); dset(ro, 'u', String(Math.round(lay.u))); dset(ro, 'face', String(Math.round(lay.faceH * 10) / 10)); dset(ro, 'big', lay.big ? '1' : '0');
     ro.classList.toggle('still', !!opts.still);
@@ -469,12 +470,12 @@
         /* FR-120: a static "z z" over a sleeping person (carved in the cave); aria-hidden, the plate and the name carry the meaning */
         if (a.asleep && d.person) { const z = el(chrome, 'z:' + k, 'div', 'ro-zz'); box(z, { x: d.person.x + d.person.w * 0.62, y: Math.max(d.slot.y + 2, d.person.y + d.person.h * 0.04) }); attr(z, 'aria-hidden', 'true'); text(z, 'z z'); }
         /* FR-016, FR-090: the name plate is the desk's one focusable button; the app's click handler opens the chat ([data-id]) */
-        const pl = el(chrome, 'n:' + k, 'button', 'ro-plate st-' + d.state + (a.selected ? ' sel' : '') + (d.narrow ? ' narrow' : '') + (a.asleep ? ' asleep' : '') + (d.lounge ? ' lounge' : '') + (a.ren ? ' has-ren' : '') + (!d.strip && a.helpers && a.helpers.length ? ' has-help' : '')); const plEase = box(pl, d.plate); /* has-help: the plate carries the +N (FR-308); a class, not :has(), so one text change does not re-match the arcade's whole tree */
+        const pl = el(chrome, 'n:' + k, 'button', 'ro-plate st-' + d.state + (a.selected ? ' sel' : '') + (d.narrow ? ' narrow' : '') + (a.asleep ? ' asleep' : '') + (d.lounge ? ' lounge' : '') + (isNarrowPlate(d) ? ' cab-narrow' : '') + (a.ren ? ' has-ren' : '') + (!d.strip && a.helpers && a.helpers.length ? ' has-help' : '')); const plEase = box(pl, d.plate); /* has-help: the plate carries the +N (FR-308); a class, not :has(), so one text change does not re-match the arcade's whole tree */
         if (pl.type !== 'button') pl.type = 'button'; dset(pl, 'id', k); dset(pl, 'state', d.state); if (d.lounge) dset(pl, 'surface', 'lounge'); else if (pl.dataset.surface) delete pl.dataset.surface; /* spec 098 FR-010: the moment's marker (spec 097 FR-246: every lounge seat) */
         /* spec 097 FR-308 (review of PR 1322): helpers with no strip (the fallback: the plate's +N and dots) are said in the plate's name and tooltip, in the flat desk's words (`helpWords`); FR-325: so is the context (`labelOf`) */
         const hw = helpWordsOf(a, d);
         attr(pl, 'aria-pressed', a.selected ? 'true' : 'false'); attr(pl, 'aria-label', labelOf(a, d)); attr(pl, 'title', hw ? a.tip + ' · ' + hw.slice(2) : a.tip);
-        plateFill(pl, a, d.state, !!d.strip);
+        plateFill(pl, a, d.state, !!d.strip, isNarrowPlate(d));
         /* spec 059 FR-170 (#1155): Open office's rename pencil (.ren[data-ren]: the app's own click and F2 handlers, the same in-place edit), right
            after its plate (a button cannot sit inside one) so the plate's hover and focus show it; CSS anchors it just after the name: no layout read */
         if (a.ren) {
@@ -611,7 +612,10 @@
   }
   /* FR-325: the plate's name with the context in the flat office's words, before "Open chat panel."; a lounge seat's name is the model's */
   const OPEN_WORDS = '. Open chat panel.';
-  function helpWordsOf(a, d) { return d && !d.strip && a.helpWords && a.helpers && a.helpers.length ? a.helpWords : ''; } /* FR-308: the fallback plate's helper count, in the flat desk's words */
+  /* a helper that failed or waits for the user is counted by the model (`helpUrgent`, from `prio` in app.js, the order of the heads and of the dots: spec 001 FR-089), not guessed here from the light states */
+  const NARROW_CAB_PLATE_W = 122.5; /* the narrow cabinet's plate at the smallest scale (CABINETS.narrow at g = 2 is 122 px in realoffice-arrangements.ts; the next cabinet's plate is 146) */
+  const isNarrowPlate = (d) => ARC && !!d && !d.lounge && !!d.plate && d.plate.w <= NARROW_CAB_PLATE_W; /* the arcade's narrow cabinet plate (122 px at g = 2; spec 102 FR-312): the only plate whose count is marked and whose name says the failed helpers; never a plate of another world, whatever its width (a default or cave desk's plate of the same width keeps FR-308's name) */
+  function helpWordsOf(a, d) { if (!(d && !d.strip && a.helpWords && a.helpers && a.helpers.length)) return ''; const u = isNarrowPlate(d) ? (a.helpUrgent | 0) : 0; return a.helpWords + (u ? ', ' + u + ' failed or waiting' : ''); } /* FR-308: the fallback plate's helper count, in the flat desk's words; on the narrow plate (no dot fits) also how many failed or wait (FR-312), nowhere else */
   function labelOf(a, d) {
     const w = d && d.lounge ? '' : X().ctxWords(a.ctx && a.ctx.pct), hw = helpWordsOf(a, d), l = String(a.label || '');
     return l.endsWith(OPEN_WORDS) ? l.slice(0, -OPEN_WORDS.length) + w + hw + OPEN_WORDS : l + hw; /* the context words, then the helpers' (". 6 helpers" stays one phrase) */
@@ -683,7 +687,7 @@
 
   /* FR-016, FR-184: the plate keeps its nodes on a status change: only the text and the dot that changed are written (a helper's list is rebuilt when it changes) */
   /* `strip`: the desk's helpers are drawn as head figures (spec 097 FR-306), so the plate keeps no +N and dots; they stay when the strip cannot be drawn (FR-308's last step, the arcade) */
-  function plateFill(pl, a, state, strip) {
+  function plateFill(pl, a, state, strip, narrow) {
     let P = pl._parts;
     if (!P) {
       P = pl._parts = { l1: document.createElement('span'), nm: document.createElement('b'), rl: document.createElement('span'), l2: document.createElement('span'), dot: document.createElement('span'), wd: document.createElement('span'), tk: document.createElement('span'), h: null, hs: '' };
@@ -692,10 +696,10 @@
       pl.textContent = ''; pl.append(P.l1, P.l2);
     }
     text(P.nm, a.name); text(P.rl, a.role);
-    const hs = strip ? '' : a.helpers.join();
+    const hs = strip ? '' : a.helpers.join() + (narrow ? '|n' + (a.helpUrgent | 0) : '');
     if (P.hs !== hs) {
       P.hs = hs; if (P.h) { P.h.remove(); P.h = null; }
-      if (hs) { P.h = document.createElement('span'); P.h.className = 'ro-help'; const hc = document.createElement('span'); hc.className = 'ro-hc'; hc.textContent = '+' + a.helpers.length + ' '; P.h.appendChild(hc); a.helpers.slice(0, 3).forEach((s) => P.h.insertAdjacentHTML('beforeend', dotHTML(s))); P.l1.appendChild(P.h); }
+      if (hs) { P.h = document.createElement('span'); P.h.className = 'ro-help'; const hc = document.createElement('span'); hc.className = 'ro-hc'; const urg = narrow ? (a.helpUrgent | 0) : 0; hc.textContent = '+' + a.helpers.length + (urg ? '' : ' '); if (urg) { const hm = document.createElement('span'); hm.className = 'ro-hm'; hm.setAttribute('aria-hidden', 'true'); hm.textContent = '!'; hc.appendChild(hm); } /* 102 FR-312: the marked count: "+3!" says a helper failed or waits; drawn only on the narrow cabinet's plate (CSS), where no dot fits */ P.h.appendChild(hc); a.helpers.slice(0, 3).forEach((s) => P.h.insertAdjacentHTML('beforeend', dotHTML(s))); P.l1.appendChild(P.h); }
     }
     const dc = dotClass(state), word = a.word ? ' ' + a.word : '', task = a.task ? (a.word ? ' · ' : ' ') + a.task : ''; /* word + task read as before: ' Word · task' */
     if (P.dot.className !== dc) P.dot.className = dc;
@@ -992,7 +996,7 @@
     let wait = 0;
     /* spec 097 FR-327: the agent a pointer is over: its monitor, person, desk (or lounge table) or name plate, never a visitor, chip or lobby plate */
     const hid = (n) => { const t = n && n.closest && n.closest('.ro-screen, .ro-person, .ro-person2, .ro-rig, .ro-initials, .ro-marquee, .ro-desk, .ro-ltable, .ro-plate'); return t ? (t.classList.contains('ro-plate') ? t.dataset.id : t.dataset.for) || '' : ''; };
-    const arm = (id) => { clearTimeout(wait); ARMED = true; wait = setTimeout(() => { ARMED = false; openZoom(id, 'hover'); }, 120); };
+    const arm = (id) => { clearTimeout(wait); ARMED = true; wait = setTimeout(() => { ARMED = false; if (ZOOM && ZOOM.held) return; openZoom(id, 'hover'); }, 120); }; /* a card held under a resting pointer is not replaced by a timer the layout armed (#1536) */
     /* FR-328: the agent changed state under a resting pointer (it walked to the lounge): the browser's pointerout is not the person leaving; the next real move is */
     ro.addEventListener('pointermove', (e) => {
       PT = e.clientX + ',' + e.clientY;
@@ -1013,6 +1017,7 @@
       if (QUIET_POINTER && !QUIET_AT) QUIET_AT = e.clientX + ',' + e.clientY;
       if (QUIET_POINTER || !id || e.pointerType === 'touch') return;
       if ((ZOOM && ZOOM.hover && ZOOM.id === id) || DISMISSED === id) return; /* Esc holds until the pointer has left */
+      if (ZOOM && ZOOM.held && ZOOM.held === e.clientX + ',' + e.clientY) return; /* FR-328 (#1536): the layout put this agent under the held point, the pointer did not move: an over with no move arms nothing */
       arm(id); /* crossing the room opens nothing */
     });
     ro.addEventListener('pointerout', (e) => {

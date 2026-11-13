@@ -37,7 +37,7 @@
     const list=Array.isArray(rows)?rows.filter(r=>r&&typeof r==='object'):[];
     if(!list.length)return `<p class="scr-empty">${esc(EMPTY)}</p>`;
     const head='<thead><tr><th scope="col">Time</th><th scope="col">Agent</th><th scope="col">Folder</th><th scope="col">App</th><th scope="col">Mode</th><th scope="col">Action</th><th scope="col">Decision</th></tr></thead>';
-    const row=r=>`<tr class="act-${esc(str(r.decision))}"><td class="act-t" title="${esc(str(r.t))}">${esc(timeText(r.t))}</td><td>${esc(str(r.agent))}</td><td>${esc(str(r.folder))}</td><td>${esc(str(r.app))}</td><td>${esc(modeWord(r.mode))}</td><td class="act-a">${esc(str(r.action))}</td><td>${esc(decisionWord(r.decision))}</td></tr>`;
+    const row=r=>`<tr class="act-${esc(str(r.decision))}"><td class="act-t" title="${esc(str(r.t))}">${esc(timeText(r.t))}</td><td class="act-w" title="${esc(str(r.agent))}">${esc(str(r.agent))}</td><td class="act-w" title="${esc(str(r.folder))}">${esc(str(r.folder))}</td><td class="act-s">${esc(str(r.app))}</td><td class="act-s">${esc(modeWord(r.mode))}</td><td class="act-a" title="${esc(str(r.action))}">${esc(str(r.action))}</td><td class="act-s">${esc(decisionWord(r.decision))}</td></tr>`;
     return `<table class="ttab act">${head}<tbody>${list.map(row).join('')}</tbody></table>`;
   }
   return {DECISION_WORDS,MODE_WORDS,NOTE,EMPTY,decisionWord,modeWord,timeText,tableHtml};
