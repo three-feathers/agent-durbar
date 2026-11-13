@@ -428,3 +428,24 @@ export function checkTeamTemplate(value: unknown, level: Level): TemplateResult 
     return none(['Not a team template.']);
   }
 }
+
+const TRAILING_JOINERS = /[\u200C\u200D\u094D\u09CD\u0A4D\u0ACD\u0B4D\u0BCD\u0C4D\u0CCD\u0D4D\u0DCA\u1039\u17D2\u1B44\uA8C4\uA9C0]+$/u;
+const graphemes = (t: string): string[] => [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(t)].map((x) => x.segment);
+/**
+ * FR-021: the name of a duplicate, "<name> copy", then " copy 2", " copy 3" until its `nameKey` is not in `takenKeys` (the `nameKey` of every stored name).
+ * Cut by grapheme to the name limit (a conjunct or an emoji sequence is never split; a trailing joiner or virama is dropped before the suffix; one grapheme
+ * too long to fit is cut by code point). `null` when no free name is found. The simulator's fake calls it; the store's `duplicate` has its own code (its mutants are anchored there) and `test:teamstore` checks both give the same name.
+ */
+export function copyName(name: string, takenKeys: ReadonlySet<string>): string | null {
+  const base = graphemes(name);
+  const len = (g: string[]): number => g.reduce((t, x) => t + Array.from(x).length, 0);
+  for (let i = 1; i <= LIMITS.templates + 3; i++) {
+    const suffix = i === 1 ? ' copy' : ` copy ${i}`;
+    let head = base.slice();
+    while (len(head) + Array.from(suffix).length > LIMITS.templateName && head.length > 0) head.pop();
+    if (head.length === 0) { head = Array.from(name); while (head.length + Array.from(suffix).length > LIMITS.templateName && head.length > 0) head.pop(); }
+    const out = head.join('').replace(TRAILING_JOINERS, '') + suffix;
+    if (!takenKeys.has(nameKey(out))) return out;
+  }
+  return null;
+}

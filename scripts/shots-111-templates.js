@@ -47,6 +47,11 @@ module.exports = async (ctx) => {
     assert.strictEqual(by('Alpha team').tag, 'Yours');
     assert.deepStrictEqual(by('Alpha team').acts, ['Use…', 'Edit…', 'Duplicate', 'Export…|off', 'Delete'], `${w}: Export is disabled`);
 
+    // every button is named with its template (a screen reader hears which one): the labels are exact
+    const labels = await js(`[...[...document.querySelectorAll('#teamsBox .tm-row')].find(r=>r.querySelector('.tm-name').textContent==='Alpha team').querySelectorAll('button')].map(b=>b.getAttribute('aria-label'))`);
+    assert.deepStrictEqual(labels, ['Use Alpha team', 'Edit Alpha team', 'Duplicate Alpha team', 'Export Alpha team (not available yet)', 'Delete Alpha team'], `${w}: buttons are named with their template: ${JSON.stringify(labels)}`);
+    assert.strictEqual(await js(`document.querySelector('#teamsBox .tm-row[data-origin="starter"] .tm-acts').getAttribute('aria-labelledby')===document.querySelector('#teamsBox .tm-row[data-origin="starter"] .tm-name').id`), true, `${w}: a row's group is named by its template`);
+
     // keyboard only: from New template… Tab reaches each enabled button in order
     await js(`document.getElementById('tmNew').focus()`);
     const seen = [];
@@ -66,7 +71,8 @@ module.exports = async (ctx) => {
     const target = await js(`(()=>{const r=[...document.querySelectorAll('#teamsBox .tm-row')].find(x=>x.querySelector('.tm-name').textContent==='Alpha team copy 2');r.querySelector('button[data-act="delete"]').focus();return r.dataset.tid})()`);
     await H.key('Enter');
     assert.ok(await until(`!!document.getElementById('modeDlg')`), `${w}: Delete opens a question`);
-    assert.ok(await js(`document.activeElement&&document.activeElement.hasAttribute('data-cancel')||/Cancel/.test(document.activeElement.textContent)`), `${w}: Cancel has the focus`);
+    assert.deepStrictEqual(await js(`[...document.querySelectorAll('#modeDlg .dbtn button')].map(b=>b.textContent)`), ['Cancel', 'Delete'], `${w}: Cancel first, then Delete`);
+    assert.strictEqual(await js(`document.activeElement.textContent`), 'Cancel', `${w}: Cancel has the focus, so Enter never deletes unread`);
     await H.shot(path.join(OUT, `111-templates-delete-${w}x${h}.png`), { prep: 'calm', blur: false, delay: 300 });
     await H.key('Escape');
     assert.ok(await until(`!document.getElementById('modeDlg')`), `${w}: Escape closed the question`);
@@ -122,11 +128,36 @@ module.exports = async (ctx) => {
         assert.ok(/could not be saved/.test(note), `${w} ${seed}: failed says so: ${note}`);
         assert.strictEqual(JSON.stringify((await rows()).map((x) => x.name)), before, `${w} ${seed}: nothing changed`);
         assert.ok(await js(`document.activeElement&&document.activeElement.dataset.act==='duplicate'`), `${w} ${seed}: the focus stays on the button`);
+        // a refused Delete: the question, Delete, then the focus is back on that row's Delete button (not on the page)
+        await js(`document.querySelector('#teamsBox .tm-row button[data-act="delete"]').focus()`);
+        await H.key('Enter');
+        assert.ok(await until(`!!document.getElementById('modeDlg')`), `${w} ${seed}: the delete question`);
+        await js(`[...document.querySelectorAll('#modeDlg button')].find(b=>b.textContent==='Delete').focus()`);
+        await H.key('Enter');
+        assert.ok(await until(`!document.getElementById('modeDlg')&&/delete/i.test(document.getElementById('tmNotice').textContent)`), `${w} ${seed}: the refused delete is told in words`);
+        assert.strictEqual(await active(), '/delete/Example team', `${w} ${seed}: the focus is back on the row's Delete button`);
+        assert.strictEqual((await rows()).length, 1, `${w} ${seed}: the template is still there`);
       }
       await js(`document.getElementById('tmH').scrollIntoView({block:'start'})`);
       await H.clearToasts();
       await H.shot(path.join(OUT, `111-templates-${seed}-${w}x${h}.png`), { prep: 'calm', blur: true, delay: 300 });
     }
+  }
+  // a name that is markup is shown as text: no element made from it, nothing runs
+  for (const [w, h] of [[1440, 900], [1280, 800]]) {
+    await H.load({ w, h, query: { simteams: 'hostile' } });
+    await H.click('#settingsBtn');
+    assert.ok(await until(`document.querySelectorAll('#teamsBox .tm-row').length===1`), `${w}: the hostile row is listed`);
+    const info = await js(`(()=>{const n=document.querySelector('#teamsBox .tm-name');return JSON.stringify({kids:n.children.length,text:n.textContent,imgs:document.querySelectorAll('#teamsBox img').length,ran:typeof window.__tmXss,label:document.querySelector('#teamsBox button[data-act="delete"]').getAttribute('aria-label')})})()`);
+    const o = JSON.parse(info);
+    assert.deepStrictEqual([o.kids, o.imgs, o.ran], [0, 0, 'undefined'], `${w}: no element came from the name: ${info}`);
+    assert.strictEqual(o.text, '<img src=x onerror=window.__tmXss=1>', `${w}: the name is shown literally`);
+    assert.strictEqual(o.label, 'Delete <img src=x onerror=window.__tmXss=1>', `${w}: and named literally`);
+    await js(`document.querySelector('#teamsBox button[data-act="delete"]').focus()`);
+    await H.key('Enter');
+    assert.ok(await until(`!!document.getElementById('modeDlg')`), `${w}: the question opens`);
+    assert.strictEqual(await js(`document.querySelectorAll('#modeDlg img').length+':'+typeof window.__tmXss`), '0:undefined', `${w}: the question holds the name as text too`);
+    await H.key('Escape');
   }
   console.log('[111] templates PASS');
 };

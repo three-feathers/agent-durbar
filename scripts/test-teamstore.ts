@@ -24,6 +24,8 @@ import assert from 'assert';
 import fs from 'fs';
 import path from 'path';
 import * as real from '../src/main/teamstore';
+import { copyName } from '../src/shared/teamtemplate';
+import { nameKey } from '../src/shared/skeleton';
 
 type Api = typeof real;
 let n = 0;
@@ -240,6 +242,12 @@ const sections: Record<string, Section> = {
     }
     const zj = s2.put(tpl('C'.repeat(34) + '\u200D' + 'yyy')); if (zj.ok) { const dz = s2.duplicate(zj.template.id); ok(dz.ok && dz.template.name === 'C'.repeat(34) + ' copy', 'a trailing ZWJ is dropped before the suffix'); }
     const dl2 = s2.duplicate(long.template.id); ok(dl2.ok && dl2.template.name.length <= 40 && dl2.template.name.endsWith(' copy 2') && dl2.template.name !== (dl.ok ? dl.template.name : ''), 'and again');
+    // the simulator's fake names a copy with the shared `copyName` (src/shared/teamtemplate.ts): it must give what the store gives, for every name stored above
+    for (const t of s2.list().slice()) {
+      const want = copyName(t.name, new Set(s2.list().map((x) => nameKey(x.name))));
+      const got = s2.duplicate(t.id);
+      ok(got.ok && got.template.name === want, 'the store names a copy as the shared copyName does: ' + JSON.stringify(t.name).slice(0, 30));
+    }
   },
   putInvalid(api) {
     const m = new MemFs(); const s = make(m, api);

@@ -108,7 +108,7 @@
         if(!ans||ans.value!=='del'){return;}
         busy=true;let r=null;try{r=await X.bridge.teamsDelete(row.id);}catch(e){r=null;}busy=false;
         if(r&&r.ok){await load();notice='Template deleted.';if(X.announce)X.announce('Template deleted.');paint();focusFirst('#tmNew');}
-        else{after(r,'The delete');}
+        else{after(r,'The delete');focusFirst(box.querySelector('[data-tid="'+row.id+'"]')?'[data-tid="'+row.id+'"] button[data-act="delete"]':'#tmNew');} /* a refused delete: back to its button, or to New when the refreshed list lost the row */
       }
     }
     function paint(){

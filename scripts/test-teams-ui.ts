@@ -52,14 +52,32 @@ for (const [res, re] of [
   ok(!t.includes(secret) && !/Member 1/.test(t), 'no error text or value reaches the words');
 }
 
+// the names are text, never markup: no way to run a string from teams.js (a name is the person's, or a file's)
+const code = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'teams.js'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+for (const bad of [/innerHTML/, /outerHTML/, /insertAdjacentHTML/, /\beval\b/, /\bFunction\s*\(/, /document\.write/]) ok(!bad.test(code), 'teams.js has no ' + bad.source);
+
 // wiring: the script is copied, loaded, and the section is in Settings
 ok(/'teams\.js'/.test(fs.readFileSync(path.join(ROOT, 'scripts', 'copy-assets.js'), 'utf8')), 'copy-assets copies teams.js');
 const html = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'index.html'), 'utf8');
-ok(html.includes('<script src="teams.js">') && html.includes('<script src="teamcheck.js">'), 'both scripts have their tag');
-ok(html.indexOf('teamcheck.js') < html.indexOf('src="sim.js"'), 'the validator copy loads before the simulator');
+ok(html.includes('<script src="teams.js">'), 'teams.js has its tag');
+ok(!html.includes('teamcheck.js'), 'the 250 KB validator copy is not in the real page: only the simulator loads it, at its first team call');
+ok(/sc\.src = 'teamcheck\.js'/.test(fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'sim.ts'), 'utf8')), 'sim.ts loads teamcheck.js itself');
 ok(/id="tmH">Team templates</.test(fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.js'), 'utf8')), 'Settings has the Team templates heading');
 const sim = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'sim.ts'), 'utf8');
 ok(/checkTeamTemplate\(draft, 'own'\)/.test(sim), 'the simulator put uses the shared validator');
+
+// the copy name: the page's function is the store's (one shared function), with the cut by grapheme, joiners and the numbered suffix
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { copyName } = require(path.join(ROOT, 'dist', 'shared', 'teamtemplate.js')) as { copyName: (n: string, t: ReadonlySet<string>) => string | null };
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const nk = (require(path.join(ROOT, 'dist', 'shared', 'skeleton.js')) as { nameKey: (n: string) => string }).nameKey;
+eq(copyName('Alpha', new Set()), 'Alpha copy', 'first copy');
+eq(copyName('Alpha', new Set([nk('Alpha copy'), nk('Alpha copy 2')])), 'Alpha copy 3', 'numbered while taken');
+eq(copyName('Alpha', new Set([nk('Alpha c\u043ey')])), 'Alpha copy', 'a lookalike of another name is not "Alpha copy"');
+eq(copyName('Alpha', new Set([nk('Alpha c\u043epy')])), 'Alpha copy 2', 'a Cyrillic-o lookalike of the copy name counts as taken');
+eq(Array.from(copyName('x'.repeat(40), new Set()) as string).length, 40, 'cut to the name limit');
+eq(copyName('a'.repeat(30) + '\u0915\u094d', new Set()), 'a'.repeat(30) + '\u0915 copy', 'a trailing virama is dropped');
+eq(copyName('A', new Set(Array.from({ length: 60 }, (_, i) => nk(i === 0 ? 'A copy' : `A copy ${i + 1}`)))), null, 'no free name is null');
 
 // the page copy of the validator: the real limits and name key
 const file = path.join(ROOT, 'dist', 'renderer', 'teamcheck.js');
