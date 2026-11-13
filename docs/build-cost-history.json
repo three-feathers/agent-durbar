@@ -79,6 +79,20 @@
         "mac": 236.4,
         "ruben-server": 524.93
       }
+    },
+    {
+      "date": "2026-11-13",
+      "version": "v0.1.18",
+      "models": {
+        "claude-opus-5-5": 4043.51,
+        "claude-sonnet-5-5": 1587.47,
+        "claude-haiku-5-5": 3.37
+      },
+      "machines": {
+        "linux": 4873.02,
+        "mac": 236.4,
+        "ruben-server": 524.93
+      }
     }
   ]
 }
