@@ -919,7 +919,8 @@ ok('FR-070 (second review of #1650): the Copilot list\'s name and value rules, b
     ['CONFIG', 'admin/s3cr3t-passw0rd'], // not a registered media type
     ['HOST', 'admin:12345'], // a one-word host with a port reads as a user and a PIN
     ['API_URL', 'https://user:pw@api.example.com'], ['API_URL', 'https://api.example.com/x?key=abc'], ['API_URL', 'https://api.example.com/#frag'], // user-info, query, fragment
-    ['API_URL', 'https://hooks.example.com/T0AB12CD/aB3dE5fG7hJ9kL1m'], // a mixed path segment (upper, lower, digits)
+    ['API_URL', 'https://hooks.example.com/T0AB12CD/aB3dE5fG7h'], // a short mixed path segment (upper, lower, digits)
+    ['BIN', '/srv/keys/aB3dE5fG7h'], // the same in a path
     ['API_URL', 'https://hooks.example.com/services/ab12cd34ef56gh78ij90'], // letters and digits in 16+ characters
     ['API_URL', 'https://intranet/x'], // a one-label host
     ['BIN', '/Hk3j9aBc2Lm8Qp4Rs6Tu'], ['BIN', '/opt/' + 'a'.repeat(41)], // a token-like or too long path segment

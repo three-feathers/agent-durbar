@@ -297,7 +297,7 @@ assert.throws(() => M.maskText('already [redaction failed] here', []), 'a failed
   assert.deepStrictEqual(calls, ['known:F', 'noPrompt'], 'secretValuesFor is never called while it could prompt');
   calls.length = 0;
   assert.deepStrictEqual(scanSecretValues(src(true), { folderKey: 'F', agentId: 'a1', open: true }), ['session-value-22', 'folder-value-1'], 'no prompt possible: the session values too, longest first');
-  assert.deepStrictEqual(calls, ['known:F', 'noPrompt', 'session:a1']);
+  assert.deepStrictEqual(calls, ['known:F', 'noPrompt', 'session:a1'], 'FR-030 calls: noPrompt is asked once, then the session values');
   calls.length = 0;
   assert.deepStrictEqual(scanSecretValues(src(true), { folderKey: 'F', agentId: 'a1', open: false }), ['folder-value-1'], 'an earlier session: its folder values only');
   assert.ok(!calls.some((c) => c.startsWith('session:')));
@@ -316,7 +316,7 @@ assert.throws(() => M.maskText('already [redaction failed] here', []), 'a failed
   assert.deepStrictEqual(calls, ['noPrompt', 'copilot:a1'], 'FR-070 notes locked: secretValuesFor is never called while it could prompt');
   calls.length = 0;
   assert.deepStrictEqual(sessionMaskValues(withCopilot(true), 'a1'), ['session-value-22'], 'FR-070 notes open vault: all session values (secretValuesFor already holds the Copilot list)');
-  assert.deepStrictEqual(calls, ['noPrompt', 'session:a1']);
+  assert.deepStrictEqual(calls, ['noPrompt', 'session:a1'], 'FR-070 notes open vault: noPrompt then the session values');
   assert.deepStrictEqual(sessionMaskValues(src(false), 'a1'), [], 'a source without copilotValuesFor: nothing while locked');
 }
 
