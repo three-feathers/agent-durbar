@@ -7,3 +7,5 @@ fjcabello
 rubenlupi
 github-actions[bot]
 github-advanced-security[bot]
+# durbar-samikshak[bot]: the pre-review App (spec 103 FR-027, delta 2026-11-13, Paco). Its text is read like a teammate's; its approval never counts as a review.
+durbar-samikshak[bot]
