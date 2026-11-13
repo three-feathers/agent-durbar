@@ -256,7 +256,7 @@ Other specs: #921 (097 P1), #936 and 097 T156..T159 (gate), 098's checks, 096 (P
 
 ## Delta 2026-11-02: petrol garage, founders' garage and rooftop terrace (FR-280..FR-299)
 
-Starts after the next built-in world's stack lands (FR-296, decided Q4). All behind closed flags (FR-294, decided Q2). 0 AI credits except T250..T253: the owner's yes for image runs stands until Codex's own limits (Q1, *Changes 2026-11-13*; it was one written yes per run); the plan's usage is noted before and after each round. **How they land (decided, Q11, the named exception):** T244, T247's scene and T248 alone; T241, T246 on a branch; one PR per world with its table, pack, flag and cells (T259, T254); the first also brings T242, T243, T245, T249, T258. A world over 30 days behind its flag after landing goes back to the owner: open it or remove its code and pack. Each new rule gets a planted mutation; driver waits use `until()`.
+Starts after the next built-in world's stack lands (FR-296, decided Q4). All behind closed flags (FR-294, decided Q2). 0 AI credits except T250..T253: each image run waits for the owner's written yes, after checking the plan's usage (Q1). **How they land (decided, Q11, the named exception):** T244, T247's scene and T248 alone; T241, T246 on a branch; one PR per world with its table, pack, flag and cells (T259, T254); the first also brings T242, T243, T245, T249, T258. A world over 30 days behind its flag after landing goes back to the owner: open it or remove its code and pack. Each new rule gets a planted mutation; driver waits use `until()`.
 
 **No art**
 
@@ -273,7 +273,7 @@ Starts after the next built-in world's stack lands (FR-296, decided Q4). All beh
 - [ ] T249 Packaged builds leave out these folders while their flags are closed: one line in `build.files` (decided, Q2). Test: a file-list test against the `dist` file set; a test that no world with an open flag is excluded, or a packaged app would offer a world with no files; a mutant for each fails [FR-294, SC-035]
 - [ ] T258 One driver for all three, `scripts/shots-102-places.js`, using the checks of the next built-in world's driver with a world id: overlap, 10.5 px, Tab, contrast, hostile names, no text in art layers, each world's edge at 3:1 against what it sits on, luminance limits, the signature picture equal across all states, nothing moving under reduced motion, Serious mode and a hidden window; `check-097-motion` with the world id. In `ui-suite.js`. Test: `sim:`, each failure planted once [FR-288, FR-289, FR-290, SC-034]
 
-**Art (needs T240, T246, and the owner's standing yes until Codex's own limits, Q1, amended 2026-11-13; note the plan's usage before and after each round; one image at a time, one pack at a time; stop at 18 per pack)**
+**Art (needs T240, T246, and the owner's written yes per image run, Q1; check the plan's usage first; one image at a time, one pack at a time; stop at 18 per pack)**
 
 - [ ] T250 Petrol garage pack: FR-292's list, FR-284, FR-285, FR-287; a generic pale car and a black bike with no badge; `ASSETS.md`. Test: `test:world-packs`, `test:realoffice-assets`, `check-world-distinct`, T258's driver, matrix at both sizes; `read:` `owner-check` per picture [FR-284, FR-285, FR-289, FR-292, SC-033]
 - [ ] T251 Founders' garage pack, sharing nothing with T250; portrait monitor; no text on the wall of arrows. Test: as T250 [FR-015, FR-284, FR-285, FR-292, SC-032]
