@@ -15,6 +15,12 @@ for (const n of names) {
 const src = fs.readFileSync(SUITE, 'utf8');
 assert.ok(/shell: false/.test(src) && !/shell: true/.test(src) && !/execSync\(|exec\(/.test(src), 'the runner spawns without a shell');
 assert.ok(/require\('electron'\)/.test(src), 'it starts the Electron binary directly');
+{ // spec 102 T204 (#1403): UI_SUITE_DPR takes 1.25 and 1.5 besides 1..4; nothing else reaches the command line
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { dprOk } = require(SUITE) as { dprOk: (v: string) => boolean };
+  for (const v of ['1', '2', '4', '1.25', '1.5']) assert.ok(dprOk(v), `UI_SUITE_DPR=${v} is passed on`);
+  for (const v of ['', '0', '5', '1.3', '1.50', '1.5;x', '--x', '1.25 ']) assert.ok(!dprOk(v), `UI_SUITE_DPR=${JSON.stringify(v)} is ignored`);
+}
 // spec 008 FR-112: a syntax error fails at once (node --check, no shell) before any Electron starts
 {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -30,6 +36,27 @@ assert.ok(/require\('electron'\)/.test(src), 'it starts the Electron binary dire
   assert.deepStrictEqual(syntaxErrors(names.map((n) => path.join(ROOT, 'scripts', n.split(' ')[0] + '.js')).concat(path.join(ROOT, 'scripts', 'driver-helpers.js'))), [], 'every listed driver and the helpers parse');
   assert.ok(src.indexOf('syntaxErrors([...new Set(') > 0 && src.indexOf('syntaxErrors([...new Set(') < src.indexOf('await Promise.all(Array.from({ length: jobs }, worker))'), 'the syntax pass runs before the first driver starts');
   // the real runner: a broken driver named with --only stops before Electron, at once, with the file and exit 1
+}
+// spec 008 FR-213 (issue #1591): under xvfb-run the screen is as big as the window at the requested density (Xvfb's default 1280x1024 left a DPR 2 window mostly off screen)
+{
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { xvfbScreenArgs, launchCommand } = require(SUITE) as { xvfbScreenArgs: (dpr: string, env?: Record<string, string>) => string[]; launchCommand: (x: boolean, e: string, a: string[], dpr: string, env?: Record<string, string>) => [string, string[]] };
+  const screen = (dpr: string, env: Record<string, string> = {}): string => xvfbScreenArgs(dpr, env)[1];
+  assert.strictEqual(screen('1'), '-screen 0 1920x1100x24', 'DPR 1: 1920x1100, colour depth 24 (more than the old 1280x1024)');
+  assert.strictEqual(screen('2'), '-screen 0 3840x2200x24', 'xvfb screen: DPR 2 holds a 1440x900 window at 2880x1800 device pixels');
+  assert.strictEqual(screen('1.5'), '-screen 0 2880x1650x24', 'DPR 1.5 is scaled the same way');
+  assert.strictEqual(screen(''), screen('1'), 'an unset density counts as 1');
+  assert.strictEqual(screen('7;rm'), screen('1'), 'a bad density counts as 1');
+  assert.strictEqual(screen('2', { UI_SUITE_XVFB_SCREEN: '3000x2000x24' }), '-screen 0 3000x2000x24', 'UI_SUITE_XVFB_SCREEN replaces the computed screen');
+  assert.strictEqual(screen('2', { UI_SUITE_XVFB_SCREEN: '3000x2000; rm -rf' }), '-screen 0 3840x2200x24', 'a malformed override is ignored');
+  for (const dpr of ['1', '2', '4']) {
+    const m = /^-screen 0 (\d+)x(\d+)x24$/.exec(screen(dpr));
+    assert.ok(m && Number(m[1]) >= 1440 * Number(dpr) && Number(m[2]) >= 900 * Number(dpr), `the screen is at least a 1440x900 window at DPR ${dpr}`);
+  }
+  const [file, list] = launchCommand(true, '/e/electron', ['/repo', '--no-sandbox', '--force-device-scale-factor=2'], '2', {});
+  assert.ok(file === 'xvfb-run' && list[0] === '-a' && list[1] === '-s' && list[2] === '-screen 0 3840x2200x24' && list[3] === '/e/electron' && list.slice(4).join() === '/repo,--no-sandbox,--force-device-scale-factor=2', 'xvfb launch: -a kept, -s and its screen as separate entries before the binary and its arguments');
+  assert.ok(src.includes('launchCommand(useXvfb, electron, argv, dpr)') && !src.includes("['xvfb-run', ['-a', electron"), 'runOne starts a driver through launchCommand, not an inline xvfb-run call without a screen');
+  assert.deepStrictEqual(launchCommand(false, '/e/electron', ['/repo'], '2', {}), ['/e/electron', ['/repo']], 'without xvfb the binary is started as before');
 }
 // issue #748 (spec 021 FR-057): no asserting driver sits unrun. Every scripts/check-*.js and shots-*.js that asserts is in the suite, in
 // shots-docs' DOC_SHOTS (retaken by `npm run shots:docs`), or in NOT_IN_SUITE with a written reason
@@ -290,6 +317,16 @@ assert.ok(dh.darkProblem({ id: 'check-user', bg: 'rgb(20, 18, 43)' }).includes('
   await D.releaseFocus(); cmds.length = 0; let real = 0; dbgCtx.js = async (c: string) => (c.includes('hasFocus') ? (cmds.length > 0 || real++ > 0) : true);
   assert.strictEqual(await D.focusPage({ ms: 50, emulate: 'first' }), true, "emulate: 'first' emulates before any real attempt"); assert.deepStrictEqual(cmds[0], ['Emulation.setFocusEmulationEnabled', true]); assert.strictEqual(real, 0, 'with no real-focus look first');
   await D.releaseFocus(); assert.deepStrictEqual(cmds[cmds.length - 1], ['Emulation.setFocusEmulationEnabled', false], 'releaseFocus turns it off'); assert.strictEqual(attached, false, 'and detaches the debugger');
+  // spec 008 FR-215: pointerOff re-sends the move until the hover clears, and fails (labelled) when it never does; stay only lists
+  const po = (clearsAfter: number) => {
+    const moves: any[] = []; const pctx: any = { ...ctx, win: { ...ctx.win, webContents: { ...ctx.win.webContents, sendInputEvent: (e: any) => moves.push(e) } }, sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, Math.min(ms, 5))) };
+    const hovered = () => moves.length < clearsAfter;
+    pctx.js = async (c: string) => (c.includes('.map(') ? (hovered() ? ['button.x "Go"'] : []) : !hovered());
+    return { moves, P: dh.helpers(pctx) };
+  };
+  { const { moves, P } = po(4); assert.deepStrictEqual(await P.pointerOff('#panel', 'button', { ms: 2000, retry: 20 }).catch((e: Error) => assert.fail('pointerOff: a hover that clears after 3 moves passes: ' + e.message)), [], 'pointerOff: a hover that clears after 3 moves passes'); assert.ok(moves.length >= 4 && moves.every((e) => e.type === 'mouseMove' && e.x === 0 && e.y === 0), 'pointerOff: the move is re-sent to 0,0 until the hover clears'); }
+  { const { moves, P } = po(1e9); await assert.rejects(() => P.pointerOff('#panel', 'button', { ms: 150, retry: 20 }), /pointerOff: the pointer did not leave #panel after 150 ms and \d+ move\(s\): \["button\.x \\"Go\\""\]/, 'pointerOff: a hover that never clears fails with its label'); assert.ok(moves.length > 1, 'the failing wait kept re-sending the move'); }
+  { const { moves, P } = po(1e9); assert.deepStrictEqual(await P.pointerOff('#panel', 'button', { stay: true }), ['button.x "Go"'], 'pointerOff stay: lists what is hovered'); assert.strictEqual(moves.length, 0, 'pointerOff stay: never moves the pointer'); }
   console.log('driver-helpers: key, load, escaping and shot behave');
 })().catch((e) => { console.error(e); process.exit(1); });
 
