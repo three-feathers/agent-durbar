@@ -2190,7 +2190,7 @@ function renderConvResults(){
   const scanning=!!st&&!st.done;
   const state=st?`<div class="cs-state"><span class="cs-st">${esc(CSU.stateText(st))}</span>${scanning&&CS.id?'<button class="btn sm" type="button" id="csStop" data-csf="stop">Stop</button>':''}</div>`:'';
   const notes=st&&st.done?CSU.notesText(st):'';
-  const ex=(h,k)=>h.excerpts&&h.excerpts.length?`<div class="cs-exs">${h.excerpts.map((x,i)=>`<button type="button" data-csk="${esc(k)}" data-csx="${i}" data-csf="${esc(k)}#${i}" title="${h.group==='office'?'Open the chat at this message':h.adapter==='vscode'?'View this chat at this message':'Resume this session at this message'}">${CSU.excerptHTML(x,esc)}</button>`).join('')}${h.more?`<span class="cs-more">+${h.more} more</span>`:''}</div>`:'';
+  const ex=(h,k)=>h.excerpts&&h.excerpts.length?`<div class="cs-exs">${h.excerpts.map((x,i)=>`<button type="button" data-csk="${esc(k)}" data-csx="${i}" data-csf="${esc(k)}#${i}" title="${h.group==='office'?'Open the chat at this message':h.adapter==='vscode'?'View this chat at this message':'Resume this session at this message'}">${CSU.excerptHTML(x,esc)}</button>`).join('')}${CSU.moreOf(h)?`<span class="cs-more">+${CSU.moreOf(h)} more</span>`:''}</div>`:'';
   const officeRow=h=>{
     const a=byId(h.agentId), k=CSU.keyOf(h); if(!a)return '';
     const named=h.titleMarks&&h.titleMarks.length&&h.title===a.name; /* FR-011: a title match marked in the row's title */
@@ -2254,8 +2254,19 @@ function csStop(){
   const s=$('convSearch'); if(s)focusIn(s);
 }
 /* FR-001 (Q1): the field, or on a narrow top bar the magnifier that opens it */
-function csOpenBox(){const w=$('convSearchWrap');if(!w)return;w.classList.add('open');$('convSearchBtn').setAttribute('aria-expanded','true');}
-function csCloseBox(){const w=$('convSearchWrap');if(!w)return;w.classList.remove('open');const b=$('convSearchBtn');b.setAttribute('aria-expanded','false');const q=$('convSearch').value.trim();b.setAttribute('aria-label',q?'Search conversations: '+q:'Search conversations');w.classList.toggle('has-q',!!q);}
+/* review of PR 1684: on a tb-search bar the opened field lies over the bar; every control it would lie over is hidden (visibility: nothing moves)
+   while it is open, so it never half-covers one. The magnifier is the box's own, the counters are to its right. */
+function csClearUnder(){
+  const bar=document.querySelector('.topbar'),w=$('convSearchWrap'),s=$('convSearch');if(!bar||!w||!s)return;
+  bar.querySelectorAll('.cs-under').forEach(e=>e.classList.remove('cs-under'));
+  if(!w.classList.contains('open')||!bar.classList.contains('tb-search'))return;
+  const f=s.getBoundingClientRect();
+  const walk=p=>{for(const k of p.children){if(k===w||!k.getClientRects().length)continue;if(k.contains(w)){walk(k);continue;} /* the box may sit in a wrapper: go inside it */
+    const r=k.getBoundingClientRect();if(r.left<f.right&&f.left<r.right&&r.top<f.bottom&&f.top<r.bottom)k.classList.add('cs-under');}};
+  walk(bar);
+}
+function csOpenBox(){const w=$('convSearchWrap');if(!w)return;w.classList.add('open');$('convSearchBtn').setAttribute('aria-expanded','true');csClearUnder();}
+function csCloseBox(){const w=$('convSearchWrap');if(!w)return;w.classList.remove('open');csClearUnder();const b=$('convSearchBtn');b.setAttribute('aria-expanded','false');const q=$('convSearch').value.trim();b.setAttribute('aria-label',q?'Search conversations: '+q:'Search conversations');w.classList.toggle('has-q',!!q);}
 function csFocusBox(){
   if(!csAvailable())return;
   if(ui.selected)closePanel();

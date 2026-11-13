@@ -20,7 +20,7 @@ type St = { hits: Map<string, Hit>; order: { office: string[]; earlier: string[]
 const C = require(path.join(ROOT, 'src', 'renderer', 'convsearch.js')) as {
   keyOf(h: Hit): string; longEnough(q: string): boolean; create(): St; addBatch(st: St, b: unknown): St; finish(st: St, d: unknown, timeOf?: (h: Hit) => number): St;
   sorted(st: St, sort: { key: string; dir: string } | null, timeOf?: (h: Hit) => number): { office: Hit[]; earlier: Hit[] }; count(st: St): number;
-  markedHTML(t: string, m: unknown, esc: (s: string) => string): string; excerptHTML(x: unknown, esc: (s: string) => string): string; accName(h: Hit): string;
+  moreOf(h: unknown): number; markedHTML(t: string, m: unknown, esc: (s: string) => string): string; excerptHTML(x: unknown, esc: (s: string) => string): string; accName(h: Hit): string;
   stateText(st: St): string; notesText(st: St): string; LOCKED: string; announceDue(last: number | undefined, now: number): boolean; pickAnchor(keys: string[], a: unknown): number;
 };
 const esc = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -61,6 +61,18 @@ assert.ok(C.longEnough('a bc') && !C.longEnough('x y') && !C.longEnough('  ab ')
   C.addBatch(multi, { hits: [hit({ sessionId: 'x', excerpts: [{ text: 'a', marks: [], speaker: 'you', anchor: { n: 0, head: 'a' } }, { text: 'b', marks: [], speaker: 'agent', anchor: { n: 1, head: 'b' } }], more: 2 }), hit({ sessionId: 'y' })] });
   C.finish(multi, {});
   assert.strictEqual(C.stateText(multi), '5 results in 2 sessions', 'each excerpt and "+N more" is a result; a title hit is one');
+}
+
+// ---- review of PR 1684: "+N more" is a whole number of 0 or more, whatever main sends
+{
+  assert.strictEqual(C.moreOf({ more: 3 }), 3);
+  assert.strictEqual(C.moreOf({ more: '<img src=x onerror=1>' }), 0, 'markup is not a count');
+  assert.strictEqual(C.moreOf({ more: -4 }), 0);
+  assert.strictEqual(C.moreOf({ more: 2.9 }), 2);
+  assert.strictEqual(C.moreOf({}), 0);
+  assert.strictEqual(C.accName(hit({ title: 'T', more: '<b>9</b>' as unknown as number })), 'T, GitHub Copilot, demo, open, match: match in the title', 'no markup in the name');
+  const st = C.create(); C.addBatch(st, { hits: [hit({ more: '<b>9</b>' as unknown as number })] }); C.finish(st, {});
+  assert.strictEqual(C.stateText(st), '1 result in 1 session', 'a markup count adds nothing');
 }
 
 // ---- FR-011: marks from offsets, every piece escaped; bad ranges dropped, overlapping merged

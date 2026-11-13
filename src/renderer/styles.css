@@ -2274,6 +2274,7 @@ body.has-csearch.cs-demo .cs-box{visibility:hidden} /* the demo office: kept in 
 .topbar.tb-search .cs-box input{display:none}
 .topbar.tb-search .cs-box.open input{display:block;position:absolute;right:0;top:50%;transform:translateY(-50%);width:260px;z-index:40;box-shadow:var(--shadow-pop)} /* over the bar's own controls, never over the banner below (review of PR 1240, Q3) */
 .topbar.tb-search .cs-box.has-q:not(.open) #convSearchBtn{border-color:var(--focus);color:var(--ink)} /* a query is active: the magnifier says so (and its accessible name holds the query) */
+.topbar .cs-under{visibility:hidden} /* review of PR 1684: a control the opened field would lie over */
 .cs-hint{position:absolute;right:calc(100% + 6px);top:50%;transform:translateY(-50%);z-index:41;max-width:360px;width:max-content;white-space:normal;font-size:var(--t4-size);line-height:var(--t5-lh);padding:var(--s-1) var(--s-2);border:1px solid var(--line);border-radius:var(--r-md);background:var(--raised);color:var(--ink-2);box-shadow:var(--shadow-pop)} /* in the bar, left of the field, never over the banner below (review of PR 1240) */
 .topbar.tb-search .cs-box.open .cs-hint{right:calc(260px + 6px)} /* left of the opened field, which lies over the bar */
 .cs-hint[hidden]{display:none}

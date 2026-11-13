@@ -9,6 +9,8 @@
   const SPEAKER={you:'You:',agent:'Agent:'};
   /* a row's key; it goes into an HTML attribute, so no control character (the parser turns NUL into U+FFFD) */
   const keyOf=h=>[h&&h.group,h&&h.adapter,h&&h.sessionId].map(x=>encodeURIComponent(String(x))).join(':');
+  /* a hit's "+N more" comes from main and goes into the page: always a whole number of 0 or more, never text */
+  const moreOf=h=>Math.max(0,Number(h&&h.more)|0);
   const plural=(n,one,many)=>n+' '+(n===1?one:(many||one+'s'));
   const listWords=a=>a.length<2?a.join(''):a.slice(0,-1).join(', ')+' and '+a[a.length-1];
 
@@ -82,7 +84,7 @@
   function accName(h){
     const first=h&&h.excerpts&&h.excerpts[0], where=h&&h.group==='office'?'open':'previous';
     const m=first?(SPEAKER[first.speaker]||'')+' '+String(first.text||''):'match in the title';
-    return [h&&h.title||'Untitled session',h&&h.app,h&&h.folderName,where].filter(Boolean).join(', ')+', match: '+m.trim()+(h&&h.more?', '+plural(h.more,'more match','more matches'):'');
+    return [h&&h.title||'Untitled session',h&&h.app,h&&h.folderName,where].filter(Boolean).join(', ')+', match: '+m.trim()+(moreOf(h)?', '+plural(moreOf(h),'more match','more matches'):'');
   }
 
   /* FR-015: the state line while scanning, and the final line (US3.4) */
@@ -92,7 +94,7 @@
     if(st.failed&&!n)return 'The search could not finish.';
     if(!n)return 'No conversation matches';
     /* a result is a match: each excerpt and each "+N more", or the title of a title hit; the sessions are the rows */
-    let r=0; for(const h of st.hits.values())r+=Math.max(1,(h.excerpts||[]).length+(+h.more||0));
+    let r=0; for(const h of st.hits.values())r+=Math.max(1,(h.excerpts||[]).length+moreOf(h));
     return plural(r,'result')+' in '+plural(n,'session');
   }
   /* FR-014 (and owner answers C, D; review N-R2): one line, only what applies */
@@ -139,5 +141,5 @@
     return best;
   }
 
-  return {dropBidi,keyOf,longEnough,create,addBatch,finish,resort,sorted,count,markedHTML,excerptHTML,accName,stateText,notesText,LOCKED,announceDue,pickAnchor};
+  return {dropBidi,moreOf,keyOf,longEnough,create,addBatch,finish,resort,sorted,count,markedHTML,excerptHTML,accName,stateText,notesText,LOCKED,announceDue,pickAnchor};
 })());

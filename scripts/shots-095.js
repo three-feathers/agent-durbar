@@ -93,6 +93,14 @@ module.exports = async (ctx) => {
         const out={banner:!!r,inBar:s.top>=b.top-0.5&&s.bottom<=b.bottom+0.5,over:!!r&&s.left<r.right&&r.left<s.right&&s.top<r.bottom&&r.top<s.bottom};if(t)t.textContent=was;return out;})()`);
       assert.ok(cover.banner && cover.inBar && !cover.over, `${w}: the open field stays in the bar, clear of the banner: ${JSON.stringify(cover)}`);
     }
+    {
+      // review of PR 1684: no top-bar control lies under the open field (a hidden one is not shown, so it is not covered)
+      const under = await js(`(()=>{const f=document.getElementById('convSearch').getBoundingClientRect(),bar=document.querySelector('.topbar'),w=document.getElementById('convSearchWrap'),out=[];
+        for(const c of bar.querySelectorAll('button,select,input,.stats,.brand')){if(w.contains(c)||c.closest('.more-menu'))continue;const cs=getComputedStyle(c);if(cs.visibility==='hidden'||!c.getClientRects().length)continue;
+          const r=c.getBoundingClientRect();if(r.width&&r.left<f.right&&f.left<r.right&&r.top<f.bottom&&f.top<r.bottom)out.push((c.id||c.className||c.tagName)+'@'+Math.round(r.left));}
+        return {open:w.classList.contains('open'),field:Math.round(f.left)+'-'+Math.round(f.right),out};})()`);
+      assert.ok(under.open && under.out.length === 0, `${w}: the open field covers no top-bar control: ${JSON.stringify(under)}`);
+    }
     await type('re');
     await ok(`(document.getElementById('convSearchHint').textContent||'')==='Type at least 3 characters'&&!document.getElementById('convSearchHint').hidden`, `${w}: "Type at least 3 characters"`);
     {
@@ -227,7 +235,7 @@ module.exports = async (ctx) => {
     const PAT = "$` style=position:fixed;inset:0;z-index:9999;background:red x=$' $& <img src=x onerror=alert(1)> \" autofocus x=\" & end"; // R1 and review of PR 1240 R4: replacement patterns and markup
     const injected = await js(`(()=>{const a=window.__durbarSimUi.agents().filter(x=>!x.parent).slice(-1)[0];a.name=${jsLiteral('Pay ' + PAT)};
       window.__durbarSimUi.cs.event({kind:'batch',searchId:window.__durbarSimUi.cs.id(),hits:[{adapter:a.info&&a.info.adapterId||'copilot',sessionId:a.id,agentId:a.id,group:'office',app:'GitHub Copilot',folderName:'demo',title:a.name,titleMarks:[[0,3]],time:0,
-        excerpts:[{text:${jsLiteral('registry ' + PAT)},marks:[[0,8]],speaker:'you',anchor:{n:0,head:'registry'}}],more:0},
+        excerpts:[{text:${jsLiteral('registry ' + PAT)},marks:[[0,8]],speaker:'you',anchor:{n:0,head:'registry'}}],more:${jsLiteral('<img src=x onerror=alert(2)>')}},
         {adapter:'claude',sessionId:'evil-earlier',agentId:a.id,group:'earlier',app:'Claude Code',folderName:'demo',title:${jsLiteral('Evil ' + PAT)},titleMarks:[[0,4]],time:Date.now()-60000,excerpts:[],more:0}],progress:{done:1,total:9},groups:{office:1,earlier:1}});return a.id;})()`);
     await ok(`[...document.querySelectorAll('#list .cs-hit button.lrow[data-id]')].some(b=>b.dataset.id===${jsLiteral(injected)})`, `${w}: the injected result is shown`, 3000);
     const inj = await js(`(()=>{const h=[...document.querySelectorAll('#list .cs-hit')].find(x=>x.querySelector('button.lrow[data-id]')&&x.querySelector('button.lrow').dataset.id===${jsLiteral(injected)});
@@ -238,6 +246,7 @@ module.exports = async (ctx) => {
     assert.ok(inj.label.includes(PAT) && inj.name === 'Pay ' + PAT && inj.ex.includes(PAT), `${w}: the text is shown as written: ${JSON.stringify(inj)}`);
     const evil = await js(`(()=>{const L=document.getElementById('list'),h=[...L.querySelectorAll('.cs-hit')].find(x=>x.dataset.csk==='earlier:claude:evil-earlier');
       return {img:L.querySelectorAll('img').length,autofocus:L.querySelectorAll('[autofocus],[onerror]').length,title:h&&(h.querySelector('.lnm')||{}).textContent};})()`);
+    assert.strictEqual(await js(`document.querySelectorAll('#list .cs-more').length`), 0, `${w}: a markup "+N more" is no count and adds nothing (review of PR 1684)`);
     assert.deepStrictEqual(evil, { img: 0, autofocus: 0, title: 'Evil ' + PAT }, `${w}: markup in an excerpt and an earlier session's title stays text (review of PR 1240, R4)`);
     // review of phase 3 (R2): shortening the query below 3 characters while it scans ends the state ("Stopped."), not a lasting "Searching"
     await focusBox();
