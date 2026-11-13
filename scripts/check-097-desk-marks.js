@@ -3,7 +3,7 @@
  * ", unsent draft" (Open office's words). Simulator only (sim=15), no AI credits; every wait is an until().
  *
  *   npm run check:ui -- --only check-097-desk-marks      (builds first)
- *   DESK_MARKS_MUTANT=lounge-pick   the old picks, the third and sixth agents (a lounge seat at 15 agents; must fail with "the picked desk is not a lounge seat")
+ *   DESK_MARKS_MUTANT=lounge-pick   the picker takes lounge seats (must fail with "the picked desk is not a lounge seat")
  *   DESK_MARKS_MUTANT=stale   the tag's class is not removed when the draft goes (must fail with "an emptied draft loses its tag"; the observer adds `on` only when it is missing: a bare add() of a class already set still fires an attribute mutation, so the old mutant looped in a microtask and froze the page until the suite's 601 s limit)
  *
  * At 1440x900 and 1280x800 in Real office it fails (exit 1) when:
@@ -33,14 +33,22 @@ module.exports = async (ctx) => {
     const tag = `${w}x${h}`;
     await H.load({ w, h, query: { officeview: 'real', sim: '15', simfreeze: '1' }, ready: `document.querySelectorAll('#stage .ro-plate').length>=10`, readyMs: 30000, settle: false });
     await js(INSTALL);
+    /* DESK_MARKS_FONT=wide (a developer aid): Verdana / DejaVu Sans with 0.1 px letter spacing in the stage, the widths CI's Linux fonts give, so a Mac run takes the wide-font path */
+    if (process.env.DESK_MARKS_FONT === 'wide') await js(`(()=>{const s=document.createElement('style');s.textContent='#stage .ro,#stage .ro *{font-family:Verdana,"DejaVu Sans",sans-serif!important;letter-spacing:.1px!important}';document.head.appendChild(s);return 1})()`);
     assert.deepStrictEqual(await shown(), [], `${tag}: no Draft tag before a draft`);
     assert.ok(!(await js(`/unsent draft/.test([...document.querySelectorAll('#stage .ro-plate')].map(p=>p.getAttribute('aria-label')).join('|'))`)), `${tag}: no plate says unsent draft before a draft`);
     const ids = await js(`(()=>{const L=window.__durbarSimUi.realLayout(),aw=new Set(L.zones.flatMap(z=>z.desks).filter(d=>d.away).map(d=>d.id));return window.__durbarSimUi.agents().filter(a=>!a.parent&&!aw.has(a.id)).map(a=>a.id)})()`); /* an empty seat (away) has its post-it where the tag would sit: its tag moves onto the note's corner, which check-office-overlap measures */
-    /* a lounge seat's tag stands on the seat's screen (FR-316; check-office-overlap measures it): the two drafted desks here are plain desks */
-    const loungeIds = await js(`((window.__durbarSimUi.realLayout().lounge||{}).desks||[]).map(d=>d.id)`);
-    const deskIds = MUTANT === 'lounge-pick' ? ids : ids.filter(k => !loungeIds.includes(k));
-    const picks = [deskIds[2], deskIds[5]];
-    for (const k of picks) assert.ok(!loungeIds.includes(k), `${tag}: the picked desk is not a lounge seat: ${k}`);
+    /* FR-316: a desk's tag stands above its plate's left end; a lounge seat's tag stands on the seat's screen (check-office-overlap measures that). The two drafted desks are picked by the
+       property this driver asserts, asked of the DOM: an active desk (working, thinking or error: never rolled into the lounge, which only finished or idle agents are), no lounge, asleep or narrow plate,
+       a plate wide enough that the tag fits over its left end, a desk of the layout (not a lounge seat, not an empty seat). Mutant lounge-pick takes the lounge seats. */
+    const PLATE_MIN = 80;
+    const cands = await js(`(()=>{const L=window.__durbarSimUi.realLayout(),lg=new Set(((L.lounge||{}).desks||[]).map(d=>d.id)),aw=new Set(L.zones.flatMap(z=>z.desks).filter(d=>d.away).map(d=>d.id)),bad=${MUTANT === 'lounge-pick'};
+      return [...document.querySelectorAll('#stage .ro-plate')].map(p=>{const c=p.classList,w=p.getBoundingClientRect().width,k=p.dataset.id,
+        ok=/(^| )st-(working|thinking|error)( |$)/.test(p.className)&&!c.contains('lounge')&&!c.contains('asleep')&&!c.contains('narrow')&&w>=${PLATE_MIN}&&!lg.has(k)&&!aw.has(k);return {k,ok,cls:p.className,w:Math.round(w)}}).filter(x=>bad?lg.has(x.k):x.ok)})()`);
+    assert.ok(cands.length >= 2, `${tag}: at least two desks with the property (an active desk, no lounge/asleep/narrow plate, a plate of ${PLATE_MIN}px or more) to draft; found ${JSON.stringify(cands)}`);
+    const picks = [cands[0].k, cands[cands.length - 1].k];
+    const loungeNow = () => js(`((window.__durbarSimUi.realLayout().lounge||{}).desks||[]).map(d=>d.id)`);
+    for (const k of picks) assert.ok(!(await loungeNow()).includes(k), `${tag}: the picked desk is not a lounge seat: ${k}`);
     /* the tag nodes, counted before and after the draft changes: made once per desk, shown by class */
     const nodes = () => js(`document.querySelectorAll('#stage .ro-drafttag').length`);
     const n0 = await nodes();
@@ -65,9 +73,10 @@ module.exports = async (ctx) => {
       bgOf=e=>{for(let n=e;n;n=n.parentElement){const c=rgb(getComputedStyle(n).backgroundColor);if(c.length>=3&&(c.length<4||c[3]>0.95))return c}return [255,255,255]};
       const plates=[...document.querySelectorAll('#stage .ro-plate')],tags=[...document.querySelectorAll('#stage .ro-drafttag.on')];
       return tags.map(t=>{const r=R(t),p=R(document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(t.dataset.for)+'"]')),a=lum(rgb(getComputedStyle(t).color)),b=lum(bgOf(t));
-        return {k:t.dataset.for,above:r.b<=p.y+0.5,left:Math.abs(r.x-p.x)<=1,outFloor:r.x<fl.x-0.5||r.r>fl.r+0.5||r.y<fl.y-0.5||r.b>fl.b+0.5,
+        return {k:t.dataset.for,tr:[r.x,r.y,r.r,r.b].map(Math.round),pr:[p.x,p.y,p.r,p.b].map(Math.round),cls:document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(t.dataset.for)+'"]').className,above:r.b<=p.y+0.5,left:Math.abs(r.x-p.x)<=1,outFloor:r.x<fl.x-0.5||r.r>fl.r+0.5||r.y<fl.y-0.5||r.b>fl.b+0.5,
           touches:plates.filter(q=>hit(r,R(q))).map(q=>q.dataset.id),others:tags.filter(o=>o!==t&&hit(r,R(o))).map(o=>o.dataset.for),font:parseFloat(getComputedStyle(t).fontSize),ratio:(Math.max(a,b)+0.05)/(Math.min(a,b)+0.05),hid:t.getAttribute('aria-hidden'),text:t.textContent.trim(),svg:!!t.querySelector('svg')}})})()`);
     assert.strictEqual(geo.length, 2, `${tag}: both tags measured`);
+    assert.deepStrictEqual((await loungeNow()).filter(k => picks.includes(k)), [], `${tag}: the drafted desks are still desks when measured (none moved into the lounge)`);
     for (const g of geo) {
       assert.ok(g.above && g.left, `${tag}: ${g.k}: the tag is above its plate's left end ${JSON.stringify(g)}`);
       assert.ok(!g.outFloor, `${tag}: ${g.k}: the tag is inside the floor`);
