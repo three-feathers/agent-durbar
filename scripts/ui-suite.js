@@ -60,6 +60,7 @@ const DRIVERS = [
   { name: 'check-helper-more' }, // spec 005 FR-234 (issue #1145): a helper's chat has no empty More menu (the button is hidden), a main agent's chat keeps it, both sizes
   { name: 'check-browser-follow' }, // spec 005 FR-235 (issue #1168): a chat that followed the end still follows after Chat, Browser, Chat (a turn writing meanwhile); one scrolled up keeps its place; both sizes
   { name: 'check-status-filter' }, // spec 001 FR-180 (issue #790): a status pill says what it hides, and Show all
+  { name: 'check-status-filter', label: 'check-status-filter retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 delta 2026-11-11 (issue 1559): the notice's contrast in the arcade, both sizes
   { name: 'check-status-tooltip' }, // spec 001 FR-187 (issue #875): the instant tooltip on the status counts: hover, keyboard focus, Escape, wording with the filter on and off, inside the window, clear of the pill, every theme, Serious mode
   { name: 'check-list-columns' }, // spec 001 FR-182..FR-184 (issues #812, #813): List columns follow their content and every cut cell keeps its text; the room's whole bottom wall; the header pencil without a tile
   { name: 'shots-001-live-activity', freeze: false }, // spec 001 FR-028 live activity, and spec 059 (issue #1135): after a live paint no pencil stays on the line under its name
@@ -92,6 +93,7 @@ const DRIVERS = [
   { name: 'shots-058-mcp-launch', label: 'shots-058-mcp-launch retro 16', env: { DRIVER_WORLD: 'retro', DRIVER_CASE: '16', DRIVER_AGENTS: '16' } }, // spec 102 T308: 16 agents under the strip: the lent layout still scrolls, so it is refused (ro-tight off)
   { name: 'shots-058-mcp-launch', label: 'shots-058-mcp-launch retro filter', env: { DRIVER_WORLD: 'retro', DRIVER_CASE: 'filter', DRIVER_AGENTS: '24' } }, // spec 102 T308: a status filter under the strip: ro-tight never set while the floor scrolls, the note keeps its top padding
   { name: 'shots-058-mcp-launch', label: 'shots-058-mcp-launch photo 18', env: { DRIVER_CASE: 'photo', DRIVER_AGENTS: '18', DRIVER_H: '760' } }, // spec 102 T308: a world that is not aisles is never lent the padding
+  { name: 'check-102-arcade-filter-note', env: { DRIVER_WORLD: 'retro' } }, // spec 102 (issue #1588, T310): the arcade at 14, 13 and 11 agents with a status filter set (15 cannot be driven: the simulator's basic agent never works), 1280x800 and 1440x900: no office scroll, the note stays clear
   { name: 'shots-058-mcp-signin-refresh' }, // spec 058 FR-208..FR-216: the sign-in refresh lines, Stop during the wait, the Settings switch
   { name: 'shots-076-orgpolicy' }, // spec 076 FR-202..FR-205 (#602): what the agent app's own organization policy blocks, greyed with the reason
   { name: 'shots-058-mcp-health' }, // spec 058 FR-090..FR-096 (#603): failure reason, when, Copy diagnostics (masked), the MCP chip dot
@@ -108,6 +110,7 @@ const DRIVERS = [
   { name: 'check-dialog-focus' },
   { name: 'check-052-primary-btn' }, // spec 052 FR-053 (#1614): the themed primary button reads at 4.5:1 at rest, hovered and pressed in every themed look
   { name: 'check-052-focus-ring' }, // spec 052 FR-052 (#1615): the keyboard ring of the top bar controls and of the ⋯ menu items reads at 3:1 beside the bar, in the retro looks
+  { name: 'check-052-danger-btn' }, // spec 052 FR-053, FR-076 (#1565): the red confirm button of a destructive dialog reads in the arcade and under the pixel theme
   { name: 'check-grant-chips' },
   { name: 'check-sched-sendto' },
   { name: 'check-sched-edit' },
@@ -130,6 +133,7 @@ const DRIVERS = [
   { name: 'shots-069-harmonize' }, // spec 069 part 2: copy servers between the agent apps' lists
   { name: 'shots-069-mcp-tools' }, // spec 069 part 3: tools on expand, Remove in the agent dialog (058's state words and Details stay)
   { name: 'shots-059-long-url' }, // spec 059 FR-019: a long unbroken name stays in its card, the inbox and the Schedules rows
+  { name: 'check-mcp-row-width' }, // spec 058 delta 2026-11-12 (#1622): a failed server's row keeps a readable text column; the buttons wrap below it
   { name: 'check-activity-table' }, // spec 052 FR-071 delta 2026-10-21 (#474): Tools > Activity renders its rows
   { name: 'check-codex-file-card' }, // spec 052 FR-172: a Codex write card names the files and shows the change
   { name: 'check-theme-art' }, // spec 040 FR-023: a picked theme's characters and gadgets on desks, walkers, places and chips
@@ -176,6 +180,7 @@ const DRIVERS = [
   { name: 'shots-readme-real' }, // spec 008 delta 2026-11-08 (issue #1256): the README's lead pictures, Real office and its Needs you inbox
   { name: 'shots-070-flat-look' }, // spec 070 A14: Flat's modern look behind html[data-flat-look] (24 px controls on, today's off; Retro and Real office equal with it on)
   { name: 'shots-102-arcade' }, // spec 102 RA3: the Retro arcade behind its flag: only its files, cabinets, marquee, no overlap at 3, 4, 8 and 15 at both sizes
+  { name: 'shots-102-arcade', label: 'shots-102-arcade wide font', env: { ARCADE_FONT: 'wide', ARCADE_CASES: 'narrow' } }, // spec 102 FR-312 (round 5 of #1599, issue #1574): the narrow plate's cases alone (ARCADE_CASES=narrow) in a font wider than macOS's (Verdana, else DejaVu Sans; the run fails if neither is installed), so the geometry is not tuned to one font
   { name: 'shots-097-moments' }, // spec 097 FR-118..FR-129: the nine world moments (first run, empty office, asleep at the desk, walk, inbox, limit, elicitation, coffee, jumps) in the Photo office and the cave
   { name: 'shots-097-moments', label: 'shots-097-moments cave', env: { MOMENTS_WORLDS: 'cave' } }, // the same nine moments in the Prehistoric cave (its flag is the simulator's page address)
   { name: 'shots-097-moments', label: 'shots-097-moments retro', env: { MOMENTS_WORLDS: 'retro' } }, // spec 102 FR-264: the same nine moments in the Retro arcade (its flag is the simulator's page address)
@@ -194,6 +199,7 @@ const DRIVERS = [
   { name: 'check-097-desk-marks' }, // spec 097 FR-316 (#1149): the Draft tag above a Real office plate for an unsent draft, its words in the plate's name, shown by class, both sizes
   { name: 'check-097-desk-marks', label: 'check-097-desk-marks retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 T283 (issue #1399): the same driver in the arcade
   { name: 'check-097-helpers' }, // spec 097 FR-306..FR-311 (#1139): a desk's helpers as head figures with a status dot under its plate, Photo office, cave and the arcade at 1440x900, both sizes; where no strip fits (the arcade at 1280x800, the default scene at 1280x800) the plate keeps +N
+  { name: 'check-097-kids' }, // spec 097 FR-368..FR-376 (#1642): the helpers as clay-toy kids on the desk top in the Photo office at 1 to 4 agents (picture, pose, one scale, +K, Tab, click, no zoom, no node per status), kid faces in the head row at 15, both sizes; KIDS_MUTANT=nokids|status|name|overlap|adulthead
   { name: 'check-097-helper-row' }, // spec 097 FR-338 (issue #1384), FR-356 (issue #1392: every folder sign whole, its + and menu inside it): a helper strip never wraps a head onto a second line; the last place is +K (6 and 7 helpers, the default scene and the lounge scene, Photo office, cave and arcade, both sizes)
   { name: 'check-097-hover-card', focus: true }, // spec 097 FR-327..FR-330 (#1151): the zoom opens over the person, desk and plate, for asleep agents, with the Changed line
   { name: 'check-097-hover-card', label: 'check-097-hover-card retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 T283 (issue #1399): the same driver in the arcade
@@ -217,6 +223,9 @@ const DRIVERS = [
   { name: 'check-browser-dialogs', label: 'check-browser-dialogs 1280', env: { DURBAR_SIM_BROWSER_CONSENT: 'ask', BROWSER_DIALOGS_SIZE: '1280x800' } }, // the same at 1280x800: the note, Leave this page?, the hidden dialog's toast
   { name: 'check-browser-tabs' }, // spec 080 Phase 1b (US6, FR-120..FR-133): page tabs, the toggle, pages opening tabs, 10 tabs, close while loading, keys, the cap, session end
   { name: 'check-browser-tabs', label: 'check-browser-tabs 1280', env: { BROWSER_TABS_SIZE: '1280x800' } }, // the same at 1280x800 (SC-011)
+  { name: 'check-080-browser-expand' }, // spec 080 FR-134..FR-139 (issue #1691): Expand browser fills the chat panel, Back to small browser and Escape restore, focus, the page keeps its Escape, not remembered; Flat, both sizes
+  { name: 'check-080-browser-expand', label: 'check-080-browser-expand photo', env: { EXPAND_WORLD: 'real' } }, // the same in the Photo office (Real office)
+  { name: 'check-080-browser-expand', label: 'check-080-browser-expand retro', env: { EXPAND_WORLD: 'real', DRIVER_WORLD: 'retro' } }, // the same in the Retro arcade
   { name: 'check-browser-tab' }, // spec 080 T014/T015/T018: Chat | Browser tabs, the bar, the native view's attach and detach, the simulator's test pages, two sessions' own views
   // issue #748 (spec 021 FR-057): drivers that asserted but nothing ran, each passing alone on the simulator (seconds on a 4-core Linux box)
   { name: 'check-checkpoints' }, // spec 065 FR-003/FR-004/FR-007: the note after a turn that changed files, preview, restore, Undo the undo, the refusal (~21 s)

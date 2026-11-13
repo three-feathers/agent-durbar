@@ -198,11 +198,12 @@ body.has-bridge #liveBar{display:flex}
 
 /* ---------- workspace ---------- */
 .workspace{flex:1;display:flex;min-height:0;min-width:0}
-#floor{flex:1;min-width:0;position:relative;overflow:hidden;padding:12px 16px 12px}
+#floor{flex:1;min-width:0;position:relative;overflow:hidden;padding:12px 16px 12px;--fnote-keep:32px}
 #floor.scrolls{overflow-y:auto}
 /* spec 102 delta 2026-11-11: the arcade hall that fits only without the floor's padding (top and bottom padding only; set by renderReal from the layout, never by hand) */
-#floor.ro-tight{padding-bottom:0}
-#floor.ro-tight:not(.has-fnote){padding-top:0}
+#floor.ro-tight{padding-top:0;padding-bottom:0}
+/* spec 102 delta 2026-11-12 (issue 1588): with the filter note the top padding is lent down to --fnote-keep (the note's line ends at 28 px, 4 px of air), not to 0 */
+#floor.ro-tight.has-fnote{padding-top:var(--fnote-keep)}
 /* spec 092 FR-006..FR-008, FR-015, FR-028, FR-032 (40 px wide: at 47 px the lobby's Bank tile lost its visitor's words at 1440x900): the lift panel at the right edge of the office area (a flex item of .workspace, so its width comes out
    of #floor and the layout counts it); shown only with two or more floors on. Semantic tokens only; text at least 10.5px; buttons at least 28x28. */
 #lift{flex:none;display:flex;flex-direction:column;align-items:stretch;min-height:0;padding:10px 0 8px 2px;border-left:1px solid var(--line);background:var(--surface)}
@@ -968,6 +969,10 @@ body.panel-open #panel{flex-direction:row}
 .bview{flex:1;min-height:120px;border-top:1px solid var(--line);background:var(--surface-2)}
 .bview{position:relative}
 .bshot{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;pointer-events:none}
+/* spec 080 FR-135 (issue 1691): the big browser fills the chat panel. The rest of the chat is hidden, not removed (a draft, the scroll
+   position and the message box's size stay); the notice strips above the panel and this session's answer bars stay in view. */
+body.browser-big #panel>.rail,body.browser-big #panel .panel-in>.ph,body.browser-big #panel #panelTabs,body.browser-big #panel #prev,body.browser-big #panel #notesDrawer,body.browser-big #panel .panel-in>.composer{display:none}
+body.browser-big #panel .bpane :is(.bstrip,.bbar,.bstat){padding-left:var(--s-4);padding-right:var(--s-4)} /* the bar lines up with the page's edges, not a centred column */
 .bnote[data-kind="dialog"] svg{color:var(--ink-2)}
 .dlg-mark{flex:none;display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;margin-right:5px;border:1px solid var(--tone-warn-line);border-radius:4px;background:var(--warn-bg);color:var(--amber-ink);font-size:var(--t5-size);font-weight:700;line-height:1}
 .stage .desk.card .dlg-mark,.stage .desk.shut .dlg-mark{position:absolute;left:2px;top:40px;margin:0;z-index:4}
@@ -1397,7 +1402,7 @@ body.panel-open #panel{flex-direction:row}
 .btn.primary.warn:hover{background:var(--tone-warn-hover)}
 /* spec 052 FR-076: red means it deletes or ends (End session, Remove, Delete floor, Clear); amber .primary.warn only grants more power (Allow all, Turn on remote) */
 .btn.primary.danger{background:var(--red-ink);border-color:transparent;color:var(--surface)}
-.btn.primary.danger:hover{background:color-mix(in srgb,var(--red-ink) 86%,#000);border-color:transparent}
+.btn.primary.danger:hover{background:color-mix(in srgb,var(--red-ink) 86%,var(--ink));border-color:transparent} /* toward the page ink: darker on a dark fill (light themes), lighter on a light fill (dark themes), so the text keeps its contrast (issue 1565) */
 
 /* ---- switch model and context, compact (spec 030) ---- */
 .mchip-btn{cursor:pointer;font-family:inherit;gap:5px}
@@ -1863,7 +1868,7 @@ html[data-motion-off] .subblk.running .sub-st::before{animation:none!important}
 html[data-platform="darwin"] :is(.topbar,.rail-top,body.panel-open .ph,body.panel-open .notice-strip,body.panel-open.screen-open .scr-head){-webkit-app-region:drag}
 html[data-platform="darwin"]:not([data-fullscreen]) .rail-top{padding-left:78px}
 html[data-platform="darwin"]:not([data-fullscreen]) body.panel-open .notice-strip{padding-left:78px}
-html[data-platform="darwin"]:not([data-fullscreen]) body.panel-open.screen-open .scr-head{padding-left:max(78px,calc((100% - 880px)/2 + 24px))} /* FR-138: keeps the FR-097 alignment */
+html[data-platform="darwin"]:not([data-fullscreen]) body.panel-open.screen-open .scr-head{padding-left:max(78px,calc((100% - var(--scr-col))/2 + 24px))} /* FR-138: keeps the FR-097 alignment */
 html[data-platform="darwin"] :is(.topbar,body.panel-open .notice-strip,body.panel-open.screen-open .scr-head) :is(button,a,input,select,textarea,label,summary,[role="button"],[role="menu"],[role="group"],[tabindex],.more-menu){-webkit-app-region:no-drag}
 html[data-platform="darwin"] :is(.rail-top,body.panel-open .ph) :is(button,a,input,select,textarea,label,summary,[role="button"],[role="menu"],[role="group"],[tabindex],[title],.more-menu,.grants){-webkit-app-region:no-drag}
 /* spec 052 FR-138: with a chat open a visible notice strip is the first row (the drag row with the room); the row below drops the room. A
@@ -1890,9 +1895,14 @@ html[data-platform="darwin"]:not([data-fullscreen]) .topbar::before{content:"";f
 @media (min-width:1600px) and (max-width:1799px){html[data-platform="darwin"]:not([data-fullscreen]) .topbar #defaultsBtn{max-width:140px}}
 html[data-platform="darwin"] body.panel-open :is(#restoreStrip:not([hidden]),#restoreStrip[hidden]+#awayStrip:not([hidden]),#restoreStrip[hidden]+#awayStrip[hidden]+#crashStrip:not([hidden])){min-height:40px}
 html[data-platform="darwin"] body.panel-open #restoreStrip[hidden]+#awayStrip[hidden]+#crashStrip[hidden]+#followStrip:not([hidden]){min-height:40px}
-html[data-platform="darwin"] .notice-strip:not([hidden]) ~ #screen .scr-head{padding-left:max(24px,calc((100% - 880px)/2 + 24px))}
+html[data-platform="darwin"] .notice-strip:not([hidden]) ~ #screen .scr-head{padding-left:max(24px,calc((100% - var(--scr-col))/2 + 24px))}
 html[data-platform="darwin"] :is(.dlg-ov,#foldersPop,#floorsPop,#defaultsPop,.mode-menu,.more-menu){-webkit-app-region:no-drag}
 html[data-platform="darwin"] .rgrip{-webkit-app-region:no-drag}
+/* spec 080 FR-139 (issue 1691): the big browser's page tabs are the top row: clear of the window buttons and the drag region, while no notice strip is above them */
+html[data-platform="darwin"]{--mac-lights-w:78px} /* the window buttons' width, as the notice strip's padding */
+html[data-platform="darwin"]:not([data-fullscreen]) body.browser-big:not(:has(.notice-strip:not([hidden]))) #panel .bstrip{padding-left:var(--mac-lights-w)}
+html[data-platform="darwin"] body.browser-big:not(:has(.notice-strip:not([hidden]))) .bstrip{-webkit-app-region:drag}
+html[data-platform="darwin"] body.browser-big .bstrip :is(button,[role="tab"],[tabindex],.btabs){-webkit-app-region:no-drag}
 
 /* spec 052 (2026-10-21, round 3, accessibility): small controls get a 24px hit area (WCAG 2.2 target size) without changing the layout */
 button.room-aiu,.lsort,.linkbtn{position:relative}
