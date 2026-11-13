@@ -4,7 +4,7 @@
 group: 046
 title: MCP servers in a session (issue #349): plain state words and how servers start per agent app, the masked failure reason with a hint, per-server Restart where the agent app has one (Copilot, Claude Code), Restart session with these servers, Open log folder (reveal only)
 status: building
-note: restart, logs and sign-in tasks open; masking and state words built
+note: restart, logs and sign-in tasks open; masking and state words built; App mode (#1667) specified, not built
 -->
 
 **Feature Branch**: `058-mcp-session-controls`

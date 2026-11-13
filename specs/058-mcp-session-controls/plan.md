@@ -461,7 +461,8 @@ prompt in spec 011). The owner tests it in a test build on his managed Mac befor
   failed-save words of spec 011 FR-012 (`saveFailed`); the simulator answers the setting without a restart.
 - **Bump** (FR-242..FR-244): `package.json` exact 1.0.32, lockfile, `.github/dependabot.yml` ignore removed, the `zod` override per Q26;
   `checkpoint` filter in `prevsessions.ts`, `convsearch.ts` and the replay mapping; the `managedSettings` / `permissionMode` options in the
-  session config on create and resume; spec 011 FR-096 in `map.ts` and the window.
+  session config on create and resume; spec 011 FR-096: `map.ts` adds `near: true` to the `limit` event (phase stays `exhausted`) when
+  `used < max`, and the window picks the words from it.
 - **Test build** (FR-245): tag `v0.1.17-test.1` (or the version then) on the top of the PR 2..4 stack; `release.yml` makes the draft.
 
 ### Order (5 PRs, small, spec first)
