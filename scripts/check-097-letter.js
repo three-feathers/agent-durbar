@@ -78,6 +78,10 @@ module.exports = async (ctx) => {
     if (scrolled) {
       await js(`(()=>{const f=document.getElementById('floor');f.classList.add('scrolls');const sp=document.createElement('div');sp.id='letter-spacer';sp.style.cssText='height:2000px;width:1px';f.appendChild(sp);f.scrollTop=40;})()`);
       assert.ok(await js(`document.getElementById('floor').scrollTop>0`), `the letter flies with the floor scrolled (${tag}): the floor did not scroll`);
+      /* the scrollbar narrows the floor and the office lays out again: fire only once a plate stands still (two reads 400 ms apart) */
+      let prev = '';
+      assert.ok(await until(`(()=>{const p=document.querySelector('#stage .ro-plate[data-id]');return !!p&&document.getElementById('floor').scrollTop>0})()`, 3000), `the letter flies with the floor scrolled (${tag}): the floor scrolled back`);
+      for (let k = 0; k < 10; k++) { const now = await js(`(()=>{const r=document.querySelector('#stage .ro-plate[data-id]').getBoundingClientRect();return r.left+','+r.top})()`); if (now === prev) break; prev = now; await ctx.sleep(400); }
     }
     await fire(`the letter flies in the ${WORLD} at ${tag}`);
     assert.ok(await until(`${ran}>=1`, 5000), `the letter flies in the ${WORLD} at ${tag}: the run never fired`);
