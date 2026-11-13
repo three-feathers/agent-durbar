@@ -192,6 +192,7 @@ try {
   const viaRun = hangs(() => gitRun(tmp, ['hash-object', '-w', '--stdin'], { input: 'x', gitCmd: [process.execPath, sleeper], timeoutMs: 1000 }));
   assert.ok(viaRun.err, 'FR-095 timeout: gitRun did not fail on a hung child');
   assert.strictEqual(viaRun.err.message, 'git hash-object timed out after 1000 ms (killed)', 'FR-095 timeout: message names the command and the timeout');
+  assert.strictEqual(viaRun.err.code, 'ETIMEDOUT', 'FR-095 timeout: the error carries code ETIMEDOUT (callers that swallow ordinary git failures rely on it)');
   assert.ok(viaRun.ms < 6000, `FR-095 timeout: failed after ${viaRun.ms} ms, not within a few seconds`);
   d = repo(); markMain(d);
   const viaPlumb = hangs(() => plumbCommit(d, 'HEAD', { 'a.txt': 'a' }, 'm', null, { gitCmd: [process.execPath, sleeper], timeoutMs: 1000 }));
@@ -199,6 +200,13 @@ try {
   assert.ok(viaPlumb.ms < 6000, 'FR-095 timeout: plumbCommit failed within a few seconds');
   assert.throws(() => gitRun(d, ['-c', 'a=b', 'rev-parse', '--verify', 'nope-not-a-ref'], {}), (e) => e.code !== 'ETIMEDOUT' && !/timed out/.test(e.message), 'FR-095 timeout: an ordinary git failure is not reported as a timeout');
   assert.throws(() => gitRun(d, ['rev-parse', 'nope-not-a-ref']), (e) => e.status === 128 && /ambiguous argument 'nope-not-a-ref'/.test(String(e.stderr)), 'FR-095 failure: an ordinary git failure keeps its exit status (128) and stderr');
+
+  // the other test scripts' git children go through gitRun, the one place with the timeout (FR-031): none starts git by hand
+  for (const f of ['test-changelog.js', 'test-check-posts.js', 'test-moments-registry.js', 'test-spec-numbers.js', 'test-usage.js']) {
+    const src = fs.readFileSync(path.join(__dirname, f), 'utf8');
+    assert.ok(/\bgitRun\(|\bplumbCommit\(/.test(src), `FR-095 routed: ${f} does not use gitRun`);
+    assert.ok(!/(execFileSync|spawnSync|execFile|spawn)\(\s*'git'/.test(src) && !/killSignal/.test(src), `FR-095 routed: ${f} starts git by hand instead of through gitRun`);
+  }
 
   // the real allow-list of this repository parses clean
   const real = pb.parseAllow(fs.readFileSync(path.join(__dirname, 'picture-budget-allow.txt'), 'utf8'));
