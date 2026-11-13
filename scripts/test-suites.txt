@@ -97,6 +97,7 @@ test:remote
 test:truth
 test:activity
 test:authcheck
+test:signinapp
 test:account
 test:autherrors
 test:autopilot

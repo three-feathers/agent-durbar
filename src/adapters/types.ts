@@ -7,6 +7,7 @@
 import type { FolderSetupStart } from '../shared/foldersetup';
 import type { ElicitAction, ElicitAnswer, ElicitRequest } from '../shared/elicit';
 import type { McpServerSpec } from '../shared/mcp';
+import type { SignInAppChoice } from '../shared/signinapp';
 import type { AutoTier, CompactResult, ContextTier, ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
 import type { AdapterCapabilities, PermissionMode } from './capabilities';
 import type { McpContextReport, McpContextServer } from '../shared/mcpcost';
@@ -824,6 +825,13 @@ export interface AgentAdapter {
    * process per session needs nothing. Never takes or returns a token.
    */
   refreshAuth?(): Promise<void>;
+  /**
+   * Spec 058 FR-238 (`capabilities.signInAppChoice`): the app (client) ID choice for the agent app's own Microsoft Entra MCP sign-in, as
+   * plain data (FR-233; undefined = none stored, the adapter's default). Stores it only: the next client the adapter starts uses it, so a change is applied with
+   * `refreshAuth()` (FR-237). Returns the client ID the adapter will hand to its agent app (the default's too), or undefined for none, so main can keep it out
+   * of every text it logs, copies or shows (FR-236). Never a secret.
+   */
+  setSignInApp?(choice: SignInAppChoice | undefined): string | undefined;
   /** True while the session is open in this adapter. */
   isLive(sessionId: string): boolean;
   /** Stop every session and free the runtime. */

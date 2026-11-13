@@ -26,6 +26,7 @@ import { accountCheck, createAccountCache } from '../accounts';
 import { createQuotaCache, quotaCheck, quotaIpcAnswer } from '../quota';
 import { copilotDir, copilotServerNames } from '../mcpfiles';
 import type { createRemoteOps } from '../remoteops';
+import { refreshAdapterAuth } from '../remoteops';
 
 export interface HarnessIpcDeps {
   dev: DevEnv;
@@ -95,11 +96,7 @@ export function register(deps: HarnessIpcDeps): HarnessIpc {
     afterSignIn: async (kind: string) => {
       accounts.forget(kind); // spec 051 FR-014: the account line is asked again after a sign-in
       quota.forget(kind); // spec 011 FR-084: the figures of the account before this sign-in are dropped
-      const ad = router.created().find((x) => x.id === kind);
-      if (!ad?.refreshAuth) return;
-      // spec 012 FR-158 / 054 FR-011: a reconnected session is not remote any more; say so instead of keeping a stale Remote chip
-      for (const id of remoteOps.ids()) if (router.adapterIdOf(id) === kind) { remoteOps.forget(id); toRenderer('agents:remoteOff', id); }
-      await ad.refreshAuth();
+      await refreshAdapterAuth({ router, remoteOps, toRenderer }, kind); // spec 012 FR-158 / 054 FR-011
     },
     realpath: (p: string) => fs.realpathSync(p),
     trustedPath: (p: string) => process.platform === 'win32' || posixTrusted(p, (q) => fs.statSync(q).mode),

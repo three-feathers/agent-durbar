@@ -107,6 +107,7 @@ export const SIM_OPTIONAL_MEMBERS: Readonly<Record<string, ((c: Caps) => boolean
   resolvePermission: null, revokeGrant: null, revokeCall: null, setModel: null, cancelQueuedModel: null, compact: null, resolvePlan: null,
   answerQuestion: null, answerElicitation: null, listAgentProfiles: null, reloadAgentProfiles: null, agentProfileOfFile: null, selectAgentProfile: null, authStatus: null, verifySignIn: null, accountInfo: null,
   refreshAuth: null, resumeIdOf: null, debug: null, writeGuard: null,
+  setSignInApp: null, // spec 058 FR-238: absent from the stand-in (the simulator starts no client to hand an app to)
   readOrgPolicy: null, // spec 076 FR-198: absent from the stand-in; the simulator's canned policy is the window's (?simorgpolicy=1)
   listSlashCommands: null, expandSlashCommand: null, // spec 073: no capability; absent from the stand-in, so no "/" list and no expansion under the simulator
 });

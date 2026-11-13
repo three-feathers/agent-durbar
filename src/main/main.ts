@@ -44,6 +44,7 @@ import { NotesStore } from './notesstore';
 import { NotesFile } from './notesfile';
 import { register as registerQuestionsIpc } from './ipc/questions';
 import { register as registerRemoteIpc } from './ipc/remote';
+import { refreshAdapterAuth } from './remoteops';
 import { register as registerHeldMigIpc } from './ipc/heldmig';
 import { HeldBeforeUpdate, discardAside, loadHeld, saveHeld } from './doormigrate';
 import { register as registerSchedulesIpc } from './ipc/schedules';
@@ -86,7 +87,8 @@ import { navigationAllowed, permissionAllowed } from './hardening';
 import type { ChatFileRef } from '../adapters/vscodeChat';
 import { McpStore } from './mcpstore';
 import { AgentStateTracker } from './mcp/agentstate';
-import { maskMcpEvent, maskMcpHistory } from './mcpmask';
+import { maskMcpEvent, maskMcpHistory, maskSignInAppText, setSignInAppMaskId } from './mcpmask';
+import type { SignInAppChoice } from '../shared/signinapp';
 import { registerMcpIpc, safeStorageCodec } from './mcpipc';
 import { MCP_SIGNIN_REFRESH_DEFAULT } from './mcpsigninrefresh';
 import { McpCostStore } from './mcpcosts';
@@ -399,7 +401,7 @@ router.onEvent((e) => onAutoTierFailed(e, agents, folderStore, wsKey));
 // Dev/test: DURBAR_LOG=/path/events.jsonl records every normalized event and what is sent to the SDK.
 if (dev.DURBAR_LOG) {
   const logFile = dev.DURBAR_LOG;
-  const write = createDebugSink(logFile, process.env, fs.appendFileSync); // redacts once, at the sink (spec 012 FR-006)
+  const write = createDebugSink(logFile, process.env, (f, d) => fs.appendFileSync(f, maskSignInAppText(d))); // redacts once, at the sink (spec 012 FR-006); spec 058 FR-236: no sign-in app ID in any line
   router.onEvent((e) => write({ t: Date.now(), event: outward(e) })); // FR-022: the sink's redact() does not know a folder extra's secret values
   router.setDebug((m) => write({ t: Date.now(), debug: m }));
 }
@@ -851,7 +853,20 @@ const worldsIpc = registerWorldsIpc({ simulator: SIMULATOR }); // spec 102 T022:
 registerSchedulesIpc({ getScheduler: () => scheduler, getFolderStore: () => folderStore });
 registerUsageIpc({ agents, getUsageStore: () => usageStore, getUsageTotalsStore: () => usageTotalsStore, usageLabel });
 const newFolderIpc = registerNewFolderIpc({ addMany, getSettingsStore: () => settingsStore, asEffort, toRenderer }); // spec 093: create a folder from + Folder (clone, new repository, empty folder)
-registerSettingsIpc({ getSettingsStore: () => settingsStore, getRunTheme: () => runTheme, clearRunTheme: () => { runTheme = undefined; } });
+/**
+ * Spec 058 FR-236..FR-238: hand the stored Copilot sign-in app value to the Copilot adapter (created for it if need be: no client starts
+ * here) and keep the client ID it will use, the default's (VS Code's) included, out of every masked text. Under the simulator the
+ * stand-in has no `setSignInApp`, so nothing is handed or masked.
+ */
+const handSignInApp = (choice: SignInAppChoice | undefined): void => {
+  const has = registry.has('copilot') && registry.get('copilot')?.capabilities?.signInAppChoice === true;
+  setSignInAppMaskId(has ? router.instance('copilot').setSignInApp?.(choice) : undefined);
+};
+registerSettingsIpc({
+  getSettingsStore: () => settingsStore, getRunTheme: () => runTheme, clearRunTheme: () => { runTheme = undefined; },
+  // spec 058 FR-237: after a saved change: the adapter gets the choice first, then its shared client reconnects (spec 012 FR-158)
+  signInApp: { hand: handSignInApp, reconnect: () => refreshAdapterAuth({ router, remoteOps, toRenderer }, 'copilot') },
+});
 registerThemesIpc({ dev });
 const harnessIpc = registerHarnessIpc({
   dev, registry, router, remoteOps, toRenderer, getWin: () => win, adaptersList,
@@ -1109,6 +1124,7 @@ app.whenReady().then(() => {
   folderStore = new FolderStore(path.join(app.getPath('userData'), 'durbar-folders.json'));
   settingsStore = new SettingsStore(path.join(app.getPath('userData'), 'durbar-settings.json'));
   settingsStore.load();
+  handSignInApp(settingsStore.copilotSignInApp); // spec 058 FR-237: the stored choice reaches the adapter before its first client starts
   /* Dev/test theme seed (spec 036 FR-005): DURBAR_THEME=<id> makes the office open on that theme for the per-theme checks; invalid ids fall back in the renderer. */
   if (dev.DURBAR_THEME) runTheme = parseThemeId(dev.DURBAR_THEME);
   mcpStore = new McpStore(path.join(app.getPath('userData'), 'durbar-mcp.json'), safeStorageCodec);

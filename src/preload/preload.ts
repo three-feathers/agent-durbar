@@ -88,6 +88,7 @@ const api: DurbarApi = {
   setCheckUpdatesAtStart: (on) => ipcRenderer.invoke('settings:setCheckUpdatesAtStart', on),
   setDiagnostics: (on) => ipcRenderer.invoke('settings:setDiagnostics', on), // spec 058 FR-227
   setMcpSignInRefresh: (on) => ipcRenderer.invoke('settings:setMcpSignInRefresh', on === true), // spec 058 FR-213
+  setCopilotSignInApp: (choice) => ipcRenderer.invoke('settings:setCopilotSignInApp', choice), // spec 058 FR-233..FR-237: main checks the value
   harnessPaste: (text) => ipcRenderer.invoke('harness:paste', text),
   harnessCancel: () => ipcRenderer.invoke('harness:cancel'),
   harnessOpenPage: (kind) => ipcRenderer.invoke('harness:openPage', kind),

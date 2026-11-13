@@ -6,6 +6,8 @@ import { aboutView } from '../../shared/about';
 import { mcpWarnDefaults } from '../../shared/mcpcost';
 import type { SettingsStore, Saved } from '../settings';
 import { MCP_SIGNIN_REFRESH_DEFAULT } from '../mcpsigninrefresh';
+import { SIGN_IN_APP_REFUSED, parseSignInApp, sameSignInApp } from '../../shared/signinapp';
+import type { SignInAppChoice } from '../../shared/signinapp';
 
 export interface SettingsIpcDeps {
   /** Created when the app is ready: read when a handler runs. */
@@ -13,12 +15,18 @@ export interface SettingsIpcDeps {
   /** DURBAR_THEME (spec 040 FR-008): a theme for this run only, never saved; a pick in Settings replaces it. */
   getRunTheme(): string | undefined;
   clearRunTheme(): void;
+  /**
+   * Spec 058 FR-237: after a saved change of the Copilot sign-in app (never for a refused value, a failed save or the same value), in
+   * this order: `hand` gives the choice to the adapter (FR-238), then `reconnect` restarts its shared client (`refreshAuth`, spec 012
+   * FR-158). Awaited before the reply.
+   */
+  signInApp?: { hand(choice: SignInAppChoice | undefined): void; reconnect(): Promise<void> };
 }
 
 export function register(deps: SettingsIpcDeps): void {
   const { getRunTheme, clearRunTheme } = deps;
   const settingsStore = deps.getSettingsStore;
-  ipcHandle('settings:get', () => ({ ...(settingsStore()?.autopilotLimit !== undefined ? { autopilotLimit: settingsStore()?.autopilotLimit } : {}), defaultMaxAiCredits: settingsStore()?.defaultMaxAiCredits, placeMap: settingsStore()?.placeMap ?? {}, customPlaces: settingsStore()?.customPlaces ?? [], seriousMode: settingsStore()?.seriousMode ?? false, motion: settingsStore()?.motion ?? true, stillHighlights: settingsStore()?.stillHighlights ?? false, autoFollowWork: settingsStore()?.autoFollowWork ?? false, notifyNeedsMe: settingsStore()?.notifyNeedsMe ?? true, breakResume: settingsStore()?.breakResume ?? 'auto', chatLinksIn: settingsStore()?.chatLinksIn ?? 'session', mcpSignInRefresh: settingsStore()?.mcpSignInRefresh ?? MCP_SIGNIN_REFRESH_DEFAULT, diagnostics: settingsStore()?.diagnostics ?? false, mcpWarnLevels: settingsStore()?.mcpWarnLevels, theme: getRunTheme() ?? settingsStore()?.theme ?? 'clean-office', characters: settingsStore()?.characters ?? 'theme', unsaved: settingsStore()?.unsavedKeys ?? [], about: aboutView(app.getVersion()) }));
+  ipcHandle('settings:get', () => ({ ...(settingsStore()?.autopilotLimit !== undefined ? { autopilotLimit: settingsStore()?.autopilotLimit } : {}), defaultMaxAiCredits: settingsStore()?.defaultMaxAiCredits, placeMap: settingsStore()?.placeMap ?? {}, customPlaces: settingsStore()?.customPlaces ?? [], seriousMode: settingsStore()?.seriousMode ?? false, motion: settingsStore()?.motion ?? true, stillHighlights: settingsStore()?.stillHighlights ?? false, autoFollowWork: settingsStore()?.autoFollowWork ?? false, notifyNeedsMe: settingsStore()?.notifyNeedsMe ?? true, breakResume: settingsStore()?.breakResume ?? 'auto', chatLinksIn: settingsStore()?.chatLinksIn ?? 'session', mcpSignInRefresh: settingsStore()?.mcpSignInRefresh ?? MCP_SIGNIN_REFRESH_DEFAULT, copilotSignInApp: settingsStore()?.copilotSignInApp, diagnostics: settingsStore()?.diagnostics ?? false, mcpWarnLevels: settingsStore()?.mcpWarnLevels, theme: getRunTheme() ?? settingsStore()?.theme ?? 'clean-office', characters: settingsStore()?.characters ?? 'theme', unsaved: settingsStore()?.unsavedKeys ?? [], about: aboutView(app.getVersion()) }));
   /* issues #1023, #1094: a setter answers `{ok, value}`, `ok` only when the write reached disk, so a failed write of a value already in force is not "Saved" */
   const setting = <K extends string, T>(key: K, fallback: T, set: (st: SettingsStore, v: unknown) => Saved<T>, want: (v: unknown) => unknown = (v) => v, unsavedKey?: string) => (_e: unknown, v: unknown) => {
     const st = settingsStore();
@@ -42,6 +50,23 @@ export function register(deps: SettingsIpcDeps): void {
   ipcHandle('settings:setDiagnostics', setting('diagnostics', false, (st, v) => st.setDiagnostics(v)));
   /* spec 058 FR-213: Refresh MCP sign-ins automatically (on unless turned off); a non-boolean keeps the setting */
   ipcHandle('settings:setMcpSignInRefresh', setting('mcpSignInRefresh', MCP_SIGNIN_REFRESH_DEFAULT, (st, v) => st.setMcpSignInRefresh(v)));
+  /*
+   * spec 058 FR-233..FR-237: the Copilot sign-in app. `null` = the default again, `{ mode: 'off' }` = Off; anything else is checked here again (the window's check is a
+   * convenience): a refused value is not stored, not echoed and not logged, the reply is the fixed FR-235 text and the value in force.
+   * A saved change of the app in force (only `ok`) is handed to the adapter and reconnects it; the same app again (also a stored
+   * `vscode` for the default), or a failed save, restarts nothing.
+   */
+  const saveSignInApp = setting<'copilotSignInApp', SignInAppChoice | undefined>('copilotSignInApp', undefined, (st, v) => st.setCopilotSignInApp(v));
+  ipcHandle('settings:setCopilotSignInApp', async (e: unknown, v: unknown) => {
+    const before = settingsStore()?.copilotSignInApp;
+    if (v !== null && !parseSignInApp(v)) return { ok: false, error: SIGN_IN_APP_REFUSED, copilotSignInApp: before };
+    const r = saveSignInApp(e, v);
+    if (r.ok && !sameSignInApp(before, r.copilotSignInApp)) {
+      deps.signInApp?.hand(r.copilotSignInApp);
+      try { await deps.signInApp?.reconnect(); } catch { /* the sessions say so on their cards (FR-158); the value is saved */ }
+    }
+    return r;
+  });
   /* spec 068 FR-006: what happens when a coffee break ends ('auto' or 'ask'; anything else keeps the setting) */
   ipcHandle('settings:setBreakResume', setting<'breakResume', 'auto' | 'ask'>('breakResume', 'auto', (st, v) => st.setBreakResume(v)));
   /* spec 080 FR-031: where a plain click on a chat link opens. A preference like the others here (the window's trust boundary); the URL of a click is checked in main whichever it is. */
