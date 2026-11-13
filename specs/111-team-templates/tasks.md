@@ -54,7 +54,7 @@
 
 ## G8: starter templates (P2, junior)
 
-- [ ] T026 [G8] `src/shared/teamstarters.ts` with Q5's starters (Read-only, default app, no model, no cap, briefs at most 600 characters ending with `SAFETY_LINES` word for word, no tool, app, path or vendor named), listed first in Settings and the add flows. Test: each passes `checkTeamTemplate(level own)`; none Allow all, none with model, effort or cap; safety lines present. [FR-070..FR-073]
+- [ ] T026 [G8] `src/shared/teamstarters.ts` with Q5's starters (Read-only, default app, no model, no cap, briefs at most 600 characters ending with `SAFETY_LINES` word for word, no tool, app, path or vendor named), listed first in Settings and the add flows. Test: each passes `checkTeamTemplate(level own)`; none Allow all, none with model, effort or cap; safety lines present. [FR-070..FR-073] Duplicating a starter: `teams:duplicate` only knows stored ids, so this task decides how a starter is copied (review of #1661).
 
 ## G9: spec 109 section (P3, senior; only when spec 109 is built)
 
