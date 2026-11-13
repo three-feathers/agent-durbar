@@ -151,6 +151,13 @@ Retired spec numbers, never to be reused for a new spec (`specs:check` and `--ad
 
 ## Changes
 
+### 2026-11-13: every UI driver awaits `H.key`, and a check in `npm test` keeps it so (FR-268, T176; issue #1653)
+
+*Found* while fixing #1651 (PR #1652): `H.key` (`scripts/driver-helpers.js`) sends its events with `sendInputEvent`, which returns before the page handles the key; its `pause` is the only wait. A driver that calls it without `await` (or through a wrapper `const key = (...) => H.key(...)` without `await`) goes on to the next step while the key is still on its way, so on a busy runner the key can land after that step.
+
+- **FR-268** `[KNOWN GAP]` (T176) `test:` `test:uisuite` **Every call of `H.key` and of a wrapper of it in `scripts/*.js` is awaited, returned or passed on, and a check fails on one that is not.** `checkKeyAwait(file, text)` in `scripts/test-ui-suite.ts` (next to FR-097's `checkDriverSource`, the same line-based guard over `scripts/*.js`, so no second mechanism) finds `H.key(` and each name defined as a wrapper of it (a line holding `H.key(` in its definition) and fails a call whose preceding token starts a statement (line start, `;`, `{`, `}`, `)`, `else`) unless the call is followed by `.then(` or `.catch(`; `await`, `return`, `=>`, `(`, `,`, `[` and `=` before it pass. Each driver that called a key bare now awaits it, and where the next step reads what the key changes it already waits for that effect with `until`; no other behaviour changes. `test:` the check fires on a sample bad line and on a bad wrapper call, and passes the awaited, returned and `.then` forms; mutant: an un-awaited call planted in a copy of a real driver dies at `the key check catches a bare H.key call`. `[KNOWN GAP]` a line-based check: a call whose `await` is on the previous line, or a key started through another name (`const k = H.key; k(...)`), is not seen; windows and macOS were not run.
+- Numbers checked 2026-11-13 with `npm run specs:numbers`: FR-268 and T176 are free.
+
 ### 2026-11-09: test:electroncache works in a worktree whose node_modules is a symlink (FR-196, T152; issue #1391)
 
 `checksumsPath()` returns the real path (`require.resolve`), so through a symlinked `node_modules` (our worktree convention) or a Windows junction it points outside the checkout, and the test's `path.relative(root, ...) === 'node_modules/electron/checksums.json'` failed there although the cache code was right.
