@@ -2275,4 +2275,4 @@ html[data-flat-look]:not([data-ui]):not([data-world])[data-density="compact"] :i
 
 /* spec 102 T340: strips that gave way in the arcade: hidden, or an overlay under #stripBar that takes no office height */
 body.strips-yield .notice-strip:not(#stripBar){display:none}
-body.strips-yield.strips-open .notice-strip:not(#stripBar):not([hidden]){display:flex;position:fixed;left:0;right:0;z-index:60;box-shadow:0 6px 14px color-mix(in srgb,var(--ink) 18%,transparent)}
+body.strips-yield.strips-open .notice-strip:not(#stripBar):not([hidden]){display:flex;position:fixed;left:0;right:0;z-index:60;box-shadow:var(--shadow-pop)}
