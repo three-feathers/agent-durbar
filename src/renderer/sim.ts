@@ -3485,7 +3485,11 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         if (!started) {
           started = true;
           // After the renderer has registered the infos, replay each agent's script.
+          /* simlate=<ms> (spec 097 FR-363, issue #1238): the replay starts that much later, so the first states arrive after the page's first frame (a check's forced race); absent = 0, unchanged */
+          const late = Math.max(0, Math.min(2000, Number(typeof location !== 'undefined' ? new URLSearchParams(location.search).get('simlate') : null) || 0));
+          const listedAt = typeof performance !== 'undefined' ? performance.now() : 0;
           setTimeout(() => {
+            if (late > 0) (window as unknown as { __durbarSimReplayDelay?: number }).__durbarSimReplayDelay = Math.round(performance.now() - listedAt); // the check reads it: a simlate that is ignored shows 0
             sims.forEach(play);
             if (opts.edits && sims[0]) simEdits(sims[0]); // spec 005 FR-026
             /* spec 008 FR-113: every script has run (a frozen simulator emits nothing more); the page's settleNow() test hook reads it */
@@ -3497,7 +3501,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
               const screenTimer = window.setInterval(screenTick, Math.round(1300 / speed));
               if (typeof window.addEventListener === 'function') window.addEventListener('pagehide', () => { window.clearInterval(screenTimer); if (timer) window.clearInterval(timer); }, { once: true });
             }
-          }, 0);
+          }, late);
         }
         /* simresume=1 (spec 006 FR-021): Priya's folder came back after a restart as its last session, not started yet */
         if (typeof location !== 'undefined' && new URLSearchParams(location.search).get('simresume') === '1') {

@@ -330,6 +330,11 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 
 - [x] T299 [US2] FR-358: `drawSlips` writes `data-variant` before measuring a variant's box (`src/renderer/realoffice.js`). Test: `sim:` `check-097-slip-plates` (new, in `ui-suite`), the slips made fresh and measured in the draw's own task, then at once after the page's first draw; fails without the line in every run.
 
+## 2026-11-11: one layout search at start (FR-363, issue #1238)
+
+- [x] T303 [US5] FR-363: `renderOffice` returns before it counts a render while the simulator's replay is pending; `simlate=<ms>` in `src/renderer/sim.ts`; `check-office-ops` rows `searchesAtStart@late15/@late40` (limit 1) and `lateReplayDelay@late15/@late40` (minimum 50). Test: `sim:` check-office-ops 3 runs; mutants `renderOffice` gate removed (the late rows fail: 2 searches) and `simlate` ignored (the delay row fails)
+- [x] T320 [US5] FR-363 (World stylesheet start order): the Photo floor moves from the base `.ro` / `.ro-strip` rules of `src/renderer/realoffice.css` to the `[data-world="photo"]` selector; `check-097-crews` delays `world.css` by 400 ms in every load. Test: `sim:` check-097-crews 'packs requested'; mutant: the base rule naming the Photo floor again fails at that label
+
 ## 2026-11-11: the pointer-event log of three flaky drivers (issue #1448)
 
 - [x] T302 [US2] Spec delta 2026-11-11: `H.pointerStep` in `scripts/driver-helpers.js` records the page's pointer events in a 200-event ring during the pointer steps of `check-097-drag`, `check-097-hover-card` and `shots-097-screens`, prints them only when the step's assertion fails (then rethrows the same error), prints nothing on a pass; diagnostic only, no retry or limit change. Test: `test:pointer-log` (bounded ring, forced failure prints, pass is silent, five mutants killed: print removed, events not printed, prints on a pass, ring unbounded, another error thrown). Run by the author on the Mac lane's own Mac, not reproduced by anyone else: 3 plain runs each of `check-097-drag`, `check-097-hover-card` and `shots-097-screens`, one driver at a time (`UI_SUITE_JOBS=1`), no `[pointer-log]` line
