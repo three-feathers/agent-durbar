@@ -50,3 +50,4 @@
 - [x] T066 Second review on #492 (Paco's agent, change 2026-10-22): copies refuse unknown fields and non-string values (named), Codex `env` numbers and multi-line strings not copyable, copy into a 0644 file leaves it 0600 (via T065), copy review wording; mutation-checked [FR-006, FR-023]
 - [x] T069 FR-067 (change 2026-11-03): a *Tools* button with icon and count per row; tool rows inside the card, description clamped to 2 lines; driver `shots-069-mcp-tools` (25 long tools, contrast, size, keyboard, overflow)
 - [x] T070 FR-068 (change 2026-11-03): per-tool "about" sizes and the row figure over the ticked tools; driver step and mutations
+- [x] T071 FR-069 (change 2026-11-12, issue #1624): Settings keeps its scroll and focus when a switch repaints it; `check-069-toggle-scroll` with mutations
