@@ -62,10 +62,10 @@ module.exports = async (ctx) => {
     return {css:s.backgroundColor,bg:t(bg),fg:t(fg),panel:t(panel),op:Math.round(op*100)/100,ratio:Math.round(r*100)/100};})()`;
   /* both builders are the app's own: dialog.js's askDialog for app.js and profileeditor.js, and screens.js's `dialog()` (exposed as DurbarScreens.dialog for the folder-setup list) for screens.js */
   const OPEN = (site) => {
-    const btns = `[{label:'Cancel',value:null},{label:${jsLiteral(site.label)},value:'ok',cls:'primary danger'}]`;
-    if (!site.screens) return `(()=>{window.DurbarDialog(document)({title:'Check',body:'A destructive confirmation.',buttons:${btns}});return 1})()`;
+    const btns = [{ label: 'Cancel', value: null }, { label: site.label, value: 'ok', cls: 'primary danger' }];
+    if (!site.screens) return `(()=>{window.DurbarDialog(document)({title:'Check',body:'A destructive confirmation.',buttons:${jsLiteral(btns)}});return 1})()`;
     /* DANGER_MUTANT=screens: screens.js's markup changed, the button row left the dialog; the driver must fail at "the dialog opened" for this label */
-    return `(()=>{window.DurbarScreens.dialog({title:'Check',html:'<p class="dsub">A destructive confirmation.</p>',buttons:${btns}});
+    return `(()=>{window.DurbarScreens.dialog({title:'Check',html:'<p class="dsub">A destructive confirmation.</p>',buttons:${jsLiteral(btns)}});
       ${process.env.DANGER_MUTANT === 'screens' ? `const o=document.getElementById('scrDlg');o.appendChild(o.querySelector('.dbtn'));` : ''}return 1})()`;
   };
   const mutate = (kind) => js(`(()=>{let n=0;for(const s of document.styleSheets){let rules;try{rules=s.cssRules}catch(e){continue}
