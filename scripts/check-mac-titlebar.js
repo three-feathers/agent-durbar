@@ -32,7 +32,7 @@ const TL = { x: 78, y: 40 }; /* traffic-light box: the hiddenInset default, not 
 const MIN_CHAT_GRAB = 32; /* px wide, with 24px of height */
 const SIZES = [[1440, 900], [1280, 800]];
 /* spec 052 FR-138 (2026-11-11, issue #1538): narrower windows, where the Settings title's own padding used to win over the Mac room: the
-   991..1208 range (the title is at max(24, W/2 - 526)), the 760..990 range and the row layout under 760. Only Settings over a chat runs here (the Tools header's own grab width at 760 px and below is a separate matter). */
+   991..1208 range (the title is at max(24, W/2 - 526)), the 760..990 range and the row layout under 760. Only Settings over a chat runs here (the Tools and folder headers at 760 px and below are in the block after the Settings states). */
 const NARROW = [[1208, 800], [1100, 800], [991, 800], [900, 800], [760, 800], [759, 800], [700, 800]];
 
 /* runs in the page */
@@ -202,6 +202,17 @@ async function run(ctx) {
     await js(`window.DurbarScreens.openSettings()`); await rec('chat-settings', size, 'chat');
     await js(`window.DurbarScreens.close()`); await ctx.sleep(300);
     await showRestore(); await js(`window.DurbarScreens.openSettings()`); await rec('chat-strip-settings', size, 'chat'); await js(`window.DurbarScreens.close()`); await reset();
+    /* issue 1548: the Tools header over a chat (title, period, scope, tabs, Close) and the other screen headers at the narrow widths: the title is not a control, so it drags */
+    if (w <= 760) {
+      const head = async (what) => { await ctx.sleep(500); if (!(await js(`!!document.querySelector('#screen:not([hidden]) .scr-head h2')`))) throw new Error('no screen header for ' + what); };
+      await openChat();
+      for (const [tab, name] of [[null, 'chat-tools'], ['agents', 'chat-tools-models'], ['cost', 'chat-tools-cost'], ['activity', 'chat-tools-activity']]) {
+        await js(`window.DurbarScreens.openTools(null, ${jsLiteral(tab)})`); await head(name); await rec(name, size, 'chat');
+        await js(`window.DurbarScreens.close()`); await ctx.sleep(300);
+      }
+      await js(`window.DurbarScreens.folderMcp('demo-folder', 'demo-folder')`); await head('folder'); await rec('chat-folder', size, 'chat');
+      await js(`window.DurbarScreens.close()`); await reset();
+    }
     if (w === 900) { await openChat(); await fullScreen(); await js(`window.DurbarScreens.openSettings()`); await rec('chat-settings-fullscreen', size, 'chat'); await js(`window.DurbarScreens.close()`); await reset(); } /* full screen: no room, the title stays at 24 */
   }
   const bad = results.filter((r) => !r.ok);
