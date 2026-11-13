@@ -313,6 +313,11 @@ Starts after the next built-in world's stack lands (FR-296, decided Q4). All beh
 
 - [x] T304 `shots-102-arcade`: the painted-pixel check treats a person whose box rounds to 0 px as BUSY (bounded 5 s re-read) and, if it stays so, fails naming `data-for`, size and style (spec Changes 2026-11-11; issue #1517). Test: `ARCADE_MUTANT=zero` passes, `ARCADE_MUTANT=zero-stuck` fails with the named person, the old code plus the same injected style died with IndexSizeError on the author's Mac (declared by the author, not reproduced by the reviewer; the old code has no mutant). The fix is not yet seen on Linux CI (spec Changes 2026-11-11 `[KNOWN GAP]`).
 
+## 2026-11-12: the Settings section list in the arcade (issue #1399)
+
+- [x] T321 `ui-suite` entry `check-settings-nav retro`: the section list over the arcade (the driver's Real office row only under `DRIVER_WORLD=retro`). Test: passes at both sizes; `NAV_MUTANT=entry` fails at "one entry per heading on the page". `[KNOWN GAP]` macOS only.
+
+
 ## 2026-11-11: the arcade plate's status word and helper dots (issue #1558)
 
 - [x] T307 The arcade plate with helpers: +N whole, then the status word whole, then dots that drop out whole in the heads' order (`.ro-wd`/`.ro-tk`/`.ro-hc`, `world.css`, `orderedHelpers` for the plate); `shots-102-arcade` marks case at both sizes and on the 122 px plate; mutants `cutword`, `cutplate`, `nodots`, `sliver`, `clipstate` each fail at their label (spec Changes 2026-11-11, 102 FR-311). **Round 3, 2026-11-12:** `.ro-wd`/`.ro-tk` are `display:contents` on the clamped (lounge, waiting, limit, asleep) plates, so the World matrix's `lounge` cells pass again; the narrow plate's ellipsis exemption in the driver tests the clipping box, `ARCADE_FONT=wide` runs it in Verdana with letter spacing; mutants `noell`, `spill` (with `ARCADE_FONT=wide`) fail at the narrow limit label (spec Changes 2026-11-12).

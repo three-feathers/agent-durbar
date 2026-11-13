@@ -3,6 +3,8 @@
  *
  *   npm run check:ui -- --only check-settings-nav
  *   OUT=<folder>  (optional) saves 052-settings-nav-{1440x900,1280x800}.png (and one per world, -<world>-)
+ *   DRIVER_WORLD=retro (ui-suite entry `check-settings-nav retro`, spec 102 T321): only the Real office row, drawn as the arcade (the other rows are not the arcade)
+ *   NAV_MUTANT=entry   (arcade row) the list loses its last button: must fail at "one entry per heading on the page"
  *
  * At 1440x900 and 1280x800, in the Flat office (Clean Office), Retro, and Real office in its worlds, the cave among them (one screen serves every world):
  *   - the list is a <nav aria-label="Settings sections"> with one button per heading that is on the page (the same labels, in page order);
@@ -22,7 +24,8 @@ const OUT = process.env.OUT || require('os').tmpdir();
 
 const SIZES = [[1440, 900], [1280, 800]];
 /* [name, theme, officeview, Real office world set by hand]: the flat office, Retro, and Real office in its three worlds (photo, the cave, the loft) */
-const WORLDS = [['flat', 'clean-office', null, null], ['retro', 'retro', null, null], ['real', null, 'real', null], ['cave', null, 'real', 'cave'], ['loft', null, 'real', 'loft']];
+const ARCADE = process.env.DRIVER_WORLD === 'retro'; // spec 102 T321: H.load draws and proves the arcade for the Real office row
+const WORLDS = ARCADE ? [['arcade', null, 'real', null]] : [['flat', 'clean-office', null, null], ['retro', 'retro', null, null], ['real', null, 'real', null], ['cave', null, 'real', 'cave'], ['loft', null, 'real', 'loft']];
 const HEADS = `.scr-body>.scr-sec>h3,.scr-body>.scr-adv>summary>h3`;
 
 module.exports = async (ctx) => {
@@ -64,6 +67,8 @@ module.exports = async (ctx) => {
     for (const [wname, theme, view, world] of WORLDS) {
       const tag = `${w}x${h} ${wname}`;
       await open(w, h, theme, view, world);
+      if (ARCADE) assert.strictEqual(await js(`document.documentElement.dataset.world`), 'retro', `${tag}: the arcade is the world shown`);
+      if (ARCADE && process.env.NAV_MUTANT === 'entry') await js(`(()=>{const b=document.querySelectorAll('#scrNav button');b[b.length-1].remove();return 1})()`);
       await emulate('no-preference');
 
       // ---- the list is built from the headings that are on the page ----
