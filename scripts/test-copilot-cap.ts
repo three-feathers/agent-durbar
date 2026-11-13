@@ -541,6 +541,49 @@ async function main(): Promise<void> {
   const probe = fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'copilot-giveup-real.ts'), 'utf8');
   assert.strictEqual((probe.match(/prompts\+\+/g) ?? []).length, 1, 'every real send of the probe goes through the one gate');
 
+  // spec 058 FR-242: records of a replay checkpoint (`checkpoint: true`, SDK 1.0.32) repeat history: no chat line, no usage, no cap total
+  {
+    const cc = new FakeClient();
+    const ca = new FakeCopilot(cc);
+    const evs: AgentEvent[] = [];
+    ca.onEvent((e) => evs.push(e));
+    const cid = await ca.start({ workspace: ws, model: 'gpt-6-luna', maxAiCredits: 30, quiet: true });
+    const cs = cc.last;
+    const replay = (type: string, data: Record<string, unknown>): void => cs.handler?.({ type, data, checkpoint: true });
+    replay('assistant.message', { messageId: 'old', content: 'said before' });
+    replay('assistant.usage', usage(29).data);
+    replay('session.usage_checkpoint', { totalNanoAiu: 40 * NANO });
+    await tick();
+    assert.ok(!evs.some((e) => e.type === 'output' || e.type === 'usage'), 'FR-242 live replay skipped: no second chat line or usage call');
+    cs.turnScript = [];
+    await ca.send(cid, { text: 'go' });
+    assert.strictEqual(sends(cs), 1, 'FR-242 live replay skipped: a replayed total over the cap holds nothing');
+    assert.ok(!evs.some((e) => e.type === 'limit'), 'FR-242: no limit from replayed usage');
+    // a replayed limit request still shows (fail safe: the agent waits for an answer)
+    replay('session_limits_exhausted.requested', { requestId: 'rq', maxAiCredits: 30, usedAiCredits: 31 });
+    await tick();
+    assert.ok(evs.some((e) => e.type === 'limit' && (e as { requestId?: string }).requestId === 'rq'), 'FR-242: a replayed limit request is still shown');
+    // spec 058 FR-242 (trackCap): a replayed OLDER usage_checkpoint and a replayed usage leave the live used total unchanged
+    {
+      const live = (ca as unknown as { sessions: Map<string, { usedCheckpointNano?: number; usedSinceNano?: number }> }).sessions.get(cid)!;
+      const usedNow = (): number => ((live.usedCheckpointNano ?? 0) + (live.usedSinceNano ?? 0)) / NANO;
+      cs.handler?.({ type: 'session.usage_checkpoint', data: { totalNanoAiu: 20 * NANO } }); // the session's own total
+      cs.handler?.({ type: 'assistant.usage', data: usage(2).data }); // and its own call since
+      await tick();
+      assert.strictEqual(usedNow(), 22, 'FR-242 trackCap: own records counted (20 + 2)');
+      replay('session.usage_checkpoint', { totalNanoAiu: 5 * NANO });
+      replay('assistant.usage', usage(9).data);
+      await tick();
+      assert.strictEqual(usedNow(), 22, 'FR-242 trackCap: a replayed older usage_checkpoint and a replayed usage leave the used total unchanged');
+    }
+    // the session's own records still count
+    cs.handler?.({ type: 'assistant.message', data: { messageId: 'new', content: 'said now' } });
+    await tick();
+    assert.ok(evs.some((e) => e.type === 'output'), 'FR-242: an own record is shown');
+    await ca.stop(cid).catch(() => undefined);
+    await ca.dispose();
+  }
+
   await ad.stop(sid).catch(() => undefined);
   fs.rmSync(ws, { recursive: true, force: true });
   clearTimeout(watchdog);

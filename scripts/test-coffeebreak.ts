@@ -32,6 +32,7 @@ const C = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'coffeebre
   untilText(b: Break | null, auto: boolean, now: number, o?: Record<string, unknown>): string;
   backInText(b: Break | null, auto: boolean, now: number, marginMs?: number): string;
   retryable(b: Break | null, a: { limit?: unknown } | null): boolean;
+  limitWords(near: unknown): { head: string; label: string };
   MARGIN_MS: number;
 };
 
@@ -566,5 +567,10 @@ const valid = (b: EventBody): void => assert.deepStrictEqual(validateEvent({ ...
   const plain = run([{ type: 'assistant', error: 'rate_limit', message: { content: [{ type: 'text', text: 'Too many requests (429)' }] } }, { type: 'result', subtype: 'error_during_execution', is_error: true, result: 'boom' }]);
   assert.ok(!plain.some((b) => b.type === 'usageLimit') && plain.some((b) => b.type === 'status' && b.status === 'error'), 'a plain 429 error stays an error');
 }
+
+// spec 011 FR-096: the spending-limit card's words: "close to" only for the limit event's own `near: true`, else "reached" (fail safe)
+assert.deepStrictEqual(C.limitWords(true), { head: 'Close to the spending limit:', label: 'Close to spending limit' }, 'FR-096 window: near');
+assert.deepStrictEqual(C.limitWords(undefined), { head: 'Spending limit reached:', label: 'Spending limit reached' }, 'FR-096 window: reached');
+for (const v of [false, 'true', 1, null]) assert.strictEqual(C.limitWords(v).label, 'Spending limit reached', `FR-096 window: ${JSON.stringify(v)} reads reached`);
 
 console.log('coffee break tests passed');

@@ -55,7 +55,7 @@ import { copilotHomeDir, copilotSlashPlaces, SlashCache, vscodeUserPromptDirs } 
 import type { SlashPlace } from './slashcommands';
 import { cleanPlanText } from './plan';
 import { copilotQuotaReset } from './usagelimit';
-import { cleanSessionTitle, eventsToHistory, previousSessionsFor } from './history';
+import { cleanSessionTitle, eventsToHistory, isReplayedRecord, previousSessionsFor } from './history';
 import type { HistoryLimits, HistoryResult, PreviousSession } from './history';
 import { unpackedRuntimePath } from './runtime';
 import * as os from 'os';
@@ -332,6 +332,19 @@ export function copilotNameError(name: string): string | undefined {
   // eslint-disable-next-line no-control-regex
   if (/[\u0000-\u001f\u007f-\u009f]/.test(name)) return 'Copilot does not accept control characters in a name.';
   return undefined;
+}
+
+/**
+ * Spec 058 FR-243 (constitution III): SDK 1.0.30+ runtimes approve "read-only" shell commands by themselves ("Read-only shell commands no
+ * longer ask for permission"; Assisted mode may approve without a human; `read:` release notes). Every Copilot session Durbar starts or
+ * resumes with tools gets this host-injected policy, so every shell request still reaches Durbar's `onPermissionRequest` broker (Read-only
+ * denies, Ask first asks, Allow all approves, as before): `ask: ['Shell(*)']` (rule vocabulary of SDK 1.0.32 `ManagedSettingsPermissions`),
+ * Assisted mode off, and the runtime's permission mode `manual` ("normal approval flow"). The runtime keeps none of it ("startup-only, not
+ * persisted: it must be re-supplied on resume"), so it is part of the config used for create, resume and the FR-158 re-resume. A fresh
+ * object each call. `[KNOWN GAP]` until the `real:` probe (T220) that the ask rule beats the runtime's own read-only approval.
+ */
+export function copilotShellGuard(): { managedSettings: { permissions: { ask: string[]; disableAssistedPermissionsMode: true } }; permissionMode: 'manual' } {
+  return { managedSettings: { permissions: { ask: ['Shell(*)'], disableAssistedPermissionsMode: true } }, permissionMode: 'manual' };
 }
 
 /**
@@ -1034,6 +1047,8 @@ export class CopilotAdapter implements AgentAdapter {
       // reads, lists or clears it. On create AND resume (the same config), so the FR-158 reconnect re-resume keeps it; not in
       // `oneShotConfig` or `renameResumeConfig` (no MCP there).
       mcpOAuthTokenStorage: 'persistent' as const,
+      // spec 058 FR-243: the shell guard, on create AND resume (the same config; the FR-158 reconnect re-resume too)
+      ...copilotShellGuard(),
     };
     this.debug?.(`mcp: servers=[${Object.keys(options.mcpServers ?? {}).join(',')}] disabled=[${(options.disabledMcpServers ?? []).join(',')}]`);
     let session: CopilotSession;
@@ -1064,6 +1079,9 @@ export class CopilotAdapter implements AgentAdapter {
     }
     sid = session.sessionId;
     const onSessionEvent = (ev: SessionEvent): void => {
+      // spec 058 FR-242: a replayed record (`checkpoint: true`, SDK 1.0.32) repeats the session's own history: no second chat line, usage
+      // call, cap total, title or idle from it. A limit request still goes on (fail safe: an agent that waits never lacks its card).
+      if (isReplayedRecord(ev) && !String(ev.type).startsWith('session_limits_exhausted.')) return;
       // Remember an open limit request so Stop / End can answer it (the runtime waits for a consumer once interest is registered).
       const live = this.sessions.get(sid);
       if (live && ev.type === 'session_limits_exhausted.requested') live.limitRequestId = ev.data.requestId;

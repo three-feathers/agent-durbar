@@ -150,6 +150,15 @@ const tsOf = (ev: Record<string, unknown>): number | undefined => {
 };
 
 /**
+ * Spec 058 FR-242: Copilot SDK 1.0.32 marks a journal record that "belongs to a replay checkpoint rather than original session history"
+ * with `checkpoint: true` (`read:` SDK 1.0.32 `session-events.d.ts`, on every event shape). Such a record repeats what the session already
+ * has, so history, search and usage skip it. Only exactly `true` counts (a missing or other value is the session's own record).
+ */
+export function isReplayedRecord(ev: unknown): boolean {
+  return isObj(ev) && ev.checkpoint === true;
+}
+
+/**
  * Convert persisted Copilot session events (session.getEvents(), or the lines of events.jsonl) into chat history:
  * user messages, the assistant's completed messages and tool calls, in order. Sub-agent events, reasoning,
  * usage and housekeeping events are left out. Only the last `maxItems` items are kept.
@@ -161,6 +170,7 @@ export function eventsToHistory(events: readonly unknown[], limits: Partial<Hist
   for (const raw of Array.isArray(events) ? events : []) {
     if (!isObj(raw) || typeof raw.type !== 'string' || !isObj(raw.data)) continue;
     if (raw.agentId || raw.ephemeral === true) continue; // sub-agent chatter / transient events
+    if (isReplayedRecord(raw)) continue; // spec 058 FR-242: a replay checkpoint's copy, not the session's own history (else a message shows twice)
     const d = raw.data;
     switch (raw.type) {
       case 'user.message': {

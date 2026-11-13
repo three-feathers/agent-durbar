@@ -367,7 +367,12 @@ export class EventMapper {
       case 'session_limits_exhausted.requested':
         // The cap belongs to the session, so sub-agent tagging is dropped on purpose.
         if (typeof d.requestId !== 'string') return;
-        return this.emit({ type: 'limit', phase: 'exhausted', requestId: d.requestId, maxAiCredits: num(d.maxAiCredits), usedAiCredits: num(d.usedAiCredits) });
+        {
+          const max = num(d.maxAiCredits), used = num(d.usedAiCredits);
+          // spec 011 FR-096: SDK 1.0.32 asks at 90% of the cap; below the cap the words say "close to", a missing or odd number keeps "reached"
+          const near = used !== undefined && max !== undefined && Number.isFinite(used) && Number.isFinite(max) && used < max;
+          return this.emit({ type: 'limit', phase: 'exhausted', requestId: d.requestId, maxAiCredits: max, usedAiCredits: used, ...(near ? { near: true as const } : {}) });
+        }
       case 'session_limits_exhausted.completed':
         if (typeof d.requestId !== 'string') return;
         return this.emit({ type: 'limit', phase: 'resolved', requestId: d.requestId, action: str(d.response?.action) });

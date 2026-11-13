@@ -268,6 +268,23 @@ const run = (events: RawEvent[]): EventBody[] => {
   ]);
   assert.ok(out.every((e) => e.agentId === undefined), 'a limit is the session\'s, never a sub-agent\'s');
 }
+// Spec 011 FR-096 (SDK 1.0.32 asks at 90% of the cap): below the cap the limit request is marked `near`; at or over it, or with a missing
+// or odd number, it stays plain "reached" (the stronger words). SYNTHETIC: shapes from the SDK 1.0.32 types, not recorded from a real session.
+{
+  const ex = (used: unknown, max: unknown) => run([{ type: 'session_limits_exhausted.requested', data: { requestId: 'n', maxAiCredits: max, usedAiCredits: used } }])[0] as { phase?: string; near?: unknown };
+  assert.strictEqual(ex(90, 100).near, true, 'FR-096 near: used 90 of 100 reads close to the limit');
+  assert.strictEqual(ex(90, 100).phase, 'exhausted', 'FR-096: still exhausted (the agent waits for the same answer)');
+  assert.ok(!('near' in ex(100, 100)), 'FR-096 reached: used 100 of 100 is reached, not near');
+  assert.ok(!('near' in ex(101, 100)), 'FR-096 reached: over the cap');
+  assert.ok(!('near' in ex(undefined, 100)), 'FR-096 reached: used missing');
+  assert.ok(!('near' in ex(90, undefined)), 'FR-096 reached: max missing');
+  assert.ok(!('near' in ex(90, Infinity)), 'FR-096 reached: a non-finite max');
+  assert.ok(!('near' in ex('90', 100)), 'FR-096 reached: a string used');
+  assert.ok(!('near' in ex(50, undefined)), 'FR-096 reached: max missing, used 50');
+  assert.ok(!('near' in ex(50, Infinity)), 'FR-096 reached: an Infinity max, used 50 (the finite check)');
+  assert.ok(!('near' in ex(NaN, 100)), 'FR-096 reached: used NaN');
+  assert.ok(!('near' in ex(50, NaN)), 'FR-096 reached: max NaN');
+}
 
 // Model and compaction events (spec 030). SYNTHETIC: shapes follow the SDK 1.0.22 type definitions (session-events.d.ts), NOT recorded from a real session (provenance: synthetic).
 {

@@ -554,6 +554,7 @@ const simApCap = (id: string): { capUnit: 'aiu' | 'usd' | 'tokens'; attachments:
 const SIM_ORG = typeof location !== 'undefined' && new URLSearchParams(location.search).get('simorgpolicy') === '1';
 /** Spec 087 FR-022c (review on PR #833): `?simsbxlower=refuse`: the app refuses to lower a Copilot floor at the switch to Allow all (the floor is kept, the window toasts). */
 const SIM_LOWER_REFUSE = typeof location !== 'undefined' && new URLSearchParams(location.search).get('simsbxlower') === 'refuse';
+const SIM_LIMIT_NEAR = typeof location !== 'undefined' && new URLSearchParams(location.search).has('simlimitnear'); // spec 011 FR-096: the runtime asks at 90% of an AIU cap
 const simOrgText = (app: string): string => `Blocked by your organization's ${app} policy`;
 const simOrgDoubtText = (app: string): string => `Your organization's ${app} policy may block this (Agent Durbar could not read all of it)`;
 const SIM_ORG_APP: Record<string, string> = { copilot: 'Copilot', claude: 'Claude Code' };
@@ -1322,7 +1323,8 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     const unreported = (s: SimAgent): boolean => !!opts.unreported && (s.room === opts.unreported || (s.info as AgentInfo & { roomName?: string }).roomName === opts.unreported);
     const usage = (s: SimAgent): void => {
       const model = (s.models ?? MODELS)[Math.floor(rnd() * (s.models ?? MODELS).length)];
-      const nano = Math.floor((SIM_EXPENSIVE[s.info.name] ?? 0.004 + rnd() * 0.012) * 1e9);
+      // spec 011 FR-096 (`simlimitnear`): Omar spends 9.5 a call, so his third call (28.5 of 30) is past 90% and under the cap
+      const nano = Math.floor(((SIM_LIMIT_NEAR && s.info.name === 'Omar' ? 9.5 : SIM_EXPENSIVE[s.info.name]) ?? 0.004 + rnd() * 0.012) * 1e9);
       const unrep = unreported(s);
       const kc = caps(s.info.adapterId ?? 'copilot');
       // FR-066: a kind without AIU reports no nanoAiu (credits unavailable); one with a USD estimate sends it as an estimate, never as credits
@@ -1331,11 +1333,13 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       if (kc.usage.costUsd) s.usd = (s.usd ?? 0) + Math.round(nano / 1e6) / 1e4;
       const cap = kc.caps ? s.info.maxAiCredits : undefined;
       const spent = kc.capUnit === 'usd' ? s.usd ?? 0 : s.used / 1e9;
-      if (cap && !s.limitReq && spent >= cap) {
+      // spec 011 FR-096: `simlimitnear` asks at 90% of an AIU cap, as the Copilot SDK 1.0.32 runtime does (the event carries `near`)
+      const askAt = cap && kc.capUnit !== 'usd' && SIM_LIMIT_NEAR ? cap * 0.9 : cap;
+      if (cap && askAt && !s.limitReq && spent >= askAt) {
         // Like the SDK: the runtime asks the user what to do and waits (the blocked model request).
         s.limitReq = 'lim-' + sid(s) + '-' + Math.floor(s.used / 1e6);
         s.state = 'waiting';
-        emit({ type: 'limit', sessionId: sid(s), timestamp: now(), phase: 'exhausted', requestId: s.limitReq, maxAiCredits: cap, usedAiCredits: spent });
+        emit({ type: 'limit', sessionId: sid(s), timestamp: now(), phase: 'exhausted', requestId: s.limitReq, maxAiCredits: cap, usedAiCredits: spent, ...(spent < cap ? { near: true as const } : {}) });
       }
       // Like the real runtime: the context window is reported before each model call (spec 019).
       const c = s.ctx;

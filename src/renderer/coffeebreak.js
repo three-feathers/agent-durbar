@@ -146,5 +146,11 @@
     return !!b&&!!a&&b.kind==='provider'&&(b.phase==='on'||b.phase==='back'||b.phase==='resuming')&&!a.limit;
   }
 
-  return {MARGIN_MS,GAP_MS,REHIT_MS,LATE_MS,REMIND_MS,RESUME_TEXT,createBreaks,holdIds,whenText,atWhen,untilText,backInText,retryable};
+  /* Spec 011 FR-096: the spending-limit card's words. `near` (the limit event's own flag: the agent app asked below its cap, Copilot SDK
+     1.0.32 at 90%) says "close to"; anything else keeps today's "reached" (fail safe: the stronger words). Same answers either way. */
+  function limitWords(near){
+    return near===true?{head:'Close to the spending limit:',label:'Close to spending limit'}:{head:'Spending limit reached:',label:'Spending limit reached'};
+  }
+
+  return {MARGIN_MS,GAP_MS,REHIT_MS,LATE_MS,REMIND_MS,RESUME_TEXT,createBreaks,holdIds,whenText,atWhen,untilText,backInText,retryable,limitWords};
 })());

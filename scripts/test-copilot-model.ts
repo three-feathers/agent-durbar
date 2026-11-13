@@ -20,6 +20,10 @@ import { modelControlFor, NO_MODEL_CONTROL } from '../src/shared/modelswitch';
 import { startOptionsOf } from '../src/main/startopts';
 import type { ModelIpcDeps } from '../src/main/ipc/model'; // compiled for the handler test below (loaded under a stand-in electron)
 
+/** Spec 058 FR-243: the shell guard Durbar sends with every Copilot session it creates or resumes (exact shape, SDK 1.0.32 types). */
+const SHELL_GUARD = { managedSettings: { permissions: { ask: ['Shell(*)'], disableAssistedPermissionsMode: true } }, permissionMode: 'manual' };
+const guardOf = (c: Record<string, unknown>): Record<string, unknown> => ({ managedSettings: c.managedSettings, permissionMode: c.permissionMode });
+
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 /** Wait for a condition, with a generous limit (AGENTS.md: asserts that depend on timing wait, they do not sleep once). */
 const waitFor = async (what: string, cond: () => boolean, ms = 5000): Promise<void> => { const end = Date.now() + ms; while (!cond()) { if (Date.now() > end) throw new Error('timed out waiting for ' + what); await sleep(2); } };
@@ -317,6 +321,7 @@ async function main(): Promise<void> {
     assert.ok(!('contextTier' in fake.created[0]));
     assert.strictEqual(fake.created[0].enableFileHooks, false, 'spec 061 FR-017: a repository\'s own hooks never run unasked');
     assert.strictEqual(fake.created[0].mcpOAuthTokenStorage, 'persistent', 'spec 058 FR-070: MCP sign-ins kept in the OS keychain (create)');
+    assert.deepStrictEqual(guardOf(fake.created[0]), SHELL_GUARD, 'spec 058 FR-243 guard on create: every shell request reaches the broker');
     await ad.setModel(sid, { model: 'sim-deep', effort: 'high', contextTier: 'long' });
     await ad.stop(sid);
     // main saves the switched choice with the folder and passes it on the next start under the same id
@@ -329,6 +334,7 @@ async function main(): Promise<void> {
     assert.strictEqual(rc.contextTier, 'long_context');
     assert.ok(!('capi' in rc));
     assert.strictEqual(rc.mcpOAuthTokenStorage, 'persistent', 'spec 058 FR-070: also on resume by session id');
+    assert.deepStrictEqual(guardOf(rc), SHELL_GUARD, 'spec 058 FR-243 guard on resume (session id): the runtime keeps none of it');
     await ad.stop(sid);
     // an auto session that is resumed keeps the runtime's own routing when the user chose no tier (main passes none)
     const a2 = await ad.start({ workspace: dir, resumeSessionId: sid, model: 'auto', quiet: true });
@@ -336,6 +342,7 @@ async function main(): Promise<void> {
     assert.strictEqual(fake.resumed[1].config.model, 'auto');
     assert.strictEqual(fake.resumed[1].config.enableFileHooks, false, 'spec 061 FR-017: also on resume');
     assert.strictEqual(fake.resumed[1].config.mcpOAuthTokenStorage, 'persistent', 'spec 058 FR-070: also on resume (resumeSessionId)');
+    assert.deepStrictEqual(guardOf(fake.resumed[1].config), SHELL_GUARD, 'spec 058 FR-243 guard on resume (resumeSessionId)');
     await ad.stop(a2);
     // spec 007 FR-016: a tier the user chose and Durbar saved goes on resume
     const a2b = await ad.start({ workspace: dir, resumeSessionId: sid, model: 'auto', autoTier: 'balance', quiet: true });

@@ -1775,7 +1775,7 @@ function realSlips(){
     if(card.classList.contains('limit')){
       if(out.limit)continue; /* one slip at the Bank; the next waits in the inbox */
       const inp=card.querySelector('.limit-amt'), btns=[...card.querySelectorAll(':scope > .note-actions button')];
-      out.limit={id:a.id,req:reqOf(card),name:a.name,who:a.name+' · '+who+' · at the Bank',text:requestText(card),input:inp?{label:inp.getAttribute('aria-label')||'',value:inp.value,min:inp.min,step:inp.step}:null,
+      out.limit={id:a.id,req:reqOf(card),label:card.getAttribute('aria-label')||'Spending limit reached',name:a.name,who:a.name+' · '+who+' · at the Bank',text:requestText(card),input:inp?{label:inp.getAttribute('aria-label')||'',value:inp.value,min:inp.min,step:inp.step}:null,
         actions:btns.map((b,i)=>({idx:i,label:b.textContent,title:b.title||'',cls:(b.className.match(/\b(primary|danger|session)\b/)||[''])[0]}))};
     }else if(card.classList.contains('elicit')){
       out.elicit.push({id:a.id,name:a.name,head:a.name+': [MCP] '+(card.getAttribute('aria-label')||'An MCP server asks for input'),text:requestText(card)});
@@ -4317,7 +4317,7 @@ function attentionItems(list,withText){
     const kind=card?(card.classList.contains('question')?'q':card.classList.contains('limit')?'l':card.classList.contains('coffee')?'c':'p'):(vis(a)==='error'?'e':a.limit?'l':'w');
     /* the OS notification never carries the request itself (a command can hold a token, and it would sit on the lock screen and in the
        notification history): only what kind of answer is needed (security review, 2026-10-20) */
-    const text=!withText?'':kind==='q'?'Has a question for you.':kind==='p'?'Asks for your OK.':kind==='e'?'Has an error. Please check it.':kind==='l'?'Reached its spending limit.':kind==='c'?(DurbarCutText.cutText(coffeeTask(a),70)+'.'):'Waiting for you.';
+    const text=!withText?'':kind==='q'?'Has a question for you.':kind==='p'?'Asks for your OK.':kind==='e'?'Has an error. Please check it.':kind==='l'?(limitNear(a)?'Is close to its spending limit.':'Reached its spending limit.'):kind==='c'?(DurbarCutText.cutText(coffeeTask(a),70)+'.'):'Waiting for you.';
     return {key:a.id+'|'+kind+'|'+(card?cardKey.get(card):''),id:a.id,name:a.name,text};
   });
 }
@@ -4617,7 +4617,7 @@ function paintInbox(focusIndex){
   list.forEach((a,i)=>{
     const card=pendingCardOf(a), row=document.createElement('section');row.className='inbox-row';
     const door=DOOR_ON&&!!$('needsPanel'), rq=card?reqOf(card):'', isLimit=!!card&&card.classList.contains('limit'), isCoffee=door&&!!card&&card.classList.contains('coffee'); /* FR-206: the request this row was painted for; FR-207: a limit row has its own amount and no letter key */
-    const st=vis(a), q=card&&card.classList.contains('question'), what=card?(q?'asks':card.classList.contains('limit')?'reached its spending limit':card.classList.contains('coffee')?'is on a '+coffeeWord().toLowerCase():'needs your OK'):(st==='error'?'has an error':a.limit?'reached its limit':LABELS[st]||st);
+    const st=vis(a), q=card&&card.classList.contains('question'), what=card?(q?'asks':card.classList.contains('limit')?(limitNear(a)?'is close to its spending limit':'reached its spending limit'):card.classList.contains('coffee')?'is on a '+coffeeWord().toLowerCase():'needs your OK'):(st==='error'?'has an error':a.limit?'reached its limit':LABELS[st]||st);
     row.setAttribute('aria-labelledby','ibh'+i);row.dataset.id=a.id;row.dataset.name=a.name;if(door)row.dataset.rq=rq;if(door&&isLimit)row.classList.add('is-limit');
     row.innerHTML='<div class="ib-av" aria-hidden="true" data-face="'+esc(faceKey(a))+'">'+avatar(a)+'</div><div class="ib-main"><div class="ib-top"><h4 class="ib-h" id="ibh'+i+'" tabindex="-1"><b class="ib-n"></b> <span class="ib-sub"><span class="ib-w"></span> <span class="ib-f"></span> <span class="ib-wait"></span></span></h4></div><p class="ib-t" id="ibt'+i+'"></p><div class="ib-act"></div></div>';
     row.querySelector('.ib-h b').textContent=a.name;row.querySelector('.ib-h b').title=a.name;row.querySelector('.ib-w').textContent=what;row.querySelector('.ib-f').textContent='· '+roomOf(a).name;row.querySelector('.ib-f').title=roomOf(a).name; /* spec 052 FR-170: the name is its own line, the rest wraps below it */
@@ -6615,8 +6615,9 @@ document.addEventListener('click',e=>{const c=e.target.closest('#capChip');if(!c
 function showLimit(a,e){
   const t=ensureTurn(a);
   const usd=isUsdCap(a),max=e.maxAiCredits||capOf(a),used=e.usedAiCredits!=null?e.usedAiCredits:capUsed(a);
-  const n=document.createElement('div');n.className='note perm limit';n.setAttribute('role','group');n.setAttribute('aria-label','Spending limit reached');
-  n.innerHTML='<b>Spending limit reached:</b> <span class="psum"></span><span class="pstate"></span>';
+  const W=COFFEE.limitWords(e.near); /* spec 011 FR-096: asked below the cap reads "close to"; the choices are the same */
+  const n=document.createElement('div');n.className='note perm limit';n.setAttribute('role','group');n.setAttribute('aria-label',W.label);
+  n.innerHTML='<b></b> <span class="psum"></span><span class="pstate"></span>';n.querySelector('b').textContent=W.head;
   n.querySelector('.psum').textContent=usd?'about $'+used.toFixed(2)+' of $'+(max||0).toFixed(2)+' (Claude\'s estimate). The agent waits for you.':'used '+used.toFixed(2)+' of '+fmtCap(max)+' AIU. The agent waits for you.';
   const row=document.createElement('div');row.className='note-actions';
   const amt=document.createElement('input');amt.type='number';amt.min='0.01';amt.step=usd?'0.01':'1';amt.value=String(max||(usd?MIN_USD_CAP:MIN_CAP));amt.className='limit-amt';amt.setAttribute('aria-label',usd?'Dollars to add to the limit':'AI credits to add to the limit');
@@ -6640,7 +6641,7 @@ function showLimit(a,e){
   mk('Remove limit','session','Remove the limit and let the agent continue',()=>answer({kind:'unset'}));
   mk('Stop here','danger','Cancel the blocked request. The agent is ready for your next message (the limit stays).',()=>answer({kind:'cancel'}));
   n.appendChild(row);
-  a.limit={requestId:e.requestId,n,row,st:n.querySelector('.pstate')};
+  a.limit={requestId:e.requestId,n,row,st:n.querySelector('.pstate'),near:e.near===true}; /* FR-096: the state and the inbox say "close to" too */
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
 }
 /* ---------- questions from the agent (spec 012 FR-130): options as buttons, "Other" text, Answer / Skip; text only, never HTML ---------- */
@@ -6873,7 +6874,9 @@ const BREAKS=COFFEE.createBreaks(SIM_BREAK?{marginMs:2000,gapMs:3000,lateMs:6000
 const coffeeWord=()=>'Coffee break'; /* a status word: plain in every theme (spec 035: status pills keep their size); only the corner's name is themed */
 const coffeeUntil=a=>{const b=BREAKS.get(a.id);return b?COFFEE.untilText(b,BREAKS.autoResumes(a.id),Date.now()):'';};
 const LIMIT_WORD='Limit reached'; /* spec 001 FR-035: the cap's label at the Bank (spec 011's words, a status word: not themed) */
-const breakWord=a=>{const b=BREAKS.get(a.id);return b&&b.kind==='cap'?LIMIT_WORD:coffeeWord();};
+const LIMIT_NEAR_WORD='Close to spending limit'; /* spec 011 FR-096: the agent app asked below the cap (Copilot SDK 1.0.32: at 90%) */
+const limitNear=a=>!!(a&&a.limit&&a.limit.near===true);
+const breakWord=a=>{const b=BREAKS.get(a.id);return b&&b.kind==='cap'?(limitNear(a)?LIMIT_NEAR_WORD:LIMIT_WORD):coffeeWord();};
 const coffeeTask=a=>breakWord(a)+' — '+coffeeUntil(a);
 /* "until 14:30" for the coffee corner and Bank entries and labels (FR-014; visitorWords cuts it for tooltips) */
 /* delta 2026-10-23 (FR-023): the time left, "back in 4 min" when it resumes by itself, "resets in 4 min" when it will ask, '' without a time */
