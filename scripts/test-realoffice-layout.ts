@@ -793,9 +793,9 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
 }
 
 {
-  // sweep 2026-11-01: choosing an Office layout repaints Settings; the pressed button keeps the keyboard focus
-  const scr = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.js'), 'utf8');
-  assert.ok(/const hadFocus=document\.activeElement===olb;\s*await paint\(\);[^\n]*\n\s*if\(hadFocus\)\{const nb=document\.querySelector\('\[data-officelayout="'\+k\+'"\]'\);if\(nb\)focusIn\(nb\);\}/.test(scr), 'the Office layout pick restores focus after the repaint');
+  // sweep 2026-11-01, spec 102 FR-301: choosing a World card repaints Settings; the chosen card keeps the keyboard focus (the cards replaced the Office layout buttons)
+  const scr = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.js'), 'utf8').replace(/\r\n/g, '\n');
+  assert.ok(/await paintSettings\(\);\s*const nb=document\.querySelector\('#wrGroup \[data-world="'\+CSS\.escape\(id\)\+'"\]'\);if\(nb\)focusIn\(nb\);/.test(scr), 'the World card pick restores focus after the repaint');
 }
 // ---- FR-107: the lamp in words, one phrase per FR-041 row, the same for every world ----
 {

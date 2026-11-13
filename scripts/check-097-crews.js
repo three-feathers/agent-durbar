@@ -120,7 +120,7 @@ module.exports = async (ctx) => {
     const tag = `${world}: ${value}${gate ? ' (cave gate open)' : ''} ${w}x${h}`;
     await H.load({ w, h, query: q(gate, world), ready: REAL, settle: false });
     const note = await pick(value, gate);
-    assert.strictEqual(note, line, `${tag}: the line under Office layout: ${JSON.stringify(note)}`);
+    assert.strictEqual(note, line, `${tag}: the line under the World cards: ${JSON.stringify(note)}`);
     /* the choice loads its set's pack on this page (ensurePack adds set.js); wait until this page draws the set and its pictures, so no
        request of this page is still in flight when the log is cleared and the page reloads (a reload aborts it: net::ERR_ABORTED, seen on
        Windows CI only, where the script started after the clear) */

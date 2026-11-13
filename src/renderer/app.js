@@ -1659,7 +1659,7 @@ const roPeople=()=>{
   }
   return r;
 };
-const roWorlds=()=>CREW&&CREW.offeredWorlds?CREW.offeredWorlds().map(w=>({id:w.id,name:w.name})):[];
+const roWorlds=()=>CREW&&CREW.offeredWorlds?CREW.offeredWorlds().map(w=>({id:w.id,name:w.name,line:w.line||''})):[];
 function setRoWorld(id){
   id=CREW&&CREW.parseWorld?CREW.parseWorld(id):'photo';
   RO_WORLD=id;try{localStorage.setItem('durbar.world',id);}catch(e){}
