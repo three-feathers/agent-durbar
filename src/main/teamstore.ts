@@ -16,7 +16,7 @@ import * as nodeFs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { readCapped, type CappedFs, type CappedFlags } from '../shared/cappedread';
-import { checkTeamTemplate, LIMITS, type TeamTemplate } from '../shared/teamtemplate';
+import { checkTeamTemplate, LIMITS, type TeamMember, type TeamTemplate } from '../shared/teamtemplate';
 import { nameKey } from '../shared/skeleton';
 import { removeStaleTemps } from './schedules';
 import { pidAlive } from './crashmarker';
@@ -37,7 +37,7 @@ export interface TeamFs extends CappedFs {
   rmSync(p: string, opts: { force: true }): void;
 }
 export interface TeamStoreDeps {
-  fs?: TeamFs; flags?: CappedFlags; now?: () => number; newId?: () => string; pid?: number; alive?: (pid: number) => boolean;
+  fs?: TeamFs; flags?: CappedFlags; now?: () => number; newId?: () => string; newMemberId?: () => string; pid?: number; alive?: (pid: number) => boolean;
   /** a short blocking pause (a held file, a Windows rename); injected so a test does not wait */
   pause?: (ms: number) => void; platform?: NodeJS.Platform;
 }
@@ -59,7 +59,11 @@ const pauseSync = (ms: number): void => { Atomics.wait(new Int32Array(new Shared
 /** how many `team-templates.bad-<time>.json` files are kept (each may hold briefs) */
 export const KEEP_BAD = 5;
 const TRAILING_JOINERS = /[\u200C\u200D\u094D\u09CD\u0A4D\u0ACD\u0B4D\u0BCD\u0C4D\u0CCD\u0D4D\u0DCA\u1039\u17D2\u1B44\uA8C4\uA9C0]+$/u;
-const SAVE_FAILED = 'The team templates could not be saved.';
+/** the fixed texts of a refused save (T007 tells `changed` and `failed` from a validation error by these) */
+export const SAVE_FAILED = 'The team templates could not be saved.';
+export const CHANGED = 'changed';
+/** FR-002: a store-only member id, 128 random bits as hex (`MEMBER_ID_RE` of the validator) */
+export const newMemberId = (): string => crypto.randomBytes(16).toString('hex');
 const graphemes = (t: string): string[] => [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(t)].map((x) => x.segment);
 const sha = (b: Buffer | string): string => crypto.createHash('sha256').update(b).digest('hex');
 type Seen = { kind: 'hash'; hash: string } | { kind: 'busy' } | { kind: 'bad' };
@@ -71,6 +75,7 @@ export class TeamTemplateStore {
   private readonly flags: CappedFlags;
   private readonly now: () => number;
   private readonly newId: () => string;
+  private readonly newMember: () => string;
   private readonly pid: number;
   private readonly alive: (pid: number) => boolean;
   private readonly pause: (ms: number) => void;
@@ -86,6 +91,7 @@ export class TeamTemplateStore {
     this.flags = deps.flags ?? nodeFs.constants;
     this.now = deps.now ?? Date.now;
     this.newId = deps.newId ?? (() => crypto.randomBytes(16).toString('hex'));
+    this.newMember = deps.newMemberId ?? newMemberId;
     this.pid = deps.pid ?? process.pid;
     this.alive = deps.alive ?? pidAlive;
     this.pause = deps.pause ?? pauseSync;
@@ -131,10 +137,20 @@ export class TeamTemplateStore {
     return this.write(value, true);
   }
 
+  /** A stored member always has one `memberId` of its own (spec 111, 2026-11-12): a member with none, or one another member of the template holds, gets a new one; its mark stays. */
+  private ensureMemberIds(members: TeamMember[]): void {
+    const seen = new Set<string>();
+    for (const m of members) {
+      if (m.memberId === undefined || seen.has(m.memberId)) m.memberId = this.newMember();
+      seen.add(m.memberId);
+    }
+  }
+
   private write(value: unknown, imported: boolean): StoreResult<{ template: StoredTemplate }> {
     const r = checkTeamTemplate(value, 'own');
     if (!r.ok) return { ok: false, errors: r.errors };
     const t = r.template;
+    if (imported) for (const m of t.members) m.memberId = this.newMember(); // a FRESH id for every member, whatever the caller passed (spec 111, review of #1640); the mark stays
     if (imported && t.id !== undefined) return { ok: false, errors: ['Template: an imported template has no id yet.'] };
     const cur = t.id !== undefined ? this.items.find((x) => x.id === t.id) : undefined;
     if (t.id !== undefined && !cur) return { ok: false, errors: ['Template: not found.'] };
@@ -143,12 +159,12 @@ export class TeamTemplateStore {
     const stored: StoredTemplate = { ...t, id: cur ? cur.id : this.newId(), origin: cur ? cur.origin : imported ? 'imported' : 'own', createdAt: cur ? cur.createdAt : at, updatedAt: at };
     const next = cur ? this.items.map((x) => (x === cur ? stored : x)) : [...this.items, stored];
     const c = this.commit(next);
-    if (c !== 'ok') return { ok: false, errors: [c === 'changed' ? 'changed' : SAVE_FAILED] };
+    if (c !== 'ok') return { ok: false, errors: [c === 'changed' ? CHANGED : SAVE_FAILED] };
     return { ok: true, template: clone(stored) };
   }
 
   /**
-   * FR-021: "<name> copy", origin `own`, each brief's `briefFrom` copied, no `memberId` (T007 gives each member a new one). The name gets
+   * FR-021: "<name> copy", origin `own`, each brief's `briefFrom` copied, each member a NEW `memberId` (T007). The name gets
    * " copy", then " copy 2", " copy 3" until its `nameKey` is not one of a stored name (an NFD spelling or a Cyrillic lookalike counts as the same).
    */
   duplicate(id: string): StoreResult<{ template: StoredTemplate }> {
@@ -157,7 +173,7 @@ export class TeamTemplateStore {
     const copy = clone(src) as Partial<StoredTemplate> & TeamTemplate;
     delete copy.id; delete copy.createdAt; delete copy.updatedAt;
     copy.origin = 'own';
-    for (const m of copy.members) delete m.memberId;
+    for (const m of copy.members) m.memberId = this.newMember(); // new ids: a duplicate's members are not the source's (FR-021)
     const taken = new Set(this.items.map((x) => nameKey(x.name)));
     const base = graphemes(src.name);
     for (let i = 1; ; i++) {
@@ -177,7 +193,7 @@ export class TeamTemplateStore {
   delete(id: string): StoreResult<{ removed: boolean }> {
     if (!this.items.some((x) => x.id === id)) return { ok: true, removed: false };
     const c = this.commit(this.items.filter((x) => x.id !== id));
-    if (c !== 'ok') return { ok: false, errors: [c === 'changed' ? 'changed' : SAVE_FAILED] };
+    if (c !== 'ok') return { ok: false, errors: [c === 'changed' ? CHANGED : SAVE_FAILED] };
     return { ok: true, removed: true };
   }
 
@@ -232,6 +248,7 @@ export class TeamTemplateStore {
           const c = checkTeamTemplate(raw, 'own');
           if (!c.ok || c.template.id === undefined || ids.has(c.template.id) || good.length >= LIMITS.templates) { bad = true; continue; }
           ids.add(c.template.id);
+          this.ensureMemberIds(c.template.members); // in memory; the next save writes them
           good.push({ ...c.template, id: c.template.id, origin: c.template.origin ?? 'own', createdAt: c.template.createdAt ?? 0, updatedAt: c.template.updatedAt ?? 0 });
         }
       }

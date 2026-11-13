@@ -48,6 +48,7 @@ Be specific without being a cliche: no tourist symbols, stereotypes, or copied l
 - **The seat can follow the state:** working at a table, relaxing on a lounger.
 - **Crews keep their own art style.** Never redraw a crew as realistic. Clothes are office-appropriate in the style of the set, loose rather than tight. Crew art needs its owner's approval per image.
 - Any character set must work in any world, so every set has the full pose list. Each world names a default set that suits it.
+- **Helpers are kids of the world, not of the set** (owner, 2026-11-12, spec 097 FR-368..FR-371): one set of kid pictures per world (the Photo office's six clay-toy kids, visibly toys, fully dressed, never photorealistic), one still pose per state with a prop. A kid stands with its feet on the desk top's front edge, **one scale per kid** for every pose (its standing figure is 0.40 of the seated person), and every place is the widest pose of the widest kid, so a state change never moves a kid. Kids go only where the desk top is empty (1 to 4 agents); a busy desk keeps the head row with the kid's face.
 
 ## Space and layout
 
@@ -55,6 +56,7 @@ Be specific without being a cliche: no tourist symbols, stereotypes, or copied l
 - **Fixtures can live in the room.** A central cluster or an aisle frees the band and makes walking real.
 - **Scale tells the truth.** Fixtures, people and furniture agree: a bar is a building, a postbox is not. One scale per depth, and shrink everything together, not one thing.
 - **Big props are one still picture of their own,** never things standing in the lobby band: a car or a palm in the band pushes plates and crowds labels. The name chips and the band's own crowding rules do the rest; never place a label by hand.
+- **Useless desk props go** (owner, 2026-11-12, spec 097 FR-374): a mug or an unlit lamp painted on a desk earns no pixels; the Photo office mug and the cave lamp are gone, and the desk top is room for helpers. Stations and meaningful objects stay.
 - **Decoration is never status.** A car, pool or palm never reacts to a state, is not clickable or focusable, and avoids saturated status colours: from across a room a green car reads as *done* and a red tool chest as *error*.
 - **Use the space near the edges and the horizon.** Empty sand or floor is waste when people could be bigger.
 - **Few people, big screens:** readable text in the room at 3 to 4. **Many people, small screens:** state by colour and marks, with text on hover or focus.
