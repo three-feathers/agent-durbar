@@ -79,6 +79,9 @@ module.exports = async (ctx) => {
         assert.ok(c.name && c.name.length > 2, `${tag}: ${c.id}: the card has its name`);
       }
 
+      const d0 = await js(`(()=>{const c=document.querySelector(${jsLiteral(CARDS + '[aria-checked="true"]')});return c.getAttribute('aria-describedby').split(' ').map(i=>{const e=document.getElementById(i);return e&&e.getAttribute('aria-hidden')!=='true'?e.textContent:''}).join(' ')})()`);
+      assert.ok(/\bIn use\b/.test(d0), `${tag}: when Settings opens, the checked card's description says In use (announced): ${JSON.stringify(d0)}`);
+
       // ---- keys: arrows move the focus and choose nothing; Enter and Space choose ----
       await js(`document.querySelector(${jsLiteral(CARDS + '[tabindex="0"]')}).focus();0`);
       await key('Right');
