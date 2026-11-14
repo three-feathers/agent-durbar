@@ -1,0 +1,1 @@
+- **A screen reader no longer misses the first permission request or question after a chat opens** (spec 005 FR-237, issue #1488): "Working…", said in the same moment, replaced it. Checked in the simulator by reading the live region; not heard with a real screen reader.
