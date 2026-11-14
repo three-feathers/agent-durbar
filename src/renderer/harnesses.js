@@ -427,7 +427,7 @@
       modal(`${n} ${name} session${n === 1 ? ' is' : 's are'} open`, `<p class="scr-note">${esc(name)} cannot be updated safely while its sessions run (on Windows a running program cannot be replaced). Nothing new starts until the update is done.</p><p class="scr-note small">${esc(endText)}</p>${extra.map((x) => `<p class="scr-note small">${esc(x)}</p>`).join('')}`,
         [{ label: 'Cancel', cancel: true, onClick: (c2) => { c2(); res(null); } },
           { label: 'Update when they end', cls: 'primary', onClick: (c2) => { c2(); res('wait'); } },
-          { label: `End ${n} session${n === 1 ? '' : 's'} and update`, cls: 'danger', onClick: (c2) => { c2(); res('end'); } }],
+          { label: `End ${n} session${n === 1 ? '' : 's'} and update`, cls: 'primary danger', onClick: (c2) => { c2(); res('end'); } }],
         { onReplaced: () => res(null) });
     });
   }

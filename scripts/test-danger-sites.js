@@ -6,7 +6,7 @@ const path = require('path');
 const { findSites } = require('./danger-sites');
 const real = path.join(__dirname, '..', 'src', 'renderer');
 const base = findSites(real);
-assert.strictEqual(base.length, 20, `the real renderer has 20 destructive dialog call sites, found ${base.length}`);
+assert.strictEqual(base.length, 21, `the real renderer has 21 destructive dialog call sites, found ${base.length}`);
 assert.ok(base.some((s) => s.file === 'teams.js' && s.label === 'Delete'), 'the Teams Delete confirm (spec 111 T008) is a read site');
 assert.ok(base.some((s) => s.file === 'screens.js') && base.some((s) => s.file === 'profileeditor.js') && base.some((s) => s.file === 'app.js'), 'sites from three files');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'danger-sites-'));

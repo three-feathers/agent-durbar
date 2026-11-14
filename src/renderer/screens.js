@@ -638,7 +638,7 @@
       const active=(window.THEME&&window.THEME.current&&window.THEME.current().id)||curTheme;
       const mine=themes.find((t)=>t.id===active&&t.own);
       if(!mine){X.toast(esc((themes.find((t)=>t.id===active)||{name:active}).name)+' is built into the app, so it cannot be removed. Pick one of your own themes (marked "yours") first.',6000);return;}
-      const ask=await dialog({title:'Remove this theme?',html:`<p class="dsub"><b>${esc(mine.name)}</b> is deleted from this computer, and Clean Office is used instead. This cannot be undone: export it first if you want a copy.</p>`,buttons:[{label:'Cancel',value:null},{label:'Remove theme',value:'rm',cls:'danger'}]});
+      const ask=await dialog({title:'Remove this theme?',html:`<p class="dsub"><b>${esc(mine.name)}</b> is deleted from this computer, and Clean Office is used instead. This cannot be undone: export it first if you want a copy.</p>`,buttons:[{label:'Cancel',value:null},{label:'Remove theme',value:'rm',cls:'primary danger'}]});
       if(!ask||ask.value!=='rm')return;
       const res=await X.bridge.removeTheme(mine.id).catch(()=>null);
       if(!res||!res.ok){X.toast(esc(res&&res.error||'The theme could not be removed.'),4200);return;}
