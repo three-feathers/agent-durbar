@@ -60,7 +60,7 @@
 .ro[data-world="retro"].still .ro-person.bob{animation:none}
 /* a helper at the door keeps still here: the room's sway rotates, and that is off the grid */
 .ro[data-world="retro"] .ro-visitor{animation:none}
-/* spec 102 T345: a runner on two pictures swaps them by opacity, a hard swap in one step each half period (1 s, the bob's period, FR-260), from `data-go` like the other loops; never the Photo office's cross-fade or bob. Before it, and when nothing runs, runA shows */
+/* spec 102 T348: a runner on two pictures swaps them by opacity, a hard swap in one step each half period (1 s, the bob's period, FR-260), from `data-go` like the other loops; never the Photo office's cross-fade or bob. Before it, and when nothing runs, runA shows */
 .ro[data-world="retro"][data-go] .ro-visitor.m-a.m-run{animation:ro-arc-run-a 1s steps(1) infinite}
 .ro[data-world="retro"][data-go] .ro-visitor2.m-b.m-run{animation:ro-arc-run-b 1s steps(1) infinite}
 @keyframes ro-arc-run-a{0%{opacity:1}50%{opacity:0}}

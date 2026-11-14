@@ -1681,7 +1681,7 @@ Built on `102-290-arcade-default-people`, stacked on the spec PR: the two values
 - **Text on the sheet is measured, not assumed:** a picture name, a heading and a monitor and mood line are cut with an ellipsis to the width of their box (the canvas measures them), so none runs into the next picture or past the sheet; `test:world-contact-sheet` plans the text boxes and fails one that leaves the sheet or overlaps another.
 - **What the sheet showed on 2026-11-14 (the agent's own look, not the owner's):** Cave is a warm brown and orange set of hand-drawn stone things, Photo is pale oak and glass photographs, Retro is dark neon pixel art cabinets; no two worlds' pictures can be mistaken at this size. The headings show what the sheet cannot fix: Cave and Photo are both `rows`, the known clash of the entry above.
 
-## Changes 2026-11-14 (third entry): the arcade's visitor runs, stepped (FR-309, FR-261, T345, issue #1399, no new FR)
+## Changes 2026-11-14 (third entry): the arcade's visitor runs, stepped (FR-309, FR-261, T348, issue #1399, no new FR)
 
 **Owner decision** (Vikram, Telegram DM, 2026-11-14 07:23 UTC, answer "1" to the question of the arcade's run pose; relayed by the Linux coordinator and recorded at https://github.com/three-feathers/agent-durbar/pull/1677#issuecomment-6873768101): "option 1: a stepped two-frame run (frame A, frame B, a hard swap, no fade) so arcade visitors run in the arcade's own style." This replaces the interim of the entry "What the run frames do in the arcade (CI, 2026-11-14)" (the visitor shows `runA` as one still frame), which waited for exactly this choice.
 

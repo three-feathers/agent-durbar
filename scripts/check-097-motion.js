@@ -9,7 +9,7 @@
  *   - 40 agents: a desk scrolled out of view keeps moving, or paints (FR-181, spec 097 T030 pacing).
  * MOTION_WORLD=retro: the same driver in the Retro arcade (spec 102 FR-309, FR-310; issue #1428): the page address forces the world, the loops are looked for in the whole room (the arcade's flash, caret and cue
  * loops are not in `.ro-art`), and the parts that are the Photo office's own (the typing rig, a runner on two pictures, the cross-fade of a pose, the desk-to-lobby fades, the count-change ease) are not run: the arcade swaps
- * a frame (FR-261), and its Terminal visitor swaps runA and runB in a stepped loop, a hard swap with no cross-fade (T345). What the arcade owes instead: no loop at the first draw and every loop after it (FR-309), each stepped with FR-260's own period (not the 1/12 s grid), a bob only on a working person, nothing but
+ * a frame (FR-261), and its Terminal visitor swaps runA and runB in a stepped loop, a hard swap with no cross-fade (T348). What the arcade owes instead: no loop at the first draw and every loop after it (FR-309), each stepped with FR-260's own period (not the 1/12 s grid), a bob only on a working person, nothing but
  * `transform` and `opacity`, and the pause, the still and the scrolled-away rules as in every world.
  * Screenshots: <SHOTS_OUT>/097-real-moving-<w>x<h>.png
  */
@@ -197,29 +197,29 @@ module.exports = async (ctx) => {
       assert.ok(a.props.every((p) => ALLOWED.includes(p)), `FR-180: only ${ALLOWED}: ${a.name}: ${a.props}`);
       assert.ok(!a.name || /steps|step-/.test(a.ease), `the arcade's loops are stepped: ${a.name}: ${a.ease}`);
     }
-    /* spec 102 T345: a visitor at the Terminal runs on two pictures, swapped by a stepped opacity loop: a hard swap, never the Photo office's cross-fade (ro-fb-run) */
-    await must(`!!document.querySelector('#stage .ro .ro-visitor.m-a.m-run')&&!!document.querySelector('#stage .ro .ro-visitor2.m-b.m-run')`, 'T345: a runner on two pictures in the arcade');
+    /* spec 102 T348: a visitor at the Terminal runs on two pictures, swapped by a stepped opacity loop: a hard swap, never the Photo office's cross-fade (ro-fb-run) */
+    await must(`!!document.querySelector('#stage .ro .ro-visitor.m-a.m-run')&&!!document.querySelector('#stage .ro .ro-visitor2.m-b.m-run')`, 'T348: a runner on two pictures in the arcade');
     const RUN = `(()=>{const A=document.querySelector('#stage .ro .ro-visitor.m-a.m-run'),B=document.querySelector('#stage .ro .ro-visitor2.m-b[data-for="'+CSS.escape(A.dataset.for)+'"]');
       const an=(e)=>e&&e.getAnimations().filter(x=>x.animationName);
       return {A,B,aa:an(A),bb:an(B)};})()`;
     const runInfo = await js(`(()=>{const r=${RUN};const o=(x)=>x.map(a=>({n:a.animationName,e:getComputedStyle(a.effect.target).animationTimingFunction,d:a.effect.getTiming().duration}));
       return {a:o(r.aa),b:o(r.bb),srcA:r.A.src.split('/').pop(),srcB:r.B?r.B.src.split('/').pop():''};})()`);
     console.log('[097-motion] arcade run layers', JSON.stringify(runInfo));
-    assert.deepStrictEqual(runInfo.a.map((x) => x.n), ['ro-arc-run-a'], 'T345: the first picture has the stepped run loop only (no ro-fa-run, no bob): ' + JSON.stringify(runInfo.a));
-    assert.deepStrictEqual(runInfo.b.map((x) => x.n), ['ro-arc-run-b'], 'T345: the second picture is shown by its stepped loop, and it is not shown only by a cross-fade: ' + JSON.stringify(runInfo.b));
-    for (const x of runInfo.a.concat(runInfo.b)) assert.ok(/^steps\(/.test(x.e) && !/linear|ease/.test(x.e), `T345: no ro-fb-run fade, the run loop is a steps function: ${x.n}: ${x.e}`);
-    assert.notStrictEqual(runInfo.srcA, runInfo.srcB, 'T345: the two frames are two different pictures');
+    assert.deepStrictEqual(runInfo.a.map((x) => x.n), ['ro-arc-run-a'], 'T348: the first picture has the stepped run loop only (no ro-fa-run, no bob): ' + JSON.stringify(runInfo.a));
+    assert.deepStrictEqual(runInfo.b.map((x) => x.n), ['ro-arc-run-b'], 'T348: the second picture is shown by its stepped loop, and it is not shown only by a cross-fade: ' + JSON.stringify(runInfo.b));
+    for (const x of runInfo.a.concat(runInfo.b)) assert.ok(/^steps\(/.test(x.e) && !/linear|ease/.test(x.e), `T348: no ro-fb-run fade, the run loop is a steps function: ${x.n}: ${x.e}`);
+    assert.notStrictEqual(runInfo.srcA, runInfo.srcB, 'T348: the two frames are two different pictures');
     /* the two frames ALTERNATE, forced without a sleep: the loops are paused at two phases (a hard swap guarantees the frames differ there), the shown picture is read from computed opacity */
     const phases = await js(`(()=>{const r=${RUN};const all=r.aa.concat(r.bb);const at=(t)=>{for(const a of all){a.pause();a.currentTime=t;}return [+getComputedStyle(r.A).opacity,+getComputedStyle(r.B).opacity];};
       const out={p1:at(100),p2:at(600),p3:at(1100),p4:at(1600),p5:at(499),p6:at(500)};for(const a of all)a.play();return out;})()`);
     console.log('[097-motion] arcade run phases (A/B opacity)', JSON.stringify(phases));
-    assert.deepStrictEqual(phases.p1, [1, 0], 'T345: the frames alternate: first half shows frame A only: ' + JSON.stringify(phases));
-    assert.deepStrictEqual(phases.p2, [0, 1], 'T345: the frames alternate: second half shows frame B only: ' + JSON.stringify(phases));
-    assert.deepStrictEqual([phases.p3, phases.p4], [[1, 0], [0, 1]], 'T345: and it repeats: ' + JSON.stringify(phases));
-    assert.deepStrictEqual([phases.p5, phases.p6], [[1, 0], [0, 1]], 'T345: a hard swap, nothing between 0 and 1 at the step: ' + JSON.stringify(phases));
+    assert.deepStrictEqual(phases.p1, [1, 0], 'T348: the frames alternate: first half shows frame A only: ' + JSON.stringify(phases));
+    assert.deepStrictEqual(phases.p2, [0, 1], 'T348: the frames alternate: second half shows frame B only: ' + JSON.stringify(phases));
+    assert.deepStrictEqual([phases.p3, phases.p4], [[1, 0], [0, 1]], 'T348: and it repeats: ' + JSON.stringify(phases));
+    assert.deepStrictEqual([phases.p5, phases.p6], [[1, 0], [0, 1]], 'T348: a hard swap, nothing between 0 and 1 at the step: ' + JSON.stringify(phases));
     /* the swap never flips the figure: both layers carry the same facing mirror (computed scale and transform), however the set is drawn (spec 097 FR-191: `mir` on the visitor and on its second frame) */
     const sc = await js(`(()=>{const r=${RUN};const g=(e)=>{const c=getComputedStyle(e);return c.scale+'|'+c.transform+'|'+e.classList.contains('mir');};return [g(r.A),g(r.B)];})()`);
-    assert.strictEqual(sc[0], sc[1], 'T345: both run frames have the same mirror (scale, transform, mir): a swap never flips the figure: ' + JSON.stringify(sc));
+    assert.strictEqual(sc[0], sc[1], 'T348: both run frames have the same mirror (scale, transform, mir): a swap never flips the figure: ' + JSON.stringify(sc));
     assert.strictEqual(await js(`document.querySelectorAll('#stage .ro .ro-person2').length`), 0, 'FR-261: no second picture for a person in the arcade');
     /* pictures of the two frames of one runner (the loops paused at two phases): the whole room, and a crop round the visitor, one file each */
     for (const [tag, t] of [['A', 100], ['B', 600], ['A2', 1100], ['B2', 1600]]) {
