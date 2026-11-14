@@ -290,6 +290,16 @@ for (const [name, mk] of [['Still', () => rig({ motion: 'still' })], ['forced co
   assert.strictEqual(fast.d.stats.degraded, false, 'frames inside the budget never degrade');
   assert.strictEqual(fast.d.stats.overBudget, 0);
 }
+// ---- skins (FR-110..FR-112): only the arcade has one; its colours come from the page's tokens, with a fallback; a skin carries no size
+{
+  const K = load(path.join(DIR, 'skins.js'));
+  assert.strictEqual(K.forWorld('', null).id, 'neutral'); assert.strictEqual(K.forWorld('photo', null).id, 'neutral'); assert.strictEqual(K.forWorld('cave', null).id, 'neutral');
+  const a = K.forWorld('retro', (n: string) => (n === '--tone-warn-ink' ? ' #123456 ' : ''));
+  assert.strictEqual(a.id, 'arcade'); assert.strictEqual(a.shape, 'square'); assert.strictEqual(a.colors.frontal, '#123456', 'a token the page has is read'); assert.strictEqual(a.colors.stem, '#ffec27', 'a missing token falls back');
+  assert.deepStrictEqual(Object.keys(a.colors).sort(), [...P.LOBES].sort(), 'one colour per lobe');
+  assert.deepStrictEqual(Object.keys(a).sort(), ['baseAlpha', 'colors', 'id', 'marker', 'shape', 'trail'], 'a skin has colours, a shape and inks, no size or position');
+  assert.strictEqual(K.forWorld('retro', () => { throw new Error('x'); }).colors.frontal, '#ffc35c', 'a failing read falls back');
+}
 console.log('braindraw: ok');
 
 // ---- the page loads brainstate.js and brainsurface.js as plain scripts (one global scope): they must not redeclare or overwrite what

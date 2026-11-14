@@ -8,6 +8,7 @@
 })(typeof self!=='undefined'?self:this, (function(){
   'use strict';
   const P=(typeof module==='object'&&module.exports)?require('./points.js'):(typeof self!=='undefined'?self:globalThis).DurbarBrainPoints;
+  const SK=(typeof module==='object'&&module.exports)?require('./skins.js'):(typeof self!=='undefined'?self:globalThis).DurbarBrainSkins;
   const TRAIL_MAX=24;            /* brainstate.ts TRAIL_MAX (a test compares) */
   const BURST_MS={full:250,calm:150}, BLOOM_MS=900, BLOOM_ALPHA_MAX=0.3;
   const BUDGET_MS={office:2,dock:3,front:6,still:0.5}; /* FR-101 */
@@ -21,26 +22,28 @@
     if(!P.SIZES[size])throw new Error('unknown size '+size);
     const set0=P.build(size);
     let motion=o.motion||'full', forced=!!o.forced, visible=o.visible!==false, focused=o.focused!==false;
-    const colors=Object.assign({},LOBE_COLORS,o.colors||{});
+    let skin=o.skin||SK.NEUTRAL, colors=Object.assign({},LOBE_COLORS,o.colors||{},skin.colors||{});
     let W=o.width||240, H=Math.round(W/P.ASPECT), dpr=host.dpr?host.dpr():1;
     let ctx=canvas.getContext('2d'), base=null, sprites=null;
     let view={id:null,lobe:null,state:'done',trail:[],bloom:[],rev:0};
     let anim=null, rafId=0, dirty=true, destroyed=false, degraded=false, over=0;
-    const stats={frames:0,basePoints:0,pointsLast:0,pointsMax:0,framesHidden:0,loops:0,loopRunning:false,baseBuilds:0,spriteBuilds:0,overBudget:0,degraded:false,lastMs:0,canvases:1};
+    const stats={skin:skin.id,shape:skin.shape,pointRects:0,pointArcs:0,frames:0,basePoints:0,pointsLast:0,pointsMax:0,framesHidden:0,loops:0,loopRunning:false,baseBuilds:0,spriteBuilds:0,overBudget:0,degraded:false,lastMs:0,canvases:1};
 
     const eff=()=>(forced||!focused)?'still':(degraded?'calm':motion);
     const px=(x)=>x*W, py=(y)=>y*H;
     function fit(){canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);if(canvas.style){canvas.style.width=W+'px';canvas.style.height=H+'px';}ctx=canvas.getContext('2d');base=null;buildBase();} /* the base layer is built here, never inside a frame: a frame draws only the lit lobe (FR-102) */
+    /* one point: a square (the arcade's voxel, and the neutral cloud at these sizes). The skin never changes where or how big (FR-110); stats count what was drawn so a test can see the shape */
+    function pointAt(c,x,y,sz){c.fillRect(x,y,sz,sz);stats.pointRects++;}
     function buildBase(){
       const c=host.makeCanvas(canvas.width,canvas.height), x=c.getContext('2d'), s=PT[size]*dpr;
       x.setTransform(1,0,0,1,0,0);
       for(let l=0;l<P.LOBES.length;l++){
         x.fillStyle=forced?FORCED.point:colors[P.LOBES[l]];
-        x.globalAlpha=forced?1:0.32;
+        x.globalAlpha=forced?1:skin.baseAlpha;
         const idx=set0.byLobe[l];
-        for(let k=0;k<idx.length;k++){const i=idx[k];x.fillRect(set0.xs[i]*canvas.width,set0.ys[i]*canvas.height,s,s);}
+        for(let k=0;k<idx.length;k++){const i=idx[k];pointAt(x,set0.xs[i]*canvas.width,set0.ys[i]*canvas.height,s);}
       }
-      stats.baseBuilds++;stats.basePoints=set0.n;base=c;
+      stats.baseBuilds++;stats.basePoints=set0.n;stats.baseSize=s;base=c;
     }
     function buildSprites(){
       if(forced||sprites)return;
@@ -61,7 +64,7 @@
       let pts=0;
       /* the trail: thin lines lobe to lobe, the newest brightest, at most TRAIL_MAX steps (FR-040) */
       const tr=view.trail.slice(-TRAIL_MAX);
-      ctx.lineWidth=Math.max(1,dpr);ctx.strokeStyle=forced?FORCED.line:'#cfd6e4';
+      ctx.lineWidth=Math.max(1,dpr);ctx.strokeStyle=forced?FORCED.line:skin.trail;
       for(let i=1;i<tr.length;i++){
         const a=P.ANCHORS[tr[i-1].lobe],c=P.ANCHORS[tr[i].lobe];if(!a||!c)continue;
         ctx.globalAlpha=forced?1:0.15+0.6*(i/tr.length);
@@ -74,9 +77,9 @@
         const a=P.ANCHORS[view.lobe], cx=px(a.x)*dpr, cy=py(a.y)*dpr;
         if(mode==='full'&&sprites){ctx.globalAlpha=0.55*(0.4+0.6*Math.min(1,t));const r=sprites[view.lobe].width;ctx.drawImage(sprites[view.lobe],cx-r/2,cy-r/2);}
         ctx.globalAlpha=1;ctx.fillStyle=forced?FORCED.lit:colors[view.lobe];
-        for(let k=0;k<reach;k++){const i=idx[k];ctx.fillRect(set0.xs[i]*canvas.width,set0.ys[i]*canvas.height,s*1.4,s*1.4);pts++;}
+        for(let k=0;k<reach;k++){const i=idx[k];pointAt(ctx,set0.xs[i]*canvas.width,set0.ys[i]*canvas.height,s*1.4);pts++;}
         /* the marker says the state by shape (FR-016): running a ring, done a filled disc, failed a cross */
-        const m=5*dpr;ctx.lineWidth=Math.max(1.5,1.5*dpr);ctx.strokeStyle=forced?FORCED.lit:'#ffffff';ctx.fillStyle=forced?FORCED.lit:colors[view.lobe];
+        const m=5*dpr;ctx.lineWidth=Math.max(1.5,1.5*dpr);ctx.strokeStyle=forced?FORCED.lit:skin.marker;ctx.fillStyle=forced?FORCED.lit:colors[view.lobe];
         ctx.beginPath();
         if(view.state==='failed'){ctx.moveTo(cx-m,cy-m);ctx.lineTo(cx+m,cy+m);ctx.moveTo(cx+m,cy-m);ctx.lineTo(cx-m,cy+m);ctx.stroke();}
         else if(view.state==='running'){ctx.arc(cx,cy,m,0,6.2832);ctx.stroke();}
@@ -136,6 +139,11 @@
         }else drawOnce();
       },
       setMotion(m){if(motion===m)return;motion=m;degraded=false;over=0;stats.degraded=false;stopLoop();anim=null;if(m!=='still')buildSprites();drawOnce();},
+      /* a world change: new colours, base layer and glow sprites rebuilt once; the points, sizes and positions are untouched (FR-110) */
+      setSkin(k){skin=k||SK.NEUTRAL;colors=Object.assign({},LOBE_COLORS,o.colors||{},skin.colors||{});stats.skin=skin.id;stats.shape=skin.shape;base=null;sprites=null;stopLoop();anim=null;buildBase();if(eff()!=='still')buildSprites();drawOnce();},
+      skin:()=>skin.id,
+      colors:()=>Object.assign({},colors),
+      geometry:()=>{let h=2166136261;for(let i=0;i<set0.n;i++){h=Math.imul(h^Math.round(set0.xs[i]*1e6),16777619);h=Math.imul(h^Math.round(set0.ys[i]*1e6),16777619);}return {n:set0.n,hash:h>>>0,w:W,h:H,pt:PT[size],drawn:stats.baseSize,cw:canvas.width,ch:canvas.height};}, /* what a skin must not change */
       setForced(f){forced=!!f;base=null;sprites=null;stopLoop();anim=null;buildBase();drawOnce();},
       /* FR-104: hidden draws nothing and stops the loop; shown again draws the latest state once */
       setVisible(v){visible=!!v;if(!visible){stopLoop();anim=null;dirty=true;return;} /* a burst cut short leaves a part frame on the canvas: draw the settled state once on show */if(dirty)drawOnce();},

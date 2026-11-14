@@ -7,6 +7,9 @@
  *   - a step does not change the picture; a failed step is not drawn as a cross (the cross is checked in the unit test; here the picture must differ);
  *   - a loop is left running when nothing happens (FR-103); a frame draws more points than the largest lit lobe (FR-102);
  *   - Still (the button, by keyboard) or reduced motion (emulated) starts an animation frame loop (SC-004); a hidden page draws a frame; forced colours keep it still.
+ *   - the Retro arcade skin (spec 106 FR-110..FR-112, T020; checked at both sizes, labels "arcade skin: ..."): on only in the arcade world (Flat and the Photo office stay neutral);
+ *     points drawn as squares, never discs; the box's font is the arcade's display font; palette read from the arcade's tokens and different from the neutral one;
+ *     and the geometry is IDENTICAL to the neutral skin: the same points (count and positions), the canvas size, the box's width and corner, every text size, and the masked texts.
  * Reported, not asserted: how many desks the floating host covers (it is fixed at the corner until T006's dock; the covering is why it stays off by default).
  * Screenshots: <SHOTS_OUT>/106-brain-<state>-<w>x<h>.png
  */
@@ -163,6 +166,51 @@ module.exports = async (ctx) => {
     assert.ok(under.composer, 'the composer exists');
     assert.deepStrictEqual(under.out, [], 'FR-105: the brain box is not over the composer, the message box or Send at ' + tag);
     assert.strictEqual(under.w, 0, 'with a chat open the floating box takes no room at all (' + tag + ')');
+
+    // ---- the Retro arcade skin (FR-110..FR-112): colours, point shape and font only; never sizes, placements or masking (070 D2)
+    const measure = async (query, label) => {
+      await H.load({ w, h, query: { brain: '1', ...query }, ready: query.officeview ? `!!document.querySelector('#stage .ro[data-world]')` : undefined });
+      await H.focusPage({ emulate: 'first' });
+      await emit({ type: 'toolCall', sessionId: id, callId: 'sk-1', tool: 'bash', phase: 'start', args: { command: cmd } });
+      await must(`!!document.querySelector('.bv .bv-c1')&&/running/.test(document.querySelector('.bv .bv-c1').textContent)`, 'the card of a running command (' + label + ')');
+      await calmDown();
+      return js(`(()=>{const b=document.querySelector('.bv'),cv=b.querySelector('canvas'),r=b.getBoundingClientRect(),cr=cv.getBoundingClientRect(),host=window.__durbarSimUi.brain.host(),st=host.stats(),
+        pr=document.createElement('span');pr.style.fontFamily='var(--ui-display)';document.body.appendChild(pr);const disp=getComputedStyle(pr).fontFamily;pr.remove();
+        const inh=getComputedStyle(document.body).fontFamily,cs=getComputedStyle(b);
+        return {world:document.documentElement.dataset.world||'',ui:document.documentElement.dataset.ui||'',skin:st.skin,shape:st.shape,rects:st.pointRects,arcs:st.pointArcs,dom:b.getAttribute('data-skin'),geo:host.draw.geometry(),
+          font:cs.fontFamily,disp,inh,fontSizes:[...b.querySelectorAll('*')].filter(e=>[...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim())).map(e=>e.className+'='+getComputedStyle(e).fontSize),
+          box:[r.width,Math.round(r.right),Math.round(r.bottom)].join(','),canvasBox:[cr.width,cr.height,Math.round(cr.left-r.left)].join(','),
+          texts:['.bv-title','.bv-lobe','.bv-sentence','.bv-c2'].map(q=>b.querySelector(q).textContent).join('|')+'|'+b.getAttribute('aria-label'),
+          colors:JSON.stringify(host.draw.colors?host.draw.colors():null),border:cs.borderTopWidth,
+          tok:['--tone-warn-ink','--tone-info-ink','--tone-ok-ink','--tone-bad-ink','--tone-idea-ink','--focus','--sel-border'].map(n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim())};})()`);
+    };
+    const flat = await measure({}, 'Flat');
+    const photo = await measure({ officeview: 'real' }, 'Photo office');
+    const arc = await measure({ officeview: 'real', worldflags: 'retro', world: 'retro' }, 'Retro arcade');
+    assert.ok(await js(`!!document.querySelector('#stage .ro[data-world="retro"]')`), 'arcade skin: the arcade office is the one drawn (a pass in the Photo office would prove nothing)');
+    await H.shot(path.join(OUT, `106-brain-arcade-${tag}.png`), { prep: 'calm', keepActions: true });
+    assert.strictEqual(arc.world, 'retro', 'arcade skin: html[data-world] is retro');
+    assert.strictEqual(arc.skin, 'arcade', 'arcade skin: applied in the arcade world (' + tag + ')');
+    assert.strictEqual(arc.dom, 'arcade', 'arcade skin: the box says which skin it wears');
+    assert.strictEqual(flat.skin, 'neutral', 'arcade skin: not applied in Flat');
+    assert.strictEqual(photo.skin, 'neutral', 'arcade skin: not applied in the Photo office (world ' + photo.world + ')');
+    assert.notStrictEqual(photo.world, 'retro', 'arcade skin: the Photo load is not the arcade');
+    assert.strictEqual(arc.shape, 'square', 'arcade skin: point shape is square');
+    assert.ok(arc.rects > 0 && arc.arcs === 0, 'arcade skin: points are drawn as squares, never discs (' + arc.rects + ' squares, ' + arc.arcs + ' discs)');
+    assert.ok(arc.disp && arc.font === arc.disp, 'arcade skin: the font is the arcade world display font: ' + arc.font + ' vs ' + arc.disp);
+    assert.notStrictEqual(flat.font, arc.font, 'arcade skin: the arcade font is not the neutral one');
+    assert.notStrictEqual(arc.colors, flat.colors, 'arcade skin: the palette differs from the neutral one');
+    assert.deepStrictEqual(JSON.parse(arc.colors).frontal, arc.tok[0], 'arcade skin: the frontal lobe wears the arcade --tone-warn-ink token');
+    assert.deepStrictEqual(JSON.parse(arc.colors).port, arc.tok[6], 'arcade skin: the port lobe wears the arcade --sel-border token');
+    for (const [n, o] of [['Flat', flat], ['Photo office', photo]]) {
+      assert.deepStrictEqual(arc.geo, o.geo, 'arcade skin: same points, canvas and point size as ' + n + ' (' + tag + ')');
+      assert.strictEqual(arc.box, o.box, 'arcade skin: the box keeps its width and corner, as in ' + n + ': ' + arc.box + ' vs ' + o.box);
+      assert.strictEqual(arc.canvasBox, o.canvasBox, 'arcade skin: the canvas keeps its size and place, as in ' + n);
+      assert.deepStrictEqual(arc.fontSizes, o.fontSizes, 'arcade skin: every text keeps its size, as in ' + n);
+      assert.strictEqual(arc.texts, o.texts, 'arcade skin: the masked texts are identical to ' + n);
+      assert.strictEqual(arc.border, o.border, 'arcade skin: the frame keeps its width');
+    }
+    console.log(`[106-brain] ${tag}: arcade skin ok (font ${arc.font.slice(0, 40)})`);
     console.log(`[106-brain] ${tag}: ok`);
   }
   console.log('[106-brain] screenshots in ' + OUT);

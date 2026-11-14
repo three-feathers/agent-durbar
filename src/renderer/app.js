@@ -7480,7 +7480,7 @@ let BRAIN_H=null, BRAIN_STATE='idle', BRAIN_WHY=''; const BRAIN_Q=[];
 function brainLoad(){
   BRAIN_STATE='loading';
   const lk=document.createElement('link');lk.rel='stylesheet';lk.href='brainview/brain.css';document.head.appendChild(lk);
-  const files=['../shared/brainstate.js','../shared/brainsurface.js','brainview/points.js','brainview/draw.js','brainview/host.js'];
+  const files=['../shared/brainstate.js','../shared/brainsurface.js','brainview/points.js','brainview/skins.js','brainview/draw.js','brainview/host.js'];
   const next=i=>{
     if(i>=files.length){
       const R=window.DurbarRedact,U=window.DurbarUsage,C=window.DurbarCost;

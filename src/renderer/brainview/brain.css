@@ -16,3 +16,9 @@
 .bv.is-empty{display:none}
 /* the floating box is for the office only: over a chat it would sit on the composer, over Settings or List view on their controls (no overlap, Calm UI) */
 body.panel-open .bv,body.screen-open .bv,body.list-mode .bv{display:none}
+/* Spec 106 FR-110 (T020): the Retro arcade skin: the world's own mono display font and square frame. Colours, shape and font only: no width, height, margin, padding or font-size here (070 D2).
+   The frame is a shadow, so the 1 px border and every size stay those of the neutral skin. */
+html[data-world="retro"][data-ui="retro"] .bv{font-family:var(--ui-display);border-color:var(--line);border-radius:0;background:var(--surface);color:var(--ink);box-shadow:0 0 0 1px var(--line),4px 4px 0 1px var(--bg)}
+html[data-world="retro"][data-ui="retro"] .bv .btn{font-family:inherit;border-radius:0;background:var(--surface-2);color:var(--ink);border-color:var(--line-ctl)}
+html[data-world="retro"][data-ui="retro"] .bv-card{border-radius:0;background:var(--surface-2)}
+@media (forced-colors:active){html[data-world="retro"][data-ui="retro"] .bv{box-shadow:none}}
