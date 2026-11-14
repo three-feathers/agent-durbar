@@ -80,6 +80,11 @@ module.exports = async (ctx) => {
   assert.ok(await js(`window.__ann.some(a=>/Added .* on the floor "Personal".*could not be switched on.*Show/.test(a))`), 'a failed switch-on is still said, with the reason');
   assert.ok(/could not be switched on/.test(await js(`[...document.querySelectorAll('.toast.with-act')].map(t=>t.textContent).join('|')`)), 'the toast says it too, with a Show button');
   assert.strictEqual(await js(`document.querySelector('#floorsBtn .fl-cnt').textContent.trim()`), '2/3', 'the floor stayed off');
+  // Show tries again; while it still fails the person is told, not left with nothing
+  await js(`window.__ann=[];[...document.querySelectorAll('.toast.with-act .toast-act')].find(b=>/Show/.test(b.textContent)).click()`);
+  await until(`window.__ann.some(a=>/still could not be switched on/.test(a))`, 4000);
+  assert.ok(await js(`window.__ann.some(a=>/still could not be switched on/.test(a))`), 'a second failure is said too');
+  assert.strictEqual(await js(`document.querySelector('#floorsBtn .fl-cnt').textContent.trim()`), '2/3', 'the floor is still off');
   await js(`window.__simSetFloorOnFail=false`);
   console.log(`[033 add] ${w}x${h}: floor named in the dialog, off floor switched on, Show goes there, a repeat says already added`);
   }

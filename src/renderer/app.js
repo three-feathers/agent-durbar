@@ -10044,7 +10044,7 @@ async function addFloorNote(r){
     const text=(it.dup?it.name+' is already added on the floor "'+nm+'".':'Added '+it.name+' on the floor "'+nm+'".')+(switched?' The floor was off, so it is switched on.':'')+(failed?' The floor is off and could not be switched on.':'');
     const html=esc(text);
     if(shown){toast(html,6000);}
-    else if(failed)toastAction(html,'Show',async()=>{const r=await floorCall(bridge.setFloorOn(f.id,true));if(r&&r.ok)goToFloor(f.id);},12000); /* Show tries the switch again, then goes there */
+    else if(failed)toastAction(html,'Show',async()=>{const r=await floorCall(bridge.setFloorOn(f.id,true));if(r&&r.ok)goToFloor(f.id);else{const t2='The floor "'+nm+'" still could not be switched on.';toast(esc(t2),8000);announce(t2);}},12000); /* Show tries the switch again, then goes there */
     else toastAction(html,'Show',()=>goToFloor(f.id),12000);
     announce(text+(shown?'':' Press Show to '+(failed?'try again.':'go there.')));
   }

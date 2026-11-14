@@ -2,6 +2,9 @@
  * Spec 033 FR-090: which folder is "already in the office". One pure decision, importable by tests (main.ts is not): the key of a folder
  * is its real path (links followed; the path as written when it does not exist) and, on Windows and macOS where a name differs only by
  * case on the same disk, lower-cased. Trailing slashes and `..` go with `path.resolve`.
+ *
+ * Known gap: on darwin the lower-casing also merges /v/Proj and /v/proj on a case-sensitive APFS volume (two real folders count as one);
+ * the volume's case rule is not asked of the file system.
  */
 import * as fs from 'fs';
 import * as path from 'path';
