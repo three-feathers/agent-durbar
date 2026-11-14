@@ -333,9 +333,11 @@
     for (const f of model.folders) signs[f.id] = { name: f.name, path: f.path, counts: f.counts.length + (f.cost ? 1 : 0) };
     let lay = meta.arrangement && meta.arrangement !== 'rows' && L.layoutFor ? L.layoutFor(meta.arrangement, engine, view, meta, signs) : L.realLayout(engine, view, meta, signs); /* spec 102 FR-228: the one seam */
     /* spec 102 delta 2026-11-11 (issue 1566): an arcade hall that would scroll takes the floor's own padding (`opts.lend`, px) when that makes it fit, so a strip over the floor does not make 15 agents scroll at 1280x800; `lent` tells the host to drop that padding */
-    if (lay.scroll && opts.lend > 0 && meta.arrangement === 'aisles' && L.layoutFor) {
+    /* spec 102 delta 2026-11-13 (issue 1598): the same when the hall fits only by cutting a folder of 4 or fewer across rows (no scroll, so the test above never ran): the lent layout is used when it keeps them whole */
+    const cutSmall = (l) => { const parts = {}, size = {}; for (const z of l.zones || []) { parts[z.id] = (parts[z.id] || 0) + 1; size[z.id] = (size[z.id] || 0) + z.desks.length; } return Object.keys(parts).some((id) => parts[id] > 1 && size[id] <= 4); };
+    if ((lay.scroll || cutSmall(lay)) && opts.lend > 0 && meta.arrangement === 'aisles' && L.layoutFor) {
       const v2 = { w: view.w, h: view.h + opts.lend }, l2 = L.layoutFor(meta.arrangement, engine, v2, meta, signs);
-      if (!l2.scroll) { lay = l2; view = v2; lay.lent = true; }
+      if (!l2.scroll && (lay.scroll || !cutSmall(l2))) { lay = l2; view = v2; lay.lent = true; }
     }
 
     let ro = stage.querySelector(':scope > .ro');
@@ -460,7 +462,7 @@
         /* FR-238: "New reply" above the plate's right end while the reply is unread (the flat desk's "New", the same isUnread); made once, shown by class */
         const nt = el(chrome, 'nr:' + k, 'span', 'ro-newtag' + (a.unread ? ' on' : '')); box(nt, { x: d.plate.x + d.plate.w, y: d.plate.y }); attr(nt, 'aria-hidden', 'true'); text(nt, 'New reply'); dset(nt, 'for', k);
         /* spec 097 FR-316: "Draft" above the plate's left end while the chat has an unsent draft (the flat desk's pencil, the same hasDraft); made once, shown by class; aria-hidden (the plate's name says it) */
-        const dt = el(chrome, 'dr:' + k, 'span', 'ro-drafttag' + (a.draft ? ' on' : '')); box(dt, d.away ? { x: d.away.x - d.away.s / 2, y: d.away.y } : { x: d.plate.x, y: d.plate.y }); /* an empty seat's post-it fills the place above the plate: the tag sits on top of the note's left corner */ attr(dt, 'aria-hidden', 'true'); dset(dt, 'for', k);
+        const dt = el(chrome, 'dr:' + k, 'span', 'ro-drafttag' + (a.draft ? ' on' : '')); box(dt, d.away ? { x: d.away.x - d.away.s / 2, y: d.away.y } : d.lounge ? { x: d.screen.x, y: d.screen.y } : { x: d.plate.x, y: d.plate.y }); /* spec 097 FR-316: a lounge seat's person sits over the plate's left end, so the tag stands on top of the seat's small screen instead */ /* an empty seat's post-it fills the place above the plate: the tag sits on top of the note's left corner */ attr(dt, 'aria-hidden', 'true'); dset(dt, 'for', k);
         if (!dt.firstChild) { if (model.draftIcon) dt.innerHTML = model.draftIcon; dt.appendChild(document.createTextNode('Draft')); } /* the icon is the app's own markup (trusted, as renIcon) */
         /* FR-038: cues, inside the slot */
         if (d.bubble) { const b = el(chrome, 'b:' + k, 'div', 'ro-bub'); box(b, d.bubble); attr(b, 'aria-hidden', 'true'); text(b, '?'); }

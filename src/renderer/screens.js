@@ -500,6 +500,8 @@
         <p class="scr-note">Go to (the navigator) opens from anywhere: a floor, a folder, an agent, or a chat by its number (C and the number).</p>
         <div class="scr-row"><span class="scr-row-l" id="navKeyL">Go to shortcut</span><kbd class="navkey-now" id="navKeyNow">${esc(X.navKey.text())}</kbd><button class="btn" type="button" id="navKeyRec" aria-describedby="navKeyL">Change…</button><button class="btn" type="button" id="navKeyReset"${X.navKey.isDefault()?' disabled':''}>Reset to ${esc(X.navKey.defText())}</button></div>
         <p class="scr-note small" id="navKeyMsg" role="status"></p>
+        ${X.searchKey?`<div class="scr-row"><span class="scr-row-l" id="csKeyL">Search conversations shortcut</span><kbd class="navkey-now" id="csKeyNow">${esc(X.searchKey.bound()?X.searchKey.text():'None')}</kbd><button class="btn" type="button" id="csKeyRec" aria-describedby="csKeyL">Change…</button><button class="btn" type="button" id="csKeyReset"${X.searchKey.isDefault()&&X.searchKey.bound()?' disabled':''}>Reset to ${esc(X.searchKey.defText())}</button></div>
+        <p class="scr-note small" id="csKeyMsg" role="status">${X.searchKey.bound()?'':esc(X.searchKey.text()+' is your Go to shortcut, so Search conversations has none. Change one of them.')}</p>`:''}
         <p class="scr-note small">Shortcuts the app, text editing or your operating system already use are refused. The list of operating system shortcuts is a known list, not every one there is. The shortcut follows the key's position, so on a Dvorak layout ${esc(X.navKey.defText())} is the key that types U. On a Mac with Dvorak, ⌘J types H and macOS keeps ⌘H for Hide, so do not pick ⌘J there.</p></section>`:'';
     /* spec 052 FR-066, FR-093: what Durbar does not do, in calm plain words (checked against the README's Safety model and Costs and caps) */
     const notSec=`<section class="scr-sec" aria-labelledby="notH"><h3 id="notH">What Durbar does not do</h3><ul class="scr-not">
@@ -552,7 +554,8 @@
     if($('advMcp')){$('advMcp').ontoggle=()=>{advOpen=$('advMcp').open;if(advOpen&&liveStale){liveStale=false;void repaintLive(true);}};if(cur.section==='mcp'){cur.section=null;const h=$('mcpH');if(h){scrollInBody(h);h.focus({preventScroll:true});atSec=true;}}}
     if($('pfSec'))wireProfiles();
     if(X.floors&&$('floorsSet'))X.floors.render();
-    if($('navKeyRec'))wireNavKey();
+    if($('navKeyRec'))wireKeyRec({rec:'navKeyRec',msg:'navKeyMsg',now:'navKeyNow',reset:'navKeyReset'},X.navKey,'opens Go to');
+    if($('csKeyRec'))wireKeyRec({rec:'csKeyRec',msg:'csKeyMsg',now:'csKeyNow',reset:'csKeyReset'},X.searchKey,'focuses Search conversations'); /* spec 095 FR-003 */
     if(X.sched&&$('schedSet'))X.sched.render();
     if($('teamsBox'))window.DurbarTeams.mount($('teamsBox'));
     /* spec 044 FR-030: the top-bar Schedules button, Ctrl+Shift+S and Ctrl+K open Settings at the Schedules heading (also when Settings is open already) */
@@ -939,28 +942,31 @@
     await paintSettings();
     const nb=document.querySelector('#myPlaces ~ .scr-tools [data-pl-act="add"], .scr-tools [data-pl-act="add"]')||document.getElementById('plH'); if(nb)focusIn(nb); /* the Add button, or the Places heading */
   }
-  /* spec 074 FR-013 / FR-014: Change… records the next key combination; Escape cancels; a refused one says why */
-  function wireNavKey(){
-    const rec=$('navKeyRec'),msg=$('navKeyMsg'),now=$('navKeyNow'),reset=$('navKeyReset');
+  /* spec 074 FR-013 / FR-014: Change… records the next key combination; Escape cancels; a refused one says why. One recorder for the Go to
+     key and (spec 095 FR-003) the Search conversations key: `K` is X.navKey or X.searchKey; `did` ends "Saved: <keys> …". */
+  function wireKeyRec(ids,K,did){
+    const rec=$(ids.rec),msg=$(ids.msg),now=$(ids.now),reset=$(ids.reset);
     let onKey=null;
-    const stop=()=>{if(onKey)window.removeEventListener('keydown',onKey,true);onKey=null;X.navKey.recording(false);rec.textContent='Change…';rec.setAttribute('aria-pressed','false');};
-    const show=t=>{now.textContent=X.navKey.text();reset.disabled=X.navKey.isDefault();msg.textContent=t;};
+    const stop=()=>{if(onKey)window.removeEventListener('keydown',onKey,true);onKey=null;K.recording(false);rec.textContent='Change…';rec.setAttribute('aria-pressed','false');};
+    /* both rows: a change of one can free or take the other (the search has no key while it equals Go to's) */
+    const showRow=(KK,n,r)=>{if(!KK||!$(n))return;const b=!KK.bound||KK.bound();$(n).textContent=b?KK.text():'None';if($(r))$(r).disabled=KK.isDefault()&&b;};
+    const show=t=>{showRow(X.navKey,'navKeyNow','navKeyReset');showRow(X.searchKey,'csKeyNow','csKeyReset');msg.textContent=t;if(K===X.navKey&&X.searchKey&&$('csKeyMsg'))$('csKeyMsg').textContent=X.searchKey.bound()?'':X.searchKey.text()+' is your Go to shortcut, so Search conversations has none. Change one of them.';};
     rec.onclick=()=>{
       if(onKey){stop();msg.textContent='Not changed.';return;}
-      X.navKey.recording(true);rec.textContent='Press the keys… (Esc to cancel)';rec.setAttribute('aria-pressed','true');msg.textContent='Press the new shortcut now.';
+      K.recording(true);rec.textContent='Press the keys… (Esc to cancel)';rec.setAttribute('aria-pressed','true');msg.textContent='Press the new shortcut now.';
       onKey=e=>{
         if(e.key==='Escape'&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!e.shiftKey){e.preventDefault();e.stopPropagation();stop();msg.textContent='Not changed.';focusIn(rec);return;}
         if(e.key==='Tab'&&!e.ctrlKey&&!e.metaKey&&!e.altKey)return; /* Tab still leaves the button */
-        const c=X.navKey.fromEvent(e); if(!c)return; /* a modifier alone: wait for the key */
+        const c=K.fromEvent(e); if(!c)return; /* a modifier alone: wait for the key */
         e.preventDefault();e.stopPropagation();
-        const why=X.navKey.clash(c);
-        if(why){msg.textContent=X.navKey.textOf(c)+' cannot be used. '+why+' Try another, or press Esc.';return;}
-        stop();X.navKey.set(c);show('Saved: '+X.navKey.text()+' opens Go to.');focusIn(rec);
+        const why=K.clash(c);
+        if(why){msg.textContent=K.textOf(c)+' cannot be used. '+why+' Try another, or press Esc.';return;}
+        stop();K.set(c);show('Saved: '+K.text()+' '+did+'.');focusIn(rec);
       };
       window.addEventListener('keydown',onKey,true);
     };
     rec.onblur=()=>{if(onKey){stop();msg.textContent='Not changed.';}};
-    reset.onclick=()=>{X.navKey.set(null);show('Back to '+X.navKey.text()+'.');focusIn(rec);};
+    reset.onclick=()=>{K.set(null);show('Back to '+K.text()+'.');focusIn(rec);};
   }
   async function onSettingsClick(e){
     if(e.target.closest('#liveBox')){await onLiveClick(e);return;} /* spec 058 FR-082 */

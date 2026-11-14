@@ -72,6 +72,7 @@ const DOC_SHOTS = [
   { name: 'shots-064-send-several', files: ['064-send-several-1440x900.png'] },
   { name: 'shots-068-coffee', files: ['068-coffee-office-15-1440x900.png', '068-coffee-bar-1440x900.png'] },
   { name: 'check-slash-suggest', files: ['073-slash-1440x900.png'] },
+  { name: 'shots-095', files: ['095-search-results-1440x900.png', '095-search-results-1280x800.png'] }, // spec 095: the conversation search's results (the jump picture stays out: the 8 MB site budget, issue 1169)
   { name: 'check-notes', files: ['083-notes-drawer-1440x900.png', '083-notes-drawer-1280x800.png', '083-notes-slash-1440x900.png', '083-notes-slash-1280x800.png', '083-notes-selection-1440x900.png', '083-notes-selection-1280x800.png'] }, // spec 083: the Notes drawer and the notes in the "/" list
   { name: 'check-notes-count', files: ['083-notes-count-1440x900.png', '083-notes-count-1280x800.png', '083-notes-marker-1440x900.png', '083-notes-marker-1280x800.png'] }, // spec 083 T030, T031: the header count and the marker
   { name: 'check-notes-screen', files: ['083-notes-screen-1440x900.png', '083-notes-screen-1280x800.png'] }, // spec 083 T034a: the per-folder Notes screen
@@ -86,11 +87,10 @@ const DOC_SHOTS = [
   { name: 'shots-058-mcp-health', files: ['058-mcp-health-1440x900.png'] },
   { name: 'shots-058-mcp-launch', files: ['058-mcp-launch-closed-1440x900.png', '058-mcp-launch-closed-1280x800.png', '058-mcp-launch-settings-1440x900.png', '058-mcp-launch-settings-1280x800.png'] }, // spec 058 FR-195..FR-203
   { name: 'shots-058-mcp-signin-refresh', files: ['058-mcp-refresh-waiting-1440x900.png', '058-mcp-refresh-waiting-1280x800.png', '058-mcp-refresh-signin-1440x900.png', '058-mcp-refresh-signin-1280x800.png', '058-mcp-refresh-settings-1440x900.png', '058-mcp-refresh-settings-1280x800.png'] }, // spec 058 FR-208..FR-216
-  // one office per theme (shots-themes.js, the Settings path); the README (035-*) and the landing page (site-theme-*) show the same
+  // one office per theme (shots-themes.js, the Settings path); the README and the landing page show the same Retro picture (035-retro); the other themes' landing pictures are site-theme-*
   ...THEMES.map(([id, short]) => ({
     label: `shots-themes ${id}`, name: 'shots-themes', env: { DURBAR_THEME: id, SHOTS_SIZE: '1440x900', SHOTS_PREFIX: '' },
-    files: [{ to: `site-theme-${short || id}-1440x900.png`, from: `${id}-1440x900.png` }]
-      .concat(['retro'].includes(id) ? [{ to: `035-${id}-1440x900.png`, from: `${id}-1440x900.png` }] : []),
+    files: [{ to: id === 'retro' ? `035-${id}-1440x900.png` : `site-theme-${short || id}-1440x900.png`, from: `${id}-1440x900.png` }],
   })),
 ];
 
