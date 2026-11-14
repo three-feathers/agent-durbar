@@ -1404,7 +1404,7 @@ html[data-world="retro"] .letter.real{box-shadow:none;outline:1px solid var(--in
 .btn.primary.warn:hover{background:var(--tone-warn-hover)}
 /* spec 052 FR-076: red means it deletes or ends (End session, Remove, Delete floor, Clear); amber .primary.warn only grants more power (Allow all, Turn on remote) */
 .btn.primary.danger{background:var(--red-ink);border-color:transparent;color:var(--surface)}
-.btn.primary.danger:hover{background:color-mix(in srgb,var(--red-ink) 86%,var(--ink));border-color:transparent} /* toward the page ink: darker on a dark fill (light themes), lighter on a light fill (dark themes), so the text keeps its contrast (issue 1565) */
+.btn.primary.danger:hover{background:color-mix(in srgb,var(--red-ink) 86%,var(--red-hover,var(--ink)));border-color:transparent} /* toward the page ink: darker on a dark fill (light themes), lighter on a light fill (dark themes), so the text keeps its contrast (issue 1565) */
 
 /* ---- switch model and context, compact (spec 030) ---- */
 .mchip-btn{cursor:pointer;font-family:inherit;gap:5px}
@@ -1798,7 +1798,7 @@ html[data-motion-off] .af-notice :is(.afn-dot,.afn-ring-fg,.dlg),html[data-motio
 @media (forced-colors:active){
   .pill,.stat,.chip,.btn,.room-new{border:1px solid CanvasText}
   [aria-pressed=true],[aria-current]:not([aria-current=false]){outline:2px solid Highlight;outline-offset:-2px}
-  .inbox:focus-within,.thpick[aria-pressed=true]{outline:2px solid Highlight}
+  .inbox:focus-within,.thpick[aria-pressed=true],.thpick[aria-checked=true]{outline:2px solid Highlight}
   .dot,.pill i{forced-color-adjust:none}
   .btn:disabled,.btn[aria-disabled=true]{color:GrayText;border-color:GrayText}
 }

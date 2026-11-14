@@ -353,19 +353,20 @@ module.exports = async (ctx) => {
       });
     }
     if (run('inbox')) assert.ok(staleRan > 0, `${tag}: the stale-button check ran (a queue of two or more in a full slip)`);
-    // ---- spec 097 FR-004 / Codex sweep: choosing an Office layout keeps keyboard focus on the choice; FR-122: Show in chat from the limit slip focuses the amount field ----
+    // ---- spec 097 FR-004 / Codex sweep: choosing a World card keeps keyboard focus on the choice; FR-122: Show in chat from the limit slip focuses the amount field ----
     if (run('focus') && world === 'photo') {
       await H.load({ w, h, query: q(world), ready: REAL, settle: false, focus: true });
       await js(`window.DurbarScreens.openSettings()`);
-      await must(`!!document.querySelector('[data-officelayout="open"]')`, 'Settings');
-      await js(`document.querySelector('[data-officelayout="open"]').focus()`);
+      await must(`!!document.querySelector('#wrGroup [data-world="plain"]')`, 'Settings');
+      await must(`document.querySelectorAll('#wrGroup .wpic img').length>=2`, 'the cards show their previews (the page is painted again once, when the previews script has loaded)');
+      await js(`document.querySelector('#wrGroup [data-world="plain"]').focus()`);
       await H.key('Return');
-      await must(`document.querySelector('[data-officelayout="open"]').getAttribute('aria-pressed')==='true'`, 'Open office chosen');
-      assert.strictEqual(await js(`(document.activeElement.dataset||{}).officelayout`), 'open', `${tag}: after the repaint the focus is on the choice just made`);
-      await js(`document.querySelector('[data-officelayout="real"]').focus()`);
+      await must(`document.querySelector('#wrGroup [data-world="plain"]').getAttribute('aria-checked')==='true'`, 'Open office chosen');
+      assert.strictEqual(await js(`(document.activeElement.dataset||{}).world`), 'plain', `${tag}: after the repaint the focus is on the choice just made`);
+      await js(`document.querySelector('#wrGroup [data-world="photo"]').focus()`);
       await H.key('Return');
-      await must(`document.querySelector('[data-officelayout="real"]').getAttribute('aria-pressed')==='true'`, 'Real office chosen');
-      assert.strictEqual(await js(`(document.activeElement.dataset||{}).officelayout`), 'real', `${tag}: and back`);
+      await must(`document.querySelector('#wrGroup [data-world="photo"]').getAttribute('aria-checked')==='true'`, 'Real office chosen');
+      assert.strictEqual(await js(`(document.activeElement.dataset||{}).world`), 'photo', `${tag}: and back`);
       await js(`document.getElementById('scrClose').click()`);
     }
     if (run('limitfocus')) {

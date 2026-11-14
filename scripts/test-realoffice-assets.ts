@@ -23,6 +23,36 @@ const KEYS = ['files', 'source', 'tool', 'date', 'made by', 'approved by', 'refe
 const CLAUSE = /fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named/;
 const kindOf = (f: string): keyof typeof CAPS | null => /^fx-[a-z]+\.webp$/.test(f) ? 'fixture' : /^p\d\d-[\w-]+(\.h)?\.webp$/.test(f) || /^[a-z][a-z0-9-]*-\w+\.webp$/.test(f) ? 'person' : f === 'desk.webp' || f === 'desk.h.webp' ? 'desk' : /^floor(-night)?\.webp$/.test(f) ? 'floor' : /^wall(-night)?\.webp$/.test(f) ? 'wall' : /^monitor(-[a-z]+)?\.webp$/.test(f) ? 'monitor' : f === 'glow.webp' ? 'glow' : null;
 
+/** Spec 102 FR-302 (T265a): the world previews in `realoffice/previews/`: one WebP per built-in world and Plain, 640 px wide, each at most 48 KB with no metadata chunk,
+ *  and `previews.json` naming exactly those, each with its own size and a zoom origin of 0..100 percent (FR-301). Sentences, empty = fine. */
+export const PREVIEW_MAX = 48 * 1024, PREVIEW_W = 640;
+export function previewProblems(files: Map<string, Buffer>, json: string, ids: string[]): string[] {
+  const out: string[] = [];
+  let doc: { formatVersion?: unknown; previews?: Record<string, { file?: unknown; width?: unknown; height?: unknown; bytes?: unknown; origin?: { x?: unknown; y?: unknown } }> };
+  try { doc = JSON.parse(json); } catch { return ['previews.json is not JSON']; }
+  if (doc.formatVersion !== 1) out.push('previews.json: formatVersion 1');
+  const prev = doc.previews || {};
+  if (JSON.stringify(Object.keys(prev).sort()) !== JSON.stringify([...ids].sort())) out.push(`previews.json names ${Object.keys(prev).sort().join(', ')}; the built-in worlds are ${[...ids].sort().join(', ')}`);
+  for (const id of ids) {
+    const e = prev[id], name = id + '.webp';
+    const buf = files.get(name);
+    if (!buf) { out.push(`${name}: no picture for ${id}`); continue; }
+    if (!e || e.file !== name) out.push(`previews.json ${id}: file is ${name}`);
+    if (buf.length > PREVIEW_MAX) out.push(`${name}: ${buf.length} bytes, over the 48 KB preview cap (FR-302)`);
+    let info: { chunks: string[]; width: number; height: number } | null = null;
+    try { info = webpInfo(buf); } catch { out.push(`${name}: not a WebP file`); }
+    if (info) {
+      for (const c of info.chunks) if (!['VP8 ', 'VP8L', 'VP8X', 'ALPH'].includes(c)) out.push(`${name}: metadata or unexpected chunk "${c}"`);
+      if (info.width !== PREVIEW_W) out.push(`${name}: ${info.width} px wide, not ${PREVIEW_W}`);
+      if (e && (e.width !== info.width || e.height !== info.height || e.bytes !== buf.length)) out.push(`previews.json ${id}: says ${e.width}x${e.height}, ${e.bytes} bytes; the picture is ${info.width}x${info.height}, ${buf.length} bytes (retake with npm run shots:docs)`);
+    }
+    const o = e && e.origin;
+    if (!o || typeof o.x !== 'number' || typeof o.y !== 'number' || o.x < 0 || o.x > 100 || o.y < 0 || o.y > 100) out.push(`previews.json ${id}: a zoom origin x and y of 0..100 percent`);
+  }
+  for (const f of files.keys()) if (!ids.includes(f.replace(/\.webp$/, ''))) out.push(`${f}: a picture for no built-in world`);
+  return out;
+}
+
 /** ASSETS.md: one section per source sheet (`### name`), each a list of `- key: value` lines */
 export function sections(md: string): Map<string, Record<string, string>> {
   const out = new Map<string, Record<string, string>>();
@@ -358,7 +388,7 @@ if (worldIds.includes('retro')) {
   }
   // the set: 15 people x 18 frames (17 and the seated `sit` of 2026-11-03), no more, no fewer; a person missing a required frame fails (T207)
   const SEATED = ['typeA', 'typeB', 'waveA', 'waveB', 'think', 'rest'], VIEWA = ['type', 'book', 'knock', 'letter', 'counter'], FACE = ['face-book', 'face-coffee', 'face-knock', 'face-letter', 'face-runA', 'face-runB', 'sit'];
-  assert.strictEqual(st.files.size, 15 * 18, '270 frames');
+  assert.strictEqual(st.files.size, 15 * 20, '300 frames (18, plus runA and runB, T296)');
   for (const pid of Object.keys(sj.seat)) for (const p of [...SEATED, ...VIEWA, ...FACE]) assert.ok(st.files.has(`${pid}-${p}.webp`), `${pid} has ${p}`);
   assert.strictEqual(Object.keys(sj.seat).length, 15);
   const heights = Object.entries(sj.faceBox).map(([pid, f]) => { assert.strictEqual(f.pose, 'face-book'); const [x, y, fw, fh] = f.box, [pw, ph] = sj.stand[pid].poses['face-book']; assert.ok(x >= 0 && y >= 0 && x + fw <= pw && y + fh <= ph && fw > 8 && fh > 8, `${pid}: faceBox inside its frame`); return fh; });
@@ -397,6 +427,50 @@ if (worldIds.includes('retro')) {
 }
 
 {
+  /* spec 102 FR-326 (review of #1677): no frame of a people set is faked by reusing or mirroring another. Pixel hashes of the decoded frames (alpha included,
+   * scripts/frame-hashes.py; plain Node cannot decode WebP): no two frames of one person or of the set share a hash, and no run frame is the horizontal mirror of
+   * another frame of the same person. Needs python3 with Pillow: skipped with a plain message on a machine without it, a failure where DURBAR_REQUIRE_PILLOW is set. */
+  const have = spawnSync('python3', ['-I', '-c', 'import PIL'], { encoding: 'utf8' });
+  if (have.error || have.status !== 0) {
+    if (process.env.DURBAR_REQUIRE_PILLOW) assert.fail('python3 with Pillow is required here (DURBAR_REQUIRE_PILLOW) and is missing: the frame hash check (FR-326) cannot run');
+    console.log('frame hash check skipped: needs python3 with Pillow (not on this machine)');
+  } else {
+    const tool = path.join(ROOT, 'scripts', 'frame-hashes.py');
+    const hashOf = (dir: string): Map<string, [string, string]> => {
+      const names = fs.readdirSync(dir).filter((f) => /^p\d\d-[A-Za-z-]+\.webp$/.test(f)).sort(), rows = new Map<string, [string, string]>();
+      const r = spawnSync('python3', ['-I', tool, ...names.map((n) => path.join(dir, n))], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
+      assert.strictEqual(r.status, 0, 'frame-hashes.py: ' + r.stderr);
+      for (const l of r.stdout.trim().split('\n')) { const [n, h, m] = l.split(' '); rows.set(n, [h, m]); }
+      assert.strictEqual(rows.size, names.length, 'a hash for every frame');
+      return rows;
+    };
+    const frameProblems = (rows: Map<string, [string, string]>): string[] => {
+      const out: string[] = [], seen = new Map<string, string>();
+      for (const [n, [h]] of rows) { const first = seen.get(h); if (first) out.push(`${first} and ${n} share a pixel hash (a frame reused)`); else seen.set(h, n); }
+      for (const [n, [h]] of rows) if (/^p\d\d-run[AB]\.webp$/.test(n)) for (const [o, [, m]] of rows) if (o !== n && o.slice(0, 3) === n.slice(0, 3) && m === h) out.push(`${n} is the horizontal mirror of ${o} (a frame mirrored)`);
+      return out;
+    };
+    const sets = fs.readdirSync(path.join(RO, 'sets')).filter((s) => fs.readdirSync(path.join(RO, 'sets', s)).some((f) => /^p\d\d-[A-Za-z-]+\.webp$/.test(f)));
+    assert.ok(sets.includes('retro') && sets.includes('office'), 'the frame check covers the Retro pixel and the Office people sets: ' + sets.join());
+    for (const s of sets) assert.deepStrictEqual(frameProblems(hashOf(path.join(RO, 'sets', s))), [], `${s}: no frame is a reused or mirrored copy of another (FR-326)`);
+    const retro = path.join(RO, 'sets', 'retro'), tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'durbar-frames-'));
+    try {
+      const plant = (label: string, edit: (dir: string) => void, expect: RegExp): void => {
+        const dir = path.join(tmp, label); fs.mkdirSync(dir);
+        for (const f of fs.readdirSync(retro)) if (/^p\d\d-[A-Za-z-]+\.webp$/.test(f)) fs.copyFileSync(path.join(retro, f), path.join(dir, f));
+        edit(dir);
+        const found = frameProblems(hashOf(dir));
+        assert.ok(found.some((p) => expect.test(p)), `FR-326 mutant "${label}" is caught by the frame check (${JSON.stringify(found)})`);
+      };
+      plant('runB is a copy of runA', (d) => fs.copyFileSync(path.join(d, 'p01-runA.webp'), path.join(d, 'p01-runB.webp')), /p01-runA\.webp and p01-runB\.webp share a pixel hash|p01-runB\.webp is the horizontal mirror/);
+      plant('runB is a copy of another person\'s frame', (d) => fs.copyFileSync(path.join(d, 'p03-type.webp'), path.join(d, 'p04-runB.webp')), /share a pixel hash/);
+      plant('runB is the mirror of runA', (d) => { const r = spawnSync('python3', ['-I', tool, '--mirror', path.join(d, 'p02-runA.webp'), path.join(d, 'p02-runB.webp')], { encoding: 'utf8' }); assert.strictEqual(r.status, 0, 'frame-hashes.py --mirror: ' + r.stderr); }, /p02-runB\.webp is the horizontal mirror of p02-runA\.webp/);
+      plant('runA is the mirror of a standing frame', (d) => { const r = spawnSync('python3', ['-I', tool, '--mirror', path.join(d, 'p05-type.webp'), path.join(d, 'p05-runA.webp')], { encoding: 'utf8' }); assert.strictEqual(r.status, 0, 'frame-hashes.py --mirror: ' + r.stderr); }, /p05-runA\.webp is the horizontal mirror of p05-type\.webp/);
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+  }
+}
+
+{
   /* spec 097 FR-371 (issue #1641 review): no kid picture is clipped by a side border. A tight crop of a whole cube or stool may rest on the
    * edge (the most in the shipped 42 is 47 rows of 220, a stool's flat side), a clipped figure runs far more: the count is of rows with
    * alpha > 128 in the first and the last column (scripts/kid-edge-rows.py decodes the WebP; plain Node cannot): needs python3 with Pillow. */
@@ -427,6 +501,33 @@ if (fs.existsSync(path.join(ROOT, 'dist', 'renderer', 'index.html'))) {
     assert.deepStrictEqual(JSON.parse((m as RegExpExecArray)[1]), src.json, `${json}.js carries ${json}.json unchanged`);
   }
   for (const f of ['realoffice.js', 'realoffice.css', 'realoffice-world.css']) assert.ok(fs.existsSync(path.join(ROOT, 'dist', 'renderer', f)), f + ' is built');
+}
+
+// ---- the world previews (spec 102 FR-302, T265a): shipped with the app, one per built-in world and Plain ----
+{
+  const dir = path.join(RO, 'previews'), pf = new Map<string, Buffer>();
+  assert.ok(fs.existsSync(dir), 'realoffice/previews exists (FR-302)');
+  for (const f of fs.readdirSync(dir)) { if (f.endsWith('.webp')) pf.set(f, fs.readFileSync(path.join(dir, f))); else assert.ok(f === 'previews.json', 'only pictures and previews.json in previews/: ' + f); }
+  const ids = ['plain', ...(require(path.join(__dirname, '..', '..', 'src', 'renderer', 'crew.js')) as { WORLDS: { id: string }[] }).WORLDS.map((x) => x.id)]; // eslint-disable-line @typescript-eslint/no-var-requires
+  const pj = fs.readFileSync(path.join(dir, 'previews.json'), 'utf8');
+  assert.deepStrictEqual(previewProblems(pf, pj, ids), [], 'the previews pass (FR-302)');
+  const good = pf.get('photo.webp') as Buffer, doc = JSON.parse(pj);
+  const red = (m: (f: Map<string, Buffer>, d: typeof doc) => void, re: RegExp, why: string): void => { const f = new Map(pf), d = JSON.parse(pj); m(f, d); assert.ok(previewProblems(f, JSON.stringify(d), ids).some((x) => re.test(x)), 'red: ' + why); };
+  red((f) => f.set('photo.webp', Buffer.concat([good, Buffer.alloc(PREVIEW_MAX)])), /over the 48 KB/, 'a preview of 49 KB or more');
+  red((f) => f.delete('cave.webp'), /no picture for cave/, 'a world without its preview');
+  red((f) => f.set('extra.webp', good), /no built-in world/, 'a picture for no world');
+  red((_f, d) => { delete d.previews.retro; }, /previews.json names/, 'previews.json missing a world');
+  red((_f, d) => { d.previews.plain.origin.x = 140; }, /zoom origin/, 'a zoom origin outside the picture');
+  red((_f, d) => { delete d.previews.plain.origin; }, /zoom origin/, 'a preview with no zoom origin');
+  red((_f, d) => { d.previews.photo.bytes = 1; }, /retake with npm run shots:docs/, 'a stale size in previews.json');
+  red((f) => f.set('photo.webp', Buffer.from('not an image at all, just some text')), /not a WebP/, 'a file that is no WebP');
+  const withChunk = (tag: string): Buffer => { const c = Buffer.concat([Buffer.from(tag), Buffer.from([4, 0, 0, 0]), Buffer.from('abcd')]); const b = Buffer.concat([good, c]); b.writeUInt32LE(b.length - 8, 4); return b; }; // a chunk appended, RIFF size fixed up
+  red((f) => f.set('photo.webp', withChunk('EXIF')), /photo\.webp: metadata or unexpected chunk "EXIF"/, 'a preview with an EXIF chunk');
+  red((f) => f.set('photo.webp', withChunk('ICCP')), /photo\.webp: metadata or unexpected chunk "ICCP"/, 'a preview with an ICC profile chunk');
+  assert.ok(Object.keys(doc.previews).length === ids.length, 'one preview per world');
+  const dist = path.join(ROOT, 'dist', 'renderer', 'realoffice', 'previews');
+  if (fs.existsSync(path.join(ROOT, 'dist', 'renderer', 'index.html'))) assert.deepStrictEqual(fs.readdirSync(dist).sort(), [...pf.keys(), 'previews.js'].sort(), 'dist previews/ holds the pictures and previews.js, not previews.json');
+  assert.ok(/previews/.test(copy) && /DurbarWorldPreviews/.test(copy), 'copy-assets.js copies realoffice/previews');
 }
 const index = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'index.html'), 'utf8');
 const csp = /Content-Security-Policy" content="([^"]*)"/.exec(index);

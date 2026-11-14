@@ -82,14 +82,14 @@ module.exports = async (ctx) => {
   // ---- FR-001, FR-003, FR-004: the Settings button and the stored choice ----
   await H.load({ w: 1440, h: 900 });
   await js(`window.DurbarScreens.openSettings()`);
-  await must(`!!document.querySelector('[data-officelayout="real"]')`, 'the Real office button');
-  const seg = await js(`[...document.querySelectorAll('[data-officelayout]')].map(b=>b.dataset.officelayout+':'+b.getAttribute('aria-pressed')).join(' ')`);
-  assert.strictEqual(seg, 'open:true real:false', 'two buttons, Open office pressed: ' + seg);
-  await js(`document.querySelector('[data-officelayout="real"]').scrollIntoView({block:'center'})`);
+  await must(`!!document.querySelector('#wrGroup [data-world="photo"]')`, 'the Photo office card');
+  const seg = await js(`[...document.querySelectorAll('#wrGroup [data-world]')].map(b=>b.dataset.world+':'+b.getAttribute('aria-checked')).join(' ')`);
+  assert.strictEqual(seg, 'plain:true photo:false', 'two cards, Plain chosen: ' + seg);
+  await js(`document.querySelector('#wrGroup [data-world="photo"]').scrollIntoView({block:'center'})`);
   await H.shot(path.join(OUT, '097-office-layout-1440x900.png'), { prep: 'calm' });
-  await js(`document.querySelector('[data-officelayout="real"]').focus();document.querySelector('[data-officelayout="real"]').click()`);
-  await must(`document.querySelector('[data-officelayout="real"]').getAttribute('aria-pressed')==='true'`, 'Real office pressed');
-  await must(`document.activeElement&&document.activeElement.dataset&&document.activeElement.dataset.officelayout==='real'`, 'the keyboard focus stays on the Real office button after the repaint');
+  await js(`document.querySelector('#wrGroup [data-world="photo"]').focus();document.querySelector('#wrGroup [data-world="photo"]').click()`);
+  await must(`document.querySelector('#wrGroup [data-world="photo"]').getAttribute('aria-checked')==='true'`, 'the Photo office card chosen');
+  await must(`document.activeElement&&document.activeElement.dataset&&document.activeElement.dataset.world==='photo'`, 'the keyboard focus stays on the Photo office card after the repaint');
   assert.strictEqual(await js(`localStorage.getItem('durbar.officeview')`), 'real', 'stored as real');
   await js(`document.getElementById('scrClose').click()`);
   await must(REAL, 'the Real office after the Settings choice');
@@ -99,8 +99,8 @@ module.exports = async (ctx) => {
   const packFiles = await js(`[...new Set([...document.querySelectorAll('script[src],link[href],#stage img[src]')].map(e=>e.getAttribute('src')||e.getAttribute('href')).filter(n=>/realoffice\\/(worlds|sets)\\//.test(n)).map(n=>n.replace(/^.*realoffice\\/(worlds|sets)\\/([^/]+)\\/.*$/,'$1/$2')))].sort().join(' ')`);
   assert.strictEqual(packFiles, 'sets/office worlds/photo', 'Real office asked for the Photo office and the Office people only: ' + packFiles);
   await js(`window.DurbarScreens.openSettings()`);
-  await must(`!!document.querySelector('[data-officelayout="real"]')`, 'Settings');
-  assert.strictEqual(await js(`!!document.querySelector('#wrGroup')`), false, 'no World row while only one world is offered');
+  await must(`!!document.querySelector('#wrGroup [data-world="photo"]')`, 'Settings');
+  assert.strictEqual(await js(`[...document.querySelectorAll('#wrGroup [data-world]')].map(b=>b.dataset.world).join()`), 'plain,photo', 'only Plain and the Photo office are offered');
   assert.ok(/World\u2019s default \(Office people\)/.test(await js(`document.querySelector('#chList [data-characters="theme"]').getAttribute('aria-label')`)), 'Characters starts with the world\u2019s default set');
   await js(`document.querySelector('#chList [data-characters="minimalist"]').click()`);
   await must(`document.getElementById('dsR').textContent==='Real office shows Office people until Minimalist has Real office poses.'`, 'Minimalist has no Real office poses: Settings says so under Office layout (Cheeky has its own since T244)');
@@ -108,8 +108,8 @@ module.exports = async (ctx) => {
   await must(`document.getElementById('dsR').textContent===''`, 'the line goes with the default');
   await js(`document.getElementById('scrClose').click()`);
   await js(`window.DurbarScreens.openSettings()`);
-  await must(`!!document.querySelector('[data-officelayout="open"]')`, 'the Office layout row');
-  await js(`document.querySelector('[data-officelayout="open"]').click()`);
+  await must(`!!document.querySelector('#wrGroup [data-world="plain"]')`, 'the Plain card');
+  await js(`document.querySelector('#wrGroup [data-world="plain"]').click()`);
   await must(`localStorage.getItem('durbar.officeview')==='flat'`, 'back to flat');
   await js(`document.getElementById('scrClose').click()`);
   await must(`!document.querySelector('#stage .ro')&&document.querySelectorAll('#stage .desk[data-id]').length>=15`, 'the flat desks again');
@@ -662,8 +662,8 @@ module.exports = async (ctx) => {
   }
   // leaving Real office gives the user's theme back, exactly (Clean Office: the bar is its light surface again)
   await js(`window.DurbarScreens.openSettings()`);
-  await must(`!!document.querySelector('[data-officelayout="open"]')`, 'the Office layout row');
-  await js(`document.querySelector('[data-officelayout="open"]').click()`);
+  await must(`!!document.querySelector('#wrGroup [data-world="plain"]')`, 'the Plain card');
+  await js(`document.querySelector('#wrGroup [data-world="plain"]').click()`);
   await must(`localStorage.getItem('durbar.officeview')==='flat'&&!document.documentElement.dataset.world`, 'flat again');
   assert.ok(await js(`document.getElementById('thWorld').hidden`), 'the theme note goes with the world');
   await js(`document.getElementById('scrClose').click()`);
