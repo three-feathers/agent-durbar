@@ -155,6 +155,31 @@ module.exports = async (ctx) => {
       }
     }
 
+    // ---- the previews' script arrives late (request delayed on purpose, the hook of check-097-crews): the pictures come in place, no repaint of the page ----
+    {
+      const ses = ctx.win.webContents.session;
+      ses.webRequest.onBeforeRequest({ urls: ['file://*/*'] }, (d, cb) => { if (/\/realoffice\/previews\/previews\.js$/.test(d.url)) setTimeout(() => cb({}), 700); else cb({}); });
+      try {
+        await H.load({ w, h, query: { sim: '15', simkinds: 'mixed', officeview: 'flat' }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=15`, focus: true });
+        await js(`document.getElementById('settingsBtn').click();0`);
+        await ok(`!!document.querySelector(${jsLiteral(CARDS)})&&!!document.getElementById('advMcp')&&!!document.getElementById('liveBox')`, `${w}x${h}: Settings opens with the cards and the MCP list`);
+        assert.strictEqual(await js(`document.querySelectorAll('#wrGroup .wpic img').length`), 0, `${w}x${h}: the previews have not arrived yet (the script is held back 700 ms)`);
+        await js(`(()=>{const b=window.__durbarSimUi.bridge();window.__mcpCalls=0;const o=b.agentMcp;b.agentMcp=(i)=>{window.__mcpCalls++;return o(i);};
+          document.getElementById('themeH').closest('section').dataset.mark='kept';
+          const c=document.querySelector('#wrGroup [data-world="photo"]');c.focus();window.__focused=c;
+          const sb=document.querySelector('#screen .scr-body');sb.scrollTop=300;window.__top=sb.scrollTop;return 0})()`);
+        const top = await js(`window.__top`);
+        assert.ok(top > 100, `${w}x${h}: the page is scrolled before the previews arrive (${top})`);
+        await ok(`document.querySelectorAll('#wrGroup .wpic img').length===2`, `${w}x${h}: the previews' pictures arrive`);
+        const calls = await js(`window.__mcpCalls`);
+        assert.strictEqual(calls, 0, `${w}x${h}: the previews' arrival does not call agents:mcp (${calls} calls)`);
+        assert.strictEqual(await js(`document.getElementById('themeH').closest('section').dataset.mark||''`), 'kept', `${w}x${h}: the previews' arrival does not repaint the page`);
+        assert.ok(await js(`document.activeElement===window.__focused&&document.contains(window.__focused)`), `${w}x${h}: the focused World card is the same element after the previews arrive`);
+        assert.strictEqual(await js(`document.querySelectorAll(${jsLiteral(CARDS + '[tabindex="0"]')}).length+':'+document.querySelector(${jsLiteral(CARDS + '[tabindex="0"]')}).dataset.world`), '1:plain', `${w}x${h}: the roving tabindex is kept after the previews arrive`);
+        assert.strictEqual(await js(`document.querySelector('#screen .scr-body').scrollTop`), top, `${w}x${h}: the scroll position is kept after the previews arrive`);
+      } finally { ses.webRequest.onBeforeRequest(null); }
+    }
+
     // ---- a stored world that is closed now (the cave, flag closed): the page falls back to the Photo office, lists no cave, and says nothing ----
     await open(w, h, { officeview: 'real' });
     await js(`localStorage.setItem('durbar.world','cave');0`);

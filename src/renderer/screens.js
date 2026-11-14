@@ -789,20 +789,30 @@
   const worldCur=()=>{const V=X.view;return V.get()==='real'&&V.world?V.world.get():'plain';};
   /* FR-302, FR-061: the previews' script (pictures and zoom origins) loads the first time the World section is drawn, never at start; until it is there the
      cards show plain tiles, and the page is painted again when it arrives (a missing script leaves the tiles) */
+  /* a card's picture: the preview of T265a when its script has arrived, else a plain tile with the name */
+  const worldPic=(w)=>{
+    const P=(window['DurbarWorldPreviews']&&window['DurbarWorldPreviews'].previews)||{}, pv=Object.prototype.hasOwnProperty.call(P,w.id)?P[w.id]:null;
+    return pv?`<span class="chsw wpic" aria-hidden="true"><img src="realoffice/previews/${esc(String(pv.file||'').replace(/[^\w.-]/g,''))}" alt="" width="${Number(pv.width)||640}" height="${Number(pv.height)||400}" draggable="false" style="--zx:${Number(pv.origin&&pv.origin.x)||50}%;--zy:${Number(pv.origin&&pv.origin.y)||50}%"></span>`:`<span class="chsw wpic wnone" aria-hidden="true"><b>${esc(w.name)}</b></span>`;
+  };
+  /* the previews' script has arrived: each card's picture is replaced in place, so the focus, the roving tabindex and the scroll stay */
+  function previewsApply(){
+    const by=new Map(worldCards().map(w=>[w.id,w]));
+    document.querySelectorAll('#wrGroup [data-world]').forEach(c=>{const w=by.get(c.dataset.world),o=c.querySelector('.wpic');if(w&&o)o.outerHTML=worldPic(w);});
+  }
   function previewsLoad(){
     if(document.getElementById('roPreviewsJs'))return;
     const sc=document.createElement('script');sc.id='roPreviewsJs';sc.src='realoffice/previews/previews.js';
-    sc.onload=()=>{if(document.getElementById('wrGroup'))paintSettings();};
+    sc.onload=previewsApply; /* the pictures come in place: no repaint of the page (a repaint reloads the MCP list for every chat and loses the focus and the scroll) */
     document.body.appendChild(sc);
   }
   function worldSection(){
     const list=worldCards();
     if(!list.length)return '';
-    const cur=worldCur(), P=(window['DurbarWorldPreviews']&&window['DurbarWorldPreviews'].previews)||{}; /* a pack-style script, so a string key (as app.js reads the packs'); loaded below */
+    const cur=worldCur(); /* the previews' script is a pack-style global, read with a string key (as app.js reads the packs'); loaded below */
     previewsLoad();
     const card=w=>{
-      const on=w.id===cur, pv=Object.prototype.hasOwnProperty.call(P,w.id)?P[w.id]:null;
-      const pic=pv?`<span class="chsw wpic" aria-hidden="true"><img src="realoffice/previews/${esc(String(pv.file||'').replace(/[^\w.-]/g,''))}" alt="" width="${Number(pv.width)||640}" height="${Number(pv.height)||400}" draggable="false" style="--zx:${Number(pv.origin&&pv.origin.x)||50}%;--zy:${Number(pv.origin&&pv.origin.y)||50}%"></span>`:`<span class="chsw wpic wnone" aria-hidden="true"><b>${esc(w.name)}</b></span>`;
+      const on=w.id===cur;
+      const pic=worldPic(w);
       return `<li class="throw"><button type="button" class="thpick" role="radio" data-world="${esc(w.id)}" aria-checked="${on}" tabindex="${on?'0':'-1'}" aria-labelledby="wn-${esc(w.id)}" aria-describedby="wl-${esc(w.id)}${on?' wu-'+esc(w.id):''}">${pic}<span class="thtx"><b id="wn-${esc(w.id)}">${esc(w.name)}</b><small id="wl-${esc(w.id)}">${esc(w.line)} Built in.</small></span><b class="wuse" id="wu-${esc(w.id)}"${on?'':' data-off aria-hidden="true"'}>In use</b></button></li>`;
     };
     return `<section class="scr-sec" aria-labelledby="worldH"><h3 id="worldH">World</h3>
