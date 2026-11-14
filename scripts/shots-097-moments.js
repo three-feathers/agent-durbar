@@ -12,7 +12,7 @@ const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
-const { helpers, jsLiteral } = require('./driver-helpers');
+const { helpers, jsLiteral, CHECK_DARK, CHECK_DARK_QUERY } = require('./driver-helpers');
 const { AT_CLOCK } = require('./shots-068-coffee');
 /* the plate's words after "Coffee break — ": "resumes at 14:30" today, "resumes Tue 12:08 AM" when the reset is on the next day (a run just before midnight UTC); test-coffeebreak checks it against untilText */
 const RESUMES = `resumes ${AT_CLOCK}`;
@@ -430,6 +430,35 @@ module.exports = async (ctx) => {
         assert.ok(fc.length >= 8 && fc.every((x) => x.ratio >= 4.5), `${tag}: forced colours keep the post-it text readable: ${JSON.stringify(fc.map((x) => [x.place, x.ratio.toFixed(1)]))}`);
       });
       console.log('[moments] notes ok', ns.length);
+    }
+    // ---- review of #1740: the question card's "Other answer" placeholder reads at 4.5:1 on its field in every built-in theme and the dark fixture, in this world (the table is in the spec delta) ----
+    if (run('placeholder')) {
+      /* the plain office (no world: the light Clean Office) and this world's own look; each with the built-in themes, and with the dark fixture */
+      for (const [name, plain, extra] of [['plain office', true, {}], ['plain office dark fixture', true, CHECK_DARK_QUERY], ['world look', false, {}], ['world look dark fixture', false, CHECK_DARK_QUERY]]) {
+        await H.load({ w, h, query: plain ? { simquestion: '1', ...extra } : q(world, { sim: '15', simquestion: '1', ...extra }), ready: plain ? 'fit' : REAL, settle: false });
+        if (!plain) await must(PICS, 'the pictures');
+        await js('window.__cx=(()=>{' + CX + 'return {Pa,Lm,over,bgOf,rat}})();0');
+        if (plain) {
+          const o = await H.openSimAgent(`a=>!a.parent&&a.question`, '#chat .note.question .q-other');
+          assert.ok(o.ok, `${tag}: an agent has the question in its chat (${name})`);
+        } else {
+          const asker = await js(`(()=>{const A=window.__durbarSimUi.agents();return (A.find(a=>a.info&&a.info.adapterId==='claude')||A[0]||{}).id||''})()`);
+          assert.ok(asker, `${tag}: the simulator has a Claude agent to ask the question`);
+          await js(`document.querySelector('#stage .ro-plate[data-id="'+${jsLiteral(asker)}+'"]').click()`);
+          await must(`!!document.querySelector('#chat .note.question:not(.settled) .q-other')`, 'the question card with its Other answer field');
+        }
+        const ids = !/dark fixture/.test(name) ? await js(`Object.keys(window.THEME._builtins())`) : [CHECK_DARK.id];
+        const rows = [];
+        for (const id of ids) {
+          if (!/dark fixture/.test(name)) await js(`window.THEME.setTheme(${jsLiteral(id)});0`);
+          await must(`window.THEME.current().id===${jsLiteral(id)}`, 'the theme ' + id);
+          await H.settle();
+          const r = await js(`(()=>{const {Pa,Lm,over,bgOf,rat}=window.__cx;const o=document.querySelector('#chat .note.question:not(.settled) .q-other');if(!o)return 0;const b=bgOf(o,document.documentElement);return rat(over(Pa(getComputedStyle(o,'::placeholder').color),b),b)})()`);
+          rows.push([id, Math.round(r * 100) / 100, r]);
+        }
+        console.log(`[moments] placeholder ratio ${tag} (${name}): ${JSON.stringify(rows.map((x) => [x[0], x[1]]))}`);
+        assert.ok(rows.length >= 1 && rows.every((x) => x[2] >= 4.5), `${tag}: the Other answer placeholder reads at 4.5:1 on its field in ${name} theme(s): ${JSON.stringify(rows.map((x) => [x[0], x[1]]))}`);
+      }
     }
     // ---- 102 T223 walk (097 FR-073, FR-075): the Real office draws no walk; a person at a desk is gone from it and appears at the place (a still pair: before, after), in the arcade ----
     if (run('walk') && world === 'retro') {
