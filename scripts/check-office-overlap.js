@@ -522,6 +522,8 @@ async function driver(ctx) {
       /* spec 097 FR-316 (issue #1511): a lounge seat's person (the picture's box from its top to the plate's top, where the plate stands in front of the lap, less 12% of its width at each side where the picture is empty) is a box for the Draft tag only: the tag must not cover the figure. Mutant (a source edit): in src/renderer/realoffice.js the `dr:` tag's box, drop `d.lounge ? { x: d.screen.x, y: d.screen.y } :`, build, run: it must fail "drafttag Draft overlaps figure <id>" at 12 and 15 agents; second mutant (every seat but the first): `d.lounge ? ` becomes `d.lounge && lay.lounge.desks[0].id === k ? `, it must fail the same label at 15 agents only */
       if (L.lounge) for (const d of L.lounge.desks) if (!document.querySelector('#stage .ro-drafttag.on[data-for="' + d.id + '"]')) P.push('lounge seat ' + d.id + ' has no Draft tag'); /* every seat is drafted by the seeding: the check below would otherwise pass for a seat with no tag */
       if (L.lounge) for (const d of L.lounge.desks) if (d.person) { const p = d.person, m = 0.12 * p.w; add('figure', null, { x: o.left + p.x + m, y: o.top + p.y, r: o.left + p.x + p.w - m, b: o.top + Math.min(p.y + p.h, d.plate.y) }, d.id); }
+      /* spec 102 (issue #1632, PR 1756 review): an arcade Draft tag on a note stays within the note's width (it starts at the cabinet's edge, 4 px in; the tag is about 60 px with its border, the note 66): a wider font would push it past the note */
+      if (want) for (const t of boxes) if (t.kind === 'drafttag') { const n = boxes.find((x) => x.kind === 'away' && t.r.x >= x.r.x - 0.5 && t.r.x < x.r.r && Math.abs(t.r.b - x.r.y) < 6); if (n && t.r.r > n.r.r + 0.5) P.push(`drafttag ${t.id} is wider than its note (${(t.r.r - t.r.x).toFixed(0)} px, note right edge ${n.r.r.toFixed(0)} < ${t.r.r.toFixed(0)})`); }
       const hit = (a, b) => a.x + 0.5 < b.r && b.x + 0.5 < a.r && a.y + 0.5 < b.b && b.y + 0.5 < a.b;
       for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
         const a = boxes[i], b = boxes[j];
@@ -622,7 +624,12 @@ async function driver(ctx) {
         console.log(`  ${tag}: face ${res.info.face ? res.info.face.toFixed(1) : '?'}px, u ${res.info.u ? res.info.u.toFixed(0) : '?'}, contrast >= ${res.info.minRatio ? res.info.minRatio.toFixed(2) : '?'}`);
       }
       /* OFFICE_SHOTS only (spec 102 T281): the draft seeding leaves the last plate hovered and focused, and its tooltip covers cabinets in the picture; take the pointer and the focus away first (the checks above are done) */
-      if (shotsDir) { await H.calm({ blur: true }); await ctx.sleep(300); await ctx.shot(path.join(shotsDir, `${prefix}-${tag.replace(/ /g, '-')}.png`)); }
+      if (shotsDir) {
+        await H.pointerOff('#stage', '.ro-plate, .ro-screen, .ro-desk'); /* the real pointer rests mid-window under xvfb, on a plate (its tooltip covered cabinets in the 1280x800 picture, PR 1756 review): move it off first */
+        await H.calm({ blur: true });
+        if (!(await H.until(`!document.querySelector('#appTip:not([hidden])')`, 3000))) { total++; failed++; console.log(`FAIL ${tag}: a tooltip is showing in the picture`); }
+        await ctx.sleep(300); await ctx.shot(path.join(shotsDir, `${prefix}-${tag.replace(/ /g, '-')}.png`));
+      }
       /* (a plate other than the one with the New reply tag: opening that chat reads the reply, and a read finished agent moves to the lounge) chat open: the chat takes the window (spec 001: body.panel-open hides the office); the page must not overflow, and closing it draws the same office */
       const before = await ctx.js(`[...document.querySelectorAll('#stage .ro-plate')].map(e=>{const r=e.getBoundingClientRect();return Math.round(r.x)+','+Math.round(r.y)}).join(';')`);
       await ctx.js(`document.querySelector('#stage .ro-plate'+${jsLiteral(marks.narrow ? ':not([data-id="' + marks.narrow + '"])' : '')}).click()`);
