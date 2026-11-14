@@ -83,8 +83,11 @@
   /* the first DESK_SPLIT_MAX characters, ending at the last blank before the bound (round 7: a token split by an in-line piece across the bound is left out whole,
      not its first half), never half a surrogate pair; with no blank in it, without the token characters the bound cut into (the reference hides the rest anyway) */
   const windowOf=s=>{if(s.length<=DESK_SPLIT_MAX)return s;let e=DESK_SPLIT_MAX;if(/[\ud800-\udbff]/.test(s[e-1]))e--;
-    const b=s.slice(0,e).search(/\s\S*$/);if(b>0){let w=s.slice(0,b+1);
-      /* a blank inside a piece (`<!-- -->`, `<span class=…>`) can end the window inside it: then the word before the piece goes too (round 7) */
+    const b=s.slice(0,e).search(/[ \t][^ \t]*$/);if(b>0){let w=s.slice(0,b+1);
+      /* round 8: the window ends at a space or a tab, never at a line break (a line break is a piece a token can be split by); a blank inside a piece (`<!-- -->`,
+         `<span class=…>`) can end the window inside it (round 7), and a last line of blanks and marks only (`\n    `, `\n> `) can be the split of the word before it: in both cases the word before
+         goes too */
+      const nl=w.search(/[\r\n][^\r\n]*$/);if(nl>=0&&!/[A-Za-z0-9]/.test(w.slice(nl))){const t=w.slice(0,nl).trimEnd();return t.slice(0,t.search(/\S*$/));} /* the last line holds only blanks and marks (`> `, `- `) */
       const t=w.trimEnd(),k=t.search(/\S*$/);if(k>0&&/[<&\u0080-\uffff]/.test(t.slice(k)))w=t.slice(0,k);return w;}
     while(e>0&&TOKEN_TAIL.test(s[e-1]))e--;return s.slice(0,e);};
   /* round 7: what the excerpt can show, before the window is taken: a closed code block becomes an empty one (plainKeep shows "code" for either), a link's target
@@ -144,6 +147,8 @@
     try{const one=t=>{const r=f(t);return typeof r==='string'?r:'';};
       /* round 7: the label as before PR 1721 first; when it is '' (the window's own fail-closed check), the label is '' here too */
       const ref=old(()=>escMask(s,t=>unhid(t,one,c=>c,'')));if(!ref)return '';
+      /* round 8: a label with no split token and no hidden character reads the same both ways: the reading as before is the answer (one pass, not two) */
+      if(splitFirst(s)===s&&unhide(s)===s)return ref;
       const h=escMask(s,t=>{const go=(x,u)=>u(x,one,c=>c,'');if(t.length>DESK_SPLIT_MAX){const r=old(()=>go(t,unhid));return r==null?'':r;}const m=both2(t,splitFirst(t),go);return m==null?'':m;});
       return h?keep(h,ref):'';}catch(e){return '';}};
   /* the wrapper the page uses: fallback words and the "is masking possible" flag */

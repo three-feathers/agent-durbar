@@ -2075,6 +2075,17 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     const wo = ST._deskWindowForTest(over);
     assert.ok(wo !== over && wo.length <= M && wo.length > M - 4 && over.startsWith(wo) && /\s$/.test(wo), `#1613 round 7: one character over the bound, the window ends at the last blank within it (${wo.length})`);
     assert.strictEqual(ST._deskWindowForTest('a'.repeat(M + 1)), '', '#1613 round 7: with no blank, the token characters the bound cut into are left out');
+    // round 8: a line break is a piece too: the window ends at a space or a tab, and a line break among the blanks before its end drops the word before it
+    for (const brk of ['\n', '\n    ', '\r\n\t', '\n> '])
+      assert.ok(!ST._deskWindowForTest('x '.repeat(8180) + 'ghp_' + B.slice(0, 10) + brk + B.slice(10, 36) + ' ' + 'tail '.repeat(100)).includes('ghp_'), `#1613 round 8: a token split by ${JSON.stringify(brk)} across the bound is left out of the window whole`);
+    const ws = 'a'.repeat(M) + ' ';
+    assert.ok(ws.length === M + 1 && ST._deskWindowForTest(ws).length <= M, '#1613 round 8: a text of 16,385 characters with a blank at index 16,384 gives a window within the bound');
+    // round 8: a label with no split token and no hidden character reads once, as before PR 1721 (one call of the mask handed in)
+    for (const lab of ['echo hello world', 'echo ' + GH, 'ls -la /tmp']) {
+      let calls = 0;
+      const out = ST.maskLabel(lab, 'run', { ...cm, cmd: (x: string) => { calls++; return maskSecretCommand(x, {}); } });
+      assert.ok(calls === 1 && out === withoutSplit(() => ST.maskLabel(lab, 'run', cm)), `#1613 round 8: a plain label is read once and as before (${calls} calls): ${out}`);
+    }
     const straddle = 'x '.repeat(8180) + 'ghp_' + B.slice(0, 10) + '<!-- -->' + B.slice(10, 36) + ' ' + 'tail '.repeat(100);
     assert.ok(!ST._deskWindowForTest(straddle).includes('ghp_'), '#1613 round 7: a token split by an in-line piece just before the bound is left out of the window whole');
     const sur = ST._deskWindowForTest('a'.repeat(M - 1) + '\u{1F600}' + 'b'.repeat(10));
