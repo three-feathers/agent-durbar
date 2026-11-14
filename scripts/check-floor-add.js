@@ -6,16 +6,13 @@
  * Then the same folder is added again (the simulator's picker is told to choose it): "already added on the floor", no second desk.
  */
 const assert = require('assert');
-const path = require('path');
 const { helpers } = require('./driver-helpers');
-const OUT = process.env.SHOTS_033_ADD || '/tmp';
 
 module.exports = async (ctx) => {
   const H = helpers(ctx);
   const { js, until, settle } = H;
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
   await H.load({ w, h, query: { simfloors: '1' }, focus: true });
-  const shot = (name) => H.shot(path.join(OUT, `033-add-${name}-${w}x${h}.png`), { tag: '033-add', what: `${name} ${w}x${h}`, prep: 'calm', keepActions: true });
   await until(`!!document.getElementById('floorsBtn')&&document.querySelectorAll('#stage .desk[data-id]').length>=1`, 15000);
   await settle();
   await js(`(()=>{window.__ann=[];new MutationObserver(()=>{const t=document.getElementById('srAnnounce').textContent;if(t)window.__ann.push(t);}).observe(document.getElementById('srAnnounce'),{childList:true,characterData:true,subtree:true});})()`);
@@ -38,7 +35,6 @@ module.exports = async (ctx) => {
   assert.ok(sel.label && sel.opts.some((o) => /Personal \(off\)/.test(o)), `the dialog lists the floors by name, Personal marked off: ${JSON.stringify(sel)}`);
   assert.ok(sel.size >= 10.5, `the floor select text is at least 10.5px: ${sel.size}`);
   await js(`(()=>{const s=document.getElementById('addFloorSel');s.value='f-personal';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
-  await shot('dialog');
   const before = await desks();
   await js(`[...document.querySelectorAll('#modeDlg .btn')].find(b=>/Add existing/.test(b.textContent)).click()`);
   await until(`!!document.querySelector('.toast.with-act')`, 6000);
@@ -49,7 +45,6 @@ module.exports = async (ctx) => {
   assert.strictEqual(await desks(), before, 'the new desk is on the other floor, not on the one shown');
   await until(`window.__ann.some(a=>/Added .* on the floor "Personal"/.test(a))`, 3000);
   assert.ok(await js(`window.__ann.some(a=>/Added .* on the floor "Personal".*Show/.test(a))`), 'the result is announced');
-  await shot('toast');
   await js(`document.querySelector('.toast.with-act .toast-act').click()`);
   await until(`localStorage.getItem('durbar.floor')==='f-personal'`, 4000);
   assert.strictEqual(await cur(), 'f-personal', 'Show went to Personal');
@@ -64,7 +59,6 @@ module.exports = async (ctx) => {
   await until(`window.__ann.some(a=>/already added on the floor "Personal"/.test(a))`, 6000);
   assert.ok(await js(`window.__ann.some(a=>/already added on the floor "Personal"/.test(a))`), 'a repeat says it is already added, on which floor');
   assert.strictEqual(await desks(), n, 'no second desk for a folder that is already there');
-  await shot('shown');
   // switching the floor on fails: the folder is still reported, with the reason, and the floor stays off (this was issue 1709 again)
   await js(`window.__simAddFolderSame=undefined;window.__ann=[]`);
   if (await js(`document.getElementById('floorsPop').hidden`)) await js(`document.getElementById('floorsBtn').click()`);

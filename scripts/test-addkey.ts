@@ -16,7 +16,7 @@ const id = (p: string): string => p;
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-addkey-'));
 try {
-  const proj = path.join(root, 'proj');
+  const proj = path.join(root, 'zproj');
   fs.mkdirSync(path.join(proj, 'sub'), { recursive: true });
   const agents: A[] = [{ id: 'a1', cwd: proj }];
   assert.strictEqual(findAdded(proj, agents, keyOf)?.id, 'a1', 'the same path');
@@ -24,17 +24,23 @@ try {
   assert.strictEqual(findAdded(path.join(proj, 'sub', '..'), agents, keyOf)?.id, 'a1', 'a .. segment');
   assert.strictEqual(findAdded(path.join(root, 'other'), agents, keyOf), undefined, 'another folder is new');
   assert.strictEqual(findAdded(path.join(root, 'missing'), agents, keyOf), undefined, 'a folder that does not exist is new, no throw');
-  assert.strictEqual(canonicalKey(path.join(root, 'missing', 'x')), path.join(root, 'missing', 'x'), 'a missing path stays as written');
+  const miss = path.join(root, 'missing', 'x');
+  const folds = process.platform === 'win32' || process.platform === 'darwin'; // canonicalKey lower-cases there (the case rule below)
+  assert.strictEqual(canonicalKey(miss), folds ? miss.toLowerCase() : miss, 'a missing path stays as written (lower-cased on win32 and darwin)');
+  assert.strictEqual(canonicalKey(miss, 'linux'), miss, 'and as written, case kept, on Linux');
   // a link to an added folder (Windows without the right may refuse a symlink: then this step is skipped, said below)
   const link = path.join(root, 'link');
   let linked = true;
-  try { fs.symlinkSync(proj, link, 'junction'); } catch { linked = false; }
+  try { fs.symlinkSync(proj, link, 'junction'); } catch (e) {
+    if (!['EPERM', 'EACCES', 'ENOSYS'].includes((e as NodeJS.ErrnoException).code ?? '')) throw e; // only "this OS may not make one" skips
+    linked = false;
+  }
   if (linked) {
     assert.strictEqual(findAdded(link, agents, keyOf)?.id, 'a1', 'a symlink to an added folder is that folder');
     assert.strictEqual(findAdded(proj, [{ id: 'a2', cwd: link }], keyOf)?.id, 'a2', 'and the other way round');
-  } else console.log('[addkey] no symlink here: that step was skipped');
+  } else console.log('[addkey] SKIPPED the symlink steps: this OS refused to create one without privilege (EPERM/EACCES)');
   // case: a name that differs only by case is the same folder on Windows and macOS, not on Linux
-  const up = (p: string): string => p.replace('proj', 'PROJ');
+  const up = (p: string): string => p.replace(path.sep + 'zproj', path.sep + 'ZPROJ');
   assert.strictEqual(canonicalKey(up(proj), 'darwin', id), canonicalKey(proj, 'darwin', id), 'darwin ignores case');
   assert.strictEqual(canonicalKey(up(proj), 'win32', id), canonicalKey(proj, 'win32', id), 'win32 ignores case');
   assert.notStrictEqual(canonicalKey(up(proj), 'linux', id), canonicalKey(proj, 'linux', id), 'linux keeps case');
