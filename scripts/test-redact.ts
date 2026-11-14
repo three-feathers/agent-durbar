@@ -1721,7 +1721,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
 // comment or tag, or a hidden character (also written as an entity) is masked like the joined token: by redact, maskSecretCommand, maskSecretArgs,
 // the desk's maskRaw and the permission card. Every token is invented and built in code from pieces.
 {
-  const ST = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string; excerpt(t: string, r: (s: string) => string, n?: number): string; plainMarks(t: string): string; maskLabel(t: string, k: string, m: Record<string, (s: string) => string>): string };
+  const ST = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string; excerpt(t: string, r: (s: string) => string, n?: number): string; plainMarks(t: string): string; _deskWindowForTest(t: string): string; DESK_SPLIT_MAX: number; maskLabel(t: string, k: string, m: Record<string, (s: string) => string>): string };
   const LA = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'liveact.js')) as { permText(t: string, k: string, m: Record<string, (s: string) => string>): { text: string } };
   const red = (t: string): string => redact(t, {});
   const cm = { redact: red, cmd: (t: string) => maskSecretCommand(t, {}), url: (t: string) => maskSecretUrl(t, {}) };
@@ -2058,11 +2058,36 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     assert.ok(!ex.includes(B.slice(16, 24)) && ex.startsWith('see [redacted] and password=[redacted]'), `#1613 round 6: the excerpt of a long text still hides its first split token: ${ex.slice(0, 80)}`);
     ST.maskRaw(big, red);
     assert.strictEqual(_splitWorkForTest(), 0, '#1613 round 6: maskRaw of a text over the bound reads it as before PR 1721 (no split work)');
-    // a split token cut by the bound is hidden: the reading as before hides the whole stretch, so the bounded reading's cut piece is masked
+    // round 7: the window ends at the last blank before the bound, so a token split by an in-line piece across the bound is left out whole (not its first half)
     const pad = 'x '.repeat(8190);
     const edge = pad + 'ghp_' + B.slice(0, 10) + '<!-- -->' + B.slice(10, 36) + ' ' + 'tail '.repeat(4000);
     const ee = ST.excerpt(edge, red);
-    assert.ok(![B.slice(0, 8), B.slice(12, 20)].some((x) => ee.includes(x)), '#1613 round 6: a split token at the bound shows nothing');
+    assert.ok(![B.slice(0, 8), B.slice(12, 20)].some((x) => ee.includes(x)), '#1613 round 7: a token split by an in-line piece across the bound shows neither half');
+    // round 7: the window is taken after closed code blocks and link targets, so a long one at the start no longer eats what the excerpt shows
+    for (const lead of ['```\n' + 'c'.repeat(17000) + '\n```\n', '[see](https://h.example/' + 'a'.repeat(17000) + ') '])
+      assert.ok(ST.excerpt(lead + 'The fix is ready.', red).includes('The fix is ready'), `#1613 round 7: the excerpt after a long ${lead[0] === '`' ? 'code block' : 'link target'} still shows the text after it`);
+    // round 7: the exact bound, the window end, a surrogate pair at the bound
+    const M = ST.DESK_SPLIT_MAX;
+    assert.strictEqual(M, 16384, '#1613 round 7: the desk bound is 16,384 characters');
+    const exact = 'ab '.repeat(6000).slice(0, M);
+    assert.strictEqual(ST._deskWindowForTest(exact), exact, '#1613 round 7: a text of exactly the bound is read whole');
+    const over = 'ab '.repeat(6000).slice(0, M + 1);
+    const wo = ST._deskWindowForTest(over);
+    assert.ok(wo !== over && wo.length <= M && wo.length > M - 4 && over.startsWith(wo) && /\s$/.test(wo), `#1613 round 7: one character over the bound, the window ends at the last blank within it (${wo.length})`);
+    assert.strictEqual(ST._deskWindowForTest('a'.repeat(M + 1)), '', '#1613 round 7: with no blank, the token characters the bound cut into are left out');
+    const straddle = 'x '.repeat(8180) + 'ghp_' + B.slice(0, 10) + '<!-- -->' + B.slice(10, 36) + ' ' + 'tail '.repeat(100);
+    assert.ok(!ST._deskWindowForTest(straddle).includes('ghp_'), '#1613 round 7: a token split by an in-line piece just before the bound is left out of the window whole');
+    const sur = ST._deskWindowForTest('a'.repeat(M - 1) + '\u{1F600}' + 'b'.repeat(10));
+    assert.ok(!/[\ud800-\udbff]$/.test(sur), '#1613 round 7: the window never ends with half a surrogate pair');
+    const splitAt = (n: number) => { const tok = 'ghp_' + B.slice(0, 12) + '\u200b' + B.slice(12, 36); return ('w '.repeat(n)).slice(0, n - tok.length - 1) + ' ' + tok; };
+    _splitWorkForTest();
+    ST.maskRaw(splitAt(M), red);
+    assert.ok(_splitWorkForTest() > 0, '#1613 round 7: maskRaw of a text of exactly the bound reads it with the split step');
+    ST.maskRaw(splitAt(M + 1), red);
+    assert.strictEqual(_splitWorkForTest(), 0, '#1613 round 7: maskRaw of a text one character over the bound reads it as before PR 1721');
+    // round 7: a label the old masks blank (fail closed) is blank here too
+    const lab = 'echo - npm_' + B.slice(0, 14) + '\\_' + B.slice(14, 36) + '\u2028sk_live_7d1\u00ad' + B.slice(0, 21);
+    assert.strictEqual(ST.maskLabel(lab, 'run', cm), '', '#1613 round 7: a label the old masks blank (fail closed) stays blank');
   }
   // round 4, item 2: a token right after an entity without its ';' (the entity's digits take its start boundary as written)
   for (const t of ['password=&#8203' + GH, 'see &#x200B' + GH + ' here'])

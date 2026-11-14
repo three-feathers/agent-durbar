@@ -21,8 +21,9 @@ import * as fs from 'fs';
   const ROOT = path.join(__dirname, '..', '..');
   const FROZEN: Record<string, string> = { 'redact-main-ref.ts': '475cd3b363f9a451fe08bb70a6696ce540e47f3e3631e775d0c08aa043aa77f0', 'safetext-main-ref.js': 'b66357c1c96725c91e6822d1ceb9e79ed2ea0142f6d26442364111e7f578442f', 'liveact-main-ref.js': 'a1b8c16044674f634a3dc9aa8994678626603f40e4b4224587b5417bd399f6a9' };
   for (const [f, sha] of Object.entries(FROZEN)) {
-    const text = fs.readFileSync(path.join(ROOT, 'scripts', 'fixtures', f));
-    assert.strictEqual(crypto.createHash('sha256').update(text).digest('hex'), sha, `#1613 monotone: the frozen reference ${f} is unchanged`);
+    // LF on every OS (.gitattributes); a checkout that still turned them into CRLF is read back as LF, so the hash names the text, not the line ends
+    const text = fs.readFileSync(path.join(ROOT, 'scripts', 'fixtures', f), 'utf8').replace(/\r\n/g, '\n');
+    assert.strictEqual(crypto.createHash('sha256').update(text, 'utf8').digest('hex'), sha, `#1613 monotone: the frozen reference ${f} is unchanged`);
   }
   const body = (f: string): string => fs.readFileSync(path.join(ROOT, f), 'utf8');
   assert.ok(!body('scripts/fixtures/redact-main-ref.ts').includes('maskSplitFirst'), '#1613 monotone: the redact reference is not the head');
@@ -55,7 +56,7 @@ const FORMS = ['mysql -u root -p' + PW, 'mysql -p' + PW, 'password=' + PW, 'pass
   'https://h.example/x?token=' + PW, '{"password":"' + PW + '"}', 'secret_key = "' + PW + '"', 'see the docs', 'Release2024', 'src/app/main', ':x-oauth-basic', 'Alternatively',
   'PGPASSWORD=' + PW2 + ' psql', 'password: ' + PW2, 'mysql -p' + PW2, '--password ' + PW2, 'export DB_PASSWORD="' + PW2 + '"'];
 const LEADS = ['', 'see ', 'password=', 'x', 'Token:<br/>', '`', '**', '- [ ] ', 'page2\u2028', 'note\u200b', '> ', 'export T=', '[gh](https://h.example/' + 'a'.repeat(300) + ')', '[x](u) '];
-const JOIN = ['', ' ', '\n', '\r\n', '\n\n', ', ', '<br>', '​'];
+const JOIN = ['', ' ', '\n', '\r\n', '\n\n', ', ', '<br>', '\u200b', '\u2028'];
 
 const mh = { redact: (x: string) => HEAD.redact(x, {}), cmd: (x: string) => HEAD.maskSecretCommand(x, {}), url: (x: string) => HEAD.maskSecretUrl(x, {}) };
 const mr = { redact: (x: string) => REF.redact(x, {}), cmd: (x: string) => REF.maskSecretCommand(x, {}), url: (x: string) => REF.maskSecretUrl(x, {}) };

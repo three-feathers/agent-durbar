@@ -80,8 +80,19 @@
      of one desk call is so at most a fixed multiple of DESK_SPLIT_MAX (pinned by a work counter). An owner may choose another number. */
   const DESK_SPLIT_MAX=16384;
   const TOKEN_TAIL=/[A-Za-z0-9_\-.~+\/=:@%]/;
-  /* the first DESK_SPLIT_MAX characters, never half a surrogate pair, and without the token characters the bound cut into (the reference hides the rest anyway) */
-  const windowOf=s=>{if(s.length<=DESK_SPLIT_MAX)return s;let e=DESK_SPLIT_MAX;if(/[\ud800-\udbff]/.test(s[e-1]))e--;while(e>0&&TOKEN_TAIL.test(s[e-1]))e--;return s.slice(0,e);};
+  /* the first DESK_SPLIT_MAX characters, ending at the last blank before the bound (round 7: a token split by an in-line piece across the bound is left out whole,
+     not its first half), never half a surrogate pair; with no blank in it, without the token characters the bound cut into (the reference hides the rest anyway) */
+  const windowOf=s=>{if(s.length<=DESK_SPLIT_MAX)return s;let e=DESK_SPLIT_MAX;if(/[\ud800-\udbff]/.test(s[e-1]))e--;
+    const b=s.slice(0,e).search(/\s\S*$/);if(b>0){let w=s.slice(0,b+1);
+      /* a blank inside a piece (`<!-- -->`, `<span class=…>`) can end the window inside it: then the word before the piece goes too (round 7) */
+      const t=w.trimEnd(),k=t.search(/\S*$/);if(k>0&&/[<&\u0080-\uffff]/.test(t.slice(k)))w=t.slice(0,k);return w;}
+    while(e>0&&TOKEN_TAIL.test(s[e-1]))e--;return s.slice(0,e);};
+  /* round 7: what the excerpt can show, before the window is taken: a closed code block becomes an empty one (plainKeep shows "code" for either), a link's target
+     goes (plainKeep shows its text either way); so a long code block or link target at the start no longer eats the window. Linear (stripLinks' scan; the code
+     block regex ends at the next fence, and a fence with none after it is the last) */
+  const shownSource=t=>{t=String(t==null?'':t).replace(/```[\s\S]*?```/g,'``````');let out='',from=0,i=t.indexOf('[');
+    while(i>=0){const j=t.indexOf(']',i+1);if(j<0)break;if(t[j+1]!=='('){i=t.indexOf('[',j+1);continue;}const k=t.indexOf(')',j+2);if(k<0)break;out+=t.slice(from,j+2);from=k;i=t.indexOf('[',k+1);}
+    return from===0?t:out+t.slice(from);};
   /* the reading as before PR 1721: the shared masks with their split step off (withoutSplit); throws without it */
   const old=fn=>{if(!SH||typeof SH.withoutSplit!=='function')throw new Error('no withoutSplit');return SH.withoutSplit(fn);};
   const splitFirst=raw=>{if(!SH||typeof SH.maskSplitTokens!=='function')throw new Error('no maskSplitTokens');const r=SH.maskSplitTokens(String(raw==null?'':raw));if(typeof r!=='string')throw new Error('mask');return r;};
@@ -89,7 +100,7 @@
     const u=unesc(raw),m=both(u,plainKeep(u,codeWord),redact);
     return m.replace(/_/g,'');}catch(e){return null;}};
   const maskPlain=(raw,redact,codeWord)=>{if(typeof redact!=='function')return null;
-    const s0=String(raw==null?'':raw);let w;try{w=splitFirst(windowOf(s0));}catch(e){return null;}
+    const s0=String(raw==null?'':raw);let w;try{w=splitFirst(s0.length>DESK_SPLIT_MAX?windowOf(shownSource(s0)):s0);}catch(e){return null;}
     const go=(x,u)=>u(x,t=>maskPlain0(t,redact,codeWord),c=>plainKeep(unesc(c),codeWord).replace(/_/g,''),null);
     try{return both2(raw,w,go);}catch(e){return null;}};
   /* the masked text, not made plain or cut: masked as it is, and again on the plain-kept text when Markdown that can split a token is
@@ -130,7 +141,11 @@
     const f=kind==='run'?m.cmd:isUrl(s)?m.url:m.redact;if(typeof f!=='function')return '';
     /* spec 012 FR-182 (review of PR 1721, round 4): each mask call masks the split tokens first, then reads as before (escMask's escaped runs are replaced
        before, so a token glued to an escaped one is still hidden in place, FR-180) */
-    try{const one=t=>{const r=f(t);return typeof r==='string'?r:'';};return escMask(s,t=>{const go=(x,u)=>u(x,one,c=>c,'');if(t.length>DESK_SPLIT_MAX){const r=old(()=>go(t,unhid));return r==null?'':r;}const m=both2(t,splitFirst(t),go);return m==null?'':m;});}catch(e){return '';}};
+    try{const one=t=>{const r=f(t);return typeof r==='string'?r:'';};
+      /* round 7: the label as before PR 1721 first; when it is '' (the window's own fail-closed check), the label is '' here too */
+      const ref=old(()=>escMask(s,t=>unhid(t,one,c=>c,'')));if(!ref)return '';
+      const h=escMask(s,t=>{const go=(x,u)=>u(x,one,c=>c,'');if(t.length>DESK_SPLIT_MAX){const r=old(()=>go(t,unhid));return r==null?'':r;}const m=both2(t,splitFirst(t),go);return m==null?'':m;});
+      return h?keep(h,ref):'';}catch(e){return '';}};
   /* the wrapper the page uses: fallback words and the "is masking possible" flag */
   function create(o){
     const red=o&&typeof o.redact==='function'?o.redact:null, cut=o&&typeof o.cut==='function'?o.cut:cutter;
@@ -148,5 +163,7 @@
   /* spec 097 FR-311 (review of PR 1721, round 2): a masked name made plain for a tooltip or an accessible name: a link becomes its text and the emphasis, code and
      strike marks go (stripLinks: linear); unlike plainKeep, a leading #, -, + or > and the blanks stay as written (`#1613 split tokens` keeps its #) */
   const plainMarks=t=>stripLinks(String(t==null?'':t)).replace(/[*`~]/g,'');
-  return {create,plain,plainKeep,plainMarks,unesc,unhide,maskRaw,excerpt,maskLabel,useShared,splitHides};
+  /* test only: the window the desk's split-aware reading takes of a long text (round 7) */
+  const _deskWindowForTest=t=>windowOf(shownSource(t));
+  return {create,plain,plainKeep,plainMarks,unesc,unhide,maskRaw,excerpt,maskLabel,useShared,splitHides,_deskWindowForTest,DESK_SPLIT_MAX};
 });
