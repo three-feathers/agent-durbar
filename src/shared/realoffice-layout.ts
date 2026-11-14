@@ -658,6 +658,12 @@ export function assignPeople(map: Record<string, string>, sessions: readonly { i
 /** the lobby band (fixtures and their visitors), for arrangements other than `rows` (spec 102 FR-256: the arcade hall keeps today's band) */
 export { roLobby as lobbyBand };
 
+/** Spec 097 FR-110 (T223): a slip's kept spot from the last draw holds only while its whole box lies inside the bounds under the lobby, on all four sides
+ *  (a spot above or left of the new floor's bounds, from a hall with a shorter lobby, was kept before and lay over the lobby's plates). Pure. */
+export function keptSpotInside(at: { x: number; y: number }, size: { w: number; h: number }, bounds: Rect): boolean {
+  return at.x >= bounds.x && at.y >= bounds.y && at.x + size.w <= bounds.x + bounds.w && at.y + size.h <= bounds.y + bounds.h;
+}
+
 /** Spec 097 FR-110, FR-121: where a slip, a bubble or a pill goes. The first free spot nearest `anchor` inside `bounds` that touches nothing in `avoid`
  *  (a plate, a sign, a chair label, a chip), or null when there is none. Pure; a 10 px grid keeps it cheap (a few hundred thousand comparisons at most). */
 export function placeBox(size: { w: number; h: number }, avoid: readonly Rect[], bounds: Rect, anchor: { x: number; y: number }, step = 10): Rect | null {
