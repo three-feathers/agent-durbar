@@ -129,13 +129,17 @@ for (const s of ROOMS) assert.ok(mk(4, 2, SIZES[s][0], SIZES[s][1]).faceH > mk(1
 }
 // ---- circle stays off for every world (FR-230, Changes 2026-11-14): no shipped manifest names it until the owner picks the many-folder fix ----
 {
-  const names = (text: string): boolean => /"arrangement"\s*:\s*"circle"/.test(text);
+  /** the parsed manifest's `arrangement` (a manifest that does not parse fails by its path, never passes); a world.json and a card.json are flat objects, so the key is at the top */
+  const arrangementOf = (text: string, file: string): unknown => { try { return (JSON.parse(text) as { arrangement?: unknown }).arrangement; } catch (e) { throw new Error(`${file} is not valid JSON: ${(e as Error).message}`); } };
+  const names = (text: string, file = 'manifest'): boolean => arrangementOf(text, file) === 'circle';
   const manifests: string[] = [];
   const walk = (d: string, depth: number): void => { if (depth > 4 || !fs.existsSync(d)) return; for (const e of fs.readdirSync(d, { withFileTypes: true })) { if (e.name === 'node_modules') continue; const f = path.join(d, e.name); if (e.isDirectory()) walk(f, depth + 1); else if (e.name === 'world.json' || e.name === 'card.json') manifests.push(f); } };
   walk(path.join(ROOT, 'worlds'), 0); walk(path.join(RO, 'worlds'), 0);
   assert.ok(manifests.length >= 3, 'the scan found the shipped world manifests');
-  for (const f of manifests) assert.ok(!names(fs.readFileSync(f, 'utf8')), `${path.relative(ROOT, f)} names arrangement circle: it stays off until the owner picks the many-folder fix (FR-230)`);
-  assert.ok(names('{ "arrangement": "circle" }'), 'mutant: a manifest naming circle is caught by the scan, which the check above relies on');
+  for (const f of manifests) assert.ok(!names(fs.readFileSync(f, 'utf8'), path.relative(ROOT, f)), `${path.relative(ROOT, f)} names arrangement circle: it stays off until the owner picks the many-folder fix (FR-230)`);
+  for (const t of ['{"arrangement":"circle"}', '{ "arrangement" : "circle" }', '{\n  "arrangement":\n    "circle"\n}', '{"arrangement":"\\u0063ircle"}']) assert.ok(names(t), `mutant: ${JSON.stringify(t)} names circle and the parsed scan catches it`);
+  assert.ok(!names('{"arrangement":"rows"}') && !names('{}'), 'rows and no key are not circle');
+  assert.throws(() => names('{"arrangement": circle}', 'worlds/x/world.json'), /worlds\/x\/world\.json is not valid JSON/, 'a manifest that does not parse fails by its path');
 }
 // the engine's cost at 40 agents in 8 folders (FR-019: under 5 ms), the best of 20: printed, the op-count row is for the wiring PR
 {
