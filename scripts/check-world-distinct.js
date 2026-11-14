@@ -1,6 +1,6 @@
 /* Spec 102 FR-016, T093 (picture half): are the worlds' pictures distinct? Simulator-side and dev-side: it decodes each WebP in an
    Electron window (Node has no WebP decoder and the project adds none), so it is NOT in `npm test`; run it under the Electron lock.
-   `npm run check:world-distinct`. It is not the app: no app code, no session, no network.
+   `npm run check:world-distinct` (it starts Electron through scripts/run-electron-script.js, which adds --no-sandbox on Linux). It is not the app: no app code, no session, no network.
 
      electron scripts/check-world-distinct.js [--measure] [--worlds-dir DIR]
 
@@ -100,6 +100,4 @@ if (!process.versions.electron) {
   process.exit(2);
 }
 const { app, BrowserWindow } = require('electron');
-/* Electron's SUID sandbox helper aborts on Linux (CI, containers) unless it is off; world-matrix.js passes the same switch. This window loads only a data: page. */
-if (process.platform === 'linux') app.commandLine.appendSwitch('no-sandbox');
 within(main(app, BrowserWindow), RUN_MS, 'the whole run').then((code) => { app.exit(code); }, (e) => { console.error(e && e.stack || e); app.exit(1); });
