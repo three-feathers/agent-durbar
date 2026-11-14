@@ -604,18 +604,18 @@
       $('thList').querySelectorAll('[data-theme]').forEach((x)=>x.setAttribute('aria-pressed',String(x===b)));
     });
     /* spec 077 FR-068: a Characters pick applies live through app.js's applyCharacters and shows the new choice at once */
-    /* FR-303: Characters are one radio group like the World row (FR-301): the click and the arrows (charKeys, the World row's radioNav) pick through pickChar; a closed entry (aria-disabled) is neither picked nor reached by the arrows */
+    /* FR-303: Characters are one radio group like the World row (FR-301): the click (Space and Enter on a focused card are a click) picks through pickChar; the arrows (charKeys, the World cards' radioNav) only move the focus; a closed entry (aria-disabled) is neither picked nor reached by the arrows */
     const syncChars=(cur)=>{const l=$('chList');if(!l)return;const all=[...l.querySelectorAll('[data-characters]')],hit=all.find((x)=>x.dataset.characters===cur)||all.find((x)=>x.getAttribute('aria-disabled')!=='true');all.forEach((x)=>{x.setAttribute('aria-checked',String(x.dataset.characters===cur));x.tabIndex=x===hit?0:-1;});};
-    pickChar=(b,focus)=>{
+    const pickChar=(b)=>{
       if(!b||!X.applyCharacters||b.getAttribute('aria-disabled')==='true')return;
       const done=X.applyCharacters(b.dataset.characters);
       Promise.resolve(done).then(()=>{const n=$('dsR'),V=X.view;if(n&&V)n.textContent=V.note();}); /* spec 102 FR-202: the one line saying a choice has no Real office poses follows the pick */
-      syncChars(b.dataset.characters);if(focus)focusIn(b);
+      syncChars(b.dataset.characters);
       /* a repaint of the list that a theme pick started earlier can land between this click and the change itself and show the old choice (check-characters on CI): once the change is applied, the buttons say what is applied */
       Promise.resolve(done).then(()=>{const cn=$('chNote');if(cn)cn.textContent=charNote();if(window.THEME&&window.THEME.characters)syncChars(window.THEME.characters());});
     };
     /* spec 077 FR-068: a Characters pick applies live through app.js's applyCharacters and shows the new choice at once */
-    if($('chList'))$('chList').addEventListener('click',(e)=>{pickChar(e.target.closest&&e.target.closest('[data-characters]'),false);});
+    if($('chList'))$('chList').addEventListener('click',(e)=>{pickChar(e.target.closest&&e.target.closest('[data-characters]'));});
     /* spec 101 FR-020: a Logo pick shows at once in the top bar and is kept (no IPC, no file) */
     if($('lgList'))$('lgList').addEventListener('click',(e)=>{
       const b=e.target.closest&&e.target.closest('[data-logo]');if(!b||!window.DurbarLogo)return;
@@ -851,16 +851,17 @@
     if(charsRefresh)charsRefresh();
     const tw=$('thWorld');if(tw){tw.textContent=worldWords();tw.hidden=!tw.textContent;}
   }
-  /* the one keyboard rule of a radio group that picks as it moves (FR-301's World row, FR-303's Characters): arrows, Home and End move and choose, a radio marked aria-disabled is skipped; Tab and Escape are the page's (one Tab stop by roving tabindex) */
-  function radioNav(e,sel,pick){
+  /* the one keyboard rule of a radio group (FR-301's World cards, FR-303's Characters cards): arrows, Home and End only MOVE the focus (to() decides what moving does), Space or Enter choose through the button's click; a radio marked aria-disabled is skipped; Tab and Escape are the page's (one Tab stop by roving tabindex) */
+  function radioNav(e,sel,to){
     const b=e.target.closest&&e.target.closest(sel);if(!b)return;
     const all=[...b.closest('[role=radiogroup]').querySelectorAll(sel.slice(sel.indexOf(' ')+1))].filter((x)=>x===b||x.getAttribute('aria-disabled')!=='true'), i=all.indexOf(b), k=e.key;
-    const to=k==='ArrowRight'||k==='ArrowDown'?all[(i+1)%all.length]:k==='ArrowLeft'||k==='ArrowUp'?all[(i-1+all.length)%all.length]:k==='Home'?all[0]:k==='End'?all[all.length-1]:null;
-    if(to){e.preventDefault();pick(to);}
+    const t=k==='ArrowRight'||k==='ArrowDown'?all[(i+1)%all.length]:k==='ArrowLeft'||k==='ArrowUp'?all[(i-1+all.length)%all.length]:k==='Home'?all[0]:k==='End'?all[all.length-1]:null;
+    if(t){e.preventDefault();to(t);}
   }
-  function worldKeys(e){radioNav(e,'#wrGroup [data-world]',(to)=>{to.closest('#wrGroup').querySelectorAll('[data-world]').forEach(x=>{x.tabIndex=x===to?0:-1;});focusIn(to);});} /* FR-301: the World cards' arrows MOVE (roving tabindex), Space or Enter chooses (the Characters radios pick as they move) */
-  let pickChar=()=>{}; /* set by the Settings paint (it closes over the page's helpers) */
-  function charKeys(e){radioNav(e,'#chList [data-characters]',(b)=>pickChar(b,true));}
+  /* an arrow moves the roving tabindex and the focus, and chooses nothing */
+  const moveOnly=(group,sel)=>(to)=>{to.closest(group).querySelectorAll(sel).forEach((x)=>{x.tabIndex=x===to?0:-1;});focusIn(to);};
+  function worldKeys(e){radioNav(e,'#wrGroup [data-world]',moveOnly('#wrGroup','[data-world]'));}
+  function charKeys(e){radioNav(e,'#chList [data-characters]',moveOnly('#chList','[data-characters]'));}
   function liveActRow(){
     const on=!!X.liveAct.get();
     return `<div class="scr-row"><span class="scr-row-l" id="laL">Live activity on desks</span>${sw(on,'Live activity on desks: what each working agent is thinking or doing, on its desk','id="liveActSw" aria-describedby="laN"')}<span class="scr-note small" id="laN">What each working agent is thinking or doing, on its desk. Secrets are masked.</span></div>`;
