@@ -435,12 +435,18 @@ module.exports = async (ctx) => {
     if (run('placeholder')) {
       /* the plain office (no world: the light Clean Office) and this world's own look; each with the built-in themes, and with the dark fixture */
       for (const [name, plain, extra] of [['plain office', true, {}], ['plain office dark fixture', true, CHECK_DARK_QUERY], ['world look', false, {}], ['world look dark fixture', false, CHECK_DARK_QUERY]]) {
-        await H.load({ w, h, query: plain ? { simquestion: '1', ...extra } : q(world, { sim: '15', simquestion: '1', ...extra }), ready: plain ? 'fit' : REAL, settle: false });
+        await H.load({ w, h, query: plain ? { sim: '15', officeview: 'flat', simquestion: '1', ...extra } : q(world, { sim: '15', simquestion: '1', ...extra }), ready: plain ? 'fit' : REAL, settle: false });
         if (!plain) await must(PICS, 'the pictures');
+        /* an earlier step may have left the page on another floor (the floor choice is stored); the question's agent must be on the floor shown */
+        const had = await js(`(()=>{const h=!!(localStorage.getItem('durbar.floor')||localStorage.getItem('durbar.floorView'));localStorage.removeItem('durbar.floor');localStorage.removeItem('durbar.floorView');return h})()`);
+        if (had) {
+          await H.load({ w, h, query: plain ? { sim: '15', officeview: 'flat', simquestion: '1', ...extra } : q(world, { sim: '15', simquestion: '1', ...extra }), ready: plain ? 'fit' : REAL, settle: false });
+          if (!plain) await must(PICS, 'the pictures');
+        }
         await js('window.__cx=(()=>{' + CX + 'return {Pa,Lm,over,bgOf,rat}})();0');
         if (plain) {
           const o = await H.openSimAgent(`a=>!a.parent&&a.question`, '#chat .note.question .q-other');
-          assert.ok(o.ok, `${tag}: an agent has the question in its chat (${name})`);
+          assert.ok(o.ok, `${tag}: an agent has the question in its chat (${name}): ${JSON.stringify({ id: o.id, ...o.seen })}`);
         } else {
           const asker = await js(`(()=>{const A=window.__durbarSimUi.agents();return (A.find(a=>a.info&&a.info.adapterId==='claude')||A[0]||{}).id||''})()`);
           assert.ok(asker, `${tag}: the simulator has a Claude agent to ask the question`);
