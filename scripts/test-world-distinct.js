@@ -110,6 +110,14 @@ const A = world('a', { 'fx-bank.webp': base, 'fx-blocks.webp': blocks(7), 'fx-we
   for (const n of ['kid1-done.webp', 'floor.webp', 'wall.webp', 'world.css', 'glow.webp', 'fx-bank.png']) assert.ok(!D.isFixtureFile(n), n);
 }
 
+/* The launcher: --no-sandbox on Linux only, first (Chromium reads it at start), then the script and its arguments. */
+{
+  const { electronArgs } = require('./run-electron-script');
+  assert.deepStrictEqual(electronArgs('linux', 'scripts/x.js', ['--measure']), ['--no-sandbox', 'scripts/x.js', '--measure'], 'LAUNCHER: Linux gets --no-sandbox before the script');
+  assert.deepStrictEqual(electronArgs('darwin', 'scripts/x.js', ['--measure']), ['scripts/x.js', '--measure'], 'LAUNCHER: macOS gets no flag');
+  assert.deepStrictEqual(electronArgs('win32', 'scripts/x.js'), ['scripts/x.js'], 'LAUNCHER: Windows gets no flag');
+}
+
 /* The limits are pinned (FR-016): the values of the spec delta, and the real pairs measured in Electron on 2026-11-14 (a committed table, not decoded here)
    all sit outside them by their margins, so a limit moved onto a real pair (14/27, say) fails here and not only in the by-hand Electron check. */
 {
