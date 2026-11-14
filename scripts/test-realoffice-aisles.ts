@@ -592,7 +592,7 @@ console.log(`floor covered with 4 or fewer: ${covs.join('; ')}`);
 // ---- spec 102 delta 2026-11-14 (spec 097 FR-104, FR-116, issue #1268 T223): the All floors view as storeys. A floor starts on a new row when that costs no row, no smaller cabinet and no scroll;
 // otherwise the floors share rows and each storey is marked by its tag and a rule where it starts. 15 agents fit both sizes over 1, 2 and 3 floors; a tag never covers a sign or another tag.
 {
-  const FLS: RealFloor[] = [{ id: 'g', name: 'Ground floor', n: 1 }, { id: 'c', name: 'Client A', n: 2 }, { id: 'p', name: 'Personal', n: 3 }].map((f) => ({ ...f, w: 6.5 * (2 + f.name.length) })); // each with a measured text width, as the renderer passes it (the sign's 12 px bold, about 6.5 px a letter)
+  const FLS: RealFloor[] = [{ id: 'g', name: 'Ground floor', n: 1 }, { id: 'c', name: 'Client A', n: 2 }, { id: 'p', name: 'Personal', n: 3 }, { id: 't', name: 'Top floor', n: 4 }, { id: 's', name: 'Sky', n: 5 }, { id: 'u', name: 'Sixth', n: 6 }].map((f) => ({ ...f, w: 6.5 * (2 + f.name.length) })); // each with a measured text width, as the renderer passes it (the sign's 12 px bold, about 6.5 px a letter)
   const fm = (sizes: number[], floorOf: number[]): RealModel => { let i = 0; return { folders: sizes.map((n, fi) => ({ id: 'f' + fi, floor: FLS[floorOf[fi]], agents: Array.from({ length: n }, () => { const k = i++; return { id: 'a' + k, state: 'working' as RealState, person: PEOPLE[k % 15], away: null }; }) })), places: ['library', 'boss'].map((id) => ({ id, visitors: [] })) }; };
   const sg = (n: number): Record<string, { name: string; path: string; counts: number }> => Object.fromEntries(Array.from({ length: n }, (_, i) => ['f' + i, { name: 'project-' + i, path: '~/work/p' + i, counts: 3 }]));
   const flat = (m: RealModel): RealModel => ({ ...m, folders: m.folders.map((f) => ({ ...f, floor: undefined })) });
@@ -689,6 +689,36 @@ console.log(`floor covered with 4 or fewer: ${covs.join('; ')}`);
     }
     assert.ok(rb!.tag.y <= Math.min(...L.lounge!.desks.map((d) => d.slot.y)) && rb!.tag.x >= 0 && rb!.tag.x + rb!.tag.w <= W && rb!.slab!.w === 2, `${nm}: the Resting tag stands over the seats, inside the hall, with an upright rule`);
     cases++;
+  }
+  // round 2 of the review of #1741: the Resting tag and rule are clear of every floor's tag and rule, folder sign, cabinet and seat. The reviewer's case (2/1/3/2 on 4 floors, one resting from the third folder), then a fuzz
+  const clearOf = (L: Layout, tag: string): void => {
+    const rb = L.storeys!.find((b) => b.n === 0), marks = L.storeys!.filter((b) => b !== rb).flatMap((b) => [{ n: `the tag of ${b.name}`, r: b.tag }, ...(b.slab ? [{ n: `the rule of ${b.name}`, r: b.slab }] : [])]);
+    if (!rb) return;
+    for (const m of marks) assert.ok(!inter(rb.tag, m.r) && !inter(rb.slab!, m.r), `${tag}: the Resting tag and rule are clear of ${m.n}`);
+    assert.ok(!L.zones.some((z) => inter(z.sign, rb.tag) || inter(z.sign, rb.slab!) || z.desks.some((d) => inter(rb.tag, d.desk))) && !L.lounge!.desks.some((d) => inter(rb.tag, d.slot) || inter(rb.tag, d.plate)), `${tag}: the Resting tag covers no sign, cabinet or seat`);
+    assert.ok(rb.tag.x >= 0 && rb.tag.x + rb.tag.w <= L.width, `${tag}: the Resting tag is inside the hall`);
+  };
+  for (const [nm, W, H] of SZ2) {
+    const m = fmx([2, 1, 3, 2], [3, 2, 1, 0], { rest: [3] }), L = aislesLayout(m, { w: W, h: H }, META, sg(4));
+    assert.ok(L.lounge && L.lounge.desks.length === 1, `reviewer's case at ${nm}: the resting agent is seated`);
+    const rb0 = L.storeys && L.storeys.find((b) => b.n === 0), fl0 = L.storeys && L.storeys.find((b) => b.name === 'Personal');
+    assert.ok(rb0 && fl0 && rb0.tag.y === fl0.tag.y && rb0.tag.x >= fl0.tag.x + fl0.tag.w + 6, `reviewer's case at ${nm}: the Resting tag starts after the tag of Personal in the same strip, 6 px clear (it is not dropped, and not over it)`);
+    if (L.storeys) { assert.ok(L.storeys.length >= 2, `reviewer's case at ${nm}: storeys or none`); clearOf(L, `reviewer's case (2/1/3/2 on 4 floors, one resting) at ${nm}`); }
+  }
+  { let seed = 4242; const rnd = (n: number): number => { seed = (seed * 1664525 + 1013904223) % 4294967296; return Math.floor((seed / 4294967296) * n); }; let drawn = 0, dropped = 0;
+    for (let t = 0; t < 400; t++) {
+      const nf = 2 + rnd(5), fls = 2 + rnd(Math.min(4, nf - 1)), sz = Array.from({ length: nf }, () => 1 + rnd(5)); if (sz.reduce((x, y) => x + y, 0) > 15) continue;
+      const cuts = [0, ...Array.from({ length: fls - 1 }, () => 1 + rnd(nf - 1))].sort((x, y) => x - y), fl = sz.map((_, i) => fls - 1 - cuts.filter((c) => c <= i && c > 0).length), tot = sz.reduce((x, y) => x + y, 0), rest = Array.from({ length: tot }, (_, i) => i).filter(() => rnd(4) === 0);
+      if (!rest.length) continue;
+      const [nm, W, H] = SZ2[t % 2], m = fmx(sz, fl.map((f) => Math.min(5, f)), { rest, helpers: rnd(2) === 0, swap: rnd(2) === 0 }), L = aislesLayout(m, { w: W, h: H }, META, sg(nf)), tag = `fuzz ${t} ${JSON.stringify(sz)} floors ${fl.join('')} rest ${rest.join(',')} at ${nm}`;
+      const seated = L.lounge ? L.lounge.desks.length : 0, F1 = aislesLayout(flat(m), { w: W, h: H }, META, sg(nf)); assert.ok(seated >= (F1.lounge ? F1.lounge.desks.length : 0), `${tag}: no fewer resting agents seated than in the hall without floors (${seated} of ${rest.length}; the legacy lounge seats fewer than ${rest.length} in some halls, also without floors)`);
+      if (!L.storeys) { dropped++; continue; }
+      drawn++;
+      for (const [i, b] of L.storeys.entries()) { assert.ok(!L.zones.some((z) => inter(z.sign, b.tag)) && !L.storeys.some((o, j) => j !== i && inter(o.tag, b.tag)) && !L.storeys.some((o, j) => j !== i && o.slab && inter(o.slab, b.tag)) && !(b.slab && L.storeys.some((o, j) => j !== i && inter(o.tag, b.slab!))), `${tag}: the tag of ${b.name} is over no sign, tag or rule`); assert.ok(b.tag.x >= 0 && b.tag.x + b.tag.w <= W, `${tag}: the tag of ${b.name} is inside the hall`); }
+      clearOf(L, tag);
+    }
+    assert.ok(drawn > 20, `the fuzz drew storeys with resting agents in ${drawn} splits (and none in ${dropped})`);
+    // no run has room: the layout is the one without floors (a floor's tag that cannot be cleared); the case is found by the fuzz's own dropped count below
   }
   // (2) the tag is sized from the measured text: a wider font gives a wider tag, a narrow measure a narrow one, a very long name is capped; with no measure 8 px a letter
   assert.strictEqual(storeyTagW({ id: 'p', name: 'Personal', n: 3, w: 100 }), 116, 'the tag is the measured text plus 16 px of padding and border');
