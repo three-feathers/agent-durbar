@@ -339,8 +339,23 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
     }
     const x0 = Math.min(...desks.map((d) => d.slot.x)), x1 = Math.max(...desks.map((d) => d.slot.x + d.slot.w)), y0 = Math.min(...desks.map((d) => d.slot.y)), y1 = Math.max(...desks.map((d) => d.slot.y + d.slot.h));
     lay.lounge = { box: { x: x0 - 4, y: y0, w: x1 - x0 + 8, h: y1 - y0 }, desks };
-    if (restBand && runInfo.length) { /* review of #1741: the seats in the free cells are no floor's: they stand under their own tag "Resting", with an upright rule before it, at the first of their runs; a sign that reached over that place gives up the width */
-      const r0 = runInfo.reduce((m, r) => (r.top < m.top || (r.top === m.top && r.x0 < m.x0) ? r : m), runInfo[0]), tx = Math.round(r0.x0 + 3), tw = Math.max(STOREY_TAG_MIN * 0.6, Math.min(storeyTagW({ id: '*rest', name: 'Resting', n: 0, w: model.restW }), r0.x1 - tx - 2));
+    if (restBand && runInfo.length) { /* the seats in the free cells are no floor's: they stand under their own tag "Resting", with an upright rule before it, in the first run of free cells where it is clear of every floor's tag and rule (a floor's tag may stand past its zone, over free cells: the Resting tag then starts after it, or takes the next run); a sign that reached over that place gives up the width.
+      Where no run has room, no storeys are drawn at all (the hall without floors, FR-248's lounge): the same fallback as above (review of #1741, round 2) */
+      const hit = (a: Rect, c: Rect): boolean => a.x < c.x + c.w && c.x < a.x + a.w && a.y < c.y + c.h && c.y < a.y + a.h;
+      const floorMarks = bands.flatMap((b) => [b.tag, ...(b.slab ? [b.slab] : [])]), tw0 = Math.max(STOREY_TAG_MIN * 0.6, storeyTagW({ id: '*rest', name: 'Resting', n: 0, w: model.restW }));
+      let at: { r: { top: number; x0: number; x1: number }; tx: number; tw: number } | null = null;
+      for (const r of [...runInfo].sort((p1, p2) => p1.top - p2.top || p1.x0 - p2.x0)) {
+        let tx = Math.round(r.x0 + 3);
+        for (let n = 0; n < 8 && !at; n++) {
+          const tw = Math.min(tw0, r.x1 - tx - 2), box = { x: tx - 4, y: r.top, w: tw + 5, h: AISLE_SIGN_H }, hits = floorMarks.filter((c) => hit(box, c)), signs = zones.filter((z) => z.sign.x >= r.x0 && hit(box, z.sign) && Math.abs(z.sign.y - r.top) < 1);
+          if (!hits.length && !signs.length && tw >= STOREY_TAG_MIN * 0.6) at = { r, tx, tw };
+          else if (hits.length) tx = Math.round(Math.max(...hits.map((c) => c.x + c.w)) + 6);
+          else break;
+        }
+        if (at) break;
+      }
+      if (!at) return aislesLayout(model, view, { ...meta, storeys: false }, signs);
+      const { r: r0, tx, tw } = at;
       for (const z of zones) if (Math.abs(z.sign.y - r0.top) < 1 && z.sign.x < r0.x0 && z.sign.x + z.sign.w > r0.x0 - 6) { z.sign.w = Math.max(AISLE_SIGN_MIN_W, r0.x0 - 6 - z.sign.x); z.signShort = true; }
       const bx0 = Math.min(...desks.map((d) => d.slot.x), tx), by0 = r0.top, bx1 = Math.max(...desks.map((d) => d.slot.x + d.slot.w), tx + tw), by1 = Math.max(...desks.map((d) => d.slot.y + d.slot.h));
       bands.push({ id: '*rest', name: 'Resting', n: 0, box: { x: bx0, y: by0, w: bx1 - bx0, h: by1 - by0 }, tag: { x: tx, y: r0.top, w: tw, h: AISLE_SIGN_H }, slab: { x: Math.max(0, tx - 3), y: r0.top, w: 2, h: AISLE_SIGN_H } });
