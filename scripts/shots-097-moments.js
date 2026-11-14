@@ -7,7 +7,7 @@
  *
  * For each world (Photo office; the Prehistoric cave behind its flag) at 1440x900 and 1280x800 it checks the moments listed in MOMENTS below
  * (each states what it asserts) and writes <SHOTS_OUT>/<world>-<moment>-<w>x<h>.png. Driver waits use until(); nothing sleeps for a fixed time.
- * Developer aids: MOMENTS_CPU_SLOW=<2..20> slows the page's CPU like a loaded runner (issue #1753); MOMENTS_MUTANT=notes-nowait reads the post-its before the crowd is drawn (must fail).
+ * Developer aids: MOMENTS_CPU_SLOW=<2..20> slows the page's CPU for the whole run, like a loaded runner (issue #1753); MOMENTS_MUTANT=notes-nowait reads the post-its before the crowd is drawn (must fail).
  */
 const os = require('os');
 const fs = require('fs');
@@ -52,7 +52,7 @@ module.exports = async (ctx) => {
     const dbg = ctx.win.webContents.debugger; if (!dbg.isAttached()) dbg.attach('1.3');
     await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
   }
-  /* a developer aid (issue #1753): MOMENTS_CPU_SLOW=<2..20> slows the page's CPU by that factor (CDP), as a loaded runner does; the notes step's race showed at 4 */
+  /* a developer aid (issue #1753): MOMENTS_CPU_SLOW=<2..20> slows the page's CPU by that factor (CDP) for the whole run, every step and size, as a loaded runner does (never reset, on purpose); the notes step's race showed at 4 */
   if (/^([2-9]|1\d|20)$/.test(process.env.MOMENTS_CPU_SLOW || '')) { const dbg = ctx.win.webContents.debugger; if (!dbg.isAttached()) dbg.attach('1.3'); await dbg.sendCommand('Emulation.setCPUThrottlingRate', { rate: Number(process.env.MOMENTS_CPU_SLOW) }); console.log('[moments] the page CPU is slowed ' + process.env.MOMENTS_CPU_SLOW + 'x (MOMENTS_CPU_SLOW)'); }
   await H.load({ w: 1440, h: 900, query: { simfreeze: '1' }, ready: 'fit', settle: false });
   const OS_REDUCED = await js(`matchMedia('(prefers-reduced-motion: reduce)').matches`);
