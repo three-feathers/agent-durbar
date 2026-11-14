@@ -5,13 +5,13 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execFileSync } = require('child_process');
-const { plumbCommit } = require('./git-index-helper.js');
+const helper = require(process.env.GIT_HELPER_MODULE ? path.resolve(process.env.GIT_HELPER_MODULE) : './git-index-helper.js'); // GIT_HELPER_MODULE swaps it (mutant runs)
+const { plumbCommit, gitRun, gitTry } = helper;
 const pb = require(process.env.PB_MODULE ? path.resolve(process.env.PB_MODULE) : './picture-budget.js');
 
 const KB = 1024;
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-pb-'));
-const G = (cwd, ...a) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false', ...a], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+const G = (cwd, ...a) => gitRun(cwd, ['-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false', ...a]).trim();
 let n = 0;
 function repo() {
   const dir = path.join(tmp, `r${n++}`);
@@ -177,6 +177,42 @@ try {
   d = repo(); markMain(d); put(d, 'docs/p.png', 50 * KB, 30); commit(d, 'f');
   const blob = G(d, 'rev-parse', 'HEAD:docs/p.png'); fs.rmSync(path.join(d, '.git/objects', blob.slice(0, 2), blob.slice(2)), { force: true });
   assert.strictEqual(require('child_process').spawnSync(process.execPath, [path.join(__dirname, 'picture-budget.js'), '--root', d], { encoding: 'utf8' }).status, 2);
+
+  // FR-095 (issue #1631): a hung git child fails with a message instead of holding the lock. The stand-in `git` is a node script (runs on
+  // Windows too) that sleeps 8 s and exits 0; the helper must kill it after 1 s. A helper with no timeout returns after 8 s: the label fails.
+  assert.strictEqual(helper.GIT_TIMEOUT_MS, 60000, 'FR-095 timeout: the default is 60 s');
+  const sleeper = path.join(tmp, 'sleeping-git.js'); fs.writeFileSync(sleeper, 'setTimeout(() => process.exit(0), 8000);\n');
+  const hangs = (fn) => { const t0 = Date.now(); let err = null; try { fn(); } catch (e) { err = e; } return { err, ms: Date.now() - t0 }; };
+  // the signal is pinned: this stand-in ignores SIGTERM and sleeps 8 s, so only SIGKILL stops it early (a helper that sends the default SIGTERM returns after 8 s).
+  // On Windows kill() is TerminateProcess and a SIGTERM handler is never run, so there the stand-in dies on either signal: the check holds on Linux and macOS only.
+  const stubborn = path.join(tmp, 'stubborn-git.js'); fs.writeFileSync(stubborn, "process.on('SIGTERM', () => {});\nsetTimeout(() => process.exit(0), 8000);\n");
+  const viaKill = hangs(() => gitRun(tmp, ['hash-object', '-w', '--stdin'], { input: 'x', gitCmd: [process.execPath, stubborn], timeoutMs: 1000 }));
+  assert.ok(viaKill.err && /timed out after 1000 ms/.test(viaKill.err.message), 'FR-095 sigkill: a child that ignores SIGTERM is still reported as timed out');
+  assert.ok(viaKill.ms < 6000, `FR-095 sigkill: a child that ignores SIGTERM lived ${viaKill.ms} ms: the kill signal is not SIGKILL`);
+  const viaRun = hangs(() => gitRun(tmp, ['hash-object', '-w', '--stdin'], { input: 'x', gitCmd: [process.execPath, sleeper], timeoutMs: 1000 }));
+  assert.ok(viaRun.err, 'FR-095 timeout: gitRun did not fail on a hung child');
+  assert.strictEqual(viaRun.err.message, 'git hash-object timed out after 1000 ms (killed)', 'FR-095 timeout: message names the command and the timeout');
+  assert.strictEqual(viaRun.err.code, 'ETIMEDOUT', 'FR-095 timeout: the error carries code ETIMEDOUT (callers that swallow ordinary git failures rely on it)');
+  assert.ok(viaRun.ms < 6000, `FR-095 timeout: failed after ${viaRun.ms} ms, not within a few seconds`);
+  d = repo(); markMain(d);
+  const viaPlumb = hangs(() => plumbCommit(d, 'HEAD', { 'a.txt': 'a' }, 'm', null, { gitCmd: [process.execPath, sleeper], timeoutMs: 1000 }));
+  assert.match(String(viaPlumb.err && viaPlumb.err.message), /^git read-tree timed out after 1000 ms/, 'FR-095 timeout: plumbCommit fails with the timeout message');
+  assert.ok(viaPlumb.ms < 6000, 'FR-095 timeout: plumbCommit failed within a few seconds');
+  assert.throws(() => gitRun(d, ['-c', 'a=b', 'rev-parse', '--verify', 'nope-not-a-ref'], {}), (e) => e.code !== 'ETIMEDOUT' && !/timed out/.test(e.message), 'FR-095 timeout: an ordinary git failure is not reported as a timeout');
+  assert.throws(() => gitRun(d, ['rev-parse', 'nope-not-a-ref']), (e) => e.status === 128 && /ambiguous argument 'nope-not-a-ref'/.test(String(e.stderr)), 'FR-095 failure: an ordinary git failure keeps its exit status (128) and stderr');
+
+  // gitTry (readMain in test-moments-registry, the pinned-commit probe in test-usage): an ordinary failure is "no answer" (null), a hang is NOT
+  assert.strictEqual(gitTry(d, ['rev-parse', 'nope-not-a-ref']), null, 'FR-095 gitTry: an ordinary git failure is null, not a throw');
+  assert.ok(/^[0-9a-f]{40}/.test(gitTry(d, ['rev-parse', 'HEAD'])), 'FR-095 gitTry: a success returns stdout');
+  const tryHang = hangs(() => gitTry(tmp, ['cat-file', '-e', 'HEAD'], { gitCmd: [process.execPath, sleeper], timeoutMs: 1000 }));
+  assert.ok(tryHang.err && tryHang.err.code === 'ETIMEDOUT', 'FR-095 gitTry: a hung child throws (ETIMEDOUT) instead of reporting "no answer"');
+  assert.ok(tryHang.ms < 6000, 'FR-095 gitTry: the hang failed within a few seconds');
+  // the other test scripts' git children go through gitRun, the one place with the timeout (FR-031): none starts git by hand
+  for (const f of ['test-changelog.js', 'test-check-posts.js', 'test-moments-registry.js', 'test-spec-numbers.js', 'test-usage.js']) {
+    const src = fs.readFileSync(path.join(__dirname, f), 'utf8');
+    assert.ok(/\b(gitRun|gitTry)\(|\bplumbCommit\(/.test(src), `FR-095 routed: ${f} does not use gitRun`);
+    assert.ok(!/(execFileSync|spawnSync|execFile|spawn)\(\s*'git'/.test(src) && !/killSignal/.test(src), `FR-095 routed: ${f} starts git by hand instead of through gitRun`);
+  }
 
   // the real allow-list of this repository parses clean
   const real = pb.parseAllow(fs.readFileSync(path.join(__dirname, 'picture-budget-allow.txt'), 'utf8'));

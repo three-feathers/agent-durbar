@@ -14,6 +14,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const { gitRun } = require('./git-index-helper.js');
 const cl = require('./changelog.js');
 const rn = require('./release-notes.js');
 
@@ -259,7 +260,7 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
   const emptyConfig = path.join(mkTmp('durbar-gitconfig-'), 'config');
   fs.writeFileSync(emptyConfig, '');
   const gitEnv = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: emptyConfig, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.invalid', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.invalid', GIT_AUTHOR_DATE: '2026-10-23T10:00:00Z', GIT_COMMITTER_DATE: '2026-10-23T10:00:00Z' };
-  const g = (d, ...args) => execFileSync('git', args, { cwd: d, env: gitEnv, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  const g = (d, ...args) => gitRun(d, args, { env: gitEnv }).trim();
   const pkg = (d, v) => fs.writeFileSync(path.join(d, 'package.json'), `${JSON.stringify({ name: 'x', version: v })}\n`);
   const commit = (d, msg) => { g(d, 'add', '-A'); g(d, 'commit', '-q', '-m', msg); };
   // a repository whose main has alpha.10 tagged (its section is in RELEASED), then two fragments and the alpha.11 version bump
@@ -615,7 +616,7 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
       // one git fast-import for the empty commits (a git commit per step took seconds)
       const steps = Array.from({ length: rn.TEST_COMMITS_MAX + 2 }, (_, i) => `step ${i + 1}`);
       const stream = steps.map((m, i) => `commit refs/heads/many\ncommitter t <t@example.invalid> 1792749600 +0000\ndata ${m.length}\n${m}\n${i ? '' : 'from refs/heads/main^0\n'}\n`).join('');
-      execFileSync('git', ['fast-import', '--quiet'], { cwd: d, env: gitEnv, input: stream, stdio: ['pipe', 'ignore', 'pipe'] });
+      gitRun(d, ['fast-import', '--quiet'], { env: gitEnv, input: stream });
       g(d, 'checkout', '-q', 'many');
       g(d, 'tag', '-a', '-m', 'test', 'v0.1.0-alpha.11-test.1');
       g(d, 'checkout', '-q', 'v0.1.0-alpha.11-test.1');

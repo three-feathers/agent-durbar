@@ -12,7 +12,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { gitTry } = require('./git-index-helper.js');
 
 const ROOT = path.join(__dirname, '..');
 const STATES = ['built', 'designed', 'fallback-flat', 'missing'];
@@ -82,10 +82,11 @@ function check({ reg, main, driver, css }) {
 
 function readMain() {
   /* the registry at the merge-base with origin/main, not at whatever origin/main is now; null in a shallow checkout (CI fetches depth 2), where the comparison is skipped and says so */
-  const mb = spawnSync('git', ['merge-base', 'HEAD', 'origin/main'], { cwd: ROOT, encoding: 'utf8' });
-  if (mb.status !== 0 || !mb.stdout.trim()) return null;
-  const r = spawnSync('git', ['show', mb.stdout.trim() + ':docs/experience/world-moments.json'], { cwd: ROOT, encoding: 'utf8' });
-  return r.status === 0 ? JSON.parse(r.stdout) : null;
+  const git = (args) => (gitTry(ROOT, args) || '').trim(); // an ordinary git failure is "no answer"; a hang throws (gitTry)
+  const mb = git(['merge-base', 'HEAD', 'origin/main']);
+  if (!mb) return null;
+  const r = git(['show', mb + ':docs/experience/world-moments.json']);
+  return r ? JSON.parse(r) : null;
 }
 
 if (require.main === module) {
