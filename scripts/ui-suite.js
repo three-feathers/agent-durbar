@@ -174,7 +174,7 @@ const DRIVERS = [
   { name: 'shots-068-coffee' }, // spec 068: coffee break (simbreak=8 in its own query)
   { name: 'shots-097-screens', focus: true }, // spec 097 P2: live screens and the hover zoom
   { name: 'shots-097-screens', label: 'shots-097-screens retro', focus: true, env: { SCREENS_WORLD: 'retro' } }, // spec 102 FR-310 (issue #1428): the arcade's screens, helper heads and big screens
-  { name: 'check-brain-draw' }, // spec 106 T005: the brain on its floating host behind an off flag: masking, text floor, no loop at rest, Still, hidden, reduced motion, forced colours
+  { name: 'check-brain-draw', focus: true }, // spec 106 T005 (its Full checks need the OS window focus, FR-210): the brain on its floating host behind an off flag: masking, text floor, no loop at rest, Still, hidden, reduced motion, forced colours
   { name: 'check-097-motion' }, // spec 097 P2: the people's motion and what stops it
   { name: 'check-097-motion', label: 'check-097-motion retro', env: { MOTION_WORLD: 'retro' } }, // spec 102 FR-309, FR-310 (issue #1428): the arcade's loops start after the calm, on the grid, stepped; its pause, still and scrolled-away rules
   { name: 'check-001-halo' }, // spec 001 FR-210: the waiting halo is a still glow, nothing animates it
