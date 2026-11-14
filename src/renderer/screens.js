@@ -146,7 +146,7 @@
     const cw=x.status==='connected'?W.callWord(x.lastCall):'';
     const stat=`<span class="mst ${esc(c.state.cls)}"${c.state.key.startsWith('unknown')?` title="${esc(W.plain(x.status,120))}"`:''}>${W.iconSvg(c.state.icon)}<span class="mst-w">${esc(c.state.word)}</span>${cw?`<span class="mst-call">\u00b7 ${esc(cw)}</span>`:''}</span>`;
     /* FR-082: the chat dialog's own hint (FR-006) with the agent app's name; Details shows the masked text main sent (FR-007, FR-086) */
-    const hint=W.hintFor({status:x.status,errorClass:x.errorClass,error:x.error,app:rp.app||(m&&m.o.appName)})||(cw?W.callHint(x.lastCall,rp.app||(m&&m.o.appName)):'');
+    const hint=W.hintFor({status:x.status,errorClass:x.errorClass,error:x.error,tokenRefused:x.tokenRefused,tokenVars:x.tokenVars,app:rp.app||(m&&m.o.appName)})||(cw?W.callHint(x.lastCall,rp.app||(m&&m.o.appName)):'');
     const detOpen=!!x.error&&liveDet.has(k);
     const det=x.error?`<button class="btn sm srv-detbtn" type="button" data-lvdet="1" aria-expanded="${detOpen}" aria-label="${esc((detOpen?'Hide':'Show')+' details of '+r.name+' for '+c.name)}">Details</button>`:'';
     const detBox=detOpen?`<div class="srv-det"><pre class="srv-err" tabindex="0" data-lverr="1" aria-label="${esc('Error text of '+r.name+' for '+c.name)}">${esc(x.error)}</pre><button class="btn sm" type="button" data-lvcopy="1" aria-label="${esc('Copy the error text of '+r.name+' for '+c.name)}">Copy</button></div>`:'';
@@ -414,6 +414,10 @@
         <p class="scr-note">Groups of folders: a floor that is <b>off</b> is hidden from the office, but <b>its agents keep running</b> and can spend credits.</p>
         <details class="scr-more"><summary>More</summary><p class="scr-note small">An off floor is not counted in Working, Waiting, Idle, Errors and Done. The office credit total still counts its agents, and an agent there that waits for you or has an error is shown <b>only here</b>, on its floor's row (for example "Off, 1 waiting"). With two or more floors, the same controls are also in the <b>Floors</b> button of the top bar.</p></details>
         <div class="floors-ui floors-set" id="floorsSet" tabindex="-1"></div></section>`:'';
+    /* spec 111 FR-020 (T008): Settings > Team templates, painted by teams.js into #teamsBox; only under the simulator until the member editor (T009) exists */
+    const teamsSec=window.DurbarTeams&&window.DurbarTeams.shown()&&X.bridge.teamsList?`<section class="scr-sec" aria-labelledby="tmH"><h3 id="tmH">Team templates</h3>
+        <p class="scr-note">A template is a saved team: its members, roles and settings. <b>Use…</b> adds that team to a folder. Starting a team does not start any member.</p>
+        <div id="teamsBox"></div></section>`:'';
     /* Schedules (spec 044 FR-011): every folder's schedules, painted by app.js into #schedSet */
     const schedSec=X.sched&&X.sched.on()?`<section class="scr-sec" aria-labelledby="schH"><h3 id="schH" tabindex="-1">Schedules</h3>
         <p class="scr-note">Prompts sent to a folder's agent at a time, every day or at an interval, <b>only while Agent Durbar is open</b>.</p>
@@ -443,15 +447,22 @@
     /* Characters (spec 077 FR-064, FR-068): who sits at the desks, on top of any theme; the theme picker's pattern, one figure per choice */
     const KIT_NAMES={office:'Minimalist',pixel:'Pixel',crew:'Cheeky'};
     /* the items are painted again after a theme pick: the theme's own figures and every preview follow the theme */
+    /* spec 102 FR-320: Retro pixel is always listed; while its flag is closed the entry is disabled and says "Not open yet" (a set's pick preview is its own first person) */
+    const retroOpen=()=>{const C=window.DurbarCrew;return !!(C&&C.levelFor&&C.levelFor(window.THEME.PIXEL_CHARACTERS)!=='closed');}; /* FR-320: "closed" is the level of `levelFor` (the one place that reads the flag), never a second read of WORLD_FLAGS */
+    const setPreview=(id)=>{const px=id==='retro';return `<svg viewBox="${px?'0 0 80 80':'85 95 290 290'}" focusable="false"><image class="chsw-set${px?' chsw-px':''}" href="realoffice/sets/${id}/p01-typeA.webp" x="0" y="0" width="${px?80:457}" height="${px?79:618}"/></svg>`;}; /* the first person's seated frame, cropped to head and shoulders (the office frame is 457x618, the head from y 111) */
+    /* FR-322: a saved Retro pixel while its flag is closed is kept; the line says what is drawn meanwhile */
+    const charNote=()=>{const C=window.DurbarCrew;if(!C||!C.peopleFor||window.THEME.characters()!==window.THEME.PIXEL_CHARACTERS||retroOpen())return '';const w=X.view&&X.view.world&&X.view.world.get?X.view.world.get():'';return (C.peopleFor(w,window.THEME.PIXEL_CHARACTERS).note||'')+' Flat draws the theme\u2019s own figures until then.';};
     const charItems=()=>{
       const cur=window.THEME.characters(), own=window.THEME.themeKit(), crewN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.IDS)?window.DurbarCrew.IDS.length:0; const preN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.PREHISTORIC_IDS)?window.DurbarCrew.PREHISTORIC_IDS.length:0,pirN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.PIRATE_IDS)?window.DurbarCrew.PIRATE_IDS.length:0,monN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.MONSTER_IDS)?window.DurbarCrew.MONSTER_IDS.length:0,royN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.ROYAL_IDS)?window.DurbarCrew.ROYAL_IDS.length:0,rebN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.REBELS_IDS)?window.DurbarCrew.REBELS_IDS.length:0;
       const real=X.view&&X.view.get()==='real'&&X.view.world; /* FR-201: in Real office the first choice is the world's default set */
-      const list=[real?{id:'theme',name:'World\u2019s default ('+real.defaultSet()+')',sub:'People follow the world'}:{id:'theme',name:'The theme\u2019s own',sub:(KIT_NAMES[own]||own)+' figures'},{id:'minimalist',name:'Minimalist',sub:'The calm office figure'},{id:'cheeky',name:'Cheeky',sub:crewN?crewN+' cheeky characters':'Cheeky characters'},{id:'prehistoric',name:'Prehistoric',sub:preN?preN+' cave characters':'Cave characters'},{id:'pirate',name:'Pirate',sub:pirN?pirN+' pirate characters':'Pirate characters'},{id:'monster',name:'Monster',sub:monN?monN+' monster characters':'Monster characters'},{id:'royal',name:'Royal',sub:royN?royN+' royal characters':'Royal characters'},{id:'rebels',name:'Animal Rebels',sub:rebN?rebN+' animal characters':'Animal characters'}];
-      return list.map((c)=>`<li class="throw"><button class="thpick" type="button" data-characters="${esc(c.id)}" aria-pressed="${c.id===cur}" aria-label="Characters ${esc(c.name)}: ${esc(c.sub)}"><span class="chsw" aria-hidden="true">${X.charPreview?X.charPreview(c.id):''}</span><span class="thtx"><b title="${esc(c.name)}">${esc(c.name)}</b><small>${esc(c.sub)}</small></span></button></li>`).join('');
+      const list=[real?{id:'theme',name:'World\u2019s default ('+real.defaultSet()+')',sub:'People follow the world'}:{id:'theme',name:'The theme\u2019s own',sub:(KIT_NAMES[own]||own)+' figures'},{id:'office',name:'Office people',sub:'15 photographed office people',set:'office'},{id:'minimalist',name:'Minimalist',sub:'The calm office figure'},{id:'cheeky',name:'Cheeky',sub:crewN?crewN+' cheeky characters':'Cheeky characters'},{id:'prehistoric',name:'Prehistoric',sub:preN?preN+' cave characters':'Cave characters'},{id:'pirate',name:'Pirate',sub:pirN?pirN+' pirate characters':'Pirate characters'},{id:'monster',name:'Monster',sub:monN?monN+' monster characters':'Monster characters'},{id:'royal',name:'Royal',sub:royN?royN+' royal characters':'Royal characters'},{id:'rebels',name:'Animal Rebels',sub:rebN?rebN+' animal characters':'Animal characters'},{id:window.THEME.PIXEL_CHARACTERS,name:'Retro pixel',sub:retroOpen()?'15 pixel people':'Not open yet',set:'retro',closed:!retroOpen()}];
+      const tab=(list.find((c)=>c.id===cur)||list.find((c)=>!c.closed)).id; /* roving tabindex: the chosen radio is the one Tab stop (World row's pattern, FR-301) */
+      return list.map((c)=>`<li class="throw" role="presentation"><button class="thpick" type="button" role="radio" data-characters="${esc(c.id)}"${c.closed?' aria-disabled="true"':''} aria-checked="${c.id===cur}" tabindex="${c.id===tab?'0':'-1'}" aria-label="Characters ${esc(c.name)}: ${esc(c.sub)}"><span class="chsw" aria-hidden="true">${c.set?setPreview(c.set):X.charPreview?X.charPreview(c.id):''}</span><span class="thtx"><b title="${esc(c.name)}">${esc(c.name)}</b><small>${esc(c.sub)}</small></span></button></li>`).join('');
     };
+    charsRefresh=()=>{const l=$('chList');if(l)l.innerHTML=charItems();};
     const charSec=window.THEME&&window.THEME.setCharacters&&X.applyCharacters?`<section class="scr-sec" aria-labelledby="chH"><h3 id="chH">Characters</h3>
         <p class="scr-note">Who sits at the desks, on top of any theme; the choice applies at once and is kept on this computer.</p>
-        <ul class="thlist" id="chList">${charItems()}</ul></section>`:'';
+        <ul class="thlist" id="chList" role="radiogroup" aria-labelledby="chH">${charItems()}</ul><p class="scr-note small" id="chNote" role="status">${esc(charNote())}</p></section>`:'';
     /* Logo (spec 101 FR-020..FR-023): the top-bar icon, the Characters pattern; DurbarLogo (logo-marks.js) keeps the choice in localStorage and applies it at once */
     const LG=window.DurbarLogo;
     const logoItems=()=>{const cur=LG.current();return LG.IDS.map((id)=>{const n=LG.NAMES[id];return `<li class="throw"><button class="thpick" type="button" data-logo="${esc(id)}" aria-pressed="${id===cur}" aria-label="Logo ${esc(n[0])}: ${esc(n[1])}"><span class="lgsw" aria-hidden="true">${LG.preview(id)}</span><span class="thtx"><b title="${esc(n[0])}">${esc(n[0])}</b><small title="${esc(n[1])}">${esc(n[1])}</small></span></button></li>`;}).join('');};
@@ -490,12 +501,15 @@
     const pfSec=profilesOn()?`<section class="scr-sec" id="pfSec" aria-labelledby="pfH">${await profilesInner()}</section>`:'';
     const detailSec=`<section class="scr-sec" aria-labelledby="detH"><h3 id="detH">Display</h3>
         <p class="scr-note">How the office and the windows look and behave on this computer.</p>
-        ${X.density?densityRow():''}${X.liveAct&&X.liveAct.usable()?liveActRow():''}${X.shutters&&X.shutters.usable()?shuttersRow():''}${X.view?officeRow()+worldRow():''}</section>`;
+        ${X.density?densityRow():''}${X.liveAct&&X.liveAct.usable()?liveActRow():''}${X.shutters&&X.shutters.usable()?shuttersRow():''}</section>`;
+    const worldSec=worldSection();
     /* spec 074 FR-013 (issue 548): the navigator shortcut, recorded here, checked for clashes, kept for this window */
     const keySec=X.navKey?`<section class="scr-sec" aria-labelledby="keyH"><h3 id="keyH">Keyboard</h3>
         <p class="scr-note">Go to (the navigator) opens from anywhere: a floor, a folder, an agent, or a chat by its number (C and the number).</p>
         <div class="scr-row"><span class="scr-row-l" id="navKeyL">Go to shortcut</span><kbd class="navkey-now" id="navKeyNow">${esc(X.navKey.text())}</kbd><button class="btn" type="button" id="navKeyRec" aria-describedby="navKeyL">Change…</button><button class="btn" type="button" id="navKeyReset"${X.navKey.isDefault()?' disabled':''}>Reset to ${esc(X.navKey.defText())}</button></div>
         <p class="scr-note small" id="navKeyMsg" role="status"></p>
+        ${X.searchKey?`<div class="scr-row"><span class="scr-row-l" id="csKeyL">Search conversations shortcut</span><kbd class="navkey-now" id="csKeyNow">${esc(X.searchKey.bound()?X.searchKey.text():'None')}</kbd><button class="btn" type="button" id="csKeyRec" aria-describedby="csKeyL">Change…</button><button class="btn" type="button" id="csKeyReset"${X.searchKey.isDefault()&&X.searchKey.bound()?' disabled':''}>Reset to ${esc(X.searchKey.defText())}</button></div>
+        <p class="scr-note small" id="csKeyMsg" role="status">${X.searchKey.bound()?'':esc(X.searchKey.text()+' is your Go to shortcut, so Search conversations has none. Change one of them.')}</p>`:''}
         <p class="scr-note small">Shortcuts the app, text editing or your operating system already use are refused. The list of operating system shortcuts is a known list, not every one there is. The shortcut follows the key's position, so on a Dvorak layout ${esc(X.navKey.defText())} is the key that types U. On a Mac with Dvorak, ⌘J types H and macOS keeps ⌘H for Hide, so do not pick ⌘J there.</p></section>`:'';
     /* spec 052 FR-066, FR-093: what Durbar does not do, in calm plain words (checked against the README's Safety model and Costs and caps) */
     const notSec=`<section class="scr-sec" aria-labelledby="notH"><h3 id="notH">What Durbar does not do</h3><ul class="scr-not">
@@ -505,7 +519,7 @@
         <li>It sends nothing to any server of its own.</li>
         <li>Rooms you hide or switch off still run and cost money.</li></ul></section>`;
     const keep=focus?null:keepPlace(r); /* spec 069 FR-069: a repaint (not the opening) keeps the scroll and the focused control */
-    r.innerHTML=head('Settings')+`<div class="scr-wrap"><div class="scr-cols"><nav class="scr-nav" id="scrNav" aria-label="Settings sections" hidden></nav><div class="scr-body">${hsSec}${pfSec}${detailSec}${keySec}${notSec}${themeSec}${charSec}${logoSec}${motionSec}${stillSec}${capSec}${moodSec}${breakSec}${linksSec}${notifySec}${followSec}${schedSec}${floorsSec}${orgSec}${placesSec}
+    r.innerHTML=head('Settings')+`<div class="scr-wrap"><div class="scr-cols"><nav class="scr-nav" id="scrNav" aria-label="Settings sections" hidden></nav><div class="scr-body">${hsSec}${pfSec}${detailSec}${worldSec}${keySec}${notSec}${themeSec}${charSec}${logoSec}${motionSec}${stillSec}${capSec}${moodSec}${breakSec}${linksSec}${notifySec}${followSec}${schedSec}${floorsSec}${teamsSec}${orgSec}${placesSec}
       <details class="scr-adv" id="advMcp"${advOpen?' open':''}><summary><h3 class="scr-adv-h">Advanced: MCP servers (extra tools for agents)</h3><span class="mtag warn" id="advMcpAtt"${live&&live.agg.attention?'':' hidden'}>${esc(attText(live?live.agg.attention:0))}</span></summary>
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH" tabindex="-1">MCP servers</h3>
         ${liveSection()}
@@ -548,8 +562,10 @@
     if($('advMcp')){$('advMcp').ontoggle=()=>{advOpen=$('advMcp').open;if(advOpen&&liveStale){liveStale=false;void repaintLive(true);}};if(cur.section==='mcp'){cur.section=null;const h=$('mcpH');if(h){scrollInBody(h);h.focus({preventScroll:true});atSec=true;}}}
     if($('pfSec'))wireProfiles();
     if(X.floors&&$('floorsSet'))X.floors.render();
-    if($('navKeyRec'))wireNavKey();
+    if($('navKeyRec'))wireKeyRec({rec:'navKeyRec',msg:'navKeyMsg',now:'navKeyNow',reset:'navKeyReset'},X.navKey,'opens Go to');
+    if($('csKeyRec'))wireKeyRec({rec:'csKeyRec',msg:'csKeyMsg',now:'csKeyNow',reset:'csKeyReset'},X.searchKey,'focuses Search conversations'); /* spec 095 FR-003 */
     if(X.sched&&$('schedSet'))X.sched.render();
+    if($('teamsBox'))window.DurbarTeams.mount($('teamsBox'));
     /* spec 044 FR-030: the top-bar Schedules button, Ctrl+Shift+S and Ctrl+K open Settings at the Schedules heading (also when Settings is open already) */
     if(cur.section==='schedules'){cur.section=null;const h=$('schH');if(h){scrollInBody(h);h.focus({preventScroll:true});atSec=true;}}
     wireMcpLevels();
@@ -571,7 +587,7 @@
       if(v&&v.ok){X.onUsageReset(v);X.toast('Usage totals were reset.',2600);paintSettings();}
       else{const m=$('usageTotalsMsg');if(m)m.textContent='Could not reset the totals.';}
     };
-    r.onclick=onSettingsClick;r.onkeydown=worldKeys;
+    r.onclick=onSettingsClick;r.onkeydown=(e)=>{worldKeys(e);charKeys(e);};
     r.onchange=e=>{if(e.target&&e.target.id==='chatLinksSel')return onChatLinksChange(e);return onPlaceChange(e);};
     /* theme picker (spec 037): click applies live through app.js's applyTheme; no restart */
     /* spec 037 FR-014: each swatch shows its own theme's colours (validated colour values set through CSSOM) */
@@ -588,14 +604,18 @@
       $('thList').querySelectorAll('[data-theme]').forEach((x)=>x.setAttribute('aria-pressed',String(x===b)));
     });
     /* spec 077 FR-068: a Characters pick applies live through app.js's applyCharacters and shows the new choice at once */
-    if($('chList'))$('chList').addEventListener('click',(e)=>{
-      const b=e.target.closest&&e.target.closest('[data-characters]');if(!b||!X.applyCharacters)return;
+    /* FR-303: Characters are one radio group like the World row (FR-301): the click and the arrows (charKeys, the World row's radioNav) pick through pickChar; a closed entry (aria-disabled) is neither picked nor reached by the arrows */
+    const syncChars=(cur)=>{const l=$('chList');if(!l)return;const all=[...l.querySelectorAll('[data-characters]')],hit=all.find((x)=>x.dataset.characters===cur)||all.find((x)=>x.getAttribute('aria-disabled')!=='true');all.forEach((x)=>{x.setAttribute('aria-checked',String(x.dataset.characters===cur));x.tabIndex=x===hit?0:-1;});};
+    pickChar=(b,focus)=>{
+      if(!b||!X.applyCharacters||b.getAttribute('aria-disabled')==='true')return;
       const done=X.applyCharacters(b.dataset.characters);
       Promise.resolve(done).then(()=>{const n=$('dsR'),V=X.view;if(n&&V)n.textContent=V.note();}); /* spec 102 FR-202: the one line saying a choice has no Real office poses follows the pick */
-      $('chList').querySelectorAll('[data-characters]').forEach((x)=>x.setAttribute('aria-pressed',String(x===b)));
+      syncChars(b.dataset.characters);if(focus)focusIn(b);
       /* a repaint of the list that a theme pick started earlier can land between this click and the change itself and show the old choice (check-characters on CI): once the change is applied, the buttons say what is applied */
-      Promise.resolve(done).then(()=>{const l=$('chList');if(l&&window.THEME&&window.THEME.characters){const cur=window.THEME.characters();l.querySelectorAll('[data-characters]').forEach((x)=>x.setAttribute('aria-pressed',String(x.dataset.characters===cur)));}});
-    });
+      Promise.resolve(done).then(()=>{const cn=$('chNote');if(cn)cn.textContent=charNote();if(window.THEME&&window.THEME.characters)syncChars(window.THEME.characters());});
+    };
+    /* spec 077 FR-068: a Characters pick applies live through app.js's applyCharacters and shows the new choice at once */
+    if($('chList'))$('chList').addEventListener('click',(e)=>{pickChar(e.target.closest&&e.target.closest('[data-characters]'),false);});
     /* spec 101 FR-020: a Logo pick shows at once in the top bar and is kept (no IPC, no file) */
     if($('lgList'))$('lgList').addEventListener('click',(e)=>{
       const b=e.target.closest&&e.target.closest('[data-logo]');if(!b||!window.DurbarLogo)return;
@@ -771,30 +791,76 @@
     const on=!!X.shutters.get();
     return `<div class="scr-row"><span class="scr-row-l" id="shL">Finished agents rest in the lounge</span>${sw(on,'Finished agents rest in the lounge: in a room where others still work, finished agents move to a couch, then to a nap bed','id="shutSw" aria-describedby="shN"')}<span class="scr-note small" id="shN">In a room where others still work, finished agents rest on a couch, and after 10 minutes on a nap bed, so the busy desks get the space.</span></div>`;
   }
-  /* spec 102 FR-201 (097 FR-114): the World row, a radio group, only with Real office on and more than one world offered (a flagged world is
-     not offered, so with the flag off the Settings page is as before). Keyboard: arrows move and select; tokens only. */
-  function worldRow(){
-    const V=X.view, W=V&&V.world, list=W?W.list():[];
-    if(!W||V.get()!=='real'||list.length<2)return '';
-    const cur=W.get();
-    return `<div class="scr-row" id="wrRow"><span class="scr-row-l" id="wrL">World</span><div class="seg" role="radiogroup" aria-labelledby="wrL" aria-describedby="wrN" id="wrGroup">${list.map(w=>`<button type="button" role="radio" data-world="${esc(w.id)}" aria-checked="${w.id===cur}" tabindex="${w.id===cur?'0':'-1'}">${esc(w.name)}</button>`).join('')}</div><span class="scr-note small" id="wrN">The room Real office draws. Its people follow the world unless you pick a set under Characters.</span></div>`;
+  /* spec 102 FR-300, FR-301 (owner, 2026-11-03; T266, first step): the World section, picture cards in one radio group. Plain is today's flat office
+     (officeview flat); the other cards are Real office in that world (officeview real + the world), both kept where they always were. A world
+     behind a closed flag is not offered by crew.js, so it is not listed here, zoom or not. Previews are the app's own pictures (realoffice/previews/,
+     taken by shots-102-previews.js); a world without one shows a plain tile with its name. */
+  let charsRefresh=null; /* set by paintSettings: draws the Characters list again (it names the world's default set) */
+  const PLAIN_CARD={id:'plain',name:'Plain',line:'Desks in coloured rooms, one person each, status in words.'};
+  const worldCards=()=>{
+    const V=X.view, W=V&&V.world;
+    return V&&W?[PLAIN_CARD].concat(W.list().map(w=>({id:w.id,name:w.name,line:w.line||''}))):[];
+  };
+  const worldCur=()=>{const V=X.view;return V.get()==='real'&&V.world?V.world.get():'plain';};
+  /* FR-302, FR-061: the previews' script (pictures and zoom origins) loads the first time the World section is drawn, never at start; until it is there the
+     cards show plain tiles, and the card pictures are replaced in place when it arrives (a missing script leaves the tiles) */
+  /* a card's picture: the preview of T265a when its script has arrived, else a plain tile with the name */
+  const worldPic=(w)=>{
+    const P=(window['DurbarWorldPreviews']&&window['DurbarWorldPreviews'].previews)||{}, pv=Object.prototype.hasOwnProperty.call(P,w.id)?P[w.id]:null;
+    return pv?`<span class="chsw wpic" aria-hidden="true"><img src="realoffice/previews/${esc(String(pv.file||'').replace(/[^\w.-]/g,''))}" alt="" width="${Number(pv.width)||640}" height="${Number(pv.height)||400}" draggable="false" style="--zx:${Number(pv.origin&&pv.origin.x)||50}%;--zy:${Number(pv.origin&&pv.origin.y)||50}%"></span>`:`<span class="chsw wpic wnone" aria-hidden="true"><b>${esc(w.name)}</b></span>`;
+  };
+  /* the previews' script has arrived: each card's picture is replaced in place, so the focus, the roving tabindex and the scroll stay */
+  function previewsApply(){
+    const by=new Map(worldCards().map(w=>[w.id,w]));
+    document.querySelectorAll('#wrGroup [data-world]').forEach(c=>{const w=by.get(c.dataset.world),o=c.querySelector('.wpic');if(w&&o)o.outerHTML=worldPic(w);});
   }
-  /* the pick applies at once; the page is painted again (Characters names the new default) and focus returns to the radio */
+  function previewsLoad(){
+    if(document.getElementById('roPreviewsJs'))return;
+    const sc=document.createElement('script');sc.id='roPreviewsJs';sc.src='realoffice/previews/previews.js';
+    sc.onload=previewsApply; /* the pictures come in place: no repaint of the page (a repaint reloads the MCP list for every chat and loses the focus and the scroll) */
+    document.body.appendChild(sc);
+  }
+  function worldSection(){
+    const list=worldCards();
+    if(!list.length)return '';
+    const cur=worldCur(); /* the previews' script is a pack-style global, read with a string key (as app.js reads the packs'); loaded below */
+    previewsLoad();
+    const card=w=>{
+      const on=w.id===cur;
+      const pic=worldPic(w);
+      return `<li class="throw"><button type="button" class="thpick" role="radio" data-world="${esc(w.id)}" aria-checked="${on}" tabindex="${on?'0':'-1'}" aria-labelledby="wn-${esc(w.id)}" aria-describedby="wl-${esc(w.id)}${on?' wu-'+esc(w.id):''}">${pic}<span class="thtx"><b id="wn-${esc(w.id)}">${esc(w.name)}</b><small id="wl-${esc(w.id)}">${esc(w.line)} Built in.</small></span><b class="wuse" id="wu-${esc(w.id)}"${on?'':' data-off aria-hidden="true"'}>In use</b></button></li>`;
+    };
+    return `<section class="scr-sec" aria-labelledby="worldH"><h3 id="worldH">World</h3>
+        <p class="scr-note">Where your agents work. The choice applies at once and is kept on this computer. Characters, below, say who sits there.</p>
+        <ul class="thlist wcards" id="wrGroup" role="radiogroup" aria-labelledby="worldH">${list.map(card).join('')}</ul>
+        <p class="scr-note small" id="dsR">${esc(X.view.note())}</p></section>`;
+  }
+  /* the pick applies at once, and the cards are updated IN PLACE (the focused card stays the same element, so the focus and the roving tabindex
+     survive a quick arrow after Enter); every card keeps the "In use" line's room (hidden, not removed), so no card changes size; the note, the
+     Characters list (it names the world's default set) and the theme note follow (Space and Enter are the button's own click) */
   async function pickWorld(b){
-    const id=b.dataset.world;X.view.world.set(id);await paintSettings();
-    const nb=document.querySelector('#wrGroup [data-world="'+CSS.escape(id)+'"]');if(nb)focusIn(nb);
+    const id=b.dataset.world, V=X.view;
+    if(id==='plain')await V.set('flat'); else{await V.set('real');V.world.set(id);}
+    document.querySelectorAll('#wrGroup [data-world]').forEach(c=>{
+      const w=c.dataset.world, on=w===id, u=c.querySelector('.wuse');
+      c.setAttribute('aria-checked',String(on));c.tabIndex=on?0:-1;
+      c.setAttribute('aria-describedby','wl-'+w+(on?' wu-'+w:''));
+      if(u){u.toggleAttribute('data-off',!on);if(on)u.removeAttribute('aria-hidden');else u.setAttribute('aria-hidden','true');}
+    });
+    const n=$('dsR');if(n)n.textContent=X.view.note();
+    if(charsRefresh)charsRefresh();
+    const tw=$('thWorld');if(tw){tw.textContent=worldWords();tw.hidden=!tw.textContent;}
   }
-  function worldKeys(e){
-    const b=e.target.closest&&e.target.closest('#wrGroup [data-world]');if(!b)return;
-    const all=[...b.parentElement.querySelectorAll('[data-world]')], i=all.indexOf(b), k=e.key;
+  /* the one keyboard rule of a radio group that picks as it moves (FR-301's World row, FR-303's Characters): arrows, Home and End move and choose, a radio marked aria-disabled is skipped; Tab and Escape are the page's (one Tab stop by roving tabindex) */
+  function radioNav(e,sel,pick){
+    const b=e.target.closest&&e.target.closest(sel);if(!b)return;
+    const all=[...b.closest('[role=radiogroup]').querySelectorAll(sel.slice(sel.indexOf(' ')+1))].filter((x)=>x===b||x.getAttribute('aria-disabled')!=='true'), i=all.indexOf(b), k=e.key;
     const to=k==='ArrowRight'||k==='ArrowDown'?all[(i+1)%all.length]:k==='ArrowLeft'||k==='ArrowUp'?all[(i-1+all.length)%all.length]:k==='Home'?all[0]:k==='End'?all[all.length-1]:null;
-    if(to){e.preventDefault();pickWorld(to);}
+    if(to){e.preventDefault();pick(to);}
   }
-  /* spec 017 FR-029 (owner 2026-10-31: no doors) and spec 097 FR-001: Open office or Real office, a separate preference (durbar.officeview) */
-  function officeRow(){
-    const view=X.view.get()==='real'?'real':'open', pressed=k=>k===view;
-    return `<div class="scr-row"><span class="scr-row-l" id="dsL">Office layout</span><div class="seg" role="group" aria-labelledby="dsL" aria-describedby="dsN dsR"><button type="button" data-officelayout="open" aria-pressed="${pressed('open')}">Open office</button><button type="button" data-officelayout="real" aria-pressed="${pressed('real')}">Real office</button></div><span class="scr-note small" id="dsN">Open office: the plain desks and status words. Real office: a realistic open-plan office, with a person at each desk, places along the back wall and lights that follow the status of each agent.</span><span class="scr-note small" id="dsR">${esc(X.view.note())}</span></div>`;
-  }
+  function worldKeys(e){radioNav(e,'#wrGroup [data-world]',(to)=>{to.closest('#wrGroup').querySelectorAll('[data-world]').forEach(x=>{x.tabIndex=x===to?0:-1;});focusIn(to);});} /* FR-301: the World cards' arrows MOVE (roving tabindex), Space or Enter chooses (the Characters radios pick as they move) */
+  let pickChar=()=>{}; /* set by the Settings paint (it closes over the page's helpers) */
+  function charKeys(e){radioNav(e,'#chList [data-characters]',(b)=>pickChar(b,true));}
   function liveActRow(){
     const on=!!X.liveAct.get();
     return `<div class="scr-row"><span class="scr-row-l" id="laL">Live activity on desks</span>${sw(on,'Live activity on desks: what each working agent is thinking or doing, on its desk','id="liveActSw" aria-describedby="laN"')}<span class="scr-note small" id="laN">What each working agent is thinking or doing, on its desk. Secrets are masked.</span></div>`;
@@ -934,28 +1000,31 @@
     await paintSettings();
     const nb=document.querySelector('#myPlaces ~ .scr-tools [data-pl-act="add"], .scr-tools [data-pl-act="add"]')||document.getElementById('plH'); if(nb)focusIn(nb); /* the Add button, or the Places heading */
   }
-  /* spec 074 FR-013 / FR-014: Change… records the next key combination; Escape cancels; a refused one says why */
-  function wireNavKey(){
-    const rec=$('navKeyRec'),msg=$('navKeyMsg'),now=$('navKeyNow'),reset=$('navKeyReset');
+  /* spec 074 FR-013 / FR-014: Change… records the next key combination; Escape cancels; a refused one says why. One recorder for the Go to
+     key and (spec 095 FR-003) the Search conversations key: `K` is X.navKey or X.searchKey; `did` ends "Saved: <keys> …". */
+  function wireKeyRec(ids,K,did){
+    const rec=$(ids.rec),msg=$(ids.msg),now=$(ids.now),reset=$(ids.reset);
     let onKey=null;
-    const stop=()=>{if(onKey)window.removeEventListener('keydown',onKey,true);onKey=null;X.navKey.recording(false);rec.textContent='Change…';rec.setAttribute('aria-pressed','false');};
-    const show=t=>{now.textContent=X.navKey.text();reset.disabled=X.navKey.isDefault();msg.textContent=t;};
+    const stop=()=>{if(onKey)window.removeEventListener('keydown',onKey,true);onKey=null;K.recording(false);rec.textContent='Change…';rec.setAttribute('aria-pressed','false');};
+    /* both rows: a change of one can free or take the other (the search has no key while it equals Go to's) */
+    const showRow=(KK,n,r)=>{if(!KK||!$(n))return;const b=!KK.bound||KK.bound();$(n).textContent=b?KK.text():'None';if($(r))$(r).disabled=KK.isDefault()&&b;};
+    const show=t=>{showRow(X.navKey,'navKeyNow','navKeyReset');showRow(X.searchKey,'csKeyNow','csKeyReset');msg.textContent=t;if(K===X.navKey&&X.searchKey&&$('csKeyMsg'))$('csKeyMsg').textContent=X.searchKey.bound()?'':X.searchKey.text()+' is your Go to shortcut, so Search conversations has none. Change one of them.';};
     rec.onclick=()=>{
       if(onKey){stop();msg.textContent='Not changed.';return;}
-      X.navKey.recording(true);rec.textContent='Press the keys… (Esc to cancel)';rec.setAttribute('aria-pressed','true');msg.textContent='Press the new shortcut now.';
+      K.recording(true);rec.textContent='Press the keys… (Esc to cancel)';rec.setAttribute('aria-pressed','true');msg.textContent='Press the new shortcut now.';
       onKey=e=>{
         if(e.key==='Escape'&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!e.shiftKey){e.preventDefault();e.stopPropagation();stop();msg.textContent='Not changed.';focusIn(rec);return;}
         if(e.key==='Tab'&&!e.ctrlKey&&!e.metaKey&&!e.altKey)return; /* Tab still leaves the button */
-        const c=X.navKey.fromEvent(e); if(!c)return; /* a modifier alone: wait for the key */
+        const c=K.fromEvent(e); if(!c)return; /* a modifier alone: wait for the key */
         e.preventDefault();e.stopPropagation();
-        const why=X.navKey.clash(c);
-        if(why){msg.textContent=X.navKey.textOf(c)+' cannot be used. '+why+' Try another, or press Esc.';return;}
-        stop();X.navKey.set(c);show('Saved: '+X.navKey.text()+' opens Go to.');focusIn(rec);
+        const why=K.clash(c);
+        if(why){msg.textContent=K.textOf(c)+' cannot be used. '+why+' Try another, or press Esc.';return;}
+        stop();K.set(c);show('Saved: '+K.text()+' '+did+'.');focusIn(rec);
       };
       window.addEventListener('keydown',onKey,true);
     };
     rec.onblur=()=>{if(onKey){stop();msg.textContent='Not changed.';}};
-    reset.onclick=()=>{X.navKey.set(null);show('Back to '+X.navKey.text()+'.');focusIn(rec);};
+    reset.onclick=()=>{K.set(null);show('Back to '+K.text()+'.');focusIn(rec);};
   }
   async function onSettingsClick(e){
     if(e.target.closest('#liveBox')){await onLiveClick(e);return;} /* spec 058 FR-082 */
@@ -1012,19 +1081,6 @@
     }
     const wb=e.target.closest('#wrGroup [data-world]');
     if(wb&&X.view&&X.view.world){pickWorld(wb);return;}
-    const olb=e.target.closest('[data-officelayout]');
-    if(olb&&X.view){
-      const k=olb.dataset.officelayout, V=X.view;
-      await V.set(k==='real'?'real':'flat');
-      const view=V.get()==='real'?'real':'open', g=olb.parentElement;
-      if(g)g.querySelectorAll('[data-officelayout]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.officelayout===view)));
-      const n=$('dsR');if(n)n.textContent=V.note();
-      const hadFocus=document.activeElement===olb;
-      await paint(); /* the World row appears with Real office, and Characters names the world's default set */
-      if(hadFocus){const nb=document.querySelector('[data-officelayout="'+k+'"]');if(nb)focusIn(nb);} /* the repaint replaced the pressed button: keep the keyboard where it was */
-      const tw=$('thWorld');if(tw){tw.textContent=worldWords();tw.hidden=!tw.textContent;}
-      return;
-    }
     const shs=e.target.closest('#shutSw');
     if(shs&&X.shutters){const on=!X.shutters.get();X.shutters.set(on);shs.classList.toggle('on',on);shs.setAttribute('aria-checked',on?'true':'false');return;}
     const bs=e.target.closest('#breakSw');
@@ -1470,7 +1526,7 @@
         const rnw=x.status==='connected'&&typeof x.renewedAt==='number'&&W.renewedWord?W.renewedWord(x.renewedAt):''; /* spec 058 FR-221: "Renewed 12:40", a quiet note, no chat line */
         const ckU=x.status==='connected'&&x.checkUnknown===true; /* spec 058 FR-225: the last check before a message got no answer in 30 s */
         const stat=`<span class="mst ${esc(sv.cls)}"${x.status&&sv.cls==='unknown'?` title="${esc(W.plain(x.status,120))}"`:''}>${W.iconSvg(sv.icon)}<span class="mst-w">${esc(sv.word)}</span>${cw?`<span class="mst-call">\u00b7 ${esc(cw)}</span>`:''}${rnw?`<span class="mst-call mst-renew">\u00b7 ${esc(rnw)}</span>`:''}${ckU?`<span class="mst-call mst-unk">\u00b7 Did not answer a check</span>`:''}</span>`;
-        const hint=W.hintFor({status:x.status,errorClass:x.errorClass,error:x.error,app,by})||(cw?W.callHint(x.lastCall,app):'');
+        const hint=W.hintFor({status:x.status,errorClass:x.errorClass,error:x.error,tokenRefused:x.tokenRefused,tokenVars:x.tokenVars,app,by})||(cw?W.callHint(x.lastCall,app):'');
         const detOpen=x.error&&openDet.has(x.name);
         /* FR-007: the masked text (main masked it; never the runtime's raw text) behind Details, and Copy copies exactly that */
         const det=x.error?`<button class="btn sm srv-detbtn" type="button" data-det="${esc(x.name)}" aria-expanded="${detOpen?'true':'false'}" aria-label="${esc((detOpen?'Hide':'Show')+' details of '+x.name)}">Details</button>`:'';
@@ -1798,8 +1854,9 @@
     if(!cur||cur.kind!=='tools')return;
     const actBtns=act?`<button class="btn" type="button" id="actCsv"${act.n?'':' disabled'}>Export CSV</button><button class="btn" type="button" id="actJson"${act.n?'':' disabled'}>Export JSON</button><button class="btn danger" type="button" id="actClear"${act.n?'':' disabled'}>Clear activity</button>`:'';
     const head=act?`${tabs}<span class="grow"></span>${actBtns}`:cost?`${cost.seg}${tabs}<span class="grow"></span><button class="btn" type="button" id="costCsv"${cost.built.rows.length&&!cost.none?'':' disabled'}>Copy as CSV</button>`:`${per}${scopeSel}${tabs}<span class="grow"></span>`;
-    r.innerHTML=`<div class="scr-head"><h2>Tools</h2>${head}<button class="btn" type="button" id="scrClose" title="Close (Esc)">Close</button></div>
-      <div class="scr-body">${body}</div>`;
+    const wide=act?' scr-wide':''; /* spec 052 FR-071 (2026-11-10): the Activity table takes the window width */
+    r.innerHTML=`<div class="scr-head${wide}"><h2>Tools</h2>${head}<button class="btn" type="button" id="scrClose" title="Close (Esc)">Close</button></div>
+      <div class="scr-body${wide}">${body}</div>`;
     wireHead();
     if($('toolScope'))$('toolScope').onchange=e=>{cur.scope=e.target.value||null;paintTools();};
     if($('perSession'))$('perSession').onclick=()=>{if(period==='session')return;period='session';cur.scope=null;paintTools();};

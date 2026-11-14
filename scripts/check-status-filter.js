@@ -12,9 +12,13 @@
  * notice goes. The Done pill keeps the lounge (the layout is sized for it). In List the same notice shows above the rows, the rows leave
  * out Noor and Maya, and Show all brings both back. Every wait is until() and its result is asserted. A miss prints DRIVER FAILED
  * (Electron still exits 0), so the npm script exits non-zero unless "all checks passed" is printed.
+ * The suite entry `check-status-filter retro` (DRIVER_WORLD set, spec 102 delta 2026-11-11, issue 1559) skips the flat behaviour above and
+ * measures, in the arcade at both sizes, the office notice and the List notice (text, bold part, Show all) and the List's empty line at 4.5:1,
+ * with an opaque colour, no opacity and an underline that is drawn; FILTER_MUTANT=old puts the old colours back (it must fail).
  *   OUT=docs/screenshots  (optional) also saves 001-status-filter-{1440x900,1280x800}.png
  */
 const assert = require('assert');
+const fs = require('fs');
 const path = require('path');
 const { helpers, jsLiteral, CHECK_DARK } = require('./driver-helpers');
 const { pageCheck } = require('./check-office-overlap.js');
@@ -24,6 +28,8 @@ module.exports = async (ctx) => {
   const H = helpers(ctx);
   const { js, until } = H;
   const ok = async (expr, what, ms) => assert.ok(await until(expr, ms || 8000), what);
+  const ARCADE = !!process.env.DRIVER_WORLD;
+  fs.rmSync(path.join(OUT, 'statusfilter-contrast.txt'), { force: true });
   const pill = (k) => `.stat[data-k="${k}"]`;
   const clickPill = (k) => js(`document.querySelector(${jsLiteral(pill(k))}).click()`);
   const count = (k) => js(`+document.querySelector(${jsLiteral(pill(k) + ' b')}).textContent`);
@@ -34,7 +40,7 @@ module.exports = async (ctx) => {
   const inLounge = (id) => js(`!!document.querySelector('#stage .lounge .desk.shut[data-id="'+CSS.escape(${jsLiteral(id)})+'"]')`);
   const inList = (id) => js(`!!document.querySelector('#list .lrow[data-id="'+CSS.escape(${jsLiteral(id)})+'"]')`);
 
-  for (const [w, h] of [[1440, 900], [1280, 800]]) {
+  for (const [w, h] of ARCADE ? [] : [[1440, 900], [1280, 800]]) {
     const tag = `${w}x${h}`;
     await H.load({ w, h });
     await H.calm({ blur: true });
@@ -125,19 +131,65 @@ module.exports = async (ctx) => {
   // Contrast of the note's three texts against their real background, Clean Office (the default) and the dark fixture theme (spec 102 T226): 12px text needs 4.5:1
   const contrast = (sel) => js(`(()=>{const rgb=c=>c.match(/[\\d.]+/g).map(Number);const lum=c=>{const [r,g,b]=c.map(v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);});return 0.2126*r+0.7152*g+0.0722*b;};
     const e=document.querySelector(${jsLiteral(sel)});let bg=null;for(let n=e;n&&!bg;n=n.parentElement){const c=getComputedStyle(n).backgroundColor;const m=rgb(c);if(m.length<4||m[3]>0.99)bg=m.slice(0,3);}
-    const fg=rgb(getComputedStyle(e).color).slice(0,3),a=lum(fg),b=lum(bg),r=(Math.max(a,b)+0.05)/(Math.min(a,b)+0.05);return {fg:fg.join(','),bg:bg.join(','),ratio:Math.round(r*100)/100};})()`);
-  for (const manifest of ['clean-office', CHECK_DARK]) {
-    const theme = typeof manifest === 'string' ? manifest : manifest.id;
-    await H.load({ w: 1440, h: 900 });
-    await js(`window.THEME.setTheme(${jsLiteral(manifest)})`);
-    await ok(`window.THEME.current().id===${jsLiteral(theme)}`, theme + ' applied');
-    await clickPill('idle');
-    await ok(`document.getElementById('filterNote')&&!document.getElementById('filterNote').hidden`, theme + ': the notice shows');
-    await H.settle();
-    for (const sel of ['#filterNote', '#filterNote b', '#filterNote .fn-all']) {
-      const c = await contrast(sel);
-      console.log(`[statusfilter] ${theme} contrast ${sel}: ${c.fg} on ${c.bg} = ${c.ratio}:1`);
-      assert.ok(c.ratio >= 4.5, `${theme}: ${sel} contrast ${c.ratio}:1 is below 4.5:1`);
+    const fg=rgb(getComputedStyle(e).color).slice(0,3),a=lum(fg),b=lum(bg),r=(Math.max(a,b)+0.05)/(Math.min(a,b)+0.05);const al=rgb(getComputedStyle(e).color)[3];let op=1;for(let n=e;n;n=n.parentElement)op*=+getComputedStyle(n).opacity;return {alpha:al===undefined?1:al,op,fg:fg.join(','),bg:bg.join(','),ratio:Math.round(r*100)/100};})()`);
+  // spec 102 delta 2026-11-11 (issue 1559): with DRIVER_WORLD set (the suite entry for the arcade) the Real office loads draw the arcade, and the notice is measured there at both sizes
+  const LOOKS = ARCADE ? [['arcade', null, { officeview: 'real' }]] : [['clean-office', 'clean-office', null], [CHECK_DARK.id, CHECK_DARK, null]];
+  for (const [theme, manifest, query] of LOOKS) {
+    for (const [w, h] of query ? [[1440, 900], [1280, 800]] : [[1440, 900]]) {
+      await H.load({ w, h, ...(query ? { query, ready: `!!document.querySelector('#stage .ro .ro-plate')`, readyMs: 30000 } : {}) });
+      if (manifest) {
+        await js(`window.THEME.setTheme(${jsLiteral(manifest)})`);
+        await ok(`window.THEME.current().id===${jsLiteral(typeof manifest === 'string' ? manifest : manifest.id)}`, theme + ' applied');
+      } else await ok(`document.documentElement.dataset.ui===document.documentElement.dataset.world`, theme + ': the arcade look is on');
+      // mutants (each must fail by its own label): old = the pre-fix colours everywhere; list = only the List's notice; empty = only the empty lines
+      const MUT = { old: 'html[data-ui="retro"][data-world] :is(.filter-note,.filter-note b,.filter-note .fn-all,.empty)', list: '#list .filter-note,#list .filter-note b,#list .filter-note .fn-all', empty: 'html[data-ui="retro"][data-world] .empty' }[process.env.FILTER_MUTANT || ''];
+      if (MUT) await ctx.win.webContents.insertCSS(`${MUT}{color:var(--surface)!important}`);
+      await clickPill('idle');
+      await ok(`document.getElementById('filterNote')&&!document.getElementById('filterNote').hidden`, `${theme} ${w}x${h}: the notice shows`);
+      await H.settle();
+      const measure = async (what, sels) => {
+        for (const sel of sels) {
+          const c = await contrast(sel);
+          console.log(`[statusfilter] ${theme} ${w}x${h} ${what} contrast ${sel}: ${c.fg} on ${c.bg} = ${c.ratio}:1`);
+          fs.appendFileSync(path.join(OUT, 'statusfilter-contrast.txt'), `${theme} ${w}x${h} ${sel}: ${c.fg} on ${c.bg} = ${c.ratio}:1\n`);
+          assert.ok(c.ratio >= 4.5, `${theme} ${w}x${h}: ${sel} contrast ${c.ratio}:1 is below 4.5:1`);
+          assert.ok(c.alpha === 1 && c.op === 1, `${theme} ${w}x${h}: ${sel} is translucent (alpha ${c.alpha}, opacity ${c.op}): the measured ratio would not be the painted one`);
+        }
+      };
+      await measure('office', ['#filterNote', '#filterNote b', '#filterNote .fn-all']);
+      if (query) {
+        assert.ok(await js(`getComputedStyle(document.querySelector('#filterNote .fn-all')).textDecorationLine.includes('underline')`), `${theme}: Show all is underlined (reads as a control)`);
+        const shot = await js(`(()=>{const r=document.getElementById('filterNote').getBoundingClientRect();return {x:Math.max(0,Math.floor(r.x)),y:Math.max(0,Math.floor(r.y)),width:Math.ceil(r.width),height:Math.ceil(r.height)}})()`);
+        const img = await ctx.win.webContents.capturePage(shot);
+        fs.writeFileSync(path.join(OUT, `statusfilter-${theme}-${w}x${h}.png`), img.toPNG());
+        // the List's copy of the notice (a different element, on --surface) and its empty line
+        await js(`document.getElementById('vList').click()`);
+        await ok(`document.body.classList.contains('list-mode')&&!!document.querySelector('#list .filter-note')`, `${theme} ${w}x${h}: the List notice shows`);
+        await H.settle();
+        await measure('list', ['#list .filter-note', '#list .filter-note b', '#list .filter-note .fn-all']);
+        assert.ok(await js(`(()=>{const d=getComputedStyle(document.querySelector('#list .fn-all'));return d.textDecorationLine.includes('underline')&&!/rgba?\\([^)]*,\\s*0\\)$/.test(d.textDecorationColor)&&d.textDecorationColor!=='transparent'})()`), `${theme}: the List Show all underline is drawn`);
+        const lr = await js(`(()=>{const r=document.querySelector('#list .list-wrap').getBoundingClientRect();return {x:Math.floor(r.x),y:Math.floor(r.y),width:Math.ceil(r.width),height:Math.min(120,Math.ceil(r.height))}})()`);
+        fs.writeFileSync(path.join(OUT, `statusfilter-${theme}-list-${w}x${h}.png`), (await ctx.win.webContents.capturePage(lr)).toPNG());
+        await js(`document.querySelector('#list .fn-all').click()`);
+        // a pill together with a folder that has no agent of that status leaves the List's empty line
+        let found = null;
+        for (const k of ['done', 'error', 'waiting', 'idle', 'working']) {
+          if (!(await js(`document.querySelector(${jsLiteral(pill(k))}).getAttribute('aria-pressed')`) === 'true')) await clickPill(k);
+          for (const v of await js(`[...document.getElementById('wsFilter').options].map(o=>o.value).filter(v=>v!=='all')`)) {
+            await js(`(()=>{const s=document.getElementById('wsFilter');s.value=${jsLiteral(v)};s.dispatchEvent(new Event('change',{bubbles:true}))})()`);
+            if (await until(`!!document.querySelector('#list .list-wrap>.empty')`, 800)) { found = `${k} in folder ${v}`; break; }
+          }
+          if (found) break;
+          await clickPill(k);
+        }
+        console.log(`[statusfilter] ${theme} ${w}x${h} empty List: ${found}`);
+        assert.ok(found, `${theme}: a status and folder with no agent exist in the simulator, for the List's empty line`);
+        await ok(`!!document.querySelector('#list .list-wrap>.empty')`, `${theme} ${w}x${h}: the List empty line shows`);
+        await H.settle();
+        await measure('list-empty', ['#list .list-wrap>.empty']);
+        const er = await js(`(()=>{const r=document.querySelector('#list .list-wrap>.empty').getBoundingClientRect();return {x:Math.floor(r.x),y:Math.floor(r.y)-40,width:Math.ceil(r.width),height:Math.ceil(r.height)+80}})()`);
+        fs.writeFileSync(path.join(OUT, `statusfilter-${theme}-empty-${w}x${h}.png`), (await ctx.win.webContents.capturePage(er)).toPNG());
+      }
     }
   }
   console.log('[statusfilter] all checks passed');

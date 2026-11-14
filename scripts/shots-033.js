@@ -142,9 +142,13 @@ module.exports = async (ctx) => {
       mouse('mouseUp', b); await ctx.sleep(80);
     };
     // mid-drag: only transform moves (the lifted row has an inline transform, nothing else inline), the handle is the only start
-    let mid = null;
-    await dragFloor(2, 0, async () => { mid = await js(`(()=>{const l=document.querySelector('#floorsPop .reo-lift');return {lift:!!l,tf:!!(l&&l.style.transform),other:l?l.getAttribute('style').replace(/transform:[^;]*;?/,'').trim():'x'}})()`); await shot('floors-drag', w, h); });
-    assert.deepStrictEqual(mid, { lift: true, tf: true, other: '' }, 'mid-drag the lifted floor only has a transform');
+    /* issue #1526 (one red on Linux CI): the step runs in H.pointerStep with the DOM mutations of #floorsPop, both printed only when its assert fails; nothing here waits, retries or moves differently */
+    await H.pointerStep('shots-033', 'floors-drag ' + w, async () => {
+      let mid = null;
+      await dragFloor(2, 0, async () => { mid = await js(`(()=>{const l=document.querySelector('#floorsPop .reo-lift');return {lift:!!l,tf:!!(l&&l.style.transform),other:l?l.getAttribute('style').replace(/transform:[^;]*;?/,'').trim():'x'}})()`); await shot('floors-drag', w, h); });
+      assert.ok(mid.lift, 'the drag did not start (no lifted floor)');
+      assert.deepStrictEqual(mid, { lift: true, tf: true, other: '' }, 'mid-drag the lifted floor only has a transform');
+    }, { dom: '#floorsPop' });
     await until(`document.querySelector('#floorsPop .fl-floor .fl-t b').textContent!==${jsLiteral(before[0])}`).catch(() => {});
     const after = await rowNames();
     assert.deepStrictEqual(after, [before[2], before[0], before[1]], "a real drag of the third floor's handle to the top reorders");
