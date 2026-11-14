@@ -9,12 +9,14 @@ export type RealState = 'working' | 'thinking' | 'waiting' | 'error' | 'limit' |
 export interface RealAgent { id: string; state: RealState; away?: string | null; person?: string | null; lounge?: boolean; helpers?: number }
 /** `keep`: the folder has a saved desk order (spec 097 FR-345): its desks stay in the model's order, no status sort */
 /** spec 102 delta 2026-11-14 (spec 097 FR-104, FR-116): the floor a folder stands on in the All floors view; `n` counts from the bottom (floor 1 is the ground floor). Only the All floors view sets it. */
-export interface RealFloor { id: string; name: string; n: number }
+/** `w`: the width in px of the tag's text ("3 Personal") in the sign's own 12 px bold font, measured by the renderer (spec 102 delta 2026-11-14, review of #1741); absent in a pure test */
+export interface RealFloor { id: string; name: string; n: number; w?: number }
 export interface RealFolder { id: string; agents: RealAgent[]; keep?: boolean; floor?: RealFloor }
 export interface RealVisitor { id: string; person?: string | null; needsYou?: boolean }
 export interface RealPlace { id: string; custom?: boolean; visitors: RealVisitor[] }
 /** `keepRooms`: the person saved a room order for this floor (spec 097 FR-353, owner Q31): the rooms stand in rows in that order, left to right, top to bottom, even if the picture is a little smaller */
-export interface RealModel { folders: RealFolder[]; places: RealPlace[]; keepRooms?: boolean }
+/** `restW`: the measured width in px of the tag "Resting" (same font as `RealFloor.w`) */
+export interface RealModel { folders: RealFolder[]; places: RealPlace[]; keepRooms?: boolean; restW?: number }
 export interface SeatMeta { w: number; h: number; headTop: number; bodyH: number; hand: number }
 /** `feet` and `top`: per pose, the lowest and highest opaque row as a share of the picture's height, measured from its alpha (owner 2026-10-31 10:19) */
 export interface StandMeta { figH: number; poses: Record<string, [number, number]>; feet?: Record<string, number>; top?: Record<string, number>; foot?: Record<string, number> }
@@ -533,8 +535,9 @@ export const STOREY_TAG_MIN = 70;
 export const STOREY_SIGN_MIN = 120;
 /** only where every zone of a storey is too narrow for both (one agent per folder): the tag is cut to its number and an ellipsis, the sign to this, px */
 export const STOREY_TAG_CUT = 40, STOREY_SIGN_CUT = 104;
-/** the width of a storey's tag ("3 Client A"): the digits, a space and the name (at most 24 letters, the rest is cut and in the title), the sign's 12 px bold, 7 px a letter, 14 px of padding */
-export const storeyTagW = (f: RealFloor): number => 14 + 7 * (String(f.n).length + 1 + Math.min(24, f.name.length));
+/** the width of a storey's tag ("3 Client A"): the text's measured width (`w`, px, the sign's 12 px bold in the font of this machine) plus the sign's 16 px of padding and border; with no measure, 8 px a letter
+ *  (the digits, a space and the name, at most 24 letters: the rest is cut and in the title). `n` 0 is the Resting tag: its text is the name alone. */
+export const storeyTagW = (f: RealFloor): number => 16 + Math.ceil(f.w !== undefined ? Math.min(f.w, 8 * 27) : 8 * ((f.n ? String(f.n).length + 1 : 0) + Math.min(24, f.name.length)));
 
 /** FR-356 (bug #1392): the narrowest whole sign: its name cut to 3 letters, no path, the counts, the cost (`counts` counts it, as `signWidth`), + and menu. Measured 183 px with two
  *  counts and a cost (the cave at 1280x800, 2026-11-09), plus 7 px for a wider font (#1079). A room narrower than this takes the short sign (FR-256's: no cost, no path). */
