@@ -451,6 +451,15 @@ module.exports = async (ctx) => {
       await must(`document.querySelector('#lift [data-lift="*all"]').getAttribute('aria-current')==='true'`, 'the All floors view (the lift says All)');
       await must(PICS, 'the pictures');
       /* 102 T223 (#1268, spec 097 FR-104): the All floors view is the building: a tag with the floor's name for every floor that has a folder, at least two floors, each name at 10.5 px or more and 4.5:1, no tag over a sign, a cabinet or another tag, nothing scrolls */
+      /* review round 4: a sign keeps its flat width and a tag its whole name, so the cave's simulator split at 1280x800 (no room for sign and tag in any zone) is the hall without floors: no tag, no rule, nothing else changed. Every other world and size must draw its storeys. */
+      const flatHall = world === 'cave' && w === 1280;
+      if (flatHall) {
+        await must(`!document.querySelector('#stage .ro-stag')&&!document.querySelector('#stage .ro-slab')&&!window.__durbarSimUi.realLayout().storeys`, 'the hall without floors (no tag, no rule)');
+        assert.strictEqual(await js(`document.getElementById('stage').dataset.fit==='scroll'`), false, `${tag}: the hall without floors does not scroll`);
+        await shot(world, 'cell-allfloors', w, h);
+        await js(`localStorage.removeItem('durbar.floor');localStorage.removeItem('durbar.floorView')`);
+        continue;
+      }
       await must(`document.querySelectorAll('#stage .ro-stag').length>=2`, 'the storey tags of the All floors view');
       const sto = await js(`(()=>{const P=(s)=>{const m=/rgba?\\(([^)]+)\\)/.exec(s);return m?m[1].split(/[ ,\\/]+/).filter(Boolean).slice(0,3).map(Number):[0,0,0]},Lm=(a)=>{const f=(x)=>{x/=255;return x<=0.03928?x/12.92:Math.pow((x+0.055)/1.055,2.4)};return 0.2126*f(a[0])+0.7152*f(a[1])+0.0722*f(a[2])};
         const R=e=>e.getBoundingClientRect(),hit=(a,b)=>a.left<b.right-0.5&&b.left<a.right-0.5&&a.top<b.bottom-0.5&&b.top<a.bottom-0.5;

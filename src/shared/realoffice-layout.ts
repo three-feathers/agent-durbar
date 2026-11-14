@@ -638,9 +638,9 @@ export function realLayout(model: RealModel, viewport: { w: number; h: number },
       /* FR-018: the sign sits at the left unless a raised hand (a waving person's picture rising into the strip) is there */
       const s0 = z.id.split('\u0000')[0], s = signs && roOwn(signs, s0) ? signs[s0] : { name: s0, path: '', counts: 1 };
       let sw = signWidth(s.name, s.path, s.counts, zw);
-      const swFull = sw; /* a sign is never cut below signMin (its + and menu would be clipped), or below its own width in a room that takes the short sign */
       const hands = desks.filter((d) => d.person && roNeedsYou(d.state) && d.person.y < y + STRIP).map((d) => [d.person!.x, d.person!.x + d.person!.w * 0.6]);
-      /* spec 097 FR-104 (review of PR 1746, issue #1759): with floors drawn, the sign keeps clear of a thinking person's dots in the strip too (the dots touched the sign's lower edge, and a sign moved for a tag stood over them) */
+      /* a sign keeps the width it has without floors, never cut (its + and menu would be clipped); one that cannot clear the dots stays where it is, touching them, exactly as without floors.
+         spec 097 FR-104 (review of PR 1746, issue #1759): with floors drawn, the sign keeps clear of a thinking person's dots in the strip too (the dots touched the sign's lower edge, and a sign moved for a tag stood over them) */
       const dots = runs ? desks.filter((d) => d.dots && d.dots.y < y + 21 && d.dots.y + DOTS_H > y + 1).map((d) => [d.dots!.x - 2, d.dots!.x + DOTS_W + 2]) : [];
       const hits = (px: number, w = sw): boolean => hands.some(([a, b]) => b > px && a < px + w) || dots.some(([a, b]) => b > px && a < px + w);
       let sx = x + 4;
@@ -648,7 +648,7 @@ export function realLayout(model: RealModel, viewport: { w: number; h: number },
       sx = Math.max(x + 4, Math.min(sx, x + zw - 4 - sw));
       if (dots.length && hits(sx)) { /* a gap between the hands and dots wide enough for the sign: the first one from the left */
         const gaps = [x + 4, ...hands.concat(dots).map((h) => h[1] + 6)].sort((p1, p2) => p1 - p2), wide = (px: number): number => Math.min(sw, x + zw - 4 - px, ...hands.concat(dots).filter(([a0]) => a0 > px).map(([a0]) => a0 - 2 - px)); /* the sign may give up width down to STOREY_SIGN_MIN */
-        const gap = gaps.find((px) => wide(px) >= sw && !hits(px)) ?? gaps.find((px) => wide(px) >= Math.min(swFull, signMin(s.counts)) && !hits(px, wide(px)));
+        const gap = gaps.find((px) => wide(px) >= sw && !hits(px));
         if (gap !== undefined) { sx = gap; sw = wide(gap); }
       }
       const [fid, part] = z.id.split('\u0000');
@@ -659,7 +659,7 @@ export function realLayout(model: RealModel, viewport: { w: number; h: number },
         const first = !started.has(si);
         if (first) started.add(si);
         const lim = r.zones.indexOf(z) < r.zones.length - 1 ? x + zw + ZGAP - 5 : W - PAD;
-        (cands.get(si) || cands.set(si, []).get(si)!).push({ zi: zones.length, sy: y + 1, sx, sw, x0: x + 4, lim, avail: lim - (x + 4), smn: Math.min(sw, signMin(s.counts)), hands, dots });
+        (cands.get(si) || cands.set(si, []).get(si)!).push({ zi: zones.length, sy: y + 1, sx, sw, x0: x + 4, lim, avail: lim - (x + 4), smn: sw, hands, dots });
         if (first && si > 0 && !forced) slabs.set(si, { x: Math.max(0, x - 3), y: y + 1, w: 2, h: 20 });
       }
       /* spec 097 FR-356 (bug #1392): the path gives way first, then the name down to 3 letters; a room too narrow even then takes FR-256's short sign (name, counts, + and menu; the cost on the name's hover) */
@@ -669,11 +669,11 @@ export function realLayout(model: RealModel, viewport: { w: number; h: number },
     }
     y += g.bottom + extra;
   }
-  /* the tag of each storey stands in the sign strip of its first zone that has the room (a sign of signMin and the tag of STOREY_TAG_MIN at least), else of the one with the most.
+  /* the tag of each storey stands in the sign strip of its first zone that has the room (a sign at its flat width and the whole tag), else of the one with the most.
      Inside that zone's strip [x0, lim] it stands clear of the sign, of every raised hand and of a thinking person's dots: after the sign, else before it, else the sign moves to the other end
      (the sign gives up width down to its minimum first). Review of PR 1746: before, a raised hand moved the sign to the zone's right end and the tag went past the zone. */
   type Cand = NonNullable<ReturnType<typeof cands.get>>[number];
-  const placeTag = (c: Cand, tw0: number, tmin: number, smin: number, keepDots: boolean, signDots = keepDots): { sx: number; sw: number; tx: number; tw: number } | null => {
+  const placeTag = (c: Cand, tw0: number, smin: number, keepDots: boolean, signDots = keepDots): { sx: number; sw: number; tx: number; tw: number } | null => {
     /* what stands in the strip along this row, in any zone (a person's picture reaches past its desk): the raised hands, and a thinking person's dots (the sign was there before them, the tag keeps clear) */
     const obst: number[][] = [];
     for (const zz of zones) if (Math.abs(zz.sign.y - c.sy) < 1) for (const d of zz.desks) {
@@ -682,9 +682,9 @@ export function realLayout(model: RealModel, viewport: { w: number; h: number },
     }
     const free = (p: number, w: number, o: number[][]): number => { let q = p; for (let h = o.find(([a, b]) => b > q && a < q + w); h; h = o.find(([a, b]) => b > q && a < q + w)) q = h[1] + 6; return q; };
     /* the tag keeps its whole text if it can; narrowed to its minimum (its name cut, whole in the title) only when no place clear of the hands and dots holds it */
-    for (const tw of [...new Set([tw0, tmin])]) {
+    for (const tw of [tw0]) {
       const sws = [...new Set([Math.max(Math.min(c.sw, smin), Math.min(c.sw, c.avail - tw - 4)), Math.min(c.sw, smin)])];
-      for (const sw2 of sws) for (const sx of [c.sx, free(c.x0, sw2, signDots ? c.hands.concat(c.dots) : c.hands), c.lim - sw2]) {
+      for (const sw2 of sws) for (const sx of signDots ? [c.sx, free(c.x0, sw2, c.hands.concat(c.dots)), c.lim - sw2] : [c.sx]) {
         if (sx < c.x0 || sx + sw2 > c.lim || (signDots ? c.hands.concat(c.dots) : c.hands).some(([a, b]) => b > sx && a < sx + sw2)) continue;
         for (const tx of [free(sx + sw2 + 4, tw, obst), free(c.x0, tw, obst)]) if (tx >= c.x0 && tx + tw <= c.lim && (tx >= sx + sw2 + 4 || tx + tw + 4 <= sx)) return { sx, sw: sw2, tx, tw };
       }
@@ -692,14 +692,15 @@ export function realLayout(model: RealModel, viewport: { w: number; h: number },
     return null;
   };
   for (const [si, list] of cands) {
-    /* in this order: the first zone of the storey with room for its sign at signMin and a tag of STOREY_TAG_MIN at least, clear of hands and dots; then the zones by room. Nothing is relaxed (no sign or tag over hands or dots, no sign cut below signMin: its + and menu would be clipped);
+    /* in this order: the first zone of the storey with room for its sign at its flat width and the whole tag, clear of hands and dots; then the zones by room; then, the sign left where it stands (as without floors, even touching dots) but the tag still clear. No sign is ever narrower than without floors;
        if no zone holds the tag, the hall is drawn without floors, never with a clipped sign. */
+    const tagW = Math.ceil(storeyTagW(runs![si].floor)); /* the tag is whole: its name is never cut to make room (only a name over 24 letters, whole in its title) */
     const byRoom = list.slice().sort((p, q) => q.avail - p.avail);
-    const tries: Array<[Cand[], boolean, boolean]> = [[list.filter((k) => k.avail >= k.smn + STOREY_TAG_MIN + 4), true, true], [byRoom, true, true]];
+    const tries: Array<[Cand[], boolean, boolean]> = [[list.filter((k) => k.avail >= k.smn + tagW + 4), true, true], [byRoom, true, true], [byRoom, true, false]];
     let c: Cand = byRoom[0], got: { sx: number; sw: number; tx: number; tw: number } | null = null;
     for (const [zs, kd, sd] of tries) for (const k of zs) {
       if (got) break;
-      c = k; got = placeTag(k, Math.max(STOREY_TAG_MIN, Math.floor(Math.min(storeyTagW(runs![si].floor), k.avail - k.smn - 4))), STOREY_TAG_MIN, k.smn, kd, sd);
+      c = k; got = placeTag(k, tagW, k.smn, kd, sd);
     }
     if (!got) return realLayout(model, viewport, { ...meta, storeys: false }, signs);
     const z = zones[c.zi];
