@@ -34,7 +34,7 @@ const LOOKS = [
   ['photo', { officeview: 'real' }, null], // control: ui is clean
   ['dark fixture', {}, CHECK_DARK], // control: ui is clean
 ];
-const KNOWN_SITES = 19; // End all sessions and the 18 others of issue #1647
+const KNOWN_SITES = 20; // End all sessions, the 18 others of issue #1647, and the Teams Delete confirm (spec 111 T008, askDialog in teams.js)
 
 /* the call sites, read from the source (danger-sites.js: every src/renderer/*.js, any spelling; test-danger-sites.js proves the reader) */
 function sites() {

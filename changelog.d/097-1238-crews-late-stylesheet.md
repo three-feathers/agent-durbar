@@ -1,1 +1,0 @@
-- **A slow start no longer makes the Retro arcade or the Prehistoric cave request the Photo office's floor picture** (spec 097 FR-363, issue #1238): the Photo floor is now set only under the Photo world's own rule, so a world stylesheet that arrives late cannot pull in another world's files. The Photo office looks the same.
