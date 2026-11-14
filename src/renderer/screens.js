@@ -1476,6 +1476,8 @@
     const stepsCmds=t=>stepParts(t).filter((p,i)=>i%2).join('\n');
     /* spec 058 FR-164: Sign in again on a row Copilot can redo (connected or failed, not waiting for a first sign-in) */
     const againB=x=>!x.canSignInAgain||x.signIn||!X.bridge.agentMcpSignIn?'':signBusy.has(x.name)?`<button class="btn sm" type="button" disabled aria-label="${esc('Signing in again to '+x.name)}">Signing in…</button>`:`<button class="btn sm" type="button" data-signagain="${esc(x.name)}" aria-label="${esc('Sign in again to '+x.name+'…')}" title="Forget the saved sign-in and sign in again (for keychain prompts that keep coming back)">Sign in again…</button>`;
+    /* FR-246: the steps block exists only for steps with a command, or where Sign in is not offered (a command-less note is the only text there) */
+    const stepsShown=x=>!!x&&!!x.signInSteps&&(!x.canSignIn||x.signInHasCommand===true);
     const signHTML=(x,s)=>{
       const n=x.name,app=s.app||(o&&o.appName)||'Your agent app',si=x.signIn,en=esc(n);
       let line='',acts='';
@@ -1492,7 +1494,7 @@
       }
       let steps='';
       /* spec 058 FR-246: steps with no command in them are a plain note for a row that cannot start a sign-in; where Sign in works they add nothing */
-      if(x.signInSteps&&!(x.canSignIn&&!stepsCmds(x.signInSteps))){
+      if(stepsShown(x)){
         const open=!x.canSignIn||openSteps.has(n);
         acts+=x.canSignIn?`<button class="btn sm" type="button" data-steps="${en}" aria-expanded="${open?'true':'false'}" aria-label="${esc((open?'Hide':'Show')+' how to sign in to '+n+' from a terminal')}">How to sign in from a terminal</button>`:'';
         if(open)steps=`<div class="srv-det"><p class="srv-steps" tabindex="0" aria-label="${esc('How to sign in to '+n+' from a terminal')}">${stepsHTML(x.signInSteps)}</p>${stepsCmds(x.signInSteps)?`<button class="btn sm" type="button" data-copysteps="${en}" aria-label="${esc('Copy the commands to sign in to '+n)}">Copy</button>`:''}</div>`;
@@ -1693,8 +1695,9 @@
       if(r&&r.ok&&r.kind==='connected'){X.toast('Signed in to '+esc(n)+'.',3600).classList.add('ok');X.announce('Signed in to '+n+'.');}
       else if(r&&r.ok){waited.add(n);if(again===true)againWait.add(n);wantFocus=['signopen',n];X.announce('Sign-in page on '+r.host+'. Press Open sign-in page to continue.');}
       else{
-        if(r&&r.manual)openSteps.add(n);
-        signNote.set(n,'Could not start the sign-in: '+((r&&r.error)||'unknown error')+(r&&r.manual?' Use the steps below.':''));
+        const sv=(st.servers||[]).find(y=>y.name===n), below=!!(r&&r.manual)&&stepsShown(sv);
+        if(below)openSteps.add(n);
+        signNote.set(n,'Could not start the sign-in: '+((r&&r.error)||'unknown error')+(below?' Use the steps below.':''));
         X.toast('Could not start the sign-in for '+esc(n)+'.',5200).classList.add('err');X.announce('Could not start the sign-in for '+n+'.');
       }
       await repaint();
@@ -1718,7 +1721,7 @@
       if(r&&r.ok){wantFocus=['signcancel',n];X.toast('Opened the sign-in page in your browser.',3600);X.announce('Opened the sign-in page. Finish signing in in your browser.');}
       else{
         if(r&&r.gone){waited.delete(n);signNote.set(n,notFinished((st.servers||[]).find(y=>y.name===n)));}
-        else if(r&&r.manual){waited.delete(n);openSteps.add(n);signNote.set(n,(r.error||'The sign-in page was refused.')+' Use the steps below.');}
+        else if(r&&r.manual){waited.delete(n);const below=stepsShown((st.servers||[]).find(y=>y.name===n));if(below)openSteps.add(n);signNote.set(n,(r.error||'The sign-in page was refused.')+(below?' Use the steps below.':''));}
         X.toast(esc((r&&r.error)||'Could not open the sign-in page.'),5200).classList.add('err');
       }
       await repaint();

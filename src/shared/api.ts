@@ -739,6 +739,8 @@ export interface AgentMcpEntry {
   signIn?: { host: string; opened: boolean; expiresInMs: number; otherSite?: string };
   /** Spec 058 FR-068: the terminal steps for this needs-sign-in server, the agent app's plain text with the name filled in (commands in backticks). */
   signInSteps?: string;
+  /** Spec 058 FR-246: `signInSteps` carries a command (`stepsHaveCommand`); without one it is a plain note, shown only where Sign in is not offered. */
+  signInHasCommand?: boolean;
   /** Spec 058 FR-180: how the agent app said a sign-in Agent Durbar started ended (`next-message`: signed in, applies next message; `failed`). */
   signInEnd?: 'next-message' | 'failed';
   /** Spec 058 FR-180: the agent app's own sentence on how far its sign-in was checked, shown under a row that offers Sign in. */

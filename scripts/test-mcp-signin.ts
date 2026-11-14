@@ -23,7 +23,7 @@ import type { McpReplyInput } from '../src/main/mcpsession';
 import { MAX_SIGN_INS, McpSignInStore, POLL_MS, RECENT_SIGN_IN_MS, SIGN_IN_MIN_TTL_MS, SIGN_IN_TTL_MS, appServerUrls, blockedAuthHost, mcpCancelSignInOp, mcpOpenSignInOp, mcpSignInOp, registrableDomain, serverUrlFor, signInErrorText, signInSiteNote } from '../src/main/mcpsignin';
 import type { ServerUrlSources } from '../src/main/mcpsignin';
 import type { McpServerSpec } from '../src/shared/mcp';
-import { SIGN_IN_MIN_TTL_MS as SHARED_MIN_TTL_MS, SIGN_IN_REQUEST_TIMEOUT_MS, signInTtlMs } from '../src/shared/mcp';
+import { SIGN_IN_MIN_TTL_MS as SHARED_MIN_TTL_MS, SIGN_IN_REQUEST_TIMEOUT_MS, signInTtlMs, stepsHaveCommand } from '../src/shared/mcp';
 import { CLAUDE_SIGN_IN_TIMEOUT_MS, ClaudeAdapter, claudeArgs } from '../src/adapters/claude';
 import { createCliTransport } from '../src/adapters/claudeTransport';
 import { fakeSpawn, SANDBOX_HOST_OK } from './fakes/claude-cli';
@@ -1039,6 +1039,7 @@ async function main(): Promise<void> {
         const rc = await mcpSignInOp({ ...d, router: routerOf(adC), live: () => BLOCKED }, store, sid, 'teams');
         assert.deepStrictEqual([rc.ok, (rc as { manual?: boolean }).manual], [false, true], 'blocked, read connected, the app says connected: not fixed, steps shown');
         assert.match((rc as { error: string }).error, /says it is signed in\. If calls still fail, use the terminal steps/);
+        assert.deepStrictEqual([stepsHaveCommand('Run `claude mcp login x`.'), stepsHaveCommand('Switch off for this session.'), stepsHaveCommand(undefined)], [true, false, false], 'FR-246: one shared test for a command in the steps');
         // FR-246: an app with no terminal command (Copilot) is never pointed at terminal steps
         const adK = new FakeAdapter({ displayName: 'Copilot', capabilities: { mcpSignIn: true, mcpSignInSteps: 'Sign in is not available. Switch off for this session if you do not need it.' } });
         adK.signInResult = { kind: 'connected' };
