@@ -70,8 +70,19 @@
       const buttons=createOnly
         ?[Object.assign({},kinds[0],{cls:'primary'}),kinds[1],kinds[2],{label:'Cancel',value:null}]
         :[{label:'Add existing folder…',value:'existing',cls:'primary'},...kinds,{label:'Cancel',value:null}];
-      const r=await ctx.askDialog({title:createOnly?'New folder':'Add a folder',body:createOnly?'Create a new folder and add it to the office.':'Add a folder you already have, or create a new one.',lines:KIND_LINES,buttons,size:'l'}); /* four or five buttons need the wide dialog to stay on one row */
+      /* spec 033 FR-092: with two or more floors the dialog says which floor the folder goes to, by name, and lets the person choose another */
+      const fp=ctx.floorPick?ctx.floorPick():null;
+      let custom;
+      if(fp){
+        const d=ctx.doc,row=d.createElement('label'),sp=d.createElement('span'),sel=d.createElement('select');
+        row.className='dinput fl-pick';sp.textContent='Put it on floor';sel.id='addFloorSel';sel.setAttribute('aria-label','Floor for the new folder');
+        fp.options.forEach(o=>{const op=d.createElement('option');op.value=o.id;op.textContent=o.name+(o.on?'':' (off)');if(o.id===fp.value)op.selected=true;sel.appendChild(op);});
+        row.append(sp,sel);
+        custom={node:row,value:()=>sel.value,valid:()=>true};
+      }
+      const r=await ctx.askDialog({title:createOnly?'New folder':'Add a folder',body:createOnly?'Create a new folder and add it to the office.':'Add a folder you already have, or create a new one.',lines:KIND_LINES,buttons,size:'l',custom}); /* four or five buttons need the wide dialog to stay on one row */
       if(!r)return;
+      if(fp&&typeof r.custom==='string'&&ctx.setFloor)ctx.setFloor(r.custom);
       if(r.value==='existing')return ctx.addExisting();
       return start(r.value);
     }

@@ -2575,8 +2575,8 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     const simQuery = typeof window !== 'undefined' && window.location ? new URLSearchParams(window.location.search) : new URLSearchParams();
     let simTheme = /^[a-z0-9_-]{1,64}$/.test(simQuery.get('theme') ?? '') ? (simQuery.get('theme') as string) : undefined;
     /* characters=<value> (spec 077 FR-064, FR-070): who sits at the desks in this run, in memory, like the theme; only a listed value */
-    const CHARS = ['theme', 'minimalist', 'cheeky', 'prehistoric', 'pirate', 'monster', 'royal', 'rebels'] as const;
-    type SimChars = (typeof CHARS)[number];
+    type SimChars = import('../shared/characters').CharacterChoice; // the type is the shared list: a value this list lacks, or one the shared list lacks, fails the typecheck
+    const CHARS: readonly SimChars[] = ['theme', 'office', 'minimalist', 'cheeky', 'prehistoric', 'pirate', 'monster', 'royal', 'rebels', 'pixel']; /* the list of src/shared/characters.ts (spec 102 FR-320, FR-321) */
     const isChars = (v: unknown): v is SimChars => typeof v === 'string' && (CHARS as readonly string[]).includes(v);
     let simCharacters: SimChars = isChars(simQuery.get('characters')) ? (simQuery.get('characters') as SimChars) : 'theme';
     const simUserThemes: Record<string, unknown>[] = []; // spec 040 FR-032: the saved themes of this simulated run (from ?usertheme=), removable
@@ -3158,6 +3158,8 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       setFloorOn: async (id, on) => {
         const f = floorsList.find((x) => x.id === id);
         if (!f) return fres('Unknown floor.');
+        /* a driver's probe (check-floor-add): switching a floor on fails, as when main cannot save the floors */
+        if (on === true && typeof window !== 'undefined' && (window as unknown as { __simSetFloorOnFail?: boolean }).__simSetFloorOnFail) return fres('The floors could not be saved.');
         f.on = on === true;
         return fres();
       },
@@ -3548,6 +3550,10 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         /* a driver's probe (shots-074): count the call and add nothing, so a shortcut check has no side effect */
         const probe = typeof window !== 'undefined' ? (window as unknown as { __simAddFolderProbe?: { n: number } }).__simAddFolderProbe : undefined;
         if (probe) { probe.n++; return { ok: true, agents: [] }; }
+        /* spec 033 FR-090: a driver sets window.__simAddFolderSame to the cwd the picker "chose": a folder already in the office is not added again */
+        const same = typeof window !== 'undefined' ? (window as unknown as { __simAddFolderSame?: string }).__simAddFolderSame : undefined;
+        const have = same ? sims.find((x) => x.info.cwd === same) : undefined;
+        if (have) return { ok: true, agents: [], existing: [{ id: have.info.id, name: have.info.name, floor: folderFloor.get(have.info.cwd) ?? 'ground' }] };
         const bad = o && o.adapterId !== undefined ? notReady(o.adapterId) : undefined;
         if (bad) return { ok: false, agents: [], error: bad }; // like main: nothing starts, nothing is written
         extra++;
@@ -3561,7 +3567,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         info.renameCap = caps(info.adapterId ?? 'copilot').renameSession;
         sims.push({ info, room: info.name, state: 'idle', intent: 'Ready', prompt: '', helpers: 0, tool: 0, think: 0, files: [], grants: new Map() });
         addedListeners.forEach((l) => l(info));
-        return { ok: true, agents: [], ...(home ? { warnings: [{ name: 'home', kind: 'home' as const }] } : {}) };
+        return { ok: true, agents: [info], ...(home ? { warnings: [{ name: 'home', kind: 'home' as const }] } : {}) };
       },
       addWorkspaceFile: async () => ({ ok: true, agents: [] }),
       /* spec 093 FR-081: create a folder, faked in the window: no process, nothing on disk, main's channels stay closed. The parent is

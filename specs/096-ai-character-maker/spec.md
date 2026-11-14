@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: AI character maker (owner request, Vikram 2026-10-30): make realistic crew characters with Codex image generation (3 poses + blink), My characters, folder pins, light portrait motion
-note: spec, plan, tasks drafted; Q1-Q5 and Q1b answered; probes P1-P8 run on Linux 2026-11-02 (see Changes); pure core built (phase 2: prompt, style, image and WebP checks); adapter, window and motion not built
+note: drafted; Q1-Q5, Q1b answered; probes P1-P8 run on Linux (see Changes); pure core built (phase 2); adapter, window and motion not built
 status: draft
 -->
 

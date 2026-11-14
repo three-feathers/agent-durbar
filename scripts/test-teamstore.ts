@@ -536,11 +536,11 @@ let killed = 0;
 for (const m of mutants) {
   assert.ok((m.shared ? sharedCompiled : compiled).includes(m.from), 'mutant anchor not found: ' + m.name);
   const file = path.join(dir, 'teamstore.mutant.js');
-  const sharedFile = path.join(dir, '..', 'shared', 'teamtemplate.mutant.js');
+  const sharedFile = path.join(dir, '..', 'shared', 'teamtemplate.teamstore-mutant.js');
   if (m.shared) {
     fs.writeFileSync(sharedFile, sharedCompiled.split(m.from).join(m.to));
     delete require.cache[sharedFile];
-    fs.writeFileSync(file, compiled.split('require("../shared/teamtemplate")').join('require("../shared/teamtemplate.mutant")'));
+    fs.writeFileSync(file, compiled.split('require("../shared/teamtemplate")').join('require("../shared/teamtemplate.teamstore-mutant")'));
   } else fs.writeFileSync(file, compiled.split(m.from).join(m.to));
   try {
     delete require.cache[file];

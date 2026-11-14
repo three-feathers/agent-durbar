@@ -47,6 +47,7 @@ const DRIVERS = [
   { name: 'check-015-bg-helper' }, // spec 015 FR-018 (issue #1141): a background helper stays Running after its call returns, until its own end or its session stops (simbghelper=1)
   { name: 'shots-034-retry' }, // spec 034 FR-021: Retrying and Gave up (simretry=1 in its own query)
   { name: 'check-serious-motion' }, // spec 052 FR-069 (issue #1182): Serious mode hides only the moods; Motion is its own switch; reduced motion still stops it; Flat and Real office, both sizes
+  { name: 'check-settings-worlds' }, // spec 102 FR-301 (T266): Settings > World: picture cards in one radio group, a closed flag unlisted, keys, focus against choice, the zoom, reduced motion, forced colours
   { name: 'check-settings-nav' }, // spec 052 FR-226 (T219): the Settings section list: built from the headings, jump, aria-current follows the scroll, keys, every world, reduced motion, narrow row
   { name: 'check-069-toggle-scroll' }, // spec 069 FR-069 (issue #1624): a Settings switch that repaints the page keeps the scroll, the focus and the open Advanced block
   { name: 'check-settings-save' }, // spec 011 FR-012 (issue #1023): a Settings row whose save fails returns to the value in force and says so
@@ -143,6 +144,7 @@ const DRIVERS = [
   { name: 'check-crew' }, // spec 077: Cheeky portraits (Characters = Cheeky on Clean Office): box vs protected zones, pose, sharpness, the fallback with a picture removed
   { name: 'check-crew', label: 'check-crew dark fixture', env: { CREW_THEME: 'check-dark' } }, // spec 077 FR-070: the same with Characters = Cheeky on the dark fixture user theme (spec 102 T226: it took Retro Pixel's place)
   { name: 'check-floor-repaint', env: { DURBAR_SIM_FLOORS: '1' } }, // spec 033 FR-088 (#787): the office repaints after a floor switch although a side panel throws
+  { name: 'check-floor-add', env: { DURBAR_SIM_FLOORS: '1' } }, // spec 033 FR-089..FR-092 (#1709): after an add the floor is named, switched on, Show; a repeat says already added
   { name: 'check-office-ops' }, // spec 097 FR-185, FR-186 (T142, T148): operation counts of the flat office, never times: elements recalculated by one text change at 15 and 40 agents
   { name: 'check-characters' }, // spec 077 FR-064..FR-069: Settings > Characters on Retro Pixel (Cheeky, Minimalist, the theme's own)
   { name: 'check-removed-themes' }, // spec 035 FR-017, FR-018: a stored id of a removed theme shows Clean Office, in both sizes; Retro stays
