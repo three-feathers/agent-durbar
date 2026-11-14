@@ -448,6 +448,37 @@ console.log(`floor covered with 4 or fewer: ${covs.join('; ')}`);
   }
   console.log(`arcade lounge: ${lc} layouts`);
 }
+// ---- spec 097 delta 2026-11-14 (issue #1760): the arcade lounge seats every resting agent. A seat never spans two cell runs, so FR-248's one-stretch count
+// (5 seats in ceil(5 x 82 / 109) = 4 cells) seated 2 + 2 when the cells fell in two runs of two at 1248 px (a run 492.8 px, three seats need 496)
+{
+  const rest = (sz: number[], idx: number[], helpers = false): RealModel => { let i = 0; return { folders: sz.map((s, fi) => ({ id: 'f' + fi, agents: Array.from({ length: s }, (): RealAgent => { const k = i++, r = idx.includes(k); return { id: 'a' + k, state: r ? (k % 2 ? 'error' : 'idle') : STATES[k % 5], person: PEOPLE[k % 15], ...(r ? { lounge: true } : {}), ...(helpers ? { helpers: 1 } : {}) }; }) })), places: [] }; };
+  const seatedOk = (m: RealModel, W: number, H: number, tag: string): Layout => {
+    const L = aislesLayout(m, { w: W, h: H }, META), want = sortDesks(m.folders.flatMap((fo) => fo.agents.filter((a) => a.lounge))).map((a) => a.id), seats = L.lounge ? L.lounge.desks : [];
+    assert.deepStrictEqual(seats.map((d) => d.id), want, `${tag}: every resting agent has a seat (${seats.length} of ${want.length})`);
+    const ds = L.zones.flatMap((z) => z.desks), floor: Rect = { x: 0, y: L.lobbyH, w: W, h: L.height - L.lobbyH };
+    seats.forEach((s, i) => {
+      for (const r of [s.plate, s.screen, s.table as Rect]) assert.ok(inside(r, floor, 1), `${tag}: seat ${s.id} leaves the floor`);
+      for (const d of ds) assert.ok(![s.plate, s.screen, s.table as Rect].some((r) => inter(r, d.desk) || inter(r, d.plate)), `${tag}: seat ${s.id} is on the cabinet of ${d.id}`);
+      seats.forEach((o, j) => { if (j > i) assert.ok(!inter(s.plate, o.plate) && !inter(s.table as Rect, o.table as Rect), `${tag}: seats ${s.id} and ${o.id} overlap`); });
+    });
+    const all = JSON.parse(JSON.stringify(m)) as RealModel; all.folders.forEach((fo) => fo.agents.forEach((a) => { a.lounge = false; }));
+    const L0 = aislesLayout(all, { w: W, h: H }, META);
+    assert.ok((L.g as number) >= (L0.g as number) && (L.scroll ? 1 : 0) <= (L0.scroll ? 1 : 0), `${tag}: the hall is smaller than with everyone at a cabinet (g ${L0.g} -> ${L.g})`);
+    return L;
+  };
+  for (const [nm, W, H] of [['1280x800', 1248, ROOM.h800], ['1440x900', 1408, ROOM.h900]] as Array<[string, number, number]>) {
+    const L = seatedOk(rest([6, 6, 3], [0, 2, 6, 7, 11]), W, H, `#1760 repro: 6/6/3, 5 resting, ${nm}`);
+    assert.ok(!L.scroll, `#1760 repro at ${nm}: no scroll`);
+  }
+  let seed = 1760, fz = 0; const rnd = (n: number): number => { seed = (seed * 1664525 + 1013904223) % 4294967296; return Math.floor((seed / 4294967296) * n); };
+  for (let t = 0; fz < 600 && t < 5000; t++) {
+    const nf = 1 + rnd(6), sz = Array.from({ length: nf }, () => 1 + rnd(6)), n = sz.reduce((a, b) => a + b, 0); if (n < 9 || n > 15) continue;
+    const idx = Array.from({ length: n }, (_, i) => i).filter(() => rnd(3) === 0), helpers = rnd(2) === 0, [nm, W, H] = t % 2 ? ['1280x800', 1248, ROOM.h800] : ['1440x900', 1408, ROOM.h900];
+    if (!idx.length) continue;
+    seatedOk(rest(sz, idx, helpers), W as number, H as number, `#1760 fuzz ${t}: ${sz.join('/')} resting ${idx.join(',')}${helpers ? ' helpers' : ''} at ${nm}`); fz++;
+  }
+  console.log(`arcade lounge seats every resting agent: the #1760 repro and ${fz} fuzz halls`);
+}
 {
   // spec 097 FR-345 (T260, issue #1152): a folder with a saved desk order keeps it in the cabinet rows; one without is sorted by status
   const mk = (keep: boolean): RealModel => ({ folders: [
