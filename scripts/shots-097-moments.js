@@ -488,6 +488,9 @@ module.exports = async (ctx) => {
       assert.deepStrictEqual(sto.signDots, [], `${tag}: no folder sign covers a thinking person's dots (issue #1759)`);
       assert.ok(sto.inWindow, `${tag}: every storey tag is inside the window`);
       assert.strictEqual(sto.scroll, false, `${tag}: the All floors view does not scroll`);
+      /* round 4 of the review of #1741: a storey tag never cuts a folder sign so far that its "New session" and "Folder actions" buttons fall outside it: each button lies inside its sign and the element at its centre is the button */
+      const btn = await js(`(()=>{const R=e=>e.getBoundingClientRect();const out=[];for(const sg of document.querySelectorAll('#stage .ro-sign:not(.ro-stag)')){const sr=R(sg);for(const b of sg.querySelectorAll('[data-newsess],[data-foldermenu]')){const r=R(b),at=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);out.push({id:b.dataset.newsess||b.dataset.foldermenu,inside:r.left>=sr.left-0.5&&r.right<=sr.right+0.5&&r.top>=sr.top-0.5&&r.bottom<=sr.bottom+0.5,hit:!!at&&(at===b||b.contains(at))})}}return out})()`);
+      assert.ok(btn.length >= 2 && btn.every((b) => b.inside && b.hit), `${tag}: every sign's + and folder-actions buttons are inside the sign and reachable: ${JSON.stringify(btn.filter((b) => !b.inside || !b.hit))} of ${btn.length}`);
       await shot(world, 'cell-allfloors', w, h);
       for (const f of world === 'retro' ? ['cell-chat', 'cell-allfloors'] : ['cell-allfloors']) assert.ok(fs.existsSync(path.join(OUT, `${world}-${f}-${w}x${h}.png`)), `${tag}: the picture ${f} was written`);
       await js(`localStorage.removeItem('durbar.floor');localStorage.removeItem('durbar.floorView')`); /* the next size starts on one floor */
