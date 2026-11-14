@@ -1039,12 +1039,12 @@ async function main(): Promise<void> {
         const rc = await mcpSignInOp({ ...d, router: routerOf(adC), live: () => BLOCKED }, store, sid, 'teams');
         assert.deepStrictEqual([rc.ok, (rc as { manual?: boolean }).manual], [false, true], 'blocked, read connected, the app says connected: not fixed, steps shown');
         assert.match((rc as { error: string }).error, /says it is signed in\. If calls still fail, use the terminal steps/);
-        // FR-233: an app with no terminal command (Copilot) is never pointed at terminal steps
+        // FR-246: an app with no terminal command (Copilot) is never pointed at terminal steps
         const adK = new FakeAdapter({ displayName: 'Copilot', capabilities: { mcpSignIn: true, mcpSignInSteps: 'Sign in is not available. Switch off for this session if you do not need it.' } });
         adK.signInResult = { kind: 'connected' };
         await adK.start({ workspace: ws, quiet: true, sessionId: sid });
         const rk = await mcpSignInOp({ ...d, router: routerOf(adK), live: () => BLOCKED }, store, sid, 'teams');
-        assert.ok(!/terminal|copilot login|mcp auth/i.test((rk as { error: string }).error) && /switch the server off for this session/.test((rk as { error: string }).error), 'FR-233: no terminal pointer for Copilot: ' + (rk as { error: string }).error);
+        assert.ok(!/terminal|copilot login|mcp auth/i.test((rk as { error: string }).error) && /switch the server off for this session/.test((rk as { error: string }).error), 'FR-246: no terminal pointer for Copilot: ' + (rk as { error: string }).error);
         const rp = await mcpSignInOp({ ...d, router: routerOf(adC), live: () => [{ name: 'teams', status: 'needs-auth' }] }, store, sid, 'teams');
         assert.deepStrictEqual(rp, { ok: true, kind: 'connected' }, 'a needs-auth server that comes back connected is signed in');
       }

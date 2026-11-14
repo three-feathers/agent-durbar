@@ -1491,7 +1491,7 @@
         if(x.defaultOn&&!x.off)acts+=`<button class="btn sm" type="button" data-swoff="${en}" aria-label="${esc('Switch off '+n+' for this session')}" title="Stop using this server in this session; switch it back on any time">Switch off for this session</button>`;
       }
       let steps='';
-      /* spec 058 FR-233: steps with no command in them are a plain note for a row that cannot start a sign-in; where Sign in works they add nothing */
+      /* spec 058 FR-246: steps with no command in them are a plain note for a row that cannot start a sign-in; where Sign in works they add nothing */
       if(x.signInSteps&&!(x.canSignIn&&!stepsCmds(x.signInSteps))){
         const open=!x.canSignIn||openSteps.has(n);
         acts+=x.canSignIn?`<button class="btn sm" type="button" data-steps="${en}" aria-expanded="${open?'true':'false'}" aria-label="${esc((open?'Hide':'Show')+' how to sign in to '+n+' from a terminal')}">How to sign in from a terminal</button>`:'';

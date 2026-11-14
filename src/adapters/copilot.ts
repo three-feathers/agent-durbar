@@ -308,7 +308,7 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpSignInReconnect: true, // spec 058 FR-207: the automatic reconnect calls rpc.mcp.restartServer only and re-reads `list` 1.5 s later (real: T176/T177, runtime 1.0.103)
   mcpSignInAgain: true, // spec 058 FR-164: oauth.login forceReauth ("clears any cached OAuth token for the server and runs a full new authorization", read: SDK 1.0.22-1.0.26 rpc.d.ts; not run on a real account)
   mcpSignIn: true, // spec 058 FR-064: rpc.mcp.oauth.login (@experimental; read: SDK 1.0.22-1.0.26 rpc.d.ts; real: worked once, macOS 2026-10-23, one server; the rest in T105)
-  mcpSignInSteps: "Sign in is not available for this server from Agent Durbar now. A sign-in made in the Copilot CLI did not carry over to Durbar's sessions when tried (2026-10-23), so none is offered. Switch off for this session if you do not need it.", // FR-068, FR-233: no CLI command (a CLI sign-in did not carry over)
+  mcpSignInSteps: "Sign in is not available for this server from Agent Durbar now. A sign-in made in the Copilot CLI did not carry over to Durbar's sessions when tried (2026-10-23), so none is offered. Switch off for this session if you do not need it.", // FR-068, FR-246: no CLI command (a CLI sign-in did not carry over)
   mcpSignInNote: 'Checked once on a real account; other servers and systems not yet.', // FR-074/FR-180: the row's honest note
   sessionStats: true, // spec 085 FR-012: rpc.usage.getMetrics (@experimental; read: SDK 1.0.24; not run on a real session)
   handoff: true, // spec 030 FR-034: rpc.history.summarizeForHandoff (cost unverified)

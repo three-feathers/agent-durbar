@@ -480,8 +480,8 @@ async function main(): Promise<void> {
       assert.deepStrictEqual([ad.capabilities.mcpSignIn, typeof ad.startMcpSignIn, typeof (ad as { cancelMcpSignIn?: unknown }).cancelMcpSignIn], [true, 'function', 'undefined'], 'Copilot: Sign in yes, a cancel call no (its cancelLogin is for owned logins only)');
       {
         const steps = ad.capabilities.mcpSignInSteps ?? '';
-        assert.ok(steps.length > 0 && !/`|\/mcp auth|copilot login|run copilot/i.test(steps), 'FR-233: the Copilot row has no CLI command (a CLI sign-in did not carry over): ' + steps);
-        assert.match(steps, /did not carry over to Durbar's sessions/, 'FR-233: says so');
+        assert.ok(steps.length > 0 && !/`|\/mcp auth|copilot login|run copilot/i.test(steps), 'FR-246: the Copilot row has no CLI command (a CLI sign-in did not carry over): ' + steps);
+        assert.match(steps, /did not carry over to Durbar's sessions/, 'FR-246: says so');
       }
       const sid = await ad.start({ workspace: ws, quiet: true });
       const s = client.last;
