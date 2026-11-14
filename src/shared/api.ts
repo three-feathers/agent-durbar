@@ -426,6 +426,8 @@ export interface AddResult {
   error?: string;
   /** Folders broader than a project (spec 006 FR-016): the renderer shows one calm line each. */
   warnings?: { name: string; kind: BroadKind }[];
+  /** Spec 033 FR-090: folders that were already in the office; nothing was started for them. `floor` is the floor id they are on. */
+  existing?: { id: string; name: string; floor: string }[];
 }
 
 /** Spec 093: what the window sends to create a folder: never a path, only the token of main's own pick; a clone adds its URL. */

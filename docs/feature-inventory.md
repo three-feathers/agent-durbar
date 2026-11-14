@@ -23,7 +23,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Boss queue, Bank, Postbox | works | works | mock+planned (boss-bank-post-coffee) | 001 024 | driver:shots-001-lobby driver:check-097-letter read:src/renderer/realoffice.js |
 | Coffee break at a usage limit | works | works | planned (coffee-bar) | 068 | test:coffeebreak driver:shots-068-coffee |
 | Finished agents rest in the lounge | works | works, a lounge row under the desks: done and read agents seated beside a small monitor, asleep after 10 minutes (097 FR-246..FR-249, owner decision 2026-11-06) | built (lounge) | 001 097 | test:realoffice-layout driver:check-097-lounge |
-| Floors, lift, All floors, Focus mode | works | works | mock+planned (lift-panel) | 033 092 | test:floors test:floornav driver:shots-092-lift |
+| Floors, lift, All floors, Focus mode | works | works | mock+planned (lift-panel) | 033 092 | test:floors test:floornav driver:shots-092-lift driver:check-floor-add |
 | Status pills as filters | works | works | none | 001 | driver:shots-001-welcome read:src/renderer/app.js |
 | Room doors (cabin signs) | missing, removed by owner decision (#954) | missing, removed | none | 017 | driver:check-no-doors |
 | Waiting desk halo (a still glow behind the screen) | missing, the screen's tint replaces it (owner decision, 2026-11-05) | missing, the screen's tint replaces it (owner decision, 2026-11-05) | none | 001 | driver:check-001-lights |
