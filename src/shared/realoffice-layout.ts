@@ -29,7 +29,7 @@ export interface RealMeta {
   desk?: [number, number];
   /** per person: the typing rig's head and hands, as fractions of the picture, with their pivots (spec Changes 2026-11-01) */
   rig?: Record<string, Record<string, { x: number; y: number; w: number; h: number; px: number; py: number }>>;
-  /** the side every standing picture faces, baked into the files (spec 097 FR-191); the lobby puts visitors to the right of their fixture, so 'left' */
+  /** the side every standing picture of the set faces, as drawn (spec 097 FR-191, 2026-11-14 delta); absent = 'left'. The lobby puts visitors to the right of their fixture, so a set that faces 'right' is drawn mirrored (`mir`) */
   facing?: 'left' | 'right';
   /** spec 097 FR-368..FR-371 (#1641, #1642): the world's helper kids (the Photo office's clay-toy kids), in shipped pixels: per kid the standing reference figure's `bodyH`, `w`, `h`,
    *  `headTop` and `face` box, every pose's size and the widest pose; absent in a world without kid art (the head row keeps FR-307's adults) */
@@ -56,7 +56,7 @@ export interface DeskBox {
 }
 /** `id` is the folder's id; `part` is 1, or 2, 3... for the rest of a folder split over rows */
 export interface ZoneBox { id: string; part: number; box: Rect; sign: Rect; desks: DeskBox[]; /** the sign shows name, counts, + and menu only; path and cost go to its hover (FR-256 in `aisles`; FR-356 in a room too narrow for the whole sign) */ signShort?: boolean }
-export interface VisitorBox { id: string; fig: (Rect & { file: string; fileB: string | null; b: Rect | null; pose: string; feetY: number; faces: 'left' | 'right' }) | null; chip: { x: number; y: number }; face: Rect | null; shadow: Rect | null }
+export interface VisitorBox { id: string; fig: (Rect & { file: string; fileB: string | null; b: Rect | null; pose: string; feetY: number; faces: 'left' | 'right'; mir: boolean }) | null; chip: { x: number; y: number }; face: Rect | null; shadow: Rect | null }
 export interface FixtureBox { id: string; custom: boolean; art: Rect | null; slot: Rect; plate: { x: number; y: number; w: number }; visitors: VisitorBox[]; more: number; light: Rect }
 export interface Layout {
   u: number; big: boolean; lobbyH: number; floorH: number; width: number; height: number; scroll: boolean; faceH: number;
@@ -432,10 +432,12 @@ function roLobby(meta: RealMeta, places: RealPlace[], W: number, Lb: number): { 
         const k0 = nearPx / standHeight(meta, String(v.person));
         const k = snap && meta.pixelPeople !== false ? visitorScale(k0) : k0, fw2 = sp.size[0] * k, fh2 = sp.size[1] * k; /* FR-255 (#1104): whole scale in a pixel world */
         const px = (n: number): number => (snap ? Math.round(n) : n);
-        const faces = meta.facing || 'left', st = meta.stand[String(v.person)], fb = roOwn(POSE_FRAME_B, sp.pose) && roOwn(st.poses, POSE_FRAME_B[sp.pose]) ? POSE_FRAME_B[sp.pose] : null;
+        /* spec 097 FR-191 (2026-11-14, #1743): the side a visitor must face is worked out from where it stands against its fixture (right of the middle faces left); a set drawn the other way is mirrored, its foot centre with it */
+        const faces: 'left' | 'right' = cx > x + fw / 2 ? 'left' : 'right', mir = (meta.facing || 'left') !== faces, ft = (f: number): number => (mir ? 1 - f : f);
+        const st = meta.stand[String(v.person)], fb = roOwn(POSE_FRAME_B, sp.pose) && roOwn(st.poses, POSE_FRAME_B[sp.pose]) ? POSE_FRAME_B[sp.pose] : null;
         /* the two running pictures have their own canvases: each in its own box, the feet on one spot, so changing picture moves no foot */
-        const b = fb ? (() => { const w = st.poses[fb][0] * k, h = st.poses[fb][1] * k; return { x: px(cx - (st.foot && roOwn(st.foot, fb) ? st.foot[fb] : sp.foot) * w), y: px(frontY - (st.feet && roOwn(st.feet, fb) ? st.feet[fb] : sp.feet) * h), w, h }; })() : null;
-        fig = { x: px(cx - sp.foot * fw2), y: px(frontY - sp.feet * fh2), w: fw2, h: fh2, file: `${v.person}-${sp.pose}.webp`, fileB: fb ? `${v.person}-${fb}.webp` : null, b, pose: sp.pose, feetY: frontY, faces };
+        const b = fb ? (() => { const w = st.poses[fb][0] * k, h = st.poses[fb][1] * k; return { x: px(cx - ft(st.foot && roOwn(st.foot, fb) ? st.foot[fb] : sp.foot) * w), y: px(frontY - (st.feet && roOwn(st.feet, fb) ? st.feet[fb] : sp.feet) * h), w, h }; })() : null;
+        fig = { x: px(cx - ft(sp.foot) * fw2), y: px(frontY - sp.feet * fh2), w: fw2, h: fh2, file: `${v.person}-${sp.pose}.webp`, fileB: fb ? `${v.person}-${fb}.webp` : null, b, pose: sp.pose, feetY: frontY, faces, mir };
         const headY = fig.y + sp.top * fh2;
         face = { x: cx - 0.065 * nearPx, y: headY, w: 0.13 * nearPx, h: 0.13 * nearPx };
         /* a soft elliptical contact shadow on the floor, centred on the foot line, a little wider than the stance */
