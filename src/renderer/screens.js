@@ -1486,7 +1486,8 @@
         if(x.defaultOn&&!x.off)acts+=`<button class="btn sm" type="button" data-swoff="${en}" aria-label="${esc('Switch off '+n+' for this session')}" title="Stop using this server in this session; switch it back on any time">Switch off for this session</button>`;
       }
       let steps='';
-      if(x.signInSteps){
+      /* spec 058 FR-233: steps with no command in them are a plain note for a row that cannot start a sign-in; where Sign in works they add nothing */
+      if(x.signInSteps&&!(x.canSignIn&&!stepsCmds(x.signInSteps))){
         const open=!x.canSignIn||openSteps.has(n);
         acts+=x.canSignIn?`<button class="btn sm" type="button" data-steps="${en}" aria-expanded="${open?'true':'false'}" aria-label="${esc((open?'Hide':'Show')+' how to sign in to '+n+' from a terminal')}">How to sign in from a terminal</button>`:'';
         if(open)steps=`<div class="srv-det"><p class="srv-steps" tabindex="0" aria-label="${esc('How to sign in to '+n+' from a terminal')}">${stepsHTML(x.signInSteps)}</p>${stepsCmds(x.signInSteps)?`<button class="btn sm" type="button" data-copysteps="${en}" aria-label="${esc('Copy the commands to sign in to '+n)}">Copy</button>`:''}</div>`;
