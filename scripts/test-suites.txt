@@ -253,6 +253,7 @@ test:quota
 test:featureinventory
 test:simversion
 test:momentsregistry
+test:world-pack
 test:paritytick
 test:picturebudget
 test:chargroups

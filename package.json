@@ -263,6 +263,7 @@
     "test:worldstore": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-worldstore.js",
     "test:worldipc": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-worldipc.js",
     "test:world-packs": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-world-packs.js",
+    "test:world-pack": "tsc -p tsconfig.scripts.json && node scripts/test-world-pack.js",
     "test:crew": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-crew.js",
     "test:chargen": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-chargen.js",
     "test:imagecheck": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-imagecheck.js",
