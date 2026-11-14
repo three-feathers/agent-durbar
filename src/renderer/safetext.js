@@ -53,30 +53,39 @@
      always found, so nothing can replace it). True when it is used. */
   const useShared=m=>{if(SH||!m||typeof m.unhide!=='function')return false;SH=m;return true;};
   const unhide=t=>{if(!SH)throw new Error('no unhide');const c=SH.unhide(t);if(typeof c!=='string')throw new Error('no unhide');return c;};
-  /* spec 012 FR-182 (review of PR 1721, round 3): both readings are kept, never one instead of the other. The text is masked as written first; the copy of THAT
-     output without hidden characters is masked again, and shown when it finds more. Before, the copy of the raw text won whenever it found anything, and removing a
-     hidden character can glue a token to the word before it (`page2<U+2028>ghp_…`), which no shape reads: the token the as-written pass hid was shown. */
-  const unhid=(raw,run,bare,fail)=>{try{const s=String(raw==null?'':raw),c=unhide(s);if(c===s)return run(s);const m=run(s);if(m===null||m==='')return m;
+  const unhid=(raw,run,bare,fail)=>{try{const s=String(raw==null?'':raw),c=unhide(s);if(c===s)return run(s);const m=run(c);return m===null||m===bare(c)?run(s):m;}catch(e){return fail;}};
+  /* spec 012 FR-182 (review of PR 1721, rounds 3 and 4): the reading of this PR keeps both: the text masked as written first, then the copy of THAT output without
+     hidden characters masked again (removing a hidden character can glue a keyword or a word to a token, `ghp_…<ZWSP>mysql -p…`, which no rule then reads). The
+     reading as before PR 1721 (unhid) is the reference: `keep` shows nothing it hides. */
+  const unhidBoth=(raw,run,bare,fail)=>{try{const s=String(raw==null?'':raw),c=unhide(s);if(c===s)return run(s);const m=run(s);if(m===null||m==='')return m;
     const c2=unhide(m);if(c2===m)return m;const m2=run(c2);return m2===null||m2===bare(c2)?m:m2;}catch(e){return fail;}};
-  /* spec 012 FR-182 (issue #1613): plainKeep turns a line break into a space and glues a word to a token across a removed mark (`AKIA…<b></b>…\`s`), and a
-     token split by either is no token any more; so the split tokens are masked first (the shared maskSplitTokens, the step redact starts with; it reads only a
-     text that can hold a piece, the rest is left byte for byte), then the text is made plain. Without the shared module: throws, so the callers fail closed. */
-  const lineMask=u=>{if(!SH||typeof SH.maskSplitTokens!=='function')throw new Error('no maskSplitTokens');const r=SH.maskSplitTokens(u);if(typeof r!=='string')throw new Error('mask');return r;};
+  /* both readings of one text: this PR's (split tokens masked first, unhidBoth) and the one before it (old, unhid), nothing shown that the second hides */
+  const both2=(raw,w,go)=>{const s=String(raw==null?'':raw);const h=go(w,unhidBoth);if(h===null||h==='')return h;if(w===s&&unhide(s)===s)return h;const r=old(()=>go(s,unhid));if(r===null||r==='')return r;return keep(h,r);};
+  /* spec 012 FR-182 (review of PR 1721, round 4): every desk mask first masks the tokens split by a line break, a mark, a tag, a comment or a hidden character
+     (the shared maskSplitTokens, the step redact starts with; nothing else of the text changes), then runs its own steps (unhide, unescape, plain, redact) on that
+     output exactly as before PR 1721. A split token is gone before those steps can glue or break it, and everything else they read as they did. Without the
+     shared module: throws, so the callers fail closed. */
+  /* the reading with split tokens masked first, with nothing shown that the reading as before PR 1721 hides (shared keepShownBy); '' on a failure */
+  const keep=(h,r)=>{if(!SH||typeof SH.keepShownBy!=='function')throw new Error('no keepShownBy');const k=SH.keepShownBy(h,r);if(typeof k!=='string')throw new Error('mask');return k;};
+  /* the reading as before PR 1721: the shared masks with their split step off (withoutSplit); throws without it */
+  const old=fn=>{if(!SH||typeof SH.withoutSplit!=='function')throw new Error('no withoutSplit');return SH.withoutSplit(fn);};
+  const splitFirst=raw=>{if(!SH||typeof SH.maskSplitTokens!=='function')throw new Error('no maskSplitTokens');const r=SH.maskSplitTokens(String(raw==null?'':raw));if(typeof r!=='string')throw new Error('mask');return r;};
   const maskPlain0=(raw,redact,codeWord)=>{try{
-    const u=lineMask(unesc(raw)),m=both(u,plainKeep(u,codeWord),redact);
+    const u=unesc(raw),m=both(u,plainKeep(u,codeWord),redact);
     return m.replace(/_/g,'');}catch(e){return null;}};
   const maskPlain=(raw,redact,codeWord)=>{if(typeof redact!=='function')return null;
-    return unhid(raw,t=>maskPlain0(t,redact,codeWord),c=>plainKeep(unesc(c),codeWord).replace(/_/g,''),null);};
+    let w;try{w=splitFirst(raw);}catch(e){return null;}
+    const go=(x,u)=>u(x,t=>maskPlain0(t,redact,codeWord),c=>plainKeep(unesc(c),codeWord).replace(/_/g,''),null);
+    try{return both2(raw,w,go);}catch(e){return null;}};
   /* the masked text, not made plain or cut: masked as it is, and again on the plain-kept text when Markdown that can split a token is
      present (otherwise the text is shown as it is). '' when masking is not possible. */
-  const maskRaw=(raw,redact)=>{if(typeof redact!=='function')return '';return unhid(raw,t=>maskRaw0(t,redact),c=>unesc(c),'');};
+  const maskRaw=(raw,redact)=>{if(typeof redact!=='function')return '';let w;try{w=splitFirst(raw);}catch(e){return '';}
+    const go=(x,u)=>u(x,t=>maskRaw0(t,redact),c=>unesc(c),'');try{const m=both2(raw,w,go);return m==null?'':m;}catch(e){return '';}};
   /* spec 012 FR-181 (review of PR 1585, round 6): a text with a backslash is masked as written first, then unescaped and masked again, so the tail glued to an escaped head
      (`ghp\_<body>@<rest>`) goes with it as in redact; a text without one is masked as before (byte for byte) */
   const maskRaw0=(raw,redact)=>{try{const r0=raw.indexOf('\\')<0?raw:redact(raw);if(typeof r0!=='string')return '';const u=unesc(r0),m1=redact(u);if(typeof m1!=='string')return '';
     if(!SPLIT.test(u))return m1; /* no Markdown that can split a token: one pass is enough (and keeps the live readout cheap) */
-    /* spec 012 FR-182 (review of PR 1721, item 1 and round 2): the plain pass would no longer read a split token that m1 hides (a line break becomes a space, a
-       removed mark glues a word on): it reads the text with its split tokens masked first (lineMask), the rest of it byte for byte */
-    const v=lineMask(u),k=plainKeep(v),m2=both(v,k,redact);return m2!==k?m2:m1;}catch(e){return '';}}; /* m2 holds what either pass found (both) */
+    const k=plainKeep(u),m2=both(u,k,redact);return m2!==k?m2:m1;}catch(e){return '';}}; /* m2 holds what either pass found (both) */
   /* raw agent text -> masked, plain, at most n characters (no n: not cut). '' when masking is not possible. */
   const excerpt=(raw,redact,n,codeWord)=>{const p=maskPlain(String(raw==null?'':raw),redact,codeWord);if(p===null)return '';return n==null?p:cutter(p,n);};
   /* a tool label masked the way the live readout (LIVEACT) masks it: a command by maskSecretCommand, a URL by maskSecretUrl, anything else by redact.
@@ -102,7 +111,9 @@
     const u=unesc(o);return got(u)===u?o:'';};
   const maskLabel=(raw,kind,mask)=>{const s=String(raw==null?'':raw).trim();if(!s)return '';const m=mask||{};
     const f=kind==='run'?m.cmd:isUrl(s)?m.url:m.redact;if(typeof f!=='function')return '';
-    try{const one=t=>{const r=f(t);return typeof r==='string'?r:'';};return escMask(s,t=>unhid(t,one,c=>c,''));}catch(e){return '';}};
+    /* spec 012 FR-182 (review of PR 1721, round 4): each mask call masks the split tokens first, then reads as before (escMask's escaped runs are replaced
+       before, so a token glued to an escaped one is still hidden in place, FR-180) */
+    try{const one=t=>{const r=f(t);return typeof r==='string'?r:'';};return escMask(s,t=>{const m=both2(t,splitFirst(t),(x,u)=>u(x,one,c=>c,''));return m==null?'':m;});}catch(e){return '';}};
   /* the wrapper the page uses: fallback words and the "is masking possible" flag */
   function create(o){
     const red=o&&typeof o.redact==='function'?o.redact:null, cut=o&&typeof o.cut==='function'?o.cut:cutter;

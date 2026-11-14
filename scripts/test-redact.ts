@@ -311,8 +311,8 @@ const env = {
         for (let j = 0; j < k; j++) parts.push(rnd5(3) === 0 ? toks5[rnd5(toks5.length)]() : words5[rnd5(words5.length)]);
         const t = parts.join([' ', '', '\n', ', '][rnd5(4)]);
         if (SPLIT5.test(t) && round5(t, red0) !== red0(t)) split++;
-        // spec 012 FR-182 (review of PR 1721, item 1 and round 2): the plain pass reads the text with its split tokens masked first (`maskSplitTokens`); the rest as in round 5
-        const want5 = round5(t, red0, maskSplitTokens(t));
+        // spec 012 FR-182 (review of PR 1721, round 4): the desk masks the split tokens first (`maskSplitTokens`), then runs the round-5 steps on that output
+        const want5 = round5(maskSplitTokens(t), red0);
         assert.strictEqual(ST.maskRaw(t, red0), want5, `#1585 round 7 gate: a backslash-free text is masked as in round 5 (fixture case ${i}: ${JSON.stringify(t).slice(0, 80)})`);
       }
       assert.ok(split > 300, `#1585 round 7 gate: the fixture reaches the plain-kept second pass (${split} cases)`);
@@ -1991,6 +1991,49 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
       }
     const t = 'glpat-' + B.slice(0, 20) + '\u200b' + 'curl -u bob:' + PW + ' h';
     assert.ok(!red(t).includes(PW), `#1613 round 3: curl -u after a whole token and a hidden character: ${red(t)}`);
+  }
+  // round 4 (fjcabello), item 1: an all-capitals keyword after a hidden piece after a whole token is a keyword, not the token's tail: its own rule still reads it
+  {
+    const PW = 'Hx9Kq2Lm7Np4Rs';
+    let own = 0;
+    for (const kw of ['TOKEN', 'APIKEY', 'API_KEY', 'AWS_SECRET_ACCESS_KEY', 'MYSQL', 'PASSWORD'])
+      for (const form of [kw + ' ' + PW, kw + '=' + PW, kw + ': ' + PW, kw + ' -u root -p' + PW])
+        for (const piece of ['\u200d', '\u200b', '\u0301', '&#8203;', '\u00ad']) {
+          if (red(form).includes(PW)) continue; // the keyword's own rule does not hide this form: nothing to keep
+          own++;
+          const out = red(GH + piece + form);
+          assert.ok(!out.includes(PW), `#1613 round 4: an all-capitals keyword after a whole token and ${JSON.stringify(piece)} keeps its rule: ${JSON.stringify(out)}`);
+        }
+    assert.ok(own >= 30, `#1613 round 4: the all-capitals table reaches the forms its rules hide (${own})`);
+  }
+  // round 4 (Opus 1, 3, 6): a name then `=` is no tail; the tail stops at a character that is no body character; FR-173's count after a hidden character
+  {
+    const PW = 'Hx9Kq2Lm7Np4Rs';
+    for (const sep of ['\n', '\n\n', '\n> ', '\u200b'])
+      assert.strictEqual(red(GH + sep + 'Db_Password="' + PW + '"'), '[redacted]' + sep + 'Db_Password="[redacted]"', `#1613 round 4: a name then = after a whole token and ${JSON.stringify(sep)} keeps the name`);
+    const o = red('ghp_' + B.slice(0, 24) + '\u200b' + B.slice(24, 36) + ':x-oauth-basic');
+    assert.ok(!o.includes(B.slice(26, 34)), `#1613 round 4: the tail before a character that is no body character is hidden: ${JSON.stringify(o)}`);
+    const six = red('ghp_' + B.slice(0, 30) + '\u200b' + B.slice(30, 36));
+    assert.ok(!six.includes(B.slice(30, 36)), `#1613 round 4: a 6-character tail after a hidden character is hidden: ${JSON.stringify(six)}`);
+  }
+  // round 4: the keyword after a hidden piece stays visible as a keyword (the union would hide its value anyway; these pin that the split step does not take it)
+  {
+    const PW = 'Hx9Kq2Lm7Np4Rs';
+    assert.strictEqual(red(GH + '\u200bTOKEN ' + PW), '[redacted]\u200bTOKEN [redacted]', '#1613 round 4: an all-capitals keyword after a whole token stays a keyword');
+    assert.strictEqual(red(GH + '\u200bAPI_KEY=' + PW), '[redacted]\u200bAPI_KEY=[redacted]', '#1613 round 4: an all-capitals name after a whole token stays a name');
+    assert.strictEqual(red('ghp_' + B.slice(0, 18) + '\u200b' + B.slice(18, 36) + '<br>mysql -p' + PW), '[redacted]<br>mysql -p[redacted]', '#1613 round 4: a keyword after a split token stays a keyword');
+  }
+  // round 4, item 2: a token right after an entity without its ';' (the entity's digits take its start boundary as written)
+  for (const t of ['password=&#8203' + GH, 'see &#x200B' + GH + ' here'])
+    assert.ok(!red(t).includes(GH.slice(8, 16)) && !red(t).includes(GH.slice(30, 38)), `#1613 round 4: a token right after an entity without ; is hidden: ${JSON.stringify(red(t))}`);
+  // round 4, item 3: the tool phrase masks the label as written too (clearing an invisible character glues two whole tokens into one run)
+  {
+    const LAp = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'liveact.js')) as { phrase(o: { kind: string; tool: string; label: string }, m: Record<string, (s: string) => string>): string };
+    const GH2 = 'gho_' + B.slice(0, 36);
+    for (const kind of ['run', 'read', 'tool']) {
+      const out = LAp.phrase({ kind, tool: 'Bash', label: GH + '\u200b' + GH2 }, cm);
+      assert.ok(![GH.slice(8, 16), GH.slice(30, 38), GH2.slice(8, 16), GH2.slice(30, 38)].some((x) => out.includes(x)), `#1613 round 4: the tool phrase hides two tokens joined by an invisible character (${kind}): ${JSON.stringify(out)}`);
+    }
   }
   // item 2: the desk keeps what both readings hide (a hidden character glues a token to the word before it)
   for (const lead of ['\u2028', '\u200b', '\u00ad']) {
