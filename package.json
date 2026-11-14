@@ -108,6 +108,8 @@
     "test:citypecheck": "node scripts/test-ci-typecheck.js",
     "test:perfrecord": "node scripts/test-perf-record.js",
     "test:world-catalogue": "node scripts/test-world-catalogue.js",
+    "test:world-distinct": "node scripts/test-world-distinct.js",
+    "check:world-distinct": "node scripts/run-electron-script.js scripts/check-world-distinct.js",
     "test:worldmatrix": "node scripts/test-world-matrix.js",
     "world:matrix": "npm run build && node scripts/world-matrix.js",
     "test:compressshots": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-compress-shots.js",

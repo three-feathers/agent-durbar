@@ -17,6 +17,11 @@ on:
       - 'docs/experience/**'
       - 'scripts/world-matrix.js'
       - 'scripts/check-world-tools.js'
+      - 'scripts/check-world-distinct.js'
+      - 'scripts/world-distinct.js'
+      - 'scripts/world-cards.js'
+      - 'scripts/run-electron-script.js'
+      - 'worlds/**'
       - '.github/workflows/world-matrix.yml'
   schedule:
     - cron: '47 4 * * 1'
@@ -73,6 +78,9 @@ jobs:
       # the page checks themselves, on fixture pages: a matrix with no present moment checks no cell, so this is what proves them
       - name: World matrix selftest
         run: node scripts/world-matrix.js --selftest
+      # spec 102 FR-016, T093: no copied, recoloured or mirrored world picture, no same average colour; a hidden Electron window, no app, no network, 0 AI credits
+      - name: World pictures are distinct
+        run: xvfb-run -a npm run check:world-distinct
       - name: World matrix at 1280x800
         env:
           WORLDS: ${{ steps.worlds.outputs.worlds }}
@@ -112,6 +120,9 @@ jobs:
       # the page checks themselves, on fixture pages: a matrix with no present moment checks no cell, so this is what proves them
       - name: World matrix selftest
         run: node scripts/world-matrix.js --selftest
+      # spec 102 FR-016, T093: no copied, recoloured or mirrored world picture, no same average colour; a hidden Electron window, no app, no network, 0 AI credits
+      - name: World pictures are distinct
+        run: xvfb-run -a npm run check:world-distinct
       - name: World matrix at 1440x900 and 1280x800
         run: node scripts/world-matrix.js
       - name: World matrix, forced colours at 1280x800
