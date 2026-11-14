@@ -20,6 +20,7 @@ import type { AgentInfo } from '../src/shared/api';
 import { endSessionOp } from '../src/main/agentops';
 import { agentMcpReply, mcpRestartOp, mcpRestartSessionOp, restartReason, validServerName } from '../src/main/mcpsession';
 import { mcpHealthUpdate } from '../src/shared/mcphealth';
+import { stepsHaveCommand } from '../src/shared/mcp';
 import type { McpReplyInput, RestartDeps, RestartSessionDeps } from '../src/main/mcpsession';
 import { isMethodNotFound, sdkErrorText } from '../src/adapters/copilot';
 import { FakeClient, FakeCopilot } from './fakes/copilot-sdk';
@@ -60,6 +61,20 @@ async function main(): Promise<void> {
       };
       const r = agentMcpReply(base);
       const by = (n: string) => r.servers.find((x) => x.name === n)!;
+      // FR-246 (review of #1731): main's row flag `signInHasCommand` follows the adapter's steps text; without it Claude Code would lose its terminal-steps button silently
+      {
+        const mk = async (steps: string) => {
+          const adS = new FakeAdapter({ capabilities: { mcpStart: 'session', mcpToggleApplies: 'live', mcpSignIn: true, mcpSignInSteps: steps } });
+          const sidS = await adS.start({ workspace: ws, quiet: true });
+          const rS = agentMcpReply({ ...base, a: info(sidS), ad: adS, cli: [...base.cli, { name: 'signed-out', enabled: true }] });
+          return rS.servers.find((x) => x.name === 'signed-out')!;
+        };
+        const claudeLike = await mk('If Sign in is not available, run `claude mcp login {name}` in a terminal.');
+        assert.deepStrictEqual([claudeLike.signInHasCommand, /claude mcp login signed-out/.test(claudeLike.signInSteps ?? '')], [true, true], 'FR-246: a steps text with a command sets signInHasCommand (the terminal-steps button depends on it)');
+        const copilotLike = await mk('Sign in is not available for this server from Agent Durbar now. Switch off for this session if you do not need it.');
+        assert.strictEqual('signInHasCommand' in copilotLike, false, 'FR-246: a command-less note leaves the flag unset');
+        assert.ok(!!copilotLike.signInSteps, 'FR-246: the note itself is still sent');
+      }
       const json = JSON.stringify(r);
       assert.ok(!json.includes(secret), 'an extra\'s header value never reaches the window (FR-005)');
       assert.ok(!json.includes('ghp_abcdefghijklmnopqrstuvwxyz0123456789'), 'a ghp_ token is masked');
@@ -472,6 +487,17 @@ async function main(): Promise<void> {
       await assert.rejects(ad.restartMcpServer('no-such-session', 'notes'), /not running/, 'not live: rejects, nothing started');
       assert.strictEqual(client.created.length, 1, 'no session was started by a restart');
       await ad.stop(sid);
+    }
+    // ---- FR-246: the simulator's steps texts agree with the shared `stepsHaveCommand` (sim.ts has no imports and mirrors it with includes('`')) ----
+    {
+      const simSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'sim.ts'), 'utf8');
+      const grab = (app: string): ((n: string) => string) => {
+        const m = new RegExp(app + ': \\{ steps: \\((n)?\\) => (.+?), note:').exec(simSrc);
+        assert.ok(m, 'sim.ts SIM_SIGN_IN has a ' + app + ' steps text');
+        return new Function('n', 'return ' + m![2]) as (n: string) => string;
+      };
+      assert.deepStrictEqual([stepsHaveCommand(grab('copilot')('x')), stepsHaveCommand(grab('claude')('x'))], [false, true], 'FR-246: the sim texts give the same answer as stepsHaveCommand (Copilot none, Claude one)');
+      assert.ok(simSrc.includes("signInHasCommand: true") && /steps\.includes\('`'\)/.test(simSrc), 'FR-246: the sim sets the flag from the same backtick test');
     }
     // ---- Copilot startMcpSignIn on the fake SDK (FR-064, SC-012, T098) ----
     {
