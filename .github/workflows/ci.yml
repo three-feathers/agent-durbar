@@ -104,6 +104,7 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/art"
           "$RUNNER_TEMP/art/bin/pip" install --quiet pillow==11.3.0
           "$RUNNER_TEMP/art/bin/python" -I scripts/build-arcade-pack.py --selftest
+          PATH="$RUNNER_TEMP/art/bin:$PATH" DURBAR_REQUIRE_PILLOW=1 node scripts/test-character-groups.js
 
   # The required check "Office layout check (xvfb)" is this one job (FR-105; it was 6 shard jobs and a summary job). Since FR-194
   # it also covers packaging (it was the separate job "Package smoke (unpacked Linux app)"): one build, then the layout steps,
