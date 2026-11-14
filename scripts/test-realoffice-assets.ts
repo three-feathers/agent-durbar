@@ -533,5 +533,23 @@ const index = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'index.html'), 
 const csp = /Content-Security-Policy" content="([^"]*)"/.exec(index);
 assert.strictEqual(csp && csp[1], "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;", 'the CSP is unchanged (FR-060)');
 assert.ok(!/realoffice/.test(index), 'index.html does not load Real office (FR-061: only on first use)');
+// spec 097 Changes 2026-11-14 (#1751): the cave draws its monitor frame round the engine's glass (3 px in); the CSS numbers come from the slate opening measured on the picture (Pillow, by hand: no WebP decoder here),
+// and the picture is pinned by hash so a new picture must be measured again
+{
+  const OPEN = { x0: 0.0964, x1: 0.9107, y0: 0.1227, y1: 0.8712 }, fw = OPEN.x1 - OPEN.x0, fh = OPEN.y1 - OPEN.y0;
+  const css = fs.readFileSync(path.join(RO, 'worlds', 'cave', 'world.css'), 'utf8').replace(/\r\n/g, '\n');
+  const pic = require('crypto').createHash('sha256').update(fs.readFileSync(path.join(RO, 'worlds', 'cave', 'monitor.webp'))).digest('hex');
+  assert.strictEqual(pic, 'b31356faa0a595ba6cd0a364e42653aced1df19ab626dd13e1cddc9f59460e14', 'the cave monitor picture changed: measure its slate opening again and update OPEN here and the calc() numbers in world.css (spec 097, #1751)');
+  const want: Record<string, [number, number]> = { left: [3 + (OPEN.x0 / fw) * 6, -(OPEN.x0 / fw) * 100], top: [3 + (OPEN.y0 / fh) * 6, -(OPEN.y0 / fh) * 100], width: [-6 / fw, 100 / fw], height: [-6 / fh, 100 / fh] };
+  const rule = /\.ro\[data-world="cave"\] \.ro-bezel::before\{([^}]*)\}/.exec(css);
+  assert.ok(rule, 'the cave bezel frame rule exists');
+  for (const k of Object.keys(want)) {
+    const m = new RegExp('(?:^|;)' + k + ':calc\\((-?[\\d.]+)px ([-+]) ([\\d.]+)%\\)').exec(rule![1]) || new RegExp('(?:^|;)' + k + ':calc\\(([\\d.]+)% ([-+]) ([\\d.]+)px\\)').exec(rule![1]);
+    assert.ok(m, `the cave frame's ${k} is a calc() of a pixel part and a percentage`);
+    const px = k === 'left' || k === 'top' ? Number(m![1]) : (m![2] === '-' ? -1 : 1) * Number(m![3]), pct = k === 'left' || k === 'top' ? (m![2] === '-' ? -1 : 1) * Number(m![3]) : Number(m![1]);
+    assert.ok(Math.abs(px - want[k][0]) < 0.01 && Math.abs(pct - want[k][1]) < 0.01, `the cave frame's ${k} follows the measured slate opening (css ${px}px ${pct}%, want ${want[k][0].toFixed(3)}px ${want[k][1].toFixed(3)}%)`);
+  }
+  assert.ok(!/\.ro\[data-world="cave"\] \.ro-bezel\{[^}]*padding/.test(css), 'the cave bezel keeps the engine\'s 3 px padding: the glass is the engine\'s');
+}
 console.log(`realoffice assets tests passed (${packs} world packs with their default sets, largest ${(biggest / 1024 / 1024).toFixed(2)} MB; the Photo office ${files.size} pictures, ${(total / 1024 / 1024).toFixed(2)} MB)`);
 process.exitCode = 0;
