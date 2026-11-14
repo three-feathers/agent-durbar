@@ -52,10 +52,10 @@
   const useShared=m=>{if(SH||!m||typeof m.unhide!=='function')return false;SH=m;return true;};
   const unhide=t=>{if(!SH)throw new Error('no unhide');const c=SH.unhide(t);if(typeof c!=='string')throw new Error('no unhide');return c;};
   const unhid=(raw,run,bare,fail)=>{try{const s=String(raw==null?'':raw),c=unhide(s);if(c===s)return run(s);const m=run(c);return m===null||m===bare(c)?run(s):m;}catch(e){return fail;}};
-  /* spec 012 FR-182 (issue #1613): plainKeep turns a line break into a space, and a token split by one is no token once it is a space; so in a text
-     with a line break the split tokens are masked first (the shared maskSplitTokens, the step redact starts with; the rest is left byte for byte), then
-     it is made plain. Without the shared module: throws, so the callers fail closed. */
-  const lineMask=u=>{if(!/[\r\n]/.test(u))return u;if(!SH||typeof SH.maskSplitTokens!=='function')throw new Error('no maskSplitTokens');const r=SH.maskSplitTokens(u);if(typeof r!=='string')throw new Error('mask');return r;};
+  /* spec 012 FR-182 (issue #1613): plainKeep turns a line break into a space and glues a word to a token across a removed mark (`AKIA…<b></b>…\`s`), and a
+     token split by either is no token any more; so the split tokens are masked first (the shared maskSplitTokens, the step redact starts with; it reads only a
+     text that can hold a piece, the rest is left byte for byte), then the text is made plain. Without the shared module: throws, so the callers fail closed. */
+  const lineMask=u=>{if(!SH||typeof SH.maskSplitTokens!=='function')throw new Error('no maskSplitTokens');const r=SH.maskSplitTokens(u);if(typeof r!=='string')throw new Error('mask');return r;};
   const maskPlain0=(raw,redact,codeWord)=>{try{
     const u=lineMask(unesc(raw)),m=both(u,plainKeep(u,codeWord),redact);
     return m.replace(/_/g,'');}catch(e){return null;}};
@@ -68,8 +68,8 @@
      (`ghp\_<body>@<rest>`) goes with it as in redact; a text without one is masked as before (byte for byte) */
   const maskRaw0=(raw,redact)=>{try{const r0=raw.indexOf('\\')<0?raw:redact(raw);if(typeof r0!=='string')return '';const u=unesc(r0),m1=redact(u);if(typeof m1!=='string')return '';
     if(!SPLIT.test(u))return m1; /* no Markdown that can split a token: one pass is enough (and keeps the live readout cheap) */
-    /* spec 012 FR-182 (review of PR 1721, item 1): plainKeep turns a line break into a space, so the plain pass would no longer read a token split by one, which m1
-       hides: the plain pass reads the text with its split tokens masked first (lineMask), the rest of it byte for byte */
+    /* spec 012 FR-182 (review of PR 1721, item 1 and round 2): the plain pass would no longer read a split token that m1 hides (a line break becomes a space, a
+       removed mark glues a word on): it reads the text with its split tokens masked first (lineMask), the rest of it byte for byte */
     const v=lineMask(u),k=plainKeep(v),m2=both(v,k,redact);return m2!==k?m2:m1;}catch(e){return '';}}; /* m2 holds what either pass found (both) */
   /* raw agent text -> masked, plain, at most n characters (no n: not cut). '' when masking is not possible. */
   const excerpt=(raw,redact,n,codeWord)=>{const p=maskPlain(String(raw==null?'':raw),redact,codeWord);if(p===null)return '';return n==null?p:cutter(p,n);};
@@ -111,5 +111,8 @@
   /* spec 012 FR-182 (review of PR 1721): whether the shared step finds a token split by a line break, a mark, a tag, a comment or a hidden character; throws without
      the shared module (callers fail closed). The permission card reads a command with its blanks collapsed, so it asks this on the text as written. */
   const splitHides=t=>{if(!SH||typeof SH.maskSplitTokens!=='function')throw new Error('no maskSplitTokens');const s=String(t==null?'':t),r=SH.maskSplitTokens(s);if(typeof r!=='string')throw new Error('mask');return r!==s;};
-  return {create,plain,plainKeep,unesc,unhide,maskRaw,excerpt,maskLabel,useShared,splitHides};
+  /* spec 097 FR-311 (review of PR 1721, round 2): a masked name made plain for a tooltip or an accessible name: a link becomes its text and the emphasis, code and
+     strike marks go (bounded classes: linear); unlike plainKeep, a leading #, -, + or > and the blanks stay as written (`#1613 split tokens` keeps its #) */
+  const plainMarks=t=>String(t==null?'':t).replace(/!?\[([^[\]]{0,256})\]\([^()\s]{0,2048}\)/g,'$1').replace(/[*`~]/g,'');
+  return {create,plain,plainKeep,plainMarks,unesc,unhide,maskRaw,excerpt,maskLabel,useShared,splitHides};
 });

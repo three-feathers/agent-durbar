@@ -2090,14 +2090,14 @@ function hiddenSpans(orig: string, masked: string): Array<[number, number]> {
 const HIDDEN_ENTITY: Record<string, number> = { zerowidthspace: 0x200b, negativeverythinspace: 0x200b, negativethinspace: 0x200b, negativemediumspace: 0x200b, negativethickspace: 0x200b, zwnj: 0x200c, zwj: 0x200d, lrm: 0x200e, rlm: 0x200f, shy: 0xad, nobreak: 0x2060, af: 0x2061, applyfunction: 0x2061, it: 0x2062, invisibletimes: 0x2062, ic: 0x2063, invisiblecomma: 0x2063 };
 /**
  * What can sit inside a token without being part of it as a reader sees it (spec 012 FR-182, issue #1613), in the order tried at one place: an HTML
- * comment (at most 256 characters inside; also the empty `<!-->` and `<!--->` that HTML closes early), a CDATA section, a processing instruction
- * (`<?x?>`) or another bogus comment (`<!x>`), an HTML tag without `<` or `>` in it (`<b>`, `</b>`, `<span class="x">`, `<span/class="x">`, `<br/>`,
+ * comment (at most 256 characters inside; also the empty `<!-->` and `<!--->` that HTML closes early), a processing instruction
+ * (`<?x?>`) or another bogus comment (`<!x>`, a CDATA section `<![CDATA[…]]>` too: outside SVG and MathML, HTML reads it as one and ends it at the first `>`), an HTML tag without `<` or `>` in it (`<b>`, `</b>`, `<span class="x">`, `<span/class="x">`, `<br/>`,
  * a custom `<my-el>` or `<svg:g>`, a name up to 64 characters, attributes up to 256), a numeric entity with or without its `;` (`&#8203`, as HTML
  * reads it) or a named one (each kept only when it stands for a `HIDDEN_CHARS` character), a run of combining marks, a `HIDDEN_CHARS` character, the backslash of a
  * Markdown escape (`NOTE_ESCAPABLE`: `sk-proj-<20>\_<rest>` reads `sk-proj-<20>_<rest>`). Each alternative is bounded, so one scan is linear.
  */
 const MD_ESC = String.raw`\\(?=[${NOTE_ESCAPABLE.replace(/[\\\]^-]/g, '\\$&')}])`;
-const SPLIT_AT = new RegExp(String.raw`<!--(?:>|->|[\s\S]{0,256}?-->)|<!\[CDATA\[[\s\S]{0,256}?\]\]>|<\?[^<>]{0,256}>|<![^<>-][^<>]{0,256}>|<\/?[A-Za-z][A-Za-z0-9:_.-]{0,63}(?:[\s/][^<>]{0,256})?>|&#(?:[0-9]{1,7}|[Xx][0-9A-Fa-f]{1,6});?|&[A-Za-z]{2,24};|\p{M}+|${MD_ESC}|${HIDDEN_CHARS.source}`, 'gu');
+const SPLIT_AT = new RegExp(String.raw`<!--(?:>|->|[\s\S]{0,256}?-->)|<\?[^<>]{0,256}>|<![^<>-][^<>]{0,256}>|<\/?[A-Za-z][A-Za-z0-9:_.-]{0,63}(?:[\s/][^<>]{0,256})?>|&#(?:[0-9]{1,7}|[Xx][0-9A-Fa-f]{1,6});?|&[A-Za-z]{2,24};|\p{M}+|${MD_ESC}|${HIDDEN_CHARS.source}`, 'gu');
 /** Whether a text can hold one of `SPLIT_AT` at all: the cheap test before the scan. */
 const SPLIT_GATE = new RegExp(String.raw`[<&\r\n\\]|\p{M}|${HIDDEN_CHARS.source}`, 'u');
 /** A line break, kept in the output: `redact` keeps the line structure. */
@@ -2121,8 +2121,8 @@ function inSpans(spans: ReadonlyArray<[number, number]>, i: number): boolean {
 const NAME_START = /^[a-z]{2,}[_-]/;
 /** A run of lower-case words joined by `_` or `-`, four or more, each starting with a letter (as the word-chain exception of `dg`; `xoxb-123456789012-ab` and a token head such as `github_pat_id8lflygpn` are no chain). */
 const WORD_CHAIN = /^[a-z]{1,32}(?:[_-][a-z][a-z0-9]{0,31}){3,16}$/;
-/** A line break for `breakSpans`, with what can stand between two pieces of a wrapped token: blanks before it (a Markdown hard break), one blank line, the indentation of the next line and its Markdown quote marks (`> `). Each part bounded, so linear. */
-const LINE_BREAKS = /[ \t]{0,64}(?:\r\n|[\r\n])(?:[ \t]{0,64}(?:\r\n|[\r\n]))?[ \t]{0,64}(?:>[ \t]{0,4}){0,8}/g;
+/** A line break for `breakSpans`, with what can stand between two pieces of a wrapped token: blanks and Markdown marks before it (a hard break, `**`, a backtick, `~`), one blank line, the indentation of the next line, its quote, list, heading or table marks (`> `, `- `, `1. `, `# `, `| `) and Markdown marks. Each part bounded, so linear. */
+const LINE_BREAKS = /[ \t*`~]{0,64}(?:\r\n|[\r\n])(?:[ \t]{0,64}(?:\r\n|[\r\n]))?[ \t]{0,64}(?:(?:>|[-+*][ \t]|[0-9]{1,9}[.)][ \t]|#{1,6}[ \t]|\|)[ \t]{0,4}){0,8}[*`~]{0,8}/g;
 /** The code point an entity stands for, or -1. */
 function entityPoint(e: string): number {
   if (e[1] === '#') {
@@ -2181,14 +2181,17 @@ function breakSpans(s: string, mask: string, written: () => ReadonlyArray<[numbe
       if (x >= at || y <= at) continue;
       // after a head the rules already hide as written, the next line is its rest only when its run is letters, digits, `_`, `-` and `.` (8 letters and digits or
       // more, FR-173's count): a `DATABASE_URL=postgres://…` line after a token stays (review of PR 1721)
-      if (inSpans(written(), a - 1) && (alnumIn(w, at, y) < GLUE_MIN || !BODY_RUN.test(s.slice(b, r)))) continue;
+      // and not across a blank line or a quote mark: a wrapped token does not cross a paragraph or start a quote (`[redacted]` then a blank line and `Alternatively` keeps it)
+      if (inSpans(written(), a - 1) && (!BARE_BREAK.test(m[0]) || alnumIn(w, at, y) < GLUE_MIN || !BODY_RUN.test(s.slice(b, r)))) continue;
       // each side on its own: the break, a blank line, the indentation and quote marks between them stay as written
       out.push([l + x, a], [b, b + (y - at)]);
     }
   }
 }
-/** A run of a token body's own characters, all of it (`.`: the dots of a JWT). */
-const BODY_RUN = /^[A-Za-z0-9_.-]+$/;
+/** A run of a token body's own characters, all of it: letters, digits, `_`, `-` and `.` (the dots of a JWT), or a base64 body (`+`, `/`, up to three `=` at its end: the tail of a `glc_`, `sntrys_`, `ABSK` or `fm2_` token; review of PR 1721, round 2). A name and a value (`=` inside), a URL and a path with `.` stay out. */
+const BODY_RUN = /^(?:[A-Za-z0-9_.-]+|[A-Za-z0-9+/_-]+={0,3})$/;
+/** A line break with blanks around it only: no blank line and no quote mark (a wrapped token goes on on the next line, even indented; a paragraph or a quote is a new text). */
+const BARE_BREAK = /^[ \t]*(?:\r\n|[\r\n])[ \t]*$/;
 let breakCalls = 0;
 /** Test only: how many line-break windows `breakSpans` masked since the last call (the guards of `breakRuns` that only spare work are pinned by it). */
 export function _breakCallsForTest(): number { const n = breakCalls; breakCalls = 0; return n; }
@@ -2213,11 +2216,21 @@ function splitSpans(s: string, mask: string, written: () => ReadonlyArray<[numbe
   const spans: Array<[number, number]> = [];
   if (!SPLIT_GATE.test(s)) return spans;
   if (/[\r\n]/.test(s)) breakSpans(s, mask, written, spans);
+  // a tag that renders a break (`<br>`, `</p><p>`, `</td><td>`) also ends a word: read once with it removed (a token split by it) and, when there is one,
+  // once with it as a blank (a word before it does not glue to the token after it: `Token</p><p>ghp_…<wbr>…`); both are taken (review of PR 1721, round 2)
+  if (pieceSpans(s, mask, written, false, spans)) pieceSpans(s, mask, written, true, spans);
+  return spans;
+}
+/** A tag that renders a break or a block edge: read as a blank by the second reading of `splitSpans`. */
+const BLOCK_TAG = /^<\/?(?:br|p|div|li|ul|ol|dl|dd|dt|td|th|tr|table|thead|tbody|tfoot|hr|h[1-6]|pre|blockquote|section|article|header|footer|nav|aside|main|figure|figcaption|details|summary)(?![A-Za-z0-9:_.-])/i;
+/** One reading of `splitSpans`' pieces: removed, or a block tag as a blank (`blockBlank`). Adds to `spans`; returns whether a block tag was removed. */
+function pieceSpans(s: string, mask: string, written: () => ReadonlyArray<[number, number]>, blockBlank: boolean, spans: Array<[number, number]>): boolean {
   const keep: string[] = [];
   const at: number[] = [];
   const ends: boolean[] = []; // per kept character: a piece that can end a word (a tag, a comment) was removed right before it
   let from = 0;
   let removed = false;
+  let block = false;
   let endNext = false;
   const take = (to: number): void => {
     for (let i = from; i < to; i++) { keep.push(s[i]); at.push(i); ends.push(endNext); endNext = false; }
@@ -2230,14 +2243,17 @@ function splitSpans(s: string, mask: string, written: () => ReadonlyArray<[numbe
     take(a);
     from = a + t.length;
     removed = true;
+    const isBlock = t[0] === '<' && BLOCK_TAG.test(t);
+    block = block || isBlock;
+    if (blockBlank && isBlock) { keep.push(' '); at.push(a); ends.push(false); }
     endNext = endNext || t[0] === '<';
   }
-  if (!removed) return spans;
+  if (!removed) return false;
   take(s.length);
   at.push(s.length);
   const j = keep.join('');
   const mj = maskTokenShapes(maskEscapedRuns(j, mask), mask);
-  if (mj === j) return spans;
+  if (mj === j) return block;
   // letters and digits of `j` before each index, for FR-173's count of what follows a piece
   const alnum = new Int32Array(j.length + 1);
   for (let i = 0; i < j.length; i++) alnum[i + 1] = alnum[i] + (/[A-Za-z0-9]/.test(j[i]) ? 1 : 0);
@@ -2257,13 +2273,12 @@ function splitSpans(s: string, mask: string, written: () => ReadonlyArray<[numbe
         let e = i;
         while (e < j.length && e - i < 4096 && TOKEN_CHAR.test(j[e])) e++;
         if (alnum[e] - alnum[i] < GLUE_MIN || !BODY_RUN.test(j.slice(i, e))) { b = i; break; }
-        b = Math.min(b, e);
       }
       crosses = true;
     }
     if (crosses) spans.push([at[a], at[b - 1] + 1]);
   }
-  return spans;
+  return block;
 }
 /**
  * Spec 012 FR-182: `s` with every token split by a piece (`splitSpans`) masked as written, before any other rule reads it, so a rule that hides the
@@ -2284,7 +2299,7 @@ function maskSplitFirst(s: string): string {
   let k = 0;
   for (const w of hidden()) {
     while (k < split.length && split[k][1] <= w[0]) k++;
-    for (let q = k; q < split.length && split[q][0] < w[1]; q++) if (split[q][1] > w[0]) { near.push(w); break; }
+    if (k < split.length && split[k][0] < w[1]) near.push(w); // split[k] ends after w starts (the loop above), and starts are sorted
   }
   return maskSplitSpans(s, split, near, MASK);
 }
