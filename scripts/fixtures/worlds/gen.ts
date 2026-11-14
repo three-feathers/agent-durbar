@@ -36,11 +36,13 @@ export function pngShaped(o: { w?: number; h?: number; depth?: number; ctype?: n
 // ---- the good pack ----
 const DIMS: Record<string, [number, number]> = {
   'wall.webp': [600, 200], 'floor.webp': [256, 256], 'welcome.webp': [1600, 1000], 'window-1.webp': [120, 200], 'window-2.webp': [120, 200], 'window-3.webp': [120, 200],
-  'desk.webp': [400, 200], 'desk-half.webp': [200, 100], 'lift-shaft.webp': [60, 400], 'lift-cover.webp': [800, 600], 'lift-cutaway.webp': [600, 500],
+  'desk.webp': [400, 200], 'desk-half.webp': [200, 100], 'monitor.webp': [300, 200], 'monitor-half.webp': [150, 100], 'desk-back.webp': [300, 300], 'desk-back-half.webp': [150, 150], 'focus.webp': [600, 400], 'lift-shaft.webp': [60, 400], 'lift-cover.webp': [800, 600], 'lift-cutaway.webp': [600, 500],
   'speech-bubble.webp': [300, 120], 'slip.webp': [300, 100], 'panel-frame.webp': [400, 300], 'panel-backdrop.webp': [800, 600],
 };
 export const goodAnchors = (name: string): Record<string, unknown> => {
   if (name.startsWith('fx-')) return { standX: 0.5, plateAnchor: { x: 0.5, y: 0.8 }, lightAnchor: { x: 0.5, y: 0.1 }, floorLine: 0.95, ...(name === 'fx-boss.webp' ? { doorRect: { x: 0.2, y: 0.1, w: 0.6, h: 0.8 } } : {}) };
+  if (name.startsWith('monitor')) return { screenRect: { x: 0.1, y: 0.1, w: 0.8, h: 0.6 } };
+  if (name.startsWith('desk-back')) return {};
   if (name.startsWith('desk')) return { surfaceY: 0.7, screenRect: { x: 0.2, y: 0.1, w: 0.5, h: 0.4 }, plateRect: { x: 0.3, y: 0.8, w: 0.4, h: 0.1 }, lampAnchor: { x: 0.9, y: 0.3 }, callAnchor: { x: 0.5, y: 0.2 } };
   return {};
 };
@@ -57,7 +59,7 @@ export function goodPack(manifest: Record<string, unknown> = {}, only?: string[]
   }
   const parts: Record<string, unknown> = {};
   for (const n of Object.keys(files)) parts[n] = { anchors: goodAnchors(n) };
-  const m: Record<string, unknown> = { formatVersion: 1, id: 'test-world', name: 'Test world', version: 1, defaultSet: 'office', tokens: goodTokens(), lights: { lamp: 'flame', call: 'dot' }, rideStyle: 'doors', parts, description: 'A synthetic world for tests.', licence: 'CC0', ...manifest };
+  const m: Record<string, unknown> = { formatVersion: 1, id: 'test-world', name: 'Test world', version: 1, defaultSet: 'office', tokens: goodTokens(), lights: { lamp: 'flame', call: 'dot' }, rideStyle: 'doors', parts, ...(files['focus.webp'] ? { arrangement: 'facing-view' } : {}) /* not circle: it stays off in every pack (FR-230) */, description: 'A synthetic world for tests.', licence: 'CC0', ...manifest };
   for (const k of Object.keys(m)) if (m[k] === undefined) delete m[k];
   files['world.json'] = Buffer.from(JSON.stringify(m));
   return files;

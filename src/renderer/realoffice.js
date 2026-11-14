@@ -242,6 +242,13 @@
   function cabinetOf(dc, meta, cab, k, state, body) {
     dc.classList.toggle('st-idle', state === 'idle'); /* FR-260: dim by opacity: a shade would darken the floor beside it too */
     const kind = cab.gw === meta.monitor.big.glass[2] ? 'big' : cab.gw === meta.monitor.small.glass[2] ? 'small' : 'narrow', m = meta.monitor[kind];
+    /* spec 102 T171: a file name or cell count that is not plain paints no picture, and neither does a missing validator (fail closed); the element is reused
+       across renders, so a picture an earlier, accepted entry painted is taken off first */
+    if (!X().monitorProblem || X().monitorProblem(m)) {
+      for (const p of ['backgroundImage', 'backgroundSize', 'backgroundPosition']) if (dc.style[p]) dc.style[p] = '';
+      delete dc.dataset.body;
+      return;
+    }
     let h = 0; for (const c of k) h = (h * 31 + c.charCodeAt(0)) >>> 0;
     const nb = m.bodies || 1, cell = ((body || 0) % nb) * (m.cells / nb) + (h % (m.cells / nb));
     const url = 'url("' + WD + m.file + '")', size = m.cells * 100 + '% 100%', pos = (cell / Math.max(1, m.cells - 1)) * 100 + '% 0';
@@ -358,6 +365,7 @@
     const art = layerOf(ro, 'ro-art'), amb = layerOf(ro, 'ro-amb'), lights = layerOf(ro, 'ro-lights'), chrome = layerOf(ro, 'ro-chrome');
     const lobby = el(art, 'lobby', 'div', 'ro-lobby'); box(lobby, { x: 0, y: 0, w: lay.width, h: lay.lobbyH });
     const strip = el(art, 'strip', 'div', 'ro-strip'); box(strip, lay.floorStrip);
+    if (lay.focus) { const fc = el(art, 'focus', 'div', 'ro-focus'); box(fc, lay.focus); fc.setAttribute('aria-hidden', 'true'); } /* spec 102 FR-227, T166: the one still picture the ring stands round; the world's stylesheet paints it, a picture that fails to load moves nothing */
     /* FR-043: the room ambient: the share of active desks among the visible ones */
     const allDesks = lay.zones.flatMap((z) => z.desks).concat(lay.lounge ? lay.lounge.desks : []); /* spec 097 FR-247: the lounge's seats are desks to the room's light, the zoom and the slips */
     const states = model.empty ? ['idle'] : allDesks.map((d) => d.state); /* FR-119: an empty floor is lit at 70 % (FR-043) */

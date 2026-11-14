@@ -22,16 +22,26 @@ export const MAX_SIDE = 4096; // FR-052
 export const MAX_PARTS = MAX_KEPT_ENTRIES;
 export const MIN_SCREEN_W = 40; // px at desk-half.webp's own size: smaller leaves no room for the bars of 097 FR-032 (chosen here, see the spec delta)
 export const MIN_SCREEN_H = 20;
+/** FR-226: the closed list of arrangement ids a world may name (one constant; the engine builds a subset, `realoffice-arrangements.ts`, and a test pins that subset). A plain string tested with `includes`, never an object lookup. */
+export const ARRANGEMENTS: readonly string[] = ['rows', 'circle', 'facing-view', 'aisles', 'flanking'];
+export const MAX_ARRANGEMENT_CHARS = 20;
+/** FR-230 (Changes 2026-11-14): arrangements on the list that no pack may turn on yet. `circle` stays off for every world, downloaded, installed or
+ *  built in, until the owner picks the many-folder fix (FR-229's gap); lifting it is taking the id out of this list (T174). */
+export const ARRANGEMENT_OFF: readonly string[] = ['circle'];
+
+/** FR-227: `focus.webp` is required with these arrangements and refused with the others. */
+export const FOCUS_ARRANGEMENTS: readonly string[] = ['circle', 'facing-view'];
 
 export type AnchorKind = 'n' | 'p' | 'r';
-export interface PartSpec { name: string; block: string; maxBytes: number; minW: number; minH: number; maxW: number; maxH: number; anchors: Readonly<Record<string, AnchorKind>> }
+export interface PartSpec { name: string; block: string; maxBytes: number; minW: number; minH: number; maxW: number; maxH: number; anchors: Readonly<Record<string, AnchorKind>>; /** FR-220: the picture must carry an alpha channel (a monitor stands on the desk, it has no rectangle of its own) */ alpha: boolean }
 
 const KB = 1024;
-const P = (name: string, block: string, kb: number, maxW: number, maxH: number, minW = 1, minH = 1, anchors: Record<string, AnchorKind> = {}): PartSpec =>
-  ({ name, block, maxBytes: kb * KB, minW, minH, maxW, maxH, anchors });
+const P = (name: string, block: string, kb: number, maxW: number, maxH: number, minW = 1, minH = 1, anchors: Record<string, AnchorKind> = {}, alpha = false): PartSpec =>
+  ({ name, block, maxBytes: kb * KB, minW, minH, maxW, maxH, anchors, alpha });
 const FIXTURE_ANCHORS: Record<string, AnchorKind> = { standX: 'n', plateAnchor: 'p', lightAnchor: 'p', floorLine: 'n' };
 const FIXTURES = ['library', 'software', 'terminal', 'web', 'boss', 'coffee', 'bank', 'post', 'tools', 'kiosk'];
 const DESK_ANCHORS: Record<string, AnchorKind> = { surfaceY: 'n', screenRect: 'r', plateRect: 'r', lampAnchor: 'p', callAnchor: 'p' };
+const MONITOR_ANCHORS: Record<string, AnchorKind> = { screenRect: 'r' }; // FR-220: a fraction of the monitor picture
 
 /**
  * The closed list of files (FR-041). Caps from the spec: wall 120 KB, floor 40 KB, welcome 150 KB, windows 60 KB, fixtures 120 KB, desk 60 KB; a
@@ -49,6 +59,11 @@ export const PART_TABLE: readonly PartSpec[] = [
   ...FIXTURES.map((f) => P('fx-' + f + '.webp', 'fixture', 120, MAX_SIDE, 300, 1, 1, f === 'boss' ? { ...FIXTURE_ANCHORS, doorRect: 'r' } : FIXTURE_ANCHORS)),
   P('desk.webp', 'desk-screen', 60, 1920, 1200, 1, 1, DESK_ANCHORS),
   P('desk-half.webp', 'desk-screen', 60, 1920, 1200, 1, 1, DESK_ANCHORS),
+  P('monitor.webp', 'desk-screen', 30, 1920, 300, 1, 1, MONITOR_ANCHORS, true), // FR-220: at most 30 KB and 300 px tall
+  P('monitor-half.webp', 'desk-screen', 30, 1920, 300, 1, 1, MONITOR_ANCHORS, true),
+  P('desk-back.webp', 'desk-screen', 30, 1920, 1200), // FR-223: optional, behind the person; the engine sizes and places it
+  P('desk-back-half.webp', 'desk-screen', 30, 1920, 1200),
+  P('focus.webp', 'room', 120, 1920, 1200), // FR-227: one still picture, no text; the engine gives its box
   P('lift-shaft.webp', 'lift', 60, 180, 1200),
   P('lift-cover.webp', 'lift', 150, 1920, 1200),
   P('lift-cutaway.webp', 'lift', 200, 1920, 1200),
@@ -65,7 +80,7 @@ export const isPartName = (n: unknown): boolean => typeof n === 'string' && PART
 export const LAMP_SHAPES = ['lamp', 'flame', 'neon-strip'];
 export const CALL_SHAPES = ['dot', 'flame', 'neon'];
 export const RIDE_STYLES = ['doors', 'gate', 'drop'];
-const MANIFEST_FIELDS = new Set(['formatVersion', 'id', 'name', 'version', 'defaultSet', 'tokens', 'lights', 'rideStyle', 'parts', 'description', 'licence']);
+const MANIFEST_FIELDS = new Set(['formatVersion', 'id', 'name', 'version', 'defaultSet', 'tokens', 'lights', 'rideStyle', 'parts', 'description', 'licence', 'arrangement']);
 
 export interface Anchors { [k: string]: number | { x: number; y: number } | { x: number; y: number; w: number; h: number } }
 export interface SafeManifest {
@@ -73,6 +88,8 @@ export interface SafeManifest {
   tokens: Record<string, string>; lights: { lamp: string; call: string }; rideStyle: string | null;
   parts: Record<string, { anchors: Anchors; sha256?: string; bytes?: number }>;
   description?: string; licence?: string;
+  /** FR-226: one of `ARRANGEMENTS`; absent means `rows` */
+  arrangement?: string;
 }
 export interface ReportRow { part: string; ok: boolean; reason: string; moments: string[] }
 export interface PackResult {
@@ -302,6 +319,13 @@ function readManifestInner(data: Uint8Array, present: readonly string[], opts: P
       else return bad('A light shape is not on the list.');
     }
   }
+  let arrangement: string | undefined;
+  if (own(doc, 'arrangement') !== undefined) {
+    const ar = own(doc, 'arrangement');
+    if (typeof ar !== 'string' || ar.length > MAX_ARRANGEMENT_CHARS || !ARRANGEMENTS.includes(ar)) return bad('This world asks for a room layout this Agent Durbar does not know; it may need a newer Agent Durbar.');
+    if (ARRANGEMENT_OFF.includes(ar)) return bad('This world asks for the circle room layout, which stays off until the owner picks its many-folder fix (FR-230).');
+    arrangement = ar;
+  }
   let rideStyle: string | null = null;
   if (own(doc, 'rideStyle') !== undefined) { const r = own(doc, 'rideStyle'); if (typeof r !== 'string' || !RIDE_STYLES.includes(r)) return bad('The ride style is not on the list.'); rideStyle = r; }
   // tokens: spec 040/070 value rules through checkUserManifest, then contrast through themeIssues
@@ -346,6 +370,13 @@ function readManifestInner(data: Uint8Array, present: readonly string[], opts: P
   const m: SafeManifest = { formatVersion: 1, id, name, version, defaultSet, tokens, lights, rideStyle, parts };
   if (description) m.description = description;
   if (licence) m.licence = licence;
+  if (arrangement !== undefined) m.arrangement = arrangement;
+  // FR-227: `focus.webp` goes with `circle` and `facing-view` and with no other arrangement (a pack without `arrangement` is `rows`)
+  const wantsFocus = FOCUS_ARRANGEMENTS.includes(arrangement ?? 'rows');
+  if (wantsFocus && !present.includes('focus.webp')) return bad('This room layout needs a focus.webp picture and the pack has none.');
+  if (!wantsFocus && present.includes('focus.webp')) return bad('focus.webp is only for the circle and facing-view layouts.');
+  // FR-220, FR-221: a monitor picture has a screenRect, because the screen is drawn inside it
+  for (const mn of ['monitor.webp', 'monitor-half.webp']) if (present.includes(mn) && !(parts[mn].anchors as Anchors).screenRect) return bad('The monitor picture needs a screenRect in world.json, so its screen can be checked.');
   return { ok: true, m, contrast };
 }
 
@@ -358,7 +389,7 @@ const tag4 = (b: Uint8Array, p: number): string => String.fromCharCode(b[p], b[p
 const le16 = (b: Uint8Array, p: number): number => b[p] | (b[p + 1] << 8);
 const le24 = (b: Uint8Array, p: number): number => b[p] | (b[p + 1] << 8) | (b[p + 2] << 16);
 
-export interface PictureInfo { kind: 'png' | 'webp'; width: number; height: number }
+export interface PictureInfo { kind: 'png' | 'webp'; width: number; height: number; /** the picture has an alpha channel (FR-220: a monitor must) */ alpha: boolean }
 const DAMAGED = 'The picture header is damaged.';
 const PNG_DEPTHS: Readonly<Record<number, readonly number[]>> = { 0: [1, 2, 4, 8, 16], 2: [8, 16], 3: [1, 2, 4, 8], 4: [8, 16], 6: [8, 16] };
 
@@ -404,7 +435,7 @@ function pngInfo(buf: Uint8Array): PictureInfo | string {
   if (!end || !idat) return 'The picture is cut short.';
   if (ctype === 3 && !seen.has('PLTE')) return DAMAGED;
   if (p !== buf.length) return 'The picture has extra bytes after its end.';
-  return { kind: 'png', width, height };
+  return { kind: 'png', width, height, alpha: ctype === 4 || ctype === 6 || seen.has('tRNS') };
 }
 
 /**
@@ -443,12 +474,12 @@ function webpShape(buf: Uint8Array): PictureInfo | string {
   if (!c || (c.id !== 'VP8 ' && c.id !== 'VP8L') || i + 1 !== list.length) return DAMAGED;
   if (hasAlph && c.id !== 'VP8 ') return DAMAGED;
   const d = c.start + 8;
-  let bw = 0, bh = 0;
+  let bw = 0, bh = 0, losslessAlpha = false;
   if (c.id === 'VP8L') {
     if (c.size < 5 || buf[d] !== 0x2f) return DAMAGED;
     const b = (buf[d + 1] | (buf[d + 2] << 8) | (buf[d + 3] << 16) | (buf[d + 4] << 24)) >>> 0;
     if ((b >>> 29) !== 0) return DAMAGED;
-    bw = (b & 0x3fff) + 1; bh = ((b >>> 14) & 0x3fff) + 1;
+    bw = (b & 0x3fff) + 1; bh = ((b >>> 14) & 0x3fff) + 1; losslessAlpha = ((b >>> 28) & 1) === 1;
   } else {
     // frame tag: bit 0 = 0 key frame, bits 1-3 version (0..3), bit 4 = shown; then the start code and 14-bit sizes with a 2-bit scale that must be 0
     if (c.size < 10 || (buf[d] & 1) !== 0 || ((buf[d] >> 1) & 7) > 3 || (buf[d] & 0x10) === 0 || buf[d + 3] !== 0x9d || buf[d + 4] !== 0x01 || buf[d + 5] !== 0x2a) return DAMAGED;
@@ -458,7 +489,7 @@ function webpShape(buf: Uint8Array): PictureInfo | string {
   }
   const width = list[0].id === 'VP8X' ? canvasW : bw, height = list[0].id === 'VP8X' ? canvasH : bh;
   if (width !== bw || height !== bh) return 'The picture header disagrees with itself.';
-  return { kind: 'webp', width, height };
+  return { kind: 'webp', width, height, alpha: hasAlph || losslessAlpha };
 }
 
 /** The picture's kind and size, or a plain reason. Bounded work: every chunk is at least 8 bytes, so the walks are linear in the (capped) file. */
@@ -476,6 +507,7 @@ export function partProblem(spec: PartSpec, buf: Uint8Array): string {
   if (h.width > MAX_SIDE || h.height > MAX_SIDE) return 'The picture is too large.';
   if (h.width > spec.maxW || h.height > spec.maxH) return 'The picture is larger than this part allows (' + spec.maxW + 'x' + spec.maxH + ').';
   if (h.width < spec.minW || h.height < spec.minH) return 'The picture is smaller than this part needs.';
+  if (spec.alpha && !h.alpha) return 'The picture needs a see-through background (a WebP or PNG with an alpha channel).';
   return '';
 }
 
@@ -488,6 +520,16 @@ function screenProblem(m: SafeManifest, buf: Uint8Array | null): string {
   const h = pictureHeader(buf);
   if (typeof h === 'string') return '';
   return r.w * h.width < MIN_SCREEN_W || r.h * h.height < MIN_SCREEN_H ? 'The screen on the small desk is too small to read.' : '';
+}
+
+/** FR-032, FR-221: the screen on the half-size monitor must be big enough to read, on the monitor picture's own size. */
+function monitorScreenProblem(m: SafeManifest, buf: Uint8Array | null): string {
+  const e = Object.prototype.hasOwnProperty.call(m.parts, 'monitor-half.webp') ? m.parts['monitor-half.webp'] : undefined;
+  const r = e && (e.anchors.screenRect as { w: number; h: number } | undefined);
+  if (!e || !buf || !r) return '';
+  const h = pictureHeader(buf);
+  if (typeof h === 'string') return '';
+  return r.w * h.width < MIN_SCREEN_W || r.h * h.height < MIN_SCREEN_H ? 'The screen on the small monitor is too small to read.' : '';
 }
 
 type Source = { headers: ZipHeader[]; read(name: string): Buffer | null };
@@ -522,7 +564,7 @@ function validateSource(src: Source, ignored: number, opts: PackOptions): PackRe
   report.push({ part: MANIFEST_NAME, ok: true, reason: mf.contrast ? 'Colours adjusted for contrast.' : 'Fine.', moments: [] });
   // 3. each picture
   const present: string[] = [];
-  let deskHalf: Buffer | null = null;
+  let deskHalf: Buffer | null = null, monitorHalf: Buffer | null = null;
   for (const spec of PART_TABLE) {
     if (!names.includes(spec.name)) continue;
     const buf = src.read(spec.name);
@@ -533,11 +575,14 @@ function validateSource(src: Source, ignored: number, opts: PackOptions): PackRe
     if (!why && entry && entry.sha256 !== undefined && entry.sha256 !== sha256(buf)) { fail(spec.name, 'The file does not match the hash in world.json.'); continue; }
     if (why) { fail(spec.name, why, momentsNeeding(spec.name)); continue; }
     if (spec.name === 'desk-half.webp') deskHalf = buf;
+    if (spec.name === 'monitor-half.webp') monitorHalf = buf;
     present.push(spec.name);
     report.push({ part: spec.name, ok: true, reason: 'Fine.', moments: [] });
   }
   const sp = screenProblem(mf.m, deskHalf);
   if (sp) fail('desk-half.webp', sp, momentsNeeding('desk-half.webp'));
+  const mp = monitorScreenProblem(mf.m, monitorHalf);
+  if (mp) fail('monitor-half.webp', mp, momentsNeeding('monitor-half.webp'));
   if (report.some((r) => !r.ok)) return finish();
   // 4. what is missing (not an error: FR-034 marks the world unfinished)
   const missing = new Set<string>();
