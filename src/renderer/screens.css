@@ -560,4 +560,5 @@ html[data-motion-off] .wpic img{transition:none;transform:none!important}
 .wnone{display:flex;align-items:center;justify-content:center;color:var(--muted)}
 .thpick[data-world] .thtx small{white-space:normal;overflow:visible}
 .wuse{align-self:flex-start;color:var(--accent)}
+.wuse[data-off]{visibility:hidden}
 @media (forced-colors:active){.thpick[data-world][aria-checked=true]{border-color:Highlight}.thpick[data-world]:focus-visible{outline:2px solid CanvasText}.wuse{color:CanvasText}}

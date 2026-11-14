@@ -91,14 +91,20 @@ module.exports = async (ctx) => {
       const acc = await js(`(()=>{const p=document.createElement('i');p.style.color='var(--accent)';document.body.appendChild(p);const c=getComputedStyle(p).color;p.remove();return c})()`);
       assert.notStrictEqual(fo.bc, acc, `${tag}: a focused card that is not chosen does not take the chosen edge`);
       const target = await js(`document.activeElement.dataset.world`);
+      await js(`window.__pressed=document.activeElement;window.__h=[...document.querySelectorAll(${jsLiteral(CARDS)})].map(b=>Math.round(b.getBoundingClientRect().height*10)).join();0`);
       await key('Return', '\r');
       await ok(`document.querySelector(${jsLiteral(CARDS + '[aria-checked="true"]')})&&document.querySelector(${jsLiteral(CARDS + '[aria-checked="true"]')}).dataset.world===${jsLiteral(target)}`, `${tag}: Enter chooses the focused card`);
-      assert.strictEqual(await js(`document.activeElement&&document.activeElement.dataset&&document.activeElement.dataset.world`), target, `${tag}: the focus stays on the card after the choice`);
+      // the cards are updated in place: the same element still has the focus (an arrow pressed now moves from it), nothing was repainted
+      await ok(`!!window.__pressed&&document.activeElement===window.__pressed&&document.contains(window.__pressed)&&window.__pressed.dataset.world===${jsLiteral(target)}`, `${tag}: the focus stays on the same card element after the choice (updated in place, not repainted)`);
+      const desc = await js(`[...document.querySelectorAll(${jsLiteral(CARDS)})].map(b=>[b.dataset.world,b.getAttribute('aria-checked'),b.getAttribute('aria-describedby').split(' ').map(i=>{const e=document.getElementById(i);return e&&e.getAttribute('aria-hidden')!=='true'&&getComputedStyle(e).visibility!=='hidden'?e.textContent:''}).join(' ')])`);
+      for (const [id, on, text] of desc) assert.strictEqual(/\bIn use\b/.test(text), on === 'true', `${tag}: ${id}: only the checked card's description says In use (announced): ${JSON.stringify(text)}`);
+      assert.strictEqual(await js(`[...document.querySelectorAll(${jsLiteral(CARDS)})].map(b=>Math.round(b.getBoundingClientRect().height*10)).join()`), await js(`window.__h`), `${tag}: no card changes size when the choice moves (each keeps the room of its In use line)`);
       const view = await js(`localStorage.getItem('durbar.officeview')+' '+localStorage.getItem('durbar.world')`);
       assert.ok(target === 'plain' ? /^flat /.test(view) : view === 'real photo', `${tag}: choosing applies at once, stored as it always was: ${view}`);
       await ok(target === 'plain' ? `!document.documentElement.dataset.world` : `document.documentElement.dataset.world==='photo'`, `${tag}: the app is in ${target} (the page's world mark)`);
       // the other card with Space
       await key('Left');
+      await ok(`document.activeElement&&document.activeElement.dataset.world&&document.activeElement.dataset.world!==${jsLiteral(target)}`, `${tag}: Left moves the focus to the other card`);
       const other = await js(`document.activeElement.dataset.world`);
       assert.notStrictEqual(other, target, `${tag}: Left moves to the other card`);
       await key('Space', ' ');
@@ -145,6 +151,15 @@ module.exports = async (ctx) => {
         await H.shot(path.join(OUT, `102-world-section-${w}x${h}.jpg`), { prep: 'mouse', quality: 60 });
       }
     }
+
+    // ---- a stored world that is closed now (the cave, flag closed): the page falls back to the Photo office, lists no cave, and says nothing ----
+    await open(w, h, { officeview: 'real' });
+    await js(`localStorage.setItem('durbar.world','cave');0`);
+    await open(w, h, { officeview: 'real' });
+    assert.deepStrictEqual(await names(), ['plain', 'photo'], `${w}x${h}: a saved cave with the flag closed: no cave card`);
+    assert.deepStrictEqual(await checked(), ['photo'], `${w}x${h}: a saved cave with the flag closed: the Photo office is the one in use`);
+    assert.strictEqual(await js(`document.documentElement.dataset.world`), 'photo', `${w}x${h}: a saved cave with the flag closed: the page is in the Photo office`);
+    await js(`localStorage.removeItem('durbar.world');0`);
 
     // ---- a flag open lists its world, after the Photo office, with its preview, or a tile when it has none; the checked one is still the one in use ----
     await emulate([{ name: 'forced-colors', value: 'none' }]);

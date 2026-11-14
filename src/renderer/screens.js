@@ -449,6 +449,7 @@
       const list=[real?{id:'theme',name:'World\u2019s default ('+real.defaultSet()+')',sub:'People follow the world'}:{id:'theme',name:'The theme\u2019s own',sub:(KIT_NAMES[own]||own)+' figures'},{id:'minimalist',name:'Minimalist',sub:'The calm office figure'},{id:'cheeky',name:'Cheeky',sub:crewN?crewN+' cheeky characters':'Cheeky characters'},{id:'prehistoric',name:'Prehistoric',sub:preN?preN+' cave characters':'Cave characters'},{id:'pirate',name:'Pirate',sub:pirN?pirN+' pirate characters':'Pirate characters'},{id:'monster',name:'Monster',sub:monN?monN+' monster characters':'Monster characters'},{id:'royal',name:'Royal',sub:royN?royN+' royal characters':'Royal characters'},{id:'rebels',name:'Animal Rebels',sub:rebN?rebN+' animal characters':'Animal characters'}];
       return list.map((c)=>`<li class="throw"><button class="thpick" type="button" data-characters="${esc(c.id)}" aria-pressed="${c.id===cur}" aria-label="Characters ${esc(c.name)}: ${esc(c.sub)}"><span class="chsw" aria-hidden="true">${X.charPreview?X.charPreview(c.id):''}</span><span class="thtx"><b title="${esc(c.name)}">${esc(c.name)}</b><small>${esc(c.sub)}</small></span></button></li>`).join('');
     };
+    charsRefresh=()=>{const l=$('chList');if(l)l.innerHTML=charItems();};
     const charSec=window.THEME&&window.THEME.setCharacters&&X.applyCharacters?`<section class="scr-sec" aria-labelledby="chH"><h3 id="chH">Characters</h3>
         <p class="scr-note">Who sits at the desks, on top of any theme; the choice applies at once and is kept on this computer.</p>
         <ul class="thlist" id="chList">${charItems()}</ul></section>`:'';
@@ -779,6 +780,7 @@
      (officeview flat); the other cards are Real office in that world (officeview real + the world), both kept where they always were. A world
      behind a closed flag is not offered by crew.js, so it is not listed here, zoom or not. Previews are the app's own pictures (realoffice/previews/,
      taken by shots-102-previews.js); a world without one shows a plain tile with its name. */
+  let charsRefresh=null; /* set by paintSettings: draws the Characters list again (it names the world's default set) */
   const PLAIN_CARD={id:'plain',name:'Plain',line:'Desks in coloured rooms, one person each, status in words.'};
   const worldCards=()=>{
     const V=X.view, W=V&&V.world;
@@ -801,19 +803,28 @@
     const card=w=>{
       const on=w.id===cur, pv=Object.prototype.hasOwnProperty.call(P,w.id)?P[w.id]:null;
       const pic=pv?`<span class="chsw wpic" aria-hidden="true"><img src="realoffice/previews/${esc(String(pv.file||'').replace(/[^\w.-]/g,''))}" alt="" width="${Number(pv.width)||640}" height="${Number(pv.height)||400}" draggable="false" style="--zx:${Number(pv.origin&&pv.origin.x)||50}%;--zy:${Number(pv.origin&&pv.origin.y)||50}%"></span>`:`<span class="chsw wpic wnone" aria-hidden="true"><b>${esc(w.name)}</b></span>`;
-      return `<li class="throw"><button type="button" class="thpick" role="radio" data-world="${esc(w.id)}" aria-checked="${on}" tabindex="${on?'0':'-1'}" aria-labelledby="wn-${esc(w.id)}" aria-describedby="wl-${esc(w.id)}">${pic}<span class="thtx"><b id="wn-${esc(w.id)}">${esc(w.name)}</b><small id="wl-${esc(w.id)}">${esc(w.line)} Built in.</small></span>${on?'<b class="wuse">In use</b>':''}</button></li>`;
+      return `<li class="throw"><button type="button" class="thpick" role="radio" data-world="${esc(w.id)}" aria-checked="${on}" tabindex="${on?'0':'-1'}" aria-labelledby="wn-${esc(w.id)}" aria-describedby="wl-${esc(w.id)}${on?' wu-'+esc(w.id):''}">${pic}<span class="thtx"><b id="wn-${esc(w.id)}">${esc(w.name)}</b><small id="wl-${esc(w.id)}">${esc(w.line)} Built in.</small></span><b class="wuse" id="wu-${esc(w.id)}"${on?'':' data-off aria-hidden="true"'}>In use</b></button></li>`;
     };
     return `<section class="scr-sec" aria-labelledby="worldH"><h3 id="worldH">World</h3>
         <p class="scr-note">Where your agents work. The choice applies at once and is kept on this computer. Characters, below, say who sits there.</p>
         <ul class="thlist wcards" id="wrGroup" role="radiogroup" aria-labelledby="worldH">${list.map(card).join('')}</ul>
         <p class="scr-note small" id="dsR">${esc(X.view.note())}</p></section>`;
   }
-  /* the pick applies at once; the page is painted again (Characters names the new default) and focus returns to the card (Space and Enter are the button's own click) */
+  /* the pick applies at once, and the cards are updated IN PLACE (the focused card stays the same element, so the focus and the roving tabindex
+     survive a quick arrow after Enter); every card keeps the "In use" line's room (hidden, not removed), so no card changes size; the note, the
+     Characters list (it names the world's default set) and the theme note follow (Space and Enter are the button's own click) */
   async function pickWorld(b){
     const id=b.dataset.world, V=X.view;
     if(id==='plain')await V.set('flat'); else{await V.set('real');V.world.set(id);}
-    await paintSettings();
-    const nb=document.querySelector('#wrGroup [data-world="'+CSS.escape(id)+'"]');if(nb)focusIn(nb);
+    document.querySelectorAll('#wrGroup [data-world]').forEach(c=>{
+      const w=c.dataset.world, on=w===id, u=c.querySelector('.wuse');
+      c.setAttribute('aria-checked',String(on));c.tabIndex=on?0:-1;
+      c.setAttribute('aria-describedby','wl-'+w+(on?' wu-'+w:''));
+      if(u){u.toggleAttribute('data-off',!on);if(on)u.removeAttribute('aria-hidden');else u.setAttribute('aria-hidden','true');}
+    });
+    const n=$('dsR');if(n)n.textContent=X.view.note();
+    if(charsRefresh)charsRefresh();
+    const tw=$('thWorld');if(tw){tw.textContent=worldWords();tw.hidden=!tw.textContent;}
   }
   function worldKeys(e){
     const b=e.target.closest&&e.target.closest('#wrGroup [data-world]');if(!b)return;
