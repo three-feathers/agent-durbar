@@ -4,6 +4,7 @@
  *
  *   DRIVER_WORLD=retro node scripts/ui-suite.js --only shots-102-strips            (the arcade, both sizes, 15 agents; and 16 agents at 1280x800)
  *   node scripts/ui-suite.js --only shots-102-strips-photo                         (the Photo office: its strips stay in the flow)
+ *   (the same, then Office -> List with the overlay open: the strips are back in the flow, no bar, no overlay; and back)
  *   SHOTS=1 OUT=<folder>  also saves 102-1589-<case>-<w>x<h>.png
  *
  * Cases (restore = the restored-Allow-all strip, away, crash, follow, MCP; crash Pick and MCP List opened where named):
@@ -92,6 +93,10 @@ module.exports = async (ctx) => {
       const n = S.shown.length;
       assert.ok(S.bar && S.yield, `${c.id} ${w}x${h}: the strips gave way to the bar: ${tell}`);
       assert.ok(S.barText.startsWith(`${n} notice${n === 1 ? '' : 's'}: `), `${c.id} ${w}x${h}: the bar counts the strips (${n}): ${S.barText}`);
+      if (c.id === 'all5') {
+        assert.ok(/Allow all restored/.test(S.barText) && /Interrupted sessions/.test(S.barText), `${c.id} ${w}x${h}: the bar's text names the folded alert strips: ${S.barText}`);
+        assert.strictEqual(await js(`document.getElementById('stripBar').getAttribute('role')`), 'alert', `${c.id} ${w}x${h}: the bar is an alert while the restored-Allow-all strip is folded into it (a display:none alert is never read)`);
+      }
       assert.ok(S.btn && S.btn.name && /^(Show|Hide) /.test(S.btn.name) && S.btn.tab >= 0 && !S.btn.dis, `${c.id} ${w}x${h}: the bar's button has an accessible name and a tab stop: ${JSON.stringify(S.btn)}`);
       if (c.list) {
         assert.ok(S.open && S.btn.exp === 'true', `${c.id} ${w}x${h}: List... opens the overlay by itself: ${tell}`);
@@ -128,6 +133,20 @@ module.exports = async (ctx) => {
       }
     }
   }
+  /* the yield ends with the Office view: List puts the strips back in the flow and forgets the open overlay; Office brings the bar back */
+  await setup(CASES[3], 1280, 800);
+  await js(`document.getElementById('sbBtn').click();0`);
+  await settle();
+  assert.ok(await js(`document.body.classList.contains('strips-open')`), 'view switch: the overlay is open before the switch');
+  await js(`document.getElementById('vList').click();0`);
+  assert.ok(await until(`document.body.classList.contains('list-mode')`, 4000), 'view switch: List is showing');
+  await settle();
+  const L = await js(`(()=>{const bar=document.getElementById('stripBar');const sh=['restore','away','crash','follow','mcp'].map(n=>document.getElementById(n+'Strip')).filter(e=>e&&!e.hidden);
+    return JSON.parse(JSON.stringify({yield:document.body.classList.contains('strips-yield'),open:document.body.classList.contains('strips-open'),bar:!!bar&&!bar.hidden,n:sh.length,
+      inFlow:sh.every(e=>getComputedStyle(e).position!=='fixed'&&e.getBoundingClientRect().height>0),tops:sh.some(e=>e.style.top!=='')}))})()`);
+  assert.ok(!L.yield && !L.open && !L.bar && L.n >= 4 && L.inFlow && !L.tops, `Office to List with strips open: no yield, no overlay, no bar, the strips are in the flow: ${JSON.stringify(L)}`);
+  await js(`document.getElementById('vOffice').click();0`);
+  assert.ok(await until(`document.body.classList.contains('strips-yield')&&!document.getElementById('stripBar').hidden&&!document.body.classList.contains('strips-open')`, 4000), 'view switch: back in the Office the strips yield again, folded');
   /* 16 agents with five strips: the bar would not make them fit, so the strips stay where they were (as the lend, T308) */
   await setup(CASES[3], 1280, 800, 16);
   const S16 = await js(STATE);

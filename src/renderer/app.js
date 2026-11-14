@@ -1885,6 +1885,8 @@ function stripsYield(on){
   if(!on){const bar=$('stripBar');if(bar&&!bar.hidden)bar.hidden=true;document.body.classList.remove('strips-open');STRIP_IDS.forEach(i=>{const e=$(i);if(e)e.style.top='';});}
   return was;
 }
+/* the yield ends with the Office view: switching to List puts the strips back in the flow and forgets the open overlay (setView); renderOffice returns early off the Office view, so it cannot do it */
+function stripsReset(){stripsOpen=false;stripsYield(false);}
 function stripsPaint(fresh){
   const bar=$('stripBar'),sh=stripsShown(),n=sh.length;if(!bar)return;
   const ae=document.activeElement,inStrip=!!(ae&&sh.some(e=>e.contains(ae)));
@@ -1899,6 +1901,7 @@ function stripsPaint(fresh){
   const w=stripsOpen?'Hide':'Show';
   if(b.textContent!==w)b.textContent=w;
   b.setAttribute('aria-label',w+(n===1?' the notice':' '+n+' notices'));b.setAttribute('aria-expanded',stripsOpen?'true':'false');
+  bar.setAttribute('role',sh.some(e=>e.id==='restoreStrip')?'alert':'status'); /* the restored-Allow-all strip is role=alert and folded away (display:none, never read): the bar carries it, with its name in the text, as assertively */
   bar.hidden=false;
   stripsPlace();
   if(inStrip&&!stripsOpen)b.focus({preventScroll:true}); /* the strip the focus was in is out of sight: it goes to the bar's button */
@@ -5656,6 +5659,7 @@ if($('sendSeveralBtn'))$('sendSeveralBtn').onclick=()=>sendToSeveral($('topMoreB
 const DESK_NAV='#stage .desk, #stage .helper, #stage .plate, #stage .ro-plate'; /* spec 097 FR-090: the Real office plates are the focusable cards there */
 $('wsFilter').addEventListener('change',e=>{ui.ws=e.target.value;renderAll();});
 function setView(v){if(v!=='list'&&CS.active&&!CS.ending){const s=$('convSearch');if(s)s.value='';csEnd({restore:false,keepFocus:true});} /* spec 095 FR-023: leaving the List view ends the search */
+  if(v!=='office')stripsReset(); /* spec 102 T340 */
   ui.view=v;document.body.classList.toggle('list-mode',v==='list');
   $('vOffice').setAttribute('aria-pressed',String(v==='office'));$('vList').setAttribute('aria-pressed',String(v==='list'));renderAll();}
 $('vOffice').onclick=()=>setView('office');

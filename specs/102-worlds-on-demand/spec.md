@@ -1612,6 +1612,16 @@ So on macOS two strips fit (with the lend of T308, as #1589 said); the open MCP 
 
 **Owner approval (Vikram, DM 2026-11-13 09:16:12 UTC, "Ok", relayed by the Linux coordinator and recorded in [a comment on PR 1685](https://github.com/three-feathers/agent-durbar/pull/1685#issuecomment-6848960211)):** approved as shown: the one "N notices" bar with Show, the strips' buttons one click behind Show, and the status-filter case staying a gap on #1597.
 
+## Changes 2026-11-14: the notice-strip yield ends with the Office view; the bar carries the folded alert; pictures at both sizes (T340, issue #1589, review of PR 1685, no new FR)
+
+Review findings on [the 2026-11-13 entry above](spec.md), all three fixed in the PR:
+
+- **The yield follows the view.** The reset ran only in `renderOffice`, which returns early off the Office view, so with the strips folded and the overlay open, switching to List left `body.strips-yield strips-open`, the bar and the strips as fixed overlays over the list (before T340 they sat in the flow), with a stale count if one was dismissed there. Now `setView` calls `stripsReset()` (open flag off, `stripsYield(false)`, the same code `renderOffice` uses) when the view is not Office: in List the strips are in the flow and there is no bar; back in the Office the next draw folds them again if the hall would scroll.
+- **A folded alert is read.** Only the restored-Allow-all strip is `role="alert"` (the crash strip is `role="status"`); folded strips are `display:none`, so that alert was never read. The bar already names every folded strip in its text ("Allow all restored", "Interrupted sessions"); while the restore strip is folded in, the bar is `role="alert"` too (otherwise `status`), so the notice is as assertive as before. `[KNOWN GAP]` Not verified with a screen reader (markup and a driver assert only), and changing a live region's role after it has content is not announced the same way by every reader.
+- **Pictures at both sizes.** `docs/screenshots/102-1589-{five-strips,mcp-list,two-strips}-after-1440x900.png` (simulator, palette-compressed with `compress-shots.js`) join the 1280x800 ones. At 1440x900 five strips and the two-strip case fit in the flow with the T308 lend, so the pictures show strips and no bar, as the table above says; the "before" pictures stay 1280x800 only (a 1440x900 "before" needs a build of `main`; not taken).
+
+`sim:` `shots-102-strips`: Office to List with the overlay open (no `strips-yield`, no `strips-open`, no bar, the strips in the flow and not fixed) and back to Office (folded again); the bar's text names the restore and crash strips and its role is `alert`. Mutants, each killed at its own label: the `setView` reset removed, the bar's role switch removed. **Numbers:** no new FR or task.
+
 ## Changes 2026-11-13: the World section, first step: picture cards for Plain and the Photo office, with their previews (T266 in part; issue #1400; no new FR)
 
 [FR-300](spec.md), [FR-301](spec.md), [FR-302](spec.md), SC-026. The recorded decisions and the spec are followed as written; this entry records how the work is cut, so each part lands behind the closed flags and nothing of an unreleased world shows.
