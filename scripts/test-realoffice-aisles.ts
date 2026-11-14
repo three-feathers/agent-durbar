@@ -6,7 +6,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { realLayout, layoutOrFlat, sortDesks, storeyRuns, storeyTagW, STOREY_GAP, STOREY_U_LOSS, type RealFloor, type RealMeta, type RealModel, type RealAgent, type RealState, type Rect, type Layout, type DeskBox } from '../src/shared/realoffice-layout';
 import { screenFit } from '../src/shared/realoffice-layout';
-import { aisleStatus, aislesLayout, layoutFor, aisleTabOrder, aisleFace, FACE_FLOOR, AISLE_SIGN_MIN_W, AISLE_PLATE_H, ARRANGEMENTS } from '../src/shared/realoffice-arrangements';
+import { aisleStatus, aislesLayout, placeResting, layoutFor, aisleTabOrder, aisleFace, FACE_FLOOR, AISLE_SIGN_MIN_W, AISLE_PLATE_H, ARRANGEMENTS } from '../src/shared/realoffice-arrangements';
 
 process.exitCode = 1;
 const ROOT = (() => { let d = __dirname; while (!fs.existsSync(path.join(d, 'package.json'))) d = path.dirname(d); return d; })();
@@ -719,6 +719,17 @@ console.log(`floor covered with 4 or fewer: ${covs.join('; ')}`);
     assert.ok(drawn > 20, `the fuzz drew storeys with resting agents in ${drawn} splits (and none in ${dropped})`);
     // no run has room: the layout is the one without floors (a floor's tag that cannot be cleared); the case is found by the fuzz's own dropped count below
   }
+  // the no-room fallback, direct: `placeResting` on crafted runs. A free run gives a place; a run held by a floor tag at its start gives a place after it; every run held, or too narrow, gives none
+  { const run = { top: 100, x0: 200, x1: 500 }, mk = (x: number, w: number): Rect => ({ x, y: 100, w, h: 18 });
+    assert.deepStrictEqual(placeResting([run], [], [], 72)!.tx, 203, 'placeResting: a free run takes the tag at its start');
+    assert.strictEqual(placeResting([run], [mk(190, 100)], [], 72)!.tx, 296, 'placeResting: after a floor tag in the way, 6 px clear');
+    assert.strictEqual(placeResting([run], [mk(190, 400)], [], 72), null, 'no room for the Resting tag: a floor tag holds the whole run');
+    assert.strictEqual(placeResting([run], [mk(190, 270)], [], 72), null, 'no room for the Resting tag: what is left of the run is narrower than the tag');
+    assert.strictEqual(placeResting([run, { top: 300, x0: 10, x1: 40 }], [mk(190, 400)], [], 72), null, 'no room for the Resting tag: no run is wide enough');
+    assert.strictEqual(placeResting([run], [], [mk(250, 100)], 72), null, 'no room for the Resting tag: a folder sign stands in the run');
+    // and the layout wired to it: with no place, the hall without floors, byte for byte
+    const m = fmx([2, 1, 3, 2], [3, 2, 1, 0], { rest: [3] });
+    for (const [, W, H] of SZ2) assert.strictEqual(JSON.stringify(aislesLayout(m, { w: W, h: H }, META, sg(4), () => null)), JSON.stringify(aislesLayout(flat(m), { w: W, h: H }, META, sg(4))), 'no room for the Resting tag: the hall without floors, byte for byte (no storeys, tags or rules)'); }
   // (2) the tag is sized from the measured text: a wider font gives a wider tag, a narrow measure a narrow one, a very long name is capped; with no measure 8 px a letter
   assert.strictEqual(storeyTagW({ id: 'p', name: 'Personal', n: 3, w: 100 }), 116, 'the tag is the measured text plus 16 px of padding and border');
   assert.strictEqual(storeyTagW({ id: 'p', name: 'Personal', n: 3 }), 16 + 8 * 10, 'no measure: 8 px a letter, digits and space included');
