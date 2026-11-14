@@ -127,11 +127,13 @@ for (const s of ROOMS) assert.ok(mk(4, 2, SIZES[s][0], SIZES[s][1]).faceH > mk(1
   assert.ok(lounge.lounge && lounge.lounge.desks.length === 3, 'the lounge row is kept, as in rows');
   assert.deepStrictEqual(circleLayout({ folders: [], places: [] }, { w: 1280, h: 697 }, META).zones, [], 'no agents, no zones');
 }
-// ---- the manifests (FR-230, T174): the Cave may name circle; the scan stays for every OTHER world ----
+// ---- the manifests (FR-230, T174): the Cave may name circle; the scan stays for every OTHER world (the parsed `arrangement`, so spacing, line breaks and \u escapes cannot hide it) ----
+/** the parsed manifest's `arrangement` (a manifest that does not parse fails by its path, never passes); a world.json and a card.json are flat objects, so the key is at the top */
+const arrangementOf = (text: string, file: string): unknown => { try { return (JSON.parse(text) as { arrangement?: unknown }).arrangement; } catch (e) { throw new Error(`${file} is not valid JSON: ${(e as Error).message}`); } };
+const names = (text: string, file = 'manifest'): boolean => arrangementOf(text, file) === 'circle';
 /** the manifests that name arrangement circle and are not the Cave's own (a world folder called `cave`, in worlds/ or the app's worlds) */
 function circleOffenders(manifests: Array<{ file: string; text: string }>): string[] {
-  const names = (text: string): boolean => /"arrangement"\s*:\s*"circle"/.test(text);
-  return manifests.filter((m) => names(m.text) && path.basename(path.dirname(m.file)) !== 'cave').map((m) => m.file);
+  return manifests.filter((m) => names(m.text, m.file) && path.basename(path.dirname(m.file)) !== 'cave').map((m) => m.file);
 }
 {
   const manifests: Array<{ file: string; text: string }> = [];
@@ -139,9 +141,12 @@ function circleOffenders(manifests: Array<{ file: string; text: string }>): stri
   walk(path.join(ROOT, 'worlds'), 0); walk(path.join(RO, 'worlds'), 0);
   assert.ok(manifests.length >= 3, 'the scan found the shipped world manifests');
   assert.deepStrictEqual(circleOffenders(manifests), [], 'no world but the Cave names arrangement circle (FR-230, T174)');
-  for (const f of ['worlds/cave/card.json', 'src/renderer/realoffice/worlds/cave/world.json']) assert.ok(/"arrangement":\s*"circle"/.test(manifests.find((m) => m.file.replace(/\\/g, '/') === f)!.text), `the Cave's ${f} names circle (T174)`);
+  for (const f of ['worlds/cave/card.json', 'src/renderer/realoffice/worlds/cave/world.json']) assert.ok(names(manifests.find((m) => m.file.replace(/\\/g, '/') === f)!.text, f), `the Cave's ${f} names circle (T174)`);
   const naming = { text: '{ "arrangement": "circle" }' };
   assert.deepStrictEqual(circleOffenders([{ file: 'worlds/photo/card.json', ...naming }, { file: 'src/renderer/realoffice/worlds/retro/world.json', ...naming }, { file: 'worlds/cave/card.json', ...naming }]), ['worlds/photo/card.json', 'src/renderer/realoffice/worlds/retro/world.json'], 'mutant: another world naming circle is caught, the Cave is not');
+  for (const t of ['{"arrangement":"circle"}', '{ "arrangement" : "circle" }', '{\n  "arrangement":\n    "circle"\n}', '{"arrangement":"\\u0063ircle"}']) assert.ok(names(t), `mutant: ${JSON.stringify(t)} names circle and the parsed scan catches it`);
+  assert.ok(!names('{"arrangement":"rows"}') && !names('{}'), 'rows and no key are not circle');
+  assert.throws(() => names('{"arrangement": circle}', 'worlds/x/world.json'), /worlds\/x\/world\.json is not valid JSON/, 'a manifest that does not parse fails by its path');
 }
 // ---- the ladder circle -> rows (FR-230, owner 2026-11-14 13:10 UTC): 15 agents in 14 and in 15 one-agent folders fall back to rows, no scroll, nothing off the stage ----
 {
