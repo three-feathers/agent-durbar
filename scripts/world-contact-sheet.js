@@ -106,7 +106,9 @@ module.exports = { plan, sheetOrder, isSheetPicture };
 
 if (process.versions.electron) {
   const { app, BrowserWindow } = require('electron');
-  main(app, BrowserWindow).then((code) => { app.exit(code); }, (e) => { console.error((e && e.stack) || e); app.exit(1); });
+  /* Electron's SUID sandbox helper aborts on Linux unless it is off (as in check-world-distinct.js); this window loads only a data: page. */
+  if (process.platform === 'linux') app.commandLine.appendSwitch('no-sandbox');
+  require('./world-distinct').within(main(app, BrowserWindow), 60000, 'the whole run').then((code) => { app.exit(code); }, (e) => { console.error((e && e.stack) || e); app.exit(1); });
 } else if (require.main === module) {
   console.error('world-contact-sheet draws in Electron: run `npm run world:contact-sheet` (under the Electron lock).');
   process.exit(2);
