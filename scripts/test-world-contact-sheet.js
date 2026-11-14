@@ -37,6 +37,38 @@ assert.deepStrictEqual(p.rows[0].items.map((i) => i.name), ['wall.webp', 'floor.
 assert.ok(p.rows[1].items.some((i) => i.y > p.rows[1].items[0].y), 'a long row wraps onto another line');
 assert.ok(problems(S.plan(fake, { width: 1400 }), [...fake, { id: 'd', files: ['x.webp'] }]).some((m) => /d: no row/.test(m)), 'a world missing from the plan is named');
 
+/* Text: a long picture name, heading and mood line are cut to their box (the stand-in measure is 0.6 em a character; the page measures with the canvas). */
+{
+  const measure = (t, px, bold) => t.length * px * (bold ? 0.66 : 0.6);
+  const longName = 'fx-' + 'x'.repeat(37) + '.webp'; // 40 characters before the extension
+  const world = [{ id: 'long-world', files: [longName, 'floor.webp', 'wall.webp'] }, { id: 'b', files: ['floor.webp'] }];
+  const heads = { 'long-world': { title: 'long-world  /  ' + 'arrangement '.repeat(12), line: 'Slate screen  |  ' + 'a very long mood line '.repeat(8) }, b: { title: 'b  /  rows', line: 'short' } };
+  assert.ok(heads['long-world'].line.length >= 160, 'the fixture mood line is at least 160 characters');
+  assert.strictEqual(longName.replace('.webp', '').length, 40);
+  const box = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  function textProblems(plan, texts) {
+    const out = [];
+    const picBoxes = plan.rows.flatMap((r) => r.items.map((i) => ({ id: r.id, what: 'picture ' + i.name, x: i.x, y: i.y, w: i.w, h: i.h })));
+    const all = [...texts, ...picBoxes];
+    for (const t of texts) if (t.x < 0 || t.x + t.w > plan.width) out.push(`${t.id} ${t.what}: leaves the sheet's width (${Math.round(t.x + t.w)} of ${plan.width})`);
+    for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) if (box(all[i], all[j])) out.push(`${all[i].id} ${all[i].what} overlaps ${all[j].id} ${all[j].what}`);
+    for (const t of texts) if (/^label /.test(t.what)) { const it = plan.rows.find((r) => r.id === t.id).items.find((i) => 'label ' + i.name === t.what); if (t.w > it.w) out.push(`${t.id} ${t.what}: wider than its picture box (${Math.round(t.w)} of ${it.w})`); }
+    return out;
+  }
+  for (const width of [400, 700, 1400]) {
+    const p = S.plan(world, { width });
+    assert.deepStrictEqual(textProblems(p, S.textBoxes(p, heads, measure)), [], `TRUNCATION: at ${width} px no drawn text leaves the sheet or touches another box`);
+  }
+  assert.strictEqual(S.fitText('short', 100, (t) => t.length * 6), 'short', 'a text that fits is left alone');
+  const cut = S.fitText('x'.repeat(40), 100, (t) => t.length * 6);
+  assert.ok(cut.endsWith('\u2026') && cut.length * 6 <= 100, 'TRUNCATION: a long text is cut with an ellipsis to the width');
+  assert.ok(S.fitText('x'.repeat(40), 100, (t) => t.length * 6).length > 5, 'and keeps as much as fits');
+  /* The checker itself sees an uncut name: with fitting off, the same fixture fails. */
+  const p = S.plan(world, { width: 1400 });
+  const uncut = S.textBoxes(p, heads, (t, px, bold) => t.length * px * (bold ? 0.66 : 0.6)).map((t) => t);
+  assert.ok(textProblems(p, uncut.map((t) => (/^label /.test(t.what) ? { ...t, w: longName.length * 10 * 0.6 } : t))).some((m) => /wider than its picture box/.test(m)), 'the text check does see a 40-character name that is not cut');
+}
+
 /* The real worlds: every picture of every world is on the sheet. */
 const SRC = path.join(__dirname, '..', 'src', 'renderer', 'realoffice', 'worlds');
 const real = fs.readdirSync(SRC).filter((id) => fs.existsSync(path.join(SRC, id, 'world.json'))).sort().map((id) => ({ id, files: fs.readdirSync(path.join(SRC, id)) }));

@@ -37,20 +37,46 @@ function plan(worlds, { width = 1400, cell = 120, gap = 10, pad = 16, header = 5
     rows.push({ id: w.id, y, headerH: header, items });
     y += header + lines * (cell + labelH + gap) + rowGap;
   }
-  return { width, height: y + pad - rowGap, cell, labelH, rows };
+  return { width, height: y + pad - rowGap, cell, labelH, pad, rows };
 }
 
+/** Text is cut with an ellipsis to the width it may have (`measure(text)` is its drawn width); the page measures with the canvas, the test with a stand-in. */
+function fitText(text, maxW, measure) {
+  if (measure(text) <= maxW) return text;
+  let lo = 0, hi = text.length;
+  while (lo < hi) { const mid = Math.ceil((lo + hi) / 2); if (measure(text.slice(0, mid) + '\u2026') <= maxW) lo = mid; else hi = mid - 1; }
+  return text.slice(0, lo) + '\u2026';
+}
+const FONT_PX = { title: 18, line: 13, label: 10 };
+
+/** The text each row draws, as boxes { id, what, x, y, w, h } at their fitted width: heading, monitor and mood line, and one label under every picture. */
+function textBoxes(p, heads, measure) {
+  const out = [];
+  const full = p.width - 2 * p.pad;
+  for (const row of p.rows) {
+    const t = fitText(heads[row.id].title, full, (x) => measure(x, FONT_PX.title, true));
+    out.push({ id: row.id, what: 'heading', x: p.pad, y: row.y, w: measure(t, FONT_PX.title, true), h: FONT_PX.title + 4 });
+    const l = fitText(heads[row.id].line, full, (x) => measure(x, FONT_PX.line, false));
+    out.push({ id: row.id, what: 'line', x: p.pad, y: row.y + 26, w: measure(l, FONT_PX.line, false), h: FONT_PX.line + 3 });
+    for (const it of row.items) {
+      const n = fitText(it.name.replace('.webp', ''), it.w, (x) => measure(x, FONT_PX.label, false));
+      out.push({ id: row.id, what: 'label ' + it.name, x: it.x, y: it.y + it.h + 2, w: measure(n, FONT_PX.label, false), h: FONT_PX.label + 2 });
+    }
+  }
+  return out;
+}
 /* Runs in the hidden window. The argument is a JSON literal of the plan, the header texts and the pictures as data URLs. */
-const PAGE = `window.__sheet = async (spec) => {
+const PAGE = 'const fitText = ' + fitText.toString() + ';\n' + `window.__sheet = async (spec) => {
   const c = document.createElement('canvas'); c.width = spec.plan.width; c.height = spec.plan.height;
   const g = c.getContext('2d');
   g.fillStyle = '#2b2b2b'; g.fillRect(0, 0, c.width, c.height);
   const load = (u) => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error('picture did not decode')); i.src = u; });
   for (const row of spec.plan.rows) {
     g.fillStyle = '#f2f2f2'; g.font = 'bold 18px sans-serif'; g.textBaseline = 'top';
-    g.fillText(spec.heads[row.id].title, 16, row.y);
+    g.font = 'bold 18px sans-serif';
+    g.fillText(fitText(spec.heads[row.id].title, spec.plan.width - 2 * spec.plan.pad, (t) => g.measureText(t).width), 16, row.y);
     g.font = '13px sans-serif'; g.fillStyle = '#c8c8c8';
-    g.fillText(spec.heads[row.id].line, 16, row.y + 26);
+    g.fillText(fitText(spec.heads[row.id].line, spec.plan.width - 2 * spec.plan.pad, (t) => g.measureText(t).width), 16, row.y + 26);
     for (const it of row.items) {
       const img = await load(spec.pics[row.id + '/' + it.name]);
       g.fillStyle = '#7d7d7d'; g.fillRect(it.x, it.y, it.w, it.h);
@@ -58,7 +84,7 @@ const PAGE = `window.__sheet = async (spec) => {
       const w = Math.round(img.naturalWidth * s), h = Math.round(img.naturalHeight * s);
       g.imageSmoothingEnabled = s < 1;
       g.drawImage(img, it.x + Math.floor((it.w - w) / 2), it.y + Math.floor((it.h - h) / 2), w, h);
-      g.fillStyle = '#c8c8c8'; g.font = '10px sans-serif'; g.fillText(it.name.replace('.webp', ''), it.x, it.y + it.h + 2);
+      g.fillStyle = '#c8c8c8'; g.font = '10px sans-serif'; g.fillText(fitText(it.name.replace('.webp', ''), it.w, (t) => g.measureText(t).width), it.x, it.y + it.h + 2);
     }
   }
   return c.toDataURL('image/jpeg', 0.82);
@@ -102,7 +128,7 @@ async function main(app, BrowserWindow) {
   return 0;
 }
 
-module.exports = { plan, sheetOrder, isSheetPicture };
+module.exports = { plan, sheetOrder, isSheetPicture, fitText, textBoxes, FONT_PX };
 
 if (process.versions.electron) {
   const { app, BrowserWindow } = require('electron');
