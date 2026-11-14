@@ -14,6 +14,13 @@ const { parseVmStat, darwinAvailable, makeAvailable, waitForMemory, main, jobs }
   assert.ok(jobs.filter((j) => /^arcade /.test(j.label)).every((j) => j.env.OFFICE_WORLD === 'retro' && j.env.OFFICE_VIEW === 'real'), 'every arcade job sets both OFFICE_VIEW=real and OFFICE_WORLD=retro');
 }
 
+/* spec 097 Changes 2026-11-14 (#1751): the Prehistoric cave is an offered world, so the office checks keep a cave run: the Real office view AND the cave world */
+{
+  const cave = jobs.filter((j) => j.env.OFFICE_VIEW === 'real' && j.env.OFFICE_WORLD === 'cave');
+  assert.ok(cave.length > 0 && cave.every((j) => /^cave \d+\/\d+$/.test(j.label)), `a cave job (OFFICE_VIEW=real, OFFICE_WORLD=cave) is in the office checks: ${JSON.stringify(jobs.map((j) => j.label))}`);
+  assert.ok(jobs.filter((j) => /^cave /.test(j.label)).every((j) => j.env.OFFICE_WORLD === 'cave' && j.env.OFFICE_VIEW === 'real'), 'every cave job sets both OFFICE_VIEW=real and OFFICE_WORLD=cave');
+}
+
 const SAMPLE_4K = `Mach Virtual Memory Statistics: (page size of 4096 bytes)
 Pages free:                               10000.
 Pages active:                            900000.

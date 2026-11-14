@@ -12,9 +12,9 @@
 .ro[data-world="cave"] .ro-fxl{background:radial-gradient(ellipse 50% 45% at 50% 40%,rgba(var(--ro-warm),.32),rgba(var(--ro-warm),0))}
 .ro[data-world="cave"] .ro-fxl.fxl-glow{background:radial-gradient(ellipse 45% 35% at 45% 55%,rgba(var(--ro-warm),.4),rgba(var(--ro-warm),0))}
 .ro[data-world="cave"] .ro-fxl.fxl-busy{background:radial-gradient(circle 7px at 50% 3%,rgb(var(--ro-amber)) 0 5px,rgba(var(--ro-amber),.45) 6px,rgba(var(--ro-amber),0) 16px)}
-/* the monitor is a slate in a rough stone frame (spec 102 FR-220, the world's own monitor): the frame is the picture, the glass keeps the app's live text on a dark face */
-.ro[data-world="cave"] .ro-bezel{background:none;box-shadow:none;border-radius:0;padding:12% 9%}
-.ro[data-world="cave"] .ro-bezel::before{content:"";position:absolute;inset:0;background:url(monitor.webp) 0 0/100% 100% no-repeat;pointer-events:none}
+/* the monitor is a slate in a rough stone frame (spec 102 FR-220, the world's own monitor): the frame is the picture, the glass keeps the app's live text on a dark face. The glass is the engine's own (the bezel inset by 3 px, 097 FR-032, where the text box sits), so the frame is drawn round it: its opening (x 9 % to 91 %, y 13.5 % to 86.5 % of the picture) is laid on the glass, which makes the picture (100% - 6px) / 0.82 wide and (100% - 6px) / 0.73 tall (spec 097 Changes 2026-11-14, #1751) */
+.ro[data-world="cave"] .ro-bezel{background:none;box-shadow:none;border-radius:0}
+.ro[data-world="cave"] .ro-bezel::before{content:"";position:absolute;left:calc(3.658537px - 10.9756%);top:calc(4.109589px - 18.4932%);width:calc(121.9512% - 7.317073px);height:calc(136.9863% - 8.219178px);background:url(monitor.webp) 0 0/100% 100% no-repeat;pointer-events:none}
 .ro[data-world="cave"] .ro-glass{background:#17120e;border-radius:2px}
 .ro[data-world="cave"] .ro-screen.st-error .ro-glass{background:#1f1210}
 .ro[data-world="cave"] .ro-screen:is(.st-waiting,.st-limit) .ro-glass{background:#1c150d}
