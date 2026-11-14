@@ -356,6 +356,9 @@ export function createNewFolderOp(d: NewFolderDeps) {
       } catch (e) {
         added = { ok: false, agents: [], error: e instanceof Error ? e.message : String(e) };
       }
+      // Spec 033 FR-090: main found the folder already in the office (a stale agent with the same real path) and started nothing. The folder
+      // made here stays as it is: nothing is removed for this case.
+      if (added.ok && !added.agents.length && added.existing?.length) return no(`The new folder was created, but ${added.existing[0].name} is already in the office, so nothing was added. The folder was not removed.`);
       if (!added.ok || !added.agents.length) return no(`Could not add the new folder: ${added.error || 'unknown error'}.` + (await removeClaimed(target)));
       if (pick && pick.token === token) pick = undefined; // spent
       d.settings()?.setNewFolderParent(parent); // FR-006: on success only
