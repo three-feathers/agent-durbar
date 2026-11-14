@@ -73,6 +73,15 @@
      shared module: throws, so the callers fail closed. */
   /* the reading with split tokens masked first, with nothing shown that the reading as before PR 1721 hides (shared keepShownBy); '' on a failure */
   const keep=(h,r)=>{if(!SH||typeof SH.keepShownBy!=='function')throw new Error('no keepShownBy');const k=SH.keepShownBy(h,r);if(typeof k!=='string')throw new Error('mask');return k;};
+  /* spec 012 FR-182 (review of PR 1721, round 6): the desk's split-aware reading is bounded. The desk shows at most a few hundred characters of a text (the reply
+     excerpt: 600; the monitor lines keep 1,200), so this PR's reading reads at most DESK_SPLIT_MAX characters of it: the excerpt reads the start of the text (what it
+     shows), and maskRaw of a longer text uses the reading as before PR 1721 alone. The reading as before always reads the whole text, at main's cost, and `keep`
+     masks every piece the bounded reading shows that it does not show whole, so a token cut at the bound is hidden, and nothing main hides shows. The split work
+     of one desk call is so at most a fixed multiple of DESK_SPLIT_MAX (pinned by a work counter). An owner may choose another number. */
+  const DESK_SPLIT_MAX=16384;
+  const TOKEN_TAIL=/[A-Za-z0-9_\-.~+\/=:@%]/;
+  /* the first DESK_SPLIT_MAX characters, never half a surrogate pair, and without the token characters the bound cut into (the reference hides the rest anyway) */
+  const windowOf=s=>{if(s.length<=DESK_SPLIT_MAX)return s;let e=DESK_SPLIT_MAX;if(/[\ud800-\udbff]/.test(s[e-1]))e--;while(e>0&&TOKEN_TAIL.test(s[e-1]))e--;return s.slice(0,e);};
   /* the reading as before PR 1721: the shared masks with their split step off (withoutSplit); throws without it */
   const old=fn=>{if(!SH||typeof SH.withoutSplit!=='function')throw new Error('no withoutSplit');return SH.withoutSplit(fn);};
   const splitFirst=raw=>{if(!SH||typeof SH.maskSplitTokens!=='function')throw new Error('no maskSplitTokens');const r=SH.maskSplitTokens(String(raw==null?'':raw));if(typeof r!=='string')throw new Error('mask');return r;};
@@ -80,13 +89,15 @@
     const u=unesc(raw),m=both(u,plainKeep(u,codeWord),redact);
     return m.replace(/_/g,'');}catch(e){return null;}};
   const maskPlain=(raw,redact,codeWord)=>{if(typeof redact!=='function')return null;
-    let w;try{w=splitFirst(raw);}catch(e){return null;}
+    const s0=String(raw==null?'':raw);let w;try{w=splitFirst(windowOf(s0));}catch(e){return null;}
     const go=(x,u)=>u(x,t=>maskPlain0(t,redact,codeWord),c=>plainKeep(unesc(c),codeWord).replace(/_/g,''),null);
     try{return both2(raw,w,go);}catch(e){return null;}};
   /* the masked text, not made plain or cut: masked as it is, and again on the plain-kept text when Markdown that can split a token is
      present (otherwise the text is shown as it is). '' when masking is not possible. */
-  const maskRaw=(raw,redact)=>{if(typeof redact!=='function')return '';let w;try{w=splitFirst(raw);}catch(e){return '';}
-    const go=(x,u)=>u(x,t=>maskRaw0(t,redact),c=>unesc(c),'');try{const m=both2(raw,w,go);return m==null?'':m;}catch(e){return '';}};
+  const maskRaw=(raw,redact)=>{if(typeof redact!=='function')return '';const s0=String(raw==null?'':raw);
+    const go=(x,u)=>u(x,t=>maskRaw0(t,redact),c=>unesc(c),'');
+    if(s0.length>DESK_SPLIT_MAX){try{const r=old(()=>go(s0,unhid));return r==null?'':r;}catch(e){return '';}} /* round 6: a long text, the reading as before alone */
+    let w;try{w=splitFirst(s0);}catch(e){return '';}try{const m=both2(raw,w,go);return m==null?'':m;}catch(e){return '';}};
   /* spec 012 FR-181 (review of PR 1585, round 6): a text with a backslash is masked as written first, then unescaped and masked again, so the tail glued to an escaped head
      (`ghp\_<body>@<rest>`) goes with it as in redact; a text without one is masked as before (byte for byte) */
   const maskRaw0=(raw,redact)=>{try{const r0=raw.indexOf('\\')<0?raw:redact(raw);if(typeof r0!=='string')return '';const u=unesc(r0),m1=redact(u);if(typeof m1!=='string')return '';
@@ -119,7 +130,7 @@
     const f=kind==='run'?m.cmd:isUrl(s)?m.url:m.redact;if(typeof f!=='function')return '';
     /* spec 012 FR-182 (review of PR 1721, round 4): each mask call masks the split tokens first, then reads as before (escMask's escaped runs are replaced
        before, so a token glued to an escaped one is still hidden in place, FR-180) */
-    try{const one=t=>{const r=f(t);return typeof r==='string'?r:'';};return escMask(s,t=>{const m=both2(t,splitFirst(t),(x,u)=>u(x,one,c=>c,''));return m==null?'':m;});}catch(e){return '';}};
+    try{const one=t=>{const r=f(t);return typeof r==='string'?r:'';};return escMask(s,t=>{const go=(x,u)=>u(x,one,c=>c,'');if(t.length>DESK_SPLIT_MAX){const r=old(()=>go(t,unhid));return r==null?'':r;}const m=both2(t,splitFirst(t),go);return m==null?'':m;});}catch(e){return '';}};
   /* the wrapper the page uses: fallback words and the "is masking possible" flag */
   function create(o){
     const red=o&&typeof o.redact==='function'?o.redact:null, cut=o&&typeof o.cut==='function'?o.cut:cutter;

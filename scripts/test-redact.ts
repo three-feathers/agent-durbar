@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Worker } from 'worker_threads';
-import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, maskNoteText, maskOutgoing, maskSplitTokens, _breakCallsForTest, keepShownBy, _unionMasksForTest, withoutSplit, redact, shQuote, splitCommand } from '../src/shared/redact';
+import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, maskNoteText, maskOutgoing, maskSplitTokens, _breakCallsForTest, keepShownBy, _unionMasksForTest, withoutSplit, _splitWorkForTest, redact, shQuote, splitCommand } from '../src/shared/redact';
 
 import { assertLinearShape, cpuMs } from './redact-growth-lib';
 import './safetext-shared'; // the desk's maskRaw (src/renderer/safetext.js) reads the compiled redact.ts, for the FR-181 differential below
@@ -2046,6 +2046,23 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
       assert.ok(!out.includes(B.slice(8, 16)), `#1613 round 5: a token glued after a long link is hidden (${surface}): ${out.slice(-60)}`);
     const bearer = red('Authorization: Bearer AKIAQVA\nFPZLDTBSLGUEC');
     assert.ok(!bearer.includes('FPZLDTBS'), `#1613 round 5: an all-capitals tail after a header-hidden head is hidden: ${JSON.stringify(bearer)}`);
+  }
+  // round 6: the desk bounds its split-aware reading (DESK_SPLIT_MAX, 16,384 characters); timing-free, by the split step's own work counter
+  {
+    const dense = (n: number) => Array.from({ length: Math.ceil(n / 60) }, (_, i) => 'see ghp_' + B.slice(0, 12) + '\u200b' + B.slice(12, 36) + ' and password=x' + i + 'yz9 <b>w</b>').join('\n').slice(0, n);
+    const big = dense(800000);
+    _splitWorkForTest();
+    const ex = ST.excerpt(big, red);
+    const exWork = _splitWorkForTest();
+    assert.ok(exWork > 0 && exWork <= 12 * 16384, `#1613 round 6: the desk excerpt reads at most a fixed multiple of 16,384 characters with the split step (${exWork})`);
+    assert.ok(!ex.includes(B.slice(16, 24)) && ex.startsWith('see [redacted] and password=[redacted]'), `#1613 round 6: the excerpt of a long text still hides its first split token: ${ex.slice(0, 80)}`);
+    ST.maskRaw(big, red);
+    assert.strictEqual(_splitWorkForTest(), 0, '#1613 round 6: maskRaw of a text over the bound reads it as before PR 1721 (no split work)');
+    // a split token cut by the bound is hidden: the reading as before hides the whole stretch, so the bounded reading's cut piece is masked
+    const pad = 'x '.repeat(8190);
+    const edge = pad + 'ghp_' + B.slice(0, 10) + '<!-- -->' + B.slice(10, 36) + ' ' + 'tail '.repeat(4000);
+    const ee = ST.excerpt(edge, red);
+    assert.ok(![B.slice(0, 8), B.slice(12, 20)].some((x) => ee.includes(x)), '#1613 round 6: a split token at the bound shows nothing');
   }
   // round 4, item 2: a token right after an entity without its ';' (the entity's digits take its start boundary as written)
   for (const t of ['password=&#8203' + GH, 'see &#x200B' + GH + ' here'])

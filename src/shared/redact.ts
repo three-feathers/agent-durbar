@@ -2366,8 +2366,12 @@ export function withoutSplit<T>(fn: () => T): T {
   splitOff = true;
   try { return fn(); } finally { splitOff = false; }
 }
+let splitWork = 0;
+/** Test only: characters the split step has read since the last call (the desk's bound on that work is pinned by it, timing-free). */
+export function _splitWorkForTest(): number { const n = splitWork; splitWork = 0; return n; }
 function maskSplitFirst(s: string): string {
   if (splitOff || !SPLIT_GATE.test(s)) return s;
+  splitWork += s.length;
   let written: Array<[number, number]> | undefined;
   const hidden = (): Array<[number, number]> => (written ??= hiddenSpans(s, maskTokenShapes(maskEscapedRuns(s, MASK), MASK)));
   const split = splitSpans(s, MASK, hidden);
