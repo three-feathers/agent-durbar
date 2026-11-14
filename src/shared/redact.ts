@@ -2121,8 +2121,8 @@ function inSpans(spans: ReadonlyArray<[number, number]>, i: number): boolean {
 const NAME_START = /^[a-z]{2,}[_-]/;
 /** A run of lower-case words joined by `_` or `-`, four or more, each starting with a letter (as the word-chain exception of `dg`; `xoxb-123456789012-ab` and a token head such as `github_pat_id8lflygpn` are no chain). */
 const WORD_CHAIN = /^[a-z]{1,32}(?:[_-][a-z][a-z0-9]{0,31}){3,16}$/;
-/** A line break for `breakSpans`, with what can stand between two pieces of a wrapped token: blanks and Markdown marks before it (a hard break, `**`, a backtick, `~`), one blank line, the indentation of the next line, its quote, list, heading or table marks (`> `, `- `, `1. `, `# `, `| `) and Markdown marks. Each part bounded, so linear. */
-const LINE_BREAKS = /[ \t*`~]{0,64}(?:\r\n|[\r\n])(?:[ \t]{0,64}(?:\r\n|[\r\n]))?[ \t]{0,64}(?:(?:>|[-+*][ \t]|[0-9]{1,9}[.)][ \t]|#{1,6}[ \t]|\|)[ \t]{0,4}){0,8}[*`~]{0,8}/g;
+/** A line break for `breakSpans`, with what can stand between two pieces of a wrapped token: blanks and Markdown marks before it (a hard break, `**`, a backtick, `~`), one blank line, the indentation of the next line, its quote, list, task, heading or table marks (`> `, `- `, `1. `, `[ ] `, `# `, `| `) and Markdown marks. Each part bounded, so linear. */
+const LINE_BREAKS = /[ \t*`~]{0,64}(?:\r\n|[\r\n])(?:[ \t]{0,64}(?:\r\n|[\r\n]))?[ \t]{0,64}(?:(?:>|[-+*][ \t]|[0-9]{1,9}[.)][ \t]|#{1,6}[ \t]|\||\[[ xX]\][ \t])[ \t]{0,4}){0,8}[*`~]{0,8}/g;
 /** The code point an entity stands for, or -1. */
 function entityPoint(e: string): number {
   if (e[1] === '#') {
@@ -2179,11 +2179,9 @@ function breakSpans(s: string, mask: string, written: () => ReadonlyArray<[numbe
     const at = a - l;
     for (const [x, y] of hs) {
       if (x >= at || y <= at) continue;
-      // after a head the rules already hide as written, the next line is its rest only when its run is letters, digits, `_`, `-` and `.` (8 letters and digits or
-      // more, FR-173's count): a `DATABASE_URL=postgres://…` line after a token stays (review of PR 1721)
-      // and across a blank line, a quote, list, heading, table or Markdown mark only when it holds both a letter and a digit: a word there is a new paragraph or item
-      // (`[redacted]`, a blank line, `Alternatively` keeps it) but a token's tail goes (owner decision in round 3 of PR 1721: security over over-masking; a git sha there is masked too)
-      if (inSpans(written(), a - 1) && ((!BARE_BREAK.test(m[0]) && !MIXED_RUN.test(s.slice(b, r))) || alnumIn(w, at, y) < GLUE_MIN || !BODY_RUN.test(s.slice(b, r)))) continue;
+      // after a head the rules already hide as written, the next line is its rest only when its run looks like a token's tail (`tailRun`) with FR-173's 8 letters
+      // and digits: a word (`Alternatively`, `implementation`), a keyword (`--password`, `mysql`), a name and value or a dotless path stays for its own rule
+      if (inSpans(written(), a - 1) && (alnumIn(w, at, y) < GLUE_MIN || !tailRun(s.slice(b, r)))) continue;
       // each side on its own: the break, a blank line, the indentation and quote marks between them stay as written
       out.push([l + x, a], [b, b + (y - at)]);
     }
@@ -2191,10 +2189,16 @@ function breakSpans(s: string, mask: string, written: () => ReadonlyArray<[numbe
 }
 /** A run of a token body's own characters, all of it: letters, digits, `_`, `-` and `.` (the dots of a JWT), or a base64 body (`+`, `/`, up to three `=` at its end: the tail of a `glc_`, `sntrys_`, `ABSK` or `fm2_` token; review of PR 1721, round 2). A name and a value (`=` inside), a URL and a path with `.` stay out. */
 const BODY_RUN = /^(?:[A-Za-z0-9_.-]+|[A-Za-z0-9+/_-]+={0,3})$/;
-/** A line break with blanks around it only: no blank line and no quote mark (a wrapped token goes on on the next line, even indented; a paragraph or a quote is a new text). */
-const BARE_BREAK = /^[ \t]*(?:\r\n|[\r\n])[ \t]*$/;
-/** A run with both a letter and a digit: a token's tail, not a word. */
-const MIXED_RUN = /^(?=[^0-9]*[0-9])(?=[^A-Za-z]*[A-Za-z])/;
+/** A digit or two capitals: what a token's body has and a word, a keyword or a lower-case path has not (`breakRuns` reads the same). */
+const TAIL_LIKE = /[0-9]|[A-Z][^A-Z]*[A-Z]/;
+/**
+ * Whether a run after a piece, right after text the rules already hide as written (a whole token), is that token's rest (review of PR 1721, round 3, owner
+ * decision: security over over-masking): a body run (`BODY_RUN`) with a digit or two capitals. A word, a keyword (`--password`, `mysql`, `token:`), a name and a
+ * value, a URL or a lower-case path stays, for its own rule to read; a git sha or a UUID after a token is taken (over-masking, written down in FR-182).
+ */
+function tailRun(run: string): boolean {
+  return BODY_RUN.test(run) && TAIL_LIKE.test(run);
+}
 let breakCalls = 0;
 /** Test only: how many line-break windows `breakSpans` masked since the last call (the guards of `breakRuns` that only spare work are pinned by it). */
 export function _breakCallsForTest(): number { const n = breakCalls; breakCalls = 0; return n; }
@@ -2255,7 +2259,8 @@ function pieceSpans(s: string, mask: string, written: () => ReadonlyArray<[numbe
   take(s.length);
   at.push(s.length);
   const j = keep.join('');
-  const mj = maskTokenShapes(maskEscapedRuns(j, mask), mask);
+  // the blank reading reads token shapes and their glued rest only: a blank it adds must not make a name and value that the text does not hold (`Token:<br/>`, round 3)
+  const mj = blockBlank ? maskGluedRest(maskBareTokenShapes(maskEscapedRuns(j, mask), mask), mask) : maskTokenShapes(maskEscapedRuns(j, mask), mask);
   if (mj === j) return block;
   // letters and digits of `j` before each index, for FR-173's count of what follows a piece
   const alnum = new Int32Array(j.length + 1);
@@ -2269,13 +2274,13 @@ function pieceSpans(s: string, mask: string, written: () => ReadonlyArray<[numbe
     let crosses = false;
     for (let i = a + 1; i < b; i++) {
       if (at[i] === at[i - 1] + 1) continue;
-      // a piece that can end a word, after text the rules already hide as written: what follows is taken only when it holds FR-173's count (8 letters
-      // and digits, `GLUE_MIN`), as a word glued to a mask is
-      if (ends[i] && inSpans(written(), at[i - 1])) {
-        // after a head the rules already hide as written, the run after a tag or comment is its rest only when it is letters, digits, `_`, `-` and `.`, with FR-173's 8
+      // after text the rules already hide as written (a whole token), the run after any piece is its rest only when it looks like a token's tail (`tailRun`), and,
+      // after a piece that can end a word (a tag, a comment), with FR-173's 8 letters and digits: a hidden character before `mysql`, `password=` or `token:` leaves the
+      // keyword for its own rule (review of PR 1721, round 3: the value after it showed when the split stretch took the keyword)
+      if (inSpans(written(), at[i - 1])) {
         let e = i;
         while (e < j.length && e - i < 4096 && TOKEN_CHAR.test(j[e])) e++;
-        if (alnum[e] - alnum[i] < GLUE_MIN || !BODY_RUN.test(j.slice(i, e))) { b = i; break; }
+        if ((ends[i] && alnum[e] - alnum[i] < GLUE_MIN) || !tailRun(j.slice(i, e))) { b = i; break; }
       }
       crosses = true;
     }

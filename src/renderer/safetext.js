@@ -53,7 +53,11 @@
      always found, so nothing can replace it). True when it is used. */
   const useShared=m=>{if(SH||!m||typeof m.unhide!=='function')return false;SH=m;return true;};
   const unhide=t=>{if(!SH)throw new Error('no unhide');const c=SH.unhide(t);if(typeof c!=='string')throw new Error('no unhide');return c;};
-  const unhid=(raw,run,bare,fail)=>{try{const s=String(raw==null?'':raw),c=unhide(s);if(c===s)return run(s);const m=run(c);return m===null||m===bare(c)?run(s):m;}catch(e){return fail;}};
+  /* spec 012 FR-182 (review of PR 1721, round 3): both readings are kept, never one instead of the other. The text is masked as written first; the copy of THAT
+     output without hidden characters is masked again, and shown when it finds more. Before, the copy of the raw text won whenever it found anything, and removing a
+     hidden character can glue a token to the word before it (`page2<U+2028>ghp_…`), which no shape reads: the token the as-written pass hid was shown. */
+  const unhid=(raw,run,bare,fail)=>{try{const s=String(raw==null?'':raw),c=unhide(s);if(c===s)return run(s);const m=run(s);if(m===null||m==='')return m;
+    const c2=unhide(m);if(c2===m)return m;const m2=run(c2);return m2===null||m2===bare(c2)?m:m2;}catch(e){return fail;}};
   /* spec 012 FR-182 (issue #1613): plainKeep turns a line break into a space and glues a word to a token across a removed mark (`AKIA…<b></b>…\`s`), and a
      token split by either is no token any more; so the split tokens are masked first (the shared maskSplitTokens, the step redact starts with; it reads only a
      text that can hold a piece, the rest is left byte for byte), then the text is made plain. Without the shared module: throws, so the callers fail closed. */

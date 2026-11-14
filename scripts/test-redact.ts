@@ -1721,7 +1721,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
 // comment or tag, or a hidden character (also written as an entity) is masked like the joined token: by redact, maskSecretCommand, maskSecretArgs,
 // the desk's maskRaw and the permission card. Every token is invented and built in code from pieces.
 {
-  const ST = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string; excerpt(t: string, r: (s: string) => string, n?: number): string; plainMarks(t: string): string };
+  const ST = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string; excerpt(t: string, r: (s: string) => string, n?: number): string; plainMarks(t: string): string; maskLabel(t: string, k: string, m: Record<string, (s: string) => string>): string };
   const LA = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'liveact.js')) as { permText(t: string, k: string, m: Record<string, (s: string) => string>): { text: string } };
   const red = (t: string): string => redact(t, {});
   const cm = { redact: red, cmd: (t: string) => maskSecretCommand(t, {}), url: (t: string) => maskSecretUrl(t, {}) };
@@ -1759,6 +1759,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     ['a space and CRLF', ' \r\n', true],
     ['CRLF and a space', '\r\n ', true],
     // round 2 (fjcabello): a Markdown mark beside the break, a list, heading or table mark starting the next line
+    ['a task item', '\n- [ ] ', true], ['strike around LF', '~~\n~~', true], ['CRLF and a quote mark', '\r\n> ', true],
     ['bold around LF', '**\n**', true], ['code marks around LF', '`\n`', true], ['a list mark', '\n- ', true], ['a numbered item', '\n1. ', true], ['a heading mark', '\n# ', true], ['a table cell', '\n| ', true],
     ['CRLF and a tab', '\r\n\t', true],
     ['LF and a quote mark', '\n> ', true],
@@ -1806,7 +1807,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
         for (const [cn, ctx] of CTX) {
           // a blank line, a quote, list, heading or table mark, or a Markdown mark at the break, after a head already hidden (alone or by its context): the tail is
           // taken only when it holds both a letter and a digit (round 3, owner decision); one without is a written-down gap
-          if (ender && /[\r\n]/.test(piece) && !/^[ \t]*(?:\r\n|[\r\n])[ \t]*$/.test(piece) && !(/[0-9]/.test(tail) && /[A-Za-z]/.test(tail)) && (red(head) !== head || red(ctx(head)) !== ctx(head))) { gaps++; continue; }
+          if (!/[0-9]|[A-Z][^A-Z]*[A-Z]/.test(tail) && (red(head) !== head || red(ctx(head)) !== ctx(head))) { gaps++; continue; }
           const t = ctx(v);
           const what = `#1613 ${fn} (${tn} cut at ${c}, ${cn})`;
           let w = shown(red(t), piece);
@@ -1862,7 +1863,8 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   // a whole token at a line's end: a short next word stays, a word that could be the rest of a token goes with it (FR-173's count, fail closed)
   assert.strictEqual(red(GH + '\nok then'), '[redacted]\nok then', '#1613 a whole token at a line end keeps a short next word');
   assert.strictEqual(red(GH + '</p>ok'), '[redacted]</p>ok', '#1613 a whole token before a tag keeps a short next word');
-  assert.strictEqual(red(GH + '\r\nimplementation'), '[redacted]\r\n[redacted]', '#1613 a whole token at a line end takes a next word of 8 letters (the written-down over-mask)');
+  assert.strictEqual(red(GH + '\r\nimplementation'), '[redacted]\r\nimplementation', '#1613 round 3: a whole token at a line end keeps a next word without a digit or two capitals');
+  assert.strictEqual(red(GH + '\r\nRelease2024'), '[redacted]\r\n[redacted]', '#1613 round 3: a whole token at a line end takes a next run with a digit (the written-down over-mask)');
   // a mask already in the text stays apart
   assert.strictEqual(red('[redacted]' + GH.slice(0, 16) + '&#8203;' + GH.slice(16)), '[redacted][redacted]', '#1613 a mask already in the text stays apart');
 
@@ -1897,7 +1899,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
       const w1 = words[rnd(words.length)], w2 = words[rnd(words.length)], sep = [' ', '\n', ', '][rnd(3)];
       const pre = w1 + sep + head; // the head in its context: a name before it can hide it as written
       if (ender && alnum(tail) < 8 && red(head) !== head) continue;
-      if (ender && /[\r\n]/.test(piece) && !/^[ \t]*(?:\r\n|[\r\n])[ \t]*$/.test(piece) && !(/[0-9]/.test(tail) && /[A-Za-z]/.test(tail)) && (red(head) !== head || red(pre) !== pre)) continue;
+      if (!/[0-9]|[A-Z][^A-Z]*[A-Z]/.test(tail) && (red(head) !== head || red(pre) !== pre)) continue;
       if (/^&#[0-9]+$/.test(piece) ? /^[0-9]/.test(tail) : /^&#x/i.test(piece) && !piece.endsWith(';') && /^[0-9A-Fa-f]/.test(tail)) continue; // the entity takes the digits after it (a written-down gap)
       const t = [w1, head + piece + tail, w2].join(sep);
       const out = red(t).replace(piece, '');
@@ -1975,6 +1977,41 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     const sha = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4';
     assert.strictEqual(red(GH + '\n\n' + sha), '[redacted]\n\n[redacted]', '#1613 round 3: a git sha after a whole token and a blank line is masked (the written-down over-mask)');
   }
+  // round 3 (review of PR 1721), item 1: a hidden piece after a whole token leaves the next keyword to its rule; the value stays hidden
+  {
+    const PW = 'Hx9Kq2Lm7Np4Rs';
+    for (const piece of ['\u200b', '\u2028', '\u00ad', '\u0301', '&#8203;', '<b></b>', '\n', '\r\n'])
+      for (const form of ['mysql -u root -p' + PW, 'mysql -p' + PW, 'password=' + PW, 'token: ' + PW, 'PGPASSWORD=' + PW, '--password ' + PW]) {
+        // `--password <value>` is a flag rule of the command masks only (redact shows it on main too), and a flag glued to a token in one word is no flag (as on main)
+        if (form.startsWith('--') && !/[\r\n]/.test(piece)) continue;
+        const t = GH + piece + form;
+        const surfaces: Array<[string, string]> = form.startsWith('--') ? [['cmd', maskSecretCommand('echo ' + t, {})], ['args', maskSecretArgs(['run', t], {}).join(' ')]] : [['redact', red(t)], ['cmd', maskSecretCommand('echo ' + t, {})], ['args', maskSecretArgs(['run', t], {}).join(' ')], ['excerpt', ST.excerpt(t, red)], ['maskRaw', ST.maskRaw(t, red)]];
+        for (const [surface, out] of surfaces)
+          assert.ok(!out.includes(PW) && !out.includes(GH.slice(8, 16)), `#1613 round 3: a keyword after a whole token and ${JSON.stringify(piece)} keeps its value hidden (${surface}): ${JSON.stringify(out)}`);
+      }
+    const t = 'glpat-' + B.slice(0, 20) + '\u200b' + 'curl -u bob:' + PW + ' h';
+    assert.ok(!red(t).includes(PW), `#1613 round 3: curl -u after a whole token and a hidden character: ${red(t)}`);
+  }
+  // item 2: the desk keeps what both readings hide (a hidden character glues a token to the word before it)
+  for (const lead of ['\u2028', '\u200b', '\u00ad']) {
+    for (const t of ['see page2' + lead + GH + '<br>glpat-' + B.slice(0, 13) + '&#8203;' + B.slice(13, 20), 'note' + lead + GH + ' AKIAQ7R2S9' + '<b></b>' + 'T4U1V6W3X8'])
+      for (const [surface, out] of [['excerpt', ST.excerpt(t, red)], ['maskRaw', ST.maskRaw(t, red)], ['maskLabel', ST.maskLabel(t, 'other', cm)]] as const)
+        assert.ok(!out.includes(GH.slice(8, 16)) && !out.includes(GH.slice(30, 38)), `#1613 round 3: the desk keeps a token glued by ${JSON.stringify(lead)} hidden (${surface}): ${JSON.stringify(out)}`);
+  }
+  // item 3: a long head already hidden, then a blank line, a quote, a list or a strike mark: the tail with a digit goes
+  for (const sep of ['\n> ', '\n\n', '\r\n> ', '~~\n~~', '**\n**', '\n- ', '\n1. ', '\n| ', '\n## ', '\n- [ ] ']) {
+    const out = red('ghp_' + B.slice(0, 20) + sep + B.slice(20, 36));
+    assert.ok(!out.includes(B.slice(24, 32)), `#1613 round 3: a long head, ${JSON.stringify(sep)}, then the tail: ${JSON.stringify(out)}`);
+  }
+  // item 4: a lower-case path or branch after a whole token stays
+  for (const [t, want] of [[GH + '<br>src/renderer/app', '[redacted]<br>src/renderer/app'], [GH + '<wbr>feature/new-login', '[redacted]<wbr>feature/new-login'], [GH + '\nsome/path/to/file', '[redacted]\nsome/path/to/file'], [GH + '\nabcdefgh/ijklmnop', '[redacted]\nabcdefgh/ijklmnop']] as const)
+    assert.strictEqual(red(t), want, `#1613 round 3: a lower-case path after a whole token stays: ${JSON.stringify(t.slice(40))}`);
+  // item 5: the blank reading of a break tag reads token shapes only (no name and value of its own)
+  assert.strictEqual(red('Token:<br/>\u2764\ufe0f' + 'ghp_' + B.slice(0, 13) + '<hr>' + B.slice(13, 36)), 'Token:<br/>\u2764\ufe0f[redacted]', '#1613 round 3: the blank reading keeps an emoji before a split token');
+  // item 7: other block tags read as a blank
+  for (const t of ['<li>Token</li><li>' + GH.slice(0, 16) + '<wbr>' + GH.slice(16) + '</li>', '<h2>Token</h2><div>' + GH.slice(0, 16) + '<!-- -->' + GH.slice(16) + '</div>', '<tr><td>a</td></tr><tr><td>' + GH.slice(0, 16) + '\u200b' + GH.slice(16)])
+    assert.ok(!red(t).includes(GH.slice(20, 28)), `#1613 round 3: li, h2, div and tr read as a blank: ${JSON.stringify(red(t))}`);
+  assert.strictEqual(ST.plainMarks('see [doc](https://h.example/a b) and [x](u(1))'), 'see [doc](https://h.example/a b) and [x](u(1))', '#1613 round 3: a link whose target holds a blank or a parenthesis keeps its marks (written down)');
   // round 2, item 5: the blanks and quote marks between the two pieces stay as written
   assert.strictEqual(red('x ' + GH.slice(0, 16) + '\n    ' + GH.slice(16) + ' y'), 'x [redacted]\n    [redacted] y', '#1613 round 2: the indentation between two pieces stays');
   assert.strictEqual(red('x ' + GH.slice(0, 16) + '\n> ' + GH.slice(16) + ' y'), 'x [redacted]\n> [redacted] y', '#1613 round 2: the quote mark between two pieces stays');
