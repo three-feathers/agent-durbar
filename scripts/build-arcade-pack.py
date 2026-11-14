@@ -385,6 +385,52 @@ def measure(im):
     span = max(1, round((bot - top + 1) * .06)); xs = [x for y in range(bot - span + 1, bot + 1) for x in range(w) if px[x, y][3]]
     return top, bot, (min(xs) + max(xs) + 1) / 2 / w
 
+RUN_RE = re.compile(r'^p\d\d-run[AB]\.webp$')
+
+def drops_file(name, keep_runs=True):
+    """a full build removes the set's built pictures before it writes them again; the drawn ones stay: the asleep `sit` frames and the drawn
+    running frames `pNN-runA/runB` (spec 102 FR-326, T296; `keep_runs=False` is the old rule, the selftest's mutant)"""
+    return name.endswith('.webp') and not name.endswith('-sit.webp') and not (keep_runs and RUN_RE.match(name))
+
+def head_foot(im):
+    """the head's mean x over the top 40% of the figure (file pixels)"""
+    px = im.load(); w, h = im.size
+    rows = [y for y in range(h) if any(px[x, y][3] for x in range(w))]; t, b = rows[0], rows[-1]; lim = t + round(.4 * (b - t + 1))
+    xs = [x + .5 for y in range(t, lim) for x in range(w) if px[x, y][3]]
+    return sum(xs) / len(xs)
+
+def read_runs(repo):
+    """what a full build would lose of the drawn running frames outside the pictures: their ASSETS.md rows per person and the round note (read before the build)"""
+    ap = os.path.join(repo, 'src/renderer/realoffice/sets/retro/ASSETS.md'); txt = open(ap, encoding='utf8').read()
+    rows = {pid: re.findall(r'^- run[AB]: `' + pid + r'-run[AB]\.webp`[^\n]*$', txt, re.M) for pid in ['p%02d' % i for i in range(1, 16)]}
+    m = re.search(r'^\*\*Running frames, round note[^\n]*$', txt, re.M)
+    return dict(rows=rows, note=m.group(0) if m else None)
+
+def keep_runs(repo, snap):
+    """the drawn running frames (`pNN-runA/runB`, spec 102 FR-326, T296) are kept byte for byte (drops_file); this puts back their `stand` entries in set.json
+    (size, feet line, top, and `foot`: the head over the same ground point as the person's `type` frame, since a jogger's planted feet are no anchor) and their
+    files names, ASSETS.md rows and round note"""
+    S = os.path.join(repo, 'src/renderer/realoffice/sets/retro'); jp = os.path.join(S, 'set.json'); meta = json.load(open(jp))
+    for pid, st in meta['stand'].items():
+        if not os.path.exists(os.path.join(S, f'{pid}-runA.webp')): continue
+        ti = Image.open(os.path.join(S, f'{pid}-type.webp')).convert('RGBA'); tf = st['foot']['type'] * ti.width; th = head_foot(ti)
+        for k in ('runA', 'runB'):
+            im = Image.open(os.path.join(S, f'{pid}-{k}.webp')).convert('RGBA'); tp, bt, _ = measure(im)
+            st['poses'][k] = [im.width, im.height]; st['feet'][k] = round((bt + 1) / im.height, 4); st['top'][k] = round(tp / im.height, 4); st['foot'][k] = round((head_foot(im) - (th - tf)) / im.width, 4)
+    with open(jp, 'w') as f: f.write(json.dumps(meta, indent=1, sort_keys=True) + '\n')
+    ap = os.path.join(S, 'ASSETS.md'); txt = open(ap, encoding='utf8').read()
+    txt = txt.replace('each with 18 Real office frames', 'each with 20 Real office frames').replace('five standing seen from behind (`type`, `book`, `knock`, `letter`, `counter`)', 'seven standing seen from behind (`type`, `book`, `knock`, `letter`, `counter`, `runA`, `runB`)')
+    txt = re.sub(r'\n\n\*\*Running frames, round note[^\n]*', '', txt)   # the last person's section runs up to `## Removed`: the note goes back after the rows
+    for pid in meta['stand']:
+        rows = snap['rows'].get(pid) or []
+        if not rows: continue
+        txt = re.sub(r'(### set-' + pid + r'\n\n- files: [^\n]*?)(?: ' + pid + r'-runA\.webp ' + pid + r'-runB\.webp)?\n', lambda m: m.group(1) + ' ' + pid + '-runA.webp ' + pid + '-runB.webp\n', txt, count=1)
+        txt = re.sub(r'\n- run[AB]: `' + pid + r'-run[AB]\.webp`[^\n]*', '', txt)
+        m = re.search(r'### set-' + pid + r'\n.*?(?=\n\n\n### set-|\n\n## |\Z)', txt, re.S)
+        txt = txt[:m.start()] + m.group(0).rstrip('\n') + '\n' + '\n'.join(rows) + txt[m.end():]
+    if snap['note'] and snap['note'] not in txt: txt = txt.replace('\n\n## Removed', '\n\n' + snap['note'] + '\n\n## Removed', 1)
+    with open(ap, 'w', encoding='utf8') as f: f.write(txt)
+
 def keep_sit(repo):
     """the asleep `sit` frames are drawn (Codex, `scripts/build-arcade-sleep.py`), not built here: a full build keeps the committed files, measures
     them into set.json, names them in each person's files line and has build-arcade-sleep.py write their ASSETS.md lines"""
@@ -397,7 +443,7 @@ def keep_sit(repo):
     with open(jp, 'w') as f: f.write(json.dumps(meta, indent=1, sort_keys=True) + '\n')
     ap = os.path.join(S, 'ASSETS.md'); txt = open(ap, encoding='utf8').read()
     for pid in meta['stand']:
-        txt = re.sub(r'(### set-' + pid + r'\n\n- files: [^\n]*?)(?: ' + pid + r'-sit\.webp)?\n', lambda m: m.group(1) + ' ' + pid + '-sit.webp\n', txt, count=1)
+        txt = re.sub(r'(### set-' + pid + r'\n\n- files: [^\n]*?)(?: ' + pid + r'-sit\.webp)?((?: ' + pid + r'-run[AB]\.webp)*)\n', lambda m: m.group(1) + ' ' + pid + '-sit.webp' + m.group(2) + '\n', txt, count=1)
     if '- **Seated on a stool**' not in txt: txt = txt.replace('- **Licence:**', '- **Seated on a stool**\n- **Licence:**', 1)
     with open(ap, 'w', encoding='utf8') as f: f.write(txt)
     import importlib.util
@@ -445,7 +491,7 @@ def build_person(idx, src_final, src_new7):
 def write_set(repo, src_final, src_new7, prompts):
     S = os.path.join(repo, 'src/renderer/realoffice/sets/retro'); os.makedirs(S, exist_ok=True)
     for f in os.listdir(S):
-        if f.endswith('.webp') and not f.endswith('-sit.webp'): os.remove(os.path.join(S, f))   # the drawn asleep frames stay (keep_sit)
+        if drops_file(f): os.remove(os.path.join(S, f))   # the drawn asleep frames stay (keep_sit), so do the drawn running frames (keep_runs)
     seat, stand, fbox, total, sections = {}, {}, {}, 0, []
     for idx in PEOPLE:
         pid, frames = build_person(idx, src_final, src_new7)
@@ -542,16 +588,46 @@ def keep_sit_selftest():
     with tempfile.TemporaryDirectory() as t:
         S = os.path.join(t, rel); shutil.copytree(os.path.join(repo, rel), S)
         jp, ap = os.path.join(S, 'set.json'), os.path.join(S, 'ASSETS.md'); want_j, want_a = open(jp).read(), open(ap, encoding='utf8').read()
+        snap = read_runs(t)   # a full build runs keep_sit, then keep_runs: the run rows and note go too, and come back after the sit lines
         meta = json.loads(want_j)
         for st in meta['stand'].values():
             for k in ('poses', 'feet', 'top', 'foot'): st[k].pop('sit', None)
         with open(jp, 'w') as f: f.write(json.dumps(meta, indent=1, sort_keys=True) + '\n')
-        txt = re.sub(r' p\d\d-sit\.webp', '', want_a); txt = re.sub(r'\n- sit: [^\n]*', '', txt); txt = re.sub(r'- \*\*Seated on a stool\*\*[^\n]*\n', '', txt)
+        txt = re.sub(r' p\d\d-sit\.webp', '', want_a); txt = re.sub(r' p\d\d-run[AB]\.webp', '', txt); txt = re.sub(r'\n- run[AB]: [^\n]*', '', txt); txt = re.sub(r'\n\n\*\*Running frames, round note[^\n]*', '', txt); txt = re.sub(r'\n- sit: [^\n]*', '', txt); txt = re.sub(r'- \*\*Seated on a stool\*\*[^\n]*\n', '', txt)
         assert txt != want_a and 'sit' not in json.dumps([s['poses'] for s in meta['stand'].values()]), 'the strip removed nothing'
         with open(ap, 'w', encoding='utf8') as f: f.write(txt)
-        keep_sit(t)
+        keep_sit(t); keep_runs(t, snap)
         assert open(jp).read() == want_j, 'keep_sit: set.json differs from the committed one'
         assert open(ap, encoding='utf8').read() == want_a, 'keep_sit: ASSETS.md differs from the committed one'
+
+def keep_runs_selftest():
+    """keep_runs, with no art cache: the committed set with what a full build loses of the running frames (the files the old rule deleted, their `stand`
+    entries, `ASSETS.md` rows and files names, the note) comes back byte for byte; a committed run frame that `drops_file` would delete fails it.
+    BUILD_MUTANT=old-delete runs the old rule and must fail at "would be deleted"."""
+    import shutil, tempfile
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); rel = 'src/renderer/realoffice/sets/retro'; old = os.environ.get('BUILD_MUTANT') == 'old-delete'
+    with tempfile.TemporaryDirectory() as t:
+        S = os.path.join(t, rel); shutil.copytree(os.path.join(repo, rel), S)
+        jp, ap = os.path.join(S, 'set.json'), os.path.join(S, 'ASSETS.md'); want_j, want_a = open(jp).read(), open(ap, encoding='utf8').read()
+        runs = sorted(f for f in os.listdir(S) if RUN_RE.match(f)); assert len(runs) == 30, f'{len(runs)} committed run frames, not 30'
+        want_f = {f: open(os.path.join(S, f), 'rb').read() for f in runs}; snap = read_runs(t)
+        assert snap['note'] and all(len(v) == 2 for v in snap['rows'].values()), 'read_runs: a person without its two rows, or no note'
+        for f in runs:
+            if drops_file(f, keep_runs=not old): os.remove(os.path.join(S, f))
+        gone = [f for f in runs if not os.path.exists(os.path.join(S, f))]
+        assert not gone, f'a committed run frame would be deleted by a full build: {gone[0]} and {len(gone) - 1} more'
+        meta = json.loads(want_j)
+        for st in meta['stand'].values():
+            for k in ('poses', 'feet', 'top', 'foot'): st[k].pop('runA', None); st[k].pop('runB', None)
+        with open(jp, 'w') as f: f.write(json.dumps(meta, indent=1, sort_keys=True) + '\n')
+        txt = re.sub(r' p\d\d-runA\.webp p\d\d-runB\.webp', '', want_a); txt = re.sub(r'\n- run[AB]: [^\n]*', '', txt); txt = re.sub(r'\n\n\*\*Running frames, round note[^\n]*', '', txt)
+        txt = txt.replace('20 Real office frames', '18 Real office frames').replace('seven standing seen from behind (`type`, `book`, `knock`, `letter`, `counter`, `runA`, `runB`)', 'five standing seen from behind (`type`, `book`, `knock`, `letter`, `counter`)')
+        assert txt != want_a and '"runA"' not in ''.join(json.dumps(s['poses']) for s in meta['stand'].values()), 'the strip removed nothing'
+        with open(ap, 'w', encoding='utf8') as f: f.write(txt)
+        keep_runs(t, snap)
+        assert open(jp).read() == want_j, 'keep_runs: set.json differs from the committed one'
+        assert open(ap, encoding='utf8').read() == want_a, 'keep_runs: ASSETS.md differs from the committed one'
+        assert all(open(os.path.join(S, f), 'rb').read() == want_f[f] for f in runs), 'keep_runs: a run frame differs'
 
 def selftest():
     # a frame off the grid is refused, a clean one passes, and one file pixel per block comes out
@@ -566,6 +642,7 @@ def selftest():
     c, g = cabinet(56, 32, 0); assert c.w == 73 and c.h == 73 and g['glass'] == [5, 18, 56, 32], g
     assert c.im.getpixel((10, 25))[3] == 0, 'the glass is a hole'
     keep_sit_selftest()
+    keep_runs_selftest()
     args_selftest()
     print('build-arcade-pack selftest ok')
 
@@ -602,8 +679,10 @@ if __name__ == '__main__':
     if cmd[0] == 'world': write_world(cmd[1]); sys.exit(0)
     _, I, REPO = cmd
     prompts = [I + '/prompts', I + '/new7/prompts']
+    runs = read_runs(REPO)
     smeta, sections, stotal = write_set(REPO, I + '/final/retro', I + '/new7/final', prompts)
     wmeta, wtotal = write_world(REPO)
     write_notes(REPO, smeta, sections, prompts)
     keep_sit(REPO)
+    keep_runs(REPO, runs)
     print(f'set: {len(sections)} people, {stotal} bytes; world: {wtotal} bytes')
