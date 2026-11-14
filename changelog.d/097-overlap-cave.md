@@ -1,0 +1,1 @@
+- **Spec 097: `check-office-overlap` can measure the Prehistoric cave** (`OFFICE_WORLD=cave`): a check script change, no change for users; the cave fails one check today (known gap in the spec).
