@@ -270,9 +270,13 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
     const runs = new Map<number, number[]>();
     for (let i = k; i < kc; i++) (runs.get(pk.at[i][0]) || runs.set(pk.at[i][0], []).get(pk.at[i][0])!).push(i);
     let next = 0;
+    /* spec 097 delta 2026-11-14 (issue #1760): a run keeps g clear at each end; when the runs then hold fewer seats than rest (two runs of two cells at 1248 px:
+       492.8 px, three seats 496 with the ends), the seats may reach the run's ends (its cells' edges, still clear of the next cabinet's slot) before a cell is added */
+    const span = (cells: number[]): number => cw + Math.max(...cells.map((i) => cxs[i])) - Math.min(...cells.map((i) => cxs[i]));
+    const end = runs.size > 1 && [...runs.values()].reduce((s, c) => s + Math.max(1, Math.floor((span(c) - 2 * g) / sw)), 0) < lounge.length ? 0 : g;
     for (const cells of runs.values()) {
       const bs = cells.map((i) => ({ x: cxs[i] + lean - cw / 2, b: slotBox(i) })), x0 = Math.min(...bs.map((c) => c.x)), x1 = Math.max(...bs.map((c) => c.x + cw));
-      const fit = Math.max(1, Math.floor((x1 - x0 - 2 * g) / sw)), take = next + fit >= lounge.length || runs.size === 1 ? lounge.length - next : fit, start = x0 + Math.max(g, (x1 - x0 - take * sw) / 2);
+      const fit = Math.max(1, Math.floor((x1 - x0 - 2 * end) / sw)), take = next + fit >= lounge.length || runs.size === 1 ? lounge.length - next : fit, start = x0 + Math.max(end, (x1 - x0 - take * sw) / 2);
       const plateY = Math.max(...bs.map((c) => c.b.cab.y)) + cabH;
       for (let j = 0; j < take && next < lounge.length; j++, next++) desks.push(aisleSeat(meta, lounge[next], snapL(start + j * sw), plateY, gl));
     }

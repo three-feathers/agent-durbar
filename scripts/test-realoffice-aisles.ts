@@ -470,10 +470,15 @@ console.log(`floor covered with 4 or fewer: ${covs.join('; ')}`);
     const L = seatedOk(rest([6, 6, 3], [0, 2, 6, 7, 11]), W, H, `#1760 repro: 6/6/3, 5 resting, ${nm}`);
     assert.ok(!L.scroll, `#1760 repro at ${nm}: no scroll`);
   }
+  /* review of #1761: at 1280x800 with the filter strip (1248x666) 11 agents with 5 resting have two runs of two cells; one cell more would add a row and scroll.
+     The seats reach the runs' ends instead (492 of 492.8 px): all five sit and the hall does not scroll */
+  { const L = seatedOk(rest([3, 8], [3, 4, 5, 6, 7]), 1248, 666, '#1761 review: 3/8, 5 resting, 1248x666 (1280x800 with the strip)'); assert.ok(!L.scroll, '#1761 review: 3/8, 5 resting, 1248x666: the seats reach the runs\' ends, no scroll'); }
+  /* the narrow-cabinet hall (cells 239.8 px, two-cell runs 479.6 px) holds 2 + 2 even at the ends: one more cell, in a hall that scrolls with everyone at a cabinet too */
+  seatedOk(rest([6, 7], [1, 4, 9, 10, 12]), 1248, 666, '#1760 one cell more: 6/7, 5 resting, 1248x666');
   let seed = 1760, fz = 0; const rnd = (n: number): number => { seed = (seed * 1664525 + 1013904223) % 4294967296; return Math.floor((seed / 4294967296) * n); };
-  for (let t = 0; fz < 600 && t < 5000; t++) {
+  for (let t = 0; fz < 800 && t < 8000; t++) {
     const nf = 1 + rnd(6), sz = Array.from({ length: nf }, () => 1 + rnd(6)), n = sz.reduce((a, b) => a + b, 0); if (n < 9 || n > 15) continue;
-    const idx = Array.from({ length: n }, (_, i) => i).filter(() => rnd(3) === 0), helpers = rnd(2) === 0, [nm, W, H] = t % 2 ? ['1280x800', 1248, ROOM.h800] : ['1440x900', 1408, ROOM.h900];
+    const idx = Array.from({ length: n }, (_, i) => i).filter(() => rnd(3) === 0), helpers = rnd(2) === 0, [nm, W, H] = ([['1440x900', 1408, ROOM.h900], ['1280x800', 1248, ROOM.h800], ['1440x900 with the strip', 1408, ROOM.h900 - 31], ['1280x800 with the strip', 1248, ROOM.h800 - 31]] as Array<[string, number, number]>)[t % 4];
     if (!idx.length) continue;
     seatedOk(rest(sz, idx, helpers), W as number, H as number, `#1760 fuzz ${t}: ${sz.join('/')} resting ${idx.join(',')}${helpers ? ' helpers' : ''} at ${nm}`); fz++;
   }
