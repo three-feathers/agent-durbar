@@ -190,6 +190,7 @@
     "test:skeleton": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-skeleton.js",
     "test:teamtemplate": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-teamtemplate.js",
     "test:teamstore": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-teamstore.js",
+    "test:teams-ui": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-teams-ui.js",
     "test:teamsipc": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-teamsipc.js",
     "test:teamstore-fs": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-teamstore-fs.js",
     "test:names": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-names.js",
@@ -382,6 +383,7 @@
     "files": [
       "dist/**/*",
       "!dist/**/*.map",
+      "!dist/renderer/teamcheck.js",
       "package.json"
     ],
     "asar": true,

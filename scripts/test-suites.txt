@@ -138,6 +138,7 @@ test:skeleton
 test:teamtemplate
 test:teamstore
 test:teamstore-fs
+test:teams-ui
 test:teamsipc
 test:names
 test:renameadapters

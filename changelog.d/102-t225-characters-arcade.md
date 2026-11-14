@@ -1,1 +1,0 @@
-- Spec note only: Retro pixel and Office people as Characters choices in every world (spec 102 T225, split into T290..T296, with new running frames for Retro pixel people as an art task) are specified; the owner answered every question. No code change.
