@@ -208,6 +208,7 @@ test:helpercard
 test:weeklyaudit
 test:newfolder
 test:newfolderop
+test:addkey
 test:newfolderipc
 test:newfoldergit
 test:supplychain
@@ -219,6 +220,8 @@ test:docsscripts
 test:citypecheck
 test:worldmatrix
 test:world-catalogue
+test:world-distinct
+test:world-contact-sheet
 test:worldzip
 test:worldpack
 test:world-packs

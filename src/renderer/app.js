@@ -293,7 +293,7 @@ async function applyCharacters(v){
   else toast('Characters: <b>'+esc(CHARACTER_NAMES[applied]||applied)+'</b>.',2600);
   return applied;
 }
-const CHARACTER_NAMES={theme:'The theme\u2019s own',minimalist:'Minimalist',cheeky:'Cheeky',prehistoric:'Prehistoric',pirate:'Pirate',monster:'Monster',royal:'Royal',rebels:'Animal Rebels'};
+const CHARACTER_NAMES={theme:'The theme\u2019s own',office:'Office people',pixel:'Retro pixel',minimalist:'Minimalist',cheeky:'Cheeky',prehistoric:'Prehistoric',pirate:'Pirate',monster:'Monster',royal:'Royal',rebels:'Animal Rebels'};
 /* FR-068: one figure per choice for its pick button: the kit that choice draws on the current theme, one Cheeky portrait for the crew */
 function charPreview(choice){
   const kit=THEME.kitFor(THEME.themeKit(),choice), a={id:'characters-preview',look:lookFor('characters-preview')};
@@ -10022,12 +10022,43 @@ function applyAddResult(r,okText){
   r.agents.forEach(addLiveAgent);
   r.agents.forEach(x=>{const ag=liveById(x.id);if(ag)announcePrevious(ag);});
   INTO=null; if(bridge.floorsState)bridge.floorsState().then(applyFloors).catch(()=>{});
+  addFloorNote(r).catch(()=>{});
+}
+/* spec 033 FR-089..FR-091 (issue 1709, owner report 2026-11-13): after an add, say where the folder is. A floor that is off is switched on (its room was
+   hidden, so the person added it again); a floor that is not the one shown gets a toast naming it with Show; a folder that was already there says so
+   and on which floor (main started nothing for it). Reuses toastAction, goToFloor, announce and the floors calls. */
+async function addFloorNote(r){
+  let state=null;
+  try{state=bridge.floorsState?await bridge.floorsState():null;}catch(e){state=null;}
+  if(state)applyFloors(state);
+  const items=[...(r.agents||[]).filter(a=>!a.parent).map(a=>({name:a.name,floor:(state&&state.byAgent&&state.byAgent[a.id])||a.floor,dup:false})),
+    ...(r.existing||[]).map(x=>({name:x.name,floor:x.floor,dup:true}))];
+  for(const it of items){
+    if(!floorsLive()||FLOORS.floors.length<2){if(it.dup){const t=it.name+' is already added.';toast(esc(t),5000);announce(t);}continue;}
+    const f=floorById(it.floor); if(!f)continue;
+    let switched=false, failed=false;
+    if(!f.on){
+      const res=await floorCall(bridge.setFloorOn(f.id,true));
+      if(res&&res.ok)switched=true; else failed=true; /* still say where it is: it is on a floor that stays off */
+    }
+    const nm=floorById(f.id).name, shown=failed?false:(!oneFloorView()||f.id===curFloorId());
+    if(shown&&!switched&&!it.dup)continue; /* it is on the floor the person is looking at: the room is there */
+    const text=(it.dup?it.name+' is already added on the floor "'+nm+'".':'Added '+it.name+' on the floor "'+nm+'".')+(switched?' The floor was off, so it is switched on.':'')+(failed?' The floor is off and could not be switched on.':'');
+    const html=esc(text);
+    if(shown){toast(html,6000);}
+    else if(failed)toastAction(html,'Show',async()=>{const r=await floorCall(bridge.setFloorOn(f.id,true));if(r&&r.ok)goToFloor(f.id);else{const t2='The floor "'+nm+'" still could not be switched on.';toast(esc(t2),8000);announce(t2);}},12000); /* Show tries the switch again, then goes there */
+    else toastAction(html,'Show',()=>goToFloor(f.id),12000);
+    announce(text+(shown?'':' Press Show to '+(failed?'try again.':'go there.')));
+  }
 }
 /* spec 093 FR-001, Q1 = a: Ctrl+O, File > Add Folder… and the palette's Add folder keep opening the system picker (Add existing) */
 function addExisting(){if(!$('addFolder').disabled&&bridge)addVia(bridge.addFolder);}
 const NEWFOLDER=window.DurbarNewFolder.create({bridge,askDialog:o=>askDialog(o),toast,esc,announce,doc:document,
   mode:()=>{const s=$('permMode'),op=s.options[s.selectedIndex];return {value:s.value,label:op?op.textContent:'Read-only'};},
-  confirmAllow,addOptions,addExisting,applyResult:(r,text)=>applyAddResult(r,text)});
+  confirmAllow,addOptions,addExisting,applyResult:(r,text)=>applyAddResult(r,text),
+  /* spec 033 FR-092 (owner request): the Add a folder dialog names the floor and lets the person pick another; the choice is the same INTO the Floors panel sets */
+  floorPick:()=>{const id=intoFloor();return id?{value:id,options:FLOORS.floors.map(f=>({id:f.id,name:f.name,on:f.on}))}:null;},
+  setFloor:id=>{INTO=id;renderIntoFloor();renderFloorsPanel();renderFloorsSettings();}});
 let pendingOpen=qs.get('open');
 if(bridge){
   document.body.classList.add('has-bridge');
