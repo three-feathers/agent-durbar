@@ -853,7 +853,7 @@
     const to=k==='ArrowRight'||k==='ArrowDown'?all[(i+1)%all.length]:k==='ArrowLeft'||k==='ArrowUp'?all[(i-1+all.length)%all.length]:k==='Home'?all[0]:k==='End'?all[all.length-1]:null;
     if(to){e.preventDefault();pick(to);}
   }
-  function worldKeys(e){radioNav(e,'#wrGroup [data-world]',pickWorld);}
+  function worldKeys(e){radioNav(e,'#wrGroup [data-world]',(to)=>{to.closest('#wrGroup').querySelectorAll('[data-world]').forEach(x=>{x.tabIndex=x===to?0:-1;});focusIn(to);});} /* FR-301: the World cards' arrows MOVE (roving tabindex), Space or Enter chooses (the Characters radios pick as they move) */
   let pickChar=()=>{}; /* set by the Settings paint (it closes over the page's helpers) */
   function charKeys(e){radioNav(e,'#chList [data-characters]',(b)=>pickChar(b,true));}
   function liveActRow(){
