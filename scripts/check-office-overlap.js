@@ -529,7 +529,7 @@ async function driver(ctx) {
       for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
         const a = boxes[i], b = boxes[j];
         if (a.kind === 'face' && b.kind === 'face') continue;
-        if ((a.kind === 'dots' || b.kind === 'dots') && a.kind !== 'stag' && b.kind !== 'stag') continue;
+        if ((a.kind === 'dots' || b.kind === 'dots') && ![a.kind, b.kind].some((k) => k === 'stag' || (floors && k === 'sign'))) continue; /* review round 2 (issue #1759): in the All floors view a sign is kept off the dots too */
         if ((a.kind === 'figure' || b.kind === 'figure') && a.kind !== 'drafttag' && b.kind !== 'drafttag') continue; /* a figure is only measured against the Draft tag (the plate stands in front of the lap by design) */
         if (hit(a.r, b.r)) P.push(`${a.kind} ${a.id} overlaps ${b.kind} ${b.id}`);
       }

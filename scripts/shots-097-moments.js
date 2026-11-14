@@ -463,6 +463,7 @@ module.exports = async (ctx) => {
           ratio:Math.min(...tags.map(t=>{const b=t.querySelector('b')||t,a=Lm(P(getComputedStyle(b).color)),c=Lm(P(getComputedStyle(t).backgroundColor));return (Math.max(a,c)+0.05)/(Math.min(a,c)+0.05)})),
           overlap:tags.flatMap((t,i)=>tags.slice(i+1).filter(o=>hit(R(t),R(o))).map(()=>'tag x tag').concat(others.filter(o=>hit(R(t),R(o))).map(o=>'tag x '+o.className))),
           cut:tags.filter(t=>{const b=t.querySelector('b');return !b||b.scrollWidth>b.clientWidth+0.5||!R(t).width}).map(t=>t.textContent.trim()), /* review of #1741: the ellipsis is on the <b>, not on the tag's box (that one never overflows) */
+          signDots:[...document.querySelectorAll('#stage .ro-sign:not(.ro-stag)')].flatMap(g=>[...document.querySelectorAll('#stage .ro-dots')].filter(d=>hit(R(g),R(d))).map(()=>g.textContent.trim().slice(0,20))), /* issue #1759: no sign over a thinking person's dots */
           lounge:document.querySelectorAll('#stage .ro-plate.lounge').length,rest:tags.some(t=>t.textContent.trim()==='Resting'),
           inWindow:tags.every(t=>{const r=R(t);return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight}),
           storeys:(lay.storeys||[]).length,scroll:st.dataset.fit==='scroll'||fl.scrollHeight>fl.clientHeight+1}})()`);
@@ -473,6 +474,7 @@ module.exports = async (ctx) => {
       assert.strictEqual(sto.small, 0, `${tag}: the storey tags are 10.5px or more`);
       assert.ok(sto.ratio >= 4.5, `${tag}: the storey tags read at 4.5:1: ${sto.ratio}`);
       assert.deepStrictEqual(sto.overlap, [], `${tag}: no storey tag covers a sign, a plate, thinking dots, a chip or another tag`);
+      assert.deepStrictEqual(sto.signDots, [], `${tag}: no folder sign covers a thinking person's dots (issue #1759)`);
       assert.ok(sto.inWindow, `${tag}: every storey tag is inside the window`);
       assert.strictEqual(sto.scroll, false, `${tag}: the All floors view does not scroll`);
       await shot(world, 'cell-allfloors', w, h);

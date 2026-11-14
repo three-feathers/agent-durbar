@@ -300,7 +300,11 @@ export function lobbyRange(H: number): [number, number] {
 /** spec 097 FR-116 (review of PR 1746): the split reads top floor first: the rows are ordered by their first folder and a row's zones by folder order (as `roPack` lays them out), so the floors' ranks must not fall in that reading order */
 function roFloorOrder(part: RealFolder[][], rank: Map<string, number>): boolean {
   let last = -1;
-  for (const row of part) for (const z of row) { const r = z.floor ? rank.get(z.floor.id) ?? 0 : 0; if (r < last) return false; last = r; }
+  for (const row of part) for (const z of row) {
+    const r = z.floor ? rank.get(z.floor.id) ?? 0 : 0;
+    if (r < last) return false;
+    last = r;
+  }
   return true;
 }
 
@@ -610,7 +614,7 @@ export function realLayout(model: RealModel, viewport: { w: number; h: number },
         /* a floor starts on a new row only when that is free too: the rows each hold one floor and the gaps between storeys are taken from the height; otherwise the floors share rows, and a storey
            that starts mid-row is marked by an upright rule. With 8 or fewer agents (one big row) floors always share it. */
         const gaps = (runs.length - 1) * STOREY_GAP, f = o.p.rows.length > 1 ? choose(folders, Ho - gaps, floor, 2) : null;
-        if (f && !f.p.rows[0].scrH && ok(f, gaps)) { c = f; forced = true; used = gaps; } else c = o;
+        if (f && f.p.fits && f.p.rows.length && !f.p.rows[0].scrH && ok(f, gaps)) { c = f; forced = true; used = gaps; } else c = o;
       }
     }
     const p = c.p; helpRows = c.hr;
@@ -620,10 +624,10 @@ export function realLayout(model: RealModel, viewport: { w: number; h: number },
   const spare = fits ? Math.max(0, Ho - Lb - used) : 0, extra = spare / (rows.length + 1);
   let y = Lb + extra / 2;
   /* spec 097 FR-104 (T113): the storey of a folder; the first zone of each storey carries its tag; a rule goes where a storey starts */
-  const runOf = new Map<string, number>(), firstOf = new Map<string, number>(), slabs = new Map<number, Rect>(), tags = new Map<number, Rect>();
-  (runs || []).forEach((rn, i) => { firstOf.set(folders[rn.from].id, i); for (let k = rn.from; k < rn.to; k++) runOf.set(folders[k].id, i); });
+  const runOf = new Map<string, number>(), started = new Set<number>(), slabs = new Map<number, Rect>(), tags = new Map<number, Rect>();
+  (runs || []).forEach((rn, i) => { for (let k = rn.from; k < rn.to; k++) runOf.set(folders[k].id, i); });
   let prevSt = -1;
-  const cands = new Map<number, Array<{ zi: number; sy: number; sx: number; sw: number; x0: number; lim: number; avail: number; hands: number[][] }>>();
+  const cands = new Map<number, Array<{ zi: number; sy: number; sx: number; sw: number; x0: number; lim: number; avail: number; hands: number[][]; dots: number[][] }>>();
   for (const r of rows) {
     const g = roRowGeom(meta, r, u);
     const stRow = runOf.get(r.zones[0].id.split('\u0000')[0]) ?? -1;
@@ -637,22 +641,32 @@ export function realLayout(model: RealModel, viewport: { w: number; h: number },
       for (const a of z.agents) { const d = roStation(meta, a, ax, y, r.Sw, u, g, big, r.scrH, r.strip ? helpRows : 0, r.strip); d.slot.h = g.bottom; desks.push(d); ax += r.Sw; }
       /* FR-018: the sign sits at the left unless a raised hand (a waving person's picture rising into the strip) is there */
       const s0 = z.id.split('\u0000')[0], s = signs && roOwn(signs, s0) ? signs[s0] : { name: s0, path: '', counts: 1 };
-      const sw = signWidth(s.name, s.path, s.counts, zw);
+      let sw = signWidth(s.name, s.path, s.counts, zw), shrunk = false;
       const hands = desks.filter((d) => d.person && roNeedsYou(d.state) && d.person.y < y + STRIP).map((d) => [d.person!.x, d.person!.x + d.person!.w * 0.6]);
-      const hits = (px: number): boolean => hands.some(([a, b]) => b > px && a < px + sw);
+      /* spec 097 FR-104 (review of PR 1746, issue #1759): with floors drawn, the sign keeps clear of a thinking person's dots in the strip too (the dots touched the sign's lower edge, and a sign moved for a tag stood over them) */
+      const dots = runs ? desks.filter((d) => d.dots && d.dots.y < y + 21 && d.dots.y + DOTS_H > y + 1).map((d) => [d.dots!.x - 2, d.dots!.x + DOTS_W + 2]) : [];
+      const hits = (px: number, w = sw): boolean => hands.some(([a, b]) => b > px && a < px + w) || dots.some(([a, b]) => b > px && a < px + w);
       let sx = x + 4;
-      if (hits(sx)) { sx = x + zw - 4 - sw; if (hits(sx)) sx = Math.max(...hands.map((h) => h[1])) + 6; }
+      if (hits(sx)) { sx = x + zw - 4 - sw; if (hits(sx)) sx = Math.max(...hands.concat(dots).map((h) => h[1])) + 6; }
       sx = Math.max(x + 4, Math.min(sx, x + zw - 4 - sw));
+      if (dots.length && hits(sx)) { /* a gap between the hands and dots wide enough for the sign: the first one from the left */
+        const gaps = [x + 4, ...hands.concat(dots).map((h) => h[1] + 6)].sort((p1, p2) => p1 - p2), wide = (px: number): number => Math.min(sw, x + zw - 4 - px, ...hands.concat(dots).filter(([a0]) => a0 > px).map(([a0]) => a0 - 2 - px)); /* the sign may give up width down to STOREY_SIGN_MIN */
+        const gap = gaps.find((px) => wide(px) >= sw && !hits(px)) ?? gaps.find((px) => wide(px) >= STOREY_SIGN_MIN && !hits(px, wide(px)));
+        if (gap !== undefined) { sx = gap; sw = wide(gap); if (sw < signMin(s.counts)) shrunk = true; }
+      }
       const [fid, part] = z.id.split('\u0000');
       /* spec 097 FR-104 (T113): every zone of a storey is a place for its tag (chosen below); the rule stands in the gap before the storey's first zone when the storey starts mid-row */
       const si = !part && runOf.has(fid) ? runOf.get(fid)! : -1;
       if (si >= 0) {
+        /* the rule goes before the storey's first zone in reading order (two folders of one floor may stand in either order) */
+        const first = !started.has(si);
+        if (first) started.add(si);
         const lim = r.zones.indexOf(z) < r.zones.length - 1 ? x + zw + ZGAP - 5 : W - PAD;
-        (cands.get(si) || cands.set(si, []).get(si)!).push({ zi: zones.length, sy: y + 1, sx, sw, x0: x + 4, lim, avail: lim - (x + 4), hands });
-        if (firstOf.get(fid) === si && si > 0 && !forced) slabs.set(si, { x: Math.max(0, x - 3), y: y + 1, w: 2, h: 20 });
+        (cands.get(si) || cands.set(si, []).get(si)!).push({ zi: zones.length, sy: y + 1, sx, sw, x0: x + 4, lim, avail: lim - (x + 4), hands, dots });
+        if (first && si > 0 && !forced) slabs.set(si, { x: Math.max(0, x - 3), y: y + 1, w: 2, h: 20 });
       }
       /* spec 097 FR-356 (bug #1392): the path gives way first, then the name down to 3 letters; a room too narrow even then takes FR-256's short sign (name, counts, + and menu; the cost on the name's hover) */
-      const short = signMin(s.counts) > zw - 8;
+      const short = signMin(s.counts) > zw - 8 || shrunk;
       zones.push({ id: fid, part: Number(part || 1), box: { x, y: y + 2, w: zw, h: g.bottom - 2 }, sign: { x: sx, y: y + 1, w: sw, h: 20 }, desks, ...(short ? { signShort: true } : {}) });
       x += zw + ZGAP;
     }
@@ -662,7 +676,7 @@ export function realLayout(model: RealModel, viewport: { w: number; h: number },
      Inside that zone's strip [x0, lim] it stands clear of the sign, of every raised hand and of a thinking person's dots: after the sign, else before it, else the sign moves to the other end
      (the sign gives up width down to its minimum first). Review of PR 1746: before, a raised hand moved the sign to the zone's right end and the tag went past the zone. */
   type Cand = NonNullable<ReturnType<typeof cands.get>>[number];
-  const placeTag = (c: Cand, tw0: number, tmin: number, smin: number, keepDots: boolean): { sx: number; sw: number; tx: number; tw: number } | null => {
+  const placeTag = (c: Cand, tw0: number, tmin: number, smin: number, keepDots: boolean, signDots = keepDots): { sx: number; sw: number; tx: number; tw: number } | null => {
     /* what stands in the strip along this row, in any zone (a person's picture reaches past its desk): the raised hands, and a thinking person's dots (the sign was there before them, the tag keeps clear) */
     const obst: number[][] = [];
     for (const zz of zones) if (Math.abs(zz.sign.y - c.sy) < 1) for (const d of zz.desks) {
@@ -673,8 +687,8 @@ export function realLayout(model: RealModel, viewport: { w: number; h: number },
     /* the tag keeps its whole text if it can; narrowed to its minimum (its name cut, whole in the title) only when no place clear of the hands and dots holds it */
     for (const tw of [...new Set([tw0, tmin])]) {
       const sws = [...new Set([Math.max(Math.min(c.sw, smin), Math.min(c.sw, c.avail - tw - 4)), Math.min(c.sw, smin)])];
-      for (const sw2 of sws) for (const sx of [c.sx, free(c.x0, sw2, c.hands), c.lim - sw2]) {
-        if (sx < c.x0 || sx + sw2 > c.lim || c.hands.some(([a, b]) => b > sx && a < sx + sw2)) continue;
+      for (const sw2 of sws) for (const sx of [c.sx, free(c.x0, sw2, signDots ? c.hands.concat(c.dots) : c.hands), c.lim - sw2]) {
+        if (sx < c.x0 || sx + sw2 > c.lim || (signDots ? c.hands.concat(c.dots) : c.hands).some(([a, b]) => b > sx && a < sx + sw2)) continue;
         for (const tx of [free(sx + sw2 + 4, tw, obst), free(c.x0, tw, obst)]) if (tx >= c.x0 && tx + tw <= c.lim && (tx >= sx + sw2 + 4 || tx + tw + 4 <= sx)) return { sx, sw: sw2, tx, tw };
       }
     }
@@ -683,11 +697,11 @@ export function realLayout(model: RealModel, viewport: { w: number; h: number },
   for (const [si, list] of cands) {
     const need = STOREY_SIGN_MIN + STOREY_TAG_MIN + 4, byRoom = list.slice().sort((p, q) => q.avail - p.avail);
     /* in this order: a zone with the room, then any zone with its tag cut to its number (STOREY_TAG_CUT, the title has the name) and its sign to STOREY_SIGN_CUT, then, the dots no longer kept clear, the zone with the most room */
-    const tries: Array<[Cand[], number, number, boolean]> = [[list.filter((k) => k.avail >= need), STOREY_TAG_MIN, STOREY_SIGN_MIN, true], [byRoom, STOREY_TAG_CUT, STOREY_SIGN_CUT, true], [byRoom, STOREY_TAG_CUT, STOREY_SIGN_CUT, false]];
+    const tries: Array<[Cand[], number, number, boolean, boolean]> = [[list.filter((k) => k.avail >= need), STOREY_TAG_MIN, STOREY_SIGN_MIN, true, true], [byRoom, STOREY_TAG_CUT, STOREY_SIGN_CUT, true, true], [byRoom, STOREY_TAG_CUT, STOREY_SIGN_CUT, true, false], [byRoom, STOREY_TAG_CUT, STOREY_SIGN_CUT, false, false]];
     let c: Cand = byRoom[0], got: { sx: number; sw: number; tx: number; tw: number } | null = null;
-    for (const [zs, tmin, smin, kd] of tries) for (const k of zs) {
+    for (const [zs, tmin, smin, kd, sd] of tries) for (const k of zs) {
       if (got) break;
-      c = k; got = placeTag(k, Math.max(tmin, Math.floor(Math.min(storeyTagW(runs![si].floor), k.avail - smin - 4))), tmin, smin, kd);
+      c = k; got = placeTag(k, Math.max(tmin, Math.floor(Math.min(storeyTagW(runs![si].floor), k.avail - smin - 4))), tmin, smin, kd, sd);
     }
     if (!got) { c = byRoom[0]; const sw3 = Math.min(c.sw, STOREY_SIGN_CUT); got = { sx: c.sx, sw: sw3, tx: Math.max(c.x0, Math.min(c.lim - STOREY_TAG_CUT, c.sx + sw3 + 4)), tw: STOREY_TAG_CUT }; } /* no zone has room for both clear of the hands: inside the hall at least */
     const z = zones[c.zi];
