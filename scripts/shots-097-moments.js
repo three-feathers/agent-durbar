@@ -448,6 +448,34 @@ module.exports = async (ctx) => {
       /* review of #1279: no silent skip. The same condition shots-092-lift uses for the All floors view; if it never comes, the run fails, so no picture is ever quietly missing */
       await must(`document.querySelector('#lift [data-lift="*all"]').getAttribute('aria-current')==='true'`, 'the All floors view (the lift says All)');
       await must(PICS, 'the pictures');
+      /* 102 T223 (#1268, spec 097 FR-104): the All floors view is the building: a tag with the floor's name for every floor that has a folder, at least two floors, each name at 10.5 px or more and 4.5:1, no tag over a sign, a cabinet or another tag, nothing scrolls */
+      await must(`document.querySelectorAll('#stage .ro-stag').length>=2`, 'the storey tags of the All floors view');
+      const sto = await js(`(()=>{const P=(s)=>{const m=/rgba?\\(([^)]+)\\)/.exec(s);return m?m[1].split(/[ ,\\/]+/).filter(Boolean).slice(0,3).map(Number):[0,0,0]},Lm=(a)=>{const f=(x)=>{x/=255;return x<=0.03928?x/12.92:Math.pow((x+0.055)/1.055,2.4)};return 0.2126*f(a[0])+0.7152*f(a[1])+0.0722*f(a[2])};
+        const R=e=>e.getBoundingClientRect(),hit=(a,b)=>a.left<b.right-0.5&&b.left<a.right-0.5&&a.top<b.bottom-0.5&&b.top<a.bottom-0.5;
+        const tags=[...document.querySelectorAll('#stage .ro-stag')], others=[...document.querySelectorAll('#stage .ro-sign:not(.ro-stag),#stage .ro-plate')];
+        const names=[...document.querySelectorAll('#lift [data-lift]')].filter(b=>b.dataset.lift!=='*all').map(b=>(b.getAttribute('aria-label')||'').split(', floor')[0]);
+        const lay=window.__durbarSimUi.realLayout(), folders=new Set(window.__durbarSimUi.agents().filter(a=>!a.parent).map(a=>a.room)).size;
+        const fl=document.getElementById('floor'), st=document.getElementById('stage');
+        return {texts:tags.map(t=>t.textContent.trim()),names,
+          small:tags.filter(t=>parseFloat(getComputedStyle(t.querySelector('b')||t).fontSize)<10.5).length,
+          ratio:Math.min(...tags.map(t=>{const b=t.querySelector('b')||t,a=Lm(P(getComputedStyle(b).color)),c=Lm(P(getComputedStyle(t).backgroundColor));return (Math.max(a,c)+0.05)/(Math.min(a,c)+0.05)})),
+          overlap:tags.flatMap((t,i)=>tags.slice(i+1).filter(o=>hit(R(t),R(o))).map(()=>'tag x tag').concat(others.filter(o=>hit(R(t),R(o))).map(o=>'tag x '+o.className))),
+          cut:tags.filter(t=>{const b=t.querySelector('b');return !b||b.scrollWidth>b.clientWidth+0.5||!R(t).width}).map(t=>t.textContent.trim()), /* review of #1741: the ellipsis is on the <b>, not on the tag's box (that one never overflows) */
+          lounge:document.querySelectorAll('#stage .ro-plate.lounge').length,rest:tags.some(t=>t.textContent.trim()==='Resting'),
+          inWindow:tags.every(t=>{const r=R(t);return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight}),
+          storeys:(lay.storeys||[]).length,scroll:st.dataset.fit==='scroll'||fl.scrollHeight>fl.clientHeight+1}})()`);
+      assert.ok(sto.storeys >= 2, `${tag}: the All floors view has at least two storeys: ${JSON.stringify(sto)}`);
+      assert.ok(sto.lounge >= 1 && sto.rest, `${tag}: the simulator's resting agents are on screen under the Resting tag (spec 102, review of #1741: no floor's band holds them): ${JSON.stringify(sto)}`);
+      assert.ok(sto.names.length >= 2 && sto.names.every((n) => sto.texts.some((t) => t.endsWith(' ' + n))), `${tag}: every floor's name is on screen in a storey tag: ${JSON.stringify([sto.names, sto.texts])}`);
+      assert.deepStrictEqual(sto.cut, [], `${tag}: no storey tag cuts its name (its <b> fits)`);
+      assert.strictEqual(sto.small, 0, `${tag}: the storey tags are 10.5px or more`);
+      assert.ok(sto.ratio >= 4.5, `${tag}: the storey tags read at 4.5:1: ${sto.ratio}`);
+      assert.deepStrictEqual(sto.overlap, [], `${tag}: no storey tag covers a sign, a plate or another tag`);
+      assert.ok(sto.inWindow, `${tag}: every storey tag is inside the window`);
+      assert.strictEqual(sto.scroll, false, `${tag}: the All floors view does not scroll`);
+      /* round 4 of the review of #1741: a storey tag never cuts a folder sign so far that its "New session" and "Folder actions" buttons fall outside it: each button lies inside its sign and the element at its centre is the button */
+      const btn = await js(`(()=>{const R=e=>e.getBoundingClientRect();const out=[];for(const sg of document.querySelectorAll('#stage .ro-sign:not(.ro-stag)')){const sr=R(sg);for(const b of sg.querySelectorAll('[data-newsess],[data-foldermenu]')){const r=R(b),at=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);out.push({id:b.dataset.newsess||b.dataset.foldermenu,inside:r.left>=sr.left-0.5&&r.right<=sr.right+0.5&&r.top>=sr.top-0.5&&r.bottom<=sr.bottom+0.5,hit:!!at&&(at===b||b.contains(at))})}}return out})()`);
+      assert.ok(btn.length >= 2 && btn.every((b) => b.inside && b.hit), `${tag}: every sign's + and folder-actions buttons are inside the sign and reachable: ${JSON.stringify(btn.filter((b) => !b.inside || !b.hit))} of ${btn.length}`);
       await shot(world, 'cell-allfloors', w, h);
       for (const f of ['cell-chat', 'cell-allfloors']) assert.ok(fs.existsSync(path.join(OUT, `${world}-${f}-${w}x${h}.png`)), `${tag}: the picture ${f} was written`);
       await js(`localStorage.removeItem('durbar.floor');localStorage.removeItem('durbar.floorView')`); /* the next size starts on one floor */

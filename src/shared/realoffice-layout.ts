@@ -8,11 +8,15 @@ export type RealState = 'working' | 'thinking' | 'waiting' | 'error' | 'limit' |
 /** `helpers`: how many sub-agents the desk has (spec 097 FR-306: the engine reserves a strip for them under the plate) */
 export interface RealAgent { id: string; state: RealState; away?: string | null; person?: string | null; lounge?: boolean; helpers?: number }
 /** `keep`: the folder has a saved desk order (spec 097 FR-345): its desks stay in the model's order, no status sort */
-export interface RealFolder { id: string; agents: RealAgent[]; keep?: boolean }
+/** spec 102 delta 2026-11-14 (spec 097 FR-104, FR-116): the floor a folder stands on in the All floors view; `n` counts from the bottom (floor 1 is the ground floor). Only the All floors view sets it. */
+/** `w`: the width in px of the tag's text ("3 Personal") in the sign's own 12 px bold font, measured by the renderer (spec 102 delta 2026-11-14, review of #1741); absent in a pure test */
+export interface RealFloor { id: string; name: string; n: number; w?: number }
+export interface RealFolder { id: string; agents: RealAgent[]; keep?: boolean; floor?: RealFloor }
 export interface RealVisitor { id: string; person?: string | null; needsYou?: boolean }
 export interface RealPlace { id: string; custom?: boolean; visitors: RealVisitor[] }
 /** `keepRooms`: the person saved a room order for this floor (spec 097 FR-353, owner Q31): the rooms stand in rows in that order, left to right, top to bottom, even if the picture is a little smaller */
-export interface RealModel { folders: RealFolder[]; places: RealPlace[]; keepRooms?: boolean }
+/** `restW`: the measured width in px of the tag "Resting" (same font as `RealFloor.w`) */
+export interface RealModel { folders: RealFolder[]; places: RealPlace[]; keepRooms?: boolean; restW?: number }
 export interface SeatMeta { w: number; h: number; headTop: number; bodyH: number; hand: number }
 /** `feet` and `top`: per pose, the lowest and highest opaque row as a share of the picture's height, measured from its alpha (owner 2026-10-31 10:19) */
 export interface StandMeta { figH: number; poses: Record<string, [number, number]>; feet?: Record<string, number>; top?: Record<string, number>; foot?: Record<string, number> }
@@ -21,6 +25,8 @@ export interface StandMeta { figH: number; poses: Record<string, [number, number
 export interface RealMeta {
   /** spec 102 FR-255: a pixel world's art (one integer scale); its lobby keeps people apart */
   pixelArt?: boolean;
+  /** spec 102 delta 2026-11-14 (spec 097 FR-104): this world draws the All floors view as storeys (a band and a tag per floor); off in a world that has not built it (Photo, cave: T113) */
+  storeys?: boolean;
   /** spec 097 FR-335 (T247): the people's own art is not pixel art (false); a hi-res crew in a pixel world is scaled to the world's people, not drawn at whole multiples of its pixels */
   pixelPeople?: boolean;
   seat: Record<string, SeatMeta>; stand: Record<string, StandMeta>;
@@ -58,11 +64,14 @@ export interface DeskBox {
 export interface ZoneBox { id: string; part: number; box: Rect; sign: Rect; desks: DeskBox[]; /** the sign shows name, counts, + and menu only; path and cost go to its hover (FR-256 in `aisles`; FR-356 in a room too narrow for the whole sign) */ signShort?: boolean }
 export interface VisitorBox { id: string; fig: (Rect & { file: string; fileB: string | null; b: Rect | null; pose: string; feetY: number; faces: 'left' | 'right' }) | null; chip: { x: number; y: number }; face: Rect | null; shadow: Rect | null }
 export interface FixtureBox { id: string; custom: boolean; art: Rect | null; slot: Rect; plate: { x: number; y: number; w: number }; visitors: VisitorBox[]; more: number; light: Rect }
+export interface StoreyBand { id: string; name: string; n: number; box: Rect; tag: Rect; slab: Rect | null }
 export interface Layout {
   u: number; big: boolean; lobbyH: number; floorH: number; width: number; height: number; scroll: boolean; faceH: number;
   zones: ZoneBox[]; fixtures: FixtureBox[]; floorStrip: Rect;
   /** `aisles` only: the free strip under the lobby where one-line pills go first */
   lane?: Rect;
+  /** the All floors view as storeys (spec 097 FR-104): one band per floor, floor 1 at the bottom; `tag` holds the floor's name, `slab` is the rule between this storey and the one above it (null for the top one) */
+  storeys?: StoreyBand[];
   /** `aisles` only: the pixel scale (CSS px per art pixel) and the cabinet's size */
   g?: number; cabinet?: { w: number; h: number; gw: number; gh: number; cols: number; rows: number };
   /** spec 097 FR-308: FR-338: the rows of the helper strip (1), or 0: none drawn, the plate keeps its `+N` and dots (no room, or no helpers) */
@@ -507,6 +516,21 @@ function roStation(meta: RealMeta, a: RealAgent, sx: number, y: number, Sw: numb
 /** FR-018: the folder sign's width for its text (an estimate; the renderer cuts the path with an ellipsis). */
 export const signWidth = (name: string, path: string, counts: number, zw: number): number =>
   Math.max(60, Math.min(zw - 8, 120 + 7 * (Math.min(40, name.length) + Math.min(40, path.length)) * 0.75 + 30 * counts));
+
+/** spec 102 delta 2026-11-14 (spec 097 FR-104, FR-116): the storeys of a model, the one rule every arrangement shares. Folders come in the building's order (highest floor first, `storeysTopDown`);
+ *  a storey is a run of folders on one floor. Returns the runs as {floor, from, to} (folder indexes, `to` excluded), or null when fewer than two floors have a folder (no storeys are drawn then). */
+export function storeyRuns(folders: ReadonlyArray<{ floor?: RealFloor }>): Array<{ floor: RealFloor; from: number; to: number }> | null {
+  const runs: Array<{ floor: RealFloor; from: number; to: number }> = [];
+  folders.forEach((f, i) => { if (!f.floor) return; const l = runs[runs.length - 1]; if (l && l.floor.id === f.floor.id && l.to === i) l.to = i + 1; else runs.push({ floor: f.floor, from: i, to: i + 1 }); });
+  return runs.length >= 2 && new Set(runs.map((r) => r.floor.id)).size === runs.length ? runs : null;
+}
+/** the rule between two storeys, in px: counted in the hall's height */
+export const STOREY_GAP = 4;
+/** the narrowest a storey's tag may be cut to, px (its name is cut with an ellipsis, the whole name is in its title) */
+export const STOREY_TAG_MIN = 70;
+/** the width of a storey's tag ("3 Client A"): the text's measured width (`w`, px, the sign's 12 px bold in the font of this machine) plus the sign's 16 px of padding and border; with no measure, 8 px a letter
+ *  (the digits, a space and the name, at most 24 letters: the rest is cut and in the title). `n` 0 is the Resting tag: its text is the name alone. */
+export const storeyTagW = (f: RealFloor): number => 16 + Math.ceil(f.w !== undefined ? Math.min(f.w, 8 * 27) : 8 * ((f.n ? String(f.n).length + 1 : 0) + Math.min(24, f.name.length)));
 
 /** FR-356 (bug #1392): the narrowest whole sign: its name cut to 3 letters, no path, the counts, the cost (`counts` counts it, as `signWidth`), + and menu. Measured 183 px with two
  *  counts and a cost (the cave at 1280x800, 2026-11-09), plus 7 px for a wider font (#1079). A room narrower than this takes the short sign (FR-256's: no cost, no path). */

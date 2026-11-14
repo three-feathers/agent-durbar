@@ -4,9 +4,9 @@ import * as assert from 'assert';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { realLayout, sortDesks, type RealMeta, type RealModel, type RealAgent, type RealState, type Rect, type Layout, type DeskBox } from '../src/shared/realoffice-layout';
+import { realLayout, sortDesks, signMin, storeyRuns, storeyTagW, STOREY_GAP, type RealFloor, type RealMeta, type RealModel, type RealAgent, type RealState, type Rect, type Layout, type DeskBox } from '../src/shared/realoffice-layout';
 import { screenFit } from '../src/shared/realoffice-layout';
-import { aisleStatus, aislesLayout, layoutFor, aisleTabOrder, aisleFace, FACE_FLOOR, AISLE_SIGN_MIN_W, AISLE_PLATE_H, ARRANGEMENTS } from '../src/shared/realoffice-arrangements';
+import { aisleStatus, aislesLayout, placeResting, layoutFor, aisleTabOrder, aisleFace, FACE_FLOOR, AISLE_SIGN_MIN_W, AISLE_PLATE_H, ARRANGEMENTS } from '../src/shared/realoffice-arrangements';
 
 process.exitCode = 1;
 const ROOT = (() => { let d = __dirname; while (!fs.existsSync(path.join(d, 'package.json'))) d = path.dirname(d); return d; })();
@@ -587,6 +587,199 @@ console.log(`floor covered with 4 or fewer: ${covs.join('; ')}`);
   }
   for (const [W, H] of FLOORS) for (const n of [5, 8, 12, 15]) assert.ok(!rowsOf(n, 4, W, H, 0).big, `FR-308: ${n} agents at ${W}x${H}: not big`);
   console.log('arcade big screens: 8 lines at 1 to 4 agents (1408 wide) and 1 to 2 (1248 wide); 3 and 4 at 1248 is the recorded gap');
+}
+
+// ---- spec 102 delta 2026-11-14 (spec 097 FR-104, FR-116, issue #1268 T223): the All floors view as storeys. A floor starts on a new row when that costs no row, no smaller cabinet and no scroll;
+// otherwise the floors share rows and each storey is marked by its tag and a rule where it starts. 15 agents fit both sizes over 1, 2 and 3 floors; a tag never covers a sign or another tag.
+{
+  const FLS: RealFloor[] = [{ id: 'g', name: 'Ground floor', n: 1 }, { id: 'c', name: 'Client A', n: 2 }, { id: 'p', name: 'Personal', n: 3 }, { id: 't', name: 'Top floor', n: 4 }, { id: 's', name: 'Sky', n: 5 }, { id: 'u', name: 'Sixth', n: 6 }].map((f) => ({ ...f, w: 6.5 * (2 + f.name.length) })); // each with a measured text width, as the renderer passes it (the sign's 12 px bold, about 6.5 px a letter)
+  const fm = (sizes: number[], floorOf: number[]): RealModel => { let i = 0; return { folders: sizes.map((n, fi) => ({ id: 'f' + fi, floor: FLS[floorOf[fi]], agents: Array.from({ length: n }, () => { const k = i++; return { id: 'a' + k, state: 'working' as RealState, person: PEOPLE[k % 15], away: null }; }) })), places: ['library', 'boss'].map((id) => ({ id, visitors: [] })) }; };
+  const sg = (n: number): Record<string, { name: string; path: string; counts: number }> => Object.fromEntries(Array.from({ length: n }, (_, i) => ['f' + i, { name: 'project-' + i, path: '~/work/p' + i, counts: 3 }]));
+  const flat = (m: RealModel): RealModel => ({ ...m, folders: m.folders.map((f) => ({ ...f, floor: undefined })) });
+  // [name, agents per folder, floor index per folder (top floor first), forced rows expected]
+  const CASES: Array<[string, number[], number[], boolean]> = [
+    ['15: 5/5/5', [5, 5, 5], [2, 1, 0], true], ['15: 4+1 on each floor', [4, 1, 4, 1, 4, 1], [2, 2, 1, 1, 0, 0], true], ['12: 4/4/4', [4, 4, 4], [2, 1, 0], true], ['9: 3/3/3', [3, 3, 3], [2, 1, 0], true],
+    ['15: 6/5/4', [6, 5, 4], [2, 1, 0], false], ['15: 7/4/4', [7, 4, 4], [2, 1, 0], false], ['15: 3,3,3,3,3 on 3 floors', [3, 3, 3, 3, 3], [2, 2, 1, 0, 0], false], ['15: 8/7 on 2 floors', [8, 7], [1, 0], false],
+    ['12: 6/3/3', [6, 3, 3], [2, 1, 0], false], ['13: 5/5/3', [5, 5, 3], [2, 1, 0], true], ['14: 5/5/4', [5, 5, 4], [2, 1, 0], true],
+  ];
+  const rowOf = (L: Layout, y: number): number => [...new Set(L.zones.map((z) => z.sign.y))].sort((a, b) => a - b).indexOf(y);
+  for (const [W, H] of [[1408, ROOM.h900], [1248, ROOM.h800]] as Array<[number, number]>) for (const [name, sz, fl, forcedRows] of CASES) {
+    const tag = `${name} at ${W}x${H}`, m = fm(sz, fl), L = aislesLayout(m, { w: W, h: H }, META, sg(sz.length)), F = aislesLayout(flat(m), { w: W, h: H }, META, sg(sz.length));
+    const floors = new Set(fl).size;
+    assert.ok(!L.scroll, `${tag}: the hall does not scroll`);
+    assert.ok(L.g === F.g && L.cabinet!.gw === F.cabinet!.gw && L.cabinet!.rows === F.cabinet!.rows, `${tag}: the same scale, cabinet and rows as the hall without floors`);
+    const S = L.storeys!; assert.ok(S && S.length === floors, `${tag}: ${floors} storeys are marked`);
+    assert.deepStrictEqual(S.map((b) => b.n), [...new Set(fl)].map((i) => FLS[i].n), `${tag}: the storeys are in the building's order, top floor first`); // reading order
+    assert.deepStrictEqual(S.map((b) => b.name), [...new Set(fl)].map((i) => FLS[i].name), `${tag}: each storey carries its floor's name`);
+    S.forEach((b, i) => { if (i) { const a = S[i - 1]; assert.ok(a.tag.y < b.tag.y || (a.tag.y === b.tag.y && a.tag.x < b.tag.x), `${tag}: the tag of ${b.name} comes after the tag of ${a.name} in reading order`); } });
+    const signs = L.zones.map((z) => z.sign);
+    for (const [i, b] of S.entries()) {
+      assert.ok(b.tag.x >= 0 && b.tag.x + b.tag.w <= W && b.tag.h === 18 && b.tag.w >= storeyTagW(FLS.find((f) => f.n === b.n)!), `${tag}: the tag of ${b.name} is whole inside the hall`);
+      assert.ok(inside(b.tag, { x: 0, y: 0, w: W, h: L.height }), `${tag}: the tag of ${b.name} is in the hall`);
+      assert.ok(!signs.some((sn) => inter(sn, b.tag)), `${tag}: the tag of ${b.name} covers no sign`);
+      assert.ok(!S.some((o, j) => j !== i && inter(o.tag, b.tag)), `${tag}: the tag of ${b.name} covers no other tag`);
+      assert.ok(!L.zones.some((z) => z.desks.some((d) => inter(b.tag, d.desk))), `${tag}: the tag of ${b.name} covers no cabinet`);
+      assert.ok(L.zones.some((z) => z.sign.y === b.tag.y && Math.abs(z.sign.x + z.sign.w + 4 - b.tag.x) <= 1 && z.sign.y >= b.box.y && z.sign.y <= b.box.y + b.box.h), `${tag}: the tag stands in the sign strip of a zone of its storey, just after its sign`);
+      if (i) assert.ok(b.slab && (forcedRows ? b.slab.w === W - 2 * 8 && b.slab.y + b.slab.h <= b.box.y : b.slab.w === 2 && b.slab.h === 18 && b.slab.y === b.box.y), `${tag}: the rule at the start of ${b.name} is ${forcedRows ? 'horizontal, above its first row' : 'upright, in the strip before its first zone'}`);
+      else assert.strictEqual(b.slab, null, `${tag}: the top storey has no rule`);
+    }
+    if (forcedRows) {
+      for (let i = 1; i < S.length; i++) assert.ok(S[i].box.y >= S[i - 1].box.y + S[i - 1].box.h + STOREY_GAP, `${tag}: the band of ${S[i].name} starts ${STOREY_GAP} px under the band above: no two bands overlap`);
+      assert.ok(S.every((b) => new Set(L.zones.filter((z) => z.sign.y === b.box.y).map((z) => z.id)).size >= 1) && new Set(S.map((b) => b.box.y)).size === S.length, `${tag}: every storey starts on a row of its own`);
+    }
+    assert.ok(Math.max(...L.zones.map((z) => z.box.y + z.box.h)) <= L.height - 7, `${tag}: the last row, with the rules between storeys counted, ends inside the hall`);
+    const rowsUsed = new Set(L.zones.map((z) => rowOf(L, z.sign.y)));
+    assert.ok(rowsUsed.size <= L.cabinet!.rows, `${tag}: no more rows than the hall has`);
+    cases++;
+  }
+  // forced only when free: 15 agents 6/5/4 share rows (a forced break would make 4 rows and scroll), 5/5/5 do not
+  const share = aislesLayout(fm([6, 5, 4], [2, 1, 0]), { w: 1248, h: ROOM.h800 }, META, sg(3)), own = aislesLayout(fm([5, 5, 5], [2, 1, 0]), { w: 1248, h: ROOM.h800 }, META, sg(3));
+  assert.strictEqual(share.cabinet!.rows, 3, 'a floor that would cost a row shares the row of the floor above (6/5/4): three rows, not four');
+  assert.strictEqual(new Set(own.storeys!.map((b) => b.box.y)).size, 3, 'floors of five agents each stand on rows of their own (5/5/5)');
+  assert.ok(share.storeys!.some((b) => b.slab && b.slab.w === 2) && own.storeys!.filter((b) => b.slab).every((b) => b.slab!.w > 100), 'the rules: upright where a floor starts mid-row, across where it starts a row');
+  // one floor with folders, or a world that does not draw storeys, draws none
+  assert.strictEqual(aislesLayout(fm([5, 5], [0, 0]), { w: 1248, h: ROOM.h800 }, META, sg(2)).storeys, undefined, 'two folders on one floor: no storeys');
+  assert.strictEqual(aislesLayout(fm([5, 5, 5], [2, 1, 0]), { w: 1248, h: ROOM.h800 }, { ...META, storeys: false }, sg(3)).storeys, undefined, 'a world without `storeys` draws none');
+  assert.strictEqual(JSON.stringify(aislesLayout(fm([5, 5, 5], [2, 1, 0]), { w: 1248, h: ROOM.h800 }, { ...META, storeys: false }, sg(3))), JSON.stringify(aislesLayout(flat(fm([5, 5, 5], [2, 1, 0])), { w: 1248, h: ROOM.h800 }, META, sg(3))), 'a world without `storeys` lays out exactly as before');
+  // the shared rule (`storeyRuns`) is the one every arrangement uses; the `rows` arrangement does not draw storeys yet (spec 097 T113, KNOWN GAP): realLayout leaves them unset
+  const runs = storeyRuns(fm([5, 5, 5], [2, 1, 0]).folders);
+  assert.deepStrictEqual(runs && runs.map((r) => [r.floor.id, r.from, r.to]), [['p', 0, 1], ['c', 1, 2], ['g', 2, 3]], 'storeyRuns: one run per floor, in the given order');
+  assert.strictEqual(storeyRuns(fm([5, 5], [0, 0]).folders), null, 'storeyRuns: one floor is no storeys');
+  assert.strictEqual(storeyRuns(fm([2, 2, 2], [0, 1, 0]).folders), null, 'storeyRuns: a floor split in two runs is not storeys (the app sorts by floor first)');
+  assert.strictEqual(realLayout(fm([5, 5, 5], [2, 1, 0]), { w: 1248, h: ROOM.h800 }, { ...META, storeys: true }, sg(3)).storeys, undefined, 'KNOWN GAP (spec 097 T113): the rows arrangement draws no storeys yet, whatever the flag');
+  // ---- review of #1741 (spec 102 delta 2026-11-14): the four fixes
+  const fmx = (sizes: number[], floorOf: number[], o: { rest?: number[]; helpers?: boolean; w?: number; swap?: boolean } = {}): RealModel => { const m = fm(sizes, floorOf); let i = 0; return { ...m, folders: m.folders.map((f) => ({ ...f, floor: f.floor && o.w !== undefined ? { ...f.floor, w: o.w } : f.floor, agents: f.agents.map((a) => { const k = i++; return { ...a, ...(o.helpers ? { helpers: 1 } : {}), ...(o.rest && o.rest.includes(k) ? { lounge: true, state: ((o.rest.indexOf(k) % 2 === 0) !== !!o.swap ? 'error' : 'idle') as RealState } : {}) }; }) })) }; }; /* swap: the resting agents' status order the other way round, so the lounge's order is not the building's */
+  const SZ2: Array<[string, number, number]> = [['1440x900', 1408, ROOM.h900], ['1280x800', 1248, ROOM.h800]];
+  // (1) resting agents (spec 097 FR-248): a resting agent's seat stands at the end of its own floor's folders, never in another floor's band or row run: reading order puts the seat after a folder of its own floor
+  const floorOfAgent = (m: RealModel, id: string): string => m.folders.find((f) => f.agents.some((a) => a.id === id))!.floor!.id;
+  const seatPrev = (L: Layout, d: DeskBox, m: RealModel): string => { /* the folder just before the seat in reading order (row, then x); its floor is the seat's floor */
+    const ys = [...new Set(L.zones.map((z) => z.sign.y))].sort((x, y) => x - y), beyond = d.plate.y > ys[ys.length - 1] + L.cabinet!.h + 18 + 21 + 40, row = ys.filter((y) => y <= d.plate.y).length - 1;
+    const before = L.zones.filter((z) => beyond || z.sign.y < ys[row] || (z.sign.y === ys[row] && z.box.x < d.slot.x)).sort((p1, p2) => p1.sign.y - p2.sign.y || p1.box.x - p2.box.x);
+    return m.folders.find((f) => f.id === before[before.length - 1].id.split('\u0000')[0])!.floor!.id;
+  };
+  for (const swap of [false, true]) for (const [nm, W, H] of SZ2) for (const [name, sz, fl, rest] of [['5/5/3, two resting on two floors', [5, 5, 3], [2, 1, 0], [7, 12]], ['4/4/4, one resting on each floor', [4, 4, 4], [2, 1, 0], [1, 5, 9]], ['3/3/3, one resting on each floor', [3, 3, 3], [2, 1, 0], [1, 4, 7]], ['5/5 on 2 floors, two resting', [5, 5], [1, 0], [2, 8]], ['2/2/2 sharing rows, three resting', [2, 2, 2], [2, 1, 0], [0, 3, 5]], ['6/5/4 sharing rows, two resting', [6, 5, 4], [2, 1, 0], [0, 7]], ['4/4/4/3, two resting', [4, 4, 4, 3], [2, 2, 1, 0], [0, 9]]] as Array<[string, number[], number[], number[]]>) {
+    const tag = `${name} at ${nm}${swap ? ' (status order swapped)' : ''}`, m = fmx(sz, fl, { rest, swap }), L = aislesLayout(m, { w: W, h: H }, META, sg(sz.length)), F0 = aislesLayout(flat(m), { w: W, h: H }, META, sg(sz.length));
+    assert.ok(!L.scroll && L.lounge && L.lounge.desks.length === rest.length && L.storeys && L.storeys.length === new Set(fl).size, `${tag}: storeys drawn, the resting agents seated, no scroll`);
+    assert.ok(L.g === F0.g && L.cabinet!.gw === F0.cabinet!.gw, `${tag}: the resting seats cost no scale and no cabinet`);
+    for (const d of L.lounge!.desks) {
+      assert.strictEqual(seatPrev(L, d, m), floorOfAgent(m, d.id), `${tag}: the seat of ${d.id} comes after a folder of its own floor, not another floor's`);
+      const mine = L.storeys!.filter((b) => b.box.y <= d.slot.y + 1 && d.slot.y + d.slot.h <= b.box.y + b.box.h + 1 && b.box.x <= d.slot.x + 1 && d.slot.x + d.slot.w <= b.box.x + b.box.w + 1);
+      assert.ok(mine.length >= 1, `${tag}: the seat of ${d.id} is inside a storey band`);
+      for (const b of L.storeys!) assert.ok(!inter(b.tag, d.slot) && !inter(b.tag, d.plate) && !inter(b.tag, d.desk), `${tag}: the tag of ${b.name} covers no resting seat`);
+      assert.ok(inside(d.slot, { x: 0, y: 0, w: W, h: L.height }, 1), `${tag}: the seat of ${d.id} is inside the hall`);
+    }
+    if (L.storeys!.every((b) => !b.slab || b.slab.w > 100)) for (const d of L.lounge!.desks) { /* floors on rows of their own: the seat is in no band but its own floor's */
+      const own = L.storeys!.findIndex((b) => b.name === FLS.find((f) => f.id === floorOfAgent(m, d.id))!.name);
+      L.storeys!.forEach((b, i) => { if (i !== own) assert.ok(!inter(d.slot, b.box) && !inter(d.plate, b.box), `${tag}: the seat of ${d.id} lies in the band of ${b.name}, a floor it is not on`); });
+    }
+    cases++;
+  }
+  // when a seat beside its floor would cost the hall (the cabinet, a scroll, a folder kept whole), or its floor has no folder here, the seats stay in the free cells at the rows' ends as FR-248 has them, under their own tag
+  // "Resting" and an upright rule: no floor's band holds them, the hall is the one without floors, and the floors' tags are as before
+  for (const [nm, W, H, sz, fl, rest] of [['a floor whose agents all rest', 1248, ROOM.h800, [5, 3, 3], [2, 1, 0], [5, 6, 7]], ['the top floor all rests', 1248, ROOM.h800, [3, 3, 3], [2, 1, 0], [0, 1, 2]], ['2/5 with one resting (the seat beside its floor would cost the cabinet)', 1408, ROOM.h900, [2, 5], [1, 0], [2]], ['the arcade demo: 3/4/2/4/2 on three floors, two resting', 1248, ROOM.h800, [3, 4, 2, 4, 2], [2, 1, 1, 0, 0], [8, 10]], ['the same at 1440x900', 1408, ROOM.h900, [3, 4, 2, 4, 2], [2, 1, 1, 0, 0], [8, 10]]] as Array<[string, number, number, number[], number[], number[]]>) {
+    const m = fmx(sz, fl, { rest }), L = aislesLayout(m, { w: W, h: H }, META, sg(sz.length)), F0 = aislesLayout(flat(m), { w: W, h: H }, META, sg(sz.length));
+    const rb = L.storeys && L.storeys.find((b) => b.n === 0);
+    assert.ok(L.storeys && rb && L.storeys[L.storeys.length - 1] === rb && L.storeys.filter((b) => b.n > 0).length >= 2, `${nm}: the floors' storeys and a Resting band after them`);
+    assert.strictEqual(L.lounge && L.lounge.desks.length, rest.length, `${nm}: every resting agent is seated`);
+    assert.ok(!L.scroll && L.g === F0.g && L.cabinet!.gw === F0.cabinet!.gw, `${nm}: the hall is as without floors (scale, cabinet, no scroll)`);
+    for (const d of L.lounge!.desks) assert.ok(inside(d.slot, rb!.box, 1), `${nm}: the seat of ${d.id} is in the Resting band`);
+    for (const b of L.storeys!) {
+      for (const d of L.lounge!.desks) assert.ok(!inter(b.tag, d.slot) && !inter(b.tag, d.plate) && !inter(b.tag, d.desk), `${nm}: the tag of ${b.name} covers no resting seat`);
+      assert.ok(!L.zones.some((z) => inter(z.sign, b.tag) || z.desks.some((d) => inter(b.tag, d.desk))) && !L.storeys!.some((o) => o !== b && inter(o.tag, b.tag)), `${nm}: the tag of ${b.name} covers no sign, cabinet or other tag`);
+    }
+    assert.ok(rb!.tag.y <= Math.min(...L.lounge!.desks.map((d) => d.slot.y)) && rb!.tag.x >= 0 && rb!.tag.x + rb!.tag.w <= W && rb!.slab!.w === 2, `${nm}: the Resting tag stands over the seats, inside the hall, with an upright rule`);
+    cases++;
+  }
+  // round 4 of the review of #1741: a folder sign is never cut below min(signMin, its width in the hall without floors) by a tag (its + and menu would fall outside it); the tag goes to another zone of its storey, or the hall is drawn without floors.
+  // The named case, then a seeded fuzz over 1 to 9 floors at both sizes (mixed states): every sign of every layout, and the share of halls that still draw floors by floor count (printed)
+  {
+    const FL9: RealFloor[] = Array.from({ length: 9 }, (_, i) => ({ id: 'x' + i, name: ['Ground floor', 'Client A', 'Personal', 'Top floor', 'Sky', 'Sixth', 'Seventh', 'Eighth', 'Ninth'][i], n: i + 1 })).map((f) => ({ ...f, w: 6.5 * (2 + f.name.length) }));
+    const mkf = (sz: number[], fl: number[]): RealModel => { let i = 0; return { folders: sz.map((n, fi) => ({ id: 'f' + fi, floor: FL9[fl[fi]], agents: Array.from({ length: n }, () => { const k = i++; return { id: 'a' + k, state: (['working', 'idle', 'waiting', 'error'] as RealState[])[k % 4], person: PEOPLE[k % 15], away: null }; }) })), places: [] }; };
+    const signsOk = (m: RealModel, W: number, H: number, n: number): { L: Layout; bad: string[] } => {
+      const L = aislesLayout(m, { w: W, h: H }, META, sg(n)), F = aislesLayout(flat(m), { w: W, h: H }, META, sg(n)), key = (zs: typeof L.zones, i: number): string => zs[i].id + '#' + zs.slice(0, i).filter((o) => o.id === zs[i].id).length;
+      /* strict (owner 2026-11-14): a sign that stands where it stands without floors is exactly as wide (a tag may not cut it); a sign the forced break moved is not below min(signMin, its flat width) */
+      const fz = (i: number): (typeof L.zones)[number] | undefined => F.zones.find((_, j) => key(F.zones, j) === key(L.zones, i));
+      return { L, bad: L.storeys ? L.zones.filter((z, i) => { const o = fz(i); return !!o && (o.sign.x === z.sign.x && o.sign.y === z.sign.y ? z.sign.w < o.sign.w - 0.01 : z.sign.w < Math.min(signMin(3), o.sign.w) - 0.01); }).map((z) => `${z.id} ${Math.round(z.sign.w)}`) : [] };
+    };
+    const named = signsOk(mkf([2, 3, 4, 2, 2, 1], [4, 3, 3, 2, 1, 0]), 1408, ROOM.h900, 6);
+    assert.deepStrictEqual(named.bad, [], 'the named case 2/3/4/2/2/1 on 5 floors at 1440x900 (a sign was cut from 278 to 169 px before): no sign is narrower than in the hall without floors (strict, owner 2026-11-14; where rows differ, not below min(signMin, flat))');
+    assert.ok(named.L.zones.every((z) => z.sign.w >= 190), 'the named case: every sign is at least 190 px, where + and the folder menu fit');
+    let seed = 31337; const rnd = (n: number): number => { seed = (seed * 1664525 + 1013904223) % 4294967296; return Math.floor((seed / 4294967296) * n); };
+    const share: Record<string, [number, number]> = {}; let layouts = 0;
+    for (let nfl = 1; nfl <= 9; nfl++) for (const [nm, W, H] of SZ2) for (let t = 0; t < 300; t++) {
+      const nf = nfl + rnd(3), sz: number[] = []; let tot = 0;
+      for (let i = 0; i < nf; i++) { sz.push(1 + rnd(Math.max(1, Math.min(6, 15 - tot - (nf - i - 1))))); tot += sz[i]; }
+      if (tot > 15) continue;
+      const cuts = new Set([0]); while (cuts.size < Math.min(nfl, nf)) cuts.add(rnd(nf)); const cs = [...cuts].sort((x, y) => x - y), fl = sz.map((_, i) => nfl - cs.filter((c) => c <= i).length);
+      const { L, bad } = signsOk(mkf(sz, fl), W, H, nf); layouts++;
+      assert.deepStrictEqual(bad, [], `fuzz ${nfl} floors ${JSON.stringify(sz)} ${fl.join('')} at ${nm}: no sign is narrower than in the hall without floors (strict, owner 2026-11-14; where rows differ, not below min(signMin, flat))`);
+      assert.ok(!L.scroll, `fuzz ${nfl} floors ${JSON.stringify(sz)} at ${nm}: the hall does not scroll`);
+      const sh = share[`${nfl} floors ${nm}`] || (share[`${nfl} floors ${nm}`] = [0, 0]); sh[1]++; if (L.storeys) sh[0]++;
+    }
+    assert.ok(layouts >= 4000, `the fuzz made ${layouts} layouts`);
+    console.log('floors still drawn, share of random halls (15 agents at most): ' + Object.entries(share).map(([k, [d, n]]) => `${k} ${Math.round((100 * d) / n)}%`).join(', '));
+  }
+  // round 4 of the review of #1741: 1/1/13 over three floors has no zone that can hold a tag and keep its sign at min(signMin, flat width): the hall without floors, byte for byte, at both sizes
+  for (const [nm, W, H] of SZ2) { const m = fm([1, 1, 13], [2, 1, 0]); assert.strictEqual(JSON.stringify(aislesLayout(m, { w: W, h: H }, META, sg(3))), JSON.stringify(aislesLayout(flat(m), { w: W, h: H }, META, sg(3))), `1/1/13 at ${nm}: no room for a tag without cutting a sign too narrow: the hall without floors`); }
+  // round 2 of the review of #1741: the Resting tag and rule are clear of every floor's tag and rule, folder sign, cabinet and seat. The reviewer's case (2/1/3/2 on 4 floors, one resting from the third folder), then a fuzz
+  const clearOf = (L: Layout, tag: string): void => {
+    const rb = L.storeys!.find((b) => b.n === 0), marks = L.storeys!.filter((b) => b !== rb).flatMap((b) => [{ n: `the tag of ${b.name}`, r: b.tag }, ...(b.slab ? [{ n: `the rule of ${b.name}`, r: b.slab }] : [])]);
+    if (!rb) return;
+    for (const m of marks) assert.ok(!inter(rb.tag, m.r) && !inter(rb.slab!, m.r), `${tag}: the Resting tag and rule are clear of ${m.n}`);
+    assert.ok(!L.zones.some((z) => inter(z.sign, rb.tag) || inter(z.sign, rb.slab!) || z.desks.some((d) => inter(rb.tag, d.desk))) && !L.lounge!.desks.some((d) => inter(rb.tag, d.slot) || inter(rb.tag, d.plate)), `${tag}: the Resting tag covers no sign, cabinet or seat`);
+    assert.ok(rb.tag.x >= 0 && rb.tag.x + rb.tag.w <= L.width, `${tag}: the Resting tag is inside the hall`);
+  };
+  for (const [nm, W, H] of SZ2) {
+    const m = fmx([2, 1, 3, 2], [3, 2, 1, 0], { rest: [3] }), L = aislesLayout(m, { w: W, h: H }, META, sg(4));
+    assert.ok(L.lounge && L.lounge.desks.length === 1, `reviewer's case at ${nm}: the resting agent is seated`);
+    const rb0 = L.storeys && L.storeys.find((b) => b.n === 0), fl0 = L.storeys && L.storeys.find((b) => b.name === 'Personal');
+    assert.ok(rb0 && fl0 && rb0.tag.y === fl0.tag.y && rb0.tag.x >= fl0.tag.x + fl0.tag.w + 6, `reviewer's case at ${nm}: the Resting tag starts after the tag of Personal in the same strip, 6 px clear (it is not dropped, and not over it)`);
+    if (L.storeys) { assert.ok(L.storeys.length >= 2, `reviewer's case at ${nm}: storeys or none`); clearOf(L, `reviewer's case (2/1/3/2 on 4 floors, one resting) at ${nm}`); }
+  }
+  { let seed = 4242; const rnd = (n: number): number => { seed = (seed * 1664525 + 1013904223) % 4294967296; return Math.floor((seed / 4294967296) * n); }; let drawn = 0, dropped = 0;
+    for (let t = 0; t < 400; t++) {
+      const nf = 2 + rnd(5), fls = 2 + rnd(Math.min(4, nf - 1)), sz = Array.from({ length: nf }, () => 1 + rnd(5)); if (sz.reduce((x, y) => x + y, 0) > 15) continue;
+      const cuts = [0, ...Array.from({ length: fls - 1 }, () => 1 + rnd(nf - 1))].sort((x, y) => x - y), fl = sz.map((_, i) => fls - 1 - cuts.filter((c) => c <= i && c > 0).length), tot = sz.reduce((x, y) => x + y, 0), rest = Array.from({ length: tot }, (_, i) => i).filter(() => rnd(4) === 0);
+      if (!rest.length) continue;
+      const [nm, W, H] = SZ2[t % 2], m = fmx(sz, fl.map((f) => Math.min(5, f)), { rest, helpers: rnd(2) === 0, swap: rnd(2) === 0 }), L = aislesLayout(m, { w: W, h: H }, META, sg(nf)), tag = `fuzz ${t} ${JSON.stringify(sz)} floors ${fl.join('')} rest ${rest.join(',')} at ${nm}`;
+      const seated = L.lounge ? L.lounge.desks.length : 0, F1 = aislesLayout(flat(m), { w: W, h: H }, META, sg(nf)); assert.ok(seated >= (F1.lounge ? F1.lounge.desks.length : 0), `${tag}: no fewer resting agents seated than in the hall without floors (${seated} of ${rest.length}; the legacy lounge seats fewer than ${rest.length} in some halls, also without floors)`);
+      if (!L.storeys) { dropped++; continue; }
+      drawn++;
+      for (const [i, b] of L.storeys.entries()) { assert.ok(!L.zones.some((z) => inter(z.sign, b.tag)) && !L.storeys.some((o, j) => j !== i && inter(o.tag, b.tag)) && !L.storeys.some((o, j) => j !== i && o.slab && inter(o.slab, b.tag)) && !(b.slab && L.storeys.some((o, j) => j !== i && inter(o.tag, b.slab!))), `${tag}: the tag of ${b.name} is over no sign, tag or rule`); assert.ok(b.tag.x >= 0 && b.tag.x + b.tag.w <= W, `${tag}: the tag of ${b.name} is inside the hall`); }
+      clearOf(L, tag);
+    }
+    assert.ok(drawn > 20, `the fuzz drew storeys with resting agents in ${drawn} splits (and none in ${dropped})`);
+    // no run has room: the layout is the one without floors (a floor's tag that cannot be cleared); the case is found by the fuzz's own dropped count below
+  }
+  // the no-room fallback, direct: `placeResting` on crafted runs. A free run gives a place; a run held by a floor tag at its start gives a place after it; every run held, or too narrow, gives none
+  { const run = { top: 100, x0: 200, x1: 500 }, mk = (x: number, w: number): Rect => ({ x, y: 100, w, h: 18 });
+    assert.deepStrictEqual(placeResting([run], [], [], 72)!.tx, 203, 'placeResting: a free run takes the tag at its start');
+    assert.strictEqual(placeResting([run], [mk(190, 100)], [], 72)!.tx, 296, 'placeResting: after a floor tag in the way, 6 px clear');
+    assert.strictEqual(placeResting([run], [mk(190, 400)], [], 72), null, 'no room for the Resting tag: a floor tag holds the whole run');
+    assert.strictEqual(placeResting([run], [mk(190, 270)], [], 72), null, 'no room for the Resting tag: what is left of the run is narrower than the tag');
+    assert.strictEqual(placeResting([run, { top: 300, x0: 10, x1: 40 }], [mk(190, 400)], [], 72), null, 'no room for the Resting tag: no run is wide enough');
+    assert.strictEqual(placeResting([run], [], [mk(250, 100)], 72), null, 'no room for the Resting tag: a folder sign stands in the run');
+    // and the layout wired to it: with no place, the hall without floors, byte for byte
+    const m = fmx([2, 1, 3, 2], [3, 2, 1, 0], { rest: [3] });
+    for (const [, W, H] of SZ2) assert.strictEqual(JSON.stringify(aislesLayout(m, { w: W, h: H }, META, sg(4), () => null)), JSON.stringify(aislesLayout(flat(m), { w: W, h: H }, META, sg(4))), 'no room for the Resting tag: the hall without floors, byte for byte (no storeys, tags or rules)'); }
+  // (2) the tag is sized from the measured text: a wider font gives a wider tag, a narrow measure a narrow one, a very long name is capped; with no measure 8 px a letter
+  assert.strictEqual(storeyTagW({ id: 'p', name: 'Personal', n: 3, w: 100 }), 116, 'the tag is the measured text plus 16 px of padding and border');
+  assert.strictEqual(storeyTagW({ id: 'p', name: 'Personal', n: 3 }), 16 + 8 * 10, 'no measure: 8 px a letter, digits and space included');
+  assert.ok(storeyTagW({ id: 'p', name: 'Personal', n: 3, w: 5000 }) <= 16 + 8 * 27, 'a long name is capped');
+  { const wide = aislesLayout(fmx([5, 5, 3], [2, 1, 0], { w: 140 }), { w: 1248, h: ROOM.h800 }, META, sg(3)), thin = aislesLayout(fmx([5, 5, 3], [2, 1, 0], { w: 50 }), { w: 1248, h: ROOM.h800 }, META, sg(3));
+    assert.ok(wide.storeys!.every((b) => b.tag.w >= 156) && thin.storeys!.every((b) => b.tag.w < 156 && b.tag.w >= 66), 'a wider measured font gives a wider tag in the layout, a narrow one a narrower one'); }
+  // (3) a forced break never drops the helper strip: 6 and 4 agents with helpers on two floors at 1280x800 keep the strip the hall without floors had
+  for (const [nm, W, H] of SZ2) for (const sz of [[6, 4], [4, 6], [5, 4, 3], [7, 3, 4]]) {
+    const fl = sz.length === 2 ? [1, 0] : [2, 1, 0], m = fmx(sz, fl, { helpers: true }), L = aislesLayout(m, { w: W, h: H }, META, sg(sz.length)), F0 = aislesLayout(flat(m), { w: W, h: H }, META, sg(sz.length));
+    assert.ok(L.helpRows! >= F0.helpRows! && !L.scroll, `${sz.join('/')} with helpers at ${nm}: the helper strip is kept (${F0.helpRows} without floors, ${L.helpRows} with)`);
+  }
+  assert.strictEqual(aislesLayout(fmx([6, 4], [1, 0], { helpers: true }), { w: 1248, h: ROOM.h800 }, META, sg(2)).helpRows, 1, '6/4 with helpers at 1280x800: the strip is shown');
+  // (4) a folder of 4 or fewer stays whole: 2/4/2/3 (the last on another floor) at 1280x800 would take a forced break that cuts the folder of 4 across two rows; the floors share rows instead
+  { const m = fmx([2, 4, 2, 3], [2, 2, 2, 1]), L = aislesLayout(m, { w: 1248, h: ROOM.h800 }, META, sg(4)), parts = new Map<string, number>();
+    for (const z of L.zones) parts.set(z.id, (parts.get(z.id) || 0) + 1);
+    assert.ok([...parts.values()].every((n) => n === 1), 'keeps a folder of 4 or fewer whole: no forced break that cuts one across rows (2/4/2/3)');
+    assert.ok(L.storeys!.length === 2 && L.storeys![1].slab!.w === 2, 'the floors share rows there (an upright rule)'); }
+  console.log('storeys: 12 agent splits over 1 to 3 floors at both sizes: no scroll, scale and cabinet as without floors, tags clear of signs, cabinets and each other');
 }
 
 console.log(`aisles tests passed (${cases} layouts)`);

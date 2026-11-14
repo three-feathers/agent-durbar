@@ -319,6 +319,16 @@
    * state,word,task,label,tip,selected,away,awayLabel,helpers:[state],helpWords}]}], places:[{id,label,custom,post,title,go,visitors:[{id,name,
    * needsYou,title}]}]}; `view`: {w,h}; `opts`: {still, world, set, rand, remember, onArt}. Returns the layout (for the app's checks).
    */
+  /* spec 102 delta 2026-11-14 (review of #1741): a storey tag's text width in the sign's own 12 px bold, in the font of this machine (a canvas measure; the layout adds the padding). Cached by font and text; null when it cannot be measured (the layout then takes 8 px a letter) */
+  let TAGCV = null;
+  function tagMeasure(stage) { /* one probe a render: the sign's bold font; returns text => px, or null (the layout then takes 8 px a letter) */
+    try {
+      const probe = document.createElement('div'); probe.className = 'ro-sign'; probe.style.cssText = 'position:absolute;visibility:hidden;left:0;top:0'; const pb = document.createElement('b'); probe.appendChild(pb); stage.appendChild(probe);
+      const cs = getComputedStyle(pb), font = cs.fontStyle + ' ' + cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily; probe.remove();
+      TAGCV = TAGCV || document.createElement('canvas').getContext('2d'); TAGCV.font = font;
+      return (text) => { const w = TAGCV.measureText(text).width; return w > 0 ? w : undefined; };
+    } catch (e) { return null; }
+  }
   function render(stage, model, view, opts) {
     const L = X();
     const world = has(root.DurbarRealOfficeWorlds || {}, opts.world || 'photo') ? opts.world || 'photo' : 'photo', set = has(root.DurbarRealOfficeSets || {}, opts.set || 'office') ? opts.set || 'office' : 'office';
@@ -331,9 +341,11 @@
     const ids = Object.keys(meta.seat).sort();
     const who = people(model, ids, opts.rand, !!opts.remember);
     const seatOk = (p) => !!p && !['typeA', 'think', 'waveA', 'rest'].some((f) => BAD.has(SD + p + '-' + f + '.webp'));
+    const tagW = model.folders.some((f) => f.floor) ? tagMeasure(stage) : null; /* review of #1741: the storey tags are sized from the text as this machine draws it */
     const engine = {
       keepRooms: !!model.keepRooms, /* spec 097 FR-353: a saved room order is kept in the rows */
-      folders: model.folders.map((f) => ({ id: f.id, keep: !!f.keep, agents: f.agents.map((a) => ({ id: a.id, state: a.state, away: a.away || null, person: seatOk(who[a.id]) ? who[a.id] : null, lounge: !!a.lounge, helpers: a.lounge || !a.subs ? 0 : a.subs.length })) })), /* spec 097 FR-246: the app's room rule (shutPlan) seats it in the lounge row; FR-306: the strip's helpers (none in the lounge; none without their list: the plate keeps its +N) */
+      restW: tagW ? tagW('Resting') : undefined, /* review of #1741: the Resting tag */
+      folders: model.folders.map((f) => ({ id: f.id, floor: f.floor ? Object.assign({}, f.floor, { w: tagW ? tagW(f.floor.n + ' ' + f.floor.name) : undefined }) : undefined, keep: !!f.keep, agents: f.agents.map((a) => ({ id: a.id, state: a.state, away: a.away || null, person: seatOk(who[a.id]) ? who[a.id] : null, lounge: !!a.lounge, helpers: a.lounge || !a.subs ? 0 : a.subs.length })) })), /* spec 097 FR-246: the app's room rule (shutPlan) seats it in the lounge row; FR-306: the strip's helpers (none in the lounge; none without their list: the plate keeps its +N) */
       places: model.places.map((p) => ({ id: p.id, custom: !!p.custom, visitors: p.visitors.map((v) => ({ id: v.id, needsYou: !!v.needsYou, person: who[v.id] || null })) })),
     };
     const signs = {};
@@ -391,6 +403,13 @@
       dset(sg, 'folder', z.id);
       signFill(sg, f, z);
       for (const d of z.desks) deskOne(d);
+    }
+    /* spec 102 delta 2026-11-14 (spec 097 FR-104): the All floors view as storeys, when the layout has them: a rule (the world's, drawn under the signs) and a tag with the floor's name per storey */
+    for (const b of lay.storeys || []) {
+      if (b.slab) { const sl = el(art, 'storey-slab:' + b.id, 'div', 'ro-slab'); box(sl, b.slab); dset(sl, 'storey', b.id); }
+      const tg = el(chrome, 'storey-tag:' + b.id, 'div', 'ro-sign ro-stag'); box(tg, b.tag); dset(tg, 'storey', b.id); dset(tg, 'surface', 'storey');
+      if (tg._sig !== b.name + '\u0000' + b.n) { tg._sig = b.name + '\u0000' + b.n; tg.textContent = ''; const nb = document.createElement('b'); nb.textContent = (b.n ? b.n + ' ' : '') + b.name; tg.appendChild(nb); }
+      attr(tg, 'title', b.n ? 'Floor ' + b.n + ': ' + b.name : 'Resting: not on any floor'); attr(tg, 'role', 'note');
     }
     if (lay.lounge) {
       for (const d of lay.lounge.desks) deskOne(d); /* spec 097 FR-247: after the desks */

@@ -405,11 +405,18 @@
         "photo": "designed",
         "cave": "designed",
         "loft": "designed",
-        "retro": "missing"
+        "retro": "built"
       },
       "nonNegotiables": "TFKM",
-      "gap": {
-        "retro": "looked at (retro-cell-allfloors, 2026-11-08): the window is full but every folder stands on one floor with no floor names or storeys, while the lift says All; the other worlds' All view shows three floor tags (shots-092-lift). Not the building view yet"
+      "evidence": {
+        "retro": {
+          "steps": [
+            "cells"
+          ],
+          "pictures": [
+            "cell-allfloors"
+          ]
+        }
       }
     },
     {

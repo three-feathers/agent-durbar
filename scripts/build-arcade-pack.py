@@ -607,7 +607,7 @@ def write_world(repo):
         mon[key] = dict(file=name, cells=16, bodies=4, cell=[cw, chh], screenRect=[round(v, 4) for v in (g['glass'][0] / cw, g['glass'][1] / chh, g['glass'][2] / cw, g['glass'][3] / chh)],
                         marqueeRect=[round(v, 4) for v in (g['marquee'][0] / cw, g['marquee'][1] / chh, g['marquee'][2] / cw, g['marquee'][3] / chh)], glass=g['glass'], marquee=g['marquee'])
     total += save(glow().im, f'{W}/glow.webp'); total += save(console().im, f'{W}/desk.webp'); total += save(welcome().im, f'{W}/welcome.webp')
-    meta = dict(formatVersion=1, id='retro', name='Retro arcade', defaultSet='retro', pixelArt=True, arrangement='aisles', css='world.css', wall='wall.webp', floorTile=[24, 24],
+    meta = dict(formatVersion=1, id='retro', name='Retro arcade', defaultSet='retro', pixelArt=True, storeys=True, arrangement='aisles', css='world.css', wall='wall.webp', floorTile=[24, 24],
                 night=dict(wall='wall-night.webp', floor='floor-night.webp'), welcome='welcome.webp', monitor=mon, glow=dict(file='glow.webp', cells=STATES, cell=[56, 15]),
                 desk=[40, 22], fixtures=fx, fixtureTop=ftop, floorLine=FL, wallSize=[WALL_W, WALL_H + SHADOW], bandRows=WALL_H)
     with open(os.path.join(W, 'world.json'), 'w') as f: f.write(json.dumps(meta, indent=1, sort_keys=True) + '\n')
