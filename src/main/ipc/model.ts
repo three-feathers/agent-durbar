@@ -174,5 +174,6 @@ export function register(deps: ModelIpcDeps): ModelIpc {
     } catch (err) {
       return { ok: false, error: errText(err), models: [] };
     }
-  });  return { modelsOf };
+  });
+  return { modelsOf };
 }

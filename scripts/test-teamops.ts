@@ -8,8 +8,10 @@
  * again against it (`TEAMOPS_MODULE`). Each must die in ITS section (the failed section's name is printed on stderr). An anchor that does not
  * match fails loudly. EQUIVALENT, so not a mutant: the token-shape test inside `takeToken` and `peek` (the live token always has the right shape, so the
  * equality test next to it decides alone; the shape test of `previewRow` is the one with a visible effect); and the snapshot being a copy: it is the copy `TemplateStore.get` makes (tested in test:teamstore),
- * this module keeps the object it is given; and the key-count bounds (`moreKeysThan`) in `readTarget`/`readChange`, which only save work: the key loop refuses an
- * unknown key at once with the same words. Run with `TEAMOPS_LABELS=1` to print where each one died.
+ * this module keeps the object it is given; The key-count bounds (`moreKeysThan`) in `readTarget`/`readChange` are EQUIVALENT IN RESULT, NOT IN COST: the key loop refuses an unknown key
+ * with the same words, and the engine lists every key of an object before any `for...in` or `Object.keys` starts (measured in `test:teamsipc`: about 1 s
+ * for 800,000 keys), so a counter cannot tell them apart; the bound only saves the array of keys and the later work. The timing checks of `arguments` and
+ * `rowArguments` (200,000 keys, well under 1.5 s) are the cost check there is. Run with `TEAMOPS_LABELS=1` to print where each one died.
  */
 import assert from 'assert';
 import fs from 'fs';
@@ -296,6 +298,12 @@ section('token', async () => {
   const keep = R(await f.ops.createPreview(TGT, 'tmpl1'));
   eq(F(await f.ops.createPreview(TGT, 'no-such')).code, 'notfound', 'a preview of a template that is not there fails');
   eq(f.ops.takeToken(keep.token), undefined, 'and the old one is gone anyway');
+  // dropped FIRST: also when the arguments are invalid
+  for (const [t, id] of [[undefined, 'tmpl1'], [TGT, 5], [{ room: '' }, 'tmpl1'], [TGT, 'x'.repeat(65)]] as const) {
+    const live = R(await f.ops.createPreview(TGT, 'tmpl1'));
+    eq(F(await f.ops.createPreview(t, id)).code, 'invalid', 'invalid arguments are refused');
+    eq(f.ops.takeToken(live.token), undefined, 'and the old preview is gone anyway');
+  }
   // an older, slower call does not replace a newer preview
   let release: () => void = () => undefined;
   const gate = new Promise<void>((res) => { release = res; });
@@ -318,6 +326,83 @@ section('token', async () => {
   const pc = R(await c.ops.createPreview(TGT, 'tmpl1'));
   c.store.get('tmpl1')!.members[0].model = 'other-1';
   eq(c.ops.takeToken(pc.token)!.template.members[0].model, 'alpha-1', 'the token holds the template as it was');
+});
+
+
+// ---------------------------------------------------------------------------------------------------------------- 8b. the token first, before any adapter
+section('tokenFirst', async () => {
+  const r = rig([tpl([mem(1)])]);
+  const p = R(await r.ops.createPreview(TGT, 'tmpl1'));
+  const base = r.calls.adapters;
+  eq(F(await r.ops.previewRow('0'.repeat(32), hexId(1), { effort: 'low' })).code, 'notfound', 'a token that is not alive');
+  eq(F(await r.ops.previewRow(p.token, hexId(9), { effort: 'low' })).code, 'notfound', 'a row that is not in the preview');
+  eq(r.calls.adapters, base, 'a foreign token and an unknown row never ask the adapters');
+  eq(r.calls.models.length, 0, 'nor the models');
+  r.clock.t += TOKEN_MS;
+  eq(F(await r.ops.previewRow(p.token, hexId(1), { effort: 'low' })).code, 'notfound', 'an expired token');
+  eq(r.calls.adapters, base, 'an expired token never asks the adapters');
+  eq(F(await r.ops.previewRow('zz', hexId(1), { effort: 'low' })).code, 'invalid', 'a malformed token');
+  eq(r.calls.adapters, base, 'a malformed token neither');
+});
+
+// ---------------------------------------------------------------------------------------------------------------- 8c. overlapping previewRow calls
+section('overlap', async () => {
+  const tick = (): Promise<void> => new Promise((res) => setImmediate(res));
+  const mk = (): { r: Rig; gate: () => Promise<void>; open: () => void; arm: () => void } => {
+    let release: () => void = () => undefined;
+    let armed = false;
+    let pending: Promise<void> | undefined;
+    const r = rig([tpl([mem(1, { model: 'beta-2' })])], {
+      adapters: async () => { if (armed) { armed = false; await pending; } return APPS; },
+    });
+    return { r, gate: async () => undefined, open: () => release(), arm: () => { armed = true; pending = new Promise<void>((res) => { release = res; }); } };
+  };
+  const final = (r: Rig, token: string): { model: string | undefined; effort: string | undefined } => { const c = r.ops.takeToken(token)!.choices.get(hexId(1))!; return { model: c.model, effort: c.effort }; };
+  // A: a model, slow (its adapters call waits); B: an effort, fast. Both changes survive, whichever is told last.
+  for (const slowFirst of [true, false]) {
+    const k = mk();
+    const p = R(await k.r.ops.createPreview(TGT, 'tmpl1'));
+    let a: Promise<unknown>, b: Promise<unknown>;
+    if (slowFirst) {
+      k.arm(); a = k.r.ops.previewRow(p.token, hexId(1), { model: 'gamma-3' }); await tick();
+      b = k.r.ops.previewRow(p.token, hexId(1), { effort: 'high' }); await b;
+      k.open(); const ra = await a as RowOk;
+      eq([ra.row.model.id, ra.row.effort.asked], ['gamma-3', 'high'], 'the slow call\'s row has both changes (slow first)');
+    } else {
+      a = k.r.ops.previewRow(p.token, hexId(1), { model: 'gamma-3' }); await a;
+      k.arm(); b = k.r.ops.previewRow(p.token, hexId(1), { effort: 'high' }); await tick();
+      const c2 = k.r.ops.previewRow(p.token, hexId(1), { effort: 'low' }); await c2; // a third, fast, in between
+      k.open(); const rb = await b as RowOk;
+      eq([rb.row.model.id, rb.row.effort.asked], ['gamma-3', 'high'], 'the slow call is the last to choose: its change wins, the model of the earlier one stays');
+    }
+    eq(final(k.r, p.token), { model: 'gamma-3', effort: 'high' }, 'the stored choices keep both (slowFirst=' + slowFirst + ')');
+  }
+  // slow MODELS: A's list is slow, B fast; the row of the call that finishes first is worked out again when a newer merge came
+  {
+    let slow = false; let rel: () => void = () => undefined;
+    const gate2 = new Promise<void>((res) => { rel = res; });
+    const r = rig([tpl([mem(1, { model: 'beta-2' })])], { models: async (id: string) => { if (slow) { slow = false; await gate2; } return MODELS[id]; } });
+    const p = R(await r.ops.createPreview(TGT, 'tmpl1'));
+    slow = true; // the next list is slow
+    const a = r.ops.previewRow(p.token, hexId(1), { model: 'gamma-3' });
+    await tick(); await tick();
+    const rb = await r.ops.previewRow(p.token, hexId(1), { effort: 'high' }) as RowOk;
+    rel();
+    const ra = await a as RowOk;
+    eq([ra.row.model.id, ra.row.effort.asked], ['gamma-3', 'high'], 'slow models: the first call\'s row is worked out again from the merged state');
+    eq([rb.row.model.id, rb.row.effort.asked], ['gamma-3', 'high'], 'and the fast call saw the model too');
+    eq(final(r, p.token), { model: 'gamma-3', effort: 'high' }, 'stored choices keep both');
+  }
+  // the preview replaced while a call waits: that call says so, and nothing is written into the new one
+  {
+    const k = mk();
+    const p = R(await k.r.ops.createPreview(TGT, 'tmpl1'));
+    k.arm(); const a = k.r.ops.previewRow(p.token, hexId(1), { effort: 'low' }); await tick();
+    const p2 = R(await k.r.ops.createPreview(TGT, 'tmpl1'));
+    k.open();
+    eq(F(await a).code, 'notfound', 'a call that waited while the preview was replaced');
+    eq(final(k.r, p2.token).effort, undefined, 'the new preview is untouched');
+  }
 });
 
 // ---------------------------------------------------------------------------------------------------------------- 9. arguments
@@ -532,6 +617,7 @@ section('modelsOf', async () => {
 // ---------------------------------------------------------------------------------------------------------------- run
 (async () => {
   for (const [name, fn] of sections) {
+    if (process.env.TEAMOPS_TRACE) console.error('section ' + name);
     try { await fn(); } catch (e) { failed++; console.error(`SECTION ${name} FAILED`); console.error(e instanceof Error ? e.message.slice(0, 240) : 'failed'); }
   }
   if (failed > 0) { console.error(`teamops: ${failed} section(s) failed`); process.exit(1); }
@@ -578,12 +664,16 @@ section('modelsOf', async () => {
     { name: 'the token never expires (previewRow)', from: 'if (this.now() >= e.expiresAt) {', to: 'if (false) {', section: 'token' },
     { name: 'the token lives one millisecond too long', from: 'if (this.now() >= e.expiresAt) {', to: 'if (this.now() > e.expiresAt) {', section: 'token' },
     { name: 'the token lives 9 minutes', from: 'exports.TOKEN_MS = 600_000;', to: 'exports.TOKEN_MS = 540_000;', section: 'token' },
-    { name: 'a new preview does not drop the old one', from: 'this.live = undefined; // a new preview drops the old one, also when this one fails', to: '', section: 'token' },
-    { name: 'a failed preview leaves the old one alive (dropped only on success)', from: "const me = ++this.gen;\n        this.live = undefined; // a new preview drops the old one, also when this one fails", to: 'const me = ++this.gen;', section: 'token' },
+    { name: 'a new preview does not drop the old one', from: '        this.live = undefined;\n        const target = readTarget(targetIn);', to: '        const target = readTarget(targetIn);', section: 'token' },
     { name: 'an older preview replaces a newer one', from: 'if (me !== this.gen)', to: 'if (false)', section: 'token' },
     { name: 'takeToken leaves the token alive', from: "this.live = undefined;\n        return this.now() < e.expiresAt ? e : undefined;", to: 'return this.now() < e.expiresAt ? e : undefined;', section: 'token' },
     { name: 'a token of any shape reaches the lookup (previewRow)', from: "if (typeof token !== 'string' || !TOKEN_RE.test(token))\n            return fail('invalid', 'Preview: not valid.');", to: '', section: 'token' },
     { name: 'the preview lists profiles', from: 'const adapters = await this.deps.adapters();', to: 'const adapters = await this.deps.adapters(); await this.deps.listProfiles?.();', section: 'nothingElse' },
+    { name: 'invalid arguments leave the old preview alive (drop after validating)', from: '        this.live = undefined;\n        const target = readTarget(targetIn);\n        if (typeof target === \'string\')\n            return fail(\'invalid\', target);', to: '        const target = readTarget(targetIn);\n        if (typeof target === \'string\')\n            return fail(\'invalid\', target);\n        this.live = undefined;', section: 'token' },
+    { name: 'previewRow asks the adapters before it checks the token', from: '        const e = this.peek(token);\n        if (!e)\n            return fail(\'notfound\', \'Preview: expired or not found. Open it again.\');\n        const m =', to: '        await this.deps.adapters();\n        const e = this.peek(token);\n        if (!e)\n            return fail(\'notfound\', \'Preview: expired or not found. Open it again.\');\n        const m =', section: 'tokenFirst' },
+    { name: 'previewRow merges into the choices read before the wait', from: '        const ctx = this.context(await this.deps.adapters());\n        if (this.peek(token) !== e)\n            return fail(\'notfound\', \'Preview: expired or not found. Open it again.\'); // replaced while it waited\n        const ch = e.choices.get(rowId); // the CURRENT choices, read after the wait', to: '        const ch0 = e.choices.get(rowId);\n        const ctx = this.context(await this.deps.adapters());\n        if (this.peek(token) !== e)\n            return fail(\'notfound\', \'Preview: expired or not found. Open it again.\'); // replaced while it waited\n        const ch = ch0;', section: 'overlap' },
+    { name: 'a call that was overtaken keeps its row (no work out again)', from: 'if (e.choices.get(rowId) !== cur)\n                continue;', to: '', section: 'overlap' },
+    { name: 'the choices are not stored before the row is worked out', from: 'e.choices.set(rowId, next);', to: '', section: 'overlap' },
     { name: 'the target is not checked', from: "if (typeof target === 'string')\n            return fail('invalid', target);", to: '', section: 'arguments' },
     { name: 'a room of any length', from: 'room.length <= ROOM_MAX', to: 'true', section: 'arguments' },
     { name: 'a target with extra keys', from: "if (keys.length !== 1)\n        return 'Target: not valid.';", to: '', section: 'arguments' },

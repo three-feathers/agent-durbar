@@ -148,11 +148,12 @@ export class TeamOps {
   }
 
   async createPreview(targetIn: unknown, templateId: unknown): Promise<PreviewOk | PreviewFail> {
+    // a new preview drops the old one FIRST: before the arguments are judged, so also an invalid call drops it
+    const me = ++this.gen;
+    this.live = undefined;
     const target = readTarget(targetIn);
     if (typeof target === 'string') return fail('invalid', target);
     if (typeof templateId !== 'string' || templateId.length === 0 || templateId.length > ID_MAX) return fail('invalid', 'Template id: not valid.');
-    const me = ++this.gen;
-    this.live = undefined; // a new preview drops the old one, also when this one fails
     const t = this.deps.store().get(templateId);
     if (!t) return fail('notfound', 'Template: not found.');
     if (!Array.isArray(t.members) || t.members.length === 0) return fail('empty', 'This template has no members.');
@@ -183,7 +184,12 @@ export class TeamOps {
     };
   }
 
-  /** a change to one row (app, model, effort): only that row is worked out again, with the same rules; nothing is converted */
+  /**
+   * A change to one row (app, model, effort): only that row is worked out again, with the same rules; nothing is converted. The token is checked
+   * FIRST (a wrong or expired one never reaches an adapter). Calls may overlap: when its awaits are done, each call MERGES its change into the
+   * CURRENT stored choices (never into a copy read before waiting) and works the row out from that state, again if a newer merge came meanwhile,
+   * so a slower call cannot overwrite what a newer one chose.
+   */
   async previewRow(token: unknown, rowId: unknown, changeIn: unknown): Promise<RowOk | PreviewFail> {
     if (typeof token !== 'string' || !TOKEN_RE.test(token)) return fail('invalid', 'Preview: not valid.');
     if (typeof rowId !== 'string' || !MEMBER_ID_RE.test(rowId)) return fail('invalid', 'Row: not valid.');
@@ -192,23 +198,28 @@ export class TeamOps {
     const e = this.peek(token);
     if (!e) return fail('notfound', 'Preview: expired or not found. Open it again.');
     const m = e.template.members.find((x) => x.memberId === rowId);
-    const ch = e.choices.get(rowId);
-    if (!m || !ch) return fail('notfound', 'Row: not found.');
-    const next: Choice = { ...ch };
+    if (!m || !e.choices.has(rowId)) return fail('notfound', 'Row: not found.');
+    const ctx = this.context(await this.deps.adapters());
+    if (this.peek(token) !== e) return fail('notfound', 'Preview: expired or not found. Open it again.'); // replaced while it waited
+    const ch = e.choices.get(rowId)!; // the CURRENT choices, read after the wait
+    const next: Choice = { app: ch.app, model: ch.model, effort: ch.effort, picked: ch.picked, appChanged: ch.appChanged };
     if (change.app !== undefined && change.app !== ch.app) {
       // another app: its model, effort and limit are not this one's; the limit is dropped, never converted
       next.app = change.app; next.model = undefined; next.effort = undefined; next.picked = false; next.appChanged = true;
     }
     if (change.model !== undefined) { next.model = change.model === '' ? undefined : change.model; next.picked = false; }
     if (change.effort !== undefined) { next.effort = change.effort === '' ? undefined : change.effort; next.picked = change.effort !== ''; }
-    const ctx = this.context(await this.deps.adapters());
-    if (this.peek(token) !== e) return fail('notfound', 'Preview: expired or not found. Open it again.'); // replaced while it waited
-    const row = await this.row(m, e.template.origin === 'imported', next, ctx);
-    if (this.peek(token) !== e) return fail('notfound', 'Preview: expired or not found. Open it again.');
-    e.choices.set(rowId, next);
-    e.rows.set(rowId, row);
-    const summary = summarize([...e.rows.values()]);
-    return { ok: true, row, summary, canCreate: summary.needsChoice === 0 };
+    e.choices.set(rowId, next); // merged at once; the row is worked out from what is stored
+    const imported = e.template.origin === 'imported';
+    for (;;) {
+      const cur = e.choices.get(rowId)!;
+      const row = await this.row(m, imported, cur, ctx);
+      if (this.peek(token) !== e) return fail('notfound', 'Preview: expired or not found. Open it again.');
+      if (e.choices.get(rowId) !== cur) continue; // a newer call merged meanwhile: work it out again from the newest state
+      e.rows.set(rowId, row);
+      const summary = summarize([...e.rows.values()]);
+      return { ok: true, row, summary, canCreate: summary.needsChoice === 0 };
+    }
   }
 
   private context(adapters: AdapterInfo[]): Ctx {
