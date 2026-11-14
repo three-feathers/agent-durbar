@@ -1713,4 +1713,158 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   assert.strictEqual(redact('see @{token=1} here'), 'see @{token=1} here', 'R12 is not part of redact(): free text keeps the pattern rules');
 }
 
+// spec 012 FR-182 (issue #1613, T164): a token split by a line break (CRLF or LF), a combining mark, a Markdown escape `\_` in its body, an HTML
+// comment or tag, or a hidden character (also written as an entity) is masked like the joined token: by redact, maskSecretCommand, maskSecretArgs,
+// the desk's maskRaw and the permission card. Every token is invented and built in code from pieces.
+{
+  const ST = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string; excerpt(t: string, r: (s: string) => string, n?: number): string };
+  const LA = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'liveact.js')) as { permText(t: string, k: string, m: Record<string, (s: string) => string>): { text: string } };
+  const red = (t: string): string => redact(t, {});
+  const cm = { redact: red, cmd: (t: string) => maskSecretCommand(t, {}), url: (t: string) => maskSecretUrl(t, {}) };
+  const B = 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8S9t0U1v2W3x4Y5z6';
+  // [name, token, where its body starts]
+  const TOKS: Array<[string, string, number]> = [
+    ['ghp', 'ghp_' + B.slice(0, 36), 4],
+    ['github_pat', 'github_pat_' + B.slice(0, 22) + '_' + (B + B).slice(3, 62), 11],
+    ['sk-proj', 'sk-proj-' + B.slice(0, 18) + '_' + B.slice(20, 42), 8],
+    ['AKIA', 'AKIA' + 'Q7R2S9T4U1V6W3X8', 4],
+    ['JWT', 'eyJ' + B.slice(0, 20) + '.eyJ' + B.slice(20, 36) + '.' + B.slice(5, 30), 3],
+    ['xoxb', 'xoxb-' + '1234567890123-' + B.slice(0, 24), 5],
+  ];
+  // [form, the piece put inside the token, whether it can end a word (FR-182: then a tail under 8 letters and digits after a whole token stays, a known gap)]
+  const FORMS: Array<[string, string, boolean]> = [
+    ['CRLF', '\r\n', true],
+    ['LF', '\n', true],
+    ['a combining mark', '\u0301', false],
+    ['two combining marks', '\u0301\u0323', false],
+    ['an HTML comment', '<!-- -->', true],
+    ['an HTML comment with words', '<!-- note -->', true],
+    ['an empty <b></b>', '<b></b>', true],
+    ['a <span> with an attribute', '<span class="k">', true],
+    ['&#8203;', '&#8203;', false],
+    ['&#x200B;', '&#x200B;', false],
+    ['&ZeroWidthSpace;', '&ZeroWidthSpace;', false],
+    ['&zwj;', '&zwj;', false],
+    ['a zero-width space', '\u200b', false],
+  ];
+  const windows = (tok: string, body: number): string[] => { const w: string[] = []; for (let i = body; i + 8 <= tok.length; i++) w.push(tok.slice(i, i + 8)); return w; };
+  const alnum = (s: string): number => (s.match(/[A-Za-z0-9]/g) ?? []).length;
+  const CTX: Array<[string, (x: string) => string]> = [['alone', (x) => x], ['among words', (x) => 'see ' + x + ' here'], ['in double quotes', (x) => 'echo "' + x + '"']];
+  let checked = 0;
+  let gaps = 0;
+  for (const [tn, tok, body] of TOKS) {
+    const ws = windows(tok, body);
+    const shown = (out: string, piece: string): string | undefined => ws.find((w) => out.replace(piece, '').includes(w));
+    for (const [fn, piece, ender] of FORMS) {
+      for (let c = body + 1; c < tok.length; c++) {
+        const head = tok.slice(0, c);
+        const tail = tok.slice(c);
+        // the known gap of FR-182: a piece that ends a word after a head the rules hide as written, then fewer than 8 letters and digits
+        if (ender && alnum(tail) < 8 && red(head) !== head) { gaps++; continue; }
+        const v = head + piece + tail;
+        for (const [cn, ctx] of CTX) {
+          const t = ctx(v);
+          const what = `#1613 ${fn} (${tn} cut at ${c}, ${cn})`;
+          let w = shown(red(t), piece);
+          assert.ok(!w, `${what}: redact hides it (${JSON.stringify(w)} shown): ${JSON.stringify(red(t))}`);
+          w = shown(maskSecretCommand('echo ' + t, {}), piece);
+          assert.ok(!w, `${what}: maskSecretCommand hides it (${JSON.stringify(w)} shown)`);
+          w = shown(maskSecretArgs(['run', t], {}).join(' '), piece);
+          assert.ok(!w, `${what}: maskSecretArgs hides it (${JSON.stringify(w)} shown)`);
+          w = shown(ST.maskRaw(t, red), piece);
+          assert.ok(!w, `${what}: the desk's maskRaw hides it (${JSON.stringify(w)} shown)`);
+          // the desk line: made plain (a line break becomes a space, `_` dropped), so it is checked without the `_` of the body too
+          const ex = ST.excerpt(t, red);
+          w = ws.find((x) => ex.replace(piece, '').includes(x) || ex.includes(x.replace(/_/g, '')));
+          assert.ok(!w, `${what}: the desk excerpt hides it (${JSON.stringify(w)} shown): ${JSON.stringify(ex)}`);
+          w = shown(LA.permText('echo ' + t, 'shell', cm).text, piece);
+          assert.ok(!w, `${what}: the permission card hides it (${JSON.stringify(w)} shown)`);
+          checked++;
+        }
+      }
+    }
+    // a Markdown escape of an underscore inside the body (`github_pat_<22>\_<59>`, `sk-proj-<18>\_<22>`): every `_` of the body escaped in turn
+    for (let c = body; c < tok.length; c++) {
+      if (tok[c] !== '_') continue;
+      const v = tok.slice(0, c) + '\\' + tok.slice(c);
+      for (const [cn, ctx] of CTX) {
+        const t = ctx(v);
+        const w = ws.find((x) => red(t).includes(x));
+        assert.ok(!w, `#1613 a Markdown escape \\_ in the body (${tn} at ${c}, ${cn}): redact hides it (${JSON.stringify(w)} shown): ${JSON.stringify(red(t))}`);
+        assert.ok(!ws.some((x) => maskSecretCommand('echo ' + t, {}).includes(x)), `#1613 a Markdown escape \\_ in the body (${tn} at ${c}, ${cn}): maskSecretCommand hides it`);
+        checked++;
+      }
+    }
+  }
+  // the escaped rest after a whole head is short: under FR-173's 16 after `_` (the review's form, before FR-182 the last 10 characters showed)
+  for (const t of ['sk-proj-' + B.slice(0, 30) + '\\_' + B.slice(30, 40), 'echo sk-proj-' + B.slice(0, 26) + '\\_' + B.slice(26, 34) + ' done']) {
+    const out = red(t);
+    assert.ok(!out.includes(B.slice(30, 38)) && !out.includes(B.slice(26, 34)), `#1613 a Markdown escape \\_ before a short rest: redact hides it: ${JSON.stringify(out)}`);
+  }
+  // a line break at a colon inside a token (a Telegram bot token's `<id>:` then its secret on the next line) is read too
+  assert.strictEqual(red('bot 123456789:\n' + (B + B).slice(0, 35) + ' ok'), 'bot [redacted]\n[redacted] ok', '#1613 a line break after the colon of a bot token');
+  assert.ok(checked > 5000 && gaps < checked / 20, `#1613: the table reaches every form (${checked} cases, ${gaps} in the written-down gap)`);
+
+  const GH = TOKS[0][1];
+  // the line structure stays: each side of a line break masked on its own
+  assert.strictEqual(red(GH.slice(0, 16) + '\r\n' + GH.slice(16)), '[redacted]\r\n[redacted]', '#1613 CRLF: the line break stays in the output');
+  assert.strictEqual(red('a ' + GH.slice(0, 16) + '\n' + GH.slice(16) + ' b'), 'a [redacted]\n[redacted] b', '#1613 LF: the words around it stay');
+  assert.strictEqual(red(GH.slice(0, 16) + '<!-- a\r\nb -->' + GH.slice(16)), '[redacted]\r\n[redacted]', '#1613 an HTML comment across lines: the line break stays');
+  assert.strictEqual(ST.excerpt('done\r\nline two\nline three', red), 'done line two line three', '#1613 the desk excerpt of plain lines is unchanged');
+  // the rules as written and the joined copy together: a key block masked whole stays one mask
+  assert.strictEqual(red('key: -----BEGIN PRIVATE KEY-----\n' + ['MIIEvQIBADANBgkqhkiG9w0BAQEFAASC', 'QQQQ' + B.slice(0, 28)].join('\n') + '\n-----END PRIVATE KEY-----'), 'key: [redacted]', '#1613 a key block stays one mask');
+  // a whole token at a line's end: a short next word stays, a word that could be the rest of a token goes with it (FR-173's count, fail closed)
+  assert.strictEqual(red(GH + '\nok then'), '[redacted]\nok then', '#1613 a whole token at a line end keeps a short next word');
+  assert.strictEqual(red(GH + '</p>ok'), '[redacted]</p>ok', '#1613 a whole token before a tag keeps a short next word');
+  assert.strictEqual(red(GH + '\r\nimplementation'), '[redacted]\r\n[redacted]', '#1613 a whole token at a line end takes a next word of 8 letters (the written-down over-mask)');
+  // a mask already in the text stays apart
+  assert.strictEqual(red('[redacted]' + GH.slice(0, 16) + '&#8203;' + GH.slice(16)), '[redacted][redacted]', '#1613 a mask already in the text stays apart');
+
+  // no over-masking: ordinary text with these pieces is returned as written
+  const B64 = Array.from({ length: 6 }, (_, i) => ('TWFueSBoYW5kcyBtYWtlIGxpZ2h0IHdvcmsu' + i).repeat(3).slice(0, 76)).join('\n');
+  for (const keep of [
+    'line one\r\nline two\r\n', 'see the docs\nimplementation notes\nconfiguration_value_here', 'cafe\u0301 and nai\u0308ve', 'काम\u093f और', '<b>bold</b> text and <i>more</i>',
+    'a<!-- note -->b', 'x&#8203;y and &amp; &lt;tag&gt; &#169;', 'Array<string> and Map<K, V>', 'version 1.2.\nNext line',
+    'sk-short\nsk_test_x\nsk_test_helpers\npk_live_x', 'abc_def-123\nghi_jkl-456', 'ID12345\r\nAB67890', 'word\u200bword', 'emoji \u{1F469}\u200d\u{1F4BB} here', B64,
+    'token:\nnone', 'C:\\Users\\me\\file_name.txt\nD:\\data\\x_y',
+  ]) {
+    assert.strictEqual(red(keep), keep, `#1613 no over-masking: ${JSON.stringify(keep.slice(0, 40))}`);
+    // a command reads a line break as the end of a command (its own rules, as on main), so only the one-line texts go through it
+    if (!/[\r\n]/.test(keep)) assert.ok(!maskSecretCommand('echo ' + keep, {}).includes('[redacted]'), `#1613 no over-masking (command): ${JSON.stringify(keep.slice(0, 40))}`);
+  }
+
+  // random cuts (as #1585): a seeded generator puts a random piece at a random place in a random token, among random words; no 8 characters of a body survive redact
+  {
+    let seed = 0x1613;
+    const rnd = (n: number): number => { seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff; return (seed >>> 16) % n; };
+    const AN = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    const b = (n: number): string => Array.from({ length: n }, () => AN[rnd(62)]).join('');
+    const gen: Array<() => [string, number]> = [() => ['ghp_' + b(36), 4], () => ['sk-proj-' + b(40), 8], () => ['github_pat_' + b(22) + '_' + b(59), 11], () => ['xoxb-' + b(12) + '-' + b(24), 5]];
+    const words = ['echo', 'token=', 'Done.', 'a/b/c', 'k=v', '[redacted]', 'the', 'note:'];
+    let n = 0;
+    for (let i = 0; i < 1500; i++) {
+      const [tok, body] = gen[rnd(gen.length)]();
+      const [fn, piece, ender] = FORMS[rnd(FORMS.length)];
+      const c = body + 1 + rnd(tok.length - body - 1);
+      const head = tok.slice(0, c);
+      const tail = tok.slice(c);
+      if (ender && alnum(tail) < 8 && red(head) !== head) continue;
+      const t = [words[rnd(words.length)], head + piece + tail, words[rnd(words.length)]].join([' ', '\n', ', '][rnd(3)]);
+      const out = red(t).replace(piece, '');
+      const w = windows(tok, body).find((x) => out.includes(x));
+      assert.ok(!w, `#1613 random cuts (case ${i}, ${fn} at ${c}): redact hides it (${JSON.stringify(w)} shown): ${JSON.stringify(t).slice(0, 90)}`);
+      n++;
+    }
+    assert.ok(n > 1300, `#1613 random cuts: ${n} cases checked`);
+  }
+
+  // growth: linear in the text
+  const split = (k: number) => Array.from({ length: Math.ceil(k / 50) }, (_, i) => 'ghp_' + String(i).padStart(12, 'Q') + '\r\n' + 'R'.repeat(24)).join(' ').slice(0, k);
+  assertLinearShape('#1613 redact many tokens split by a line break', (x) => { redact(x, {}); }, split, 400_000);
+  assertLinearShape('#1613 redact many joined line breaks', (x) => { redact(x, {}); }, (k) => 'ab_12345678\n'.repeat(Math.ceil(k / 12)).slice(0, k), 400_000);
+  assertLinearShape('#1613 redact many tags and comments', (x) => { redact(x, {}); }, (k) => 'a1<b></b>b2<!-- -->'.repeat(Math.ceil(k / 19)).slice(0, k), 400_000);
+  assertLinearShape('#1613 redact many unclosed comments', (x) => { redact(x, {}); }, (k) => 'x<!--'.repeat(Math.ceil(k / 5)).slice(0, k), 400_000);
+  assertLinearShape('#1613 redact many entities and marks', (x) => { redact(x, {}); }, (k) => 'a&#8203;b\u0301c&zwj;'.repeat(Math.ceil(k / 15)).slice(0, k), 400_000);
+}
+
 console.log('redact: all checks passed');

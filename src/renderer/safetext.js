@@ -52,8 +52,11 @@
   const useShared=m=>{if(SH||!m||typeof m.unhide!=='function')return false;SH=m;return true;};
   const unhide=t=>{if(!SH)throw new Error('no unhide');const c=SH.unhide(t);if(typeof c!=='string')throw new Error('no unhide');return c;};
   const unhid=(raw,run,bare,fail)=>{try{const s=String(raw==null?'':raw),c=unhide(s);if(c===s)return run(s);const m=run(c);return m===null||m===bare(c)?run(s):m;}catch(e){return fail;}};
+  /* spec 012 FR-182 (issue #1613): plainKeep turns a line break into a space, and a token split by one is no token once it is a space; so a text
+     with a line break is masked as written first (redact keeps the break and reads a token across it), then made plain */
+  const lineMask=(u,redact)=>{if(!/[\r\n]/.test(u))return u;const r=redact(u);if(typeof r!=='string')throw new Error('mask');return r;};
   const maskPlain0=(raw,redact,codeWord)=>{try{
-    const u=unesc(raw),m=both(u,plainKeep(u,codeWord),redact);
+    const u=lineMask(unesc(raw),redact),m=both(u,plainKeep(u,codeWord),redact);
     return m.replace(/_/g,'');}catch(e){return null;}};
   const maskPlain=(raw,redact,codeWord)=>{if(typeof redact!=='function')return null;
     return unhid(raw,t=>maskPlain0(t,redact,codeWord),c=>plainKeep(unesc(c),codeWord).replace(/_/g,''),null);};

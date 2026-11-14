@@ -698,7 +698,12 @@ export function redact(text: unknown, env?: Env): string {
       if (s.includes(value)) s = s.split(value).join(`[redacted:${name}]`);
     }
     s = cut(s, REDACT_MAX_CHARS);
-    return maskTokenShapes(maskEscapedRuns(s, '[redacted]'), '[redacted]');
+    const out = maskTokenShapes(maskEscapedRuns(s, '[redacted]'), '[redacted]');
+    let written: Array<[number, number]> | undefined;
+    const hidden = (): Array<[number, number]> => (written ??= hiddenSpans(s, out));
+    const split = splitSpans(s, '[redacted]', hidden);
+    // spec 012 FR-182: what the copy without split pieces hides, together with what the rules hide as written (neither pass's output simply wins), then the rules once more
+    return split.length ? maskTokenShapes(maskEscapedRuns(maskSplitSpans(s, split, hidden(), '[redacted]'), '[redacted]'), '[redacted]') : out;
   } catch {
     return '[redaction failed]';
   }
@@ -2082,6 +2087,198 @@ function hiddenSpans(orig: string, masked: string): Array<[number, number]> {
   }
   if (shownTo < orig.length) hidden.push([shownTo, orig.length]);
   return hidden;
+}
+
+/** Named HTML entities of characters in `HIDDEN_CHARS` (spec 012 FR-182): `&ZeroWidthSpace;` reads as nothing, like `&#8203;`. */
+const HIDDEN_ENTITY: Record<string, number> = { zerowidthspace: 0x200b, negativeverythinspace: 0x200b, negativethinspace: 0x200b, negativemediumspace: 0x200b, negativethickspace: 0x200b, zwnj: 0x200c, zwj: 0x200d, lrm: 0x200e, rlm: 0x200f, shy: 0xad, nobreak: 0x2060, af: 0x2061, applyfunction: 0x2061, it: 0x2062, invisibletimes: 0x2062, ic: 0x2063, invisiblecomma: 0x2063 };
+/**
+ * What can sit inside a token without being part of it as a reader sees it (spec 012 FR-182, issue #1613), in the order tried at one place: an HTML
+ * comment (at most 256 characters inside), an HTML tag without `<` or `>` in it (`<b>`, `</b>`, `<span class="x">`, `<br/>`), a numeric or named entity
+ * (kept only when it stands for a `HIDDEN_CHARS` character), a run of combining marks, a `HIDDEN_CHARS` character, the backslash of a
+ * Markdown escape (`NOTE_ESCAPABLE`: `sk-proj-<20>\_<rest>` reads `sk-proj-<20>_<rest>`). Each alternative is bounded, so one scan is linear.
+ */
+const MD_ESC = String.raw`\\(?=[${NOTE_ESCAPABLE.replace(/[\\\]^-]/g, '\\$&')}])`;
+const SPLIT_AT = new RegExp(String.raw`<!--[\s\S]{0,256}?-->|<\/?[A-Za-z][A-Za-z0-9]{0,15}(?:\s[^<>]{0,128})?\/?>|&#(?:[0-9]{1,7}|[Xx][0-9A-Fa-f]{1,6});|&[A-Za-z]{2,24};|\p{M}+|${MD_ESC}|${HIDDEN_CHARS.source}`, 'gu');
+/** Whether a text can hold one of `SPLIT_AT` at all: the cheap test before the scan. */
+const SPLIT_GATE = new RegExp(String.raw`[<&\r\n\\]|\p{M}|${HIDDEN_CHARS.source}`, 'u');
+/** A line break, kept in the output: `redact` keeps the line structure. */
+const LINE_END = /(\r\n|[\r\n\u2028\u2029])/;
+/** A mask (plain or named) at one place, and one that ends a stretch. */
+const MASK_AT = /\[redacted(?::[^\]\r\n]{1,128})?\]/y;
+const MASK_END = /\[redacted(?::[^\]\r\n]{1,128})?\]$/;
+/** Whether index `i` lies in one of the sorted, disjoint spans. */
+function inSpans(spans: ReadonlyArray<[number, number]>, i: number): boolean {
+  let lo = 0;
+  let hi = spans.length - 1;
+  while (lo <= hi) {
+    const m = (lo + hi) >> 1;
+    if (i < spans[m][0]) hi = m - 1;
+    else if (i >= spans[m][1]) lo = m + 1;
+    else return true;
+  }
+  return false;
+}
+/** A run that starts with a lower-case word and `_` or `-`: a name of its own, not the rest of a token body. */
+const NAME_START = /^[a-z]{2,}[_-]/;
+/** A run of lower-case words joined by `_` or `-`, three or more, each starting with a letter (as the word-chain exception of `dg`; `xoxb-123456789012-ab` is no chain). */
+const WORD_CHAIN = /^[a-z]{1,32}(?:[_-][a-z][a-z0-9]{0,31}){2,16}$/;
+/** A line break, for `breakSpans`. */
+const LINE_BREAKS = /\r\n|[\r\n]/g;
+/** How far a line break's token run is read on each side for `breakRuns`. */
+const BREAK_REACH = 256;
+/** The code point an entity stands for, or -1. */
+function entityPoint(e: string): number {
+  if (e[1] === '#') {
+    const n = e[2] === 'x' || e[2] === 'X' ? parseInt(e.slice(3, -1), 16) : parseInt(e.slice(2, -1), 10);
+    return n >= 0 && n <= 0x10ffff ? n : -1;
+  }
+  return HIDDEN_ENTITY[e.slice(1, -1).toLowerCase()] ?? -1;
+}
+/**
+ * The token runs on both sides of a line break at [a, b) of `s` when it can sit inside a token, as [l, r) (the break excluded), else undefined: at
+ * least 12 token characters on the two sides together (the shortest shape), one of them a digit, `_`, `-` or a second capital (prose lines
+ * `word\nword` are not read); after a line of 20 or more, no next line that starts a name of its own (`NAME_START`) and no side made of lower-case
+ * words (`WORD_CHAIN`): a digit or the length of the next line would satisfy a shape's guard for a near-miss name on this one
+ * (`sgp_CrossValidation_…` then `sbp_…_v2`); not two long base64 lines (the wrap rule of the base64 shapes, `LINE_BREAK`: a base64 line wrapped
+ * into another is no token start); and a left run under `BREAK_REACH` characters (its start is then a real start). Reads at most `BREAK_REACH` each side.
+ */
+function breakRuns(s: string, a: number, b: number): [number, number] | undefined {
+  let l = a;
+  while (l > 0 && a - l < BREAK_REACH && TOKEN_CHAR.test(s[l - 1])) l--;
+  let r = b;
+  while (r < s.length && r - b < BREAK_REACH && TOKEN_CHAR.test(s[r])) r++;
+  if (l === a || r === b || a - l >= BREAK_REACH || a - l + r - b < 12) return undefined;
+  const w = s.slice(l, a) + s.slice(b, r);
+  if (a - l >= 40 && r - b >= 40 && /^[A-Za-z0-9+/=]*$/.test(w)) return undefined;
+  // after a line of 20 or more: a next line that starts a name of its own (`sbp_…`, `ico-…`), or a side of lower-case words joined by `_` or `-` (the word-chain exception of `dg`)
+  if (a - l >= 20 && (NAME_START.test(s.slice(b, r)) || WORD_CHAIN.test(s.slice(l, a)) || WORD_CHAIN.test(s.slice(b, r)))) return undefined;
+  return /[0-9_-]|[A-Z][^A-Z]*[A-Z]/.test(w) ? [l, r] : undefined;
+}
+/**
+ * Spec 012 FR-182 (issue #1613): a token split by a line break. Each line break that can sit inside a token (`breakRuns`) is read on its own: the
+ * token run before it joined to the run after it, through the token shapes and their glued rest (`maskBareTokenShapes`, `maskGluedRest`, after
+ * `maskEscapedRuns`); a name, header or cookie rule is not used there (two lines `auth: 127.0.0.1:8080` and `pass: 1523/1523` joined would read as
+ * one name and value). Only the two neighbouring runs are joined, so the other line breaks stay starts and ends (`the` on the line before a token
+ * does not glue to it; three lines of near-miss words `sk-short`, `sk_test_x`, `sk_test_helpers` are never one run). A hidden stretch that crosses
+ * the break is taken, unless the text before the break is already hidden as written and what follows holds fewer than FR-173's 8 letters and
+ * digits (`Cookie: <token>` then `ok` keeps `ok`); so a whole token at a line's end takes a next word of 8 or more with it (over-masking, as
+ * FR-173's glued rest; fail closed). One small mask call per such break (one per distinct pair of runs), so linear.
+ */
+function breakSpans(s: string, mask: string, written: () => ReadonlyArray<[number, number]>, out: Array<[number, number]>): void {
+  const seen = new Map<string, Array<[number, number]>>();
+  LINE_BREAKS.lastIndex = 0;
+  for (let m = LINE_BREAKS.exec(s); m; m = LINE_BREAKS.exec(s)) {
+    const a = m.index;
+    const b = a + m[0].length;
+    const lr = breakRuns(s, a, b);
+    if (!lr) continue;
+    const [l, r] = lr;
+    const w = s.slice(l, a) + s.slice(b, r);
+    let hs = seen.get(w);
+    if (!hs) { hs = hiddenSpans(w, maskGluedRest(maskBareTokenShapes(maskEscapedRuns(w, mask), mask), mask)); seen.set(w, hs); }
+    const at = a - l;
+    for (const [x, y] of hs) {
+      if (x >= at || y <= at) continue;
+      if (alnumIn(w, at, y) < GLUE_MIN && inSpans(written(), a - 1)) continue;
+      out.push([l + x, b + (y - at)]);
+    }
+  }
+}
+/** Letters and digits of `w` in [from, to), counted up to FR-173's 8. */
+function alnumIn(w: string, from: number, to: number): number {
+  let n = 0;
+  for (let i = from; i < to && n < GLUE_MIN; i++) if (/[A-Za-z0-9]/.test(w[i])) n++;
+  return n;
+}
+/**
+ * Spec 012 FR-182 (issue #1613): a token split by something a reader does not see as part of it (`SPLIT_AT`: a combining mark, a hidden character,
+ * an HTML comment or tag, an entity of a hidden character, the backslash of a Markdown escape) is the same token once it is removed. The text is read
+ * once more with those removed (the hidden-character set is `HIDDEN_CHARS`, the one set of `unhide`; FR-031), through the same steps as written
+ * (`maskEscapedRuns` then `maskTokenShapes`), and each hidden stretch of that copy that crosses a removed piece is masked in the text as written
+ * (mapped back with an index, as `maskKeepingMarkdown` maps its copy; `hiddenSpans` places it). A stretch that crosses nothing is left to the rules
+ * as written. A tag or a comment can also end a word: after text the rules already hide as written, the stretch goes on past it only when what
+ * follows holds FR-173's count (8 letters and digits). Line breaks are read by `breakSpans`. `written` gives what the rules hide as written
+ * (`hiddenSpans`), asked for only when needed. The spans are in `s`; `maskSplitSpans` masks them. A text without any such piece gives none.
+ * Linear: one scan and one more mask pass, plus `breakSpans`.
+ */
+function splitSpans(s: string, mask: string, written: () => ReadonlyArray<[number, number]>): Array<[number, number]> {
+  const spans: Array<[number, number]> = [];
+  if (!SPLIT_GATE.test(s)) return spans;
+  if (/[\r\n]/.test(s)) breakSpans(s, mask, written, spans);
+  const keep: string[] = [];
+  const at: number[] = [];
+  const ends: boolean[] = []; // per kept character: a piece that can end a word (a tag, a comment) was removed right before it
+  let from = 0;
+  let removed = false;
+  let endNext = false;
+  const take = (to: number): void => {
+    for (let i = from; i < to; i++) { keep.push(s[i]); at.push(i); ends.push(endNext); endNext = false; }
+  };
+  SPLIT_AT.lastIndex = 0;
+  for (let m = SPLIT_AT.exec(s); m; m = SPLIT_AT.exec(s)) {
+    const t = m[0];
+    const a = m.index;
+    if (t[0] === '&') { const cp = entityPoint(t); if (cp < 0 || !HIDDEN_CHARS.test(String.fromCodePoint(cp))) continue; }
+    else if (/^\p{M}/u.test(t) && !(a > 0 && s.charCodeAt(a - 1) < 0x80)) continue; // a mark on a non-ASCII letter is part of a word no token shape reads
+    take(a);
+    from = a + t.length;
+    removed = true;
+    endNext = endNext || t[0] === '<';
+  }
+  if (!removed) return spans;
+  take(s.length);
+  at.push(s.length);
+  const j = keep.join('');
+  const mj = maskTokenShapes(maskEscapedRuns(j, mask), mask);
+  if (mj === j) return spans;
+  // letters and digits of `j` before each index, for FR-173's count of what follows a piece
+  const alnum = new Int32Array(j.length + 1);
+  for (let i = 0; i < j.length; i++) alnum[i + 1] = alnum[i] + (/[A-Za-z0-9]/.test(j[i]) ? 1 : 0);
+  for (const [a, b0] of hiddenSpans(j, mj)) {
+    let b = b0;
+    let crosses = false;
+    for (let i = a + 1; i < b; i++) {
+      if (at[i] === at[i - 1] + 1) continue;
+      // a piece that can end a word, after text the rules already hide as written: what follows is taken only when it holds FR-173's count (8 letters
+      // and digits, `GLUE_MIN`), as a word glued to a mask is
+      if (ends[i] && alnum[b] - alnum[i] < GLUE_MIN && inSpans(written(), at[i - 1])) { b = i; break; }
+      crosses = true;
+    }
+    if (crosses) spans.push([at[a], at[b - 1] + 1]);
+  }
+  return spans;
+}
+/**
+ * `s` with the `split` spans (from `splitSpans`) and the `written` spans (what the rules hide as written, `hiddenSpans`) masked as one union, so a
+ * stretch either pass finds goes whole (`maskCore`'s rule; `maskSpans` is its form without line breaks). A span made only of `split` ones keeps
+ * its line breaks, each side masked on its own (`[redacted]\r\n[redacted]`: `redact` keeps the line structure), and so does one joined with a
+ * `written` span inside one line; one that holds a `written` span across lines is one mask, as the rules wrote it (a key block). Linear after the sort.
+ */
+function maskSplitSpans(s: string, split: ReadonlyArray<[number, number]>, written: ReadonlyArray<[number, number]>, mask: string): string {
+  const all: Array<[number, number, boolean]> = [...split.map(([a, b]): [number, number, boolean] => [a, b, true]), ...written.map(([a, b]): [number, number, boolean] => [a, b, !LINE_END.test(s.slice(a, b))])];
+  for (const sp of all) {
+    // a mask already in the text at either end of a span stays as it is (`[redacted]\=ghp\_<body>` keeps its first mask apart, as the rules as written do;
+    // `hiddenSpans` counts such a mask as hidden when the placement is ambiguous)
+    for (MASK_AT.lastIndex = sp[0]; sp[0] < sp[1] && MASK_AT.test(s); MASK_AT.lastIndex = sp[0]) sp[0] = MASK_AT.lastIndex;
+    for (let m = MASK_END.exec(s.slice(Math.max(sp[0], sp[1] - 140), sp[1])); m && sp[1] > sp[0]; m = MASK_END.exec(s.slice(Math.max(sp[0], sp[1] - 140), sp[1]))) sp[1] -= m[0].length;
+  }
+  all.sort((x, y) => x[0] - y[0] || y[1] - x[1]);
+  let out = '';
+  let pos = 0;
+  let cur: [number, number, boolean] | undefined;
+  const flush = (): void => {
+    if (!cur) return;
+    const [a, b, lines] = cur;
+    out += s.slice(pos, a) + (lines ? s.slice(a, b).split(LINE_END).map((p, k) => (k % 2 ? p : p ? mask : '')).join('') : mask);
+    pos = b;
+  };
+  for (const sp of all) {
+    if (sp[1] <= sp[0]) continue;
+    if (cur && sp[0] < cur[1]) { cur[1] = Math.max(cur[1], sp[1]); cur[2] = cur[2] && sp[2]; }
+    else { flush(); cur = [sp[0], sp[1], sp[2]]; }
+  }
+  flush();
+  return out + s.slice(pos);
 }
 
 /**
