@@ -1684,18 +1684,28 @@ function setRoWorld(id){
 /* a loaded pack's numbers (the pack script assigns DurbarRealOfficeWorlds / DurbarRealOfficeSets), or null */
 const packMeta=(kind,id)=>{const g=window[kind==='worlds'?'DurbarRealOfficeWorlds':'DurbarRealOfficeSets'];return g&&Object.prototype.hasOwnProperty.call(g,id)?g[id]:null;};
 /* loads one pack's script (and its stylesheet when world.json names one) the first time it is shown */
+const RO_SHEET_WAIT_MS=4000;
+let roSheetGen=0; /* counts the world stylesheets that finished loading: realoffice.js measures again after one (html[data-ro-sheets]) */
 function ensurePack(kind,id){
   const key=kind+'/'+id;
   if(PACKS[key])return PACKS[key]==='ready';
   PACKS[key]='loading';
   const sc=document.createElement('script');sc.src='realoffice/'+kind+'/'+id+'/'+(kind==='worlds'?'world':'set')+'.js';
+  const done=()=>{syncWorld();layoutKey='';scheduleRender();};
   sc.onload=()=>{
     const m=packMeta(kind,id);
-    if(!m){PACKS[key]='failed';}else{
-      PACKS[key]='ready';
-      if(kind==='worlds'&&typeof m.css==='string'&&/^[\w.-]+\.css$/.test(m.css)&&!document.getElementById('roWorldCss-'+id)){const l=document.createElement('link');l.id='roWorldCss-'+id;l.rel='stylesheet';l.href='realoffice/worlds/'+id+'/'+m.css;document.head.appendChild(l);}
+    if(!m){PACKS[key]='failed';return done();}
+    if(kind==='worlds'&&typeof m.css==='string'&&/^[\w.-]+\.css$/.test(m.css)&&!document.getElementById('roWorldCss-'+id)){
+      /* spec 097 (2026-11-14): a world is drawn only once its stylesheet has loaded (or failed): a first draw before it measured the roles and plates with the base CSS alone, and nothing measured again */
+      const l=document.createElement('link');l.id='roWorldCss-'+id;l.rel='stylesheet';l.href='realoffice/worlds/'+id+'/'+m.css;
+      /* settles once: the sheet's load, its error, or a 4 s timer (a sheet that never answers draws with the base CSS, as before) */
+      let settled=false,timer=0;
+      const settle=()=>{if(settled)return;settled=true;clearTimeout(timer);document.documentElement.dataset.roSheets=String(++roSheetGen);PACKS[key]='ready';done();};
+      l.onload=settle;l.onerror=settle;timer=setTimeout(settle,RO_SHEET_WAIT_MS);
+      document.head.appendChild(l);
+      return;
     }
-    syncWorld();layoutKey='';scheduleRender();};
+    PACKS[key]='ready';done();};
   sc.onerror=()=>{PACKS[key]='failed';syncWorld();layoutKey='';scheduleRender();};
   document.body.appendChild(sc);
   return false;
