@@ -1,0 +1,1 @@
+- **The red confirm button keeps its contrast when hovered in a partial theme** (spec 052 FR-053, FR-076, issue #1700): a theme that sets the text colour but not the surfaces could make the hovered red button of a destructive dialog read below 4.5:1; the hover now moves away from its text there. Themes that already read look the same. Checked in the simulator on Linux only.

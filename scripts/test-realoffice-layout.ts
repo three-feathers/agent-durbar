@@ -458,9 +458,9 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
     assert.deepStrictEqual([metaOf(wj('retro'), sj('office')).pixelArt, metaOf(wj('retro'), sj('office')).pixelPeople], [true, false], 'FR-323: the arcade keeps its rules with a photo set (097 T247)');
     assert.deepStrictEqual([metaOf(wj('retro'), sj('retro')).pixelArt, metaOf(wj('retro'), sj('retro')).pixelPeople], [true, true], 'the arcade with its own people');
     assert.deepStrictEqual([metaOf(wj('cave'), sj('retro')).pixelArt, metaOf(wj('cave'), sj('retro')).pixelPeople], [false, true], 'the cave with Retro pixel people: the cave rules');
-    // the fallback until T296: the Retro pixel set has no seen-from-behind running frame, so the Terminal visitor draws `letter` (FR-326 not built)
+    // T296 (FR-326): the Retro pixel set has its own seen-from-behind running frames, so the Terminal visitor draws `runA`/`runB`, not the `letter` fallback
     const st = sj('retro').stand as Record<string, { poses: Record<string, number[]> }>;
-    for (const id of Object.keys(st)) { assert.ok(!('runA' in st[id].poses) && !('runB' in st[id].poses), `${id}: no runA/runB yet (T296 is art); the letter fallback draws`); assert.ok('letter' in st[id].poses, `${id}: letter is there for the fallback`); }
+    for (const id of Object.keys(st)) { assert.ok('runA' in st[id].poses && 'runB' in st[id].poses, `${id}: runA and runB are in the stand poses (T296)`); assert.ok('letter' in st[id].poses, `${id}: letter stays (the other places)`); const f = (st[id] as unknown as { foot: Record<string, number> }).foot; for (const q of ['runA', 'runB']) assert.ok(f[q] > 0.3 && f[q] < 0.7, `${id} ${q}: the head-anchored foot share is near the standing frames'`); }
   }
   { // FR-337 (issue #1154): the art list's numbers come from the code, so a count in the spec cannot drift (Cheeky has 13 ids, not 15)
     const FRAMES = 12; // FR-337: book, coffee, knock, letter, rest, runA, runB, think, typeA, typeB, waveA, waveB
