@@ -775,6 +775,7 @@
      the flat office's own sentence (word for word, textContent). The shared lobby above is the real one (the caller passes the places). */
   function drawEmpty(art, chrome, lay, meta, empty) {
     const W = lay.width, top = lay.lobbyH, H = lay.height - top;
+    if (lay.cabinet) { drawEmptyCabinets(art, chrome, lay, meta, empty); return; }
     const dw = Math.max(120, Math.min(W * 0.26, 340, (H - 60) / 0.7)), dh = dw * (meta.desk[1] / meta.desk[0]);
     const gap = (W - 3 * dw) / 4, y0 = top + Math.max(70, H * 0.42);
     for (let i = 0; i < 3; i++) {
@@ -791,6 +792,26 @@
     pl.dataset.surface = 'empty-office'; pl.dataset.floorEmpty = empty.id || '';
     text(pl, empty.text);
     EMPTY_BOX = { x: (W - pw) / 2 - 4, y: top + 10, w: pw + 8, h: 64 }; /* the plate (two lines at most) is on the avoid list of the slips */
+  }
+
+  /* spec 102 delta 2026-11-14 (T223): the arcade's empty office: the hall's floor and wall fill the area (the layout is the hall's, `lay.height` is the floor), the words card under the lane,
+     and three cabinets of the world (the layout's own scale, its own pictures, screens off) in one row below it, centred in what is left of the floor */
+  function drawEmptyCabinets(art, chrome, lay, meta, empty) {
+    const W = lay.width, top = lay.lobbyH, g = lay.g, cw = lay.cabinet.w, ch = lay.cabinet.h, kind = lay.cabinet.gw === meta.monitor.big.glass[2] ? 'big' : lay.cabinet.gw === meta.monitor.small.glass[2] ? 'small' : 'narrow';
+    const pw = Math.min(560, W - 40), plateB = top + 14 + 48, gap = Math.max(g * 4, (W - 3 * cw) / 4), x0 = (W - 3 * cw - 2 * gap) / 2, y0 = Math.max(plateB + 8, plateB + (lay.height - plateB - ch - 8) / 2);
+    for (let i = 0; i < 3; i++) {
+      const x = x0 + i * (cw + gap);
+      const dc = el(art, 'ed:' + i, 'div', 'ro-desk ro-edesk ro-cab' + (i === 2 ? ' mir' : '')); box(dc, { x, y: y0, w: cw, h: ch }); attr(dc, 'aria-hidden', 'true');
+      cabinetOf(dc, meta, lay.cabinet, 'empty' + i, 'idle', i);
+      const mirrored = i === 2, gl = { x: x + (mirrored ? lay.cabinet.w / g - 5 - lay.cabinet.gw : 5) * g, y: y0 + 18 * g, w: lay.cabinet.gw * g, h: lay.cabinet.gh * g };
+      const sc = el(art, 'em:' + i, 'div', 'ro-screen ro-escreen st-idle off'); box(sc, { x: gl.x - 4 * g, y: gl.y - 4 * g, w: gl.w + 8 * g, h: gl.h + 8 * g }); attr(sc, 'aria-hidden', 'true');
+      if (!sc.firstChild) sc.innerHTML = '<div class="ro-bezel"><div class="ro-glass"></div></div><div class="ro-neck"></div><div class="ro-foot"></div>';
+      sc.firstChild.style.height = px(gl.h + 6);
+    }
+    const pl = el(chrome, 'ep', 'div', 'ro-eplate'); box(pl, { x: (W - pw) / 2, y: top + 14, w: pw });
+    pl.dataset.surface = 'empty-office'; pl.dataset.floorEmpty = empty.id || '';
+    text(pl, empty.text);
+    EMPTY_BOX = { x: (W - pw) / 2 - 4, y: top + 10, w: pw + 8, h: 64 };
   }
 
   /* spec 097 FR-121, FR-122, FR-124: slips and a bubble. The words, buttons and their order come from the app (the cards' own); this draws them on
