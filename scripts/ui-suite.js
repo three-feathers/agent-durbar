@@ -181,6 +181,7 @@ const DRIVERS = [
   { name: 'check-097-crews' }, // spec 097 FR-335, FR-336 (issue #1154): Real office with each Characters value draws its set or the Office people, no crew picture, the true note
   { name: 'shots-readme-real' }, // spec 008 delta 2026-11-08 (issue #1256): the README's lead pictures, Real office and its Needs you inbox
   { name: 'shots-070-flat-look' }, // spec 070 A14: Flat's modern look behind html[data-flat-look] (24 px controls on, today's off; Retro and Real office equal with it on)
+  { name: 'shots-102-previews' }, // spec 102 T265a (FR-302): one preview per built-in world in simscene=preview, 640 px WebP under 48 KB, with its zoom origin
   { name: 'shots-102-arcade' }, // spec 102 RA3: the Retro arcade behind its flag: only its files, cabinets, marquee, no overlap at 3, 4, 8 and 15 at both sizes
   { name: 'shots-102-arcade', label: 'shots-102-arcade wide font', env: { ARCADE_FONT: 'wide', ARCADE_CASES: 'narrow' } }, // spec 102 FR-312 (round 5 of #1599, issue #1574): the narrow plate's cases alone (ARCADE_CASES=narrow) in a font wider than macOS's (Verdana, else DejaVu Sans; the run fails if neither is installed), so the geometry is not tuned to one font
   { name: 'shots-097-moments' }, // spec 097 FR-118..FR-129: the nine world moments (first run, empty office, asleep at the desk, walk, inbox, limit, elicitation, coffee, jumps) in the Photo office and the cave
@@ -192,6 +193,9 @@ const DRIVERS = [
   { name: 'check-097-chat-look', label: 'check-097-chat-look retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 T283 (issue #1399): the same driver in the arcade
   { name: 'check-097-chat-contrast' }, // spec 097 (#1146, T197): chat text, links, code chips and header text against the real pixels behind them, both sizes; header text inside the window
   { name: 'check-097-chat-contrast', label: 'check-097-chat-contrast retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 T283 (issue #1399): the same driver in the arcade
+  { name: 'check-097-letter' }, // spec 097 FR-377 (#1587): the schedule letter flies from the Postbox plate to the target's plate in the Photo office, both sizes, reduced motion, off-screen plate, 3:1 on the picture
+  { name: 'check-097-letter', label: 'check-097-letter retro', env: { DRIVER_WORLD: 'retro' } }, // the same in the Retro arcade
+  { name: 'check-097-letter', label: 'check-097-letter cave', env: { DRIVER_WORLD: 'cave' } }, // the same in the Prehistoric cave (spec 097 FR-377: one of the three Real office worlds)
   { name: 'check-097-order' }, // spec 097 FR-345..FR-348 (#1152): rooms, desks and places rearranged in Real office by key and folder menu on spec 033's one order; the flat order shows, both sizes
   { name: 'check-097-drag' }, // spec 097 FR-352..FR-355 (#1152, Q30..Q33): drag a plate or folder sign in Real office (Photo, cave, arcade), the lobby by chip button and the +N menu, on the one saved order; both sizes
   { name: 'check-097-slip-plates' }, // spec 097 (bug 1434): no request slip covers a plate, sign, chair label, chip, cue or face; 15 agents, both sizes, three worlds

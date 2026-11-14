@@ -253,6 +253,7 @@ test:simversion
 test:momentsregistry
 test:paritytick
 test:picturebudget
+test:chargroups
 test:dangersites
 test:specnumbers
 test:pencilpark
