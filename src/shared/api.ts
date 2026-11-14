@@ -15,6 +15,7 @@ import type { AdapterInfo } from './adapters';
 import type { OrgPolicyAppView } from './orgpolicy';
 import type { ActivityRow } from './activity';
 import type { RemoteState } from './remote';
+import type { TeamTemplate } from './teamtemplate';
 import type { NotesExport, NotesFileCount, NotesSetFile, NotesView, NotesWrote } from './notes';
 export type { RemoteState };
 export type { AdapterInfo };
@@ -727,6 +728,10 @@ export interface AgentMcpEntry {
   needsSignIn?: true;
   /** Spec 058 FR-164: **Sign in again** is offered: the agent app can redo the sign-in itself, the session runs, and this server is on and not waiting for a first sign-in. */
   canSignInAgain?: boolean;
+  /** Spec 058 FR-232 (issue #1621): failed with a 403 on a server whose entry sends its own token (a header or `${NAME}`, no OAuth): not a sign-in. */
+  tokenRefused?: true;
+  /** Spec 058 FR-232: the `${NAME}` names that entry uses and Durbar's own environment does not have (names only, never a value; at most 3). */
+  tokenVars?: string[];
   /** Spec 058 FR-065: a sign-in is open for this server. The host only, never the address; `expiresInMs` is what is left of the 10 minutes. */
   signIn?: { host: string; opened: boolean; expiresInMs: number; otherSite?: string };
   /** Spec 058 FR-068: the terminal steps for this needs-sign-in server, the agent app's plain text with the name filled in (commands in backticks). */
@@ -856,6 +861,85 @@ export interface UpdatesView {
   waiting: Record<string, number>;
   announce?: { app: string; version: string; name: string };
 }
+
+/**
+ * Spec 095 FR-031, FR-033 (search conversations): what main sends the window about a scan. Masked text, ids main already knows, a folder's
+ * display name, times and mark offsets only: never a path, a transcript or raw text. `kind` tells `search:batch` from `search:done`.
+ */
+export interface ConvSearchExcerpt {
+  /** Masked in main, at most 180 characters, with `…` where it was cut. */
+  text: string;
+  /** [start, end) of every query word found in `text`. */
+  marks: Array<[number, number]>;
+  speaker: 'you' | 'agent' | 'title';
+  /** FR-013: `n` = ordinal among the session's text messages; `head` = the first 60 characters of `anchorKey` of the masked message. */
+  anchor: { n: number; head: string };
+}
+export interface ConvSearchHit {
+  /** Adapter id (`copilot`, `claude`, `codex`) or `vscode`. */
+  adapter: string;
+  /** The open agent's id, or the earlier session's id (VS Code: the chat key). */
+  sessionId: string;
+  /** Open: the agent. Earlier: an open agent of that folder and app, for `resumeSession` / `readVsChat`. */
+  agentId?: string;
+  group: 'office' | 'earlier';
+  app: string;
+  folderName: string;
+  /** Masked. */
+  title: string;
+  titleMarks: Array<[number, number]>;
+  /** Last active, ms (0 when not known). */
+  time: number;
+  excerpts: ConvSearchExcerpt[];
+  /** Hits not shown ("+N more"). */
+  more: number;
+}
+export interface ConvSearchNotes {
+  searched: number;
+  folders: number;
+  notInstalled: string[];
+  tooLarge: number;
+  unreadable: number;
+  titleOnly: { count: number; apps: string[] };
+  hidden: number;
+  floorsOff: number;
+  capped: { sessions: boolean; perFolder: boolean; results: boolean };
+  timedOut: boolean;
+  cut: number;
+  bounded: number;
+  maskFailed: number;
+  /** The query was longer than 200 characters or 8 words and was cut (FR-033). */
+  queryCut: boolean;
+  /** Folders whose earlier Codex sessions were not listed because their floor is off (owner answer C, FR-014). */
+  floorOffFolders: number;
+  /** Saved MCP values were locked in the vault, so the open sessions' values were not masked (owner answer D): "Some saved MCP values are locked; excerpts may show them." */
+  mcpValuesLocked: boolean;
+  /** FR-022 (review N-R2): folders whose earlier sessions were not listed within the plan's deadline, and their apps. */
+  lateLists: number;
+  lateApps: string[];
+}
+/**
+ * `stopped` on a `done`: main stopped the scan itself (the window closed or hid, or a quit began), so the window can leave "Searching…";
+ * the notes are then empty and `progress` is the last one sent. A cancel from the window or a new start sends no `done`.
+ */
+export type ConvSearchEvent =
+  | { kind: 'batch'; searchId: string; hits: ConvSearchHit[]; progress: { done: number; total: number }; groups: { office: number; earlier: number } }
+  | { kind: 'done'; searchId: string; notes: ConvSearchNotes; progress: { done: number; total: number }; failed: boolean; stopped?: true };
+/** `short`: under 3 characters (spaces not counted); `none`: no session is open, nothing to search yet; `invalid`: not a query. */
+export type ConvSearchStart = { ok: true; searchId: string; query: string; cut: boolean } | { ok: false; code: 'short' | 'none' | 'invalid'; error: string };
+
+/** Spec 111 T007: a template as main stores it (the window never sets `id`, `origin` or the times; a member's `memberId` and `briefFrom` are main's). */
+export type TeamTemplateInfo = TeamTemplate & { id: string; origin: 'own' | 'imported'; createdAt: number; updatedAt: number };
+/**
+ * A refused call. `invalid`: the value was not accepted (`errors` name fields, never values). `changed`: the file moved under the store; it was read
+ * again, `templates` is the new list, and the window keeps what the person typed and offers the save again. `failed`: the write failed; keep what was typed.
+ * `blocked`: the store file cannot be read or moved aside, so saves may keep failing (show a notice).
+ */
+export type TeamsRefused = { ok: false; code: 'invalid' | 'changed' | 'failed'; errors: string[]; blocked: boolean; templates?: TeamTemplateInfo[] };
+/** `setAside`: true once after the store set a bad file aside at the load (show one toast, no content; the answer after that is false). */
+export type TeamsList = { ok: true; templates: TeamTemplateInfo[]; blocked: boolean; setAside: boolean };
+export type TeamsOne = { ok: true; template: TeamTemplateInfo } | TeamsRefused;
+export type TeamsRemoved = { ok: true; removed: boolean } | TeamsRefused;
 
 export interface DurbarApi {
   version(): Promise<string>;
@@ -1192,6 +1276,16 @@ export interface DurbarApi {
   notesExport?(id: string): Promise<NotesExport>;
   /** A folder's notes changed (another chat, another process): refetch the open folder's notes when the fingerprint is its own. */
   onNotesChanged?(cb: (v: { fingerprint: string }) => void): () => void;
+  /**
+   * Spec 111 T007 (FR-010, FR-023, FR-100): the person's team templates, window only; main checks every argument and keeps `memberId` and `briefFrom` itself.
+   * `teamsPut`: no `id` creates (always `own`, no `memberId` or `briefFrom` allowed), an `id` updates (a member keeps its brief mark by `memberId`).
+   * `teamsMarkMine(templateId, memberId)` is the only way to clear a brief's file mark for a member that keeps its `memberId` (a member sent as new loses it, FR-023 `[KNOWN GAP]`); ask the person first (`askDialog`).
+   */
+  teamsList?(): Promise<TeamsList>;
+  teamsPut?(template: unknown): Promise<TeamsOne>;
+  teamsDelete?(id: string): Promise<TeamsRemoved>;
+  teamsDuplicate?(id: string): Promise<TeamsOne>;
+  teamsMarkMine?(templateId: string, memberId: string): Promise<TeamsOne>;
   /** Spec 066: answer a proposed plan (window only). */
   resolvePlan?(id: string, requestId: string, answer: { kind: 'approve' | 'reject' | 'revise'; feedback?: string }): Promise<{ ok: boolean; error?: string }>;
   /** Interrupt the current turn only; the agent returns to Ready. */
@@ -1226,6 +1320,15 @@ export interface DurbarApi {
   /** Read-only VS Code Copilot Chat history for this agent's folder. */
   listVsChats?(id: string): Promise<VsChatListResult>;
   readVsChat?(id: string, key: string): Promise<{ ok: boolean; error?: string; transcript?: VsChatTranscript }>;
+  /**
+   * Spec 095 FR-033: search the text of every open and earlier session (window only). The window sends only the query; main decides the
+   * scope from its own agents and folder store, streams `onConvSearch` events for that `searchId` and ignores a stale or unknown id.
+   */
+  convSearchStart?(query: string): Promise<ConvSearchStart>;
+  convSearchCancel?(searchId: string): Promise<{ ok: boolean }>;
+  /** FR-026, FR-033: the box was cleared or closed: stops this window's scan (no `done`) and drops the kept Codex titles. */
+  convSearchClear?(): Promise<{ ok: boolean }>;
+  onConvSearch?(cb: (e: ConvSearchEvent) => void): () => void;
   onEvent(cb: (e: AgentEvent) => void): () => void;
   onAgentAdded(cb: (a: AgentInfo) => void): () => void;
   /** The Settings… item of the macOS app menu (⌘,), spec 052 FR-083. */
