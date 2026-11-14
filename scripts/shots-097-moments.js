@@ -12,7 +12,7 @@ const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
-const { helpers, jsLiteral } = require('./driver-helpers');
+const { helpers, jsLiteral, CHECK_DARK, CHECK_DARK_QUERY } = require('./driver-helpers');
 const { AT_CLOCK } = require('./shots-068-coffee');
 /* the plate's words after "Coffee break — ": "resumes at 14:30" today, "resumes Tue 12:08 AM" when the reset is on the next day (a run just before midnight UTC); test-coffeebreak checks it against untilText */
 const RESUMES = `resumes ${AT_CLOCK}`;
@@ -21,6 +21,8 @@ const SIZES = [[1440, 900], [1280, 800]];
 const WORLDS = (process.env.MOMENTS_WORLDS || 'photo').split(',');
 const ONLY = (process.env.MOMENTS_ONLY || '').split(',').filter(Boolean);
 
+/* in-page contrast helpers for the cells step: Pa parses a computed colour (with alpha), Lm is its luminance, over lays it on a background, bgOf stacks the backgrounds up to the root, rat is the WCAG ratio */
+const CX = String.raw`const Pa=(s)=>{const m=/rgba?\(([^)]+)\)/.exec(s||'');if(!m)return[0,0,0,0];const v=m[1].split(/[ ,\/]+/).filter(Boolean).map(Number);return[v[0]||0,v[1]||0,v[2]||0,v.length>3?v[3]:1]};const Lm=(a)=>{const f=(x)=>{x/=255;return x<=0.03928?x/12.92:Math.pow((x+0.055)/1.055,2.4)};return 0.2126*f(a[0])+0.7152*f(a[1])+0.0722*f(a[2])};const over=(f,b)=>[f[0]*f[3]+b[0]*(1-f[3]),f[1]*f[3]+b[1]*(1-f[3]),f[2]*f[3]+b[2]*(1-f[3]),1];const bgOf=(e,root)=>{const L=[];for(let n=e;n;n=n.parentElement){const c=Pa(getComputedStyle(n).backgroundColor);if(c[3]>0)L.push(c);if(c[3]>=1||n===root)break}let b=[0,0,0,1];for(const c of L.reverse())b=over(c,b);return b};const phc=(o)=>{const k=getComputedStyle(o,'::placeholder');const c=Pa(k.color);c[3]*=parseFloat(k.opacity);return c};const rat=(a,b)=>{const x=Lm(a),y=Lm(b);return (Math.max(x,y)+0.05)/(Math.min(x,y)+0.05)};`;
 module.exports = async (ctx) => {
   // made when the driver runs, not when the file is required (test-coffeebreak requires it for RESUMES: spec 012 FR-166)
   const OUT = process.env.SHOTS_OUT || fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-097-moments-'));
@@ -429,6 +431,60 @@ module.exports = async (ctx) => {
       });
       console.log('[moments] notes ok', ns.length);
     }
+    // ---- review of #1740: the question card's "Other answer" placeholder reads at 4.5:1 on its field in every built-in theme and the dark fixture, in this world (the table is in the spec delta) ----
+    if (run('placeholder')) {
+      /* the plain office (no world: the light Clean Office) and this world's own look; each with the built-in themes, and with the dark fixture */
+      for (const [name, plain, extra] of [['plain office', true, {}], ['plain office dark fixture', true, CHECK_DARK_QUERY], ['world look', false, {}], ['world look dark fixture', false, CHECK_DARK_QUERY]]) {
+        await H.load({ w, h, query: plain ? { sim: '15', officeview: 'flat', simquestion: '1', ...extra } : q(world, { sim: '15', simquestion: '1', ...extra }), ready: plain ? 'fit' : REAL, settle: false });
+        if (!plain) await must(PICS, 'the pictures');
+        /* an earlier step may have left the page on another floor (the floor choice is stored); the question's agent must be on the floor shown */
+        const had = await js(`(()=>{const h=!!(localStorage.getItem('durbar.floor')||localStorage.getItem('durbar.floorView'));localStorage.removeItem('durbar.floor');localStorage.removeItem('durbar.floorView');return h})()`);
+        if (had) {
+          await H.load({ w, h, query: plain ? { sim: '15', officeview: 'flat', simquestion: '1', ...extra } : q(world, { sim: '15', simquestion: '1', ...extra }), ready: plain ? 'fit' : REAL, settle: false });
+          if (!plain) await must(PICS, 'the pictures');
+        }
+        await js('window.__cx=(()=>{' + CX + 'return {Pa,Lm,over,bgOf,rat,phc}})();0');
+        if (plain) {
+          const o = await H.openSimAgent(`a=>!a.parent&&a.question`, '#chat .note.question .q-other');
+          assert.ok(o.ok, `${tag}: an agent has the question in its chat (${name}): ${JSON.stringify({ id: o.id, ...o.seen })}`);
+        } else {
+          const asker = await js(`(()=>{const A=window.__durbarSimUi.agents();return (A.find(a=>a.info&&a.info.adapterId==='claude')||A[0]||{}).id||''})()`);
+          assert.ok(asker, `${tag}: the simulator has a Claude agent to ask the question`);
+          await js(`document.querySelector('#stage .ro-plate[data-id="'+${jsLiteral(asker)}+'"]').click()`);
+          await must(`!!document.querySelector('#chat .note.question:not(.settled) .q-other')`, 'the question card with its Other answer field');
+        }
+        const ids = !/dark fixture/.test(name) ? await js(`Object.keys(window.THEME._builtins())`) : [CHECK_DARK.id];
+        const rows = [];
+        for (const id of ids) {
+          if (!/dark fixture/.test(name)) await js(`window.THEME.setTheme(${jsLiteral(id)});0`);
+          await must(`window.THEME.current().id===${jsLiteral(id)}`, 'the theme ' + id);
+          await H.settle();
+          const r = await js(`(()=>{const {Pa,Lm,over,bgOf,rat,phc}=window.__cx;const o=document.querySelector('#chat .note.question:not(.settled) .q-other');if(!o)return 0;const b=bgOf(o,document.documentElement);return rat(over(phc(o),b),b)})()`);
+          rows.push([id, Math.round(r * 100) / 100, r]);
+        }
+        console.log(`[moments] placeholder ratio ${tag} (${name}): ${JSON.stringify(rows.map((x) => [x[0], x[1]]))}`);
+        assert.ok(rows.length >= 1 && rows.every((x) => x[2] >= 4.5), `${tag}: the Other answer placeholder reads at 4.5:1 on its field in ${name} theme(s): ${JSON.stringify(rows.map((x) => [x[0], x[1]]))}`);
+      }
+    }
+    // ---- 102 T223 walk (097 FR-073, FR-075): the Real office draws no walk; a person at a desk is gone from it and appears at the place (a still pair: before, after), in the arcade ----
+    if (run('walk') && world === 'retro') {
+      await H.load({ w, h, query: q(world), ready: REAL, settle: false });
+      await must(PICS, 'the pictures');
+      const MIRA = `(()=>{const a=window.__durbarSimUi.agents().find(x=>x.name==='Mira');return a?a.id:''})()`;
+      const mira = await js(MIRA);
+      assert.ok(mira, `${tag}: the simulator has Mira`);
+      const where = () => js(`(()=>{const id=${jsLiteral(mira)};return {chip:[...document.querySelectorAll('#stage .ro-chip,#stage .ro-lplate')].filter(c=>/Mira/.test(c.dataset.name||c.textContent)).length,at:window.__durbarSimUi.awayIds().includes(id),walkers:document.querySelectorAll('#walkers .walker,#stage .walker,#stage .ro-walker').length}})()`);
+      const b = await where();
+      assert.deepStrictEqual([b.at, b.chip, b.walkers], [false, 0, 0], `${tag}: before: Mira works at her desk, nobody at a place: ${JSON.stringify(b)}`);
+      await shot(world, 'walk-desk', w, h);
+      assert.ok(await js(`window.__durbarSimUi.pinAt(${jsLiteral(mira)},'terminal')`), `${tag}: Mira is sent to the Terminal`);
+      await must(`window.__durbarSimUi.awayIds().includes(${jsLiteral(mira)})&&[...document.querySelectorAll('#stage .ro-chip,#stage .ro-lplate')].some(c=>/Mira/.test(c.dataset.name||c.textContent))`, 'Mira at the Terminal');
+      await must(PICS, 'the pictures');
+      await H.settle();
+      const a2 = await where();
+      assert.ok(a2.at && a2.chip >= 1 && a2.walkers === 0, `${tag}: after: Mira stands at the Terminal and nothing walks (097 FR-075): ${JSON.stringify(a2)}`);
+      await shot(world, 'walk-place', w, h);
+    }
     // ---- 102 T223: the cells that are not one of the nine, looked at in the arcade (chat with a request, the All floors view): pictures and no text under 10.5px ----
     if (run('cells') && world === 'retro') {
       await H.load({ w, h, query: q(world, { sim: '15', simfloors: '1' }), ready: REAL, settle: false });
@@ -442,14 +498,56 @@ module.exports = async (ctx) => {
       const perm = await js(`(()=>{const c=document.querySelector('#chat .note.perm:not(.settled)');if(!c)return null;const P=(s)=>{const m=/rgba?\\(([^)]+)\\)/.exec(s);return m?m[1].split(/[ ,\\/]+/).filter(Boolean).slice(0,3).map(Number):[0,0,0]},Lm=(a)=>{const f=(x)=>{x/=255;return x<=0.03928?x/12.92:Math.pow((x+0.055)/1.055,2.4)};return 0.2126*f(a[0])+0.7152*f(a[1])+0.0722*f(a[2])};const bg=P(getComputedStyle(c).backgroundColor);const worst=[...c.querySelectorAll('*')].filter(e=>e.children.length===0&&e.textContent.trim()&&e.getClientRects().length&&!e.closest('.btn')).map(e=>{const a=Lm(P(getComputedStyle(e).color)),b=Lm(bg);return (Math.max(a,b)+0.05)/(Math.min(a,b)+0.05)});return {lum:Lm(bg),btns:c.querySelectorAll('.btn').length,texts:worst.length,min:worst.length?Math.min(...worst):0}})()`);
       assert.ok(perm && perm.lum < 0.2 && perm.btns >= 2 && perm.texts > 0 && perm.min >= 4.5, `${tag}: the permission card in the arcade's chat is dark, has its buttons and its text reads at 4.5:1: ${JSON.stringify(perm)}`);
       await shot(world, 'cell-chat', w, h);
+      /* 102 T223: the chat of the simulator's first Claude agent (Ada) holds the simulator's question card (the question-card cell); Kenji sits on another floor with floors on, so this page has one floor */
+      await H.load({ w, h, query: q(world, { sim: '15', simquestion: '1' }), ready: REAL, settle: false });
+      await must(PICS, 'the pictures');
+      await js('window.__cx=(()=>{' + CX + 'return {Pa,Lm,over,bgOf,rat,phc}})();0');
+      /* the simulator's question comes from its first Claude agent (its first agent when there is none), a little after the first draw */
+      const asker = await js(`(()=>{const A=window.__durbarSimUi.agents();return (A.find(a=>a.info&&a.info.adapterId==='claude')||A[0]||{}).id||''})()`);
+      assert.ok(asker, `${tag}: the simulator has a Claude agent to ask the question`);
+      await js(`document.querySelector('#stage .ro-plate[data-id="'+${jsLiteral(asker)}+'"]').click()`);
+      await must(`document.body.classList.contains('panel-open')&&!!document.querySelector('#chat .note.question:not(.settled)')`, 'the chat of the asker with its question');
+      await H.settle();
+      /* the question card is dark like the permission card and reads at 4.5:1; its options and its two buttons are there; no text under 10.5px */
+      const qc = await js(`(()=>{const {Pa,Lm,over,bgOf,rat,phc}=window.__cx;const c=document.querySelector('#chat .note.question:not(.settled)');if(!c)return null;const leaf=(e)=>e.children.length===0&&e.textContent.trim()&&e.getClientRects().length;const ink=(e,col)=>{const b=bgOf(e,c);return rat(over(Pa(col),b),b)};const all=[...c.querySelectorAll('*')].filter(leaf);const text=all.filter(e=>!e.closest('.btn')).map(e=>ink(e,getComputedStyle(e).color));const btn=all.filter(e=>e.closest('.btn')).map(e=>ink(e,getComputedStyle(e).color));const other=c.querySelector('.q-other');const ph=other&&other.placeholder?(()=>{const b=bgOf(other,c);return rat(over(phc(other),b),b)})():0;return {lum:Lm(bgOf(c,c)),opts:c.querySelectorAll('.q-opt').length,btns:[...c.querySelectorAll(':scope > .note-actions .btn')].map(b=>b.textContent.trim()),texts:text.length,min:text.length?Math.min(...text):0,btnTexts:btn.length,btnMin:btn.length?Math.min(...btn):0,ph,small:all.filter(e=>parseFloat(getComputedStyle(e).fontSize)<10.5).length}})()`);
+      assert.ok(qc && qc.lum < 0.2 && qc.opts >= 2 && qc.btns.length === 2 && qc.texts > 0 && qc.min >= 4.5 && qc.small === 0, `${tag}: the question card in the arcade's chat is dark, has its options and buttons, its text reads at 4.5:1, nothing under 10.5px: ${JSON.stringify(qc)}`);
+      assert.ok(qc.btnTexts >= 4 && qc.btnMin >= 4.5, `${tag}: the options, Answer and Skip read at 4.5:1 on their own background: ${JSON.stringify(qc)}`);
+      assert.ok(qc.ph >= 4.5, `${tag}: the Other answer placeholder reads at 4.5:1 on its field: ${JSON.stringify(qc)}`);
+      await shot(world, 'cell-question', w, h);
+      /* the keyboard ring of Answer and Skip (the base :focus-visible rule): a solid outline of 2px or more that shows at 3:1 against the card, each with its picture */
+      for (const label of ['Answer', 'Skip']) {
+        const fr = await js(`(()=>{const {Pa,Lm,over,bgOf,rat,phc}=window.__cx;const c=document.querySelector('#chat .note.question:not(.settled)');const b=[...c.querySelectorAll(':scope > .note-actions .btn')].find(x=>x.textContent.trim()===${jsLiteral(label)});if(!b)return null;b.focus();const k=getComputedStyle(b);return {on:document.activeElement===b&&b.matches(':focus-visible'),style:k.outlineStyle,width:parseFloat(k.outlineWidth),ring:rat(over(Pa(k.outlineColor),bgOf(c,c)),bgOf(c,c))}})()`);
+        assert.ok(fr && fr.on && fr.style === 'solid' && fr.width >= 2 && fr.ring >= 3, `${tag}: ${label} shows a keyboard focus ring (solid, 2px or more, 3:1 on the card): ${JSON.stringify(fr)}`);
+        await H.settle();
+        if (label === 'Answer') await shot(world, 'cell-focus-answer', w, h);
+        else await shot(world, 'cell-focus-skip', w, h);
+      }
+      await js(`document.activeElement&&document.activeElement.blur()`);
+      /* the answer bar is the same question, shown under the chat while its card is scrolled out of view (052 FR-162) */
+      await js(`document.getElementById('chat').scrollTop=0`);
+      await must(`!document.getElementById('answerBar').hidden&&!!document.querySelector('#answerBar .ab-act button')`, 'the answer bar once the card is out of view');
+      await H.settle();
+      const ab = await js(`(()=>{const {Pa,Lm,over,bgOf,rat,phc}=window.__cx;const b=document.getElementById('answerBar');const lf=[...b.querySelectorAll('*')].filter(e=>e.children.length===0&&e.textContent.trim()&&e.getClientRects().length).map(e=>{const bg=bgOf(e,b);return rat(over(Pa(getComputedStyle(e).color),bg),bg)});return {texts:lf.length,min:lf.length?Math.min(...lf):0,asks:/ asks:/.test(b.textContent),btns:[...b.querySelectorAll('.ab-act button')].map(x=>x.textContent.trim()),small:[...b.querySelectorAll('*')].filter(e=>e.children.length===0&&e.textContent.trim()&&e.getClientRects().length&&parseFloat(getComputedStyle(e).fontSize)<10.5).length,inside:b.getBoundingClientRect().bottom<=document.getElementById('chat').getBoundingClientRect().bottom+120}})()`);
+      assert.ok(ab.asks && ab.btns.includes('Answer in chat') && ab.small === 0 && ab.inside && ab.texts > 0 && ab.min >= 4.5, `${tag}: the answer bar names the asker, offers Answer in chat, every text (the buttons too) reads at 4.5:1, text >= 10.5px: ${JSON.stringify(ab)}`);
+      await shot(world, 'cell-answerbar', w, h);
       await H.load({ w, h, query: q(world, { sim: '15', simfloors: '1' }), ready: REAL, settle: false });
       await must(PICS, 'the pictures');
+      /* 102 T223 building-preview (097 FR-105): the real pointer rests on All, as a visitor's does; the page must have seen it enter the button */
+      await must(`!!document.querySelector('#lift:not([hidden]) [data-lift="*all"]')`, 'the lift with its All button');
+      await js(`window.__bpEnter=false;document.querySelector('#lift [data-lift="*all"]').addEventListener('mouseenter',()=>{window.__bpEnter=true});0`);
+      const bp = await js(`(()=>{const r=document.querySelector('#lift [data-lift="*all"]').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
+      ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: bp.x, y: bp.y });
+      await must(`window.__bpEnter===true&&document.querySelector('#lift [data-lift="*all"]').matches(':hover')`, 'the pointer on the All button');
+      await H.settle();
+      await shot(world, 'cell-preview', w, h);
+      ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 0, y: 0 });
+      await must(`!document.querySelector('#lift [data-lift="*all"]').matches(':hover')`, 'the pointer off the All button');
       await js(`document.querySelector('#lift [data-lift="*all"]').click()`);
       /* review of #1279: no silent skip. The same condition shots-092-lift uses for the All floors view; if it never comes, the run fails, so no picture is ever quietly missing */
       await must(`document.querySelector('#lift [data-lift="*all"]').getAttribute('aria-current')==='true'`, 'the All floors view (the lift says All)');
       await must(PICS, 'the pictures');
       await shot(world, 'cell-allfloors', w, h);
-      for (const f of ['cell-chat', 'cell-allfloors']) assert.ok(fs.existsSync(path.join(OUT, `${world}-${f}-${w}x${h}.png`)), `${tag}: the picture ${f} was written`);
+      for (const f of ['cell-chat', 'cell-question', 'cell-focus-answer', 'cell-focus-skip', 'cell-answerbar', 'cell-preview', 'cell-allfloors']) assert.ok(fs.existsSync(path.join(OUT, `${world}-${f}-${w}x${h}.png`)), `${tag}: the picture ${f} was written`);
       await js(`localStorage.removeItem('durbar.floor');localStorage.removeItem('durbar.floorView')`); /* the next size starts on one floor */
     }
   }
