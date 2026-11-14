@@ -13,7 +13,7 @@ const IN_REPO = path.join(ROOT, 'src', 'renderer', 'realoffice', 'worlds');
 
 const { TEXT_FIELDS, cardProblems, judge, loadKnown, readCards, staleKnown } = require('./world-cards');
 
-const mk = (id, over) => ({ formatVersion: 1, id, arrangement: `arr ${id}`, monitor: `mon ${id}`, light: [3000 + (id.charCodeAt(0) % 10) * 1000], mood: `mood ${id}`, wall: `wall ${id}`, floor: `floor ${id}`, desk: `desk ${id}`, fixtureStyle: `fix ${id}`, plants: `plant ${id}`, motif: `motif ${id}`, ...over });
+const mk = (id, over) => ({ formatVersion: 1, id, arrangement: `arr ${id}`, monitor: `mon ${id}`, light: [3000 + (id.charCodeAt(0) % 10) * 1000], mood: `mood ${id}`, wall: `wall ${id}`, floor: `floor ${id}`, desk: `desk ${id}`, fixtureStyle: `fix ${id}`, plants: `plant ${id}`, motif: `motif ${id}`, 'distinct-check': { state: 'pending' }, ...over });
 
 /* Fixtures: each failure is found, by name (FR-016). */
 {
@@ -54,6 +54,22 @@ const mk = (id, over) => ({ formatVersion: 1, id, arrangement: `arr ${id}`, moni
   assert.deepStrictEqual(staleKnown({ a, b: sa }, known), [], 'a listed pair that still clashes is not stale');
   assert.deepStrictEqual(staleKnown({ a, b }, known), ['a and b no longer share the same arrangement: remove it from known-clashes.json'], 'a listed pair that no longer clashes fails, naming known-clashes.json');
   assert.deepStrictEqual(staleKnown({ a }, known), [], 'a listed pair with a world missing is not judged here');
+  /* T094: the reviewer's look is a required field with two states, and a pending one names no reviewer (it is set by a person, never by a script). */
+  const dcp = (dc) => cardProblems({ ...mk('a'), 'distinct-check': dc }, 'a');
+  const noDc = mk('a'); delete noDc['distinct-check'];
+  assert.ok(cardProblems(noDc, 'a').some((p) => /missing "distinct-check"/.test(p)), 'a card without distinct-check fails');
+  assert.deepStrictEqual(dcp({ state: 'pending' }), [], 'pending passes');
+  assert.deepStrictEqual(dcp({ state: 'passed', by: 'Vikram', date: '2026-11-14', worlds: 3 }), [], 'passed with a reviewer, a real date and a count passes');
+  assert.ok(dcp({ state: 'looked' }).some((p) => /must be "pending" or "passed"/.test(p)), 'an unknown state fails');
+  assert.ok(dcp('passed').some((p) => /missing "distinct-check"/.test(p)), 'a string is not the field');
+  assert.ok(dcp({ state: 'pending', by: 'Vikram' }).length > 0, 'a pending look names no reviewer');
+  assert.ok(dcp({ state: 'passed', date: '2026-11-14', worlds: 3 }).some((p) => /by must name/.test(p)), 'passed without a reviewer fails');
+  assert.ok(dcp({ state: 'passed', by: ' ', date: '2026-11-14', worlds: 3 }).some((p) => /by must name/.test(p)), 'a blank reviewer fails');
+  assert.ok(dcp({ state: 'passed', by: 'V', date: '2026-02-30', worlds: 3 }).some((p) => /real YYYY-MM-DD/.test(p)), 'an impossible date fails');
+  assert.ok(dcp({ state: 'passed', by: 'V', date: '14/11/2026', worlds: 3 }).some((p) => /real YYYY-MM-DD/.test(p)), 'a date in another shape fails');
+  assert.ok(dcp({ state: 'passed', by: 'V', date: '2026-11-14', worlds: 1 }).some((p) => /at least 2/.test(p)), 'comparing fewer than two worlds fails');
+  assert.ok(dcp({ state: 'passed', by: 'V', date: '2026-11-14', worlds: '3' }).some((p) => /at least 2/.test(p)), 'the count is a number');
+  assert.ok(dcp({ state: 'passed', by: 'V', date: '2026-11-14', worlds: 3, extra: 1 }).some((p) => /exactly state, by, date and worlds/.test(p)), 'an extra field fails');
   assert.ok(cardProblems(mk('a'), 'a').length === 0);
   assert.ok(cardProblems({ ...mk('a'), wall: '' }, 'a').some((p) => /"wall"/.test(p)), 'an empty field is named');
   assert.ok(cardProblems(mk('a'), 'z').some((p) => /differs/.test(p)), 'a card id must match its folder');

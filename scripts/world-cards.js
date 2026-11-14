@@ -16,6 +16,22 @@ function cardProblems(card, id) {
   if (card.id !== id) out.push(`${id}: card id "${card.id}" differs from its folder`);
   for (const f of TEXT_FIELDS) if (typeof card[f] !== 'string' || !norm(card[f])) out.push(`${id}: missing or empty "${f}"`);
   if (!Array.isArray(card.light) || !card.light.length || !card.light.every((k) => Number.isFinite(k) && k >= 1000 && k <= 20000)) out.push(`${id}: "light" must be a list of temperatures in kelvin, 1000..20000`);
+  out.push(...distinctProblems(card['distinct-check'], id));
+  return out;
+}
+
+/** The reviewer's look (spec 102 FR-017, T094), set by a person after the contact sheet: { state: 'pending' } or { state: 'passed', by, date, worlds }. Nothing here sets it. */
+function distinctProblems(dc, id) {
+  if (!dc || typeof dc !== 'object' || Array.isArray(dc)) return [`${id}: missing "distinct-check" (use {"state":"pending"} until a person has looked at the contact sheet)`];
+  const keys = Object.keys(dc).sort().join(',');
+  if (dc.state === 'pending') return keys === 'state' ? [] : [`${id}: a pending "distinct-check" has no other field (it names a reviewer only once passed)`];
+  if (dc.state !== 'passed') return [`${id}: "distinct-check" state must be "pending" or "passed"`];
+  const out = [];
+  if (keys !== 'by,date,state,worlds') out.push(`${id}: a passed "distinct-check" has exactly state, by, date and worlds`);
+  if (typeof dc.by !== 'string' || !dc.by.trim()) out.push(`${id}: "distinct-check" by must name the reviewer`);
+  const ok = typeof dc.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dc.date) && new Date(dc.date + 'T00:00:00Z').toISOString().slice(0, 10) === dc.date;
+  if (!ok) out.push(`${id}: "distinct-check" date must be a real YYYY-MM-DD date`);
+  if (!Number.isInteger(dc.worlds) || dc.worlds < 2) out.push(`${id}: "distinct-check" worlds is how many worlds were compared, at least 2`);
   return out;
 }
 
@@ -81,4 +97,4 @@ function staleKnown(cards, known) {
   }).map((k) => `${k.pair[0]} and ${k.pair[1]} no longer share ${k.field === 'light' ? 'a light temperature within 200 K' : `the same ${k.field}`}: remove it from known-clashes.json`);
 }
 
-module.exports = { TEXT_FIELDS, MIN_GAP_K, norm, cardProblems, pairClashes, judge, loadKnown, readCards, staleKnown };
+module.exports = { TEXT_FIELDS, MIN_GAP_K, norm, cardProblems, distinctProblems, pairClashes, judge, loadKnown, readCards, staleKnown };
