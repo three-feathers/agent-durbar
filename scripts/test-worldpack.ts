@@ -6,7 +6,8 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { PART_TABLE, PART_NAMES, readManifest, type PackOptions, validateWorldFiles, validateWorldZip, partProblem, pictureHeader, MANIFEST_BYTES, PACK_MAX_BYTES, hasDuplicateKeys, MAX_SIDE, LAMP_SHAPES, CALL_SHAPES, RIDE_STYLES } from '../src/shared/worldpack';
+import { ARRANGEMENTS, FOCUS_ARRANGEMENTS, PART_TABLE, PART_NAMES, readManifest, type PackOptions, validateWorldFiles, validateWorldZip, partProblem, pictureHeader, MANIFEST_BYTES, PACK_MAX_BYTES, hasDuplicateKeys, MAX_SIDE, LAMP_SHAPES, CALL_SHAPES, RIDE_STYLES } from '../src/shared/worldpack';
+import { ARRANGEMENTS as BUILT_ARRANGEMENTS } from '../src/shared/realoffice-arrangements';
 import { MOMENT_BLOCKS, BLOCK_PARTS, MOMENT_EXTRAS, momentCoverage, uncoveredMoments, momentsNeeding } from '../src/shared/worldmoments';
 import { buildPartPrompt, buildPartTemplate, cleanPlaceIdea, EXCLUSION_CLAUSE, MAX_RAW_IDEA, MARK_OPEN, MARK_CLOSE, MAX_PLACE_IDEA, MAX_PROMPT_CHARS, PROMPT_PARTS, WRAPPER_BEFORE } from '../src/shared/worldprompts';
 import { goodPack, toStored, webp, webpOfSize, png, pngShaped, pngChunk, chunk, riff, vp8, vp8x, vp8l, goodTokens, SECRET_MARKER } from './fixtures/worlds/gen';
@@ -21,8 +22,8 @@ const check = (f: Record<string, Buffer>, o: PackOptions = opts) => validateWorl
 const withManifest = (m: Record<string, unknown>, only?: string[]) => check(goodPack(m, only));
 
 // ---- the closed list and its caps (FR-041, FR-042) ----
-assert.strictEqual(PART_NAMES.length, 25);
-assert.strictEqual(new Set(PART_NAMES.map((n) => n.toLowerCase())).size, 25, 'unique names');
+assert.strictEqual(PART_NAMES.length, 30);
+assert.strictEqual(new Set(PART_NAMES.map((n) => n.toLowerCase())).size, 30, 'unique names');
 const spec = (n: string) => PART_TABLE.find((p) => p.name === n)!;
 assert.strictEqual(spec('wall.webp').maxBytes, 120 * 1024); assert.strictEqual(spec('floor.webp').maxBytes, 40 * 1024); assert.strictEqual(spec('welcome.webp').maxBytes, 150 * 1024);
 for (const n of ['window-1.webp', 'window-2.webp', 'window-3.webp']) assert.strictEqual(spec(n).maxBytes, 60 * 1024, n);
@@ -55,7 +56,7 @@ assert.ok(withManifest({}).ok, 'the baseline');
   const r = withManifest({});
   assert.ok(r.ok && r.manifest, 'ok');
   const m = r.manifest!;
-  assert.deepStrictEqual(Object.keys(m).sort(), ['defaultSet', 'description', 'formatVersion', 'id', 'licence', 'lights', 'name', 'parts', 'rideStyle', 'tokens', 'version'], 'the copy holds exactly the listed fields');
+  assert.deepStrictEqual(Object.keys(m).sort(), ['arrangement', 'defaultSet', 'description', 'formatVersion', 'id', 'licence', 'lights', 'name', 'parts', 'rideStyle', 'tokens', 'version'], 'the copy holds exactly the listed fields');
   assert.deepStrictEqual(m.parts['fx-boss.webp'].anchors.doorRect, { x: 0.2, y: 0.1, w: 0.6, h: 0.8 });
   assert.strictEqual(Object.getPrototypeOf(m.parts), Object.prototype);
 }
@@ -453,6 +454,58 @@ assert.ok(okCount > 50 && noCount > ROUNDS / 3, 'the manifest fuzz both accepts 
 }
 // zip-wrapped, too: the whole gate on mutated manifests inside real zips
 assert.ok(validateWorldZip(toStored(goodPack()), opts).ok);
+
+// ---- spec 102 T171: arrangement, focus.webp, monitor and desk-back parts (FR-220, FR-221, FR-223, FR-226, FR-227, SC-021) ----
+{
+  const arr = (v: unknown, only?: string[]) => withManifest({ arrangement: v }, only);
+  const noFocus = PART_NAMES.filter((n) => n !== 'focus.webp');
+  assert.deepStrictEqual(ARRANGEMENTS, ['rows', 'circle', 'facing-view', 'aisles', 'flanking'], 'T171: the five ids, in the spec order');
+  for (const id of ARRANGEMENTS) {
+    const r = arr(id, FOCUS_ARRANGEMENTS.includes(id) ? undefined : noFocus);
+    assert.ok(r.ok, `T171 arrangement accepted: ${id}: ${r.reason}`);
+    assert.strictEqual(r.manifest && r.manifest.arrangement, id, `T171 arrangement kept: ${id}`);
+  }
+  assert.ok(check(goodPack({}, noFocus)).ok && check(goodPack({}, noFocus)).manifest!.arrangement === undefined, 'T171 absent arrangement is rows and stays absent');
+  for (const [label, v] of [['__proto__', '__proto__'], ['constructor', 'constructor'], ['toString', 'toString'], ['hasOwnProperty', 'hasOwnProperty'], ['array', ['circle']], ['number', 1], ['null', null], ['object', { id: 'circle' }], ['empty', ''], ['upper case', 'Circle'], ['padded', 'circle '], ['long', 'x'.repeat(21)], ['very long', 'circle'.repeat(400)], ['unknown', 'spiral']] as Array<[string, unknown]>) {
+    const r = arr(v);
+    assert.ok(!r.ok, `T171 hostile arrangement refused: ${label}`);
+    assert.ok(/newer Agent Durbar/.test(r.reason), `T171 hostile arrangement says it may need a newer Durbar: ${label}: ${r.reason}`);
+  }
+  // no parameters: a position, radius, seat count, order or offset is not a field
+  for (const f of ['radius', 'seats', 'order', 'offset', 'position', 'focus', 'ring']) assert.ok(!withManifest({ arrangement: 'circle', [f]: 5 }).ok, `T171 parameter field refused: ${f}`);
+  assert.ok(!(() => { const g = goodPack(); const m = JSON.parse(g['world.json'].toString()); m.parts['focus.webp'].anchors = { x: 0.1, y: 0.1 }; g['world.json'] = Buffer.from(JSON.stringify(m)); return check(g); })().ok, 'T171 focus.webp takes no anchors (a position is refused)');
+  // focus.webp: required with circle and facing-view, refused with the others
+  for (const id of ['circle', 'facing-view']) assert.ok(!arr(id, noFocus).ok, `T171 focus required with ${id}`);
+  for (const id of ['rows', 'aisles', 'flanking']) assert.ok(!arr(id).ok, `T171 focus refused with ${id}`);
+  assert.ok(!withManifest({ arrangement: undefined }).ok, 'T171 focus refused without an arrangement (rows)');
+  // caps: monitor 30 KB and 300 px tall, desk-back 30 KB, focus 120 KB at 1920x1200
+  const cap = (n: string) => PART_TABLE.find((p) => p.name === n)!;
+  for (const n of ['monitor.webp', 'monitor-half.webp', 'desk-back.webp', 'desk-back-half.webp']) assert.strictEqual(cap(n).maxBytes, 30 * 1024, `T171 cap of ${n}`);
+  assert.strictEqual(cap('focus.webp').maxBytes, 120 * 1024, 'T171 cap of focus.webp');
+  for (const n of ['monitor.webp', 'monitor-half.webp']) {
+    assert.strictEqual(cap(n).maxH, 300, `T171 ${n} at most 300 px tall`);
+    assert.strictEqual(partProblem(cap(n), webpOfSize(200, 300, 30 * 1024)), '', `T171 ${n} at its caps`);
+    assert.notStrictEqual(partProblem(cap(n), webpOfSize(200, 300, 30 * 1024 + 1)), '', `T171 ${n} one byte over`);
+    assert.notStrictEqual(partProblem(cap(n), webpOfSize(200, 301, 1000)), '', `T171 ${n} one pixel too tall`);
+  }
+  assert.notStrictEqual(partProblem(cap('focus.webp'), webpOfSize(600, 400, 120 * 1024 + 1)), '', 'T171 focus one byte over');
+  assert.notStrictEqual(partProblem(cap('desk-back.webp'), webpOfSize(100, 100, 30 * 1024 + 1)), '', 'T171 desk-back one byte over');
+  // a monitor needs a screenRect inside 0..1, and the half one a screen big enough to read (097 FR-032)
+  const withAnchor = (part: string, anchors: unknown) => { const g = goodPack(); const m = JSON.parse(g['world.json'].toString()); m.parts[part].anchors = anchors; g['world.json'] = Buffer.from(JSON.stringify(m)); return check(g); };
+  for (const mn of ['monitor.webp', 'monitor-half.webp']) {
+    assert.ok(withAnchor(mn, { screenRect: { x: 0.1, y: 0.1, w: 0.8, h: 0.6 } }).ok, `T171 ${mn} with a screenRect is accepted`);
+    assert.ok(!withAnchor(mn, {}).ok, `T171 ${mn} without a screenRect is refused`);
+    assert.ok(!withAnchor(mn, { screenRect: { x: 0.5, y: 0.1, w: 0.8, h: 0.6 } }).ok, `T171 ${mn} screenRect outside the picture is refused`);
+    assert.ok(!withAnchor(mn, { screenRect: { x: -0.1, y: 0.1, w: 0.5, h: 0.6 } }).ok, `T171 ${mn} screenRect below 0 is refused`);
+    assert.ok(!withAnchor(mn, { screenRect: { x: 0.1, y: 0.1, w: 0.8, h: 0.6 }, radius: 3 }).ok, `T171 ${mn} takes no other field`);
+  }
+  const small = withAnchor('monitor-half.webp', { screenRect: { x: 0.1, y: 0.1, w: 0.2, h: 0.1 } }); // 150x100 picture: 30x10 px of screen
+  assert.ok(!small.ok && /small monitor/.test(small.reason), 'T171 the half monitor\'s screen too small to read is refused: ' + small.reason);
+  assert.ok(withAnchor('monitor.webp', { screenRect: { x: 0.1, y: 0.1, w: 0.1, h: 0.1 } }).ok, 'T171 the floor holds on the half monitor only (FR-032 names the half size)');
+  assert.ok(check(goodPack({}, noFocus.filter((n) => !/^(monitor|desk-back)/.test(n)))).ok, 'T171 a pack without monitor and desk-back parts is still accepted (FR-222: the CSS monitor stays)');
+  // the engine's built ids are all in the pack's list
+  for (const id of BUILT_ARRANGEMENTS) assert.ok(ARRANGEMENTS.includes(id), `T171 built arrangement ${id} is in ARRANGEMENTS`);
+}
 
 console.log('OK: closed list and caps, manifest, tokens, pictures, coverage equals the registry, prompts, fuzz ' + ROUNDS + ' manifests (' + okCount + ' accepted)');
 process.exitCode = 0;
