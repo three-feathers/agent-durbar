@@ -1871,11 +1871,74 @@ function renderReal(stage,floor,aw,ah,model,empty){
   stage.dataset.fit=RO_LAST.scroll?'scroll':'ok';floor.classList.toggle('scrolls',!!RO_LAST.scroll);
   return true;
 }
+/* spec 102 T340 (issue 1589, owner decision 8 on 1400): in the arcade the notice strips yield before the office scrolls. When the hall still scrolls with the strips in the flow,
+   they leave it: one bar (#stripBar, one line) counts them and Show/Hide opens them as an overlay that takes no office height. Measured with the strips in the flow first (as ro-tight),
+   kept only if it removes the scroll. */
+const STRIP_IDS=['restoreStrip','awayStrip','crashStrip','followStrip','mcpStrip'];
+const STRIP_NAME={restoreStrip:'Allow all restored',awayStrip:'Since you were away',crashStrip:'Interrupted sessions',followStrip:'Auto-follow',mcpStrip:'MCP servers'};
+let stripsOpen=false;
+const stripsShown=()=>STRIP_IDS.map($).filter(e=>e&&!e.hidden);
+const roomOf2=floor=>{const c=getComputedStyle(floor);return floor.clientHeight-parseFloat(c.paddingTop)-parseFloat(c.paddingBottom);};
+function stripsYield(on){
+  const was=document.body.classList.contains('strips-yield');
+  document.body.classList.toggle('strips-yield',!!on);
+  if(!on){const bar=$('stripBar');if(bar&&!bar.hidden)bar.hidden=true;document.body.classList.remove('strips-open');STRIP_IDS.forEach(i=>{const e=$(i);if(e)e.style.top='';});}
+  return was;
+}
+/* the yield ends with the Office view: switching to List puts the strips back in the flow and forgets the open overlay (setView); renderOffice returns early off the Office view, so it cannot do it */
+function stripsReset(){stripsOpen=false;stripsYield(false);stripsAlertClear();}
+/* The restored-Allow-all strip is role=alert; folded into the bar it is display:none and never read. An always-present, visually hidden role=alert region (#stripAlert; the existing announce() region is polite, so it cannot do this) is written once when that strip JOINS the folded set and emptied when it leaves or the yield ends; the bar stays role=status. */
+let stripsAlerted=false;
+function stripsAlertClear(){stripsAlerted=false;const r=$('stripAlert');if(r&&r.textContent)r.textContent='';}
+function stripsPaint(fresh){
+  const bar=$('stripBar'),sh=stripsShown(),n=sh.length;if(!bar)return;
+  const ae=document.activeElement,inStrip=!!(ae&&sh.some(e=>e.contains(ae)));
+  if(fresh)stripsOpen=sh.some(e=>e.querySelector('[aria-expanded="true"]')); /* a list the person just opened stays in view */
+  if(!bar.dataset.built){
+    bar.dataset.built='1';
+    bar.innerHTML='<span class="ns-ic" aria-hidden="true">i</span><span class="ns-t" id="sbText"></span><span class="ns-act"><button class="btn" type="button" id="sbBtn"></button></span>';
+    $('sbBtn').onclick=()=>{stripsOpen=!stripsOpen;stripsPaint(false);if(stripsOpen){const b=stripsShown().map(e=>e.querySelector('button')).find(Boolean);if(b)focusIn(b,{reveal:false});}};
+  }
+  const t=$('sbText'),b=$('sbBtn'),txt=n+(n===1?' notice':' notices')+': '+sh.map(e=>STRIP_NAME[e.id]).join(', ')+'.';
+  if(t.textContent!==txt)t.textContent=txt;
+  const w=stripsOpen?'Hide':'Show';
+  if(b.textContent!==w)b.textContent=w;
+  b.setAttribute('aria-label',w+(n===1?' the notice':' '+n+' notices'));b.setAttribute('aria-expanded',stripsOpen?'true':'false');
+  const al=sh.some(e=>e.id==='restoreStrip');
+  if(al&&!stripsAlerted){const r=$('stripAlert');if(r)r.textContent='Allow all restored';}
+  if(!al)stripsAlertClear();else stripsAlerted=true;
+  bar.hidden=false;
+  stripsPlace();
+  if(inStrip&&!stripsOpen)b.focus({preventScroll:true}); /* the strip the focus was in is out of sight: it goes to the bar's button */
+}
+function stripsPlace(){
+  const bar=$('stripBar');if(!bar||bar.hidden)return;
+  document.body.classList.toggle('strips-open',stripsOpen);
+  let y=Math.round(bar.getBoundingClientRect().bottom);
+  for(const e of stripsShown()){if(stripsOpen){e.style.top=y+'px';y+=Math.round(e.getBoundingClientRect().height);}else e.style.top='';}
+}
+document.addEventListener('keydown',e=>{
+  if(e.key!=='Escape'||!stripsOpen||!document.body.classList.contains('strips-yield'))return;
+  const t=e.target;if(!(t&&t.closest&&t.closest('#stripBar,.notice-strip')))return;
+  e.preventDefault();e.stopPropagation();stripsOpen=false;stripsPaint(false);const b=$('sbBtn');if(b)b.focus({preventScroll:true});
+},true);
+function renderRealYield(stage,floor,model,aw,ah,yieldWas){
+  if(!renderReal(stage,floor,aw,ah,model))return false;
+  if(!(RO_LAST&&RO_LAST.aisles&&RO_LAST.scroll&&stripsShown().length)){stripsAlertClear();return true;}
+  stripsYield(true);stripsPaint(!yieldWas);
+  floor.classList.remove('ro-tight');
+  renderReal(stage,floor,aw,roomOf2(floor),model);
+  if(RO_LAST&&RO_LAST.scroll){ /* it did not help (more agents than fit): the strips stay as they were, the office scrolls as before */
+    stripsYield(false);stripsAlertClear();floor.classList.remove('ro-tight');renderReal(stage,floor,aw,roomOf2(floor),model);
+  }
+  return true;
+}
 function renderOffice(){
   PLACE_ONLY=null; PLACE_DIRTY=null;
   if(ui.view!=='office')return;
   const floor=$('floor'), stage=$('stage');
   renderFilterNote(); /* before the padding is read below */
+  const yieldWas=stripsYield(false); /* spec 102 T340: strips that gave way go back in the flow, so the room is measured with them, as ro-tight below */
   floor.classList.remove('ro-tight'); /* the padding lent to the arcade hall is asked for again on every draw (renderReal), so the room below is always measured with the padding the page gives */
   const cs=getComputedStyle(floor);
   const aw=floor.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);
@@ -1906,7 +1969,8 @@ function renderOffice(){
     stage.innerHTML='<div class="empty">'+EMPTY_DESK+(!agents.length&&!demoOn?'No agents yet. Use "+ Folder" at the top left to add a folder'+' (or "+ Workspace" for a VS Code .code-workspace file).':(agents.length&&ROOMS.every(r=>r.hidden)?'All folders are hidden. Open Manage folders (next to the folder filter) to show them again.':agents.length&&floorsLive()&&!floorsOnList().length?(FLOORS.floors.length>1?'All floors are off. Open "Floors" above or Settings > Floors to switch one on.':'Your only floor is off. Switch it on in Settings > Floors.'):agents.length&&ROOMS.every(r=>!roomShown(r))?('Nothing to show: every folder is hidden or on a floor that is off. Open '+(floorsLive()&&FLOORS.floors.length>1?'"Floors" or "Folders" above, or ':'"Folders" above, or ')+'Settings > Floors.'):'No agents match these filters.'))+'</div>';
     floor.classList.remove('scrolls'); return;
   }
-  if(officeView()==='real'&&renderReal(stage,floor,aw,ah,model))return; /* spec 097: Real office draws the same model; flat below is unchanged */
+  if(officeView()==='real'&&renderRealYield(stage,floor,model,aw,ah,yieldWas))return;
+  stripsAlertClear(); /* spec 097: Real office draws the same model; flat below is unchanged */
   /* Density is chosen from the unfiltered set so cards do not change shape when a status pill filters. */
   OPS.renders++;
   const sizing=lastSizing=sizingModel(model); /* what chooseLayout is given (the hook below reads it) */
@@ -5601,6 +5665,7 @@ if($('sendSeveralBtn'))$('sendSeveralBtn').onclick=()=>sendToSeveral($('topMoreB
 const DESK_NAV='#stage .desk, #stage .helper, #stage .plate, #stage .ro-plate'; /* spec 097 FR-090: the Real office plates are the focusable cards there */
 $('wsFilter').addEventListener('change',e=>{ui.ws=e.target.value;renderAll();});
 function setView(v){if(v!=='list'&&CS.active&&!CS.ending){const s=$('convSearch');if(s)s.value='';csEnd({restore:false,keepFocus:true});} /* spec 095 FR-023: leaving the List view ends the search */
+  if(v!=='office')stripsReset(); /* spec 102 T340 */
   ui.view=v;document.body.classList.toggle('list-mode',v==='list');
   $('vOffice').setAttribute('aria-pressed',String(v==='office'));$('vList').setAttribute('aria-pressed',String(v==='list'));renderAll();}
 $('vOffice').onclick=()=>setView('office');
@@ -10167,7 +10232,7 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
-if(SIM)window.__durbarSimUi={announce,afArrivalPrio,afNotice:{ms:v=>{AF_NOTICE_MS=Math.max(100,Number(v)||3000);return AF_NOTICE_MS;},on:v=>{setAutoFollowOn(!!v);return AF_ON;},shown:()=>!!AF_NOTICE}, /* spec 052 FR-239: drivers only: the notice's length, Auto-follow without Settings */swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
+if(SIM)window.__durbarSimUi={announce,renderRestoreStrip,afArrivalPrio,afNotice:{ms:v=>{AF_NOTICE_MS=Math.max(100,Number(v)||3000);return AF_NOTICE_MS;},on:v=>{setAutoFollowOn(!!v);return AF_ON;},shown:()=>!!AF_NOTICE}, /* spec 052 FR-239: drivers only: the notice's length, Auto-follow without Settings */swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
   chatTrimNow:()=>chatTrimPending(false), /* spec 005 FR-238: trim the chats waiting for a frame now (a burst with no frame between) */
   hiddenTrimTimer:()=>({on:!!hiddenTrimT,ms:TRIM_HIDDEN_MS}),
   helperState:(id,st)=>{const h=agents.find(x=>x.id===id&&x.parent);if(!h||!['working','thinking','waiting','error','limit','done','idle'].includes(st))return false;h.state=st==='limit'?'waiting':st;h.limit=st==='limit';h.paused=false;layoutKey='';renderAll();return true;}, /* spec 097 T335 (issue 1642): drivers only: a helper's state the simulator never sends (waiting, limit), for the kids on the desk */
