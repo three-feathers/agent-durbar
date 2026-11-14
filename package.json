@@ -268,7 +268,7 @@
     "test:imagecheck": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-imagecheck.js",
     "test:logo-assets": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-logo-assets.js",
     "test:crew-assets": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-crew-assets.js",
-    "test:realoffice-layout": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-realoffice-layout.js && node dist-scripts/scripts/test-realoffice-aisles.js && node dist-scripts/scripts/test-realoffice-ctx.js",
+    "test:realoffice-layout": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-realoffice-layout.js && node dist-scripts/scripts/test-realoffice-aisles.js && node dist-scripts/scripts/test-realoffice-slipspot.js && node dist-scripts/scripts/test-realoffice-ctx.js",
     "test:realoffice-assets": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-realoffice-assets.js",
     "test:settingsnav": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-settings-nav.js",
     "test:navigator": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-navigator.js",

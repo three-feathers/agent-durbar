@@ -176,7 +176,8 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
   /* FR-248: the lounge's seats take cells after the cabinets, in the hall's own grid (so the plan is never worse than with those agents at cabinets): as many
      cells as the seats need at the narrowest cell a plan can have (a seat is narrower than a cabinet with its player, so 5 seats take 4 cells) */
   const minCell = cabGrid(CABINETS.narrow.gw, CABINETS.narrow.gh).w + PW + AISLE_GAP, nCells = lounge.length ? Math.ceil((lounge.length * AISLE_LSEAT) / minCell - 1e-9) : 0;
-  const sizes = folders.map((f) => f.agents.length), kc = k + nCells, lobbyT = Math.min(kc <= 4 ? AISLE_LOBBY_FEW : AISLE_LOBBY, lobbyMax);
+  /* spec 102 delta 2026-11-14 (T223): an empty floor (no agent, no lounge seat) is planned as a hall of three one-cabinet folders (the empty office's three desks), so it fits and takes the whole floor like the 15-agent hall; no zone is drawn from it (`folders` is empty) */
+  const sizes = folders.map((f) => f.agents.length), kc = k + nCells, planSizes = kc ? sizes : [1, 1, 1], lobbyT = Math.min(kc <= 4 ? AISLE_LOBBY_FEW : AISLE_LOBBY, lobbyMax);
   /* owner, 2026-11-03 06:59 UTC (option A): with 4 or fewer the lobby may be lower, down to its minimum, when that lets the cabinets grow; the
      lobby height and the plan are chosen together, by the floor the cabinets and people cover (the same height on a tie keeps the higher lobby);
      what the larger plan leaves goes back to the lobby */
@@ -184,15 +185,15 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
   /* spec 097 FR-306, FR-308 (issue #1139): with helpers, one row of head figures under every plate (a fixed height in every row); if the hall then no longer fits, no strip: the plate keeps +N and dots */
   const hasHelpers = folders.some((f) => f.agents.some((a) => (a.helpers || 0) > 0));
   const planAt = (sh: number): Plan => {
-    let first = planFor(sizes, W, Ho - lobbyT - AISLE_LANE - AISLE_PAD, PW, nCells, sh);
-    if (kc <= 4 && AISLE_LOW_LOBBY) for (let L = lobbyT - 4; L >= Math.min(lobbyMin + AISLE_LANE, AISLE_LOBBY_LOW); L -= 2) { const p = planFor(sizes, W, Ho - L - AISLE_LANE - AISLE_PAD, PW, nCells, sh); if (covered(p) > covered(first)) first = p; }
+    let first = planFor(planSizes, W, Ho - lobbyT - AISLE_LANE - AISLE_PAD, PW, nCells, sh);
+    if (kc <= 4 && AISLE_LOW_LOBBY) for (let L = lobbyT - 4; L >= Math.min(lobbyMin + AISLE_LANE, AISLE_LOBBY_LOW); L -= 2) { const p = planFor(planSizes, W, Ho - L - AISLE_LANE - AISLE_PAD, PW, nCells, sh); if (covered(p) > covered(first)) first = p; }
     /* spec 102 delta 2026-11-12 (issue 1590): the lowest lobby is also tried when the plan at the set lobby fits only by cutting a folder of 4 or fewer across rows (keep: false) and the lowest lobby keeps them whole */
-    const low = planFor(sizes, W, Ho - lobbyMin - AISLE_LANE - AISLE_PAD, PW, nCells, sh);
+    const low = planFor(planSizes, W, Ho - lobbyMin - AISLE_LANE - AISLE_PAD, PW, nCells, sh);
     return first.fits && (first.keep || !low.keep) ? first : low;
   };
   let sh = hasHelpers ? helpH(1) : 0, plan = planAt(sh);
   if (sh && (!plan.fits || !plan.keep)) { const p0 = planAt(0); if (!plan.fits || p0.keep) { sh = 0; plan = p0; } } /* spec 102 delta 2026-11-12 (issue 1590): also no strip when it is what splits a folder of 4 or fewer that the hall keeps whole without it */
-  const { g, cols, rows, sl } = plan, pk = packSeats(sizes, cols, plan.keep, nCells), cab = cabGrid(plan.gw, plan.gh), cabW = cab.w * g, cabH = cab.h * g, pw = PW * g, ph = AISLE_PERSON.h * g;
+  const { g, cols, rows, sl } = plan, pk = packSeats(planSizes, cols, plan.keep, nCells), cab = cabGrid(plan.gw, plan.gh), cabW = cab.w * g, cabH = cab.h * g, pw = PW * g, ph = AISLE_PERSON.h * g;
   const bend = 2 * sl, used = rows * (plan.rowH + bend);
   const Lb0 = Math.round(plan.fits ? Math.max(lobbyMin, Math.min(Ho - used - AISLE_PAD - AISLE_LANE, lobbyT)) : lobbyMin);
   const Lb = Math.ceil(Lb0 / g) * g;
