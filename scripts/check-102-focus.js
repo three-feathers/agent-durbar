@@ -6,7 +6,8 @@
  *
  * The fixture lives in the page only: the Photo office's numbers with `arrangement: "circle"` set after load (no shipped world names circle yet; T174), and a plain
  * colour for a picture. At 15 agents, 1440x900 and 1280x800, asserted: with `rows` there is no .ro-focus (T167); with `circle` exactly one, aria-hidden, no tabindex,
- * no text, no pointer events, nothing tabbable inside it, inside the room, clear of every folder zone and sign; a picture that fails to load moves no desk; back to
+ * no text, no pointer events, nothing tabbable inside it, inside the room, clear of every folder zone and sign; a picture that fails to load moves no desk; a layout
+ * with no focus box (page-only: the engine's result without `focus`) renders without a throw, draws no .ro-focus and moves nothing; back to
  * `rows` the element is gone. Prints "[102] focus PASS".  OUT=/tmp (optional) saves 102-focus-<w>x<h>.png.
  */
 const assert = require('assert');
@@ -63,6 +64,20 @@ module.exports = async (ctx) => {
     assert.strictEqual(failed, loaded, `${tag}: a picture that fails to load moves no plate, zone, sign or the box itself`);
     assert.strictEqual((await js(READ)).n, 1, `${tag}: the box stays when its picture fails`);
     await js(`(()=>{document.getElementById('fixFocus').textContent='.ro[data-world="photo"] .ro-focus{background-color:#b5651d}';return 0})()`);
+    await settle();
+    // no focus box (Changes 2026-11-14: circle omits it on a floor where it cannot hold its minimum): the engine's result without `focus`, a page-only fixture;
+    // the render runs without a throw, draws no .ro-focus and moves no plate, zone or sign against the same layout with the box
+    await js(`(()=>{const E=window.exports,f=window.__fixLF||E.layoutFor;window.__fixLF=f;E.layoutFor=function(){const l=f.apply(this,arguments);delete l.focus;return l};
+      const R=window.DurbarRealOffice,r=window.__fixRender||R.render;window.__fixRender=r;window.__roN=0;window.__roErr='';R.render=function(){try{const l=r.apply(this,arguments);window.__roN++;return l}catch(e){window.__roErr=String(e&&e.message||e);throw e}};return 0})()`);
+    const noBox = JSON.parse(await frame(ids[2]));
+    assert.ok(await js(`window.__roN>0||window.__roErr!==''`), `${tag}: the office re-rendered with no focus box`);
+    assert.strictEqual(await js(`window.__roErr`), '', `${tag}: a layout with no focus box renders without a throw`);
+    assert.strictEqual((await js(READ)).n, 0, `${tag}: a layout with no focus box draws no .ro-focus`);
+    const was = JSON.parse(loaded);
+    assert.deepStrictEqual({ dr: noBox.dr, zones: noBox.zones, desks: noBox.desks }, { dr: was.dr, zones: was.zones, desks: was.desks }, `${tag}: a layout with no focus box moves no plate, zone or sign`);
+    await js(`(()=>{window.exports.layoutFor=window.__fixLF;window.DurbarRealOffice.render=window.__fixRender;return 0})()`);
+    await poke(ids[2], 'error'); await poke(ids[2], 'idle');
+    assert.ok(await until(`document.querySelectorAll('#stage .ro-focus').length===1`, 8000), `${tag}: with the box back one .ro-focus is drawn again`);
     await settle();
     await H.shot(path.join(OUT, `102-focus-${w}x${h}.png`), { prep: 'mouse', tag: '102' });
     console.log(`[102] ${tag}: focus box ${JSON.stringify(c.box)} in room ${JSON.stringify(c.room)}`);

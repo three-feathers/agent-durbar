@@ -242,7 +242,13 @@
   function cabinetOf(dc, meta, cab, k, state, body) {
     dc.classList.toggle('st-idle', state === 'idle'); /* FR-260: dim by opacity: a shade would darken the floor beside it too */
     const kind = cab.gw === meta.monitor.big.glass[2] ? 'big' : cab.gw === meta.monitor.small.glass[2] ? 'small' : 'narrow', m = meta.monitor[kind];
-    if (X().monitorProblem && X().monitorProblem(m)) return; /* spec 102 T171: a file name or cell count that is not plain paints no picture */
+    /* spec 102 T171: a file name or cell count that is not plain paints no picture, and neither does a missing validator (fail closed); the element is reused
+       across renders, so a picture an earlier, accepted entry painted is taken off first */
+    if (!X().monitorProblem || X().monitorProblem(m)) {
+      for (const p of ['backgroundImage', 'backgroundSize', 'backgroundPosition']) if (dc.style[p]) dc.style[p] = '';
+      delete dc.dataset.body;
+      return;
+    }
     let h = 0; for (const c of k) h = (h * 31 + c.charCodeAt(0)) >>> 0;
     const nb = m.bodies || 1, cell = ((body || 0) % nb) * (m.cells / nb) + (h % (m.cells / nb));
     const url = 'url("' + WD + m.file + '")', size = m.cells * 100 + '% 100%', pos = (cell / Math.max(1, m.cells - 1)) * 100 + '% 0';

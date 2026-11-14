@@ -59,7 +59,7 @@ export function goodPack(manifest: Record<string, unknown> = {}, only?: string[]
   }
   const parts: Record<string, unknown> = {};
   for (const n of Object.keys(files)) parts[n] = { anchors: goodAnchors(n) };
-  const m: Record<string, unknown> = { formatVersion: 1, id: 'test-world', name: 'Test world', version: 1, defaultSet: 'office', tokens: goodTokens(), lights: { lamp: 'flame', call: 'dot' }, rideStyle: 'doors', parts, ...(files['focus.webp'] ? { arrangement: 'circle' } : {}), description: 'A synthetic world for tests.', licence: 'CC0', ...manifest };
+  const m: Record<string, unknown> = { formatVersion: 1, id: 'test-world', name: 'Test world', version: 1, defaultSet: 'office', tokens: goodTokens(), lights: { lamp: 'flame', call: 'dot' }, rideStyle: 'doors', parts, ...(files['focus.webp'] ? { arrangement: 'facing-view' } : {}) /* not circle: it stays off in every pack (FR-230) */, description: 'A synthetic world for tests.', licence: 'CC0', ...manifest };
   for (const k of Object.keys(m)) if (m[k] === undefined) delete m[k];
   files['world.json'] = Buffer.from(JSON.stringify(m));
   return files;

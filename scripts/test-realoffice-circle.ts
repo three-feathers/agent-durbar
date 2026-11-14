@@ -156,7 +156,8 @@ for (const s of ROOMS) assert.ok(mk(4, 2, SIZES[s][0], SIZES[s][1]).faceH > mk(1
   assert.notStrictEqual(monitorProblem(null), '', 'T171 monitor: no entry'); assert.notStrictEqual(monitorProblem(undefined), '', 'T171 monitor: undefined entry');
   const src = fs.readFileSync(path.join(RO, '..', 'realoffice.js'), 'utf8').replace(/\r\n/g, '\n');
   const at = src.indexOf('function cabinetOf');
-  assert.ok(at > 0 && /monitorProblem\(m\)\) return;/.test(src.slice(at, src.indexOf("backgroundImage !== url", at))), 'T171 monitor: cabinetOf asks monitorProblem before it paints a picture');
+  /* a fast tripwire only: the behaviour (fail closed, a reused cabinet cleared) is proved on the page by check-102-cabinet-guard */
+  assert.ok(at > 0 && /if \(!X\(\)\.monitorProblem \|\| X\(\)\.monitorProblem\(m\)\) \{/.test(src.slice(at, src.indexOf("backgroundImage !== url", at))), 'T171 monitor: cabinetOf asks monitorProblem, failing closed, before it paints a picture');
 }
 console.log(`circle tests passed (${cases} layouts)`);
 process.exitCode = 0;
