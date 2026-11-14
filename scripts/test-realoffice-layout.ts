@@ -321,11 +321,23 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
     }
     assert.ok(n >= 12, `visitors checked at ${W}: ${n}`);
   }
-  /* a picture set that faced right would be wrong for every visitor: the check reads the meta, not the code path */
+  /* spec 097 FR-191 (2026-11-14, #1743): a set drawn facing right is mirrored, the side a visitor faces follows where it stands against its fixture, and the foot centre mirrors with the picture */
+  type Fig = NonNullable<ReturnType<typeof realLayout>['fixtures'][number]['visitors'][number]['fig']>;
+  const figs = (mt: RealMeta): { fx: { x: number; w: number }; v: Fig; chipX: number }[] => realLayout(((): ReturnType<typeof model> => { const m = model(15, 4); m.places = ['library', 'software', 'terminal', 'web', 'boss', 'coffee', 'bank', 'postbox', 'other'].map((id, i) => ({ id, visitors: [{ id: 'v' + i, person: PEOPLE[i] }, { id: 'w' + i, person: PEOPLE[(i + 5) % 15] }] })); return m; })(), { w: 1440, h: 900 }, mt).fixtures.flatMap((f) => f.visitors.filter((v) => v.fig && f.art).map((v) => ({ fx: f.art!, v: v.fig!, chipX: v.chip.x })));
   const flipped = JSON.parse(JSON.stringify(META)) as RealMeta; flipped.facing = 'right';
   const bare = JSON.parse(JSON.stringify(META)) as RealMeta; delete bare.facing;
-  assert.strictEqual(realLayout(model(15, 4), { w: 1440, h: 900 }, bare).fixtures.flatMap((f) => f.visitors).find((v) => v.fig)!.fig!.faces, 'left', 'no `facing` in people.json: the shipped pictures face left');
-  assert.strictEqual(realLayout(model(15, 4), { w: 1440, h: 900 }, flipped).fixtures.flatMap((f) => f.visitors).find((v) => v.fig)!.fig!.faces, 'right', 'red: the side follows the meta');
+  assert.ok(figs(bare).length >= 10 && figs(bare).every((x) => !x.v.mir && x.v.faces === 'left'), 'no `facing`: the shipped pictures face left, nothing mirrored');
+  assert.ok(figs(META).every((x) => !x.v.mir && x.v.faces === 'left'), 'the Office people face left: nothing mirrored');
+  const retroSet = { ...readJson('worlds', 'retro', 'world.json'), ...readJson('sets', 'retro', 'set.json') } as unknown as RealMeta;
+  assert.strictEqual(retroSet.facing, 'right', 'the Retro pixel people are drawn facing right (their raised hand and card are on the right of the picture)');
+  const rfigs = figs(retroSet);
+  assert.ok(rfigs.length >= 10 && rfigs.every((x) => x.v.mir && x.v.faces === 'left'), 'Retro pixel visitors stand right of their fixture, face left (toward it) and are mirrored to do so');
+  for (const x of rfigs) {
+    const foot = (retroSet.stand[x.v.file.split('-')[0]].foot as Record<string, number>)[x.v.pose];
+    assert.ok(x.v.x + x.v.w / 2 > x.fx.x + x.fx.w / 2, 'it stands right of its fixture middle');
+    assert.ok(Math.abs(x.v.x + (1 - foot) * x.v.w - x.chipX) < 0.5, `${x.v.file}: a mirrored picture stands on its mirrored foot centre`);
+  }
+  assert.ok(figs(flipped).every((x) => x.v.mir && x.v.faces === 'left'), 'the side a visitor faces comes from the geometry, the mirror from the set');
 }
 
 // ---- SC-007: under 5 ms for 40 agents in 8 folders (CPU time, minimum of runs, agent-notes "Timing checks") ----
@@ -1010,9 +1022,9 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
     }
   }
   assert.ok(checked > 50, `FR-255 lobby: enough pictures checked (${checked})`);
-  // 6. a world without pixelArt is unchanged: the photo world's band is byte-identical to main's (sha computed with main's code, 2026-11-04)
+  // 6. a world without pixelArt is unchanged: the photo world's band is byte-identical to main's (sha computed with main's code, 2026-11-04; the `mir` flag of #1743 is left out, it is false here)
   const P = ['library', 'software', 'terminal', 'web', 'other', 'coffee', 'boss', 'bank', 'postbox'].map((id, i) => ({ id, visitors: i % 3 === 0 ? [{ id: 'v' + i, person: PEOPLE[i], needsYou: false }] : [] }));
-  assert.strictEqual(createHash('sha256').update(JSON.stringify(lobbyBand(META, P, 1408, 150))).digest('hex').slice(0, 16), 'fad790c1536fb4f8', 'FR-255 lobby: the photo world is unchanged');
+  assert.strictEqual(createHash('sha256').update(JSON.stringify(lobbyBand(META, P, 1408, 150), (k, v) => (k === 'mir' ? undefined : v))).digest('hex').slice(0, 16), 'fad790c1536fb4f8', 'FR-255 lobby: the photo world is unchanged');
 }
 {
   // spec 097 FR-345 (T260, issue #1152): a folder with a saved desk order (`keep`) keeps the model's order; one without is sorted by status (FR-022); the lounge row is unchanged
