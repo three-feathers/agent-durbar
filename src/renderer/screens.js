@@ -788,7 +788,7 @@
   };
   const worldCur=()=>{const V=X.view;return V.get()==='real'&&V.world?V.world.get():'plain';};
   /* FR-302, FR-061: the previews' script (pictures and zoom origins) loads the first time the World section is drawn, never at start; until it is there the
-     cards show plain tiles, and the page is painted again when it arrives (a missing script leaves the tiles) */
+     cards show plain tiles, and the card pictures are replaced in place when it arrives (a missing script leaves the tiles) */
   /* a card's picture: the preview of T265a when its script has arrived, else a plain tile with the name */
   const worldPic=(w)=>{
     const P=(window['DurbarWorldPreviews']&&window['DurbarWorldPreviews'].previews)||{}, pv=Object.prototype.hasOwnProperty.call(P,w.id)?P[w.id]:null;
