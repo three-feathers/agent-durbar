@@ -333,7 +333,7 @@
     const seatOk = (p) => !!p && !['typeA', 'think', 'waveA', 'rest'].some((f) => BAD.has(SD + p + '-' + f + '.webp'));
     const engine = {
       keepRooms: !!model.keepRooms, /* spec 097 FR-353: a saved room order is kept in the rows */
-      folders: model.folders.map((f) => ({ id: f.id, keep: !!f.keep, agents: f.agents.map((a) => ({ id: a.id, state: a.state, away: a.away || null, person: seatOk(who[a.id]) ? who[a.id] : null, lounge: !!a.lounge, helpers: a.lounge || !a.subs ? 0 : a.subs.length })) })), /* spec 097 FR-246: the app's room rule (shutPlan) seats it in the lounge row; FR-306: the strip's helpers (none in the lounge; none without their list: the plate keeps its +N) */
+      folders: model.folders.map((f) => ({ id: f.id, floor: f.floor || undefined, keep: !!f.keep, agents: f.agents.map((a) => ({ id: a.id, state: a.state, away: a.away || null, person: seatOk(who[a.id]) ? who[a.id] : null, lounge: !!a.lounge, helpers: a.lounge || !a.subs ? 0 : a.subs.length })) })), /* spec 097 FR-246: the app's room rule (shutPlan) seats it in the lounge row; FR-306: the strip's helpers (none in the lounge; none without their list: the plate keeps its +N) */
       places: model.places.map((p) => ({ id: p.id, custom: !!p.custom, visitors: p.visitors.map((v) => ({ id: v.id, needsYou: !!v.needsYou, person: who[v.id] || null })) })),
     };
     const signs = {};
@@ -391,6 +391,13 @@
       dset(sg, 'folder', z.id);
       signFill(sg, f, z);
       for (const d of z.desks) deskOne(d);
+    }
+    /* spec 102 delta 2026-11-14 (spec 097 FR-104): the All floors view as storeys, when the layout has them: a rule (the world's, drawn under the signs) and a tag with the floor's name per storey */
+    for (const b of lay.storeys || []) {
+      if (b.slab) { const sl = el(art, 'storey-slab:' + b.id, 'div', 'ro-slab'); box(sl, b.slab); dset(sl, 'storey', b.id); }
+      const tg = el(chrome, 'storey-tag:' + b.id, 'div', 'ro-sign ro-stag'); box(tg, b.tag); dset(tg, 'storey', b.id); dset(tg, 'surface', 'storey');
+      if (tg._sig !== b.name + '\u0000' + b.n) { tg._sig = b.name + '\u0000' + b.n; tg.textContent = ''; const nb = document.createElement('b'); nb.textContent = b.n + ' ' + b.name; tg.appendChild(nb); }
+      attr(tg, 'title', 'Floor ' + b.n + ': ' + b.name); attr(tg, 'role', 'note');
     }
     if (lay.lounge) {
       for (const d of lay.lounge.desks) deskOne(d); /* spec 097 FR-247: after the desks */

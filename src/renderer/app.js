@@ -1741,6 +1741,12 @@ function realSubs(a,stOf){
   return orderedHelpers(a).map(h=>{const w=helperWords(h,roHelperMask);
     return {id:h.id,name:w.name||'Helper',state:stOf(h,false),label:w.aria,title:w.tip,selected:ui.selected===h.id};});
 }
+/* spec 102 delta 2026-11-14 (spec 097 FR-104): in the All floors view each folder of the Real office says which floor it stands on (id, name, number from the bottom), so a world that draws storeys can mark them; one floor shown: none */
+function roFloor(r){
+  if(!allFloorsView())return undefined;
+  const f=floorById(r.floor),p=f&&window.DurbarFloorNav.place(FLOORS.floors,f.id);
+  return f&&p?{id:f.id,name:f.name,n:p.n}:undefined;
+}
 function realModel(model){
   const D=window.DurbarPlaces, E=window.exports;
   RO_LOUNGE=new Set(model.flatMap(m=>(m.rolled||[]).map(x=>x.a.id)));
@@ -1750,7 +1756,7 @@ function realModel(model){
     const list=m.mains.concat((m.rolled||[]).map(x=>x.a));
     const counts=['waiting','error','working','done','idle'].map(k=>{const n=m.all.filter(a=>!a.parent&&(k==='working'?(vis(a)==='working'||vis(a)==='thinking'):vis(a)===k)).length;return {state:k,n,word:LABELS[k].toLowerCase()};}).filter(c=>c.n);
     const u=SIM_QUIET_HEADS.has('aiu')?null:roomAiu(r);
-    return {id:r.id,keep:!!(ORDER.desks[r.path]&&ORDER.desks[r.path].length),name:r.name,path:deskMask(showPath(r.path)),cost:u?u.long:'',counts,newSess:!!(bridge&&bridge.newSession&&anyKindReady()&&!demoOn),menu:!!(bridge&&bridge.removeFolder&&!demoOn),
+    return {id:r.id,floor:roFloor(r),keep:!!(ORDER.desks[r.path]&&ORDER.desks[r.path].length),name:r.name,path:deskMask(showPath(r.path)),cost:u?u.long:'',counts,newSess:!!(bridge&&bridge.newSession&&anyKindReady()&&!demoOn),menu:!!(bridge&&bridge.removeFolder&&!demoOn),
       agents:list.map(a=>{const v=VISITS.at(a.id),st=stOf(a,old.has(a.id)),task=deskMask(taskOf(a)),place=v?placeLabel(v.place):'',needs=st==='waiting'||st==='limit';
         if(rolled.has(a.id)&&!v){ /* spec 097 FR-246, FR-120: in the lounge row, resting or asleep; the words of the flat lounge's peek card and label, the same masked reply (shutReply) */
           const asleep=old.has(a.id), ago=ACT.agoLong(sinceLast(a)), said=SHUT.spoken(ago), line=shutReply(a,140), who=a.profile?a.profile.name+' · '+a.role:a.role, word=asleep?'Asleep':stWord(a);
