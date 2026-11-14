@@ -60,7 +60,7 @@ const CASES = [
   ['prehistoric', true, 'prehistoric', 'Real office draws the Prehistoric people.'],
   /* spec 102 T295 (FR-320, FR-321): Office people by choice in every world (a value of its own, no flag), and Retro pixel people (its own flag open, \`worldflags=retro\`) in the Photo office and the cave too */
   ['office', false, 'office', ''],
-  ['retro', false, 'retro', ''],
+  ['pixel', false, 'retro', ''], /* the stored value is `pixel` (FR-266), the set it draws is `retro` */
 ];
 
 module.exports = async (ctx) => {
@@ -110,7 +110,7 @@ module.exports = async (ctx) => {
     return js(SCENE);
   };
   /* the flags the simulator opens: the world's own, the cave's for the gate case, and the retro flag for the Retro pixel value (spec 102 FR-320: closed, that choice cannot be picked; check-characters has the closed case) */
-  const flagsOf = (gate, world, value) => [...new Set([...(world === 'cave' || world === 'retro' ? [world] : gate ? ['cave'] : []), ...(value === 'retro' ? ['retro'] : [])])];
+  const flagsOf = (gate, world, value) => [...new Set([...(world === 'cave' || world === 'retro' ? [world] : gate ? ['cave'] : []), ...(value === 'pixel' ? ['retro'] : [])])];
   const q = (gate, world, value) => ({ officeview: 'real', simfreeze: '1', ...(flagsOf(gate, world, value).length ? { worldflags: flagsOf(gate, world, value).join(',') } : {}), ...(world === 'cave' || world === 'retro' ? { world } : {}) });
   const pick = async (value, gate) => { // the real path: Settings > Characters
     await js(`window.DurbarScreens.openSettings()`);
