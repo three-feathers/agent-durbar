@@ -496,7 +496,7 @@ async function driver(ctx) {
     const flatFiles = await ctx.js(`performance.getEntriesByType('resource').map(e=>e.name).filter(n=>/realoffice|\\/shared\\/(lights|realoffice-layout)\\.js/.test(n))`);
     total++;
     if (flatFiles.length || (await ctx.js(`!!window.DurbarRealOffice||!!document.querySelector('.ro')`))) { failed++; console.log('FAIL real: flat mode loaded Real office files: ' + flatFiles.join(', ')); }
-    const realCheck = (amb, want) => {
+    const realCheck = (amb, want, floors) => {
       const P = [], ro = document.querySelector('#stage .ro'), L = window.__durbarSimUi.realLayout();
       if (!ro || !L) return { problems: ['no Real office drawn'], info: {} };
       /* T276: a run that asked for the arcade must have drawn it, or it would pass on the Photo office */
@@ -507,7 +507,15 @@ async function driver(ctx) {
       const boxes = [];
       const add = (kind, e, r, rid) => { if (e && !e.getClientRects().length) return; boxes.push({ kind, id: e ? (e.dataset.id || e.dataset.place || e.dataset.folder || e.textContent.slice(0, 16)) : (rid || ''), r: r || R(e) }); };
       document.querySelectorAll('#stage .ro-plate').forEach((e) => add('plate', e));
-      document.querySelectorAll('#stage .ro-sign').forEach((e) => add('sign', e));
+      document.querySelectorAll('#stage .ro-sign:not(.ro-stag)').forEach((e) => add('sign', e));
+      /* spec 097 FR-104 (T113, review of PR 1746): the storey tags of the All floors view, and the thinking dots over a head, which a tag must keep clear of (the dots are measured only against a tag: they stand over a person by design) */
+      document.querySelectorAll('#stage .ro-stag').forEach((e) => add('stag', e));
+      document.querySelectorAll('#stage .ro-dots').forEach((e) => add('dots', e));
+      if (floors) {
+        const tags = [...document.querySelectorAll('#stage .ro-stag')];
+        if (!L.storeys || L.storeys.length < 2 || tags.length !== L.storeys.length) P.push('the All floors view did not draw its storeys (' + (L.storeys ? L.storeys.length : 0) + ' in the layout, ' + tags.length + ' tags on screen)');
+        tags.forEach((e) => { const b = e.querySelector('b'); if (!b || b.scrollWidth > b.clientWidth + 0.5) P.push('storey tag "' + e.textContent.trim() + '" cuts its name'); }); /* the ellipsis is on the <b>, not on the tag's box */
+      }
       document.querySelectorAll('#stage .ro-lplate').forEach((e) => add('placeplate', e));
       document.querySelectorAll('#stage .ro-chip').forEach((e) => add('chip', e));
       document.querySelectorAll('#stage .ro-drafttag.on').forEach((e) => add('drafttag', e)); /* spec 097 FR-316 */
@@ -521,6 +529,7 @@ async function driver(ctx) {
       for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
         const a = boxes[i], b = boxes[j];
         if (a.kind === 'face' && b.kind === 'face') continue;
+        if ((a.kind === 'dots' || b.kind === 'dots') && ![a.kind, b.kind].some((k) => k === 'stag' || (floors && k === 'sign'))) continue; /* review round 2 (issue #1759): in the All floors view a sign is kept off the dots too */
         if ((a.kind === 'figure' || b.kind === 'figure') && a.kind !== 'drafttag' && b.kind !== 'drafttag') continue; /* a figure is only measured against the Draft tag (the plate stands in front of the lap by design) */
         if (hit(a.r, b.r)) P.push(`${a.kind} ${a.id} overlaps ${b.kind} ${b.id}`);
       }
@@ -561,10 +570,13 @@ async function driver(ctx) {
       return { problems: P, info: { plates: document.querySelectorAll('#stage .ro-plate').length, face: L.faceH, u: L.u, scroll: L.scroll, minFont, minRatio, drafts: document.querySelectorAll('#stage .ro-drafttag.on').length, seats: L.lounge ? L.lounge.desks.length : 0 } };
     };
     /* simrooms=1: one folder of 15, split over rows (its sign repeats); simrooms=solo: 15 folders, past the exhaustive search */
-    for (const [sim, rooms] of [[3, ''], [12, ''], [15, ''], [15, '1'], [15, 'solo']]) for (const [w, h] of SIZES) {
+    /* spec 097 T113 (FR-104, review of PR 1746): the All floors view in the Real office too (`simfloors=1`, the lift's All): 15 agents over three floors, drawn as storeys; the same checks plus no storey tag over a sign, plate, chip, dots or another tag, none cut.
+       [KNOWN GAP] The cave is not measured here: its OFFICE_WORLD=cave variant is in pull request 1750 (branch 097-overlap-cave), not merged, so this check cannot draw it yet; the same case goes in with that change. */
+    for (const [sim, rooms, floors] of [[3, ''], [12, ''], [15, ''], [15, '1'], [15, 'solo'], [15, '', true]]) for (const [w, h] of SIZES) {
       if (!mine()) continue;
-      const tag = `real sim${sim}${rooms ? '-rooms' + rooms : ''}-${w}x${h}`;
-      await load(`sim=${sim}&simfreeze=1&officeview=real${rooms ? '&simrooms=' + rooms : ''}${/^(retro|cave)$/.test(process.env.OFFICE_WORLD || '') ? '&worldflags=' + process.env.OFFICE_WORLD + '&world=' + process.env.OFFICE_WORLD : ''}`, w, h);
+      const tag = `real sim${sim}${rooms ? '-rooms' + rooms : ''}${floors ? '-allfloors' : ''}-${w}x${h}`;
+      await ctx.js(`localStorage.removeItem('durbar.floor');` + (floors ? `localStorage.setItem('durbar.floorView','all')` : `localStorage.removeItem('durbar.floorView')`)); // the view is read at start (FR-037)
+      await load(`sim=${sim}&simfreeze=1&officeview=real${rooms ? '&simrooms=' + rooms : ''}${floors ? '&simfloors=1' : ''}${/^(retro|cave)$/.test(process.env.OFFICE_WORLD || '') ? '&worldflags=' + process.env.OFFICE_WORLD + '&world=' + process.env.OFFICE_WORLD : ''}`, w, h);
       if (!(await H.until(`!!document.querySelector('#stage .ro .ro-plate')&&[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`, 15000))) { total++; failed++; console.log(`FAIL ${tag}: the Real office was not drawn`); continue; }
       /* OFFICE_FONT: the other fonts of other machines (a CI runner's wider sans broke the chips and plates once): every Real office text in that family, drawn again */
       if (process.env.OFFICE_FONT) {
@@ -606,7 +618,7 @@ async function driver(ctx) {
       if (!(await H.until(`window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()`, 15000))) { total++; failed++; console.log(`FAIL ${tag}: the office did not settle after the drafts were seeded`); continue; }
       await stable(tag + ' with drafts');
       for (const [step, amb] of [['closed', 0.7], ['closed', 1]]) {
-        const res = await ctx.js(`(${realCheck.toString()})(${amb},${jsLiteral(wantWorld)})`);
+        const res = await ctx.js(`(${realCheck.toString()})(${amb},${jsLiteral(wantWorld)},${jsLiteral(!!floors)})`);
         if (amb === 1 && res.info.seats) console.log(`  ${tag}: ${res.info.seats} lounge seat${res.info.seats > 1 ? 's' : ''}, each with its Draft tag measured against its own figure`);
         if (!res.info.drafts) res.problems.push('no Draft tag was in the checked layout');
         total++;

@@ -3,6 +3,7 @@
  "id": "photo",
  "name": "Photo office",
  "defaultSet": "office",
+ "storeys": true,
  "css": "world.css",
  "desk": [
   900,
