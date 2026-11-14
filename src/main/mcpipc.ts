@@ -73,6 +73,11 @@ export function registerMcpIpc(deps: {
   globalNames?(): Partial<Record<GlobalApp, string[]>>;
   /** Spec 058 FR-185: the addresses of Codex's own `config.toml` servers (the values-free view), for the "different site" line of a Codex agent. */
   codexServers?(): Record<string, { url?: string }>;
+  /**
+   * Spec 058 (2026-11-14 delta): where one chat's switched-off server NAMES are kept across closing the chat and an app restart
+   * (main: the folder store, keyed by the folder and the session's resume id). Names only.
+   */
+  savedOff?: { read(a: AgentInfo): string[]; write(a: AgentInfo, names: string[]): void };
   /** The agent app of an agent (`copilot`, `claude`, `codex`, ...). */
   appOf?(agentId: string): string | undefined;
   /** Spec 058 FR-232: whether a variable is set (not empty) in Durbar's own environment (presence only); default `process.env`. Tests inject it. */
@@ -122,11 +127,28 @@ export function registerMcpIpc(deps: {
     checkFreshMs?: number;
     checkTimeoutMs?: number;
   };
-}): { optionsFor(agentId: string): { mcpServers: Record<string, McpServerSpec>; disabledMcpServers: string[]; disabledMcpTools?: Record<string, string[]> }; secretValuesFor(agentId: string): string[]; copilotValuesFor(agentId: string): string[]; signInRefresh: McpSignInRefresher; hidesEvent(e: { type: string; requestId?: unknown }): boolean } {
+}): { optionsFor(agentId: string): { mcpServers: Record<string, McpServerSpec>; disabledMcpServers: string[]; disabledMcpTools?: Record<string, string[]> }; secretValuesFor(agentId: string): string[]; copilotValuesFor(agentId: string): string[]; signInRefresh: McpSignInRefresher; hidesEvent(e: { type: string; requestId?: unknown }): boolean; noteSession(agentId: string): void } {
   const { agents, router, dev } = deps;
   const store = deps.store;
-  /** Per agent id, this run only: servers the user switched off for that agent. */
+  /** Per agent id: servers the user switched off for that agent (names; saved per session through `savedOff`, spec 058 2026-11-14 delta). */
   const off = new Map<string, Set<string>>();
+  const hydrated = new Set<string>();
+  /** Spec 058 (2026-11-14 delta): this chat's saved switches are read once per run, the first time anything asks; every read below goes through here. */
+  const offSet = (id: string): Set<string> | undefined => {
+    if (!hydrated.has(id)) {
+      const a = agents.get(id);
+      if (!a) return off.get(id);
+      hydrated.add(id);
+      let names: string[] = [];
+      try { names = deps.savedOff?.read(a) ?? []; } catch { names = []; }
+      if (names.length) off.set(id, new Set([...(off.get(id) ?? []), ...names]));
+    }
+    return off.get(id);
+  };
+  const saveOff = (id: string): void => {
+    const a = agents.get(id);
+    if (a) try { deps.savedOff?.write(a, [...(off.get(id) ?? [])]); } catch { /* the switch still holds for this run */ }
+  };
   /** Latest MCP state the runtime reported per session. */
   const live = new Map<string, McpServerStatus[]>();
   /**
@@ -164,7 +186,7 @@ export function registerMcpIpc(deps: {
     try {
       // Spec 069 FR-009: the user list's values too (all of them, also one a folder extra shadows: masking more is safe). FR-070 (second
       // review of #1650): asked also when the Copilot read failed, with no reserved names then (an extra of a Copilot server's name counts too).
-      rest = mcpSecretValues(deps.globalFor?.(agentId), store().forSession(keyOf(a), off.get(agentId) ?? [], (c?.servers ?? []).map((x) => x.name)).mcpServers);
+      rest = mcpSecretValues(deps.globalFor?.(agentId), store().forSession(keyOf(a), offSet(agentId) ?? [], (c?.servers ?? []).map((x) => x.name)).mcpServers);
     } catch {
       rest = []; // store not ready or unreadable: the shape-based masking still runs, and the event is not lost
     }
@@ -330,7 +352,7 @@ export function registerMcpIpc(deps: {
     router,
     secrets: secretValuesFor,
     live: (id) => live.get(id) ?? [],
-    off: (id) => off.get(id) ?? new Set<string>(),
+    off: (id) => offSet(id) ?? new Set<string>(),
     push: (id, view) => deps.pushContext?.(id, view),
     persist: (id, servers, at) => {
       const app = deps.appOf?.(id);
@@ -492,7 +514,7 @@ export function registerMcpIpc(deps: {
       a,
       ad: router.forAgent(a.id),
       live: live.get(a.id) ?? [],
-      off: off.get(a.id) ?? new Set<string>(),
+      off: offSet(a.id) ?? new Set<string>(),
       secrets: secretValuesFor(a.id),
       cli: all,
       extras: s.list(keyOf(a)),
@@ -523,7 +545,7 @@ export function registerMcpIpc(deps: {
   ipcHandle('agents:mcpRefresh', (e, id: unknown, manual?: unknown) => (fromApp(e) ? mcpRefreshOp({ agents, router, lastRead, now: deps.now }, refreshing, id, manual) : { ok: false, supported: false, error: 'invalid request' }));
   /** Spec 058 FR-021, FR-209: restart one server of this agent's running session; one at a time per server, a second caller shares it. */
   const restarting = new Map<string, Promise<McpRestartResult>>();
-  const offFor = (k: string): Set<string> => new Set([...(off.get(k) ?? []), ...store().ambientDisabled(), ...offOf('claude', store().ambientDisabled())]);
+  const offFor = (k: string): Set<string> => new Set([...(offSet(k) ?? []), ...store().ambientDisabled(), ...offOf('claude', store().ambientDisabled())]);
   const restartDeps = { agents, router, live: (k: string) => live.get(k) ?? [], off: offFor, secrets: secretValuesFor, log: deps.log };
   ipcHandle('agents:mcpRestart', async (_e, id: unknown, name: unknown) => {
     if (typeof id === 'string' && typeof name === 'string') refresher.clearPending(id, name); // spec 058 FR-221: the person's own action wins over a waiting mark
@@ -595,7 +617,7 @@ export function registerMcpIpc(deps: {
   ipcHandle('agents:mcpSignIn', async (e, id: unknown, name: unknown, again?: unknown) => {
     if (!fromApp(e)) return { ok: false, error: 'invalid request' };
     if (typeof id === 'string' && typeof name === 'string') refresher.clearPending(id, name); // spec 058 FR-221
-    const r = await mcpSignInOp({ agents, router, live: (k) => live.get(k) ?? [], secrets: secretValuesFor, serverUrl: serverUrlOf, blocked: (aid, n) => signInBlockedOf(aid, n), off: (aid, n) => off.get(aid)?.has(n) === true, orgRefused: (aid, n) => { try { return deps.orgMcpNow?.(aid, serverDefOf(aid, n))?.refuse === true; } catch { return false; } }, ensureLive: deps.ensureLive, settle: (aid, n) => Promise.all([refresher.quiesce(aid, n), restarting.get(`${aid}\0${n}`)?.then(() => undefined, () => undefined)]).then(() => undefined) }, signIns, id, name, again);
+    const r = await mcpSignInOp({ agents, router, live: (k) => live.get(k) ?? [], secrets: secretValuesFor, serverUrl: serverUrlOf, blocked: (aid, n) => signInBlockedOf(aid, n), off: (aid, n) => offSet(aid)?.has(n) === true, orgRefused: (aid, n) => { try { return deps.orgMcpNow?.(aid, serverDefOf(aid, n))?.refuse === true; } catch { return false; } }, ensureLive: deps.ensureLive, settle: (aid, n) => Promise.all([refresher.quiesce(aid, n), restarting.get(`${aid}\0${n}`)?.then(() => undefined, () => undefined)]).then(() => undefined) }, signIns, id, name, again);
     // FR-210: the person signs in: automatic reconnects may try this server again
     const ad = typeof id === 'string' ? router.forAgent(id) : undefined;
     if (r.ok && ad && typeof name === 'string') refresher.clearBlock(ad.id, name);
@@ -628,7 +650,9 @@ export function registerMcpIpc(deps: {
   });
   ipcHandle('agents:setMcp', async (_e, id: unknown, name: unknown, enabled: unknown) => {
     if (typeof id === 'string' && typeof name === 'string') refresher.clearPending(id, name); // spec 058 FR-221
+    if (typeof id === 'string') offSet(id); // the saved switches first, so this one adds to them
     const r = await setMcpOp({ agents, router, wsKey: keyOf, orgMcpRefusal: async (a, n) => { const v = await deps.orgMcp?.(a.id, serverDefOf(a.id, n)); return v?.refuse ? `${v.why}: it cannot be switched on.` : undefined; } }, off, id, name, enabled);
+    if (r.ok && typeof id === 'string') saveOff(id);
     if (r.ok && typeof id === 'string' && typeof name === 'string') { const t = touched.get(id) ?? new Set<string>(); t.add(name); touched.set(id, t); }
     const ad = typeof id === 'string' ? router.forAgent(id) : undefined;
     if (r.ok && ad && typeof name === 'string') refresher.clearBlock(ad.id, name); // spec 058 FR-210: a switch change
@@ -636,6 +660,10 @@ export function registerMcpIpc(deps: {
   });
 
   return {
+    /** Spec 058 (2026-11-14 delta): a message went out; keep the chat's switches under its session id as it is now (a Codex thread id exists only after the first message). */
+    noteSession(agentId: string) {
+      if (offSet(agentId)?.size) saveOff(agentId);
+    },
     secretValuesFor,
     copilotValuesFor,
     signInRefresh: refresher,
@@ -647,16 +675,16 @@ export function registerMcpIpc(deps: {
     },
     optionsFor(agentId: string) {
       const a = agents.get(agentId);
-      if (!a) return { mcpServers: {}, disabledMcpServers: [...(off.get(agentId) ?? [])] };
+      if (!a) return { mcpServers: {}, disabledMcpServers: [...(offSet(agentId) ?? [])] };
       // Only this agent's own folder's extras are passed (spec 020 FR-012).
       const c = cliWithValues();
       keepCopilotValues(agentId, c); // FR-070: the values this session starts with are kept for the run
-      const r = store().forSession(keyOf(a), off.get(agentId) ?? [], c.servers.map((x) => x.name));
+      const r = store().forSession(keyOf(a), offSet(agentId) ?? [], c.servers.map((x) => x.name));
       launched.set(agentId, new Set(r.disabledMcpServers));
       touched.delete(agentId);
       // Spec 069 FR-009: the agent app's own user list that Durbar passes itself (Claude Code); a folder extra of the same name wins.
       const toolsOff = store().toolsOffFor(keyOf(a)); // spec 069 FR-061/FR-062
-      return { mcpServers: mergeSessionServers(deps.globalFor?.(agentId) ?? {}, r.mcpServers, off.get(agentId)), disabledMcpServers: r.disabledMcpServers, ...(Object.keys(toolsOff).length ? { disabledMcpTools: toolsOff } : {}) };
+      return { mcpServers: mergeSessionServers(deps.globalFor?.(agentId) ?? {}, r.mcpServers, offSet(agentId)), disabledMcpServers: r.disabledMcpServers, ...(Object.keys(toolsOff).length ? { disabledMcpTools: toolsOff } : {}) };
     },
   };
 }

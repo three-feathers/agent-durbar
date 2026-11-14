@@ -184,8 +184,7 @@ and nothing is opened; simulator shows the button and a toast.
   starts these servers with your next message"; Copilot real 2026-10-21, *Changes*), and
   the switch timing (*at once* or *from your next message*). The current claim "a switch applies right away" is shown only when the
   adapter applies it live.
-- **FR-003** The dialog explains the two scopes in one sentence each: **This session** (the switch and Restart; kept until the app is
-  closed, as today) and **New sessions** (Settings and the folder's extras; spec 019 FR-008). Wording reviewed against the README's MCP
+- **FR-003** The dialog explains the two scopes in one sentence each: **This session** (the switch and Restart; kept until the person switches it on again, also after an app restart: FR-247, 2026-11-14; it was "until the app is closed") and **New sessions** (Settings and the folder's extras; spec 019 FR-008). Wording reviewed against the README's MCP
   section (one word per concept, spec 052).
 - **FR-004** `[IMPLEMENTED]` (`sim:` shots-058-mcp-words; not against a real event stream) The dialog **updates while open** when an `mcp` event for that agent arrives (state, error), without losing focus or
   scroll position.
@@ -388,6 +387,16 @@ All answered by the owner: option A for each (see *Clarifications*). The options
   (0 credits, one more process per restarted agent).
 
 ## Changes
+
+### 2026-11-14: a per-chat switch-off persists, also after an app restart (issue #1732, FR-247)
+
+**Owner report (Vikram, Telegram, 2026-11-14 06:30 and 06:32 UTC):** "when I turn off mcp for a chat, closing and opening it defaults to global settings selection, it does not persist", then "Also after restart of app".
+
+**Cause (read in code; the simulator keeps its switches in the page, so it cannot show it):** the switches were one in-memory map in `src/main/mcpipc.ts` (`off`, per agent id, "this run only", FR-003: "kept until the app is closed"). An app restart always lost them. The same chat resumed under another agent id (a new session, Previous sessions) found nothing. Closing and opening a chat in the same run, End session, and Restart session kept them (same id; `test:mcpswitchpersist` and `check-058-mcp-switch-persist`).
+
+**Owner decision (2026-11-14, from the two messages above):** the written lifetime "until the app is closed" is replaced. A switch-off stays until the person switches the server on again.
+
+- **FR-247** **The per-chat switch-off is saved.** The names of the servers switched off in one chat are kept in the folder's saved entry (`folders.json`, `sessionMcpOff`: a list of `{id, off}`), next to the per-session modes (spec 003, 2026-10-21): `id` is the session's resume id (`resumeIdFor`: the agent id, Codex: its thread id) and `off` the server NAMES. **Names only**: never an address, command, header, environment value or token, in the file, the log or a toast. The saved names are read once per run, the first time main is asked about the chat (the dialog, the session start, a switch), and a switch is written when it is made; a message re-writes them under the session's current resume id (a Codex thread id exists only after the first message). A saved name that no list has any more is no row and changes nothing; it stays in the file until the person switches it on or the entry is pushed out. Bounds: the newest 50 sessions per folder, 50 names each, a name 1..64 characters without control characters; a bad entry is dropped on read; a corrupt file reads as nothing saved (the folder store's own rule); an empty list removes the entry; an unchanged list is not written. A removed folder takes its entries with it; an entry of a session that is gone stays until 50 newer ones push it out. A failing save never fails the switch (it holds for this run). **Scope unchanged:** the chat's own switch (not Settings' lists, FR-003 "New sessions"); another chat in the same folder, and a new session, start with none. The last line of the dialog reads "A switch stays off for this agent until you switch it on, also in its next sessions and after the app is restarted." `[IMPLEMENTED]` `src/main/folders.ts` (`parseSessionMcpOff`, `setSessionMcpOff`, `sessionMcpOff`), `src/main/mcpipc.ts` (`offSet`, `saveOff`, `noteSession`), `src/main/main.ts` (`savedOff`), `src/renderer/screens.js`. `test:` `scripts/test-mcp-switchpersist.ts` (close and open, session restart, an app restart by a new store reading the saved file, switch back on, names only, an unknown name, a corrupt file, a failing store, bounds and pruning; mutants: the read dropped, the write dropped), `sim:` `scripts/check-058-mcp-switch-persist.js` (the window side and the sentence; the simulator's MCP bridge is in the page). `[KNOWN GAP]` not run on a real agent app (read: `optionsFor` passes the loaded names as `disabledMcpServers` at the session start); a session removed for good leaves its entry until pushed out; Settings' global switches (spec 069) are untouched.
 
 ### 2026-11-12: a 403 from a server that sends a token header is not "needs sign-in" (issue #1621, FR-232)
 
@@ -706,7 +715,7 @@ height and its rows spilled over the footer instead of scrolling. (2) Six server
 
 - **FR-077** **The footer never overlaps the rows.** In a wide dialog (`.dlg.wide`, so the agent's MCP dialog) the title and the
   buttons stay in view and only the body scrolls, with a few pixels of padding so the switches' focus ring is not clipped (`.dlg.imp` does the same). At 1440x900,
-  1280x800 and 1280x600 with 14 or more servers, no row's box meets the button row and *Done* is visible and clickable. The *Restart session with these servers* row and the "Applies to this agent until the app is closed" line are part of the scrolling body, never on the buttons (owner, macOS, issue #544). Other
+  1280x800 and 1280x600 with 14 or more servers, no row's box meets the button row and *Done* is visible and clickable. The *Restart session with these servers* row and the "A switch stays off for this agent until you switch it on..." line (FR-247) are part of the scrolling body, never on the buttons (owner, macOS, issue #544). Other
   `dialog()` users with a wide body behave the same. [IMPLEMENTED] `sim:` `shots-058-mcp-words.js`.
 - **FR-078** **A word says who turned the server off, and never contradicts the switch.** A server the runtime reports `disabled`:
   - reads "Off for this session" only when the user's switch here is off (`off`);

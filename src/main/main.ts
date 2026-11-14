@@ -217,6 +217,7 @@ const mcp = registerMcpIpc({
   store: () => mcpStore as McpStore,
   agents,
   ensureLive: (a) => ensureLive(a), // spec 058 FR-229
+  savedOff: { read: (a) => folderStore?.sessionMcpOff(wsKey(a), resumeIdFor(a.id)) ?? [], write: (a, names) => void folderStore?.setSessionMcpOff(wsKey(a), resumeIdFor(a.id), names) }, // spec 058 (2026-11-14 delta): server names only
   router,
   dev,
   appOf: appIdOf,
@@ -751,6 +752,7 @@ function noteLastSession(a: AgentInfo | undefined): void {
   folderStore?.setLastSession(wsKey(a), rid, router.adapterIdOf(a.id));
   folderStore?.addOpenSession(wsKey(a), rid, router.adapterIdOf(a.id)); // spec 052 FR-088: every open session comes back, not only the last
   folderStore?.setSessionMode(wsKey(a), rid, a.permMode); // spec 003 (2026-10-21): it comes back in its own mode
+  mcp.noteSession(a.id); // spec 058 (2026-11-14 delta): and with its own MCP switches
 }
 /** The id a session is resumed under after a restart (Codex: its thread id; others: the agent id). */
 const resumeIdFor = (id: string): string => router.forAgent(id)?.resumeIdOf?.(id) ?? id;
