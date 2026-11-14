@@ -275,9 +275,20 @@
         "photo": "designed",
         "cave": "designed",
         "loft": "missing",
-        "retro": "designed"
+        "retro": "built"
       },
-      "nonNegotiables": "M"
+      "nonNegotiables": "M",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "walk"
+          ],
+          "pictures": [
+            "walk-desk",
+            "walk-place"
+          ]
+        }
+      }
     },
     {
       "id": "empty-office",
@@ -414,7 +425,7 @@
         "photo": "designed",
         "cave": "designed",
         "loft": "designed",
-        "retro": "designed"
+        "retro": "fallback-flat"
       },
       "nonNegotiables": "TK"
     },
@@ -605,9 +616,19 @@
         "photo": "designed",
         "cave": "designed",
         "loft": "designed",
-        "retro": "designed"
+        "retro": "built"
       },
-      "nonNegotiables": "AKT"
+      "nonNegotiables": "AKT",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "cells"
+          ],
+          "pictures": [
+            "cell-question"
+          ]
+        }
+      }
     },
     {
       "id": "elicitation",
@@ -642,9 +663,19 @@
         "photo": "designed",
         "cave": "designed",
         "loft": "designed",
-        "retro": "designed"
+        "retro": "built"
       },
-      "nonNegotiables": "AKT"
+      "nonNegotiables": "AKT",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "cells"
+          ],
+          "pictures": [
+            "cell-answerbar"
+          ]
+        }
+      }
     },
     {
       "id": "coffee-bar",
