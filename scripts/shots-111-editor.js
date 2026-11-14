@@ -35,8 +35,9 @@ module.exports = async (ctx) => {
   const good = fs.readFileSync(file, 'utf8');
   if (MUT) {
     assert.ok(Object.prototype.hasOwnProperty.call(MUTANTS, MUT), `TEAMS_EDITOR_MUTANT=${MUT} is not one of ${Object.keys(MUTANTS).join('|')}`);
-    assert.ok(good.includes(MUTANTS[MUT][0]), `TEAMS_EDITOR_MUTANT=${MUT}: the anchor is not in teameditor.js any more`);
-    const mutated = good.split(MUTANTS[MUT][0]).join(MUTANTS[MUT][1]);
+    const lf = good.replace(/\r\n/g, '\n'); // Windows checks out CRLF; the anchors are LF
+    assert.ok(lf.includes(MUTANTS[MUT][0]), `TEAMS_EDITOR_MUTANT=${MUT}: the anchor is not in teameditor.js (read with LF)`);
+    const mutated = lf.split(MUTANTS[MUT][0]).join(MUTANTS[MUT][1]);
     // a mutant that does not compile would die of its syntax error, whatever it was meant to break: refuse it before the run
     try { new (require('vm').Script)(mutated, { filename: 'teameditor.js' }); } catch (e) { assert.fail(`TEAMS_EDITOR_MUTANT=${MUT} is not valid JavaScript: ${e.message}`); }
     fs.writeFileSync(file, mutated);

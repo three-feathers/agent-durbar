@@ -455,6 +455,12 @@ process.on('exit', (c) => { if (!finished && c === 0) { console.error('teams-edi
 
   // ---------------------------------------------------------------- 6. mutants, on copies
   if (!process.env.TEAMS_EDITOR_SRC) {
+    /* the source with LF line ends, then the mutation; a missing anchor is a failed check with the mutant's name, not a silent no-op */
+    const mutate = (text: string, m: { name: string; from: string; to: string }): string => {
+      const lf = text.replace(/\r\n/g, '\n');
+      assert.ok(lf.includes(m.from), 'mutant anchor not found: ' + m.name);
+      return lf.split(m.from).join(m.to);
+    };
     const files = ['teameditor.js', 'memberrows.js', 'modelswitch.js', 'teams.js', 'dialog.js'];
     const mutants: { name: string; file: string; from: string; to: string; label?: string }[] = [
       { name: 'the limit is kept when the app changes', file: 'teameditor.js', from: "m.app=String(app||'');m.capText='';m.capUnit='';", to: "m.app=String(app||'');m.capUnit='';", label: 'changing the app clears the limit' },
@@ -483,14 +489,21 @@ process.on('exit', (c) => { if (!finished && c === 0) { console.error('teams-edi
       { name: 'dialog: a click on the backdrop bypasses dismiss()', file: 'dialog.js', from: 'DURBAR_PRESS.onBackdrop(d,dismiss);', to: 'DURBAR_PRESS.onBackdrop(d,()=>done(null));', label: 'a click on the backdrop asks dismiss()' },
       { name: 'the own brief limit for a brief from a file', file: 'teameditor.js', from: 'const briefLimits=fromFile=>fromFile?BRIEF_FILE:BRIEF_OWN;', to: 'const briefLimits=fromFile=>BRIEF_OWN;', label: 'keeps its limit of 2,000' },
     ];
+    // Windows checks sources out with CRLF: the anchors (some span lines) are written with LF, so the text is read with LF first (`mutate`). Shown without Windows:
+    // every anchor is found in the CRLF form of its file too, and the raw CRLF text would NOT hold a multi-line anchor (the failure this guards against).
+    for (const m of mutants) {
+      const lf = fs.readFileSync(path.join(ROOT, 'src', 'renderer', m.file), 'utf8').replace(/\r\n/g, '\n');
+      const crlf = lf.replace(/\n/g, '\r\n');
+      ok(mutate(crlf, m).includes(m.to === '' ? '' : m.to), 'the anchor of "' + m.name + '" is found in a CRLF source');
+      if (m.from.includes('\n')) ok(!crlf.includes(m.from), 'a multi-line anchor ("' + m.name + '") would not match the raw CRLF text: it must be read with LF');
+    }
+    assert.throws(() => mutate('no such text', mutants[0]), /mutant anchor not found: /, 'a missing anchor says so, with the mutant\'s name');
     let killed = 0;
     for (const m of mutants) {
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'teams-editor-mutant-'));
       try {
         for (const f of files) fs.copyFileSync(path.join(ROOT, 'src', 'renderer', f), path.join(dir, f));
-        const src = fs.readFileSync(path.join(dir, m.file), 'utf8');
-        assert.ok(src.includes(m.from), 'mutant anchor not found: ' + m.name);
-        const mutated = src.split(m.from).join(m.to);
+        const mutated = mutate(fs.readFileSync(path.join(dir, m.file), 'utf8'), m);
         // a mutant that does not compile would "die" of the syntax error, whatever it was meant to break: refuse it
         try { new vm.Script(mutated, { filename: m.file }); } catch (e) { assert.fail('mutant is not valid JavaScript (' + m.name + '): ' + (e as Error).message); }
         fs.writeFileSync(path.join(dir, m.file), mutated);
