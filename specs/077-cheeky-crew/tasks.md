@@ -141,4 +141,4 @@ Q2-Q8 are answered; **Q1 (art format) is open again** (2026-10-23). Tasks are ma
 
 ## Office people and Retro pixel values (delta 2026-11-13, spec 102 T290..T293)
 
-- [x] T115 `src/shared/characters.ts`, `theme.js`, `app.js`, `sim.ts`, `api.ts` list `office` and `pixel` (Retro pixel); Settings > Characters shows them (Retro pixel disabled and "Not open yet" while its flag is closed); `test:characters` and `check-characters` extended [FR-078]
+- [x] T115 `src/shared/characters.ts`, `theme.js`, `app.js`, `sim.ts`, `api.ts` list `office` and `pixel` (Retro pixel), as a radio group (FR-078; the pattern of the World row, `radioNav`); Settings > Characters shows them (Retro pixel disabled and "Not open yet" while its flag is closed); `test:characters` and `check-characters` extended [FR-078]
