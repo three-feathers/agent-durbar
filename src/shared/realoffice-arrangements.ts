@@ -307,11 +307,11 @@ export function circleWith(model: RealModel, view: { w: number; h: number }, met
   const sideH = (i: number, j: number, w: number, b: number): number => (j > i ? rowsOf(i, j, w) * b + (runs(i, j).length - 1) * ZGAP : 0);
   const zonesIn = (i: number, j: number): number => (j > i ? seats[j - 1].fx - seats[i].fx + 1 : 0);
   const rowOf = (u: number) => ({ zones: folders, n: k, Sw: (PW + SR) * u, scrH: 0, strip: 0 });
-  const need = CIRCLE_FOCUS_MIN.h + PAD;
+  const needOf = (withFocus: boolean): number => (withFocus ? CIRCLE_FOCUS_MIN.h + PAD : 0);
   /* the seats at unit u: the split into a left side, a top row and a right side (k >= 3: a ring, each of them used) that fits, the most even and narrowest first; null when none does */
-  const plan = (u: number): CirclePlan | null => {
+  const plan = (u: number, withFocus: boolean): CirclePlan | null => {
     if (!k) return null;
-    const Sw = (PW + SR) * u, b = rowGeom(meta, rowOf(u), u).bottom, ring = k >= 3;
+    const Sw = (PW + SR) * u, b = rowGeom(meta, rowOf(u), u).bottom, ring = k >= 3 && withFocus;
     let best: CirclePlan | null = null, bestScore = -Infinity;
     for (let wl = 1; wl <= maxSide; wl++) for (let wr = 1; wr <= maxSide; wr++) {
       for (let nl = ring ? 1 : 0; nl <= k - (ring ? 2 : 0); nl++) {
@@ -320,7 +320,7 @@ export function circleWith(model: RealModel, view: { w: number; h: number }, met
         for (let nr = ring ? 1 : 0; nl + nr <= k - 1 || (k === 1 && nl + nr === 0); nr++) {
           const nt = k - nl - nr, zt = zonesIn(nl, nl + nt);
           if (Math.max(nt * Sw + zt * 8 + ZGAP * (zt - 1), ring ? (wl + wr) * Sw + 16 + 2 * ZGAP + CIRCLE_FOCUS_MIN.w : 0) > W - 2 * PAD) continue; /* the row, and the two sides with the focus between them, fit the width */
-          const colH = Math.max(hl, sideH(nl + nt, k, wr, b)), used = b + ZGAP + Math.max(colH, need);
+          const colH = Math.max(hl, sideH(nl + nt, k, wr, b)), used = b + ZGAP + Math.max(colH, needOf(withFocus));
           if (used > avail) continue;
           const score = -Math.abs(nl - nr) * 1e4 - colH - (wl + wr - 2) * 5e3;
           if (score > bestScore) { bestScore = score; best = { nl, nt, nr, wl, wr, colH }; }
@@ -329,10 +329,12 @@ export function circleWith(model: RealModel, view: { w: number; h: number }, met
     }
     return best;
   };
-  let u = CIRCLE_U_MIN, fits = true, cfg: CirclePlan | null = null;
+  let u = CIRCLE_U_MIN, fits = true, cfg: CirclePlan | null = null, withFocus = true;
   if (k) {
-    cfg = plan(CIRCLE_U_MIN); fits = !!cfg;
-    if (cfg) { let lo = CIRCLE_U_MIN, hi = U_MAX; for (let i = 0; i < 16; i++) { const m = (lo + hi) / 2; if (plan(m)) lo = m; else hi = m; } u = lo; cfg = plan(lo); }
+    cfg = plan(CIRCLE_U_MIN, true);
+    if (!cfg) { cfg = plan(CIRCLE_U_MIN, false); if (cfg) withFocus = false; } /* only the ring and its focus box make it scroll (a lounge-heavy floor): one row of desks, no box, the faces stay at the floor */
+    fits = !!cfg;
+    if (cfg) { let lo = CIRCLE_U_MIN, hi = U_MAX; for (let i = 0; i < 16; i++) { const m = (lo + hi) / 2; if (plan(m, withFocus)) lo = m; else hi = m; } u = lo; cfg = plan(lo, withFocus); }
     else { /* nothing fits at CIRCLE_U_MIN: as many in the top row as its width holds, the rest in two sides of the widest kind, and the floor scrolls */
       const Sw = (PW + SR) * u, b = rowGeom(meta, rowOf(u), u).bottom, ring = k >= 3;
       let nt = ring ? k - 2 : k;
@@ -343,7 +345,7 @@ export function circleWith(model: RealModel, view: { w: number; h: number }, met
     }
   }
   const Sw = (PW + SR) * u, g = rowGeom(meta, rowOf(u), u), b = g.bottom;
-  const used = k ? b + ZGAP + Math.max(cfg!.colH, need) : 0;
+  const need = needOf(withFocus), used = k ? b + ZGAP + Math.max(cfg!.colH, need) : 0;
   const Lb = Math.round(fits ? Math.max(lobbyMin, Math.min(Ho - used, lobbyMax)) : lobbyMin);
   const spare = fits ? Math.max(0, Ho - Lb - used) : 0, y0 = Lb + spare / 3;
   const zones: ZoneBox[] = [], part: Record<number, number> = {};
@@ -362,10 +364,10 @@ export function circleWith(model: RealModel, view: { w: number; h: number }, met
     sx = Math.max(x + 4, Math.min(sx, x + zw - 4 - sw));
     zones.push({ id: f.id, part: (part[seats[i].fx] = (part[seats[i].fx] || 0) + 1), box: { x, y: top + 2, w: zw, h: bot - top - 2 }, sign: { x: sx, y: top + 1, w: sw, h: 20 }, desks, ...(signMin(s.counts) > zw - 8 ? { signShort: true } : {}) });
   };
-  const bw = (w: number): number => w * Sw + 8;
+  const bw = (w: number): number => w * Sw + 8, ringed = k >= 3 && withFocus;
   const rowW = k ? cfg!.nt * Sw + zonesIn(cfg!.nl, cfg!.nl + cfg!.nt) * 8 + ZGAP * (zonesIn(cfg!.nl, cfg!.nl + cfg!.nt) - 1) : 0;
   /* the ring spans the row, or the two sides with the focus between them when that is wider (a ring of a few people); the sides stand at its two ends, the row in the middle */
-  const span = k >= 3 ? Math.max(rowW, (cfg!.wl + cfg!.wr) * Sw + 16 + 2 * ZGAP + CIRCLE_FOCUS_MIN.w) : rowW, rx0 = PAD + (W - 2 * PAD - span) / 2, rx1 = rx0 + span;
+  const span = ringed ? Math.max(rowW, (cfg!.wl + cfg!.wr) * Sw + 16 + 2 * ZGAP + CIRCLE_FOCUS_MIN.w) : rowW, rx0 = PAD + (W - 2 * PAD - span) / 2, rx1 = rx0 + span;
   if (k) {
     const { nl, nt, nr, wl, wr } = cfg!, yc = y0 + b + ZGAP;
     /* the left side: the first seat at its foot, upwards; a seat's column snakes with its row (outer, then inner, then outer again) */
@@ -386,9 +388,11 @@ export function circleWith(model: RealModel, view: { w: number; h: number }, met
   }
   const lb = lobbyBand(meta, model.places, W, Lb);
   const height = fits ? H0 : Math.ceil(Lb + used + PAD + R);
-  const ringed = k >= 3, fx0 = ringed ? rx0 + bw(cfg!.wl) + ZGAP : PAD, fx1 = ringed ? rx1 - bw(cfg!.wr) - ZGAP : W - PAD, fy = y0 + b + ZGAP;
-  const lay: Layout = { u, big: false, lobbyH: Lb, floorH: height - Lb, width: W, height, scroll: !fits || Ho + R > H0 + 0.5, faceH: FACE_U * u, zones, fixtures: lb.fixtures, floorStrip: lb.floorStrip, helpRows: 0,
-    focus: { x: fx0, y: fy, w: fx1 - fx0, h: fits ? Ho - PAD - fy : Math.max(need - PAD, (cfg ? cfg.colH : 0)) } };
+  const fx0 = ringed ? rx0 + bw(cfg!.wl) + ZGAP : PAD, fx1 = ringed ? rx1 - bw(cfg!.wr) - ZGAP : W - PAD, fy = y0 + b + ZGAP;
+  const lay: Layout = { u, big: false, lobbyH: Lb, floorH: height - Lb, width: W, height, scroll: !fits || Ho + R > H0 + 0.5, faceH: FACE_U * u, zones, fixtures: lb.fixtures, floorStrip: lb.floorStrip, helpRows: 0 };
+  /* the focus box, when it holds `CIRCLE_FOCUS_MIN`: with every agent in the lounge, or the ring dropped it to fit, there is none (never a negative height) */
+  const focus: Rect = { x: fx0, y: fy, w: fx1 - fx0, h: fits ? Ho - PAD - fy : Math.max(need - PAD, (cfg ? cfg.colH : 0)) };
+  if (withFocus && focus.w >= CIRCLE_FOCUS_MIN.w - 0.5 && focus.h >= CIRCLE_FOCUS_MIN.h - 0.5) lay.focus = focus;
   if (LR) lay.lounge = loungeRows(meta, lounge, W, height - R).row;
   return lay;
 }
