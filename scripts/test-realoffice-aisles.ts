@@ -696,11 +696,13 @@ console.log(`floor covered with 4 or fewer: ${covs.join('; ')}`);
     const FL9: RealFloor[] = Array.from({ length: 9 }, (_, i) => ({ id: 'x' + i, name: ['Ground floor', 'Client A', 'Personal', 'Top floor', 'Sky', 'Sixth', 'Seventh', 'Eighth', 'Ninth'][i], n: i + 1 })).map((f) => ({ ...f, w: 6.5 * (2 + f.name.length) }));
     const mkf = (sz: number[], fl: number[]): RealModel => { let i = 0; return { folders: sz.map((n, fi) => ({ id: 'f' + fi, floor: FL9[fl[fi]], agents: Array.from({ length: n }, () => { const k = i++; return { id: 'a' + k, state: (['working', 'idle', 'waiting', 'error'] as RealState[])[k % 4], person: PEOPLE[k % 15], away: null }; }) })), places: [] }; };
     const signsOk = (m: RealModel, W: number, H: number, n: number): { L: Layout; bad: string[] } => {
-      const L = aislesLayout(m, { w: W, h: H }, META, sg(n)), F = aislesLayout(flat(m), { w: W, h: H }, META, sg(n)), fw = new Map(F.zones.map((z) => [z.id, z.sign.w]));
-      return { L, bad: L.storeys ? L.zones.filter((z) => z.sign.w < Math.min(signMin(3), fw.get(z.id) ?? 1e9) - 0.01).map((z) => `${z.id} ${Math.round(z.sign.w)}`) : [] };
+      const L = aislesLayout(m, { w: W, h: H }, META, sg(n)), F = aislesLayout(flat(m), { w: W, h: H }, META, sg(n)), key = (zs: typeof L.zones, i: number): string => zs[i].id + '#' + zs.slice(0, i).filter((o) => o.id === zs[i].id).length;
+      /* strict (owner 2026-11-14): a sign that stands where it stands without floors is exactly as wide (a tag may not cut it); a sign the forced break moved is not below min(signMin, its flat width) */
+      const fz = (i: number): (typeof L.zones)[number] | undefined => F.zones.find((_, j) => key(F.zones, j) === key(L.zones, i));
+      return { L, bad: L.storeys ? L.zones.filter((z, i) => { const o = fz(i); return !!o && (o.sign.x === z.sign.x && o.sign.y === z.sign.y ? z.sign.w < o.sign.w - 0.01 : z.sign.w < Math.min(signMin(3), o.sign.w) - 0.01); }).map((z) => `${z.id} ${Math.round(z.sign.w)}`) : [] };
     };
     const named = signsOk(mkf([2, 3, 4, 2, 2, 1], [4, 3, 3, 2, 1, 0]), 1408, ROOM.h900, 6);
-    assert.deepStrictEqual(named.bad, [], 'the named case 2/3/4/2/2/1 on 5 floors at 1440x900 (a sign was cut from 278 to 169 px before): no sign is cut below min(signMin, its width without floors)');
+    assert.deepStrictEqual(named.bad, [], 'the named case 2/3/4/2/2/1 on 5 floors at 1440x900 (a sign was cut from 278 to 169 px before): no sign is narrower than in the hall without floors (strict, owner 2026-11-14; where rows differ, not below min(signMin, flat))');
     assert.ok(named.L.zones.every((z) => z.sign.w >= 190), 'the named case: every sign is at least 190 px, where + and the folder menu fit');
     let seed = 31337; const rnd = (n: number): number => { seed = (seed * 1664525 + 1013904223) % 4294967296; return Math.floor((seed / 4294967296) * n); };
     const share: Record<string, [number, number]> = {}; let layouts = 0;
@@ -710,7 +712,7 @@ console.log(`floor covered with 4 or fewer: ${covs.join('; ')}`);
       if (tot > 15) continue;
       const cuts = new Set([0]); while (cuts.size < Math.min(nfl, nf)) cuts.add(rnd(nf)); const cs = [...cuts].sort((x, y) => x - y), fl = sz.map((_, i) => nfl - cs.filter((c) => c <= i).length);
       const { L, bad } = signsOk(mkf(sz, fl), W, H, nf); layouts++;
-      assert.deepStrictEqual(bad, [], `fuzz ${nfl} floors ${JSON.stringify(sz)} ${fl.join('')} at ${nm}: no sign is cut below min(signMin, its width without floors)`);
+      assert.deepStrictEqual(bad, [], `fuzz ${nfl} floors ${JSON.stringify(sz)} ${fl.join('')} at ${nm}: no sign is narrower than in the hall without floors (strict, owner 2026-11-14; where rows differ, not below min(signMin, flat))`);
       assert.ok(!L.scroll, `fuzz ${nfl} floors ${JSON.stringify(sz)} at ${nm}: the hall does not scroll`);
       const sh = share[`${nfl} floors ${nm}`] || (share[`${nfl} floors ${nm}`] = [0, 0]); sh[1]++; if (L.storeys) sh[0]++;
     }
