@@ -1548,7 +1548,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     const simMcpAuth = simQs?.get('simmcpauth') ?? '';
     /* the apps whose rows sign in in the simulator, with the texts their adapters send (src/adapters/copilot.ts, claude.ts) */
     const SIM_SIGN_IN: Record<string, { steps: (n: string) => string; note: string; restart: boolean; noCall: string }> = {
-      copilot: { steps: (n) => 'If Sign in is not available, sign in from the Copilot CLI: run `copilot`, type `/mcp auth ' + n + '` and finish in your browser. Then use Restart session with these servers. This may not carry over to this session (seen on 2026-10-23).', note: 'Checked once on a real account; other servers and systems not yet.', restart: false, noCall: 'This Copilot version cannot start a sign-in from Agent Durbar.' },
+      copilot: { steps: () => "Sign in is not available for this server from Agent Durbar. Switch it off for this session if you do not need it.", note: 'Checked once on a real account; other servers and systems not yet.', restart: false, noCall: 'This Copilot version cannot start a sign-in from Agent Durbar.' },
       claude: { steps: (n) => 'If Sign in is not available, run `claude mcp login ' + n + "` in a terminal and finish in your browser. This works only for a server in Claude Code's own settings. Then press Restart on this row.", note: 'Not checked on a real account yet.', restart: true, noCall: 'This Claude Code version cannot start a sign-in from Agent Durbar.' },
     };
     const simSignApp = (s: SimAgent) => SIM_SIGN_IN[s.info.adapterId ?? 'copilot'];
@@ -2334,7 +2334,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
           const can = simMcpAuth !== 'manual';
           if (origin === 'folder' && !can) return {};
           const steps = origin === 'folder' ? 'This server is only known to Agent Durbar; use Sign in here.' : app.steps(n);
-          return { signInSteps: steps, ...(app.restart && restartable(n, true) ? { signInRestart: true } : {}), ...(can ? { canSignIn: true, signInNote: app.note, ...(open ? { signIn: { host: 'auth.example.com', opened: open.opened, expiresInMs: Math.max(0, simMcpTtl - (Date.now() - open.at)) } } : {}) } : {}) };
+          return { signInSteps: steps, ...(steps.includes('`') ? { signInHasCommand: true } : {}), ...(app.restart && restartable(n, true) ? { signInRestart: true } : {}), ...(can ? { canSignIn: true, signInNote: app.note, ...(open ? { signIn: { host: 'auth.example.com', opened: open.opened, expiresInMs: Math.max(0, simMcpTtl - (Date.now() - open.at)) } } : {}) } : {}) };
         };
         const toolsOffOf = (n: string) => (simToolsOff[s.info.cwd]?.[n] ? { toolsOff: [...(simToolsOff[s.info.cwd]?.[n] ?? [])] } : {});
         const servers = [
@@ -2423,7 +2423,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         const s = sims.find((x) => x.info.id === id);
         const app = s ? simSignApp(s) : undefined;
         if (!s || !app || !simMcpAuth) return { ok: false, error: 'Unknown agent or server.' };
-        if (simMcpAuth === 'manual') return { ok: false, manual: true, error: app.noCall };
+        if (simMcpAuth === 'manual' || simMcpAuth === 'refused') return { ok: false, manual: true, error: app.noCall }; // `refused`: the row offers Sign in, the app refuses the call (FR-246)
         const st = simServer(s, sims.indexOf(s), name, true);
         if (again === true ? !((st.status === 'connected' || st.status === 'failed') && simRemoteMcp(name)) : st.status !== 'needs-auth') return { ok: false, error: name + (again === true ? ' cannot be signed in again now.' : ' does not need a sign-in.') };
         if (simSignOpen(s, name)) return { ok: false, error: 'A sign-in for ' + name + ' is already open.' };

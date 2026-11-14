@@ -65,7 +65,7 @@
   /* Spec 058 FR-201: the suggested fix per reason key, fixed text; Agent Durbar never runs it (the person presses it where it is).
      ctx = {file} (a list's file label, `~/...`, for `config`). Unknown keys get the `unknown` fix. */
   const FIXES={
-    'auth':'Sign in again: Show opens the chat’s MCP list, with Sign in (or the steps to sign in from a terminal).',
+    'auth':'Sign in again: Show opens the chat’s MCP list, with Sign in (or what to do when it is not available).',
     'not-found':'Install the command, or put its full path in the server’s entry. Then restart the server, or start a new chat.',
     'policy':'Your organization’s sign-in rules refused it, usually a managed-device check. Sign in again using a browser your organization allows, or ask your administrator.',
     'refused':'Check the server’s address or port and that the server is running; another program may use the port. Then press Restart.',
