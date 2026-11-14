@@ -1,0 +1,1 @@
+- Added: Brain view wears the Retro arcade skin (spec 106 FR-110..FR-112, issue #1275): in the arcade world the brain is drawn with the world's own colours, square points, display font and square frame; sizes, positions and masking are the same as in every other world. Brain view itself is still behind its off preview flag; the Photo skin is next.

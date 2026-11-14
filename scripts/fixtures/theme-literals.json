@@ -36,7 +36,7 @@
     "fonts": 0
   },
   "brainview/draw.js": {
-    "colors": 10,
+    "colors": 8,
     "fonts": 0
   },
   "brainview/host.js": {
