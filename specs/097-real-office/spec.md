@@ -1646,3 +1646,28 @@ FR-316 puts the Draft tag above the left end of the plate and asks that it not t
 **What this does to FR-179 and FR-035 (a).** Met by the decision: T156, T157 (as written above), T159, and T158's per-animation row. Open: T158's idle-CPU row (so T158 is unticked and `test:world-catalogue` still counts it as not met, which keeps the gate closed until a number is measured or the owner moves the row); the real-machine run T181 and spec 001 T182; the real-GPU run 097 T162 (FR-189). The older count targets in spec 001 (SC-007, T180, the owner's targets of 2026-11-01) and the table rows above are superseded by this decision for the gate and stay as history.
 
 **Honest flags.** The criteria are measured on one Apple M4, in the simulator, on this Mac: Linux (i5) and Windows are not measured, nor is the real app, nor process start to first paint. Times are recorded, never asserted in a driver (FR-186). Not built or merged: #1716 (closed) and the pencils, spread and scene-swap memos. PRs #1678, #1680 and #1686 are open; this delta changes no code.
+
+## Changes 2026-11-14 (later): T158's idle-CPU row gets a time criterion and is met (owner decision; issue #1401; amends T158; no new FR)
+
+**Owner decision** (Vikram, Telegram DM, 2026-11-14 08:28 UTC, answer '1', recorded at https://github.com/three-feathers/agent-durbar/issues/1401#issuecomment-6874547605): T158's idle row is "flat office idle main-thread under 25 % of one core at 15 agents, at 1440x900 and 1280x800, simulator, 10 s window, median of 3 runs". This replaces the old estimate (63 to under 15 % of a core) for the gate, as the earlier 2026-11-14 decision did for T156 and T157.
+
+**Measured** on `origin/main` 2de1d8a6e, flat office, simulator, one Apple M4, 2026-11-14 (median [min-max] of 3 alternating runs; main thread is the delta of CDP `Performance.getMetrics` `TaskDuration` over the window, one core; total is the delta of `app.getAppMetrics()` `cumulativeCPUUsage`, percent of one core):
+
+| case | main-thread % | total % | infinite animations running |
+|---|---|---|---|
+| 15 agents 1440x900, animations on | 15.4 [7.4-16.0] | 23.8 [12.6-25.3] | 62 |
+| 15 agents 1280x800, animations on | 10.4 [7.1-13.9] | 17.7 [12.7-22.5] | 62 |
+| 40 agents 1440x900, animations on (not part of the criterion) | 27.0 [26.2-27.8] | 37.5 [36.6-38.1] | 212 |
+| control, all animations paused (`animation-play-state: paused`): 15 at 1440x900, 15 at 1280x800, 40 at 1440x900 | 1.2 to 1.3 | 2.5 to 3.3 | 0 |
+
+**Method.** `DURBAR_SIM=N`, flat office (no `.ro`, checked each run), loaded with `simfreeze=1`, settled by a condition wait (element count and stage markup unchanged for 5 reads), then a 10 s window; 3 runs per case, cases alternating, `uptime` 1-minute load below 3 before every run; Electron one at a time under the lock; frame rate 60 in every run. The driver is a scratch script and is not committed.
+
+**Result: met.** The criterion is under 25 % of one core on the main thread; the worst 15-agent run is 16.0 %, the medians are 15.4 and 10.4. **T158's idle-CPU row is ticked, and with it T158.** The per-animation row was already met (above). The row stays a recorded measurement, never asserted in a driver (FR-186).
+
+**Caveats.**
+- The 15-agent case is bimodal: runs fall at about 7 to 9 % or at 15 to 16 % (1440x900: 15.4, 16.0, 7.4 in run order; 1280x800: 13.9, 7.1, 10.4). Load does not explain it (the 7.4 run had load 2.65, the 15.4 run load 1.49). The median of 3 can land on either mode; both are under 25 %. The 40-agent case is tight.
+- The old spec number (app total 63.7 to 58.3 %) is **not reproduced and not comparable**: it came from the real app, a different method and a build before the halo fix. Electron's `percentCPUUsage` reads about 2 % total here (wrong scale on macOS), so `cumulativeCPUUsage` deltas are used.
+- All animations paused leaves main 1.2 to 1.3 % and total 2.5 to 3.3 %, so the running animations are almost the whole idle cost (about 0.12 points of main thread per running animation at 40 agents).
+- `[KNOWN GAP]` One machine: Apple M4, hardware compositing (`gpu_compositing` on), device pixel ratio 1, not Retina. Linux (i5) and Windows are not measured.
+- `[KNOWN GAP]` The simulator, not the real app: no real session, and `simfreeze=1` holds the desk glow still (an unfrozen 15-agent run, extra row, came out at 8.3 [5.2-13.3] main thread, inside the noise).
+- This does not tick T181, spec 001 T182 or 097 T162 (the real-GPU run, FR-189), which stay open for FR-179.
