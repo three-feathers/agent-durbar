@@ -10,7 +10,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
-import { CHARACTER_CHOICES, CHARACTER_KITS, SET_CHOICES, LEGACY_CREW_THEME, PIXEL_CHARACTERS, RETRO_MIGRATION_OPEN, kitFor, migrateLegacyTheme, migrateRetroTheme, parseCharacters } from '../src/shared/characters';
+import { CHARACTER_CHOICES, CHARACTER_KITS, SET_CHOICES, LEGACY_CREW_THEME, PIXEL_CHARACTERS, kitFor, migrateLegacyTheme, parseCharacters } from '../src/shared/characters';
+import * as charactersModule from '../src/shared/characters';
 import { parseSettings } from '../src/shared/credits';
 import { SCENE_KITS } from '../src/shared/themes';
 
@@ -139,48 +140,26 @@ assert.deepStrictEqual(parseSettings('{"characters":"rebels"}'), { characters: '
 assert.deepStrictEqual(migrateLegacyTheme({ theme: 'cheeky-crew', characters: 'prehistoric' }), { settings: { characters: 'prehistoric' }, changed: true }, 'a stored Prehistoric is kept by the migration');
 for (const bad of ['"theme"', '"crew"', '"CHEEKY"', '42', '{}', '["cheeky"]', 'null']) assert.deepStrictEqual(parseSettings(`{"characters":${bad}}`), {}, 'dropped: ' + bad);
 
-// --- spec 102 T227 / FR-266: the Retro Pixel migration, pure ---
-assert.strictEqual(RETRO_MIGRATION_OPEN, false, 'T227: the migration is closed until T230 flips the flag');
-{
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const CREW = require(path.join(ROOT, 'src', 'renderer', 'crew.js'));
-  assert.strictEqual(CREW.WORLD_FLAGS.retro, RETRO_MIGRATION_OPEN, 'T227: the two copies of the retro flag agree');
-}
-assert.deepStrictEqual(migrateRetroTheme({ theme: 'retro' }, true), { settings: { characters: PIXEL_CHARACTERS, retroMovePending: true }, changed: true }, 'T227: theme to pixel, theme gone, the marker set');
-for (const c of CHARACTER_CHOICES.filter((v) => v !== 'theme')) {
-  const once = migrateRetroTheme({ theme: 'retro', characters: c, seriousMode: true } as { theme?: string; characters?: string; retroMovePending?: true }, true);
-  assert.deepStrictEqual(once, { settings: { characters: c, seriousMode: true, retroMovePending: true as const }, changed: true }, `T227: an explicit ${c} is untouched (not overwritten)`);
-  const twice = migrateRetroTheme(once.settings, true);
-  assert.deepStrictEqual(twice, { settings: once.settings, changed: false }, `T227: a repeat changes nothing for ${c}`);
-}
-{
-  const once = migrateRetroTheme({ theme: 'retro' }, true);
-  assert.deepStrictEqual(migrateRetroTheme(once.settings, true), { settings: once.settings, changed: false }, 'T227: a repeat changes nothing');
-}
-for (const s of [{}, { theme: 'clean-office' }, { theme: 'Retro' }, { theme: 'retro-2' }, { theme: 'my-retro' }, { theme: 'retro ' }, { characters: 'cheeky' }]) {
-  assert.deepStrictEqual(migrateRetroTheme(s, true), { settings: s, changed: false }, 'T227: only the built-in id retro migrates, not a theme named like it: ' + JSON.stringify(s));
-}
-assert.deepStrictEqual(migrateRetroTheme({ theme: 'retro' }, false), { settings: { theme: 'retro' }, changed: false }, 'T227: flag closed, nothing migrates');
-for (const bad of [undefined, null, 0, '', {}, 'nope']) assert.deepStrictEqual(migrateRetroTheme({ theme: 'retro', characters: bad as unknown as string }, true).settings.characters, bad === 'nope' ? 'nope' : PIXEL_CHARACTERS, 'T227: a missing or empty Characters gets pixel');
+// --- spec 102 Changes 2026-11-14 (T347): the Retro Pixel theme is kept; no migration code exists ---
+assert.strictEqual((charactersModule as Record<string, unknown>).migrateRetroTheme, undefined, 'T347: no Retro theme migration is exported');
+assert.strictEqual((charactersModule as Record<string, unknown>).RETRO_MIGRATION_OPEN, undefined, 'T347: and no second flag');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const CREW = require(path.join(ROOT, 'src', 'renderer', 'crew.js'));
 // spec 102 FR-266, FR-320 (T290): the value the migration writes is the value the lists keep and the arcade and the Photo office draw as the Retro pixel set (the SET is `retro`)
 assert.strictEqual(PIXEL_CHARACTERS, 'pixel'); assert.strictEqual(T.PIXEL_CHARACTERS, PIXEL_CHARACTERS, 'theme.js has the same PIXEL_CHARACTERS'); assert.strictEqual(CREW.PIXEL_CHARACTERS, PIXEL_CHARACTERS, 'crew.js has the same PIXEL_CHARACTERS');
 {
-  const migrated = migrateRetroTheme({ theme: 'retro' } as { theme?: string; characters?: string; retroMovePending?: true }, true).settings;
-  const loaded = parseSettings(JSON.stringify(migrated)).characters, OPEN = { cave: false, retro: true };
-  assert.strictEqual(loaded, PIXEL_CHARACTERS, 'T227+T290: a migrated settings file reads back as pixel (not dropped)');
-  assert.strictEqual(parseCharacters(migrated.characters), PIXEL_CHARACTERS, 'T227+T290: the migrated value passes parseCharacters');
-  assert.strictEqual(T.parseCharacters(migrated.characters), PIXEL_CHARACTERS, 'T227+T290: and the renderer list');
-  for (const world of ['photo', 'retro']) assert.strictEqual(CREW.peopleFor(world, loaded, OPEN).set, 'retro', `T227+T290: the migrated value draws the Retro pixel set (the set is retro) in ${world}`);
+  // an old-theme user who also picked Retro pixel people (stored `pixel`, set `retro`) reads it back, in Flat and the worlds
+  const loaded = parseSettings(JSON.stringify({ theme: 'retro', characters: PIXEL_CHARACTERS })).characters, OPEN = { cave: false, retro: true };
+  assert.strictEqual(loaded, PIXEL_CHARACTERS, 'T290: a stored pixel reads back (not dropped)');
+  assert.strictEqual(parseCharacters(loaded), PIXEL_CHARACTERS, 'T290: it passes parseCharacters');
+  assert.strictEqual(T.parseCharacters(loaded), PIXEL_CHARACTERS, 'T290: and the renderer list');
+  for (const world of ['photo', 'retro']) assert.strictEqual(CREW.peopleFor(world, loaded, OPEN).set, 'retro', `T290: pixel draws the Retro pixel set (the set is retro) in ${world}`);
   assert.strictEqual(CREW.peopleFor('photo', loaded, OPEN).setName, 'Retro pixel', 'T290: the set keeps its name');
   assert.strictEqual(CREW.peopleFor('photo', loaded, { cave: false, retro: false }).set, 'office', 'T290: flag closed: the world\'s default, the value kept');
   T.setTheme('clean-office'); T.setCharacters(loaded as string);
-  assert.strictEqual(T.characters(), PIXEL_CHARACTERS, 'T227+T290: Flat keeps the migrated value'); assert.strictEqual(T.sceneKit(), 'office', 'T227+T290: and draws the theme\'s own figures until T294');
+  assert.strictEqual(T.characters(), PIXEL_CHARACTERS, 'T290: Flat keeps the value'); assert.strictEqual(T.sceneKit(), 'office', 'T290: and draws the theme\'s own figures until T294');
   T.setCharacters('theme');
 }
-const frozen = Object.freeze({ theme: 'retro' });
-migrateRetroTheme(frozen, true);
 
 async function main(): Promise<void> {
   // --- the store and the IPC handlers, with a stand-in electron ---
@@ -221,62 +200,28 @@ async function main(): Promise<void> {
     // an old file with a stored choice keeps it
     fs.writeFileSync(file, JSON.stringify({ version: 1, theme: 'cheeky-crew', characters: 'minimalist' }));
     assert.strictEqual(new SettingsStore(file).load().characters, 'minimalist', 'a stored choice is kept');
-    // spec 102 T227 / FR-266: the Retro Pixel migration through the store, flag closed and open (test-only override)
+    // spec 102 Changes 2026-11-14 (T347): an old Retro Pixel theme user keeps the theme and Characters; nothing is written, no marker
     {
       const rfile = path.join(dir, 'retro-settings.json');
-      const body = (extra: Record<string, unknown>): string => JSON.stringify({ version: 1, theme: 'retro', seriousMode: true, ...extra });
-      fs.writeFileSync(rfile, body({}));
-      for (const odd of [body({}), body({ characters: 'rebels', future: { keep: 1 } }), '{"theme":"retro","__proto__":{"x":1}, "notes": "kept"}']) {
+      for (const odd of [JSON.stringify({ version: 1, theme: 'retro', seriousMode: true }), JSON.stringify({ version: 1, theme: 'retro', characters: 'rebels', future: { keep: 1 } }), JSON.stringify({ version: 1, theme: 'retro', characters: PIXEL_CHARACTERS })]) {
         fs.writeFileSync(rfile, odd, { mode: 0o644 });
         fs.chmodSync(rfile, 0o644);
         fs.utimesSync(rfile, new Date(0), new Date(0));
         const bytes = fs.readFileSync(rfile);
         const ino = fs.statSync(rfile).ino;
-        const closed = new SettingsStore(rfile).load();
-        assert.strictEqual(closed.theme, 'retro', 'T227: flag closed, the stored theme stays');
-        assert.strictEqual(closed.retroMovePending, undefined, 'T227: flag closed, no marker');
+        const want = JSON.parse(odd);
+        const st0 = new SettingsStore(rfile);
+        const loaded = st0.load() as Record<string, unknown>;
+        assert.strictEqual(loaded.theme, 'retro', 'T347: the stored theme stays');
+        assert.strictEqual(loaded.characters, want.characters, 'T347: Characters is unchanged: ' + String(want.characters));
+        assert.ok(!('retroMovePending' in loaded) && !('retroMovePending' in st0), 'T347: no marker, no marker API');
         const st = fs.statSync(rfile);
-        assert.strictEqual(st.mtimeMs, 0, 'T227: flag closed, the file is not written (mtime)');
-        assert.ok(fs.readFileSync(rfile).equals(bytes), 'T227: flag closed, the file bytes are the same');
-        assert.strictEqual(st.ino, ino, 'T227: flag closed, the file is not replaced (inode)');
-        if (process.platform !== 'win32') assert.strictEqual(st.mode & 0o777, 0o644, 'T227: flag closed, the mode is the same');
-        assert.deepStrictEqual(fs.readdirSync(path.dirname(rfile)).filter((n) => n.startsWith('retro-settings.json.')), [], 'T227: flag closed, no temp file');
-      }
-      fs.writeFileSync(rfile, body({}));
-      for (const c of [undefined, ...CHARACTER_CHOICES.filter((v) => v !== 'theme')]) {
-        fs.writeFileSync(rfile, body(c ? { characters: c } : {}));
-        const open1 = new SettingsStore(rfile, undefined, true).load();
-        assert.strictEqual(open1.theme, undefined, 'T227: the theme is cleared ' + String(c));
-        assert.strictEqual(open1.characters, c ?? PIXEL_CHARACTERS, 'T227: an explicit choice is untouched, an unset one becomes pixel: ' + String(c));
-        assert.strictEqual(open1.seriousMode, true, 'T227: the other settings are untouched');
-        const disk = JSON.parse(fs.readFileSync(rfile, 'utf8'));
-        assert.ok(!('theme' in disk), 'T227: written at once');
-        assert.strictEqual(disk.characters, c ?? PIXEL_CHARACTERS, 'T227: the file holds the explicit choice, or pixel');
-        assert.strictEqual(disk.retroMovePending, true, 'T227: the marker is in the same save as the theme removal');
-        const again = new SettingsStore(rfile, undefined, true);
-        assert.strictEqual(again.load().retroMovePending, true, 'T227: the marker survives a restart (a crash before the renderer half)');
-        assert.strictEqual(again.retroMovePending, true);
-        const text = fs.readFileSync(rfile, 'utf8');
-        fs.utimesSync(rfile, new Date(0), new Date(0));
-        new SettingsStore(rfile, undefined, true).load();
-        assert.strictEqual(fs.statSync(rfile).mtimeMs, 0, 'T227: the second load writes nothing');
-        assert.strictEqual(fs.readFileSync(rfile, 'utf8'), text, 'T227: and the file is the same');
-        const ack = new SettingsStore(rfile, undefined, true);
-        ack.load();
-        ack.ackRetroMove();
-        assert.strictEqual(ack.retroMovePending, false, 'T227: the acknowledgement clears the marker');
-        const after = JSON.parse(fs.readFileSync(rfile, 'utf8'));
-        assert.ok(!('retroMovePending' in after) && !('theme' in after) && after.characters === (c ?? PIXEL_CHARACTERS), 'T227: cleared on disk, an explicit choice kept, an unset one is the migrated pixel (the reader keeps it now that the list has it)');
-        assert.strictEqual(new SettingsStore(rfile, undefined, true).load().retroMovePending, undefined, 'T227: and it does not come back');
-      }
-      assert.deepStrictEqual(parseSettings('{"retroMovePending":true}'), { retroMovePending: true }, 'T227: a reader keeps the marker');
-      for (const bad of ['"yes"', '1', 'false', 'null']) assert.deepStrictEqual(parseSettings(`{"retroMovePending":${bad}}`), {}, 'T227: only true counts: ' + bad);
-      // malformed files read safely and write nothing
-      for (const raw of ['', '{', 'null', '[]', '{"theme":42}', '{"theme":["retro"]}', '{"theme":"RETRO"}']) {
-        fs.writeFileSync(rfile, raw);
-        fs.utimesSync(rfile, new Date(0), new Date(0));
-        assert.strictEqual(new SettingsStore(rfile, undefined, true).load().theme, undefined, 'T227: a bad file reads safely: ' + raw);
-        assert.strictEqual(fs.statSync(rfile).mtimeMs, 0, 'T227: a bad file is not rewritten: ' + raw);
+        assert.strictEqual(st.mtimeMs, 0, 'T347: the file is not written (mtime)');
+        assert.ok(fs.readFileSync(rfile).equals(bytes), 'T347: the file bytes are the same');
+        assert.strictEqual(st.ino, ino, 'T347: the file is not replaced (inode)');
+        assert.deepStrictEqual(fs.readdirSync(path.dirname(rfile)).filter((n) => n.startsWith('retro-settings.json.')), [], 'T347: no temp file');
+        // a hand-written marker is not kept or acted on
+        assert.deepStrictEqual(parseSettings('{"retroMovePending":true}'), {}, 'T347: a retroMovePending in a file is dropped');
       }
     }
     // unknown values fall back safely
