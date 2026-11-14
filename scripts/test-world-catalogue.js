@@ -34,34 +34,14 @@ function pairClashes(a, b) {
   return out.filter((c, i) => out.findIndex((d) => d.field === c.field) === i);
 }
 
-/** Splits clashes into failures and the named, already-built ones that are only reported. */
-function judge(cards, known) {
-  const fails = []; const reported = [];
+/** The clashes between every pair of cards, as failures: a shared field is never allowed (the list of known clashes was removed with T174, when the Cave took its own arrangement). */
+function judge(cards) {
+  const fails = [];
   const ids = Object.keys(cards).sort();
   for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {
-    for (const c of pairClashes(cards[ids[i]], cards[ids[j]])) {
-      const listed = known.some((k) => k.field === c.field && k.pair.length === 2 && [c.a, c.b].every((x) => k.pair.includes(x)));
-      (listed ? reported : fails).push(`${c.a} and ${c.b} share ${c.field === 'light' ? 'a light temperature within 200 K' : `the same ${c.field}`}`);
-    }
+    for (const c of pairClashes(cards[ids[i]], cards[ids[j]])) fails.push(`${c.a} and ${c.b} share ${c.field === 'light' ? 'a light temperature within 200 K' : `the same ${c.field}`}`);
   }
-  return { fails, reported };
-}
-
-/** known-clashes.json: a missing file is "none"; one that is unreadable, not JSON, or has an entry without a pair of two ids and a field is a problem naming the file. */
-function loadKnown(dir) {
-  const file = path.join(dir, 'known-clashes.json');
-  let raw;
-  try { raw = fs.readFileSync(file, 'utf8'); } catch (e) { return e && e.code === 'ENOENT' ? { known: [], problems: [] } : { known: [], problems: [`known-clashes.json unreadable (${e.code || e.name}): ${file}`] }; }
-  let list;
-  try { list = JSON.parse(raw).clashes; } catch (e) { return { known: [], problems: [`known-clashes.json is not valid JSON: ${file}`] }; }
-  if (list === undefined) list = [];
-  if (!Array.isArray(list)) return { known: [], problems: [`known-clashes.json: "clashes" must be a list: ${file}`] };
-  const problems = [];
-  list.forEach((k, i) => {
-    const ok = k && typeof k === 'object' && Array.isArray(k.pair) && k.pair.length === 2 && k.pair.every((x) => typeof x === 'string' && x) && k.pair[0] !== k.pair[1] && (TEXT_FIELDS.includes(k.field) || k.field === 'light');
-    if (!ok) problems.push(`known-clashes.json: entry ${i} needs "pair" (two different world ids) and "field" (a card field): ${file}`);
-  });
-  return problems.length ? { known: [], problems } : { known: list, problems: [] };
+  return fails;
 }
 
 const mk = (id, over) => ({ formatVersion: 1, id, arrangement: `arr ${id}`, monitor: `mon ${id}`, light: [3000 + (id.charCodeAt(0) % 10) * 1000], mood: `mood ${id}`, wall: `wall ${id}`, floor: `floor ${id}`, desk: `desk ${id}`, fixtureStyle: `fix ${id}`, plants: `plant ${id}`, motif: `motif ${id}`, ...over });
@@ -69,39 +49,16 @@ const mk = (id, over) => ({ formatVersion: 1, id, arrangement: `arr ${id}`, moni
 /* Fixtures: each failure is found, by name (FR-016). */
 {
   const a = mk('a'); const b = mk('b');
-  assert.deepStrictEqual(judge({ a, b }, []).fails, [], 'two different cards pass');
+  assert.deepStrictEqual(judge({ a, b }), [], 'two different cards pass');
   for (const f of TEXT_FIELDS) {
-    const r = judge({ a, b: mk('b', { [f]: `  ${a[f].toUpperCase()}! ` }) }, []);
-    assert.deepStrictEqual(r.fails, [`a and b share the same ${f}`], `a shared ${f} fails, named, in normalised text`);
+    const r = judge({ a, b: mk('b', { [f]: `  ${a[f].toUpperCase()}! ` }) });
+    assert.deepStrictEqual(r, [`a and b share the same ${f}`], `a shared ${f} fails, named, in normalised text`);
   }
-  assert.deepStrictEqual(judge({ a, b: mk('b', { light: [a.light[0] + 150] }) }, []).fails, ['a and b share a light temperature within 200 K'], '150 K apart fails');
-  assert.deepStrictEqual(judge({ a, b: mk('b', { light: [a.light[0] + 200] }) }, []).fails, [], '200 K apart passes');
-  assert.strictEqual(judge({ a, b: mk('b', { light: [9000, a.light[0] - 199] }) }, []).fails.length, 1, 'any of a world\'s lights counts');
-  const known = [{ pair: ['a', 'b'], field: 'arrangement' }];
-  const sa = mk('b', { arrangement: a.arrangement });
-  assert.deepStrictEqual(judge({ a, b: sa }, known).fails, [], 'a named pair and field is only reported');
-  assert.strictEqual(judge({ a, b: sa }, known).reported.length, 1);
-  assert.strictEqual(judge({ a, b: mk('b', { arrangement: a.arrangement, monitor: a.monitor }) }, known).fails.length, 1, 'the list does not swallow another field');
-  assert.strictEqual(judge({ a, c: mk('c', { arrangement: a.arrangement }) }, known).fails.length, 1, 'the list does not swallow another pair');
-  const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'durbar-known-'));
-  const put = (txt) => fs.writeFileSync(path.join(tmp, 'known-clashes.json'), txt);
-  try {
-    assert.deepStrictEqual(loadKnown(tmp), { known: [], problems: [] }, 'a missing known-clashes.json means none');
-    put('{ nope');
-    assert.ok(loadKnown(tmp).problems.some((p) => /not valid JSON.*known-clashes\.json/.test(p)), 'malformed JSON fails, naming the file');
-    put('{"clashes":{"pair":["a","b"]}}');
-    assert.ok(loadKnown(tmp).problems.some((p) => /must be a list.*known-clashes\.json/.test(p)), 'clashes must be a list, naming the file');
-    fs.rmSync(path.join(tmp, 'known-clashes.json'));
-    fs.mkdirSync(path.join(tmp, 'known-clashes.json'));
-    assert.ok(loadKnown(tmp).problems.some((p) => /unreadable \(EISDIR\).*known-clashes\.json/.test(p)), 'known-clashes.json as a folder (EISDIR) fails naming the file; only ENOENT means none');
-    fs.rmdirSync(path.join(tmp, 'known-clashes.json'));
-    for (const bad of [{ field: 'arrangement' }, { pair: 'ab', field: 'arrangement' }, { pair: ['a'], field: 'arrangement' }, { pair: ['a', 'a'], field: 'arrangement' }, { pair: ['a', 2], field: 'arrangement' }, { pair: ['a', 'b'] }, { pair: ['a', 'b'], field: 'nonsense' }, null]) {
-      put(JSON.stringify({ clashes: [bad] }));
-      assert.ok(loadKnown(tmp).problems.some((p) => /entry 0 needs "pair"/.test(p)), `an entry ${JSON.stringify(bad)} fails, naming the file`);
-    }
-    put(JSON.stringify({ clashes: [{ pair: ['a', 'b'], field: 'arrangement' }] }));
-    assert.deepStrictEqual(loadKnown(tmp), { known: [{ pair: ['a', 'b'], field: 'arrangement' }], problems: [] }, 'a good entry loads');
-  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+  assert.deepStrictEqual(judge({ a, b: mk('b', { light: [a.light[0] + 150] }) }), ['a and b share a light temperature within 200 K'], '150 K apart fails');
+  assert.deepStrictEqual(judge({ a, b: mk('b', { light: [a.light[0] + 200] }) }), [], '200 K apart passes');
+  assert.strictEqual(judge({ a, b: mk('b', { light: [9000, a.light[0] - 199] }) }).length, 1, 'any of a world\'s lights counts');
+  /* no list: the old Photo and Cave pair (both rows) would fail now, so a world that shares an arrangement can only fail */
+  assert.deepStrictEqual(judge({ a, b: mk('b', { arrangement: a.arrangement }) }), ['a and b share the same arrangement'], 'a shared arrangement fails, with no list to name it');
   assert.ok(cardProblems(mk('a'), 'a').length === 0);
   assert.ok(cardProblems({ ...mk('a'), wall: '' }, 'a').some((p) => /"wall"/.test(p)), 'an empty field is named');
   assert.ok(cardProblems(mk('a'), 'z').some((p) => /differs/.test(p)), 'a card id must match its folder');
@@ -128,10 +85,7 @@ if (!process.env.DURBAR_WORLDS_DIR) for (const id of fs.readdirSync(IN_REPO)) {
   const arr = JSON.parse(fs.readFileSync(wj, 'utf8')).arrangement || 'rows';
   if (cards[id] && cards[id].arrangement !== arr) problems.push(`${id}: card arrangement "${cards[id].arrangement}" differs from world.json "${arr}"`);
 }
-const { known, problems: knownProblems } = loadKnown(WORLDS);
-problems.push(...knownProblems);
-const { fails, reported } = judge(cards, known);
-for (const r of reported) console.log(`[KNOWN GAP] ${r}`);
+const fails = judge(cards);
 for (const f of [...problems, ...fails]) console.error(`FAIL ${f}`);
 assert.strictEqual(problems.length + fails.length, 0, 'the world catalogue has problems (above)');
 console.log(`test-world-catalogue OK (${Object.keys(cards).length} cards: ${Object.keys(cards).join(', ')})`);

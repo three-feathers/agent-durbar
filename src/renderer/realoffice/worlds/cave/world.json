@@ -3,6 +3,7 @@
  "id": "cave",
  "name": "Prehistoric cave",
  "defaultSet": "prehistoric",
+ "arrangement": "circle",
  "css": "world.css",
  "wall": "wall.webp",
  "monitor": "monitor.webp",
