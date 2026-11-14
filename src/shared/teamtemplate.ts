@@ -37,13 +37,17 @@ export const LIMITS = {
   ownBrief: { chars: 4000, lines: 80 }, importedBrief: { chars: 2000, lines: 40 },
 } as const;
 
+/** what a `teams:*` call says when the store file moved under it (code `changed`): main and the simulator's fake say it the same way */
+export const CHANGED_TEXT = 'The team templates file changed while you were editing. It was read again; save once more.';
+
 const MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}$/;
 const CHARACTER_RE = /^[a-z][a-z0-9-]{0,23}$/;
 /** `PROFILE_ID` of `src/main/folders.ts` (a test checks it is the same source) */
 const PROFILE_ID_RE = /^[A-Za-z0-9._:@/-]{1,100}$/;
 /** the shape of an adapter id (`ADAPTER_ID`, `folders.ts`, not exported, so no equality test; G2 may move it here); main checks the id against the ready apps at create (FR-031) */
 const APP_RE = /^[a-z][a-z0-9-]{0,31}$/;
-const MEMBER_ID_RE = /^[0-9a-f]{32}$/;
+/** a store-only member id: 128 random bits as hex; the validator, main's channels and the simulator's fake all test it with this one expression */
+export const MEMBER_ID_RE = /^[0-9a-f]{32}$/;
 const TEMPLATE_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const PERM_MODES: ReadonlySet<string> = new Set(['read-only', 'ask', 'allow']);
 const CAP_UNITS: ReadonlySet<string> = new Set(['aiu', 'usd']);
@@ -427,4 +431,25 @@ export function checkTeamTemplate(value: unknown, level: Level): TemplateResult 
   } catch {
     return none(['Not a team template.']);
   }
+}
+
+const TRAILING_JOINERS = /[\u200C\u200D\u094D\u09CD\u0A4D\u0ACD\u0B4D\u0BCD\u0C4D\u0CCD\u0D4D\u0DCA\u1039\u17D2\u1B44\uA8C4\uA9C0]+$/u;
+const graphemes = (t: string): string[] => [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(t)].map((x) => x.segment);
+/**
+ * FR-021: the name of a duplicate, "<name> copy", then " copy 2", " copy 3" until its `nameKey` is not in `takenKeys` (the `nameKey` of every stored name).
+ * Cut by grapheme to the name limit (a conjunct or an emoji sequence is never split; a trailing joiner or virama is dropped before the suffix; one grapheme
+ * too long to fit is cut by code point). `null` when no free name is found. The one copy of the rule: the store's `duplicate` and the simulator's fake both call it (test:teamstore anchors its mutants here).
+ */
+export function copyName(name: string, takenKeys: ReadonlySet<string>): string | null {
+  const base = graphemes(name);
+  const len = (g: string[]): number => g.reduce((t, x) => t + Array.from(x).length, 0);
+  for (let i = 1; i <= LIMITS.templates + 3; i++) {
+    const suffix = i === 1 ? ' copy' : ` copy ${i}`;
+    let head = base.slice();
+    while (len(head) + Array.from(suffix).length > LIMITS.templateName && head.length > 0) head.pop();
+    if (head.length === 0) { head = Array.from(name); while (head.length + Array.from(suffix).length > LIMITS.templateName && head.length > 0) head.pop(); }
+    const out = head.join('').replace(TRAILING_JOINERS, '') + suffix;
+    if (!takenKeys.has(nameKey(out))) return out;
+  }
+  return null;
 }
