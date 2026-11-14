@@ -71,38 +71,49 @@ module.exports = async (ctx) => {
       console.log('[moments] worldcss-late ok', sheetAtDraw);
     }
     // ---- the same bug's other ends: a stylesheet that fails (cancelled) or never answers (held, 4 s timer in app.js) still draws, with the base CSS ----
-    // a page held by a stylesheet can stall a script call: every wait here is bounded, so a stall is a failed assertion and not a hung run
+    // The product's own timing, read from inside the app: a poll of the page every 100 ms that does not depend on the page's load event (a held sheet can hold the load event back). Every call is bounded, so a stalled renderer is a failed assertion and not a hung run.
     const within = (p, ms, dflt) => Promise.race([p, new Promise((r) => setTimeout(() => r(dflt), ms))]);
     for (const mode of ['fail', 'hang']) {
       if (!run('worldcss-' + mode) || world === 'photo') continue;
-      if (mode === 'hang' && (w !== SIZES[0][0] || world !== 'retro')) continue; /* world- and size-independent code; a held sheet stalls the page's own load, which was not reliable to wait on in the cave and at the second size (KNOWN GAP in the spec delta) */
       const ses = ctx.win.webContents.session;
       const held = [];
       let hits = 0;
       ses.webRequest.onBeforeRequest({ urls: ['file://*/*'] }, (d, cb) => { if (/\/realoffice\/worlds\/[a-z0-9-]+\/world\.css$/.test(d.url)) { hits++; if (mode === 'fail') cb({ redirectURL: 'file:///durbar-no-such-world.css' }); else held.push(cb); } else cb({}); });
-      await ses.clearCache(); /* an earlier moment's copy of the sheet would answer for the cancelled request */
+      await within(ctx.win.loadURL('about:blank'), 5000, undefined); /* the page's memory cache of an earlier load of the sheet would answer for the request */
+      await ses.clearCache(); /* an earlier moment's copy of the sheet would answer for the request */
       await js(`localStorage.clear()`).catch(() => undefined); /* a clean start: the earlier moments leave a world and a view in the storage */
       const t0 = Date.now();
       let err = '';
-      // a held stylesheet that the page names while it parses also holds the page's own load event: do not wait for that, wait for the drawn office
       const loading = H.load({ w, h, query: q(world), ready: REAL, settle: false }).catch((e) => { err = String(e && e.message || e); });
-      try {
-        if (!(await within(H.until(REAL, 12000), 14000, false))) throw new Error(`the office was not drawn in 12 s: ${REAL}`);
-        await within(must(PICS, 'the pictures'), 14000, true);
-      } catch (e) { err = String(e && e.message || e); }
-      // the page's own marker that the sheet settled (html[data-ro-sheets], spec 097 2026-11-14): by its error event, or by the 4 s timer
-      const settled = await within(H.until(`!!document.documentElement.dataset.roSheets`, 12000), 14000, false);
-      const took = Date.now() - t0;
-      const sheet = await within(js(`(document.getElementById('roWorldCss-'+${jsLiteral(world)})||{}).sheet?'loaded':'none'`).catch(() => 'n/a'), 3000, 'n/a');
+      const probe = `(()=>{const s=document.getElementById('stage');return [s&&s.dataset.d||'',document.querySelectorAll('#stage .ro-plate').length,document.documentElement.dataset.roSheets||''].join('|')})()`;
+      const evs = []; const wc = ctx.win.webContents;
+      const hooks = ['did-start-navigation', 'did-navigate', 'dom-ready', 'did-finish-load', 'did-fail-load', 'render-process-gone', 'unresponsive'].map((n) => { const f = () => evs.push(`${n}@${Date.now() - t0}`); wc.on(n, f); return [n, f]; });
+      if (!wc.debugger.isAttached()) wc.debugger.attach('1.3'); /* DevTools protocol: Electron's executeJavaScript waits for the page's load event, which a held sheet can hold back */
+      let tDrawn = -1, tSettled = -1, last = '', polls = 0, stalled = 0;
+      while (Date.now() - t0 < 12000 && (tDrawn < 0 || tSettled < 0)) {
+        const r = await within(wc.debugger.sendCommand('Runtime.evaluate', { expression: probe, returnByValue: true }).then((o) => String((o.result && o.result.value) || ''), () => 'STALLED'), 400, 'STALLED');
+        polls++;
+        if (r === 'STALLED') stalled++; else {
+          last = r;
+          const [d, plates, sheets] = r.split('|');
+          if (tSettled < 0 && sheets) tSettled = Date.now() - t0;
+          if (tDrawn < 0 && d === 'real' && Number(plates) > 0) tDrawn = Date.now() - t0;
+        }
+        await new Promise((r2) => setTimeout(r2, 100));
+      }
+      const timing = `drawn at ${tDrawn} ms, sheet settled at ${tSettled} ms, ${stalled} of ${polls} polls stalled, last state ${last}, window events ${evs.join(',')}, loading ${wc.isLoading()}`;
+      hooks.forEach(([n, f]) => wc.removeListener(n, f));
+      try { wc.debugger.detach(); } catch { /* already detached */ }
       ses.webRequest.onBeforeRequest(null);
       held.forEach((cb) => cb({ cancel: true }));
       await within(loading, 15000, undefined);
-      assert.strictEqual(err, '', `${tag}: worldcss-${mode}: the office is still drawn when the ${world} stylesheet ${mode === 'fail' ? 'fails' : 'never answers'}: ${err}`);
-      assert.ok(hits >= 1, `${tag}: worldcss-${mode}: the stylesheet was requested and held back (${hits}, sheet ${sheet})`);
-      assert.ok(settled, `${tag}: worldcss-${mode}: the stylesheet settled (the pack is ready) within 12 s`);
-      if (mode === 'fail') assert.ok(took < 3500, `${tag}: worldcss-fail: a failed stylesheet settles at once through its error event, not through the 4 s timer (${took} ms)`);
-      if (mode === 'hang') assert.ok(took >= 3500 && took < 12000, `${tag}: worldcss-hang: the draw waits for the 4 s timer, not for ever (${took} ms)`);
-      console.log(`[moments] worldcss-${mode} ok ${took} ms`);
+      assert.strictEqual(err, '', `${tag}: worldcss-${mode}: the page loads: ${err}`);
+      assert.ok(hits >= 1, `${tag}: worldcss-${mode}: the stylesheet was requested (${hits})`);
+      assert.ok(tSettled >= 0 && tDrawn >= 0, `${tag}: worldcss-${mode}: the ${world} office is still drawn when its stylesheet ${mode === 'fail' ? 'fails' : 'never answers'}, and the pack is ready: ${timing}`);
+      if (mode === 'fail') assert.ok(tSettled < 3500, `${tag}: worldcss-fail: a failed stylesheet settles at once through its error event, not through the 4 s timer (${timing})`);
+      if (mode === 'hang') assert.ok(tSettled >= 3500 && tSettled < 8000 && tDrawn < 8000, `${tag}: worldcss-hang: the draw waits for the 4 s timer, not for ever (${timing})`);
+      await within(must(PICS, 'the pictures'), 14000, undefined);
+      console.log(`[moments] worldcss-${mode} ok: ${timing}`);
     }
     // ---- FR-118 first run ----
     if (run('first-run')) {
