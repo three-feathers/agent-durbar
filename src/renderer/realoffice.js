@@ -797,7 +797,7 @@
   /* spec 102 delta 2026-11-14 (T223): the arcade's empty office: the hall's floor and wall fill the area (the layout is the hall's, `lay.height` is the floor), the words card under the lane,
      and three cabinets of the world (the layout's own scale, its own pictures, screens off) in one row below it, centred in what is left of the floor */
   function drawEmptyCabinets(art, chrome, lay, meta, empty) {
-    const W = lay.width, top = lay.lobbyH, g = lay.g, cw = lay.cabinet.w, ch = lay.cabinet.h, kind = lay.cabinet.gw === meta.monitor.big.glass[2] ? 'big' : lay.cabinet.gw === meta.monitor.small.glass[2] ? 'small' : 'narrow';
+    const W = lay.width, top = lay.lobbyH, g = lay.g, cw = lay.cabinet.w, ch = lay.cabinet.h;
     const pw = Math.min(560, W - 40), plateB = top + 14 + 48, gap = Math.max(g * 4, (W - 3 * cw) / 4), x0 = (W - 3 * cw - 2 * gap) / 2, y0 = Math.max(plateB + 8, plateB + (lay.height - plateB - ch - 8) / 2);
     for (let i = 0; i < 3; i++) {
       const x = x0 + i * (cw + gap);
@@ -854,7 +854,7 @@
         const size = () => ({ w: Math.ceil(e.offsetWidth) + 2, h: Math.ceil(e.offsetHeight) + 2 });
         let r = size();
         const laneFree = () => lay.lane && v === 'pill' && !(e._at.y >= lay.lane.y && e._at.y + r.h <= lay.lane.y + lay.lane.h + 0.01) && P(r, avoid, lay.lane, anchor); /* a pill docked before its font loaded goes back to the lane */
-        if (e._at && e._v === v && e._at.w >= r.w && e._at.h >= r.h && !hits({ x: e._at.x, y: e._at.y, w: r.w, h: r.h }) && !laneFree() && e._at.x + r.w <= bounds.x + bounds.w && e._at.y + r.h <= bounds.y + bounds.h) { avoid.push({ x: e._at.x, y: e._at.y, w: r.w, h: r.h }); e.dataset.variant = v; return true; }
+        if (e._at && e._v === v && e._at.w >= r.w && e._at.h >= r.h && !hits({ x: e._at.x, y: e._at.y, w: r.w, h: r.h }) && !laneFree() && e._at.x >= bounds.x && e._at.y >= bounds.y && e._at.x + r.w <= bounds.x + bounds.w && e._at.y + r.h <= bounds.y + bounds.h) { avoid.push({ x: e._at.x, y: e._at.y, w: r.w, h: r.h }); e.dataset.variant = v; return true; }
         for (let pass = 0; pass < 2; pass++) { /* the second pass re-places with the box it really has (a late font can widen the text) */
           const dock = () => P(r, avoid, { x: bounds.x, y: bounds.y + bounds.h - r.h, w: bounds.w, h: r.h }, anchor) || (lay.lane && P(r, HARD, lay.lane, anchor)) || P(r, HARD, bounds, anchor, 4) || { x: bounds.x + bounds.w - r.w, y: bounds.y + bounds.h - r.h, w: r.w, h: r.h }; /* last: over another slip or a sign, never a cabinet, screen or person while any such spot exists (pre-review of #1079) */
           const at = (lay.lane && v === 'pill' ? P(r, avoid, lay.lane, anchor) : null) || P(r, avoid.concat(softAvoid), bounds, anchor) || (lay.big || v === 'pill' ? P(r, avoid, bounds, anchor) : null) || (lay.cabinet && v === 'pill' ? dock() : null); /* a one-line pill may sit over a monitor when there is no other spot; in the arcade it docks at the floor's bottom edge, never hidden */

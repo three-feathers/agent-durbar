@@ -116,6 +116,8 @@ module.exports = async (ctx) => {
     if (run('empty-office')) {
       await H.load({ w, h, query: q(world, { simfloors: 'ground' }), ready: REAL, settle: false });
       await must(PICS, 'the pictures');
+      /* the order is fixed, not left to the simulator's clock: the limit slip is on the first floor (placed under that floor's lobby) before the empty floor is shown, so the slip that crosses is always checked (its kept spot must be placed again under the empty floor's taller lobby) */
+      if (world === 'retro') await must(`!!document.querySelector('#stage .ro-slip.ro-limit:not([hidden])')`, 'the limit slip on the first floor');
       await H.goToFloor((await H.floors())[1].id);
       await must(`!!document.querySelector('#stage .ro-eplate')&&!document.querySelector('#stage .ro-ride')`, 'the empty plate, the ride over');
       await must(PICS, 'the pictures');

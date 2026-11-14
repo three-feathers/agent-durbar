@@ -589,5 +589,31 @@ console.log(`floor covered with 4 or fewer: ${covs.join('; ')}`);
   console.log('arcade big screens: 8 lines at 1 to 4 agents (1408 wide) and 1 to 2 (1248 wide); 3 and 4 at 1248 is the recorded gap');
 }
 
+/* spec 102 delta 2026-11-14 (T223): the empty floor (no agent, no lounge seat) is planned as three one-cabinet folders: three cabinets of the plan's size in one row, the whole floor, no zone, no scroll.
+   Pure, so removing the plan fails here and not only in the Electron driver. The plan is the one three real one-cabinet folders get, and the sizes are measured at both floors. */
+{
+  const places = model(0, 1).places;
+  const want: Record<string, { g: number; cab: { w: number; h: number; gw: number; gh: number }; lobbyH: number }> = {
+    '1440x797': { g: 4, cab: { w: 244, h: 292, gw: 44, gh: 32 }, lobbyH: 168 },
+    '1280x697': { g: 3, cab: { w: 276, h: 273, gw: 75, gh: 50 }, lobbyH: 168 },
+  };
+  for (const [i, [W, H]] of SIZES.entries()) {
+    const label = `empty floor plan, ${NAMES[i]}`, E = aislesLayout({ folders: [], places }, { w: W, h: H }, META, {}), three = aislesLayout(model(3, 3, ['idle']), { w: W, h: H }, META, SIGNS(3)), w = want[`${W}x${H}`];
+    assert.ok(E.cabinet, `${label}: the plan has a cabinet size`);
+    const c = E.cabinet!;
+    assert.deepStrictEqual({ g: E.g, cab: { w: c.w, h: c.h, gw: c.gw, gh: c.gh }, lobbyH: E.lobbyH }, w, `${label}: scale, cabinet size and lobby`);
+    assert.deepStrictEqual([c.cols, c.rows], [3, 1], `${label}: three cabinets in one row (columns, rows)`);
+    assert.deepStrictEqual([E.g, E.cabinet, E.lobbyH, E.height, E.big], [three.g, three.cabinet, three.lobbyH, three.height, three.big], `${label}: the plan of three one-cabinet folders`);
+    assert.strictEqual(E.zones.length, 0, `${label}: no zone is drawn from the plan`);
+    assert.ok(!E.scroll && E.height === H && E.width === W, `${label}: the stage is the floor (${E.width}x${E.height}, no scroll)`);
+    assert.ok(3 * c.w + 2 * 4 * (E.g as number) <= W, `${label}: the three cabinets and the gaps between them fit across ${W} px`);
+    assert.ok(E.lobbyH + 62 + c.h <= H, `${label}: the plate and a row of cabinets fit under the lobby`);
+    /* one lounge seat is not an empty floor: its plan is the seat's */
+    const lounged = aislesLayout(model(1, 1, ['idle'], 1), { w: W, h: H }, META, SIGNS(1));
+    assert.ok(lounged.lounge && lounged.zones.length === 0, `${label}: a floor with only a lounge seat is not planned as the empty floor`);
+  }
+  console.log('arcade empty floor plan: three cabinets, both floors');
+}
+
 console.log(`aisles tests passed (${cases} layouts)`);
 process.exitCode = 0;
