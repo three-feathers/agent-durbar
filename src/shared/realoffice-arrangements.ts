@@ -1,7 +1,7 @@
 /** Spec 102 FR-227, FR-256 (T202, T203, T205): where the people sit. `rows` is `realLayout`, untouched; `aisles` is the Retro arcade hall:
  *  staggered aisles of cabinets in an integer pixel scale `g`. Pure, no DOM, nothing draws it yet (RA3). The numbers marked "provisional"
  *  come from the mockup and the art by eye and are replaced by measured ones (T201's `faceBox`, T207's frame sizes). */
-import { STOREY_GAP, STOREY_TAG_MIN, storeyRuns, storeyTagW, lobbyBand, lobbyRange, realLayout, shownDesks, signWidth, splitLounge, BIG_MAX, helpH, helpCols, helpShown, FACE_U, type DeskBox, type Layout, type RealAgent, type RealMeta, type RealModel, type RealState, type Rect, type StoreyBand, type ZoneBox } from './realoffice-layout';
+import { STOREY_GAP, STOREY_TAG_MIN, signMin, storeyRuns, storeyTagW, lobbyBand, lobbyRange, realLayout, shownDesks, signWidth, splitLounge, BIG_MAX, helpH, helpCols, helpShown, FACE_U, type DeskBox, type Layout, type RealAgent, type RealMeta, type RealModel, type RealState, type Rect, type StoreyBand, type ZoneBox } from './realoffice-layout';
 
 export const ARRANGEMENTS = ['rows', 'aisles'] as const;
 export type Arrangement = (typeof ARRANGEMENTS)[number];
@@ -322,16 +322,27 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
      zone's sign (which gives up the width, to no less than its shortest form), so a tag never covers a sign, a cabinet or another tag; a name too long for the room is cut (its title has all of it).
      A rule between two storeys that start on rows of their own is horizontal (in the gap `forced` made); a storey that starts in the middle of a row has an upright rule in the strip before its first zone. */
   const bands: StoreyBand[] = [];
+  /* round 4 of the review of #1741 (the rule of #1746): a folder sign is never cut below min(signMin, its own width in this hall): its + and its menu would fall outside it. The tag goes to the first zone of the storey, in reading order,
+     that keeps its sign at that width and leaves the tag at STOREY_TAG_MIN at least; if no zone of the storey can, the hall is drawn without floors */
+  const flatSign = new Map(zones.map((z) => [z, z.sign.w] as const));
+  let noRoom = false;
   if (runs) runs.forEach((run, si) => {
-    const ids = new Set(folders.slice(run.from, run.to).map((f) => f.id)), zs = zones.filter((z) => ids.has(z.id));
-    const z0 = zs.reduce((m, z) => (z.sign.y < m.sign.y || (z.sign.y === m.sign.y && z.box.x < m.box.x) ? z : m), zs[0]);
-    const next = zones.filter((o) => o !== z0 && o.sign.y === z0.sign.y && o.box.x >= z0.box.x + z0.box.w - 1).reduce((m, o) => Math.min(m, o.box.x), W - AISLE_PAD), avail = Math.max(z0.box.w, next - 4 - z0.sign.x);
-    const tw = Math.max(STOREY_TAG_MIN, Math.min(storeyTagW(run.floor), avail - AISLE_SIGN_MIN_W - 4));
-    z0.sign.w = Math.max(AISLE_SIGN_MIN_W, Math.min(z0.sign.w, avail - tw - 4));
+    const ids = new Set(folders.slice(run.from, run.to).map((f) => f.id)), zs = zones.filter((z) => ids.has(z.id)).sort((p1, p2) => p1.sign.y - p2.sign.y || p1.box.x - p2.box.x), z0 = zs[0];
+    const room = (z: ZoneBox): { avail: number; smn: number } => {
+      const next = zones.filter((o) => o !== z && o.sign.y === z.sign.y && o.sign.x > z.sign.x).reduce((m, o) => Math.min(m, Math.min(o.box.x, o.sign.x)), W - AISLE_PAD), avail = next - 4 - z.sign.x; /* the tag ends before the next zone starts (its upright rule stands there) */
+      const s1 = signs && Object.prototype.hasOwnProperty.call(signs, z.id.split('\u0000')[0]) ? signs[z.id.split('\u0000')[0]] : { counts: 1 };
+      return { avail, smn: Math.min(signMin(s1.counts), flatSign.get(z)!) };
+    };
+    const left = (z: ZoneBox): number => { const r = room(z); return r.avail - r.smn - 4; }, want = Math.max(STOREY_TAG_MIN, storeyTagW(run.floor)), least = Math.min(STOREY_TAG_MIN, storeyTagW(run.floor));
+    const zt = zs.find((z) => left(z) >= want) || zs.filter((z) => left(z) >= least).sort((p1, p2) => left(p2) - left(p1))[0]; /* reading order first for a whole name; else the zone with the most room */
+    if (!zt) { noRoom = true; return; }
+    const { avail, smn } = room(zt), tw = Math.min(want, avail - smn - 4);
+    zt.sign.w = Math.max(smn, Math.min(zt.sign.w, avail - tw - 4));
     const bx0 = Math.min(...zs.map((z) => z.box.x)), bx1 = Math.max(...zs.map((z) => z.box.x + z.box.w)), by0 = z0.sign.y, by1 = Math.max(...zs.map((z) => z.box.y + z.box.h));
     const slab: Rect | null = !si ? null : forced ? { x: AISLE_PAD, y: by0 - STOREY_GAP + 1, w: W - 2 * AISLE_PAD, h: 2 } : { x: Math.max(0, z0.sign.x - 3), y: by0, w: 2, h: AISLE_SIGN_H };
-    bands.push({ id: run.floor.id, name: run.floor.name, n: run.floor.n, box: { x: bx0, y: by0, w: bx1 - bx0, h: by1 - by0 }, tag: { x: Math.round(z0.sign.x + z0.sign.w + 4), y: by0, w: tw, h: AISLE_SIGN_H }, slab });
+    bands.push({ id: run.floor.id, name: run.floor.name, n: run.floor.n, box: { x: bx0, y: by0, w: bx1 - bx0, h: by1 - by0 }, tag: { x: Math.round(zt.sign.x + zt.sign.w + 4), y: zt.sign.y, w: tw, h: AISLE_SIGN_H }, slab });
   });
+  if (noRoom) return aislesLayout(model, view, { ...meta, storeys: false }, signs, place);
   const lb = lobbyBand(meta, model.places, W, Lb);
   const height = plan.fits ? Ho : Math.ceil(Lb + AISLE_LANE + used + AISLE_PAD);
   const lay: Layout = { lane: { x: AISLE_PAD, y: Lb, w: W - 2 * AISLE_PAD, h: AISLE_LANE }, u: AISLE_PERSON.h * g, g, big: k + nCells <= BIG_MAX, lobbyH: Lb, floorH: height - Lb, width: W, height, scroll: !plan.fits, faceH: FACE_GRID * g, zones, fixtures: lb.fixtures, floorStrip: lb.floorStrip, cabinet: { w: cabW, h: cabH, gw: plan.gw, gh: plan.gh, cols, rows }, helpRows: sh ? 1 : 0, ...(bands.length ? { storeys: bands } : {}) };
