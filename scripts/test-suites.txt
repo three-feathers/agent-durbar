@@ -220,6 +220,7 @@ test:docsscripts
 test:citypecheck
 test:worldmatrix
 test:world-catalogue
+test:world-distinct
 test:worldzip
 test:worldpack
 test:world-packs
