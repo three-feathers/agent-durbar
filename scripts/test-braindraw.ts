@@ -397,6 +397,15 @@ console.log('braindraw: page load ok');
     const f = p.host.draw.stats.frames; p.host.feed('a', 'Ada', p.ev(1)); p.flush();
     assert.strictEqual(p.host.draw.stats.frames, f, 'a hidden window: no frame');
   }
+  // a page that gains the focus with no focus event (an emulated focus, a window shown already focused) is Full at the next event (the Windows CI failure of check-brain-draw)
+  {
+    const p = page(() => 'Ada'); let has = false; (p.doc as unknown as { hasFocus: () => boolean }).hasFocus = () => has;
+    p.winL.blur[0](); assert.strictEqual(p.host.draw.mode(), 'still', 'no focus: Still');
+    has = true; p.host.feed('a', 'Ada', p.ev(1)); p.flush();
+    assert.strictEqual(p.host.draw.mode(), 'full', 'the page has the focus and sent no focus event: the next event reads hasFocus() and draws Full');
+    has = false; p.host.feed('a', 'Ada', p.ev(2)); p.flush();
+    assert.strictEqual(p.host.draw.mode(), 'still', 'the focus went with no blur event: the next event draws Still');
+  }
   // over a chat, Settings or List view the box is hidden (brain.css) and the renderer draws nothing (no overlap with the composer)
   for (const cls of ['panel-open', 'screen-open', 'list-mode']) {
     const p = page(() => 'Ada'); p.doc.body.classes.add(cls);

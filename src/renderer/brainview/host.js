@@ -31,7 +31,8 @@
       '<div class="bv-body"><canvas class="bv-canvas" aria-hidden="true"></canvas><strong class="bv-lobe"></strong><p class="bv-sentence"></p><div class="bv-card"><strong class="bv-c1"></strong><div class="bv-c2"></div><div class="bv-c3"></div></div></div>';
     doc.body.appendChild(el);
     const q=(c)=>el.querySelector(c), canvas=q('.bv-canvas');
-    const draw=DR.create({canvas,size:'dock',width:240,motion,forced:!!(mqForced&&mqForced.matches),visible:!doc.hidden,focused:doc.hasFocus?doc.hasFocus():true,
+    let seenFocus=doc.hasFocus?!!doc.hasFocus():true; /* the focus the renderer was last told: a page that gains the focus without a focus event (an emulated one, a window shown already focused) is caught at the next event, from hasFocus() */
+    const draw=DR.create({canvas,size:'dock',width:240,motion,forced:!!(mqForced&&mqForced.matches),visible:!doc.hidden,focused:seenFocus,
       host:{now:()=>win.performance.now(),raf:(f)=>win.requestAnimationFrame(f),caf:(i)=>win.cancelAnimationFrame(i),dpr:()=>win.devicePixelRatio||1,makeCanvas:(w,h)=>{const c=doc.createElement('canvas');c.width=w;c.height=h;return c;}}});
     /* drawn only while the window is shown and the body is not folded: a folded host draws nothing (FR-104) */
     /* and not while a chat, Settings or List view covers the office: the box is hidden by brain.css then (it would sit on their controls) */
@@ -44,7 +45,7 @@
     if(mqForced&&mqForced.addEventListener)mqForced.addEventListener('change',()=>draw.setForced(mqForced.matches));
     doc.addEventListener('visibilitychange',syncVisible);
     if(typeof win.MutationObserver==='function'&&doc.body&&doc.body.nodeType)new win.MutationObserver(syncVisible).observe(doc.body,{attributes:true,attributeFilter:['class']}); /* a chat or Settings opening or closing */
-    win.addEventListener('focus',()=>draw.setFocused(true)); win.addEventListener('blur',()=>draw.setFocused(false));
+    win.addEventListener('focus',()=>{seenFocus=true;draw.setFocused(true);}); win.addEventListener('blur',()=>{seenFocus=false;draw.setFocused(false);});
     applyMotion();
 
     /* one paint puts all the text and the picture in the same turn, so no frame shows parts of two cards (FR-023) */
@@ -62,6 +63,7 @@
       draw.set(viewOf(S,s,shownId)); states.set(shownId,S.markPainted(s,opts.now()));
     }
     function feed(id,name,ev){
+      const hf=doc.hasFocus?!!doc.hasFocus():true; if(hf!==seenFocus)draw.setFocused(hf); seenFocus=hf;
       const prev=states.get(id)||S.initBrain(String(name||'Agent'),opts.mask);
       const now=opts.now(), next=S.brainState(prev,ev,now,opts.mask);
       states.set(id,next); for(const k of states.keys()){if(states.size<=60)break;if(k!==id&&k!==shownId)states.delete(k);} /* oldest first, never the one in use */
