@@ -25,7 +25,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawn, spawnSync } = require('child_process');
-const { ensureElectron } = require('./ensure-electron');
+const { ensureElectron, buildProblem } = require('./ensure-electron');
 
 const ROOT = path.join(__dirname, '..');
 const SIM = { DURBAR_SIM: '15', DURBAR_SIM_FREEZE: '1' };
@@ -276,6 +276,32 @@ function args(a = process.argv.slice(2)) {
   return { list: a.includes('--list'), only: i >= 0 ? new Set(String(a[i + 1] || '').split(',').filter(Boolean)) : undefined, shard: j >= 0 ? a[j + 1] : undefined, shardGiven: j >= 0 };
 }
 
+/** Spec 008 FR-212: the edit distance between two names (insert, delete, replace), for the "did you mean" of `unknownOnly`. */
+function editDistance(a, b) {
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+/** Spec 008 FR-212 (issue #1572): the problems with the names given to `--only`, one text per name that matches no driver name and no label ([] when all match).
+ *  A name in NOT_IN_SUITE gets its written reason; any other gets up to 3 near names (a prefix or a part of one, or within 3 edits), the closest first, ties in suite order. */
+function unknownOnly(only, drivers = DRIVERS, notInSuite = NOT_IN_SUITE) {
+  const known = [...new Set(drivers.flatMap((d) => (d.label && d.label !== d.name ? [d.name, d.label] : [d.name])))];
+  const out = [];
+  for (const name of only || []) {
+    if (known.includes(name)) continue;
+    if (Object.prototype.hasOwnProperty.call(notInSuite, name)) { out.push(`${name} is not a ui-suite driver: ${notInSuite[name]}`); continue; }
+    const near = known.map((k, i) => ({ k, i, d: editDistance(name, k) })).filter((x) => x.d <= 3 || x.k.startsWith(name) || x.k.includes(name) || name.includes(x.k))
+      .sort((x, y) => x.d - y.d || x.i - y.i).slice(0, 3).map((x) => x.k);
+    out.push(`${name} matches no driver${near.length ? `; did you mean ${near.join(', ')}?` : ''}`);
+  }
+  return out;
+}
+
 /** Recorded seconds per driver (scripts/ui-suite-timings.json), only to balance shards; a driver with no entry counts as the median. */
 function timings() {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'ui-suite-timings.json'), 'utf8')); } catch { return {}; }
@@ -384,9 +410,12 @@ function launchCommand(useXvfb, electron, argv, dpr, env = process.env) {
  * `process.env` as the base of the child's environment (an allow-list, so no token reaches Electron), `d.timeoutMs` replaces the
  * suite's limit. Every driver (spec 008 FR-199, issue #1417) runs as its own process tree: it ends with the whole tree at the limit and when
  * this process gets SIGINT, SIGTERM or exits (`xvfb-run`'s own cleanup does not run when only its shell is killed). There is no `d.killTree` flag.
- * `launch` is for tests: `[file, args]` replaces the Electron/xvfb-run command.
+ * `launch` is for tests: `[file, args]` replaces the Electron/xvfb-run command. A missing build (FR-211) is returned as a failed run without starting anything.
  */
-function runOne(d, outDir, { launch } = {}) {
+function runOne(d, outDir, { launch, build = launch ? () => '' : buildProblem } = {}) {
+  // FR-211: no build, no Electron (it would open an error box and wait for it until the time limit)
+  const missing = build();
+  if (missing) return Promise.resolve({ ok: false, code: 1, secs: 0, why: missing, log: missing });
   const electron = require('electron'); // the binary's path
   const user = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-ui-user-'));
   const env = { ...(d.baseEnv || process.env), ...(d.sim === false ? {} : SIM), ...(d.env || {}), DURBAR_USER_DATA: user, DURBAR_DRIVER: path.join(__dirname, d.name + '.js') };
@@ -417,11 +446,14 @@ function runOne(d, outDir, { launch } = {}) {
 }
 
 /** `ensure`, `run` and `argv` are for tests (scripts/test-ui-suite.ts); the defaults install Electron and start the real drivers. */
-async function main({ ensure = ensureElectron, run = runOne, argv, shared = sharedDesktop() } = {}) {
+async function main({ ensure = ensureElectron, run = runOne, argv, shared = sharedDesktop(), build = buildProblem } = {}) {
   const a = args(argv);
   // a bare `--shard` (no value) is refused, never "every driver"; only an empty UI_SUITE_SHARD env value means the whole list (FR-182, review on #1257)
   if (a.shardGiven && !a.shard) throw new Error('ui-suite: --shard wants a value i/n (1 <= i <= n), got none');
   const sh = a.shardGiven ? a.shard : process.env.UI_SUITE_SHARD;
+  // FR-212: a name asked for that matches no driver fails the run (before the shard split and the build check: a user error that costs nothing to say), never dropped because another name matched
+  const unknown = a.list ? [] : unknownOnly(a.only);
+  if (unknown.length) throw new Error(`--only names no driver to run:\n  ${unknown.join('\n  ')}\nno driver was started`);
   const todo = shard(DRIVERS.filter((d) => !a.only || a.only.has(d.name) || a.only.has(d.label || '')), sh);
   if (a.list) { for (const d of DRIVERS) console.log(d.label || d.name); return; }
   // a shard that selects no driver (more shards than drivers, or --only narrowing) must not pass green with "0/0"
@@ -433,6 +465,9 @@ async function main({ ensure = ensureElectron, run = runOne, argv, shared = shar
     for (const b of bad) console.error(`ui-suite: syntax error in ${b.file}\n${b.error.split(/\r?\n/).map((l) => '      | ' + l).join('\n')}`);
     throw new Error(`${bad.length} file(s) do not parse: ${bad.map((b) => b.file).join(', ')}; no driver was started`);
   }
+  // FR-211: a missing build fails in seconds with its path, before Electron is fetched or started
+  const noBuild = build();
+  if (noBuild) throw new Error(`${noBuild}; no driver was started`);
   // FR-114: install Electron once before the drivers start in parallel (two first runs racing on the same binary fail, PR #546)
   if (!ensure()) throw new Error('the Electron binary is not installed and could not be fetched (see above); no driver was started');
   const outDir = process.env.UI_SUITE_OUT ? path.resolve(process.env.UI_SUITE_OUT) : fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-ui-shots-'));
@@ -479,5 +514,5 @@ async function main({ ensure = ensureElectron, run = runOne, argv, shared = shar
   if (failed.length) process.exitCode = 1;
 }
 
-module.exports = { dprOk, xvfbScreenArgs, launchCommand, sharedDesktop, syntaxErrors, main, runOne, killTree, guardTree, shard, DRIVERS, NOT_IN_SUITE }; // runOne: also spec 001 FR-082 (scripts/shots-docs.js)
+module.exports = { dprOk, xvfbScreenArgs, launchCommand, sharedDesktop, syntaxErrors, main, runOne, killTree, guardTree, shard, unknownOnly, DRIVERS, NOT_IN_SUITE }; // runOne: also spec 001 FR-082 (scripts/shots-docs.js)
 if (require.main === module) main().catch((e) => { console.error('ui-suite:', e.message); process.exitCode = 1; });
