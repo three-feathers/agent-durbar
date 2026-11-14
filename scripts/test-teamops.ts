@@ -8,7 +8,7 @@
  * again against it (`TEAMOPS_MODULE`). Each must die in ITS section (the failed section's name is printed on stderr). An anchor that does not
  * match fails loudly. EQUIVALENT, so not a mutant: the token-shape test inside `takeToken` and `peek` (the live token always has the right shape, so the
  * equality test next to it decides alone; the shape test of `previewRow` is the one with a visible effect); and the snapshot being a copy: it is the copy `TemplateStore.get` makes (tested in test:teamstore),
- * this module keeps the object it is given; The key-count bounds (`moreKeysThan`) in `readTarget`/`readChange` are EQUIVALENT IN RESULT, NOT IN COST: the key loop refuses an unknown key
+ * this module keeps the object it is given; and the key-count bounds (`moreKeysThan`) in `readTarget`/`readChange` are EQUIVALENT IN RESULT, NOT IN COST: the key loop refuses an unknown key
  * with the same words, and the engine lists every key of an object before any `for...in` or `Object.keys` starts (measured in `test:teamsipc`: about 1 s
  * for 800,000 keys), so a counter cannot tell them apart; the bound only saves the array of keys and the later work. The timing checks of `arguments` and
  * `rowArguments` (200,000 keys, well under 1.5 s) are the cost check there is. Run with `TEAMOPS_LABELS=1` to print where each one died.
@@ -403,6 +403,35 @@ section('overlap', async () => {
     eq(F(await a).code, 'notfound', 'a call that waited while the preview was replaced');
     eq(final(k.r, p2.token).effort, undefined, 'the new preview is untouched');
   }
+  // the token expires, or the preview is replaced, WHILE the row is worked out (a slow models() list): a fixed notfound, nothing written
+  for (const how of ['expires', 'replaced'] as const) {
+    let slow = false; let rel: () => void = () => undefined;
+    const gate = new Promise<void>((res) => { rel = res; });
+    const r = rig([tpl([mem(1, { model: 'beta-2' })])], { models: async (id: string) => { if (slow) { slow = false; await gate; } return MODELS[id]; } });
+    const p = R(await r.ops.createPreview(TGT, 'tmpl1'));
+    slow = true;
+    const a = r.ops.previewRow(p.token, hexId(1), { effort: 'low' });
+    await tick(); await tick();
+    let p2: PreviewOk | undefined;
+    if (how === 'expires') r.clock.t += TOKEN_MS + 1; else p2 = R(await r.ops.createPreview(TGT, 'tmpl1'));
+    rel();
+    const x = F(await a);
+    eq([x.code, x.errors], ['notfound', ['Preview: expired or not found. Open it again.']], 'while the row waits for models, the preview ' + how + ': a fixed notfound');
+    if (p2) eq(final(r, p2.token).effort, undefined, 'the new preview is untouched');
+    eq(r.ops.takeToken(p.token), undefined, 'and the old token is gone');
+  }
+  // Use another app, then a second change of the same row: the template's limit does not come back (FR-033)
+  {
+    const r = rig([tpl([mem(1, { cap: { unit: 'aiu', amount: 40 } })])]);
+    const p = R(await r.ops.createPreview(TGT, 'tmpl1'));
+    eq((p.rows[0].limit.source), 'member', 'the template\'s own limit at first');
+    const a1 = await r.ops.previewRow(p.token, hexId(1), { app: 'tokapp' }) as RowOk;
+    eq([a1.row.limit.source, a1.row.limit.amount], ['default', 60], 'another app (AI credits too): the limit is dropped, the default applies');
+    const a2 = await r.ops.previewRow(p.token, hexId(1), { effort: 'low' }) as RowOk;
+    eq([a2.row.limit.source, a2.row.limit.amount], ['default', 60], 'a second change of the row: the limit of the template does not come back');
+    const a3 = await r.ops.previewRow(p.token, hexId(1), { model: '' }) as RowOk;
+    eq([a3.row.limit.source, a3.row.app.id], ['default', 'tokapp'], 'nor a third');
+  }
 });
 
 // ---------------------------------------------------------------------------------------------------------------- 9. arguments
@@ -673,6 +702,8 @@ section('modelsOf', async () => {
     { name: 'previewRow asks the adapters before it checks the token', from: '        const e = this.peek(token);\n        if (!e)\n            return fail(\'notfound\', \'Preview: expired or not found. Open it again.\');\n        const m =', to: '        await this.deps.adapters();\n        const e = this.peek(token);\n        if (!e)\n            return fail(\'notfound\', \'Preview: expired or not found. Open it again.\');\n        const m =', section: 'tokenFirst' },
     { name: 'previewRow merges into the choices read before the wait', from: '        const ctx = this.context(await this.deps.adapters());\n        if (this.peek(token) !== e)\n            return fail(\'notfound\', \'Preview: expired or not found. Open it again.\'); // replaced while it waited\n        const ch = e.choices.get(rowId); // the CURRENT choices, read after the wait', to: '        const ch0 = e.choices.get(rowId);\n        const ctx = this.context(await this.deps.adapters());\n        if (this.peek(token) !== e)\n            return fail(\'notfound\', \'Preview: expired or not found. Open it again.\'); // replaced while it waited\n        const ch = ch0;', section: 'overlap' },
     { name: 'a call that was overtaken keeps its row (no work out again)', from: 'if (e.choices.get(rowId) !== cur)\n                continue;', to: '', section: 'overlap' },
+    { name: 'the preview is not checked again after the row is worked out', from: "            const row = await this.row(m, imported, cur, ctx);\n            if (this.peek(token) !== e)\n                return fail('notfound', 'Preview: expired or not found. Open it again.');\n", to: "            const row = await this.row(m, imported, cur, ctx);\n", section: 'overlap' },
+    { name: 'a second change forgets that the app was changed', from: 'appChanged: ch.appChanged };', to: 'appChanged: false };', section: 'overlap' },
     { name: 'the choices are not stored before the row is worked out', from: 'e.choices.set(rowId, next);', to: '', section: 'overlap' },
     { name: 'the target is not checked', from: "if (typeof target === 'string')\n            return fail('invalid', target);", to: '', section: 'arguments' },
     { name: 'a room of any length', from: 'room.length <= ROOM_MAX', to: 'true', section: 'arguments' },
