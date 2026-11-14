@@ -190,7 +190,7 @@
     const firstReady=()=>{const c=choices();return (c.find(k=>!k.disabled)||c[0]||{id:''}).id;};
     const draft=edit?draftOf(request.template):newDraft(firstReady());
     const opener=request.opener||(document.activeElement!==document.body?document.activeElement:null);
-    const baseline=snapshot(draft);
+    let baseline=null; /* taken after the first paint of the members: that paint normalises what the app cannot enforce (a permission, a limit in the other unit, an empty app) */
     let reload=false, saved=false, focusAfter=null;
     for(;;){
       const shown=draft.notice;draft.notice='';
@@ -227,12 +227,13 @@
     /* one dialog for the draft as it is now; resolves {value:'save'|'mark:<key>'} or null */
     function ask(d,o){
       const ui=build(d,o);
+      if(baseline===null)baseline=snapshot(d);
       let closeIt=null;
       const busyNow=()=>!!ui.busy;
       ui.closeWith=v=>{if(closeIt)closeIt(v);};
       const p=env.askDialog({title:d.id?'Edit team template':'New team template',body:'A template is a saved team: its members, roles and settings. Nothing starts until you use it.',
         size:'l',overlayClass:'tm-ed-ov',returnFocus:opener,
-        custom:{node:ui.node,value:()=>null,valid:()=>true,confirm:()=>ui.save(),dismiss:()=>{if(busyNow()||!isDirty(draft,baseline))return true;if(closeIt)closeIt('discard?');return false;}},
+        custom:{node:ui.node,value:()=>null,valid:()=>true,confirm:()=>ui.save(),dismiss:()=>{if(busyNow())return false;if(!isDirty(draft,baseline))return true;if(closeIt)closeIt('discard?');return false;}},
         buttons:[{label:'Cancel',value:null},{label:'Save template',value:'save',cls:'primary'}],
         auto:(close)=>{closeIt=close;return ()=>{ui.dead=true;};}});
       /* the focus goes where the caller says (after a mark) or to the template's name, once the dialog is in the page */

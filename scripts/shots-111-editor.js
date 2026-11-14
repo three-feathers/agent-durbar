@@ -195,6 +195,19 @@ async function body(ctx) {
     assert.ok(await until(`!document.getElementById('modeDlg')`), `${w}: Escape closes (nothing changed)`);
   }
 
+  // the dirty baseline is the draft after the first paint: an Edit whose permission the app cannot enforce (the stored limit in the other unit is in test:teams-editor), then Esc untouched, closes at once
+  for (const [w, h] of [[1440, 900], [1280, 800]]) {
+    await H.load({ w, h, query: { simteams: 'imported', simkinds: 'solo' } });
+    const put = await call('teamsPut', { name: 'Odd values', members: [{ ...member(1, 'codex'), permMode: 'allow' }] }); // simkinds=solo: Codex there can only read
+    assert.strictEqual(put.ok, true, `${w}: a template whose values the first paint changes: ${JSON.stringify(put.errors || [])}`);
+    await openSettings();
+    await focusSel('#teamsBox .tm-row[data-origin="own"] button[data-act="edit"]'); await H.key('Enter');
+    assert.ok(await until(`!!document.querySelector('#modeDlg .tm-ed')`), `${w}: the editor opens`);
+    assert.strictEqual(await js(`document.querySelector('#modeDlg fieldset.tm-mem [id$="-perm"]').value`), 'read-only', `${w}: the first paint set the unsupported permission back to read-only`);
+    await H.key('Escape');
+    assert.ok(await until(`!document.getElementById('modeDlg')`), `${w}: Escape on an untouched Edit closes at once, with no question`);
+  }
+
   // a hostile name is text
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     await H.load({ w, h, query: { simteams: 'hostile', simkinds: 'mixed' } });

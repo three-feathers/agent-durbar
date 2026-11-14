@@ -96,6 +96,21 @@ dd.members[0].name = 'x'; eq(E.isDirty(dd, base0), true, 'a typed name is');
 dd.members[0].name = ''; eq(E.isDirty(dd, base0), false, 'typed and erased is not');
 E.addMember(dd, 'claude'); eq(E.isDirty(dd, base0), true, 'a new member is');
 
+// every field is in the dirty snapshot: changing each one in turn makes the draft dirty (a field dropped from the snapshot would lose typed text on Esc)
+const FIELD_EDITS: [string, (d: any) => void][] = [
+  ['template name', (d) => { d.name = 'x'; }], ['description', (d) => { d.description = 'x'; }],
+  ['member name', (d) => { d.members[0].name = 'x'; }], ['role', (d) => { d.members[0].role = 'x'; }], ['brief', (d) => { d.members[0].brief = 'x'; }],
+  ['profile', (d) => { d.members[0].profile = 'x'; }], ['app', (d) => { d.members[0].app = 'codex'; }], ['model', (d) => { d.members[0].model = 'm2'; }],
+  ['effort', (d) => { d.members[0].effort = 'high'; }], ['permMode', (d) => { d.members[0].permMode = 'allow'; }], ['capText', (d) => { d.members[0].capText = '9'; }],
+  ['character', (d) => { d.members[0].character = 'gamer'; }], ['sendBrief', (d) => { d.members[0].sendBrief = false; }], ['memberId', (d) => { d.members[0].memberId = 'b'.repeat(32); }],
+];
+for (const [field, edit] of FIELD_EDITS) {
+  const d = E.draftOf({ id: 't', name: 'T', description: 'D', members: [{ name: 'A', role: 'R', brief: 'b', profile: 'p', app: 'claude', model: 'm', effort: 'low', permMode: 'ask', cap: { unit: 'usd', amount: 2 }, character: 'punk', sendBrief: true, memberId: 'a'.repeat(32) }] });
+  const base = E.snapshot(d);
+  eq(E.isDirty(d, base), false, 'dirty: a loaded draft is clean before changing ' + field);
+  edit(d); eq(E.isDirty(d, base), true, 'dirty: changing ' + field + ' makes the draft dirty');
+}
+
 // the section is shown only under the simulator until T010 (the create preview)
 {
   const T = load('teams.js');
@@ -440,6 +455,41 @@ process.on('exit', (c) => { if (!finished && c === 0) { console.error('teams-edi
     }
   }
 
+  // a save in flight: Escape, Cancel and the backdrop do nothing; `ok` closes with the list repainted, a refusal stays with what was typed
+  for (const outcome of ['ok', 'failed']) {
+    const s = await session((env) => env.E2.open({ mode: 'new' }, env), { put: () => new Promise((r) => setTimeout(() => r(outcome === 'ok' ? { ok: true, template: {} } : { ok: false, code: 'failed', errors: [], blocked: false }), 200)) });
+    const { doc, w } = s; const fs1 = q(doc, 'fieldset.tm-mem');
+    typeIn(w, q(doc, '#tmEd-tname'), 'Keep me'); fill(w, doc, fs1, 'Ana', 'Lead');
+    click(saveBtn(doc)); await tick(30);
+    doc.body.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    const cb = cancelBtn(doc); if (cb) click(cb);
+    const ov = doc.getElementById('modeDlg'); if (ov) ov.click();
+    await tick(30);
+    ok(!!q(doc, '#modeDlg .tm-ed') && title(doc) !== 'Discard changes?', 'while a save is in flight Escape, Cancel and the backdrop do nothing (' + outcome + ')');
+    await tick(300);
+    if (outcome === 'ok') { eq(await Promise.race([s.result, tick(100).then(() => 'still waiting')]), true, 'ok: the editor closes and the list is repainted'); ok(!q(doc, '#modeDlg'), 'ok: closed'); }
+    else {
+      ok(!!q(doc, '#modeDlg .tm-ed') && /What you typed is kept/.test(q(doc, '#tmEdErr').textContent), 'failed: the dialog stays after the answer');
+      eq(q(doc, 'fieldset.tm-mem input[id$="-name"]').value, 'Ana', 'failed: what was typed is kept');
+      doc.body.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); await tick(10);
+      eq(title(doc), 'Discard changes?', 'failed: afterwards Escape asks as usual');
+      click(qa(doc, '#modeDlg .dbtn button').find((b) => b.textContent === 'Discard')); await tick(10); await s.result;
+    }
+  }
+
+  // the dirty baseline is the draft after the first paint: opening an Edit whose stored values the app cannot enforce, then Esc untouched, closes at once
+  {
+    const t = { id: 'tn1', name: 'T', members: [
+      { name: 'A', role: 'R', app: 'codex', permMode: 'allow', cap: { unit: 'usd', amount: 4 }, memberId: 'e'.repeat(32) },
+      { name: 'B', role: 'R', app: 'claude', permMode: 'read-only', cap: { unit: 'aiu', amount: 40 }, memberId: 'f'.repeat(32) }] };
+    const s = await session((env) => env.E2.open({ mode: 'edit', template: t }, env));
+    const { doc, w } = s;
+    eq(q(doc, 'fieldset.tm-mem:nth-of-type(1) select[id$="-perm"]').value, 'read-only', 'the first paint set an unsupported permission back to read-only');
+    eq(q(doc, 'fieldset.tm-mem:nth-of-type(2) input[type="number"]').value, '', 'and cleared a limit saved in the other unit');
+    doc.body.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    eq(await Promise.race([s.result, tick(150).then(() => 'still waiting')]), false, 'Esc on an untouched Edit closes at once (the first paint is the baseline)');
+  }
+
   // ---------------------------------------------------------------- 4. static
   const strip = (f: string): string => fs.readFileSync(path.join(SRC, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
   for (const f of ['teameditor.js', 'memberrows.js', 'teams.js']) {
@@ -472,9 +522,9 @@ process.on('exit', (c) => { if (!finished && c === 0) { console.error('teams-edi
       { name: 'innerHTML with the name', file: 'teameditor.js', from: 'v.legend.textContent=legendText(', to: 'v.legend.innerHTML=legendText(', label: 'no element came from a value' },
       { name: 'aria-describedby dropped', file: 'teameditor.js', from: "if(ids2.length)f.control.setAttribute('aria-describedby',ids2.join(' '));else f.control.removeAttribute('aria-describedby');", to: "f.control.removeAttribute('aria-describedby');", label: 'is linked (aria-describedby) to its error' },
       { name: 'briefFrom sent to main', file: 'teameditor.js', from: "if(m.memberId!=='')o.memberId=m.memberId;", to: "if(m.memberId!=='')o.memberId=m.memberId;if(m.briefFrom)o.briefFrom=m.briefFrom;", label: 'briefFrom is never sent' },
-      { name: 'Esc with changes closes without asking', file: 'teameditor.js', from: 'dismiss:()=>{if(busyNow()||!isDirty(draft,baseline))return true;', to: 'dismiss:()=>{if(true)return true;', label: 'Cancel with unsaved changes asks' },
+      { name: 'Esc with changes closes without asking', file: 'teameditor.js', from: "if(!isDirty(draft,baseline))return true;if(closeIt)closeIt('discard?');return false;}", to: 'return true;}', label: 'Cancel with unsaved changes asks' },
       { name: 'the section shown in the real app', file: 'teams.js', from: 'function shown(){return !!(X&&X.sim);}', to: 'function shown(){return !!X;}', label: 'does not show the section in the app' },
-      { name: 'the editor asks even when nothing changed', file: 'teameditor.js', from: 'dismiss:()=>{if(busyNow()||!isDirty(draft,baseline))return true;', to: 'dismiss:()=>{if(busyNow())return true;', label: 'Cancel with nothing changed closes at once' },
+      { name: 'the editor asks even when nothing changed', file: 'teameditor.js', from: 'if(!isDirty(draft,baseline))return true;', to: '', label: 'Cancel with nothing changed closes at once' },
       { name: 'Mark as mine without a memberId', file: 'teameditor.js', from: "if(m.briefFrom==='file'&&m.memberId&&d.id){", to: "if(m.briefFrom==='file'&&d.id){", label: 'a file brief without a memberId: not offered' },
       { name: 'Mark as mine without a template id', file: 'teameditor.js', from: "if(m.briefFrom==='file'&&m.memberId&&d.id){", to: "if(m.briefFrom==='file'&&m.memberId){", label: 'template without an id: not offered' },
       { name: 'the status words are not painted', file: 'teameditor.js', from: "v.status.textContent=stateWords(m,st).join(' · ');", to: "v.status.textContent='';", label: 'says so in the member\'s description' },
@@ -487,8 +537,16 @@ process.on('exit', (c) => { if (!finished && c === 0) { console.error('teams-edi
       { name: 'dialog: a rejected confirm() closes', file: 'dialog.js', from: '()=>{el.disabled=false;});return;}', to: '()=>{el.disabled=false;fin();});return;}', label: 'a rejected confirm(): open' },
       { name: 'dialog: a rejected dismiss() closes', file: 'dialog.js', from: 'r.then(ok=>{if(ok!==false)done(null);},()=>undefined);', to: 'r.then(ok=>{if(ok!==false)done(null);},()=>done(null));', label: 'a rejected dismiss() keeps it open' },
       { name: 'dialog: a click on the backdrop bypasses dismiss()', file: 'dialog.js', from: 'DURBAR_PRESS.onBackdrop(d,dismiss);', to: 'DURBAR_PRESS.onBackdrop(d,()=>done(null));', label: 'a click on the backdrop asks dismiss()' },
+      { name: 'Esc during a save is not ignored', file: 'teameditor.js', from: 'if(busyNow())return false;', to: '', label: 'while a save is in flight Escape, Cancel and the backdrop do nothing' },
+      { name: 'the baseline is taken before the first paint', file: 'teameditor.js', from: 'let baseline=null;', to: 'let baseline=snapshot(draft);', label: 'Esc on an untouched Edit closes at once' },
       { name: 'the own brief limit for a brief from a file', file: 'teameditor.js', from: 'const briefLimits=fromFile=>fromFile?BRIEF_FILE:BRIEF_OWN;', to: 'const briefLimits=fromFile=>BRIEF_OWN;', label: 'keeps its limit of 2,000' },
     ];
+    // one mutant per field of the dirty snapshot: the check that changes that field must fail
+    const SNAP_M = '[m.name,m.role,m.brief,m.profile,m.app,m.model,m.effort,m.permMode,m.capText,m.character,m.sendBrief,m.memberId]';
+    const MEMBER_FIELDS: [string, string][] = [['member name', 'm.name'], ['role', 'm.role'], ['brief', 'm.brief'], ['profile', 'm.profile'], ['app', 'm.app'], ['model', 'm.model'], ['effort', 'm.effort'], ['permMode', 'm.permMode'], ['capText', 'm.capText'], ['character', 'm.character'], ['sendBrief', 'm.sendBrief'], ['memberId', 'm.memberId']];
+    for (const [field, ref] of MEMBER_FIELDS) mutants.push({ name: 'the dirty snapshot drops ' + field, file: 'teameditor.js', from: SNAP_M, to: SNAP_M.replace(ref + ',', '').replace(',' + ref + ']', ']'), label: field === 'member name' ? 'a typed name is' : 'dirty: changing ' + field + ' makes the draft dirty' }); // the older check on a typed member name comes first
+    mutants.push({ name: 'the dirty snapshot drops the template name', file: 'teameditor.js', from: '[d.name,d.description,', to: '[d.description,', label: 'dirty: changing template name makes the draft dirty' });
+    mutants.push({ name: 'the dirty snapshot drops the description', file: 'teameditor.js', from: '[d.name,d.description,', to: '[d.name,', label: 'dirty: changing description makes the draft dirty' });
     // Windows checks sources out with CRLF: the anchors (some span lines) are written with LF, so the text is read with LF first (`mutate`). Shown without Windows:
     // every anchor is found in the CRLF form of its file too, and the raw CRLF text would NOT hold a multi-line anchor (the failure this guards against).
     for (const m of mutants) {
