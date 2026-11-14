@@ -29,11 +29,11 @@ export const MAX_ARRANGEMENT_CHARS = 20;
 export const FOCUS_ARRANGEMENTS: readonly string[] = ['circle', 'facing-view'];
 
 export type AnchorKind = 'n' | 'p' | 'r';
-export interface PartSpec { name: string; block: string; maxBytes: number; minW: number; minH: number; maxW: number; maxH: number; anchors: Readonly<Record<string, AnchorKind>> }
+export interface PartSpec { name: string; block: string; maxBytes: number; minW: number; minH: number; maxW: number; maxH: number; anchors: Readonly<Record<string, AnchorKind>>; /** FR-220: the picture must carry an alpha channel (a monitor stands on the desk, it has no rectangle of its own) */ alpha: boolean }
 
 const KB = 1024;
-const P = (name: string, block: string, kb: number, maxW: number, maxH: number, minW = 1, minH = 1, anchors: Record<string, AnchorKind> = {}): PartSpec =>
-  ({ name, block, maxBytes: kb * KB, minW, minH, maxW, maxH, anchors });
+const P = (name: string, block: string, kb: number, maxW: number, maxH: number, minW = 1, minH = 1, anchors: Record<string, AnchorKind> = {}, alpha = false): PartSpec =>
+  ({ name, block, maxBytes: kb * KB, minW, minH, maxW, maxH, anchors, alpha });
 const FIXTURE_ANCHORS: Record<string, AnchorKind> = { standX: 'n', plateAnchor: 'p', lightAnchor: 'p', floorLine: 'n' };
 const FIXTURES = ['library', 'software', 'terminal', 'web', 'boss', 'coffee', 'bank', 'post', 'tools', 'kiosk'];
 const DESK_ANCHORS: Record<string, AnchorKind> = { surfaceY: 'n', screenRect: 'r', plateRect: 'r', lampAnchor: 'p', callAnchor: 'p' };
@@ -55,8 +55,8 @@ export const PART_TABLE: readonly PartSpec[] = [
   ...FIXTURES.map((f) => P('fx-' + f + '.webp', 'fixture', 120, MAX_SIDE, 300, 1, 1, f === 'boss' ? { ...FIXTURE_ANCHORS, doorRect: 'r' } : FIXTURE_ANCHORS)),
   P('desk.webp', 'desk-screen', 60, 1920, 1200, 1, 1, DESK_ANCHORS),
   P('desk-half.webp', 'desk-screen', 60, 1920, 1200, 1, 1, DESK_ANCHORS),
-  P('monitor.webp', 'desk-screen', 30, 1920, 300, 1, 1, MONITOR_ANCHORS), // FR-220: at most 30 KB and 300 px tall
-  P('monitor-half.webp', 'desk-screen', 30, 1920, 300, 1, 1, MONITOR_ANCHORS),
+  P('monitor.webp', 'desk-screen', 30, 1920, 300, 1, 1, MONITOR_ANCHORS, true), // FR-220: at most 30 KB and 300 px tall
+  P('monitor-half.webp', 'desk-screen', 30, 1920, 300, 1, 1, MONITOR_ANCHORS, true),
   P('desk-back.webp', 'desk-screen', 30, 1920, 1200), // FR-223: optional, behind the person; the engine sizes and places it
   P('desk-back-half.webp', 'desk-screen', 30, 1920, 1200),
   P('focus.webp', 'room', 120, 1920, 1200), // FR-227: one still picture, no text; the engine gives its box
@@ -384,7 +384,7 @@ const tag4 = (b: Uint8Array, p: number): string => String.fromCharCode(b[p], b[p
 const le16 = (b: Uint8Array, p: number): number => b[p] | (b[p + 1] << 8);
 const le24 = (b: Uint8Array, p: number): number => b[p] | (b[p + 1] << 8) | (b[p + 2] << 16);
 
-export interface PictureInfo { kind: 'png' | 'webp'; width: number; height: number }
+export interface PictureInfo { kind: 'png' | 'webp'; width: number; height: number; /** the picture has an alpha channel (FR-220: a monitor must) */ alpha: boolean }
 const DAMAGED = 'The picture header is damaged.';
 const PNG_DEPTHS: Readonly<Record<number, readonly number[]>> = { 0: [1, 2, 4, 8, 16], 2: [8, 16], 3: [1, 2, 4, 8], 4: [8, 16], 6: [8, 16] };
 
@@ -430,7 +430,7 @@ function pngInfo(buf: Uint8Array): PictureInfo | string {
   if (!end || !idat) return 'The picture is cut short.';
   if (ctype === 3 && !seen.has('PLTE')) return DAMAGED;
   if (p !== buf.length) return 'The picture has extra bytes after its end.';
-  return { kind: 'png', width, height };
+  return { kind: 'png', width, height, alpha: ctype === 4 || ctype === 6 || seen.has('tRNS') };
 }
 
 /**
@@ -469,12 +469,12 @@ function webpShape(buf: Uint8Array): PictureInfo | string {
   if (!c || (c.id !== 'VP8 ' && c.id !== 'VP8L') || i + 1 !== list.length) return DAMAGED;
   if (hasAlph && c.id !== 'VP8 ') return DAMAGED;
   const d = c.start + 8;
-  let bw = 0, bh = 0;
+  let bw = 0, bh = 0, losslessAlpha = false;
   if (c.id === 'VP8L') {
     if (c.size < 5 || buf[d] !== 0x2f) return DAMAGED;
     const b = (buf[d + 1] | (buf[d + 2] << 8) | (buf[d + 3] << 16) | (buf[d + 4] << 24)) >>> 0;
     if ((b >>> 29) !== 0) return DAMAGED;
-    bw = (b & 0x3fff) + 1; bh = ((b >>> 14) & 0x3fff) + 1;
+    bw = (b & 0x3fff) + 1; bh = ((b >>> 14) & 0x3fff) + 1; losslessAlpha = ((b >>> 28) & 1) === 1;
   } else {
     // frame tag: bit 0 = 0 key frame, bits 1-3 version (0..3), bit 4 = shown; then the start code and 14-bit sizes with a 2-bit scale that must be 0
     if (c.size < 10 || (buf[d] & 1) !== 0 || ((buf[d] >> 1) & 7) > 3 || (buf[d] & 0x10) === 0 || buf[d + 3] !== 0x9d || buf[d + 4] !== 0x01 || buf[d + 5] !== 0x2a) return DAMAGED;
@@ -484,7 +484,7 @@ function webpShape(buf: Uint8Array): PictureInfo | string {
   }
   const width = list[0].id === 'VP8X' ? canvasW : bw, height = list[0].id === 'VP8X' ? canvasH : bh;
   if (width !== bw || height !== bh) return 'The picture header disagrees with itself.';
-  return { kind: 'webp', width, height };
+  return { kind: 'webp', width, height, alpha: hasAlph || losslessAlpha };
 }
 
 /** The picture's kind and size, or a plain reason. Bounded work: every chunk is at least 8 bytes, so the walks are linear in the (capped) file. */
@@ -502,6 +502,7 @@ export function partProblem(spec: PartSpec, buf: Uint8Array): string {
   if (h.width > MAX_SIDE || h.height > MAX_SIDE) return 'The picture is too large.';
   if (h.width > spec.maxW || h.height > spec.maxH) return 'The picture is larger than this part allows (' + spec.maxW + 'x' + spec.maxH + ').';
   if (h.width < spec.minW || h.height < spec.minH) return 'The picture is smaller than this part needs.';
+  if (spec.alpha && !h.alpha) return 'The picture needs a see-through background (a WebP or PNG with an alpha channel).';
   return '';
 }
 

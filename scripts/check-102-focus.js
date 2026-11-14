@@ -52,14 +52,16 @@ module.exports = async (ctx) => {
     assert.strictEqual(c.dr.length, 15, `${tag}: 15 plates are drawn`);
     const cx = c.dr.map((d) => ({ x: d.x + d.w / 2, y: d.y + d.h / 2 })), b = c.box;
     assert.ok(cx.some((p) => p.x < b.x) && cx.some((p) => p.x > b.x + b.w) && cx.some((p) => p.y < b.y), `${tag}: the ring stands round the box: desks on its left, its right and above it`);
-    // a picture that fails to load moves no desk
-    const before = (await js(READ)).desks;
-    await js(`(()=>{document.getElementById('fixFocus').textContent='.ro[data-world="photo"] .ro-focus{background-image:url(realoffice/worlds/photo/no-such-focus.webp)}';return 0})()`);
-    await js(`new Promise(res=>{const i=new Image();i.onload=i.onerror=()=>res(1);i.src='realoffice/worlds/photo/no-such-focus.webp'})`);
-    await settle();
-    const after = await js(READ);
-    assert.strictEqual(after.desks, before, `${tag}: a picture that fails to load moves no desk`);
-    assert.strictEqual(after.n, 1, `${tag}: the box stays when its picture fails`);
+    // a picture that loads, and the same box with a picture that fails: every plate, zone, sign and the box itself is where it was (nothing in the layout reads the picture)
+    const PIC = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+    const setPic = (url) => js(`(()=>{document.getElementById('fixFocus').textContent='.ro[data-world="photo"] .ro-focus{background-image:url(${jsLiteral(url).slice(1, -1)})}';return new Promise(res=>{const i=new Image();i.onload=i.onerror=()=>res(1);i.src=${jsLiteral(url)}})})()`);
+    const frame = async (id) => { await poke(id, 'error'); await poke(id, 'idle'); await settle(); const r = await js(READ); return JSON.stringify({ dr: r.dr, zones: r.zones, box: r.box, desks: r.desks }); };
+    await setPic(PIC);
+    const loaded = await frame(ids[2]);
+    await setPic('realoffice/worlds/photo/no-such-focus.webp');
+    const failed = await frame(ids[2]);
+    assert.strictEqual(failed, loaded, `${tag}: a picture that fails to load moves no plate, zone, sign or the box itself`);
+    assert.strictEqual((await js(READ)).n, 1, `${tag}: the box stays when its picture fails`);
     await js(`(()=>{document.getElementById('fixFocus').textContent='.ro[data-world="photo"] .ro-focus{background-color:#b5651d}';return 0})()`);
     await settle();
     await H.shot(path.join(OUT, `102-focus-${w}x${h}.png`), { prep: 'mouse', tag: '102' });

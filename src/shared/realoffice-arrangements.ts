@@ -407,6 +407,17 @@ export function layoutFor(arrangement: Arrangement, model: RealModel, view: { w:
   return arrangement === 'aisles' ? aislesLayout(model, view, meta, signs) : arrangement === 'circle' ? circleLayout(model, view, meta, signs) : realLayout(model, view, meta, signs);
 }
 
+/** Spec 102 T171 (FR-220): what `cabinetOf` may paint from a world's `monitor` entry: a plain file name (lower-case letters, digits and single hyphens, `.webp`, no path, no quote, no `url()`) and a whole number of cells from 1 to 1024
+ *  (`bodies`, when present, a whole number from 1 that divides the cells). '' when fine, else the reason; the renderer draws no cabinet picture for a reason. Pure. */
+export const MONITOR_FILE_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*\.webp$/;
+export function monitorProblem(m: { file?: unknown; cells?: unknown; bodies?: unknown } | null | undefined): string {
+  if (!m || typeof m !== 'object') return 'no monitor entry';
+  if (typeof m.file !== 'string' || m.file.length > 64 || !MONITOR_FILE_RE.test(m.file)) return 'the monitor file name is not a plain .webp name';
+  if (typeof m.cells !== 'number' || !Number.isInteger(m.cells) || m.cells < 1 || m.cells > 1024) return 'the monitor cells are not a whole number from 1 to 1024';
+  if (m.bodies !== undefined && (typeof m.bodies !== 'number' || !Number.isInteger(m.bodies) || m.bodies < 1 || m.cells % m.bodies !== 0)) return 'the monitor bodies are not a whole number that divides the cells';
+  return '';
+}
+
 /** T205: keyboard order is the seat order, row by row (FR-229), then the lounge's seats (spec 097 FR-249); `FACE_U` is kept in scope for the tests that compare the two arrangements */
 export const aisleTabOrder = (L: Layout): string[] => L.zones.flatMap((z) => z.desks.map((d) => d.id)).concat(L.lounge ? L.lounge.desks.map((d) => d.id) : []);
 export const ROWS_FACE_U = FACE_U;

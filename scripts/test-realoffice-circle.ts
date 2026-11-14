@@ -4,7 +4,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { realLayout, sortDesks, type RealMeta, type RealModel, type RealAgent, type RealState, type Rect, type Layout } from '../src/shared/realoffice-layout';
-import { ARRANGEMENTS, FACE_FLOOR, arrangementFits, circleLayout, circleWith, layoutFor, isArrangement, CIRCLE_FOCUS_MIN } from '../src/shared/realoffice-arrangements';
+import { ARRANGEMENTS, FACE_FLOOR, arrangementFits, circleLayout, circleWith, layoutFor, isArrangement, monitorProblem, CIRCLE_FOCUS_MIN } from '../src/shared/realoffice-arrangements';
 
 process.exitCode = 1;
 const ROOT = (() => { let d = __dirname; while (!fs.existsSync(path.join(d, 'package.json'))) d = path.dirname(d); return d; })();
@@ -124,6 +124,21 @@ for (const s of ROOMS) assert.ok(mk(4, 2, SIZES[s][0], SIZES[s][1]).faceH > mk(1
   const m = model(40, 8), s = SIGNS(8); let best = Infinity;
   for (let i = 0; i < 20; i++) { const t0 = process.hrtime.bigint(); circleLayout(m, { w: 1280, h: 697 }, META, s); best = Math.min(best, Number(process.hrtime.bigint() - t0) / 1e6); }
   console.log(`circle at 40 agents in 8 folders: best of 20 ${best.toFixed(2)} ms`);
+}
+// ---- spec 102 T171: what the cabinet painter may take from a world's `monitor` entry (FR-220) ----
+{
+  const ok = { file: 'monitor.webp', cells: 16, bodies: 4 };
+  assert.strictEqual(monitorProblem(ok), '', 'T171 monitor: a plain entry is fine');
+  assert.strictEqual(monitorProblem({ file: 'monitor-half.webp', cells: 1 }), '', 'T171 monitor: one cell, no bodies is fine');
+  const retro = readJson('worlds', 'retro', 'world.json').monitor as Record<string, { file: string; cells: number; bodies?: number }>;
+  for (const k of Object.keys(retro)) assert.strictEqual(monitorProblem(retro[k]), '', `T171 monitor: the shipped arcade's ${k} entry is fine`);
+  for (const [label, f] of [['path', '../x.webp'], ['slash', 'a/b.webp'], ['backslash', 'a\\b.webp'], ['quote', 'a".webp'], ['url', 'url(x).webp'], ['space', 'a b.webp'], ['upper case', 'Monitor.webp'], ['not webp', 'monitor.png'], ['double dot', 'a..webp'], ['no name', '.webp'], ['hyphen first', '-a.webp'], ['double hyphen', 'a--b.webp'], ['empty', ''], ['long', 'a'.repeat(70) + '.webp'], ['number', 1], ['array', ['monitor.webp']], ['null', null], ['scheme', 'https://x/a.webp'], ['data', 'data:image/webp;base64,AA']] as Array<[string, unknown]>) assert.notStrictEqual(monitorProblem({ file: f, cells: 16 }), '', `T171 monitor: file refused: ${label}`);
+  for (const [label, c] of [['zero', 0], ['negative', -1], ['fraction', 1.5], ['NaN', NaN], ['Infinity', Infinity], ['string', '16'], ['huge', 1025], ['null', null], ['missing', undefined]] as Array<[string, unknown]>) assert.notStrictEqual(monitorProblem({ file: 'monitor.webp', cells: c }), '', `T171 monitor: cells refused: ${label}`);
+  for (const [label, b] of [['zero', 0], ['not dividing', 5], ['fraction', 1.5], ['string', '4']] as Array<[string, unknown]>) assert.notStrictEqual(monitorProblem({ file: 'monitor.webp', cells: 16, bodies: b }), '', `T171 monitor: bodies refused: ${label}`);
+  assert.notStrictEqual(monitorProblem(null), '', 'T171 monitor: no entry'); assert.notStrictEqual(monitorProblem(undefined), '', 'T171 monitor: undefined entry');
+  const src = fs.readFileSync(path.join(RO, '..', 'realoffice.js'), 'utf8').replace(/\r\n/g, '\n');
+  const at = src.indexOf('function cabinetOf');
+  assert.ok(at > 0 && /monitorProblem\(m\)\) return;/.test(src.slice(at, src.indexOf("backgroundImage !== url", at))), 'T171 monitor: cabinetOf asks monitorProblem before it paints a picture');
 }
 console.log(`circle tests passed (${cases} layouts)`);
 process.exitCode = 0;

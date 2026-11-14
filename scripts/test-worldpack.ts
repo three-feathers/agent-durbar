@@ -277,8 +277,8 @@ assert.ok(withManifest({ description: '' }).ok, 'an empty description is no desc
 assert.ok(!withManifest({ description: 'ㅤ' }).ok, 'a blank description');
 
 // ---- pictures (FR-052) ----
-assert.deepStrictEqual(pictureHeader(webp(600, 200)), { kind: 'webp', width: 600, height: 200 });
-assert.deepStrictEqual(pictureHeader(png(600, 200)), { kind: 'png', width: 600, height: 200 });
+assert.deepStrictEqual(pictureHeader(webp(600, 200)), { kind: 'webp', width: 600, height: 200, alpha: true });
+assert.deepStrictEqual(pictureHeader(png(600, 200)), { kind: 'png', width: 600, height: 200, alpha: true });
 // the exact shapes that ARE pictures stay accepted (the strict rules must not refuse what a real encoder writes)
 {
   const okPic = (b: Buffer, what: string, w = 100, h = 100): void => { const r = pictureHeader(b); assert.ok(typeof r !== 'string' && r.width === w && r.height === h, what + ': ' + (typeof r === 'string' ? r : '')); };
@@ -503,6 +503,25 @@ assert.ok(validateWorldZip(toStored(goodPack()), opts).ok);
   assert.ok(!small.ok && /small monitor/.test(small.reason), 'T171 the half monitor\'s screen too small to read is refused: ' + small.reason);
   assert.ok(withAnchor('monitor.webp', { screenRect: { x: 0.1, y: 0.1, w: 0.1, h: 0.1 } }).ok, 'T171 the floor holds on the half monitor only (FR-032 names the half size)');
   assert.ok(check(goodPack({}, noFocus.filter((n) => !/^(monitor|desk-back)/.test(n)))).ok, 'T171 a pack without monitor and desk-back parts is still accepted (FR-222: the CSS monitor stays)');
+  // FR-220: a monitor picture carries alpha (a WebP with alpha, or a PNG with it); the other parts are not asked
+  const noAlpha = (w: number, h: number): Buffer => { const b = Buffer.from(webp(w, h)); b[24] &= ~0x10; return b; };
+  const alphaIn = (b: Buffer): boolean => { const h = pictureHeader(b); return typeof h !== 'string' && h.alpha; };
+  const lossyAlpha = riff([vp8x(4, 4, 0x10), chunk('ALPH', Buffer.alloc(17)), vp8(4, 4)]);
+  assert.ok(alphaIn(webp(40, 40)), 'T171 alpha: lossless with the alpha bit has alpha');
+  assert.ok(!alphaIn(noAlpha(40, 40)), 'T171 alpha: lossless without the bit has none');
+  assert.ok(alphaIn(lossyAlpha), 'T171 alpha: lossy with VP8X, ALPH has alpha');
+  assert.ok(!alphaIn(riff([vp8(40, 40)])), 'T171 alpha: plain lossy has none');
+  assert.ok(!alphaIn(riff([vp8x(40, 40, 0x10), (() => { const l = vp8l(40, 40); l[8 + 4] &= ~0x10; return l; })()])), 'T171 alpha: the VP8X flag alone is not alpha');
+  assert.ok(alphaIn(png(40, 40)) && !alphaIn(pngShaped({ ctype: 2 })), 'T171 alpha: PNG colour types 6 and 2');
+  for (const n of ['monitor.webp', 'monitor-half.webp']) {
+    assert.strictEqual(partProblem(cap(n), webp(40, 40)), '', `T171 ${n} with alpha is fine`);
+    assert.strictEqual(partProblem(cap(n), lossyAlpha), '', `T171 ${n} lossy with alpha is fine`);
+    assert.ok(/see-through/.test(partProblem(cap(n), noAlpha(40, 40))), `T171 ${n} without alpha is refused`);
+    assert.ok(/see-through/.test(partProblem(cap(n), riff([vp8(40, 40)]))), `T171 ${n} plain lossy is refused`);
+    assert.ok(/see-through/.test(partProblem(cap(n), pngShaped({ ctype: 2, w: 40, h: 40 }))), `T171 ${n} opaque PNG is refused`);
+  }
+  assert.strictEqual(partProblem(cap('desk.webp'), noAlpha(40, 40)), '', 'T171 other parts are not asked for alpha');
+  { const g = goodPack(); g['monitor.webp'] = noAlpha(300, 200); const r = check(g); assert.ok(!r.ok && /see-through/.test(r.reason), 'T171 a pack whose monitor has no alpha is refused: ' + r.reason); }
   // the engine's built ids are all in the pack's list
   for (const id of BUILT_ARRANGEMENTS) assert.ok(ARRANGEMENTS.includes(id), `T171 built arrangement ${id} is in ARRANGEMENTS`);
 }
