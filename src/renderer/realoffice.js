@@ -351,10 +351,7 @@
     const signs = {};
     for (const f of model.folders) signs[f.id] = { name: f.name, path: f.path, counts: f.counts.length + (f.cost ? 1 : 0) };
     const layOut = (eng) => meta.arrangement && meta.arrangement !== 'rows' && L.layoutFor ? L.layoutFor(meta.arrangement, eng, view, meta, signs) : L.realLayout(eng, view, meta, signs); /* spec 102 FR-228: the one seam */
-    let lay;
-    try { lay = layOut(engine); } catch (e) { /* spec 097 review of #1746: a layout that fails never leaves an empty office: the hall without floors is drawn instead (the floors' names are the first to go) */
-      lay = layOut(Object.assign({}, engine, { folders: engine.folders.map((f) => Object.assign({}, f, { floor: undefined })) }));
-    }
+    let lay = L.layoutOrFlat(layOut, engine); /* spec 097 review of #1746: a layout that throws is drawn again without floors (tested by test-realoffice-aisles) */
     /* spec 102 delta 2026-11-11 (issue 1566): an arcade hall that would scroll takes the floor's own padding (`opts.lend`, px) when that makes it fit, so a strip over the floor does not make 15 agents scroll at 1280x800; `lent` tells the host to drop that padding */
     /* spec 102 delta 2026-11-13 (issue 1598): the same when the hall fits only by cutting a folder of 4 or fewer across rows (no scroll, so the test above never ran): the lent layout is used when it keeps them whole */
     const cutSmall = (l) => { const parts = {}, size = {}; for (const z of l.zones || []) { parts[z.id] = (parts[z.id] || 0) + 1; size[z.id] = (size[z.id] || 0) + z.desks.length; } return Object.keys(parts).some((id) => parts[id] > 1 && size[id] <= 4); };

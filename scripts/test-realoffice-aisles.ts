@@ -4,7 +4,7 @@ import * as assert from 'assert';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { realLayout, sortDesks, storeyRuns, storeyTagW, STOREY_GAP, STOREY_U_LOSS, type RealFloor, type RealMeta, type RealModel, type RealAgent, type RealState, type Rect, type Layout, type DeskBox } from '../src/shared/realoffice-layout';
+import { realLayout, layoutOrFlat, sortDesks, storeyRuns, storeyTagW, STOREY_GAP, STOREY_U_LOSS, type RealFloor, type RealMeta, type RealModel, type RealAgent, type RealState, type Rect, type Layout, type DeskBox } from '../src/shared/realoffice-layout';
 import { screenFit } from '../src/shared/realoffice-layout';
 import { aisleStatus, aislesLayout, layoutFor, aisleTabOrder, aisleFace, FACE_FLOOR, AISLE_SIGN_MIN_W, AISLE_PLATE_H, ARRANGEMENTS } from '../src/shared/realoffice-arrangements';
 
@@ -880,6 +880,16 @@ for (const world of ['photo', 'cave']) {
       cases++;
     }
   }
+  // the renderer's guard: a layout that throws is drawn again without floors (the flat hall), never an empty office
+  { const m = fm([5, 5, 5], [2, 1, 0]), real = (x: RealModel): Layout => realLayout(x, { w: 1408, h: ROOM.h900 }, ON, sg(3));
+    let calls = 0;
+    let L: Layout = null as unknown as Layout;
+    try { L = layoutOrFlat((x) => { calls++; if (x.folders.some((f) => f.floor)) throw new Error('forced: a layout that fails with floors'); return real(x); }, m); } catch (e) { assert.fail(`${world}: layoutOrFlat: a throwing layout is drawn again without floors (it threw: ${(e as Error).message})`); }
+    assert.strictEqual(calls, 2, `${world}: layoutOrFlat: a throwing layout is drawn again without floors (called ${calls} times)`);
+    assert.ok(L.storeys === undefined && L.zones.length === 3 && L.u > 0 && !L.scroll, `${world}: layoutOrFlat: the fallback is the valid flat hall (no storeys, every folder drawn)`);
+    assert.strictEqual(JSON.stringify(L), JSON.stringify(real(flat(m))), `${world}: layoutOrFlat: the fallback is exactly the hall without floors`);
+    assert.strictEqual(layoutOrFlat(real, m).storeys!.length, 3, `${world}: layoutOrFlat: a layout that does not throw is returned as it is`);
+    cases++; }
   // forced only when free: 15 agents 5/5/5 at 1440x900 stand each on its own row, at 1280x800 the floors share rows (checked above)
   const small = realLayout(fm([5, 5, 5], [2, 1, 0]), { w: 1248, h: ROOM.h800 }, ON, sg(3));
   assert.ok(!small.scroll, `${world}: 15 agents over 3 floors fit 1280x800 with no scroll`);

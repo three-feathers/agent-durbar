@@ -723,6 +723,11 @@ export function realLayout(model: RealModel, viewport: { w: number; h: number },
   return lay;
 }
 
+/** spec 097 round 2 of the review of #1746: a layout that throws never leaves an empty office: `lay` is run again on the same model without floors (the hall without floors, as before the storeys); the floors' names are the first to go */
+export function layoutOrFlat(lay: (m: RealModel) => Layout, model: RealModel): Layout {
+  try { return lay(model); } catch (e) { return lay({ ...model, folders: model.folders.map((f) => ({ ...f, floor: undefined })) }); }
+}
+
 /** FR-246: the agents the app put in the lounge (`lounge`, never one away at a place) leave their folders; the lounge in status order (FR-022), then folder order */
 export function splitLounge(model: RealModel): { desks: RealFolder[]; lounge: RealAgent[] } {
   const inLounge = (a: RealAgent): boolean => !!a.lounge && !a.away;
