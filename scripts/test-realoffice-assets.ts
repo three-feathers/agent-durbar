@@ -15,13 +15,13 @@ const ROOT = (() => { let d = __dirname; while (!fs.existsSync(path.join(d, 'pac
 const RO = path.join(ROOT, 'src', 'renderer', 'realoffice');
 
 /** FR-062 caps, in bytes, by kind of picture */
-export const CAPS = { person: 80 * 1024, fixture: 120 * 1024, desk: 60 * 1024, floor: 40 * 1024, wall: 120 * 1024, monitor: 30 * 1024, glow: 20 * 1024, total: 10 * 1024 * 1024 };
+export const CAPS = { person: 80 * 1024, fixture: 120 * 1024, desk: 60 * 1024, floor: 40 * 1024, wall: 120 * 1024, monitor: 30 * 1024, glow: 20 * 1024, focus: 120 * 1024, total: 10 * 1024 * 1024 };
 /** spec 102 FR-213: all shipped art (every world and every set) at most this many bytes */
 export const SHIPPED_MAX = 30 * 1024 * 1024;
 export const PERSON_MAX_H = 640;
 const KEYS = ['files', 'source', 'tool', 'date', 'made by', 'approved by', 'reference', 'prompt', 'cut', 'licence'];
 const CLAUSE = /fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named/;
-const kindOf = (f: string): keyof typeof CAPS | null => /^fx-[a-z]+\.webp$/.test(f) ? 'fixture' : /^p\d\d-[\w-]+(\.h)?\.webp$/.test(f) || /^[a-z][a-z0-9-]*-\w+\.webp$/.test(f) ? 'person' : f === 'desk.webp' || f === 'desk.h.webp' ? 'desk' : /^floor(-night)?\.webp$/.test(f) ? 'floor' : /^wall(-night)?\.webp$/.test(f) ? 'wall' : /^monitor(-[a-z]+)?\.webp$/.test(f) ? 'monitor' : f === 'glow.webp' ? 'glow' : null;
+const kindOf = (f: string): keyof typeof CAPS | null => /^fx-[a-z]+\.webp$/.test(f) ? 'fixture' : /^p\d\d-[\w-]+(\.h)?\.webp$/.test(f) || /^[a-z][a-z0-9-]*-\w+\.webp$/.test(f) ? 'person' : f === 'desk.webp' || f === 'desk.h.webp' ? 'desk' : /^floor(-night)?\.webp$/.test(f) ? 'floor' : /^wall(-night)?\.webp$/.test(f) ? 'wall' : /^monitor(-[a-z]+)?\.webp$/.test(f) ? 'monitor' : f === 'glow.webp' ? 'glow' : f === 'focus.webp' ? 'focus' : null;
 
 /** ASSETS.md: one section per source sheet (`### name`), each a list of `- key: value` lines */
 export function sections(md: string): Map<string, Record<string, string>> {
@@ -127,6 +127,7 @@ export function problems(files: Map<string, Buffer>, peopleJson: string, md: str
   }
   if (objs.night) { want.add(objs.night.wall); want.add(objs.night.floor); }
   if (objs.glow) want.add(objs.glow.file);
+  if ((meta as { arrangement?: unknown }).arrangement === 'circle') { want.add('focus.webp'); if (!files.has('focus.webp')) out.push('arrangement circle needs focus.webp (spec 102 FR-227)'); } /* the one picture the circle stands round, named by the arrangement, not by a key */
   for (const f of want) if (!files.has(f)) out.push(`people.json names ${f}, which is not in the folder`);
   for (const f of files.keys()) if (!want.has(f.replace(/\.h\.webp$/, '.webp'))) out.push(`${f}: people.json does not name it`);
   return out;
@@ -288,6 +289,14 @@ const total = [...files.values()].reduce((s, b) => s + b.length, 0);
   assert.ok(problems(one('p01-book.webp', Buffer.from('not an image at all, just some text')), pj1, okMd).some((p) => /not a WebP/.test(p)), 'red: not a picture');
   const big = new Map(files); big.set('p01-typeA.webp', Buffer.concat([good, Buffer.alloc(CAPS.total)]));
   assert.ok(problems(big, pj, md).some((p) => /over 10485760/.test(p)), 'red: a pack over 10 MB');
+  /* spec 102 FR-227, T174, T242: focus.webp is named by the arrangement circle, listed in ASSETS.md and capped */
+  const pjc = JSON.stringify({ ...JSON.parse(pj1), arrangement: 'circle' }), mdf = okMd.replace('\n## Removed', '### focus\n- files: focus.webp\n- source: s\n- tool: t\n- date: 2026-11-14\n- made by: m\n- approved by: a\n- reference: r\n- prompt: p\n- cut: c\n- licence: MIT\n\n## Removed');
+  const withFocus = new Map(one('p01-book.webp', book)); withFocus.set('focus.webp', good);
+  assert.deepStrictEqual(only(problems(withFocus, pjc, mdf)), [], 'a circle world with focus.webp, listed, passes');
+  assert.ok(only(problems(one('p01-book.webp', book), pjc, okMd)).some((p) => /arrangement circle needs focus.webp/.test(p)), 'red: circle without focus.webp');
+  assert.ok(only(problems(withFocus, pj1, mdf)).some((p) => /focus.webp: people.json does not name it/.test(p)), 'red: focus.webp in a world that does not name circle');
+  const fat = new Map(withFocus); fat.set('focus.webp', Buffer.concat([good, Buffer.alloc(130 * 1024)]));
+  assert.ok(only(problems(fat, pjc, mdf)).some((p) => /over the focus cap/.test(p)), 'red: a 130 KB focus picture');
 }
 
 assert.deepStrictEqual(halfProblems(files, (META as unknown as { px: Record<string, number> }).px), [], 'every person and the desk has both sizes (FR-183)');

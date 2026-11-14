@@ -411,6 +411,13 @@ export function layoutFor(arrangement: Arrangement, model: RealModel, view: { w:
   return arrangement === 'aisles' ? aislesLayout(model, view, meta, signs) : arrangement === 'circle' ? circleLayout(model, view, meta, signs) : realLayout(model, view, meta, signs);
 }
 
+/** FR-230 (owner, 2026-11-14 13:10 UTC): the ladder `circle` to `rows`. A `circle` that does not fit this floor at the face floor (`arrangementFits`; `leftAt` holds it off until two agents fewer) draws `rows`, so no floor scrolls
+ *  with 15 agents because of the arrangement; every other id runs as `layoutFor` says. `ran` is the arrangement that drew. Pure. */
+export function layoutWithFallback(arrangement: Arrangement, model: RealModel, view: { w: number; h: number }, meta: RealMeta, signs?: Record<string, { name: string; path: string; counts: number }>, leftAt?: number): { lay: Layout; ran: Arrangement } {
+  if (arrangement === 'circle' && !arrangementFits('circle', model, view, meta, leftAt)) return { lay: realLayout(model, view, meta, signs), ran: 'rows' };
+  return { lay: layoutFor(arrangement, model, view, meta, signs), ran: arrangement };
+}
+
 /** Spec 102 T171 (FR-220): what `cabinetOf` may paint from a world's `monitor` entry: a plain file name (lower-case letters, digits and single hyphens, `.webp`, no path, no quote, no `url()`) and a whole number of cells from 1 to 1024
  *  (`bodies`, when present, a whole number from 1 that divides the cells). '' when fine, else the reason; the renderer draws no cabinet picture for a reason. Pure. */
 export const MONITOR_FILE_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*\.webp$/;

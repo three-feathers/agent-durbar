@@ -1,7 +1,7 @@
 {
  "formatVersion": 1,
  "id": "cave",
- "arrangement": "rows",
+ "arrangement": "circle",
  "monitor": "Slate screen in a frame of stacked rough stones",
  "light": [2000],
  "mood": "Warm, flickering and snug, lit by fire",

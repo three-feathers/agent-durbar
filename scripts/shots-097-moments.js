@@ -148,7 +148,10 @@ module.exports = async (ctx) => {
       const after = await widths();
       const sleepers = after.lounge.filter((x) => x[1] === 'asleep');
       assert.ok(sleepers.length >= 1 && !after.desks.some((x) => x[1] === 'asleep'), `${tag}: an asleep agent whose message is read sits in the lounge row, not at a desk: ${JSON.stringify(after.lounge)}`);
-      assert.ok(after.u >= before.u - 1e-6, `${tag}: the room it leaves goes to the desks: u ${before.u} -> ${after.u}`);
+      /* spec 102 T174: in the circle the lounge row takes its height from the ring, so the desks can come down (the Cave at 1440x900: u 129 -> 92); the claim "the desks take the freed room" is the rows' (097 FR-246), and the circle's is the face floor (FR-229) */
+      const ringed = (await js(`document.querySelector('#stage .ro').dataset.arrangement`)) === 'circle';
+      if (ringed) assert.ok(after.face >= 24, `${tag}: in the circle the desks keep the face floor after an agent goes to the lounge: ${after.face} px`);
+      else assert.ok(after.u >= before.u - 1e-6, `${tag}: the room it leaves goes to the desks: u ${before.u} -> ${after.u}`);
       console.log('[moments] when the message is read', `desk faces ${before.face} -> ${after.face} px; lounge`, JSON.stringify(after.lounge));
       const sl = await js(`(()=>{const P=[...document.querySelectorAll('#stage .ro-plate.asleep')];return P.map(p=>({id:p.dataset.id,l:p.getAttribute('aria-label'),t:p.getAttribute('title'),x:p.textContent,
         person:!!document.querySelector('#stage .ro-person.asleep[data-for="'+p.dataset.id+'"]'),zz:!!document.querySelector('#stage .ro-zz'),w:p.getBoundingClientRect().width,

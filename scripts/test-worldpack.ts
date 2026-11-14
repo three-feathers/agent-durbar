@@ -465,15 +465,10 @@ assert.ok(validateWorldZip(toStored(goodPack()), opts).ok);
     assert.ok(r.ok, `T171 arrangement accepted: ${id}: ${r.reason}`);
     assert.strictEqual(r.manifest && r.manifest.arrangement, id, `T171 arrangement kept: ${id}`);
   }
-  // FR-230: circle stays off in every pack until the owner picks the many-folder fix; refused with its own reason, with or without focus.webp, no throw
-  assert.deepStrictEqual(ARRANGEMENT_OFF, ['circle'], 'FR-230: only circle is off');
-  for (const [label, only] of [['with focus.webp', undefined], ['without focus.webp', noFocus]] as Array<[string, string[] | undefined]>) {
-    const got: Array<ReturnType<typeof check>> = [];
-    assert.doesNotThrow(() => { got.push(arr('circle', only)); }, `FR-230 circle ${label}: no throw`);
-    const r = got[0];
-    assert.ok(!r.ok, `FR-230 circle refused in a pack ${label}`);
-    assert.ok(/stays off until the owner picks its many-folder fix \(FR-230\)/.test(r.reason), `FR-230 circle ${label}: refused for its own reason: ${r.reason}`);
-  }
+  // FR-230 (T174): circle is on; a pack naming it needs focus.webp (FR-227) and keeps no position field; the off list is empty
+  assert.deepStrictEqual(ARRANGEMENT_OFF, [], 'FR-230: nothing is off since T174');
+  { const r = arr('circle'); assert.ok(r.ok && r.manifest!.arrangement === 'circle', `T174 circle accepted with focus.webp: ${r.reason}`); }
+  { const r = arr('circle', noFocus); assert.ok(!r.ok, 'T174 circle without focus.webp is refused (FR-227)'); }
   assert.ok(arr('rows', noFocus).ok, 'FR-230: rows still accepted');
   assert.ok(check(goodPack({}, noFocus)).ok && check(goodPack({}, noFocus)).manifest!.arrangement === undefined, 'T171 absent arrangement is rows and stays absent');
   for (const [label, v] of [['__proto__', '__proto__'], ['constructor', 'constructor'], ['toString', 'toString'], ['hasOwnProperty', 'hasOwnProperty'], ['array', ['circle']], ['number', 1], ['null', null], ['object', { id: 'circle' }], ['empty', ''], ['upper case', 'Circle'], ['padded', 'circle '], ['long', 'x'.repeat(21)], ['very long', 'circle'.repeat(400)], ['unknown', 'spiral']] as Array<[string, unknown]>) {
@@ -482,10 +477,10 @@ assert.ok(validateWorldZip(toStored(goodPack()), opts).ok);
     assert.ok(/newer Agent Durbar/.test(r.reason), `T171 hostile arrangement says it may need a newer Durbar: ${label}: ${r.reason}`);
   }
   // no parameters: a position, radius, seat count, order or offset is not a field
-  for (const f of ['radius', 'seats', 'order', 'offset', 'position', 'focus', 'ring']) assert.ok(!withManifest({ arrangement: 'facing-view', [f]: 5 }).ok, `T171 parameter field refused: ${f}`); /* facing-view, not circle: circle is refused anyway (FR-230) */
+  for (const f of ['radius', 'seats', 'order', 'offset', 'position', 'focus', 'ring']) for (const id of ['facing-view', 'circle']) assert.ok(!withManifest({ arrangement: id, [f]: 5 }).ok, `T171 parameter field refused: ${f} with ${id}`); /* facing-view, circle: both take focus.webp */
   assert.ok(!(() => { const g = goodPack(); const m = JSON.parse(g['world.json'].toString()); m.parts['focus.webp'].anchors = { x: 0.1, y: 0.1 }; g['world.json'] = Buffer.from(JSON.stringify(m)); return check(g); })().ok, 'T171 focus.webp takes no anchors (a position is refused)');
   // focus.webp: required with circle and facing-view, refused with the others
-  assert.ok(arr('facing-view').ok && !arr('facing-view', noFocus).ok, 'T171 focus required with facing-view'); /* circle: refused whatever its pictures (FR-230) */
+  for (const id of ['facing-view', 'circle']) assert.ok(arr(id).ok && !arr(id, noFocus).ok, `T171 focus required with ${id}`); 
   for (const id of ['rows', 'aisles', 'flanking']) assert.ok(!arr(id).ok, `T171 focus refused with ${id}`);
   assert.ok(!withManifest({ arrangement: undefined }).ok, 'T171 focus refused without an arrangement (rows)');
   // caps: monitor 30 KB and 300 px tall, desk-back 30 KB, focus 120 KB at 1920x1200

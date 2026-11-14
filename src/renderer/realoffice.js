@@ -23,6 +23,7 @@
   const OFF = new Set(); /* keys of desks whose motion stands still: scrolled away or under the zoom */
   let LAY_G = 0; const CUR_G = () => LAY_G; /* the arcade's scale, for its screen text (0 in other worlds) */
   let CUR = null; /* {ro, screenOf, still, hold, desks: Map id -> desk, agents: Map id -> model agent, folders: Map, drawn} */
+  let CIRCLE_HOLD = null; /* FR-230: {key, at}: where the circle fell back to rows, and the count of agents it fell back at */
   let ZOOM = null; /* {id, hover, focus, panel, plate} */
   let IO = null, DISMISSED = '';
   /* spec 052 FR-183: focus the app moves by itself onto a plate is not the person asking to read that screen */
@@ -337,7 +338,15 @@
     };
     const signs = {};
     for (const f of model.folders) signs[f.id] = { name: f.name, path: f.path, counts: f.counts.length + (f.cost ? 1 : 0) };
-    let lay = meta.arrangement && meta.arrangement !== 'rows' && L.layoutFor ? L.layoutFor(meta.arrangement, engine, view, meta, signs) : L.realLayout(engine, view, meta, signs); /* spec 102 FR-228: the one seam */
+    /* spec 102 FR-228: the one seam; FR-230 (owner, 2026-11-14 13:10 UTC): a circle that does not fit at the face floor draws rows, and comes back only with two agents fewer than it left at (kept per world, window size and folder list, so another floor does not inherit it) */
+    const arr = meta.arrangement && meta.arrangement !== 'rows' && L.layoutFor ? meta.arrangement : 'rows';
+    let lay, ran = arr;
+    if (arr === 'circle' && L.layoutWithFallback) {
+      const n = engine.folders.reduce((c, f) => c + f.agents.length, 0), key = world + '|' + view.w + 'x' + view.h + '|' + engine.folders.map((f) => f.id).join(',');
+      const r = L.layoutWithFallback('circle', engine, view, meta, signs, CIRCLE_HOLD && CIRCLE_HOLD.key === key ? CIRCLE_HOLD.at : undefined);
+      lay = r.lay; ran = r.ran;
+      if (ran === 'circle') CIRCLE_HOLD = null; else if (!CIRCLE_HOLD || CIRCLE_HOLD.key !== key) CIRCLE_HOLD = { key, at: n };
+    } else lay = arr !== 'rows' ? L.layoutFor(arr, engine, view, meta, signs) : L.realLayout(engine, view, meta, signs);
     /* spec 102 delta 2026-11-11 (issue 1566): an arcade hall that would scroll takes the floor's own padding (`opts.lend`, px) when that makes it fit, so a strip over the floor does not make 15 agents scroll at 1280x800; `lent` tells the host to drop that padding */
     if (lay.scroll && opts.lend > 0 && meta.arrangement === 'aisles' && L.layoutFor) {
       const v2 = { w: view.w, h: view.h + opts.lend }, l2 = L.layoutFor(meta.arrangement, engine, v2, meta, signs);
@@ -349,7 +358,7 @@
     sty(ro, 'width', px(lay.width)); sty(ro, 'height', px(lay.height));
     LAY_G = lay.cabinet ? lay.g || 0 : 0;
     if (lay.g) setVar(ro, '--ro-g', String(lay.g)); /* spec 102 FR-255: one integer scale for the world's art */
-    dset(ro, 'set', set); dset(ro, 'world', world); dset(ro, 'u', String(Math.round(lay.u))); dset(ro, 'face', String(Math.round(lay.faceH * 10) / 10)); dset(ro, 'big', lay.big ? '1' : '0');
+    dset(ro, 'set', set); dset(ro, 'world', world); dset(ro, 'arrangement', ran); dset(ro, 'u', String(Math.round(lay.u))); dset(ro, 'face', String(Math.round(lay.faceH * 10) / 10)); dset(ro, 'big', lay.big ? '1' : '0');
     ro.classList.toggle('still', !!opts.still);
     ro.classList.toggle('hold', !!opts.hold); /* the people stand still, the lights may not (FR-071) */
     const drawn = !!(CUR && CUR.ro === ro && CUR.drawn);

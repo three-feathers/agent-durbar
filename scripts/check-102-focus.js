@@ -67,7 +67,7 @@ module.exports = async (ctx) => {
     await settle();
     // no focus box (Changes 2026-11-14: circle omits it on a floor where it cannot hold its minimum): the engine's result without `focus`, a page-only fixture;
     // the render runs without a throw, draws no .ro-focus and moves no plate, zone or sign against the same layout with the box
-    await js(`(()=>{const E=window.exports,f=window.__fixLF||E.layoutFor;window.__fixLF=f;E.layoutFor=function(){const l=f.apply(this,arguments);delete l.focus;return l};
+    await js(`(()=>{const E=window.exports,f=window.__fixLF||E.layoutFor,g=window.__fixLW||E.layoutWithFallback;window.__fixLF=f;window.__fixLW=g;E.layoutFor=function(){const l=f.apply(this,arguments);delete l.focus;return l};E.layoutWithFallback=function(){const r=g.apply(this,arguments);delete r.lay.focus;return r}; /* the circle goes through the ladder (T174): the fixture removes the box from either seam */
       const R=window.DurbarRealOffice,r=window.__fixRender||R.render;window.__fixRender=r;window.__roN=0;window.__roErr='';R.render=function(){try{const l=r.apply(this,arguments);window.__roN++;return l}catch(e){window.__roErr=String(e&&e.message||e);throw e}};return 0})()`);
     const noBox = JSON.parse(await frame(ids[2]));
     assert.ok(await js(`window.__roN>0||window.__roErr!==''`), `${tag}: the office re-rendered with no focus box`);
@@ -75,7 +75,7 @@ module.exports = async (ctx) => {
     assert.strictEqual((await js(READ)).n, 0, `${tag}: a layout with no focus box draws no .ro-focus`);
     const was = JSON.parse(loaded);
     assert.deepStrictEqual({ dr: noBox.dr, zones: noBox.zones, desks: noBox.desks }, { dr: was.dr, zones: was.zones, desks: was.desks }, `${tag}: a layout with no focus box moves no plate, zone or sign`);
-    await js(`(()=>{window.exports.layoutFor=window.__fixLF;window.DurbarRealOffice.render=window.__fixRender;return 0})()`);
+    await js(`(()=>{window.exports.layoutFor=window.__fixLF;window.exports.layoutWithFallback=window.__fixLW;window.DurbarRealOffice.render=window.__fixRender;return 0})()`);
     await poke(ids[2], 'error'); await poke(ids[2], 'idle');
     assert.ok(await until(`document.querySelectorAll('#stage .ro-focus').length===1`, 8000), `${tag}: with the box back one .ro-focus is drawn again`);
     await settle();

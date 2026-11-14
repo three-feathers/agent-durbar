@@ -4,7 +4,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { realLayout, sortDesks, splitLounge, type RealMeta, type RealModel, type RealAgent, type RealState, type Rect, type Layout } from '../src/shared/realoffice-layout';
-import { ARRANGEMENTS, FACE_FLOOR, arrangementFits, circleLayout, circleWith, layoutFor, isArrangement, monitorProblem, CIRCLE_FOCUS_MIN } from '../src/shared/realoffice-arrangements';
+import { ARRANGEMENTS, FACE_FLOOR, arrangementFits, circleLayout, circleWith, layoutFor, layoutWithFallback, isArrangement, monitorProblem, CIRCLE_FOCUS_MIN } from '../src/shared/realoffice-arrangements';
 
 process.exitCode = 1;
 const ROOT = (() => { let d = __dirname; while (!fs.existsSync(path.join(d, 'package.json'))) d = path.dirname(d); return d; })();
@@ -127,19 +127,62 @@ for (const s of ROOMS) assert.ok(mk(4, 2, SIZES[s][0], SIZES[s][1]).faceH > mk(1
   assert.ok(lounge.lounge && lounge.lounge.desks.length === 3, 'the lounge row is kept, as in rows');
   assert.deepStrictEqual(circleLayout({ folders: [], places: [] }, { w: 1280, h: 697 }, META).zones, [], 'no agents, no zones');
 }
-// ---- circle stays off for every world (FR-230, Changes 2026-11-14): no shipped manifest names it until the owner picks the many-folder fix ----
+// ---- the manifests (FR-230, T174): the Cave may name circle; the scan stays for every OTHER world (the parsed `arrangement`, so spacing, line breaks and \u escapes cannot hide it) ----
+/** the parsed manifest's `arrangement` (a manifest that does not parse fails by its path, never passes); a world.json and a card.json are flat objects, so the key is at the top */
+const arrangementOf = (text: string, file: string): unknown => { try { return (JSON.parse(text) as { arrangement?: unknown }).arrangement; } catch (e) { throw new Error(`${file} is not valid JSON: ${(e as Error).message}`); } };
+const names = (text: string, file = 'manifest'): boolean => arrangementOf(text, file) === 'circle';
+/** the manifests that name arrangement circle and are not the Cave's own (a world folder called `cave`, in worlds/ or the app's worlds) */
+function circleOffenders(manifests: Array<{ file: string; text: string }>): string[] {
+  return manifests.filter((m) => names(m.text, m.file) && path.basename(path.dirname(m.file)) !== 'cave').map((m) => m.file);
+}
 {
-  /** the parsed manifest's `arrangement` (a manifest that does not parse fails by its path, never passes); a world.json and a card.json are flat objects, so the key is at the top */
-  const arrangementOf = (text: string, file: string): unknown => { try { return (JSON.parse(text) as { arrangement?: unknown }).arrangement; } catch (e) { throw new Error(`${file} is not valid JSON: ${(e as Error).message}`); } };
-  const names = (text: string, file = 'manifest'): boolean => arrangementOf(text, file) === 'circle';
-  const manifests: string[] = [];
-  const walk = (d: string, depth: number): void => { if (depth > 4 || !fs.existsSync(d)) return; for (const e of fs.readdirSync(d, { withFileTypes: true })) { if (e.name === 'node_modules') continue; const f = path.join(d, e.name); if (e.isDirectory()) walk(f, depth + 1); else if (e.name === 'world.json' || e.name === 'card.json') manifests.push(f); } };
+  const manifests: Array<{ file: string; text: string }> = [];
+  const walk = (d: string, depth: number): void => { if (depth > 4 || !fs.existsSync(d)) return; for (const e of fs.readdirSync(d, { withFileTypes: true })) { if (e.name === 'node_modules') continue; const f = path.join(d, e.name); if (e.isDirectory()) walk(f, depth + 1); else if (e.name === 'world.json' || e.name === 'card.json') manifests.push({ file: path.relative(ROOT, f), text: fs.readFileSync(f, 'utf8') }); } };
   walk(path.join(ROOT, 'worlds'), 0); walk(path.join(RO, 'worlds'), 0);
   assert.ok(manifests.length >= 3, 'the scan found the shipped world manifests');
-  for (const f of manifests) assert.ok(!names(fs.readFileSync(f, 'utf8'), path.relative(ROOT, f)), `${path.relative(ROOT, f)} names arrangement circle: it stays off until the owner picks the many-folder fix (FR-230)`);
+  assert.deepStrictEqual(circleOffenders(manifests), [], 'no world but the Cave names arrangement circle (FR-230, T174)');
+  for (const f of ['worlds/cave/card.json', 'src/renderer/realoffice/worlds/cave/world.json']) assert.ok(names(manifests.find((m) => m.file.replace(/\\/g, '/') === f)!.text, f), `the Cave's ${f} names circle (T174)`);
+  const naming = { text: '{ "arrangement": "circle" }' };
+  assert.deepStrictEqual(circleOffenders([{ file: 'worlds/photo/card.json', ...naming }, { file: 'src/renderer/realoffice/worlds/retro/world.json', ...naming }, { file: 'worlds/cave/card.json', ...naming }]), ['worlds/photo/card.json', 'src/renderer/realoffice/worlds/retro/world.json'], 'mutant: another world naming circle is caught, the Cave is not');
   for (const t of ['{"arrangement":"circle"}', '{ "arrangement" : "circle" }', '{\n  "arrangement":\n    "circle"\n}', '{"arrangement":"\\u0063ircle"}']) assert.ok(names(t), `mutant: ${JSON.stringify(t)} names circle and the parsed scan catches it`);
   assert.ok(!names('{"arrangement":"rows"}') && !names('{}'), 'rows and no key are not circle');
   assert.throws(() => names('{"arrangement": circle}', 'worlds/x/world.json'), /worlds\/x\/world\.json is not valid JSON/, 'a manifest that does not parse fails by its path');
+}
+// ---- the ladder circle -> rows (FR-230, owner 2026-11-14 13:10 UTC): 15 agents in 14 and in 15 one-agent folders fall back to rows, no scroll, nothing off the stage ----
+{
+  const META_CAVE = { ...readJson('worlds', 'cave', 'world.json'), ...readJson('sets', 'prehistoric', 'set.json') } as unknown as RealMeta;
+  assert.strictEqual((META_CAVE as unknown as { arrangement: string }).arrangement, 'circle', 'the Cave names circle');
+  type Ran = { lay: Layout; ran: string };
+  /** labels: scroll (the floor scrolls), off (a desk or zone leaves the stage), ran (the arrangement that drew is not the one the fit rule gives) */
+  const ladder = (r: Ran, W: number, fits: boolean): string[] => {
+    const out = new Set<string>(), floor: Rect = { x: 0, y: 0, w: W, h: r.lay.height };
+    if (r.lay.scroll) out.add('scroll');
+    for (const z of r.lay.zones) { if (!inside(z.box, floor)) out.add('off'); for (const d of z.desks) if (!inside(d.slot, floor)) out.add('off'); }
+    if (r.ran !== (fits ? 'circle' : 'rows')) out.add('ran');
+    return [...out];
+  };
+  const seen: string[] = [];
+  for (const [name, meta] of [['Photo meta', META], ['Cave meta', META_CAVE]] as Array<[string, RealMeta]>) SIZES.slice(0, 2).forEach(([W, H], s) => {
+    for (const f of [1, 4, 8, 12, 13, 14, 15]) {
+      const m = model(15, f), v = { w: W, h: H }, fits = arrangementFits('circle', m, v, meta);
+      const r = layoutWithFallback('circle', m, v, meta, SIGNS(f));
+      assert.deepStrictEqual(ladder(r, W, fits), [], `${name} ${NAMES[s]}, 15 agents in ${f} folders: ladder ${fits ? 'keeps circle' : 'falls back to rows'}, no scroll, nothing off the stage`);
+      assert.strictEqual(fits, !circleLayout(m, v, meta, SIGNS(f)).scroll, `${name} ${NAMES[s]} ${f} folders: fits means the circle does not scroll`);
+      if (f >= 14) seen.push(`${name} ${NAMES[s]} ${f}: ${r.ran}`);
+      if (!fits) {
+        assert.ok(ladder({ lay: circleLayout(m, v, meta, SIGNS(f)), ran: 'circle' }, W, fits).includes('scroll'), `mutant (ladder removed): the circle's scroll is caught at ${name} ${NAMES[s]} ${f} folders`);
+        assert.ok(ladder({ lay: realLayout(m, v, meta, SIGNS(f)), ran: 'circle' }, W, fits).includes('ran'), `mutant (circle forced): caught by its ran label at ${name} ${NAMES[s]} ${f} folders`);
+      } else assert.ok(ladder({ lay: realLayout(m, v, meta, SIGNS(f)), ran: 'rows' }, W, fits).includes('ran'), `mutant (rows always): caught by its ran label at ${name} ${NAMES[s]} ${f} folders`);
+    }
+  });
+  for (const want of ['Photo meta 1440x900 15: rows', 'Photo meta 1440x900 14: circle', 'Cave meta 1280x800 14: rows', 'Cave meta 1280x800 15: rows', 'Cave meta 1440x900 14: circle', 'Cave meta 1440x900 15: circle']) assert.ok(seen.includes(want), `the measured edge: ${want}`); /* Photo's meta scrolls at 15 folders at 1440x900, the Cave's does not (its desk is smaller); both fall back at 14 and 15 at 1280x800 */
+  console.log('ladder at 14 and 15 folders: ' + seen.join('; '));
+  // the hold: back only with two agents fewer than it left at
+  const m15 = model(15, 14), m14 = model(14, 14), m13 = model(13, 13), v = { w: 1280, h: 697 };
+  assert.strictEqual(layoutWithFallback('circle', m13, v, META_CAVE, SIGNS(13), 15).ran, 'circle', 'left at 15, back at 13: two fewer');
+  assert.strictEqual(layoutWithFallback('circle', m14, v, META_CAVE, SIGNS(14), 15).ran, 'rows', 'left at 15, still rows at 14: one fewer is not enough');
+  assert.strictEqual(layoutWithFallback('circle', m15, v, META_CAVE, SIGNS(15), undefined).ran, 'rows', 'no hold: 15 agents in 14 folders is rows');
+  assert.strictEqual(JSON.stringify(layoutWithFallback('rows', m15, v, META_CAVE, SIGNS(14)).lay), JSON.stringify(realLayout(m15, v, META_CAVE, SIGNS(14))), 'rows is untouched by the ladder');
 }
 // the engine's cost at 40 agents in 8 folders (FR-019: under 5 ms), the best of 20: printed, the op-count row is for the wiring PR
 {
