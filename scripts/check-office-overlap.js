@@ -505,12 +505,17 @@ async function driver(ctx) {
       const o = ro.getBoundingClientRect(), fl = document.getElementById('floor').getBoundingClientRect();
       const R = (e) => { const b = e.getBoundingClientRect(); return { x: b.left, y: b.top, r: b.right, b: b.bottom }; };
       const boxes = [];
-      const add = (kind, e, r, rid) => { if (e && !e.getClientRects().length) return; boxes.push({ kind, id: e ? (e.dataset.id || e.dataset.place || e.dataset.folder || e.textContent.slice(0, 16)) : (rid || ''), r: r || R(e) }); };
+      const add = (kind, e, r, rid) => { if (e && !e.getClientRects().length) return; boxes.push({ kind, id: e ? (e.dataset.id || e.dataset.place || e.dataset.folder || e.dataset.for || e.textContent.slice(0, 16)) : (rid || ''), r: r || R(e) }); };
       document.querySelectorAll('#stage .ro-plate').forEach((e) => add('plate', e));
       document.querySelectorAll('#stage .ro-sign').forEach((e) => add('sign', e));
       document.querySelectorAll('#stage .ro-lplate').forEach((e) => add('placeplate', e));
       document.querySelectorAll('#stage .ro-chip').forEach((e) => add('chip', e));
       document.querySelectorAll('#stage .ro-drafttag.on').forEach((e) => add('drafttag', e)); /* spec 097 FR-316 */
+      /* spec 102 (issue #1632): in the arcade a Draft tag stays off its cabinet's whole screen box (the glass and the bezel round it), and an empty seat's tag, on the post-it beside the cabinet, off the cabinet too: both boxes are measured against the Draft tag only. Mutant (a source edit): in src/renderer/realoffice.js the `dr:` tag's box, drop the `lay.cabinet && ...` clamp (use `d.away.x - d.away.s / 2` alone), build, run: it must fail "drafttag <id> overlaps cabinet <id>" (and screenbox) on every post-it that stands right of its cabinet */
+      if (want) {
+        document.querySelectorAll('#stage .ro-screen:not(.ro-lmon)').forEach((e) => add('screenbox', e));
+        for (const z of L.zones) for (const d of z.desks) if (d.away) add('cabinet', document.querySelector('#stage .ro-desk.ro-cab[data-for="' + d.id + '"]'));
+      }
       document.querySelectorAll('#stage .ro-away').forEach((e) => add('away', e));
       document.querySelectorAll('#stage .ro-screen .ro-bezel').forEach((e) => add('screen', e));
       for (const z of L.zones) for (const d of z.desks) if (d.person) add('face', null, { x: o.left + d.person.vis.x, y: o.top + d.person.vis.y, r: o.left + d.person.vis.x + d.person.vis.w, b: o.top + d.person.vis.y + Math.min(d.person.vis.h, L.faceH * 1.2) });
@@ -521,7 +526,7 @@ async function driver(ctx) {
       for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
         const a = boxes[i], b = boxes[j];
         if (a.kind === 'face' && b.kind === 'face') continue;
-        if ((a.kind === 'figure' || b.kind === 'figure') && a.kind !== 'drafttag' && b.kind !== 'drafttag') continue; /* a figure is only measured against the Draft tag (the plate stands in front of the lap by design) */
+        if (['figure', 'cabinet', 'screenbox'].some((k) => a.kind === k || b.kind === k) && a.kind !== 'drafttag' && b.kind !== 'drafttag') continue; /* a figure, a cabinet and a screen box are only measured against the Draft tag (the plate stands in front of the lap by design) */
         if (hit(a.r, b.r)) P.push(`${a.kind} ${a.id} overlaps ${b.kind} ${b.id}`);
       }
       for (const b of boxes) if (b.r.x < fl.left - 0.5 || b.r.r > fl.right + 0.5 || b.r.y < o.top - 0.5 || b.r.b > o.bottom + 0.5) P.push(`${b.kind} ${b.id} outside the office`);
@@ -576,7 +581,7 @@ async function driver(ctx) {
       }
       /* spec 097 FR-316 (issue #1149): unsent drafts on four desks (the narrowest plate also has a New reply tag, so both tags sit above it) and on a lounge seat when there is one: the Draft tag's box is checked against plates, tags, faces and screens at every size */
       const order = await ctx.js(`[...document.querySelectorAll('#stage .ro-plate')].filter(p=>p.getClientRects().length).sort((a,b)=>a.getBoundingClientRect().width-b.getBoundingClientRect().width).map(p=>p.dataset.id)`);
-      const picks = order.slice(0, 4), lounge = await ctx.js(`(()=>{const l=window.__durbarSimUi.realLayout().lounge;return l?l.desks.map((d)=>d.id):[]})()`); /* every lounge seat (spec 097 FR-316, issue #1511), not only the first */
+      const picks = wantWorld ? order : order.slice(0, 4), /* the arcade drafts every desk (issue #1632: a tag's place depends on the cabinet's side and its note) */ lounge = await ctx.js(`(()=>{const l=window.__durbarSimUi.realLayout().lounge;return l?l.desks.map((d)=>d.id):[]})()`); /* every lounge seat (spec 097 FR-316, issue #1511), not only the first */
       const marks = { narrow: order[0] || null, rest: picks.length - 1, lounge };
       console.log(`  ${tag}: drafts on ${picks.length} desks${lounge.length ? ' and ' + lounge.length + ' lounge seat' + (lounge.length > 1 ? 's ' : ' ') + lounge.join(', ') : ' (no lounge row)'}, New reply on ${marks.narrow}`);
       for (const id of new Set([...picks, ...lounge])) {
