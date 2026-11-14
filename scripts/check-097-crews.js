@@ -74,7 +74,9 @@ module.exports = async (ctx) => {
   const reqs = new Map();
   let T0 = Date.now(); /* the reload's start: request times in the diagnostics */
   const ses = ctx.win.webContents.session;
-  ses.webRequest.onBeforeRequest({ urls: ['file://*/*'] }, (d, cb) => { reqs.set(d.id, { url: decodeURIComponent(d.url), raw: d.url, status: 0, error: '', t0: Date.now() - T0, type: d.resourceType }); cb({}); });
+  ses.webRequest.onBeforeRequest({ urls: ['file://*/*'] }, (d, cb) => { reqs.set(d.id, { url: decodeURIComponent(d.url), raw: d.url, status: 0, error: '', t0: Date.now() - T0, type: d.resourceType });
+    /* spec 097 FR-363 (T320): a world's stylesheet answers 400 ms late in every load, so the room is drawn before it applies on any machine (on CI's slow disk it was only sometimes): a base rule that names another world's floor then requests that world's pack */
+    if (/\/realoffice\/worlds\/[a-z0-9-]+\/world\.css$/.test(d.url)) setTimeout(() => cb({}), 400); else cb({}); });
   ses.webRequest.onCompleted({ urls: ['file://*/*'] }, (d) => { const e = reqs.get(d.id); if (e) { e.status = d.statusCode; e.t1 = Date.now() - T0; } });
   ses.webRequest.onErrorOccurred({ urls: ['file://*/*'] }, (d) => { const e = reqs.get(d.id); if (e) { e.error = d.error; e.t1 = Date.now() - T0; } });
   /* the page picks a frame's file by srcset and sizes (img() in realoffice.js: the half-size .h.webp or the full one); when `sizes` or `srcset` changes as the layout settles (slow Windows CI),
