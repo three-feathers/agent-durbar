@@ -210,10 +210,10 @@ body.has-bridge #topBtns{display:flex}
 /* FR-030 (#309): a preview card (about 160x100) with a mini room in the theme's own colours (--sw-* set from validated tokens) */
 .thpick{position:relative;display:flex;flex-direction:column;align-items:stretch;gap:6px;width:100%;min-height:100px;padding:6px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);cursor:pointer;text-align:left;font:inherit;color:var(--ink)}
 .thpick:hover{border-color:var(--line-2);background:var(--raised)}
-.thpick[aria-pressed=true]{border-color:var(--focus,#2f5f8a);box-shadow:0 0 0 2px var(--stat-sel-ring);background:var(--raised)}
-.thpick[aria-pressed=true]:not(:focus-visible){outline:2px solid var(--focus,#2f5f8a);outline-offset:-1px} /* spec 052 FR-052: selected is not colour only (the check mark too) */
+.thpick[aria-pressed=true],.thpick[aria-checked=true]{border-color:var(--focus,#2f5f8a);box-shadow:0 0 0 2px var(--stat-sel-ring);background:var(--raised)}
+.thpick[aria-pressed=true]:not(:focus-visible),.thpick[aria-checked=true]:not(:focus-visible){outline:2px solid var(--focus,#2f5f8a);outline-offset:-1px} /* spec 052 FR-052: selected is not colour only (the check mark too) */
 /* spec 052 R3: the chosen theme also carries a small check badge (top right, over the preview; no size change) */
-.thpick[aria-pressed=true]::after{content:"\2713";position:absolute;top:4px;right:4px;z-index:1;width:16px;height:16px;border-radius:50%;background:var(--focus,#2f5f8a);color:#fff;font-size:10.5px;font-weight:700;line-height:16px;text-align:center;pointer-events:none}
+.thpick[aria-pressed=true]::after,.thpick[aria-checked=true]::after{content:"\2713";position:absolute;top:4px;right:4px;z-index:1;width:16px;height:16px;border-radius:50%;background:var(--focus,#2f5f8a);color:#fff;font-size:10.5px;font-weight:700;line-height:16px;text-align:center;pointer-events:none}
 .thsw{position:relative;display:block;height:58px;border-radius:8px;border:1px solid var(--line-2);overflow:hidden;background:var(--sw-bg,var(--bg))}
 .thsw i{position:absolute;display:block}
 .thsw-wall{left:0;right:0;top:0;height:46%;background:var(--sw-tint,var(--tint-blue));border-bottom:3px solid var(--sw-wall,var(--wall-blue))}
@@ -222,7 +222,7 @@ body.has-bridge #topBtns{display:flex}
 .thsw-ag{left:46%;width:8%;aspect-ratio:1;bottom:58%;border-radius:50%;background:var(--sw-agent,var(--sage));box-shadow:0 0 0 1.5px var(--sw-ink,var(--ink))}
 .chsw{display:block;height:58px;border-radius:8px;border:1px solid var(--line-2);overflow:hidden;background:var(--bg)} /* spec 077 FR-068: one figure per Characters choice */
 .chsw svg{display:block;width:58px;height:58px;margin:0 auto}
-.thpick:disabled{opacity:.6;cursor:not-allowed} /* spec 102 FR-320: a set that is not open yet */
+.thpick:disabled,.thpick[aria-disabled=true]{opacity:.6;cursor:not-allowed} /* spec 102 FR-320: a set that is not open yet */
 .chsw-px{image-rendering:pixelated} /* spec 102 FR-320: a pixel set keeps its pixels in its pick preview */
 .thtx{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 6px;min-width:0;padding:0 2px}
 .thtx b{flex:0 1 auto;font-size:12px;font-weight:600;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} /* spec 052 FR-053: one line */
