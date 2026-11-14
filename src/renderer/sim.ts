@@ -1548,7 +1548,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     const simMcpAuth = simQs?.get('simmcpauth') ?? '';
     /* the apps whose rows sign in in the simulator, with the texts their adapters send (src/adapters/copilot.ts, claude.ts) */
     const SIM_SIGN_IN: Record<string, { steps: (n: string) => string; note: string; restart: boolean; noCall: string }> = {
-      copilot: { steps: () => "Sign in is not available for this server from Agent Durbar now. A sign-in made in the Copilot CLI did not carry over to Durbar's sessions when tried (2026-10-23), so none is offered. Switch off for this session if you do not need it.", note: 'Checked once on a real account; other servers and systems not yet.', restart: false, noCall: 'This Copilot version cannot start a sign-in from Agent Durbar.' },
+      copilot: { steps: () => "Sign in is not available for this server from Agent Durbar. Switch it off for this session if you do not need it.", note: 'Checked once on a real account; other servers and systems not yet.', restart: false, noCall: 'This Copilot version cannot start a sign-in from Agent Durbar.' },
       claude: { steps: (n) => 'If Sign in is not available, run `claude mcp login ' + n + "` in a terminal and finish in your browser. This works only for a server in Claude Code's own settings. Then press Restart on this row.", note: 'Not checked on a real account yet.', restart: true, noCall: 'This Claude Code version cannot start a sign-in from Agent Durbar.' },
     };
     const simSignApp = (s: SimAgent) => SIM_SIGN_IN[s.info.adapterId ?? 'copilot'];

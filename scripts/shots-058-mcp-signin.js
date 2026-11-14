@@ -209,7 +209,7 @@ module.exports = async (ctx) => {
     assert.ok(await js(`!!window.__row('my-notes').querySelector('.srv-steps')`), 'the note is open by default');
     {
       const st = await js(`window.__row('my-notes').querySelector('.srv-steps').textContent`);
-      assert.ok(/did not carry over to Durbar's sessions/.test(st) && /Switch off for this session/.test(st), 'FR-246: the honest note: ' + st);
+      assert.ok(/^Sign in is not available for this server from Agent Durbar\. Switch it off for this session if you do not need it\.$/.test(st.trim()) && !/CLI|copilot/i.test(st), 'FR-246: the owner-chosen note, no CLI mention: ' + st);
       assert.ok(!/\/mcp auth|copilot login|`copilot`|run copilot/i.test(st) && !(await js(`!!window.__row('my-notes').querySelector('.srv-steps code, button[data-copysteps]')`)), 'FR-246: no CLI command, no Copy: ' + st);
     }
     await check(w, 'manual');

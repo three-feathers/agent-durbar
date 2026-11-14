@@ -71,7 +71,7 @@ async function main(): Promise<void> {
         };
         const claudeLike = await mk('If Sign in is not available, run `claude mcp login {name}` in a terminal.');
         assert.deepStrictEqual([claudeLike.signInHasCommand, /claude mcp login signed-out/.test(claudeLike.signInSteps ?? '')], [true, true], 'FR-246: a steps text with a command sets signInHasCommand (the terminal-steps button depends on it)');
-        const copilotLike = await mk('Sign in is not available for this server from Agent Durbar now. Switch off for this session if you do not need it.');
+        const copilotLike = await mk('Sign in is not available for this server from Agent Durbar. Switch it off for this session if you do not need it.');
         assert.strictEqual('signInHasCommand' in copilotLike, false, 'FR-246: a command-less note leaves the flag unset');
         assert.ok(!!copilotLike.signInSteps, 'FR-246: the note itself is still sent');
       }
@@ -507,7 +507,7 @@ async function main(): Promise<void> {
       {
         const steps = ad.capabilities.mcpSignInSteps ?? '';
         assert.ok(steps.length > 0 && !/`|\/mcp auth|copilot login|run copilot/i.test(steps), 'FR-246: the Copilot row has no CLI command (a CLI sign-in did not carry over): ' + steps);
-        assert.match(steps, /did not carry over to Durbar's sessions/, 'FR-246: says so');
+        assert.strictEqual(steps, "Sign in is not available for this server from Agent Durbar. Switch it off for this session if you do not need it.", 'FR-246: the owner-chosen note (2026-11-14), no CLI mention');
       }
       const sid = await ad.start({ workspace: ws, quiet: true });
       const s = client.last;
