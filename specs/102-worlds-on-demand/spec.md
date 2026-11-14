@@ -1753,6 +1753,30 @@ Four defects found by the reviewer (Linux run of `shots-097-moments retro` and a
 
 **Checks.** `test-realoffice-aisles`: the named case (every sign at least 190 px); a seeded fuzz of 5,400 layouts (1 to 9 floors, both sizes, mixed states): every sign at least min(signMin, its flat width), no scroll, and the share that draws floors printed; 1/1/13 draws the flat hall byte for byte. `shots-097-moments retro`, step `cells`: every sign's "New session" and "Folder actions" button lies inside its sign and `elementFromPoint` at its centre returns it. Mutants, each killed at its own label: the cut allowed back down to 120 px ("the named case ... no sign is cut below"); in the driver, a sign's width forced to 100 px.
 
+## Changes 2026-11-14: round 4 of the review of #1741, owner decision: the STRICT rule for the signs of the All floors view (spec 097 FR-104, FR-018; T223 in part, issue #1268; no new FR)
+
+**Owner (verified on GitHub, vikramgorla):** Vikram, Telegram DM, 2026-11-14 13:51 UTC, answer "1": the strict rule. Recorded at https://github.com/three-feathers/agent-durbar/pull/1741#issuecomment-6878254378 (and #1746 comment 6878254089). It replaces the "min(signMin, its flat width)" form of the entry above, in the arcade's first sign and every other.
+
+**Rule.** A folder sign is exactly as wide as in the same hall without floors: never narrower, never wider than its own room. A storey tag never changes a sign's width: it goes to the first zone of its storey, in reading order, where its **whole** text (and no less than 70 px) fits beside the sign at that width and before the next zone on the row; if no zone of a storey can take it, **the hall is drawn without floors** (all storeys, as before the storeys). The tag is no longer cut to fit and no sign is cut for it. Abbreviated floor tags for many floors are **not decided** and not built. A sign the forced row break moves is, as before, measured in the hall as it is (rows and columns change its room), so the test compares it with its flat width where it stands in the same place, and not below min(signMin, flat) where it moved.
+
+**Exact fallback table (the arcade, pure layout, seeded fuzz of 300 random halls of 15 agents or fewer per floor count and size, mixed states; share of halls that still draw floors).** All three columns at 1440x900 / 1280x800.
+
+| floors | at b2e53eaca (before round 4) | min(signMin, flat) form (round 4, first push) | strict rule (this entry) |
+|---|---|---|---|
+| 1 | 0 % / 0 % | 0 % / 0 % | 0 % / 0 % |
+| 2 | 100 % / 100 % | 99 % / 96 % | 94 % / 92 % |
+| 3 | 100 % / 100 % | 89 % / 70 % | 67 % / 60 % |
+| 4 | 100 % / 100 % | 59 % / 32 % | 27 % / 20 % |
+| 5 | 100 % / 100 % | 35 % / 6 % | 3 % / 4 % |
+| 6 | 100 % / 100 % | 10 % / 0 % | 0 % / 0 % |
+| 7 | 100 % / 100 % | 1 % / 0 % | 0 % / 0 % |
+| 8 | 100 % / 100 % | 1 % / 0 % | 0 % / 0 % |
+| 9 | 100 % / 100 % | 0 % / 0 % | 0 % / 0 % |
+
+At b2e53eaca a sign was cut below 190 px in 3,798 of the 4,800 halls with 2 or more floors. The named splits (5/5/5, 4+1 on each floor, 4/4/4, 3/3/3, 6/5/4, 7/4/4, 3 each over five folders, 8/7, 6/3/3, 5/5/3, 5/5/4, 2/3/4/2/2/1 on 5 floors, 2/1/3/2 on 4 floors) still draw floors at both sizes; **1/1/13 over three floors draws the hall without floors**. The simulator's 15 agents over three floors: see the driver step. Halls of more than about four floors are drawn flat in this hall (the lift still lists every floor): an honest limit, and the reason the owner may later decide abbreviated tags.
+
+**Checks.** `test-realoffice-aisles`: the named case (every sign at least 190 px and not narrower than flat); the seeded fuzz of 5,400 layouts (1 to 9 floors, both sizes): a sign is exactly as wide as in the hall without floors where it stands in the same place, else not below min(signMin, flat); the share table is printed. `shots-097-moments retro`, step `cells`: every sign's "New session" and "Folder actions" button lies inside its sign and is reachable at its centre. Mutants, each killed at its own label: a tag allowed to cut the sign back to 120 px ("the named case ... no sign is narrower than in the hall without floors"); in the driver, a sign's width forced to 100 px.
+
 ## Changes 2026-11-14: T275 and T276 are ticked: the arcade layout job was delivered on 2026-11-08 (issue #1303, no new FR)
 
 Linux asked what is really open before building. Nothing is. T275 and T276 were written on 2026-11-07/08 and left unticked when their fix landed (commit `f9489c46e`, *Changes 2026-11-08*: "T275's job line, taken here with the fix; T275 keeps the rest of its list"; there is no rest: the plate fix, the `OFFICE_WORLD` flag and the job were all that T275 lists). **Measured at `2de1d8a6e` (main), 2026-11-14, simulator only:** `OFFICE_REDUCED_MOTION=1 OFFICE_VIEW=real OFFICE_WORLD=retro node scripts/check-office-overlap.js` (the command the `arcade` job in `scripts/check-parallel.js` spawns): "office check (Real office): 31/31 checks passed, 0 failed", where T226 recorded 12 of 31 failing with "plate sim-4 cuts its lines (21>19)"; `node scripts/test-check-parallel.js` passes (the `arcade` job with both `OFFICE_VIEW=real` and `OFFICE_WORLD=retro`); `npm run test:realoffice-layout` passes ("arcade plates: 42 cabinet and 12 lounge plates, box 21 px, line needs 21 px (21 waiting or limit)"). Later arcade plate work (T261, the narrow plate, the 21 px plate's neighbours) kept it at 31/31. Issue #1303 was already closed. **Not re-run here:** the "plate 2 px shorter fails" mutant and the `shots-102-arcade` pictures at 15 agents (both sizes): they are as the T276 pull request left them and `ui-suite` runs the pictures; Linux and Windows.
