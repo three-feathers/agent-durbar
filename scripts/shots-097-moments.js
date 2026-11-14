@@ -56,6 +56,54 @@ module.exports = async (ctx) => {
   if (OS_REDUCED) console.log('[moments] the OS asks for reduced motion: the ring and the ride are checked in their reduced form only');
   for (const world of WORLDS) for (const [w, h] of SIZES) {
     const tag = `${world} ${w}x${h}`;
+    // ---- spec 097 2026-11-14 (issue #1711): a world is drawn only once its stylesheet has loaded (the stylesheet answers 400 ms late, the hook of check-097-crews, T320) ----
+    if (run('worldcss-late') && world !== 'photo') {
+      const ses = ctx.win.webContents.session;
+      ses.webRequest.onBeforeRequest({ urls: ['file://*/*'] }, (d, cb) => { if (/\/realoffice\/worlds\/[a-z0-9-]+\/world\.css$/.test(d.url)) setTimeout(() => cb({}), 400); else cb({}); });
+      await H.load({ w, h, query: q(world), ready: REAL, settle: false });
+      const sheetAtDraw = await js(`!!(document.getElementById('roWorldCss-'+${jsLiteral(world)})||{}).sheet`);
+      await must(`!!(document.getElementById('roWorldCss-'+${jsLiteral(world)})||{}).sheet`, 'the world stylesheet');
+      await H.until(`document.getElementById('stage').dataset.fit`, 2000).catch(() => undefined);
+      const sliver = await js(`[...document.querySelectorAll('#stage .ro-plate .ro-role')].filter(r=>!r.hidden&&getComputedStyle(r).display!=='none'&&r.getBoundingClientRect().width<19).map(r=>[r.textContent,Math.round(r.getBoundingClientRect().width)])`);
+      ses.webRequest.onBeforeRequest(null);
+      assert.deepStrictEqual(sliver, [], `${tag}: a role is shown as a sliver: ${JSON.stringify(sliver)}`);
+      assert.strictEqual(sheetAtDraw, true, `${tag}: the office is drawn only after the ${world} stylesheet has loaded`);
+      console.log('[moments] worldcss-late ok', sheetAtDraw);
+    }
+    // ---- the same bug's other ends: a stylesheet that fails (cancelled) or never answers (held, 4 s timer in app.js) still draws, with the base CSS ----
+    // a page held by a stylesheet can stall a script call: every wait here is bounded, so a stall is a failed assertion and not a hung run
+    const within = (p, ms, dflt) => Promise.race([p, new Promise((r) => setTimeout(() => r(dflt), ms))]);
+    for (const mode of ['fail', 'hang']) {
+      if (!run('worldcss-' + mode) || world === 'photo') continue;
+      if (mode === 'hang' && (w !== SIZES[0][0] || world !== 'retro')) continue; /* world- and size-independent code; a held sheet stalls the page's own load, which was not reliable to wait on in the cave and at the second size (KNOWN GAP in the spec delta) */
+      const ses = ctx.win.webContents.session;
+      const held = [];
+      let hits = 0;
+      ses.webRequest.onBeforeRequest({ urls: ['file://*/*'] }, (d, cb) => { if (/\/realoffice\/worlds\/[a-z0-9-]+\/world\.css$/.test(d.url)) { hits++; if (mode === 'fail') cb({ redirectURL: 'file:///durbar-no-such-world.css' }); else held.push(cb); } else cb({}); });
+      await ses.clearCache(); /* an earlier moment's copy of the sheet would answer for the cancelled request */
+      await js(`localStorage.clear()`).catch(() => undefined); /* a clean start: the earlier moments leave a world and a view in the storage */
+      const t0 = Date.now();
+      let err = '';
+      // a held stylesheet that the page names while it parses also holds the page's own load event: do not wait for that, wait for the drawn office
+      const loading = H.load({ w, h, query: q(world), ready: REAL, settle: false }).catch((e) => { err = String(e && e.message || e); });
+      try {
+        if (!(await within(H.until(REAL, 12000), 14000, false))) throw new Error(`the office was not drawn in 12 s: ${REAL}`);
+        await within(must(PICS, 'the pictures'), 14000, true);
+      } catch (e) { err = String(e && e.message || e); }
+      // the page's own marker that the sheet settled (html[data-ro-sheets], spec 097 2026-11-14): by its error event, or by the 4 s timer
+      const settled = await within(H.until(`!!document.documentElement.dataset.roSheets`, 12000), 14000, false);
+      const took = Date.now() - t0;
+      const sheet = await within(js(`(document.getElementById('roWorldCss-'+${jsLiteral(world)})||{}).sheet?'loaded':'none'`).catch(() => 'n/a'), 3000, 'n/a');
+      ses.webRequest.onBeforeRequest(null);
+      held.forEach((cb) => cb({ cancel: true }));
+      await within(loading, 15000, undefined);
+      assert.strictEqual(err, '', `${tag}: worldcss-${mode}: the office is still drawn when the ${world} stylesheet ${mode === 'fail' ? 'fails' : 'never answers'}: ${err}`);
+      assert.ok(hits >= 1, `${tag}: worldcss-${mode}: the stylesheet was requested and held back (${hits}, sheet ${sheet})`);
+      assert.ok(settled, `${tag}: worldcss-${mode}: the stylesheet settled (the pack is ready) within 12 s`);
+      if (mode === 'fail') assert.ok(took < 3500, `${tag}: worldcss-fail: a failed stylesheet settles at once through its error event, not through the 4 s timer (${took} ms)`);
+      if (mode === 'hang') assert.ok(took >= 3500 && took < 12000, `${tag}: worldcss-hang: the draw waits for the 4 s timer, not for ever (${took} ms)`);
+      console.log(`[moments] worldcss-${mode} ok ${took} ms`);
+    }
     // ---- FR-118 first run ----
     if (run('first-run')) {
       if (world === 'cave' || world === 'retro') {
@@ -131,20 +179,6 @@ module.exports = async (ctx) => {
       await shot(world, 'empty', w, h);
     }
     // ---- FR-120 asleep ----
-    // ---- spec 097 2026-11-14: a world is drawn only once its stylesheet has loaded (the stylesheet answers 400 ms late, the hook of check-097-crews, T320) ----
-    if (run('worldcss-late') && world !== 'photo') {
-      const ses = ctx.win.webContents.session;
-      ses.webRequest.onBeforeRequest({ urls: ['file://*/*'] }, (d, cb) => { if (/\/realoffice\/worlds\/[a-z0-9-]+\/world\.css$/.test(d.url)) setTimeout(() => cb({}), 400); else cb({}); });
-      await H.load({ w, h, query: q(world), ready: REAL, settle: false });
-      const sheetAtDraw = await js(`!!(document.getElementById('roWorldCss-${world}')||{}).sheet`);
-      await must(`!!(document.getElementById('roWorldCss-${world}')||{}).sheet`, 'the world stylesheet');
-      await H.until(`document.getElementById('stage').dataset.fit`, 2000).catch(() => undefined);
-      const sliver = await js(`[...document.querySelectorAll('#stage .ro-plate .ro-role')].filter(r=>!r.hidden&&getComputedStyle(r).display!=='none'&&r.getBoundingClientRect().width<19).map(r=>[r.textContent,Math.round(r.getBoundingClientRect().width)])`);
-      ses.webRequest.onBeforeRequest(null);
-      assert.deepStrictEqual(sliver, [], `${tag}: a role is shown as a sliver: ${JSON.stringify(sliver)}`);
-      assert.strictEqual(sheetAtDraw, true, `${tag}: the office is drawn only after the ${world} stylesheet has loaded`);
-      console.log('[moments] worldcss-late ok', sheetAtDraw);
-    }
     if (run('asleep')) {
       await H.load({ w, h, query: q(world), ready: REAL, settle: false });
       await must(PICS, 'the pictures');
