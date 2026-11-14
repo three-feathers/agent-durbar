@@ -7,6 +7,7 @@
  *
  * For each world (Photo office; the Prehistoric cave behind its flag) at 1440x900 and 1280x800 it checks the moments listed in MOMENTS below
  * (each states what it asserts) and writes <SHOTS_OUT>/<world>-<moment>-<w>x<h>.png. Driver waits use until(); nothing sleeps for a fixed time.
+ * Developer aids: MOMENTS_CPU_SLOW=<2..20> slows the page's CPU for the whole run, like a loaded runner (issue #1753); MOMENTS_MUTANT=notes-nowait reads the post-its before the crowd is drawn (must fail).
  */
 const os = require('os');
 const fs = require('fs');
@@ -51,6 +52,8 @@ module.exports = async (ctx) => {
     const dbg = ctx.win.webContents.debugger; if (!dbg.isAttached()) dbg.attach('1.3');
     await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
   }
+  /* a developer aid (issue #1753): MOMENTS_CPU_SLOW=<2..20> slows the page's CPU by that factor (CDP) for the whole run, every step and size, as a loaded runner does (never reset, on purpose); the notes step's race showed at 4 */
+  if (/^([2-9]|1\d|20)$/.test(process.env.MOMENTS_CPU_SLOW || '')) { const dbg = ctx.win.webContents.debugger; if (!dbg.isAttached()) dbg.attach('1.3'); await dbg.sendCommand('Emulation.setCPUThrottlingRate', { rate: Number(process.env.MOMENTS_CPU_SLOW) }); console.log('[moments] the page CPU is slowed ' + process.env.MOMENTS_CPU_SLOW + 'x (MOMENTS_CPU_SLOW)'); }
   await H.load({ w: 1440, h: 900, query: { simfreeze: '1' }, ready: 'fit', settle: false });
   const OS_REDUCED = await js(`matchMedia('(prefers-reduced-motion: reduce)').matches`);
   if (OS_REDUCED) console.log('[moments] the OS asks for reduced motion: the ring and the ride are checked in their reduced form only');
@@ -410,11 +413,20 @@ module.exports = async (ctx) => {
       await H.load({ w, h, query: q(world), ready: REAL, settle: false }); /* the Boss's post-its are the simulator's own waiting agents (a visit to the Boss is not pinned) */
       await must(PICS, 'the pictures');
       const PL = ['boss', 'bank', 'coffee', 'library', 'software', 'terminal', 'web', 'other'];
-      await js('window.__durbarSimUi.uncrowd();' + PL.filter((id) => id !== 'boss').map((id, i) => 'window.__durbarSimUi.crowd(' + jsLiteral(id) + ',1,' + (8 + i) + ')').join(';'));
+      /* issue #1753: the simulator's own visits (replayed tool calls at the Terminal, the Software library and the Library, the cap at the Bank, the waiting agents at the Boss) are
+         promoted 600 ms after their call on the wall clock; wait for them, so the scene before the crowd is the same on a fast and a slow machine (9 post-its, no coffee, web or other) */
+      await must(H.SETTLED, "the simulator's own visits settled");
+      const CROWD = 'window.__durbarSimUi.uncrowd();' + PL.filter((id) => id !== 'boss').map((id, i) => 'window.__durbarSimUi.crowd(' + jsLiteral(id) + ',1,' + (8 + i) + ')').join(';');
+      const NOWAIT = process.env.MOMENTS_MUTANT === 'notes-nowait'; /* the mutant reads in the same task as the crowd, before its render: it must fail at "one post-it for each place" */
+      if (!NOWAIT) await js(CROWD);
       const CONTRAST = `const P=s=>{const m=/rgba?\\(([^)]+)\\)/.exec(s);return m?m[1].split(/[ ,\\/]+/).filter(Boolean).slice(0,3).map(Number):[0,0,0]},Lm=c=>{const f=x=>{x/=255;return x<=0.03928?x/12.92:Math.pow((x+0.055)/1.055,2.4)};return 0.2126*f(c[0])+0.7152*f(c[1])+0.0722*f(c[2])},K=(a,b)=>{const x=Lm(P(a)),y=Lm(P(b));return (Math.max(x,y)+0.05)/(Math.min(x,y)+0.05)};`;
-      const readNotes = () => js('(()=>{' + CONTRAST + "const ARC=" + jsLiteral(world === 'retro') + ";return [...document.querySelectorAll('#stage .ro-away')].map(e=>{const c=getComputedStyle(e);return {place:e.dataset.place,text:e.textContent,bg:c.backgroundColor,key:ARC?c.color:c.backgroundColor,ink:c.color,ratio:K(c.color,c.backgroundColor),size:parseFloat(c.fontSize)}})})()");
-      await must(`document.querySelectorAll('#stage .ro-away').length>=8`, 'a post-it for each place');
-      const ns = await readNotes();
+      const NOTES = '(()=>{' + CONTRAST + "const ARC=" + jsLiteral(world === 'retro') + ";return [...document.querySelectorAll('#stage .ro-away')].map(e=>{const c=getComputedStyle(e);return {place:e.dataset.place,text:e.textContent,bg:c.backgroundColor,key:ARC?c.color:c.backgroundColor,ink:c.color,ratio:K(c.color,c.backgroundColor),size:parseFloat(c.fontSize)}})})()";
+      const readNotes = () => js(NOTES);
+      /* issue #1753: crowd() only queues a render (requestAnimationFrame), and the scene before it already has 8 or more post-its, so a count alone was met by the old scene
+         on a slow page. settleNow() draws the queued render before the count and the read. */
+      if (!NOWAIT) await must(`window.__durbarSimUi.settleNow()`, 'the crowd drawn');
+      if (!NOWAIT) await must(`document.querySelectorAll('#stage .ro-away').length>=8`, 'a post-it for each place');
+      const ns = NOWAIT ? await js(CROWD + ';' + NOTES) : await readNotes();
       assert.deepStrictEqual([...new Set(ns.map((x) => x.place))].sort(), PL.slice().sort(), `${tag}: one post-it for each place: ${JSON.stringify(ns.map((x) => [x.place, x.text]))}`);
       /* the arcade's ticket is a dark card whose edge and words carry the place's colour (102 FR-264, owner 2026-11-03) */
       assert.strictEqual(new Set(ns.map((x) => x.key)).size, PL.length, `${tag}: one colour per place, all different: ${JSON.stringify(ns.map((x) => [x.place, x.key]))}`);
