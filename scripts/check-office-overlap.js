@@ -627,7 +627,8 @@ async function driver(ctx) {
       if (shotsDir) {
         await H.pointerOff('#stage', '.ro-plate, .ro-screen, .ro-desk'); /* the real pointer rests mid-window under xvfb, on a plate (its tooltip covered cabinets in the 1280x800 picture, PR 1756 review): move it off first */
         await H.calm({ blur: true });
-        if (!(await H.until(`!document.querySelector('#appTip:not([hidden])')`, 3000))) { total++; failed++; console.log(`FAIL ${tag}: a tooltip is showing in the picture`); }
+        if (process.env.OFFICE_MUTANT === 'tooltip') await ctx.js(`(()=>{const p=document.querySelector('#stage .ro-plate');p.dispatchEvent(new PointerEvent('pointerover',{bubbles:true,pointerType:'mouse'}))})()`), await ctx.sleep(1200); /* the hover card opens after its delay */ /* test only: a plate hovered again after the pointer left (a mutant of the assert below: it must fail "a tooltip is showing in the picture"; the assert watches the app tooltip and the hover card #roZoom) */
+        if (!(await H.until(`!document.querySelector('#appTip:not([hidden]), #roZoom')`, 3000))) { total++; failed++; console.log(`FAIL ${tag}: a tooltip is showing in the picture`); }
         await ctx.sleep(300); await ctx.shot(path.join(shotsDir, `${prefix}-${tag.replace(/ /g, '-')}.png`));
       }
       /* (a plate other than the one with the New reply tag: opening that chat reads the reply, and a read finished agent moves to the lounge) chat open: the chat takes the window (spec 001: body.panel-open hides the office); the page must not overflow, and closing it draws the same office */
