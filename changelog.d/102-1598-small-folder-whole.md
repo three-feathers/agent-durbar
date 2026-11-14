@@ -1,1 +1,0 @@
-- Retro arcade: with a notice strip showing at 1280 wide, a folder of 4 or fewer agents is no longer split across two rows when 10 agents are in 3 folders; the hall takes the floor's padding to keep it whole (spec 102, T342, issue #1598).

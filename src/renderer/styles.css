@@ -1798,7 +1798,7 @@ html[data-motion-off] .af-notice :is(.afn-dot,.afn-ring-fg,.dlg),html[data-motio
 @media (forced-colors:active){
   .pill,.stat,.chip,.btn,.room-new{border:1px solid CanvasText}
   [aria-pressed=true],[aria-current]:not([aria-current=false]){outline:2px solid Highlight;outline-offset:-2px}
-  .inbox:focus-within,.thpick[aria-pressed=true]{outline:2px solid Highlight}
+  .inbox:focus-within,.thpick[aria-pressed=true],.thpick[aria-checked=true]{outline:2px solid Highlight}
   .dot,.pill i{forced-color-adjust:none}
   .btn:disabled,.btn[aria-disabled=true]{color:GrayText;border-color:GrayText}
 }

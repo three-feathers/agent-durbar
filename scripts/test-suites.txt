@@ -137,6 +137,7 @@ test:skeleton
 test:teamtemplate
 test:teamstore
 test:teamstore-fs
+test:teams-ui
 test:teamsipc
 test:names
 test:renameadapters
@@ -208,6 +209,7 @@ test:helpercard
 test:weeklyaudit
 test:newfolder
 test:newfolderop
+test:addkey
 test:newfolderipc
 test:newfoldergit
 test:supplychain
@@ -219,6 +221,8 @@ test:docsscripts
 test:citypecheck
 test:worldmatrix
 test:world-catalogue
+test:world-distinct
+test:world-contact-sheet
 test:worldzip
 test:worldpack
 test:world-packs
@@ -251,6 +255,7 @@ test:simversion
 test:momentsregistry
 test:paritytick
 test:picturebudget
+test:chargroups
 test:dangersites
 test:specnumbers
 test:pencilpark
