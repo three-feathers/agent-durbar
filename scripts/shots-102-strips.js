@@ -4,6 +4,7 @@
  *
  *   DRIVER_WORLD=retro node scripts/ui-suite.js --only shots-102-strips            (the arcade, both sizes, 15 agents; and 16 agents at 1280x800)
  *   node scripts/ui-suite.js --only shots-102-strips-photo                         (the Photo office: its strips stay in the flow)
+ *   (the restore strip joining an already folded bar: the alert region is written once)
  *   (the same, then Office -> List with the overlay open: the strips are back in the flow, no bar, no overlay; and back)
  *   SHOTS=1 OUT=<folder>  also saves 102-1589-<case>-<w>x<h>.png
  *
@@ -138,6 +139,25 @@ module.exports = async (ctx) => {
       }
     }
   }
+  /* the restore strip JOINS an already folded bar (the path of the review finding): folded with four strips and no restore strip, #stripAlert is empty;
+     the strip arrives (renderRestoreStrip, as the app does for a restored Allow all) and the region holds the phrase, written once: a redraw does not write it again */
+  await setup(CASES[3], 1280, 800);
+  await js(`document.querySelector('#restoreStrip [data-ns="keep"]').click();0`);
+  await until(`document.getElementById('restoreStrip').hidden`, 4000);
+  await settle();
+  const J0 = await js(STATE);
+  assert.ok(J0.bar && J0.yield && !J0.shown.includes('restore') && J0.shown.length === 4, `join: the bar is folded over four strips, no restore strip: ${JSON.stringify(J0)}`);
+  assert.strictEqual(await js(`document.getElementById('stripAlert').textContent`), '', 'join: the alert region is empty before the restore strip arrives');
+  await js(`(()=>{const r=document.getElementById('stripAlert');window.__alertWrites=0;new MutationObserver(m=>{window.__alertWrites+=m.length}).observe(r,{childList:true,characterData:true,subtree:true});delete document.getElementById('restoreStrip').dataset.kept;window.__durbarSimUi.renderRestoreStrip();return 0})()`);
+  assert.ok(await until(`document.getElementById('stripAlert').textContent==='Allow all restored'`, 4000), 'join: the restore strip joined the folded bar and the alert region holds the phrase');
+  assert.ok(await until(`document.getElementById('restoreStrip')&&!document.getElementById('restoreStrip').hidden&&document.body.classList.contains('strips-yield')`, 4000), 'join: the restore strip is shown and folded in');
+  await js(`window.dispatchEvent(new Event('resize'));0`);
+  await settle();
+  await js(`window.dispatchEvent(new Event('resize'));0`);
+  await settle();
+  const J1 = await js(`JSON.parse(JSON.stringify({writes:window.__alertWrites,text:document.getElementById('stripAlert').textContent,role:document.getElementById('stripBar').getAttribute('role'),yield:document.body.classList.contains('strips-yield')}))`);
+  assert.ok(J1.yield && J1.text === 'Allow all restored' && J1.role === 'status', `join: still folded, the phrase stays, the bar stays status: ${JSON.stringify(J1)}`);
+  assert.strictEqual(J1.writes, 1, `join: the alert region was written once, not again by a redraw (${J1.writes} mutations)`);
   /* the yield ends with the Office view: List puts the strips back in the flow and forgets the open overlay; Office brings the bar back */
   await setup(CASES[3], 1280, 800);
   await js(`document.getElementById('sbBtn').click();0`);
