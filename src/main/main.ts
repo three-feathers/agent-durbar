@@ -91,6 +91,7 @@ import type { ChatFileRef } from '../adapters/vscodeChat';
 import { McpStore } from './mcpstore';
 import { AgentStateTracker } from './mcp/agentstate';
 import { maskMcpEvent, maskMcpHistory } from './mcpmask';
+import { savedMcpOff } from './mcpsavedoff';
 import { registerMcpIpc, safeStorageCodec } from './mcpipc';
 import { MCP_SIGNIN_REFRESH_DEFAULT } from './mcpsigninrefresh';
 import { McpCostStore } from './mcpcosts';
@@ -217,7 +218,7 @@ const mcp = registerMcpIpc({
   store: () => mcpStore as McpStore,
   agents,
   ensureLive: (a) => ensureLive(a), // spec 058 FR-229
-  savedOff: { read: (a) => folderStore?.sessionMcpOff(wsKey(a), resumeIdFor(a.id)) ?? [], write: (a, names) => void folderStore?.setSessionMcpOff(wsKey(a), resumeIdFor(a.id), names) }, // spec 058 (2026-11-14 delta): server names only
+  savedOff: savedMcpOff(() => folderStore, wsKey, (id) => resumeIdFor(id)), // spec 058 (2026-11-14 delta): server names only
   router,
   dev,
   appOf: appIdOf,
@@ -445,8 +446,8 @@ function folderSetupStart(key: string, dirs: readonly string[], appId: string, t
   return { mcpServers: ap.mcpServers, ...(any ? { folderSetup: { hooks: ap.hooks, rules: ap.rules } } : {}), ...(hasFolderRules(ap) ? { rules: true as const } : {}) };
 }
 
-const startOptionsFor = (a: AgentInfo) => {
-  const base = { ...startOptionsOf(a, wsKey(a), DEFAULT_MODEL, asEffort(a.effort)), ...mcp.optionsFor(a.id) };
+const startOptionsFor = (a: AgentInfo, resumeSessionId?: string) => {
+  const base = { ...startOptionsOf(a, wsKey(a), DEFAULT_MODEL, asEffort(a.effort)), ...mcp.optionsFor(a.id, resumeSessionId ? { agent: a, sessionId: resumeSessionId } : undefined) }; // spec 058 FR-247: a resumed session starts with its saved switches
   const appId = router.adapterIdOf(a.id) ?? a.adapterId ?? registry.defaultId;
   const fs61 = folderSetupStart(wsKey(a), a.folders ?? [a.cwd], appId, new Set(Object.keys(base.mcpServers)));
   // spec 087 FR-019 (the organization policy, read in main) and FR-007c (the stored choice); the adapter decides what they mean
@@ -474,7 +475,7 @@ async function addWorkspace(
   draft.maxAiCredits = startCap(ad.capabilities?.capUnit, opts.maxAiCredits, folderStore?.get(wsKey(draft))?.maxAiCredits, settingsStore?.defaultMaxAiCredits);
   // spec 076 FR-203: the guard checks the mode and model of exactly these options and only then starts the adapter; a refusal throws
   // before the start (nothing started, nothing written), and advice is shown as a toast once the session has started (`agents:orgNote`)
-  const { result: id } = await startGuardOp(orgGuard, ad, { ...startOptionsFor(draft), resumeSessionId: opts.resumeSessionId });
+  const { result: id } = await startGuardOp(orgGuard, ad, { ...startOptionsFor(draft, opts.resumeSessionId), resumeSessionId: opts.resumeSessionId });
   router.bind(id, adapterId);
   const saved = folderStore?.get(wsKey(draft));
   const info: AgentInfo = { ...draft, id, hidden: saved?.hidden, label: saved?.label, defaultAgent: saved?.defaultAgent };

@@ -29,6 +29,7 @@ async function main(): Promise<void> {
     (require('../src/main/ipcguard') as typeof import('../src/main/ipcguard')).initSimGuard(false);
     const { registerMcpIpc } = require('../src/main/mcpipc') as typeof import('../src/main/mcpipc');
     const { McpStore } = require('../src/main/mcpstore') as typeof import('../src/main/mcpstore');
+    const { savedMcpOff } = require('../src/main/mcpsavedoff') as typeof import('../src/main/mcpsavedoff');
     const { FolderStore, parseSessionMcpOff, MAX_SESSION_MCP_OFF, MAX_MCP_OFF_NAMES } = require('../src/main/folders') as typeof import('../src/main/folders');
     /* eslint-enable @typescript-eslint/no-require-imports */
     const frame = { url: pathToFileURL(path.join(__dirname, '..', 'src', 'renderer', 'index.html')).href };
@@ -44,11 +45,17 @@ async function main(): Promise<void> {
     const sid = await ad.start({ workspace: ws, quiet: true });
 
     // one "run" of the app: a new store reading the saved file, new handlers, a new agents map (the same ids come back, as after a restart)
-    const boot = (): { agents: Map<string, never>; fs: InstanceType<typeof FolderStore>; mcp: ReturnType<typeof registerMcpIpc> } => {
+    // main's own helper (`savedMcpOff`, the key is wsKey + resumeIdFor), with main's wsKey rule; `rid` stands for resumeIdFor (a Codex thread id differs from the agent id)
+    const wsKey = (a: { workspaceFile?: string; cwd: string }): string => a.workspaceFile ?? a.cwd;
+    let rid = (id: string): string => id;
+    const writes = { n: 0 };
+    const boot = (readd = true, agentExtra: Record<string, unknown> = {}): { agents: Map<string, never>; fs: InstanceType<typeof FolderStore>; mcp: ReturnType<typeof registerMcpIpc> } => {
       const fstore = new FolderStore(file);
       fstore.load();
-      if (!fstore.get(ws)) fstore.upsert({ workspace: ws, permMode: 'read-only' });
-      const agents = new Map([[sid, { id: sid, cwd: ws, name: 'Mia', permMode: 'read-only' } as never]]);
+      if (readd && !fstore.get(agentExtra.workspaceFile ? String(agentExtra.workspaceFile) : ws)) fstore.upsert({ workspace: agentExtra.workspaceFile ? String(agentExtra.workspaceFile) : ws, permMode: 'read-only' });
+      const realSave = (fstore as unknown as { save(): void }).save.bind(fstore);
+      (fstore as unknown as { save(): void }).save = () => { writes.n++; realSave(); };
+      const agents = new Map([[sid, { id: sid, cwd: ws, name: 'Mia', permMode: 'read-only', ...agentExtra } as never]]);
       const router = { onEvent: () => () => undefined, forAgent: (id: string) => (agents.has(id) ? ad : undefined), adapterIdOf: () => 'fake' };
       const store = new McpStore(path.join(root, 'durbar-mcp.json'));
       store.load();
@@ -58,7 +65,7 @@ async function main(): Promise<void> {
         router: router as never,
         dev: { DURBAR_COPILOT_DIR: path.join(root, 'copilot') } as never,
         appOf: () => 'copilot',
-        savedOff: { read: (a) => fstore.sessionMcpOff(a.cwd, a.id), write: (a, names) => void fstore.setSessionMcpOff(a.cwd, a.id, names) },
+        savedOff: savedMcpOff(() => fstore, wsKey, (id) => rid(id)),
       });
       return { agents, fs: fstore, mcp };
     };
@@ -79,8 +86,16 @@ async function main(): Promise<void> {
 
     // app restart: everything new, only the saved file remains
     run = boot();
+    assert.ok(run.mcp.optionsFor(sid).disabledMcpServers.includes('wiki'), 'the restarted app starts the session with it off, before any dialog was opened');
     assert.deepStrictEqual(await offNames(), ['wiki'], 'after an app restart: still off');
-    assert.ok(run.mcp.optionsFor(sid).disabledMcpServers.includes('wiki'), 'the restarted app starts the session with it off');
+    // unchanged list: not written (a message re-saves it on every send)
+    const w0 = writes.n;
+    for (let i = 0; i < 20; i++) run.mcp.noteSession(sid);
+    assert.strictEqual(writes.n, w0, 'twenty messages with an unchanged list write nothing');
+    // a session resumed from Previous sessions: its agent is not in the office yet when the start options are built
+    const draft = { id: '', cwd: ws, name: 'Mia', permMode: 'read-only' } as never;
+    assert.ok(run.mcp.optionsFor('', { agent: draft, sessionId: sid }).disabledMcpServers.includes('wiki'), 'a resumed session starts with its saved switches');
+    assert.ok(!run.mcp.optionsFor('', { agent: draft, sessionId: 'another-session' }).disabledMcpServers.includes('wiki'), 'another session does not');
 
     // turning it back on persists too
     assert.deepStrictEqual(await call('agents:setMcp', sid, 'wiki', true), { ok: true });
@@ -101,17 +116,35 @@ async function main(): Promise<void> {
     run = boot();
     assert.deepStrictEqual(await offNames(), ['tool', 'wiki'], 'unknown names are not rows');
 
-    // a corrupt file: the switches are lost (nothing crashes), and the next switch saves again
+    // a corrupt file with the folder NOT re-added: a switch must not write over it (it could hold the person's other folders)
     fs.writeFileSync(file, '{ not json');
+    run = boot(false);
+    assert.deepStrictEqual(await offNames(), [], 'a corrupt file: nothing off, no crash');
+    await call('agents:setMcp', sid, 'wiki', false);
+    run.mcp.noteSession(sid);
+    assert.strictEqual(fs.readFileSync(file, 'utf8'), '{ not json', 'an unknown folder never rewrites the file');
+    // the folder added again: the next switch saves
     run = boot();
     assert.deepStrictEqual(await offNames(), [], 'a corrupt file: nothing off, no crash');
     assert.deepStrictEqual(await call('agents:setMcp', sid, 'wiki', false), { ok: true });
     assert.deepStrictEqual(await offNames(), ['wiki']);
 
     // a store that throws never breaks the switch for this run
-    const bad = registerMcpIpc({ store: () => ({ load() {} }) as never, agents: run.agents as never, router: { onEvent: () => () => undefined, forAgent: () => ad, adapterIdOf: () => 'fake' } as never, dev: { DURBAR_COPILOT_DIR: path.join(root, 'copilot') } as never, appOf: () => 'copilot', savedOff: { read: () => { throw new Error('x'); }, write: () => { throw new Error('x'); } } });
+    const bad = registerMcpIpc({ store: () => ({ load() {} }) as never, agents: run.agents as never, router: { onEvent: () => () => undefined, forAgent: () => ad, adapterIdOf: () => 'fake' } as never, dev: { DURBAR_COPILOT_DIR: path.join(root, 'copilot') } as never, appOf: () => 'copilot', savedOff: { read: () => { throw new Error('x'); }, readFor: () => { throw new Error('x'); }, write: () => { throw new Error('x'); } } });
     void bad;
     assert.deepStrictEqual(await call('agents:setMcp', sid, 'wiki', false), { ok: true }, 'a failing save does not fail the switch');
+
+    // a multi-root workspace whose resume id differs from the agent id (Codex): saved under the workspace file and the resume id
+    const wf = path.join(root, 'two.code-workspace');
+    fs.writeFileSync(wf, '{}');
+    rid = () => 'thread-7';
+    run = boot(true, { workspaceFile: wf });
+    await call('agents:setMcp', sid, 'tool', false);
+    const doc = JSON.parse(fs.readFileSync(file, 'utf8')).folders.find((f: { workspace: string }) => f.workspace === wf);
+    assert.deepStrictEqual(doc.sessionMcpOff, [{ id: 'thread-7', off: ['tool'] }], 'keyed by the workspace file and the resume id');
+    run = boot(true, { workspaceFile: wf });
+    assert.deepStrictEqual(await offNames(), ['tool'], 'comes back after a restart under the resume id');
+    rid = (id) => id;
 
     // parse rules: bounds, names, ids
     assert.strictEqual(parseSessionMcpOff('x'), undefined);

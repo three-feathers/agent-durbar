@@ -3,6 +3,7 @@ import type { OrgMcpServer, OrgVerdict } from '../shared/orgpolicy';
 import { safeStorage } from 'electron';
 import { fromAppFrame as fromApp, ipcHandle } from './ipcguard';
 import * as path from 'path';
+import type { SavedMcpOff } from './mcpsavedoff';
 import type { AgentInfo, AgentMcpReply, GlobalApp, McpContextView, McpFolderState, McpState } from '../shared/api';
 import type { McpServerStatus } from '../adapters/types';
 import { setMcpOp } from './agentops';
@@ -77,7 +78,7 @@ export function registerMcpIpc(deps: {
    * Spec 058 (2026-11-14 delta): where one chat's switched-off server NAMES are kept across closing the chat and an app restart
    * (main: the folder store, keyed by the folder and the session's resume id). Names only.
    */
-  savedOff?: { read(a: AgentInfo): string[]; write(a: AgentInfo, names: string[]): void };
+  savedOff?: SavedMcpOff;
   /** The agent app of an agent (`copilot`, `claude`, `codex`, ...). */
   appOf?(agentId: string): string | undefined;
   /** Spec 058 FR-232: whether a variable is set (not empty) in Durbar's own environment (presence only); default `process.env`. Tests inject it. */
@@ -127,7 +128,7 @@ export function registerMcpIpc(deps: {
     checkFreshMs?: number;
     checkTimeoutMs?: number;
   };
-}): { optionsFor(agentId: string): { mcpServers: Record<string, McpServerSpec>; disabledMcpServers: string[]; disabledMcpTools?: Record<string, string[]> }; secretValuesFor(agentId: string): string[]; copilotValuesFor(agentId: string): string[]; signInRefresh: McpSignInRefresher; hidesEvent(e: { type: string; requestId?: unknown }): boolean; noteSession(agentId: string): void } {
+}): { optionsFor(agentId: string, resume?: { agent: AgentInfo; sessionId: string }): { mcpServers: Record<string, McpServerSpec>; disabledMcpServers: string[]; disabledMcpTools?: Record<string, string[]> }; secretValuesFor(agentId: string): string[]; copilotValuesFor(agentId: string): string[]; signInRefresh: McpSignInRefresher; hidesEvent(e: { type: string; requestId?: unknown }): boolean; noteSession(agentId: string): void } {
   const { agents, router, dev } = deps;
   const store = deps.store;
   /** Per agent id: servers the user switched off for that agent (names; saved per session through `savedOff`, spec 058 2026-11-14 delta). */
@@ -673,9 +674,14 @@ export function registerMcpIpc(deps: {
       if ((e as { phase?: unknown }).phase !== 'asked') hidden.delete(e.requestId); // its answer or cancel ends it (review of #1080, item 7)
       return true;
     },
-    optionsFor(agentId: string) {
+    optionsFor(agentId: string, resume?: { agent: AgentInfo; sessionId: string }) {
       const a = agents.get(agentId);
-      if (!a) return { mcpServers: {}, disabledMcpServers: [...(offSet(agentId) ?? [])] };
+      if (!a) {
+        // a session about to be resumed (Previous sessions): its agent is not in the office yet, so its saved switches are read under the session id it resumes
+        let saved: string[] = [];
+        if (resume) try { saved = deps.savedOff?.readFor(resume.agent, resume.sessionId) ?? []; } catch { saved = []; }
+        return { mcpServers: {}, disabledMcpServers: [...new Set([...(offSet(agentId) ?? []), ...saved])] };
+      }
       // Only this agent's own folder's extras are passed (spec 020 FR-012).
       const c = cliWithValues();
       keepCopilotValues(agentId, c); // FR-070: the values this session starts with are kept for the run
