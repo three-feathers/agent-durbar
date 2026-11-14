@@ -77,7 +77,8 @@ module.exports = async (ctx) => {
   const CASE = process.env.DRIVER_CASE || '';
   /* issue #1625 (spec 102 T346): the arcade does not scroll at 15 agents with each OTHER strip under the top bar (restore, away, crash, follow), alone and in the two pairs the
      lend can rescue, at both sizes. The mixed simulator always shows the restore strip, so a scene's other strips are dismissed (Keep as it is) and only the named ones are on show.
-     Prints one line per scene with the strips' heights, the floor and the layout: those numbers are the measurement (Linux, 2026-11-14, in the spec delta). */
+     Prints one line per scene with the strips' heights, the floor and the layout: those numbers are the measurement (Linux, 2026-11-14, in the spec delta).
+     The scenes that still scroll (three strips at 1280x800, MCP list open, crash list plus restore) are DELIBERATELY not asserted here: they are the known gap of 1589, fixed by the approved, not yet merged 1685; add them when it lands, so this case covers only what passes today. */
   if (CASE === 'strips') {
     assert.strictEqual(REAL, 'arcade', 'DRIVER_CASE=strips runs in the arcade (DRIVER_WORLD=retro)');
     const IDS = { restore: 'restoreStrip', away: 'awayStrip', crash: 'crashStrip', follow: 'followStrip' };
