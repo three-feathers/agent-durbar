@@ -50,6 +50,7 @@ function reencode(p) {
   }
   return { ...p, rgba: o };
 }
+const mirror = (p) => { const o = Buffer.alloc(p.rgba.length); for (let y = 0; y < p.h; y++) for (let x = 0; x < p.w; x++) p.rgba.copy(o, (y * p.w + x) * 4, (y * p.w + (p.w - 1 - x)) * 4, (y * p.w + (p.w - 1 - x)) * 4 + 4); return { ...p, rgba: o }; };
 const double = (p) => { const o = Buffer.alloc(p.w * 2 * p.h * 2 * 4); for (let y = 0; y < p.h * 2; y++) for (let x = 0; x < p.w * 2; x++) p.rgba.copy(o, (y * p.w * 2 + x) * 4, ((y >> 1) * p.w + (x >> 1)) * 4, ((y >> 1) * p.w + (x >> 1)) * 4 + 4); return { rgba: o, w: p.w * 2, h: p.h * 2 }; };
 const solid = (rgb, w = 32, h = 32) => { const px = Buffer.alloc(w * h * 4); for (let i = 0; i < px.length; i += 4) { px[i] = rgb[0]; px[i + 1] = rgb[1]; px[i + 2] = rgb[2]; px[i + 3] = 255; } return { rgba: px, w, h }; };
 
@@ -74,6 +75,11 @@ const A = world('a', { 'fx-bank.webp': base, 'fx-blocks.webp': blocks(7), 'fx-we
   assert.deepStrictEqual(kinds(A, world('b', { 'fx-bank.webp': invert(blocks(7)) })), ['near'], 'RECOLOURED: an inverted copy fails as near');
   assert.deepStrictEqual(kinds(A, world('b', { 'fx-bank.webp': reencode(base) })), ['near'], 'RE-ENCODED: a blurred and nudged copy fails as near');
   assert.ok(D.dhDistance(feat(base), feat(reencode(base))) <= 2, 'RE-ENCODED: a nudge of one step moves the difference hash by at most 2 (the level band absorbs it)');
+  /* 144 px: the cell grids (9, 8 and 16) divide it, so a flip lands on the same cells, as the real pictures' sizes mostly do closely enough (planted: 3/64). */
+  const big = world('a', { 'fx-bank.webp': picture(1, 144, 144), 'fx-blocks.webp': blocks(7, 144, 144) });
+  assert.deepStrictEqual(kinds(big, world('b', { 'fx-bank.webp': mirror(picture(1, 144, 144)) })), ['near'], 'MIRRORED: a left-right flipped copy fails as near');
+  assert.deepStrictEqual(kinds(big, world('b', { 'fx-bank.webp': mirror(blocks(7, 144, 144)) })), ['near'], 'MIRRORED: a flipped opaque copy fails as near');
+  assert.ok(/mirrored\)/.test(D.comparePair(big, world('b', { 'fx-bank.webp': mirror(picture(1, 144, 144)) }))[0].msg), 'MIRRORED: the message says it was mirrored');
   assert.deepStrictEqual(kinds(A, world('b', { 'fx-bank.webp': double(base) })), ['near'], 'RE-ENCODED: a copy at twice the size fails as near');
 }
 {
@@ -102,6 +108,28 @@ const A = world('a', { 'fx-bank.webp': base, 'fx-blocks.webp': blocks(7), 'fx-we
   /* File helpers: only fixtures count; a kid picture or a CSS file is not a fixture. */
   for (const n of ['fx-bank.webp', 'fx-web.webp', 'desk.webp', 'desk.h.webp', 'monitor.webp', 'monitor-half.webp']) assert.ok(D.isFixtureFile(n), n);
   for (const n of ['kid1-done.webp', 'floor.webp', 'wall.webp', 'world.css', 'glow.webp', 'fx-bank.png']) assert.ok(!D.isFixtureFile(n), n);
+}
+
+/* The limits are pinned (FR-016): the values of the spec delta, and the real pairs measured in Electron on 2026-11-14 (a committed table, not decoded here)
+   all sit outside them by their margins, so a limit moved onto a real pair (14/27, say) fails here and not only in the by-hand Electron check. */
+{
+  assert.deepStrictEqual(D.LIMITS, { dhash: 8, mask: 24, deltaE: 8 }, 'LIMITS: difference hash 8/64, silhouette 24/256, delta E 8');
+  const MEASURED = [ // nearest fixtures of each real pair (both hashes, mirror included): difference hash /64, silhouette /256
+    { pair: 'cave/photo', dh: 13, mask: 27 }, { pair: 'cave/retro', dh: 17, mask: 40 }, { pair: 'photo/retro', dh: 22, mask: 42 },
+  ];
+  for (const m of MEASURED) {
+    assert.ok(m.dh - D.LIMITS.dhash >= 5, `LIMITS: the ${m.pair} pair (${m.dh}/64) stays at least 5 bits above the difference-hash limit`);
+    assert.ok(m.mask > D.LIMITS.mask, `LIMITS: the ${m.pair} pair (${m.mask}/256) stays above the silhouette limit`);
+  }
+  assert.ok(20.3 - D.LIMITS.deltaE >= 12, 'LIMITS: the closest real colour pair (photo and retro floors, delta E 20.3) stays 12 above the colour limit');
+  /* A planted copy under the limits still fails with room: the measured planted distances are 0..4 of 64 (mirrored 3, re-encoded 2). */
+  assert.ok(4 + 4 <= D.LIMITS.dhash, 'LIMITS: planted copies measured at 4/64 at most keep 4 bits under the limit');
+}
+{
+  const done = { hung: false, quick: false };
+  D.within(new Promise(() => {}), 20, 'decode x/y.webp').catch((e) => { assert.match(e.message, /"decode x\/y\.webp" did not finish/, 'WATCHDOG: a step that never settles fails, naming it'); done.hung = true; });
+  D.within(Promise.resolve(7), 1000, 'quick').then((v) => { assert.strictEqual(v, 7, 'WATCHDOG: a step that settles passes its value'); done.quick = true; });
+  process.on('exit', (c) => { if (c === 0 && !(done.hung && done.quick)) { console.error('FAIL WATCHDOG: a hung step was not failed, or a quick one not passed'); process.exitCode = 1; } });
 }
 
 /* The real worlds: no fixture file is the same as another world's (exact sha256 of the bytes). Plain Node needs no decoder. */
