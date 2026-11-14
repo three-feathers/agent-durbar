@@ -274,6 +274,10 @@ Proposed defaults, 2026-11-10. Ruben's approval on #1306 covers the scope. **Q1,
 
 ## Changes
 
+### 2026-11-14: merge of main; the guard of #1699 and a test file race (PR #1661, test only)
+
+The Delete confirm of the Teams list is a new `primary danger` destructive dialog: `check-052-danger-dialogs` and `test:dangersites` count it (20 sites; see spec 052, Changes 2026-11-14). `test-teamstore` and `test-teamtemplate` both wrote `dist-scripts/src/shared/teamtemplate.mutant.js`, and run in parallel one removed the file under the other (ENOENT on macOS CI); `test-teamstore` now writes `teamtemplate.teamstore-mutant.js`.
+
 ### 2026-11-13: review of #1661 (T008; decided by the coordinator under Ruben's delegation; Ruben may overrule)
 
 Required by the two reads (Vikram's and Paco's Opus readers). Decisions:
