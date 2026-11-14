@@ -460,12 +460,14 @@ module.exports = async (ctx) => {
           small:tags.filter(t=>parseFloat(getComputedStyle(t.querySelector('b')||t).fontSize)<10.5).length,
           ratio:Math.min(...tags.map(t=>{const b=t.querySelector('b')||t,a=Lm(P(getComputedStyle(b).color)),c=Lm(P(getComputedStyle(t).backgroundColor));return (Math.max(a,c)+0.05)/(Math.min(a,c)+0.05)})),
           overlap:tags.flatMap((t,i)=>tags.slice(i+1).filter(o=>hit(R(t),R(o))).map(()=>'tag x tag').concat(others.filter(o=>hit(R(t),R(o))).map(o=>'tag x '+o.className))),
-          cut:tags.filter(t=>t.scrollWidth>t.clientWidth+0.5||!R(t).width).length,
+          cut:tags.filter(t=>{const b=t.querySelector('b');return !b||b.scrollWidth>b.clientWidth+0.5||!R(t).width}).map(t=>t.textContent.trim()), /* review of #1741: the ellipsis is on the <b>, not on the tag's box (that one never overflows) */
+          lounge:document.querySelectorAll('#stage .ro-plate.lounge').length,rest:tags.some(t=>t.textContent.trim()==='Resting'),
           inWindow:tags.every(t=>{const r=R(t);return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight}),
           storeys:(lay.storeys||[]).length,scroll:st.dataset.fit==='scroll'||fl.scrollHeight>fl.clientHeight+1}})()`);
       assert.ok(sto.storeys >= 2, `${tag}: the All floors view has at least two storeys: ${JSON.stringify(sto)}`);
+      assert.ok(sto.lounge >= 1 && sto.rest, `${tag}: the simulator's resting agents are on screen under the Resting tag (spec 102, review of #1741: no floor's band holds them): ${JSON.stringify(sto)}`);
       assert.ok(sto.names.length >= 2 && sto.names.every((n) => sto.texts.some((t) => t.endsWith(' ' + n))), `${tag}: every floor's name is on screen in a storey tag: ${JSON.stringify([sto.names, sto.texts])}`);
-      assert.strictEqual(sto.cut, 0, `${tag}: no storey tag cuts its name`);
+      assert.deepStrictEqual(sto.cut, [], `${tag}: no storey tag cuts its name (its <b> fits)`);
       assert.strictEqual(sto.small, 0, `${tag}: the storey tags are 10.5px or more`);
       assert.ok(sto.ratio >= 4.5, `${tag}: the storey tags read at 4.5:1: ${sto.ratio}`);
       assert.deepStrictEqual(sto.overlap, [], `${tag}: no storey tag covers a sign, a plate or another tag`);
