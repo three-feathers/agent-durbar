@@ -1886,7 +1886,10 @@ function stripsYield(on){
   return was;
 }
 /* the yield ends with the Office view: switching to List puts the strips back in the flow and forgets the open overlay (setView); renderOffice returns early off the Office view, so it cannot do it */
-function stripsReset(){stripsOpen=false;stripsYield(false);}
+function stripsReset(){stripsOpen=false;stripsYield(false);stripsAlertClear();}
+/* The restored-Allow-all strip is role=alert; folded into the bar it is display:none and never read. An always-present, visually hidden role=alert region (#stripAlert; the existing announce() region is polite, so it cannot do this) is written once when that strip JOINS the folded set and emptied when it leaves or the yield ends; the bar stays role=status. */
+let stripsAlerted=false;
+function stripsAlertClear(){stripsAlerted=false;const r=$('stripAlert');if(r&&r.textContent)r.textContent='';}
 function stripsPaint(fresh){
   const bar=$('stripBar'),sh=stripsShown(),n=sh.length;if(!bar)return;
   const ae=document.activeElement,inStrip=!!(ae&&sh.some(e=>e.contains(ae)));
@@ -1901,7 +1904,9 @@ function stripsPaint(fresh){
   const w=stripsOpen?'Hide':'Show';
   if(b.textContent!==w)b.textContent=w;
   b.setAttribute('aria-label',w+(n===1?' the notice':' '+n+' notices'));b.setAttribute('aria-expanded',stripsOpen?'true':'false');
-  bar.setAttribute('role',sh.some(e=>e.id==='restoreStrip')?'alert':'status'); /* the restored-Allow-all strip is role=alert and folded away (display:none, never read): the bar carries it, with its name in the text, as assertively */
+  const al=sh.some(e=>e.id==='restoreStrip');
+  if(al&&!stripsAlerted){const r=$('stripAlert');if(r)r.textContent='Allow all restored';}
+  if(!al)stripsAlertClear();else stripsAlerted=true;
   bar.hidden=false;
   stripsPlace();
   if(inStrip&&!stripsOpen)b.focus({preventScroll:true}); /* the strip the focus was in is out of sight: it goes to the bar's button */
@@ -1919,12 +1924,12 @@ document.addEventListener('keydown',e=>{
 },true);
 function renderRealYield(stage,floor,model,aw,ah,yieldWas){
   if(!renderReal(stage,floor,aw,ah,model))return false;
-  if(!(RO_LAST&&RO_LAST.aisles&&RO_LAST.scroll&&stripsShown().length))return true;
+  if(!(RO_LAST&&RO_LAST.aisles&&RO_LAST.scroll&&stripsShown().length)){stripsAlertClear();return true;}
   stripsYield(true);stripsPaint(!yieldWas);
   floor.classList.remove('ro-tight');
   renderReal(stage,floor,aw,roomOf2(floor),model);
   if(RO_LAST&&RO_LAST.scroll){ /* it did not help (more agents than fit): the strips stay as they were, the office scrolls as before */
-    stripsYield(false);floor.classList.remove('ro-tight');renderReal(stage,floor,aw,roomOf2(floor),model);
+    stripsYield(false);stripsAlertClear();floor.classList.remove('ro-tight');renderReal(stage,floor,aw,roomOf2(floor),model);
   }
   return true;
 }
@@ -1964,7 +1969,8 @@ function renderOffice(){
     stage.innerHTML='<div class="empty">'+EMPTY_DESK+(!agents.length&&!demoOn?'No agents yet. Use "+ Folder" at the top left to add a folder'+' (or "+ Workspace" for a VS Code .code-workspace file).':(agents.length&&ROOMS.every(r=>r.hidden)?'All folders are hidden. Open Manage folders (next to the folder filter) to show them again.':agents.length&&floorsLive()&&!floorsOnList().length?(FLOORS.floors.length>1?'All floors are off. Open "Floors" above or Settings > Floors to switch one on.':'Your only floor is off. Switch it on in Settings > Floors.'):agents.length&&ROOMS.every(r=>!roomShown(r))?('Nothing to show: every folder is hidden or on a floor that is off. Open '+(floorsLive()&&FLOORS.floors.length>1?'"Floors" or "Folders" above, or ':'"Folders" above, or ')+'Settings > Floors.'):'No agents match these filters.'))+'</div>';
     floor.classList.remove('scrolls'); return;
   }
-  if(officeView()==='real'&&renderRealYield(stage,floor,model,aw,ah,yieldWas))return; /* spec 097: Real office draws the same model; flat below is unchanged */
+  if(officeView()==='real'&&renderRealYield(stage,floor,model,aw,ah,yieldWas))return;
+  stripsAlertClear(); /* spec 097: Real office draws the same model; flat below is unchanged */
   /* Density is chosen from the unfiltered set so cards do not change shape when a status pill filters. */
   OPS.renders++;
   const sizing=lastSizing=sizingModel(model); /* what chooseLayout is given (the hook below reads it) */

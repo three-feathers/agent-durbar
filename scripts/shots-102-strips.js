@@ -95,7 +95,11 @@ module.exports = async (ctx) => {
       assert.ok(S.barText.startsWith(`${n} notice${n === 1 ? '' : 's'}: `), `${c.id} ${w}x${h}: the bar counts the strips (${n}): ${S.barText}`);
       if (c.id === 'all5') {
         assert.ok(/Allow all restored/.test(S.barText) && /Interrupted sessions/.test(S.barText), `${c.id} ${w}x${h}: the bar's text names the folded alert strips: ${S.barText}`);
-        assert.strictEqual(await js(`document.getElementById('stripBar').getAttribute('role')`), 'alert', `${c.id} ${w}x${h}: the bar is an alert while the restored-Allow-all strip is folded into it (a display:none alert is never read)`);
+        assert.strictEqual(await js(`document.getElementById('stripBar').getAttribute('role')`), 'status', `${c.id} ${w}x${h}: the bar stays role=status (the alert is its own region)`);
+        assert.strictEqual(await js(`document.getElementById('stripAlert').textContent`), 'Allow all restored', `${c.id} ${w}x${h}: the always-present alert region holds the phrase while the restore strip is folded in (a display:none alert is never read)`);
+        assert.strictEqual(await js(`document.getElementById('stripAlert').getAttribute('role')`), 'alert', `${c.id} ${w}x${h}: the alert region is role=alert`);
+      } else if (c.bar === true || (typeof c.bar === 'function' && c.bar(w))) {
+        assert.strictEqual(await js(`document.getElementById('stripAlert').textContent`), '', `${c.id} ${w}x${h}: no restore strip folded in, so the alert region is empty`);
       }
       assert.ok(S.btn && S.btn.name && /^(Show|Hide) /.test(S.btn.name) && S.btn.tab >= 0 && !S.btn.dis, `${c.id} ${w}x${h}: the bar's button has an accessible name and a tab stop: ${JSON.stringify(S.btn)}`);
       if (c.list) {
@@ -129,6 +133,7 @@ module.exports = async (ctx) => {
         }
         const E = await js(STATE);
         assert.ok(E.shown.every((x) => x === 'follow') && fits(E), `${c.id} ${w}x${h}: after Dismiss only what has no Dismiss is left and the office fits: ${JSON.stringify(E)}`);
+        assert.strictEqual(await js(`document.getElementById('stripAlert').textContent`), '', `${c.id} ${w}x${h}: the restore strip is gone, so the alert region is empty again`);
         assert.ok(!E.bar && !E.yield, `${c.id} ${w}x${h}: with one strip left the bar goes and the strip is in the flow again: ${JSON.stringify(E)}`);
       }
     }
@@ -145,6 +150,7 @@ module.exports = async (ctx) => {
     return JSON.parse(JSON.stringify({yield:document.body.classList.contains('strips-yield'),open:document.body.classList.contains('strips-open'),bar:!!bar&&!bar.hidden,n:sh.length,
       inFlow:sh.every(e=>getComputedStyle(e).position!=='fixed'&&e.getBoundingClientRect().height>0),tops:sh.some(e=>e.style.top!=='')}))})()`);
   assert.ok(!L.yield && !L.open && !L.bar && L.n >= 4 && L.inFlow && !L.tops, `Office to List with strips open: no yield, no overlay, no bar, the strips are in the flow: ${JSON.stringify(L)}`);
+  assert.strictEqual(await js(`document.getElementById('stripAlert').textContent`), '', 'view switch: in List the alert region is empty');
   await js(`document.getElementById('vOffice').click();0`);
   assert.ok(await until(`document.body.classList.contains('strips-yield')&&!document.getElementById('stripBar').hidden&&!document.body.classList.contains('strips-open')`, 4000), 'view switch: back in the Office the strips yield again, folded');
   /* 16 agents with five strips: the bar would not make them fit, so the strips stay where they were (as the lend, T308) */
