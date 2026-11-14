@@ -411,7 +411,7 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
       monster: ['full', 'full', 'monster', 'monster'], royal: ['full', 'full', 'royal', 'royal'], rebels: ['full', 'full', 'rebels', 'rebels'],
       prehistoric: ['full', 'full', 'prehistoric', 'prehistoric'],
       office: ['full', 'full', 'office', 'office'], /* spec 102 FR-321 (T292): Office people by choice, in every flag state */
-      retro: ['closed', 'closed', 'office', 'office'], /* FR-320, FR-322 (T290): behind its flag the world's default draws, the choice is kept */
+      pixel: ['closed', 'closed', 'office', 'office'], /* FR-320, FR-322 (T290): behind its flag the world's default draws, the choice is kept */
     };
     for (const [c, [lc, lo, sc, so]] of Object.entries(want)) {
       assert.strictEqual(C.levelFor(c, CLOSED), lc, `${c || '(none)'}: level, gate closed`); assert.strictEqual(C.levelFor(c, OPEN), lo, `${c || '(none)'}: level, gate open`);
@@ -420,26 +420,26 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
     }
     for (const c of Object.keys(C.CREWS)) assert.ok(c in want, `${c}: every crew is in this table, so a new crew must be decided here`);
     for (const c of ['__proto__', 'constructor', 'toString', 'nonsense']) assert.strictEqual(C.levelFor(c, OPEN), 'default', `${c}: not a crew, no level to report`);
-    assert.strictEqual(C.peopleFor('photo', 'retro', { cave: false, retro: true }).set, 'retro', 'a full set outside the crews has its level full');
-    assert.strictEqual(C.levelFor('retro', { cave: false, retro: true }), 'full'); assert.strictEqual(C.levelFor('retro', { cave: false, retro: false }), 'closed');
+    assert.strictEqual(C.peopleFor('photo', 'pixel', { cave: false, retro: true }).set, 'retro', 'a full set outside the crews has its level full');
+    assert.strictEqual(C.levelFor('pixel', { cave: false, retro: true }), 'full'); assert.strictEqual(C.levelFor('pixel', { cave: false, retro: false }), 'closed');
     for (const c of Object.keys(C.CREWS)) assert.ok(!/crew\/art|portrait/i.test(JSON.stringify(C.peopleFor('photo', c, OPEN))), `${c}: Real office names no crew picture`);
   }
   { // spec 102 T290..T293 (FR-320..FR-322): Office people and Retro pixel are Characters values, one REAL_SETS row each, in every world and flag state
     const rowOf = (c: string) => C.REAL_SETS.filter((x) => x.choice === c);
     assert.deepStrictEqual(rowOf('office').map((x) => x.id), ['office'], 'FR-321: Office people has its own explicit value (the empty choice means "not picked")');
     assert.ok(!rowOf('office')[0].flag, 'FR-321: Office people always ship, no flag');
-    assert.deepStrictEqual(rowOf('retro').map((x) => [x.id, x.flag]), [['retro', 'retro']], 'FR-320: Retro pixel is the value `retro`, behind the `retro` flag');
+    assert.deepStrictEqual(rowOf('pixel').map((x) => [x.id, x.flag]), [['retro', 'retro']], 'FR-320: Retro pixel is the stored value `pixel` (FR-266), drawing the set `retro`, behind the `retro` flag (the one mapping)');
     for (const w of ['photo', 'cave', 'retro']) for (const f of [{ cave: true, retro: true }, { cave: true, retro: false }]) {
       assert.strictEqual(C.peopleFor(w, 'office', f).set, 'office', `${w}: Office people by choice (flags ${JSON.stringify(f)})`);
       assert.strictEqual(C.peopleFor(w, 'office', f).setName, 'Office people');
     }
     assert.strictEqual(C.peopleFor('retro', 'office', { retro: true }).world, 'retro', 'FR-321: the arcade draws Office people by choice and stays the arcade');
-    assert.strictEqual(C.peopleFor('photo', 'retro', { retro: true }).set, 'retro', 'FR-320: Retro pixel people in the Photo office when the flag is open');
-    assert.strictEqual(C.peopleFor('photo', 'retro', { retro: true }).note, '', 'no note while it draws');
-    const closed = C.peopleFor('photo', 'retro', { retro: false });
+    assert.strictEqual(C.peopleFor('photo', 'pixel', { retro: true }).set, 'retro', 'FR-320: Retro pixel people in the Photo office when the flag is open');
+    assert.strictEqual(C.peopleFor('photo', 'pixel', { retro: true }).note, '', 'no note while it draws');
+    const closed = C.peopleFor('photo', 'pixel', { retro: false });
     assert.strictEqual(closed.set, 'office', 'FR-322: the flag closed, the Photo office draws its default people');
     assert.strictEqual(closed.note, 'Real office shows Office people until Retro pixel is open in Real office.', 'FR-322: the line names the set, not a crew word');
-    assert.strictEqual(C.peopleFor('cave', 'retro', { cave: true, retro: false }).note, 'Real office shows Prehistoric until Retro pixel is open in Real office.', 'FR-322: the default is the world\'s own');
+    assert.strictEqual(C.peopleFor('cave', 'pixel', { cave: true, retro: false }).note, 'Real office shows Prehistoric until Retro pixel is open in Real office.', 'FR-322: the default is the world\'s own');
     assert.strictEqual(C.peopleFor('photo', 'office', { retro: false }).note, '', 'Office people has no closed line');
     // a stored setting that never named the value draws as before (SC-017): theme and the empty choice are the world's default
     assert.strictEqual(C.peopleFor('retro', 'theme', { retro: true }).set, 'retro'); assert.strictEqual(C.peopleFor('retro', '', { retro: true }).set, 'retro');
@@ -491,7 +491,7 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
     const choices = [...CHARACTER_CHOICES] as string[];
     const ALL = Object.fromEntries(Object.keys(C.WORLD_FLAGS).map((k) => [k, true]));
     const defaultOf: Record<string, string> = { photo: 'office', cave: 'prehistoric', retro: 'retro' };
-    const own: Record<string, string> = { office: 'office', retro: 'retro', cheeky: 'cheeky', prehistoric: 'prehistoric', pirate: 'pirate', monster: 'monster', royal: 'royal', rebels: 'rebels' }; // a crew with a row: its own people in every world
+    const own: Record<string, string> = { office: 'office', pixel: 'retro', cheeky: 'cheeky', prehistoric: 'prehistoric', pirate: 'pirate', monster: 'monster', royal: 'royal', rebels: 'rebels' }; // a crew with a row: its own people in every world
     for (const w of C.WORLDS) assert.ok(w.id in defaultOf, `world ${w.id} has no column in the matrix (T249): add one here and a row in the spec's table`);
     for (const c of choices) assert.ok(c === 'theme' || c === 'minimalist' || c in own, `Characters value ${c} has no cell in the matrix (T249): add it here and to the spec's table`);
     assert.ok(!choices.includes('mine'), 'My characters (spec 096) is a KNOWN GAP: when it becomes a value it needs a cell in every world (T246)');

@@ -4,13 +4,16 @@
  * (it cannot import TS), and `test:characters` checks both answer alike.
  */
 
+/** Spec 102 FR-266, FR-320: the stored Characters value that names the Retro pixel people (the SET is `retro`, `sets/retro`; T344 renames the value only if the owner confirms C1). Declared first: the list below uses it. */
+export const PIXEL_CHARACTERS = 'pixel';
+
 /** The Characters values, in the order Settings lists them. `theme` = the theme's own kit (the default, never written). */
-export const CHARACTER_CHOICES = ['theme', 'office', 'minimalist', 'cheeky', 'prehistoric', 'pirate', 'monster', 'royal', 'rebels', 'retro'] as const;
+export const CHARACTER_CHOICES = ['theme', 'office', 'minimalist', 'cheeky', 'prehistoric', 'pirate', 'monster', 'royal', 'rebels', PIXEL_CHARACTERS] as const;
 export type CharacterChoice = (typeof CHARACTER_CHOICES)[number];
 
 /** Spec 102 FR-320, FR-321: the values that name a Real office people set (Office people, Retro pixel), not a flat kit. Until Flat draws their heads (FR-203, T294) they draw the theme's own figures. */
-export type SetChoice = 'office' | 'retro';
-export const SET_CHOICES: readonly SetChoice[] = ['office', 'retro'];
+export type SetChoice = 'office' | typeof PIXEL_CHARACTERS;
+export const SET_CHOICES: readonly SetChoice[] = ['office', PIXEL_CHARACTERS];
 
 /** The scene kit (spec 035 FR-013) each explicit choice draws. */
 export const CHARACTER_KITS: Readonly<Record<Exclude<CharacterChoice, 'theme' | SetChoice>, string>> = { minimalist: 'office', cheeky: 'crew', prehistoric: 'crew', pirate: 'crew', monster: 'crew', royal: 'crew', rebels: 'crew' };
@@ -48,8 +51,6 @@ export function migrateLegacyTheme<T extends { theme?: string; characters?: Char
  * closed, `SettingsStore.load` leaves a stored Retro Pixel theme alone. T230 removes both.
  */
 export const RETRO_MIGRATION_OPEN = false;
-/** The Characters value a Retro Pixel user gets (FR-266); it joins CHARACTER_CHOICES with T122. */
-export const PIXEL_CHARACTERS = 'pixel';
 
 /**
  * FR-266: a stored theme `retro` is removed (Clean Office) and Characters becomes `pixel` unless a choice is stored (kept, FR-202).

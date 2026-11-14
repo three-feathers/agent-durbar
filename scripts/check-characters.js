@@ -88,7 +88,7 @@ module.exports = async (ctx) => {
       assert.ok(await H.until(`(document.querySelector('#chList [data-characters="theme"]')||{}).textContent&&document.querySelector('#chList [data-characters="theme"]').textContent.includes(${jsLiteral(own)})`, 4000), `${where}: The theme's own follows the theme (${own})`);
       const sc = await section();
       assert.ok(sc.afterTheme, `${where}: Characters comes right after Theme`);
-      assert.deepStrictEqual(sc.items.map((i) => i.id), ['theme', 'office', 'minimalist', 'cheeky', 'prehistoric', 'pirate', 'monster', 'royal', 'rebels', 'retro'], `${where}: the ten choices in order: Office people right after the default (spec 102 FR-321), Retro pixel always listed (FR-320)`);
+      assert.deepStrictEqual(sc.items.map((i) => i.id), ['theme', 'office', 'minimalist', 'cheeky', 'prehistoric', 'pirate', 'monster', 'royal', 'rebels', 'pixel'], `${where}: the ten choices in order: Office people right after the default (spec 102 FR-321), Retro pixel always listed (FR-320)`);
       assert.deepStrictEqual(sc.items.map((i) => i.pressed), ['true', 'false', 'false', 'false', 'false', 'false', 'false', 'false', 'false', 'false'], `${where}: the default is pressed`);
       for (const i of sc.items) {
         assert.ok(i.svg, `${where}: ${i.id} has a preview figure`);
@@ -103,7 +103,7 @@ module.exports = async (ctx) => {
       assert.ok(sc.items.find((i) => i.id === 'rebels').pic, `${where}: the Animal Rebels preview is a portrait (spec 077 FR-077)`);
       assert.ok(!sc.items.find((i) => i.id === 'minimalist').pic && !sc.items.find((i) => i.id === 'theme').pic, `${where}: the other previews are drawn figures`);
       /* spec 102 FR-320, FR-321: the two set entries show the set's own picture; the flag is closed here, so Retro pixel is disabled and says so (name and label) */
-      const setPic = await H.js(`['office','retro'].map(id=>{const b=document.querySelector('#chList [data-characters="'+id+'"]'),im=b.querySelector('.chsw image');return {id,href:im?im.getAttribute('href'):'',disabled:b.disabled,label:b.getAttribute('aria-label'),sub:(b.querySelector('small')||{}).textContent}})`);
+      const setPic = await H.js(`[['office','office'],['pixel','retro']].map(([id,set])=>{const b=document.querySelector('#chList [data-characters="'+id+'"]'),im=b.querySelector('.chsw image');return {id,href:im?im.getAttribute('href'):'',disabled:b.disabled,label:b.getAttribute('aria-label'),sub:(b.querySelector('small')||{}).textContent}})`);
       assert.ok(/sets\/office\/p01-typeA/.test(setPic[0].href) && /sets\/retro\/p01-typeA/.test(setPic[1].href), `${where}: the set previews are the sets' own pictures (${JSON.stringify(setPic)})`);
       assert.strictEqual(setPic[0].disabled, false, `${where}: Office people can be picked`);
       assert.ok(setPic[1].disabled && /Not open yet$/.test(setPic[1].label) && setPic[1].sub === 'Not open yet', `${where}: the retro flag is closed: Retro pixel is disabled and its name says "Not open yet" (${JSON.stringify(setPic[1])})`);
@@ -185,24 +185,24 @@ module.exports = async (ctx) => {
     // spec 102 T291 (FR-320..FR-322): Retro pixel while its flag is closed (a click changes nothing), a saved Retro pixel with the flag closed (kept, the line says what is drawn), and open (a normal pick)
     await openSettings();
     await H.clearToasts();
-    await H.js(`document.querySelector('#chList [data-characters="retro"]').click()`);
+    await H.js(`document.querySelector('#chList [data-characters="pixel"]').click()`);
     await H.settle(); // a refused click has no event to wait for: the page settles, then the state must be as it was
     assert.strictEqual(await H.js(`window.THEME.characters()`), 'theme', `${tag}: a click on the closed Retro pixel changes nothing`);
-    assert.strictEqual(await H.js(`document.querySelector('#chList [data-characters="retro"]').getAttribute('aria-pressed')`), 'false', `${tag}: and does not press it`);
+    assert.strictEqual(await H.js(`document.querySelector('#chList [data-characters="pixel"]').getAttribute('aria-pressed')`), 'false', `${tag}: and does not press it`);
     await pickChars('office');
     assert.strictEqual(await H.js(`window.THEME.sceneKit()`), 'office', `${tag}: Office people in Flat draw the theme's own figures until Flat has their heads (T294)`);
     await close();
-    await H.load({ w, h, query: { characters: 'retro' }, ready: 'fit', settle: false });
+    await H.load({ w, h, query: { characters: 'pixel' }, ready: 'fit', settle: false });
     await H.office(15);
-    assert.strictEqual(await H.js(`window.THEME.characters()`), 'retro', `${tag}: a saved Retro pixel is kept while its flag is closed`);
+    assert.strictEqual(await H.js(`window.THEME.characters()`), 'pixel', `${tag}: a saved Retro pixel is kept while its flag is closed`);
     await openSettings();
     assert.strictEqual(await H.js(`document.getElementById('chNote').textContent`), 'Real office shows Office people until Retro pixel is open in Real office. Flat draws the theme\u2019s own figures until then.', `${tag}: the line under the list says what is drawn meanwhile`);
     await close();
     await H.load({ w, h, query: { worldflags: 'retro' }, ready: 'fit', settle: false });
     await H.office(15);
-    await pickChars('retro');
+    await pickChars('pixel');
     assert.strictEqual(await H.js(`document.getElementById('chNote').textContent`), '', `${tag}: flag open: a normal pick, no line`);
-    assert.strictEqual(await H.js(`document.querySelector('#chList [data-characters="retro"]').disabled`), false, `${tag}: flag open: Retro pixel is not disabled`);
+    assert.strictEqual(await H.js(`document.querySelector('#chList [data-characters="pixel"]').disabled`), false, `${tag}: flag open: Retro pixel is not disabled`);
     await close();
     console.log(`[characters] ${tag} ok`, JSON.stringify(await desks()));
   }

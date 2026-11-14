@@ -2506,8 +2506,8 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     const simQuery = typeof window !== 'undefined' && window.location ? new URLSearchParams(window.location.search) : new URLSearchParams();
     let simTheme = /^[a-z0-9_-]{1,64}$/.test(simQuery.get('theme') ?? '') ? (simQuery.get('theme') as string) : undefined;
     /* characters=<value> (spec 077 FR-064, FR-070): who sits at the desks in this run, in memory, like the theme; only a listed value */
-    const CHARS = ['theme', 'office', 'minimalist', 'cheeky', 'prehistoric', 'pirate', 'monster', 'royal', 'rebels', 'retro'] as const; /* the list of src/shared/characters.ts (spec 102 FR-320, FR-321) */
-    type SimChars = (typeof CHARS)[number];
+    type SimChars = import('../shared/characters').CharacterChoice; // the type is the shared list: a value this list lacks, or one the shared list lacks, fails the typecheck
+    const CHARS: readonly SimChars[] = ['theme', 'office', 'minimalist', 'cheeky', 'prehistoric', 'pirate', 'monster', 'royal', 'rebels', 'pixel']; /* the list of src/shared/characters.ts (spec 102 FR-320, FR-321) */
     const isChars = (v: unknown): v is SimChars => typeof v === 'string' && (CHARS as readonly string[]).includes(v);
     let simCharacters: SimChars = isChars(simQuery.get('characters')) ? (simQuery.get('characters') as SimChars) : 'theme';
     const simUserThemes: Record<string, unknown>[] = []; // spec 040 FR-032: the saved themes of this simulated run (from ?usertheme=), removable

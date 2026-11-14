@@ -293,7 +293,7 @@ async function applyCharacters(v){
   else toast('Characters: <b>'+esc(CHARACTER_NAMES[applied]||applied)+'</b>.',2600);
   return applied;
 }
-const CHARACTER_NAMES={theme:'The theme\u2019s own',office:'Office people',retro:'Retro pixel',minimalist:'Minimalist',cheeky:'Cheeky',prehistoric:'Prehistoric',pirate:'Pirate',monster:'Monster',royal:'Royal',rebels:'Animal Rebels'};
+const CHARACTER_NAMES={theme:'The theme\u2019s own',office:'Office people',pixel:'Retro pixel',minimalist:'Minimalist',cheeky:'Cheeky',prehistoric:'Prehistoric',pirate:'Pirate',monster:'Monster',royal:'Royal',rebels:'Animal Rebels'};
 /* FR-068: one figure per choice for its pick button: the kit that choice draws on the current theme, one Cheeky portrait for the crew */
 function charPreview(choice){
   const kit=THEME.kitFor(THEME.themeKit(),choice), a={id:'characters-preview',look:lookFor('characters-preview')};
