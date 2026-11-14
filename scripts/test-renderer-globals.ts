@@ -32,6 +32,9 @@ assert.deepStrictEqual(clashes({ 'a.js': 'root.DurbarA=api;', 'b.js': 'if(window
 
 const files: Record<string, string> = {};
 for (const f of fs.readdirSync(DIR).filter((f) => f.endsWith('.js')).sort()) files[f] = fs.readFileSync(path.join(DIR, f), 'utf8');
+// spec 106: Brain view's files are loaded on first use from their own folder; their globals count too
+const BRAIN_DIR = path.join(DIR, 'brainview');
+if (fs.existsSync(BRAIN_DIR)) for (const f of fs.readdirSync(BRAIN_DIR).filter((f) => f.endsWith('.js')).sort()) files['brainview/' + f] = fs.readFileSync(path.join(BRAIN_DIR, f), 'utf8');
 assert.ok(Object.keys(files).length > 10, 'the renderer scripts were found');
 
 const dup = clashes(files);

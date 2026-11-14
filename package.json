@@ -242,6 +242,8 @@
     "test:theme": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-theme.js",
     "test:brainstate": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-brainstate.js",
     "test:brainloop": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-brainloop.js",
+    "test:brainpoints": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-brainpoints.js",
+    "test:braindraw": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-braindraw.js",
     "test:brainsurface": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-brainsurface.js",
     "test:toolusage": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-toolusage.js",
     "test:contacts": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-contacts.js",

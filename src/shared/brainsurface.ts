@@ -7,7 +7,7 @@
  * such steps). Screen share (FR-080): `ctx.sharing` makes every formatter return the tool word and state only, never text, a path or a cost.
  * Pure: no DOM, no Node, no clock (time is passed in).
  */
-import { GLYPHS, baseName, currentStep, loopText, maskText, usdText } from './brainstate';
+import { GLYPHS, baseName, currentStep, loopText, brainMaskText, usdText } from './brainstate';
 import type { BrainMask, BrainState, BrainStep } from './brainstate';
 
 export type Surface = 'office' | 'card' | 'front' | 'transcript' | 'turnmap' | 'export' | 'share';
@@ -32,7 +32,7 @@ const PREVIEW_CARD = 120;
 const NAME_LEN = 40;
 
 /** The masked text of any string, once more (FR-021). Not exported as a second mask: it only composes redact's functions. */
-const clean = (ctx: SurfaceCtx, s: unknown): string => maskText(ctx.mask, s);
+const clean = (ctx: SurfaceCtx, s: unknown): string => brainMaskText(ctx.mask, s);
 /** A step's target masked by its own kind (FR-021): a command through maskSecretCommand, a URL through maskSecretUrl, then the common mask. */
 function cleanTarget(st: BrainStep, ctx: SurfaceCtx): string {
   const m = ctx.mask;
@@ -44,7 +44,7 @@ function cleanTarget(st: BrainStep, ctx: SurfaceCtx): string {
   } catch { t = ''; }
   return clean(ctx, t);
 }
-const oneLine = (s: string): string => s.replace(/\s+/g, ' ').trim();
+const brainOneLine = (s: string): string => s.replace(/\s+/g, ' ').trim();
 const noSlash = (s: string): string => s.replace(/[\\/]/g, '');
 
 /** A masked path relative to the folder; a path outside it shows only its file name, never an absolute path. */
@@ -89,12 +89,12 @@ export function officeLine(st: BrainStep, ctx: SurfaceCtx): string {
 
 /** Office tag "Ada thought it through · Think · done" and the orb's name: the agent's name plus the office row. */
 export function officeTag(name: string, st: BrainStep | undefined, ctx: SurfaceCtx): string {
-  const who = noSlash(oneLine(clean(ctx, name))).slice(0, NAME_LEN);
+  const who = noSlash(brainOneLine(clean(ctx, name))).slice(0, NAME_LEN);
   if (!st) return who;
   return `${who} · ${officeLine(st, ctx)}`;
 }
 export function orbName(name: string, ctx: SurfaceCtx): string {
-  return noSlash(oneLine(clean(ctx, name))).slice(0, NAME_LEN);
+  return noSlash(brainOneLine(clean(ctx, name))).slice(0, NAME_LEN);
 }
 
 export interface CardLines { head: string; preview: string; why: string }
@@ -102,10 +102,10 @@ export interface CardLines { head: string; preview: string; why: string }
 /** The preview of a card: the masked command, the file's base name (no folder), the URL, the query or the MCP tool (FR-020, FR-085). */
 function previewOf(st: BrainStep, ctx: SurfaceCtx): string {
   if (st.other) return `Other tool: ${st.other}`;
-  if (st.glyph === 'mcp') return oneLine([st.server, st.tool].filter(Boolean).join(' · '));
+  if (st.glyph === 'mcp') return brainOneLine([st.server, st.tool].filter(Boolean).join(' · '));
   if (st.targetKind === 'file') return midCut(baseName(clean(ctx, st.target)), PREVIEW_CARD);
   if (st.targetKind === 'none') return '';
-  const t = oneLine(cleanTarget(st, ctx));
+  const t = brainOneLine(cleanTarget(st, ctx));
   return Array.from(t).length > PREVIEW_CARD ? Array.from(t).slice(0, PREVIEW_CARD - 1).join('') + '…' : t;
 }
 
@@ -117,7 +117,7 @@ export function cardLines(st: BrainStep, ctx: SurfaceCtx): CardLines {
   if (ctx.sharing) return { head: shareLine(st), preview: '', why: '' };
   const dur = durationText(st, ctx.now);
   const head = `${st.state === 'failed' ? '✗ ' : ''}${GLYPHS[st.glyph].word}${st.helper ? ' (helper)' : ''} · ${stateWord(st)}${dur ? ' · ' + dur : ''}`;
-  const why = oneLine(clean(ctx, st.why));
+  const why = brainOneLine(clean(ctx, st.why));
   return { head: clean(ctx, head), preview: clean(ctx, previewOf(st, ctx)), why: why ? `Why: ${why}` : '' };
 }
 
@@ -127,7 +127,7 @@ export function transcriptText(st: BrainStep, ctx: SurfaceCtx): string {
   let t: string;
   if (st.targetKind === 'file') t = relPathOrHome(st.target, ctx);
   else t = cleanTarget(st, ctx);
-  return oneLine(t);
+  return brainOneLine(t);
 }
 function relPathOrHome(path: string, ctx: SurfaceCtx): string {
   const p = clean(ctx, path);
@@ -151,9 +151,9 @@ export function turnMapLine(st: BrainStep, ctx: SurfaceCtx): string {
   if (ctx.sharing) return shareLine(st);
   let what = '';
   if (st.other) what = `Other tool: ${st.other}`;
-  else if (st.glyph === 'mcp') what = oneLine([st.server, st.tool].filter(Boolean).join(' · '));
+  else if (st.glyph === 'mcp') what = brainOneLine([st.server, st.tool].filter(Boolean).join(' · '));
   else if (st.targetKind === 'file') what = midCut(relPath(st.target, ctx.folder, ctx), 80);
-  else if (st.targetKind !== 'none') what = relCommand(oneLine(cleanTarget(st, ctx)), ctx);
+  else if (st.targetKind !== 'none') what = relCommand(brainOneLine(cleanTarget(st, ctx)), ctx);
   return clean(ctx, `${st.n} ${GLYPHS[st.glyph].word}${what ? ' · ' + what : ''} · ${stateWord(st)}`);
 }
 export function exportText(steps: readonly BrainStep[], ctx: SurfaceCtx): string {
@@ -194,7 +194,7 @@ export function costDetail(s: BrainState, ctx: SurfaceCtx): string {
 
 /** The sentence under the card (FR-022). Sharing: the current tool word and state only. */
 export function sentenceFor(s: BrainState, ctx: SurfaceCtx): string {
-  if (!ctx.sharing) return oneLine(clean(ctx, s.sentence));
+  if (!ctx.sharing) return brainOneLine(clean(ctx, s.sentence));
   const st = currentStep(s);
   if (s.wait) return 'You · waiting';
   if (st) return shareLine(st);

@@ -30,5 +30,17 @@
   "realoffice-world.css": {
     "colors": 0,
     "fonts": 0
+  },
+  "brainview/brain.css": {
+    "colors": 8,
+    "fonts": 0
+  },
+  "brainview/draw.js": {
+    "colors": 10,
+    "fonts": 0
+  },
+  "brainview/host.js": {
+    "colors": 0,
+    "fonts": 0
   }
 }

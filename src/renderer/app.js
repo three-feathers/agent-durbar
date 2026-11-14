@@ -7473,6 +7473,32 @@ function onAgentRenamed(e){
   a.alias=typeof e.alias==='string'&&e.alias?e.alias:undefined;
   repaintName(a);
 }
+/* spec 106 T005: Brain view's temporary floating host, OFF by default (localStorage durbar.brainPreview = "on", or ?brain=1 in the simulator).
+   Loaded on first use (FR-105) from files that are not in index.html; events that arrive while it loads wait in a short queue. Removed by T006's dock. */
+const BRAIN_PREVIEW=(()=>{try{return (qs.has('sim')&&qs.get('brain')==='1')||localStorage.getItem('durbar.brainPreview')==='on';}catch(e){return false;}})();
+let BRAIN_H=null, BRAIN_STATE='idle', BRAIN_WHY=''; const BRAIN_Q=[];
+function brainLoad(){
+  BRAIN_STATE='loading';
+  const lk=document.createElement('link');lk.rel='stylesheet';lk.href='brainview/brain.css';document.head.appendChild(lk);
+  const files=['../shared/brainstate.js','../shared/brainsurface.js','brainview/points.js','brainview/draw.js','brainview/host.js'];
+  const next=i=>{
+    if(i>=files.length){
+      const R=window.DurbarRedact,U=window.DurbarUsage,C=window.DurbarCost;
+      if(NO_REDACT||!R||typeof R.redact!=='function'||!U||!C){BRAIN_STATE='failed';BRAIN_WHY='no mask';BRAIN_Q.length=0;return;} /* no masking, no brain */
+      const mask=Object.assign({},R,{units:{validNano:U.validNano,AIU_USD:C.AIU_USD,money:C.money,creditsWord:'AIU',estimateWord:'Claude (est.)'}});
+      BRAIN_H=window.DurbarBrainHost.start({mask,now:()=>Date.now(),name:id=>{const a=liveById(id);return a?a.name:'Agent';}});
+      BRAIN_STATE=BRAIN_H?'ready':'failed';if(!BRAIN_H)BRAIN_WHY='host refused';
+      BRAIN_Q.splice(0).forEach(x=>{if(BRAIN_H)BRAIN_H.feed(x[0],x[1],x[2]);});
+      return;
+    }
+    const sc=document.createElement('script');sc.src=files[i];sc.onload=()=>next(i+1);sc.onerror=()=>{BRAIN_STATE='failed';BRAIN_WHY='script '+files[i];BRAIN_Q.length=0;};document.head.appendChild(sc);
+  };
+  next(0);
+}
+function brainFeed(a,e){
+  if(!BRAIN_PREVIEW||BRAIN_STATE==='failed')return;
+  if(BRAIN_H)BRAIN_H.feed(a.id,a.name,e);else{BRAIN_Q.push([a.id,a.name,e]);if(BRAIN_Q.length>500)BRAIN_Q.shift(); /* while it loads, the newest 500 events are kept (a step's end beats its start) */if(BRAIN_STATE==='idle'){BRAIN_STATE='waiting';if(document.readyState==='complete')brainLoad();else window.addEventListener('load',brainLoad,{once:true});}}
+}
 function onLiveEvent(e){
   const a=liveById(e.sessionId); if(!a)return;
   if(e.type==='permission'&&e.permission)whyNote(a,e.permission); /* spec 003 FR-099: why a call ran without asking, for its tool card's tag */
@@ -7480,6 +7506,7 @@ function onLiveEvent(e){
   a.lastEventAt=Date.now(); /* spec 052 FR-062: last activity (when it arrived here; a helper's event counts for its main agent) */
   feedStats(a,e);
   liveFeed(a,e); /* spec 001 FR-028 */
+  brainFeed(a,e); /* spec 106 T005: off unless the preview flag is on */
   if(!e.agentId){ /* spec 034: only main-agent events change the mood */
     if(e.type==='toolCall')MOOD.onTool(a.id,e);
     else if(e.type==='status'){MOOD.onStatus(a.id,e.status);if(e.permission)MOOD.onPermission(a.id,e.permission,e.timestamp);} /* a pending request arrives inside a needs-permission status */
@@ -9619,7 +9646,7 @@ async function removeSessionUi(a){
   const name=r.name; removeLiveAgent(r.id); renderFolders(); scheduleRender(); toast(esc(name)+' removed. Its history is under Previous sessions.',3600).classList.add('ok');
 }
 function removeLiveAgent(id){
-  STATS.forget(id); MOOD.forget(id);
+  STATS.forget(id); MOOD.forget(id); if(BRAIN_H)BRAIN_H.forget(id); /* spec 106 T005 */
   if(LIVEACT){LIVEACT.drop(id);clearTimeout(liveTimers.get(id));liveTimers.delete(id);} /* spec 001 FR-028 */
   VISITS.leave(id); dropWalker(id); BREAKS.end(id); /* spec 068: a removed agent's break is forgotten */
   for(let i=agents.length-1;i>=0;i--)if(agents[i].id===id||agents[i].parent===id){forgetCardState(agents[i].id);agents.splice(i,1);}
@@ -10167,7 +10194,7 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
-if(SIM)window.__durbarSimUi={announce,afArrivalPrio,afNotice:{ms:v=>{AF_NOTICE_MS=Math.max(100,Number(v)||3000);return AF_NOTICE_MS;},on:v=>{setAutoFollowOn(!!v);return AF_ON;},shown:()=>!!AF_NOTICE}, /* spec 052 FR-239: drivers only: the notice's length, Auto-follow without Settings */swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
+if(SIM)window.__durbarSimUi={brain:{host:()=>BRAIN_H,state:()=>BRAIN_STATE,why:()=>BRAIN_WHY,flag:BRAIN_PREVIEW,queued:()=>BRAIN_Q.length}, /* spec 106 T005: check-brain-draw reads the floating host's frame counts */announce,afArrivalPrio,afNotice:{ms:v=>{AF_NOTICE_MS=Math.max(100,Number(v)||3000);return AF_NOTICE_MS;},on:v=>{setAutoFollowOn(!!v);return AF_ON;},shown:()=>!!AF_NOTICE}, /* spec 052 FR-239: drivers only: the notice's length, Auto-follow without Settings */swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
   chatTrimNow:()=>chatTrimPending(false), /* spec 005 FR-238: trim the chats waiting for a frame now (a burst with no frame between) */
   hiddenTrimTimer:()=>({on:!!hiddenTrimT,ms:TRIM_HIDDEN_MS}),
   helperState:(id,st)=>{const h=agents.find(x=>x.id===id&&x.parent);if(!h||!['working','thinking','waiting','error','limit','done','idle'].includes(st))return false;h.state=st==='limit'?'waiting':st;h.limit=st==='limit';h.paused=false;layoutKey='';renderAll();return true;}, /* spec 097 T335 (issue 1642): drivers only: a helper's state the simulator never sends (waiting, limit), for the kids on the desk */

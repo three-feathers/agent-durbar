@@ -252,6 +252,8 @@ test:mcpcontextipc
 test:quota
 test:featureinventory
 test:simversion
+test:brainpoints
+test:braindraw
 test:momentsregistry
 test:paritytick
 test:picturebudget

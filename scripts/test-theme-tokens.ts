@@ -95,7 +95,7 @@ for (const [k, spec] of Object.entries(TYPED_TOKENS)) {
 
 // ---- 3. the literal ratchet ----
 const RATCHET = path.join(ROOT, 'scripts', 'fixtures', 'theme-literals.json');
-const FILES = ['styles.css', 'screens.css', 'themes.css', 'app.js', 'screens.js', 'scenekits.js', 'index.html', 'realoffice-world.css'];
+const FILES = ['styles.css', 'screens.css', 'themes.css', 'app.js', 'screens.js', 'scenekits.js', 'index.html', 'realoffice-world.css', 'brainview/brain.css', 'brainview/draw.js', 'brainview/host.js'];
 function literals(file: string): { colors: number; fonts: number } {
   let src = fs.readFileSync(path.join(ROOT, 'src', 'renderer', file), 'utf8');
   if (file.endsWith('.css')) src = src.replace(/\/\*[\s\S]*?\*\//g, '');

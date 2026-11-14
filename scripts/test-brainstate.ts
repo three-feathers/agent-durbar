@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as R from '../src/shared/redact';
 import { costDetail, exportText, formatStep, officeLine, sentenceFor } from '../src/shared/brainsurface';
-import { BrainMask, BrainState, FRAME_MS, GLYPHS, HISTORY_MAX, PAINT_MS, REVEAL_ORDER, STEP_CAP, TRAIL_MAX, baseName, brainState, currentStep, glyphOf, initBrain, loopText, markPainted, maskText, programOf, revealStages, sentenceOf, shouldPaint, trailOf, usedLobes } from '../src/shared/brainstate';
+import { BrainMask, BrainState, FRAME_MS, GLYPHS, HISTORY_MAX, PAINT_MS, REVEAL_ORDER, STEP_CAP, TRAIL_MAX, baseName, brainState, currentStep, glyphOf, initBrain, loopText, markPainted, brainMaskText, programOf, revealStages, sentenceOf, shouldPaint, trailOf, usedLobes } from '../src/shared/brainstate';
 
 // the app's own usage units (spec 011 `usagetotals.js`, spec 052 `costtable.js`), as the page passes them next to redact's functions
 const USAGE = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'usagetotals.js'));
@@ -326,9 +326,9 @@ assert.ok(!JSON.stringify(s).includes('SECRET-OUTPUT'), 'tool output is never ke
   assert.strictEqual(feed(kc, [{ type: 'user' }]).inKeyBlock, false, 'a new turn starts outside a block');
 }
 // F7: a mask returning a non-string yields no text, never a coerced object
-assert.strictEqual(maskText({ ...mask, maskTokenShapes: () => ({ toString: () => 'LEAK-' + GH }) as unknown as string } as never, 'x'), '', 'a non-string result fails closed');
-assert.strictEqual(maskText({ ...mask, maskTokenShapes: () => 5 as unknown as string } as never, 'x'), '', 'a number result fails closed');
-assert.strictEqual(maskText(mask, 'a\u202Eb\u2066c\u2069d'), 'abcd', 'bidi override and isolate characters are dropped');
+assert.strictEqual(brainMaskText({ ...mask, maskTokenShapes: () => ({ toString: () => 'LEAK-' + GH }) as unknown as string } as never, 'x'), '', 'a non-string result fails closed');
+assert.strictEqual(brainMaskText({ ...mask, maskTokenShapes: () => 5 as unknown as string } as never, 'x'), '', 'a number result fails closed');
+assert.strictEqual(brainMaskText(mask, 'a\u202Eb\u2066c\u2069d'), 'abcd', 'bidi override and isolate characters are dropped');
 assert.strictEqual(initBrain('Ada\u202E', mask).name, 'Ada', 'also in a name');
 
 // F3: the program of a command is taken from the MASKED command: a token as the first word never reaches the office cell
@@ -455,7 +455,7 @@ assert.ok(Math.abs(s.turnCost - 0.05) < 1e-9, 'junk costs are ignored');
   let cases = 0;
   for (const h of heads) for (const tl of tails) for (const sz of [1, 3, 7, 1000]) {
     const text = 'I will send ' + h + SEC + tl;
-    if (maskText(mask, text).includes(SEC.slice(0, 8))) continue; // redact itself does not mask this shape (#1227's kind of gap): out of scope here
+    if (brainMaskText(mask, text).includes(SEC.slice(0, 8))) continue; // redact itself does not mask this shape (#1227's kind of gap): out of scope here
     cases++;
     const chunks: string[] = []; for (let i = 0; i < text.length; i += sz) chunks.push(text.slice(i, i + sz));
     const st = feed(fresh(), [{ type: 'user' }, ...chunks.map((delta) => ({ type: 'thinking', delta })), start('bash', { command: 'ls' })], 1);
@@ -477,7 +477,7 @@ for (const seed0 of [1, 7, 42]) {
   for (let it = 0; it < 400; it++) {
     const sec = pick(SECS), text = pick(pres) + pick(heads) + sec + pick(tails);
     const slices: string[] = []; for (let j = 0; j + 8 <= sec.length; j += 3) slices.push(sec.slice(j, j + 8));
-    if (slices.some((x) => maskText(mask, text).includes(x))) continue; // redact itself does not mask this text as a whole (#1227)
+    if (slices.some((x) => brainMaskText(mask, text).includes(x))) continue; // redact itself does not mask this text as a whole (#1227)
     const chunks: string[] = []; for (let i = 0; i < text.length;) { const n = 1 + Math.floor(rnd() * (rnd() < 0.3 ? 60 : 12)); chunks.push(text.slice(i, i + n)); i += n; }
     cases++;
     const kind = rnd() < 0.5 ? 'thinking' : 'output';
