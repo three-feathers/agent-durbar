@@ -4,7 +4,7 @@ import * as assert from 'assert';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { realLayout, sortDesks, storeyRuns, storeyTagW, STOREY_GAP, type RealFloor, type RealMeta, type RealModel, type RealAgent, type RealState, type Rect, type Layout, type DeskBox } from '../src/shared/realoffice-layout';
+import { realLayout, sortDesks, storeyRuns, storeyTagW, STOREY_GAP, STOREY_U_LOSS, type RealFloor, type RealMeta, type RealModel, type RealAgent, type RealState, type Rect, type Layout, type DeskBox } from '../src/shared/realoffice-layout';
 import { screenFit } from '../src/shared/realoffice-layout';
 import { aisleStatus, aislesLayout, layoutFor, aisleTabOrder, aisleFace, FACE_FLOOR, AISLE_SIGN_MIN_W, AISLE_PLATE_H, ARRANGEMENTS } from '../src/shared/realoffice-arrangements';
 
@@ -641,13 +641,68 @@ console.log(`floor covered with 4 or fewer: ${covs.join('; ')}`);
   assert.strictEqual(aislesLayout(fm([5, 5], [0, 0]), { w: 1248, h: ROOM.h800 }, META, sg(2)).storeys, undefined, 'two folders on one floor: no storeys');
   assert.strictEqual(aislesLayout(fm([5, 5, 5], [2, 1, 0]), { w: 1248, h: ROOM.h800 }, { ...META, storeys: false }, sg(3)).storeys, undefined, 'a world without `storeys` draws none');
   assert.strictEqual(JSON.stringify(aislesLayout(fm([5, 5, 5], [2, 1, 0]), { w: 1248, h: ROOM.h800 }, { ...META, storeys: false }, sg(3))), JSON.stringify(aislesLayout(flat(fm([5, 5, 5], [2, 1, 0])), { w: 1248, h: ROOM.h800 }, META, sg(3))), 'a world without `storeys` lays out exactly as before');
-  // the shared rule (`storeyRuns`) is the one every arrangement uses; the `rows` arrangement does not draw storeys yet (spec 097 T113, KNOWN GAP): realLayout leaves them unset
+  // the shared rule (`storeyRuns`) is the one every arrangement uses; the `rows` arrangement (`realLayout`, Photo and cave) uses it too (spec 097 T113, the block below)
   const runs = storeyRuns(fm([5, 5, 5], [2, 1, 0]).folders);
   assert.deepStrictEqual(runs && runs.map((r) => [r.floor.id, r.from, r.to]), [['p', 0, 1], ['c', 1, 2], ['g', 2, 3]], 'storeyRuns: one run per floor, in the given order');
   assert.strictEqual(storeyRuns(fm([5, 5], [0, 0]).folders), null, 'storeyRuns: one floor is no storeys');
   assert.strictEqual(storeyRuns(fm([2, 2, 2], [0, 1, 0]).folders), null, 'storeyRuns: a floor split in two runs is not storeys (the app sorts by floor first)');
-  assert.strictEqual(realLayout(fm([5, 5, 5], [2, 1, 0]), { w: 1248, h: ROOM.h800 }, { ...META, storeys: true }, sg(3)).storeys, undefined, 'KNOWN GAP (spec 097 T113): the rows arrangement draws no storeys yet, whatever the flag');
   console.log('storeys: 12 agent splits over 1 to 3 floors at both sizes: no scroll, scale and cabinet as without floors, tags clear of signs, cabinets and each other');
+}
+
+// ---- spec 097 delta 2026-11-14 (FR-104, FR-116, T113): the `rows` arrangement (Photo, cave) draws the All floors view as storeys with the same shared rule. A floor starts on a new row only when that is free:
+// no row more, no scroll, no helper strip lost, the unit u at most STOREY_U_LOSS smaller; otherwise the floors share rows and an upright rule and the tag mark each storey. Measured on 15 agents at both sizes.
+for (const world of ['photo', 'cave']) {
+  const WM = { ...readJson('worlds', world, 'world.json'), ...readJson('sets', world === 'cave' ? 'retro' : 'office', 'set.json') } as unknown as RealMeta;
+  const WP = Object.keys(WM.seat).sort();
+  const FLS: RealFloor[] = [{ id: 'g', name: 'Ground floor', n: 1 }, { id: 'c', name: 'Client A', n: 2 }, { id: 'p', name: 'Personal', n: 3 }];
+  const fm = (sizes: number[], floorOf: number[]): RealModel => { let i = 0; return { folders: sizes.map((n, fi) => ({ id: 'f' + fi, floor: FLS[floorOf[fi]], agents: Array.from({ length: n }, () => { const k = i++; return { id: 'a' + k, state: 'working' as RealState, person: WP[k % WP.length], away: null }; }) })), places: ['library', 'coffee', 'boss'].map((id) => ({ id, visitors: [] })) }; };
+  const sg = (n: number): Record<string, { name: string; path: string; counts: number }> => Object.fromEntries(Array.from({ length: n }, (_, i) => ['f' + i, { name: 'project-' + i, path: '~/work/p' + i, counts: 3 }]));
+  const flat = (m: RealModel): RealModel => ({ ...m, folders: m.folders.map((f) => ({ ...f, floor: undefined })) });
+  const ON = { ...WM, storeys: true }, OFF = { ...WM, storeys: false };
+  const ROWS = (L: Layout): number => new Set(L.zones.map((z) => Math.round(z.sign.y))).size;
+  const CASES: Array<[string, number[], number[]]> = [
+    ['15: 5/5/5', [5, 5, 5], [2, 1, 0]], ['15: 4+1 on each floor', [4, 1, 4, 1, 4, 1], [2, 2, 1, 1, 0, 0]], ['15: 8/7 on 2 floors', [8, 7], [1, 0]], ['15: 6/5/4', [6, 5, 4], [2, 1, 0]], ['15: 7/4/4', [7, 4, 4], [2, 1, 0]],
+    ['15: 3,3,3,3,3 on 3 floors', [3, 3, 3, 3, 3], [2, 2, 1, 0, 0]], ['12: 4/4/4', [4, 4, 4], [2, 1, 0]], ['9: 3/3/3', [3, 3, 3], [2, 1, 0]], ['15: 1/1/13', [1, 1, 13], [2, 1, 0]],
+  ];
+  const sizes: Array<[number, number]> = [[1408, ROOM.h900], [1248, ROOM.h800]];
+  const table: string[] = [];
+  for (const [W, H] of sizes) for (const [name, sz, fl] of CASES) {
+    const tag = `${world} ${name} at ${W}x${H}`, m = fm(sz, fl), L = realLayout(m, { w: W, h: H }, ON, sg(sz.length)), F = realLayout(flat(m), { w: W, h: H }, ON, sg(sz.length));
+    const floors = new Set(fl).size, S = L.storeys!;
+    assert.ok(!L.scroll && !F.scroll, `${tag}: the hall does not scroll`);
+    assert.ok(L.u >= F.u * (1 - STOREY_U_LOSS) - 1e-6 && ROWS(L) === ROWS(F), `${tag}: the people are at most ${STOREY_U_LOSS * 100} % smaller and no row is added by the floors (u ${F.u.toFixed(1)} -> ${L.u.toFixed(1)})`);
+    assert.ok(S && S.length === floors, `${tag}: ${floors} storeys are marked`);
+    assert.deepStrictEqual(S.map((b) => [b.n, b.name]), [...new Set(fl)].map((i) => [FLS[i].n, FLS[i].name]), `${tag}: top floor first, each storey carries its floor's number and name`);
+    const signs = L.zones.map((z) => z.sign);
+    for (const [i, b] of S.entries()) {
+      assert.ok(b.tag.h === 20 && b.tag.w >= 40 && b.tag.x >= 0 && b.tag.x + b.tag.w <= W && inside(b.tag, { x: 0, y: 0, w: W, h: L.height }), `${tag}: the tag of ${b.name} is whole inside the hall`);
+      assert.ok(!signs.some((sn) => inter(sn, b.tag)), `${tag}: the tag of ${b.name} covers no sign`);
+      assert.ok(!S.some((o, j) => j !== i && inter(o.tag, b.tag)), `${tag}: the tag of ${b.name} covers no other tag`);
+      assert.ok(!L.zones.some((z) => z.desks.some((d) => inter(b.tag, d.plate) || inter(b.tag, d.desk))), `${tag}: the tag of ${b.name} covers no plate or desk`);
+      assert.ok(L.zones.some((z) => z.sign.y === b.tag.y && b.tag.x >= z.box.x - 1 && b.tag.x < z.box.x + z.box.w), `${tag}: the tag stands in the sign strip of a zone`);
+      if (i) assert.ok(b.slab && b.slab.w * b.slab.h > 0, `${tag}: ${b.name} has a rule where it starts`); else assert.strictEqual(b.slab, null, `${tag}: the top storey has no rule`);
+      if (i) assert.ok(!L.zones.some((z) => inter(b.slab!, z.sign) || z.desks.some((d) => inter(b.slab!, d.plate))), `${tag}: the rule of ${b.name} covers no sign or plate`);
+    }
+    const own = S.length > 1 && new Set(S.map((b) => b.box.y)).size === S.length && S.every((b, i) => !i || (b.slab!.w > 100));
+    if (own) { /* floors on rows of their own: no row holds two floors, the rule lies across between the rows */
+      const rowFloors = new Map<number, Set<string>>(); L.zones.forEach((z) => { const k = Math.round(z.sign.y), f = m.folders.find((x) => x.id === z.id)!.floor!.id; (rowFloors.get(k) || rowFloors.set(k, new Set()).get(k)!).add(f); });
+      assert.ok([...rowFloors.values()].every((st) => st.size === 1), `${tag}: no row holds two floors`);
+      for (let i = 1; i < S.length; i++) assert.ok(S[i].slab!.y >= S[i - 1].box.y + S[i - 1].box.h - 1 && S[i].slab!.y + 2 <= S[i].box.y, `${tag}: the rule of ${S[i].name} lies in the gap above its row`);
+    } else assert.ok(S.every((b, i) => !i || b.slab!.w === 2), `${tag}: floors sharing rows are marked by an upright rule`);
+    table.push(`${W}x${H} ${name}: u ${F.u.toFixed(1)} -> ${L.u.toFixed(1)}, ${ROWS(L)} rows, ${own ? 'floors on rows of their own' : 'floors share rows'}`);
+    cases++;
+  }
+  // forced only when free: 15 agents 5/5/5 at 1440x900 stand each on its own row (u 2 % smaller at most), at 1280x800 the gaps would break the 15-agent rule: they share rows
+  const big = realLayout(fm([5, 5, 5], [2, 1, 0]), { w: 1408, h: ROOM.h900 }, ON, sg(3)), small = realLayout(fm([5, 5, 5], [2, 1, 0]), { w: 1248, h: ROOM.h800 }, ON, sg(3)), smallFlat = realLayout(flat(fm([5, 5, 5], [2, 1, 0])), { w: 1248, h: ROOM.h800 }, ON, sg(3));
+  assert.strictEqual(new Set(big.storeys!.map((b) => b.box.y)).size, 3, `${world}: 5/5/5 at 1440x900: every floor starts on a row of its own`);
+  assert.ok(small.storeys!.filter((b) => b.slab).every((b) => b.slab!.w === 2) && small.u === smallFlat.u && ROWS(small) === ROWS(smallFlat), `${world}: 5/5/5 at 1280x800: the gaps would cost the scale, so the floors share rows and nothing is smaller`);
+  assert.ok(!small.scroll, `${world}: 15 agents over 3 floors fit 1280x800 with no scroll`);
+  // off: no storeys, and the layout is exactly the old one
+  assert.strictEqual(realLayout(fm([5, 5, 5], [2, 1, 0]), { w: 1408, h: ROOM.h900 }, OFF, sg(3)).storeys, undefined, `${world}: with storeys off it leaves them unset`);
+  assert.strictEqual(JSON.stringify(realLayout(fm([5, 5, 5], [2, 1, 0]), { w: 1408, h: ROOM.h900 }, OFF, sg(3))), JSON.stringify(realLayout(flat(fm([5, 5, 5], [2, 1, 0])), { w: 1408, h: ROOM.h900 }, OFF, sg(3))), `${world}: with storeys off the floors change nothing`);
+  assert.strictEqual(realLayout(fm([5, 5], [0, 0]), { w: 1408, h: ROOM.h900 }, ON, sg(2)).storeys, undefined, `${world}: one floor with folders: no storeys`);
+  assert.strictEqual(JSON.stringify(realLayout(flat(fm([5, 5, 5], [2, 1, 0])), { w: 1408, h: ROOM.h900 }, ON, sg(3))), JSON.stringify(realLayout(flat(fm([5, 5, 5], [2, 1, 0])), { w: 1408, h: ROOM.h900 }, OFF, sg(3))), `${world}: no floors given (one floor shown): the flag changes nothing`);
+  console.log(`rows storeys (${world}): ${table.length} splits at both sizes: no scroll, no row added, u at most 2 % smaller, tags clear of signs, plates and each other\n  ` + table.join('\n  '));
 }
 
 console.log(`aisles tests passed (${cases} layouts)`);

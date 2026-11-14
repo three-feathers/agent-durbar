@@ -429,8 +429,9 @@ module.exports = async (ctx) => {
       });
       console.log('[moments] notes ok', ns.length);
     }
-    // ---- 102 T223: the cells that are not one of the nine, looked at in the arcade (chat with a request, the All floors view): pictures and no text under 10.5px ----
-    if (run('cells') && world === 'retro') {
+    // ---- 097 T113: the All floors view as storeys in Photo and the cave too (the same step, same checks); 102 T223: the cells that are not one of the nine, looked at in the arcade (chat with a request, the All floors view): pictures and no text under 10.5px ----
+    if (run('cells')) {
+      if (world === 'retro') {
       await H.load({ w, h, query: q(world, { sim: '15', simfloors: '1' }), ready: REAL, settle: false });
       await must(PICS, 'the pictures');
       await js(`(()=>{const p=[...document.querySelectorAll('#stage .ro-plate')].find(x=>x.textContent.startsWith('Jonas'));p.click()})()`);
@@ -442,6 +443,7 @@ module.exports = async (ctx) => {
       const perm = await js(`(()=>{const c=document.querySelector('#chat .note.perm:not(.settled)');if(!c)return null;const P=(s)=>{const m=/rgba?\\(([^)]+)\\)/.exec(s);return m?m[1].split(/[ ,\\/]+/).filter(Boolean).slice(0,3).map(Number):[0,0,0]},Lm=(a)=>{const f=(x)=>{x/=255;return x<=0.03928?x/12.92:Math.pow((x+0.055)/1.055,2.4)};return 0.2126*f(a[0])+0.7152*f(a[1])+0.0722*f(a[2])};const bg=P(getComputedStyle(c).backgroundColor);const worst=[...c.querySelectorAll('*')].filter(e=>e.children.length===0&&e.textContent.trim()&&e.getClientRects().length&&!e.closest('.btn')).map(e=>{const a=Lm(P(getComputedStyle(e).color)),b=Lm(bg);return (Math.max(a,b)+0.05)/(Math.min(a,b)+0.05)});return {lum:Lm(bg),btns:c.querySelectorAll('.btn').length,texts:worst.length,min:worst.length?Math.min(...worst):0}})()`);
       assert.ok(perm && perm.lum < 0.2 && perm.btns >= 2 && perm.texts > 0 && perm.min >= 4.5, `${tag}: the permission card in the arcade's chat is dark, has its buttons and its text reads at 4.5:1: ${JSON.stringify(perm)}`);
       await shot(world, 'cell-chat', w, h);
+      }
       await H.load({ w, h, query: q(world, { sim: '15', simfloors: '1' }), ready: REAL, settle: false });
       await must(PICS, 'the pictures');
       await js(`document.querySelector('#lift [data-lift="*all"]').click()`);
@@ -472,7 +474,7 @@ module.exports = async (ctx) => {
       assert.ok(sto.inWindow, `${tag}: every storey tag is inside the window`);
       assert.strictEqual(sto.scroll, false, `${tag}: the All floors view does not scroll`);
       await shot(world, 'cell-allfloors', w, h);
-      for (const f of ['cell-chat', 'cell-allfloors']) assert.ok(fs.existsSync(path.join(OUT, `${world}-${f}-${w}x${h}.png`)), `${tag}: the picture ${f} was written`);
+      for (const f of world === 'retro' ? ['cell-chat', 'cell-allfloors'] : ['cell-allfloors']) assert.ok(fs.existsSync(path.join(OUT, `${world}-${f}-${w}x${h}.png`)), `${tag}: the picture ${f} was written`);
       await js(`localStorage.removeItem('durbar.floor');localStorage.removeItem('durbar.floorView')`); /* the next size starts on one floor */
     }
   }
