@@ -1,0 +1,1 @@
+- **Prehistoric cave (behind its flag, not offered yet): the text on a desk screen sits inside the slate** (issue #1751): the stone frame is drawn round the screen's glass, a little larger than before.
