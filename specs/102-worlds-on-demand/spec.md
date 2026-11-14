@@ -1597,6 +1597,41 @@ The `[KNOWN GAP]` of 2026-11-11 above about `SIZES` is closed by this change. Lo
 
 **Numbers** (checked 2026-11-12, `npm run specs:numbers`, `origin/main` `c4e1f7ebe`, every remote branch and 49 open PR heads): spec 102 reaches T310 on `main` and T325 on open PR #1599; this entry takes **T326, T327** and no FR.
 
+## Changes 2026-11-13: in the arcade the notice strips yield before the office scrolls (T340, issue #1589, no new FR; owner decision 8 of 2026-11-13)
+
+[FR-229](spec.md) and FR-293 (15 agents fit 1440x900 and 1280x800, no office scroll) hold with any notice strips. **Owner decision** (Vikram, 2026-11-13, relayed by the Linux coordinator, [decision 8 on #1400](https://github.com/three-feathers/agent-durbar/issues/1400#issuecomment-6845205102)): "#1589: the notice strips yield before the office scrolls." This replaces the `[KNOWN GAP]`s of the 2026-11-11 delta (two strips at once, a taller strip, the open MCP list) and the owner's 2026-11-12 "accepted for now".
+
+**Measured (simulator, `simkinds=mixed`, 15 agents, Retro arcade, macOS; room = floor less its padding, hall = layout height, over = `#floor` scrollHeight less clientHeight; strips 31 px, away 36 px):**
+
+| case | 1440x900 room / hall / over | 1280x800 room / hall / over |
+|---|---|---|
+| no strip | 828 / 828 / 0 | 728 / 728 / 0 |
+| one strip (restore, crash, follow, MCP) | 797 / 797 / 0 | 697 / 697 / 0 |
+| away strip (36 px) | 792 / 792 / 0 | 692 / 692 / 0 |
+| crash card, Pick open (68 px) | 760 / 760 / 0 | 684 / 684 / 0 (lent) |
+| MCP and crash, or restore and MCP | 766 / 766 / 0 | 690 / 690 / 0 (lent) |
+| **MCP list open (221 or 226 px)** | 607 / 700 / **93** | 502 / 700 / **198** |
+| all five strips (193 px) | 692 / 692 / 0 (lent) | 568 / 700 / **132** |
+| filter `working` (6 agents) and MCP, or and crash | fits | fits |
+
+So on macOS two strips fit (with the lend of T308, as #1589 said); the open MCP list and three or more strips scroll.
+
+**The rule (one).** In a world whose arrangement is `aisles` (the arcade; Flat, Photo and Cave are not changed: their strips stay in the flow), when the hall still scrolls with the strips in the flow and the lent padding (T308), the strips leave the flow: `#stripBar`, one line (31 px, the strip's look), says "N notices: <names>." with a Show/Hide button (`aria-expanded`, name "Show 3 notices"), and Show opens the strips themselves as an overlay (`position:fixed` under the bar, no office height). The layout is asked again with the bar only; if the hall still scrolls (16 agents or more) the strips go back into the flow and the office scrolls as before. Nothing is lost: every strip keeps its text and buttons, reached by the bar's button (Tab stop, Enter or Space), then Tab inside the overlay; Escape hides the overlay and returns focus to the bar's button. A list the person opens (MCP List..., crash Pick...) opens the overlay too, so it stays in view. Focus that was in a strip when it folds goes to the bar's button. The crash card's focus return (to the first session's desk when it goes) and the follow strip's buttons are unchanged. Why this and not a priority order or a pill lane: no choice of "most urgent" (restore, crash, MCP and follow are all urgent to someone), no strip is lost, and the bar is one line whatever the count, so the room needed is the same for 1 or 5 strips and an open list cannot grow the office. **No loop:** as `ro-tight`, the strips are put back in the flow at the start of every draw and the decision is made in the same task.
+
+`sim:` `shots-102-strips` (new, Retro arcade, both sizes, 15 agents): the rows above that scrolled must not scroll, the bar's button has a name and a tab stop, Show opens each strip, Escape returns focus; one mutant per assert (T340). `[KNOWN GAP]` with a status filter showing 11 to 15 agents plus a strip the office still scrolls at 1280x800 (the note takes 40 px; gap (b) of #1597; the bar is not shorter than a strip); 16 or more agents scroll as before; Photo has no lend and no yield (not extended here). Not measured: Linux and Windows strip heights; the away strip with several missed prompts; a two-line strip text at 1280x800; the overlay with a screen reader (markup read only).
+
+**Owner approval (Vikram, DM 2026-11-13 09:16:12 UTC, "Ok", relayed by the Linux coordinator and recorded in [a comment on PR 1685](https://github.com/three-feathers/agent-durbar/pull/1685#issuecomment-6848960211)):** approved as shown: the one "N notices" bar with Show, the strips' buttons one click behind Show, and the status-filter case staying a gap on #1597.
+
+## Changes 2026-11-14: the notice-strip yield ends with the Office view; the bar carries the folded alert; pictures at both sizes (T340, issue #1589, review of PR 1685, no new FR)
+
+Review findings on [the 2026-11-13 entry above](spec.md), all three fixed in the PR:
+
+- **The yield follows the view.** The reset ran only in `renderOffice`, which returns early off the Office view, so with the strips folded and the overlay open, switching to List left `body.strips-yield strips-open`, the bar and the strips as fixed overlays over the list (before T340 they sat in the flow), with a stale count if one was dismissed there. Now `setView` calls `stripsReset()` (open flag off, `stripsYield(false)`, the same code `renderOffice` uses) when the view is not Office: in List the strips are in the flow and there is no bar; back in the Office the next draw folds them again if the hall would scroll.
+- **A folded alert is read.** Only the restored-Allow-all strip is `role="alert"` (the crash strip is `role="status"`); folded strips are `display:none`, so that alert was never read. The bar names every folded strip in its text and stays `role="status"` (a role switched on after its text is in place is not announced by many readers). Instead an always-present, visually hidden `role="alert"` region, `#stripAlert` (class `sr-only`; the existing `announce()` region is polite, so it cannot carry an alert), is written once, "Allow all restored", when the restore strip joins the folded set, and emptied when it leaves, when the yield ends (the strip is in the flow and speaks for itself) and on the switch to List. A redraw does not write it again (driver: folded over four strips with the region empty, then the restore strip arrives, as for a restored Allow all; the region holds the phrase and a MutationObserver counts one write across two redraws). `[KNOWN GAP]` Not verified with a screen reader (markup and a driver assert only).
+- **Pictures at both sizes.** `docs/screenshots/102-1589-{five-strips,mcp-list,two-strips}-after-1440x900.png` (simulator, palette-compressed with `compress-shots.js`) join the 1280x800 ones. At 1440x900 five strips and the two-strip case fit in the flow with the T308 lend, so the pictures show strips and no bar, as the table above says; the "before" pictures stay 1280x800 only (a 1440x900 "before" needs a build of `main`; not taken).
+
+`sim:` `shots-102-strips`: Office to List with the overlay open (no `strips-yield`, no `strips-open`, no bar, the strips in the flow and not fixed) and back to Office (folded again); the bar's text names the restore and crash strips, the bar stays `status`, `#stripAlert` holds the phrase while the strip is folded in and is empty otherwise (no restore strip, after Dismiss, in List). Mutants, each killed at its own label: the `setView` reset removed, the phrase never written, written only on the first fold (the later join never writes), the region never cleared. **Numbers:** no new FR or task.
+
 ## Changes 2026-11-13: the World section, first step: picture cards for Plain and the Photo office, with their previews (T266 in part; issue #1400; no new FR)
 
 [FR-300](spec.md), [FR-301](spec.md), [FR-302](spec.md), SC-026. The recorded decisions and the spec are followed as written; this entry records how the work is cut, so each part lands behind the closed flags and nothing of an unreleased world shows.
