@@ -443,16 +443,22 @@
     /* Characters (spec 077 FR-064, FR-068): who sits at the desks, on top of any theme; the theme picker's pattern, one figure per choice */
     const KIT_NAMES={office:'Minimalist',pixel:'Pixel',crew:'Cheeky'};
     /* the items are painted again after a theme pick: the theme's own figures and every preview follow the theme */
+    /* spec 102 FR-320: Retro pixel is always listed; while its flag is closed the entry is disabled and says "Not open yet" (a set's pick preview is its own first person) */
+    const retroOpen=()=>{const C=window.DurbarCrew;return !!(C&&C.levelFor&&C.levelFor(window.THEME.PIXEL_CHARACTERS)!=='closed');}; /* FR-320: "closed" is the level of `levelFor` (the one place that reads the flag), never a second read of WORLD_FLAGS */
+    const setPreview=(id)=>{const px=id==='retro';return `<svg viewBox="${px?'0 0 80 80':'85 95 290 290'}" focusable="false"><image class="chsw-set${px?' chsw-px':''}" href="realoffice/sets/${id}/p01-typeA.webp" x="0" y="0" width="${px?80:457}" height="${px?79:618}"/></svg>`;}; /* the first person's seated frame, cropped to head and shoulders (the office frame is 457x618, the head from y 111) */
+    /* FR-322: a saved Retro pixel while its flag is closed is kept; the line says what is drawn meanwhile */
+    const charNote=()=>{const C=window.DurbarCrew;if(!C||!C.peopleFor||window.THEME.characters()!==window.THEME.PIXEL_CHARACTERS||retroOpen())return '';const w=X.view&&X.view.world&&X.view.world.get?X.view.world.get():'';return (C.peopleFor(w,window.THEME.PIXEL_CHARACTERS).note||'')+' Flat draws the theme\u2019s own figures until then.';};
     const charItems=()=>{
       const cur=window.THEME.characters(), own=window.THEME.themeKit(), crewN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.IDS)?window.DurbarCrew.IDS.length:0; const preN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.PREHISTORIC_IDS)?window.DurbarCrew.PREHISTORIC_IDS.length:0,pirN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.PIRATE_IDS)?window.DurbarCrew.PIRATE_IDS.length:0,monN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.MONSTER_IDS)?window.DurbarCrew.MONSTER_IDS.length:0,royN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.ROYAL_IDS)?window.DurbarCrew.ROYAL_IDS.length:0,rebN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.REBELS_IDS)?window.DurbarCrew.REBELS_IDS.length:0;
       const real=X.view&&X.view.get()==='real'&&X.view.world; /* FR-201: in Real office the first choice is the world's default set */
-      const list=[real?{id:'theme',name:'World\u2019s default ('+real.defaultSet()+')',sub:'People follow the world'}:{id:'theme',name:'The theme\u2019s own',sub:(KIT_NAMES[own]||own)+' figures'},{id:'minimalist',name:'Minimalist',sub:'The calm office figure'},{id:'cheeky',name:'Cheeky',sub:crewN?crewN+' cheeky characters':'Cheeky characters'},{id:'prehistoric',name:'Prehistoric',sub:preN?preN+' cave characters':'Cave characters'},{id:'pirate',name:'Pirate',sub:pirN?pirN+' pirate characters':'Pirate characters'},{id:'monster',name:'Monster',sub:monN?monN+' monster characters':'Monster characters'},{id:'royal',name:'Royal',sub:royN?royN+' royal characters':'Royal characters'},{id:'rebels',name:'Animal Rebels',sub:rebN?rebN+' animal characters':'Animal characters'}];
-      return list.map((c)=>`<li class="throw"><button class="thpick" type="button" data-characters="${esc(c.id)}" aria-pressed="${c.id===cur}" aria-label="Characters ${esc(c.name)}: ${esc(c.sub)}"><span class="chsw" aria-hidden="true">${X.charPreview?X.charPreview(c.id):''}</span><span class="thtx"><b title="${esc(c.name)}">${esc(c.name)}</b><small>${esc(c.sub)}</small></span></button></li>`).join('');
+      const list=[real?{id:'theme',name:'World\u2019s default ('+real.defaultSet()+')',sub:'People follow the world'}:{id:'theme',name:'The theme\u2019s own',sub:(KIT_NAMES[own]||own)+' figures'},{id:'office',name:'Office people',sub:'15 photographed office people',set:'office'},{id:'minimalist',name:'Minimalist',sub:'The calm office figure'},{id:'cheeky',name:'Cheeky',sub:crewN?crewN+' cheeky characters':'Cheeky characters'},{id:'prehistoric',name:'Prehistoric',sub:preN?preN+' cave characters':'Cave characters'},{id:'pirate',name:'Pirate',sub:pirN?pirN+' pirate characters':'Pirate characters'},{id:'monster',name:'Monster',sub:monN?monN+' monster characters':'Monster characters'},{id:'royal',name:'Royal',sub:royN?royN+' royal characters':'Royal characters'},{id:'rebels',name:'Animal Rebels',sub:rebN?rebN+' animal characters':'Animal characters'},{id:window.THEME.PIXEL_CHARACTERS,name:'Retro pixel',sub:retroOpen()?'15 pixel people':'Not open yet',set:'retro',closed:!retroOpen()}];
+      const tab=(list.find((c)=>c.id===cur)||list.find((c)=>!c.closed)).id; /* roving tabindex: the chosen radio is the one Tab stop (World row's pattern, FR-301) */
+      return list.map((c)=>`<li class="throw" role="presentation"><button class="thpick" type="button" role="radio" data-characters="${esc(c.id)}"${c.closed?' aria-disabled="true"':''} aria-checked="${c.id===cur}" tabindex="${c.id===tab?'0':'-1'}" aria-label="Characters ${esc(c.name)}: ${esc(c.sub)}"><span class="chsw" aria-hidden="true">${c.set?setPreview(c.set):X.charPreview?X.charPreview(c.id):''}</span><span class="thtx"><b title="${esc(c.name)}">${esc(c.name)}</b><small>${esc(c.sub)}</small></span></button></li>`).join('');
     };
     charsRefresh=()=>{const l=$('chList');if(l)l.innerHTML=charItems();};
     const charSec=window.THEME&&window.THEME.setCharacters&&X.applyCharacters?`<section class="scr-sec" aria-labelledby="chH"><h3 id="chH">Characters</h3>
         <p class="scr-note">Who sits at the desks, on top of any theme; the choice applies at once and is kept on this computer.</p>
-        <ul class="thlist" id="chList">${charItems()}</ul></section>`:'';
+        <ul class="thlist" id="chList" role="radiogroup" aria-labelledby="chH">${charItems()}</ul><p class="scr-note small" id="chNote" role="status">${esc(charNote())}</p></section>`:'';
     /* Logo (spec 101 FR-020..FR-023): the top-bar icon, the Characters pattern; DurbarLogo (logo-marks.js) keeps the choice in localStorage and applies it at once */
     const LG=window.DurbarLogo;
     const logoItems=()=>{const cur=LG.current();return LG.IDS.map((id)=>{const n=LG.NAMES[id];return `<li class="throw"><button class="thpick" type="button" data-logo="${esc(id)}" aria-pressed="${id===cur}" aria-label="Logo ${esc(n[0])}: ${esc(n[1])}"><span class="lgsw" aria-hidden="true">${LG.preview(id)}</span><span class="thtx"><b title="${esc(n[0])}">${esc(n[0])}</b><small title="${esc(n[1])}">${esc(n[1])}</small></span></button></li>`;}).join('');};
@@ -576,7 +582,7 @@
       if(v&&v.ok){X.onUsageReset(v);X.toast('Usage totals were reset.',2600);paintSettings();}
       else{const m=$('usageTotalsMsg');if(m)m.textContent='Could not reset the totals.';}
     };
-    r.onclick=onSettingsClick;r.onkeydown=worldKeys;
+    r.onclick=onSettingsClick;r.onkeydown=(e)=>{worldKeys(e);charKeys(e);};
     r.onchange=e=>{if(e.target&&e.target.id==='chatLinksSel')return onChatLinksChange(e);return onPlaceChange(e);};
     /* theme picker (spec 037): click applies live through app.js's applyTheme; no restart */
     /* spec 037 FR-014: each swatch shows its own theme's colours (validated colour values set through CSSOM) */
@@ -593,14 +599,18 @@
       $('thList').querySelectorAll('[data-theme]').forEach((x)=>x.setAttribute('aria-pressed',String(x===b)));
     });
     /* spec 077 FR-068: a Characters pick applies live through app.js's applyCharacters and shows the new choice at once */
-    if($('chList'))$('chList').addEventListener('click',(e)=>{
-      const b=e.target.closest&&e.target.closest('[data-characters]');if(!b||!X.applyCharacters)return;
+    /* FR-303: Characters are one radio group like the World row (FR-301): the click and the arrows (charKeys, the World row's radioNav) pick through pickChar; a closed entry (aria-disabled) is neither picked nor reached by the arrows */
+    const syncChars=(cur)=>{const l=$('chList');if(!l)return;const all=[...l.querySelectorAll('[data-characters]')],hit=all.find((x)=>x.dataset.characters===cur)||all.find((x)=>x.getAttribute('aria-disabled')!=='true');all.forEach((x)=>{x.setAttribute('aria-checked',String(x.dataset.characters===cur));x.tabIndex=x===hit?0:-1;});};
+    pickChar=(b,focus)=>{
+      if(!b||!X.applyCharacters||b.getAttribute('aria-disabled')==='true')return;
       const done=X.applyCharacters(b.dataset.characters);
       Promise.resolve(done).then(()=>{const n=$('dsR'),V=X.view;if(n&&V)n.textContent=V.note();}); /* spec 102 FR-202: the one line saying a choice has no Real office poses follows the pick */
-      $('chList').querySelectorAll('[data-characters]').forEach((x)=>x.setAttribute('aria-pressed',String(x===b)));
+      syncChars(b.dataset.characters);if(focus)focusIn(b);
       /* a repaint of the list that a theme pick started earlier can land between this click and the change itself and show the old choice (check-characters on CI): once the change is applied, the buttons say what is applied */
-      Promise.resolve(done).then(()=>{const l=$('chList');if(l&&window.THEME&&window.THEME.characters){const cur=window.THEME.characters();l.querySelectorAll('[data-characters]').forEach((x)=>x.setAttribute('aria-pressed',String(x.dataset.characters===cur)));}});
-    });
+      Promise.resolve(done).then(()=>{const cn=$('chNote');if(cn)cn.textContent=charNote();if(window.THEME&&window.THEME.characters)syncChars(window.THEME.characters());});
+    };
+    /* spec 077 FR-068: a Characters pick applies live through app.js's applyCharacters and shows the new choice at once */
+    if($('chList'))$('chList').addEventListener('click',(e)=>{pickChar(e.target.closest&&e.target.closest('[data-characters]'),false);});
     /* spec 101 FR-020: a Logo pick shows at once in the top bar and is kept (no IPC, no file) */
     if($('lgList'))$('lgList').addEventListener('click',(e)=>{
       const b=e.target.closest&&e.target.closest('[data-logo]');if(!b||!window.DurbarLogo)return;
@@ -836,12 +846,16 @@
     if(charsRefresh)charsRefresh();
     const tw=$('thWorld');if(tw){tw.textContent=worldWords();tw.hidden=!tw.textContent;}
   }
-  function worldKeys(e){
-    const b=e.target.closest&&e.target.closest('#wrGroup [data-world]');if(!b)return;
-    const all=[...b.closest('#wrGroup').querySelectorAll('[data-world]')], i=all.indexOf(b), k=e.key;
+  /* the one keyboard rule of a radio group that picks as it moves (FR-301's World row, FR-303's Characters): arrows, Home and End move and choose, a radio marked aria-disabled is skipped; Tab and Escape are the page's (one Tab stop by roving tabindex) */
+  function radioNav(e,sel,pick){
+    const b=e.target.closest&&e.target.closest(sel);if(!b)return;
+    const all=[...b.closest('[role=radiogroup]').querySelectorAll(sel.slice(sel.indexOf(' ')+1))].filter((x)=>x===b||x.getAttribute('aria-disabled')!=='true'), i=all.indexOf(b), k=e.key;
     const to=k==='ArrowRight'||k==='ArrowDown'?all[(i+1)%all.length]:k==='ArrowLeft'||k==='ArrowUp'?all[(i-1+all.length)%all.length]:k==='Home'?all[0]:k==='End'?all[all.length-1]:null;
-    if(to){e.preventDefault();all.forEach(x=>x.tabIndex=x===to?0:-1);focusIn(to);} /* FR-301: arrows move (roving tabindex), Space or Enter chooses */
+    if(to){e.preventDefault();pick(to);}
   }
+  function worldKeys(e){radioNav(e,'#wrGroup [data-world]',pickWorld);}
+  let pickChar=()=>{}; /* set by the Settings paint (it closes over the page's helpers) */
+  function charKeys(e){radioNav(e,'#chList [data-characters]',(b)=>pickChar(b,true));}
   function liveActRow(){
     const on=!!X.liveAct.get();
     return `<div class="scr-row"><span class="scr-row-l" id="laL">Live activity on desks</span>${sw(on,'Live activity on desks: what each working agent is thinking or doing, on its desk','id="liveActSw" aria-describedby="laN"')}<span class="scr-note small" id="laN">What each working agent is thinking or doing, on its desk. Secrets are masked.</span></div>`;

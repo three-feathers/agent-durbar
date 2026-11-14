@@ -184,8 +184,10 @@
     { id: 'cave', name: 'Prehistoric cave', defaultSet: 'prehistoric', flag: 'cave', line: 'A cave of stone desks, with prehistoric people.' },
     { id: 'retro', name: 'Retro arcade', defaultSet: 'retro', flag: 'retro', line: 'An arcade hall: each person at their own cabinet, in pixels.' },
   ];
+  /* spec 102 FR-266, FR-320: the stored Characters value of the Retro pixel people; the copy of PIXEL_CHARACTERS in src/shared/characters.ts (test:characters compares them) */
+  const PIXEL_CHARACTERS = 'pixel';
   const REAL_SETS = [
-    { id: 'office', name: 'Office people', choice: '' },
+    { id: 'office', name: 'Office people', choice: 'office' }, /* spec 102 FR-321: an explicit value, so any world can draw them by choice */
     { id: 'prehistoric', name: 'Prehistoric', choice: 'prehistoric' }, /* owner 2026-11-08 (097 Q12): a set with full poses needs no flag; only the cave WORLD is gated */
     /* spec 097 FR-335/FR-336 (issue #1154; T240..T244): the five crews' own Real office people, full poses, no flag (Q12); a crew's note is the line "Real office draws the <Crew> people." */
     { id: 'pirate', name: 'Pirate', choice: 'pirate' },
@@ -193,7 +195,7 @@
     { id: 'rebels', name: 'Rebels', choice: 'rebels' },
     { id: 'monster', name: 'Monster', choice: 'monster' },
     { id: 'cheeky', name: 'Cheeky', choice: 'cheeky' },
-    { id: 'retro', name: 'Retro pixel', choice: 'retro', flag: 'retro' },
+    { id: 'retro', name: 'Retro pixel', choice: PIXEL_CHARACTERS, flag: 'retro' }, /* the one mapping of the Characters value `pixel` to the set `retro` (T344 may rename the value, not the set) */
   ];
   /* the Characters choices that name a crew (Minimalist has none), from CREWS: a new crew gets its note by construction */
   const crewName = (c) => (c === 'minimalist' || has(CREWS, c)) ? c[0].toUpperCase() + c.slice(1) : '';
@@ -211,7 +213,7 @@
     if (byChoice) return { world: w.id, set: byChoice.id, setName: byChoice.name, note: crewName(c) ? `Real office draws the ${crewName(c)} people.` : '' }; /* 097 Q12: say that the crew's own people are drawn */
     const d = rowOf(REAL_SETS, w.defaultSet);
     const def = d && on(d, flags) ? d : REAL_SETS[0];
-    const lv = levelFor(c, flags), n = crewName(c);
+    const lv = levelFor(c, flags), row = c && c !== 'theme' ? REAL_SETS.find((s) => s.choice === c) : null, n = crewName(c) || (row && row.flag ? row.name : ''); /* FR-322: a set behind a closed flag says so by its own name */
     /* FR-336: say the true reason: a set with poses behind a closed flag is "not open", a crew with only heads "has no poses" */
     return { world: w.id, set: def.id, setName: def.name, note: !n ? '' : lv === 'closed' ? `Real office shows ${def.name} until ${n} is open in Real office.` : `Real office shows ${def.name} until ${n} has Real office poses.` };
   }
@@ -222,5 +224,5 @@
     if (row) return on(row, flags) ? 'full' : 'closed';
     return crewName(c) ? 'heads' : 'default';
   }
-  return { WORLD_FLAGS, WORLDS, REAL_SETS, offeredWorlds, parseWorld, peopleFor, levelFor, CREWS, PREHISTORIC_IDS, PIRATE_IDS, MONSTER_IDS, ROYAL_IDS, REBELS_IDS, ALL_IDS, idsFor, storeKey, POSES, BOX, PX_PER_UNIT, FACE, FACE_W, FACE_H, FACE_CROP, faceBox, viewBox, poseFor, file, files, usable, IDS, MAX_ENTRIES, MAX_ID, seeded, seededRand, pickCharacter, assignCrew, pruneCrew, loadCrew };
+  return { WORLD_FLAGS, WORLDS, REAL_SETS, PIXEL_CHARACTERS, offeredWorlds, parseWorld, peopleFor, levelFor, CREWS, PREHISTORIC_IDS, PIRATE_IDS, MONSTER_IDS, ROYAL_IDS, REBELS_IDS, ALL_IDS, idsFor, storeKey, POSES, BOX, PX_PER_UNIT, FACE, FACE_W, FACE_H, FACE_CROP, faceBox, viewBox, poseFor, file, files, usable, IDS, MAX_ENTRIES, MAX_ID, seeded, seededRand, pickCharacter, assignCrew, pruneCrew, loadCrew };
 })());

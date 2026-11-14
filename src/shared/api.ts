@@ -1,4 +1,5 @@
 import type { OrderDoc } from './roomorder';
+import type { CharacterChoice } from './characters';
 import type { FolderSetupDecision, FolderSetupView, HookExplanation } from './foldersetup';
 import type { BroadKind } from './broadfolder';
 import type { AgentEvent, McpServerStatus } from '../adapters/types';
@@ -221,7 +222,7 @@ export interface AppSettingsView {
   /** Active theme id (specs 035-040). Omitted = Clean Office. */
   theme?: string;
   /** Spec 077 FR-064: who sits at the desks (`theme`: the theme's own). */
-  characters?: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric' | 'pirate' | 'monster' | 'royal' | 'rebels';
+  characters?: CharacterChoice;
   /** OS notifications when an agent needs you while the window is in the background (spec 052 FR-059). On unless turned off. */
   notifyNeedsMe?: boolean;
   /** Spec 099 S1: the turn limit last used for Autopilot; absent until then. */
@@ -1057,9 +1058,9 @@ export interface DurbarApi {
   /** Bring the window to the front (a click on a "needs you" notification, spec 052 FR-059). */
   focusWindow?(): Promise<{ ok: boolean }>;
   /** Set the theme (specs 037-040): a built-in id or an imported user theme id. */
-  setTheme?(id: string): Promise<{ ok: boolean; theme?: string; characters?: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric' | 'pirate' | 'monster' | 'royal' | 'rebels' }>;
+  setTheme?(id: string): Promise<{ ok: boolean; theme?: string; characters?: CharacterChoice }>;
   /** Spec 077 FR-064: set who sits at the desks; main refuses anything not on the list (`ok: false`, the value in force). */
-  setCharacters?(v: string): Promise<{ ok: boolean; characters: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric' | 'pirate' | 'monster' | 'royal' | 'rebels' }>;
+  setCharacters?(v: string): Promise<{ ok: boolean; characters: CharacterChoice }>;
   /** Spec 102 FR-064: installed worlds as main lists them; `state` is *Damaged* when a re-check failed. No path, no description. */
   worldList?(): Promise<Array<{ key: string; name: string; origin: 'project' | 'source' | 'uploaded' | 'made' | 'imported' | null; version: number; size: number; state: 'ok' | 'unfinished' | 'damaged' | 'revoked'; unfinished: boolean; parts: string[]; date: string }>>;
   /** Spec 102 FR-062, FR-063: one part's bytes (PNG or WebP) for a key main listed, after the re-check; nothing for anything else. */
