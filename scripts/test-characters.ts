@@ -22,6 +22,10 @@ const T = require(path.join(ROOT, 'src', 'renderer', 'theme.js'));
 assert.deepStrictEqual(T.CHARACTERS, [...CHARACTER_CHOICES], 'theme.js lists the same Characters values, in the same order');
 assert.deepStrictEqual([...CHARACTER_CHOICES], ['theme', 'office', 'minimalist', 'cheeky', 'prehistoric', 'pirate', 'monster', 'royal', 'rebels', 'pixel'], 'Office people right after the default (spec 102 FR-321), Retro pixel last (FR-320); the crews keep their order (FR-064, FR-072)');
 assert.deepStrictEqual(T.SET_CHOICES, [...SET_CHOICES], 'theme.js names the same set values (spec 102 FR-320, FR-321)');
+// spec 102 FR-266, FR-320 (review of #1676): the stored value is `pixel`; `retro` is the SET (and the world and the flag), never a Characters value, and T344's rename is not built: a stored `retro` is dropped like any value off the list (FR-064), in main and in the renderer, with no alias
+assert.strictEqual(parseCharacters('retro'), undefined, 'main: a stored retro is dropped (the value is pixel; retro is the set)');
+assert.strictEqual(T.parseCharacters('retro'), undefined, 'renderer: a stored retro is dropped (the value is pixel; retro is the set)');
+assert.deepStrictEqual(parseSettings('{"characters":"retro"}'), {}, 'main: a settings file holding characters retro reads back with no characters');
 assert.deepStrictEqual(T.CHARACTER_KITS, { ...CHARACTER_KITS }, 'theme.js maps each choice to the same kit');
 assert.strictEqual(T.LEGACY_CREW_THEME, LEGACY_CREW_THEME);
 for (const k of Object.values(CHARACTER_KITS)) assert.ok(SCENE_KITS.includes(k) && T.SCENE_KITS.includes(k), `${k} is a scene kit`);
