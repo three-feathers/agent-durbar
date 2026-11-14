@@ -1,0 +1,1 @@
+- Fixed: a server you switch off for one chat in its MCP dialog now stays off after you close and open the chat and after you restart the app, until you switch it on again (spec 058 FR-247, issue #1732, owner report). Durbar saves only the session id and the server names in the folder's entry; the dialog's last line says so.

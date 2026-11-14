@@ -396,7 +396,7 @@ async function main(): Promise<void> {
     // the two calls exactly: nothing after the spread may override what the guard checks (`{ ...opts, model: x }` would start x unchecked)
     const guardCalls = mainSrc.match(/startGuardOp\(orgGuard, ad, \{[^\n]*\}\)/g) ?? [];
     assert.deepStrictEqual(guardCalls, [
-      'startGuardOp(orgGuard, ad, { ...startOptionsFor(draft), resumeSessionId: opts.resumeSessionId })',
+      'startGuardOp(orgGuard, ad, { ...startOptionsFor(draft, opts.resumeSessionId), resumeSessionId: opts.resumeSessionId })',
       'startGuardOp(orgGuard, ad, { ...startOptionsFor(a), ...(resume ? { resumeSessionId: a.id } : { sessionId: a.id }), quiet: opts.quiet ?? true })',
     ], 'f: main.ts: addWorkspace and the lazy start call startGuardOp with the adapter and its start options, nothing overriding the mode or model');
     assert.deepStrictEqual(mainSrc.match(/\.start\(\s*[^)\s]/g) ?? [], [], 'f: main.ts: no other start call with arguments (an adapter start outside the guard)');
