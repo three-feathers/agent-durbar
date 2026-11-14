@@ -60,5 +60,271 @@
  "floorLine": 276,
  "px": {
   "desk.webp": 900
+ },
+ "kids": {
+  "kid1": {
+   "bodyH": 250,
+   "face": [
+    22,
+    0,
+    96,
+    95
+   ],
+   "h": 250,
+   "headTop": 0,
+   "poses": {
+    "working": [
+     136,
+     218
+    ],
+    "thinking": [
+     126,
+     253
+    ],
+    "waiting": [
+     161,
+     213
+    ],
+    "error": [
+     164,
+     264
+    ],
+    "limit": [
+     168,
+     250
+    ],
+    "done": [
+     139,
+     220
+    ],
+    "asleep": [
+     180,
+     176
+    ]
+   },
+   "ref": "limit",
+   "w": 168,
+   "widest": "asleep"
+  },
+  "kid2": {
+   "bodyH": 227,
+   "face": [
+    24,
+    2,
+    85,
+    62
+   ],
+   "h": 227,
+   "headTop": 2,
+   "poses": {
+    "working": [
+     130,
+     186
+    ],
+    "thinking": [
+     112,
+     230
+    ],
+    "waiting": [
+     144,
+     175
+    ],
+    "error": [
+     156,
+     235
+    ],
+    "limit": [
+     148,
+     227
+    ],
+    "done": [
+     131,
+     206
+    ],
+    "asleep": [
+     164,
+     142
+    ]
+   },
+   "ref": "limit",
+   "w": 148,
+   "widest": "asleep"
+  },
+  "kid3": {
+   "bodyH": 204,
+   "face": [
+    5,
+    0,
+    113,
+    71
+   ],
+   "h": 204,
+   "headTop": 0,
+   "poses": {
+    "working": [
+     134,
+     186
+    ],
+    "thinking": [
+     126,
+     220
+    ],
+    "waiting": [
+     160,
+     186
+    ],
+    "error": [
+     160,
+     235
+    ],
+    "limit": [
+     146,
+     204
+    ],
+    "done": [
+     138,
+     194
+    ],
+    "asleep": [
+     169,
+     161
+    ]
+   },
+   "ref": "limit",
+   "w": 146,
+   "widest": "asleep"
+  },
+  "kid4": {
+   "bodyH": 221,
+   "face": [
+    10,
+    2,
+    105,
+    59
+   ],
+   "h": 221,
+   "headTop": 2,
+   "poses": {
+    "working": [
+     135,
+     190
+    ],
+    "thinking": [
+     132,
+     226
+    ],
+    "waiting": [
+     158,
+     192
+    ],
+    "error": [
+     144,
+     235
+    ],
+    "limit": [
+     156,
+     221
+    ],
+    "done": [
+     128,
+     192
+    ],
+    "asleep": [
+     177,
+     156
+    ]
+   },
+   "ref": "limit",
+   "w": 156,
+   "widest": "asleep"
+  },
+  "kid5": {
+   "bodyH": 236,
+   "face": [
+    7,
+    0,
+    100,
+    82
+   ],
+   "h": 236,
+   "headTop": 0,
+   "poses": {
+    "working": [
+     125,
+     214
+    ],
+    "thinking": [
+     131,
+     238
+    ],
+    "waiting": [
+     158,
+     221
+    ],
+    "error": [
+     157,
+     254
+    ],
+    "limit": [
+     158,
+     236
+    ],
+    "done": [
+     128,
+     206
+    ],
+    "asleep": [
+     158,
+     172
+    ]
+   },
+   "ref": "limit",
+   "w": 158,
+   "widest": "waiting"
+  },
+  "kid6": {
+   "bodyH": 204,
+   "face": [
+    20,
+    1,
+    89,
+    55
+   ],
+   "h": 204,
+   "headTop": 1,
+   "poses": {
+    "working": [
+     114,
+     181
+    ],
+    "thinking": [
+     110,
+     212
+    ],
+    "waiting": [
+     156,
+     182
+    ],
+    "error": [
+     150,
+     218
+    ],
+    "limit": [
+     144,
+     204
+    ],
+    "done": [
+     129,
+     204
+    ],
+    "asleep": [
+     157,
+     148
+    ]
+   },
+   "ref": "limit",
+   "w": 144,
+   "widest": "asleep"
+  }
  }
 }
