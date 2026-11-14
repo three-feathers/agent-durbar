@@ -7,6 +7,10 @@
  *   - hidden: animations run or text repaints while hidden; a missed line does not show once on return (FR-074);
  *   - a pose change without its cross-fade, a desk-to-lobby move without its fade at both ends, a person drawn over the desk after coming back (FR-072, FR-073);
  *   - 40 agents: a desk scrolled out of view keeps moving, or paints (FR-181, spec 097 T030 pacing).
+ * MOTION_WORLD=retro: the same driver in the Retro arcade (spec 102 FR-309, FR-310; issue #1428): the page address forces the world, the loops are looked for in the whole room (the arcade's flash, caret and cue
+ * loops are not in `.ro-art`), and the parts that are the Photo office's own (the typing rig, a runner on two pictures, the cross-fade of a pose, the desk-to-lobby fades, the count-change ease) are not run: the arcade swaps
+ * a frame and has no second picture (FR-261). What the arcade owes instead: no loop at the first draw and every loop after it (FR-309), each stepped with FR-260's own period (not the 1/12 s grid), a bob only on a working person, nothing but
+ * `transform` and `opacity`, and the pause, the still and the scrolled-away rules as in every world.
  * Screenshots: <SHOTS_OUT>/097-real-moving-<w>x<h>.png
  */
 const os = require('os');
@@ -17,6 +21,9 @@ const { helpers, jsLiteral } = require('./driver-helpers');
 
 const OUT = process.env.SHOTS_OUT || fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-097-motion-'));
 const SIZES = [[1440, 900], [1280, 800]];
+const RETRO = process.env.MOTION_WORLD === 'retro';
+if (process.env.MOTION_WORLD && !RETRO) throw new Error('MOTION_WORLD must be retro');
+const WORLD_Q = RETRO ? { worldflags: 'retro', world: 'retro' } : {};
 
 module.exports = async (ctx) => {
   const H = helpers(ctx);
@@ -33,20 +40,31 @@ module.exports = async (ctx) => {
   await motionOn();
   /* FR-228: nothing of the room's loops runs during the first draw; afterwards they all do */
   {
-    await H.load({ w: 1440, h: 900, query: { officeview: 'real', romotion: '1' }, ready: REAL, settle: false });
-    const LOOPS = `document.querySelector('#stage .ro .ro-art').getAnimations({subtree:true}).filter(a=>a.animationName).length`;
+    await H.load({ w: 1440, h: 900, query: { officeview: 'real', romotion: '1', ...WORLD_Q }, ready: REAL, settle: false });
+    const LOOPS = `document.querySelector(${jsLiteral(RETRO ? '#stage .ro' : '#stage .ro .ro-art')}).getAnimations({subtree:true}).filter(a=>a.animationName).length`;
     assert.strictEqual(await js(`document.querySelector('#stage .ro')._ready===true`), false, 'FR-228: still at the first draw');
     assert.strictEqual(await js(LOOPS), 0, 'FR-228: no loop of the art during the first draw');
     await must(`(${LOOPS})>0`, 'FR-228: the loops start', 6000);
     /* FR-229: every endless loop on one grid of 1/12 s */
     const GRID = `(()=>{const S=1000/12,off=(v)=>{const m=((v%S)+S)%S;return Math.min(m,S-m);},bad=[];let n=0;for(const a of document.querySelector('#stage .ro').getAnimations({subtree:true})){if(!a.animationName)continue;const t=a.effect.getTiming();if(t.iterations!==Infinity)continue;n++;if(!t.easing.startsWith('steps')||off(t.duration)>0.01||off(a.startTime)>0.01)bad.push(a.animationName+' '+t.easing+' '+t.duration+' '+a.startTime);}return {n,bad};})()`;
+    if (RETRO) {
+      /* spec 102 FR-309: the arcade's loops keep FR-260's periods (not 097 FR-229's grid): each is stepped and has one of the periods the spec names */
+      const PERIODS = { 'ro-arc-flash': [2200], 'ro-arc-dots': [2000], 'ro-arc-bob': [1000], 'ro-blink': [1200] };
+      const SEEN = `[...document.querySelector('#stage .ro').getAnimations({subtree:true})].filter(a=>a.animationName&&a.effect.getTiming().iterations===Infinity).map(a=>({n:a.animationName,d:a.effect.getTiming().duration,e:getComputedStyle(a.effect.target,a.effect.pseudoElement).animationTimingFunction}))`;
+      await must(`(${SEEN}).length>=8`, 'FR-309: loops to look at', 6000);
+      const seen = await js(SEEN);
+      console.log('[097-motion] arcade loops', seen.length);
+      const bad = seen.filter((a) => !(PERIODS[a.n] || []).includes(a.d) || !/steps|step-/.test(a.e));
+      assert.deepStrictEqual(bad, [], 'FR-309, FR-260: every loop stepped, with the period the spec names');
+    } else {
     await must(`(${GRID}).n>=8`, 'FR-229: loops to look at', 6000);
     const grid = await js(GRID);
     console.log('[097-motion] grid', grid.n, 'loops');
     assert.deepStrictEqual(grid.bad, [], 'FR-229: every loop stepped, its duration and start on the grid');
+    }
   }
   const loadReal = async (w, h, query = {}) => {
-    await H.load({ w, h, query: { officeview: 'real', romotion: '1', ...query }, ready: REAL, settle: false });
+    await H.load({ w, h, query: { officeview: 'real', romotion: '1', ...WORLD_Q, ...query }, ready: REAL, settle: false });
     await must(`document.querySelector('#stage .ro')._ready===true`, 'the room ready to move (FR-228)', 6000);
     await must(PICS, 'the pictures');
     await must(`document.querySelectorAll('#stage .ro-stext:not(.off) .ro-sl').length>0`, 'text on the screens');
@@ -63,11 +81,12 @@ module.exports = async (ctx) => {
   /* what the page says about a desk that is not on the rig, for the log */
   const rigState = (i) => js(`(()=>{const q=(c)=>document.querySelector('#stage '+c+'[data-for="'+CSS.escape(${jsLiteral(i)})+'"]'),p=q('.ro-person'),r=q('.ro-rig'),d=window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).find(x=>x.id===${jsLiteral(i)});return {reduced:matchMedia('(prefers-reduced-motion: reduce)').matches,hidden:document.hidden,focus:document.hasFocus(),ro:document.querySelector('#stage .ro').className,person:p&&p.className,pose:p&&p.dataset.pose,anims:p&&p.getAnimations().map(a=>a.animationName||a.playState),rig:r&&r.querySelectorAll('img').length,state:d&&d.state,layoutPose:d&&d.person&&d.person.pose,pid:d&&d.person&&d.person.pid,hasRig:!!(d&&d.person&&window.DurbarRealOfficeSets.office.rig&&window.DurbarRealOfficeSets.office.rig[d.person.pid])};})()`);
   const ALLOWED = ['opacity', 'transform', 'translate', 'scale']; /* FR-180, changed 2026-11-01: all composited, none needs layout */
+  const TYPE = RETRO ? 'type' : 'typeA'; /* the working pose's name: the arcade's frames are `type`, the Photo office's `typeA` */
   const seat = async (nth = 0) => {
     const id = await js(`window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).filter(d=>d.state==='idle'&&d.person).map(d=>d.id)[${jsLiteral(nth)}]`);
     assert.ok(id, 'an idle agent at a desk');
     await emit({ type: 'status', sessionId: id, status: 'working', intent: 'Driver work' });
-    await must(`!!document.querySelector('#stage .ro-person[data-pose="typeA"][data-for="'+CSS.escape(${jsLiteral(id)})+'"]')`, 'a person typing at the desk');
+    await must(`!!document.querySelector('#stage .ro-person[data-pose="'+${jsLiteral(TYPE)}+'"][data-for="'+CSS.escape(${jsLiteral(id)})+'"]')`, 'a person typing at the desk');
     return id;
   };
   mark('motion');
@@ -79,6 +98,7 @@ module.exports = async (ctx) => {
   const same = (a, b) => changed(a, b) < 0.001;
   const animInfo = `document.getAnimations().filter(a=>a.effect&&a.effect.target&&a.effect.target.closest&&a.effect.target.closest('.ro-art,.ro-stext')).map(a=>{const t=a.effect.getTiming(),k=a.effect.getKeyframes(),props=[...new Set(k.flatMap(f=>Object.keys(f).filter(p=>!['offset','computedOffset','easing','composite'].includes(p))))];
     return {name:a.animationName||'',target:a.effect.target.className,dur:t.duration,props,ease:a.animationName?getComputedStyle(a.effect.target).animationTimingFunction:t.easing,state:a.playState,changes:k.length,kf:k.map(f=>f.easing)};})`;
+  if (!RETRO) { // the Photo office's rig, runners and cross-fades (the arcade swaps a frame: FR-261)
   for (const [w, h] of SIZES) {
     await loadReal(w, h);
     await js(INSTALL);
@@ -156,6 +176,45 @@ module.exports = async (ctx) => {
   const order = await js(`(()=>{const q=(s)=>document.querySelector('#stage '+s+'[data-for="'+CSS.escape(${jsLiteral(lobbyId)})+'"]');return {p:+getComputedStyle(q('.ro-person')).zIndex,d:+getComputedStyle(q('.ro-desk')).zIndex,s:+getComputedStyle(q('.ro-screen')).zIndex};})()`);
   assert.ok(order.p < order.d && order.d < order.s, 'back behind the desk: ' + JSON.stringify(order));
 
+  }
+  /* ---- spec 102 FR-309, FR-310 (issue #1428): the arcade's people and loops: what moves, in steps, on the grid, and only a working person ---- */
+  const arcadeLoops = async (w, h) => {
+    await loadReal(w, h);
+    await js(INSTALL);
+    /* under xvfb the pointer rests mid-window, on a desk: its hover card (FR-034) opens and the desks under the card stand still (`ro-off`,
+       on purpose). At 1280x800 the card covered the typist, so the bob was rightly still (PR #1436 review); park the pointer off the room first */
+    H.wc().sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
+    await must(`!document.getElementById('roZoom')`, 'no hover card open before the typist sits (the pointer parked off the room)');
+    const typist = await seat();
+    await must(`!!document.querySelector('#stage .ro-person.bob[data-for="'+CSS.escape(${jsLiteral(typist)})+'"]')`, 'the typist bobs');
+    const still = await js(`(()=>{const p=document.querySelector('#stage .ro-person[data-for="'+CSS.escape(${jsLiteral(typist)})+'"]'),z=document.getElementById('roZoom'),f=document.getElementById('floor').getBoundingClientRect(),b=p.getBoundingClientRect();return {off:p.classList.contains('ro-off'),zoom:z?z.getBoundingClientRect().toJSON():null,inFloor:b.top>=f.top&&b.bottom<=f.bottom&&b.left>=f.left&&b.right<=f.right};})()`);
+    assert.ok(!still.off && !still.zoom && still.inFloor, `the typist ${typist} is on screen and free to move (no hover card over it, not scrolled away) before its bob is measured: ${JSON.stringify(still)}`);
+    const anims = await js(animInfo);
+    const names = {}; for (const a of anims) names[a.name] = (names[a.name] || 0) + 1;
+    console.log('[097-motion] arcade animations', w, h, JSON.stringify(names));
+    assert.ok(names['ro-arc-bob'] >= 1, 'a bob: ' + JSON.stringify(names));
+    for (const a of anims) {
+      assert.ok(a.props.every((p) => ALLOWED.includes(p)), `FR-180: only ${ALLOWED}: ${a.name}: ${a.props}`);
+      assert.ok(!a.name || /steps|step-/.test(a.ease), `the arcade's loops are stepped: ${a.name}: ${a.ease}`);
+    }
+    /* spec 102 FR-261: the arcade draws no second picture (a visitor's run frames cross-fade only in the Photo office and the cave), however the visitors happen to be placed */
+    assert.strictEqual(await js(`document.querySelectorAll('#stage .ro .ro-visitor2, #stage .ro .ro-person2').length`), 0, 'FR-261: no second picture in the arcade');
+    /* a bob only on a working person (aisleStatus), every one of them */
+    const bobs = await js(`[...document.querySelectorAll('#stage .ro-person.bob')].map(e=>{const d=window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).find(x=>x.id===e.dataset.for);return d&&d.state;})`);
+    assert.ok(bobs.length > 0 && bobs.every((st) => st === 'working'), 'a bob only on a working person: ' + JSON.stringify(bobs));
+    /* the loops outside the art: the marquee's flash, the cue's dots, the caret: all there once the room is ready, each by its own state */
+    await must(`document.querySelectorAll('#stage .ro-marquee.mq-flash').length+document.querySelectorAll('#stage .ro-marquee.mq-flash-red').length>0`, 'a flashing marquee in the scene');
+    const all = await js(`document.querySelector('#stage .ro').getAnimations({subtree:true}).filter(a=>a.animationName).map(a=>a.animationName)`);
+    for (const n of ['ro-arc-flash', 'ro-arc-bob']) assert.ok(all.includes(n), `FR-309: the loop ${n} runs after the calm: ${JSON.stringify(all)}`);
+    assert.strictEqual(await js(`document.querySelector('#stage .ro').dataset.go`), '1', 'FR-309: the room says its loops started');
+    const r = await js(CROP(typist)), first = await bitmap(r);
+    let most = 0;
+    for (let t = 0; t < 14 && most < 0.005; t++) { await ctx.sleep(180); most = Math.max(most, changed(first, await bitmap(r))); }
+    console.log(`[097-motion] arcade: the bob changes ${(most * 100).toFixed(1)} % of the person's pixels`);
+    assert.ok(most >= 0.005, 'captures differ while working (the bob)');
+    await H.shot(path.join(OUT, `097-arcade-moving-${w}x${h}.png`), { prep: 'calm' });
+  };
+  if (RETRO) for (const [w, h] of SIZES) await arcadeLoops(w, h);
   mark('hidden');
   /* ---- FR-074: hidden: nothing runs, nothing paints; one catch-up on return. A real hide where the OS gives one, else the document's own signal ---- */
   await loadReal(1440, 900);
@@ -214,7 +273,7 @@ module.exports = async (ctx) => {
   await stillChecks('reduced');
   await motionOn();
   await loadReal(1440, 900);
-  await must(`document.querySelectorAll('#stage .ro-rig,#stage .ro-person2,#stage .ro-visitor2').length>0`, 'the rig or second frames without reduced motion');
+  await must(RETRO ? `document.querySelector('#stage .ro').getAnimations({subtree:true}).filter(a=>a.animationName).length>0` : `document.querySelectorAll('#stage .ro-rig,#stage .ro-person2,#stage .ro-visitor2').length>0`, 'the rig, second frames or the arcade\'s loops without reduced motion');
   await js(`document.getElementById('settingsBtn').click()`);
   await must(`!!document.getElementById('motionSw')`, 'the Motion switch');
   await js(`document.getElementById('motionSw').click()`);
@@ -231,7 +290,7 @@ module.exports = async (ctx) => {
 
   mark('forty');
   /* ---- owner 2026-11-01: a session count change eases: sizes go there on translate and scale, from where they were; frames are recorded, not asserted ---- */
-  {
+  if (!RETRO) { // the Photo desks ease on scale; the arcade's cabinets keep the grid
     await motionOn();
     await loadReal(1280, 800, { sim: '8' });
     await js(INSTALL);
@@ -267,6 +326,7 @@ module.exports = async (ctx) => {
   assert.ok(await H.until(`${OUTRUN}.length===0`, 8000), 'nothing out of view runs');
   /* a rig goes still with its person, in the same frame: not only when the next draw sets the class */
   await js(`document.getElementById('floor').scrollTop=0;0`);
+  if (!RETRO) { // the typing rig is the Photo office's
   const rigAway = await seat();
   await must(onRig(rigAway), 'a desk on the rig to scroll away');
   const late = await js(`new Promise((done)=>{const f=document.getElementById('floor');f.scrollTop=0;const t0=performance.now();let bad=0,seen=0,seenAt=0;const look=()=>{for(const r of document.querySelectorAll('#stage .ro-rig')){const p=document.querySelector('#stage .ro-person[data-for="'+CSS.escape(r.dataset.for)+'"]');if(!p)continue;if(p.classList.contains('ro-off'))seen++;if(p.classList.contains('ro-off')!==r.classList.contains('ro-off'))bad++;}if(seen&&!seenAt)seenAt=performance.now();if(performance.now()-t0<20000&&!(seenAt&&performance.now()-seenAt>500))requestAnimationFrame(look);else done({bad,seen,ms:Math.round(performance.now()-t0)});};f.scrollTop=f.scrollHeight;requestAnimationFrame(look);})`);
@@ -275,6 +335,7 @@ module.exports = async (ctx) => {
   if (/lod[12]/.test(lod)) console.log('[097-motion] no rig check: the frame rate dropped them here', lod);
   else assert.ok(late.seen > 0, 'rigs went out of view: ' + JSON.stringify(late) + ' ' + JSON.stringify(await rigState(rigAway)));
   assert.strictEqual(late.bad, 0, 'a rig out of step with its person');
+  }
   await js(`document.getElementById('floor').scrollTop=0;0`);
   const off = await js(`(()=>{const fl=document.getElementById('floor').getBoundingClientRect();const out=[...document.querySelectorAll('#stage .ro-person')].filter(e=>e.getBoundingClientRect().top>fl.bottom+20);
 return {out:out.length};})()`);

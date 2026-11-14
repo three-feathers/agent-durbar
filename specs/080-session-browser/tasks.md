@@ -196,6 +196,7 @@ description: "Tasks for spec 080: each session gets its own built-in browser"
     - the **once-per-app** consent through the existing `askDialog` pattern (as `src/renderer/app.js:4892`), no new component: FR-025d's text, *Not now* / *Open the browser*, remembered in `SettingsStore` (parsed by `parseSettings`) and never asked again for any tab, session or launch; *Not now* opens nothing and a chat link goes to the system browser that time (test of the setting, sim driver);
     - a hidden session's dialog: the toast *A page in <session> is asking: "…"* (masked), the session's chat brought forward on its Browser tab with the other chat's composer draft kept, and the *Dialog open* marker until the dialog closes (sim driver);
     - the *Leave this page?* box through `askDialog`, *Leave* / *Stay*, **Stay** focused, and the *Leave, then click again* line when the target is unknown (sim driver).
+    - Fixed 2026-11-09 (issue #1411, spec delta of that date): the hidden-dialog step fired its alert on a page timer started while A was shown; on macOS the stale sheets of debugger-closed alerts hold the main process ~0.8 s on the next navigation, so the alert came before the switch to B. The driver now makes A's page alert once B is shown (`sim:` macOS, both sizes).
 - [x] T016 [US1] Overlays win. [FR-008]
   - **Status 2026-10-24 (slice 3):** built: one `overlayOpen`/`overlayClose` pair in `app.js` and an observer that finds the shared menu, `askDialog`, toasts, the slash list and popovers (instead of a call at every site); main hides the view, the pane shows the `capturePage` still picture (in memory only). `sim:` `check-browser-tab` opens the More menu, a dialog, a toast and the slash list over the page and checks each (`elementFromPoint`, the picture fills the area, the view is back after); picture `080-browser-overlay-1440x900.png`.
   - AC1: one `overlayOpen` / `overlayClose` helper in `app.js`, called by the shared menu, `askDialog`, toasts, the slash list and tooltips over the panel.
@@ -286,6 +287,24 @@ Owner decisions (Vikram, 2026-10-31 05:17 UTC): *Open chat links in a new tab* i
   - Done 2026-10-31: README (features, safety model, known limits, the two screenshots), the shortcut sheet (?) and `changelog.d/080-browser-tabs-build.md` (named after the build branch); spec tags and the `specs-index` note. The memory measurement stays with T013 AC5 (open).
 
 **Checkpoint**: tabs per session; chat links in the active tab by default or a new tab by choice; the cap unchanged in meaning.
+
+---
+
+## Phase 1c: expand the browser (spec delta 2026-11-13, issue #1691)
+
+Owner request (Vikram, 2026-11-13): see the browser big, make it small before going back to the chat. Renderer only; no main-process change.
+
+- [x] T080 [US1] Pure model first: `bigModel(on)` in `src/renderer/browserpane.js` (name, tooltip, icon, announcement) and `#bBig` in `paneHTML`, tested in `scripts/test-browserpane.ts`. [FR-134]
+  - AC1: small: *Expand browser*; big: *Back to small browser*, tooltip with *(Esc)*; SVG icons; no `aria-pressed`; the button is the last child of the bar's toolbar (test).
+- [x] T081 [US1] The big state: `setBig`, `expanded`, `restore` in `browserpane.js`; `body.browser-big` rules in `styles.css`; the Escape line in `app.js`; ends on Chat tab, `hide`, another chat; kept on a rebuild of the same chat; memory only. [FR-135, FR-136, FR-137, FR-138, FR-139]
+  - AC1: the pane fills `#panel` (window content with no notice and no answer bar) within 1 px; the view's bounds equal `#bView` within 2 px; restore gives back the small rectangle within 1 px.
+  - AC2: Escape on the button, the bar, the address field (not typing) and the body restores and focuses *Expand browser*; Escape in the page reaches the page and the browser stays big; a Durbar dialog over the big page closes first with Escape, the browser stays big.
+  - AC3: Chat tab, another chat, closing the chat and a reload all end it; nothing in `localStorage`.
+- [x] T082 [US1] Driver `scripts/check-080-browser-expand.js`, registered in `scripts/ui-suite.js` for Flat, Real office and the Retro arcade, at 1440x900 and 1280x800: AC1-AC3 of T081, an overlay over the big page (FR-008), text at least 10.5 px, no page or panel scroll; pictures small and big. Mutants: *expand does not fill*, *restore forgets*, *focus not returned*, *Escape steals from the page*, *state persisted*, each failing at its labelled assertion (the PR lists them). [FR-134..FR-139]
+- [x] T083 Docs: `docs/features.md`, `docs/feature-inventory.md` (the Browser tab row), a `changelog.d/080-1691-browser-expand.md` fragment, the spec's tags, the `specs-index` note. [FR-134..FR-139]
+  - Done 2026-11-13 (T080-T083): `test:` `test:browserpane` (T080 AC1); `sim:` `check-080-browser-expand` in Flat, the Photo office and the Retro arcade at 1440x900 and 1280x800 (T081 AC1-AC3, T082); the five named mutants each failed at their labelled assertion at 1280x800 in Flat (the PR lists them); docs pictures `080-browser-expand-{small,big}-flat-{1440x900,1280x800}.png` through `shots:docs`, and `080-browser-tabs-*.png` retaken (the bar has the new button). Not run on macOS or Windows by hand; DPR 2 not checked.
+
+**Checkpoint**: the browser can be made big and small again; nothing about the page changes.
 
 ---
 
@@ -486,6 +505,7 @@ Owner decisions (Vikram, 2026-10-31 05:17 UTC): *Open chat links in a new tab* i
   - T017 needs T014 and T015;
   - T018 can start after T012 and must pass before T019.
 - **Phase 1b (tabs, 2026-10-31):** needs T012-T017; T020 and T021 first (tests), then T022 → T023 → T024; T025 and T026 after T023; T027 last. Independent of Phase 2.
+- **Phase 1c (expand, 2026-11-13):** needs Phase 1 (T015, T016); T080 → T081 → T082 → T083. Independent of Phase 1b's open work and of Phase 2.
 - **Phase 2:** needs Phase 1 and **041 T018 `bridgecore.ts`** (shared with 072 T033; proposed on #556).
   - T031 → T032 → T033 → T035 (T030, T034 and T043 run in parallel) → T044 → T036 → T037 → T038 → T039 → T040 → T042;
   - T041 any time after T037.
@@ -511,6 +531,7 @@ Owner decisions (Vikram, 2026-10-31 05:17 UTC): *Open chat links in a new tab* i
 | FR-110..FR-113 | T070, T071, T072 (later) |
 | FR-120..FR-130, FR-132, FR-133 | T020, T021, T022, T023, T024, T025, T026, T027 |
 | FR-131 | T028 |
+| FR-134..FR-139 | T080, T081, T082, T083 |
 | SC-001 | T015, T038 |
 | SC-002, SC-004 | T018 |
 | SC-003 | T033 |

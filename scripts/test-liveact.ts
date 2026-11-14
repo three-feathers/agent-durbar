@@ -5,7 +5,7 @@ import assert from 'assert';
 import { assertLinearShape } from './redact-growth-lib';
 import fs from 'fs';
 import path from 'path';
-import { redact, maskSecretCommand, maskSecretUrl, maskHomePaths } from '../src/shared/redact';
+import { redact, maskSecretCommand, maskSecretUrl, maskHomePaths, maskBareTokenShapes } from '../src/shared/redact';
 import { grantScope } from '../src/adapters/permissions';
 
 const ROOT = path.join(__dirname, '..', '..');
@@ -252,7 +252,7 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
 // page wiring: the shim, the compiled redact module and liveact.js load in order before app.js; redact.ts stays import-free
 {
   const html = fs.readFileSync(path.join(R, 'index.html'), 'utf8');
-  ok(/<script src="exports-shim\.js"><\/script>\s*<script src="\.\.\/shared\/redact\.js"><\/script>\s*(?:<script src="\.\.\/shared\/answerlimits\.js"><\/script>(?:<!--[^>]*-->)?\s*)?<script src="safetext\.js"><\/script>\s*<script src="liveact\.js"><\/script>\s*<script src="app\.js">/.test(html), 'script order');
+  ok(/<script src="exports-shim\.js"><\/script>\s*<script src="\.\.\/shared\/redact\.js"><\/script>\s*(?:<script src="\.\.\/shared\/answerlimits\.js"><\/script>(?:<!--[^>]*-->)?\s*)?<script src="safetext\.js"><\/script>\s*<script src="lookalike\.js"><\/script>\s*<script src="liveact\.js"><\/script>\s*<script src="app\.js">/.test(html), 'script order (spec 003 FR-113: lookalike.js before liveact.js)');
   const red = fs.readFileSync(path.join(ROOT, 'src', 'shared', 'redact.ts'), 'utf8');
   ok(!/^\s*import\s/m.test(red) && !/\brequire\(/.test(red), 'redact.ts has no imports (it loads as a page script)');
   const copy = fs.readFileSync(path.join(ROOT, 'scripts', 'copy-assets.js'), 'utf8');
@@ -473,6 +473,15 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   eq(L.toolName(TK, { redact: () => TK + ' ' }), 'tool', 'any change at all: tool');
   eq(L.toolName(TK, { redact: () => undefined as unknown as string }), 'tool', 'a mask answering no string: tool');
   eq(L.toolName('x'.repeat(1000001) + TK, hm), 'tool', 'over the 1,000,000-character cut of redact: tool, never the raw token');
+  // spec 012 FR-181 (review of PR 1585, round 7): a name over 256 characters is the neutral word before any mask runs (fail closed; real names are under 30 characters)
+  eq(L.toolName('\\a'.repeat(150), hm), 'tool', '#1585 round 7 toolName: a name over 256 characters is the neutral word');
+  eq(L.toolName('a'.repeat(256), hm), 'a'.repeat(256), '#1585 round 7 toolName: a name of 256 characters is still shown');
+  eq(L.toolName('[redacted:'.repeat(4000) + ']a\\b', hm), 'tool', '#1585 round 7 toolName: a 40,000-character [redacted: name is the neutral word');
+  {
+    const t0 = Date.now(), r = L.toolName('\\a'.repeat(500_000), hm), ms = Date.now() - t0;
+    eq(r, 'tool', '#1585 round 7 toolName: a 1 MB backslash-dense name is the neutral word');
+    ok(ms < 1000, '#1585 round 7 toolName: a 1 MB backslash-dense name is answered before any mask runs (generous limit 1,000 ms; took ' + ms + ' ms)');
+  }
   eq(L.phrase({ kind: 'tool', tool: TK, label: '' }, { redact: () => '[redaction failed]' }), 'Using tool', 'phrase with a failed mask: Using tool');
   // the chat: every surface that names a tool calls the one function
   const app = fs.readFileSync(path.join(R, 'app.js'), 'utf8').replace(/\r\n/g, '\n');
@@ -530,13 +539,130 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
     eq(L.permText('mcp ' + TK, k, { redact: () => { throw new Error('x'); }, cmd: () => { throw new Error('x'); }, url: () => { throw new Error('x'); } }), { text: w, hidden: true, why: 'unchecked' }, k + ': a throwing mask: neutral words, unchecked');
     eq(L.permText('mcp ' + TK, k, { redact: () => 5 as unknown as string, cmd: () => 5 as unknown as string, url: () => 5 as unknown as string }), { text: w, hidden: true, why: 'unchecked' }, k + ': a mask that gives no string: neutral words, unchecked');
   }
+  // spec 012 FR-181 (T163): the desk's maskRaw (redact underneath) hides the rest glued to a named marker `[redacted:NAME]`, as it does after a plain `[redacted]`
+  {
+    const ST = require(path.join(R, 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string };
+    const V = 'Vq7Wx8Ec9Rv0Tb1Yn2Um3Ik4', REST = 'abcdefghij0123456789xy';
+    const red = (t: string) => redact(t, { FOO_TOKEN: V });
+    for (const sep of ['_', '-', '']) eq(ST.maskRaw('secret=' + V + sep + REST, red), 'secret=[redacted:FOO_TOKEN]', '#1544 named marker: maskRaw hides the rest glued to a named marker (' + (sep || 'no separator') + ')');
+    eq(ST.maskRaw('cp ' + V + '_backup', red), 'cp [redacted:FOO_TOKEN]_backup', '#1544 named marker: maskRaw keeps a short suffix');
+  }
+  // spec 012 FR-181 (review of PR 1585): a shell escape of a letter (`g\hp_`, `ghp_\A…`) is hidden on the card too, because the shell kind's mask is maskSecretCommand
+  {
+    const B = 'A1b2C3d4E5f6' + 'G7h8I9j0K1l2M3n4O5p6Q7r8';
+    for (const [what, tok] of [['g\\hp_', 'g\\hp_' + B], ['ghp_\\A', 'ghp_\\' + B]] as const) {
+      eq(L.permText('run echo ' + tok, 'shell', mask), { text: 'run echo [redacted]', hidden: true, why: 'secret' }, '#1585 permText shell: ' + what + ' is hidden, the command kept as written');
+    }
+  }
+  // spec 012 FR-180, kept alive after FR-181 (review of PR 1585, round 4): the shared masks now hide an escaped run themselves, so the window's order (runs BEFORE the mask) is
+  // pinned with a mask that reads text only as written (`maskBareTokenShapes`): a token glued to an escaped one is hidden in place, not blinded by the final check
+  {
+    const ST = require(path.join(R, 'safetext.js')) as { maskLabel(t: string, k: string, m: Record<string, (s: string) => string>): string };
+    const B = 'A1b2C3d4E5f6' + 'G7h8I9j0K1l2M3n4O5p6Q7r8';
+    const asWritten = { cmd: (s: string) => maskBareTokenShapes(s, '[redacted]'), redact: (s: string) => maskBareTokenShapes(s, '[redacted]') }; // the bare shapes: no escaped-run step and no glued rest
+    eq(ST.maskLabel('run echo ghp_' + B + 'ghp\\_' + B, 'run', asWritten), 'run echo [redacted]', 'FR-180 order: a token glued to an escaped one is hidden in place by a mask that reads text as written');
+  }
+  // spec 012 FR-180: a Markdown-escaped token (`ghp\_...`) is hidden on the card as the desk mask hides it, and the command is shown as written
+  {
+    const ST = require(path.join(R, 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string; maskLabel(t: string, k: string, m: Record<string, (s: string) => string>): string };
+    // the Markdown-escaped form of a fixture, built on purpose: backslashes first, then each `_` (one helper for every escaped fixture here)
+    const escUnderscore = (x: string) => x.replace(/\\/g, '\\\\').replace(/_/g, '\\_');
+    const E = escUnderscore(TK), GP = 'github_pat_' + '11ABCDEFG0' + 'a1B2c3D4e5F6g7H8i9J0k1_' + 'L2m3N4o5P6q7R8s9T0u1V2w3X4y5Z6a7B8c9D0e1F2g3H4i5J6k7L8m9N0', GE = escUnderscore(GP);
+    const SE = 'sk\\-' + 'proj\\-A1b2C3d4E5f6G7h8I9j0K1l2M3n4', SKP = /sk.{0,2}proj|A1b2C3d4|K1l2M3n4/;
+    for (const [what, tok, parts] of [['ghp', E, PARTS], ['github_pat', GE, /11ABCDEFG0|L2m3N4o5|github/], ['sk-', SE, SKP]] as const) {
+      ok(ST.maskRaw(tok, mask.redact) !== tok.replace(/\\/g, ''), what + ': the desk mask hides the escaped token (the baseline)');
+      const r = L.permText('run echo a \\> b ' + tok, 'shell', hm);
+      eq(r, { text: 'run echo a \\> b [redacted]', hidden: true, why: 'secret' }, '#1490 ' + what + ': an escaped token in a shell command is hidden, the command kept as written');
+      ok(!parts.test(r.text), what + ': no part of the escaped token is shown: ' + r.text);
+      const t = L.permText('mcp srv › create ' + tok, 'tool', hm), o = L.permText('fetch https://example.test/x and ' + tok, 'other', hm);
+      ok(!parts.test(t.text) && t.hidden, what + ': tool kind: the escaped token is hidden: ' + t.text);
+      ok(!parts.test(o.text) && o.hidden && /^fetch /.test(o.text), what + ': other kind: the escaped token is hidden: ' + o.text);
+      const p = L.phrase({ kind: 'run', tool: 'Bash', label: 'echo ' + tok }, hm);
+      ok(!parts.test(p) && /^Running /.test(p), what + ': the live readout (phrase) hides the escaped token too: ' + p);
+    }
+    eq(L.permText('run echo a \\> b \\_x', 'shell', hm), { text: 'run echo a \\> b \\_x', hidden: false }, 'an escape without a token is shown as written, not flagged');
+    // the final check: an escaped token the run pass cannot reach (glued after a token the mask already hid) leaves the label empty, so the card is blind
+    eq(L.permText('run echo ' + TK + E, 'shell', hm), { text: 'run echo [redacted]', hidden: true, why: 'secret' }, 'a token glued to an escaped one: no part shown, the command kept (not a blind card)');
+    eq(ST.maskLabel('echo ' + E, 'run', { ...mask, cmd: (s: string) => s.replace(/ghp_\w+/, '[redacted]') }), 'echo [redacted]', 'the run pass hides the escaped run');
+    // a mask that hides a token only after `echo ` (context, as a secret name does): no run alone is hidden, the unescaped copy is
+    eq(ST.maskLabel('echo ' + E, 'run', { ...mask, cmd: (s: string) => s.replace(/echo ghp_\w+/, 'echo [redacted]') }), '', 'the unescaped copy still holding a secret gives an empty label (fail closed)');
+    eq(ST.maskLabel('echo ' + E, 'run', { ...mask, cmd: () => '' }), '', 'a mask that gives nothing: empty label');
+    // an environment secret is hidden as `[redacted:NAME]` (the activity log's redact): the marker count must read that form too (invented value)
+    const ENV = { MY_API_KEY: 'zq7_Fake_Value_9x8w7v6u5' }, EV = escUnderscore(ENV.MY_API_KEY);
+    const em = { redact: (s: string) => redact(s, ENV), cmd: (s: string) => maskSecretCommand(s, ENV), url: (s: string) => maskSecretUrl(s, ENV) };
+    ok(redact('x ' + ENV.MY_API_KEY, ENV) === 'x [redacted:MY_API_KEY]', 'the env mask names the secret (the baseline)');
+    eq(ST.maskLabel('echo ' + EV, 'run', em), 'echo [redacted]', 'an env secret with escapes is hidden (run)');
+    eq(ST.maskLabel('send ' + EV, 'other', em), 'send [redacted]', 'an env secret with escapes is hidden (other)');
+    eq(L.permText('run echo ' + EV, 'shell', em), { text: 'run echo [redacted]', hidden: true, why: 'secret' }, 'an env secret with escapes is hidden on the card (shell)');
+    eq(L.permText('send ' + EV, 'other', em), { text: 'send [redacted]', hidden: true, why: 'secret' }, 'an env secret with escapes is hidden on the card (other)');
+    // review of PR 1540 (1): the mask can hide by stretching a `[redacted]` already there, so the marker count does not change: any change counts (invented values)
+    for (const v of ['password=[redacted]\\_Zq9xW8vU7tS6rQ5p', 'token=[redacted]\\-Zq9xW8vU7tS6rQ5p']) {
+      ok(!ST.maskRaw('echo ' + v, mask.redact).includes('Zq9x'), 'stretch ' + v.slice(0, 5) + ': the desk mask hides the rest (the baseline)');
+      const o = L.permText('send ' + v, 'other', hm), t = L.permText('mcp srv › create ' + v, 'tool', hm), sh = L.permText('run echo ' + v, 'shell', hm);
+      ok(!o.text.includes('Zq9x') && o.hidden, 'stretch ' + v.slice(0, 5) + ': other kind hides the rest: ' + o.text);
+      ok(!t.text.includes('Zq9x') && t.hidden, 'stretch ' + v.slice(0, 5) + ': tool kind hides the rest: ' + t.text);
+      ok(!sh.text.includes('Zq9x') && sh.hidden, 'stretch ' + v.slice(0, 5) + ': shell kind hides the rest: ' + sh.text);
+      const p = L.phrase({ kind: 'run', tool: 'Bash', label: 'echo ' + v }, hm), pr = L.phrase({ kind: 'read', tool: 'Read', label: 'notes ' + v }, hm);
+      ok(!p.includes('Zq9x') && !pr.includes('Zq9x'), 'stretch ' + v.slice(0, 5) + ': phrase hides the rest: ' + p + ' / ' + pr);
+      // the shared mask now hides the escaped rest as written (spec 012 FR-181, review of PR 1585), so the label keeps its text; a mask that reads only text without a backslash still fails closed
+      eq(ST.maskLabel('send ' + v, 'other', mask), 'send ' + v.slice(0, v.indexOf(']') + 1), 'stretch ' + v.slice(0, 5) + ': the shared mask hides the escaped rest in place');
+      eq(ST.maskLabel('send ' + v, 'other', { ...mask, redact: (x: string) => (x.includes('\\') ? x : redact(x, {})) }), '', 'stretch ' + v.slice(0, 5) + ': a mask that changes only the unescaped copy gives an empty label');
+    }
+    // round 3: the stretch hidden in place, not by blanking the label (escaped brackets make the whole value one run)
+    for (const v of ['password=\\[redacted\\]\\_Zq9xW8vU7tS6rQ5p', 'x\\[redacted\\]\\_Zq9xW8vU7tS6rQ5p', 'token=\\[redacted\\]\\-Zq9xW8vU7tS6rQ5p']) {
+      eq(ST.maskLabel('send ' + v, 'other', mask), 'send [redacted]', 'stretch exact: ' + v.slice(0, 7) + ' is hidden in place');
+      eq(L.permText('send ' + v, 'other', hm), { text: 'send [redacted]', hidden: true, why: 'secret' }, 'stretch exact: ' + v.slice(0, 7) + ' on the card');
+    }
+    // review of PR 1540 (2): a mask that fails only on the unescaped copy (no backslash and no mask in it) gives an empty label
+    const failOnly = (bad: unknown) => ({ ...mask, cmd: (s: string) => (s.includes('\\') || s.includes('[redacted]') ? maskSecretCommand(s, {}) : bad as string) });
+    for (const [what, bad] of [['empty', ''], ['redaction failed', '[redaction failed]'], ['not a string', 5]] as const) {
+      eq(ST.maskLabel('echo ' + E, 'run', failOnly(bad)), '', 'a mask failing only on the unescaped copy (' + what + '): empty label');
+    }
+    // review of PR 1540 (3): the work grows linearly with the label (phrase and the desk tool labels pass it uncut); more than 64 distinct escaped runs: empty label
+    const many = (k: number) => Array.from({ length: Math.ceil(k / 30) }, (_, i) => 'ghp\\_' + String(i).padStart(24, 'Q')).join(' ').slice(0, k);
+    assertLinearShape('maskLabel many distinct escaped tokens', (x) => { ST.maskLabel(x, 'other', mask); }, many, 400_000);
+    assertLinearShape('maskLabel one escaped token repeated', (x) => { ST.maskLabel(x, 'other', mask); }, (k) => ('x ' + E + ' ').repeat(Math.ceil(k / (E.length + 3))).slice(0, k), 100_000);
+    assertLinearShape('maskLabel one long escaped run', (x) => { ST.maskLabel(x, 'other', mask); }, (k) => 'a\\_'.repeat(Math.ceil(k / 3)).slice(0, k), 100_000);
+    const longMany = (n: number) => many(n * 30) + ' ' + 'z'.repeat(10_001);
+    eq(ST.maskLabel(longMany(65), 'other', mask), '', 'more than 64 distinct escaped runs in a label over 10,000 characters: empty label (fail closed)');
+    ok(!ST.maskLabel(longMany(64), 'other', mask).includes('QQQQ') && ST.maskLabel(longMany(64), 'other', mask) !== '', '64 distinct escaped runs in a long label are each looked at and hidden');
+    ok(!ST.maskLabel(many(300 * 30), 'other', mask).includes('QQQQ') && ST.maskLabel(many(300 * 30), 'other', mask) !== '', 'a label of 10,000 characters or fewer has every escaped run checked (300 runs)');
+    // round 3 of the review of PR 1540: real commands with many escaped runs keep their card text and Allow (invented content). A blind `why`
+    // (unchecked, concealed, cut) is what the page's permBlind turns into no Allow.
+    const BLIND = ['unchecked', 'concealed', 'cut'];
+    const heredoc = "run cat > fix.py <<'EOF'\nimport re\n" + Array.from({ length: 70 }, (_, i) => "s = re.sub(r'field" + i + "\\.(\\d+)\\-v', 'f" + i + "', s)").join('\n') + '\nEOF';
+    ok(heredoc.length > 2500 && heredoc.length < 10_000, 'the heredoc is about 3 KB: ' + heredoc.length);
+    const hd = L.permText(heredoc, 'shell', hm);
+    ok(!BLIND.includes(String(hd.why)) && hd.text.includes('field69') && hd.text.includes("r'field0\\.(\\d+)\\-v'"), 'a 3 KB heredoc with 70 distinct escaped runs keeps its text and Allow: ' + hd.why);
+    const grep = "run grep -E '" + Array.from({ length: 65 }, (_, i) => 'host' + i + '\\.example\\.com').join('|') + "' access.log";
+    const gr = L.permText(grep, 'shell', hm);
+    eq(gr, { text: grep, hidden: false }, 'a grep -E with 65 escaped alternatives keeps its text and Allow');
+    // round 4: the cap boundary. Exactly 10,000 characters (permText's own cut) with 100 distinct escaped runs is checked whole; 10,001 is the capped case
+    const fill = (pre: string, n: number) => { const h = pre + Array.from({ length: 100 }, (_, i) => 'item' + i + '\\.v').join(' ') + ' '; return h + 'z'.repeat(n - h.length); };
+    for (const [kind, pre] of [['other', 'send '], ['run', 'echo ']] as const) {
+      const at = fill(pre, 10_000), over = fill(pre, 10_001);
+      ok(at.length === 10_000 && over.length === 10_001, kind + ': the boundary labels are 10,000 and 10,001 characters');
+      eq(ST.maskLabel(at, kind, mask), at, kind + ': a 10,000-character label with 100 escaped runs is checked whole and kept');
+      eq(ST.maskLabel(over, kind, mask), '', kind + ': a 10,001-character label with more than 64 escaped runs is the capped case (empty label)');
+    }
+    {
+      const o = fill('send ', 10_000), t = fill('mcp srv › ', 10_000), r = fill('run echo ', 10_000);
+      eq(L.permText(o, 'other', hm), { text: o, hidden: false }, 'an exactly 10,000-character other card with 100 escaped runs keeps its text and Allow');
+      const tc = L.permText(t, 'tool', hm), rc = L.permText(r, 'shell', hm);
+      // the tool kind shows each word through toolName first, which turns any word the mask (escapes undone) changes into `tool`: masked, not blind
+      ok(!BLIND.includes(String(tc.why)) && tc.why === 'secret' && /^mcp srv › tool tool /.test(tc.text), 'an exactly 10,000-character tool card keeps Allow (escaped words read tool): ' + tc.why);
+      eq(rc, { text: r, hidden: false }, 'an exactly 10,000-character shell card with 100 escaped runs keeps its text and Allow');
+      // 10,001 characters: permText cuts at a word first (why cut: blind, as for any text over the cut), so the label cap is never what blinds a card
+      for (const [k, x] of [['other', fill('send ', 10_001)], ['tool', fill('mcp srv › ', 10_001)], ['shell', fill('run echo ', 10_001)]] as const) eq(L.permText(x, k, hm).why, 'cut', k + ': a 10,001-character card is cut by permText');
+    }
+  }
   // the page: every permission surface calls the one function; keys, ids and scopes stay raw
   const app = fs.readFileSync(path.join(R, 'app.js'), 'utf8').replace(/\r\n/g, '\n');
   ok(/const shownPerm=\(t,kind\)=>window\.DurbarLiveAct\?window\.DurbarLiveAct\.permText\(t,permKind\(kind\),LIVE_MASK\|\|\{\}\):\{text:'request',hidden:true,why:'unchecked'\}/.test(app), 'the page has one permission-text function, failing closed (unchecked)');
   const card = app.slice(app.indexOf('function showPerm('), app.indexOf('function roAskHint('));
   ok(/ps\.textContent=sumS\.text/.test(card) && !/ps\.textContent=p\.summary/.test(card), 'card text');
-  ok(/announce\(a\.name\+' needs your OK: '\+sumS\.text\+/.test(card), 'screen-reader announcement shows the masked summary');
-  ok(/expertScopeLabel\(scopeS\.text\)/.test(card) && /cutText\(scopeS\.text,30\)/.test(card), 'session button and its tooltip');
+  ok(/announce\(\[a\.name,' needs your OK: ',look,look\?' The request: ':'',sumS\.text,/.test(card), 'screen-reader announcement shows the masked summary (after the lookalike line, spec 003 FR-118)');
+  ok(/const keyS=p\.scopeKey\?shownPerm\(grantText\(p\.scopeKey,p\.scopeLabel\),String\(p\.scopeKey\)\):null/.test(card) && /expertScopeLabel\(gt\)/.test(card) && /cutText\(gt,window\.DurbarLookalike&&typeof window\.DurbarLookalike\.tipLen==='function'\?window\.DurbarLookalike\.tipLen\(gt\):240\)/.test(card), 'session button and its tooltip: the raw key through the one mask (spec 003 FR-118)');
   ok(/cutText\(broadS\.text,18\)/.test(card), 'any-arguments tooltip');
   // follow-up of the pre-review of PR 1317 (spec 012 FR-176): the "any arguments" scope label is built by the adapter from the command's first word, unmasked (the grant key needs it raw);
   // the page shows it only through `permText` (`broadS`, its tooltip and the scope hint), so a token-shaped first word is hidden there. Values are made up at run time.
@@ -557,12 +683,12 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
     ok(/broadS=shownPerm\(p\.broadScopeLabel\|\|p\.kind,p\.kind\)/.test(app), 'the page masks the any-arguments label with shownPerm');
   }
   ok(/scopeHint\(Object\.assign\(\{\},p,\{scopeLabel:p\.scopeLabel\?scopeS\.text:p\.scopeLabel,broadScopeLabel:p\.broadScopeLabel\?broadS\.text:p\.broadScopeLabel\}\)\)/.test(card), 'the scope hint');
-  ok(/const hwhy=permWhy\(sumS,scopeS,broadS\)/.test(card) && /if\(p\.state==='pending'&&hwhy\)\{const hp=/.test(card) && /PERM_WHY\[hwhy\]\+hgrant/.test(card), 'review 4: the hidden-part line shows on every pending card with a hidden part, with or without a scope key');
+  ok(/const hwhy=permWhy\(sumS,scopeS,broadS,keyS\)/.test(card) && /if\(p\.state==='pending'&&hwhy\)\{const hp=/.test(card) && /PERM_WHY\[hwhy\]\+hgrant/.test(card), 'review 4: the hidden-part line shows on every pending card with a hidden part, with or without a scope key');
   ok(/bridge\.resolvePermission\(a\.id,p\.requestId,approve,remember,!!broad\)/.test(card) && /a\.pend\.set\(p\.requestId,/.test(card), 'the answer still binds to the real request id');
   ok(/scopeLabel:broad\?p\.broadScopeLabel:p\.scopeLabel,summary:p\.summary/.test(card), 'the settled copy keeps the raw words (masked when drawn)');
   const grants = app.slice(app.indexOf('function grantChipX('), app.indexOf('function closeGrants('));
   ok(/const gLab=g=>shownPerm\(g\.label,String\(g\.key\|\|''\)\)/.test(app), 'a grant label is masked by its key kind');
-  ok(/aria-label="Revoke permission: \$\{esc\(gLab\(g\)\.text\)\}"/.test(grants) && /data-revoke="\$\{esc\(g\.key\)\}"/.test(grants), 'chip accessible name masked, revoke key raw');
+  ok(/aria-label="Revoke permission: \$\{esc\(gLab\(g\)\.text\)\}\$\{gLook\(g\)\?'\.'\+esc\(gLook\(g\)\):''\}"/.test(grants) && /data-revoke="\$\{esc\(g\.key\)\}"/.test(grants), 'chip accessible name masked, revoke key raw');
   ok(/shortGrantLabel\(gLab\(g\)\.text\)/.test(grants), 'chip and list text');
   ok((grants.match(/cutText\(gLab\(g\)\.text,240\)/g) || []).length === 2 && !/cutText\(g\.label/.test(grants), 'chip and list tooltips');
   const why = app.slice(app.indexOf('function whyPaint('), app.indexOf('function whyRefresh('));
@@ -618,7 +744,7 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   ok(/const PERM_LINE=[^\n]*\|mcp\|custom-tool\)/.test(app), 'item 2: PERM_LINE has the custom-tool verb');
   ok(/if\(p\)\{const rest=shownPerm\(p\[3\],p\[2\]==='run'\?'shell':p\[2\]==='mcp'\|\|p\[2\]==='custom-tool'\?'mcp':'other'\)\.text;/.test(app) && !/STX\.maskLabel\(p\[3\]/.test(app), 'item 2: taskMask goes through the permission mask');
   // item 3: the hidden-part warnings (mutants N3, N3b, N8, N9)
-  ok(/'\. Revoke from its chip\.'\+\(scopeS\.hidden\?' '\+PERM_WHY\[scopeS\.why\|\|'secret'\]\+PERM_GRANT:''\)/.test(card), 'N3: the session button tooltip carries the hidden-part warning');
+  ok(/'\. Revoke from its chip\.'\+\(keyS\.hidden\?' '\+PERM_WHY\[keyS\.why\|\|'secret'\]\+PERM_GRANT:''\)/.test(card), 'N3: the session button tooltip carries the hidden-part warning (of the key text, spec 003 FR-118)');
   ok(/until you end this session\.'\+\(broadS\.hidden\?' '\+PERM_WHY\[broadS\.why\|\|'secret'\]\+PERM_GRANT:''\)/.test(card), 'N3b: the any-arguments tooltip carries the hidden-part warning');
   const why = app.slice(app.indexOf('function whyPaint('), app.indexOf('function whyRefresh('));
   ok(/if\(wl\.hidden\)d\.sentence\+=' \(A part of the rule is hidden: '/.test(why) && /Durbar could not check its text/.test(why) && /control characters, shown as markers/.test(why), 'N8: the why-allowed sentence says a part of the rule is hidden, and why');
@@ -631,9 +757,11 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   for (const k of ['shell', 'shell:git status', 'shell-exact:run ls']) eq(permKind(k), 'shell', 'N15: permKind(' + k + ') is shell');
   for (const k of ['mcp', 'custom-tool', 'mcp:srv', 'custom-tool:x']) eq(permKind(k), 'tool', 'N15: permKind(' + k + ') is tool');
   for (const k of ['write', 'fetch', '', 'url:x']) eq(permKind(k), 'other', 'N15: permKind(' + k + ') is other');
-  { const c = 'run tool --api-key abcdefgh12345678'; ok(L.permText(c, 'shell', hm).hidden === true && !/abcdefgh/.test(L.permText(c, 'shell', hm).text) && L.permText(c, 'other', hm).hidden === false, 'N15: the shell kind uses the command mask (redact alone leaves --api-key K)'); }
+  // a flag value only the command mask finds: `--password K` (plain redact needs `=` or `:` after the name). `--api-key K` was the case until spec 012 FR-170 made plain redact hide `api-key K` too; it is now hidden by both kinds
+  { const c = 'run tool --password abcdefgh12345678'; ok(L.permText(c, 'shell', hm).hidden === true && !/abcdefgh/.test(L.permText(c, 'shell', hm).text) && L.permText(c, 'other', hm).hidden === false && /abcdefgh/.test(L.permText(c, 'other', hm).text), 'N15: the shell kind uses the command mask (redact alone leaves --password K)'); }
+  { const c = 'run tool --api-key abcdefgh12345678'; ok(['shell', 'other'].every((k) => L.permText(c, k, hm).hidden === true && !/abcdefgh/.test(L.permText(c, k, hm).text)), 'N15: --api-key K is hidden by both kinds (spec 012 FR-170)'); }
   // item 4: the announcement and a card with no scope
-  ok(/announce\(a\.name\+' needs your OK: '\+sumS\.text\+\(hwhy\?'\. '\+PERM_WHY\[hwhy\]\+hgrant:''\)\)/.test(card), 'item 4: the announcement carries the hidden-part warning');
+  ok(/announce\(\[a\.name,' needs your OK: ',look,look\?' The request: ':'',sumS\.text,hwhy\?'\. '\+PERM_WHY\[hwhy\]\+hgrant:''\]\)/.test(card), 'item 4: the announcement carries the hidden-part warning');
   // item 5: a request whose text could not be checked: truthful copy, no Allow
   const pw = /const PERM_WHY=\{([^\n]*)\};/.exec(app);
   ok(!!pw && !/unchecked:'[^']*secret/.test(pw![1]) && /unchecked:'Durbar could not check this request/.test(pw![1]), 'item 5: the unchecked copy does not claim a secret');
@@ -730,5 +858,100 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
     const r = L.permText(t, 'shell', hm);
     ok(r.hidden && r.why === 'secret' && /\[redacted/.test(r.text) && /^run /.test(r.text), 'r3 item 2: an ordinary token value stays allowable with the mask: ' + JSON.stringify([r.why, r.text]));
   }
+}
+// spec 003 FR-117, FR-119 (T045, issue #1300): lookalike letters marked in the shown text, never a letter of a hidden part; fail safe without lookalike.js
+{
+  type Look = { n?: number; findings?: { cp: number; rule: string }[]; hosts?: { shown: string; ascii: string }[]; inHidden?: boolean; unchecked?: boolean };
+  const P = (t: string, k: string, m: Record<string, (s: string) => string> = mask) => L.permText(t, k, m) as { text: string; hidden: boolean; why?: string; look?: Look };
+  const LKM = /\u27e6U\+[0-9A-F]{4,6} [A-Za-z ]+\u27e7/g; // the lookalike marker (the FR-318 one has no script name)
+  const s1 = P('fetch https://exampl\u0435.invalid/x', 'other');
+  eq(s1.text, 'fetch https://exampl\u0435\u27e6U+0435 Cyrillic\u27e7.invalid/x', 'scenario 1: the letter stays and its marker follows it');
+  ok(s1.look && s1.look.n === 1 && s1.look.findings![0].cp === 0x435 && s1.look.hosts!.length === 1 && s1.look.hosts![0].ascii === 'xn--exampl-8of.invalid' && !s1.look.inHidden, 'scenario 1: look names the finding and the punycode host: ' + JSON.stringify(s1.look));
+  eq([s1.hidden, s1.why], [false, undefined], 'a lookalike alone hides nothing (warn, not block)');
+  const s8 = P('run exa\u200bmpl\u0435 --x', 'shell');
+  eq(s8.text, 'run exa\u27e6U+200B\u27e7mpl\u0435\u27e6U+0435 Cyrillic\u27e7 --x', 'scenario 8: the FR-318 marker and the lookalike marker both show');
+  eq([s8.hidden, s8.why, s8.look && s8.look.n], [true, 'control', 1], 'scenario 8: still the control why');
+  // markers only add: the shown text without them is what FR-318 shows
+  const corpus: [string, string][] = [['run durbtoo\u04cf --sync', 'shell'], ['mcp srv-demo \u203a re\u0430d_notes', 'tool'], ['fetch https://\uff45\uff58\uff41.invalid/', 'other'], ['run a\u200bb\u0430 | \u0441\u043e\u0440\u0435 x', 'shell'], ['run a1\u0662 x', 'shell']];
+  const real = require.cache[require.resolve(path.join(R, 'lookalike.js'))]!;
+  const realExports = real.exports;
+  for (const [t, k] of corpus) {
+    const r = P(t, k);
+    real.exports = { check: () => ({ findings: [], hosts: [] }), line: () => '', marker: () => '', hostOdd: () => false };
+    const base = P(t, k);
+    real.exports = realExports;
+    ok(r.look && r.look.n! > 0, 'a finding in ' + JSON.stringify(t));
+    eq(r.text.replace(LKM, ''), base.text, 'no character removed or replaced: ' + JSON.stringify(r.text));
+    eq([r.hidden, r.why], [base.hidden, base.why], 'FR-318 hidden and why unchanged: ' + t);
+  }
+  // clean text: FR-318's result exactly, no look field
+  for (const [t, k] of [['read /home/u/\u041e\u0442\u0447\u0451\u0442\u044b/notes.txt', 'other'], ['write C:\\Users\\u\\\u03b1\u03c1\u03c7\u03b5\u03af\u03bf.txt', 'other'], ['run durbtool --name caf\u00e9', 'shell'], ['run npm test', 'shell']] as const)
+    eq(P(t, k), { text: t, hidden: false }, 'scenario 7: clean text unchanged: ' + t);
+  // scenario 9: a lookalike letter inside a part the mask replaced is never named; the line says there is one
+  const sm = { ...mask, redact: (x: string) => redact(x, {}).replace(/SECRET\S*/g, '[redacted]'), cmd: (x: string) => maskSecretCommand(x, {}).replace(/SECRET\S*/g, '[redacted]') };
+  const h = P('run durbtool SECRETab\u0435c ok', 'shell', sm);
+  ok(/\[redacted/.test(h.text) && h.why === 'secret', 'scenario 9: the secret is replaced: ' + h.text);
+  ok(!/U\+0435|Cyrillic|\u0435/.test(h.text), 'scenario 9: no marker names the hidden letter: ' + h.text);
+  ok(h.look && h.look.inHidden === true && h.look.n === 0, 'scenario 9: inHidden: ' + JSON.stringify(h.look));
+  const h2 = P('run durb\u0251tool SECRETab\u0435c', 'shell', sm);
+  ok(h2.look && h2.look.n === 1 && h2.look.inHidden === true && /durb\u0251\u27e6U\+0251 Latin\u27e7tool/.test(h2.text), 'a shown finding and a hidden one: ' + JSON.stringify([h2.text, h2.look]));
+  // a blind card (unchecked, concealed, cut) shows no text and so no look
+  eq(P('run exampl\u0435', 'shell', {}), { text: 'a command', hidden: true, why: 'unchecked' }, 'no mask: no look');
+  ok(!('look' in P('run x ' + 'y'.repeat(10001) + ' exampl\u0435', 'shell')), 'a cut card: no look');
+  // FR-119: no lookalike.js, or a throwing check: unchecked when the text has a non-ASCII letter; the text is still FR-318's
+  for (const [what, ex] of [['missing', {}], ['throws', { check: () => { throw new Error('x'); } }], ['not loaded', undefined]] as const) {
+    real.exports = ex as unknown;
+    const u = P('fetch https://exampl\u0435.invalid/x', 'other'), a = P('run npm test', 'shell');
+    real.exports = realExports;
+    eq(u, { text: 'fetch https://exampl\u0435.invalid/x', hidden: false, look: { unchecked: true } }, what + ': could not check, said so, text kept');
+    eq(a, { text: 'run npm test', hidden: false }, what + ': plain ASCII needs no check');
+  }
+  ok(P('fetch https://exampl\u0435.invalid/x', 'other').look!.n === 1, 'the real module is back');
+}
+// fix round 1 (#1300 review): inHidden per finding; hosts never from text holding a placeholder; bounded and linear
+{
+  type Look = { n?: number; findings?: { cp: number; rule: string }[]; hosts?: { shown: string; ascii: string }[]; inHidden?: boolean };
+  const P = (t: string) => L.permText(t, 'shell', mask) as { text: string; look?: Look };
+  const p = P('run tool --token=s\u0435cret123456789abcdef https://sk-' + 'a'.repeat(30) + '\u0435.invalid/');
+  ok(/--token=\[redacted/.test(p.text), 'the token is masked: ' + p.text);
+  ok(p.look && p.look.inHidden === true, 'the lookalike inside the masked token is said, although the shown text has a finding too: ' + JSON.stringify(p.look));
+  ok(p.look && !p.look.findings!.some((f) => f.rule === 'host') && p.look.hosts!.length === 0, 'no host the mask made: ' + JSON.stringify(p.look));
+  const LK = require(path.join(R, 'lookalike.js')) as { line(l: unknown): string };
+  ok(!/cannot read|\[redacted\]\u0435\.invalid/.test(LK.line(p.look)), 'the line names no host the mask made: ' + LK.line(p.look));
+  // a clean shown part and a hidden finding: inHidden; nothing hidden: no inHidden
+  ok(P('run durbtoo\u04cf --sync').look!.inHidden === false, 'nothing hidden: inHidden false');
+  // bounded: 9990 fullwidth letters in one token, or thousands of tokens: the text grows by at most MARK_MAX markers and one "and N more"
+  for (const t of ['run ' + '\uff41'.repeat(9990), 'run x ' + 'a\u0430 '.repeat(3330)]) {
+    const r = P(t);
+    ok(r.text.length < t.length + 600 && /\u27e6and \d+ more lookalike letters\u27e7/.test(r.text), 'at most 20 markers, then and N more: ' + (r.text.length - t.length));
+    ok((r.text.match(/\u27e6U\+[0-9A-F]{4,6} [A-Za-z ]+\u27e7/g) || []).length === 20, 'exactly 20 markers');
+  }
+  assertLinearShape('permText one long lookalike token', (x) => { L.permText('run ' + x, 'shell', mask); }, (k) => '\uff41'.repeat(k), 10000);
+  assertLinearShape('permText many lookalike tokens', (x) => { L.permText('run x ' + x, 'shell', mask); }, (k) => 'a\u0430 '.repeat(Math.ceil(k / 3)).slice(0, k), 10000);
+}
+// fix round 2 (#1300 re-review): a token masked inside a host never reaches the line; inHidden per finding (pinned with a stub mask); ESC is no word break
+{
+  type Look = { n?: number; findings?: { cp: number; rule: string; marked?: string; token?: string }[]; hosts?: { shown: string; ascii: string }[]; inHidden?: boolean };
+  const LK = require(path.join(R, 'lookalike.js')) as { line(l: unknown): string };
+  const G = 'ghp' + '_' + 'Q7'.repeat(18), PARTS = /ghp_|Q7Q7|7Q7Q/;
+  for (const [t, k] of [['fetch https://\u0435x-' + G + '-y.invalid/', 'other'], ['run curl https://\u0435x-' + G + '-y.invalid/', 'shell'], ['run ssh u@\u0435x-' + G + '-y.invalid', 'shell'], ['fetch https://ex^' + G + '^y.invalid/', 'other'], ['run scp f u@\u0435x-' + G + '-y.invalid:/x', 'shell']] as const) {
+    const r = L.permText(t, k, mask) as { text: string; look?: Look };
+    const line = r.look ? LK.line(r.look) : '';
+    ok(!PARTS.test(r.text) && !PARTS.test(line) && !PARTS.test(JSON.stringify(r.look || {})), 'no part of a token masked inside a host in the text, the line or look: ' + JSON.stringify([r.text, line]));
+    ok(r.look && r.look.inHidden === true && r.look.hosts!.length === 0 && !r.look.findings!.some((f) => f.rule === 'host'), 'the host is hidden, said as a hidden part: ' + t);
+  }
+  // pins "every character of the host": a stub mask that hides only the middle of a host, so both ends stay shown (the real mask now hides to the end of the host)
+  { const st = (x: string) => x.replace(/SECRET\d+/g, '[redacted]');
+    for (const [t, k] of [['fetch https://еx-SECRET123456-y.invalid/', 'other'], ['run ssh u@еx-SECRET123456-y.invalid', 'shell']] as const) {
+      const r = L.permText(t, k, { redact: st, cmd: st, url: st }) as { text: string; look?: Look };
+      ok(/е⟦U\+0435 Cyrillic⟧x-\[redacted\]-y\.invalid/.test(r.text) && !/SECRET/.test(r.text + (r.look ? LK.line(r.look) + JSON.stringify(r.look) : '')) && r.look!.hosts!.length === 0 && r.look!.inHidden === true, 'a host whose middle is hidden is never named: ' + JSON.stringify([r.text, r.look])); } }
+  // pins inHidden per finding: the raw text has fewer findings (no host: the / before @) than the shown one, yet a letter is hidden
+  const P = '\u0440\u0430\u0443\u0440\u0430\u04cf', stub = (x: string) => x.replace(/a\/SECRET[^@]*/g, '[redacted]');
+  const sp = L.permText('run scp a/SECRET\u0430@' + P + '.invalid:/y .', 'shell', { redact: stub, cmd: stub, url: stub }) as { text: string; look?: Look };
+  ok(sp.text.startsWith('run scp [redacted]@') && sp.look && sp.look.n! > 1 && sp.look.inHidden === true && sp.look.hosts!.length === 0, 'the hidden Cyrillic letter is said although the shown text has more findings; hosts come from the raw text only: ' + JSON.stringify([sp.text, sp.look && sp.look.n, sp.look && sp.look.inHidden]));
+  // ESC is left out like clean() does, so it does not start a new word: an argument after it is no program name
+  const e = L.permText('run x \u001b' + P, 'shell', mask) as { text: string; look?: Look };
+  ok(!e.look || (e.look.n === 0 && !e.look.inHidden), 'an argument after ESC is not a program name: ' + JSON.stringify(e));
+  ok((L.permText('run x\n' + P, 'shell', mask) as { look?: Look }).look!.n === 6, 'a line break still starts a command');
 }
 console.log(`liveact: ${n} checks passed`);

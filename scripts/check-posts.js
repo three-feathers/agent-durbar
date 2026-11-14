@@ -81,11 +81,8 @@ function loadRedact() {
   if (typeof r.redact !== 'function') throw new Error('no redact export');
   return r.redact;
 }
-function trustedAuthors(root = ROOT) {
-  // as scripts/trusted-lib.sh: comment lines out, CR dropped, plain logins only (letters, digits, dashes, an optional [bot])
-  return new Set(fs.readFileSync(path.join(root, 'scripts/trusted-authors.txt'), 'utf8').split('\n').map((l) => l.replace(/\r$/, ''))
-    .filter((l) => !/^[ \t]*#/.test(l) && /^[A-Za-z0-9-]+(\[bot\])?$/.test(l)));
-}
+// as scripts/trusted-lib.sh reads it: the one parser, scripts/trusted-authors.js
+const trustedAuthors = (root = ROOT) => require('./trusted-authors.js').trustedAuthors(root);
 function loadBlocked(root = ROOT) {
   const f = path.join(root, BLOCKED_FILE);
   const j = JSON.parse(fs.readFileSync(f, 'utf8'));

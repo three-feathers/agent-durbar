@@ -2,11 +2,12 @@
 #screen{flex:1;min-height:0;min-width:0;display:flex;flex-direction:column;background:var(--bg);overflow:hidden}
 #screen[hidden]{display:none}
 body.screen-open .workspace{display:none}
-.scr-head{flex:none;display:flex;align-items:center;gap:12px;padding:8px max(24px,calc((100% - 880px)/2 + 24px));border-bottom:1px solid var(--line);background:var(--surface)} /* spec 052 FR-097: the title and Close line up with the centred content column */
+:root{--scr-col:880px} /* the content column of the Settings and Tools screens, set once */
+.scr-head{flex:none;display:flex;align-items:center;gap:12px;padding:8px max(24px,calc((100% - var(--scr-col))/2 + 24px));border-bottom:1px solid var(--line);background:var(--surface)} /* spec 052 FR-097: the title and Close line up with the centred content column */
 .scr-head h2{margin:0;font-size:var(--t1-size);font-weight:var(--t1-weight);line-height:var(--t1-lh);letter-spacing:-.01em}
 .scr-head .grow{flex:1}
 .scr-head .per-since{margin-left:-4px;font-size:var(--t5-size);color:var(--muted);white-space:nowrap} /* spec 052 FR-092: the start date of "All time" in Cost */
-.scr-body{flex:1;min-height:0;overflow:auto;padding:16px 24px 24px;max-width:880px;width:100%;margin:0 auto}
+.scr-body{flex:1;min-height:0;overflow:auto;padding:16px 24px 24px;max-width:var(--scr-col);width:100%;margin:0 auto}
 .scr-sec{margin:0 0 var(--sec-gap);padding:var(--sec-pad);background:var(--surface);border:1px solid var(--line);border-radius:var(--r-xl)}
 .scr-sec .seg{width:max-content}
 .scr-sec h3{margin:0 0 4px;font-size:var(--t2-size);font-weight:var(--t2-weight);line-height:var(--t2-lh);letter-spacing:-.01em} /* spec 052 FR-053, FR-098 (T2) */
@@ -26,16 +27,17 @@ body.screen-open .workspace{display:none}
 
 /* server rows */
 .srvs{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:8px}
-.srv{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
+.srv{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
 .srv.amb{background:var(--tone-neutral-faint)}
 .srv-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.srv:has(.srv-why,.srv-hint,.srv-det) .srv-main{flex-basis:240px} /* spec 058 FR-231 (#1622): a row with a reason, help or details text keeps 240px for it; the buttons wrap below when they do not fit beside it. A row with only a name and a state stays on one line */
 .srv-top{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
 .srv-name{font-size:13px}
 .srv-cmd{font:11px/1.35 var(--font-mono);color:var(--ink-2);overflow-wrap:anywhere;white-space:pre-wrap}
 .srv-secrets{display:flex;flex-wrap:wrap;gap:5px}
 .sec{display:inline-flex;gap:6px;align-items:center;height:20px;padding:0 8px;border-radius:var(--r-sm);background:var(--surface-2);border:1px solid var(--line);font:11px var(--font-mono);color:var(--ink-2)}
 .sec i{font-style:normal;letter-spacing:.06em;color:var(--muted)}
-.srv-act{display:flex;align-items:center;gap:8px;flex:none}
+.srv-act{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px;flex:none;max-width:100%;margin-left:auto} /* spec 058 FR-231 (#1622): the text column keeps 240px; the buttons wrap below it when they do not fit beside it */
 .mtag{display:inline-block;font-size:10.5px;font-weight:650;padding:1px 7px;border-radius:999px;background:var(--tone-info-faint);border:1px solid var(--tone-info-line);color:var(--tone-info-ink)}
 .mtag.warn{background:var(--tone-warn-bg);border-color:var(--tone-warn-line);color:var(--tone-warn-ink)}
 .swt{--switch-on:var(--accent);--switch-off:var(--tone-neutral-track);position:relative;width:38px;height:22px;border-radius:999px;border:1px solid var(--line-2);background:var(--switch-off);cursor:pointer;padding:0;flex:none;transition:background .15s}
@@ -208,10 +210,10 @@ body.has-bridge #topBtns{display:flex}
 /* FR-030 (#309): a preview card (about 160x100) with a mini room in the theme's own colours (--sw-* set from validated tokens) */
 .thpick{position:relative;display:flex;flex-direction:column;align-items:stretch;gap:6px;width:100%;min-height:100px;padding:6px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);cursor:pointer;text-align:left;font:inherit;color:var(--ink)}
 .thpick:hover{border-color:var(--line-2);background:var(--raised)}
-.thpick[aria-pressed=true]{border-color:var(--focus,#2f5f8a);box-shadow:0 0 0 2px var(--stat-sel-ring);background:var(--raised)}
-.thpick[aria-pressed=true]:not(:focus-visible){outline:2px solid var(--focus,#2f5f8a);outline-offset:-1px} /* spec 052 FR-052: selected is not colour only (the check mark too) */
+.thpick[aria-pressed=true],.thpick[aria-checked=true]{border-color:var(--focus,#2f5f8a);box-shadow:0 0 0 2px var(--stat-sel-ring);background:var(--raised)}
+.thpick[aria-pressed=true]:not(:focus-visible),.thpick[aria-checked=true]:not(:focus-visible){outline:2px solid var(--focus,#2f5f8a);outline-offset:-1px} /* spec 052 FR-052: selected is not colour only (the check mark too) */
 /* spec 052 R3: the chosen theme also carries a small check badge (top right, over the preview; no size change) */
-.thpick[aria-pressed=true]::after{content:"\2713";position:absolute;top:4px;right:4px;z-index:1;width:16px;height:16px;border-radius:50%;background:var(--focus,#2f5f8a);color:#fff;font-size:10.5px;font-weight:700;line-height:16px;text-align:center;pointer-events:none}
+.thpick[aria-pressed=true]::after,.thpick[aria-checked=true]::after{content:"\2713";position:absolute;top:4px;right:4px;z-index:1;width:16px;height:16px;border-radius:50%;background:var(--focus,#2f5f8a);color:#fff;font-size:10.5px;font-weight:700;line-height:16px;text-align:center;pointer-events:none}
 .thsw{position:relative;display:block;height:58px;border-radius:8px;border:1px solid var(--line-2);overflow:hidden;background:var(--sw-bg,var(--bg))}
 .thsw i{position:absolute;display:block}
 .thsw-wall{left:0;right:0;top:0;height:46%;background:var(--sw-tint,var(--tint-blue));border-bottom:3px solid var(--sw-wall,var(--wall-blue))}
@@ -220,6 +222,8 @@ body.has-bridge #topBtns{display:flex}
 .thsw-ag{left:46%;width:8%;aspect-ratio:1;bottom:58%;border-radius:50%;background:var(--sw-agent,var(--sage));box-shadow:0 0 0 1.5px var(--sw-ink,var(--ink))}
 .chsw{display:block;height:58px;border-radius:8px;border:1px solid var(--line-2);overflow:hidden;background:var(--bg)} /* spec 077 FR-068: one figure per Characters choice */
 .chsw svg{display:block;width:58px;height:58px;margin:0 auto}
+.thpick:disabled,.thpick[aria-disabled=true]{opacity:.6;cursor:not-allowed} /* spec 102 FR-320: a set that is not open yet */
+.chsw-px{image-rendering:pixelated} /* spec 102 FR-320: a pixel set keeps its pixels in its pick preview */
 .thtx{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 6px;min-width:0;padding:0 2px}
 .thtx b{flex:0 1 auto;font-size:12px;font-weight:600;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} /* spec 052 FR-053: one line */
 .thtx small{flex-basis:100%;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -320,7 +324,11 @@ body.has-bridge #topBtns{display:flex}
 .scr-body .ttab.act thead th:first-child{width:auto}
 .ttab.act td{font-size:12px;vertical-align:top}
 .ttab.act .act-t{white-space:nowrap;color:var(--ink-2)}
-.ttab.act .act-a{overflow-wrap:break-word;max-width:48ch}
+.ttab.act .act-a{overflow-wrap:anywhere;min-width:24ch} /* narrow window: the table scrolls inside .scr-body, Action never collapses to a sliver */
+.ttab.act .act-w{overflow-wrap:anywhere} /* a long unbroken Agent or Folder value wraps instead of pushing Action and Decision out */
+.ttab.act .act-s{white-space:nowrap} /* 2026-11-10: App, Mode and Decision never break mid-word; Action takes the rest */
+/* the Activity tab uses the window width (usual 24px gutters); the head follows the body (FR-097) */
+.scr-head.scr-wide,.scr-body.scr-wide{--scr-col:100%} /* head and body read the same column width, so the head padding follows (FR-097, FR-138) */
 .ttab.act tr.act-denied td:last-child{color:var(--red-ink,var(--ink))}
 /* spec 052 FR-049: install plan cards: radio beside its command (".dlg label" stacks them), the chosen card is outlined */
 .dlg .hs-plan{flex-direction:row;align-items:flex-start;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;cursor:pointer}
@@ -517,3 +525,49 @@ body.has-bridge #topBtns{display:flex}
 .orgrows{list-style:none;margin:0;padding:0}.orgrow{padding:6px 0;border-top:1px solid var(--line);display:flex;flex-direction:column;align-items:flex-start;gap:2px;font-size:var(--t3-size,12px)}.orgrow small{font-size:11px;color:var(--muted,inherit);overflow-wrap:anywhere}.orgrow small.warn{color:var(--amber-ink)}.orgrow ul{margin:2px 0 0;padding-left:18px}
 
 @media (forced-colors:active){.swt{border-color:ButtonText;forced-color-adjust:none;background:Canvas}.swt i{background:ButtonText;box-shadow:none}.swt.on{background:Highlight;border-color:Highlight}.swt.on i{background:HighlightText}} /* on and off differ by the knob's place and by colour: both survive */
+
+/* Settings section list (spec 052 FR-226, T219): the list of sections beside the page, in every world (the screen is shared). Wide: a column on the
+   left of the centred page; narrow (the screen under 760px): a row above it that scrolls sideways. Text is the 12px of --t4-size, over the 10.5px floor. */
+.scr-wrap{flex:1;min-height:0;min-width:0;display:flex;flex-direction:column;container:scrset/inline-size}
+.scr-cols{flex:1;min-height:0;display:flex;align-items:stretch;width:100%;max-width:calc(880px + 220px);margin:0 auto;padding-left:calc(var(--s-1)*6)}
+.scr-cols>.scr-body{max-width:880px;margin:0;flex:1 1 auto;min-width:0;width:auto}
+.scr-nav{flex:none;width:184px;align-self:flex-start;max-height:calc(100% - 40px);margin:calc(var(--s-1)*4) calc(var(--s-1)*3) calc(var(--s-1)*6) 0;padding:calc(var(--s-1)*1.5);box-sizing:border-box;overflow-y:auto;overscroll-behavior:contain;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-xl)} /* a card like the sections, so its text sits on --surface in every world (Retro's page is dark) */
+.scr-nav[hidden]{display:none}
+.scr-nav ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:calc(var(--s-1)*0.25)}
+.scr-nav button{display:block;width:100%;text-align:left;font:inherit;font-size:var(--t4-size);color:var(--ink-2);background:none;border:0;border-left:3px solid transparent;border-radius:var(--r-sm);padding:calc(var(--s-1)*1) calc(var(--s-1)*2);cursor:pointer;overflow-wrap:anywhere}
+.scr-nav button:hover{background:var(--surface-2);color:var(--ink)}
+.scr-nav button[aria-current]{color:var(--ink);background:var(--surface-2);border-left-color:var(--focus)}
+@container scrset (max-width:759px){
+  .scr-cols{flex-direction:column;padding-left:0}
+  .scr-nav{width:auto;align-self:stretch;max-height:none;margin:calc(var(--s-1)*2) calc(var(--s-1)*6) 0;padding:calc(var(--s-1)*1) calc(var(--s-1)*1.5);overflow:auto hidden}
+  .scr-nav ul{flex-direction:row;gap:calc(var(--s-1)*1);width:max-content}
+  .scr-nav button{white-space:nowrap;border-left:0;border-bottom:3px solid transparent;border-radius:var(--r-sm) var(--r-sm) 0 0}
+  .scr-nav button[aria-current]{border-bottom-color:var(--focus)}
+}
+/* the title and Close line up with the list-and-page block instead of the 880px column alone (880 + list 184 + gutters) */
+#screen:has(.scr-nav) .scr-head,html[data-platform="darwin"] .notice-strip:not([hidden]) ~ #screen:has(.scr-nav) .scr-head{--sn-pad:max(calc(var(--s-1)*6),calc(50% - var(--s-1)*131.5));padding-left:var(--sn-pad);padding-right:var(--sn-pad)}
+@media (max-width:759px){#screen:has(.scr-nav) .scr-head{padding-left:calc(var(--s-1)*6);padding-right:calc(var(--s-1)*6)}}
+/* spec 111 T008: Settings > Team templates (teams.js); text stays at least 10.5px, buttons wrap under the name when the column is narrow; spacing from the tokens */
+.tm-list{list-style:none;margin:var(--sec-gap) 0 0;padding:0;display:flex;flex-direction:column;gap:var(--sec-gap)}
+.tm-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--sec-gap);padding:var(--row-pad);border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface)}
+.tm-info{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--sec-gap);min-width:0}
+.tm-name{overflow-wrap:anywhere}
+.tm-sum{font-size:var(--t4-size);color:var(--ink-2)}
+.tm-acts{display:flex;flex-wrap:wrap;gap:var(--sec-gap)}
+
+/* ---- spec 102 FR-301 (T266): the World section, picture cards in one radio group (the theme picker's card, .thpick, with a picture) ---- */
+.wcards{grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
+.thpick[data-world]{border-width:2px}
+.thpick[data-world]:hover{border-color:var(--line-2);background:var(--raised)}
+.thpick[data-world][aria-checked=true]{border-color:var(--accent);background:var(--raised)}
+.thpick[data-world]:focus-visible{outline:2px solid var(--focus);outline-offset:3px} /* outside the card with a gap: focus never looks like the 2 px chosen edge */
+.thpick[data-world] .wpic{height:auto;aspect-ratio:8/5;background:var(--surface)}
+.wpic img{display:block;width:100%;height:100%;object-fit:cover;transform-origin:var(--zx,50%) var(--zy,50%);transition:transform 220ms ease-out}
+.thpick[data-world]:hover .wpic img,.thpick[data-world]:focus-visible .wpic img{transform:scale(1.6)} /* FR-301: by transform only, inside the clip, toward the people: nothing around it moves */
+html[data-motion-off] .wpic img{transition:none;transform:none!important}
+@media (prefers-reduced-motion:reduce){.wpic img{transition:none;transform:none!important}}
+.wnone{display:flex;align-items:center;justify-content:center;color:var(--muted)}
+.thpick[data-world] .thtx small{white-space:normal;overflow:visible}
+.wuse{align-self:flex-start;color:var(--accent)}
+.wuse[data-off]{visibility:hidden}
+@media (forced-colors:active){.thpick[data-world][aria-checked=true]{border-color:Highlight}.thpick[data-world]:focus-visible{outline:2px solid CanvasText}.wuse{color:CanvasText}}

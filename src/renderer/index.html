@@ -13,7 +13,7 @@
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs><filter id="soft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="6"/></filter></defs></svg>
 
-<header class="topbar">
+<header class="topbar tb-search"><!-- spec 095: the search starts as its magnifier, so the first layout has the narrow bar; fitTopbar shows the field where it fits -->
   <div class="brand">
     <div class="brand-mark" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 20 20" data-logo-id="1" focusable="false"><rect data-slot="plate" x="0" y="0" width="20" height="20" rx="4"/><path data-slot="gold" d="M4 5L3.5 1.5L5.6 3L7 1L8.4 3L10.5 1.5L10 5Z"/><path data-slot="gold" d="M4 6H6.2L10 10L6.2 14H4V12.2L6.2 10L4 7.8Z"/><rect data-slot="gold" x="11" y="12" width="5.5" height="2"/><rect data-slot="bot" x="2" y="16" width="4" height="3" rx="0.6"/><rect data-slot="bot" x="8" y="16" width="4" height="3" rx="0.6"/><rect data-slot="bot" x="14" y="16" width="4" height="3" rx="0.6"/></svg></div>
     <div><h1>Agent Durbar</h1></div>
@@ -44,6 +44,12 @@
     <div class="seg" role="group" aria-label="View">
       <button id="vOffice" aria-pressed="true">Office</button>
       <button id="vList" aria-pressed="false">List</button>
+    </div>
+    <!-- spec 095 FR-001 (Q1): search the text of every open and earlier session; on a narrow top bar it is the magnifier, which opens the field -->
+    <div class="cs-box" id="convSearchWrap">
+      <button class="btn" id="convSearchBtn" type="button" aria-expanded="false" aria-controls="convSearch" aria-label="Search conversations" title="Search conversations"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true" focusable="false"><circle cx="7" cy="7" r="4.4"/><path d="M10.3 10.3l3.4 3.4"/></svg></button>
+      <input id="convSearch" type="search" aria-label="Search conversations" placeholder="Search conversations" autocomplete="off" spellcheck="false" maxlength="400" aria-describedby="convSearchHint">
+      <span class="cs-hint" id="convSearchHint" role="status" hidden></span>
     </div>
     <!-- spec 052 #308: rarely used controls in one overflow (ids kept) -->
     <div class="top-more">
@@ -119,6 +125,7 @@
 <script src="gitstatus.js"></script>
 <script src="sessionsummary.js"></script>
 <script src="sessionsearch.js"></script>
+<script src="convsearch.js"></script>
 <script src="usagetotals.js"></script>
 <script src="costtable.js"></script>
 <script src="activitytable.js"></script>
@@ -132,6 +139,8 @@
 <script src="newfolder.js"></script><!-- spec 093: the create-a-folder flow (window.DurbarNewFolder) -->
 <script src="floornav.js"></script><!-- spec 092: the rules for moving between floor screens (window.DurbarFloorNav) -->
 <script src="cuttext.js"></script>
+<script src="chattrim.js"></script><!-- spec 005 FR-238: a chat's bounded transcript (window.DurbarChatTrim), read by app.js -->
+<script src="subretire.js"></script><!-- spec 005 FR-240: which finished helpers a parent keeps (window.DurbarSubRetire), read by app.js -->
 <script src="slashsuggest.js"></script>
 <script src="notes.js"></script><!-- spec 083: the Notes helpers (window.DurbarNotes), read at call time by app.js -->
 <script src="notesscreen.js"></script><!-- spec 083 T034a: the per-folder Notes screen's helpers (window.DurbarNotesScreen), read at call time by app.js -->
@@ -140,6 +149,7 @@
 <script src="grantlabel.js"></script>
 <script src="whyallowed.js"></script>
 <script src="sandboxtext.js"></script>
+<script src="autopilot.js"></script>
 <script src="mcpwords.js"></script>
 <script src="orgwords.js"></script>
 <script src="place-icons.js"></script>
@@ -168,6 +178,8 @@
 <script src="signin.js"></script>
 <script src="harnesses.js"></script>
 <script src="profileeditor.js"></script>
+<script src="settingsnav.js"></script>
+<script src="teams.js"></script><!-- spec 111 T008: Settings > Team templates (window.DurbarTeams) -->
 <script src="screens.js"></script>
 <script src="foldersetup.js"></script>
 <script src="demo.js"></script>
@@ -177,6 +189,7 @@
 <script src="../shared/redact.js"></script>
 <script src="../shared/answerlimits.js"></script><!-- spec 052 FR-178: MAX_ANSWER, read through window.exports by app.js when a question card is built (the card's boxes) -->
 <script src="safetext.js"></script>
+<script src="lookalike.js"></script>
 <script src="liveact.js"></script>
 <script src="app.js"></script>
 <script src="../shared/profiletemplates.js"></script><!-- spec 043 FR-018: read at call time by profileeditor.js and the simulator -->

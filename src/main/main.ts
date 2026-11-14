@@ -16,6 +16,7 @@ import { register as registerBrowserIpc } from './ipc/browser';
 import { noteWindowZoom } from './titledblclick';
 import { register as registerAttachmentsIpc } from './ipc/attachments';
 import { register as registerCheckpointsIpc } from './ipc/checkpoints';
+import { register as registerWorldsIpc } from './ipc/worlds';
 import { register as registerFloorsIpc } from './ipc/floors';
 import { register as registerFoldersIpc } from './ipc/folders';
 import { register as registerNewFolderIpc } from './ipc/newfolder';
@@ -27,11 +28,20 @@ import type { SetupKind } from '../shared/harnesssetup';
 import { register as registerModelIpc } from './ipc/model';
 import { onAutoTierFailed } from './ipc/model';
 import { register as registerPreviousIpc } from './ipc/previous';
+import { vsUserDirsOf } from './ipc/previous';
+import { register as registerConvSearchIpc } from './ipc/convsearch';
+import { buildScope } from './convscope';
+import { createReadGate, rendererScript } from './convsearch';
+import type { SessionSearchApi } from './convsearch';
+import { createMasker, sessionMaskValues } from './convmask';
 import { register as registerProfilesIpc } from './ipc/profiles';
 import { createProfileFreshness } from './profilefiles';
 import { register as registerSlashIpc } from './ipc/slash';
 import { nativeConfirm } from './nativeconfirm';
 import { register as registerNotesIpc } from './ipc/notes';
+import { register as registerTeamsIpc } from './ipc/teams';
+import { TeamsIpcOps } from './teamsipc';
+import { TeamTemplateStore } from './teamstore';
 import { NotesOps, notesConfirmText } from './notesops';
 import { NotesStore } from './notesstore';
 import { NotesFile } from './notesfile';
@@ -63,6 +73,7 @@ import type { AgentAdapter, AgentEvent } from '../adapters/types';
 import type { AdapterInfo } from '../shared/adapters';
 import { startOptionsOf } from './startopts';
 import { resolveWorkspaceCwd } from '../adapters/workspace';
+import { findAdded } from './addkey';
 import { MAX_ATTACH_BYTES, MAX_ATTACH_FILES, fmtSize, kindOfFile, sweepStaleStageDirs, sweepStaleTempDirs } from '../shared/attachments';
 import { ACCOUNT_TEMP_PREFIXES } from '../shared/account';
 import type { AddResult, AgentInfo, PermMode, PickedFile, SessionOptions } from '../shared/api';
@@ -103,7 +114,10 @@ import { decisionOf } from '../shared/activity';
 import type { ActivityDecision } from '../shared/activity';
 import { folderKeyOf, folderNameOf } from '../shared/usagedoc';
 import { agentLabel } from '../shared/toolusage';
-import { devEnv, devWarning } from './devhooks';
+import { autopilotTestGate, devEnv, devWarning } from './devhooks';
+import { AUTOPILOT_WIRED } from '../adapters/autopilotHost';
+import { bothGuards, createAutopilotOps, windowAdapters } from './autopilotops';
+import { folderFingerprint } from './gitstatus';
 import { isSimBlocked, sealChildProcess, simDetectorFor, simGuardDescriptors, simulatorCount, simulatorOn } from './simguard';
 import childProcess = require('child_process');
 import { initSimGuard, simRefusedChannels } from './ipcguard';
@@ -188,7 +202,9 @@ for (const [name, value] of simClock.switches) app.commandLine.appendSwitch(name
 // spec 010 FR-024: under the simulator every descriptor creates an inert stand-in, never the real adapter
 const registry = createRegistry(simGuardDescriptors([...PRODUCTION_DESCRIPTORS, ...offeredDescriptors(dev)], SIMULATOR)); // Copilot, then Claude Code (spec 012 FR-135); detection decides what is ready
 const router = createRouter(registry);
-router.setEventGuard(eventGate((line) => console.warn(redact(line)))); // spec 010 FR-035: every event checked before any listener; a bad one is dropped
+/** Spec 010 FR-035: the shape check of every event, one instance for the run (its drop-line count is per run); spec 099 FR-082 adds Autopilot's check to it below. */
+const eventShape = eventGate((line) => console.warn(redact(line)));
+router.setEventGuard(eventShape); // spec 010 FR-035: every event checked before any listener; a bad one is dropped
 /** Spec 076 section O (issue #602): each agent app's own organization policy, read by its adapter, cached 60 s. */
 const orgPolicies = new OrgPolicyCache({ ids: () => registry.list().map((d) => d.id), adapter: (id) => (registry.has(id) ? router.instance(id) : undefined) });
 /** Spec 076 FR-203: the start guard's deps; advice is shown once the session has started (a toast in the window). */
@@ -262,6 +278,34 @@ const toRenderer = (channel: string, payload: unknown): void => {
 /** An MCP status event carries server error text: masked here, once, before the window sees it (spec 019 FR-021). */
 /** Spec 019 FR-022: the masked copy of an `mcp` event, built once per event; every path out of main (window, debug sink) uses it. */
 const outward = (e: AgentEvent): AgentEvent => maskMcpEvent(e, e.type === 'mcp' || (e.type === 'toolCall' && ((e.phase !== 'start' && e.mcpServer) || e.edit)) ? mcp.secretValuesFor(e.sessionId) : []); // spec 005 FR-024: edits too
+/**
+ * Spec 099: main's Autopilot. `AUTOPILOT_WIRED` is false, so in the default build it refuses to turn on and no surface offers it (spec *Changes*, Phase 3 gate).
+ * The other half is the test-only switch, which a packaged build cannot open.
+ */
+const autopilotOn = (): boolean => AUTOPILOT_WIRED || autopilotTestGate(process.env, app.isPackaged);
+const autopilotOps = createAutopilotOps({
+  agents,
+  router,
+  get ops() { return opsDeps; },
+  enabled: autopilotOn,
+  remoteOn: (id) => remoteOps.engaged(id),
+  org: (a) => orgPolicies.autopilotRefusal(appIdOf(a.id)),
+  confirm: (o) => nativeConfirm(win, o), // D12: the page cannot answer it; Cancel is the default and Escape's answer
+  ensureLive: (a) => ensureLive(a),
+  appName: (a) => registry.get(a.adapterId)?.displayName ?? a.adapterId ?? 'The agent app',
+  folderLabel: (a) => a.workspaceFile ?? a.cwd,
+  fingerprint: async (a) => { // FR-023: read-only, the spec 063 runner
+    const prints = await Promise.all(rootsOf(a).map((r) => folderFingerprint(r)));
+    return prints.every((p) => p === null) ? null : prints.join('|');
+  },
+  log: (a, decision, action) => logActivity(a, decision, action),
+  say: (a, line) => toRenderer('agents:orgNote', { id: a.id, text: line }),
+  changed: (a) => toRenderer('agents:autopilot', { id: a.id, autopilot: a.autopilot ?? null }),
+  rememberLimit: (limit) => settingsStore?.setAutopilotLimit(limit),
+  warn: (line) => console.warn(redact(line)), // T095: the masked log line (check-console-mask)
+});
+router.setEventGuard(bothGuards(eventShape, autopilotOps.accepts)); // spec 099 FR-082, T095 with spec 010 FR-035: both checks, the shape first, before any listener, so nothing uses or forwards a bad one
+router.onEvent((e) => autopilotOps.onEvent(e));
 router.onEvent((e) => { if (!mcp.hidesEvent(e)) toRenderer('agent:event', toWindowEvent(e, outward)); }); // spec 087 (review rounds 7-8): the sandbox event cleaned too; spec 058 FR-215: an elicitation main declined is not shown
 // Spec 087 FR-011: the OS sandbox state is kept on the agent's info (cleaned: own known fields, reason masked and cut), so a reloaded
 // window gets it from agents:list; never saved
@@ -479,8 +523,13 @@ async function addMany(paths: string[], permMode: PermMode, opts: SessionOptions
   const added: AgentInfo[] = [];
   const errors: string[] = [];
   const readyIds = opts.adapterId !== undefined ? await readyAdapterIds() : undefined; // a kind the user picked must be ready (FR-058)
+  const existing: NonNullable<AddResult['existing']> = [];
   for (const p of paths) {
     try {
+      // Spec 033 FR-090: a folder that is already in the office is not started a second time; the window says where it is.
+      const key = ((w) => w.workspaceFile ?? w.cwd)(resolveWorkspaceCwd(p));
+      const have = findAdded(key, agents.values(), wsKey);
+      if (have) { existing.push({ id: have.id, name: have.name, floor: folderStore?.floorOfFolder(wsKey(have)) ?? have.floor ?? GROUND }); continue; }
       added.push(await addWorkspace(p, permMode, { model: opts.model, effort: opts.effort, persist: opts.persist, maxAiCredits: opts.maxAiCredits, floor: opts.floor, adapterId: opts.adapterId, readyIds }));
     } catch (err) {
       errors.push(`${path.basename(p)}: ${err instanceof Error ? err.message : String(err)}`);
@@ -498,7 +547,7 @@ async function addMany(paths: string[], permMode: PermMode, opts: SessionOptions
       }
     }
   }
-  return { ok: errors.length === 0, agents: added, error: errors.join('; ') || undefined, ...(warnings.length ? { warnings } : {}) };
+  return { ok: errors.length === 0, agents: added, error: errors.join('; ') || undefined, ...(warnings.length ? { warnings } : {}), ...(existing.length ? { existing } : {}) };
 }
 
 /** Folders remembered from earlier runs come back as "not started" agents: nothing runs until the first message. */
@@ -637,7 +686,7 @@ const scheduleDeps = (file: string): SchedulerDeps => ({
 });
 
 // The handler bodies that refuse a setting a live session cannot take live in agentops.ts (spec 012 FR-054); `store` is read when a handler runs.
-const opsDeps: OpsDeps = { agents, router, get store() { return folderStore; }, wsKey, sessionKey: (a) => resumeIdFor(a.id), log: (a, decision, action) => logActivity(a, decision, action), orgRefusal: (a, mode) => orgPolicies.refusalNow(appIdOf(a.id), { mode }) };
+const opsDeps: OpsDeps = { agents, router, get store() { return folderStore; }, wsKey, sessionKey: (a) => resumeIdFor(a.id), log: (a, decision, action) => logActivity(a, decision, action), orgRefusal: (a, mode) => orgPolicies.refusalNow(appIdOf(a.id), { mode }), endAutopilot: (a) => autopilotOps.endForMode(a), autopilotStopSeen: (id) => autopilotOps.stopSeen(id) };
 
 /* DURBAR_THEME (spec 040 FR-008): a theme for this run only, never saved; a pick in Settings replaces it and is saved as usual. */
 let runTheme: string | undefined;
@@ -669,7 +718,7 @@ const loginPathReady = (): Promise<void> => {
 };
 const adaptersList = (refresh: boolean): Promise<AdapterInfo[]> => {
   // spec 012 FR-156: after the probes, each agent app that can tell is asked whether its sign-in works; cached until Check again
-  if (!adaptersInfo || refresh) adaptersInfo = loginPathReady().then(() => detectAll(registry, simDetectorFor(SIMULATOR, detectorFor))).then((infos) => withSignIn(infos, signInCheck));
+  if (!adaptersInfo || refresh) adaptersInfo = loginPathReady().then(() => detectAll(registry, simDetectorFor(SIMULATOR, detectorFor))).then((infos) => withSignIn(infos, signInCheck)).then((infos) => windowAdapters(infos, autopilotOn())); // spec 099: no surface offers it while it is off
   return adaptersInfo;
 };
 /** Spec 012 FR-157: a session refused because of the sign-in marks its agent app `not-signed-in` in the cached list and tells the window. */
@@ -769,7 +818,7 @@ const renameSessionOpFor = (openIds: () => ReadonlySet<string>) => renameOp({
 
 // ---- IPC (spec 045 FR-060): every handler lives in src/main/ipc/<area>.ts, registered here through ipcHandle / ipcOn (ipcguard.ts). ----
 // Stores created in whenReady, and state that changes, are passed as getters so a handler reads them when it runs.
-const remoteOps = registerRemoteIpc({ agents, router, toRenderer, getWin: () => win, logActivity });
+const remoteOps = registerRemoteIpc({ agents, router, toRenderer, getWin: () => win, logActivity, autopilotOn: (id) => autopilotOps.engaged(id) });
 registerHeldMigIpc({ held: () => heldBefore, router });
 registerAppIpc({
   getSinceAway: () => (sinceAway ? { ...sinceAway, briefing: summaryDays?.recent() } : null), // spec 085 FR-009: yesterday's and today's ended sessions, numbers only
@@ -788,10 +837,26 @@ const browser = registerBrowserIpc({ agents, getWin: () => win, toRenderer, simu
 const browserGone = (id: string): void => void browser.destroy(id).catch(() => undefined);
 /** Spec 043 FR-041: which profile file changes each session has seen (shared by ipc/agents.ts and ipc/profiles.ts). */
 const profileFreshness = createProfileFreshness();
-registerAgentsIpc({ browserGone, agents, router, agentState, opsDeps, remoteOps, mcpGate: (id) => mcp.signInRefresh.beforeSend(id), mcpStopWait: (id) => mcp.signInRefresh.stopWait(id), mcpBusy: (id) => chatBusy(id), mcpForget: (id) => mcp.signInRefresh.forget(id), mcpStopped: (id) => mcp.signInRefresh.noteStop(id), mcpSecrets: (id) => mcp.secretValuesFor(id), logMcp: (a, action) => logActivity(a, 'mcp-restart', action), getScheduler: () => scheduler, getCheckpointStore: () => checkpointStore, profileFreshness, vsChatRefs, continued, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, maskHistory, forgetSandboxNote: (id) => sandboxOps.forget(id), getSummaryDays: () => summaryDays }); // spec 087: sandboxOps is set below, before any IPC call
+registerAgentsIpc({ browserGone, autopilot: autopilotOps, agents, router, agentState, opsDeps, remoteOps, mcpGate: (id) => mcp.signInRefresh.beforeSend(id), mcpStopWait: (id) => mcp.signInRefresh.stopWait(id), mcpBusy: (id) => chatBusy(id), mcpForget: (id) => mcp.signInRefresh.forget(id), mcpStopped: (id) => mcp.signInRefresh.noteStop(id), mcpSecrets: (id) => mcp.secretValuesFor(id), logMcp: (a, action) => logActivity(a, 'mcp-restart', action), getScheduler: () => scheduler, getCheckpointStore: () => checkpointStore, profileFreshness, vsChatRefs, continued, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, maskHistory, forgetSandboxNote: (id) => sandboxOps.forget(id), getSummaryDays: () => summaryDays }); // spec 087: sandboxOps is set below, before any IPC call
 registerAttachmentsIpc({ dev, pickedFiles, getStageDir, sizeOf });
-registerPreviousIpc({ browserGone, renameSessionOpFor, dev, agents, router, registry, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, wsKey, resumeIdFor, forgetOpenSession, logActivity, addWorkspace, vsChatRefs, maskHistory });
+registerPreviousIpc({ browserGone, sessionsChanged: () => convSearch.dropKept(), renameSessionOpFor, dev, agents, router, registry, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, wsKey, resumeIdFor, forgetOpenSession, logActivity, addWorkspace, vsChatRefs, maskHistory });
+// spec 095 (T022): the conversation search. Scope from main's own agents and folder store; MCP values without a keychain prompt (as
+// NotesOps); one cross-scan gate for what starts a Codex process; the matcher is the window's own file, loaded when first needed
+const convGate = createReadGate<unknown>();
+const convListings = new Map<string, Promise<unknown>>(); // FR-022: the folder listings running now, shared by scans
+let convMatcher: { masker: ReturnType<typeof createMasker>; search: SessionSearchApi } | undefined;
+const convSearch = registerConvSearchIpc({
+  hasSessions: () => agents.size > 0,
+  scope: (stop, codexLists) => buildScope({
+    agents, router, store: folderStore, wsKey, resumeIdFor, appName: (id) => registry.get(id)?.displayName ?? id, vsUserDirs: () => vsUserDirsOf(dev),
+    rememberChat: (agentId, ref) => { const m = vsChatRefs.get(agentId) ?? new Map<string, ChatFileRef>(); m.set(ref.summary.key, ref); vsChatRefs.set(agentId, m); }, // FR-012: View opens it
+    values: { knownSecretValues: (key) => mcpStore?.knownSecretValues(key) ?? [], noPrompt: () => !mcpStore || mcpStore.noPrompt(), secretValuesFor: (id) => mcp.secretValuesFor(id), copilotValuesFor: (id) => mcp.copilotValuesFor(id) },
+    gate: convGate, codexLists, listings: convListings, // FR-026: the box session's Codex titles, memory only
+  }, stop),
+  matcher: () => (convMatcher ??= { masker: createMasker({ unhide: (s) => rendererScript<{ unhide(s: string): string }>('safetext.js').unhide(s) }), search: rendererScript<SessionSearchApi>('sessionsearch.js') }),
+});
 registerCheckpointsIpc({ agents, getCheckpointStore: () => checkpointStore, busyStatus });
+const worldsIpc = registerWorldsIpc({ simulator: SIMULATOR }); // spec 102 T022: installed worlds, read from disk after a re-check; no network
 registerSchedulesIpc({ getScheduler: () => scheduler, getFolderStore: () => folderStore });
 registerUsageIpc({ agents, getUsageStore: () => usageStore, getUsageTotalsStore: () => usageTotalsStore, usageLabel });
 const newFolderIpc = registerNewFolderIpc({ addMany, getSettingsStore: () => settingsStore, asEffort, toRenderer }); // spec 093: create a folder from + Folder (clone, new repository, empty folder)
@@ -840,6 +905,10 @@ function oneShotFor(id: string): { name: string; generate: (prompt: string) => R
 registerProfilesIpc({ agents, router, getAgentTrust: () => agentTrust, wsKey, ensureLive, oneShot: (id) => oneShotFor(id), profileFreshness });
 registerSlashIpc({ agents, router, ensureLive }); // spec 073
 registerNotesIpc({ getOps: () => notesOps }); // spec 083
+// spec 111 T007: the team templates; the store is opened when first asked (never under the simulator: its channels are refused before this runs)
+let teamsOps: TeamsIpcOps | undefined;
+let teamStore: TeamTemplateStore | undefined;
+registerTeamsIpc({ getOps: () => (SIMULATOR ? undefined : (teamsOps ??= new TeamsIpcOps({ store: () => (teamStore ??= new TeamTemplateStore(path.join(app.getPath('userData'), 'team-templates.json'))) }))) });
 registerModelIpc({ agents, router, registry, getFolderStore: () => folderStore, wsKey, orgModel: (adapterId, model) => orgPolicies.model(adapterId, model) });
 registerOrgPolicyIpc({ view: () => orgPolicies.view() });
 registerAdaptersIpc({ adaptersList });
@@ -955,6 +1024,7 @@ function createWindow(): void {
   const query: Record<string, string> = {};
   if (SIMULATOR) {
     query.sim = String(simulatorCount(dev));
+    if (autopilotOn()) query.simautopilot = '1'; // spec 099: the simulator offers Autopilot only when main says it is on
     if (dev.DURBAR_SIM_FREEZE === '1') query.simfreeze = '1';
     if (dev.DURBAR_SIM_ROOMS) query.simrooms = dev.DURBAR_SIM_ROOMS;
     if (dev.DURBAR_SIM_FLOORS === '1' || dev.DURBAR_SIM_FLOORS === 'ground') query.simfloors = dev.DURBAR_SIM_FLOORS; // spec 092 T010: 'ground' = the same three floors with every folder on the Ground floor
@@ -965,11 +1035,13 @@ function createWindow(): void {
     if (dev.DURBAR_SIM_FLOORS_OFF) query.floorsoff = dev.DURBAR_SIM_FLOORS_OFF.slice(0, 200);
     if (simClock.query) query.simclock = simClock.query; // spec 001 FR-084: a pinned page clock for screenshots
   }
+  if (dev.DURBAR_DOOR === '1') query.door = '1'; // spec 052 FR-191: Your door (the Needs you panel) is behind a flag until the owner's look
   win.on('focus', () => win?.flashFrame(false)); // spec 052 FR-059: the taskbar flash stops when you come back
   {
     // spec 052 FR-085 / FR-087 / FR-090: on macOS closing the window hides it (the agents keep running; ⌘Q quits);
     // elsewhere it asks first while agents work (closing ends their sessions); either way the window's place is remembered
     const w = win;
+    w.on('close', () => convSearch.cancelAll()); // spec 095 FR-023: closing (or hiding) the window stops a conversation search
     w.on('close', (ev) => {
       if (hideOnClose(process.platform, quitting)) {
         ev.preventDefault();
@@ -1066,7 +1138,7 @@ app.whenReady().then(() => {
   notesOps = new NotesOps({
     agents, store: () => notesStore, resumeIdFor, adapterIdOf: (id) => router.adapterIdOf(id),
     folderValues: (key) => mcpStore?.knownSecretValues(key) ?? [], // FR-005: never decrypts, so no keychain prompt from a notes save
-    sessionValues: (id) => (mcpStore?.noPrompt() ? mcp.secretValuesFor(id) : []), // forSession could unlock the vault: only when it cannot
+    sessionValues: (id) => sessionMaskValues({ noPrompt: () => mcpStore?.noPrompt() === true, secretValuesFor: (x) => mcp.secretValuesFor(x), copilotValuesFor: (x) => mcp.copilotValuesFor(x) }, id), // forSession could unlock the vault: only when it cannot; else the Copilot-list values alone (spec 069 FR-070)
     // FR-050..FR-055 (T041, T042): the .durbar/notes/notes.md mirror, only for a folder whose switch (`notesProject` in folders.json) is on
     file: () => notesFile, fileOn: (key) => !!folderStore?.get(key)?.notesProject, fileGit: (key) => folderStore?.get(key)?.notesProject === 'git', setFileOn: (key, on, git) => folderStore?.setNotesFile(key, on, git) === true,
     ignoreOwn: (key) => folderStore?.get(key)?.notesIgnoreOwn, setIgnoreOwn: (key, id) => folderStore?.setNotesIgnoreOwn(key, id) === true,
@@ -1189,6 +1261,7 @@ let disposedOnQuit = false;
 /** Spec 093 FR-043: a running clone is ended and its folder removed (at most 5 s) before the app quits; asked once. */
 let newFolderEnded = false;
 app.on('before-quit', (ev) => {
+  convSearch.cancelAll(); // spec 095 FR-023: a conversation search stops on quit (also when the quit is then cancelled)
   if (!quitConfirmed) {
     if (workingCount() > 0 && !dev.DURBAR_SHOT && !dev.DURBAR_DRIVER) {
       ev.preventDefault();
@@ -1228,6 +1301,7 @@ app.on('before-quit', (ev) => {
     .finally(() => app.quit());
 });
 app.on('will-quit', () => {
+  worldsIpc.shutdown(); // spec 102: no read starts after quit
   scheduler?.flush(); // spec 044 FR-037: a fold counted during the 3 s dispose window of before-quit
   void destroyAllViews(); // spec 080 FR-023: the session browsers (none exist until the browser pane lands)
   usageStore?.flush();

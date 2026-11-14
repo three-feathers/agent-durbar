@@ -17,8 +17,13 @@
  *   - a header line ends past the window's right edge (the stats line of #1146 was clipped there);
  *   - a kind of text the check exists for is missing (no line measured, no link, no code chip), so it cannot pass by measuring nothing.
  * Prints each chat's worst lines. Screenshots: <SHOTS_OUT>/chatcontrast-<main|helper>-<w>x<h>.png and the glyph-free captures (-bg).
- * CONTRAST_MUTANT=ro (the helper panel gets the Real office root's class again, #1164's bug) or =clear (the chat's surfaces transparent):
- * both must fail; used to show the check can fail.
+ * CONTRAST_MUTANT=hover (the pointer left on the first link: must fail with 'is hovered at the read') or =ro (the helper panel gets the Real office root's class again, #1164's bug) or =clear (the chat's surfaces transparent):
+ * both must fail on the 4.5:1 assert; =nohide (the rule that makes the glyphs transparent never applies: the text stays in the frame, as in a capture from before the rule)
+ * must fail on it too (about 1:1); used to show the check can fail. A stale frame itself cannot be made on demand: the marker wait has no mutant of its own.
+ *
+ * The glyph-free capture (#1301, spec 008 FR-184): `capturePage()` can return the compositor's previous frame, one that still shows the text, under load (on Linux CI
+ * every line then measured 1.00:1: the text blended over itself). The same call that hides the glyphs adds a 4x4 magenta marker in the window's top right corner; the
+ * capture is repeated until that marker is in it, so the frame measured is one drawn after the hiding, and fails (it never measures) when none comes in 15 s.
  */
 const os = require('os');
 const fs = require('fs');
@@ -55,8 +60,18 @@ const LINES = `(()=>{const out=[],p=document.getElementById('panel'),W=innerWidt
     }
   }
   return out;})()`;
-const HIDE_ON = `(()=>{const s=document.createElement('style');s.id='cc-hide';s.textContent='#panel,#panel *{color:transparent!important;-webkit-text-fill-color:transparent!important;text-shadow:none!important;caret-color:transparent!important;text-decoration-color:transparent!important}';document.head.appendChild(s);return true})()`;
-const HIDE_OFF = `(()=>{const s=document.getElementById('cc-hide');if(s)s.remove();return true})()`;
+const MARK = 4; // the marker's side in CSS px
+const HIDE_CSS = MUTANT === 'nohide' ? '' : '#panel,#panel *{color:transparent!important;-webkit-text-fill-color:transparent!important;text-shadow:none!important;caret-color:transparent!important;text-decoration-color:transparent!important}';
+const MARK_CSS = `position:fixed;top:0;right:0;width:${MARK}px;height:${MARK}px;background:#ff00ff;z-index:2147483647;pointer-events:none`;
+const HIDE_ON = `(()=>{const s=document.createElement('style');s.id='cc-hide';s.textContent=${jsLiteral(HIDE_CSS)};document.head.appendChild(s);
+  const m=document.createElement('div');m.id='cc-mark';m.style.cssText=${jsLiteral(MARK_CSS)};document.body.appendChild(m);return true})()`;
+const HIDE_OFF = `(()=>{for(const id of ['cc-hide','cc-mark']){const s=document.getElementById(id);if(s)s.remove();}return true})()`;
+/* the marker's colour, read from a capture: BGRA bitmap, a pixel well inside the marker */
+const hasMark = (img, s) => {
+  const { width: iw, height: ih } = img.getSize();
+  const x = Math.min(iw - 1, Math.floor(iw - (MARK / 2) * s)), y = Math.min(ih - 1, Math.floor((MARK / 2) * s)), i = (y * iw + x) * 4, b = img.toBitmap();
+  return b[i + 2] > 240 && b[i + 1] < 16 && b[i] > 240;
+};
 const MUTATE = {
   ro: `(()=>{const pi=document.querySelector('#panel .panel-in');pi.classList.add('ro');return pi.classList.contains('ro')})()`,
   clear: `(()=>{const s=document.createElement('style');s.textContent='#panel,#panel *{background-color:transparent!important}html[data-world] body{background:url(realoffice/worlds/photo/floor.webp) center/cover!important}';document.head.appendChild(s);return true})()`,
@@ -83,18 +98,30 @@ module.exports = async (ctx) => {
 
   /** every line of text in the open chat, with its contrast against the pixels behind it */
   const measure = async (file) => {
+    /* spec 008 FR-214: the pointer off the chat before the colours are read (a link in its :hover colour is not the resting one); CONTRAST_MUTANT=hover leaves it on the first link */
+    if (MUTANT === 'hover') { const at = await js(`(()=>{const b=document.querySelector('#panel a[href]').getBoundingClientRect();return {x:Math.round(b.left+b.width/2),y:Math.round(b.top+b.height/2)}})()`); H.wc().sendInputEvent({ type: 'mouseMove', x: at.x, y: at.y }); await H.until(`!!document.querySelector('#panel a:hover')`, 2000); }
+    const hot = MUTANT === 'hover' ? await js(`[...document.querySelectorAll('#panel :hover')].map(e=>e.tagName.toLowerCase())`) : await H.pointerOff('#panel');
+    assert.deepStrictEqual(hot, [], `the chat's ${JSON.stringify(hot)} is hovered at the read (the pointer is on the chat: its colours are the :hover ones)`);
     const lines = await js(LINES);
     await js(HIDE_ON);
-    await js(`new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(true))))`);
-    const img = await ctx.win.webContents.capturePage();
+    const vw = await js('innerWidth');
+    let img = null;
+    for (const end = Date.now() + 15000; Date.now() < end;) {
+      await js(`new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(true))))`);
+      const c = await ctx.win.webContents.capturePage();
+      if (hasMark(c, c.getSize().width / vw)) { img = c; break; }
+      await ctx.sleep(50);
+    }
     await js(HIDE_OFF);
+    assert.ok(img, 'the glyph-free frame was captured: no capture showed the marker added with the hiding of the text in 15 s (#1301)');
     fs.writeFileSync(file, img.toPNG());
     const { width: iw, height: ih } = img.getSize(), bmp = img.toBitmap(); // BGRA
-    const vw = await js('innerWidth'), s = iw / vw;
+    const s = iw / vw;
     return lines.map((l) => {
       const c = parseColor(l.color), a = c ? c.a * l.op : 0, vals = [];
       for (let y = Math.max(0, Math.floor(l.y * s)); y < Math.min(ih, Math.ceil((l.y + l.h) * s)); y += 2)
         for (let x = Math.max(0, Math.floor(l.x * s)); x < Math.min(iw, Math.ceil((l.x + l.w) * s)); x += 2) {
+          if (x >= iw - MARK * s && y < MARK * s) continue; // the marker's own pixels
           const i = (y * iw + x) * 4, br = bmp[i + 2], bg = bmp[i + 1], bb = bmp[i];
           const fr = a * c.r + (1 - a) * br, fg = a * c.g + (1 - a) * bg, fb = a * c.b + (1 - a) * bb;
           vals.push(ratio(lum(fr, fg, fb), lum(br, bg, bb)));
@@ -116,7 +143,7 @@ module.exports = async (ctx) => {
     for (const [who, a] of [['main', pair.main], ['helper', pair.helper]]) {
       await openChat(a.id, a.name);
       if (who === 'main') await must(`!!document.querySelector('#panel a[href*="example.com/registry"]')`, 'the reply with a link');
-      if (MUTANT && who === (MUTANT === 'ro' ? 'helper' : who)) assert.ok(await js(MUTATE[MUTANT]), 'the mutant applies');
+      if (MUTATE[MUTANT] && who === (MUTANT === 'ro' ? 'helper' : who)) assert.ok(await js(MUTATE[MUTANT]), 'the mutant applies');
       await H.settle();
       await H.shot(path.join(OUT, `chatcontrast-${who}-${tag}.png`), { settle: true, tag: 'chatcontrast', what: `${who} ${a.name} ${tag}` });
       const res = await measure(path.join(OUT, `chatcontrast-${who}-${tag}-bg.png`));

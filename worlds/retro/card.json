@@ -1,0 +1,15 @@
+{
+ "formatVersion": 1,
+ "id": "retro",
+ "arrangement": "aisles",
+ "monitor": "Arcade cabinet, which is also the monitor: level glass and marquee, four body shapes",
+ "light": [7200],
+ "mood": "Neon arcade at dusk, loud and playful",
+ "wall": "Pixel brick, dark navy, with neon tubes",
+ "floor": "Pixel diamond lattice, dark carpet",
+ "desk": "Arcade cabinet body, one per seat",
+ "fixtureStyle": "Arcade machines: prize counter, cartridge wall, service panel, pinball table, change machine, coin vault",
+ "plants": "No plants: plush prizes in the prize counter",
+ "motif": "A visible pixel grid over everything",
+ "distinct-check": { "state": "pending" }
+}

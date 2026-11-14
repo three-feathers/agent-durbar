@@ -8,10 +8,10 @@ Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `tes
 
 - **`pkill -f` / `pgrep -f` match their own shell**. Select by field (`ps -eo pid,args | awk ...`) or keep the PIDs you started (2026-10-20).
 - **Plain Node 22.18+ can `require()` an erasable `src/shared/*.ts`** (no `enum`, `namespace`, parameter properties): a no-build script can reuse `redact.ts`; wrap it, fail closed on a throw; `process.features.typescript` tells a test (spec 008 FR-122, `real:` Node 22.23).
-- **`npm test -- --bail`** stops at the first failing suite (ignored under `CI`); not for the final run (spec 008 FR-115).
+- **`npm test -- --bail`** stops at the first failure (not under `CI`), not for final runs (spec 008 FR-115).
 - **systemd user units do not sandbox on an Ubuntu 24.04 VPS** (`apparmor_restrict_unprivileged_userns=1`): `InaccessiblePaths`, `ProtectHome`, `PrivateUsers` drop silently. Probe a setting with `systemd-run --user --wait --pipe -p <x> cat <file>`; use a separate unix user for isolation (FR-058, `real:` systemd 255).
 - **The Write tool turns a ` ` escape into the raw character**, so `tsc` fails; write them with a Python edit, check with `perl -ne 'print if /[^\x00-\x7f]/'` (2026-10-25, `real:`).
-- **A lock "check, then act" needs a short `wx` guard and an owner token**: re-check under the guard; write or unlink only while the token is yours; move a stale guard aside and check identity (never `lstat` then `unlink`). Test with an injected fs swapping the lock between calls; it narrows the race, not closes it (spec 083 FR-008, #723, `test:` `test-notesstore.ts`).
+- **A lock "check, then act" needs a short `wx` guard and an owner token**: re-check under the guard; write or unlink only while the token is yours; move a stale guard aside and check identity (never `lstat` then `unlink`). Test with an injected fs swapping the lock between calls; it narrows the race, not closes it (spec 083 FR-008, `test-notesstore.ts`).
 - **Capture `child_process` functions at call time, not at load**: a function grabbed at module load bypasses the simulator's seal and test spies; pass a wrapper that reads `child_process.execFile` when called (spec 081, `test:simguard`).
 - **Sealing a Node built-in works only on the real module object**: patch `require('child_process')` (`import x = require(...)`, not `import * as`: its `__importStar` copy has getters only; patch `require('fs')` to fake an fs call, PR #489); TS's CommonJS output reads `child_process_1.execFile` at call time, so the seal reaches `src/` (spec 010 FR-030, `test-simguard` §5). `test:ipcchannels` bans `ipcMain` and `.ipc` outside `ipcguard.ts`.
 - **git rerere can replay a stale resolution and silently drop a rule** (no markers; it twice dropped `.mode-menu` from `styles.css`). After "Resolved ... using previous resolution", rebuild each file with `git merge-file -p ours base theirs` and diff it, or `git rerere forget <file>` during the conflict (PRs #488, #511, `real:`).
@@ -40,9 +40,9 @@ Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `tes
 - **A contrast fallback must not touch shared surfaces** (`--surface`, `--bg`): fix only the text side, test a dark theme with one failing pair. A list copied between `src/renderer` and `src/shared` needs an equality test (#500, `test:theme-tokens`).
 - **A send gate's busy check reads main's `lastStatus`, not `agentState`**: `agents:send` sets Thinking first (spec 058 FR-209).
 - **A lookup table keyed by event or adapter text needs `hasOwnProperty`** (`'__proto__'`, `toString`), and number helpers need `Number.isFinite` (`Infinity` printed `InfinityM`) (spec 015, #601; spec 007 T038).
-- **A test server that never reads a socket never sees it close**: call `s.resume()` on every accepted socket when waiting for `close`; list processes before blaming the product. It blocked v0.1.1 on macOS (PR #847, `real:` test builds).
+- **A test server that never reads a socket never sees it close**: call `s.resume()` on each accepted socket before awaiting `close`; list processes before blaming the product (PR #847, macOS).
 - **Install Electron once before parallel Electrons** (`ensureElectron()` from `scripts/ensure-electron.js`), or first runs race on `node_modules/electron/dist` (`ETXTBSY`, "Could not find sentinel") (spec 008 FR-114, `sim:`).
-- **Electron checks are heavy**: at most two drivers at once under `nice -n 10`; keep the limits in `run-tests.js` and `check-parallel.js`.
+- **Electron checks are heavy**: at most two drivers at once, `nice -n 10` (limits: `run-tests.js`, `check-parallel.js`).
 
 ## CI, review and merge
 
@@ -70,7 +70,7 @@ Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `tes
 - **A new renderer script needs a line in `scripts/copy-assets.js`** and its `<script>` tag, or the page silently runs without it (`window.DurbarX` undefined); check `ls dist/renderer` and let a driver assert something it draws (#605, spec 087 T030).
 - **A screen no driver opens can break unseen** (#474).
 - **A new event type needs `EVENT_TYPES` in `eventguard.ts` and the contract's `TYPES`** (spec 087).
-- **An issue number in a renderer comment is a colour literal**: `test:theme-tokens` counts `#` + 3-8 hex digits in `app.js`, `screens.js`, `scenekits.js`, `index.html`, comments included. Write "PR 642" / "issue 619"; "N literals, ratchet allows N-1" after a merge is often this (PRs #498, #511, #535, #642).
+- **An issue number in a renderer comment is a colour literal**: `test:theme-tokens` counts `#` + 3-8 hex digits in `app.js`, `screens.js`, `scenekits.js`, `index.html`, comments too; write "PR 642". A ratchet one over after a merge is often this (#498, #642).
 - **Theme values: two copies, one corpus**: typed-token grammar lives in `theme.js` and `src/shared/themetokens.ts`; change both (`BAR_*` too), run `test:theme-tokens` (`THEME_LITERALS_WRITE=1`, `inventory.js --update` lower). An inline custom property beats `html[data-ui=...]` in `themes.css` (spec 070).
 - **`\s` inside a page-code template literal is `s`**: write `\\s`, `\\n`, `\\d`, and print the tested text in the message. Match time-left text as a range (spec 068 T021).
 - **`webContents.executeJavaScript` waits for a returned promise**: end a line that opens a dialog with `void ...;0`. `H.calm()` hides `#toasts` for the rest of the run: use `H.clearToasts()` when you check a toast (spec 080).
@@ -96,6 +96,7 @@ Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `tes
 - **"Chat open" has no office**: `body.panel-open` hides `#stage-host`; check closed, open, closed. A window is at least 640x480 (`minHeight`) (spec 001).
 - **A driver loads the `dist` of the tree it lives in**: to compare builds, `require` the tested tree's helpers or pass `index:` to `H.load` (2026-10-25, `sim:`).
 - **Floors on: a driver sees one floor**: run every driver that loads `simfloors` (`grep -l simfloors scripts/*.js`); walk floors with `H.eachFloor` / `H.goToFloor` or use `simfloors=ground`. PageDown on the body does not scroll `#floor`; the key handler does (spec 092 phase 1).
+- **A `String.replace` string replacement expands `$&`, `` $` ``, `$'`** (`esc()` keeps `$`): patched-in data injects markup (spec 095). Pass data to builders.
 - **`announce()` keeps the last text within 60 ms**: in a driver wait for each announcement (`until` on a `MutationObserver` list of `#srAnnounce`, filter "Floor ") before the next change (spec 092 phase 2).
 - **A marker keyed on "a turn just ended" fires on the simulator's start-up replay**: gate it with `SIM&&!window.__durbarSimReplayed`; an opened chat makes a Done agent Idle (`Ready in <folder>`) (#691).
 - **A driver that counts "today" needs a pinned clock** (`simclock=<ms>`, spec 001 FR-084): seeded schedules first run 12 minutes after start, so a run near midnight sees none (PR 621, `real:` CI at 23:54).
@@ -135,10 +136,11 @@ Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `tes
 - **A shortcut clash check needs more than the app's keys**: macOS Control letters edit text, IBus owns Ctrl+Shift+U/E, and handlers match `e.key` or `e.code` (Dvorak). Refuse a recorded shortcut whose position or typed letter is taken (`clashOf` in `navigator.js`); `test-navigator.ts` scans `app.js` (#552).
 - **CSS subgrid rows count the row's padding inside the first and last tracks**: add it to those track sizes and measure the cell (#812, spec 001 FR-182).
 - **Scene pictures**: an `<image href>` with a relative path works under `img-src 'self'`; detect a broken one with `new Image()` + `decode()` and key it in `data-sig` (`check-crew.js`). Pillow `save(..., 'WEBP', exif=b'')` writes clean chunks (`test:crew-assets`) (spec 077).
-- **A new crew's `FACE` points do not move a couch seat's face**: the crop is anchored on the face point (62% across), so only the pixels decide whether the chat badge covers the face; on a `check-crew` seat failure, look at the picture. Read new points on a 50 px grid with a red 110x140 box beside a Cheeky one (#815). The Retro Pixel bed step flaked (3/5) until it measured once two reads 300 ms apart agree.
+- **`FACE` points don't move a seat's face** (crop at 62%): only pixels decide if the badge covers it; on a `check-crew` seat failure look at the picture, read points on a 50 px grid, a red 110x140 box beside a Cheeky one (#815). Retro Pixel's bed step flaked 3/5 until two reads 300 ms apart had to agree.
 - **A destroyed `WebContentsView` has no `webContents`**: keep the `webContents` before `close()` to check `isDestroyed()` and the OS process (`process.kill(pid, 0)` gives `ESRCH`). `Page.getNavigationHistory` gives each entry a `transitionType` (`form_submit` for a form), so main knows a form page without reading it; `sendInputEvent` (`char`) fires a view's `input-event`. `sim:` spec 080 T013/T018.
 - **The simulator's End session never reaches main**: a driver that checks a browser teardown uses the driver-context hooks `ctx.browserGone` / `ctx.browserStates` (`main.ts`), not the renderer.
 - **No referrer from a custom scheme** (2026-10-31): a `durbar-sim:` `_blank` has `referrer.url === ''`; test referrer rules over loopback http (`check-browser-tabs.js`).
+- **A child's `TMPDIR` needs room for Unix sockets** (macOS: 104 bytes): use `makeSocketSafePrivateDir` (spec 087 FR-024).
 - **CSS anchor positioning** (2026-11-05, #1155, Chromium 125+): `anchor-name`s are document-global, so unique, and precede what they anchor; guard: `check-097-plate-pencil`.
 
 ## Team chat

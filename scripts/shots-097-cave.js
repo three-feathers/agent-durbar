@@ -47,8 +47,8 @@ module.exports = async (ctx) => {
   assert.strictEqual(await js(`document.documentElement.dataset.world+' '+document.querySelector('#stage .ro').dataset.set`), 'photo office', 'flag off: the Photo office with the Office people');
   assert.strictEqual(await packs(), 'sets/office worlds/photo', 'flag off: no cave or Prehistoric file asked for: ' + await packs());
   await js(`window.DurbarScreens.openSettings()`);
-  await must(`!!document.querySelector('[data-officelayout="real"]')`, 'Settings');
-  assert.strictEqual(await js(`!!document.querySelector('#wrGroup')`), false, 'flag off: no World row');
+  await must(`!!document.querySelector('#wrGroup [data-world="photo"]')`, 'Settings');
+  assert.strictEqual(await js(`[...document.querySelectorAll('#wrGroup [data-world]')].map(b=>b.dataset.world).join()`), 'plain,photo', 'flag off: the cave is not listed');
   await js(`document.getElementById('scrClose').click();localStorage.removeItem('durbar.world')`);
 
   // ---- the flag on (simulator): the cave, its set, nothing else ----
@@ -85,8 +85,9 @@ module.exports = async (ctx) => {
   await loadReal(1440, 900, CAVE);
   await js(`window.DurbarScreens.openSettings()`);
   await must(`!!document.querySelector('#wrGroup')`, 'the World row');
-  const row = await js(`(()=>{const g=document.querySelector('#wrGroup');return {role:g.getAttribute('role'),radios:[...g.querySelectorAll('[role=radio]')].map(b=>b.dataset.world+':'+b.getAttribute('aria-checked')+':'+b.tabIndex).join(' '),label:document.getElementById('wrL').textContent}})()`);
-  assert.deepStrictEqual(row, { role: 'radiogroup', radios: 'photo:false:-1 cave:true:0', label: 'World' }, 'a radio group with the cave checked and one tab stop: ' + JSON.stringify(row));
+  await must(`document.querySelectorAll('#wrGroup .wpic img').length>=2`, 'the cards show their previews (the page is painted again once the previews script has loaded)');
+  const row = await js(`(()=>{const g=document.querySelector('#wrGroup');return {role:g.getAttribute('role'),radios:[...g.querySelectorAll('[role=radio]')].map(b=>b.dataset.world+':'+b.getAttribute('aria-checked')+':'+b.tabIndex).join(' '),label:document.getElementById('worldH').textContent}})()`);
+  assert.deepStrictEqual(row, { role: 'radiogroup', radios: 'plain:false:-1 photo:false:-1 cave:true:0', label: 'World' }, 'a radio group with the cave checked and one tab stop: ' + JSON.stringify(row));
   assert.ok(/World’s default \(Prehistoric\)/.test(await js(`document.querySelector('#chList [data-characters="theme"]').getAttribute('aria-label')`)), 'Characters names the cave’s default set');
   await js(`document.querySelector('#wrGroup [data-world="cave"]').focus()`);
   await H.shot(path.join(OUT, 'cave-settings-1440x900.png'), { prep: 'mouse' });
@@ -100,7 +101,9 @@ module.exports = async (ctx) => {
   };
   const RO = (world, set) => `(()=>{const r=document.querySelector('#stage .ro');return !!r&&r.dataset.world===${jsLiteral(world)}&&r.dataset.set===${jsLiteral(set)}})()`;
   await H.key('Left');
-  await must(`document.documentElement.dataset.world==='photo'&&document.activeElement&&document.activeElement.dataset.world==='photo'`, 'ArrowLeft moves to the Photo office and keeps focus on the radio');
+  await must(`document.activeElement&&document.activeElement.dataset.world==='photo'&&document.documentElement.dataset.world==='cave'`, 'ArrowLeft moves the focus to the Photo office and chooses nothing (FR-301)');
+  await H.key('Return');
+  await must(`document.documentElement.dataset.world==='photo'&&document.activeElement&&document.activeElement.dataset.world==='photo'`, 'Enter chooses the Photo office and keeps focus on the card');
   assert.strictEqual(await js(`localStorage.getItem('durbar.world')`), 'photo', 'the choice is kept');
   assert.ok(/World\u2019s default \(Office people\)/.test(await js(`document.querySelector('#chList [data-characters="theme"]').getAttribute('aria-label')`)), 'Characters now names the Office people');
   await room(RO('photo', 'office'), 'the Photo office draws the Office people on the default');
@@ -112,12 +115,13 @@ module.exports = async (ctx) => {
   await H.shot(path.join(OUT, 'photo-prehistoric-15-1440x900.png'), { prep: 'calm' });
   await js(`window.DurbarScreens.openSettings()`);
   await must(`!!document.querySelector('#wrGroup')`, 'the World row');
-  await js(`document.querySelector('#chList [data-characters="cheeky"]').click()`);
-  await must(`/until Cheeky has Real office poses/.test(document.getElementById('dsR').textContent)`, 'Cheeky has no Real office poses: one line saying so');
-  await room(RO('photo', 'office'), 'Cheeky: the world\u2019s default set');
+  await js(`document.querySelector('#chList [data-characters="minimalist"]').click()`);
+  await must(`/until Minimalist has Real office poses/.test(document.getElementById('dsR').textContent)`, 'Minimalist has no Real office poses: one line saying so (Cheeky has its own set since T244)');
+  await room(RO('photo', 'office'), 'Minimalist: the world\u2019s default set');
   await js(`document.querySelector('#chList [data-characters="theme"]').click();document.querySelector('#wrGroup [data-world="photo"]').focus()`);
   await H.key('Right');
-  await must(`document.documentElement.dataset.world==='cave'`, 'ArrowRight back to the cave');
+  await H.key('Return');
+  await must(`document.documentElement.dataset.world==='cave'`, 'ArrowRight then Enter back to the cave');
   await room(RO('cave', 'prehistoric'), 'the cave with its default set');
   await js(`document.getElementById('scrClose').click()`);
   console.log('[cave] checks passed; shots in', OUT);

@@ -143,6 +143,17 @@ Animations are subtle, CSS-only in compact densities and stop under reduced-moti
 
 ## Changes
 
+### 2026-11-11: `shots-001-live-activity` reads the lobby through the settled check (issue #1481, FR-191)
+
+`read:` CI run 42924505740, job 130207522830 failed `shots-001-live-activity: 1440 sparse: office page rules` with the only problem "a walking figure is not on a slot (566,329)". That driver is the only one in `ui-suite.js` with `freeze: false`: the live simulator keeps sending agents to the lobby, and its `page()` waited once for no figure walking and then made one `pageCheck`. A figure also jumps without walking when the lobby re-lays out (`move(w, pos, null, true)` in `app.js`) and the next frame repaints, so one read can land between the two. `check:office` already handles this (spec 024 T027, FR-191: re-read for up to 3 s, fail only when two reads two animation frames apart show the same figures and lit slots), but only inside its own `measure()`.
+
+- **Change:** that loop moves into an exported `settledPageCheck(ctx, expanded, expectPlaces, beforeRead)` in `scripts/check-office-overlap.js`; `measure()` keeps its `OFFICE_TEST_STUCK_WALKER` hooks (as `beforeRead`) and calls it, and `shots-001-live-activity.js` `page()` calls it too (FR-031: one copy). Scripts only; no change to `src/`.
+- **`[KNOWN GAP]`** The race is inferred from the code and that one CI log. It did not reproduce locally (5 of 5 passes), so it was not observed, and this change is not shown to remove the failure; it makes the driver tolerate the one cause found.
+
+### 2026-11-09: `check-001-lights` picks its four desks from a settled office (issue #1342, FR-231)
+
+`sim:` The driver waited for 8 desks, then took four desks whose screen was off and whose person was at the desk. The frozen simulator's replay leaves some working agents' tool calls open; each shows as a visit to a place once the lobby's 600 ms debounce has passed, and stays. Read before the debounce, 7 desks qualified; read after it, 3 (sim-1, -5, -12 and -14 away), so the driver failed with `four desks with their light off (3)` whenever the read came late: under load, and on CI (15 of the last 100 failed `ui-platforms.yml` runs, Linux and Windows, every kit and both sizes). The tint rule and the app are not wrong. The driver now waits until the office has settled (`visitsSettled()`, `settleNow()`, no figure walking) and picks from every desk whose screen is off, wherever its person stands: its check reads an away desk's screen like any other (sim-3, amber and away, was already checked on every run). Nothing in the app changes.
+
 ### 2026-11-07: the demo header case narrows in steps (issue #1285, FR-179)
 
 `sim:` The demo case of `check-office-overlap.js` narrowed every room header to 164 px once and required one to give way (`no-aiu`). The user-theme fixture's pixel font still holds at 164 px, so nothing gave way and the 2 user-theme jobs of `check-parallel --themes` failed on `main` (`narrowing the headers made none give way`), at 1440x900 and 1280x800. The headers were not wrong; the 164 px assumption was theme-specific. The driver now narrows in steps (164, 148, 132, 116, 100 px) and stops at the first width where a header gives way; it still fails when none does at 100 px. FR-179 and the app are unchanged. `[KNOWN GAP]` the demo has no cost chip (`roomAiu` is null while the demo is on), so `no-aiu` there marks "the header had to shed a part", not a visible chip going.
@@ -399,6 +410,14 @@ Spec [024](../024-office-places/spec.md) adds a one-row **lobby** band between t
 - **FR-034** (amendment) **One helper shows a pending request.** `focusRequest(card)` (app.js) brings the card into view and focuses its first answer control (a question's option or field), else the card itself; the answer bar's `show` and the lobby's `openAtRequest` both call it.
 - Docs: `postNext` (not `postLines`) in the plan and tasks; `lobbyFit(aw, places, addButton, post)` in FR-039 and the plan.
 - *Result (2026-10-23, Linux, Xvfb, simulator only):* `sim:` `shots-001-lobby.js` hostile pass at 1440x900: four agents (the Boss's first entry, one inside "+N", Omar at the Bank, a coffee-corner visitor) get a title like `<img src=x onerror=…><b>Mal1</b>`, and a schedule prompt with the same markup is saved through the simulator bridge; no `img` and no injected `b` in `#stage`, `#walkers` or `#modeMenu`, `window.__pwn` stays unset, and the entries, tile labels and tooltips, the "+N" list and the Postbox line show the literal text. Mutation: `esc(a.name)` dropped from the lobby entry fails it. Token: a bare `ghp_` token placed across the desk title's 200th character leaves no `ghp_` and no piece of it in the title or the accessible name; mutation (cut, then mask) fails it with `ghp_Q7Q7Q7…` in the title. (A token after `Authorization: token` is masked even when cut, by the header rule, so the check uses a bare token.) `test:` `test:places` `every: null` cases; mutation back to `every==null` fails it.
+
+### 2026-11-13: the letter also flies in the Real office (issue #1587)
+
+*Found:* the Postbox's letter rule looked for the flat office's `.place.postbox` and `.desk[data-id]` only, so in the Real office (Photo office, Prehistoric cave, Retro arcade) it never flew.
+
+*Changed:*
+- Amendment to the Postbox's letter rule (FR-038): **the letter also flies in the Real office:** from the Postbox plate (`.ro-lplate[data-post]`) to the agent's name plate (`.ro-plate[data-id]`), skipped only when either end is off screen (in the flat office too: a desk scrolled out of view got a letter flying to nowhere). Rules, driver and mutants: [spec 097](../097-real-office/spec.md) FR-377.
+- *Result (2026-11-13, Linux, Xvfb, simulator only):* see spec 097 FR-377 (`sim:` `check-097-letter`).
 
 ### 2026-10-22: a long unbroken name on a full desk card (issue #536)
 

@@ -16,7 +16,26 @@
 const UNSAFE = { '<': '\\u003C', '>': '\\u003E', '/': '\\u002F', '\u2028': '\\u2028', '\u2029': '\\u2029' };
 const jsLiteral = (v) => JSON.stringify(v).replace(/[<>/\u2028\u2029]/g, (c) => UNSAFE[c]);
 
+const fs = require('fs');
 const path = require('path');
+/* spec 102 T226 (FR-267): the fixture user theme with a dark page and its own display font; it takes Retro Pixel's place as the second theme of the layout checks.
+   CHECK_DARK is the manifest, CHECK_DARK_QUERY loads it in the simulator (`theme` + `usertheme`), and `window.THEME.setTheme(CHECK_DARK)` switches to it in a loaded page. */
+const CHECK_DARK = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'themes', 'check-dark.json'), 'utf8'));
+const CHECK_DARK_QUERY = { theme: CHECK_DARK.id, usertheme: JSON.stringify(CHECK_DARK) };
+/* spec 102 T226: a run that says "dark" must be on the dark fixture: the theme on screen is `check-dark` and the page (`--bg`) is an opaque fill with luminance under 0.2.
+   A transparent or unparsable `--bg` is not dark (review of PR #1276, B). `darkProblem` judges what the page reported; `darkFixtureProblem` reads it. Both return the problem text, or '' when it is right. */
+function darkProblem(on) {
+  if (on.id !== CHECK_DARK.id) return `the dark run is on theme "${on.id}", not the fixture "${CHECK_DARK.id}"`;
+  const v = /^rgba?\(/.test(String(on.bg)) ? (String(on.bg).match(/\d+(\.\d+)?/g) || []).map(Number) : [];
+  const alpha = v.length === 3 ? 1 : v.length === 4 ? v[3] : NaN; /* rgb() has none; rgba() carries it as the fourth number */
+  if (!(v.length === 3 || v.length === 4) || !(alpha >= 0.9)) return `the dark run's page is not an opaque fill (--bg ${on.bg})`;
+  const lum = (0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]) / 255;
+  if (!(lum < 0.2)) return `the dark run's page is not dark (--bg ${on.bg}, luminance ${lum.toFixed(2)})`;
+  return '';
+}
+async function darkFixtureProblem(ctx) {
+  return darkProblem(await ctx.js(`(()=>{const e=document.createElement('i');e.style.cssText='position:fixed;background:var(--bg)';document.body.appendChild(e);const c=getComputedStyle(e).backgroundColor;e.remove();return {id:window.THEME.current().id,bg:c}})()`));
+}
 const LIMIT = 8000;
 const INDEX = path.join(__dirname, '..', 'dist', 'renderer', 'index.html');
 
@@ -58,7 +77,10 @@ function waits(ctx) {
   /** Spec 001 FR-085: no lobby figure is mid-walk (the 1 s WALK_MS transition of `syncWalkers` marks a figure `.walking`), at most `ms`.
    *  Used by `calm` and every `shot`, so no screenshot catches a figure between two places. */
   const settleWalk = (ms = 6000) => until(`!document.querySelector('.walker.walking')`, ms);
-  return { until, settle, settleWalk, office, chatOf };
+  /** The page is ready after a simulator replay (`simfreeze=1`): replayed, the lobby's visits settled, the last render drawn and no scene transition running. `load`'s settle and
+   *  check-097-crews' wait (issue #1459) use this one expression, so they cannot drift apart. */
+  const SETTLED = `!!window.__durbarSimReplayed&&!!window.__durbarSimUi&&window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()&&!document.querySelector('.scene-out')`;
+  return { until, settle, settleWalk, office, chatOf, SETTLED };
 }
 
 
@@ -90,12 +112,79 @@ function failDriver(message) {
 }
 
 /**
+ * Spec 097 delta 2026-11-11 (issue #1448): a diagnostic, nothing else. `pointerLog(ctx)` records the pointer events the page receives during a
+ * pointer-dependent step into a ring of the last POINTER_LOG_MAX events (capture-phase listeners on window), and `step(driver, name, fn)` runs the
+ * step: when `fn` fails with an AssertionError the ring is printed (`[pointer-log] <driver> <step>: N events`, one line per event) and the SAME error is
+ * thrown again; a pass prints nothing. It never retries, waits, moves the pointer or changes a limit, and a failed arm or read (a reloaded or closed page)
+ * is ignored, so a driver passes and fails as it did. Only type, position, buttons, isTrusted and the time since the step began are kept: no page text.
+ * `DIAG_FORCE_FAIL=1` (or a part of a step name) makes the first matching step fail once after it ran, to see the output.
+ * Spec 033 delta 2026-11-11 (issue #1526): `step(driver, name, fn, { dom: '<selector>' })` also records the DOM mutations (childList, attributes, subtree) of that
+ * element into a ring of the last DOM_LOG_MAX and prints them in a `[dom-log]` block before the pointer block, on a failure only: milliseconds since the step began, the
+ * kind (c = childList, a = attributes), the target's tag and first class (cut at 16 characters) and the counts of added and removed nodes. No text, no attribute values.
+ */
+const POINTER_LOG_MAX = 200;
+const DOM_LOG_MAX = 100;
+const POINTER_TYPES = ['pointermove', 'pointerdown', 'pointerup', 'pointercancel', 'pointerover', 'pointerout', 'pointerenter', 'pointerleave', 'mousemove', 'mousedown', 'mouseup', 'mouseenter', 'mouseleave'];
+const POINTER_SHORT = { pointermove: 'pm', pointerdown: 'pd', pointerup: 'pu', pointercancel: 'pc', pointerover: 'po', pointerout: 'pt', pointerenter: 'pe', pointerleave: 'pl', mousemove: 'mm', mousedown: 'md', mouseup: 'mu', mouseenter: 'me', mouseleave: 'ml' };
+const POINTER_ARM = `(()=>{const w=window,L=w.__ptrLog=w.__ptrLog||{ev:[],t0:0};
+  if(!w.__ptrLogOn){w.__ptrLogOn=1;for(const t of ${JSON.stringify(POINTER_TYPES)})w.addEventListener(t,(e)=>{const E=L.ev;E.push({type:e.type,x:Math.round(e.clientX),y:Math.round(e.clientY),buttons:e.buttons,trusted:e.isTrusted,at:performance.now()});if(E.length>${POINTER_LOG_MAX})E.splice(0,E.length-${POINTER_LOG_MAX});},true);}
+  L.ev.length=0;L.t0=performance.now();return 1})()`;
+/** The mutation ring of one element (`sel` is spliced through jsLiteral, the helper every driver uses for page code); a missing element or MutationObserver arms nothing. */
+const domArm = (sel) => `(()=>{const w=window;if(w.__domLog&&w.__domLog.obs)w.__domLog.obs.disconnect();w.__domLog=null;const el=document.querySelector(${jsLiteral(sel)});if(!el||typeof MutationObserver!=='function')return 0;
+  const D=w.__domLog={ev:[],t0:performance.now(),obs:null};D.obs=new MutationObserver((rs)=>{const now=performance.now();for(const r of rs){const t=r.target,c=String((t.classList&&t.classList[0])||'').slice(0,16);D.ev.push({k:r.type==='childList'?'c':'a',tag:String(t.tagName||'').toLowerCase(),cls:c,add:r.addedNodes?r.addedNodes.length:0,rem:r.removedNodes?r.removedNodes.length:0,at:now});}if(D.ev.length>${DOM_LOG_MAX})D.ev.splice(0,D.ev.length-${DOM_LOG_MAX});});
+  D.obs.observe(el,{childList:true,subtree:true,attributes:true});return 1})()`;
+const DOM_READ = `(()=>{const D=window.__domLog;if(!D)return '[]';const q=D.obs.takeRecords();void q;return JSON.stringify(D.ev.map((e)=>({k:e.k,tag:e.tag,cls:e.cls,add:e.add,rem:e.rem,ms:Math.round(e.at-D.t0)})))})()`;
+const POINTER_READ = `(()=>{const L=window.__ptrLog;return L?JSON.stringify(L.ev.map((e)=>({type:e.type,x:e.x,y:e.y,buttons:e.buttons,trusted:e.trusted,ms:Math.round(e.at-L.t0)}))):'[]'})()`;
+function pointerLog(ctx, out = (l) => console.log(l)) {
+  let forced = false;
+  const forceHit = (name) => {
+    const f = process.env.DIAG_FORCE_FAIL;
+    if (forced || !f) return false;
+    if (f !== '1' && !String(name).includes(f)) return false;
+    forced = true;
+    return true;
+  };
+  const arm = async (dom) => { try { await ctx.js(POINTER_ARM); } catch { /* a diagnostic never changes the verdict */ } if (dom) { try { await ctx.js(domArm(dom)); } catch { /* same */ } } };
+  const printDom = async (driver, name) => {
+    let ev = [];
+    try { ev = JSON.parse(await ctx.js(DOM_READ)); } catch { return; }
+    out(`[dom-log] ${driver} ${name}: ${ev.length} mutations (ms kind tag.class +added-removed; c=childList a=attributes)`);
+    const tok = ev.map((e) => `${e.ms} ${e.k} ${e.tag}.${e.cls} +${e.add}-${e.rem}`);
+    for (let i = 0; i < tok.length; i += 8) out('  ' + tok.slice(i, i + 8).join(';'));
+  };
+  const print = async (driver, name) => {
+    let ev = [];
+    try { ev = JSON.parse(await ctx.js(POINTER_READ)); } catch { return; }
+    out(`[pointer-log] ${driver} ${name}: ${ev.length} events (ms type x,y buttons+T/S; ${Object.entries(POINTER_SHORT).map(([k, v]) => v + '=' + k.replace('pointer', 'p.').replace('mouse', 'm.')).join(' ')}; T=trusted S=script)`);
+    /* the suite shows only the last 25 lines of a failed driver, each cut at 240 characters: 11 short events a line keep 200 events (19 lines) inside that */
+    const tok = ev.map((e) => `${e.ms} ${POINTER_SHORT[e.type] || e.type} ${e.x},${e.y} ${e.buttons}${e.trusted ? 'T' : 'S'}`);
+    for (let i = 0; i < tok.length; i += 11) out('  ' + tok.slice(i, i + 11).join(';'));
+  };
+  const step = async (driver, name, fn, opts = {}) => {
+    await arm(opts && opts.dom);
+    try {
+      const r = await fn();
+      if (forceHit(name)) throw new (require('assert').AssertionError)({ message: `forced failure of ${name} (DIAG_FORCE_FAIL)` });
+      return r;
+    } catch (e) {
+      if (e && (e.name === 'AssertionError' || e.code === 'ERR_ASSERTION')) { if (opts && opts.dom) await printDom(driver, name); await print(driver, name); }
+      throw e;
+    }
+  };
+  return { arm, step, print, printDom };
+}
+
+/**
  * The helpers every driver used to define for itself (FR-097). `H = helpers(ctx)`; it also carries `until`, `settle`, `office`, `chatOf`.
  * Values spliced into page code go through jsLiteral.
  */
+const DRIVER_WORLD = process.env.DRIVER_WORLD || ''; // spec 102 T283: `retro` runs a driver's Real office loads in the arcade; spec 097 FR-377: `cave` in the Prehistoric cave
+if (DRIVER_WORLD && DRIVER_WORLD !== 'retro' && DRIVER_WORLD !== 'cave') throw new Error('DRIVER_WORLD must be retro or cave');
+const assert = require('assert');
 function helpers(ctx) {
   const w = waits(ctx);
   const closeGuard = guardWindow(ctx.win);
+  const ptr = pointerLog(ctx);
   const wc = () => ctx.win.webContents;
   /** Run code in the page. A failure names the code (first 90 chars) and is thrown again, so the driver fails as before. */
   const js = async (code) => { try { return await ctx.js(code); } catch (e) { console.log('JS ERR for', String(code).slice(0, 90)); throw e; } };
@@ -176,11 +265,48 @@ function helpers(ctx) {
   };
   /** Hide the start-up toasts with a style (once). `keepActions`: keep the ones with a button. `blur`: also drop the focus ring. */
   const calm = async (o = {}) => { await js(`(()=>{if(!document.getElementById('shotCalm')){const s=document.createElement('style');s.id='shotCalm';s.textContent='#toasts${o.keepActions ? ' .toast:not(.with-act)' : ''}{display:none!important}';document.head.append(s);}${o.blur ? 'if(document.activeElement&&document.activeElement!==document.body)document.activeElement.blur();' : ''}})()`); await w.settleWalk(); };
+  /**
+   * Spec 008 FR-214, FR-215: the real pointer rests where the window lies on the screen (script clicks never move it), so a control under it reads in its :hover colours.
+   * Moves the pointer to 0,0 and re-sends the move every `retry` ms (250) until nothing under `scope` (a selector list) matches :hover, at most `ms` (3000; a slow first run drops or delays the first move).
+   * FR-216: the move counts only when the page saw a mousemove at 0,0 (a capture listener), and nothing may be :hover at two samples at least a frame and 100 ms apart (the Xvfb cursor rests mid-window and hovers a button again a moment after one empty sample); a re-hover re-sends the move.
+   * Returns what still is hovered (descriptions; empty = fine); `controls` (a selector list) limits the list to those elements. When the bound ends with such an element still hovered it throws, labelled, so a real leak is told from a slow start.
+   * `{ stay: true }` only lists (a mutant that put the pointer there itself): no move, no wait, no failure. A colour read goes after this and asserts the list is empty.
+   */
+  const pointerOff = async (scope, controls, o = {}) => {
+    const sel = scope.split(',').map((x) => x.trim() + ' :hover').join(',');
+    const list = () => js(`[...document.querySelectorAll(${jsLiteral(sel)})].filter(e=>${controls ? 'e.matches(' + jsLiteral(controls) + ')&&e.getClientRects().length' : 'true'}).map(e=>(e.id?'#'+e.id:e.tagName.toLowerCase()+'.'+String(e.className).trim().replace(/ +/g,'.'))+' "'+(e.textContent||e.value||'').trim().slice(0,30)+'"')`);
+    if (o.stay) return list();
+    const ms = o.ms || 3000, retry = o.retry || 250, end = Date.now() + ms;
+    // FR-216: the page records the last point it saw (capture phase, so no handler hides it); the move counts as delivered only when that point is 0,0, and a later real-cursor move (the Xvfb cursor rests mid-window) makes it undelivered again
+    await ctx.js(`(()=>{let s=window.__pointerOffSeen;if(!s){s=window.__pointerOffSeen={x:null,y:null};addEventListener('mousemove',(e)=>{s.x=e.clientX;s.y=e.clientY},true)}s.x=null;s.y=null})()`); // one listener per page, the record is reset per call
+    // one sample: nothing under the scope is :hover and the last move the page saw was 0,0; `frame`: after a painted frame (or 250 ms when none is painted)
+    const sample = (frame) => ctx.js(`(async()=>{try{${frame ? 'await new Promise((r)=>{const t=setTimeout(r,250);requestAnimationFrame(()=>{clearTimeout(t);r()})});' : ''}const s=window.__pointerOffSeen||{};return !document.querySelector(${jsLiteral(sel)})&&s.x===0&&s.y===0}catch(e){return false}})()`);
+    let moves = 0, last = 0, clear = false, hot = [];
+    for (;;) {
+      if (Date.now() - last >= retry || moves === 0) { wc().sendInputEvent({ type: 'mouseMove', x: 0, y: 0 }); moves++; last = Date.now(); }
+      // two clear samples at least one frame and 100 ms apart: one empty :hover can come before the real cursor's hover is applied (FR-216)
+      if (await sample(false)) {
+        await ctx.sleep(100);
+        if (await sample(true)) {
+          hot = await list();
+          if (!hot.length) { clear = true; break; }
+        }
+        last = 0; // it was clear and is hovered again: send the move again at once
+      }
+      if (Date.now() > end) break;
+      await ctx.sleep(50);
+    }
+    if (!clear) hot = await list();
+    // FR-216: no :hover and still no move seen at 0,0 is not a pass: the pointer may be anywhere
+    if (!clear && !hot.length && !(await ctx.js(`(()=>{const s=window.__pointerOffSeen;return !!s&&s.x===0&&s.y===0})()`))) throw new assert.AssertionError({ message: `pointerOff: the page never saw the move to 0,0 on ${scope} after ${ms} ms and ${moves} move(s)` });
+    if (!clear && hot.length) throw new assert.AssertionError({ message: `pointerOff: the pointer did not leave ${scope} after ${ms} ms and ${moves} move(s): ${JSON.stringify(hot)}` });
+    return hot;
+  };
   /** Remove the toasts that are on screen now. */
   const clearToasts = () => js(`document.querySelectorAll('#toasts .toast').forEach(t=>t.remove())`);
   /**
    * Size the window, load the renderer with the simulator query and wait until it is ready (default: 15 desks) and has stopped changing.
-   * `query` is added to sim=15 and simfreeze=1 (an undefined value removes one); `ready` is a page expression ('fit': the stage has laid out); `settle: false` skips the
+   * `query` is added to sim=15 and simfreeze=1 (an undefined value removes one); `fastVisits: true` adds `simvisits=fast` (spec 008 FR-190: the lobby's own timers 10x shorter, simulator only; for a driver that never looks at lobby visits or walking and takes no picture of them); `ready` is a page expression ('fit': the stage has laid out); `settle: false` skips the
    * settling wait; `focus` focuses the page afterwards.
    */
   const load = async (o = {}) => {
@@ -188,13 +314,22 @@ function helpers(ctx) {
     // spec 001 FR-084: a pinned simulator clock (main's `simclock`, from DURBAR_SIM_CLOCK) stays pinned across the driver's reloads
     let clock = null;
     try { clock = new URL(wc().getURL()).searchParams.get('simclock'); } catch { clock = null; }
-    const query = { sim: '15', simfreeze: '1', ...(clock && /^\d{1,15}$/.test(clock) ? { simclock: clock } : {}), ...(o.query || {}) };
+    const query = { sim: '15', simfreeze: '1', ...(clock && /^\d{1,15}$/.test(clock) ? { simclock: clock } : {}), ...(o.fastVisits ? { simvisits: 'fast' } : {}), ...(o.query || {}) };
     for (const k of Object.keys(query)) if (query[k] === undefined) delete query[k];
+    const arcade = DRIVER_WORLD === 'retro' && query.officeview === 'real'; // spec 102 T283: the Real office loads draw the arcade
+    if (arcade) Object.assign(query, { worldflags: 'retro', world: 'retro' });
+    const cave = DRIVER_WORLD === 'cave' && query.officeview === 'real'; // spec 097 FR-377: the Real office loads draw the Prehistoric cave
+    if (cave) Object.assign(query, { worldflags: 'cave', world: 'cave' });
     await ctx.win.loadFile(o.index || INDEX, { query });
     // spec 092: with `simfloors=1` (the 15 agents spread over three floors on) the office shows one floor, so the default "15 desks" would only be met by its timeout
     const ready = o.ready === 'fit' ? `document.getElementById('stage')&&document.getElementById('stage').dataset.fit` : o.ready || `document.querySelectorAll('#stage .desk[data-id]').length>=${query.simfloors === '1' ? 1 : 15}`;
-    await ctx.waitFor(ready, o.readyMs || 15000);
+    if (!(await ctx.waitFor(ready, o.readyMs || 15000))) console.log(`[waits] load: the ready expression never held in ${o.readyMs || 15000} ms (pass \`ready\` for this page): ${String(ready).replace(/\s+/g, ' ').slice(0, 120)}`); // spec 008 FR-190: a timeout here costs the whole wait
+    // spec 008 FR-190: a frozen simulator says when it is steady (every script replayed, no lobby visit waiting to start or end, the frame drawn): wait for that
+    // instead of letting `settle` find it by sampling 200 ms apart (a load used to spend 0.5-1 s there). `settle` still runs after it, so nothing is skipped.
+    if (query.simfreeze === '1' && !o.index && o.settle !== false) await w.until(w.SETTLED, 4000);
     if (o.settle !== false) await w.settle();
+    if (arcade) assert.ok(await w.until(`!!document.querySelector('#stage .ro[data-world="retro"]')`, 5000), 'DRIVER_WORLD=retro: the arcade is not drawn (a pass here would be the Photo office)');
+    if (cave) assert.ok(await w.until(`!!document.querySelector('#stage .ro[data-world="cave"]')`, 5000), 'DRIVER_WORLD=cave: the cave is not drawn (a pass here would be the Photo office)');
     if (o.focus) wc().focus();
   };
   /**
@@ -267,7 +402,7 @@ function helpers(ctx) {
     await goToFloor(list[0].id);
     for (let i = 0; i < list.length; i++) { await goToFloor(list[i].id); await w.settle(); await fn(list[i], i); }
   };
-  return { ...w, allowWindowClose: closeGuard.allow, wc, js, click, clickText, exists, text, idOf, key, calm, clearToasts, focusPage, releaseFocus, loseFocus, focusWc, load, shot, openSimAgent, floors, shownFloor, goToFloor, eachFloor, INDEX };
+  return { ...w, pointerStep: ptr.step, allowWindowClose: closeGuard.allow, wc, js, click, clickText, exists, text, idOf, key, calm, pointerOff, clearToasts, focusPage, releaseFocus, loseFocus, focusWc, load, shot, openSimAgent, floors, shownFloor, goToFloor, eachFloor, INDEX };
 }
 
 /**
@@ -294,4 +429,8 @@ async function shotWithView(win, view, file) {
   fs.writeFileSync(file, nativeImage.createFromBitmap(base, { width: size.width, height: size.height }).toPNG());
 }
 
-module.exports = { waits, helpers, guardWindow, jsLiteral, shotWithView, LIMIT, INDEX };
+/* Spec 097 FR-365: a page expression, true once no WAAPI move or fade runs in #stage (a plate's ease, a pencil's hold and fade; the CSS loops, a person's bob,
+   keep running and do not count). One text for the pencil-ease driver's waits and the release clip's one capture (scripts/release-video.js `glide`). */
+const STILL_STAGE = `!(document.getElementById('stage')||document.body).getAnimations({subtree:true}).some(a=>!a.animationName&&a.playState==='running')`;
+
+module.exports = { STILL_STAGE, waits, helpers, pointerLog, POINTER_LOG_MAX, DOM_LOG_MAX, guardWindow, jsLiteral, shotWithView, LIMIT, INDEX, CHECK_DARK, CHECK_DARK_QUERY, darkFixtureProblem, darkProblem };

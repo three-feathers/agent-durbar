@@ -27,7 +27,7 @@
  *   - a picture that fails to load leaves a broken image instead of the initials disc (FR-065).
  *   - the world chrome (FR-113): in Real office the top bar, More menu, a toast, Settings and a dialog do not use the photo world's
  *     tokens (glass on the menu and toast, bar ink, page ink; FR-182: a dialog has no blur and is the opaque surface, its text at 4.5:1 on computed colours), text under 10.5px, or leaving Real office does not restore the theme exactly; flat has no world.
- * Screenshots: <SHOTS_OUT>/097-world-{menu,toast,settings,dialog}-<w>x<h>.png, 097-real-15-<w>x<h>.png, 097-real-lobby-<w>x<h>.png (the lobby band, with the Terminal runner), 097-real-3-<w>x<h>.png, 097-real-lights-1440x900.png, 097-office-layout-1440x900.png.
+ * Screenshots: <SHOTS_OUT>/097-world-{menu,toast,settings,dialog}-<w>x<h>.png, 097-real-15-<w>x<h>.jpg, 097-real-lobby-<w>x<h>.png (the lobby band, with the Terminal runner), 097-real-3-<w>x<h>.png, 097-real-lights-1440x900.png, 097-office-layout-1440x900.png.
  */
 const os = require('os');
 const fs = require('fs');
@@ -43,6 +43,8 @@ module.exports = async (ctx) => {
   const { js } = H;
   const SHARP = `(()=>{const px={...window.DurbarRealOfficeWorlds.photo.px,...window.DurbarRealOfficeSets.office.px},all=[...document.querySelectorAll('#stage .ro-person,#stage .ro-visitor')].filter(i=>i.currentSrc);const rows=all.map(i=>{const half=/\.h\.webp$/.test(i.currentSrc),file=i.currentSrc.split('/').pop().replace('.h.webp','.webp'),own=half?Math.ceil(px[file]/2):px[file];return {half,seat:i.classList.contains('ro-person'),ratio:own/(i.getBoundingClientRect().width*devicePixelRatio)};});const rs=(f)=>rows.filter(f).map(r=>r.ratio);return {dpr:devicePixelRatio,seatFull:rows.filter(r=>r.seat&&!r.half).length,seatHalf:rows.filter(r=>r.seat&&r.half).length,lobbyFull:rows.filter(r=>!r.seat&&!r.half).length,lobbyHalf:rows.filter(r=>!r.seat&&r.half).length,minHalfRatio:Math.min(99,...rs(r=>r.half)),seatRatios:[Math.min(99,...rs(r=>r.seat)),Math.max(0,...rs(r=>r.seat))]};})()`;
   const must = async (expr, what, ms = 15000) => assert.ok(await H.until(expr, ms), 'timed out waiting for ' + what);
+  /* the pointer rests where an earlier step or the display left it (under a virtual X display, on a plate): a pointer on a plate opens that agent's card (FR-327), so a step that wants no card moves it off the office first */
+  const park = async () => { ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 }); await js(`new Promise(r=>setTimeout(r,150))`); };
   const REAL = `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'`;
   /* every picture of the office has decoded (or failed): no half-drawn screenshot */
   const PICS = `[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`;
@@ -80,14 +82,14 @@ module.exports = async (ctx) => {
   // ---- FR-001, FR-003, FR-004: the Settings button and the stored choice ----
   await H.load({ w: 1440, h: 900 });
   await js(`window.DurbarScreens.openSettings()`);
-  await must(`!!document.querySelector('[data-officelayout="real"]')`, 'the Real office button');
-  const seg = await js(`[...document.querySelectorAll('[data-officelayout]')].map(b=>b.dataset.officelayout+':'+b.getAttribute('aria-pressed')).join(' ')`);
-  assert.strictEqual(seg, 'open:true real:false', 'two buttons, Open office pressed: ' + seg);
-  await js(`document.querySelector('[data-officelayout="real"]').scrollIntoView({block:'center'})`);
+  await must(`!!document.querySelector('#wrGroup [data-world="photo"]')`, 'the Photo office card');
+  const seg = await js(`[...document.querySelectorAll('#wrGroup [data-world]')].map(b=>b.dataset.world+':'+b.getAttribute('aria-checked')).join(' ')`);
+  assert.strictEqual(seg, 'plain:true photo:false', 'two cards, Plain chosen: ' + seg);
+  await js(`document.querySelector('#wrGroup [data-world="photo"]').scrollIntoView({block:'center'})`);
   await H.shot(path.join(OUT, '097-office-layout-1440x900.png'), { prep: 'calm' });
-  await js(`document.querySelector('[data-officelayout="real"]').focus();document.querySelector('[data-officelayout="real"]').click()`);
-  await must(`document.querySelector('[data-officelayout="real"]').getAttribute('aria-pressed')==='true'`, 'Real office pressed');
-  await must(`document.activeElement&&document.activeElement.dataset&&document.activeElement.dataset.officelayout==='real'`, 'the keyboard focus stays on the Real office button after the repaint');
+  await js(`document.querySelector('#wrGroup [data-world="photo"]').focus();document.querySelector('#wrGroup [data-world="photo"]').click()`);
+  await must(`document.querySelector('#wrGroup [data-world="photo"]').getAttribute('aria-checked')==='true'`, 'the Photo office card chosen');
+  await must(`document.activeElement&&document.activeElement.dataset&&document.activeElement.dataset.world==='photo'`, 'the keyboard focus stays on the Photo office card after the repaint');
   assert.strictEqual(await js(`localStorage.getItem('durbar.officeview')`), 'real', 'stored as real');
   await js(`document.getElementById('scrClose').click()`);
   await must(REAL, 'the Real office after the Settings choice');
@@ -97,17 +99,17 @@ module.exports = async (ctx) => {
   const packFiles = await js(`[...new Set([...document.querySelectorAll('script[src],link[href],#stage img[src]')].map(e=>e.getAttribute('src')||e.getAttribute('href')).filter(n=>/realoffice\\/(worlds|sets)\\//.test(n)).map(n=>n.replace(/^.*realoffice\\/(worlds|sets)\\/([^/]+)\\/.*$/,'$1/$2')))].sort().join(' ')`);
   assert.strictEqual(packFiles, 'sets/office worlds/photo', 'Real office asked for the Photo office and the Office people only: ' + packFiles);
   await js(`window.DurbarScreens.openSettings()`);
-  await must(`!!document.querySelector('[data-officelayout="real"]')`, 'Settings');
-  assert.strictEqual(await js(`!!document.querySelector('#wrGroup')`), false, 'no World row while only one world is offered');
+  await must(`!!document.querySelector('#wrGroup [data-world="photo"]')`, 'Settings');
+  assert.strictEqual(await js(`[...document.querySelectorAll('#wrGroup [data-world]')].map(b=>b.dataset.world).join()`), 'plain,photo', 'only Plain and the Photo office are offered');
   assert.ok(/World\u2019s default \(Office people\)/.test(await js(`document.querySelector('#chList [data-characters="theme"]').getAttribute('aria-label')`)), 'Characters starts with the world\u2019s default set');
-  await js(`document.querySelector('#chList [data-characters="cheeky"]').click()`);
-  await must(`document.getElementById('dsR').textContent==='Real office shows Office people until Cheeky has Real office poses.'`, 'Cheeky has no Real office poses: Settings says so under Office layout');
+  await js(`document.querySelector('#chList [data-characters="minimalist"]').click()`);
+  await must(`document.getElementById('dsR').textContent==='Real office shows Office people until Minimalist has Real office poses.'`, 'Minimalist has no Real office poses: Settings says so under Office layout (Cheeky has its own since T244)');
   await js(`document.querySelector('#chList [data-characters="theme"]').click()`);
   await must(`document.getElementById('dsR').textContent===''`, 'the line goes with the default');
   await js(`document.getElementById('scrClose').click()`);
   await js(`window.DurbarScreens.openSettings()`);
-  await must(`!!document.querySelector('[data-officelayout="open"]')`, 'the Office layout row');
-  await js(`document.querySelector('[data-officelayout="open"]').click()`);
+  await must(`!!document.querySelector('#wrGroup [data-world="plain"]')`, 'the Plain card');
+  await js(`document.querySelector('#wrGroup [data-world="plain"]').click()`);
   await must(`localStorage.getItem('durbar.officeview')==='flat'`, 'back to flat');
   await js(`document.getElementById('scrClose').click()`);
   await must(`!document.querySelector('#stage .ro')&&document.querySelectorAll('#stage .desk[data-id]').length>=15`, 'the flat desks again');
@@ -242,9 +244,10 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(pl.cc, [], 'no two chips overlap');
     assert.deepStrictEqual(pl.initials, [], `no bare initial in the lobby (names, or their first letters and an ellipsis): ${JSON.stringify(pl.initials)} of ${pl.chips}`);
     /* going back from the chat above leaves the focus on a plate, and a focused plate has its zoom open (FR-034): not in the picture */
+    await park();
     await js(`document.activeElement&&document.activeElement.blur&&document.activeElement.blur();0`);
     await must(`!document.getElementById('roZoom')`, 'no zoom in the picture');
-    await H.shot(path.join(OUT, `097-real-15-${w}x${h}.png`), { prep: 'calm' });
+    await H.shot(path.join(OUT, `097-real-15-${w}x${h}.jpg`), { prep: 'calm' });
     // ---- owner 2026-10-31 ("make a real running pose"): someone at the Terminal jogs in place (stride A in P1), no treadmill; a
     //      close crop of the lobby band shows it ----
     // A simulator visit comes and goes, so wait for one, let its pictures decode, take the crop, and keep the crop only if the runner is still there.
@@ -306,6 +309,7 @@ module.exports = async (ctx) => {
     await must(`!document.getElementById('modeMenu')`, 'the list closed');
     await must(`document.activeElement&&document.activeElement.matches('#stage .ro-lplate[data-placemore]')`, 'focus is back on the "+N" plate after Escape');
     await loadReal(w, h);
+    await park();
     await js(`document.querySelector('#stage .ro-plate').focus()`);
     const first = await js(`document.activeElement.dataset.id`);
     await H.key('Right');
@@ -402,7 +406,7 @@ module.exports = async (ctx) => {
     const sharp3 = await js(SHARP);
     console.log('[097] sharp at 3', w, JSON.stringify(sharp3));
     assert.ok(sharp3.minHalfRatio >= 1.45, 'at 3 agents too: ' + JSON.stringify(sharp3));
-    await H.shot(path.join(OUT, `097-real-3-${w}x${h}.png`), { prep: 'calm' });
+    await H.shot(path.join(OUT, `097-real-3-${w}x${h}.jpg`), { prep: 'calm' });
   }
 
   // ---- FR-006: a click on a person opens its chat ----
@@ -479,7 +483,7 @@ module.exports = async (ctx) => {
     /* amber at the Boss: the empty desk of a waiting agent at the Boss keeps its amber screen, and its plate says Waiting (acceptance 3) */
     await loadReal(1440, 900);
     await installTint();
-    const boss = await js(`(()=>{const p=[...document.querySelectorAll('#stage .ro-plate[data-state="waiting"]')].find(p=>(p.getAttribute('aria-label')||'').includes(', at Boss.'));return p?p.dataset.id:'';})()`);
+    const boss = await js(`(()=>{const p=[...document.querySelectorAll('#stage .ro-plate[data-state="waiting"]')].find(p=>(p.getAttribute('aria-label')||'').includes(', at Boss'));return p?p.dataset.id:'';})()`);
     assert.ok(boss, 'the simulator has an agent waiting at the Boss');
     const b0 = await js(T(boss));
     assert.ok(b0.tint === 'amber' && b0.glass === TINT.amber, `FR-236: the empty desk of an agent waiting at the Boss keeps its amber screen: ${JSON.stringify(b0)}`);
@@ -658,8 +662,8 @@ module.exports = async (ctx) => {
   }
   // leaving Real office gives the user's theme back, exactly (Clean Office: the bar is its light surface again)
   await js(`window.DurbarScreens.openSettings()`);
-  await must(`!!document.querySelector('[data-officelayout="open"]')`, 'the Office layout row');
-  await js(`document.querySelector('[data-officelayout="open"]').click()`);
+  await must(`!!document.querySelector('#wrGroup [data-world="plain"]')`, 'the Plain card');
+  await js(`document.querySelector('#wrGroup [data-world="plain"]').click()`);
   await must(`localStorage.getItem('durbar.officeview')==='flat'&&!document.documentElement.dataset.world`, 'flat again');
   assert.ok(await js(`document.getElementById('thWorld').hidden`), 'the theme note goes with the world');
   await js(`document.getElementById('scrClose').click()`);

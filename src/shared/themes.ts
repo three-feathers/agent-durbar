@@ -35,6 +35,8 @@ export interface UserThemeCheck {
  * markup / CSS syntax): the pack is refused. `unusableTokens` lists the keys that are only unusable: they are dropped and the defaults used.
  */
 const TOKEN_KEY_RE = /^--[a-z0-9-]{1,48}$/;
+/** The longest token value; `parseColor` (themegen.ts) refuses longer input with the same limit, and theme.js `TOKEN_VALUE_MAX` equals it (test:theme-tokens). */
+export const TOKEN_VALUE_MAX = 64;
 const TOKEN_VALUE_RE = /^(#[0-9a-f]{3,8}|(rgb|rgba|hsl|hsla)\([0-9a-z., %/+-]*\)|-?[0-9]*\.?[0-9]+(px|em|rem|%|s|ms|deg)?|[a-z][a-z-]*)$/i;
 export function badToken(tokens: unknown): string | null {
   if (!tokens || typeof tokens !== 'object' || Array.isArray(tokens)) return null;
@@ -49,7 +51,7 @@ export function unusableTokens(tokens: unknown): string[] {
   const out: string[] = [];
   for (const [k, v] of Object.entries(tokens as Record<string, unknown>)) {
     if (Object.prototype.hasOwnProperty.call(TYPED_TOKENS, k)) { if (typedValue(k, v) === null) out.push(k); }
-    else if (typeof v !== 'string' || v.trim().length > 64 || !TOKEN_VALUE_RE.test(v.trim())) out.push(k);
+    else if (typeof v !== 'string' || v.trim().length > TOKEN_VALUE_MAX || !TOKEN_VALUE_RE.test(v.trim())) out.push(k);
   }
   return out;
 }

@@ -205,7 +205,7 @@ loading, empty ("This server lists no tools"), not running ("Start the session t
 - **FR-009** `[IMPLEMENTED]` **Claude Code's user list in Durbar's Claude sessions** (Q1 A): main reads `mcpServers` of the Claude file (values in main
   only) and adds the switched-on entries to the `mcpServers` of a Claude agent's start options (only for agents whose adapter is
   `claude`); a name that is also a folder extra keeps the folder extra (compared without case). The values also mask that session's
-  MCP errors (`secretValuesFor`). Settings has a switch per Claude entry for new Durbar sessions,
+  MCP errors (`secretValuesFor`; since change 2026-11-13, FR-070, a Copilot agent's are masked with the Copilot CLI list's values too). Settings has a switch per Claude entry for new Durbar sessions,
   kept with the Copilot switches (`disabledAmbient`). `${NAME}` references are passed as written (Claude Code expands them, `read:` docs).
   (change 2026-10-22, review 6 on #489) The CLI transport no longer puts the MCP JSON (values included) on the command line, where
   `ps` shows it: it is written to `mcp-config.json` (mode 0600) in a new private temp folder (`mkdtemp`, 0700), `--mcp-config` gets that
@@ -518,6 +518,114 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
     already off. Spec 100 owns the figure; its *Changes* point here.
   `sim:` `shots-069-mcp-tools` (25 tools with very long names and descriptions, both sizes, Clean Office and Retro Pixel; mutations: no clamp,
   no `min-width`, off list ignored each fail it). The Stone look is not on main. Not verified on macOS or Windows.
+
+- **2026-11-12 (owner Vikram, from the real app; FR-069, T071, issue #1624):** switching an MCP server off in Settings scrolled the page back
+  to the top.
+  - **FR-069, a switch in Settings keeps the page where it is.** The switches of the *From the Copilot CLI list* rows and the *Claude Code* list
+    rebuild the whole Settings page after they are saved, and the rebuilt page started at its top with the focus
+    on nothing. Now a repaint of Settings (every call of it except the opening) keeps the body's scroll position and the focused control (its
+    id, or its row's server name and action), as spec 058's live list repaint (FR-083) already does for its own box; the open or closed state
+    of *Advanced: MCP servers* was already kept. Parts above the switch that arrive after the paint (agent app accounts,
+    quota, sandbox, policy rows) make the page shorter at first, so the position is set again as the page grows until the person scrolls, presses a
+    key or clicks (or 4 s have passed); the browser's scroll anchoring is off meanwhile. Only a person's own action (a search, a section
+    jump, scrolling) moves the page; spec 112 FR-004 says the same of its search. *Acceptance:* with the page scrolled well below its top,
+    each of these Settings switches is turned off and on again, at 1440x900 and 1280x800: the Copilot CLI list switch, the Claude Code list switch,
+    Serious mode, Motion, Notifications, Coffee break resume, Still highlights, MCP sign-in refresh, Auto-follow, Live activity, Diagnostics
+    and the Lounge switch; the scroll position is unchanged (within 1 px), the focus is on the same control and the Advanced block is open.
+    Before the change only the first two jumped (to 0, with the focus lost); the others change themselves in place.
+  `sim:` `check-069-toggle-scroll` (read once two frames have passed and the page height has not changed for ten frames; mutations: the
+  restore dropped, the re-set on growth dropped and the focus restore dropped each fail it at its labelled assertion). Not verified on macOS
+  or Windows. `[KNOWN GAP]` the *World* choice (it repaints Settings through the same path) is shown only in the Real office with two or more
+  worlds, which the simulator does not offer on main, so it is not driven.
+
+- **2026-11-13 (issue #1639, found in the review of #1637; FR-070, T072; security-relevant; scope, plain values and kept values from the review of #1650; name rule, vault-free notes and search from its second review; URL words and real regions from its third; word and length caps, `hook`/`dsn` name endings from its fourth):** the Copilot CLI list's values were not in the
+  mask list.
+  - **FR-070, a Copilot session's text is masked with the Copilot CLI list's values.** `secretValuesFor` (FR-009) built the list of
+    values that mask a session's MCP errors, failed tool cards, edits, resumed history and the other callers of `secretValuesFor` (notes,
+    conversation search) from the folder extras and Claude Code's user list only. The Copilot CLI list (`~/.copilot/mcp-config.json`, which
+    the Copilot runtime loads itself) was read only for names and addresses, so a header or env value of a server there was hidden only
+    when it had a known token shape; a server that echoed a shape-less key in its error showed it under *Details* and in *Copy diagnostics*
+    (spec 058 FR-006, FR-093). Now the env and header values of the servers of that list join the list, with these rules:
+    - **Copilot agents only** (`appOf` is `copilot`, or unknown: then masked too), since only the Copilot runtime gives those servers
+      the values; a Claude or Codex agent's text is not masked with them (their servers were never given them).
+    - **Plain setting values are left out, by name and by value** (`copilotListValues` and `plainSettingValue` in
+      `src/main/mcpmask.ts`; second review of #1650), since the mask is a plain substring replace and such a value would turn that
+      text into `[redacted]` everywhere in the agent's edits, history and notes:
+      - **A secret-looking name masks every value**: when the env or header name is secret by `secretFlag` (the rule the flag,
+        query and `NAME=` masks use: `SMTP_PASSWORD`, `DB_PASS`, `GITHUB_TOKEN`, `X-Api-Key`, `Authorization`, `Cookie`) or has one
+        of this list's own words `pin`, `otp`, `totp`, `mfa`, `hook`, `hooks`, `webhook` (also inside a word: `SLACKWEBHOOK`), `dsn`,
+        `seed` or `salt`, or a word that ends in `hook`, `hooks` or `dsn` (`SLACKHOOK`, `SENTRYDSN`; fourth review of #1650; not
+        `HOOKUP`, `SEEDING` or `SPINNER`) (`PIN_CODE`, `SLACK_WEBHOOK`, `SENTRY_DSN`, `HOOKS_URL`; a capability URL is the secret itself; `secretFlag` itself is
+        unchanged), every value of 4 or more characters joins the list whatever its form (16 letters, a 6-digit PIN,
+        `admin/s3cr3t-passw0rd`, any URL), except the words `true`, `false`, `none` and `null` (any case), which cannot be a secret
+        (`AUTH_ENABLED: true` stays readable).
+      - **Under any other name** (`NODE_ENV`, `PORT`, `Accept`, `API_URL`, `AWS_REGION`), a plain setting value is left out: a number
+        or dotted version of up to 15 digits; one word of up to 16 letters in one case (`true`, `info`, `DEBUG`, `Production`); a media
+        type whose top-level type is registered (`application`, `audio`, `font`, `haptics`, `image`, `message`, `model`, `multipart`,
+        `text`, `video`: `application/json`, not `admin/x`); an `http`/`https` URL with no user-info, query or fragment
+        (`https://api.github.com/v3/repos`); `localhost` or a dotted host name or IPv4 address with a port (`localhost:3000`,
+        `db.internal:5432`; not `admin:12345`); an absolute path (`/usr/local/bin`, `C:\Program Files\nodejs`, `~/bin`); a cloud
+        region (third review of #1650: a real prefix `us`, `eu`, `ap`, `sa`, `ca`, `me`, `af`, `il`, `mx` or `cn`, optionally `-gov` or
+        `-iso`, then a direction `north`, `south`, `east`, `west`, `central`, `northeast`, `northwest`, `southeast` or `southwest`, then
+        `-` and one or two digits: `us-east-1`, `eu-west-3`, `ap-southeast-2`, `cn-north-1`, `us-gov-west-1`; not a passphrase shape
+        like `bad-staple-horse-7`).
+      - **A URL is plain only when every path segment and the left-most host label is a plain word** (third review of #1650):
+        one to four lower-case words of up to 16 letters joined by `-`, `_` or `.`, with an optional leading `.` (`repos`,
+        `.well-known`, `openid-configuration`), and at most 40 characters (fourth review of #1650: a long letters-only chain is
+        masked); `v` and up to 3 digits (`v3`); or up to 6 digits; an empty segment (a trailing `/`) is fine. Upper case, letters mixed with digits, or a longer digit run masks
+        the whole URL (`https://hooks.zapier.com/hooks/catch/1234567/abc9xyz/`, `https://example.com/hook/3f9a1c2b7d`,
+        `https://abc123.ngrok.io`, `/repos/Owner/Repo`: over-masking accepted). The left-most host label of a `host:port` value
+        follows the same rule. The other host labels, and the segments of a file path, must each be at most 40 characters of letters,
+        digits, `.`, `_`, `-`, `~` (and spaces in a path) and not token-like (not upper case, lower case and digits together, and
+        not letters and digits together in 16 or more characters). A value over 256 characters is never plain.
+      - Any other value of 4 or more characters counts (`mcpSecretValues`' rule: under 4 is skipped). These rules apply to this list
+        only; the folder extras and Claude Code's list keep every value of 4 or more characters, as on `main`.
+      - `[KNOWN GAP]` a secret of one of those plain forms under a name with neither a secret word nor one of the words above
+        (`MY_VALUE: 482913`, `KEYWORD: qwhzmtrbvkpdlsfn`; a URL whose secret path part, or whose left-most host label, is lower-case
+        letters only in the plain-word form above, at most 40 characters: `https://example.com/i/qwhzmtrbvkpdlsfn`,
+        `https://qwhzmtrbvkpdlsfn.example.com/`, `https://qwhz-mtrb-vkpd-lsfn.example.com`, `HOST: qwhzmtrbvkpdlsfn.internal:5432`;
+        a file path with a letters-only segment) is not in the list, and the shape rules (`redact`) do not
+        catch it either: it shows in clear if the server echoes it. The other way, an ordinary value under a secret-looking name
+        (`TOKEN_URL: https://auth.example.com/token`, `AUTH_MODE: oauth`) is masked everywhere in that agent's text (over-masking
+        accepted, as `secretFlag` accepts it).
+    - **Read on every call and kept for the run**: the list is read again on every call (as `serverUrlOf` reads it, `cli()`), in one
+      read that also gives the list's names (no second read of the file per call), and every value read for an agent, also at its
+      session start (`optionsFor`), is kept for that agent until Durbar quits: a value the user rotated or removed, or a file half-written
+      or briefly invalid, does not drop a value the running server may still echo. Kept in main memory only, never written.
+    - **Independent of the folder store, both ways**: the file is read outside the folder store's `try`, so a store that cannot be read
+      (or a Claude list read that fails) still leaves the Copilot values in the list; and a Copilot list read that fails still gives the
+      folder extras and Claude Code's values (the store is then asked with no reserved names, so an extra of the same name as a Copilot
+      server counts too: masking more is safe).
+    - **Notes and search without the vault**: `copilotValuesFor` (the same read and per-agent keep, no folder store, so it can never
+      unlock the vault) gives a Copilot agent's Copilot-list values on their own. `sessionMaskValues` (`src/main/convmask.ts`) is the one
+      choice both callers use: `secretValuesFor` when the vault needs no prompt, otherwise `copilotValuesFor`; spec 083 Notes
+      (`sessionValues` in `src/main/main.ts`) and conversation search (`scanSecretValues`, open agents) both call it, so a locked vault no
+      longer drops these values from a note or a search hit.
+    - All servers of the file count, also one switched off in Settings (the runtime still has the value in its file).
+    The values stay in main: never in a reply, a log line or the view `cliServers` returns (still names, transports, commands, arguments
+    and addresses only). `[KNOWN GAP]`s, not changed here:
+    - Only entries `parseMcpConfig` accepts give values: an entry it skips (a name that is empty once cleaned, an unknown `type`, an
+      `http` entry without `url`), a non-string value, a stdio entry's `headers` and an http entry's `env` add nothing.
+    - A `${VAR}` reference masks only its literal text; if the Copilot runtime expands it, the expanded value is not in the list (not
+      checked in the Copilot docs).
+    - `copilotDir` ignores `COPILOT_HOME` (only `DURBAR_COPILOT_DIR` in dev and tests): with `COPILOT_HOME` set, the runtime's file is not
+      the one read, so its values are not masked (the same holds for the Settings list, spec 019).
+    - Notes (spec 083) and conversation search get these values only for an open agent (`copilotValuesFor` keys on the agent): a past
+      session in search, or a note with no agent, is masked without them. The `main.ts` wiring of `sessionValues` is read, not unit
+      tested; `sessionMaskValues` and `scanSecretValues` are.
+    - Codex: the values of Codex's own `config.toml` servers (which the Codex runtime starts itself) are not in the list either
+      (`sessionGlobalFor` gives Claude's list only); a Codex server that echoes a shape-less value still shows it.
+  `test:` `test:mcpglobal` *FR-070* (planted shape-less values in a Copilot-list header and env, through `registerMcpIpc`'s `agents:mcp`
+  reply and spec 058's `diagnostics` text; a Claude agent does not get them, an agent of unknown app does; under non-secret names `true`,
+  `production`, `1234`, `application/json`, a plain URL, path, region and `localhost:3000` are left out, and `correct-horse-battery-staple`,
+  `admin/s3cr3t-passw0rd`, a 17-letter word and a 16-digit number are not; under `SMTP_PASSWORD`, `PIN_CODE` and `X-Api-Key` plain forms
+  are masked, `true` is not; webhook-style URLs with a short id, `abc123.ngrok.io` and `bad-staple-horse-7` are masked under a plain
+  name, and any URL under `WEBHOOK_URL`, `SLACK_WEBHOOK`, `HOOK`, `DSN`, `SEED`, `SALT`, `TOTP` or `MFA`; a rewritten file adds the new value and keeps the old one; a throwing folder store keeps the Copilot values
+  and a throwing Copilot read keeps the folder and Claude values; a store value inside a Copilot value leaves one `[redacted]` (final
+  sort); `copilotValuesFor` never reads the store; one read of the file per call; an injected `log` and `console` see no value);
+  `test:convmask` *FR-070* (`sessionMaskValues` and `scanSecretValues` with a locked vault give the Copilot values and never call
+  `secretValuesFor`). Mutants listed in the PR comments, each failing at its labelled assertion. Not verified with a real Copilot session
+  or server (no AI credits), nor on macOS or Windows (the read is the same `path.join` code `cliServers` already uses).
 
 ## Relationship to other specs
 

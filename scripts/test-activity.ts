@@ -36,6 +36,16 @@ try {
     assert.deepStrictEqual(Object.keys(r!).sort(), [...ACTIVITY_FIELDS].sort(), 'a row has exactly the listed fields');
     assert.strictEqual(r!.folder, 'web-shop', 'folder base name, not the full path');
     assert.strictEqual(sanitizeActivityRow({ ...base, t: new Date().toISOString(), folder: 'C:\\Users\\u\\proj\\' })!.folder, 'proj', 'Windows path: base name');
+    // spec 012 FR-181 (issue #1541): the row's last redact() hides an escaped token (`ghp\_<body>`), so the log and its export never hold it
+    assert.strictEqual(sanitizeActivityRow({ ...base, t: new Date().toISOString(), action: 'echo ' + 'ghp' + '\\_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8' }, {})!.action, 'echo [redacted]', '#1541 activity: the row hides an escaped token');
+    // review of PR 1585: an escaped rest glued to a mask (an env value's named marker, or a plain mask) is hidden by the row's last redact() too
+    {
+      const V = 'Vq7Wx8Ec9Rv0' + 'Tb1Yn2Um3Ik4', REST = 'abcdefghij' + '0123456789xy';
+      for (const [what, action] of [['named \\_<rest>', 'secret=' + V + '\\_' + REST], ['named _<4>\\<18>', 'secret=' + V + '_' + REST.slice(0, 4) + '\\' + REST.slice(4)], ['plain \\_<rest>', 'send x[redacted]\\_' + REST]] as const) {
+        const got = sanitizeActivityRow({ ...base, t: new Date().toISOString(), action }, { FOO_TOKEN: V })!.action;
+        assert.ok(!got.replace(/\\/g, '').includes(REST.slice(10, 18)) && !got.includes(V), `#1585 activity: an escaped rest after a mask is hidden (${what}): ${got}`);
+      }
+    }
     st.flush();
     const disk = fs.readFileSync(file, 'utf8');
     for (const bad of ['secret prompt', 'model reply', 'tool output', 'file body', '/home/u']) assert.ok(!disk.includes(bad), `not on disk: ${bad}`);
@@ -225,7 +235,7 @@ try {
     const html = T.tableHtml([{ t: '2026-10-20T10:00:00Z', agent: '<img src=x onerror=alert(1)>', folder: 'f', app: 'a', mode: 'allow', action: '"><script>', decision: 'auto-allow-all' }], esc);
     assert.ok(!html.includes('<img') && !html.includes('<script>'), 'escaped');
     assert.ok(html.includes('Automatic (Allow all)') && html.includes('Allow all'));
-    assert.deepStrictEqual(Object.values(T.DECISION_WORDS), ['Allowed once by you', 'Allowed for the session', 'Denied', 'Automatic (Allow all)', 'Automatic (session permission)', 'Mode changed', 'Limit changed', 'Remote control on', 'Remote control off', 'Session deleted', 'MCP restart', 'Loop started', 'Loop pass', 'Loop pass skipped', 'Loop on hold', 'Loop ended']);
+    assert.deepStrictEqual(Object.values(T.DECISION_WORDS), ['Allowed once by you', 'Allowed for the session', 'Denied', 'Automatic (Allow all)', 'Automatic (session permission)', 'Mode changed', 'Limit changed', 'Remote control on', 'Remote control off', 'Session deleted', 'MCP restart', 'Loop started', 'Loop pass', 'Loop pass skipped', 'Loop on hold', 'Loop ended', 'Autopilot on', 'Autopilot ended', 'Autopilot off']);
     assert.deepStrictEqual(Object.keys(T.DECISION_WORDS), [...ACTIVITY_DECISIONS], 'one plain word per decision, in the same order');
 
     // spec 072 FR-024 (T008): the loop rows main records, through the store: kept, redacted, never the prompt or the reply

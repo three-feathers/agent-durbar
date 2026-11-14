@@ -115,6 +115,7 @@ T.setTheme('clean-office');
     'font-weight': /^(?:normal|bold|[4-8]00)$/, // a heavier face widens text a little; 900 and bolder/lighter are refused
     'letter-spacing': /^(?:normal|0|0?\.(?:0[0-9]?|10?)em)$/, // at most .1em: it widens text, like a font change; today's uses are .01-.08em
     flex: /^0 1 auto$/, // the initial value; no flex-basis or grow
+    'outline-offset': /^-?[0-3]px$/, // paint only: an outline takes no layout space (spec 052 FR-052, issue #1615: an inset ring on a segment button); at most 3px either way
     transform: /^translate\(-?[0-2]px,-?[0-2]px\)$/, // retro button press nudge (today 2px and -1px); no scale, rotate or bigger moves
   };
   // Custom properties a style may declare (colours and a font family); a length in their value would feed a size.

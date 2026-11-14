@@ -2,7 +2,7 @@
   "version": 1,
   "since": "2026-10-25",
   "through": "2026-11-07",
-  "note": "work before 2026-10-25, and other machines and teams (a Mac, Copilot, Codex, the other two owners' setups).",
+  "note": "work before 2026-10-25, Copilot and Codex, and machines that publish no usage file yet (Paco's server has none yet; the Mac's file ends 2026-11-09 for now; Ruben's server file ends on 2026-11-12, a day that was partial when it was written, and the Linux file ends on 2026-11-14, a partial day (data up to about 07:00 UTC), so those totals may be a little higher).",
   "models": { "claude-opus-5-5": 2856, "claude-sonnet-5-5": 902 },
   "machines": { "linux": 3758 }
 }

@@ -28,7 +28,9 @@ const CLOCK = '2026-10-20T09:30:00Z';
 
 /** `f`: a file the driver writes under the same name; `{ to, from }`: the linked name and the name the driver writes. */
 const THEMES = [['clean-office', 'clean'], ['retro']];
+/** `ship: '<folder>'`: the files are shipped with the app, not linked from the docs, so they are written into that folder of the repository (or into `--out`) and are exempt from the linked-picture check (spec 102 FR-302: the world previews). */
 const DOC_SHOTS = [
+  { name: 'shots-102-previews', ship: 'src/renderer/realoffice/previews', files: ['plain.webp', 'photo.webp', 'cave.webp', 'retro.webp', 'previews.json'] }, // spec 102 T265a: one 640 px preview per built-in world, each under 48 KB, with its zoom origin
   { name: 'shots-hero', files: ['m6-fullchat-sim15-1280x800.png'] },
   { name: 'shots-003-011', files: ['m6-fullchat-sim15-1440x900.png', '003-allow-all-menu-1440x900.png'] },
   { name: 'check-office-fill', files: ['001-helpers-2-1440x900.png', '001-helpers-2-1280x800.png', '001-helpers-3-1440x900.png', '001-helpers-3-1280x800.png', '001-fill-1-1440x900.png', '001-fill-1-1920x1080.png', '001-fill-4-1440x900.png', '001-fill-6-1440x900.png', '001-shutters-1440x900.png'] },
@@ -64,6 +66,7 @@ const DOC_SHOTS = [
   { label: 'shots-051-setup win32', name: 'shots-051-setup', files: ['051-install-manual-win32-1440x900.png'] },
   { name: 'shots-081-updates', files: ['081-updates-avail-1440x900.png'] },
   { name: 'shots-052-ux', files: ['052-office-1440x900.png'] },
+  { name: 'check-settings-nav', files: ['052-settings-nav-1440x900.png'] }, // spec 052 FR-226: the Settings section list (the 1280x800 twin is not linked: the site's 8 MB budget)
   { name: 'check-auto-follow', files: ['052-auto-follow-queue-1440x900.png', '052-auto-follow-queue-1280x800.png'] },
   { name: 'shots-063-folder-status', files: ['063-folder-changes-1440x900.png'] },
   { name: 'shots-009-openwith', files: ['009-openwith-1440x900.png', '009-openwith-1280x800.png'] }, // spec 009 FR-019: the chat header's Open with menu
@@ -71,6 +74,7 @@ const DOC_SHOTS = [
   { name: 'shots-064-send-several', files: ['064-send-several-1440x900.png'] },
   { name: 'shots-068-coffee', files: ['068-coffee-office-15-1440x900.png', '068-coffee-bar-1440x900.png'] },
   { name: 'check-slash-suggest', files: ['073-slash-1440x900.png'] },
+  { name: 'shots-095', files: ['095-search-results-1440x900.png', '095-search-results-1280x800.png'] }, // spec 095: the conversation search's results (the jump picture stays out: the 8 MB site budget, issue 1169)
   { name: 'check-notes', files: ['083-notes-drawer-1440x900.png', '083-notes-drawer-1280x800.png', '083-notes-slash-1440x900.png', '083-notes-slash-1280x800.png', '083-notes-selection-1440x900.png', '083-notes-selection-1280x800.png'] }, // spec 083: the Notes drawer and the notes in the "/" list
   { name: 'check-notes-count', files: ['083-notes-count-1440x900.png', '083-notes-count-1280x800.png', '083-notes-marker-1440x900.png', '083-notes-marker-1280x800.png'] }, // spec 083 T030, T031: the header count and the marker
   { name: 'check-notes-screen', files: ['083-notes-screen-1440x900.png', '083-notes-screen-1280x800.png'] }, // spec 083 T034a: the per-folder Notes screen
@@ -79,16 +83,16 @@ const DOC_SHOTS = [
   { name: 'shots-074-navigator', files: ['074-navigator-start-1440x900.png'] },
   { name: 'check-browser-tabs', files: ['080-browser-tabs-1440x900.png'] }, // spec 080 FR-122 (US6): the page tab strip with 10 tabs
   { label: 'check-browser-tabs 1280', name: 'check-browser-tabs', env: { BROWSER_TABS_SIZE: '1280x800' }, files: ['080-browser-tabs-1280x800.png'] },
+  { name: 'check-080-browser-expand', files: ['080-browser-expand-small-flat-1440x900.png', '080-browser-expand-big-flat-1440x900.png', '080-browser-expand-small-flat-1280x800.png', '080-browser-expand-big-flat-1280x800.png'] }, // spec 080 FR-134, FR-135 (issue #1691): the browser small and expanded
   { name: 'shots-058-mcp-settings', files: ['058-mcp-settings-1440x900.png'] },
   { name: 'shots-076-orgpolicy', files: ['076-orgpolicy-mode-1440x900.png', '076-orgpolicy-server-1440x900.png', '076-orgpolicy-organization-1440x900.png'] },
   { name: 'shots-058-mcp-health', files: ['058-mcp-health-1440x900.png'] },
   { name: 'shots-058-mcp-launch', files: ['058-mcp-launch-closed-1440x900.png', '058-mcp-launch-closed-1280x800.png', '058-mcp-launch-settings-1440x900.png', '058-mcp-launch-settings-1280x800.png'] }, // spec 058 FR-195..FR-203
   { name: 'shots-058-mcp-signin-refresh', files: ['058-mcp-refresh-waiting-1440x900.png', '058-mcp-refresh-waiting-1280x800.png', '058-mcp-refresh-signin-1440x900.png', '058-mcp-refresh-signin-1280x800.png', '058-mcp-refresh-settings-1440x900.png', '058-mcp-refresh-settings-1280x800.png'] }, // spec 058 FR-208..FR-216
-  // one office per theme (shots-themes.js, the Settings path); the README (035-*) and the landing page (site-theme-*) show the same
+  // one office per theme (shots-themes.js, the Settings path); the README and the landing page show the same Retro picture (035-retro); the other themes' landing pictures are site-theme-*
   ...THEMES.map(([id, short]) => ({
     label: `shots-themes ${id}`, name: 'shots-themes', env: { DURBAR_THEME: id, SHOTS_SIZE: '1440x900', SHOTS_PREFIX: '' },
-    files: [{ to: `site-theme-${short || id}-1440x900.png`, from: `${id}-1440x900.png` }]
-      .concat(['retro'].includes(id) ? [{ to: `035-${id}-1440x900.png`, from: `${id}-1440x900.png` }] : []),
+    files: [{ to: id === 'retro' ? `035-${id}-1440x900.png` : `site-theme-${short || id}-1440x900.png`, from: `${id}-1440x900.png` }],
   })),
 ];
 
@@ -130,7 +134,7 @@ function linkedImages(root = ROOT) {
 /** FR-083: `uncovered` = linked but neither retaken nor explained; `unlinked` = retaken but linked nowhere; `missingDrivers`. */
 function coverage(root = ROOT) {
   const linked = linkedImages(root);
-  const made = new Set(DOC_SHOTS.flatMap((d) => d.files.map(target)));
+  const made = new Set(DOC_SHOTS.filter((d) => !d.ship).flatMap((d) => d.files.map(target)));
   return {
     linked,
     uncovered: linked.filter((f) => !made.has(f) && !NO_DRIVER[f]),
@@ -209,6 +213,14 @@ async function main({ argv = process.argv.slice(2), run, ensure, clockQuery } = 
         if (!r.ok) console.log(r.log.split(/\r?\n/).filter((l) => l.trim()).slice(-20).map((l) => '      | ' + l.slice(0, 240)).join('\n'));
       } else {
         const names = d.files.map((f) => [source(f), target(f)]);
+        if (d.ship) { // shipped files: into their folder (or --out), as written (a WebP is not palette-compressed, and the driver keeps it under its cap)
+          const dest = a.out ? out : path.join(ROOT, d.ship);
+          fs.mkdirSync(dest, { recursive: true });
+          for (const [sf, t] of names) { fs.copyFileSync(path.join(tmp, sf), path.join(dest, t)); copied.push(t); }
+          console.log(`  ok   ${label.padEnd(30)} ${String(r.secs).padStart(4)} s  ${names.length} file(s) into ${path.relative(ROOT, dest) || '.'}`);
+          fs.rmSync(tmp, { recursive: true, force: true });
+          continue;
+        }
         if (!a.linkedOnly) {
           // the same driver's other pictures that docs/screenshots already has (a linked 1440x900's 1280x800 twin, other spec views)
           const mapped = new Set(names.map(([s]) => s));

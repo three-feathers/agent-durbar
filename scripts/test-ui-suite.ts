@@ -15,6 +15,12 @@ for (const n of names) {
 const src = fs.readFileSync(SUITE, 'utf8');
 assert.ok(/shell: false/.test(src) && !/shell: true/.test(src) && !/execSync\(|exec\(/.test(src), 'the runner spawns without a shell');
 assert.ok(/require\('electron'\)/.test(src), 'it starts the Electron binary directly');
+{ // spec 102 T204 (#1403): UI_SUITE_DPR takes 1.25 and 1.5 besides 1..4; nothing else reaches the command line
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { dprOk } = require(SUITE) as { dprOk: (v: string) => boolean };
+  for (const v of ['1', '2', '4', '1.25', '1.5']) assert.ok(dprOk(v), `UI_SUITE_DPR=${v} is passed on`);
+  for (const v of ['', '0', '5', '1.3', '1.50', '1.5;x', '--x', '1.25 ']) assert.ok(!dprOk(v), `UI_SUITE_DPR=${JSON.stringify(v)} is ignored`);
+}
 // spec 008 FR-112: a syntax error fails at once (node --check, no shell) before any Electron starts
 {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -30,6 +36,27 @@ assert.ok(/require\('electron'\)/.test(src), 'it starts the Electron binary dire
   assert.deepStrictEqual(syntaxErrors(names.map((n) => path.join(ROOT, 'scripts', n.split(' ')[0] + '.js')).concat(path.join(ROOT, 'scripts', 'driver-helpers.js'))), [], 'every listed driver and the helpers parse');
   assert.ok(src.indexOf('syntaxErrors([...new Set(') > 0 && src.indexOf('syntaxErrors([...new Set(') < src.indexOf('await Promise.all(Array.from({ length: jobs }, worker))'), 'the syntax pass runs before the first driver starts');
   // the real runner: a broken driver named with --only stops before Electron, at once, with the file and exit 1
+}
+// spec 008 FR-213 (issue #1591): under xvfb-run the screen is as big as the window at the requested density (Xvfb's default 1280x1024 left a DPR 2 window mostly off screen)
+{
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { xvfbScreenArgs, launchCommand } = require(SUITE) as { xvfbScreenArgs: (dpr: string, env?: Record<string, string>) => string[]; launchCommand: (x: boolean, e: string, a: string[], dpr: string, env?: Record<string, string>) => [string, string[]] };
+  const screen = (dpr: string, env: Record<string, string> = {}): string => xvfbScreenArgs(dpr, env)[1];
+  assert.strictEqual(screen('1'), '-screen 0 1920x1100x24', 'DPR 1: 1920x1100, colour depth 24 (more than the old 1280x1024)');
+  assert.strictEqual(screen('2'), '-screen 0 3840x2200x24', 'xvfb screen: DPR 2 holds a 1440x900 window at 2880x1800 device pixels');
+  assert.strictEqual(screen('1.5'), '-screen 0 2880x1650x24', 'DPR 1.5 is scaled the same way');
+  assert.strictEqual(screen(''), screen('1'), 'an unset density counts as 1');
+  assert.strictEqual(screen('7;rm'), screen('1'), 'a bad density counts as 1');
+  assert.strictEqual(screen('2', { UI_SUITE_XVFB_SCREEN: '3000x2000x24' }), '-screen 0 3000x2000x24', 'UI_SUITE_XVFB_SCREEN replaces the computed screen');
+  assert.strictEqual(screen('2', { UI_SUITE_XVFB_SCREEN: '3000x2000; rm -rf' }), '-screen 0 3840x2200x24', 'a malformed override is ignored');
+  for (const dpr of ['1', '2', '4']) {
+    const m = /^-screen 0 (\d+)x(\d+)x24$/.exec(screen(dpr));
+    assert.ok(m && Number(m[1]) >= 1440 * Number(dpr) && Number(m[2]) >= 900 * Number(dpr), `the screen is at least a 1440x900 window at DPR ${dpr}`);
+  }
+  const [file, list] = launchCommand(true, '/e/electron', ['/repo', '--no-sandbox', '--force-device-scale-factor=2'], '2', {});
+  assert.ok(file === 'xvfb-run' && list[0] === '-a' && list[1] === '-s' && list[2] === '-screen 0 3840x2200x24' && list[3] === '/e/electron' && list.slice(4).join() === '/repo,--no-sandbox,--force-device-scale-factor=2', 'xvfb launch: -a kept, -s and its screen as separate entries before the binary and its arguments');
+  assert.ok(src.includes('launchCommand(useXvfb, electron, argv, dpr)') && !src.includes("['xvfb-run', ['-a', electron"), 'runOne starts a driver through launchCommand, not an inline xvfb-run call without a screen');
+  assert.deepStrictEqual(launchCommand(false, '/e/electron', ['/repo'], '2', {}), ['/e/electron', ['/repo']], 'without xvfb the binary is started as before');
 }
 // issue #748 (spec 021 FR-057): no asserting driver sits unrun. Every scripts/check-*.js and shots-*.js that asserts is in the suite, in
 // shots-docs' DOC_SHOTS (retaken by `npm run shots:docs`), or in NOT_IN_SUITE with a written reason
@@ -116,11 +143,43 @@ const jobsOf = (y: string): Record<string, string> => {
 const ciJobs = jobsOf(ci);
 // FR-104: no separate "What changed" job, and no job waits for another one in a pull request
 assert.ok(!ciJobs.changes && !/needs:/.test(ci), 'ci.yml: no changes job and no needs (each job decides what to run itself)');
-for (const j of ['build-test', 'package-smoke', 'office-check']) assert.ok(ciJobs[j] && ciJobs[j].includes('bash .github/scripts/ci-changes.sh') && ciJobs[j].includes('fetch-depth: 2'), `ci.yml ${j} works out what changed inline`);
-const changes = fs.readFileSync(path.join(ROOT, '.github', 'scripts', 'ci-changes.sh'), 'utf8');
-assert.ok(changes.includes('git diff --name-only HEAD^1 HEAD') && /"\$\{EVENT_NAME:-\}" != "pull_request"/.test(changes), 'ci-changes.sh: diff of the test merge commit on PRs, everything on other events');
+for (const j of ['build-test', 'office-check']) assert.ok(ciJobs[j] && ciJobs[j].includes('bash .github/scripts/ci-changes.sh') && ciJobs[j].includes('fetch-depth: 2'), `ci.yml ${j} works out what changed inline`);
+const changesSh = fs.readFileSync(path.join(ROOT, '.github', 'scripts', 'ci-changes.sh'), 'utf8');
+const changes = fs.readFileSync(path.join(ROOT, '.github', 'scripts', 'ci-changes.js'), 'utf8');
+assert.ok(changesSh.includes("git show 'HEAD^1:.github/scripts/ci-changes.js'") && changesSh.includes('node "$tmp/.github/scripts/ci-changes.js" --root .'), 'ci-changes.sh runs the base copy of the one decision, ci-changes.js (FR-191; test:cichanges runs it)');
+assert.ok(changes.includes("['diff', '--name-only', '--no-renames', '-z', 'HEAD^1', 'HEAD']") && changes.includes("env.EVENT_NAME !== 'pull_request'"), 'ci-changes.js: diff of the test merge commit on PRs, everything on other events (test:cichanges runs it)');
+// FR-191: on a pull request the office job's steps (office layout and, since FR-194, package smoke) follow `ui`; Build and test keeps `code`
+assert.ok(!ciJobs['office-check'].includes("outputs.code == 'true'") && ciJobs['office-check'].includes("steps.changes.outputs.ui == 'true'"), 'ci.yml office-check runs its steps only when ui=true');
+assert.ok(ciJobs['build-test'].includes("steps.changes.outputs.code == 'true'") && !ciJobs['build-test'].includes('outputs.ui'), 'ci.yml Build and test still runs on every code change');
 // the required check names of the main ruleset still report on every pull request
-for (const name of ['name: Build and test (${{ matrix.os }})', 'name: Package smoke (unpacked Linux app)', 'name: Office layout check (xvfb)']) assert.ok(ci.includes(name), `ci.yml keeps the required check ${name}`);
+for (const name of ['name: Build and test (${{ matrix.os }})', 'name: Office layout check (xvfb)']) assert.ok(ci.includes(name), `ci.yml keeps the required check ${name}`);
+// FR-194: packaging is a step of the office job (the old required check "Package smoke (unpacked Linux app)" is gone), runs even when
+// the layout steps failed, and the job fails when either part failed and says which
+assert.ok(!ciJobs['package-smoke'] && ci.split('name: Package smoke (unpacked Linux app)').length === 2, 'ci.yml: no separate Package smoke job, one step of that name');
+const officeJob = ciJobs['office-check'];
+const B = `steps\\.build\\.outcome == 'success'`;
+const packageRe = new RegExp(`- name: Package smoke \\(unpacked Linux app\\)\\r?\\n\\s+if: \\$\\{\\{ !cancelled\\(\\) && steps\\.changes\\.outputs\\.ui == 'true' && ${B} \\}\\}\\r?\\n\\s+id: package\\r?\\n\\s+run: npm run pack:dir:prebuilt`);
+const layoutRe = new RegExp(`if: \\$\\{\\{ !cancelled\\(\\) && steps\\.changes\\.outputs\\.ui == 'true' && ${B} \\}\\}\\r?\\n\\s+id: layout`);
+const geometryRe = new RegExp(`id: geometry\\r?\\n\\s+if: [^\\r\\n]*&& ${B}\\r?\\n`);
+assert.ok(packageRe.test(officeJob), 'FR-194: the office job packs the app after the layout steps with the wrapped ${{ !cancelled() && ... }} (not always(): a cancel stops the run), only on a successful build');
+assert.ok(layoutRe.test(officeJob), 'FR-194: the layout runs after a failed geometry step (wrapped !cancelled()), only on a successful build');
+assert.ok(geometryRe.test(officeJob), 'FR-194: geometry runs only on a successful build');
+// the dots in steps.build.outcome are literal: the same job with any other character there must fail each guard
+const dotMutant = officeJob.split('steps.build.outcome').join('steps_build_outcome');
+assert.ok(dotMutant !== officeJob && [packageRe, layoutRe, geometryRe].every((re) => !re.test(dotMutant)), 'FR-194: a literal . in steps.build.outcome (an escaped dot, not any character)');
+assert.ok(/id: build\r?\n\s+if: steps\.changes\.outputs\.ui == 'true'\r?\n\s+run: npm run build/.test(officeJob) && /id: install\r?\n\s+if: steps\.changes\.outputs\.ui == 'true'\r?\n\s+uses: \.\/\.github\/actions\/npm-ci/.test(officeJob), 'FR-194: install and build have ids so the summary can name them');
+assert.strictEqual((officeJob.match(/if: .*always\(\)/g) || []).length, 1, 'FR-194: always() only on the summary step');
+assert.ok(officeJob.indexOf('npm run pack:dir:prebuilt') > officeJob.indexOf('node scripts/check-parallel.js') && officeJob.split('npm run build').length === 2, 'FR-194: one build, then layout, then packaging');
+assert.ok(/for part in INSTALL BUILD GEOMETRY LAYOUT PACKAGE/.test(officeJob) && ['install', 'build', 'geometry', 'layout', 'package'].every((x) => officeJob.includes(`steps.${x}.outcome`)) && officeJob.includes('GITHUB_STEP_SUMMARY') && /if: always\(\)\r?\n\s+shell: bash/.test(officeJob), 'FR-194: the last step fails the job and names the failed part (install, build, geometry, layout, package) from the step outcomes');
+// an `if:` that starts with `!` must be wrapped in ${{ }}: unquoted, YAML reads `!cancelled()` as a tag and the whole workflow does not load
+for (const f of fs.readdirSync(WF).filter((x) => /\.ya?ml$/.test(x))) {
+  const txt = fs.readFileSync(path.join(WF, f), 'utf8');
+  assert.ok(!/^\s*(- )?if:\s*!/m.test(txt), `${f}: an if: starting with ! is not wrapped in \${{ }} (invalid YAML)`);
+  // a real parser when one is installed (js-yaml is only a transitive dependency, so it is optional here; the guard above is the floor)
+  let yaml: { load: (s: string) => unknown } | undefined;
+  try { yaml = require('js-yaml'); } catch { yaml = undefined; }
+  if (yaml) assert.doesNotThrow(() => (yaml as { load: (s: string) => unknown }).load(txt), `${f} is not valid YAML`);
+}
 const bt = ciJobs['build-test'];
 for (const os of ['ubuntu-latest', 'windows-latest', 'macos-latest']) assert.ok(bt.includes(`- os: ${os}`), `Build and test reports for ${os}`);
 // FR-106: macOS is a report-only Linux job on pull requests and merge queue entries, the real build and test on every other event
@@ -136,6 +195,16 @@ for (const step of ['check-theme-geometry.js', 'check-office-overlap.js', 'check
 assert.ok(!/part:/.test(wf) && !/OFFICE_SHARD/.test(wf), 'one job per OS: the office layout runs whole, no parts');
 assert.ok(wf.includes(`os: \${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest","macos-latest","windows-latest"]' || '["ubuntu-latest","windows-latest"]') }}`), 'macOS UI checks only nightly and by hand');
 assert.ok(/^ {2}schedule:/m.test(wf), 'ui-platforms.yml runs nightly');
+// FR-191: a cheap decision job; the shards need it and run only on ui=true; "UI suite complete" passes when ui=false, fails when the decision failed
+{
+  const uj = jobsOf(wf);
+  assert.ok(uj.changes && uj.changes.includes('bash .github/scripts/ci-changes.sh') && uj.changes.includes('fetch-depth: 2') && uj.changes.includes('ui: ${{ steps.changes.outputs.ui }}'), 'ui-platforms.yml: a changes job outputs ui');
+  assert.ok(uj.ui.includes('needs: changes') && uj.ui.includes("if: ${{ !github.event.pull_request.draft && needs.changes.outputs.ui == 'true' }}"), 'the UI shards run only when ui=true');
+  const c = uj.complete;
+  assert.ok(c.includes('needs: [changes, ui]') && c.includes('CHANGES: ${{ needs.changes.result }}') && c.includes('UI_NEEDED: ${{ needs.changes.outputs.ui }}'), 'UI suite complete reads the decision');
+  assert.ok(c.indexOf('test "$CHANGES" = "success"') > 0 && c.indexOf('test "$CHANGES" = "success"') < c.indexOf('if [ "$UI_NEEDED" = "false" ]') && c.includes('test "$RESULT" = "success"'), 'a failed decision fails; ui=false passes; otherwise every shard must pass');
+  for (const p of ["'.github/scripts/ci-changes.*'", "'.github/actions/npm-ci/**'", "'tsconfig.json'", "'build/**'"]) assert.ok(wf.split(p).length === 3, `ui-platforms.yml prefilters ${p} on pull requests and pushes`);
+}
 assert.ok(wf.includes("OFFICE_HERE: ${{ (matrix.os != 'ubuntu-latest' || (github.event_name != 'pull_request' && github.event_name != 'push'))"), 'Linux skips the office layout here only for the events where ci.yml runs it');
 // FR-098: every workflow with a required check also runs on merge queue entries
 const sk = fs.readFileSync(path.join(WF, 'spec-kit.yml'), 'utf8');
@@ -158,6 +227,12 @@ for (const p of ['src/main/**', 'src/adapters/**', 'src/shared/**', 'src/preload
 assert.ok(!mpPaths.some((p) => p.startsWith('src/renderer') || p.startsWith('docs') || p.startsWith('specs')), 'macos-pr.yml: UI, docs and specs do not start macOS');
 assert.ok(/runs-on: macos-latest/.test(mp) && mp.includes('npm test') && !/pull_request_target|secrets\./.test(mp) && !/^ {2}push:|schedule:/m.test(mp), 'macos-pr.yml: real macOS npm test on pull requests only, no secrets');
 assert.ok(!/name: Build and test/.test(mp), 'macos-pr.yml does not reuse a required check name');
+{ // FR-191: the macOS job's first step decides; every later step runs only on macos=true (docs and a version-only bump skip them)
+  const mj = jobsOf(mp)['macos-test'];
+  const steps = mj.slice(mj.indexOf('steps:')).split(/\n {6}- /).slice(1);
+  assert.ok(mj.includes('fetch-depth: 2') && steps[1].includes('id: changes') && steps[1].includes('bash .github/scripts/ci-changes.sh'), 'macos-pr.yml: checkout, then the decision');
+  assert.ok(steps.length >= 6 && steps.slice(2).every((st) => st.startsWith("if: steps.changes.outputs.macos == 'true'")), 'macos-pr.yml: every step after the decision needs macos=true');
+}
 // FR-106: macOS runs on pull requests nowhere (installed app, packaged check and install check too) and nightly failures are reported
 for (const f of ['installed-app.yml', 'packaged-check.yml']) {
   const y = fs.readFileSync(path.join(WF, f), 'utf8');
@@ -169,17 +244,27 @@ const watch = fs.readFileSync(path.join(WF, 'nightly-watch.yml'), 'utf8');
 assert.ok(!/pull_request/.test(watch) && !/actions\/checkout/.test(watch) && watch.includes(`github.event.workflow_run.event == 'schedule'`), 'nightly-watch.yml: only scheduled runs, never PR code');
 const watched = ((/workflows: \[(.*)\]/.exec(watch) || [])[1] || '').split(',').map((x) => x.trim());
 const wfNames = new Set(fs.readdirSync(WF).filter((f) => f.endsWith('.yml')).map((f) => (/^name: (.*)$/m.exec(fs.readFileSync(path.join(WF, f), 'utf8')) || [])[1]));
-for (const w of ['CI', 'UI on three OSes', 'Installed app', 'Packaged check', 'Install check', 'E2E real accounts']) assert.ok(watched.includes(w) && wfNames.has(w), `nightly-watch.yml watches "${w}" (a real workflow name)`);
-// FR-111 (owner decision 2026-10-22): theme layout checks run Clean Office and Retro on pull requests, every theme elsewhere
+for (const w of ['CI', 'UI on three OSes', 'Installed app', 'Packaged check', 'Install check', 'E2E real accounts', 'Electron cache warmer']) assert.ok(watched.includes(w) && wfNames.has(w), `nightly-watch.yml watches "${w}" (a real workflow name)`);
+// FR-111 (owner decision 2026-10-22; Retro replaced by the dark fixture, spec 102 T226): theme layout checks run Clean Office and the dark fixture on pull requests, every theme elsewhere
 assert.ok(office.includes(`CHECK_ALL_THEMES: \${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && '0' || '1' }}`) && wf.includes(`CHECK_ALL_THEMES: \${{ github.event_name == 'pull_request' && '0' || '1' }}`), 'every theme on main, nightly and by hand');
 const geo = fs.readFileSync(path.join(ROOT, 'scripts', 'check-theme-geometry.js'), 'utf8');
-assert.ok(/process\.env\.CHECK_ALL_THEMES === '1' \? ALL_THEMES : 'retro'/.test(geo) && /const ALL_THEMES = 'retro,user,pink-studio'/.test(geo), 'check-theme-geometry: Retro by default, all with CHECK_ALL_THEMES=1');
-assert.ok(/const THEMES = \['clean', 'retro'\];/.test(fs.readFileSync(path.join(ROOT, 'scripts', 'shots-052-addleft.js'), 'utf8')), 'shots-052-addleft: Clean and Retro, the built-in themes (spec 035 FR-017)');
+assert.ok(/process\.env\.CHECK_ALL_THEMES === '1' \? ALL_THEMES : 'dark'/.test(geo) && /const ALL_THEMES = 'dark,user,pink-studio'/.test(geo), 'check-theme-geometry: the dark fixture by default, all with CHECK_ALL_THEMES=1 (spec 102 T226)');
+assert.ok(/const THEMES = \[\['clean', \{ theme: 'clean' \}\], \['dark', CHECK_DARK_QUERY\]\];/.test(fs.readFileSync(path.join(ROOT, 'scripts', 'shots-052-addleft.js'), 'utf8')), 'shots-052-addleft: Clean Office and the dark fixture theme (spec 102 T226)');
+// review of PR #1276 (A): the dark jobs say so (CHECK_EXPECT_DARK=1), so the driver demands the dark fixture whatever its file is called; both job definitions are pinned here
+const par = fs.readFileSync(path.join(ROOT, 'scripts', 'check-parallel.js'), 'utf8');
+assert.ok(par.includes(`const DARK_THEME = 'scripts/fixtures/themes/check-dark.json';`), 'check-parallel: DARK_THEME is the dark fixture');
+assert.ok(par.includes(`env: { OFFICE_USER_THEME: DARK_THEME, CHECK_EXPECT_DARK: '1' } }`) && par.includes(`env: { OFFICE_USER_THEME: DARK_THEME, CHECK_EXPECT_DARK: '1', OFFICE_CHARACTERS: 'cheeky' } }`), 'check-parallel: both dark jobs set CHECK_EXPECT_DARK=1');
+assert.ok(ci.includes('else export OFFICE_USER_THEME=scripts/fixtures/themes/check-dark.json CHECK_EXPECT_DARK=1; fi'), 'ci.yml theme-shard: the dark entry loads the dark fixture and sets CHECK_EXPECT_DARK=1');
+const ovl = fs.readFileSync(path.join(ROOT, 'scripts', 'check-office-overlap.js'), 'utf8');
+assert.ok(ovl.includes(`process.env.CHECK_EXPECT_DARK === '1'`) && /if \(expectDark \|\| /.test(ovl) && ovl.includes('CHECK_EXPECT_DARK=1 needs OFFICE_USER_THEME'), 'check-office-overlap: CHECK_EXPECT_DARK=1 requires the dark fixture check, and a user theme');
 // FR-110: every job of every workflow has a time limit
 for (const f of fs.readdirSync(WF).filter((x) => x.endsWith('.yml'))) for (const [id, body] of Object.entries(jobsOf(fs.readFileSync(path.join(WF, f), 'utf8')))) assert.ok(/^ {4}timeout-minutes: /m.test(body), `${f} ${id} has timeout-minutes`);
 // ---- scripts/driver-helpers.js (spec 008 FR-097): the shared plumbing behaves as the drivers' own copies did ----
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const dh = require(path.join(ROOT, 'scripts', 'driver-helpers.js'));
+// review of PR #1276 (B): the dark fixture's page must be an opaque dark fill; transparent and unparsable values are not dark
+for (const [bg, ok] of [['rgb(20, 18, 43)', true], ['rgba(20, 18, 43, 1)', true], ['rgba(20, 18, 43, 0.95)', true], ['rgba(0, 0, 0, 0)', false], ['rgba(20, 18, 43, 0.5)', false], ['', false], ['transparent', false], ['color(srgb 0.1 0.1 0.1)', false], ['rgb(244, 241, 232)', false]]) assert.strictEqual(dh.darkProblem({ id: 'check-dark', bg }) === '', ok, `darkProblem ${JSON.stringify(bg)} is ${ok ? 'dark' : 'a problem'}`);
+assert.ok(dh.darkProblem({ id: 'check-user', bg: 'rgb(20, 18, 43)' }).includes('not the fixture'), 'darkProblem: another theme id is a problem');
 (async () => {
   const events: any[] = [], sizes: any[] = [], loads: any[] = [], codes: string[] = [], waited: string[] = [], shots: string[] = [], sleeps: number[] = [];
   const ctx = {
@@ -232,12 +317,37 @@ const dh = require(path.join(ROOT, 'scripts', 'driver-helpers.js'));
   await D.releaseFocus(); cmds.length = 0; let real = 0; dbgCtx.js = async (c: string) => (c.includes('hasFocus') ? (cmds.length > 0 || real++ > 0) : true);
   assert.strictEqual(await D.focusPage({ ms: 50, emulate: 'first' }), true, "emulate: 'first' emulates before any real attempt"); assert.deepStrictEqual(cmds[0], ['Emulation.setFocusEmulationEnabled', true]); assert.strictEqual(real, 0, 'with no real-focus look first');
   await D.releaseFocus(); assert.deepStrictEqual(cmds[cmds.length - 1], ['Emulation.setFocusEmulationEnabled', false], 'releaseFocus turns it off'); assert.strictEqual(attached, false, 'and detaches the debugger');
+  // spec 008 FR-215: pointerOff re-sends the move until the hover clears, and fails (labelled) when it never does; stay only lists
+  const po = (clearsAfter: number) => {
+    const moves: any[] = []; const pctx: any = { ...ctx, win: { ...ctx.win, webContents: { ...ctx.win.webContents, sendInputEvent: (e: any) => moves.push(e) } }, sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, Math.min(ms, 5))) };
+    const hovered = () => moves.length < clearsAfter;
+    // the page: the install call (addEventListener) answers true, the list (.map) the hovered controls, a sample "no :hover and the page saw a move at 0,0"
+    pctx.js = async (c: string) => (c.includes('addEventListener') ? true : c.includes('.map(') ? (hovered() ? ['button.x "Go"'] : []) : (!hovered() && moves.length > 0));
+    return { moves, P: dh.helpers(pctx) };
+  };
+  { const { moves, P } = po(4); assert.deepStrictEqual(await P.pointerOff('#panel', 'button', { ms: 2000, retry: 20 }).catch((e: Error) => assert.fail('pointerOff: a hover that clears after 3 moves passes: ' + e.message)), [], 'pointerOff: a hover that clears after 3 moves passes'); assert.ok(moves.length >= 4 && moves.every((e) => e.type === 'mouseMove' && e.x === 0 && e.y === 0), 'pointerOff: the move is re-sent to 0,0 until the hover clears'); }
+  { const { moves, P } = po(1e9); await assert.rejects(() => P.pointerOff('#panel', 'button', { ms: 150, retry: 20 }), /pointerOff: the pointer did not leave #panel after 150 ms and \d+ move\(s\): \["button\.x \\"Go\\""\]/, 'pointerOff: a hover that never clears fails with its label'); assert.ok(moves.length > 1, 'the failing wait kept re-sending the move'); }
+  // spec 008 FR-216: the real cursor hovers the control again after the first empty sample; a second sample finds it and the move is re-sent
+  // the page code of the helper (the listener and the sample) runs for real in a vm with a stub page: a :hover that is empty at the first querySelector call and set at the next one (the real cursor), until a move arrives
+  const rehover = (o: { unseen?: boolean } = {}) => {
+    const moves: any[] = []; const listeners: any[] = []; let hot = false, calls = 0, dropped = false;
+    const sandbox: any = { window: {}, addEventListener: (_t: string, f: any) => listeners.push(f), requestAnimationFrame: (f: () => void) => setTimeout(f, 1), setTimeout, clearTimeout, document: { querySelector: () => { const r = hot ? {} : null; if (++calls === 1) hot = true; return r; } } };
+    const sendInputEvent = (e: any) => { moves.push(e); hot = false; if (!o.unseen && !dropped) for (const f of listeners) f({ clientX: e.x, clientY: e.y }); };
+    const pctx: any = { ...ctx, win: { ...ctx.win, webContents: { ...ctx.win.webContents, sendInputEvent } }, sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, Math.min(ms, 5))) };
+    pctx.js = async (c: string) => (c.includes('.map(') ? (hot ? ['button.x "Go"'] : []) : require('vm').runInNewContext(c, sandbox));
+    return { moves, listeners, drop: () => { dropped = true; calls = 99; hot = false; }, P: dh.helpers(pctx) };
+  };
+  { const { moves, P } = rehover(); assert.deepStrictEqual(await P.pointerOff('#panel', 'button', { ms: 3000, retry: 1e9 }).catch((e: Error) => assert.fail('pointerOff: a re-hover after the first empty sample is re-sent and passes: ' + e.message)), [], 'pointerOff: a re-hover after the first empty sample is waited out (re-sent at once, retry is huge)'); assert.ok(moves.length >= 2, 'pointerOff: a re-hover after the first empty sample re-sends the move (two samples)'); }
+  { const { moves, P } = rehover({ unseen: true }); await assert.rejects(() => P.pointerOff('#panel', 'button', { ms: 250, retry: 20 }), /pointerOff: the page never saw the move to 0,0/, 'pointerOff: no :hover but no move seen at 0,0 fails with its label'); assert.ok(moves.length > 3, 'pointerOff: a move the page never saw at 0,0 is re-sent, not counted as clear'); }
+  // two calls on one page: one listener, and the second call does not trust what the first recorded
+  { const r = rehover(); await r.P.pointerOff('#panel', 'button', { ms: 3000, retry: 1e9 }); assert.strictEqual(r.listeners.length, 1, 'pointerOff: one listener per page'); r.drop(); await assert.rejects(() => r.P.pointerOff('#panel', 'button', { ms: 250, retry: 20 }), /pointerOff: the page never saw the move to 0,0/, 'pointerOff: a second call does not trust the first call\'s record'); assert.strictEqual(r.listeners.length, 1, 'pointerOff: still one listener after two calls'); }
+  { const { moves, P } = po(1e9); assert.deepStrictEqual(await P.pointerOff('#panel', 'button', { stay: true }), ['button.x "Go"'], 'pointerOff stay: lists what is hovered'); assert.strictEqual(moves.length, 0, 'pointerOff stay: never moves the pointer'); }
   console.log('driver-helpers: key, load, escaping and shot behave');
 })().catch((e) => { console.error(e); process.exit(1); });
 
 // ---- no driver keeps its own copy of what the shared module does, and no string is spliced raw into page code ----
 // Not page drivers: they never touch a window (or drive a real session / the packaged app).
-const SKIP = new Set(['driver-helpers.js', 'ui-suite.js', 'check-names.js', 'check-fuses.js', 'check-fuses-launch.js', 'check-parallel.js', 'e2e-driver.js', 'installed-app-check.js', 'installed-app-ci.js']);
+const SKIP = new Set(['driver-helpers.js', 'ui-suite.js', 'check-names.js', 'check-fuses.js', 'check-fuses-launch.js', 'check-parallel.js', 'check-world-distinct.js', 'e2e-driver.js', 'installed-app-check.js', 'installed-app-ci.js']);
 /** The template literals of one line (top level only): their text and their `${...}` expressions (a nested template is part of its expression). */
 function templates(line: string): { text: string; exprs: string[] }[] {
   const out: { text: string; exprs: string[] }[] = [];
@@ -366,7 +476,7 @@ async function shardMain(): Promise<void> {
       console.log = () => undefined;
       let err: Error | undefined;
       let ensured = false;
-      try { await main({ ensure: () => { ensured = true; return true; }, argv, run: async (d: { name: string }) => { ran.push(d.name); return { ok: true, secs: 0, why: '', log: '' }; } }); } catch (e) { err = e as Error; } finally { console.log = log; }
+      try { await main({ ensure: () => { ensured = true; return true; }, argv, shared: false /* FR-210 reorders focus entries on a shared desktop; this test is about the shard */, run: async (d: { name: string }) => { ran.push(d.name); return { ok: true, secs: 0, why: '', log: '' }; } }); } catch (e) { err = e as Error; } finally { console.log = log; }
       if (err) assert.ok(!ensured && ran.length === 0, 'a refused shard starts nothing, not even the Electron install');
       return { ran, err, code: process.exitCode };
     };
@@ -493,7 +603,7 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
       const at = text.indexOf('  complete:');
       assert.ok(at > 0, 'the aggregate job exists');
       const job = text.slice(at);
-      assert.ok(job.includes('name: UI suite complete') && /^\s+needs: ui\s*$/m.test(job), 'UI suite complete needs the shard job');
+      assert.ok(job.includes('name: UI suite complete') && /^\s+needs: \[changes, ui\]\s*$/m.test(job), 'UI suite complete needs the decision and the shard job (FR-191)');
       assert.ok(/if: \$\{\{ always\(\) && !github\.event\.pull_request\.draft \}\}/.test(job), 'it runs after a failed shard, and skips drafts');
       assert.ok(/RESULT: \$\{\{ needs\.ui\.result \}\}/.test(job) && job.includes('test "$RESULT" = "success"'), 'it passes only when every shard succeeded');
       assert.ok(/permissions: \{\}/.test(job) && !/\$\{\{ github\.event\.(pull_request|issue|head_commit)\.(title|body)/.test(wf), 'no permissions, no PR text in the workflow');
@@ -515,3 +625,112 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
   }
   console.log('ui-suite shards: ok');
 }
+// spec 008 FR-199 (issue #1417): a driver stopped at its time limit leaves no process behind, whether or not it sets killTree.
+// The child is node, which starts a long-lived grandchild (like xvfb-run starting Xvfb and Electron). POSIX only: on Windows taskkill /T does
+// it and is not run here. Only PIDs this test creates are checked or killed.
+(async () => {
+  if (process.platform === 'win32') { console.log('ui-suite kill tree: skipped on Windows (taskkill /T is not exercised here)'); return; }
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { runOne } = require(SUITE) as { runOne: (d: object, out: string, o: { launch: [string, string[]] }) => Promise<{ ok: boolean; why: string; log: string }> };
+  const alive = (pid: number): boolean => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  const parent = "const {spawn}=require('child_process');const g=spawn(process.execPath,['-e','setTimeout(()=>{},300000)'],{stdio:'ignore'});console.log('GRANDCHILD '+g.pid);console.log('DRIVER-OUTPUT-KEPT');setTimeout(()=>{},300000)";
+  const out = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ui-suite-kill-'));
+  const pids: number[] = [];
+  try {
+    for (const d of [{ name: 'x' }, { name: 'x', killTree: true }]) {
+      const r = await runOne({ ...d, timeoutMs: 1500, sim: false }, out, { launch: [process.execPath, ['-e', parent]] });
+      const gp = Number((/GRANDCHILD (\d+)/.exec(r.log) || [])[1]);
+      assert.ok(gp > 0, 'the test child started a grandchild');
+      pids.push(gp);
+      assert.ok(!r.ok && /time limit/.test(r.why), 'the run fails with the time limit as the reason');
+      assert.ok(r.log.includes('DRIVER-OUTPUT-KEPT'), 'the output of a stopped driver is still in the log');
+      await new Promise((res) => setTimeout(res, 500));
+      assert.ok(!alive(gp), `no grandchild is left after the time limit (${JSON.stringify(d)})`);
+    }
+  } finally {
+    for (const p of pids) if (alive(p)) { try { process.kill(p, 'SIGKILL'); } catch { /* gone */ } }
+    fs.rmSync(out, { recursive: true, force: true });
+  }
+  console.log('ui-suite kill tree: ok');
+})().catch((e) => { console.error(e); process.exitCode = 1; });
+// spec 008 FR-199: SIGINT and SIGTERM to a process running `runOne` end the tree and remove the run's user-data folder. The runner is a node
+// child of this test with its own TMPDIR, so the folder it makes (durbar-ui-user-*) is found and nothing else is touched. POSIX only.
+(async () => {
+  if (process.platform === 'win32') { console.log('ui-suite signals: skipped on Windows'); return; }
+  const os = require('os') as typeof import('os');
+  const { spawn } = require('child_process') as typeof import('child_process');
+  const alive = (pid: number): boolean => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  const sleep = (ms: number): Promise<void> => new Promise((res) => setTimeout(res, ms));
+  for (const [sig, code] of [['SIGINT', 130], ['SIGTERM', 143]] as const) {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ui-suite-sig-'));
+    const pidFile = path.join(tmp, 'grandchild.pid');
+    // static code only: the values travel in argv, never inside a code string (CodeQL: improper code sanitization)
+    const launchJs = "const fs=require('fs'),{spawn}=require('child_process');const pf=process.argv[1];const g=spawn(process.execPath,['-e','setTimeout(()=>{},300000)'],{stdio:'ignore'});fs.writeFileSync(pf,String(g.pid));fs.writeFileSync(pf+'.launch',String(process.pid));setTimeout(()=>{},300000)";
+    const runner = "require(process.argv[1]).runOne({name:'x',sim:false,timeoutMs:120000},process.argv[2],{launch:[process.execPath,['-e',process.argv[4],process.argv[3]]]})";
+    const runnerProc = spawn(process.execPath, ['-e', runner, SUITE, tmp, pidFile, launchJs], { env: { ...process.env, TMPDIR: tmp, TMP: tmp, TEMP: tmp }, stdio: 'ignore' });
+    const exited = new Promise<{ code: number | null; signal: string | null }>((res) => runnerProc.on('close', (c, s) => res({ code: c, signal: s })));
+    let gp = 0;
+    const killPid = (p: number): void => { if (p > 0 && alive(p)) { try { process.kill(p, 'SIGKILL'); } catch { /* gone */ } } };
+    try {
+      for (let i = 0; i < 100 && !gp; i++) { await sleep(100); try { gp = Number(fs.readFileSync(pidFile, 'utf8')); } catch { /* not yet */ } }
+      assert.ok(gp > 0 && alive(gp), 'the runner started a grandchild');
+      assert.ok(fs.readdirSync(tmp).some((f) => f.startsWith('durbar-ui-user-')), 'the run made its user-data folder');
+      runnerProc.kill(sig);
+      const r = await exited;
+      assert.ok(r.signal === sig || r.code === code, `${sig}: the runner ends as without the handler (got ${r.signal || r.code})`);
+      await sleep(500);
+      assert.ok(!alive(gp), `${sig}: no grandchild is left`);
+      assert.deepStrictEqual(fs.readdirSync(tmp).filter((f) => f.startsWith('durbar-ui-user-')), [], `${sig}: the user-data folder is removed`);
+    } finally {
+      killPid(gp);
+      try { killPid(Number(fs.readFileSync(pidFile + '.launch', 'utf8'))); } catch { /* never written */ }
+      if (runnerProc.exitCode === null && runnerProc.signalCode === null) { try { runnerProc.kill('SIGKILL'); } catch { /* gone */ } }
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+  // spec 008 FR-210 (issue #1498): an entry with `focus: true` (it waits on the real OS window focus) never runs next to another window
+  // when drivers share a desktop; the others still run `jobs` at a time; with a display of its own per driver (xvfb) nothing changes
+  {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const suite = require(SUITE) as { main: (o: unknown) => Promise<void>; DRIVERS: { name: string; label?: string; focus?: boolean }[]; sharedDesktop: (p: string, e: Record<string, string>) => boolean };
+    const label = (d: { name: string; label?: string }): string => d.label || d.name;
+    const flagged = suite.DRIVERS.filter((d) => d.focus).map(label).sort();
+    assert.deepStrictEqual(flagged, ['check-097-hover-card', 'shots-097-screens', 'shots-097-screens retro'], 'the focus entries are the ones with a failure on record (#1498, #1408)');
+    assert.deepStrictEqual([['darwin', {}], ['win32', {}], ['linux', {}], ['linux', { DISPLAY: ':0' }], ['linux', { DISPLAY: ':0', UI_SUITE_XVFB: '1' }]].map(([p, e]) => suite.sharedDesktop(p as string, e as Record<string, string>)), [true, true, false, true, false], 'windows share a desktop on macOS, Windows and Linux with a display; not under xvfb');
+    const only = ['shots-097-screens', 'check-097-hover-card', 'shots-017', 'shots-018', 'shots-033', 'check-office-fill'].join(',');
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ui-suite-focus-'));
+    const was = { jobs: process.env.UI_SUITE_JOBS, out: process.env.UI_SUITE_OUT, log: console.log };
+    const play = async (shared: boolean): Promise<{ ran: string[]; peak: number; focusNextToOther: string[]; peakOthers: number }> => {
+      const live = new Set<string>(); const ran: string[] = []; const clash: string[] = [];
+      let peak = 0, peakOthers = 0;
+      const fake = async (d: { name: string; label?: string; focus?: boolean }): Promise<{ ok: boolean; secs: number; why: string; log: string }> => {
+        const me = label(d);
+        live.add(me); ran.push(me); peak = Math.max(peak, live.size);
+        if ([...live].some((x) => x !== me && suite.DRIVERS.some((y) => label(y) === x && y.focus)) || (d.focus && live.size > 1)) clash.push(me);
+        peakOthers = Math.max(peakOthers, [...live].filter((x) => !suite.DRIVERS.some((y) => label(y) === x && y.focus)).length);
+        await sleep(40);
+        live.delete(me);
+        return { ok: true, secs: 0, why: '', log: '' };
+      };
+      process.env.UI_SUITE_JOBS = '3'; process.env.UI_SUITE_OUT = tmp;
+      console.log = (): void => undefined;
+      try { await suite.main({ ensure: () => true, run: fake, argv: ['--only', only], shared }); } finally { console.log = was.log; }
+      return { ran, peak, focusNextToOther: clash, peakOthers };
+    };
+    try {
+      const a = await play(true);
+      assert.deepStrictEqual([...a.ran].sort(), ['check-097-hover-card', 'check-097-hover-card retro', 'check-office-fill', 'shots-017','shots-018', 'shots-033', 'shots-097-screens', 'shots-097-screens retro'], 'on a shared desktop every selected entry runs once');
+      assert.deepStrictEqual(a.focusNextToOther, [], 'a focus entry ran next to another window');
+      assert.ok(a.peakOthers >= 2, `the other entries still run in parallel (peak ${a.peakOthers})`);
+      assert.deepStrictEqual(a.ran.slice(-3).sort(), ['check-097-hover-card', 'shots-097-screens', 'shots-097-screens retro'], 'the focus entries run last, alone');
+      const b = await play(false);
+      assert.ok(b.peak >= 3 && b.focusNextToOther.length > 0, 'with a display per driver (xvfb) the focus entries are scheduled as before');
+    } finally {
+      if (was.jobs === undefined) delete process.env.UI_SUITE_JOBS; else process.env.UI_SUITE_JOBS = was.jobs;
+      if (was.out === undefined) delete process.env.UI_SUITE_OUT; else process.env.UI_SUITE_OUT = was.out;
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+    assert.ok(/focus: true/.test(fs.readFileSync(SUITE, 'utf8')), 'ui-suite.js carries the flag');
+  }
+  console.log('ui-suite signals: ok');
+})().catch((e) => { console.error(e); process.exitCode = 1; });
