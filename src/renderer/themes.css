@@ -88,7 +88,7 @@ html[data-ui="retro"] .btn.primary:not(.warn,.danger,:disabled,[aria-disabled=tr
    the rule that gives every themed .btn a surface background outranked styles.css .btn.primary.danger, so the button was its panel's own colour in the arcade and under the pixel theme.
    Disabled keeps the muted look of every primary (styles.css .btn.primary:is(:disabled)); the hover rule is needed too, this rest rule outranks styles.css .btn.primary.danger:hover */
 html[data-ui]:not([data-ui="clean"]) .btn.primary.danger:not(:disabled,[aria-disabled=true]){background:var(--red-ink);border-color:transparent;color:var(--surface)}
-html[data-ui]:not([data-ui="clean"]) .btn.primary.danger:not(:disabled,[aria-disabled=true]):hover{background:color-mix(in srgb,var(--red-ink) 86%,var(--ink))}
+html[data-ui]:not([data-ui="clean"]) .btn.primary.danger:not(:disabled,[aria-disabled=true]):hover{background:color-mix(in srgb,var(--red-ink) 86%,var(--red-hover,var(--ink)))}
 
 /* ---------- spec 052 FR-054: a period texture on the rooms, art only (2-4%).
    Gradients and inline SVG only; the room's colour and every size stay; text sits on its own surface above it. ---------- */
