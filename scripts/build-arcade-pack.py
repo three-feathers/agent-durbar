@@ -3,7 +3,7 @@
 
   python3 -I scripts/build-arcade-pack.py <interop-dir> [<repo>]       build into src/renderer/realoffice/{worlds,sets}/retro
   python3 -I scripts/build-arcade-pack.py --world [<repo>]              the world only (no art cache): wall, floor, cabinets, fixtures
-  python3 -I scripts/build-arcade-pack.py --selftest                    the checks that need no art (a frame off the grid is refused, same bytes twice)
+  python3 -I scripts/build-arcade-pack.py --selftest                    the checks that need no art (a frame off the grid is refused, same bytes twice, the welcome picture)
 
   <interop-dir>  the art cache's crew/interop folder: final/retro (people r1..r8) and new7/final (r9..r15), 8x frames, and prompts/
                  (read only; nothing in it is copied except the frames, shrunk to the grid).
@@ -376,6 +376,84 @@ def console():
     R(P['dg'], 4, 19, 4, 3); R(P['dg'], 32, 19, 4, 3)
     return c
 
+# ---------------------------------------------------------------------------------------------------------------- welcome (T206: the first-run picture)
+WELCOME_W, WELCOME_H = 480, 300        # 16:10 like the 1920x1200 cap; one file pixel is one grid pixel, shown at 3 px a pixel in a 1440 px window
+
+def screen_art(c, x, y, w, h, kind):
+    """what a cabinet's glass shows when nobody plays: an attract loop drawn as a few flat blocks (invented shapes, no game or brand)"""
+    R = c.R; R('#05060f', x, y, w, h)
+    if kind == 0:                                                     # a cannon under rows of block creatures
+        for r in range(4):
+            for q in range(7):
+                col = (P['lime'], P['yellow'], P['pink'], P['blue'])[r]; X, Y = x + 5 + q * ((w - 10) // 7), y + 5 + r * 7
+                R(col, X, Y, 6, 4); R('#05060f', X + 1, Y + 1, 1, 1); R('#05060f', X + 4, Y + 1, 1, 1)
+        R(P['cream'], x + w // 2 - 1, y + h - 14, 2, 5); R(P['lime'], x + w // 2 - 4, y + h - 9, 9, 3); R(P['lime'], x + w // 2 - 2, y + h - 11, 5, 2)
+    elif kind == 1:                                                   # a road running to a horizon: dark sky, a horizon line, a two-edged road in perspective, a dashed centre line, two cars
+        hz = y + max(8, h * 2 // 5); cx = x + w // 2; rows = y + h - hz
+        for X in range(x + 3, x + w - 3, 9): R(P['cream'], X + (X // 9) % 3, y + 2 + (X // 9) % 3 * 2, 1, 1)          # a few stars
+        R(P['plum'], x, hz - 3, w, 2); R(P['pink'], x, hz - 1, w, 1)                                                    # the glow on the horizon
+        R(P['green'], x, hz, w, rows); R('#05060f', x, hz + 1, w, 1)                                                    # the verge, dark at the horizon
+        for Y in range(hz, y + h):
+            t = (Y - hz + 1) / rows; half = max(2, round(2 + t * (w // 2 - 4))); band = int(t * 7) % 2                  # the road widens to the foot of the glass
+            R(P['dg'] if band else '#3b3550', cx - half, Y, 2 * half, 1)
+            R(P['red'] if band else P['cream'], cx - half - 1, Y, 2, 1); R(P['red'] if band else P['cream'], cx + half - 1, Y, 2, 1)
+            if int(t * 9) % 2 == 0: R(P['yellow'], cx - (1 if t > .5 else 0), Y, 1 + (1 if t > .5 else 0), 1)           # dashes, longer near us
+        R(P['k'], cx - 2, hz + 5, 5, 1); R(P['blue'], cx - 2, hz + 3, 5, 2); R(P['cream'], cx - 1, hz + 2, 3, 1)       # a far car, going away
+        R(P['k'], cx - 6, y + h - 4, 12, 1); R(P['red'], cx - 6, y + h - 7, 12, 3); R(P['pink'], cx - 4, y + h - 9, 8, 2); R(P['k'], cx - 3, y + h - 8, 6, 1); R(P['yellow'], cx - 5, y + h - 6, 2, 1); R(P['yellow'], cx + 3, y + h - 6, 2, 1)   # our car from behind, its lights on
+    elif kind == 2:                                                   # two bats and a ball
+        for Y in range(y + 2, y + h - 2, 4): R(P['lg'], x + w // 2, Y, 1, 2)
+        R(P['blue'], x + 4, y + h // 3, 2, 10); R(P['pink'], x + w - 6, y + h // 2, 2, 10); R(P['cream'], x + w // 2 + 8, y + h // 2 - 3, 3, 3)
+        R(P['lg'], x + w // 2 - 14, y + 3, 4, 1); R(P['lg'], x + w // 2 + 10, y + 3, 4, 1)
+    elif kind == 3:                                                   # a stack of falling blocks
+        for i, (col, bx, by) in enumerate(((P['blue'], 2, 6), (P['blue'], 3, 6), (P['orange'], 0, 5), (P['orange'], 1, 5), (P['pink'], 0, 4), (P['lime'], 2, 4), (P['lime'], 3, 4), (P['yellow'], 1, 3), (P['yellow'], 2, 3), (P['red'], 0, 6), (P['red'], 1, 6))):
+            bw = (w - 8) // 5; R(P['k'], x + 4 + bx * bw, y + h - 4 - (by + 1) * 6, bw, 6); R(col, x + 5 + bx * bw, y + h - 3 - (by + 1) * 6, bw - 2, 4)
+        R(P['cream'], x + w - 12, y + 4, 8, 1); R(P['cream'], x + w - 12, y + 8, 6, 1)
+    else:                                                             # a snake of blocks round a maze
+        R(P['blue'], x + 3, y + 3, w - 6, 1); R(P['blue'], x + 3, y + h - 4, w - 6, 1); R(P['blue'], x + 3, y + 3, 1, h - 6); R(P['blue'], x + w - 4, y + 3, 1, h - 6)
+        for X in range(x + 8, x + w - 8, 5): R(P['cream'], X, y + h // 2, 1, 1)
+        for i in range(10): R(P['lime'], x + 8 + i * 2, y + 9 + i // 3, 2, 2)
+        R(P['red'], x + w - 14, y + h // 2 - 2, 4, 4)
+
+def lit_marquee(c, x, y, w, h, trim):
+    """the marquee strip, lit: the app writes the real words here, the picture only has a glow of dashes"""
+    c.R('#150f24', x, y, w, h)
+    for X in range(x + 4, x + w - 4, 4): c.R(trim, X, y + h // 2, 3, 1, .85)
+
+def welcome():
+    """the first-run hall (spec 102 T206): the night wall, the lattice floor, a back row of cabinets with their attract loops lit, two big ones at the
+    edges nearer to us, pools of light on the floor, the edges dimmed. The middle stays quiet: the first-run card stands there."""
+    W, H = WELCOME_W, WELCOME_H; c = C(W, H)
+    tile = floor(False)
+    for ty in range(0, H, 24):
+        for tx in range(0, W, 24): c.draw(tile, tx, ty)
+    wl = wall(False); c.im.alpha_composite(wl.im.crop(((WALL_W - W) // 2, 0, (WALL_W + W) // 2, wl.h)), (0, 0))
+    def stand(kind, variant, gw, gh, cx, base, art, mirror=False):
+        cab, g = cabinet(gw, gh, variant, kind); cell = C(cab.w, cab.h)
+        screen_art(cell, g['glass'][0], g['glass'][1], g['glass'][2], g['glass'][3], art); mq = g['marquee']; lit_marquee(cell, mq[0], mq[1], mq[2], mq[3], TRIM[variant % 4])
+        cell.draw(cab, 0, 0)
+        im = cell.im.transpose(Image.FLIP_LEFT_RIGHT) if mirror else cell.im
+        X, Y = cx - cab.w // 2, base - cab.h
+        pool = C(cab.w + 30, 14)                                           # the pool of the screen's light on the floor in front of it
+        for yy in range(14):
+            for xx in range(pool.w):
+                dx, dy = (xx + .5 - pool.w / 2) / (pool.w / 2), (yy + .5 - 7) / 7
+                if (dx * dx + dy * dy) ** .5 < 1 and (xx + yy) % 2 == 0: pool.R(TRIM[variant % 4], xx, yy, 1, 1, .22)
+        c.draw(pool, X - 15, base - 4); c.im.alpha_composite(im, (X, Y))
+    back = [(0, 3, 0), (1, 0, 1), (0, 1, 2), (2, 2, 3), (0, 0, 4), (3, 3, 0), (0, 2, 1), (1, 1, 2), (0, 3, 3)]       # (body, colour, loop) along the wall
+    for i, (kind, var, art) in enumerate(back):
+        cx = 26 + i * 53
+        if 150 < cx < 330 and kind == 0: continue                          # a gap behind the card, where the floor runs back to the wall
+        stand(kind, var, 44, 32, cx, 140 + (i % 2) * 2, art, mirror=cx > W // 2)
+    stand(0, 1, 75, 50, 30, 268, 1); stand(0, 3, 75, 50, W - 30, 268, 3, mirror=True)
+    stand(3, 0, 56, 32, 118, 286, 2); stand(2, 2, 56, 32, W - 118, 286, 0, mirror=True)
+    edge = Image.new('RGBA', (W, H), (0, 0, 0, 0)); px = edge.load()      # the dimmed edges: a dither, no gradient
+    for y in range(H):
+        for x in range(W):
+            d = min(x, W - 1 - x, (y + 20) // 2 if y < 100 else 999) / 70
+            if d < 1 and (x + y) % 2 == 0 and (x // 2 + y // 2) % 2 == 0 or d < .5 and (x + y) % 2 == 0: px[x, y] = (5, 6, 15, round(150 * (1 - d)))
+    c.im.alpha_composite(edge)
+    return c
+
 # ---------------------------------------------------------------------------------------------------------------- people
 def measure(im):
     """lowest/highest opaque row (share of height) and the centre of the planted feet (share of width)"""
@@ -528,9 +606,9 @@ def write_world(repo):
         strip, g = cab_strip(gw, gh); total += save(strip.im, f'{W}/{name}'); cw, chh = g['cell']
         mon[key] = dict(file=name, cells=16, bodies=4, cell=[cw, chh], screenRect=[round(v, 4) for v in (g['glass'][0] / cw, g['glass'][1] / chh, g['glass'][2] / cw, g['glass'][3] / chh)],
                         marqueeRect=[round(v, 4) for v in (g['marquee'][0] / cw, g['marquee'][1] / chh, g['marquee'][2] / cw, g['marquee'][3] / chh)], glass=g['glass'], marquee=g['marquee'])
-    total += save(glow().im, f'{W}/glow.webp'); total += save(console().im, f'{W}/desk.webp')
+    total += save(glow().im, f'{W}/glow.webp'); total += save(console().im, f'{W}/desk.webp'); total += save(welcome().im, f'{W}/welcome.webp')
     meta = dict(formatVersion=1, id='retro', name='Retro arcade', defaultSet='retro', pixelArt=True, arrangement='aisles', css='world.css', wall='wall.webp', floorTile=[24, 24],
-                night=dict(wall='wall-night.webp', floor='floor-night.webp'), monitor=mon, glow=dict(file='glow.webp', cells=STATES, cell=[56, 15]),
+                night=dict(wall='wall-night.webp', floor='floor-night.webp'), welcome='welcome.webp', monitor=mon, glow=dict(file='glow.webp', cells=STATES, cell=[56, 15]),
                 desk=[40, 22], fixtures=fx, fixtureTop=ftop, floorLine=FL, wallSize=[WALL_W, WALL_H + SHADOW], bandRows=WALL_H)
     with open(os.path.join(W, 'world.json'), 'w') as f: f.write(json.dumps(meta, indent=1, sort_keys=True) + '\n')
     return meta, total
@@ -639,6 +717,11 @@ def selftest():
         except SystemExit: pass
     w1, w2 = io.BytesIO(), io.BytesIO(); wall(False).im.save(w1, 'WEBP', lossless=True); wall(False).im.save(w2, 'WEBP', lossless=True)
     assert hashlib.sha256(w1.getvalue()).digest() == hashlib.sha256(w2.getvalue()).digest(), 'two runs differ'
+    # T206: the first-run picture is 16:10 inside the part's cap, a lossless drawing with no metadata, and two runs give the same bytes
+    wa, wb = io.BytesIO(), io.BytesIO(); welcome().im.save(wa, 'WEBP', lossless=True, quality=100, method=6, exact=True); welcome().im.save(wb, 'WEBP', lossless=True, quality=100, method=6, exact=True)
+    assert wa.getvalue() == wb.getvalue(), 'welcome: two runs differ'
+    assert wa.getvalue()[12:16] == b'VP8L' and len(wa.getvalue()) <= 150 * 1024 and welcome().im.size == (480, 300), 'welcome: not a lossless 480x300 picture within 150 KB'
+    assert len(set(welcome().im.convert('RGB').getdata())) > 40, 'welcome: nearly blank'
     c, g = cabinet(56, 32, 0); assert c.w == 73 and c.h == 73 and g['glass'] == [5, 18, 56, 32], g
     assert c.im.getpixel((10, 25))[3] == 0, 'the glass is a hole'
     keep_sit_selftest()
