@@ -27,6 +27,7 @@ import type { TeamMember } from '../shared/teamtemplate';
 import { validMode } from './agentops';
 import type { StoredTemplate } from './teamstore';
 import { isPlain, moreKeysThan, own } from './teamsipc';
+import { findAdded } from './addkey';
 
 /** how long a preview's token lives (the delta of 2026-11-14) */
 export const TOKEN_MS = 600_000;
@@ -44,7 +45,7 @@ export interface PreviewRow {
   model: { id: string; present: boolean; orgBlocked: boolean; words: string };
   effort: { asked?: string; used?: string; note: '' | 'falls to the default' | 'imported above the default' | 'picked' };
   cost: { tier: Tier; multiplier?: number; words: string };
-  limit: { unit: Unit; amount?: number; source: 'member' | 'default' | 'none'; words: string };
+  limit: { unit: Unit; amount?: number; source: 'member' | 'folder' | 'default' | 'none'; words: string };
   needsChoice: boolean;
   reasons: string[];
   perm: Perm;
@@ -61,7 +62,43 @@ export type PreviewOk = {
 export type RowOk = { ok: true; row: PreviewRow; summary: PreviewSummary; canCreate: boolean };
 
 export type Target = { room: string } | { pick: true };
-export type ResolvedTarget = { ok: true; key: string; existing: number } | { ok: false; cancelled?: boolean };
+/** `savedCap`: the limit (AI credits) the target folder already has saved, if any (the add path's `folderStore.get(key).maxAiCredits`) */
+export type ResolvedTarget = { ok: true; key: string; existing: number; savedCap?: number } | { ok: false; cancelled?: boolean };
+
+/** What main gives `resolveTargetFrom`: the open agents, the folder store's saved limit, the dialog (or `DURBAR_PICK`), and the add flows' own path resolution. */
+export interface TargetEnv<A> {
+  agents(): Iterable<A>;
+  /** main's `wsKey`: the workspace file, else the folder */
+  wsKey(a: A): string;
+  /** main's `resolveWorkspaceCwd` */
+  resolveCwd(p: string): { cwd: string; workspaceFile?: string };
+  savedCap(key: string): number | undefined;
+  /** the folder dialog: the chosen path, or null when cancelled */
+  pick(): Promise<string | null>;
+  /** tests inject these two (`addkey.ts`) */
+  platform?: string;
+  realpath?: (p: string) => string;
+}
+const cleanCap = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : undefined);
+
+/**
+ * The target of a preview, with the key the add flows use (spec 111, second read of T010): a room is its agent's `wsKey`; a picked folder is
+ * `resolveWorkspaceCwd` then `findAdded` over the open agents, so a symlink, a trailing slash or (Windows, macOS) another case is the SAME room;
+ * else the resolved path. `existing` is 0 until T011 writes the team record. The key never goes to the window.
+ */
+export async function resolveTargetFrom<A>(t: Target, env: TargetEnv<A>): Promise<ResolvedTarget> {
+  if ('room' in t) {
+    for (const a of env.agents()) if ((a as { id?: unknown }).id === t.room) { const key = env.wsKey(a); return { ok: true, key, existing: 0, savedCap: cleanCap(env.savedCap(key)) }; }
+    return { ok: false };
+  }
+  const p = await env.pick();
+  if (!p) return { ok: false, cancelled: true };
+  const ws = env.resolveCwd(p);
+  const want = ws.workspaceFile ?? ws.cwd;
+  const have = findAdded(want, env.agents(), env.wsKey, env.platform, env.realpath);
+  const key = have ? env.wsKey(have) : want;
+  return { ok: true, key, existing: 0, savedCap: cleanCap(env.savedCap(key)) };
+}
 
 export interface TeamOpsDeps {
   /** only `get` is used */
@@ -80,7 +117,7 @@ export interface TeamOpsDeps {
 /** what a row is now: the template's values, then the person's changes (`teams:previewRow`) */
 interface Choice { app: string; model: string | undefined; effort: string | undefined; picked: boolean; appChanged: boolean }
 export interface PreviewEntry {
-  token: string; expiresAt: number; key: string; existing: number;
+  token: string; expiresAt: number; key: string; existing: number; savedCap: number | undefined;
   /** the template as it was when the preview was built; T011 compares it with the store to see a change */
   template: StoredTemplate;
   choices: Map<string, Choice>;
@@ -161,7 +198,7 @@ export class TeamOps {
     const r = await this.deps.resolveTarget(target);
     if (!r.ok) return r.cancelled === true ? fail('cancelled', 'No folder was chosen.') : fail('invalid', 'The room could not be found.');
     const adapters = await this.deps.adapters();
-    const ctx = this.context(adapters);
+    const ctx = this.context(adapters, r.savedCap);
     const choices = new Map<string, Choice>();
     const rows = new Map<string, PreviewRow>();
     const imported = t.origin === 'imported';
@@ -173,7 +210,7 @@ export class TeamOps {
     }
     if (me !== this.gen) return fail('cancelled', 'This preview was replaced by a newer one.');
     const token = (this.deps.newToken ?? (() => randomBytes(16).toString('hex')))();
-    const entry: PreviewEntry = { token, expiresAt: this.now() + TOKEN_MS, key: r.key, existing: r.existing, template: t, choices, rows };
+    const entry: PreviewEntry = { token, expiresAt: this.now() + TOKEN_MS, key: r.key, existing: r.existing, savedCap: r.savedCap, template: t, choices, rows };
     this.live = entry;
     const list = [...rows.values()];
     const summary = summarize(list);
@@ -199,7 +236,7 @@ export class TeamOps {
     if (!e) return fail('notfound', 'Preview: expired or not found. Open it again.');
     const m = e.template.members.find((x) => x.memberId === rowId);
     if (!m || !e.choices.has(rowId)) return fail('notfound', 'Row: not found.');
-    const ctx = this.context(await this.deps.adapters());
+    const ctx = this.context(await this.deps.adapters(), e.savedCap);
     if (this.peek(token) !== e) return fail('notfound', 'Preview: expired or not found. Open it again.'); // replaced while it waited
     const ch = e.choices.get(rowId)!; // the CURRENT choices, read after the wait
     const next: Choice = { app: ch.app, model: ch.model, effort: ch.effort, picked: ch.picked, appChanged: ch.appChanged };
@@ -222,7 +259,7 @@ export class TeamOps {
     }
   }
 
-  private context(adapters: AdapterInfo[]): Ctx {
+  private context(adapters: AdapterInfo[], savedCap: number | undefined): Ctx {
     const apps = new Map<string, AdapterInfo>();
     for (const i of adapters) apps.set(i.id, i);
     const cache = new Map<string, Promise<ModelChoice[] | undefined>>();
@@ -234,6 +271,7 @@ export class TeamOps {
         return p;
       },
       defaultCap: this.deps.defaultCapAiu(),
+      savedCap,
     };
   }
 
@@ -293,11 +331,13 @@ export class TeamOps {
       if (!ch.appChanged && m.cap && m.cap.unit === unit) amount = parseCapIn(unit, m.cap.amount);
       if (amount !== undefined) { limit.amount = amount; limit.source = 'member'; }
       else {
-        const d = startCap(unit, undefined, undefined, ctx.defaultCap);
-        if (d !== undefined) { limit.amount = d; limit.source = 'default'; }
+        // the add path's order (spec 011): the folder's saved limit, then the settings default; a dollar limit only when chosen
+        const f = startCap(unit, undefined, ctx.savedCap, undefined);
+        const d = f ?? startCap(unit, undefined, undefined, ctx.defaultCap);
+        if (d !== undefined) { limit.amount = d; limit.source = f !== undefined ? 'folder' : 'default'; }
       }
       const dropped = ch.appChanged || (m.cap !== undefined && m.cap.unit !== unit && limit.source !== 'member');
-      limit.words = limit.amount === undefined ? 'No limit' : unit === 'usd' ? `Limit: ${limit.amount.toFixed(2)} USD (estimate)` : `Limit: ${num2(limit.amount)} AI credits${limit.source === 'default' ? ' (your default)' : ''}`;
+      limit.words = limit.amount === undefined ? 'No limit' : unit === 'usd' ? `Limit: ${limit.amount.toFixed(2)} USD (estimate)` : `Limit: ${num2(limit.amount)} AI credits${limit.source === 'default' ? ' (your default)' : limit.source === 'folder' ? ' (saved for this folder)' : ''}`;
       if (dropped && limit.source !== 'member') limit.words += '. The earlier limit was dropped: it is not converted between units.';
     }
     // permissions: what is stored, never raised; an imported Allow all shows as Ask (FR-096)
@@ -310,7 +350,7 @@ export class TeamOps {
   }
 }
 
-interface Ctx { apps: Map<string, AdapterInfo>; models(id: string): Promise<ModelChoice[] | undefined>; defaultCap: number | undefined }
+interface Ctx { apps: Map<string, AdapterInfo>; models(id: string): Promise<ModelChoice[] | undefined>; defaultCap: number | undefined; savedCap: number | undefined }
 
 function summarize(rows: PreviewRow[]): PreviewSummary {
   return {

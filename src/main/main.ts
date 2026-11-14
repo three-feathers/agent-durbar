@@ -41,7 +41,7 @@ import { nativeConfirm } from './nativeconfirm';
 import { register as registerNotesIpc } from './ipc/notes';
 import { register as registerTeamsIpc } from './ipc/teams';
 import { TeamsIpcOps } from './teamsipc';
-import { TeamOps } from './teamops';
+import { TeamOps, resolveTargetFrom } from './teamops';
 import { TeamTemplateStore } from './teamstore';
 import { NotesOps, notesConfirmText } from './notesops';
 import { NotesStore } from './notesstore';
@@ -920,11 +920,15 @@ registerTeamsIpc({
     adapters: () => adaptersList(false),
     models: (id) => modelIpc.modelsOf(id),
     defaultCapAiu: () => settingsStore?.defaultMaxAiCredits,
-    resolveTarget: async (t) => {
-      if ('room' in t) { const a = agents.get(t.room); return a ? { ok: true, key: wsKey(a), existing: 0 } : { ok: false }; }
-      const r = await dialog.showOpenDialog({ title: 'Choose the folder for the team', properties: ['openDirectory'] });
-      return r.canceled || r.filePaths.length !== 1 ? { ok: false, cancelled: true } : { ok: true, key: r.filePaths[0], existing: 0 };
-    },
+    // the key is the add flows' key (`resolveWorkspaceCwd`, `findAdded`); the saved limit is the folder store's, as the normal add path reads it
+    resolveTarget: (t) => resolveTargetFrom(t, {
+      agents: () => agents.values(), wsKey, resolveCwd: resolveWorkspaceCwd, savedCap: (key) => folderStore?.get(key)?.maxAiCredits,
+      pick: async () => {
+        if (dev.DURBAR_PICK) { const first = dev.DURBAR_PICK.split(path.delimiter)[0]; return first || null; } // the dev hook of ipc/themes.ts: path.delimiter keeps C:\ paths whole
+        const r = await dialog.showOpenDialog({ title: 'Choose the folder for the team', properties: ['openDirectory'] });
+        return r.canceled || r.filePaths.length !== 1 ? null : r.filePaths[0];
+      },
+    }),
   }))),
 });
 registerOrgPolicyIpc({ view: () => orgPolicies.view() });

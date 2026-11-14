@@ -28,8 +28,10 @@ import type { TeamMember } from '../src/shared/teamtemplate';
 
 const MODNAME = process.env.TEAMOPS_MODULE ?? 'teamops';
 const IS_COPY = process.env.TEAMOPS_MODULE !== undefined;
+/** a mutant of `src/main/ipc/teams.js` (the handlers) is loaded by the `handlers` section instead */
+const IPC_MODULE = process.env.TEAMS_IPC_MODULE;
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { TeamOps, TOKEN_MS } = require('../src/main/' + MODNAME) as typeof import('../src/main/teamops');
+const { TeamOps, TOKEN_MS, resolveTargetFrom } = require('../src/main/' + MODNAME) as typeof import('../src/main/teamops');
 
 let n = 0;
 const ok = (c: unknown, m: string): void => { n++; assert.ok(c, m); };
@@ -233,6 +235,54 @@ section('limits', async () => {
   const p3 = R(await r3.ops.createPreview(TGT, 'tmpl1'));
   const same = await r3.ops.previewRow(p3.token, hexId(1), { app: 'copilot' }) as RowOk;
   eq([same.row.model.id, same.row.effort.asked, same.row.limit.amount], ['beta-2', 'high', 40], 'the same app: nothing changes, the limit stays');
+});
+
+section('savedLimit', async () => {
+  // the folder's saved limit comes before the settings default (the add path's order); a room saved at 10 AIU with a default of 50 previews 10
+  const folder = (cap?: number): Partial<TeamOpsDeps> => ({ defaultCapAiu: () => 50, resolveTarget: async () => ({ ok: true as const, key: 'room-key-opaque', existing: 0, savedCap: cap }) });
+  const saved = await one(mem(1), {}, folder(10));
+  eq([saved.limit.amount, saved.limit.source, saved.limit.words], [10, 'folder', 'Limit: 10 AI credits (saved for this folder)'], 'a folder saved at 10 AIU: 10, not the default 50');
+  eq((await one(mem(1), {}, folder(undefined))).limit.amount, 50, 'no saved limit: the default');
+  eq((await one(mem(1, { cap: { unit: 'aiu', amount: 40 } }), {}, folder(10))).limit.source, 'member', 'the member\'s own limit still comes first');
+  eq([(await one(mem(1, { app: 'claude' }), {}, folder(10))).limit.amount, (await one(mem(1, { app: 'codex' }), {}, folder(10))).limit.amount], [undefined, undefined], 'a saved AI-credit limit is never a dollar limit, and Codex has none');
+  const r = rig([tpl([mem(1, { cap: { unit: 'aiu', amount: 40 } })])], folder(10));
+  const p = R(await r.ops.createPreview(TGT, 'tmpl1'));
+  const toTok = await r.ops.previewRow(p.token, hexId(1), { app: 'tokapp' }) as RowOk;
+  eq([toTok.row.limit.source, toTok.row.limit.amount], ['folder', 10], 'after another app (the member\'s limit dropped): the folder\'s saved limit applies (previewRow keeps it)');
+});
+
+// ---------------------------------------------------------------------------------------------------------------- 5b. the key of the target
+section('targetKey', async () => {
+  interface Ag { id: string; key: string }
+  const agents: Ag[] = [{ id: 'agent-1', key: '/w/proj' }, { id: 'agent-2', key: '/w/other.code-workspace' }];
+  const links: Record<string, string> = { '/w/link': '/w/proj' };
+  const caps: Record<string, number> = { '/w/proj': 10 };
+  const env = (picked: string | null, platform = 'linux', list: Ag[] = agents) => ({
+    agents: () => list, wsKey: (a: Ag) => a.key, resolveCwd: (p: string) => (p.endsWith('.code-workspace') ? { cwd: '/w', workspaceFile: p } : { cwd: p.replace(/\/+$/, '') }),
+    savedCap: (k: string) => caps[k], pick: async () => picked, platform, realpath: (p: string) => links[p] ?? p,
+  });
+  const T = (t: object, e: ReturnType<typeof env>) => resolveTargetFrom(t as never, e as never) as Promise<{ ok: boolean; key?: string; existing?: number; savedCap?: number; cancelled?: boolean }>;
+  eq(await T({ room: 'agent-1' }, env(null)), { ok: true, key: '/w/proj', existing: 0, savedCap: 10 }, 'a room: its wsKey and its saved limit');
+  eq(await T({ room: 'agent-9' }, env(null)), { ok: false }, 'a room that is not open');
+  eq(await T({ pick: true }, env(null)), { ok: false, cancelled: true }, 'a cancelled dialog');
+  eq(await T({ pick: true }, env('')), { ok: false, cancelled: true }, 'an empty answer is a cancel too');
+  // the same room, however it is picked: the key is the OPEN room's wsKey
+  eq((await T({ pick: true }, env('/w/proj'))).key, '/w/proj', 'the same path');
+  eq((await T({ pick: true }, env('/w/link'))).key, '/w/proj', 'a symbolic link to it');
+  eq((await T({ pick: true }, env('/w/proj/'))).key, '/w/proj', 'a trailing slash');
+  eq((await T({ pick: true }, env('/w/proj/../proj'))).key, '/w/proj', 'a dot-dot path');
+  eq((await T({ pick: true }, env('/W/PROJ', 'win32'))).key, '/w/proj', 'another case on Windows');
+  eq((await T({ pick: true }, env('/W/PROJ', 'darwin'))).key, '/w/proj', 'another case on macOS');
+  eq((await T({ pick: true }, env('/W/PROJ', 'linux'))).key, '/W/PROJ', 'another case on Linux is another folder');
+  eq((await T({ pick: true }, env('/w/other.code-workspace'))).key, '/w/other.code-workspace', 'a workspace file: its own key');
+  const fresh = await T({ pick: true }, env('/w/new'));
+  eq([fresh.key, fresh.existing, fresh.savedCap], ['/w/new', 0, undefined], 'a folder that is not open: the resolved path, no saved limit');
+  eq((await T({ pick: true }, env('/w/new/'))).key, '/w/new', 'a folder that is not open: the key is the RESOLVED path (the add flows\' resolveWorkspaceCwd), not the text the dialog gave');
+  eq((await T({ pick: true }, env('/w/proj'))).savedCap, 10, 'a picked open room carries its saved limit');
+  eq((await T({ pick: true }, env('/w/proj', 'linux', []))).key, '/w/proj', 'no agents: the resolved path');
+  // a saved limit that is not a usable number is dropped
+  const bad = (v: unknown) => T({ room: 'agent-1' }, { ...env(null), savedCap: () => v as number });
+  for (const v of [NaN, Infinity, -5, 0, '10', null, undefined]) eq((await bad(v)).savedCap, undefined, 'an unusable saved limit is dropped');
 });
 
 // ---------------------------------------------------------------------------------------------------------------- 6. modes
@@ -461,7 +511,9 @@ section('arguments', async () => {
   let ran = false;
   await bad(Object.defineProperty({}, 'room', { enumerable: true, get() { ran = true; return 'a'; } }), 'tmpl1', 'a getter');
   ok(!ran, 'the getter never ran');
-  await bad(new Proxy({}, { ownKeys() { throw new Error('trap'); } }), 'tmpl1', 'a hostile proxy (a throw is not let out)').catch(() => undefined);
+  // a hostile proxy whose trap throws: the ops let the rejection out (the handler answers `failed`, see `handlers`); it is asserted here, never swallowed
+  await assert.rejects(r.ops.createPreview(new Proxy({}, { ownKeys() { throw new Error('trap'); } }), 'tmpl1'), /trap/, 'a hostile proxy makes createPreview reject');
+  n++;
   // size: a huge object is judged by its key count, quickly
   const huge: Record<string, number> = {};
   for (let i = 0; i < 200_000; i++) huge['k' + i] = i;
@@ -578,7 +630,7 @@ section('handlers', async () => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const g = require('../src/main/ipcguard') as typeof import('../src/main/ipcguard');
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const t = require('../src/main/ipc/teams') as typeof import('../src/main/ipc/teams');
+    const t = require('../src/main/ipc/' + (IPC_MODULE ?? 'teams')) as typeof import('../src/main/ipc/teams');
     g.initSimGuard(false);
     const frame = { url: pathToFileURL(path.join(__dirname, '..', 'src', 'renderer', 'index.html')).href };
     const win = { senderFrame: frame, sender: { mainFrame: frame } };
@@ -596,6 +648,16 @@ section('handlers', async () => {
       try { const x = await call(c, { senderFrame: other, sender: { mainFrame: other } }, ...args); refused = x.ok === false; } catch { refused = true; }
       ok(refused, c + ': another page is refused');
     }
+    // the real TeamOps and a hostile argument whose trap throws: the handler answers the fixed `failed`, with no word of the trap
+    handlers.clear();
+    const realOps = rig([tpl([mem(1)])]).ops;
+    t.register({ getOps: () => undefined, getTeamOps: () => realOps });
+    const hostile = new Proxy({}, { ownKeys() { throw new Error('trap ' + secret); } });
+    for (const [c, args] of [['teams:createPreview', [hostile, 'tmpl1']], ['teams:previewRow', [TOKENS[0], hexId(1), hostile]]] as const) {
+      const bad = await call(c, win, ...args);
+      eq([bad.ok, bad.code, bad.errors], [false, 'failed', ['The team templates could not be used.']], c + ': a hostile argument is refused with fixed words');
+      ok(!JSON.stringify(bad).includes('trap') && !JSON.stringify(bad).includes(secret), c + ': the trap\'s text is never in the answer');
+    }
     handlers.clear();
     t.register({ getOps: () => undefined, getTeamOps: () => undefined });
     const none = await call('teams:createPreview', win, TGT, 'tmpl1');
@@ -610,7 +672,7 @@ section('handlers', async () => {
 
 // ---------------------------------------------------------------------------------------------------------------- 13. modelsOf is models:list unchanged
 section('modelsOf', async () => {
-  if (IS_COPY) return;
+  if (IS_COPY || IPC_MODULE) return;
   // models:list on a stand-in Electron with fake adapters: its answers are what they were, and `modelsOf` returns the same list
   hookElectron();
   try {
@@ -650,16 +712,17 @@ section('modelsOf', async () => {
     try { await fn(); } catch (e) { failed++; console.error(`SECTION ${name} FAILED`); console.error(e instanceof Error ? e.message.slice(0, 240) : 'failed'); }
   }
   if (failed > 0) { console.error(`teamops: ${failed} section(s) failed`); process.exit(1); }
-  if (IS_COPY) { console.log(`teamops (copy): ${n} checks passed`); return; }
+  if (IS_COPY || IPC_MODULE) { console.log(`teamops (copy): ${n} checks passed`); return; }
   // ------------------------------------------------------------------------------------------------------------ mutants, on copies
   const dir = path.join(__dirname, '..', 'src', 'main');
   const orig = fs.readFileSync(path.join(dir, 'teamops.js'), 'utf8');
+  const ipcOrig = fs.readFileSync(path.join(dir, 'ipc', 'teams.js'), 'utf8');
   const mutate = (text: string, m: { name: string; from: string; to: string }): string => {
     const lf = text.replace(/\r\n/g, '\n');
     assert.ok(lf.includes(m.from), 'mutant anchor not found: ' + m.name);
     return lf.split(m.from).join(m.to);
   };
-  const mutants: { name: string; from: string; to: string; section: string }[] = [
+  const mutants: { name: string; from: string; to: string; section: string; ipc?: boolean }[] = [
     { name: 'the first model is preselected when it is missing', from: "model = { id: ch.model, present: false, orgBlocked: false, words: 'Not offered here' };", to: "model = { id: list[0].id, present: true, orgBlocked: false, words: 'Offered' }; found = list[0];", section: 'models' },
     { name: 'a missing model needs no choice', from: "reasons.push('This model is not offered here.');", to: '', section: 'models' },
     { name: 'an org-blocked model needs no choice', from: "reasons.push('This model is blocked by your organization.');", to: '', section: 'models' },
@@ -679,7 +742,7 @@ section('modelsOf', async () => {
     { name: 'an imported effort on the app default model is taken', from: 'if (ch.picked || !imported) {', to: 'if (true) {', section: 'effort' },
     { name: 'the limit amount is kept when the app changes', from: 'if (!ch.appChanged && m.cap && m.cap.unit === unit)', to: 'if (m.cap)', section: 'limits' },
     { name: 'the limit is kept in another unit (not converted, just kept)', from: 'if (!ch.appChanged && m.cap && m.cap.unit === unit)', to: 'if (!ch.appChanged && m.cap)', section: 'limits' },
-    { name: 'a USD app takes the AIU default', from: "const d = (0, credits_1.startCap)(unit, undefined, undefined, ctx.defaultCap);", to: "const d = (0, credits_1.startCap)('aiu', undefined, undefined, ctx.defaultCap);", section: 'limits' },
+    { name: 'a USD app takes the AIU default', from: "const d = f ?? (0, credits_1.startCap)(unit, undefined, undefined, ctx.defaultCap);", to: "const d = f ?? (0, credits_1.startCap)('aiu', undefined, undefined, ctx.defaultCap);", section: 'limits' },
     { name: 'an out-of-range amount is used as it is', from: 'amount = (0, credits_1.parseCapIn)(unit, m.cap.amount);', to: 'amount = m.cap.amount;', section: 'limits' },
     { name: 'model and effort follow an app change', from: 'next.model = undefined;', to: '', section: 'limits' },
     { name: 'a USD limit shown as credits', from: "unit === 'usd' ? `Limit: ${limit.amount.toFixed(2)} USD (estimate)`", to: "false ? ''", section: 'limits' },
@@ -700,11 +763,19 @@ section('modelsOf', async () => {
     { name: 'the preview lists profiles', from: 'const adapters = await this.deps.adapters();', to: 'const adapters = await this.deps.adapters(); await this.deps.listProfiles?.();', section: 'nothingElse' },
     { name: 'invalid arguments leave the old preview alive (drop after validating)', from: '        this.live = undefined;\n        const target = readTarget(targetIn);\n        if (typeof target === \'string\')\n            return fail(\'invalid\', target);', to: '        const target = readTarget(targetIn);\n        if (typeof target === \'string\')\n            return fail(\'invalid\', target);\n        this.live = undefined;', section: 'token' },
     { name: 'previewRow asks the adapters before it checks the token', from: '        const e = this.peek(token);\n        if (!e)\n            return fail(\'notfound\', \'Preview: expired or not found. Open it again.\');\n        const m =', to: '        await this.deps.adapters();\n        const e = this.peek(token);\n        if (!e)\n            return fail(\'notfound\', \'Preview: expired or not found. Open it again.\');\n        const m =', section: 'tokenFirst' },
-    { name: 'previewRow merges into the choices read before the wait', from: '        const ctx = this.context(await this.deps.adapters());\n        if (this.peek(token) !== e)\n            return fail(\'notfound\', \'Preview: expired or not found. Open it again.\'); // replaced while it waited\n        const ch = e.choices.get(rowId); // the CURRENT choices, read after the wait', to: '        const ch0 = e.choices.get(rowId);\n        const ctx = this.context(await this.deps.adapters());\n        if (this.peek(token) !== e)\n            return fail(\'notfound\', \'Preview: expired or not found. Open it again.\'); // replaced while it waited\n        const ch = ch0;', section: 'overlap' },
+    { name: 'previewRow merges into the choices read before the wait', from: '        const ctx = this.context(await this.deps.adapters(), e.savedCap);\n        if (this.peek(token) !== e)\n            return fail(\'notfound\', \'Preview: expired or not found. Open it again.\'); // replaced while it waited\n        const ch = e.choices.get(rowId); // the CURRENT choices, read after the wait', to: '        const ch0 = e.choices.get(rowId);\n        const ctx = this.context(await this.deps.adapters(), e.savedCap);\n        if (this.peek(token) !== e)\n            return fail(\'notfound\', \'Preview: expired or not found. Open it again.\'); // replaced while it waited\n        const ch = ch0;', section: 'overlap' },
     { name: 'a call that was overtaken keeps its row (no work out again)', from: 'if (e.choices.get(rowId) !== cur)\n                continue;', to: '', section: 'overlap' },
     { name: 'the preview is not checked again after the row is worked out', from: "            const row = await this.row(m, imported, cur, ctx);\n            if (this.peek(token) !== e)\n                return fail('notfound', 'Preview: expired or not found. Open it again.');\n", to: "            const row = await this.row(m, imported, cur, ctx);\n", section: 'overlap' },
     { name: 'a second change forgets that the app was changed', from: 'appChanged: ch.appChanged };', to: 'appChanged: false };', section: 'overlap' },
     { name: 'the choices are not stored before the row is worked out', from: 'e.choices.set(rowId, next);', to: '', section: 'overlap' },
+    { name: 'the saved limit of the folder is ignored', from: 'const f = (0, credits_1.startCap)(unit, undefined, ctx.savedCap, undefined);', to: 'const f = undefined;', section: 'savedLimit' },
+    { name: 'previewRow forgets the folder\'s saved limit', from: 'const ctx = this.context(await this.deps.adapters(), e.savedCap);', to: 'const ctx = this.context(await this.deps.adapters(), undefined);', section: 'savedLimit' },
+    { name: 'the saved limit of a dollar app is used as dollars', from: 'const f = (0, credits_1.startCap)(unit, undefined, ctx.savedCap, undefined);', to: 'const f = ctx.savedCap;', section: 'savedLimit' },
+    { name: 'a picked folder is keyed by its raw path (no findAdded)', from: 'const have = (0, addkey_1.findAdded)(want, env.agents(), env.wsKey, env.platform, env.realpath);', to: 'const have = undefined;', section: 'targetKey' },
+    { name: 'a picked folder is keyed by the path as picked (no resolveCwd)', from: 'const want = ws.workspaceFile ?? ws.cwd;', to: 'const want = p;', section: 'targetKey' },
+    { name: 'the saved limit is not returned for a room', from: 'return { ok: true, key, existing: 0, savedCap: cleanCap(env.savedCap(key)) };\n            }', to: 'return { ok: true, key, existing: 0 };\n            }', section: 'targetKey' },
+    { name: 'a cancelled pick is a room that is not there', from: 'return { ok: false, cancelled: true };', to: 'return { ok: false };', section: 'targetKey' },
+    { name: 'the handler lets a throw out (guardAsync)', from: 'try {\n        return await fn();\n    }\n    catch {\n        return FAILED;\n    }', to: 'return await fn();', section: 'handlers', ipc: true },
     { name: 'the target is not checked', from: "if (typeof target === 'string')\n            return fail('invalid', target);", to: '', section: 'arguments' },
     { name: 'a room of any length', from: 'room.length <= ROOM_MAX', to: 'true', section: 'arguments' },
     { name: 'a target with extra keys', from: "if (keys.length !== 1)\n        return 'Target: not valid.';", to: '', section: 'arguments' },
@@ -718,10 +789,11 @@ section('modelsOf', async () => {
     { name: 'canCreate ignores the rows', from: 'canCreate: summary.needsChoice === 0,', to: 'canCreate: true,', section: 'apps' },
   ];
   // every anchor is found in the CRLF form of the file too, as a Windows checkout has it, and a missing one says so
-  const lost = mutants.filter((m) => !orig.replace(/\r\n/g, '\n').includes(m.from)).map((m) => m.name);
+  const baseOf = (m: { ipc?: boolean }): string => (m.ipc ? ipcOrig : orig);
+  const lost = mutants.filter((m) => !baseOf(m).replace(/\r\n/g, '\n').includes(m.from)).map((m) => m.name);
   assert.deepStrictEqual(lost, [], 'mutant anchors not found');
   for (const m of mutants) {
-    const crlf = orig.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n');
+    const crlf = baseOf(m).replace(/\r\n/g, '\n').replace(/\n/g, '\r\n');
     ok(mutate(crlf, m).length > 0, 'the anchor of "' + m.name + '" is found in a CRLF source');
   }
   assert.throws(() => mutate('no such text', mutants[0]), /mutant anchor not found: /, 'a missing anchor says so');
@@ -729,13 +801,13 @@ section('modelsOf', async () => {
   let k = 0;
   for (const m of mutants) {
     k++;
-    const uniq = `teamops.mutant-${process.pid}-${k}`;
-    const file = path.join(dir, uniq + '.js');
+    const uniq = m.ipc ? `teams.mutant-${process.pid}-${k}` : `teamops.mutant-${process.pid}-${k}`;
+    const file = path.join(m.ipc ? path.join(dir, 'ipc') : dir, uniq + '.js');
     try {
-      const mutated = mutate(orig, m);
+      const mutated = mutate(baseOf(m), m);
       try { new vm.Script(mutated, { filename: uniq }); } catch (e) { assert.fail('mutant is not valid JavaScript (' + m.name + '): ' + (e as Error).message); }
       fs.writeFileSync(file, mutated);
-      const r = spawnSync(process.execPath, [__filename], { env: Object.assign({}, process.env, { TEAMOPS_MODULE: uniq }), encoding: 'utf8', timeout: 120000 });
+      const r = spawnSync(process.execPath, [__filename], { env: Object.assign({}, process.env, m.ipc ? { TEAMS_IPC_MODULE: uniq } : { TEAMOPS_MODULE: uniq }), encoding: 'utf8', timeout: 120000 });
       assert.notStrictEqual(r.status, 0, 'mutant NOT killed: ' + m.name);
       const died = [...r.stderr.matchAll(/SECTION (\w+) FAILED/g)].map((x) => x[1]);
       if (process.env.TEAMOPS_LABELS) console.log(m.name + ' => ' + (died.join(',') || '(no section: ' + (r.stderr.split('\n').find((l) => /Error/.test(l)) ?? 'silent exit') + ')'));
