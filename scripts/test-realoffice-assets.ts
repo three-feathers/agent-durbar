@@ -15,13 +15,13 @@ const ROOT = (() => { let d = __dirname; while (!fs.existsSync(path.join(d, 'pac
 const RO = path.join(ROOT, 'src', 'renderer', 'realoffice');
 
 /** FR-062 caps, in bytes, by kind of picture */
-export const CAPS = { person: 80 * 1024, fixture: 120 * 1024, desk: 60 * 1024, floor: 40 * 1024, wall: 120 * 1024, monitor: 30 * 1024, glow: 20 * 1024, total: 10 * 1024 * 1024 };
+export const CAPS = { person: 80 * 1024, fixture: 120 * 1024, desk: 60 * 1024, floor: 40 * 1024, wall: 120 * 1024, monitor: 30 * 1024, glow: 20 * 1024, welcome: 150 * 1024, total: 10 * 1024 * 1024 };
 /** spec 102 FR-213: all shipped art (every world and every set) at most this many bytes */
 export const SHIPPED_MAX = 30 * 1024 * 1024;
 export const PERSON_MAX_H = 640;
 const KEYS = ['files', 'source', 'tool', 'date', 'made by', 'approved by', 'reference', 'prompt', 'cut', 'licence'];
 const CLAUSE = /fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named/;
-const kindOf = (f: string): keyof typeof CAPS | null => /^fx-[a-z]+\.webp$/.test(f) ? 'fixture' : /^p\d\d-[\w-]+(\.h)?\.webp$/.test(f) || /^[a-z][a-z0-9-]*-\w+\.webp$/.test(f) ? 'person' : f === 'desk.webp' || f === 'desk.h.webp' ? 'desk' : /^floor(-night)?\.webp$/.test(f) ? 'floor' : /^wall(-night)?\.webp$/.test(f) ? 'wall' : /^monitor(-[a-z]+)?\.webp$/.test(f) ? 'monitor' : f === 'glow.webp' ? 'glow' : null;
+const kindOf = (f: string): keyof typeof CAPS | null => /^fx-[a-z]+\.webp$/.test(f) ? 'fixture' : /^p\d\d-[\w-]+(\.h)?\.webp$/.test(f) || /^[a-z][a-z0-9-]*-\w+\.webp$/.test(f) ? 'person' : f === 'desk.webp' || f === 'desk.h.webp' ? 'desk' : /^floor(-night)?\.webp$/.test(f) ? 'floor' : /^wall(-night)?\.webp$/.test(f) ? 'wall' : /^monitor(-[a-z]+)?\.webp$/.test(f) ? 'monitor' : f === 'glow.webp' ? 'glow' : f === 'welcome.webp' ? 'welcome' : null;
 
 /** Spec 102 FR-302 (T265a): the world previews in `realoffice/previews/`: one WebP per built-in world and Plain, 640 px wide, each at most 48 KB with no metadata chunk,
  *  and `previews.json` naming exactly those, each with its own size and a zoom origin of 0..100 percent (FR-301). Sentences, empty = fine. */
@@ -112,6 +112,7 @@ export function problems(files: Map<string, Buffer>, peopleJson: string, md: str
     /* spec 102 FR-254, SC-025: a pixel-art picture is lossless (VP8L), one file pixel per grid pixel, and never animated */
     if (pixelArt && !(info.chunks.includes('VP8L') && !info.chunks.includes('VP8 ') && !info.chunks.includes('ALPH'))) out.push(`${name}: a pixel-art picture must be lossless (VP8L only)`);
     if (kind !== 'floor' && kind !== 'wall' && !info.chunks.includes('ALPH') && !info.chunks.includes('VP8L')) out.push(`${name}: no alpha channel`);
+    if (kind === 'welcome' && (info.width > 1920 || info.height > 1200)) out.push(`${name}: ${info.width}x${info.height}, over 1920x1200 (spec 102 FR-042)`);
     if (kind === 'monitor' && info.height > 300) out.push(`${name}: ${info.height} px tall, over 300 (spec 102 FR-220)`);
     if (kind === 'person' && info.height > PERSON_MAX_H) out.push(`${name}: ${info.height} px tall, over ${PERSON_MAX_H}`);
   }
@@ -165,7 +166,7 @@ export function problems(files: Map<string, Buffer>, peopleJson: string, md: str
     if (!km.poses || !km.poses[km.widest] || km.poses[km.widest][0] !== wid) out.push(`world.json kids ${kid}: widest is not the widest pose (FR-369's place)`);
   }
   for (const [pid, parts] of Object.entries((meta as { rig?: Record<string, Record<string, unknown>> }).rig || {})) for (const key of Object.keys(parts)) want.add(`${pid}-rig${key}.webp`); /* spec Changes 2026-11-01 */
-  for (const k of ['wall', 'monitor'] as const) { const v = (meta as Record<string, unknown>)[k]; if (typeof v === 'string') want.add(v); } // optional parts a world names (spec 102 FR-220)
+  for (const k of ['wall', 'monitor', 'welcome'] as const) { const v = (meta as Record<string, unknown>)[k]; if (typeof v === 'string') want.add(v); } // optional parts a world names (spec 102 FR-220)
   /* the arcade names its parts in objects (spec 102 FR-252, FR-257, FR-260): three cabinets, the night room, the glow strip */
   const objs = meta as unknown as { monitor?: Record<string, { file: string; cells: number; bodies?: number; screenRect: number[]; marqueeRect: number[] }>; night?: { wall: string; floor: string }; glow?: { file: string; cells: string[] } };
   if (objs.monitor && typeof objs.monitor === 'object') for (const [k, mv] of Object.entries(objs.monitor)) {
@@ -388,13 +389,18 @@ if (worldIds.includes('retro')) {
   }
   // the set: 15 people x 18 frames (17 and the seated `sit` of 2026-11-03), no more, no fewer; a person missing a required frame fails (T207)
   const SEATED = ['typeA', 'typeB', 'waveA', 'waveB', 'think', 'rest'], VIEWA = ['type', 'book', 'knock', 'letter', 'counter'], FACE = ['face-book', 'face-coffee', 'face-knock', 'face-letter', 'face-runA', 'face-runB', 'sit'];
-  assert.strictEqual(st.files.size, 15 * 18, '270 frames');
+  assert.strictEqual(st.files.size, 15 * 20, '300 frames (18, plus runA and runB, T296)');
   for (const pid of Object.keys(sj.seat)) for (const p of [...SEATED, ...VIEWA, ...FACE]) assert.ok(st.files.has(`${pid}-${p}.webp`), `${pid} has ${p}`);
   assert.strictEqual(Object.keys(sj.seat).length, 15);
   const heights = Object.entries(sj.faceBox).map(([pid, f]) => { assert.strictEqual(f.pose, 'face-book'); const [x, y, fw, fh] = f.box, [pw, ph] = sj.stand[pid].poses['face-book']; assert.ok(x >= 0 && y >= 0 && x + fw <= pw && y + fh <= ph && fw > 8 && fh > 8, `${pid}: faceBox inside its frame`); return fh; });
   assert.strictEqual(heights.length, 15, 'a faceBox per person (T201)');
   assert.ok(Math.min(...heights) >= FACE_GRID, `the smallest measured face (${Math.min(...heights)} grid px) is at least the layout's FACE_GRID (${FACE_GRID}): the layout never promises more than the art has`);
   assert.ok(Math.min(...heights) * 2 >= FACE_FLOOR, 'at g = 2 the smallest face is at least the 24 px floor (FR-229)');
+  /* spec 102 FR-352 (T206): the first-run picture is in the pack, named by world.json, lossless, in the part's size and cap, and is the hall (not a blank) */
+  const wel = w.files.get('welcome.webp') as Buffer, welInfo = webpInfo(wel);
+  assert.strictEqual((w.json as { welcome?: string }).welcome, 'welcome.webp', 'world.json names welcome.webp (FR-352)');
+  assert.ok(wel.length <= CAPS.welcome && welInfo.width <= 1920 && welInfo.height <= 1200 && welInfo.width * 10 === welInfo.height * 16, `welcome.webp is 16:10, at most 1920x1200 and ${CAPS.welcome} bytes: ${welInfo.width}x${welInfo.height}, ${wel.length}`);
+  assert.ok(wel.length > 8 * 1024, 'welcome.webp is a drawn hall, not a flat fill (over 8 KB lossless)');
   // T208: the sizes of the committed files, against the caps
   const wBytes = [...w.files.values()].reduce((n, b) => n + b.length, 0), sBytes = [...st.files.values()].reduce((n, b) => n + b.length, 0);
   console.log(`retro arcade: world ${(wBytes / 1024).toFixed(1)} KB (${w.files.size} files), people ${(sBytes / 1024).toFixed(1)} KB (${st.files.size} files), together ${((wBytes + sBytes) / 1024).toFixed(1)} KB`);
@@ -407,7 +413,7 @@ if (worldIds.includes('retro')) {
   assert.deepStrictEqual(rel(problems(new Map([['p01-book.webp', lossless]]), mini, sec)), [], 'a lossless pixel picture passes');
   assert.ok(rel(problems(new Map([['p01-book.webp', lossy]]), mini, sec)).some((x) => /must be lossless/.test(x)), 'red: a lossy picture in a pixel-art pack');
   assert.ok(rel(problems(new Map([['p01-book.webp', lossless]]), mini.replace('"p01":', '"p01":{"figH":72,"poses":{"book":[32,71],"coffee":[30,71]},"feet":{"book":1,"coffee":1},"top":{"book":0,"coffee":0}},"p02":'), sec)).some((x) => /not in the folder/.test(x)), 'red: a person missing a frame it names');
-  for (const [name, kind] of [['fx-bank.webp', 'fixture'], ['desk.webp', 'desk'], ['floor.webp', 'floor'], ['wall.webp', 'wall'], ['monitor.webp', 'monitor'], ['glow.webp', 'glow'], ['p01-book.webp', 'person']] as const) {
+  for (const [name, kind] of [['fx-bank.webp', 'fixture'], ['desk.webp', 'desk'], ['floor.webp', 'floor'], ['wall.webp', 'wall'], ['monitor.webp', 'monitor'], ['glow.webp', 'glow'], ['welcome.webp', 'welcome'], ['p01-book.webp', 'person']] as const) {
     const over = Buffer.concat([lossless, Buffer.alloc(CAPS[kind])]);
     assert.ok(problems(new Map([[name, over]]), mini, sec).some((x) => new RegExp(`${name.replace('.', '\\.')}: \\d+ bytes, over the ${kind} cap`).test(x)), `red: a planted ${kind} over its cap`);
   }
@@ -424,6 +430,50 @@ if (worldIds.includes('retro')) {
   const have = spawnSync('python3', ['-I', '-c', 'import PIL'], { encoding: 'utf8' });
   if (have.error || have.status !== 0) console.log('build-arcade-pack selftest skipped: needs python3 with Pillow (not on this machine; the committed pictures are still checked above)');
   else { const r = spawnSync('python3', ['-I', script, '--selftest'], { encoding: 'utf8' }); assert.strictEqual(r.status, 0, 'build-arcade-pack.py --selftest: ' + r.stdout + r.stderr); }
+}
+
+{
+  /* spec 102 FR-326 (review of #1677): no frame of a people set is faked by reusing or mirroring another. Pixel hashes of the decoded frames (alpha included,
+   * scripts/frame-hashes.py; plain Node cannot decode WebP): no two frames of one person or of the set share a hash, and no run frame is the horizontal mirror of
+   * another frame of the same person. Needs python3 with Pillow: skipped with a plain message on a machine without it, a failure where DURBAR_REQUIRE_PILLOW is set. */
+  const have = spawnSync('python3', ['-I', '-c', 'import PIL'], { encoding: 'utf8' });
+  if (have.error || have.status !== 0) {
+    if (process.env.DURBAR_REQUIRE_PILLOW) assert.fail('python3 with Pillow is required here (DURBAR_REQUIRE_PILLOW) and is missing: the frame hash check (FR-326) cannot run');
+    console.log('frame hash check skipped: needs python3 with Pillow (not on this machine)');
+  } else {
+    const tool = path.join(ROOT, 'scripts', 'frame-hashes.py');
+    const hashOf = (dir: string): Map<string, [string, string]> => {
+      const names = fs.readdirSync(dir).filter((f) => /^p\d\d-[A-Za-z-]+\.webp$/.test(f)).sort(), rows = new Map<string, [string, string]>();
+      const r = spawnSync('python3', ['-I', tool, ...names.map((n) => path.join(dir, n))], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
+      assert.strictEqual(r.status, 0, 'frame-hashes.py: ' + r.stderr);
+      for (const l of r.stdout.trim().split('\n')) { const [n, h, m] = l.split(' '); rows.set(n, [h, m]); }
+      assert.strictEqual(rows.size, names.length, 'a hash for every frame');
+      return rows;
+    };
+    const frameProblems = (rows: Map<string, [string, string]>): string[] => {
+      const out: string[] = [], seen = new Map<string, string>();
+      for (const [n, [h]] of rows) { const first = seen.get(h); if (first) out.push(`${first} and ${n} share a pixel hash (a frame reused)`); else seen.set(h, n); }
+      for (const [n, [h]] of rows) if (/^p\d\d-run[AB]\.webp$/.test(n)) for (const [o, [, m]] of rows) if (o !== n && o.slice(0, 3) === n.slice(0, 3) && m === h) out.push(`${n} is the horizontal mirror of ${o} (a frame mirrored)`);
+      return out;
+    };
+    const sets = fs.readdirSync(path.join(RO, 'sets')).filter((s) => fs.readdirSync(path.join(RO, 'sets', s)).some((f) => /^p\d\d-[A-Za-z-]+\.webp$/.test(f)));
+    assert.ok(sets.includes('retro') && sets.includes('office'), 'the frame check covers the Retro pixel and the Office people sets: ' + sets.join());
+    for (const s of sets) assert.deepStrictEqual(frameProblems(hashOf(path.join(RO, 'sets', s))), [], `${s}: no frame is a reused or mirrored copy of another (FR-326)`);
+    const retro = path.join(RO, 'sets', 'retro'), tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'durbar-frames-'));
+    try {
+      const plant = (label: string, edit: (dir: string) => void, expect: RegExp): void => {
+        const dir = path.join(tmp, label); fs.mkdirSync(dir);
+        for (const f of fs.readdirSync(retro)) if (/^p\d\d-[A-Za-z-]+\.webp$/.test(f)) fs.copyFileSync(path.join(retro, f), path.join(dir, f));
+        edit(dir);
+        const found = frameProblems(hashOf(dir));
+        assert.ok(found.some((p) => expect.test(p)), `FR-326 mutant "${label}" is caught by the frame check (${JSON.stringify(found)})`);
+      };
+      plant('runB is a copy of runA', (d) => fs.copyFileSync(path.join(d, 'p01-runA.webp'), path.join(d, 'p01-runB.webp')), /p01-runA\.webp and p01-runB\.webp share a pixel hash|p01-runB\.webp is the horizontal mirror/);
+      plant('runB is a copy of another person\'s frame', (d) => fs.copyFileSync(path.join(d, 'p03-type.webp'), path.join(d, 'p04-runB.webp')), /share a pixel hash/);
+      plant('runB is the mirror of runA', (d) => { const r = spawnSync('python3', ['-I', tool, '--mirror', path.join(d, 'p02-runA.webp'), path.join(d, 'p02-runB.webp')], { encoding: 'utf8' }); assert.strictEqual(r.status, 0, 'frame-hashes.py --mirror: ' + r.stderr); }, /p02-runB\.webp is the horizontal mirror of p02-runA\.webp/);
+      plant('runA is the mirror of a standing frame', (d) => { const r = spawnSync('python3', ['-I', tool, '--mirror', path.join(d, 'p05-type.webp'), path.join(d, 'p05-runA.webp')], { encoding: 'utf8' }); assert.strictEqual(r.status, 0, 'frame-hashes.py --mirror: ' + r.stderr); }, /p05-runA\.webp is the horizontal mirror of p05-type\.webp/);
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+  }
 }
 
 {
