@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Worker } from 'worker_threads';
-import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, maskNoteText, maskOutgoing, redact, shQuote, splitCommand } from '../src/shared/redact';
+import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, maskNoteText, maskOutgoing, maskSplitTokens, _breakCallsForTest, keepShownBy, _unionMasksForTest, withoutSplit, _splitWorkForTest, redact, shQuote, splitCommand } from '../src/shared/redact';
 
 import { assertLinearShape, cpuMs } from './redact-growth-lib';
 import './safetext-shared'; // the desk's maskRaw (src/renderer/safetext.js) reads the compiled redact.ts, for the FR-181 differential below
@@ -275,9 +275,11 @@ const env = {
       const SPLIT5 = /[*`~[\]]/;
       const RUN5 = /[A-Za-z0-9_\-.+/=:@%]{12,}/g;
       const reEsc5 = (t: string): string => t.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
-      const round5 = (u: string, red: (t: string) => string): string => {
+      // `plainFrom` (spec 012 FR-182, review of PR 1721): the text the plain pass reads; round 5 read `u` itself
+      const round5 = (u: string, red: (t: string) => string, plainFrom = u): string => {
         const m1 = red(u);
         if (!SPLIT5.test(u)) return m1;
+        u = plainFrom;
         const k = ST.plainKeep(u);
         let m = red(k);
         const seen = new Set<string>(), found: string[] = [];
@@ -309,7 +311,9 @@ const env = {
         for (let j = 0; j < k; j++) parts.push(rnd5(3) === 0 ? toks5[rnd5(toks5.length)]() : words5[rnd5(words5.length)]);
         const t = parts.join([' ', '', '\n', ', '][rnd5(4)]);
         if (SPLIT5.test(t) && round5(t, red0) !== red0(t)) split++;
-        assert.strictEqual(ST.maskRaw(t, red0), round5(t, red0), `#1585 round 7 gate: a backslash-free text is masked as in round 5 (fixture case ${i}: ${JSON.stringify(t).slice(0, 80)})`);
+        // spec 012 FR-182 (review of PR 1721, round 4): the desk masks the split tokens first (`maskSplitTokens`), then runs the round-5 steps on that output
+        const want5 = round5(maskSplitTokens(t), red0);
+        assert.strictEqual(ST.maskRaw(t, red0), want5, `#1585 round 7 gate: a backslash-free text is masked as in round 5 (fixture case ${i}: ${JSON.stringify(t).slice(0, 80)})`);
       }
       assert.ok(split > 300, `#1585 round 7 gate: the fixture reaches the plain-kept second pass (${split} cases)`);
     }
@@ -1711,6 +1715,447 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   // one level and the bounds
   assert.strictEqual(maskSecretCommand(`srv @{token="${'a'.repeat(1500)}"}`), 'srv @{token="[redacted]"}', 'R12: a value of 1500 chars');
   assert.strictEqual(redact('see @{token=1} here'), 'see @{token=1} here', 'R12 is not part of redact(): free text keeps the pattern rules');
+}
+
+// spec 012 FR-182 (issue #1613, T164): a token split by a line break (CRLF or LF), a combining mark, a Markdown escape `\_` in its body, an HTML
+// comment or tag, or a hidden character (also written as an entity) is masked like the joined token: by redact, maskSecretCommand, maskSecretArgs,
+// the desk's maskRaw and the permission card. Every token is invented and built in code from pieces.
+{
+  const ST = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string; excerpt(t: string, r: (s: string) => string, n?: number): string; plainMarks(t: string): string; _deskWindowForTest(t: string): string; DESK_SPLIT_MAX: number; maskLabel(t: string, k: string, m: Record<string, (s: string) => string>): string };
+  const LA = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'liveact.js')) as { permText(t: string, k: string, m: Record<string, (s: string) => string>): { text: string } };
+  const red = (t: string): string => redact(t, {});
+  const cm = { redact: red, cmd: (t: string) => maskSecretCommand(t, {}), url: (t: string) => maskSecretUrl(t, {}) };
+  const B = 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8S9t0U1v2W3x4Y5z6';
+  // [name, token, where its body starts]
+  const TOKS: Array<[string, string, number]> = [
+    ['ghp', 'ghp_' + B.slice(0, 36), 4],
+    ['github_pat', 'github_pat_' + B.slice(0, 22) + '_' + (B + B).slice(3, 62), 11],
+    ['sk-proj', 'sk-proj-' + B.slice(0, 18) + '_' + B.slice(20, 42), 8],
+    ['AKIA', 'AKIA' + 'Q7R2S9T4U1V6W3X8', 4],
+    ['AIza', 'AIza' + B.slice(0, 35), 4],
+    ['JWT', 'eyJ' + B.slice(0, 20) + '.eyJ' + B.slice(20, 36) + '.' + B.slice(5, 30), 3],
+    ['xoxb', 'xoxb-' + '1234567890123-' + B.slice(0, 24), 5],
+  ];
+  // [form, the piece put inside the token, whether it can end a word (FR-182: then a tail under 8 letters and digits after a whole token stays, a known gap)]
+  const FORMS: Array<[string, string, boolean]> = [
+    ['CRLF', '\r\n', true],
+    ['LF', '\n', true],
+    ['a combining mark', '\u0301', false],
+    ['two combining marks', '\u0301\u0323', false],
+    ['an HTML comment', '<!-- -->', true],
+    ['an HTML comment with words', '<!-- note -->', true],
+    ['an empty <b></b>', '<b></b>', true],
+    ['a <span> with an attribute', '<span class="k">', true],
+    ['&#8203;', '&#8203;', false],
+    ['&#x200B;', '&#x200B;', false],
+    ['&ZeroWidthSpace;', '&ZeroWidthSpace;', false],
+    ['&zwj;', '&zwj;', false],
+    ['a zero-width space', '\u200b', false],
+    // review of PR 1721
+    ['CR', '\r', true],
+    ['LF and indentation', '\n    ', true],
+    ['a Markdown hard break (two spaces, LF)', '  \n', true],
+    ['a tab and LF', '\t\n', true],
+    ['a space and CRLF', ' \r\n', true],
+    ['CRLF and a space', '\r\n ', true],
+    // round 2 (fjcabello): a Markdown mark beside the break, a list, heading or table mark starting the next line
+    ['a task item', '\n- [ ] ', true], ['strike around LF', '~~\n~~', true], ['CRLF and a quote mark', '\r\n> ', true],
+    ['bold around LF', '**\n**', true], ['code marks around LF', '`\n`', true], ['a list mark', '\n- ', true], ['a numbered item', '\n1. ', true], ['a heading mark', '\n# ', true], ['a table cell', '\n| ', true],
+    ['CRLF and a tab', '\r\n\t', true],
+    ['LF and a quote mark', '\n> ', true],
+    ['a blank line', '\n\n', true],
+    ['a blank CRLF line', '\r\n\r\n', true],
+    ['<!-->', '<!-->', true],
+    ['<!--->', '<!--->', true],
+    ['<?x?>', '<?x?>', true],
+    ['<!x>', '<!x>', true],
+    ['<![CDATA[]]>', '<![CDATA[]]>', true],
+    ['a custom element', '<my-el></my-el>', true],
+    ['an svg:g element', '<svg:g></svg:g>', true],
+    ['a long tag name', '<' + 'abcdefghij'.repeat(3) + '></' + 'abcdefghij'.repeat(3) + '>', true],
+    ['<span/class>', '<span/class="x">', true],
+    ['a long attribute', '<span title="' + 'x'.repeat(140) + '">', true],
+    ['a zero-width space and a mark', '\u200b\u0301', false],
+    ['an astral hidden character and a mark', '\u{E0041}\u0301', false],
+    ['&#8203 without ;', '&#8203', false],
+    ['&#x200B without ;', '&#x200B', false],
+  ];
+  const windows = (tok: string, body: number): string[] => { const w: string[] = []; for (let i = body; i + 8 <= tok.length; i++) w.push(tok.slice(i, i + 8)); return w; };
+  const alnum = (s: string): number => (s.match(/[A-Za-z0-9]/g) ?? []).length;
+  const CTX: Array<[string, (x: string) => string]> = [['alone', (x) => x], ['among words', (x) => 'see ' + x + ' here'], ['in double quotes', (x) => 'echo "' + x + '"'],
+    // Markdown around it: the desk's maskRaw takes its plain pass then (review of PR 1721, item 1)
+    ['in a code span', (x) => '`' + x + '`'], ['in a task item', (x) => '- [ ] ' + x], ['after a code span and a masked value', (x) => 'a `b` password=x1234567 ' + x],
+    ['beside a second token in a code span', (x) => '`gho_' + 'Z9y8X7w6V5u4T3s2R1q0P9o8N7m6L5k4J3i2' + '` then ' + x],
+    // round 2: a Markdown mark right after the token with a word glued on (plainKeep removes the mark and glues the word)
+    ['before a code mark and a word', (x) => x + '`s'], ['before a bold word', (x) => x + '**word**'],
+    ['after a masked value, before a code mark', (x) => 'Rotated `password=hunter22`, new ' + x + '`s']];
+  let checked = 0;
+  let gaps = 0;
+  for (const [tn, tok, body] of TOKS) {
+    const ws = windows(tok, body);
+    const shown = (out: string, piece: string): string | undefined => ws.find((w) => out.replace(piece, '').includes(w));
+    for (const [fn, piece, ender] of FORMS) {
+      for (let c = body + 1; c < tok.length; c++) {
+        const head = tok.slice(0, c);
+        const tail = tok.slice(c);
+        // the known gap of FR-182: a piece that ends a word after a head the rules hide as written, then fewer than 8 letters and digits
+        if (ender && alnum(tail) < 8 && red(head) !== head) { gaps++; continue; }
+        // a blank line or a quote mark after a whole head: a new paragraph or quote, not the token's rest (round 2, item 4): a written-down gap
+        // an entity without its `;` takes the digits after it, as HTML does (`&#82031` is another character): a written-down gap
+        if (/^&#[0-9]+$/.test(piece) ? /^[0-9]/.test(tail) : /^&#x/i.test(piece) && !piece.endsWith(';') && /^[0-9A-Fa-f]/.test(tail)) { gaps++; continue; }
+        const v = head + piece + tail;
+        for (const [cn, ctx] of CTX) {
+          // a blank line, a quote, list, heading or table mark, or a Markdown mark at the break, after a head already hidden (alone or by its context): the tail is
+          // taken only when it holds both a letter and a digit (round 3, owner decision); one without is a written-down gap
+          if (!/[0-9]|[A-Z][^A-Z]*[A-Z]/.test(tail) && (red(head) !== head || red(ctx(head)) !== ctx(head))) { gaps++; continue; }
+          const t = ctx(v);
+          const what = `#1613 ${fn} (${tn} cut at ${c}, ${cn})`;
+          let w = shown(red(t), piece);
+          assert.ok(!w, `${what}: redact hides it (${JSON.stringify(w)} shown): ${JSON.stringify(red(t))}`);
+          checked++;
+          // the other surfaces at the first and last cut and every fifth one (each runs redact itself; the whole table on all six took over three minutes)
+          if (c !== body + 1 && c !== tok.length - 1 && c % 5 !== 0) continue;
+          w = shown(maskSecretCommand('echo ' + t, {}), piece);
+          assert.ok(!w, `${what}: maskSecretCommand hides it (${JSON.stringify(w)} shown)`);
+          w = shown(maskSecretArgs(['run', t], {}).join(' '), piece);
+          assert.ok(!w, `${what}: maskSecretArgs hides it (${JSON.stringify(w)} shown)`);
+          w = shown(ST.maskRaw(t, red), piece);
+          assert.ok(!w, `${what}: the desk's maskRaw hides it (${JSON.stringify(w)} shown)`);
+          // the desk line: made plain (a line break becomes a space, `_` dropped), so it is checked without the `_` of the body too
+          const ex = ST.excerpt(t, red);
+          w = ws.find((x) => ex.replace(piece, '').includes(x) || ex.includes(x.replace(/_/g, '')));
+          assert.ok(!w, `${what}: the desk excerpt hides it (${JSON.stringify(w)} shown): ${JSON.stringify(ex)}`);
+          w = shown(LA.permText('echo ' + t, 'shell', cm).text, piece);
+          assert.ok(!w, `${what}: the permission card hides it (${JSON.stringify(w)} shown)`);
+        }
+      }
+    }
+    // a Markdown escape of an underscore inside the body (`github_pat_<22>\_<59>`, `sk-proj-<18>\_<22>`): every `_` of the body escaped in turn
+    for (let c = body; c < tok.length; c++) {
+      if (tok[c] !== '_') continue;
+      const v = tok.slice(0, c) + '\\' + tok.slice(c);
+      for (const [cn, ctx] of CTX) {
+        const t = ctx(v);
+        const w = ws.find((x) => red(t).includes(x));
+        assert.ok(!w, `#1613 a Markdown escape \\_ in the body (${tn} at ${c}, ${cn}): redact hides it (${JSON.stringify(w)} shown): ${JSON.stringify(red(t))}`);
+        assert.ok(!ws.some((x) => maskSecretCommand('echo ' + t, {}).includes(x)), `#1613 a Markdown escape \\_ in the body (${tn} at ${c}, ${cn}): maskSecretCommand hides it`);
+        checked++;
+      }
+    }
+  }
+  // the escaped rest after a whole head is short: under FR-173's 16 after `_` (the review's form, before FR-182 the last 10 characters showed)
+  for (const t of ['sk-proj-' + B.slice(0, 30) + '\\_' + B.slice(30, 40), 'echo sk-proj-' + B.slice(0, 26) + '\\_' + B.slice(26, 34) + ' done']) {
+    const out = red(t);
+    assert.ok(!out.includes(B.slice(30, 38)) && !out.includes(B.slice(26, 34)), `#1613 a Markdown escape \\_ before a short rest: redact hides it: ${JSON.stringify(out)}`);
+  }
+  // a line break at a colon inside a token (a Telegram bot token's `<id>:` then its secret on the next line) is read too
+  assert.strictEqual(red('bot 123456789:\n' + (B + B).slice(0, 35) + ' ok'), 'bot [redacted]\n[redacted] ok', '#1613 a line break after the colon of a bot token');
+  assert.ok(checked > 20000 && gaps < checked / 5, `#1613: the table reaches every form (${checked} cases, ${gaps} in the written-down gap)`);
+
+  const GH = TOKS[0][1];
+  // the line structure stays: each side of a line break masked on its own
+  assert.strictEqual(red(GH.slice(0, 16) + '\r\n' + GH.slice(16)), '[redacted]\r\n[redacted]', '#1613 CRLF: the line break stays in the output');
+  assert.strictEqual(red('a ' + GH.slice(0, 16) + '\n' + GH.slice(16) + ' b'), 'a [redacted]\n[redacted] b', '#1613 LF: the words around it stay');
+  assert.strictEqual(red(GH.slice(0, 16) + '<!-- a\r\nb -->' + GH.slice(16)), '[redacted]\r\n[redacted]', '#1613 an HTML comment across lines: the line break stays');
+  assert.strictEqual(ST.excerpt('done\r\nline two\nline three', red), 'done line two line three', '#1613 the desk excerpt of plain lines is unchanged');
+  // the rules as written and the joined copy together: a key block masked whole stays one mask
+  assert.strictEqual(red('key: -----BEGIN PRIVATE KEY-----\n' + ['MIIEvQIBADANBgkqhkiG9w0BAQEFAASC', 'QQQQ' + B.slice(0, 28)].join('\n') + '\n-----END PRIVATE KEY-----'), 'key: [redacted]', '#1613 a key block stays one mask');
+  // a whole token at a line's end: a short next word stays, a word that could be the rest of a token goes with it (FR-173's count, fail closed)
+  assert.strictEqual(red(GH + '\nok then'), '[redacted]\nok then', '#1613 a whole token at a line end keeps a short next word');
+  assert.strictEqual(red(GH + '</p>ok'), '[redacted]</p>ok', '#1613 a whole token before a tag keeps a short next word');
+  assert.strictEqual(red(GH + '\r\nimplementation'), '[redacted]\r\nimplementation', '#1613 round 3: a whole token at a line end keeps a next word without a digit or two capitals');
+  assert.strictEqual(red(GH + '\r\nRelease2024'), '[redacted]\r\n[redacted]', '#1613 round 3: a whole token at a line end takes a next run with a digit (the written-down over-mask)');
+  // a mask already in the text stays apart
+  assert.strictEqual(red('[redacted]' + GH.slice(0, 16) + '&#8203;' + GH.slice(16)), '[redacted][redacted]', '#1613 a mask already in the text stays apart');
+
+  // no over-masking: ordinary text with these pieces is returned as written
+  const B64 = Array.from({ length: 6 }, (_, i) => ('TWFueSBoYW5kcyBtYWtlIGxpZ2h0IHdvcmsu' + i).repeat(3).slice(0, 76)).join('\n');
+  for (const keep of [
+    'line one\r\nline two\r\n', 'see the docs\nimplementation notes\nconfiguration_value_here', 'cafe\u0301 and nai\u0308ve', 'काम\u093f और', '<b>bold</b> text and <i>more</i>',
+    'a<!-- note -->b', 'x&#8203;y and &amp; &lt;tag&gt; &#169;', 'Array<string> and Map<K, V>', 'version 1.2.\nNext line',
+    'sk-short\nsk_test_x\nsk_test_helpers\npk_live_x', 'abc_def-123\nghi_jkl-456', 'ID12345\r\nAB67890', 'word\u200bword', 'emoji \u{1F469}\u200d\u{1F4BB} here', B64,
+    'token:\nnone', 'C:\\Users\\me\\file_name.txt\nD:\\data\\x_y',
+  ]) {
+    assert.strictEqual(red(keep), keep, `#1613 no over-masking: ${JSON.stringify(keep.slice(0, 40))}`);
+    // a command reads a line break as the end of a command (its own rules, as on main), so only the one-line texts go through it
+    if (!/[\r\n]/.test(keep)) assert.ok(!maskSecretCommand('echo ' + keep, {}).includes('[redacted]'), `#1613 no over-masking (command): ${JSON.stringify(keep.slice(0, 40))}`);
+  }
+
+  // random cuts (as #1585): a seeded generator puts a random piece at a random place in a random token, among random words; no 8 characters of a body survive redact
+  {
+    let seed = 0x1613;
+    const rnd = (n: number): number => { seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff; return (seed >>> 16) % n; };
+    const AN = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    const b = (n: number): string => Array.from({ length: n }, () => AN[rnd(62)]).join('');
+    const gen: Array<() => [string, number]> = [() => ['ghp_' + b(36), 4], () => ['sk-proj-' + b(40), 8], () => ['github_pat_' + b(22) + '_' + b(59), 11], () => ['xoxb-' + b(12) + '-' + b(24), 5]];
+    const words = ['echo', 'token=', 'Done.', 'a/b/c', 'k=v', '[redacted]', 'the', 'note:'];
+    let n = 0;
+    for (let i = 0; i < 2000; i++) {
+      const [tok, body] = gen[rnd(gen.length)]();
+      const [fn, piece, ender] = FORMS[rnd(FORMS.length)];
+      const c = body + 1 + rnd(tok.length - body - 1);
+      const head = tok.slice(0, c);
+      const tail = tok.slice(c);
+      const w1 = words[rnd(words.length)], w2 = words[rnd(words.length)], sep = [' ', '\n', ', '][rnd(3)];
+      const pre = w1 + sep + head; // the head in its context: a name before it can hide it as written
+      if (ender && alnum(tail) < 8 && red(head) !== head) continue;
+      if (!/[0-9]|[A-Z][^A-Z]*[A-Z]/.test(tail) && (red(head) !== head || red(pre) !== pre)) continue;
+      if (/^&#[0-9]+$/.test(piece) ? /^[0-9]/.test(tail) : /^&#x/i.test(piece) && !piece.endsWith(';') && /^[0-9A-Fa-f]/.test(tail)) continue; // the entity takes the digits after it (a written-down gap)
+      const t = [w1, head + piece + tail, w2].join(sep);
+      const out = red(t).replace(piece, '');
+      const w = windows(tok, body).find((x) => out.includes(x));
+      assert.ok(!w, `#1613 random cuts (case ${i}, ${fn} at ${c}): redact hides it (${JSON.stringify(w)} shown): ${JSON.stringify(t).slice(0, 90)}`);
+      n++;
+    }
+    assert.ok(n > 1300, `#1613 random cuts: ${n} cases checked`);
+  }
+
+  // review of PR 1721, item 1: the review's desk inputs, through maskRaw
+  for (const t of ['`' + GH.slice(0, 24) + '\n' + GH.slice(24) + '`', 'Rotated `password=hunter22`, new one ' + GH.slice(0, 12) + '\r\n' + GH.slice(12), '**' + GH.slice(0, 20) + '\r' + GH.slice(20) + '**']) {
+    const m = ST.maskRaw(t, red);
+    assert.ok(!windows(GH, 4).some((x) => m.replace(/\s/g, '').includes(x)), `#1613 review item 1: maskRaw hides a line-split token beside Markdown: ${JSON.stringify(m)}`);
+  }
+  // item 3: a token at the end of a long wrapped URL path (a left run of 300 token characters)
+  {
+    const t = 'https://h.example/' + 'abc/'.repeat(75) + GH.slice(0, 20) + '\n' + GH.slice(20);
+    assert.ok(!red(t).includes(GH.slice(24, 32)) && !red(t).includes(GH.slice(4, 12)), `#1613 a token at the end of a long wrapped URL path: ${red(t).slice(-60)}`);
+  }
+  // item 4: a rule that hides the head first (a secret query name, a Bearer header) does not leave the tail
+  for (const [what, got] of [
+    ['maskSecretArgs, a query token split by LF', maskSecretArgs(['run', 'https://h.example/x?token=' + GH.slice(0, 20) + '\n' + GH.slice(20)], {}).join(' ')],
+    ['maskSecretArgs, a query token split by a comment', maskSecretArgs(['run', 'https://h.example/x?token=' + GH.slice(0, 20) + '<!-- -->' + GH.slice(20)], {}).join(' ')],
+    ['maskSecretUrl, a query token split by a comment', maskSecretUrl('https://h.example/x?token=' + GH.slice(0, 20) + '<!-- -->' + GH.slice(20), {})],
+    ['maskSecretArgs, a name=value split by an entity', maskSecretArgs(['token=' + GH.slice(0, 20) + '&#8203;' + GH.slice(20)], {}).join(' ')],
+    ['maskSecretCommand, a Bearer header split by LF', maskSecretCommand('echo Authorization: Bearer ' + GH.slice(0, 20) + '\n' + GH.slice(20), {})],
+  ] as const) assert.ok(!got.includes(GH.slice(24, 32)) && !got.includes(GH.slice(28, 36)), `#1613 review item 4: ${what}: ${got}`);
+  // item 7: text far from a split token stays byte for byte
+  {
+    const far = '\n\nsplit: ghp_' + B.slice(0, 10) + '\u200b' + B.slice(10, 36);
+    for (const t of ['a /\\[redacted\\]/ b', "eq('mysql -p' + 'hunter2 -u root', 'x')"]) {
+      const alone = red(t);
+      const both = red(t + far);
+      assert.strictEqual(both.slice(0, alone.length), alone, `#1613 review item 7: unrelated text stays as without the split token: ${JSON.stringify(t)}`);
+      assert.ok(!both.includes(B.slice(10, 18)), '#1613 review item 7: the split token is hidden');
+    }
+  }
+  // Paco's item 4: after a whole token, the next line is taken only when it is a token body's own characters
+  assert.strictEqual(red(GH + '\nDATABASE_URL=postgres://db.example/app'), '[redacted]\nDATABASE_URL=postgres://db.example/app', '#1613 a whole token at a line end keeps a next line that is a name and a URL');
+  assert.strictEqual(red(GH + '<br>DATABASE_URL=postgres://db.example/app'), '[redacted]<br>DATABASE_URL=postgres://db.example/app', '#1613 a whole token before a tag keeps a name and a URL after it');
+  // round 2, item 2: the tail of a base64-bodied token after a whole head (a line break or a tag)
+  {
+    const b64 = B + 'a7B8c9D0e1F2g3H4i5J6k7L8m9N0o1P2q3R4s5T6u7V8w9X0y1Z2a3B4c5D6e7F8g9H0';
+    const tail = 'Qr+St/Uv9Wx+Yz/0Ab1Cd2Ef==';
+    for (const [what, t, rest] of [
+      ['glc_', 'glc_' + b64.slice(0, 40) + '\n' + tail, tail], ['sntrys_', 'sntrys_' + b64.slice(0, 44) + '\n' + tail, tail], ['ABSK', 'ABSK' + b64.slice(0, 104) + '\n' + tail, tail],
+      ['fm2_', 'fm2_' + b64.slice(0, 104) + '\n' + tail, tail], ['BBDC-', 'BBDC-' + b64.slice(0, 40) + '\n' + 'ab/cd+ef12/gh34ij56kl', 'ab/cd+ef12/gh34ij56kl'], ['glc_ after a tag', 'glc_' + b64.slice(0, 40) + '<wbr>' + tail, tail],
+    ] as const) assert.ok(!red(t).includes(rest.slice(0, 8)) && !red(t).includes(rest.slice(-10)), `#1613 round 2: a base64 tail after a whole ${what} head is hidden: ${JSON.stringify(red(t))}`);
+    for (const keep of ['DATABASE_URL=postgres://db.example/app', 'key=value', 'https://h.example/a', 'src/main/app.ts', '/usr/local/bin/node', 'abc1234'])
+      assert.strictEqual(red(GH + '\n' + keep), '[redacted]\n' + keep, `#1613 round 2: a whole token at a line end keeps a next line ${JSON.stringify(keep)}`);
+  }
+  // round 2, item 3: a word, a tag that renders a break, then a split token
+  for (const t of ['<p>Token</p><p>' + GH.slice(0, 16) + '<wbr>' + GH.slice(16) + '</p>', 'word<br>' + GH.slice(0, 16) + '<!-- -->' + GH.slice(16), '<td>name</td><td>' + GH.slice(0, 16) + '\u200b' + GH.slice(16) + '</td>', 'key<br>sk-proj-' + B.slice(0, 20) + '<wbr>' + B.slice(20, 48)]) {
+    for (const [surface, out] of [['redact', red(t)], ['maskRaw', ST.maskRaw(t, red)], ['excerpt', ST.excerpt(t, red)], ['card', LA.permText('echo ' + t, 'shell', cm).text]] as const)
+      assert.ok(![GH.slice(20, 28), GH.slice(30, 38), B.slice(24, 32)].some((x) => out.includes(x)), `#1613 round 2: a word and a break tag before a split token (${surface}): ${JSON.stringify(out)}`);
+  }
+  assert.strictEqual(red('Token<br>ghp_' + B.slice(0, 36)), 'Token<br>[redacted]', '#1613 round 2: a word, a break tag, then a whole token');
+  // round 2, item 4: after a whole token, no tail across a blank line, an indentation or a quote mark
+  for (const [t, want] of [[GH + '\n\nAlternatively, use SSH.', '[redacted]\n\nAlternatively, use SSH.'], [GH + '\n\n    implementation detail', '[redacted]\n\n    implementation detail'], [GH + '\r\n\r\nAlternatively', '[redacted]\r\n\r\nAlternatively'], [GH + '\n> Afterwards we rotate it', '[redacted]\n> Afterwards we rotate it']] as const)
+    assert.strictEqual(red(t), want, `#1613 round 2: a whole token keeps the word after a blank line or a quote mark: ${JSON.stringify(t.slice(40))}`);
+  // round 2 (fjcabello): the helper-name step keeps a leading mark and the blanks, and drops a link and emphasis
+  assert.strictEqual(ST.plainMarks('#1613 split  tokens'), '#1613 split  tokens', '#1613 round 2: plainMarks keeps a leading # and the blanks');
+  assert.strictEqual(ST.plainMarks('- **Hx** [click](https://evil.example/x) `c`'), '- Hx click c', '#1613 round 2: plainMarks drops a link, emphasis and code marks');
+  // round 3 (owner decision): across a blank line or a quote, list, heading or table mark, a whole token's tail with a letter and a digit goes; words stay; a git sha there is masked (written down)
+  {
+    const pat = 'github_pat_' + B.slice(0, 22) + '_' + (B + B).slice(5, 32);
+    const tail31 = 'Q9w8E7r6T5y4U3i2O1p0A9s8D7f6G5h';
+    for (const sep of ['\n\n', '\r\n\r\n', '\n> ', '\n- ', '\n| ']) {
+      const out = red(pat + sep + tail31);
+      assert.ok(!out.includes(tail31.slice(0, 8)) && !out.includes(tail31.slice(-8)), `#1613 round 3: a whole token's tail with a letter and a digit after ${JSON.stringify(sep)} is hidden: ${JSON.stringify(out)}`);
+    }
+    for (const word of ['Alternatively, use SSH.', '> Note: rotate it', '## Step 2', '- item2', 'Documentation'])
+      assert.strictEqual(red(GH + '\n\n' + word), '[redacted]\n\n' + word, `#1613 round 3: a word after a whole token and a blank line stays: ${JSON.stringify(word)}`);
+    const sha = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4';
+    assert.strictEqual(red(GH + '\n\n' + sha), '[redacted]\n\n[redacted]', '#1613 round 3: a git sha after a whole token and a blank line is masked (the written-down over-mask)');
+  }
+  // round 3 (review of PR 1721), item 1: a hidden piece after a whole token leaves the next keyword to its rule; the value stays hidden
+  {
+    const PW = 'Hx9Kq2Lm7Np4Rs';
+    for (const piece of ['\u200b', '\u2028', '\u00ad', '\u0301', '&#8203;', '<b></b>', '\n', '\r\n'])
+      for (const form of ['mysql -u root -p' + PW, 'mysql -p' + PW, 'password=' + PW, 'token: ' + PW, 'PGPASSWORD=' + PW, '--password ' + PW]) {
+        // `--password <value>` is a flag rule of the command masks only (redact shows it on main too), and a flag glued to a token in one word is no flag (as on main)
+        if (form.startsWith('--') && !/[\r\n]/.test(piece)) continue;
+        const t = GH + piece + form;
+        const surfaces: Array<[string, string]> = form.startsWith('--') ? [['cmd', maskSecretCommand('echo ' + t, {})], ['args', maskSecretArgs(['run', t], {}).join(' ')]] : [['redact', red(t)], ['cmd', maskSecretCommand('echo ' + t, {})], ['args', maskSecretArgs(['run', t], {}).join(' ')], ['excerpt', ST.excerpt(t, red)], ['maskRaw', ST.maskRaw(t, red)]];
+        for (const [surface, out] of surfaces)
+          assert.ok(!out.includes(PW) && !out.includes(GH.slice(8, 16)), `#1613 round 3: a keyword after a whole token and ${JSON.stringify(piece)} keeps its value hidden (${surface}): ${JSON.stringify(out)}`);
+      }
+    const t = 'glpat-' + B.slice(0, 20) + '\u200b' + 'curl -u bob:' + PW + ' h';
+    assert.ok(!red(t).includes(PW), `#1613 round 3: curl -u after a whole token and a hidden character: ${red(t)}`);
+  }
+  // round 4 (fjcabello), item 1: an all-capitals keyword after a hidden piece after a whole token is a keyword, not the token's tail: its own rule still reads it
+  {
+    const PW = 'Hx9Kq2Lm7Np4Rs';
+    let own = 0;
+    for (const kw of ['TOKEN', 'APIKEY', 'API_KEY', 'AWS_SECRET_ACCESS_KEY', 'MYSQL', 'PASSWORD'])
+      for (const form of [kw + ' ' + PW, kw + '=' + PW, kw + ': ' + PW, kw + ' -u root -p' + PW])
+        for (const piece of ['\u200d', '\u200b', '\u0301', '&#8203;', '\u00ad']) {
+          if (red(form).includes(PW)) continue; // the keyword's own rule does not hide this form: nothing to keep
+          own++;
+          const out = red(GH + piece + form);
+          assert.ok(!out.includes(PW), `#1613 round 4: an all-capitals keyword after a whole token and ${JSON.stringify(piece)} keeps its rule: ${JSON.stringify(out)}`);
+        }
+    assert.ok(own >= 30, `#1613 round 4: the all-capitals table reaches the forms its rules hide (${own})`);
+  }
+  // round 4 (Opus 1, 3, 6): a name then `=` is no tail; the tail stops at a character that is no body character; FR-173's count after a hidden character
+  {
+    const PW = 'Hx9Kq2Lm7Np4Rs';
+    for (const sep of ['\n', '\n\n', '\n> ', '\u200b'])
+      assert.strictEqual(red(GH + sep + 'Db_Password="' + PW + '"'), '[redacted]' + sep + 'Db_Password="[redacted]"', `#1613 round 4: a name then = after a whole token and ${JSON.stringify(sep)} keeps the name`);
+    const o = red('ghp_' + B.slice(0, 24) + '\u200b' + B.slice(24, 36) + ':x-oauth-basic');
+    assert.ok(!o.includes(B.slice(26, 34)), `#1613 round 4: the tail before a character that is no body character is hidden: ${JSON.stringify(o)}`);
+    const six = red('ghp_' + B.slice(0, 30) + '\u200b' + B.slice(30, 36));
+    assert.ok(!six.includes(B.slice(30, 36)), `#1613 round 4: a 6-character tail after a hidden character is hidden: ${JSON.stringify(six)}`);
+  }
+  // round 4: the keyword after a hidden piece stays visible as a keyword (the union would hide its value anyway; these pin that the split step does not take it)
+  {
+    const PW = 'Hx9Kq2Lm7Np4Rs';
+    assert.strictEqual(red(GH + '\u200bTOKEN ' + PW), '[redacted]\u200bTOKEN [redacted]', '#1613 round 4: an all-capitals keyword after a whole token stays a keyword');
+    assert.strictEqual(red(GH + '\u200bAPI_KEY=' + PW), '[redacted]\u200bAPI_KEY=[redacted]', '#1613 round 4: an all-capitals name after a whole token stays a name');
+    assert.strictEqual(red('ghp_' + B.slice(0, 18) + '\u200b' + B.slice(18, 36) + '<br>mysql -p' + PW), '[redacted]<br>mysql -p[redacted]', '#1613 round 4: a keyword after a split token stays a keyword');
+  }
+  // round 5 (fjcabello): keepShownBy compares whole words, whatever they are made of; an all-capitals tail of 8 or more without a secret-name word is a tail
+  assert.strictEqual(keepShownBy('--password ab!cd#ef', '--password [redacted]'), '--password [redacted]', '#1613 round 5: keepShownBy masks a word of symbols the reference hides');
+  assert.strictEqual(keepShownBy('a [redacted]x9', 'a [redacted]'), 'a [redacted][redacted]', '#1613 round 5: keepShownBy masks a short rest glued to a mask');
+  assert.strictEqual(keepShownBy('see [redacted] more', 'see ghp_x more'), 'see [redacted] more', '#1613 round 5: keepShownBy keeps a word of masks only');
+  for (const t of ['token: AKIAABQ6<b></b>AGAQWSONVRMK', 'AKIAABQ6\u200bAGAQWSONVRMK here', 'see AKIAABQ6<!-- -->AGAQWSONVRMK'])
+    assert.ok(!red(t).includes('AGAQWSON'), `#1613 round 5: an all-capitals tail of 8 or more is hidden: ${JSON.stringify(red(t))}`);
+  assert.strictEqual(red(GH + '\u200bAWS_SECRET_ACCESS_KEY is set'), '[redacted]\u200bAWS_SECRET_ACCESS_KEY is set', '#1613 round 5: an all-capitals run holding a secret-name word stays a keyword');
+  // round 5 (Opus): the pieces of keepShownBy, the union, the reading as before, the review's repros
+  {
+    const PW2 = 'Ab3,Cd5#Ef7^Gh9';
+    assert.strictEqual(keepShownBy('PGPASSWORD=' + PW2 + ' psql', 'PGPASSWORD=[redacted] psql'), '[redacted] psql', '#1613 round 5: keepShownBy masks a piece the reference does not show whole (fail closed) and keeps the ones it shows');
+    assert.strictEqual(_unionMasksForTest('a b c', 'a [redacted] c', '[redacted] b c'), '[redacted] [redacted] c', '#1613 round 5: the union hides what either reading hides');
+    assert.strictEqual(_unionMasksForTest('a b c', '[redacted] b c', '[redacted] b c'), '[redacted] b c', '#1613 round 5: the union of one reading is that reading');
+    const split = GH.slice(0, 16) + '\u200b' + GH.slice(16);
+    assert.ok(withoutSplit(() => red(split)).includes(GH.slice(20, 28)), '#1613 round 5: withoutSplit reads as before PR 1721 (a split token shows)');
+    assert.ok(!red(split).includes(GH.slice(20, 28)), '#1613 round 5: outside withoutSplit the split token is hidden');
+    const cmd = maskSecretCommand('echo ghp_' + B.slice(0, 18) + '\u200b' + B.slice(18, 36) + '.`\u200bPGPASSWORD=' + PW2 + ' psql', {});
+    assert.ok(!cmd.includes(PW2) && !cmd.includes(B.slice(20, 28)), `#1613 round 5: a punctuated password after a split token in a command is hidden: ${JSON.stringify(cmd)}`);
+    const link = '[gh](https://h.example/' + 'a'.repeat(2100) + ')p_' + B.slice(0, 36);
+    for (const [surface, out] of [['maskRaw', ST.maskRaw(link, red)], ['excerpt', ST.excerpt(link, red)]] as const)
+      assert.ok(!out.includes(B.slice(8, 16)), `#1613 round 5: a token glued after a long link is hidden (${surface}): ${out.slice(-60)}`);
+    const bearer = red('Authorization: Bearer AKIAQVA\nFPZLDTBSLGUEC');
+    assert.ok(!bearer.includes('FPZLDTBS'), `#1613 round 5: an all-capitals tail after a header-hidden head is hidden: ${JSON.stringify(bearer)}`);
+  }
+  // round 6: the desk bounds its split-aware reading (DESK_SPLIT_MAX, 16,384 characters); timing-free, by the split step's own work counter
+  {
+    const dense = (n: number) => Array.from({ length: Math.ceil(n / 60) }, (_, i) => 'see ghp_' + B.slice(0, 12) + '\u200b' + B.slice(12, 36) + ' and password=x' + i + 'yz9 <b>w</b>').join('\n').slice(0, n);
+    const big = dense(800000);
+    _splitWorkForTest();
+    const ex = ST.excerpt(big, red);
+    const exWork = _splitWorkForTest();
+    assert.ok(exWork > 0 && exWork <= 12 * 16384, `#1613 round 6: the desk excerpt reads at most a fixed multiple of 16,384 characters with the split step (${exWork})`);
+    assert.ok(!ex.includes(B.slice(16, 24)) && ex.startsWith('see [redacted] and password=[redacted]'), `#1613 round 6: the excerpt of a long text still hides its first split token: ${ex.slice(0, 80)}`);
+    ST.maskRaw(big, red);
+    assert.strictEqual(_splitWorkForTest(), 0, '#1613 round 6: maskRaw of a text over the bound reads it as before PR 1721 (no split work)');
+    // round 7: the window ends at the last blank before the bound, so a token split by an in-line piece across the bound is left out whole (not its first half)
+    const pad = 'x '.repeat(8190);
+    const edge = pad + 'ghp_' + B.slice(0, 10) + '<!-- -->' + B.slice(10, 36) + ' ' + 'tail '.repeat(4000);
+    const ee = ST.excerpt(edge, red);
+    assert.ok(![B.slice(0, 8), B.slice(12, 20)].some((x) => ee.includes(x)), '#1613 round 7: a token split by an in-line piece across the bound shows neither half');
+    // round 7: the window is taken after closed code blocks and link targets, so a long one at the start no longer eats what the excerpt shows
+    for (const lead of ['```\n' + 'c'.repeat(17000) + '\n```\n', '[see](https://h.example/' + 'a'.repeat(17000) + ') '])
+      assert.ok(ST.excerpt(lead + 'The fix is ready.', red).includes('The fix is ready'), `#1613 round 7: the excerpt after a long ${lead[0] === '`' ? 'code block' : 'link target'} still shows the text after it`);
+    // round 7: the exact bound, the window end, a surrogate pair at the bound
+    const M = ST.DESK_SPLIT_MAX;
+    assert.strictEqual(M, 16384, '#1613 round 7: the desk bound is 16,384 characters');
+    const exact = 'ab '.repeat(6000).slice(0, M);
+    assert.strictEqual(ST._deskWindowForTest(exact), exact, '#1613 round 7: a text of exactly the bound is read whole');
+    const over = 'ab '.repeat(6000).slice(0, M + 1);
+    const wo = ST._deskWindowForTest(over);
+    assert.ok(wo !== over && wo.length <= M && wo.length > M - 4 && over.startsWith(wo) && /\s$/.test(wo), `#1613 round 7: one character over the bound, the window ends at the last blank within it (${wo.length})`);
+    assert.strictEqual(ST._deskWindowForTest('a'.repeat(M + 1)), '', '#1613 round 7: with no blank, the token characters the bound cut into are left out');
+    // round 8: a line break is a piece too: the window ends at a space or a tab, and a line break among the blanks before its end drops the word before it
+    for (const brk of ['\n', '\n    ', '\r\n\t', '\n> '])
+      assert.ok(!ST._deskWindowForTest('x '.repeat(8180) + 'ghp_' + B.slice(0, 10) + brk + B.slice(10, 36) + ' ' + 'tail '.repeat(100)).includes('ghp_'), `#1613 round 8: a token split by ${JSON.stringify(brk)} across the bound is left out of the window whole`);
+    const ws = 'a'.repeat(M) + ' ';
+    assert.ok(ws.length === M + 1 && ST._deskWindowForTest(ws).length <= M, '#1613 round 8: a text of 16,385 characters with a blank at index 16,384 gives a window within the bound');
+    // round 8: a label with no split token and no hidden character reads once, as before PR 1721 (one call of the mask handed in)
+    for (const lab of ['echo hello world', 'echo ' + GH, 'ls -la /tmp']) {
+      let calls = 0;
+      const out = ST.maskLabel(lab, 'run', { ...cm, cmd: (x: string) => { calls++; return maskSecretCommand(x, {}); } });
+      assert.ok(calls === 1 && out === withoutSplit(() => ST.maskLabel(lab, 'run', cm)), `#1613 round 8: a plain label is read once and as before (${calls} calls): ${out}`);
+    }
+    const straddle = 'x '.repeat(8180) + 'ghp_' + B.slice(0, 10) + '<!-- -->' + B.slice(10, 36) + ' ' + 'tail '.repeat(100);
+    assert.ok(!ST._deskWindowForTest(straddle).includes('ghp_'), '#1613 round 7: a token split by an in-line piece just before the bound is left out of the window whole');
+    const sur = ST._deskWindowForTest('a'.repeat(M - 1) + '\u{1F600}' + 'b'.repeat(10));
+    assert.ok(!/[\ud800-\udbff]$/.test(sur), '#1613 round 7: the window never ends with half a surrogate pair');
+    const splitAt = (n: number) => { const tok = 'ghp_' + B.slice(0, 12) + '\u200b' + B.slice(12, 36); return ('w '.repeat(n)).slice(0, n - tok.length - 1) + ' ' + tok; };
+    _splitWorkForTest();
+    ST.maskRaw(splitAt(M), red);
+    assert.ok(_splitWorkForTest() > 0, '#1613 round 7: maskRaw of a text of exactly the bound reads it with the split step');
+    ST.maskRaw(splitAt(M + 1), red);
+    assert.strictEqual(_splitWorkForTest(), 0, '#1613 round 7: maskRaw of a text one character over the bound reads it as before PR 1721');
+    // round 7: a label the old masks blank (fail closed) is blank here too
+    const lab = 'echo - npm_' + B.slice(0, 14) + '\\_' + B.slice(14, 36) + '\u2028sk_live_7d1\u00ad' + B.slice(0, 21);
+    assert.strictEqual(ST.maskLabel(lab, 'run', cm), '', '#1613 round 7: a label the old masks blank (fail closed) stays blank');
+  }
+  // round 4, item 2: a token right after an entity without its ';' (the entity's digits take its start boundary as written)
+  for (const t of ['password=&#8203' + GH, 'see &#x200B' + GH + ' here'])
+    assert.ok(!red(t).includes(GH.slice(8, 16)) && !red(t).includes(GH.slice(30, 38)), `#1613 round 4: a token right after an entity without ; is hidden: ${JSON.stringify(red(t))}`);
+  // round 4, item 3: the tool phrase masks the label as written too (clearing an invisible character glues two whole tokens into one run)
+  {
+    const LAp = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'liveact.js')) as { phrase(o: { kind: string; tool: string; label: string }, m: Record<string, (s: string) => string>): string };
+    const GH2 = 'gho_' + B.slice(0, 36);
+    for (const kind of ['run', 'read', 'tool']) {
+      const out = LAp.phrase({ kind, tool: 'Bash', label: GH + '\u200b' + GH2 }, cm);
+      assert.ok(![GH.slice(8, 16), GH.slice(30, 38), GH2.slice(8, 16), GH2.slice(30, 38)].some((x) => out.includes(x)), `#1613 round 4: the tool phrase hides two tokens joined by an invisible character (${kind}): ${JSON.stringify(out)}`);
+    }
+  }
+  // item 2: the desk keeps what both readings hide (a hidden character glues a token to the word before it)
+  for (const lead of ['\u2028', '\u200b', '\u00ad']) {
+    for (const t of ['see page2' + lead + GH + '<br>glpat-' + B.slice(0, 13) + '&#8203;' + B.slice(13, 20), 'note' + lead + GH + ' AKIAQ7R2S9' + '<b></b>' + 'T4U1V6W3X8'])
+      for (const [surface, out] of [['excerpt', ST.excerpt(t, red)], ['maskRaw', ST.maskRaw(t, red)], ['maskLabel', ST.maskLabel(t, 'other', cm)]] as const)
+        assert.ok(!out.includes(GH.slice(8, 16)) && !out.includes(GH.slice(30, 38)), `#1613 round 3: the desk keeps a token glued by ${JSON.stringify(lead)} hidden (${surface}): ${JSON.stringify(out)}`);
+  }
+  // item 3: a long head already hidden, then a blank line, a quote, a list or a strike mark: the tail with a digit goes
+  for (const sep of ['\n> ', '\n\n', '\r\n> ', '~~\n~~', '**\n**', '\n- ', '\n1. ', '\n| ', '\n## ', '\n- [ ] ']) {
+    const out = red('ghp_' + B.slice(0, 20) + sep + B.slice(20, 36));
+    assert.ok(!out.includes(B.slice(24, 32)), `#1613 round 3: a long head, ${JSON.stringify(sep)}, then the tail: ${JSON.stringify(out)}`);
+  }
+  // item 4: a lower-case path or branch after a whole token stays
+  for (const [t, want] of [[GH + '<br>src/renderer/app', '[redacted]<br>src/renderer/app'], [GH + '<wbr>feature/new-login', '[redacted]<wbr>feature/new-login'], [GH + '\nsome/path/to/file', '[redacted]\nsome/path/to/file'], [GH + '\nabcdefgh/ijklmnop', '[redacted]\nabcdefgh/ijklmnop']] as const)
+    assert.strictEqual(red(t), want, `#1613 round 3: a lower-case path after a whole token stays: ${JSON.stringify(t.slice(40))}`);
+  // item 5: the blank reading of a break tag reads token shapes only (no name and value of its own)
+  assert.strictEqual(red('Token:<br/>\u2764\ufe0f' + 'ghp_' + B.slice(0, 13) + '<hr>' + B.slice(13, 36)), 'Token:<br/>\u2764\ufe0f[redacted]', '#1613 round 3: the blank reading keeps an emoji before a split token');
+  // item 7: other block tags read as a blank
+  for (const t of ['<li>Token</li><li>' + GH.slice(0, 16) + '<wbr>' + GH.slice(16) + '</li>', '<h2>Token</h2><div>' + GH.slice(0, 16) + '<!-- -->' + GH.slice(16) + '</div>', '<tr><td>a</td></tr><tr><td>' + GH.slice(0, 16) + '\u200b' + GH.slice(16)])
+    assert.ok(!red(t).includes(GH.slice(20, 28)), `#1613 round 3: li, h2, div and tr read as a blank: ${JSON.stringify(red(t))}`);
+  assert.strictEqual(ST.plainMarks('see [doc](https://h.example/a b) and [x](u(1))'), 'see doc and x)', '#1613 round 5: plainMarks reads links as the old regex did (a blank in the target; the first ) ends it)');
+  // round 2, item 5: the blanks and quote marks between the two pieces stay as written
+  assert.strictEqual(red('x ' + GH.slice(0, 16) + '\n    ' + GH.slice(16) + ' y'), 'x [redacted]\n    [redacted] y', '#1613 round 2: the indentation between two pieces stays');
+  assert.strictEqual(red('x ' + GH.slice(0, 16) + '\n> ' + GH.slice(16) + ' y'), 'x [redacted]\n> [redacted] y', '#1613 round 2: the quote mark between two pieces stays');
+  // item 8: each guard pinned
+  assert.strictEqual(red(GH.slice(0, 16) + '\u2028' + GH.slice(16)), '[redacted]\u2028[redacted]', '#1613 a line separator inside a token stays in the output');
+  for (const keep of ['ghp_' + B.slice(0, 12) + '&#38;' + B.slice(12, 36), 'ghp_' + B.slice(0, 12) + '&amp;' + B.slice(12, 36), 'sgp_CrossValidation_ResultsForThe_Model\nsbp_Final2']) assert.strictEqual(red(keep), keep, `#1613 a guard keeps it readable: ${JSON.stringify(keep)}`);
+  _breakCallsForTest();
+  red(Array.from({ length: 200 }, (_, i) => 'Some words on line ' + i + ' and more words\nanother line of words here').join('\n'));
+  red(Array.from({ length: 200 }, (_, i) => 'ab' + (i % 10) + '\ncd' + (i % 7)).join(' '));
+  assert.strictEqual(_breakCallsForTest(), 0, '#1613 prose lines and short pieces cost no line-break mask call');
+
+  // growth: linear in the text
+  const split = (k: number) => Array.from({ length: Math.ceil(k / 50) }, (_, i) => 'ghp_' + String(i).padStart(12, 'Q') + '\r\n' + 'R'.repeat(24)).join(' ').slice(0, k);
+  assertLinearShape('#1613 redact many tokens split by a line break', (x) => { redact(x, {}); }, split, 400_000);
+  assertLinearShape('#1613 redact many joined line breaks', (x) => { redact(x, {}); }, (k) => 'ab_12345678\n'.repeat(Math.ceil(k / 12)).slice(0, k), 400_000);
+  assertLinearShape('#1613 redact many tags and comments', (x) => { redact(x, {}); }, (k) => 'a1<b></b>b2<!-- -->'.repeat(Math.ceil(k / 19)).slice(0, k), 400_000);
+  assertLinearShape('#1613 redact many unclosed comments', (x) => { redact(x, {}); }, (k) => 'x<!--'.repeat(Math.ceil(k / 5)).slice(0, k), 400_000);
+  assertLinearShape('#1613 redact one long run with line breaks', (x) => { redact(x, {}); }, (k) => ('Ab1_'.repeat(70) + '\n').repeat(Math.ceil(k / 281)).slice(0, k), 400_000);
+  assertLinearShape('#1613 redact many indented and quoted line breaks', (x) => { redact(x, {}); }, (k) => 'ab_123456\n\n  > cd_789012'.repeat(Math.ceil(k / 24)).slice(0, k), 400_000);
+  // issue #1725 (round 3): the desk's plainKeep link regex is bounded, so a reply of many `[` or `[x](` is linear
+  assertLinearShape('#1725 the desk excerpt of many [', (x) => { ST.excerpt(x, red); }, (k) => '['.repeat(k), 80_000);
+  assertLinearShape('#1725 the desk excerpt of many [x](', (x) => { ST.excerpt(x, red); }, (k) => '[x]('.repeat(Math.ceil(k / 4)).slice(0, k), 320_000);
+  assertLinearShape('#1725 the desk mask of many [', (x) => { ST.maskRaw(x, red); }, (k) => '['.repeat(k), 80_000);
+  assertLinearShape('#1613 redact many entities and marks', (x) => { redact(x, {}); }, (k) => 'a&#8203;b\u0301c&zwj;'.repeat(Math.ceil(k / 15)).slice(0, k), 400_000);
 }
 
 console.log('redact: all checks passed');

@@ -5,3 +5,6 @@ scripts/test-suites.txt merge=union
 scripts/fixtures/build-cost/* text eol=lf
 docs/build-cost*.svg text eol=lf
 docs/build-cost*.json text eol=lf
+
+# spec 012 FR-182 (review of PR 1721, round 7): the frozen references of scripts/test-redact-monotone.ts are hash-checked; LF on every OS
+scripts/fixtures/*-main-ref.* text eol=lf

@@ -585,7 +585,7 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
     }
     {
       // subjects are untrusted Markdown: each one is a single code span, so no mention, link, image or HTML renders, and Markdown or
-      // HTML that would rebuild a token redact() cannot see (bold, an empty tag, a comment, an entity) shows literally (review on #665)
+      // HTML that would rebuild a token redact() cannot see (bold, an entity of a visible character) shows literally (review on #665)
       const T36 = 'Ab1'.repeat(12);
       const hostile = [
         'Ping @octocat about `code` and **bold** <b>tag</b> ![x](https://example.invalid/i.png) [a](http://x)',
@@ -607,7 +607,8 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
       }
       const spans = items.map((l) => /^- `[0-9a-f]{12}` `([^`]*)`$/.exec(l)[1]).reverse(); // newest first in the notes
       assert.strictEqual(spans[0], "Ping @octocat about 'code' and **bold** <b>tag</b> ![x](https://example.invalid/i.png) [a](http://x)", 'a backtick becomes a quote, the rest stays literal inside the span');
-      assert.deepStrictEqual(spans.slice(1), hostile.slice(1), 'the four masking-bypass forms are inside a code span, so they render literally, never as a ghp_ token');
+      // spec 012 FR-182 (issue #1613): redact() now reads a token split by an empty tag or a comment, so those two subjects are masked before they reach the notes
+      assert.deepStrictEqual(spans.slice(1), [hostile[1], '[redacted]', '[redacted]', hostile[4]], 'the four masking-bypass forms are inside a code span, so they render literally, never as a ghp_ token (the tag and comment forms masked)');
     }
     {
       // at most TEST_COMMITS_MAX commits are listed, then a count of the rest

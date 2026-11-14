@@ -1,0 +1,2178 @@
+/* FROZEN REFERENCE (spec 012 FR-182, review of PR 1721, round 4): src/shared/redact.ts as on main at 2de1d8a6e, before PR 1721, unchanged. scripts/test-redact-monotone.ts
+   checks that the masks of this PR never show what this copy hides. Do not edit; do not import it outside that test. */
+/**
+ * Secret redaction (spec 012 FR-006, constitution III). Pure: no Electron, no Node-only imports, so it is unit-tested.
+ * Everything that reaches the `DURBAR_LOG` debug log, and vendor stderr, goes through `redact` first.
+ * What the mask covers and misses, against public lists: `specs/012-claude-codex-adapters/secret-coverage.md`.
+ */
+
+/** Longest input handled per call; the rest is dropped, so a huge stderr cannot stall the main process. */
+export const REDACT_MAX_CHARS = 1_000_000;
+
+const SECRET_NAME = /(TOKEN|KEY|SECRET|PASSWORD|PASS|AUTH|CREDENTIAL)/i;
+const SECRET_PREFIX = /^(GH_|GITHUB_|OPENAI_|ANTHROPIC_|COPILOT_)/i;
+/** Long but harmless values: excluded from the "20+ characters" rule only (the name rule still applies). */
+const LONG_OK_NAME = /^(PATH|PATHEXT|PSMODULEPATH|HOME|HOMEPATH|HOMEDRIVE|USERPROFILE|PWD|OLDPWD|SHELL|TMPDIR|TEMP|TMP|APPDATA|LOCALAPPDATA|PROGRAMFILES|PROGRAMFILES\(X86\)|PROGRAMDATA|SYSTEMROOT|WINDIR|COMSPEC|NODE_PATH|MANPATH|INFOPATH|LS_COLORS|LSCOLORS|TERM_PROGRAM_VERSION|DISPLAY|DBUS_SESSION_BUS_ADDRESS|SSH_AUTH_SOCK|INIT_CWD|_|__CF.*|SSL_CERT_FILE|NODE_EXTRA_CA_CERTS|.*_HOME|ONEDRIVE.*|COMMONPROGRAMFILES.*|PROGRAMW6432|ALLUSERSPROFILE|PUBLIC|TERM_SESSION_ID|XPC_SERVICE_NAME|VSCODE_.*|TERM_PROGRAM.*|ITERM_.*|COLORTERM|DURBAR_.*|XDG_.*|LC_.*|npm_.*)$/i;
+
+/* Token and key shapes start where no letter or digit precedes them, not at `\b`: there is no word boundary between `_` and a
+   letter, so `\b` let a token wrapped in Markdown emphasis (`_ghp_…_`, `__sk-…__`) or glued to a snake_case word (`my_ghp_…`)
+   through (spec 012 FR-080 delta 2026-10-22). JWTs keep their stricter start (never after a letter, digit, `_` or `-`, so a long
+   base64url run is never rescanned from inside and the pattern stays linear); the wrapping is a bounded prefix instead: up to 8
+   underscores and up to 4 snake_case words (`my_eyJ…`, `MY__eyJ…`, `____eyJ…`), kept in the output (T128). */
+/* A token may also start right after a percent-encoded byte (`?q=token%3Dghp_…`, `%22ghp_…%22`, `%2F`, `%3A`), where the char before
+   it is a hex digit (spec 012 FR-080 delta 2026-10-22, T129, review of PR #543), and after a `%` encoded any number of times
+   (`%253D`, `%2525253D`): the last escape of a re-encoded `%` always follows `25`, so `(?:%|25)XX` covers every depth with a
+   fixed-width lookbehind (T130; over-masks a token glued to a literal `25XX`, fail-safe). It may also start right after a backslash
+   escape (`\n`, `\t`, `\uXXXX`, `\xXX`), because the debug log redacts *after* `JSON.stringify`, which turns a token at the start of a
+   line into `\nghp_…` (T130, review of PR #549). A quoted-printable escape (`=3Dghp_…`: `=` and two upper-case hex digits) and a
+   `%uXXXX` escape (`%u003Dghp_…`, merged into the `%XX` branch so the start costs no more per position) start a token too (T132, issue #551). Every branch is fixed-width, so each position costs O(1): still linear. */
+const PCT = String.raw`(?<=(?:%(?:u[0-9A-Fa-f]{2})?|25)[0-9A-Fa-f]{2}|=[0-9A-F]{2}|\\(?:[nrtbfv]|u[0-9A-Fa-f]{4}|x[0-9A-Fa-f]{2}))`;
+/** The same for the shapes added in T137: `25XX` alone is no start and `%` counts up to 8 re-encodings. Base64 holds `25AA` by chance, and the wide start doubles a `2525…` run (200 to 409 ms per MB, 2026-11-02). */
+const PCT_BOUNDED = String.raw`(?<=%(?:(?:25){0,8}|u[0-9A-Fa-f]{2})[0-9A-Fa-f]{2}|=[0-9A-F]{2}|\\(?:[nrtbfv]|u[0-9A-Fa-f]{4}|x[0-9A-Fa-f]{2}))`;
+/** Where a token shape may start: no letter or digit before it, or right after a `%XX`, `%uXXXX`, `=XX` or backslash escape. */
+const START = String.raw`(?:(?<![A-Za-z0-9])|${PCT})`;
+const shape = (body: string, flags = 'g'): RegExp => new RegExp(START + body, flags);
+const START_BOUNDED = String.raw`(?:(?<![A-Za-z0-9])|${PCT_BOUNDED})`;
+/** A shape that is only tried when the text matches its marker (a cheap test before a 1 MB regex scan). The marker is a superset of
+    every spelling the shape accepts (case-insensitive; `:` also as `\u003a`, `\x3a` or `%…3a`), which `test-redact.ts` checks
+    against the unguarded run (`maskTokenShapesUnguarded`). */
+type Guarded = { re: RegExp; marker: RegExp };
+const guarded = (re: RegExp, marker: RegExp): Guarded => ({ re, marker });
+/** A literal host or word matched in any case: `[Hh][Oo]…`, dots escaped. */
+const ci = (lit: string): string => lit.replace(/[A-Za-z]/g, (c) => `[${c.toUpperCase()}${c.toLowerCase()}]`).replace(/\./g, String.raw`\.`);
+/** A `/` as written in a URL, JSON-escaped (`\/`, `\\/`, `\u002f`, `\x2f`) or percent-encoded any number of times (`%2F`, `%252F`, up to 8 re-encodings). */
+const SL = String.raw`(?:\\{0,2}\/|\\{1,2}(?:u002[Ff]|x2[Ff])|%(?:25){0,8}2[Ff])`;
+/** One or two of them (`//`) between URL segments. */
+const SL2 = String.raw`(?:${SL}){1,2}`;
+/** A `:` written the same ways (`:`, `\u003a`, `\x3a`, `%3A`, `%253A`, ...). */
+const COLON = String.raw`(?::|\\{1,2}(?:u003[Aa]|x3[Aa])|%(?:25){0,8}3[Aa])`;
+/** A `.` as written, or percent-encoded any number of times (`%2E`). */
+const DOT = String.raw`(?:\.|%(?:25){0,8}2[Ee])`;
+/** After a webhook host: an optional trailing dot and an optional `:port` (the colon in any spelling). */
+const HOSTX = String.raw`\.?(?:${COLON}[0-9]{1,5})?`;
+/**
+ * Fixed-prefix tokens by family, one regex with one start (spec 012 FR-080 delta 2026-11-01, T137; every list entry and why it is or is
+ * not here: `specs/012-claude-codex-adapters/secret-coverage.md`). Only a prefix distinctive enough to be safe beside text: `pk_live_`
+ * (public), a bare hex or UUID key (no prefix) stay out. Linear: a literal prefix, then one bounded or tail-free class; a body that
+ * must end is `{N}` plus a lookahead, so a failed try costs at most N steps and an open-ended body consumes its run.
+ * Formats written from gitleaks' `config/gitleaks.toml` and vendors' public token formats (`THIRD_PARTY_NOTICES.md`). For gitleaks:
+ * MIT License. Copyright (c) 2019 Zachary Rice. Permission is hereby granted, free of charge, to any person obtaining a copy of this
+ * software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to
+ * whom the Software is furnished to do so, subject to the following conditions: The above copyright notice and this permission notice shall
+ * be included in all copies or substantial portions of the Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+ * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO
+ * EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+ * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+const NOT_AFTER = '(?![A-Za-z0-9])';
+/** A body that may hold `_`, `-` or `.` must have a digit near its start and not read as lower-case words (`cfut_cross_validation_results_v2` is a name, not a key). Bounded lookaheads. */
+const dg = (cls: string, min: number): string => String.raw`(?![a-z]{1,32}(?:[_-][a-z0-9]{1,32}){2,16}(?![A-Za-z0-9_-]))(?=${cls}{0,128}[0-9])${cls}{${min},}`;
+const W = '[A-Za-z0-9_-]';
+/** A token whose body is letters and digits only, written back to back (`ghp_AAAA…ghp_BBBB…`, issue #1233). The body used to stop at the `_` of the next prefix, so that prefix was swallowed and the START rule (a letter precedes it) hid nothing of the second token. Now the body may hold the `_` that follows a lead (`swallow`: the prefix of its own or another GitHub or npm family without that `_`), so glued tokens, of one family or of `gh[pousr]_`, `github_pat_` and `npm_` in any order, are one match. The first `min` characters are letters or digits only, so a list of bare prefixes (`ghp_gho_ghu_…`) is no body. One flat repeat of a fixed-width choice, so still linear. */
+const GH_SWALLOW = 'gh[pousr]|github|github_pat|github_pat_[A-Za-z0-9]{22}|npm'; // `github_pat_` has a second `_` after its first 22 characters
+const glued = (prefix: string, min: number, swallow: string): string => String.raw`${prefix}[A-Za-z0-9]{${min}}(?:[A-Za-z0-9]|(?<=${swallow})_)*`;
+/** The GitHub and npm token shapes as a second token: `PREFIXED_NEXT` takes them too, after a token whose body swallowed their prefix. */
+const GH_NPM_NEXT = String.raw`gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}`;
+const PREFIXED = [
+  // cloud
+  String.raw`(?:ABIA|ACCA|A3T[A-Z0-9])(?=[A-Z]{0,15}[0-9])[A-Z0-9]{16}${NOT_AFTER}`, // the rarer AWS access key ids need a digit: `ACCAGTTGCATGCATGCATG` is DNA
+  String.raw`bedrock-api-key-${dg('[A-Za-z0-9+/=_-]', 20)}`, // Amazon Bedrock, short-lived
+  String.raw`ya29\.${dg(W, 20)}|GOCSPX-${dg(W, 24)}`, // Google OAuth access token, client secret
+  String.raw`[A-Za-z0-9_~.]{3}[0-9]Q~[A-Za-z0-9_~.-]{31,34}(?![A-Za-z0-9_~.-])`, // Entra ID (Azure AD) client secret
+  String.raw`do[opr]_v1_[a-f0-9]{64}|v1\.0-[a-f0-9]{24}-[a-f0-9]{146}|cf(?:ut|at|k)_${dg(W, 40)}`, // DigitalOcean, Cloudflare
+  String.raw`vcc_${dg('[A-Za-z0-9]', 40)}|nf[pcub]_${dg(W, 30)}|rnd_${dg('[A-Za-z0-9]', 32)}|xai-${dg('[A-Za-z0-9]', 40)}|nvapi-${dg(W, 40)}|csk-${dg('[A-Za-z0-9]', 40)}|pcsk_${dg(W, 40)}|(?<![-_])fw_${dg('[A-Za-z0-9]', 24)}|BBDC-${dg('[A-Za-z0-9+/_-]', 40)}|CFPAT-${dg(W, 43)}|unkey_${dg('[A-Za-z0-9]', 20)}|bkua_${dg('[A-Za-z0-9]', 32)}|lin_oauth_${dg('[A-Za-z0-9]', 40)}|sk\.eyJ${dg('[A-Za-z0-9_.-]', 20)}`, // format from public lists, not confirmed by a vendor page (secret-coverage.md): Vercel, Netlify, Render, xAI, NVIDIA, Cerebras, Pinecone, Fireworks, Bitbucket, Contentful, Unkey, Buildkite, Linear, Mapbox
+  String.raw`HRKU-${dg(W, 40)}|fo1_${W}{43}|fm[12][ar]?_[A-Za-z0-9+/]{100,}={0,3}|vc[parki]_[A-Za-z0-9]{40,}`, // Heroku, Fly.io, Vercel
+  String.raw`sbp_${dg('[A-Za-z0-9_]', 40)}|sb_secret_${dg(W, 20)}|napi_[A-Za-z0-9]{40,}|pscale_(?:tkn|oauth|pw)_${dg('[A-Za-z0-9_=.-]', 32)}|AstraCS:[A-Za-z0-9]{24}:[a-f0-9]{64}`, // Supabase, Neon, PlanetScale, DataStax
+  String.raw`[A-Za-z0-9]{14}\.atlasv1\.[A-Za-z0-9_=-]{60,}|hv[sbr]\.${dg(W, 24)}|dp\.(?:pt|st|ct|sa|scim|audit)\.${dg('[A-Za-z0-9._-]', 40)}|pul-[a-f0-9]{40}|ops_eyJ[A-Za-z0-9+/]{100,}={0,3}|A3-[A-Z0-9]{6}-(?:[A-Z0-9]{11}|[A-Z0-9]{6}-[A-Z0-9]{5})-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}|AGE-SECRET-KEY-1[A-Z0-9]{58}|tskey-${dg('[A-Za-z0-9-]', 20)}|sha256~${W}{43}`, // Terraform, Vault, Doppler, Pulumi, 1Password, age, Tailscale, OpenShift
+  // code hosts and CI
+  String.raw`gl(?:dt|rt|ft|ffct|imt|agent|oas|soat|ptt|cbt)-${dg('[A-Za-z0-9_.-]', 20)}|GR1348941${dg(W, 20)}`, // GitLab, beside `glpat-`
+  String.raw`ATATT3${dg('[A-Za-z0-9_=-]', 20)}`, // Atlassian
+  String.raw`CCIP(?:AT|RJ)_${dg('[A-Za-z0-9_]', 20)}|sgp_${dg('[A-Za-z0-9_]', 40)}|(?:pat|sat)\.${W}{22}\.[A-Za-z0-9]{24}\.[A-Za-z0-9]{20}|PMAK-[A-Fa-f0-9]{24}-[A-Fa-f0-9]{34}`, // CircleCI, Sourcegraph, Harness, Postman
+  // AI providers, beside `sk-`
+  String.raw`gsk_[A-Za-z0-9]{40,}|pplx-[A-Za-z0-9]{40,}`,
+  String.raw`(?<![-_])hf_[A-Za-z0-9]{30,}|api_org_[A-Za-z0-9]{30,}|(?<![-_])r8_[A-Za-z0-9]{30,}|tvly-${dg(W, 20)}|lsv2_[a-z]{2}_${dg('[A-Za-z0-9_]', 30)}`, // Hugging Face (letters only is real), Replicate, Tavily, LangSmith. A two-letter prefix does not start after `-` or `_`: base64url holds those by chance
+  // package registries
+  String.raw`npm_[A-Za-z0-9]{36,}|pypi-Ag${dg(W, 50)}|rubygems_[a-f0-9]{48}|CLOJARS_[A-Za-z0-9]{60}|dckr_pat_${dg(W, 20)}`, // npm, PyPI, RubyGems, Clojars, Docker
+  // chat and mail (Slack, Discord, Telegram tokens: their own shapes below)
+  String.raw`SG\.${dg('[A-Za-z0-9_.=-]', 40)}|(?<![-_])key-[a-f0-9]{32}${NOT_AFTER}|[a-f0-9]{32}-us[0-9]{1,2}${NOT_AFTER}|xkeysib-[a-f0-9]{64}-[A-Za-z0-9]{16}|re_[A-Za-z0-9]{8}_[A-Za-z0-9]{24}|[0-9]{15,16}(?:\||%7[Cc])${W}{27,40}${NOT_AFTER}`, // SendGrid, Mailgun, Mailchimp, Brevo, Resend, Facebook
+  // payment
+  String.raw`(?:sk|rk)_(?:live|test|prod)_(?=[A-Za-z]{0,128}[0-9])[A-Za-z0-9]{16,}|whsec_[A-Za-z0-9]{24,}|sq0(?:atp|csp)-${dg(W, 22)}|rzp_(?:live|test)_[A-Za-z0-9]{14,}|FLWSECK(?:_TEST)?-[A-Za-z0-9]{12,}(?:-X)?|access-(?:sandbox|development|production)-[a-f0-9-]{36}|shp(?:at|ca|pa|ss)_[A-Fa-f0-9]{32}|pdl_(?:live|sdbx)_${dg('[A-Za-z0-9_]', 20)}|duffel_(?:test|live)_[A-Za-z0-9_=-]{43}`, // Stripe, Square, Razorpay, Flutterwave, Plaid, Shopify, Paddle, Duffel
+  // developer tools
+  String.raw`lin_api_[A-Za-z0-9]{40,}|ntn_[A-Za-z0-9]{40,}|sntry[su]_[A-Za-z0-9+/=_]{40,}|gl(?:c|sa)_${dg('[A-Za-z0-9+/_]', 32)}={0,3}|NR(?:AK|II|JS)-${dg('[A-Za-z0-9-]', 19)}|dt0c01\.[A-Za-z0-9]{24}\.[A-Za-z0-9]{64}|ph[xs]_[A-Za-z0-9]{30,}|sl\.${dg(W, 100)}|pat[A-Za-z0-9]{14}\.[a-f0-9]{64}|pnu_[A-Za-z0-9]{36}|rdme_[A-Za-z0-9]{70}|shippo_(?:live|test)_[A-Fa-f0-9]{40}|EZ[AT]K[A-Za-z0-9]{54}|ico-[A-Za-z0-9]{32}(?![A-Za-z0-9.])|API-[A-Z0-9]{26}${NOT_AFTER}|fio-u-[A-Za-z0-9_=-]{64}|s-s4t2(?:ud|af)-[a-f0-9]{64}|[A-Za-z0-9]{6}_[A-Za-z0-9]{29}_mmk|sm_[aps]at_[A-Za-z0-9]{16}|tk-us-${W}{48}|p8e-[A-Za-z0-9]{32}|(?:sc|ext|scauth|authress)_[A-Za-z0-9]{5,30}\.[A-Za-z0-9]{4,6}\.acc[_-][A-Za-z0-9-]{10,32}\.[A-Za-z0-9+/_=-]{30,120}`, // Linear, Notion, Sentry, Grafana, New Relic, Dynatrace, PostHog, Dropbox, Airtable, Prefect, ReadMe, Shippo, EasyPost, Infracost (not a `.css` name), Octopus, Frame.io, 42, MaxMind, SettleMint, Scalingo, Adobe, Authress
+].join('|');
+/**
+ * Prefixes made only of base64 characters: inside base64 a `/EAAA…` is ordinary (zero bytes are `AAAA`), so these never start after `/`, `+`, `-` or `_` (base64url), never on a line
+ * wrapped from or into a long base64 line, and must end on a character that is not base64. Each run has one start, so a failed end costs its run once; `EAAA`'s body can hold `-`,
+ * so it is bounded (T137, reviews of #1015). `%` is in the X bearer's run class but not in `NOT_B64_AFTER`: on `%41AAAA…+` a failed end backtracks to a `%` and matches, so a run of
+ * such starts cannot fail over and over: that is what keeps it linear. The bearer must hold a `%` too, which base64 never does.
+ */
+const LINE_BREAK = String.raw`(?:\\[nr]|[\r\n]){1,2}`;
+const NOT_B64_AFTER = String.raw`(?![A-Za-z0-9+/=])(?!${LINE_BREAK}[A-Za-z0-9+/=]{40})`;
+const B64_START = String.raw`(?:(?<![A-Za-z0-9+/_-])|${PCT_BOUNDED})(?<![A-Za-z0-9+/=]{40}${LINE_BREAK})`;
+const B64_PREFIXED = [
+  String.raw`ABSK[A-Za-z0-9+/]{100,}={0,2}`, // Amazon Bedrock, long-lived
+  String.raw`AIza${W}{35}(?![_-])`, // Google API key (Gemini too)
+  String.raw`LTAI[A-Za-z0-9]{12,}|4b1d[A-Za-z0-9]{38}|dapi[a-f0-9]{32}(?:-[0-9])?`, // Alibaba, ClickHouse, Databricks
+  String.raw`AKCp[A-Za-z0-9]{60,}|cmVmd[A-Za-z0-9]{59}|SK[A-Fa-f0-9]{32}|eyJrIjoi[A-Za-z0-9]{70,}={0,3}`, // JFrog, Twilio, old Grafana keys
+  String.raw`EAA[CM][A-Za-z0-9]{100,}|EAAA${W}{60,128}|A{20,24}(?=[A-Za-z0-9]{0,128}%)[B-Za-z0-9%][A-Za-z0-9%]{79,}`, // Facebook, Square, X (Twitter) bearer
+  String.raw`1\/\/0${dg(W, 30)}|AKLT${dg(W, 20)}|oy2(?=[a-z]{0,43}[0-9])[a-z0-9]{43}|cio(?=[A-Za-z]{0,32}[0-9])[A-Za-z0-9]{32}|ATBB${dg('[A-Za-z0-9_=-]', 20)}`, // format from public lists, not confirmed by a vendor page: Google refresh, Volcengine, NuGet, crates.io, Bitbucket
+].join('|');
+
+/**
+ * A JWT, found by a scan rather than by the regex alone (T137, review of #1015). `25AAeyJ` repeated over 1 MB made every `eyJ` a start that read up to 4096 characters
+ * (4.5 s on `main`). All the `eyJ` of one run of token characters end at the same place, so that end and the two segments after it are read once per run: a run that cannot
+ * end a JWT is passed whole, and only a run that can reaches the regex, whose start is a bounded lookbehind.
+ */
+const JWT_AT = new RegExp(String.raw`(?<=(?:(?<![A-Za-z0-9_-])|${PCT})_{0,8}(?:[A-Za-z0-9]{1,40}_{1,3}){0,4})eyJ[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}\.[A-Za-z0-9_-]{5,4096}`, 'y');
+const JWT_RUN = /[A-Za-z0-9_-]*/y;
+function runEnd(s: string, from: number): number {
+  JWT_RUN.lastIndex = from;
+  JWT_RUN.test(s);
+  return JWT_RUN.lastIndex;
+}
+function maskJwts(s: string, mask: string): string {
+  let out = '';
+  let copied = 0;
+  let end = -1; // where the run of the current `eyJ` ends
+  let can = false; // two segments follow it
+  for (let at = s.indexOf('eyJ'); at >= 0; ) {
+    if (at >= end) {
+      end = runEnd(s, at);
+      const second = s[end] === '.' ? runEnd(s, end + 1) : -1;
+      can = second - end - 1 >= 5 && second - end - 1 <= 4096 && s[second] === '.' && runEnd(s, second + 1) - second - 1 >= 5;
+    }
+    const first = end - at - 3;
+    if (!can || first < 5) { at = s.indexOf('eyJ', end); continue; }
+    if (first > 4096) { at = s.indexOf('eyJ', Math.max(at + 1, end - 4099)); continue; }
+    JWT_AT.lastIndex = at;
+    if (JWT_AT.test(s)) {
+      out += s.slice(copied, at) + mask;
+      copied = JWT_AT.lastIndex;
+      at = s.indexOf('eyJ', copied);
+    } else at = s.indexOf('eyJ', at + 1);
+  }
+  return copied === 0 ? s : out + s.slice(copied);
+}
+
+/**
+ * Bare token shapes: their classes hold no shell syntax. `maskBareTokenShapes` is these alone, for the folder-setup display (spec 061 FR-014); `maskTokenShapes` adds the rules that hold a name.
+ * `HELD_SHAPES` are the shapes of before T137, unchanged and first, with `HELD_PATTERNS` before them: a rule added later only sees what they left, so it can hide more but can never show what they hid
+ * (review of #1015: a guard on `glpat-`, a narrower start and a later prefix taking the head of an older token each did; `scripts/test-redact-shapes.ts` pins it). Guard a new shape, never one of these.
+ */
+const HELD_SHAPES: Array<RegExp | Guarded | ((s: string, mask: string) => string)> = [
+  shape(glued('gh[pousr]_', 20, GH_SWALLOW)),
+  shape(String.raw`github_pat_[A-Za-z0-9_]{20,}`),
+  shape(String.raw`glpat-[A-Za-z0-9_.-]{20,}`), // GitLab personal access token (spec 093: a clone URL's user part must not be one); no digit guard, 3% of real ones have none. `.`: the routable form
+  shape(String.raw`sk-(?:ant-)?[A-Za-z0-9_-]{20,}`), // OpenAI, Anthropic, DeepSeek, OpenRouter. `sk-ant-` also glued to a word: below
+  // any case: `bearer xyz` in a lowercased log line is the same secret (review on PR #630)
+  shape(String.raw`[Bb][Ee][Aa][Rr][Ee][Rr]\s{1,8}[A-Za-z0-9._~+/=-]{8,}`),
+  maskJwts,
+  shape(String.raw`(?:AKIA|ASIA)[A-Z0-9]{16}(?![A-Za-z0-9])`),
+  // Chat-tool secrets (T132, issue #551). Slack tokens: `xoxb-`, `xoxp-`, `xoxa-`, `xoxc-`, `xoxd-` (browser session), `xoxr-`, `xoxs-`,
+  // `xoxe-` and `xapp-`, then 8+ token characters or `%XX` escapes (a URL-encoded `xoxd-…%2B…%2F`); `xoxo-` is not a Slack prefix.
+  guarded(shape(String.raw`(?:xox[abcdeprs]|xapp)-(?:[A-Za-z0-9-]|%[0-9A-Fa-f]{2}){8,}`), /xox|xapp-/i),
+  // Webhooks: the fixed host and path sit in a lookbehind (host in any case, optional trailing dot and `:port`), so the scheme and host
+  // stay and only the secret path is masked. Between segments one or two slashes (`//`); the segments before the last are bounded
+  // classes split by a fixed `/`, the last one is unbounded (`[A-Za-z0-9_-]+`, a long or underscore secret is masked whole), so there
+  // is no nested quantifier. Slack: `services`, `workflows` and `triggers` paths.
+  guarded(new RegExp(String.raw`(?<=${ci('hooks.slack.com')}${HOSTX}${SL2}(?:${ci('services')}|${ci('workflows')}|${ci('triggers')})${SL2})(?:[A-Za-z0-9]{1,64}${SL2}){2,3}[A-Za-z0-9_-]+`, 'g'), /hooks\.slack\.com/i),
+  guarded(new RegExp(String.raw`(?<=${ci('discord')}(?:${ci('app')})?${ci('.com')}${HOSTX}${SL2}${ci('api')}${SL2}(?:[Vv][0-9]{1,2}${SL2})?${ci('webhooks')}${SL2})[0-9]{5,30}${SL2}[A-Za-z0-9_-]{20,}`, 'g'), /discord(?:app)?\.com/i),
+  // Telegram bot token: `<6-12 digits>:<exactly 35 chars>` (the real shape, so an id, a session or a file name is not one), bare or
+  // right after `/bot` on any host, port or path (`api.telegram.org/bot…`, `api.telegram.org/file/bot…`, a local Bot API server, a
+  // proxy): a letter then precedes it, so the lookbehind is host-free.
+  guarded(shape(String.raw`[0-9]{6,12}${COLON}[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])`), /[0-9]{6}[:%\\]/),
+  guarded(new RegExp(String.raw`(?<=${SL}[Bb][Oo][Tt])[0-9]{6,12}${COLON}[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])`, 'g'), /bot[0-9]{6}/i),
+  // Discord bot token (the id is the base64 of a numeric id, so its second character is D, T, j or z; the dots may be percent-encoded): base64 user id, `.`, 6-character timestamp, `.`, HMAC (27 or more); the first character is M, N or O.
+  guarded(shape(String.raw`[MNO][DTjz][A-Za-z0-9_-]{21,26}${DOT}[A-Za-z0-9_-]{6}${DOT}[A-Za-z0-9_-]{27,}`), /(?:\.|%(?:25){0,8}2[Ee])[A-Za-z0-9_-]{6}(?:\.|%(?:25){0,8}2[Ee])/),
+];
+/* The lookahead is every character these two can start with: without it a run of punctuation passes the start and tries all 100 alternatives at each position (`&` repeated: 90 to 14 ms per MB). */
+const PREFIXED_AT = new RegExp('(?=[A-Za-z0-9_~.])' + START_BOUNDED + `(?:${PREFIXED})`, 'g');
+/** The same without a start, tried at one place (`y`): a second token that begins where the first ends or inside the end of its body. */
+const PREFIXED_NEXT = new RegExp(`(?:${GH_NPM_NEXT}|${PREFIXED})`, 'y');
+/** How far back from the end of a match a swallowed second token can start: its prefix plus the structured part before the body runs on (the longest first parts, `sc_` + 30 characters + `.` + 6 + `.acc_`, reach 40 from the end of the first token). */
+const PREFIX_REACH = 40;
+/**
+ * `PREFIXED_AT`, and every token glued to a match (issue #1233, spec 012 FR-169). A token written right after another has a letter or digit before it, so the start rule
+ * hides nothing of it; and an open-ended body of letters and digits runs on into the next prefix. After each match the glued tokens are taken: one starting at its end
+ * (a fixed-length body) or starting in the last `PREFIX_REACH` characters of it (the swallowed prefix, whose body then runs on past the end). A token found there only
+ * extends the mask, never shortens it. Each match costs a bounded number of tries at fixed places, so still linear.
+ */
+function maskPrefixedGlued(s: string, mask: string): string {
+  let out = '';
+  let copied = 0;
+  PREFIXED_AT.lastIndex = 0;
+  for (let m = PREFIXED_AT.exec(s); m; m = PREFIXED_AT.exec(s)) {
+    const start = m.index;
+    let end = start + m[0].length;
+    for (let more = true; more; ) {
+      more = false;
+      for (let at = Math.max(start + 1, end - PREFIX_REACH); at <= end; at++) {
+        PREFIXED_NEXT.lastIndex = at;
+        const n = PREFIXED_NEXT.exec(s);
+        if (n && at + n[0].length > end) { end = at + n[0].length; more = true; break; }
+      }
+    }
+    out += s.slice(copied, start) + mask;
+    copied = end;
+    PREFIXED_AT.lastIndex = end;
+  }
+  return copied === 0 ? s : out + s.slice(copied);
+}
+const TOKEN_SHAPES: Array<RegExp | Guarded | ((s: string, mask: string) => string)> = [
+  maskPrefixedGlued,
+  new RegExp(`(?=[A-Za-z0-9])${B64_START}(?:${B64_PREFIXED})${NOT_B64_AFTER}`, 'g'),
+  // Google storage HMAC: its body is upper case and digits only, so it ends at any other character, a letter included (a second token glued to it starts in lower case: issue #1237)
+  new RegExp(`(?=[A-Za-z0-9])${B64_START}GOOG1[A-Z0-9]{40,}(?![A-Z0-9+/=])(?!${LINE_BREAK}[A-Za-z0-9+/=]{40})`, 'g'),
+  /sk-ant-[A-Za-z0-9_-]{8,}/g, // no start: a key glued to a letter (`xsk-ant-…`) is still a key (from spec 103's `maskAll`)
+  guarded(shape(String.raw`xox[os]-[0-9]{1,20}-[0-9]{1,20}-[0-9]{1,20}-[A-Fa-f0-9]{8,}`), /xox[os]-[0-9]/), // the legacy four-part Slack form (a plain `xoxo-…` is a hug: stays)
+  // Microsoft Teams incoming webhook: the host stays, the path is the secret.
+  guarded(new RegExp(String.raw`(?<=${ci('.webhook.office.com')}${HOSTX}${SL2}${ci('webhookb2')}${SL2})[A-Za-z0-9@_-]{20,}(?:(?:${SL})[A-Za-z0-9@_-]{1,128}){0,4}`, 'g'), /webhook\.office\.com/i),
+];
+
+/** A private key block in any spelling (PEM, OpenSSH, encrypted, PGP; lower case, runs of spaces): to its END line or, cut off, to the end of the text (the first match takes the rest, so no rescan). A PUBLIC block does not match. */
+const KEY_BLOCK = /-----BEGIN[\sA-Z0-9_-]{0,100}?PRIVATE\s{1,8}KEY(?:\s{1,8}BLOCK)?-----[\s\S]*?(?:-----END[\sA-Z0-9_-]{0,100}?PRIVATE\s{1,8}KEY(?:\s{1,8}BLOCK)?-----|$)/gi;
+/**
+ * Spec 095 (review of PR 1098, finding 2): where a private key block that `KEY_BLOCK` would mask to the end of `text` starts (its BEGIN is
+ * in `text` and no matching `-----END ... PRIVATE KEY-----` follows), else -1. The same grammar as `KEY_BLOCK`, so a `-----END CERTIFICATE-----`
+ * does not close it. Used by the conversation search to take such a block's BEGIN into a window that starts inside its body.
+ */
+export function openKeyBlockStart(text: string): number {
+  const re = new RegExp(KEY_BLOCK.source, KEY_BLOCK.flags);
+  const end = /-----END[\sA-Z0-9_-]{0,100}?PRIVATE\s{1,8}KEY(?:\s{1,8}BLOCK)?-----$/i;
+  let open = -1;
+  for (let m = re.exec(text); m; m = re.exec(text)) {
+    open = m.index + m[0].length === text.length && !end.test(m[0]) ? m.index : -1;
+    if (m[0].length === 0) re.lastIndex++;
+  }
+  return open;
+}
+/**
+ * Spec 012 FR-174 (issue #1298): the shell removes the quotes of `'pass'"word"=x`, `pa"ss"word=x` and `"pass"word=x`, so each is the name `password`. Any run of quote or backslash characters
+ * (the close of one span and the open of the next, a JSON-escaped quote, `pa\ss`, `pa""""""""ss`: a shell takes any number of empty quotes) may sit between any two atoms of a name. Not a count:
+ * a count (it was 6) is a bypass one quote longer (pre-review of PR 1317). An ASCII class that no atom of a name shares, so a run is taken once from each start: linear (`test-redact-growth.ts`,
+ * `quotes`), and nothing for the hidden-character walker to add.
+ */
+/**
+ * What a shell removes without a trace: quotes (any number, `''`), backslashes, an empty backtick pair or `$()` (or with one space inside; fixed-width parts only, the walker of `test-redact-shapes.ts` allows no variable part inside an unbounded repeat), a backslash and a line break (a line continuation: inside a name `Q_SPLIT` takes it, after a name the backslash is in `Q_END` and the line break in the `\s` that follows), and the `$` of `$'…'` or `$"…"`. Between the atoms of a secret name (`Q_SPLIT`), and
+ * between the name and its separator or the value (`Q_END`: one more quote was a bypass, review of PR 1317 by Ruben). ASCII only and no atom of a name shares a character with them, so a run is taken once from
+ * each start: linear (`test-redact-growth.ts`, `quotes*`), nothing for the hidden-character walker to add.
+ */
+const Q_SPLIT = String.raw`(?:\\\n|\\\r\n|["'\\]|\`\`|\` \`|\$\(\)|\$\( \)|\$(?=["']))*`;
+const Q_END = String.raw`(?:["'\`\\]|\$\(\)|\$\( \))*`;
+/** `Q_END` for the value side: also a line continuation (a backslash and a line break, LF or CRLF) before the value (`--password=\<newline>V`, round 3 of the review of PR 1317). Fixed-width alternatives, no variable part in the repeat. */
+const Q_VALUE = String.raw`(?:\\\n|\\\r\n|["'\`\\]|\$\(\)|\$\( \))*`;
+const splitQuotes = (src: string): string => (src.match(/\[[^\]]*\]\??|\(\?:[^)]*\)\??|\\.\??|[^[(\\]\??/g) ?? [src]).join(Q_SPLIT);
+/** A name that holds a secret, right before its separator (checked backwards from the separator, so `max_tokens` and `token_count` are not it). */
+const SECRET_NAMES = `(?:${['secret_?access_?key', 'session_?token', 'client_?secret', 'api_?secret', 'app_?secret', 'consumer_?secret', 'shared_?secret', 'secret_?key', 'api[_-]?key', 'access[_-]?key', 'auth[_-]?key', 'account_?key', 'sharedaccesskey', 'private[_-]?key', 'priv_?key', 'signing_?key', 'encryption_?key', 'master_?key', 'license_?key', 'service_?key', 'token', 'secret', 'password', 'passwd', 'passphrase', 'contrase(?:n|ñ)a', '_gitlab_session'].map((n) => splitQuotes(ci(n))).join('|')}|(?<![A-Za-z])(?:${['pwd', 'pass', 'auth'].map((n) => splitQuotes(ci(n))).join('|')}))`;
+/** The names whose short values (4 to 7 characters) are hidden too. */
+const SHORT_NAMES = `(?:${['secret_?access_?key', 'session_?token', 'client_?secret', 'api_?secret', 'app_?secret', 'consumer_?secret', 'shared_?secret', 'secret_?key', 'api[_-]?key', 'access[_-]?key', 'auth[_-]?key', 'account_?key', 'sharedaccesskey', 'private[_-]?key', 'priv_?key', 'signing_?key', 'encryption_?key', 'master_?key', 'license_?key', 'service_?key', 'token', 'secret', 'password', 'passwd', 'passphrase', 'contrase(?:n|ñ)a', '_gitlab_session'].map((n) => splitQuotes(ci(n))).join('|')}|(?<![A-Za-z])${splitQuotes(ci('pwd'))})`; // the names whose short values (4 to 7 characters) are hidden too (issue #1227)
+const PASSWORD_NAMES = `(?:${['password', 'passwd', 'passphrase', 'contrase(?:n|ñ)a'].map((n) => splitQuotes(ci(n))).join('|')}|(?<![A-Za-z])${splitQuotes(ci('pwd'))})`; // a value that can be several words
+/**
+ * A value's simple stop rule, the same in free text and commands: a space, a quote, a backtick, `<`, `>`, `,`, `;`, `|`, `&`, `$(`, `${`, `**`, and (`closerAt`) a closing bracket of one opened
+ * before the name. So `token=abc12345;curl${IFS}x|sh` shows the shell, a note's `{token:abc12345,name:bob}` keeps its name, and `password=Summer2024&Secure!9` leaves `&Secure!9`
+ * (listed in secret-coverage.md: a tail is a smaller loss than a person's note, and a permission line must not hide a command an agent wrote). In a URL query `#` stops it too.
+ */
+const STOP = String.raw`\s"'\`\\<>,;|&`;
+const NV = `[^${STOP}]`;
+const VALUE_END = String.raw`(?:[\s"'\`,;)\]}|&<>]|$)`;
+const valueBody = (extra = ''): string => String.raw`(?:[^${STOP}$*${extra}]|\\(?!["'\`nrt\\])|\$(?![({])|\*(?![\s*]|$))+`;
+/** A value starting with `/` is a path, unless it reads as base64 (`aws_secret_access_key=/aB3d…`): 32 or more base64 characters, a digit, and a run of 16 with no slash. */
+const SLASH_B64 = String.raw`(?=\/[A-Za-z0-9+/=]{31})(?=[A-Za-z0-9+/=]{0,128}[0-9])(?=[A-Za-z0-9+/=]{0,64}[A-Za-z0-9+=]{16})`;
+/** What is a value only in form. */
+const NOT_A_VALUE = [
+  String.raw`\.{1,2}[\\/]|~[\\/]|[A-Za-z]:[\\/]|[<{\[]`, // a path, a placeholder
+  String.raw`\$(?:[{(]|[A-Z0-9_]{1,128}\b|[a-z][a-z0-9_]{0,128}\b)|%[A-Za-z_]`, // a variable
+  String.raw`[\w.-]{1,128}(?:[\\/][\w.-]{1,128}){1,16}\.[A-Za-z0-9]{1,8}${VALUE_END}`, // keys/server_2026.pem (base64 has no dot)
+  String.raw`[a-z0-9_.-]{1,64}(?:[\\/][a-z0-9_.-]{1,64}){1,16}${VALUE_END}`, // src/foo1 (base64 is never all lower case)
+  String.raw`[\w+.-]{0,24}:\/\/`, // a URL: its credential and query have their own rules
+  String.raw`\$?[\w.]{1,128}\((?![^()\r\n]{0,128}\)[\w!@#$%^&*])`, // getToken2(a, b), but not Sup3r(S3cret)99
+  String.raw`[A-Za-z_$][\w$]{0,64}(?:\.[A-Za-z_$][\w$]{0,64}){1,8}${VALUE_END}`, // config.token2
+  String.raw`[0-9]{1,128}[.:/-][0-9.:/TZ+-]{0,128}${VALUE_END}`, // 127.0.0.1:8080, 1523/1523, 2026-11-01T10:00:00Z
+  String.raw`(?![0-9a-f]{8}-[0-9a-f]{4}-)[a-z]{2}[a-z0-9]{0,30}(?:[_-][a-z0-9]{1,32}){1,16}${VALUE_END}`, // lower-case words, as in dg(): gpt-4o-mini, reset-flow-v2 (a UUID is not)
+].join('|');
+/** A key-looking start that is not finished (a stream cut inside `X-Api-Key: sk-ab12`): too short for its own shape, and lower-case with a hyphen, which `NOT_A_VALUE` takes for words. */
+const KEY_START = String.raw`(?:sk|ghp|gho|ghu|ghs|ghr|glpat|xox[a-z]|hf|npm)[_-]${NV}{2,}`;
+/** A value of 4 to 7 characters that has a letter and a digit (`abc123`, `hunter2`): a number (`4096`), a word (`none`, `string`), an id, a version or an algorithm name (`NOT_SHORT`) is not one. Issue #1227. */
+const NOT_SHORT_NAMES: Array<[string, string]> = [['sha', '(?:1|224|256|384|512)'], ['utf', '(?:8|16|32)'], ['base', '(?:32|58|64)'], ['hs', '(?:256|384|512)'], ['rs', '(?:256|384|512)'], ['es', '(?:256|384|512)'], ['ps', '(?:256|384|512)'], ['u?int', '(?:8|16|32|64|128)'], ['float', '(?:16|32|64)'], ['ipv', '[46]'], ['oauth', '[12]'], ['ed', '(?:25519|448)'], ['x', '(?:509|448|25519)'], ['pkcs#?', '(?:1|5|7|8|10|12)'], ['win', '(?:32|64)'], ['rsa', '(?:1024|2048|3072|4096)'], ['tls', '1[0-3]?'], ['http', '[123]'], ['md', '[245]'], ['des', '3?'], ['crc', '(?:8|16|32|64)'], ['iso', '(?:8859|646|8601)'], ['ucs', '[24]'], ['aes', '(?:128|192|256)']];
+const NOT_SHORT = `(?:#(?:[0-9A-Fa-f]{6}|[0-9A-Fa-f]{3,4})|0x[0-9A-Fa-f]+|v?[0-9]{1,6}(?:\\.[0-9]{1,6}){1,6}\\.?|[A-Z][0-9]{1,5}|[A-Za-z]{1,6}-[0-9]{1,5}\\.?|${NOT_SHORT_NAMES.map(([w, n]) => `${ci(w)}${n}`).join('|')})(?!${NV})`; // `T144`, `v1.2.3`, `0x1f`, `#ff00aa`, `FR-186`, `sha256`, `utf8`, `HS256`, `int64`, `oauth2`, `ed25519`, `x509`, `PKCS#12`, `win32`: an id, a version or a name, not a secret. A name takes only the sizes it really has (`Win2024`, `hs2023`, `Des123` are passwords); `#` only a hex colour of 3, 4 or 6 digits (`#hunt3` and `#abc12` are passwords). Left readable on purpose, a [KNOWN GAP] (FR-170 item 5): one capital and digits (`X12345`), `0x` hex, a dotted version, a hex colour
+const SHORT_VALUE = `(?=${NV}{4,7}(?!${NV}))(?!${NOT_SHORT})(?=${NV}{0,6}[0-9])(?=${NV}{0,6}[A-Za-z])`; // `a1b2c3d` and `abc123` are still hidden: a short hex id is a short password as far as the text can tell
+/** After a password's first word: up to 8 more words of 2 to 32 letters and digits that each hold a digit (`ab12 cd34 ef56`); a word without a digit (`is`, `the`) ends it. */
+const PHRASE_WORD = String.raw`\x20{1,2}(?=[A-Za-z0-9]{0,32}[0-9])[A-Za-z0-9]{2,32}(?![A-Za-z0-9])`;
+const PHRASE_TAIL = `(?:${PHRASE_WORD}){0,8}`; // optional: a required tail fails at the end of a long value and backtracks it, at every start (`password=` repeated was quadratic)
+/**
+ * `name=value`, `"name": "value"`, `name := value`, in any case for the name but not the value (`$DB_PASS` is a variable, `$uperS3cret` is not), also JSON-escaped (FR-080 delta 2026-11-01). The match starts
+ * at the name and keeps it with the separator and the opening quotes (group 1); the name is matched FORWARD, never in a lookbehind: a lookbehind over a quote run (`Q_END`) is retried at every
+ * position and walks back over the whole run, which is quadratic on some V8 versions (review of PR 1317, round 2). A value is 8 or more characters with a digit in the first 128, or 20 or more with a symbol letters and hyphens do not explain
+ * (`please-enter-your-password` is prose, and a saved note keeps the mask for good). The body has no tail, so open-ended is linear.
+ */
+const named = (before: string, extra: string, names = SECRET_NAMES, short = false, tail = ''): RegExp => new RegExp(String.raw`(${before}${names}${Q_END}\s{0,8}(?::=|=>|[:=]|%3[DdAa])\s{0,8}${Q_VALUE})(?:${SLASH_B64}|(?!\/|${NOT_A_VALUE})(?:(?=${NV}{8})(?=${NV}{0,128}[0-9])|(?=${NV}{20})(?=[A-Za-z_.-]{0,128}[+=~@!#^*?])${short ? `|${SHORT_VALUE}` : ''})${short ? `|(?=${KEY_START})` : ''})${valueBody(extra)}${tail}`, 'g');
+const NAMED_IN_QUERY = named('[?&]', '#');
+const NAMED_SECRET = named('', '', SECRET_NAMES, false);
+/** A password with several words is its own pass so that `NAMED_SECRET` sees the rest as a mask. */
+const NAMED_PHRASE = named('', '', PASSWORD_NAMES, true, PHRASE_TAIL);
+/** Short values are only for the names in `SHORT_NAMES` (not `pass` or `auth`, which are common words). */
+const NAMED_SHORT = named('', '', SHORT_NAMES, true);
+/** `password: [redacted]!word12345`: the rest of a value glued to a mask after a secret name. A stream masks a short value (`SHORT_VALUE`, 4 to 7 characters) when a piece ends 4 to 7 characters into a longer one, and the next piece brings the rest (`Pa55` then `!word12345`), which no rule took when it starts with a symbol; on `main` the whole value arrived first and went as one. The rest goes up to the value's stop rule (`valueBody`), as the whole value would, never starts at a backslash (an escape that closes a quoted value) and holds a letter or a digit in its first 65 characters (a full stop, `!`, `)` or `...` after a mask is the sentence's; review of #1243 at bda3f0d33, O1). A glued `/path`, `:8080` or `[1]` still goes: it may be the rest of the secret. Anchored at the name and the literal mask, no tail, so linear. Re-review of #1243 at f8af91b1a (B2). */
+const NAMED_MASKED_REST = new RegExp(String.raw`(${SECRET_NAMES}${Q_END}\s{0,8}(?::=|=>|[:=]|%3[DdAa])\s{0,8}${Q_VALUE}\[redacted\])(?!\\)(?=${NV}{0,64}[A-Za-z0-9])${valueBody()}`, 'g'); // not from a backslash: `\"[redacted]\"}` is an escaped quote after a JSON value, not a rest; and only a rest with a letter or a digit, so a sentence keeps its punctuation (`[redacted].`, `[redacted]. Then`, `[redacted])`)
+/** `pwd=[redacted] blue8 x`: a password of several words that arrived in pieces (the brain view masks the first word, the next delta brings the rest) keeps taking its words after the mask, also when a few characters of the next piece sit glued to it (`[redacted]4 ef56`, which `maskGluedTail` would take after this). At least one word, so it is anchored at a literal. It runs before `NAMED_PHRASE`, so one call takes at most 8 words after a mask or after a first word; masking the result again takes 8 more (a stream does). */
+const NAMED_PHRASE_MASKED = new RegExp(String.raw`(${PASSWORD_NAMES}${Q_END}\s{0,8}(?::=|=>|[:=]|%3[DdAa])\s{0,8}${Q_VALUE})\[redacted\][A-Za-z0-9]{0,32}(?:${PHRASE_WORD}){1,8}`, 'g');
+/** Where in a value the first closing bracket with no opener inside the value is, or -1: `(token=abc12345)` keeps its `)`, `Sup3r(S3cret)99` is one value. */
+function closerAt(v: string): number {
+  const open = { ')': 0, ']': 0, '}': 0 };
+  for (let i = 0; i < v.length; i++) {
+    const c = v[i];
+    if (c === '(') open[')']++; else if (c === '[') open[']']++; else if (c === '{') open['}']++;
+    else if (c === ')' || c === ']' || c === '}') { if (open[c] === 0) return i; open[c]--; }
+  }
+  return -1;
+}
+/** What the bare-token rule needs from `maskCookies`, the run end cached so that a run of heads costs one scan, not one per head. */
+interface BareCtx { runEnd: (i: number) => number; endOk: (i: number) => boolean; maskAt: (i: number) => number }
+/** A header value with no `=`: one opaque token (a session id, a signed blob), or one inside a pair of quotes. Returns where it ends, or -1 when it is not one. It must be at least 8 characters with no space, not `undefined`, `null`, `HttpOnly`, `Secure` or `deleted`, and what follows it must end the value: the line, a quote, a backslash, `;`, a shell character or a closing bracket (only spaces between). The token stops at the same characters (not at `:`, so `s:abc.sig` and `urn:sess:abc` are one token) and at the next `cookie:` head, so the shell part and the bracket stay visible, as after a pair. `cookie: Set-Cookie:` is two heads, not one token. */
+const BARE_PLAIN = /^(?:undefined|null|httponly|secure|deleted)$/i;
+function bareEnd(s: string, at: number, ctx: BareCtx): number {
+  const q = s[at];
+  if (q === '"' || q === "'") { const e = ctx.runEnd(at + 1); return s[e] === q && e - at - 1 >= 8 && !(e - at - 1 <= 9 && BARE_PLAIN.test(s.slice(at + 1, e))) ? e + 1 : -1; }
+  const i = ctx.runEnd(at);
+  if (i - at < 8 || (i - at <= 9 && BARE_PLAIN.test(s.slice(at, i)))) return -1;
+  return ctx.endOk(i) ? i : -1;
+}
+/** Characters the bare-token scans looked at, for the growth test (`scripts/test-redact-growth.ts`): a count, not a clock, so a stall fails on any machine. Read and reset by `bareStepsForTest`; one addition per scan, no cost worth naming. */
+let bareSteps = 0;
+export function bareStepsForTest(): number { const n = bareSteps; bareSteps = 0; return n; }
+const ENV_MASK = /\[redacted:[A-Za-z0-9_.-]{1,64}\]/y;
+/** A cookie header: `name=value` pairs split by `;`. Returns where the pairs end, or -1 when this is prose. A hand-written scan, one pass, no regex to go wrong: it stops at a quote, a backslash or the
+ *  line's end. A pair followed by more text counts when its value is long enough to be one (`sid=abcdef12 && curl x`); `cookie: a=b is the format` is prose, and a short later pair ends it there, so an `Expires=Wed, 21 Oct` stays. */
+function cookieEnd(s: string, from: number, newlineFrom: (i: number) => number, ctx: BareCtx, bareFirst: boolean): number {
+  const ends = (c: string | undefined): boolean => c === undefined || c === '\r' || c === '\n' || c === '"' || c === "'" || c === '\\';
+  let i = from;
+  let end = -1;
+  for (;;) {
+    const nameAt = i;
+    while (i < s.length && i - nameAt < 128 && !/[\s=;,"'\\|&`$(]/.test(s[i])) i++;
+    if (i === nameAt || s[i] !== '=') {
+      const done = nameAt === from && !bareFirst ? -1 : ctx.maskAt(nameAt); // a mask already there is a finished token: it is not replaced, the scan goes on after it
+      const b = done >= 0 ? done : nameAt === from && !bareFirst ? -1 : bareEnd(s, nameAt, ctx);
+      if (b < 0) return end;
+      if (done < 0) end = b;
+      i = b;
+      if (s[i] !== ';') return end;
+      i++;
+      while (s[i] === ' ' || s[i] === '\t') i++;
+      if (ends(s[i])) return end;
+      continue;
+    }
+    const valueAt = ++i;
+    if (s[i] === '"') { const q = s.indexOf('"', i + 1); const nl = newlineFrom(i); i = q < 0 || (nl >= 0 && nl < q) ? (nl < 0 ? s.length : nl) : q + 1; } else while (i < s.length && !/[\s;"'\\|&`]/.test(s[i]) && !(s[i] === '$' && (s[i + 1] === '(' || s[i + 1] === '{'))) i++;
+    if (ends(s[i]) || s[i] === '|' || s[i] === '&' || s[i] === '`' || s[i] === '$') return i; // the shell after it stays visible (STOP's rule; a diff reaches the approval card through `redact`)
+    if (s[i] === ';') {
+      end = i;
+      i++;
+      while (s[i] === ' ' || s[i] === '\t') i++;
+      if (ends(s[i])) return end;
+      continue;
+    }
+    let j = i; // whitespace after the value: the end of the header only when the line ends there
+    while (s[j] === ' ' || s[j] === '\t') j++;
+    if (ends(s[j])) return i;
+    const v = s.slice(valueAt, i); // 8 characters, or 4 to 7 with a letter and a digit (`sid=abc1234 x`, issue #1227)
+    return v.length >= 8 || (v.length >= 4 && /[0-9]/.test(v) && /[A-Za-z]/.test(v)) ? i : end;
+  }
+}
+const COOKIE_HEAD = shape(String.raw`(?:set-)?cookie\s{0,8}:\s{0,8}`, 'gi');
+const COOKIE_HEAD_NEXT = shape(String.raw`(?:set-)?cookie\s{0,8}:`, 'gi'); // the same head, to find the next one
+function maskCookies(s: string, mask: string): string {
+  if (!/cookie/i.test(s)) return s;
+  let out = '';
+  let from = 0;
+  // the next line break, found once and kept: looking it up per head made `cookie: a="x" ` repeated quadratic (976 ms on 1 MB)
+  let nl = -2;
+  const newlineFrom = (i: number): number => { if (nl !== -1 && nl < i) nl = s.indexOf('\n', i); return nl; };
+  // Bare tokens (`bareEnd`): a head that starts inside the run the last one scanned ends at the same place (`cookie:cookie:` repeated took 18 s at 100 KB when each head scanned to the end) (a cut at the next head leaves no token, so what follows a run is looked at once per run).
+  let runS = -1;
+  let runE = -2;
+  const plainEnd = (i: number): number => {
+    if (i >= runS && i <= runE) { bareSteps++; return runE; }
+    let k = i;
+    while (k < s.length && !/[\s=;"'\\|&`)\]}>]/.test(s[k]) && !(s[k] === '$' && (s[k + 1] === '(' || s[k + 1] === '{'))) k++;
+    bareSteps += k - i + 1;
+    runS = i; runE = k;
+    return k;
+  };
+  const nextHead = (i: number): number => { // the heads are met in order, so the sum of these searches is one pass
+    COOKIE_HEAD_NEXT.lastIndex = i;
+    const h = COOKIE_HEAD_NEXT.exec(s);
+    bareSteps += (h ? h.index : s.length) - i + 1;
+    return h ? h.index : -1;
+  };
+  const ctx: BareCtx = {
+    runEnd: (i) => { const e = plainEnd(i); const h = nextHead(i); return h >= 0 && h < e ? h : e; },
+    endOk: (i) => {
+      let j = i;
+      while (s[j] === ' ' || s[j] === '\t') j++;
+      bareSteps += j - i + 1;
+      const c = s[j];
+      return c === undefined || /[\r\n"'\\;|&`)\]}>]/.test(c) || (c === '$' && (s[j + 1] === '(' || s[j + 1] === '{'));
+    },
+    maskAt: (i) => {
+      if (mask.length > 0 && s.startsWith(mask, i)) return i + mask.length;
+      if (s[i] !== '[') return -1;
+      ENV_MASK.lastIndex = i;
+      return ENV_MASK.test(s) ? ENV_MASK.lastIndex : -1;
+    },
+  };
+  COOKIE_HEAD.lastIndex = 0;
+  for (let m = COOKIE_HEAD.exec(s); m; m = COOKIE_HEAD.exec(s)) {
+    const at = m.index + m[0].length;
+    const ws = m[0].slice(m[0].indexOf(':') + 1); // a bare token may follow on the same line, or on a folded one (`\r\n` then a space or tab), not on any next line
+    const end = cookieEnd(s, at, newlineFrom, ctx, !/[\r\n]/.test(ws) || /^[ \t]*\r?\n[ \t]+$/.test(ws));
+    if (end > at) { out += s.slice(from, at) + mask; from = end; COOKIE_HEAD.lastIndex = end; }
+  }
+  return from === 0 ? s : out + s.slice(from);
+}
+/** A password in a command-shaped rule: ends at shell syntax, and at brackets, so `curl -u a:b(curl) x` shows `(curl)`. `Bearer x` is not one: its own shape takes the value too (in a note, even after a mark). */
+const CMD_VALUE = String.raw`(?![Bb][Ee][Aa][Rr][Ee][Rr]\s)(?:[^\s"'|;&\`$()<>]|\$(?![({]))+`;
+const HELD_PATTERNS: RegExp[] = [
+  // `Bearer: <value>` (a colon after the scheme word, as in hand-written headers): 8 or more characters with a digit, so `Bearer: configuration` stays
+  shape(String.raw`([Bb][Ee][Aa][Rr][Ee][Rr]:\s{0,8})(?=[A-Za-z0-9._~+/=-]{8})(?=[A-Za-z0-9._~+/=-]{0,64}[0-9])[A-Za-z0-9._~+/=-]+`),
+  // `Bearer x. <value>`: a short first word and a stop character (`. , ; : ! ? ) -`, spaces or none after it, an optional quote) hide the value from the `Bearer` shape (issue #1227); the value is 12 or more characters with a digit. All of it goes, the scheme word too, as the `Bearer` shape of `HELD_SHAPES` hides it: this rule runs first, so keeping `Bearer ` showed what `main` hid (`"Bearer sk-proj-…`, `Cookie: a=Bearer x.…; b=1`). The first word may be the head of the secret.
+  shape(String.raw`[Bb][Ee][Aa][Rr][Ee][Rr]\s{1,8}(?=[A-Za-z0-9_~+/=-]{1,7}[.,;:!?)-]\s{0,8}["']?(?=[A-Za-z0-9._~+/=-]{0,64}[0-9])[A-Za-z0-9._~+/=-]{12})[A-Za-z0-9_~+/=-]{1,7}[.,;:!?)-]\s{0,8}["']?[A-Za-z0-9._~+/=-]+`),
+  shape(String.raw`(authorization\s{0,8}[:=]\s{0,8})(?:(?:bearer|basic|token)\s{1,8}){0,8}(?!'?\[(?:redacted|secret hidden)\]'?\}*(?:[\s",;]|$))[^\s",;]+`, 'gi'), // a value R12 already hid, whole, inside single quotes (`Authorization='[redacted]'}`) stays as it is; `[redacted]TOKEN` is not a hidden value
+  shape(String.raw`([a-z][a-z0-9+.-]{1,20}:\/\/)[^\s/:@"]{0,200}:[^\s/@"]{1,200}(?=@)`, 'gi'),
+  /(?<![A-Za-z0-9_-])tid=[0-9a-f]{8,64};[^\s"|<>`&]*/g,
+  // OAuth and signed-URL values in a URL's query or fragment (an authorization address, a loopback callback, a presigned link), also percent-encoded inside
+  // another URL; the names are not secret-looking, so the token shapes miss them (review on #635: a CLI's stderr reaches the debug sink).
+  // A fixed separator and name, then a value that stops at the next separator: no tail, so linear.
+  /((?:[?&#;]|%(?:3[Ff]|26|23|3[Bb]))(?:code|state|code_verifier|code_challenge|id_token|access_token|refresh_token|client_secret|sig|x-amz-signature|x-amz-security-token|x-goog-signature)(?:=|%3[Dd]))[^&;#\s"'\\<>]+/gi,
+];
+
+/** Rules added by T137, after `HELD_SHAPES`. */
+const PATTERNS: RegExp[] = [
+  KEY_BLOCK,
+  shape(String.raw`((?:set-)?cookie\\{0,2}["']\s{0,8}:\s{0,8}\\{0,2}")(?=[^\s=;,"'\\]{1,128}=|[^\s=;,"'\\|&\x60$()]{8,}(?:"|\\))(?:[^"\\\r\n]|\\(?!"))*`, 'gi'), // `"Cookie": "sid=…"` or one opaque token, in JSON: to the closing quote. The header form: `maskCookies`.
+  // `mysql -pPASSWORD` (the password glued to the flag; `-p` alone asks for it, `-P` is the port): the client programs of MySQL and MariaDB, after them the flag in the same command: one line, or lines joined by a continuation (`\`, a PowerShell backtick or a cmd `^`, then LF or CRLF); a `;`, `&` or `|` ends the command, so `mysql; tar -pxf a1.tgz` stays; the program name in any case, `mysql8` too, and `-p` after a quoted or backtick-quoted value (issue #1227)
+  new RegExp(String.raw`(\b(?:${ci('mysql')}|${ci('mariadb')})[A-Za-z0-9-]{0,12}(?:(?=\s)|["'](?=[\s,]))(?:[^\r\n\\\`^;&|]|[\\\`^](?![\r\n])|[\\\`^]\r?\n){0,200}?(?<=[\s"']-p))(?:(?<=\s-p)(?:"[^"\r\n]{1,128}(?:"|(?=[\r\n])|$)|'[^'\r\n]{1,128}(?:'|(?=[\r\n])|$)|\`[^\`\r\n]{1,128}(?:\`|(?=[\r\n])|$))|(?=(?:[^\s"'|;&\`$()<>]|\$(?![({])){3})${CMD_VALUE})`, 'g'),
+  // `aws_secret_access_key <value>`: the name, a space and the 40-character value (the `=` and `:` forms are `NAMED_SECRET`'s)
+  shape(String.raw`((?:aws[_-]?)?secret[_-]?access[_-]?key["']?\s{1,8}["']?)[A-Za-z0-9/+=]{40,}`, 'gi'),
+  // the name written as words (`secret access key: <value>`, `AWS Secret Access Key = <value>`): a space before `key` (`access_key` and `access-key` are `NAMED_SECRET`'s), then a separator or spaces and 40 or more base64 characters
+  shape(String.raw`((?:aws[ \t_-]?)?secret[ \t_-]{0,3}access[ \t]+key["']?(?:\s{1,8}|\s{0,8}[:=]\s{0,8})["']?)[A-Za-z0-9/+=]{40,}`, 'gi'),
+  // `token <value>`, `apikey <value>`: a scheme word or a name with a space and no separator; 8 or more characters with a letter and a digit, and nothing `NOT_A_VALUE` knows
+  shape(String.raw`((?:token|api[_-]?key)\s{1,8})(?!\/|${NOT_A_VALUE})(?=[A-Za-z0-9._~+/=-]{8})(?=[A-Za-z0-9._~+/=-]{0,64}[0-9])(?=[A-Za-z0-9._~+/=-]{0,64}[A-Za-z])[A-Za-z0-9._~+/=-]+`, 'gi'),
+  // a `.netrc` entry: the word `password`, a space, the value
+  new RegExp(String.raw`(\bmachine\s{1,8}\S{1,253}\s{1,8}(?:login\s{1,8}\S{1,128}\s{1,8})?password\s{1,8})${CMD_VALUE}`, 'g'),
+  // `curl -u user:pass` (only after `curl`: `git push -u origin:main` is not this); the user stays, a bare `-u user` has no secret to hide
+  new RegExp(String.raw`(\bcurl\b[^\r\n]{0,200}?\s(?:-[A-Za-z]{0,8}u|--user)[ =]{0,2}["']?[^\s:"']{0,128}:)${CMD_VALUE}`, 'g'),
+];
+
+/** The token shapes in a list. The JWT's prefix is outside its match (lookbehind), so it stays too. */
+function maskList(text: string, mask: string, guard: boolean, list: ReadonlyArray<RegExp | Guarded | ((s: string, mask: string) => string)>): string {
+  let out = text;
+  for (const t of list) {
+    if (typeof t === 'function') out = t(out, mask);
+    else if (t instanceof RegExp) out = out.replace(t, () => mask);
+    else if (!guard || t.marker.test(out)) out = out.replace(t.re, () => mask);
+  }
+  return out;
+}
+/** Only the token shapes. */
+function maskBare(text: string, mask: string, guard: boolean): string {
+  return maskList(maskList(text, mask, guard, HELD_SHAPES), mask, guard, TOKEN_SHAPES);
+}
+
+/** Characters a glued second token is made of, and the ones it may start with (`sk-` body swallowing `glpat` leaves `-<body>`; `glpat-` swallowing `sha256` leaves `~<body>`; a body swallowing the start of a base64 token such as `ABSK` stops at its first `/` or `+`: pre-review of PR 1317). */
+const GLUE_REST = /[A-Za-z0-9_\-.~+/=:%]/;
+const GLUE_START = /[A-Za-z0-9_\-.~:%/+]/;
+/** The fewest letters and digits (all of them in the glued run, separators between segments allowed) that make what is glued to a mask a second token: 8, the measure of #1237's review (the rest of a body whose head the first token swallowed). */
+const GLUE_MIN = 8;
+/** After a `_` it is 16: an identifier suffix (`ghp_…_backup`) is not a token, and FR-169 keeps the 8-character rest of `ghp_…ghx_` + 8 readable. */
+const GLUE_MIN_UNDERSCORE = 16;
+/** After a `/` or `+` it is 32: `[redacted]/v1/chat/completions` is a path, the rest of a base64 token (`ABSK` + 100 or more characters) is long. */
+const GLUE_MIN_B64 = 32;
+/** A backslash before a character of the rest (not `\n`, `\r`, `\t`: a JSON-escaped line break ends it): the rest goes on after it (spec 012 FR-181, review of PR 1585). */
+const glueEsc = (s: string, i: number): boolean => s[i] === '\\' && i + 1 < s.length && GLUE_REST.test(s[i + 1]) && s[i + 1] !== 'n' && s[i + 1] !== 'r' && s[i + 1] !== 't';
+/** The named marker `redact` writes for an env value (`[redacted:NAME]`). */
+const NAMED_MARKER = /\[redacted:[^\]\r\n]{1,128}\]/g;
+/**
+ * Existing capability checked (FR-031, pre-review of PR 1317): `maskGluedTail` (spec 106 FR-021, the brain state's streamed pieces) also folds what is glued to a mask into it, but takes any one glued
+ * character, because there the next piece of a secret arrives raw after a mask. In a whole text that would hide `.git`, `:8080` and `_backup`, so this rule needs the count below; the two are not one.
+ * Issue #1237 (spec 012 FR-173): what is glued to a mask and still holds 8 or more letters and digits (16 after a `_`) is the rest of a second token whose head the first one swallowed; it goes into the mask. A single scan. */
+function maskGluedRest(s: string, mask: string): string {
+  if (!mask) return s; // an empty mask is found at every place, and the scan would not advance
+  // spec 012 FR-181 (T163): a named marker `[redacted:NAME]` (an env value `redact` replaced) takes its glued rest too, with the same counts and end rule; the next plain mask and the next
+  // named marker are each found once and looked for again only when the scan has passed them, so this stays one scan
+  const named = s.includes('[redacted:');
+  let plainAt = s.indexOf(mask);
+  let namedAt = -1;
+  let namedLen = 0;
+  const findNamed = (from: number): void => {
+    NAMED_MARKER.lastIndex = from;
+    const m = named ? NAMED_MARKER.exec(s) : null;
+    namedAt = m ? m.index : -1;
+    namedLen = m ? m[0].length : 0;
+  };
+  findNamed(0);
+  const next = (): [number, number] => (plainAt >= 0 && (namedAt < 0 || plainAt <= namedAt) ? [plainAt, mask.length] : [namedAt, namedLen]);
+  let [at, len] = next();
+  if (at < 0) return s;
+  let out = '';
+  let from = 0;
+  while (at >= 0) {
+    const start = at + len;
+    let end = start;
+    let alnum = 0;
+    const first = glueEsc(s, start) ? s[start + 1] : s[start];
+    if (start < s.length && GLUE_START.test(first)) {
+      while (end < s.length) {
+        if (glueEsc(s, end)) { if (/[A-Za-z0-9]/.test(s[end + 1])) alnum++; end += 2; continue; } // spec 012 FR-181 (review of PR 1585): an escaped character of the rest is glued too (`[redacted]\_<rest>`)
+        if (!GLUE_REST.test(s[end])) break;
+        if (/[A-Za-z0-9]/.test(s[end])) alnum++;
+        end++;
+      }
+    }
+    // a full stop or a colon that ends the run is the sentence's (spec 106 FR-021: "[redacted]." keeps its full stop), with its escape (`[redacted]\.`)
+    while (end > start && (s[end - 1] === '.' || s[end - 1] === ':')) { end--; if (end > start && s[end - 1] === '\\') end--; }
+    if (alnum >= (first === '_' ? GLUE_MIN_UNDERSCORE : first === '/' || first === '+' ? GLUE_MIN_B64 : GLUE_MIN)) { out += s.slice(from, start); from = end; }
+    const after = Math.max(end, start);
+    if (plainAt >= 0 && plainAt < after) plainAt = s.indexOf(mask, after);
+    if (namedAt >= 0 && namedAt < after) findNamed(after);
+    [at, len] = next();
+  }
+  return from === 0 ? s : out + s.slice(from);
+}
+
+function maskShapes(text: string, mask: string, guard: boolean): string {
+  let out = text;
+  // A function, so `$&` or `$1` in the mask stays literal; group 1, when a pattern has one, is what names the secret and stays.
+  const replaced = (m: RegExp[]): void => { for (const p of m) out = out.replace(p, (_m: string, keep?: unknown) => (typeof keep === 'string' ? keep : '') + mask); };
+  replaced(HELD_PATTERNS);
+  out = maskList(out, mask, guard, HELD_SHAPES);
+  replaced(PATTERNS);
+  out = maskCookies(out, mask);
+  out = maskList(out, mask, guard, TOKEN_SHAPES);
+  // The named-secret rules before the glued rest: a mask glued to a secret name (`<token>-dbpassword: "V"`) must not fold the name into the mask first, or the value after it is no value of any name (review of PR 1317, Ruben).
+  // A value with its own shape is gone whole by now (a named-secret value stops at `\`, which would leave the tail of `token=123456\u003A…`).
+  const value = (m: string, keep: string): string => { const v = m.slice(keep.length); const i = closerAt(v); return keep + mask + (i < 0 ? '' : v.slice(i)); };
+  // the rest glued to a mask joins it (`keep` ends with the mask, so nothing is added but a closing bracket of one opened before the name); first, so it sees only the masks of earlier pieces and passes, never the `#` a query mask of this pass stops at
+  const rest = (m: string, keep: string): string => { const v = m.slice(keep.length); const i = closerAt(v); return keep + (i < 0 ? '' : v.slice(i)); };
+  return maskGluedRest(out.replace(NAMED_MASKED_REST, rest).replace(NAMED_IN_QUERY, value).replace(NAMED_PHRASE_MASKED, value).replace(NAMED_PHRASE, value).replace(NAMED_SHORT, value).replace(NAMED_SECRET, value), mask);
+}
+
+/** The one key-shape mask (FR-031): replaces every key block, secret header, URL credential, named secret and bare token shape with `mask` (a JWT's leading underscores and words stay). `redact` adds the env values and the cut. Linear. */
+export function maskTokenShapes(text: string, mask: string): string {
+  return maskShapes(text, mask, true);
+}
+/**
+ * Only the bare token shapes, for what must show its shell syntax (spec 061 FR-014, `shownCommand`): their classes hold no `$`, backtick, `(`, `|` or `;`, so a repository's
+ * `--auth=$(curl …|sh)` stays visible. `maskTokenShapes`' name, header and cookie rules hide to a space or to the line's end, and would let a repository choose what is hidden.
+ */
+export function maskBareTokenShapes(text: string, mask: string): string {
+  return maskBare(text, mask, true);
+}
+/** Test only: every pattern's source, for the check that none nests quantifiers (`scripts/test-redact-shapes.ts`). */
+export const _maskSourcesForTest = (): string[] => [...HELD_PATTERNS, ...PATTERNS, ...[...HELD_SHAPES, ...TOKEN_SHAPES].flatMap((t) => (typeof t === 'function' ? [] : t instanceof RegExp ? [t] : [t.re])), PREFIXED_AT, PREFIXED_NEXT, JWT_AT, NAMED_IN_QUERY, NAMED_SECRET, NAMED_PHRASE, NAMED_PHRASE_MASKED, NAMED_MASKED_REST, NAMED_SHORT, COOKIE_HEAD].map((r) => r.source);
+/** Test only: the same without the marker guard, to prove the guard never changes the result. */
+export function maskTokenShapesUnguarded(text: string, mask: string): string {
+  return maskShapes(text, mask, false);
+}
+
+type Env = Record<string, string | undefined>;
+
+function envSecrets(env: Env): Array<[string, string]> {
+  const out: Array<[string, string]> = [];
+  for (const [name, value] of Object.entries(env)) {
+    if (typeof value !== 'string' || value.length <= 7) continue;
+    const byName = SECRET_NAME.test(name) || SECRET_PREFIX.test(name);
+    const byLength = value.length >= 20 && !/\s/.test(value) && !LONG_OK_NAME.test(name);
+    if (!byName && !byLength) continue;
+    // Also the forms the value takes inside JSON (once, twice escaped) and inside a URL.
+    const j1 = JSON.stringify(value).slice(1, -1);
+    const j2 = JSON.stringify(j1).slice(1, -1);
+    for (const v of new Set([value, j1, j2, encodeURIComponent(value)])) out.push([name, v]);
+  }
+  // Longest first, so a value that contains another one is replaced whole.
+  return out.sort((a, b) => b[1].length - a[1].length);
+}
+
+const TOKEN_CHAR = /[A-Za-z0-9_\-.~+/=:@%]/;
+const TRUNCATED = ' [truncated]';
+
+/** Cut to `max` chars without leaving the start of a token (a secret may straddle the cut) or a newline. */
+export function cut(s: string, max: number): string {
+  if (s.length <= max) return s;
+  let end = max;
+  if (end > 0 && /[\ud800-\udbff]/.test(s[end - 1])) end--; // never leave half a surrogate pair
+  while (end > 0 && TOKEN_CHAR.test(s[end - 1])) end--;
+  // a loop, not `/[ \t]+$/`: that regex retries at every blank of a long run (quadratic on a 1 MB run of spaces)
+  while (end > 0 && (s[end - 1] === ' ' || s[end - 1] === '\t')) end--;
+  return s.slice(0, end) + TRUNCATED;
+}
+
+/** Env snapshots made by the masking helpers: their secret list is computed once, so a 100 000-token command does not rescan the env per token. */
+const SNAPSHOTS = new WeakMap<Env, Array<[string, string]>>();
+function snapshot(env?: Env): Env {
+  if (env && SNAPSHOTS.has(env)) return env;
+  const e: Env = { ...(env ?? (globalThis as { process?: { env?: Env } }).process?.env ?? {}) };
+  SNAPSHOTS.set(e, envSecrets(e));
+  return e;
+}
+
+/** A run of token characters and backslash escapes (spec 012 FR-181): an escape of a token character or of a Markdown-escapable one. */
+const ESC_RUN = /(?:[A-Za-z0-9_\-.~+/=:@%]|\\[A-Za-z0-9_\-.~+/=:@%\\`*{}[\]()#!|<>])+/g;
+const ESC_BREAK = /\\[nrt]/;
+const ESC_BREAK_KEEP = /(\\[nrt])/;
+const ESC_BREAK_START = /^\\[nrt]/;
+/** Whether the rest of a run after a hidden piece (it starts with a break escape, whose letter counts) holds FR-173's count of letters and digits: 8. */
+function glueCount(rest: string): boolean {
+  let n = 0;
+  for (let i = 0; i < rest.length && n < GLUE_MIN; i++) if (/[A-Za-z0-9]/.test(rest[i])) n++;
+  return n >= GLUE_MIN;
+}
+/** A mask (plain or named) that ends right where a run starts. */
+const MASK_BEFORE = /\[redacted(?::[^\]\r\n]{1,128})?\]$/;
+/** A shell escape of a token character that is not a Markdown escape (`\h`, `\0`, `\=`). */
+const TOKEN_ESC = /\\[A-Za-z0-9=:@%/]/;
+/**
+ * Spec 012 FR-181 (issue #1541): each run of token characters with a backslash escape in it (`ghp\_<body>`, `g\hp_<body>`) that one of
+ * its unescaped readings shows as a secret becomes `mask` in the text as written, before the rules read the text (a token glued to an
+ * escaped one is half hidden by the rules as written, and that output no longer holds the run). The readings are taken of the run once
+ * the rules have read it as written (`w`), so a run the rules already hide (`password=a\b`, `\\nsk-<body>`) is left to them: the
+ * Markdown escapes removed (`withoutMarks`, the marks kept: in a command they are shell syntax), through every rule; every escape of a
+ * token character removed too (`g\hp_`), through the token shapes and the glued rest only (`C:\keys\server.pem` read so is no path any
+ * more, and a named rule would hide it); and `\n`, `\r`, `\t` as a break (a JSON-escaped line break before a token): a piece between
+ * breaks that holds an escape and hides is masked alone, and only when none does is the whole run read. The text is never shown
+ * unescaped (`\>` is not `>`). `maskTokenShapes`, never `redact`: no recursion. A run glued straight after a mask is also read with the mask in front, so an escaped rest is that mask's
+ * glued rest (FR-173 counts). A fixed number of calls per distinct run, so linear; a
+ * text without a backslash is returned as it is.
+ */
+function maskEscapedRuns(s: string, mask: string): string {
+  if (!s.includes('\\')) return s;
+  const seen = new Map<string, boolean>();
+  const hides = (r: string): boolean => {
+    let hit = seen.get(r);
+    if (hit === undefined) {
+      const w = maskTokenShapes(r, mask);
+      const md = withoutMarks(w, true).k;
+      const sh = TOKEN_ESC.test(w) ? withoutMarks(w, true, true).k : '';
+      hit = maskTokenShapes(md, mask) !== md || (sh !== '' && maskGluedRest(maskBareTokenShapes(sh, mask), mask) !== sh);
+      seen.set(r, hit);
+    }
+    return hit;
+  };
+  return s.replace(ESC_RUN, (r: string, at: number) => {
+    if (!r.includes('\\')) return r;
+    // a run glued straight after a mask (plain, or the named marker of an env value written before this step) is read as that mask's rest (review of PR 1585): `[redacted:NAME]_ab\<rest>`;
+    // not when it starts with a line break escape, which ends the rest (`[redacted]\nNext line`)
+    if (at > 0 && s[at - 1] === ']' && !ESC_BREAK_START.test(r) && MASK_BEFORE.test(s.slice(Math.max(0, at - 140), at)) && hides(mask + r)) return mask;
+    if (ESC_BREAK.test(r)) {
+      // the pieces between breaks first, so `a\n<escaped token>\tb` keeps `a\n` and `\tb`; when no piece hides, the whole run is read (a `\n` that is a shell escape inside a token)
+      let any = false;
+      let out = '';
+      const parts = r.split(ESC_BREAK_KEEP);
+      for (let i = 0; i < parts.length; i += 2) {
+        const p = parts[i];
+        const br = i > 0 ? parts[i - 1] : '';
+        const h = p.includes('\\') && hides(p);
+        if (!h) { out += br + p; continue; }
+        any = true;
+        // review of PR 1585 (round 3): a break escape inside a body (`ghp\_<20>\n<16>`) is a shell escape of a letter there; once a piece with an escape hides, the rest of the run after it
+        // is its tail when it holds FR-173's count (8 letters and digits, the letters of the breaks included): hidden with it. Fail closed: a long word on the next line glued to it is hidden too.
+        // review of PR 1585 (round 4): the pieces before it (no piece of them hid alone) are read as one stretch with the whole-run check (`ghp_<20>\n<16>\tg\hp_<36>`), without the start of
+        // this piece: a second token glued inside it by `.`, `=`, `/` or `:` is a known gap (spec 012 FR-181, round 5); one check per run: after the first hidden piece the rest is its tail or holds fewer than 8 letters and digits
+        const lead = out !== '' && hides(out) ? '' : out + br;
+        const rest = parts.slice(i + 1).join('');
+        if (glueCount(rest)) return lead + mask;
+        out = lead + mask;
+      }
+      if (any) return out;
+    }
+    return hides(r) ? mask : r;
+  });
+}
+
+/** Replace secret environment values and key-like strings. Never throws; keeps line structure. */
+export function redact(text: unknown, env?: Env): string {
+  try {
+    let s = typeof text === 'string' ? text : text == null ? '' : String(text);
+    const e: Env = env ?? (globalThis as { process?: { env?: Env } }).process?.env ?? {};
+    // Replace first, then cut: a secret straddling the cut is already gone.
+    for (const [name, value] of SNAPSHOTS.get(e) ?? envSecrets(e)) {
+      if (s.includes(value)) s = s.split(value).join(`[redacted:${name}]`);
+    }
+    s = cut(s, REDACT_MAX_CHARS);
+    return maskTokenShapes(maskEscapedRuns(s, '[redacted]'), '[redacted]');
+  } catch {
+    return '[redaction failed]';
+  }
+}
+
+/**
+ * `k` is `u` with its Markdown marks removed. Masks `k`, and also every token-like run of `u` that `redact` changes on its own, together
+ * with the token characters glued after it (spec 073 FR-014, review of PR #614): removing `**` can glue a token to the word before it
+ * (`x**ghp_...**` -> `xghp_...`, which no shape matches) or join a late-split token's tail (`ghp_<20>**K1l2...`). Anything either pass
+ * finds is masked; neither pass's output simply wins. The window's DurbarSafeText (`src/renderer/safetext.js`, `both`) does the same.
+ */
+export function redactMarkdown(u: string, k: string, env?: Env): string {
+  let m = redact(k, env);
+  const seen = new Set<string>();
+  const found: string[] = [];
+  for (const r of u.match(/[A-Za-z0-9_\-.+/=:@%]{12,}/g) ?? []) {
+    if (seen.has(r)) continue;
+    seen.add(r);
+    if (redact(r, env) !== r) found.push(r);
+  }
+  found.sort((a, b) => b.length - a.length);
+  for (const r of found) m = m.replace(new RegExp(r.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&') + '[A-Za-z0-9_-]*', 'g'), () => MASK);
+  return m;
+}
+
+/**
+ * Spec 106 FR-021 (review of PR 1226, F1): token characters glued to a mask are the tail of a secret whose head was already masked (a
+ * secret that arrives in pieces: the head masks, the next piece is appended raw and matches no shape). They go into the mask. A `.` or
+ * `:` counts only when more token characters follow, so "[redacted]." at the end of a sentence keeps its full stop. Linear.
+ */
+export function maskGluedTail(text: string): string {
+  // a mask then `@host`: the host of a URL with credentials stays (H6)
+  return text.replace(/\[redacted(?::[A-Za-z0-9_.-]{1,64})?\](?!@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}(?::\d{1,5})?(?:[/?#\s]|$))(?:[A-Za-z0-9_\-~+/=@%]|[.:](?=[A-Za-z0-9_\-~+/=@%.:]))+/g, '[redacted]');
+}
+
+const MASK = '[redacted]';
+/** T065 (#374): a string longer than this is replaced by `[redacted]` whole, before any rule runs and never cut, so a 1 MB arg costs nothing. Above the 4096 display cap (T054) and the 4096 per-arg limit of per-folder extras (FR-022). */
+export const MASK_INPUT_MAX = 12288;
+const capped = (x: unknown): unknown => (typeof x === 'string' && x.length > MASK_INPUT_MAX ? MASK : x);
+const SECRET_SUB = /token|secret|passw|passphrase|apikey|privatekey|credential|cookie|signature|jwt/;
+const SECRET_WORDS = new Set(['key', 'pass', 'pwd', 'pw', 'pat', 'bearer', 'auth', 'authorization', 'session', 'sig']);
+const HEADER_FLAGS = new Set(['-h', '--header', '--headers', '--http-header']);
+
+/**
+ * Does a flag, header, query or `NAME=` name look secret (spec 041 FR-053)? Case-insensitive, after percent-decoding and splitting on
+ * `-`, `_`, `.` and camelCase boundaries (`privateKey` is `private`, `key`). Over-masking is accepted (`--no-auth`, `--session-name`).
+ */
+export function secretFlag(flag: string): boolean {
+  let n = String(flag ?? '').replace(/^(?:-+|\/)/, '').slice(0, 256);
+  if (!n) return false;
+  if (n.includes('%')) { try { n = decodeURIComponent(n); } catch { /* keep the raw name */ } }
+  const words = n.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2').toLowerCase().split(/[\s\-_.]+/).filter(Boolean);
+  return SECRET_SUB.test(n.toLowerCase()) || SECRET_SUB.test(words.join('')) || words.some((w) => SECRET_WORDS.has(w));
+}
+
+/** Spec 058 FR-232 (c): upper snake case, at most 40 characters. */
+const ENV_VAR_NAME = /^[A-Z][A-Z0-9_]{0,39}$/;
+/**
+ * Spec 058 FR-232 (c), review of PR #1637: may Durbar say this `${NAME}` as a variable name? Only an environment-variable-shaped name: upper
+ * snake case, no token shape (`maskTokenShapes`), and no piece between `_` that reads as a key rather than a word (16 or more characters,
+ * or 8 or more with 3 or more digits), with at most 5 digits in all. A token pasted inside `${...}` (hex, a mixed-case key, a password, a
+ * JWT, `GHP_A1B2...`) is never a name. One rule for main (`mcptoken.ts`) and the window (`mcpwords.js`, through the page's `exports`).
+ */
+export function envVarName(n: unknown): boolean {
+  if (typeof n !== 'string' || !ENV_VAR_NAME.test(n)) return false;
+  if (maskTokenShapes(n, MASK) !== n) return false;
+  if ((n.match(/[0-9]/g) ?? []).length > 5) return false;
+  return n.split('_').every((p) => p.length < 16 && !(p.length >= 8 && (p.match(/[0-9]/g) ?? []).length >= 3));
+}
+
+/** A flag arg split into name, separator (first `=`, `:` or space) and the rest. A flag starts with `-`, or is a Windows-style one-segment `/name`. */
+export function parseFlag(a: string): { name: string; sep?: string; rest?: string } | undefined {
+  const m = /^(-[^\s=:]*|\/[^\s=:/\\]+)(?:([=:\s])([\s\S]*))?$/.exec(a);
+  return m ? { name: m[1], sep: m[2], rest: m[3] } : undefined;
+}
+
+const URL_SHAPE = /^[a-z][a-z0-9+.-]{1,20}:\/\//i;
+/** `NAME=value`, also the PowerShell `$env:NAME=value` form (no spaces around `=` needed; `$env:NAME = 'v'` is the same rule). */
+const KV = /^(\s*)((?:\$env:)?[A-Za-z_][A-Za-z0-9_.-]{0,127})(\s*=)([\s\S]*)$/i;
+const ENV_PREFIX = /^\$env:/i;
+/** The next arg after a secret flag stays a flag (not its value) only when it has the shape of a long flag: `--name`, `--name=..`. */
+const LONG_FLAG = /^--[A-Za-z][A-Za-z0-9_.-]*(?:[=:\s]|$)/;
+/** `Bearer x` / `Basic x` as a whole arg: the word and exactly one token (so `Basic setup of the server` stays). */
+const BEARER = /^(bearer|basic)(\s+)\S+\s*$/i;
+/** R11: auth scheme words; the secret is the next arg. */
+const SCHEME_WORDS = ['bearer', 'basic', 'token', 'digest', 'negotiate', 'apikey'];
+const SCHEME = new RegExp(`^(?:${SCHEME_WORDS.join('|')})$`, 'i');
+/** Spec 106 (F1b): is `word` the start of an auth scheme word, so a streamed `Authorization: Bea` may still become `Authorization: Bearer <secret>`? Uses the same words as R11. */
+export function schemeWord(word: string): boolean {
+  return SCHEME.test(word);
+}
+export function schemePrefix(word: string): boolean {
+  const w = word.toLowerCase();
+  return w.length > 0 && SCHEME_WORDS.some((s) => s.startsWith(w));
+}
+/** `Name: <scheme word>` with nothing after it and a secret-looking name (`Authorization: Bearer`): the secret is the next arg (R11 b). */
+function schemeHeader(a: string, anyName = false): boolean {
+  const h = HDR.exec(a);
+  return !!h && !URL_SHAPE.test(a) && SCHEME.test(h[2].trim()) && (anyName || secretFlag(h[1]));
+}
+/**
+ * R11(b) on the raw text of a `command`, before `redact()` (R8) can mask the scheme word and hide the shape: in `Name: <scheme>` (also
+ * quoted) with a secret-looking name, the word after it is the secret. Bounded pieces, starting at the start, a whitespace or a `=`: linear.
+ */
+export function maskSchemeSecrets(c: string): string {
+  if (!/:/.test(c)) return c;
+  // `Name:` (the name starts at the text start, a whitespace or a `=`: `--header=Authorization:Digest SEC`; a quote may come before it)
+  const head = /(^|[\s=])(["']?)([A-Za-z0-9][A-Za-z0-9_-]{0,127})(\s{0,8}:\s{0,8})/g;
+  const scheme = /["']?(?:bearer|basic|token|digest|negotiate|apikey)["']?\s{1,8}/iy; // the scheme word, quoted or not, and the space after it
+  const bare = /(?!-)[^\s"']{1,4096}/y;
+  // a quoted run from `at` (a quote character): up to the closing quote within 4096, else to the end of the text (fail-safe: an unclosed quote hides the rest)
+  const runEnd = (at: number): number => { const k = c.indexOf(c[at], at + 1); return k < 0 || k - at > 4097 ? c.length : k + 1; };
+  let out = '';
+  let from = 0;
+  let m: RegExpExecArray | null;
+  while ((m = head.exec(c)) !== null) {
+    const e = m.index + m[0].length;
+    if (!secretFlag(m[3])) { head.lastIndex = Math.max(e, head.lastIndex); continue; }
+    let keepTo = e; // text kept as it is, up to here
+    let maskTo = -1; // then `[redacted]` replaces up to here
+    scheme.lastIndex = e;
+    const sm = scheme.exec(c);
+    if (sm) { // R11 (b): the scheme word stays, the secret after it is a bare word or a quoted run (`Authorization: Basic "SEC x"`)
+      const r = e + sm[0].length;
+      if (c[r] === '"' || c[r] === "'") { keepTo = r; maskTo = runEnd(r); } else { bare.lastIndex = r; const bm = bare.exec(c); if (bm) { keepTo = r; maskTo = r + bm[0].length; } }
+    }
+    if (maskTo < 0 && (c[e] === '"' || c[e] === "'")) { keepTo = e; maskTo = runEnd(e); } // a quoted value after the name is masked whole (redact() would stop at the first space: `Authorization: 'a SEC'`)
+    if (maskTo < 0) continue;
+    out += c.slice(from, keepTo) + MASK;
+    from = maskTo;
+    head.lastIndex = maskTo;
+  }
+  return from === 0 ? c : out + c.slice(from);
+}
+const HDR = /^([A-Za-z0-9][A-Za-z0-9_-]{0,127})\s{0,8}:\s*([\s\S]*)$/;
+/** `Name:` alone: its value is the next arg (R5). */
+const HDR_NAME_ONLY = /^([A-Za-z0-9][A-Za-z0-9_-]{0,127})\s{0,8}:\s{0,8}$/;
+/** Pieces of a text: `;`, and a `,` only when a `name=` follows (bounded look-ahead), so a password with a comma stays whole (R6). */
+const PAIR_SPLIT = /(;|,(?=\s{0,8}[A-Za-z_][A-Za-z0-9_.-]{0,127}\s{0,8}=))/;
+/** Levels of nesting (shell split, `NAME=value`, quoted word: 1 each). Past it a value that would need another pass is masked whole (fail-safe), never shown. */
+const MAX_DEPTH = 8;
+
+function maskJsonValue(v: unknown, force: boolean, depth: number, env: Env | undefined, d: number): unknown {
+  if (depth > 32) return MASK;
+  if (Array.isArray(v)) {
+    // an array of strings is an args list (`["--token","x"]`)
+    if (v.length > 0 && v.every((x) => typeof x === 'string')) return force ? v.map(() => MASK) : maskArgs(v as string[], snapshot(env), d);
+    return v.map((x) => maskJsonValue(x, force, depth + 1, env, d));
+  }
+  if (v !== null && typeof v === 'object') {
+    const out: Record<string, unknown> = {};
+    const o = v as Record<string, unknown>;
+    // R7: `{"name":"token","value":"x"}` / `{"key":"Authorization","value":"x"}`: the test is on the raw name string.
+    const nameKey = Object.keys(o).find((k) => k.toLowerCase() === 'name' && typeof o[k] === 'string') ?? Object.keys(o).find((k) => k.toLowerCase() === 'key' && typeof o[k] === 'string');
+    const pn = nameKey === undefined ? undefined : (o[nameKey] as string);
+    const pairSecret = pn !== undefined && secretFlag(pn);
+    for (const [k, x] of Object.entries(o)) out[k] = maskJsonValue(x, force || secretFlag(k) || (pairSecret && /^value$/i.test(k)), depth + 1, env, d);
+    return out;
+  }
+  if (typeof v === 'string') return force ? MASK : maskText(v, d, env);
+  if (typeof v === 'number') return force ? MASK : v;
+  return v;
+}
+
+/** Valid JSON: every string or number under a secret-looking key, at any depth, is masked; written back compactly. */
+function maskJson(v: string, env: Env | undefined, force: boolean, d: number): string | undefined {
+  let parsed: unknown;
+  try { parsed = JSON.parse(v); } catch { return undefined; }
+  if (parsed === null || typeof parsed !== 'object') return undefined;
+  return JSON.stringify(maskJsonValue(parsed, force, 0, env, d));
+}
+
+/** R7 on escaped objects: `{\"name\":\"token\",\"value\":\"x\"}` (or `\"key\"`): a secret-looking name masks the `\"value\"` of the same object. One level (no braces inside), bounded. */
+function maskEscapedObjects(v: string): string {
+  if (!v.includes('{')) return v;
+  return v.replace(/\{([^{}]{0,4100})\}/g, (m, body: string) => {
+    const n = /\\{1,16}"(?:name|key)\\{1,16}"\s{0,8}:\s{0,8}\\{1,16}"([^"\\]{0,100})\\{1,16}"/i.exec(body);
+    if (!n || !secretFlag(n[1])) return m;
+    return '{' + body.replace(/(\\{1,16}"value\\{1,16}"\s{0,8}:\s{0,8})(?:(\\{1,16}")[^"\\]{0,2000}(\\{1,16}")|\[[^\[\]]{0,2000}\]|[^\s,}\[\]"\\][^\s,}\]"\\]{0,1999})/i, (_x, pre: string, q1?: string, q2?: string) => `${pre}${q1 ? `${q1}${MASK}${q2}` : MASK}`) + '}';
+  });
+}
+
+/** `\"name\":\"value\"` pairs with escaped quotes (any escape depth; JSON inside a shell string that R1 cannot parse). The value may contain spaces. */
+function maskEscapedPairs(v: string, force = false): string {
+  if (!v.includes('\\"')) return v;
+  if (!force) v = maskEscapedObjects(v); // R7 first: the test is on the raw name string, before the pair rule below masks it
+  return v.replace(/(\\{1,16}")([^"\\]{1,100})(\\{1,16}")(\s{0,8}:\s{0,8})(?:(\\{1,16}")[^"\\]{0,2000}(\\{1,16}")|[^\s,}\]"\\]{1,2000})/g, (m, q1: string, name: string, q2: string, colon: string, vq1?: string, vq2?: string) => {
+    if (!force && !secretFlag(name)) return m;
+    return `${q1}${name}${q2}${colon}${vq1 ? `${vq1}${MASK}${vq2}` : MASK}`;
+  });
+}
+
+/** Text that is not valid JSON: `"name": "value"` pairs with a secret-looking name, by pattern. */
+function maskJsonPairs(v: string, force = false): string {
+  // the same pairs with escaped quotes (`{\"token\":\"x\"}`, JSON inside a shell string that R1 could not parse)
+  return maskEscapedPairs(v, force).replace(/"([^"\\]{1,100})"(\s{0,8}:\s{0,8})("(?:[^"\\]|\\.){0,2000}"?|[^\s,}\]"]{1,2000})/g, (m, name: string, colon: string, val: string) => {
+    if (!force && !secretFlag(name)) return m;
+    return `"${name}"${colon}${val.startsWith('"') ? `"${MASK}"` : MASK}`;
+  });
+}
+
+/** One `NAME=value` or `Name: value` piece: masked when the name looks secret; otherwise its value is masked recursively (a URL, JSON). */
+function maskKv(part: string, depth: number, env?: Env): string {
+  const kv = KV.exec(part);
+  if (kv) {
+    if (secretFlag(kv[2].replace(ENV_PREFIX, ''))) { // R12: a hashtable member already hidden (`'[redacted]'}`) keeps its quotes and what closes it
+      const hid = /^(\s*)(["']?)\[redacted\](["';}\s]*)$/.exec(kv[4]);
+      return hid ? `${kv[1]}${kv[2]}${kv[3]}${hid[1]}${hid[2]}${MASK}${hid[3]}` : `${kv[1]}${kv[2]}=${MASK}`;
+    }
+    const hv = HDR_NAME_ONLY.exec(kv[4].trim());
+    if (hv && secretFlag(hv[1])) return part; // `NAME=Name:` (R5): the value of `Name:` is the next word, masked by maskArgs; masking `Name:` here repeated `[redacted]` at each depth level
+    // `OPTS=\"--token x\"`: a stray quote in front of a flag-shaped value is set aside so the flag is seen
+    const lead = depth > 0 ? /^[\\"'`]+/.exec(kv[4])?.[0] ?? '' : '';
+    if (lead && /^[-/]/.test(kv[4].slice(lead.length))) return `${kv[1]}${kv[2]}${kv[3]}${lead}${maskText(kv[4].slice(lead.length), depth - 1, env)}`;
+  }
+  if (kv) return depth > 0 ? `${kv[1]}${kv[2]}${kv[3]}${maskText(kv[4], depth - 1, env)}` : kv[4].trim() === '' ? part : `${kv[1]}${kv[2]}=${MASK}`; // budget spent: fail-safe
+  const h = HDR.exec(part);
+  if (h && !URL_SHAPE.test(part)) return secretFlag(h[1]) ? `${h[1]}: ${MASK}` : part;
+  const b = BEARER.exec(part);
+  return b ? `${b[1]}${b[2]}${MASK}` : part;
+}
+
+/**
+ * Words of a shell string (R1): split on whitespace outside quotes. A `"` or `'` opens a span that ends at the next same quote and stays
+ * inside the word with its quotes; an unmatched quote is a literal. No escapes, `$(...)` or heredocs (`[KNOWN GAP]`; the payload of a shell
+ * wrapper is unescaped by `maskScriptText` before this, T067). `seps` has one more
+ * entry than `words` (the whitespace before the first word, between words, after the last), so `seps[0] + words[0] + seps[1] ...` is the
+ * input. Linear: a matched span is skipped and, once a quote type has no match, there is none after it (one failed search per type).
+ */
+export function shellWords(s: string): { words: string[]; seps: string[] } {
+  const words: string[] = [];
+  const seps: string[] = [];
+  const n = s.length;
+  const WS = /\s/;
+  let noDq = false;
+  let noSq = false;
+  let i = 0;
+  while (i < n && WS.test(s[i])) i++;
+  seps.push(s.slice(0, i));
+  while (i < n) {
+    let j = i;
+    while (j < n && !WS.test(s[j])) {
+      const c = s[j];
+      if ((c === '"' && !noDq) || (c === "'" && !noSq)) {
+        const k = s.indexOf(c, j + 1);
+        if (k >= 0) { j = k + 1; continue; }
+        if (c === '"') noDq = true; else noSq = true;
+      }
+      j++;
+    }
+    words.push(s.slice(i, j));
+    let k = j;
+    while (k < n && WS.test(s[k])) k++;
+    seps.push(s.slice(j, k));
+    i = k;
+  }
+  return { words, seps };
+}
+
+/** Words split on whitespace only (quotes ignored); same shape as `shellWords`. Used when R1 leaves a text with spaces in one word. */
+function plainWords(s: string): { words: string[]; seps: string[] } {
+  const words: string[] = [];
+  const seps: string[] = [/^\s*/.exec(s)![0]];
+  const re = /(\S+)(\s*)/g;
+  re.lastIndex = seps[0].length;
+  for (let m = re.exec(s); m; m = re.exec(s)) { words.push(m[1]); seps.push(m[2]); }
+  return { words, seps };
+}
+
+/** R3: a text with whitespace is masked word by word as an args list; the separators, and the trailing run of `[;&|]+` of a word, are kept. A secret that ends in those characters shows only them. */
+function maskShellString(v0: string, depth: number, env?: Env, plain = false): string {
+  const v = maskEscapedPairs(maskSchemeSecrets(v0)); // the scheme pre-pass first (R11 b, as for a command), then before the split: an escaped value may hold spaces
+  let { words, seps } = plain ? plainWords(v) : shellWords(v);
+  if (words.length === 1 && unquote(words[0])[1] !== '') return seps[0] + maskArgs(words, snapshot(env), depth)[0] + seps[1]; // one whole-quoted word (`A="x --token y"`, `--cmd='...'`): its inside
+  if (words.length < 2) {
+    // R1 could not split it (escaped quotes such as `\"`): the plain whitespace split, quotes ignored, so text with spaces is never shown unmasked
+    if (!/\s/.test(v.trim()) || KV.test(v)) return v; // (a `NAME=value` word had its value masked by `maskKv` already)
+    ({ words, seps } = plainWords(v));
+  }
+  const cores: string[] = [];
+  const idx: number[] = [];
+  const leads: string[] = [];
+  const tails: string[] = [];
+  const outWords: string[] = [];
+  words.forEach((w, i) => {
+    let e = w.length; // the trailing run of `;`, `&`, `|` (a backward loop: a regex `[;&|]+$` is quadratic on a long run)
+    while (e > 0 && ';&|'.includes(w[e - 1])) e--;
+    const body = w.slice(0, e);
+    const tail = w.slice(e);
+    // a stray quote or backslash in front of an unquoted word (`\"--token`, an unmatched `"`) is set aside, so the flag behind it is seen
+    const lead = unquote(body)[1] === '' ? (/^[\\"'`]+/.exec(body) ?? (/^[-/]/.test(body) ? null : /^[^\s"'\\`]*[\\"'`]+(?=[-/])/.exec(body)))?.[0] ?? '' : '';
+    const core = body.slice(lead.length);
+    leads[i] = lead;
+    tails[i] = tail;
+    outWords[i] = lead + tail;
+    if (core !== '') { cores.push(core); idx.push(i); }
+  });
+  const masked = maskArgs(cores, snapshot(env), depth, false, false);
+  idx.forEach((wi, k) => { outWords[wi] = leads[wi] + masked[k] + tails[wi]; });
+  let out = seps[0];
+  for (let i = 0; i < outWords.length; i++) out += outWords[i] + seps[i + 1];
+  return out;
+}
+
+/*
+ * T067 (#447): shell wrappers whose payload holds escaped quotes. R1 knows no escapes, so `sh -c "srv -H \"X-Api-Key: x\""` or
+ * `powershell -Command "srv `"x`""` used to be cut at the escaped quote and the secret showed. The payload after `sh|bash|... -c`,
+ * `cmd /c` (or `/k`) and `powershell|pwsh -Command` is unescaped one level with that shell's own rules, masked by the usual rules and,
+ * when anything changed, written back with the same quoting. At most `WRAP_MAX` decodes nest; a payload past that, or one whose quotes
+ * do not close, is masked to its end (fail closed). Every pass is a single scan (a backslash run is matched whole), so the cost stays linear.
+ */
+type ShellKind = 'sh' | 'cmd' | 'ps';
+/** Text that may hold an escape of one of the three shells (`''` is PowerShell's quote inside `'...'`); without one the plain rules already see every quote (R1). */
+const SCRIPT_GATE = /[\\`^]|""|''/;
+const WRAP_MAX = 2;
+let wrapActive = 0;
+const SH_EXE = /^(?:sh|bash|zsh|dash|ksh|mksh|ash|fish)$/;
+
+function shellKind(word: string): ShellKind | undefined {
+  const w = unquote(word)[0];
+  const base = w.slice(Math.max(w.lastIndexOf('/'), w.lastIndexOf('\\')) + 1).toLowerCase().replace(/\.exe$/, '');
+  if (SH_EXE.test(base)) return 'sh';
+  if (base === 'cmd') return 'cmd';
+  if (base === 'powershell' || base === 'pwsh') return 'ps';
+  return undefined;
+}
+function isCommandFlag(kind: ShellKind, w: string): boolean {
+  if (kind === 'sh') return /^-[A-Za-z]*c[A-Za-z]*$/.test(w); // -c, -lc, -ec
+  if (kind === 'cmd') return /^\/[ck]$/i.test(w);
+  return /^-(?:c|co|com|comm|comma|comman|command)$/i.test(w); // PowerShell accepts any prefix of -Command
+}
+/** Flags of each shell that take the next word as their value (`sh -o pipefail -c`, `powershell -ExecutionPolicy Bypass -Command`). */
+const VALUE_FLAG: Record<ShellKind, RegExp> = {
+  sh: /^(?:[-+][oO]|--rcfile|--init-file)$/, // `-o pipefail`, `-O extglob` (bash shopt)
+  cmd: /^$/,
+  ps: /^-(?:executionpolicy|ep|ex|windowstyle|w|workingdirectory|wd|configurationname|settingsfile|inputformat|if|outputformat|of|version|v)$/i,
+};
+
+/** Where each wrapper's payload starts: a shell word, up to 8 flag words, then its command flag. One R1 pass over the text. */
+function findWrappers(s: string): Array<{ kind: ShellKind; start: number }> {
+  const { words, seps } = shellWords(s);
+  const pos: number[] = [];
+  let p = seps[0].length;
+  for (let i = 0; i < words.length; i++) { pos.push(p); p += words[i].length + seps[i + 1].length; }
+  const found: Array<{ kind: ShellKind; start: number }> = [];
+  for (let i = 0; i < words.length; i++) {
+    const kind = shellKind(words[i]);
+    if (!kind) continue;
+    for (let j = i + 1; j < words.length && j <= i + 9; j++) {
+      const w = words[j];
+      if (isCommandFlag(kind, w)) {
+        const k = kind === 'sh' && words[j + 1] === '--' ? j + 2 : j + 1; // `bash -c -- "..."`: `--` ends the options, the script follows
+        if (k < words.length) found.push({ kind, start: pos[k] });
+        break;
+      }
+      if (!/^[-+/]/.test(w)) break;
+      if (VALUE_FLAG[kind].test(w)) j++;
+    }
+  }
+  return found;
+}
+
+type Decoded = { value: string; end: number; quote: string };
+/** POSIX: one word from `i` (`\x` outside quotes, `'...'` literal, `"..."` with `\"`, `\\`, `\$`, `` \` ``). Undefined when a quote does not close. */
+function decodeSh(s: string, i: number): Decoded | undefined {
+  const n = s.length;
+  const out: string[] = [];
+  let j = i;
+  while (j < n) {
+    const c = s[j];
+    if (/\s/.test(c) || c === ';' || c === '&' || c === '|') break;
+    if (c === '\\') { if (j + 1 < n) { if (s[j + 1] !== '\n') out.push(s[j + 1]); j += 2; } else { out.push(c); j++; } continue; }
+    if (c === "'") { const k = s.indexOf("'", j + 1); if (k < 0) return undefined; out.push(s.slice(j + 1, k)); j = k + 1; continue; }
+    if (c === '"') {
+      j++;
+      let closed = false;
+      while (j < n) {
+        const e = s[j];
+        if (e === '\\' && j + 1 < n && '"\\$`\n'.includes(s[j + 1])) { if (s[j + 1] !== '\n') out.push(s[j + 1]); j += 2; continue; }
+        if (e === '"') { closed = true; j++; break; }
+        out.push(e);
+        j++;
+      }
+      if (!closed) return undefined;
+      continue;
+    }
+    out.push(c);
+    j++;
+  }
+  return { value: out.join(''), end: j, quote: s[i] === '"' || s[i] === "'" ? s[i] : '' };
+}
+/**
+ * PowerShell: a word of glued parts from `i` when it starts with a quote (`"..."` with `` `x ``, `""` and the `\"` of the Windows command
+ * line; `'...'` with `''`; unquoted parts with `` `x `` and `\"`), up to whitespace; otherwise the unquoted rest of the line. Undefined
+ * when a quote does not close.
+ */
+function decodePs(s: string, i: number): Decoded | undefined {
+  const n = s.length;
+  const out: string[] = [];
+  const quote = s[i] === '"' || s[i] === "'" ? s[i] : '';
+  let j = i;
+  while (j < n) {
+    const c = s[j];
+    if (quote && /\s/.test(c)) break;
+    if (c === '"' || c === "'") {
+      j++;
+      let closed = false;
+      while (j < n) {
+        const e = s[j];
+        if (c === '"' && (e === '`' || (e === '\\' && s[j + 1] === '"')) && j + 1 < n) { out.push(s[j + 1]); j += 2; continue; }
+        if (e === c) {
+          if (s[j + 1] === c) { out.push(c); j += 2; continue; }
+          closed = true;
+          j++;
+          break;
+        }
+        out.push(e);
+        j++;
+      }
+      if (!closed) return undefined;
+      continue;
+    }
+    if ((c === '`' || (c === '\\' && s[j + 1] === '"')) && j + 1 < n) { out.push(s[j + 1]); j += 2; continue; }
+    out.push(c);
+    j++;
+  }
+  return { value: out.join(''), end: j, quote };
+}
+/** cmd: the rest of the line; one outer pair of quotes is removed, then `^x` and the `\"` of the program's command line. */
+function decodeCmd(s: string, i: number): Decoded {
+  const rest = s.slice(i);
+  const quoted = rest.length >= 2 && rest[0] === '"' && rest[rest.length - 1] === '"';
+  const inner = quoted ? rest.slice(1, -1) : rest;
+  // `^x` is cmd's escape; a run of backslashes before `"` is halved (the program's command line: 2n+1 backslashes and `"` are n and a quote)
+  // a whole backslash run is matched at once (with or without its `"`), so a long run without a quote is not retried from each position
+  const value = inner.replace(/\^([\s\S])|(\\+)("?)/g, (_m, x?: string, b?: string, q?: string) => x ?? (q ? '\\'.repeat((b ?? '').length >> 1) + '"' : (b ?? '')));
+  return { value, end: s.length, quote: quoted ? '"' : '' };
+}
+/** The masked payload written back in the quoting it came in (display only; `$` and `` ` `` stay as they are in sh). */
+function encodePayload(kind: ShellKind, v: string, d: Decoded, raw: string): string {
+  if (kind === 'sh') {
+    if (d.quote === "'") return shQuote(v, true);
+    if (d.quote === '"') return '"' + v.replace(/[\\"]/g, '\\$&') + '"'; // every backslash and quote escaped: each reads back as one char
+    return v.replace(/[\s"'\\;&|<>()]/g, '\\$&');
+  }
+  if (kind === 'ps') {
+    if (d.quote === "'") return "'" + v.replace(/'/g, "''") + "'";
+    return d.quote + v.replace(/[`"]|\\$/g, '`$&') + d.quote; // a last backslash too, or with the closing quote it reads as `\"`
+  }
+  // the program's command line: the backslashes right before a `"` are doubled, then the quote is escaped (decodeCmd halves them back)
+  // whole backslash runs again (linear): a run before a `"` is doubled, a run without one is kept, a bare `"` becomes `\"`
+  const body = raw.includes('\\"') ? v.replace(/(\\+)("?)|"/g, (_m, b?: string, q?: string) => (b === undefined ? '\\"' : q ? b + b + '\\"' : b)) : v.replace(/"/g, '^"');
+  return d.quote ? `"${body}"` : body;
+}
+const HAS_ESC: Record<ShellKind, RegExp> = { sh: /\\/, cmd: /\^|\\"/, ps: /`|""|\\"|''/ };
+
+/** A segment between wrappers, masked by `plain` with its outer whitespace kept. */
+function maskSegment(seg: string, plain: (x: string) => string): string {
+  let a = 0;
+  let b = seg.length;
+  while (a < b && /\s/.test(seg[a])) a++;
+  while (b > a && /\s/.test(seg[b - 1])) b--;
+  return a === b ? seg : seg.slice(0, a) + plain(seg.slice(a, b)) + seg.slice(b);
+}
+
+/**
+ * The text with each shell wrapper's payload unescaped one level, masked and written back; undefined when no wrapper's payload holds an
+ * escape (the caller then uses its usual rules, unchanged). `plain` masks the text around the payloads.
+ */
+function maskScriptText(s0: string, d: number, env: Env | undefined, plain: (x: string) => string): string | undefined {
+  if (!SCRIPT_GATE.test(s0)) return undefined;
+  // the escaped-pair rule, made for raw escaped text, runs first on the text as it is (`{\\"token\\":\\"x\\"}` inside `sh -c "..."`
+  // decodes to `{\token\:\x\}`, where no rule sees a pair any more); it keeps the escape runs, so the decode below still works.
+  // Not `redact()` or the scheme rule here: their value class takes a backslash (`Bearer x\"` would lose its `\` and break the quoting)
+  const s = maskEscapedPairs(s0);
+  const ws = findWrappers(s);
+  if (!ws.length) return undefined;
+  // only when some payload may hold an escape: a cmd or PowerShell payload runs to the end of the text, so the first one decides; a sh
+  // payload is one word (each scanned once, words do not overlap)
+  // A cmd or PowerShell payload runs to the end, so a later one of the same kind is inside it: each kind is tested once, at its first
+  // payload (at most two scans); a nested wrapper of the other kind (`cmd /c powershell -Command "..."`) is still looked at.
+  let esc = false;
+  const tested = new Set<ShellKind>();
+  for (const w of ws) {
+    if (w.kind !== 'sh') {
+      if (tested.has(w.kind)) continue;
+      tested.add(w.kind);
+      if (HAS_ESC[w.kind].test(s.slice(w.start))) { esc = true; break; }
+      continue;
+    }
+    const dec = decodeSh(s, w.start);
+    if (!dec || HAS_ESC.sh.test(s.slice(w.start, dec.end))) { esc = true; break; }
+  }
+  if (!esc) return undefined;
+  let out = '';
+  let cur = 0;
+  for (const w of ws) {
+    if (w.start < cur) continue; // inside a payload already handled
+    out += maskSegment(s.slice(cur, w.start), plain);
+    if (wrapActive >= WRAP_MAX) return out + MASK; // deeper than WRAP_MAX decodes: the payload is masked whole, to the end
+    const dec = w.kind === 'sh' ? decodeSh(s, w.start) : w.kind === 'ps' ? decodePs(s, w.start) : decodeCmd(s, w.start);
+    if (!dec) return out + MASK; // a quote that does not close: masked to the end of the payload (fail closed)
+    const raw = s.slice(w.start, dec.end);
+    let inner: string;
+    wrapActive++;
+    try { inner = maskShellScript(w.kind, dec.value, Math.max(d - 1, 0), env); } finally { wrapActive--; }
+    out += inner === dec.value ? raw : encodePayload(w.kind, inner, dec, raw);
+    cur = dec.end;
+  }
+  return out + maskSegment(s.slice(cur), plain);
+}
+
+/** Escapes inside a script a shell runs (no outer quotes): sh `\x`, PowerShell `` `x ``, cmd `^x` and the program's `\"`. */
+const SCRIPT_ESC: Record<ShellKind, RegExp> = { sh: /\\/, ps: /`/, cmd: /\^|\\"/ };
+
+/**
+ * A script that a shell of `kind` runs (the decoded payload of a wrapper, or the arg after `sh -c` / `cmd /c` / `powershell -Command`
+ * in an args list). Without an escape of that shell it is masked by the usual rules; with one it is unescaped one level first (sh word
+ * by word, each changed word written back in its own quoting; PowerShell and cmd as a whole, shown unescaped when anything changed).
+ * Past `WRAP_MAX` decodes it is masked whole.
+ */
+function maskShellScript(kind: ShellKind, script: string, d: number, env: Env | undefined): string {
+  if (!SCRIPT_ESC[kind].test(script)) return redact(maskText(script, d, env), env);
+  if (wrapActive >= WRAP_MAX) return MASK;
+  wrapActive++;
+  try {
+    if (kind === 'sh') return maskShWords(maskEscapedPairs(script), d, env); // escaped pairs first, on the raw text (see maskScriptText)
+    const dec = kind === 'ps' ? script.replace(/`([\s\S])/g, '$1') : script.replace(/\^([\s\S])|\\"/g, (_m, x?: string) => x ?? '"');
+    const inner = redact(maskText(dec, Math.max(d - 1, 0), env), env);
+    return inner === dec ? script : inner;
+  } finally { wrapActive--; }
+}
+
+/** A sh script word by word (`decodeSh`), masked as an args list; a word the rules changed is written back in its own quoting. A quote that does not close masks the rest. */
+function maskShWords(s: string, d: number, env: Env | undefined): string {
+  const spans: Array<{ start: number; dec: Decoded }> = [];
+  const n = s.length;
+  let i = 0;
+  let failAt = -1;
+  while (i < n) {
+    const c = s[i];
+    if (/\s/.test(c)) { i++; continue; }
+    if (';&|'.includes(c)) { let j = i; while (j < n && ';&|'.includes(s[j])) j++; spans.push({ start: i, dec: { value: s.slice(i, j), end: j, quote: '' } }); i = j; continue; }
+    const dec = decodeSh(s, i);
+    if (!dec) { failAt = i; break; }
+    if (dec.end <= i) { i++; continue; }
+    spans.push({ start: i, dec });
+    i = dec.end;
+  }
+  const masked = maskArgs(spans.map((x) => x.dec.value), snapshot(env), Math.max(d - 1, 0));
+  let out = '';
+  let cur = 0;
+  spans.forEach((x, k) => {
+    const m = redact(masked[k], env);
+    out += s.slice(cur, x.start) + (m === x.dec.value ? s.slice(x.start, x.dec.end) : encodePayload('sh', m, x.dec, ''));
+    cur = x.dec.end;
+  });
+  return failAt < 0 ? out + s.slice(cur) : out + s.slice(cur, failAt) + MASK;
+}
+
+// ---- R12 (spec 041 FR-053, T072, issue #502): PowerShell hashtable literals `@{ Name = Value; ... }` ----
+const HT_LITERAL_MAX = 4000; // a literal is read up to this many characters from its `@{`; past that the rest up to its `}` is hidden
+const WORD_END = /[\s;}]/g;
+
+/** The index of the quote that closes the string opened at `p` (`""` / `''` doubled, and `` `x `` in a double-quoted one, are escapes), or -1 before `max`. */
+function htCloseQuote(s: string, p: number, max: number): number {
+  const q = s[p];
+  for (let k = p + 1; k < max; k++) {
+    if (q === '"' && s[k] === '`') k++;
+    else if (s[k] === q) { if (s[k + 1] === q) k++; else return k; }
+  }
+  return -1;
+}
+
+/** Fast character tests for the scanner below (ASCII first; a regex only for the rest of Unicode white space). */
+const htWs = (c: string): boolean => { const k = c.charCodeAt(0); return k < 128 ? k === 32 || (k >= 9 && k <= 13) : /\s/.test(c); };
+const htWordStop = (c: string): boolean => c === ';' || c === '}' || htWs(c);
+const htNameStop = (c: string): boolean => c === '=' || c === '"' || c === "'" || c === '{' || htWordStop(c);
+
+/** The name test for a member name (`secretFlag` after the quote marks are removed), remembered for the short names a literal repeats (bounded). */
+const HT_NAMES = new Map<string, boolean>();
+function htSecretName(raw: string): boolean {
+  if (raw.length > 64) return secretFlag(raw.replace(/[`"']/g, ''));
+  let r = HT_NAMES.get(raw);
+  if (r === undefined) {
+    r = secretFlag(raw.replace(/[`"']/g, ''));
+    if (HT_NAMES.size >= 512) HT_NAMES.clear();
+    HT_NAMES.set(raw, r);
+  }
+  return r;
+}
+
+/** Where a PowerShell expression that starts at `p` ends: the next `;`, `}` or line break outside brackets and strings (a backtick continues the line). Never past `max`. */
+function htExprEnd(s: string, p: number, max: number): number {
+  let d = 0;
+  let k = p;
+  while (k < max) {
+    const c = s[k];
+    if (c === '"' || c === "'") { const e = htCloseQuote(s, k, max); if (e < 0) return max; k = e + 1; continue; }
+    if (c === '`') { k += s[k + 1] === '\r' && s[k + 2] === '\n' ? 3 : 2; continue; }
+    if (c === '(' || c === '{') d++;
+    else if (c === ')') { if (d > 0) d--; }
+    else if (c === '}') { if (d === 0) break; d--; }
+    else if ((c === ';' || c === '\n') && d === 0) break;
+    k++;
+  }
+  k = Math.min(k, max);
+  while (k > p && /\s/.test(s[k - 1])) k--;
+  return k;
+}
+
+/** Where the literal that is open at `p` (with `depth` levels open) ends: the index of its closing `}`, or the end of the text. Quote-aware, one pass. */
+function htLitEnd(s: string, p: number, depth: number): number {
+  const n = s.length;
+  for (let k = p; k < n; k++) {
+    const c = s[k];
+    if (c === '"' || c === "'") { const e = htCloseQuote(s, k, n); if (e < 0) return n; k = e; }
+    else if (c === '`') k++;
+    else if (c === '{') depth++;
+    else if (c === '}' && --depth <= 0) return k;
+  }
+  return n;
+}
+
+/**
+ * The value ranges to hide in the hashtable literals of `s`: for each member whose name looks secret (`secretFlag`, the test of R7 and the
+ * secret flags) the value, without its quotes when it is one plain quoted string or bare word. Any other value of a secret member (an
+ * expression, a here-string, a string followed by more code) is hidden whole up to the member's end (fail closed). A member whose value
+ * is a nested literal restarts the scan inside it (any depth). `<#...#>` is white space (an unclosed one hides the rest of the literal).
+ * A literal is read up to HT_LITERAL_MAX characters; past that everything up to its closing `}` (or the end of the text) is hidden. One
+ * pass: every character is read a constant number of times, so the cost is linear in the text. `\"` counts as a quote (the args form).
+ */
+function hashtableRanges(s: string): Array<[number, number]> {
+  if (!s.includes('\\"')) return htRanges(s);
+  const r = htRanges(s.replace(/\\+"/g, (m) => ' '.repeat(m.length - 1) + '"')); // same length: backslashes then a quote are spaces and a quote
+  const out: Array<[number, number]> = [];
+  for (const [a, b] of r) { let b2 = b; if (s[b] === '"') while (b2 > a && s[b2 - 1] === '\\') b2--; if (b2 > a) out.push([a, b2]); }
+  return out;
+}
+function htRanges(s: string): Array<[number, number]> {
+  const out: Array<[number, number]> = [];
+  const n = s.length;
+  const hide = (from2: number, to: number): void => {
+    if (to <= from2) return;
+    const last = out[out.length - 1];
+    if (last && last[1] === from2) last[1] = to; else out.push([from2, to]);
+  };
+  const toEnd = (q: number): boolean => { // after a value ending at q: only spaces then `;`, `}`, a line break or the end
+    while (q < n && (s[q] === ' ' || s[q] === '\t')) q++;
+    return q >= n || s[q] === ';' || s[q] === '}' || s[q] === '\n' || s[q] === '\r';
+  };
+  let from = 0;
+  let depth = 1;
+  let limit = 0;
+  let sp = 0; // the last token boundary (outside any quote) and the bracket depth there: where the past-the-bound scan starts
+  let sd = 1;
+  const hsAt = [-2, -2]; // cached here-string closer position per kind ('@ and "@), -1 = none after the scan point
+  let ld = -2; // the last `"` and the last `'`, found once (linear)
+  let ls = -2;
+  const lastDq = (): number => (ld === -2 ? (ld = s.lastIndexOf('"')) : ld);
+  const lastSq = (): number => (ls === -2 ? (ls = s.lastIndexOf("'")) : ls);
+  let cmAt = -2; // cached `#>` position
+  const skipSp = (p0: number): number => { // the gap between a name, `=` and a value: white space (line breaks too) and block comments; a comment with an `=` in it is hidden (it may be a commented-out member)
+    let p = p0;
+    for (;;) {
+      const ch = s[p];
+      if (ch === undefined) return p;
+      if (htWs(ch)) p++;
+      else if (ch === '<' && s[p + 1] === '#') {
+        if (cmAt === -2 || (cmAt >= 0 && cmAt < p + 2)) cmAt = s.indexOf('#>', p + 2);
+        if (cmAt < 0) p += 2; // never closes: only the mark is white space, the text behind it is read as code
+        else { let eq = false; for (let k = p + 2; k < cmAt && !eq; k++) eq = s[k] === '='; if (eq) hide(p + 2, cmAt); p = cmAt + 2; } // (read once: the comment is passed)
+      }
+      else if (ch === '#' && s[p + 1] === '>') p += 2;
+      else return p;
+    }
+  };
+  for (;;) {
+    const at = s.indexOf('@{', from);
+    if (at < 0) return out;
+    limit = Math.min(n, at + HT_LITERAL_MAX);
+    let p = at + 2;
+    depth = 1;
+    sp = p;
+    sd = depth;
+    while (p < limit && depth > 0) {
+      sp = p;
+      sd = depth;
+      const c = s[p];
+      if (c === '}') { p++; depth--; continue; }
+      if (c === ';' || htWs(c)) { p++; continue; }
+      if ((c === '<' && s[p + 1] === '#') || (c === '#' && s[p + 1] === '>')) { p += 2; continue; } // block comment marks are white space; the inside is read as code
+      if (c === '@' && s[p + 1] === '{') { p += 2; depth++; continue; }
+      const mEnd = limit;
+      let ns: number;
+      let ne: number;
+      if (c === '"' || c === "'") {
+        const e = htCloseQuote(s, p, mEnd);
+        if (e < 0) { p++; continue; } // a stray quote: the text behind it is read as it is
+        ns = p + 1; ne = e; p = e + 1;
+      } else {
+        ns = p;
+        while (p < mEnd && !htNameStop(s[p])) p++;
+        ne = p;
+        if (ne === ns) { p++; continue; }
+      }
+      p = skipSp(p);
+      if (s[p] !== '=' || p >= mEnd) { if ((c === '"' || c === "'") && s.indexOf(c, ns) >= ne) p = ns; continue; } // not `Name = Value`: a bare word is passed, a quoted one with no doubled quote in it is read again from inside (its quotes may be the stray ones; reading a doubled-quote run again would be quadratic)
+      p = skipSp(p + 1);
+      const secret = htSecretName(s.slice(ns, ne)); // `"api""key"` is the name api"key: the quote marks go before the test
+      if (s.startsWith('[ordered]', p)) p += 9;
+      while (s[p] === '`' && (s[p + 1] === '\n' || (s[p + 1] === '\r' && s[p + 2] === '\n'))) { // a line continuation right after `=`
+        p += s[p + 1] === '\n' ? 2 : 3;
+        while (p < mEnd && (s[p] === ' ' || s[p] === '\t')) p++;
+      }
+      const vc = s[p];
+      if (vc === '@' && s[p + 1] === '{' && !secret) { p += 2; depth++; continue; } // a nested literal: scanned in place
+      if (vc === '@' && (s[p + 1] === "'" || s[p + 1] === '"')) { // here-string: up to its closing `'@` / `"@` at a line start
+        const hq = s[p + 1] === "'" ? 0 : 1; // the closer is searched once per kind, then reused: a text of `@'` openers with no closer stays linear
+        if (hsAt[hq] === -2 || (hsAt[hq] >= 0 && hsAt[hq] < p + 2)) hsAt[hq] = s.indexOf('\n' + s[p + 1] + '@', p + 2); // (positions only grow, so -1 stays -1)
+        const close = hsAt[hq];
+        const end = close < 0 || close + 3 > limit ? limit : close + 3;
+        if (secret) hide(p, end);
+        p = Math.max(end, p + 2); // (always forward, whatever the cache holds)
+        continue;
+      }
+      if (vc === '"' || vc === "'") {
+        const e = htCloseQuote(s, p, mEnd);
+        if (e < 0) { // unclosed: a secret's rest is hidden (fail closed); to the end of the text when no such quote follows at all, else to the literal bound
+          const none = (vc === '"' ? lastDq() : lastSq()) <= p;
+          if (secret) hide(p + 1, none ? n : mEnd);
+          p = none ? n : mEnd;
+          continue;
+        }
+        if (!secret) { p = e + 1; continue; }
+        const hidden = e - p === MASK.length + 1 && s.startsWith(MASK, p + 1); // a value hidden already: said again it must give the same text; more after it is code
+        if (toEnd(e + 1)) { if (!hidden) hide(p + 1, e); p = e + 1; continue; }
+        const end = htExprEnd(s, p, mEnd); // a string followed by more code
+        hide(p, end);
+        p = Math.max(end, e + 1);
+        continue;
+      }
+      const vs = p;
+      while (p < mEnd && !htWordStop(s[p])) p++;
+      if (secret && p >= mEnd && p < n) { // a bare word longer than the literal bound: hidden to its end (fail closed), found in one pass
+        WORD_END.lastIndex = p;
+        p = WORD_END.exec(s)?.index ?? n;
+        hide(vs, p);
+        continue;
+      }
+      if (!secret) continue;
+      const hidden = p - vs === MASK.length && s.startsWith(MASK, vs);
+      if (toEnd(p) && !/[({]/.test(s.slice(vs, p))) { if (!hidden) hide(vs, p); continue; } // a bare word with brackets (`(Get-Secret)`, `@{a=1}`) is an expression
+      const end = htExprEnd(s, vs, mEnd);
+      hide(vs, end);
+      p = Math.max(end, p);
+    }
+    if (depth > 0 && p >= limit && limit < n) { // past the literal bound: the rest up to the literal's end is hidden (fail closed)
+      const e = htLitEnd(s, sp, sd); // from the last token boundary: the bound may fall inside a string
+      if (e > p) {
+        if (!(s.startsWith(MASK, p) && /^[\s"';]*$/.test(s.slice(p + MASK.length, e)))) hide(p, e); // (an earlier [redacted] and its closers stay as they are)
+        p = e;
+      }
+    }
+    from = Math.max(at + 2, p);
+  }
+}
+
+/** `s` with the value of each secret-looking hashtable member shown as `[redacted]` (R12), quotes kept. */
+function maskHashtables(s: string): string {
+  if (!s.includes('@{')) return s;
+  const r = hashtableRanges(s);
+  if (!r.length) return s;
+  let out = '';
+  let cur = 0;
+  for (const [a, b] of r) { out += s.slice(cur, a) + MASK; cur = b; }
+  return out + s.slice(cur);
+}
+
+/** Reads `a` from `from` and says whether every literal opened so far is closed at its end: `{` and `}` count outside quotes only (`st` carries the state to the next arg). Linear. */
+function htClosed(a: string, from: number, st: { depth: number; q: string }): boolean {
+  for (let k = from; k < a.length; k++) {
+    const c = a[k];
+    if (st.q) {
+      if (c === '`' && st.q === '"') k++;
+      else if (c === st.q) st.q = ''; // a doubled quote closes and opens again
+    } else if (c === '"' || c === "'") st.q = c;
+    else if (c === '{') st.depth++;
+    else if (c === '}' && st.depth > 0) st.depth--;
+  }
+  return st.depth === 0 && st.q === '';
+}
+
+/** R12 for an args list: a literal split across args (`@{token=`, `SEC;`, `port=8080}`) is read as the args joined by a space; a value that spans args is hidden in the first and cut from the later ones. */
+function maskHashtableArgs(args: readonly string[]): readonly string[] {
+  if (!Array.isArray(args) || !args.some((a) => typeof a === 'string' && a.includes('@{'))) return args;
+  const out: string[] = [];
+  let i = 0;
+  while (i < args.length) {
+    const a = args[i];
+    if (typeof a !== 'string' || !a.includes('@{')) { out.push(a); i++; continue; }
+    let j = i;
+    const st = { depth: 0, q: '' }; // brackets outside quotes, across the args: a `}` inside quotes does not close the literal
+    let closed = htClosed(a, a.indexOf('@{'), st);
+    while (!closed && j + 1 < args.length && typeof args[j + 1] === 'string') { // (no length bound: a literal that is still open past the bound has its later args hidden)
+      j++;
+      closed = htClosed(args[j], 0, st);
+    }
+    const group = args.slice(i, j + 1) as string[];
+    const joined = group.join(' ');
+    const ranges = hashtableRanges(joined);
+    if (!ranges.length) { out.push(...group); i = j + 1; continue; }
+    let off = 0;
+    for (const g of group) {
+      const end = off + g.length;
+      let t = '';
+      let cur = off;
+      for (const [r0, r1] of ranges) {
+        if (r1 <= off || r0 >= end) continue;
+        t += joined.slice(cur, Math.max(r0, off, cur));
+        if (r0 >= off) t += MASK; // the range starts here; in a later arg only its tail is cut
+        cur = Math.min(r1, end);
+      }
+      t += joined.slice(cur, end);
+      if (t !== '' || g === '') out.push(t);
+      off = end + 1;
+    }
+    i = j + 1;
+  }
+  return out;
+}
+
+/** A free-standing value or arg: JSON, URL, connection string (`;`/`,`-separated pairs), `NAME=value`, `Name: value`, a shell string. The caller finishes with `redact()`. */
+function maskText(v: string, depth: number, env?: Env, noScript = false): string {
+  if (!noScript && SCRIPT_GATE.test(v) && /\s/.test(v)) { // T067 (#447): a shell wrapper whose payload has escaped quotes, decoded one level first
+    const sc = maskScriptText(v, depth, env, (seg) => maskText(seg, depth, env, true));
+    if (sc !== undefined) return sc;
+  }
+  if (v.includes('@{')) v = maskHashtables(v); // R12
+  // T067: a leading quote that closes nowhere in the value (`--opt="token=x`) is set aside, so the rules see what is behind it (fail closed)
+  if ((v[0] === '"' || v[0] === "'") && v.indexOf(v[0], 1) < 0) return v[0] + maskText(v.slice(1), depth, env, noScript);
+  if (v.startsWith('{') || v.startsWith('[')) {
+    const e = v.trimEnd();
+    const j = e.endsWith('}') || e.endsWith(']') ? maskJson(v, env, false, depth) : undefined; // parse only what can be JSON
+    if (j !== undefined) return j;
+    const p = maskJsonPairs(v); // not valid JSON: the pairs by pattern, then what is left of it split on whitespace only (quotes cannot be trusted in broken JSON), once
+    return depth > 0 ? (/\s/.test(p.trim()) ? maskShellString(p, depth - 1, env, true) : p) : /\s|["']/.test(p.trim()) ? MASK : p;
+  }
+  if (v.startsWith('-') || v.startsWith('/')) { // a flag-shaped value (`A=--token=x`, `{"a":"--api-key=x"}`) uses one level of the budget
+    const f = parseFlag(v);
+    if (f) {
+      if (depth > 0) return maskArgs([v], snapshot(env), depth - 1)[0];
+      if (f.rest) return MASK; // budget spent
+    }
+  }
+  const t = v.includes('://') ? maskSecretUrl(v, env) : v; // a URL anywhere in the text, not only at its start
+  if (URL_SHAPE.test(t)) return t;
+  const h = HDR.exec(t); // R4: the header shape first, before the `;` / `,` split
+  if (h && h[2] !== '' && secretFlag(h[1])) return `${h[1]}: ${MASK}`;
+  const r = PAIR_SPLIT.test(t) ? t.split(PAIR_SPLIT).map((p, i) => (i % 2 ? p : maskKv(p, depth, env))).join('') : maskKv(t, depth, env);
+  if (depth > 0) return /\s/.test(r.trim()) ? maskShellString(r, depth - 1, env) : r; // R3
+  return /\s|["']/.test(r.trim()) ? MASK : r; // budget spent and another pass would be needed: masked whole, never shown
+}
+
+/** `Name: value` after a header flag: the value is masked whatever the name (FR-012: no header values). */
+function maskHeaderValue(v: string, env: Env | undefined, d: number): string {
+  if (v.startsWith('{') || v.startsWith('[')) return redact(maskJson(v, env, true, d) ?? maskJsonPairs(v, true), env); // JSON headers: every value, whatever the key
+  const h = HDR.exec(v);
+  if (h && !URL_SHAPE.test(v)) return `${h[1]}: ${MASK}`;
+  const kv = KV.exec(v);
+  if (kv && !v.includes('://')) return `${kv[1]}${kv[2]}=${MASK}`; // `Name=value` form
+  return redact(maskText(v, d, env), env);
+}
+
+/**
+ * One word as a POSIX shell reads it, for display only (spec 041 T067, spec 061 T057: the one display-quoting helper). A word of only
+ * safe characters is shown bare unless `always`; anything else (whitespace, shell characters, empty) goes in single quotes, a `'` inside
+ * written `'\''`. Used by the folder setup list (`foldersetup.ts`) and by the shell-wrapper payload written back here.
+ */
+export function shQuote(w: string, always = false): string {
+  return !always && /^[A-Za-z0-9_@%+=:,./~^-]+$/.test(w) ? w : `'${w.replace(/'/g, `'\\''`)}'`;
+}
+
+/** R2: an arg that starts and ends with the same quote: its inside and the quote. */
+function unquote(a: string): [string, string] {
+  const q = a[0];
+  return a.length >= 2 && (q === '"' || q === "'") && a[a.length - 1] === q ? [a.slice(1, -1), q] : [a, ''];
+}
+
+/**
+ * Command-line arguments for display (spec 041 FR-053): the value of a secret-looking flag (next arg, or the rest of the same arg after
+ * the first `=`, `:` or space), header values after a header flag, `NAME=value` and `Name: value` pieces, JSON, connection strings,
+ * URL-shaped values and shell strings (an arg with spaces is masked word by word, to `MAX_DEPTH` levels) are masked, a whole-quoted arg on
+ * its inside, and everything goes through `redact()`. Never throws; returns a new array of the same length.
+ */
+export function maskSecretArgs(args: readonly string[], envIn?: Env): string[] {
+  return maskArgsImpl(args, envIn, true);
+}
+function maskArgsImpl(args: readonly string[], envIn: Env | undefined, cap: boolean): string[] {
+  return maskArgs((cap && Array.isArray(args) ? args.map(capped) : args) as string[], snapshot(envIn), MAX_DEPTH, true);
+}
+
+function maskArgs(args0: readonly string[], env: Env, d: number, top = false, ht = true): string[] {
+  const args = ht ? maskHashtableArgs(args0) : args0; // R12 (not for the words of a text that maskText already read whole: the `;` that ended a member is not in them)
+  const rd = (x: string): string => (top ? redact(x, env) : x); // a nested call is redacted by the outer one, over the whole arg
+  const out: string[] = [];
+  let pending: 'secret' | 'header' | undefined;
+  // T067: `sh -c <script>`, `cmd /c <script>`, `powershell -Command <script>` as separate args. A sh script is the one arg after `-c`;
+  // cmd and PowerShell join every arg after their flag into the script, so each of those args keeps that shell's escapes: it is
+  // unescaped one level and then goes through the rules below with the others (a `-H` before it still counts); shown as it was when
+  // the rules change nothing.
+  let wrapKind: ShellKind | undefined; // a shell word seen, its command flag not yet
+  let wrapSeen = 0;
+  let wrapValue = false; // the arg is the value of a flag of that shell (`-ExecutionPolicy Bypass`)
+  let scriptKind: ShellKind | undefined; // sh: the next arg is the script
+  let joinKind: ShellKind | undefined; // cmd, PowerShell: every later arg is part of the script
+  let fix: { i: number; dec: string; raw: string } | undefined;
+  const unfix = (): void => { if (fix && out[fix.i] === fix.dec) out[fix.i] = fix.raw; fix = undefined; };
+  for (const raw of Array.isArray(args) ? args : []) {
+    unfix();
+    try {
+      let a0 = typeof raw === 'string' ? raw : String(raw ?? '');
+      const sk = scriptKind;
+      scriptKind = undefined;
+      if (sk === 'sh' && a0 === '--') { scriptKind = 'sh'; out.push(a0); continue; } // `bash -c -- <script>`
+      if (wrapKind) {
+        if (wrapValue) { wrapValue = false; }
+        else if (isCommandFlag(wrapKind, a0)) { if (wrapKind === 'sh') scriptKind = 'sh'; else joinKind = wrapKind; wrapKind = undefined; }
+        else if (/^[-+/]/.test(a0) && ++wrapSeen <= 9) { wrapValue = VALUE_FLAG[wrapKind].test(a0); }
+        else wrapKind = undefined;
+      } else if ((wrapKind = shellKind(a0))) { wrapSeen = 0; wrapValue = false; } // also inside a cmd script (`cmd /c powershell -Command ...`)
+      if (sk && !pending && SCRIPT_ESC.sh.test(a0)) { out.push(rd(maskShellScript('sh', a0, d, env))); continue; }
+      if (joinKind && (joinKind === 'ps' ? /`|''|""/ : SCRIPT_ESC.cmd).test(a0)) {
+        const pd = joinKind === 'ps' ? decodePs(a0, 0) : undefined; // PowerShell: a quoted word (`'a ''b'''`) or the arg with `` `x `` removed
+        const dec = joinKind === 'ps' ? (pd && pd.end === a0.length ? pd.value : a0.replace(/`([\s\S])/g, '$1')) : a0.replace(/\^([\s\S])|\\"/g, (_m, x?: string) => x ?? '"');
+        fix = { i: out.length, dec, raw: a0 };
+        a0 = dec;
+      }
+      // T067 (#447): a leading quote with no closing quote in the arg (`"--token=x`, `"X-Api-Key:` from a naive split) is set aside, so the
+      // flag, `Name:` or `NAME=` behind it is seen and the rest of the arg is masked by the rules (fail closed); it is put back in front
+      const lead = (a0[0] === '"' || a0[0] === "'") && a0.indexOf(a0[0], 1) < 0 ? a0[0] : '';
+      if (lead) a0 = a0.slice(1);
+      const push = (x: string): void => { out.push(lead && x !== MASK ? lead + x : x); };
+      const [a, q] = unquote(a0);
+      const W = (x: string): string => (q && (x !== MASK || a === MASK) ? q + x + q : x); // R12: a value already hidden inside its quotes keeps them
+      const f = a.startsWith('-') || a.startsWith('/') ? parseFlag(a) : undefined;
+      if (pending && !LONG_FLAG.test(a) && (pending === 'secret' || !a.startsWith('-'))) {
+        if (pending === 'header' && HDR_NAME_ONLY.test(a)) { push(W(a)); pending = 'secret'; continue; } // R5: `Name:` then its value as the next arg
+        if (SCHEME.test(a.trim()) || (pending === 'header' && schemeHeader(a))) { push(W(a)); pending = 'secret'; continue; } // R11 a/b: the scheme word stays, the next arg is the secret
+        if (pending === 'header' && schemeHeader(a, true)) { push(W(maskHeaderValue(a, env, d))); pending = 'secret'; continue; } // R11 after a header flag: any name (FR-012: header values are masked whatever the name)
+        push(pending === 'secret' ? MASK : W(maskHeaderValue(a, env, d)));
+        pending = undefined;
+        continue;
+      }
+      pending = undefined;
+      if (!f && ((top ? /^(?:bearer|basic)$/i : /^Bearer$/).test(a.trim()) || schemeHeader(a))) { push(W(a)); pending = 'secret'; continue; } // R11 c (`Basic` and a lowercase `bearer` only at top level: in prose, `Basic setup` must stay) and b
+      if (!f) {
+        const hn = HDR_NAME_ONLY.exec(a);
+        if (hn && secretFlag(hn[1])) { push(W(a)); pending = 'secret'; continue; } // R5
+      }
+      if (f) {
+        const secret = secretFlag(f.name);
+        if (f.rest === undefined) {
+          pending = secret ? 'secret' : HEADER_FLAGS.has(f.name.toLowerCase()) ? 'header' : undefined;
+          push(W(rd(a)));
+        } else if (secret) {
+          if (SCHEME.test(f.rest.trim())) { push(W(a)); pending = 'secret'; continue; } // R11 a: `--auth=Bearer` and then the secret as its own arg
+          push(`${f.name}${f.sep}${MASK}`);
+          if (f.rest === '') pending = 'secret'; // `--token=` and then the value as its own arg
+        }
+        else if (HEADER_FLAGS.has(f.name.toLowerCase())) {
+          push(W(`${f.name}${f.sep}${maskHeaderValue(f.rest, env, d)}`));
+          if (schemeHeader(f.rest, true) || HDR_NAME_ONLY.test(f.rest.replace(/^["']/, ''))) pending = 'secret'; // R11 b: `--header=Authorization: Bearer`, and R5 (T067): `--header="X-Api-Key:`, then the secret
+        }
+        else { const [rv, rq] = unquote(f.rest); push(W(`${f.name}${f.sep}${rq}${rd(maskText(rv, d, env))}${rq}`)); } // a whole-quoted value (`--env="API_TOKEN=x"`) is masked on its inside, like a top-level arg (R2); same depth as that path
+        continue;
+      }
+      {
+        // `OPTS=\"--token` (a secret flag with no value, as the value of NAME=): the next word is its value
+        const kvm = KV.exec(a.replace(/^[\\"'`]+/, ''));
+        const inner = kvm ? kvm[4].replace(/^[\\"'`]+/, '') : '';
+        const f2 = inner.startsWith('-') || inner.startsWith('/') ? parseFlag(inner) : undefined;
+        if (f2 && f2.rest === undefined && secretFlag(f2.name) && !secretFlag(kvm![2].replace(ENV_PREFIX, ''))) pending = 'secret';
+        const hv = kvm ? HDR_NAME_ONLY.exec(inner.trim()) : null;
+        if (hv && secretFlag(hv[1])) pending = 'secret'; // `NAME=Name:` then its value as the next arg (R5)
+      }
+      push(W(rd(maskText(a, d, env))));
+    } catch {
+      out.push(MASK);
+    }
+  }
+  unfix();
+  return out;
+}
+
+/**
+ * Splits a command string into words for display (`shellWords`, R1): whitespace outside `"..."` and `'...'` separates words, and a quoted span
+ * stays in its word with its quotes. Not parsed here (`[KNOWN GAP]`): backslash, backtick and `^` escapes (`maskSecretCommand` unescapes a
+ * shell wrapper's payload first, T067), `$(...)`, heredocs. A drive or UNC
+ * path (`C:\Program Files\nodejs\node.exe`) is one token: it ends at the first whitespace-separated chunk that has no `\` or `/` (or has `=`,
+ * or starts with `-`, `/`, `\` or a drive); the rest is split as above.
+ */
+export function splitCommand(command: unknown): string[] {
+  const s = (typeof command === 'string' ? command : '').trim();
+  if (!s) return [];
+  const chunks = shellWords(s).words;
+  if (!/^(?:[A-Za-z]:[\\/]|\\\\)/.test(s)) return chunks;
+  // Drive or UNC path: one token up to the first space, and each following chunk joins it only when it still looks like the rest of
+  // the path (it contains a `\` or `/`, and does not start with `-`, `/`, `\` or a drive). `serve`, `s.js` and `token=x` end the path.
+  let end = 1;
+  while (end < chunks.length && /[\\/]/.test(chunks[end]) && !chunks[end].includes('=') && !/^(?:[-/\\]|[A-Za-z]:[\\/])/.test(chunks[end])) end++;
+  return [chunks.slice(0, end).join(' '), ...chunks.slice(end)];
+}
+
+/**
+ * Words of a command where the first word that opens a quote closing nowhere later starts one last word that runs to the end (T067: an
+ * unclosed quote makes the rest one argument, so it is masked as one; R1 alone kept it a literal and `srv "--token x more` showed `more`).
+ */
+function joinUnclosed(w: string[]): string[] {
+  let laterDq = false;
+  let laterSq = false;
+  let at = -1;
+  for (let i = w.length - 1; i >= 0; i--) {
+    const x = w[i];
+    if ((x[0] === '"' && !laterDq && x.indexOf('"', 1) < 0) || (x[0] === "'" && !laterSq && x.indexOf("'", 1) < 0)) at = i;
+    if (x.includes('"')) laterDq = true;
+    if (x.includes("'")) laterSq = true;
+  }
+  return at < 0 ? w : [...w.slice(0, at), w.slice(at).join(' ')];
+}
+
+/**
+ * A command for display: `redact()` on the raw text first (R8: `Authorization: Bearer x` and `Bearer x` side by side), split like
+ * `splitCommand`, masked like `maskSecretArgs`, joined with one space. T067: the payload of a shell wrapper (`sh -c`, `cmd /c`,
+ * `powershell -Command`) with escaped quotes is unescaped one level and masked before the split. `mapWord` (the read tools' path reducer)
+ * runs on each masked word outside such a payload. Never throws.
+ */
+export function maskSecretCommand(command: unknown, envIn?: Env, mapWord?: (word: string) => string): string {
+  return maskCommandImpl(command, envIn, true, mapWord);
+}
+function maskCommandImpl(command: unknown, envIn: Env | undefined, cap: boolean, mapWord?: (word: string) => string): string {
+  try {
+    if (cap && typeof command === 'string' && command.length > MASK_INPUT_MAX) return MASK;
+    const env = snapshot(envIn);
+    const plain = (c: string): string => {
+      const out = maskArgs(joinUnclosed(splitCommand(redact(maskSchemeSecrets(maskHashtables(c)), env))), env, MAX_DEPTH, true);
+      return (mapWord ? out.map((x) => mapWord(x)) : out).join(' ');
+    };
+    const c = typeof command === 'string' ? command : '';
+    return maskScriptText(c, MAX_DEPTH, env, plain) ?? plain(c);
+  } catch { return '[redaction failed]'; }
+}
+
+/**
+ * TEST ONLY (scripts/test-redact.ts): the same rules as the public functions without the `MASK_INPUT_MAX` cap, so the
+ * linearity and cost rows measure the rule path and not the cap. Nothing under `src/` may use it.
+ */
+export const _uncappedForTest = {
+  maskSecretArgs: (args: readonly string[], envIn?: Env): string[] => maskArgsImpl(args, envIn, false),
+  maskSecretCommand: (command: unknown, envIn?: Env): string => maskCommandImpl(command, envIn, false),
+  /** A wrapper payload written back by `encodePayload` and read again by that shell's decoder (T067: it must read back the same). */
+  payloadRoundTrip: (kind: ShellKind, quote: string, v: string, raw = ''): string | undefined => {
+    const enc = encodePayload(kind, v, { value: v, end: 0, quote }, raw);
+    return (kind === 'sh' ? decodeSh(enc, 0) : kind === 'cmd' ? decodeCmd(enc, 0) : decodePs(enc, 0))?.value;
+  },
+};
+
+/**
+ * OAuth query and fragment values that are secrets although their names do not look like one (review on PR #630): an authorization
+ * `code`, the `state` that pairs with it, and the tokens a redirect can carry. Only in a URL's query or fragment, never as flags.
+ */
+const OAUTH_PARAMS = new Set(['code', 'state', 'id_token', 'refresh_token', 'access_token', 'code_verifier', 'client_secret']);
+const oauthParam = (name: string): boolean => {
+  let n = name;
+  if (n.includes('%')) { try { n = decodeURIComponent(n); } catch { /* keep the raw name */ } }
+  return OAUTH_PARAMS.has(n.toLowerCase());
+};
+
+const UNC_SEG = String.raw`[^\\/\s"'<>|:;,*?]{1,128}`;
+const UNC_SEP = String.raw`(?:\\{1,2}|\/)`;
+// spec 097 FR-311 delta 2026-11-08 (review of PR #1322): the lead is any run of two or more `\` (an odd count, `\\\server`, showed the name once
+// a Markdown unescape halved it); never after a letter, digit, `:` or another separator
+const UNC_HOME = new RegExp(String.raw`(?<![A-Za-z0-9_.~:\\/-])\\{2,}${UNC_SEG}${UNC_SEP}${UNC_SEG}(?:${UNC_SEP}(?:[^\\/\r\n"'<>|:;,*?]{1,128}(?=[\\/])|${UNC_SEG}))?`, 'g');
+// The forward-slash form (`//server/homes/user`, reviews of PR #1322): `//` starts far more than UNC paths (`//cdn.example.com/x.js`, a protocol-relative
+// URL; `//TODO/fix`, a comment), so it counts only when (1) the share has a home-share name (`home`, `homes`, `user`, `users`, `profile`, `profiles`, any case,
+// a hidden `$` allowed), (2) the host is a bare name (no dot, not `localhost`: a web host has a dot, a NetBIOS server has none), and (3) it does not follow
+// `src=`, `href=`, `srcset=` or `url(` (quoted or not). Host, share and the next folder become `~`; a segment never takes `(` or `)`, so a closing paren stays.
+// `[KNOWN GAP]` an FQDN host (`//fs01.corp.example/homes/u`) and a share with any other name are not masked in this form (the backslash forms are). A bare host
+// cannot be told from a NetBIOS server by its shape, so `//cdn/profile/pic.png` or `//HOME/users` outside those attributes is masked: over-masking, the safe side.
+const FWD_SEG = String.raw`[^\\/\s"'<>|:;,*?()]{1,128}`;
+const UNC_FWD_HOME = new RegExp(String.raw`(?<![A-Za-z0-9_.~:\\/-])(?<!(?:src|href|srcset)\s*=\s*["']?|url\(\s*["']?)\/\/(?!localhost(?![^\\/\s"'<>|:;,*?().]))[^\\/\s"'<>|:;,*?().]{1,128}\/(?:homes?|users?|profiles?)\$?(?![^\\/\s"'<>|:;,*?()])(?:\/(?:[^\\/\r\n"'<>|:;,*?()]{1,128}(?=\\|\/(?!\/))|${FWD_SEG}))?`, 'gi');
+/**
+ * Home folders in free text become `~` (review on PR #630: a copied error must not carry the user name): `/home/<user>`,
+ * `/Users/<user>`, `<drive>:\Users\<user>` (also with `/` or doubled `\\` as in JSON), and the given home folders themselves
+ * (`HOME`, `USERPROFILE` of this process by default). A user name with spaces is covered when a separator follows it. A UNC path
+ * (`\\server\share\user`, with any run of two or more `\`; with `//` only on a bare host and a home-share name, `//server/homes/user`, never in a `src=`, `href=` or `url(`): its host, share and next folder.
+ * Bounded; never throws.
+ */
+export function maskHomePaths(text: unknown, homes?: readonly (string | undefined)[]): string {
+  try {
+    let s = typeof text === 'string' ? text : text == null ? '' : String(text);
+    const env = (globalThis as { process?: { env?: Env } }).process?.env ?? {};
+    const list = (homes ?? [env.HOME, env.USERPROFILE]).filter((h): h is string => typeof h === 'string' && h.replace(/[\\/]+$/, '').length >= 4);
+    for (const h of [...new Set(list.map((x) => x.replace(/[\\/]+$/, '')))].sort((a, b) => b.length - a.length)) {
+      // only a whole folder: `/home/vik` is not the start of `/home/vikram`
+      for (const v of new Set([h, JSON.stringify(h).slice(1, -1)])) s = s.replace(new RegExp(v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + String.raw`(?![^\\/\s"'<>|:;,*?])`, 'g'), '~');
+    }
+    s = s.replace(/(?<![A-Za-z0-9_.~-])(?:\/(?:home|Users)\/|[A-Za-z]:(?:\\{1,2}|\/)Users(?:\\{1,2}|\/))(?:[^\\/\r\n"'<>|:;,*?]{1,128}(?=[\\/])|[^\\/\s"'<>|:;,*?]{1,128})/g, '~');
+    // a UNC path (`\\server\share\user\...`, or doubled as in JSON): where the user name sits is not known, so host, share and the next folder become `~`
+    return s.replace(UNC_HOME, '~').replace(UNC_FWD_HOME, '~');
+  } catch {
+    return '[redaction failed]';
+  }
+}
+
+/**
+ * A URL for display (FR-053): everything between `://` and the last `@` of the authority becomes `[redacted]` (with or without a colon),
+ * query and fragment values with a secret-looking name (percent-decoded) are masked, and the known path secrets (Telegram bot token,
+ * Slack and Discord webhooks) too; then `redact()`. Other path secrets are not detected (`[KNOWN GAP]`).
+ */
+export function maskSecretUrl(url: unknown, envIn?: Env): string {
+  const env = snapshot(envIn);
+  let s = typeof url === 'string' ? url : '';
+  s = s.replace(/([a-z][a-z0-9+.-]{1,20}:\/\/)[^/?#\s]{0,2000}@/gi, '$1' + MASK + '@');
+  s = s.replace(/([?&;#])([^=&;#?\s]{1,100})=([^&;#\s]*)/g, (m, sep: string, name: string) => (secretFlag(name) || oauthParam(name) ? `${sep}${name}=${MASK}` : m));
+  s = s.replace(/(\/bot\d{1,20}:)[^/?#\s]+/gi, '$1' + MASK);
+  s = s.replace(/(hooks\.slack\.com\/services\/[^/?#\s]+\/[^/?#\s]+\/)[^/?#\s]+/gi, '$1' + MASK);
+  s = s.replace(/(\/api(?:\/v\d{1,3})?\/webhooks\/[^/?#\s]+\/)[^/?#\s]+/gi, '$1' + MASK);
+  return redact(s, env);
+}
+
+/**
+ * The one debug-log sink (`DURBAR_LOG`): every record is JSON-encoded, redacted once, then appended as one line.
+ * A record over the cap is written as `{"truncated":true,"head":"..."}`, so the file stays valid JSONL.
+ * `append` and `env` are injected so tests need no Electron or real log file.
+ */
+export function createDebugSink(file: string, env: Env, append: (file: string, data: string) => void): (record: unknown) => void {
+  return (record) => {
+    let line: string;
+    try { line = JSON.stringify(record) ?? 'null'; } catch { line = '"[unserializable]"'; }
+    const over = line.length > REDACT_MAX_CHARS;
+    const safe = redact(line, env);
+    append(file, (over ? JSON.stringify({ truncated: true, head: safe }) : safe) + '\n');
+  };
+}
+
+// ---- Notes (spec 083 FR-005, issue 699) ----
+
+/**
+ * Spec 084 FR-033, 083 *Changes* 2026-11-06 (moved here from `src/renderer/safetext.js`, spec 097 FR-030, so there is one copy):
+ * what can sit invisibly inside a token and hide it from every shape. Default-ignorable code points (soft hyphen, zero-width characters,
+ * joiners, bidi marks, variation selectors, Hangul fillers, tag characters), every format character (`\p{Cf}`), the control characters
+ * other than tab, line feed and carriage return (those end a token or a line; CR renders as a line end), the line and paragraph
+ * separators, the near-invisible spaces (six-per-em, punctuation, thin, hair, narrow no-break, medium mathematical), and five
+ * characters that render as an empty glyph but are neither `Cf` nor default-ignorable (review of PR 1236): U+2800 BRAILLE PATTERN BLANK,
+ * U+13441 EGYPTIAN HIEROGLYPH FULL BLANK, U+13442 EGYPTIAN HIEROGLYPH HALF BLANK, U+16FE4 KHITAN SMALL SCRIPT FILLER and U+1D159
+ * MUSICAL SYMBOL NULL NOTEHEAD. Wider spaces
+ * are a visible gap and stay out. Per code point (`u`), astral characters included. The masks read a copy without them
+ * (`unhide`); the text is shown as written, so the joiners real scripts and emoji need stay.
+ */
+export const HIDDEN_CHARS = /\p{Default_Ignorable_Code_Point}|\p{Cf}|[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u2028\u2029\u2006\u2008\u2009\u200a\u202f\u205f\u2800\u{13441}\u{13442}\u{16fe4}\u{1d159}]/u;
+const HIDDEN_ALL = new RegExp(HIDDEN_CHARS.source, 'gu');
+/** The text without `HIDDEN_CHARS` (DurbarSafeText.unhide in the window, `convmask` in main, and the notes and outgoing masks). */
+export function unhide(t: unknown): string {
+  return String(t == null ? '' : t).replace(HIDDEN_ALL, '');
+}
+const PLAIN_ASCII = /^[\x20-\x7e]*$/;
+/**
+ * Text that makes every hidden character live (review of PR 1244; the independent audit). A rule with a bounded window (`{0,N}`, `{1,N}`) over a
+ * class that admits non-ASCII (`[^...]`, `\S`) counts an inert hidden character toward its limit, so the copy without it reads a token the text
+ * as written does not: the fast path would mask less than the reference. Each alternative is the head of such a rule: a secret name and its
+ * separator (`named`: the value, its digit look-ahead and its closer), `cookie` (the header, the JSON form and `cookieEnd`'s 128-character name
+ * loop, a count in code, not a regex), `machine` (netrc: host and login), `curl` (the window before `-u` and the user), `mysql`/`mariadb` (the window before `-p`), `://` (URL credentials).
+ * Text-wide on purpose: the netrc `\s{1,8}` crosses line breaks. `scripts/test-livehead.ts` (FR-063) lists the mask rules with such a window and
+ * fails when one has no alternative here. A per-line guard is possible later.
+ */
+const LIVE_HEADS: readonly string[] = [
+  String.raw`${SECRET_NAMES}${Q_END}\s{0,8}(?::=|=>|[:=]|%3[DdAa])`, // a secret name and its separator
+  'cookie',
+  String.raw`\bmachine\s`,
+  String.raw`\bcurl\b`,
+  String.raw`\b(?:mysql|mariadb)`, // `-p` after the client name: a 200-character window (FR-170 item 1)
+  String.raw`:\/\/`,
+];
+const LIVE_HEAD = new RegExp(LIVE_HEADS.join('|'), 'i');
+/** The alternatives of `LIVE_HEAD`, one regex each (`scripts/test-livehead.ts` checks each against its own sample). */
+export const _liveHeadsForTest = (): RegExp[] => LIVE_HEADS.map((h) => new RegExp(h, 'i'));
+/** A character a token cannot be made of or sit next to: non-ASCII, not a space (U+0085 and the Unicode spaces included), not hidden, a whole code point. */
+function isInertSide(cp: number | undefined): boolean {
+  if (cp === undefined || cp < 0x80 || (cp >= 0xd800 && cp <= 0xdfff)) return false;
+  const ch = String.fromCodePoint(cp);
+  return !/\s/u.test(ch) && !HIDDEN_CHARS.test(ch);
+}
+/**
+ * Spec 095 *Changes* 2026-11-07 (issue 1234): whether `s` holds a hidden character (`HIDDEN_CHARS`) that can hide a token, so the masks
+ * must also read the copy without hidden characters (`maskKeepingMarkdown`, three passes when live, and `convmask.maskWork`'s x3). A run of hidden
+ * characters is inert when the characters on both sides are non-ASCII, not spaces and not hidden (a ZWJ or VS16 inside an emoji sequence
+ * or a script): every token shape is ASCII, so one split or glued by it has an ASCII neighbour and stays live. That premise fails for `name=value` (a value may be non-ASCII, and the digit look-ahead counts up to 128 characters, hidden ones too), so a text with a secret name and a separator (`LIVE_HEAD`) is always live (review of PR 1244). A run at either end, or next
+ * to a space or an ASCII character, is live. Known values (and the environment's secrets) with a non-ASCII or non-printable character are
+ * matched literally, so a hidden character could split one between two non-ASCII characters: then every hidden character is live.
+ * The one rule of `maskNoteText`, `maskOutgoing` and `maskWork`.
+ */
+export function hiddenCanHide(s: string, values: readonly string[] = [], env?: Env): boolean {
+  return hiddenScan(s, values, env).live;
+}
+/**
+ * `hiddenCanHide` and what the scan cost: `runs`, the hidden runs it walked (a live text stops at the first reason, so `runs` is only
+ * meaningful when `live` is false). `convmask.maskWork` prices the scan per run (review of PR 1244, item 5: it runs once in `maskWork`
+ * and once in the mask, and a text of joined emoji has thousands of runs).
+ */
+export function hiddenScan(s: string, values: readonly string[] = [], env?: Env): { live: boolean; runs: number } {
+  const LIVE = { live: true, runs: 0 };
+  HIDDEN_ALL.lastIndex = 0;
+  let m = HIDDEN_ALL.exec(s);
+  if (!m) return { live: false, runs: 0 };
+  if (!values.every((v) => PLAIN_ASCII.test(v))) return LIVE;
+  // a rule's bounded window counts hidden characters too: always live. The head is read on the text as written and on the text without its
+  // Markdown marks (`maskCore` masks both: `pass**word**=`, `Coo**kie**:`, `https:**//**`, `api\_key=` are heads there; review of PR 1244, item 1)
+  if (LIVE_HEAD.test(s) || (NOTE_MARK.test(s) && LIVE_HEAD.test(withoutMarks(s).k))) return LIVE;
+  const e = snapshot(env);
+  for (const [, v] of SNAPSHOTS.get(e) ?? []) if (!PLAIN_ASCII.test(v)) return LIVE;
+  let runs = 0;
+  while (m) {
+    const a = m.index;
+    let b = a + m[0].length;
+    HIDDEN_ALL.lastIndex = b;
+    for (let n = HIDDEN_ALL.exec(s); n && n.index === b; n = HIDDEN_ALL.exec(s)) b = n.index + n[0].length; // the whole run
+    if (/\s/u.test(s.slice(a, b))) return LIVE; // a hidden character the rules read as a space (VT, FF, LS, PS, BOM) ends a value: live
+    const lo = a > 1 && s.charCodeAt(a - 1) >= 0xdc00 && s.charCodeAt(a - 1) <= 0xdfff && s.charCodeAt(a - 2) >= 0xd800 && s.charCodeAt(a - 2) <= 0xdbff ? a - 2 : a - 1;
+    const before = a > 0 ? s.codePointAt(lo) : undefined;
+    if (!isInertSide(before) || !isInertSide(b < s.length ? s.codePointAt(b) : undefined)) return LIVE;
+    runs++;
+    HIDDEN_ALL.lastIndex = b;
+    m = HIDDEN_ALL.exec(s);
+  }
+  return { live: false, runs };
+}
+/** For each character of `unhide(s)`, its index in `s` (plus a final entry, `s.length`). */
+function unhiddenIndex(s: string): Int32Array {
+  const at = new Int32Array(s.length + 1);
+  let j = 0;
+  let from = 0;
+  HIDDEN_ALL.lastIndex = 0;
+  for (let m = HIDDEN_ALL.exec(s); m; m = HIDDEN_ALL.exec(s)) {
+    for (let i = from; i < m.index; i++) at[j++] = i;
+    from = m.index + m[0].length;
+  }
+  for (let i = from; i < s.length; i++) at[j++] = i;
+  at[j] = s.length;
+  return at.subarray(0, j + 1);
+}
+
+/** Characters that can sit inside a token without being part of it in Markdown: emphasis, code, strike, link brackets, a Markdown escape's backslash. Invisible characters are `HIDDEN_CHARS`. */
+export const NOTE_MARK = /[*`~[\]\\]/;
+const NOTE_ESCAPABLE = '\\`*_{}[]()#+-.!~|<>';
+export const NOTE_RUN = /[A-Za-z0-9_\-.+/=:@%]{12,}/g;
+
+/**
+ * `s` without its split marks, and for each kept character its index in `s` (plus a final entry, `s.length`). For the escaped-run step
+ * of `redact` (spec 012 FR-181): `keepMarks`, the marks stay (in a command they are shell syntax); `tokenEsc`, a backslash before any
+ * token character is an escape too (`g\hp_`: a shell drops it).
+ */
+function withoutMarks(s: string, keepMarks = false, tokenEsc = false): { k: string; at: number[] } {
+  const keep: string[] = [];
+  const at: number[] = [];
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '\\') {
+      if (i + 1 < s.length && (NOTE_ESCAPABLE.includes(s[i + 1]) || (tokenEsc && TOKEN_CHAR.test(s[i + 1])))) { keep.push(s[i + 1]); at.push(i + 1); i++; }
+      else { keep.push(c); at.push(i); } // a Windows path's backslash is a character
+      continue;
+    }
+    if (!keepMarks && NOTE_MARK.test(c)) continue;
+    keep.push(c);
+    at.push(i);
+  }
+  at.push(s.length);
+  return { k: keep.join(''), at };
+}
+
+/** Replace each [a, b) span of `s` (in `s` coordinates, overlapping ones joined) with the mask. */
+function maskSpans(s: string, spans: Array<[number, number]>): string {
+  if (!spans.length) return s;
+  spans.sort((x, y) => x[0] - y[0] || y[1] - x[1]);
+  let out = '';
+  let pos = 0;
+  let cur: [number, number] | undefined;
+  const flush = (): void => { if (cur) { out += s.slice(pos, cur[0]) + MASK; pos = cur[1]; } };
+  for (const sp of spans) {
+    if (cur && sp[0] <= cur[1]) cur[1] = Math.max(cur[1], sp[1]);
+    else { flush(); cur = [sp[0], sp[1]]; }
+  }
+  flush();
+  return out + s.slice(pos);
+}
+
+/** The first and last character of `k` that `r` (its masked copy) changed, line by line when the line count is kept (else for the whole text). */
+function changedRegions(k: string, r: string): Array<[number, number]> {
+  const diff = (a: string, b: string, base: number): [number, number] | undefined => {
+    if (a === b) return undefined;
+    let p = 0;
+    const max = Math.min(a.length, b.length);
+    while (p < max && a[p] === b[p]) p++;
+    let q = 0;
+    while (q < max - p && a[a.length - 1 - q] === b[b.length - 1 - q]) q++;
+    let from = p;
+    let to = a.length - q;
+    if (to <= from) { if (from > 0) from--; else to = Math.min(a.length, from + 1); } // only inserted text: take a neighbouring character
+    return [base + from, base + to];
+  };
+  const ka = k.split('\n');
+  const ra = r.split('\n');
+  if (ka.length !== ra.length) { const d = diff(k, r, 0); return d ? [d] : []; }
+  const out: Array<[number, number]> = [];
+  let base = 0;
+  for (let i = 0; i < ka.length; i++) {
+    const d = diff(ka[i], ra[i], base);
+    if (d) out.push(d);
+    base += ka[i].length + 1;
+  }
+  return out;
+}
+
+/**
+ * What a mark hides: a secret split by `**`, a backtick, `~`, a bracket or a Markdown escape. Works on the text without marks and maps
+ * each find back to the text as written. `find` gives the spans in `k` coordinates; the result is in `s` coordinates.
+ */
+function spansAcrossMarks(s: string, find: (k: string, at: number[], u: string) => Array<[number, number]>): Array<[number, number]> {
+  if (!NOTE_MARK.test(s)) return [];
+  const { k, at } = withoutMarks(s);
+  const spans: Array<[number, number]> = [];
+  for (const [a, b] of find(k, at, s)) if (b > a) spans.push([at[a], at[b - 1] + 1]);
+  return spans;
+}
+
+const MASK_SHOWN = /\[redacted(?::[^\]\r\n]{1,128})?\]/;
+/**
+ * The spans of `orig` that `masked` (`orig` with some spans replaced by a mask, as `redact` and `maskSpans` write it) no longer shows.
+ * The literal pieces between the masks are placed twice, as early and as late as they fit; a character counts as shown only when every
+ * placement shows it, so an ambiguous placement hides more, never less. Anything that does not fit (a mask failed) hides all.
+ */
+function hiddenSpans(orig: string, masked: string): Array<[number, number]> {
+  if (masked === orig) return [];
+  const all: Array<[number, number]> = [[0, orig.length]];
+  let m = masked;
+  const cutTail = orig.length > REDACT_MAX_CHARS && m.endsWith(TRUNCATED);
+  if (cutTail) m = m.slice(0, -TRUNCATED.length);
+  const pieces = m.split(MASK_SHOWN);
+  const n = pieces.length;
+  if (n === 1) return !cutTail || !orig.startsWith(pieces[0]) ? all : [[pieces[0].length, orig.length]];
+  const early = new Array<number>(n);
+  const late = new Array<number>(n);
+  if (!orig.startsWith(pieces[0])) return all;
+  early[0] = 0;
+  let pos = pieces[0].length;
+  for (let i = 1; i < n; i++) {
+    const p = pieces[i];
+    const at = i === n - 1 && !cutTail ? (orig.endsWith(p) && orig.length - p.length >= pos ? orig.length - p.length : -1) : orig.indexOf(p, pos);
+    if (at < 0) return all;
+    early[i] = at;
+    pos = at + p.length;
+  }
+  late[n - 1] = cutTail ? orig.lastIndexOf(pieces[n - 1], orig.length - pieces[n - 1].length) : early[n - 1];
+  if (late[n - 1] < early[n - 1]) return all;
+  for (let i = n - 2; i >= 1; i--) {
+    const from = late[i + 1] - pieces[i].length;
+    const at = from < early[i] ? -1 : orig.lastIndexOf(pieces[i], from);
+    if (at < early[i]) return all;
+    late[i] = at;
+  }
+  late[0] = 0;
+  if (n > 1 && pieces[0].length > late[1]) return all;
+  const hidden: Array<[number, number]> = [];
+  let shownTo = 0;
+  for (let i = 0; i < n; i++) {
+    const a = late[i];
+    const b = early[i] + pieces[i].length;
+    if (b <= a) continue;
+    if (a > shownTo) hidden.push([shownTo, a]);
+    shownTo = Math.max(shownTo, b);
+  }
+  if (shownTo < orig.length) hidden.push([shownTo, orig.length]);
+  return hidden;
+}
+
+/**
+ * One pass on `s` as written: (1) the known values, as written and across Markdown marks; (2) every token-like run, or region, that
+ * `redact` only finds once the marks are removed (a token split by `**` or a backtick, or glued to the word before it), judged on the
+ * text as written; (3) what `redact` finds. All three are spans of the same text, masked once as their union, so a value or a run that
+ * overlaps a token's start cannot leave its body (review of PR 1236); then `redact` once more. With nothing from (1) or (2) the result
+ * is `redact(s)`, as before.
+ */
+function maskCore(s: string, vals: readonly string[], env: Env): string {
+  const spans: Array<[number, number]> = [];
+  for (const v of vals) for (let i = s.indexOf(v); i >= 0; i = s.indexOf(v, i + v.length)) spans.push([i, i + v.length]);
+  if (vals.length) {
+    spans.push(...spansAcrossMarks(s, (k) => {
+      const out: Array<[number, number]> = [];
+      for (const v of vals) for (let i = k.indexOf(v); i >= 0; i = k.indexOf(v, i + v.length)) out.push([i, i + v.length]);
+      return out;
+    }));
+  }
+  spans.push(...spansAcrossMarks(s, (k, at, u) => {
+    const out: Array<[number, number]> = [];
+    // a run of `u` (marks are not run characters) that `redact` changes on its own, with the token characters glued after it across marks
+    const kIndex = new Map<number, number>();
+    at.forEach((uIdx, kIdx) => kIndex.set(uIdx, kIdx));
+    const seen = new Map<string, boolean>();
+    for (const m of u.matchAll(NOTE_RUN)) {
+      const i = m.index ?? 0;
+      const touches = (i > 0 && NOTE_MARK.test(u[i - 1])) || (i + m[0].length < u.length && NOTE_MARK.test(u[i + m[0].length]));
+      if (!touches) continue;
+      let hit = seen.get(m[0]);
+      if (hit === undefined) { hit = redact(m[0], env) !== m[0]; seen.set(m[0], hit); }
+      if (!hit) continue;
+      const a = kIndex.get(i);
+      const lastK = kIndex.get(i + m[0].length - 1);
+      if (a === undefined || lastK === undefined) continue;
+      let b = lastK + 1;
+      while (b < k.length && /[A-Za-z0-9_-]/.test(k[b])) b++;
+      out.push([a, b]);
+    }
+    // whatever `redact` finds in the text without marks that it did not find in the text as written
+    out.push(...changedRegions(k, redact(k, env)));
+    return out;
+  }));
+  if (!spans.length) return redact(s, env);
+  spans.push(...hiddenSpans(s, redact(s, env)));
+  return redact(maskSpans(s, spans), env);
+}
+
+/**
+ * The one core of `maskNoteText` (spec 083 FR-005) and `maskOutgoing` (spec 084 FR-033): masks text, keeping the Markdown and the
+ * text as written. `maskCore` on the text, and, when it holds hidden characters (`HIDDEN_CHARS`), also on the copy without them; the
+ * union of both is masked, so neither a hidden character inside a token nor one that glues a token to a word in the copy lets it
+ * through. Known values under 4 characters are skipped, longest first. Mask first, cut after (the caller): a secret across the cut
+ * would leave a head. `changed` says whether anything was masked. Linear: a fixed number of passes.
+ */
+function maskKeepingMarkdown(text: unknown, values: readonly string[], alwaysCopy = false): { text: string; changed: boolean } {
+  const original = typeof text === 'string' ? text : text == null ? '' : String(text);
+  // longest first only for a stable order: the values are spans of one union, so a shorter value inside a longer one cannot leave a piece
+  const vals = [...new Set(values.filter((v) => typeof v === 'string' && v.length >= 4))].sort((a, b) => b.length - a.length);
+  const env = snapshot(); // the environment's secrets read once for every pass of this call, not once per pass
+  let out = maskCore(original, vals, env);
+  const c = unhide(original);
+  if (c !== original && (alwaysCopy || hiddenCanHide(original, vals, env))) {
+    const copy = maskCore(c, vals, env);
+    if (copy !== c) {
+      const at = unhiddenIndex(original);
+      const spans = hiddenSpans(original, out);
+      for (const [a, b] of hiddenSpans(c, copy)) if (b > a) spans.push([at[a], at[b - 1] + 1]);
+      out = redact(maskSpans(original, spans), env);
+    }
+  }
+  return { text: out, changed: out !== original };
+}
+
+/** Test reference only (spec 095 T065): the masks as they were before an inert hidden character skipped the copy pass, the copy always read. The differential fuzz in `scripts/test-maskoutgoing.ts` compares against it. */
+export function maskKeepingMarkdownReference(text: unknown, values: readonly string[] = []): { text: string; changed: boolean } {
+  return maskKeepingMarkdown(text, values, true);
+}
+
+/** Spec 083 FR-005 (D3): the mask every note passes before it is stored; `changed` is the note's `hidden`. See `maskKeepingMarkdown`. */
+export function maskNoteText(text: unknown, values: readonly string[] = []): { text: string; changed: boolean } {
+  return maskKeepingMarkdown(text, values);
+}
+
+/**
+ * Spec 084 FR-033 (D10): the secret check of a message to a contact, in the window on every change of the field and in main right
+ * before the send; `values` are the known secret values of that chat's folder and session. `changed` blocks the send (no override) and
+ * `text` is what *Use the masked text* puts in the field. The same core and order as `maskNoteText`, so both always agree.
+ */
+export function maskOutgoing(text: unknown, values: readonly string[] = []): { text: string; changed: boolean } {
+  return maskKeepingMarkdown(text, Array.isArray(values) ? values : []); // a missing list is no list, never a throw
+}
