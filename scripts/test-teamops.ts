@@ -274,6 +274,12 @@ section('targetKey', async () => {
   eq((await T({ pick: true }, env('/W/PROJ', 'win32'))).key, '/w/proj', 'another case on Windows');
   eq((await T({ pick: true }, env('/W/PROJ', 'darwin'))).key, '/w/proj', 'another case on macOS');
   eq((await T({ pick: true }, env('/W/PROJ', 'linux'))).key, '/W/PROJ', 'another case on Linux is another folder');
+  // the saved limit is looked up by the SAME key (the open room's), not by the path as picked
+  eq((await T({ pick: true }, env('/w/link'))).savedCap, 10, 'a link to the room: its saved limit');
+  eq((await T({ pick: true }, env('/w/proj/'))).savedCap, 10, 'a trailing slash: its saved limit');
+  eq((await T({ pick: true }, env('/W/PROJ', 'win32'))).savedCap, 10, 'another case on Windows: its saved limit');
+  eq((await T({ pick: true }, env('/W/PROJ', 'darwin'))).savedCap, 10, 'another case on macOS: its saved limit');
+  eq((await T({ pick: true }, env('/W/PROJ', 'linux'))).savedCap, undefined, 'another case on Linux is not the room: no saved limit');
   eq((await T({ pick: true }, env('/w/other.code-workspace'))).key, '/w/other.code-workspace', 'a workspace file: its own key');
   const fresh = await T({ pick: true }, env('/w/new'));
   eq([fresh.key, fresh.existing, fresh.savedCap], ['/w/new', 0, undefined], 'a folder that is not open: the resolved path, no saved limit');
@@ -722,7 +728,7 @@ section('modelsOf', async () => {
     assert.ok(lf.includes(m.from), 'mutant anchor not found: ' + m.name);
     return lf.split(m.from).join(m.to);
   };
-  const mutants: { name: string; from: string; to: string; section: string; ipc?: boolean }[] = [
+  const mutants: { name: string; from: string; to: string; section: string; ipc?: boolean; once?: boolean }[] = [
     { name: 'the first model is preselected when it is missing', from: "model = { id: ch.model, present: false, orgBlocked: false, words: 'Not offered here' };", to: "model = { id: list[0].id, present: true, orgBlocked: false, words: 'Offered' }; found = list[0];", section: 'models' },
     { name: 'a missing model needs no choice', from: "reasons.push('This model is not offered here.');", to: '', section: 'models' },
     { name: 'an org-blocked model needs no choice', from: "reasons.push('This model is blocked by your organization.');", to: '', section: 'models' },
@@ -773,6 +779,7 @@ section('modelsOf', async () => {
     { name: 'the saved limit of a dollar app is used as dollars', from: 'const f = (0, credits_1.startCap)(unit, undefined, ctx.savedCap, undefined);', to: 'const f = ctx.savedCap;', section: 'savedLimit' },
     { name: 'a picked folder is keyed by its raw path (no findAdded)', from: 'const have = (0, addkey_1.findAdded)(want, env.agents(), env.wsKey, env.platform, env.realpath);', to: 'const have = undefined;', section: 'targetKey' },
     { name: 'a picked folder is keyed by the path as picked (no resolveCwd)', from: 'const want = ws.workspaceFile ?? ws.cwd;', to: 'const want = p;', section: 'targetKey' },
+    { name: 'the saved limit of a picked folder is looked up by the picked path', from: 'const key = have ? env.wsKey(have) : want;\n    return { ok: true, key, existing: 0, savedCap: cleanCap(env.savedCap(key)) };', to: 'const key = have ? env.wsKey(have) : want;\n    return { ok: true, key, existing: 0, savedCap: cleanCap(env.savedCap(want)) };', section: 'targetKey', once: true },
     { name: 'the saved limit is not returned for a room', from: 'return { ok: true, key, existing: 0, savedCap: cleanCap(env.savedCap(key)) };\n            }', to: 'return { ok: true, key, existing: 0 };\n            }', section: 'targetKey' },
     { name: 'a cancelled pick is a room that is not there', from: 'return { ok: false, cancelled: true };', to: 'return { ok: false };', section: 'targetKey' },
     { name: 'the handler lets a throw out (guardAsync)', from: 'try {\n        return await fn();\n    }\n    catch {\n        return FAILED;\n    }', to: 'return await fn();', section: 'handlers', ipc: true },
@@ -792,6 +799,7 @@ section('modelsOf', async () => {
   const baseOf = (m: { ipc?: boolean }): string => (m.ipc ? ipcOrig : orig);
   const lost = mutants.filter((m) => !baseOf(m).replace(/\r\n/g, '\n').includes(m.from)).map((m) => m.name);
   assert.deepStrictEqual(lost, [], 'mutant anchors not found');
+  for (const m of mutants) if (m.once) assert.strictEqual(baseOf(m).replace(/\r\n/g, '\n').split(m.from).length - 1, 1, 'the anchor of "' + m.name + '" matches exactly once');
   for (const m of mutants) {
     const crlf = baseOf(m).replace(/\r\n/g, '\n').replace(/\n/g, '\r\n');
     ok(mutate(crlf, m).length > 0, 'the anchor of "' + m.name + '" is found in a CRLF source');
