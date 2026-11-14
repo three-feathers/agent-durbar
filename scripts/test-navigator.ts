@@ -296,6 +296,32 @@ function scanHandler(raw: string): number {
   assert.deepStrictEqual(N.loadCombo(JSON.stringify({ mod: true, shift: true, code: 'KeyN' }), false), D, 'another taken combination still falls back');
 }
 
+// ---- spec 095 FR-003 (Q2): Ctrl+Shift+F (⇧⌘F) is Search conversations: Go to cannot record it, a Go to saved on it is kept, and the search's own key rules ----
+{
+  const NS = N as typeof N & { SEARCH_COMBO: Combo; searchClashOf(c: Combo, mac: boolean, goTo?: Combo): string; loadSearchCombo(j: unknown, mac: boolean): Combo };
+  const F = { mod: true, ctrl: false, alt: false, shift: true, code: 'KeyF' };
+  for (const mac of [false, true]) assert.strictEqual(N.clashOf(F, mac), 'Already used for Search conversations.', `${mac ? 'Mac' : 'Windows/Linux'}: the Go to recorder refuses Ctrl+Shift+F`);
+  assert.deepStrictEqual(N.loadCombo(JSON.stringify(F), false), F, 'a Go to saved on Ctrl+Shift+F before the search existed is kept (SAVED_BEFORE)');
+  assert.deepStrictEqual(N.loadCombo(JSON.stringify(F), true), F, 'and on a Mac');
+  assert.deepStrictEqual(NS.SEARCH_COMBO, F, 'the search default is Ctrl+Shift+F / ⇧⌘F');
+  assert.deepStrictEqual(NS.loadSearchCombo(null, false), F);
+  assert.deepStrictEqual(NS.loadSearchCombo('{bad', true), F);
+  assert.deepStrictEqual(NS.loadSearchCombo(JSON.stringify({ mod: true, code: 'KeyK' }), false), F, 'a taken combination falls back to the default');
+  assert.deepStrictEqual(NS.loadSearchCombo(JSON.stringify({ mod: true, shift: true, code: 'KeyG' }), false), { mod: true, ctrl: false, alt: false, shift: true, code: 'KeyG' }, 'an own choice is kept');
+  assert.strictEqual(NS.searchClashOf(F, false), '', 'the search may use its own default');
+  assert.strictEqual(NS.searchClashOf({ mod: true, shift: true, code: 'KeyG' }, false, { mod: true, shift: true, code: 'KeyG' }), 'Already used for Go to.', 'never the Go to key');
+  assert.strictEqual(NS.searchClashOf({ mod: true, code: 'KeyK' }, false), 'Already used for the command palette.');
+  assert.ok(/Add Ctrl or Alt/.test(NS.searchClashOf({ code: 'KeyF' }, false)), 'a key alone is refused');
+  const navSrc = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'navigator.js'), 'utf8');
+  assert.ok(/\['mod\+shift\+KeyF','Search conversations'\]/.test(navSrc), 'TAKEN has the Search conversations row');
+  // mutation: without the row, the Go to recorder would take it
+  const tmp = path.join(require('os').tmpdir(), 'durbar-nav-mut-f-' + process.pid + '.js');
+  fs.writeFileSync(tmp, navSrc.replace(/\n\s*\['mod\+shift\+KeyF','Search conversations'\],[^\n]*/, ''));
+  const N3 = require(tmp) as typeof N;
+  fs.unlinkSync(tmp);
+  assert.strictEqual(N3.clashOf(F, false), '', 'mutation: with the row removed, Ctrl+Shift+F is free for Go to (the check above would fail)');
+}
+
 // ---- saved shortcut ----
 assert.deepStrictEqual(N.loadCombo(null, false), D);
 assert.deepStrictEqual(N.loadCombo('{bad', true), D);

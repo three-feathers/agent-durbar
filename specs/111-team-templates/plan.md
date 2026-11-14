@@ -67,11 +67,12 @@ Nothing existing creates several sessions at once or stores reusable agent setup
 | `src/shared/jsonscan.ts` | pure TS, **spec 110's** (110 T009); used here, not built here | Iterative pre-scan with spec 110's options `{ comments, maxDepth, maxBytes, duplicateKeys }` plus `maxValues`, `maxKeyLen`, `forbidKeys`; this spec passes `{ comments: false, maxDepth: 8, maxBytes: 262144, maxValues: 5000, maxKeyLen: 64, forbidKeys: [3 keys], duplicateKeys: 'refuse' }` | FR-090 |
 | `src/shared/teamstarters.ts` | pure TS data | The starters | FR-070..FR-073 |
 | `src/main/teamstore.ts` | main, no Electron import | `TeamTemplateStore`: load, set aside a bad file, list, put, duplicate, delete, save (temp, rename, 0600) | FR-001, FR-003, FR-021 |
+| `src/main/teamsipc.ts` | main, pure logic with injected deps | The `teams:*` channel operations (list, put, delete, duplicate, markMine; results, marks, memberIds, `setAside`), reused by `ipc/teams.ts` | FR-001, FR-002, FR-023 |
 | `src/main/teamops.ts` | main, pure logic with injected deps | Create preview (apps, models, org blocks, effort fallback, cost tiers, cap words), token store (10 min), create apply (lazy members, team record), save-room builder, export collect, import read/preview/apply | FR-030..FR-053, FR-084, FR-090..FR-101 |
 | `src/main/ipc/teams.ts` | IPC | `teams:list`, `teams:put`, `teams:delete`, `teams:duplicate`, `teams:createPreview(target, templateId)`, `teams:create(token, choices)`, `teams:savePreview(agentId)`, `teams:saveRoom(agentId, rows)` (an agent id of the room, FR-030), `teams:export(id)`, `teams:importPick()`, `teams:importApply(token, choices)`, `teams:cancel(token)`; all `ipcHandle`, every argument type- and size-checked | FR-010, FR-039, FR-100, FR-101 |
 | `src/main/folders.ts` | existing | `SavedFolder.team` (`parseTeamRecord`, at most 8 members), `setTeamRecord`, `setTeamMemberSession`, `dropTeamMember` | FR-040, FR-044 |
 | `src/main/main.ts` | existing | `addLazyMember` (restore path's `infoFor`); `restoreFolders` reads the team record first (latest mode via `modeForSession`, unknown apps skipped); `sendOp` adds the masked, framed brief after `sendWithSlash`'s expansion when the session id has no `briefSent` in the record, and writes `briefSent` after a successful send (nothing in memory only) | FR-034, FR-036, FR-040 |
-| `src/preload/preload.ts`, `src/shared/api.ts` | existing | Typed bridge members `teams*`, `TeamTemplateView`, `TeamPreview` (no brief text for foreign briefs beyond the preview) | FR-010 |
+| `src/preload/preload.ts`, `src/shared/api.ts` | existing | Typed bridge members `teams*`, `TeamTemplateInfo`, `TeamPreview` (no brief text for foreign briefs beyond the preview) | FR-010 |
 | `src/renderer/teams.js` (new UMD) + `scripts/copy-assets.js` + `index.html` | renderer | Settings section, editor, Create team, Save team, Import preview dialogs | FR-020..FR-024, FR-031, FR-050, FR-095 |
 | `src/renderer/app.js`, `realoffice.js` | existing | Role prefix on desks, list, Real office, tooltip, `aria-label`; Role chip and menu in the chat header; character on `agent:added` | FR-060..FR-064, FR-038 |
 | `src/renderer/sim.ts` | simulator | Fake store and channels, fake apps and models (FR-133), a two-team 15-agent scene | FR-133, FR-063 |
@@ -147,6 +148,7 @@ Frame words: `role`, `brief`, `template`, `author`, `written`, `person`, `user`,
 - `test:jsonscan` (shared): depth, values, duplicates, forbidden keys, position, CPU bound; spy on `JSON.parse`.
 - `test:teamimport`: the SC-002 fixture set (`scripts/fixtures/teams/`), FIFO and symlink swap with an injected fs, token rules.
 - `test:teamstore`: bad file set aside, 0600, atomic save.
+- `test:teamsipc`: the channel operations of T007 (results, marks, memberIds, `setAside`, throws).
 - `test:teamops`: preview rows for missing app, missing model, org block, effort fallback, cost words, caps; create builds lazy members only (fake adapter start count 0); restore of 8 members with their own settings; brief once per session; mutants for "preselect first model", "keep Allow all", "skip brief accept".
 - Drivers (simulator): `shots-111-templates`, `shots-111-create`, `shots-111-import` in three worlds at 1440x900 and 1280x800; `check:office` with the two-team scene.
 
