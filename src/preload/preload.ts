@@ -146,6 +146,11 @@ const api: DurbarApi = {
   notesSetFile: (id, on, opts) => ipcRenderer.invoke('notes:setFile', id, on, opts),
   notesExport: (id) => ipcRenderer.invoke('notes:export', id), // spec 083 T034b: main shows the save dialog
   onNotesChanged: (cb) => sub('notes:changed', cb),
+  teamsList: () => ipcRenderer.invoke('teams:list'), // spec 111 T007: team templates
+  teamsPut: (template) => ipcRenderer.invoke('teams:put', template),
+  teamsDelete: (id) => ipcRenderer.invoke('teams:delete', id),
+  teamsDuplicate: (id) => ipcRenderer.invoke('teams:duplicate', id),
+  teamsMarkMine: (templateId, memberId) => ipcRenderer.invoke('teams:markMine', templateId, memberId),
   listProfileFiles: () => ipcRenderer.invoke('profiles:listFiles'),
   readProfileFile: (fileId) => ipcRenderer.invoke('profiles:read', fileId),
   saveProfileFile: (fileId, text, baseSha, overwrite) => ipcRenderer.invoke('profiles:save', fileId, text, baseSha, overwrite),
@@ -209,6 +214,14 @@ const api: DurbarApi = {
   resumeSession: (id, sessionId, replace) => ipcRenderer.invoke('sessions:resume', id, sessionId, replace),
   listVsChats: (id) => ipcRenderer.invoke('vschat:list', id),
   readVsChat: (id, key) => ipcRenderer.invoke('vschat:read', id, key),
+  // spec 095 FR-033: the window sends only the query (and main's own searchId); both events come to this window only
+  convSearchStart: (query) => ipcRenderer.invoke('search:start', query),
+  convSearchCancel: (searchId) => ipcRenderer.invoke('search:cancel', searchId),
+  convSearchClear: () => ipcRenderer.invoke('search:clear'),
+  onConvSearch: (cb) => {
+    const offs = [sub('search:batch', cb), sub('search:done', cb)];
+    return () => offs.forEach((off) => off());
+  },
   openInVSCode: (id) => ipcRenderer.invoke('agents:openInVSCode', id),
   openWithTargets: (id) => ipcRenderer.invoke('agents:openWithTargets', id),
   openWith: (id, target) => ipcRenderer.invoke('agents:openWith', id, target),

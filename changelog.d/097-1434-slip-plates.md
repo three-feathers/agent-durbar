@@ -1,1 +1,0 @@
-- **In the Retro arcade, the first draw no longer puts a request pill over a name plate** (spec 097 FR-358, issue #1434): for about half a second after the office appeared at 1280x800 the limit and inbox pills lay over plates. Checked with `check-097-slip-plates` on the simulator; not run on a Mac.

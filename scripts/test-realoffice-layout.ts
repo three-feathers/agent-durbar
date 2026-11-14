@@ -6,6 +6,7 @@ import * as path from 'path';
 import { placeBox, portraitCrop, PORTRAIT_SIDE, slipAvoid, NOTE_PAPER, NOTE_PAPER_DEFAULT, NOTE_INK, notePaper, screenFit, screenFor, personMotion, zoomRect, realLayout, lobbyWidths, sortDesks, deskOrder, deskBase, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
   type RealModel, type RealMeta, type RealAgent, type RealState, type Rect, type Layout } from '../src/shared/realoffice-layout';
 import { signMin, lobbyBand, lobbyScale, visitorScale, HEAD, HEAD_FACE, HELP_FACE_MIN, HELP_GAP, helpH, helpCols, helpShown, headCrop, helperPerson } from '../src/shared/realoffice-layout';
+import { KID_U, KID_CAP, BIG_MAX, kidScale, kidBox, kidPose, kidHeadCrop, kidOf, helperHead, type KidMeta, type DeskBox } from '../src/shared/realoffice-layout';
 import { createHash } from 'crypto';
 import { CHARACTER_CHOICES } from '../src/shared/characters';
 import { lampWords, lightFor, lightState, LIGHT_TABLE, ambientFor, doneTick, fixtureLight, isActive, type LightState } from '../src/shared/lights';
@@ -1128,12 +1129,14 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
     assert.deepStrictEqual(stripProblems(L, label, m), [], label);
     if (n <= 15 && W >= 1280) assert.ok(!L.scroll, `${label}: 15 agents never scroll with helpers`);
     if (n === 15 && f === 4 && W >= 1280) assert.ok(L.faceH >= FACE_FLOOR - 1e-9, `${label}: face ${L.faceH} over the SC-002 ratchet`);
-    const hasStrip = L.zones.some((z) => z.desks.some((d) => d.strip));
+    assert.ok(L.big || L.zones.every((z) => z.desks.every((d) => !d.kids)), `${label}: kids only at the big level`);
+    const hasStrip = L.zones.some((z) => z.desks.some((d) => d.strip || d.kids)); /* FR-368: at the big level a desk's helpers may stand on its desk top instead (the row keeps the strip's height) */
     if (hc === 0) assert.strictEqual(JSON.stringify(L), JSON.stringify(base), `${label}: no helpers, no change at all`);
     if (hasStrip) {
       withStrip++;
       assert.strictEqual(L.helpRows, 1, `${label}: FR-338 strips drawn with one row`);
-      assert.strictEqual(L.zones.flatMap((z) => z.desks).filter((d) => d.strip).length, L.zones.flatMap((z) => z.desks).filter((d) => !d.lounge && helpersOf(m, d.id) > 0).length, `${label}: exactly the desks with helpers have a strip`);
+      assert.strictEqual(L.zones.flatMap((z) => z.desks).filter((d) => d.strip || d.kids).length, L.zones.flatMap((z) => z.desks).filter((d) => !d.lounge && helpersOf(m, d.id) > 0).length, `${label}: exactly the desks with helpers have a strip or kids`);
+      assert.ok(L.zones.every((z) => z.desks.every((d) => !(d.strip && d.kids))), `${label}: a desk has a strip or kids, never both`);
     } else assert.ok(L.helpRows === 0 || hc === 0, `${label}: no strip means helpRows 0`);
     if (hc === 0) assert.ok(!hasStrip && L.helpRows === 0, `${label}: helpers none, strips none`);
     sc++;
@@ -1290,6 +1293,131 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
     }
   }
   assert.ok(shortSeen > 0 && wholeSeen > 0, `a one-desk room takes the short sign, a wide room keeps it whole (${shortSeen} short, ${wholeSeen} whole)`);
+}
+/* spec 097 FR-368..FR-373, FR-376 (#1642): the helpers as clay-toy kids on the desk top at the big level (1 to 4 agents), the head row's kid faces at 5 to 15.
+   Mutants (each run by hand on the compiled engine, each must fail here with its own message; PR #1642 lists the runs):
+     normal:  `big && meta.kids` -> `meta.kids` in roStation (kids at the normal level)           -> "kids only at the big level"
+     person:  `l1 = centre.x - KID_GAP` -> `l1 = centre.x + 20` in kidZone (a kid over the person)  -> "lies over the person"
+     plate:   `plate.y - KID_FEET` -> `plate.y + 6` in roStation (a kid over the plate or pencil) -> "feet line"
+     seventh: `KID_CAP = 6` -> `KID_CAP = 7` (a 7th kid)                                          -> "shown ... is not"
+     wrongk:  `places[shown]` -> `places[shown - 1]` in kidZone (the +K block on the last kid)     -> "+K block"
+     movesu:  `const dh = 0.382 * Math.min(r.Sw - 6, 2 * u);` -> `... * (meta.kids ? 0.99 : 1);` in roRowGeom (kid art moves a row) -> "u or a row moved"
+     perpose: `kidScale(kid, u)` -> `kidScale(kid, u) * (pose === 'asleep' ? 1.2 : 1)` in kidBox (a scale per pose) -> "kid1 asleep leaves its place" (run 2026-11-13: all seven fail with these messages) */
+{
+  const KIDS = META.kids as Record<string, KidMeta>;
+  const helpersOf = (m: RealModel, id: string): number => m.folders.flatMap((x) => x.agents).find((a) => a.id === id)!.helpers || 0;
+  assert.ok(KIDS && Object.keys(KIDS).length === 6, 'the Photo office has six kids (#1641)');
+  const NOKIDS = { ...META } as RealMeta; delete NOKIDS.kids;
+  const KID_STATES: RealState[] = ['working', 'thinking', 'waiting', 'error', 'limit', 'done', 'idle'];
+  /** an independent place width: the widest pose of every kid at its own scale (FR-369), plus the 4 px gap */
+  const placeOf = (u: number): number => Math.max(...Object.values(KIDS).map((k) => Math.max(...Object.values(k.poses).map((p) => p[0])) * 0.4 * u / k.bodyH)) + 4;
+  /** an independent count: whole places in each span, the cap of 6 kids, the +K block takes a place of its own */
+  const expectKids = (d: DeskBox, n: number, u: number): number => {
+    const c = d.person ? d.person.vis : d.away ? { x: d.away.x - d.away.s / 2 - 4, w: d.away.s + 8 } : null;
+    if (!c) return -1;
+    const pl = placeOf(u), left = Math.floor((c.x - 4 - (d.desk.x + 6) + 4) / pl), right = Math.floor((d.call.x - 6 - (c.x + c.w + 4) + 4) / pl), P = Math.max(0, left) + Math.max(0, right);
+    const k = n <= Math.min(P, 6) ? n : Math.min(6, P - 1);
+    return k < 1 ? 0 : k;
+  };
+  let kc = 0, withKids = 0, withMore = 0, awayKids = 0;
+  const seen: Record<string, number> = {};
+  for (const [W, H] of SIZES) for (const n of [1, 2, 3, 4]) for (const f of [1, 2]) for (const hc of [0, 1, 2, 3, 5, 6, 7, 12]) for (const away of [false, true]) {
+    if (f > n) continue;
+    const m = model(n, f, { away: false, states: KID_STATES.slice(n % 3) });
+    m.folders.forEach((fo) => fo.agents.forEach((a, i) => { a.helpers = i % 2 ? Math.min(hc, 2) : hc; if (away && a.id === 'a0') { a.away = 'coffee'; } }));
+    if (away) m.places.find((p) => p.id === 'coffee')!.visitors.push({ id: 'a0', person: PEOPLE[0], needsYou: false } as never);
+    const L = realLayout(m, { w: W, h: H }, META), L0 = realLayout(m, { w: W, h: H }, NOKIDS);
+    const label = `${n} agents, ${f} folders, ${hc} helpers${away ? ', a0 away' : ''}, ${W}x${H}`;
+    assert.deepStrictEqual(problems(L, W, H), [], label);
+    /* FR-373: the kid zone never moves anything: u, rows, every desk's boxes but its strip are those of the same office without kid art */
+    assert.ok(L.u === L0.u && L.height === L0.height && L.helpRows === L0.helpRows, `${label}: u or a row moved (${L.u}/${L0.u})`);
+    const strip = (d: DeskBox): string => JSON.stringify({ ...d, strip: undefined, kids: undefined });
+    assert.deepStrictEqual(L.zones.map((z) => z.desks.map(strip)), L0.zones.map((z) => z.desks.map(strip)), `${label}: u or a row moved: a desk's boxes differ`);
+    for (const z of L.zones) for (const d of z.desks) {
+      const k = helpersOf(m, d.id);
+      if (!L.big) { assert.ok(!d.kids, `${label}: kids only at the big level (${d.id})`); continue; }
+      const want = k ? expectKids(d, k, L.u) : 0;
+      if (!want) { assert.ok(!d.kids, `${label}: ${d.id} has no room for a kid and draws none`); if (k && L.helpRows) assert.ok(d.strip, `${label}: ${d.id} keeps the head row (plan A4)`); continue; }
+      const kz = d.kids!;
+      assert.ok(kz, `${label}: ${d.id} with ${k} helpers draws ${want} kids`);
+      assert.strictEqual(kz.shown, want, `${label}: shown ${kz.shown} of ${d.id} is not ${want} (${k} helpers)`);
+      assert.ok(kz.shown <= KID_CAP && kz.places.length === kz.shown, `${label}: ${d.id} draws ${kz.shown} kids, at most ${KID_CAP}`);
+      assert.ok(Math.abs(kz.place - placeOf(L.u)) < 1e-6, `${label}: the place is the widest pose of the widest kid`);
+      if (k > kz.shown) {
+        withMore++;
+        assert.ok(kz.more, `${label}: ${d.id} has ${k - kz.shown} more helpers: a +K block`);
+        const last = kz.places[kz.places.length - 1], mo = kz.more!;
+        assert.ok(!inter(mo, last, 0.5) && mo.y + mo.h <= kz.feet + 0.01 && mo.w >= 28, `${label}: the +K block of ${d.id} is on a kid ${JSON.stringify([mo, last])}`);
+      } else assert.ok(!kz.more, `${label}: ${d.id} shows all ${k}: no +K block`);
+      /* the feet line: on the desk top, at least 4 px above the plate (the rename pencil reaches 2 px over it) */
+      assert.ok(kz.feet <= d.plate.y - 4 + 1e-9 && kz.feet > d.desk.y, `${label}: the feet line of ${d.id} ${kz.feet} is not on the desk top over the plate ${d.plate.y}`);
+      const avoid: [string, Rect | null][] = [['the person', d.person && d.person.vis], ['the plate', d.plate], ['the screen', d.screen],
+        ['the post-it', d.away && { x: d.away.x - d.away.s / 2, y: d.away.y, w: d.away.s, h: d.away.s }], ['the bubble', d.bubble && { x: d.bubble.x, y: d.bubble.y - 24, w: 24, h: 24 }],
+        ['the dots', d.dots && { x: d.dots.x, y: d.dots.y - 8, w: 30, h: 10 }], ['the bang', d.bang && { x: d.bang.x, y: d.bang.y, w: 20, h: 20 }], ['the call light', { x: d.call.x, y: d.call.y, w: 12, h: 12 }]];
+      const boxes = kz.places.concat(kz.more ? [kz.more] : []);
+      boxes.forEach((p, i) => {
+        assert.ok(p.x >= d.desk.x + 6 - 1e-6 && p.x + p.w <= d.call.x - 6 + 1e-6, `${label}: place ${i} of ${d.id} leaves the desk top's spans`);
+        assert.ok(inside(p, { x: 0, y: 0, w: W, h: L.height }, 0.01) && inside(p, z.box, 0.01), `${label}: place ${i} of ${d.id} leaves the window or its zone`);
+        for (const [what, r] of avoid) if (r) assert.ok(!inter(p, r, 0.01), `${label}: place ${i} of ${d.id} lies over ${what} ${JSON.stringify([p, r])}`);
+        boxes.forEach((q, j) => { if (j > i) assert.ok(!inter(p, q, 0.01), `${label}: places ${i} and ${j} of ${d.id} overlap`); });
+      });
+      /* every kid in every pose: inside its place, its sole on the feet line, one scale per kid (its standing figure is 0.40 u) */
+      for (const [kid, km] of Object.entries(KIDS)) for (const pose of Object.keys(km.poses)) {
+        const b = kidBox(km, pose, kz.places[0], kz.feet, L.u), sc = KID_U * L.u / km.bodyH;
+        assert.ok(b.x >= kz.places[0].x - 0.01 && b.x + b.w <= kz.places[0].x + kz.places[0].w + 0.01 && b.y >= kz.places[0].y - 0.01, `${label}: ${kid} ${pose} leaves its place`);
+        assert.ok(Math.abs(b.y + b.h - kz.feet) < 1e-6, `${label}: ${kid} ${pose} does not stand on the feet line`);
+        assert.ok(Math.abs(b.h - km.poses[pose][1] * sc) < 1e-6 && Math.abs(b.w - km.poses[pose][0] * sc) < 1e-6, `${label}: ${kid} ${pose}: one scale per kid for every pose`);
+      }
+      /* the places fill nearest the person first, the left span before the right one (FR-368: waiting and error, first in orderedHelpers, stand nearest) */
+      const cx = (d.person ? d.person.vis.x : d.away!.x);
+      const lefts = kz.places.filter((p) => p.x < cx), rights = kz.places.filter((p) => p.x >= cx);
+      assert.ok(kz.places.slice(0, lefts.length).every((p) => p.x < cx), `${label}: ${d.id}'s left span fills first`);
+      lefts.forEach((p, i) => { if (i) assert.ok(p.x < lefts[i - 1].x, `${label}: ${d.id}'s left places go outward from the person`); });
+      rights.forEach((p, i) => { if (i) assert.ok(p.x > rights[i - 1].x, `${label}: ${d.id}'s right places go outward from the person`); });
+      /* FR-310, FR-373: a slip avoids every kid */
+      const av = slipAvoid(L);
+      assert.ok(kz.places.every((p) => av.includes(p)) && (!kz.more || av.includes(kz.more)), `${label}: slipAvoid carries ${d.id}'s kids`);
+      withKids++; if (d.away) awayKids++;
+      seen[`${n}@${W}`] = Math.max(seen[`${n}@${W}`] || 0, kz.shown + (kz.more ? 1 : 0));
+    }
+    kc++;
+  }
+  assert.ok(kc > 150 && withKids > 100 && withMore > 20 && awayKids > 5, `kid cases ran (${kc} layouts, ${withKids} desks with kids, ${withMore} with +K, ${awayKids} away)`);
+  /* the measured places with the shipped art (FR-369's numbers, pinned): 7 helpers on the first desk of one folder, all working */
+  const pin = (n: number, W: number, H: number): [number, number] => { const m = model(n, 1, { away: false, states: ['working'] }); m.folders[0].agents.forEach((a) => { a.helpers = 7; }); const L = realLayout(m, { w: W, h: H }, META); const z = L.zones[0].desks[0].kids; return z ? [z.shown, z.more ? 7 - z.shown : 0] : [0, 0]; };
+  assert.deepStrictEqual([1, 2, 3, 4].map((n) => pin(n, 1440, 848)), [[6, 1], [5, 2], [2, 5], [1, 6]], 'the kids and +K of 7 helpers at 1, 2, 3, 4 agents, 1440x900');
+  assert.deepStrictEqual([1, 2, 3, 4].map((n) => pin(n, 1280, 748)), [[6, 1], [5, 2], [3, 4], [1, 6]], 'the kids and +K of 7 helpers at 1, 2, 3, 4 agents, 1280x800');
+  /* FR-373: 5 to 15 agents: the layout is the one without kid art, byte for byte (the head row's boxes too) */
+  for (const [W, H] of SIZES.slice(0, 2)) for (const n of [5, 6, 8, 12, 15]) for (const f of [1, 2, 4]) {
+    if (f > n) continue;
+    const m = model(n, f); m.folders.forEach((fo) => fo.agents.forEach((a, i) => { a.helpers = [0, 1, 3, 7, 12][i % 5]; }));
+    const L = realLayout(m, { w: W, h: H }, META);
+    assert.ok(n <= BIG_MAX || !L.big, `${n} agents are not the big level`);
+    if (!L.big) assert.strictEqual(JSON.stringify(L), JSON.stringify(realLayout(m, { w: W, h: H }, NOKIDS)), `${n} agents, ${f} folders, ${W}x${H}: kids only at the big level, the rest is unchanged`);
+  }
+  /* FR-371: the pose of a state; idle holds done; a resting parent puts every kid to sleep */
+  assert.deepStrictEqual(['working', 'thinking', 'waiting', 'error', 'limit', 'done', 'idle', 'asleep'].map((s) => kidPose(s, false)), ['working', 'thinking', 'waiting', 'error', 'limit', 'done', 'done', 'asleep'], 'FR-371: one pose per state');
+  assert.ok(['working', 'error', 'waiting', 'done'].every((s) => kidPose(s, true) === 'asleep'), 'FR-371: a kid rests with its parent');
+  for (const [kid, km] of Object.entries(KIDS)) for (const pose of ['working', 'thinking', 'waiting', 'error', 'limit', 'done', 'asleep']) assert.ok(km.poses[pose], `${kid} has the ${pose} picture`);
+  /* FR-370: the head row's faces are kid faces in the Photo office: helperPerson's rule over the kids, the face's longer side 24 px across in the 30 px head, inside the picture */
+  const ids = Object.keys(KIDS).sort(), picks = new Set<string>();
+  for (let i = 0; i < 60; i++) {
+    const hid = 'helper-' + i, h = helperHead(hid, PEOPLE[0], META)!;
+    const kid = kidOf(hid, KIDS)!; picks.add(kid);
+    assert.strictEqual(kid, helperPerson(hid, null, ids), 'kidOf is helperPerson over the kids');
+    assert.ok(h.world && h.file === `${kid}-${KIDS[kid].ref}.webp` && h.w === KIDS[kid].w, `FR-370: ${hid}'s head is ${kid}'s face (${h.file})`);
+  }
+  assert.strictEqual(picks.size, 6, 'every kid is somebody\'s face');
+  for (const [kid, km] of Object.entries(KIDS)) {
+    const c = kidHeadCrop(km), across = Math.max(km.face[2], km.face[3]) * HEAD / c.s;
+    assert.ok(across >= HELP_FACE_MIN - 1e-9, `FR-370: ${kid}'s face is ${across.toFixed(1)} px across in the head row, under ${HELP_FACE_MIN}`);
+    assert.ok(c.x >= 0 && c.y >= 0 && c.x + c.s <= km.w + 1e-9 && c.y + c.s <= km.h + 1e-9, `${kid}'s head crop stays inside its picture`);
+    assert.ok(c.x <= km.face[0] + 1e-9 && c.x + c.s >= km.face[0] + km.face[2] - 1e-9 && c.y <= km.face[1] + 1e-9, `${kid}'s head crop holds its whole face`);
+  }
+  /* a world without kid art keeps FR-307's adult heads (the cave and the arcade until 102 T326, T327) */
+  const adult = helperHead('helper-1', PEOPLE[0], NOKIDS)!;
+  assert.ok(!adult.world && /-rest\.webp$/.test(adult.file) && adult.file !== PEOPLE[0] + '-rest.webp' && JSON.stringify(adult.crop) === JSON.stringify(headCrop(META.seat[adult.file.replace('-rest.webp', '')])), 'no kid art: an adult of the set, never the parent, headCrop');
+  assert.ok(Math.abs(kidScale(KIDS.kid1, 200) * KIDS.kid1.bodyH - 80) < 1e-9, 'kidScale: 0.40 u');
 }
 console.log(`realoffice layout and lights tests passed (${cases} layouts, ${lcases} with a lounge, faces ${JSON.stringify(faces)})`);
 process.exitCode = 0;

@@ -51,12 +51,27 @@ export function copilotServerNames(dir: string): string[] {
 }
 
 export function cliServers(dir: string, disabled: ReadonlySet<string>): { servers: McpAmbientView[]; file: McpCliFile } {
+  const { servers, file } = cliServersWithValues(dir, disabled);
+  return { servers, file };
+}
+
+/** The env and header values of one server of the Copilot CLI list (main only, for masking). */
+export type McpCliValues = { env: Record<string, string>; headers: Record<string, string> };
+
+/**
+ * Spec 069 FR-070 (issue #1639): `cliServers` plus, per server the parser accepts (also one switched off), its env and header values, in
+ * the same single read. Main only: the values are for `mcpSecretValues` (the masking of the session's text) and must
+ * never reach a reply, the window or a log line; `cliServers`, the view the window gets, drops them.
+ */
+export function cliServersWithValues(dir: string, disabled: ReadonlySet<string>): { servers: McpAmbientView[]; file: McpCliFile; values: McpCliValues[] } {
   const out: McpAmbientView[] = [];
+  const values: McpCliValues[] = [];
   const r = readCandidates(path.join(dir, 'mcp-config.json'));
   for (const c of r?.candidates ?? []) {
+    values.push({ env: c.env, headers: c.headers });
     if (out.some((o) => o.name === c.originalName)) continue;
     out.push({ name: c.originalName, origin: 'copilot-config', transport: c.transport, command: c.command, args: c.args, url: c.url, enabled: !disabled.has(c.originalName) });
   }
   for (const b of BUILTIN_SERVERS) if (!out.some((o) => o.name === b)) out.push({ name: b, origin: 'builtin', enabled: !disabled.has(b) });
-  return { servers: out, file: { label: CLI_FILE_LABEL, found: r !== undefined, error: r?.error, skipped: r?.skipped ?? 0 } };
+  return { servers: out, file: { label: CLI_FILE_LABEL, found: r !== undefined, error: r?.error, skipped: r?.skipped ?? 0 }, values };
 }
