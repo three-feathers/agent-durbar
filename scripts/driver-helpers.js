@@ -239,6 +239,16 @@ function helpers(ctx) {
     await emulateFocus();
     return w.until('document.hasFocus()', 1500);
   };
+  /**
+   * Spec 052 (issue #1658): a precheck for a driver that needs `:focus-visible`, which never matches in a page without the OS focus. Asks for the focus
+   * through `focusPage` (the one focus step, repeated up to `ms`, default 2000, as it can arrive late) and fails at once, with `tag`, when the page still
+   * reports none, instead of the first `:focus-visible` wait timing out as a product assertion. `expr` (default `document.hasFocus()`) is the reading; a mutant may pass `false`.
+   */
+  const needFocus = async (tag, o = {}) => {
+    const ms = o.ms || 2000;
+    const had = await focusPage({ ms });
+    if (!(had && (!o.expr || await w.until(o.expr, ms)))) require('assert').fail(`${tag}: the window does not have focus (document.hasFocus() is false): bring the app to the front; the machine may have no key window`);
+  };
   const loseFocus = async () => { await releaseFocus(); try { ctx.win.blur(); } catch { /* gone */ } return w.until('!document.hasFocus()', 4000); };
   /** Give another web contents (a Browser tab's view) the real focus and wait until it reports it; false when it never does. */
   const focusWc = async (target, ms = 3000) => {
@@ -402,7 +412,7 @@ function helpers(ctx) {
     await goToFloor(list[0].id);
     for (let i = 0; i < list.length; i++) { await goToFloor(list[i].id); await w.settle(); await fn(list[i], i); }
   };
-  return { ...w, pointerStep: ptr.step, allowWindowClose: closeGuard.allow, wc, js, click, clickText, exists, text, idOf, key, calm, pointerOff, clearToasts, focusPage, releaseFocus, loseFocus, focusWc, load, shot, openSimAgent, floors, shownFloor, goToFloor, eachFloor, INDEX };
+  return { ...w, pointerStep: ptr.step, allowWindowClose: closeGuard.allow, wc, js, click, clickText, exists, text, idOf, key, calm, pointerOff, clearToasts, focusPage, needFocus, releaseFocus, loseFocus, focusWc, load, shot, openSimAgent, floors, shownFloor, goToFloor, eachFloor, INDEX };
 }
 
 /**
