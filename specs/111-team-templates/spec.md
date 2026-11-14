@@ -280,7 +280,7 @@ The Delete confirm of the Teams list is a new `primary danger` destructive dialo
 ### 2026-11-14: review of #1720 (T009; decided by the coordinator under Ruben's delegation; Ruben may overrule)
 
 Paco's Opus read found three gaps; decisions:
-- **While a save is in flight** (`teams:put` pending) Escape, Cancel and the backdrop do nothing: the dialog stays open until the answer; on `ok` it closes with the list repainted, on `changed`, `failed` or `invalid` it stays with what was typed. (A close during the save would store the template and leave the list stale.) A test with a slow `teamsPut` and Escape.
+- **While a save is in flight** (`teams:put` pending) Escape, Cancel and the backdrop do nothing: the dialog stays open until the answer; on `ok` it closes with the list repainted, on `changed`, `failed` or `invalid` it stays with what was typed. (A close during the save would store the template and leave the list stale.) A test with a slow `teamsPut` and Escape. `[KNOWN GAP]` if `teams:put` never answered (a hung IPC) the dialog could not be closed, because there is no time limit; a throw or a rejection frees it.
 - **The dirty baseline is taken after the first paint** of the members (the first paint normalises what the app cannot enforce: a permission, a limit in the other unit, an empty app), so opening an Edit and pressing Escape without touching anything closes at once; a test with a stored limit in the other unit and an unsupported permission.
 - **Every field is in the dirty snapshot** (name, description and per member role, brief, profile, app, model, effort, permMode, capText, character, sendBrief, memberId): a test changes each one in turn and expects *Discard changes?*, with a mutant that drops one field.
 
