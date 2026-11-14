@@ -167,9 +167,9 @@
 
 /* the chrome: theme tokens only, at least 10.5px (FR-016, FR-044) */
 .ro-sign{display:flex;align-items:center;gap:7px;height:20px;padding:0 6px;border-radius:6px;background:var(--surface);color:var(--ink);border:1px solid var(--line);white-space:nowrap;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.18);font-size:11px}
-.ro-stag{justify-content:center;gap:0;padding:0 7px;border-color:var(--brand-bg,var(--line));cursor:default} /* spec 102 delta 2026-11-14 (spec 097 FR-104): a storey's tag: the sign's look, its border in the world's accent, never dragged */
-.ro-stag b{font-size:11px;font-weight:700;min-width:0}
-.ro-slab{background:var(--brand-bg,var(--line));border-radius:1px;opacity:.85}
+.ro-stag{justify-content:center;gap:0;border-color:var(--brand-bg,var(--line));cursor:default} /* spec 102 delta 2026-11-14 (spec 097 FR-104): a storey's tag: the sign's look, its border in the world's accent, never dragged */
+.ro-stag b{min-width:0}
+.ro-slab{background:var(--brand-bg,var(--line));opacity:.85}
 .ro-sign b{font-size:12px;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:3ch}
 .ro-sign .ro-path{font:10.5px ui-monospace,"Cascadia Mono",Menlo,Consolas,monospace;color:var(--muted);overflow:hidden;text-overflow:ellipsis;min-width:0;flex:0 1000 auto} /* the path gives way long before the name (a font wider than measured, #1079 on Linux) */
 .ro-sc{display:flex;gap:6px;align-items:center;flex:none}

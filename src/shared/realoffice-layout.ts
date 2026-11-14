@@ -526,7 +526,7 @@ export function storeyRuns(folders: ReadonlyArray<{ floor?: RealFloor }>): Array
 export const STOREY_GAP = 4;
 /** the narrowest a storey's tag may be cut to, px (its name is cut with an ellipsis, the whole name is in its title) */
 export const STOREY_TAG_MIN = 70;
-/** the width of a storey's tag ("3 Client A"): the digits, a space and the name (at most 24 letters, the rest is cut and in the title), 11 px bold, 7 px a letter, 14 px of padding */
+/** the width of a storey's tag ("3 Client A"): the digits, a space and the name (at most 24 letters, the rest is cut and in the title), the sign's 12 px bold, 7 px a letter, 14 px of padding */
 export const storeyTagW = (f: RealFloor): number => 14 + 7 * (String(f.n).length + 1 + Math.min(24, f.name.length));
 
 /** FR-356 (bug #1392): the narrowest whole sign: its name cut to 3 letters, no path, the counts, the cost (`counts` counts it, as `signWidth`), + and menu. Measured 183 px with two
