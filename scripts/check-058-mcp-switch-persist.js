@@ -38,7 +38,7 @@ module.exports = async (ctx) => {
     assert.ok(target, 'a server is on: ' + JSON.stringify(before));
     const was = await offNames();
     await js(`document.querySelector('#agMcp button.swt[data-n=${jsLiteral(target.n)}]').click()`);
-    assert.ok(await until(`${'[...document.querySelectorAll("#agMcp button.swt")]'}.some(b=>b.dataset.n===${jsLiteral(target.n)}&&b.getAttribute('aria-checked')!=='true')`), 'the switch went off');
+    assert.ok(await until(`[...document.querySelectorAll('#agMcp button.swt')].some(b=>b.dataset.n===${jsLiteral(target.n)}&&b.getAttribute('aria-checked')!=='true')`), 'the switch went off');
     const want = [...was, target.n].sort();
     // close the dialog and the chat, open it again
     await closeDlg();
