@@ -10,5 +10,6 @@
  "desk": "Oak top with an oak front panel on black steel sled legs",
  "fixtureStyle": "Photographic office furniture: bookshelf, coffee station, door, counter",
  "plants": "Potted leafy plants on the bookshelves",
- "motif": "Morning window light across oak"
+ "motif": "Morning window light across oak",
+ "distinct-check": { "state": "pending" }
 }
