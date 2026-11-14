@@ -217,6 +217,9 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(phases.p2, [0, 1], 'T345: the frames alternate: second half shows frame B only: ' + JSON.stringify(phases));
     assert.deepStrictEqual([phases.p3, phases.p4], [[1, 0], [0, 1]], 'T345: and it repeats: ' + JSON.stringify(phases));
     assert.deepStrictEqual([phases.p5, phases.p6], [[1, 0], [0, 1]], 'T345: a hard swap, nothing between 0 and 1 at the step: ' + JSON.stringify(phases));
+    /* the swap never flips the figure: both layers carry the same facing mirror (computed scale and transform), however the set is drawn (spec 097 FR-191: `mir` on the visitor and on its second frame) */
+    const sc = await js(`(()=>{const r=${RUN};const g=(e)=>{const c=getComputedStyle(e);return c.scale+'|'+c.transform+'|'+e.classList.contains('mir');};return [g(r.A),g(r.B)];})()`);
+    assert.strictEqual(sc[0], sc[1], 'T345: both run frames have the same mirror (scale, transform, mir): a swap never flips the figure: ' + JSON.stringify(sc));
     assert.strictEqual(await js(`document.querySelectorAll('#stage .ro .ro-person2').length`), 0, 'FR-261: no second picture for a person in the arcade');
     /* pictures of the two frames of one runner (the loops paused at two phases): the whole room, and a crop round the visitor, one file each */
     for (const [tag, t] of [['A', 100], ['B', 600], ['A2', 1100], ['B2', 1600]]) {
