@@ -199,10 +199,10 @@ module.exports = async (ctx) => {
     }
     /* spec 102 T350: a visitor at the Terminal runs on two pictures, swapped by a stepped opacity loop: a hard swap, never the Photo office's cross-fade (ro-fb-run) */
     await must(`!!document.querySelector('#stage .ro .ro-visitor.m-a.m-run')&&!!document.querySelector('#stage .ro .ro-visitor2.m-b.m-run')`, 'T350: a runner on two pictures in the arcade');
-    const RUN = `(()=>{const A=document.querySelector('#stage .ro .ro-visitor.m-a.m-run'),B=document.querySelector('#stage .ro .ro-visitor2.m-b[data-for="'+CSS.escape(A.dataset.for)+'"]');
+    await js(`window.__stepRun=()=>{const A=document.querySelector('#stage .ro .ro-visitor.m-a.m-run'),B=document.querySelector('#stage .ro .ro-visitor2.m-b[data-for="'+CSS.escape(A.dataset.for)+'"]');
       const an=(e)=>e&&e.getAnimations().filter(x=>x.animationName);
-      return {A,B,aa:an(A),bb:an(B)};})()`;
-    const runInfo = await js(`(()=>{const r=${RUN};const o=(x)=>x.map(a=>({n:a.animationName,e:getComputedStyle(a.effect.target).animationTimingFunction,d:a.effect.getTiming().duration}));
+      return {A,B,aa:an(A),bb:an(B)};};0`);
+    const runInfo = await js(`(()=>{const r=window.__stepRun();const o=(x)=>x.map(a=>({n:a.animationName,e:getComputedStyle(a.effect.target).animationTimingFunction,d:a.effect.getTiming().duration}));
       return {a:o(r.aa),b:o(r.bb),srcA:r.A.src.split('/').pop(),srcB:r.B?r.B.src.split('/').pop():''};})()`);
     console.log('[097-motion] arcade run layers', JSON.stringify(runInfo));
     assert.deepStrictEqual(runInfo.a.map((x) => x.n), ['ro-arc-run-a'], 'T350: the first picture has the stepped run loop only (no ro-fa-run, no bob): ' + JSON.stringify(runInfo.a));
@@ -210,7 +210,7 @@ module.exports = async (ctx) => {
     for (const x of runInfo.a.concat(runInfo.b)) assert.ok(/^steps\(/.test(x.e) && !/linear|ease/.test(x.e), `T350: no ro-fb-run fade, the run loop is a steps function: ${x.n}: ${x.e}`);
     assert.notStrictEqual(runInfo.srcA, runInfo.srcB, 'T350: the two frames are two different pictures');
     /* the two frames ALTERNATE, forced without a sleep: the loops are paused at two phases (a hard swap guarantees the frames differ there), the shown picture is read from computed opacity */
-    const phases = await js(`(()=>{const r=${RUN};const all=r.aa.concat(r.bb);const at=(t)=>{for(const a of all){a.pause();a.currentTime=t;}return [+getComputedStyle(r.A).opacity,+getComputedStyle(r.B).opacity];};
+    const phases = await js(`(()=>{const r=window.__stepRun();const all=r.aa.concat(r.bb);const at=(t)=>{for(const a of all){a.pause();a.currentTime=t;}return [+getComputedStyle(r.A).opacity,+getComputedStyle(r.B).opacity];};
       const out={p1:at(100),p2:at(600),p3:at(1100),p4:at(1600),p5:at(499),p6:at(500)};for(const a of all)a.play();return out;})()`);
     console.log('[097-motion] arcade run phases (A/B opacity)', JSON.stringify(phases));
     assert.deepStrictEqual(phases.p1, [1, 0], 'T350: the frames alternate: first half shows frame A only: ' + JSON.stringify(phases));
@@ -218,16 +218,16 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual([phases.p3, phases.p4], [[1, 0], [0, 1]], 'T350: and it repeats: ' + JSON.stringify(phases));
     assert.deepStrictEqual([phases.p5, phases.p6], [[1, 0], [0, 1]], 'T350: a hard swap, nothing between 0 and 1 at the step: ' + JSON.stringify(phases));
     /* the swap never flips the figure: both layers carry the same facing mirror (computed scale and transform), however the set is drawn (spec 097 FR-191: `mir` on the visitor and on its second frame) */
-    const sc = await js(`(()=>{const r=${RUN};const g=(e)=>{const c=getComputedStyle(e);return c.scale+'|'+c.transform+'|'+e.classList.contains('mir');};return [g(r.A),g(r.B)];})()`);
+    const sc = await js(`(()=>{const r=window.__stepRun();const g=(e)=>{const c=getComputedStyle(e);return c.scale+'|'+c.transform+'|'+e.classList.contains('mir');};return [g(r.A),g(r.B)];})()`);
     assert.strictEqual(sc[0], sc[1], 'T350: both run frames have the same mirror (scale, transform, mir): a swap never flips the figure: ' + JSON.stringify(sc));
     assert.strictEqual(await js(`document.querySelectorAll('#stage .ro .ro-person2').length`), 0, 'FR-261: no second picture for a person in the arcade');
     /* pictures of the two frames of one runner (the loops paused at two phases): the whole room, and a crop round the visitor, one file each */
     for (const [tag, t] of [['A', 100], ['B', 600], ['A2', 1100], ['B2', 1600]]) {
-      const box = await js(`new Promise(res=>{const r=${RUN};for(const a of r.aa.concat(r.bb)){a.pause();a.currentTime=${t};}requestAnimationFrame(()=>requestAnimationFrame(()=>{const b=r.A.getBoundingClientRect();res({x:Math.max(0,Math.round(b.left-60)),y:Math.max(0,Math.round(b.top-50)),width:Math.round(b.width+120),height:Math.round(b.height+100)});}));})`);
+      const box = await js(`new Promise(res=>{const r=window.__stepRun();for(const a of r.aa.concat(r.bb)){a.pause();a.currentTime=${jsLiteral(t)};}requestAnimationFrame(()=>requestAnimationFrame(()=>{const b=r.A.getBoundingClientRect();res({x:Math.max(0,Math.round(b.left-60)),y:Math.max(0,Math.round(b.top-50)),width:Math.round(b.width+120),height:Math.round(b.height+100)});}));})`);
       if (!/2$/.test(tag)) await H.shot(path.join(OUT, `102-296-steprun-${tag}-${w}x${h}.png`));
       fs.writeFileSync(path.join(OUT, `102-296-steprun-crop-${tag}-${w}x${h}.png`), (await ctx.win.webContents.capturePage(box)).toPNG());
     }
-    await js(`(()=>{const r=${RUN};for(const a of r.aa.concat(r.bb))a.play();})();0`);
+    await js(`(()=>{const r=window.__stepRun();for(const a of r.aa.concat(r.bb))a.play();})();0`);
     /* a bob only on a working person (aisleStatus), every one of them */
     const bobs = await js(`[...document.querySelectorAll('#stage .ro-person.bob')].map(e=>{const d=window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).find(x=>x.id===e.dataset.for);return d&&d.state;})`);
     assert.ok(bobs.length > 0 && bobs.every((st) => st === 'working'), 'a bob only on a working person: ' + JSON.stringify(bobs));
