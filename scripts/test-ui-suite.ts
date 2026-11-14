@@ -332,7 +332,7 @@ assert.ok(dh.darkProblem({ id: 'check-user', bg: 'rgb(20, 18, 43)' }).includes('
 
 // ---- no driver keeps its own copy of what the shared module does, and no string is spliced raw into page code ----
 // Not page drivers: they never touch a window (or drive a real session / the packaged app).
-const SKIP = new Set(['driver-helpers.js', 'ui-suite.js', 'check-names.js', 'check-fuses.js', 'check-fuses-launch.js', 'check-parallel.js', 'e2e-driver.js', 'installed-app-check.js', 'installed-app-ci.js']);
+const SKIP = new Set(['driver-helpers.js', 'ui-suite.js', 'check-names.js', 'check-fuses.js', 'check-fuses-launch.js', 'check-parallel.js', 'check-world-distinct.js', 'e2e-driver.js', 'installed-app-check.js', 'installed-app-ci.js']);
 /** The template literals of one line (top level only): their text and their `${...}` expressions (a nested template is part of its expression). */
 function templates(line: string): { text: string; exprs: string[] }[] {
   const out: { text: string; exprs: string[] }[] = [];

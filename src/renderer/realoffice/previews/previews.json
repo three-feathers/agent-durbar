@@ -1,0 +1,47 @@
+{
+ "formatVersion": 1,
+ "width": 640,
+ "maxBytes": 49152,
+ "previews": {
+  "plain": {
+   "file": "plain.webp",
+   "width": 640,
+   "height": 357,
+   "bytes": 11844,
+   "origin": {
+    "x": 41.8,
+    "y": 43.3
+   }
+  },
+  "photo": {
+   "file": "photo.webp",
+   "width": 640,
+   "height": 376,
+   "bytes": 33742,
+   "origin": {
+    "x": 50,
+    "y": 75.6
+   }
+  },
+  "cave": {
+   "file": "cave.webp",
+   "width": 640,
+   "height": 376,
+   "bytes": 48478,
+   "origin": {
+    "x": 50,
+    "y": 73.2
+   }
+  },
+  "retro": {
+   "file": "retro.webp",
+   "width": 640,
+   "height": 376,
+   "bytes": 46224,
+   "origin": {
+    "x": 47,
+    "y": 52.3
+   }
+  }
+ }
+}

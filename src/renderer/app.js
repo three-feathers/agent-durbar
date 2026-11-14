@@ -293,7 +293,7 @@ async function applyCharacters(v){
   else toast('Characters: <b>'+esc(CHARACTER_NAMES[applied]||applied)+'</b>.',2600);
   return applied;
 }
-const CHARACTER_NAMES={theme:'The theme\u2019s own',minimalist:'Minimalist',cheeky:'Cheeky',prehistoric:'Prehistoric',pirate:'Pirate',monster:'Monster',royal:'Royal',rebels:'Animal Rebels'};
+const CHARACTER_NAMES={theme:'The theme\u2019s own',office:'Office people',pixel:'Retro pixel',minimalist:'Minimalist',cheeky:'Cheeky',prehistoric:'Prehistoric',pirate:'Pirate',monster:'Monster',royal:'Royal',rebels:'Animal Rebels'};
 /* FR-068: one figure per choice for its pick button: the kit that choice draws on the current theme, one Cheeky portrait for the crew */
 function charPreview(choice){
   const kit=THEME.kitFor(THEME.themeKit(),choice), a={id:'characters-preview',look:lookFor('characters-preview')};
@@ -480,12 +480,17 @@ function syncDesks(){
    end is not on screen). One element in the walkers layer, removed when it lands. */
 function flyLetter(agentId){
   if(REDUCED||reducedMotion()||ui.view!=='office')return;
-  const layer=$('walkers'), floor=$('floor'), pb=document.querySelector('#stage .place.postbox'), d=document.querySelector(`#stage .desk[data-id="${CSS.escape(String(agentId))}"]`);
+  /* spec 097 FR-377: the Real office draws the Postbox as a lobby plate and the desk as a name plate (the pair the focus and follow flows look for) */
+  const layer=$('walkers'), floor=$('floor'), pb=document.querySelector('#stage .place.postbox, #stage .ro-lplate[data-post]'), d=document.querySelector(`#stage .desk[data-id="${CSS.escape(String(agentId))}"], #stage .ro-plate[data-id="${CSS.escape(String(agentId))}"]`);
   if(!layer||!floor||!pb||!d)return;
   const fr=floor.getBoundingClientRect(); if(!fr.width)return;
-  const c=el=>{const r=el.getBoundingClientRect();return {x:Math.round(r.left-fr.left+floor.scrollLeft+r.width/2),y:Math.round(r.top-fr.top+floor.scrollTop+r.height/2)};};
-  const from=c(pb.querySelector('.pic')||pb), to=c(d.querySelector('.scene')||d);
-  const el=document.createElement('span');el.className='letter';el.setAttribute('aria-hidden','true');
+  const real=pb.classList.contains('ro-lplate')||d.classList.contains('ro-plate');
+  const rb=pb.querySelector('.pic')||pb, rd=d.querySelector('.scene')||d, a=rb.getBoundingClientRect(), b=rd.getBoundingClientRect();
+  const seen=r=>r.width>0&&r.height>0&&r.right>fr.left&&r.left<fr.right&&r.bottom>fr.top&&r.top<fr.bottom; /* FR-377: skipped only when an end is off screen */
+  if(!seen(a)||!seen(b))return;
+  const c=r=>({x:Math.round(r.left-fr.left+floor.scrollLeft+r.width/2),y:Math.round(r.top-fr.top+floor.scrollTop+r.height/2)});
+  const from=c(a), to=c(b);
+  const el=document.createElement('span');el.className='letter'+(real?' real':'');el.dataset.for=String(agentId);el.setAttribute('aria-hidden','true');
   el.innerHTML='<svg viewBox="0 0 16 12" width="16" height="12" aria-hidden="true" focusable="false"><rect x=".75" y=".75" width="14.5" height="10.5" rx="1.5" fill="var(--surface)" stroke="currentColor" stroke-width="1.3"/><path d="M1.5 1.8L8 6.6l6.5-4.8" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>';
   el.style.transform=`translate(${from.x}px,${from.y}px)`;layer.appendChild(el);void el.offsetWidth;
   let done=false;const end=()=>{if(done)return;done=true;el.remove();};
@@ -1670,7 +1675,7 @@ const roPeople=()=>{
   }
   return r;
 };
-const roWorlds=()=>CREW&&CREW.offeredWorlds?CREW.offeredWorlds().map(w=>({id:w.id,name:w.name})):[];
+const roWorlds=()=>CREW&&CREW.offeredWorlds?CREW.offeredWorlds().map(w=>({id:w.id,name:w.name,line:w.line||''})):[];
 function setRoWorld(id){
   id=CREW&&CREW.parseWorld?CREW.parseWorld(id):'photo';
   RO_WORLD=id;try{localStorage.setItem('durbar.world',id);}catch(e){}
@@ -10017,12 +10022,43 @@ function applyAddResult(r,okText){
   r.agents.forEach(addLiveAgent);
   r.agents.forEach(x=>{const ag=liveById(x.id);if(ag)announcePrevious(ag);});
   INTO=null; if(bridge.floorsState)bridge.floorsState().then(applyFloors).catch(()=>{});
+  addFloorNote(r).catch(()=>{});
+}
+/* spec 033 FR-089..FR-091 (issue 1709, owner report 2026-11-13): after an add, say where the folder is. A floor that is off is switched on (its room was
+   hidden, so the person added it again); a floor that is not the one shown gets a toast naming it with Show; a folder that was already there says so
+   and on which floor (main started nothing for it). Reuses toastAction, goToFloor, announce and the floors calls. */
+async function addFloorNote(r){
+  let state=null;
+  try{state=bridge.floorsState?await bridge.floorsState():null;}catch(e){state=null;}
+  if(state)applyFloors(state);
+  const items=[...(r.agents||[]).filter(a=>!a.parent).map(a=>({name:a.name,floor:(state&&state.byAgent&&state.byAgent[a.id])||a.floor,dup:false})),
+    ...(r.existing||[]).map(x=>({name:x.name,floor:x.floor,dup:true}))];
+  for(const it of items){
+    if(!floorsLive()||FLOORS.floors.length<2){if(it.dup){const t=it.name+' is already added.';toast(esc(t),5000);announce(t);}continue;}
+    const f=floorById(it.floor); if(!f)continue;
+    let switched=false, failed=false;
+    if(!f.on){
+      const res=await floorCall(bridge.setFloorOn(f.id,true));
+      if(res&&res.ok)switched=true; else failed=true; /* still say where it is: it is on a floor that stays off */
+    }
+    const nm=floorById(f.id).name, shown=failed?false:(!oneFloorView()||f.id===curFloorId());
+    if(shown&&!switched&&!it.dup)continue; /* it is on the floor the person is looking at: the room is there */
+    const text=(it.dup?it.name+' is already added on the floor "'+nm+'".':'Added '+it.name+' on the floor "'+nm+'".')+(switched?' The floor was off, so it is switched on.':'')+(failed?' The floor is off and could not be switched on.':'');
+    const html=esc(text);
+    if(shown){toast(html,6000);}
+    else if(failed)toastAction(html,'Show',async()=>{const r=await floorCall(bridge.setFloorOn(f.id,true));if(r&&r.ok)goToFloor(f.id);else{const t2='The floor "'+nm+'" still could not be switched on.';toast(esc(t2),8000);announce(t2);}},12000); /* Show tries the switch again, then goes there */
+    else toastAction(html,'Show',()=>goToFloor(f.id),12000);
+    announce(text+(shown?'':' Press Show to '+(failed?'try again.':'go there.')));
+  }
 }
 /* spec 093 FR-001, Q1 = a: Ctrl+O, File > Add Folder… and the palette's Add folder keep opening the system picker (Add existing) */
 function addExisting(){if(!$('addFolder').disabled&&bridge)addVia(bridge.addFolder);}
 const NEWFOLDER=window.DurbarNewFolder.create({bridge,askDialog:o=>askDialog(o),toast,esc,announce,doc:document,
   mode:()=>{const s=$('permMode'),op=s.options[s.selectedIndex];return {value:s.value,label:op?op.textContent:'Read-only'};},
-  confirmAllow,addOptions,addExisting,applyResult:(r,text)=>applyAddResult(r,text)});
+  confirmAllow,addOptions,addExisting,applyResult:(r,text)=>applyAddResult(r,text),
+  /* spec 033 FR-092 (owner request): the Add a folder dialog names the floor and lets the person pick another; the choice is the same INTO the Floors panel sets */
+  floorPick:()=>{const id=intoFloor();return id?{value:id,options:FLOORS.floors.map(f=>({id:f.id,name:f.name,on:f.on}))}:null;},
+  setFloor:id=>{INTO=id;renderIntoFloor();renderFloorsPanel();renderFloorsSettings();}});
 let pendingOpen=qs.get('open');
 if(bridge){
   document.body.classList.add('has-bridge');

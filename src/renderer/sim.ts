@@ -977,7 +977,10 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     // spec 001 FR-046: read here from the page address (like simkinds), so app.js's option list stays as it is
     const simQs = typeof location !== 'undefined' ? new URLSearchParams(location.search) : null;
     const simRooms = opts.rooms ?? (simQs && /^[1-5]$/.test(simQs.get('simrooms') || '') ? parseInt(simQs.get('simrooms') || '0', 10) : 0);
-    const noHelpers = opts.noHelpers ?? (simQs ? simQs.get('simhelpers') === '0' : false);
+    // spec 102 FR-302 (T265a, simulator only): `simscene=preview` is the world previews' scene: three people of one folder, at their own desks, no helpers
+    //; every person is idle, so no slip, notice, banner or bubble lies over a desk, and none leaves it for a lounge
+    const previewScene = !!simQs && simQs.get('simscene') === 'preview';
+    const noHelpers = previewScene || (opts.noHelpers ?? (simQs ? simQs.get('simhelpers') === '0' : false));
     // spec 001 FR-097 (issue 697): simhelpers=<1..6> gives every main agent that many helpers (running, done and failed mixed, in SIM_HX_ORDER),
     // and the first agent's second helper is Codex-shaped: announced with no task and finished with no result (so "not reported" is seen)
     const simHelpers = !noHelpers && simQs && /^[1-6]$/.test(simQs.get('simhelpers') || '') ? parseInt(simQs.get('simhelpers') || '0', 10) : 0;
@@ -987,7 +990,8 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     // Fewer than 12: drop the quieter agents first so the status mix stays varied.
     let rows = ROSTER.slice(0, Math.min(n, ROSTER.length));
     if (n < 12) rows = ROSTER.filter((r) => r[0] !== 'Hugo' && r[0] !== 'Priya' && r[0] !== 'Noor' && r[0] !== 'Omar').slice(0, n);
-    while (rows.length < n) rows.push(['Agent' + (rows.length + 1), 'Worker', 'blog', 'working', 'Working through a queued task', 0, ['src/index.ts']]);
+    if (previewScene) rows = ROSTER.filter((r) => r[0] === 'Ada' || r[0] === 'Mira' || r[0] === 'Jonas').map((r): Row => [r[0], r[1], 'mcp-swiss', 'idle', 'Ready. Send a message to start.', 0, r[6]]);
+    while (!previewScene && rows.length < n) rows.push(['Agent' + (rows.length + 1), 'Worker', 'blog', 'working', 'Working through a queued task', 0, ['src/index.ts']]);
 
     const simSbxAlways = new Set<string>(); // spec 087 FR-007c: the simulated stored Always continue choice (memory only)
     const crashIds = new Set<string>(); // spec 006 FR-046 (simcrash=N): the sessions the faked crash left mid-turn
@@ -1005,7 +1009,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       const info: AgentInfo = { id: 'sim-' + (i + 1), name, cwd, folders: [cwd], adapterId: mixed ? SIM_KIND_BY_AGENT[i] ?? 'copilot' : 'copilot', permMode: i % 3 === 1 ? 'ask' : i % 3 === 2 ? 'allow' : 'read-only', model: SIM_MODEL_BY_AGENT[i] ?? 'auto', maxAiCredits: SIM_CAPS[name], permRestored: i % 3 === 2 && i < 6 ? true : undefined, modelControl: { switch: 'next-message', effort: true, contextTier: true, compact: true, windowKnown: true }, profiles: true, slash: !(simQs && simQs.get('simslash') === 'none' && mixed && SIM_KIND_BY_AGENT[i] === 'basic'), ...(opts.reply === 'secrets' && i === 7 ? { title: SECRETS_TEXT } : {}) } as AgentInfo; // FR-065: one agent starts with a runtime title that holds the planted secrets (it becomes its name)
       // Spec 052 FR-046: a pending permission card only happens in Ask first, so a waiting agent starts in Ask first (Jonas was Allow all
       // and restored, Lena Read-only); the restored Allow-all folder the restore strip names is then Tomas's (swisscontract-ai).
-      if (state === 'waiting' && info.permMode !== 'ask') { info.permMode = 'ask'; info.permRestored = undefined; }
+      if ((state === 'waiting' || previewScene) && info.permMode !== 'ask') { info.permMode = 'ask'; info.permRestored = undefined; } // the preview scene is in Ask first, so no restore notice shows (FR-302)
       if (mixed && info.adapterId !== 'copilot') {
         const k = caps(info.adapterId ?? 'copilot');
         if (!k.caps) info.maxAiCredits = undefined; // no credit cap on a kind that has none
@@ -1376,7 +1380,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       if (s) { simSched.list.push({ id: 'sched-fire', folder: s.info.workspaceFile ?? s.info.cwd ?? '', prompt: 'Scheduled check-in: summarise what changed', at: Date.now() + opts.schedFire * 1000, target: { session: s.info.id, agent: s.info.id, name: s.info.title ?? '' } }); simSched.n += 1; }
     }
     /* spec 044 FR-033 (check-sched-top): a driver makes a schedule's run fail now, as if the app had sent it and the send had failed */
-    const simSchedProbe = { runsCalls: 0 }; // a driver counts how often the window asks for a log (spec 044 FR-043: only while a list is shown)
+    const simSchedProbe = { runsCalls: 0, ranCalls: 0 }; // a driver counts how often the window asks for a log (spec 044 FR-043: only while a list is shown) and how many runs the page was told of (spec 097 FR-377: `ranCalls`, the positive control of the letter's "no letter" checks)
     (window as unknown as { __durbarSimSched?: unknown }).__durbarSimSched = {
       probe: simSchedProbe,
       fail: (id: string): boolean => {
@@ -1460,7 +1464,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         simHeld.items = simHeld.items.filter((x) => x.id !== r.id);
         simHeld.chosen.delete(r.id);
         emit({ type: 'user', sessionId: s.info.id, timestamp: now, text: r.prompt } as AgentEvent);
-        simSched.ran.forEach((f) => f({ agentId: s.info.id, scheduleId: sc.id, every: sc.every, at: sc.at, rule: sc.rule }));
+        simSchedProbe.ranCalls++; simSched.ran.forEach((f) => f({ agentId: s.info.id, scheduleId: sc.id, every: sc.every, at: sc.at, rule: sc.rule }));
         simSched.attrib.set(s.info.id, sc.id);
         simRecord(sc, simSched.runs, 'sent', now, { session: s.info.id });
         void api.send(s.info.id, r.prompt, []);
@@ -1479,7 +1483,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         const outcome = sc.prompt.length > simPromptMax() ? 'skipped-review' : simSched.pausedAll ? 'skipped-paused' : sc.cap && (sc.spent ?? 0) >= sc.cap.amount ? 'skipped-cap' : !s ? 'failed' : busy ? 'skipped-busy' : 'sent';
         if (outcome === 'sent' && s) {
           emit({ type: 'user', sessionId: s.info.id, timestamp: now, text: sc.prompt } as AgentEvent);
-          simSched.ran.forEach((f) => f({ agentId: s.info.id, scheduleId: sc.id, every: sc.every, at: sc.at, rule: sc.rule }));
+          simSchedProbe.ranCalls++; simSched.ran.forEach((f) => f({ agentId: s.info.id, scheduleId: sc.id, every: sc.every, at: sc.at, rule: sc.rule }));
           simSched.attrib.set(s.info.id, sc.id);
           void api.send(s.info.id, sc.prompt, []);
         }
@@ -2571,8 +2575,8 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     const simQuery = typeof window !== 'undefined' && window.location ? new URLSearchParams(window.location.search) : new URLSearchParams();
     let simTheme = /^[a-z0-9_-]{1,64}$/.test(simQuery.get('theme') ?? '') ? (simQuery.get('theme') as string) : undefined;
     /* characters=<value> (spec 077 FR-064, FR-070): who sits at the desks in this run, in memory, like the theme; only a listed value */
-    const CHARS = ['theme', 'minimalist', 'cheeky', 'prehistoric', 'pirate', 'monster', 'royal', 'rebels'] as const;
-    type SimChars = (typeof CHARS)[number];
+    type SimChars = import('../shared/characters').CharacterChoice; // the type is the shared list: a value this list lacks, or one the shared list lacks, fails the typecheck
+    const CHARS: readonly SimChars[] = ['theme', 'office', 'minimalist', 'cheeky', 'prehistoric', 'pirate', 'monster', 'royal', 'rebels', 'pixel']; /* the list of src/shared/characters.ts (spec 102 FR-320, FR-321) */
     const isChars = (v: unknown): v is SimChars => typeof v === 'string' && (CHARS as readonly string[]).includes(v);
     let simCharacters: SimChars = isChars(simQuery.get('characters')) ? (simQuery.get('characters') as SimChars) : 'theme';
     const simUserThemes: Record<string, unknown>[] = []; // spec 040 FR-032: the saved themes of this simulated run (from ?usertheme=), removable
@@ -3154,6 +3158,8 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       setFloorOn: async (id, on) => {
         const f = floorsList.find((x) => x.id === id);
         if (!f) return fres('Unknown floor.');
+        /* a driver's probe (check-floor-add): switching a floor on fails, as when main cannot save the floors */
+        if (on === true && typeof window !== 'undefined' && (window as unknown as { __simSetFloorOnFail?: boolean }).__simSetFloorOnFail) return fres('The floors could not be saved.');
         f.on = on === true;
         return fres();
       },
@@ -3544,6 +3550,10 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         /* a driver's probe (shots-074): count the call and add nothing, so a shortcut check has no side effect */
         const probe = typeof window !== 'undefined' ? (window as unknown as { __simAddFolderProbe?: { n: number } }).__simAddFolderProbe : undefined;
         if (probe) { probe.n++; return { ok: true, agents: [] }; }
+        /* spec 033 FR-090: a driver sets window.__simAddFolderSame to the cwd the picker "chose": a folder already in the office is not added again */
+        const same = typeof window !== 'undefined' ? (window as unknown as { __simAddFolderSame?: string }).__simAddFolderSame : undefined;
+        const have = same ? sims.find((x) => x.info.cwd === same) : undefined;
+        if (have) return { ok: true, agents: [], existing: [{ id: have.info.id, name: have.info.name, floor: folderFloor.get(have.info.cwd) ?? 'ground' }] };
         const bad = o && o.adapterId !== undefined ? notReady(o.adapterId) : undefined;
         if (bad) return { ok: false, agents: [], error: bad }; // like main: nothing starts, nothing is written
         extra++;
@@ -3557,7 +3567,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         info.renameCap = caps(info.adapterId ?? 'copilot').renameSession;
         sims.push({ info, room: info.name, state: 'idle', intent: 'Ready', prompt: '', helpers: 0, tool: 0, think: 0, files: [], grants: new Map() });
         addedListeners.forEach((l) => l(info));
-        return { ok: true, agents: [], ...(home ? { warnings: [{ name: 'home', kind: 'home' as const }] } : {}) };
+        return { ok: true, agents: [info], ...(home ? { warnings: [{ name: 'home', kind: 'home' as const }] } : {}) };
       },
       addWorkspaceFile: async () => ({ ok: true, agents: [] }),
       /* spec 093 FR-081: create a folder, faked in the window: no process, nothing on disk, main's channels stay closed. The parent is

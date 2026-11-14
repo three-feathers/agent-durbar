@@ -262,7 +262,7 @@ const run = async (ctx, reqs) => {
   assert.strictEqual(await js(`(()=>{const r=document.querySelector('#stage .ro');return r.dataset.world+' '+r.dataset.set})()`), 'photo office', 'flag closed: the Photo office');
   assert.strictEqual(await packs(), 'sets/office worlds/photo', 'flag closed: no file of the arcade asked for: ' + await packs());
   await js(`window.DurbarScreens.openSettings();0`);
-  await must(`!!document.querySelector('[data-officelayout="real"]')`, 'Settings');
+  await must(`!!document.querySelector('#wrGroup [data-world="photo"]')`, 'Settings');
   assert.strictEqual(await js(`!![...document.querySelectorAll('#wrGroup [data-world]')].find(b=>b.dataset.world==='retro')`), false, 'flag closed: not offered');
   await js(`document.getElementById('scrClose').click();localStorage.removeItem('durbar.world');0`);
 
