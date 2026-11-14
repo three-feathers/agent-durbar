@@ -547,3 +547,20 @@ body.has-bridge #topBtns{display:flex}
 /* the title and Close line up with the list-and-page block instead of the 880px column alone (880 + list 184 + gutters) */
 #screen:has(.scr-nav) .scr-head,html[data-platform="darwin"] .notice-strip:not([hidden]) ~ #screen:has(.scr-nav) .scr-head{--sn-pad:max(calc(var(--s-1)*6),calc(50% - var(--s-1)*131.5));padding-left:var(--sn-pad);padding-right:var(--sn-pad)}
 @media (max-width:759px){#screen:has(.scr-nav) .scr-head{padding-left:calc(var(--s-1)*6);padding-right:calc(var(--s-1)*6)}}
+
+/* ---- spec 102 FR-301 (T266): the World section, picture cards in one radio group (the theme picker's card, .thpick, with a picture) ---- */
+.wcards{grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
+.thpick[data-world]{border-width:2px}
+.thpick[data-world]:hover{border-color:var(--line-2);background:var(--raised)}
+.thpick[data-world][aria-checked=true]{border-color:var(--accent);background:var(--raised)}
+.thpick[data-world]:focus-visible{outline:2px solid var(--focus);outline-offset:3px} /* outside the card with a gap: focus never looks like the 2 px chosen edge */
+.thpick[data-world] .wpic{height:auto;aspect-ratio:8/5;background:var(--surface)}
+.wpic img{display:block;width:100%;height:100%;object-fit:cover;transform-origin:var(--zx,50%) var(--zy,50%);transition:transform 220ms ease-out}
+.thpick[data-world]:hover .wpic img,.thpick[data-world]:focus-visible .wpic img{transform:scale(1.6)} /* FR-301: by transform only, inside the clip, toward the people: nothing around it moves */
+html[data-motion-off] .wpic img{transition:none;transform:none!important}
+@media (prefers-reduced-motion:reduce){.wpic img{transition:none;transform:none!important}}
+.wnone{display:flex;align-items:center;justify-content:center;color:var(--muted)}
+.thpick[data-world] .thtx small{white-space:normal;overflow:visible}
+.wuse{align-self:flex-start;color:var(--accent)}
+.wuse[data-off]{visibility:hidden}
+@media (forced-colors:active){.thpick[data-world][aria-checked=true]{border-color:Highlight}.thpick[data-world]:focus-visible{outline:2px solid CanvasText}.wuse{color:CanvasText}}

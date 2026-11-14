@@ -180,9 +180,9 @@
      picks a set. A set listed here has the full Real office pose set (FR-204); Minimalist is not listed yet (#1331). */
   const WORLD_FLAGS = { cave: false, retro: false };
   const WORLDS = [
-    { id: 'photo', name: 'Photo office', defaultSet: 'office' },
-    { id: 'cave', name: 'Prehistoric cave', defaultSet: 'prehistoric', flag: 'cave' },
-    { id: 'retro', name: 'Retro arcade', defaultSet: 'retro', flag: 'retro' },
+    { id: 'photo', name: 'Photo office', defaultSet: 'office', line: 'A realistic open-plan office: a person at each desk, places along the back wall.' },
+    { id: 'cave', name: 'Prehistoric cave', defaultSet: 'prehistoric', flag: 'cave', line: 'A cave of stone desks, with prehistoric people.' },
+    { id: 'retro', name: 'Retro arcade', defaultSet: 'retro', flag: 'retro', line: 'An arcade hall: each person at their own cabinet, in pixels.' },
   ];
   /* spec 102 FR-266, FR-320: the stored Characters value of the Retro pixel people; the copy of PIXEL_CHARACTERS in src/shared/characters.ts (test:characters compares them) */
   const PIXEL_CHARACTERS = 'pixel';
