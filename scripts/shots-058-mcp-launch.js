@@ -27,7 +27,7 @@
  * is photo and #stage .ro is photo/office; shots 058-mcp-launch-real-<w>x<h>.png and 058-mcp-launch-settings-real-<w>x<h>.png (not linked, not committed).
  * Issue #1566: first, in the Real office look (Photo; the arcade with DRIVER_WORLD=retro, which then runs only this part), at 1280x800 and 1440x900 with 15 agents: the office does
  * not scroll while the strip is shown (list closed) and after Dismiss, and the floor's lent padding (ro-tight) is gone with the strip.
- * Issue #1625 (T345): DRIVER_WORLD=retro DRIVER_CASE=strips: the restore, away, crash and follow strips alone, and away+follow and restore+away, at both sizes: no office scroll.
+ * Issue #1625 (T346): DRIVER_WORLD=retro DRIVER_CASE=strips: the restore, away, crash and follow strips alone, and away+follow and restore+away, at both sizes: no office scroll.
  * Prints "[058] launch PASS" ("[058] launch arcade office PASS" under DRIVER_WORLD=retro).
  */
 const assert = require('assert');
@@ -75,7 +75,7 @@ module.exports = async (ctx) => {
      DRIVER_CASE=10 (issue #1598: DRIVER_AGENTS=10 DRIVER_ROOMS=3, DRIVER_H=769 (the 666 px room), three folders, strip shown: no folder of 4 or fewer is cut, no scroll);
      DRIVER_CASE=photo (18 agents in Photo at 1280x760 (DRIVER_H), where the strip leaves 636 px, Photo scrolls and the lend would rescue it: a world that is not `aisles` is never lent the padding) */
   const CASE = process.env.DRIVER_CASE || '';
-  /* issue #1625 (spec 102 T345): the arcade does not scroll at 15 agents with each OTHER strip under the top bar (restore, away, crash, follow), alone and in the two pairs the
+  /* issue #1625 (spec 102 T346): the arcade does not scroll at 15 agents with each OTHER strip under the top bar (restore, away, crash, follow), alone and in the two pairs the
      lend can rescue, at both sizes. The mixed simulator always shows the restore strip, so a scene's other strips are dismissed (Keep as it is) and only the named ones are on show.
      Prints one line per scene with the strips' heights, the floor and the layout: those numbers are the measurement (Linux, 2026-11-14, in the spec delta). */
   if (CASE === 'strips') {
