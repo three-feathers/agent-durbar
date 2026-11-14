@@ -217,6 +217,14 @@
 
 - [x] T170 (FR-210) `scripts/ui-suite.js`: `focus: true` on `shots-097-screens` (both entries) and `check-097-hover-card`; `main` runs the other entries at the job count and then the `focus` entries alone when drivers share a desktop; `scripts/test-ui-suite.ts` overlap test and a mutant; `changelog.d/008-uisuite-focus-serial.md`. Issue #1498.
 
+## 2026-11-11: a missing build fails in seconds with its path (FR-211)
+
+- [x] T171 (FR-211) `scripts/ensure-electron.js` `buildProblem`; `scripts/ui-suite.js` `main` and `runOne` and `scripts/check-parallel.js` `main` stop on it before Electron; the other plain-Node Electron launchers (`check-mac-titlebar`, `check-office-overlap`, `check-theme-geometry`, `check-perf`, `world-matrix`, `perf-record`, `release-video`) call it too; `scripts/test-ui-suite.ts` runs every site against a folder with no build (message, failure, fast) as asserts on a copy of `scripts/` (no per-site mutants); `buildProblem` shows the file relative to the repo folder.
+
+## 2026-11-11: a name given to --only that matches no driver fails the run (FR-212)
+
+- [x] T172 (FR-212) `scripts/ui-suite.js` `unknownOnly` and `editDistance`; `main` throws the unknown names before anything starts; `scripts/test-ui-suite.ts` covers an unknown name, a `NOT_IN_SUITE` name, a near name and a label, with a mutant.
+
 ## 2026-11-12: the Xvfb screen is as big as the window at the requested density (FR-213)
 
 - [x] T173 (FR-213) `scripts/ui-suite.js` `xvfbScreenArgs` and `launchCommand` (the xvfb path of `runOne`); `scripts/test-ui-suite.ts` checks the argument and the argv shape with two mutants. Linux/Xvfb run by the coordinator, see the PR.
