@@ -281,7 +281,7 @@ The other 17 cells are the same shared code, in tokens, or a `person`, `fixture`
 
 ## Delta 2026-11-11: Retro pixel and Office people as Characters choices (T225 split into T290..T296; FR-320..FR-326)
 
-**Status:** plan only; C2..C7 answered by the owner 2026-11-11; C1 and C8 are proposals pending his confirmation (spec Changes 2026-11-11). No `src/` change in the spec PR. Open: C1/C8 confirmation; the pictures were approved 2026-11-13 and are not committed.
+**Status:** plan only; C2..C7 answered by the owner 2026-11-11; C1 answered 2026-11-14 (old theme stays, value stays `pixel`) and C8 confirmed by the owner 2026-11-14 07:31 UTC (spec Changes 2026-11-11, 2026-11-14). No `src/` change in the spec PR. Nothing open on C1, C2 (Characters always its own card section, owner 2026-11-14 07:31 UTC) or C8; the pictures were approved 2026-11-13 and are not committed.
 
 **Reused (spec 021 FR-031).** `peopleFor`, `levelFor`, `REAL_SETS`, `WORLD_FLAGS` (`crew.js`: the `retro` row with its choice and flag is already there); `CHARACTER_CHOICES`, `parseCharacters`, `kitFor` (`src/shared/characters.ts`) and their copies in `theme.js`; `settings:setCharacters` (main, one place for policy); the Characters list and `charPreview` (`screens.js`, `app.js`, 077 FR-068); FR-203's heads by `faceBox`; `meta.pixelPeople` and 097 T247's scaling of one style of people in another world; `check-097-crews`, `check-characters`, the request log (T218); for the art, `scripts/build-arcade-pack.py` and `scripts/build-arcade-sleep.py` (grid snap, own colours, lossless WebP) and `test:realoffice-assets`.
 
