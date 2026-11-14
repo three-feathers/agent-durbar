@@ -2181,8 +2181,9 @@ function breakSpans(s: string, mask: string, written: () => ReadonlyArray<[numbe
       if (x >= at || y <= at) continue;
       // after a head the rules already hide as written, the next line is its rest only when its run is letters, digits, `_`, `-` and `.` (8 letters and digits or
       // more, FR-173's count): a `DATABASE_URL=postgres://…` line after a token stays (review of PR 1721)
-      // and not across a blank line or a quote mark: a wrapped token does not cross a paragraph or start a quote (`[redacted]` then a blank line and `Alternatively` keeps it)
-      if (inSpans(written(), a - 1) && (!BARE_BREAK.test(m[0]) || alnumIn(w, at, y) < GLUE_MIN || !BODY_RUN.test(s.slice(b, r)))) continue;
+      // and across a blank line, a quote, list, heading, table or Markdown mark only when it holds both a letter and a digit: a word there is a new paragraph or item
+      // (`[redacted]`, a blank line, `Alternatively` keeps it) but a token's tail goes (owner decision in round 3 of PR 1721: security over over-masking; a git sha there is masked too)
+      if (inSpans(written(), a - 1) && ((!BARE_BREAK.test(m[0]) && !MIXED_RUN.test(s.slice(b, r))) || alnumIn(w, at, y) < GLUE_MIN || !BODY_RUN.test(s.slice(b, r)))) continue;
       // each side on its own: the break, a blank line, the indentation and quote marks between them stay as written
       out.push([l + x, a], [b, b + (y - at)]);
     }
@@ -2192,6 +2193,8 @@ function breakSpans(s: string, mask: string, written: () => ReadonlyArray<[numbe
 const BODY_RUN = /^(?:[A-Za-z0-9_.-]+|[A-Za-z0-9+/_-]+={0,3})$/;
 /** A line break with blanks around it only: no blank line and no quote mark (a wrapped token goes on on the next line, even indented; a paragraph or a quote is a new text). */
 const BARE_BREAK = /^[ \t]*(?:\r\n|[\r\n])[ \t]*$/;
+/** A run with both a letter and a digit: a token's tail, not a word. */
+const MIXED_RUN = /^(?=[^0-9]*[0-9])(?=[^A-Za-z]*[A-Za-z])/;
 let breakCalls = 0;
 /** Test only: how many line-break windows `breakSpans` masked since the last call (the guards of `breakRuns` that only spare work are pinned by it). */
 export function _breakCallsForTest(): number { const n = breakCalls; breakCalls = 0; return n; }

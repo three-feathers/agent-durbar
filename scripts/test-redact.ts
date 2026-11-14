@@ -1804,9 +1804,9 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
         if (/^&#[0-9]+$/.test(piece) ? /^[0-9]/.test(tail) : /^&#x/i.test(piece) && !piece.endsWith(';') && /^[0-9A-Fa-f]/.test(tail)) { gaps++; continue; }
         const v = head + piece + tail;
         for (const [cn, ctx] of CTX) {
-          // a blank line, a quote, list, heading or table mark, or a Markdown mark at the break, after a head already hidden (alone or by its context): a new
-          // paragraph or item, not the token's rest (round 2, item 4): a written-down gap
-          if (ender && /[\r\n]/.test(piece) && !/^[ \t]*(?:\r\n|[\r\n])[ \t]*$/.test(piece) && (red(head) !== head || red(ctx(head)) !== ctx(head))) { gaps++; continue; }
+          // a blank line, a quote, list, heading or table mark, or a Markdown mark at the break, after a head already hidden (alone or by its context): the tail is
+          // taken only when it holds both a letter and a digit (round 3, owner decision); one without is a written-down gap
+          if (ender && /[\r\n]/.test(piece) && !/^[ \t]*(?:\r\n|[\r\n])[ \t]*$/.test(piece) && !(/[0-9]/.test(tail) && /[A-Za-z]/.test(tail)) && (red(head) !== head || red(ctx(head)) !== ctx(head))) { gaps++; continue; }
           const t = ctx(v);
           const what = `#1613 ${fn} (${tn} cut at ${c}, ${cn})`;
           let w = shown(red(t), piece);
@@ -1897,7 +1897,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
       const w1 = words[rnd(words.length)], w2 = words[rnd(words.length)], sep = [' ', '\n', ', '][rnd(3)];
       const pre = w1 + sep + head; // the head in its context: a name before it can hide it as written
       if (ender && alnum(tail) < 8 && red(head) !== head) continue;
-      if (ender && /[\r\n]/.test(piece) && !/^[ \t]*(?:\r\n|[\r\n])[ \t]*$/.test(piece) && (red(head) !== head || red(pre) !== pre)) continue;
+      if (ender && /[\r\n]/.test(piece) && !/^[ \t]*(?:\r\n|[\r\n])[ \t]*$/.test(piece) && !(/[0-9]/.test(tail) && /[A-Za-z]/.test(tail)) && (red(head) !== head || red(pre) !== pre)) continue;
       if (/^&#[0-9]+$/.test(piece) ? /^[0-9]/.test(tail) : /^&#x/i.test(piece) && !piece.endsWith(';') && /^[0-9A-Fa-f]/.test(tail)) continue; // the entity takes the digits after it (a written-down gap)
       const t = [w1, head + piece + tail, w2].join(sep);
       const out = red(t).replace(piece, '');
@@ -1962,6 +1962,19 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   // round 2 (fjcabello): the helper-name step keeps a leading mark and the blanks, and drops a link and emphasis
   assert.strictEqual(ST.plainMarks('#1613 split  tokens'), '#1613 split  tokens', '#1613 round 2: plainMarks keeps a leading # and the blanks');
   assert.strictEqual(ST.plainMarks('- **Hx** [click](https://evil.example/x) `c`'), '- Hx click c', '#1613 round 2: plainMarks drops a link, emphasis and code marks');
+  // round 3 (owner decision): across a blank line or a quote, list, heading or table mark, a whole token's tail with a letter and a digit goes; words stay; a git sha there is masked (written down)
+  {
+    const pat = 'github_pat_' + B.slice(0, 22) + '_' + (B + B).slice(5, 32);
+    const tail31 = 'Q9w8E7r6T5y4U3i2O1p0A9s8D7f6G5h';
+    for (const sep of ['\n\n', '\r\n\r\n', '\n> ', '\n- ', '\n| ']) {
+      const out = red(pat + sep + tail31);
+      assert.ok(!out.includes(tail31.slice(0, 8)) && !out.includes(tail31.slice(-8)), `#1613 round 3: a whole token's tail with a letter and a digit after ${JSON.stringify(sep)} is hidden: ${JSON.stringify(out)}`);
+    }
+    for (const word of ['Alternatively, use SSH.', '> Note: rotate it', '## Step 2', '- item2', 'Documentation'])
+      assert.strictEqual(red(GH + '\n\n' + word), '[redacted]\n\n' + word, `#1613 round 3: a word after a whole token and a blank line stays: ${JSON.stringify(word)}`);
+    const sha = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4';
+    assert.strictEqual(red(GH + '\n\n' + sha), '[redacted]\n\n[redacted]', '#1613 round 3: a git sha after a whole token and a blank line is masked (the written-down over-mask)');
+  }
   // round 2, item 5: the blanks and quote marks between the two pieces stay as written
   assert.strictEqual(red('x ' + GH.slice(0, 16) + '\n    ' + GH.slice(16) + ' y'), 'x [redacted]\n    [redacted] y', '#1613 round 2: the indentation between two pieces stays');
   assert.strictEqual(red('x ' + GH.slice(0, 16) + '\n> ' + GH.slice(16) + ' y'), 'x [redacted]\n> [redacted] y', '#1613 round 2: the quote mark between two pieces stays');
@@ -1981,6 +1994,10 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   assertLinearShape('#1613 redact many unclosed comments', (x) => { redact(x, {}); }, (k) => 'x<!--'.repeat(Math.ceil(k / 5)).slice(0, k), 400_000);
   assertLinearShape('#1613 redact one long run with line breaks', (x) => { redact(x, {}); }, (k) => ('Ab1_'.repeat(70) + '\n').repeat(Math.ceil(k / 281)).slice(0, k), 400_000);
   assertLinearShape('#1613 redact many indented and quoted line breaks', (x) => { redact(x, {}); }, (k) => 'ab_123456\n\n  > cd_789012'.repeat(Math.ceil(k / 24)).slice(0, k), 400_000);
+  // issue #1725 (round 3): the desk's plainKeep link regex is bounded, so a reply of many `[` or `[x](` is linear
+  assertLinearShape('#1725 the desk excerpt of many [', (x) => { ST.excerpt(x, red); }, (k) => '['.repeat(k), 80_000);
+  assertLinearShape('#1725 the desk excerpt of many [x](', (x) => { ST.excerpt(x, red); }, (k) => '[x]('.repeat(Math.ceil(k / 4)).slice(0, k), 320_000);
+  assertLinearShape('#1725 the desk mask of many [', (x) => { ST.maskRaw(x, red); }, (k) => '['.repeat(k), 80_000);
   assertLinearShape('#1613 redact many entities and marks', (x) => { redact(x, {}); }, (k) => 'a&#8203;b\u0301c&zwj;'.repeat(Math.ceil(k / 15)).slice(0, k), 400_000);
 }
 

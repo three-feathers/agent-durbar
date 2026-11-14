@@ -19,7 +19,9 @@
   const unesc=t=>String(t==null?'':t).replace(/\\([\\`*_{}\[\]()#+\-.!~|<>])/g,'$1');
   /* Markdown to plain words but KEEPING `_`: code blocks (also one never closed), links, emphasis, headings and list marks (- * + >) go;
      whitespace collapses. `codeWord`: a code block leaves the word "code" (the desk line), otherwise a space (the live readout). */
-  const plainKeep=(t,codeWord)=>String(t==null?'':t).replace(/```[\s\S]*?(```|$)/g,codeWord?' code ':' ').replace(/!?\[([^\]]*)\]\([^)]*\)/g,'$1').replace(/^[#>\-*+\s]+/gm,'').replace(/[*`~]/g,'').replace(/\s+/g,' ').trim();
+  const plainKeep=(t,codeWord)=>String(t==null?'':t).replace(/```[\s\S]*?(```|$)/g,codeWord?' code ':' ').replace(/!?\[([^\]]{0,256})\]\([^)]{0,2048}\)/g,'$1').replace(/^[#>\-*+\s]+/gm,'').replace(/[*`~]/g,'').replace(/\s+/g,' ').trim();
+  /* issue #1725 (review of PR 1721, round 3): the link's text and target are bounded (256 and 2,048 characters), so a reply of many `[` or `[x](` costs a bounded scan per
+     bracket, linear (unbounded classes rescanned to the end of the text from every `[`: quadratic, seconds per desk call on an 80k reply); a longer link keeps its marks */
   /* ... and the plain words (also without `_`) */
   const plain=(t,codeWord)=>plainKeep(t,codeWord).replace(/_/g,'');
   const SPLIT=/[*`~\[\]]/; /* Markdown marks that can sit inside a token (emphasis, code, strike, link brackets) */
