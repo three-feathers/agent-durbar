@@ -427,6 +427,50 @@ if (worldIds.includes('retro')) {
 }
 
 {
+  /* spec 102 FR-326 (review of #1677): no frame of a people set is faked by reusing or mirroring another. Pixel hashes of the decoded frames (alpha included,
+   * scripts/frame-hashes.py; plain Node cannot decode WebP): no two frames of one person or of the set share a hash, and no run frame is the horizontal mirror of
+   * another frame of the same person. Needs python3 with Pillow: skipped with a plain message on a machine without it, a failure where DURBAR_REQUIRE_PILLOW is set. */
+  const have = spawnSync('python3', ['-I', '-c', 'import PIL'], { encoding: 'utf8' });
+  if (have.error || have.status !== 0) {
+    if (process.env.DURBAR_REQUIRE_PILLOW) assert.fail('python3 with Pillow is required here (DURBAR_REQUIRE_PILLOW) and is missing: the frame hash check (FR-326) cannot run');
+    console.log('frame hash check skipped: needs python3 with Pillow (not on this machine)');
+  } else {
+    const tool = path.join(ROOT, 'scripts', 'frame-hashes.py');
+    const hashOf = (dir: string): Map<string, [string, string]> => {
+      const names = fs.readdirSync(dir).filter((f) => /^p\d\d-[A-Za-z-]+\.webp$/.test(f)).sort(), rows = new Map<string, [string, string]>();
+      const r = spawnSync('python3', ['-I', tool, ...names.map((n) => path.join(dir, n))], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
+      assert.strictEqual(r.status, 0, 'frame-hashes.py: ' + r.stderr);
+      for (const l of r.stdout.trim().split('\n')) { const [n, h, m] = l.split(' '); rows.set(n, [h, m]); }
+      assert.strictEqual(rows.size, names.length, 'a hash for every frame');
+      return rows;
+    };
+    const frameProblems = (rows: Map<string, [string, string]>): string[] => {
+      const out: string[] = [], seen = new Map<string, string>();
+      for (const [n, [h]] of rows) { const first = seen.get(h); if (first) out.push(`${first} and ${n} share a pixel hash (a frame reused)`); else seen.set(h, n); }
+      for (const [n, [h]] of rows) if (/^p\d\d-run[AB]\.webp$/.test(n)) for (const [o, [, m]] of rows) if (o !== n && o.slice(0, 3) === n.slice(0, 3) && m === h) out.push(`${n} is the horizontal mirror of ${o} (a frame mirrored)`);
+      return out;
+    };
+    const sets = fs.readdirSync(path.join(RO, 'sets')).filter((s) => fs.readdirSync(path.join(RO, 'sets', s)).some((f) => /^p\d\d-[A-Za-z-]+\.webp$/.test(f)));
+    assert.ok(sets.includes('retro') && sets.includes('office'), 'the frame check covers the Retro pixel and the Office people sets: ' + sets.join());
+    for (const s of sets) assert.deepStrictEqual(frameProblems(hashOf(path.join(RO, 'sets', s))), [], `${s}: no frame is a reused or mirrored copy of another (FR-326)`);
+    const retro = path.join(RO, 'sets', 'retro'), tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'durbar-frames-'));
+    try {
+      const plant = (label: string, edit: (dir: string) => void, expect: RegExp): void => {
+        const dir = path.join(tmp, label); fs.mkdirSync(dir);
+        for (const f of fs.readdirSync(retro)) if (/^p\d\d-[A-Za-z-]+\.webp$/.test(f)) fs.copyFileSync(path.join(retro, f), path.join(dir, f));
+        edit(dir);
+        const found = frameProblems(hashOf(dir));
+        assert.ok(found.some((p) => expect.test(p)), `FR-326 mutant "${label}" is caught by the frame check (${JSON.stringify(found)})`);
+      };
+      plant('runB is a copy of runA', (d) => fs.copyFileSync(path.join(d, 'p01-runA.webp'), path.join(d, 'p01-runB.webp')), /p01-runA\.webp and p01-runB\.webp share a pixel hash|p01-runB\.webp is the horizontal mirror/);
+      plant('runB is a copy of another person\'s frame', (d) => fs.copyFileSync(path.join(d, 'p03-type.webp'), path.join(d, 'p04-runB.webp')), /share a pixel hash/);
+      plant('runB is the mirror of runA', (d) => { const r = spawnSync('python3', ['-I', tool, '--mirror', path.join(d, 'p02-runA.webp'), path.join(d, 'p02-runB.webp')], { encoding: 'utf8' }); assert.strictEqual(r.status, 0, 'frame-hashes.py --mirror: ' + r.stderr); }, /p02-runB\.webp is the horizontal mirror of p02-runA\.webp/);
+      plant('runA is the mirror of a standing frame', (d) => { const r = spawnSync('python3', ['-I', tool, '--mirror', path.join(d, 'p05-type.webp'), path.join(d, 'p05-runA.webp')], { encoding: 'utf8' }); assert.strictEqual(r.status, 0, 'frame-hashes.py --mirror: ' + r.stderr); }, /p05-runA\.webp is the horizontal mirror of p05-type\.webp/);
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+  }
+}
+
+{
   /* spec 097 FR-371 (issue #1641 review): no kid picture is clipped by a side border. A tight crop of a whole cube or stool may rest on the
    * edge (the most in the shipped 42 is 47 rows of 220, a stool's flat side), a clipped figure runs far more: the count is of rows with
    * alpha > 128 in the first and the last column (scripts/kid-edge-rows.py decodes the WebP; plain Node cannot): needs python3 with Pillow. */
