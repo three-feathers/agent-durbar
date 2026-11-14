@@ -65,7 +65,13 @@ module.exports = async (ctx) => {
       await must(`!!(document.getElementById('roWorldCss-'+${jsLiteral(world)})||{}).sheet`, 'the world stylesheet');
       await H.until(`document.getElementById('stage').dataset.fit`, 2000).catch(() => undefined);
       const sliver = await js(`[...document.querySelectorAll('#stage .ro-plate .ro-role')].filter(r=>!r.hidden&&getComputedStyle(r).display!=='none'&&r.getBoundingClientRect().width<19).map(r=>[r.textContent,Math.round(r.getBoundingClientRect().width)])`);
+      // the 4 s timer must not settle a second time: after it would have fired, the counter is still 1
+      await H.until(`document.documentElement.dataset.roSheets==='1'`, 2000).catch(() => undefined);
+      const sheetsAtLoad = await js(`document.documentElement.dataset.roSheets||''`);
+      await new Promise((r) => setTimeout(r, 4600));
+      const sheetsLater = await js(`document.documentElement.dataset.roSheets||''`);
       ses.webRequest.onBeforeRequest(null);
+      assert.deepStrictEqual([sheetsAtLoad, sheetsLater], ['1', '1'], `${tag}: worldcss-late: the stylesheet settles once: the counter after the load and after the 4 s timer would have fired`);
       assert.deepStrictEqual(sliver, [], `${tag}: a role is shown as a sliver: ${JSON.stringify(sliver)}`);
       assert.strictEqual(sheetAtDraw, true, `${tag}: the office is drawn only after the ${world} stylesheet has loaded`);
       console.log('[moments] worldcss-late ok', sheetAtDraw);
@@ -77,20 +83,23 @@ module.exports = async (ctx) => {
       if (!run('worldcss-' + mode) || world === 'photo') continue;
       const ses = ctx.win.webContents.session;
       const held = [];
-      let hits = 0;
-      ses.webRequest.onBeforeRequest({ urls: ['file://*/*'] }, (d, cb) => { if (/\/realoffice\/worlds\/[a-z0-9-]+\/world\.css$/.test(d.url)) { hits++; if (mode === 'fail') cb({ redirectURL: 'file:///durbar-no-such-world.css' }); else held.push(cb); } else cb({}); });
-      await within(ctx.win.loadURL('about:blank'), 5000, undefined); /* the page's memory cache of an earlier load of the sheet would answer for the request */
+      let hits = 0, tReq = 0;
+      ses.webRequest.onBeforeRequest({ urls: ['file://*/*'] }, (d, cb) => { if (/\/realoffice\/worlds\/[a-z0-9-]+\/world\.css$/.test(d.url)) { if (!hits++) tReq = Date.now(); if (mode === 'fail') cb({ redirectURL: 'file:///durbar-no-such-world.css' }); else held.push(cb); } else cb({}); });
+      const wc = ctx.win.webContents;
+      await js(`localStorage.clear()`).catch(() => undefined); /* a clean start, on the page the earlier moment left (the storage is that page's): its world and view are gone */
       await ses.clearCache(); /* an earlier moment's copy of the sheet would answer for the request */
-      await js(`localStorage.clear()`).catch(() => undefined); /* a clean start: the earlier moments leave a world and a view in the storage */
+      if (!wc.debugger.isAttached()) wc.debugger.attach('1.3'); /* DevTools protocol: Electron's executeJavaScript waits for the page's load event, which a held sheet can hold back */
+      let loading, sheetsAfterLate = '1';
+      try {
+      await within(wc.debugger.sendCommand('Page.navigate', { url: 'about:blank' }), 5000, undefined); /* the page's memory cache of an earlier load of the sheet would answer for the request */
       const t0 = Date.now();
       let err = '';
-      const loading = H.load({ w, h, query: q(world), ready: REAL, settle: false }).catch((e) => { err = String(e && e.message || e); });
+      loading = H.load({ w, h, query: q(world), ready: REAL, settle: false }).catch((e) => { err = String(e && e.message || e); });
       const probe = `(()=>{const s=document.getElementById('stage');return [s&&s.dataset.d||'',document.querySelectorAll('#stage .ro-plate').length,document.documentElement.dataset.roSheets||''].join('|')})()`;
-      const evs = []; const wc = ctx.win.webContents;
+      const evs = [];
       const hooks = ['did-start-navigation', 'did-navigate', 'dom-ready', 'did-finish-load', 'did-fail-load', 'render-process-gone', 'unresponsive'].map((n) => { const f = () => evs.push(`${n}@${Date.now() - t0}`); wc.on(n, f); return [n, f]; });
-      if (!wc.debugger.isAttached()) wc.debugger.attach('1.3'); /* DevTools protocol: Electron's executeJavaScript waits for the page's load event, which a held sheet can hold back */
       let tDrawn = -1, tSettled = -1, last = '', polls = 0, stalled = 0;
-      while (Date.now() - t0 < 12000 && (tDrawn < 0 || tSettled < 0)) {
+      while (Date.now() - t0 < 16000 && (tDrawn < 0 || tSettled < 0)) {
         const r = await within(wc.debugger.sendCommand('Runtime.evaluate', { expression: probe, returnByValue: true }).then((o) => String((o.result && o.result.value) || ''), () => 'STALLED'), 400, 'STALLED');
         polls++;
         if (r === 'STALLED') stalled++; else {
@@ -101,19 +110,26 @@ module.exports = async (ctx) => {
         }
         await new Promise((r2) => setTimeout(r2, 100));
       }
-      const timing = `drawn at ${tDrawn} ms, sheet settled at ${tSettled} ms, ${stalled} of ${polls} polls stalled, last state ${last}, window events ${evs.join(',')}, loading ${wc.isLoading()}`;
+      const sinceReq = (t) => (t < 0 || !tReq ? -1 : t - (tReq - t0)); /* from the moment the page asked for the sheet: that is when the 4 s timer starts */
+      const timing = `drawn ${sinceReq(tDrawn)} ms and sheet settled ${sinceReq(tSettled)} ms after the page asked for it (drawn at ${tDrawn} ms, settled at ${tSettled} ms from the load), ${stalled} of ${polls} polls stalled, last state ${last}, window events ${evs.join(',')}, loading ${wc.isLoading()}`;
       hooks.forEach(([n, f]) => wc.removeListener(n, f));
-      try { wc.debugger.detach(); } catch { /* already detached */ }
+      if (mode === 'hang') { /* the sheet answers at last, after the timer settled the pack: that load must not settle it a second time */
+        held.splice(0).forEach((cb) => cb({}));
+        await new Promise((r) => setTimeout(r, 1000));
+        sheetsAfterLate = await within(wc.debugger.sendCommand('Runtime.evaluate', { expression: `document.documentElement.dataset.roSheets||''`, returnByValue: true }).then((o) => String((o.result && o.result.value) || ''), () => 'STALLED'), 1500, 'STALLED');
+      }
       ses.webRequest.onBeforeRequest(null);
       held.forEach((cb) => cb({ cancel: true }));
       await within(loading, 15000, undefined);
       assert.strictEqual(err, '', `${tag}: worldcss-${mode}: the page loads: ${err}`);
       assert.ok(hits >= 1, `${tag}: worldcss-${mode}: the stylesheet was requested (${hits})`);
       assert.ok(tSettled >= 0 && tDrawn >= 0, `${tag}: worldcss-${mode}: the ${world} office is still drawn when its stylesheet ${mode === 'fail' ? 'fails' : 'never answers'}, and the pack is ready: ${timing}`);
-      if (mode === 'fail') assert.ok(tSettled < 3500, `${tag}: worldcss-fail: a failed stylesheet settles at once through its error event, not through the 4 s timer (${timing})`);
-      if (mode === 'hang') assert.ok(tSettled >= 3500 && tSettled < 8000 && tDrawn < 8000, `${tag}: worldcss-hang: the draw waits for the 4 s timer, not for ever (${timing})`);
+      if (mode === 'fail') assert.ok(sinceReq(tSettled) >= 0 && sinceReq(tSettled) < 3500, `${tag}: worldcss-fail: a failed stylesheet settles at once through its error event, not through the 4 s timer (${timing})`);
+      if (mode === 'hang') assert.ok(sinceReq(tSettled) >= 3500 && sinceReq(tSettled) < 12000 && sinceReq(tDrawn) < 12000, `${tag}: worldcss-hang: the draw waits for the 4 s timer, not for ever (${timing})`);
+      if (mode === 'hang') assert.strictEqual(sheetsAfterLate, '1', `${tag}: worldcss-hang: the sheet that answers after the timer does not settle the pack a second time (counter ${sheetsAfterLate})`);
       await within(must(PICS, 'the pictures'), 14000, undefined);
       console.log(`[moments] worldcss-${mode} ok: ${timing}`);
+      } finally { try { wc.debugger.detach(); } catch { /* already detached */ } }
     }
     // ---- FR-118 first run ----
     if (run('first-run')) {
