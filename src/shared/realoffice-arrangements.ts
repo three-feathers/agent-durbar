@@ -1,9 +1,9 @@
 /** Spec 102 FR-227, FR-256 (T202, T203, T205): where the people sit. `rows` is `realLayout`, untouched; `aisles` is the Retro arcade hall:
  *  staggered aisles of cabinets in an integer pixel scale `g`. Pure, no DOM, nothing draws it yet (RA3). The numbers marked "provisional"
  *  come from the mockup and the art by eye and are replaced by measured ones (T201's `faceBox`, T207's frame sizes). */
-import { lobbyBand, lobbyRange, realLayout, shownDesks, signWidth, splitLounge, BIG_MAX, helpH, helpCols, helpShown, FACE_U, type DeskBox, type Layout, type RealAgent, type RealMeta, type RealModel, type RealState, type Rect, type ZoneBox } from './realoffice-layout';
+import { lobbyBand, lobbyRange, loungeRows, realLayout, rowGeom, deskStation, shownDesks, signWidth, signMin, splitLounge, BIG_MAX, helpH, helpCols, helpShown, FACE_U, PW, SR, PAD, ZGAP, STRIP, U_MAX, type DeskBox, type Layout, type RealAgent, type RealMeta, type RealModel, type RealState, type Rect, type ZoneBox } from './realoffice-layout';
 
-export const ARRANGEMENTS = ['rows', 'aisles'] as const;
+export const ARRANGEMENTS = ['rows', 'circle', 'aisles'] as const;
 export type Arrangement = (typeof ARRANGEMENTS)[number];
 export const isArrangement = (v: unknown): v is Arrangement => typeof v === 'string' && (ARRANGEMENTS as readonly string[]).includes(v);
 
@@ -281,9 +281,134 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
   return lay;
 }
 
+/** Spec 102 FR-227, FR-229, T165: `circle`. The folders' desks, in the model's sequence, go round a `focus` picture: up the left side (the first seat at its foot), along the top row, down the right
+ *  side, open towards the viewer. A side is one desk wide, or two where the people do not fit otherwise (`CircleOpts.side`); in a two-wide side the seats snake from row to row and a folder starts a new
+ *  row, so a zone is still a rectangle. A desk is `rows`' own (`deskStation`), so the face is `FACE_U * u`; `u` is the largest the ring allows, found by bisection like FR-011, and never under
+ *  `CIRCLE_U_MIN` (a face of 24 px, FR-229), so a ring that cannot hold the people at it scrolls, as `rows` does. First build: no fixtures in the centre, no helper strip, no big screens at 4 agents or
+ *  fewer (FR-230), and the lobby band is `rows`'. Pure, no DOM, nothing draws it yet. */
+/** the least `u` of `circle`: a desk face of `FACE_FLOOR` (24 px, FR-229) at `FACE_U` of the unit */
+export const CIRCLE_U_MIN = Math.ceil(FACE_FLOOR / FACE_U);
+export const CIRCLE_FOCUS_MIN = { w: 160, h: 120 } as const;
+/** `side`: the widest side, 1 or 2 desks (default 2: one desk wide does not hold 15 at 1280x800, measured in the Changes of 2026-11-13) */
+export interface CircleOpts { side?: 1 | 2 }
+interface CirclePlan { nl: number; nt: number; nr: number; wl: number; wr: number; colH: number }
+export function circleWith(model: RealModel, view: { w: number; h: number }, meta: RealMeta, signs: Record<string, { name: string; path: string; counts: number }> | undefined, opt: CircleOpts = {}): Layout {
+  const W = Math.max(200, view.w), H0 = Math.max(200, view.h);
+  const { desks: atDesks, lounge } = splitLounge(model);
+  const folders = atDesks.filter((f) => f.agents.length).map((f) => ({ id: f.id, agents: shownDesks(f) }));
+  const [lobbyMin, lobbyMax] = lobbyRange(H0), maxSide = opt.side ?? 2;
+  const LR = lounge.length ? loungeRows(meta, lounge, W, 0) : null, R = LR ? LR.h : 0, Ho = Math.max(200, H0 - R);
+  const seats = folders.flatMap((f, fx) => f.agents.map((a) => ({ a, fx })));
+  const k = seats.length, avail = Ho - lobbyMin;
+  /** the runs of one folder in seats [i, j) */
+  const runs = (i: number, j: number): Array<[number, number]> => { const r: Array<[number, number]> = []; for (let n = i; n < j; n++) if (!r.length || seats[n].fx !== seats[n - 1].fx) r.push([n, n + 1]); else r[r.length - 1][1] = n + 1; return r; };
+  /** rows of a side `w` wide holding seats [i, j): each folder starts a new row; and its height at desk height `b` */
+  const rowsOf = (i: number, j: number, w: number): number => runs(i, j).reduce((s, [p, q]) => s + Math.ceil((q - p) / w), 0);
+  const sideH = (i: number, j: number, w: number, b: number): number => (j > i ? rowsOf(i, j, w) * b + (runs(i, j).length - 1) * ZGAP : 0);
+  const zonesIn = (i: number, j: number): number => (j > i ? seats[j - 1].fx - seats[i].fx + 1 : 0);
+  const rowOf = (u: number) => ({ zones: folders, n: k, Sw: (PW + SR) * u, scrH: 0, strip: 0 });
+  const needOf = (withFocus: boolean): number => (withFocus ? CIRCLE_FOCUS_MIN.h + PAD : 0);
+  /* the seats at unit u: the split into a left side, a top row and a right side (k >= 3: a ring, each of them used) that fits, the most even and narrowest first; null when none does */
+  const plan = (u: number, withFocus: boolean): CirclePlan | null => {
+    if (!k) return null;
+    const Sw = (PW + SR) * u, b = rowGeom(meta, rowOf(u), u).bottom, ring = k >= 3 && withFocus;
+    let best: CirclePlan | null = null, bestScore = -Infinity;
+    for (let wl = 1; wl <= maxSide; wl++) for (let wr = 1; wr <= maxSide; wr++) {
+      for (let nl = ring ? 1 : 0; nl <= k - (ring ? 2 : 0); nl++) {
+        const hl = sideH(0, nl, wl, b);
+        if (hl > avail) break;
+        for (let nr = ring ? 1 : 0; nl + nr <= k - 1 || (k === 1 && nl + nr === 0); nr++) {
+          const nt = k - nl - nr, zt = zonesIn(nl, nl + nt);
+          if (Math.max(nt * Sw + zt * 8 + ZGAP * (zt - 1), ring ? (wl + wr) * Sw + 16 + 2 * ZGAP + CIRCLE_FOCUS_MIN.w : 0) > W - 2 * PAD) continue; /* the row, and the two sides with the focus between them, fit the width */
+          const colH = Math.max(hl, sideH(nl + nt, k, wr, b)), used = b + ZGAP + Math.max(colH, needOf(withFocus));
+          if (used > avail) continue;
+          const score = -Math.abs(nl - nr) * 1e4 - colH - (wl + wr - 2) * 5e3;
+          if (score > bestScore) { bestScore = score; best = { nl, nt, nr, wl, wr, colH }; }
+        }
+      }
+    }
+    return best;
+  };
+  let u = CIRCLE_U_MIN, fits = true, cfg: CirclePlan | null = null, withFocus = true;
+  if (k) {
+    cfg = plan(CIRCLE_U_MIN, true);
+    if (!cfg) { cfg = plan(CIRCLE_U_MIN, false); if (cfg) withFocus = false; } /* only the ring and its focus box make it scroll (a lounge-heavy floor): one row of desks, no box, the faces stay at the floor */
+    fits = !!cfg;
+    if (cfg) { let lo = CIRCLE_U_MIN, hi = U_MAX; for (let i = 0; i < 16; i++) { const m = (lo + hi) / 2; if (plan(m, withFocus)) lo = m; else hi = m; } u = lo; cfg = plan(lo, withFocus); }
+    else { /* nothing fits at CIRCLE_U_MIN: as many in the top row as its width holds, the rest in two sides of the widest kind, and the floor scrolls */
+      const Sw = (PW + SR) * u, b = rowGeom(meta, rowOf(u), u).bottom, ring = k >= 3;
+      let nt = ring ? k - 2 : k;
+      const topW = (n: number): number => { const l = Math.ceil((k - n) / 2); return n * Sw + zonesIn(l, l + n) * 8 + ZGAP * (zonesIn(l, l + n) - 1); };
+      while (nt > 1 && topW(nt) > W - 2 * PAD) nt--;
+      const nl = ring ? Math.ceil((k - nt) / 2) : 0, nr = k - nt - nl;
+      cfg = { nl, nt, nr, wl: 1, wr: 1, colH: Math.max(sideH(0, nl, 1, b), sideH(nl + nt, k, 1, b)) };
+    }
+  }
+  const Sw = (PW + SR) * u, g = rowGeom(meta, rowOf(u), u), b = g.bottom;
+  const need = needOf(withFocus), used = k ? b + ZGAP + Math.max(cfg!.colH, need) : 0;
+  const Lb = Math.round(fits ? Math.max(lobbyMin, Math.min(Ho - used, lobbyMax)) : lobbyMin);
+  const spare = fits ? Math.max(0, Ho - Lb - used) : 0, y0 = Lb + spare / 3;
+  const zones: ZoneBox[] = [], part: Record<number, number> = {};
+  /** one zone of consecutive seats [i, j): `at` gives each seat's slot corner; the box is their union and the sign sits on its top edge */
+  const zoneOf = (i: number, j: number, at: (n: number) => { x: number; y: number }): void => {
+    const f = folders[seats[i].fx], desks: DeskBox[] = [];
+    for (let n = i; n < j; n++) { const p = at(n), d = deskStation(meta, seats[n].a, p.x, p.y, Sw, u, g, false, 0, 0, 0); d.slot.h = b; desks.push(d); }
+    const x = Math.min(...desks.map((d) => d.slot.x)) - 4, top = Math.min(...desks.map((d) => d.slot.y)), bot = Math.max(...desks.map((d) => d.slot.y + d.slot.h));
+    const zw = Math.max(...desks.map((d) => d.slot.x + d.slot.w)) + 4 - x;
+    const s = signs && Object.prototype.hasOwnProperty.call(signs, f.id) ? signs[f.id] : { name: f.id, path: '', counts: 1 };
+    const sw = signWidth(s.name, s.path, s.counts, zw);
+    const hands = desks.filter((d) => d.person && (d.state === 'waiting' || d.state === 'limit') && d.person.y < top + STRIP).map((d) => [d.person!.x, d.person!.x + d.person!.w * 0.6]);
+    const hits = (px: number): boolean => hands.some(([p, q]) => q > px && p < px + sw);
+    let sx = x + 4;
+    if (hits(sx)) { sx = x + zw - 4 - sw; if (hits(sx)) sx = Math.max(...hands.map((h) => h[1])) + 6; }
+    sx = Math.max(x + 4, Math.min(sx, x + zw - 4 - sw));
+    zones.push({ id: f.id, part: (part[seats[i].fx] = (part[seats[i].fx] || 0) + 1), box: { x, y: top + 2, w: zw, h: bot - top - 2 }, sign: { x: sx, y: top + 1, w: sw, h: 20 }, desks, ...(signMin(s.counts) > zw - 8 ? { signShort: true } : {}) });
+  };
+  const bw = (w: number): number => w * Sw + 8, ringed = k >= 3 && withFocus;
+  const rowW = k ? cfg!.nt * Sw + zonesIn(cfg!.nl, cfg!.nl + cfg!.nt) * 8 + ZGAP * (zonesIn(cfg!.nl, cfg!.nl + cfg!.nt) - 1) : 0;
+  /* the ring spans the row, or the two sides with the focus between them when that is wider (a ring of a few people); the sides stand at its two ends, the row in the middle */
+  const span = ringed ? Math.max(rowW, (cfg!.wl + cfg!.wr) * Sw + 16 + 2 * ZGAP + CIRCLE_FOCUS_MIN.w) : rowW, rx0 = PAD + (W - 2 * PAD - span) / 2, rx1 = rx0 + span;
+  if (k) {
+    const { nl, nt, nr, wl, wr } = cfg!, yc = y0 + b + ZGAP;
+    /* the left side: the first seat at its foot, upwards; a seat's column snakes with its row (outer, then inner, then outer again) */
+    let yb = yc + sideH(0, nl, wl, b), row = 0;
+    for (const [i, j] of runs(0, nl)) {
+      const rows = Math.ceil((j - i) / wl), r0 = row; row += rows;
+      zoneOf(i, j, (n) => { const r = Math.floor((n - i) / wl), c0 = (n - i) % wl, c = (r0 + r) % 2 ? wl - 1 - c0 : c0; return { x: rx0 + 4 + c * Sw, y: yb - (r + 1) * b }; });
+      yb -= rows * b + ZGAP;
+    }
+    let x = rx0 + (span - rowW) / 2;
+    for (const [i, j] of runs(nl, nl + nt)) { const x0 = x; zoneOf(i, j, (n) => ({ x: x0 + 4 + (n - i) * Sw, y: y0 })); x += (j - i) * Sw + 8 + ZGAP; }
+    let yr = yc; row = 0;
+    for (const [i, j] of runs(nl + nt, k)) {
+      const rows = Math.ceil((j - i) / wr), r0 = row, y1 = yr; row += rows;
+      zoneOf(i, j, (n) => { const r = Math.floor((n - i) / wr), c0 = (n - i) % wr, c = (r0 + r) % 2 ? wr - 1 - c0 : c0; return { x: rx1 - bw(wr) + 4 + c * Sw, y: y1 + r * b }; });
+      yr += rows * b + ZGAP;
+    }
+  }
+  const lb = lobbyBand(meta, model.places, W, Lb);
+  const height = fits ? H0 : Math.ceil(Lb + used + PAD + R);
+  const fx0 = ringed ? rx0 + bw(cfg!.wl) + ZGAP : PAD, fx1 = ringed ? rx1 - bw(cfg!.wr) - ZGAP : W - PAD, fy = y0 + b + ZGAP;
+  const lay: Layout = { u, big: false, lobbyH: Lb, floorH: height - Lb, width: W, height, scroll: !fits || Ho + R > H0 + 0.5, faceH: FACE_U * u, zones, fixtures: lb.fixtures, floorStrip: lb.floorStrip, helpRows: 0 };
+  /* the focus box, when it holds `CIRCLE_FOCUS_MIN`: with every agent in the lounge, or the ring dropped it to fit, there is none (never a negative height) */
+  const focus: Rect = { x: fx0, y: fy, w: fx1 - fx0, h: fits ? Ho - PAD - fy : Math.max(need - PAD, (cfg ? cfg.colH : 0)) };
+  if (withFocus && focus.w >= CIRCLE_FOCUS_MIN.w - 0.5 && focus.h >= CIRCLE_FOCUS_MIN.h - 0.5) lay.focus = focus;
+  if (LR) lay.lounge = loungeRows(meta, lounge, W, height - R).row;
+  return lay;
+}
+export const circleLayout = (model: RealModel, view: { w: number; h: number }, meta: RealMeta, signs?: Record<string, { name: string; path: string; counts: number }>): Layout => circleWith(model, view, meta, signs);
+
+/** FR-230: whether `id` fits this floor, on the count of agents only; `leftAt` (the count it last fell back at) makes it return only with two agents fewer, so a seat count at the edge does not flip the room. `rows` always fits. Pure. */
+export function arrangementFits(id: Arrangement, model: RealModel, view: { w: number; h: number }, meta: RealMeta, leftAt?: number): boolean {
+  if (id === 'rows') return true;
+  const n = model.folders.reduce((s, f) => s + f.agents.length, 0);
+  if (leftAt !== undefined && n > leftAt - 2) return false;
+  return !layoutFor(id, model, view, meta).scroll;
+}
+
 /** FR-228's one seam: the arrangement a world names picks the function. `rows` is `realLayout` and nothing else (T167: byte-identical). */
 export function layoutFor(arrangement: Arrangement, model: RealModel, view: { w: number; h: number }, meta: RealMeta, signs?: Record<string, { name: string; path: string; counts: number }>): Layout {
-  return arrangement === 'aisles' ? aislesLayout(model, view, meta, signs) : realLayout(model, view, meta, signs);
+  return arrangement === 'aisles' ? aislesLayout(model, view, meta, signs) : arrangement === 'circle' ? circleLayout(model, view, meta, signs) : realLayout(model, view, meta, signs);
 }
 
 /** T205: keyboard order is the seat order, row by row (FR-229), then the lounge's seats (spec 097 FR-249); `FACE_U` is kept in scope for the tests that compare the two arrangements */

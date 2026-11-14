@@ -69,6 +69,8 @@ export interface Layout {
   helpRows?: number;
   /** spec 097 FR-246..FR-248: the lounge row (its box and its seats), when an agent sits there */
   lounge?: { box: Rect; desks: DeskBox[] };
+  /** `circle` only (spec 102 FR-227): the box of the `focus` picture, in the middle of the ring; no desk or sign lies on it */
+  focus?: Rect;
 }
 
 /* FR-010 constants (b2.js) */
@@ -657,6 +659,8 @@ export function assignPeople(map: Record<string, string>, sessions: readonly { i
 
 /** the lobby band (fixtures and their visitors), for arrangements other than `rows` (spec 102 FR-256: the arcade hall keeps today's band) */
 export { roLobby as lobbyBand };
+/** the row geometry and one desk, for `circle` (spec 102 FR-227: a ring of the same desks as `rows`, so a desk is the same picture in both) */
+export { roRowGeom as rowGeom, roStation as deskStation };
 
 /** Spec 097 FR-110, FR-121: where a slip, a bubble or a pill goes. The first free spot nearest `anchor` inside `bounds` that touches nothing in `avoid`
  *  (a plate, a sign, a chair label, a chip), or null when there is none. Pure; a 10 px grid keeps it cheap (a few hundred thousand comparisons at most). */
