@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Worker } from 'worker_threads';
-import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, maskNoteText, maskOutgoing, maskSplitTokens, _breakCallsForTest, redact, shQuote, splitCommand } from '../src/shared/redact';
+import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, maskNoteText, maskOutgoing, maskSplitTokens, _breakCallsForTest, keepShownBy, _unionMasksForTest, withoutSplit, redact, shQuote, splitCommand } from '../src/shared/redact';
 
 import { assertLinearShape, cpuMs } from './redact-growth-lib';
 import './safetext-shared'; // the desk's maskRaw (src/renderer/safetext.js) reads the compiled redact.ts, for the FR-181 differential below
@@ -2023,6 +2023,30 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     assert.strictEqual(red(GH + '\u200bAPI_KEY=' + PW), '[redacted]\u200bAPI_KEY=[redacted]', '#1613 round 4: an all-capitals name after a whole token stays a name');
     assert.strictEqual(red('ghp_' + B.slice(0, 18) + '\u200b' + B.slice(18, 36) + '<br>mysql -p' + PW), '[redacted]<br>mysql -p[redacted]', '#1613 round 4: a keyword after a split token stays a keyword');
   }
+  // round 5 (fjcabello): keepShownBy compares whole words, whatever they are made of; an all-capitals tail of 8 or more without a secret-name word is a tail
+  assert.strictEqual(keepShownBy('--password ab!cd#ef', '--password [redacted]'), '--password [redacted]', '#1613 round 5: keepShownBy masks a word of symbols the reference hides');
+  assert.strictEqual(keepShownBy('a [redacted]x9', 'a [redacted]'), 'a [redacted][redacted]', '#1613 round 5: keepShownBy masks a short rest glued to a mask');
+  assert.strictEqual(keepShownBy('see [redacted] more', 'see ghp_x more'), 'see [redacted] more', '#1613 round 5: keepShownBy keeps a word of masks only');
+  for (const t of ['token: AKIAABQ6<b></b>AGAQWSONVRMK', 'AKIAABQ6\u200bAGAQWSONVRMK here', 'see AKIAABQ6<!-- -->AGAQWSONVRMK'])
+    assert.ok(!red(t).includes('AGAQWSON'), `#1613 round 5: an all-capitals tail of 8 or more is hidden: ${JSON.stringify(red(t))}`);
+  assert.strictEqual(red(GH + '\u200bAWS_SECRET_ACCESS_KEY is set'), '[redacted]\u200bAWS_SECRET_ACCESS_KEY is set', '#1613 round 5: an all-capitals run holding a secret-name word stays a keyword');
+  // round 5 (Opus): the pieces of keepShownBy, the union, the reading as before, the review's repros
+  {
+    const PW2 = 'Ab3,Cd5#Ef7^Gh9';
+    assert.strictEqual(keepShownBy('PGPASSWORD=' + PW2 + ' psql', 'PGPASSWORD=[redacted] psql'), '[redacted] psql', '#1613 round 5: keepShownBy masks a piece the reference does not show whole (fail closed) and keeps the ones it shows');
+    assert.strictEqual(_unionMasksForTest('a b c', 'a [redacted] c', '[redacted] b c'), '[redacted] [redacted] c', '#1613 round 5: the union hides what either reading hides');
+    assert.strictEqual(_unionMasksForTest('a b c', '[redacted] b c', '[redacted] b c'), '[redacted] b c', '#1613 round 5: the union of one reading is that reading');
+    const split = GH.slice(0, 16) + '\u200b' + GH.slice(16);
+    assert.ok(withoutSplit(() => red(split)).includes(GH.slice(20, 28)), '#1613 round 5: withoutSplit reads as before PR 1721 (a split token shows)');
+    assert.ok(!red(split).includes(GH.slice(20, 28)), '#1613 round 5: outside withoutSplit the split token is hidden');
+    const cmd = maskSecretCommand('echo ghp_' + B.slice(0, 18) + '\u200b' + B.slice(18, 36) + '.`\u200bPGPASSWORD=' + PW2 + ' psql', {});
+    assert.ok(!cmd.includes(PW2) && !cmd.includes(B.slice(20, 28)), `#1613 round 5: a punctuated password after a split token in a command is hidden: ${JSON.stringify(cmd)}`);
+    const link = '[gh](https://h.example/' + 'a'.repeat(2100) + ')p_' + B.slice(0, 36);
+    for (const [surface, out] of [['maskRaw', ST.maskRaw(link, red)], ['excerpt', ST.excerpt(link, red)]] as const)
+      assert.ok(!out.includes(B.slice(8, 16)), `#1613 round 5: a token glued after a long link is hidden (${surface}): ${out.slice(-60)}`);
+    const bearer = red('Authorization: Bearer AKIAQVA\nFPZLDTBSLGUEC');
+    assert.ok(!bearer.includes('FPZLDTBS'), `#1613 round 5: an all-capitals tail after a header-hidden head is hidden: ${JSON.stringify(bearer)}`);
+  }
   // round 4, item 2: a token right after an entity without its ';' (the entity's digits take its start boundary as written)
   for (const t of ['password=&#8203' + GH, 'see &#x200B' + GH + ' here'])
     assert.ok(!red(t).includes(GH.slice(8, 16)) && !red(t).includes(GH.slice(30, 38)), `#1613 round 4: a token right after an entity without ; is hidden: ${JSON.stringify(red(t))}`);
@@ -2054,7 +2078,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   // item 7: other block tags read as a blank
   for (const t of ['<li>Token</li><li>' + GH.slice(0, 16) + '<wbr>' + GH.slice(16) + '</li>', '<h2>Token</h2><div>' + GH.slice(0, 16) + '<!-- -->' + GH.slice(16) + '</div>', '<tr><td>a</td></tr><tr><td>' + GH.slice(0, 16) + '\u200b' + GH.slice(16)])
     assert.ok(!red(t).includes(GH.slice(20, 28)), `#1613 round 3: li, h2, div and tr read as a blank: ${JSON.stringify(red(t))}`);
-  assert.strictEqual(ST.plainMarks('see [doc](https://h.example/a b) and [x](u(1))'), 'see [doc](https://h.example/a b) and [x](u(1))', '#1613 round 3: a link whose target holds a blank or a parenthesis keeps its marks (written down)');
+  assert.strictEqual(ST.plainMarks('see [doc](https://h.example/a b) and [x](u(1))'), 'see doc and x)', '#1613 round 5: plainMarks reads links as the old regex did (a blank in the target; the first ) ends it)');
   // round 2, item 5: the blanks and quote marks between the two pieces stay as written
   assert.strictEqual(red('x ' + GH.slice(0, 16) + '\n    ' + GH.slice(16) + ' y'), 'x [redacted]\n    [redacted] y', '#1613 round 2: the indentation between two pieces stays');
   assert.strictEqual(red('x ' + GH.slice(0, 16) + '\n> ' + GH.slice(16) + ' y'), 'x [redacted]\n> [redacted] y', '#1613 round 2: the quote mark between two pieces stays');

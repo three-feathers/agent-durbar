@@ -17,11 +17,17 @@
   'use strict';
   /* Markdown escapes undone before the first mask: `ghp\_...` must read as a token (the backslash would break the pattern) */
   const unesc=t=>String(t==null?'':t).replace(/\\([\\`*_{}\[\]()#+\-.!~|<>])/g,'$1');
+  /* Markdown links `[text](target)` (an image `![text](target)` too) become their text, exactly as `/!?\[([^\]]*)\]\([^)]*\)/g` replaces them, in one scan: from a `[`, the next
+     `]` must be followed by `(` and a later `)`; when it is not, no `[` before that `]` can start a link either, so the scan goes on after it; with no `)` left none can */
+  const stripLinks=t=>{let out='',from=0,i=t.indexOf('[');while(i>=0){const j=t.indexOf(']',i+1);if(j<0)break;if(t[j+1]!=='('){i=t.indexOf('[',j+1);continue;}
+    const k=t.indexOf(')',j+2);if(k<0)break;const st=i>0&&t[i-1]==='!'&&i-1>=from?i-1:i;out+=t.slice(from,st)+t.slice(i+1,j);from=k+1;i=t.indexOf('[',from);}
+    return from===0?t:out+t.slice(from);};
   /* Markdown to plain words but KEEPING `_`: code blocks (also one never closed), links, emphasis, headings and list marks (- * + >) go;
      whitespace collapses. `codeWord`: a code block leaves the word "code" (the desk line), otherwise a space (the live readout). */
-  const plainKeep=(t,codeWord)=>String(t==null?'':t).replace(/```[\s\S]*?(```|$)/g,codeWord?' code ':' ').replace(/!?\[([^\]]{0,256})\]\([^)]{0,2048}\)/g,'$1').replace(/^[#>\-*+\s]+/gm,'').replace(/[*`~]/g,'').replace(/\s+/g,' ').trim();
-  /* issue #1725 (review of PR 1721, round 3): the link's text and target are bounded (256 and 2,048 characters), so a reply of many `[` or `[x](` costs a bounded scan per
-     bracket, linear (unbounded classes rescanned to the end of the text from every `[`: quadratic, seconds per desk call on an 80k reply); a longer link keeps its marks */
+  const plainKeep=(t,codeWord)=>stripLinks(String(t==null?'':t).replace(/```[\s\S]*?(```|$)/g,codeWord?' code ':' ')).replace(/^[#>\-*+\s]+/gm,'').replace(/[*`~]/g,'').replace(/\s+/g,' ').trim();
+  /* issue #1725 (review of PR 1721, rounds 3 and 5): links are made plain by a scan (stripLinks), not by the regex `!?\[([^\]]*)\]\([^)]*\)` that rescanned to the end of the
+     text from every `[` (quadratic: seconds per desk call on an 80k reply); the same links as that regex, of any length (round 3 bounded them, and a long link kept its
+     marks where main removed them, so a token glued after it was no token: round 5) */
   /* ... and the plain words (also without `_`) */
   const plain=(t,codeWord)=>plainKeep(t,codeWord).replace(/_/g,'');
   const SPLIT=/[*`~\[\]]/; /* Markdown marks that can sit inside a token (emphasis, code, strike, link brackets) */
@@ -129,7 +135,7 @@
      the shared module (callers fail closed). The permission card reads a command with its blanks collapsed, so it asks this on the text as written. */
   const splitHides=t=>{if(!SH||typeof SH.maskSplitTokens!=='function')throw new Error('no maskSplitTokens');const s=String(t==null?'':t),r=SH.maskSplitTokens(s);if(typeof r!=='string')throw new Error('mask');return r!==s;};
   /* spec 097 FR-311 (review of PR 1721, round 2): a masked name made plain for a tooltip or an accessible name: a link becomes its text and the emphasis, code and
-     strike marks go (bounded classes: linear); unlike plainKeep, a leading #, -, + or > and the blanks stay as written (`#1613 split tokens` keeps its #) */
-  const plainMarks=t=>String(t==null?'':t).replace(/!?\[([^[\]]{0,256})\]\([^()\s]{0,2048}\)/g,'$1').replace(/[*`~]/g,'');
+     strike marks go (stripLinks: linear); unlike plainKeep, a leading #, -, + or > and the blanks stay as written (`#1613 split tokens` keeps its #) */
+  const plainMarks=t=>stripLinks(String(t==null?'':t)).replace(/[*`~]/g,'');
   return {create,plain,plainKeep,plainMarks,unesc,unhide,maskRaw,excerpt,maskLabel,useShared,splitHides};
 });

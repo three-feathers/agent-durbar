@@ -2219,7 +2219,8 @@ function breakSpans(s: string, mask: string, written: () => ReadonlyArray<[numbe
 const BODY_RUN = /^(?:[A-Za-z0-9_.-]+|[A-Za-z0-9+/_-]+={0,3})$/;
 /**
  * Whether a run after a piece, right after text the rules already hide as written (a whole token), is that token's rest (review of PR 1721, round 3, owner
- * decision: security over over-masking): a body run (`BODY_RUN`) with a digit, or with two capitals and a lower-case letter (round 4: all capitals is a keyword). A word, a keyword (`--password`, `mysql`, `token:`), a name and a
+ * decision: security over over-masking): a body run (`BODY_RUN`) with a digit, or with two capitals and a lower-case letter, or of 8 or more capitals without a
+ * secret-name word (round 5; round 4: a shorter all-capitals run, or one naming a secret, is a keyword). A word, a keyword (`--password`, `mysql`, `token:`), a name and a
  * value, a URL or a lower-case path stays, for its own rule to read; a git sha or a UUID after a token is taken (over-masking, written down in FR-182).
  */
 function tailRun(run: string): boolean {
@@ -2235,8 +2236,12 @@ function tailRun(run: string): boolean {
     if (c >= 65 && c <= 90) caps++;
     else if (c >= 97 && c <= 122) lower = true;
   }
-  return caps >= 2 && lower;
+  if (caps >= 2 && lower) return true;
+  // round 5: an all-capitals run of 8 or more (`AGAQWSONVRMK`, the rest of an `AKIA` key) is a tail unless it holds a secret-name word (`API_KEY`, `TOKEN`)
+  return caps >= 8 && run.length >= 8 && !SECRET_WORD.test(run);
 }
+/** A word that names a secret or its keyword, in capitals (`API_KEY`, `MYSQL_PWD`, `AWS_SECRET_ACCESS_KEY`): never a token's tail. */
+const SECRET_WORD = /TOKEN|KEY|SECRET|PASS|PWD|AUTH|API|CRED|SESSION|COOKIE|BEARER|MYSQL|LOGIN|PRIVATE|SIGN/;
 /** A character of a token's body (no `:`, `@`, `%` or `~`: what follows a tail there is something else, `:x-oauth-basic`). */
 const BODY_CHAR = /[A-Za-z0-9_.+/=-]/;
 /** A name and one `=`: an assignment, not a base64 tail. */
@@ -2377,21 +2382,25 @@ function maskSplitFirst(s: string): string {
   }
   return maskSplitSpans(s, split, near, MASK);
 }
-const SHOWN_MASK = /(\[redacted(?::[^\]\r\n]{1,128})?\])/;
 const SHOWN_MASKS = /\[redacted(?::[^\]\r\n]{1,128})?\]/g;
-const SHOWN_RUN = /[A-Za-z0-9_\-.+/=:@%]{4,}/g;
+/** A blank run or a mask: what the pieces of `keepShownBy` are cut at. */
+const PIECE_CUT = /(\s+|\[redacted(?::[^\]\r\n]{1,128})?\])/;
 /**
- * Spec 012 FR-182 (review of PR 1721, round 4: monotone by construction where the two readings cannot be placed on one text): `head` with every run of 4 or more
- * token characters it shows that `ref` does not show as a whole run masked. `head` and `ref` are two masked readings of one text in the same form (a command's
- * words, a desk line); `ref` is the reading as before PR 1721. So nothing `ref` hides can show in `head`; a run `head` cut differently is masked too (fail closed).
- * Linear: one set of `ref`'s runs.
+ * Spec 012 FR-182 (review of PR 1721, rounds 4 and 5: monotone by construction where the two readings cannot be placed on one text): `head` with every piece it
+ * shows (cut at blanks and at masks) that is not also a piece of `ref` replaced by a mask. `head` and `ref` are two masked readings of one text in the same form (a
+ * command's words, a desk line); `ref` is the reading as before PR 1721. So nothing `ref` hides can show in `head`, whatever characters it is made of
+ * (`PGPASSWORD=` stays when `ref` shows it, `Ab3,Cd5#Ef7^Gh9` after it goes when `ref` masks it, `[redacted]x9` loses `x9`); a piece the two readings cut differently is
+ * masked too (fail closed). Linear: one set of `ref`'s pieces.
  */
 export function keepShownBy(head: string, ref: string): string {
   if (head === ref) return head;
-  const shown = new Set<string>();
-  for (const m of ref.replace(SHOWN_MASKS, '\u0000').matchAll(SHOWN_RUN)) shown.add(m[0]);
-  return head.split(SHOWN_MASK).map((p, k) => (k % 2 ? p : p.replace(SHOWN_RUN, (r) => (shown.has(r) ? r : MASK)))).join('');
+  const pieces = new Set<string>();
+  const rs = ref.split(PIECE_CUT);
+  for (let k = 0; k < rs.length; k += 2) pieces.add(rs[k]);
+  return head.split(PIECE_CUT).map((p, k) => (k % 2 || p === '' || pieces.has(p) ? p : MASK)).join('');
 }
+/** Test only: the span-level union of two readings (`unionMasks`). */
+export const _unionMasksForTest = (s: string, first: string, written: string): string => unionMasks(s, first, written);
 /** Characters of `x` outside its masks. */
 const shownLength = (x: string): number => x.replace(/\[redacted(?::[^\]\r\n]{1,128})?\]/g, '').length;
 /**
