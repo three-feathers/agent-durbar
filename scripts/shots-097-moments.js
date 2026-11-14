@@ -464,6 +464,7 @@ module.exports = async (ctx) => {
           overlap:tags.flatMap((t,i)=>tags.slice(i+1).filter(o=>hit(R(t),R(o))).map(()=>'tag x tag').concat(others.filter(o=>hit(R(t),R(o))).map(o=>'tag x '+o.className))),
           cut:tags.filter(t=>{const b=t.querySelector('b');return !b||b.scrollWidth>b.clientWidth+0.5||!R(t).width}).map(t=>t.textContent.trim()), /* review of #1741: the ellipsis is on the <b>, not on the tag's box (that one never overflows) */
           signDots:[...document.querySelectorAll('#stage .ro-sign:not(.ro-stag)')].flatMap(g=>[...document.querySelectorAll('#stage .ro-dots')].filter(d=>hit(R(g),R(d))).map(()=>g.textContent.trim().slice(0,20))), /* issue #1759: no sign over a thinking person's dots */
+          signBtns:[...document.querySelectorAll('#stage .ro-sign:not(.ro-stag)')].flatMap(g=>[...g.querySelectorAll('.ro-sb')].filter(b=>{const r=R(b),q=R(g),e=document.elementFromPoint((r.left+r.right)/2,(r.top+r.bottom)/2);return !(r.width>0&&r.left>=q.left-1&&r.right<=q.right+1&&r.top>=q.top-1&&r.bottom<=q.bottom+1&&e&&(e===b||b.contains(e)))}).map(b=>(g.textContent.trim().slice(0,12))+' '+(b.dataset.newsess?'+':'...'))), /* review of #1746 round 3: a sign's + and folder-actions buttons are inside the sign and the topmost thing at their centre (not clipped) */
           lounge:document.querySelectorAll('#stage .ro-plate.lounge').length,rest:tags.some(t=>t.textContent.trim()==='Resting'),
           inWindow:tags.every(t=>{const r=R(t);return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight}),
           storeys:(lay.storeys||[]).length,scroll:st.dataset.fit==='scroll'||fl.scrollHeight>fl.clientHeight+1}})()`);
@@ -474,6 +475,7 @@ module.exports = async (ctx) => {
       assert.strictEqual(sto.small, 0, `${tag}: the storey tags are 10.5px or more`);
       assert.ok(sto.ratio >= 4.5, `${tag}: the storey tags read at 4.5:1: ${sto.ratio}`);
       assert.deepStrictEqual(sto.overlap, [], `${tag}: no storey tag covers a sign, a plate, thinking dots, a chip or another tag`);
+      assert.deepStrictEqual(sto.signBtns, [], `${tag}: every folder sign's + and folder-actions buttons are visible, inside the sign and not clipped`);
       assert.deepStrictEqual(sto.signDots, [], `${tag}: no folder sign covers a thinking person's dots (issue #1759)`);
       assert.ok(sto.inWindow, `${tag}: every storey tag is inside the window`);
       assert.strictEqual(sto.scroll, false, `${tag}: the All floors view does not scroll`);

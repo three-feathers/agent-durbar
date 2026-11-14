@@ -4,7 +4,7 @@ import * as assert from 'assert';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { realLayout, layoutOrFlat, sortDesks, storeyRuns, storeyTagW, STOREY_GAP, STOREY_U_LOSS, type RealFloor, type RealMeta, type RealModel, type RealAgent, type RealState, type Rect, type Layout, type DeskBox } from '../src/shared/realoffice-layout';
+import { realLayout, layoutOrFlat, signMin, sortDesks, storeyRuns, storeyTagW, STOREY_GAP, STOREY_U_LOSS, type RealFloor, type RealMeta, type RealModel, type RealAgent, type RealState, type Rect, type Layout, type DeskBox } from '../src/shared/realoffice-layout';
 import { screenFit } from '../src/shared/realoffice-layout';
 import { aisleStatus, aislesLayout, placeResting, layoutFor, aisleTabOrder, aisleFace, FACE_FLOOR, AISLE_SIGN_MIN_W, AISLE_PLATE_H, ARRANGEMENTS } from '../src/shared/realoffice-arrangements';
 
@@ -789,10 +789,12 @@ for (const world of ['photo', 'cave']) {
       assert.ok(!S.some((o) => o.slab && inter(o.slab, b.tag)), `${tag}: no rule runs over the tag of ${b.name}`);
       if (i) assert.ok(!L.zones.some((z) => inter(b.slab!, z.sign) || z.desks.some((d) => inter(b.slab!, d.plate))), `${tag}: the rule of ${b.name} covers no sign or plate`);
     }
+    /* review round 3: a sign is never cut below signMin (190 px with three counts: its + and folder-actions control would be clipped), unless its room is narrower and takes the short sign by itself */
+    for (const z of L.zones) assert.ok(z.sign.w >= Math.min(signMin(3), z.box.w - 8) - 0.5, `${tag}: the sign of ${z.id} is ${Math.round(z.sign.w)} px, not cut below signMin (${signMin(3)} px): its buttons stay inside it`);
     /* issue #1759 and review round 2: no sign covers a thinking person's dots (the sign moved for a tag stood over them) */
-    const gapFor = (z: Layout['zones'][number]): boolean => { /* is there a place of the sign's minimum width (120 px) in the zone's strip clear of every hand and dots? (then the sign must stand there) */
+    const gapFor = (z: Layout['zones'][number]): boolean => { /* is there a place of the sign's minimum width (signMin, 190 px with three counts) in the zone's strip clear of every hand and dots? (then the sign must stand there) */
       const ob = z.desks.flatMap((d) => [...(d.dots ? [[d.dots.x - 2, d.dots.x + 32]] : []), ...(d.person && needsYou(d) && d.person.y < z.sign.y + 20 ? [[d.person.x, d.person.x + d.person.w * 0.6]] : [])]), lo = z.box.x + 4, hi = z.box.x + z.box.w - 4;
-      return [lo, ...ob.map((o) => o[1] + 6)].some((px) => { const w = Math.min(hi - px, ...ob.filter((o) => o[0] > px).map((o) => o[0] - 2 - px)); return w >= 120 && !ob.some((o) => o[1] > px && o[0] < px + 120); });
+      return [lo, ...ob.map((o) => o[1] + 6)].some((px) => { const w = Math.min(hi - px, ...ob.filter((o) => o[0] > px).map((o) => o[0] - 2 - px)); const need = Math.min(signMin(3), z.sign.w); return w >= need && !ob.some((o) => o[1] > px && o[0] < px + need); });
     };
     for (const z of L.zones) for (const d of z.desks) if (d.dots && gapFor(z)) assert.ok(!inter(z.sign, { x: d.dots.x, y: d.dots.y, w: 30, h: 10 }), `${tag}: the sign of ${z.id} covers the thinking dots of ${d.id}`);
     /* review round 2: a floor's rule and tag stand at the floor's first folder in reading order: the upright rule before its first zone, no tag above it, no rule below the tag */
@@ -874,6 +876,13 @@ for (const world of ['photo', 'cave']) {
     }
     assert.ok(drawn > 300, `${world}: the fuzz draws floors in most halls (${drawn} of 600)`);
     console.log(`rows storeys (${world}): 600 random halls: ${drawn} draw floors, the others the hall without floors; no tag off the hall or over a sign, plate, desk, hand, dots or tag; reading order; no row added`); }
+  // the simulator's All floors split (3 floors: command-center 3, swisscontract-ai 4 | infra 1, mcp-swiss 3 with Mira thinking, blog 2, and two resting agents) at 1280x800: no sign is cut below signMin, none covers Mira's dots
+  { const m = fm([3, 4, 1, 3, 2], [2, 1, 0, 0, 0]);
+    m.folders[3].agents[2].state = 'thinking'; m.folders[4].agents.push({ id: 'r1', state: 'done', person: WP[11 % WP.length], away: null, lounge: true } as RealAgent, { id: 'r2', state: 'done', person: WP[12 % WP.length], away: null, lounge: true } as RealAgent);
+    const L = realLayout(m, { w: 1248, h: ROOM.h800 }, ON, sg(5)), z = L.zones.find((q) => q.id === 'f3')!;
+    assert.ok(z.sign.w >= signMin(3) - 0.5, `${world}: the mcp-swiss sign at 1280x800 is ${Math.round(z.sign.w)} px, not cut below signMin (${signMin(3)} px)`);
+    for (const q of L.zones) for (const d of q.desks) if (d.dots) assert.ok(!inter(q.sign, { x: d.dots.x, y: d.dots.y, w: 30, h: 10 }), `${world}: the sign of ${q.id} covers Mira's dots (${d.id})`);
+    cases++; }
   // 1 to 9 floors (the app allows more): realLayout never throws and the layout is valid (every folder drawn, finite boxes, tags inside the hall); more than four floors cannot stand on rows of their own, the hall is the flat one
   { let seed = world === 'photo' ? 31 : 37; const rnd = (): number => { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296; };
     const FL9: RealFloor[] = Array.from({ length: 9 }, (_, i) => ({ id: 'x' + i, name: 'Floor ' + (i + 1), n: i + 1 }));
