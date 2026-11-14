@@ -60,9 +60,19 @@ function features(rgba, w, h) {
 }
 
 const hamming = (a, b) => { let n = 0; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) n++; return n; };
+const swapLD = (dh) => dh.replace(/[12]/g, (c) => (c === '1' ? '2' : '1'));
+/** The picture flipped left to right: each row of the difference hash reversed with lighter and darker swapped (a pair now reads the other way round), each row of the mask reversed. */
+const mirrorDh = (dh) => { let o = ''; for (let y = 0; y < DH_H; y++) o += swapLD(dh.slice(y * (DH_W - 1), (y + 1) * (DH_W - 1))).split('').reverse().join(''); return o; };
+const mirrorMask = (m) => { let o = ''; for (let y = 0; y < MASK_N; y++) o += m.slice(y * MASK_N, (y + 1) * MASK_N).split('').reverse().join(''); return o; };
 /** Difference-hash distance; the light and dark swapped counts too, so an inverted copy is still near. */
-const dhDistance = (a, b) => Math.min(hamming(a.dh, b.dh), hamming(a.dh, b.dh.replace(/[12]/g, (c) => (c === '1' ? '2' : '1'))));
+const dhDistance = (a, b) => Math.min(hamming(a.dh, b.dh), hamming(a.dh, swapLD(b.dh)));
 const maskDistance = (a, b) => hamming(a.mask, b.mask);
+/** The nearer of the picture and its left-right mirror: { dh, mask, mirrored }. A mirrored copy is as much a copy as a recoloured one. */
+function distances(a, b) {
+  const plain = { dh: dhDistance(a, b), mask: maskDistance(a, b), mirrored: false };
+  const m = { dh: Math.min(hamming(a.dh, mirrorDh(b.dh)), hamming(a.dh, swapLD(mirrorDh(b.dh)))), mask: hamming(a.mask, mirrorMask(b.mask)), mirrored: true };
+  return m.dh + m.mask / 4 < plain.dh + plain.mask / 4 ? m : plain;
+}
 function deltaE(a, b) {
   const p = lab(...a.avg), q = lab(...b.avg);
   return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
@@ -83,8 +93,8 @@ function comparePair(A, B, limits = LIMITS) {
   for (const [na, fa] of Object.entries(A.fixtures)) for (const [nb, fb] of Object.entries(B.fixtures)) {
     if (fa.sha && fa.sha === fb.sha) { out.push({ kind: 'copy', msg: `${A.id}/${na} and ${B.id}/${nb} are the same file (sha256 ${fa.sha.slice(0, 12)})` }); seen.add(na + '|' + nb); continue; }
     if (!fa.f || !fb.f || fa.f.flat || fb.f.flat || seen.has(na + '|' + nb)) continue;
-    const dd = dhDistance(fa.f, fb.f), md = maskDistance(fa.f, fb.f);
-    if (dd <= limits.dhash && md <= limits.mask) out.push({ kind: 'near', msg: `${A.id}/${na} and ${B.id}/${nb} look the same (difference hash ${dd}/64 apart, silhouette ${md}/256 apart): a recoloured or re-encoded copy` });
+    const { dh: dd, mask: md, mirrored } = distances(fa.f, fb.f);
+    if (dd <= limits.dhash && md <= limits.mask) out.push({ kind: 'near', msg: `${A.id}/${na} and ${B.id}/${nb} look the same (difference hash ${dd}/64 apart, silhouette ${md}/256 apart${mirrored ? ', mirrored' : ''}): a recoloured, re-encoded or mirrored copy` });
   }
   for (const role of Object.keys(COLOUR_ROLES)) {
     const a = A.colours[role], b = B.colours[role];
@@ -94,6 +104,12 @@ function comparePair(A, B, limits = LIMITS) {
   }
   return out;
 }
+
+/** Rejects with a message naming the step when `p` has not settled in `ms` (the Electron check's watchdog). */
+const within = (p, ms, label) => new Promise((resolve, reject) => {
+  const t = setTimeout(() => reject(new Error(`check-world-distinct: "${label}" did not finish in ${ms / 1000} s`)), ms);
+  Promise.resolve(p).then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
+});
 
 /** Every pair of the worlds, sorted by id. */
 function compareAll(worlds, limits = LIMITS) {
@@ -110,4 +126,4 @@ function worldFromBytes(id, files) {
   return { id, fixtures, colours: {} };
 }
 
-module.exports = { LIMITS, MASK_N, DH_CELLS, sha256, features, cells, lab, hamming, dhDistance, maskDistance, deltaE, comparePair, compareAll, worldFromBytes, isFixtureFile, COLOUR_ROLES };
+module.exports = { within, LIMITS, MASK_N, DH_CELLS, sha256, features, cells, lab, hamming, dhDistance, maskDistance, distances, mirrorDh, mirrorMask, deltaE, comparePair, compareAll, worldFromBytes, isFixtureFile, COLOUR_ROLES };

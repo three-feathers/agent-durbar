@@ -31,13 +31,17 @@ const PAGE = `window.__dec = async (url) => {
   return { w: c.width, h: c.height, b64: btoa(s) };
 }; true;`;
 
+/* A step that does not settle in `ms` fails the run, naming the step (a corrupt picture can hang a decode). The run takes about 1 s: 30 s a decode and 60 s in all are about 50 times that. */
+const STEP_MS = 30000, RUN_MS = 60000;
+const within = D.within;
+
 async function main(app, BrowserWindow) {
-  await app.whenReady();
+  await within(app.whenReady(), STEP_MS, 'Electron start');
   const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true, backgroundThrottling: false } });
-  await win.loadURL('data:text/html;charset=utf-8,<title>decode</title>');
-  await win.webContents.executeJavaScript(PAGE);
-  const decode = async (buf) => {
-    const r = await win.webContents.executeJavaScript('window.__dec(' + JSON.stringify('data:image/webp;base64,' + buf.toString('base64')) + ')');
+  await within(win.loadURL('data:text/html;charset=utf-8,<title>decode</title>'), STEP_MS, 'load the decode page');
+  await within(win.webContents.executeJavaScript(PAGE), STEP_MS, 'install the decoder');
+  const decode = async (buf, label) => {
+    const r = await within(win.webContents.executeJavaScript('window.__dec(' + JSON.stringify('data:image/webp;base64,' + buf.toString('base64')) + ')'), STEP_MS, 'decode ' + label);
     return { w: r.w, h: r.h, rgba: Buffer.from(r.b64, 'base64') };
   };
   const worlds = [];
@@ -51,7 +55,7 @@ async function main(app, BrowserWindow) {
       const wantFixture = D.isFixtureFile(name);
       const role = Object.keys(D.COLOUR_ROLES).find((r) => D.COLOUR_ROLES[r].test(name));
       if (!wantFixture && !role) continue;
-      const px = await decode(buf);
+      const px = await decode(buf, `${id}/${name}`);
       const f = D.features(px.rgba, px.w, px.h);
       if (wantFixture) w.fixtures[name] = { sha: D.sha256(buf), f };
       if (role) w.colours[role] = { name, f };
@@ -66,12 +70,12 @@ async function main(app, BrowserWindow) {
       let best = null;
       for (const [na, fa] of Object.entries(A.fixtures)) for (const [nb, fb] of Object.entries(B.fixtures)) {
         if (fa.f.flat || fb.f.flat) continue;
-        const dd = D.dhDistance(fa.f, fb.f), md = D.maskDistance(fa.f, fb.f);
+        const { dh: dd, mask: md } = D.distances(fa.f, fb.f);
         if (!best || dd + md / 4 < best.dd + best.md / 4) best = { na, nb, dd, md };
       }
-      const same = (x, y) => (x.f.dh === y.f.dh ? 0 : D.dhDistance(x.f, y.f));
+      const same = (x, y) => D.distances(x.f, y.f).dh;
       let rowSame = '';
-      for (const [na, fa] of Object.entries(A.fixtures)) if (B.fixtures[na] && !fa.f.flat && !B.fixtures[na].f.flat) rowSame += ` ${na}:${same(fa, B.fixtures[na])}/${D.maskDistance(fa.f, B.fixtures[na].f)}`;
+      for (const [na, fa] of Object.entries(A.fixtures)) if (B.fixtures[na] && !fa.f.flat && !B.fixtures[na].f.flat) rowSame += ` ${na}:${same(fa, B.fixtures[na])}/${D.distances(fa.f, B.fixtures[na].f).mask}`;
       const col = Object.keys(D.COLOUR_ROLES).filter((r) => A.colours[r] && B.colours[r]).map((r) => `${r} dE ${D.deltaE(A.colours[r].f, B.colours[r].f).toFixed(1)}`).join(', ');
       console.log(`${A.id} vs ${B.id}: nearest fixture pair ${best ? `${best.na} / ${best.nb} dh ${best.dd}/64 mask ${best.md}/256` : 'none'}; same-name dh/mask:${rowSame || ' none'}; ${col || 'no colour roles shared'}`);
     }
@@ -96,4 +100,6 @@ if (!process.versions.electron) {
   process.exit(2);
 }
 const { app, BrowserWindow } = require('electron');
-main(app, BrowserWindow).then((code) => { app.exit(code); }, (e) => { console.error(e && e.stack || e); app.exit(1); });
+/* Electron's SUID sandbox helper aborts on Linux (CI, containers) unless it is off; world-matrix.js passes the same switch. This window loads only a data: page. */
+if (process.platform === 'linux') app.commandLine.appendSwitch('no-sandbox');
+within(main(app, BrowserWindow), RUN_MS, 'the whole run').then((code) => { app.exit(code); }, (e) => { console.error(e && e.stack || e); app.exit(1); });
