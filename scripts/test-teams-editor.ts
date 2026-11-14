@@ -16,6 +16,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import * as vm from 'vm';
 import { spawnSync } from 'child_process';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { JSDOM } = require('jsdom') as { JSDOM: new (html: string, o?: unknown) => { window: any } }; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -189,7 +190,9 @@ const choose = (w: any, el: any, v: string): void => { el.value = v; el.dispatch
 const click = (el: any): void => el.click();
 const saveBtn = (doc: any): any => qa(doc, '#modeDlg .dbtn button').find((b) => b.textContent === 'Save template');
 const cancelBtn = (doc: any): any => qa(doc, '#modeDlg .dbtn button').find((b) => b.textContent === 'Cancel');
-const discard = async (doc: any): Promise<void> => { await tick(10); eq(q(doc, '#modeDlg h3').textContent, 'Discard changes?', 'Cancel with changes asks'); click(qa(doc, '#modeDlg .dbtn button').find((b) => b.textContent === 'Discard')); await tick(10); };
+const closedClean = async (doc: any, s: { result: Promise<any> }): Promise<void> => { click(cancelBtn(doc)); eq(await Promise.race([s.result, tick(150).then(() => 'still waiting')]), false, 'Cancel with nothing changed closes at once'); }; // a clean editor never asks
+const title = (doc: any): string => { const h = q(doc, '#modeDlg h3'); return h ? h.textContent : '(no dialog open)'; }; // a missing dialog is a failed check with words, not a TypeError
+const discard = async (doc: any): Promise<void> => { await tick(10); eq(title(doc), 'Discard changes?', 'Cancel with unsaved changes asks "Discard changes?"'); const dbtn = qa(doc, '#modeDlg .dbtn button').find((b) => b.textContent === 'Discard'); ok(dbtn, 'the question has a Discard button'); click(dbtn); await tick(10); };
 const fill = (w: any, doc: any, fs: any, name: string, role: string): void => { typeIn(w, q(fs, 'input[id$="-name"]'), name); typeIn(w, q(fs, 'input[id$="-role"]'), role); void doc; };
 
 let finished = false; // a dialog that never closes drains the event loop and would end the process with 0: say so
@@ -205,6 +208,7 @@ process.on('exit', (c) => { if (!finished && c === 0) { console.error('teams-edi
     eq(doc.activeElement.id.endsWith('tname'), true, 'the focus starts on the template name');
     click(saveBtn(doc)); await tick(5);
     eq(s.calls.put.length, 0, 'nothing was sent');
+    ok(q(doc, '#modeDlg .tm-ed'), 'Save with errors keeps the editor open (confirm() false)');
     const nameInput = q(doc, 'fieldset input[id$="-name"]');
     const desc = (nameInput.getAttribute('aria-describedby') || '').split(' ').map((i: string) => doc.getElementById(i)).filter(Boolean);
     ok(desc.some((e: any) => e.textContent === 'Give the member a name (1 to 60 characters).' && !e.hidden), 'the member name is linked (aria-describedby) to its error');
@@ -309,7 +313,7 @@ process.on('exit', (c) => { if (!finished && c === 0) { console.error('teams-edi
   ] as [string, any, boolean][]) {
     const s = await session((env) => env.E2.open({ mode: 'edit', template: t }, env));
     eq(!!q(s.doc, 'button[data-act="mark"]'), shown, 'Mark as mine for ' + label + ': ' + (shown ? 'offered' : 'not offered'));
-    click(cancelBtn(s.doc)); await s.result;
+    await closedClean(s.doc, s);
   }
 
   // a save that throws (the bridge rejects) is told in words, the dialog stays and what was typed is kept
@@ -346,20 +350,20 @@ process.on('exit', (c) => { if (!finished && c === 0) { console.error('teams-edi
     const esc = (): void => { doc.activeElement.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); };
     esc(); await tick(10);
     ok(!q(doc, '#modeDlg'), 'Esc with no change closes at once');
-    eq(await s.result, false, 'and saves nothing');
+    eq(await Promise.race([s.result, tick(100).then(() => 'still waiting')]), false, 'Esc with no change saves nothing and the editor is done');
     eq(s.calls.ask, ['New team template'], 'without a question');
     const s2 = await session((env) => env.E2.open({ mode: 'new' }, env));
     const d2 = s2.doc; const e2 = (): void => { d2.activeElement.dispatchEvent(new s2.w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); };
     typeIn(s2.w, q(d2, '#tmEd-tname'), 'Keep me'); typeIn(s2.w, q(d2, 'fieldset input[id$="-name"]'), 'Ana');
     e2(); await tick(10);
-    eq(q(d2, '#modeDlg h3').textContent, 'Discard changes?', 'Esc with changes asks');
-    eq(d2.activeElement.textContent, 'Cancel', 'Cancel has the focus');
+    eq(title(d2), 'Discard changes?', 'Esc with unsaved changes asks "Discard changes?"');
+    eq(d2.activeElement.textContent, 'Cancel', 'the question starts with Cancel focused');
     eq(q(d2, '#modeDlg .tm-ed'), null, 'the question is the only dialog');
     e2(); await tick(10);  // Esc on the question: Cancel, the editor comes back as it was
     eq(q(d2, '#tmEd-tname').value, 'Keep me', 'Cancel: the template name is kept');
     eq(q(d2, 'fieldset input[id$="-name"]').value, 'Ana', 'and the member');
     click(cancelBtn(d2)); await tick(10);
-    eq(q(d2, '#modeDlg h3').textContent, 'Discard changes?', 'the Cancel button of the editor asks too');
+    eq(title(d2), 'Discard changes?', 'the Cancel button of the editor with unsaved changes asks "Discard changes?"');
     click(qa(d2, '#modeDlg .dbtn button').find((b) => b.textContent === 'Discard')); await tick(10);
     ok(!q(d2, '#modeDlg'), 'Discard closes');
     eq(await s2.result, false, 'nothing saved');
@@ -375,7 +379,7 @@ process.on('exit', (c) => { if (!finished && c === 0) { console.error('teams-edi
     eq(qa(doc, '#modeDlg img').length, 0, 'no element came from a value');
     eq(q(doc, 'fieldset legend').textContent, 'Member 1 of 1: ' + hostile, 'the legend shows it literally');
     eq(typeof (globalThis as any).__x, 'undefined', 'nothing ran');
-    click(cancelBtn(doc)); await s.result;
+    await closedClean(doc, s);
   }
 
   // the dialog's own `custom.confirm`
@@ -386,7 +390,7 @@ process.on('exit', (c) => { if (!finished && c === 0) { console.error('teams-edi
     const go = () => qa(doc, '#modeDlg .dbtn button').find((b) => b.textContent === 'Go');
     go().click(); await tick(); ok(q(doc, '#modeDlg'), 'confirm() false keeps the dialog open');
     go().click(); await tick(); ok(q(doc, '#modeDlg') && go().disabled, 'a pending promise keeps it open, button disabled');
-    gate(false); await tick(5); ok(q(doc, '#modeDlg') && !go().disabled, 'a promise of false keeps it open, button back');
+    gate(false); await tick(5); const back = go(); ok(!!q(doc, '#modeDlg') && !!back && !back.disabled, 'a promise of false keeps it open, button back');
     n = 1; go().click(); await tick(); gate(true); await tick(5);
     eq(((await p) as any).value, 'go', 'a promise of true closes with the value'); ok(!q(doc, '#modeDlg'), 'closed');
   }
@@ -412,7 +416,15 @@ process.on('exit', (c) => { if (!finished && c === 0) { console.error('teams-edi
     esc(); await tick(10); ok(q(doc, '#modeDlg'), 'a rejected dismiss() keeps it open');
     answer = () => Promise.resolve(false); esc(); await tick(10); ok(q(doc, '#modeDlg'), 'a promise of false keeps it open');
     answer = () => false; click(cancelBtn(doc)); await tick(5); ok(q(doc, '#modeDlg'), 'false keeps it open for the Cancel button too');
-    answer = () => true; esc(); await tick(5); eq(await p, null, 'true closes with null'); ok(!q(doc, '#modeDlg'), 'closed');
+    answer = () => false; doc.getElementById('modeDlg').click(); await tick(5); ok(q(doc, '#modeDlg'), 'a click on the backdrop asks dismiss(): false keeps it open');
+    answer = () => Promise.resolve(false); doc.getElementById('modeDlg').click(); await tick(10); ok(q(doc, '#modeDlg'), 'a click on the backdrop: a promise of false keeps it open');
+    answer = () => true; doc.getElementById('modeDlg').click(); await tick(5); eq(await p, null, 'a click on the backdrop closes when dismiss() says true'); ok(!q(doc, '#modeDlg'), 'backdrop: closed');
+  }
+  {
+    const w = page(); const doc = w.document; const ask = createDialog(doc);
+    const p = ask({ title: 'T', body: 'B', custom: { node: doc.createElement('div'), value: () => null, valid: () => true, dismiss: () => true }, buttons: [{ label: 'Cancel', value: null }, { label: 'Go', value: 'go', cls: 'primary' }] });
+    const esc = (): void => { doc.activeElement.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); };
+    esc(); await tick(5); eq(await p, null, 'true closes with null (Escape)'); ok(!q(doc, '#modeDlg'), 'closed');
   }
   // a dialog with no custom.dismiss and no custom.confirm behaves as before (Esc and Cancel close with null, the primary button with its value), with or without `custom`
   for (const withCustom of [false, true]) {
@@ -444,31 +456,32 @@ process.on('exit', (c) => { if (!finished && c === 0) { console.error('teams-edi
   // ---------------------------------------------------------------- 6. mutants, on copies
   if (!process.env.TEAMS_EDITOR_SRC) {
     const files = ['teameditor.js', 'memberrows.js', 'modelswitch.js', 'teams.js', 'dialog.js'];
-    const mutants: { name: string; file: string; from: string; to: string }[] = [
-      { name: 'the limit is kept when the app changes', file: 'teameditor.js', from: "m.app=String(app||'');m.capText='';m.capUnit='';", to: "m.app=String(app||'');m.capUnit='';" },
-      { name: 'Mark as mine without the question', file: 'teameditor.js', from: 'const ans=await env.askDialog(', to: "const ans={value:'mark'};const unused=(" },
-      { name: 'Mark as mine on any answer', file: 'teameditor.js', from: "if(!ans||ans.value!=='mark')return false;", to: '' },
-      { name: 'no limit of 8 (canAdd)', file: 'teameditor.js', from: 'const canAdd=d=>d.members.length<MAX_MEMBERS;', to: 'const canAdd=d=>true;' },
-      { name: 'no limit of 8 (addMember)', file: 'teameditor.js', from: 'if(!canAdd(d))return null;', to: '' },
-      { name: 'the Add member button stays enabled', file: 'teameditor.js', from: 'addBtn.disabled=!can;', to: 'addBtn.disabled=false;' },
-      { name: 'innerHTML with the name', file: 'teameditor.js', from: 'v.legend.textContent=legendText(', to: 'v.legend.innerHTML=legendText(' },
-      { name: 'aria-describedby dropped', file: 'teameditor.js', from: "if(ids2.length)f.control.setAttribute('aria-describedby',ids2.join(' '));", to: '' },
-      { name: 'briefFrom sent to main', file: 'teameditor.js', from: "if(m.memberId!=='')o.memberId=m.memberId;", to: "if(m.memberId!=='')o.memberId=m.memberId;if(m.briefFrom)o.briefFrom=m.briefFrom;" },
-      { name: 'Esc with changes closes without asking', file: 'teameditor.js', from: 'dismiss:()=>{if(busyNow()||!isDirty(draft,baseline))return true;', to: 'dismiss:()=>{if(true)return true;' },
-      { name: 'the section shown in the real app', file: 'teams.js', from: 'function shown(){return !!(X&&X.sim);}', to: 'function shown(){return !!X;}' },
-      { name: 'Esc with no changes asks too', file: 'teameditor.js', from: 'dismiss:()=>{if(busyNow()||!isDirty(draft,baseline))return true;', to: 'dismiss:()=>{if(busyNow())return true;' },
-      { name: 'Mark as mine without a memberId', file: 'teameditor.js', from: "if(m.briefFrom==='file'&&m.memberId&&d.id){", to: "if(m.briefFrom==='file'&&d.id){" },
-      { name: 'Mark as mine without a template id', file: 'teameditor.js', from: "if(m.briefFrom==='file'&&m.memberId&&d.id){", to: "if(m.briefFrom==='file'&&m.memberId){" },
-      { name: 'the status words are not painted', file: 'teameditor.js', from: "v.status.textContent=stateWords(m,st).join(' · ');", to: "v.status.textContent='';" },
-      { name: 'the app select has no state words', file: 'teameditor.js', from: "(k.shortName||k.name||k.id)+' ('+(k.stateText||'ready')+')'", to: '(k.shortName||k.name||k.id)' },
-      { name: 'dialog: dismiss() is never asked (Esc, Cancel, backdrop)', file: 'dialog.js', from: 'const r=custom.dismiss();', to: 'const r=true;' },
-      { name: 'dialog: Escape bypasses dismiss()', file: 'dialog.js', from: 'e.stopPropagation();dismiss();return;}', to: 'e.stopPropagation();done(null);return;}' },
-      { name: 'dialog: the Cancel button bypasses dismiss()', file: 'dialog.js', from: "if(b.value===null&&custom&&typeof custom.dismiss==='function'){dismiss();return;}", to: '' },
-      { name: 'dialog: confirm() false does not keep it open', file: 'dialog.js', from: "          if(r===false)return;\n        }\n        fin();", to: '        }\n        fin();' },
-      { name: 'dialog: a promise of false from confirm() closes', file: 'dialog.js', from: 'el.disabled=false;if(ok!==false)fin();', to: 'el.disabled=false;fin();' },
-      { name: 'dialog: a rejected confirm() closes', file: 'dialog.js', from: '()=>{el.disabled=false;});return;}', to: '()=>{el.disabled=false;fin();});return;}' },
-      { name: 'dialog: a rejected dismiss() closes', file: 'dialog.js', from: 'r.then(ok=>{if(ok!==false)done(null);},()=>undefined);', to: 'r.then(ok=>{if(ok!==false)done(null);},()=>done(null));' },
-      { name: 'the own brief limit for a brief from a file', file: 'teameditor.js', from: 'const briefLimits=fromFile=>fromFile?BRIEF_FILE:BRIEF_OWN;', to: 'const briefLimits=fromFile=>BRIEF_OWN;' },
+    const mutants: { name: string; file: string; from: string; to: string; label?: string }[] = [
+      { name: 'the limit is kept when the app changes', file: 'teameditor.js', from: "m.app=String(app||'');m.capText='';m.capUnit='';", to: "m.app=String(app||'');m.capUnit='';", label: 'changing the app clears the limit' },
+      { name: 'Mark as mine without the question', file: 'teameditor.js', from: "const ans=await env.askDialog({title:'Mark this brief as yours?'", to: "const ans={value:'mark'};const unused=({title:'Mark this brief as yours?'", label: 'the question is asked first' },
+      { name: 'Mark as mine on any answer', file: 'teameditor.js', from: "if(!ans||ans.value!=='mark')return false;", to: '', label: 'Keep: still nothing marked' },
+      { name: 'no limit of 8 (canAdd)', file: 'teameditor.js', from: 'const canAdd=d=>d.members.length<MAX_MEMBERS;', to: 'const canAdd=d=>true;', label: 'the 9th cannot be added' },
+      { name: 'no limit of 8 (addMember)', file: 'teameditor.js', from: 'if(!canAdd(d))return null;', to: '', label: 'addMember refuses a 9th' },
+      { name: 'the Add member button stays enabled', file: 'teameditor.js', from: 'addBtn.disabled=!can;', to: 'addBtn.disabled=false;', label: 'Add member is disabled at 8' },
+      { name: 'innerHTML with the name', file: 'teameditor.js', from: 'v.legend.textContent=legendText(', to: 'v.legend.innerHTML=legendText(', label: 'no element came from a value' },
+      { name: 'aria-describedby dropped', file: 'teameditor.js', from: "if(ids2.length)f.control.setAttribute('aria-describedby',ids2.join(' '));else f.control.removeAttribute('aria-describedby');", to: "f.control.removeAttribute('aria-describedby');", label: 'is linked (aria-describedby) to its error' },
+      { name: 'briefFrom sent to main', file: 'teameditor.js', from: "if(m.memberId!=='')o.memberId=m.memberId;", to: "if(m.memberId!=='')o.memberId=m.memberId;if(m.briefFrom)o.briefFrom=m.briefFrom;", label: 'briefFrom is never sent' },
+      { name: 'Esc with changes closes without asking', file: 'teameditor.js', from: 'dismiss:()=>{if(busyNow()||!isDirty(draft,baseline))return true;', to: 'dismiss:()=>{if(true)return true;', label: 'Cancel with unsaved changes asks' },
+      { name: 'the section shown in the real app', file: 'teams.js', from: 'function shown(){return !!(X&&X.sim);}', to: 'function shown(){return !!X;}', label: 'does not show the section in the app' },
+      { name: 'the editor asks even when nothing changed', file: 'teameditor.js', from: 'dismiss:()=>{if(busyNow()||!isDirty(draft,baseline))return true;', to: 'dismiss:()=>{if(busyNow())return true;', label: 'Cancel with nothing changed closes at once' },
+      { name: 'Mark as mine without a memberId', file: 'teameditor.js', from: "if(m.briefFrom==='file'&&m.memberId&&d.id){", to: "if(m.briefFrom==='file'&&d.id){", label: 'a file brief without a memberId: not offered' },
+      { name: 'Mark as mine without a template id', file: 'teameditor.js', from: "if(m.briefFrom==='file'&&m.memberId&&d.id){", to: "if(m.briefFrom==='file'&&m.memberId){", label: 'template without an id: not offered' },
+      { name: 'the status words are not painted', file: 'teameditor.js', from: "v.status.textContent=stateWords(m,st).join(' · ');", to: "v.status.textContent='';", label: 'says so in the member\'s description' },
+      { name: 'the app select has no state words', file: 'teameditor.js', from: "(k.shortName||k.name||k.id)+' ('+(k.stateText||'ready')+')'", to: '(k.shortName||k.name||k.id)', label: 'says each app\'s state in words' },
+      { name: 'dialog: dismiss() is never asked (Esc, Cancel, backdrop)', file: 'dialog.js', from: 'const r=custom.dismiss();', to: 'const r=true;', label: 'Cancel with unsaved changes asks' },
+      { name: 'dialog: Escape bypasses dismiss()', file: 'dialog.js', from: 'e.stopPropagation();dismiss();return;}', to: 'e.stopPropagation();done(null);return;}', label: 'Esc with unsaved changes asks' },
+      { name: 'dialog: the Cancel button bypasses dismiss()', file: 'dialog.js', from: "if(b.value===null&&custom&&typeof custom.dismiss==='function'){dismiss();return;}", to: '', label: 'Cancel with unsaved changes asks' },
+      { name: 'dialog: confirm() false does not keep it open', file: 'dialog.js', from: "          if(r===false)return;\n        }\n        fin();", to: '        }\n        fin();', label: 'confirm() false keeps the dialog open' },
+      { name: 'dialog: a promise of false from confirm() closes', file: 'dialog.js', from: 'el.disabled=false;if(ok!==false)fin();', to: 'el.disabled=false;fin();', label: 'Save with errors keeps the editor open' },
+      { name: 'dialog: a rejected confirm() closes', file: 'dialog.js', from: '()=>{el.disabled=false;});return;}', to: '()=>{el.disabled=false;fin();});return;}', label: 'a rejected confirm(): open' },
+      { name: 'dialog: a rejected dismiss() closes', file: 'dialog.js', from: 'r.then(ok=>{if(ok!==false)done(null);},()=>undefined);', to: 'r.then(ok=>{if(ok!==false)done(null);},()=>done(null));', label: 'a rejected dismiss() keeps it open' },
+      { name: 'dialog: a click on the backdrop bypasses dismiss()', file: 'dialog.js', from: 'DURBAR_PRESS.onBackdrop(d,dismiss);', to: 'DURBAR_PRESS.onBackdrop(d,()=>done(null));', label: 'a click on the backdrop asks dismiss()' },
+      { name: 'the own brief limit for a brief from a file', file: 'teameditor.js', from: 'const briefLimits=fromFile=>fromFile?BRIEF_FILE:BRIEF_OWN;', to: 'const briefLimits=fromFile=>BRIEF_OWN;', label: 'keeps its limit of 2,000' },
     ];
     let killed = 0;
     for (const m of mutants) {
@@ -477,9 +490,15 @@ process.on('exit', (c) => { if (!finished && c === 0) { console.error('teams-edi
         for (const f of files) fs.copyFileSync(path.join(ROOT, 'src', 'renderer', f), path.join(dir, f));
         const src = fs.readFileSync(path.join(dir, m.file), 'utf8');
         assert.ok(src.includes(m.from), 'mutant anchor not found: ' + m.name);
-        fs.writeFileSync(path.join(dir, m.file), src.split(m.from).join(m.to));
+        const mutated = src.split(m.from).join(m.to);
+        // a mutant that does not compile would "die" of the syntax error, whatever it was meant to break: refuse it
+        try { new vm.Script(mutated, { filename: m.file }); } catch (e) { assert.fail('mutant is not valid JavaScript (' + m.name + '): ' + (e as Error).message); }
+        fs.writeFileSync(path.join(dir, m.file), mutated);
         const r = spawnSync(process.execPath, [__filename], { env: Object.assign({}, process.env, { TEAMS_EDITOR_SRC: dir }), encoding: 'utf8', timeout: 60000 });
         assert.notStrictEqual(r.status, 0, 'mutant NOT killed: ' + m.name);
+        const first = (/AssertionError[^\n]*?: ([^\n]*)/.exec(r.stderr) || [])[1] || '(no assertion message: ' + (r.stderr.split('\n').find((l) => /Error/.test(l)) || 'silent exit') + ')';
+        if (process.env.TEAMS_EDITOR_LABELS) console.log(m.name + ' => ' + first);
+        assert.ok(!!process.env.TEAMS_EDITOR_LABELS || (m.label !== undefined && first.includes(m.label)), `mutant "${m.name}" must die at its own check "${m.label}", it died at: ${first}`);
         killed++;
       } finally { fs.rmSync(dir, { recursive: true, force: true }); }
     }

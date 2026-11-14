@@ -26,7 +26,7 @@ const fs = require('fs');
 const MUTANTS = {
   nostate: ["v.status.textContent=stateWords(m,st).join(' · ');", "v.status.textContent='';"],
   noappstate: ["(k.shortName||k.name||k.id)+' ('+(k.stateText||'ready')+')'", "(k.shortName||k.name||k.id)"],
-  nodescribe: ["if(ids2.length)f.control.setAttribute('aria-describedby',ids2.join(' '));", ''],
+  nodescribe: ["if(ids2.length)f.control.setAttribute('aria-describedby',ids2.join(' '));else f.control.removeAttribute('aria-describedby');", "f.control.removeAttribute('aria-describedby');"],
 };
 
 module.exports = async (ctx) => {
@@ -36,7 +36,10 @@ module.exports = async (ctx) => {
   if (MUT) {
     assert.ok(Object.prototype.hasOwnProperty.call(MUTANTS, MUT), `TEAMS_EDITOR_MUTANT=${MUT} is not one of ${Object.keys(MUTANTS).join('|')}`);
     assert.ok(good.includes(MUTANTS[MUT][0]), `TEAMS_EDITOR_MUTANT=${MUT}: the anchor is not in teameditor.js any more`);
-    fs.writeFileSync(file, good.split(MUTANTS[MUT][0]).join(MUTANTS[MUT][1]));
+    const mutated = good.split(MUTANTS[MUT][0]).join(MUTANTS[MUT][1]);
+    // a mutant that does not compile would die of its syntax error, whatever it was meant to break: refuse it before the run
+    try { new (require('vm').Script)(mutated, { filename: 'teameditor.js' }); } catch (e) { assert.fail(`TEAMS_EDITOR_MUTANT=${MUT} is not valid JavaScript: ${e.message}`); }
+    fs.writeFileSync(file, mutated);
     console.log('[111] TEAMS_EDITOR_MUTANT=' + MUT + ': teameditor.js rewritten for this run');
   }
   try { await body(ctx); } finally { if (MUT) fs.writeFileSync(file, good); }
