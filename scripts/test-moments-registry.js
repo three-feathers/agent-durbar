@@ -98,7 +98,7 @@ if (require.main === module) {
   assert.deepStrictEqual(check(inputs), [], 'the real registry passes');
   assert.strictEqual(RETRO_CELLS.length, 26);
   { const w = writtenPictures(driver);
-    for (const n of ['inbox', 'asleep', 'coffee', 'notes', 'jump-f1', 'jump-f2', 'cell-chat', 'cell-question', 'cell-answerbar', 'cell-preview', 'walk-desk', 'walk-place']) assert.ok(w.has(n), 'the picture ' + n + ' is read as written');
+    for (const n of ['inbox', 'asleep', 'coffee', 'notes', 'jump-f1', 'jump-f2', 'cell-chat', 'cell-question', 'cell-focus-answer', 'cell-focus-skip', 'cell-answerbar', 'cell-preview', 'walk-desk', 'walk-place']) assert.ok(w.has(n), 'the picture ' + n + ' is read as written');
     for (const n of ['15', 'inbox-', 'world', 'limitfocus', 'scope', 'w', 'h']) assert.ok(!w.has(n), `${n} is not a picture name`);
     assert.ok(writtenPictures(driver, true).has('15'), 'the old parse (every quoted word on a shot line) took the 15: the mutant is real'); }
   assert.strictEqual(Object.keys(reg.worlds).sort().join(), WORLDS.slice().sort().join(), 'the four worlds');
@@ -127,6 +127,7 @@ if (require.main === module) {
   fails('answer-bar built on a step removed from the driver (cells)', (i) => { i.driver = i.driver.replace("run('cells')", "run('cellz')"); }, /answer-bar: evidence step cells/);
   fails('walk built on a step removed from the driver (walk)', (i) => { i.driver = i.driver.replace("run('walk')", "run('walkx')"); }, /walk: evidence step walk/);
   fails('walk built on a picture the driver no longer writes', (i) => { i.driver = i.driver.replace("'walk-place'", "'walk-gone'"); }, /walk: evidence picture walk-place/);
+  fails('question-card built on a focus-ring picture the driver no longer writes', (i) => { i.driver = i.driver.replace("'cell-focus-skip'", "'cell-focus-gone'"); }, /question-card: evidence picture cell-focus-skip/);
   fails('answer-bar built on a picture the driver no longer writes', (i) => { i.driver = i.driver.replace("'cell-answerbar'", "'cell-gone'"); }, /answer-bar: evidence picture cell-answerbar/);
   fails('building-preview built with no evidence', (i) => { i.reg.moments.find((m) => m.id === 'building-preview').worlds.retro = 'built'; }, /building-preview is built and names no evidence/);
   fails('building-preview fallback-flat naming evidence', (i) => { i.reg.moments.find((m) => m.id === 'building-preview').evidence = { retro: { steps: ['cells'], pictures: ['cell-preview'] } }; }, /building-preview is fallback-flat but names evidence/);

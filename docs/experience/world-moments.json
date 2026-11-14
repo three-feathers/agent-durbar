@@ -625,7 +625,9 @@
             "cells"
           ],
           "pictures": [
-            "cell-question"
+            "cell-question",
+            "cell-focus-answer",
+            "cell-focus-skip"
           ]
         }
       }
