@@ -2,7 +2,7 @@
    in Node (tests) `require` gives the same factory. DurbarDialog(document) returns askDialog(opts).
    askDialog({title,body,lines:[text],input:{label,placeholder,max,value,focus,select,error,submitOnEnter,check,multiline},buttons:[{label,value,cls}],check:{label,checked},returnFocus}) resolves {value,checked,text[,picked]} for a
    button (`text` = the optional input's value, `lines` = a short list under the body; `size` 'm' or 'l' picks the wider dialog widths, default S (spec 052 FR-167); all set with textContent, never HTML), or null when dismissed (Cancel button with value null, Escape, click on the backdrop).
-   Spec 099: `custom` {node, value(), valid(), onChange}: a form of its own above the buttons; the primary button follows `valid`; the result carries `custom`: its value.
+   Spec 099: `custom` {node, value(), valid(), onChange}: a form of its own above the buttons; the primary button follows `valid`; the result carries `custom`: its value. `custom.dismiss()` (spec 111 T009) runs before Escape, the backdrop or a Cancel button closes it: false keeps it open. `custom.confirm(value)` runs before a confirming button closes the dialog: false or a promise of false keeps it open.
    Spec 064: `input.multiline` (a textarea), `picks:[{label,note,value,checked,disabled}]` (a checkbox list, result `picked`: the chosen values),
    `need:{text,picks,label(n)}` (the primary button stays disabled until met; `label` names it from the count).
    `input.hint`: a 12px note under the field (the label stays one short line, spec 052 FR-170). `input.submitOnEnter`: Enter in the field presses the primary button unless `need` keeps it disabled; never from a textarea (Escape still cancels). `input.check(text)` returns an error line or '': when
@@ -96,11 +96,21 @@ const DURBAR_PRESS=(function(){
         if(held&&t&&typeof t.focus==='function'&&doc.contains(t))focusIn(t);
         resolve(v);
       };
+      /* spec 111 T009: `custom.dismiss()` runs before Escape, a click on the backdrop or a Cancel button closes the dialog: false (or a promise of false) keeps it open
+         (the member editor asks "Discard changes?" when something was typed; it may also close the dialog itself) */
+      const dismiss=()=>{
+        if(custom&&typeof custom.dismiss==='function'){
+          const r=custom.dismiss();
+          if(r===false)return;
+          if(r&&typeof r.then==='function'){r.then(ok=>{if(ok!==false)done(null);},()=>undefined);return;}
+        }
+        done(null);
+      };
       const textOf=()=>input?d.querySelector('#mdIn').value:undefined;
       /* while open: Escape cancels, Tab wraps. On the document in the capture phase, so it also works when focus slipped out. */
       const onKey=e=>{
         if(e.key==='Enter'&&input&&input.submitOnEnter&&!input.multiline&&e.target&&e.target.id==='mdIn'&&!e.isComposing){const p=row.querySelector('.primary');if(p){e.preventDefault();if(!p.disabled)p.click();return;}}
-        if(e.key==='Escape'){e.preventDefault();e.stopPropagation();done(null);return;}
+        if(e.key==='Escape'){e.preventDefault();e.stopPropagation();dismiss();return;}
         if(e.key!=='Tab')return;
         const it=items();if(!it.length)return;
         const i=it.indexOf(doc.activeElement);
@@ -114,16 +124,25 @@ const DURBAR_PRESS=(function(){
       const onFocusIn=e=>{if(d.contains(e.target)){lastIn=e.target;return;}const f=lastIn&&d.contains(lastIn)?lastIn:first();if(f)focusIn(f);};
       buttons.forEach(b=>{const el=doc.createElement('button');el.type='button';el.className='btn'+(b.cls?' '+b.cls:'');el.textContent=b.label;if(b.value===null)el.dataset.cancel='1';el.onclick=()=>{
         if(el.disabled)return;
+        if(b.value===null&&custom&&typeof custom.dismiss==='function'){dismiss();return;}
         if(b.value!==null&&input&&typeof input.check==='function'){
           const msg=input.check(textOf());const er=d.querySelector('#mdErr'),inp=d.querySelector('#mdIn');
           if(msg){er.textContent=msg;er.hidden=false;er.setAttribute('role','alert');inp.setAttribute('aria-invalid','true');inp.setAttribute('aria-describedby','mdErr');focusIn(inp);return;}
         }
-        done(b.value===null?null:Object.assign({value:b.value,checked:check?d.querySelector('#mdChk').checked:false},input?{text:textOf()}:{},picks?{picked:pickedOf()}:{},custom?{custom:custom.value()}:{}));
+        const fin=()=>done(b.value===null?null:Object.assign({value:b.value,checked:check?d.querySelector('#mdChk').checked:false},input?{text:textOf()}:{},picks?{picked:pickedOf()}:{},custom?{custom:custom.value()}:{}));
+        /* spec 111 T009: `custom.confirm()` runs before a confirming button closes the dialog; false (or a promise of false) keeps it open, with the
+           button disabled while a promise is pending (the member editor saves there and keeps what was typed when the save is refused) */
+        if(b.value!==null&&custom&&typeof custom.confirm==='function'){
+          const r=custom.confirm(b.value);
+          if(r&&typeof r.then==='function'){el.disabled=true;r.then(ok=>{el.disabled=false;if(ok!==false)fin();},()=>{el.disabled=false;});return;}
+          if(r===false)return;
+        }
+        fin();
       };row.appendChild(el);});
       /* spec 064 FR-002: the primary button stays disabled until the text and the number of picks it needs are there */
       if(need){const p=row.querySelector('.primary');const check2=()=>{if(!p)return;const okText=!need.text||String(textOf()||'').trim().length>0;const okPicks=!need.picks||(pickedOf()||[]).length>=need.picks;p.disabled=!(okText&&okPicks);if(need.label)p.textContent=need.label((pickedOf()||[]).length);};d.addEventListener('input',check2);d.addEventListener('change',check2);check2();}
       if(custom){row.parentNode.insertBefore(custom.node,row);const p=row.querySelector('.primary');custom.onChange=v=>{if(p)p.disabled=!v;};if(p)p.disabled=!custom.valid();}
-      DURBAR_PRESS.onBackdrop(d,()=>done(null)); /* FR-237: a drag from the field that ends on the backdrop keeps the dialog */
+      DURBAR_PRESS.onBackdrop(d,dismiss); /* FR-237: a drag from the field that ends on the backdrop keeps the dialog */
       doc.addEventListener('keydown',onKey,true);doc.addEventListener('focusin',onFocusIn,true);
       doc.body.appendChild(d);
       focusIn(input&&input.focus?d.querySelector('#mdIn'):first());

@@ -8074,7 +8074,11 @@ const askDialog=DurbarDialog(document);
 /* spec 043 FR-014: the profile file editor (profileeditor.js) uses the same bridge, dialog, toast and escaping */
 if(window.DurbarProfileEditor)window.DurbarProfileEditor.init({bridge,askDialog,toast:(...x)=>toast(...x),esc:s=>esc(s)});
 /* spec 111 T008: Settings > Team templates (teams.js) uses the same bridge, dialog, toast and announcer */
-if(window.DurbarTeams)window.DurbarTeams.init({bridge,sim:!!SIM,askDialog,toast:(...x)=>toast(...x),esc:s=>esc(s),announce:(t)=>announce(t)});
+/* spec 111 T009: the member editor reads the page's own app, model, permission and character helpers, at the time it opens (KINDS and the model lists load later than this line) */
+if(window.DurbarTeams)window.DurbarTeams.init({bridge,sim:!!SIM,askDialog,toast:(...x)=>toast(...x),esc:s=>esc(s),announce:(t)=>announce(t),
+  editorEnv:()=>({kinds:()=>KINDS?DMK().kindChoices(KINDS):[],kindCaps:id=>kindCaps(id),shows:(c,f)=>DMK().shows(c,f),ensureModels:k=>ensureModels(k),modelsFor:k=>modelsFor(k),
+    fillModelSelect:(sel,cur,k)=>fillModelSelect(sel,cur,k),fillEffortSelect:(sel,m,cur,off,k)=>fillEffortSelect(sel,m,cur,off,k),fillPerm:(sel,c,k)=>fillPermSelect(sel,c,k),
+    limits:{minAiu:MIN_CAP,minUsd:MIN_USD_CAP},characters:()=>CREW?crewIds():[]})});
 /* ---------------- spec 059: rename a session ---------------- */
 /* Main sessions only (never helpers); a started or not started, live or ended card. */
 const canRenameSession=a=>!!(a&&a.live&&!a.parent&&a.info&&bridge.renameSession);
@@ -8938,15 +8942,19 @@ function newSession(a0,o){
   d.innerHTML=`<div class="dlg m" role="dialog" aria-modal="true" aria-labelledby="sdT"><h3 id="sdT">${ho?'Continue in another agent app':'New session in '+esc(roomOf(a).name)}</h3>
    <p class="dsub">${ho?'A new session in <code>'+esc(roomOf(a).path)+'</code>, in the agent app you pick, starting from a summary of this conversation (you review it first). '+esc(a.name)+' keeps its history.':'Another agent with its own chat in <code>'+esc(roomOf(a).path)+'</code>.'}</p>
    ${DMK().showsKindPicker(KINDS)?`<label>Agent app<select id="sdKind">${kindOptions()}</select></label>`:''}
-   <label>Permissions<select id="sdPerm"><option value="read-only">Read-only</option><option value="ask">Ask first</option><option value="allow">Allow all (no prompts)</option></select></label>
+   <span id="sdPermSlot"></span>
    <label id="sdModelL">Model<select id="sdModel"></select></label>
    <label id="sdEffL">Reasoning effort<select id="sdEff"></select></label>
    ${bridge.listProfiles&&a.info&&a.info.profiles?`<div id="sdAgentL" class="sd-agent" hidden><label>Profile<select id="sdAgent"><option value="">Default</option></select></label>${bridge.setFolderDefaultAgent?'<label class="chk"><input type="checkbox" id="sdAgentDef"> Default for new sessions here</label>':''}</div>`:''}
    ${canHandoff(a)?`<label class="chk" id="sdSumL"><input type="checkbox" id="sdSum"${o.summary?' checked':''}> Start with a summary of this conversation (you review it before it is sent)</label>`:''}
    ${bridge.harnessQuota?'<small class="dhint" id="sdQuota" role="status" hidden></small>':''}
-   ${bridge.setCap?'<label id="sdCapL"><span id="sdCapT">Spending limit</span><input id="sdCap" type="number" min="0.001" step="0.01" placeholder="No limit" aria-describedby="sdCapH"></label><small class="dhint" id="sdCapH">In AI credits. Empty means no limit.</small>':''}
+   ${bridge.setCap?'<span id="sdCapSlot"></span>':''}
    <div class="dbtn"><button class="btn" id="sdCancel" type="button">Cancel</button><button class="btn primary" id="sdGo" type="button">Start session</button></div></div>`;
   document.body.appendChild(d);
+  /* spec 111 T009 (FR-031): the permissions row and the limit row come from memberrows.js, the same builders as the team member editor */
+  const MR=window.DurbarMemberRows;
+  $('sdPermSlot').replaceWith(...MR.permRow(document,{id:'sdPerm'}).nodes);
+  if($('sdCapSlot'))$('sdCapSlot').replaceWith(...MR.capRow(document,{ids:{row:'sdCapL',title:'sdCapT',input:'sdCap',hint:'sdCapH'}}).nodes);
   $('sdPerm').value=a.info.permMode||'read-only';
   let capUsd=null; /* the unit the cap field shows; the AIU default is never put in a dollar field (FR-150) */
   /* the chosen kind decides which fields exist: its own model list (spec 012 FR-120; none yet = hidden, FR-062); no credit cap field without the capability (FR-061) */
@@ -8963,7 +8971,7 @@ function newSession(a0,o){
     if($('sdCapL')){
       $('sdCapL').hidden=!!c&&!DMK().shows(c,'cap');$('sdCapH').hidden=$('sdCapL').hidden;
       const cc=c||capsFor(a),usd=!!cc&&cc.capUnit==='usd';
-      if(usd!==capUsd){capUsd=usd;$('sdCapH').textContent=usd?'Claude\'s estimate, in dollars. Empty means no limit.':'In AI credits. Empty means no limit.';$('sdCap').min=usd?String(MIN_USD_CAP):'0.001';$('sdCap').value=usd?'':(APP_SETTINGS.defaultMaxAiCredits||'');}
+      if(usd!==capUsd){capUsd=usd;const sp=MR.capSpec(usd,{minUsd:MIN_USD_CAP});$('sdCapH').textContent=sp.hint;$('sdCap').min=sp.min;$('sdCap').value=usd?'':(APP_SETTINGS.defaultMaxAiCredits||'');}
     }
     if(c)fillPermSelect($('sdPerm'),c,k);else markOrgModes($('sdPerm'),a.info.adapterId);
   };
@@ -9001,7 +9009,7 @@ function newSession(a0,o){
     if($('sdKind')&&(!kind||(DMK().kindChoices(KINDS).find(k=>k.id===kind)||{disabled:true}).disabled)){notReadyToast(DMK().kindChoices(KINDS).find(k=>k.id===kind));return;}
     const opts={permMode:$('sdPerm').value,model:$('sdModelL').hidden?undefined:$('sdModel').value,effort:$('sdEff').hidden?undefined:($('sdEff').value||undefined)};
     if(kind)opts.adapterId=kind;
-    if($('sdCap')&&!$('sdCapL').hidden){const cv=parseFloat($('sdCap').value);opts.maxAiCredits=capUsd?(cv>=MIN_USD_CAP&&cv<=1e4?Math.round(cv*100)/100:null):(cv>=MIN_CAP&&cv<=1e6?Math.round(cv*100)/100:null);}
+    if($('sdCap')&&!$('sdCapL').hidden){const cp=MR.capParse(capUsd,$('sdCap').value,{minAiu:MIN_CAP,minUsd:MIN_USD_CAP});opts.maxAiCredits=cp.amount!==undefined?cp.amount:null;}
     const profId=$('sdAgentL')&&!$('sdAgentL').hidden?$('sdAgent').value:'';
     if($('sdAgentDef')&&!$('sdAgentL').hidden){
       const want=$('sdAgentDef').checked&&profId?profId:(profId===a.info.defaultAgent?null:undefined);

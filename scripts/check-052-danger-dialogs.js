@@ -36,7 +36,7 @@ const LOOKS = [
   ['photo', { officeview: 'real' }, null], // control: ui is clean
   ['dark fixture', {}, CHECK_DARK], // control: ui is clean
 ];
-const KNOWN_SITES = 20; // End all sessions, the 18 others of issue #1647, and the Teams Delete confirm (spec 111 T008, askDialog in teams.js)
+const KNOWN_SITES = 21; // End all sessions, the 18 others of issue #1647, the Teams Delete confirm (spec 111 T008, teams.js) and the member editor's Discard confirm (spec 111 T009, teameditor.js); each is built here through DurbarDialog(document) from the label read in the source, and measured at rest, focused and hovered
 
 /* the call sites, read from the source (danger-sites.js: every src/renderer/*.js, any spelling; test-danger-sites.js proves the reader) */
 function sites() {

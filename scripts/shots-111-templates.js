@@ -115,9 +115,13 @@ async function body(ctx) {
     assert.strictEqual(await active(), 'tmNew//', `${w}: the focus went to New template…`);
     void del;
 
-    // New, Edit and Use go to the member editor hook (T009): in words, nothing changes
+    // New opens the member editor (T009, its own driver shots-111-editor); Escape closes it. Use… says in words that creating a team is later (T010)
     await H.click('#tmNew');
-    assert.ok(await until(`/member editor is not available/.test(document.getElementById('srAnnounce').textContent)||[...document.querySelectorAll('#toasts .toast')].some(t=>/member editor is not available/.test(t.textContent))`), `${w}: New says the editor is not there yet (T009)`);
+    assert.ok(await until(`!!document.querySelector('#modeDlg .tm-ed')`), `${w}: New opens the member editor`);
+    await H.key('Escape');
+    assert.ok(await until(`!document.getElementById('modeDlg')`), `${w}: Escape closes the editor`);
+    await js(`document.querySelector('#teamsBox .tm-row[data-origin="own"] button[data-act="use"]').click()`);
+    assert.ok(await until(`/not available yet/.test(document.getElementById('srAnnounce').textContent)`), `${w}: Use… says in words that creating a team comes later`);
 
     // sizes and overflow
     const small = await js(`[...document.querySelectorAll('#teamsBox *')].filter(e=>e.childNodes.length&&[...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim())).map(e=>parseFloat(getComputedStyle(e).fontSize)).filter(f=>f<10.5).length`);
