@@ -1735,8 +1735,10 @@ function realCtxPush(a){
    user name would show. No redact module: homeMask keeps the text and deskMask gives '' (fail closed). */
 const homeMask=t=>{const R=window.DurbarRedact;if(!R||typeof R.maskHomePaths!=='function')return t;const h=R.maskHomePaths(t);return typeof h==='string'?h:'';};
 const helperMask=t=>deskMask(homeMask(t));
-/* spec 097 FR-311 (review of PR 1322): the head figures use the one helper mask above (home folders first, on the raw text) */
-const roHelperMask=helperMask;
+/* spec 097 FR-311 (review of PR 1322): the head figures use the one helper mask above (home folders first, on the raw text), then the Markdown is made plain
+   (`plainKeep`, the `_` kept): a link planted in a helper's name never reaches the accessible name or the +K tooltip. The desk mask keeps Markdown as written, and
+   before spec 012 FR-182 the link went only because the escaped token in the check's name sent the mask down its plain pass (review of PR 1721) */
+const roHelperMask=t=>{const m=helperMask(t);const S=window.DurbarSafeText;return m&&S&&typeof S.plainKeep==='function'?S.plainKeep(m):m;};
 function realSubs(a,stOf){
   return orderedHelpers(a).map(h=>{const w=helperWords(h,roHelperMask);
     return {id:h.id,name:w.name||'Helper',state:stOf(h,false),label:w.aria,title:w.tip,selected:ui.selected===h.id};});
