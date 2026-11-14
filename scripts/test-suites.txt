@@ -137,6 +137,7 @@ test:skeleton
 test:teamtemplate
 test:teamstore
 test:teamstore-fs
+test:teams-ui
 test:teamsipc
 test:names
 test:renameadapters
@@ -221,6 +222,7 @@ test:citypecheck
 test:worldmatrix
 test:world-catalogue
 test:world-distinct
+test:world-contact-sheet
 test:worldzip
 test:worldpack
 test:world-packs

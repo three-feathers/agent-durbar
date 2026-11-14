@@ -414,6 +414,10 @@
         <p class="scr-note">Groups of folders: a floor that is <b>off</b> is hidden from the office, but <b>its agents keep running</b> and can spend credits.</p>
         <details class="scr-more"><summary>More</summary><p class="scr-note small">An off floor is not counted in Working, Waiting, Idle, Errors and Done. The office credit total still counts its agents, and an agent there that waits for you or has an error is shown <b>only here</b>, on its floor's row (for example "Off, 1 waiting"). With two or more floors, the same controls are also in the <b>Floors</b> button of the top bar.</p></details>
         <div class="floors-ui floors-set" id="floorsSet" tabindex="-1"></div></section>`:'';
+    /* spec 111 FR-020 (T008): Settings > Team templates, painted by teams.js into #teamsBox; only under the simulator until the member editor (T009) exists */
+    const teamsSec=window.DurbarTeams&&window.DurbarTeams.shown()&&X.bridge.teamsList?`<section class="scr-sec" aria-labelledby="tmH"><h3 id="tmH">Team templates</h3>
+        <p class="scr-note">A template is a saved team: its members, roles and settings. <b>Use…</b> adds that team to a folder. Starting a team does not start any member.</p>
+        <div id="teamsBox"></div></section>`:'';
     /* Schedules (spec 044 FR-011): every folder's schedules, painted by app.js into #schedSet */
     const schedSec=X.sched&&X.sched.on()?`<section class="scr-sec" aria-labelledby="schH"><h3 id="schH" tabindex="-1">Schedules</h3>
         <p class="scr-note">Prompts sent to a folder's agent at a time, every day or at an interval, <b>only while Agent Durbar is open</b>.</p>
@@ -455,6 +459,7 @@
       const tab=(list.find((c)=>c.id===cur)||list.find((c)=>!c.closed)).id; /* roving tabindex: the chosen radio is the one Tab stop (World row's pattern, FR-301) */
       return list.map((c)=>`<li class="throw" role="presentation"><button class="thpick" type="button" role="radio" data-characters="${esc(c.id)}"${c.closed?' aria-disabled="true"':''} aria-checked="${c.id===cur}" tabindex="${c.id===tab?'0':'-1'}" aria-label="Characters ${esc(c.name)}: ${esc(c.sub)}"><span class="chsw" aria-hidden="true">${c.set?setPreview(c.set):X.charPreview?X.charPreview(c.id):''}</span><span class="thtx"><b title="${esc(c.name)}">${esc(c.name)}</b><small>${esc(c.sub)}</small></span></button></li>`).join('');
     };
+    charsRefresh=()=>{const l=$('chList');if(l)l.innerHTML=charItems();};
     const charSec=window.THEME&&window.THEME.setCharacters&&X.applyCharacters?`<section class="scr-sec" aria-labelledby="chH"><h3 id="chH">Characters</h3>
         <p class="scr-note">Who sits at the desks, on top of any theme; the choice applies at once and is kept on this computer.</p>
         <ul class="thlist" id="chList" role="radiogroup" aria-labelledby="chH">${charItems()}</ul><p class="scr-note small" id="chNote" role="status">${esc(charNote())}</p></section>`:'';
@@ -496,7 +501,8 @@
     const pfSec=profilesOn()?`<section class="scr-sec" id="pfSec" aria-labelledby="pfH">${await profilesInner()}</section>`:'';
     const detailSec=`<section class="scr-sec" aria-labelledby="detH"><h3 id="detH">Display</h3>
         <p class="scr-note">How the office and the windows look and behave on this computer.</p>
-        ${X.density?densityRow():''}${X.liveAct&&X.liveAct.usable()?liveActRow():''}${X.shutters&&X.shutters.usable()?shuttersRow():''}${X.view?officeRow()+worldRow():''}</section>`;
+        ${X.density?densityRow():''}${X.liveAct&&X.liveAct.usable()?liveActRow():''}${X.shutters&&X.shutters.usable()?shuttersRow():''}</section>`;
+    const worldSec=worldSection();
     /* spec 074 FR-013 (issue 548): the navigator shortcut, recorded here, checked for clashes, kept for this window */
     const keySec=X.navKey?`<section class="scr-sec" aria-labelledby="keyH"><h3 id="keyH">Keyboard</h3>
         <p class="scr-note">Go to (the navigator) opens from anywhere: a floor, a folder, an agent, or a chat by its number (C and the number).</p>
@@ -513,7 +519,7 @@
         <li>It sends nothing to any server of its own.</li>
         <li>Rooms you hide or switch off still run and cost money.</li></ul></section>`;
     const keep=focus?null:keepPlace(r); /* spec 069 FR-069: a repaint (not the opening) keeps the scroll and the focused control */
-    r.innerHTML=head('Settings')+`<div class="scr-wrap"><div class="scr-cols"><nav class="scr-nav" id="scrNav" aria-label="Settings sections" hidden></nav><div class="scr-body">${hsSec}${pfSec}${detailSec}${keySec}${notSec}${themeSec}${charSec}${logoSec}${motionSec}${stillSec}${capSec}${moodSec}${breakSec}${linksSec}${notifySec}${followSec}${schedSec}${floorsSec}${orgSec}${placesSec}
+    r.innerHTML=head('Settings')+`<div class="scr-wrap"><div class="scr-cols"><nav class="scr-nav" id="scrNav" aria-label="Settings sections" hidden></nav><div class="scr-body">${hsSec}${pfSec}${detailSec}${worldSec}${keySec}${notSec}${themeSec}${charSec}${logoSec}${motionSec}${stillSec}${capSec}${moodSec}${breakSec}${linksSec}${notifySec}${followSec}${schedSec}${floorsSec}${teamsSec}${orgSec}${placesSec}
       <details class="scr-adv" id="advMcp"${advOpen?' open':''}><summary><h3 class="scr-adv-h">Advanced: MCP servers (extra tools for agents)</h3><span class="mtag warn" id="advMcpAtt"${live&&live.agg.attention?'':' hidden'}>${esc(attText(live?live.agg.attention:0))}</span></summary>
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH" tabindex="-1">MCP servers</h3>
         ${liveSection()}
@@ -559,6 +565,7 @@
     if($('navKeyRec'))wireKeyRec({rec:'navKeyRec',msg:'navKeyMsg',now:'navKeyNow',reset:'navKeyReset'},X.navKey,'opens Go to');
     if($('csKeyRec'))wireKeyRec({rec:'csKeyRec',msg:'csKeyMsg',now:'csKeyNow',reset:'csKeyReset'},X.searchKey,'focuses Search conversations'); /* spec 095 FR-003 */
     if(X.sched&&$('schedSet'))X.sched.render();
+    if($('teamsBox'))window.DurbarTeams.mount($('teamsBox'));
     /* spec 044 FR-030: the top-bar Schedules button, Ctrl+Shift+S and Ctrl+K open Settings at the Schedules heading (also when Settings is open already) */
     if(cur.section==='schedules'){cur.section=null;const h=$('schH');if(h){scrollInBody(h);h.focus({preventScroll:true});atSec=true;}}
     wireMcpLevels();
@@ -784,18 +791,65 @@
     const on=!!X.shutters.get();
     return `<div class="scr-row"><span class="scr-row-l" id="shL">Finished agents rest in the lounge</span>${sw(on,'Finished agents rest in the lounge: in a room where others still work, finished agents move to a couch, then to a nap bed','id="shutSw" aria-describedby="shN"')}<span class="scr-note small" id="shN">In a room where others still work, finished agents rest on a couch, and after 10 minutes on a nap bed, so the busy desks get the space.</span></div>`;
   }
-  /* spec 102 FR-201 (097 FR-114): the World row, a radio group, only with Real office on and more than one world offered (a flagged world is
-     not offered, so with the flag off the Settings page is as before). Keyboard: arrows move and select; tokens only. */
-  function worldRow(){
-    const V=X.view, W=V&&V.world, list=W?W.list():[];
-    if(!W||V.get()!=='real'||list.length<2)return '';
-    const cur=W.get();
-    return `<div class="scr-row" id="wrRow"><span class="scr-row-l" id="wrL">World</span><div class="seg" role="radiogroup" aria-labelledby="wrL" aria-describedby="wrN" id="wrGroup">${list.map(w=>`<button type="button" role="radio" data-world="${esc(w.id)}" aria-checked="${w.id===cur}" tabindex="${w.id===cur?'0':'-1'}">${esc(w.name)}</button>`).join('')}</div><span class="scr-note small" id="wrN">The room Real office draws. Its people follow the world unless you pick a set under Characters.</span></div>`;
+  /* spec 102 FR-300, FR-301 (owner, 2026-11-03; T266, first step): the World section, picture cards in one radio group. Plain is today's flat office
+     (officeview flat); the other cards are Real office in that world (officeview real + the world), both kept where they always were. A world
+     behind a closed flag is not offered by crew.js, so it is not listed here, zoom or not. Previews are the app's own pictures (realoffice/previews/,
+     taken by shots-102-previews.js); a world without one shows a plain tile with its name. */
+  let charsRefresh=null; /* set by paintSettings: draws the Characters list again (it names the world's default set) */
+  const PLAIN_CARD={id:'plain',name:'Plain',line:'Desks in coloured rooms, one person each, status in words.'};
+  const worldCards=()=>{
+    const V=X.view, W=V&&V.world;
+    return V&&W?[PLAIN_CARD].concat(W.list().map(w=>({id:w.id,name:w.name,line:w.line||''}))):[];
+  };
+  const worldCur=()=>{const V=X.view;return V.get()==='real'&&V.world?V.world.get():'plain';};
+  /* FR-302, FR-061: the previews' script (pictures and zoom origins) loads the first time the World section is drawn, never at start; until it is there the
+     cards show plain tiles, and the card pictures are replaced in place when it arrives (a missing script leaves the tiles) */
+  /* a card's picture: the preview of T265a when its script has arrived, else a plain tile with the name */
+  const worldPic=(w)=>{
+    const P=(window['DurbarWorldPreviews']&&window['DurbarWorldPreviews'].previews)||{}, pv=Object.prototype.hasOwnProperty.call(P,w.id)?P[w.id]:null;
+    return pv?`<span class="chsw wpic" aria-hidden="true"><img src="realoffice/previews/${esc(String(pv.file||'').replace(/[^\w.-]/g,''))}" alt="" width="${Number(pv.width)||640}" height="${Number(pv.height)||400}" draggable="false" style="--zx:${Number(pv.origin&&pv.origin.x)||50}%;--zy:${Number(pv.origin&&pv.origin.y)||50}%"></span>`:`<span class="chsw wpic wnone" aria-hidden="true"><b>${esc(w.name)}</b></span>`;
+  };
+  /* the previews' script has arrived: each card's picture is replaced in place, so the focus, the roving tabindex and the scroll stay */
+  function previewsApply(){
+    const by=new Map(worldCards().map(w=>[w.id,w]));
+    document.querySelectorAll('#wrGroup [data-world]').forEach(c=>{const w=by.get(c.dataset.world),o=c.querySelector('.wpic');if(w&&o)o.outerHTML=worldPic(w);});
   }
-  /* the pick applies at once; the page is painted again (Characters names the new default) and focus returns to the radio */
+  function previewsLoad(){
+    if(document.getElementById('roPreviewsJs'))return;
+    const sc=document.createElement('script');sc.id='roPreviewsJs';sc.src='realoffice/previews/previews.js';
+    sc.onload=previewsApply; /* the pictures come in place: no repaint of the page (a repaint reloads the MCP list for every chat and loses the focus and the scroll) */
+    document.body.appendChild(sc);
+  }
+  function worldSection(){
+    const list=worldCards();
+    if(!list.length)return '';
+    const cur=worldCur(); /* the previews' script is a pack-style global, read with a string key (as app.js reads the packs'); loaded below */
+    previewsLoad();
+    const card=w=>{
+      const on=w.id===cur;
+      const pic=worldPic(w);
+      return `<li class="throw"><button type="button" class="thpick" role="radio" data-world="${esc(w.id)}" aria-checked="${on}" tabindex="${on?'0':'-1'}" aria-labelledby="wn-${esc(w.id)}" aria-describedby="wl-${esc(w.id)}${on?' wu-'+esc(w.id):''}">${pic}<span class="thtx"><b id="wn-${esc(w.id)}">${esc(w.name)}</b><small id="wl-${esc(w.id)}">${esc(w.line)} Built in.</small></span><b class="wuse" id="wu-${esc(w.id)}"${on?'':' data-off aria-hidden="true"'}>In use</b></button></li>`;
+    };
+    return `<section class="scr-sec" aria-labelledby="worldH"><h3 id="worldH">World</h3>
+        <p class="scr-note">Where your agents work. The choice applies at once and is kept on this computer. Characters, below, say who sits there.</p>
+        <ul class="thlist wcards" id="wrGroup" role="radiogroup" aria-labelledby="worldH">${list.map(card).join('')}</ul>
+        <p class="scr-note small" id="dsR">${esc(X.view.note())}</p></section>`;
+  }
+  /* the pick applies at once, and the cards are updated IN PLACE (the focused card stays the same element, so the focus and the roving tabindex
+     survive a quick arrow after Enter); every card keeps the "In use" line's room (hidden, not removed), so no card changes size; the note, the
+     Characters list (it names the world's default set) and the theme note follow (Space and Enter are the button's own click) */
   async function pickWorld(b){
-    const id=b.dataset.world;X.view.world.set(id);await paintSettings();
-    const nb=document.querySelector('#wrGroup [data-world="'+CSS.escape(id)+'"]');if(nb)focusIn(nb);
+    const id=b.dataset.world, V=X.view;
+    if(id==='plain')await V.set('flat'); else{await V.set('real');V.world.set(id);}
+    document.querySelectorAll('#wrGroup [data-world]').forEach(c=>{
+      const w=c.dataset.world, on=w===id, u=c.querySelector('.wuse');
+      c.setAttribute('aria-checked',String(on));c.tabIndex=on?0:-1;
+      c.setAttribute('aria-describedby','wl-'+w+(on?' wu-'+w:''));
+      if(u){u.toggleAttribute('data-off',!on);if(on)u.removeAttribute('aria-hidden');else u.setAttribute('aria-hidden','true');}
+    });
+    const n=$('dsR');if(n)n.textContent=X.view.note();
+    if(charsRefresh)charsRefresh();
+    const tw=$('thWorld');if(tw){tw.textContent=worldWords();tw.hidden=!tw.textContent;}
   }
   /* the one keyboard rule of a radio group that picks as it moves (FR-301's World row, FR-303's Characters): arrows, Home and End move and choose, a radio marked aria-disabled is skipped; Tab and Escape are the page's (one Tab stop by roving tabindex) */
   function radioNav(e,sel,pick){
@@ -804,14 +858,9 @@
     const to=k==='ArrowRight'||k==='ArrowDown'?all[(i+1)%all.length]:k==='ArrowLeft'||k==='ArrowUp'?all[(i-1+all.length)%all.length]:k==='Home'?all[0]:k==='End'?all[all.length-1]:null;
     if(to){e.preventDefault();pick(to);}
   }
-  function worldKeys(e){radioNav(e,'#wrGroup [data-world]',pickWorld);}
+  function worldKeys(e){radioNav(e,'#wrGroup [data-world]',(to)=>{to.closest('#wrGroup').querySelectorAll('[data-world]').forEach(x=>{x.tabIndex=x===to?0:-1;});focusIn(to);});} /* FR-301: the World cards' arrows MOVE (roving tabindex), Space or Enter chooses (the Characters radios pick as they move) */
   let pickChar=()=>{}; /* set by the Settings paint (it closes over the page's helpers) */
   function charKeys(e){radioNav(e,'#chList [data-characters]',(b)=>pickChar(b,true));}
-  /* spec 017 FR-029 (owner 2026-10-31: no doors) and spec 097 FR-001: Open office or Real office, a separate preference (durbar.officeview) */
-  function officeRow(){
-    const view=X.view.get()==='real'?'real':'open', pressed=k=>k===view;
-    return `<div class="scr-row"><span class="scr-row-l" id="dsL">Office layout</span><div class="seg" role="group" aria-labelledby="dsL" aria-describedby="dsN dsR"><button type="button" data-officelayout="open" aria-pressed="${pressed('open')}">Open office</button><button type="button" data-officelayout="real" aria-pressed="${pressed('real')}">Real office</button></div><span class="scr-note small" id="dsN">Open office: the plain desks and status words. Real office: a realistic open-plan office, with a person at each desk, places along the back wall and lights that follow the status of each agent.</span><span class="scr-note small" id="dsR">${esc(X.view.note())}</span></div>`;
-  }
   function liveActRow(){
     const on=!!X.liveAct.get();
     return `<div class="scr-row"><span class="scr-row-l" id="laL">Live activity on desks</span>${sw(on,'Live activity on desks: what each working agent is thinking or doing, on its desk','id="liveActSw" aria-describedby="laN"')}<span class="scr-note small" id="laN">What each working agent is thinking or doing, on its desk. Secrets are masked.</span></div>`;
@@ -1032,19 +1081,6 @@
     }
     const wb=e.target.closest('#wrGroup [data-world]');
     if(wb&&X.view&&X.view.world){pickWorld(wb);return;}
-    const olb=e.target.closest('[data-officelayout]');
-    if(olb&&X.view){
-      const k=olb.dataset.officelayout, V=X.view;
-      await V.set(k==='real'?'real':'flat');
-      const view=V.get()==='real'?'real':'open', g=olb.parentElement;
-      if(g)g.querySelectorAll('[data-officelayout]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.officelayout===view)));
-      const n=$('dsR');if(n)n.textContent=V.note();
-      const hadFocus=document.activeElement===olb;
-      await paint(); /* the World row appears with Real office, and Characters names the world's default set */
-      if(hadFocus){const nb=document.querySelector('[data-officelayout="'+k+'"]');if(nb)focusIn(nb);} /* the repaint replaced the pressed button: keep the keyboard where it was */
-      const tw=$('thWorld');if(tw){tw.textContent=worldWords();tw.hidden=!tw.textContent;}
-      return;
-    }
     const shs=e.target.closest('#shutSw');
     if(shs&&X.shutters){const on=!X.shutters.get();X.shutters.set(on);shs.classList.toggle('on',on);shs.setAttribute('aria-checked',on?'true':'false');return;}
     const bs=e.target.closest('#breakSw');

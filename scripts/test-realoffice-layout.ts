@@ -834,9 +834,10 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
 }
 
 {
-  // sweep 2026-11-01: choosing an Office layout repaints Settings; the pressed button keeps the keyboard focus
-  const scr = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.js'), 'utf8');
-  assert.ok(/const hadFocus=document\.activeElement===olb;\s*await paint\(\);[^\n]*\n\s*if\(hadFocus\)\{const nb=document\.querySelector\('\[data-officelayout="'\+k\+'"\]'\);if\(nb\)focusIn\(nb\);\}/.test(scr), 'the Office layout pick restores focus after the repaint');
+  // sweep 2026-11-01, spec 102 FR-301: choosing a World card repaints Settings; the chosen card keeps the keyboard focus (the cards replaced the Office layout buttons)
+  const scr = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.js'), 'utf8').replace(/\r\n/g, '\n');
+  const pw = (/async function pickWorld\(b\)\{[\s\S]*?\n  \}\n/.exec(scr) || [''])[0];
+  assert.ok(/aria-checked/.test(pw) && /tabIndex=on\?0:-1/.test(pw) && !/paintSettings/.test(pw), 'the World card pick updates the cards in place (no repaint of the page, so the focus and the roving tabindex survive)');
 }
 // ---- FR-107: the lamp in words, one phrase per FR-041 row, the same for every world ----
 {

@@ -1675,7 +1675,7 @@ const roPeople=()=>{
   }
   return r;
 };
-const roWorlds=()=>CREW&&CREW.offeredWorlds?CREW.offeredWorlds().map(w=>({id:w.id,name:w.name})):[];
+const roWorlds=()=>CREW&&CREW.offeredWorlds?CREW.offeredWorlds().map(w=>({id:w.id,name:w.name,line:w.line||''})):[];
 function setRoWorld(id){
   id=CREW&&CREW.parseWorld?CREW.parseWorld(id):'photo';
   RO_WORLD=id;try{localStorage.setItem('durbar.world',id);}catch(e){}
@@ -8073,6 +8073,8 @@ async function cardOp(a,op,anchor){
 const askDialog=DurbarDialog(document);
 /* spec 043 FR-014: the profile file editor (profileeditor.js) uses the same bridge, dialog, toast and escaping */
 if(window.DurbarProfileEditor)window.DurbarProfileEditor.init({bridge,askDialog,toast:(...x)=>toast(...x),esc:s=>esc(s)});
+/* spec 111 T008: Settings > Team templates (teams.js) uses the same bridge, dialog, toast and announcer */
+if(window.DurbarTeams)window.DurbarTeams.init({bridge,sim:!!SIM,askDialog,toast:(...x)=>toast(...x),esc:s=>esc(s),announce:(t)=>announce(t)});
 /* ---------------- spec 059: rename a session ---------------- */
 /* Main sessions only (never helpers); a started or not started, live or ended card. */
 const canRenameSession=a=>!!(a&&a.live&&!a.parent&&a.info&&bridge.renameSession);

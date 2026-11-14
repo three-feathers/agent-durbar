@@ -1,6 +1,6 @@
 {
   "name": "agent-durbar",
-  "version": "0.1.18",
+  "version": "0.1.19",
   "description": "Office-style command center to see, chat with and coordinate AI agents across harnesses (GitHub Copilot, Claude Code, OpenAI Codex), for anyone who works with agents.",
   "private": true,
   "desktopName": "agent-durbar.desktop",
@@ -110,6 +110,8 @@
     "test:world-catalogue": "node scripts/test-world-catalogue.js",
     "test:world-distinct": "node scripts/test-world-distinct.js",
     "check:world-distinct": "node scripts/run-electron-script.js scripts/check-world-distinct.js",
+    "test:world-contact-sheet": "node scripts/test-world-contact-sheet.js",
+    "world:contact-sheet": "node scripts/run-electron-script.js scripts/world-contact-sheet.js",
     "test:worldmatrix": "node scripts/test-world-matrix.js",
     "world:matrix": "npm run build && node scripts/world-matrix.js",
     "test:compressshots": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-compress-shots.js",
@@ -187,6 +189,7 @@
     "test:skeleton": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-skeleton.js",
     "test:teamtemplate": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-teamtemplate.js",
     "test:teamstore": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-teamstore.js",
+    "test:teams-ui": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-teams-ui.js",
     "test:teamsipc": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-teamsipc.js",
     "test:teamstore-fs": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-teamstore-fs.js",
     "test:names": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-names.js",
@@ -379,6 +382,7 @@
     "files": [
       "dist/**/*",
       "!dist/**/*.map",
+      "!dist/renderer/teamcheck.js",
       "package.json"
     ],
     "asar": true,
