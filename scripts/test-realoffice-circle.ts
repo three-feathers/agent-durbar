@@ -127,6 +127,16 @@ for (const s of ROOMS) assert.ok(mk(4, 2, SIZES[s][0], SIZES[s][1]).faceH > mk(1
   assert.ok(lounge.lounge && lounge.lounge.desks.length === 3, 'the lounge row is kept, as in rows');
   assert.deepStrictEqual(circleLayout({ folders: [], places: [] }, { w: 1280, h: 697 }, META).zones, [], 'no agents, no zones');
 }
+// ---- circle stays off for every world (FR-230, Changes 2026-11-14): no shipped manifest names it until the owner picks the many-folder fix ----
+{
+  const names = (text: string): boolean => /"arrangement"\s*:\s*"circle"/.test(text);
+  const manifests: string[] = [];
+  const walk = (d: string, depth: number): void => { if (depth > 4 || !fs.existsSync(d)) return; for (const e of fs.readdirSync(d, { withFileTypes: true })) { if (e.name === 'node_modules') continue; const f = path.join(d, e.name); if (e.isDirectory()) walk(f, depth + 1); else if (e.name === 'world.json' || e.name === 'card.json') manifests.push(f); } };
+  walk(path.join(ROOT, 'worlds'), 0); walk(path.join(RO, 'worlds'), 0);
+  assert.ok(manifests.length >= 3, 'the scan found the shipped world manifests');
+  for (const f of manifests) assert.ok(!names(fs.readFileSync(f, 'utf8')), `${path.relative(ROOT, f)} names arrangement circle: it stays off until the owner picks the many-folder fix (FR-230)`);
+  assert.ok(names('{ "arrangement": "circle" }'), 'mutant: a manifest naming circle is caught by the scan, which the check above relies on');
+}
 // the engine's cost at 40 agents in 8 folders (FR-019: under 5 ms), the best of 20: printed, the op-count row is for the wiring PR
 {
   const m = model(40, 8), s = SIGNS(8); let best = Infinity;
