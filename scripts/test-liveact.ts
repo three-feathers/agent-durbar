@@ -587,7 +587,8 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
     // a mask that hides a token only after `echo ` (context, as a secret name does): no run alone is hidden, the unescaped copy is
     // spec 012 FR-182 (round 4 of PR 1721): the shared split step reads `ghp\_…` itself now, so the fail-closed path is shown with a made-up secret no token shape knows
     eq(ST.maskLabel('echo ' + escUnderscore('zzq_A1b2C3d4E5f6G7h8'), 'run', { ...mask, cmd: (s: string) => s.replace(/echo zzq_\w+/, 'echo [redacted]') }), '', 'the unescaped copy still holding a secret gives an empty label (fail closed)');
-    eq(ST.maskLabel('echo ' + E, 'run', { ...mask, cmd: (s: string) => s.replace(/echo ghp_\w+/, 'echo [redacted]') }), 'echo [redacted]', 'an escaped token the shared split step reads is hidden in place');
+    // round 7 of PR 1721: when the label as before PR 1721 is '' (this context-only mask leaves the unescaped copy holding the token), the label is '' here too
+    eq(ST.maskLabel('echo ' + E, 'run', { ...mask, cmd: (s: string) => s.replace(/echo ghp_\w+/, 'echo [redacted]') }), '', 'an escaped token a context-only mask hides gives an empty label, as before PR 1721');
     eq(ST.maskLabel('echo ' + E, 'run', { ...mask, cmd: () => '' }), '', 'a mask that gives nothing: empty label');
     // an environment secret is hidden as `[redacted:NAME]` (the activity log's redact): the marker count must read that form too (invented value)
     const ENV = { MY_API_KEY: 'zq7_Fake_Value_9x8w7v6u5' }, EV = escUnderscore(ENV.MY_API_KEY);
@@ -608,8 +609,7 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
       ok(!p.includes('Zq9x') && !pr.includes('Zq9x'), 'stretch ' + v.slice(0, 5) + ': phrase hides the rest: ' + p + ' / ' + pr);
       // the shared mask now hides the escaped rest as written (spec 012 FR-181, review of PR 1585), so the label keeps its text; a mask that reads only text without a backslash still fails closed
       eq(ST.maskLabel('send ' + v, 'other', mask), 'send ' + v.slice(0, v.indexOf(']') + 1), 'stretch ' + v.slice(0, 5) + ': the shared mask hides the escaped rest in place');
-      // spec 012 FR-182 (round 4 of PR 1721): the shared split step (`maskSplitTokens`, not the mask handed in) reads the escaped rest first, so the label keeps its text
-      eq(ST.maskLabel('send ' + v, 'other', { ...mask, redact: (x: string) => (x.includes('\\') ? x : redact(x, {})) }), 'send ' + v.slice(0, v.indexOf(']') + 1), 'stretch ' + v.slice(0, 5) + ': the shared split step hides the escaped rest even when the mask handed in reads only text without a backslash');
+      eq(ST.maskLabel('send ' + v, 'other', { ...mask, redact: (x: string) => (x.includes('\\') ? x : redact(x, {})) }), '', 'stretch ' + v.slice(0, 5) + ': a mask that changes only the unescaped copy gives an empty label');
     }
     // round 3: the stretch hidden in place, not by blanking the label (escaped brackets make the whole value one run)
     for (const v of ['password=\\[redacted\\]\\_Zq9xW8vU7tS6rQ5p', 'x\\[redacted\\]\\_Zq9xW8vU7tS6rQ5p', 'token=\\[redacted\\]\\-Zq9xW8vU7tS6rQ5p']) {
