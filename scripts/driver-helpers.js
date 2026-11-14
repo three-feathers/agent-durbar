@@ -268,6 +268,7 @@ function helpers(ctx) {
   /**
    * Spec 008 FR-214, FR-215: the real pointer rests where the window lies on the screen (script clicks never move it), so a control under it reads in its :hover colours.
    * Moves the pointer to 0,0 and re-sends the move every `retry` ms (250) until nothing under `scope` (a selector list) matches :hover, at most `ms` (3000; a slow first run drops or delays the first move).
+   * FR-216: the move counts only when the page saw a mousemove at 0,0 (a capture listener), and nothing may be :hover at two samples at least a frame and 100 ms apart (the Xvfb cursor rests mid-window and hovers a button again a moment after one empty sample); a re-hover re-sends the move.
    * Returns what still is hovered (descriptions; empty = fine); `controls` (a selector list) limits the list to those elements. When the bound ends with such an element still hovered it throws, labelled, so a real leak is told from a slow start.
    * `{ stay: true }` only lists (a mutant that put the pointer there itself): no move, no wait, no failure. A colour read goes after this and asserts the list is empty.
    */
@@ -276,14 +277,26 @@ function helpers(ctx) {
     const list = () => js(`[...document.querySelectorAll(${jsLiteral(sel)})].filter(e=>${controls ? 'e.matches(' + jsLiteral(controls) + ')&&e.getClientRects().length' : 'true'}).map(e=>(e.id?'#'+e.id:e.tagName.toLowerCase()+'.'+String(e.className).trim().replace(/ +/g,'.'))+' "'+(e.textContent||e.value||'').trim().slice(0,30)+'"')`);
     if (o.stay) return list();
     const ms = o.ms || 3000, retry = o.retry || 250, end = Date.now() + ms;
-    let moves = 0, last = 0, clear = false;
+    // FR-216: the page records the last point it saw (capture phase, so no handler hides it); the move counts as delivered only when that point is 0,0, and a later real-cursor move (the Xvfb cursor rests mid-window) makes it undelivered again
+    await ctx.js(`(()=>{const s=window.__pointerOffSeen={x:null,y:null};addEventListener('mousemove',(e)=>{s.x=e.clientX;s.y=e.clientY},true)})()`);
+    // one sample: nothing under the scope is :hover and the last move the page saw was 0,0; `frame`: after a painted frame (or 250 ms when none is painted)
+    const sample = (frame) => ctx.js(`(async()=>{try{${frame ? 'await new Promise((r)=>{const t=setTimeout(r,250);requestAnimationFrame(()=>{clearTimeout(t);r()})});' : ''}const s=window.__pointerOffSeen||{};return !document.querySelector(${jsLiteral(sel)})&&s.x===0&&s.y===0}catch(e){return false}})()`);
+    let moves = 0, last = 0, clear = false, hot = [];
     for (;;) {
       if (Date.now() - last >= retry || moves === 0) { wc().sendInputEvent({ type: 'mouseMove', x: 0, y: 0 }); moves++; last = Date.now(); }
-      if (await ctx.js(`(()=>{try{return !document.querySelector(${jsLiteral(sel)})}catch(e){return false}})()`)) { clear = true; break; }
+      // two clear samples at least one frame and 100 ms apart: one empty :hover can come before the real cursor's hover is applied (FR-216)
+      if (await sample(false)) {
+        await ctx.sleep(100);
+        if (await sample(true)) {
+          hot = await list();
+          if (!hot.length) { clear = true; break; }
+        }
+        last = 0; // it was clear and is hovered again: send the move again at once
+      }
       if (Date.now() > end) break;
       await ctx.sleep(50);
     }
-    const hot = await list();
+    if (!clear) hot = await list();
     if (!clear && hot.length) throw new assert.AssertionError({ message: `pointerOff: the pointer did not leave ${scope} after ${ms} ms and ${moves} move(s): ${JSON.stringify(hot)}` });
     return hot;
   };

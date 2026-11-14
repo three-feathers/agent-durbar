@@ -321,11 +321,24 @@ assert.ok(dh.darkProblem({ id: 'check-user', bg: 'rgb(20, 18, 43)' }).includes('
   const po = (clearsAfter: number) => {
     const moves: any[] = []; const pctx: any = { ...ctx, win: { ...ctx.win, webContents: { ...ctx.win.webContents, sendInputEvent: (e: any) => moves.push(e) } }, sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, Math.min(ms, 5))) };
     const hovered = () => moves.length < clearsAfter;
-    pctx.js = async (c: string) => (c.includes('.map(') ? (hovered() ? ['button.x "Go"'] : []) : !hovered());
+    // the page: the install call (addEventListener) answers true, the list (.map) the hovered controls, a sample "no :hover and the page saw a move at 0,0"
+    pctx.js = async (c: string) => (c.includes('addEventListener') ? true : c.includes('.map(') ? (hovered() ? ['button.x "Go"'] : []) : (!hovered() && moves.length > 0));
     return { moves, P: dh.helpers(pctx) };
   };
   { const { moves, P } = po(4); assert.deepStrictEqual(await P.pointerOff('#panel', 'button', { ms: 2000, retry: 20 }).catch((e: Error) => assert.fail('pointerOff: a hover that clears after 3 moves passes: ' + e.message)), [], 'pointerOff: a hover that clears after 3 moves passes'); assert.ok(moves.length >= 4 && moves.every((e) => e.type === 'mouseMove' && e.x === 0 && e.y === 0), 'pointerOff: the move is re-sent to 0,0 until the hover clears'); }
   { const { moves, P } = po(1e9); await assert.rejects(() => P.pointerOff('#panel', 'button', { ms: 150, retry: 20 }), /pointerOff: the pointer did not leave #panel after 150 ms and \d+ move\(s\): \["button\.x \\"Go\\""\]/, 'pointerOff: a hover that never clears fails with its label'); assert.ok(moves.length > 1, 'the failing wait kept re-sending the move'); }
+  // spec 008 FR-216: the real cursor hovers the control again after the first empty sample; a second sample finds it and the move is re-sent
+  // the page code of the helper (the listener and the sample) runs for real in a vm with a stub page: a :hover that is empty at the first querySelector call and set at the next one (the real cursor), until a move arrives
+  const rehover = (o: { unseen?: boolean } = {}) => {
+    const moves: any[] = []; const listeners: any[] = []; let hot = false, calls = 0;
+    const sandbox: any = { window: {}, addEventListener: (_t: string, f: any) => listeners.push(f), requestAnimationFrame: (f: () => void) => setTimeout(f, 1), setTimeout, clearTimeout, document: { querySelector: () => { const r = hot ? {} : null; if (++calls === 1) hot = true; return r; } } };
+    const sendInputEvent = (e: any) => { moves.push(e); hot = false; if (!o.unseen) for (const f of listeners) f({ clientX: e.x, clientY: e.y }); };
+    const pctx: any = { ...ctx, win: { ...ctx.win, webContents: { ...ctx.win.webContents, sendInputEvent } }, sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, Math.min(ms, 5))) };
+    pctx.js = async (c: string) => (c.includes('.map(') ? (hot ? ['button.x "Go"'] : []) : require('vm').runInNewContext(c, sandbox));
+    return { moves, P: dh.helpers(pctx) };
+  };
+  { const { moves, P } = rehover(); assert.deepStrictEqual(await P.pointerOff('#panel', 'button', { ms: 3000, retry: 20 }).catch((e: Error) => assert.fail('pointerOff: a re-hover after the first empty sample is re-sent and passes: ' + e.message)), [], 'pointerOff: a re-hover after the first empty sample is waited out'); assert.ok(moves.length >= 2, 'pointerOff: a re-hover after the first empty sample re-sends the move (two samples)'); }
+  { const { moves, P } = rehover({ unseen: true }); await P.pointerOff('#panel', 'button', { ms: 250, retry: 20 }).catch(() => undefined); assert.ok(moves.length > 3, 'pointerOff: a move the page never saw at 0,0 is re-sent, not counted as clear'); }
   { const { moves, P } = po(1e9); assert.deepStrictEqual(await P.pointerOff('#panel', 'button', { stay: true }), ['button.x "Go"'], 'pointerOff stay: lists what is hovered'); assert.strictEqual(moves.length, 0, 'pointerOff stay: never moves the pointer'); }
   console.log('driver-helpers: key, load, escaping and shot behave');
 })().catch((e) => { console.error(e); process.exit(1); });
