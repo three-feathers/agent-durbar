@@ -452,3 +452,6 @@
 
 ## 2026-11-13: the danger hover reads 4.5:1 in a partial user theme (FR-053, FR-076, FR-169, issue #1700)
 - [x] T344 `theme.js` `contrastFix` writes `--red-hover` where the `--ink` mix of the danger hover is under 4.5:1 (cleared in `setTheme` and `paintWorld`); `styles.css` and `themes.css` mix toward `var(--red-hover,var(--ink))`; `test-themegen` cases; `check-052-danger-dialogs` partial dark retro-ui user theme and mutant `DANGER_MUTANT=hover` [FR-053, FR-076, FR-169, issue #1700, no new FR]
+
+## 2026-11-14: warn, plain danger hover and plain red confirms in the themed looks (FR-053, FR-076, issue #1570)
+- [x] T345 `themes.css`: warn rest and hover, plain `.btn.danger:hover` restored after the themed `.btn` rule; `screens.js` Remove theme and `harnesses.js` End N sessions and update are `primary danger`; `danger-sites.js` ALLOW `harnesses.js`, 21 sites; new driver `scripts/check-052-warn-danger-btn.js` (in `ui-suite.js`) with mutants `WARN_MUTANT=old|warn|dangerhover|sites` [FR-053, FR-076, issue #1570, no new FR]
