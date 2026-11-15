@@ -1,23 +1,23 @@
 /*
  * Spec 058 (issue #364), T102/T104: the MCP Sign in in the per-agent MCP dialog, Copilot first. Simulator only (no AI credits, no real
  * runtime, no browser, no real OAuth): `simmcpauth=1` gives the Copilot agents a "my-notes" server that needs a sign-in; Sign in shows the
- * host, Open sign-in page opens nothing (a toast) and the row reads Running after 2 s. `simmcpauth=manual` shows the terminal steps instead.
+ * host, Open sign-in page opens nothing (a toast) and the row reads Running after 2 s. `simmcpauth=manual` shows the app's note instead (Claude Code: its terminal steps; Copilot: no command, FR-246); `simmcpauth=refused` offers Sign in and the app refuses it.
  *
  *   npm run build
  *   OUT=docs/screenshots DURBAR_USER_DATA=$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 \
  *     DURBAR_DRIVER=$PWD/scripts/shots-058-mcp-signin.js xvfb-run -a npx electron . --no-sandbox
  *
  * Checks, at 1440x900 and 1280x800:
- * - the needs-sign-in row: hint, Sign in, Switch off for this session, How to sign in from a terminal; other rows have none of it;
- * - the steps (copilot, /mcp auth <name>) with Copy; Sign in -> "Sign-in page on auth.example.com" (no address anywhere), focus on
+ * - the needs-sign-in row: hint, Sign in, Switch off for this session (Copilot has no terminal button, FR-246); other rows have none of it;
+ * - FR-246: no Copilot CLI command in the row; Sign in -> "Sign-in page on auth.example.com" (no address anywhere), focus on
  *   Open sign-in page; Open -> toast, waiting text with the credential-store sentence; then Running and a toast; the live region says so;
  * - Cancel returns to Sign in with focus on it; Switch off for this session goes through the existing switch;
- * - simmcpauth=manual: no Sign in, the steps are open;
+ * - simmcpauth=manual: no Sign in, the app's note is open (Copilot: no command); simmcpauth=refused: Copilot says no "steps below" (FR-246);
  * - spec 058 FR-175..FR-183 (simkinds=mixed): a Claude Code row signs in the same way (its own steps, note and Restart kept; the limit
  *   line says to press Restart; Restart picks the sign-in up); Codex rows keep today's behaviour until PR B;
  * - the dialog fits the window and its text is at least 10.5px.
  * - FR-164: Sign in again on a running server (not the built-in one): a confirmation, then Open sign-in page with the host only; Cancel.
- * Shots: 058-mcp-signin-row-, -again-ask-, -again-, -steps-, -confirm-, -waiting-, -manual-, and -claude-row-, -claude-steps-,
+ * Shots: 058-mcp-signin-row-, -again-ask-, -again-, -confirm-, -waiting-, -manual-, and -claude-row-, -claude-steps-,
  * -claude-confirm-, -claude-manual-<w>x<h>.png. Prints "[058 signin] PASS".
  */
 const assert = require('assert');
@@ -64,7 +64,7 @@ module.exports = async (ctx) => {
     let n = await info('my-notes');
     assert.strictEqual(n.status, 'Needs sign-in', 'my-notes needs a sign-in: ' + JSON.stringify(n));
     assert.ok(/This server needs you to sign in\. GitHub Copilot keeps the sign-in; Agent Durbar never sees it\./.test(n.text), 'the hint: ' + n.text);
-    assert.deepStrictEqual(n.buttons.filter((b) => ['Sign in', 'Switch off for this session', 'How to sign in from a terminal'].includes(b)), ['Sign in', 'Switch off for this session', 'How to sign in from a terminal']);
+    assert.deepStrictEqual(n.buttons.filter((b) => ['Sign in', 'Switch off for this session', 'How to sign in from a terminal'].includes(b)), ['Sign in', 'Switch off for this session'], 'FR-246: Copilot has no terminal route: ' + JSON.stringify(n.buttons));
     assert.ok(!n.buttons.includes('Restart'), 'a needs-sign-in row has no Restart: ' + JSON.stringify(n.buttons));
     assert.ok(await js(`!!window.__row('my-notes').querySelector('.srv-act button.primary[data-signin]')`), 'Sign in is the primary action, where Restart would be');
     assert.ok(/Checked once on a real account; other servers and systems not yet\./.test(n.text), 'FR-074 in the row: ' + n.text);
@@ -77,18 +77,13 @@ module.exports = async (ctx) => {
     // ---- FR-164: Sign in again is only for remote servers Durbar knows by address: none of these rows (stdio, built-in, needs sign-in) ----
     for (const r of ['github', 'github-mcp-server', 'my-notes']) assert.ok(!(await info(r)).buttons.includes('Sign in again…'), `no Sign in again on ${r}`);
 
-    // ---- the terminal steps ----
-    await click('my-notes', 'How to sign in from a terminal');
-    assert.ok(await until(`!!window.__row('my-notes').querySelector('.srv-steps')`), 'steps opened');
-    const steps = await js(`window.__row('my-notes').querySelector('.srv-steps').textContent`);
-    assert.ok(/copilot/.test(steps) && /\/mcp auth my-notes/.test(steps) && /Restart session with these servers/.test(steps), 'Copilot manual route: ' + steps);
-    assert.ok(/If Sign in is not available/.test(steps) && /may not carry over to this session \(seen on 2026-10-23\)/.test(steps), 'the route is not presented as sure: ' + steps);
-    assert.deepStrictEqual(await js(`[...window.__row('my-notes').querySelectorAll('.srv-steps code')].map(c=>c.textContent)`), ['copilot', '/mcp auth my-notes']);
-    assert.ok(await js(`!!window.__row('my-notes').querySelector('button[data-copysteps]')`), 'Copy is offered');
+    // ---- spec 058 FR-246 (issue 1730): no Copilot CLI instruction in a Copilot row (a CLI sign-in did not carry over to Durbar's sessions) ----
+    {
+      const rowText = await js(`window.__row('my-notes').textContent`);
+      assert.ok(!/\/mcp auth|copilot login|`copilot`/.test(rowText) && !/\bruns? `?copilot\b/i.test(rowText), 'FR-246: no Copilot CLI command in the row: ' + rowText);
+      assert.ok(!(await js(`!!window.__row('my-notes').querySelector('.srv-steps, button[data-steps], button[data-copysteps], code')`)), 'FR-246: no steps block, no terminal button, no Copy, no code in a row that has Sign in');
+    }
     await check(w, 'steps');
-    await shot(`058-mcp-signin-steps-${w}x${h}.png`);
-    await click('my-notes', 'How to sign in from a terminal');
-    assert.ok(await until(`!window.__row('my-notes').querySelector('.srv-steps')`), 'steps closed again');
 
     // ---- Sign in: the host, never the address; focus moves to Open sign-in page ----
     await click('my-notes', 'Sign in');
@@ -205,16 +200,43 @@ module.exports = async (ctx) => {
     assert.ok(!(await info('my-notes')).sign, 'no sign-in block for a server that is off');
     await closeDlg();
 
-    // ---- manual: the app cannot start a sign-in, so the steps show ----
+    // ---- manual: the app cannot start a sign-in, so its note shows ----
     await H.load({ w, h, ready: 'fit', focus: true, query: { simmcpauth: 'manual' } });
     await openMcp('sim-6');
     n = await info('my-notes');
     assert.strictEqual(n.status, 'Needs sign-in');
     assert.ok(!n.buttons.includes('Sign in') && n.buttons.includes('Switch off for this session'), 'no Sign in, but Switch off: ' + JSON.stringify(n.buttons));
-    assert.ok(await js(`!!window.__row('my-notes').querySelector('.srv-steps')`), 'the steps are open by default');
-    assert.ok(/\/mcp auth my-notes/.test(await js(`window.__row('my-notes').querySelector('.srv-steps').textContent`)));
+    assert.ok(await js(`!!window.__row('my-notes').querySelector('.srv-steps')`), 'the note is open by default');
+    {
+      const st = await js(`window.__row('my-notes').querySelector('.srv-steps').textContent`);
+      assert.ok(/^Sign in is not available for this server from Agent Durbar\. Switch it off for this session if you do not need it\.$/.test(st.trim()) && !/CLI|copilot/i.test(st), 'FR-246: the owner-chosen note, no CLI mention: ' + st);
+      assert.ok(!/\/mcp auth|copilot login|`copilot`|run copilot/i.test(st) && !(await js(`!!window.__row('my-notes').querySelector('.srv-steps code, button[data-copysteps]')`)), 'FR-246: no CLI command, no Copy: ' + st);
+    }
     await check(w, 'manual');
     await shot(`058-mcp-signin-manual-${w}x${h}.png`);
+    await closeDlg();
+
+    // ---- FR-246: Sign in is offered but the app refuses the call (`manual`): Copilot shows the note and never says "steps below"; Claude Code's steps open ----
+    await H.load({ w, h, ready: 'fit', focus: true, query: { simmcpauth: 'refused', simkinds: 'mixed' } });
+    await openMcp('sim-6'); // Claude Code in the mixed set
+    await click('my-notes', 'Sign in');
+    assert.ok(await until(`/Could not start the sign-in/.test(window.__row('my-notes').textContent)`), 'Claude refused: the sentence shows');
+    {
+      const ct = await js(`window.__row('my-notes').textContent`);
+      assert.ok(/Use the steps below\./.test(ct) && (await js(`!!window.__row('my-notes').querySelector('.srv-steps')`)) && /claude mcp login my-notes/.test(ct), 'FR-246: Claude refused: its steps open and the sentence points at them: ' + ct);
+    }
+    await closeDlg();
+    await H.load({ w, h, ready: 'fit', focus: true, query: { simmcpauth: 'refused' } });
+    await openMcp('sim-6'); // a Copilot agent
+    await click('my-notes', 'Sign in');
+    assert.ok(await until(`/Could not start the sign-in/.test(window.__row('my-notes').textContent)`), 'Copilot refused: the sentence shows');
+    {
+      const rt = await js(`window.__row('my-notes').textContent`);
+      assert.ok(!/steps below/i.test(rt), 'FR-246: a refused Copilot sign-in never says "steps below" (nothing is below): ' + rt);
+      assert.ok(/This Copilot version cannot start a sign-in from Agent Durbar\./.test(rt) && !/\/mcp auth|copilot login|`copilot`/.test(rt), 'FR-246: the plain refusal, no CLI command: ' + rt);
+      assert.ok(!(await js(`!!window.__row('my-notes').querySelector('.srv-steps, button[data-steps], code')`)), 'FR-246: no steps block for a command-less note where Sign in is offered');
+    }
+    await check(w, 'refused');
     await closeDlg();
 
     // ---- spec 058 FR-175..FR-183 (T154): a Claude Code row signs in the same way; Codex keeps today's behaviour until PR B ----

@@ -36,6 +36,19 @@ module.exports = async (ctx) => {
   const load = async (w, h) => {
     await H.load({ w, h, query: {}, ready: 'fit' });
     await js(`(()=>{const b=window.__durbarSimUi.bridge();window.__calls=[];window.__rsArg=[];for(const k of ['send','resumeSession']){const f=b[k];if(!f||f.__rec)continue;const w=function(...a){window.__calls.push(k);if(k==='resumeSession')window.__rsArg.push(a[0]);return f.apply(this,a)};w.__rec=1;b[k]=w;}})()`);
+    /* every text #srAnnounce gets is recorded (announce() keeps only the last one, and a late "Reply finished" replaces "Message shown."), so a check asks what was announced, not what is shown at the moment */
+    await js(`(()=>{const el=document.getElementById('srAnnounce');window.__ann=[];new MutationObserver(()=>{const t=el.textContent;if(t)window.__ann.push(t)}).observe(el,{childList:true,characterData:true,subtree:true})})()`);
+  };
+  const clearAnn = () => js(`void (window.__ann.length=0)`);
+  const wasAnnounced = (text, ms) => until(`window.__ann.includes(${jsLiteral(text)})`, ms || 4000);
+  /* the open chat is idle: no turn running (the Stop slot is not showing), no caret, Send is back */
+  const IDLE = `(()=>{const s=document.getElementById('runSlot'),b=document.getElementById('sendBtn');return !!s&&!s.classList.contains('running')&&!document.querySelector('#chat .bubble.caret')&&!!b&&b.getClientRects().length>0})()`;
+  /* one turn: send, then wait until the reply bubble exists (the count grew) AND Noor is idle. Idle alone passes before the reply has started, and its late "Reply finished" would replace "Message shown." */
+  const turn = async (text, extra) => {
+    const n0 = await js(`document.querySelectorAll('#chat .msg.user').length`);
+    const a0 = await js(`document.querySelectorAll('#chat .msg.agent .bubble').length`);
+    await js(`(()=>{const m=document.getElementById('msgInput');m.focus();m.value=${jsLiteral(text)};m.dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('sendBtn').click();})()`);
+    return until(`document.querySelectorAll('#chat .msg.user').length>${jsLiteral(n0)}&&document.querySelectorAll('#chat .msg.agent .bubble').length>${jsLiteral(a0)}&&` + (extra || 'true') + '&&' + IDLE, 20000);
   };
   const calls = (k) => js(`window.__calls.filter(c=>c===${jsLiteral(k)}).length`);
   const open = async (name) => {
@@ -79,26 +92,26 @@ module.exports = async (ctx) => {
     /* a long chat: several turns with the simulator (two of them the same line), so the reveal has to scroll */
     const DUP = 'Please repeat this exact line, it is sent twice.';
     const TURNS = ['Please list the open items, number 1, with one line each.', 'Please list the open items, number 2, with one line each.', 'Please list the open items, number 3, with one line each.', 'Please list the open items, number 4, with one line each.', 'Please list the open items, number 5, with one line each.', 'Please list the open items, number 6, with one line each.', DUP, DUP];
-    for (const turn of TURNS) {
-      const n0 = await js(`document.querySelectorAll('#chat .msg.user').length`);
-      await js(`(()=>{const m=document.getElementById('msgInput');m.focus();m.value=${jsLiteral(turn)};m.dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('sendBtn').click();})()`);
-      await until(`document.querySelectorAll('#chat .msg.user').length>${jsLiteral(n0)}&&!document.querySelector('#chat .bubble.caret')&&!!document.querySelector('#chat .msg.agent .bubble > .nt-btn')&&(()=>{const b=document.getElementById('sendBtn');return !!b&&b.getClientRects().length>0})()`, 20000);
-    }
+    for (const [i, text] of TURNS.entries()) check(await turn(text, `!!document.querySelector('#chat .msg.agent .bubble > .nt-btn')`), `${tag}: turn ${i + 1}: Noor answered and went idle`);
     await until(`!!document.querySelector('#chat .chat-inner .msg.agent .bubble > .nt-btn')`, 15000);
     const reply = await firstReply();
     check(reply && reply.text, `${tag}: Noor has a finished reply to save`);
     check(await save(srcId, 'agent', reply.ord, reply.text, srcId), `${tag}: the note from Noor's session is saved`);
+    check(await until(IDLE, 4000), `${tag}: Noor is idle before Open source (no late "Reply finished" can replace the announcement)`);
     await open('Ada');
     check(await openDrawer(), `${tag}: the drawer opens from another chat of the folder`);
     /* the picture is taken inside the 1.2 s: the fade is held still for it (a style only the driver adds) */
     await js(`(()=>{const e=document.createElement('style');e.id='ntShotStyle';e.textContent='.bubble.nt-found{animation:none!important}';document.head.appendChild(e)})()`);
+    await clearAnn();
     check(await openSource(reply.text.slice(0, 20)), `${tag}: the row's ⋯ offers Open source`);
     check(await until(`/Noor/.test((document.getElementById('panelTitle')||{}).textContent||'')&&!!document.querySelector('#chat .bubble.nt-found')`, 8000), `${tag}: Noor's chat opens with the message outlined`);
     const f1 = await found();
     check(f1 && f1.inside && f1.page === 0, `${tag}: the message is inside #chat and the page did not scroll (${JSON.stringify(f1)})`);
     check(await js(`document.getElementById('notesDrawer').hidden`), `${tag}: the drawer closed so the chat is uncovered`);
     check(await until(`document.activeElement&&document.activeElement.id==='chat'`, 4000), `${tag}: the focus is on the chat log, not <body> (${JSON.stringify(await activeDesc())})`);
-    check(await until(`document.getElementById('srAnnounce').textContent==='Message shown.'`, 4000), `${tag}: Message shown. is announced`);
+    const shown = await wasAnnounced('Message shown.');
+    const heard = JSON.stringify(await js(`window.__ann`));
+    check(shown, `${tag}: Message shown. is announced (heard: ${heard})`);
     await H.shot(path.join(OUT, `083-notes-source-${w}x${h}.png`), { prep: 'calm', tag: 'notes-source', keepActions: false });
     await js(`document.getElementById('ntShotStyle').remove()`);
     check(await until(`!document.querySelector('#chat .bubble.nt-found')`, 4000), `${tag}: the outline ends`);
@@ -139,9 +152,7 @@ module.exports = async (ctx) => {
     const nearJs = `(()=>{const c=document.getElementById('chat'),all=[...c.querySelectorAll('.chat-inner .msg.agent .bubble')],ch=c.clientHeight,L=[];for(let i=all.length-1;i>=0;i--){const b=all[i];if(!b._raw)continue;const cb=b.getBoundingClientRect(),cr=c.getBoundingClientRect();const centre=c.scrollTop+(cb.top-cr.top)+cb.height/2;const left=c.scrollHeight-centre-ch/2;L.push(Math.round(left));if(left>=130&&left<=360)return {ord:i,text:b._raw,L};}return {L};})()`;
     let NEAR = await js(nearJs);
     for (let k = 1; k <= 6 && !(NEAR && NEAR.text); k++) { /* the heights vary with the window and the fonts: one more turn at a time until a reply sits in the band */
-      const n0 = await js(`document.querySelectorAll('#chat .msg.user').length`);
-      await js(`(()=>{const m=document.getElementById('msgInput');m.focus();m.value=${jsLiteral('One more question, number ' + k + ': what is next?')};m.dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('sendBtn').click();})()`);
-      await until(`document.querySelectorAll('#chat .msg.user').length>${jsLiteral(n0)}&&!document.querySelector('#chat .bubble.caret')&&(()=>{const b=document.getElementById('sendBtn');return !!b&&b.getClientRects().length>0})()`, 20000);
+      check(await turn('One more question, number ' + k + ': what is next?'), `${tag}: extra turn ${k}: Noor answered and went idle`);
       await open('Noor');
       NEAR = await js(nearJs);
     }
@@ -204,17 +215,19 @@ module.exports = async (ctx) => {
     const GHOST = 'A saved idea that is not in any chat of this simulated session.';
     check(await save(srcId, 'agent', 0, GHOST, srcId), `${tag}: a note whose message is not in the chat is saved`);
     await open('Ada'); await openDrawer();
+    await clearAnn();
     check(await openSource(GHOST.slice(0, 20)), `${tag}: Open source on the missing message`);
     check(await until(`/Noor/.test((document.getElementById('panelTitle')||{}).textContent||'')&&document.body.textContent.includes(${jsLiteral(NOMSG)})`, 8000), `${tag}: the chat opens and the toast says the message was not found`);
     check(!(await found()), `${tag}: nothing is outlined when the message is missing`);
-    check(await until(`document.getElementById('srAnnounce').textContent===${jsLiteral(NOMSG)}`, 4000), `${tag}: the missing message is announced`);
+    check(await wasAnnounced(NOMSG), `${tag}: the missing message is announced`);
     check(await until(`document.activeElement&&document.activeElement.id==='chat'`, 4000), `${tag}: the focus is on the chat log when the message is missing`);
     const openerId = await open('Ada');
     check(await save(openerId, 'user', 0, 'An idea from a session that is gone.', 'sim-gone-session'), `${tag}: a note from a gone session is saved`);
     await openDrawer();
+    await clearAnn();
     check(await openSource('An idea from a session'), `${tag}: Open source on the gone session`);
     check(await until(`[...document.querySelectorAll('#toasts .toast')].some(t=>t.textContent===${jsLiteral(GONE)})`, 8000), `${tag}: the toast says the session is gone (${await toasts()})`);
-    check(await until(`document.getElementById('srAnnounce').textContent===${jsLiteral(GONE)}`, 4000), `${tag}: the gone session is announced`);
+    check(await wasAnnounced(GONE), `${tag}: the gone session is announced`);
     check(await until(`!!(document.activeElement&&document.activeElement.closest&&document.activeElement.closest('#notesDrawer .nt-row'))`, 4000), `${tag}: the focus is back on the note's row (${JSON.stringify(await activeDesc())})`);
     check(await js(`!document.getElementById('notesDrawer').hidden`) && (await notesOf()).some((n) => n.text.startsWith('An idea from a session')) && (await notesOf()).some((n) => n.text === GHOST), `${tag}: the drawer stays open and both notes stay`);
     check((await calls('resumeSession')) === 0, `${tag}: a gone session resumes nothing`);

@@ -14,7 +14,7 @@ import type { McpWarnLevels } from '../shared/mcpcost';
 import { MCP_SIGNIN_REFRESH_DEFAULT } from './mcpsigninrefresh';
 import { addCustomPlace, removeCustomPlace, setPlaceEntry, updateCustomPlace } from '../shared/places';
 import type { CustomPlace, PlaceError, PlaceMap } from '../shared/places';
-import { migrateLegacyTheme, parseCharacters } from '../shared/characters';
+import { RETRO_MIGRATION_OPEN, migrateLegacyTheme, migrateRetroTheme, parseCharacters } from '../shared/characters';
 import { migrateRemovedTheme } from '../shared/themes';
 import type { CharacterChoice } from '../shared/characters';
 
@@ -42,7 +42,7 @@ export interface Saved<T> { ok: boolean; value: T }
 export class SettingsStore {
   private s: AppSettings = {};
   /** `newPlaceId` makes candidate ids for new custom places; tests inject their own. */
-  constructor(private readonly file: string, private readonly newPlaceId: () => string = randomPlaceId) {}
+  constructor(private readonly file: string, private readonly newPlaceId: () => string = randomPlaceId, private readonly retroOpen: boolean = RETRO_MIGRATION_OPEN) {}
 
   load(): AppSettings {
     try {
@@ -54,8 +54,10 @@ export class SettingsStore {
     const m = migrateLegacyTheme(this.s);
     // spec 035 FR-018: a removed built-in theme (Corporate, the courts) becomes Clean Office the same way; Characters is untouched
     const r = migrateRemovedTheme(m.settings);
-    if (m.changed || r.changed) {
-      this.s = r.settings;
+    // spec 102 FR-266 (T227): a stored Retro Pixel theme moves to Characters `pixel`, once; inert while the flag is closed
+    const p = migrateRetroTheme(r.settings, this.retroOpen);
+    if (m.changed || r.changed || p.changed) {
+      this.s = p.settings;
       this.save();
     }
     return { ...this.s };
@@ -86,6 +88,19 @@ export class SettingsStore {
     const p = parseNewFolderParent(v);
     if (!p || p === this.s.newFolderParent) return;
     this.commit({ ...this.s, newFolderParent: p }, 'newFolderParent');
+  }
+
+  /** Spec 102 FR-266 (T227): true from the save that moved a Retro Pixel theme until `ackRetroMove`; T230's renderer half reads it, also after a crash. */
+  get retroMovePending(): boolean {
+    return this.s.retroMovePending === true;
+  }
+
+  /** The renderer half has applied the move: clears the marker (it stays when the file cannot be written, so the next run asks again). */
+  ackRetroMove(): void {
+    if (this.s.retroMovePending !== true) return;
+    const next: AppSettings = { ...this.s };
+    delete next.retroMovePending;
+    this.commit(next);
   }
 
   /** Spec 080 FR-025d (Q2): the session browser's one-time note was accepted. */

@@ -197,6 +197,8 @@ module.exports = async (ctx) => {
       assert.ok(a.props.every((p) => ALLOWED.includes(p)), `FR-180: only ${ALLOWED}: ${a.name}: ${a.props}`);
       assert.ok(!a.name || /steps|step-/.test(a.ease), `the arcade's loops are stepped: ${a.name}: ${a.ease}`);
     }
+    /* spec 102 FR-261: the arcade draws no second picture (a visitor's run frames cross-fade only in the Photo office and the cave), however the visitors happen to be placed */
+    assert.strictEqual(await js(`document.querySelectorAll('#stage .ro .ro-visitor2, #stage .ro .ro-person2').length`), 0, 'FR-261: no second picture in the arcade');
     /* a bob only on a working person (aisleStatus), every one of them */
     const bobs = await js(`[...document.querySelectorAll('#stage .ro-person.bob')].map(e=>{const d=window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).find(x=>x.id===e.dataset.for);return d&&d.state;})`);
     assert.ok(bobs.length > 0 && bobs.every((st) => st === 'working'), 'a bob only on a working person: ' + JSON.stringify(bobs));

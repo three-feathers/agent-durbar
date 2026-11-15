@@ -33,12 +33,15 @@ import { register as registerConvSearchIpc } from './ipc/convsearch';
 import { buildScope } from './convscope';
 import { createReadGate, rendererScript } from './convsearch';
 import type { SessionSearchApi } from './convsearch';
-import { createMasker } from './convmask';
+import { createMasker, sessionMaskValues } from './convmask';
 import { register as registerProfilesIpc } from './ipc/profiles';
 import { createProfileFreshness } from './profilefiles';
 import { register as registerSlashIpc } from './ipc/slash';
 import { nativeConfirm } from './nativeconfirm';
 import { register as registerNotesIpc } from './ipc/notes';
+import { register as registerTeamsIpc } from './ipc/teams';
+import { TeamsIpcOps } from './teamsipc';
+import { TeamTemplateStore } from './teamstore';
 import { NotesOps, notesConfirmText } from './notesops';
 import { NotesStore } from './notesstore';
 import { NotesFile } from './notesfile';
@@ -70,6 +73,7 @@ import type { AgentAdapter, AgentEvent } from '../adapters/types';
 import type { AdapterInfo } from '../shared/adapters';
 import { startOptionsOf } from './startopts';
 import { resolveWorkspaceCwd } from '../adapters/workspace';
+import { findAdded } from './addkey';
 import { MAX_ATTACH_BYTES, MAX_ATTACH_FILES, fmtSize, kindOfFile, sweepStaleStageDirs, sweepStaleTempDirs } from '../shared/attachments';
 import { ACCOUNT_TEMP_PREFIXES } from '../shared/account';
 import type { AddResult, AgentInfo, PermMode, PickedFile, SessionOptions } from '../shared/api';
@@ -519,8 +523,13 @@ async function addMany(paths: string[], permMode: PermMode, opts: SessionOptions
   const added: AgentInfo[] = [];
   const errors: string[] = [];
   const readyIds = opts.adapterId !== undefined ? await readyAdapterIds() : undefined; // a kind the user picked must be ready (FR-058)
+  const existing: NonNullable<AddResult['existing']> = [];
   for (const p of paths) {
     try {
+      // Spec 033 FR-090: a folder that is already in the office is not started a second time; the window says where it is.
+      const key = ((w) => w.workspaceFile ?? w.cwd)(resolveWorkspaceCwd(p));
+      const have = findAdded(key, agents.values(), wsKey);
+      if (have) { existing.push({ id: have.id, name: have.name, floor: folderStore?.floorOfFolder(wsKey(have)) ?? have.floor ?? GROUND }); continue; }
       added.push(await addWorkspace(p, permMode, { model: opts.model, effort: opts.effort, persist: opts.persist, maxAiCredits: opts.maxAiCredits, floor: opts.floor, adapterId: opts.adapterId, readyIds }));
     } catch (err) {
       errors.push(`${path.basename(p)}: ${err instanceof Error ? err.message : String(err)}`);
@@ -538,7 +547,7 @@ async function addMany(paths: string[], permMode: PermMode, opts: SessionOptions
       }
     }
   }
-  return { ok: errors.length === 0, agents: added, error: errors.join('; ') || undefined, ...(warnings.length ? { warnings } : {}) };
+  return { ok: errors.length === 0, agents: added, error: errors.join('; ') || undefined, ...(warnings.length ? { warnings } : {}), ...(existing.length ? { existing } : {}) };
 }
 
 /** Folders remembered from earlier runs come back as "not started" agents: nothing runs until the first message. */
@@ -841,7 +850,7 @@ const convSearch = registerConvSearchIpc({
   scope: (stop, codexLists) => buildScope({
     agents, router, store: folderStore, wsKey, resumeIdFor, appName: (id) => registry.get(id)?.displayName ?? id, vsUserDirs: () => vsUserDirsOf(dev),
     rememberChat: (agentId, ref) => { const m = vsChatRefs.get(agentId) ?? new Map<string, ChatFileRef>(); m.set(ref.summary.key, ref); vsChatRefs.set(agentId, m); }, // FR-012: View opens it
-    values: { knownSecretValues: (key) => mcpStore?.knownSecretValues(key) ?? [], noPrompt: () => !mcpStore || mcpStore.noPrompt(), secretValuesFor: (id) => mcp.secretValuesFor(id) },
+    values: { knownSecretValues: (key) => mcpStore?.knownSecretValues(key) ?? [], noPrompt: () => !mcpStore || mcpStore.noPrompt(), secretValuesFor: (id) => mcp.secretValuesFor(id), copilotValuesFor: (id) => mcp.copilotValuesFor(id) },
     gate: convGate, codexLists, listings: convListings, // FR-026: the box session's Codex titles, memory only
   }, stop),
   matcher: () => (convMatcher ??= { masker: createMasker({ unhide: (s) => rendererScript<{ unhide(s: string): string }>('safetext.js').unhide(s) }), search: rendererScript<SessionSearchApi>('sessionsearch.js') }),
@@ -896,6 +905,10 @@ function oneShotFor(id: string): { name: string; generate: (prompt: string) => R
 registerProfilesIpc({ agents, router, getAgentTrust: () => agentTrust, wsKey, ensureLive, oneShot: (id) => oneShotFor(id), profileFreshness });
 registerSlashIpc({ agents, router, ensureLive }); // spec 073
 registerNotesIpc({ getOps: () => notesOps }); // spec 083
+// spec 111 T007: the team templates; the store is opened when first asked (never under the simulator: its channels are refused before this runs)
+let teamsOps: TeamsIpcOps | undefined;
+let teamStore: TeamTemplateStore | undefined;
+registerTeamsIpc({ getOps: () => (SIMULATOR ? undefined : (teamsOps ??= new TeamsIpcOps({ store: () => (teamStore ??= new TeamTemplateStore(path.join(app.getPath('userData'), 'team-templates.json'))) }))) });
 registerModelIpc({ agents, router, registry, getFolderStore: () => folderStore, wsKey, orgModel: (adapterId, model) => orgPolicies.model(adapterId, model) });
 registerOrgPolicyIpc({ view: () => orgPolicies.view() });
 registerAdaptersIpc({ adaptersList });
@@ -1125,7 +1138,7 @@ app.whenReady().then(() => {
   notesOps = new NotesOps({
     agents, store: () => notesStore, resumeIdFor, adapterIdOf: (id) => router.adapterIdOf(id),
     folderValues: (key) => mcpStore?.knownSecretValues(key) ?? [], // FR-005: never decrypts, so no keychain prompt from a notes save
-    sessionValues: (id) => (mcpStore?.noPrompt() ? mcp.secretValuesFor(id) : []), // forSession could unlock the vault: only when it cannot
+    sessionValues: (id) => sessionMaskValues({ noPrompt: () => mcpStore?.noPrompt() === true, secretValuesFor: (x) => mcp.secretValuesFor(x), copilotValuesFor: (x) => mcp.copilotValuesFor(x) }, id), // forSession could unlock the vault: only when it cannot; else the Copilot-list values alone (spec 069 FR-070)
     // FR-050..FR-055 (T041, T042): the .durbar/notes/notes.md mirror, only for a folder whose switch (`notesProject` in folders.json) is on
     file: () => notesFile, fileOn: (key) => !!folderStore?.get(key)?.notesProject, fileGit: (key) => folderStore?.get(key)?.notesProject === 'git', setFileOn: (key, on, git) => folderStore?.setNotesFile(key, on, git) === true,
     ignoreOwn: (key) => folderStore?.get(key)?.notesIgnoreOwn, setIgnoreOwn: (key, id) => folderStore?.setNotesIgnoreOwn(key, id) === true,

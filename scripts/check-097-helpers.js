@@ -104,10 +104,11 @@ module.exports = async (ctx) => {
   /* the status tokens a dot must show: a probe element in the page takes the colour from the token itself */
   const tokens = () => js(`(()=>{const probe=(v)=>{const s=document.createElement('span');s.style.cssText='position:absolute;visibility:hidden;background:var('+v+');border-color:var('+v+');border-style:solid;border-width:1px';document.body.appendChild(s);const c=getComputedStyle(s).backgroundColor;s.remove();return c};return {working:probe('--c-working'),thinking:probe('--c-thinking'),waiting:probe('--c-waiting'),error:probe('--c-error'),done:probe('--c-done'),idle:probe('--c-idle')}})()`);
   /* what a head's picture must be: the person helperPerson gives (never the parent's), cropped by headCrop: asked of the page's own pure module, compared with what the page drew */
-  const picture = (headId, parentId) => js(`(()=>{try{const E=window.exports,ro=document.querySelector('#stage .ro'),seat=window.DurbarRealOfficeSets[ro.dataset.set].seat,ids=Object.keys(seat).sort(),parent=window.DurbarRealOffice.personOf(${jsLiteral(parentId)}),want=E.helperPerson(${jsLiteral(headId)},parent,ids);
-    const b=document.querySelector('#stage .ro-hd[data-id="'+CSS.escape(${jsLiteral(headId)})+'"]'),im=b&&b.querySelector('img');if(!im)return {want,parent,none:true};
-    const m=/\\/([a-z0-9-]+)-rest\\.webp$/.exec(im.getAttribute('src')||''),c=E.headCrop(seat[want]),f=E.HEAD/c.s;
-    return {want,parent,got:m&&m[1],nat:im.naturalWidth,w:parseFloat(im.style.width),left:parseFloat(im.style.left),top:parseFloat(im.style.top),ew:seat[want].w*f,el:-c.x*f,et:-c.y*f}}catch(e){return {err:String(e&&e.message)}}})()`);
+  /* spec 097 FR-370 (#1642): in a world with kids the head is the kid's face (helperHead), else the adult helperPerson picks, never the parent */
+  const picture = (headId, parentId) => js(`(()=>{try{const E=window.exports,ro=document.querySelector('#stage .ro'),meta=Object.assign({},window.DurbarRealOfficeWorlds[ro.dataset.world],window.DurbarRealOfficeSets[ro.dataset.set]),parent=window.DurbarRealOffice.personOf(${jsLiteral(parentId)});
+    const hd=E.helperHead(${jsLiteral(headId)},parent,meta),b=document.querySelector('#stage .ro-hd[data-id="'+CSS.escape(${jsLiteral(headId)})+'"]'),im=b&&b.querySelector('img');if(!im||!hd)return {want:hd&&hd.file,parent,none:true};
+    const m=/\\/([a-z0-9-]+-[a-z]+\\.webp)$/.exec(im.getAttribute('src')||''),c=hd.crop,f=E.HEAD/c.s;
+    return {want:hd.file,kid:hd.world,parent:parent?parent+'-rest.webp':null,got:m&&m[1],nat:im.naturalWidth,w:parseFloat(im.style.width),left:parseFloat(im.style.left),top:parseFloat(im.style.top),ew:hd.w*f,el:-c.x*f,et:-c.y*f}}catch(e){return {err:String(e&&e.message)}}})()`);
   const hit = (a, b, t = 0.5) => a.x + t < b.x + b.w && b.x + t < a.x + a.w && a.y + t < b.y + b.h && b.y + t < a.y + a.h;
   const shots = [];
 
@@ -157,10 +158,11 @@ module.exports = async (ctx) => {
           assert.ok(d.subNames.some((n) => t.label.includes(n)) && t.label.includes('helper of ' + d.name), `${tag}: ${t.id}'s accessible name has its name and its parent: ${t.label}`);
           assert.ok(d.subNames.some((n) => t.title.includes(n)), `${tag}: ${t.id}'s tooltip has its name: ${t.title}`);
         }
-        /* the picture is the right person's, cropped as headCrop says (not the parent's) */
+        /* the picture is the right person's, cropped as headCrop says (not the parent's); in the Photo office the kid's face, cropped as kidHeadCrop says (FR-370) */
         const pic = await picture(t.id, d.id);
         assert.ok(!pic.err, `${tag}: picture facts: ${pic.err}`);
-        assert.ok(pic.got && pic.got === pic.want && pic.got !== pic.parent, `${tag}: ${t.id}'s picture is ${pic.got}, helperPerson says ${pic.want}, the parent is ${pic.parent}`);
+        assert.ok(pic.got && pic.got === pic.want && pic.got !== pic.parent, `${tag}: ${t.id}'s picture is ${pic.got}, helperHead says ${pic.want}, the parent is ${pic.parent}`);
+        if (world === 'photo') assert.ok(pic.kid && /^kid\d-/.test(pic.got), `${tag}: ${t.id}'s head is a kid's face in the Photo office (FR-370), not an adult (${pic.got})`);
         assert.ok(Math.abs(pic.w - pic.ew) < 0.2 && Math.abs(pic.left - pic.el) < 0.2 && Math.abs(pic.top - pic.et) < 0.2 && pic.nat > 0, `${tag}: ${t.id}'s crop ${JSON.stringify([pic.w, pic.left, pic.top])} is headCrop's ${JSON.stringify([pic.ew, pic.el, pic.et])}`);
         pictures++;
         assert.strictEqual(t.glyph, false, `${tag}: ${t.id} has its picture, no placeholder`);
