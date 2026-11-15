@@ -332,7 +332,7 @@ for (const n of [3, 8, 15]) for (const dh of [0, 31]) {
 
 // ---- the seam: `rows` is realLayout, byte for byte (T167); the day or night light is no parameter (FR-251) ----
 {
-  assert.deepStrictEqual([...ARRANGEMENTS], ['rows', 'aisles']);
+  assert.deepStrictEqual([...ARRANGEMENTS], ['rows', 'circle', 'aisles']); /* `circle`: spec 102 T165 */
   const m = model(15, 4), v = { w: 1280, h: 748 };
   assert.strictEqual(JSON.stringify(layoutFor('rows', m, v, META, SIGNS(4))), JSON.stringify(realLayout(m, v, META, SIGNS(4))), 'rows is untouched');
   assert.strictEqual(JSON.stringify(layoutFor('aisles', m, v, META, SIGNS(4))), JSON.stringify(aislesLayout(m, v, META, SIGNS(4))));
