@@ -88,6 +88,9 @@
   </div>
 </div>
 <!-- spec 052 FR-015: the restored-Allow-all notice, a strip that takes its own room (nothing is covered) -->
+<!-- spec 102 T340: in the arcade, the one line the notice strips give way to when the office would scroll (app.js stripsYield) -->
+<div class="notice-strip info" id="stripBar" role="status" hidden></div>
+<div id="stripAlert" class="sr-only" role="alert"></div>
 <div class="notice-strip" id="restoreStrip" role="alert" hidden></div>
 <!-- spec 052 FR-089: Since you were away (shown once after more than 30 minutes closed; dismissible) -->
 <div class="notice-strip info" id="awayStrip" role="status" hidden></div>
@@ -179,6 +182,8 @@
 <script src="harnesses.js"></script>
 <script src="profileeditor.js"></script>
 <script src="settingsnav.js"></script>
+<script src="memberrows.js"></script><!-- spec 111 T009: the permissions and limit rows, shared by New session and the member editor -->
+<script src="teameditor.js"></script><!-- spec 111 T009: the team member editor (window.DurbarTeamEditor) -->
 <script src="teams.js"></script><!-- spec 111 T008: Settings > Team templates (window.DurbarTeams) -->
 <script src="screens.js"></script>
 <script src="foldersetup.js"></script>

@@ -197,19 +197,52 @@ module.exports = async (ctx) => {
     await H.settle(); // a refused click has no event to wait for: the page settles, then the state must be as it was
     assert.strictEqual(await H.js(`window.THEME.characters()`), 'theme', `${tag}: a click on the closed Retro pixel changes nothing`);
     assert.strictEqual(await H.js(`document.querySelector('#chList [data-characters="pixel"]').getAttribute('aria-checked')`), 'false', `${tag}: and does not check it`);
-    /* spec 102 FR-303 (review of #1676): Characters are one radio group like the World row: roles, aria-checked, one Tab stop, arrows move and choose and skip the closed entry, Tab and Escape are left alone */
+    /* spec 102 FR-303 (review of #1676): Characters are one radio group like the World row: roles, aria-checked, one Tab stop, arrows only move (and skip the closed entry), Enter and Space choose, Tab and Escape are left alone */
     const rg = await H.js(`(()=>{const g=document.getElementById('chList'),r=[...g.querySelectorAll('[data-characters]')];return {role:g.getAttribute('role'),lb:g.getAttribute('aria-labelledby'),roles:[...new Set(r.map(b=>b.getAttribute('role')))],n:r.length,checked:r.filter(b=>b.getAttribute('aria-checked')==='true').map(b=>b.dataset.characters),tabs:r.filter(b=>b.tabIndex===0).map(b=>b.dataset.characters),dis:r.filter(b=>b.getAttribute('aria-disabled')==='true').map(b=>b.dataset.characters),pressed:r.some(b=>b.hasAttribute('aria-pressed'))}})()`);
     assert.deepStrictEqual([rg.role, rg.lb, rg.roles, rg.n, rg.pressed], ['radiogroup', 'chH', ['radio'], 10, false], `${tag}: Characters is a radio group of radios: ${JSON.stringify(rg)}`);
     assert.deepStrictEqual([rg.checked, rg.tabs, rg.dis], [['theme'], ['theme'], ['pixel']], `${tag}: one checked radio, it is the one Tab stop, only the closed Retro pixel is aria-disabled: ${JSON.stringify(rg)}`);
     const keyed = (sel) => H.js(`(()=>{const a=document.activeElement;return {on:a&&a.dataset?a.dataset.characters:null,now:window.THEME.characters(),checked:[...document.querySelectorAll('#chList [data-characters]')].filter(b=>b.getAttribute('aria-checked')==='true').map(b=>b.dataset.characters).join(),tabs:[...document.querySelectorAll('#chList [data-characters]')].filter(b=>b.tabIndex===0).map(b=>b.dataset.characters).join()}})()`);
+    // FR-301 through FR-303: arrows, Home and End only MOVE the focus (roving tabindex), Enter and Space choose
+    const openIds = await H.js(`[...document.querySelectorAll('#chList [data-characters]')].filter(b=>b.getAttribute('aria-disabled')!=='true').map(b=>b.dataset.characters)`);
+    assert.deepStrictEqual([openIds.length, openIds[0], openIds.includes('pixel')], [9, 'theme', false], `${tag}: the radios that can be picked: nine, the theme's own first, not the closed Retro pixel: ${JSON.stringify(openIds)}`);
+    const moved = async (to, what) => {
+      assert.ok(await H.until(`document.activeElement.dataset.characters===${jsLiteral(to)}`, 3000), `${tag}: ${what} moves the focus to ${to}`);
+      assert.deepStrictEqual(await keyed(), { on: to, now: 'theme', checked: 'theme', tabs: to }, `${tag}: ${what} only moves the focus: the checked radio and the stored choice stay on the theme's own, the one Tab stop follows the focus`);
+    };
+    const chose = async (to, what) => {
+      assert.ok(await H.until(`window.THEME.characters()===${jsLiteral(to)}`, 3000), `${tag}: ${what} chooses ${to}`);
+      assert.deepStrictEqual(await keyed(), { on: to, now: to, checked: to, tabs: to }, `${tag}: ${what}: the choice, the checked radio and the one Tab stop are ${to}, the focus stays on it`);
+    };
     await H.js(`document.querySelector('#chList [data-characters="theme"]').focus()`);
     await H.key('Down');
-    assert.ok(await H.until(`window.THEME.characters()==='office'&&document.activeElement.dataset.characters==='office'`, 3000), `${tag}: ArrowDown moves to Office people and chooses it`);
-    assert.deepStrictEqual(await keyed(), { on: 'office', now: 'office', checked: 'office', tabs: 'office' }, `${tag}: the choice and the one Tab stop follow the arrow`);
+    await moved(openIds[1], 'ArrowDown');
+    await H.key('Right');
+    await moved(openIds[2], 'ArrowRight');
+    await H.key('Up');
+    await moved(openIds[1], 'ArrowUp');
     await H.key('End');
-    assert.ok(await H.until(`window.THEME.characters()==='rebels'&&document.activeElement.dataset.characters==='rebels'`, 3000), `${tag}: End goes to the last radio that can be picked (the closed Retro pixel is skipped)`);
+    await moved(openIds[8], 'End (the closed Retro pixel is skipped)');
     await H.key('Down');
-    assert.ok(await H.until(`window.THEME.characters()==='theme'&&document.activeElement.dataset.characters==='theme'`, 3000), `${tag}: ArrowDown after the last open radio wraps to the first (the closed Retro pixel is skipped)`);
+    await moved(openIds[0], 'ArrowDown after the last radio that can be picked (it wraps; the closed Retro pixel is skipped)');
+    await H.key('Left');
+    await moved(openIds[8], 'ArrowLeft from the first (it wraps)');
+    await H.key('Home');
+    await moved(openIds[0], 'Home');
+    await H.key('Down');
+    await moved(openIds[1], 'ArrowDown');
+    await H.key('Return');
+    await chose(openIds[1], 'Enter');
+    await H.key('Down');
+    assert.ok(await H.until(`document.activeElement.dataset.characters===${jsLiteral(openIds[2])}`, 3000), `${tag}: ArrowDown from the chosen radio moves to ${openIds[2]}`);
+    assert.deepStrictEqual(await keyed(), { on: openIds[2], now: openIds[1], checked: openIds[1], tabs: openIds[2] }, `${tag}: and again only moves: ${openIds[1]} stays chosen`);
+    ctx.win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Space' });
+    ctx.win.webContents.sendInputEvent({ type: 'char', keyCode: ' ' });
+    ctx.win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Space' });
+    await chose(openIds[2], 'Space');
+    await H.key('Home');
+    assert.ok(await H.until(`document.activeElement.dataset.characters==='theme'`, 3000), `${tag}: Home moves to the theme's own`);
+    await H.key('Return');
+    await chose('theme', 'Enter on the first radio');
     const evt = (key) => H.js(`(()=>{const e=new KeyboardEvent('keydown',{key:${jsLiteral(key)},bubbles:true,cancelable:true});document.activeElement.dispatchEvent(e);return e.defaultPrevented})()`);
     assert.strictEqual(await evt('Tab'), false, `${tag}: Tab is left alone (one stop, then the page)`);
     assert.strictEqual(await evt('Escape'), false, `${tag}: Escape is left alone`);

@@ -464,6 +464,7 @@
      and pressed fill (themes.css); themegen.ts BRAND_UIS and BRAND_HOVER_MIX are the same (test:theme-tokens) */
   const BRAND_UIS=UI_STYLES.filter(u=>u!=='clean');
   const BRAND_HOVER_MIX=0.14;
+  const RED_HOVER_MIX=0.14; /* the 14% of the .btn.primary.danger:hover mix (themes.css, styles.css), issue #1700 */
   /* the colour the hovered fill is mixed toward: the text where that keeps 4.5:1 with it, else away from the text (black under lighter text, white under darker), which only raises the contrast; themegen.ts brandHoverTarget is the same */
   function brandHover(mk,bg){
     if(ratio(mk,mixHex(bg,mk,BRAND_HOVER_MIX).slice(0,7))>=4.5)return mk;
@@ -603,6 +604,14 @@
           t['--brand-hover']=brandHover(mark,bg);
         }
       }
+      /* spec 052 FR-053, FR-076 (#1700): the hovered red confirm button mixes RED_HOVER_MIX of --ink into --red-ink (themes.css, styles.css). Where a repaired --ink (a partial user theme) makes that
+         fill read under 4.5:1 with its text (--surface), the target moves AWAY from the text (black under lighter text, white under darker), which only raises the contrast; written as --red-hover.
+         A theme where --ink already reads gets no --red-hover and keeps the --ink mix (every complete theme). */
+      {
+        const rd=hexOf('--red-ink'),sf=rd&&hexOf('--surface',rd),ik=rd&&hexOf('--ink',rd);
+        if(rd&&sf&&ik&&ratio(sf,mixHex(rd,ik,RED_HOVER_MIX).slice(0,7))<4.5)t['--red-hover']=lum(sf)>lum(rd)?'#000000':'#ffffff';
+        else delete t['--red-hover'];
+      }
       if(!changed)break;
     }
     return back;
@@ -736,6 +745,7 @@
     if(typeof document!=='undefined'&&document.documentElement){
       for(const k of Object.keys(TYPED_TOKENS))if(!Object.prototype.hasOwnProperty.call(manifest.tokens||{},k))document.documentElement.style.removeProperty(k);
       for(const k of Object.keys(BAR_TOKENS))if(!Object.prototype.hasOwnProperty.call(resolved,k))document.documentElement.style.removeProperty(k);
+      if(!Object.prototype.hasOwnProperty.call(resolved,'--red-hover'))document.documentElement.style.removeProperty('--red-hover'); /* issue #1700, as --brand-hover */
       if(!Object.prototype.hasOwnProperty.call(resolved,'--brand-hover'))document.documentElement.style.removeProperty('--brand-hover'); /* the repair's hover target (issue #1614) belongs to the user theme that got it */
       if(Object.prototype.hasOwnProperty.call(manifest.tokens||{},'--ui-display'))document.documentElement.dataset.display='';else delete document.documentElement.dataset.display;
     }
@@ -899,7 +909,7 @@
     const el=document.documentElement;
     if(currentWorld){
       applyTokens(worldResolved);
-      el.style.removeProperty('--brand-hover'); /* a user theme's repair target (issue #1614) is not the world's; leaving the world re-applies the theme's tokens */
+      el.style.removeProperty('--red-hover');el.style.removeProperty('--brand-hover'); /* a user theme's repair target (issue #1614) is not the world's; leaving the world re-applies the theme's tokens */
       for(const [k,v] of Object.entries(WORLD_SETS[currentWorld].shadow))el.style.setProperty(k,v);
       el.dataset.world=currentWorld;
       if(WORLD_SETS[currentWorld].dark)el.dataset.dark='';else delete el.dataset.dark; /* a light world's bar is dark by its own rules */

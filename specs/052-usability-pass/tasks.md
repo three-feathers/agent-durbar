@@ -449,3 +449,9 @@
 
 ## 2026-11-13: every destructive dialog's red confirm button and the retro-ui user themes (FR-053, FR-076, issue #1647)
 - [x] T323 New driver `scripts/check-052-danger-dialogs.js` (listed in `ui-suite.js`): reads the 19 `primary danger` call sites of every `src/renderer/*.js` (`scripts/danger-sites.js`, any spelling, count asserted; `test-danger-sites.js` self-tests six spellings and two failing shapes), opens each through the app's own builders (`DurbarDialog`, `DurbarScreens.dialog`), builds each dialog with its own label and measures its confirm button at rest, focus and hover (>= 4.5:1, not the panel's, hover differs) in the arcade, the Flat office under the pixel theme, Cave, three retro-ui user themes and two `clean` controls, at both sizes; nothing was wrong, no CSS change; `DANGER_MUTANT=old|one|sites|screens` each fail with their own label [FR-053, FR-076, no new FR, issue #1647; partial-theme hover defect: #1700]
+
+## 2026-11-13: the danger hover reads 4.5:1 in a partial user theme (FR-053, FR-076, FR-169, issue #1700)
+- [x] T344 `theme.js` `contrastFix` writes `--red-hover` where the `--ink` mix of the danger hover is under 4.5:1 (cleared in `setTheme` and `paintWorld`); `styles.css` and `themes.css` mix toward `var(--red-hover,var(--ink))`; `test-themegen` cases; `check-052-danger-dialogs` partial dark retro-ui user theme and mutant `DANGER_MUTANT=hover` [FR-053, FR-076, FR-169, issue #1700, no new FR]
+
+## 2026-11-14: warn, plain danger hover and plain red confirms in the themed looks (FR-053, FR-076, issue #1570)
+- [x] T345 `themes.css`: warn rest and hover, plain `.btn.danger:hover` restored after the themed `.btn` rule; `screens.js` Remove theme and `harnesses.js` End N sessions and update are `primary danger`; `danger-sites.js` ALLOW `harnesses.js`, 21 sites; new driver `scripts/check-052-warn-danger-btn.js` (in `ui-suite.js`) with mutants `WARN_MUTANT=old|warn|dangerhover|sites` [FR-053, FR-076, issue #1570, no new FR]

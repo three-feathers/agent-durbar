@@ -97,7 +97,7 @@ jobs:
           # spec 103: on this job test:prereview must run the real-SDK test, never skip it (the install step above)
           PREREVIEW_REQUIRE_REAL_SDK: ${{ matrix.os == 'ubuntu-latest' && '1' || '' }}
         run: npm test
-      # spec 102 T201: the art build script's own checks; it needs Pillow, nothing else does, and no art is made here
+      # spec 102 T201: the art build script's own checks, and T296's frame guard (FR-326); they need Pillow, nothing else does, and no art is made here
       - if: steps.changes.outputs.code == 'true' && matrix.os == 'ubuntu-latest'
         name: Art build script selftest
         run: |
@@ -105,6 +105,7 @@ jobs:
           "$RUNNER_TEMP/art/bin/pip" install --quiet pillow==11.3.0
           "$RUNNER_TEMP/art/bin/python" -I scripts/build-arcade-pack.py --selftest
           PATH="$RUNNER_TEMP/art/bin:$PATH" DURBAR_REQUIRE_PILLOW=1 node scripts/test-character-groups.js
+          PATH="$RUNNER_TEMP/art/bin:$PATH" DURBAR_REQUIRE_PILLOW=1 npm run test:realoffice-assets
 
   # The required check "Office layout check (xvfb)" is this one job (FR-105; it was 6 shard jobs and a summary job). Since FR-194
   # it also covers packaging (it was the separate job "Package smoke (unpacked Linux app)"): one build, then the layout steps,
