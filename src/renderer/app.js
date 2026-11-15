@@ -1751,6 +1751,12 @@ function realSubs(a,stOf){
   return orderedHelpers(a).map(h=>{const w=helperWords(h,roHelperMask);
     return {id:h.id,name:w.name||'Helper',state:stOf(h,false),label:w.aria,title:w.tip,selected:ui.selected===h.id};});
 }
+/* spec 102 delta 2026-11-14 (spec 097 FR-104): in the All floors view each folder of the Real office says which floor it stands on (id, name, number from the bottom), so a world that draws storeys can mark them; one floor shown: none */
+function roFloor(r){
+  if(!allFloorsView())return undefined;
+  const f=floorById(r.floor),p=f&&window.DurbarFloorNav.place(FLOORS.floors,f.id);
+  return f&&p?{id:f.id,name:f.name,n:p.n}:undefined;
+}
 function realModel(model){
   const D=window.DurbarPlaces, E=window.exports;
   RO_LOUNGE=new Set(model.flatMap(m=>(m.rolled||[]).map(x=>x.a.id)));
@@ -1760,7 +1766,7 @@ function realModel(model){
     const list=m.mains.concat((m.rolled||[]).map(x=>x.a));
     const counts=['waiting','error','working','done','idle'].map(k=>{const n=m.all.filter(a=>!a.parent&&(k==='working'?(vis(a)==='working'||vis(a)==='thinking'):vis(a)===k)).length;return {state:k,n,word:LABELS[k].toLowerCase()};}).filter(c=>c.n);
     const u=SIM_QUIET_HEADS.has('aiu')?null:roomAiu(r);
-    return {id:r.id,keep:!!(ORDER.desks[r.path]&&ORDER.desks[r.path].length),name:r.name,path:deskMask(showPath(r.path)),cost:u?u.long:'',counts,newSess:!!(bridge&&bridge.newSession&&anyKindReady()&&!demoOn),menu:!!(bridge&&bridge.removeFolder&&!demoOn),
+    return {id:r.id,floor:roFloor(r),keep:!!(ORDER.desks[r.path]&&ORDER.desks[r.path].length),name:r.name,path:deskMask(showPath(r.path)),cost:u?u.long:'',counts,newSess:!!(bridge&&bridge.newSession&&anyKindReady()&&!demoOn),menu:!!(bridge&&bridge.removeFolder&&!demoOn),
       agents:list.map(a=>{const v=VISITS.at(a.id),st=stOf(a,old.has(a.id)),task=deskMask(taskOf(a)),place=v?placeLabel(v.place):'',needs=st==='waiting'||st==='limit';
         if(rolled.has(a.id)&&!v){ /* spec 097 FR-246, FR-120: in the lounge row, resting or asleep; the words of the flat lounge's peek card and label, the same masked reply (shutReply) */
           const asleep=old.has(a.id), ago=ACT.agoLong(sinceLast(a)), said=SHUT.spoken(ago), line=shutReply(a,140), who=a.profile?a.profile.name+' · '+a.role:a.role, word=asleep?'Asleep':stWord(a);
@@ -2774,7 +2780,9 @@ function wireMenu(btnId,menuId){
    of view, a bar above the composer shows it with the same choices; its buttons press the card's own buttons, so there is one code
    path. A question is answered in its card (options and text): the bar takes you there. */
 /* the words of a request card (permission, question, limit), in full: the answer bar and the inbox show exactly this (FR-016, FR-027) */
-function requestRaw(n){const c=n.cloneNode(true);c.querySelectorAll('.note-actions,.q-opts,.q-form,.q-urlbox,.pstate,.pdiff').forEach(x=>x.remove()); /* spec 052 FR-080: the command never (notifications use this text) */c.querySelectorAll('p,div,pre,ul,ol,li,details,h1,h2,h3,h4,h5,h6').forEach(x=>x.before(' ')); /* FR-214: a space between blocks, textContent joins them ("(search_companies)Allow"); inline code gets none */const qs=[...c.querySelectorAll('.q-text')]; /* a card with 2-4 questions has one .q-text each: read them all */return (qs.length?qs.map(x=>x.textContent).join(' '):c.textContent).replace(/\s+/g,' ').trim().replace(/^(Needs your OK|Permission|Question from the agent|Questions from the agent):?\s*/,'');} /* spec 012 FR-178: the card's own words, unmasked: announce() masks them itself, so a command is said as the card shows it */
+/* spec 005 FR-339 (issue 1754): the parts of a question card as one line: "Heading: question / Heading: question". Pure. A part with no heading is its question alone; a blank part is left out; a heading that already ends in : ? . ! gets no second colon. */
+function joinQuestionParts(parts){return (parts||[]).map(p=>{const h=String(p&&p.head||'').replace(/\s+/g,' ').trim(),t=String(p&&p.text||'').replace(/\s+/g,' ').trim();return h&&t?h+(/[:?.!]$/.test(h)?' ':': ')+t:(t||h);}).filter(Boolean).join(' / ');}
+function requestRaw(n){const c=n.cloneNode(true);c.querySelectorAll('.note-actions,.q-opts,.q-form,.q-urlbox,.pstate,.pdiff').forEach(x=>x.remove()); /* spec 052 FR-080: the command never (notifications use this text) */c.querySelectorAll('p,div,pre,ul,ol,li,details,h1,h2,h3,h4,h5,h6').forEach(x=>x.before(' ')); /* FR-214: a space between blocks, textContent joins them ("(search_companies)Allow"); inline code gets none */const qs=[...c.querySelectorAll('.q-text')]; /* a card with 2-4 questions has one .q-text each: read them all; spec 005 FR-339: each with its heading, the parts apart */return (qs.length?joinQuestionParts(qs.map(x=>{const t=x.querySelector('.tag');const h=t?t.textContent:'';if(t){const y=x.cloneNode(true);y.querySelector('.tag').remove();return {head:h,text:y.textContent};}return {head:'',text:x.textContent};})):c.textContent).replace(/\s+/g,' ').trim().replace(/^(Needs your OK|Permission|Question from the agent|Questions from the agent):?\s*/,'');} /* spec 012 FR-178: the card's own words, unmasked: announce() masks them itself, so a command is said as the card shows it */
 function requestText(n){return safeMask(requestRaw(n));} /* spec 041 FR-065: the question is agent text; the answer bar and the inbox read it from here (announcements read requestRaw, FR-178) */let answerObs=null;
 /* spec 052 FR-060: the key of a permission card's button, and the one click path the bar and the keys share */
 const answerKeyOf=b=>b.dataset.act==='session'?'S':/\bdanger\b/.test(b.className)?'D':/\bprimary\b/.test(b.className)?'A':'';

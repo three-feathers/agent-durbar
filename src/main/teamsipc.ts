@@ -31,13 +31,13 @@ const ID_MAX = 64;
 
 type Bad = { ok: false; code: 'invalid'; errors: string[]; blocked: boolean };
 
-const isPlain = (v: unknown): v is Record<string, unknown> => {
+export const isPlain = (v: unknown): v is Record<string, unknown> => {
   if (typeof v !== 'object' || v === null || Array.isArray(v)) return false;
   const p = Object.getPrototypeOf(v) as unknown;
   return p === Object.prototype || p === null;
 };
 /** an own data property only: `__proto__`, `constructor`, inherited and accessor properties never count */
-const own = (o: Record<string, unknown>, k: string): unknown => {
+export const own = (o: Record<string, unknown>, k: string): unknown => {
   const d = Object.getOwnPropertyDescriptor(o, k);
   return d && 'value' in d ? d.value : undefined;
 };
@@ -61,7 +61,7 @@ class TooLarge extends Error {}
  * listing short. What it saves: no array of keys is built and no copy of the object is kept, and the loop stops at the limit. Only own keys count
  * (`for...in` also visits inherited enumerable ones).
  */
-function moreKeysThan(o: object, max: number): boolean {
+export function moreKeysThan(o: object, max: number): boolean {
   let n = 0;
   for (const k in o) if (Object.prototype.hasOwnProperty.call(o, k) && ++n > max) return true;
   return false;
