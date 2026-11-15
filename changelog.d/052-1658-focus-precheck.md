@@ -1,0 +1,1 @@
+- Test driver only: `check-052-focus-ring` now says "the window does not have focus (document.hasFocus() is false)" at once when the app window has no focus, instead of failing as "addFolder is focus-visible" (spec 052, #1658).

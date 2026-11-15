@@ -85,6 +85,7 @@ const DRIVERS = [
   { name: 'shots-003-mode-back' },
   { name: 'check-sandbox-floor' }, // spec 087: the OS sandbox chip, tooltips, note (Continue / Always / Change mode…), Codex card line, Settings line
   { name: 'shots-012-signin-chat' },
+  { name: 'check-058-mcp-switch-persist' }, // spec 058 (2026-11-14 delta): a switch stays off after closing the chat, a reload and Restart session
   { name: 'shots-058-mcp-restart' }, // spec 058: per-server Restart and Restart session with these servers
   { name: 'shots-058-mcp-signin' }, // spec 058 T102/T104: Sign in for a Copilot server that needs it (simmcpauth), the two-step open, the steps
   { name: 'shots-058-mcp-words' }, // spec 058 T113-T115: state words, hints, Details and live refresh in the MCP dialog
@@ -95,7 +96,10 @@ const DRIVERS = [
   { name: 'shots-058-mcp-launch', label: 'shots-058-mcp-launch retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 (issue #1566): the strip over the arcade at 15 agents, 1280x800 and 1440x900: no office scroll while shown and after Dismiss
   { name: 'shots-058-mcp-launch', label: 'shots-058-mcp-launch retro 16', env: { DRIVER_WORLD: 'retro', DRIVER_CASE: '16', DRIVER_AGENTS: '16' } }, // spec 102 T308: 16 agents under the strip: the lent layout still scrolls, so it is refused (ro-tight off)
   { name: 'shots-058-mcp-launch', label: 'shots-058-mcp-launch retro filter', env: { DRIVER_WORLD: 'retro', DRIVER_CASE: 'filter', DRIVER_AGENTS: '24' } }, // spec 102 T308: a status filter under the strip: ro-tight never set while the floor scrolls, the note keeps its top padding
+  { name: 'shots-058-mcp-launch', label: 'shots-058-mcp-launch retro strips', env: { DRIVER_WORLD: 'retro', DRIVER_CASE: 'strips' } }, // spec 102 T346 (issue #1625): 15 agents under each restore, away, crash and follow strip alone and the pairs away+follow, restore+away: no office scroll, both sizes; the still-scrolling 1589 scenes (3 strips, MCP list open) are deliberately not asserted until 1685 lands
   { name: 'shots-058-mcp-launch', label: 'shots-058-mcp-launch photo 18', env: { DRIVER_CASE: 'photo', DRIVER_AGENTS: '18', DRIVER_H: '760' } }, // spec 102 T308: a world that is not aisles is never lent the padding
+  { name: 'check-102-focus' }, // spec 102 T166: the circle layout's focus box is one hidden, still, textless box inside the room and clear of the zones; a picture that fails moves no desk (page-only fixture, 1440x900 and 1280x800)
+  { name: 'check-102-cabinet-guard' }, // spec 102 T171: the arcade cabinet's monitor guard fails closed and a refused entry clears the reused cabinet; hostile entries move nothing (page-only fixture, 1440x900 and 1280x800)
   { name: 'check-102-arcade-filter-note', env: { DRIVER_WORLD: 'retro' } }, // spec 102 (issue #1588, T310): the arcade at 14, 13 and 11 agents with a status filter set (15 cannot be driven: the simulator's basic agent never works), 1280x800 and 1440x900: no office scroll, the note stays clear
   { name: 'shots-058-mcp-signin-refresh' }, // spec 058 FR-208..FR-216: the sign-in refresh lines, Stop during the wait, the Settings switch
   { name: 'shots-076-orgpolicy' }, // spec 076 FR-202..FR-205 (#602): what the agent app's own organization policy blocks, greyed with the reason
@@ -184,6 +188,7 @@ const DRIVERS = [
   { name: 'check-office-ops-real' }, // spec 097 FR-186: operation counts of Real office, never times (renders, layout reads, nodes, attribute writes, elements recalculated, animations, picture area)
   { name: 'shots-097-realoffice' }, // spec 097 P1: Real office mode (the switch, the scene, the lights, flat loads none of it)
   { name: 'check-097-crews' }, // spec 097 FR-335, FR-336 (issue #1154): Real office with each Characters value draws its set or the Office people, no crew picture, the true note
+  { name: 'check-097-lobby-facing' }, // spec 097 FR-191, FR-194 (#1743): every lobby visitor faces the fixture it stands at (the picture's drawn side, mirrored or not, against the fixture's side) in the Photo office, the arcade and the cave, both sizes
   { name: 'shots-readme-real' }, // spec 008 delta 2026-11-08 (issue #1256): the README's lead pictures, Real office and its Needs you inbox
   { name: 'shots-070-flat-look' }, // spec 070 A14: Flat's modern look behind html[data-flat-look] (24 px controls on, today's off; Retro and Real office equal with it on)
   { name: 'check-102-welcome' }, // spec 102 FR-352 (T206): the arcade's first-run card stands in the drawn hall: the picture loads, shows beside the card, the card is opaque and its text is 4.5:1, both sizes; four mutants (WELCOME_MUTANT)
@@ -194,7 +199,7 @@ const DRIVERS = [
   { name: 'shots-097-moments', label: 'shots-097-moments cave', env: { MOMENTS_WORLDS: 'cave' } }, // the same nine moments in the Prehistoric cave (its flag is the simulator's page address)
   { name: 'shots-097-moments', label: 'shots-097-moments retro', env: { MOMENTS_WORLDS: 'retro' } }, // spec 102 FR-264: the same nine moments in the Retro arcade (its flag is the simulator's page address)
   { name: 'shots-097-chat' }, // spec 097 FR-106 (T120): the chat in the world: desk-side column, portrait, lamp words, surface and contrast, card tails
-  { name: 'shots-097-chat', label: 'shots-097-chat retro', env: { MOMENTS_WORLDS: 'retro' } }, // spec 102 T221: the arcade's chat at three sizes: marquee name, the cards dark (4.5:1, deep), tab order as flat's
+  { name: 'shots-097-chat', label: 'shots-097-chat retro', env: { MOMENTS_WORLDS: 'retro' } }, // spec 102 T221: the arcade's chat at three sizes: the name plain on the header (T305), the cards dark (4.5:1, deep), tab order as flat's
   { name: 'check-097-chat-look' }, // spec 097 (#1140, T195): every chat, main or helper, has the same world look and follows the Office layout setting while open
   { name: 'check-097-chat-look', label: 'check-097-chat-look retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 T283 (issue #1399): the same driver in the arcade
   { name: 'check-097-chat-contrast' }, // spec 097 (#1146, T197): chat text, links, code chips and header text against the real pixels behind them, both sizes; header text inside the window
@@ -269,6 +274,7 @@ const NOT_IN_SUITE = {
   'shots-034': 'passes alone but takes about 124 s (fixed settles at both sizes, Serious mode, reduced motion, mini); CI is near its limit (#738). Needs its sleeps turned into until() waits before it joins the suite. Since spec 068 FR-005 it checks that the credit limit is a break, not a faint',
   'shots-024-custom': 'passes alone with DURBAR_SIM_PLACES=3 but takes about 89 s (custom places: seeding, Add / Edit dialog, Settings, rename, delete at both sizes); too long for the suite today. Run it by hand: DURBAR_SIM_PLACES=3 as its header says',
   'check-rename': 'npm run check:rename, about 140 s (spec 059, issue #372: rename a session, every kind and level, both sizes); check-rename-inline in DRIVERS covers the in-place rename on every surface',
+  'check-office-overlap': 'run by `npm run check:office` and by check-parallel.js (the Office layout job and its Real office and arcade variants, OFFICE_VIEW/OFFICE_WORLD): it needs those environment variables and measures every layout, so it is not a one-driver suite entry (spec 102 issue #1632 added a tooltip assert)',
   'check-perf': 'npm run check:perf measures frame times and DOM growth under load; its limits depend on the machine, so it is a local check, not a gate on shared runners',
 };
 
