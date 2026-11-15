@@ -748,7 +748,7 @@ Spec, plan and tasks only: nothing here is built. Numbers taken: FR-193..FR-203,
 
 - **SC-005** Over at least 500 seeds at each of 1440x900 and 1280x800, chat closed and open, 0 differences in chosen layout, trial answers or boxes; every planted mutant of T178 is caught.
 - **SC-006** `partsMeasured` per search at most the limit T167 sets; search time at most 40 % of today's at 15 and 40 agents, same machine, alternating runs; `searchFellBack` 0 over the seeds.
-- **SC-007** Start at most 1500 ms and layout reads under 40 at 15 agents on the reference machine; the row for 40 agents as the owner decides; the Mac's numbers recorded beside them.
+- **SC-007** *(layout reads under 40 is no longer a gate: owner, 2026-11-14, spec 097 Changes 2026-11-14: status update under 30 ms at 15 agents)* Start at most 1500 ms and layout reads under 40 at 15 agents on the reference machine; the row for 40 agents as the owner decides; the Mac's numbers recorded beside them.
 
 **Open questions for the owner (not answered here; recommendations in the plan).** Q1: does 1500 ms bind at 40 agents too? Q2: which machine is the target measured on? Q3: if T167 shows a low gain, stop or build the cheaper parts? Q4: may the first paint wait (FR-201 d)?
 

@@ -4,12 +4,12 @@
  * class string is read whatever its spelling: either order of the two words, any run of spaces, single, double or back quotes, a space after `cls:`.
  * A site is `{label:'..',value:..,cls:'<those words>'}`; the number of places that name both words side by side must equal the number of sites parsed,
  * so a string in a shape this reader does not parse (an object built another way, `className`) fails with a message instead of hiding.
- * ALLOW lists files by name with the reason (none today: `harnesses.js` has `cls:'danger'` alone, a plain red button, issue #1570, which names one word only).
+ * ALLOW lists files by name with the reason (`harnesses.js`, issue #1570: its confirm is a modal() button with another shape).
  */
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
-const ALLOW = {};
+const ALLOW = { 'harnesses.js': 'End N sessions and update is a `modal()` button ({label, cls, onClick}, no value): not an askDialog site; its class is asserted from the source by check-052-warn-danger-btn (issue #1570)' };
 const WORDS = /(?<![\w-])(?:primary\s+danger|danger\s+primary)(?![\w-])/g; /* the two class words side by side, wherever they stand (quotes and apostrophes in the text around do not matter) */
 const both = (s) => /^\s*(?:primary\s+danger|danger\s+primary)\s*$/.test(s);
 function findSites(dir) {

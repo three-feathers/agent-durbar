@@ -2331,3 +2331,7 @@ and open PRs, 2026-11-11): **FR-230** and **T212**.
 
 - **FR-231 (2026-11-12)** `[IMPLEMENTED]` `test: check-mcp-row-width` `sim:` the text column of a server row never gets narrower than 240 px of the row's room (`flex-basis:240px` on a row that has reason, help or details text); when the buttons do not fit beside it the row wraps and the buttons (Tools, Restart, Sign in again..., Remove..., the switch) sit on their own line below, right aligned. A row with only a name and a state (no text under it), or where everything fits, stays on one line as before. Text stays at 11px or more (10.5px floor), nothing overlaps, no page scroll, the dialog still scrolls inside itself. The same approach as the Tools > Activity width fix (#1466, FR-071: a minimum width for the text-bearing column and wrapping instead of squeezing).
 - `[KNOWN GAP]` Windows and macOS font widths are not measured (Linux fonts in the simulator): a different font changes the line counts, not the rule.
+
+## Changes 2026-11-13: the MCP strip and its list in the arcade (spec 102 T340, issue #1589)
+
+FR-200's strip and open list are unchanged in every office. In the Retro arcade, when the hall would scroll with strips in the flow, the strips (MCP, crash, restore, away, follow) give way to one bar that opens them as an overlay under it; List... opens that overlay so the list stays in view. The text, buttons and focus rules of each strip are as before. See spec 102, Changes 2026-11-13.
