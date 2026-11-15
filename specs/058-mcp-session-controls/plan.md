@@ -482,6 +482,9 @@ prompt in spec 011). The owner tests it in a test build on his managed Mac befor
 4. **T218** the Settings UI and words, FR-239, FR-241's line (S; Sonnet build and Sonnet review; screenshots both sizes).
 5. **T219** the test build, FR-245 (S; Sonnet review), then **T221** the owner's Mac test; results recorded here; PRs 2..4 merge after it and
    after the owner says so (FR-244).
+
+**Merge gate** (spec *Merge gate*, review of #1669, 2026-11-15): PRs 2..4 (#1675, #1681, #1688) carry `needs-owner-approval` until T220's
+Ask-first half, Q26, T221 and the owner's word; then they merge in order #1675, #1681, #1688, back to back; only an owner removes the label.
 **Open questions are tracked, not assumed.** Q25 is open (asked 2026-11-13 on issue #1667 and in this spec). T217 and T218 build its option
 (a) only because it adds nothing that (b) or (c) would have to remove: the `copilot-cli` value is stored and not offered. The owner's request
 names "copilot cli mode"; under (a) he can still try any id through Custom app, and an answer of (b) adds one constant to T217 and one
