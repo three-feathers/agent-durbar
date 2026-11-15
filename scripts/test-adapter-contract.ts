@@ -10,7 +10,7 @@ import * as path from 'path';
 import * as ts from 'typescript';
 import { FakeAdapter } from '../src/adapters/fake';
 import type { OptionalMember } from '../src/adapters/fake';
-import { eventProblems } from '../src/adapters/eventguard';
+import { eventProblems, problemWords, TOOL_NAME_MAX } from '../src/adapters/eventguard';
 import { EventMapper } from '../src/adapters/map';
 import type { RawEvent } from '../src/adapters/map';
 import { FakeClient, FakeCopilot } from './fakes/copilot-sdk';
@@ -426,6 +426,12 @@ async function main(): Promise<void> {
     assert.ok(eventProblems({ ...base, phase: 'failed', mcpServer: '', mcpAuth: true }).length > 0, 'mcpAuth with an empty mcpServer is refused');
     assert.ok(eventProblems({ ...base, phase: 'failed', mcpServer: 'notes', mcpAuth: false }).length > 0, 'mcpAuth false is refused');
     assert.ok(eventProblems({ ...base, phase: 'failed', mcpServer: 'notes', mcpAuth: 'yes' }).length > 0, 'mcpAuth of another type is refused');
+    // spec 012 FR-183: a tool name of at most TOOL_NAME_MAX characters passes, a longer one is refused (and its drop line names only the field)
+    assert.strictEqual(TOOL_NAME_MAX, 256, '#1593 toolCall.tool: the cap is 256');
+    assert.deepStrictEqual(eventProblems({ ...base, phase: 'start', tool: 'a'.repeat(256) }), [], '#1593 toolCall.tool: a name of 256 characters passes');
+    assert.deepStrictEqual(eventProblems({ ...base, phase: 'start', tool: 'a'.repeat(257) }), ['toolCall.tool too long'], '#1593 toolCall.tool: a name of 257 characters is refused');
+    assert.deepStrictEqual(eventProblems({ ...base, phase: 'start', tool: '[redacted:'.repeat(100_000) }), ['toolCall.tool too long'], '#1593 toolCall.tool: a long dense name is refused');
+    assert.strictEqual(problemWords('toolCall.tool too long'), 'toolCall.tool: too long', '#1593 toolCall.tool: the drop line names the field and the kind only');
     // spec 058 FR-180 (T151): signInEnd is one of two values, or missing
     const mev = (x: Record<string, unknown>) => eventProblems({ type: 'mcp', sessionId: 's', timestamp: 1, servers: [{ name: 'notes', status: 'needs-auth', ...x }] });
     assert.deepStrictEqual([mev({}), mev({ signInEnd: 'next-message' }), mev({ signInEnd: 'failed' })], [[], [], []], 'signInEnd next-message, failed or missing pass');

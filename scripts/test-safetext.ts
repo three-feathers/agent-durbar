@@ -3,6 +3,7 @@ import './safetext-shared'; // the compiled hidden-character module for safetext
 import assert from 'assert';
 import { assertLinearShape } from './redact-growth-lib';
 import fs from 'fs';
+import crypto from 'crypto';
 import path from 'path';
 import { redact, maskSecretCommand, maskSecretUrl } from '../src/shared/redact';
 
@@ -16,6 +17,7 @@ const S = require(path.join(R, 'safetext.js')) as {
   unesc(t: unknown): string;
   excerpt(raw: unknown, redact: unknown, n?: number, codeWord?: boolean): string;
   maskLabel(raw: unknown, kind: string, mask: Record<string, unknown>): string;
+  maskRaw(raw: unknown, redact: unknown): string;
 };
 let n = 0;
 const ok = (c: unknown, m: string) => { assert.ok(c, m); n++; };
@@ -214,5 +216,67 @@ eq(T.ready, true, 'redact: ready');
   const configured = S as Bare;
   eq(configured.useShared({ unhide: (x: string) => x }), false, 'a found module cannot be replaced');
   eq(S.create({ redact: (s: string) => redact(s, {}) }).ready, true, 'with the shared module: ready');
+}
+// spec 012 FR-183 (issue 1593): the desk masks stay linear on many link openings and on many secrets after a mark; over the second pass's work budget they
+// fail closed; under it they give exactly what main gave (a frozen copy of safetext.js as on main at 7ce319809)
+{
+  const red = (x: string): string => redact(x, {});
+  const opens = (k: number): string => '[redacted:'.repeat(Math.ceil(k / 10)).slice(0, k) + ']a\\b';
+  assertLinearShape('#1593 maskRaw of many [redacted: openings', (x) => void S.maskRaw(x, red), opens, 160_000);
+  assertLinearShape('#1593 excerpt of many [redacted: openings', (x) => void S.excerpt(x, red, 140), opens, 160_000);
+  const pwRun = (k: number, f: (i: number) => string = (i) => 'password=' + String(i).padStart(14, 'K') + ' '): string => { let t = '*'; for (let i = 0; t.length < k; i++) t += f(i); return t.slice(0, k); };
+  assertLinearShape('#1593 maskRaw of many distinct secrets after a mark', (x) => void S.maskRaw(x, red), (k) => pwRun(k), 400_000);
+  assertLinearShape('#1593 excerpt of many distinct secrets after a mark', (x) => void S.excerpt(x, red, 140), (k) => pwRun(k), 400_000);
+  // over the budget: nothing, never a half-masked text; also when the secrets' names hold a hidden character (the copy without it is over the budget, the text
+  // as written is not: the failure is final, the text as written is not read in its place)
+  const over = pwRun(200_000);
+  eq(S.maskRaw(over, red), '', '#1593 over the budget: maskRaw gives nothing');
+  eq(S.excerpt(over, red, 140), '', '#1593 over the budget: the excerpt gives nothing');
+  eq(T.mask(over), '', '#1593 over the budget: the wrapper mask gives nothing');
+  eq(T.excerpt(over, 140), 'Finished.', '#1593 over the budget: the wrapper excerpt gives its fallback word');
+  const hid = pwRun(60_000, (i) => 'pass​word=' + String(i).padStart(14, 'K') + ' ');
+  eq(S.excerpt(hid, red, 140), '', '#1593 over the budget with a hidden character in each name: the excerpt gives nothing');
+  eq(S.maskRaw(hid, red), '', '#1593 over the budget with a hidden character in each name: maskRaw gives nothing');
+
+  // the differential: byte-identical output to main's copy under the budget
+  const ROOT_ = path.join(__dirname, '..', '..');
+  const refFile = path.join(ROOT_, 'scripts', 'fixtures', 'safetext-1593-main-ref.js');
+  const refText = fs.readFileSync(refFile, 'utf8').replace(/\r\n/g, '\n');
+  eq(crypto.createHash('sha256').update(refText, 'utf8').digest('hex'), '4a1856a6ff14310d9354e7c2e3cae0f1aa6eef742f75c73330c9d46e79191a27', '#1593 differential: the frozen copy is unchanged');
+  ok(!refText.includes('BOTH_WORK'), '#1593 differential: the frozen copy is not the head');
+  const R0 = require(refFile) as typeof S & { useShared(m: unknown): boolean; create: typeof S.create };
+  R0.useShared(require('../src/shared/redact'));
+  const RT = R0.create({ redact: red, cut: cutText });
+  let seed = 1593;
+  const rnd = (): number => { seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const pick = <X,>(xs: readonly X[]): X => xs[Math.floor(rnd() * xs.length)];
+  const z = 'gh' + 'p_' + 'Z9y8X7w6V5u4T3s2R1q0P9o8N7m6L5k4J3i2';
+  const toks = [ghp, pat, sk, z, 'password=Hx9Kq2Lm7Np4Rs', 'API_KEY=Hx9Kq2Lm7Np4Rs', 'Authorization: Bearer ' + z.slice(4), 'https://u:Hx9Kq2Lm7Np4Rs@h.example/x', 'mysql -pHx9Kq2Lm7Np4Rs'];
+  const marks = ['*', '**', '`', '~~', '[', ']', '(', ')', '![', '](u)', '\\', '\\_', '_', '[redacted:', '[redacted]', '<!-- -->', '​', '\n', '\r\n', '```', '# ', '> ', '- ', '[x](', ']a\\b'];
+  const words = ['', ' ', 'x', 'word', 'Done.', 'my_branch', 'see ', 'a.b/c', '12345678901234', 'snake_case_name_here'];
+  const piece = (): string => {
+    const r = rnd();
+    if (r < 0.25) { const t = pick(toks); const i = 4 + Math.floor(rnd() * (t.length - 4)); return t.slice(0, i) + pick(marks) + t.slice(i); } // a token split by a mark
+    if (r < 0.4) return pick(toks);
+    if (r < 0.75) return pick(marks);
+    return pick(words);
+  };
+  const cases = new Set<string>();
+  while (cases.size < 2000) { let t = ''; const k = 1 + Math.floor(rnd() * 24); for (let i = 0; i < k; i++) t += piece(); cases.add(t); }
+  // adversarial shapes under the budget, and the issue's own
+  const shapes = [opens(1_000), opens(16_000), opens(40_000), pwRun(10_000), pwRun(16_384), pwRun(30_000), '['.repeat(20_000), '[x]('.repeat(5_000), '\\['.repeat(10_000),
+    pwRun(20_000, (i) => 'x*gh' + 'p_' + String(i).padStart(36, 'Q') + '*.'), pwRun(40_000, (i) => 'gh' + 'p_' + String(i).padStart(36, 'Q') + ' '), pwRun(16_000, (i) => 'pass​word=' + String(i).padStart(14, 'K') + ' ')];
+  let same = 0;
+  for (const t of [...cases, ...shapes]) {
+    const where = JSON.stringify(t.slice(0, 60));
+    assert.strictEqual(S.maskRaw(t, red), R0.maskRaw(t, red), `#1593 differential: maskRaw as on main: ${where}`);
+    assert.strictEqual(S.excerpt(t, red, 140), R0.excerpt(t, red, 140), `#1593 differential: excerpt as on main: ${where}`);
+    assert.strictEqual(S.excerpt(t, red, undefined, true), R0.excerpt(t, red, undefined, true), `#1593 differential: excerpt with the code word as on main: ${where}`);
+    assert.strictEqual(T.mask(t), RT.mask(t), `#1593 differential: the wrapper mask as on main: ${where}`);
+    same++;
+  }
+  ok(same >= 2000 + shapes.length, `#1593 differential: ${same} texts, byte-identical`);
+  // over the budget the head shows nothing where main showed a masked text (the intended change)
+  ok(R0.maskRaw(over, red).length > 0 && S.maskRaw(over, red) === '', '#1593 over the budget: main showed a masked text, the head shows nothing');
 }
 console.log(`safetext: ${n} checks passed`);

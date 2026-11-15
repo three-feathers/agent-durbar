@@ -254,4 +254,4 @@ T133 verification (2026-10-25, review on #698): typecheck, build and the offline
 
 ## Changes 2026-11-16 (the desk masks stay linear; a tool call's name is capped: issue #1593)
 
-- [ ] T165 (2026-11-16, issue #1593) FR-183: `BOTH_WORK` budget in `both` (`src/renderer/safetext.js`), final failure through `maskPlain0`; `TOOL_NAME_MAX` in `src/adapters/eventguard.ts`; the `#1593` block in `scripts/test-safetext.ts` (growth on the issue's shape and the many-secrets shape, over-budget asserts, differential against `scripts/fixtures/safetext-1593-main-ref.js`); `#1593 toolCall.tool` asserts in `scripts/test-adapter-contract.ts`; mutants in the PR.
+- [x] T165 (2026-11-16, issue #1593) FR-183: `BOTH_WORK` budget in `both` (`src/renderer/safetext.js`), final failure through `maskPlain0`; `TOOL_NAME_MAX` in `src/adapters/eventguard.ts`; the `#1593` block in `scripts/test-safetext.ts` (growth on the issue's shape and the many-secrets shape, over-budget asserts, differential against `scripts/fixtures/safetext-1593-main-ref.js`); `#1593 toolCall.tool` asserts in `scripts/test-adapter-contract.ts`; mutants in the PR.

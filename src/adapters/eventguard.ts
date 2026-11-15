@@ -22,6 +22,8 @@ export const validSignInEnd = (v: unknown): v is (typeof SIGN_IN_ENDS)[number] =
 
 /** Spec 003 FR-110: longest permission `requestId` (a tool call id); the window keeps it as a map key. */
 export const REQUEST_ID_MAX = 256;
+/** Spec 012 FR-183: longest toolCall `tool` (a tool name); a longer one is refused here, before main's stores or the window read it (the window shows `tool` above it too). */
+export const TOOL_NAME_MAX = 256;
 
 /** Spec 003 FR-102: the optional `allowedBy` of a permission (display only): a known kind and string fields, else the event is refused. */
 function allowedByProblems(a: unknown, where: string): string[] {
@@ -125,6 +127,7 @@ export function eventProblems(e: unknown): string[] {
     case 'toolCall':
       if (!str(e.callId) || !e.callId) out.push('toolCall.callId missing');
       if (!str(e.tool)) out.push('toolCall.tool missing');
+      else if ((e.tool as string).length > TOOL_NAME_MAX) out.push('toolCall.tool too long');
       if (!oneOf(e.phase, ['start', 'update', 'complete', 'failed'])) out.push(`toolCall.phase ${String(e.phase)}`);
       if (!optStr(e.output)) out.push('toolCall.output is not a string');
       if (e.edit !== undefined) out.push(...editProblems(e.edit));
