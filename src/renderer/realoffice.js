@@ -306,6 +306,14 @@
     return PEOPLE;
   }
 
+  /* The numbers one scene is drawn with: the world's furniture numbers with the set's people numbers. Spec 102 FR-323: `pixelArt` is the WORLD's (grid snap, screen box,
+     smoothing of the room), whatever the set; the set's own `pixelArt` only says how its people are drawn (`pixelPeople`, spec 097 T247: a crew's hi-res people in a pixel world are scaled to its people). */
+  function metaOf(worldMeta, setMeta) {
+    const meta = Object.assign({}, worldMeta, setMeta);
+    meta.pixelArt = !!(worldMeta && worldMeta.pixelArt);
+    meta.pixelPeople = !!(setMeta && setMeta.pixelArt);
+    return meta;
+  }
   /**
    * Draw the office into `stage`. `model`: {folders:[{id,name,path,cost,counts:[{state,n,word}],newSess,menu,agents:[{id,name,role,
    * state,word,task,label,tip,selected,away,awayLabel,helpers:[state],helpWords}]}], places:[{id,label,custom,post,title,go,visitors:[{id,name,
@@ -317,9 +325,8 @@
     WD = 'realoffice/worlds/' + world + '/'; SD = 'realoffice/sets/' + set + '/';
     if (SET_SHOWN !== set) { SET_SHOWN = set; PEOPLE = null; SEEN.clear(); } /* the people belong to a set: switching sets draws its own, kept apart */
     WPX = root.DurbarRealOfficeWorlds[world].px || {}; SPX = root.DurbarRealOfficeSets[set].px || {};
-    const meta = Object.assign({}, root.DurbarRealOfficeWorlds[world], root.DurbarRealOfficeSets[set]); /* the world's furniture numbers with the set's people numbers */
+    const meta = metaOf(root.DurbarRealOfficeWorlds[world], root.DurbarRealOfficeSets[set]);
     onArt = opts.onArt || null;
-    meta.pixelPeople = !!root.DurbarRealOfficeSets[set].pixelArt; /* spec 097 T247: a crew's hi-res people in a pixel world are scaled to its people */
     PIXEL = !!meta.pixelArt;
     const ids = Object.keys(meta.seat).sort();
     const who = people(model, ids, opts.rand, !!opts.remember);
@@ -333,10 +340,13 @@
     for (const f of model.folders) signs[f.id] = { name: f.name, path: f.path, counts: f.counts.length + (f.cost ? 1 : 0) };
     let lay = meta.arrangement && meta.arrangement !== 'rows' && L.layoutFor ? L.layoutFor(meta.arrangement, engine, view, meta, signs) : L.realLayout(engine, view, meta, signs); /* spec 102 FR-228: the one seam */
     /* spec 102 delta 2026-11-11 (issue 1566): an arcade hall that would scroll takes the floor's own padding (`opts.lend`, px) when that makes it fit, so a strip over the floor does not make 15 agents scroll at 1280x800; `lent` tells the host to drop that padding */
-    if (lay.scroll && opts.lend > 0 && meta.arrangement === 'aisles' && L.layoutFor) {
+    /* spec 102 delta 2026-11-13 (issue 1598): the same when the hall fits only by cutting a folder of 4 or fewer across rows (no scroll, so the test above never ran): the lent layout is used when it keeps them whole */
+    const cutSmall = (l) => { const parts = {}, size = {}; for (const z of l.zones || []) { parts[z.id] = (parts[z.id] || 0) + 1; size[z.id] = (size[z.id] || 0) + z.desks.length; } return Object.keys(parts).some((id) => parts[id] > 1 && size[id] <= 4); };
+    if ((lay.scroll || cutSmall(lay)) && opts.lend > 0 && meta.arrangement === 'aisles' && L.layoutFor) {
       const v2 = { w: view.w, h: view.h + opts.lend }, l2 = L.layoutFor(meta.arrangement, engine, v2, meta, signs);
-      if (!l2.scroll) { lay = l2; view = v2; lay.lent = true; }
+      if (!l2.scroll && (lay.scroll || !cutSmall(l2))) { lay = l2; view = v2; lay.lent = true; }
     }
+    lay.aisles = meta.arrangement === 'aisles'; /* spec 102 T340: the host yields its notice strips only for this arrangement */
 
     let ro = stage.querySelector(':scope > .ro');
     if (!ro) { stage.textContent = ''; ro = document.createElement('div'); ro.className = 'ro'; stage.appendChild(ro); ro.addEventListener('click', forward); wireZoom(ro); }
@@ -460,7 +470,7 @@
         /* FR-238: "New reply" above the plate's right end while the reply is unread (the flat desk's "New", the same isUnread); made once, shown by class */
         const nt = el(chrome, 'nr:' + k, 'span', 'ro-newtag' + (a.unread ? ' on' : '')); box(nt, { x: d.plate.x + d.plate.w, y: d.plate.y }); attr(nt, 'aria-hidden', 'true'); text(nt, 'New reply'); dset(nt, 'for', k);
         /* spec 097 FR-316: "Draft" above the plate's left end while the chat has an unsent draft (the flat desk's pencil, the same hasDraft); made once, shown by class; aria-hidden (the plate's name says it) */
-        const dt = el(chrome, 'dr:' + k, 'span', 'ro-drafttag' + (a.draft ? ' on' : '')); box(dt, d.away ? { x: d.away.x - d.away.s / 2, y: d.away.y } : { x: d.plate.x, y: d.plate.y }); /* an empty seat's post-it fills the place above the plate: the tag sits on top of the note's left corner */ attr(dt, 'aria-hidden', 'true'); dset(dt, 'for', k);
+        const dt = el(chrome, 'dr:' + k, 'span', 'ro-drafttag' + (a.draft ? ' on' : '')); box(dt, d.away ? { x: d.away.x - d.away.s / 2, y: d.away.y } : d.lounge ? { x: d.screen.x, y: d.screen.y } : { x: d.plate.x, y: d.plate.y }); /* spec 097 FR-316: a lounge seat's person sits over the plate's left end, so the tag stands on top of the seat's small screen instead */ /* an empty seat's post-it fills the place above the plate: the tag sits on top of the note's left corner */ attr(dt, 'aria-hidden', 'true'); dset(dt, 'for', k);
         if (!dt.firstChild) { if (model.draftIcon) dt.innerHTML = model.draftIcon; dt.appendChild(document.createTextNode('Draft')); } /* the icon is the app's own markup (trusted, as renIcon) */
         /* FR-038: cues, inside the slot */
         if (d.bubble) { const b = el(chrome, 'b:' + k, 'div', 'ro-bub'); box(b, d.bubble); attr(b, 'aria-hidden', 'true'); text(b, '?'); }
@@ -514,7 +524,7 @@
           const sh = el(art, 'vs:' + v.id, 'div', 'ro-shadow'); box(sh, v.shadow);
           /* FR-070: stride frames, a knock or a breath; FR-073: in at the fixture after the fade at the desk */
           const m = L.personMotion(v.id, v.fig.pose, null), fresh = !art._k.has('v:' + v.id), mov = moving() && !OFF.has(v.id);
-          const two = mov && m.kind === 'frames' && v.fig.fileB && !BAD.has(SD + v.fig.fileB) && !(GLIDING.has(v.id) || (fresh && CUR.drawn && WHERE.has(v.id))) ? second(art, 'vb:' + v.id, v.id, v.fig.b || v.fig, v.fig.fileB, 'ro-visitor2', m) : null;
+          const two = mov && !CUR.pixelArt /* spec 102 FR-261: a pixel world swaps the frame, it draws no second picture (the run frames of the Retro pixel set cross-fade only in the Photo office and the cave) */ && m.kind === 'frames' && v.fig.fileB && !BAD.has(SD + v.fig.fileB) && !(GLIDING.has(v.id) || (fresh && CUR.drawn && WHERE.has(v.id))) ? second(art, 'vb:' + v.id, v.id, v.fig.b || v.fig, v.fig.fileB, 'ro-visitor2', m) : null;
           const cl = two && two.on ? ' m-a m-' + m.style : mov ? ({ breathe: ' m-br', knock: ' m-knock' }[m.kind] || '') : '';
           const im = el(art, 'v:' + v.id, 'img', 'ro-visitor' + cl); box(im, v.fig); dset(im, 'for', v.id); dset(im, 'place', fx.id); dset(im, 'pose', v.fig.pose); dset(im, 'faces', v.fig.faces); dset(im, 'feet', String(Math.round(v.fig.feetY * 10) / 10)); img(im, v.fig.file, true, v.fig.w);
           if (cl) { setVar(im, '--ro-per', m.period + 's'); setVar(im, '--ro-sw', m.sway + 's'); setVar(im, '--ro-u', (v.fig.h / 100).toFixed(3) + 'px'); setVar(im, '--ro-org', '50% ' + px(v.fig.feetY - v.fig.y)); }
@@ -544,7 +554,7 @@
     watchBody(); wasHidden = hiddenNow();
     fitRoles(chrome); /* keeps its own record of what it measured */
     /* FR-184: a status update reads no layout here: chips and plates are measured and placed again only when one of them or the width changed */
-    const lobbySig = JSON.stringify([lay.width, [...chrome.querySelectorAll(':scope > .ro-chip')].map((c) => [c.dataset.name, c.dataset.x, c.dataset.y, !!c._ic]), [...chrome.querySelectorAll(':scope > .ro-lplate')].map((e) => [e.dataset.place, e.title, e.style.left, e.style.top])]);
+    const lobbySig = JSON.stringify([lay.width, document.documentElement.dataset.roSheets, [...chrome.querySelectorAll(':scope > .ro-chip')].map((c) => [c.dataset.name, c.dataset.x, c.dataset.y, !!c._ic]), [...chrome.querySelectorAll(':scope > .ro-lplate')].map((e) => [e.dataset.place, e.title, e.style.left, e.style.top])]);
     if (chrome._lobbySig !== lobbySig) { placeLobby(chrome, lay.width); chrome._lobbySig = document.hidden || document.body.classList.contains('panel-open') ? null : lobbySig; } /* under a chat nothing is laid out: what it measures there is not remembered */
     else for (const e of chrome.querySelectorAll(':scope > .ro-chip, :scope > .ro-lplate')) if (e._at) { sty(e, 'left', e._at[0]); sty(e, 'top', e._at[1]); if (e._at[2]) sty(e, 'maxWidth', e._at[2]); } /* the draw above wrote the unplaced box: back to where they were placed */
     /* a chip or plate does not travel: it fades in where it now is, so nothing passes over anything (owner 2026-11-01) */
@@ -1194,7 +1204,7 @@
     const todo = [];
     for (const p of chrome.querySelectorAll(':scope > .ro-plate')) {
       const r = p.querySelector('.ro-role'); if (!r) continue;
-      const key = p.style.width + '|' + p.style.height + '|' + p._sig;
+      const key = p.style.width + '|' + p.style.height + '|' + p._sig + '|' + document.documentElement.dataset.roSheets; /* a world stylesheet that arrived restyles the role */
       if (p._rk === key) continue;
       p._rk = key; r.hidden = false; todo.push(r);
     }
@@ -1357,5 +1367,5 @@
   }
   /* spec 097 FR-186: work the room has put off on a timer (a screen's throttled repaint, FR-033; a redraw when a done tick ends): check-office-ops-real starts a measured update only when there is none, so no earlier update's deferred work is counted in it. Read only */
   const pending = () => { let screens = 0; for (const s of SCR.values()) if (s.timer) screens++; return { screens }; }; /* FR-236: no done tick to wait for any more */
-  root.DurbarRealOffice = { hoverState: () => ({ still: QUIET_POINTER, armed: ARMED }), pending, render, reset, leave, feed, resume, quietFocus, ctx, whereSize: () => WHERE.size, bad: () => [...BAD], resolve, stagger, personOf: (id) => (PEOPLE && has(PEOPLE, id) ? PEOPLE[id] : null) /* the chat's header draws the same person (spec 097 FR-106) */ }; /* resolve: for the driver's deterministic check */
+  root.DurbarRealOffice = { metaOf, hoverState: () => ({ still: QUIET_POINTER, armed: ARMED }), pending, render, reset, leave, feed, resume, quietFocus, ctx, whereSize: () => WHERE.size, bad: () => [...BAD], resolve, stagger, personOf: (id) => (PEOPLE && has(PEOPLE, id) ? PEOPLE[id] : null) /* the chat's header draws the same person (spec 097 FR-106) */ }; /* resolve: for the driver's deterministic check */
 })(typeof self !== 'undefined' ? self : this);

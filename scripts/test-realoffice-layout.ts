@@ -392,7 +392,7 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
   } finally { C.WORLDS.pop(); C.REAL_SETS.pop(); delete (C.WORLD_FLAGS as Record<string, boolean>).pirate; }
   // FR-083 / FR-202 / FR-336: the note (peopleFor's): a crew with a row says it draws its people, one without (Minimalist) has the `heads` line; the names come from CREWS, so every crew has one by construction
   const note = (c: string): string => C.peopleFor('photo', c).note;
-  for (const c of ['theme', 'mine', '', '__proto__', 'constructor', 'office']) assert.strictEqual(note(c), '', `${c || '(none)'}: no note`);
+  for (const c of ['theme', 'mine', '', '__proto__', 'constructor', 'office']) assert.strictEqual(note(c), '', `${c || '(none)'}: no note (Office people is a value now, FR-321, and says nothing)`);
   for (const c of Object.keys(C.CREWS)) assert.strictEqual(note(c), `Real office draws the ${c[0].toUpperCase() + c.slice(1)} people.`, `${c}: draws its own people, and Settings says so (Q12, T240..T244: the "until <Crew> has Real office poses" line is gone for every wired crew)`);
   assert.strictEqual(note('minimalist'), 'Real office shows Office people until Minimalist has Real office poses.', 'Minimalist has no set yet (#1331): the true, temporary line stays');
   { // FR-336 `closed` stays for any set row whose flag is off (here Minimalist's, temporarily)
@@ -410,17 +410,57 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
       minimalist: ['heads', 'heads', 'office', 'office'], cheeky: ['full', 'full', 'cheeky', 'cheeky'], pirate: ['full', 'full', 'pirate', 'pirate'],
       monster: ['full', 'full', 'monster', 'monster'], royal: ['full', 'full', 'royal', 'royal'], rebels: ['full', 'full', 'rebels', 'rebels'],
       prehistoric: ['full', 'full', 'prehistoric', 'prehistoric'],
+      office: ['full', 'full', 'office', 'office'], /* spec 102 FR-321 (T292): Office people by choice, in every flag state */
+      pixel: ['closed', 'closed', 'office', 'office'], /* FR-320, FR-322 (T290): behind its flag the world's default draws, the choice is kept */
     };
     for (const [c, [lc, lo, sc, so]] of Object.entries(want)) {
       assert.strictEqual(C.levelFor(c, CLOSED), lc, `${c || '(none)'}: level, gate closed`); assert.strictEqual(C.levelFor(c, OPEN), lo, `${c || '(none)'}: level, gate open`);
       assert.strictEqual(C.peopleFor('photo', c, CLOSED).set, sc, `${c || '(none)'}: set, gate closed`); assert.strictEqual(C.peopleFor('photo', c, OPEN).set, so, `${c || '(none)'}: set, gate open`);
-      assert.strictEqual(C.peopleFor('photo', c, OPEN).note === '', lo === 'default', `${c || '(none)'}: no note only for the default; a crew always gets a line`);
+      assert.strictEqual(C.peopleFor('photo', c, OPEN).note === '', lo === 'default' || c === 'office', `${c || '(none)'}: no note only for the default (and Office people); a crew always gets a line`);
     }
     for (const c of Object.keys(C.CREWS)) assert.ok(c in want, `${c}: every crew is in this table, so a new crew must be decided here`);
-    for (const c of ['__proto__', 'constructor', 'toString', 'office', 'nonsense']) assert.strictEqual(C.levelFor(c, OPEN), 'default', `${c}: not a crew, no level to report`);
-    assert.strictEqual(C.peopleFor('photo', 'retro', { cave: false, retro: true }).set, 'retro', 'a full set outside the crews has its level full');
-    assert.strictEqual(C.levelFor('retro', { cave: false, retro: true }), 'full'); assert.strictEqual(C.levelFor('retro', { cave: false, retro: false }), 'closed');
+    for (const c of ['__proto__', 'constructor', 'toString', 'nonsense']) assert.strictEqual(C.levelFor(c, OPEN), 'default', `${c}: not a crew, no level to report`);
+    assert.strictEqual(C.peopleFor('photo', 'pixel', { cave: false, retro: true }).set, 'retro', 'a full set outside the crews has its level full');
+    assert.strictEqual(C.levelFor('pixel', { cave: false, retro: true }), 'full'); assert.strictEqual(C.levelFor('pixel', { cave: false, retro: false }), 'closed');
     for (const c of Object.keys(C.CREWS)) assert.ok(!/crew\/art|portrait/i.test(JSON.stringify(C.peopleFor('photo', c, OPEN))), `${c}: Real office names no crew picture`);
+  }
+  { // spec 102 T290..T293 (FR-320..FR-322): Office people and Retro pixel are Characters values, one REAL_SETS row each, in every world and flag state
+    const rowOf = (c: string) => C.REAL_SETS.filter((x) => x.choice === c);
+    assert.deepStrictEqual(rowOf('office').map((x) => x.id), ['office'], 'FR-321: Office people has its own explicit value (the empty choice means "not picked")');
+    assert.ok(!rowOf('office')[0].flag, 'FR-321: Office people always ship, no flag');
+    assert.deepStrictEqual(rowOf('pixel').map((x) => [x.id, x.flag]), [['retro', 'retro']], 'FR-320: Retro pixel is the stored value `pixel` (FR-266), drawing the set `retro`, behind the `retro` flag (the one mapping)');
+    for (const w of ['photo', 'cave', 'retro']) for (const f of [{ cave: true, retro: true }, { cave: true, retro: false }]) {
+      assert.strictEqual(C.peopleFor(w, 'office', f).set, 'office', `${w}: Office people by choice (flags ${JSON.stringify(f)})`);
+      assert.strictEqual(C.peopleFor(w, 'office', f).setName, 'Office people');
+    }
+    assert.strictEqual(C.peopleFor('retro', 'office', { retro: true }).world, 'retro', 'FR-321: the arcade draws Office people by choice and stays the arcade');
+    assert.strictEqual(C.peopleFor('photo', 'pixel', { retro: true }).set, 'retro', 'FR-320: Retro pixel people in the Photo office when the flag is open');
+    assert.strictEqual(C.peopleFor('photo', 'pixel', { retro: true }).note, '', 'no note while it draws');
+    const closed = C.peopleFor('photo', 'pixel', { retro: false });
+    assert.strictEqual(closed.set, 'office', 'FR-322: the flag closed, the Photo office draws its default people');
+    assert.strictEqual(closed.note, 'Real office shows Office people until Retro pixel is open in Real office.', 'FR-322: the line names the set, not a crew word');
+    assert.strictEqual(C.peopleFor('cave', 'pixel', { cave: true, retro: false }).note, 'Real office shows Prehistoric until Retro pixel is open in Real office.', 'FR-322: the default is the world\'s own');
+    assert.strictEqual(C.peopleFor('photo', 'office', { retro: false }).note, '', 'Office people has no closed line');
+    // a stored setting that never named the value draws as before (SC-017): theme and the empty choice are the world's default
+    assert.strictEqual(C.peopleFor('retro', 'theme', { retro: true }).set, 'retro'); assert.strictEqual(C.peopleFor('retro', '', { retro: true }).set, 'retro');
+  }
+  { // spec 102 T293 (FR-323): the Photo office with the Retro pixel set keeps the Photo office's rules: `pixelArt` is the world's, the people's pixel mode is the set's
+    const vm = require('vm') as typeof import('vm');
+    const ctx = vm.createContext({ self: {} as Record<string, unknown>, document: { addEventListener: () => undefined } });
+    vm.runInContext(fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'realoffice.js'), 'utf8'), ctx, { filename: 'realoffice.js' });
+    const metaOf = vm.runInContext('self.DurbarRealOffice.metaOf', ctx) as (w: unknown, s: unknown) => { pixelArt: boolean; pixelPeople: boolean };
+    const wj = (id: string) => readJson('worlds', id, 'world.json'), sj = (id: string) => readJson('sets', id, 'set.json');
+    assert.strictEqual(!!wj('photo').pixelArt, false); assert.strictEqual(!!wj('retro').pixelArt, true); assert.strictEqual(!!sj('retro').pixelArt, true);
+    const photoRetro = metaOf(wj('photo'), sj('retro'));
+    assert.strictEqual(photoRetro.pixelArt, false, 'FR-323: the Photo office with the Retro pixel set keeps the Photo office rules (no grid snap, no arcade screen box)');
+    assert.strictEqual(photoRetro.pixelPeople, true, 'FR-323: only the people are drawn with the nearest pixel');
+    assert.deepStrictEqual([metaOf(wj('photo'), sj('office')).pixelArt, metaOf(wj('photo'), sj('office')).pixelPeople], [false, false], 'Photo office with Office people: neither');
+    assert.deepStrictEqual([metaOf(wj('retro'), sj('office')).pixelArt, metaOf(wj('retro'), sj('office')).pixelPeople], [true, false], 'FR-323: the arcade keeps its rules with a photo set (097 T247)');
+    assert.deepStrictEqual([metaOf(wj('retro'), sj('retro')).pixelArt, metaOf(wj('retro'), sj('retro')).pixelPeople], [true, true], 'the arcade with its own people');
+    assert.deepStrictEqual([metaOf(wj('cave'), sj('retro')).pixelArt, metaOf(wj('cave'), sj('retro')).pixelPeople], [false, true], 'the cave with Retro pixel people: the cave rules');
+    // T296 (FR-326): the Retro pixel set has its own seen-from-behind running frames, so the Terminal visitor draws `runA`/`runB`, not the `letter` fallback
+    const st = sj('retro').stand as Record<string, { poses: Record<string, number[]> }>;
+    for (const id of Object.keys(st)) { assert.ok('runA' in st[id].poses && 'runB' in st[id].poses, `${id}: runA and runB are in the stand poses (T296)`); assert.ok('letter' in st[id].poses, `${id}: letter stays (the other places)`); const f = (st[id] as unknown as { foot: Record<string, number> }).foot; for (const q of ['runA', 'runB']) assert.ok(f[q] > 0.3 && f[q] < 0.7, `${id} ${q}: the head-anchored foot share is near the standing frames'`); }
   }
   { // FR-337 (issue #1154): the art list's numbers come from the code, so a count in the spec cannot drift (Cheeky has 13 ids, not 15)
     const FRAMES = 12; // FR-337: book, coffee, knock, letter, rest, runA, runB, think, typeA, typeB, waveA, waveB
@@ -451,7 +491,7 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
     const choices = [...CHARACTER_CHOICES] as string[];
     const ALL = Object.fromEntries(Object.keys(C.WORLD_FLAGS).map((k) => [k, true]));
     const defaultOf: Record<string, string> = { photo: 'office', cave: 'prehistoric', retro: 'retro' };
-    const own: Record<string, string> = { cheeky: 'cheeky', prehistoric: 'prehistoric', pirate: 'pirate', monster: 'monster', royal: 'royal', rebels: 'rebels' }; // a crew with a row: its own people in every world
+    const own: Record<string, string> = { office: 'office', pixel: 'retro', cheeky: 'cheeky', prehistoric: 'prehistoric', pirate: 'pirate', monster: 'monster', royal: 'royal', rebels: 'rebels' }; // a crew with a row: its own people in every world
     for (const w of C.WORLDS) assert.ok(w.id in defaultOf, `world ${w.id} has no column in the matrix (T249): add one here and a row in the spec's table`);
     for (const c of choices) assert.ok(c === 'theme' || c === 'minimalist' || c in own, `Characters value ${c} has no cell in the matrix (T249): add it here and to the spec's table`);
     assert.ok(!choices.includes('mine'), 'My characters (spec 096) is a KNOWN GAP: when it becomes a value it needs a cell in every world (T246)');
@@ -794,9 +834,10 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
 }
 
 {
-  // sweep 2026-11-01: choosing an Office layout repaints Settings; the pressed button keeps the keyboard focus
-  const scr = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.js'), 'utf8');
-  assert.ok(/const hadFocus=document\.activeElement===olb;\s*await paint\(\);[^\n]*\n\s*if\(hadFocus\)\{const nb=document\.querySelector\('\[data-officelayout="'\+k\+'"\]'\);if\(nb\)focusIn\(nb\);\}/.test(scr), 'the Office layout pick restores focus after the repaint');
+  // sweep 2026-11-01, spec 102 FR-301: choosing a World card repaints Settings; the chosen card keeps the keyboard focus (the cards replaced the Office layout buttons)
+  const scr = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.js'), 'utf8').replace(/\r\n/g, '\n');
+  const pw = (/async function pickWorld\(b\)\{[\s\S]*?\n  \}\n/.exec(scr) || [''])[0];
+  assert.ok(/aria-checked/.test(pw) && /tabIndex=on\?0:-1/.test(pw) && !/paintSettings/.test(pw), 'the World card pick updates the cards in place (no repaint of the page, so the focus and the roving tabindex survive)');
 }
 // ---- FR-107: the lamp in words, one phrase per FR-041 row, the same for every world ----
 {

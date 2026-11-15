@@ -1313,6 +1313,8 @@ body.browser-big #panel .bpane :is(.bstrip,.bbar,.bstat){padding-left:var(--s-4)
 .letter{position:absolute;left:0;top:0;width:16px;height:12px;margin:-6px 0 0 -8px;color:var(--ink-2);pointer-events:none;z-index:3}
 .letter svg{display:block}
 .letter.flying{transition:transform .9s cubic-bezier(.3,.1,.3,1)}
+.letter.real{color:var(--ink);background:var(--surface);box-shadow:var(--shadow-card)} /* spec 097 FR-377: a chip of the world's own surface and ink over a floor photo or the arcade's floor */
+html[data-world="retro"] .letter.real{box-shadow:none;outline:1px solid var(--ink)} /* the arcade: square, no blur, a 1 px ink outline, as its pixel art */
 @media (prefers-reduced-motion:reduce){.letter{display:none}}
 .place-add{flex:none;align-self:center;width:26px;height:26px;box-sizing:border-box;padding:0;border-radius:50%;border:1.5px dashed var(--line-2);background:color-mix(in srgb,var(--raised) 55%,transparent);color:var(--ink-2);font:inherit;font-size:16px;line-height:1;cursor:pointer}
 .place-add:hover{background:var(--raised);border-style:solid}
@@ -1402,7 +1404,7 @@ body.browser-big #panel .bpane :is(.bstrip,.bbar,.bstat){padding-left:var(--s-4)
 .btn.primary.warn:hover{background:var(--tone-warn-hover)}
 /* spec 052 FR-076: red means it deletes or ends (End session, Remove, Delete floor, Clear); amber .primary.warn only grants more power (Allow all, Turn on remote) */
 .btn.primary.danger{background:var(--red-ink);border-color:transparent;color:var(--surface)}
-.btn.primary.danger:hover{background:color-mix(in srgb,var(--red-ink) 86%,var(--ink));border-color:transparent} /* toward the page ink: darker on a dark fill (light themes), lighter on a light fill (dark themes), so the text keeps its contrast (issue 1565) */
+.btn.primary.danger:hover{background:color-mix(in srgb,var(--red-ink) 86%,var(--red-hover,var(--ink)));border-color:transparent} /* toward the page ink: darker on a dark fill (light themes), lighter on a light fill (dark themes), so the text keeps its contrast (issue 1565) */
 
 /* ---- switch model and context, compact (spec 030) ---- */
 .mchip-btn{cursor:pointer;font-family:inherit;gap:5px}
@@ -1796,7 +1798,7 @@ html[data-motion-off] .af-notice :is(.afn-dot,.afn-ring-fg,.dlg),html[data-motio
 @media (forced-colors:active){
   .pill,.stat,.chip,.btn,.room-new{border:1px solid CanvasText}
   [aria-pressed=true],[aria-current]:not([aria-current=false]){outline:2px solid Highlight;outline-offset:-2px}
-  .inbox:focus-within,.thpick[aria-pressed=true]{outline:2px solid Highlight}
+  .inbox:focus-within,.thpick[aria-pressed=true],.thpick[aria-checked=true]{outline:2px solid Highlight}
   .dot,.pill i{forced-color-adjust:none}
   .btn:disabled,.btn[aria-disabled=true]{color:GrayText;border-color:GrayText}
 }
@@ -2175,7 +2177,7 @@ h2,h3,h4{text-wrap:balance}
 .nt-count:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
 .nt-count[hidden]{display:none}
 .nt-mark{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;padding:0;margin-left:6px;border:0;border-radius:6px;background:transparent;color:var(--ink-2);cursor:pointer;vertical-align:middle}
-.bubble.nt-found{outline:2px solid var(--focus);outline-offset:3px;animation:ntFound 1.2s ease-out} /* spec 083 FR-046: Open source outlines the message for 1.2 s (app.js removes the class); reduced motion drops the fade, the outline stays */
+.bubble.nt-found{outline:2px solid var(--focus);outline-offset:3px;animation:ntFound var(--nt-ms,1.2s) ease-out both} /* spec 083 FR-046: Open source outlines the message for 1.2 s (app.js removes the class); reduced motion drops the fade, the outline stays */
 @keyframes ntFound{from{outline-color:var(--focus)}to{outline-color:transparent}}
 .nt-mark:hover,.nt-mark:focus-visible{background:var(--surface-2);color:var(--ink)}
 .nt-mark:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
@@ -2270,9 +2272,49 @@ body.panel-open .door-panel,#screen:not([hidden]) ~ .door-panel{display:none}
 .door-body .inbox-row .ib-ans>.btn.session{flex:1 1 100%;display:block;height:auto;min-height:28px;padding-top:var(--r-sm);padding-bottom:var(--r-sm);white-space:normal;overflow:visible;text-overflow:clip;text-align:left} /* FR-199 (Q-NY-10): the session grant on its own line, wrapped and never cut */
 .door-body .inbox-row.is-limit .ib-ans>.btn.session{flex:none;display:inline-block;height:28px;min-height:0;padding-top:0;padding-bottom:0;white-space:nowrap;text-align:center} /* the limit row's Remove limit is a plain button like Raise limit and Stop here */
 
+/* ---- spec 095 (phase 3): search conversations. FR-001: the field after the view toggle; on a narrow top bar (fitTopbar's tb-search
+   step) the magnifier, which opens the field over the bar. FR-050: 10.5px or more, focus rings as elsewhere, the mark has a non-colour
+   cue (bold and an underline), every colour from the theme tokens. ---- */
+.cs-box{display:none;position:relative;align-items:center;flex:none}
+body.has-csearch .cs-box{display:flex}
+body.has-csearch.cs-demo .cs-box{visibility:hidden} /* the demo office: kept in the layout (no relayout when the demo is turned on or off), nothing to search */
+.cs-box input{height:var(--h-ctl);width:172px;border:1px solid var(--line-ctl);background:var(--surface-2);color:var(--ink);border-radius:var(--r-md);padding:0 var(--s-2);font:inherit;font-size:var(--t4-size)}
+.cs-box input::placeholder{color:var(--muted)}
+.cs-box input[aria-invalid="true"]{border-color:var(--tone-warn-line)}
+#convSearchBtn{display:none;height:var(--h-ctl);width:var(--h-ctl);padding:0;align-items:center;justify-content:center}
+.topbar.tb-search #convSearchBtn{display:inline-flex}
+.topbar.tb-search .cs-box input{display:none}
+.topbar.tb-search .cs-box.open input{display:block;position:absolute;right:0;top:50%;transform:translateY(-50%);width:260px;z-index:40;box-shadow:var(--shadow-card)} /* over the bar's own controls, never over the banner below (review of PR 1240, Q3) */
+.topbar.tb-search .cs-box.has-q:not(.open) #convSearchBtn{border-color:var(--focus);color:var(--ink)} /* a query is active: the magnifier says so (and its accessible name holds the query) */
+.topbar .cs-under{visibility:hidden} /* review of PR 1684: a control the opened field would lie over */
+.cs-hint{position:absolute;right:calc(100% + 6px);top:50%;transform:translateY(-50%);z-index:41;max-width:360px;width:max-content;white-space:normal;font-size:var(--t4-size);line-height:var(--t5-lh);padding:var(--s-1) var(--s-2);border:1px solid var(--line);border-radius:var(--r-md);background:var(--raised);color:var(--ink-2);box-shadow:var(--shadow-card)} /* in the bar, left of the field, never over the banner below (review of PR 1240) */
+.topbar.tb-search .cs-box.open .cs-hint{right:calc(260px + 6px)} /* left of the opened field, which lies over the bar */
+.cs-hint[hidden]{display:none}
+
+/* FR-004, FR-010, FR-052: the results view in #list, in the List's own grid; rows never overlap, an excerpt is at most two lines.
+   Sizes from the type and spacing scale (spec 070 FR-054); the buttons are the app's own .btn.sm and plain buttons. */
+.cs-state,.cs-notes,.cs-ghead,.cs-exs{grid-column:1/-1}
+.cs-state{display:flex;align-items:center;gap:var(--s-3);padding:var(--s-2) var(--s-4);font-size:var(--t4-size);color:var(--ink-2);border-bottom:1px solid var(--line-soft)}
+.cs-notes{padding:var(--s-2) var(--s-4);font-size:var(--t4-size);line-height:var(--t4-lh);color:var(--muted);border-bottom:1px solid var(--line-soft)}
+.cs-ghead{padding:var(--s-3) var(--s-4) var(--s-1);font-size:var(--t4-size);font-weight:var(--t1-weight);color:var(--ink)}
+.cs-ghead span{font-weight:var(--t3-weight);color:var(--muted)}
+.cs-hit{display:grid;grid-template-columns:subgrid;grid-column:1/-1;border-bottom:1px solid var(--line-soft)}
+.cs-hit>.lrow{border-bottom:0}
+.lrow.cs-prow{cursor:default}
+.cs-exs{display:flex;flex-direction:column;gap:var(--s-1);padding:0 var(--s-4) var(--s-2) calc(var(--s-5) + var(--s-3));min-width:0}
+.cs-exs>button{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-align:left;font:inherit;font-size:var(--t4-size);line-height:var(--t4-lh);color:var(--ink-2);background:transparent;border:0;border-radius:var(--r-sm);padding:0 var(--s-1);cursor:pointer;max-width:100%;overflow-wrap:anywhere}
+.cs-exs>button:hover{background:var(--surface-2)}
+.cs-who{font-weight:var(--t1-weight);color:var(--ink)}
+.cs-more{font-size:var(--t4-size);color:var(--muted);padding:0 var(--s-1)}
+.cs-wrap mark,.cs-hit mark{background:var(--warn-bg);color:var(--ink);font-weight:var(--t1-weight);text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:2px;padding:0}
+
 /* ---- spec 070 A14 (FR-061..FR-066, FR-075, FR-076; T034..T036, T044): Flat's modern look, behind html[data-flat-look] (flatlook.js; off by default).
    Only Flat matches: Clean Office has no data-ui and no world is shown, so Real office, Retro, the cave and every other pack are untouched (FR-066).
    Colours are !important because theme.js writes the pack's values as inline style; sizes and radii are tokens the rules above read. ---- */
+/* spec 102 T340: strips that gave way in the arcade: hidden, or an overlay under #stripBar that takes no office height */
+body.strips-yield .notice-strip:not(#stripBar){display:none}
+body.strips-yield.strips-open .notice-strip:not(#stripBar):not([hidden]){display:flex;position:fixed;left:0;right:0;z-index:60;box-shadow:var(--shadow-pop)}
+
 html[data-flat-look]:not([data-ui]):not([data-world]){
   --bg:var(--flat-page)!important; --surface:var(--flat-page)!important; --raised:var(--flat-page)!important; --card:var(--flat-page)!important; --surface-2:var(--flat-page-2)!important; --note:var(--flat-page-2)!important;
   --line:var(--flat-line)!important; --line-2:var(--flat-line-2)!important; --line-ctl:var(--flat-line-ctl)!important; --sage-ink:var(--flat-accent)!important;
@@ -2282,3 +2324,4 @@ html[data-flat-look]:not([data-ui]):not([data-world]){
   --composer-pad:6px; --inbox-pad:4px;
 }
 html[data-flat-look]:not([data-ui]):not([data-world])[data-density="compact"] :is(#panel,#screen,.dlg,.dlg-ov,.more-menu,.mode-menu,#topMoreMenu){--h-ctl:24px; --h-chip:24px}
+
