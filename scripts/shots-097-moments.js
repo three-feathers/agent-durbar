@@ -194,6 +194,8 @@ module.exports = async (ctx) => {
     if (run('empty-office')) {
       await H.load({ w, h, query: q(world, { simfloors: 'ground' }), ready: REAL, settle: false });
       await must(PICS, 'the pictures');
+      /* the order is fixed, not left to the simulator's clock: the limit slip is on the first floor (placed under that floor's lobby) before the empty floor is shown, so the slip that crosses is always checked (its kept spot must be placed again under the empty floor's taller lobby) */
+      if (world === 'retro') await must(`!!document.querySelector('#stage .ro-slip.ro-limit:not([hidden])')`, 'the limit slip on the first floor');
       await H.goToFloor((await H.floors())[1].id);
       await must(`!!document.querySelector('#stage .ro-eplate')&&!document.querySelector('#stage .ro-ride')`, 'the empty plate, the ride over');
       await must(PICS, 'the pictures');
@@ -206,6 +208,18 @@ module.exports = async (ctx) => {
       assert.strictEqual(em.amb, '0.7', `${tag}: room at 70 %`);
       assert.ok(em.small >= 10.5, `${tag}: plate text >= 10.5px`);
       assert.deepStrictEqual(await slipOverlaps(), [], `${tag}: no slip covers the empty floor's plate`);
+      if (world === 'retro') { /* spec 102 delta 2026-11-14 (T223): the arcade's empty office is a hall: the stage takes the floor like the 15-agent hall, the plate is over its floor and readable, nothing scrolls */
+        const hall = await js(`(()=>{const R=e=>e.getBoundingClientRect(),f=document.getElementById('floor'),s=document.getElementById('stage'),p=document.querySelector('#stage .ro-eplate'),cs=getComputedStyle(f),pc=getComputedStyle(p),fr=R(f),sr=R(s),pr=R(p);
+          return {stageH:Math.round(sr.height),floorBottom:Math.round(fr.bottom-parseFloat(cs.paddingBottom)),stageBottom:Math.round(sr.bottom),gap:Math.round(fr.bottom-parseFloat(cs.paddingBottom)-sr.bottom),scrolls:f.scrollHeight>f.clientHeight+1,fit:s.dataset.fit,
+          plateIn:pr.left>=sr.left&&pr.right<=sr.right&&pr.top>=sr.top&&pr.bottom<=sr.bottom,plateH:Math.round(pr.height),ink:pc.color,bg:pc.backgroundColor,cabs:document.querySelectorAll('#stage .ro-edesk').length}})()`);
+        console.log(`[moments] ${tag}: empty office stage height ${hall.stageH}, floor bottom ${hall.floorBottom}, stage bottom ${hall.stageBottom}`);
+        assert.ok(Math.abs(hall.gap) <= 8, `${tag}: the arcade's empty stage fills the office area: its bottom edge is ${hall.gap}px from the floor's bottom (stage ${hall.stageH}px)`);
+        assert.ok(!hall.scrolls && hall.fit === 'ok', `${tag}: the empty arcade office does not scroll`);
+        const lum = (c) => { const v = (c.match(/[\d.]+/g) || []).slice(0, 3).map(Number).map((x) => { x /= 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }); return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]; };
+        const ratio = (lum(hall.ink) + 0.05 > lum(hall.bg) + 0.05 ? (lum(hall.ink) + 0.05) / (lum(hall.bg) + 0.05) : (lum(hall.bg) + 0.05) / (lum(hall.ink) + 0.05));
+        assert.ok(ratio >= 4.5, `${tag}: the empty arcade office's words read at 4.5:1 or better (${ratio.toFixed(2)}: ${hall.ink} on ${hall.bg})`);
+        assert.ok(hall.plateIn && hall.plateH > 0, `${tag}: the words card is drawn on the hall's floor`);
+      }
       await shot(world, 'empty', w, h);
     }
     // ---- FR-120 asleep ----
@@ -417,6 +431,8 @@ module.exports = async (ctx) => {
     if (run('coffee')) {
       await H.load({ w, h, query: q(world, { simbreak: '600' }), ready: REAL, settle: false });
       await must(`(window.__durbarSimUi.agents().find(a=>a.name==='Tomas')||{}).paused||[...document.querySelectorAll('#stage .ro-plate')].some(p=>/Tomas/.test(p.textContent)&&/Coffee/i.test(p.textContent))`, 'Tomas on a coffee break', 30000);
+      /* simbreak also sends Rosa to the corner 1.5 s after the load (sim.ts, spec 068 FR-017): the read waits until her break is drawn (a slow page draws it late: issue 1758), so it always sees the settled scene of both */
+      await must(`['Tomas','Rosa'].every(n=>[...document.querySelectorAll('#stage .ro-chip[data-coffeeid]')].some(c=>(c.getAttribute('aria-label')||'').startsWith(n+' ')))`, "Rosa's simulated break drawn at the corner beside Tomas's", 30000);
       if (process.env.MOMENTS_FONT) { await js(`(()=>{const s=document.createElement('style');s.textContent='#stage .ro *{font-family:'+${jsLiteral(process.env.MOMENTS_FONT)}+' !important}';document.head.appendChild(s);window.__durbarSimUi.crew.renderAll();})()`); await H.until(PICS, 10000); } /* a developer aid: another font's widths (CI's Linux fonts are wider) */
       const cf = await js(`(()=>{const p=[...document.querySelectorAll('#stage .ro-plate')].find(p=>/Tomas/.test(p.textContent));return {plate:p.textContent,label:p.getAttribute('aria-label'),title:p.getAttribute('title'),state:p.dataset.state,away:[...document.querySelectorAll('#stage .ro-away')].map(e=>e.textContent),
         chips:[...document.querySelectorAll('#stage .ro-chip')].filter(c=>c.dataset.coffeeid).map(c=>[c.textContent,c.getAttribute('aria-label')])}})()`);
@@ -428,8 +444,9 @@ module.exports = async (ctx) => {
       /* the arcade's ticket is a dark card with a neon edge (102 FR-264, owner 2026-11-03): its own colour is the edge and the words, not the paper */
       const NOTE_PROP = world === 'retro' ? 'borderTopColor' : 'backgroundColor';
       assert.ok(await js(`getComputedStyle(document.querySelector('#stage .ro-away[data-place="coffee"]'))[${jsLiteral(NOTE_PROP)}]`) !== await js(`getComputedStyle(document.querySelector('#stage .ro-away:not([data-place="coffee"])')||document.body)[${jsLiteral(NOTE_PROP)}]`), `${tag}: the coffee post-it has its own colour`);
-      assert.strictEqual(cf.chips.length, 1, `${tag}: only the agent on a coffee break stands at the corner (FR-128): ${JSON.stringify(cf.chips)}`);
-      assert.ok(/^Tomas \(until .* back in \d+ min\)\. Open the chat\.$/.test(cf.chips[0][1]), `${tag}: the corner chip's name: ${cf.chips[0][1]}`);
+      assert.deepStrictEqual(cf.chips.map((c) => c[1].split(' ')[0]).sort(), ['Rosa', 'Tomas'], `${tag}: only the agents on a coffee break (Tomas and Rosa) stand at the corner (FR-128): ${JSON.stringify(cf.chips)}`);
+      const tomasChip = cf.chips.find((c) => c[1].startsWith('Tomas '));
+      assert.ok(/^Tomas \(until .* back in \d+ min\)\. Open the chat\.$/.test(tomasChip[1]), `${tag}: the corner chip's name: ${tomasChip[1]}`);
       await shot(world, 'coffee', w, h);
       await H.load({ w, h, query: q(world), ready: REAL, settle: false });
       await must(PICS, 'the pictures');
