@@ -1,0 +1,1 @@
+- **Fixed: the release clip's lounge scene no longer shows a spending-limit slip over the lounge row** (spec 008 FR-270, issue #1792): the simulator's Omar reaches his cap and the Real office drew its limit slip over the zoom; the scene now removes that limit first, as a user would. Simulator only, checked on Linux.
