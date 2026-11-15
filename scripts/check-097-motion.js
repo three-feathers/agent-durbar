@@ -199,9 +199,10 @@ module.exports = async (ctx) => {
     }
     /* spec 102 T350: a visitor at the Terminal runs on two pictures, swapped by a stepped opacity loop: a hard swap, never the Photo office's cross-fade (ro-fb-run) */
     await must(`!!document.querySelector('#stage .ro .ro-visitor.m-a.m-run')&&!!document.querySelector('#stage .ro .ro-visitor2.m-b.m-run')`, 'T350: a runner on two pictures in the arcade');
-    await js(`window.__stepRun=()=>{const A=document.querySelector('#stage .ro .ro-visitor.m-a.m-run'),B=document.querySelector('#stage .ro .ro-visitor2.m-b[data-for="'+CSS.escape(A.dataset.for)+'"]');
+    const STEPRUN = `window.__stepRun=()=>{const A=document.querySelector('#stage .ro .ro-visitor.m-a.m-run'),B=document.querySelector('#stage .ro .ro-visitor2.m-b[data-for="'+CSS.escape(A.dataset.for)+'"]');
       const an=(e)=>e&&e.getAnimations().filter(x=>x.animationName);
-      return {A,B,aa:an(A),bb:an(B)};};0`);
+      return {A,B,aa:an(A),bb:an(B)};};0`;
+    await js(STEPRUN);
     const runInfo = await js(`(()=>{const r=window.__stepRun();const o=(x)=>x.map(a=>({n:a.animationName,e:getComputedStyle(a.effect.target).animationTimingFunction,d:a.effect.getTiming().duration}));
       return {a:o(r.aa),b:o(r.bb),srcA:r.A.src.split('/').pop(),srcB:r.B?r.B.src.split('/').pop():''};})()`);
     console.log('[097-motion] arcade run layers', JSON.stringify(runInfo));
@@ -218,8 +219,11 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual([phases.p3, phases.p4], [[1, 0], [0, 1]], 'T350: and it repeats: ' + JSON.stringify(phases));
     assert.deepStrictEqual([phases.p5, phases.p6], [[1, 0], [0, 1]], 'T350: a hard swap, nothing between 0 and 1 at the step: ' + JSON.stringify(phases));
     /* the swap never flips the figure: both layers carry the same facing mirror (computed scale and transform), however the set is drawn (spec 097 FR-191: `mir` on the visitor and on its second frame) */
-    const sc = await js(`(()=>{const r=window.__stepRun();const g=(e)=>{const c=getComputedStyle(e);return c.scale+'|'+c.transform+'|'+e.classList.contains('mir');};return [g(r.A),g(r.B)];})()`);
-    assert.strictEqual(sc[0], sc[1], 'T350: both run frames have the same mirror (scale, transform, mir): a swap never flips the figure: ' + JSON.stringify(sc));
+    const MIRROR = `(()=>{const r=window.__stepRun();const g=(e)=>{const c=getComputedStyle(e);return {scale:c.scale,transform:c.transform,mir:e.classList.contains('mir')};};return [g(r.A),g(r.B)];})()`;
+    const sc = await js(MIRROR);
+    assert.deepStrictEqual(sc[0], sc[1], 'T350: both run frames have the same mirror (scale, transform, mir): a swap never flips the figure: ' + JSON.stringify(sc));
+    /* a MIRRORED runner (the Retro people are drawn facing right and the lobby mirrors them, spec 097 FR-191): both layers have `mir` and scale -1 1 */
+    assert.ok(sc.every((x) => x.mir && x.scale === '-1 1'), 'T350: a mirrored runner: both run frames have mir and scale -1 1: ' + JSON.stringify(sc));
     assert.strictEqual(await js(`document.querySelectorAll('#stage .ro .ro-person2').length`), 0, 'FR-261: no second picture for a person in the arcade');
     /* pictures of the two frames of one runner (the loops paused at two phases): the whole room, and a crop round the visitor, one file each */
     for (const [tag, t] of [['A', 100], ['B', 600], ['A2', 1100], ['B2', 1600]]) {
@@ -242,6 +246,13 @@ module.exports = async (ctx) => {
     console.log(`[097-motion] arcade: the bob changes ${(most * 100).toFixed(1)} % of the person's pixels`);
     assert.ok(most >= 0.005, 'captures differ while working (the bob)');
     await H.shot(path.join(OUT, `097-arcade-moving-${w}x${h}.png`), { prep: 'calm' });
+    /* an UNMIRRORED runner: the Office people drawn in the arcade face left, as the lobby wants, so `v.fig.mir` is false: neither layer has `mir`, the scale is none on both (the second layer follows the layout, it is not always or never mirrored) */
+    await loadReal(w, h, { characters: 'office' });
+    await must(`document.querySelector('#stage .ro').dataset.set==='office'`, 'T350: the arcade draws the Office people');
+    await must(`!!document.querySelector('#stage .ro .ro-visitor.m-a.m-run')&&!!document.querySelector('#stage .ro .ro-visitor2.m-b.m-run')`, 'T350: an Office-people runner on two pictures in the arcade');
+    await js(STEPRUN);
+    const sc2 = await js(MIRROR);
+    assert.ok(sc2.every((x) => !x.mir && x.scale === 'none'), 'T350: an unmirrored runner: neither run frame has mir, scale none: ' + JSON.stringify(sc2));
   };
   if (RETRO) for (const [w, h] of SIZES) await arcadeLoops(w, h);
   mark('hidden');
