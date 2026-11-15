@@ -29,7 +29,9 @@ const fresh = (name = 'proj'): string => { const d = path.join(root, `c${++seq}`
 const sha = (b: Buffer | string): string => createHash('sha256').update(b).digest('hex');
 const md = (folder: string): string => path.join(folder, '.durbar', 'notes', 'notes.md');
 /** The inode at `p` itself (no link followed), `undefined` when nothing is there. */
-const inoOf = (p: string): number | undefined => { try { return nodeFs.lstatSync(p).ino; } catch { return undefined; } };
+const inoOf = (p: string): bigint | undefined => { try { return nodeFs.lstatSync(p, { bigint: true }).ino; } catch { return undefined; } };
+/** Whether a mirror id `<dev>:<ino>` ends in `ino`. Always a bigint: an NTFS file ID above 2^53 loses its low bit as a number (issue 1491 for the production side). */
+const idHolds = (id: string | undefined, ino: bigint | undefined): boolean => id !== undefined && ino !== undefined && id.endsWith(`:${ino}`);
 const ROOT = ((): string => { let d = __dirname; while (!nodeFs.existsSync(path.join(d, 'package.json'))) d = path.dirname(d); return d; })();
 let tick = Date.parse('2026-10-31T12:00:00.000Z');
 const tickClock = (): Date => new Date(tick += 1000);
@@ -564,7 +566,7 @@ async function main(): Promise<void> {
       const { folder, store } = await written();
       const outside = freshOut('outside');
       nodeFs.writeFileSync(path.join(outside, 'notes', 'notes.md'), 'someone else\'s different bytes\n');
-      const ino = nodeFs.statSync(path.join(outside, 'notes', 'notes.md')).ino;
+      const ino = nodeFs.statSync(path.join(outside, 'notes', 'notes.md'), { bigint: true }).ino;
       const aside = path.join(path.dirname(folder), 'aside');
       let done = false;
       const swap = (): void => { if (done) return; done = true; nodeFs.renameSync(path.join(folder, '.durbar'), aside); nodeFs.symlinkSync(outside, path.join(folder, '.durbar'), 'dir'); };
@@ -572,7 +574,7 @@ async function main(): Promise<void> {
       else c.hook.unlinkSync = (real, ...a) => { swap(); return real(...a); };
       const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder), new NotesFile().ignoreId(folder));
       assert.strictEqual(r.removed, false, `${when}: ${JSON.stringify(r)}`);
-      const left = nodeFs.readdirSync(path.join(outside, 'notes')).map((n) => nodeFs.statSync(path.join(outside, 'notes', n)).ino);
+      const left = nodeFs.readdirSync(path.join(outside, 'notes')).map((n) => nodeFs.statSync(path.join(outside, 'notes', n), { bigint: true }).ino);
       assert.ok(left.includes(ino), `${when}: the outside file still exists (${nodeFs.readdirSync(path.join(outside, 'notes')).join()})`);
       if (when === 'rename') assert.ok(nodeFs.existsSync(path.join(outside, 'notes', 'notes.md')), 'renamed back');
       assert.ok(nodeFs.readdirSync(aside).length === 1, `${when}: Durbar's own file is kept (maybe under the random name)`);
@@ -584,7 +586,7 @@ async function main(): Promise<void> {
       const { folder, store } = await written();
       const outside = freshOut('outside3');
       nodeFs.copyFileSync(md(folder), path.join(outside, 'notes', 'notes.md'));
-      const ino = nodeFs.statSync(path.join(outside, 'notes', 'notes.md')).ino;
+      const ino = nodeFs.statSync(path.join(outside, 'notes', 'notes.md'), { bigint: true }).ino;
       const d = path.join(folder, '.durbar'), aside = path.join(path.dirname(folder), 'aside3');
       let state: 'real' | 'link' = 'real', phase = 0;
       const toLink = (): void => { if (state === 'link') return; nodeFs.renameSync(d, aside); nodeFs.symlinkSync(outside, d, 'dir'); state = 'link'; };
@@ -594,7 +596,7 @@ async function main(): Promise<void> {
       c.hook.openSync = (real, ...a) => { if (phase === 1 && String(a[0]).endsWith('.del')) { toLink(); phase = 2; } return real(...a); };
       const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder), new NotesFile().ignoreId(folder));
       assert.ok(phase === 2 && !r.removed, `the sequence ran and nothing was deleted: ${JSON.stringify(r)}`);
-      assert.ok(nodeFs.readdirSync(path.join(outside, 'notes')).map((n) => nodeFs.statSync(path.join(outside, 'notes', n)).ino).includes(ino), 'the outside file still exists');
+      assert.ok(nodeFs.readdirSync(path.join(outside, 'notes')).map((n) => nodeFs.statSync(path.join(outside, 'notes', n), { bigint: true }).ino).includes(ino), 'the outside file still exists');
     }
     // a real swapper in another process, bounded. Issue #1463: the outside file has OTHER bytes than Durbar's here, so a delete may
     // move it (C, counted) but must never delete or overwrite it (A needs Durbar's own bytes and is pinned by the deterministic test
@@ -610,7 +612,7 @@ async function main(): Promise<void> {
     const outNotes = path.join(outside, 'notes'), outMd = path.join(outNotes, 'notes.md');
     const outBytes = Buffer.from('someone else\'s notes.md: not the bytes Durbar wrote\n');
     nodeFs.writeFileSync(outMd, outBytes);
-    let ino = nodeFs.statSync(outMd).ino;
+    let ino = nodeFs.statSync(outMd, { bigint: true }).ino;
     const real = path.join(path.dirname(folder), 'real-durbar');
     const stop = path.join(path.dirname(folder), 'stop');
     const ended = path.join(path.dirname(folder), 'swapper-ended'); // the swapper writes it after putting .durbar back for good
@@ -655,7 +657,7 @@ async function main(): Promise<void> {
       let outName: string | undefined;
       for (const n of nodeFs.readdirSync(outNotes)) {
         const at = path.join(outNotes, n);
-        if (nodeFs.lstatSync(at).ino !== ino) { outOfProject++; nodeFs.unlinkSync(at); continue; } // Durbar's file landed here (old name looked up in the project, new one outside): the test's own bytes, dropped
+        if (nodeFs.lstatSync(at, { bigint: true }).ino !== ino) { outOfProject++; nodeFs.unlinkSync(at); continue; } // Durbar's file landed here (old name looked up in the project, new one outside): the test's own bytes, dropped
         if (outName === undefined || n === 'notes.md') { if (outName !== undefined) nodeFs.unlinkSync(path.join(outNotes, outName)); outName = n; } else nodeFs.unlinkSync(at); // a second name of the outside file
       }
       if (outName === 'notes.md') { /* untouched */ } else if (outName !== undefined) {
@@ -663,13 +665,13 @@ async function main(): Promise<void> {
       } else {
         // every lstat throws (never `inoOf`, which turns an error into `undefined`): the swapper can move `real` back to `.durbar` between
         // the listing and an lstat, and a swallowed ENOENT read as "not here" counted a C as lost, and the cleanup below then deleted it
-        const here = viaReal((d) => nodeFs.readdirSync(d).find((n) => nodeFs.lstatSync(path.join(d, n)).ino === ino));
+        const here = viaReal((d) => nodeFs.readdirSync(d).find((n) => nodeFs.lstatSync(path.join(d, n), { bigint: true }).ino === ino));
         if (here !== undefined) { intoProject++; viaReal((d) => nodeFs.renameSync(path.join(d, here), outMd)); } // C: moved into the project: put back
-        else { lost++; nodeFs.writeFileSync(outMd, outBytes); ino = nodeFs.statSync(outMd).ino; } // deleted or overwritten: must never happen
+        else { lost++; nodeFs.writeFileSync(outMd, outBytes); ino = nodeFs.statSync(outMd, { bigint: true }).ino; } // deleted or overwritten: must never happen
       }
       // Durbar's own file left under a random name in the project (a refused delete): dropped, so the next attempt starts clean
       // only a `.del` file that a strict lstat shows is not the outside file (a throw is retried by viaReal); the outside file is never deleted here
-      viaReal((d) => { for (const n of nodeFs.readdirSync(d)) if (n.endsWith('.del') && nodeFs.lstatSync(path.join(d, n)).ino !== ino) nodeFs.unlinkSync(path.join(d, n)); });
+      viaReal((d) => { for (const n of nodeFs.readdirSync(d)) if (n.endsWith('.del') && nodeFs.lstatSync(path.join(d, n), { bigint: true }).ino !== ino) nodeFs.unlinkSync(path.join(d, n)); });
       if (i % 50 === 0) await new Promise((res) => setImmediate(res));
     }
     nodeFs.writeFileSync(stop, '');
@@ -688,7 +690,7 @@ async function main(): Promise<void> {
       const outside = freshOut('outsideS');
       const outMd = path.join(outside, 'notes', 'notes.md');
       if (outBytes === 'same') nodeFs.copyFileSync(md(folder), outMd); else nodeFs.writeFileSync(outMd, outBytes);
-      return { c, folder, store, outside, outMd, outIno: nodeFs.statSync(outMd).ino, ownIno: nodeFs.statSync(md(folder)).ino, mirror: await store.getMirror(folder) };
+      return { c, folder, store, outside, outMd, outIno: nodeFs.statSync(outMd, { bigint: true }).ino, ownIno: nodeFs.statSync(md(folder), { bigint: true }).ino, mirror: await store.getMirror(folder) };
     };
     const projDir = (folder: string): string => path.join(folder, '.durbar', 'notes');
     // C: the delete's rename looks up notes.md through the link (the other folder) and its random name in the project
@@ -707,7 +709,7 @@ async function main(): Promise<void> {
     // (mirror.id, spec 083 Changes 2026-11-10): the file under the random name is not that inode, so it is kept, not deleted
     {
       const t = await setup('same');
-      assert.ok(t.mirror?.id && t.mirror.id.endsWith(`:${t.ownIno}`), `the mirror holds the inode Durbar wrote: ${JSON.stringify(t.mirror)}`);
+      assert.ok(idHolds(t.mirror?.id, t.ownIno), `the mirror holds the inode Durbar wrote: ${JSON.stringify(t.mirror)}`);
       let name = '';
       t.c.hook.renameSync = (real, ...a) => { if (String(a[0]) === md(t.folder)) { name = path.basename(String(a[1])); return real(t.outMd, a[1]); } return real(...a); };
       const r = new NotesFile({ fs: t.c.fs, now: tickClock }).remove(t.folder, t.mirror);
@@ -767,10 +769,23 @@ async function main(): Promise<void> {
       assert.strictEqual(r.why, `Durbar did not delete .durbar/notes/notes.md: it could not be deleted (EPERM); the file is kept as ${path.basename(doomed)} in .durbar/notes: renaming it back to notes.md restores it.`);
     }
   });
+  await test('mirror.id check on an inode above 2^53 (spec 083 Changes 2026-11-11): read as a bigint, the low bit counts', async () => {
+    // an NTFS file ID such as 12947848929002475 is odd; as a number it reads ...476 and an endsWith check fails (Windows CI run 42932253989)
+    const big = 12947848929002475n;
+    assert.notStrictEqual(String(Number(big)), String(big), 'the premise: a number cannot hold it');
+    const c = countingFs();
+    // honours the options like node does: a bigint ino only for { bigint: true }, else the number it rounds to, so the case fails if the product stops asking for a bigint
+    c.hook.fstatSync = (real, ...a) => { const st = real(...a) as { ino: bigint | number }; const asked = (a[1] as { bigint?: boolean } | undefined)?.bigint === true; return new Proxy(st, { get: (t, k) => (k === 'ino' ? (asked ? big : Number(big)) : (t as never)[k]) }); };
+    const { folder, store } = await written(new NotesFile({ fs: c.fs, now: tickClock }));
+    const id = (await store.getMirror(folder))?.id;
+    assert.ok(id?.endsWith(`:${big}`), `the product keeps every digit: ${id}`);
+    assert.ok(idHolds(id, big), 'the bigint compare holds');
+    assert.ok(!idHolds(id, big + 1n) && !idHolds(id, big - 1n), 'a neighbour that differs only in the low bit does not');
+  });
   await test('mirror.id (spec 083 Changes 2026-11-10): stored and read back; a document without it still reads; a malformed one is dropped', async () => {
     const { folder, store } = await written();
     const m = await store.getMirror(folder);
-    assert.ok(m?.id && /^\d+:\d+$/.test(m.id) && m.id.endsWith(`:${inoOf(md(folder))}`), JSON.stringify(m));
+    assert.ok(m?.id && /^\d+:\d+$/.test(m.id) && idHolds(m.id, inoOf(md(folder))), JSON.stringify(m));
     const base = { version: 1, folderName: 'p', notes: [], tombstones: [] };
     const mir = { sha256: 'a'.repeat(64), bytes: 3, at: '2026-11-10T00:00:00.000Z' };
     const parsed = (mirror: unknown) => { const r = parseNotesDoc(JSON.stringify({ ...base, mirror })); assert.ok(r.ok, JSON.stringify(r)); return (r as { doc: { mirror?: unknown } }).doc.mirror; };
@@ -919,7 +934,7 @@ async function main(): Promise<void> {
       const { folder, store } = await written();
       const outside = freshOut('outside4');
       nodeFs.copyFileSync(md(folder), path.join(outside, 'notes', 'notes.md'));
-      const ino = nodeFs.statSync(path.join(outside, 'notes', 'notes.md')).ino;
+      const ino = nodeFs.statSync(path.join(outside, 'notes', 'notes.md'), { bigint: true }).ino;
       const d = path.join(folder, '.durbar'), aside = path.join(path.dirname(folder), 'aside4');
       let state: 'real' | 'link' = 'real', phase = 0, doomed = '';
       const toLink = (): void => { if (state === 'link') return; nodeFs.renameSync(d, aside); nodeFs.symlinkSync(outside, d, 'dir'); state = 'link'; };
@@ -930,7 +945,7 @@ async function main(): Promise<void> {
       c.hook.linkSync = (real, ...a) => { const r = real(...a); phase = 3; return r; };
       const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder), new NotesFile().ignoreId(folder));
       assert.ok(phase === 3 && !r.removed, `the sequence ran: ${JSON.stringify(r)}`);
-      assert.ok(nodeFs.readdirSync(path.join(outside, 'notes')).map((n) => nodeFs.statSync(path.join(outside, 'notes', n)).ino).includes(ino), `the outside file still exists (${nodeFs.readdirSync(path.join(outside, 'notes')).join()})`);
+      assert.ok(nodeFs.readdirSync(path.join(outside, 'notes')).map((n) => nodeFs.statSync(path.join(outside, 'notes', n), { bigint: true }).ino).includes(ino), `the outside file still exists (${nodeFs.readdirSync(path.join(outside, 'notes')).join()})`);
       assert.ok(/Durbar could not confirm that notes\.md is the same file: if there is no notes\.md, renaming \.notes\.md\.\d+\.[a-z0-9]+\.del back to notes\.md restores it; if there is, compare them before deleting \.notes\.md\.\d+\.[a-z0-9]+\.del\.$/.test(r.why!), r.why);
     }
     // 5: every unlink of the random name fails (a Windows editor holds it): nothing unlinks notes.md; the answer names both names
@@ -952,7 +967,7 @@ async function main(): Promise<void> {
       const { folder, store } = await written();
       const outside = freshOut('outside5');
       nodeFs.writeFileSync(path.join(outside, 'notes', 'notes.md'), 'the other folder\'s own file\n');
-      const ino = nodeFs.statSync(path.join(outside, 'notes', 'notes.md')).ino;
+      const ino = nodeFs.statSync(path.join(outside, 'notes', 'notes.md'), { bigint: true }).ino;
       const d = path.join(folder, '.durbar'), aside = path.join(path.dirname(folder), 'aside5');
       let state: 'real' | 'link' = 'real', phase = 0, doomed = '';
       const toLink = (): void => { if (state === 'link') return; nodeFs.renameSync(d, aside); nodeFs.symlinkSync(outside, d, 'dir'); state = 'link'; };
@@ -975,7 +990,7 @@ async function main(): Promise<void> {
       };
       const r = new NotesFile({ fs: c.fs, now: tickClock }).remove(folder, await store.getMirror(folder), new NotesFile().ignoreId(folder));
       assert.ok(phase === 3 && !r.removed, `the sequence ran: ${JSON.stringify(r)}`);
-      assert.ok(nodeFs.existsSync(path.join(outside, 'notes', 'notes.md')) && nodeFs.statSync(path.join(outside, 'notes', 'notes.md')).ino === ino, 'the other folder\'s notes.md survives');
+      assert.ok(nodeFs.existsSync(path.join(outside, 'notes', 'notes.md')) && nodeFs.statSync(path.join(outside, 'notes', 'notes.md'), { bigint: true }).ino === ino, 'the other folder\'s notes.md survives');
     }
   });
   await test('PR 931 review 2, points 2 and 3: only turning on creates the file; another folder at the same path is not written into', async () => {

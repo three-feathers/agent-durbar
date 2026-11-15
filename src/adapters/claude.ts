@@ -146,7 +146,9 @@ export const CLAUDE_PLAN_NOTE = '(Plan first: write the full plan in your reply,
  * as a prompt (`real:` 2026-10-22, spec 073), so Durbar neither starts a goal on it nor sends it a clear. A version it cannot read gets the clear.
  */
 export const CLAUDE_GOAL_MIN_VERSION = '2.1.309';
-const claudeOlderThanGoal = (version: string | undefined): boolean => typeof version === 'string' && /^\d+\.\d+\.\d+/.test(version) && compareVersions(version, CLAUDE_GOAL_MIN_VERSION) < 0;
+/** A readable `x.y.z` Claude Code version below `min`; an unknown or unreadable version is never older (spec 099, spec 012 FR-179). */
+export const claudeKnownOlderThan = (version: string | undefined, min: string): boolean => typeof version === 'string' && /^\d+\.\d+\.\d+/.test(version) && compareVersions(version, min) < 0;
+const claudeOlderThanGoal = (version: string | undefined): boolean => claudeKnownOlderThan(version, CLAUDE_GOAL_MIN_VERSION);
 /** FR-058. */
 export const CLAUDE_GOAL_TYPED = 'Autopilot sets the goal from your message.';
 
@@ -294,6 +296,28 @@ export interface ClaudeLaunch {
   disallowedMcpTools?: string[];
   /** Spec 015 FR-016: pass `--forward-subagent-text` (set only when the installed Claude Code is known to have it; see `claudeForwardsSubagentText`). */
   forwardSubagentText?: boolean;
+  /** Spec 012 FR-179: private file paths that replace `settingsJson`, `appendSystemPrompt` and `agent.json` on the argv (set only by `cliLaunchArgs`). */
+  settingsFile?: string;
+  appendSystemPromptFile?: string;
+  agentsFile?: string;
+}
+
+/**
+ * Spec 012 FR-179 (issue #1379): the first Claude Code known to take each launch content as a file (vendor CHANGELOG, `read:` 2026-11-11).
+ * `--append-system-prompt-file` is named in 2.1.69 (may be older); `--agents <file>` (with `-p`) came in 2.1.281. `--settings` took a file from
+ * the start (1.0.61), so it has no gate. An older version is refused when the launch carries that content (no fallback to the command line).
+ */
+export const CLAUDE_PROMPT_FILE_MIN_VERSION = '2.1.69';
+export const CLAUDE_AGENTS_FILE_MIN_VERSION = '2.1.281';
+/** Spec 012 FR-179: why this launch cannot start on `version` (older than a file flag its content needs), or undefined. An unknown version passes. */
+export function claudeLaunchFilesRefusal(version: string | undefined, launch: Pick<ClaudeLaunch, 'appendSystemPrompt' | 'agent'>): string | undefined {
+  if (launch.agent && claudeKnownOlderThan(version, CLAUDE_AGENTS_FILE_MIN_VERSION)) {
+    return `This session needs Claude Code ${CLAUDE_AGENTS_FILE_MIN_VERSION} or newer to use an agent profile. Update Claude Code in Settings > Agent apps.`;
+  }
+  if (launch.appendSystemPrompt && claudeKnownOlderThan(version, CLAUDE_PROMPT_FILE_MIN_VERSION)) {
+    return `This session needs Claude Code ${CLAUDE_PROMPT_FILE_MIN_VERSION} or newer to pass the folder's CLAUDE.md privately. Update Claude Code in Settings > Agent apps.`;
+  }
+  return undefined;
 }
 
 /** Spec 015 FR-016: the first Claude Code with `--forward-subagent-text` (its CHANGELOG, `read:` 2.1.211). An older or unreadable version never gets the flag (an unknown flag would stop the CLI). */
@@ -363,11 +387,13 @@ export function claudeArgs(i: ClaudeLaunch): string[] {
   a.push('--setting-sources', o.settingSources.join(','));
   if (o.strictMcpConfig) a.push('--strict-mcp-config');
   if (i.mcpConfig) a.push('--mcp-config', i.mcpConfig);
-  if (i.settingsJson) a.push('--settings', i.settingsJson);
+  if (i.settingsFile) a.push('--settings', i.settingsFile);
+  else if (i.settingsJson) a.push('--settings', i.settingsJson);
   if (claudeModelFlag(i.model)) a.push('--model', i.model as string);
   if (i.effort && CLAUDE_EFFORTS.has(i.effort)) a.push('--effort', i.effort);
-  if (i.appendSystemPrompt) a.push('--append-system-prompt', i.appendSystemPrompt);
-  if (i.agent && /^[A-Za-z0-9._-]{1,64}$/.test(i.agent.name)) a.push('--agents', i.agent.json, '--agent', i.agent.name);
+  if (i.appendSystemPromptFile) a.push('--append-system-prompt-file', i.appendSystemPromptFile);
+  else if (i.appendSystemPrompt) a.push('--append-system-prompt', i.appendSystemPrompt);
+  if (i.agent && /^[A-Za-z0-9._-]{1,64}$/.test(i.agent.name)) a.push('--agents', i.agentsFile ?? i.agent.json, '--agent', i.agent.name);
   for (const d of i.addDirs ?? []) a.push('--add-dir', d);
   if (i.maxBudgetUsd !== undefined && Number.isFinite(i.maxBudgetUsd)) a.push('--max-budget-usd', budgetText(i.maxBudgetUsd));
   if (claudeNameOk(i.name)) a.push('--name', i.name as string);
@@ -553,11 +579,24 @@ export const CLAUDE_ENTRYPOINT = 'agent-durbar';
  * new private temp folder (`mkdtemp`, 0700); `--mcp-config` gets the path; `cleanup` deletes the folder (on the CLI's exit).
  */
 export function privateMcpConfig(json: string, tmpRoot: string = os.tmpdir()): { file: string; cleanup: () => void } {
+  const p = privateLaunchFiles({ 'mcp-config.json': json }, tmpRoot);
+  return { file: p.files['mcp-config.json'], cleanup: p.cleanup };
+}
+
+/**
+ * Spec 012 FR-179 (issue #1379): several launch files in ONE new private folder (the `privateMcpConfig` folder: `makePrivateDir`, 0700),
+ * each 0600, flag `wx`. A failed write removes the folder before the error is raised. Names are fixed by the caller, never from content.
+ */
+export function privateLaunchFiles(contents: Readonly<Record<string, string>>, tmpRoot: string = os.tmpdir()): { files: Record<string, string>; cleanup: () => void } {
   const { dir, cleanup } = makePrivateDir('durbar-mcp-', tmpRoot); // spec 012 FR-165: tracked and swept on exit (privatedirs.ts)
   try {
-    const file = path.join(dir, 'mcp-config.json');
-    fs.writeFileSync(file, json, { mode: 0o600, flag: 'wx' });
-    return { file, cleanup };
+    const files: Record<string, string> = {};
+    for (const [name, text] of Object.entries(contents)) {
+      const file = path.join(dir, name);
+      fs.writeFileSync(file, text, { mode: 0o600, flag: 'wx' });
+      files[name] = file;
+    }
+    return { files, cleanup };
   } catch (e) {
     cleanup();
     throw e;
@@ -573,11 +612,34 @@ export function liveMcpConfigCount(): number {
   return livePrivateDirs('durbar-mcp-');
 }
 
-/** The CLI argv for a launch, with the MCP JSON moved to a private file (`privateMcpConfig`). */
+/**
+ * The CLI argv for a launch, with the MCP JSON (spec 069 FR-009), the `--settings` JSON, the folder's `CLAUDE.md` text and the agent JSON
+ * (spec 012 FR-179) moved to private files in one folder; the argv holds only their paths.
+ */
 export function cliLaunchArgs(launch: ClaudeLaunch, tmpRoot?: string): { args: string[]; cleanup: () => void } {
-  if (!launch.mcpConfig) return { args: claudeArgs(launch), cleanup: () => undefined };
-  const p = privateMcpConfig(launch.mcpConfig, tmpRoot);
-  return { args: claudeArgs({ ...launch, mcpConfig: p.file }), cleanup: p.cleanup };
+  const contents: Record<string, string> = {};
+  if (launch.mcpConfig) contents['mcp-config.json'] = launch.mcpConfig;
+  if (launch.settingsJson) contents['settings.json'] = launch.settingsJson;
+  if (launch.appendSystemPrompt) contents['instructions.md'] = launch.appendSystemPrompt;
+  if (launch.agent) contents['agents.json'] = launch.agent.json;
+  if (!Object.keys(contents).length) return { args: claudeArgs(launch), cleanup: () => undefined };
+  const p = privateLaunchFiles(contents, tmpRoot);
+  const f = p.files;
+  const moved: ClaudeLaunch = {
+    ...launch,
+    mcpConfig: f['mcp-config.json'],
+    settingsJson: undefined,
+    settingsFile: f['settings.json'],
+    appendSystemPrompt: undefined,
+    appendSystemPromptFile: f['instructions.md'],
+    ...(launch.agent ? { agent: { name: launch.agent.name, json: '' }, agentsFile: f['agents.json'] } : {}),
+  };
+  try {
+    return { args: claudeArgs(moved), cleanup: p.cleanup };
+  } catch (e) {
+    p.cleanup();
+    throw e;
+  }
 }
 
 /** The CLI transport factory; `spawn` and `tmpRoot` are for the tests (a fake child, a counted temp folder). */
@@ -1558,6 +1620,10 @@ export class ClaudeAdapter implements AgentAdapter {
       ...(claudeNameOk(s.pendingName) ? { name: s.pendingName } : {}),
       ...(claudeForwardsSubagentText((await this.sandboxFactsNow()).version) ? { forwardSubagentText: true } : {}), // spec 015 FR-016
     };
+    // spec 012 FR-179: content that needs a file flag this Claude Code lacks is never sent on the command line instead (CLI transport
+    // only: the SDK transport does not use these files)
+    const refusal = this.deps.sdkTransport ? undefined : claudeLaunchFilesRefusal((await this.sandboxFactsNow()).version, launch);
+    if (refusal) throw new Error(refusal);
     const handlers: TransportHandlers = {
       message: (m) => this.onMessage(s, m),
       control: (req) => this.onControl(s, req),

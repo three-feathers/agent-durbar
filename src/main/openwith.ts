@@ -11,7 +11,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { EDITIONS, EDITOR_NOT_FOUND, defaultEnv, planEdition, spawnPlan } from './vscode';
+import { EDITIONS, EDITOR_NOT_FOUND, defaultEnv, isWindowsTarget, planEdition, spawnPlan } from './vscode';
 import type { LaunchEnv, LaunchPlan, OpenResult } from './vscode';
 import { CMD_UNSAFE } from '../shared/wincmd';
 
@@ -164,8 +164,15 @@ export async function openWith(agent: OwnedAgent | undefined, targetId: unknown,
   return launch(plan, name, t.note, d);
 }
 
-/** What an editor gets: the workspace file if the agent has one, else the folder; both checked and resolved (FR-021, FR-027). */
+/** What an editor gets: the workspace file if the agent has one, else the folder; both checked and resolved (FR-021, FR-027).
+ *  On Windows the resolved path must also be a drive or UNC path (spec 009 FR-028), as `openInVSCode` asks; realpath gives one. */
 function editorDest(agent: OwnedAgent, d: Deps): { ok: true; dest: string; what: 'folder' | 'workspace file'; note?: string } | { ok: false; error: string } {
+  const t = editorPath(agent, d);
+  if (t.ok && d.platform === 'win32' && !isWindowsTarget(t.dest)) return { ok: false, error: `This ${t.what} is not on a drive or a network share, so it was not opened.` };
+  return t;
+}
+
+function editorPath(agent: OwnedAgent, d: Deps): { ok: true; dest: string; what: 'folder' | 'workspace file'; note?: string } | { ok: false; error: string } {
   if (agent.workspaceFile != null) {
     const w = checkWorkspace(agent.workspaceFile, d);
     return w.ok ? { ok: true, dest: w.path, what: 'workspace file', ...(w.linked ? { note: WORKSPACE_LINK_NOTE } : {}) } : w;

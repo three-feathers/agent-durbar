@@ -78,6 +78,10 @@ The runtime has no queue for an agent switch. A choice made while the agent work
 
 ## Changes
 
+### 2026-11-11: FR-044's `dev`/`ino` check compares bigints (issue #1491)
+
+Without `O_NOFOLLOW` (Windows), `readAgentFile` read the `lstat`'s `dev` and `ino` as plain numbers; an NTFS file ID above 2^53 loses its low bit, so a swapped file with a neighbouring ID could pass. The `lstat` and an `fstat` of the opened descriptor (which `readCapped` now hands its `vet`) are read with `{ bigint: true }` and compared as bigints. Nothing stored changes. Details, tests and limits: spec 083 *Changes* 2026-11-11 (`test:agentconfirm`, *issue 1491 agenttrust ino* and *dev*; not run on Windows).
+
 ### 2026-10-29: index status text kept from before the fixed status words (spec 021 FR-063)
 
 The `status:` of the specs-index block used to read (moved here unchanged; the block now has one status word and a short note):

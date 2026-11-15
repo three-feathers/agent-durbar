@@ -142,10 +142,36 @@ function addsOf(root, base, head, files) {
   return m;
 }
 
+/** Spec 021 FR-094: a PR stacked on this one, or one this one is stacked on, INHERITS numbers, it does not claim them again. self: { headRef, baseRef }
+ * (the branch's own PR, or the checked-out branch name); heads: [{ label, headRef, baseRef, sameRepo }] -> Map(label -> why), along the base chain in both directions.
+ * `main` is never a stack member; a PR from another repository (sameRepo not true) never is either, nor is a branch that is one. */
+function stackRelated(self, heads) {
+  const out = new Map();
+  if (!self) return out;
+  const skip = (r) => !r || r === 'main';
+  if (!self.sameRepo) return out; // a fork's branch name is the outsider's choice: it never joins a stack (unknown = not stacked)
+  let want = self.baseRef;
+  for (let i = 0; i < heads.length && !skip(want); i++) {
+    const h = heads.find((x) => x.headRef === want && x.sameRepo && !out.has(x.label));
+    if (!h) break;
+    out.set(h.label, 'this branch is stacked on it: inherited numbers'); want = h.baseRef;
+  }
+  const names = new Set(skip(self.headRef) ? [] : [self.headRef]);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const h of heads) {
+      if (out.has(h.label) || !h.sameRepo || skip(h.baseRef) || !names.has(h.baseRef)) continue;
+      out.set(h.label, 'stacked on this branch: inherited numbers'); grew = true;
+      if (!skip(h.headRef)) names.add(h.headRef);
+    }
+  }
+  return out;
+}
+
 /** -> { base, branchAdds, main, prs, skipped, twice } from the refs in the repository (no network). heads: [{ label, sha }]; headRev: the branch
  * (a sha; CI passes the PR head, because HEAD there is a merge commit with current main inside, where a number main took meanwhile would
  * vanish from "added"). Throws when anything cannot be read. */
-function collect(root, heads, headRev = 'HEAD') {
+function collect(root, heads, headRev = 'HEAD', self = null) {
   const base = gitq(root, ['merge-base', headRev, 'origin/main']);
   if (!base) throw new Error('no origin/main or no merge-base with it (shallow clone?): run `git fetch origin main` (CI: fetch-depth 0)');
   const files = specFilesChanged(root, base, headRev);
@@ -158,10 +184,14 @@ function collect(root, heads, headRev = 'HEAD') {
     for (const [id, n] of here) if (n > 1 && n > (there.get(id) || 0)) twice.push({ file: f, id });
   }
   const prs = [], skipped = [], noBase = [];
+  const stacked = stackRelated(self, heads);
   for (const h of heads) {
     if (isAncestor(root, h.sha, headRev)) { skipped.push(`${h.label} (already in this branch)`); continue; }
     if (isAncestor(root, h.sha, 'origin/main')) { skipped.push(`${h.label} (merged)`); continue; }
-    const pbase = gitq(root, ['merge-base', h.sha, 'origin/main']);
+    // FR-094: a PR stacked with this branch (by base ref, or its history contains this head) is not skipped: only what it adds BEYOND the history
+    // it shares with this branch counts as its claim, so a number both take on their own is still a clash
+    const inStack = stacked.has(h.label) || isAncestor(root, headRev, h.sha);
+    const pbase = gitq(root, ['merge-base', h.sha, inStack ? headRev : 'origin/main']);
     if (!pbase) { noBase.push(h.label); continue; }
     prs.push({ label: h.label, adds: addsOf(root, pbase, h.sha, files) });
   }
@@ -190,6 +220,7 @@ function ownerRepo(root) {
   const m = url.match(/github\.com[:/]([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/);
   return m ? `${m[1]}/${m[2]}` : null;
 }
+const withRefs = (o, headRef, baseRef, sameRepo) => { if (headRef) o.headRef = headRef; if (baseRef) o.baseRef = baseRef; if (sameRepo === true) o.sameRepo = true; return o; };
 const GH_LIMIT = 500, REST_PAGES = 30;
 /** The open PRs over the public REST API, paged until a short page. A token that is invalid or expired answers 401/403 even for public data:
  * retry once without it. More than REST_PAGES full pages is "cannot tell" (null), never a silently cut list. */
@@ -198,7 +229,7 @@ async function restOpenPrs(repo, token, getJson = httpsJson) {
     const res = [];
     for (let page = 1; page <= REST_PAGES; page++) {
       const rows = await getJson(`https://api.github.com/repos/${repo}/pulls?state=open&per_page=100&page=${page}`, tok);
-      for (const r of rows) res.push({ number: r.number, sha: r.head && r.head.sha });
+      for (const r of rows) res.push(withRefs({ number: r.number, sha: r.head && r.head.sha }, r.head && r.head.ref, r.base && r.base.ref, !!(r.head && r.head.repo && r.base && r.base.repo && r.head.repo.full_name === r.base.repo.full_name)));
       if (rows.length < 100) return res;
     }
     throw new Error('more open PRs than the pages read');
@@ -212,9 +243,9 @@ async function restOpenPrs(repo, token, getJson = httpsJson) {
  * a word, so an answer that reaches GH_LIMIT is not trusted: the REST pages are read instead. deps: runCmd, getJson (tests). */
 async function openPrs(root, env = process.env, deps = {}) {
   try {
-    const out = (deps.runCmd || run)(root, 'gh', ['pr', 'list', '--state', 'open', '--limit', String(GH_LIMIT), '--json', 'number,headRefOid']);
+    const out = (deps.runCmd || run)(root, 'gh', ['pr', 'list', '--state', 'open', '--limit', String(GH_LIMIT), '--json', 'number,headRefOid,headRefName,baseRefName,isCrossRepository']);
     const rows = JSON.parse(out);
-    if (rows.length < GH_LIMIT) return rows.map((p) => ({ number: p.number, sha: p.headRefOid }));
+    if (rows.length < GH_LIMIT) return rows.map((p) => withRefs({ number: p.number, sha: p.headRefOid }, p.headRefName, p.baseRefName, p.isCrossRepository === false));
   } catch { /* no gh, or not logged in, or a bad token: the public API */ }
   const repo = ownerRepo(root);
   if (!repo) return null;
@@ -263,13 +294,18 @@ async function main(argv, env, deps = {}) {
   if (prList) { const open = new Set(prList.map((p) => String(p.number))); heads = heads.filter((h) => open.has(h.number)); }
   if (!heads.length && !noFetch) say('specs:numbers: WARN no PR heads found; only origin/main was compared');
   let res;
-  try { res = collect(root, heads, headRev); } catch (e) { say(`specs:numbers: NOT CHECKED: ${firstLine(e)}`); return 2; }
+  // the branch's own PR (from the list) or, on a local run, the checked-out branch: its refs tell which open PRs are stacked with it
+  const own = prList && prList.find((p) => String(p.number) === exclude);
+  const refOf = new Map((prList || []).map((p) => [String(p.number), p]));
+  heads = heads.map((h) => ({ ...h, headRef: (refOf.get(h.number) || {}).headRef, baseRef: (refOf.get(h.number) || {}).baseRef, sameRepo: (refOf.get(h.number) || {}).sameRepo }));
+  const self = own ? { headRef: own.headRef, baseRef: own.baseRef, sameRepo: own.sameRepo } : { headRef: gitq(root, ['symbolic-ref', '--short', '-q', 'HEAD']) || undefined, sameRepo: true };
+  try { res = collect(root, heads, headRev, self); } catch (e) { say(`specs:numbers: NOT CHECKED: ${firstLine(e)}`); return 2; }
   const clashes = findClashes(res);
   say(report(res, clashes).join('\n'));
   return clashes.length ? 1 : 0;
 }
 
-module.exports = { openPrs, GH_LIMIT, parseDefinitions, definitionCounts, added, findClashes, scrub, collect, report, restOpenPrs, main, show, SPEC_FILE_RE };
+module.exports = { stackRelated, openPrs, GH_LIMIT, parseDefinitions, definitionCounts, added, findClashes, scrub, collect, report, restOpenPrs, main, show, SPEC_FILE_RE };
 
 if (require.main === module) {
   main(process.argv.slice(2), process.env).then((c) => process.exit(c), (e) => { emit(`specs:numbers: NOT CHECKED: ${firstLine(e)}`); process.exit(2); });

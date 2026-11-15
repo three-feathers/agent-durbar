@@ -56,6 +56,81 @@ module.exports = async (ctx) => {
   if (OS_REDUCED) console.log('[moments] the OS asks for reduced motion: the ring and the ride are checked in their reduced form only');
   for (const world of WORLDS) for (const [w, h] of SIZES) {
     const tag = `${world} ${w}x${h}`;
+    // ---- spec 097 2026-11-14 (issue #1711): a world is drawn only once its stylesheet has loaded (the stylesheet answers 400 ms late, the hook of check-097-crews, T320) ----
+    if (run('worldcss-late') && world !== 'photo') {
+      const ses = ctx.win.webContents.session;
+      ses.webRequest.onBeforeRequest({ urls: ['file://*/*'] }, (d, cb) => { if (/\/realoffice\/worlds\/[a-z0-9-]+\/world\.css$/.test(d.url)) setTimeout(() => cb({}), 400); else cb({}); });
+      await H.load({ w, h, query: q(world), ready: REAL, settle: false });
+      const sheetAtDraw = await js(`!!(document.getElementById('roWorldCss-'+${jsLiteral(world)})||{}).sheet`);
+      await must(`!!(document.getElementById('roWorldCss-'+${jsLiteral(world)})||{}).sheet`, 'the world stylesheet');
+      await H.until(`document.getElementById('stage').dataset.fit`, 2000).catch(() => undefined);
+      const sliver = await js(`[...document.querySelectorAll('#stage .ro-plate .ro-role')].filter(r=>!r.hidden&&getComputedStyle(r).display!=='none'&&r.getBoundingClientRect().width<19).map(r=>[r.textContent,Math.round(r.getBoundingClientRect().width)])`);
+      // the 4 s timer must not settle a second time: after it would have fired, the counter is still 1
+      await H.until(`document.documentElement.dataset.roSheets==='1'`, 2000).catch(() => undefined);
+      const sheetsAtLoad = await js(`document.documentElement.dataset.roSheets||''`);
+      await new Promise((r) => setTimeout(r, 4600));
+      const sheetsLater = await js(`document.documentElement.dataset.roSheets||''`);
+      ses.webRequest.onBeforeRequest(null);
+      assert.deepStrictEqual([sheetsAtLoad, sheetsLater], ['1', '1'], `${tag}: worldcss-late: the stylesheet settles once: the counter after the load and after the 4 s timer would have fired`);
+      assert.deepStrictEqual(sliver, [], `${tag}: a role is shown as a sliver: ${JSON.stringify(sliver)}`);
+      assert.strictEqual(sheetAtDraw, true, `${tag}: the office is drawn only after the ${world} stylesheet has loaded`);
+      console.log('[moments] worldcss-late ok', sheetAtDraw);
+    }
+    // ---- the same bug's other ends: a stylesheet that fails (cancelled) or never answers (held, 4 s timer in app.js) still draws, with the base CSS ----
+    // The product's own timing, read from inside the app: a poll of the page every 100 ms that does not depend on the page's load event (a held sheet can hold the load event back). Every call is bounded, so a stalled renderer is a failed assertion and not a hung run.
+    const within = (p, ms, dflt) => Promise.race([p, new Promise((r) => setTimeout(() => r(dflt), ms))]);
+    for (const mode of ['fail', 'hang']) {
+      if (!run('worldcss-' + mode) || world === 'photo') continue;
+      const ses = ctx.win.webContents.session;
+      const held = [];
+      let hits = 0, tReq = 0;
+      ses.webRequest.onBeforeRequest({ urls: ['file://*/*'] }, (d, cb) => { if (/\/realoffice\/worlds\/[a-z0-9-]+\/world\.css$/.test(d.url)) { if (!hits++) tReq = Date.now(); if (mode === 'fail') cb({ redirectURL: 'file:///durbar-no-such-world.css' }); else held.push(cb); } else cb({}); });
+      const wc = ctx.win.webContents;
+      await js(`localStorage.clear()`).catch(() => undefined); /* a clean start, on the page the earlier moment left (the storage is that page's): its world and view are gone */
+      await ses.clearCache(); /* an earlier moment's copy of the sheet would answer for the request */
+      if (!wc.debugger.isAttached()) wc.debugger.attach('1.3'); /* DevTools protocol: Electron's executeJavaScript waits for the page's load event, which a held sheet can hold back */
+      let loading, sheetsAfterLate = '1';
+      try {
+      await within(wc.debugger.sendCommand('Page.navigate', { url: 'about:blank' }), 5000, undefined); /* the page's memory cache of an earlier load of the sheet would answer for the request */
+      const t0 = Date.now();
+      let err = '';
+      loading = H.load({ w, h, query: q(world), ready: REAL, settle: false }).catch((e) => { err = String(e && e.message || e); });
+      const probe = `(()=>{const s=document.getElementById('stage');return [s&&s.dataset.d||'',document.querySelectorAll('#stage .ro-plate').length,document.documentElement.dataset.roSheets||''].join('|')})()`;
+      const evs = [];
+      const hooks = ['did-start-navigation', 'did-navigate', 'dom-ready', 'did-finish-load', 'did-fail-load', 'render-process-gone', 'unresponsive'].map((n) => { const f = () => evs.push(`${n}@${Date.now() - t0}`); wc.on(n, f); return [n, f]; });
+      let tDrawn = -1, tSettled = -1, last = '', polls = 0, stalled = 0;
+      while (Date.now() - t0 < 16000 && (tDrawn < 0 || tSettled < 0)) {
+        const r = await within(wc.debugger.sendCommand('Runtime.evaluate', { expression: probe, returnByValue: true }).then((o) => String((o.result && o.result.value) || ''), () => 'STALLED'), 400, 'STALLED');
+        polls++;
+        if (r === 'STALLED') stalled++; else {
+          last = r;
+          const [d, plates, sheets] = r.split('|');
+          if (tSettled < 0 && sheets) tSettled = Date.now() - t0;
+          if (tDrawn < 0 && d === 'real' && Number(plates) > 0) tDrawn = Date.now() - t0;
+        }
+        await new Promise((r2) => setTimeout(r2, 100));
+      }
+      const sinceReq = (t) => (t < 0 || !tReq ? -1 : t - (tReq - t0)); /* from the moment the page asked for the sheet: that is when the 4 s timer starts */
+      const timing = `drawn ${sinceReq(tDrawn)} ms and sheet settled ${sinceReq(tSettled)} ms after the page asked for it (drawn at ${tDrawn} ms, settled at ${tSettled} ms from the load), ${stalled} of ${polls} polls stalled, last state ${last}, window events ${evs.join(',')}, loading ${wc.isLoading()}`;
+      hooks.forEach(([n, f]) => wc.removeListener(n, f));
+      if (mode === 'hang') { /* the sheet answers at last, after the timer settled the pack: that load must not settle it a second time */
+        held.splice(0).forEach((cb) => cb({}));
+        await new Promise((r) => setTimeout(r, 1000));
+        sheetsAfterLate = await within(wc.debugger.sendCommand('Runtime.evaluate', { expression: `document.documentElement.dataset.roSheets||''`, returnByValue: true }).then((o) => String((o.result && o.result.value) || ''), () => 'STALLED'), 1500, 'STALLED');
+      }
+      ses.webRequest.onBeforeRequest(null);
+      held.forEach((cb) => cb({ cancel: true }));
+      await within(loading, 15000, undefined);
+      assert.strictEqual(err, '', `${tag}: worldcss-${mode}: the page loads: ${err}`);
+      assert.ok(hits >= 1, `${tag}: worldcss-${mode}: the stylesheet was requested (${hits})`);
+      assert.ok(tSettled >= 0 && tDrawn >= 0, `${tag}: worldcss-${mode}: the ${world} office is still drawn when its stylesheet ${mode === 'fail' ? 'fails' : 'never answers'}, and the pack is ready: ${timing}`);
+      if (mode === 'fail') assert.ok(sinceReq(tSettled) >= 0 && sinceReq(tSettled) < 3500, `${tag}: worldcss-fail: a failed stylesheet settles at once through its error event, not through the 4 s timer (${timing})`);
+      if (mode === 'hang') assert.ok(sinceReq(tSettled) >= 3500 && sinceReq(tSettled) < 12000 && sinceReq(tDrawn) < 12000, `${tag}: worldcss-hang: the draw waits for the 4 s timer, not for ever (${timing})`);
+      if (mode === 'hang') assert.strictEqual(sheetsAfterLate, '1', `${tag}: worldcss-hang: the sheet that answers after the timer does not settle the pack a second time (counter ${sheetsAfterLate})`);
+      await within(must(PICS, 'the pictures'), 14000, undefined);
+      console.log(`[moments] worldcss-${mode} ok: ${timing}`);
+      } finally { try { wc.debugger.detach(); } catch { /* already detached */ } }
+    }
     // ---- FR-118 first run ----
     if (run('first-run')) {
       if (world === 'cave' || world === 'retro') {
@@ -278,19 +353,20 @@ module.exports = async (ctx) => {
       });
     }
     if (run('inbox')) assert.ok(staleRan > 0, `${tag}: the stale-button check ran (a queue of two or more in a full slip)`);
-    // ---- spec 097 FR-004 / Codex sweep: choosing an Office layout keeps keyboard focus on the choice; FR-122: Show in chat from the limit slip focuses the amount field ----
+    // ---- spec 097 FR-004 / Codex sweep: choosing a World card keeps keyboard focus on the choice; FR-122: Show in chat from the limit slip focuses the amount field ----
     if (run('focus') && world === 'photo') {
       await H.load({ w, h, query: q(world), ready: REAL, settle: false, focus: true });
       await js(`window.DurbarScreens.openSettings()`);
-      await must(`!!document.querySelector('[data-officelayout="open"]')`, 'Settings');
-      await js(`document.querySelector('[data-officelayout="open"]').focus()`);
+      await must(`!!document.querySelector('#wrGroup [data-world="plain"]')`, 'Settings');
+      await must(`document.querySelectorAll('#wrGroup .wpic img').length>=2`, 'the cards show their previews (the page is painted again once, when the previews script has loaded)');
+      await js(`document.querySelector('#wrGroup [data-world="plain"]').focus()`);
       await H.key('Return');
-      await must(`document.querySelector('[data-officelayout="open"]').getAttribute('aria-pressed')==='true'`, 'Open office chosen');
-      assert.strictEqual(await js(`(document.activeElement.dataset||{}).officelayout`), 'open', `${tag}: after the repaint the focus is on the choice just made`);
-      await js(`document.querySelector('[data-officelayout="real"]').focus()`);
+      await must(`document.querySelector('#wrGroup [data-world="plain"]').getAttribute('aria-checked')==='true'`, 'Open office chosen');
+      assert.strictEqual(await js(`(document.activeElement.dataset||{}).world`), 'plain', `${tag}: after the repaint the focus is on the choice just made`);
+      await js(`document.querySelector('#wrGroup [data-world="photo"]').focus()`);
       await H.key('Return');
-      await must(`document.querySelector('[data-officelayout="real"]').getAttribute('aria-pressed')==='true'`, 'Real office chosen');
-      assert.strictEqual(await js(`(document.activeElement.dataset||{}).officelayout`), 'real', `${tag}: and back`);
+      await must(`document.querySelector('#wrGroup [data-world="photo"]').getAttribute('aria-checked')==='true'`, 'Real office chosen');
+      assert.strictEqual(await js(`(document.activeElement.dataset||{}).world`), 'photo', `${tag}: and back`);
       await js(`document.getElementById('scrClose').click()`);
     }
     if (run('limitfocus')) {
@@ -437,6 +513,9 @@ module.exports = async (ctx) => {
       await H.settle();
       const small = await js(`[...document.querySelectorAll('#panel *')].filter(e=>e.children.length===0&&e.textContent.trim()&&e.getClientRects().length&&parseFloat(getComputedStyle(e).fontSize)<10.5).length`);
       assert.strictEqual(small, 0, `${tag}: the chat has no text under 10.5px`);
+      /* 102 T223 (#1268): the permission card in the arcade's chat is dark (T221 fixed the cream card found in #1279) and every text of it reads at 4.5:1; its buttons are there */
+      const perm = await js(`(()=>{const c=document.querySelector('#chat .note.perm:not(.settled)');if(!c)return null;const P=(s)=>{const m=/rgba?\\(([^)]+)\\)/.exec(s);return m?m[1].split(/[ ,\\/]+/).filter(Boolean).slice(0,3).map(Number):[0,0,0]},Lm=(a)=>{const f=(x)=>{x/=255;return x<=0.03928?x/12.92:Math.pow((x+0.055)/1.055,2.4)};return 0.2126*f(a[0])+0.7152*f(a[1])+0.0722*f(a[2])};const bg=P(getComputedStyle(c).backgroundColor);const worst=[...c.querySelectorAll('*')].filter(e=>e.children.length===0&&e.textContent.trim()&&e.getClientRects().length&&!e.closest('.btn')).map(e=>{const a=Lm(P(getComputedStyle(e).color)),b=Lm(bg);return (Math.max(a,b)+0.05)/(Math.min(a,b)+0.05)});return {lum:Lm(bg),btns:c.querySelectorAll('.btn').length,texts:worst.length,min:worst.length?Math.min(...worst):0}})()`);
+      assert.ok(perm && perm.lum < 0.2 && perm.btns >= 2 && perm.texts > 0 && perm.min >= 4.5, `${tag}: the permission card in the arcade's chat is dark, has its buttons and its text reads at 4.5:1: ${JSON.stringify(perm)}`);
       await shot(world, 'cell-chat', w, h);
       await H.load({ w, h, query: q(world, { sim: '15', simfloors: '1' }), ready: REAL, settle: false });
       await must(PICS, 'the pictures');

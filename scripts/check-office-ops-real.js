@@ -17,6 +17,8 @@
  *
  *   npm run check:ui -- --only check-office-ops-real      (builds first)
  *   OPS_INDEX=<index.html>   load another build of the page (a mutation or a before/after run)
+ *   OPS_MUTANT=late          after the 40-agent load, the pointer arrives on a desk, as a virtual display's resting pointer did under a CPU load (issue #1448): passes, the card is closed before the updates
+ *   OPS_MUTANT=unparked      the same without the park before each update (must fail: a hover card during the measured updates)
  */
 const fs = require('fs');
 const os = require('os');
@@ -108,6 +110,7 @@ module.exports = async (ctx) => {
   const H = helpers(ctx);
   const { js } = H;
   const index = process.env.OPS_INDEX || undefined;
+  const MUTANT = process.env.OPS_MUTANT || '';
   const dbg = ctx.win.webContents.debugger;
   if (!dbg.isAttached()) dbg.attach('1.3');
   await dbg.sendCommand('Emulation.setDeviceMetricsOverride', { width: 0, height: 0, deviceScaleFactor: 1, mobile: false });
@@ -117,7 +120,16 @@ module.exports = async (ctx) => {
   const rows = {};
   const readsBy = {}; /* n -> the layout reads of the update with the most, by the page line that made them (a reads row over its limit names them) */
   /* spec 097 FR-327: a pointer resting on a desk or plate opens that agent's card, and an open card is placed again on every draw (more layout reads). Under a virtual display the pointer rests mid-window, so every load moves it off the office first: the rows count the room, not a card */
-  const load = async (n, extra = {}) => { await H.load({ w: 1440, h: 900, index, query: { sim: String(n), officeview: 'real', ...extra }, ready: REAL, readyMs: 30000, settle: false }); ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 }); await H.until(`!document.getElementById('roZoom')`, 3000); };
+  /* issue #1448: that wait could pass before the card opened (a hover opens it 120 ms after the pointer arrives), and under a CPU load a card was then open through all 8 updates
+     (readsPerStatus@40 = 29: the 11 of the room plus 18 of placeZoom). So the pointer is parked again before every measured update, and the update waits for no card, open or armed */
+  const parked = `!document.getElementById('roZoom')&&!window.DurbarRealOffice.hoverState().armed`;
+  const park = async () => { ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 }); return H.until(parked, 3000); };
+  const load = async (n, extra = {}) => { await H.load({ w: 1440, h: 900, index, query: { sim: String(n), officeview: 'real', ...extra }, ready: REAL, readyMs: 30000, settle: false }); await park();
+    if (MUTANT && n === 40) { /* the late pointer of issue #1448: on the desk nearest the middle of the window, after the wait above */
+      const pt = await js(`(()=>{const fl=document.getElementById('floor').getBoundingClientRect();const c=[...document.querySelectorAll('#stage .ro-desk')].map(e=>e.getBoundingClientRect()).filter(b=>b.top>fl.top&&b.bottom<fl.bottom).sort((a,b)=>Math.hypot(a.x-720,a.y-450)-Math.hypot(b.x-720,b.y-450))[0];return [Math.round(c.left+c.width/2),Math.round(c.top+c.height/2)];})()`);
+      ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: pt[0], y: pt[1] });
+      assert.ok(await H.until(`!!document.getElementById('roZoom')`, 3000), 'OPS_MUTANT: the late pointer opened a hover card');
+    } };
   const frames = () => js(`new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>{const c=new MessageChannel();c.port1.onmessage=()=>r(1);c.port2.postMessage(0);})))`);
 
   // ---- FR-183 at big screens ----
@@ -182,11 +194,12 @@ module.exports = async (ctx) => {
     await frames();
     const per = { renders: [], reads: [], nodes: [], attrs: [] }, resizes = [];
     let seen = {}, worst = null, putOff = 0, mostReads = null;
-    const startedBusy = [];
+    const startedBusy = [], carded = [];
     for (let i = 0; i < 8; i++) {
       const st = i % 2 ? 'working' : 'idle';
       /* a deterministic window (review on #969, nodes 27 once at 40 agents): the previous update's deferred work (its screen's throttled repaint, FR-033, 2 s; a done tick's redraw, 2.05 s)
          lands later on the wall clock, and under a CPU load inside this window. Start only when nothing is put off, the lobby settled and no render queued */
+      if (MUTANT !== 'unparked') assert.ok(await park(), `${n} agents: no hover card before update ${i} (the pointer parked off the office): ` + JSON.stringify(await js(`[!!document.getElementById('roZoom'),window.DurbarRealOffice.hoverState()]`)));
       assert.ok(await H.until(`(()=>{const p=window.DurbarRealOffice.pending();return p.screens===0;})()&&` + SETTLED, 15000), `${n} agents: nothing put off before update ${i}: ` + JSON.stringify(await js(`window.DurbarRealOffice.pending()`)));
       await frames();
       /* what was put off at the very start of the window, read in the same page task that starts it: every measured update must start from none */
@@ -196,6 +209,7 @@ module.exports = async (ctx) => {
       assert.ok(ok, `the plate shows ${st}`);
       await frames();
       const o = await js(`window.__ops.stop()`);
+      if (!(await js(parked))) carded.push(i); /* a card that opened inside the window would count its own reads */
       const put = await js(`(()=>{const p=window.DurbarRealOffice.pending();return p.screens;})()`); putOff += put;
       for (const k of Object.keys(per)) per[k].push(o[k]);
       resizes.push(...o.resized);
@@ -204,6 +218,7 @@ module.exports = async (ctx) => {
       if (!worst || o.nodes + o.attrs > worst.nodes + worst.attrs) worst = { i, ...o }; /* the most costly update's breakdown is logged, so a failure says what it wrote */
     }
     assert.deepStrictEqual(startedBusy, [], `${n} agents: every measured update started with nothing put off (the updates that did not)`);
+    assert.deepStrictEqual(carded, [], `${n} agents: no hover card opened or armed during a measured update (the updates that had one; the rows count the room, not a card)`);
     assert.ok(putOff > 0, `${n} agents: pending() saw the screen repaints the updates put off (FR-033), so the wait before each update waits for something real`);
     rows[`rendersPerStatus@${n}`] = med(per.renders);
     rows[`readsPerStatus@${n}`] = med(per.reads);

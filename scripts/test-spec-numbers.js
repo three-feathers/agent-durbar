@@ -256,6 +256,92 @@ try {
     }
     r = cli(hid, ['--no-fetch', '--head', sha]); assert.notStrictEqual(r.status, 2, r.stdout); }
 
+  // FR-094: stacked PRs inherit numbers. Pure part first.
+  { const H = (label, headRef, baseRef, sameRepo = true) => ({ label, headRef, baseRef, sameRepo });
+    const stk = (self, heads) => [...sn.stackRelated({ sameRepo: true, ...self }, heads).keys()].sort();
+    assert.deepStrictEqual(stk({ headRef: 'a', baseRef: 'main' }, [H('PR #2', 'b', 'a'), H('PR #3', 'c', 'b'), H('PR #4', 'x', 'main')]), ['PR #2', 'PR #3'], 'stacked on this head branch, also a chain of two');
+    assert.deepStrictEqual(stk({ headRef: 'c', baseRef: 'b' }, [H('PR #1', 'a', 'main'), H('PR #2', 'b', 'a'), H('PR #4', 'x', 'main')]), ['PR #1', 'PR #2'], 'this branch is stacked on them: the base chain');
+    assert.deepStrictEqual(stk({ headRef: 'a', baseRef: 'main' }, [H('PR #4', 'x', 'main'), H('PR #5', 'y', 'main')]), [], 'two PRs on main are not stacked');
+    assert.deepStrictEqual(stk({ headRef: 'main', baseRef: 'main' }, [H('PR #4', 'x', 'main')]), [], 'main is never a stack member');
+    assert.deepStrictEqual(sn.stackRelated(null, [H('PR #4', 'x', 'a')]).size, 0);
+    // two PRs on the same NON-main base are siblings, not a stack: only the PR of that base is related
+    assert.deepStrictEqual(stk({ headRef: 'x', baseRef: 'F' }, [H('PR #1', 'F', 'main'), H('PR #2', 'y', 'F')]), ['PR #1'], 'siblings on a shared non-main base are not stacked with each other');
+    // a fork PR never joins a stack, by name: not as a member, not as a link of a chain, not as the checked branch
+    assert.deepStrictEqual(stk({ headRef: 'w', baseRef: 'main' }, [H('PR #900', '096-x', 'w', false), H('PR #50', '096-y', '096-x')]), [], 'a fork PR on this branch is no stack member and no link to a team PR');
+    assert.deepStrictEqual(stk({ headRef: 'c', baseRef: 'b' }, [H('PR #900', 'b', 'main', false)]), [], 'a fork whose head name equals our base is not our base');
+    assert.deepStrictEqual([...sn.stackRelated({ headRef: 'a', baseRef: 'main', sameRepo: false }, [H('PR #2', 'b', 'a')]).keys()], [], 'a fork branch is stacked with nothing');
+    assert.deepStrictEqual(stk({ headRef: 'a', baseRef: 'main' }, [{ label: 'PR #2', headRef: 'b', baseRef: 'a' }]), [], 'unknown repository = not stacked (fail closed)'); }
+
+  const stackRepo = () => {
+    const sd = repo(); G(sd, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+    G(sd, 'checkout', '-q', '-b', 'search-window'); write(sd, 'specs/001-a/tasks.md', T('001', '002', '003', '020')); const win = commit(sd, 'window');
+    return { sd, win };
+  };
+  const names = (sd, args) => cli(sd, args, {});
+  { // separate PR, same number: clash (no refs at all, no ancestry)
+    const { sd } = stackRepo();
+    G(sd, 'checkout', '-q', '-b', 'other', 'main'); write(sd, 'specs/001-a/tasks.md', T('001', '002', '003', '020')); const oth = commit(sd, 'other');
+    G(sd, 'update-ref', 'refs/remotes/pr/9', oth); G(sd, 'checkout', '-q', 'search-window');
+    r = names(sd, ['--no-fetch']); assert.strictEqual(r.status, 1, 'separate PR taking the same number must clash: ' + r.stdout); assert.match(r.stdout, /T020 is also in PR #9/);
+    // unrelated PR with other numbers: no clash
+    write(sd, 'specs/001-a/tasks.md', T('001', '002', '003', '021')); commit(sd, 'renumbered');
+    r = names(sd, ['--no-fetch']); assert.strictEqual(r.status, 0, 'unrelated PR with other numbers: ' + r.stdout);
+  }
+  { // PR whose history contains this head (no ref names known): the inherited number is no clash, its own new number is compared
+    const { sd, win } = stackRepo();
+    G(sd, 'checkout', '-q', '-b', 'search-ui'); write(sd, 'specs/001-a/tasks.md', T('001', '002', '003', '020', '030')); const ui = commit(sd, 'ui');
+    G(sd, 'update-ref', 'refs/remotes/pr/10', ui); G(sd, 'checkout', '-q', 'search-window');
+    r = names(sd, ['--no-fetch']); assert.strictEqual(r.status, 0, 'a PR containing the checked head is not a second claim of what it inherits: ' + r.stdout);
+    assert.ok(win);
+  }
+  { // a real double-take INSIDE one stack: both take T030 on their own after the cut (history shared up to the cut, neither contains the other)
+    const { sd } = stackRepo();
+    G(sd, 'checkout', '-q', '-b', 'search-ui'); write(sd, 'specs/001-a/tasks.md', T('001', '002', '003', '020', '030')); const ui = commit(sd, 'ui takes T030');
+    G(sd, 'checkout', '-q', 'search-window'); write(sd, 'specs/001-a/tasks.md', T('001', '002', '003', '020', '030')); const win2 = commit(sd, 'window takes T030 on its own');
+    G(sd, 'update-ref', 'refs/remotes/pr/10', ui);
+    const heads = [{ label: 'PR #10', sha: ui, headRef: 'search-ui', baseRef: 'search-window', sameRepo: true }];
+    const cl = sn.findClashes(sn.collect(sd, heads, win2, { headRef: 'search-window', baseRef: 'main', sameRepo: true }));
+    assert.deepStrictEqual(cl.map((c) => `${c.id} ${c.with.split(' ')[0]}`), ['T030 PR'], 'a number each of two stacked PRs adds on its own is a clash');
+    // the reverse: checked on the stacked branch
+    const cl2 = sn.findClashes(sn.collect(sd, [{ label: 'PR #8', sha: win2, headRef: 'search-window', baseRef: 'main', sameRepo: true }], ui, { headRef: 'search-ui', baseRef: 'search-window', sameRepo: true }));
+    assert.deepStrictEqual(cl2.map((c) => c.id), ['T030'], 'the reverse direction: the same double-take');
+  }
+
+  // diverged stack, the base PR moved on after the stack was cut: only the ref link (in main(), through gh and through the REST fallback) clears it
+  { const sd = repo(); G(sd, 'checkout', '-q', '-b', 'search-window');
+    write(sd, 'specs/001-a/tasks.md', T('001', '002', '003', '020')); commit(sd, 'window cut');
+    G(sd, 'checkout', '-q', '-b', 'search-ui'); write(sd, 'specs/001-a/tasks.md', T('001', '002', '003', '020', '030')); const ui = commit(sd, 'ui');
+    G(sd, 'checkout', '-q', 'search-window'); write(sd, 'specs/001-a/tasks.md', T('001', '002', '003', '020', '025')); const win = commit(sd, 'window moved on');
+    G(sd, 'checkout', '-q', 'main'); G(sd, 'update-ref', 'refs/remotes/origin/main', 'main');
+    const org = path.join(tmp, `o${fs.readdirSync(tmp).length}.git`); G(tmp, 'clone', '-q', '--bare', sd, org); G(sd, 'remote', 'add', 'origin', org);
+    G(org, 'update-ref', 'refs/pull/10/head', ui); G(org, 'update-ref', 'refs/pull/8/head', win);
+    G(sd, 'checkout', '-q', '--detach', win); // the checked-out branch name must not be what the answer depends on
+    const gh = (rows) => () => JSON.stringify(rows);
+    const ghRows = (cross10, base10 = 'search-window') => [
+      { number: 8, headRefOid: win, headRefName: 'search-window', baseRefName: 'main', isCrossRepository: false },
+      { number: 10, headRefOid: ui, headRefName: 'search-ui', baseRefName: base10, isCrossRepository: cross10 }];
+    const restRows = (repo10) => [
+      { number: 8, head: { sha: win, ref: 'search-window', repo: { full_name: 'o/r' } }, base: { ref: 'main', repo: { full_name: 'o/r' } } },
+      { number: 10, head: { sha: ui, ref: 'search-ui', repo: { full_name: repo10 } }, base: { ref: 'search-window', repo: { full_name: 'o/r' } } }];
+    const viaMain = async (openPrsFn, num) => { const out = []; const lg = console.log; console.log = (x) => out.push(String(x)); let code;
+      try { code = await sn.main(['--root', sd], { PR_NUMBER: num, PR_HEAD_SHA: win }, { openPrs: openPrsFn }); } finally { console.log = lg; } return { code, out: out.join('\n') }; };
+    const viaGh = (rows) => (root, env) => sn.openPrs(root, env, { runCmd: gh(rows) });
+    const viaRest = (rows) => (root, env) => sn.openPrs(gr, env, { runCmd: () => { throw new Error('no gh'); }, getJson: async () => rows });
+    // the list itself
+    assert.deepStrictEqual(await viaGh(ghRows(false))(sd, {}), [{ number: 8, sha: win, headRef: 'search-window', baseRef: 'main', sameRepo: true }, { number: 10, sha: ui, headRef: 'search-ui', baseRef: 'search-window', sameRepo: true }], 'gh: refs and isCrossRepository are read');
+    assert.deepStrictEqual((await viaRest(restRows('o/r'))(sd, { }))[1], { number: 10, sha: ui, headRef: 'search-ui', baseRef: 'search-window', sameRepo: true }, 'REST: refs and the repository are read');
+    assert.strictEqual((await viaRest(restRows('fork/r'))(sd, {}))[1].sameRepo, undefined, 'REST: another repository is not same-repo');
+    // through main(): the own PR's refs come from the list
+    for (const [name, fn] of [['gh', viaGh(ghRows(false))], ['REST', viaRest(restRows('o/r'))]]) {
+      const rr = await viaMain(fn, '8'); assert.strictEqual(rr.code, 0, `${name}: stacked PR #10 clears PR #8: ${rr.out}`);
+    }
+    // the same number on its own: no refs from the list (a mutant that drops them) must clash, and so must a fork PR of the same shape
+    let rr = await viaMain(viaGh(ghRows(true)), '8'); assert.strictEqual(rr.code, 1, 'gh: a cross-repository PR never joins the stack: ' + rr.out);
+    rr = await viaMain(viaGh(ghRows(null)), '8'); assert.strictEqual(rr.code, 1, 'gh: isCrossRepository unknown is not stacked: ' + rr.out);
+    rr = await viaMain(viaRest(restRows('fork/r')), '8'); assert.strictEqual(rr.code, 1, 'REST: a fork PR never joins the stack: ' + rr.out);
+    rr = await viaMain(viaGh(ghRows(false, 'unrelated')), '8'); assert.strictEqual(rr.code, 1, 'gh: base ref not this head: a separate PR clashes: ' + rr.out);
+  }
+
   // the workflow keeps the token away from PR code (mutant: remove any of these and this fails)
   // a Windows checkout has CRLF line ends (core.autocrlf): the shape checks read the workflow with LF only, and a CRLF copy must give the same jobs
   const wfRaw = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'spec-kit.yml'), 'utf8');

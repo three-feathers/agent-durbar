@@ -35,7 +35,7 @@ async function main(): Promise<void> {
   (require('../src/main/ipcguard') as typeof import('../src/main/ipcguard')).initSimGuard(false);
   const { register, linkedInProject } = require('../src/main/ipc/profiles') as typeof import('../src/main/ipc/profiles');
   const { listClaudeAgents } = require('../src/adapters/claudeAgents') as typeof import('../src/adapters/claudeAgents');
-  const { AgentTrustStore, readAgentFile, shownSha } = require('../src/main/agenttrust') as typeof import('../src/main/agenttrust');
+  const { AgentTrustStore, nodeAgentFileFs, readAgentFile, shownSha } = require('../src/main/agenttrust') as typeof import('../src/main/agenttrust');
   const { ClaudeAdapter, claudeArgs } = require('../src/adapters/claude') as typeof import('../src/adapters/claude');
   const { createCliTransport } = require('../src/adapters/claudeTransport') as typeof import('../src/adapters/claudeTransport');
   /* eslint-enable @typescript-eslint/no-require-imports */
@@ -63,17 +63,33 @@ async function main(): Promise<void> {
       const link = path.join(root, 'link.md');
       fs.symlinkSync(file, link);
       assert.strictEqual(readAgentFile(link), undefined, 'a linked agent file is refused');
-      const noFollowless = { io: fs, flags: { O_RDONLY: fs.constants.O_RDONLY }, lstat: (f: string) => fs.lstatSync(f) };
+      const noFollowless = { ...nodeAgentFileFs, flags: { O_RDONLY: fs.constants.O_RDONLY } }; // the real wrappers: the bigint option must reach node (issue #1491)
       assert.strictEqual(readAgentFile(link, noFollowless), undefined, 'without O_NOFOLLOW (Windows) the lstat refuses the link');
       assert.ok(readAgentFile(file, noFollowless)?.sha256 === sha(V1), 'without O_NOFOLLOW a plain file is read');
       // without O_NOFOLLOW: a file replaced between the lstat and the open (another dev/ino on the descriptor) is refused
-      const otherIno = { ...noFollowless, lstat: (f: string) => { const st = fs.lstatSync(f); return { isSymbolicLink: () => st.isSymbolicLink(), dev: st.dev, ino: st.ino + 1 }; } };
+      const otherIno = { ...noFollowless, lstat: (f: string, o: { bigint: true }) => { const st = fs.lstatSync(f, o); return { isSymbolicLink: () => st.isSymbolicLink(), dev: st.dev, ino: st.ino + 1n }; } };
       assert.strictEqual(readAgentFile(file, otherIno), undefined, 'a file other than the one the lstat saw is refused');
       // the link check on its own: an lstat that reports a link with the real file's dev and ino is still refused
-      const linkSameIno = { ...noFollowless, lstat: (f: string) => { const st = fs.lstatSync(f); return { isSymbolicLink: () => true, dev: st.dev, ino: st.ino }; } };
+      const linkSameIno = { ...noFollowless, lstat: (f: string, o: { bigint: true }) => { const st = fs.lstatSync(f, o); return { isSymbolicLink: () => true, dev: st.dev, ino: st.ino }; } };
       assert.strictEqual(readAgentFile(file, linkSameIno), undefined, 'a link is refused even when dev and ino match');
-      const otherDev = { ...noFollowless, lstat: (f: string) => { const st = fs.lstatSync(f); return { isSymbolicLink: () => false, dev: st.dev + 1, ino: st.ino }; } };
+      const otherDev = { ...noFollowless, lstat: (f: string, o: { bigint: true }) => { const st = fs.lstatSync(f, o); return { isSymbolicLink: () => false, dev: st.dev + 1n, ino: st.ino }; } };
       assert.strictEqual(readAgentFile(file, otherDev), undefined, 'another device is refused');
+      // issue #1491: NTFS file IDs above 2^53 that differ only in bit 0 are two files. The stubs answer like node: a bigint only for
+      // { bigint: true }, else the rounded number, so a read that drops the option (or compares as numbers) fails these cases.
+      const A = 12947848929002476n;
+      const B = A + 1n;
+      assert.strictEqual(Number(A), Number(B), 'precondition: as plain numbers the two ids are equal');
+      const ids = (lIno: bigint, fIno: bigint, lDev = 7n, fDev = 7n) => {
+        const as = (v: bigint, o?: { bigint?: boolean }): never => (o?.bigint ? v : Number(v)) as never;
+        return {
+          io: fs, flags: { O_RDONLY: fs.constants.O_RDONLY },
+          lstat: (f: string, o?: { bigint?: boolean }) => { const st = fs.lstatSync(f); return { isSymbolicLink: () => st.isSymbolicLink(), dev: as(lDev, o), ino: as(lIno, o) }; },
+          fstat: (_fd: number, o?: { bigint?: boolean }) => ({ dev: as(fDev, o), ino: as(fIno, o) }),
+        } as never;
+      };
+      assert.ok(readAgentFile(file, ids(A, A, A, A))?.sha256 === sha(V1), 'issue 1491: the same ids above 2^53 on both sides are read');
+      assert.strictEqual(readAgentFile(file, ids(A, B)), undefined, 'issue 1491 agenttrust ino: a descriptor whose inode differs only in bit 0 above 2^53 is refused');
+      assert.strictEqual(readAgentFile(file, ids(A, A, A, B)), undefined, 'issue 1491 agenttrust dev: a descriptor whose device differs only in bit 0 above 2^53 is refused');
       const hard = path.join(root, 'hard.md');
       fs.linkSync(file, hard);
       assert.strictEqual(readAgentFile(file), undefined, 'a file with a second hard link is refused');

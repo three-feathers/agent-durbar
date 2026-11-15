@@ -10,6 +10,7 @@
  *   removed fails "Escape closes an open menu while a card is open"; the capture `pointermove` listener in wireZoom deleted fails "a real move to empty floor inside the office closes the held card"; the coordinate comparison dropped
  *   (`ZOOM.held !== PT` turned into `true`) fails "a pointermove at the same place does not close the held asleep card"; the `pointerleave` listener in wireZoom deleted ("noleave") fails "a jump straight off the
  *   office closes the held card"; the window's `focus` listener (`addEventListener('focus', replaceZoom)` in openZoom, turned into `0`) removed ("no window focus") fails "the card closes on the window's focus event".
+ *   #1536 (by hand, the dist copy, never `check:ui`, which builds first): `npm run build`, in dist/renderer/realoffice.js delete the `if (ZOOM && ZOOM.held && ZOOM.held === e.clientX + ',' + e.clientY) return;` line and `if (ZOOM && ZOOM.held) return; ` in `arm`'s timer, run `UI_SUITE_XVFB=1 node scripts/ui-suite.js --only check-097-hover-card`, build again: it fails "is still open 400 ms after the desk of".
  *   The focus listeners removed (placeZoom's `document.addEventListener('focusin', replaceZoom, true)` and the focusout one turned into `0`) must fail at "the card is placed again off the slip that took the focus".
  *   The page focus (#1408): the shared focus emulation holds it for the steps that test no blur (a neighbour driver takes the OS focus on Windows CI);
  *   CHECK_097_STEAL_FOCUS=plate|refill|all blurs the window just before the plate's focus() and/or the 700 ms rest. Mutant: `focusPage({ emulate: 'first' })` in
@@ -129,17 +130,20 @@ module.exports = async (ctx) => {
     let wk = await js(PICKW([]));
     const desks = await js(`${sim}.realLayout().zones.flatMap(z=>z.desks).map(d=>d.id+':'+d.state+(d.away?'@':''))`);
     assert.ok(wk, `${tag}: a working desk: ${JSON.stringify(desks)}`);
-    for (const kind of ['person', 'desk', 'plate', 'screen']) {
-      wk = await hoverWork(kind, wk, [], `${tag} ${kind}`);
-      assert.ok(wk, `${tag}: hovering the ${kind} of a working desk opens its zoom (FR-327)`);
-    }
-    /* from the screen to the person of the same desk: the same panel stays (no close and reopen) */
-    const c0 = await card();
-    const pp = await spot('person', wk);
-    assert.ok(await moveTo(pp.x, pp.y), `${tag}: moved to the person`);
-    await js(`new Promise(r=>setTimeout(r,400))`);
-    const c1 = await card();
-    assert.ok(c1 && c1.id === wk && c1.node === c0.node, `${tag}: moving over the parts of one desk keeps the same panel (${c0 && c0.node} then ${c1 && c1.node})`);
+    let c0, c1, pp;
+    await H.pointerStep('check-097-hover-card', `${tag} hover parts of one desk`, async () => {
+      for (const kind of ['person', 'desk', 'plate', 'screen']) {
+        wk = await hoverWork(kind, wk, [], `${tag} ${kind}`);
+        assert.ok(wk, `${tag}: hovering the ${kind} of a working desk opens its zoom (FR-327)`);
+      }
+      /* from the screen to the person of the same desk: the same panel stays (no close and reopen) */
+      c0 = await card();
+      pp = await spot('person', wk);
+      assert.ok(await moveTo(pp.x, pp.y), `${tag}: moved to the person`);
+      await js(`new Promise(r=>setTimeout(r,400))`);
+      c1 = await card();
+      assert.ok(c1 && c1.id === wk && c1.node === c0.node, `${tag}: moving over the parts of one desk keeps the same panel (${c0 && c0.node} then ${c1 && c1.node})`);
+    });
     assert.ok(!c1.small.length && c1.inside && !c1.coversPlate && c1.w >= 379 && c1.w <= 481, `${tag}: the card: no text under 10.5 px (${c1.small}), inside the window, not over its plate, 380-480 px wide (${c1.w})`);
     await onTop(`${tag} desk`);
     assert.strictEqual(c1.live, null, `${tag}: not a live region`);
@@ -211,21 +215,24 @@ module.exports = async (ctx) => {
     assert.ok(await js(`document.activeElement&&document.activeElement.dataset&&document.activeElement.dataset.id===${jsLiteral(S)}`), `${tag}: the focus stays on the plate`);
     await js(`document.activeElement.blur();0`);
     /* ---- FR-328 (2026-11-08): an agent falls asleep while its card is open: the open card switches to the asleep view (the masked last reply, no tool log) ---- */
-    const wk2 = await hoverWork('person', null, [R, S], `${tag} falls asleep`);
-    assert.ok(wk2, `${tag}: the card opens on a second working desk for the falls-asleep step`);
-    const before = await card();
-    assert.ok(!/^Asleep/.test(before.word), `${tag}: the card starts awake: ${before.word}`);
-    const SAID = 'Wrapped up the fallback and ran the checks. ' + TOKEN;
-    await js(`(()=>{const a=${sim}.agents().find(x=>x.id===${jsLiteral(wk2)});a.state='done';a.lastOutput=${jsLiteral(SAID)};a.lastEventAt=Date.now()-34*60000;${sim}.crew.renderAll();return 1})()`);
-    await must(`(()=>{const z=document.getElementById('roZoom');return !!z&&z.dataset.for===${jsLiteral(wk2)}&&/^Asleep/.test(z.querySelector('.ro-zs').textContent)&&z.dataset.state==='asleep'&&z.querySelector('.ro-zl').textContent.includes('Wrapped up the fallback and ran the checks.')})()`, `${tag}: the open card shows the asleep view after its agent fell asleep (FR-328)`, 8000);
-    const after = await card();
-    noBad(`${tag} fell asleep`, after);
-    assert.ok(after.node === before.node && after.facts.some(([k]) => k === 'Last activity') && after.inside && !after.small.length, `${tag}: the same panel, refilled: ${JSON.stringify(after.facts)}`);
-    const blurs0 = await js(`window.__blurs`);
-    if (/refill|all/.test(THIEF)) await steal();
-    await js(`new Promise(r=>setTimeout(r,700))`); /* the agent walks to the lounge row under the resting pointer: that is not the pointer leaving (the card stays) */
-    assert.strictEqual(await js(`window.__blurs`), blurs0, `${tag}: no window blur during the 700 ms rest (a blur closes the card, FR-034; #1408: an environment problem, not the card)`);
-    assert.ok(await js(ZOOM_FOR(wk2)) && (await card()).word.startsWith('Asleep'), `${tag}: the asleep card is still open 700 ms after the refill, the pointer has not moved`);
+    let wk2; /* used by the steps after this one */
+    await H.pointerStep('check-097-hover-card', `${tag} falls asleep`, async () => {
+      wk2 = await hoverWork('person', null, [R, S], `${tag} falls asleep`);
+      assert.ok(wk2, `${tag}: the card opens on a second working desk for the falls-asleep step`);
+      const before = await card();
+      assert.ok(!/^Asleep/.test(before.word), `${tag}: the card starts awake: ${before.word}`);
+      const SAID = 'Wrapped up the fallback and ran the checks. ' + TOKEN;
+      await js(`(()=>{const a=${sim}.agents().find(x=>x.id===${jsLiteral(wk2)});a.state='done';a.lastOutput=${jsLiteral(SAID)};a.lastEventAt=Date.now()-34*60000;${sim}.crew.renderAll();return 1})()`);
+      await must(`(()=>{const z=document.getElementById('roZoom');return !!z&&z.dataset.for===${jsLiteral(wk2)}&&/^Asleep/.test(z.querySelector('.ro-zs').textContent)&&z.dataset.state==='asleep'&&z.querySelector('.ro-zl').textContent.includes('Wrapped up the fallback and ran the checks.')})()`, `${tag}: the open card shows the asleep view after its agent fell asleep (FR-328)`, 8000);
+      const after = await card();
+      noBad(`${tag} fell asleep`, after);
+      assert.ok(after.node === before.node && after.facts.some(([k]) => k === 'Last activity') && after.inside && !after.small.length, `${tag}: the same panel, refilled: ${JSON.stringify(after.facts)}`);
+      const blurs0 = await js(`window.__blurs`);
+      if (/refill|all/.test(THIEF)) await steal();
+      await js(`new Promise(r=>setTimeout(r,700))`); /* the agent walks to the lounge row under the resting pointer: that is not the pointer leaving (the card stays) */
+      assert.strictEqual(await js(`window.__blurs`), blurs0, `${tag}: no window blur during the 700 ms rest (a blur closes the card, FR-034; #1408: an environment problem, not the card)`);
+      assert.ok(await js(ZOOM_FOR(wk2)) && (await card()).word.startsWith('Asleep'), `${tag}: the asleep card is still open 700 ms after the refill, the pointer has not moved`);
+    });
     /* an open menu is above the card: Escape closes the menu (the app's menus stop the key themselves), the card does not take it first (FR-328) */
     await js(`(()=>{const m=document.createElement('div');m.id='modeMenu';m.tabIndex=-1;const b=document.createElement('button');b.textContent='x';m.appendChild(b);m.addEventListener('keydown',(e)=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();m.remove();}});document.body.appendChild(m);b.focus();return document.activeElement===b})()`);
     wc().sendInputEvent({ type: 'keyDown', keyCode: 'Escape' }); wc().sendInputEvent({ type: 'keyUp', keyCode: 'Escape' });
@@ -236,6 +243,18 @@ module.exports = async (ctx) => {
     await js(`(()=>{const [x,y]=${jsLiteral(held)}.split(',').map(Number),e=document.elementFromPoint(x,y)||document.body;e.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,cancelable:true,clientX:x,clientY:y,pointerType:'mouse'}));return 1})()`);
     await js(`new Promise(r=>setTimeout(r,400))`);
     assert.ok(await js(ZOOM_FOR(wk2)), `${tag}: a pointermove at the same place does not close the held asleep card (FR-328)`);
+    /* #1536: the layout slides another agent's desk under the held point (no pointer move) and the browser sends an over: it arms nothing, the held card stays (FR-328) */
+    const intruder = await js(`(()=>{const [x,y]=${jsLiteral(held)}.split(',').map(Number),ro=document.querySelector('#stage .ro'),o=ro.getBoundingClientRect();
+      const other=[...document.querySelectorAll('#stage .ro-plate')].map(p=>p.dataset.id).find(id=>id&&id!==${jsLiteral(wk2)});if(!other)return null;
+      const d=document.createElement('div');d.className='ro-desk';d.id='hoverIntruder';d.dataset.for=other;d.style.cssText='position:absolute;z-index:99999;width:40px;height:40px;pointer-events:auto;left:'+(x-o.left-20)+'px;top:'+(y-o.top-20)+'px';ro.appendChild(d);
+      const at=document.elementFromPoint(x,y);if(at!==d)return {other,under:false};
+      d.dispatchEvent(new PointerEvent('pointerover',{bubbles:true,cancelable:true,clientX:x,clientY:y,pointerType:'mouse'}));
+      return {other,under:true}})()`);
+    assert.ok(intruder && intruder.under, `${tag}: another agent's desk element is under the held point for the layout-over step: ${JSON.stringify(intruder)}`);
+    await js(`new Promise(r=>setTimeout(r,400))`); /* longer than the 120 ms hover timer, the pointer has not moved */
+    const kept = await js(ZOOM_FOR(wk2));
+    await js(`(()=>{const d=document.getElementById('hoverIntruder');if(d)d.remove();return 1})()`);
+    assert.ok(kept, `${tag}: the held card of ${wk2} is still open 400 ms after the desk of ${intruder.other} came under the held point with an over and no move (an over made by the layout arms nothing, FR-328, #1536)`);
     const EMPTY = `(()=>{const ro=document.querySelector('#stage .ro'),o=ro.getBoundingClientRect(),held=${jsLiteral(held)};
       for(let y=o.top+8;y<o.bottom-8;y+=23)for(let x=o.left+8;x<o.right-8;x+=29){if(Math.round(x)+','+Math.round(y)===held)continue;const e=document.elementFromPoint(x,y);if(e&&ro.contains(e)&&!e.closest('.ro-screen, .ro-person, .ro-person2, .ro-rig, .ro-initials, .ro-marquee, .ro-desk, .ro-ltable, .ro-plate, .ro-zoom, .ro-slip, .ro-chip, .ro-lplate, .ro-visitor'))return {x:Math.round(x),y:Math.round(y)};}
       return null})()`;
@@ -247,15 +266,18 @@ module.exports = async (ctx) => {
     await must(NONE, `${tag}: closed on leaving after the refill`);
     /* a fresh refill, then the pointer jumps straight off the office with no move inside it: only the office's pointerleave lets the held card go (FR-328) */
     await js(`(()=>{const a=${sim}.agents().find(x=>x.id===${jsLiteral(wk2)});a.state='working';a.lastEventAt=Date.now();${sim}.crew.renderAll();return 1})()`); /* the first one goes back to work: a working desk for this step */
-    const wk4 = await hoverWork('person', null, [R, S], `${tag} falls asleep, then leaves`);
-    assert.ok(wk4, `${tag}: the card opens on a third working desk for the leave step`);
-    await js(`(()=>{const a=${sim}.agents().find(x=>x.id===${jsLiteral(wk4)});a.state='done';a.lastOutput='Done and checked.';a.lastEventAt=Date.now()-34*60000;${sim}.crew.renderAll();return 1})()`);
-    await must(`(()=>{const z=document.getElementById('roZoom');return !!z&&z.dataset.for===${jsLiteral(wk4)}&&z.dataset.state==='asleep'&&/^Asleep/.test(z.querySelector('.ro-zs').textContent)})()`, `${tag}: the card of the third agent shows the asleep view`, 8000);
-    await js(`new Promise(r=>setTimeout(r,400))`);
-    assert.ok(await js(ZOOM_FOR(wk4)), `${tag}: the held card of the third agent is still open before the pointer leaves`);
-    assert.strictEqual(await js(`(()=>{const e=document.elementFromPoint(1,1);return !!e&&!document.querySelector('#stage .ro').contains(e)})()`), true, `${tag}: (1,1) is outside the office, so the jump leaves it without a move inside`);
-    await moveTo(1, 1);
-    await must(NONE, `${tag}: a jump straight off the office closes the held card (pointerleave, FR-328)`);
+    let wk4;
+    await H.pointerStep('check-097-hover-card', `${tag} falls asleep, then leaves`, async () => {
+      wk4 = await hoverWork('person', null, [R, S], `${tag} falls asleep, then leaves`);
+      assert.ok(wk4, `${tag}: the card opens on a third working desk for the leave step`);
+      await js(`(()=>{const a=${sim}.agents().find(x=>x.id===${jsLiteral(wk4)});a.state='done';a.lastOutput='Done and checked.';a.lastEventAt=Date.now()-34*60000;${sim}.crew.renderAll();return 1})()`);
+      await must(`(()=>{const z=document.getElementById('roZoom');return !!z&&z.dataset.for===${jsLiteral(wk4)}&&z.dataset.state==='asleep'&&/^Asleep/.test(z.querySelector('.ro-zs').textContent)})()`, `${tag}: the card of the third agent shows the asleep view`, 8000);
+      await js(`new Promise(r=>setTimeout(r,400))`);
+      assert.ok(await js(ZOOM_FOR(wk4)), `${tag}: the held card of the third agent is still open before the pointer leaves`);
+      assert.strictEqual(await js(`(()=>{const e=document.elementFromPoint(1,1);return !!e&&!document.querySelector('#stage .ro').contains(e)})()`), true, `${tag}: (1,1) is outside the office, so the jump leaves it without a move inside`);
+      await moveTo(1, 1);
+      await must(NONE, `${tag}: a jump straight off the office closes the held card (pointerleave, FR-328)`);
+    });
     await js(`(()=>{const a=${sim}.agents().find(x=>x.id===${jsLiteral(wk4)});a.state='working';a.lastEventAt=Date.now();${sim}.crew.renderAll();return 1})()`);
     /* ---- FR-330: no free place: real-shaped slips (they take pointer events, each holds an input) tile the room except round the hovered person, so the card lands over some of them ---- */
     /* a desk that is working now (read again here: an agent may have left on a visit since the first one was chosen) */

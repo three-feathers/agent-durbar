@@ -1,5 +1,5 @@
 import { copilotHooksJson } from '../shared/foldersetup';
-import { makePrivateDir } from './privatedirs';
+import { makeSocketSafePrivateDir } from './privatedirs';
 import { readCopilotOrgPolicy, resolveCopilotManaged } from './copilotOrgPolicy';
 import type { CopilotManagedClient } from './copilotOrgPolicy';
 import type { OrgPolicy } from '../shared/orgpolicy';
@@ -56,7 +56,7 @@ import type { SlashPlace } from './slashcommands';
 import { cleanPlanText } from './plan';
 import { copilotQuotaReset } from './usagelimit';
 import { cleanSessionTitle, eventsToHistory, previousSessionsFor } from './history';
-import type { HistoryResult, PreviousSession } from './history';
+import type { HistoryLimits, HistoryResult, PreviousSession } from './history';
 import { unpackedRuntimePath } from './runtime';
 import * as os from 'os';
 import * as fs from 'fs';
@@ -523,7 +523,7 @@ export class CopilotAdapter implements AgentAdapter {
    * that client is stopped (`releaseRuntimeTmp`), when its start fails, or by the quit sweep.
    */
   protected async createClient(): Promise<CopilotClient> {
-    const tmp = makePrivateDir('durbar-cprt-');
+    const tmp = makeSocketSafePrivateDir('durbar-cprt-'); // FR-024: room for Unix sockets under it (macOS's temp root is long)
     try {
       // Packaged app: run the runtime from app.asar.unpacked. Dev: the SDK's own runtime, still as a child process: the connection is
       // passed explicitly so an env such as COPILOT_SDK_DEFAULT_CONNECTION=inprocess cannot pick the in-process transport, which takes no env
@@ -884,8 +884,8 @@ export class CopilotAdapter implements AgentAdapter {
   }
 
   /** Persisted messages and tool calls of a live (e.g. just resumed) session, capped, for replay in the chat panel. */
-  async history(sessionId: string): Promise<HistoryResult> {
-    return eventsToHistory(await this.mustGet(sessionId).session.getEvents());
+  async history(sessionId: string, limits?: Partial<HistoryLimits>): Promise<HistoryResult> {
+    return eventsToHistory(await this.mustGet(sessionId).session.getEvents(), limits); // spec 095 FR-024: `limits` only from the search
   }
 
   async start(options: StartOptions): Promise<string> {

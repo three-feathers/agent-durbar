@@ -7,8 +7,10 @@
  *   node scripts/ui-suite.js --shard 2/3                  shard 2 of 3, balanced by recorded duration (UI_SUITE_SHARD=2/3 too; spec 008 FR-182, FR-183)
  *   UI_SUITE_OUT=<folder>                 where every screenshot goes (default: a new temp folder, printed at the end)
  *   UI_SUITE_XVFB=1                       Linux: run under xvfb-run even when a display is set
- *   UI_SUITE_DPR=<1..4>                   force the device scale factor (2 = a Retina screen) for every driver
- *   UI_SUITE_JOBS=<n>                     drivers at once (default 2; each has its own profile and, on Linux, its own xvfb display)
+ *   UI_SUITE_DPR=<1..4, or 1.25, 1.5>     force the device scale factor (2 = a Retina screen, 1.25 and 1.5 = a Windows laptop at 125 % and 150 %) for every driver
+ *   UI_SUITE_XVFB_SCREEN=WxHxD            Linux/xvfb: replace the screen (default 1920x1100 times the density, depth 24; a malformed value is ignored; spec 008 FR-213)
+ *   UI_SUITE_JOBS=<n>                     drivers at once (default 2; each has its own profile and, on Linux, its own xvfb display);
+ *                                         an entry with `focus: true` (waits on the OS window focus) runs alone, after the others, when windows share a desktop (FR-210)
  *   UI_SUITE_RETRY=1                      run each failed driver once more, alone, at the end; a pass then is reported as FLAKY
  *                                         (listed in the summary and the GitHub job summary), never as a clean pass
  *
@@ -23,7 +25,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawn, spawnSync } = require('child_process');
-const { ensureElectron } = require('./ensure-electron');
+const { ensureElectron, buildProblem } = require('./ensure-electron');
 
 const ROOT = path.join(__dirname, '..');
 const SIM = { DURBAR_SIM: '15', DURBAR_SIM_FREEZE: '1' };
@@ -45,7 +47,9 @@ const DRIVERS = [
   { name: 'check-015-bg-helper' }, // spec 015 FR-018 (issue #1141): a background helper stays Running after its call returns, until its own end or its session stops (simbghelper=1)
   { name: 'shots-034-retry' }, // spec 034 FR-021: Retrying and Gave up (simretry=1 in its own query)
   { name: 'check-serious-motion' }, // spec 052 FR-069 (issue #1182): Serious mode hides only the moods; Motion is its own switch; reduced motion still stops it; Flat and Real office, both sizes
+  { name: 'check-settings-worlds' }, // spec 102 FR-301 (T266): Settings > World: picture cards in one radio group, a closed flag unlisted, keys, focus against choice, the zoom, reduced motion, forced colours
   { name: 'check-settings-nav' }, // spec 052 FR-226 (T219): the Settings section list: built from the headings, jump, aria-current follows the scroll, keys, every world, reduced motion, narrow row
+  { name: 'check-069-toggle-scroll' }, // spec 069 FR-069 (issue #1624): a Settings switch that repaints the page keeps the scroll, the focus and the open Advanced block
   { name: 'check-settings-save' }, // spec 011 FR-012 (issue #1023): a Settings row whose save fails returns to the value in force and says so
   { name: 'check-rail' }, // spec 005 FR-190, FR-194, FR-216 and 052 FR-215: the agent rail's List view: fit, order, two heights, folders that collapse, Your door, Mac drag areas
   { name: 'check-rail-resize' }, // spec 005 FR-236 (issue #1223): the agent rail's width: drag, keys, double-click reset, remembered, clamped when the window shrinks, both sizes
@@ -55,7 +59,9 @@ const DRIVERS = [
   { name: 'check-052-follow-notice' }, // spec 052 FR-238..FR-241 (owner, 2026-11-09): the Auto-follow notice: both notices, countdown, Stay and Escape, background pause, announcement priority, reduced motion, four looks at two sizes
   { name: 'check-helper-bar' }, // spec 015 FR-020 (issue #1142): the Sub-agent activity / Back to parent chat bar stays at the top of a helper's chat while it scrolls, opaque, both sizes
   { name: 'check-helper-more' }, // spec 005 FR-234 (issue #1145): a helper's chat has no empty More menu (the button is hidden), a main agent's chat keeps it, both sizes
+  { name: 'check-browser-follow' }, // spec 005 FR-235 (issue #1168): a chat that followed the end still follows after Chat, Browser, Chat (a turn writing meanwhile); one scrolled up keeps its place; both sizes
   { name: 'check-status-filter' }, // spec 001 FR-180 (issue #790): a status pill says what it hides, and Show all
+  { name: 'check-status-filter', label: 'check-status-filter retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 delta 2026-11-11 (issue 1559): the notice's contrast in the arcade, both sizes
   { name: 'check-status-tooltip' }, // spec 001 FR-187 (issue #875): the instant tooltip on the status counts: hover, keyboard focus, Escape, wording with the filter on and off, inside the window, clear of the pill, every theme, Serious mode
   { name: 'check-list-columns' }, // spec 001 FR-182..FR-184 (issues #812, #813): List columns follow their content and every cut cell keeps its text; the room's whole bottom wall; the header pencil without a tile
   { name: 'shots-001-live-activity', freeze: false }, // spec 001 FR-028 live activity, and spec 059 (issue #1135): after a live paint no pencil stays on the line under its name
@@ -83,7 +89,14 @@ const DRIVERS = [
   { name: 'shots-058-mcp-signin' }, // spec 058 T102/T104: Sign in for a Copilot server that needs it (simmcpauth), the two-step open, the steps
   { name: 'shots-058-mcp-words' }, // spec 058 T113-T115: state words, hints, Details and live refresh in the MCP dialog
   { name: 'shots-058-mcp-settings' }, // spec 058 FR-080..FR-086 (#596): live MCP state over the running chats in Settings
+  { name: 'shots-102-strips', env: { DRIVER_WORLD: 'retro' } }, // spec 102 T340 (#1589): the arcade's notice strips yield to one bar before the office scrolls: five strips, the open MCP list, 16 agents
+  { name: 'shots-102-strips', label: 'shots-102-strips photo', env: { DRIVER_CASE: 'photo' } }, // spec 102 T340: the Photo office keeps its strips in the flow
   { name: 'shots-058-mcp-launch' }, // spec 058 FR-195..FR-203: MCP health strip at launch; Sign in, Sign in again and Restart where it failed in Settings
+  { name: 'shots-058-mcp-launch', label: 'shots-058-mcp-launch retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 (issue #1566): the strip over the arcade at 15 agents, 1280x800 and 1440x900: no office scroll while shown and after Dismiss
+  { name: 'shots-058-mcp-launch', label: 'shots-058-mcp-launch retro 16', env: { DRIVER_WORLD: 'retro', DRIVER_CASE: '16', DRIVER_AGENTS: '16' } }, // spec 102 T308: 16 agents under the strip: the lent layout still scrolls, so it is refused (ro-tight off)
+  { name: 'shots-058-mcp-launch', label: 'shots-058-mcp-launch retro filter', env: { DRIVER_WORLD: 'retro', DRIVER_CASE: 'filter', DRIVER_AGENTS: '24' } }, // spec 102 T308: a status filter under the strip: ro-tight never set while the floor scrolls, the note keeps its top padding
+  { name: 'shots-058-mcp-launch', label: 'shots-058-mcp-launch photo 18', env: { DRIVER_CASE: 'photo', DRIVER_AGENTS: '18', DRIVER_H: '760' } }, // spec 102 T308: a world that is not aisles is never lent the padding
+  { name: 'check-102-arcade-filter-note', env: { DRIVER_WORLD: 'retro' } }, // spec 102 (issue #1588, T310): the arcade at 14, 13 and 11 agents with a status filter set (15 cannot be driven: the simulator's basic agent never works), 1280x800 and 1440x900: no office scroll, the note stays clear
   { name: 'shots-058-mcp-signin-refresh' }, // spec 058 FR-208..FR-216: the sign-in refresh lines, Stop during the wait, the Settings switch
   { name: 'shots-076-orgpolicy' }, // spec 076 FR-202..FR-205 (#602): what the agent app's own organization policy blocks, greyed with the reason
   { name: 'shots-058-mcp-health' }, // spec 058 FR-090..FR-096 (#603): failure reason, when, Copy diagnostics (masked), the MCP chip dot
@@ -94,10 +107,17 @@ const DRIVERS = [
   { name: 'shots-model', label: 'shots-model 1280', env: { MODEL_W: '1280', MODEL_H: '800' } },
   { name: 'check-model-choice' }, // spec 030 FR-060..FR-066: model, effort and context chosen one after another stay together, each app, each order
   { name: 'shots-007-autotier' }, // spec 007 FR-013..FR-018 (#607): the Auto routing tier in the model menu, confirm, Undo, the organization lock
+  { name: 'shots-111-templates' }, // spec 111 T008 (FR-020, FR-021, FR-131): Settings > Team templates: starter and own rows, keyboard only, Delete asks, Export disabled, blocked/changed/failed seeds
+  { name: 'shots-111-editor' }, // spec 111 T009 (FR-022, FR-023, FR-131, FR-132): the member editor: keyboard only, errors with aria-describedby, limit cleared with the app, the limit of 8, Mark as mine asks, three worlds at both sizes
   { name: 'shots-043-editor' }, // spec 043 FR-014: the profile file editor (modes, split widths, save round trip, unsaved guard)
   { name: 'shots-043-ai' }, // spec 043 FR-026..FR-039: Create with AI (canned generation, Extra tools, Stop waiting, Cancel and reopen)
   { name: 'shots-043-manage' }, // spec 043 FR-040..FR-042: nothing written before Save, the Profile menu refreshes at once, Delete from the menu and Settings
   { name: 'check-dialog-focus' },
+  { name: 'check-052-primary-btn' }, // spec 052 FR-053 (#1614): the themed primary button reads at 4.5:1 at rest, hovered and pressed in every themed look
+  { name: 'check-052-focus-ring' }, // spec 052 FR-052 (#1615): the keyboard ring of the top bar controls and of the ⋯ menu items reads at 3:1 beside the bar, in the retro looks
+  { name: 'check-052-danger-btn' }, // spec 052 FR-053, FR-076 (#1565): the red confirm button of a destructive dialog reads in the arcade and under the pixel theme
+  { name: 'check-052-warn-danger-btn' }, // spec 052 FR-053, FR-076 (#1570): warn button, plain danger hover and two plain danger confirms keep their meaning in the arcade and under the pixel theme
+  { name: 'check-052-danger-dialogs' }, // spec 052 FR-053, FR-076 (#1647): every destructive dialog's red confirm button reads at rest, focus and hover, retro-ui user themes included
   { name: 'check-grant-chips' },
   { name: 'check-sched-sendto' },
   { name: 'check-sched-edit' },
@@ -107,10 +127,11 @@ const DRIVERS = [
   { name: 'check-inbox-text' }, // spec 052 FR-214: the text of a Needs you card never runs words together
   { name: 'check-inbox-avatar' }, // spec 052 (#1174): no avatar in the Needs you dialog outgrows its box; the first Allow button is in view
   { name: 'check-097-one-face' }, // spec 097 (#1193): the rail row, the chat header and the inbox show one picture per agent, in Real office and in the flat office with two crews
+  { name: 'check-097-one-face', label: 'check-097-one-face retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 T283 (issue #1399): the same driver in the arcade
   { name: 'check-question-visible' },
   { name: 'check-chat-no-scroll' },
-  { name: 'check-chat-visibility', label: 'check-chat-visibility 1440', env: { CVONLY: '1440' } }, // one entry per size so each has its own time limit (#1127, FR-063)
-  { name: 'check-chat-visibility', label: 'check-chat-visibility 1280', env: { CVONLY: '1280' } }, // spec 005 FR-210: a long chat is laid out only near the view; scroll, find, copy, focus and the pinned end are as before
+  { name: 'check-chat-visibility', label: 'check-chat-visibility 1440', env: { CVONLY: '1440' }, timeoutMs: 900_000 }, // spec 005 T227 (issue 1610): 900 s is a stated margin, not a fix: Linux frame cost is about 3.4x a Mac's; one entry per size so each has its own time limit (#1127, FR-063)
+  { name: 'check-chat-visibility', label: 'check-chat-visibility 1280', env: { CVONLY: '1280' }, timeoutMs: 900_000 }, // spec 005 T227: the same margin; FR-210: a long chat is laid out only near the view; scroll, find, copy, focus and the pinned end are as before
   { name: 'check-chat-title' }, // spec 052 FR-180 (#789): the chat header's title uses the free room up to the buttons
   { name: 'check-no-demo-badge' }, // spec 052 FR-181: no Demo / Live badge in the top bar; the demo cues remain
   { name: 'check-logo-family' }, // spec 101 FR-072: Settings > Logo, the top-bar icon on every theme, world and forced colours, tile and name unchanged
@@ -119,12 +140,14 @@ const DRIVERS = [
   { name: 'shots-069-harmonize' }, // spec 069 part 2: copy servers between the agent apps' lists
   { name: 'shots-069-mcp-tools' }, // spec 069 part 3: tools on expand, Remove in the agent dialog (058's state words and Details stay)
   { name: 'shots-059-long-url' }, // spec 059 FR-019: a long unbroken name stays in its card, the inbox and the Schedules rows
+  { name: 'check-mcp-row-width' }, // spec 058 delta 2026-11-12 (#1622): a failed server's row keeps a readable text column; the buttons wrap below it
   { name: 'check-activity-table' }, // spec 052 FR-071 delta 2026-10-21 (#474): Tools > Activity renders its rows
   { name: 'check-codex-file-card' }, // spec 052 FR-172: a Codex write card names the files and shows the change
   { name: 'check-theme-art' }, // spec 040 FR-023: a picked theme's characters and gadgets on desks, walkers, places and chips
   { name: 'check-crew' }, // spec 077: Cheeky portraits (Characters = Cheeky on Clean Office): box vs protected zones, pose, sharpness, the fallback with a picture removed
   { name: 'check-crew', label: 'check-crew dark fixture', env: { CREW_THEME: 'check-dark' } }, // spec 077 FR-070: the same with Characters = Cheeky on the dark fixture user theme (spec 102 T226: it took Retro Pixel's place)
   { name: 'check-floor-repaint', env: { DURBAR_SIM_FLOORS: '1' } }, // spec 033 FR-088 (#787): the office repaints after a floor switch although a side panel throws
+  { name: 'check-floor-add', env: { DURBAR_SIM_FLOORS: '1' } }, // spec 033 FR-089..FR-092 (#1709): after an add the floor is named, switched on, Show; a repeat says already added
   { name: 'check-office-ops' }, // spec 097 FR-185, FR-186 (T142, T148): operation counts of the flat office, never times: elements recalculated by one text change at 15 and 40 agents
   { name: 'check-characters' }, // spec 077 FR-064..FR-069: Settings > Characters on Retro Pixel (Cheeky, Minimalist, the theme's own)
   { name: 'check-removed-themes' }, // spec 035 FR-017, FR-018: a stored id of a removed theme shows Clean Office, in both sizes; Retro stays
@@ -143,6 +166,9 @@ const DRIVERS = [
   { name: 'check-chat-memory' }, // spec 005 FR-238, FR-239 (issue 1380): a chat's transcript is bounded: 20,000 events after a fill and a warm-up, nodes, listeners and heap flat; caps and budget, waiting and live cards, helpers, note places, the line, a scrolled-up chat keeps its place, the cheap path
   { name: 'check-chat-memory', label: 'check-chat-memory real', env: { CCM_WORLD: 'real' } }, // the same with the Real office on (FR-078 parity)
   { name: 'check-chat-memory', label: 'check-chat-memory retro', env: { CCM_WORLD: 'retro' } }, // and with the Retro arcade
+  { name: 'check-helper-retention', timeoutMs: 900_000 }, // spec 005 FR-240, FR-241 (issue 1418): a parent keeps its newest 50 done and 20 failed helpers; 300 more helpers of 500 events after 300 grow nodes, listeners and heap under the measured plateau; running, open and focused helpers kept; a late event ignored; stubs, the line, the office's count at 1440x900 and 1280x800
+  { name: 'check-helper-retention', label: 'check-helper-retention real', env: { CHR_WORLD: 'real' }, timeoutMs: 900_000 }, // the same with the Real office on (097 FR-306, FR-338 parity)
+  { name: 'check-helper-retention', label: 'check-helper-retention retro', env: { CHR_WORLD: 'retro' }, timeoutMs: 900_000 }, // and with the Retro arcade
   { name: 'check-notes-count' }, // spec 083 T030..T032: the header count, the marker on a saved message, the drawer's search (SC-005)
   { name: 'check-notes-screen' }, // spec 083 T034a: the per-folder Notes screen, its three ways in, Done (FR-044, FR-045)
   { name: 'check-notes-switch' }, // spec 083 T042: the project-file switch, its dialogs and states (FR-050, FR-055)
@@ -150,8 +176,8 @@ const DRIVERS = [
   { name: 'check-notes-export' }, // spec 083 T034b: Export…, Delete all… and Remove folder's Also delete its notes (FR-048)
   { name: 'check-edits' }, // spec 005 FR-020..FR-026: file edits in the chat
   { name: 'shots-068-coffee' }, // spec 068: coffee break (simbreak=8 in its own query)
-  { name: 'shots-097-screens' }, // spec 097 P2: live screens and the hover zoom
-  { name: 'shots-097-screens', label: 'shots-097-screens retro', env: { SCREENS_WORLD: 'retro' } }, // spec 102 FR-310 (issue #1428): the arcade's screens, helper heads and big screens
+  { name: 'shots-097-screens', focus: true }, // spec 097 P2: live screens and the hover zoom
+  { name: 'shots-097-screens', label: 'shots-097-screens retro', focus: true, env: { SCREENS_WORLD: 'retro' } }, // spec 102 FR-310 (issue #1428): the arcade's screens, helper heads and big screens
   { name: 'check-097-motion' }, // spec 097 P2: the people's motion and what stops it
   { name: 'check-097-motion', label: 'check-097-motion retro', env: { MOTION_WORLD: 'retro' } }, // spec 102 FR-309, FR-310 (issue #1428): the arcade's loops start after the calm, on the grid, stepped; its pause, still and scrolled-away rules
   { name: 'check-001-halo' }, // spec 001 FR-210: the waiting halo is a still glow, nothing animates it
@@ -160,22 +186,35 @@ const DRIVERS = [
   { name: 'check-097-crews' }, // spec 097 FR-335, FR-336 (issue #1154): Real office with each Characters value draws its set or the Office people, no crew picture, the true note
   { name: 'shots-readme-real' }, // spec 008 delta 2026-11-08 (issue #1256): the README's lead pictures, Real office and its Needs you inbox
   { name: 'shots-070-flat-look' }, // spec 070 A14: Flat's modern look behind html[data-flat-look] (24 px controls on, today's off; Retro and Real office equal with it on)
+  { name: 'check-102-welcome' }, // spec 102 FR-352 (T206): the arcade's first-run card stands in the drawn hall: the picture loads, shows beside the card, the card is opaque and its text is 4.5:1, both sizes; four mutants (WELCOME_MUTANT)
+  { name: 'shots-102-previews' }, // spec 102 T265a (FR-302): one preview per built-in world in simscene=preview, 640 px WebP under 48 KB, with its zoom origin
   { name: 'shots-102-arcade' }, // spec 102 RA3: the Retro arcade behind its flag: only its files, cabinets, marquee, no overlap at 3, 4, 8 and 15 at both sizes
+  { name: 'shots-102-arcade', label: 'shots-102-arcade wide font', env: { ARCADE_FONT: 'wide', ARCADE_CASES: 'narrow' } }, // spec 102 FR-312 (round 5 of #1599, issue #1574): the narrow plate's cases alone (ARCADE_CASES=narrow) in a font wider than macOS's (Verdana, else DejaVu Sans; the run fails if neither is installed), so the geometry is not tuned to one font
   { name: 'shots-097-moments' }, // spec 097 FR-118..FR-129: the nine world moments (first run, empty office, asleep at the desk, walk, inbox, limit, elicitation, coffee, jumps) in the Photo office and the cave
   { name: 'shots-097-moments', label: 'shots-097-moments cave', env: { MOMENTS_WORLDS: 'cave' } }, // the same nine moments in the Prehistoric cave (its flag is the simulator's page address)
   { name: 'shots-097-moments', label: 'shots-097-moments retro', env: { MOMENTS_WORLDS: 'retro' } }, // spec 102 FR-264: the same nine moments in the Retro arcade (its flag is the simulator's page address)
   { name: 'shots-097-chat' }, // spec 097 FR-106 (T120): the chat in the world: desk-side column, portrait, lamp words, surface and contrast, card tails
-  { name: 'shots-097-chat', label: 'shots-097-chat retro', env: { MOMENTS_WORLDS: 'retro' } }, // spec 102 T221: the arcade's chat at three sizes: marquee name, the cards dark (4.5:1, deep), tab order as flat's
+  { name: 'shots-097-chat', label: 'shots-097-chat retro', env: { MOMENTS_WORLDS: 'retro' } }, // spec 102 T221: the arcade's chat at three sizes: the name plain on the header (T305), the cards dark (4.5:1, deep), tab order as flat's
   { name: 'check-097-chat-look' }, // spec 097 (#1140, T195): every chat, main or helper, has the same world look and follows the Office layout setting while open
+  { name: 'check-097-chat-look', label: 'check-097-chat-look retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 T283 (issue #1399): the same driver in the arcade
   { name: 'check-097-chat-contrast' }, // spec 097 (#1146, T197): chat text, links, code chips and header text against the real pixels behind them, both sizes; header text inside the window
+  { name: 'check-097-chat-contrast', label: 'check-097-chat-contrast retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 T283 (issue #1399): the same driver in the arcade
+  { name: 'check-097-letter' }, // spec 097 FR-377 (#1587): the schedule letter flies from the Postbox plate to the target's plate in the Photo office, both sizes, reduced motion, off-screen plate, 3:1 on the picture
+  { name: 'check-097-letter', label: 'check-097-letter retro', env: { DRIVER_WORLD: 'retro' } }, // the same in the Retro arcade
+  { name: 'check-097-letter', label: 'check-097-letter cave', env: { DRIVER_WORLD: 'cave' } }, // the same in the Prehistoric cave (spec 097 FR-377: one of the three Real office worlds)
   { name: 'check-097-order' }, // spec 097 FR-345..FR-348 (#1152): rooms, desks and places rearranged in Real office by key and folder menu on spec 033's one order; the flat order shows, both sizes
   { name: 'check-097-drag' }, // spec 097 FR-352..FR-355 (#1152, Q30..Q33): drag a plate or folder sign in Real office (Photo, cave, arcade), the lobby by chip button and the +N menu, on the one saved order; both sizes
+  { name: 'check-097-slip-plates' }, // spec 097 (bug 1434): no request slip covers a plate, sign, chair label, chip, cue or face; 15 agents, both sizes, three worlds
   { name: 'check-097-plate-pencil' }, // spec 059 FR-170 (#1155): the rename pencil beside a Real office plate's name, F2 on a plate, both sizes
+  { name: 'check-097-pencil-ease' }, // spec 097 FR-365 (bug 1513): no rename pencil painted over its plate's name or status while plates ease to the lounge (capturePage frames), Photo office and arcade, both sizes; PENCIL_EASE_MUTANT=nohide
   { name: 'check-097-ctx-frame' }, // spec 097 FR-322..FR-326 (Q8, owner 2026-11-07): the context line round each monitor frame in the Photo office, the cave and the arcade; bands, share, outside the glass, none for unknown, no node per update; CTX_MUTANT=colour|glass|node|unknown
   { name: 'check-097-desk-marks' }, // spec 097 FR-316 (#1149): the Draft tag above a Real office plate for an unsent draft, its words in the plate's name, shown by class, both sizes
+  { name: 'check-097-desk-marks', label: 'check-097-desk-marks retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 T283 (issue #1399): the same driver in the arcade
   { name: 'check-097-helpers' }, // spec 097 FR-306..FR-311 (#1139): a desk's helpers as head figures with a status dot under its plate, Photo office, cave and the arcade at 1440x900, both sizes; where no strip fits (the arcade at 1280x800, the default scene at 1280x800) the plate keeps +N
+  { name: 'check-097-kids' }, // spec 097 FR-368..FR-376 (#1642): the helpers as clay-toy kids on the desk top in the Photo office at 1 to 4 agents (picture, pose, one scale, +K, Tab, click, no zoom, no node per status), kid faces in the head row at 15, both sizes; KIDS_MUTANT=nokids|status|name|overlap|adulthead
   { name: 'check-097-helper-row' }, // spec 097 FR-338 (issue #1384), FR-356 (issue #1392: every folder sign whole, its + and menu inside it): a helper strip never wraps a head onto a second line; the last place is +K (6 and 7 helpers, the default scene and the lounge scene, Photo office, cave and arcade, both sizes)
-  { name: 'check-097-hover-card' }, // spec 097 FR-327..FR-330 (#1151): the zoom opens over the person, desk and plate, for asleep agents, with the Changed line
+  { name: 'check-097-hover-card', focus: true }, // spec 097 FR-327..FR-330 (#1151): the zoom opens over the person, desk and plate, for asleep agents, with the Changed line
+  { name: 'check-097-hover-card', label: 'check-097-hover-card retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 T283 (issue #1399): the same driver in the arcade
   { name: 'check-097-lounge' }, // spec 097 FR-246..FR-249 (#1220): finished, read agents sit in the lounge row in the Photo office and the arcade, unread keeps the desk, the ease back, reduced motion, both sizes
   { name: 'check-097-world-look' }, // spec 097 FR-350, FR-351 (#1153): a world keeps its own colours whatever theme is picked, and the arcade's drop overlay reads
   { name: 'shots-097-cave' }, // spec 097 phase 4: the Prehistoric cave behind its flag (World row, its set, any set in any world, no blend)
@@ -187,6 +226,7 @@ const DRIVERS = [
   { name: 'check-ui-text', label: 'check-ui-text dark', env: { UITEXT_PART: 'dark' } },
   { name: 'shots-006-crash' }, // spec 006 FR-038..FR-046 (#606): the crash card (Resume all, Pick…, Dismiss), per-row resume, the lost-turn note
   { name: 'shots-074-navigator', env: { DURBAR_SIM_FLOORS: '1' } }, // spec 074: Go to (keyboard navigator), chat numbers, the shortcut in Settings
+  { name: 'shots-095' }, // spec 095 phase 3: search conversations: the box, the results in the List view, open and jump, keyboard, live region, end-state notes, the shortcut in Settings
   { name: 'check-browser-scenarios' }, // spec 080 T018 AC2/AC4: US1 scenarios 1-5 and US2 scenarios 1-3 incl. SC-002 and SC-004; confirm, prompt, sensitive fields, sliding element, redirect, basic-auth pages
   { name: 'check-browser-cap' }, // spec 080 T013 AC3: six pages, four stay loaded, the two least recent reload with the note
   { name: 'check-browser-cap', label: 'check-browser-cap typing', env: { BROWSER_CAP_MODE: 'typing' } }, // AC4: typing in a page protects it; the sixth says too many are open
@@ -196,6 +236,9 @@ const DRIVERS = [
   { name: 'check-browser-dialogs', label: 'check-browser-dialogs 1280', env: { DURBAR_SIM_BROWSER_CONSENT: 'ask', BROWSER_DIALOGS_SIZE: '1280x800' } }, // the same at 1280x800: the note, Leave this page?, the hidden dialog's toast
   { name: 'check-browser-tabs' }, // spec 080 Phase 1b (US6, FR-120..FR-133): page tabs, the toggle, pages opening tabs, 10 tabs, close while loading, keys, the cap, session end
   { name: 'check-browser-tabs', label: 'check-browser-tabs 1280', env: { BROWSER_TABS_SIZE: '1280x800' } }, // the same at 1280x800 (SC-011)
+  { name: 'check-080-browser-expand' }, // spec 080 FR-134..FR-139 (issue #1691): Expand browser fills the chat panel, Back to small browser and Escape restore, focus, the page keeps its Escape, not remembered; Flat, both sizes
+  { name: 'check-080-browser-expand', label: 'check-080-browser-expand photo', env: { EXPAND_WORLD: 'real' } }, // the same in the Photo office (Real office)
+  { name: 'check-080-browser-expand', label: 'check-080-browser-expand retro', env: { EXPAND_WORLD: 'real', DRIVER_WORLD: 'retro' } }, // the same in the Retro arcade
   { name: 'check-browser-tab' }, // spec 080 T014/T015/T018: Chat | Browser tabs, the bar, the native view's attach and detach, the simulator's test pages, two sessions' own views
   // issue #748 (spec 021 FR-057): drivers that asserted but nothing ran, each passing alone on the simulator (seconds on a 4-core Linux box)
   { name: 'check-checkpoints' }, // spec 065 FR-003/FR-004/FR-007: the note after a turn that changed files, preview, restore, Undo the undo, the refusal (~21 s)
@@ -238,6 +281,32 @@ function args(a = process.argv.slice(2)) {
   return { list: a.includes('--list'), only: i >= 0 ? new Set(String(a[i + 1] || '').split(',').filter(Boolean)) : undefined, shard: j >= 0 ? a[j + 1] : undefined, shardGiven: j >= 0 };
 }
 
+/** Spec 008 FR-212: the edit distance between two names (insert, delete, replace), for the "did you mean" of `unknownOnly`. */
+function editDistance(a, b) {
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+/** Spec 008 FR-212 (issue #1572): the problems with the names given to `--only`, one text per name that matches no driver name and no label ([] when all match).
+ *  A name in NOT_IN_SUITE gets its written reason; any other gets up to 3 near names (a prefix or a part of one, or within 3 edits), the closest first, ties in suite order. */
+function unknownOnly(only, drivers = DRIVERS, notInSuite = NOT_IN_SUITE) {
+  const known = [...new Set(drivers.flatMap((d) => (d.label && d.label !== d.name ? [d.name, d.label] : [d.name])))];
+  const out = [];
+  for (const name of only || []) {
+    if (known.includes(name)) continue;
+    if (Object.prototype.hasOwnProperty.call(notInSuite, name)) { out.push(`${name} is not a ui-suite driver: ${notInSuite[name]}`); continue; }
+    const near = known.map((k, i) => ({ k, i, d: editDistance(name, k) })).filter((x) => x.d <= 3 || x.k.startsWith(name) || x.k.includes(name) || name.includes(x.k))
+      .sort((x, y) => x.d - y.d || x.i - y.i).slice(0, 3).map((x) => x.k);
+    out.push(`${name} matches no driver${near.length ? `; did you mean ${near.join(', ')}?` : ''}`);
+  }
+  return out;
+}
+
 /** Recorded seconds per driver (scripts/ui-suite-timings.json), only to balance shards; a driver with no entry counts as the median. */
 function timings() {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'ui-suite-timings.json'), 'utf8')); } catch { return {}; }
@@ -266,6 +335,12 @@ function shard(list, spec, times = timings()) {
     if (best === i - 1) mine.add(d);
   });
   return list.filter((d) => mine.has(d));
+}
+
+/** Spec 008 FR-210: do the drivers' windows share one desktop, and so one OS window focus? True on macOS, Windows and Linux with a display;
+ *  false on Linux under xvfb (a display, and a focus, per driver: `runOne` uses xvfb-run exactly then). */
+function sharedDesktop(platform = process.platform, env = process.env) {
+  return platform !== 'linux' || (!!env.DISPLAY && env.UI_SUITE_XVFB !== '1');
 }
 
 /** Spec 008 FR-112: syntax errors in the given files, from `node --check` (no shell, nothing run). [] when all parse. */
@@ -313,14 +388,39 @@ function guardTree(child, { proc = process, kill = killTree, cleanup = () => {} 
   return release;
 }
 
+/** The device scale factors a run may force: whole 1..4, and Windows' 125 % and 150 % (spec 102 T204, #1403). Anything else is ignored. */
+const dprOk = (v) => /^([1-4]|1\.25|1\.5)$/.test(String(v));
+
+/**
+ * Spec 008 FR-213 (issue #1591): the `xvfb-run` options that give Xvfb a screen as big as the biggest window at the requested density. Xvfb's default screen
+ * is 1280x1024 device pixels, so at UI_SUITE_DPR=2 a 1440x900 window (2880x1800 device pixels) was mostly off screen: nothing real was painted below
+ * device y 1024 and painted-pixel checks could not see the lower rooms. The screen is 1920x1100 logical (the 1920x1080 view of the widest driver and a margin)
+ * times the density, colour depth 24: DPR 1 is 1920x1100, DPR 2 is 3840x2200. A bad or unset density counts as 1.
+ * `UI_SUITE_XVFB_SCREEN=WxHxD` replaces it (checked; a malformed value is ignored). Returned as separate argv entries (`-s` and one value), never a shell string.
+ */
+function xvfbScreenArgs(dpr, env = process.env) {
+  const want = String(env.UI_SUITE_XVFB_SCREEN || '');
+  if (/^[1-9]\d{2,4}x[1-9]\d{2,4}x(8|16|24|30|32)$/.test(want)) return ['-s', `-screen 0 ${want}`];
+  const f = dprOk(dpr) ? Number(dpr) : 1;
+  return ['-s', `-screen 0 ${Math.ceil(1920 * f)}x${Math.ceil(1100 * f)}x24`];
+}
+
+/** The command that starts Electron for a driver: the binary itself, or under `xvfb-run -a` (a display of its own) with the screen of `xvfbScreenArgs`. Separate argv entries, no shell. */
+function launchCommand(useXvfb, electron, argv, dpr, env = process.env) {
+  return useXvfb ? ['xvfb-run', ['-a', ...xvfbScreenArgs(dpr, env), electron, ...argv]] : [electron, argv];
+}
+
 /**
  * Run one driver. Opt-in for unattended callers (spec 008 FR-175, FR-176; scripts/release-video.js): `d.baseEnv` replaces
  * `process.env` as the base of the child's environment (an allow-list, so no token reaches Electron), `d.timeoutMs` replaces the
  * suite's limit. Every driver (spec 008 FR-199, issue #1417) runs as its own process tree: it ends with the whole tree at the limit and when
  * this process gets SIGINT, SIGTERM or exits (`xvfb-run`'s own cleanup does not run when only its shell is killed). There is no `d.killTree` flag.
- * `launch` is for tests: `[file, args]` replaces the Electron/xvfb-run command.
+ * `launch` is for tests: `[file, args]` replaces the Electron/xvfb-run command. A missing build (FR-211) is returned as a failed run without starting anything.
  */
-function runOne(d, outDir, { launch } = {}) {
+function runOne(d, outDir, { launch, build = launch ? () => '' : buildProblem } = {}) {
+  // FR-211: no build, no Electron (it would open an error box and wait for it until the time limit)
+  const missing = build();
+  if (missing) return Promise.resolve({ ok: false, code: 1, secs: 0, why: missing, log: missing });
   const electron = require('electron'); // the binary's path
   const user = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-ui-user-'));
   const env = { ...(d.baseEnv || process.env), ...(d.sim === false ? {} : SIM), ...(d.env || {}), DURBAR_USER_DATA: user, DURBAR_DRIVER: path.join(__dirname, d.name + '.js') };
@@ -328,9 +428,9 @@ function runOne(d, outDir, { launch } = {}) {
   if (d.freeze === false) delete env.DURBAR_SIM_FREEZE; // a driver that needs the live simulator (spec 001 FR-082: shots-docs.js)
   for (const v of OUT_VARS) env[v] = outDir;
   const dpr = String(d.dpr || process.env.UI_SUITE_DPR || ''); // d.dpr: a driver that always records at that density (release-video: sharp zooms)
-  const argv = [ROOT, '--no-sandbox', ...(/^[1-4]$/.test(dpr) ? ['--force-device-scale-factor=' + dpr] : [])]; // UI_SUITE_DPR=2: a high-density screen (a Retina Mac) on any OS
-  const useXvfb = process.platform === 'linux' && (!process.env.DISPLAY || process.env.UI_SUITE_XVFB === '1'); // UI_SUITE_XVFB=1: keep windows off a desktop
-  const [file, list] = launch ? launch : useXvfb ? ['xvfb-run', ['-a', electron, ...argv]] : [electron, argv];
+  const argv = [ROOT, '--no-sandbox', ...(dprOk(dpr) ? ['--force-device-scale-factor=' + dpr] : [])]; // UI_SUITE_DPR=2: a high-density screen (a Retina Mac) on any OS
+  const useXvfb = !sharedDesktop(); // UI_SUITE_XVFB=1: keep windows off a desktop
+  const [file, list] = launch ? launch : launchCommand(useXvfb, electron, argv, dpr);
   return new Promise((resolve) => {
     const started = Date.now();
     let log = '';
@@ -351,11 +451,14 @@ function runOne(d, outDir, { launch } = {}) {
 }
 
 /** `ensure`, `run` and `argv` are for tests (scripts/test-ui-suite.ts); the defaults install Electron and start the real drivers. */
-async function main({ ensure = ensureElectron, run = runOne, argv } = {}) {
+async function main({ ensure = ensureElectron, run = runOne, argv, shared = sharedDesktop(), build = buildProblem } = {}) {
   const a = args(argv);
   // a bare `--shard` (no value) is refused, never "every driver"; only an empty UI_SUITE_SHARD env value means the whole list (FR-182, review on #1257)
   if (a.shardGiven && !a.shard) throw new Error('ui-suite: --shard wants a value i/n (1 <= i <= n), got none');
   const sh = a.shardGiven ? a.shard : process.env.UI_SUITE_SHARD;
+  // FR-212: a name asked for that matches no driver fails the run (before the shard split and the build check: a user error that costs nothing to say), never dropped because another name matched
+  const unknown = a.list ? [] : unknownOnly(a.only);
+  if (unknown.length) throw new Error(`--only names no driver to run:\n  ${unknown.join('\n  ')}\nno driver was started`);
   const todo = shard(DRIVERS.filter((d) => !a.only || a.only.has(d.name) || a.only.has(d.label || '')), sh);
   if (a.list) { for (const d of DRIVERS) console.log(d.label || d.name); return; }
   // a shard that selects no driver (more shards than drivers, or --only narrowing) must not pass green with "0/0"
@@ -367,6 +470,9 @@ async function main({ ensure = ensureElectron, run = runOne, argv } = {}) {
     for (const b of bad) console.error(`ui-suite: syntax error in ${b.file}\n${b.error.split(/\r?\n/).map((l) => '      | ' + l).join('\n')}`);
     throw new Error(`${bad.length} file(s) do not parse: ${bad.map((b) => b.file).join(', ')}; no driver was started`);
   }
+  // FR-211: a missing build fails in seconds with its path, before Electron is fetched or started
+  const noBuild = build();
+  if (noBuild) throw new Error(`${noBuild}; no driver was started`);
   // FR-114: install Electron once before the drivers start in parallel (two first runs racing on the same binary fail, PR #546)
   if (!ensure()) throw new Error('the Electron binary is not installed and could not be fetched (see above); no driver was started');
   const outDir = process.env.UI_SUITE_OUT ? path.resolve(process.env.UI_SUITE_OUT) : fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-ui-shots-'));
@@ -376,10 +482,14 @@ async function main({ ensure = ensureElectron, run = runOne, argv } = {}) {
   const jobs = Math.max(1, Math.min(6, Number(process.env.UI_SUITE_JOBS || 2) || 2));
   const failed = [];
   const started = Date.now();
+  // spec 008 FR-210 (issue #1498): an entry with `focus: true` waits on the real OS window focus, which a neighbour's window takes away on a shared
+  // desktop: the others run `jobs` at a time first, then those entries one at a time with no other window open
+  let queue = shared ? todo.filter((d) => !d.focus) : todo;
+  const alone = shared ? todo.filter((d) => d.focus) : [];
   let next = 0;
   const worker = async () => {
-    while (next < todo.length) {
-      const d = todo[next++];
+    while (next < queue.length) {
+      const d = queue[next++];
       const r = await run(d, outDir);
       console.log(`  ${r.ok ? 'ok  ' : 'FAIL'} ${(d.label || d.name).padEnd(26)} ${String(r.secs).padStart(4)} s${r.ok ? '' : '  ' + r.why.trim().slice(0, 300)}`);
       /* spec 008 FR-190: a wait that timed out (`[waits] ...` from driver-helpers) shows even when the driver passed: a wait that is always spent costs its whole limit every run */
@@ -391,6 +501,8 @@ async function main({ ensure = ensureElectron, run = runOne, argv } = {}) {
     }
   };
   await Promise.all(Array.from({ length: jobs }, worker));
+  queue = alone; next = 0;
+  await worker();
   // a slow runner (macOS in CI) can lose a race against a fixed delay: one more run alone, reported as FLAKY so it stays visible
   const flaky = [];
   if (process.env.UI_SUITE_RETRY === '1' && failed.length) {
@@ -407,5 +519,5 @@ async function main({ ensure = ensureElectron, run = runOne, argv } = {}) {
   if (failed.length) process.exitCode = 1;
 }
 
-module.exports = { syntaxErrors, main, runOne, killTree, guardTree, shard, DRIVERS, NOT_IN_SUITE }; // runOne: also spec 001 FR-082 (scripts/shots-docs.js)
+module.exports = { dprOk, xvfbScreenArgs, launchCommand, sharedDesktop, syntaxErrors, main, runOne, killTree, guardTree, shard, unknownOnly, DRIVERS, NOT_IN_SUITE }; // runOne: also spec 001 FR-082 (scripts/shots-docs.js)
 if (require.main === module) main().catch((e) => { console.error('ui-suite:', e.message); process.exitCode = 1; });
