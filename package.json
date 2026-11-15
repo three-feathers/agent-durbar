@@ -1,6 +1,6 @@
 {
   "name": "agent-durbar",
-  "version": "0.1.20",
+  "version": "0.1.21",
   "description": "Office-style command center to see, chat with and coordinate AI agents across harnesses (GitHub Copilot, Claude Code, OpenAI Codex), for anyone who works with agents.",
   "private": true,
   "desktopName": "agent-durbar.desktop",
@@ -162,6 +162,7 @@
     "test:schedtop": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-schedtop.js",
     "test:schedhist": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-schedhist.js",
     "test:cuttext": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-cut-text.js",
+    "test:questionparts": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-question-parts.js",
     "test:chattrim": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-chattrim.js",
     "test:subretire": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-subretire.js",
     "test:probe": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-probe.js",
@@ -195,6 +196,7 @@
     "test:teams-editor": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-teams-editor.js",
     "test:teams-ui": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-teams-ui.js",
     "test:teamsipc": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-teamsipc.js",
+    "test:teamops": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-teamops.js",
     "test:teamstore-fs": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-teamstore-fs.js",
     "test:names": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-names.js",
     "test:inlinename": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-inlinename.js",
