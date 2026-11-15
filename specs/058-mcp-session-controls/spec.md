@@ -2737,7 +2737,8 @@ facts below that this delta relies on, unless tagged otherwise):
   words (FR-239)"), the window's `/mcp auth` sentence back on the Off refusal ("FR-246: no CLI command in the refusal row"), the capability gate
   dropped ("FR-238: no sign-in app group without the adapter's signInAppChoice"), the copilot-cli line dropped ("FR-234: a stored copilot-cli shows
   Copilot CLI's line"). `docs/screenshots/058-mcp-refresh-settings-*` not retaken: the Off line is below their fold and the part in view is
-  unchanged (a retake differed only by unrelated simulator drift).
+  unchanged (a retake differed only by unrelated simulator drift). Second review: the three new `screens.js` comments name the PR as "PR 1688"
+  (`test:theme-tokens` read a hash and four digits as a colour literal).
 
 #### Later, not in this plan
 

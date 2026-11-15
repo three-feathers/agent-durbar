@@ -275,7 +275,7 @@
      all in place (no repaint, so the page never jumps); the words are FR-239's. `siSaved` is the choice in force, `siDraft` the unsaved pick (kept over a repaint). ---------------- */
   const SI_MODES=[
     {id:'vscode',label:"Visual Studio Code's app",tag:'default',line:"Experimental. Uses Visual Studio Code's Microsoft Entra app ID, as Copilot did before version 1.0.26. Durbar is not Visual Studio Code. Your organization or Microsoft may refuse this, and sign-ins show as Visual Studio Code in your organization's logs."},
-    {id:'off',label:'Off',line:"Agent Durbar does not set an app. Copilot's sign-in to Microsoft Entra MCP servers may fail; then switch the server off for the session if you do not need it."}, /* FR-246: no CLI command in a Copilot row (review of #1688) */
+    {id:'off',label:'Off',line:"Agent Durbar does not set an app. Copilot's sign-in to Microsoft Entra MCP servers may fail; then switch the server off for the session if you do not need it."}, /* FR-246: no CLI command in a Copilot row (review of PR 1688) */
     {id:'custom',label:'Custom app',line:"Your organization's own Microsoft Entra app (client) ID. It needs the MCP server's permissions, admin consent and the sign-in redirect address for this computer, which Agent Durbar has not confirmed yet: ask your administrator. An app ID is not a secret. Never enter a client secret here."}];
   const SI_NOTICE="Experimental: Copilot now signs in to Microsoft Entra MCP servers with Visual Studio Code's app ID by default, as it did before. Sign-ins show as Visual Studio Code in your organization's logs. Choose Off or your own app below.";
   const SI_LINUX='On Linux this Copilot version cannot use the system sign-in; this setting may have no effect.';
@@ -294,7 +294,7 @@
   const siRefusalText=(x)=>{if(!x||(x.status!=='failed'&&x.status!=='needs-auth'))return '';const r=siRefusal(x.error);return r?r.text:'';};
   function siPrime(){try{if(X&&X.bridge&&X.bridge.getSettings)X.bridge.getSettings().then(a=>{if(!siDraft)siSaved=siChoiceOf(a);}).catch(()=>{});}catch(e){}}
   function signInAppSection(app){
-    if(!X.bridge.setCopilotSignInApp||!siCap)return ''; /* FR-238 (review of #1688): only for the Copilot adapter with signInAppChoice */
+    if(!X.bridge.setCopilotSignInApp||!siCap)return ''; /* FR-238 (review of PR 1688): only for the Copilot adapter with signInAppChoice */
     siSaved=siChoiceOf(app);
     const d=siDraft||{mode:siSaved.mode,id:siSaved.clientId||''}, linux=(window.agentDurbar&&window.agentDurbar.platform)==='linux';
     const radios=SI_MODES.map(m=>{
@@ -594,7 +594,7 @@
       /* spec 051 FR-014: the account lines are filled in after the paint (Codex needs about 2 s); asked again on open, Check again and after a sign-in */
       acctAgain=X._acctRefresh==='check'?'check':!!X._acctRefresh;X._acctRefresh=false;
     }
-    /* spec 058 FR-238 (review of #1688): the sign-in app row only when the Copilot adapter reports signInAppChoice */
+    /* spec 058 FR-238 (review of PR 1688): the sign-in app row only when the Copilot adapter reports signInAppChoice */
     if(kinds===null&&X.bridge.listAdapters&&X.bridge.setCopilotSignInApp){try{kinds=(await X.bridge.listAdapters())||[];}catch(e){kinds=[];}}
     siCap=siCapOf(kinds);
     /* spec 043 FR-010, FR-019: Settings > Agent Success Profiles (custom agents): the profile files of the office's folders and yours */
