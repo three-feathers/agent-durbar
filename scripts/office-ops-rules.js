@@ -17,6 +17,9 @@ const LIMITS = {
   /* the two @late rows equal `searchesAtStart` and are kept only to document that the forced-late loads (which fail every time without the gate) are held to the same one search */
   'searchesAtStart@late15': 1, // T303, FR-363: the replay's first states arrive 50 ms late (`simlate=50`): still one search
   'searchesAtStart@late40': 1,
+  searchesAtRealStart: 1, // T351, FR-378 (issue #1575): the real app's start (no first-state batch; `simreal=idle`): one layout search
+  'probesAtRealStart@15': 20, // T351: measured 12
+  'probesAtRealStart@40': 50, // measured 38
   'probesAtStart@15': 20, // T157, owner decision 2026-11-11: measured 18
   'probesAtStart@40': 50, // measured 47
   rendersAtStart: 8,
@@ -29,6 +32,8 @@ const LIMITS = {
   staleFits: 0, // header and usage-line classes that a full fit would change, after a status filter and a body-class change
 };
 const MINIMUMS = {
+  'realStartIdle@15': 1, // T351: `simreal=idle` was honoured (the page records -1, the row is 1; an ignored option leaves 0)
+  'realStartIdle@40': 1,
   'lateReplayDelay@late15': 50, // T303: `simlate=50` was honoured: the replay waited at least 50 ms (an ignored option reads 0 and the forced-late row would test nothing)
   'lateReplayDelay@late40': 50,
   handPositions: 2, // T158: a compact desk's tapping hand shows at least two positions over its cycle (it is alive)
