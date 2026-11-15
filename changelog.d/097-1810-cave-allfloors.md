@@ -1,1 +1,1 @@
-- **Fixed: the office check asserts the cave's All floors view draws storeys, as Photo's does** (spec 097 FR-104, issue #1810): it had asserted the flat hall, which no machine draws. Check only, no change to the office; one 1280x800 face minimum is a known gap (issue #1814).
+- **Fixed: the office check asserts the cave's All floors view draws storeys, as Photo's does** (spec 097 FR-104, issue #1810): it had asserted the flat hall, which no machine draws. Check only, no change to the office; its 1280x800 face minimum is met by issue #1814's change.

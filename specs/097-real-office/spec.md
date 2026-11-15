@@ -1778,10 +1778,22 @@ Decision of the coordinator under Vikram's delegation of 2026-11-15 00:28 UTC, c
 
 **Rule (check only, no look change).**
 1. **The cave asserts storeys like Photo:** at least two storeys, one tag per storey, every tag whole, no overlap with signs, plates, chips, dots or another tag. A cave that falls back to the flat hall is a regression and fails ("did not draw its storeys"); the flat branch is dropped until a machine is shown drawing it flat (then it needs its own spec text and a reason-recording layout, so a broken cave cannot hide as a fallback).
-2. **The face minimum.** The cave's All floors case at 1280x800 has a desk face of 30.3 px, under the 30.5 px minimum, in the storeys draw and in a hall forced flat (storeys off, or the tag width six times wider; measured by the reviewer), so the 2 % storey loss is not the cause. This one case has a minimum of 29.9 px as a `[KNOWN GAP]` (issue #1814: find the cause and restore 30.5 px). Photo, the arcade and every other cave case keep 30.5 px.
+2. **The face minimum** (cause found and fixed by FR-308's delta of issue #1814 below). The cave's All floors case at 1280x800 had a desk face of 30.3 px, under the 30.5 px minimum, in the storeys draw and in a hall forced flat (measured by the reviewer), so the 2 % storey loss was not the cause; the helper strip was. The 29.9 px carve-out this item first gave that case is removed: every case keeps 30.5 px.
 3. Mutants, each killed at its own label: `OFFICE_MUTANT=cave-tag` (one tag taken away) fails "did not draw its storeys (3 in the layout, 2 tags)"; `cave-flat` (the storeys and tags taken away, as a cave that fell back to flat) fails the same check.
 
-`[IMPLEMENTED]` `sim:` `check-office-overlap` (macOS). `[KNOWN GAP]` Linux and Windows not run by me; the 29.9 px minimum (issue #1814).
+`[IMPLEMENTED]` `sim:` `check-office-overlap` (macOS). `[KNOWN GAP]` Linux and Windows not run by me.
+
+## Changes 2026-11-15 (issue #1814): the cave keeps its desk face at 30.5 px: the helper strip is refused where it would cost it (T358; FR-308; no new FR)
+
+**Cause (measured, macOS simulator, cave, All floors, 1280x800).** `choose()` in `realLayout` takes the helper strip whenever it fits. In this case the strip (30 px of heads plus 4 px of padding) costs the desks height: u 101.1, desk face `FACE_U` 0.30 x u = 30.3 px, under SC-002's 30.5 px minimum; without the strip u is 112.7 and the face 33.8 px.
+
+**Rule (FR-308, cave only, behind a world value).** A world may set `minFace` in its `world.json` (the cave: 30.5; `RealMeta.minFace`, read like `storeys`). Where it is set, the helper strip is taken only while `FACE_U x u` stays at or over `minFace`; where the strip would take the face under it and the hall without the strip has a larger u, the hall is drawn without the strip (the helper heads become the plate's `+N` and dots, FR-016). A world without `minFace` (Photo, the arcade, a world pack) lays out as before, to the byte: no change.
+
+**Numbers.** That case: u 101.1 to 113 (at least 101.67 is what 30.5 needs), face 30.3 to 33.8 px; the helper heads of its desks become `+N` and dots (Kenji +1, Elif +6, Ada +2, Clara +3 in the simulator's hall). The rule also acts in other cave halls where the strip costs the face: in the pure sweep (2592 halls per world, sizes 1000x600 to 1440x848) 132 cave halls drop the strip; for example the cave's 4/4/4 with helpers at 1440x900 goes from u 98.6 and a face of 29.6 px with the strip to u 128.6 and 38.6 px without it, so `test-realoffice-aisles` expects no strip for the cave there (Photo's 4/4/4 strip rule is untouched and its assertions are as before). The `check-office-overlap` carve-out (29.9 px) is removed: 30.5 px for every case.
+
+**Tests.** `test:realoffice-layout`: the same sweep for Photo and the arcade has the sha256 of the layouts of the code before the rule (pinned); the cave's sweep: where the strip would take the face under 30.5 px and a hall without it is bigger, no strip and the bigger u; elsewhere the layout is identical with and without `minFace`. Mutants: `minFace` ignored fails "the strip would cost the face (28.59 px) and is not drawn" at its own label; the cave without `minFace` in `world.json` fails `check-office-overlap` "desk face 30.3px (ratchet 30.5px" for the 1280x800 All floors case (2 of 37).
+
+The cave stays behind its flag; its look is the owner's. `[IMPLEMENTED]` `sim:` `check-office-overlap` (cave, Photo, arcade: 37 of 37), `test:realoffice-layout`, `test-realoffice-aisles` (macOS). `[KNOWN GAP]` Linux, Windows and CI not run by me; the other cave halls where the strip is now dropped (above) were seen in the pure sweep, not in pictures; the arcade has the check but no sweep change to look at.
 
 ## Changes 2026-11-15 (round 6 of the review of #1746): small views, the office check in NOT_IN_SUITE (T113; no new FR)
 
