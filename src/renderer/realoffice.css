@@ -18,6 +18,7 @@
 .ro[data-world="photo"]{background:#c9a77c url(realoffice/worlds/photo/floor.webp) center/cover} /* spec 097 FR-363 (T320): the Photo floor only under the Photo world's own selector, so a late world stylesheet never makes another world request it */
 .ro[data-world="photo"] .ro-strip{background:url(realoffice/worlds/photo/floor.webp) center top/100% auto}
 .ro-strip{box-shadow:inset 0 3px 4px -2px rgba(0,0,0,.25)}
+.ro-focus{position:absolute;pointer-events:none;background:center/contain no-repeat} /* spec 102 T166: aria-hidden, no text; the world's own stylesheet gives the picture */
 .ro-fx{object-fit:fill}
 .ro-kiosk{display:flex;align-items:center;justify-content:center;border-radius:8px 8px 3px 3px;background:linear-gradient(#3b3f45,#24272b);border:2px solid #15171a;color:#dfe8f2}
 .ro-kiosk svg{width:45%;height:auto}
