@@ -159,6 +159,7 @@
     "test:schedtop": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-schedtop.js",
     "test:schedhist": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-schedhist.js",
     "test:cuttext": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-cut-text.js",
+    "test:questionparts": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-question-parts.js",
     "test:chattrim": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-chattrim.js",
     "test:subretire": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-subretire.js",
     "test:probe": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-probe.js",

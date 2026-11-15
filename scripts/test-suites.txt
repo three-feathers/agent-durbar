@@ -73,6 +73,7 @@ test:mcpsigninrefresh
 test:places
 test:floornav
 test:cuttext
+test:questionparts
 test:chattrim
 test:subretire
 test:grantlabel
