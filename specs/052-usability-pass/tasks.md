@@ -455,3 +455,6 @@
 
 ## 2026-11-14: warn, plain danger hover and plain red confirms in the themed looks (FR-053, FR-076, issue #1570)
 - [x] T345 `themes.css`: warn rest and hover, plain `.btn.danger:hover` restored after the themed `.btn` rule; `screens.js` Remove theme and `harnesses.js` End N sessions and update are `primary danger`; `danger-sites.js` ALLOW `harnesses.js`, 21 sites; new driver `scripts/check-052-warn-danger-btn.js` (in `ui-suite.js`) with mutants `WARN_MUTANT=old|warn|dangerhover|sites` [FR-053, FR-076, issue #1570, no new FR]
+
+## 2026-11-15: a multi-part question's headings and questions are apart (FR-243, issue #1754)
+- [x] T346 `joinQuestionParts()` in `app.js`, used by `requestRaw()`: `Heading: question / Heading: question`; pure test `scripts/test-question-parts.js` (`test:questionparts`); `check-inbox-text` asserts the inbox row and the answer bar, mutant `QPARTS_MUTANT=glue` [FR-243, issue #1754]
