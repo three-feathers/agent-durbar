@@ -97,11 +97,23 @@ export function onAutoTierFailed(e: AgentEvent, agents: Map<string, AgentInfo>, 
   store?.setAutoTier(wsKey(a), e.effective ?? null);
 }
 
-export function register(deps: ModelIpcDeps): void {
+/** What `register` hands back: the models of an agent app as `models:list` answers them (spec 111 T010 reuses it, FR-031 of spec 021). */
+export interface ModelIpc {
+  /** one list per agent app id (a known one), each model with the organization's verdict; throws when the app cannot list */
+  modelsOf(kind: string): Promise<ModelChoice[]>;
+}
+
+export function register(deps: ModelIpcDeps): ModelIpc {
   const { agents, router, registry, wsKey } = deps;
   const folderStore = deps.getFolderStore;
   /** The last list of models each agent app offers; a switch request is checked against its session's own app (spec 030 FR-018, FR-063). */
   const lastModels = new Map<string, ModelChoice[]>();
+  /** `models:list`'s body (spec 076 FR-202), extracted unchanged for spec 111 T010: the list of one app with `orgBlocked`/`orgDoubt`, and remembered for a switch. */
+  const modelsOf = async (id: string): Promise<ModelChoice[]> => {
+    const models = await withOrgModels((await modelOptionsOf(router.instance(id))).filter((m) => !m.disabled).map(({ disabled: _d, ...m }) => m), deps.orgModel && ((m) => deps.orgModel!(id, m)));
+    lastModels.set(id, models);
+    return models;
+  };
   const modelsForValidation = async (kind: string): Promise<ModelChoice[]> => {
     let list = lastModels.get(kind);
     if (!list?.length) {
@@ -158,11 +170,10 @@ export function register(deps: ModelIpcDeps): void {
     const id = kind === undefined || kind === null || kind === '' ? registry.defaultId : typeof kind === 'string' && registry.has(kind) ? kind : undefined;
     if (!id) return { ok: false, error: 'unknown agent app', models: [] };
     try {
-      const models = await withOrgModels((await modelOptionsOf(router.instance(id))).filter((m) => !m.disabled).map(({ disabled: _d, ...m }) => m), deps.orgModel && ((m) => deps.orgModel!(id, m)));
-      lastModels.set(id, models);
-      return { ok: true, models };
+      return { ok: true, models: await modelsOf(id) };
     } catch (err) {
       return { ok: false, error: errText(err), models: [] };
     }
   });
+  return { modelsOf };
 }

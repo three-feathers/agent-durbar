@@ -85,6 +85,7 @@ const DRIVERS = [
   { name: 'shots-003-mode-back' },
   { name: 'check-sandbox-floor' }, // spec 087: the OS sandbox chip, tooltips, note (Continue / Always / Change mode…), Codex card line, Settings line
   { name: 'shots-012-signin-chat' },
+  { name: 'check-058-mcp-switch-persist' }, // spec 058 (2026-11-14 delta): a switch stays off after closing the chat, a reload and Restart session
   { name: 'shots-058-mcp-restart' }, // spec 058: per-server Restart and Restart session with these servers
   { name: 'shots-058-mcp-signin' }, // spec 058 T102/T104: Sign in for a Copilot server that needs it (simmcpauth), the two-step open, the steps
   { name: 'shots-058-mcp-words' }, // spec 058 T113-T115: state words, hints, Details and live refresh in the MCP dialog

@@ -1,0 +1,1 @@
+- **Fixed: a flaky check, not the app** (spec 070 FR-066, issue #1786): `shots-070-flat-look` sometimes read the Retro top bar before it had settled and saw two rows (79 px) instead of one (48 px), probably a late reflow or the bar's fit, not confirmed; it now waits until the bar is one row and steady. Simulator only.
