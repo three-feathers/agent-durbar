@@ -123,6 +123,7 @@ const FROM_APP = [
   'world:list', 'world:part', 'world:remove', // spec 102 FR-064: installed worlds, by key and part name; never open to the simulator
   'schedules:remove', 'schedules:runNow', 'schedules:runs', 'schedules:save',
   'search:cancel', 'search:clear', 'search:start', // spec 095 FR-033: the conversation search reads the text of every session
+  'teams:delete', 'teams:duplicate', 'teams:list', 'teams:markMine', 'teams:put', // spec 111 T007: the person's team templates (briefs), window only; never open to the simulator
   'schedules:restartLoop', 'schedules:stopLoop', // spec 072 FR-007, FR-008 (T007): Stop loop and Start again
 ];
 assert.strictEqual(new Set(FROM_APP).size, FROM_APP.length, 'no channel twice in the list');

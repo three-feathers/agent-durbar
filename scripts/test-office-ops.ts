@@ -39,5 +39,9 @@ assert.ok(R.judge({ 'animatedOtherProperties@15': 1 }).failed.length === 1, 'one
 assert.ok(R.judge({ 'animatedOtherProperties@15': 0 }).failed.length === 0, 'none passes');
 assert.ok(R.judge({ 'searchesPerStatus@15': 1 }).failed.length === 1, 'a layout search per status change fails');
 assert.ok(R.judge({ 'elementsRecalculated@15': 1401 }).failed.length === 1, 'the :has() rule (1401 elements) fails');
+assert.ok(R.judge({ 'searchesAtStart@late40': 2 }).failed.length === 1 && R.judge({ 'searchesAtStart@late40': 1 }).failed.length === 0, 'a second layout search at a late start fails (limit 1)');
+assert.ok(R.judge({ 'searchesAtStart@40': 2 }).failed.length === 1 && R.judge({ 'searchesAtStart@15': 1 }).failed.length === 0, 'the plain start row allows 1 search (owner decision 2026-11-11)');
+assert.ok(R.judge({ 'probesAtStart@40': 51 }).failed.length === 1 && R.judge({ 'probesAtStart@40': 50 }).failed.length === 0 && R.judge({ 'probesAtStart@15': 21 }).failed.length === 1 && R.judge({ 'probesAtStart@15': 20 }).failed.length === 0, 'start probes: at most 50 at 40 agents and 20 at 15');
+assert.ok(R.judge({ 'lateReplayDelay@late15': 0 }).failed.length === 1 && R.judge({ 'lateReplayDelay@late15': 50 }).failed.length === 0, 'a simlate that was ignored (delay 0) fails');
 assert.ok(R.judge({ 'handPositions@15': 1 }).failed.length === 1, 'a hand that never moves fails');
 console.log('test-office-ops: ok');

@@ -313,9 +313,20 @@
         "photo": "built",
         "cave": "built",
         "loft": "missing",
-        "retro": "fallback-flat"
+        "retro": "built"
       },
       "nonNegotiables": "TKS"
+,
+      "evidence": {
+        "retro": {
+          "steps": [
+            "first-run"
+          ],
+          "pictures": [
+            "firstrun"
+          ]
+        }
+      }
     },
     {
       "id": "lift-panel",
