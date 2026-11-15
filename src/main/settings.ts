@@ -56,6 +56,7 @@ export class SettingsStore {
     const m = migrateLegacyTheme(this.s);
     // spec 035 FR-018: a removed built-in theme (Corporate, the courts) becomes Clean Office the same way; Characters is untouched
     const r = migrateRemovedTheme(m.settings);
+    // spec 102 Changes 2026-11-14 (T347): the Retro Pixel theme is kept (owner decision); nothing here moves its users
     if (m.changed || r.changed) {
       this.s = r.settings;
       this.save();

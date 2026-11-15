@@ -121,6 +121,18 @@ assert.ok(Object.keys(clean).length > 100, 'all of Clean Office');
   // the least mix: a mid text on a mid fill is moved only as far as 4.5:1 at rest, not to pure black
   T.setTheme({ id: 'dk-mid', name: 'D', version: '1.0', author: 't', ui: 'retro', tokens: { '--brand-bg': '#808080', '--brand-mark': '#8a8a8a' } });
   assert.ok(T.token('--brand-mark') !== '#000000' && contrast(T.token('--brand-mark'), '#808080') < 5.2, `least mix: #8a8a8a on #808080 is repaired to ${T.token('--brand-mark')} (${contrast(T.token('--brand-mark'), '#808080').toFixed(2)}:1), not pushed to pure black`);
+  // issue #1700: a partial dark user theme (--ink set, no --raised/--card) gets --ink repaired to a mid grey; the danger hover is then moved away from its text (--red-hover) and reads 4.5:1
+  for (const ui of ['retro', 'clean']) {
+    T.setTheme({ id: 'partial-' + ui, name: 'P', version: '1.0', author: 't', ui, tokens: { '--bg': '#14121f', '--surface': '#1e1b2e', '--ink': '#f0eaff' } });
+    const rd = T.token('--red-ink'), sf = T.token('--surface'), rh = T.token('--red-hover');
+    assert.ok(contrast(sf, rd) >= 4.5, `partial ${ui}: rest ${contrast(sf, rd).toFixed(2)}:1`);
+    assert.ok(/^#[0-9a-f]{6}$/.test(rh || ''), `partial ${ui}: the repair wrote --red-hover (got ${rh})`);
+    assert.ok(contrast(sf, mixHex(rd, rh, 0.14)) >= 4.5, `partial ${ui}: hovered ${contrast(sf, mixHex(rd, rh, 0.14)).toFixed(2)}:1`);
+    assert.ok(contrast(sf, mixHex(rd, T.token('--ink'), 0.14)) < 4.5, `partial ${ui}: the --ink mix alone would be under 4.5:1 (the bug of #1700)`);
+    assert.notStrictEqual(mixHex(rd, rh, 0.14), rd, `partial ${ui}: hover differs from rest`);
+  }
+  T.setTheme({ id: 'complete-dark', name: 'C', version: '1.0', author: 't', ui: 'retro', tokens: { '--bg': '#14121f', '--surface': '#1e1b2e', '--raised': '#262238', '--card': '#262238', '--card-waiting': '#262238', '--card-error': '#262238', '--ink': '#f0eaff' } });
+  assert.strictEqual(T.token('--red-hover'), null, 'a theme whose --ink reads gets no --red-hover: the --ink mix stays');
   T.setTheme({ id: 'dk-clean', name: 'D', version: '1.0', author: 't', ui: 'clean', tokens: { '--brand-bg': '#2a6a9a' } });
   assert.strictEqual(T.token('--brand-hover'), null, 'a clean-ui theme gets no hover target');
   const rc = repaired('clean');
