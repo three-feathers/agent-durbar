@@ -46,6 +46,9 @@ async function copilot(): Promise<void> {
   assert.strictEqual(cfg.allowTranscriptRecovery, false);
   assert.deepStrictEqual([cfg.availableTools, cfg.mcpServers, cfg.enableSkills, cfg.enableFileHooks, cfg.remoteSession], [[], {}, false, false, 'off']);
   assert.strictEqual(((await (cfg.onPermissionRequest as () => Promise<{ kind: string }>)()).kind), 'reject');
+  const GUARD = { managedSettings: { permissions: { ask: ['Shell(*)'], disableAssistedPermissionsMode: true } }, permissionMode: 'manual' };
+  assert.deepStrictEqual(cfg.excludedTools, ['builtin:*', 'mcp:*', 'custom:*'], 'spec 058 FR-243: the rename resume excludes every tool source as a second lock');
+  assert.deepStrictEqual({ managedSettings: cfg.managedSettings, permissionMode: cfg.permissionMode }, GUARD, 'spec 058 FR-243: the shell guard on the rename resume');
 
   // a live session: one name.set on it, no resume, not disconnected
   {
@@ -66,6 +69,7 @@ async function copilot(): Promise<void> {
     assert.strictEqual(fake.resumed[0].config.workingDirectory, '/work/older', 'resumed in the folder Copilot stored for it');
     assert.strictEqual(fake.resumed[0].config.suppressResumeEvent, true);
     assert.strictEqual(fake.resumed[0].config.allowTranscriptRecovery, false);
+    assert.deepStrictEqual({ managedSettings: fake.resumed[0].config.managedSettings, permissionMode: fake.resumed[0].config.permissionMode, excludedTools: fake.resumed[0].config.excludedTools }, { ...GUARD, excludedTools: ['builtin:*', 'mcp:*', 'custom:*'] }, 'spec 058 FR-243: the stored session is reopened with the guard and excludedTools');
     assert.deepStrictEqual(fake.resumed.map((r) => r.id), ['stored-1']);
     const calls = fake.last.calls;
     assert.deepStrictEqual(names(calls).filter((n) => n !== 'registerInterest'), ['name.set', 'disconnect'], 'rename then release');

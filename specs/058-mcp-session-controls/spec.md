@@ -2601,7 +2601,12 @@ facts below that this delta relies on, unless tagged otherwise):
 - Built for FR-243: `[IMPLEMENTED]` `copilotShellGuard()` (`src/adapters/copilot.ts`), spread into the one session config used for create, resume and
   the FR-158 re-resume; the field names are those of the installed SDK 1.0.32 types (`SessionConfigBase.managedSettings`,
   `ManagedSettingsPermissions.ask` / `disableAssistedPermissionsMode`, `permissionMode`), and the SDK sends both on `session.create` and
-  `session.resume` (`read:` `client.js`). Not in the tool-free one-shot or rename configs (no tools, every request rejected). `test:
+  `session.resume` (`read:` `client.js`). Review of #1675 (Paco, 2026-11-15): also in the throw-away configs, `oneShotConfig` (plan read,
+  `generateText`) and `renameResumeConfig`, which reopens a stored session in its real folder and now also has `excludedTools: ['builtin:*',
+  'mcp:*', 'custom:*']` (a runtime-approved read-only shell command never reaches their reject-all broker, so the empty tool list was the only
+  lock). `test: copilotoneshot`, `test: renameadapters` (the config and the fake's resumed config). Mutants: guard dropped from `oneShotConfig`
+  ("spec 058 FR-243: the shell guard on the one-shot session too"), from `renameResumeConfig` ("spec 058 FR-243: the shell guard on the rename
+  resume"), `excludedTools` dropped there ("spec 058 FR-243: the rename resume excludes every tool source as a second lock"). `test:
   copilot-model` (create, resume by id, `resumeSessionId`), `test: authcheck` (refreshAuth re-resume). Mutants: resume without the guard
   ("spec 058 FR-243 guard on resume (session id)"), `permissionMode` left out ("spec 058 FR-243 guard on create"), the reconnect without it
   ("spec 058 FR-243 guard on the refreshAuth re-resume"), `disableAssistedPermissionsMode` dropped ("spec 058 FR-243 guard on create"; on

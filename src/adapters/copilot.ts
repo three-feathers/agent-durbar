@@ -337,7 +337,7 @@ export function copilotNameError(name: string): string | undefined {
 /**
  * Spec 058 FR-243 (constitution III): SDK 1.0.30+ runtimes approve "read-only" shell commands by themselves ("Read-only shell commands no
  * longer ask for permission"; Assisted mode may approve without a human; `read:` release notes). Every Copilot session Durbar starts or
- * resumes with tools gets this host-injected policy, so every shell request still reaches Durbar's `onPermissionRequest` broker (Read-only
+ * resumes gets this host-injected policy (the throw-away one-shot and rename resume too, review of #1675), so every shell request still reaches Durbar's `onPermissionRequest` broker (Read-only
  * denies, Ask first asks, Allow all approves, as before): `ask: ['Shell(*)']` (rule vocabulary of SDK 1.0.32 `ManagedSettingsPermissions`),
  * Assisted mode off, and the runtime's permission mode `manual` ("normal approval flow"). The runtime keeps none of it ("startup-only, not
  * persisted: it must be re-supplied on resume"), so it is part of the config used for create, resume and the FR-158 re-resume. A fresh
@@ -350,6 +350,8 @@ export function copilotShellGuard(): { managedSettings: { permissions: { ask: st
 /**
  * Spec 059 FR-007: the config of the prompt-free resume that renames a stored session: every permission request is denied (none can
  * arrive, nothing is sent), no MCP server, skill, hook or git operation is started, remote control stays off, no tool is offered.
+ * Spec 058 FR-243 (review of #1675): it reopens a stored session in its real folder, and a resume may "continue pending work" (`read:`
+ * SDK 1.0.32 types), so it gets `excludedTools` as a second lock beside the empty tool list, and the shell guard.
  */
 export function renameResumeConfig(workingDirectory: string): Record<string, unknown> {
   return {
@@ -359,6 +361,7 @@ export function renameResumeConfig(workingDirectory: string): Record<string, unk
     allowTranscriptRecovery: false, // a damaged transcript is refused, never repaired by a rename
     streaming: false,
     availableTools: [],
+    excludedTools: ['builtin:*', 'mcp:*', 'custom:*'], // spec 058 FR-243: a second lock, as in `oneShotConfig`
     mcpServers: {},
     enableConfigDiscovery: false,
     enableSkills: false,
@@ -369,6 +372,7 @@ export function renameResumeConfig(workingDirectory: string): Record<string, unk
     // remote control then hinges only on `rpc.remote.enable`, which Durbar calls only in `CopilotAdapter.setRemote(id, true)` (user action).
     remoteSession: 'off',
     onPermissionRequest: async (): Promise<PermissionRequestResult> => ({ kind: 'reject', feedback: 'Agent Durbar allows no tools here.' }) as PermissionRequestResult,
+    ...copilotShellGuard(), // spec 058 FR-243: a runtime-approved read-only shell command would never reach the reject-all broker above
   };
 }
 
@@ -437,6 +441,7 @@ export function oneShotConfig(dir: string, disabledMcpServers: readonly string[]
     streaming: false,
     availableTools: [],
     excludedTools: ['builtin:*', 'mcp:*', 'custom:*'],
+    ...copilotShellGuard(), // spec 058 FR-243: the throw-away sessions too (plan read, `generateText`)
     mcpServers: {},
     ...(disabledMcpServers.length ? { disabledMcpServers: [...disabledMcpServers] } : {}),
     enableConfigDiscovery: false,
