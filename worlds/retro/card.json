@@ -10,5 +10,6 @@
  "desk": "Arcade cabinet body, one per seat",
  "fixtureStyle": "Arcade machines: prize counter, cartridge wall, service panel, pinball table, change machine, coin vault",
  "plants": "No plants: plush prizes in the prize counter",
- "motif": "A visible pixel grid over everything"
+ "motif": "A visible pixel grid over everything",
+ "distinct-check": { "state": "pending" }
 }
