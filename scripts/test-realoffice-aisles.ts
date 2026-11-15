@@ -6,7 +6,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { realLayout, layoutOrFlat, signMin, signWidth, sortDesks, storeyRuns, storeyTagW, STOREY_GAP, STOREY_U_LOSS, type RealFloor, type RealMeta, type RealModel, type RealAgent, type RealState, type Rect, type Layout, type DeskBox } from '../src/shared/realoffice-layout';
 import { screenFit } from '../src/shared/realoffice-layout';
-import { aisleStatus, aislesLayout, placeResting, layoutFor, aisleTabOrder, aisleFace, FACE_FLOOR, AISLE_SIGN_MIN_W, AISLE_PLATE_H, ARRANGEMENTS } from '../src/shared/realoffice-arrangements';
+import { aisleStatus, aislesLayout, AISLES_DEPTH, placeResting, layoutFor, aisleTabOrder, aisleFace, FACE_FLOOR, AISLE_SIGN_MIN_W, AISLE_PLATE_H, ARRANGEMENTS } from '../src/shared/realoffice-arrangements';
 
 process.exitCode = 1;
 const ROOT = (() => { let d = __dirname; while (!fs.existsSync(path.join(d, 'package.json'))) d = path.dirname(d); return d; })();
@@ -773,6 +773,34 @@ console.log(`floor covered with 4 or fewer: ${covs.join('; ')}`);
     assert.ok(L.storeys && L.storeys.filter((b) => b.n > 0).length === new Set(fl).size, `${nm}: the floors stay on when the forced break is given up`);
     assert.ok(L.storeys!.filter((b) => b.n > 0 && b.slab).every((b) => b.slab!.w === 2), `${nm}: the floors share rows (upright rules): the forced break was given up`);
     assert.ok(L.zones.length === F.zones.length && L.zones.every((z, i) => Math.abs(z.sign.w - F.zones[i].sign.w) < 0.01 && (rest.length > 0 || z.sign.x === F.zones[i].sign.x)), `${nm}: every sign is as wide as without floors (and where, with no resting agent)`);
+  }
+  // round 6 of the review of #1741 (C1): in a small window a cell can be narrower than a seat, so a floor's cells may not seat its agents and no floor can grow; the layout then goes to the hall without floors, and the re-layouts end.
+  // The reviewer's case (3/2/2/5 on 2 floors, resting 2,3,5,6,7,9,10,11, helpers, 800x500) threw a RangeError (an endless chain) when that branch was removed; a thrown error is turned into a failed assertion here
+  {
+    const tryL = (m: RealModel, W: number, H: number, n: number): { L?: Layout; err?: string; depth: number } => { AISLES_DEPTH.max = 0; try { return { L: aislesLayout(m, { w: W, h: H }, META, sg(n)), depth: AISLES_DEPTH.max }; } catch (e) { return { err: String(e), depth: AISLES_DEPTH.max }; } };
+    const m = fmx([3, 2, 2, 5], [1, 1, 0, 0], { rest: [2, 3, 5, 6, 7, 9, 10, 11], helpers: true }), r = tryL(m, 800, 500, 4), F = aislesLayout(flat(m), { w: 800, h: 500 }, META, sg(4));
+    assert.strictEqual(r.err, undefined, `C1 case (3/2/2/5 on 2 floors, 8 resting, helpers, 800x500): the layout ends and does not throw (${r.err})`);
+    assert.ok(r.L && r.L.storeys === undefined && JSON.stringify(r.L) === JSON.stringify(F), 'C1 case: no floor can grow its cells, so the hall without floors, byte for byte');
+    assert.ok(r.L!.lounge!.desks.length >= F.lounge!.desks.length, 'C1 case: as many resting agents seated as the hall without floors seats');
+    assert.ok(r.depth <= 4 * 8 + 8, `C1 case: the chain of re-layouts is bounded (${r.depth} deep)`);
+    // the fuzz: 640x480 up to 1000x600, 1 to 9 floors, resting agents, helpers on and off: no throw, a bounded chain, every resting agent seated when floors are drawn, and never fewer than the hall without floors
+    const FL9: RealFloor[] = Array.from({ length: 9 }, (_, i) => ({ id: 'y' + i, name: ['Ground floor', 'Client A', 'Personal', 'Top floor', 'Sky', 'Sixth', 'Seventh', 'Eighth', 'Ninth'][i], n: i + 1 })).map((f) => ({ ...f, w: 6.5 * (2 + f.name.length) }));
+    let seed = 777; const rnd = (n: number): number => { seed = (seed * 1664525 + 1013904223) % 4294967296; return Math.floor((seed / 4294967296) * n); };
+    let layouts = 0, maxDepth = 0, flatHalls = 0, withFloors = 0;
+    for (let t = 0; t < 40000 && layouts < 6000; t++) {
+      const nfl = 1 + rnd(9), nf = nfl + rnd(3), sz = Array.from({ length: nf }, () => 1 + rnd(5)), tot = sz.reduce((x, y) => x + y, 0); if (tot > 15) continue;
+      const cuts = new Set([0]); while (cuts.size < Math.min(nfl, nf)) cuts.add(rnd(nf)); const cs = [...cuts].sort((x, y) => x - y), fl = sz.map((_, i) => Math.min(8, nfl - cs.filter((c) => c <= i).length));
+      const rest = Array.from({ length: tot }, (_, i) => i).filter(() => rnd(3) === 0), W = 640 + rnd(361), H = 480 + rnd(121);
+      let i0 = 0; const mm: RealModel = { folders: sz.map((n, fi) => ({ id: 'f' + fi, floor: FL9[fl[fi]], agents: Array.from({ length: n }, () => { const k = i0++; return { id: 'a' + k, state: (['working', 'idle', 'waiting', 'error'] as RealState[])[k % 4], person: PEOPLE[k % 15], away: null, helpers: rnd(2), ...(rest.includes(k) ? { lounge: true } : {}) }; }) })), places: [] };
+      const q = tryL(mm, W, H, nf), tag = `small-view fuzz ${t}: ${JSON.stringify(sz)} floors ${fl.join('')} rest ${rest.join(',')} at ${W}x${H}`; layouts++;
+      assert.strictEqual(q.err, undefined, `${tag}: the layout ends and does not throw (${q.err})`);
+      maxDepth = Math.max(maxDepth, q.depth); assert.ok(q.depth <= 4 * rest.length + 8, `${tag}: the chain of re-layouts is bounded (${q.depth} deep)`);
+      const F2 = aislesLayout(flat(mm), { w: W, h: H }, META, sg(nf)), seated = q.L!.lounge ? q.L!.lounge.desks.length : 0;
+      assert.ok(seated >= (F2.lounge ? F2.lounge.desks.length : 0), `${tag}: no fewer resting agents seated than in the hall without floors`);
+      if (q.L!.storeys) { withFloors++; assert.strictEqual(seated, rest.length, `${tag}: floors are drawn only when every resting agent is seated`); } else flatHalls++;
+    }
+    assert.ok(layouts >= 5000, `the small-view fuzz made ${layouts} layouts`);
+    console.log(`small views (640x480 to 1000x600): ${layouts} layouts, ${withFloors} with floors, ${flatHalls} flat, deepest chain ${maxDepth}`);
   }
   // round 2 of the review of #1741: the Resting tag and rule are clear of every floor's tag and rule, folder sign, cabinet and seat. The reviewer's case (2/1/3/2 on 4 floors, one resting from the third folder), then a fuzz
   const clearOf = (L: Layout, tag: string): void => {
