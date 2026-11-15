@@ -1770,7 +1770,7 @@ Decision of the coordinator under Vikram's delegation of 2026-11-15 00:28 UTC, c
    - Test: `test-realoffice-aisles`, every named split and random hall (both worlds, both sizes, 1 to 9 floors, mixed states, resting agents): each zone's sign width equals the width of the same folder and part in the flat layout, to 0.01 px. Mutant: the comparison removed fails "its width without floors is ...". More halls draw no floors; the shares are in the pull request.
 2. **The Real office check for the cave** (finding B2). `check-office-overlap` with `OFFICE_WORLD=cave` runs `real sim15-allfloors` and, as the strict rule draws the cave's simulator split flat, asserts the hall without floors there (no storeys in the layout, no tag, no rule); the read-back of `data-world` still proves the page drew the cave. Photo and the arcade keep asserting their storeys. Mutant: the assertion inverted fails the cave case. `[KNOWN GAP]` Every cave case reports "screen text outside its glass" with or without floors: that is main's own failure on the cave (13 of 37 here, 11 of 31 on main; issues #1751 and #1752), not from this change.
 
-## Changes 2026-11-15 (issue #1810): the cave's All floors office case accepts either outcome of the strict rule (T352; FR-104; no new FR; amends the review-of-#1746 round 5 item 2)
+## Changes 2026-11-15 (issue #1810): the cave's All floors office case accepts either outcome of the strict rule (T353; FR-104; no new FR; amends the review-of-#1746 round 5 item 2)
 
 **Found** on macOS (simulator): `OFFICE_VIEW=real OFFICE_WORLD=cave check-office-overlap` failed the four `real sim15-allfloors` cases ("must be the hall without floors ... but it drew storeys: 3 in the layout, 3 tags"; at 1280x800 also "desk face 30.3px (ratchet 30.5px)").
 
