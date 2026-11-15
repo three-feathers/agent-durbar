@@ -156,6 +156,7 @@ body.has-bridge #liveBar{display:flex}
 .note.question .q-opt .q-desc{display:block;margin-top:2px;font-size:11px;font-weight:400;line-height:1.35;opacity:.85}
 .note.question .q-other{display:block;box-sizing:border-box;min-height:30px;height:30px;width:100%;flex:1 1 100%;max-width:100%;resize:none;overflow-y:auto;border:1px solid var(--line-ctl);border-radius:9px;padding:6px 9px;font:inherit;font-size:12px;line-height:1.35;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--surface);color:var(--ink)}
 .note.question .q-other.chosen{box-shadow:inset 0 0 0 2px currentColor}
+.note.question .q-other::placeholder{color:var(--muted);opacity:1} /* spec 102 FR-264: the browser's own grey was 3.9:1 on the arcade's dark field; the muted ink reads at 4.5:1 or more on every surface */
 /* MCP elicitation (spec 012 FR-151): a small form, or an https page to open; labels tied to inputs, text 11.5px and up */
 .note.question .q-form{display:grid;gap:9px;margin-top:8px}
 .note.question .q-field{display:grid;gap:3px;max-width:420px}
@@ -2311,6 +2312,10 @@ body.has-csearch.cs-demo .cs-box{visibility:hidden} /* the demo office: kept in 
 /* ---- spec 070 A14 (FR-061..FR-066, FR-075, FR-076; T034..T036, T044): Flat's modern look, behind html[data-flat-look] (flatlook.js; off by default).
    Only Flat matches: Clean Office has no data-ui and no world is shown, so Real office, Retro, the cave and every other pack are untouched (FR-066).
    Colours are !important because theme.js writes the pack's values as inline style; sizes and radii are tokens the rules above read. ---- */
+/* spec 102 T340: strips that gave way in the arcade: hidden, or an overlay under #stripBar that takes no office height */
+body.strips-yield .notice-strip:not(#stripBar){display:none}
+body.strips-yield.strips-open .notice-strip:not(#stripBar):not([hidden]){display:flex;position:fixed;left:0;right:0;z-index:60;box-shadow:var(--shadow-pop)}
+
 html[data-flat-look]:not([data-ui]):not([data-world]){
   --bg:var(--flat-page)!important; --surface:var(--flat-page)!important; --raised:var(--flat-page)!important; --card:var(--flat-page)!important; --surface-2:var(--flat-page-2)!important; --note:var(--flat-page-2)!important;
   --line:var(--flat-line)!important; --line-2:var(--flat-line-2)!important; --line-ctl:var(--flat-line-ctl)!important; --sage-ink:var(--flat-accent)!important;
@@ -2320,3 +2325,4 @@ html[data-flat-look]:not([data-ui]):not([data-world]){
   --composer-pad:6px; --inbox-pad:4px;
 }
 html[data-flat-look]:not([data-ui]):not([data-world])[data-density="compact"] :is(#panel,#screen,.dlg,.dlg-ov,.more-menu,.mode-menu,#topMoreMenu){--h-ctl:24px; --h-chip:24px}
+

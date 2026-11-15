@@ -203,7 +203,7 @@ const ver = (h) => (/^##\s+(v\S+)/.exec(h) || [])[1];
 function requirePrevious(parts, previous) {
   if (!previous) return;
   if (!parts.rest.some((l) => ver(l) === previous)) {
-    throw new Error(`CHANGELOG.md has no section for the previous release ${previous}: merge its fold PR (changelog.d/README.md) before tagging the next release`);
+    throw new Error(`CHANGELOG.md has no section for the previous release ${previous}: merge its fold PR (changelog.d/README.md) before tagging the next release; if it was tagged but never released, add a "## ${previous} (not released, YYYY-MM-DD)" section instead (spec 008 FR-271)`);
   }
 }
 
@@ -261,7 +261,7 @@ function notes(root = ROOT, { release, previous } = {}) {
   return { section: r.section, source: 'fragments' };
 }
 
-module.exports = { highlightProblem, MARKER, INTRO, splitChangelog, bulletBlocks, parseFragment, readFragments, check, pending, build, notes, highlights, highlightsBlock, sceneIds, HIGHLIGHT_MAX };
+module.exports = { requirePrevious, highlightProblem, MARKER, INTRO, splitChangelog, bulletBlocks, parseFragment, readFragments, check, pending, build, notes, highlights, highlightsBlock, sceneIds, HIGHLIGHT_MAX };
 
 if (require.main === module) {
   const [cmd, ...args] = process.argv.slice(2);

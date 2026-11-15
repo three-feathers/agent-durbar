@@ -604,18 +604,18 @@
       $('thList').querySelectorAll('[data-theme]').forEach((x)=>x.setAttribute('aria-pressed',String(x===b)));
     });
     /* spec 077 FR-068: a Characters pick applies live through app.js's applyCharacters and shows the new choice at once */
-    /* FR-303: Characters are one radio group like the World row (FR-301): the click and the arrows (charKeys, the World row's radioNav) pick through pickChar; a closed entry (aria-disabled) is neither picked nor reached by the arrows */
+    /* FR-303: Characters are one radio group like the World row (FR-301): the click (Space and Enter on a focused card are a click) picks through pickChar; the arrows (charKeys, the World cards' radioNav) only move the focus; a closed entry (aria-disabled) is neither picked nor reached by the arrows */
     const syncChars=(cur)=>{const l=$('chList');if(!l)return;const all=[...l.querySelectorAll('[data-characters]')],hit=all.find((x)=>x.dataset.characters===cur)||all.find((x)=>x.getAttribute('aria-disabled')!=='true');all.forEach((x)=>{x.setAttribute('aria-checked',String(x.dataset.characters===cur));x.tabIndex=x===hit?0:-1;});};
-    pickChar=(b,focus)=>{
+    const pickChar=(b)=>{
       if(!b||!X.applyCharacters||b.getAttribute('aria-disabled')==='true')return;
       const done=X.applyCharacters(b.dataset.characters);
       Promise.resolve(done).then(()=>{const n=$('dsR'),V=X.view;if(n&&V)n.textContent=V.note();}); /* spec 102 FR-202: the one line saying a choice has no Real office poses follows the pick */
-      syncChars(b.dataset.characters);if(focus)focusIn(b);
+      syncChars(b.dataset.characters);
       /* a repaint of the list that a theme pick started earlier can land between this click and the change itself and show the old choice (check-characters on CI): once the change is applied, the buttons say what is applied */
       Promise.resolve(done).then(()=>{const cn=$('chNote');if(cn)cn.textContent=charNote();if(window.THEME&&window.THEME.characters)syncChars(window.THEME.characters());});
     };
     /* spec 077 FR-068: a Characters pick applies live through app.js's applyCharacters and shows the new choice at once */
-    if($('chList'))$('chList').addEventListener('click',(e)=>{pickChar(e.target.closest&&e.target.closest('[data-characters]'),false);});
+    if($('chList'))$('chList').addEventListener('click',(e)=>{pickChar(e.target.closest&&e.target.closest('[data-characters]'));});
     /* spec 101 FR-020: a Logo pick shows at once in the top bar and is kept (no IPC, no file) */
     if($('lgList'))$('lgList').addEventListener('click',(e)=>{
       const b=e.target.closest&&e.target.closest('[data-logo]');if(!b||!window.DurbarLogo)return;
@@ -638,7 +638,7 @@
       const active=(window.THEME&&window.THEME.current&&window.THEME.current().id)||curTheme;
       const mine=themes.find((t)=>t.id===active&&t.own);
       if(!mine){X.toast(esc((themes.find((t)=>t.id===active)||{name:active}).name)+' is built into the app, so it cannot be removed. Pick one of your own themes (marked "yours") first.',6000);return;}
-      const ask=await dialog({title:'Remove this theme?',html:`<p class="dsub"><b>${esc(mine.name)}</b> is deleted from this computer, and Clean Office is used instead. This cannot be undone: export it first if you want a copy.</p>`,buttons:[{label:'Cancel',value:null},{label:'Remove theme',value:'rm',cls:'danger'}]});
+      const ask=await dialog({title:'Remove this theme?',html:`<p class="dsub"><b>${esc(mine.name)}</b> is deleted from this computer, and Clean Office is used instead. This cannot be undone: export it first if you want a copy.</p>`,buttons:[{label:'Cancel',value:null},{label:'Remove theme',value:'rm',cls:'primary danger'}]});
       if(!ask||ask.value!=='rm')return;
       const res=await X.bridge.removeTheme(mine.id).catch(()=>null);
       if(!res||!res.ok){X.toast(esc(res&&res.error||'The theme could not be removed.'),4200);return;}
@@ -851,16 +851,17 @@
     if(charsRefresh)charsRefresh();
     const tw=$('thWorld');if(tw){tw.textContent=worldWords();tw.hidden=!tw.textContent;}
   }
-  /* the one keyboard rule of a radio group that picks as it moves (FR-301's World row, FR-303's Characters): arrows, Home and End move and choose, a radio marked aria-disabled is skipped; Tab and Escape are the page's (one Tab stop by roving tabindex) */
-  function radioNav(e,sel,pick){
+  /* the one keyboard rule of a radio group (FR-301's World cards, FR-303's Characters cards): arrows, Home and End only MOVE the focus (to() decides what moving does), Space or Enter choose through the button's click; a radio marked aria-disabled is skipped; Tab and Escape are the page's (one Tab stop by roving tabindex) */
+  function radioNav(e,sel,to){
     const b=e.target.closest&&e.target.closest(sel);if(!b)return;
     const all=[...b.closest('[role=radiogroup]').querySelectorAll(sel.slice(sel.indexOf(' ')+1))].filter((x)=>x===b||x.getAttribute('aria-disabled')!=='true'), i=all.indexOf(b), k=e.key;
-    const to=k==='ArrowRight'||k==='ArrowDown'?all[(i+1)%all.length]:k==='ArrowLeft'||k==='ArrowUp'?all[(i-1+all.length)%all.length]:k==='Home'?all[0]:k==='End'?all[all.length-1]:null;
-    if(to){e.preventDefault();pick(to);}
+    const t=k==='ArrowRight'||k==='ArrowDown'?all[(i+1)%all.length]:k==='ArrowLeft'||k==='ArrowUp'?all[(i-1+all.length)%all.length]:k==='Home'?all[0]:k==='End'?all[all.length-1]:null;
+    if(t){e.preventDefault();to(t);}
   }
-  function worldKeys(e){radioNav(e,'#wrGroup [data-world]',(to)=>{to.closest('#wrGroup').querySelectorAll('[data-world]').forEach(x=>{x.tabIndex=x===to?0:-1;});focusIn(to);});} /* FR-301: the World cards' arrows MOVE (roving tabindex), Space or Enter chooses (the Characters radios pick as they move) */
-  let pickChar=()=>{}; /* set by the Settings paint (it closes over the page's helpers) */
-  function charKeys(e){radioNav(e,'#chList [data-characters]',(b)=>pickChar(b,true));}
+  /* an arrow moves the roving tabindex and the focus, and chooses nothing */
+  const moveOnly=(group,sel)=>(to)=>{to.closest(group).querySelectorAll(sel).forEach((x)=>{x.tabIndex=x===to?0:-1;});focusIn(to);};
+  function worldKeys(e){radioNav(e,'#wrGroup [data-world]',moveOnly('#wrGroup','[data-world]'));}
+  function charKeys(e){radioNav(e,'#chList [data-characters]',moveOnly('#chList','[data-characters]'));}
   function liveActRow(){
     const on=!!X.liveAct.get();
     return `<div class="scr-row"><span class="scr-row-l" id="laL">Live activity on desks</span>${sw(on,'Live activity on desks: what each working agent is thinking or doing, on its desk','id="liveActSw" aria-describedby="laN"')}<span class="scr-note small" id="laN">What each working agent is thinking or doing, on its desk. Secrets are masked.</span></div>`;
@@ -1476,6 +1477,8 @@
     const stepsCmds=t=>stepParts(t).filter((p,i)=>i%2).join('\n');
     /* spec 058 FR-164: Sign in again on a row Copilot can redo (connected or failed, not waiting for a first sign-in) */
     const againB=x=>!x.canSignInAgain||x.signIn||!X.bridge.agentMcpSignIn?'':signBusy.has(x.name)?`<button class="btn sm" type="button" disabled aria-label="${esc('Signing in again to '+x.name)}">Signing in…</button>`:`<button class="btn sm" type="button" data-signagain="${esc(x.name)}" aria-label="${esc('Sign in again to '+x.name+'…')}" title="Forget the saved sign-in and sign in again (for keychain prompts that keep coming back)">Sign in again…</button>`;
+    /* FR-246: the steps block exists only for steps with a command, or where Sign in is not offered (a command-less note is the only text there) */
+    const stepsShown=x=>!!x&&!!x.signInSteps&&(!x.canSignIn||x.signInHasCommand===true);
     const signHTML=(x,s)=>{
       const n=x.name,app=s.app||(o&&o.appName)||'Your agent app',si=x.signIn,en=esc(n);
       let line='',acts='';
@@ -1491,7 +1494,8 @@
         if(x.defaultOn&&!x.off)acts+=`<button class="btn sm" type="button" data-swoff="${en}" aria-label="${esc('Switch off '+n+' for this session')}" title="Stop using this server in this session; switch it back on any time">Switch off for this session</button>`;
       }
       let steps='';
-      if(x.signInSteps){
+      /* spec 058 FR-246: steps with no command in them are a plain note for a row that cannot start a sign-in; where Sign in works they add nothing */
+      if(stepsShown(x)){
         const open=!x.canSignIn||openSteps.has(n);
         acts+=x.canSignIn?`<button class="btn sm" type="button" data-steps="${en}" aria-expanded="${open?'true':'false'}" aria-label="${esc((open?'Hide':'Show')+' how to sign in to '+n+' from a terminal')}">How to sign in from a terminal</button>`:'';
         if(open)steps=`<div class="srv-det"><p class="srv-steps" tabindex="0" aria-label="${esc('How to sign in to '+n+' from a terminal')}">${stepsHTML(x.signInSteps)}</p>${stepsCmds(x.signInSteps)?`<button class="btn sm" type="button" data-copysteps="${en}" aria-label="${esc('Copy the commands to sign in to '+n)}">Copy</button>`:''}</div>`;
@@ -1564,7 +1568,7 @@
       /* spec 058 FR-164 (owner 2026-10-23): sign in again to every server Copilot can redo, so the signed runtime writes each sign-in anew */
       const againN=(s.servers||[]).filter(x=>x.canSignInAgain&&!x.signIn).length;
       const againAll=againN>1&&X.bridge.agentMcpSignIn?`<div class="mcp-rsess"><button class="btn sm" type="button" id="mcpSignAgainAll"${againBusy?' disabled':''}>${againBusy?'Starting sign-ins…':'Sign in again to all ('+againN+')…'}</button><span class="dsub small">For keychain prompts that come back on every launch (sign-ins saved by an older Agent Durbar): ${esc(s.app||'the agent app')} forgets each saved sign-in and you sign in again in your browser, one page per server.</span></div>`:'';
-      return `<p class="dsub">${s.live?(fixed?'This agent is running.':s.toggleApplies==='next-message'?'This agent is running: a switch applies from your next message.':'This agent is running: a switch applies right away.'):'This agent has no running session: your choices apply when it starts.'} Servers from your agent apps' own lists apply to every folder (see <b>Settings</b>); <i>Durbar folder</i> servers belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p>${fixed?'<p class="dsub" role="note"><b>The switches are off for this agent app:</b> it cannot change its MCP servers while it runs. They are set when the session starts.</p>':''}${refreshRow(s)}<ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul>${mcRep&&s.live?`<p class="dsub small mcp-total" id="mcpTotal">${mc.totalLine(mcRep,mcC.window)?`<b>${esc(mc.totalLine(mcRep,mcC.window))}.</b> `:''}${esc(mc.footnoteOf(mcRep,mcC.app))}${mcRep.servers.some(y=>y.deferredTokens)?' Tools loaded on demand are not in the window until they are used, so they are not in this total.':''}</p>`:''}${rsess}${againAll}<p class="dsub small">A switch stays for this agent, also in its next sessions, until the app is closed.</p>`;
+      return `<p class="dsub">${s.live?(fixed?'This agent is running.':s.toggleApplies==='next-message'?'This agent is running: a switch applies from your next message.':'This agent is running: a switch applies right away.'):'This agent has no running session: your choices apply when it starts.'} Servers from your agent apps' own lists apply to every folder (see <b>Settings</b>); <i>Durbar folder</i> servers belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p>${fixed?'<p class="dsub" role="note"><b>The switches are off for this agent app:</b> it cannot change its MCP servers while it runs. They are set when the session starts.</p>':''}${refreshRow(s)}<ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul>${mcRep&&s.live?`<p class="dsub small mcp-total" id="mcpTotal">${mc.totalLine(mcRep,mcC.window)?`<b>${esc(mc.totalLine(mcRep,mcC.window))}.</b> `:''}${esc(mc.footnoteOf(mcRep,mcC.app))}${mcRep.servers.some(y=>y.deferredTokens)?' Tools loaded on demand are not in the window until they are used, so they are not in this total.':''}</p>`:''}${rsess}${againAll}<p class="dsub small">A switch stays off for this agent until you switch it on, also in its next sessions and after the app is restarted.</p>`;
     };
     let dlg=null;
     /* spec 069 FR-032/FR-033: expanded rows and their tools, loaded once per open dialog (again after a Restart) */
@@ -1692,8 +1696,9 @@
       if(r&&r.ok&&r.kind==='connected'){X.toast('Signed in to '+esc(n)+'.',3600).classList.add('ok');X.announce('Signed in to '+n+'.');}
       else if(r&&r.ok){waited.add(n);if(again===true)againWait.add(n);wantFocus=['signopen',n];X.announce('Sign-in page on '+r.host+'. Press Open sign-in page to continue.');}
       else{
-        if(r&&r.manual)openSteps.add(n);
-        signNote.set(n,'Could not start the sign-in: '+((r&&r.error)||'unknown error')+(r&&r.manual?' Use the steps below.':''));
+        const sv=(st.servers||[]).find(y=>y.name===n), below=!!(r&&r.manual)&&stepsShown(sv);
+        if(below)openSteps.add(n);
+        signNote.set(n,'Could not start the sign-in: '+((r&&r.error)||'unknown error')+(below?' Use the steps below.':''));
         X.toast('Could not start the sign-in for '+esc(n)+'.',5200).classList.add('err');X.announce('Could not start the sign-in for '+n+'.');
       }
       await repaint();
@@ -1717,7 +1722,7 @@
       if(r&&r.ok){wantFocus=['signcancel',n];X.toast('Opened the sign-in page in your browser.',3600);X.announce('Opened the sign-in page. Finish signing in in your browser.');}
       else{
         if(r&&r.gone){waited.delete(n);signNote.set(n,notFinished((st.servers||[]).find(y=>y.name===n)));}
-        else if(r&&r.manual){waited.delete(n);openSteps.add(n);signNote.set(n,(r.error||'The sign-in page was refused.')+' Use the steps below.');}
+        else if(r&&r.manual){waited.delete(n);const below=stepsShown((st.servers||[]).find(y=>y.name===n));if(below)openSteps.add(n);signNote.set(n,(r.error||'The sign-in page was refused.')+(below?' Use the steps below.':''));}
         X.toast(esc((r&&r.error)||'Could not open the sign-in page.'),5200).classList.add('err');
       }
       await repaint();

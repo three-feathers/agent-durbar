@@ -472,8 +472,8 @@ section('handlersNeverThrow', () => {
     g.initSimGuard(false);
     const boom = (): never => { throw new Error('secret ' + TOKEN); };
     const throwing = { list: boom, put: boom, delete: boom, duplicate: boom, markMine: boom } as unknown as TeamsIpcOps;
-    t.register({ getOps: () => throwing });
-    eq([...handlers.keys()].sort(), ['teams:delete', 'teams:duplicate', 'teams:list', 'teams:markMine', 'teams:put'], 'the five channels');
+    t.register({ getOps: () => throwing, getTeamOps: () => undefined });
+    eq([...handlers.keys()].sort(), ['teams:createPreview', 'teams:delete', 'teams:duplicate', 'teams:list', 'teams:markMine', 'teams:previewRow', 'teams:put'], 'the seven channels');
     const frame = { url: require('url').pathToFileURL(path.join(__dirname, '..', 'src', 'renderer', 'index.html')).href };
     const sender = { mainFrame: frame };
     const good = { senderFrame: frame, sender };
@@ -487,7 +487,7 @@ section('handlersNeverThrow', () => {
     // a foreign frame never reaches the ops (ipcHandle refuses it before the handler)
     let reached = false;
     handlers.clear();
-    t.register({ getOps: () => { reached = true; return undefined; } });
+    t.register({ getOps: () => { reached = true; return undefined; }, getTeamOps: () => { reached = true; return undefined; } });
     const other = { url: 'https://example.invalid/' };
     let refusedFrame = false;
     try { handlers.get('teams:list')!({ senderFrame: other, sender: { mainFrame: other } }); } catch { refusedFrame = true; }
