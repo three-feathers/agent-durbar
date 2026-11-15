@@ -373,6 +373,14 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
     assert.strictEqual(rn.previousRelease(d, g(d, 'rev-parse', 'v0.1.0-alpha.12^{commit}'), 'v0.1.0-alpha.12'), 'v0.1.0-alpha.11');
     g(d, 'checkout', '-q', 'v0.1.0-alpha.12');
     assert.throws(() => rn.releaseNotes(d, { ...opts, tag: 'v0.1.0-alpha.12' }), /no section for the previous release v0\.1\.0-alpha\.11: merge its fold PR/);
+    // FR-271: the refusal names the fix for a tag that never got a release, and such a section satisfies the check
+    assert.throws(() => rn.releaseNotes(d, { ...opts, tag: 'v0.1.0-alpha.12' }), /never released, add a "## v0\.1\.0-alpha\.11 \(not released, YYYY-MM-DD\)" section/);
+    {
+      const text = fs.readFileSync(path.join(d, 'CHANGELOG.md'), 'utf8');
+      const mark = '## v0.1.0-alpha.11 (not released, 2026-10-23)\n\nTagged but never released.\n\n';
+      const i = text.search(/^## v/m);
+      cl.requirePrevious({ rest: (text.slice(0, i) + mark + text.slice(i)).split('\n') }, 'v0.1.0-alpha.11');
+    }
     // after the fold of alpha.11 (done from its tag, then main merged) the alpha.12 notes list only C
     g(d, 'checkout', '-q', '-b', 'fold', 'v0.1.0-alpha.11');
     cl.build(d, { release: 'v0.1.0-alpha.11 ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.11), 2026-10-23)' });

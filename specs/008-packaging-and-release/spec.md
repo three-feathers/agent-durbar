@@ -170,6 +170,13 @@ The `v0.1.21` dry run (`node scripts/release-notes.js --tag v0.1.21 ...`, the sa
   - Three fragments get text fixes so the public `v0.1.21` notes read right: `issue #1589` and `issue #1724` (the `#` was missing, so they did not link), and the stale "CI not run on the PR head yet" is dropped from `021-1768-spec-numbers-bold.md` (#1769 merged with CI green).
   - `[KNOWN GAP]` `previousRelease()` does not skip a tag that has no published release, so the next tag-only release needs the same hand-written section: issue #1784.
 
+### 2026-11-15: a tag without a release: keep the refusal, name the fix (FR-118 unchanged, FR-271, T185; issue #1784)
+
+`previousRelease()` counts any `vX.Y.Z[-pre.N]` tag reachable from the tagged commit's parent, so a tag that never got a release (v0.1.20) makes the next tag need a `CHANGELOG.md` section for it. Skipping such a tag was rejected: it needs the GitHub API (the verify job and its tests must stay offline) or a repo marker, and a tag-only release whose fragments were never folded would then pass silently, which is the safety FR-118 exists for. The hand-written section already is the marker, and it is explicit and reviewed.
+
+- **FR-271** `[IMPLEMENTED]` (T185) `test:` **The refusal names both fixes.** When the previous release has no `CHANGELOG.md` section, the message still starts "CHANGELOG.md has no section for the previous release vX: merge its fold PR" and now adds: if it was tagged but never released, add a `## vX (not released, YYYY-MM-DD)` section instead. `changelog.d/README.md` says the same. A "not released" section satisfies the check and a real unfolded release is still refused; the test covers both, with a mutant that drops the hint.
+- **T185** see FR-271; the `[KNOWN GAP]` of T181 (issue #1784) is closed as a decision, not a code change to `previousRelease()`.
+
 ### 2026-11-15: release.yml builds before its tests (FR-193 amended, T180; v0.1.20 release run 43685791437)
 
 Found when the v0.1.20 release run 43685791437 failed at `npm test` on all three systems, in the same 3 of 260 suites: `test:uisuite` ("the build is missing: dist/main/main.js does not exist"), `test:teams-ui` ("Cannot find module dist/shared/teamtemplate.js") and `test:checkparallel`. `release.yml` ran `npm run typecheck` (`tsc --noEmit`, no `dist/`) and then `npm test`, while `ci.yml` builds first. Since FR-211 (issue #1557) and spec 111's `test:teams-ui`, `npm test` needs `dist/`. That is an assertion failure, not an infrastructure cause, so no rerun (FR-087).

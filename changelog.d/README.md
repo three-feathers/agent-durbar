@@ -56,6 +56,9 @@ Branch names must match the Spec Kit gate (lowercase letters, digits and hyphens
    `changelog:build` writes a new section under *Unreleased* with every fragment (by file name), then any bullet still under
    *Unreleased*, and deletes the fragments. The PR goes through the queue like any other; the workflow never pushes to `main`
    or opens it. Merge it before the next tag: `verify` refuses a tag while the previous release has no section.
+   A tag that never got a release (its release run failed, nothing was published) has no fold PR: give it a section by hand,
+   `## vX.Y.Z (not released, YYYY-MM-DD)` with one plain paragraph and no bullets (spec 008 FR-271), and leave its fragments for the next
+   release. The check is offline and the tag still counts as the previous release; the refusal names this fix.
 
    A fragment edited on `main` after the tag gives a **modify/delete conflict** in `git merge origin/main`. Keep the deletion
    (`git rm changelog.d/<file>`): the tag's text is what was released. If the edit added something genuinely new, put that in
