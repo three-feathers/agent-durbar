@@ -243,6 +243,13 @@
   function cabinetOf(dc, meta, cab, k, state, body) {
     dc.classList.toggle('st-idle', state === 'idle'); /* FR-260: dim by opacity: a shade would darken the floor beside it too */
     const kind = cab.gw === meta.monitor.big.glass[2] ? 'big' : cab.gw === meta.monitor.small.glass[2] ? 'small' : 'narrow', m = meta.monitor[kind];
+    /* spec 102 T171: a file name or cell count that is not plain paints no picture, and neither does a missing validator (fail closed); the element is reused
+       across renders, so a picture an earlier, accepted entry painted is taken off first */
+    if (!X().monitorProblem || X().monitorProblem(m)) {
+      for (const p of ['backgroundImage', 'backgroundSize', 'backgroundPosition']) if (dc.style[p]) dc.style[p] = '';
+      delete dc.dataset.body;
+      return;
+    }
     let h = 0; for (const c of k) h = (h * 31 + c.charCodeAt(0)) >>> 0;
     const nb = m.bodies || 1, cell = ((body || 0) % nb) * (m.cells / nb) + (h % (m.cells / nb));
     const url = 'url("' + WD + m.file + '")', size = m.cells * 100 + '% 100%', pos = (cell / Math.max(1, m.cells - 1)) * 100 + '% 0';
@@ -381,6 +388,7 @@
     const art = layerOf(ro, 'ro-art'), amb = layerOf(ro, 'ro-amb'), lights = layerOf(ro, 'ro-lights'), chrome = layerOf(ro, 'ro-chrome');
     const lobby = el(art, 'lobby', 'div', 'ro-lobby'); box(lobby, { x: 0, y: 0, w: lay.width, h: lay.lobbyH });
     const strip = el(art, 'strip', 'div', 'ro-strip'); box(strip, lay.floorStrip);
+    if (lay.focus) { const fc = el(art, 'focus', 'div', 'ro-focus'); box(fc, lay.focus); fc.setAttribute('aria-hidden', 'true'); } /* spec 102 FR-227, T166: the one still picture the ring stands round; the world's stylesheet paints it, a picture that fails to load moves nothing */
     /* FR-043: the room ambient: the share of active desks among the visible ones */
     const allDesks = lay.zones.flatMap((z) => z.desks).concat(lay.lounge ? lay.lounge.desks : []); /* spec 097 FR-247: the lounge's seats are desks to the room's light, the zoom and the slips */
     const states = model.empty ? ['idle'] : allDesks.map((d) => d.state); /* FR-119: an empty floor is lit at 70 % (FR-043) */
@@ -489,7 +497,7 @@
         /* FR-238: "New reply" above the plate's right end while the reply is unread (the flat desk's "New", the same isUnread); made once, shown by class */
         const nt = el(chrome, 'nr:' + k, 'span', 'ro-newtag' + (a.unread ? ' on' : '')); box(nt, { x: d.plate.x + d.plate.w, y: d.plate.y }); attr(nt, 'aria-hidden', 'true'); text(nt, 'New reply'); dset(nt, 'for', k);
         /* spec 097 FR-316: "Draft" above the plate's left end while the chat has an unsent draft (the flat desk's pencil, the same hasDraft); made once, shown by class; aria-hidden (the plate's name says it) */
-        const dt = el(chrome, 'dr:' + k, 'span', 'ro-drafttag' + (a.draft ? ' on' : '')); box(dt, d.away ? { x: d.away.x - d.away.s / 2, y: d.away.y } : d.lounge ? { x: d.screen.x, y: d.screen.y } : { x: d.plate.x, y: d.plate.y }); /* spec 097 FR-316: a lounge seat's person sits over the plate's left end, so the tag stands on top of the seat's small screen instead */ /* an empty seat's post-it fills the place above the plate: the tag sits on top of the note's left corner */ attr(dt, 'aria-hidden', 'true'); dset(dt, 'for', k);
+        const dt = el(chrome, 'dr:' + k, 'span', 'ro-drafttag' + (a.draft ? ' on' : '')); box(dt, d.away ? { x: lay.cabinet && d.away.x > d.plate.x + d.plate.w / 2 ? Math.max(d.away.x - d.away.s / 2, d.plate.x + d.plate.w) : d.away.x - d.away.s / 2, y: d.away.y } : d.lounge ? { x: d.screen.x, y: d.screen.y } : { x: d.plate.x, y: d.plate.y }); /* spec 097 FR-316: a lounge seat's person sits over the plate's left end, so the tag stands on top of the seat's small screen instead */ /* an empty seat's post-it fills the place above the plate: the tag sits on top of the note's left corner; at a cabinet whose note stands on its right (the note overlaps the cabinet's edge by 4 px), from the cabinet's right edge on, so it reaches neither the cabinet nor its screen box (spec 102, issue #1632) */ attr(dt, 'aria-hidden', 'true'); dset(dt, 'for', k);
         if (!dt.firstChild) { if (model.draftIcon) dt.innerHTML = model.draftIcon; dt.appendChild(document.createTextNode('Draft')); } /* the icon is the app's own markup (trusted, as renIcon) */
         /* FR-038: cues, inside the slot */
         if (d.bubble) { const b = el(chrome, 'b:' + k, 'div', 'ro-bub'); box(b, d.bubble); attr(b, 'aria-hidden', 'true'); text(b, '?'); }
@@ -543,9 +551,9 @@
           const sh = el(art, 'vs:' + v.id, 'div', 'ro-shadow'); box(sh, v.shadow);
           /* FR-070: stride frames, a knock or a breath; FR-073: in at the fixture after the fade at the desk */
           const m = L.personMotion(v.id, v.fig.pose, null), fresh = !art._k.has('v:' + v.id), mov = moving() && !OFF.has(v.id);
-          const two = mov && !CUR.pixelArt /* spec 102 FR-261: a pixel world swaps the frame, it draws no second picture (the run frames of the Retro pixel set cross-fade only in the Photo office and the cave) */ && m.kind === 'frames' && v.fig.fileB && !BAD.has(SD + v.fig.fileB) && !(GLIDING.has(v.id) || (fresh && CUR.drawn && WHERE.has(v.id))) ? second(art, 'vb:' + v.id, v.id, v.fig.b || v.fig, v.fig.fileB, 'ro-visitor2', m) : null;
+          const two = mov && !CUR.pixelArt /* spec 102 FR-261: a pixel world swaps the frame, it draws no second picture (the run frames of the Retro pixel set cross-fade only in the Photo office and the cave) */ && m.kind === 'frames' && v.fig.fileB && !BAD.has(SD + v.fig.fileB) && !(GLIDING.has(v.id) || (fresh && CUR.drawn && WHERE.has(v.id))) ? second(art, 'vb:' + v.id, v.id, v.fig.b || v.fig, v.fig.fileB, 'ro-visitor2' + (v.fig.mir ? ' mir' : ''), m) : null;
           const cl = two && two.on ? ' m-a m-' + m.style : mov ? ({ breathe: ' m-br', knock: ' m-knock' }[m.kind] || '') : '';
-          const im = el(art, 'v:' + v.id, 'img', 'ro-visitor' + cl); box(im, v.fig); dset(im, 'for', v.id); dset(im, 'place', fx.id); dset(im, 'pose', v.fig.pose); dset(im, 'faces', v.fig.faces); dset(im, 'feet', String(Math.round(v.fig.feetY * 10) / 10)); img(im, v.fig.file, true, v.fig.w);
+          const im = el(art, 'v:' + v.id, 'img', 'ro-visitor' + (v.fig.mir ? ' mir' : '') + cl); /* spec 097 FR-191 (#1743): a set drawn facing right is mirrored by the scale property, so a breath or a knock on transform keeps it */ box(im, v.fig); dset(im, 'for', v.id); dset(im, 'place', fx.id); dset(im, 'pose', v.fig.pose); dset(im, 'faces', v.fig.faces); dset(im, 'feet', String(Math.round(v.fig.feetY * 10) / 10)); img(im, v.fig.file, true, v.fig.w);
           if (cl) { setVar(im, '--ro-per', m.period + 's'); setVar(im, '--ro-sw', m.sway + 's'); setVar(im, '--ro-u', (v.fig.h / 100).toFixed(3) + 'px'); setVar(im, '--ro-org', '50% ' + px(v.fig.feetY - v.fig.y)); }
           if (fresh && CUR.drawn && moving() && !hiddenNow() && !glide(im, v.id, WHERE.get(v.id), v.fig)) fadeIn(im, 150, 150);
           WHERE.set(v.id, v.fig);
