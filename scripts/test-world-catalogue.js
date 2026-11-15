@@ -11,40 +11,9 @@ const ROOT = path.join(__dirname, '..');
 const WORLDS = process.env.DURBAR_WORLDS_DIR || path.join(ROOT, 'worlds');
 const IN_REPO = path.join(ROOT, 'src', 'renderer', 'realoffice', 'worlds');
 
-const TEXT_FIELDS = ['arrangement', 'monitor', 'mood', 'wall', 'floor', 'desk', 'fixtureStyle', 'plants', 'motif'];
-const MIN_GAP_K = 200;
-const norm = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+const { TEXT_FIELDS, cardProblems, judge, readCards } = require('./world-cards');
 
-/** Problems with one card's shape, as strings (empty = fine). */
-function cardProblems(card, id) {
-  const out = [];
-  if (!card || typeof card !== 'object' || Array.isArray(card)) return [`${id}: card.json is not an object`];
-  if (card.formatVersion !== 1) out.push(`${id}: formatVersion must be 1`);
-  if (card.id !== id) out.push(`${id}: card id "${card.id}" differs from its folder`);
-  for (const f of TEXT_FIELDS) if (typeof card[f] !== 'string' || !norm(card[f])) out.push(`${id}: missing or empty "${f}"`);
-  if (!Array.isArray(card.light) || !card.light.length || !card.light.every((k) => Number.isFinite(k) && k >= 1000 && k <= 20000)) out.push(`${id}: "light" must be a list of temperatures in kelvin, 1000..20000`);
-  return out;
-}
-
-/** Differences that fail between two cards: { field, a, b } for each shared field, and a light pair under 200 K apart. */
-function pairClashes(a, b) {
-  const out = [];
-  for (const f of TEXT_FIELDS) if (norm(a[f]) === norm(b[f])) out.push({ field: f, a: a.id, b: b.id });
-  for (const ka of a.light) for (const kb of b.light) if (Math.abs(ka - kb) < MIN_GAP_K) { out.push({ field: 'light', a: a.id, b: b.id }); break; }
-  return out.filter((c, i) => out.findIndex((d) => d.field === c.field) === i);
-}
-
-/** The clashes between every pair of cards, as failures: a shared field is never allowed (the list of known clashes was removed with T174, when the Cave took its own arrangement). */
-function judge(cards) {
-  const fails = [];
-  const ids = Object.keys(cards).sort();
-  for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {
-    for (const c of pairClashes(cards[ids[i]], cards[ids[j]])) fails.push(`${c.a} and ${c.b} share ${c.field === 'light' ? 'a light temperature within 200 K' : `the same ${c.field}`}`);
-  }
-  return fails;
-}
-
-const mk = (id, over) => ({ formatVersion: 1, id, arrangement: `arr ${id}`, monitor: `mon ${id}`, light: [3000 + (id.charCodeAt(0) % 10) * 1000], mood: `mood ${id}`, wall: `wall ${id}`, floor: `floor ${id}`, desk: `desk ${id}`, fixtureStyle: `fix ${id}`, plants: `plant ${id}`, motif: `motif ${id}`, ...over });
+const mk = (id, over) => ({ formatVersion: 1, id, arrangement: `arr ${id}`, monitor: `mon ${id}`, light: [3000 + (id.charCodeAt(0) % 10) * 1000], mood: `mood ${id}`, wall: `wall ${id}`, floor: `floor ${id}`, desk: `desk ${id}`, fixtureStyle: `fix ${id}`, plants: `plant ${id}`, motif: `motif ${id}`, 'distinct-check': { state: 'pending' }, ...over });
 
 /* Fixtures: each failure is found, by name (FR-016). */
 {
@@ -59,6 +28,22 @@ const mk = (id, over) => ({ formatVersion: 1, id, arrangement: `arr ${id}`, moni
   assert.strictEqual(judge({ a, b: mk('b', { light: [9000, a.light[0] - 199] }) }).length, 1, 'any of a world\'s lights counts');
   /* no list: the old Photo and Cave pair (both rows) would fail now, so a world that shares an arrangement can only fail */
   assert.deepStrictEqual(judge({ a, b: mk('b', { arrangement: a.arrangement }) }), ['a and b share the same arrangement'], 'a shared arrangement fails, with no list to name it');
+  /* T094: the reviewer's look is a required field with two states, and a pending one names no reviewer (it is set by a person, never by a script). */
+  const dcp = (dc) => cardProblems({ ...mk('a'), 'distinct-check': dc }, 'a');
+  const noDc = mk('a'); delete noDc['distinct-check'];
+  assert.ok(cardProblems(noDc, 'a').some((p) => /missing "distinct-check"/.test(p)), 'a card without distinct-check fails');
+  assert.deepStrictEqual(dcp({ state: 'pending' }), [], 'pending passes');
+  assert.deepStrictEqual(dcp({ state: 'passed', by: 'Vikram', date: '2026-11-14', worlds: 3 }), [], 'passed with a reviewer, a real date and a count passes');
+  assert.ok(dcp({ state: 'looked' }).some((p) => /must be "pending" or "passed"/.test(p)), 'an unknown state fails');
+  assert.ok(dcp('passed').some((p) => /missing "distinct-check"/.test(p)), 'a string is not the field');
+  assert.ok(dcp({ state: 'pending', by: 'Vikram' }).length > 0, 'a pending look names no reviewer');
+  assert.ok(dcp({ state: 'passed', date: '2026-11-14', worlds: 3 }).some((p) => /by must name/.test(p)), 'passed without a reviewer fails');
+  assert.ok(dcp({ state: 'passed', by: ' ', date: '2026-11-14', worlds: 3 }).some((p) => /by must name/.test(p)), 'a blank reviewer fails');
+  assert.ok(dcp({ state: 'passed', by: 'V', date: '2026-02-30', worlds: 3 }).some((p) => /real YYYY-MM-DD/.test(p)), 'an impossible date fails');
+  assert.ok(dcp({ state: 'passed', by: 'V', date: '14/11/2026', worlds: 3 }).some((p) => /real YYYY-MM-DD/.test(p)), 'a date in another shape fails');
+  assert.ok(dcp({ state: 'passed', by: 'V', date: '2026-11-14', worlds: 1 }).some((p) => /at least 2/.test(p)), 'comparing fewer than two worlds fails');
+  assert.ok(dcp({ state: 'passed', by: 'V', date: '2026-11-14', worlds: '3' }).some((p) => /at least 2/.test(p)), 'the count is a number');
+  assert.ok(dcp({ state: 'passed', by: 'V', date: '2026-11-14', worlds: 3, extra: 1 }).some((p) => /exactly state, by, date and worlds/.test(p)), 'an extra field fails');
   assert.ok(cardProblems(mk('a'), 'a').length === 0);
   assert.ok(cardProblems({ ...mk('a'), wall: '' }, 'a').some((p) => /"wall"/.test(p)), 'an empty field is named');
   assert.ok(cardProblems(mk('a'), 'z').some((p) => /differs/.test(p)), 'a card id must match its folder');
@@ -67,15 +52,7 @@ const mk = (id, over) => ({ formatVersion: 1, id, arrangement: `arr ${id}`, moni
 }
 
 /* The real cards. */
-const ids = fs.readdirSync(WORLDS, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name).sort();
-const cards = {}; const problems = [];
-for (const id of ids) {
-  let card;
-  try { card = JSON.parse(fs.readFileSync(path.join(WORLDS, id, 'card.json'), 'utf8')); } catch (e) { problems.push(`${id}: card.json unreadable (${e.code || e.name})`); continue; }
-  const p = cardProblems(card, id);
-  problems.push(...p);
-  if (!p.length) cards[id] = card;
-}
+const { cards, ids, problems } = readCards(WORLDS);
 for (const need of ['photo', 'cave', 'retro']) if (!ids.includes(need)) problems.push(`${need}: no worlds/${need}/card.json (T093, T228)`);
 /* A world that is built in the repo has a card, and its arrangement is the one world.json carries (rows when it names none). */
 if (!process.env.DURBAR_WORLDS_DIR) for (const id of fs.readdirSync(IN_REPO)) {
