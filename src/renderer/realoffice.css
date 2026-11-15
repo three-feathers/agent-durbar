@@ -21,7 +21,7 @@
 .ro-fx{object-fit:fill}
 .ro-kiosk{display:flex;align-items:center;justify-content:center;border-radius:8px 8px 3px 3px;background:linear-gradient(#3b3f45,#24272b);border:2px solid #15171a;color:#dfe8f2}
 .ro-kiosk svg{width:45%;height:auto}
-.ro-visitor,.ro-visitor2{object-fit:fill;cursor:pointer}
+.ro-visitor,.ro-visitor2{object-fit:fill;cursor:pointer}.ro-visitor.mir,.ro-visitor2.mir{scale:-1 1} /* a set drawn facing right (spec 097 FR-191): mirrored on `scale`, not `transform` (spec 102 FR-256) */
 .ro-shadow{border-radius:50%;background:radial-gradient(closest-side,rgba(30,20,10,.38),rgba(30,20,10,0))} /* the contact shadow under a visitor's feet */
 
 /* zones, people, desks and monitors */
