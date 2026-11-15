@@ -405,6 +405,10 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
     }
     if (en) bands.forEach((b, si) => { const mine = desks.filter((d) => loungeSt(lounge[desks.indexOf(d)]) === si); if (!mine.length) return; const x0b = Math.min(b.box.x, ...mine.map((d) => d.slot.x)), y0b = Math.min(b.box.y, ...mine.map((d) => d.slot.y)), x1b = Math.max(b.box.x + b.box.w, ...mine.map((d) => d.slot.x + d.slot.w)), y1b = Math.max(b.box.y + b.box.h, ...mine.map((d) => d.slot.y + d.slot.h)); b.box = { x: x0b, y: y0b, w: x1b - x0b, h: y1b - y0b }; }); /* a band holds its floor's resting seats */
   }
+  /* round 7 of the review of #1741: an upright floor rule is decoration of the tag; where it would be drawn through a folder sign (a hall that scrolls lets signs overflow), a tag, another rule or a resting seat, it is skipped, not moved:
+     the zone's own left edge is under the same sign. A horizontal rule (floors on rows of their own) is in the gap and never meets one. */
+  const hitR = (a: Rect, c: Rect): boolean => a.x < c.x + c.w && c.x < a.x + a.w && a.y < c.y + c.h && c.y < a.y + a.h;
+  for (const b of bands) if (b.slab && b.slab.w <= 2 && (zones.some((z) => hitR(b.slab!, z.sign)) || bands.some((o) => hitR(b.slab!, o.tag) || (o !== b && o.slab && hitR(b.slab!, o.slab))) || (lay.lounge ? lay.lounge.desks.some((d) => hitR(b.slab!, d.slot) || hitR(b.slab!, d.plate)) : false))) b.slab = null;
   return lay;
 }
 
