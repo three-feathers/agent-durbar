@@ -18,6 +18,8 @@
  *   ANSWER_SAFETY_MUTANT=emptybar   the bar's buttons are replaced by a span holding a token-shaped string once the bar shows: must fail at
  *                                   `only "Show in chat"` with the diagnostic printed and the token masked (else: `the 1770 diagnostic did not print`)
  *   ANSWER_SAFETY_MUTANT=noredact   the same with redact.js not loaded: the HTML is withheld, so it must fail at `the 1770 diagnostic did not print`
+ *   ANSWER_SAFETY_MUTANT=diagthrow  the bar emptied and the diagnostic's page read throws: must still fail at `only "Show in chat"`, ending ` [1770 diagnostic failed]`
+ *   ANSWER_SAFETY_MUTANT=diagthrow-nocatch   the same with the catch rethrowing (the guard removed): fails with the thrown error, not that label (killed)
  */
 const path = require('path');
 const assert = require('assert');
@@ -26,7 +28,8 @@ const { helpers, jsLiteral } = require('./driver-helpers');
 const MUTANT = process.env.ANSWER_SAFETY_MUTANT || '';
 const PLANTED = 'ghp_' + 'Q1w2E3r4T5y6U7i8O9p0A1s2D3f4G5h6J7k8';
 let redactLib = null;
-const EMPTY = MUTANT === 'emptybar' || MUTANT === 'noredact';
+const THROW = MUTANT === 'diagthrow' || MUTANT === 'diagthrow-nocatch';
+const EMPTY = MUTANT === 'emptybar' || MUTANT === 'noredact' || THROW;
 if (MUTANT !== 'noredact') { try { redactLib = require(path.join(__dirname, '..', 'dist', 'shared', 'redact.js')); } catch { redactLib = null; } }
 /* mask first, then cut (constitution III); null when redact.js did not load, so the caller withholds the text (fail closed) */
 const masked = (s, max) => (redactLib && typeof redactLib.redact === 'function' && typeof redactLib.cut === 'function' ? redactLib.cut(redactLib.redact(String(s)), max) : null);
@@ -178,15 +181,25 @@ module.exports = async (ctx) => {
     let diag = '';
     if (JSON.stringify(limitLabels) !== JSON.stringify(['Show in chat'])) {
       /* issue 1770: the state at the failed read, for the next time it happens; the assertion below is the same first read as before */
-      const st = await js(`(async()=>{const b=document.getElementById('answerBar');const now={hidden:b?b.hidden:null,html:b?b.outerHTML:'no #answerBar'};
+      if (THROW) await js(`window.__diagThrow=true`);
+      try {
+        const st = await js(`(async()=>{if(window.__diagThrow)throw new Error('diagthrow mutant');const b=document.getElementById('answerBar');const now={hidden:b?b.hidden:null,html:b?b.outerHTML:'no #answerBar'};
         await new Promise(r=>{const t=setTimeout(r,250);requestAnimationFrame(()=>{clearTimeout(t);r()})});
         const cards=[...document.querySelectorAll('#chat .note.perm, #chat .note.limit, #chat .note.question, #chat .note.plan')];
         return Object.assign(now,{later:b?[...b.querySelectorAll('button')].map(x=>x.textContent):[],n:cards.length,
           cards:cards.slice(0,8).map(c=>({cls:String(c.className),data:Object.entries(c.dataset).map(([k,v])=>k+'='+v).join(' '),text:(c.textContent||'').replace(/\\s+/g,' ').trim()}))})})()`);
-      const html = masked(st.html, 1500);
-      const cards = st.cards.map((c) => { const t = masked(c.data + ' | ' + c.text, 160); return c.cls + (t === null ? ' [text withheld: redact.js did not load]' : ' ' + t); });
-      diag = ` [1770 diagnostic] bar hidden=${st.hidden}; labels a frame later ${JSON.stringify(st.later.map((x) => masked(x, 40)))}; bar ${html === null ? '[html withheld: redact.js did not load]' : html}; cards (${st.n}): ${cards.length ? cards.join(' || ') : 'none'}`;
-      if (EMPTY) assert.ok(diag.includes('id="answerBar"') && /note[^|]*limit/.test(diag) && !diag.includes(PLANTED), `${w}: the 1770 diagnostic did not print (or printed the planted token): ${diag.split(PLANTED).join('<planted>')}`);
+        /* public CI logs: every page value is masked (redact, then cut) and left out when redact.js did not load; the flag and the count only as such */
+        const hidden = st.hidden === true ? 'true' : st.hidden === false ? 'false' : 'null';
+        const html = masked(st.html, 1500);
+        const cards = (Array.isArray(st.cards) ? st.cards : []).map((c) => { const k = masked(c.cls, 80), t = masked(c.data + ' | ' + c.text, 160); return (k === null ? '[class withheld]' : k) + (t === null ? ' [text withheld: redact.js did not load]' : ' ' + t); });
+        const later = (Array.isArray(st.later) ? st.later : []).map((x) => { const m = masked(x, 40); return m === null ? '[withheld]' : m; });
+        diag = ` [1770 diagnostic] bar hidden=${hidden}; labels a frame later ${JSON.stringify(later)}; bar ${html === null ? '[html withheld: redact.js did not load]' : html}; cards (${Number(st.n) || 0}): ${cards.length ? cards.join(' || ') : 'none'}`;
+      } catch (e) {
+        if (MUTANT === 'diagthrow-nocatch') throw e; /* the mutant: the guard removed */
+        diag = ' [1770 diagnostic failed]'; /* fixed text, no error text: the original assertion below is still what fails */
+      }
+      if (EMPTY && !THROW) assert.ok(diag.includes('id="answerBar"') && /note[^|]*limit/.test(diag) && !diag.includes(PLANTED), `${w}: the 1770 diagnostic did not print (or printed the planted token): ${diag.split(PLANTED).join('<planted>')}`);
+      if (MUTANT === 'diagthrow') assert.ok(diag === ' [1770 diagnostic failed]', `${w}: the 1770 diagnostic did not fall back after a throw: ${diag.split(PLANTED).join('<planted>')}`);
     }
     assert.deepStrictEqual(limitLabels, ['Show in chat'], `${w}: only "Show in chat" ${jsLiteral(limitLabels)}${diag}`);
     assert.strictEqual(await js(`!!document.querySelector('#answerBar input')`), false, `${w}: no field in the bar`);
