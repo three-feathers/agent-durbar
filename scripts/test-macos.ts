@@ -152,12 +152,12 @@ const rules = [
   `@media (max-width:1320px){${D}:not([data-fullscreen]) .topbar::before{width:64px;margin-right:-8px}}`,
   `${D} body.panel-open :is(#restoreStrip:not([hidden]),#restoreStrip[hidden]+#awayStrip:not([hidden]),#restoreStrip[hidden]+#awayStrip[hidden]+#crashStrip:not([hidden])){min-height:40px}`, // the first strip clears the 78x40 box
   `${D}:not([data-fullscreen]) body.panel-open .notice-strip{padding-left:78px}`,
-  `${D}:not([data-fullscreen]) body.panel-open.screen-open .scr-head{padding-left:max(78px,calc((100% - 880px)/2 + 24px))}`, // FR-097 alignment kept
+  `${D}:not([data-fullscreen]) body.panel-open.screen-open .scr-head{padding-left:max(78px,calc((100% - var(--scr-col))/2 + 24px))}`, // FR-097 alignment kept
   `${D} :is(.topbar,body.panel-open .notice-strip,body.panel-open.screen-open .scr-head) :is(button,a,input,select,textarea,label,summary,[role="button"],[role="menu"],[role="group"],[tabindex],.more-menu){-webkit-app-region:no-drag}`,
   `${D} :is(.rail-top,body.panel-open .ph) :is(button,a,input,select,textarea,label,summary,[role="button"],[role="menu"],[role="group"],[tabindex],[title],.more-menu,.grants){-webkit-app-region:no-drag}`,
   `${D} body.panel-open .notice-strip:not([hidden]) ~ .notice-strip{padding-left:20px}`,
   `${D} .notice-strip:not([hidden]) ~ .workspace .rail-top{padding-left:8px}`,
-  `${D} .notice-strip:not([hidden]) ~ #screen .scr-head{padding-left:max(24px,calc((100% - 880px)/2 + 24px))}`,
+  `${D} .notice-strip:not([hidden]) ~ #screen .scr-head{padding-left:max(24px,calc((100% - var(--scr-col))/2 + 24px))}`,
   `${D} :is(.dlg-ov,#foldersPop,#floorsPop,#defaultsPop,.mode-menu,.more-menu){-webkit-app-region:no-drag}`,
 ];
 for (const rule of rules) assert.ok(css.includes(rule), `Mac title bar rule (FR-085, FR-138): ${rule.slice(0, 90)}`);

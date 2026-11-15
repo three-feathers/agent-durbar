@@ -184,10 +184,11 @@ module.exports = async (ctx) => {
 
   /* the mode switch through Settings, as a user does it: a timeline per switch. Failures here are recorded, never thrown. */
   const oneSwitch = async (to) => {
+    const card = to === 'real' ? (process.env.DRIVER_WORLD === 'retro' ? 'retro' : 'photo') : 'plain'; // spec 102 FR-301: Plain is the flat office, a world card is Real office in that world
     await js(`window.DurbarScreens.openSettings()`);
-    if (!(await until(`!!document.querySelector('[data-officelayout=${jsLiteral(to)}]')`, 8000))) return { error: `no Settings control for ${to}` };
+    if (!(await until(`!!document.querySelector('#wrGroup [data-world=${jsLiteral(card)}]')`, 8000))) return { error: `no Settings control for ${to}` };
     const r = await js(`(async()=>{const P=window.__P;P.start();const t0=performance.now();const tl={};
-      document.querySelector('[data-officelayout="${to}"]').click();
+      document.querySelector('#wrGroup [data-world="${card}"]').click();
       const closer=document.getElementById('scrClose');if(closer)closer.click();
       const real=${to === 'real'};const st=document.getElementById('stage');
       for(;;){const ok=real?(st.dataset.d==='real'&&!!st.querySelector('.ro .ro-plate')):(!st.querySelector('.ro')&&st.querySelector('.desk[data-id]'));if(ok)break;await new Promise(r=>requestAnimationFrame(r));if(performance.now()-t0>20000)return {timeout:true};}
