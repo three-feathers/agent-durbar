@@ -1,0 +1,1 @@
+- Spec 097: how a made character is drawn in the Real office (issue #1605): a spec delta only, with Q38 for the owner; nothing is built because `mine` and the character store are not on main yet.
