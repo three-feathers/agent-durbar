@@ -1,1 +1,0 @@
-- **A question with several parts no longer runs its headings and questions together** (spec 005 FR-339, issue #1754): the answer bar and the Needs you inbox now read "Focus ring: Which colour should the focus ring use? / Screens: Which screens should get it first?" instead of one run of words. Checked in the simulator on the Mac only.
