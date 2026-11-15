@@ -22,6 +22,7 @@
  * The full layout matrix in every theme stays available on demand: npm run check:themes.
  */
 const fs = require('fs');
+const { buildProblem } = require('./ensure-electron'); // spec 008 FR-211: one shared build check
 const { pageCheck } = require('./check-office-overlap.js');
 const { helpers, jsLiteral, CHECK_DARK, darkFixtureProblem } = require('./driver-helpers');
 const os = require('os');
@@ -180,7 +181,7 @@ module.exports = (ctx) => driver(ctx).catch((e) => { console.log('FAIL ' + (e &&
 
 if (require.main === module) {
   const { spawnSync } = require('child_process');
-  if (!fs.existsSync(INDEX)) { console.error('dist/ missing: run npm run build first'); process.exit(2); }
+  { const noBuild = buildProblem(); if (noBuild) { console.error(noBuild); process.exit(2); } }
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-geometry-'));
   const marker = path.join(userData, 'geometry.fail');
   const electron = require('electron'); /* path to the binary */
