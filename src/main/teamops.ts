@@ -128,7 +128,7 @@ export interface TeamOpsDeps {
 export interface LazyMemberSpec { app: string; model: string | undefined; effort: string | undefined; mode: SavedPermMode; cap: number | undefined; name: string; key: string }
 export interface CreateDeps {
   /** the real count and record of the room's key and its saved limit, read fresh */
-  room(key: string): { count: number; savedCap?: number; team?: TeamRecord; known?: boolean };
+  room(key: string): { count: number; savedCap?: number; team?: TeamRecord; known?: boolean; sessionNames?: unknown };
   /** `addLazyMember`: one not-started agent like a restored session (`infoFor(..., { lazy: true })`); no adapter start; no effect in the office */
   build(spec: LazyMemberSpec): AgentInfo;
   /** ONE write: the team record and the members' session names (`setTeamRecord`); false = nothing was written */
@@ -139,8 +139,8 @@ export interface CreateDeps {
   unplace(id: string): void;
   /** `agent:added` for a member, only after EVERY member of the batch was placed (no removal event exists, so the window is never told of a member that may be removed) */
   announce(info: AgentInfo): void;
-  /** puts the room's record back as it was before the batch (`previous` undefined = none), drops the batch's names and a room the write created; false when it failed */
-  rollback(key: string, previous: TeamRecord | undefined, infos: AgentInfo[], removeRoom: boolean): boolean;
+  /** puts the room's record and its whole session-name list back as they were before the batch (`previous` undefined = none), and removes a room the write created; false when it failed */
+  rollback(key: string, previous: TeamRecord | undefined, previousNames: unknown, removeRoom: boolean): boolean;
 }
 
 /** `choices` of `teams:create` (the delta of 2026-11-15): only what the person changed, all re-validated */
@@ -390,7 +390,7 @@ export class TeamOps {
       for (const info of infos) dep.place(info);
     } catch (err) {
       for (const info of infos) { try { dep.unplace(info.id); } catch { /* best effort */ } }
-      try { dep.rollback(e.key, room.team, infos, room.known === false); } catch { /* the answer is `failed` all the same */ }
+      try { dep.rollback(e.key, room.team, room.sessionNames, room.known === false); } catch { /* the answer is `failed` all the same */ }
       throw err;
     }
     for (const info of infos) { try { dep.announce(info); } catch { /* the team exists and is written; a window that missed one shows it at its next refresh */ } }

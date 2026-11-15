@@ -7,7 +7,7 @@ import { parseEffort } from '../shared/effort';
 import * as fs from 'fs';
 import { isDeepStrictEqual } from 'util';
 import * as path from 'path';
-import { parseCap, parseCapIn } from '../shared/credits';
+import { parseCap } from '../shared/credits';
 import { parseAutoTier, parseTier } from '../shared/modelswitch';
 import type { AutoTier, ContextTier } from '../shared/modelswitch';
 import * as floorOps from '../shared/floors';
@@ -17,7 +17,7 @@ import type { OrderDoc } from '../shared/roomorder';
 import { cleanDisplayName, nameError, MAX_FOLDER_LABEL } from '../shared/names';
 import type { SessionNameEntry } from '../shared/sessionname';
 import { markIdOk, markSrcOk } from '../shared/sessionid';
-import { APP_RE, LIMITS as TEAM_LIMITS, MEMBER_ID_RE, MODEL_RE } from '../shared/teamtemplate';
+import { LIMITS as TEAM_LIMITS, MEMBER_ID_RE, checkMember } from '../shared/teamtemplate';
 import type { TeamCap } from '../shared/teamtemplate';
 
 export type SavedPermMode = 'read-only' | 'ask' | 'allow';
@@ -314,13 +314,8 @@ export function parseTeamRecord(v: unknown): TeamRecord | undefined {
 function parseTeamMember(v: unknown): TeamRecordMember | undefined {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined;
   const o = v as Record<string, unknown>;
-  const name = cleanDisplayName(o.name, TEAM_LIMITS.name);
-  const role = cleanDisplayName(o.role, TEAM_LIMITS.role);
-  if (typeof o.memberId !== 'string' || !MEMBER_ID_RE.test(o.memberId) || !name || !role) return undefined;
-  if (typeof o.app !== 'string' || !APP_RE.test(o.app)) return undefined;
-  const capIn = o.cap && typeof o.cap === 'object' ? (o.cap as Record<string, unknown>) : undefined;
-  const unit = capIn?.unit === 'aiu' || capIn?.unit === 'usd' ? capIn.unit : undefined;
-  const amount = unit ? parseCapIn(unit, capIn?.amount) : undefined;
+  if (typeof o.memberId !== 'string' || !MEMBER_ID_RE.test(o.memberId)) return undefined;
+  if (typeof o.sendBrief !== 'boolean') return undefined; // never read as `true` (fails open)
   const sessions: TeamRecordMember['sessions'] = [];
   if (Array.isArray(o.sessions)) {
     for (const s of o.sessions.slice(0, 50)) {
@@ -328,14 +323,18 @@ function parseTeamMember(v: unknown): TeamRecordMember | undefined {
       if (x && typeof x.id === 'string' && SESSION_NAME_ID.test(x.id) && !sessions.some((y) => y.id === x.id)) sessions.push({ id: x.id, ...(x.briefSent === true ? { briefSent: true as const } : {}) });
     }
   }
-  // lengths in code points, as the template store measures them (`tooLong` of teamtemplate.ts): a quick cut at twice the limit, then `[...s].length`
-  const lim = o.briefFrom === 'file' ? TEAM_LIMITS.importedBrief : TEAM_LIMITS.ownBrief;
-  const brief = typeof o.brief === 'string' && o.brief.length > 0 && o.brief.length <= lim.chars * 2 && [...o.brief].length <= lim.chars && o.brief.split('\n').length <= lim.lines ? o.brief : undefined;
+  // the same check the template store runs on every read of team-templates.json (FR-031, level `own`): hidden characters, lone surrogates, unmasked
+  // tokens, frame-guard text, lengths in code points, the fields' shapes. A member that fails is dropped, as the store drops a bad template. The record's
+  // `mode` is the member's `permMode`; an unknown mode reads as read-only.
+  const cand: Record<string, unknown> = { memberId: o.memberId, name: o.name, role: o.role, app: o.app, sendBrief: o.sendBrief, permMode: o.mode === 'ask' || o.mode === 'allow' ? o.mode : 'read-only' };
+  for (const k of ['brief', 'briefFrom', 'profile', 'model', 'effort', 'cap'] as const) if (o[k] !== undefined) cand[k] = o[k];
+  const r = checkMember(cand, 'own');
+  if (!r.ok) return undefined;
+  const m = r.member;
   return {
-    memberId: o.memberId, name, role, ...(brief ? { brief } : {}), ...(o.briefFrom === 'file' ? { briefFrom: 'file' as const } : {}), sendBrief: o.sendBrief !== false,
-    app: o.app, ...(typeof o.model === 'string' && MODEL_RE.test(o.model) ? { model: o.model } : {}), ...(parseEffort(o.effort) ? { effort: parseEffort(o.effort) } : {}),
-    mode: o.mode === 'ask' || o.mode === 'allow' ? o.mode : 'read-only', ...(unit && amount !== undefined ? { cap: { unit, amount } } : {}),
-    ...(typeof o.profile === 'string' && PROFILE_ID.test(o.profile) ? { profile: o.profile } : {}), sessions,
+    memberId: o.memberId, name: m.name, role: m.role, ...(m.brief !== undefined ? { brief: m.brief } : {}), ...(m.briefFrom === 'file' ? { briefFrom: 'file' as const } : {}), sendBrief: m.sendBrief,
+    app: m.app, ...(m.model !== undefined ? { model: m.model } : {}), ...(m.effort !== undefined ? { effort: m.effort } : {}),
+    mode: m.permMode, ...(m.cap !== undefined ? { cap: m.cap } : {}), ...(m.profile !== undefined ? { profile: m.profile } : {}), sessions,
   };
 }
 
@@ -723,18 +722,18 @@ export class FolderStore {
   }
 
   /**
-   * Spec 111 (review of T011): puts back the team record from before a failed batch, in one write: `previous` (undefined = no record), the names of
-   * the batch dropped, and a room that `setTeamRecord` created removed (`removeRoom`). The in-memory state is put back when the write fails (false).
+   * Spec 111 (review of T011): puts back the room as it was before a failed batch, in one write: the team record (`previous`, undefined = none), the
+   * WHOLE list of session names (`previousNames`: the batch may have pushed out older names of other sessions, so it is put back, not filtered), and
+   * a room that `setTeamRecord` created removed (`removeRoom`). The in-memory state is put back when the write fails (false).
    */
-  restoreTeamRecord(workspace: string, previous: unknown, names: Array<{ src: string; id: string }>, removeRoom: boolean): boolean {
+  restoreTeamRecord(workspace: string, previous: unknown, previousNames: unknown, removeRoom: boolean): boolean {
     const cur = this.get(workspace);
     if (!cur) return true;
     const prev = previous === undefined ? undefined : parseTeamRecord(previous);
     if (previous !== undefined && !prev) return false;
     const before = { team: cur.team, sessionNames: cur.sessionNames, folders: this.folders };
     if (prev) cur.team = prev; else delete cur.team;
-    const left = (cur.sessionNames ?? []).filter((x) => !names.some((n) => n.src === x.src && n.id === x.id));
-    cur.sessionNames = left.length ? left : undefined;
+    cur.sessionNames = parseSessionNames(previousNames);
     if (removeRoom && !prev) this.folders = this.folders.filter((f) => f !== cur);
     if (this.save()) return true;
     cur.team = before.team; cur.sessionNames = before.sessionNames; this.folders = before.folders;

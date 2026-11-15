@@ -91,11 +91,11 @@ function world(templates: StoredTemplate[], rooms: Record<string, Room> = {}, o:
     place: (i: AgentInfo): void => { bound.add(i.id); office.set(i.id, i); if (placed++ === fail.placeAt) throw new Error('boom ' + MARK); log.push('place:' + i.id); },
     unplace: (id: string): void => { log.push('unplace:' + id); office.delete(id); bound.delete(id); },
     announce: (i: AgentInfo): void => { if (announcedN++ === fail.announceAt) throw new Error('window gone ' + MARK); log.push('announce:' + i.id); announced.push(i.id); },
-    rollback: (key: string, previous: TeamRecord | undefined, infos: AgentInfo[], removeRoom: boolean): boolean => {
+    rollback: (key: string, previous: TeamRecord | undefined, _names: unknown, removeRoom: boolean): boolean => {
       log.push('rollback');
       const r = rm.get(key); if (!r) return true;
       if (previous) rm.set(key, { ...r, team: previous }); else if (removeRoom) rm.delete(key); else rm.set(key, { ...r, team: undefined });
-      return !infos.some((x) => x.id === 'never');
+      return true;
     },
     adapterOf,
   };
@@ -535,11 +535,11 @@ section('folders', async () => {
     const emoji = '\u{1F600}';
     const withBrief = (brief: string, extra: object = {}): TeamRecord => ({ templates: ['T'], members: [{ ...teamOf(1, 'x').members[0], brief, ...extra }] });
     eq(parseTeamRecord(withBrief(emoji.repeat(3000)))!.members[0].brief, emoji.repeat(3000), 'a brief of 3,000 emojis is kept');
-    eq(parseTeamRecord(withBrief(emoji.repeat(4001)))!.members[0].brief, undefined, 'a brief of 4,001 code points is dropped');
+    eq(parseTeamRecord(withBrief(emoji.repeat(4001))), undefined, 'a member with a brief of 4,001 code points is dropped (never kept with sendBrief true)');
     eq(parseTeamRecord(withBrief(emoji.repeat(4000)))!.members[0].brief, emoji.repeat(4000), 'exactly 4,000 code points is kept');
-    eq(parseTeamRecord(withBrief('a'.repeat(2001), { briefFrom: 'file' }))!.members[0].brief, undefined, 'a brief from a file is cut at 2,000');
+    eq(parseTeamRecord(withBrief('a'.repeat(2001), { briefFrom: 'file' })), undefined, 'a brief from a file over 2,000: the member is dropped');
     eq(parseTeamRecord(withBrief('a'.repeat(2000), { briefFrom: 'file' }))!.members[0].brief, 'a'.repeat(2000), 'and 2,000 is kept');
-    eq(parseTeamRecord(withBrief('x\n'.repeat(80) + 'x'))!.members[0].brief, undefined, 'more than 80 lines is dropped');
+    eq(parseTeamRecord(withBrief('x\n'.repeat(80) + 'x')), undefined, 'more than 80 lines: the member is dropped');
     const f2 = path.join(dir, 'brief.json');
     const sb = new FolderStore(f2); sb.load();
     ok(sb.setTeamRecord(ws, withBrief(emoji.repeat(3000))), 'a record with a 3,000-emoji brief is saved');
@@ -550,26 +550,40 @@ section('folders', async () => {
       eq(sc.setTeamRecord(ws, lossy), false, 'a record that would lose a field is refused: ' + JSON.stringify(lossy).slice(0, 50));
     }
     ok(!sc.get(ws) && !fs.existsSync(path.join(dir, 'lossy.json')), 'nothing was added or written');
+    // the record is checked when it is READ, as the template store checks its file (Opus read of T011)
+    const good = teamOf(1, 'x').members[0];
+    const badRec = (o: object): TeamRecord => ({ templates: [], members: [{ ...good, ...o } as never] });
+    eq(parseTeamRecord(badRec({})) !== undefined, true, 'the plain member is fine');
+    eq(parseTeamRecord({ templates: [], members: [{ memberId: 'a'.repeat(32), name: 'Ana', role: 'Tester', brief: 'ok \u202E evil \ud800', sendBrief: 'no', app: 'copilot', mode: 'ask', sessions: [] }] }), undefined, 'the reported repro: dropped');
+    for (const [label, o] of [['a lone surrogate', { brief: 'a \ud800 b' }], ['a bidi override', { brief: 'a \u202E b' }], ['a zero-width character', { brief: 'a \u200B b' }], ['a hidden character in the name', { name: 'A\u202Eb' }],
+      ['sendBrief "no"', { sendBrief: 'no' }], ['sendBrief 0', { sendBrief: 0 }], ['sendBrief missing', { sendBrief: undefined }], ['a brief that is not text', { brief: 5 }],
+      ['a bad profile', { profile: 'bad id!' }], ['a bad model', { model: '../m' }], ['a bad cap', { cap: { unit: 'aiu', amount: -1 } }], ['a cap with an extra key', { cap: { unit: 'aiu', amount: 40, x: 1 } }], ['an app with capitals', { app: 'Bad App' }]] as const) {
+      eq(parseTeamRecord(badRec(o)), undefined, label + ': the member is dropped');
+    }
+    const secret = 'ghp' + '_' + 'A1b2C3d4'.repeat(5);
+    const masked = parseTeamRecord(badRec({ brief: 'use ' + secret + ' now' }));
+    ok(!JSON.stringify(masked ?? '').includes(secret), 'a token in the brief never comes back as it was');
+    eq(new FolderStore(path.join(dir, 'tok.json')).setTeamRecord(ws, badRec({ brief: 'use ' + secret + ' now' })), false, 'a record whose brief would be masked is refused whole');
     // restoreTeamRecord: the record from before, the names of the batch dropped, a created room removed
     const sr = new FolderStore(path.join(dir, 'restore.json')); sr.load();
     const prevRec = teamOf(1, 'Old', 500);
     ok(sr.setTeamRecord(ws, prevRec, [{ src: 'copilot', id: 'old-0', name: 'Keep' }]), 'a first record');
     const grown: TeamRecord = { templates: ['Old', 'New'], members: [...prevRec.members, ...teamOf(1, 'New', 600).members] };
     ok(sr.setTeamRecord(ws, grown, [{ src: 'copilot', id: 'new-0', name: 'Gone' }]), 'a second batch');
-    ok(sr.restoreTeamRecord(ws, prevRec, [{ src: 'copilot', id: 'new-0' }], false), 'restored');
+    ok(sr.restoreTeamRecord(ws, prevRec, [{ src: 'copilot', id: 'old-0', name: 'Keep' }], false), 'restored');
     eq([sr.get(ws)!.team, sr.get(ws)!.sessionNames?.map((x) => x.name)], [parseTeamRecord(prevRec), ['Keep']], 'the previous record is back and the batch\'s name is gone');
     eq(new FolderStore(path.join(dir, 'restore.json')).load()[0].team, parseTeamRecord(prevRec), 'also on disk');
     const sn = new FolderStore(path.join(dir, 'restore2.json')); sn.load();
     ok(sn.setTeamRecord(ws, prevRec, [{ src: 'copilot', id: 'x-0', name: 'Z' }]), 'a new room');
-    ok(sn.restoreTeamRecord(ws, undefined, [{ src: 'copilot', id: 'x-0' }], true) && !sn.get(ws), 'a room the batch created is removed');
-    ok(sn.restoreTeamRecord(ws, undefined, [], true), 'a room that is gone is fine');
+    ok(sn.restoreTeamRecord(ws, undefined, undefined, true) && !sn.get(ws), 'a room the batch created is removed');
+    ok(sn.restoreTeamRecord(ws, undefined, undefined, true), 'a room that is gone is fine');
     const sk = new FolderStore(path.join(dir, 'restore3.json')); sk.load();
     sk.upsert({ workspace: ws, permMode: 'ask' });
-    ok(sk.setTeamRecord(ws, prevRec) && sk.restoreTeamRecord(ws, undefined, [], false) && sk.get(ws)!.team === undefined && sk.get(ws)!.permMode === 'ask', 'a known room keeps its entry without the record');
+    ok(sk.setTeamRecord(ws, prevRec) && sk.restoreTeamRecord(ws, undefined, undefined, false) && sk.get(ws)!.team === undefined && sk.get(ws)!.permMode === 'ask', 'a known room keeps its entry without the record');
     const sf = new FolderStore(path.join(blocked, 'r.json')); sf.load();
     sf.upsert({ workspace: ws, permMode: 'ask' });
     const snapshot = JSON.stringify(sf.get(ws));
-    eq(sf.restoreTeamRecord(ws, undefined, [], true), false, 'a failed write answers false');
+    eq(sf.restoreTeamRecord(ws, undefined, undefined, true), false, 'a failed write answers false');
     eq(JSON.stringify(sf.get(ws)), snapshot, 'and the room stays as it was');
     // parseTeamRecord
     eq(parseTeamRecord(null), undefined, 'null');
@@ -578,12 +592,61 @@ section('folders', async () => {
     eq([p9.members.length, p9.templates.length], [8, 8], 'at most 8 members and 8 names');
     const dup = parseTeamRecord({ templates: ['A', 'A'], members: [teamOf(1, 'x').members[0], teamOf(1, 'x').members[0]] })!;
     eq([dup.members.length, dup.templates], [1, ['A']], 'a repeated member id and a repeated name are dropped');
-    const odd = parseTeamRecord({ templates: [], members: [{ ...teamOf(1, 'x').members[0], mode: 'autopilot', app: 'Bad App', cap: { unit: 'aiu', amount: -1 } }, { ...teamOf(1, 'x').members[0], mode: 'autopilot', cap: { unit: 'aiu', amount: -1 }, memberId: hexId(5) }] })!;
-    eq([odd.members.length, odd.members[0].mode, odd.members[0].cap], [1, 'read-only', undefined], 'a bad app drops the member; an odd mode reads as read-only; a bad limit is dropped');
+    const odd = parseTeamRecord({ templates: [], members: [{ ...teamOf(1, 'x').members[0], mode: 'autopilot', app: 'Bad App', cap: { unit: 'aiu', amount: -1 } }, { ...teamOf(1, 'x').members[0], mode: 'autopilot', memberId: hexId(5) }] })!;
+    eq([odd.members.length, odd.members[0].mode, odd.members[0].cap], [1, 'read-only', undefined], 'a bad app drops the member; an odd mode reads as read-only');
     // a huge file with a team is parsed quickly
     const t0 = Date.now();
     parseSavedFolders(JSON.stringify({ folders: [{ workspace: ws, permMode: 'ask', team: { templates: [], members: Array.from({ length: 30_000 }, (_, i) => teamOf(1, 'x', i + 1).members[0]) } }] }));
     ok(Date.now() - t0 < 10_000, 'a record with 30,000 members is read quickly (only 8 kept)');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// ---------------------------------------------------------------------------------------------------------------- 13b. real store: what create writes survives a read, a rollback keeps every older name
+section('realstore', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-teamcreate-'));
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { checkTeamTemplate } = require('../src/shared/teamtemplate') as typeof import('../src/shared/teamtemplate');
+    const ws = path.join(dir, 'proj');
+    const make = (file: string, templates: StoredTemplate[], failAt = -1) => {
+      const store = new FolderStore(path.join(dir, file)); store.load();
+      let i = 0, p = 0;
+      const create = {
+        room: (key: string) => { const f = store.get(key); return { count: f?.team?.members.length ?? 0, savedCap: f?.maxAiCredits, team: f?.team, known: f !== undefined, sessionNames: f?.sessionNames?.map((x) => ({ ...x })) }; },
+        build: (s_: LazyMemberSpec): AgentInfo => ({ id: 'agent-' + ++i, alias: s_.name, adapterId: s_.app, cwd: s_.key, lazy: true }) as unknown as AgentInfo,
+        commit: (key: string, team: TeamRecord, infos: AgentInfo[]): boolean => store.setTeamRecord(key, team, infos.map((x) => ({ src: x.adapterId ?? 'copilot', id: x.id, name: x.alias ?? '' }))),
+        place: (): void => { if (p++ === failAt) throw new Error('boom'); },
+        unplace: (): void => undefined, announce: (): void => undefined,
+        rollback: (key: string, previous: TeamRecord | undefined, names: unknown, removeRoom: boolean): boolean => store.restoreTeamRecord(key, previous, names, removeRoom),
+      };
+      const w = world(templates, {}, { create, resolveTarget: async () => ({ ok: true as const, key: ws, existing: store.get(ws)?.team?.members.length ?? 0 }) });
+      return { store, w };
+    };
+    // a template as the store holds it (checked at level own): the record created from it is read back whole
+    const checked = checkTeamTemplate({ name: 'Squad  A', description: 'd', members: [
+      { name: 'Ana  Smith', role: 'QA  lead', brief: 'Check the plan.\nThen ' + '\u{1F600}'.repeat(3000), app: 'copilot', permMode: 'ask', sendBrief: true, cap: { unit: 'aiu', amount: 40 } },
+      { name: 'Bo', role: 'Dev', app: 'claude', permMode: 'read-only', sendBrief: false, cap: { unit: 'usd', amount: 2.5 }, profile: 'my-agent', model: 'sonnet-x', effort: 'low' },
+    ] }, 'own');
+    assert.ok(checked.ok, 'the fixture template passes the store check');
+    const t = { ...(checked as { template: object }).template, id: 'tmpl1', origin: 'own', createdAt: 1, updatedAt: 1, members: (checked as { template: { members: TeamMember[] } }).template.members.map((m, k) => ({ ...m, memberId: hexId(k + 1) })) } as unknown as StoredTemplate;
+    const { store, w } = make('a.json', [t]);
+    const r = isOk(await created(w));
+    eq(r.added, 2, 'created through the real store');
+    const back = new FolderStore(path.join(dir, 'a.json')).load().find((f) => f.workspace === ws)!;
+    eq(back.team, store.get(ws)!.team, 'the record read back from the file is the record that was written (nothing lost, nothing masked twice)');
+    eq(back.team!.members.map((m) => m.sendBrief), [true, false], 'sendBrief is kept as written');
+    // a rollback gives back every older name: 200 names, a batch of 3 whose place throws on the 2nd
+    const three = tpl([mem(1), mem(2), mem(3)]);
+    const m2 = make('b.json', [three], 1);
+    m2.store.upsert({ workspace: ws, permMode: 'ask' });
+    for (let i = 0; i < 200; i++) assert.ok(m2.store.setSessionName(ws, 'copilot', 's' + i, 'Name ' + i));
+    const before = JSON.parse(JSON.stringify(m2.store.get(ws)!.sessionNames));
+    eq(before.length, 200, 'a full list of names');
+    await assert.rejects(async () => created(m2.w), /boom/, 'the place throws');
+    n++;
+    eq(m2.store.get(ws)!.sessionNames, before, 'the names are exactly as before (the oldest ones were not lost)');
+    eq([m2.store.get(ws)!.team, m2.store.get(ws)!.permMode], [undefined, 'ask'], 'no record, the room as it was');
+    eq(new FolderStore(path.join(dir, 'b.json')).load()[0].sessionNames, before, 'also on disk');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -723,18 +786,19 @@ section('main', () => {
     { name: 'a new room gets Allow all', from: "cur = { workspace, permMode: 'read-only', hidden: false };", to: "cur = { workspace, permMode: 'allow', hidden: false };", section: 'folders', file: 'folders' },
     { name: 'a new room is hidden', from: "cur = { workspace, permMode: 'read-only', hidden: false };", to: "cur = { workspace, permMode: 'read-only', hidden: true };", section: 'folders', file: 'folders' },
     { name: 'a record has more than 8 members', from: 'if (members.length >= teamtemplate_1.LIMITS.members)', to: 'if (members.length >= 99)', section: 'folders', file: 'folders' },
-    { name: 'an odd mode is read as Allow all', from: "mode: o.mode === 'ask' || o.mode === 'allow' ? o.mode : 'read-only',", to: "mode: o.mode === 'ask' ? o.mode : 'allow',", section: 'folders', file: 'folders' },
+    { name: 'an odd mode is read as Allow all', from: "permMode: o.mode === 'ask' || o.mode === 'allow' ? o.mode : 'read-only'", to: "permMode: o.mode === 'ask' ? o.mode : 'allow'", section: 'folders', file: 'folders' },
     { name: 'a failing announce is propagated', from: 'dep.announce(info);\n            }\n            catch { /* the team exists', to: 'dep.announce(info);\n            }\n            catch (e) { throw e; /* the team exists', section: 'atomicity' },
     { name: 'the default limit is not normalized', from: 'const c = (0, credits_1.parseCapIn)(unit === \'none\' ? undefined : unit, cap);', to: 'const c = cap;', section: 'limits' },
     { name: 'the snapshot is compared only once', from: "if (!this.unchanged(t))\n            return cfail('changed', CHANGED_NOW);", to: 'if (false)\n            return cfail(\'changed\', CHANGED_NOW);', section: 'snapshot2' },
     { name: 'a throw at place removes only the first agent', from: 'for (const info of infos) {\n                try {\n                    dep.unplace(info.id);', to: 'for (const info of infos.slice(0, 1)) {\n                try {\n                    dep.unplace(info.id);', section: 'atomicity' },
     { name: 'the agent whose place threw stays', from: 'for (const info of infos) {\n                try {\n                    dep.unplace(info.id);', to: 'for (const info of infos.slice(0, 1).concat(infos.slice(2))) {\n                try {\n                    dep.unplace(info.id);', section: 'atomicity' },
-    { name: 'the record is not put back after a throw', from: 'dep.rollback(e.key, room.team, infos, room.known === false);', to: 'void 0;', section: 'atomicity' },
+    { name: 'the record is not put back after a throw', from: 'dep.rollback(e.key, room.team, room.sessionNames, room.known === false);', to: 'void 0;', section: 'atomicity' },
     { name: 'a room the write created stays after a throw', from: 'room.known === false);', to: 'false);', section: 'atomicity' },
     { name: 'the window is told before every member is placed', from: 'for (const info of infos)\n                dep.place(info);', to: 'for (const info of infos) {\n                dep.place(info);\n                dep.announce(info);\n            }', section: 'atomicity' },
-    { name: 'a brief is measured in UTF-16 units', from: '[...o.brief].length <= lim.chars', to: 'o.brief.length <= lim.chars', section: 'folders', file: 'folders' },
     { name: 'a record that loses a field is saved', from: '!(0, util_1.isDeepStrictEqual)(rec, JSON.parse(JSON.stringify(team)))', to: 'false', section: 'folders', file: 'folders' },
-    { name: 'a restore keeps the batch names', from: 'cur.sessionNames = left.length ? left : undefined;', to: '', section: 'folders', file: 'folders' },
+    { name: 'the record is not checked when read', from: 'const r = (0, teamtemplate_1.checkMember)(cand, \'own\');', to: 'const r = { ok: true, member: { name: cand.name, role: cand.role, app: cand.app, permMode: cand.permMode, sendBrief: cand.sendBrief, brief: cand.brief, briefFrom: cand.briefFrom, profile: cand.profile, model: cand.model, effort: cand.effort, cap: cand.cap } };', section: 'folders', file: 'folders' },
+    { name: 'a non-boolean sendBrief is read as true', from: "if (typeof o.sendBrief !== 'boolean')\n        return undefined;", to: 'if (false)\n        return undefined;', section: 'folders', file: 'folders' },
+    { name: 'a restore does not put the older names back', from: 'cur.sessionNames = parseSessionNames(previousNames);', to: 'cur.sessionNames = (cur.sessionNames ?? []).filter((x) => !/^agent-/.test(x.id));', section: 'realstore', file: 'folders' },
     { name: 'a restore keeps the new record', from: 'if (prev)\n            cur.team = prev;\n        else\n            delete cur.team;', to: '', section: 'folders', file: 'folders' },
     { name: 'a restore leaves the created room', from: 'if (removeRoom && !prev)', to: 'if (false)', section: 'folders', file: 'folders' },
   ] as never;
