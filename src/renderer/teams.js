@@ -3,7 +3,7 @@
    - the section (mount): a list of rows, each with plain buttons (keyboard only, every button named with the template it acts on), Delete through
      the shared askDialog, answers from the `teams:*` channels in words only (a code and a notice, never a value or a field's text).
    Built-in starters come from setStarters (T026 supplies them; none yet) and show *Use…* and *Duplicate* only. *Export…* is shown disabled until
-   the import and export group (G7). The section is shown only under the simulator until T009 (shown()). New, Edit and Use open the member editor, which is T009: `openEditor` below is the one hook it fills in.
+   the import and export group (G7). New and Edit open the member editor (teameditor.js, T009) through `openEditor` below; Use… waits for the create step (T010).
    In the page: window.DurbarTeams; in Node: module.exports. */
 (function(root, api){
   if(typeof module==='object'&&module.exports) module.exports=api; else root.DurbarTeams=api;
@@ -65,14 +65,19 @@
   function init(ctx){X=ctx;}
   /* T026 gives the built-in starters (plain templates, ids main resolves); the list repaints the next time it is mounted or repainted */
   function setStarters(list){STARTERS=Array.isArray(list)?list:[];}
-  /* the section is shown only under the simulator until the member editor (T009) exists: New, Edit and Use would be dead ends in the app */
+  /* the section is shown only under the simulator until Use… and the create preview exist (T010): with the editor alone a person could save templates but not use them */
   function shown(){return !!(X&&X.sim);}
-  /* T009's hook. `request` is {mode:'new'|'edit'|'use', template?: the stored template (never a starter's id sent to main), starter?: true}. T009 replaces
-     this body with the member editor (dialog size l) and resolves true when a template was saved, so the list repaints. Until then it says so, in words. */
+  /* The member editor (T009, teameditor.js). `request` is {mode:'new'|'edit'|'use', template?: the stored template (never a starter's id sent to main), starter?: true}.
+     New and Edit open the editor and resolve true when the list should be repainted (saved, a brief marked, or the file changed). Use… is G4 (T010): until then it says so. */
   function openEditor(request){
-    void request;
-    if(X&&X.announce)X.announce('The member editor is not available yet.');
-    if(X&&X.toast)X.toast('The member editor is not available yet.',3600);
+    const E=typeof self!=='undefined'?self.DurbarTeamEditor:null;
+    if(request&&request.mode!=='use'&&E&&X&&X.editorEnv&&typeof E.open==='function'){
+      return E.open(request,{bridge:X.bridge,askDialog:X.askDialog,announce:X.announce,toast:X.toast,refusalText:(res,what)=>refusalText(res,what),rows:X.editorEnv,
+        opener:typeof document!=='undefined'&&document.activeElement&&document.activeElement!==document.body?document.activeElement:null});
+    }
+    const t=request&&request.mode==='use'?'Creating a team from a template is not available yet.':'The member editor is not available yet.';
+    if(X&&X.announce)X.announce(t);
+    if(X&&X.toast)X.toast(t,3600);
     return Promise.resolve(false);
   }
 
@@ -118,6 +123,7 @@
       if(kind==='use'||kind==='edit'){
         const changed=await openEditor({mode:kind,template:src,starter:row.origin==='starter'});
         if(changed){await load();paint();}
+        focusFirst('[data-tid="'+row.id+'"] button[data-act="'+kind+'"]'); /* the list was repainted: the focus goes back to the button that opened the editor */
         return;
       }
       if(kind==='duplicate'){
@@ -143,7 +149,7 @@
       const bar=el('div','scr-row');
       const nb=el('button','btn','New template…');nb.type='button';nb.id='tmNew';
       if(loadFailed||isFull){nb.disabled=true;nb.setAttribute('aria-label','New template ('+(loadFailed?LOAD_FAILED_WORDS:FULL_WORDS)+')');}
-      else nb.onclick=async()=>{if(busy)return;if(await openEditor({mode:'new'})){await load();paint();}};
+      else nb.onclick=async()=>{if(busy)return;if(await openEditor({mode:'new'})){await load();paint();}focusFirst('#tmNew');};
       bar.appendChild(nb);box.appendChild(bar);
       if(blocked){const b=el('p','scr-note warn','The team templates file cannot be read or set aside, so changes may not be saved.');b.setAttribute('role','note');box.appendChild(b);}
       if(ASIDE){
