@@ -476,7 +476,7 @@
         /* the monitor: the glass in the art; its text sits with the chrome, above the lights (FR-044), and repaints on its own (FR-033) */
         const sc = el(art, 'm:' + k, 'div', 'ro-screen st-' + d.state + (lt.glow === 'off' ? ' off' : '') + (a.asleep ? ' asleep' : '') + (d.lounge ? ' ro-lmon' : '') + (lt.tint !== 'none' ? ' tint-' + lt.tint : '')); /* FR-236: the screen is the status cue */ box(sc, d.screen); dset(sc, 'for', k);
         if (!sc.firstChild) sc.innerHTML = '<div class="ro-bezel"><div class="ro-glass" aria-hidden="true"></div></div><div class="ro-neck"></div><div class="ro-foot"></div><svg class="ro-ctx" aria-hidden="true" focusable="false"><rect class="ro-ck" pathLength="100" fill="none"/><rect pathLength="100" fill="none"/></svg>'; /* spec 097 FR-324: the context line, made once per desk */
-        const bez = sc.firstChild; bez.style.height = px(d.glass.h + 2 * (d.glass.y - d.screen.y)); /* spec 097 FR-380: the bezel is as tall as it was (the glass and the frame's hole above and below it) */
+        const bez = sc.firstChild; bez.style.height = px(d.glass.h + 2 * (d.glass.y - d.screen.y)); /* spec 097 FR-381: the bezel is as tall as it was (the glass and the frame's hole above and below it) */
         ctxPaint(sc, a, d); /* FR-322: the line round the frame, outside the glass; attributes only (FR-326) */
         if (!d.lounge) screenBox(chrome, d, k);
         else { const s = SCR.get(k); if (s) { clearTimeout(s.timer); if (IO) IO.unobserve(s.box); SCR.delete(k); } } /* FR-247: a lounge monitor shows no text (the zoom still reads its last lines, FR-034) */
