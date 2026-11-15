@@ -122,8 +122,8 @@ if (require.main === module) {
   fails('a picture named 15 (the old every-quoted-word parse would pass it)', (i) => { i.reg.moments.find((x) => x.id === 'lounge').evidence.retro.pictures = ['15']; }, /picture 15/);
   fails('permission-card built on a picture the driver does not write', (i) => { i.reg.moments.find((m) => m.id === 'permission-card').evidence.retro.pictures = ['retro-cell-chat']; }, /permission-card: evidence picture retro-cell-chat/);
   fails('permission-card built on a step the driver does not have', (i) => { i.reg.moments.find((m) => m.id === 'permission-card').evidence.retro.steps = ['perm']; }, /permission-card: evidence step perm/);
-  fails('empty-office built again with no evidence', (i) => { i.reg.moments.find((m) => m.id === 'empty-office').worlds.retro = 'built'; }, /empty-office is built and names no evidence/);
-  fails('a missing cell without a reason', (i) => { delete i.reg.moments.find((m) => m.id === 'empty-office').gap; }, /empty-office is missing and says nothing why/);
+  fails('empty-office built with no evidence', (i) => { delete i.reg.moments.find((m) => m.id === 'empty-office').evidence; }, /empty-office is built and names no evidence/);
+  fails('a missing cell without a reason', (i) => { delete i.reg.moments.find((m) => m.id === 'all-floors').gap; }, /all-floors is missing and says nothing why/);
   fails('shippable while a cell is missing', (i) => { i.reg.worlds.retro.shippable = true; }, /shippable while a cell is missing/);
   fails('the first-run rule unscoped', (i) => { i.css = i.css.replace('html[data-world="retro"] body:has(#stage > .welcome) #stats', 'body:has(#stage > .welcome) #stats'); }, /not scoped to html\[data-world="retro"\]/);
   { /* main stands in as a registry whose retro part differs (as on this branch), so these stay mutants after the arcade is merged */
