@@ -92,8 +92,8 @@ import { navigationAllowed, permissionAllowed } from './hardening';
 import type { ChatFileRef } from '../adapters/vscodeChat';
 import { McpStore } from './mcpstore';
 import { AgentStateTracker } from './mcp/agentstate';
-import { maskMcpEvent, maskMcpHistory, maskSignInAppText, setSignInAppMaskId } from './mcpmask';
-import type { SignInAppChoice } from '../shared/signinapp';
+import { maskMcpEvent, maskMcpHistory } from './mcpmask';
+import { createSignInAppHand, maskedAppend } from './signinapphand';
 import { savedMcpOff } from './mcpsavedoff';
 import { registerMcpIpc, safeStorageCodec } from './mcpipc';
 import { MCP_SIGNIN_REFRESH_DEFAULT } from './mcpsigninrefresh';
@@ -408,7 +408,7 @@ router.onEvent((e) => onAutoTierFailed(e, agents, folderStore, wsKey));
 // Dev/test: DURBAR_LOG=/path/events.jsonl records every normalized event and what is sent to the SDK.
 if (dev.DURBAR_LOG) {
   const logFile = dev.DURBAR_LOG;
-  const write = createDebugSink(logFile, process.env, (f, d) => fs.appendFileSync(f, maskSignInAppText(d))); // redacts once, at the sink (spec 012 FR-006); spec 058 FR-236: no sign-in app ID in any line
+  const write = createDebugSink(logFile, process.env, maskedAppend(fs.appendFileSync)); // redacts once, at the sink (spec 012 FR-006); spec 058 FR-236: no sign-in app ID in any line
   router.onEvent((e) => write({ t: Date.now(), event: outward(e) })); // FR-022: the sink's redact() does not know a folder extra's secret values
   router.setDebug((m) => write({ t: Date.now(), debug: m }));
 }
@@ -871,10 +871,10 @@ const newFolderIpc = registerNewFolderIpc({ addMany, getSettingsStore: () => set
  * here) and keep the client ID it will use, the default's (VS Code's) included, out of every masked text. Under the simulator the
  * stand-in has no `setSignInApp`, so nothing is handed or masked.
  */
-const handSignInApp = (choice: SignInAppChoice | undefined): void => {
-  const has = registry.has('copilot') && registry.get('copilot')?.capabilities?.signInAppChoice === true;
-  setSignInAppMaskId(has ? router.instance('copilot').setSignInApp?.(choice) : undefined);
-};
+const handSignInApp = createSignInAppHand({
+  available: () => registry.has('copilot') && registry.get('copilot')?.capabilities?.signInAppChoice === true,
+  adapter: () => router.instance('copilot'),
+});
 registerSettingsIpc({
   getSettingsStore: () => settingsStore, getRunTheme: () => runTheme, clearRunTheme: () => { runTheme = undefined; },
   // spec 058 FR-237: after a saved change: the adapter gets the choice first, then its shared client reconnects (spec 012 FR-158)

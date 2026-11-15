@@ -12,7 +12,9 @@ import { parseSettings } from '../src/shared/credits';
 import { SettingsStore } from '../src/main/settings';
 import { CopilotAdapter, VSCODE_ENTRA_CLIENT_ID, copilotEntraOption } from '../src/adapters/copilot';
 import { FakeClient } from './fakes/copilot-sdk';
-import { MCP_ERROR_MAX_CHARS, maskMcpError, maskMcpEvent, maskMcpStatuses, maskMcpText, maskSignInAppText, setSignInAppMaskId } from '../src/main/mcpmask';
+import { MCP_ERROR_MAX_CHARS, maskMcpError, maskMcpEvent, maskMcpStatuses, maskMcpText, maskSignInAppText, addSignInAppMaskId } from '../src/main/mcpmask';
+import { createSignInAppHand, maskedAppend } from '../src/main/signinapphand';
+import { createDebugSink } from '../src/shared/redact';
 import { classifyMcpCall, isSignInAppRefusal, mcpFailureVerdict, signInAppRefusalText } from '../src/shared/mcpcall';
 import { refreshAdapterAuth } from '../src/main/remoteops';
 import type { AgentAdapter, AgentEvent } from '../src/adapters/types';
@@ -320,7 +322,10 @@ async function main(): Promise<void> {
   {
     assert.strictEqual(maskSignInAppId(`a ${CUSTOM_UP} b ${CUSTOM}`, CUSTOM), `a ${SIGN_IN_APP_ID_MASK} b ${SIGN_IN_APP_ID_MASK}`, 'any case');
     assert.strictEqual(maskSignInAppId('a.b.c', 'a.b'), 'a.b.c', 'not an ID: no replace');
-    setSignInAppMaskId(CUSTOM);
+    assert.ok(maskSignInAppText(CUSTOM).includes(CUSTOM), 'nothing handed out yet: nothing to replace');
+    addSignInAppMaskId('not-a-guid');
+    assert.strictEqual(maskSignInAppText('not-a-guid'), 'not-a-guid', 'an invalid ID is never a mask');
+    addSignInAppMaskId(CUSTOM);
     const err = `ENTRA_CLIENT_NOT_PREAUTHORIZED: client ${CUSTOM_UP} for https://x.example`;
     const m = maskMcpError(err) ?? '';
     noGuid(m, 'a masked MCP error');
@@ -344,11 +349,47 @@ async function main(): Promise<void> {
     const plain = { type: 'status', sessionId: 's', status: 'error', intent: 'nothing here' } as AgentEvent;
     assert.strictEqual(maskMcpEvent(plain), plain, 'an event without the ID is the same object');
     noGuid(maskSignInAppText(JSON.stringify({ debug: `refreshAuth: old client stop failed: ${CUSTOM_UP}` })), 'a debug-log line');
-    setSignInAppMaskId(undefined);
-    assert.ok(maskSignInAppText(CUSTOM).includes(CUSTOM), 'off: nothing to replace');
-    setSignInAppMaskId('not-a-guid');
-    assert.strictEqual(maskSignInAppText('not-a-guid'), 'not-a-guid', 'an invalid ID is never a mask');
-    setSignInAppMaskId(undefined);
+  }
+
+  // ---- FR-236 (review of #1681, F8): an ID handed out earlier in this run stays masked after a switch (Custom A to B, then Off) ----
+  {
+    const B = '1a2b3c4d-5e6f-4a1b-8c2d-3e4f5a6b7c8d';
+    addSignInAppMaskId(B); // the switch to Custom app B
+    addSignInAppMaskId(undefined); // then Off: nothing new to mask, nothing forgotten
+    const late = `old client stop failed: ${CUSTOM_UP}; new client: ${B.toUpperCase()}`;
+    for (const out of [maskSignInAppText(late), maskMcpError(late) ?? '', JSON.stringify(maskMcpEvent({ type: 'status', sessionId: 's', status: 'error', intent: late } as AgentEvent))]) {
+      assert.ok(!out.toLowerCase().includes(CUSTOM) && !out.toLowerCase().includes(B), FR236(`an ID handed out earlier in this run stays masked after a switch (${out.slice(0, 120)})`));
+    }
+  }
+
+  // ---- FR-236..FR-238 (review of #1681, F2): main's wiring, with a fake adapter and a fake sink, and main.ts using it ----
+  {
+    const C = '2b3c4d5e-6f7a-4b2c-9d3e-4f5a6b7c8d9e';
+    const handed: (SignInAppChoice | undefined)[] = [];
+    let available = false;
+    const hand = createSignInAppHand({ available: () => available, adapter: () => ({ setSignInApp: (c) => { handed.push(c); return c?.mode === 'custom' ? c.clientId : undefined; } }) });
+    hand({ mode: 'custom', clientId: C });
+    assert.deepStrictEqual(handed, [], 'FR-238 wiring: nothing is handed when the adapter has no signInAppChoice (the simulator)');
+    assert.ok(maskSignInAppText(C).includes(C), 'and nothing is masked for it');
+    available = true;
+    hand({ mode: 'custom', clientId: C });
+    assert.deepStrictEqual(handed, [{ mode: 'custom', clientId: C }], 'FR-237 wiring: the choice reaches the adapter');
+    assert.ok(!maskSignInAppText(`x ${C.toUpperCase()} y`).toLowerCase().includes(C), FR236('wiring: the ID the adapter will use is masked after the hand'));
+    const lines: string[] = [];
+    const write = createDebugSink('events.jsonl', {}, maskedAppend((_f, d) => { lines.push(d); }));
+    write({ t: 1, debug: `refreshAuth: old client stop failed: ${C.toUpperCase()} and ${CUSTOM}` });
+    assert.strictEqual(lines.length, 1);
+    assert.ok(!lines[0].toLowerCase().includes(C) && !lines[0].toLowerCase().includes(CUSTOM) && lines[0].includes(SIGN_IN_APP_ID_MASK), FR236(`wiring: a debug-log line through the sink has no ID (${lines[0].slice(0, 160)})`));
+    // main.ts uses these two (a source check: main.ts cannot be loaded without Electron; as test-mcp-errormask checks outward())
+    let root = __dirname;
+    while (!fs.existsSync(path.join(root, 'package.json'))) root = path.dirname(root);
+    const main = fs.readFileSync(path.join(root, 'src', 'main', 'main.ts'), 'utf8');
+    const sinks = main.split('\n').filter((l) => l.includes('createDebugSink('));
+    assert.ok(sinks.length === 1 && /createDebugSink\(logFile, process\.env, maskedAppend\(fs\.appendFileSync\)\)/.test(sinks[0]), FR236(`wiring: the DURBAR_LOG sink appends through maskedAppend (${sinks.join(' | ')})`));
+    assert.ok(/const handSignInApp = createSignInAppHand\(\{\s*available: \(\) => registry\.has\('copilot'\) && registry\.get\('copilot'\)\?\.capabilities\?\.signInAppChoice === true,\s*adapter: \(\) => router\.instance\('copilot'\),\s*\}\);/.test(main), 'FR-238 wiring: handSignInApp is createSignInAppHand on the Copilot adapter with signInAppChoice');
+    assert.strictEqual((main.match(/handSignInApp\(settingsStore\.copilotSignInApp\)/g) ?? []).length, 1, 'FR-237 wiring: launch hands the stored choice');
+    assert.ok(/signInApp: \{ hand: handSignInApp, reconnect: \(\) => refreshAdapterAuth\(\{ router, remoteOps, toRenderer \}, 'copilot'\) \}/.test(main), 'FR-237 wiring: a saved change is handed through handSignInApp, then reconnects Copilot');
+    assert.ok(!/\bsetSignInApp\?*\.?\(/.test(main.replace(/createSignInAppHand/g, '')), 'FR-238 wiring: main.ts never calls setSignInApp itself (only through createSignInAppHand)');
   }
 
   // ---- FR-240: "app mode refused" ----
@@ -375,7 +416,8 @@ async function main(): Promise<void> {
     assert.strictEqual(classifyMcpCall('AADSTS65001 consent'), 'auth', '65001 stays auth');
     assert.strictEqual(signInAppRefusalText('app', "Visual Studio Code's app"), "Microsoft refused the sign-in app chosen in Settings > MCP servers (Visual Studio Code's app): this server does not accept that app. Choose another app or Off.", 'FR-240: the words with a sign-in app set');
     assert.strictEqual(signInAppRefusalText('redirect', 'Custom app'), "Microsoft refused the sign-in app chosen in Settings > MCP servers (Custom app): the app does not list this computer's sign-in address. Choose another app or Off.", 'FR-240: the redirect reason');
-    assert.strictEqual(signInAppRefusalText('app', undefined), "Microsoft refused Copilot's sign-in app for this server.", 'FR-240: the words with Off');
+    assert.strictEqual(signInAppRefusalText('app', undefined), "Microsoft refused Copilot's sign-in app for this server. Switch it off for this session if you do not need it.", 'FR-240: the words with Off');
+    for (const k of ['app', 'redirect'] as const) for (const l of [undefined, 'Custom app']) assert.ok(!/\/mcp|\bcopilot\b/.test(signInAppRefusalText(k, l)), 'FR-240 with FR-246: no CLI command in the refusal words');
   }
 
   // ---- FR-234: the unlabeled runtime ID is not in src/ (a source scan that cannot pass empty) ----

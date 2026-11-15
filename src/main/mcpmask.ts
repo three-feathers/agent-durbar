@@ -9,17 +9,29 @@ import { maskSignInAppId, parseClientId } from '../shared/signinapp';
 export const MCP_ERROR_MAX_CHARS = 300;
 
 /**
- * Spec 058 FR-236 (issue #1667): the sign-in app (client) ID in force, or undefined. Main sets it at launch and after each saved change
- * (`setSignInAppMaskId`), so every MCP text below shows `<sign-in app ID>` in its place, whichever session or path it comes from. One
- * module value instead of a parameter: every caller of these masks would otherwise need a new argument, and a missed one would leak.
+ * Spec 058 FR-236 (issue #1667): every sign-in app (client) ID handed to the adapter during this run, newest last. Main adds one at launch
+ * and after each saved change (`addSignInAppMaskId`), so every MCP text below shows `<sign-in app ID>` in its place, whichever session or
+ * path it comes from. Review of #1681 (F8): an ID is kept after a switch (Custom A to B, VS Code or Off), because the old client's stop
+ * error, its late events and the reconnect's debug lines can still quote it. At most `SIGN_IN_APP_MASK_MAX` IDs (one per saved change;
+ * the oldest goes first). One module value instead of a parameter: every caller of these masks would otherwise need a new argument, and a
+ * missed one would leak.
  */
-let signInAppId: string | undefined;
-export function setSignInAppMaskId(id: string | undefined): void {
-  signInAppId = parseClientId(id);
+export const SIGN_IN_APP_MASK_MAX = 64;
+const signInAppIds: string[] = [];
+export function addSignInAppMaskId(id: string | undefined): void {
+  const g = parseClientId(id);
+  if (!g || signInAppIds.includes(g)) return;
+  signInAppIds.push(g);
+  if (signInAppIds.length > SIGN_IN_APP_MASK_MAX) signInAppIds.shift();
 }
-/** FR-236: `text` with the sign-in app ID in force (any case) replaced; the same text when none is set. For texts outside these masks (the debug log). */
+const maskAllSignInAppIds = (text: string): string => {
+  let s = text;
+  for (const g of signInAppIds) s = maskSignInAppId(s, g);
+  return s;
+};
+/** FR-236: `text` with every sign-in app ID of this run (any case) replaced; the same text when none was handed out. For texts outside these masks (the debug log). */
 export function maskSignInAppText(text: string): string {
-  return maskSignInAppId(text, signInAppId);
+  return maskAllSignInAppIds(text);
 }
 
 /**
@@ -136,7 +148,7 @@ export function maskMcpText(text: unknown, values: readonly string[] = [], max?:
   if (text === undefined || text === null) return undefined;
   let s = typeof text === 'string' ? text : String(text);
   for (const v of values) if (v.length >= 4 && s.includes(v)) s = s.split(v).join('[redacted]');
-  s = maskSignInAppId(s, signInAppId); // spec 058 FR-236: before any cut, so no part of the ID is left
+  s = maskAllSignInAppIds(s); // spec 058 FR-236: before any cut, so no part of an ID is left
   s = redact(s); // env values and token shapes on the whole text: linear, about 7 ms per MB
   s = maskHomePaths(s); // spec 058 FR-093 (review on PR #630): `/home/<user>`, `C:\\Users\\<user>` -> `~`, so no user name leaves main
   if (max !== undefined) s = cut(s, max);
@@ -180,8 +192,8 @@ export function maskEditInfo(edit: EditInfo, values: readonly string[] = []): Ed
 export function maskMcpEvent<E extends AgentEvent>(e: E, values: readonly string[] = []): E {
   if (e.type === 'mcp') return { ...e, servers: maskMcpStatuses(e.servers, values) };
   // spec 058 FR-236: an error status quotes the runtime's text (a failed client start, a refused sign-in): the sign-in app ID never shows
-  if (e.type === 'status' && typeof e.intent === 'string' && signInAppId) {
-    const intent = maskSignInAppId(e.intent, signInAppId);
+  if (e.type === 'status' && typeof e.intent === 'string' && signInAppIds.length) {
+    const intent = maskAllSignInAppIds(e.intent);
     return intent === e.intent ? e : { ...e, intent };
   }
   if (e.type !== 'toolCall') return e;

@@ -49,6 +49,7 @@ async function main(): Promise<void> {
   assert.deepStrictEqual(c.capi, { autoTier: 'efficiency' }, 'the cheapest auto routing, as a new auto session');
   assert.ok(!('name' in c) && !('sessionId' in c) && !('agentDirectories' in c) && !('skillDirectories' in c), 'no name (it would persist the session) and no agent or skill folders');
   assert.ok(!('disabledMcpServers' in oneShotConfig('/tmp/x')), 'no list when there is nothing to switch off');
+  assert.deepStrictEqual({ managedSettings: c.managedSettings, permissionMode: c.permissionMode }, { managedSettings: { permissions: { ask: ['Shell(*)'], disableAssistedPermissionsMode: true } }, permissionMode: 'manual' }, 'spec 058 FR-243: the shell guard on the one-shot session too');
 
   // ---- success: the reply, the credits, the session gone
   {
