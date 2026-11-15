@@ -1,7 +1,7 @@
 /** Spec 102 FR-227, FR-256 (T202, T203, T205): where the people sit. `rows` is `realLayout`, untouched; `aisles` is the Retro arcade hall:
  *  staggered aisles of cabinets in an integer pixel scale `g`. Pure, no DOM, nothing draws it yet (RA3). The numbers marked "provisional"
  *  come from the mockup and the art by eye and are replaced by measured ones (T201's `faceBox`, T207's frame sizes). */
-import { lobbyBand, lobbyRange, loungeRows, realLayout, rowGeom, deskStation, shownDesks, signWidth, signMin, signShortMin, splitLounge, BIG_MAX, helpH, helpCols, helpShown, FACE_U, PW, SR, PAD, ZGAP, STRIP, U_MAX, type DeskBox, type Layout, type RealAgent, type RealMeta, type RealModel, type RealState, type Rect, type ZoneBox } from './realoffice-layout';
+import { lobbyBand, lobbyRange, loungeRows, realLayout, rowGeom, deskStation, shownDesks, signWidth, signMin, signShortMin, CHIP_KINDS, splitLounge, BIG_MAX, helpH, helpCols, helpShown, FACE_U, PW, SR, PAD, ZGAP, STRIP, U_MAX, type DeskBox, type Layout, type RealAgent, type RealMeta, type RealModel, type RealState, type Rect, type ZoneBox } from './realoffice-layout';
 
 export const ARRANGEMENTS = ['rows', 'circle', 'aisles'] as const;
 export type Arrangement = (typeof ARRANGEMENTS)[number];
@@ -290,7 +290,7 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
 export const CIRCLE_U_MIN = Math.ceil(FACE_FLOOR / FACE_U);
 export const CIRCLE_FOCUS_MIN = { w: 160, h: 120 } as const;
 /** `side`: the widest side, 1 or 2 desks (default 2: one desk wide does not hold 15 at 1280x800, measured in the Changes of 2026-11-13) */
-export interface CircleOpts { side?: 1 | 2 }
+export interface CircleOpts { side?: 1 | 2; /** test only: the room from the sign's LIVE chips (what #1764's first fix did): the mutant of 097 FR-015, which the same-slots test must kill */ liveChips?: boolean }
 interface CirclePlan { nl: number; nt: number; nr: number; wl: number; wr: number; colH: number }
 export function circleWith(model: RealModel, view: { w: number; h: number }, meta: RealMeta, signs: Record<string, { name: string; path: string; counts: number }> | undefined, opt: CircleOpts = {}): Layout {
   const W = Math.max(200, view.w), H0 = Math.max(200, view.h);
@@ -306,8 +306,11 @@ export function circleWith(model: RealModel, view: { w: number; h: number }, met
   const rowsOf = (i: number, j: number, w: number): number => runs(i, j).reduce((s, [p, q]) => s + Math.ceil((q - p) / w), 0);
   const sideH = (i: number, j: number, w: number, b: number): number => (j > i ? rowsOf(i, j, w) * b + (runs(i, j).length - 1) * ZGAP : 0);
   const zonesIn = (i: number, j: number): number => (j > i ? seats[j - 1].fx - seats[i].fx + 1 : 0);
-  /** the least width a folder's room may have so its sign keeps its + and menu (FR-231): the short sign's measured width (`signShortMin`) */
-  const needW = (fx: number): number => { const f = folders[fx], s = signs && Object.prototype.hasOwnProperty.call(signs, f.id) ? signs[f.id] : { counts: 1 }; return signShortMin((s as { chips?: number }).chips ?? s.counts) + 8; }; /* `chips`: the count chips alone (the short form hides the cost); `counts` (chips and cost) when the caller gives no `chips`, which is never too narrow */
+  /** the least width a folder's room may have so its sign keeps its + and menu (FR-231): the short sign's measured width (`signShortMin`) for the MOST chips the folder can ever show, one per agent up to `CHIP_KINDS`: from the agents, never from the states, so a status change moves no seat (097 FR-015, 102 FR-230) */
+  const needW = (fx: number): number => {
+    const f = folders[fx], all = model.folders.find((x) => x.id === f.id), s = signs && Object.prototype.hasOwnProperty.call(signs, f.id) ? (signs[f.id] as { chips?: number }) : undefined;
+    return signShortMin(opt.liveChips && s && s.chips !== undefined ? s.chips : Math.min(all ? all.agents.length : f.agents.length, CHIP_KINDS)) + 8;
+  };
   /** a zone of `c` desk columns holding folder `fx`, at desk width `Sw`: the desks' width, or the sign's if that is wider */
   const zoneW = (fx: number, c: number, Sw: number): number => Math.max(c * Sw + 8, needW(fx));
   /** the width of the top row over seats [i, j): its zones and the gaps between them; `sideBw` the width of a side over [i, j), `w` desks wide: the widest of its zones, never under the desks' */
@@ -407,11 +410,11 @@ export function circleWith(model: RealModel, view: { w: number; h: number }, met
 export const circleLayout = (model: RealModel, view: { w: number; h: number }, meta: RealMeta, signs?: Record<string, { name: string; path: string; counts: number }>): Layout => circleWith(model, view, meta, signs);
 
 /** FR-230: whether `id` fits this floor, on the count of agents only; `leftAt` (the count it last fell back at) makes it return only with two agents fewer, so a seat count at the edge does not flip the room. `rows` always fits. Pure. */
-export function arrangementFits(id: Arrangement, model: RealModel, view: { w: number; h: number }, meta: RealMeta, leftAt?: number, signs?: Record<string, { name: string; path: string; counts: number }>): boolean {
+export function arrangementFits(id: Arrangement, model: RealModel, view: { w: number; h: number }, meta: RealMeta, leftAt?: number): boolean {
   if (id === 'rows') return true;
   const n = model.folders.reduce((s, f) => s + f.agents.length, 0);
   if (leftAt !== undefined && n > leftAt - 2) return false;
-  return !layoutFor(id, model, view, meta, signs).scroll; /* with the signs: a ring whose signs the rooms cannot hold whole (FR-231) does not fit */
+  return !layoutFor(id, model, view, meta).scroll;
 }
 
 /** FR-228's one seam: the arrangement a world names picks the function. `rows` is `realLayout` and nothing else (T167: byte-identical). */
@@ -422,7 +425,7 @@ export function layoutFor(arrangement: Arrangement, model: RealModel, view: { w:
 /** FR-230 (owner, 2026-11-14 13:10 UTC): the ladder `circle` to `rows`. A `circle` that does not fit this floor at the face floor (`arrangementFits`; `leftAt` holds it off until two agents fewer) draws `rows`, so no floor scrolls
  *  with 15 agents because of the arrangement; every other id runs as `layoutFor` says. `ran` is the arrangement that drew. Pure. */
 export function layoutWithFallback(arrangement: Arrangement, model: RealModel, view: { w: number; h: number }, meta: RealMeta, signs?: Record<string, { name: string; path: string; counts: number }>, leftAt?: number): { lay: Layout; ran: Arrangement } {
-  if (arrangement === 'circle' && !arrangementFits('circle', model, view, meta, leftAt, signs)) return { lay: realLayout(model, view, meta, signs), ran: 'rows' };
+  if (arrangement === 'circle' && !arrangementFits('circle', model, view, meta, leftAt)) return { lay: realLayout(model, view, meta, signs), ran: 'rows' };
   return { lay: layoutFor(arrangement, model, view, meta, signs), ran: arrangement };
 }
 

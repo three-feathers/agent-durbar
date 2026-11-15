@@ -272,6 +272,9 @@ module.exports = async (ctx) => {
       const READ = `(()=>{const R=e=>e.getBoundingClientRect(),out=[];for(const g of document.querySelectorAll('#stage .ro-sign:not(.ro-stag)')){const q=R(g);for(const b of g.querySelectorAll('[data-newsess],[data-foldermenu]')){const r=R(b),e=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);out.push({sign:g.textContent.trim().slice(0,14),w:Math.round(q.width),ok:r.width>0&&r.left>=q.left-0.5&&r.right<=q.right+0.5&&r.top>=q.top-0.5&&r.bottom<=q.bottom+0.5&&!!e&&(e===b||b.contains(e))})}}return out})()`;
       for (const n of ['15', '8']) {
         await H.load({ w, h, query: q(world, { sim: n }), ready: REAL, settle: true });
+        /* what is drawn matters: the Cave's 15-agent frame at 1280x800 is rows (its folders' rooms leave the ring no room at the face floor, spec 102 Changes 2026-11-15), so a check of its signs there is a check of rows; every other Cave case is the circle, the Photo office is rows */
+        const arr = await js(`document.querySelector('#stage .ro').dataset.arrangement`), want = world === 'cave' && !(n === '15' && w === 1280) ? 'circle' : 'rows';
+        assert.strictEqual(arr, want, `${tag}: ${n} agents: the arrangement drawn is ${want}`);
         const rd = await js(READ);
         assert.ok(rd.length >= 2, `${tag}: ${n} agents: the signs' buttons were found (${rd.length})`);
         assert.deepStrictEqual(rd.filter((b) => !b.ok), [], `${tag}: ${n} agents: every sign's + and folder-actions buttons are inside the sign and reachable (elementFromPoint), none clipped`);

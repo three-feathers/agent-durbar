@@ -443,9 +443,12 @@ export const signWidth = (name: string, path: string, counts: number, zw: number
 /** FR-356 (bug #1392): the narrowest whole sign: its name cut to 3 letters, no path, the counts, the cost (`counts` counts it, as `signWidth`), + and menu. Measured 183 px with two
  *  counts and a cost (the cave at 1280x800, 2026-11-09), plus 7 px for a wider font (#1079). A room narrower than this takes the short sign (FR-256's: no cost, no path). */
 export const signMin = (counts: number): number => 100 + 30 * counts;
-/** Spec 102 FR-231 (reviewer's finding on #1764): the narrowest sign that keeps its + and folder-actions buttons inside it and reachable: the short form (name cut to 3 letters, count chips, + and menu). Measured: with
- *  `chips` count chips (not the cost, which the short form hides) the buttons are clipped below 132 px with two, 156 with three, 178 with four (the Cave at 1440x900, swept in the simulator); 93 + 24 per chip, 7 px of it for a wider font as `signMin`. A room never gives a sign less. */
-export const signShortMin = (chips: number): number => 93 + 24 * chips;
+/** Spec 102 FR-231 (reviewer's finding on #1764): the narrowest sign that keeps its + and folder-actions buttons inside it and reachable: the short form (name cut to 3 letters, count chips, + and menu; the cost is hidden).
+ *  Mac measurement, a sweep of the real `.ro-sign.short` in the simulator: clipped below 132 / 156 / 178 px with 2 / 3 / 4 chips. The reviewer's sweep on Linux (not measured here): 135 / 160 / 185 px. Windows: not measured.
+ *  100 + 25 per chip is 150 / 175 / 200 px: 15 px above the Linux numbers at 2 to 4 chips (and 15 px at 5), so it holds on both with room for a wider font (`signMin` allows 7 px). A room never gives a sign less. */
+export const signShortMin = (chips: number): number => 100 + 25 * chips;
+/** the kinds of count chip a folder's sign can show (waiting, error, working, done, idle: the app's `counts`): a folder shows at most this many, and at most one per agent */
+export const CHIP_KINDS = 5;
 
 /** FR-019: the whole office: pure, no DOM. `signs` gives each folder's sign text lengths (name, path, number of count chips). */
 export function realLayout(model: RealModel, viewport: { w: number; h: number }, meta: RealMeta, signs?: Record<string, { name: string; path: string; counts: number }>): Layout {
