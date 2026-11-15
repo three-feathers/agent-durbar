@@ -4,7 +4,7 @@
 group: 046
 title: MCP servers in a session (issue #349): plain state words and how servers start per agent app, the masked failure reason with a hint, per-server Restart where the agent app has one (Copilot, Claude Code), Restart session with these servers, Open log folder (reveal only)
 status: building
-note: restart, logs and sign-in tasks open; masking and state words built; App mode (#1667): SDK 1.0.32 bump (PR 2) and the setting and adapter (PR 3) built, Settings UI not built
+note: restart, logs and sign-in tasks open; masking and state words built; App mode (#1667): SDK bump and setting built, Settings UI not built
 -->
 
 **Feature Branch**: `058-mcp-session-controls`
@@ -2649,11 +2649,22 @@ facts below that this delta relies on, unless tagged otherwise):
   at launch and after each change, from the value `setSignInApp` returns, so VS Code's id is masked too); `maskMcpText` replaces it, any
   case, with `<sign-in app ID>` after the session values and **before** `redact` and any cut (so `maskMcpError`, `maskMcpStatuses`, Copy
   diagnostics, tool outputs and history get it); `maskMcpEvent` also masks an error `status` text; the `DURBAR_LOG` debug sink masks each
-  line (`maskSignInAppText` on the sink's append). Why a module value in a shared mask helper: every caller of these masks would otherwise
+  line (`maskSignInAppText` on the sink's append). Review of #1681 (Paco, 2026-11-15): **F8** the mask keeps every ID handed out during
+  the run (`addSignInAppMaskId`, at most 64, the oldest dropped first), not only the one in force, so after Custom A to B, VS Code or Off the
+  old client's stop error, `dropAfterReconnect` lines and late events still show `<sign-in app ID>`; **F2** main's two wiring points live in
+  `src/main/signinapphand.ts` (`createSignInAppHand`: the capability gate, the hand, the mask; `maskedAppend`: the sink's append), driven in
+  `test: signinapp` with a fake adapter and a fake `createDebugSink` append, plus source checks that `main.ts` uses them (`main.ts` cannot be
+  loaded without Electron). Mutants: the sink back to a plain `fs.appendFileSync` ("FR-236: wiring: the DURBAR_LOG sink appends through
+  maskedAppend"), the mask ID never set after the hand ("FR-236: wiring: the ID the adapter will use is masked after the hand"),
+  `maskedAppend` passing the line unmasked ("FR-236: wiring: a debug-log line through the sink has no ID"), launch handing `undefined`
+  ("FR-237 wiring: launch hands the stored choice"), the gate without `signInAppChoice` ("FR-238 wiring: handSignInApp is
+  createSignInAppHand on the Copilot adapter with signInAppChoice"), the gate dropped in the module ("FR-238 wiring: nothing is handed when
+  the adapter has no signInAppChoice (the simulator)"), only the ID in force masked ("FR-236: an ID handed out earlier in this run stays
+  masked after a switch"). Why a module value in a shared mask helper: every caller of these masks would otherwise
   need a new argument, and a missed one would leak; a value that is not a valid GUID never becomes a pattern. Mutants: clientId logged, id
   left in a masked error, replace after the cut, case-sensitive replace ("any case"), `matsAppName` passed. **`[KNOWN GAP]`** the
   activity-log row "Copilot sign-in app changed to <label>" is not built (an app-wide row has no agent or folder and needs a new decision
-  label in the window's activity table): left to T218; chat output text (`output` events) is not masked (only errors, MCP texts and logs).
+  label in the window's activity table): **T233** (open; review of #1688, F7); chat output text (`output` events) is not masked (only errors, MCP texts and logs).
 - Built for FR-237: `[IMPLEMENTED]` (main side; the confirm is T218): the handler saves, then `hand` (`setSignInApp` through `handSignInApp` in
   `main.ts`), then `reconnect` = `refreshAdapterAuth` (moved from `afterSignIn` in `src/main/ipc/harness.ts` to `src/main/remoteops.ts`,
   used by both: spec 012 FR-158's `refreshAuth` with the remote-off notes); the same app in force (also `vscode` while it is the default), a
@@ -2666,7 +2677,10 @@ facts below that this delta relies on, unless tagged otherwise):
   instead of `void`, so main can mask it without knowing the mode-to-id table (which stays in the adapter); `signInAppChoice` capability
   (only Copilot), contract C2 line; the simulator stand-in has no `setSignInApp` (`SIM_OPTIONAL_MEMBERS`: `null`).
 - Built for FR-240: `[IMPLEMENTED]` (pure part; the row and the failed call's line use it in T218): `isSignInAppRefusal`, `mcpFailureVerdict`
-  (refusal first, then `classifyMcpCall`), `signInAppRefusalText` in `src/shared/mcpcall.ts`; `classifyMcpCall` unchanged. Mutants: 65002
+  (refusal first, then `classifyMcpCall`), `signInAppRefusalText` in `src/shared/mcpcall.ts`; `classifyMcpCall` unchanged. The Off words end
+  with FR-246's note, "Switch it off for this session if you do not need it." (no CLI command; review of #1688, F1). Mutant: the
+  `/mcp auth` sentence back ("FR-240: the words with Off"; a second assert, "FR-240 with FR-246: no CLI command in the refusal words",
+  checks every variant). Mutants: 65002
   read as `auth`, check dropped, order swapped ("FR-240 order: refusal before auth (unauthorized_client)"), Off and set words swapped.
 - **Not verified**: no real sign-in with any mode (no runtime started; 0 AI credits); `client.start()` with `entra` on a real runtime; Linux
   (FR-241: Entra is Windows and macOS only in the runtime, `read:`), macOS ad-hoc re-signing of the OneAuth/MSAL libraries, Windows; T221.

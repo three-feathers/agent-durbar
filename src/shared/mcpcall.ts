@@ -67,10 +67,10 @@ export function isSignInAppRefusal(text: unknown): SignInAppRefusal | undefined 
 
 /**
  * FR-240's words for a refusal: with a sign-in app set (`label`, the Settings choice's display name), which app and why; with Off, the
- * plain sentence (the caller adds the existing CLI steps, FR-068). Fixed words: nothing of the vendor text is repeated.
+ * plain sentence and FR-246's calm note (no CLI command in a Copilot row: review of #1688). Fixed words: nothing of the vendor text is repeated.
  */
 export function signInAppRefusalText(kind: SignInAppRefusal, label: string | undefined): string {
-  if (!label) return "Microsoft refused Copilot's sign-in app for this server.";
+  if (!label) return "Microsoft refused Copilot's sign-in app for this server. Switch it off for this session if you do not need it.";
   const reason = kind === 'redirect' ? "the app does not list this computer's sign-in address" : 'this server does not accept that app';
   return `Microsoft refused the sign-in app chosen in Settings > MCP servers (${label}): ${reason}. Choose another app or Off.`;
 }
