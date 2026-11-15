@@ -938,6 +938,7 @@ for (const world of ['photo', 'cave']) {
       if (i) assert.ok(b.slab && b.slab.w * b.slab.h > 0, `${tag}: ${b.name} has a rule where it starts`); else assert.strictEqual(b.slab, null, `${tag}: the top storey has no rule`);
       assert.ok(!S.some((o) => o.slab && inter(o.slab, b.tag)), `${tag}: no rule runs over the tag of ${b.name}`);
       if (i) assert.ok(!L.zones.some((z) => inter(b.slab!, z.sign) || z.desks.some((d) => inter(b.slab!, d.plate))), `${tag}: the rule of ${b.name} covers no sign or plate`);
+      if (i && b.slab) assert.ok(!S.some((o) => o !== b && o.slab && inter(b.slab!, o.slab)) && !L.zones.some((z) => z.desks.some((d) => inter(b.slab!, d.desk))) && !(L.lounge ? L.lounge.desks.some((d) => inter(b.slab!, d.slot) || inter(b.slab!, d.plate) || inter(b.slab!, d.desk)) : false), `${tag}: the rule of ${b.name} covers no other rule, desk or resting seat`);
     }
     /* review rounds 3 and 4: a sign keeps exactly the width it has without floors in its room (signWidth of the zone's width): never cut, so its + and folder-actions control stay whole, and never wider than its room */
     for (const z of L.zones) { const fz = F.zones.find((q) => q.id === z.id && q.part === z.part);
