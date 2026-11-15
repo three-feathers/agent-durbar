@@ -18,7 +18,7 @@
  * review fixes of PR 621, the missing module) run once, with Cheeky.
  *
  *   npm run check:ui -- --only check-crew            (builds first)
- *   CREW_THEME=<theme id>         the theme under the crew (default clean-office)
+ *   CREW_THEME=<theme id>         the theme under the crew (default clean-office; check-dark is the dark fixture user theme, spec 102 T226, saved in each page load)
  *   CREW_CHARS=<cheeky|prehistoric|pirate|monster|royal|rebels>  run one crew only (default: both)
  *   SHOTS_OUT=<folder>            screenshots (default: crew-shots in the OS temp folder)
  */
@@ -26,7 +26,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const assert = require('assert');
-const { helpers, jsLiteral } = require('./driver-helpers');
+const { helpers, jsLiteral, CHECK_DARK } = require('./driver-helpers');
 
 /* spec 077 FR-064..FR-066: Cheeky is a Characters choice, picked on top of a theme */
 const THEME_ID = process.env.CREW_THEME || 'clean-office';
@@ -148,7 +148,9 @@ const naturals = (files) => `Promise.all(${jsLiteral(files)}.map(f=>new Promise(
 const hit = (a, b) => a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1];
 
 async function runCrew(ctx, full) {
-  const H = helpers(ctx);
+  const H0 = helpers(ctx);
+  /* a user theme under test (the dark fixture) is put in every page address, so Settings lists it and it can be picked */
+  const H = THEME_ID === CHECK_DARK.id ? { ...H0, load: (o) => H0.load({ ...o, query: { ...(o.query || {}), usertheme: JSON.stringify(CHECK_DARK) } }) } : H0;
   const out = process.env.SHOTS_OUT || path.join(os.tmpdir(), 'crew-shots');
   fs.mkdirSync(out, { recursive: true });
   const C = require('../src/renderer/crew.js');
@@ -164,8 +166,10 @@ async function runCrew(ctx, full) {
     await H.js(`window.DurbarScreens.close()`);
     await H.until(`!document.querySelector('.scene-out')`, 3000);
     await H.settle();
+    /* spec 008 FR-190: instead of a fixed 250 ms for the new pictures: every portrait on the stage is decoded (the fade of the old scene was waited for above
+       with `.scene-out`), then two painted frames */
+    await H.js(`Promise.all([...document.querySelectorAll('#stage image')].map((i)=>{const m=new Image();m.src=i.getAttribute('href')||i.getAttribute('xlink:href')||'';return m.decode().catch(()=>0);})).then(()=>true)`);
     await H.js(`new Promise((r)=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(true))))`);
-    await ctx.sleep(250);
   };
   const pick = (id) => pickIn('theme', id);
   const pickChars = (v) => pickIn('characters', v);
@@ -174,6 +178,21 @@ async function runCrew(ctx, full) {
     if (await H.js(`window.THEME.current().id`) !== THEME_ID) await pick(THEME_ID);
     await pickChars(CHARS);
     assert.strictEqual(await H.js(`window.THEME.sceneKit()`), 'crew', `${THEME_ID}: Characters = ${CHARS} draws the crew kit`);
+  };
+  /* issue #1460: the crew scenes drawn on screen, as survey() will read them (visible, with the crew kit's signature and a picture). A bounded wait (CREW_WAIT_MS),
+     never a retry: the asserts that follow are the same. On a timeout it prints what the page shows, and the assert after it fails with its own text.
+     CREW_MUTANT (test-only, a one-off in the page): `slow` hides the scenes for 1.5 s after useCrew() (the wait must carry the check through it),
+     `slow-nowait` hides them and skips the wait (the existing assert must fail with its (0)). */
+  const CREW_WAIT_MS = 5000; // the one cap: the wait and its message both read it
+  const MUTANT = process.env.CREW_MUTANT || '';
+  const crewDrawn = async (n) => {
+    if (MUTANT) await H.js(`(()=>{const s=document.createElement('style');s.id='crew-mutant';s.textContent='#stage svg.scene{display:none!important}';document.head.appendChild(s);setTimeout(()=>s.remove(),1500);return true;})()`);
+    if (MUTANT === 'slow-nowait') return false;
+    const drawn = `[...document.querySelectorAll('#stage .desk[data-id] svg.scene, #stage .helper svg.scene')].filter((s)=>s.getClientRects().length&&/\\|crew\\|/.test(s.dataset.sig||'')&&s.querySelector('image')).length`;
+    if (await H.until(`${drawn}>=${Number(n)}`, CREW_WAIT_MS)) return true;
+    const d = await H.js(`(()=>{const U=window.__durbarSimUi,q=(x)=>[...document.querySelectorAll(x)];return {characters:window.THEME.characters(),sceneKit:window.THEME.sceneKit(),theme:window.THEME.current().id,scenes:q('#stage svg.scene').length,visible:q('#stage svg.scene').filter((s)=>s.getClientRects().length).length,sigs:q('#stage svg.scene').slice(0,4).map((s)=>s.dataset.sig||''),dragging:document.body.classList.contains('reo-dragging'),bad:U&&U.crew?U.crew.state().bad:null};})()`);
+    console.log(`[crew] ${THEME_ID}: ${n} crew scenes not drawn after ${CREW_WAIT_MS / 1000} s`, JSON.stringify(d));
+    return false;
   };
   console.log(`[crew] theme ${THEME_ID}, characters ${CHARS}`);
 
@@ -236,6 +255,7 @@ async function runCrew(ctx, full) {
     await H.load({ w, h, ready: 'fit', settle: false });
     await H.office(15);
     await useCrew();
+    await crewDrawn(15);
     const nat = await sizes();
     const s = await H.js(`(${survey.toString()})()`);
     assert.strictEqual(s.theme, THEME_ID, 'the theme stays the one under test');
@@ -275,7 +295,7 @@ async function runCrew(ctx, full) {
     assert.strictEqual(s.broken, 0, `${tag}: no picture without a source`);
     console.log(`[crew] ${tag}`, JSON.stringify({ scenes: mains.length, characters: [...seen], walkers: s.walkers.length, chips: s.chips.length, lounge: s.lounge.length }));
     await H.clearToasts();
-    await ctx.sleep(200);
+    await H.js(`new Promise((r)=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(true))))`); /* the toasts are gone from a painted frame (was a 200 ms sleep) */
     await ctx.shot(path.join(out, `crew-office-${CHARS}-${THEME_ID}-${tag}.png`));
     // FR-061: an idle desk's portrait is full colour; its furniture keeps the dim
     const idle = await H.js(`(${idleOpacity.toString()})()`);
@@ -315,6 +335,7 @@ async function runCrew(ctx, full) {
   {
     await H.load({ w: 1920, h: 1080, query: { sim: '2', simrooms: '1', simhelpers: '0' }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=2&&document.getElementById('stage').dataset.fit` });
     await useCrew();
+    await crewDrawn(2);
     const nat = await sizes();
     const s = await H.js(`(${survey.toString()})()`);
     const imgs = s.scenes.flatMap((x) => x.images);

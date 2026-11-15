@@ -13,6 +13,8 @@ export interface RemoteIpcDeps {
   toRenderer(channel: string, payload: unknown): void;
   getWin(): BrowserWindow | undefined;
   logActivity(a: AgentInfo, decision: ActivityDecision, action: string): void;
+  /** Spec 099 FR-007: read when asked, since Autopilot's ops are created after this. */
+  autopilotOn?(id: string): boolean;
 }
 
 /** Registers the handlers and returns the remote-control operations the rest of main uses (end a session, quit, sign-in). */
@@ -33,6 +35,7 @@ export function register(deps: RemoteIpcDeps): ReturnType<typeof createRemoteOps
         detail: 'Its messages are sent to GitHub, so it can be followed and steered from github.com and GitHub Mobile. Anyone who can see the session on GitHub can steer it.\n\nOnly continue if you started this in Durbar.',
       });
     },
+    autopilotOn: (id) => !!deps.autopilotOn?.(id),
     record: (id, on) => {
       const a = agents.get(id);
       if (a) logActivity(a, on ? 'remote-on' : 'remote-off', on ? 'Remote control from GitHub turned on' : 'Remote control from GitHub turned off');

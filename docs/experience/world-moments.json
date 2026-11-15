@@ -48,6 +48,14 @@
       ],
       "shippable": false,
       "pack": "src/renderer/realoffice/worlds/loft"
+    },
+    "retro": {
+      "name": "Retro arcade",
+      "crews": [
+        "retro"
+      ],
+      "shippable": false,
+      "pack": "src/renderer/realoffice/worlds/retro"
     }
   },
   "moments": [
@@ -65,9 +73,20 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "built"
       },
-      "nonNegotiables": "TFMKPC"
+      "nonNegotiables": "TFMKPC",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "asleep"
+          ],
+          "pictures": [
+            "asleep"
+          ]
+        }
+      }
     },
     {
       "id": "lobby",
@@ -83,9 +102,20 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "built"
       },
-      "nonNegotiables": "TFMKC"
+      "nonNegotiables": "TFMKC",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "asleep"
+          ],
+          "pictures": [
+            "asleep"
+          ]
+        }
+      }
     },
     {
       "id": "boss-bank-post-coffee",
@@ -101,9 +131,22 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "built"
       },
-      "nonNegotiables": "TAMKC"
+      "nonNegotiables": "TAMKC",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "coffee",
+            "notes"
+          ],
+          "pictures": [
+            "coffee",
+            "notes"
+          ]
+        }
+      }
     },
     {
       "id": "desk-card",
@@ -119,9 +162,20 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "built"
       },
-      "nonNegotiables": "TFMKCR"
+      "nonNegotiables": "TFMKCR",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "asleep"
+          ],
+          "pictures": [
+            "asleep"
+          ]
+        }
+      }
     },
     {
       "id": "desk-lights",
@@ -136,9 +190,20 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "built"
       },
-      "nonNegotiables": "MCT"
+      "nonNegotiables": "MCT",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "asleep"
+          ],
+          "pictures": [
+            "asleep"
+          ]
+        }
+      }
     },
     {
       "id": "live-screen",
@@ -152,9 +217,20 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "built"
       },
-      "nonNegotiables": "RTKM"
+      "nonNegotiables": "RTKM",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "asleep"
+          ],
+          "pictures": [
+            "asleep"
+          ]
+        }
+      }
     },
     {
       "id": "lounge",
@@ -170,9 +246,20 @@
       "worlds": {
         "photo": "built",
         "cave": "built",
-        "loft": "missing"
+        "loft": "missing",
+        "retro": "built"
       },
-      "nonNegotiables": "FMK"
+      "nonNegotiables": "FMK",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "asleep"
+          ],
+          "pictures": [
+            "asleep"
+          ]
+        }
+      }
     },
     {
       "id": "walk",
@@ -187,9 +274,21 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "missing"
+        "loft": "missing",
+        "retro": "built"
       },
-      "nonNegotiables": "M"
+      "nonNegotiables": "M",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "walk"
+          ],
+          "pictures": [
+            "walk-desk",
+            "walk-place"
+          ]
+        }
+      }
     },
     {
       "id": "empty-office",
@@ -203,9 +302,20 @@
       "worlds": {
         "photo": "built",
         "cave": "built",
-        "loft": "missing"
+        "loft": "missing",
+        "retro": "built"
       },
-      "nonNegotiables": "TK"
+      "nonNegotiables": "TK",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "empty-office"
+          ],
+          "pictures": [
+            "empty"
+          ]
+        }
+      }
     },
     {
       "id": "first-run",
@@ -220,9 +330,21 @@
       "worlds": {
         "photo": "built",
         "cave": "built",
-        "loft": "missing"
+        "loft": "missing",
+        "retro": "built"
       },
       "nonNegotiables": "TKS"
+,
+      "evidence": {
+        "retro": {
+          "steps": [
+            "first-run"
+          ],
+          "pictures": [
+            "firstrun"
+          ]
+        }
+      }
     },
     {
       "id": "lift-panel",
@@ -236,7 +358,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "fallback-flat"
       },
       "nonNegotiables": "TKMCF"
     },
@@ -252,9 +375,21 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "built"
       },
-      "nonNegotiables": "MK"
+      "nonNegotiables": "MK",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "jumps"
+          ],
+          "pictures": [
+            "jump-f1",
+            "jump-f2"
+          ]
+        }
+      }
     },
     {
       "id": "floor-indicator",
@@ -268,7 +403,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "fallback-flat"
       },
       "nonNegotiables": "TKC"
     },
@@ -286,9 +422,20 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "built"
       },
-      "nonNegotiables": "TFKM"
+      "nonNegotiables": "TFKM",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "cells"
+          ],
+          "pictures": [
+            "cell-allfloors"
+          ]
+        }
+      }
     },
     {
       "id": "building-preview",
@@ -302,7 +449,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "fallback-flat"
       },
       "nonNegotiables": "TK"
     },
@@ -318,9 +466,21 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "missing"
+        "loft": "missing",
+        "retro": "built"
       },
-      "nonNegotiables": "KM"
+      "nonNegotiables": "KM",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "jumps"
+          ],
+          "pictures": [
+            "jump-f1",
+            "jump-f2"
+          ]
+        }
+      }
     },
     {
       "id": "inbox",
@@ -335,9 +495,20 @@
       "worlds": {
         "photo": "built",
         "cave": "built",
-        "loft": "missing"
+        "loft": "missing",
+        "retro": "built"
       },
-      "nonNegotiables": "AKTS"
+      "nonNegotiables": "AKTS",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "inbox"
+          ],
+          "pictures": [
+            "inbox"
+          ]
+        }
+      }
     },
     {
       "id": "chat-open",
@@ -352,7 +523,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "fallback-flat"
       },
       "nonNegotiables": "MK"
     },
@@ -371,7 +543,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "fallback-flat"
       },
       "nonNegotiables": "TKF"
     },
@@ -389,7 +562,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "fallback-flat"
       },
       "nonNegotiables": "TKSC"
     },
@@ -407,9 +581,21 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "missing"
+        "loft": "missing",
+        "retro": "built"
       },
-      "nonNegotiables": "ATSK"
+      "nonNegotiables": "ATSK",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "inbox",
+            "limitfocus"
+          ],
+          "pictures": [
+            "inbox"
+          ]
+        }
+      }
     },
     {
       "id": "permission-card",
@@ -425,9 +611,20 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "built"
       },
-      "nonNegotiables": "ASKTC"
+      "nonNegotiables": "ASKTC",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "cells"
+          ],
+          "pictures": [
+            "cell-chat"
+          ]
+        }
+      }
     },
     {
       "id": "question-card",
@@ -443,9 +640,22 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "built"
       },
-      "nonNegotiables": "AKT"
+      "nonNegotiables": "AKT",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "cells"
+          ],
+          "pictures": [
+            "cell-question",
+            "cell-focus-answer",
+            "cell-focus-skip"
+          ]
+        }
+      }
     },
     {
       "id": "elicitation",
@@ -461,7 +671,8 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "missing"
+        "loft": "missing",
+        "retro": "fallback-flat"
       },
       "nonNegotiables": "AKS"
     },
@@ -478,9 +689,20 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "designed"
+        "loft": "designed",
+        "retro": "built"
       },
-      "nonNegotiables": "AKT"
+      "nonNegotiables": "AKT",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "cells"
+          ],
+          "pictures": [
+            "cell-answerbar"
+          ]
+        }
+      }
     },
     {
       "id": "coffee-bar",
@@ -496,9 +718,20 @@
       "worlds": {
         "photo": "designed",
         "cave": "designed",
-        "loft": "missing"
+        "loft": "missing",
+        "retro": "built"
       },
-      "nonNegotiables": "TK"
+      "nonNegotiables": "TK",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "coffee"
+          ],
+          "pictures": [
+            "coffee"
+          ]
+        }
+      }
     }
   ]
 }

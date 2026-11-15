@@ -49,10 +49,10 @@ export interface SessionSearchApi {
 
 /**
  * T010: a pure window script, required by main from the built tree (`<dist>/main/..` + `/renderer/<name>`; packaged in `app.asar` with the
- * rest of `dist/**`). One source of truth: main runs the very file the window runs, so the fold cannot drift. Only these two names.
+ * rest of `dist/**`). One source of truth: main runs the very file the window runs, so the fold cannot drift. Only these three names (`liveact.js`: the activity log's mask, `src/main/activitymask.ts`).
  */
-export function rendererScript<T>(name: 'sessionsearch.js' | 'safetext.js', baseDir: string = __dirname): T {
-  if (name !== 'sessionsearch.js' && name !== 'safetext.js') throw new Error('not a shared window script');
+export function rendererScript<T>(name: 'sessionsearch.js' | 'safetext.js' | 'liveact.js', baseDir: string = __dirname): T {
+  if (name !== 'sessionsearch.js' && name !== 'safetext.js' && name !== 'liveact.js') throw new Error('not a shared window script');
   return require(path.join(baseDir, '..', 'renderer', name)) as T;
 }
 
@@ -328,18 +328,26 @@ export function orderPlan(plan: ScanPlan): { list: PlanSession[]; notes: ScanNot
   return { list, notes };
 }
 
+/** T022 (review of PR 1098): the longest a gated read may hold the gate; then it rejects and the next read runs (the hung one is left to end by itself). */
+export const READ_GATE_TIMEOUT_MS = 20_000;
+
 /**
- * One cross-scan gate for reads that start a process (an open Codex session's `thread/read`, FR-023): one read at a time across scans; a
- * read of the same key already in flight is shared, never started twice. The result is dropped as soon as the read settles (A1).
+ * One cross-scan gate for Codex calls (an open session's `thread/read`, a folder's `thread/list` probe; FR-023): one at a time across scans; a
+ * read of the same key already in flight is shared, never started twice. The result is dropped as soon as the read settles (A1). A read
+ * that does not settle within `timeoutMs` rejects (the scan counts its session as unreadable), so a hung `thread/read` cannot block the
+ * reads of later scans. `run`'s own `timeoutMs` replaces it for one call (a call that may take longer, such as a whole probe). `wait` is the
+ * timer (tests inject their own).
  */
-export function createReadGate<T>(): { run(key: string, fn: () => Promise<T>): Promise<T>; inFlight(): number } {
+export function createReadGate<T>(o: { timeoutMs?: number; wait?: (ms: number) => Promise<void> } = {}): { run(key: string, fn: () => Promise<T>, timeoutMs?: number): Promise<T>; inFlight(): number } {
+  const ms = o.timeoutMs ?? READ_GATE_TIMEOUT_MS;
+  const wait = o.wait ?? ((t: number) => new Promise<void>((r) => { const h = setTimeout(r, t); h.unref?.(); }));
   let tail: Promise<unknown> = Promise.resolve();
   const live = new Map<string, Promise<T>>();
   return {
-    run(key, fn) {
+    run(key, fn, timeoutMs) {
       const cur = live.get(key);
       if (cur) return cur;
-      const p = tail.then(() => fn());
+      const p = tail.then(() => Promise.race([fn(), wait(timeoutMs ?? ms).then((): never => { throw new Error('read timed out'); })]));
       tail = p.catch(() => undefined);
       live.set(key, p);
       const drop = (): void => { if (live.get(key) === p) live.delete(key); };

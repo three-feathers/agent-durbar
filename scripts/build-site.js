@@ -202,7 +202,7 @@ function latestChanges(changelog) {
 /* Internal references (spec numbers, FR ids, issue numbers) left out for the landing page. */
 function stripRefs(text) {
   return String(text)
-    .replace(/\s*\([^()]*\b(?:spec \d{3}|specs? \d{3}|FR-\d+|#\d+|owner)\b[^()]*\)/gi, '')
+    .replace(/\s*\((?=(?:[^()]|\([^()]*\))*?\b(?:spec \d{3}|specs? \d{3}|FR-\d+|#\d+|owner)\b)(?:[^()]|\([^()]*\))*\)/gi, '')
     .replace(/\s+([.,;:])/g, '$1')
     .trim();
 }

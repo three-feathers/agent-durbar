@@ -82,10 +82,10 @@
         else s.pending.delete(k);
       },
       /* how long the oldest pending request has been waiting, 0 if none */
-      waitingMs(id){
+      waitingMs(id,at){
         const s=st.get(id);if(!s||!s.pending.size)return 0;
         let first=Infinity;s.pending.forEach(t=>{if(t<first)first=t;});
-        return Math.max(0,now()-first);
+        return Math.max(0,(at===undefined?now():at)-first);
       },
       failStreak(id){const s=st.get(id);return s?s.streak:0;},
       errorAt(id){const s=st.get(id);return s?s.errorAt:0;},

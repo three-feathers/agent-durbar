@@ -31,6 +31,7 @@ bad3.harnesses[0].name = 'Imaginary Agent';
 assert.ok(site.validateLanding(bad3, { readme }).some((e) => /not in the README's Harnesses table/.test(e)), 'an unknown harness fails');
 assert.ok(site.headingAnchors(readme).has('costs-and-caps') && site.headingAnchors(readme).has('safety-model'), 'README anchors');
 assert.strictEqual(site.stripRefs('**Cost per folder (spec 052 FR-044, #315).** Tools'), '**Cost per folder.** Tools', 'spec references are stripped');
+assert.strictEqual(site.stripRefs('**Notes: Open source** (spec 083 FR-046, [issue 699](https://example.com/issues/699)): a note'), '**Notes: Open source**: a note', 'a reference group holding a markdown link is stripped whole');
 for (const os of ['macOS', 'Windows', 'Linux']) assert.ok(site.installSteps(readme)[os], `README has the ${os} install step`);
 
 const out = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-site-'));
@@ -130,7 +131,7 @@ assert.match(docs, /<a class="keep" href="index\.html#download">Download<\/a>/, 
 // spec 050 FR-012 (issue #759): every picture the site links is a palette PNG (colour type 3), made by `npm run shots:docs` or `npm run shots:compress`;
 // a linked picture the quality guard refused to compress is named in KEPT_ORIGINAL with the reason
 const KEPT_ORIGINAL = {};
-for (const f of require('./shots-docs.js').linkedImages(ROOT)) {
+for (const f of require('./shots-docs.js').linkedImages(ROOT).filter((x) => !/\.jpg$/.test(x))) { // a JPEG (a photographed scene) has no palette
   const b = fs.readFileSync(path.join(ROOT, 'docs', 'screenshots', f)).subarray(0, 26);
   assert.ok(KEPT_ORIGINAL[f] || b[25] === 3, `${f} is not a palette PNG: run \`npm run shots:compress\` (or name it in KEPT_ORIGINAL with the reason the quality guard refused it)`);
 }

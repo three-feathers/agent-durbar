@@ -41,10 +41,28 @@ async function trace(fn) {
 }
 
 /** Sum of `elementCount` of the renderer main thread's UpdateLayoutTree events. */
-function elementsRecalculated(events) {
+function elementsRecalculated(events, eventName = 'UpdateLayoutTree') {
   const names = new Map(events.filter((e) => e.ph === 'M' && e.name === 'thread_name').map((e) => [`${e.pid}:${e.tid}`, e.args.name]));
-  return events.filter((e) => e.name === 'UpdateLayoutTree' && names.get(`${e.pid}:${e.tid}`) === 'CrRendererMain')
+  return events.filter((e) => e.name === eventName && names.get(`${e.pid}:${e.tid}`) === 'CrRendererMain')
     .reduce((s, e) => s + ((e.args && e.args.elementCount) || 0), 0);
+}
+
+/* #1208: a trace is only a sample of the page if the renderer was recording when the page code ran. `startRecording` resolves when the browser has begun, and a renderer under a
+   CPU load can start recording after the code it was meant to cover (the whole trace then holds no UpdateLayoutTree, and the calibration below took that for a renamed event).
+   The page puts its own marker (`console.timeStamp`, a `TimeStamp` event of `devtools.timeline`) just before the code; a trace without the marker proves nothing and is taken
+   again (at most TRACE_TRIES, each counted and printed). A trace that has the marker and no UpdateLayoutTree still fails the calibration: a renamed thread or event is not waited out.
+   OPS_TRACE_MUTANT=name looks for an event with another name (the calibration must fail: "a new element must recalculate some element"); =nomark never emits the marker
+   (must fail: "a trace holding the page's own marker"); =nomarkcount never emits it in the four counting traces (must fail the same assert, naming a text change). */
+const TRACE_TRIES = 10;
+const MARK = 'ops-trace-start';
+const TRACE_MUTANT = process.env.OPS_TRACE_MUTANT || '';
+const markerIn = (events) => events.some((e) => e.name === 'TimeStamp' && e.args && e.args.data && e.args.data.message === MARK);
+async function tracedWithMarker(code, mutant = 'nomark') {
+  for (let attempt = 1; attempt <= TRACE_TRIES; attempt++) {
+    const events = await trace(() => code(TRACE_MUTANT !== mutant));
+    if (markerIn(events)) return { events, attempt };
+  }
+  return { events: null, attempt: TRACE_TRIES };
 }
 
 /* The counters, in the page: layout reads and the floor's style reads between `start()` and `stop()`, renders and searches from the app's own counters */
@@ -84,6 +102,18 @@ module.exports = async (ctx) => {
   };
   for (const n of [15, 40]) {
     const load = (w = 1440, h = 900) => H.load({ w, h, index: process.env.OPS_INDEX || undefined, query: { sim: String(n) }, ready: FLAT, readyMs: 30000 });
+    /* the start with the first states late (spec 097 FR-363, issue #1238): `simlate=50` makes the replay start 50 ms after the agents are listed, so a render that comes first (the race) is
+       forced in every load; 3 loads, the most searches counted. The page's own record of the delay proves the option was honoured (an ignored one reads 0 and the loads would test nothing). */
+    {
+      const late = { searches: 0, probes: 0, delay: Infinity };
+      for (let i = 0; i < 3; i++) {
+        await H.load({ w: 1440, h: 900, index: process.env.OPS_INDEX || undefined, query: { sim: String(n), simlate: '50' }, ready: FLAT, readyMs: 30000 });
+        const o = await js(`({...window.__durbarSimUi.ops(), delay: window.__durbarSimReplayDelay||0})`);
+        late.searches = Math.max(late.searches, o.searches); late.probes = Math.max(late.probes, o.probes); late.delay = Math.min(late.delay, o.delay);
+      }
+      rows[`searchesAtStart@late${n}`] = late.searches; rows[`lateReplayDelay@late${n}`] = late.delay;
+      console.log('[ops]', n, 'agents, first states 50 ms late (3 loads): most layout searches', late.searches, 'most probes', late.probes, 'least replay delay', late.delay, 'ms');
+    }
     await load();
     await js(`localStorage.setItem('durbar.doorsigns','off')`); // desks as scenes, not doors: every working desk animates (the doors and signs are going)
     await load();
@@ -119,10 +149,18 @@ module.exports = async (ctx) => {
       await change(0);
       await H.settle();
       /* calibration (pre-review of #949): a new element always has its style computed, so a trace with no UpdateLayoutTree event at all means the thread or event name changed. A text change itself may recalculate 0 elements when no stylesheet rule watches it (the AI maker's \`body:has()\` rule used to), and that is a pass */
-      const probe = elementsRecalculated(await trace(() => js(`(()=>{const d=document.querySelector(${jsLiteral(host)});const s=document.createElement('i');s.className='ops-probe';d.appendChild(s);const h=document.body.offsetHeight;s.remove();return h;})()`)));
+      const sample = await tracedWithMarker((mark) => js(`(()=>{if(${jsLiteral(mark)})console.timeStamp(${jsLiteral(MARK)});const d=document.querySelector(${jsLiteral(host)});const s=document.createElement('i');s.className='ops-probe';d.appendChild(s);const h=document.body.offsetHeight;s.remove();return h;})()`));
+      console.log(`[ops] ${label}: calibration trace recorded the page's marker on attempt ${sample.attempt}`);
+      assert.ok(sample.events, `${label}: a trace holding the page's own marker: none of ${TRACE_TRIES} traces did, so the renderer was not recording while the page code ran`);
+      const probe = elementsRecalculated(sample.events, TRACE_MUTANT === 'name' ? 'UpdateLayoutTreeX' : 'UpdateLayoutTree');
       assert.ok(probe > 0, `${label}: a new element must recalculate some element; a trace with none means the trace's thread or event name changed (${probe})`);
       const counts = [];
-      for (let i = 1; i <= 4; i++) counts.push(elementsRecalculated(await trace(() => change(i))));
+      /* each counting trace holds the page's marker too: a trace that lost its events would count 0 and, as the least of 4, pass a `:has()` regression silently (review of #1318) */
+      for (let i = 1; i <= 4; i++) {
+        const t = await tracedWithMarker((mark) => js(`(()=>{if(${jsLiteral(mark)})console.timeStamp(${jsLiteral(MARK)});document.querySelector(${jsLiteral(text)}).textContent=${jsLiteral('Op ')}+${i};return document.body.offsetHeight;})()`), 'nomarkcount');
+        assert.ok(t.events, `${label}: a trace holding the page's own marker: none of ${TRACE_TRIES} traces of text change ${i} did, so the renderer was not recording while the page code ran`);
+        counts.push(elementsRecalculated(t.events));
+      }
       rows[key] = Math.min(...counts); // the least of 4: a render that lands inside one trace by itself (a timer) only adds, and the `:has()` cost shows in all 4
       console.log(`[ops] ${label}: elements recalculated by one text change`, counts.join(' '));
     };
@@ -134,7 +172,7 @@ module.exports = async (ctx) => {
     const id = ids[3];
     const emit = (st) => `window.__durbarSimEmit({type:'status',sessionId:${jsLiteral(id)},timestamp:Date.now(),status:${jsLiteral(st)}})`;
     await drawn(emit('working')); // so that every change below is a real change of one agent's status
-    const per = { renders: [], searches: [], reads: [], gcsFloor: [] }, leaks = [];
+    const per = { renders: [], searches: [], reads: [], gcsFloor: [] }, leaks = [], due = [];
     for (let i = 0; i < 8; i++) {
       /* a settled window (#1195, 3 renders once in 8 on Linux CI, 3 of 10 runs under a CPU load): the previous update's visit (a desk walking to a place starts, or ends, on the
          250 ms visit tick, which renders) lands inside this window on a slow machine. Start only when no visit waits to start or end and no render is queued (the lobby's own
@@ -145,6 +183,7 @@ module.exports = async (ctx) => {
       await drawn(emit(i % 2 ? 'working' : 'idle'));
       const o = await js(`window.__ops.stop()`);
       for (const k of Object.keys(per)) per[k].push(o[k]);
+      due.push(await js(`window.__durbarSimUi.timerDraw()`));
       /* a finished turn marks the desk unread (a "New" label before the name), which shifts the keyless spans a morph matches by position */
       leaks.push(await js(`document.querySelectorAll('#stage [data-placed]:not(.role):not(.ren)').length`));
     }
@@ -152,6 +191,15 @@ module.exports = async (ctx) => {
     console.log('[ops]', n, 'agents, per status update (8): renders', per.renders.join(','), 'searches', per.searches.join(','), 'reads', per.reads.join(','), 'floor style reads', per.gcsFloor.join(','));
     /* every update drew (a missed render would show 0), and at most one render of something else (the coffee break's own timer, \`coffeeTick\`, can fall in the window and
        add one: traced, it is the only other caller); the row is the median, so a second render caused by the update itself would show */
+    /* #1302: the second and third render of a sample were the mood tick (5 s) and the "ago" tick (30 s) drawing, after an update, what the update's own draw had shown: a tick that
+       compared with the signature of its last tick, not of the last draw (traced under load: renderAll < setState, then the ticks at app.js 295 and 298, and coffeeTick's minute).
+       A draw now records what it showed, so after an update's draw no tick is due: asserted on every sample, not by hoping no tick lands inside one */
+    /* an error moves the ambulance, which the mood reads: the draw's signature must be taken after it (review of #1318), so no tick is due after this draw either */
+    await drawn(emit('error'));
+    due.push(await js(`window.__durbarSimUi.timerDraw()`));
+    await drawn(emit('working'));
+    due.push(await js(`window.__durbarSimUi.timerDraw()`));
+    assert.deepStrictEqual(due, due.map(() => false), `${n} agents: after a status update's draw no mood or "ago" tick is due to draw it again (${due})`);
     assert.ok(per.renders.every((r) => r >= 1 && r <= 2), `${n} agents: every status update is one render, two at most with a timer's (${per.renders})`);
     rows[`rendersPerStatus@${n}`] = med(per.renders);
     rows[`searchesPerStatus@${n}`] = Math.max(...per.searches);
@@ -259,15 +307,18 @@ module.exports = async (ctx) => {
       await js(`window.__durbarSimEmit({type:'status',sessionId:${jsLiteral(aid)},timestamp:Date.now(),status:${jsLiteral(st)}})`);
       assert.ok(await until(`(document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(aid)})+'"]')||{classList:{contains:()=>false}}).classList.contains('st-working')===${jsLiteral(st === 'working')}`, 8000), `${n} agents, arcade: the desk settles (${st})`);
     }
-    assert.ok(await until(`window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()`, 15000), `${n} agents, arcade: the office settled before the status updates`);
+    /* no screen repaint put off either (DurbarRealOffice.pending(), FR-033, as check-office-ops-real waits) */
+    assert.ok(await until(`window.DurbarRealOffice.pending().screens===0&&window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()`, 15000), `${n} agents, arcade: the office settled before the status updates`);
     await js(`(()=>{window.__aN=0;window.__aO=new MutationObserver(ms=>{for(const m of ms)for(const x of [...m.addedNodes,...m.removedNodes])if(x.nodeType===1)window.__aN++;});window.__aO.observe(document.querySelector('#stage .ro'),{childList:true,subtree:true});})()`);
     const aseen = [];
     for (let i = 0; i < 8; i++) {
       const st = i % 2 ? 'working' : 'idle';
       await js(`window.__durbarSimEmit({type:'status',sessionId:${jsLiteral(aid)},timestamp:Date.now(),status:${jsLiteral(st)}})`);
       aseen.push(await until(`(document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(aid)})+'"]')||{classList:{contains:()=>false}}).classList.contains('st-working')===${jsLiteral(st === 'working')}`, 8000));
+      /* and its screen's throttled repaint (2 s, FR-033) has landed inside the window, whatever the load: a repaint that removes the caret (a node) then always counts */
+      aseen.push(await until(`window.DurbarRealOffice.pending().screens===0`, 8000));
     }
-    assert.ok(aseen.every(Boolean), `${n} agents, arcade: every status event reached the desk's plate (${aseen})`);
+    assert.ok(aseen.every(Boolean), `${n} agents, arcade: every status event reached the desk's plate and its screen repainted (${aseen})`);
     rows[`statusNodes@retro${n}`] = await js(`(window.__aO.disconnect(),window.__aN)`);
     console.log('[ops]', n, 'agents, arcade: elements added or removed under the office over 8 status updates', rows[`statusNodes@retro${n}`]);
 

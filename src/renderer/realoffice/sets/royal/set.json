@@ -1,0 +1,322 @@
+{
+ "formatVersion": 1,
+ "id": "royal",
+ "name": "Royal",
+ "level": "full",
+ "seat": {
+  "alchemist": {
+   "bodyH": 343,
+   "h": 359,
+   "hand": 0.88,
+   "headTop": 16,
+   "w": 334
+  },
+  "jester": {
+   "bodyH": 343,
+   "h": 355,
+   "hand": 0.88,
+   "headTop": 12,
+   "w": 359
+  },
+  "king": {
+   "bodyH": 343,
+   "h": 353,
+   "hand": 0.88,
+   "headTop": 10,
+   "w": 341
+  },
+  "knight": {
+   "bodyH": 345,
+   "h": 357,
+   "hand": 0.88,
+   "headTop": 12,
+   "w": 300
+  },
+  "princess": {
+   "bodyH": 343,
+   "h": 354,
+   "hand": 0.88,
+   "headTop": 11,
+   "w": 324
+  },
+  "queen": {
+   "bodyH": 342,
+   "h": 354,
+   "hand": 0.88,
+   "headTop": 12,
+   "w": 297
+  }
+ },
+ "stand": {
+  "alchemist": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "runA": 1.0,
+    "runB": 1.0
+   },
+   "figH": 362,
+   "poses": {
+    "book": [
+     111,
+     361
+    ],
+    "coffee": [
+     113,
+     361
+    ],
+    "knock": [
+     120,
+     358
+    ],
+    "letter": [
+     112,
+     361
+    ],
+    "runA": [
+     145,
+     362
+    ],
+    "runB": [
+     145,
+     361
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0028,
+    "knock": 0.0,
+    "letter": 0.0,
+    "runA": 0.0,
+    "runB": 0.0
+   }
+  },
+  "jester": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "runA": 1.0,
+    "runB": 1.0
+   },
+   "figH": 361,
+   "poses": {
+    "book": [
+     158,
+     361
+    ],
+    "coffee": [
+     162,
+     361
+    ],
+    "knock": [
+     166,
+     361
+    ],
+    "letter": [
+     198,
+     361
+    ],
+    "runA": [
+     166,
+     361
+    ],
+    "runB": [
+     184,
+     361
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "runA": 0.0,
+    "runB": 0.0
+   }
+  },
+  "king": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "runA": 1.0,
+    "runB": 1.0
+   },
+   "figH": 361,
+   "poses": {
+    "book": [
+     137,
+     361
+    ],
+    "coffee": [
+     135,
+     361
+    ],
+    "knock": [
+     154,
+     361
+    ],
+    "letter": [
+     157,
+     361
+    ],
+    "runA": [
+     148,
+     361
+    ],
+    "runB": [
+     155,
+     361
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "runA": 0.0,
+    "runB": 0.0
+   }
+  },
+  "knight": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "runA": 1.0,
+    "runB": 1.0
+   },
+   "figH": 362,
+   "poses": {
+    "book": [
+     127,
+     361
+    ],
+    "coffee": [
+     127,
+     361
+    ],
+    "knock": [
+     141,
+     362
+    ],
+    "letter": [
+     186,
+     361
+    ],
+    "runA": [
+     165,
+     360
+    ],
+    "runB": [
+     159,
+     361
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "runA": 0.0,
+    "runB": 0.0
+   }
+  },
+  "princess": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "runA": 1.0,
+    "runB": 1.0
+   },
+   "figH": 361,
+   "poses": {
+    "book": [
+     142,
+     360
+    ],
+    "coffee": [
+     144,
+     361
+    ],
+    "knock": [
+     150,
+     361
+    ],
+    "letter": [
+     129,
+     361
+    ],
+    "runA": [
+     163,
+     361
+    ],
+    "runB": [
+     149,
+     361
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "runA": 0.0,
+    "runB": 0.0
+   }
+  },
+  "queen": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "runA": 1.0,
+    "runB": 1.0
+   },
+   "figH": 361,
+   "poses": {
+    "book": [
+     124,
+     361
+    ],
+    "coffee": [
+     122,
+     361
+    ],
+    "knock": [
+     141,
+     361
+    ],
+    "letter": [
+     144,
+     361
+    ],
+    "runA": [
+     127,
+     360
+    ],
+    "runB": [
+     123,
+     361
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "runA": 0.0,
+    "runB": 0.0
+   }
+  }
+ }
+}

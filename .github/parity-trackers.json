@@ -1,0 +1,4 @@
+{
+  "_comment": "Spec 021 FR-088: tracker issues whose '- [ ] #N' lines .github/workflows/parity-tick.yml ticks when #N is closed as completed (unticks on reopen). Issue numbers only (#1147 Real office gaps, #1404 Retro arcade checklist); each tracker must be opened by an account in scripts/trusted-authors.txt.",
+  "trackers": [1147, 1404]
+}

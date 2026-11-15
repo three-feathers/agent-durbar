@@ -396,7 +396,7 @@ async function main(): Promise<void> {
     // the two calls exactly: nothing after the spread may override what the guard checks (`{ ...opts, model: x }` would start x unchecked)
     const guardCalls = mainSrc.match(/startGuardOp\(orgGuard, ad, \{[^\n]*\}\)/g) ?? [];
     assert.deepStrictEqual(guardCalls, [
-      'startGuardOp(orgGuard, ad, { ...startOptionsFor(draft), resumeSessionId: opts.resumeSessionId })',
+      'startGuardOp(orgGuard, ad, { ...startOptionsFor(draft, opts.resumeSessionId), resumeSessionId: opts.resumeSessionId })',
       'startGuardOp(orgGuard, ad, { ...startOptionsFor(a), ...(resume ? { resumeSessionId: a.id } : { sessionId: a.id }), quiet: opts.quiet ?? true })',
     ], 'f: main.ts: addWorkspace and the lazy start call startGuardOp with the adapter and its start options, nothing overriding the mode or model');
     assert.deepStrictEqual(mainSrc.match(/\.start\(\s*[^)\s]/g) ?? [], [], 'f: main.ts: no other start call with arguments (an adapter start outside the guard)');
@@ -617,7 +617,7 @@ async function main(): Promise<void> {
     (cyc.resolved as Record<string, unknown>).self = cyc;
     const fallback = emptyOrgPolicy(P);
     const cy = await readCopilotOrgPolicy({ rpc: { managedSettings: { resolve: async () => cyc } } }, () => fallback);
-    assert.strictEqual(cy, fallback, 'i: Copilot: a cyclic runtime answer falls back to the file');
+    assert.deepStrictEqual(cy, { ...fallback, runtimeUnread: 'failed' }, 'i: Copilot: a cyclic runtime answer falls back to the file, and says so (spec 099 FR-070)');
     // the string-list byte cap (the rule list is ALSO bounded in total, so the problem text proves which cap fired)
     const bs = claude({ availableModels: Array.from({ length: 150 }, (_, i) => `${i}-` + 'y'.repeat(2000)) });
     assert.ok(bs.problems.some((x) => x.includes('availableModels is longer than Agent Durbar reads')), 'i: a string list over the byte cap says so (the list cap, not only the total)');

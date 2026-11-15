@@ -88,8 +88,11 @@ assert.ok(!/app\.setName\(/.test(main), 'main.ts must not call app.setName');
 
 // package.json: the build scripts run the check, AppImage has no forced --no-sandbox
 for (const s of ['pack:dir', 'dist', 'dist:mac:arm64', 'dist:mac:x64', 'dist:win', 'dist:linux']) {
-  assert.ok(/check-fuses\.js && node scripts\/check-names\.js$/.test(pkg.scripts[s]), `${s} runs check-names.js after check-fuses.js`);
+  // pack:dir is the build plus pack:dir:prebuilt (spec 008 FR-194: CI builds once, then packs)
+  const script = s === 'pack:dir' ? pkg.scripts['pack:dir:prebuilt'] : pkg.scripts[s];
+  assert.ok(/check-fuses\.js && node scripts\/check-names\.js$/.test(script), `${s} runs check-names.js after check-fuses.js`);
 }
+assert.strictEqual(pkg.scripts['pack:dir'], 'npm run build && npm run pack:dir:prebuilt', 'pack:dir is the build, then pack:dir:prebuilt');
 assert.deepStrictEqual(pkg.build.appImage.executableArgs, [], 'FR-041: no forced --no-sandbox in the desktop entry');
 assert.ok(fs.readFileSync(path.join(root, 'scripts', 'test-suites.txt'), 'utf8').split(/\r?\n/).includes('test:checknames'));
 console.log('checknames ok');

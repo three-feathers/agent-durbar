@@ -1,1 +1,0 @@
-- The release clip's step captions are numbered 1, 2, 3... in the order they are shown (spec 008; the v0.1.11 clip read "3." then "2."). Checked by `test:releasevideo` with a mutant; the clip was not re-filmed.

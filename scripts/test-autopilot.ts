@@ -32,8 +32,10 @@ assert.strictEqual(validMode('autopilot'), 'read-only', 'autopilot is not a mode
 assert.strictEqual(validMode(undefined), 'read-only');
 assert.strictEqual(validMode('allow'), 'allow');
 
-// ---- 2. never saved or defaulted (a source-text check: two files do not mention autopilot; it shows no behaviour, section 3 pins the file list) ----
-for (const f of ['src/main/folders.ts', 'src/shared/credits.ts']) assert.ok(!/autopilot/i.test(src(f)), `${f} never mentions autopilot (nothing is saved or defaulted)`);
+// ---- 2. never saved or defaulted ----
+assert.ok(!/autopilot/i.test(src('src/main/folders.ts')), 'folders.ts never mentions autopilot (nothing is saved or defaulted for a folder)');
+// S1: the one setting is the turn limit last used, a number; never a mode or an on/off
+assert.deepStrictEqual([...new Set(src('src/shared/credits.ts').match(/\bautopilot\w*/gi))].sort(), ['autopilotLimit'], 'credits.ts holds only the remembered limit');
 {
   const file = path.join(ROOT, 'src/adapters/types.ts');
   const sf = ts.createSourceFile(file, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);

@@ -28,3 +28,7 @@
 - [x] T017 Spec delta FR-018, FR-019; plan and tasks (numbers checked against `main`, remote branches and open PRs on 2026-11-04)
 - [x] T018 `SubagentEvent.background`, event guard; Claude mapper (`run_in_background`, close only on `task_notification`), Copilot mapper (`executionMode`); renderer `onTaskTool` / session stop [FR-018]
 - [x] T019 Simulator `simbghelper=1`; mapper tests; driver case; mutation checks; changelog fragment; `[KNOWN GAP]` kept [FR-019]
+
+## 2026-11-08 delta: one helper mask on every surface (issue #1330)
+
+- [x] T021 `homeMask` + `helperMask` in `app.js` at intake and on every helper surface (panel title, task and error line, chat block, flat tile, expanded card); `test:helpercard` cases; `check-015-bg-helper` step 4; mutation checks; changelog fragment; `[KNOWN GAP]` kept (no real session) [FR-021]

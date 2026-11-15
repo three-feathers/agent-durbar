@@ -676,7 +676,7 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
     }
   }
   assert.match(jobs['draft-release'], /if \[ "\$\(gh release view "\$TAG" --json isDraft -q \.isDraft\)" != "true" \]; then\n[^\n]*\n {14}exit 1\n {12}fi\n {12}gh release upload "\$TAG" dist-artifacts\/\* --clobber/, 'files are replaced only on a draft, a published release is refused');
-  for (const [, u] of wf.matchAll(/uses: (\S+)/g)) assert.match(u, /^[\w.-]+\/[\w.-]+@[0-9a-f]{40}$/, `${u} pinned by commit sha`);
+  for (const [, u] of wf.matchAll(/uses: (?!\.\/)(\S+)/g)) assert.match(u, /^[\w.-]+\/[\w.-]+@[0-9a-f]{40}$/, `${u} pinned by commit sha`);
 }
 
 // --- spec 058 T160 (#509): the safety properties of .github/workflows/mcp-oauth-real.yml (a manual run with the real CI secret) ---
@@ -697,7 +697,7 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
     '    strategy:', '      fail-fast: false', '      matrix:', MATRIX_OS, '    steps:',
     SHA('checkout'), '        with:', '          persist-credentials: false',
     SHA('setup-node'), '        with:', '          node-version: 22', '          cache: npm',
-    '      - run: npm ci', '      - run: npx tsc -p tsconfig.scripts.json', '      - run: node dist-scripts/scripts/test-demo-oauth-mcp.js',
+    '      - uses: ./.github/actions/npm-ci', '      - run: npx tsc -p tsconfig.scripts.json', '      - run: node dist-scripts/scripts/test-demo-oauth-mcp.js',
     FIXED(6, '- '), '        shell: bash', '        env:',
     '          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_CODEX_GITHUB_FINE_GRAINED_TOKEN }}',
     '        run: node dist-scripts/scripts/mcp-oauth-real.js "$RUNNER_TEMP/mcp-oauth.json"',
@@ -753,8 +753,8 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
   const mutants = {
     'type: string': [sub('type: choice', 'type: string'), /type: string/],
     'fromJSON(inputs.oses)': [sub(/os: \$\{\{ fromJSON\(.*\) \}\}/, 'os: ${{ fromJSON(inputs.oses) }}'), /fromJSON\(inputs\.oses\) \}\}"/],
-    'an input in run:': [sub('- run: npm ci', '- run: echo ${{ inputs.oses }}'), /echo \$\{\{ inputs/],
-    'an input in a multi-line run:': [sub('- run: npm ci', '- run: |\n          echo ${{ inputs.oses }}'), /run: \|/],
+    'an input in run:': [sub('- uses: ./.github/actions/npm-ci', '- run: echo ${{ inputs.oses }}'), /echo \$\{\{ inputs/],
+    'an input in a multi-line run:': [sub('- uses: ./.github/actions/npm-ci', '- run: |\n          echo ${{ inputs.oses }}'), /run: \|/],
     'a self-hosted label': [sub('"macos-latest"', '"self-hosted"'), /self-hosted/],
     'an extra option': [sub('- macos-latest\n', '- macos-latest\n          - self-hosted\n'), /- self-hosted/],
     'write permission': [sub('contents: read', 'contents: write'), /contents: write/],
@@ -769,15 +769,15 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
     'a second string input': [sub('      oses:\n', '      target:\n        type: string\n      oses:\n'), /target:/],
     'FROMJSON of the input': [sub(/os: \$\{\{ fromJSON\(.*\) \}\}/, 'os: ${{ FROMJSON(inputs.oses) }}'), /FROMJSON/],
     'an input in a github-script': [`${file.trimEnd()}\n      - uses: actions/github-script@0000000000000000000000000000000000000000\n        with:\n          script: console.log('\${{ inputs.oses }}')\n`, /github-script|extra line/],
-    'github.event.inputs': [sub('- run: npm ci', '- run: echo ${{ github.event.inputs.oses }}'), /github\.event\.inputs/],
+    'github.event.inputs': [sub('- uses: ./.github/actions/npm-ci', '- run: echo ${{ github.event.inputs.oses }}'), /github\.event\.inputs/],
     'a fifth comparison': [sub("|| '[\"windows-latest\",\"ubuntu-latest\"]') }}", "|| inputs.oses == 'x' && '[\"y\"]' || '[\"windows-latest\",\"ubuntu-latest\"]') }}"), /inputs\.oses == 'x'/],
     'runs-on from the input': [sub('runs-on: ${{ matrix.os }}', 'runs-on: ${{ inputs.oses }}'), /runs-on: \$\{\{ inputs/],
     'matrix include on a custom runner': [sub('    steps:\n', '        include:\n          - os: my-runner\n    steps:\n'), /include:/],
     'matrix include from a variable': [sub('    steps:\n', '        include:\n          - os: ${{ vars.RUNNER }}\n    steps:\n'), /include:/],
-    'github.event in a - run: line': [sub('- run: npm ci', '- run: echo "${{ github.event.sender.login }}"'), /github\.event\.sender/],
-    'github.head_ref in a - run: line': [sub('- run: npm ci', '- run: echo "${{ github.head_ref }}"'), /github\.head_ref/],
-    'github.event in a multi-line run': [sub('- run: npm ci', '- run: |\n          echo "${{ github.event.sender.login }}"'), /run: \|/],
-    'the secret in a - run: line': [sub('- run: npm ci', '- run: echo ${{ secrets.COPILOT_CODEX_GITHUB_FINE_GRAINED_TOKEN }}'), /secrets\. must appear exactly once/],
+    'github.event in a - run: line': [sub('- uses: ./.github/actions/npm-ci', '- run: echo "${{ github.event.sender.login }}"'), /github\.event\.sender/],
+    'github.head_ref in a - run: line': [sub('- uses: ./.github/actions/npm-ci', '- run: echo "${{ github.head_ref }}"'), /github\.head_ref/],
+    'github.event in a multi-line run': [sub('- uses: ./.github/actions/npm-ci', '- run: |\n          echo "${{ github.event.sender.login }}"'), /run: \|/],
+    'the secret in a - run: line': [sub('- uses: ./.github/actions/npm-ci', '- run: echo ${{ secrets.COPILOT_CODEX_GITHUB_FINE_GRAINED_TOKEN }}'), /secrets\. must appear exactly once/],
     'the secret in a second env entry': [sub('        run: node dist-scripts/scripts/mcp-oauth-real.js', '          OTHER: ${{ secrets.X }}\n        run: node dist-scripts/scripts/mcp-oauth-real.js'), /secrets\. must appear exactly once/],
     'the secret in a step name': [sub('name: Summary', 'name: ${{ secrets.X }}'), /secrets\. must appear exactly once/],
     'a # line inside the path block': [sub('mcp-oauth.json\n', 'mcp-oauth.json\n            # ~/.copilot/**\n'), /line 6\d: "            # ~\/\.copilot/],

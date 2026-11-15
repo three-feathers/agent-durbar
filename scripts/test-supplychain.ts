@@ -150,6 +150,20 @@ for (const f of fs.readdirSync(wfDir).filter((n) => /\.ya?ml$/.test(n))) {
 }
 assert.ok(uses > 5, 'the workflows were actually read');
 
+// spec 008 (2026-11-08): a GitHub 504 on the Electron download failed the queue; every job installs through the cached, retrying composite action
+for (const f of fs.readdirSync(wfDir).filter((n) => /\.ya?ml$/.test(n))) {
+  const text = fs.readFileSync(path.join(wfDir, f), 'utf8');
+  assert.ok(!/^\s*(?:- )?run:\s*npm ci\s*$/m.test(text), `${f}: a plain "npm ci" would download Electron with no cache or retry; use ./.github/actions/npm-ci`);
+}
+const npmCiAction = fs.readFileSync(path.join(root, '.github', 'actions', 'npm-ci', 'action.yml'), 'utf8');
+assert.ok(/actions\/cache@[0-9a-f]{40}/.test(npmCiAction), 'the Electron download cache step exists');
+// FR-195: the key, the paths and the three cache variables come from the script the warmer shares (test:electroncache checks it)
+const cacheScript = fs.readFileSync(path.join(root, 'scripts', 'electron-cache.js'), 'utf8');
+for (const v of ['ELECTRON_CACHE=', 'electron_config_cache=', 'ELECTRON_BUILDER_CACHE=']) assert.ok(cacheScript.includes(v), `${v} points at the cached directory`);
+assert.ok(/key: \$\{\{ steps\.plan\.outputs\.key \}\}/.test(npmCiAction) && /electron-\$\{runnerOs\}-\$\{runnerArch\}-\$\{v\.electron\}-builder-/.test(cacheScript), 'the cache key carries the exact Electron version');
+assert.ok(/default: '30 120 300'/.test(npmCiAction) && /exit 1/.test(npmCiAction), 'npm ci retries 4 times by default (30 s, 120 s, 300 s apart) and still fails loudly');
+assert.ok(!/secrets\./.test(npmCiAction), 'the action touches no secrets');
+
 export type GitRun = (args: string[]) => { status: number | null; stdout: string; stderr: string; error?: Error };
 const realGit: GitRun = (args) => { const r = spawnSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 64 << 20 }); return { status: r.status, stdout: r.stdout || '', stderr: r.stderr || '', error: r.error }; };
 const readHead = (dir: string) => (f: string) => { const fd = fs.openSync(path.join(dir, f), 'r'); try { const b = Buffer.alloc(HEAD); const n = fs.readSync(fd, b, 0, HEAD, 0); return b.subarray(0, n); } finally { fs.closeSync(fd); } };

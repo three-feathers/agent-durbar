@@ -19,6 +19,8 @@ const COVERED: Array<{ key: string; alt: string; what: string; sample: string }>
   { key: '[^\\s=;,"\'\\\\]{1,128}', alt: 'cookie', what: 'cookie', sample: 'Cookie: a=b' },
   { key: '\\bmachine\\s{1,8}', alt: 'machine', what: 'netrc', sample: 'machine h login u password p' },
   { key: '\\bcurl\\b[^\\r\\n]{0,200}', alt: 'curl', what: 'curl -u', sample: 'curl -u u:p h' },
+  { key: '[^\\r\\n\\\\\\`^;&|]', alt: 'mysql', what: 'mysql -p', sample: 'mysql -u r -pab1' },
+  { key: '\\[redacted\\]', alt: '%3[DdAa]', what: 'named phrase after a mask', sample: 'password=abc' }, // FR-170 item 6: `contrase(?:n|ñ)a` in the lookbehind, covered by the name alternative
   { key: '[^()\\r\\n]{0,128}', alt: '%3[DdAa]', what: 'named secret', sample: 'password=abc' },
 ];
 const used = new Set<string>();
@@ -47,6 +49,13 @@ for (const c of COVERED) {
   assert.strictEqual(hiddenCanHide('é‍é ' + c.sample, [], {}), true, `LIVE_HEAD makes hidden characters live for ${c.what}`);
 }
 assert.strictEqual(hiddenCanHide('é‍é plain words', [], {}), false, 'no rule head: an inert hidden character stays inert');
+// review of PR 1317 (Ruben, item 2): the named-secret head sees the same names as the rule: any run of quotes, an empty backtick pair or `$()` between the name and its separator or inside it
+{
+  const head = alts.filter((x) => x.source.includes('%3[DdAa]'));
+  assert.strictEqual(head.length, 1, 'LIVE_HEAD has one named-secret head');
+  for (const t of ["--pass'word'''=v", "--password''=v", "''--pass''word''=''v''", '--pa``ss=v', '--pa$()ss=v', '--password$()=v', '--password' + '"'.repeat(30) + ':= v']) assert.ok(head[0].test(t), `#1317 item 2: the named-secret head matches ${t}`);
+  assert.ok(!head[0].test('--pass word v'), 'the named-secret head needs a separator');
+}
 
 // the walker: every shape the review of PR 1244 named is flagged, the ASCII ones are not
 const flagged = (src: string): boolean => windowsOf(src).length > 0;

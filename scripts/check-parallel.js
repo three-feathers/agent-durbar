@@ -3,7 +3,7 @@
  * each in its own Electron (and its own xvfb display on Linux). Same checks as running them one by one.
  *
  *   node scripts/check-parallel.js            the default theme            (npm run check:office:fast)
- *   node scripts/check-parallel.js --themes   the 6 built-in themes and the user-theme fixture   (npm run check:themes)
+ *   node scripts/check-parallel.js --themes   Clean Office, the dark fixture theme (alone and with Cheeky) and the user-theme fixture   (npm run check:themes)
  *
  * The machine must stay usable while it runs (an earlier version started 4 Electrons on a 4-core laptop with 2 GB free
  * and froze it). So:
@@ -23,7 +23,7 @@ const { spawn, execFileSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { ensureElectron } = require('./ensure-electron');
+const { ensureElectron, buildProblem } = require('./ensure-electron');
 
 const ROOT = path.join(__dirname, '..');
 const themes = process.argv.includes('--themes');
@@ -89,12 +89,15 @@ async function waitForMemory(avail, min, maxMs, { now = Date.now, wait = sleep, 
   return true;
 }
 
+const DARK_THEME = 'scripts/fixtures/themes/check-dark.json';
 const variants = themes
-  ? ['clean-office', 'retro'].map((t) => ({ name: t, env: { DURBAR_THEME: t, OFFICE_THEME: t } }))
-      // spec 077 FR-070: Cheeky is a Characters choice, not a theme: measured on top of Retro Pixel (the one built-in theme with a dark floor)
-      .concat(['retro'].map((t) => ({ name: t + ' + cheeky', env: { DURBAR_THEME: t, OFFICE_THEME: t, OFFICE_CHARACTERS: 'cheeky' } })))
+  ? [{ name: 'clean-office', env: { DURBAR_THEME: 'clean-office', OFFICE_THEME: 'clean-office' } }]
+      // spec 102 T226 (FR-267): the dark fixture user theme (dark page, its own display font) takes Retro Pixel's two places
+      // spec 077 FR-070: Cheeky is a Characters choice, not a theme: measured on top of the dark theme
+      .concat([{ name: 'dark theme', env: { OFFICE_USER_THEME: DARK_THEME, CHECK_EXPECT_DARK: '1' } }])
+      .concat([{ name: 'dark theme + cheeky', env: { OFFICE_USER_THEME: DARK_THEME, CHECK_EXPECT_DARK: '1', OFFICE_CHARACTERS: 'cheeky' } }])
       .concat([{ name: 'user theme', env: { OFFICE_USER_THEME: 'scripts/fixtures/themes/check-user.json' } }])
-  : [{ name: 'default', env: {} }, { name: 'real office', env: { OFFICE_VIEW: 'real' } }, { name: 'real office wide font', env: { OFFICE_VIEW: 'real', OFFICE_FONT: 'DejaVu Sans' } }]; // spec 097 FR-091: the Real office variant of check-office-overlap.js
+  : [{ name: 'default', env: {} }, { name: 'real office', env: { OFFICE_VIEW: 'real' } }, { name: 'real office wide font', env: { OFFICE_VIEW: 'real', OFFICE_FONT: 'DejaVu Sans' } }, { name: 'arcade', env: { OFFICE_VIEW: 'real', OFFICE_WORLD: 'retro' } }]; // spec 097 FR-091: the Real office variant of check-office-overlap.js
 const jobs = [];
 for (const v of variants) for (let k = 0; k < SHARDS; k++) jobs.push({ label: `${v.name} ${k + 1}/${SHARDS}`, env: { ...v.env, OFFICE_SHARDS: String(SHARDS), OFFICE_SHARD: String(k) } });
 
@@ -133,9 +136,15 @@ const run = (job) => new Promise((resolve) => {
  * Run every job and return how many failed. `ensure`, `runJob`, `available` and `log` are for tests (scripts/test-ui-suite.ts):
  * the defaults install Electron, start check-office-overlap.js and read the real memory.
  */
-async function main({ ensure = ensureElectron, runJob = run, available: avail = available, jobs: list = jobs, workers = JOBS, log = console.log, waitMaxMs = WAIT_MAX_MS } = {}) {
+async function main({ build = buildProblem, ensure = ensureElectron, runJob = run, available: avail = available, jobs: list = jobs, workers = JOBS, log = console.log, waitMaxMs = WAIT_MAX_MS } = {}) {
   const t0 = Date.now();
   log(`check:parallel: ${list.length} jobs (${variants.length} x ${SHARDS} shards), up to ${workers} at a time, nice 10, motion ${process.env.CHECK_MOTION === '1' ? 'on' : 'reduced'}`);
+  // FR-211: no build, no part (each part would load dist/ in Electron and wait)
+  const noBuild = build();
+  if (noBuild) {
+    log(`check:parallel: ${noBuild}; no part was started`);
+    return list.length;
+  }
   // FR-114: one install before the fan-out; without the binary every part would fail, so stop here and say why
   if (!ensure()) {
     log('check:parallel: the Electron binary is not installed and could not be fetched (see above); no part was started');

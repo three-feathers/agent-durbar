@@ -12,7 +12,7 @@
  *     from this one: an overlay blocks dragging (FR-138);
  *   - a clickable element whose box overlaps the traffic-light box (x<78, y<40, by rectangle, not by sampling) outside full screen (an
  *     overlay's own backdrop is not counted: the native traffic lights sit above the page; a control inside a dialog is);
- *   - a screen header over a chat whose title is not on the centred content column (FR-097) at widths above 990px;
+ *   - a screen header over a chat whose title is not where FR-097 puts it (the centred content column; for Settings, which has a section list, the list-and-page block) at widths above 990px, or starts under the traffic lights;
  *   - the top bar's rows (one row at wide sizes, two when it wraps): the first row's items start at x>=78, a wrapped row at the normal padding (the room is for the first row only);
  *   - a clickable element over an effective drag region (it could not be clicked on a Mac).
  * It exits non-zero on a failure and also when the driver itself throws or does not finish (a marker file decides, Electron exits 0 after
@@ -20,6 +20,7 @@
  */
 'use strict';
 const fs = require('fs');
+const { buildProblem } = require('./ensure-electron'); // spec 008 FR-211: one shared build check
 const os = require('os');
 const path = require('path');
 const { helpers, jsLiteral } = require('./driver-helpers');
@@ -98,7 +99,12 @@ function measure(TLX, TLY) {
   /* a screen header over a chat: its title is on the centred column of FR-097 */
   let head = null;
   const h2 = document.querySelector('#screen:not([hidden]) .scr-head h2');
-  if (h2 && document.body.classList.contains('panel-open') && W > 990) head = { left: h2.getBoundingClientRect().left, want: (W - 880) / 2 + 24 };
+  if (h2 && document.body.classList.contains('panel-open') && W > 990) {
+    /* FR-097 (2026-11-11 delta, #1458): a screen with a section list (Settings, .scr-nav; spec 052 FR-226) lines the title up with the
+       list-and-page block: max(24px, 50% - 526px), the same as screens.css (--sn-pad); the other screens keep the 880px column. */
+    const nav = !!document.querySelector('#screen:not([hidden]) .scr-nav');
+    head = { left: h2.getBoundingClientRect().left, want: nav ? Math.max(24, W / 2 - 526) : (W - 880) / 2 + 24, nav };
+  }
   return {
     full, bandDrag, grab, topbar, head,
     drags: drags.filter((d) => !(d.e.parentElement && reg(d.e.parentElement) === 'drag')).map((d) => nm(d.e) + ' ' + JSON.stringify(rr(d.r))),
@@ -135,7 +141,8 @@ async function run(ctx) {
     if (kind === 'chat' ? m.grab < MIN_CHAT_GRAB : kind === 'plain' && m.bandDrag === 0) why.push(`grab block ${m.grab}px wide${kind === 'chat' ? ` (< ${MIN_CHAT_GRAB}, 24px tall needed)` : ' (none)'}`);
     if (m.topbar && !m.full && m.topbar.firstMin < TL.x - 1) why.push(`top bar first row starts at x=${m.topbar.firstMin} (< ${TL.x})`);
     if (m.topbar && m.topbar.rows === 2 && m.topbar.restMin > 30) why.push(`top bar second row starts at x=${m.topbar.restMin} (the room is for the first row only)`);
-    if (m.head && Math.abs(m.head.left - m.head.want) > 1) why.push(`screen title at x=${Math.round(m.head.left)}, the centred column is at x=${Math.round(m.head.want)} (FR-097)`);
+    if (m.head && Math.abs(m.head.left - m.head.want) > 1) why.push(`screen title at x=${Math.round(m.head.left)}, ${m.head.nav ? 'the list-and-page block' : 'the centred column'} is at x=${Math.round(m.head.want)} (FR-097)`);
+    if (m.head && !m.full && m.head.left < TL.x - 1) why.push(`screen title at x=${Math.round(m.head.left)} is under the traffic lights (< ${TL.x})`);
     if (m.clickUnderTL.length) why.push('clickable under the traffic lights: ' + m.clickUnderTL.map((c) => c.el + JSON.stringify(c.rect)).join(', '));
     if (m.clickInDrag.length) why.push('clickable over a drag region: ' + m.clickInDrag.map((c) => c.el + JSON.stringify(c.rect)).join(', '));
     results.push({ name, size, ok: !why.length });
@@ -201,7 +208,7 @@ module.exports = driver;
 
 if (require.main === module) {
   const { spawn } = require('child_process');
-  if (!fs.existsSync(INDEX)) { console.error('dist/ missing: run npm run build first'); process.exit(2); }
+  { const noBuild = buildProblem(); if (noBuild) { console.error(noBuild); process.exit(2); } }
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-mactb-'));
   const electron = require('electron'); /* path to the binary */
   // a clean environment: no DURBAR_OPEN / DURBAR_PERM / DURBAR_SHOT or other dev switch from the caller can point the run at real folders

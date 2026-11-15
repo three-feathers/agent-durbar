@@ -1,7 +1,7 @@
 /* spec 052 FR-164 (owner, 2026-10-21): + Folder and + Workspace sit at the left end of the top bar, first in tab order, and the Mac
    File menu has Add Folder… (⌘O) and Add VS Code Workspace… (⇧⌘O) that press the same buttons. Simulator only, no credits.
      npm run build && DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 DURBAR_DRIVER=$PWD/scripts/shots-052-addleft.js xvfb-run -a npx electron . --no-sandbox
-   Per size (1440x900, 1280x800) and built-in theme, with floors and several agent apps (the widest bar):
+   Per size (1440x900, 1280x800) and theme (Clean Office, the dark fixture), with floors and several agent apps (the widest bar):
      - the add buttons are the first controls after the brand (leftmost, and first in tab order), labelled, text at least 10.5px;
      - the top bar is one row (about 48px) and no control leaves the window or overlaps another;
      - spec 044 FR-034: with simsched=1 the Schedules button is shown, after the ⋯ button and before Needs you, in that same row.
@@ -12,13 +12,13 @@
    A failure throws (DRIVER FAILED, exit 1); `npm run check:ui` runs it. */
 const path = require('path');
 const { Menu } = require('electron');
-const { helpers } = require('./driver-helpers');
+const { helpers, CHECK_DARK_QUERY } = require('./driver-helpers');
 
 const ROOT = path.join(__dirname, '..');
 const INDEX = path.join(ROOT, 'dist', 'renderer', 'index.html');
 const SIZES = [[1440, 900], [1280, 800]];
-// spec 008 FR-111, spec 035 FR-017: Clean Office and Retro, the two built-in themes
-const THEMES = ['clean', 'retro'];
+// spec 008 FR-111, spec 102 T226: Clean Office and the dark fixture user theme (dark page, its own display font), which took Retro's place
+const THEMES = [['clean', { theme: 'clean' }], ['dark', CHECK_DARK_QUERY]];
 
 /* runs in the page */
 function topCheck() {
@@ -72,8 +72,8 @@ module.exports = async (ctx) => {
   };
   for (const [w, h] of SIZES) {
     {
-      for (const theme of THEMES) {
-        await load({ sim: '15', simfreeze: '1', simfloors: '1', simkinds: 'mixed', simsched: '1', theme }, w, h);
+      for (const [theme, themeQuery] of THEMES) {
+        await load({ sim: '15', simfreeze: '1', simfloors: '1', simkinds: 'mixed', simsched: '1', ...themeQuery }, w, h);
         const p = await ctx.js(`(${topCheck.toString()})()`);
         total++;
         if (p.length) fail(`${w}x${h} ${theme}: ${p.join('; ')}`);

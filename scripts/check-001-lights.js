@@ -54,8 +54,13 @@ module.exports = async (ctx) => {
     if (prep) { await js(prep); await must(`window.THEME.sceneKit()===${jsLiteral(kit)}`, `${tag}: the ${kit} kit`); }
     if (MUTANT === 'glow') await js(`(()=>{const s=document.createElement('style');s.textContent='.desk.is-waiting::after{content:"";position:absolute;inset:0;box-shadow:0 0 6px 2px orange}';document.head.appendChild(s);return 1})()`);
     if (MUTANT === 'ink') await js(`(()=>{for(const sh of document.styleSheets){let rs;try{rs=sh.cssRules}catch{continue}for(let i=rs.length-1;i>=0;i--)if(rs[i].selectorText&&rs[i].selectorText.includes('.scr-c'))sh.deleteRule(i);}return 1})()`);
-    /* red, orange, green and an unread desk that asks for permission, on desks that were off and at their desk */
-    const free = await js(`[...document.querySelectorAll('#stage .desk.card[data-id]')].filter(d=>d.dataset.tint==='none'&&!d.classList.contains('is-away')).map(d=>d.dataset.id)`);
+    /* Issue #1342: the frozen simulator's replay leaves some working agents' tool calls open, so their visits show after the lobby's
+       debounce (600 ms) and stay. Counting off desks "at their desk" before that found 7, after it 3: the outcome hung on how soon the
+       read came (it failed under load and on CI). So the office settles first (no visit about to start or end, nothing walking) and the
+       four are picked from the desks whose screen is off, wherever their person stands: READ checks an away desk's screen as any other. */
+    await must(`!!window.__durbarSimReplayed&&window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()&&!document.querySelector('.walker.walking')`, `${tag}: the office settled`, 15000);
+    /* red, orange, green and an unread desk that asks for permission, on desks that were off */
+    const free = await js(`[...document.querySelectorAll('#stage .desk.card[data-id]')].filter(d=>d.dataset.tint==='none').map(d=>d.dataset.id)`);
     assert.ok(free.length >= 4, `${tag}: four desks with their light off (${free.length})`);
     const [r, o, g, gw] = free.slice(-4);
     await E(r, { type: 'status', status: 'error', intent: 'Failed' });
@@ -81,7 +86,7 @@ module.exports = async (ctx) => {
       if (d.tint in seen) seen[d.tint]++;
     }
     if (res.desks.some((d) => d.id === gw && d.tint === 'amber')) seen.both++;
-    console.log('[001-lights]', tag, res.desks.length, 'desks', JSON.stringify(res.desks.reduce((a, d) => ((a[d.tint] = (a[d.tint] || 0) + 1), a), {})));
+    console.log('[001-lights]', tag, res.desks.length, 'desks, picked', [r, o, g, gw].join(' '), JSON.stringify(res.desks.reduce((a, d) => ((a[d.tint] = (a[d.tint] || 0) + 1), a), {})));
     assert.deepStrictEqual(P, [], `${tag}: the screen tints (spec 001 FR-230, FR-231)`);
   }
   for (const k of ['amber', 'orange', 'red', 'green', 'both']) assert.ok(seen[k] > 0, `the run saw ${k} (${JSON.stringify(seen)}): a check that met no case proves nothing`);

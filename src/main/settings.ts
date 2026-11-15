@@ -55,6 +55,7 @@ export class SettingsStore {
     const m = migrateLegacyTheme(this.s);
     // spec 035 FR-018: a removed built-in theme (Corporate, the courts) becomes Clean Office the same way; Characters is untouched
     const r = migrateRemovedTheme(m.settings);
+    // spec 102 Changes 2026-11-14 (T347): the Retro Pixel theme is kept (owner decision); nothing here moves its users
     if (m.changed || r.changed) {
       this.s = r.settings;
       this.save();
@@ -228,6 +229,17 @@ export class SettingsStore {
     else delete next.sandboxAlwaysContinue;
     const ok = this.commit(next, !on ? 'sandboxAlwaysContinue' : undefined); // turning the choice off is the safe direction: in force for this run even if it cannot be saved (`isUnsaved`); turning it on is rolled back
     return { ok, value: this.sandboxAlwaysContinue(app) };
+  }
+
+  /** Spec 099 S1: the turn limit last used for Autopilot, remembered only after the person confirmed it. */
+  get autopilotLimit(): number | undefined {
+    return this.s.autopilotLimit;
+  }
+
+  setAutopilotLimit(v: number): void {
+    if (!Number.isInteger(v) || v < 1 || v > 1000) return;
+    this.s = { ...this.s, autopilotLimit: v };
+    this.save();
   }
 
   /** OS notifications when an agent needs you (spec 052 FR-059): on by default; only `false` is written. */
