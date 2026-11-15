@@ -16,7 +16,7 @@ const read = (f: string): string => fs.readFileSync(path.join(ROOT, 'scripts', f
 
 // ---- the list: the three owners and our automation; dependabot's body is upstream text, so it is not on it
 const list = read('trusted-authors.txt').split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
-assert.deepStrictEqual(list, ['vikramgorla', 'fjcabello', 'rubenlupi', 'github-actions[bot]', 'github-advanced-security[bot]'], 'the trusted list');
+assert.deepStrictEqual(list, ['vikramgorla', 'fjcabello', 'rubenlupi', 'github-actions[bot]', 'github-advanced-security[bot]', 'durbar-samikshak[bot]'], 'the trusted list');
 
 // ---- static: pr-gate prints no raw body of anyone else; every list it prints goes through the trust defs
 const gate = read('pr-gate.sh');

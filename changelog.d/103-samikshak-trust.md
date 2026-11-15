@@ -1,0 +1,1 @@
+- **Samikshak on the trust list** (spec 103, Paco's decision 2026-11-13): the pre-review App `durbar-samikshak[bot]` is a trusted author, so agents read its comments like a teammate's. Its approval never counts as a review and posting stays off until the key isolation (FR-042) is built. Checked with `npm run rules:check` and the trusted-list tests.
