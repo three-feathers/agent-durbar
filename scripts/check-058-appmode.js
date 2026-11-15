@@ -15,7 +15,9 @@
  * At 1440x900 and 1280x800, in the flat office and in the Real office (DPR 1): the default is Visual Studio Code's app with the notice, Got it
  * hides it (and it stays hidden when Settings is opened again), Custom shows the ID field and refuses a bad ID inline with the fixed text (never the typed
  * value), Off shows its words, every change asks first (Cancel changes nothing) and the page keeps its scroll; text is at least 10.5px and
- * nothing overlaps or scrolls sideways.
+ * nothing overlaps or scrolls sideways. No CLI command (`/mcp`) anywhere in the group or the refusal rows (FR-246, review of #1688). At
+ * 1440x900 (flat) only: without the adapter's `signInAppChoice` (`simsigninappcap=0`) there is no group (FR-238), and a stored pending
+ * `copilot-cli` (`simsigninapp=copilot-cli`) shows FR-234's line with Visual Studio Code's app selected.
  */
 const assert = require('assert');
 const path = require('path');
@@ -28,7 +30,9 @@ const REFUSED = "Not an app (client) ID. It looks like 00000000-0000-0000-0000-0
 const WORDS = {
   heading: 'Copilot sign-in app for Microsoft (experimental)',
   vscode: "Experimental. Uses Visual Studio Code's Microsoft Entra app ID, as Copilot did before version 1.0.26. Durbar is not Visual Studio Code. Your organization or Microsoft may refuse this, and sign-ins show as Visual Studio Code in your organization's logs.",
-  off: "Agent Durbar does not set an app. Copilot's sign-in to Microsoft Entra MCP servers may fail; then use /mcp auth <name> in the Copilot CLI.",
+  off: "Agent Durbar does not set an app. Copilot's sign-in to Microsoft Entra MCP servers may fail; then switch the server off for the session if you do not need it.",
+  offRefused: "Microsoft refused Copilot's sign-in app for this server. Switch it off for this session if you do not need it.",
+  cli: "Copilot CLI's app: not available in this build, so Visual Studio Code's app (the default) is used.",
   custom: "Your organization's own Microsoft Entra app (client) ID. It needs the MCP server's permissions, admin consent and the sign-in redirect address for this computer, which Agent Durbar has not confirmed yet: ask your administrator. An app ID is not a secret. Never enter a client secret here.",
   notice: "Experimental: Copilot now signs in to Microsoft Entra MCP servers with Visual Studio Code's app ID by default, as it did before. Sign-ins show as Visual Studio Code in your organization's logs. Choose Off or your own app below.",
   linux: 'On Linux this Copilot version cannot use the system sign-in; this setting may have no effect.',
@@ -64,6 +68,7 @@ module.exports = async (ctx) => {
     assert.ok(r.hint.includes(expectWords), `${tag}: FR-240: the refusal words show on the row: ${JSON.stringify(r)}`);
     assert.ok(/Refused: the sign-in app/.test(r.why), `${tag}: FR-240: the reason says the app was refused, not "needs sign-in": ${JSON.stringify(r)}`);
     assert.ok(!/needs you to sign in/.test(r.hint), `${tag}: FR-240 order: the sign-in words do not win over the refusal words: ${JSON.stringify(r)}`);
+    assert.ok(!/\/mcp/.test(r.hint), `${tag}: FR-246: no CLI command in the refusal row: ${JSON.stringify(r)}`);
     await report('unauthorized: sign in required', 'auth');
     assert.ok(await until(`/needs you to sign in|Sign in from the chat/.test((document.querySelector('#liveBox [data-lvs="team-wiki"][data-lvc]')||{textContent:''}).textContent)&&!/Refused: the sign-in app/.test((document.querySelector('#liveBox [data-lvs="team-wiki"][data-lvc]')||{textContent:''}).textContent)`, 6000), `${tag}: a plain sign-in failure keeps the sign-in words`);
   };
@@ -104,6 +109,8 @@ module.exports = async (ctx) => {
       assert.strictEqual(await js(`document.getElementById('siD_vscode').textContent`), WORDS.vscode, `${tag}: Visual Studio Code's line (FR-239)`);
       assert.strictEqual(await js(`document.getElementById('siD_off').textContent`), WORDS.off, `${tag}: Off shows its words (FR-239)`);
       assert.strictEqual(await js(`document.getElementById('siD_custom').textContent`), WORDS.custom, `${tag}: Custom app's line (FR-239)`);
+      assert.strictEqual(await js(`['siH','siNotice','siCli','siGroup','siLinux','siMsg'].map(i=>(document.getElementById(i)||{textContent:''}).textContent).join(' ').includes('/mcp')`), false, `${tag}: FR-246: no CLI command in the sign-in app group`);
+      assert.strictEqual(await js(`!!document.getElementById('siCli')`), false, `${tag}: FR-234: no Copilot CLI line when nothing is stored`);
       assert.strictEqual(await js(`document.querySelectorAll('#siGroup input[name=siMode]:not(:checked)').length`), 2, `${tag}: one choice selected`);
       assert.strictEqual(await js(`!!document.getElementById('siD_off').closest('.siapp-opt').querySelector('input').getAttribute('aria-describedby')`), true, `${tag}: each choice names its line to a screen reader`);
       assert.strictEqual(await js(`(()=>{const n=document.getElementById('siNotice');return n?n.querySelector('span').textContent:null})()`), WORDS.notice, `${tag}: notice: shown once for a fresh settings file, with the fixed words`);
@@ -191,7 +198,7 @@ module.exports = async (ctx) => {
       assert.deepStrictEqual(await stored(), { app: { mode: 'off' }, seen: true }, `${tag}: an explicit Off is stored as Off`);
       assert.ok(Math.abs((await top()) - y0) <= 1, `${tag}: scroll kept after Off`);
       await shot('off');
-      await refusal(tag + ' Off', "Microsoft refused Copilot's sign-in app for this server. Use /mcp auth team-wiki in the Copilot CLI.");
+      await refusal(tag + ' Off', WORDS.offRefused);
       // ---- back to Visual Studio Code's app ----
       await pick('vscode');
       await js(`document.getElementById('siSave').click();0`);
@@ -204,5 +211,21 @@ module.exports = async (ctx) => {
       await H.clearToasts();
     }
   }
+  // ---- 1440x900 flat only: the capability gate (FR-238) and a stored pending copilot-cli (FR-234) ----
+  await H.load({ w: 1440, h: 900, ready: 'fit', focus: true, query: { simkinds: 'mixed', simsigninappcap: '0' } });
+  await js(`window.DurbarScreens.openSettings('mcp')`);
+  assert.ok(await until(`!!document.getElementById('mcpRefreshLine')&&document.getElementById('advMcp').open`), 'no capability: Settings > MCP servers painted');
+  await H.settle();
+  assert.strictEqual(await js(`!!document.getElementById('siGroup')||!!document.getElementById('siH')`), false, 'FR-238: no sign-in app group without the adapter\'s signInAppChoice');
+  await H.load({ w: 1440, h: 900, ready: 'fit', focus: true, query: { simkinds: 'mixed', simsigninapp: 'copilot-cli' } });
+  await js(`window.DurbarScreens.openSettings('mcp')`);
+  assert.ok(await until(`!!document.getElementById('siGroup')`), 'copilot-cli stored: the group is there');
+  await H.settle();
+  assert.strictEqual(await js(`(document.getElementById('siCli')||{}).textContent||null`), WORDS.cli, "FR-234: a stored copilot-cli shows Copilot CLI's line");
+  assert.strictEqual(await js(`(document.querySelector('#siGroup input[name=siMode]:checked')||{}).value||null`), 'vscode', "FR-234: a stored copilot-cli selects Visual Studio Code's app (the default)");
+  assert.strictEqual(await js(`parseFloat(getComputedStyle(document.getElementById('siCli')).fontSize)>=10.5`), true, 'FR-234 line: text at least 10.5px');
+  await scrollToHeading();
+  await raf2();
+  await H.shot(path.join(OUT, '058-appmode-copilot-cli-1440x900.png'), { prep: 'mouse', tag: '058' });
   console.log('[058] app mode PASS');
 };

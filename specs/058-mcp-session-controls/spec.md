@@ -4,7 +4,7 @@
 group: 046
 title: MCP servers in a session (issue #349): plain state words and how servers start per agent app, the masked failure reason with a hint, per-server Restart where the agent app has one (Copilot, Claude Code), Restart session with these servers, Open log folder (reveal only)
 status: building
-note: restart, logs and sign-in tasks open; masking and state words built; App mode (#1667): SDK bump and setting built, Settings UI not built
+note: restart, logs and sign-in tasks open; masking and state words built; App mode (#1667): bump, setting, Settings UI built; real checks open
 -->
 
 **Feature Branch**: `058-mcp-session-controls`
@@ -2708,7 +2708,8 @@ facts below that this delta relies on, unless tagged otherwise):
   malformed flags, a failed save). Mutants for the notice are in the driver (below).
 - Built for FR-240 (row): `[IMPLEMENTED]` the row's reason line and hint (Settings' live rows and a chat's MCP dialog) ask `isSignInAppRefusal` first
   (`mcpwords.hintFor` `refusalText`, `reasonOf` `refusal`: "Refused: the sign-in app"), worded by `signInAppRefusalText` with the app in force (`siSaved`:
-  Visual Studio Code's app, Custom app, or Off with `/mcp auth <name>`). `test: mcpwords` (refusal before the sign-in words, only failed or needs-sign-in rows,
+  Visual Studio Code's app, Custom app, or Off with FR-246's note and no CLI command: review of #1688, F1, which removed the `/mcp auth <name>` sentence
+  the window added). `test: mcpwords` (refusal before the sign-in words, only failed or needs-sign-in rows,
   unchanged without a refusal). **`[KNOWN GAP]`** the failed tool call's own line in the chat still uses the old words: it is main's `mcpCall` class word
   (`auth` | `policy`) with a simulator copy compared by `test:mcpcall`; a third class needs a main, simulator and test change of its own.
 - Built for FR-241: `[IMPLEMENTED]` the Linux line shows only where `agentDurbar.platform === 'linux'`; nothing is hidden or refused. macOS redirect: in
@@ -2723,7 +2724,17 @@ facts below that this delta relies on, unless tagged otherwise):
   nothing is stored"), `field-always` ("field hidden in Visual Studio Code's mode"), `cancel-applies` ("Cancel changes nothing (nothing saved)"),
   `scroll-reset` ("scroll kept: the page does not jump to the top on a change"). `docs/screenshots/058-mcp-refresh-settings-*` retaken (they show the new group
   under the refresh line); the other linked 058 pictures of those drivers differ from `main`'s by unrelated drift and were not committed. **Not verified**: a real sign-in with any mode; the real reconnect (the simulator starts no client); Windows and
-  macOS pictures; dark theme; DPR 2; the activity-log row "Copilot sign-in app changed to <label>" (left to a later delta, as PR 3 said).
+  macOS pictures; dark theme; DPR 2; the activity-log row "Copilot sign-in app changed to <label>" (**T233**, open).
+- Review of #1688 (Paco, 2026-11-15): **F1** the Off line and the Off refusal have no CLI command (FR-239, FR-240 with FR-246); the driver asserts
+  the new words and no `/mcp` in the group or the refusal rows. **F5** a stored `copilot-cli` shows FR-234's line ("Copilot CLI's app: not available
+  in this build, so Visual Studio Code's app (the default) is used.", `#siCli`) with Visual Studio Code's app selected (driver, `simsigninapp=copilot-cli`).
+  **F6** the group shows only when `listAdapters` reports the Copilot adapter with `signInAppChoice` (FR-238; the simulator's Copilot entry has the
+  flag, `simsigninappcap=0` drops it; driver: no group then). **F7** the activity-log row is T233. **F9** this spec's status note is under 160
+  characters and current. Mutants (source, each killed by the driver at its own assertion): the Off line with `/mcp auth` back ("Off shows its
+  words (FR-239)"), the window's `/mcp auth` sentence back on the Off refusal ("FR-246: no CLI command in the refusal row"), the capability gate
+  dropped ("FR-238: no sign-in app group without the adapter's signInAppChoice"), the copilot-cli line dropped ("FR-234: a stored copilot-cli shows
+  Copilot CLI's line"). `docs/screenshots/058-mcp-refresh-settings-*` not retaken: the Off line is below their fold and the part in view is
+  unchanged (a retake differed only by unrelated simulator drift).
 
 #### Later, not in this plan
 

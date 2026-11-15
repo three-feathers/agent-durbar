@@ -2485,7 +2485,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     let seriousMode = false; /* spec 034 */
     let motion = true; /* spec 052 FR-069 (issue #1182) */
     let simDiagnostics = false; /* spec 058 FR-227: Settings > Diagnostics */
-    let simSignInApp: { mode: 'off' | 'vscode' | 'copilot-cli' | 'custom'; clientId?: string } | undefined; /* spec 058 FR-233: nothing stored = the default (VS Code's app); main checks and saves in the real app */
+    let simSignInApp: { mode: 'off' | 'vscode' | 'copilot-cli' | 'custom'; clientId?: string } | undefined = typeof location !== 'undefined' && new URLSearchParams(location.search).get('simsigninapp') === 'copilot-cli' ? { mode: 'copilot-cli' } : undefined; /* `simsigninapp=copilot-cli`: a stored pending choice (FR-234);  spec 058 FR-233: nothing stored = the default (VS Code's app); main checks and saves in the real app */
     let simSignInAppSeen = false; /* spec 058 FR-239: the once-shown notice; a reload forgets it here (main's handler is tested in test:signinapp) */
     let stillHighlights = typeof location !== 'undefined' && new URLSearchParams(location.search).get('simstillhl') === '1'; /* spec 001 FR-192; ?simstillhl=1 starts it saved on (the boot read) */
     let autoFollowWork = false; /* spec 052 FR-182: off by default; the simulator keeps it in memory and refuses a non-boolean like main */
@@ -3308,7 +3308,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     };
     const simAdapters = (): AdapterInfo[] => simAdapterList().map(signInState).map((k) => (SIM_AUTOPILOT && simApCap(k.id) ? { ...k, capabilities: { ...k.capabilities, autopilot: simApCap(k.id) } } : k));
     const simAdapterList = (): AdapterInfo[] => [
-      { id: 'copilot', displayName: 'Copilot', state: 'ready', version: 'sim', capabilities: { ...copilotCaps } },
+      { id: 'copilot', displayName: 'Copilot', state: 'ready', version: 'sim', capabilities: { ...copilotCaps, ...(typeof location !== 'undefined' && new URLSearchParams(location.search).get('simsigninappcap') === '0' ? {} : { signInAppChoice: true }) } }, // spec 058 FR-238: the Copilot adapter's flag; `simsigninappcap=0` drops it (the row must hide)
       ...(simKinds ? [
         simKindsParam === 'solo' && !simInstalled.has('claude')
           ? { id: 'claude', displayName: 'Claude Code', state: 'not-installed', hint: 'Install Claude Code, then choose Check again.', capabilities: { ...copilotCaps, caps: false, mcpToggle: false, remote: false } }
