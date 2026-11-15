@@ -214,7 +214,8 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
   /* the cells a storey's resting seats need, after that storey's last folder; their sum is the lounge's cells in the building view */
   const aOk = !!runs && lounge.length > 0 && lounge.every((a) => loungeSt(a) >= 0), loungeS = aOk ? [...lounge].sort((a, b) => loungeSt(a) - loungeSt(b)) : lounge, cellsPer = aOk ? runs!.map((_, si) => { const n = loungeS.filter((a) => loungeSt(a) === si).length; return n ? Math.max(minPer[si] || 0, Math.ceil((n * AISLE_LSEAT) / minCell - 1e-9)) : 0; }) : [];
   const ends: ReadonlyMap<number, number> | undefined = aOk ? new Map(runs!.map((r, si) => [r.to - 1, cellsPer[si]] as const).filter(([, n]) => n > 0)) : undefined, nCellsS = cellsPer.reduce((a, b) => a + b, 0);
-  const sizes = folders.map((f) => f.agents.length), kc = k + nCells0, lobbyT = Math.min(kc <= 4 ? AISLE_LOBBY_FEW : AISLE_LOBBY, lobbyMax);
+  /* spec 102 delta 2026-11-14 (T223): an empty floor (no agent, no lounge seat) is planned as a hall of three one-cabinet folders (the empty office's three desks), so it fits and takes the whole floor like the 15-agent hall; no zone is drawn from it (`folders` is empty) */
+  const sizes = folders.map((f) => f.agents.length), kc = k + nCells0, planSizes = kc ? sizes : [1, 1, 1], lobbyT = Math.min(kc <= 4 ? AISLE_LOBBY_FEW : AISLE_LOBBY, lobbyMax);
   /* owner, 2026-11-03 06:59 UTC (option A): with 4 or fewer the lobby may be lower, down to its minimum, when that lets the cabinets grow; the
      lobby height and the plan are chosen together, by the floor the cabinets and people cover (the same height on a tie keeps the higher lobby);
      what the larger plan leaves goes back to the lobby */
@@ -223,10 +224,10 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
   const hasHelpers = folders.some((f) => f.agents.some((a) => (a.helpers || 0) > 0));
   const planAt = (sh: number, st?: ReadonlySet<number>, en?: ReadonlyMap<number, number>): Plan => {
     const nCells = en ? nCellsS : nCells0;
-    let first = planFor(sizes, W, Ho - lobbyT - AISLE_LANE - AISLE_PAD, PW, nCells, sh, st, en);
-    if (kc <= 4 && AISLE_LOW_LOBBY) for (let L = lobbyT - 4; L >= Math.min(lobbyMin + AISLE_LANE, AISLE_LOBBY_LOW); L -= 2) { const p = planFor(sizes, W, Ho - L - AISLE_LANE - AISLE_PAD, PW, nCells, sh, st, en); if (covered(p) > covered(first)) first = p; }
+    let first = planFor(planSizes, W, Ho - lobbyT - AISLE_LANE - AISLE_PAD, PW, nCells, sh, st, en);
+    if (kc <= 4 && AISLE_LOW_LOBBY) for (let L = lobbyT - 4; L >= Math.min(lobbyMin + AISLE_LANE, AISLE_LOBBY_LOW); L -= 2) { const p = planFor(planSizes, W, Ho - L - AISLE_LANE - AISLE_PAD, PW, nCells, sh, st, en); if (covered(p) > covered(first)) first = p; }
     /* spec 102 delta 2026-11-12 (issue 1590): the lowest lobby is also tried when the plan at the set lobby fits only by cutting a folder of 4 or fewer across rows (keep: false) and the lowest lobby keeps them whole */
-    const low = planFor(sizes, W, Ho - lobbyMin - AISLE_LANE - AISLE_PAD, PW, nCells, sh, st, en);
+    const low = planFor(planSizes, W, Ho - lobbyMin - AISLE_LANE - AISLE_PAD, PW, nCells, sh, st, en);
     return first.fits && (first.keep || !low.keep) ? first : low;
   };
   const solve = (st?: ReadonlySet<number>, en?: ReadonlyMap<number, number>): { sh: number; plan: Plan } => {
@@ -254,7 +255,7 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
   lounge = en ? loungeS : sp.lounge;
   const sol = ch.sol, forced = ch.forced;
   const { sh, plan } = sol;
-  const { g, cols, rows, sl } = plan, pk = packSeats(sizes, cols, plan.keep, nCells, forced, en), cab = cabGrid(plan.gw, plan.gh), cabW = cab.w * g, cabH = cab.h * g, pw = PW * g, ph = AISLE_PERSON.h * g;
+  const { g, cols, rows, sl } = plan, pk = packSeats(planSizes, cols, plan.keep, nCells, forced, en), cab = cabGrid(plan.gw, plan.gh), cabW = cab.w * g, cabH = cab.h * g, pw = PW * g, ph = AISLE_PERSON.h * g;
   const bend = 2 * sl, nGap = forced && runs ? runs.length - 1 : 0, used = rows * (plan.rowH + bend) + nGap * STOREY_GAP;
   /* the storey of each row (lounge-only rows below the last folder take the last one): the rule between storeys is added above its first row */
   const stOfFolder = folders.map((_, fi) => (forced && runs ? Math.max(0, runs.findIndex((r) => fi >= r.from && fi < r.to)) : 0)), rowSt: number[] = Array.from({ length: rows }, () => -1);

@@ -292,11 +292,18 @@
         "photo": "built",
         "cave": "built",
         "loft": "missing",
-        "retro": "missing"
+        "retro": "built"
       },
       "nonNegotiables": "TK",
-      "gap": {
-        "retro": "the arcade stage ends about y=410 at 1280x800 and the window below it is blank dark page (retro-empty-1280x800 and 1440x900, looked at 2026-11-07); photo and cave fill the window. Words, three desks and lift are right; the layout is not built"
+      "evidence": {
+        "retro": {
+          "steps": [
+            "empty-office"
+          ],
+          "pictures": [
+            "empty"
+          ]
+        }
       }
     },
     {
