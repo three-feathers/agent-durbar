@@ -634,7 +634,7 @@ async function driver(ctx) {
         if (!res.info.drafts) res.problems.push('no Draft tag was in the checked layout');
         total++;
         if (sim === 15 && res.info.scroll) res.problems.push('the office scrolls at the 15-agent scale');
-        const caveFloors = floors && process.env.OFFICE_WORLD === 'cave', ratchet = caveFloors ? 29.9 : 30.5; /* spec 097 (issue 1810, T357): the cave's All floors hall at 1280x800 has a desk face of 30.3 px, under the 30.5 px minimum (measured on macOS and on Linux; a flat hall measured 30.3 px too, so the 2 % storey loss is not the cause): this case alone has 29.9 px, as a [KNOWN GAP] until the cause is found (issue 1814); every other case keeps 30.5 px */
+        const ratchet = 30.5; /* the cave too (spec 097 FR-308, delta 2026-11-15): its helper strip is not drawn where it would take the face under 30.5 px (world.json `minFace`) */
         if (sim === 15 && !rooms && res.info.face < ratchet) res.problems.push(`desk face ${res.info.face.toFixed(1)}px (ratchet ${ratchet.toFixed(1)}px, lowered 2026-11-01 for a room that stays still; SC-002 target 40px is a KNOWN GAP)`);
         if (res.problems.length) { failed++; console.log(`FAIL ${tag} ${step} ambient ${amb}: ${res.problems.slice(0, 12).join('; ')}`); }
         rows.push({ label: `${tag} ${step} ambient ${amb}`, d: 'real', h: '-', rooms: '-', plates: res.info.plates, desks: res.info.plates, stageH: Math.round(res.info.u || 0), floorH: 0, minFont: res.info.minFont, problems: res.problems.length });

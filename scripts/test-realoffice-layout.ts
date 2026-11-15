@@ -871,6 +871,50 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
   console.log(`lounge with helpers: the moments scene and ${n} rooms keep u`);
 }
 
+// ---- spec 097 FR-308 (delta 2026-11-15, issue 1814): a world with `minFace` takes the helper strip only while the desk face stays over it ----
+{
+  const CAVE = { ...readJson('worlds', 'cave', 'world.json'), ...readJson('sets', 'prehistoric', 'set.json') } as unknown as RealMeta;
+  const PH = META;
+  assert.strictEqual(CAVE.minFace, 30.5, 'the cave names its face minimum (SC-002)');
+  assert.strictEqual(PH.minFace, undefined, 'Photo has no face minimum: the strip rule is as before');
+  const RETRO = { ...readJson('worlds', 'retro', 'world.json'), ...readJson('sets', 'retro', 'set.json') } as unknown as RealMeta;
+  assert.strictEqual(RETRO.minFace, undefined, 'the arcade has no face minimum');
+  const ST2: RealState[] = ['working', 'waiting', 'thinking', 'error', 'done', 'idle'];
+  /** n agents over f folders on `fl` floors (when fl > 1, the folders take the floors in turn), helpers on every desk but each third */
+  const hall = (M: RealMeta, n: number, f: number, fl: number, hp: number): RealModel => {
+    const ppl = Object.keys(M.seat).sort();
+    const m: RealModel = { folders: Array.from({ length: f }, (_, i) => ({ id: 'f' + i, agents: [] as RealAgent[], ...(fl > 1 ? { floor: { id: 'fl' + (i % fl), name: 'Floor ' + (i % fl + 1), n: i % fl + 1 } } : {}) })), places: PLACES.map((id) => ({ id, visitors: [] })) };
+    for (let i = 0; i < n; i++) m.folders[i % f].agents.push({ id: 'a' + i, state: ST2[i % 6], away: null, person: ppl[i % ppl.length], helpers: i % 3 === 2 ? 0 : hp });
+    return m;
+  };
+  const sizes: [number, number][] = [];
+  for (const W of [1000, 1100, 1180, 1280, 1366, 1440]) for (const H of [600, 650, 700, 748, 800, 848]) sizes.push([W, H]);
+  const sweep = (M: RealMeta, bare = false): { key: string; L: Layout }[] => {
+    const out: { key: string; L: Layout }[] = [];
+    for (const [W, H] of sizes) for (const n of [6, 9, 12, 15]) for (const f of [2, 3, 4]) for (const fl of [1, 3]) for (const hp of [1, 3, 6]) out.push({ key: `${W}x${H} n${n} f${f} fl${fl} h${hp}`, L: realLayout(hall(M, n, f, fl, bare ? 0 : hp), { w: W, h: H }, M) });
+    return out;
+  };
+  /* Photo and the arcade: the sweep's layouts are the layouts of origin/main (sha256 over the JSON of every layout; computed with the same sweep on the code before the rule, 5c58d9122) */
+  const digest = (M: RealMeta): string => createHash('sha256').update(JSON.stringify(sweep(M).map((x) => x.L))).digest('hex');
+  const PIN = { photo: 'f987e516c637124d1a81bfe8d4dfa0777459d6264027c767724082fe6ccefc5a', retro: '1e558d682a7b8ec803240e521775c852dad3716030f5f9eae2e398114df74519' };
+  assert.strictEqual(digest(PH), PIN.photo, 'FR-308 (2026-11-15): the Photo layouts changed; a world without minFace must lay out as before the rule');
+  assert.strictEqual(digest(RETRO), PIN.retro, 'FR-308 (2026-11-15): the arcade layouts changed; a world without minFace must lay out as before the rule');
+  /* the cave: every case with the strip keeps its face at or over 30.5 px, and the rule fires (a case that the strip alone would take under it) */
+  const free = { ...CAVE } as Record<string, unknown>; delete free.minFace;
+  const A = sweep(CAVE), B = sweep(free as unknown as RealMeta), Z = sweep(CAVE, true); /* with the rule, without it, and the same halls without helpers */
+  let fired = 0;
+  A.forEach((a, i) => {
+    const b = B[i], z = Z[i];
+    if (b.L.helpRows && b.L.faceH < 30.5 - 1e-6 && z.L.u > b.L.u + 1e-6) {
+      fired++;
+      assert.strictEqual(a.L.helpRows, 0, `FR-308 (2026-11-15): ${a.key}: the strip would cost the face (${b.L.faceH.toFixed(2)} px) and is not drawn`);
+      assert.ok(a.L.u > b.L.u && Math.abs(a.L.u - z.L.u) < 1e-6, `FR-308 (2026-11-15): ${a.key}: the hall without the strip is bigger (u ${b.L.u.toFixed(2)} -> ${a.L.u.toFixed(2)})`);
+    } else assert.strictEqual(JSON.stringify(a.L), JSON.stringify(b.L), `FR-308 (2026-11-15): ${a.key}: no change where the strip costs the face nothing`);
+  });
+  assert.ok(fired >= 1, `FR-308 (2026-11-15): the sweep has a cave case where the strip costs the face (${fired})`);
+  console.log(`minFace: ${A.length} halls per world; Photo and the arcade as before the rule; the cave drops the strip in ${fired}`);
+}
+
 // ---- owner 2026-11-02: one post-it paper colour per place, dark ink at 4.5:1 or better on each, one default for a custom place ----
 {
   const lum = (hex: string): number => { const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((x) => (x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4))); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };

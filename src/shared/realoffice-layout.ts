@@ -27,6 +27,8 @@ export interface RealMeta {
   pixelArt?: boolean;
   /** spec 102 delta 2026-11-14 (spec 097 FR-104): this world draws the All floors view as storeys (a band and a tag per floor); off in a world that has not built it (Photo, cave: T113) */
   storeys?: boolean;
+  /** spec 097 FR-308 (delta 2026-11-15, issue 1814): the smallest desk face, in px, that the helper strip may cost; the strip is taken only while FACE_U * u keeps the face at or over it. Unset (Photo, the arcade): the strip is taken whenever it fits, as before. */
+  minFace?: number;
   /** spec 097 FR-335 (T247): the people's own art is not pixel art (false); a hi-res crew in a pixel world is scaled to the world's people, not drawn at whole multiples of its pixels */
   pixelPeople?: boolean;
   seat: Record<string, SeatMeta>; stand: Record<string, StandMeta>;
@@ -598,7 +600,7 @@ export function realLayout(model: RealModel, viewport: { w: number; h: number },
       const p0 = pack(fs, ho, 0, bf);
       if (!fs.some((f) => f.agents.some((a) => (a.helpers || 0) > 0))) return { p: p0, hr: 0 };
       const room = (q: ReturnType<typeof roPack>): boolean => q.rows.every((r) => !r.strip || r.Sw - 16 >= HEAD);
-      const ok = (q: ReturnType<typeof roPack>): boolean => q.fits && room(q) && q.u >= floor - 1e-6;
+      const ok = (q: ReturnType<typeof roPack>): boolean => q.fits && room(q) && q.u >= floor - 1e-6 && !(meta.minFace && FACE_U * q.u < meta.minFace - 1e-6 && p0.u > q.u + 1e-6); /* FR-308 (2026-11-15): a world with `minFace` does not pay its face for the strip: refused where it takes the face under and the hall without it is bigger */
       const p1 = pack(fs, ho, helpH(1), bf);
       return ok(p1) ? { p: p1, hr: 1 } : { p: p0, hr: 0 };
     };
