@@ -515,7 +515,7 @@ async function driver(ctx) {
       document.querySelectorAll('#stage .ro-dots').forEach((e) => add('dots', e));
       if (floors) {
         const tags = [...document.querySelectorAll('#stage .ro-stag')];
-        /* round 5 of the review of #1746: the strict rule (a sign at its flat width, a whole tag) draws the cave's simulator split as the hall without floors; the cave case requires exactly that (the data-world read-back above has proved the page drew the cave). Photo and the arcade require their storeys. */
+        /* round 5 of the review of #1746: the strict rule (a sign at its flat width, a whole tag) draws the cave's simulator split as the hall without floors; the cave case asserts exactly that (the data-world read-back above has proved the page drew the cave). Photo and the arcade assert their storeys. */
         if ((asked || '') === 'cave') { if (L.storeys || tags.length || document.querySelector('#stage .ro-slab')) P.push('the cave\'s All floors view must be the hall without floors (the strict rule), but it drew storeys: ' + (L.storeys ? L.storeys.length : 0) + ' in the layout, ' + tags.length + ' tags'); }
         else if (!L.storeys || L.storeys.length < 2 || tags.length !== L.storeys.length) P.push('the All floors view did not draw its storeys (' + (L.storeys ? L.storeys.length : 0) + ' in the layout, ' + tags.length + ' tags on screen)');
         tags.forEach((e) => { const b = e.querySelector('b'); if (!b || b.scrollWidth > b.clientWidth + 0.5) P.push('storey tag "' + e.textContent.trim() + '" cuts its name'); }); /* the ellipsis is on the <b>, not on the tag's box */
