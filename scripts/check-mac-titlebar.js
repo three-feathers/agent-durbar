@@ -20,6 +20,7 @@
  */
 'use strict';
 const fs = require('fs');
+const { buildProblem } = require('./ensure-electron'); // spec 008 FR-211: one shared build check
 const os = require('os');
 const path = require('path');
 const { helpers, jsLiteral } = require('./driver-helpers');
@@ -207,7 +208,7 @@ module.exports = driver;
 
 if (require.main === module) {
   const { spawn } = require('child_process');
-  if (!fs.existsSync(INDEX)) { console.error('dist/ missing: run npm run build first'); process.exit(2); }
+  { const noBuild = buildProblem(); if (noBuild) { console.error(noBuild); process.exit(2); } }
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-mactb-'));
   const electron = require('electron'); /* path to the binary */
   // a clean environment: no DURBAR_OPEN / DURBAR_PERM / DURBAR_SHOT or other dev switch from the caller can point the run at real folders

@@ -23,7 +23,7 @@ const { spawn, execFileSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { ensureElectron } = require('./ensure-electron');
+const { ensureElectron, buildProblem } = require('./ensure-electron');
 
 const ROOT = path.join(__dirname, '..');
 const themes = process.argv.includes('--themes');
@@ -136,9 +136,15 @@ const run = (job) => new Promise((resolve) => {
  * Run every job and return how many failed. `ensure`, `runJob`, `available` and `log` are for tests (scripts/test-ui-suite.ts):
  * the defaults install Electron, start check-office-overlap.js and read the real memory.
  */
-async function main({ ensure = ensureElectron, runJob = run, available: avail = available, jobs: list = jobs, workers = JOBS, log = console.log, waitMaxMs = WAIT_MAX_MS } = {}) {
+async function main({ build = buildProblem, ensure = ensureElectron, runJob = run, available: avail = available, jobs: list = jobs, workers = JOBS, log = console.log, waitMaxMs = WAIT_MAX_MS } = {}) {
   const t0 = Date.now();
   log(`check:parallel: ${list.length} jobs (${variants.length} x ${SHARDS} shards), up to ${workers} at a time, nice 10, motion ${process.env.CHECK_MOTION === '1' ? 'on' : 'reduced'}`);
+  // FR-211: no build, no part (each part would load dist/ in Electron and wait)
+  const noBuild = build();
+  if (noBuild) {
+    log(`check:parallel: ${noBuild}; no part was started`);
+    return list.length;
+  }
   // FR-114: one install before the fan-out; without the binary every part would fail, so stop here and say why
   if (!ensure()) {
     log('check:parallel: the Electron binary is not installed and could not be fetched (see above); no part was started');

@@ -229,7 +229,15 @@ function helpers(ctx) {
        #1179: a focus() behind a dialog fires no focusin in an unfocused page), and releaseFocus() ends it as before. emulate:true keeps the
        fallback only: a driver that tests a blur after releaseFocus() (check-list-columns) must not start with the emulation, because on Windows
        the blur it then makes does not reach a page that never owned the OS focus (#1179) */
-    if (o.emulate === 'first') { await emulateFocus(); if (emulating.has(wc())) return w.until('document.hasFocus()', 1500); }
+    if (o.emulate === 'first') {
+      await emulateFocus();
+      if (emulating.has(wc())) {
+        if (await w.until('document.hasFocus()', 1500)) return true;
+        /* the emulation is recorded but the page does not report focus: it was lost across a reload or a resize (the second size of a driver on the Windows runner, PR 1282): switch it off and on again, then wait */
+        await releaseFocus(); await emulateFocus();
+        if (emulating.has(wc())) return w.until('document.hasFocus()', 3000);
+      }
+    }
     for (;;) {
       try { if (ctx.win.show) ctx.win.show(); if (ctx.win.focus) ctx.win.focus(); wc().focus(); } catch { /* the window is going away: the guard reports it */ }
       if (await w.until('document.hasFocus()', 400)) return true;
