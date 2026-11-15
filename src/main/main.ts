@@ -945,10 +945,12 @@ registerTeamsIpc({
     // the key is the add flows' key (`resolveWorkspaceCwd`, `findAdded`); the saved limit is the folder store's, as the normal add path reads it
     // T011: the not-started members, the one write (record and names), then the office; a team member is never started here
     create: {
-      room: (key) => { const f = folderStore?.get(key); return { count: f?.team?.members.length ?? 0, savedCap: f?.maxAiCredits, team: f?.team }; },
+      room: (key) => { const f = folderStore?.get(key); return { count: f?.team?.members.length ?? 0, savedCap: f?.maxAiCredits, team: f?.team, known: f !== undefined }; },
       build: addLazyMember,
       commit: (key, team, infos) => !!folderStore && folderStore.setTeamRecord(key, team, infos.map((i) => ({ src: i.adapterId ?? DEFAULT_ADAPTER, id: i.id, name: i.alias ?? '' }))),
-      place: (info) => { router.bind(info.id, info.adapterId ?? DEFAULT_ADAPTER); agents.set(info.id, info); toRenderer('agent:added', info); },
+      place: (info) => { router.bind(info.id, info.adapterId ?? DEFAULT_ADAPTER); agents.set(info.id, info); },
+      announce: (info) => toRenderer('agent:added', info),
+      rollback: (key, previous, infos, removeRoom) => !!folderStore && folderStore.restoreTeamRecord(key, previous, infos.map((i) => ({ src: i.adapterId ?? DEFAULT_ADAPTER, id: i.id })), removeRoom),
       unplace: (id) => { agents.delete(id); agentState.remove(id); router.unbind(id); },
     },
     resolveTarget: (t) => resolveTargetFrom(t, {

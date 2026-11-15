@@ -61,7 +61,7 @@ const isOk = (v: unknown): CreateOk => { assert.ok((v as CreateOk).ok === true, 
 interface Room { team?: TeamRecord; savedCap?: number }
 interface World {
   ops: InstanceType<typeof TeamOps>; log: string[]; starts: { n: number }; office: Map<string, AgentInfo>; rooms: Map<string, Room>; store: Map<string, StoredTemplate>; clock: { t: number };
-  built: LazyMemberSpec[]; names: Array<{ src: string; id: string; name: string }>; set: (o: Partial<TeamOpsDeps>) => void; fail: { commit: boolean; placeAt: number };
+  bound: Set<string>; announced: string[]; built: LazyMemberSpec[]; names: Array<{ src: string; id: string; name: string }>; set: (o: Partial<TeamOpsDeps>) => void; fail: { commit: boolean; placeAt: number };
   preview: (target?: Target, id?: string) => Promise<string>;
 }
 let tokenN = 0;
@@ -71,12 +71,13 @@ function world(templates: StoredTemplate[], rooms: Record<string, Room> = {}, o:
   const clock = { t: 1_000_000 };
   const log: string[] = [], built: LazyMemberSpec[] = [], names: World['names'] = [];
   const office = new Map<string, AgentInfo>();
+  const bound = new Set<string>(), announced: string[] = [];
   const starts = { n: 0 };
   const fail = { commit: false, placeAt: -1 };
   let ids = 0, placed = 0;
   const adapterOf = (a: string) => ({ capabilities: { caps: true }, start: () => { starts.n++; } }) as { capabilities: unknown; start(): void; a?: string };
   const create = {
-    room: (key: string) => { const r = rm.get(key); return { count: r?.team?.members.length ?? 0, savedCap: r?.savedCap, team: r?.team }; },
+    room: (key: string) => { const r = rm.get(key); return { count: r?.team?.members.length ?? 0, savedCap: r?.savedCap, team: r?.team, known: r !== undefined }; },
     build: (s: LazyMemberSpec): AgentInfo => { log.push('build'); built.push(s); adapterOf(s.app); return { id: 'agent-' + ++ids, name: 'room', alias: s.name, cwd: s.key, permMode: s.mode, model: s.model ?? '', effort: s.effort, maxAiCredits: s.cap, adapterId: s.app, lazy: true } as unknown as AgentInfo; },
     commit: (key: string, team: TeamRecord, infos: AgentInfo[]): boolean => {
       log.push('commit');
@@ -85,8 +86,16 @@ function world(templates: StoredTemplate[], rooms: Record<string, Room> = {}, o:
       for (const i of infos) names.push({ src: i.adapterId ?? 'copilot', id: i.id, name: i.alias ?? '' });
       return true;
     },
-    place: (i: AgentInfo): void => { if (placed++ === fail.placeAt) throw new Error('boom ' + MARK); log.push('place:' + i.id); office.set(i.id, i); },
-    unplace: (id: string): void => { log.push('unplace:' + id); office.delete(id); },
+    // a place that fails does so AFTER it bound the agent and put it in the office (the worst case of `main.ts`)
+    place: (i: AgentInfo): void => { bound.add(i.id); office.set(i.id, i); if (placed++ === fail.placeAt) throw new Error('boom ' + MARK); log.push('place:' + i.id); },
+    unplace: (id: string): void => { log.push('unplace:' + id); office.delete(id); bound.delete(id); },
+    announce: (i: AgentInfo): void => { log.push('announce:' + i.id); announced.push(i.id); },
+    rollback: (key: string, previous: TeamRecord | undefined, infos: AgentInfo[], removeRoom: boolean): boolean => {
+      log.push('rollback');
+      const r = rm.get(key); if (!r) return true;
+      if (previous) rm.set(key, { ...r, team: previous }); else if (removeRoom) rm.delete(key); else rm.set(key, { ...r, team: undefined });
+      return !infos.some((x) => x.id === 'never');
+    },
     adapterOf,
   };
   const deps: TeamOpsDeps = {
@@ -102,7 +111,7 @@ function world(templates: StoredTemplate[], rooms: Record<string, Room> = {}, o:
     ...o,
   };
   const ops = new TeamOps(deps);
-  const w: World = { ops, log, starts, office, rooms: rm, store, clock, built, names, set: (x) => Object.assign(deps, x), fail, preview: async (target: Target = { room: 'r1' }, id = 'tmpl1') => { const r = await ops.createPreview(target, id); assert.ok(r.ok, 'preview'); return (r as { token: string }).token; } };
+  const w: World = { ops, log, starts, office, bound, announced, rooms: rm, store, clock, built, names, set: (x) => Object.assign(deps, x), fail, preview: async (target: Target = { room: 'r1' }, id = 'tmpl1') => { const r = await ops.createPreview(target, id); assert.ok(r.ok, 'preview'); return (r as { token: string }).token; } };
   return w;
 }
 const created = async (w: World, choices: unknown = { rows: {} }, target: Target = { room: 'r1' }): Promise<CreateOk | CreateFail> => w.ops.create(await w.preview(target), choices);
@@ -115,7 +124,7 @@ section('nothing', async () => {
   eq(w.starts.n, 0, 'the fake adapter was started 0 times');
   eq(r.agents.map((a) => a.id), ['agent-1', 'agent-2', 'agent-3'], 'the template\'s order');
   ok(r.agents.every((a) => (a as { lazy?: boolean }).lazy === true), 'every member is a not-started agent');
-  eq(w.log, ['build', 'build', 'build', 'commit', 'place:agent-1', 'place:agent-2', 'place:agent-3'], 'built with no effect, then ONE write, then placed in the office');
+  eq(w.log, ['build', 'build', 'build', 'commit', 'place:agent-1', 'place:agent-2', 'place:agent-3', 'announce:agent-1', 'announce:agent-2', 'announce:agent-3'], 'built with no effect, then ONE write, then placed in the office, then the window is told');
   eq(w.built.map((b) => [b.app, b.model, b.mode, b.name]), [['copilot', undefined, 'read-only', 'Member 1'], ['claude', 'sonnet-x', 'read-only', 'Member 2'], ['codex', undefined, 'read-only', 'Member 3']], 'what main builds each member from');
   const team = w.rooms.get('key-r1')!.team!;
   eq(team.members.map((m) => [m.memberId, m.name, m.role, m.app, m.mode, m.sessions]), [[hexId(1), 'Member 1', 'role1', 'copilot', 'read-only', [{ id: 'agent-1' }]], [hexId(2), 'Member 2', 'role2', 'claude', 'read-only', [{ id: 'agent-2' }]], [hexId(3), 'Member 3', 'role3', 'codex', 'read-only', [{ id: 'agent-3' }]]], 'the record keeps each member and its session id');
@@ -193,6 +202,22 @@ section('snapshot', async () => {
   w2.store.set('tmpl1', tpl([mem(1, { brief: 'changed brief' })]));
   eq(isFail(await w2.ops.create(t3, { rows: {} })).code, 'changed', 'a member brief changed');
   eq(w2.office.size, 0, 'nothing created');
+});
+
+section('snapshot2', async () => {
+  // edited or deleted DURING the awaits (a slow adapters() list): checked again right before the write
+  for (const how of ['edited', 'deleted']) {
+    const w2 = world([tpl([mem(1), mem(2)])]);
+    const t2 = await w2.preview();
+    w2.set({ adapters: async () => { await new Promise((r) => setTimeout(r, 5)); if (how === 'edited') w2.store.set('tmpl1', tpl([mem(1), mem(2, { role: 'edited' })], { updatedAt: 2 })); else w2.store.delete('tmpl1'); return APPS; } });
+    const e = isFail(await w2.ops.create(t2, { rows: {} }));
+    eq([e.code, w2.log, w2.office.size, w2.rooms.size], ['changed', [], 0, 0], 'a template ' + how + ' while create waited: changed, nothing built or written');
+  }
+  // an unchanged one still passes with a slow list
+  const w3 = world([tpl([mem(1)])]);
+  const t3 = await w3.preview();
+  w3.set({ adapters: async () => { await new Promise((r) => setTimeout(r, 5)); return APPS; } });
+  isOk(await w3.ops.create(t3, { rows: {} }));
 });
 
 // ---------------------------------------------------------------------------------------------------------------- 5. a row that needs a choice
@@ -403,12 +428,36 @@ section('atomicity', async () => {
   eq([e.code, e.errors], ['failed', ['The team could not be created.']], 'a write that fails: failed, fixed words');
   eq([w.office.size, w.log.filter((l) => l.startsWith('place')).length], [0, 0], 'nothing was put in the office');
   eq(w.starts.n, 0, 'nothing started');
-  // a place that throws: the ones already placed are removed and the throw goes to the handler
-  const w2 = world([tpl([mem(1), mem(2), mem(3)])]);
-  w2.fail.placeAt = 2;
-  await assert.rejects(async () => created(w2), /boom/, 'the throw is not swallowed here');
+  // a place that throws on the 2nd of 3: the WHOLE batch goes (the one that threw too), the window was told of none, the record is as before
+  const old = teamOf(2, 'Old');
+  const w2 = world([tpl([mem(1), mem(2), mem(3)])], { 'key-r1': { team: old } });
+  w2.fail.placeAt = 1;
+  await assert.rejects(async () => created(w2), /boom/, 'the throw is not swallowed here (the handler answers failed)');
   n++;
-  eq([w2.office.size, w2.log.filter((l) => l.startsWith('unplace')).sort()], [0, ['unplace:agent-1', 'unplace:agent-2']], 'agents already placed are removed');
+  eq([w2.office.size, w2.bound.size, w2.announced, w2.rooms.get('key-r1')!.team, w2.rooms.get('key-r1')!.team!.members.length], [0, 0, [], old, 2], 'agents, router, window, record and count are as before');
+  eq(w2.log.filter((l) => l.startsWith('unplace')).sort(), ['unplace:agent-1', 'unplace:agent-2', 'unplace:agent-3'], 'every member of the batch is removed, the one that threw too');
+  eq(w2.log.includes('rollback'), true, 'the record was put back');
+  // the same, in a room the write created: the room is not left
+  const w2b = world([tpl([mem(1), mem(2)])]);
+  w2b.fail.placeAt = 0;
+  await assert.rejects(async () => created(w2b), /boom/, 'a throw at the first');
+  n++;
+  eq([w2b.rooms.has('key-r1'), w2b.office.size, w2b.announced], [false, 0, []], 'a room the write created is removed again');
+  // a room that existed without a record: its entry stays, the record goes
+  const w2c = world([tpl([mem(1), mem(2)])], { 'key-r1': { savedCap: 45 } });
+  w2c.fail.placeAt = 1;
+  await assert.rejects(async () => created(w2c), /boom/, 'a throw in a known room');
+  n++;
+  eq([w2c.rooms.get('key-r1'), w2c.office.size], [{ savedCap: 45, team: undefined }, 0], 'the room stays without a record');
+  // a rollback that throws does not change the answer (the original throw)
+  const w2d = world([tpl([mem(1), mem(2)])], {}, {});
+  w2d.fail.placeAt = 1;
+  (w2d as unknown as { set(o: object): void }).set({});
+  const dd = (w2d.ops as unknown as { deps: { create: { rollback(): boolean } } }).deps.create;
+  dd.rollback = () => { throw new Error('rb'); };
+  await assert.rejects(async () => created(w2d), /boom/, 'a failing rollback: the same throw');
+  n++;
+  eq(w2d.office.size, 0, 'the agents are gone anyway');
   // a name the session-name rule refuses: nothing is created, never under another name
   const secret = 'ghp' + '_' + 'A1b2C3d4'.repeat(5);
   const w3 = world([tpl([mem(1, { name: secret })])]);
@@ -416,7 +465,7 @@ section('atomicity', async () => {
   eq([e3.code, w3.log], ['failed', []], 'a name that is refused: failed before any effect');
   ok(!JSON.stringify(e3).includes('ghp'), 'no value in the answer');
   // a build that throws: no effect, the throw reaches the handler
-  const w4 = world([tpl([mem(1)])], {}, { create: { room: () => ({ count: 0 }), build: () => { throw new Error('x'); }, commit: () => { throw new Error('no'); }, place: () => undefined, unplace: () => undefined } });
+  const w4 = world([tpl([mem(1)])], {}, { create: { room: () => ({ count: 0 }), build: () => { throw new Error('x'); }, commit: () => { throw new Error('no'); }, place: () => undefined, unplace: () => undefined, announce: () => undefined, rollback: () => true } });
   await assert.rejects(async () => created(w4), /x/, 'a build that throws');
   n++;
   // no `create` dependency (the simulator): failed
@@ -467,6 +516,46 @@ section('folders', async () => {
     const before = JSON.stringify(bad.get(ws));
     eq(bad.setTeamRecord(ws, rec, names), false, 'a write that fails, room already there');
     eq(JSON.stringify(bad.get(ws)), before, 'team and names are put back');
+    // lengths in code points (the template store's rule): 3,000 emojis are 6,000 UTF-16 units and a valid brief
+    const emoji = '\u{1F600}';
+    const withBrief = (brief: string, extra: object = {}): TeamRecord => ({ templates: ['T'], members: [{ ...teamOf(1, 'x').members[0], brief, ...extra }] });
+    eq(parseTeamRecord(withBrief(emoji.repeat(3000)))!.members[0].brief, emoji.repeat(3000), 'a brief of 3,000 emojis is kept');
+    eq(parseTeamRecord(withBrief(emoji.repeat(4001)))!.members[0].brief, undefined, 'a brief of 4,001 code points is dropped');
+    eq(parseTeamRecord(withBrief(emoji.repeat(4000)))!.members[0].brief, emoji.repeat(4000), 'exactly 4,000 code points is kept');
+    eq(parseTeamRecord(withBrief('a'.repeat(2001), { briefFrom: 'file' }))!.members[0].brief, undefined, 'a brief from a file is cut at 2,000');
+    eq(parseTeamRecord(withBrief('a'.repeat(2000), { briefFrom: 'file' }))!.members[0].brief, 'a'.repeat(2000), 'and 2,000 is kept');
+    eq(parseTeamRecord(withBrief('x\n'.repeat(80) + 'x'))!.members[0].brief, undefined, 'more than 80 lines is dropped');
+    const f2 = path.join(dir, 'brief.json');
+    const sb = new FolderStore(f2); sb.load();
+    ok(sb.setTeamRecord(ws, withBrief(emoji.repeat(3000))), 'a record with a 3,000-emoji brief is saved');
+    eq(new FolderStore(f2).load()[0].team!.members[0].brief, emoji.repeat(3000), 'and read back whole');
+    // a record that would lose a FIELD (not a member) is refused whole, and nothing is written
+    const sc = new FolderStore(path.join(dir, 'lossy.json')); sc.load();
+    for (const lossy of [withBrief(emoji.repeat(4001)), withBrief('x', { cap: { unit: 'aiu', amount: -1 } }), withBrief('x', { profile: 'bad id!' }), withBrief('x', { model: '../m' }), withBrief('x', { mode: 'autopilot' }), withBrief('x', { effort: 'Bad Effort' })]) {
+      eq(sc.setTeamRecord(ws, lossy), false, 'a record that would lose a field is refused: ' + JSON.stringify(lossy).slice(0, 50));
+    }
+    ok(!sc.get(ws) && !fs.existsSync(path.join(dir, 'lossy.json')), 'nothing was added or written');
+    // restoreTeamRecord: the record from before, the names of the batch dropped, a created room removed
+    const sr = new FolderStore(path.join(dir, 'restore.json')); sr.load();
+    const prevRec = teamOf(1, 'Old', 500);
+    ok(sr.setTeamRecord(ws, prevRec, [{ src: 'copilot', id: 'old-0', name: 'Keep' }]), 'a first record');
+    const grown: TeamRecord = { templates: ['Old', 'New'], members: [...prevRec.members, ...teamOf(1, 'New', 600).members] };
+    ok(sr.setTeamRecord(ws, grown, [{ src: 'copilot', id: 'new-0', name: 'Gone' }]), 'a second batch');
+    ok(sr.restoreTeamRecord(ws, prevRec, [{ src: 'copilot', id: 'new-0' }], false), 'restored');
+    eq([sr.get(ws)!.team, sr.get(ws)!.sessionNames?.map((x) => x.name)], [parseTeamRecord(prevRec), ['Keep']], 'the previous record is back and the batch\'s name is gone');
+    eq(new FolderStore(path.join(dir, 'restore.json')).load()[0].team, parseTeamRecord(prevRec), 'also on disk');
+    const sn = new FolderStore(path.join(dir, 'restore2.json')); sn.load();
+    ok(sn.setTeamRecord(ws, prevRec, [{ src: 'copilot', id: 'x-0', name: 'Z' }]), 'a new room');
+    ok(sn.restoreTeamRecord(ws, undefined, [{ src: 'copilot', id: 'x-0' }], true) && !sn.get(ws), 'a room the batch created is removed');
+    ok(sn.restoreTeamRecord(ws, undefined, [], true), 'a room that is gone is fine');
+    const sk = new FolderStore(path.join(dir, 'restore3.json')); sk.load();
+    sk.upsert({ workspace: ws, permMode: 'ask' });
+    ok(sk.setTeamRecord(ws, prevRec) && sk.restoreTeamRecord(ws, undefined, [], false) && sk.get(ws)!.team === undefined && sk.get(ws)!.permMode === 'ask', 'a known room keeps its entry without the record');
+    const sf = new FolderStore(path.join(blocked, 'r.json')); sf.load();
+    sf.upsert({ workspace: ws, permMode: 'ask' });
+    const snapshot = JSON.stringify(sf.get(ws));
+    eq(sf.restoreTeamRecord(ws, undefined, [], true), false, 'a failed write answers false');
+    eq(JSON.stringify(sf.get(ws)), snapshot, 'and the room stays as it was');
     // parseTeamRecord
     eq(parseTeamRecord(null), undefined, 'null');
     const nine = { templates: Array.from({ length: 12 }, (_, i) => 'T' + i), members: teamOf(12, 'x').members };
@@ -478,8 +567,8 @@ section('folders', async () => {
     eq([odd.members.length, odd.members[0].mode, odd.members[0].cap], [1, 'read-only', undefined], 'a bad app drops the member; an odd mode reads as read-only; a bad limit is dropped');
     // a huge file with a team is parsed quickly
     const t0 = Date.now();
-    parseSavedFolders(JSON.stringify({ folders: [{ workspace: ws, permMode: 'ask', team: { templates: [], members: Array.from({ length: 200_000 }, (_, i) => teamOf(1, 'x', i + 1).members[0]) } }] }));
-    ok(Date.now() - t0 < 3000, 'a record with 200,000 members is read quickly (only 8 kept)');
+    parseSavedFolders(JSON.stringify({ folders: [{ workspace: ws, permMode: 'ask', team: { templates: [], members: Array.from({ length: 30_000 }, (_, i) => teamOf(1, 'x', i + 1).members[0]) } }] }));
+    ok(Date.now() - t0 < 10_000, 'a record with 30,000 members is read quickly (only 8 kept)');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -587,7 +676,7 @@ section('main', () => {
   };
   const mutants: { name: string; from: string; to: string; section: string; file?: 'folders' }[] = [
     { name: 'the entry\'s own choices are trusted instead of the call\'s', from: 'const appChanged = app !== m.app;', to: 'const appChanged = app !== m.app; { const c0 = e.choices.get(String(m.memberId)); if (c0) { rc.app = c0.app; rc.model = c0.model; } }', section: 'choices' },
-    { name: 'the snapshot is not compared', from: '!(0, util_1.isDeepStrictEqual)(now, t)', to: 'false', section: 'snapshot' },
+    { name: 'the snapshot is not compared', from: '(0, util_1.isDeepStrictEqual)(now, t)', to: 'true', section: 'snapshot' },
     { name: 'an adapter is started', from: 'const infos = picked.map((x) => dep.build({ ...x.spec, key: e.key }));', to: 'const infos = picked.map((x) => dep.build({ ...x.spec, key: e.key })); dep.adapterOf(picked[0].spec.app).start();', section: 'nothing' },
     { name: 'an own Allow all enters as Allow all unconfirmed', from: "if (mode === 'allow' && (imported || choices.allowConfirmed !== true))", to: "if (mode === 'allow' && imported)", section: 'modes' },
     { name: 'an imported Allow all is kept', from: "if (mode === 'allow' && (imported || choices.allowConfirmed !== true))", to: "if (mode === 'allow' && choices.allowConfirmed !== true)", section: 'modes' },
@@ -605,7 +694,7 @@ section('main', () => {
     { name: 'the record is written after the agents are placed', from: 'if (!dep.commit(e.key, team, infos))', to: 'for (const i of infos) dep.place(i);\n        if (!dep.commit(e.key, team, infos))', section: 'atomicity' },
     { name: 'a failed write is ignored', from: 'if (!dep.commit(e.key, team, infos))', to: 'if (dep.commit(e.key, team, infos) && false)', section: 'atomicity' },
     { name: 'the write comes before the checks', from: 'const e = this.takeToken(tokenIn);', to: 'const e = this.takeToken(tokenIn); if (e && this.deps.create) this.deps.create.commit(e.key, { templates: [], members: [] }, []);', section: 'arguments' },
-    { name: 'placed agents are not removed after a throw', from: 'for (const id of placed) {', to: 'for (const id of []) {', section: 'atomicity' },
+    { name: 'placed agents are not removed after a throw', from: 'for (const info of infos) {\n                try {\n                    dep.unplace(info.id);', to: 'for (const info of []) {\n                try {\n                    dep.unplace(info.id);', section: 'atomicity' },
     { name: 'a row that needs a choice is created', from: 'if (row.needsChoice)', to: 'if (false)', section: 'needschoice' },
     { name: 'a limit sent with another app counts', from: 'if (!appChanged) {', to: 'if (true) {', section: 'limits' },
     { name: 'a limit in the wrong unit is converted', from: 'if (rc.cap.unit !== unit)', to: 'if (false)', section: 'limits' },
@@ -613,13 +702,24 @@ section('main', () => {
     { name: 'an unknown row id is ignored', from: "return cfail('invalid', 'Choices: a row is not in this preview.');", to: 'continue;', section: 'arguments' },
     { name: 'the imported effort is raised (picked always)', from: "picked: rc.effort !== undefined && rc.effort !== '', appChanged,", to: 'picked: true, appChanged,', section: 'effort' },
     { name: 'the real count of a room is 0', from: 'const teamCountOf = (env, key) => { const n = env.teamCount?.(key);', to: 'const teamCountOf = (env, key) => { const n = 0;', section: 'target' },
-    { name: 'the record is saved smaller when a member does not parse', from: 'rec.members.length !== given.length', to: 'false', section: 'folders', file: 'folders' },
+    { name: 'the record is saved smaller when a member does not parse', from: '!(0, util_1.isDeepStrictEqual)(rec, JSON.parse(JSON.stringify(team)))', to: '!rec || rec.members.length !== team.members.length', section: 'folders', file: 'folders' },
     { name: 'a new room is left in memory after a failed write', from: 'if (created)\n            this.folders = this.folders.filter((f) => f !== cur);', to: 'if (created) { }', section: 'folders', file: 'folders' },
     { name: 'a failed write keeps the team', from: 'cur.team = before.team;', to: '', section: 'folders', file: 'folders' },
     { name: 'a new room gets Allow all', from: "cur = { workspace, permMode: 'read-only', hidden: false };", to: "cur = { workspace, permMode: 'allow', hidden: false };", section: 'folders', file: 'folders' },
     { name: 'a new room is hidden', from: "cur = { workspace, permMode: 'read-only', hidden: false };", to: "cur = { workspace, permMode: 'read-only', hidden: true };", section: 'folders', file: 'folders' },
     { name: 'a record has more than 8 members', from: 'if (members.length >= teamtemplate_1.LIMITS.members)', to: 'if (members.length >= 99)', section: 'folders', file: 'folders' },
     { name: 'an odd mode is read as Allow all', from: "mode: o.mode === 'ask' || o.mode === 'allow' ? o.mode : 'read-only',", to: "mode: o.mode === 'ask' ? o.mode : 'allow',", section: 'folders', file: 'folders' },
+    { name: 'the snapshot is compared only once', from: "if (!this.unchanged(t))\n            return cfail('changed', CHANGED_NOW);", to: 'if (false)\n            return cfail(\'changed\', CHANGED_NOW);', section: 'snapshot2' },
+    { name: 'a throw at place removes only the first agent', from: 'for (const info of infos) {\n                try {\n                    dep.unplace(info.id);', to: 'for (const info of infos.slice(0, 1)) {\n                try {\n                    dep.unplace(info.id);', section: 'atomicity' },
+    { name: 'the agent whose place threw stays', from: 'for (const info of infos) {\n                try {\n                    dep.unplace(info.id);', to: 'for (const info of infos.slice(0, 1).concat(infos.slice(2))) {\n                try {\n                    dep.unplace(info.id);', section: 'atomicity' },
+    { name: 'the record is not put back after a throw', from: 'dep.rollback(e.key, room.team, infos, room.known === false);', to: 'void 0;', section: 'atomicity' },
+    { name: 'a room the write created stays after a throw', from: 'room.known === false);', to: 'false);', section: 'atomicity' },
+    { name: 'the window is told before every member is placed', from: 'for (const info of infos)\n                dep.place(info);', to: 'for (const info of infos) {\n                dep.place(info);\n                dep.announce(info);\n            }', section: 'atomicity' },
+    { name: 'a brief is measured in UTF-16 units', from: '[...o.brief].length <= lim.chars', to: 'o.brief.length <= lim.chars', section: 'folders', file: 'folders' },
+    { name: 'a record that loses a field is saved', from: '!(0, util_1.isDeepStrictEqual)(rec, JSON.parse(JSON.stringify(team)))', to: 'false', section: 'folders', file: 'folders' },
+    { name: 'a restore keeps the batch names', from: 'cur.sessionNames = left.length ? left : undefined;', to: '', section: 'folders', file: 'folders' },
+    { name: 'a restore keeps the new record', from: 'if (prev)\n            cur.team = prev;\n        else\n            delete cur.team;', to: '', section: 'folders', file: 'folders' },
+    { name: 'a restore leaves the created room', from: 'if (removeRoom && !prev)', to: 'if (false)', section: 'folders', file: 'folders' },
   ] as never;
   const base = (m: { file?: string }): string => (m.file === 'folders' ? origFold : origOps);
   const lost = mutants.filter((m) => !base(m).replace(/\r\n/g, '\n').includes(m.from)).map((m) => m.name);

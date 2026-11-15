@@ -5,6 +5,7 @@
  */
 import { parseEffort } from '../shared/effort';
 import * as fs from 'fs';
+import { isDeepStrictEqual } from 'util';
 import * as path from 'path';
 import { parseCap, parseCapIn } from '../shared/credits';
 import { parseAutoTier, parseTier } from '../shared/modelswitch';
@@ -327,7 +328,9 @@ function parseTeamMember(v: unknown): TeamRecordMember | undefined {
       if (x && typeof x.id === 'string' && SESSION_NAME_ID.test(x.id) && !sessions.some((y) => y.id === x.id)) sessions.push({ id: x.id, ...(x.briefSent === true ? { briefSent: true as const } : {}) });
     }
   }
-  const brief = typeof o.brief === 'string' && o.brief.length > 0 && o.brief.length <= TEAM_LIMITS.ownBrief.chars ? o.brief : undefined;
+  // lengths in code points, as the template store measures them (`tooLong` of teamtemplate.ts): a quick cut at twice the limit, then `[...s].length`
+  const lim = o.briefFrom === 'file' ? TEAM_LIMITS.importedBrief : TEAM_LIMITS.ownBrief;
+  const brief = typeof o.brief === 'string' && o.brief.length > 0 && o.brief.length <= lim.chars * 2 && [...o.brief].length <= lim.chars && o.brief.split('\n').length <= lim.lines ? o.brief : undefined;
   return {
     memberId: o.memberId, name, role, ...(brief ? { brief } : {}), ...(o.briefFrom === 'file' ? { briefFrom: 'file' as const } : {}), sendBrief: o.sendBrief !== false,
     app: o.app, ...(typeof o.model === 'string' && MODEL_RE.test(o.model) ? { model: o.model } : {}), ...(parseEffort(o.effort) ? { effort: parseEffort(o.effort) } : {}),
@@ -692,8 +695,8 @@ export class FolderStore {
    */
   setTeamRecord(workspace: string, team: unknown, names: Array<{ src: string; id: string; name: string }> = []): boolean {
     const rec = parseTeamRecord(team);
-    const given = (team as { members?: unknown[] } | null)?.members;
-    if (!rec || !Array.isArray(given) || rec.members.length !== given.length) return false; // a record that loses a member in the parse is refused, never saved smaller
+    // a record that loses a member, or a FIELD of a member, in the parse is refused, never saved smaller (a brief cut to nothing would leave `sendBrief` true)
+    if (!rec || !isDeepStrictEqual(rec, JSON.parse(JSON.stringify(team)))) return false;
     const entries: SessionNameEntry[] = [];
     for (const n of names) {
       const e = parseSessionNameEntry({ src: n.src, id: n.id, name: n.name });
@@ -716,6 +719,25 @@ export class FolderStore {
     if (this.save()) return true;
     if (created) this.folders = this.folders.filter((f) => f !== cur);
     else { cur.team = before.team; cur.sessionNames = before.sessionNames; }
+    return false;
+  }
+
+  /**
+   * Spec 111 (review of T011): puts back the team record from before a failed batch, in one write: `previous` (undefined = no record), the names of
+   * the batch dropped, and a room that `setTeamRecord` created removed (`removeRoom`). The in-memory state is put back when the write fails (false).
+   */
+  restoreTeamRecord(workspace: string, previous: unknown, names: Array<{ src: string; id: string }>, removeRoom: boolean): boolean {
+    const cur = this.get(workspace);
+    if (!cur) return true;
+    const prev = previous === undefined ? undefined : parseTeamRecord(previous);
+    if (previous !== undefined && !prev) return false;
+    const before = { team: cur.team, sessionNames: cur.sessionNames, folders: this.folders };
+    if (prev) cur.team = prev; else delete cur.team;
+    const left = (cur.sessionNames ?? []).filter((x) => !names.some((n) => n.src === x.src && n.id === x.id));
+    cur.sessionNames = left.length ? left : undefined;
+    if (removeRoom && !prev) this.folders = this.folders.filter((f) => f !== cur);
+    if (this.save()) return true;
+    cur.team = before.team; cur.sessionNames = before.sessionNames; this.folders = before.folders;
     return false;
   }
 

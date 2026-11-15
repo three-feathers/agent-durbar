@@ -128,15 +128,19 @@ export interface TeamOpsDeps {
 export interface LazyMemberSpec { app: string; model: string | undefined; effort: string | undefined; mode: SavedPermMode; cap: number | undefined; name: string; key: string }
 export interface CreateDeps {
   /** the real count and record of the room's key and its saved limit, read fresh */
-  room(key: string): { count: number; savedCap?: number; team?: TeamRecord };
+  room(key: string): { count: number; savedCap?: number; team?: TeamRecord; known?: boolean };
   /** `addLazyMember`: one not-started agent like a restored session (`infoFor(..., { lazy: true })`); no adapter start; no effect in the office */
   build(spec: LazyMemberSpec): AgentInfo;
   /** ONE write: the team record and the members' session names (`setTeamRecord`); false = nothing was written */
   commit(key: string, team: TeamRecord, infos: AgentInfo[]): boolean;
-  /** after the write: bind the agent to its app, add it to the office, emit `agent:added` */
+  /** after the write: bind the agent to its app and add it to the office; tells the window nothing (see `announce`) */
   place(info: AgentInfo): void;
-  /** undo of `place` when a later `place` threw */
+  /** undo of `place`: idempotent (an agent that is not there is not an error) */
   unplace(id: string): void;
+  /** `agent:added` for a member, only after EVERY member of the batch was placed (no removal event exists, so the window is never told of a member that may be removed) */
+  announce(info: AgentInfo): void;
+  /** puts the room's record back as it was before the batch (`previous` undefined = none), drops the batch's names and a room the write created; false when it failed */
+  rollback(key: string, previous: TeamRecord | undefined, infos: AgentInfo[], removeRoom: boolean): boolean;
 }
 
 /** `choices` of `teams:create` (the delta of 2026-11-15): only what the person changed, all re-validated */
@@ -155,6 +159,8 @@ export interface PreviewEntry {
   rows: Map<string, PreviewRow>;
 }
 
+const CHANGED_AFTER = 'The template changed after the preview. Open it again.';
+const CHANGED_NOW = CHANGED_AFTER;
 const cfail = (code: CreateFail['code'], error: string): CreateFail => ({ ok: false, code, errors: [error], blocked: false });
 const fail = (code: PreviewFail['code'], error: string): PreviewFail => ({ ok: false, code, errors: [error], blocked: false });
 
@@ -298,6 +304,12 @@ export class TeamOps {
    * (one `commit`) and only then places them. No adapter is started and no message sent here. Autopilot is never set; the mode never rises above
    * the template's (an imported Allow all and an unconfirmed own one enter as Ask). A refusal is a fixed sentence, never a value.
    */
+  /** the template as the store has it now, equal to the snapshot of the preview */
+  private unchanged(t: StoredTemplate): boolean {
+    const now = t.id === undefined ? undefined : this.deps.store().get(String(t.id));
+    return now !== undefined && isDeepStrictEqual(now, t);
+  }
+
   async create(tokenIn: unknown, choicesIn: unknown): Promise<CreateOk | CreateFail> {
     const e = this.takeToken(tokenIn); // consumed here, once, also when the rest is refused
     if (!e) return cfail('expired', 'Preview: expired or not found. Open it again.');
@@ -306,8 +318,7 @@ export class TeamOps {
     const choices = readChoices(choicesIn);
     if (typeof choices === 'string') return cfail('invalid', choices);
     const t = e.template;
-    const now = t.id === undefined ? undefined : this.deps.store().get(String(t.id));
-    if (!now || !isDeepStrictEqual(now, t)) return cfail('changed', 'The template changed after the preview. Open it again.');
+    if (!this.unchanged(t)) return cfail('changed', CHANGED_AFTER);
     const ids = new Set(t.members.map((m) => m.memberId));
     for (const id of Object.keys(choices.rows)) if (!ids.has(id)) return cfail('invalid', 'Choices: a row is not in this preview.');
     const imported = t.origin === 'imported';
@@ -346,6 +357,7 @@ export class TeamOps {
     }
     if (picked.length === 0) return cfail('empty', 'No member is included.');
     // ---- from here to the write there is no `await`: two creates in one room cannot both pass the count
+    if (!this.unchanged(t)) return cfail('changed', CHANGED_NOW); // again: it may have been edited during the awaits above
     const room = dep.room(e.key);
     const have = Number.isInteger(room.count) && room.count > 0 ? room.count : 0;
     if (have + picked.length > LIMITS.members) return cfail('full', `This room has ${have} team members; this template adds ${picked.length}; at most ${LIMITS.members}`);
@@ -368,8 +380,15 @@ export class TeamOps {
     if (name && !names.includes(name)) names.push(name);
     const team: TeamRecord = { templates: names.slice(-LIMITS.members), members: [...(room.team?.members ?? []), ...made] };
     if (!dep.commit(e.key, team, infos)) return cfail('failed', 'The team could not be created.');
-    const placed: string[] = [];
-    try { for (const info of infos) { dep.place(info); placed.push(info.id); } } catch (err) { for (const id of placed) { try { dep.unplace(id); } catch { /* best effort */ } } throw err; }
+    // step (c): a `place` that throws midway undoes the WHOLE batch (the one that threw too: `unplace` is idempotent) and puts the record back
+    try {
+      for (const info of infos) dep.place(info);
+    } catch (err) {
+      for (const info of infos) { try { dep.unplace(info.id); } catch { /* best effort */ } }
+      try { dep.rollback(e.key, room.team, infos, room.known === false); } catch { /* the answer is `failed` all the same */ }
+      throw err;
+    }
+    for (const info of infos) { try { dep.announce(info); } catch { /* the team exists and is written; a window that missed one shows it at its next refresh */ } }
     return { ok: true, agents: infos, added: infos.length, existing: have };
   }
 
