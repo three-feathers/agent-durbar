@@ -710,6 +710,11 @@ export function realLayout(model: RealModel, viewport: { w: number; h: number },
     if (got.sw < z.sign.w) z.sign.w = got.sw;
     tags.set(si, { x: Math.round(got.tx), y: c.sy, w: got.tw, h: 20 });
   }
+  /* spec 097 round 5 of the review of #1746: a sign is exactly as wide as the sign of the same folder (and part) in the hall without floors: the ordered split the floors force can give a folder another zone width; then the hall is the hall without floors */
+  if (runs && tags.size === runs.length) {
+    const flatHall = realLayout(model, viewport, { ...meta, storeys: false }, signs), fw = new Map(flatHall.zones.map((z) => [z.id + '\u0000' + z.part, z.sign.w]));
+    if (zones.some((z) => Math.abs((fw.get(z.id + '\u0000' + z.part) ?? -1) - z.sign.w) > 0.01)) return flatHall;
+  }
   const lb = roLobby(meta, model.places, W, Lb);
   const fitsAll = fits && Ho + R <= H0 + 0.5;
   const height = fitsAll ? H0 : Math.ceil(Lb + used + PAD + R);

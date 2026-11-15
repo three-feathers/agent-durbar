@@ -887,8 +887,8 @@ for (const world of ['photo', 'cave']) {
       if (i) assert.ok(!L.zones.some((z) => inter(b.slab!, z.sign) || z.desks.some((d) => inter(b.slab!, d.plate))), `${tag}: the rule of ${b.name} covers no sign or plate`);
     }
     /* review rounds 3 and 4: a sign keeps exactly the width it has without floors in its room (signWidth of the zone's width): never cut, so its + and folder-actions control stay whole, and never wider than its room */
-    for (const z of L.zones) { const i = z.id.slice(1), flatW = signWidth('project-' + i, '~/work/p' + i, 3, z.box.w);
-      assert.ok(Math.abs(z.sign.w - flatW) < 0.01, `${tag}: the sign of ${z.id} is ${Math.round(z.sign.w)} px: its width without floors is ${Math.round(flatW)} px (never narrower: its + and folder-actions control would be clipped; never wider than its room ${Math.round(z.box.w - 8)} px)`); }
+    for (const z of L.zones) { const fz = F.zones.find((q) => q.id === z.id && q.part === z.part);
+      assert.ok(fz && Math.abs(z.sign.w - fz.sign.w) < 0.01, `${tag}: the sign of ${z.id} part ${z.part} is ${Math.round(z.sign.w)} px: its width without floors is ${fz ? Math.round(fz.sign.w) : 'missing'} px (exactly the flat width: never narrower, its path, cost and buttons stay; never wider than its room)`); }
     /* issue #1759 and review round 2: no sign covers a thinking person's dots (the sign moved for a tag stood over them) */
     const gapFor = (z: Layout['zones'][number]): boolean => { /* is there a place of the sign's minimum width (its flat width) in the zone's strip clear of every hand and dots? (then the sign must stand there) */
       const ob = z.desks.flatMap((d) => [...(d.dots ? [[d.dots.x - 2, d.dots.x + 32]] : []), ...(d.person && needsYou(d) && d.person.y < z.sign.y + 20 ? [[d.person.x, d.person.x + d.person.w * 0.6]] : [])]), lo = z.box.x + 4, hi = z.box.x + z.box.w - 4;
@@ -927,7 +927,7 @@ for (const world of ['photo', 'cave']) {
   const CASES: Array<[string, number[], number[]]> = [
     ['15: 5/5/5', [5, 5, 5], [2, 1, 0]], ['15: 4+1 on each floor', [4, 1, 4, 1, 4, 1], [2, 2, 1, 1, 0, 0]], ['15: 8/7 on 2 floors', [8, 7], [1, 0]], ['15: 6/5/4', [6, 5, 4], [2, 1, 0]], ['15: 7/4/4', [7, 4, 4], [2, 1, 0]],
     ['15: 3,3,3,3,3 on 3 floors', [3, 3, 3, 3, 3], [2, 2, 1, 0, 0]], ['12: 4/4/4', [4, 4, 4], [2, 1, 0]], ['9: 3/3/3', [3, 3, 3], [2, 1, 0]], ['15: 1/1/13', [1, 1, 13], [2, 1, 0]], ['13: 1/8/4', [1, 8, 4], [2, 1, 0]],
-    ['15: 10/5 on 2 floors', [10, 5], [1, 0]], ['15: 3,3,3,3,3 on 4 floors (floor 1 holds the last two)', [3, 3, 3, 3, 3], [3, 2, 1, 0, 0]], ['11: 5/1/5', [5, 1, 5], [2, 1, 0]],
+    ['15: 10/5 on 2 floors', [10, 5], [1, 0]], ['15: 2/4/1/2/2/2/2 on 2 floors (round 5: a split that narrows a sign)', [2, 4, 1, 2, 2, 2, 2], [1, 1, 1, 0, 0, 0, 0]], ['15: 3,3,3,3,3 on 4 floors (floor 1 holds the last two)', [3, 3, 3, 3, 3], [3, 2, 1, 0, 0]], ['11: 5/1/5', [5, 1, 5], [2, 1, 0]],
   ];
   const sizes: Array<[number, number]> = [[1408, ROOM.h900], [1248, ROOM.h800]];
   const table: string[] = [], outcome = new Map<string, string>();
@@ -945,7 +945,7 @@ for (const world of ['photo', 'cave']) {
     assert.strictEqual(outcome.get('1408 15: 5/5/5'), 'own', `${world}: 5/5/5 at 1440x900: every floor on a row of its own (the tolerance ${STOREY_U_LOSS * 100} % must cover its cost, lower pin)`);
     assert.ok(cost > 0.01 && cost <= STOREY_U_LOSS, `${world}: 5/5/5 at 1440x900 costs ${(cost * 100).toFixed(2)} % of u: more than 1 %, at most the tolerance (the pin means something)`); }
   assert.strictEqual(outcome.get(world === 'photo' ? '1408 15: 3,3,3,3,3 on 3 floors' : '1248 15: 5/5/5'), 'share', `${world}: a case that would cost more than the tolerance for rows of their own shares rows (upper pin)`);
-  assert.strictEqual(outcome.get('1248 15: 5/5/5'), 'share', `${world}: 5/5/5 at 1280x800: the floors share rows (own rows would scroll or cost the scale)`);
+  assert.strictEqual(outcome.get('1248 15: 5/5/5'), world === 'photo' ? 'none' : 'share', `${world}: 5/5/5 at 1280x800: ${world === 'photo' ? 'the floors in reading order give the folders other zone widths than the flat hall, so a sign would be narrower: no floors' : 'the floors share rows (own rows would scroll or cost the scale)'}`);
   assert.strictEqual(outcome.get('1408 13: 1/8/4'), 'none', `${world}: 1/8/4 at 1440x900: floors on rows of their own would add a row, in reading order they cost one: no floors are drawn`);
   assert.strictEqual(outcome.get('1248 15: 8/7 on 2 floors'), 'own', `${world}: 8/7 on 2 floors at 1280x800 stand on rows of their own at no cost`);
   // a raised hand under the sign's end (the waiting person stands there): the tag stays inside the hall and clear of the next folder's sign (review of PR 1746, finding 1)
