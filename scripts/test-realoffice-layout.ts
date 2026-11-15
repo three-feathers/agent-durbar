@@ -340,6 +340,31 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
   assert.ok(figs(flipped).every((x) => x.v.mir && x.v.faces === 'left'), 'the side a visitor faces comes from the geometry, the mirror from the set');
 }
 
+// ---- spec 097 FR-379 (T352, issue #1751): a framed monitor's glass is the picture's hole, and the screen text sits in it ----
+{
+  const CAVE = { ...META, ...readJson('worlds', 'cave', 'world.json') } as unknown as RealMeta;
+  const css = fs.readFileSync(path.join(RO, 'worlds', 'cave', 'world.css'), 'utf8').replace(/\r\n/g, '\n');
+  const pad = /\.ro-bezel\{[^}]*padding:(\d+(?:\.\d+)?)% (\d+(?:\.\d+)?)%/.exec(css);
+  assert.ok(pad, 'the cave css has a .ro-bezel padding');
+  const fr = CAVE.monitorFrame;
+  assert.ok(fr, 'the cave world names its monitor frame (monitorFrame)');
+  assert.deepStrictEqual([Number(pad![2]) / 100, Number(pad![1]) / 100], fr, 'cave css padding equals monitorFrame');
+  const m = model(6, 2), withLounge = model(6, 2); withLounge.folders[0].agents[0].lounge = true;
+  for (const [mt, nm] of [[CAVE, 'cave'], [META, 'photo']] as const) {
+    for (const mm of [m, withLounge]) {
+      const L = realLayout(mm, { w: 1440, h: 900 }, mt);
+      const ds = [...L.zones.flatMap((z) => z.desks), ...(L.lounge ? L.lounge.desks : [])];
+      assert.ok(ds.length >= 6, 'desks drawn');
+      for (const d of ds) {
+        const ix = mt.monitorFrame ? mt.monitorFrame[0] * d.screen.w : 3, iy = mt.monitorFrame ? mt.monitorFrame[1] * d.screen.w : 3;
+        const near = (a: number, b: number): boolean => Math.abs(a - b) < 1e-6;
+        assert.ok(near(d.glass.x - d.screen.x, ix) && near(d.screen.x + d.screen.w - d.glass.x - d.glass.w, ix) && near(d.glass.y - d.screen.y, iy), `${nm} glass is the frame's hole: ${JSON.stringify({ g: d.glass, s: d.screen })}`);
+        assert.ok(d.glass.w > 0 && d.glass.h > 0, `${nm} glass has a size`);
+      }
+    }
+  }
+}
+
 // ---- SC-007: under 5 ms for 40 agents in 8 folders (CPU time, minimum of runs, agent-notes "Timing checks") ----
 {
   const m = model(40, 8);

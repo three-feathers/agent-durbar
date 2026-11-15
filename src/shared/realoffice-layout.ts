@@ -29,6 +29,8 @@ export interface RealMeta {
   storeys?: boolean;
   /** spec 097 FR-335 (T247): the people's own art is not pixel art (false); a hi-res crew in a pixel world is scaled to the world's people, not drawn at whole multiples of its pixels */
   pixelPeople?: boolean;
+  /** spec 097 FR-379: a world whose monitor is a framed picture: the frame's side (`[0]`) and top and bottom (`[1]`) thickness as shares of the screen box's width, as the world's `.ro-bezel` padding says; absent = the flat monitor's 3 px bezel */
+  monitorFrame?: [number, number];
   seat: Record<string, SeatMeta>; stand: Record<string, StandMeta>;
   fixtures: Record<string, [number, number]>; fixtureTop?: Record<string, number>; floorLine: number;
   /** the world's desk picture in its own pixels (spec 097 FR-247: the lounge's small desk keeps its shape) */
@@ -487,6 +489,12 @@ function roNote(px: number, sx: number, slotW: number, sl: number, deskY: number
   return { x: Math.min(x, sx + slotW - s / 2 - 2), y: deskY - s + 4, s };
 }
 
+/** FR-379: the glass of a screen box `screen` whose bezel is `bezelH` tall: the box less the bezel (3 px) or, in a world with `monitorFrame`, less the frame's hole inset (the same shares of the width as the world's CSS padding) */
+export function frameGlass(meta: Pick<RealMeta, 'monitorFrame'>, screen: Rect, bezelH: number): Rect {
+  const f = meta.monitorFrame, ix = f ? f[0] * screen.w : 3, iy = f ? f[1] * screen.w : 3;
+  return { x: screen.x + ix, y: screen.y + iy, w: screen.w - 2 * ix, h: bezelH - 2 * iy };
+}
+
 /** FR-013, FR-016, FR-017, FR-036, FR-038: one desk (roStation) in a slot. */
 function roStation(meta: RealMeta, a: RealAgent, sx: number, y: number, Sw: number, u: number, g: Geom, big: boolean, scrH: number, hr = 0, hh = 0): DeskBox {
   const narrow = roNarrow(a);
@@ -510,7 +518,7 @@ function roStation(meta: RealMeta, a: RealAgent, sx: number, y: number, Sw: numb
   if (big) { const top = 6; sl = sx + 0.04 * slotW; sr = sx + 0.96 * slotW; sw = sr - sl; sh = scrH - 4 - top; neck = 0; foot = y + STRIP + top + sh; }
   sh = Math.max(12, sh);
   const screen = { x: sl, y: foot - neck - sh, w: sw, h: sh + neck + 4 };
-  const glass = { x: sl + 3, y: foot - neck - sh + 3, w: sw - 6, h: sh - 6 };
+  const glass = frameGlass(meta, screen, sh); /* FR-379: 3 px in, or the framed monitor's hole */
   const plateH = roNeedsYou(a.state) ? PLATE_H_ASK : PLATE_H;
   const plate = { x: sx + 8, y: deskY + 0.22 * dh + 2, w: slotW - 16, h: plateH };
   /* the desk picture is dh tall; the row shows its top (desktop, front panel, the upper legs), so the box is cut at the row's bottom */
@@ -770,7 +778,7 @@ export function loungeRows(meta: RealMeta, agents: readonly RealAgent[], W: numb
     const table = { x: sx + S.w - LOUNGE_GAP - tw, y: plateY + 2 - th, w: tw, h: th };
     const sw = 0.92 * tw, sh = sw * 0.6, neck = 6, foot = table.y + 0.14 * th;
     const screen = { x: table.x + (tw - sw) / 2, y: foot - neck - sh, w: sw, h: sh + neck + 4 };
-    const glass = { x: screen.x + 3, y: screen.y + 3, w: sw - 6, h: sh - 6 };
+    const glass = frameGlass(meta, screen, sh);
     return {
       id: a.id, state: a.state, lounge: true, narrow: false, slot: { x: sx, y, w: S.w, h: S.h }, desk: { ...table, full: th }, table,
       plate: { x: sx + 2, y: plateY, w: S.w - 4, h: PLATE_H_ASK }, screen, glass, person, face, away: null,

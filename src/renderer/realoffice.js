@@ -476,7 +476,7 @@
         /* the monitor: the glass in the art; its text sits with the chrome, above the lights (FR-044), and repaints on its own (FR-033) */
         const sc = el(art, 'm:' + k, 'div', 'ro-screen st-' + d.state + (lt.glow === 'off' ? ' off' : '') + (a.asleep ? ' asleep' : '') + (d.lounge ? ' ro-lmon' : '') + (lt.tint !== 'none' ? ' tint-' + lt.tint : '')); /* FR-236: the screen is the status cue */ box(sc, d.screen); dset(sc, 'for', k);
         if (!sc.firstChild) sc.innerHTML = '<div class="ro-bezel"><div class="ro-glass" aria-hidden="true"></div></div><div class="ro-neck"></div><div class="ro-foot"></div><svg class="ro-ctx" aria-hidden="true" focusable="false"><rect class="ro-ck" pathLength="100" fill="none"/><rect pathLength="100" fill="none"/></svg>'; /* spec 097 FR-324: the context line, made once per desk */
-        const bez = sc.firstChild; bez.style.height = px(d.glass.h + 6);
+        const bez = sc.firstChild; bez.style.height = px(d.glass.h + 2 * (d.glass.y - d.screen.y)); /* spec 097 FR-379: the bezel is as tall as it was (the glass and the frame's hole above and below it) */
         ctxPaint(sc, a, d); /* FR-322: the line round the frame, outside the glass; attributes only (FR-326) */
         if (!d.lounge) screenBox(chrome, d, k);
         else { const s = SCR.get(k); if (s) { clearTimeout(s.timer); if (IO) IO.unobserve(s.box); SCR.delete(k); } } /* FR-247: a lounge monitor shows no text (the zoom still reads its last lines, FR-034) */
@@ -649,7 +649,7 @@
     const lv = f ? f.lv : '', dash = f ? f.dash : '';
     if ((s.dataset.lv || '') !== lv) { if (lv) s.dataset.lv = lv; else delete s.dataset.lv; }
     for (const r of s.children) attr(r, 'stroke-dasharray', dash || null); /* the dark keyline under the line (.ro-ck) and the line itself: the same dash */
-    if (d) { setVar(s, '--ro-cw', px(d.screen.w)); setVar(s, '--ro-ch', px(CUR && CUR.pixelArt ? d.screen.h : d.glass.h + 6)); /* the arcade's screen box is the whole frame; the others' is the bezel */ }
+    if (d) { setVar(s, '--ro-cw', px(d.screen.w)); setVar(s, '--ro-ch', px(CUR && CUR.pixelArt ? d.screen.h : d.glass.h + 2 * (d.glass.y - d.screen.y))); /* the arcade's screen box is the whole frame; the others' is the bezel */ }
   }
   /* FR-325: the plate's name with the context in the flat office's words, before "Open chat panel."; a lounge seat's name is the model's */
   const OPEN_WORDS = '. Open chat panel.';
