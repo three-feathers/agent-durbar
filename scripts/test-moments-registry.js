@@ -133,7 +133,7 @@ if (require.main === module) {
   fails('building-preview fallback-flat naming evidence', (i) => { i.reg.moments.find((m) => m.id === 'building-preview').evidence = { retro: { steps: ['cells'], pictures: ['cell-preview'] } }; }, /building-preview is fallback-flat but names evidence/);
   fails('empty-office built with no evidence', (i) => { delete i.reg.moments.find((m) => m.id === 'empty-office').evidence; }, /empty-office is built and names no evidence/);
   fails('a missing cell without a reason', (i) => { const m = i.reg.moments.find((x) => x.id === 'all-floors'); m.worlds.retro = 'missing'; delete m.evidence; delete m.gap; }, /all-floors is missing and says nothing why/); /* all-floors may already be built (the All floors PR): the mutant makes it missing first */
-  fails('shippable while a cell is missing', (i) => { i.reg.worlds.retro.shippable = true; }, /shippable while a cell is missing/);
+  fails('shippable while a cell is missing', (i) => { const m = i.reg.moments.find((x) => x.id === 'all-floors'); m.worlds.retro = 'missing'; delete m.evidence; m.gap = 'x'; i.reg.worlds.retro.shippable = true; }, /shippable while a cell is missing/); /* all-floors built on this branch: the mutant makes one cell missing first */
   fails('the first-run rule unscoped', (i) => { i.css = i.css.replace('html[data-world="retro"] body:has(#stage > .welcome) #stats', 'body:has(#stage > .welcome) #stats'); }, /not scoped to html\[data-world="retro"\]/);
   { /* main stands in as a registry whose retro part differs (as on this branch), so these stay mutants after the arcade is merged */
     const asMain = () => { const m = clone(); m.moments.find((x) => x.id === 'lobby').worlds.retro = 'designed'; return m; };
