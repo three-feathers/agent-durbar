@@ -2650,7 +2650,7 @@ facts below that this delta relies on, unless tagged otherwise):
   case, with `<sign-in app ID>` after the session values and **before** `redact` and any cut (so `maskMcpError`, `maskMcpStatuses`, Copy
   diagnostics, tool outputs and history get it); `maskMcpEvent` also masks an error `status` text; the `DURBAR_LOG` debug sink masks each
   line (`maskSignInAppText` on the sink's append). Review of #1681 (Paco, 2026-11-15): **F8** the mask keeps every ID handed out during
-  the run (`addSignInAppMaskId`, at most 64, the oldest dropped first), not only the one in force, so after Custom A to B, VS Code or Off the
+  the run (`addSignInAppMaskId`, at most 64, the least recently handed dropped first), not only the one in force, so after Custom A to B, VS Code or Off the
   old client's stop error, `dropAfterReconnect` lines and late events still show `<sign-in app ID>`; **F2** main's two wiring points live in
   `src/main/signinapphand.ts` (`createSignInAppHand`: the capability gate, the hand, the mask; `maskedAppend`: the sink's append), driven in
   `test: signinapp` with a fake adapter and a fake `createDebugSink` append, plus source checks that `main.ts` uses them (`main.ts` cannot be
@@ -2660,7 +2660,10 @@ facts below that this delta relies on, unless tagged otherwise):
   ("FR-237 wiring: launch hands the stored choice"), the gate without `signInAppChoice` ("FR-238 wiring: handSignInApp is
   createSignInAppHand on the Copilot adapter with signInAppChoice"), the gate dropped in the module ("FR-238 wiring: nothing is handed when
   the adapter has no signInAppChoice (the simulator)"), only the ID in force masked ("FR-236: an ID handed out earlier in this run stays
-  masked after a switch"). Why a module value in a shared mask helper: every caller of these masks would otherwise
+  masked after a switch"). Second review of #1681 (Paco, 2026-11-15): the 64 kept IDs are least-recently-handed first, so a re-handed ID
+  moves to the end and the ID in force is never the next one dropped (the repeat check runs after `parseClientId`'s trim and lower case).
+  Mutant: the old skip on a repeat ("FR-236: a re-handed ID moves to the end: the in-force ID stays masked after 63 other IDs"); cap
+  dropped ("FR-236: at most 64 IDs are kept (the least recently handed goes first)"). Why a module value in a shared mask helper: every caller of these masks would otherwise
   need a new argument, and a missed one would leak; a value that is not a valid GUID never becomes a pattern. Mutants: clientId logged, id
   left in a masked error, replace after the cut, case-sensitive replace ("any case"), `matsAppName` passed. **`[KNOWN GAP]`** the
   activity-log row "Copilot sign-in app changed to <label>" is not built (an app-wide row has no agent or folder and needs a new decision

@@ -12,7 +12,7 @@ import { parseSettings } from '../src/shared/credits';
 import { SettingsStore } from '../src/main/settings';
 import { CopilotAdapter, VSCODE_ENTRA_CLIENT_ID, copilotEntraOption } from '../src/adapters/copilot';
 import { FakeClient } from './fakes/copilot-sdk';
-import { MCP_ERROR_MAX_CHARS, maskMcpError, maskMcpEvent, maskMcpStatuses, maskMcpText, maskSignInAppText, addSignInAppMaskId } from '../src/main/mcpmask';
+import { MCP_ERROR_MAX_CHARS, maskMcpError, maskMcpEvent, maskMcpStatuses, maskMcpText, maskSignInAppText, addSignInAppMaskId, SIGN_IN_APP_MASK_MAX } from '../src/main/mcpmask';
 import { createSignInAppHand, maskedAppend } from '../src/main/signinapphand';
 import { createDebugSink } from '../src/shared/redact';
 import { classifyMcpCall, isSignInAppRefusal, mcpFailureVerdict, signInAppRefusalText } from '../src/shared/mcpcall';
@@ -358,6 +358,18 @@ async function main(): Promise<void> {
     assert.strictEqual((main.match(/handSignInApp\(settingsStore\.copilotSignInApp\)/g) ?? []).length, 1, 'FR-237 wiring: launch hands the stored choice');
     assert.ok(/signInApp: \{ hand: handSignInApp, reconnect: \(\) => refreshAdapterAuth\(\{ router, remoteOps, toRenderer \}, 'copilot'\) \}/.test(main), 'FR-237 wiring: a saved change is handed through handSignInApp, then reconnects Copilot');
     assert.ok(!/\bsetSignInApp\?*\.?\(/.test(main.replace(/createSignInAppHand/g, '')), 'FR-238 wiring: main.ts never calls setSignInApp itself (only through createSignInAppHand)');
+  }
+
+  // ---- FR-236 (second review of #1681): the cap evicts the least recently handed ID, never the one in force ----
+  {
+    const X = '3c4d5e6f-7a8b-4c3d-8e4f-5a6b7c8d9e0f';
+    const other = (i: number): string => `${(0x10000000 + i).toString(16)}-0000-4000-8000-000000000000`;
+    addSignInAppMaskId(X); // X in force
+    for (let i = 0; i < SIGN_IN_APP_MASK_MAX - 1; i++) addSignInAppMaskId(other(i));
+    addSignInAppMaskId(`  ${X.toUpperCase()}  `); // X handed again (as typed: trimmed and lower-cased before the repeat check)
+    for (let i = SIGN_IN_APP_MASK_MAX - 1; i < 2 * SIGN_IN_APP_MASK_MAX - 2; i++) addSignInAppMaskId(other(i));
+    assert.ok(!maskSignInAppText(`late: ${X.toUpperCase()}`).toLowerCase().includes(X), FR236(`a re-handed ID moves to the end: the in-force ID stays masked after ${SIGN_IN_APP_MASK_MAX - 1} other IDs`));
+    assert.ok(maskSignInAppText(other(0)).includes(other(0)), `FR-236: at most ${SIGN_IN_APP_MASK_MAX} IDs are kept (the least recently handed goes first)`);
   }
 
   // ---- FR-240: "app mode refused" ----

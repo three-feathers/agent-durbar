@@ -13,14 +13,17 @@ export const MCP_ERROR_MAX_CHARS = 300;
  * and after each saved change (`addSignInAppMaskId`), so every MCP text below shows `<sign-in app ID>` in its place, whichever session or
  * path it comes from. Review of #1681 (F8): an ID is kept after a switch (Custom A to B, VS Code or Off), because the old client's stop
  * error, its late events and the reconnect's debug lines can still quote it. At most `SIGN_IN_APP_MASK_MAX` IDs (one per saved change;
- * the oldest goes first). One module value instead of a parameter: every caller of these masks would otherwise need a new argument, and a
- * missed one would leak.
+ * the least recently handed goes first: a re-handed ID moves to the end). One module value instead of a parameter: every caller of these
+ * masks would otherwise need a new argument, and a missed one would leak.
  */
 export const SIGN_IN_APP_MASK_MAX = 64;
 const signInAppIds: string[] = [];
 export function addSignInAppMaskId(id: string | undefined): void {
   const g = parseClientId(id);
-  if (!g || signInAppIds.includes(g)) return;
+  if (!g) return;
+  // Second review of #1681: a re-handed ID moves to the end (the ID in force is the newest, never the next one evicted)
+  const at = signInAppIds.indexOf(g);
+  if (at >= 0) signInAppIds.splice(at, 1);
   signInAppIds.push(g);
   if (signInAppIds.length > SIGN_IN_APP_MASK_MAX) signInAppIds.shift();
 }
