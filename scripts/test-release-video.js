@@ -554,5 +554,15 @@ const { killTree } = require('./ui-suite');
     const pesrc = fs.readFileSync(path.join(__dirname, 'check-097-pencil-ease.js'), 'utf8').replace(/\r\n/g, '\n');
     assert.ok(/const STILL = STILL_STAGE;/.test(pesrc) && !/getAnimations\(\{subtree:true\}\)/.test(pesrc), 'check-097-pencil-ease uses the same STILL_STAGE');
   }
+  {
+    // FR-270 (issue #1792): the lounge scene answers the simulator's spending-limit slip before it films; the driver runs in Electron, so the check reads the source
+    const src = fs.readFileSync(path.join(__dirname, 'release-video.js'), 'utf8').replace(/\r\n/g, '\n');
+    const lounge = (x) => { const a = x.indexOf('\n  lounge: {'), b = x.indexOf('\n  railwidth: {'); return a < 0 || b < a ? '' : x.slice(a, b); };
+    const ok = (x) => { const l = lounge(x); return /\.ro-limit/.test(l) && /textContent==='Remove limit'\)/.test(l) && /b\.click\(\)/.test(l) && /the limit slip did not go/.test(l); };
+    assert.ok(ok(src), 'the lounge scene removes the limit and waits for the slip to go (issue #1792)');
+    assert.ok(!ok(src.replace("x.textContent==='Remove limit');if(b)b.click()", "x.textContent==='Remove limit');")), 'mutant: a lounge scene that never presses Remove limit is caught');
+    assert.ok(!ok(src.replace("throw new Error('lounge: the limit slip did not go')", '0')), 'mutant: a lounge scene that does not wait for the slip to go is caught');
+    assert.ok(src.indexOf("lounge: the limit slip did not go") < src.indexOf("await S.caption('{step}. Finished, reply not read yet'"), 'the slip is answered before the first caption and still');
+  }
   console.log('release-video: tests passed');
 })().catch((e) => { console.error(e); process.exitCode = 1; });

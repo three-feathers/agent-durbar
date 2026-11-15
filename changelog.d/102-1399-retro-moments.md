@@ -1,0 +1,1 @@
+- **Arcade driver cases for the Postbox, the still highlights and auto-follow** (spec 102 T318, T319, T320, part of the arcade driver coverage): the new `check-102-arcade-postbox`, and `check-unread retro` and `check-auto-follow retro` in the UI suite. Tests only; each has a mutant that fails at its own label.
