@@ -6,6 +6,8 @@ import * as path from 'path';
 import { placeBox, portraitCrop, PORTRAIT_SIDE, slipAvoid, NOTE_PAPER, NOTE_PAPER_DEFAULT, NOTE_INK, notePaper, screenFit, screenFor, personMotion, zoomRect, realLayout, lobbyWidths, sortDesks, deskOrder, deskBase, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
   type RealModel, type RealMeta, type RealAgent, type RealState, type Rect, type Layout } from '../src/shared/realoffice-layout';
 import { signMin, lobbyBand, lobbyScale, visitorScale, HEAD, HEAD_FACE, HELP_FACE_MIN, HELP_GAP, helpH, helpCols, helpShown, headCrop, helperPerson } from '../src/shared/realoffice-layout';
+import { DOTS_BOX } from '../src/shared/realoffice-layout';
+import { layoutFor } from '../src/shared/realoffice-arrangements';
 import { KID_U, KID_CAP, BIG_MAX, kidScale, kidBox, kidPose, kidHeadCrop, kidOf, helperHead, type KidMeta, type DeskBox } from '../src/shared/realoffice-layout';
 import { createHash } from 'crypto';
 import { CHARACTER_CHOICES } from '../src/shared/characters';
@@ -165,6 +167,51 @@ for (const [k, v] of Object.entries(faces)) assert.ok(v >= FACE_FLOOR - 1e-9, `S
     assert.strictEqual(!!d.bang, d.state === 'error', `bang for ${d.state}`);
     assert.strictEqual(!!d.dots, d.state === 'thinking', `dots for ${d.state}`);
   }
+}
+
+// ---- FR-038 (spec 097 delta 2026-11-15, T350, issues 1763 and 1759): no folder sign over the thinking dots, and no dots over a screen's glass, in the Photo office and the cave, `rows` and `circle`, both sizes ----
+{
+  const ROOM = [[1408, 797], [1248, 697]] as const; /* the measured floors of 1440x900 and 1280x800 */
+  const ST: RealState[] = ['working', 'thinking', 'waiting', 'limit', 'error', 'done', 'idle'];
+  const dotsBox = (d: DeskBox): Rect => ({ x: d.dots!.x, y: d.dots!.y, w: DOTS_BOX.w, h: DOTS_BOX.h });
+  const problems = (L: Layout): { sign: string[]; glass: string[] } => {
+    const sign: string[] = [], glass: string[] = [];
+    const desks = L.zones.flatMap((z) => z.desks).filter((d) => d.dots);
+    for (const z of L.zones) for (const d of desks) if (inter(z.sign, dotsBox(d))) sign.push(`the sign of ${z.id} (bottom ${(z.sign.y + z.sign.h).toFixed(1)}) over the dots of ${d.id} (top ${d.dots!.y.toFixed(1)})`);
+    if (!L.big) for (const d of desks) if (inter(d.glass, dotsBox(d))) glass.push(`the dots of ${d.id} over its screen's glass`);
+    return { sign, glass };
+  };
+  /* the reproduced case (simulator, `simrooms=solo`, cave, both sizes, main at 773dadaeb): one folder per agent, the second agent thinking; its sign is the zone's whole width, so it cannot step aside */
+  const CM = { ...readJson('worlds', 'cave', 'world.json'), ...readJson('sets', 'prehistoric', 'set.json') } as unknown as RealMeta;
+  for (const [W, H] of ROOM) {
+    const CP = Object.keys(CM.seat).sort();
+    const m: RealModel = { folders: Array.from({ length: 15 }, (_, i) => ({ id: 'f' + i, agents: [{ id: 'a' + i, state: (i === 1 ? 'thinking' : 'working') as RealState, person: CP[i % CP.length], away: null }] })), places: [] };
+    const L = realLayout(m, { w: W, h: H }, CM, Object.fromEntries(m.folders.map((f) => [f.id, { name: f.id + '-app', path: '~/work/' + f.id, counts: 2 }])));
+    const p = problems(L);
+    assert.deepStrictEqual(p.sign, [], `cave, 15 folders of one at ${W}: no sign over the thinking dots (FR-038)`);
+    assert.deepStrictEqual(p.glass, [], `cave, 15 folders of one at ${W}: the dots end before the screen's glass (FR-038)`);
+  }
+  let laid = 0, thinking = 0;
+  for (const [world, set] of [['photo', 'office'], ['cave', 'prehistoric']] as const) for (const arr of ['rows', 'circle'] as const) {
+    const WM = { ...readJson('worlds', world, 'world.json'), ...readJson('sets', set, 'set.json') } as unknown as RealMeta, WP = Object.keys(WM.seat).sort();
+    let seed = world === 'photo' ? 3 : 5; const rnd = (): number => { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296; };
+    const sign: string[] = [], glass: string[] = [];
+    for (let t = 0; t < 600; t++) {
+      const nfold = 1 + Math.floor(rnd() * 9), total = Math.min(15, Math.max(nfold, 1 + Math.floor(rnd() * 15)));
+      const sz = Array.from({ length: nfold }, () => 1); for (let r = total - nfold; r > 0; r--) sz[Math.floor(rnd() * nfold)]++;
+      let k = 0; const hel = rnd() < 0.3;
+      const m: RealModel = { folders: sz.map((n, fi) => ({ id: 'f' + fi, agents: Array.from({ length: n }, () => { const i = k++; return { id: 'a' + i, state: ST[Math.floor(rnd() * ST.length)], person: WP[i % WP.length], away: null, ...(hel ? { helpers: 1 + Math.floor(rnd() * 2) } : {}) }; }) })), places: [] };
+      const sg = Object.fromEntries(sz.map((_, i) => ['f' + i, { name: 'project-' + i, path: '~/work/p' + i, counts: 1 + Math.floor(rnd() * 3) }]));
+      const [W, H] = ROOM[t % 2];
+      const L = layoutFor(arr, m, { w: W, h: H }, WM, sg), p = problems(L);
+      laid++; if (L.zones.some((z) => z.desks.some((d) => d.dots))) thinking++;
+      sign.push(...p.sign.map((s) => `${world} ${arr} hall ${t} (${sz.join('/')}) at ${W}: ${s}`)); glass.push(...p.glass.map((s) => `${world} ${arr} hall ${t} (${sz.join('/')}) at ${W}: ${s}`));
+    }
+    assert.deepStrictEqual(sign.slice(0, 3), [], `${world} ${arr}: no sign over the thinking dots in 600 random halls (FR-038; ${sign.length} found)`);
+    assert.deepStrictEqual(glass.slice(0, 3), [], `${world} ${arr}: no thinking dots over a screen's glass below the big level in 600 random halls (FR-038; ${glass.length} found)`);
+  }
+  assert.ok(thinking > laid / 2, `the random halls hold a thinking person in most layouts (${thinking} of ${laid})`);
+  console.log(`FR-038: ${laid} random halls (Photo office and cave, rows and circle, both sizes; ${thinking} with a thinking person) and the cave's 15 folders of one: no sign over the dots, no dots over a screen's glass`);
 }
 
 // ---- FR-023..FR-027: the lobby band ----

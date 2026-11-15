@@ -75,6 +75,10 @@ export interface Layout {
 
 /* FR-010 constants (b2.js) */
 export const PW = 0.80, SR = 0.66, STRIP = 22, PAD = 8, ZGAP = 8, DESK_AT = 0.76;
+/** FR-038 (delta 2026-11-15): the thinking dots start at least this far below the sign strip, and end this far before the screen's glass (px); a sign's lower edge is 1 px above the strip's, so 3 px clear of it */
+export const DOTS_CLEAR = 2;
+/** FR-038: the drawn box of the three thinking dots (6, 8 and 10 px with 3 px gaps, `realoffice.css` `.ro-dots`), px */
+export const DOTS_BOX = { w: 30, h: 10 } as const;
 /** A desk face's height (crown to chin) as a share of the body height `u`: measured on 6 of the 15 people with a grid over the art
  *  (p01 0.30, p02 0.41, p04 0.27, p08 0.33, p11 0.33, p13 0.30), rounded down to 0.30; per person it varies (spec 097 delta 2026-10-31). */
 export const FACE_U = 0.30;
@@ -503,7 +507,9 @@ function roStation(meta: RealMeta, a: RealAgent, sx: number, y: number, Sw: numb
     lamp: { x: sx + 0.02 * slotW, y: Math.max(y + STRIP, headY - 0.35 * u), w: 0.96 * slotW, h: deskY + dh * 0.5 - Math.max(y + STRIP, headY - 0.35 * u) },
     bubble: person && roNeedsYou(a.state) ? { x: px + 0.2 * u - 6, y: headY - 0.04 * u } : null,
     bang: a.state === 'error' ? { x: sr - 10, y: screen.y - 8 } : null,
-    dots: person && a.state === 'thinking' ? { x: px + (big ? 0.2 : 0.1) * u, y: headY + (big ? 0.12 : -0.13) * u } : null,
+    /* FR-038 (spec 097 delta 2026-11-15, T350): the dots never rise into the row's sign strip (the folder sign stands at y + 1, 20 px tall), in every world and arrangement: a tall person (the cave's seat, hand 0.88) put them under the sign.
+       Below the big level they also end before the screen's glass (its text): moved down, they would have reached its corner. At the big level the person sits in front of the big screen by design. */
+    dots: person && a.state === 'thinking' ? { x: big ? px + 0.2 * u : Math.min(px + 0.1 * u, glass.x - DOTS_BOX.w - DOTS_CLEAR), y: Math.max(headY + (big ? 0.12 : -0.13) * u, y + STRIP + DOTS_CLEAR) } : null,
     call: { x: sx + slotW - 16, y: deskY + 0.05 * dh },
   };
 }

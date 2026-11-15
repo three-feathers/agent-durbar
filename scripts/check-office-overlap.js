@@ -510,11 +510,13 @@ async function driver(ctx) {
       const add = (kind, e, r, rid) => { if (e && !e.getClientRects().length) return; boxes.push({ kind, id: e ? (e.dataset.id || e.dataset.place || e.dataset.folder || e.dataset.for || e.textContent.slice(0, 16)) : (rid || ''), r: r || R(e) }); };
       document.querySelectorAll('#stage .ro-plate').forEach((e) => add('plate', e));
       document.querySelectorAll('#stage .ro-sign').forEach((e) => add('sign', e));
+      /* spec 097 FR-038 (delta 2026-11-15, T350, issues 1763 and 1759): the thinking dots over a head, measured against the folder signs only (they stand over a person by design) */
+      document.querySelectorAll('#stage .ro-dots').forEach((e) => add('dots', e));
       document.querySelectorAll('#stage .ro-lplate').forEach((e) => add('placeplate', e));
       document.querySelectorAll('#stage .ro-chip').forEach((e) => add('chip', e));
       document.querySelectorAll('#stage .ro-drafttag.on').forEach((e) => add('drafttag', e)); /* spec 097 FR-316 */
       /* spec 102 (issue #1632): in the arcade a Draft tag stays off its cabinet's whole screen box (the glass and the bezel round it), and an empty seat's tag, on the post-it beside the cabinet, off the cabinet too: both boxes are measured against the Draft tag only. Mutant (a source edit): in src/renderer/realoffice.js the `dr:` tag's box, drop the `lay.cabinet && ...` clamp (use `d.away.x - d.away.s / 2` alone), build, run: it must fail "drafttag <id> overlaps cabinet <id>" (and screenbox) on every post-it that stands right of its cabinet */
-      if (want) {
+      if (want === 'retro') { /* the arcade's cabinets only: the cave has none (`want` is `cave` there, and the cabinet lookup threw on null: spec 097 delta 2026-11-15) */
         document.querySelectorAll('#stage .ro-screen:not(.ro-lmon)').forEach((e) => add('screenbox', e));
         for (const z of L.zones) for (const d of z.desks) if (d.away) add('cabinet', document.querySelector('#stage .ro-desk.ro-cab[data-for="' + d.id + '"]'));
       }
@@ -530,6 +532,7 @@ async function driver(ctx) {
       for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
         const a = boxes[i], b = boxes[j];
         if (a.kind === 'face' && b.kind === 'face') continue;
+        if ((a.kind === 'dots' || b.kind === 'dots') && a.kind !== 'sign' && b.kind !== 'sign') continue; /* FR-038: a sign never covers the dots; the dots meet nothing else here */
         if (['figure', 'cabinet', 'screenbox'].some((k) => a.kind === k || b.kind === k) && a.kind !== 'drafttag' && b.kind !== 'drafttag') continue; /* a figure, a cabinet and a screen box are only measured against the Draft tag (the plate stands in front of the lap by design) */
         if (hit(a.r, b.r)) P.push(`${a.kind} ${a.id} overlaps ${b.kind} ${b.id}`);
       }
