@@ -754,6 +754,21 @@ export function secretFlag(flag: string): boolean {
   return SECRET_SUB.test(n.toLowerCase()) || SECRET_SUB.test(words.join('')) || words.some((w) => SECRET_WORDS.has(w));
 }
 
+/** Spec 058 FR-232 (c): upper snake case, at most 40 characters. */
+const ENV_VAR_NAME = /^[A-Z][A-Z0-9_]{0,39}$/;
+/**
+ * Spec 058 FR-232 (c), review of PR #1637: may Durbar say this `${NAME}` as a variable name? Only an environment-variable-shaped name: upper
+ * snake case, no token shape (`maskTokenShapes`), and no piece between `_` that reads as a key rather than a word (16 or more characters,
+ * or 8 or more with 3 or more digits), with at most 5 digits in all. A token pasted inside `${...}` (hex, a mixed-case key, a password, a
+ * JWT, `GHP_A1B2...`) is never a name. One rule for main (`mcptoken.ts`) and the window (`mcpwords.js`, through the page's `exports`).
+ */
+export function envVarName(n: unknown): boolean {
+  if (typeof n !== 'string' || !ENV_VAR_NAME.test(n)) return false;
+  if (maskTokenShapes(n, MASK) !== n) return false;
+  if ((n.match(/[0-9]/g) ?? []).length > 5) return false;
+  return n.split('_').every((p) => p.length < 16 && !(p.length >= 8 && (p.match(/[0-9]/g) ?? []).length >= 3));
+}
+
 /** A flag arg split into name, separator (first `=`, `:` or space) and the rest. A flag starts with `-`, or is a Windows-style one-segment `/name`. */
 export function parseFlag(a: string): { name: string; sep?: string; rest?: string } | undefined {
   const m = /^(-[^\s=:]*|\/[^\s=:/\\]+)(?:([=:\s])([\s\S]*))?$/.exec(a);
