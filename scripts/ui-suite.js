@@ -229,8 +229,9 @@ const DRIVERS = [
   // against the 600 s limit); the light part also has the built-in themes' contrast, the dark part the tones and the stylesheet check
   { name: 'check-ui-text', label: 'check-ui-text light', env: { UITEXT_PART: 'light' } },
   { name: 'check-ui-text', label: 'check-ui-text dark', env: { UITEXT_PART: 'dark' } },
+  // spec 006 FR-038..FR-046 (#606): the crash card (Resume all, Pick…, Dismiss), per-row resume, the lost-turn note
   { name: 'shots-006-crash' },
-  { name: 'shots-006-crash', label: 'shots-006-crash retro', env: { DRIVER_WORLD: 'retro' } }, // spec 097 (issue #1567): the Real office passes in the arcade // spec 006 FR-038..FR-046 (#606): the crash card (Resume all, Pick…, Dismiss), per-row resume, the lost-turn note
+  { name: 'shots-006-crash', label: 'shots-006-crash retro', env: { DRIVER_WORLD: 'retro' } }, // spec 097 (issue #1567): the Real office passes in the arcade
   { name: 'shots-074-navigator', env: { DURBAR_SIM_FLOORS: '1' } }, // spec 074: Go to (keyboard navigator), chat numbers, the shortcut in Settings
   { name: 'shots-095' }, // spec 095 phase 3: search conversations: the box, the results in the List view, open and jump, keyboard, live region, end-state notes, the shortcut in Settings
   { name: 'check-browser-scenarios' }, // spec 080 T018 AC2/AC4: US1 scenarios 1-5 and US2 scenarios 1-3 incl. SC-002 and SC-004; confirm, prompt, sensitive fields, sliding element, redirect, basic-auth pages

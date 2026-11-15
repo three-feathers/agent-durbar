@@ -166,11 +166,11 @@ module.exports = async (ctx) => {
     }
 
     // the first session's plate is not shown (display:none, as a plate that is not drawn or not reachable): focus goes to the next shown plate, and when none is shown to the Office button, never to <body>
-    for (const [what, hide, want] of [['the first plate is hidden', ['sim-1'], 'sim-2'], ['every plate is hidden', ['sim-1', 'sim-2', 'sim-3'], 'vOffice']]) {
+    for (const [what, hide, want, how] of [['the first plate is hidden', ['sim-1'], 'sim-2'], ['every plate is hidden', ['sim-1', 'sim-2', 'sim-3'], 'vOffice'], ['the first plate is inert (drawn, with a box, but not reachable)', ['sim-1'], 'sim-2', 'inert']]) {
       await H.load({ w, h, query: { simcrash: '3', officeview: 'real' }, ready: REAL, focus: true });
       await H.calm();
       assert.ok(await until(`(()=>{const s=document.getElementById('crashStrip');return !!s&&!s.hidden&&!!s.querySelector('[data-cr="all"]')})()`, 10000), `${w}: real: ${what}: the card shows`);
-      await js(`${jsLiteral(hide)}.forEach(id=>{const p=document.querySelector('#stage .ro-plate[data-id="'+id+'"]');if(p)p.style.display='none';})`);
+      await js(`${jsLiteral(hide)}.forEach(id=>{const p=document.querySelector('#stage .ro-plate[data-id="'+id+'"]');if(p){if(${jsLiteral(how === 'inert')})p.setAttribute('inert','');else p.style.display='none';}})`);
       await click('#crashStrip [data-cr="close"]');
       assert.ok(await until(`document.getElementById('crashStrip').hidden`, 10000), `${w}: real: ${what}: Dismiss closes the card`);
       const ok = `(()=>{const a=document.activeElement;return !!a&&(a.dataset.id===${jsLiteral(want)}||a.id===${jsLiteral(want)})})()`;
