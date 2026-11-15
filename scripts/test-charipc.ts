@@ -128,8 +128,12 @@ function imageGenTripwire(): void {
   const arg = calls[0].arguments[0];
   assert.ok(calls[0].arguments.length === 1 && arg && ts.isObjectLiteralExpression(arg) && arg.properties.every((p) => (ts.isPropertyAssignment(p) || ts.isShorthandPropertyAssignment(p) || ts.isMethodDeclaration(p)) && p.name !== undefined && !ts.isComputedPropertyName(p.name)),
     'tripwire: main.ts gives the characters IPC its deps as one plain object (no spread, no computed key) while T030a is open');
-  const names = (arg as ts.ObjectLiteralExpression).properties.map((p) => (p.name as ts.Identifier).text);
+  const names = (arg as ts.ObjectLiteralExpression).properties.map((p) => (p.name as ts.Identifier | ts.StringLiteral).text);
   assert.ok(!names.includes('loginGate'), 'tripwire: main.ts gives the characters IPC a loginGate before T030a is ticked (FR-034)');
+  // round 4 of #956: a `__proto__` key would hand the IPC an inherited loginGate (the IPC reads only an own one, and the key set is exact)
+  assert.ok(!names.includes('__proto__'), 'tripwire: main.ts gives the characters IPC deps a __proto__ key (an inherited loginGate) while T030a is open');
+  assert.deepStrictEqual([...names].sort(), ['dev', 'getSettingsStore', 'openFolderKeys', 'registry', 'router'],
+    'tripwire: main.ts gives the characters IPC exactly dev, registry, router, getSettingsStore and openFolderKeys while T030a is open');
 }
 
 async function main(): Promise<void> {
@@ -186,6 +190,25 @@ async function main(): Promise<void> {
       encode: (b, h, o) => encode(b, h, o),
     });
     const ungated = handlers.get('character:generate')!;
+    // round 4 of #956: an inherited loginGate is no gate, from a prototype object or from a `__proto__` key in the deps literal
+    let inheritedCalls = 0;
+    const inheritedGate = async (): Promise<{ ok: true }> => { inheritedCalls++; return { ok: true }; };
+    const ownDeps = {
+      dev: devEnv as never,
+      registry: { has: (id: string) => id === 'codex' } as never,
+      router: { instance: () => adapter } as never,
+      getSettingsStore: () => settings,
+      openFolderKeys: () => openFolders,
+      encode: (b: Uint8Array, h: { width: number; height: number }, o: { signal?: AbortSignal }) => encode(b, h, o),
+    };
+    register(Object.assign(Object.create({ loginGate: inheritedGate }) as object, ownDeps) as Parameters<typeof register>[0]);
+    const inheritedProto = handlers.get('character:generate')!;
+    register({
+      // @ts-expect-error `__proto__` is not a deps key: this is the shape the main.ts tripwire refuses
+      __proto__: { loginGate: inheritedGate },
+      ...ownDeps,
+    });
+    const inheritedLiteral = handlers.get('character:generate')!;
     let gate: (id: string) => Promise<{ ok: true } | { ok: false; error: string }> = async () => ({ ok: true });
     const gateCalls: string[] = [];
     const ipc = register({
@@ -260,6 +283,10 @@ async function main(): Promise<void> {
       const r = (await ungated(win, DESC, 'codex')) as Rec;
       assert.ok(r.ok === false && r.error === NO_LOGIN_GATE && prompts.length === 0, 'tripwire: character:generate ran an image adapter with no login gate (FR-034): ' + JSON.stringify(r));
       assert.deepStrictEqual(tempFolders().filter((f) => !startTemps.has(f)), [], 'no temp folder without a gate');
+      const p = (await inheritedProto(win, DESC, 'codex')) as Rec;
+      assert.ok(p.ok === false && p.error === NO_LOGIN_GATE && inheritedCalls === 0 && prompts.length === 0, 'an inherited loginGate (prototype object) is no gate (FR-034): ' + JSON.stringify({ ok: p.ok, error: p.error, inheritedCalls }));
+      const l = (await inheritedLiteral(win, DESC, 'codex')) as Rec;
+      assert.ok(l.ok === false && l.error === NO_LOGIN_GATE && inheritedCalls === 0 && prompts.length === 0, 'a { __proto__: { loginGate } } deps literal is no gate (FR-034): ' + JSON.stringify({ ok: l.ok, error: l.error, inheritedCalls }));
       gate = async () => ({ ok: false, error: 'Codex is signed in with an API key, so each picture would be charged by OpenAI. Sign in to Codex with ChatGPT to make characters.' });
       assert.deepStrictEqual(await call('character:generate', DESC, 'codex'), { ok: false, error: 'Codex is signed in with an API key, so each picture would be charged by OpenAI. Sign in to Codex with ChatGPT to make characters.' }, 'the gate\'s refusal is the reply');
       assert.deepStrictEqual(gateCalls, ['codex'], 'the gate is asked with the adapter id');

@@ -5,6 +5,7 @@
  * `[KNOWN GAP]` a partial echo of the description in an error is not recognised: only the whole text (raw or cleaned, plain or JSON-escaped) is removed.
  * FR-034 fails closed (T030b; third review of #956): `character:generate` refuses every try unless main's own login gate (`loginGate`, T030a) is passed in, so no
  * adapter change, on the class, the instance or from a helper, can start a paid picture. `main.ts` passes none until T030a builds it; `test:charipc`'s tripwire checks both.
+ * Only an own `loginGate` property counts (round 4): an inherited one, as `{ __proto__: { loginGate } }` gives, is refused like a missing one.
  */
 import { app } from 'electron';
 import { randomBytes } from 'crypto';
@@ -111,7 +112,9 @@ export function safeGenerateError(err: unknown, description: readonly string[]):
 class Cancelled extends Error {}
 
 export function register(deps: CharactersIpcDeps): CharactersIpc {
-  const { dev, registry, router, getSettingsStore, openFolderKeys, loginGate } = deps;
+  const { dev, registry, router, getSettingsStore, openFolderKeys } = deps;
+  // FR-034 (T030b, round 4 of #956): the gate is read as an own property only, so a `{ __proto__: { loginGate } }` deps object (or any inherited one) is no gate
+  const loginGate = Object.prototype.hasOwnProperty.call(deps, 'loginGate') && typeof deps.loginGate === 'function' ? deps.loginGate : undefined;
   const store = new CharacterStore(path.join(app.getPath('userData'), 'characters'), (m) => console.warn(redact(`[characters] ${m}`)));
   const encode = deps.encode ?? encodeSheet;
   const generateMs = deps.limits?.generateMs ?? GENERATE_TIMEOUT_MS;
