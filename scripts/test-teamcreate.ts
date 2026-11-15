@@ -61,7 +61,7 @@ const isOk = (v: unknown): CreateOk => { assert.ok((v as CreateOk).ok === true, 
 interface Room { team?: TeamRecord; savedCap?: number }
 interface World {
   ops: InstanceType<typeof TeamOps>; log: string[]; starts: { n: number }; office: Map<string, AgentInfo>; rooms: Map<string, Room>; store: Map<string, StoredTemplate>; clock: { t: number };
-  bound: Set<string>; announced: string[]; built: LazyMemberSpec[]; names: Array<{ src: string; id: string; name: string }>; set: (o: Partial<TeamOpsDeps>) => void; fail: { commit: boolean; placeAt: number };
+  bound: Set<string>; announced: string[]; built: LazyMemberSpec[]; names: Array<{ src: string; id: string; name: string }>; set: (o: Partial<TeamOpsDeps>) => void; fail: { commit: boolean; placeAt: number; announceAt: number };
   preview: (target?: Target, id?: string) => Promise<string>;
 }
 let tokenN = 0;
@@ -73,7 +73,8 @@ function world(templates: StoredTemplate[], rooms: Record<string, Room> = {}, o:
   const office = new Map<string, AgentInfo>();
   const bound = new Set<string>(), announced: string[] = [];
   const starts = { n: 0 };
-  const fail = { commit: false, placeAt: -1 };
+  const fail = { commit: false, placeAt: -1, announceAt: -1 };
+  let announcedN = 0;
   let ids = 0, placed = 0;
   const adapterOf = (a: string) => ({ capabilities: { caps: true }, start: () => { starts.n++; } }) as { capabilities: unknown; start(): void; a?: string };
   const create = {
@@ -89,7 +90,7 @@ function world(templates: StoredTemplate[], rooms: Record<string, Room> = {}, o:
     // a place that fails does so AFTER it bound the agent and put it in the office (the worst case of `main.ts`)
     place: (i: AgentInfo): void => { bound.add(i.id); office.set(i.id, i); if (placed++ === fail.placeAt) throw new Error('boom ' + MARK); log.push('place:' + i.id); },
     unplace: (id: string): void => { log.push('unplace:' + id); office.delete(id); bound.delete(id); },
-    announce: (i: AgentInfo): void => { log.push('announce:' + i.id); announced.push(i.id); },
+    announce: (i: AgentInfo): void => { if (announcedN++ === fail.announceAt) throw new Error('window gone ' + MARK); log.push('announce:' + i.id); announced.push(i.id); },
     rollback: (key: string, previous: TeamRecord | undefined, infos: AgentInfo[], removeRoom: boolean): boolean => {
       log.push('rollback');
       const r = rm.get(key); if (!r) return true;
@@ -337,6 +338,14 @@ section('limits', async () => {
   // another app: the limit is dropped, never converted, a sent one is ignored
   eq((await cap({ cap: { unit: 'aiu', amount: 40 } }, {}, { rows: { [hexId(1)]: { app: 'claude' } } })).cap, undefined, 'another app drops the member\'s limit');
   eq((await cap({}, {}, { rows: { [hexId(1)]: { app: 'claude', cap: { unit: 'aiu', amount: 3 } } } })).cap, undefined, 'a limit sent with another app is ignored');
+  // the saved limit and the settings default are not rounded: the record must still parse whole (the real `setTeamRecord` compares them)
+  for (const [room, def, want] of [[{ savedCap: 33.333 }, 60, 33.33], [{}, 77.777, 77.78]] as const) {
+    const w = world([tpl([mem(1)])], { 'key-r1': room }, { defaultCapAiu: () => def });
+    isOk(await created(w));
+    const team = w.rooms.get('key-r1')!.team!;
+    eq([w.built[0].cap, team.members[0].cap], [want, { unit: 'aiu', amount: want }], 'the effective limit is rounded by the parser the record uses');
+    eq(parseTeamRecord(team), team, 'the record parses whole');
+  }
   // refused
   for (const [m, c] of [[{}, { unit: 'usd', amount: 3 }], [{ app: 'claude' }, { unit: 'aiu', amount: 3 }], [{ app: 'codex' }, { unit: 'aiu', amount: 3 }], [{}, { unit: 'aiu', amount: 0 }], [{}, { unit: 'aiu', amount: 'abc' }]] as const) {
     const w = world([tpl([mem(1, m as Partial<TeamMember>)])]);
@@ -458,6 +467,12 @@ section('atomicity', async () => {
   await assert.rejects(async () => created(w2d), /boom/, 'a failing rollback: the same throw');
   n++;
   eq(w2d.office.size, 0, 'the agents are gone anyway');
+  // an `announce` that throws (the 2nd of 3): the team exists and stays, nothing is undone, the answer is ok
+  const w2e = world([tpl([mem(1), mem(2), mem(3)])]);
+  w2e.fail.announceAt = 1;
+  const r2e = isOk(await created(w2e));
+  eq([r2e.added, w2e.office.size, w2e.rooms.get('key-r1')!.team!.members.length, w2e.log.filter((l) => l.startsWith('unplace') || l === 'rollback')], [3, 3, 3, []], 'a failing announce: all placed, record intact, no unplace, no rollback');
+  eq(w2e.announced, ['agent-1', 'agent-3'], 'the others were still announced');
   // a name the session-name rule refuses: nothing is created, never under another name
   const secret = 'ghp' + '_' + 'A1b2C3d4'.repeat(5);
   const w3 = world([tpl([mem(1, { name: secret })])]);
@@ -709,6 +724,8 @@ section('main', () => {
     { name: 'a new room is hidden', from: "cur = { workspace, permMode: 'read-only', hidden: false };", to: "cur = { workspace, permMode: 'read-only', hidden: true };", section: 'folders', file: 'folders' },
     { name: 'a record has more than 8 members', from: 'if (members.length >= teamtemplate_1.LIMITS.members)', to: 'if (members.length >= 99)', section: 'folders', file: 'folders' },
     { name: 'an odd mode is read as Allow all', from: "mode: o.mode === 'ask' || o.mode === 'allow' ? o.mode : 'read-only',", to: "mode: o.mode === 'ask' ? o.mode : 'allow',", section: 'folders', file: 'folders' },
+    { name: 'a failing announce is propagated', from: 'dep.announce(info);\n            }\n            catch { /* the team exists', to: 'dep.announce(info);\n            }\n            catch (e) { throw e; /* the team exists', section: 'atomicity' },
+    { name: 'the default limit is not normalized', from: 'const c = (0, credits_1.parseCapIn)(unit === \'none\' ? undefined : unit, cap);', to: 'const c = cap;', section: 'limits' },
     { name: 'the snapshot is compared only once', from: "if (!this.unchanged(t))\n            return cfail('changed', CHANGED_NOW);", to: 'if (false)\n            return cfail(\'changed\', CHANGED_NOW);', section: 'snapshot2' },
     { name: 'a throw at place removes only the first agent', from: 'for (const info of infos) {\n                try {\n                    dep.unplace(info.id);', to: 'for (const info of infos.slice(0, 1)) {\n                try {\n                    dep.unplace(info.id);', section: 'atomicity' },
     { name: 'the agent whose place threw stays', from: 'for (const info of infos) {\n                try {\n                    dep.unplace(info.id);', to: 'for (const info of infos.slice(0, 1).concat(infos.slice(2))) {\n                try {\n                    dep.unplace(info.id);', section: 'atomicity' },

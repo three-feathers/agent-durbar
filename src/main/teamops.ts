@@ -347,6 +347,11 @@ export class TeamOps {
           if (cap === undefined) return cfail('invalid', 'Choices, limit: not valid.');
         }
       }
+      if (cap !== undefined) { // the folder's saved limit and the settings default are not rounded: the same parser as the record's gives the one value both keep
+        const c = parseCapIn(unit === 'none' ? undefined : unit, cap);
+        if (c === undefined) return cfail('failed', 'The team could not be created.');
+        cap = c;
+      }
       // the mode: the template's, never raised; an imported Allow all and an own one nobody confirmed enter as Ask (FR-035, FR-096)
       let mode: SavedPermMode = validMode(m.permMode);
       if (mode === 'allow' && (imported || choices.allowConfirmed !== true)) mode = 'ask';
