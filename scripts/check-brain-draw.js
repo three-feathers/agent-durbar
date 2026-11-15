@@ -38,7 +38,9 @@ module.exports = async (ctx) => {
   const stats = () => js(`window.__durbarSimUi.brain.host().stats()`);
   const calmDown = async () => { await H.until(`window.__durbarSimUi.brain.host()&&!window.__durbarSimUi.brain.host().stats().loopRunning`, 8000); };
   const DESKS = `[...document.querySelectorAll('#stage .desk[data-id]')].map(d=>{const r=d.getBoundingClientRect();return [d.dataset.id,Math.round(r.left),Math.round(r.top),Math.round(r.width),Math.round(r.height)].join(':')})`;
-  await media([{ name: 'prefers-reduced-motion', value: 'no-preference' }, { name: 'forced-colors', value: 'none' }]);
+  /* setEmulatedMedia replaces the whole list: always both features, so neither falls back to the machine's own value (the Windows runner reports reduced motion) */
+  const motionAllowed = () => media([{ name: 'prefers-reduced-motion', value: 'no-preference' }, { name: 'forced-colors', value: 'none' }]);
+  await motionAllowed();
 
   for (const [w, h] of SIZES) {
     const tag = `${w}x${h}`;
@@ -62,6 +64,8 @@ module.exports = async (ctx) => {
     await H.load({ w, h, query: { brain: '1' } });
     // the OS may take the focus from a driver (three run at a time): an unfocused page draws Still, which would make the "no loop" checks below pass for any code
     assert.ok(await H.focusPage({ emulate: 'first' }), `the page has the focus (real or emulated) before the Full checks at ${tag}`);
+    // the first size's reduced-motion and forced-colours steps changed the emulated media, and focusPage may detach the debugger (which clears it): allow motion again
+    await motionAllowed();
     const before = await js(DESKS);
     assert.strictEqual(before.length, 15, '15 desks');
     await js(`window.__errs=[];addEventListener('error',e=>window.__errs.push(String(e.message)+' '+String(e.filename).split('/').pop()));0`);
@@ -69,7 +73,9 @@ module.exports = async (ctx) => {
     await emit({ type: 'toolCall', sessionId: id, callId: 'b-1', tool: 'bash', phase: 'start', args: { command: cmd } });
     await must(`!!document.querySelector('.bv .bv-c1')&&/running/.test(document.querySelector('.bv .bv-c1').textContent)`, 'the card of a running command');
     await calmDown();
-    assert.strictEqual(await js(`window.__durbarSimUi.brain.host().draw.mode()`), 'full', 'the brain is in Full (the page has focus), so the Still checks below test something');
+    const full = await H.until(`window.__durbarSimUi.brain.host().draw.mode()==='full'`, 3000);
+    const why = full ? null : await js(`({mode:window.__durbarSimUi.brain.host().draw.mode(),degraded:window.__durbarSimUi.brain.host().stats().degraded,hasFocus:document.hasFocus(),reduce:matchMedia('(prefers-reduced-motion: reduce)').matches,forced:matchMedia('(forced-colors: active)').matches})`);
+    assert.ok(full, 'the brain is in Full (the page has focus), so the Still checks below test something at ' + tag + ': ' + JSON.stringify(why));
     assert.ok((await stats()).loops >= 1, 'a step in Full ran an animation loop');
     assert.deepStrictEqual(await js(DESKS), before, 'the floating brain moves no desk');
     const everything = await js(`document.querySelector('.bv').outerHTML+'|'+document.querySelector('.bv').innerText+'|'+document.querySelector('.bv canvas').toDataURL().length`);
