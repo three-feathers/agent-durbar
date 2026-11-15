@@ -372,7 +372,7 @@ Order: T327 (the owner's picture gate) before any code PR; T328, T329 (art, #164
 
 ## Phase: My characters in the Real office and the arcade (issue #1605, spec delta 2026-11-15; Q38 answered (a) 2026-11-15 17:56 UTC; blocked on spec 096 phase 3 and 4)
 
-- [ ] T352 Rebase #956 and #977 (spec 096 phase 3 and 4) onto `main`: decided yes (owner, 2026-11-15 17:56 UTC); in progress. Test: `read:` the owner's answer on the PR [FR-081]
+- [ ] T352 Bring #956 and #977 (spec 096 phase 3 and 4) up to date with `main` (merge `main` in, no rebase, no force push): decided yes (owner, 2026-11-15 17:56 UTC); in progress. Test: `read:` the owner's answer on the PR [FR-081]
 - [ ] T353 [US5] `mine` drawn through `peopleFor` as a `heads` value in every world, matrix cells, `check-097-crews` case; mutant: `mine` as `full` dies at the cell's own assert text. Test: `test:realoffice-layout`, `check-097-crews` (simulator) [FR-379]
 - [ ] T354 [US5] Q38 (a), decided: the maker's pose pass: extra sheets, the encoder's `seat`/`stand` records, preset `real-office-front-v1`. Test: `test:chargen`, `test:charencoder`, `test:realoffice-assets` on a fixture; cost shown first; real image generation only on Vikram's explicit go and a cost statement, never started by an agent [FR-380]
 - [ ] T355 [US5] Q38 (a), decided: a made set as a `REAL_SETS` row at `level: full` in the Photo office, both sizes, 15 agents; pictures read by eye. Test: `check-097-crews`, `check:office`, `docs/screenshots/097-1605-*` [FR-380]
