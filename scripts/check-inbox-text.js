@@ -35,12 +35,12 @@ module.exports = async (ctx) => {
   const r = (await js(`[...document.querySelectorAll('#inboxDlg .ib-t')].map(p=>({text:p.textContent}))`)).map((c) => ({ text: glue(c.text, 'inbox') }));
   const perm = r.find((c) => /zzdemo/.test(c.text)), q = r.find((c) => /zzone/.test(c.text));
   assert.strictEqual(perm.text, 'Write to /tmp/zzdemo/a.txt If you approve, Codex may run this outside its sandbox. Allow for this session covers every file in /tmp/zzdemo, not only this one.', 'each block of the card is apart from the next');
-  assert.strictEqual(q.text, 'Part one: First zzone question? / Part two: Second zztwo question?', 'both questions are in the row, each with its heading, the parts apart (spec 052 FR-243)');
+  assert.strictEqual(q.text, 'Part one: First zzone question? / Part two: Second zztwo question?', 'both questions are in the row, each with its heading, the parts apart (spec 005 FR-339)');
   for (const c of r) assert.ok(!/Allow once|\bDeny\b/.test(c.text), 'no button label in: ' + c.text);
   // the one builder: requestRaw (behind requestText, which the bar, the inbox and the strip's folded rows read) joins the parts with joinQuestionParts
   const appSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'app.js'), 'utf8').replace(/\r\n/g, '\n').replace(M === 'src' ? /joinQuestionParts\(qs\.map/g : /$^/g, '(qs.map');
   assert.ok(/function requestRaw\([^\n]*qs\.length\?joinQuestionParts\(qs\.map/.test(appSrc), 'requestRaw builds a question card text with joinQuestionParts (the parts apart)');
-  // spec 052 FR-243 (issue #1754): the answer bar of the simulator's own two-part question (headings Focus ring and Screens) keeps the parts apart
+  // spec 005 FR-339 (issue #1754): the answer bar of the simulator's own two-part question (headings Focus ring and Screens) keeps the parts apart
   const EXPECT = 'Focus ring: Which colour should the focus ring use? / Screens: Which screens should get it first?';
   // the Retro arcade and the Photo office, at both sizes (OUT=dir also saves the pictures)
   for (const [look, lq] of [['arcade', { officeview: 'real', worldflags: 'retro', world: 'retro' }], ['photo', { officeview: 'real', world: 'photo' }]]) for (const [w, h] of [[1440, 900], [1280, 800]]) {

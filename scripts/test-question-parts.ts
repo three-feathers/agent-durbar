@@ -1,5 +1,5 @@
 /**
- * Spec 052 FR-243 (issue #1754): the text of a question card with several parts keeps the parts apart: "Heading: question / Heading: question".
+ * Spec 005 FR-339 (issue #1754): the text of a question card with several parts keeps the parts apart: "Heading: question / Heading: question".
  * The page's own `joinQuestionParts` and `requestRaw` are cut out of app.js and run (the second on a DOM built like showQuestion's cards).
  * QPARTS_MUTANT=glue makes the function join with a space and no heading colon (what main did): the checks must fail. `npm run test:questionparts`. No credits spent.
  */
@@ -33,6 +33,8 @@ eq(join([{ head: 'A', text: 'one?' }, { head: 'B', text: 'two?' }, { head: 'C', 
 eq(join([{ head: '', text: 'Which?' }, { head: 'Screens', text: 'Where?' }]), 'Which? / Screens: Where?', 'a part with no heading is its question alone');
 eq(join([{ head: '', text: 'First?' }, { head: '', text: 'Second?' }]), 'First? / Second?', 'no headings at all');
 eq(join([{ head: 'A', text: 'one?' }, { head: ' ', text: '  ' }, { head: '', text: '' }, { text: 'two?' }]), 'A: one? / two?', 'blank parts are left out');
+eq(join([{ head: 'A', text: '' }]), 'A', 'a heading with no question is the heading alone');
+eq(join([{ head: 'A', text: '  ' }, { head: 'B', text: 'two?' }]), 'A / B: two?', 'a heading-only part among others');
 eq(join([]), '', 'no parts');
 eq(join(null), '', 'null');
 eq(join([{ head: 'Ready?', text: 'Which?' }, { head: 'Note:', text: 'Which?' }]), 'Ready? Which? / Note: Which?', 'a heading with its own punctuation gets no second colon');
