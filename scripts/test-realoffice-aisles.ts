@@ -224,6 +224,10 @@ for (const [W, H] of SIZES) for (const dh of [0, 31]) for (const n of [1, 2, 3, 
   const gap = n === 10 && f >= 3 && W === 1280 && dh === 31;
   if (n <= 10 && !gap) assert.deepStrictEqual(cut, [], `${n} in ${f} at ${W}x${H - dh}: a folder of 4 or fewer is split`);
   if (n <= 10 && gap) assert.ok(cut.length > 0 && !L.scroll, `${n} in ${f} at ${W}x${H - dh}: the named gap (a split folder, no scroll) moved: cut ${cut.length}, scroll ${L.scroll}`);
+  if (n <= 10 && gap) { /* issue #1598 (T342): the renderer's lend (the floor's 24 px) is what keeps them whole: the layout at that height has no cut folder and no scroll */
+    const Ll = aislesLayout(model(n, f), { w: W, h: H - dh + 24 }, META, SIGNS(f)), pl = new Map<string, number>(); for (const z of Ll.zones) pl.set(z.id, (pl.get(z.id) || 0) + 1);
+    assert.ok(![...pl.values()].some((v) => v > 1) && !Ll.scroll, `${n} in ${f} at ${W}x${H - dh} + 24 lent: the folders are whole and the hall does not scroll`);
+  }
   if (n <= 10 && gap) {
     /* the strip stays where dropping it would not keep the folders whole (the lowest-lobby hall needs 682 px, this room has 666): a helper each keeps the strip row */
     const mg = model(n, f); for (const fo of mg.folders) for (const a of fo.agents) a.helpers = 1;
@@ -328,7 +332,7 @@ for (const n of [3, 8, 15]) for (const dh of [0, 31]) {
 
 // ---- the seam: `rows` is realLayout, byte for byte (T167); the day or night light is no parameter (FR-251) ----
 {
-  assert.deepStrictEqual([...ARRANGEMENTS], ['rows', 'aisles']);
+  assert.deepStrictEqual([...ARRANGEMENTS], ['rows', 'circle', 'aisles']); /* `circle`: spec 102 T165 */
   const m = model(15, 4), v = { w: 1280, h: 748 };
   assert.strictEqual(JSON.stringify(layoutFor('rows', m, v, META, SIGNS(4))), JSON.stringify(realLayout(m, v, META, SIGNS(4))), 'rows is untouched');
   assert.strictEqual(JSON.stringify(layoutFor('aisles', m, v, META, SIGNS(4))), JSON.stringify(aislesLayout(m, v, META, SIGNS(4))));
@@ -443,6 +447,42 @@ console.log(`floor covered with 4 or fewer: ${covs.join('; ')}`);
     }
   }
   console.log(`arcade lounge: ${lc} layouts`);
+}
+// ---- spec 097 delta 2026-11-14 (issue #1760): the arcade lounge seats every resting agent. A seat never spans two cell runs, so FR-248's one-stretch count
+// (5 seats in ceil(5 x 82 / 109) = 4 cells) seated 2 + 2 when the cells fell in two runs of two at 1248 px (a run 492.8 px, three seats need 496)
+{
+  const rest = (sz: number[], idx: number[], helpers = false): RealModel => { let i = 0; return { folders: sz.map((s, fi) => ({ id: 'f' + fi, agents: Array.from({ length: s }, (): RealAgent => { const k = i++, r = idx.includes(k); return { id: 'a' + k, state: r ? (k % 2 ? 'error' : 'idle') : STATES[k % 5], person: PEOPLE[k % 15], ...(r ? { lounge: true } : {}), ...(helpers ? { helpers: 1 } : {}) }; }) })), places: [] }; };
+  const seatedOk = (m: RealModel, W: number, H: number, tag: string): Layout => {
+    const L = aislesLayout(m, { w: W, h: H }, META), want = sortDesks(m.folders.flatMap((fo) => fo.agents.filter((a) => a.lounge))).map((a) => a.id), seats = L.lounge ? L.lounge.desks : [];
+    assert.deepStrictEqual(seats.map((d) => d.id), want, `${tag}: every resting agent has a seat (${seats.length} of ${want.length})`);
+    const ds = L.zones.flatMap((z) => z.desks), floor: Rect = { x: 0, y: L.lobbyH, w: W, h: L.height - L.lobbyH };
+    seats.forEach((s, i) => {
+      for (const r of [s.plate, s.screen, s.table as Rect]) assert.ok(inside(r, floor, 1), `${tag}: seat ${s.id} leaves the floor`);
+      for (const d of ds) assert.ok(![s.plate, s.screen, s.table as Rect].some((r) => inter(r, d.desk) || inter(r, d.plate)), `${tag}: seat ${s.id} is on the cabinet of ${d.id}`);
+      seats.forEach((o, j) => { if (j > i) assert.ok(!inter(s.plate, o.plate) && !inter(s.table as Rect, o.table as Rect), `${tag}: seats ${s.id} and ${o.id} overlap`); });
+    });
+    const all = JSON.parse(JSON.stringify(m)) as RealModel; all.folders.forEach((fo) => fo.agents.forEach((a) => { a.lounge = false; }));
+    const L0 = aislesLayout(all, { w: W, h: H }, META);
+    assert.ok((L.g as number) >= (L0.g as number) && (L.scroll ? 1 : 0) <= (L0.scroll ? 1 : 0), `${tag}: the hall is smaller than with everyone at a cabinet (g ${L0.g} -> ${L.g})`);
+    return L;
+  };
+  for (const [nm, W, H] of [['1280x800', 1248, ROOM.h800], ['1440x900', 1408, ROOM.h900]] as Array<[string, number, number]>) {
+    const L = seatedOk(rest([6, 6, 3], [0, 2, 6, 7, 11]), W, H, `#1760 repro: 6/6/3, 5 resting, ${nm}`);
+    assert.ok(!L.scroll, `#1760 repro at ${nm}: no scroll`);
+  }
+  /* review of #1761: at 1280x800 with the filter strip (1248x666) 11 agents with 5 resting have two runs of two cells; one cell more would add a row and scroll.
+     The seats reach the runs' ends instead (492 of 492.8 px): all five sit and the hall does not scroll */
+  { const L = seatedOk(rest([3, 8], [3, 4, 5, 6, 7]), 1248, 666, '#1761 review: 3/8, 5 resting, 1248x666 (1280x800 with the strip)'); assert.ok(!L.scroll, '#1761 review: 3/8, 5 resting, 1248x666: the seats reach the runs\' ends, no scroll'); }
+  /* the narrow-cabinet hall (cells 239.8 px, two-cell runs 479.6 px) holds 2 + 2 even at the ends: one more cell, in a hall that scrolls with everyone at a cabinet too */
+  seatedOk(rest([6, 7], [1, 4, 9, 10, 12]), 1248, 666, '#1760 one cell more: 6/7, 5 resting, 1248x666');
+  let seed = 1760, fz = 0; const rnd = (n: number): number => { seed = (seed * 1664525 + 1013904223) % 4294967296; return Math.floor((seed / 4294967296) * n); };
+  for (let t = 0; fz < 800 && t < 8000; t++) {
+    const nf = 1 + rnd(6), sz = Array.from({ length: nf }, () => 1 + rnd(6)), n = sz.reduce((a, b) => a + b, 0); if (n < 9 || n > 15) continue;
+    const idx = Array.from({ length: n }, (_, i) => i).filter(() => rnd(3) === 0), helpers = rnd(2) === 0, [nm, W, H] = ([['1440x900', 1408, ROOM.h900], ['1280x800', 1248, ROOM.h800], ['1440x900 with the strip', 1408, ROOM.h900 - 31], ['1280x800 with the strip', 1248, ROOM.h800 - 31]] as Array<[string, number, number]>)[t % 4];
+    if (!idx.length) continue;
+    seatedOk(rest(sz, idx, helpers), W as number, H as number, `#1760 fuzz ${t}: ${sz.join('/')} resting ${idx.join(',')}${helpers ? ' helpers' : ''} at ${nm}`); fz++;
+  }
+  console.log(`arcade lounge seats every resting agent: the #1760 repro and ${fz} fuzz halls`);
 }
 {
   // spec 097 FR-345 (T260, issue #1152): a folder with a saved desk order keeps it in the cabinet rows; one without is sorted by status
@@ -583,6 +623,32 @@ console.log(`floor covered with 4 or fewer: ${covs.join('; ')}`);
   }
   for (const [W, H] of FLOORS) for (const n of [5, 8, 12, 15]) assert.ok(!rowsOf(n, 4, W, H, 0).big, `FR-308: ${n} agents at ${W}x${H}: not big`);
   console.log('arcade big screens: 8 lines at 1 to 4 agents (1408 wide) and 1 to 2 (1248 wide); 3 and 4 at 1248 is the recorded gap');
+}
+
+/* spec 102 delta 2026-11-14 (T223): the empty floor (no agent, no lounge seat) is planned as three one-cabinet folders: three cabinets of the plan's size in one row, the whole floor, no zone, no scroll.
+   Pure, so removing the plan fails here and not only in the Electron driver. The plan is the one three real one-cabinet folders get, and the sizes are measured at both floors. */
+{
+  const places = model(0, 1).places;
+  const want: Record<string, { g: number; cab: { w: number; h: number; gw: number; gh: number }; lobbyH: number }> = {
+    '1440x797': { g: 4, cab: { w: 244, h: 292, gw: 44, gh: 32 }, lobbyH: 168 },
+    '1280x697': { g: 3, cab: { w: 276, h: 273, gw: 75, gh: 50 }, lobbyH: 168 },
+  };
+  for (const [i, [W, H]] of SIZES.entries()) {
+    const label = `empty floor plan, ${NAMES[i]}`, E = aislesLayout({ folders: [], places }, { w: W, h: H }, META, {}), three = aislesLayout(model(3, 3, ['idle']), { w: W, h: H }, META, SIGNS(3)), w = want[`${W}x${H}`];
+    assert.ok(E.cabinet, `${label}: the plan has a cabinet size`);
+    const c = E.cabinet!;
+    assert.deepStrictEqual({ g: E.g, cab: { w: c.w, h: c.h, gw: c.gw, gh: c.gh }, lobbyH: E.lobbyH }, w, `${label}: scale, cabinet size and lobby`);
+    assert.deepStrictEqual([c.cols, c.rows], [3, 1], `${label}: three cabinets in one row (columns, rows)`);
+    assert.deepStrictEqual([E.g, E.cabinet, E.lobbyH, E.height, E.big], [three.g, three.cabinet, three.lobbyH, three.height, three.big], `${label}: the plan of three one-cabinet folders`);
+    assert.strictEqual(E.zones.length, 0, `${label}: no zone is drawn from the plan`);
+    assert.ok(!E.scroll && E.height === H && E.width === W, `${label}: the stage is the floor (${E.width}x${E.height}, no scroll)`);
+    assert.ok(3 * c.w + 2 * 4 * (E.g as number) <= W, `${label}: the three cabinets and the gaps between them fit across ${W} px`);
+    assert.ok(E.lobbyH + 62 + c.h <= H, `${label}: the plate and a row of cabinets fit under the lobby`);
+    /* one lounge seat is not an empty floor: its plan is the seat's */
+    const lounged = aislesLayout(model(1, 1, ['idle'], 1), { w: W, h: H }, META, SIGNS(1));
+    assert.ok(lounged.lounge && lounged.zones.length === 0, `${label}: a floor with only a lounge seat is not planned as the empty floor`);
+  }
+  console.log('arcade empty floor plan: three cabinets, both floors');
 }
 
 console.log(`aisles tests passed (${cases} layouts)`);

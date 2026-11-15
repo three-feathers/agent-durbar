@@ -348,12 +348,14 @@
   const SCENE_KITS=['office','pixel','crew'];
   /* Characters, separate from themes (spec 077 FR-064, FR-065): who sits at the desks. 'theme' is the theme's own kit (the default);
      the others name a kit that is drawn on top of any theme. The same list and rule as src/shared/characters.ts (test:characters). */
-  const CHARACTERS=['theme','minimalist','cheeky','prehistoric','pirate','monster','royal','rebels'];
+  const PIXEL_CHARACTERS='pixel'; /* spec 102 FR-266, FR-320: the stored value of the Retro pixel people (the set is `retro`); the copy of PIXEL_CHARACTERS in src/shared/characters.ts, compared by test:characters */
+  const CHARACTERS=['theme','office','minimalist','cheeky','prehistoric','pirate','monster','royal','rebels',PIXEL_CHARACTERS];
+  const SET_CHOICES=['office',PIXEL_CHARACTERS]; /* spec 102 FR-320, FR-321: Real office people sets; Flat draws the theme's own figures until T294 */
   const CHARACTER_KITS={minimalist:'office',cheeky:'crew',prehistoric:'crew',pirate:'crew',monster:'crew',royal:'crew',rebels:'crew'};
   const REMOVED_THEMES=['corporate','durbar-indian','durbar-european','durbar-japanese']; /* spec 035 FR-017: removed built-ins; FR-018 maps them to Clean Office, same list as src/shared/themes.ts (test:theme) */
   const LEGACY_CREW_THEME='cheeky-crew'; /* FR-066: no longer a theme; FR-067 maps it to Clean Office with Characters = Cheeky */
   function parseCharacters(v){return typeof v==='string'&&CHARACTERS.includes(v)?v:undefined;}
-  function kitFor(themeKit,choice){const c=parseCharacters(choice);if(c&&c!=='theme')return CHARACTER_KITS[c];return themeKit||'office';}
+  function kitFor(themeKit,choice){const c=parseCharacters(choice);if(c&&c!=='theme'&&!SET_CHOICES.includes(c))return CHARACTER_KITS[c];return themeKit||'office';}
 
   function validateManifest(m){
     if(!m || typeof m!=='object') return null;
@@ -462,6 +464,7 @@
      and pressed fill (themes.css); themegen.ts BRAND_UIS and BRAND_HOVER_MIX are the same (test:theme-tokens) */
   const BRAND_UIS=UI_STYLES.filter(u=>u!=='clean');
   const BRAND_HOVER_MIX=0.14;
+  const RED_HOVER_MIX=0.14; /* the 14% of the .btn.primary.danger:hover mix (themes.css, styles.css), issue #1700 */
   /* the colour the hovered fill is mixed toward: the text where that keeps 4.5:1 with it, else away from the text (black under lighter text, white under darker), which only raises the contrast; themegen.ts brandHoverTarget is the same */
   function brandHover(mk,bg){
     if(ratio(mk,mixHex(bg,mk,BRAND_HOVER_MIX).slice(0,7))>=4.5)return mk;
@@ -601,6 +604,14 @@
           t['--brand-hover']=brandHover(mark,bg);
         }
       }
+      /* spec 052 FR-053, FR-076 (#1700): the hovered red confirm button mixes RED_HOVER_MIX of --ink into --red-ink (themes.css, styles.css). Where a repaired --ink (a partial user theme) makes that
+         fill read under 4.5:1 with its text (--surface), the target moves AWAY from the text (black under lighter text, white under darker), which only raises the contrast; written as --red-hover.
+         A theme where --ink already reads gets no --red-hover and keeps the --ink mix (every complete theme). */
+      {
+        const rd=hexOf('--red-ink'),sf=rd&&hexOf('--surface',rd),ik=rd&&hexOf('--ink',rd);
+        if(rd&&sf&&ik&&ratio(sf,mixHex(rd,ik,RED_HOVER_MIX).slice(0,7))<4.5)t['--red-hover']=lum(sf)>lum(rd)?'#000000':'#ffffff';
+        else delete t['--red-hover'];
+      }
       if(!changed)break;
     }
     return back;
@@ -734,6 +745,7 @@
     if(typeof document!=='undefined'&&document.documentElement){
       for(const k of Object.keys(TYPED_TOKENS))if(!Object.prototype.hasOwnProperty.call(manifest.tokens||{},k))document.documentElement.style.removeProperty(k);
       for(const k of Object.keys(BAR_TOKENS))if(!Object.prototype.hasOwnProperty.call(resolved,k))document.documentElement.style.removeProperty(k);
+      if(!Object.prototype.hasOwnProperty.call(resolved,'--red-hover'))document.documentElement.style.removeProperty('--red-hover'); /* issue #1700, as --brand-hover */
       if(!Object.prototype.hasOwnProperty.call(resolved,'--brand-hover'))document.documentElement.style.removeProperty('--brand-hover'); /* the repair's hover target (issue #1614) belongs to the user theme that got it */
       if(Object.prototype.hasOwnProperty.call(manifest.tokens||{},'--ui-display'))document.documentElement.dataset.display='';else delete document.documentElement.dataset.display;
     }
@@ -897,7 +909,7 @@
     const el=document.documentElement;
     if(currentWorld){
       applyTokens(worldResolved);
-      el.style.removeProperty('--brand-hover'); /* a user theme's repair target (issue #1614) is not the world's; leaving the world re-applies the theme's tokens */
+      el.style.removeProperty('--red-hover');el.style.removeProperty('--brand-hover'); /* a user theme's repair target (issue #1614) is not the world's; leaving the world re-applies the theme's tokens */
       for(const [k,v] of Object.entries(WORLD_SETS[currentWorld].shadow))el.style.setProperty(k,v);
       el.dataset.world=currentWorld;
       if(WORLD_SETS[currentWorld].dark)el.dataset.dark='';else delete el.dataset.dark; /* a light world's bar is dark by its own rules */
@@ -1138,6 +1150,8 @@
     kitFor,
     parseCharacters,
     CHARACTERS:CHARACTERS.slice(),
+    SET_CHOICES:SET_CHOICES.slice(),
+    PIXEL_CHARACTERS:PIXEL_CHARACTERS,
     CHARACTER_KITS:Object.assign({},CHARACTER_KITS),
     LEGACY_CREW_THEME,
     REMOVED_THEMES:REMOVED_THEMES.slice(),

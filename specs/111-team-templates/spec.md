@@ -4,12 +4,12 @@
 group: 046
 title: Team templates (issue #1306, owner 2026-11-10): a saved team of agents (name, role brief or custom agent, app, model, effort, permission mode, cap, character) that creates a room in one click, lazily; save a room as a template; role and model on desk and chat header in every world; starter templates; export and import as a file, validated in main as untrusted
 status: draft
-note: G1 and T006 merged; T007 in review (#1640), T008 in review (#1661); rest not built
+note: G1, T006 and T007 merged; T008 in review (#1661); rest not built
 -->
 
 **Feature Branch**: `111-team-templates` (spec, plan and tasks only). The build is one small PR per group (G1..G10).
 **Created**: 2026-11-10
-**Status**: Draft. Being built, one PR per task: T032 (#1583), T004 (#1594) and T006 (#1602) are merged; T007 is in review (#1640) and T008 (#1661, stacked on it); the rest is not built. Q1..Q10 carry proposed defaults (*Clarifications*); Q1, Q3 and Q8 were confirmed by the owners on 2026-11-10 (Ruben and Paco, comments on #1306), so the groups that depend on them (T013, G7) may start (plan, tasks). The design review of 2026-11-10 and the review on PR #1456 are folded in (*Changes*).
+**Status**: Draft. Being built, one PR per task: T032 (#1583), T004 (#1594) and T006 (#1602) are merged; T007 (#1640) is merged and T008 is in review (#1661); the rest is not built. Q1..Q10 carry proposed defaults (*Clarifications*); Q1, Q3 and Q8 were confirmed by the owners on 2026-11-10 (Ruben and Paco, comments on #1306), so the groups that depend on them (T013, G7) may start (plan, tasks). The design review of 2026-11-10 and the review on PR #1456 are folded in (*Changes*).
 **Issue**: #1306 (Refs: the issue stays open for the build).
 **Input**: Owner idea and approval on issue #1306, quoted with their dates:
 
@@ -273,6 +273,43 @@ Proposed defaults, 2026-11-10. Ruben's approval on #1306 covers the scope. **Q1,
 - **Q10** (proposed default) *Save team as template…* names the custom agent id only and never reads profile files (FR-050).
 
 ## Changes
+
+### 2026-11-14: merge of main; the guard of #1699 and a test file race (PR #1661, test only)
+
+The Delete confirm of the Teams list is a new `primary danger` destructive dialog: `check-052-danger-dialogs` and `test:dangersites` count it (20 sites; see spec 052, Changes 2026-11-14). `test-teamstore` and `test-teamtemplate` both wrote `dist-scripts/src/shared/teamtemplate.mutant.js`, and run in parallel one removed the file under the other (ENOENT on macOS CI); `test-teamstore` now writes `teamtemplate.teamstore-mutant.js`.
+### 2026-11-14: review of #1720 (T009; decided by the coordinator under Ruben's delegation; Ruben may overrule)
+
+Paco's Opus read found three gaps; decisions:
+- **While a save is in flight** (`teams:put` pending) Escape, Cancel and the backdrop do nothing: the dialog stays open until the answer; on `ok` it closes with the list repainted, on `changed`, `failed` or `invalid` it stays with what was typed. (A close during the save would store the template and leave the list stale.) A test with a slow `teamsPut` and Escape. `[KNOWN GAP]` if `teams:put` never answered (a hung IPC) the dialog could not be closed, because there is no time limit; a throw or a rejection frees it.
+- **The dirty baseline is taken after the first paint** of the members (the first paint normalises what the app cannot enforce: a permission, a limit in the other unit, an empty app), so opening an Edit and pressing Escape without touching anything closes at once; a test with a stored limit in the other unit and an unsupported permission.
+- **Every field is in the dirty snapshot** (name, description and per member role, brief, profile, app, model, effort, permMode, capText, character, sendBrief, memberId): a test changes each one in turn and expects *Discard changes?*, with a mutant that drops one field.
+
+### 2026-11-13: the member editor (T009; decided by the coordinator under Ruben's delegation, from the implementer's proposals; Ruben may overrule)
+
+- **Changing the app** clears the limit, the model and the effort (the old ones may not exist for the new app); changing the model keeps the effort only if the new model offers it.
+- **The limit** is in the app's unit: an empty AIU limit means the person's default limit (FR-002), an empty dollar limit means no limit, an app without a limit capability has no row and sends none; an amount out of range is a field error (*New session* is unchanged).
+- **Fields refused by main** are marked by reading only the `Member N, <field>` start of each line of `errors`, with a fixed sentence per field; no value is shown.
+- **"Looks like <name>"** compares names after NFKC, trim, collapsing spaces and lower case in the page (it does not load the 250 KB skeleton table); "Mixed letters" comes from `DurbarLookalike`; *Save* refuses a clash with "Two members cannot have names that look the same."; a clash found only by the skeleton is refused by main as "not accepted" (`[KNOWN GAP]`).
+- **Esc** with unsaved changes asks "Discard changes?" (Cancel focused); without changes it closes at once. (The implementer proposed closing without asking; a team of eight members is too much typing to lose to one key.)
+- **Mark as mine** only on a saved member (one with a `memberId`) of a saved template, with the FR-023 confirmation.
+- **Not ready to ship**: the section stays **simulator-only until T010** (the create preview, *Use…*), not until T009. With T009 alone a person could save templates but not use them (*Use…* still says it comes later), a half feature in a daily stable release. T010 turns `DurbarTeams.shown()` on for everyone and drops "simulator only" from the docs and the changelog. (Replaces the 2026-11-13 hand-over at T009.)
+
+
+### 2026-11-13: review of #1661 (T008; decided by the coordinator under Ruben's delegation; Ruben may overrule)
+
+Required by the two reads (Vikram's and Paco's Opus readers). Decisions:
+- **The set-aside notice** says what happened and no more: "The team templates file could not be read, so it was kept aside; templates that could not be read are not in the list." (the store keeps the valid ones). It is shown inline **and** as a toast (FR-001), and the inline note is kept in module state, so a repaint of Settings does not lose it; it is cleared by a dismiss or by the next real list.
+- **A failed `teams:list`** (a throw or `ok: false`) is not "no templates": the section says "The team templates could not be loaded. Try again." with a *Try again* button, New is disabled, and no "Copied as" or "deleted" is announced over a failed reload.
+- **Focus after Duplicate, Delete or a refusal** goes to the named control through `window.DurbarScroll.focus` (focus, then reveal it in its own scroller), so a keyboard user near the end of a long list does not lose the focus ring; the driver checks it with about 40 templates.
+- **At 50 templates** *Duplicate* and *New template…* are disabled with the reason in words ("At most 50 templates: delete one first.") in the control's accessible name and in a visible note; the pure part (`actionsOf(row, {full:true})`) and the driver test it. *Export…*'s reason ("Export comes with import and export, in a later step.") is also a visible line under the section, not only a `title`.
+- **The simulator's fake follows main**: `changed` answers main's sentence ("The team templates file changed while you were editing. It was read again; save once more."), a malformed `memberId` answers "Member N, memberId: not valid." before "not a member", and the member limit is the validator's `LIMITS.members`, not a literal.
+- **Not shipped before it is usable**: the Team templates section is shown only under the simulator until T009 (the editor) lands; the changelog fragment says so. T009 turns it on for everyone. (The alternative, shipping a visible dead end in the next daily release, needs the owners' written yes.)
+- **One voice for screen readers**: `#srAnnounce` announces; `#tmNotice` has no `role="status"`.
+- **The mutants of `teams.js`** run from the driver, not by hand: `TEAMS_MUTANT=editstarter|exportenabled|rawerrors|innerhtml|nolabel|cancelorder|noask|nofocus` (the pattern of the other drivers), each dying at its label.
+- **`teamcheck.js`** (about 250 KB, simulator only) is left out of the packaged app if the build's file list allows it; otherwise the size is named here as accepted.
+- **Duplicating a starter** (T026) is on T026's line: `teams:duplicate` only knows stored ids, so T026 decides how a starter is copied.
+- **docs-sync**: `docs/features.md` and `docs/feature-inventory.md` get the entry (under the simulator, "not yet available in the app"), the linked `052-settings-nav` picture is retaken, and the PR body carries the `Docs:` line; the specs-index note and the Status line say T007 is merged.
+
 
 ### 2026-11-13: second read of #1640 (Paco's side, Opus; decided by the coordinator under Ruben's delegation; Ruben may overrule)
 

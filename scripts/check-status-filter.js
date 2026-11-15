@@ -14,7 +14,9 @@
  * (Electron still exits 0), so the npm script exits non-zero unless "all checks passed" is printed.
  * The suite entry `check-status-filter retro` (DRIVER_WORLD set, spec 102 delta 2026-11-11, issue 1559) skips the flat behaviour above and
  * measures, in the arcade at both sizes, the office notice and the List notice (text, bold part, Show all) and the List's empty line at 4.5:1,
- * with an opaque colour, no opacity and an underline that is drawn; FILTER_MUTANT=old puts the old colours back (it must fail).
+ * with an opaque colour, no opacity and an underline that is drawn; FILTER_MUTANT=old puts the old colours back (it must fail). It also focuses Show all by keyboard
+ * (window focus, a Tab press, then focus()) and asserts its focus ring is drawn (outline-style not none, width > 0), at least 2px wide and at least 3:1 against the arcade floor
+ * (issue 1646); FILTER_RING_MUTANT=none|thin|floor each fail it (the label names the ring).
  *   OUT=docs/screenshots  (optional) also saves 001-status-filter-{1440x900,1280x800}.png
  */
 const assert = require('assert');
@@ -129,9 +131,9 @@ module.exports = async (ctx) => {
   }
 
   // Contrast of the note's three texts against their real background, Clean Office (the default) and the dark fixture theme (spec 102 T226): 12px text needs 4.5:1
-  const contrast = (sel) => js(`(()=>{const rgb=c=>c.match(/[\\d.]+/g).map(Number);const lum=c=>{const [r,g,b]=c.map(v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);});return 0.2126*r+0.7152*g+0.0722*b;};
+  const contrast = (sel, prop = 'color') => js(`(()=>{const rgb=c=>c.match(/[\\d.]+/g).map(Number);const lum=c=>{const [r,g,b]=c.map(v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);});return 0.2126*r+0.7152*g+0.0722*b;};
     const e=document.querySelector(${jsLiteral(sel)});let bg=null;for(let n=e;n&&!bg;n=n.parentElement){const c=getComputedStyle(n).backgroundColor;const m=rgb(c);if(m.length<4||m[3]>0.99)bg=m.slice(0,3);}
-    const fg=rgb(getComputedStyle(e).color).slice(0,3),a=lum(fg),b=lum(bg),r=(Math.max(a,b)+0.05)/(Math.min(a,b)+0.05);const al=rgb(getComputedStyle(e).color)[3];let op=1;for(let n=e;n;n=n.parentElement)op*=+getComputedStyle(n).opacity;return {alpha:al===undefined?1:al,op,fg:fg.join(','),bg:bg.join(','),ratio:Math.round(r*100)/100};})()`);
+    const fg=rgb(getComputedStyle(e)[${jsLiteral(prop)}]).slice(0,3),a=lum(fg),b=lum(bg),r=(Math.max(a,b)+0.05)/(Math.min(a,b)+0.05);const al=rgb(getComputedStyle(e)[${jsLiteral(prop)}])[3];let op=1;for(let n=e;n;n=n.parentElement)op*=+getComputedStyle(n).opacity;return {alpha:al===undefined?1:al,op,fg:fg.join(','),bg:bg.join(','),ratio:Math.round(r*100)/100};})()`);
   // spec 102 delta 2026-11-11 (issue 1559): with DRIVER_WORLD set (the suite entry for the arcade) the Real office loads draw the arcade, and the notice is measured there at both sizes
   const LOOKS = ARCADE ? [['arcade', null, { officeview: 'real' }]] : [['clean-office', 'clean-office', null], [CHECK_DARK.id, CHECK_DARK, null]];
   for (const [theme, manifest, query] of LOOKS) {
@@ -158,6 +160,23 @@ module.exports = async (ctx) => {
       };
       await measure('office', ['#filterNote', '#filterNote b', '#filterNote .fn-all']);
       if (query) {
+        // spec 102 delta 2026-11-11 (issue 1646): the keyboard focus ring of Show all on the arcade floor. A key press and the window focus make :focus-visible match; FILTER_RING_MUTANT=none|thin|floor (injected after the load) must each fail
+        const RING = { none: 'outline:none!important', thin: 'outline-width:1px!important', floor: 'outline-color:var(--bg)!important' }[process.env.FILTER_RING_MUTANT || ''];
+        if (RING) await ctx.win.webContents.insertCSS(`#filterNote .fn-all:focus-visible{${RING}}`);
+        assert.ok(await H.focusPage(), `${theme} ${w}x${h}: the window has the focus (a ring is only drawn in a focused window)`);
+        await H.key('Tab');
+        assert.ok(await until(`!!document.activeElement&&document.activeElement!==document.body`, 3000), `${theme} ${w}x${h}: the Tab key press did not move focus off the body`);
+        await js(`document.querySelector('#filterNote .fn-all').focus()`);
+        assert.ok(await until(`document.querySelector('#filterNote .fn-all').matches(':focus-visible')`, 3000), `${theme} ${w}x${h}: Show all is focus-visible after a key press`);
+        const ring = await js(`(()=>{const s=getComputedStyle(document.querySelector('#filterNote .fn-all'));return {style:s.outlineStyle,width:parseFloat(s.outlineWidth),offset:s.outlineOffset,color:s.outlineColor,halo:s.boxShadow}})()`);
+        const rc = await contrast('#filterNote .fn-all', 'outlineColor');
+        console.log(`[statusfilter] ${theme} ${w}x${h} focus ring: outline ${ring.width}px ${ring.style} ${ring.color} offset ${ring.offset}, halo ${ring.halo}; ${rc.fg} on ${rc.bg} = ${rc.ratio}:1`);
+        fs.appendFileSync(path.join(OUT, 'statusfilter-contrast.txt'), `${theme} ${w}x${h} focus ring ${ring.width}px ${ring.style} ${rc.fg} on ${rc.bg} = ${rc.ratio}:1\n`);
+        assert.ok(ring.style !== 'none' && ring.width > 0, `${theme} ${w}x${h}: arcade Show all focus ring is not drawn (outline-style ${ring.style}, outline-width ${ring.width}px)`);
+        assert.ok(ring.width >= 2, `${theme} ${w}x${h}: arcade Show all focus ring width ${ring.width}px is below 2px`);
+        assert.ok(rc.alpha === 1, `${theme} ${w}x${h}: the focus ring colour is translucent (alpha ${rc.alpha}): the measured ratio would not be the painted one`);
+        assert.ok(rc.ratio >= 3, `${theme} ${w}x${h}: arcade Show all focus ring: outline ${ring.width}px ${ring.style} ${rc.fg} is ${rc.ratio}:1 against the floor ${rc.bg} (3:1 needed)`);
+        await js(`document.activeElement.blur()`);
         assert.ok(await js(`getComputedStyle(document.querySelector('#filterNote .fn-all')).textDecorationLine.includes('underline')`), `${theme}: Show all is underlined (reads as a control)`);
         const shot = await js(`(()=>{const r=document.getElementById('filterNote').getBoundingClientRect();return {x:Math.max(0,Math.floor(r.x)),y:Math.max(0,Math.floor(r.y)),width:Math.ceil(r.width),height:Math.ceil(r.height)}})()`);
         const img = await ctx.win.webContents.capturePage(shot);
