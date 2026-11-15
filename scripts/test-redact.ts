@@ -1721,7 +1721,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
 // comment or tag, or a hidden character (also written as an entity) is masked like the joined token: by redact, maskSecretCommand, maskSecretArgs,
 // the desk's maskRaw and the permission card. Every token is invented and built in code from pieces.
 {
-  const ST = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string; excerpt(t: string, r: (s: string) => string, n?: number): string; plainMarks(t: string): string; _deskWindowForTest(t: string): string; DESK_SPLIT_MAX: number; maskLabel(t: string, k: string, m: Record<string, (s: string) => string>): string };
+  const ST = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string; excerpt(t: string, r: (s: string) => string, n?: number): string; plainMarks(t: string): string; _deskWindowForTest(t: string): string; _deskWindowStepsForTest(): number; DESK_SPLIT_MAX: number; maskLabel(t: string, k: string, m: Record<string, (s: string) => string>): string };
   const LA = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'liveact.js')) as { permText(t: string, k: string, m: Record<string, (s: string) => string>): { text: string } };
   const red = (t: string): string => redact(t, {});
   const cm = { redact: red, cmd: (t: string) => maskSecretCommand(t, {}), url: (t: string) => maskSecretUrl(t, {}) };
@@ -2073,19 +2073,57 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     assert.strictEqual(ST._deskWindowForTest(exact), exact, '#1613 round 7: a text of exactly the bound is read whole');
     const over = 'ab '.repeat(6000).slice(0, M + 1);
     const wo = ST._deskWindowForTest(over);
-    assert.ok(wo !== over && wo.length <= M && wo.length > M - 4 && over.startsWith(wo) && /\s$/.test(wo), `#1613 round 7: one character over the bound, the window ends at the last blank within it (${wo.length})`);
+    assert.ok(wo !== over && wo.length <= M && wo.length > M - 8 && over.startsWith(wo) && /\s$/.test(wo), `#1613 round 7: one character over the bound, the window ends at the last blank within it (${wo.length})`);
     assert.strictEqual(ST._deskWindowForTest('a'.repeat(M + 1)), '', '#1613 round 7: with no blank, the token characters the bound cut into are left out');
     // round 8: a line break is a piece too: the window ends at a space or a tab, and a line break among the blanks before its end drops the word before it
     for (const brk of ['\n', '\n    ', '\r\n\t', '\n> '])
       assert.ok(!ST._deskWindowForTest('x '.repeat(8180) + 'ghp_' + B.slice(0, 10) + brk + B.slice(10, 36) + ' ' + 'tail '.repeat(100)).includes('ghp_'), `#1613 round 8: a token split by ${JSON.stringify(brk)} across the bound is left out of the window whole`);
     const ws = 'a'.repeat(M) + ' ';
     assert.ok(ws.length === M + 1 && ST._deskWindowForTest(ws).length <= M, '#1613 round 8: a text of 16,385 characters with a blank at index 16,384 gives a window within the bound');
+    // round 9: the window ends before the last two token runs and what lies between them: every white space is a blank, marks are passed over, an open tag goes
+    // with its run; for every family, with the bound 1 to 25 characters into the second half, behind fillers of spaces, tabs only and each line break alone
+    {
+      const head = 'ghp_' + B.slice(0, 10);
+      const at = (fill: string, brk: string, off: number) => {
+        const sep = fill.slice(1), lead = head + brk;
+        const k = Math.floor((M - 40 - lead.length) / fill.length);
+        const v = M - off - lead.length - sep.length - k * fill.length;
+        return 'w'.repeat(v) + sep + fill.repeat(k) + lead + B.slice(10, 36) + sep + ('tail' + sep).repeat(50);
+      };
+      const fills = ['x ', 'x\t', 'x\n', 'x\r\n', 'x\r', 'x ', 'x ', 'x\f', 'x\v'];
+      const brks = ['\n', ' \n', '  \n', '\t\n', '\r\n', '\r', '\n\n', '**\n', ' ', ' ', '\f', '\v', '\n    ', '\r    ', '\r> ', '\r\t', '\n> ', '\n1. ', '\n2) ', '\n[x] ', '\n- [x] ', '\n- [ ] ', '\n# ', '<span class="a" id="b">', '<!-- a note -->', '<!-- -->'];
+      for (const fill of fills)
+        for (const brk of brks)
+          for (const off of [1, 5, 12, 25]) {
+            const t = at(fill, brk, off);
+            const w = ST._deskWindowForTest(t);
+            assert.ok(!w.includes('ghp_') && w.length > M - 64 && t.startsWith(w), `#1613 round 9: a token split by ${JSON.stringify(brk)} across the bound (${off} into its second half, filler ${JSON.stringify(fill)}) is left out whole and the rest kept (${w.length}): ${JSON.stringify(w.slice(-40))}`);
+          }
+      // the exact bound (the window ends before the 'y' at 16,380, not at 16,382 as from 16,385)
+      assert.strictEqual(ST._deskWindowForTest('y '.repeat(M / 2) + 'z '.repeat(10)).length, M - 4, '#1613 round 9: the window counts back from character 16,384');
+      // no white space at all: round 7's trim; white space but nothing to keep: empty
+      assert.strictEqual(ST._deskWindowForTest('-\n'.repeat(M / 2 + 10)), '', '#1613 round 9: white space and marks only before the bound: nothing is kept');
+      assert.strictEqual(ST._deskWindowForTest('a.b'.repeat(6000)), 'a.b'.repeat(6000).slice(0, M).replace(/[a.b]+$/, ''), '#1613 round 9: no white space at all: the token characters the bound cut into go');
+      // linear: the walk back reads each character at most once (a long run before the end cost 396 ms against main's 25 ms with a regex search)
+      for (const t of ['a'.repeat(15000) + ' ' + 'b'.repeat(1000) + '\n  ' + 'c'.repeat(2000), 'x'.repeat(M + 10), ('q'.repeat(4000) + '\n').repeat(5), 'a '.repeat(9000)]) {
+        ST._deskWindowStepsForTest();
+        ST._deskWindowForTest(t);
+        const steps = ST._deskWindowStepsForTest();
+        assert.ok(steps > 0 && steps <= M + 256, `#1613 round 9: the window's walk back is linear (${steps} steps)`);
+      }
+    }
     // round 8: a label with no split token and no hidden character reads once, as before PR 1721 (one call of the mask handed in)
     for (const lab of ['echo hello world', 'echo ' + GH, 'ls -la /tmp']) {
       let calls = 0;
       const out = ST.maskLabel(lab, 'run', { ...cm, cmd: (x: string) => { calls++; return maskSecretCommand(x, {}); } });
       assert.ok(calls === 1 && out === withoutSplit(() => ST.maskLabel(lab, 'run', cm)), `#1613 round 8: a plain label is read once and as before (${calls} calls): ${out}`);
     }
+    // round 9: the shortcut needs both checks: a label with a hidden character but no split token reads both ways (the reading as before shows these)
+    for (const lab of [GH + '\u200b' + 'password=Hx9Kq2Lm7Np4Rs', 'note' + GH + '\u200b' + 'password=Hx9Kq2Lm7Np4Rs'])
+      for (const kind of ['other', 'run']) {
+        const out = ST.maskLabel(lab, kind, cm);
+        assert.ok(out !== '' && !out.includes('Hx9Kq2Lm7Np4Rs') && !out.includes(GH.slice(8, 16)), `#1613 round 9: a label with a hidden character and no split token is read both ways (${kind}): ${JSON.stringify(out)}`);
+      }
     const straddle = 'x '.repeat(8180) + 'ghp_' + B.slice(0, 10) + '<!-- -->' + B.slice(10, 36) + ' ' + 'tail '.repeat(100);
     assert.ok(!ST._deskWindowForTest(straddle).includes('ghp_'), '#1613 round 7: a token split by an in-line piece just before the bound is left out of the window whole');
     const sur = ST._deskWindowForTest('a'.repeat(M - 1) + '\u{1F600}' + 'b'.repeat(10));

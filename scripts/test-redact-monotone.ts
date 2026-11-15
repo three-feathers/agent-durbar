@@ -83,27 +83,33 @@ const run = (seed: number, cases: number) => {
     const secrets = [PW, PW2];
     for (let k = body; k + 8 <= tok.length; k++) secrets.push(tok.slice(k, k + 8));
     const shown = (o: string) => secrets.filter((x) => o.includes(x));
-    const pairs: Array<[string, string, string]> = [
-      ['redact', HEAD.redact(t, {}), REF.redact(t, {})],
-      ['maskSecretCommand', HEAD.maskSecretCommand('echo ' + t, {}), REF.maskSecretCommand('echo ' + t, {})],
-      ['maskSecretArgs', HEAD.maskSecretArgs(['run', t], {}).join(' '), REF.maskSecretArgs(['run', t], {}).join(' ')],
-      ['maskSecretUrl', HEAD.maskSecretUrl('https://h.example/p?q=' + t, {}), REF.maskSecretUrl('https://h.example/p?q=' + t, {})],
-      ['maskRaw', STH.maskRaw(t, (x) => HEAD.redact(x, {})), STR.maskRaw(t, (x) => REF.redact(x, {}))],
-      ['excerpt', STH.excerpt(t, (x) => HEAD.redact(x, {})), STR.excerpt(t, (x) => REF.redact(x, {}))],
-      ['maskLabel', STH.maskLabel(t, 'other', { redact: (x) => HEAD.redact(x, {}) }), STR.maskLabel(t, 'other', { redact: (x) => REF.redact(x, {}) })],
-      ['maskLabel run', STH.maskLabel(t, 'run', { cmd: (x) => HEAD.maskSecretCommand(x, {}) }), STR.maskLabel(t, 'run', { cmd: (x) => REF.maskSecretCommand(x, {}) })],
-      ['maskNoteText', HEAD.maskNoteText(t).text, REF.maskNoteText(t).text],
-      ['maskOutgoing', HEAD.maskOutgoing(t).text, REF.maskOutgoing(t).text],
-      ['redactMarkdown', HEAD.redactMarkdown(t, t.replace(/[*`~[\]]/g, ''), {}), REF.redactMarkdown(t, t.replace(/[*`~[\]]/g, ''), {})],
-      ['permText other', LAH.permText(t, 'other', mh).text, LAR.permText(t, 'other', mr).text],
-      ['permText shell', LAH.permText('run ' + t, 'shell', mh).text, LAR.permText('run ' + t, 'shell', mr).text],
-      ['phrase', LAH.phrase({ kind: 'run', tool: 'Bash', label: t }, mh), LAR.phrase({ kind: 'run', tool: 'Bash', label: t }, mr)],
+    const md = t.replace(/[*`~[\]]/g, '');
+    // round 9: main's reading is computed only where this PR's reading shows a secret (where it shows none, it cannot show more than main)
+    const pairs: Array<[string, () => string, () => string]> = [
+      ['redact', () => HEAD.redact(t, {}), () => REF.redact(t, {})],
+      ['maskSecretCommand', () => HEAD.maskSecretCommand('echo ' + t, {}), () => REF.maskSecretCommand('echo ' + t, {})],
+      ['maskSecretArgs', () => HEAD.maskSecretArgs(['run', t], {}).join(' '), () => REF.maskSecretArgs(['run', t], {}).join(' ')],
+      ['maskSecretUrl', () => HEAD.maskSecretUrl('https://h.example/p?q=' + t, {}), () => REF.maskSecretUrl('https://h.example/p?q=' + t, {})],
+      ['maskRaw', () => STH.maskRaw(t, (x) => HEAD.redact(x, {})), () => STR.maskRaw(t, (x) => REF.redact(x, {}))],
+      ['excerpt', () => STH.excerpt(t, (x) => HEAD.redact(x, {})), () => STR.excerpt(t, (x) => REF.redact(x, {}))],
+      ['maskLabel', () => STH.maskLabel(t, 'other', { redact: (x) => HEAD.redact(x, {}) }), () => STR.maskLabel(t, 'other', { redact: (x) => REF.redact(x, {}) })],
+      ['maskLabel run', () => STH.maskLabel(t, 'run', { cmd: (x) => HEAD.maskSecretCommand(x, {}) }), () => STR.maskLabel(t, 'run', { cmd: (x) => REF.maskSecretCommand(x, {}) })],
+      ['maskNoteText', () => HEAD.maskNoteText(t).text, () => REF.maskNoteText(t).text],
+      ['maskOutgoing', () => HEAD.maskOutgoing(t).text, () => REF.maskOutgoing(t).text],
+      ['redactMarkdown', () => HEAD.redactMarkdown(t, md, {}), () => REF.redactMarkdown(t, md, {})],
+      ['permText other', () => LAH.permText(t, 'other', mh).text, () => LAR.permText(t, 'other', mr).text],
+      ['permText shell', () => LAH.permText('run ' + t, 'shell', mh).text, () => LAR.permText('run ' + t, 'shell', mr).text],
+      ['phrase', () => LAH.phrase({ kind: 'run', tool: 'Bash', label: t }, mh), () => LAR.phrase({ kind: 'run', tool: 'Bash', label: t }, mr)],
     ];
-    for (const [surface, head, ref] of pairs) {
+    for (const [surface, headOf, refOf] of pairs) {
+      const head = headOf();
+      const headShown = shown(head);
+      if (!headShown.length) continue;
+      const ref = refOf();
       // the tool phrase is cut at 160 characters: when main's phrase was cut, it hid the rest by length, not by a mask (this PR's masks can shorten what comes first)
       if (surface === 'phrase' && ref.endsWith('\u2026')) continue;
       const refShown = new Set(shown(ref));
-      const extra = shown(head).filter((x) => !refShown.has(x));
+      const extra = headShown.filter((x) => !refShown.has(x));
       if (extra.length && leaks.length < 12) leaks.push(`${surface}: ${JSON.stringify(t).slice(0, 160)} -> ${JSON.stringify(head).slice(0, 160)} (main: ${JSON.stringify(ref).slice(0, 120)})`);
       else if (extra.length) leaks.push(surface);
     }
@@ -111,14 +117,18 @@ const run = (seed: number, cases: number) => {
   return { distinct: seen.size, leaks };
 };
 
+// round 9: three suites, one seed each (`npm test` runs them in parallel; the time budget is 3 minutes each): `a`, `b`, `c`; no argument runs all three
+const SEEDS: Record<string, number> = { a: 0x1613, b: 0x1721, c: 0x2026 };
+const part = process.argv[2];
+const seeds = part && SEEDS[part] !== undefined ? [SEEDS[part]] : Object.values(SEEDS);
 let total = 0;
 const all: string[] = [];
-for (const seed of [0x1613, 0x1721, 0x2026]) {
+for (const seed of seeds) {
   const { distinct, leaks } = run(seed, 7000);
   total += distinct;
   all.push(...leaks);
   console.log(`redact monotone: seed ${seed.toString(16)}: ${distinct} distinct cases, ${leaks.length} where this PR shows what main hides`);
 }
-assert.ok(total >= 20000, `#1613 monotone: at least 20,000 distinct cases (${total})`);
+assert.ok(total >= 6900 * seeds.length, `#1613 monotone: at least 6,900 distinct cases per seed, 20,700 over the three suites (${total})`);
 assert.strictEqual(all.length, 0, `#1613 monotone: no surface shows a secret that main's masks hide (${all.length} cases):\n${all.slice(0, 12).join('\n')}`);
 console.log(`redact monotone: all checks passed (${total} distinct cases, fourteen surfaces)`);

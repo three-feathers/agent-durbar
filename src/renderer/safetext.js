@@ -80,16 +80,27 @@
      of one desk call is so at most a fixed multiple of DESK_SPLIT_MAX (pinned by a work counter). An owner may choose another number. */
   const DESK_SPLIT_MAX=16384;
   const TOKEN_TAIL=/[A-Za-z0-9_\-.~+\/=:@%]/;
-  /* the first DESK_SPLIT_MAX characters, ending at the last blank before the bound (round 7: a token split by an in-line piece across the bound is left out whole,
-     not its first half), never half a surrogate pair; with no blank in it, without the token characters the bound cut into (the reference hides the rest anyway) */
+  /* the first DESK_SPLIT_MAX characters, never half a surrogate pair, ending before the last two token runs and what lies between them (round 9 of the review
+     of PR 1721): from the bound back, the run the bound cuts into (or ends at) goes, then blanks (any white space: a line break is a piece a token can be split
+     by) and mark-only runs (`>`, `-`, `**`, `1.`, `2)`, `[x]`, hidden characters) are passed over, and the next token run goes too; so a token split by a line
+     break, blanks before it or a mark across the bound is left out whole, not its first half. A tag or comment still open at the end (a `<` with no `>` after
+     it in the last 256 characters) goes with the run that holds it (a blank inside it cannot keep the half before it). With no white space at all, round 7's
+     token-character trim: the one piece left is not a piece of the reference, so `keep` masks it whole. Linear: backward loops (pinned by a step counter) */
+  const WIN_MARK=/^(?:[0-9]{1,9}[.)]|\[[ xX]?\]|[!-\/:-@\[-`{-~\u00ad\u200b-\u200f\u2060-\u2064\ufeff]+)$/;
+  const WIN_BLANK=/\s/;
+  let winSteps=0;
   const windowOf=s=>{if(s.length<=DESK_SPLIT_MAX)return s;let e=DESK_SPLIT_MAX;if(/[\ud800-\udbff]/.test(s[e-1]))e--;
-    const b=s.slice(0,e).search(/[ \t][^ \t]*$/);if(b>0){let w=s.slice(0,b+1);
-      /* round 8: the window ends at a space or a tab, never at a line break (a line break is a piece a token can be split by); a blank inside a piece (`<!-- -->`,
-         `<span class=…>`) can end the window inside it (round 7), and a last line of blanks and marks only (`\n    `, `\n> `) can be the split of the word before it: in both cases the word before
-         goes too */
-      const nl=w.search(/[\r\n][^\r\n]*$/);if(nl>=0&&!/[A-Za-z0-9]/.test(w.slice(nl))){const t=w.slice(0,nl).trimEnd();return t.slice(0,t.search(/\S*$/));} /* the last line holds only blanks and marks (`> `, `- `) */
-      const t=w.trimEnd(),k=t.search(/\S*$/);if(k>0&&/[<&\u0080-\uffff]/.test(t.slice(k)))w=t.slice(0,k);return w;}
-    while(e>0&&TOKEN_TAIL.test(s[e-1]))e--;return s.slice(0,e);};
+    let i=e,runs=0,blank=false;
+    while(i>0&&runs<2){
+      while(i>0&&WIN_BLANK.test(s[i-1])){i--;winSteps++;blank=true;}
+      let j=i;while(j>0&&!WIN_BLANK.test(s[j-1])){j--;winSteps++;}
+      if(j===i)break;
+      if(i===e||!WIN_MARK.test(s.slice(j,i)))runs++; /* the run at the bound always counts (it may be half a mark or half a token) */
+      i=j;}
+    if(i===0){if(blank)return '';while(e>0&&TOKEN_TAIL.test(s[e-1]))e--;return s.slice(0,e);} /* no white space at all: round 7's trim */
+    const f=Math.max(0,i-256),tail=s.slice(f,i),lt=tail.lastIndexOf('<');winSteps+=tail.length;
+    if(lt>=0&&tail.indexOf('>',lt)<0){i=f+lt;while(i>0&&!WIN_BLANK.test(s[i-1])){i--;winSteps++;}}
+    return s.slice(0,i);};
   /* round 7: what the excerpt can show, before the window is taken: a closed code block becomes an empty one (plainKeep shows "code" for either), a link's target
      goes (plainKeep shows its text either way); so a long code block or link target at the start no longer eats the window. Linear (stripLinks' scan; the code
      block regex ends at the next fence, and a fence with none after it is the last) */
@@ -148,8 +159,8 @@
       /* round 7: the label as before PR 1721 first; when it is '' (the window's own fail-closed check), the label is '' here too */
       const ref=old(()=>escMask(s,t=>unhid(t,one,c=>c,'')));if(!ref)return '';
       /* round 8: a label with no split token and no hidden character reads the same both ways: the reading as before is the answer (one pass, not two) */
-      if(splitFirst(s)===s&&unhide(s)===s)return ref;
-      const h=escMask(s,t=>{const go=(x,u)=>u(x,one,c=>c,'');if(t.length>DESK_SPLIT_MAX){const r=old(()=>go(t,unhid));return r==null?'':r;}const m=both2(t,splitFirst(t),go);return m==null?'':m;});
+      const sf=splitFirst(s);if(sf===s&&unhide(s)===s)return ref; /* round 9: the split step on the label once, shared with the reading below */
+      const h=escMask(s,t=>{const go=(x,u)=>u(x,one,c=>c,'');if(t.length>DESK_SPLIT_MAX){const r=old(()=>go(t,unhid));return r==null?'':r;}const m=both2(t,t===s?sf:splitFirst(t),go);return m==null?'':m;});
       return h?keep(h,ref):'';}catch(e){return '';}};
   /* the wrapper the page uses: fallback words and the "is masking possible" flag */
   function create(o){
@@ -170,5 +181,6 @@
   const plainMarks=t=>stripLinks(String(t==null?'':t)).replace(/[*`~]/g,'');
   /* test only: the window the desk's split-aware reading takes of a long text (round 7) */
   const _deskWindowForTest=t=>windowOf(shownSource(t));
-  return {create,plain,plainKeep,plainMarks,unesc,unhide,maskRaw,excerpt,maskLabel,useShared,splitHides,_deskWindowForTest,DESK_SPLIT_MAX};
+  const _deskWindowStepsForTest=()=>{const n=winSteps;winSteps=0;return n;};
+  return {create,plain,plainKeep,plainMarks,unesc,unhide,maskRaw,excerpt,maskLabel,useShared,splitHides,_deskWindowForTest,_deskWindowStepsForTest,DESK_SPLIT_MAX};
 });

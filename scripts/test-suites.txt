@@ -10,6 +10,8 @@ test:vscode
 test:runtime-core
 test:runtime-redact
 test:redact-monotone
+test:redact-monotone-b
+test:redact-monotone-c
 test:livehead
 test:maskoutgoing-fuzz
 test:maskoutgoing-fuzz-b
