@@ -262,12 +262,19 @@ void (async () => {
     const t = mk('win32', ['C:\\Program Files\\nodejs\\npm.cmd']);
     assert.ok(t.setup.run('codex', 'install').ok);
     assert.strictEqual(t.calls[0].file, 'C:\\Windows\\System32\\cmd.exe');
-    assert.deepStrictEqual(t.calls[0].args, ['/d', '/s', '/c', '"C:\\Program Files\\nodejs\\npm.cmd" install -g @openai/codex']);
+    assert.deepStrictEqual(t.calls[0].args, ['/d', '/s', '/c', '""C:\\Program Files\\nodejs\\npm.cmd" install -g @openai/codex"'], 'spec 009 FR-029: an outer pair for /s, so the space in Program Files survives');
     assert.strictEqual(t.calls[0].opts.windowsVerbatimArguments, true);
     assert.strictEqual(t.calls[0].opts.detached, false);
     const u = mk('win32', ['C:\\a&b\\npm.cmd']);
     (u.setup['deps'].detectEnv.env as Record<string, string>).PATH = 'C:\\a&b';
     assert.ok(!u.setup.run('codex', 'install').ok, 'a path with & is refused');
+    // spec 009 FR-029: an npm.cmd argument with white space stays refused (stricter than the helper's quoting); every plan's arguments
+    // are fixed words today, so the plan list is replaced here to reach the rule
+    const w = mk('win32', ['C:\\Program Files\\nodejs\\npm.cmd']);
+    const real = w.setup.plans('codex', 'install');
+    (w.setup as unknown as { plans: typeof w.setup.plans }).plans = () => ({ ...real, plans: real.plans.map((pl) => ({ ...pl, args: [...pl.args, 'a b'] })) });
+    assert.deepStrictEqual(w.setup.prepare('codex', 'install'), { ok: false, error: 'This command cannot be run safely on this computer.' }, 'white space in an argument is refused');
+    assert.strictEqual(w.calls.length, 0, 'nothing started');
   }
   // output lines are redacted before they reach the window
   {

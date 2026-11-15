@@ -40,7 +40,11 @@
   const openStr=raw=>{const t=String(raw==null?'':raw),i=Math.max(t.lastIndexOf('\x1b]'),t.lastIndexOf('\x1bP'),t.lastIndexOf('\x1b^'),t.lastIndexOf('\x1b_'),t.lastIndexOf('\x1bX'),t.lastIndexOf('\x90'),t.lastIndexOf('\x98'),t.lastIndexOf('\x9d'),t.lastIndexOf('\x9e'),t.lastIndexOf('\x9f'));return i>=0&&!/[\x07\x9c]|\x1b\\/.test(t.slice(i+1));};
   /* spec 097 FR-317 (issue #1284): a tool NAME is shown through the same mask as a label (MCP servers choose names). Control codes out first, then the mask;
      a name the mask changed in ANY way is shown as the generic word `tool`, never half hidden. No mask or a failing one: `tool` too. Every surface that shows a name calls this. */
+  /* spec 012 FR-181 (review of PR 1585, round 7): a tool name longer than this is the neutral word before any mask runs (fail closed); the longest real names are under 30 characters, and an
+     uncapped name was the one input that let a backslash-dense or `[redacted:`-dense text reach maskRaw at up to 1,000,000 characters (issue #1593) */
+  const TOOL_CAP=256;
   const toolName=(raw,mask)=>{const m=mask||{};try{if(typeof m.redact!=='function')return 'tool'; /* no mask: fail closed, as a label */
+    if(String(raw==null?'':raw).length>TOOL_CAP)return 'tool';
     if(openStr(raw))return 'tool'; /* an escape string left open at the end swallows what follows it, and what is shown would be the start of a token (ghp_ and four characters): fail closed (review of PR 1292) */
     const t=String(clearIn(raw==null?'':raw,m.redact)).trim();if(!t)return 'tool';
     const x=ST.maskRaw(t,m.redact);return x===t?t:'tool';}catch(e){return 'tool';}}; /* shown only when the mask left it exactly as it was: any change, a failed or cut mask ("[redaction failed]", the 1,000,000-character cut), a throw: `tool` */

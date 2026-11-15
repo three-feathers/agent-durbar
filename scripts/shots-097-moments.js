@@ -7,6 +7,7 @@
  *
  * For each world (Photo office; the Prehistoric cave behind its flag) at 1440x900 and 1280x800 it checks the moments listed in MOMENTS below
  * (each states what it asserts) and writes <SHOTS_OUT>/<world>-<moment>-<w>x<h>.png. Driver waits use until(); nothing sleeps for a fixed time.
+ * Developer aids: MOMENTS_CPU_SLOW=<2..20> slows the page's CPU for the whole run, like a loaded runner (issue #1753); MOMENTS_MUTANT=notes-nowait reads the post-its before the crowd is drawn (must fail).
  */
 const os = require('os');
 const fs = require('fs');
@@ -51,11 +52,88 @@ module.exports = async (ctx) => {
     const dbg = ctx.win.webContents.debugger; if (!dbg.isAttached()) dbg.attach('1.3');
     await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
   }
+  /* a developer aid (issue #1753): MOMENTS_CPU_SLOW=<2..20> slows the page's CPU by that factor (CDP) for the whole run, every step and size, as a loaded runner does (never reset, on purpose); the notes step's race showed at 4 */
+  if (/^([2-9]|1\d|20)$/.test(process.env.MOMENTS_CPU_SLOW || '')) { const dbg = ctx.win.webContents.debugger; if (!dbg.isAttached()) dbg.attach('1.3'); await dbg.sendCommand('Emulation.setCPUThrottlingRate', { rate: Number(process.env.MOMENTS_CPU_SLOW) }); console.log('[moments] the page CPU is slowed ' + process.env.MOMENTS_CPU_SLOW + 'x (MOMENTS_CPU_SLOW)'); }
   await H.load({ w: 1440, h: 900, query: { simfreeze: '1' }, ready: 'fit', settle: false });
   const OS_REDUCED = await js(`matchMedia('(prefers-reduced-motion: reduce)').matches`);
   if (OS_REDUCED) console.log('[moments] the OS asks for reduced motion: the ring and the ride are checked in their reduced form only');
   for (const world of WORLDS) for (const [w, h] of SIZES) {
     const tag = `${world} ${w}x${h}`;
+    // ---- spec 097 2026-11-14 (issue #1711): a world is drawn only once its stylesheet has loaded (the stylesheet answers 400 ms late, the hook of check-097-crews, T320) ----
+    if (run('worldcss-late') && world !== 'photo') {
+      const ses = ctx.win.webContents.session;
+      ses.webRequest.onBeforeRequest({ urls: ['file://*/*'] }, (d, cb) => { if (/\/realoffice\/worlds\/[a-z0-9-]+\/world\.css$/.test(d.url)) setTimeout(() => cb({}), 400); else cb({}); });
+      await H.load({ w, h, query: q(world), ready: REAL, settle: false });
+      const sheetAtDraw = await js(`!!(document.getElementById('roWorldCss-'+${jsLiteral(world)})||{}).sheet`);
+      await must(`!!(document.getElementById('roWorldCss-'+${jsLiteral(world)})||{}).sheet`, 'the world stylesheet');
+      await H.until(`document.getElementById('stage').dataset.fit`, 2000).catch(() => undefined);
+      const sliver = await js(`[...document.querySelectorAll('#stage .ro-plate .ro-role')].filter(r=>!r.hidden&&getComputedStyle(r).display!=='none'&&r.getBoundingClientRect().width<19).map(r=>[r.textContent,Math.round(r.getBoundingClientRect().width)])`);
+      // the 4 s timer must not settle a second time: after it would have fired, the counter is still 1
+      await H.until(`document.documentElement.dataset.roSheets==='1'`, 2000).catch(() => undefined);
+      const sheetsAtLoad = await js(`document.documentElement.dataset.roSheets||''`);
+      await new Promise((r) => setTimeout(r, 4600));
+      const sheetsLater = await js(`document.documentElement.dataset.roSheets||''`);
+      ses.webRequest.onBeforeRequest(null);
+      assert.deepStrictEqual([sheetsAtLoad, sheetsLater], ['1', '1'], `${tag}: worldcss-late: the stylesheet settles once: the counter after the load and after the 4 s timer would have fired`);
+      assert.deepStrictEqual(sliver, [], `${tag}: a role is shown as a sliver: ${JSON.stringify(sliver)}`);
+      assert.strictEqual(sheetAtDraw, true, `${tag}: the office is drawn only after the ${world} stylesheet has loaded`);
+      console.log('[moments] worldcss-late ok', sheetAtDraw);
+    }
+    // ---- the same bug's other ends: a stylesheet that fails (cancelled) or never answers (held, 4 s timer in app.js) still draws, with the base CSS ----
+    // The product's own timing, read from inside the app: a poll of the page every 100 ms that does not depend on the page's load event (a held sheet can hold the load event back). Every call is bounded, so a stalled renderer is a failed assertion and not a hung run.
+    const within = (p, ms, dflt) => Promise.race([p, new Promise((r) => setTimeout(() => r(dflt), ms))]);
+    for (const mode of ['fail', 'hang']) {
+      if (!run('worldcss-' + mode) || world === 'photo') continue;
+      const ses = ctx.win.webContents.session;
+      const held = [];
+      let hits = 0, tReq = 0;
+      ses.webRequest.onBeforeRequest({ urls: ['file://*/*'] }, (d, cb) => { if (/\/realoffice\/worlds\/[a-z0-9-]+\/world\.css$/.test(d.url)) { if (!hits++) tReq = Date.now(); if (mode === 'fail') cb({ redirectURL: 'file:///durbar-no-such-world.css' }); else held.push(cb); } else cb({}); });
+      const wc = ctx.win.webContents;
+      await js(`localStorage.clear()`).catch(() => undefined); /* a clean start, on the page the earlier moment left (the storage is that page's): its world and view are gone */
+      await ses.clearCache(); /* an earlier moment's copy of the sheet would answer for the request */
+      if (!wc.debugger.isAttached()) wc.debugger.attach('1.3'); /* DevTools protocol: Electron's executeJavaScript waits for the page's load event, which a held sheet can hold back */
+      let loading, sheetsAfterLate = '1';
+      try {
+      await within(wc.debugger.sendCommand('Page.navigate', { url: 'about:blank' }), 5000, undefined); /* the page's memory cache of an earlier load of the sheet would answer for the request */
+      const t0 = Date.now();
+      let err = '';
+      loading = H.load({ w, h, query: q(world), ready: REAL, settle: false }).catch((e) => { err = String(e && e.message || e); });
+      const probe = `(()=>{const s=document.getElementById('stage');return [s&&s.dataset.d||'',document.querySelectorAll('#stage .ro-plate').length,document.documentElement.dataset.roSheets||''].join('|')})()`;
+      const evs = [];
+      const hooks = ['did-start-navigation', 'did-navigate', 'dom-ready', 'did-finish-load', 'did-fail-load', 'render-process-gone', 'unresponsive'].map((n) => { const f = () => evs.push(`${n}@${Date.now() - t0}`); wc.on(n, f); return [n, f]; });
+      let tDrawn = -1, tSettled = -1, last = '', polls = 0, stalled = 0;
+      while (Date.now() - t0 < 16000 && (tDrawn < 0 || tSettled < 0)) {
+        const r = await within(wc.debugger.sendCommand('Runtime.evaluate', { expression: probe, returnByValue: true }).then((o) => String((o.result && o.result.value) || ''), () => 'STALLED'), 400, 'STALLED');
+        polls++;
+        if (r === 'STALLED') stalled++; else {
+          last = r;
+          const [d, plates, sheets] = r.split('|');
+          if (tSettled < 0 && sheets) tSettled = Date.now() - t0;
+          if (tDrawn < 0 && d === 'real' && Number(plates) > 0) tDrawn = Date.now() - t0;
+        }
+        await new Promise((r2) => setTimeout(r2, 100));
+      }
+      const sinceReq = (t) => (t < 0 || !tReq ? -1 : t - (tReq - t0)); /* from the moment the page asked for the sheet: that is when the 4 s timer starts */
+      const timing = `drawn ${sinceReq(tDrawn)} ms and sheet settled ${sinceReq(tSettled)} ms after the page asked for it (drawn at ${tDrawn} ms, settled at ${tSettled} ms from the load), ${stalled} of ${polls} polls stalled, last state ${last}, window events ${evs.join(',')}, loading ${wc.isLoading()}`;
+      hooks.forEach(([n, f]) => wc.removeListener(n, f));
+      if (mode === 'hang') { /* the sheet answers at last, after the timer settled the pack: that load must not settle it a second time */
+        held.splice(0).forEach((cb) => cb({}));
+        await new Promise((r) => setTimeout(r, 1000));
+        sheetsAfterLate = await within(wc.debugger.sendCommand('Runtime.evaluate', { expression: `document.documentElement.dataset.roSheets||''`, returnByValue: true }).then((o) => String((o.result && o.result.value) || ''), () => 'STALLED'), 1500, 'STALLED');
+      }
+      ses.webRequest.onBeforeRequest(null);
+      held.forEach((cb) => cb({ cancel: true }));
+      await within(loading, 15000, undefined);
+      assert.strictEqual(err, '', `${tag}: worldcss-${mode}: the page loads: ${err}`);
+      assert.ok(hits >= 1, `${tag}: worldcss-${mode}: the stylesheet was requested (${hits})`);
+      assert.ok(tSettled >= 0 && tDrawn >= 0, `${tag}: worldcss-${mode}: the ${world} office is still drawn when its stylesheet ${mode === 'fail' ? 'fails' : 'never answers'}, and the pack is ready: ${timing}`);
+      if (mode === 'fail') assert.ok(sinceReq(tSettled) >= 0 && sinceReq(tSettled) < 3500, `${tag}: worldcss-fail: a failed stylesheet settles at once through its error event, not through the 4 s timer (${timing})`);
+      if (mode === 'hang') assert.ok(sinceReq(tSettled) >= 3500 && sinceReq(tSettled) < 12000 && sinceReq(tDrawn) < 12000, `${tag}: worldcss-hang: the draw waits for the 4 s timer, not for ever (${timing})`);
+      if (mode === 'hang') assert.strictEqual(sheetsAfterLate, '1', `${tag}: worldcss-hang: the sheet that answers after the timer does not settle the pack a second time (counter ${sheetsAfterLate})`);
+      await within(must(PICS, 'the pictures'), 14000, undefined);
+      console.log(`[moments] worldcss-${mode} ok: ${timing}`);
+      } finally { try { wc.debugger.detach(); } catch { /* already detached */ } }
+    }
     // ---- FR-118 first run ----
     if (run('first-run')) {
       if (world === 'cave' || world === 'retro') {
@@ -116,6 +194,8 @@ module.exports = async (ctx) => {
     if (run('empty-office')) {
       await H.load({ w, h, query: q(world, { simfloors: 'ground' }), ready: REAL, settle: false });
       await must(PICS, 'the pictures');
+      /* the order is fixed, not left to the simulator's clock: the limit slip is on the first floor (placed under that floor's lobby) before the empty floor is shown, so the slip that crosses is always checked (its kept spot must be placed again under the empty floor's taller lobby) */
+      if (world === 'retro') await must(`!!document.querySelector('#stage .ro-slip.ro-limit:not([hidden])')`, 'the limit slip on the first floor');
       await H.goToFloor((await H.floors())[1].id);
       await must(`!!document.querySelector('#stage .ro-eplate')&&!document.querySelector('#stage .ro-ride')`, 'the empty plate, the ride over');
       await must(PICS, 'the pictures');
@@ -128,6 +208,18 @@ module.exports = async (ctx) => {
       assert.strictEqual(em.amb, '0.7', `${tag}: room at 70 %`);
       assert.ok(em.small >= 10.5, `${tag}: plate text >= 10.5px`);
       assert.deepStrictEqual(await slipOverlaps(), [], `${tag}: no slip covers the empty floor's plate`);
+      if (world === 'retro') { /* spec 102 delta 2026-11-14 (T223): the arcade's empty office is a hall: the stage takes the floor like the 15-agent hall, the plate is over its floor and readable, nothing scrolls */
+        const hall = await js(`(()=>{const R=e=>e.getBoundingClientRect(),f=document.getElementById('floor'),s=document.getElementById('stage'),p=document.querySelector('#stage .ro-eplate'),cs=getComputedStyle(f),pc=getComputedStyle(p),fr=R(f),sr=R(s),pr=R(p);
+          return {stageH:Math.round(sr.height),floorBottom:Math.round(fr.bottom-parseFloat(cs.paddingBottom)),stageBottom:Math.round(sr.bottom),gap:Math.round(fr.bottom-parseFloat(cs.paddingBottom)-sr.bottom),scrolls:f.scrollHeight>f.clientHeight+1,fit:s.dataset.fit,
+          plateIn:pr.left>=sr.left&&pr.right<=sr.right&&pr.top>=sr.top&&pr.bottom<=sr.bottom,plateH:Math.round(pr.height),ink:pc.color,bg:pc.backgroundColor,cabs:document.querySelectorAll('#stage .ro-edesk').length}})()`);
+        console.log(`[moments] ${tag}: empty office stage height ${hall.stageH}, floor bottom ${hall.floorBottom}, stage bottom ${hall.stageBottom}`);
+        assert.ok(Math.abs(hall.gap) <= 8, `${tag}: the arcade's empty stage fills the office area: its bottom edge is ${hall.gap}px from the floor's bottom (stage ${hall.stageH}px)`);
+        assert.ok(!hall.scrolls && hall.fit === 'ok', `${tag}: the empty arcade office does not scroll`);
+        const lum = (c) => { const v = (c.match(/[\d.]+/g) || []).slice(0, 3).map(Number).map((x) => { x /= 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }); return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]; };
+        const ratio = (lum(hall.ink) + 0.05 > lum(hall.bg) + 0.05 ? (lum(hall.ink) + 0.05) / (lum(hall.bg) + 0.05) : (lum(hall.bg) + 0.05) / (lum(hall.ink) + 0.05));
+        assert.ok(ratio >= 4.5, `${tag}: the empty arcade office's words read at 4.5:1 or better (${ratio.toFixed(2)}: ${hall.ink} on ${hall.bg})`);
+        assert.ok(hall.plateIn && hall.plateH > 0, `${tag}: the words card is drawn on the hall's floor`);
+      }
       await shot(world, 'empty', w, h);
     }
     // ---- FR-120 asleep ----
@@ -278,19 +370,20 @@ module.exports = async (ctx) => {
       });
     }
     if (run('inbox')) assert.ok(staleRan > 0, `${tag}: the stale-button check ran (a queue of two or more in a full slip)`);
-    // ---- spec 097 FR-004 / Codex sweep: choosing an Office layout keeps keyboard focus on the choice; FR-122: Show in chat from the limit slip focuses the amount field ----
+    // ---- spec 097 FR-004 / Codex sweep: choosing a World card keeps keyboard focus on the choice; FR-122: Show in chat from the limit slip focuses the amount field ----
     if (run('focus') && world === 'photo') {
       await H.load({ w, h, query: q(world), ready: REAL, settle: false, focus: true });
       await js(`window.DurbarScreens.openSettings()`);
-      await must(`!!document.querySelector('[data-officelayout="open"]')`, 'Settings');
-      await js(`document.querySelector('[data-officelayout="open"]').focus()`);
+      await must(`!!document.querySelector('#wrGroup [data-world="plain"]')`, 'Settings');
+      await must(`document.querySelectorAll('#wrGroup .wpic img').length>=2`, 'the cards show their previews (the page is painted again once, when the previews script has loaded)');
+      await js(`document.querySelector('#wrGroup [data-world="plain"]').focus()`);
       await H.key('Return');
-      await must(`document.querySelector('[data-officelayout="open"]').getAttribute('aria-pressed')==='true'`, 'Open office chosen');
-      assert.strictEqual(await js(`(document.activeElement.dataset||{}).officelayout`), 'open', `${tag}: after the repaint the focus is on the choice just made`);
-      await js(`document.querySelector('[data-officelayout="real"]').focus()`);
+      await must(`document.querySelector('#wrGroup [data-world="plain"]').getAttribute('aria-checked')==='true'`, 'Open office chosen');
+      assert.strictEqual(await js(`(document.activeElement.dataset||{}).world`), 'plain', `${tag}: after the repaint the focus is on the choice just made`);
+      await js(`document.querySelector('#wrGroup [data-world="photo"]').focus()`);
       await H.key('Return');
-      await must(`document.querySelector('[data-officelayout="real"]').getAttribute('aria-pressed')==='true'`, 'Real office chosen');
-      assert.strictEqual(await js(`(document.activeElement.dataset||{}).officelayout`), 'real', `${tag}: and back`);
+      await must(`document.querySelector('#wrGroup [data-world="photo"]').getAttribute('aria-checked')==='true'`, 'Real office chosen');
+      assert.strictEqual(await js(`(document.activeElement.dataset||{}).world`), 'photo', `${tag}: and back`);
       await js(`document.getElementById('scrClose').click()`);
     }
     if (run('limitfocus')) {
@@ -409,11 +502,20 @@ module.exports = async (ctx) => {
       await H.load({ w, h, query: q(world), ready: REAL, settle: false }); /* the Boss's post-its are the simulator's own waiting agents (a visit to the Boss is not pinned) */
       await must(PICS, 'the pictures');
       const PL = ['boss', 'bank', 'coffee', 'library', 'software', 'terminal', 'web', 'other'];
-      await js('window.__durbarSimUi.uncrowd();' + PL.filter((id) => id !== 'boss').map((id, i) => 'window.__durbarSimUi.crowd(' + jsLiteral(id) + ',1,' + (8 + i) + ')').join(';'));
+      /* issue #1753: the simulator's own visits (replayed tool calls at the Terminal, the Software library and the Library, the cap at the Bank, the waiting agents at the Boss) are
+         promoted 600 ms after their call on the wall clock; wait for them, so the scene before the crowd is the same on a fast and a slow machine (9 post-its, no coffee, web or other) */
+      await must(H.SETTLED, "the simulator's own visits settled");
+      const CROWD = 'window.__durbarSimUi.uncrowd();' + PL.filter((id) => id !== 'boss').map((id, i) => 'window.__durbarSimUi.crowd(' + jsLiteral(id) + ',1,' + (8 + i) + ')').join(';');
+      const NOWAIT = process.env.MOMENTS_MUTANT === 'notes-nowait'; /* the mutant reads in the same task as the crowd, before its render: it must fail at "one post-it for each place" */
+      if (!NOWAIT) await js(CROWD);
       const CONTRAST = `const P=s=>{const m=/rgba?\\(([^)]+)\\)/.exec(s);return m?m[1].split(/[ ,\\/]+/).filter(Boolean).slice(0,3).map(Number):[0,0,0]},Lm=c=>{const f=x=>{x/=255;return x<=0.03928?x/12.92:Math.pow((x+0.055)/1.055,2.4)};return 0.2126*f(c[0])+0.7152*f(c[1])+0.0722*f(c[2])},K=(a,b)=>{const x=Lm(P(a)),y=Lm(P(b));return (Math.max(x,y)+0.05)/(Math.min(x,y)+0.05)};`;
-      const readNotes = () => js('(()=>{' + CONTRAST + "const ARC=" + jsLiteral(world === 'retro') + ";return [...document.querySelectorAll('#stage .ro-away')].map(e=>{const c=getComputedStyle(e);return {place:e.dataset.place,text:e.textContent,bg:c.backgroundColor,key:ARC?c.color:c.backgroundColor,ink:c.color,ratio:K(c.color,c.backgroundColor),size:parseFloat(c.fontSize)}})})()");
-      await must(`document.querySelectorAll('#stage .ro-away').length>=8`, 'a post-it for each place');
-      const ns = await readNotes();
+      const NOTES = '(()=>{' + CONTRAST + "const ARC=" + jsLiteral(world === 'retro') + ";return [...document.querySelectorAll('#stage .ro-away')].map(e=>{const c=getComputedStyle(e);return {place:e.dataset.place,text:e.textContent,bg:c.backgroundColor,key:ARC?c.color:c.backgroundColor,ink:c.color,ratio:K(c.color,c.backgroundColor),size:parseFloat(c.fontSize)}})})()";
+      const readNotes = () => js(NOTES);
+      /* issue #1753: crowd() only queues a render (requestAnimationFrame), and the scene before it already has 8 or more post-its, so a count alone was met by the old scene
+         on a slow page. settleNow() draws the queued render before the count and the read. */
+      if (!NOWAIT) await must(`window.__durbarSimUi.settleNow()`, 'the crowd drawn');
+      if (!NOWAIT) await must(`document.querySelectorAll('#stage .ro-away').length>=8`, 'a post-it for each place');
+      const ns = NOWAIT ? await js(CROWD + ';' + NOTES) : await readNotes();
       assert.deepStrictEqual([...new Set(ns.map((x) => x.place))].sort(), PL.slice().sort(), `${tag}: one post-it for each place: ${JSON.stringify(ns.map((x) => [x.place, x.text]))}`);
       /* the arcade's ticket is a dark card whose edge and words carry the place's colour (102 FR-264, owner 2026-11-03) */
       assert.strictEqual(new Set(ns.map((x) => x.key)).size, PL.length, `${tag}: one colour per place, all different: ${JSON.stringify(ns.map((x) => [x.place, x.key]))}`);

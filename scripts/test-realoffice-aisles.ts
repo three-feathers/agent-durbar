@@ -24,8 +24,47 @@ const SIGNS = (f: number): Record<string, { name: string; path: string; counts: 
 const inter = (a: Rect, b: Rect, t = 0.5): boolean => a.x + t < b.x + b.w && b.x + t < a.x + a.w && a.y + t < b.y + b.h && b.y + t < a.y + a.h;
 const inside = (a: Rect, b: Rect, t = 0.5): boolean => a.x >= b.x - t && a.y >= b.y - t && a.x + a.w <= b.x + b.w + t && a.y + a.h <= b.y + b.h + t;
 /** the floors the app shows: both sizes with the chat closed; an open chat hides the office (#1001), so no office floor has a chat beside it */
-const SIZES: [number, number][] = [[1440, 848], [1280, 748]];
+/** the measured rooms (spec 102 T309, issue #1590): the floor less its 12 px padding top and bottom, at 1440x900 and 1280x800 */
+const ROOM = { h900: 797, h800: 697 } as const;
+const SIZES: [number, number][] = [[1440, ROOM.h900], [1280, ROOM.h800]];
 const NAMES = ['1440x900', '1280x800'];
+
+// ---- spec 102 delta 2026-11-11 (issue #1566, T308): the measured rooms of the app (the floor less its 12 px padding top and bottom): 1280x800 is 697 px, 666 with a 31 px strip; 1440x900 is 797, 766 with it.
+// The hall for 15 agents needs 682 px: it fits with no strip, scrolls under a strip until the floor's padding is lent (666 + 24 = 690), and the threshold is pinned here, not in a driver
+{
+  const m15 = model(15, 4), at = (w: number, h: number): Layout => aislesLayout(m15, { w, h }, META, SIGNS(4));
+  assert.ok(!at(1248, ROOM.h800).scroll && !at(1408, ROOM.h900).scroll && !at(1408, ROOM.h900 - 31).scroll, '15 agents fit the measured rooms (1280x800 without a strip, 1440x900 with and without)');
+  assert.ok(at(1248, 666).scroll, '15 agents at 1280x800 with the strip shown (666 px) scroll until the padding is lent');
+  assert.ok(!at(1248, 690).scroll && !at(1248, 682).scroll, '15 agents fit 690 px (666 + the 24 px lent) and the boundary 682');
+  assert.ok(at(1248, 681).scroll, '15 agents scroll at 681 px: the hall needs 682');
+  assert.ok(at(1248, 666).height > 666 && at(1248, 666).height <= 700, 'the scroll fallback is taller than the room it was given');
+  const m16 = model(16, 4);
+  assert.ok(aislesLayout(m16, { w: 1248, h: 666 }, META, SIGNS(4)).scroll && aislesLayout(m16, { w: 1248, h: 690 }, META, SIGNS(4)).scroll, '16 agents scroll at 666 px and still at 690 (666 + the 24 px lent): the lend must be refused for them (shots-058-mcp-launch retro 16 drives that)');
+}
+
+
+// ---- spec 102 delta 2026-11-12 (issue #1588, T310): the filter note's lent padding. The floor at 1280x800 is 721 px of content (800 less the chrome) and the hall for 11 to 15 agents needs 682.
+// With the note the floor pads its top 40 px (the note stands in it: top 8 px, a 20 px line, so it ends at 28); `#floor.ro-tight.has-fnote` keeps `--fnote-keep` of it and lends the rest, with the bottom 12 px.
+{
+  const css = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'styles.css'), 'utf8').replace(/\r\n/g, '\n');
+  const num = (re: RegExp, what: string): number => { const m = re.exec(css); assert.ok(m, `styles.css: ${what} is missing`); return Number(m![1]); };
+  const keep = num(/#floor\{[^}]*--fnote-keep:([\d.]+)px/, 'the floor\'s --fnote-keep'), padNote = num(/#floor\.has-fnote\{padding-top:([\d.]+)px\}/, 'the floor\'s padding-top with a note');
+  const noteTop = num(/#filterNote\{position:absolute;top:([\d.]+)px/, 'the note\'s top'), line = num(/\.filter-note\{[^}]*line-height:([\d.]+)px/, 'the note\'s line height');
+  assert.ok(/#floor\.ro-tight\.has-fnote\{padding-top:var\(--fnote-keep\)\}/.test(css), 'styles.css: #floor.ro-tight.has-fnote must keep --fnote-keep as its top padding');
+  const FLOOR = 721, bottom = 12; /* measured by check-102-arcade-filter-note: clientHeight of #floor at 1280x800, its paddings included */
+  const room = (padTop: number, padBottom = 0): number => FLOOR - padTop - padBottom; /* what the hall gets: the floor less the paddings that stay */
+  assert.ok(keep >= noteTop + line, `the note ends at ${noteTop + line} px and the kept padding is ${keep}: the hall would start under the note`);
+  for (const [n, f] of [[15, 4], [14, 4], [11, 3]] as [number, number][]) {
+    const at = (h: number): Layout => aislesLayout(model(n, f), { w: 1248, h }, META, SIGNS(f));
+    assert.ok(!at(room(keep)).scroll, `${n} agents at 1280x800 with the filter note: ${room(keep)} px (the floor less the ${keep} px kept) still scrolls (the hall needs 682)`);
+  }
+  const m15 = model(15, 4), at15 = (h: number): Layout => aislesLayout(m15, { w: 1248, h }, META, SIGNS(4));
+  assert.ok(at15(room(padNote, bottom)).scroll && at15(room(padNote)).scroll, `15 agents with the note: ${room(padNote, bottom)} px as the page gives it and ${room(padNote)} px with only the bottom lent (the #1566 fix) scroll: the reason for lending the top too`);
+  assert.ok(!at15(682).scroll && at15(681).scroll, 'the boundary: 682 fits and 681 scrolls');
+  const maxKeep = FLOOR - 682; /* the most that may stay on top: one px more and the hall is 681 */
+  assert.ok(keep <= maxKeep && !at15(room(maxKeep)).scroll && at15(room(maxKeep + 1)).scroll, `the kept padding ${keep} is at most ${maxKeep}: at ${maxKeep} the hall fits (682) and at ${maxKeep + 1} it scrolls (681)`);
+  console.log(`filter note: keeps ${keep} px of its ${padNote} px top padding (the note ends at ${noteTop + line}), the hall gets ${room(keep)} px of ${FLOOR}; the most that may stay is ${maxKeep}`);
+}
 
 /* spec 102 T276 (issue #1303): a one-line arcade plate fits its line. The plate box is AISLE_PLATE_H tall; what its CSS asks for (border, padding, one line) must fit in it, at the dense levels too
  * (12 and 15 agents, both sizes), where every cabinet and lounge plate has that height; text never under 10.5 px. check-office-overlap.js (OFFICE_WORLD=retro) measures the drawn plate; this holds the numbers. */
@@ -180,7 +219,30 @@ for (const [W, H] of SIZES) for (const dh of [0, 31]) for (const n of [1, 2, 3, 
   for (const z of L.zones) { parts.set(z.id, (parts.get(z.id) || 0) + 1); sizes.set(z.id, (sizes.get(z.id) || 0) + z.desks.length); }
   const cut = [...parts].filter(([id, c]) => c > 1 && (sizes.get(id) || 0) <= 4);
   if (cut.length) split.push(`${n} in ${f} at ${W}x${H - dh}`);
-  if (n <= 10) assert.deepStrictEqual(cut, [], `${n} in ${f} at ${W}x${H - dh}: a folder of 4 or fewer is split`);
+  /* spec 102 T309 (issue #1590): three rows of the narrowest cabinet need 558 px under the lowest lobby (96 + 20 lane) and 8 px of padding: 682 px. 10 agents in 3 or 4 folders at 1280x800 are whole from 682 (the lobby then
+     under its 128 px, owner decision, spec 102 2026-11-12) and no longer split at the measured 697. The one gap left is the 31 px strip at 1280x800 (666 px, no layout-only fix: the lend runs only for a plan that scrolls, a split plan does not). */
+  const gap = n === 10 && f >= 3 && W === 1280 && dh === 31;
+  if (n <= 10 && !gap) assert.deepStrictEqual(cut, [], `${n} in ${f} at ${W}x${H - dh}: a folder of 4 or fewer is split`);
+  if (n <= 10 && gap) assert.ok(cut.length > 0 && !L.scroll, `${n} in ${f} at ${W}x${H - dh}: the named gap (a split folder, no scroll) moved: cut ${cut.length}, scroll ${L.scroll}`);
+  if (n <= 10 && gap) { /* issue #1598 (T342): the renderer's lend (the floor's 24 px) is what keeps them whole: the layout at that height has no cut folder and no scroll */
+    const Ll = aislesLayout(model(n, f), { w: W, h: H - dh + 24 }, META, SIGNS(f)), pl = new Map<string, number>(); for (const z of Ll.zones) pl.set(z.id, (pl.get(z.id) || 0) + 1);
+    assert.ok(![...pl.values()].some((v) => v > 1) && !Ll.scroll, `${n} in ${f} at ${W}x${H - dh} + 24 lent: the folders are whole and the hall does not scroll`);
+  }
+  if (n <= 10 && gap) {
+    /* the strip stays where dropping it would not keep the folders whole (the lowest-lobby hall needs 682 px, this room has 666): a helper each keeps the strip row */
+    const mg = model(n, f); for (const fo of mg.folders) for (const a of fo.agents) a.helpers = 1;
+    const G1 = aislesLayout(mg, { w: W, h: H - dh }, META, SIGNS(f));
+    assert.ok(G1.helpRows === 1 && !G1.scroll, `${n} in ${f} at ${W}x${H - dh} with a helper each: the strip stays where dropping it would not keep the folders whole (strip rows ${G1.helpRows}, scroll ${G1.scroll})`);
+  }
+  if (n === 10 && f >= 3 && W === 1280 && dh === 0) {
+    const whole = (h: number): boolean => { const M = aislesLayout(model(n, f), { w: W, h }, META, SIGNS(f)), c = new Map<string, number>(); for (const z of M.zones) c.set(z.id, (c.get(z.id) || 0) + 1); return ![...c.values()].some((v) => v > 1) && !M.scroll; };
+    assert.ok(!whole(681) && whole(682), `${n} in ${f} at ${W}: the folders are whole from 682 px and not at 681 (the threshold moved)`);
+    /* the app's agents have helpers: the strip under every plate (FR-306) is what split the folder in the picture; it is dropped when that keeps the folders whole */
+    const mh = model(n, f); for (const fo of mh.folders) for (const a of fo.agents) a.helpers = 1;
+    const H1 = aislesLayout(mh, { w: W, h: H }, META, SIGNS(f)), c1 = new Map<string, number>(); for (const z of H1.zones) c1.set(z.id, (c1.get(z.id) || 0) + 1);
+    assert.ok(![...c1.values()].some((v) => v > 1) && !H1.scroll && H1.helpRows === 0, `${n} in ${f} at ${W}x${H} with a helper each: the folders are whole, no scroll, and the strip is dropped (split ${[...c1.values()].some((v) => v > 1)}, scroll ${H1.scroll}, strip rows ${H1.helpRows})`);
+    assert.ok(L.lobbyH < 128 && L.lobbyH >= 96, `${n} in ${f} at ${W}x${H}: the lobby is ${L.lobbyH} px (between its lowest, 96, and the set 128)`);
+  }
   /* a small room stands close together: neighbours on a row at most a quarter of a slot apart (1.1 slots a column) */
   if (n <= 4) for (const a of L.zones.flatMap((z) => z.desks)) for (const b of L.zones.flatMap((z) => z.desks)) if (a !== b && Math.abs(a.slot.y - b.slot.y) < 1 && b.slot.x > a.slot.x) {
     const gap = b.slot.x - (a.slot.x + a.slot.w);
@@ -270,7 +332,7 @@ for (const n of [3, 8, 15]) for (const dh of [0, 31]) {
 
 // ---- the seam: `rows` is realLayout, byte for byte (T167); the day or night light is no parameter (FR-251) ----
 {
-  assert.deepStrictEqual([...ARRANGEMENTS], ['rows', 'aisles']);
+  assert.deepStrictEqual([...ARRANGEMENTS], ['rows', 'circle', 'aisles']); /* `circle`: spec 102 T165 */
   const m = model(15, 4), v = { w: 1280, h: 748 };
   assert.strictEqual(JSON.stringify(layoutFor('rows', m, v, META, SIGNS(4))), JSON.stringify(realLayout(m, v, META, SIGNS(4))), 'rows is untouched');
   assert.strictEqual(JSON.stringify(layoutFor('aisles', m, v, META, SIGNS(4))), JSON.stringify(aislesLayout(m, v, META, SIGNS(4))));
@@ -386,6 +448,42 @@ console.log(`floor covered with 4 or fewer: ${covs.join('; ')}`);
   }
   console.log(`arcade lounge: ${lc} layouts`);
 }
+// ---- spec 097 delta 2026-11-14 (issue #1760): the arcade lounge seats every resting agent. A seat never spans two cell runs, so FR-248's one-stretch count
+// (5 seats in ceil(5 x 82 / 109) = 4 cells) seated 2 + 2 when the cells fell in two runs of two at 1248 px (a run 492.8 px, three seats need 496)
+{
+  const rest = (sz: number[], idx: number[], helpers = false): RealModel => { let i = 0; return { folders: sz.map((s, fi) => ({ id: 'f' + fi, agents: Array.from({ length: s }, (): RealAgent => { const k = i++, r = idx.includes(k); return { id: 'a' + k, state: r ? (k % 2 ? 'error' : 'idle') : STATES[k % 5], person: PEOPLE[k % 15], ...(r ? { lounge: true } : {}), ...(helpers ? { helpers: 1 } : {}) }; }) })), places: [] }; };
+  const seatedOk = (m: RealModel, W: number, H: number, tag: string): Layout => {
+    const L = aislesLayout(m, { w: W, h: H }, META), want = sortDesks(m.folders.flatMap((fo) => fo.agents.filter((a) => a.lounge))).map((a) => a.id), seats = L.lounge ? L.lounge.desks : [];
+    assert.deepStrictEqual(seats.map((d) => d.id), want, `${tag}: every resting agent has a seat (${seats.length} of ${want.length})`);
+    const ds = L.zones.flatMap((z) => z.desks), floor: Rect = { x: 0, y: L.lobbyH, w: W, h: L.height - L.lobbyH };
+    seats.forEach((s, i) => {
+      for (const r of [s.plate, s.screen, s.table as Rect]) assert.ok(inside(r, floor, 1), `${tag}: seat ${s.id} leaves the floor`);
+      for (const d of ds) assert.ok(![s.plate, s.screen, s.table as Rect].some((r) => inter(r, d.desk) || inter(r, d.plate)), `${tag}: seat ${s.id} is on the cabinet of ${d.id}`);
+      seats.forEach((o, j) => { if (j > i) assert.ok(!inter(s.plate, o.plate) && !inter(s.table as Rect, o.table as Rect), `${tag}: seats ${s.id} and ${o.id} overlap`); });
+    });
+    const all = JSON.parse(JSON.stringify(m)) as RealModel; all.folders.forEach((fo) => fo.agents.forEach((a) => { a.lounge = false; }));
+    const L0 = aislesLayout(all, { w: W, h: H }, META);
+    assert.ok((L.g as number) >= (L0.g as number) && (L.scroll ? 1 : 0) <= (L0.scroll ? 1 : 0), `${tag}: the hall is smaller than with everyone at a cabinet (g ${L0.g} -> ${L.g})`);
+    return L;
+  };
+  for (const [nm, W, H] of [['1280x800', 1248, ROOM.h800], ['1440x900', 1408, ROOM.h900]] as Array<[string, number, number]>) {
+    const L = seatedOk(rest([6, 6, 3], [0, 2, 6, 7, 11]), W, H, `#1760 repro: 6/6/3, 5 resting, ${nm}`);
+    assert.ok(!L.scroll, `#1760 repro at ${nm}: no scroll`);
+  }
+  /* review of #1761: at 1280x800 with the filter strip (1248x666) 11 agents with 5 resting have two runs of two cells; one cell more would add a row and scroll.
+     The seats reach the runs' ends instead (492 of 492.8 px): all five sit and the hall does not scroll */
+  { const L = seatedOk(rest([3, 8], [3, 4, 5, 6, 7]), 1248, 666, '#1761 review: 3/8, 5 resting, 1248x666 (1280x800 with the strip)'); assert.ok(!L.scroll, '#1761 review: 3/8, 5 resting, 1248x666: the seats reach the runs\' ends, no scroll'); }
+  /* the narrow-cabinet hall (cells 239.8 px, two-cell runs 479.6 px) holds 2 + 2 even at the ends: one more cell, in a hall that scrolls with everyone at a cabinet too */
+  seatedOk(rest([6, 7], [1, 4, 9, 10, 12]), 1248, 666, '#1760 one cell more: 6/7, 5 resting, 1248x666');
+  let seed = 1760, fz = 0; const rnd = (n: number): number => { seed = (seed * 1664525 + 1013904223) % 4294967296; return Math.floor((seed / 4294967296) * n); };
+  for (let t = 0; fz < 800 && t < 8000; t++) {
+    const nf = 1 + rnd(6), sz = Array.from({ length: nf }, () => 1 + rnd(6)), n = sz.reduce((a, b) => a + b, 0); if (n < 9 || n > 15) continue;
+    const idx = Array.from({ length: n }, (_, i) => i).filter(() => rnd(3) === 0), helpers = rnd(2) === 0, [nm, W, H] = ([['1440x900', 1408, ROOM.h900], ['1280x800', 1248, ROOM.h800], ['1440x900 with the strip', 1408, ROOM.h900 - 31], ['1280x800 with the strip', 1248, ROOM.h800 - 31]] as Array<[string, number, number]>)[t % 4];
+    if (!idx.length) continue;
+    seatedOk(rest(sz, idx, helpers), W as number, H as number, `#1760 fuzz ${t}: ${sz.join('/')} resting ${idx.join(',')}${helpers ? ' helpers' : ''} at ${nm}`); fz++;
+  }
+  console.log(`arcade lounge seats every resting agent: the #1760 repro and ${fz} fuzz halls`);
+}
 {
   // spec 097 FR-345 (T260, issue #1152): a folder with a saved desk order keeps it in the cabinet rows; one without is sorted by status
   const mk = (keep: boolean): RealModel => ({ folders: [
@@ -430,10 +528,10 @@ console.log(`floor covered with 4 or fewer: ${covs.join('; ')}`);
 
 /* spec 097 T247: the default arcade is unchanged by the crews' scaling: the Retro pixel people (pixelPeople unset, k 1) give the layout they gave before it. The hash is of every
    layout below (4, 12, 15 agents, both sizes), taken from the code before the change; a change here moves a pixel-art arcade, which is not what the crews' wiring may do.
-   Re-taken on purpose by spec 102 FR-308 (2026-11-09): `big` is now "4 or fewer" (it was the cabinet's kind: true for 12 and 15 agents, false for some groups of 4) (the plans did not move). */
+   Re-taken on purpose by spec 102 FR-308 (2026-11-09): `big` is now "4 or fewer" (it was the cabinet's kind: true for 12 and 15 agents, false for some groups of 4) (the plans did not move). Its two floors stay 848 and 748 px high on purpose (spec 102 T309): the hash pins the layout code, not the app's rooms. */
 {
   const h = crypto.createHash('sha256');
-  for (const [W, H] of SIZES) for (const n of [4, 12, 15]) h.update(JSON.stringify(aislesLayout(model(n, 4, STATES, n > 4 ? 3 : 0), { w: W, h: H }, META, SIGNS(4))));
+  for (const [W, H] of [[1440, 848], [1280, 748]]) for (const n of [4, 12, 15]) h.update(JSON.stringify(aislesLayout(model(n, 4, STATES, n > 4 ? 3 : 0), { w: W, h: H }, META, SIGNS(4))));
   const got = h.digest('hex');
   console.log(`arcade, Retro pixel people layout hash ${got}`);
   assert.strictEqual(got, '7c469f199d1ea68917bf09721a2bf96362a5b18a6a40c91d6cada1e5c3cf2349', 'the Retro pixel set lays out differently than before the crews were wired');
@@ -525,6 +623,32 @@ console.log(`floor covered with 4 or fewer: ${covs.join('; ')}`);
   }
   for (const [W, H] of FLOORS) for (const n of [5, 8, 12, 15]) assert.ok(!rowsOf(n, 4, W, H, 0).big, `FR-308: ${n} agents at ${W}x${H}: not big`);
   console.log('arcade big screens: 8 lines at 1 to 4 agents (1408 wide) and 1 to 2 (1248 wide); 3 and 4 at 1248 is the recorded gap');
+}
+
+/* spec 102 delta 2026-11-14 (T223): the empty floor (no agent, no lounge seat) is planned as three one-cabinet folders: three cabinets of the plan's size in one row, the whole floor, no zone, no scroll.
+   Pure, so removing the plan fails here and not only in the Electron driver. The plan is the one three real one-cabinet folders get, and the sizes are measured at both floors. */
+{
+  const places = model(0, 1).places;
+  const want: Record<string, { g: number; cab: { w: number; h: number; gw: number; gh: number }; lobbyH: number }> = {
+    '1440x797': { g: 4, cab: { w: 244, h: 292, gw: 44, gh: 32 }, lobbyH: 168 },
+    '1280x697': { g: 3, cab: { w: 276, h: 273, gw: 75, gh: 50 }, lobbyH: 168 },
+  };
+  for (const [i, [W, H]] of SIZES.entries()) {
+    const label = `empty floor plan, ${NAMES[i]}`, E = aislesLayout({ folders: [], places }, { w: W, h: H }, META, {}), three = aislesLayout(model(3, 3, ['idle']), { w: W, h: H }, META, SIGNS(3)), w = want[`${W}x${H}`];
+    assert.ok(E.cabinet, `${label}: the plan has a cabinet size`);
+    const c = E.cabinet!;
+    assert.deepStrictEqual({ g: E.g, cab: { w: c.w, h: c.h, gw: c.gw, gh: c.gh }, lobbyH: E.lobbyH }, w, `${label}: scale, cabinet size and lobby`);
+    assert.deepStrictEqual([c.cols, c.rows], [3, 1], `${label}: three cabinets in one row (columns, rows)`);
+    assert.deepStrictEqual([E.g, E.cabinet, E.lobbyH, E.height, E.big], [three.g, three.cabinet, three.lobbyH, three.height, three.big], `${label}: the plan of three one-cabinet folders`);
+    assert.strictEqual(E.zones.length, 0, `${label}: no zone is drawn from the plan`);
+    assert.ok(!E.scroll && E.height === H && E.width === W, `${label}: the stage is the floor (${E.width}x${E.height}, no scroll)`);
+    assert.ok(3 * c.w + 2 * 4 * (E.g as number) <= W, `${label}: the three cabinets and the gaps between them fit across ${W} px`);
+    assert.ok(E.lobbyH + 62 + c.h <= H, `${label}: the plate and a row of cabinets fit under the lobby`);
+    /* one lounge seat is not an empty floor: its plan is the seat's */
+    const lounged = aislesLayout(model(1, 1, ['idle'], 1), { w: W, h: H }, META, SIGNS(1));
+    assert.ok(lounged.lounge && lounged.zones.length === 0, `${label}: a floor with only a lounge seat is not planned as the empty floor`);
+  }
+  console.log('arcade empty floor plan: three cabinets, both floors');
 }
 
 console.log(`aisles tests passed (${cases} layouts)`);
