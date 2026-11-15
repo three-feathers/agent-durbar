@@ -17,7 +17,7 @@ const { JSDOM } = require('jsdom') as { JSDOM: new (html: string) => { window: {
 const DOC = new JSDOM('<!doctype html><body></body>').window.document;
 
 const R_DIR = path.join(__dirname, '..', '..', 'src', 'renderer');
-const app = fs.readFileSync(path.join(R_DIR, 'app.js'), 'utf8');
+const app = fs.readFileSync(path.join(R_DIR, 'app.js'), 'utf8').replace(/\r\n/g, '\n');
 let n = 0;
 const ok = (c: unknown, m: string): void => { assert.ok(c, m); n++; };
 const eq = (a: unknown, b: unknown, m: string): void => { assert.deepStrictEqual(a, b, m); n++; };
@@ -233,9 +233,9 @@ ok(/[{,]\s*announce\s*[,}]/.test(topLevel('DurbarNewFolder.create({')), 'newfold
 // the request lines pass the name as its own part (a token-shaped name cannot undo the escapes of the command)
 ok(/announce\(\[a\.name,' needs your OK: ',look,/.test(app), 'the permission card line: name, fixed words and request are their own parts');
 ok(/announce\(\[a\.name,c\.classList\.contains\('question'\)\?' asks: ':' needs your OK: ',requestRaw\(c\)\]/.test(app), 'the queue line: the card\'s own words (requestRaw), fixed words their own part');
-ok(/announce\(\[a\.name,' asks: ',String\(\(qs\[0\]&&qs\[0\]\.question\)\|\|''\)\|\|'a question'\]\)/.test(app), 'the question line: the raw question, fixed words their own part');
+ok(/announce\(\[a\.name,' asks: ',String\(\(qs\[0\]&&qs\[0\]\.question\)\|\|''\)\|\|'a question'\],ANN_REQUEST\)/.test(app), 'the question line: the raw question, fixed words their own part');
 ok(/announce\(\[word,': ',what\]\)/.test(app) && (app.match(/answerPress\(src,requestRaw\((card|c)\)\)/g) || []).length === 2 && !/answerPress\(src,(text|textOf)/.test(app), 'the answer-bar line: the card\'s own words, as parts');
-ok(/\{text:R\.message\|\|'',max:160\}/.test(app), 'the MCP request line: the raw message as a {text,max} part');
+ok(/\{text:R\.message\|\|'',max:160\}\],ANN_REQUEST\)/.test(app), 'the MCP request line: the raw message as a {text,max} part');
 // no announcement reads a desk-masked copy of a request or a question (that copy has its escapes undone)
 // the whole argument of each announce( call in app.js, by matching brackets (string contents kept, so a call is read as written)
 const argAt = (i: number): string => { let d = 0; for (let j = i; j < app.length; j++) { const c = app[j];
