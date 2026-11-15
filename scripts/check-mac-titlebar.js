@@ -201,8 +201,14 @@ async function run(ctx) {
     await rec('tall-dialog', size, 'modal'); await reset();
   }
   /* spec 052 FR-138: the Close button of every screen header stays inside a narrow window, the title keeps its place under the traffic lights */
-  const closeIn = async (name, size, W) => {
-    await ctx.sleep(600);
+  /* condition waits, no fixed sleeps (FR-048b): a wait that runs out fails with its own label */
+  const need = async (expr, label, ms = 4000) => { if (!(await H.until(expr, ms))) throw new Error(`${label}: not reached in ${ms} ms`); };
+  /* the header's child boxes are the same on two reads in a row (polled every 50 ms): laid out at this window size */
+  const HEAD_STILL = `(()=>{const h=document.querySelector('#screen:not([hidden]) .scr-head');if(!h)return false;const s=h.getBoundingClientRect().width+'|'+[...h.children].map(e=>{const r=e.getBoundingClientRect();return [r.left,r.top,r.right,r.bottom].map(Math.round).join(',')}).join(';');const same=window.__fr138Head===s;window.__fr138Head=s;return same})()`;
+  const closeIn = async (name, size, W, ready) => {
+    await need(`!document.getElementById('screen').hidden&&document.body.classList.contains('screen-open')&&!!document.getElementById('scrClose')&&(${ready})`, `${size} ${name}: the screen is open on its view`);
+    await js(`delete window.__fr138Head`);
+    await need(HEAD_STILL, `${size} ${name}: the header is laid out`);
     const m = await js(`(${measureHead.toString()})()`);
     const why = [];
     if (!m) why.push('no screen header');
@@ -221,16 +227,22 @@ async function run(ctx) {
     const size = `${w}x${h}`;
     await H.load({ w, h, ready: 'fit' });
     await js(`document.documentElement.dataset.platform='darwin'`);
-    await ctx.sleep(400);
+    /* the darwin rules apply: the top bar is a drag region (styles.css, FR-138) */
+    await need(`getComputedStyle(document.querySelector('.topbar')).getPropertyValue('-webkit-app-region')==='drag'`, `${size}: the macOS title bar rules apply`);
     await js(`['restoreStrip','awayStrip'].forEach(i=>{document.getElementById(i).hidden=true})`);
     /* mutant (proves the check can fail): MAC_TITLEBAR_MUTANT=nowrap puts the header back to one row */
     if (process.env.MAC_TITLEBAR_MUTANT === 'nowrap') await js(`(()=>{const st=document.createElement('style');st.textContent='.scr-head{flex-wrap:nowrap !important}';document.head.appendChild(st)})()`);
     const W = await js(`document.documentElement.clientWidth`);
     if (W > w + 1 || W < w - 1) throw new Error(`the window is ${W}px wide, not ${w}`);
     await openChat();
-    for (const [name, open] of [['chat-tools', `window.DurbarScreens.openTools(null)`], ['chat-tools-cost', `window.DurbarScreens.openTools(null,'cost')`], ['chat-tools-activity', `window.DurbarScreens.openTools(null,'activity')`], ['chat-settings', `window.DurbarScreens.openSettings()`]]) {
-      await js(open); await closeIn(name, size, W);
-      await js(`window.DurbarScreens.close()`); await ctx.sleep(300);
+    for (const [name, open, ready] of [
+      ['chat-tools', `window.DurbarScreens.openTools(null)`, `!!document.querySelector('#tabTools[aria-selected="true"]')`],
+      ['chat-tools-cost', `window.DurbarScreens.openTools(null,'cost')`, `!!document.querySelector('#tabCost[aria-selected="true"]')`],
+      ['chat-tools-activity', `window.DurbarScreens.openTools(null,'activity')`, `!!document.querySelector('#tabActivity[aria-selected="true"]')&&!!document.querySelector('.scr-head.scr-wide')`],
+      ['chat-settings', `window.DurbarScreens.openSettings()`, `!!document.querySelector('#screen:not([hidden]) .scr-nav')`]]) {
+      await js(open); await closeIn(name, size, W, ready);
+      await js(`window.DurbarScreens.close()`);
+      await need(`document.getElementById('screen').hidden&&!document.body.classList.contains('screen-open')&&document.body.classList.contains('panel-open')`, `${size} ${name}: the screen closed, the chat is still open`);
     }
     await reset();
   }
