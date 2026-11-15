@@ -3,7 +3,7 @@
  * `tryId`, an id main listed, a name, or a folder key; no text from the window becomes a path. Every channel is owner-only (`fromApp`) and none is open to the simulator.
  * The description goes to the adapter once, inside the prompt, and is never stored, logged or kept in an error (D3, FR-032, SC-004). A try is held only in memory.
  * `[KNOWN GAP]` a partial echo of the description in an error is not recognised: only the whole text (raw or cleaned, plain or JSON-escaped) is removed.
- * `[KNOWN GAP]` FR-034's login gate is not enforced here yet: no adapter reports `imageGen`, so nothing can run. T030a must add it here before Codex's `imageGen` turns on.
+ * `[KNOWN GAP]` FR-034's login gate is not enforced here yet: no adapter reports `imageGen`, so nothing can run (T030b's tripwire in `test:charipc` keeps it so). T030a must add it here before Codex's `imageGen` turns on.
  */
 import { app } from 'electron';
 import { randomBytes } from 'crypto';
@@ -17,12 +17,12 @@ import { CHARACTER_IDEAS, SHEET_NAME, buildCharacterPrompt, cleanDescription } f
 import { DEFAULT_STYLE_ID } from '../../shared/charstyle';
 import { MAX_CHARACTERS, cleanCharacterName, pinDecision } from '../../shared/charrules';
 import type { EncoderResult, FaceSet, FrameSet } from '../../shared/charrules';
-import { readCapped } from '../../shared/cappedread';
 import { MAX_IMAGE_BYTES, checkImage } from '../../shared/imagecheck';
 import { maskHomePaths, redact, redactMarkdown } from '../../shared/redact';
 import { encodeSheet } from '../charencoder';
 import type { EncodeOptions } from '../charencoder';
 import { CharacterStore } from '../charstore';
+import { readSameFile } from '../samefileread';
 import type { DevEnv } from '../devhooks';
 import { pickFolder } from '../pickfolder';
 import type { SettingsStore } from '../settings';
@@ -81,22 +81,11 @@ export function sheetFolderOf(file: unknown, tmpRoot: string = os.tmpdir()): str
 }
 
 type SheetRead = { ok: true; bytes: Uint8Array } | { ok: false; error: string };
-/**
- * FR-020: the expected file only: `lstat` of a regular file (no link), at most 20 MB, then the shared capped, no-follow, one-link read (`readCapped`, FR-031) of
- * that same file (device and inode compared as bigints, issue #1491), read once into memory.
- */
+/** FR-020: the expected file only, at most 20 MB, read once into memory by the shared identity-checked read (`readSameFile`, FR-031). */
 function readSheet(file: string): SheetRead {
-  const TOO_BIG = { ok: false, error: 'The picture is too big.' } as const;
-  let st: fs.BigIntStats;
-  try { st = fs.lstatSync(file, { bigint: true }); } catch { return { ok: false, error: NO_PICTURE }; }
-  if (!st.isFile()) return { ok: false, error: NO_PICTURE };
-  if (st.size > BigInt(MAX_IMAGE_BYTES)) return TOO_BIG;
-  const r = readCapped(fs, fs.constants, file, MAX_IMAGE_BYTES, (_now: fs.Stats, fd: number) => {
-    const id = fs.fstatSync(fd, { bigint: true });
-    return id.ino !== st.ino || id.dev !== st.dev ? 'replaced' : undefined;
-  });
+  const r = readSameFile(file, MAX_IMAGE_BYTES);
   if (r.ok) return { ok: true, bytes: r.buf };
-  return r.code === 'too-big' ? TOO_BIG : { ok: false, error: NO_PICTURE };
+  return r.code === 'too-big' ? { ok: false, error: 'The picture is too big.' } : { ok: false, error: NO_PICTURE };
 }
 
 /** The forms an echo of the text can take: as it is, and JSON-escaped once or twice (as a log or an error wrapping another error carries it; the same idea as `maskHomePaths`). */

@@ -6,6 +6,9 @@
  *  - The store reads only folders whose name is an id and files from its own list, never a link. A bad folder is skipped with a warning that names no path.
  *  - Every write is under the root, except `export`, which writes one new folder inside the folder the user picked, overwriting nothing.
  * No error text here carries a path: the sentences are the store's own.
+ * `[KNOWN GAP]` a parent-folder swap race: `readEntry` checks the `my-...` folder with `lstat`, then opens files inside it; `O_NOFOLLOW` and the inode compare
+ * guard only the last part of the path, so a folder swapped for a link in between is followed, and `rename()` writes `character.json` through it. It needs write
+ * access to userData as the same user (no one gains rights) and Node has no portable `openat` (spec 096 *Changes 2026-11-15, round 2*).
  */
 import { randomBytes } from 'crypto';
 import * as fs from 'fs';
@@ -13,7 +16,7 @@ import * as path from 'path';
 import { CHARACTER_ID_RE, MAX_CHARACTERS, cleanCharacterName, isStoredFace } from '../shared/charrules';
 import type { FaceSet, FrameSet } from '../shared/charrules';
 import { MAX_FRAME_BYTES, checkFrames } from '../shared/webpcheck';
-import { readCapped } from '../shared/cappedread';
+import { readSameFile } from './samefileread';
 
 export interface CharacterEntry {
   id: string;
@@ -47,18 +50,9 @@ const MAX_SUFFIX = 99;
 const hex = (n: number): string => randomBytes(n).toString('hex');
 const lstatOf = (p: string): fs.Stats | null => { try { return fs.lstatSync(p); } catch { return null; } };
 
-/**
- * FR-030: a regular file, never a link, up to `cap` bytes. `lstat` first (a link or a FIFO is never opened; on Windows, with no `O_NOFOLLOW`, this is the guard), then
- * the shared capped, no-follow, one-link read (`readCapped`, FR-031), and the opened file must be the one `lstat` saw: device and inode compared as bigints (issue #1491).
- */
+/** FR-030: a regular file, never a link or a hard-linked file, up to `cap` bytes: the shared identity-checked read (`readSameFile`, FR-031). */
 function readRegular(file: string, cap: number): Buffer | null {
-  let st: fs.BigIntStats;
-  try { st = fs.lstatSync(file, { bigint: true }); } catch { return null; }
-  if (!st.isFile() || st.size > BigInt(cap)) return null;
-  const r = readCapped(fs, fs.constants, file, cap, (_now: fs.Stats, fd: number) => {
-    const id = fs.fstatSync(fd, { bigint: true });
-    return id.ino !== st.ino || id.dev !== st.dev ? 'replaced' : undefined;
-  });
+  const r = readSameFile(file, cap);
   return r.ok ? r.buf : null;
 }
 

@@ -30,7 +30,11 @@ function setup(warn?: (m: string) => void): { root: string; store: CharacterStor
 function linkOk(target: string, at: string): boolean {
   try { fs.symlinkSync(target, at); return true; } catch { console.log('test-charstore: no link rights here, a link case is skipped'); return false; }
 }
-const saved = (r: ReturnType<CharacterStore['save']>): { id: string; name: string } => { assert.ok(r.ok, 'saved: ' + JSON.stringify(r)); return r as { ok: true; id: string; name: string }; };
+/** A hard link needs no special rights on Windows, macOS or Linux, but a file system can refuse one (FAT, some network shares): then the case is skipped and says why. */
+function hardLinkOk(target: string, at: string): boolean {
+  try { fs.linkSync(target, at); return true; } catch (e) { console.log(`test-charstore: this file system refused a hard link (${String((e as NodeJS.ErrnoException).code)}), a hard-link case is skipped`); return false; }
+}
+const saved = (r:ReturnType<CharacterStore['save']>): { id: string; name: string } => { assert.ok(r.ok, 'saved: ' + JSON.stringify(r)); return r as { ok: true; id: string; name: string }; };
 const tree = (d: string): string[] => fs.readdirSync(d, { recursive: true, encoding: 'utf8' }).sort();
 
 try {
@@ -168,6 +172,19 @@ try {
     const rightRecord = path.join(outside, 'record.json');
     fs.writeFileSync(rightRecord, JSON.stringify({ ...JSON.parse(fs.readFileSync(path.join(root, good.id, 'character.json'), 'utf8')), id: jsonLink }));
     if (linkOk(rightRecord, path.join(root, jsonLink, 'character.json'))) assert.ok(!store.has(jsonLink), 'a record that is a link is refused');
+    // hard links (review of #956, round 2): the second name of a file outside is refused by the one-link rule of the shared read, the only check that can refuse
+    // it: the record is right in every field and the frame is a copy of a good one (`has` reads frames by lstat only, so it stays true there)
+    const hardRecordId = copyOf('my-0000000000ae', (d) => { fs.rmSync(path.join(d, 'character.json')); });
+    const hardRecord = path.join(outside, 'hard-record.json');
+    fs.writeFileSync(hardRecord, JSON.stringify({ ...JSON.parse(fs.readFileSync(path.join(root, good.id, 'character.json'), 'utf8')), id: hardRecordId }));
+    if (hardLinkOk(hardRecord, path.join(root, hardRecordId, 'character.json'))) assert.strictEqual(store.has(hardRecordId), false, 'a record with a second hard link is refused');
+    const hardFrameId = copyOf('my-0000000000af', (d) => { fs.rmSync(path.join(d, 'working.webp')); });
+    const hardFrame = path.join(outside, 'hard-frame.webp');
+    fs.copyFileSync(path.join(root, good.id, 'working.webp'), hardFrame);
+    if (hardLinkOk(hardFrame, path.join(root, hardFrameId, 'working.webp'))) {
+      assert.ok(store.has(hardFrameId), 'the hard-linked frame passes the lstat checks of the record');
+      assert.strictEqual(store.frames(hardFrameId).ok, false, 'a frame with a second hard link is not read');
+    }
     // a good record over a broken picture is refused at the read, not handed to the window
     const broken = copyOf('my-0000000000ad', (d) => { fs.writeFileSync(path.join(d, 'waiting.webp'), 'not a picture'); });
     assert.ok(store.has(broken) && !store.frames(broken).ok, 'the bytes are checked again');
@@ -303,6 +320,11 @@ try {
     assert.ok(/const tmp = path\.join\(this\.root, TMP_PREFIX/.test(src) && /const tmp = path\.join\(dir, /.test(src), 'temp names are under the root');
     assert.ok(/CHARACTER_ID_RE\.test\(id\) \? path\.join\(this\.root, id\) : null/.test(src), 'an id is checked before it becomes a path');
     assert.ok((src.match(/recursive: true, force: true/g) ?? []).length <= 4, 'few recursive removes');
+    // FR-031 (review of #956, round 2): the store and the sheet read share one identity-checked read; neither keeps its own copy of it
+    for (const f of [path.join('src', 'main', 'charstore.ts'), path.join('src', 'main', 'ipc', 'characters.ts')]) {
+      const code = fs.readFileSync(path.join(ROOT, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
+      assert.ok(/\breadSameFile\(/.test(code) && !/\breadCapped\b|bigint: true/.test(code), `${f}: reads through readSameFile only, no copy of it`);
+    }
   }
   console.log('test-charstore: ok');
 } finally {

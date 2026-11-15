@@ -14,6 +14,11 @@ import * as ts from 'typescript';
 import { cleanCharacterName, parseEncoderReply, pinDecision } from '../src/shared/charrules';
 import type { EncoderResult } from '../src/shared/charrules';
 import { MARK_CLOSE, MARK_OPEN, SHEET_NAME } from '../src/shared/chargen';
+import { PRODUCTION_DESCRIPTORS } from '../src/adapters/descriptors';
+import { offeredDescriptors } from '../src/adapters/experimental';
+import { CodexAdapter } from '../src/adapters/codex';
+import { ClaudeAdapter } from '../src/adapters/claude';
+import { CopilotAdapter } from '../src/adapters/copilot';
 
 type Handler = (e: unknown, ...a: unknown[]) => unknown;
 type Rec = Record<string, unknown>;
@@ -73,7 +78,34 @@ function imageAdapter(server: FakeCodexServer, log: string[]): Rec {
   };
 }
 
+/**
+ * Tripwire (review of #956, round 2; spec 096 FR-034, T030a, T030b): paid image generation never turns on before main's own login gate. While T030a is open in
+ * `tasks.md`, no real adapter reports `imageGen: true` or has a `generateImage` method: read from every registered descriptor (Copilot, Claude on both transports,
+ * Codex), from the adapter classes, and from the adapters' source (a flag or method set another way, a field or a constructor assignment, is caught there).
+ * T030a replaces this with its gate test: once T030a is ticked this fails until it is removed.
+ */
+function imageGenTripwire(): void {
+  const tasks = fs.readFileSync(path.join(ROOT, 'specs', '096-ai-character-maker', 'tasks.md'), 'utf8');
+  const t030a = /^- \[([ xX])\] T030a\b/m.exec(tasks);
+  assert.ok(t030a, 'T030a is in spec 096 tasks.md');
+  assert.strictEqual(t030a[1], ' ', 'T030a is ticked: replace this tripwire (T030b) with T030a\'s FR-034 gate test');
+  const descriptors = [...PRODUCTION_DESCRIPTORS, ...offeredDescriptors({}), ...offeredDescriptors({ DURBAR_CLAUDE_TRANSPORT: 'sdk' })];
+  assert.deepStrictEqual([...new Set(descriptors.map((d) => d.id))].sort(), ['claude', 'codex', 'copilot'], 'the tripwire sees every real adapter');
+  for (const d of descriptors) assert.notStrictEqual(d.capabilities.imageGen, true, `tripwire: ${d.id} reports imageGen before T030a's login gate (FR-034)`);
+  for (const [name, cls] of [['CodexAdapter', CodexAdapter], ['ClaudeAdapter', ClaudeAdapter], ['CopilotAdapter', CopilotAdapter]] as const) {
+    assert.ok(!('generateImage' in cls.prototype), `tripwire: ${name} has generateImage before T030a's login gate (FR-034)`);
+  }
+  const dir = path.join(ROOT, 'src', 'adapters');
+  const files = fs.readdirSync(dir).filter((f) => f.endsWith('.ts') && f !== 'types.ts' && f !== 'capabilities.ts');
+  assert.ok(files.includes('codex.ts') && files.length > 20, 'the tripwire reads the adapters\' source: ' + files.length);
+  for (const f of files) {
+    const code = fs.readFileSync(path.join(dir, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
+    assert.ok(!/\b(imageGen|generateImage)\b/.test(code), `tripwire: src/adapters/${f} turns on image generation before T030a's login gate (FR-034)`);
+  }
+}
+
 async function main(): Promise<void> {
+  imageGenTripwire();
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-charipc-'));
   // its own OS temp folder: this suite lists and removes `durbar-img-*` there, and other worktrees' runs share the real one
   const ownTemp = path.join(base, 'tmp');
@@ -257,6 +289,15 @@ async function main(): Promise<void> {
       }
       for (const f of server.current.imageOutside) fs.rmSync(f, { force: true });
       noTemps('symlink'); }
+    mode('hardlink');
+    { const r = await call('character:generate', DESC, 'codex');
+      if (server.current.imageError) realConsole.log(`test-charipc: this file system refused a hard link (${server.current.imageError}), the hard-link case is skipped`);
+      else {
+        assert.ok(r.ok === false && r.error === 'No picture came back. Try again.', `a sheet with a second hard link is refused: ok ${String(r.ok)}, error ${String(r.error)}`);
+        assert.ok(fs.existsSync(server.current.imageOutside[server.current.imageOutside.length - 1]), 'its other name is untouched');
+      }
+      for (const f of server.current.imageOutside) fs.rmSync(f, { force: true });
+      noTemps('hardlink'); }
     // the lstat before the open is the only link guard on Windows (no O_NOFOLLOW), and the opened file must be the one lstat saw: an lstat that says "link", or names
     // another file, refuses the sheet even though the open would read it (review of #956)
     mode('sheet');

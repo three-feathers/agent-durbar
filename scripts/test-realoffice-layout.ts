@@ -506,7 +506,8 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
     const own: Record<string, string> = { office: 'office', pixel: 'retro', cheeky: 'cheeky', prehistoric: 'prehistoric', pirate: 'pirate', monster: 'monster', royal: 'royal', rebels: 'rebels' }; // a crew with a row: its own people in every world
     for (const w of C.WORLDS) assert.ok(w.id in defaultOf, `world ${w.id} has no column in the matrix (T249): add one here and a row in the spec's table`);
     for (const c of choices) assert.ok(c === 'theme' || c === 'minimalist' || c === 'mine' || c in own, `Characters value ${c} has no cell in the matrix (T249): add it here and to the spec's table`);
-    // My characters (spec 096 FR-040) is a value since #956, not offered by Settings: its cell is the world's default in every world, with no note, until T246 gives it its own (spec 097 Changes 2026-11-15)
+    // My characters (spec 096 FR-040) is a value since #956, not offered by Settings. INTERIM cell (spec 097 Changes 2026-11-15): the world's default in every world, with no
+    // note, until #1807's T353 (FR-379) makes `mine` a `heads` value with the FR-336 note (same set); then this asserts that note instead
     assert.ok(choices.includes('mine') && !('mine' in own), 'mine has the interim cell (the world\'s default) until T246');
     for (const w of C.WORLDS) assert.strictEqual(C.peopleFor(w.id, 'mine', ALL).note, '', `${w.id} x mine: no note (nothing to report before T246)`);
     for (const w of C.WORLDS) for (const c of choices) {
