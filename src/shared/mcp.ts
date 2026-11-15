@@ -236,3 +236,8 @@ export function trustHash(d: { transport: string; command?: string; args?: strin
     .digest('hex');
 }
 
+
+/** Spec 058 FR-246: does an app's sign-in steps text carry a command (backticks, FR-068)? Main's row flag `signInHasCommand` and the chat's "terminal steps" sentence use this one test; the window reads the flag. */
+export function stepsHaveCommand(text: string | undefined): boolean {
+  return typeof text === 'string' && /`[^`]+`/.test(text);
+}

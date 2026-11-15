@@ -1,0 +1,1 @@
+- **A Copilot MCP server that needs a sign-in no longer shows Copilot CLI steps** (spec 058, issue #1730, owner report): the row no longer tells you to run `copilot` and `/mcp auth`. **Sign in** stays in the MCP dialog wherever it can start one; where it cannot, the row says so and offers **Switch off for this session**. Checked on the simulator only.
