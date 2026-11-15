@@ -89,6 +89,8 @@ const DRIVERS = [
   { name: 'shots-058-mcp-signin' }, // spec 058 T102/T104: Sign in for a Copilot server that needs it (simmcpauth), the two-step open, the steps
   { name: 'shots-058-mcp-words' }, // spec 058 T113-T115: state words, hints, Details and live refresh in the MCP dialog
   { name: 'shots-058-mcp-settings' }, // spec 058 FR-080..FR-086 (#596): live MCP state over the running chats in Settings
+  { name: 'shots-102-strips', env: { DRIVER_WORLD: 'retro' } }, // spec 102 T340 (#1589): the arcade's notice strips yield to one bar before the office scrolls: five strips, the open MCP list, 16 agents
+  { name: 'shots-102-strips', label: 'shots-102-strips photo', env: { DRIVER_CASE: 'photo' } }, // spec 102 T340: the Photo office keeps its strips in the flow
   { name: 'shots-058-mcp-launch' }, // spec 058 FR-195..FR-203: MCP health strip at launch; Sign in, Sign in again and Restart where it failed in Settings
   { name: 'shots-058-mcp-launch', label: 'shots-058-mcp-launch retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 (issue #1566): the strip over the arcade at 15 agents, 1280x800 and 1440x900: no office scroll while shown and after Dismiss
   { name: 'shots-058-mcp-launch', label: 'shots-058-mcp-launch retro 16', env: { DRIVER_WORLD: 'retro', DRIVER_CASE: '16', DRIVER_AGENTS: '16' } }, // spec 102 T308: 16 agents under the strip: the lent layout still scrolls, so it is refused (ro-tight off)
@@ -106,6 +108,7 @@ const DRIVERS = [
   { name: 'check-model-choice' }, // spec 030 FR-060..FR-066: model, effort and context chosen one after another stay together, each app, each order
   { name: 'shots-007-autotier' }, // spec 007 FR-013..FR-018 (#607): the Auto routing tier in the model menu, confirm, Undo, the organization lock
   { name: 'shots-111-templates' }, // spec 111 T008 (FR-020, FR-021, FR-131): Settings > Team templates: starter and own rows, keyboard only, Delete asks, Export disabled, blocked/changed/failed seeds
+  { name: 'shots-111-editor' }, // spec 111 T009 (FR-022, FR-023, FR-131, FR-132): the member editor: keyboard only, errors with aria-describedby, limit cleared with the app, the limit of 8, Mark as mine asks, three worlds at both sizes
   { name: 'shots-043-editor' }, // spec 043 FR-014: the profile file editor (modes, split widths, save round trip, unsaved guard)
   { name: 'shots-043-ai' }, // spec 043 FR-026..FR-039: Create with AI (canned generation, Extra tools, Stop waiting, Cancel and reopen)
   { name: 'shots-043-manage' }, // spec 043 FR-040..FR-042: nothing written before Save, the Profile menu refreshes at once, Delete from the menu and Settings
@@ -113,6 +116,7 @@ const DRIVERS = [
   { name: 'check-052-primary-btn' }, // spec 052 FR-053 (#1614): the themed primary button reads at 4.5:1 at rest, hovered and pressed in every themed look
   { name: 'check-052-focus-ring' }, // spec 052 FR-052 (#1615): the keyboard ring of the top bar controls and of the ⋯ menu items reads at 3:1 beside the bar, in the retro looks
   { name: 'check-052-danger-btn' }, // spec 052 FR-053, FR-076 (#1565): the red confirm button of a destructive dialog reads in the arcade and under the pixel theme
+  { name: 'check-052-warn-danger-btn' }, // spec 052 FR-053, FR-076 (#1570): warn button, plain danger hover and two plain danger confirms keep their meaning in the arcade and under the pixel theme
   { name: 'check-052-danger-dialogs' }, // spec 052 FR-053, FR-076 (#1647): every destructive dialog's red confirm button reads at rest, focus and hover, retro-ui user themes included
   { name: 'check-grant-chips' },
   { name: 'check-sched-sendto' },

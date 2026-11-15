@@ -162,7 +162,8 @@ function aisleSeat(meta: RealMeta, a: RealAgent, sx: number, plateY: number, gl:
   };
 }
 
-export function aislesLayout(model: RealModel, view: { w: number; h: number }, meta: RealMeta, signs?: Record<string, { name: string; path: string; counts: number }>): Layout {
+/** `minCells` (internal, spec 097 delta 2026-11-14, issue #1760): the lounge's cell count when the first count's runs could not seat every resting agent */
+export function aislesLayout(model: RealModel, view: { w: number; h: number }, meta: RealMeta, signs?: Record<string, { name: string; path: string; counts: number }>, minCells = 0): Layout {
   const W = Math.max(200, view.w), Ho = Math.max(200, view.h);
   /* FR-248: the lounge's agents leave their cabinets; their seats take cells after the cabinets (below) */
   const sp = splitLounge(model), lounge = sp.lounge;
@@ -175,7 +176,7 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
   /* the lobby first: the rows bend only with what is left once it has its height */
   /* FR-248: the lounge's seats take cells after the cabinets, in the hall's own grid (so the plan is never worse than with those agents at cabinets): as many
      cells as the seats need at the narrowest cell a plan can have (a seat is narrower than a cabinet with its player, so 5 seats take 4 cells) */
-  const minCell = cabGrid(CABINETS.narrow.gw, CABINETS.narrow.gh).w + PW + AISLE_GAP, nCells = lounge.length ? Math.ceil((lounge.length * AISLE_LSEAT) / minCell - 1e-9) : 0;
+  const minCell = cabGrid(CABINETS.narrow.gw, CABINETS.narrow.gh).w + PW + AISLE_GAP, nCells = lounge.length ? Math.max(minCells, Math.ceil((lounge.length * AISLE_LSEAT) / minCell - 1e-9)) : 0;
   const sizes = folders.map((f) => f.agents.length), kc = k + nCells, lobbyT = Math.min(kc <= 4 ? AISLE_LOBBY_FEW : AISLE_LOBBY, lobbyMax);
   /* owner, 2026-11-03 06:59 UTC (option A): with 4 or fewer the lobby may be lower, down to its minimum, when that lets the cabinets grow; the
      lobby height and the plan are chosen together, by the floor the cabinets and people cover (the same height on a tie keeps the higher lobby);
@@ -269,14 +270,21 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
     const runs = new Map<number, number[]>();
     for (let i = k; i < kc; i++) (runs.get(pk.at[i][0]) || runs.set(pk.at[i][0], []).get(pk.at[i][0])!).push(i);
     let next = 0;
+    /* spec 097 delta 2026-11-14 (issue #1760): a run keeps g clear at each end; when the runs then hold fewer seats than rest (two runs of two cells at 1248 px:
+       492.8 px, three seats 496 with the ends), the seats may reach the run's ends (its cells' edges, still clear of the next cabinet's slot) before a cell is added */
+    const span = (cells: number[]): number => cw + Math.max(...cells.map((i) => cxs[i])) - Math.min(...cells.map((i) => cxs[i]));
+    const end = runs.size > 1 && [...runs.values()].reduce((s, c) => s + Math.max(1, Math.floor((span(c) - 2 * g) / sw)), 0) < lounge.length ? 0 : g;
     for (const cells of runs.values()) {
       const bs = cells.map((i) => ({ x: cxs[i] + lean - cw / 2, b: slotBox(i) })), x0 = Math.min(...bs.map((c) => c.x)), x1 = Math.max(...bs.map((c) => c.x + cw));
-      const fit = Math.max(1, Math.floor((x1 - x0 - 2 * g) / sw)), take = next + fit >= lounge.length || runs.size === 1 ? lounge.length - next : fit, start = x0 + Math.max(g, (x1 - x0 - take * sw) / 2);
+      const fit = Math.max(1, Math.floor((x1 - x0 - 2 * end) / sw)), take = next + fit >= lounge.length || runs.size === 1 ? lounge.length - next : fit, start = x0 + Math.max(end, (x1 - x0 - take * sw) / 2);
       const plateY = Math.max(...bs.map((c) => c.b.cab.y)) + cabH;
       for (let j = 0; j < take && next < lounge.length; j++, next++) desks.push(aisleSeat(meta, lounge[next], snapL(start + j * sw), plateY, gl));
     }
     const x0 = Math.min(...desks.map((d) => d.slot.x)), x1 = Math.max(...desks.map((d) => d.slot.x + d.slot.w)), y0 = Math.min(...desks.map((d) => d.slot.y)), y1 = Math.max(...desks.map((d) => d.slot.y + d.slot.h));
     lay.lounge = { box: { x: x0 - 4, y: y0, w: x1 - x0 + 8, h: y1 - y0 }, desks };
+    /* spec 097 delta 2026-11-14 (issue #1760): a seat never spans two runs, so runs of the counted cells can hold fewer seats than rest (5 resting in two runs of
+       two cells at 1248 px seat 2 + 2): lay the hall out again with one cell more. At most one cell per resting agent, and each cell holds a seat, so it ends */
+    if (desks.length < lounge.length && nCells < lounge.length) return aislesLayout(model, view, meta, signs, nCells + 1);
   }
   return lay;
 }
