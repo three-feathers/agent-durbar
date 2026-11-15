@@ -585,7 +585,10 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
     eq(L.permText('run echo ' + TK + E, 'shell', hm), { text: 'run echo [redacted]', hidden: true, why: 'secret' }, 'a token glued to an escaped one: no part shown, the command kept (not a blind card)');
     eq(ST.maskLabel('echo ' + E, 'run', { ...mask, cmd: (s: string) => s.replace(/ghp_\w+/, '[redacted]') }), 'echo [redacted]', 'the run pass hides the escaped run');
     // a mask that hides a token only after `echo ` (context, as a secret name does): no run alone is hidden, the unescaped copy is
-    eq(ST.maskLabel('echo ' + E, 'run', { ...mask, cmd: (s: string) => s.replace(/echo ghp_\w+/, 'echo [redacted]') }), '', 'the unescaped copy still holding a secret gives an empty label (fail closed)');
+    // spec 012 FR-182 (round 4 of PR 1721): the shared split step reads `ghp\_…` itself now, so the fail-closed path is shown with a made-up secret no token shape knows
+    eq(ST.maskLabel('echo ' + escUnderscore('zzq_A1b2C3d4E5f6G7h8'), 'run', { ...mask, cmd: (s: string) => s.replace(/echo zzq_\w+/, 'echo [redacted]') }), '', 'the unescaped copy still holding a secret gives an empty label (fail closed)');
+    // round 7 of PR 1721: when the label as before PR 1721 is '' (this context-only mask leaves the unescaped copy holding the token), the label is '' here too
+    eq(ST.maskLabel('echo ' + E, 'run', { ...mask, cmd: (s: string) => s.replace(/echo ghp_\w+/, 'echo [redacted]') }), '', 'an escaped token a context-only mask hides gives an empty label, as before PR 1721');
     eq(ST.maskLabel('echo ' + E, 'run', { ...mask, cmd: () => '' }), '', 'a mask that gives nothing: empty label');
     // an environment secret is hidden as `[redacted:NAME]` (the activity log's redact): the marker count must read that form too (invented value)
     const ENV = { MY_API_KEY: 'zq7_Fake_Value_9x8w7v6u5' }, EV = escUnderscore(ENV.MY_API_KEY);
