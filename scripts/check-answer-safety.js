@@ -12,9 +12,24 @@
  *     DURBAR_DRIVER=$PWD/scripts/check-answer-safety.js xvfb-run -a npx electron . --no-sandbox
  *
  * Also in `npm run check:ui` (scripts/ui-suite.js).
+ *
+ * Issue 1770 (spec 052 T346): when the FR-210 (B) limit step reads a wrong label list, its assertion message also carries the bar's hidden flag, its labels one
+ * painted frame later, its outerHTML and the pending request cards, masked by dist/shared/redact.js and bounded (withheld when that file does not load).
+ *   ANSWER_SAFETY_MUTANT=emptybar   the bar's buttons are replaced by a span holding a token-shaped string once the bar shows: must fail at
+ *                                   `only "Show in chat"` with the diagnostic printed and the token masked (else: `the 1770 diagnostic did not print`)
+ *   ANSWER_SAFETY_MUTANT=noredact   the same with redact.js not loaded: the HTML is withheld, so it must fail at `the 1770 diagnostic did not print`
  */
+const path = require('path');
 const assert = require('assert');
 const { helpers, jsLiteral } = require('./driver-helpers');
+
+const MUTANT = process.env.ANSWER_SAFETY_MUTANT || '';
+const PLANTED = 'ghp_' + 'Q1w2E3r4T5y6U7i8O9p0A1s2D3f4G5h6J7k8';
+let redactLib = null;
+const EMPTY = MUTANT === 'emptybar' || MUTANT === 'noredact';
+if (MUTANT !== 'noredact') { try { redactLib = require(path.join(__dirname, '..', 'dist', 'shared', 'redact.js')); } catch { redactLib = null; } }
+/* mask first, then cut (constitution III); null when redact.js did not load, so the caller withholds the text (fail closed) */
+const masked = (s, max) => (redactLib && typeof redactLib.redact === 'function' && typeof redactLib.cut === 'function' ? redactLib.cut(redactLib.redact(String(s)), max) : null);
 
 module.exports = async (ctx) => {
   const H = helpers(ctx);
@@ -158,7 +173,22 @@ module.exports = async (ctx) => {
     await limit('lb-' + w);
     await js(`(()=>{const c=document.getElementById('chat');if(!document.getElementById('fillerX')){const f=document.createElement('div');f.id='fillerX';f.style.height='4000px';f.style.flex='none';c.prepend(f);}c.scrollTop=0;c.dispatchEvent(new Event('scroll'));})()`);
     assert.ok(await until(`!document.getElementById('answerBar').hidden`, 5000), `${w}: the bar shows for the limit`);
-    assert.deepStrictEqual(await barLabels(), ['Show in chat'], `${w}: only "Show in chat" ${jsLiteral(await barLabels())}`);
+    if (EMPTY) await js(`(()=>{const b=document.getElementById('answerBar');b.querySelectorAll('button').forEach(x=>x.remove());const s=document.createElement('span');s.className='mut-1770';s.textContent=${jsLiteral(PLANTED)};b.append(s);return 1})()`);
+    const limitLabels = await barLabels();
+    let diag = '';
+    if (JSON.stringify(limitLabels) !== JSON.stringify(['Show in chat'])) {
+      /* issue 1770: the state at the failed read, for the next time it happens; the assertion below is the same first read as before */
+      const st = await js(`(async()=>{const b=document.getElementById('answerBar');const now={hidden:b?b.hidden:null,html:b?b.outerHTML:'no #answerBar'};
+        await new Promise(r=>{const t=setTimeout(r,250);requestAnimationFrame(()=>{clearTimeout(t);r()})});
+        const cards=[...document.querySelectorAll('#chat .note.perm, #chat .note.limit, #chat .note.question, #chat .note.plan')];
+        return Object.assign(now,{later:b?[...b.querySelectorAll('button')].map(x=>x.textContent):[],n:cards.length,
+          cards:cards.slice(0,8).map(c=>({cls:String(c.className),data:Object.entries(c.dataset).map(([k,v])=>k+'='+v).join(' '),text:(c.textContent||'').replace(/\\s+/g,' ').trim()}))})})()`);
+      const html = masked(st.html, 1500);
+      const cards = st.cards.map((c) => { const t = masked(c.data + ' | ' + c.text, 160); return c.cls + (t === null ? ' [text withheld: redact.js did not load]' : ' ' + t); });
+      diag = ` [1770 diagnostic] bar hidden=${st.hidden}; labels a frame later ${JSON.stringify(st.later.map((x) => masked(x, 40)))}; bar ${html === null ? '[html withheld: redact.js did not load]' : html}; cards (${st.n}): ${cards.length ? cards.join(' || ') : 'none'}`;
+      if (EMPTY) assert.ok(diag.includes('id="answerBar"') && /note[^|]*limit/.test(diag) && !diag.includes(PLANTED), `${w}: the 1770 diagnostic did not print (or printed the planted token): ${diag.split(PLANTED).join('<planted>')}`);
+    }
+    assert.deepStrictEqual(limitLabels, ['Show in chat'], `${w}: only "Show in chat" ${jsLiteral(limitLabels)}${diag}`);
     assert.strictEqual(await js(`!!document.querySelector('#answerBar input')`), false, `${w}: no field in the bar`);
 
     // ---- FR-211 (C): a held Enter in the message box sends nothing; one Enter sends the draft ----
