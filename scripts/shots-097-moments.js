@@ -431,6 +431,8 @@ module.exports = async (ctx) => {
     if (run('coffee')) {
       await H.load({ w, h, query: q(world, { simbreak: '600' }), ready: REAL, settle: false });
       await must(`(window.__durbarSimUi.agents().find(a=>a.name==='Tomas')||{}).paused||[...document.querySelectorAll('#stage .ro-plate')].some(p=>/Tomas/.test(p.textContent)&&/Coffee/i.test(p.textContent))`, 'Tomas on a coffee break', 30000);
+      /* simbreak also sends Rosa to the corner 1.5 s after the load (sim.ts, spec 068 FR-017): the read waits until her break is drawn (a slow page draws it late: issue 1758), so it always sees the settled scene of both */
+      await must(`['Tomas','Rosa'].every(n=>[...document.querySelectorAll('#stage .ro-chip[data-coffeeid]')].some(c=>(c.getAttribute('aria-label')||'').startsWith(n+' ')))`, "Rosa's simulated break drawn at the corner beside Tomas's", 30000);
       if (process.env.MOMENTS_FONT) { await js(`(()=>{const s=document.createElement('style');s.textContent='#stage .ro *{font-family:'+${jsLiteral(process.env.MOMENTS_FONT)}+' !important}';document.head.appendChild(s);window.__durbarSimUi.crew.renderAll();})()`); await H.until(PICS, 10000); } /* a developer aid: another font's widths (CI's Linux fonts are wider) */
       const cf = await js(`(()=>{const p=[...document.querySelectorAll('#stage .ro-plate')].find(p=>/Tomas/.test(p.textContent));return {plate:p.textContent,label:p.getAttribute('aria-label'),title:p.getAttribute('title'),state:p.dataset.state,away:[...document.querySelectorAll('#stage .ro-away')].map(e=>e.textContent),
         chips:[...document.querySelectorAll('#stage .ro-chip')].filter(c=>c.dataset.coffeeid).map(c=>[c.textContent,c.getAttribute('aria-label')])}})()`);
@@ -442,8 +444,9 @@ module.exports = async (ctx) => {
       /* the arcade's ticket is a dark card with a neon edge (102 FR-264, owner 2026-11-03): its own colour is the edge and the words, not the paper */
       const NOTE_PROP = world === 'retro' ? 'borderTopColor' : 'backgroundColor';
       assert.ok(await js(`getComputedStyle(document.querySelector('#stage .ro-away[data-place="coffee"]'))[${jsLiteral(NOTE_PROP)}]`) !== await js(`getComputedStyle(document.querySelector('#stage .ro-away:not([data-place="coffee"])')||document.body)[${jsLiteral(NOTE_PROP)}]`), `${tag}: the coffee post-it has its own colour`);
-      assert.strictEqual(cf.chips.length, 1, `${tag}: only the agent on a coffee break stands at the corner (FR-128): ${JSON.stringify(cf.chips)}`);
-      assert.ok(/^Tomas \(until .* back in \d+ min\)\. Open the chat\.$/.test(cf.chips[0][1]), `${tag}: the corner chip's name: ${cf.chips[0][1]}`);
+      assert.deepStrictEqual(cf.chips.map((c) => c[1].split(' ')[0]).sort(), ['Rosa', 'Tomas'], `${tag}: only the agents on a coffee break (Tomas and Rosa) stand at the corner (FR-128): ${JSON.stringify(cf.chips)}`);
+      const tomasChip = cf.chips.find((c) => c[1].startsWith('Tomas '));
+      assert.ok(/^Tomas \(until .* back in \d+ min\)\. Open the chat\.$/.test(tomasChip[1]), `${tag}: the corner chip's name: ${tomasChip[1]}`);
       await shot(world, 'coffee', w, h);
       await H.load({ w, h, query: q(world), ready: REAL, settle: false });
       await must(PICS, 'the pictures');
