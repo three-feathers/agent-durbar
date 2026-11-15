@@ -1,0 +1,1 @@
+- **The Retro arcade's first-run screen has its hall** (spec 102 FR-352, T206): the welcome card now stands in a drawn night arcade (rows of cabinets with their screens lit, light on the floor) instead of the plain dark page. The picture is drawn in code, 20 KB, no AI credits. Flat and the Photo office are unchanged.

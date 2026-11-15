@@ -90,6 +90,11 @@ html[data-ui="retro"] .btn.primary:not(.warn,.danger,:disabled,[aria-disabled=tr
 html[data-ui]:not([data-ui="clean"]) .btn.primary.danger:not(:disabled,[aria-disabled=true]){background:var(--red-ink);border-color:transparent;color:var(--surface)}
 html[data-ui]:not([data-ui="clean"]) .btn.primary.danger:not(:disabled,[aria-disabled=true]):hover{background:color-mix(in srgb,var(--red-ink) 86%,var(--red-hover,var(--ink)))}
 
+/* spec 052 FR-053, FR-076 (issue 1570): the same cascade took two more looks from styles.css: the warn button (amber fill, `.btn.primary.warn`) and the soft red fill of the plain danger button on hover (`.btn.danger:hover`, a non-primary one). Each is restored after the themed .btn rule, with the same tokens as styles.css (a theme that sets them keeps its own); disabled stays muted */
+html[data-ui]:not([data-ui="clean"]) .btn.primary.warn:not(:disabled,[aria-disabled=true]){background:var(--warn-bg);border-color:var(--tone-warn-line);color:var(--amber-ink)}
+html[data-ui]:not([data-ui="clean"]) .btn.primary.warn:not(:disabled,[aria-disabled=true]):hover{background:var(--tone-warn-hover)}
+html[data-ui]:not([data-ui="clean"]) .btn.danger:not(.primary,:disabled,[aria-disabled=true]):hover{background:var(--tone-bad-soft);border-color:var(--tone-bad-line);color:var(--tone-bad-ink)}
+
 /* ---------- spec 052 FR-054: a period texture on the rooms, art only (2-4%).
    Gradients and inline SVG only; the room's colour and every size stay; text sits on its own surface above it. ---------- */
 html[data-ui="retro"] .stage .room{background-image:repeating-conic-gradient(rgba(17,17,34,.035) 0 25%,transparent 0 50%);background-size:2px 2px}
