@@ -2440,18 +2440,28 @@ export function maskSplitTokens(text: unknown): string {
 }
 /** How far on each side of a cut `splitSafeCut` reads: more than a token plus the longest piece of `SPLIT_AT` or `LINE_BREAKS` (about 324 characters). */
 const CUT_NEAR = 512;
+/** How far past `CUT_NEAR` `splitSafeCut` follows a run to its end; a longer run fails closed. */
+const CUT_RUN_MAX = 16384;
 /** The gap `breakSpans` leaves between the two sides of a line break: exactly one `LINE_BREAKS` piece. */
 const BREAK_GAP = new RegExp(`^(?:${LINE_BREAKS.source})$`);
 /**
  * Spec 012 FR-182 (review of PR 1721, round 10): where the desk's bounded window may end. `cut` moved to the start of any split span (`splitSpans`: a token
  * joined across a line break, a mark, a tag, a comment or a hidden character) that crosses it, read in the text within `CUT_NEAR` characters on each side,
- * so a split token is whole in the window or not in it at all. The spans are merged first, so one look finds the start. Linear: at most 2 x CUT_NEAR + 16
- * characters of split work (counted by `_splitWorkForTest`). Throws on a bad argument (the desk then fails closed).
+ * so a split token is whole in the window or not in it at all. The spans are merged first, so one look finds the start. The read takes whole runs at
+ * both ends (round 11). Linear: at most cut + CUT_NEAR + 16 + CUT_RUN_MAX characters of split work (counted by `_splitWorkForTest`), about
+ * 2 x CUT_NEAR on text with blanks. Throws on a bad argument (the desk then fails closed).
  */
 export function splitSafeCut(text: string, cut: number): number {
   if (typeof text !== 'string' || !Number.isInteger(cut) || cut < 0 || cut > text.length) throw new Error('splitSafeCut');
-  const lo = Math.max(0, cut - CUT_NEAR);
-  const s = text.slice(lo, Math.min(text.length, cut + CUT_NEAR + 16));
+  // round 11: never read a token from its middle: from the start of the run (no white space) holding cut - CUT_NEAR, to the end of the run holding
+  // cut + CUT_NEAR + 16 (a token can be longer than CUT_NEAR); the right end capped at CUT_RUN_MAX more, past which the cut fails closed to `lo`
+  let lo = Math.max(0, cut - CUT_NEAR);
+  while (lo > 0 && !/\s/.test(text[lo - 1])) lo--;
+  let hi = Math.min(text.length, cut + CUT_NEAR + 16);
+  const cap = Math.min(text.length, hi + CUT_RUN_MAX);
+  while (hi < cap && !/\s/.test(text[hi])) hi++;
+  if (hi < text.length && hi === cap && !/\s/.test(text[hi])) return lo;
+  const s = text.slice(lo, hi);
   if (!SPLIT_GATE.test(s)) return cut;
   splitWork += s.length;
   let written: Array<[number, number]> | undefined;

@@ -2132,8 +2132,35 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
         _splitWorkForTest();
         ST._deskWindowForTest(t);
         const steps = ST._deskWindowStepsForTest(), work = _splitWorkForTest();
-        assert.ok(steps <= M && work <= 2 * 512 + 16, `#1613 round 10: the window's walk back is linear (${steps} steps, ${work} characters of split work)`);
+        // round 11: the read takes whole runs at both ends: at most cut + 528 + 16,384 characters, about 2 x 512 on text with blanks
+        assert.ok(steps <= M && work <= M + 528 + 16384 && (!/^(?:a |see )/.test(t) || work <= 2 * 512 + 16 + 160), `#1613 round 10: the window's walk back is linear (${steps} steps, ${work} characters of split work)`);
       }
+    }
+    // round 11: a token longer than the 512-character neighbourhood, split near the cut, is read from its start: whole in the window or not in it
+    {
+      const al = (n: number, salt: number) => Array.from({ length: n }, (_, i) => B[(i * 7 + salt) % B.length]).join('');
+      const jwt = 'eyJhbGciOiJIUzI1NiJ9.' + al(900, 1) + '.' + al(44, 3);
+      const gh = 'ghp_' + al(962, 5);
+      let checked = 0;
+      for (const tok of [jwt, gh])
+        for (const brk of ['\n', ' ', '\t', ' '])
+          for (const p of [266, 700]) {
+            const split = tok.slice(0, p) + brk + tok.slice(p);
+            const frag = tok.slice(p - 20, p);
+            if (tok === jwt && brk === '\n') assert.ok(!red('see ' + split + ' now').includes(frag), `#1613 round 11: the split step hides a long JWT split by a line break at ${p}`);
+            for (let d = -20; d < 20; d++) {
+              const p0 = M - p - d; // the token starts here; the bound lies d characters after the break
+              const lead = ('x '.repeat(p0)).slice(0, p0 - 1) + ' ';
+              const t = lead + split + ' ' + 'tail '.repeat(300);
+              const w = ST._deskWindowForTest(t);
+              const hides = !maskSplitTokens(t.slice(p0 - 1024, p0 + split.length + 1024)).includes(frag);
+              if (hides) checked++;
+              assert.ok(t.startsWith(w) && (!hides || !w.includes(frag) || w.includes(split)), `#1613 round 11: a ${tok.slice(0, 4)} token of ${tok.length} characters split by ${JSON.stringify(brk)} at ${p}, the bound ${d} after the break, is whole in the window or not in it (${w.length})`);
+            }
+          }
+      assert.ok(checked >= 40, `#1613 round 11: the long-token cases the split step hides are checked (${checked})`);
+      // a run past the right cap cannot be read whole: the cut fails closed to the start of the run that holds cut - 512
+      assert.strictEqual(ST._deskWindowForTest('x '.repeat(8190) + 'q'.repeat(40000)).length, M - 4 - 512, '#1613 round 11: a run longer than the cap past the cut fails closed');
     }
     // round 8: a label with no split token and no hidden character reads once, as before PR 1721 (one call of the mask handed in)
     for (const lab of ['echo hello world', 'echo ' + GH, 'ls -la /tmp']) {
