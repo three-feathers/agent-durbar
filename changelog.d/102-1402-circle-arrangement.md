@@ -1,0 +1,1 @@
+- **Spec 102: the `circle` arrangement exists in the layout engine** (T165, issue #1402): two-desk-wide sides, measured at 15 agents (31.6 px faces at 1440x900, 27.5 px at 1280x800); nothing draws or uses it yet, so no change for users.
