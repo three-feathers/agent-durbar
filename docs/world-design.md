@@ -43,6 +43,7 @@ Be specific without being a cliche: no tourist symbols, stereotypes, or copied l
 
 - **Standing means standing on the floor.** Feet on the floor plane, with a real contact shadow. Check it at every size.
 - **Visitors face what they are using** and are drawn at a readable size. They may stand in front of windows and walls.
+- **A set says which way its standing pictures are drawn** (`facing` in `set.json`, absent means left, spec 097 FR-191, 2026-11-14, #1743): the lobby works out the side a visitor must face from where it stands against its fixture and mirrors the picture (and its foot centre) when the set was drawn the other way. Look at the real pixels of a new set, not at the meta: the Retro pixel people face right and said left, so the arcade's visitors turned their backs on the fixtures until a driver read the pictures' side (`check-097-lobby-facing`).
 - **Backs are welcome.** A person seen from behind shows their screen best. Faces matter, but not always.
 - **Seats are for sitting.** A body sits in its seat, with no furniture across a torso, no cut hips between table legs, no chair cut off at the edge. Check every person and every pose: one good crop proves nothing about the others.
 - **The seat can follow the state:** working at a table, relaxing on a lounger.
