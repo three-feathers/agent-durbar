@@ -8,6 +8,7 @@
  */
 'use strict';
 const fs = require('fs');
+const { buildProblem } = require('./ensure-electron'); // spec 008 FR-211: one shared build check
 const os = require('os');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
@@ -268,7 +269,8 @@ function writeRecord(file, record) {
 }
 
 async function recordAll(opts) {
-  if (!fs.existsSync(path.join(ROOT, 'dist', 'renderer', 'index.html'))) { console.error('dist/ missing: run npm run build first'); return 2; }
+  const noBuild = buildProblem();
+  if (noBuild) { console.error(noBuild); return 2; }
   const electron = require('electron');
   const work = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-perf-rec-'));
   try {

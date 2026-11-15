@@ -111,6 +111,9 @@ module.exports = async (ctx) => {
 
       // ---- every entry, clicked in turn, shows its own heading ----
       for (let i = 0; i < n; i++) {
+        /* the list is its own scroller (max-height, overflow-y auto): with enough sections the last entry sits below its box, where a click lands on the page
+           behind it. Scroll the list to the entry first, as a wheel would (23 entries at 1280x800, spec 111 review of 1661). */
+        await js(`(()=>{const n=document.getElementById('scrNav'),b=n.querySelector('button[data-i="${i}"]'),r=n.getBoundingClientRect(),c=b.getBoundingClientRect();if(c.top<r.top||c.bottom>r.bottom)n.scrollTop+=c.top<r.top?c.top-r.top-8:c.bottom-r.bottom+8;})();0`);
         await mclick(`#scrNav button[data-i="${i}"]`);
         await ok(`document.querySelectorAll('#scrNav [aria-current]').length===1&&document.querySelector('#scrNav [aria-current]').dataset.i==='${i}'`, `${tag}: entry ${i} is current after its click`);
         ht = await headTop(i);
