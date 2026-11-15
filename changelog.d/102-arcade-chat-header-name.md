@@ -1,1 +1,0 @@
-- **No black block behind the name in the Retro arcade's chat** (spec 102, issue #1429): the name in the chat header sat on a black rectangle that did not match the dark panel. It now shows in the same yellow on the panel's own colour.

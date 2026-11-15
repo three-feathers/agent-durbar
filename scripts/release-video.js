@@ -496,6 +496,8 @@ const SCENES = {
  * A scene's `refs` say which spec and FR numbers it shows: `{ spec: '097', fr: [246, 249] }` (no `fr`: any change to that spec). Without
  * --scenes the clip gets the scenes named by a fragment's `Scene:` field and the scenes whose refs a bullet of the release names, between
  * the title and end cards; none found is an error that asks for --scenes (never a stale list). */
+const AUTO_MIN = 3;                  // feature scenes a default clip is filled up to (spec 008 FR-218, issue #1790: one scene gave 16.8 s, under LEN_MIN)
+const FILL_SCENES = ['needsyou', 'signin', 'lounge']; // the standing tour that fills a short default clip, in this order (12.6 s, 7 s, 10.5 s measured)
 const AUTO_MAX = 4;                  // feature scenes in a default clip, so its length stays inside LEN_MAX and its GIF inside GIF_MAX (issue #1305: Real office scenes are photos, about 1-2.4 MB each at 640 px and 128 colours; five of them did not fit)
 /** The (lo, hi) FR numbers a text names for `spec`: "(spec 097 FR-246..FR-249, FR-236)" gives [[246,249],[236,236]]; [] when the spec is named without FR numbers, null when it is not named. */
 function frsNamed(text, spec) {
@@ -526,6 +528,10 @@ function chooseScenes({ sceneFields = [], bullets = [] }, scenes = SCENES) {
   const byRef = sceneIdsFor(bullets, scenes).filter((id) => !named.includes(id));
   const feature = [...named, ...byRef].slice(0, AUTO_MAX);
   if (!feature.length) throw new Error('no scene shows this release (no fragment has a Scene: field and no bullet names a scene\'s spec and FR); pass --scenes <ids> (see --list)');
+  for (const id of FILL_SCENES) { // FR-218: the release's own scenes come first; a clip with one or two is filled up so it stays over the length floor
+    if (feature.length >= AUTO_MIN) break;
+    if (!feature.includes(id) && Object.prototype.hasOwnProperty.call(scenes, id)) feature.push(id);
+  }
   return ['intro', ...feature, 'outro'];
 }
 /** The bullets and Scene: fields of a release: the pending fragments of the checkout, and the version's section of CHANGELOG.md once folded. */
@@ -776,7 +782,10 @@ async function main(argv = process.argv.slice(2), deps = {}) {
   try {
     console.log(`release-video: ${a.version}, scenes ${a.scenes.join(', ')}, frames in ${frames}`);
     const runOne = deps.runOne || require('./ui-suite').runOne;
-    const r = await runOne({ name: 'release-video', baseEnv: childEnv(), timeoutMs: RECORD_MS, dpr: 2, env: { DURBAR_SIM_CLOCK: CLOCK, TZ: 'UTC', LANG: 'en_US.UTF-8', RV_VERSION: a.version, RV_SCENES: a.scenes.join(','), RV_COUNT: a.count === null ? '' : String(a.count) } }, frames);
+    const xvfbWas = process.env.UI_SUITE_XVFB;
+    if (process.platform === 'linux') process.env.UI_SUITE_XVFB = '1'; // FR-217: always a virtual screen, so the window is 1440x900 whatever the host's desktop (a clamped window filmed the wrong desks, #1789); `runOne` reads it
+    let r;
+    try { r = await runOne({ name: 'release-video', baseEnv: childEnv(), timeoutMs: RECORD_MS, dpr: 2, env: { DURBAR_SIM_CLOCK: CLOCK, TZ: 'UTC', LANG: 'en_US.UTF-8', RV_VERSION: a.version, RV_SCENES: a.scenes.join(','), RV_COUNT: a.count === null ? '' : String(a.count) } }, frames); } finally { if (xvfbWas === undefined) delete process.env.UI_SUITE_XVFB; else process.env.UI_SUITE_XVFB = xvfbWas; }
     if (!r.ok) throw new Error(`the recording failed (${r.why || 'exit ' + r.code}):\n${r.log.split(/\r?\n/).filter((l) => l.trim()).slice(-20).join('\n')}`);
     const shot = JSON.parse(fs.readFileSync(path.join(frames, 'frames.json'), 'utf8'));
     fs.writeFileSync(path.join(frames, 'list.ffconcat'), concatList(shot.frames));
@@ -890,6 +899,8 @@ async function driver(ctx) {
     async reset(query = {}, o = {}) {
       cam = FULL; zoomStill = false;
       await H.load({ w: W, h: H_, ready: o.ready || 'fit', query, settle: o.ready ? false : undefined }); // `ready`: a page expression for a world whose desks are not `.desk` cards (Real office)
+      const win = await H.js('[innerWidth,innerHeight]'); // FR-217: a window the screen clamped would be stretched into the frame and the camera would point at the wrong place
+      if (!Array.isArray(win) || Math.abs(win[0] - W) > 2 || Math.abs(win[1] - H_) > 2) throw new Error(`the app window is ${win && win[0]}x${win && win[1]} CSS px, not ${W}x${H_} (the screen is too small?); no clip is made`);
       if (!o.ready) await H.office(query.simfloors === '1' ? 1 : 12);
       else await H.settle();
       H.wc().sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
@@ -1038,5 +1049,5 @@ async function driver(ctx) {
 }
 
 module.exports = driver;
-Object.assign(module.exports, { sceneTitle, ZOOM_MAX, ZOOM_FPS, ZOOM_SECS, FULL, fitCamera, ease, zoomPath, cropRect, stillNames, HOME_PATH_RE, PLATFORM_ADDED, unexpectedEnvKeys, ENV_ALLOW, RECORD_MS, FFMPEG_MS, childEnv, gitEmail, run, W, H_, BAND, FRAME_H, composeFrame, SCENES, AUTO_MAX, frsNamed, refMatches, sceneIdsFor, chooseScenes, releaseSources, stepCounter, VERSION_RE, FPS, GIF_MAX, MP4_MAX, parseArgs, fill, forbiddenValues, privacyProblems, concatList, mp4Args, gifArgs, gifTries, lengthOk, main });
+Object.assign(module.exports, { sceneTitle, ZOOM_MAX, ZOOM_FPS, ZOOM_SECS, FULL, fitCamera, ease, zoomPath, cropRect, stillNames, HOME_PATH_RE, PLATFORM_ADDED, unexpectedEnvKeys, ENV_ALLOW, RECORD_MS, FFMPEG_MS, childEnv, gitEmail, run, W, H_, BAND, FRAME_H, composeFrame, SCENES, AUTO_MAX, AUTO_MIN, FILL_SCENES, frsNamed, refMatches, sceneIdsFor, chooseScenes, releaseSources, stepCounter, VERSION_RE, FPS, GIF_MAX, MP4_MAX, parseArgs, fill, forbiddenValues, privacyProblems, concatList, mp4Args, gifArgs, gifTries, lengthOk, main });
 if (require.main === module) main().catch((e) => { console.error('release-video:', e.message); process.exitCode = 1; });
