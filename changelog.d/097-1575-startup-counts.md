@@ -1,0 +1,1 @@
+- **Start-up layout searches measured** (spec 097 FR-378, issue #1575): the check of the real app now counts the layout searches at start-up and limits them (one search, 12 probes at 15 agents, 38 at 40). A check change only; no change for users.
