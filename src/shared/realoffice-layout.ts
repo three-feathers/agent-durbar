@@ -443,6 +443,9 @@ export const signWidth = (name: string, path: string, counts: number, zw: number
 /** FR-356 (bug #1392): the narrowest whole sign: its name cut to 3 letters, no path, the counts, the cost (`counts` counts it, as `signWidth`), + and menu. Measured 183 px with two
  *  counts and a cost (the cave at 1280x800, 2026-11-09), plus 7 px for a wider font (#1079). A room narrower than this takes the short sign (FR-256's: no cost, no path). */
 export const signMin = (counts: number): number => 100 + 30 * counts;
+/** Spec 102 FR-231 (reviewer's finding on #1764): the narrowest sign that keeps its + and folder-actions buttons inside it and reachable: the short form (name cut to 3 letters, counts, + and menu). Measured in the Cave at 1440x900: with
+ *  three counts the buttons are clipped from 150 px down, the sign `infra-notes` needs 136 px with two; 77 + 30 per count (7 px for a wider font, as `signMin`). A room never gives a sign less. */
+export const signShortMin = (counts: number): number => 77 + 30 * counts;
 
 /** FR-019: the whole office: pure, no DOM. `signs` gives each folder's sign text lengths (name, path, number of count chips). */
 export function realLayout(model: RealModel, viewport: { w: number; h: number }, meta: RealMeta, signs?: Record<string, { name: string; path: string; counts: number }>): Layout {

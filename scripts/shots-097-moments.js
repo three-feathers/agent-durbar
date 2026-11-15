@@ -267,6 +267,19 @@ module.exports = async (ctx) => {
       await must(`!!document.querySelector('#chat .note.elicit')`, 'the card in the chat');
       assert.ok(await js(`document.getElementById('chat').querySelector('.note.elicit').textContent`).then((t) => /An MCP server asks for input/.test(t)), `${tag}: the chat holds the flat card`);
     }
+    // ---- spec 102 T174 (review finding on #1764, Changes 2026-11-15): every folder sign's + and folder-actions buttons are inside the sign and the topmost thing at their centre (not clipped by the circle's narrow rooms) ----
+    if (run('signreach') && (world === 'cave' || world === 'photo')) {
+      const READ = `(()=>{const R=e=>e.getBoundingClientRect(),out=[];for(const g of document.querySelectorAll('#stage .ro-sign:not(.ro-stag)')){const q=R(g);for(const b of g.querySelectorAll('[data-newsess],[data-foldermenu]')){const r=R(b),e=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);out.push({sign:g.textContent.trim().slice(0,14),w:Math.round(q.width),ok:r.width>0&&r.left>=q.left-0.5&&r.right<=q.right+0.5&&r.top>=q.top-0.5&&r.bottom<=q.bottom+0.5&&!!e&&(e===b||b.contains(e))})}}return out})()`;
+      for (const n of ['15', '8']) {
+        await H.load({ w, h, query: q(world, { sim: n }), ready: REAL, settle: true });
+        const rd = await js(READ);
+        assert.ok(rd.length >= 2, `${tag}: ${n} agents: the signs' buttons were found (${rd.length})`);
+        assert.deepStrictEqual(rd.filter((b) => !b.ok), [], `${tag}: ${n} agents: every sign's + and folder-actions buttons are inside the sign and reachable (elementFromPoint), none clipped`);
+        /* the mutant of this check: a sign cut to 60 px (what the circle's narrow room did) must fail it, so the check can fail */
+        await js(`(()=>{const g=document.querySelector('#stage .ro-sign:not(.ro-stag) [data-newsess]').closest('.ro-sign');g.classList.add('short');g.style.maxWidth='60px'})()`);
+        assert.ok((await js(READ)).some((b) => !b.ok), `${tag}: mutant (a sign cut to 60 px) is caught by the reachability check`);
+      }
+    }
     // ---- T139: reduced motion and forced colours ----
     if (run('emulation')) {
       await emulate([{ name: 'forced-colors', value: 'active' }], async () => {
