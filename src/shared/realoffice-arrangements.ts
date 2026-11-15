@@ -169,14 +169,14 @@ function aisleSeat(meta: RealMeta, a: RealAgent, sx: number, plateY: number, gl:
 }
 
 /** spec 102 delta 2026-11-14 (round 2 of the review of #1741): where the "Resting" tag and its rule go: the first run of free cells (`runs`: row top, left and right edge) where they are clear of every floor mark (`marks`: floor tags and rules) and of the folder signs
- *  (`signRects`) to the right of the run's start; after a floor mark in the way (6 px clear) or in the next run; null when no run has room (the caller then draws no storeys). Pure, exported for its test. */
+ *  (`signRects`: no sign is ever cut for the tag); after a floor mark or a sign in the way (6 px clear) or in the next run; null when no run has room (the caller then draws no storeys). Pure, exported for its test. */
 export function placeResting(runs: ReadonlyArray<{ top: number; x0: number; x1: number }>, marks: ReadonlyArray<Rect>, signRects: ReadonlyArray<Rect>, tw0: number): { r: { top: number; x0: number; x1: number }; tx: number; tw: number } | null {
   const hit = (a: Rect, c: Rect): boolean => a.x < c.x + c.w && c.x < a.x + a.w && a.y < c.y + c.h && c.y < a.y + a.h;
   for (const r of [...runs].sort((p1, p2) => p1.top - p2.top || p1.x0 - p2.x0)) {
     let tx = Math.round(r.x0 + 3);
     for (let n = 0; n < 8; n++) {
-      const tw = Math.min(tw0, r.x1 - tx - 2), box = { x: tx - 4, y: r.top, w: tw + 5, h: AISLE_SIGN_H }, hits = marks.filter((c) => hit(box, c)), sg = signRects.filter((z) => z.x >= r.x0 && hit(box, z) && Math.abs(z.y - r.top) < 1);
-      if (!hits.length && !sg.length && tw >= STOREY_TAG_MIN * 0.6) return { r, tx, tw };
+      const tw = Math.min(tw0, r.x1 - tx - 2), box = { x: tx - 4, y: r.top, w: tw + 5, h: AISLE_SIGN_H }, hits = [...marks.filter((c) => hit(box, c)), ...signRects.filter((z) => hit(box, z) && Math.abs(z.y - r.top) < 1)];
+      if (!hits.length && tw >= STOREY_TAG_MIN * 0.6) return { r, tx, tw };
       if (hits.length) tx = Math.round(Math.max(...hits.map((c) => c.x + c.w)) + 6); else break;
     }
   }
@@ -185,14 +185,14 @@ export function placeResting(runs: ReadonlyArray<{ top: number; x0: number; x1: 
 
 /** `minCells` (internal, spec 097 delta 2026-11-14, issue #1760): the lounge's cell count when the first count's runs could not seat every resting agent; `minPer` (internal, the same in
  *  the building view): each storey's cell count when its seats beside its floor did not all fit */
-export function aislesLayout(model: RealModel, view: { w: number; h: number }, meta: RealMeta, signs?: Record<string, { name: string; path: string; counts: number }>, place: typeof placeResting = placeResting, minCells = 0, minPer: ReadonlyArray<number> = []): Layout {
+export function aislesLayout(model: RealModel, view: { w: number; h: number }, meta: RealMeta, signs?: Record<string, { name: string; path: string; counts: number }>, place: typeof placeResting = placeResting, minCells = 0, minPer: ReadonlyArray<number> = [], noForce = false): Layout {
   const W = Math.max(200, view.w), Ho = Math.max(200, view.h);
   /* FR-248: the lounge's agents leave their cabinets; their seats take cells after the cabinets (below) */
   const sp = splitLounge(model); let lounge = sp.lounge;
   const floorOf = new Map(model.folders.map((f) => [f.id, f.floor] as const));
   const folders = sp.desks.filter((f) => f.agents.length).map((f) => ({ id: f.id, agents: shownDesks(f), floor: floorOf.get(f.id) })); /* FR-345: a saved desk order is kept in the cabinet rows too */
   /* spec 102 delta 2026-11-14 (spec 097 FR-104): a world that draws storeys (`meta.storeys`) puts each floor on rows of its own; `starts` are the folders that begin a storey after the first */
-  let runs = meta.storeys ? storeyRuns(folders) : null, starts: ReadonlySet<number> | undefined = runs ? new Set(runs.slice(1).map((r) => r.from)) : undefined;
+  let runs = meta.storeys ? storeyRuns(folders) : null, starts: ReadonlySet<number> | undefined = runs && !noForce ? new Set(runs.slice(1).map((r) => r.from)) : undefined; /* noForce: the hall again without the forced row break (round 5 of #1741: the break narrowed a sign) */
   /* review of #1741: a resting agent's seat stands at the end of its own floor's folders when that costs the hall nothing (the lounge is put in the building's order, stable: the status order within a floor).
      Otherwise (or when an agent's floor has no folder here) the seats stay in the free cells at the rows' ends, as FR-248 has them, under their own tag "Resting" and a rule: no floor's band holds them */
   const floorOfAgent = new Map(model.folders.flatMap((f) => f.agents.map((a) => [a.id, f.floor] as const)));
@@ -326,7 +326,12 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
   const bands: StoreyBand[] = [];
   /* round 4 of the review of #1741, owner decision 2026-11-14 (the strict rule): a folder sign is exactly as wide as in the hall without floors, never narrower. The tag goes to the first zone of its storey, in reading order, that keeps its sign so and takes
      the whole tag; if no zone of a storey can, the hall is drawn without floors */
-  const flatSign = new Map(zones.map((z) => [z, z.sign.w] as const));
+  /* the strict rule (owner 2026-11-14, round 5 of #1741): every sign is exactly its width in the hall without floors (this layout's own, drawn again without storeys), never narrower and never wider than its room. A forced row break that moved a sign
+     to a narrower place is given up (the floors share rows); if the sign is still narrower, the hall is drawn without floors */
+  const flatL = runs ? aislesLayout(model, view, { ...meta, storeys: false }, signs, place, minCells) : null, zkey = (zs: ZoneBox[], i: number): string => zs[i].id + '#' + zs.slice(0, i).filter((o) => o.id === zs[i].id).length;
+  const flatByKey = new Map(flatL ? flatL.zones.map((z, i) => [zkey(flatL.zones, i), z.sign.w] as const) : []), flatSign = new Map(zones.map((z, i) => [z, flatByKey.get(zkey(zones, i)) ?? z.sign.w] as const));
+  if (runs && zones.some((z) => z.sign.w < flatSign.get(z)! - 0.01)) return forced ? aislesLayout(model, view, meta, signs, place, minCells, minPer, true) : aislesLayout(model, view, { ...meta, storeys: false }, signs, place, minCells);
+  if (runs) for (const z of zones) z.sign.w = flatSign.get(z)!;
   let noRoom = false;
   if (runs) runs.forEach((run, si) => {
     const ids = new Set(folders.slice(run.from, run.to).map((f) => f.id)), zs = zones.filter((z) => ids.has(z.id)).sort((p1, p2) => p1.sign.y - p2.sign.y || p1.box.x - p2.box.x), z0 = zs[0];
@@ -371,14 +376,13 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
     }
     /* spec 097 delta 2026-11-14 (issue #1760): a seat never spans two runs, so runs of the counted cells can hold fewer seats than rest (5 resting in two runs of
        two cells at 1248 px seat 2 + 2): lay the hall out again with one cell more. At most one cell per resting agent, and each cell holds a seat, so it ends.
-       In the building view with seats beside their floors (spec 102 delta 2026-11-14), the floor whose seats did not fit gets the cell (`minPer`, at most one per its resting agent);
-       if none can grow, the hall without floors */
+       In the building view with seats beside their floors (spec 102 delta 2026-11-14), the floor whose seats did not fit gets the cell (`minPer`, at most one per its resting agent); a floor that is short always has a cell to gain, so there is no other way out */
     if (desks.length < lounge.length) {
       if (en) {
         const grow = cellsPer.map((c, si) => ((left.get(si) || 0) > 0 && c < lounge.filter((a) => loungeSt(a) === si).length ? c + 1 : c));
-        return grow.some((c, si) => c !== cellsPer[si]) ? aislesLayout(model, view, meta, signs, place, minCells, grow) : aislesLayout(model, view, { ...meta, storeys: false }, signs, place, minCells);
+        return aislesLayout(model, view, meta, signs, place, minCells, grow, noForce); /* a floor that is short has fewer cells than resting agents (each cell of a run seats at least one), so `grow` always differs and the recursion ends at one cell per agent */
       }
-      if (nCells < lounge.length) return aislesLayout(model, view, meta, signs, place, nCells + 1, minPer);
+      if (nCells < lounge.length) return aislesLayout(model, view, meta, signs, place, nCells + 1, minPer, noForce);
     }
     const x0 = Math.min(...desks.map((d) => d.slot.x)), x1 = Math.max(...desks.map((d) => d.slot.x + d.slot.w)), y0 = Math.min(...desks.map((d) => d.slot.y)), y1 = Math.max(...desks.map((d) => d.slot.y + d.slot.h));
     lay.lounge = { box: { x: x0 - 4, y: y0, w: x1 - x0 + 8, h: y1 - y0 }, desks };
@@ -388,7 +392,6 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
       const at = place(runInfo, floorMarks, zones.map((z) => z.sign), tw0);
       if (!at) return aislesLayout(model, view, { ...meta, storeys: false }, signs, place, minCells);
       const { r: r0, tx, tw } = at;
-      for (const z of zones) if (Math.abs(z.sign.y - r0.top) < 1 && z.sign.x < r0.x0 && z.sign.x + z.sign.w > r0.x0 - 6) { z.sign.w = Math.max(AISLE_SIGN_MIN_W, r0.x0 - 6 - z.sign.x); z.signShort = true; }
       const bx0 = Math.min(...desks.map((d) => d.slot.x), tx), by0 = r0.top, bx1 = Math.max(...desks.map((d) => d.slot.x + d.slot.w), tx + tw), by1 = Math.max(...desks.map((d) => d.slot.y + d.slot.h));
       bands.push({ id: '*rest', name: 'Resting', n: 0, box: { x: bx0, y: by0, w: bx1 - bx0, h: by1 - by0 }, tag: { x: tx, y: r0.top, w: tw, h: AISLE_SIGN_H }, slab: { x: Math.max(0, tx - 3), y: r0.top, w: 2, h: AISLE_SIGN_H } });
     }
