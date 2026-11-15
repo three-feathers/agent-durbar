@@ -496,7 +496,7 @@ async function driver(ctx) {
     const flatFiles = await ctx.js(`performance.getEntriesByType('resource').map(e=>e.name).filter(n=>/realoffice|\\/shared\\/(lights|realoffice-layout)\\.js/.test(n))`);
     total++;
     if (flatFiles.length || (await ctx.js(`!!window.DurbarRealOffice||!!document.querySelector('.ro')`))) { failed++; console.log('FAIL real: flat mode loaded Real office files: ' + flatFiles.join(', ')); }
-    const realCheck = (amb, want, asked, floors) => {
+    const realCheck = (amb, want, asked, floors, mut) => {
       const P = [], ro = document.querySelector('#stage .ro'), L = window.__durbarSimUi.realLayout();
       if (!ro || !L) return { problems: ['no Real office drawn'], info: {} };
       /* T276: a run that asked for the arcade must have drawn it, or it would pass on the Photo office */
@@ -513,11 +513,19 @@ async function driver(ctx) {
       /* spec 097 FR-038 (delta 2026-11-15, T350, issues 1763 and 1759) and FR-104 (T113, review of PR 1746): a sign (every view) and a storey tag keep clear of the dots;  the storey tags of the All floors view, and the thinking dots over a head, which a tag must keep clear of (the dots are measured only against a tag: they stand over a person by design) */
       document.querySelectorAll('#stage .ro-stag').forEach((e) => add('stag', e));
       document.querySelectorAll('#stage .ro-dots').forEach((e) => add('dots', e));
+      let outcome = '';
       if (floors) {
+        /* spec 097 (issue 1810, T352): the strict rule is measurement dependent (the tag's width comes from a canvas in the sign's own font, the sign stays at its flat width, u at most 2 % smaller), so the cave's All floors view is flat on one machine and storeys on another: either is accepted, each with its own checks, and the outcome is reported. Mutants (a test-only edit of the page, OFFICE_MUTANT): cave-tag drops one tag of a storeys outcome, cave-slab adds a slab to a (simulated) flat one, cave-loss (below) takes 2 % off a (simulated) flat face. */
+        /* a wide OFFICE_FONT does not make this Mac draw the flat outcome (the layout measures its own canvas font), so the two flat mutants simulate a flat draw: the storeys and their tags and slabs are taken away before the flat checks run */
+        if (asked === 'cave' && (mut === 'cave-slab' || mut === 'cave-loss') && L.storeys) { L.storeys = null; document.querySelectorAll('#stage .ro-stag, #stage .ro-slab').forEach((e) => e.remove()); }
+        if (asked === 'cave' && mut === 'cave-tag' && L.storeys) { const t = document.querySelector('#stage .ro-stag'); if (t) t.remove(); }
+        if (asked === 'cave' && mut === 'cave-slab' && !L.storeys) { const d = document.createElement('div'); d.className = 'ro-slab'; ro.appendChild(d); }
         const tags = [...document.querySelectorAll('#stage .ro-stag')];
-        /* round 5 of the review of #1746: the strict rule (a sign at its flat width, a whole tag) draws the cave's simulator split as the hall without floors; the cave case asserts exactly that (the data-world read-back above has proved the page drew the cave). Photo and the arcade assert their storeys. */
-        if ((asked || '') === 'cave') { if (L.storeys || tags.length || document.querySelector('#stage .ro-slab')) P.push('the cave\'s All floors view must be the hall without floors (the strict rule), but it drew storeys: ' + (L.storeys ? L.storeys.length : 0) + ' in the layout, ' + tags.length + ' tags'); }
-        else if (!L.storeys || L.storeys.length < 2 || tags.length !== L.storeys.length) P.push('the All floors view did not draw its storeys (' + (L.storeys ? L.storeys.length : 0) + ' in the layout, ' + tags.length + ' tags on screen)');
+        const storeyChecks = () => { if (!L.storeys || L.storeys.length < 2 || tags.length !== L.storeys.length) P.push('the All floors view did not draw its storeys (' + (L.storeys ? L.storeys.length : 0) + ' in the layout, ' + tags.length + ' tags on screen)'); };
+        if ((asked || '') === 'cave') {
+          if (L.storeys) { outcome = 'storeys (' + L.storeys.length + ')'; storeyChecks(); }
+          else { outcome = 'flat'; if (tags.length || document.querySelector('#stage .ro-slab')) P.push('the cave\'s All floors view drew no storeys in its layout but still has ' + tags.length + ' tags or a slab'); }
+        } else storeyChecks();
         tags.forEach((e) => { const b = e.querySelector('b'); if (!b || b.scrollWidth > b.clientWidth + 0.5) P.push('storey tag "' + e.textContent.trim() + '" cuts its name'); }); /* the ellipsis is on the <b>, not on the tag's box */
       }
       document.querySelectorAll('#stage .ro-lplate').forEach((e) => add('placeplate', e));
@@ -578,7 +586,7 @@ async function driver(ctx) {
       const se = document.scrollingElement;
       if (se.scrollWidth > innerWidth + 1 || se.scrollHeight > innerHeight + 1) P.push('the page overflows');
       if (amb != null) ro.style.removeProperty('--ro-amb');
-      return { problems: P, info: { plates: document.querySelectorAll('#stage .ro-plate').length, face: L.faceH, u: L.u, scroll: L.scroll, minFont, minRatio, drafts: document.querySelectorAll('#stage .ro-drafttag.on').length, seats: L.lounge ? L.lounge.desks.length : 0 } };
+      return { problems: P, info: { outcome, storeys: L.storeys ? L.storeys.length : 0, plates: document.querySelectorAll('#stage .ro-plate').length, face: mut === 'cave-loss' && asked === 'cave' && !L.storeys ? L.faceH * 0.98 : L.faceH, u: L.u, scroll: L.scroll, minFont, minRatio, drafts: document.querySelectorAll('#stage .ro-drafttag.on').length, seats: L.lounge ? L.lounge.desks.length : 0 } };
     };
     /* simrooms=1: one folder of 15, split over rows (its sign repeats); simrooms=solo: 15 folders, past the exhaustive search */
     /* spec 097 T113 (FR-104, review of PR 1746): the All floors view in the Real office too (`simfloors=1`, the lift's All): 15 agents over three floors, drawn as storeys; the same checks plus no storey tag over a sign, plate, chip, dots or another tag, none cut.
@@ -629,15 +637,16 @@ async function driver(ctx) {
       if (!(await H.until(`window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()`, 15000))) { total++; failed++; console.log(`FAIL ${tag}: the office did not settle after the drafts were seeded`); continue; }
       await stable(tag + ' with drafts');
       for (const [step, amb] of [['closed', 0.7], ['closed', 1]]) {
-        const res = await ctx.js(`(${realCheck.toString()})(${amb},${jsLiteral(wantWorld)},${jsLiteral(process.env.OFFICE_WORLD || '')},${jsLiteral(!!floors)})`);
+        const res = await ctx.js(`(${realCheck.toString()})(${amb},${jsLiteral(wantWorld)},${jsLiteral(process.env.OFFICE_WORLD || '')},${jsLiteral(!!floors)},${jsLiteral(process.env.OFFICE_MUTANT || '')})`);
         if (amb === 1 && res.info.seats) console.log(`  ${tag}: ${res.info.seats} lounge seat${res.info.seats > 1 ? 's' : ''}, each with its Draft tag measured against its own figure`);
         if (!res.info.drafts) res.problems.push('no Draft tag was in the checked layout');
         total++;
         if (sim === 15 && res.info.scroll) res.problems.push('the office scrolls at the 15-agent scale');
-        if (sim === 15 && !rooms && res.info.face < 30.5) res.problems.push(`desk face ${res.info.face.toFixed(1)}px (ratchet 30.5px, lowered 2026-11-01 for a room that stays still; SC-002 target 40px is a KNOWN GAP)`);
+        const ratchet = res.info.storeys ? 30.5 * (1 - 0.02) : 30.5; /* the rule's 2 % loss (STOREY_U_LOSS) only when storeys are drawn */
+        if (sim === 15 && !rooms && res.info.face < ratchet) res.problems.push(`desk face ${res.info.face.toFixed(1)}px (ratchet ${ratchet.toFixed(1)}px${res.info.storeys ? ' with storeys' : ''}, lowered 2026-11-01 for a room that stays still; SC-002 target 40px is a KNOWN GAP)`);
         if (res.problems.length) { failed++; console.log(`FAIL ${tag} ${step} ambient ${amb}: ${res.problems.slice(0, 12).join('; ')}`); }
         rows.push({ label: `${tag} ${step} ambient ${amb}`, d: 'real', h: '-', rooms: '-', plates: res.info.plates, desks: res.info.plates, stageH: Math.round(res.info.u || 0), floorH: 0, minFont: res.info.minFont, problems: res.problems.length });
-        console.log(`  ${tag}: face ${res.info.face ? res.info.face.toFixed(1) : '?'}px, u ${res.info.u ? res.info.u.toFixed(0) : '?'}, contrast >= ${res.info.minRatio ? res.info.minRatio.toFixed(2) : '?'}`);
+        console.log(`  ${tag}:${res.info.outcome ? ' outcome: ' + res.info.outcome + ',' : ''} face ${res.info.face ? res.info.face.toFixed(1) : '?'}px, u ${res.info.u ? res.info.u.toFixed(0) : '?'}, contrast >= ${res.info.minRatio ? res.info.minRatio.toFixed(2) : '?'}`);
       }
       /* OFFICE_SHOTS only (spec 102 T281): the draft seeding leaves the last plate hovered and focused, and its tooltip covers cabinets in the picture; take the pointer and the focus away first (the checks above are done) */
       if (shotsDir) {
