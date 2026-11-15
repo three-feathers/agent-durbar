@@ -1,0 +1,1 @@
+- Fixed: in the Retro arcade the people standing at the lobby fixtures (Boss, Bank, Library and the rest) now face the fixture they use instead of turning away from it (spec 097 FR-191, issue #1743): the Retro pixel people are drawn facing right, so the lobby mirrors them; the Photo office and the Office people are unchanged.

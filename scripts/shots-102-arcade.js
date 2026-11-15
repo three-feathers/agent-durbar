@@ -78,7 +78,7 @@ const run = async (ctx, reqs) => {
   const MUT = process.env.ARCADE_MUTANT || '';
   /* ARCADE_FONT=wide (test only): the narrow cases run in a font wider than macOS's, so the geometry is not tuned to one font: Verdana where it is installed (macOS, Windows: "Limit reached" 80.5 px bold, 71.6 px regular), else DejaVu Sans (the CI Linux default: 76 px bold). The same driver passes in it with the final CSS; mutant `oldgeometry` (600 weight, 7 px left padding, 20 px right padding) dies in it. */
   const WIDE = process.env.ARCADE_FONT === 'wide', WIDE_CSS = '#stage .ro-plate,#stage .ro-plate *{font-family:Verdana,"DejaVu Sans",sans-serif!important}';
-  let wideChecked = false;
+  let wideChecked = false, fontNamed = false;
   const wideFont = async () => { /* ARCADE_FONT=wide proves nothing if neither font is installed (the page would measure the fallback sans-serif): fail loudly */
     if (!WIDE || wideChecked) return;
     wideChecked = true;
@@ -128,6 +128,10 @@ const run = async (ctx, reqs) => {
       await must(`!document.querySelector('#stage .ro-help .dot.error')&&document.querySelectorAll('#stage .ro-help .dot.waiting').length>0`, 'the helpers\' dots show a waiting one and no error one (' + helper + ')', 8000);
     }
     if (MUT === 'noaria' && urgent !== undefined) await js(`(()=>{for(const m of document.querySelectorAll('#stage .ro-hm'))m.removeAttribute('aria-hidden');})();0`);
+    if (!fontNamed && !WIDE && urgent !== undefined) { /* issue #1626: the CI log names the font the narrow plate's word is drawn in: the stack, the drawn width, and the same word's canvas width in each installed candidate (the nearest is the font; a canvas cannot name the one the page picked, so this is a match, not a lookup) */
+      fontNamed = true;
+      console.log('[102-arcade] narrow plate font', JSON.stringify(await js(`(()=>{const w=document.querySelector('#stage .ro-plate.cab-narrow .ro-wd');if(!w||!w.firstChild)return null;const cs=getComputedStyle(w),r=document.createRange();r.selectNodeContents(w.firstChild);const drawn=+r.getBoundingClientRect().width.toFixed(2),c=document.createElement('canvas').getContext('2d');c.letterSpacing=cs.letterSpacing==='normal'?'0px':cs.letterSpacing;const t=w.firstChild.textContent.trim(),wd=(f)=>{c.font=cs.fontStyle+' '+cs.fontWeight+' '+cs.fontSize+' '+f;return c.measureText(t).width;},o={};for(const n of ['DejaVu Sans','Liberation Sans','Noto Sans','Ubuntu','Segoe UI','Verdana','Arial','Roboto']){if(Math.abs(wd('"'+n+'", monospace')-wd('monospace'))>0.01&&Math.abs(wd('"'+n+'", serif')-wd('serif'))>0.01)o[n]=+wd('"'+n+'"').toFixed(2);}const near=Object.keys(o).sort((a,b)=>Math.abs(o[a]-drawn)-Math.abs(o[b]-drawn))[0]||null;return {stack:cs.fontFamily,size:cs.fontSize,weight:cs.fontWeight,text:t,drawn,installed:o,nearest:near,nearestOff:near?+Math.abs(o[near]-drawn).toFixed(2):null};})()`)));
+    }
     const r = await js(PLATES(nopencil));
     console.log('[102-arcade] plate marks', tag, JSON.stringify(scene), JSON.stringify(r.seen.filter((x) => x.helped)));
     const helped = r.seen.filter((x) => x.helped);
