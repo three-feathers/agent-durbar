@@ -1,0 +1,1 @@
+- **Fixed: the office check accepts either outcome of the cave's All floors rule** (spec 097 FR-104, issue #1810): whether the strict rule draws storeys depends on the font width of the machine, so the check now runs the storey checks when storeys are drawn and the flat checks when not, and says which. Check only, no change to the office.
