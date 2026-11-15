@@ -6,7 +6,7 @@ import * as path from 'path';
 import { placeBox, portraitCrop, PORTRAIT_SIDE, slipAvoid, NOTE_PAPER, NOTE_PAPER_DEFAULT, NOTE_INK, notePaper, screenFit, screenFor, personMotion, zoomRect, realLayout, lobbyWidths, sortDesks, deskOrder, deskBase, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
   type RealModel, type RealMeta, type RealAgent, type RealState, type Rect, type Layout } from '../src/shared/realoffice-layout';
 import { signMin, lobbyBand, lobbyScale, visitorScale, HEAD, HEAD_FACE, HELP_FACE_MIN, HELP_GAP, helpH, helpCols, helpShown, headCrop, helperPerson } from '../src/shared/realoffice-layout';
-import { DOTS_BOX } from '../src/shared/realoffice-layout';
+import { DOTS_BOX, DOTS_CLEAR } from '../src/shared/realoffice-layout';
 import { layoutFor } from '../src/shared/realoffice-arrangements';
 import { KID_U, KID_CAP, BIG_MAX, kidScale, kidBox, kidPose, kidHeadCrop, kidOf, helperHead, type KidMeta, type DeskBox } from '../src/shared/realoffice-layout';
 import { createHash } from 'crypto';
@@ -174,12 +174,14 @@ for (const [k, v] of Object.entries(faces)) assert.ok(v >= FACE_FLOOR - 1e-9, `S
   const ROOM = [[1408, 797], [1248, 697]] as const; /* the measured floors of 1440x900 and 1280x800 */
   const ST: RealState[] = ['working', 'thinking', 'waiting', 'limit', 'error', 'done', 'idle'];
   const dotsBox = (d: DeskBox): Rect => ({ x: d.dots!.x, y: d.dots!.y, w: DOTS_BOX.w, h: DOTS_BOX.h });
-  const problems = (L: Layout): { sign: string[]; glass: string[] } => {
-    const sign: string[] = [], glass: string[] = [];
+  const problems = (L: Layout): { sign: string[]; glass: string[]; clear: string[] } => {
+    const sign: string[] = [], glass: string[] = [], clear: string[] = [];
     const desks = L.zones.flatMap((z) => z.desks).filter((d) => d.dots);
     for (const z of L.zones) for (const d of desks) if (inter(z.sign, dotsBox(d))) sign.push(`the sign of ${z.id} (bottom ${(z.sign.y + z.sign.h).toFixed(1)}) over the dots of ${d.id} (top ${d.dots!.y.toFixed(1)})`);
+    /* the 3 px the spec promises (DOTS_CLEAR below the strip, whose bottom is 1 px under a sign's): dots under a sign start at least 3 px below its lower edge */
+    for (const z of L.zones) for (const d of desks) { const b = dotsBox(d); if (z.sign.x < b.x + b.w && b.x < z.sign.x + z.sign.w && z.sign.y <= b.y && b.y < z.sign.y + z.sign.h + 3 - 1e-6) clear.push(`the dots of ${d.id} start ${(b.y - z.sign.y - z.sign.h).toFixed(1)} px under the sign of ${z.id}`); }
     if (!L.big) for (const d of desks) if (inter(d.glass, dotsBox(d))) glass.push(`the dots of ${d.id} over its screen's glass`);
-    return { sign, glass };
+    return { sign, glass, clear };
   };
   /* the reproduced case (simulator, `simrooms=solo`, cave, both sizes, main at 773dadaeb): one folder per agent, the second agent thinking; its sign is the zone's whole width, so it cannot step aside */
   const CM = { ...readJson('worlds', 'cave', 'world.json'), ...readJson('sets', 'prehistoric', 'set.json') } as unknown as RealMeta;
@@ -190,12 +192,23 @@ for (const [k, v] of Object.entries(faces)) assert.ok(v >= FACE_FLOOR - 1e-9, `S
     const p = problems(L);
     assert.deepStrictEqual(p.sign, [], `cave, 15 folders of one at ${W}: no sign over the thinking dots (FR-038)`);
     assert.deepStrictEqual(p.glass, [], `cave, 15 folders of one at ${W}: the dots end before the screen's glass (FR-038)`);
+    assert.deepStrictEqual(p.clear, [], `cave, 15 folders of one at ${W}: the dots start 3 px clear of the sign's lower edge (FR-038, DOTS_CLEAR)`);
+  }
+  /* the big level (BIG_MAX agents or fewer): the person sits in front of the big screen, the dots stay where they were, 0.2 u right of the head's centre and 0.12 u below its top; the strip clamp does not reach them and the glass bound does not apply */
+  for (const [world, set] of [['photo', 'office'], ['cave', 'prehistoric']] as const) for (const [W, H] of ROOM) {
+    const WM = { ...readJson('worlds', world, 'world.json'), ...readJson('sets', set, 'set.json') } as unknown as RealMeta, WP = Object.keys(WM.seat).sort();
+    const m: RealModel = { folders: [{ id: 'f0', agents: [0, 1, 2].map((i) => ({ id: 'a' + i, state: (i === 1 ? 'thinking' : 'working') as RealState, person: WP[i], away: null })) }], places: [] };
+    const L = realLayout(m, { w: W, h: H }, WM, { f0: { name: 'big-app', path: '~/work/big', counts: 2 } }), d = L.zones[0].desks.find((x) => x.id === 'a1')!;
+    assert.ok(L.big && d.dots && d.face, `${world} big level at ${W}: three agents take the big level, the thinker has dots`);
+    const want = { x: d.slot.x + d.slot.w / 2 + 0.2 * L.u, y: d.face!.y + 0.12 * L.u };
+    assert.ok(want.y > d.slot.y + STRIP + DOTS_CLEAR + 1 && Math.abs(want.x - Math.min(d.slot.x + d.slot.w / 2 + 0.1 * L.u, d.glass.x - DOTS_BOX.w - DOTS_CLEAR)) > 5, `${world} big level at ${W}: the case tells the big rule from the clamps`);
+    assert.ok(Math.abs(d.dots!.x - want.x) < 0.01 && Math.abs(d.dots!.y - want.y) < 0.01, `${world} big level at ${W}: the dots are 0.2 u right of the head and 0.12 u below its top, not clamped (want ${want.x.toFixed(1)},${want.y.toFixed(1)}, got ${d.dots!.x.toFixed(1)},${d.dots!.y.toFixed(1)})`);
   }
   let laid = 0, thinking = 0;
   for (const [world, set] of [['photo', 'office'], ['cave', 'prehistoric']] as const) for (const arr of ['rows', 'circle'] as const) {
     const WM = { ...readJson('worlds', world, 'world.json'), ...readJson('sets', set, 'set.json') } as unknown as RealMeta, WP = Object.keys(WM.seat).sort();
     let seed = world === 'photo' ? 3 : 5; const rnd = (): number => { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296; };
-    const sign: string[] = [], glass: string[] = [];
+    const sign: string[] = [], glass: string[] = [], clear: string[] = [];
     for (let t = 0; t < 600; t++) {
       const nfold = 1 + Math.floor(rnd() * 9), total = Math.min(15, Math.max(nfold, 1 + Math.floor(rnd() * 15)));
       const sz = Array.from({ length: nfold }, () => 1); for (let r = total - nfold; r > 0; r--) sz[Math.floor(rnd() * nfold)]++;
@@ -205,10 +218,11 @@ for (const [k, v] of Object.entries(faces)) assert.ok(v >= FACE_FLOOR - 1e-9, `S
       const [W, H] = ROOM[t % 2];
       const L = layoutFor(arr, m, { w: W, h: H }, WM, sg), p = problems(L);
       laid++; if (L.zones.some((z) => z.desks.some((d) => d.dots))) thinking++;
-      sign.push(...p.sign.map((s) => `${world} ${arr} hall ${t} (${sz.join('/')}) at ${W}: ${s}`)); glass.push(...p.glass.map((s) => `${world} ${arr} hall ${t} (${sz.join('/')}) at ${W}: ${s}`));
+      sign.push(...p.sign.map((s) => `${world} ${arr} hall ${t} (${sz.join('/')}) at ${W}: ${s}`)); glass.push(...p.glass.map((s) => `${world} ${arr} hall ${t} (${sz.join('/')}) at ${W}: ${s}`)); clear.push(...p.clear.map((s) => `${world} ${arr} hall ${t} (${sz.join('/')}) at ${W}: ${s}`));
     }
     assert.deepStrictEqual(sign.slice(0, 3), [], `${world} ${arr}: no sign over the thinking dots in 600 random halls (FR-038; ${sign.length} found)`);
     assert.deepStrictEqual(glass.slice(0, 3), [], `${world} ${arr}: no thinking dots over a screen's glass below the big level in 600 random halls (FR-038; ${glass.length} found)`);
+    assert.deepStrictEqual(clear.slice(0, 3), [], `${world} ${arr}: the dots start 3 px clear of a sign's lower edge in 600 random halls (FR-038, DOTS_CLEAR; ${clear.length} found)`);
   }
   assert.ok(thinking > laid / 2, `the random halls hold a thinking person in most layouts (${thinking} of ${laid})`);
   console.log(`FR-038: ${laid} random halls (Photo office and cave, rows and circle, both sizes; ${thinking} with a thinking person) and the cave's 15 folders of one: no sign over the dots, no dots over a screen's glass`);
