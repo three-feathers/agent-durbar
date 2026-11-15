@@ -70,6 +70,7 @@ test:copilotoneshot
 test:copilotcap
 test:copilot-tmpdir
 test:mcpsession
+test:mcpswitchpersist
 test:mcpcall
 test:mcpsignin
 test:mcpsigninrefresh

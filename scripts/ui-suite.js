@@ -85,6 +85,7 @@ const DRIVERS = [
   { name: 'shots-003-mode-back' },
   { name: 'check-sandbox-floor' }, // spec 087: the OS sandbox chip, tooltips, note (Continue / Always / Change mode…), Codex card line, Settings line
   { name: 'shots-012-signin-chat' },
+  { name: 'check-058-mcp-switch-persist' }, // spec 058 (2026-11-14 delta): a switch stays off after closing the chat, a reload and Restart session
   { name: 'shots-058-mcp-restart' }, // spec 058: per-server Restart and Restart session with these servers
   { name: 'shots-058-mcp-signin' }, // spec 058 T102/T104: Sign in for a Copilot server that needs it (simmcpauth), the two-step open, the steps
   { name: 'shots-058-mcp-words' }, // spec 058 T113-T115: state words, hints, Details and live refresh in the MCP dialog
@@ -95,7 +96,10 @@ const DRIVERS = [
   { name: 'shots-058-mcp-launch', label: 'shots-058-mcp-launch retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 (issue #1566): the strip over the arcade at 15 agents, 1280x800 and 1440x900: no office scroll while shown and after Dismiss
   { name: 'shots-058-mcp-launch', label: 'shots-058-mcp-launch retro 16', env: { DRIVER_WORLD: 'retro', DRIVER_CASE: '16', DRIVER_AGENTS: '16' } }, // spec 102 T308: 16 agents under the strip: the lent layout still scrolls, so it is refused (ro-tight off)
   { name: 'shots-058-mcp-launch', label: 'shots-058-mcp-launch retro filter', env: { DRIVER_WORLD: 'retro', DRIVER_CASE: 'filter', DRIVER_AGENTS: '24' } }, // spec 102 T308: a status filter under the strip: ro-tight never set while the floor scrolls, the note keeps its top padding
+  { name: 'shots-058-mcp-launch', label: 'shots-058-mcp-launch retro strips', env: { DRIVER_WORLD: 'retro', DRIVER_CASE: 'strips' } }, // spec 102 T346 (issue #1625): 15 agents under each restore, away, crash and follow strip alone and the pairs away+follow, restore+away: no office scroll, both sizes; the still-scrolling 1589 scenes (3 strips, MCP list open) are deliberately not asserted until 1685 lands
   { name: 'shots-058-mcp-launch', label: 'shots-058-mcp-launch photo 18', env: { DRIVER_CASE: 'photo', DRIVER_AGENTS: '18', DRIVER_H: '760' } }, // spec 102 T308: a world that is not aisles is never lent the padding
+  { name: 'check-102-focus' }, // spec 102 T166: the circle layout's focus box is one hidden, still, textless box inside the room and clear of the zones; a picture that fails moves no desk (page-only fixture, 1440x900 and 1280x800)
+  { name: 'check-102-cabinet-guard' }, // spec 102 T171: the arcade cabinet's monitor guard fails closed and a refused entry clears the reused cabinet; hostile entries move nothing (page-only fixture, 1440x900 and 1280x800)
   { name: 'check-102-arcade-filter-note', env: { DRIVER_WORLD: 'retro' } }, // spec 102 (issue #1588, T310): the arcade at 14, 13 and 11 agents with a status filter set (15 cannot be driven: the simulator's basic agent never works), 1280x800 and 1440x900: no office scroll, the note stays clear
   { name: 'shots-058-mcp-signin-refresh' }, // spec 058 FR-208..FR-216: the sign-in refresh lines, Stop during the wait, the Settings switch
   { name: 'shots-076-orgpolicy' }, // spec 076 FR-202..FR-205 (#602): what the agent app's own organization policy blocks, greyed with the reason
