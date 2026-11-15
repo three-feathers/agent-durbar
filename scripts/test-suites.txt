@@ -67,12 +67,14 @@ test:copilotoneshot
 test:copilotcap
 test:copilot-tmpdir
 test:mcpsession
+test:mcpswitchpersist
 test:mcpcall
 test:mcpsignin
 test:mcpsigninrefresh
 test:places
 test:floornav
 test:cuttext
+test:questionparts
 test:chattrim
 test:subretire
 test:grantlabel
@@ -140,6 +142,7 @@ test:teamstore-fs
 test:teams-editor
 test:teams-ui
 test:teamsipc
+test:teamops
 test:names
 test:renameadapters
 test:sessionname
