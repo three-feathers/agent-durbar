@@ -259,6 +259,11 @@ const SCENES = {
         for(const a of cand){if(out.length===2)break;const next=out.concat(a.id);if(next.every(id=>{const r=A.find(x=>x.id===id).room;return M.some(o=>o.room===r&&!next.includes(o.id)&&!fin(o))}))out.push(a.id);}
         return out})()`);
       if (pick.length !== 2) throw new Error('lounge: two agents to finish were not found');
+      // FR-270 (issue #1792): Omar's simulated spending limit puts a limit slip at the right edge of the room, and it covered the lounge row's zoom; the scene answers it as a user would (Remove limit), then waits for the slip to go
+      if (await H.until(`!!document.querySelector('#stage .ro-limit:not([hidden]) .ro-sbtn')`, 6000)) {
+        await H.js(`(()=>{const b=[...document.querySelectorAll('#stage .ro-limit .ro-sbtn')].find(x=>x.textContent==='Remove limit');if(b)b.click();return !!b})()`);
+        if (!(await H.until(`!document.querySelector('#stage .ro-limit:not([hidden])')`, 8000))) throw new Error('lounge: the limit slip did not go');
+      }
       await H.js(`(()=>{for(const id of [${pick.map(idLit).join(',')}]){const a=${SIM}.agents().find(x=>x.id===id);a.state='done';a.lastOutput=a.lastOutput||'Finished the change and ran the tests.';a.lastEventAt=Date.now();${SIM}.unread.mark(id);}${SIM}.crew.renderAll();return 1})()`);
       if (!(await H.until(`document.querySelectorAll('#stage .ro-plate.st-done').length>=2`, 8000))) throw new Error('lounge: no finished desks');
       await H.settle();
