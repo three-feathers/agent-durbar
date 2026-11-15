@@ -145,7 +145,7 @@ module.exports = async (ctx) => {
       assert.ok(await until(`document.getElementById('tabChat').getAttribute('aria-selected')==='true'`, 8000), `${w}: the Chat tab is selected again`);
     }];
     await hiddenCase('the Browser tab is showing', ...browserTab, 'l5');
-    await hiddenCase('the Notes drawer is open', async () => {
+    const notesDrawer = [async () => {
       // Opening the drawer says "Notes. N notes." at status priority, and a status said in the same 60 ms window by something else replaces it (the latest of equal
       // priority wins): let #srAnnounce go quiet first, then wait for the drawer's own line, so it is in before the limit's line is emitted
       assert.ok(await until(`window.__seq.length>0&&performance.now()-window.__t0-window.__seq[window.__seq.length-1][0]>400`, 8000), `${w}: #srAnnounce is quiet before the Notes drawer opens`);
@@ -157,8 +157,10 @@ module.exports = async (ctx) => {
     }, async () => {
       await H.key('Escape');
       assert.ok(await until(`document.getElementById('notesDrawer').hidden`, 8000), `${w}: the Notes drawer closes`);
-    }, 'l6');
+    }];
+    await hiddenCase('the Notes drawer is open', ...notesDrawer, 'l6');
     await hiddenCase('the Browser tab is showing', ...browserTab, 'p5', true);
+    await hiddenCase('the Notes drawer is open', ...notesDrawer, 'p6', true);
     // ---- 5b. ANOTHER agent's chat is open (Auto-follow off): the card is named, not "in its card", said once ----
     await emit({ type: 'limit', phase: 'resolved', requestId: 'l2-' + w, action: 'unset' });
     const B = await H.openSimAgent(`a=>!a.parent&&a.live&&a.info&&a.id!==${jsLiteral(A)}&&(a.state==='idle'||a.state==='done')`, '#msgInput');
