@@ -3612,9 +3612,14 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
           /* simlate=<ms> (spec 097 FR-363, issue #1238): the replay starts that much later, so the first states arrive after the page's first frame (a check's forced race); absent = 0, unchanged */
           const late = Math.max(0, Math.min(2000, Number(typeof location !== 'undefined' ? new URLSearchParams(location.search).get('simlate') : null) || 0));
           const listedAt = typeof performance !== 'undefined' ? performance.now() : 0;
+          /* simreal=<gap ms> (spec 097 FR-378, issue #1575): the start as the real app has it: no first-state batch, so the office's gate is open from the first frame (`__durbarSimReplayed` set now) and agent i's script starts i x gap ms after the listing (0 to 1000), or with `idle` no script plays; absent = the replay below, unchanged */
+          const realRaw = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('simreal') : null;
+          const realGap = realRaw === 'idle' ? -1 : realRaw !== null && Number.isFinite(Number(realRaw)) ? Math.max(0, Math.min(1000, Number(realRaw))) : null;
+          if (realGap !== null) { const w = window as unknown as { __durbarSimReplayed?: boolean; __durbarSimReal?: number }; w.__durbarSimReplayed = true; w.__durbarSimReal = realGap; } // the check reads __durbarSimReal: an ignored simreal shows nothing
           setTimeout(() => {
             if (late > 0) (window as unknown as { __durbarSimReplayDelay?: number }).__durbarSimReplayDelay = Math.round(performance.now() - listedAt); // the check reads it: a simlate that is ignored shows 0
-            sims.forEach(play);
+            if (realGap === null) sims.forEach(play);
+            else if (realGap >= 0) sims.forEach((x, i) => setTimeout(() => play(x), realGap * i)); // -1 (`idle`): no script plays, the agents stay as listed
             if (opts.edits && sims[0]) simEdits(sims[0]); // spec 005 FR-026
             /* spec 008 FR-113: every script has run (a frozen simulator emits nothing more); the page's settleNow() test hook reads it */
             (window as unknown as { __durbarSimReplayed?: boolean }).__durbarSimReplayed = true;
