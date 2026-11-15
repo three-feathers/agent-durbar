@@ -532,7 +532,7 @@
           const sh = el(art, 'vs:' + v.id, 'div', 'ro-shadow'); box(sh, v.shadow);
           /* FR-070: stride frames, a knock or a breath; FR-073: in at the fixture after the fade at the desk */
           const m = L.personMotion(v.id, v.fig.pose, null), fresh = !art._k.has('v:' + v.id), mov = moving() && !OFF.has(v.id);
-          const two = mov && !CUR.pixelArt /* spec 102 FR-261: a pixel world swaps the frame, it draws no second picture (the run frames of the Retro pixel set cross-fade only in the Photo office and the cave) */ && m.kind === 'frames' && v.fig.fileB && !BAD.has(SD + v.fig.fileB) && !(GLIDING.has(v.id) || (fresh && CUR.drawn && WHERE.has(v.id))) ? second(art, 'vb:' + v.id, v.id, v.fig.b || v.fig, v.fig.fileB, 'ro-visitor2' + (v.fig.mir ? ' mir' : ''), m) : null;
+          const two = mov /* spec 102 T350: a pixel world draws the second picture too, but its loop is a hard swap (retro world.css), never the cross-fade */ && m.kind === 'frames' && v.fig.fileB && !BAD.has(SD + v.fig.fileB) && !(GLIDING.has(v.id) || (fresh && CUR.drawn && WHERE.has(v.id))) ? second(art, 'vb:' + v.id, v.id, v.fig.b || v.fig, v.fig.fileB, 'ro-visitor2' + (v.fig.mir ? ' mir' : ''), m) : null;
           const cl = two && two.on ? ' m-a m-' + m.style : mov ? ({ breathe: ' m-br', knock: ' m-knock' }[m.kind] || '') : '';
           const im = el(art, 'v:' + v.id, 'img', 'ro-visitor' + (v.fig.mir ? ' mir' : '') + cl); /* spec 097 FR-191 (#1743): a set drawn facing right is mirrored by the scale property, so a breath or a knock on transform keeps it */ box(im, v.fig); dset(im, 'for', v.id); dset(im, 'place', fx.id); dset(im, 'pose', v.fig.pose); dset(im, 'faces', v.fig.faces); dset(im, 'feet', String(Math.round(v.fig.feetY * 10) / 10)); img(im, v.fig.file, true, v.fig.w);
           if (cl) { setVar(im, '--ro-per', m.period + 's'); setVar(im, '--ro-sw', m.sway + 's'); setVar(im, '--ro-u', (v.fig.h / 100).toFixed(3) + 'px'); setVar(im, '--ro-org', '50% ' + px(v.fig.feetY - v.fig.y)); }
@@ -885,7 +885,7 @@
         sig: Q,
         fill: (e, v) => {
           e.setAttribute('role', 'group'); e.setAttribute('aria-label', Q.total + (Q.total === 1 ? ' request needs you' : ' requests need you'));
-          if (v === 'pill') { e.appendChild(btn(Q.total + (Q.total === 1 ? ' needs you' : ' need you') + ' \u00B7 Open the inbox', '', 'ro-pill', { slipact: 'inbox' })); return; }
+          if (v === 'pill') { const t = Q.total + (Q.total === 1 ? ' needs you' : ' need you') + ' \u00B7 Open the inbox'; e.appendChild(btn(t, t, 'ro-pill', { slipact: 'inbox' })); return; }
           const f = Q.first, h = document.createElement('p'); h.className = 'sl-h';
           const nm = document.createElement('b'); nm.textContent = f.name; h.appendChild(nm);
           const w = document.createElement('span'); w.textContent = ' ' + f.what + ' \u00B7 ' + f.folder; h.appendChild(w); e.appendChild(h);
@@ -906,7 +906,7 @@
         sig: [L.id, L.name, L.who, L.text, L.actions, L.input && [L.input.label, L.input.min, L.input.step, L.input.value]],
         fill: (e, v) => {
           e.setAttribute('role', 'group'); e.setAttribute('aria-label', 'Spending limit reached');
-          if (v === 'pill') { e.appendChild(btn(L.name + ': Spending limit reached \u00B7 Show in chat', 'Open the chat', 'ro-pill', { slipact: 'open', slipid: L.id, slipfocus: 'limit' })); return; }
+          if (v === 'pill') { const sfx = ': Spending limit reached \u00B7 Show in chat', t = L.name + sfx, b = btn(t, t, 'ro-pill', /* spec 097 FR-359: the title is the whole text, for what the ellipsis cuts (the accessible name is the button's text) */ { slipact: 'open', slipid: L.id, slipfocus: 'limit' }); b.textContent = ''; const n = document.createElement('span'); n.className = 'ro-pn'; n.textContent = L.name; const x = document.createElement('span'); x.className = 'ro-ps'; x.textContent = sfx; b.appendChild(n); b.appendChild(x); /* FR-359: only the name span is cut by the ellipsis, the suffix stays whole */ e.appendChild(b); return; }
           e.appendChild(p('sl-h', L.who)); e.appendChild(p('sl-t', L.text));
           const row = document.createElement('div'); row.className = 'sl-act';
           if (L.input) { const i = document.createElement('input'); i.type = 'number'; i.className = 'limit-amt'; i.min = L.input.min; i.step = L.input.step; i.value = L.input.value; i.setAttribute('aria-label', L.input.label); row.appendChild(i); }
