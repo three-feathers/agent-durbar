@@ -264,6 +264,7 @@ const NOT_IN_SUITE = {
   'shots-034': 'passes alone but takes about 124 s (fixed settles at both sizes, Serious mode, reduced motion, mini); CI is near its limit (#738). Needs its sleeps turned into until() waits before it joins the suite. Since spec 068 FR-005 it checks that the credit limit is a break, not a faint',
   'shots-024-custom': 'passes alone with DURBAR_SIM_PLACES=3 but takes about 89 s (custom places: seeding, Add / Edit dialog, Settings, rename, delete at both sizes); too long for the suite today. Run it by hand: DURBAR_SIM_PLACES=3 as its header says',
   'check-rename': 'npm run check:rename, about 140 s (spec 059, issue #372: rename a session, every kind and level, both sizes); check-rename-inline in DRIVERS covers the in-place rename on every surface',
+  'check-office-overlap': 'run by `npm run check:office` and by check-parallel.js (the Office layout job and its Real office and arcade variants, OFFICE_VIEW/OFFICE_WORLD): it needs those environment variables and measures every layout, so it is not a one-driver suite entry (spec 102 issue #1632 added a tooltip assert)',
   'check-perf': 'npm run check:perf measures frame times and DOM growth under load; its limits depend on the machine, so it is a local check, not a gate on shared runners',
 };
 
