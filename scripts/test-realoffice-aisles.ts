@@ -775,6 +775,10 @@ console.log(`floor covered with 4 or fewer: ${covs.join('; ')}`);
     assert.ok(L.storeys!.filter((b) => b.n > 0 && b.slab).every((b) => b.slab!.w === 2), `${nm}: the floors share rows (upright rules): the forced break was given up`);
     assert.ok(L.zones.length === F.zones.length && L.zones.every((z, i) => Math.abs(z.sign.w - F.zones[i].sign.w) < 0.01 && (rest.length > 0 || z.sign.x === F.zones[i].sign.x)), `${nm}: every sign is as wide as without floors (and where, with no resting agent)`);
   }
+  // round 7 of the review of #1741: an upright floor rule is skipped where it would be drawn through a sign (a hall that scrolls lets signs overflow): retro 6/5 on 2 floors at 1000x600
+  { const m = fm([6, 5], [1, 0]), L = aislesLayout(m, { w: 1000, h: 600 }, META, sg(2));
+    assert.ok(L.storeys && L.storeys.length === 2 && L.scroll, '6/5 on 2 floors at 1000x600: floors drawn in a hall that scrolls');
+    assert.ok(L.storeys!.every((b) => !b.slab || !L.zones.some((z) => inter(b.slab!, z.sign))), '6/5 on 2 floors at 1000x600: the floor rule covers no sign (it is skipped where a sign overflows it)'); }
   // round 6 of the review of #1741 (C1): in a small window a cell can be narrower than a seat, so a floor's cells may not seat its agents and no floor can grow; the layout then goes to the hall without floors, and the re-layouts end.
   // The reviewer's case (3/2/2/5 on 2 floors, resting 2,3,5,6,7,9,10,11, helpers, 800x500) threw a RangeError (an endless chain) when that branch was removed; a thrown error is turned into a failed assertion here
   {
@@ -798,6 +802,7 @@ console.log(`floor covered with 4 or fewer: ${covs.join('; ')}`);
       maxDepth = Math.max(maxDepth, q.depth); assert.ok(q.depth <= 4 * rest.length + 8, `${tag}: the chain of re-layouts is bounded (${q.depth} deep)`);
       const F2 = aislesLayout(flat(mm), { w: W, h: H }, META, sg(nf)), seated = q.L!.lounge ? q.L!.lounge.desks.length : 0;
       assert.ok(seated >= (F2.lounge ? F2.lounge.desks.length : 0), `${tag}: no fewer resting agents seated than in the hall without floors`);
+      if (q.L!.storeys) for (const [bi, b] of q.L!.storeys.entries()) if (b.slab) assert.ok(!q.L!.zones.some((z) => inter(b.slab!, z.sign)) && !q.L!.storeys.some((o, oi) => inter(b.slab!, o.tag) || (oi !== bi && o.slab && inter(b.slab!, o.slab))) && !(q.L!.lounge ? q.L!.lounge.desks.some((d) => inter(b.slab!, d.slot) || inter(b.slab!, d.plate)) : false), `${tag}: the rule of ${b.name} covers no sign, tag, other rule or seat`);
       if (q.L!.storeys) { withFloors++; assert.strictEqual(seated, rest.length, `${tag}: floors are drawn only when every resting agent is seated`); } else flatHalls++;
     }
     assert.ok(layouts >= 5000, `the small-view fuzz made ${layouts} layouts`);
