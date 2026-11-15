@@ -473,7 +473,7 @@ section('handlersNeverThrow', () => {
     const boom = (): never => { throw new Error('secret ' + TOKEN); };
     const throwing = { list: boom, put: boom, delete: boom, duplicate: boom, markMine: boom } as unknown as TeamsIpcOps;
     t.register({ getOps: () => throwing, getTeamOps: () => undefined });
-    eq([...handlers.keys()].sort(), ['teams:createPreview', 'teams:delete', 'teams:duplicate', 'teams:list', 'teams:markMine', 'teams:previewRow', 'teams:put'], 'the seven channels');
+    eq([...handlers.keys()].sort(), ['teams:create', 'teams:createPreview', 'teams:delete', 'teams:duplicate', 'teams:list', 'teams:markMine', 'teams:previewRow', 'teams:put'], 'the eight channels');
     const frame = { url: require('url').pathToFileURL(path.join(__dirname, '..', 'src', 'renderer', 'index.html')).href };
     const sender = { mainFrame: frame };
     const good = { senderFrame: frame, sender };

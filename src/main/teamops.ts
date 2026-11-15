@@ -18,8 +18,10 @@
  * `teamtemplate.ts` and the argument helpers of `teamsipc.ts`.
  */
 import { randomBytes } from 'crypto';
+import { isDeepStrictEqual } from 'util';
 import type { AdapterInfo } from '../shared/adapters';
-import type { ModelChoice } from '../shared/api';
+import type { AgentInfo, ModelChoice } from '../shared/api';
+import { cleanDisplayName } from '../shared/names';
 import { parseEffort } from '../shared/effort';
 import { parseCapIn, startCap } from '../shared/credits';
 import { APP_RE, LIMITS, MEMBER_ID_RE, MODEL_RE } from '../shared/teamtemplate';
@@ -28,6 +30,7 @@ import { validMode } from './agentops';
 import type { StoredTemplate } from './teamstore';
 import { isPlain, moreKeysThan, own } from './teamsipc';
 import { findAdded } from './addkey';
+import type { SavedPermMode, TeamRecord, TeamRecordMember } from './folders';
 
 /** how long a preview's token lives (the delta of 2026-11-14) */
 export const TOKEN_MS = 600_000;
@@ -73,22 +76,25 @@ export interface TargetEnv<A> {
   /** main's `resolveWorkspaceCwd` */
   resolveCwd(p: string): { cwd: string; workspaceFile?: string };
   savedCap(key: string): number | undefined;
+  /** the members the room's team record already has (T011: the real count, not a guess); absent = 0 */
+  teamCount?(key: string): number;
   /** the folder dialog: the chosen path, or null when cancelled */
   pick(): Promise<string | null>;
   /** tests inject these two (`addkey.ts`) */
   platform?: string;
   realpath?: (p: string) => string;
 }
+const teamCountOf = <A>(env: TargetEnv<A>, key: string): number => { const n = env.teamCount?.(key); return typeof n === 'number' && Number.isInteger(n) && n > 0 && n <= LIMITS.members ? n : 0; };
 const cleanCap = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : undefined);
 
 /**
  * The target of a preview, with the key the add flows use (spec 111, second read of T010): a room is its agent's `wsKey`; a picked folder is
  * `resolveWorkspaceCwd` then `findAdded` over the open agents, so a symlink, a trailing slash or (Windows, macOS) another case is the SAME room;
- * else the resolved path. `existing` is 0 until T011 writes the team record. The key never goes to the window.
+ * else the resolved path. `existing` is the real count of the room's team record (T011). The key never goes to the window.
  */
 export async function resolveTargetFrom<A>(t: Target, env: TargetEnv<A>): Promise<ResolvedTarget> {
   if ('room' in t) {
-    for (const a of env.agents()) if ((a as { id?: unknown }).id === t.room) { const key = env.wsKey(a); return { ok: true, key, existing: 0, savedCap: cleanCap(env.savedCap(key)) }; }
+    for (const a of env.agents()) if ((a as { id?: unknown }).id === t.room) { const key = env.wsKey(a); return { ok: true, key, existing: teamCountOf(env, key), savedCap: cleanCap(env.savedCap(key)) }; }
     return { ok: false };
   }
   const p = await env.pick();
@@ -97,7 +103,7 @@ export async function resolveTargetFrom<A>(t: Target, env: TargetEnv<A>): Promis
   const want = ws.workspaceFile ?? ws.cwd;
   const have = findAdded(want, env.agents(), env.wsKey, env.platform, env.realpath);
   const key = have ? env.wsKey(have) : want;
-  return { ok: true, key, existing: 0, savedCap: cleanCap(env.savedCap(key)) };
+  return { ok: true, key, existing: teamCountOf(env, key), savedCap: cleanCap(env.savedCap(key)) };
 }
 
 export interface TeamOpsDeps {
@@ -112,7 +118,32 @@ export interface TeamOpsDeps {
   resolveTarget(t: Target): Promise<ResolvedTarget>;
   now?: () => number;
   newToken?: () => string;
+  /** T011 (`teams:create`): the room, the build of one not-started agent, the one write, the placing in the office. Absent: `create` answers `failed`. */
+  create?: CreateDeps;
+  /** a random 128-bit hex id for a member whose id the room's record already has (tests inject it) */
+  newMemberId?: () => string;
 }
+
+/** what main builds one not-started member from: all of it already validated here */
+export interface LazyMemberSpec { app: string; model: string | undefined; effort: string | undefined; mode: SavedPermMode; cap: number | undefined; name: string; key: string }
+export interface CreateDeps {
+  /** the real count and record of the room's key and its saved limit, read fresh */
+  room(key: string): { count: number; savedCap?: number; team?: TeamRecord };
+  /** `addLazyMember`: one not-started agent like a restored session (`infoFor(..., { lazy: true })`); no adapter start; no effect in the office */
+  build(spec: LazyMemberSpec): AgentInfo;
+  /** ONE write: the team record and the members' session names (`setTeamRecord`); false = nothing was written */
+  commit(key: string, team: TeamRecord, infos: AgentInfo[]): boolean;
+  /** after the write: bind the agent to its app, add it to the office, emit `agent:added` */
+  place(info: AgentInfo): void;
+  /** undo of `place` when a later `place` threw */
+  unplace(id: string): void;
+}
+
+/** `choices` of `teams:create` (the delta of 2026-11-15): only what the person changed, all re-validated */
+export interface RowChoice { include?: boolean; app?: string; model?: string; effort?: string; cap?: { unit: 'aiu' | 'usd'; amount: number | string } }
+export interface CreateChoices { rows: Record<string, RowChoice>; allowConfirmed?: boolean }
+export type CreateFail = { ok: false; code: 'invalid' | 'notfound' | 'full' | 'expired' | 'changed' | 'needschoice' | 'empty' | 'failed'; errors: string[]; blocked: boolean };
+export type CreateOk = { ok: true; agents: AgentInfo[]; added: number; existing: number };
 
 /** what a row is now: the template's values, then the person's changes (`teams:previewRow`) */
 interface Choice { app: string; model: string | undefined; effort: string | undefined; picked: boolean; appChanged: boolean }
@@ -124,6 +155,7 @@ export interface PreviewEntry {
   rows: Map<string, PreviewRow>;
 }
 
+const cfail = (code: CreateFail['code'], error: string): CreateFail => ({ ok: false, code, errors: [error], blocked: false });
 const fail = (code: PreviewFail['code'], error: string): PreviewFail => ({ ok: false, code, errors: [error], blocked: false });
 
 const STATE_WORDS: Record<string, string> = {
@@ -259,6 +291,88 @@ export class TeamOps {
     }
   }
 
+  /**
+   * `teams:create` (T011, FR-034, FR-035, FR-039, FR-040, FR-043; the delta of 2026-11-15). Takes the token ONCE; uses only the `choices` of THIS call
+   * (the entry's own choices and rows are for display); compares the template snapshot with the store; re-checks every included row with the same
+   * rules as the preview (`row`); then, with no `await` in between, counts the room's members, builds the not-started agents, writes the record
+   * (one `commit`) and only then places them. No adapter is started and no message sent here. Autopilot is never set; the mode never rises above
+   * the template's (an imported Allow all and an unconfirmed own one enter as Ask). A refusal is a fixed sentence, never a value.
+   */
+  async create(tokenIn: unknown, choicesIn: unknown): Promise<CreateOk | CreateFail> {
+    const e = this.takeToken(tokenIn); // consumed here, once, also when the rest is refused
+    if (!e) return cfail('expired', 'Preview: expired or not found. Open it again.');
+    const dep = this.deps.create;
+    if (!dep) return cfail('failed', 'The team could not be created.');
+    const choices = readChoices(choicesIn);
+    if (typeof choices === 'string') return cfail('invalid', choices);
+    const t = e.template;
+    const now = t.id === undefined ? undefined : this.deps.store().get(String(t.id));
+    if (!now || !isDeepStrictEqual(now, t)) return cfail('changed', 'The template changed after the preview. Open it again.');
+    const ids = new Set(t.members.map((m) => m.memberId));
+    for (const id of Object.keys(choices.rows)) if (!ids.has(id)) return cfail('invalid', 'Choices: a row is not in this preview.');
+    const imported = t.origin === 'imported';
+    const ctx = this.context(await this.deps.adapters(), cleanCap(dep.room(e.key).savedCap));
+    const picked: Array<{ m: TeamMember; spec: Omit<LazyMemberSpec, 'key'>; name: string; role: string }> = [];
+    for (const m of t.members) {
+      const rc = choices.rows[String(m.memberId)] ?? {};
+      if (rc.include === false) continue;
+      const app = rc.app ?? m.app;
+      const appChanged = app !== m.app;
+      const ch: Choice = {
+        app,
+        model: rc.model !== undefined ? (rc.model === '' ? undefined : rc.model) : appChanged ? undefined : m.model,
+        effort: rc.effort !== undefined ? (rc.effort === '' ? undefined : rc.effort) : appChanged ? undefined : m.effort,
+        picked: rc.effort !== undefined && rc.effort !== '', appChanged,
+      };
+      const row = await this.row(m, imported, ch, ctx);
+      if (row.needsChoice) return cfail('needschoice', 'A row still needs a choice.');
+      const unit = row.limit.unit;
+      let cap = row.limit.amount;
+      if (rc.cap !== undefined) {
+        if (unit === 'none') return cfail('invalid', 'Choices, limit: not valid.'); // an app with no limit takes none
+        if (!appChanged) { // the limit of the app the template named; with another app it is ignored (never converted)
+          if (rc.cap.unit !== unit) return cfail('invalid', 'Choices, limit: not valid.');
+          cap = parseCapIn(unit, rc.cap.amount);
+          if (cap === undefined) return cfail('invalid', 'Choices, limit: not valid.');
+        }
+      }
+      // the mode: the template's, never raised; an imported Allow all and an own one nobody confirmed enter as Ask (FR-035, FR-096)
+      let mode: SavedPermMode = validMode(m.permMode);
+      if (mode === 'allow' && (imported || choices.allowConfirmed !== true)) mode = 'ask';
+      const name = cleanDisplayName(m.name, LIMITS.name);
+      const role = cleanDisplayName(m.role, LIMITS.role);
+      if (!name || !role) return cfail('failed', 'The team could not be created.');
+      picked.push({ m, name, role, spec: { app, model: row.model.id === '' ? undefined : row.model.id, effort: parseEffort(row.effort.used), mode, cap: unit === 'none' ? undefined : cap, name } });
+    }
+    if (picked.length === 0) return cfail('empty', 'No member is included.');
+    // ---- from here to the write there is no `await`: two creates in one room cannot both pass the count
+    const room = dep.room(e.key);
+    const have = Number.isInteger(room.count) && room.count > 0 ? room.count : 0;
+    if (have + picked.length > LIMITS.members) return cfail('full', `This room has ${have} team members; this template adds ${picked.length}; at most ${LIMITS.members}`);
+    const infos = picked.map((x) => dep.build({ ...x.spec, key: e.key }));
+    const taken = new Set((room.team?.members ?? []).map((x) => x.memberId));
+    const made: TeamRecordMember[] = picked.map((x, i) => {
+      let memberId = String(x.m.memberId);
+      while (taken.has(memberId)) memberId = (this.deps.newMemberId ?? (() => randomBytes(16).toString('hex')))();
+      taken.add(memberId);
+      const u = x.spec.cap === undefined ? undefined : unitOf(ctx.apps.get(x.spec.app)!);
+      return {
+        memberId, name: x.name, role: x.role, ...(x.m.brief !== undefined && x.m.brief !== '' ? { brief: x.m.brief } : {}), ...(x.m.briefFrom === 'file' ? { briefFrom: 'file' as const } : {}),
+        sendBrief: x.m.sendBrief !== false, app: x.spec.app, ...(x.spec.model !== undefined ? { model: x.spec.model } : {}), ...(x.spec.effort !== undefined ? { effort: x.spec.effort } : {}),
+        mode: x.spec.mode, ...(x.spec.cap !== undefined && u && u !== 'none' ? { cap: { unit: u, amount: x.spec.cap } } : {}),
+        ...(x.m.profile !== undefined ? { profile: x.m.profile } : {}), sessions: [{ id: infos[i].id }],
+      };
+    });
+    const name = cleanDisplayName(t.name, 60);
+    const names = [...(room.team?.templates ?? [])];
+    if (name && !names.includes(name)) names.push(name);
+    const team: TeamRecord = { templates: names.slice(-LIMITS.members), members: [...(room.team?.members ?? []), ...made] };
+    if (!dep.commit(e.key, team, infos)) return cfail('failed', 'The team could not be created.');
+    const placed: string[] = [];
+    try { for (const info of infos) { dep.place(info); placed.push(info.id); } } catch (err) { for (const id of placed) { try { dep.unplace(id); } catch { /* best effort */ } } throw err; }
+    return { ok: true, agents: infos, added: infos.length, existing: have };
+  }
+
   private context(adapters: AdapterInfo[], savedCap: number | undefined): Ctx {
     const apps = new Map<string, AdapterInfo>();
     for (const i of adapters) apps.set(i.id, i);
@@ -348,6 +462,38 @@ export class TeamOps {
       needsChoice: reasons.length > 0, reasons, perm, profile: m.profile !== undefined, fromFile: m.briefFrom === 'file',
     };
   }
+}
+
+/** the `choices` of `teams:create`: shape and size are judged before any copy (own data properties only); a fixed sentence, never the value */
+function readChoices(v: unknown): CreateChoices | string {
+  if (!isPlain(v)) return 'Choices: send an object.';
+  if (moreKeysThan(v, 2)) return 'Choices: not valid.';
+  for (const k of Object.keys(v)) if (k !== 'rows' && k !== 'allowConfirmed') return 'Choices: not valid.';
+  const rowsIn = own(v, 'rows'), allow = own(v, 'allowConfirmed');
+  if (allow !== undefined && typeof allow !== 'boolean') return 'Choices: not valid.';
+  if (!isPlain(rowsIn) || moreKeysThan(rowsIn, LIMITS.members)) return 'Choices: rows not valid.';
+  const rows: Record<string, RowChoice> = Object.create(null) as Record<string, RowChoice>;
+  for (const id of Object.keys(rowsIn)) {
+    if (!MEMBER_ID_RE.test(id)) return 'Choices: a row is not valid.';
+    const x = own(rowsIn, id);
+    if (!isPlain(x) || moreKeysThan(x, 5)) return 'Choices: a row is not valid.';
+    const r: RowChoice = {};
+    for (const k of Object.keys(x)) {
+      const y = own(x, k);
+      if (k === 'include') { if (typeof y !== 'boolean') return 'Choices, include: not valid.'; r.include = y; }
+      else if (k === 'app') { if (typeof y !== 'string' || y.length > 32 || !APP_RE.test(y)) return 'Choices, app: not valid.'; r.app = y; }
+      else if (k === 'model') { if (typeof y !== 'string' || y.length > 100 || (y !== '' && !MODEL_RE.test(y))) return 'Choices, model: not valid.'; r.model = y; }
+      else if (k === 'effort') { if (typeof y !== 'string' || y.length > 20 || (y !== '' && parseEffort(y) === undefined)) return 'Choices, effort: not valid.'; r.effort = y; }
+      else if (k === 'cap') {
+        if (!isPlain(y) || moreKeysThan(y, 2)) return 'Choices, limit: not valid.';
+        const unit = own(y, 'unit'), amount = own(y, 'amount');
+        if ((unit !== 'aiu' && unit !== 'usd') || Object.keys(y).length !== 2 || !((typeof amount === 'number') || (typeof amount === 'string' && amount.length <= 32))) return 'Choices, limit: not valid.';
+        r.cap = { unit, amount };
+      } else return 'Choices: a row is not valid.';
+    }
+    rows[id] = r;
+  }
+  return { rows, ...(allow === true ? { allowConfirmed: true } : {}) };
 }
 
 interface Ctx { apps: Map<string, AdapterInfo>; models(id: string): Promise<ModelChoice[] | undefined>; defaultCap: number | undefined; savedCap: number | undefined }

@@ -6,7 +6,7 @@
 import { parseEffort } from '../shared/effort';
 import * as fs from 'fs';
 import * as path from 'path';
-import { parseCap } from '../shared/credits';
+import { parseCap, parseCapIn } from '../shared/credits';
 import { parseAutoTier, parseTier } from '../shared/modelswitch';
 import type { AutoTier, ContextTier } from '../shared/modelswitch';
 import * as floorOps from '../shared/floors';
@@ -16,6 +16,8 @@ import type { OrderDoc } from '../shared/roomorder';
 import { cleanDisplayName, nameError, MAX_FOLDER_LABEL } from '../shared/names';
 import type { SessionNameEntry } from '../shared/sessionname';
 import { markIdOk, markSrcOk } from '../shared/sessionid';
+import { APP_RE, LIMITS as TEAM_LIMITS, MEMBER_ID_RE, MODEL_RE } from '../shared/teamtemplate';
+import type { TeamCap } from '../shared/teamtemplate';
 
 export type SavedPermMode = 'read-only' | 'ask' | 'allow';
 
@@ -57,7 +59,18 @@ export interface SavedFolder {
   notesProject?: true | 'git';
   /** Spec 083 Changes 2026-11-01: identity (`dev:ino[:birth]`) of the `.durbar/notes/.gitignore` Durbar itself made (only that very file is ever deleted by Durbar). */
   notesIgnoreOwn?: string;
+  /** Spec 111 FR-040: the team members made from a template (at most 8), with their own settings. Written only when it exists. */
+  team?: TeamRecord;
 }
+
+/** Spec 111 FR-040: one member of the room's team record. `sessions` are the member's session ids (`briefSent` is T013's). */
+export interface TeamRecordMember {
+  memberId: string; name: string; role: string; brief?: string; briefFrom?: 'file'; sendBrief: boolean;
+  app: string; model?: string; effort?: string; mode: SavedPermMode; cap?: TeamCap; profile?: string;
+  sessions: Array<{ id: string; briefSent?: true }>;
+}
+/** `templates`: the names the members came from (display only) */
+export interface TeamRecord { templates: string[]; members: TeamRecordMember[] }
 
 export interface SessionMode {
   id: string;
@@ -271,6 +284,58 @@ export function parsePrevMarks(v: unknown): PrevMark[] | undefined {
 
 const MAX_FOLDERS = 200;
 
+/** Spec 111 FR-040: a team record read from the file (or checked before a write): what is malformed is dropped, at most 8 members, 8 template names. No member left = no record. */
+export function parseTeamRecord(v: unknown): TeamRecord | undefined {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined;
+  const o = v as Record<string, unknown>;
+  const members: TeamRecordMember[] = [];
+  const seen = new Set<string>();
+  if (Array.isArray(o.members)) {
+    for (const e of o.members.slice(0, 64)) {
+      const m = parseTeamMember(e);
+      if (!m || seen.has(m.memberId)) continue;
+      seen.add(m.memberId);
+      members.push(m);
+      if (members.length >= TEAM_LIMITS.members) break;
+    }
+  }
+  if (!members.length) return undefined;
+  const templates: string[] = [];
+  if (Array.isArray(o.templates)) {
+    for (const t of o.templates.slice(0, 64)) {
+      const n = cleanDisplayName(t, 60);
+      if (n && !templates.includes(n)) templates.push(n);
+      if (templates.length >= TEAM_LIMITS.members) break;
+    }
+  }
+  return { templates, members };
+}
+function parseTeamMember(v: unknown): TeamRecordMember | undefined {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined;
+  const o = v as Record<string, unknown>;
+  const name = cleanDisplayName(o.name, TEAM_LIMITS.name);
+  const role = cleanDisplayName(o.role, TEAM_LIMITS.role);
+  if (typeof o.memberId !== 'string' || !MEMBER_ID_RE.test(o.memberId) || !name || !role) return undefined;
+  if (typeof o.app !== 'string' || !APP_RE.test(o.app)) return undefined;
+  const capIn = o.cap && typeof o.cap === 'object' ? (o.cap as Record<string, unknown>) : undefined;
+  const unit = capIn?.unit === 'aiu' || capIn?.unit === 'usd' ? capIn.unit : undefined;
+  const amount = unit ? parseCapIn(unit, capIn?.amount) : undefined;
+  const sessions: TeamRecordMember['sessions'] = [];
+  if (Array.isArray(o.sessions)) {
+    for (const s of o.sessions.slice(0, 50)) {
+      const x = s && typeof s === 'object' ? (s as Record<string, unknown>) : undefined;
+      if (x && typeof x.id === 'string' && SESSION_NAME_ID.test(x.id) && !sessions.some((y) => y.id === x.id)) sessions.push({ id: x.id, ...(x.briefSent === true ? { briefSent: true as const } : {}) });
+    }
+  }
+  const brief = typeof o.brief === 'string' && o.brief.length > 0 && o.brief.length <= TEAM_LIMITS.ownBrief.chars ? o.brief : undefined;
+  return {
+    memberId: o.memberId, name, role, ...(brief ? { brief } : {}), ...(o.briefFrom === 'file' ? { briefFrom: 'file' as const } : {}), sendBrief: o.sendBrief !== false,
+    app: o.app, ...(typeof o.model === 'string' && MODEL_RE.test(o.model) ? { model: o.model } : {}), ...(parseEffort(o.effort) ? { effort: parseEffort(o.effort) } : {}),
+    mode: o.mode === 'ask' || o.mode === 'allow' ? o.mode : 'read-only', ...(unit && amount !== undefined ? { cap: { unit, amount } } : {}),
+    ...(typeof o.profile === 'string' && PROFILE_ID.test(o.profile) ? { profile: o.profile } : {}), sessions,
+  };
+}
+
 /** Spec 017 FR-034: does a saved folder still carry the old `closed` flag (a door plate)? It is ignored on read and dropped from the file. */
 export function hasLegacyClosed(text: string): boolean {
   try {
@@ -318,6 +383,7 @@ export function parseSavedFolders(text: string): SavedFolder[] {
       ...(parseSessionModes(o.sessionModes) ? { sessionModes: parseSessionModes(o.sessionModes) } : {}),
       ...(parseSessionMcpOff(o.sessionMcpOff) ? { sessionMcpOff: parseSessionMcpOff(o.sessionMcpOff) } : {}),
       ...(typeof o.notesIgnoreOwn === 'string' && /^[0-9]{1,24}:[0-9]{1,24}(?::[0-9]{1,24})?$/.test(o.notesIgnoreOwn) ? { notesIgnoreOwn: o.notesIgnoreOwn } : {}),
+      ...(parseTeamRecord(o.team) ? { team: parseTeamRecord(o.team) } : {}), // spec 111: only when set, so older files read back unchanged
       ...(o.notesProject === true || o.notesProject === 'git' ? { notesProject: o.notesProject } : {}), // spec 083 FR-050: only `true` or `'git'` turns it on; anything else is off (the old `notesFile` is dropped: Changes 2026-11-01)
     });
     if (out.length >= MAX_FOLDERS) break;
@@ -616,6 +682,40 @@ export class FolderStore {
     cur.sessionNames = out.length ? out.slice(-MAX_SESSION_NAMES) : undefined;
     if (this.save()) return true;
     cur.sessionNames = before;
+    return false;
+  }
+
+  /**
+   * Spec 111 FR-040 (the T011 delta): saves the room's team record and the members' session names in ONE write. A room that is not in the list is
+   * added (read-only, no model, no adapter id: the members carry their own). False (the in-memory state put back, nothing changed) for a record or name
+   * that does not parse whole, a folder that cannot be added, or a write that failed.
+   */
+  setTeamRecord(workspace: string, team: unknown, names: Array<{ src: string; id: string; name: string }> = []): boolean {
+    const rec = parseTeamRecord(team);
+    const given = (team as { members?: unknown[] } | null)?.members;
+    if (!rec || !Array.isArray(given) || rec.members.length !== given.length) return false; // a record that loses a member in the parse is refused, never saved smaller
+    const entries: SessionNameEntry[] = [];
+    for (const n of names) {
+      const e = parseSessionNameEntry({ src: n.src, id: n.id, name: n.name });
+      if (!e) return false;
+      entries.push(e);
+    }
+    let cur = this.get(workspace);
+    const created = !cur;
+    if (!cur) {
+      if (typeof workspace !== 'string' || !workspace || workspace.length > 4096 || !path.isAbsolute(workspace) || this.folders.length >= MAX_FOLDERS) return false;
+      cur = { workspace, permMode: 'read-only', hidden: false };
+      this.folders.push(cur);
+    }
+    const before = { team: cur.team, sessionNames: cur.sessionNames };
+    cur.team = rec;
+    if (entries.length) {
+      const list = (cur.sessionNames ?? []).filter((x) => !entries.some((e) => e.src === x.src && e.id === x.id));
+      cur.sessionNames = [...list, ...entries].slice(-MAX_SESSION_NAMES);
+    }
+    if (this.save()) return true;
+    if (created) this.folders = this.folders.filter((f) => f !== cur);
+    else { cur.team = before.team; cur.sessionNames = before.sessionNames; }
     return false;
   }
 
