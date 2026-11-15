@@ -2160,7 +2160,26 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
           }
       assert.ok(checked >= 40, `#1613 round 11: the long-token cases the split step hides are checked (${checked})`);
       // a run past the right cap cannot be read whole: the cut fails closed to the start of the run that holds cut - 512
-      assert.strictEqual(ST._deskWindowForTest('x '.repeat(8190) + 'q'.repeat(40000)).length, M - 4 - 512, '#1613 round 11: a run longer than the cap past the cut fails closed');
+      // round 12: a run longer than the cap past the cut is read up to the cap: the window keeps everything to the cut (round 11 dropped 512 more)
+      assert.strictEqual(ST._deskWindowForTest('x '.repeat(8190) + 'q'.repeat(40000)).length, M - 4, '#1613 round 12: a run longer than the cap past the cut keeps the window to the cut');
+      const sentence = 'The build passed and the report is attached below.';
+      const b64 = al(40000, 11);
+      for (const t of [sentence + '\n' + b64, sentence + '\r\n' + b64]) {
+        assert.ok(ST._deskWindowForTest(t).startsWith(sentence), '#1613 round 12: a sentence, a line break and a 40,000-character run keep the sentence in the window');
+        assert.ok(ST.excerpt(t, red).includes('The build passed and the report is attached'), `#1613 round 12: ... and in the excerpt: ${JSON.stringify(ST.excerpt(t, red).slice(0, 80))}`);
+      }
+      const mini = 'console.log(1)\n' + 'var a={"k":1,"b":[2,3]};'.repeat(2000);
+      assert.ok(ST._deskWindowForTest(mini).startsWith('console.log(1)\n'), '#1613 round 12: a minified line with one line break keeps its first line');
+      // a 3,000-character JWT split 100 characters in, the bound in the 40 positions after the break: its second half runs about 2,900 characters past the cut
+      const big = 'eyJhbGciOiJIUzI1NiJ9.' + al(2935, 13) + '.' + al(44, 17);
+      const bigSplit = big.slice(0, 100) + '\n' + big.slice(100);
+      assert.ok(!red('see ' + bigSplit + ' now').includes(big.slice(80, 100)), '#1613 round 12: the split step hides a 3,000-character JWT split by a line break');
+      for (let d = 1; d <= 40; d++) {
+        const p0 = M - 100 - d;
+        const t = ('x '.repeat(p0)).slice(0, p0 - 1) + ' ' + bigSplit + ' ' + 'tail '.repeat(100);
+        const w = ST._deskWindowForTest(t);
+        assert.ok(!w.includes(big.slice(80, 100)) || w.includes(bigSplit), `#1613 round 12: a 3,000-character JWT split by a line break, the bound ${d} after it, is whole in the window or not in it (${w.length})`);
+      }
     }
     // round 8: a label with no split token and no hidden character reads once, as before PR 1721 (one call of the mask handed in)
     for (const lab of ['echo hello world', 'echo ' + GH, 'ls -la /tmp']) {
