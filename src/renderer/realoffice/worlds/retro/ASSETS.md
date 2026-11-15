@@ -28,7 +28,20 @@ A hall of arcade cabinets, drawn **in code** (`scripts/build-arcade-pack.py`, fr
 - approved by: Vikram, 2026-11-01 (the mockup's look)
 - reference: the mockup
 - prompt: none, drawn in code
-- cut: as room-day; night only, one dark set (owner 2026-11-03, spec 102: no light choice, so no `lightSets`); its `welcome-night` part is not drawn (the world's `welcome` part is T206)
+- cut: as room-day; night only, one dark set (owner 2026-11-03, spec 102: no light choice, so no `lightSets`); there is no `welcome-night`: the one `welcome` picture below is night too (T206)
+- licence: MIT
+
+### room-welcome
+
+- files: welcome.webp
+- source: the first-run hall, composed in code from the night wall, the night floor tile and the world's own cabinets (a back row of nine and four nearer ones, each with an attract loop of flat blocks on its glass: block creatures under a cannon, a road to a horizon, two bats and a ball, falling blocks, a snake in a maze; invented shapes), pools of screen light on the floor, dithered dim edges; the middle is left quiet for the first-run card
+- tool: `scripts/build-arcade-pack.py` (Pillow), `welcome()`
+- date: 2026-11-13
+- made by: Vikram's agent (Claude Code)
+- approved by: Vikram, owner decision 2026-11-13 to build it, drawn in code (comment on issue 1400); the picture itself waits for his look on the PR
+- reference: none
+- prompt: none, drawn in code (0 AI credits)
+- cut: 480 x 300 grid pixels, one file pixel per grid pixel, lossless (VP8L), no metadata chunk; shown with `background-size: cover`, nearest pixel
 - licence: MIT
 
 ### cabinets

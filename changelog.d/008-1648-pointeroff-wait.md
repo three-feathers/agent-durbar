@@ -1,1 +1,0 @@
-- Fixed: the UI checks' pointer reset no longer reports a slow first run as a hovered control (spec 008 FR-215, issue #1648): `pointerOff` re-sends the move to 0,0 every 250 ms for up to 3 s and, if a control is still hovered then, fails with `the pointer did not leave` and the list.

@@ -8,11 +8,15 @@ export type RealState = 'working' | 'thinking' | 'waiting' | 'error' | 'limit' |
 /** `helpers`: how many sub-agents the desk has (spec 097 FR-306: the engine reserves a strip for them under the plate) */
 export interface RealAgent { id: string; state: RealState; away?: string | null; person?: string | null; lounge?: boolean; helpers?: number }
 /** `keep`: the folder has a saved desk order (spec 097 FR-345): its desks stay in the model's order, no status sort */
-export interface RealFolder { id: string; agents: RealAgent[]; keep?: boolean }
+/** spec 102 delta 2026-11-14 (spec 097 FR-104, FR-116): the floor a folder stands on in the All floors view; `n` counts from the bottom (floor 1 is the ground floor). Only the All floors view sets it. */
+/** `w`: the width in px of the tag's text ("3 Personal") in the sign's own 12 px bold font, measured by the renderer (spec 102 delta 2026-11-14, review of #1741); absent in a pure test */
+export interface RealFloor { id: string; name: string; n: number; w?: number }
+export interface RealFolder { id: string; agents: RealAgent[]; keep?: boolean; floor?: RealFloor }
 export interface RealVisitor { id: string; person?: string | null; needsYou?: boolean }
 export interface RealPlace { id: string; custom?: boolean; visitors: RealVisitor[] }
 /** `keepRooms`: the person saved a room order for this floor (spec 097 FR-353, owner Q31): the rooms stand in rows in that order, left to right, top to bottom, even if the picture is a little smaller */
-export interface RealModel { folders: RealFolder[]; places: RealPlace[]; keepRooms?: boolean }
+/** `restW`: the measured width in px of the tag "Resting" (same font as `RealFloor.w`) */
+export interface RealModel { folders: RealFolder[]; places: RealPlace[]; keepRooms?: boolean; restW?: number }
 export interface SeatMeta { w: number; h: number; headTop: number; bodyH: number; hand: number }
 /** `feet` and `top`: per pose, the lowest and highest opaque row as a share of the picture's height, measured from its alpha (owner 2026-10-31 10:19) */
 export interface StandMeta { figH: number; poses: Record<string, [number, number]>; feet?: Record<string, number>; top?: Record<string, number>; foot?: Record<string, number> }
@@ -21,6 +25,8 @@ export interface StandMeta { figH: number; poses: Record<string, [number, number
 export interface RealMeta {
   /** spec 102 FR-255: a pixel world's art (one integer scale); its lobby keeps people apart */
   pixelArt?: boolean;
+  /** spec 102 delta 2026-11-14 (spec 097 FR-104): this world draws the All floors view as storeys (a band and a tag per floor); off in a world that has not built it (Photo, cave: T113) */
+  storeys?: boolean;
   /** spec 097 FR-335 (T247): the people's own art is not pixel art (false); a hi-res crew in a pixel world is scaled to the world's people, not drawn at whole multiples of its pixels */
   pixelPeople?: boolean;
   seat: Record<string, SeatMeta>; stand: Record<string, StandMeta>;
@@ -29,9 +35,15 @@ export interface RealMeta {
   desk?: [number, number];
   /** per person: the typing rig's head and hands, as fractions of the picture, with their pivots (spec Changes 2026-11-01) */
   rig?: Record<string, Record<string, { x: number; y: number; w: number; h: number; px: number; py: number }>>;
-  /** the side every standing picture faces, baked into the files (spec 097 FR-191); the lobby puts visitors to the right of their fixture, so 'left' */
+  /** the side every standing picture of the set faces, as drawn (spec 097 FR-191, 2026-11-14 delta); absent = 'left'. The lobby puts visitors to the right of their fixture, so a set that faces 'right' is drawn mirrored (`mir`) */
   facing?: 'left' | 'right';
+  /** spec 097 FR-368..FR-371 (#1641, #1642): the world's helper kids (the Photo office's clay-toy kids), in shipped pixels: per kid the standing reference figure's `bodyH`, `w`, `h`,
+   *  `headTop` and `face` box, every pose's size and the widest pose; absent in a world without kid art (the head row keeps FR-307's adults) */
+  kids?: Record<string, KidMeta>;
 }
+export interface KidMeta { ref: string; bodyH: number; w: number; h: number; headTop: number; face: [number, number, number, number]; poses: Record<string, [number, number]>; widest: string }
+/** spec 097 FR-368..FR-373: a desk's kid zone: the feet line, the place width, the places nearest the person first (left span, then right), how many show as kids, and the `+K` block (or null) */
+export interface KidZone { feet: number; place: number; places: Rect[]; shown: number; more: Rect | null }
 export interface Rect { x: number; y: number; w: number; h: number }
 export interface DeskBox {
   id: string; state: RealState; slot: Rect; desk: Rect & { full: number }; plate: Rect; screen: Rect; glass: Rect;
@@ -41,6 +53,8 @@ export interface DeskBox {
   call: { x: number; y: number };
   /** spec 097 FR-306, FR-308: the helper strip under the plate, inside the slot: `rows` of head figures, `shown` fit, the rest are the `+K` button; only a desk with helpers has one */
   strip?: Rect & { rows: number; shown: number; cols: number };
+  /** spec 097 FR-368: the helpers as kids on the desk top (the big level, a world with kids, room for at least one); such a desk has no `strip` */
+  kids?: KidZone;
   /** `aisles` only (spec 102 FR-256..FR-259): the marquee, the standing person's box and the side the screen faces */
   /** spec 097 FR-247, FR-248: a seat of the lounge row (no desk or cabinet; `table` is the small desk the monitor stands on) */
   lounge?: boolean; table?: Rect;
@@ -48,19 +62,24 @@ export interface DeskBox {
 }
 /** `id` is the folder's id; `part` is 1, or 2, 3... for the rest of a folder split over rows */
 export interface ZoneBox { id: string; part: number; box: Rect; sign: Rect; desks: DeskBox[]; /** the sign shows name, counts, + and menu only; path and cost go to its hover (FR-256 in `aisles`; FR-356 in a room too narrow for the whole sign) */ signShort?: boolean }
-export interface VisitorBox { id: string; fig: (Rect & { file: string; fileB: string | null; b: Rect | null; pose: string; feetY: number; faces: 'left' | 'right' }) | null; chip: { x: number; y: number }; face: Rect | null; shadow: Rect | null }
+export interface VisitorBox { id: string; fig: (Rect & { file: string; fileB: string | null; b: Rect | null; pose: string; feetY: number; faces: 'left' | 'right'; mir: boolean }) | null; chip: { x: number; y: number }; face: Rect | null; shadow: Rect | null }
 export interface FixtureBox { id: string; custom: boolean; art: Rect | null; slot: Rect; plate: { x: number; y: number; w: number }; visitors: VisitorBox[]; more: number; light: Rect }
+export interface StoreyBand { id: string; name: string; n: number; box: Rect; tag: Rect; slab: Rect | null }
 export interface Layout {
   u: number; big: boolean; lobbyH: number; floorH: number; width: number; height: number; scroll: boolean; faceH: number;
   zones: ZoneBox[]; fixtures: FixtureBox[]; floorStrip: Rect;
   /** `aisles` only: the free strip under the lobby where one-line pills go first */
   lane?: Rect;
+  /** the All floors view as storeys (spec 097 FR-104): one band per floor, floor 1 at the bottom; `tag` holds the floor's name, `slab` is the rule between this storey and the one above it (null for the top one) */
+  storeys?: StoreyBand[];
   /** `aisles` only: the pixel scale (CSS px per art pixel) and the cabinet's size */
   g?: number; cabinet?: { w: number; h: number; gw: number; gh: number; cols: number; rows: number };
   /** spec 097 FR-308: FR-338: the rows of the helper strip (1), or 0: none drawn, the plate keeps its `+N` and dots (no room, or no helpers) */
   helpRows?: number;
   /** spec 097 FR-246..FR-248: the lounge row (its box and its seats), when an agent sits there */
   lounge?: { box: Rect; desks: DeskBox[] };
+  /** `circle` only (spec 102 FR-227): the box of the `focus` picture, in the middle of the ring; no desk or sign lies on it */
+  focus?: Rect;
 }
 
 /* FR-010 constants (b2.js) */
@@ -102,6 +121,63 @@ export function helperPerson(helperId: string, parentPerson: string | null | und
   let h = 2166136261;
   for (const ch of String(helperId)) { h ^= ch.codePointAt(0) as number; h = Math.imul(h, 16777619) >>> 0; }
   return list[h % list.length];
+}
+
+/** Spec 097 FR-368, FR-369 (delta 2026-11-12, owner: kids about 0.40 of the person, as many as fit up to 6, then +K): a kid's standing height as a share of `u`; the gap between
+ *  places; the feet line's height over the plate's top (clear of the rename pencil's 2 px); the desk's edge margin; the most kids a desk draws. */
+export const KID_U = 0.40, KID_GAP = 4, KID_FEET = 4, KID_EDGE = 6, KID_CAP = 6;
+/** FR-369: one scale per kid, for every pose ("shrink everything together"): its standing reference figure is `KID_U * u` tall */
+export const kidScale = (kid: KidMeta, u: number): number => KID_U * u / kid.bodyH;
+/** FR-369 (plan A2): one place width for the world: the widest pose of the widest kid at its own scale, plus the gap; so any kid fits any place and nothing moves on a status change */
+export function kidPlaceW(kids: Record<string, KidMeta>, u: number): number {
+  let w = 0;
+  for (const id of Object.keys(kids)) { const k = kids[id], p = roOwn(k.poses, k.widest) ? k.poses[k.widest] : [k.w, k.h]; w = Math.max(w, p[0] * kidScale(k, u)); }
+  return w + KID_GAP;
+}
+/** FR-371: the picture of a helper's state: `idle` holds the `done` picture; every state rests (`asleep`) when its parent desk is asleep */
+export function kidPose(state: string, parentAsleep: boolean): string {
+  if (parentAsleep) return 'asleep';
+  return state === 'idle' ? 'done' : ['working', 'thinking', 'waiting', 'error', 'limit', 'done', 'asleep'].includes(state) ? state : 'working';
+}
+/** FR-369: a kid's drawn box in a place: its pose at the kid's one scale, centred in the place, its sole on the feet line */
+export function kidBox(kid: KidMeta, pose: string, place: Rect, feet: number, u: number): Rect {
+  const k = kidScale(kid, u), p = roOwn(kid.poses, pose) ? kid.poses[pose] : [kid.w, kid.h], w = p[0] * k, h = p[1] * k;
+  return { x: place.x + (place.w - w) / 2, y: feet - h, w, h };
+}
+/** FR-370 (plan A3): the head row's square of a kid's standing picture: the face box's longer side fills `HEAD_FACE` of the head, centred on the face, inside the picture */
+export function kidHeadCrop(kid: KidMeta): { x: number; y: number; s: number } {
+  const [fx, fy, fw, fh] = kid.face, s = Math.min(Math.max(fw, fh) / HEAD_FACE, kid.w, kid.h);
+  return { x: Math.max(0, Math.min(kid.w - s, fx + fw / 2 - s / 2)), y: Math.max(0, Math.min(kid.h - s, fy + fh / 2 - s / 2)), s };
+}
+/** FR-370: the kid a helper is, by `helperPerson`'s stable rule over the world's kids (a kid is never a parent) */
+export const kidOf = (helperId: string, kids: Record<string, KidMeta>): string | null => helperPerson(helperId, null, Object.keys(kids).sort());
+/** FR-307, FR-370: the one answer for a helper head's picture: the kid's face (the world's `<kid>-<ref>.webp`) in a world with kids, else an adult of the set
+ *  (never the parent) cropped by `headCrop` from `<person>-rest.webp`; `w` is the picture's width in its pixels, `world` says which folder it is in */
+export function helperHead(helperId: string, parentPerson: string | null | undefined, meta: Pick<RealMeta, 'seat' | 'kids'>): { file: string; world: boolean; w: number; crop: { x: number; y: number; s: number } } | null {
+  if (meta.kids && Object.keys(meta.kids).length) {
+    const id = kidOf(helperId, meta.kids) as string, k = meta.kids[id];
+    return { file: `${id}-${k.ref}.webp`, world: true, w: k.w, crop: kidHeadCrop(k) };
+  }
+  const seat = meta.seat || {}, p = helperPerson(helperId, parentPerson, Object.keys(seat).sort());
+  return p && roOwn(seat, p) ? { file: `${p}-rest.webp`, world: false, w: seat[p].w, crop: headCrop(seat[p]) } : null;
+}
+/** FR-368, FR-369, FR-373: the kid zone of one desk at the big level: two spans on the desk top beside the centre (the person's head and shoulders, the away post-it, or where the
+ *  person would sit), the places nearest the centre first (left span, then right), as many kids as fit up to `KID_CAP`, then `+K` in the next place; null when no kid fits (plan A4) */
+export function kidZone(kids: Record<string, KidMeta>, n: number, u: number, desk: Rect, centre: Rect, feet: number, right: number): KidZone | null {
+  if (n <= 0 || !Object.keys(kids).length) return null;
+  let tall = 0;
+  for (const id of Object.keys(kids)) { const k = kids[id]; for (const ps of Object.keys(k.poses)) tall = Math.max(tall, k.poses[ps][1] * kidScale(k, u)); }
+  const place = kidPlaceW(kids, u), top = feet - tall;
+  const l0 = desk.x + KID_EDGE, l1 = centre.x - KID_GAP, r0 = centre.x + centre.w + KID_GAP, r1 = right;
+  const fit = (span: number): number => Math.max(0, Math.floor((span + KID_GAP) / place));
+  const nl = fit(l1 - l0), nr = fit(r1 - r0), places: Rect[] = [];
+  for (let i = 0; i < nl; i++) places.push({ x: l1 + KID_GAP - (i + 1) * place, y: top, w: place - KID_GAP, h: feet - top });
+  for (let i = 0; i < nr; i++) places.push({ x: r0 + i * place, y: top, w: place - KID_GAP, h: feet - top });
+  const P = places.length, shown = n <= Math.min(P, KID_CAP) ? n : Math.min(KID_CAP, P - 1);
+  if (shown < 1) return null;
+  let more: Rect | null = null;
+  if (shown < n) { const p = places[shown], s = Math.max(28, Math.round(0.13 * u)); more = { x: p.x + (p.w - s) / 2, y: feet - s, w: s, h: s }; }
+  return { feet, place, places: places.slice(0, shown), shown, more };
 }
 
 /** FR-011: the search is exhaustive up to this many folders; past it, rows of about equal size in the needs-you-first order (FR-019 budget). */
@@ -367,10 +443,12 @@ function roLobby(meta: RealMeta, places: RealPlace[], W: number, Lb: number): { 
         const k0 = nearPx / standHeight(meta, String(v.person));
         const k = snap && meta.pixelPeople !== false ? visitorScale(k0) : k0, fw2 = sp.size[0] * k, fh2 = sp.size[1] * k; /* FR-255 (#1104): whole scale in a pixel world */
         const px = (n: number): number => (snap ? Math.round(n) : n);
-        const faces = meta.facing || 'left', st = meta.stand[String(v.person)], fb = roOwn(POSE_FRAME_B, sp.pose) && roOwn(st.poses, POSE_FRAME_B[sp.pose]) ? POSE_FRAME_B[sp.pose] : null;
+        /* spec 097 FR-191 (2026-11-14, #1743): the side a visitor must face is worked out from where it stands against its fixture (right of the middle faces left); a set drawn the other way is mirrored, its foot centre with it */
+        const faces: 'left' | 'right' = cx > x + fw / 2 ? 'left' : 'right', mir = (meta.facing || 'left') !== faces, ft = (f: number): number => (mir ? 1 - f : f);
+        const st = meta.stand[String(v.person)], fb = roOwn(POSE_FRAME_B, sp.pose) && roOwn(st.poses, POSE_FRAME_B[sp.pose]) ? POSE_FRAME_B[sp.pose] : null;
         /* the two running pictures have their own canvases: each in its own box, the feet on one spot, so changing picture moves no foot */
-        const b = fb ? (() => { const w = st.poses[fb][0] * k, h = st.poses[fb][1] * k; return { x: px(cx - (st.foot && roOwn(st.foot, fb) ? st.foot[fb] : sp.foot) * w), y: px(frontY - (st.feet && roOwn(st.feet, fb) ? st.feet[fb] : sp.feet) * h), w, h }; })() : null;
-        fig = { x: px(cx - sp.foot * fw2), y: px(frontY - sp.feet * fh2), w: fw2, h: fh2, file: `${v.person}-${sp.pose}.webp`, fileB: fb ? `${v.person}-${fb}.webp` : null, b, pose: sp.pose, feetY: frontY, faces };
+        const b = fb ? (() => { const w = st.poses[fb][0] * k, h = st.poses[fb][1] * k; return { x: px(cx - ft(st.foot && roOwn(st.foot, fb) ? st.foot[fb] : sp.foot) * w), y: px(frontY - (st.feet && roOwn(st.feet, fb) ? st.feet[fb] : sp.feet) * h), w, h }; })() : null;
+        fig = { x: px(cx - ft(sp.foot) * fw2), y: px(frontY - sp.feet * fh2), w: fw2, h: fh2, file: `${v.person}-${sp.pose}.webp`, fileB: fb ? `${v.person}-${fb}.webp` : null, b, pose: sp.pose, feetY: frontY, faces, mir };
         const headY = fig.y + sp.top * fh2;
         face = { x: cx - 0.065 * nearPx, y: headY, w: 0.13 * nearPx, h: 0.13 * nearPx };
         /* a soft elliptical contact shadow on the floor, centred on the foot line, a little wider than the stance */
@@ -422,10 +500,15 @@ function roStation(meta: RealMeta, a: RealAgent, sx: number, y: number, Sw: numb
   const plate = { x: sx + 8, y: deskY + 0.22 * dh + 2, w: slotW - 16, h: plateH };
   /* the desk picture is dh tall; the row shows its top (desktop, front panel, the upper legs), so the box is cut at the row's bottom */
   const desk = { x: sx + 3, y: deskY, w: dw, h: Math.min(dh, g.base - g.deskBack - 2), full: dh };
-  const strip = hr > 0 && hh > 0 && (a.helpers || 0) > 0 ? { x: plate.x, y: y + g.stripY, w: plate.w, h: hh - 2, rows: hr, cols: helpCols(plate.w), shown: helpShown(plate.w, hr, a.helpers as number) } : undefined;
+  /* FR-368 (delta 2026-11-12): at the big level in a world with kids, a desk's helpers stand on its desk top; the centre is the person's head and shoulders, else the post-it, else where the person would sit */
+  const away = a.away ? roNote(px, sx, slotW, sl, deskY, u, big) : null;
+  const kz = big && meta.kids && !a.lounge && (a.helpers || 0) > 0
+    ? kidZone(meta.kids, a.helpers as number, u, { x: sx + 3, y: deskY, w: dw, h: dh }, person ? person.vis : away ? { x: away.x - away.s / 2 - 4, y: away.y, w: away.s + 8, h: away.s } : { x: px - 0.3 * u, y: headY, w: 0.6 * u, h: deskY - headY }, plate.y - KID_FEET, sx + slotW - 16 - KID_EDGE)
+    : null;
+  const strip = !kz && hr > 0 && hh > 0 && (a.helpers || 0) > 0 ? { x: plate.x, y: y + g.stripY, w: plate.w, h: hh - 2, rows: hr, cols: helpCols(plate.w), shown: helpShown(plate.w, hr, a.helpers as number) } : undefined;
   return {
-    id: a.id, state: a.state, narrow, slot: { x: sx, y, w: slotW, h: 0 }, desk, plate, screen, glass, person, face, ...(strip ? { strip } : {}),
-    away: a.away ? roNote(px, sx, slotW, sl, deskY, u, big) : null, /* the note on the desk, where the person would sit */
+    id: a.id, state: a.state, narrow, slot: { x: sx, y, w: slotW, h: 0 }, desk, plate, screen, glass, person, face, ...(strip ? { strip } : {}), ...(kz ? { kids: kz } : {}),
+    away, /* the note on the desk, where the person would sit */
     lamp: { x: sx + 0.02 * slotW, y: Math.max(y + STRIP, headY - 0.35 * u), w: 0.96 * slotW, h: deskY + dh * 0.5 - Math.max(y + STRIP, headY - 0.35 * u) },
     bubble: person && roNeedsYou(a.state) ? { x: px + 0.2 * u - 6, y: headY - 0.04 * u } : null,
     bang: a.state === 'error' ? { x: sr - 10, y: screen.y - 8 } : null,
@@ -437,6 +520,21 @@ function roStation(meta: RealMeta, a: RealAgent, sx: number, y: number, Sw: numb
 /** FR-018: the folder sign's width for its text (an estimate; the renderer cuts the path with an ellipsis). */
 export const signWidth = (name: string, path: string, counts: number, zw: number): number =>
   Math.max(60, Math.min(zw - 8, 120 + 7 * (Math.min(40, name.length) + Math.min(40, path.length)) * 0.75 + 30 * counts));
+
+/** spec 102 delta 2026-11-14 (spec 097 FR-104, FR-116): the storeys of a model, the one rule every arrangement shares. Folders come in the building's order (highest floor first, `storeysTopDown`);
+ *  a storey is a run of folders on one floor. Returns the runs as {floor, from, to} (folder indexes, `to` excluded), or null when fewer than two floors have a folder (no storeys are drawn then). */
+export function storeyRuns(folders: ReadonlyArray<{ floor?: RealFloor }>): Array<{ floor: RealFloor; from: number; to: number }> | null {
+  const runs: Array<{ floor: RealFloor; from: number; to: number }> = [];
+  folders.forEach((f, i) => { if (!f.floor) return; const l = runs[runs.length - 1]; if (l && l.floor.id === f.floor.id && l.to === i) l.to = i + 1; else runs.push({ floor: f.floor, from: i, to: i + 1 }); });
+  return runs.length >= 2 && new Set(runs.map((r) => r.floor.id)).size === runs.length ? runs : null;
+}
+/** the rule between two storeys, in px: counted in the hall's height */
+export const STOREY_GAP = 4;
+/** the narrowest a storey's tag may be cut to, px (its name is cut with an ellipsis, the whole name is in its title) */
+export const STOREY_TAG_MIN = 70;
+/** the width of a storey's tag ("3 Client A"): the text's measured width (`w`, px, the sign's 12 px bold in the font of this machine) plus the sign's 16 px of padding and border; with no measure, 8 px a letter
+ *  (the digits, a space and the name, at most 24 letters: the rest is cut and in the title). `n` 0 is the Resting tag: its text is the name alone. */
+export const storeyTagW = (f: RealFloor): number => 16 + Math.ceil(f.w !== undefined ? Math.min(f.w, 8 * 27) : 8 * ((f.n ? String(f.n).length + 1 : 0) + Math.min(24, f.name.length)));
 
 /** FR-356 (bug #1392): the narrowest whole sign: its name cut to 3 letters, no path, the counts, the cost (`counts` counts it, as `signWidth`), + and menu. Measured 183 px with two
  *  counts and a cost (the cave at 1280x800, 2026-11-09), plus 7 px for a wider font (#1079). A room narrower than this takes the short sign (FR-256's: no cost, no path). */
@@ -587,6 +685,14 @@ export function assignPeople(map: Record<string, string>, sessions: readonly { i
 
 /** the lobby band (fixtures and their visitors), for arrangements other than `rows` (spec 102 FR-256: the arcade hall keeps today's band) */
 export { roLobby as lobbyBand };
+/** the row geometry and one desk, for `circle` (spec 102 FR-227: a ring of the same desks as `rows`, so a desk is the same picture in both) */
+export { roRowGeom as rowGeom, roStation as deskStation };
+
+/** Spec 097 FR-110 (T223): a slip's kept spot from the last draw holds only while its whole box lies inside the bounds under the lobby, on all four sides
+ *  (a spot above or left of the new floor's bounds, from a hall with a shorter lobby, was kept before and lay over the lobby's plates). Pure. */
+export function keptSpotInside(at: { x: number; y: number }, size: { w: number; h: number }, bounds: Rect): boolean {
+  return at.x >= bounds.x && at.y >= bounds.y && at.x + size.w <= bounds.x + bounds.w && at.y + size.h <= bounds.y + bounds.h;
+}
 
 /** Spec 097 FR-110, FR-121: where a slip, a bubble or a pill goes. The first free spot nearest `anchor` inside `bounds` that touches nothing in `avoid`
  *  (a plate, a sign, a chair label, a chip), or null when there is none. Pure; a 10 px grid keeps it cheap (a few hundred thousand comparisons at most). */
@@ -634,6 +740,7 @@ export function slipAvoid(lay: Layout): Rect[] {
     for (const d of z.desks) {
       out.push(d.plate);
       if (d.strip) out.push({ x: d.strip.x, y: d.strip.y, w: d.strip.w, h: d.strip.h }); /* FR-310 */
+      if (d.kids) { for (const p of d.kids.places) out.push(p); if (d.kids.more) out.push(d.kids.more); } /* FR-373 */
       if (d.face) out.push(d.face);
       if (d.away) out.push({ x: d.away.x - d.away.s / 2 - 4, y: d.away.y - 2, w: d.away.s + 8, h: d.away.s + 6 }); /* the note's own square, with a little for its tilt */
       if (d.bubble) out.push({ x: d.bubble.x, y: d.bubble.y - 24, w: 24, h: 24 });
