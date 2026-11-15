@@ -1,0 +1,1 @@
+- **check-005-announce-request** (check change, issue #1812) now also covers the plan card arriving with the Notes drawer open over its chat: the line sends you to the chat, never "in its card".
