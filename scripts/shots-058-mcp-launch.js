@@ -71,10 +71,11 @@ module.exports = async (ctx) => {
   /* review of 2026-11-12 (T308, tests only): the three rules of the lend that the 15-agent loop below cannot show, each at 1280x800 with the strip shown:
      DRIVER_CASE=16 (16 agents: the lent layout still scrolls, so it is refused: ro-tight off, the office scrolls as before);
      DRIVER_CASE=filter (a status filter showing 11 to 15 agents: ro-tight is never set while the floor scrolls, and the note keeps its top padding);
+     DRIVER_CASE=10 (issue #1598: DRIVER_AGENTS=10 DRIVER_ROOMS=3, DRIVER_H=769 (the 666 px room), three folders, strip shown: no folder of 4 or fewer is cut, no scroll);
      DRIVER_CASE=photo (18 agents in Photo at 1280x760 (DRIVER_H), where the strip leaves 636 px, Photo scrolls and the lend would rescue it: a world that is not `aisles` is never lent the padding) */
   const CASE = process.env.DRIVER_CASE || '';
   if (CASE) {
-    await H.load({ w: 1280, h: Number(process.env.DRIVER_H || 800), ready: 'fit', focus: true, query: { sim: String(Number(process.env.DRIVER_AGENTS || 15)), simkinds: 'mixed', simmcplaunch: '1', simmcpauth: '1', officeview: 'real' } });
+    await H.load({ w: 1280, h: Number(process.env.DRIVER_H || 800), ready: 'fit', focus: true, query: { sim: String(Number(process.env.DRIVER_AGENTS || 15)), simkinds: 'mixed', simmcplaunch: '1', simmcpauth: '1', officeview: 'real', ...(process.env.DRIVER_ROOMS ? { simrooms: process.env.DRIVER_ROOMS } : {}) } });
     assert.strictEqual(await js(`document.documentElement.dataset.world`), REAL === 'arcade' ? 'retro' : 'photo', `${CASE}: the world is the one asked for`);
     const CNT = Number(process.env.DRIVER_AGENTS || 15); /* the case's agent count, passed as ?sim= */
     assert.strictEqual(await js(`window.__durbarSimUi.agents().filter(a=>!a.parent).length`), CNT, `${CASE}: the simulator shows ${CNT} main agents`);
@@ -87,7 +88,7 @@ module.exports = async (ctx) => {
       assert.ok(await until(`document.getElementById('floor').classList.contains('has-fnote')&&!document.getElementById('filterNote').hidden`, 6000), 'filter: the filter note shows');
       await settle();
     }
-    const S = JSON.parse(JSON.stringify(await js(`(()=>{const f=document.getElementById('floor'),r=document.querySelector('#stage .ro'),L=window.__durbarSimUi.realLayout();return {sh:f.scrollHeight,ch:f.clientHeight,roBottom:r?Math.round(r.getBoundingClientRect().bottom):0,fb:Math.round(f.getBoundingClientRect().bottom),tight:f.classList.contains('ro-tight'),note:f.classList.contains('has-fnote'),scroll:!!(L&&L.scroll),lent:!!(L&&L.lent),desks:document.querySelectorAll('#stage .ro .ro-plate:not(.lounge)').length,pt:getComputedStyle(f).paddingTop,pb:getComputedStyle(f).paddingBottom}})()`)));
+    const S = JSON.parse(JSON.stringify(await js(`(()=>{const f=document.getElementById('floor'),r=document.querySelector('#stage .ro'),L=window.__durbarSimUi.realLayout();return {sh:f.scrollHeight,ch:f.clientHeight,roBottom:r?Math.round(r.getBoundingClientRect().bottom):0,fb:Math.round(f.getBoundingClientRect().bottom),tight:f.classList.contains('ro-tight'),note:f.classList.contains('has-fnote'),scroll:!!(L&&L.scroll),lent:!!(L&&L.lent),desks:document.querySelectorAll('#stage .ro .ro-plate:not(.lounge)').length,strip:!document.getElementById('mcpStrip').hidden,pt:getComputedStyle(f).paddingTop,pb:getComputedStyle(f).paddingBottom}})()`)));
     const tell = JSON.stringify(S);
     if (CASE === '16') {
       assert.ok(S.scroll && !S.lent && !S.tight, `arcade 16 agents MCP strip 1280: the lent layout still scrolls, so it is refused (ro-tight off, the layout not lent): ${tell}`);
@@ -96,6 +97,14 @@ module.exports = async (ctx) => {
       assert.ok(S.note && S.desks >= 11 && S.desks <= 15, `arcade filter MCP strip 1280: the filter shows 11 to 15 agents under the note (${S.desks} drawn): ${tell}`);
       assert.ok(!(S.tight && S.sh > S.ch + 1), `arcade filter MCP strip 1280: the lent padding is not taken while the floor still scrolls (ro-tight with scrollHeight ${S.sh} against ${S.ch}): ${tell}`);
       assert.ok(S.pt !== '0px', `arcade filter MCP strip 1280: the note keeps its top padding (${S.pt}): ${tell}`);
+    } else if (CASE === '10') {
+      /* issue #1598 (spec 102 T342): 10 agents in 3 or 4 folders at 1280x800 with the strip (room 666 px): no folder of 4 or fewer is cut across rows, the office does not scroll; the lent padding is what makes the room (the hall is whole from 682) */
+      const Z = JSON.parse(JSON.stringify(await js(`(()=>{const m={};for(const z of window.__durbarSimUi.realLayout().zones||[]){const e=m[z.id]||(m[z.id]={parts:0,desks:0});e.parts++;e.desks+=z.desks.length}return m})()`)));
+      const ids = Object.keys(Z), cut = ids.filter((i) => Z[i].parts > 1 && Z[i].desks <= 4);
+      assert.ok(ids.length >= 3 && ids.length <= 4, `arcade 10 agents MCP strip 1280: the simulator has 3 or 4 folders (${ids.length}): ${tell} ${JSON.stringify(Z)}`);
+      assert.deepStrictEqual(cut, [], `arcade 10 agents MCP strip 1280: a folder of 4 or fewer is cut across rows (${cut}): ${tell} ${JSON.stringify(Z)}`);
+      assert.ok(!S.scroll && S.sh <= S.ch + 1 && S.tight && S.lent, `arcade 10 agents MCP strip 1280: whole folders by the lent padding, no scroll: ${tell}`);
+      await shot('102-1598-ten-strip-1280x769.png');
     } else {
       assert.ok(!S.tight && !S.lent, `Photo 18 agents MCP strip 1280x760: the padding is lent to the arcade only (ro-tight ${S.tight}, lent ${S.lent}): ${tell}`);
     }

@@ -411,6 +411,14 @@ Spec [024](../024-office-places/spec.md) adds a one-row **lobby** band between t
 - Docs: `postNext` (not `postLines`) in the plan and tasks; `lobbyFit(aw, places, addButton, post)` in FR-039 and the plan.
 - *Result (2026-10-23, Linux, Xvfb, simulator only):* `sim:` `shots-001-lobby.js` hostile pass at 1440x900: four agents (the Boss's first entry, one inside "+N", Omar at the Bank, a coffee-corner visitor) get a title like `<img src=x onerror=…><b>Mal1</b>`, and a schedule prompt with the same markup is saved through the simulator bridge; no `img` and no injected `b` in `#stage`, `#walkers` or `#modeMenu`, `window.__pwn` stays unset, and the entries, tile labels and tooltips, the "+N" list and the Postbox line show the literal text. Mutation: `esc(a.name)` dropped from the lobby entry fails it. Token: a bare `ghp_` token placed across the desk title's 200th character leaves no `ghp_` and no piece of it in the title or the accessible name; mutation (cut, then mask) fails it with `ghp_Q7Q7Q7…` in the title. (A token after `Authorization: token` is masked even when cut, by the header rule, so the check uses a bare token.) `test:` `test:places` `every: null` cases; mutation back to `every==null` fails it.
 
+### 2026-11-13: the letter also flies in the Real office (issue #1587)
+
+*Found:* the Postbox's letter rule looked for the flat office's `.place.postbox` and `.desk[data-id]` only, so in the Real office (Photo office, Prehistoric cave, Retro arcade) it never flew.
+
+*Changed:*
+- Amendment to the Postbox's letter rule (FR-038): **the letter also flies in the Real office:** from the Postbox plate (`.ro-lplate[data-post]`) to the agent's name plate (`.ro-plate[data-id]`), skipped only when either end is off screen (in the flat office too: a desk scrolled out of view got a letter flying to nowhere). Rules, driver and mutants: [spec 097](../097-real-office/spec.md) FR-377.
+- *Result (2026-11-13, Linux, Xvfb, simulator only):* see spec 097 FR-377 (`sim:` `check-097-letter`).
+
 ### 2026-10-22: a long unbroken name on a full desk card (issue #536)
 
 The full card's name (`.who .name`) wraps to two lines and ends in "…"; a token with no spaces may break anywhere. The rule is spec 059 FR-019 (it owns where names are shown); card widths do not change, and a full card with a long name can only get shorter.
@@ -740,7 +748,7 @@ Spec, plan and tasks only: nothing here is built. Numbers taken: FR-193..FR-203,
 
 - **SC-005** Over at least 500 seeds at each of 1440x900 and 1280x800, chat closed and open, 0 differences in chosen layout, trial answers or boxes; every planted mutant of T178 is caught.
 - **SC-006** `partsMeasured` per search at most the limit T167 sets; search time at most 40 % of today's at 15 and 40 agents, same machine, alternating runs; `searchFellBack` 0 over the seeds.
-- **SC-007** Start at most 1500 ms and layout reads under 40 at 15 agents on the reference machine; the row for 40 agents as the owner decides; the Mac's numbers recorded beside them.
+- **SC-007** *(layout reads under 40 is no longer a gate: owner, 2026-11-14, spec 097 Changes 2026-11-14: status update under 30 ms at 15 agents)* Start at most 1500 ms and layout reads under 40 at 15 agents on the reference machine; the row for 40 agents as the owner decides; the Mac's numbers recorded beside them.
 
 **Open questions for the owner (not answered here; recommendations in the plan).** Q1: does 1500 ms bind at 40 agents too? Q2: which machine is the target measured on? Q3: if T167 shows a low gain, stop or build the cheaper parts? Q4: may the first paint wait (FR-201 d)?
 
