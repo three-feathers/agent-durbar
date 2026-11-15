@@ -510,7 +510,7 @@ async function driver(ctx) {
       const add = (kind, e, r, rid) => { if (e && !e.getClientRects().length) return; boxes.push({ kind, id: e ? (e.dataset.id || e.dataset.place || e.dataset.folder || e.dataset.for || e.textContent.slice(0, 16)) : (rid || ''), r: r || R(e) }); };
       document.querySelectorAll('#stage .ro-plate').forEach((e) => add('plate', e));
       document.querySelectorAll('#stage .ro-sign:not(.ro-stag)').forEach((e) => add('sign', e));
-      /* spec 097 FR-038 (delta 2026-11-15, T350, issues 1763 and 1759) and FR-104 (T113, review of PR 1746): a sign (every view) and a storey tag keep clear of the dots;  the storey tags of the All floors view, and the thinking dots over a head, which a tag must keep clear of (the dots are measured only against a tag: they stand over a person by design) */
+      /* spec 097 FR-038 (delta 2026-11-15, T350, issues 1763 and 1759) and FR-104 (T113, review of PR 1746): the storey tags of the All floors view and the thinking dots over a head are boxes too; a folder sign (every view) and a storey tag must keep clear of the dots, and the dots are measured against nothing else here (they stand over a person by design) */
       document.querySelectorAll('#stage .ro-stag').forEach((e) => add('stag', e));
       document.querySelectorAll('#stage .ro-dots').forEach((e) => add('dots', e));
       let outcome = '';
