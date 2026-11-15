@@ -29,7 +29,7 @@ export interface RealMeta {
   storeys?: boolean;
   /** spec 097 FR-335 (T247): the people's own art is not pixel art (false); a hi-res crew in a pixel world is scaled to the world's people, not drawn at whole multiples of its pixels */
   pixelPeople?: boolean;
-  /** spec 097 FR-379: a world whose monitor is a framed picture: the frame's side (`[0]`) and top and bottom (`[1]`) thickness as shares of the screen box's width, as the world's `.ro-bezel` padding says; absent = the flat monitor's 3 px bezel */
+  /** spec 097 FR-380: a world whose monitor is a framed picture: the frame's side (`[0]`) and top and bottom (`[1]`) thickness as shares of the screen box's width, as the world's `.ro-bezel` padding says; absent = the flat monitor's 3 px bezel */
   monitorFrame?: [number, number];
   seat: Record<string, SeatMeta>; stand: Record<string, StandMeta>;
   fixtures: Record<string, [number, number]>; fixtureTop?: Record<string, number>; floorLine: number;
@@ -489,7 +489,7 @@ function roNote(px: number, sx: number, slotW: number, sl: number, deskY: number
   return { x: Math.min(x, sx + slotW - s / 2 - 2), y: deskY - s + 4, s };
 }
 
-/** FR-379: the glass of a screen box `screen` whose bezel is `bezelH` tall: the box less the bezel (3 px) or, in a world with `monitorFrame`, less the frame's hole inset (the same shares of the width as the world's CSS padding) */
+/** FR-380: the glass of a screen box `screen` whose bezel is `bezelH` tall: the box less the bezel (3 px) or, in a world with `monitorFrame`, less the frame's hole inset (the same shares of the width as the world's CSS padding) */
 export function frameGlass(meta: Pick<RealMeta, 'monitorFrame'>, screen: Rect, bezelH: number): Rect {
   const f = meta.monitorFrame, ix = f ? f[0] * screen.w : 3, iy = f ? f[1] * screen.w : 3;
   return { x: screen.x + ix, y: screen.y + iy, w: screen.w - 2 * ix, h: bezelH - 2 * iy };
@@ -518,7 +518,7 @@ function roStation(meta: RealMeta, a: RealAgent, sx: number, y: number, Sw: numb
   if (big) { const top = 6; sl = sx + 0.04 * slotW; sr = sx + 0.96 * slotW; sw = sr - sl; sh = scrH - 4 - top; neck = 0; foot = y + STRIP + top + sh; }
   sh = Math.max(12, sh);
   const screen = { x: sl, y: foot - neck - sh, w: sw, h: sh + neck + 4 };
-  const glass = frameGlass(meta, screen, sh); /* FR-379: 3 px in, or the framed monitor's hole */
+  const glass = frameGlass(meta, screen, sh); /* FR-380: 3 px in, or the framed monitor's hole */
   const plateH = roNeedsYou(a.state) ? PLATE_H_ASK : PLATE_H;
   const plate = { x: sx + 8, y: deskY + 0.22 * dh + 2, w: slotW - 16, h: plateH };
   /* the desk picture is dh tall; the row shows its top (desktop, front panel, the upper legs), so the box is cut at the row's bottom */

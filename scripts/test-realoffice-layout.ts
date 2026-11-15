@@ -340,7 +340,7 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
   assert.ok(figs(flipped).every((x) => x.v.mir && x.v.faces === 'left'), 'the side a visitor faces comes from the geometry, the mirror from the set');
 }
 
-// ---- spec 097 FR-379 (T352, issue #1751): a framed monitor's glass is the picture's hole, and the screen text sits in it ----
+// ---- spec 097 FR-380 (T353, issue #1751): a framed monitor's glass is the picture's hole, and the screen text sits in it ----
 {
   const CAVE = { ...META, ...readJson('worlds', 'cave', 'world.json') } as unknown as RealMeta;
   const css = fs.readFileSync(path.join(RO, 'worlds', 'cave', 'world.css'), 'utf8').replace(/\r\n/g, '\n');
