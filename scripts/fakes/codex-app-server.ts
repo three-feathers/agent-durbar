@@ -510,6 +510,8 @@ export class FakeCodexServer {
   imageOutside: string[] = [];
   /** Spec 096 FR-070: write what `imageMode` asks into the thread's folder. A file system error (no link rights on Windows, a file system without hard links) ends in `imageError`. */
   imageError: string | undefined;
+  /** The code of a refused `linkSync` in `hardlink` mode, apart from any other write error, so a test can tell a refused link (a skip only where `hardLinkSkip` allows) from a broken fake. */
+  imageLinkRefused: string | undefined;
   private actAsImageTool(cwd: string): void {
     const sheet = (): Uint8Array => (typeof this.opts.imageSheet === 'object' ? this.opts.imageSheet : pngSheet(this.opts.imageSheet ?? 'transparent'));
     const file = (name: string): string => path.join(cwd, name);
@@ -529,7 +531,7 @@ export class FakeCodexServer {
           const outside = `${cwd}-outside.png`;
           fs.writeFileSync(outside, sheet());
           this.imageOutside.push(outside);
-          fs.linkSync(outside, file('sheet.png'));
+          try { fs.linkSync(outside, file('sheet.png')); } catch (e) { this.imageLinkRefused = (e as NodeJS.ErrnoException).code ?? 'link failed'; throw e; }
           break;
         }
         case 'text': fs.writeFileSync(file('sheet.png'), 'I could not make a picture, sorry.\n'); break;

@@ -3,7 +3,8 @@
  * `tryId`, an id main listed, a name, or a folder key; no text from the window becomes a path. Every channel is owner-only (`fromApp`) and none is open to the simulator.
  * The description goes to the adapter once, inside the prompt, and is never stored, logged or kept in an error (D3, FR-032, SC-004). A try is held only in memory.
  * `[KNOWN GAP]` a partial echo of the description in an error is not recognised: only the whole text (raw or cleaned, plain or JSON-escaped) is removed.
- * `[KNOWN GAP]` FR-034's login gate is not enforced here yet: no adapter reports `imageGen`, so nothing can run (T030b's tripwire in `test:charipc` keeps it so). T030a must add it here before Codex's `imageGen` turns on.
+ * FR-034 fails closed (T030b; third review of #956): `character:generate` refuses every try unless main's own login gate (`loginGate`, T030a) is passed in, so no
+ * adapter change, on the class, the instance or from a helper, can start a paid picture. `main.ts` passes none until T030a builds it; `test:charipc`'s tripwire checks both.
  */
 import { app } from 'electron';
 import { randomBytes } from 'crypto';
@@ -38,6 +39,8 @@ const NEEDS_CODEX = 'This needs OpenAI Codex, installed and signed in with ChatG
 const NO_PICTURE = 'No picture came back. Try again.';
 const COULD_NOT = 'Codex could not make the picture. Try again.';
 const REFUSED = { ok: false, error: 'Agent Durbar refused a call that did not come from its own window.' };
+/** FR-034, T030b: what a try gets while main has no login gate (T030a). */
+export const NO_LOGIN_GATE = 'Making characters with AI is not turned on in this version yet.';
 
 export interface CharactersIpcDeps {
   dev: DevEnv;
@@ -51,6 +54,11 @@ export interface CharactersIpcDeps {
   encode?: (bytes: Uint8Array, header: { width: number; height: number }, opts: EncodeOptions) => Promise<EncoderResult>;
   /** Tests: the platform whose folder keys are normalised (default this one's). */
   platform?: string;
+  /**
+   * FR-034 (T030a): main's own login gate, asked before every `generateImage` (a refusal starts no process). Undefined until T030a builds it: then every try is
+   * refused with `NO_LOGIN_GATE` (fail closed, T030b). Only `test:charipc` passes a stand-in.
+   */
+  loginGate?: (adapterId: string) => Promise<{ ok: true } | { ok: false; error: string }>;
   /** Tests: shorter limits. */
   limits?: { generateMs?: number; graceMs?: number; tryTtlMs?: number };
 }
@@ -103,7 +111,7 @@ export function safeGenerateError(err: unknown, description: readonly string[]):
 class Cancelled extends Error {}
 
 export function register(deps: CharactersIpcDeps): CharactersIpc {
-  const { dev, registry, router, getSettingsStore, openFolderKeys } = deps;
+  const { dev, registry, router, getSettingsStore, openFolderKeys, loginGate } = deps;
   const store = new CharacterStore(path.join(app.getPath('userData'), 'characters'), (m) => console.warn(redact(`[characters] ${m}`)));
   const encode = deps.encode ?? encodeSheet;
   const generateMs = deps.limits?.generateMs ?? GENERATE_TIMEOUT_MS;
@@ -129,14 +137,18 @@ export function register(deps: CharactersIpcDeps): CharactersIpc {
     const kind = typeof adapterId === 'string' && registry.has(adapterId) ? adapterId : undefined;
     const ad = kind ? router.instance(kind) : undefined;
     if (!ad || ad.capabilities?.imageGen !== true || typeof ad.generateImage !== 'function') return { ok: false, error: NEEDS_CODEX };
+    if (!loginGate) return { ok: false, error: NO_LOGIN_GATE }; // FR-034 fails closed until T030a (T030b)
     if (store.list().length >= MAX_CHARACTERS) return { ok: false, error: `You have ${MAX_CHARACTERS} characters, the most Durbar keeps. Delete one first.`, full: true };
-    drop();
     const ctl = new AbortController();
     running = ctl;
     const started = Date.now();
     let timedOut = false;
     const guard = setTimeout(() => { timedOut = true; ctl.abort(); }, generateMs + graceMs);
     try {
+      const gate = await loginGate(kind as string);
+      if (!gate.ok) return { ok: false, error: gate.error };
+      if (ctl.signal.aborted) throw new Cancelled();
+      drop();
       const result = await new Promise<{ file: string }>((resolve, reject) => {
         let over = false;
         ctl.signal.addEventListener('abort', () => { if (!over) { over = true; reject(new Cancelled()); } }, { once: true });

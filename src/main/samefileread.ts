@@ -12,10 +12,17 @@ import * as fs from 'fs';
 import { readCapped } from '../shared/cappedread';
 import type { CappedRead, CappedVetoed } from '../shared/cappedread';
 
+/** An `lstat` failure: only ENOENT is `missing`; EACCES, ELOOP, ENOTDIR, EIO and the rest are `error` with their code, as `readCapped` maps an open (third review of #956). */
+export function lstatFailure(e: unknown): CappedRead {
+  const c = (e as { code?: unknown } | null)?.code;
+  const errno = typeof c === 'string' && /^[A-Z0-9_]{2,24}$/.test(c) ? c : 'ERROR';
+  return errno === 'ENOENT' ? { ok: false, code: 'missing' } : { ok: false, code: 'error', errno };
+}
+
 /** Never throws; nothing it returns carries a path. */
 export function readSameFile(file: string, cap: number): CappedRead | CappedVetoed {
   let st: fs.BigIntStats;
-  try { st = fs.lstatSync(file, { bigint: true }); } catch { return { ok: false, code: 'missing' }; }
+  try { st = fs.lstatSync(file, { bigint: true }); } catch (e) { return lstatFailure(e); }
   if (!st.isFile()) return { ok: false, code: st.isSymbolicLink() ? 'link' : 'not-file' };
   if (st.size > BigInt(cap)) return { ok: false, code: 'too-big' };
   return readCapped(fs, fs.constants, file, cap, (_now: fs.Stats, fd: number) => {

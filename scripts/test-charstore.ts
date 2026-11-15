@@ -9,6 +9,8 @@ import * as path from 'path';
 import { CharacterStore, nameSlug } from '../src/main/charstore';
 import type { NewCharacter } from '../src/main/charstore';
 import { CHARACTER_ID_RE, MAX_CHARACTERS } from '../src/shared/charrules';
+import { readSameFile } from '../src/main/samefileread';
+import { HARD_LINK_REFUSALS, hardLinkOrSkip, hardLinkSkip } from './fakes/hardlinks';
 
 const ROOT = path.join(__dirname, '..', '..');
 const artDir = path.join(ROOT, 'src', 'renderer', 'crew', 'art');
@@ -30,9 +32,9 @@ function setup(warn?: (m: string) => void): { root: string; store: CharacterStor
 function linkOk(target: string, at: string): boolean {
   try { fs.symlinkSync(target, at); return true; } catch { console.log('test-charstore: no link rights here, a link case is skipped'); return false; }
 }
-/** A hard link needs no special rights on Windows, macOS or Linux, but a file system can refuse one (FAT, some network shares): then the case is skipped and says why. */
+/** A hard link needs no special rights, but a Windows file system can refuse one (FAT, some network shares): only there, outside CI, is the case skipped (`hardLinkSkip`). */
 function hardLinkOk(target: string, at: string): boolean {
-  try { fs.linkSync(target, at); return true; } catch (e) { console.log(`test-charstore: this file system refused a hard link (${String((e as NodeJS.ErrnoException).code)}), a hard-link case is skipped`); return false; }
+  return hardLinkOrSkip('test-charstore', target, at, (t, a) => fs.linkSync(t, a), console.log);
 }
 const saved = (r:ReturnType<CharacterStore['save']>): { id: string; name: string } => { assert.ok(r.ok, 'saved: ' + JSON.stringify(r)); return r as { ok: true; id: string; name: string }; };
 const tree = (d: string): string[] => fs.readdirSync(d, { recursive: true, encoding: 'utf8' }).sort();
@@ -185,6 +187,16 @@ try {
       assert.ok(store.has(hardFrameId), 'the hard-linked frame passes the lstat checks of the record');
       assert.strictEqual(store.frames(hardFrameId).ok, false, 'a frame with a second hard link is not read');
     }
+    // a refused hard link is a skip only on Windows outside CI, and only for a refused link's codes (third review of #956): anywhere else it fails the suite
+    for (const c of HARD_LINK_REFUSALS) assert.strictEqual(hardLinkSkip(c, 'win32', {}), null, `hard-link skip: ${c} on Windows may skip`);
+    for (const [c, plat, env] of [['EPERM', 'linux', {}], ['EPERM', 'darwin', {}], ['EXDEV', 'linux', {}], ['EPERM', 'win32', { CI: 'true' }], ['EIO', 'win32', {}], ['EACCES', 'win32', {}], [undefined, 'win32', {}]] as const) {
+      assert.notStrictEqual(hardLinkSkip(c, plat, env), null, `hard-link skip: ${String(c)} on ${plat} ${JSON.stringify(env)} fails the case`);
+    }
+    {
+      const refuse = (): void => { throw Object.assign(new Error('refused'), { code: 'EPERM' }); };
+      if (process.platform === 'win32' && !process.env.CI) assert.strictEqual(hardLinkOrSkip('probe', 'a', 'b', refuse, () => undefined), false, 'a refused link on Windows outside CI is a skip');
+      else assert.throws(() => hardLinkOrSkip('probe', 'a', 'b', refuse, () => undefined), /probe: a hard link was refused \(EPERM\)/, 'a refused link here fails the case');
+    }
     // a good record over a broken picture is refused at the read, not handed to the window
     const broken = copyOf('my-0000000000ad', (d) => { fs.writeFileSync(path.join(d, 'waiting.webp'), 'not a picture'); });
     assert.ok(store.has(broken) && !store.frames(broken).ok, 'the bytes are checked again');
@@ -209,6 +221,27 @@ try {
     try { otherFile = store.has(good.id); } finally { realFs.lstatSync = lstat; }
     assert.strictEqual(otherFile, false, 'the opened record must be the one lstat saw (device and inode)');
     assert.ok(store.has(good.id), 'and the same record is read when lstat says it is a file');
+    // readSameFile (third review of #956): only ENOENT is `missing`; any other lstat error is an `error` with its code, never `missing`
+    const sameCode = (r: ReturnType<typeof readSameFile>): string => (r.ok ? 'ok' : r.code === 'error' ? `error ${String(r.errno)}` : r.code);
+    assert.strictEqual(sameCode(readSameFile(path.join(root, good.id, 'nope.json'), 4096)), 'missing', 'readSameFile: a missing file is missing');
+    // on the real file system too (Windows answers ENOENT for a path through a file, so only Linux and macOS check it)
+    if (process.platform !== 'win32') assert.strictEqual(sameCode(readSameFile(path.join(linkJson, 'below'), 4096)), 'error ENOTDIR', 'readSameFile: a path through a file is an error, not missing');
+    for (const code of ['EACCES', 'ELOOP', 'ENOTDIR', 'EIO', 'EPERM']) {
+      realFs.lstatSync = ((p: fs.PathLike, ...rest: unknown[]) => {
+        if (path.resolve(String(p)) === path.resolve(linkJson)) throw Object.assign(new Error(`${code}: no`), { code });
+        return (lstat as (...a: unknown[]) => fs.Stats)(p, ...rest);
+      }) as typeof fs.lstatSync;
+      let got: string;
+      try { got = sameCode(readSameFile(linkJson, 4096)); } finally { realFs.lstatSync = lstat; }
+      assert.strictEqual(got, `error ${code}`, `readSameFile: lstat ${code} is an error, not missing`);
+    }
+    realFs.lstatSync = ((p: fs.PathLike, ...rest: unknown[]) => {
+      if (path.resolve(String(p)) === path.resolve(linkJson)) throw Object.assign(new Error('gone'), { code: 'ENOENT' });
+      return (lstat as (...a: unknown[]) => fs.Stats)(p, ...rest);
+    }) as typeof fs.lstatSync;
+    let gone: string;
+    try { gone = sameCode(readSameFile(linkJson, 4096)); } finally { realFs.lstatSync = lstat; }
+    assert.strictEqual(gone, 'missing', 'readSameFile: lstat ENOENT is missing');
   }
   // --- a root that is a link is not used ---
   {
