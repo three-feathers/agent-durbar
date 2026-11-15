@@ -912,6 +912,25 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
     } else assert.strictEqual(JSON.stringify(a.L), JSON.stringify(b.L), `FR-308 (2026-11-15): ${a.key}: no change where the strip costs the face nothing`);
   });
   assert.ok(fired >= 1, `FR-308 (2026-11-15): the sweep has a cave case where the strip costs the face (${fired})`);
+  /* review of PR 1815 (F1): with agents in the lounge the floor of the "back at their desks" hall is worked out without the rule, so a strip that costs the face nothing (the same u, or a face of 30.5 px or more) is never lost to it. Lounge halls: the same sweep with every third agent but a folder's first sitting in the lounge, done */
+  const loungeSweep = (M: RealMeta, bare = false): { key: string; L: Layout }[] => {
+    const out: { key: string; L: Layout }[] = [];
+    for (const [W, H] of sizes) for (const n of [9, 12, 15]) for (const f of [1, 2, 3, 4]) for (const fl of [1, 3]) for (const hp of [1, 3]) {
+      const m = hall(M, n, f, fl, bare ? 0 : hp);
+      m.folders.forEach((fo) => fo.agents.forEach((a, k) => { if (k > 0 && k % 3 === 0) { a.lounge = true; a.state = 'done'; } }));
+      out.push({ key: `lounge ${W}x${H} n${n} f${f} fl${fl} h${hp}`, L: realLayout(m, { w: W, h: H }, M) });
+    }
+    return out;
+  };
+  const LA = loungeSweep(CAVE), LB = loungeSweep(free as unknown as RealMeta), LZ = loungeSweep(CAVE, true);
+  let lost = 0, withLounge = 0;
+  LA.forEach((a, i) => {
+    const b = LB[i], z = LZ[i];
+    if (a.L.lounge) withLounge++;
+    if (b.L.helpRows && !a.L.helpRows) { lost++; assert.ok(b.L.faceH < 30.5 - 1e-6 && z.L.u > b.L.u + 1e-6, `FR-308 (2026-11-15): ${a.key}: the lounge hall lost its strip though it costs the face nothing (face ${b.L.faceH.toFixed(2)} px, u ${b.L.u.toFixed(2)} -> ${a.L.u.toFixed(2)})`); }
+  });
+  assert.ok(withLounge >= 50, `FR-308 (2026-11-15): the lounge sweep has halls with a lounge (${withLounge})`);
+  console.log(`minFace with a lounge: ${LA.length} halls, ${withLounge} with a lounge row, the strip is dropped in ${lost} (each where it costs the face)`);
   console.log(`minFace: ${A.length} halls per world; Photo and the arcade as before the rule; the cave drops the strip in ${fired}`);
 }
 

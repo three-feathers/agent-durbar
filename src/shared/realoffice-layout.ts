@@ -596,11 +596,11 @@ export function realLayout(model: RealModel, viewport: { w: number; h: number },
     };
     /* FR-308, FR-338: with helpers, one row of head figures is kept while the desks still fit and a slot holds a figure; else none: the plate's +N and dots (FR-016). Never two rows (FR-338).
        `floor` (FR-246, FR-247, delta 2026-11-08, review of PR 1322): the row is taken only while its u is at least `floor`; else no strip (the plate keeps its +N and dots). */
-    const choose = (fs: typeof folders, ho: number, floor: number, bf: 0 | 1 | 2 = 0): { p: ReturnType<typeof roPack>; hr: number } => {
+    const choose = (fs: typeof folders, ho: number, floor: number, bf: 0 | 1 | 2 = 0, nm = false): { p: ReturnType<typeof roPack>; hr: number } => {
       const p0 = pack(fs, ho, 0, bf);
       if (!fs.some((f) => f.agents.some((a) => (a.helpers || 0) > 0))) return { p: p0, hr: 0 };
       const room = (q: ReturnType<typeof roPack>): boolean => q.rows.every((r) => !r.strip || r.Sw - 16 >= HEAD);
-      const ok = (q: ReturnType<typeof roPack>): boolean => q.fits && room(q) && q.u >= floor - 1e-6 && !(meta.minFace && FACE_U * q.u < meta.minFace - 1e-6 && p0.u > q.u + 1e-6); /* FR-308 (2026-11-15): a world with `minFace` does not pay its face for the strip: refused where it takes the face under and the hall without it is bigger */
+      const ok = (q: ReturnType<typeof roPack>): boolean => q.fits && room(q) && q.u >= floor - 1e-6 && !(!nm && meta.minFace && FACE_U * q.u < meta.minFace - 1e-6 && p0.u > q.u + 1e-6); /* FR-308 (2026-11-15): a world with `minFace` does not pay its face for the strip: refused where it takes the face under and the hall without it is bigger */
       const p1 = pack(fs, ho, helpH(1), bf);
       return ok(p1) ? { p: p1, hr: 1 } : { p: p0, hr: 0 };
     };
@@ -609,7 +609,7 @@ export function realLayout(model: RealModel, viewport: { w: number; h: number },
        took its share, and the desks shrank when an agent fell asleep (u 103.4 -> 99.4, cave 1280x800, shots-097-moments). */
     const helpersAny = (fs: typeof folders): boolean => fs.some((f) => f.agents.some((a) => (a.helpers || 0) > 0));
     const back = lounge.length && helpersAny(folders) ? model.folders.filter((f) => f.agents.length).map((f) => ({ id: f.id, floor: f.floor, agents: sortDesks(f.agents) })) : null;
-    const floor = back ? choose(back, H0, 0).p.u : 0;
+    const floor = back ? choose(back, H0, 0, 0, true).p.u /* review of PR 1815 (F1): the lounge floor is worked out without the minFace refusal, so a strip that costs the face nothing is not lost to it */ : 0;
     let c = choose(folders, Ho, floor);
     /* spec 097 FR-104, FR-116 (T113, review of PR 1746): the floors are drawn only when that costs nothing, measured against the same hall without floors (`c`): the floors in reading order, floor 1 at the bottom
        (the search keeps that order), no row more, the helper strip kept, no scroll, and the unit u at most STOREY_U_LOSS (2 %) smaller, the 4 px rules between the storeys counted. If no split does that,
