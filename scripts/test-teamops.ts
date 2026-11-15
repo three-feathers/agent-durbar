@@ -252,43 +252,67 @@ section('savedLimit', async () => {
 });
 
 // ---------------------------------------------------------------------------------------------------------------- 5b. the key of the target
-section('targetKey', async () => {
+/**
+ * The key of the target, platform independent (a failure of the Windows job: `path.resolve('/w/link')` is `C:\w\link` there, and a fake `realpath` keyed
+ * by the POSIX text never matched). Every fictitious path is built with the path module under test (`P`), and `addkey.ts` (`canonicalKey`) is made to
+ * use that same module by swapping `path.resolve` for the run: the section runs with the real `path`, then as Windows (`path.win32`) and as POSIX
+ * (`path.posix`), whatever the host. What this does NOT show: a real Windows file system (a real symbolic link, `realpathSync.native`, drive letters
+ * other than the host's, UNC paths); only CI on windows-latest runs that.
+ */
+async function targetKeyRun(P: path.PlatformPath, label: string): Promise<void> {
+  const W = (...parts: string[]): string => P.resolve(P.sep, 'w', ...parts);
   interface Ag { id: string; key: string }
-  const agents: Ag[] = [{ id: 'agent-1', key: '/w/proj' }, { id: 'agent-2', key: '/w/other.code-workspace' }];
-  const links: Record<string, string> = { '/w/link': '/w/proj' };
-  const caps: Record<string, number> = { '/w/proj': 10 };
+  const proj = W('proj'), other = W('other.code-workspace'), link = W('link'), fresh0 = W('new');
+  const agents: Ag[] = [{ id: 'agent-1', key: proj }, { id: 'agent-2', key: other }];
+  const links: Record<string, string> = { [link]: proj };
+  const caps: Record<string, number> = { [proj]: 10 };
+  const strip = (x: string): string => x.replace(/[\\/]+$/, '');
   const env = (picked: string | null, platform = 'linux', list: Ag[] = agents) => ({
-    agents: () => list, wsKey: (a: Ag) => a.key, resolveCwd: (p: string) => (p.endsWith('.code-workspace') ? { cwd: '/w', workspaceFile: p } : { cwd: p.replace(/\/+$/, '') }),
-    savedCap: (k: string) => caps[k], pick: async () => picked, platform, realpath: (p: string) => links[p] ?? p,
+    agents: () => list, wsKey: (a: Ag) => a.key, resolveCwd: (x: string) => (x.endsWith('.code-workspace') ? { cwd: W(), workspaceFile: x } : { cwd: strip(x) }),
+    savedCap: (k: string) => caps[k], pick: async () => picked, platform, realpath: (x: string) => links[x] ?? x,
   });
   const T = (t: object, e: ReturnType<typeof env>) => resolveTargetFrom(t as never, e as never) as Promise<{ ok: boolean; key?: string; existing?: number; savedCap?: number; cancelled?: boolean }>;
-  eq(await T({ room: 'agent-1' }, env(null)), { ok: true, key: '/w/proj', existing: 0, savedCap: 10 }, 'a room: its wsKey and its saved limit');
-  eq(await T({ room: 'agent-9' }, env(null)), { ok: false }, 'a room that is not open');
-  eq(await T({ pick: true }, env(null)), { ok: false, cancelled: true }, 'a cancelled dialog');
-  eq(await T({ pick: true }, env('')), { ok: false, cancelled: true }, 'an empty answer is a cancel too');
+  const up = proj.toUpperCase();
+  const at = (m: string): string => `${m} [${label}]`;
+  eq(await T({ room: 'agent-1' }, env(null)), { ok: true, key: proj, existing: 0, savedCap: 10 }, at('a room: its wsKey and its saved limit'));
+  eq(await T({ room: 'agent-9' }, env(null)), { ok: false }, at('a room that is not open'));
+  eq(await T({ pick: true }, env(null)), { ok: false, cancelled: true }, at('a cancelled dialog'));
+  eq(await T({ pick: true }, env('')), { ok: false, cancelled: true }, at('an empty answer is a cancel too'));
   // the same room, however it is picked: the key is the OPEN room's wsKey
-  eq((await T({ pick: true }, env('/w/proj'))).key, '/w/proj', 'the same path');
-  eq((await T({ pick: true }, env('/w/link'))).key, '/w/proj', 'a symbolic link to it');
-  eq((await T({ pick: true }, env('/w/proj/'))).key, '/w/proj', 'a trailing slash');
-  eq((await T({ pick: true }, env('/w/proj/../proj'))).key, '/w/proj', 'a dot-dot path');
-  eq((await T({ pick: true }, env('/W/PROJ', 'win32'))).key, '/w/proj', 'another case on Windows');
-  eq((await T({ pick: true }, env('/W/PROJ', 'darwin'))).key, '/w/proj', 'another case on macOS');
-  eq((await T({ pick: true }, env('/W/PROJ', 'linux'))).key, '/W/PROJ', 'another case on Linux is another folder');
+  eq((await T({ pick: true }, env(proj))).key, proj, at('the same path'));
+  eq((await T({ pick: true }, env(link))).key, proj, at('a symbolic link to it'));
+  eq((await T({ pick: true }, env(proj + P.sep))).key, proj, at('a trailing slash'));
+  eq((await T({ pick: true }, env(proj + P.sep + '..' + P.sep + 'proj'))).key, proj, at('a dot-dot path'));
+  eq((await T({ pick: true }, env(up, 'win32'))).key, proj, at('another case on Windows'));
+  eq((await T({ pick: true }, env(up, 'darwin'))).key, proj, at('another case on macOS'));
+  eq((await T({ pick: true }, env(up, 'linux'))).key, up, at('another case on Linux is another folder'));
   // the saved limit is looked up by the SAME key (the open room's), not by the path as picked
-  eq((await T({ pick: true }, env('/w/link'))).savedCap, 10, 'a link to the room: its saved limit');
-  eq((await T({ pick: true }, env('/w/proj/'))).savedCap, 10, 'a trailing slash: its saved limit');
-  eq((await T({ pick: true }, env('/W/PROJ', 'win32'))).savedCap, 10, 'another case on Windows: its saved limit');
-  eq((await T({ pick: true }, env('/W/PROJ', 'darwin'))).savedCap, 10, 'another case on macOS: its saved limit');
-  eq((await T({ pick: true }, env('/W/PROJ', 'linux'))).savedCap, undefined, 'another case on Linux is not the room: no saved limit');
-  eq((await T({ pick: true }, env('/w/other.code-workspace'))).key, '/w/other.code-workspace', 'a workspace file: its own key');
-  const fresh = await T({ pick: true }, env('/w/new'));
-  eq([fresh.key, fresh.existing, fresh.savedCap], ['/w/new', 0, undefined], 'a folder that is not open: the resolved path, no saved limit');
-  eq((await T({ pick: true }, env('/w/new/'))).key, '/w/new', 'a folder that is not open: the key is the RESOLVED path (the add flows\' resolveWorkspaceCwd), not the text the dialog gave');
-  eq((await T({ pick: true }, env('/w/proj'))).savedCap, 10, 'a picked open room carries its saved limit');
-  eq((await T({ pick: true }, env('/w/proj', 'linux', []))).key, '/w/proj', 'no agents: the resolved path');
+  eq((await T({ pick: true }, env(link))).savedCap, 10, at('a link to the room: its saved limit'));
+  eq((await T({ pick: true }, env(proj + P.sep))).savedCap, 10, at('a trailing slash: its saved limit'));
+  eq((await T({ pick: true }, env(up, 'win32'))).savedCap, 10, at('another case on Windows: its saved limit'));
+  eq((await T({ pick: true }, env(up, 'darwin'))).savedCap, 10, at('another case on macOS: its saved limit'));
+  eq((await T({ pick: true }, env(up, 'linux'))).savedCap, undefined, at('another case on Linux is not the room: no saved limit'));
+  eq((await T({ pick: true }, env(other))).key, other, at('a workspace file: its own key'));
+  const fresh = await T({ pick: true }, env(fresh0));
+  eq([fresh.key, fresh.existing, fresh.savedCap], [fresh0, 0, undefined], at('a folder that is not open: the resolved path, no saved limit'));
+  eq((await T({ pick: true }, env(fresh0 + P.sep))).key, fresh0, at('a folder that is not open: the key is the RESOLVED path (the add flows\' resolveWorkspaceCwd), not the text the dialog gave'));
+  eq((await T({ pick: true }, env(proj))).savedCap, 10, at('a picked open room carries its saved limit'));
+  eq((await T({ pick: true }, env(proj, 'linux', []))).key, proj, at('no agents: the resolved path'));
   // a saved limit that is not a usable number is dropped
   const bad = (v: unknown) => T({ room: 'agent-1' }, { ...env(null), savedCap: () => v as number });
-  for (const v of [NaN, Infinity, -5, 0, '10', null, undefined]) eq((await bad(v)).savedCap, undefined, 'an unusable saved limit is dropped');
+  for (const v of [NaN, Infinity, -5, 0, '10', null, undefined]) eq((await bad(v)).savedCap, undefined, at('an unusable saved limit is dropped'));
+}
+
+section('targetKey', async () => {
+  await targetKeyRun(path, 'native ' + process.platform);
+  // the same checks as Windows and as POSIX, whatever the host: `addkey.ts` reads `path.resolve` at each call
+  const real = path.resolve;
+  try {
+    for (const [label, P] of [['simulated win32', path.win32], ['simulated posix', path.posix]] as const) {
+      path.resolve = P.resolve;
+      await targetKeyRun(P, label);
+    }
+  } finally { path.resolve = real; }
 });
 
 // ---------------------------------------------------------------------------------------------------------------- 6. modes
