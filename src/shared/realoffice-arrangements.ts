@@ -306,8 +306,8 @@ export function circleWith(model: RealModel, view: { w: number; h: number }, met
   const rowsOf = (i: number, j: number, w: number): number => runs(i, j).reduce((s, [p, q]) => s + Math.ceil((q - p) / w), 0);
   const sideH = (i: number, j: number, w: number, b: number): number => (j > i ? rowsOf(i, j, w) * b + (runs(i, j).length - 1) * ZGAP : 0);
   const zonesIn = (i: number, j: number): number => (j > i ? seats[j - 1].fx - seats[i].fx + 1 : 0);
-  /** the least width a folder's room may have so its sign keeps its + and menu (FR-231): the short sign's measured width (`signShortMin`), at most the whole sign's (`signMin`) */
-  const needW = (fx: number): number => { const f = folders[fx], s = signs && Object.prototype.hasOwnProperty.call(signs, f.id) ? signs[f.id] : { counts: 1 }; return signShortMin(s.counts) + 8; };
+  /** the least width a folder's room may have so its sign keeps its + and menu (FR-231): the short sign's measured width (`signShortMin`) */
+  const needW = (fx: number): number => { const f = folders[fx], s = signs && Object.prototype.hasOwnProperty.call(signs, f.id) ? signs[f.id] : { counts: 1 }; return signShortMin((s as { chips?: number }).chips ?? s.counts) + 8; }; /* `chips`: the count chips alone (the short form hides the cost); `counts` (chips and cost) when the caller gives no `chips`, which is never too narrow */
   /** a zone of `c` desk columns holding folder `fx`, at desk width `Sw`: the desks' width, or the sign's if that is wider */
   const zoneW = (fx: number, c: number, Sw: number): number => Math.max(c * Sw + 8, needW(fx));
   /** the width of the top row over seats [i, j): its zones and the gaps between them; `sideBw` the width of a side over [i, j), `w` desks wide: the widest of its zones, never under the desks' */

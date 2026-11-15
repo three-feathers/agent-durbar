@@ -176,6 +176,15 @@ const signProblems = (L: Layout, counts: number): string[] => {
   kill('signw', (x) => { x.zones[1].sign.w = 118; }); /* the 118 px sign of the review: its + and menu fall outside it */
   kill('signin', (x) => { x.zones[1].sign.x = x.zones[1].box.x + x.zones[1].box.w - 20; });
   kill('signshort', (x) => { x.zones[1].signShort = !x.zones[1].signShort; });
+  // `chips`: the count chips alone (the short form hides the cost), so a sign with a cost needs one chip less room than its `counts` say; the rooms follow `chips` where it is given
+  {
+    const view = { w: 1280, h: 697 };
+    const withChips = (f: number, chips?: number) => Object.fromEntries(Array.from({ length: f }, (_, i) => ['f' + i, { name: 'project-' + i, path: '~/work/long/path/to/project-' + i, counts: 3, ...(chips === undefined ? {} : { chips }) }]));
+    const edge = (chips?: number): number => { let f = 1; while (f <= 15 && !circleLayout(model(15, f), view, META_CAVE, withChips(f, chips)).scroll) f++; return f; };
+    assert.ok(edge(2) > edge(), `chips 2 of counts 3 (a cost): the circle holds more folders (${edge(2)} against ${edge()}) at 1280x800`);
+    const L2 = circleLayout(model(15, 4), view, META_CAVE, withChips(4, 2));
+    assert.deepStrictEqual(signProblems(L2, 2), [], 'with chips 2 every sign holds the short form of two chips');
+  }
   // the cause (mutant of the engine): zones as wide as their desks only, the circle before FR-231, cuts a sign below its short form
   const sw = (x: Layout): number => Math.min(...x.zones.map((z) => z.sign.w));
   assert.ok(sw(L) >= signShortMin(3), 'with the rooms the smallest sign is whole');

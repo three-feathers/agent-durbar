@@ -337,7 +337,7 @@
       places: model.places.map((p) => ({ id: p.id, custom: !!p.custom, visitors: p.visitors.map((v) => ({ id: v.id, needsYou: !!v.needsYou, person: who[v.id] || null })) })),
     };
     const signs = {};
-    for (const f of model.folders) signs[f.id] = { name: f.name, path: f.path, counts: f.counts.length + (f.cost ? 1 : 0) };
+    for (const f of model.folders) signs[f.id] = { name: f.name, path: f.path, counts: f.counts.length + (f.cost ? 1 : 0), chips: f.counts.length }; /* chips: what the short sign keeps (spec 102 FR-231) */
     /* spec 102 FR-228: the one seam; FR-230 (owner, 2026-11-14 13:10 UTC): a circle that does not fit at the face floor draws rows, and comes back only with two agents fewer than it left at (kept per world, window size and folder list, so another floor does not inherit it) */
     const arr = meta.arrangement && meta.arrangement !== 'rows' && L.layoutFor ? meta.arrangement : 'rows';
     let lay, ran = arr;
