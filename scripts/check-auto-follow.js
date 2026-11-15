@@ -144,7 +144,19 @@ module.exports = async (ctx) => {
 
     // ---- on: the switch is a real click, the answer comes from main (the simulator's stand-in refuses a non-boolean like main)
     assert.deepStrictEqual(await js(`window.__durbarSimUi.bridge().setAutoFollowWork('yes').then(r=>({ok:r.ok,v:r.autoFollowWork}))`), { ok: false, v: false }, `${tag}: a non-boolean is refused with ok:false`);
+    /* Issue #1362 (spec 052 FR-243): the office lays out in the same frame as the floor changes size, before it is painted. This observer is made after the app's own
+       (the callbacks of one delivery run in the order the observers were made), so at each of its calls the app has had its turn: no floor with a height may still overflow. */
+    await js(`(()=>{window.__fitRO={n:0,bad:[]};const f=document.getElementById('floor');new ResizeObserver(()=>{if(!f.clientHeight)return;window.__fitRO.n++;if(f.scrollHeight>f.clientHeight+1)window.__fitRO.bad.push(f.scrollHeight+'/'+f.clientHeight);}).observe(f);})();0`);
     await setting(true);
+    {
+      const r = await js(`window.__fitRO`);
+      assert.ok(r.n >= 1, `${tag}: the floor changed size when Settings closed with the strip (calls: ${r.n})`);
+      assert.deepStrictEqual(r.bad, [], `${tag}: FR-243: the office fits its floor in the frame the floor changed size, not a frame later (scroll/client heights of each overflowing call)`);
+      /* the same on a shown floor that gets 31 px shorter (what the strip appearing does), then back */
+      const r2 = await js(`(()=>{const f=document.getElementById('floor'),R=window.__fitRO,two=()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));R.n=0;R.bad=[];f.style.maxHeight=(f.clientHeight-31)+'px';return two().then(()=>{f.style.maxHeight='';return two();}).then(()=>({n:R.n,bad:R.bad}));})()`);
+      assert.ok(r2.n >= 2, `${tag}: the floor changed size twice (calls: ${r2.n})`);
+      assert.deepStrictEqual(r2.bad, [], `${tag}: FR-243: a floor 31 px shorter: the office fits at once (scroll/client heights of each overflowing call)`);
+    }
     let st = await strip();
     assert.ok(!st.hidden && st.h >= 28 && st.h <= 40, `${tag}: the strip shows, one row: ${st.h}px`);
     assert.strictEqual(st.text, 'Auto-follow on. It follows an agent after you send it a message.', `${tag}: idle words`);

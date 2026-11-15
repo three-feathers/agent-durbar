@@ -88,7 +88,11 @@ module.exports = async (ctx) => {
       const query = flag === 'on' ? { flatlook: '1' } : {};
       await H.load({ w, h, query });
       await js(`(()=>{const st=document.createElement('style');st.textContent='*{transition:none!important}';document.head.appendChild(st);window.THEME.setTheme('retro')})()`);
-      await ctx.sleep(500);
+      // the bar fits one frame after the switch (fitTopbar, from its ResizeObserver): read it once it is one row and has kept its height over two frames (#1786; a fixed sleep read the unfitted two-row bar, 79 px, on a slow runner)
+      const barFit = `new Promise(res=>{const h=()=>document.querySelector('.topbar').getBoundingClientRect().height,a=h();requestAnimationFrame(()=>requestAnimationFrame(()=>res(a<=52.5&&h()===a)))})`;
+      let fitted = false;
+      for (const end = Date.now() + 15000; !fitted && Date.now() < end; await ctx.sleep(50)) fitted = await js(barFit);
+      assert.ok(fitted, `FR-066: the retro top bar did not settle on one row (${w}x${h}, flag ${flag}): ` + await js(`document.querySelector('.topbar').getBoundingClientRect().height`));
       const r = await js(PROBE);
       await H.load({ w, h, query: { officeview: 'real', ...query }, ready: `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'`, settle: false });
       await ctx.sleep(1500);
