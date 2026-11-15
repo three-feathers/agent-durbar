@@ -6,9 +6,12 @@
  */
 import { fromAppFrame as fromApp, ipcHandle } from '../ipcguard';
 import type { TeamsIpcOps } from '../teamsipc';
+import type { TeamOps } from '../teamops';
 
 export interface TeamsIpcDeps {
   getOps(): TeamsIpcOps | undefined;
+  /** spec 111 T010: the create preview; undefined under the simulator (its channels are refused before this code) */
+  getTeamOps(): TeamOps | undefined;
 }
 
 const NO = { ok: false as const, code: 'invalid' as const, errors: ['Team templates are not available.'], blocked: false };
@@ -18,11 +21,19 @@ function guard(fn: () => unknown): unknown {
   try { return fn(); } catch { return FAILED; }
 }
 
+async function guardAsync(fn: () => Promise<unknown>): Promise<unknown> {
+  try { return await fn(); } catch { return FAILED; }
+}
+
 export function register(deps: TeamsIpcDeps): void {
   const ops = deps.getOps;
   ipcHandle('teams:list', (e) => (!fromApp(e) ? NO : guard(() => ops()?.list() ?? NO)));
   ipcHandle('teams:put', (e, value: unknown) => (!fromApp(e) ? NO : guard(() => ops()?.put(value) ?? NO)));
   ipcHandle('teams:delete', (e, id: unknown) => (!fromApp(e) ? NO : guard(() => ops()?.delete(id) ?? NO)));
   ipcHandle('teams:duplicate', (e, id: unknown) => (!fromApp(e) ? NO : guard(() => ops()?.duplicate(id) ?? NO)));
+  const preview = deps.getTeamOps;
+  // spec 111 T010: the create preview. The arguments are checked inside `TeamOps` (shape and size before any copy); a throw answers the fixed `failed`.
+  ipcHandle('teams:createPreview', (e, target: unknown, templateId: unknown) => (!fromApp(e) ? NO : guardAsync(async () => (await preview()?.createPreview(target, templateId)) ?? NO)));
+  ipcHandle('teams:previewRow', (e, token: unknown, rowId: unknown, change: unknown) => (!fromApp(e) ? NO : guardAsync(async () => (await preview()?.previewRow(token, rowId, change)) ?? NO)));
   ipcHandle('teams:markMine', (e, templateId: unknown, memberId: unknown, ...extra: unknown[]) => (!fromApp(e) ? NO : guard(() => ops()?.markMine(templateId, memberId, ...extra) ?? NO)));
 }
