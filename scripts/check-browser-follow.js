@@ -11,8 +11,8 @@
  *   3. the Chat content keeps its width while collapsed (the cause: it re-wrapped wider, shorter, and grew back with no scroll event);
  *   4. spec 005 FR-243 (issue #1224): "at the end" is 2 px or less, also 1.3 s after new text (the typing row's timer), after a turn whose
  *      first text is one code block, and when a waiting card's answer bar appears under the chat and makes it shorter;
- *   closing the chat disconnects the box observer (the disconnects of #chat's observers are counted);
-   all of it again with a classic scrollbar (15 px, injected style), where the collapsed chat would lose the scrollbar's width.
+ *   5. closing the chat disconnects the box observer (the disconnects of #chat's observers are counted);
+ *      all of it again with a classic scrollbar (15 px, injected style), where the collapsed chat would lose the scrollbar's width.
  * Waits are conditions or counts of frames, never a fixed sleep. A miss prints DRIVER FAILED.
  */
 const assert = require('assert');
