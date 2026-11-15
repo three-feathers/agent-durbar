@@ -99,6 +99,7 @@
       const tail=t=>cut?{text:t.text,hidden:true,why:'cut'}:t, suf=cut?' ⟦cut⟧':'';
       if(!PCTRL_T.test(r0)){
         const c=permCore(r0,k,m);if(c.out===null)return fb('unchecked');if(c.lost)return fb('concealed');return tail(c.out===c.s?{text:c.out+suf,hidden:false}:{text:c.out+suf,hidden:true,why:'secret'});}
+      if(typeof ST.splitHides!=='function')return fb('unchecked');if(ST.splitHides(r0))return fb('concealed'); /* spec 012 FR-182: a token split by a line break with blanks around it, read on the text as written */
       for(const v of [stripAnsi(r0),introOut(r0),r0.replace(PCTRL,'')]){ /* a token the controls split: the mask must find nothing in any reading */
         const c=permCore(v,k,m);if(c.out===null)return fb('unchecked');if(c.out!==c.s)return fb('concealed');} /* a secret behind controls: no text, and the card offers no Allow */
       let mk=r0.replace(PCTRL,pmark),mcut=false;

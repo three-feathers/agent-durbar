@@ -43,5 +43,7 @@ assert.ok(R.judge({ 'searchesAtStart@late40': 2 }).failed.length === 1 && R.judg
 assert.ok(R.judge({ 'searchesAtStart@40': 2 }).failed.length === 1 && R.judge({ 'searchesAtStart@15': 1 }).failed.length === 0, 'the plain start row allows 1 search (owner decision 2026-11-11)');
 assert.ok(R.judge({ 'probesAtStart@40': 51 }).failed.length === 1 && R.judge({ 'probesAtStart@40': 50 }).failed.length === 0 && R.judge({ 'probesAtStart@15': 21 }).failed.length === 1 && R.judge({ 'probesAtStart@15': 20 }).failed.length === 0, 'start probes: at most 50 at 40 agents and 20 at 15');
 assert.ok(R.judge({ 'lateReplayDelay@late15': 0 }).failed.length === 1 && R.judge({ 'lateReplayDelay@late15': 50 }).failed.length === 0, 'a simlate that was ignored (delay 0) fails');
+assert.ok(R.judge({ 'searchesAtRealStart@40': 2 }).failed.length === 1 && R.judge({ 'searchesAtRealStart@15': 1 }).failed.length === 0 && R.judge({ 'probesAtRealStart@15': 21 }).failed.length === 1 && R.judge({ 'probesAtRealStart@40': 51 }).failed.length === 1 && R.judge({ 'probesAtRealStart@40': 50 }).failed.length === 0, 'the real start: 1 search, at most 20 probes at 15 agents and 50 at 40 (FR-378)');
+assert.ok(R.judge({ 'realStartIdle@15': 0 }).failed.length === 1 && R.judge({ 'realStartIdle@15': 1 }).failed.length === 0, 'a simreal that was ignored fails (FR-378)');
 assert.ok(R.judge({ 'handPositions@15': 1 }).failed.length === 1, 'a hand that never moves fails');
 console.log('test-office-ops: ok');

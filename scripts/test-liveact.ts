@@ -585,7 +585,10 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
     eq(L.permText('run echo ' + TK + E, 'shell', hm), { text: 'run echo [redacted]', hidden: true, why: 'secret' }, 'a token glued to an escaped one: no part shown, the command kept (not a blind card)');
     eq(ST.maskLabel('echo ' + E, 'run', { ...mask, cmd: (s: string) => s.replace(/ghp_\w+/, '[redacted]') }), 'echo [redacted]', 'the run pass hides the escaped run');
     // a mask that hides a token only after `echo ` (context, as a secret name does): no run alone is hidden, the unescaped copy is
-    eq(ST.maskLabel('echo ' + E, 'run', { ...mask, cmd: (s: string) => s.replace(/echo ghp_\w+/, 'echo [redacted]') }), '', 'the unescaped copy still holding a secret gives an empty label (fail closed)');
+    // spec 012 FR-182 (round 4 of PR 1721): the shared split step reads `ghp\_…` itself now, so the fail-closed path is shown with a made-up secret no token shape knows
+    eq(ST.maskLabel('echo ' + escUnderscore('zzq_A1b2C3d4E5f6G7h8'), 'run', { ...mask, cmd: (s: string) => s.replace(/echo zzq_\w+/, 'echo [redacted]') }), '', 'the unescaped copy still holding a secret gives an empty label (fail closed)');
+    // round 7 of PR 1721: when the label as before PR 1721 is '' (this context-only mask leaves the unescaped copy holding the token), the label is '' here too
+    eq(ST.maskLabel('echo ' + E, 'run', { ...mask, cmd: (s: string) => s.replace(/echo ghp_\w+/, 'echo [redacted]') }), '', 'an escaped token a context-only mask hides gives an empty label, as before PR 1721');
     eq(ST.maskLabel('echo ' + E, 'run', { ...mask, cmd: () => '' }), '', 'a mask that gives nothing: empty label');
     // an environment secret is hidden as `[redacted:NAME]` (the activity log's redact): the marker count must read that form too (invented value)
     const ENV = { MY_API_KEY: 'zq7_Fake_Value_9x8w7v6u5' }, EV = escUnderscore(ENV.MY_API_KEY);
@@ -761,7 +764,7 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   { const c = 'run tool --password abcdefgh12345678'; ok(L.permText(c, 'shell', hm).hidden === true && !/abcdefgh/.test(L.permText(c, 'shell', hm).text) && L.permText(c, 'other', hm).hidden === false && /abcdefgh/.test(L.permText(c, 'other', hm).text), 'N15: the shell kind uses the command mask (redact alone leaves --password K)'); }
   { const c = 'run tool --api-key abcdefgh12345678'; ok(['shell', 'other'].every((k) => L.permText(c, k, hm).hidden === true && !/abcdefgh/.test(L.permText(c, k, hm).text)), 'N15: --api-key K is hidden by both kinds (spec 012 FR-170)'); }
   // item 4: the announcement and a card with no scope
-  ok(/announce\(\[a\.name,' needs your OK: ',look,look\?' The request: ':'',sumS\.text,hwhy\?'\. '\+PERM_WHY\[hwhy\]\+hgrant:''\]\)/.test(card), 'item 4: the announcement carries the hidden-part warning');
+  ok(/announce\(\[a\.name,' needs your OK: ',look,look\?' The request: ':'',sumS\.text,hwhy\?'\. '\+PERM_WHY\[hwhy\]\+hgrant:''\],ANN_REQUEST\)/.test(card), 'item 4: the announcement carries the hidden-part warning');
   // item 5: a request whose text could not be checked: truthful copy, no Allow
   const pw = /const PERM_WHY=\{([^\n]*)\};/.exec(app);
   ok(!!pw && !/unchecked:'[^']*secret/.test(pw![1]) && /unchecked:'Durbar could not check this request/.test(pw![1]), 'item 5: the unchecked copy does not claim a secret');

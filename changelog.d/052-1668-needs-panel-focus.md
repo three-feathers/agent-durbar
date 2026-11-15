@@ -1,0 +1,1 @@
+- **Fixed: the Needs you panel check no longer fails on Windows runners when another check's window takes the focus** (spec 052, issue #1668): `check-needs-panel` now keeps the page's focus for its whole run, since a `focus()` in an unfocused page fires no `focusin` and the panel then ignored the answer key. Test driver only; checked on Linux, not on Windows.
