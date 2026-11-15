@@ -8,6 +8,10 @@ Not released yet: each change is a file in [`changelog.d/`](changelog.d/) until 
 
 <!-- changelog.d: fragments only; a bullet here fails npm run changelog:check -->
 
+## v0.1.20 (not released, 2026-11-15)
+
+Tagged but never released: the release build failed its tests, so no download was published. Its changes ship in v0.1.21; until then v0.1.19 is the latest release.
+
 ## v0.1.19 ([release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.19), 2026-11-14)
 
 - **Adding a folder tells you which floor it went to** (spec 033, issue #1709, owner report): a folder added while its floor was off or not on screen looked as if nothing happened, so it was added again and again. Now the Add a folder dialog names the floor and lets you pick another (**Put it on floor**), a floor that was off is switched on, a toast names the floor with **Show** (it never moves you by itself) and says it aloud, and adding a folder that is already in the office starts no second session and says on which floor it is. Checked on the simulator only.

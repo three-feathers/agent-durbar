@@ -233,3 +233,4 @@
 - [x] T176 (FR-215) `scripts/driver-helpers.js` `pointerOff` (re-sent move, labelled failure); `scripts/test-ui-suite.ts` fake-page test with two mutants; `changelog.d/008-1648-pointeroff-wait.md`.
 - [x] T179 (FR-216) `scripts/driver-helpers.js` `pointerOff` (capture listener for the 0,0 move, two clear samples a frame and 100 ms apart, re-send on a re-hover); `scripts/test-ui-suite.ts` vm stub-page test with two mutants; `changelog.d/008-1719-pointeroff-two-samples.md`.
 - [x] T180 (FR-193 amended) `release.yml` runs `npm run build` instead of `npm run typecheck` before `npm test`; `scripts/test-ci-typecheck.js` also reads `release.yml`, with a mutant that restores the typecheck step (v0.1.20 release run 43685791437)
+- [x] T181 (FR-118, delta 2026-11-15) `CHANGELOG.md` `## v0.1.20 (not released, 2026-11-15)` section so `v0.1.21` can be tagged; fragments left unfolded; follow-up issue #1784 (`previousRelease()` counts a tag with no published release)

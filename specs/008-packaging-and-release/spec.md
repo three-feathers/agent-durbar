@@ -161,6 +161,14 @@ Retired spec numbers, never to be reused for a new spec (`specs:check` and `--ad
 
 - **FR-196** `[IMPLEMENTED]` (T152) `test:` **The checksums-source assertion compares real paths of both sides.** `fs.realpathSync(ec.checksumsPath())` must equal `fs.realpathSync(<root>/node_modules/electron/checksums.json)`, so it holds with a real or a symlinked `node_modules` and still fails for a checksums file from any other electron copy (a decoy case in the test proves it). Production code unchanged. `[KNOWN GAP]` run on macOS only (symlinked and real layouts); Windows junctions and Linux are proven by CI.
 
+### 2026-11-15: a "not released" CHANGELOG section for the tag-only v0.1.20 (FR-118 unchanged, T181; issue #1784)
+
+The `v0.1.21` dry run (`node scripts/release-notes.js --tag v0.1.21 ...`, the same check as `release.yml`'s verify job) refused with "CHANGELOG.md has no section for the previous release v0.1.20". `previousRelease()` takes the newest release tag reachable from the tagged commit's parent, and `v0.1.20` (43ea66b62) is such a tag although its release run failed (delta above) and no release was drafted or published. FR-118's check (`requirePrevious()` in `scripts/changelog.js`) then wants a `CHANGELOG.md` section for it.
+
+- **T181** `read:` `CHANGELOG.md` gets a `## v0.1.20 (not released, 2026-11-15)` section with one plain paragraph and no bullets: tagged but never released, its changes ship in `v0.1.21`. The `changelog.d/` fragments stay unfolded, so `v0.1.21`'s notes are built from all of them (the `v0.1.21` row of the Release table). No script changes; the tag stays where it is. Decided by the coordinator under the owner's delegation (option a of three).
+  - Until the `v0.1.21` fold PR merges, the site's *What's new* (`latestChanges()` in `scripts/build-site.js` reads the newest `## v` section) shows this section's paragraph instead of `v0.1.19`'s list; the paragraph is written to be true there.
+  - `[KNOWN GAP]` `previousRelease()` does not skip a tag that has no published release, so the next tag-only release needs the same hand-written section: issue #1784.
+
 ### 2026-11-15: release.yml builds before its tests (FR-193 amended, T180; v0.1.20 release run 43685791437)
 
 Found when the v0.1.20 release run 43685791437 failed at `npm test` on all three systems, in the same 3 of 260 suites: `test:uisuite` ("the build is missing: dist/main/main.js does not exist"), `test:teams-ui` ("Cannot find module dist/shared/teamtemplate.js") and `test:checkparallel`. `release.yml` ran `npm run typecheck` (`tsc --noEmit`, no `dist/`) and then `npm test`, while `ci.yml` builds first. Since FR-211 (issue #1557) and spec 111's `test:teams-ui`, `npm test` needs `dist/`. That is an assertion failure, not an infrastructure cause, so no rerun (FR-087).
