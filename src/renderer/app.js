@@ -535,7 +535,7 @@ function openCoffeeMenu(id,anchor){
   m.style.left=Math.max(8,Math.min(ab.left,innerWidth-b.width-8))+'px';
   m.style.top=(ab.bottom+6+b.height<=innerHeight-8?ab.bottom+6:Math.max(8,ab.top-6-b.height))+'px';
   /* focus back to the entry; after Retry now the agent has left the corner, so to its desk (never lost to the page) */
-  const back=()=>{const f=document.querySelector('#stage [data-coffeeid="'+CSS.escape(id)+'"]')||(document.contains(anchor)?anchor:null)||document.querySelector('#stage .desk[data-id="'+CSS.escape(id)+'"]');if(f)focusIn(f);};
+  const back=()=>{const f=document.querySelector('#stage [data-coffeeid="'+CSS.escape(id)+'"]')||(document.contains(anchor)?anchor:null)||cardOf(id);if(f)focusIn(f);};
   m.addEventListener('click',e=>{const t=e.target.closest('[data-cact]');if(!t)return;if(t.getAttribute('aria-disabled')==='true'){e.preventDefault();announce(coffeeNoRetry(a)||'Not available now');return;}closeModeMenu();
     if(t.dataset.cact==='retry'){announce(retryCoffee(a)?'Retry now: '+a.name:(coffeeNoRetry(a)||'Nothing was sent'));scheduleRender();requestAnimationFrame(()=>requestAnimationFrame(back));}else openAtRequest(id);});
   m.addEventListener('keydown',e=>{const its=[...m.querySelectorAll('[data-cact]')],i=its.indexOf(document.activeElement);
@@ -1745,8 +1745,10 @@ function realCtxPush(a){
    user name would show. No redact module: homeMask keeps the text and deskMask gives '' (fail closed). */
 const homeMask=t=>{const R=window.DurbarRedact;if(!R||typeof R.maskHomePaths!=='function')return t;const h=R.maskHomePaths(t);return typeof h==='string'?h:'';};
 const helperMask=t=>deskMask(homeMask(t));
-/* spec 097 FR-311 (review of PR 1322): the head figures use the one helper mask above (home folders first, on the raw text) */
-const roHelperMask=helperMask;
+/* spec 097 FR-311 (review of PR 1322): the head figures use the one helper mask above (home folders first, on the raw text), then the Markdown marks are made plain
+   (`plainMarks`: links to their text, emphasis, code and strike marks out; the `_`, a leading `#`, `-`, `+` or `>` and the blanks kept): a link planted in a helper's name never reaches the accessible name or the +K tooltip. The desk mask keeps Markdown as written, and
+   before spec 012 FR-182 the link went only because the escaped token in the check's name sent the mask down its plain pass (review of PR 1721) */
+const roHelperMask=t=>{const m=helperMask(t);const S=window.DurbarSafeText;return m&&S&&typeof S.plainMarks==='function'?S.plainMarks(m):m;};
 function realSubs(a,stOf){
   return orderedHelpers(a).map(h=>{const w=helperWords(h,roHelperMask);
     return {id:h.id,name:w.name||'Helper',state:stOf(h,false),label:w.aria,title:w.tip,selected:ui.selected===h.id};});
@@ -5574,22 +5576,24 @@ async function endAllSessions(anchor){
 }
 /* spec 006 FR-038..FR-046 (issue 606): the last run ended abnormally with sessions mid-turn. One calm card; resuming is the same wake as
    opening a restored chat (own mode and caps, no prompt), one after another. */
-const crashSt={loaded:false,items:[],first:null,missing:0,pick:false,done:new Set(),busy:false};
+const crashSt={loaded:false,items:[],ids:[],first:null,missing:0,pick:false,done:new Set(),busy:false};
 const crashLeft=()=>crashSt.items.filter(i=>!crashSt.done.has(i.id)&&liveById(i.id)&&liveById(i.id).info&&liveById(i.id).info.resumeLast);
 async function renderCrashStrip(){
   const el=$('crashStrip'); if(!el||!bridge||!bridge.interrupted||demoOn)return;
   if(!crashSt.loaded){let s=null; try{s=await bridge.interrupted();}catch(e){s=null;}
-    crashSt.loaded=true; crashSt.items=(s&&Array.isArray(s.items))?s.items.filter(i=>i&&liveById(i.id)):[]; crashSt.missing=(s&&s.missing>0)?s.missing:0;crashSt.first=crashSt.items.length?crashSt.items[0].id:null;}
+    crashSt.loaded=true; crashSt.items=(s&&Array.isArray(s.items))?s.items.filter(i=>i&&liveById(i.id)):[]; crashSt.missing=(s&&s.missing>0)?s.missing:0;crashSt.ids=crashSt.items.map(i=>i.id);crashSt.first=crashSt.ids.length?crashSt.ids[0]:null;}
   paintCrashStrip();
 }
+const shownEl=e=>!!e&&e.getClientRects().length>0&&!e.closest('[inert],[hidden]'); /* drawn and shown: focus() on a display:none element does nothing and leaves the page on <body> */
+const cardOf=id=>document.querySelector('#stage .desk[data-id="'+CSS.escape(id)+'"],#stage .ro-plate[data-id="'+CSS.escape(id)+'"]'); /* a session's card in the flat office (desk) or the Real office (plate) */
 function paintCrashStrip(focusSel){
   const el=$('crashStrip'); if(!el)return;
   const left=crashLeft();
   if(!left.length){const was=!el.hidden,had=el.contains(document.activeElement);el.hidden=true;el.innerHTML='';crashSt.pick=false;
     if(was){if(bridge.dismissInterrupted)bridge.dismissInterrupted().catch(()=>{});scheduleRender();
-      /* review of PR 720: focus does not fall to <body>: it goes to the desk of the card's first session (after the office redraws), else the office */
+      /* review of PR 720: focus does not fall to <body>: it goes to the desk (Real office: the plate) of the card's first session that is drawn and shown (after the office redraws), else the office */
       if(had||document.activeElement===document.body)requestAnimationFrame(()=>{const ae=document.activeElement;if(ae&&ae!==document.body&&document.contains(ae))return;
-        const d=crashSt.first&&document.querySelector('#stage .desk[data-id="'+CSS.escape(crashSt.first)+'"]');if(d)focusIn(d);else focusAfterGone('gone');});}
+        const d=crashSt.ids.map(cardOf).find(shownEl);if(d)focusIn(d);else focusAfterGone('gone');});}
     return;}
   const n=left.length, ex=crashSt.missing>0?' ('+crashSt.missing+(crashSt.missing===1?' more':' others')+' could not be reopened.)':'';
   el.innerHTML='<span class="ns-ic" aria-hidden="true">i</span><span class="ns-t"><b>'+(n===1?'1 session was interrupted':n+' sessions were interrupted')+'</b> when Durbar stopped unexpectedly. The reply '+(n===1?'it was':'each was')+' writing is lost, and nothing is sent again.'+ex+'</span>'+
@@ -6984,6 +6988,7 @@ function showLimit(a,e){
   n.appendChild(row);
   a.limit={requestId:e.requestId,n,row,st:n.querySelector('.pstate')};
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
+  const op=afPanelId();if(op)announce(chatShownNow(a.id)?[a.name,' reached its spending limit: ',n.querySelector('.psum').textContent,' Choose in its card.']:[a.name,' reached its spending limit. Open its chat to choose.'],ANN_REQUEST); /* spec 005 FR-237: whenever a chat is open, like the question card; the card is named only where it is shown; none open: the open-chat line or the auto-follow notice says it later */
 }
 /* ---------- questions from the agent (spec 012 FR-130): options as buttons, "Other" text, Answer / Skip; text only, never HTML ---------- */
 /* ---------------- plan first (spec 066): the agent's proposed plan, with Approve / Revise… / Reject ---------------- */
@@ -7005,6 +7010,7 @@ function showPlan(a,e){
   n.appendChild(row);
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
   a.plan={requestId:e.requestId,n,st,row};
+  const op=afPanelId();if(op)announce(chatShownNow(a.id)?[a.name,' proposes a plan. Approve, revise or reject it in its card.']:[a.name,' proposes a plan. Open its chat to review it.'],ANN_REQUEST); /* spec 005 FR-237: as the limit card; the plan's text is not read out */
   /* spec 066 (2026-11-01 delta): the plan never takes focus from typing: with text in the message box, or focus in any text field, Approve is left alone */
   const ae=document.activeElement, mb=$('msgInput');
   if(ui.selected===a.id&&!modalOpen()&&!(mb&&mb.value)&&(!ae||ae===document.body||ae===mb))focusIn(ok);
@@ -7069,7 +7075,7 @@ function showQuestion(a,e){
   row.appendChild(ok);row.appendChild(skip);n.appendChild(row);
   a.question={requestId:e.requestId,n,row,st};(a.qs||(a.qs=new Map())).set(e.requestId,a.question); /* spec 052 FR-178: every open question by request id (two can be open at once) */
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
-  announce([a.name,' asks: ',String((qs[0]&&qs[0].question)||'')||'a question']); /* spec 012 FR-178: the question as the card shows it; announce masks it */renderInboxBtn();
+  announce([a.name,' asks: ',String((qs[0]&&qs[0].question)||'')||'a question'],ANN_REQUEST); /* spec 012 FR-178: the question as the card shows it; announce masks it */renderInboxBtn();
 }
 /* ---------- MCP elicitation (spec 012 FR-151): a form in the question card, or an https page opened only after a click.
    Text only, never HTML; values are never logged or shown afterwards. Main checks the answer again before the agent gets it. ---------- */
@@ -7173,7 +7179,7 @@ function showElicitation(a,e){
   n.appendChild(row);
   a.question={requestId:e.requestId,n,row,st,elicit:isUrl?'url':'form'};(a.qs||(a.qs=new Map())).set(e.requestId,a.question);
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
-  announce([a.name,': ',R.source?R.source+' ':'an MCP server ',isUrl?'asks you to open a page on ':'asks for input',isUrl?(R.host||'the web'):'','. ',{text:R.message||'',max:160}]); /* spec 012 FR-178: the message as the card shows it, masked by announce before its 160-character cut */renderInboxBtn();
+  announce([a.name,': ',R.source?R.source+' ':'an MCP server ',isUrl?'asks you to open a page on ':'asks for input',isUrl?(R.host||'the web'):'','. ',{text:R.message||'',max:160}],ANN_REQUEST); /* spec 012 FR-178: the message as the card shows it, masked by announce before its 160-character cut */renderInboxBtn();
 }
 /* spec 052 FR-178: why a question ended unanswered, in words for the card's tooltip (codes only, from the adapter's event or this window; never text of the question) */
 const SKIP_WHY={user:'you pressed Skip',stop:'the turn was stopped',interrupt:'the turn was stopped',reconnect:'the agent app was reconnected',exit:'the agent app ended',unreadable:'the agent app ended the question without an answer',aborted:'the agent app reported the turn as aborted'};
@@ -7384,7 +7390,7 @@ function showPerm(a,p){
   }
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
   if(t.T.typing)typingPaint(t.T.typing);
-  if(p.state==='pending')announce([a.name,' needs your OK: ',look,look?' The request: ':'',sumS.text,hwhy?'. '+PERM_WHY[hwhy]+hgrant:'']); /* spec 003 FR-118: the lookalike line first, so the 300-character announcement keeps it; spec 012 FR-178: the name, the fixed words and the request are masked apart, so the request is said as the card shows it and the fixed words are always said */
+  if(p.state==='pending')announce([a.name,' needs your OK: ',look,look?' The request: ':'',sumS.text,hwhy?'. '+PERM_WHY[hwhy]+hgrant:''],ANN_REQUEST); /* spec 003 FR-118: the lookalike line first, so the 300-character announcement keeps it; spec 012 FR-178: the name, the fixed words and the request are masked apart, so the request is said as the card shows it and the fixed words are always said */
   renderInboxBtn();
 }
 /* spec 003 FR-094..FR-096 (owner 2026-10-23, supersedes spec 052 FR-074's button): under a request denied by Read-only, one button
@@ -9635,7 +9641,7 @@ function startSessionEdit(a0,surface,from,pid){
 function focusAfterGone(how){
   if(how!=='gone')return;
   const ae=document.activeElement; if(ae&&ae!==document.body&&document.contains(ae))return;
-  const t=document.querySelector('#stage .room-head [data-foldermenu]')||document.querySelector('#stage .desk[data-id]')||document.querySelector('#list button.lrow')||$('vOffice');
+  const t=[document.querySelector('#stage .room-head [data-foldermenu]'),document.querySelector('#stage .desk[data-id],#stage .ro-plate[data-id]'),document.querySelector('#list button.lrow')].find(shownEl)||$('vOffice'); /* the first one drawn and shown (a Real office draws plates; a hidden list's rows take no focus), else the Office button */
   if(t)focusIn(t);
 }
 /* A folder's display name edited in place ('room' = the room header, 'fp' = the Folders panel row). Same submit part as the dialog. */
@@ -10262,7 +10268,7 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
-if(SIM)window.__durbarSimUi={announce,renderRestoreStrip,afArrivalPrio,afNotice:{ms:v=>{AF_NOTICE_MS=Math.max(100,Number(v)||3000);return AF_NOTICE_MS;},on:v=>{setAutoFollowOn(!!v);return AF_ON;},shown:()=>!!AF_NOTICE}, /* spec 052 FR-239: drivers only: the notice's length, Auto-follow without Settings */swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
+if(SIM)window.__durbarSimUi={announce,renderRestoreStrip,afArrivalPrio,afTracker:{ids:()=>AFT.ids(),pending:()=>AFT.pendingList().map(v=>v.id+'|'+v.kind),quiet:()=>AFT.isQuiet,follow:id=>AFT.follow(id)}, /* spec 005 FR-237: drivers only: what Auto-follow follows, holds and whether it is quiet; follow() makes an agent followed without a hand open (which would drop the others, spec 052 FR-185) */ afNotice:{ms:v=>{AF_NOTICE_MS=Math.max(100,Number(v)||3000);return AF_NOTICE_MS;},on:v=>{setAutoFollowOn(!!v);return AF_ON;},shown:()=>!!AF_NOTICE}, /* spec 052 FR-239: drivers only: the notice's length, Auto-follow without Settings */swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
   chatTrimNow:()=>chatTrimPending(false), /* spec 005 FR-238: trim the chats waiting for a frame now (a burst with no frame between) */
   hiddenTrimTimer:()=>({on:!!hiddenTrimT,ms:TRIM_HIDDEN_MS}),
   helperState:(id,st)=>{const h=agents.find(x=>x.id===id&&x.parent);if(!h||!['working','thinking','waiting','error','limit','done','idle'].includes(st))return false;h.state=st==='limit'?'waiting':st;h.limit=st==='limit';h.paused=false;layoutKey='';renderAll();return true;}, /* spec 097 T335 (issue 1642): drivers only: a helper's state the simulator never sends (waiting, limit), for the kids on the desk */
