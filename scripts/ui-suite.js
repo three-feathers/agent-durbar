@@ -55,8 +55,10 @@ const DRIVERS = [
   { name: 'check-rail' }, // spec 005 FR-190, FR-194, FR-216 and 052 FR-215: the agent rail's List view: fit, order, two heights, folders that collapse, Your door, Mac drag areas
   { name: 'check-rail-resize' }, // spec 005 FR-236 (issue #1223): the agent rail's width: drag, keys, double-click reset, remembered, clamped when the window shrinks, both sizes
   { name: 'check-unread' }, // spec 001 FR-170..FR-177, spec 005 FR-176/FR-177 (issue #691): a finished agent's reply stays marked New until its chat is shown
+  { name: 'check-unread', label: 'check-unread retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 T319 (issue #1399): the New mark and the still highlights in the arcade (its Real office step)
   { name: 'check-001-lights' }, // spec 001 FR-230, FR-231: Open office's screens tinted by status as Real office's, no card glow or waiting halo, every kit, both sizes
   { name: 'check-auto-follow' }, // spec 052 FR-182..FR-190 (issue #686): opt-in Auto-follow and the attention queue: off by default, send, arrivals, guards, Previous/Next, pause, empty queue, fit
+  { name: 'check-auto-follow', label: 'check-auto-follow retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 T320 (issue #1399): auto-follow's return and the desk mark in the arcade (about 215 s on macOS; the suite's limit is 600 s per driver)
   { name: 'check-052-follow-notice' }, // spec 052 FR-238..FR-241 (owner, 2026-11-09): the Auto-follow notice: both notices, countdown, Stay and Escape, background pause, announcement priority, reduced motion, four looks at two sizes
   { name: 'check-helper-bar' }, // spec 015 FR-020 (issue #1142): the Sub-agent activity / Back to parent chat bar stays at the top of a helper's chat while it scrolls, opaque, both sizes
   { name: 'check-helper-more' }, // spec 005 FR-234 (issue #1145): a helper's chat has no empty More menu (the button is hidden), a main agent's chat keeps it, both sizes
@@ -159,6 +161,7 @@ const DRIVERS = [
   { name: 'shots-040-picker' }, // spec 040 FR-031, FR-032: no AI maker or Import; Remove a saved theme asks first, Clean Office after
   { name: 'check-permission-scope' }, // spec 003 FR-108: the approval card says how far "for this session" reaches
   { name: 'check-permission-lookalike' }, // spec 003 FR-117..FR-119 (#1300): lookalike letters marked on the approval card, its line, the session button from the key, chips, why-allowed; all buttons stay
+  { name: 'check-005-announce-request' }, // spec 005 FR-237 (#1488): the first permission request or question after a chat opens is what #srAnnounce ends on, not "Working…"
   { name: 'check-answer-safety' }, // spec 052 FR-209..FR-212: the answer bar, a held Enter, a limit in flight, a plan while typing
   { name: 'check-inbox-safety' }, // spec 052 FR-206..FR-208: Needs you: a stale button, a held key and a limit row answer nothing they should not
   { name: 'check-needs-panel' }, // spec 052 FR-191..FR-195 (T196, T197): Your door, the Needs you panel behind its flag: non-modal, no focus change on opening, app start with Later, no shift, Esc and the amber toggle, All clear, Real office slips
@@ -225,12 +228,15 @@ const DRIVERS = [
   { name: 'check-097-world-look' }, // spec 097 FR-350, FR-351 (#1153): a world keeps its own colours whatever theme is picked, and the arcade's drop overlay reads
   { name: 'shots-097-cave' }, // spec 097 phase 4: the Prehistoric cave behind its flag (World row, its set, any set in any world, no blend)
   { name: 'shots-001-lobby' }, // spec 001 FR-034..FR-040: Boss queue, Bank, Postbox and its letter, who is at a place (simsched in its own query)
+  { name: 'check-102-arcade-postbox' }, // spec 102 T318 (issue #1399): the Postbox in the arcade: a lobby plate with the arcade's word, the missed runs, a click opens Settings > Schedules
   { name: 'check-done-desk-mask' }, // spec 041 FR-065: no token of a done reply on the office floor
   // spec 052 FR-171: wrapping, sizes, box widths, field weight, dark contrast. Two drivers that run at once (issue #738: one took ~650 s
   // against the 600 s limit); the light part also has the built-in themes' contrast, the dark part the tones and the stylesheet check
   { name: 'check-ui-text', label: 'check-ui-text light', env: { UITEXT_PART: 'light' } },
   { name: 'check-ui-text', label: 'check-ui-text dark', env: { UITEXT_PART: 'dark' } },
-  { name: 'shots-006-crash' }, // spec 006 FR-038..FR-046 (#606): the crash card (Resume all, Pick…, Dismiss), per-row resume, the lost-turn note
+  // spec 006 FR-038..FR-046 (#606): the crash card (Resume all, Pick…, Dismiss), per-row resume, the lost-turn note
+  { name: 'shots-006-crash' },
+  { name: 'shots-006-crash', label: 'shots-006-crash retro', env: { DRIVER_WORLD: 'retro' } }, // spec 097 (issue #1567): the Real office passes in the arcade
   { name: 'shots-074-navigator', env: { DURBAR_SIM_FLOORS: '1' } }, // spec 074: Go to (keyboard navigator), chat numbers, the shortcut in Settings
   { name: 'shots-095' }, // spec 095 phase 3: search conversations: the box, the results in the List view, open and jump, keyboard, live region, end-state notes, the shortcut in Settings
   { name: 'check-browser-scenarios' }, // spec 080 T018 AC2/AC4: US1 scenarios 1-5 and US2 scenarios 1-3 incl. SC-002 and SC-004; confirm, prompt, sensitive fields, sliding element, redirect, basic-auth pages
