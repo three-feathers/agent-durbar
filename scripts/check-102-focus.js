@@ -21,12 +21,12 @@ module.exports = async (ctx) => {
   const READ = `(()=>{const ro=document.querySelector('#stage .ro'),f=[...document.querySelectorAll('#stage .ro-focus')],r=e=>{const b=e.getBoundingClientRect();return {x:b.x,y:b.y,w:b.width,h:b.height}};
     const o=ro.getBoundingClientRect(),zones=[...document.querySelectorAll('#stage .ro-zone,#stage .ro-sign')].map(r);
     return {n:f.length,world:ro.dataset.world,desks:[...document.querySelectorAll('#stage .ro-plate[data-id]')].map(e=>e.dataset.id+':'+JSON.stringify(r(e))).join('|'),
-      dr:[...document.querySelectorAll('#stage .ro-plate[data-id]')].map(r),zones,room:{x:o.x,y:o.y,w:o.width,h:o.height},box:f[0]?r(f[0]):null,
+      dr:[...document.querySelectorAll('#stage .ro-plate[data-id]')].map(r),seats:[...document.querySelectorAll('#stage .ro-plate[data-id]')].map(e=>{const b=r(e);return {x:b.x,y:b.y,w:b.w}}),rooms:[...document.querySelectorAll('#stage .ro-zone')].map(r),zones,room:{x:o.x,y:o.y,w:o.width,h:o.height},box:f[0]?r(f[0]):null,
       aria:f[0]?f[0].getAttribute('aria-hidden'):null,tab:f[0]?f[0].hasAttribute('tabindex'):null,text:f[0]?f[0].textContent:null,
       pe:f[0]?getComputedStyle(f[0]).pointerEvents:null,inner:f[0]?f[0].querySelectorAll('a,button,input,[tabindex]').length:null}})()`;
   const hit = (a, b) => a.x + 0.5 < b.x + b.w && b.x + 0.5 < a.x + a.w && a.y + 0.5 < b.y + b.h && b.y + 0.5 < a.y + a.h;
   /* 1280x800 takes 12 agents: with 15 the circle needs more room than the floor has at the face floor (the simulator's 15-agent frame is rows there, spec 102 Changes 2026-11-15), so the ladder draws rows and no box; that case is asserted after the loop */
-  for (const [w, h, N] of [[1440, 900, 15], [1280, 800, 10]]) {
+  for (const [w, h, N, warm] of [[1440, 900, 15, false], [1280, 800, 12, true]]) {
     const tag = `focus ${w}x${h}`;
     await H.load({ w, h, ready: 'fit', focus: true, query: { officeview: 'real', sim: String(N) } });
     const ids = await js(`window.__durbarSimUi.agents().filter(a=>!a.parent).map(a=>a.id)`);
@@ -58,12 +58,23 @@ module.exports = async (ctx) => {
     const PIC = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
     const setPic = (url) => js(`(()=>{document.getElementById('fixFocus').textContent='.ro[data-world="photo"] .ro-focus{background-image:url(${jsLiteral(url).slice(1, -1)})}';return new Promise(res=>{const i=new Image();i.onload=i.onerror=()=>res(1);i.src=${jsLiteral(url)}})})()`);
     const frame = async (id) => { await poke(id, 'error'); await poke(id, 'idle'); await settle(); const r = await js(READ); return JSON.stringify({ dr: r.dr, zones: r.zones, box: r.box, desks: r.desks }); };
+    /* at 15 agents every sign is as wide as its room, so the two frames below may end in different states (the original fixture: a seat that depended on a state would show); with 12 agents at 1280x800 a sign is as wide as its own chips and cost, so a first error-then-idle settles this agent into the state both frames end in */
+    if (warm) await frame(ids[2]);
     await setPic(PIC);
     const loaded = await frame(ids[2]);
     await setPic('realoffice/worlds/photo/no-such-focus.webp');
     const failed = await frame(ids[2]);
     assert.strictEqual(failed, loaded, `${tag}: a picture that fails to load moves no plate, zone, sign or the box itself`);
     assert.strictEqual((await js(READ)).n, 1, `${tag}: the box stays when its picture fails`);
+    // a status change moves no seat (097 FR-015, 102 FR-230): another agent stays in error (its folder's chips change), and every seat, room and the box are where they were; a plate's height follows its state, not its place
+    const seatsOf = (r) => JSON.stringify({ seats: r.seats.map((p) => JSON.stringify(p)).sort(), rooms: r.rooms, box: r.box }); /* the places, not who sits in them: desks are sorted by state, so two agents may swap places */
+    const before = seatsOf(await js(READ));
+    const active = await js(`(window.__durbarSimUi.agents().find(a=>!a.parent&&a.state==='working')||{}).id`); /* a working agent stays at its desk when it goes to error (a resting one would leave the lounge row, which is a seat change by design) */
+    assert.ok(active, `${tag}: a working agent to send to error`);
+    await poke(active, 'error'); await settle();
+    assert.strictEqual(seatsOf(await js(READ)), before, `${tag}: a status change (an agent goes to error: its folder's chips change) moves no seat, room or the box`);
+    await poke(active, 'working'); await settle(); /* put it back: the frames below compare with the ones above */
+
     await js(`(()=>{document.getElementById('fixFocus').textContent='.ro[data-world="photo"] .ro-focus{background-color:#b5651d}';return 0})()`);
     await settle();
     // no focus box (Changes 2026-11-14: circle omits it on a floor where it cannot hold its minimum): the engine's result without `focus`, a page-only fixture;
