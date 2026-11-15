@@ -300,3 +300,11 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
 ## Changes 2026-10-31: doors removed (pointer, spec 017 T024)
 
 Spec 017 FR-029 (owner decision, no doors) removed the Office with cabins layout, the desk door button, meeting-room signs, room door plates, **Close all** / **Open all**, door-held schedules and the door refusal of remote control, and `door-art`, `--door-*` and the door words of the theme contract. Any requirement in this spec about those (door plates, plate totals or siren, door signs, collapse, Close all / Open all, the `door` field) no longer applies and is kept as a record; Hide folder, floors and the plain status word stay. See spec 017's table of what was lost and what remains.
+
+## Changes 2026-11-15: the FR-066 check measures Retro's bar after the bar has fitted (bug, issue #1786; no new FR; amends FR-066's test)
+
+`shots-070-flat-look` failed about 1 run in 8 in CI (ubuntu shard 3/4, 1280x800 only) with `FR-066: retro is unchanged with the flag on`, the one differing field `barH: 79` against `48`. Cause (read: `src/renderer/app.js` `fitTopbar`): switching to Retro puts the bar into its wider, upper-case Retro look, and the bar gives way (search field, folder filter, brand name) in `fitTopbar`, which runs in the next animation frame after the bar's `ResizeObserver` fires. For that one frame the bar is two rows high (79 px at 1280 wide). The driver waited a fixed 500 ms after `setTheme('retro')` and then read the bar, so on a slow, loaded runner it could read the frame before the fit. The product draws the settled bar correctly; only the read was early.
+
+- **Test fix.** After the switch the driver waits for a condition, not a time: the bar is one row (`.topbar` height at most 52.5 px, the limit the same driver already asserts) and has kept the same height over two further animation frames. A bar that never settles to one row still fails, with the measured height in the message; the FR-066 equality is unchanged and not loosened.
+- **Mutant.** Without the wait the read happens in the frame before the fit; the test now cannot read it there.
+- `[KNOWN GAP]` Not reproduced locally in 6 plain runs (Linux/Xvfb, no load); the cause is from the code and the CI numbers, not a captured early read. macOS and Windows not run.
