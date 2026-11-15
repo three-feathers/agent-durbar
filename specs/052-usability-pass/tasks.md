@@ -459,3 +459,6 @@
 
 ## 2026-11-14: warn, plain danger hover and plain red confirms in the themed looks (FR-053, FR-076, issue #1570)
 - [x] T345 `themes.css`: warn rest and hover, plain `.btn.danger:hover` restored after the themed `.btn` rule; `screens.js` Remove theme and `harnesses.js` End N sessions and update are `primary danger`; `danger-sites.js` ALLOW `harnesses.js`, 21 sites; new driver `scripts/check-052-warn-danger-btn.js` (in `ui-suite.js`) with mutants `WARN_MUTANT=old|warn|dangerhover|sites` [FR-053, FR-076, issue #1570, no new FR]
+
+## 2026-11-15: `check-answer-safety` diagnostic on the limit step (FR-210, issue #1770)
+- [x] T346 `scripts/check-answer-safety.js` FR-210 (B): on a wrong label list, the assertion message carries the bar's hidden flag, its labels a frame later, its `outerHTML` and the pending request cards, masked by `dist/shared/redact.js` and bounded (fail closed when it does not load); the asserted read is unchanged; mutant `ANSWER_SAFETY_MUTANT=emptybar` must fail at `only "Show in chat"` with the diagnostic printed and the planted token masked, and `ANSWER_SAFETY_MUTANT=noredact` (redact.js not loaded, HTML withheld) must fail at `the 1770 diagnostic did not print` [FR-210, issue #1770, no new FR, test driver only]
