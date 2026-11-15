@@ -27,6 +27,7 @@
  * is photo and #stage .ro is photo/office; shots 058-mcp-launch-real-<w>x<h>.png and 058-mcp-launch-settings-real-<w>x<h>.png (not linked, not committed).
  * Issue #1566: first, in the Real office look (Photo; the arcade with DRIVER_WORLD=retro, which then runs only this part), at 1280x800 and 1440x900 with 15 agents: the office does
  * not scroll while the strip is shown (list closed) and after Dismiss, and the floor's lent padding (ro-tight) is gone with the strip.
+ * Issue #1625 (T346): DRIVER_WORLD=retro DRIVER_CASE=strips: the restore, away, crash and follow strips alone, and away+follow and restore+away, at both sizes: no office scroll.
  * Prints "[058] launch PASS" ("[058] launch arcade office PASS" under DRIVER_WORLD=retro).
  */
 const assert = require('assert');
@@ -74,6 +75,39 @@ module.exports = async (ctx) => {
      DRIVER_CASE=10 (issue #1598: DRIVER_AGENTS=10 DRIVER_ROOMS=3, DRIVER_H=769 (the 666 px room), three folders, strip shown: no folder of 4 or fewer is cut, no scroll);
      DRIVER_CASE=photo (18 agents in Photo at 1280x760 (DRIVER_H), where the strip leaves 636 px, Photo scrolls and the lend would rescue it: a world that is not `aisles` is never lent the padding) */
   const CASE = process.env.DRIVER_CASE || '';
+  /* issue #1625 (spec 102 T346): the arcade does not scroll at 15 agents with each OTHER strip under the top bar (restore, away, crash, follow), alone and in the two pairs the
+     lend can rescue, at both sizes. The mixed simulator always shows the restore strip, so a scene's other strips are dismissed (Keep as it is) and only the named ones are on show.
+     Prints one line per scene with the strips' heights, the floor and the layout: those numbers are the measurement (Linux, 2026-11-14, in the spec delta).
+     The scenes that still scroll (three strips at 1280x800, MCP list open, crash list plus restore) are DELIBERATELY not asserted here: they are the known gap of 1589, fixed by the approved, not yet merged 1685; add them when it lands, so this case covers only what passes today. */
+  if (CASE === 'strips') {
+    assert.strictEqual(REAL, 'arcade', 'DRIVER_CASE=strips runs in the arcade (DRIVER_WORLD=retro)');
+    const IDS = { restore: 'restoreStrip', away: 'awayStrip', crash: 'crashStrip', follow: 'followStrip' };
+    const SCENES = [['restore', {}], ['away', { simaway: '1' }], ['crash', { simcrash: '3' }], ['follow', {}], ['away+follow', { simaway: '1' }], ['restore+away', { simaway: '1' }]];
+    const shownNow = `(()=>{const o={};for(const [k,i] of Object.entries(${jsLiteral(IDS)})){const e=document.getElementById(i);if(e&&!e.hidden&&e.getClientRects().length)o[k]=Math.round(e.getBoundingClientRect().height)}return o})()`;
+    for (const [w, h] of [[1440, 900], [1280, 800]]) {
+      for (const [name, q] of SCENES) {
+        const want = name.split('+');
+        await H.load({ w, h, ready: 'fit', focus: true, query: { simkinds: 'mixed', officeview: 'real', ...q } });
+        assert.strictEqual(await js(`document.documentElement.dataset.world`), 'retro', `${name} ${w}: the arcade is drawn`);
+        assert.ok(await until(`!!document.getElementById('restoreStrip')&&!document.getElementById('restoreStrip').hidden`, 8000), `${name} ${w}: the simulator's restore strip shows first`);
+        if (!want.includes('restore')) {
+          await js(`document.querySelector('#restoreStrip [data-ns="keep"]').click()`);
+          assert.ok(await until(`document.getElementById('restoreStrip').hidden`, 4000), `${name} ${w}: Keep as it is closes the restore strip`);
+        }
+        if (want.includes('follow')) await js(`window.__durbarSimUi.afNotice.on(true);0`);
+        for (const k of want) assert.ok(await until(`(()=>{const e=document.getElementById(${jsLiteral(IDS[k])});return !!e&&!e.hidden&&e.getClientRects().length>0})()`, 9000), `${name} ${w}: the ${k} strip shows`);
+        await settle();
+        const strips = await js(shownNow);
+        assert.deepStrictEqual(Object.keys(strips).sort(), [...want].sort(), `${name} ${w}: exactly the named strips are on show: ${JSON.stringify(strips)}`);
+        const F = JSON.parse(JSON.stringify(await js(`(()=>{const f=document.getElementById('floor'),r=document.querySelector('#stage .ro'),L=window.__durbarSimUi.realLayout();return {sh:f.scrollHeight,ch:f.clientHeight,roBottom:r?Math.round(r.getBoundingClientRect().bottom):0,fb:Math.round(f.getBoundingClientRect().bottom),fit:document.getElementById('stage').dataset.fit,tight:f.classList.contains('ro-tight'),scroll:!!(L&&L.scroll),lent:!!(L&&L.lent),H:L?Math.round(L.height):0}})()`)));
+        const tell = JSON.stringify({ strips, ...F, font: await js(`getComputedStyle(document.body).fontFamily.split(',')[0]`) });
+        console.log(`[058] strips ${w}x${h} ${name} ${tell}`);
+        assert.ok(F.sh <= F.ch + 1 && F.fit === 'ok' && F.roBottom <= F.fb + 1 && !F.scroll, `arcade ${name} strip ${w}x${h}: the office does not scroll (scrollHeight ${F.sh} against clientHeight ${F.ch}, room ends ${F.roBottom} of ${F.fb}, layout scroll ${F.scroll}): ${tell}`);
+      }
+    }
+    console.log('[058] launch arcade strips PASS');
+    return;
+  }
   if (CASE) {
     await H.load({ w: 1280, h: Number(process.env.DRIVER_H || 800), ready: 'fit', focus: true, query: { sim: String(Number(process.env.DRIVER_AGENTS || 15)), simkinds: 'mixed', simmcplaunch: '1', simmcpauth: '1', officeview: 'real', ...(process.env.DRIVER_ROOMS ? { simrooms: process.env.DRIVER_ROOMS } : {}) } });
     assert.strictEqual(await js(`document.documentElement.dataset.world`), REAL === 'arcade' ? 'retro' : 'photo', `${CASE}: the world is the one asked for`);
