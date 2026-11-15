@@ -2080,36 +2080,59 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
       assert.ok(!ST._deskWindowForTest('x '.repeat(8180) + 'ghp_' + B.slice(0, 10) + brk + B.slice(10, 36) + ' ' + 'tail '.repeat(100)).includes('ghp_'), `#1613 round 8: a token split by ${JSON.stringify(brk)} across the bound is left out of the window whole`);
     const ws = 'a'.repeat(M) + ' ';
     assert.ok(ws.length === M + 1 && ST._deskWindowForTest(ws).length <= M, '#1613 round 8: a text of 16,385 characters with a blank at index 16,384 gives a window within the bound');
-    // round 9: the window ends before the last two token runs and what lies between them: every white space is a blank, marks are passed over, an open tag goes
-    // with its run; for every family, with the bound 1 to 25 characters into the second half, behind fillers of spaces, tabs only and each line break alone
+    // round 10: the window ends at the last white space before the bound, then before any split span that crosses it (the shared splitSafeCut): a split
+    // token is whole in the window or not in it at all, and nothing else goes. The bound in the second half, or the token ending 1 to 20 characters before it
+    // with a keyword across the bound, behind fillers of spaces, tabs only and each line break alone
     {
-      const head = 'ghp_' + B.slice(0, 10);
-      const at = (fill: string, brk: string, off: number) => {
-        const sep = fill.slice(1), lead = head + brk;
-        const k = Math.floor((M - 40 - lead.length) / fill.length);
-        const v = M - off - lead.length - sep.length - k * fill.length;
-        return 'w'.repeat(v) + sep + fill.repeat(k) + lead + B.slice(10, 36) + sep + ('tail' + sep).repeat(50);
-      };
-      const fills = ['x ', 'x\t', 'x\n', 'x\r\n', 'x\r', 'x ', 'x ', 'x\f', 'x\v'];
-      const brks = ['\n', ' \n', '  \n', '\t\n', '\r\n', '\r', '\n\n', '**\n', ' ', ' ', '\f', '\v', '\n    ', '\r    ', '\r> ', '\r\t', '\n> ', '\n1. ', '\n2) ', '\n[x] ', '\n- [x] ', '\n- [ ] ', '\n# ', '<span class="a" id="b">', '<!-- a note -->', '<!-- -->'];
-      for (const fill of fills)
-        for (const brk of brks)
-          for (const off of [1, 5, 12, 25]) {
-            const t = at(fill, brk, off);
-            const w = ST._deskWindowForTest(t);
-            assert.ok(!w.includes('ghp_') && w.length > M - 64 && t.startsWith(w), `#1613 round 9: a token split by ${JSON.stringify(brk)} across the bound (${off} into its second half, filler ${JSON.stringify(fill)}) is left out whole and the rest kept (${w.length}): ${JSON.stringify(w.slice(-40))}`);
-          }
-      // the exact bound (the window ends before the 'y' at 16,380, not at 16,382 as from 16,385)
-      assert.strictEqual(ST._deskWindowForTest('y '.repeat(M / 2) + 'z '.repeat(10)).length, M - 4, '#1613 round 9: the window counts back from character 16,384');
-      // no white space at all: round 7's trim; white space but nothing to keep: empty
-      assert.strictEqual(ST._deskWindowForTest('-\n'.repeat(M / 2 + 10)), '', '#1613 round 9: white space and marks only before the bound: nothing is kept');
-      assert.strictEqual(ST._deskWindowForTest('a.b'.repeat(6000)), 'a.b'.repeat(6000).slice(0, M).replace(/[a.b]+$/, ''), '#1613 round 9: no white space at all: the token characters the bound cut into go');
-      // linear: the walk back reads each character at most once (a long run before the end cost 396 ms against main's 25 ms with a regex search)
-      for (const t of ['a'.repeat(15000) + ' ' + 'b'.repeat(1000) + '\n  ' + 'c'.repeat(2000), 'x'.repeat(M + 10), ('q'.repeat(4000) + '\n').repeat(5), 'a '.repeat(9000)]) {
+      const toks: Array<[string, string]> = [['ghp_' + B.slice(0, 10), B.slice(10, 36)], ['AKIAQ7WE9RT1', 'YU3IO5PA']];
+      const lc = '<a' + 'b'.repeat(63) + ' ' + 'k="v" '.repeat(43).slice(0, 255) + '>';
+      const brks = ['\n', ' \n', '  \n', '\t\n', '\r\n', '\r', '\n\n', '**\n', ' ', ' ', '\f', '\v', '\n    ', '\r    ', '\r> ', '\r\t', '\n> ', '\n1. ', '\n2) ', '\n[x] ', '\n- [x] ', '\n- [ ] ', '\n# ',
+        '\n​ ', '<span class="a" id="b">', '<!-- a note -->', '<!-- -->', '<!-- a > b c -->', '<!-- a < b c -->', '<!--' + 'c '.repeat(128) + '-->', '<!--' + ' '.repeat(120) + '-->', lc];
+      const mustHide = ['\n', ' \n', '  \n', '\t\n', '\r\n', '\r', '\n\n', '\n    ', '\n> ', '\n1. ', '\n[x] ', '\n- [x] ', '<span class="a" id="b">', '<!-- a note -->', '<!-- a > b c -->', '<!-- a < b c -->', '<!--' + 'c '.repeat(128) + '-->', lc];
+      const fills = ['x ', 'x\t', 'x\n', 'x\r\n', 'x\r', 'x ', 'x\f', 'x\v'];
+      const pres = ['', 'a > b ', '<b>x</b> '];
+      let checked = 0;
+      for (const [h1, h2] of toks)
+        for (const brk of brks) {
+          if (mustHide.includes(brk)) assert.ok(!red('see ' + h1 + brk + h2 + ' now').includes(h1), `#1613 round 10: the split step hides ${h1.slice(0, 4)} split by ${JSON.stringify(brk.slice(0, 20))}`);
+          for (const fill of fills)
+            for (const pre of pres)
+              // off > 0: the bound that many characters into the second half; off < 0: the token ends -off characters before it, the keyword across it
+              for (const off of [1, 5, 7, -1, -4, -9, -20]) {
+                if (off > 0 && off >= h2.length) continue;
+                const sep = fill.slice(1), lead = pre + h1 + brk;
+                const after = off > 0 ? h2 + sep + 'tail' : h2 + ' --password Zq9Kq2Lm7Np4Rs' + sep + 'tail';
+                const k = Math.floor((M - 600 - lead.length) / fill.length);
+                const v = M - (off > 0 ? off : -off - h2.length) - lead.length - sep.length - k * fill.length;
+                const t = 'w'.repeat(v) + sep + fill.repeat(k) + lead + after + (sep + 'tail').repeat(200);
+                const w = ST._deskWindowForTest(t);
+                const whole = h1 + brk + h2;
+                // what the reading without a bound hides here (the split step on the text around the token: a filler of hidden characters glues it to its neighbours)
+                const p0 = v + sep.length + k * fill.length;
+                const hides = !maskSplitTokens(t.slice(p0 - 1024, p0 + 1024)).includes(h1);
+                const ok = t.startsWith(w) && w.length > M - 64 - lead.length && (!hides || !w.includes(h1) || w.includes(whole));
+                if (hides) checked++;
+                assert.ok(ok, `#1613 round 10: a token split by ${JSON.stringify(brk.slice(0, 24))} (${off > 0 ? off + ' into its second half' : -off + ' before the bound'}, filler ${JSON.stringify(fill)}, before it ${JSON.stringify(pre)}) is whole in the window or not in it, the rest kept (${w.length}): ${JSON.stringify(w.slice(-50))}`);
+              }
+        }
+      assert.ok(checked > 3000, `#1613 round 10: the cases the split step hides are checked (${checked})`);
+      // the exact bound: a blank at index 16,384 is past the bound (the window ends before the 'y' at 16,383)
+      assert.strictEqual(ST._deskWindowForTest('a' + 'y '.repeat(M / 2) + 'z '.repeat(10)).length, M - 1, '#1613 round 10: the window counts back from character 16,384');
+      assert.strictEqual(ST._deskWindowForTest('a.b'.repeat(6000)), 'a.b'.repeat(6000).slice(0, M).replace(/[a.b]+$/, ''), '#1613 round 10: no white space at all: the token characters the bound cut into go');
+      const json = '{"a":1,"b":[2,3]},'.repeat(1200);
+      assert.strictEqual(ST._deskWindowForTest(json), json.slice(0, M).replace(/[A-Za-z0-9_\-.~+\/=:@%]+$/, ''), '#1613 round 10: no white space at all (a minified line): only the token characters the bound cut into go');
+      // mark-heavy text keeps its window (round 9's mark walk emptied these)
+      for (const t of ['Summary of the work here\n' + '- - - - - - - - - -\n'.repeat(1200), 'Report: ok\n' + '---\n'.repeat(5000), 'Note ' + '> '.repeat(9000), 'Steps\n' + '1. \n'.repeat(5000), 'a'.repeat(16300) + ' b'.repeat(100), '-\n'.repeat(M / 2 + 10)]) {
+        const w = ST._deskWindowForTest(t);
+        assert.ok(w.length > M - 8 && t.startsWith(w), `#1613 round 10: mark-heavy text keeps its window (${w.length}): ${JSON.stringify(t.slice(0, 24))}`);
+      }
+      // linear: one walk back (each character at most once) and at most 2 x 512 + 16 characters of split work
+      for (const t of ['a'.repeat(15000) + ' ' + 'b'.repeat(1000) + '\n  ' + 'c'.repeat(2000), 'x'.repeat(M + 10), ('q'.repeat(4000) + '\n').repeat(5), 'a '.repeat(9000), ('see ghp_' + B.slice(0, 12) + '\n' + B.slice(12, 36) + ' ').repeat(500)]) {
         ST._deskWindowStepsForTest();
+        _splitWorkForTest();
         ST._deskWindowForTest(t);
-        const steps = ST._deskWindowStepsForTest();
-        assert.ok(steps > 0 && steps <= M + 256, `#1613 round 9: the window's walk back is linear (${steps} steps)`);
+        const steps = ST._deskWindowStepsForTest(), work = _splitWorkForTest();
+        assert.ok(steps <= M && work <= 2 * 512 + 16, `#1613 round 10: the window's walk back is linear (${steps} steps, ${work} characters of split work)`);
       }
     }
     // round 8: a label with no split token and no hidden character reads once, as before PR 1721 (one call of the mask handed in)
@@ -2118,6 +2141,10 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
       const out = ST.maskLabel(lab, 'run', { ...cm, cmd: (x: string) => { calls++; return maskSecretCommand(x, {}); } });
       assert.ok(calls === 1 && out === withoutSplit(() => ST.maskLabel(lab, 'run', cm)), `#1613 round 8: a plain label is read once and as before (${calls} calls): ${out}`);
     }
+    // round 10: an escaped label's escaped copy is read with its own split step, not the label's (exact output: the escaped word stays as written)
+    for (const [lab, kind, want] of [['cat a\\_b AKIAQ7WE9RT1\nYU3IO5PA', 'other', 'cat a\\_b [redacted]\n[redacted]'], ['cat a\\_b AKIAQ7WE9RT1\nYU3IO5PA', 'run', 'cat a\\_b [redacted] [redacted]'],
+      ['see a\\_b.md and ghp_' + B.slice(0, 12) + '​' + B.slice(12, 36), 'other', 'see a\\_b.md and [redacted]'], ['see a\\_b.md and ghp_' + B.slice(0, 12) + '​' + B.slice(12, 36), 'run', 'see a\\_b.md and [redacted]']] as const)
+      assert.strictEqual(ST.maskLabel(lab, kind, cm), want, `#1613 round 10: an escaped label is masked exactly (${kind})`);
     // round 9: the shortcut needs both checks: a label with a hidden character but no split token reads both ways (the reading as before shows these)
     for (const lab of [GH + '\u200b' + 'password=Hx9Kq2Lm7Np4Rs', 'note' + GH + '\u200b' + 'password=Hx9Kq2Lm7Np4Rs'])
       for (const kind of ['other', 'run']) {

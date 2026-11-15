@@ -80,27 +80,18 @@
      of one desk call is so at most a fixed multiple of DESK_SPLIT_MAX (pinned by a work counter). An owner may choose another number. */
   const DESK_SPLIT_MAX=16384;
   const TOKEN_TAIL=/[A-Za-z0-9_\-.~+\/=:@%]/;
-  /* the first DESK_SPLIT_MAX characters, never half a surrogate pair, ending before the last two token runs and what lies between them (round 9 of the review
-     of PR 1721): from the bound back, the run the bound cuts into (or ends at) goes, then blanks (any white space: a line break is a piece a token can be split
-     by) and mark-only runs (`>`, `-`, `**`, `1.`, `2)`, `[x]`, hidden characters) are passed over, and the next token run goes too; so a token split by a line
-     break, blanks before it or a mark across the bound is left out whole, not its first half. A tag or comment still open at the end (a `<` with no `>` after
-     it in the last 256 characters) goes with the run that holds it (a blank inside it cannot keep the half before it). With no white space at all, round 7's
-     token-character trim: the one piece left is not a piece of the reference, so `keep` masks it whole. Linear: backward loops (pinned by a step counter) */
-  const WIN_MARK=/^(?:[0-9]{1,9}[.)]|\[[ xX]?\]|[!-\/:-@\[-`{-~\u00ad\u200b-\u200f\u2060-\u2064\ufeff]+)$/;
+  /* the first DESK_SPLIT_MAX characters, never half a surrogate pair, ending at the last white space before the bound, then before any split span that crosses
+     that cut (round 10 of the review of PR 1721: the shared splitSafeCut reads the split spans within 512 characters of the cut), so a token split by a line
+     break, a mark, a tag, a comment or a hidden character is whole in the window or not in it at all, and nothing else is dropped. With no white space at all,
+     round 7's token-character trim: the one piece left is not a piece of the reference, so `keep` masks it whole. Without the shared module: throws (the
+     callers fail closed). Linear: one walk back (pinned by a step counter) and the bounded split read */
   const WIN_BLANK=/\s/;
   let winSteps=0;
   const windowOf=s=>{if(s.length<=DESK_SPLIT_MAX)return s;let e=DESK_SPLIT_MAX;if(/[\ud800-\udbff]/.test(s[e-1]))e--;
-    let i=e,runs=0,blank=false;
-    while(i>0&&runs<2){
-      while(i>0&&WIN_BLANK.test(s[i-1])){i--;winSteps++;blank=true;}
-      let j=i;while(j>0&&!WIN_BLANK.test(s[j-1])){j--;winSteps++;}
-      if(j===i)break;
-      if(i===e||!WIN_MARK.test(s.slice(j,i)))runs++; /* the run at the bound always counts (it may be half a mark or half a token) */
-      i=j;}
-    if(i===0){if(blank)return '';while(e>0&&TOKEN_TAIL.test(s[e-1]))e--;return s.slice(0,e);} /* no white space at all: round 7's trim */
-    const f=Math.max(0,i-256),tail=s.slice(f,i),lt=tail.lastIndexOf('<');winSteps+=tail.length;
-    if(lt>=0&&tail.indexOf('>',lt)<0){i=f+lt;while(i>0&&!WIN_BLANK.test(s[i-1])){i--;winSteps++;}}
-    return s.slice(0,i);};
+    if(!SH||typeof SH.splitSafeCut!=='function')throw new Error('no splitSafeCut');
+    let c=e;while(c>0&&!WIN_BLANK.test(s[c-1])){c--;winSteps++;}
+    if(c===0){while(e>0&&TOKEN_TAIL.test(s[e-1]))e--;return s.slice(0,e);} /* no white space at all */
+    const k=SH.splitSafeCut(s,c);if(!Number.isInteger(k)||k<0||k>c)throw new Error('cut');return s.slice(0,k);};
   /* round 7: what the excerpt can show, before the window is taken: a closed code block becomes an empty one (plainKeep shows "code" for either), a link's target
      goes (plainKeep shows its text either way); so a long code block or link target at the start no longer eats the window. Linear (stripLinks' scan; the code
      block regex ends at the next fence, and a fence with none after it is the last) */

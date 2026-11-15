@@ -2438,6 +2438,39 @@ function coveredBy(spans: ReadonlyArray<[number, number]>, a: number, b: number)
 export function maskSplitTokens(text: unknown): string {
   try { return maskSplitFirst(typeof text === 'string' ? text : text == null ? '' : String(text)); } catch { return '[redaction failed]'; }
 }
+/** How far on each side of a cut `splitSafeCut` reads: more than a token plus the longest piece of `SPLIT_AT` or `LINE_BREAKS` (about 324 characters). */
+const CUT_NEAR = 512;
+/** The gap `breakSpans` leaves between the two sides of a line break: exactly one `LINE_BREAKS` piece. */
+const BREAK_GAP = new RegExp(`^(?:${LINE_BREAKS.source})$`);
+/**
+ * Spec 012 FR-182 (review of PR 1721, round 10): where the desk's bounded window may end. `cut` moved to the start of any split span (`splitSpans`: a token
+ * joined across a line break, a mark, a tag, a comment or a hidden character) that crosses it, read in the text within `CUT_NEAR` characters on each side,
+ * so a split token is whole in the window or not in it at all. The spans are merged first, so one look finds the start. Linear: at most 2 x CUT_NEAR + 16
+ * characters of split work (counted by `_splitWorkForTest`). Throws on a bad argument (the desk then fails closed).
+ */
+export function splitSafeCut(text: string, cut: number): number {
+  if (typeof text !== 'string' || !Number.isInteger(cut) || cut < 0 || cut > text.length) throw new Error('splitSafeCut');
+  const lo = Math.max(0, cut - CUT_NEAR);
+  const s = text.slice(lo, Math.min(text.length, cut + CUT_NEAR + 16));
+  if (!SPLIT_GATE.test(s)) return cut;
+  splitWork += s.length;
+  let written: Array<[number, number]> | undefined;
+  const hidden = (): Array<[number, number]> => (written ??= hiddenSpans(s, maskTokenShapes(maskEscapedRuns(s, MASK), MASK)));
+  const spans = splitSpans(s, MASK, hidden).sort((x, y) => x[0] - y[0]);
+  const c = cut - lo;
+  let a = -1;
+  let b = -1;
+  for (const [x, y] of spans) {
+    // `breakSpans` gives the two sides of a line break as two spans: a gap that is one `LINE_BREAKS` piece joins them
+    if (x > b && !(b >= 0 && BREAK_GAP.test(s.slice(b, x)))) {
+      if (x > c) break; // a new stretch after the cut
+      a = x;
+      b = y;
+    } else if (y > b) b = y;
+    if (a < c && b > c) return lo + a;
+  }
+  return cut;
+}
 /**
  * `s` with the `split` spans (from `splitSpans`) and the `written` spans (what the rules hide as written, `hiddenSpans`) masked as one union, so a
  * stretch either pass finds goes whole (`maskCore`'s rule; `maskSpans` is its form without line breaks). A span made only of `split` ones keeps
