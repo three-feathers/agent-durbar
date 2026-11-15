@@ -1,0 +1,1 @@
+- **Fixed: the release run builds before its tests** (spec 008 FR-193, the v0.1.20 release run): `release.yml` ran `npm run typecheck` and then `npm test`, but `npm test` now needs `dist/`, so three suites failed on every system. It now runs `npm run build` first, as `ci.yml` does; `test:citypecheck` checks it. Not verified: a release run with this file.
