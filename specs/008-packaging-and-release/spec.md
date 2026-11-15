@@ -161,6 +161,14 @@ Retired spec numbers, never to be reused for a new spec (`specs:check` and `--ad
 
 - **FR-196** `[IMPLEMENTED]` (T152) `test:` **The checksums-source assertion compares real paths of both sides.** `fs.realpathSync(ec.checksumsPath())` must equal `fs.realpathSync(<root>/node_modules/electron/checksums.json)`, so it holds with a real or a symlinked `node_modules` and still fails for a checksums file from any other electron copy (a decoy case in the test proves it). Production code unchanged. `[KNOWN GAP]` run on macOS only (symlinked and real layouts); Windows junctions and Linux are proven by CI.
 
+### 2026-11-15: release.yml builds before its tests (FR-193 amended, T180; v0.1.20 release run 43685791437)
+
+Found when the v0.1.20 release run 43685791437 failed at `npm test` on all three systems, in the same 3 of 260 suites: `test:uisuite` ("the build is missing: dist/main/main.js does not exist"), `test:teams-ui` ("Cannot find module dist/shared/teamtemplate.js") and `test:checkparallel`. `release.yml` ran `npm run typecheck` (`tsc --noEmit`, no `dist/`) and then `npm test`, while `ci.yml` builds first. Since FR-211 (issue #1557) and spec 111's `test:teams-ui`, `npm test` needs `dist/`. That is an assertion failure, not an infrastructure cause, so no rerun (FR-087).
+
+- **FR-193, amended** `[IMPLEMENTED]` (T180) `test:` **Every workflow that runs `npm test` builds first, with no separate typecheck.** `release.yml`'s test job runs `npm run build` where it ran `npm run typecheck`; a type error still fails that step, because build runs the same `tsc -p tsconfig.json`. `scripts/test-ci-typecheck.js` now also reads `release.yml` and asserts it runs `npm run build` and not `npm run typecheck`, with a mutant that puts the typecheck step back. This replaces FR-193's sentence "`release.yml` keeps `npm run typecheck` because no build step runs before its tests".
+  - `[KNOWN GAP]` The workflow file a release run reads is the one at the tagged commit, so the `v0.1.20` tag (43ea66b62) cannot be fixed by this change; the release is cut again from a commit that has it.
+  - Not verified: a release run with this file. The next daily release is that check.
+
 ### 2026-11-09: no duplicate typecheck step before build in CI (FR-193, T150; owner decision, team-reviewed on #1352)
 
 Owner (Vikram, 2026-11-08) asked for CI optimisation; the agents of Paco and Ruben agreed on the #1352 comments. `npm run build` is `tsc -p tsconfig.json && node scripts/copy-assets.js`, and `npm run typecheck` is the same `tsc -p tsconfig.json --noEmit`, so running both compiles twice for nothing. FR-192's measurement (about 290 runner minutes a week, #1352) is the basis; this is a separate, smaller change that does not wait for that proposal.

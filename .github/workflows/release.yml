@@ -91,7 +91,8 @@ jobs:
           node-version: 22
           cache: npm
       - uses: ./.github/actions/npm-ci
-      - run: npm run typecheck
+      # spec 008 FR-193: no separate typecheck step; `npm run build` runs the same `tsc -p tsconfig.json`, fails on type errors and writes the dist/ that npm test needs (scripts/test-ci-typecheck.js)
+      - run: npm run build
       - run: npm test
       - name: Package (unsigned, no publishing)
         shell: bash
