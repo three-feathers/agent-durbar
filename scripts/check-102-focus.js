@@ -4,8 +4,8 @@
  *   npm run build
  *   OUT=/tmp DURBAR_USER_DATA=$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 DURBAR_DRIVER=$PWD/scripts/check-102-focus.js xvfb-run -a npx electron . --no-sandbox
  *
- * 1280x800 takes 12 agents (15 agents are rows there, with no box, asserted last). The fixture lives in the page only: the Photo office's numbers with `arrangement: "circle"` set after load (no shipped world names circle yet; T174), and a plain
- * colour for a picture. At 15 agents, 1440x900 and 1280x800, asserted: with `rows` there is no .ro-focus (T167); with `circle` exactly one, aria-hidden, no tabindex,
+ * 1280x800 takes 12 agents (15 agents are rows there, with no box, asserted last). The fixture lives in the page only: the Photo office's numbers with `arrangement: "circle"` set after load (the Cave names circle since T174, so the fixture sets it on Photo's numbers to test the engine and the renderer apart from the Cave's own manifest), and a plain
+ * colour for a picture. At 15 agents at 1440x900 and 12 agents at 1280x800 (15 agents fall back to rows there: no box, no scroll, asserted last), asserted: with `rows` there is no .ro-focus (T167); with `circle` exactly one, aria-hidden, no tabindex,
  * no text, no pointer events, nothing tabbable inside it, inside the room, clear of every folder zone and sign; a picture that fails to load moves no desk; a layout
  * with no focus box (page-only: the engine's result without `focus`) renders without a throw, draws no .ro-focus and moves nothing; back to
  * `rows` the element is gone. Prints "[102] focus PASS".  OUT=/tmp (optional) saves 102-focus-<w>x<h>.png.
