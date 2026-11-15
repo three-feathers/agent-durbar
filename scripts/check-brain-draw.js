@@ -58,7 +58,7 @@ module.exports = async (ctx) => {
     // ---- on: the layout is unchanged, the brain follows the agent
     await H.load({ w, h, query: { brain: '1' } });
     // the OS may take the focus from a driver (three run at a time): an unfocused page draws Still, which would make the "no loop" checks below pass for any code
-    await H.focusPage({ emulate: 'first' });
+    assert.ok(await H.focusPage({ emulate: 'first' }), `the page has the focus (real or emulated) before the Full checks at ${tag}`);
     const before = await js(DESKS);
     assert.strictEqual(before.length, 15, '15 desks');
     await js(`window.__errs=[];addEventListener('error',e=>window.__errs.push(String(e.message)+' '+String(e.filename).split('/').pop()));0`);
@@ -154,7 +154,7 @@ module.exports = async (ctx) => {
     await H.shot(path.join(OUT, `106-brain-forced-${tag}.png`), { prep: 'calm' });
     await media([{ name: 'forced-colors', value: 'none' }]);
     // ---- no overlap with the chat: the floating box is for the office only; with a chat open it is hidden and the composer is not under it
-    await H.focusPage({ emulate: 'first' });
+    assert.ok(await H.focusPage({ emulate: 'first' }), `the page has the focus before the chat opens at ${tag}`);
     const opened = await H.openSimAgent(`a=>a.id===${jsLiteral(id)}`, '#msgInput');
     assert.ok(opened.ok, 'the chat opens: ' + JSON.stringify(opened.seen));
     const under = await js(`(()=>{const out=[];for(const sel of ['#msgInput','#sendBtn','.composer']){const e=document.querySelector(sel);if(!e)continue;const r=e.getBoundingClientRect();if(!r.width)continue;
