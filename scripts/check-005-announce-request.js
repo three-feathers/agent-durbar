@@ -18,7 +18,9 @@ module.exports = async (ctx) => {
     const first = await H.openSimAgent(`a=>!a.parent&&a.live&&a.info&&(a.state==='idle'||a.state==='done')`, '#msgInput');
     assert.ok(first.ok, `${w}: opened an idle agent's chat ${jsLiteral(first.seen)}`);
     const A = first.id;
-    const emit = (e) => js(`window.__durbarSimUi.emit(${jsLiteral(Object.assign({ timestamp: 1, sessionId: A }, e))})`);
+    // every event of one case goes in ONE page evaluation, so "the same 60 ms window" never depends on CDP round-trip speed
+    const emitAll = (...es) => js(`(()=>{for(const e of ${jsLiteral(es.map((e) => Object.assign({ timestamp: 1, sessionId: A }, e)))})window.__durbarSimUi.emit(e);return 0;})()`);
+    const emit = (e) => emitAll(e);
     await js(`(()=>{window.__seq=[];window.__t0=performance.now();const el=document.getElementById('srAnnounce');
       new MutationObserver(()=>{window.__seq.push([Math.round(performance.now()-window.__t0),el.textContent]);}).observe(el,{childList:true,characterData:true,subtree:true});})();0`);
     const seq = () => js(`window.__seq.filter(x=>x[1]).slice()`);
@@ -30,8 +32,8 @@ module.exports = async (ctx) => {
     // ---- 1. a permission request: ask first, send a message (the turn starts: "Working…"), the request arrives in the same window ----
     assert.strictEqual(await js(`window.__durbarSimUi.bridge().setPermMode(${jsLiteral(A)},'ask',{}).then(r=>r.ok)`), true, `${w}: the agent asks first`);
     await js(`window.__seq.length=0;0`);
-    await emit({ type: 'status', status: 'working', intent: 'Working' });
-    await emit({ type: 'status', status: 'needs-permission', intent: 'Waiting', permission: { requestId: 'r1-' + w, kind: 'shell', summary: 'Run the first request', state: 'pending' } });
+    await emitAll({ type: 'status', status: 'working', intent: 'Working' },
+      { type: 'status', status: 'needs-permission', intent: 'Waiting', permission: { requestId: 'r1-' + w, kind: 'shell', summary: 'Run the first request', state: 'pending' } });
     assert.ok(await until(`!!document.querySelector('#chat .note.perm.pending')`, 8000), `${w}: the permission card is in the chat`);
     assert.ok(await settled('needs your OK'), `${w}: the request is announced and #srAnnounce settles`);
     await trace('permission');
@@ -43,8 +45,8 @@ module.exports = async (ctx) => {
     await emit({ type: 'status', status: 'idle' });
     assert.ok(await until(`document.getElementById('srAnnounce').textContent!==${jsLiteral(await end())}`, 8000), `${w}: the idle status is said`);
     await js(`window.__seq.length=0;0`);
-    await emit({ type: 'status', status: 'working', intent: 'Working' });
-    await emit({ type: 'question', phase: 'asked', requestId: 'q1-' + w, questions: [{ question: 'Which colour?', multiSelect: false, options: [{ label: 'red' }, { label: 'blue' }].map((o) => ({ label: o.label })) }] });
+    await emitAll({ type: 'status', status: 'working', intent: 'Working' },
+      { type: 'question', phase: 'asked', requestId: 'q1-' + w, questions: [{ question: 'Which colour?', multiSelect: false, options: [{ label: 'red' }, { label: 'blue' }].map((o) => ({ label: o.label })) }] });
     assert.ok(await until(`!!document.querySelector('#chat .question')`, 8000), `${w}: the question card is in the chat`);
     assert.ok(await settled('asks: Which colour'), `${w}: the question is announced and #srAnnounce settles`);
     await trace('question');
@@ -55,8 +57,8 @@ module.exports = async (ctx) => {
     await emit({ type: 'status', status: 'idle' });
     await until(`document.getElementById('srAnnounce').textContent!==${jsLiteral(await end())}||window.__seq.length>0`, 8000);
     await js(`window.__seq.length=0;0`);
-    await emit({ type: 'status', status: 'working', intent: 'Working' });
-    await emit({ type: 'question', phase: 'asked', requestId: 'e1-' + w, questions: [{ question: 'Where should this deploy go?', header: 'deploy-mcp', multiSelect: false, options: [] }],
+    await emitAll({ type: 'status', status: 'working', intent: 'Working' },
+      { type: 'question', phase: 'asked', requestId: 'e1-' + w, questions: [{ question: 'Where should this deploy go?', header: 'deploy-mcp', multiSelect: false, options: [] }],
       elicitation: { message: 'Where should this deploy go?', source: 'deploy-mcp', fields: [{ name: 'environment', title: 'Which environment?', type: 'enum', required: true, enumValues: ['staging', 'production'] }] } });
     assert.ok(await until(`!!document.querySelector('#chat .note.elicit')`, 8000), `${w}: the elicitation card is in the chat`);
     assert.ok(await settled('Where should this deploy go'), `${w}: the elicitation is announced and #srAnnounce settles`);
