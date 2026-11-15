@@ -167,6 +167,7 @@ The `v0.1.21` dry run (`node scripts/release-notes.js --tag v0.1.21 ...`, the sa
 
 - **T181** `read:` `CHANGELOG.md` gets a `## v0.1.20 (not released, 2026-11-15)` section with one plain paragraph and no bullets: tagged but never released, its changes ship in `v0.1.21`. The `changelog.d/` fragments stay unfolded, so `v0.1.21`'s notes are built from all of them (the `v0.1.21` row of the Release table). No script changes; the tag stays where it is. Decided by the coordinator under the owner's delegation (option a of three).
   - Until the `v0.1.21` fold PR merges, the site's *What's new* (`latestChanges()` in `scripts/build-site.js` reads the newest `## v` section) shows this section's paragraph instead of `v0.1.19`'s list; the paragraph is written to be true there.
+  - Three fragments get text fixes so the public `v0.1.21` notes read right: `issue #1589` and `issue #1724` (the `#` was missing, so they did not link), and the stale "CI not run on the PR head yet" is dropped from `021-1768-spec-numbers-bold.md` (#1769 merged with CI green).
   - `[KNOWN GAP]` `previousRelease()` does not skip a tag that has no published release, so the next tag-only release needs the same hand-written section: issue #1784.
 
 ### 2026-11-15: release.yml builds before its tests (FR-193 amended, T180; v0.1.20 release run 43685791437)
