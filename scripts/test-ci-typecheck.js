@@ -27,7 +27,8 @@ const read = (f) => fs.readFileSync(path.join(process.env.CITC_ROOT || ROOT, f),
 const pkg = JSON.parse(read('package.json'));
 const ci = read('.github/workflows/ci.yml');
 const mac = read('.github/workflows/macos-pr.yml');
-check(pkg, { 'ci.yml': ci, 'macos-pr.yml': mac });
+const rel = read('.github/workflows/release.yml'); /* FR-193 amended (T180): the release run's npm test needs dist/ too (v0.1.20 run 43685791437) */
+check(pkg, { 'ci.yml': ci, 'macos-pr.yml': mac, 'release.yml': rel });
 
 // mutants: each must fail with the intended assert text
 const fails = (fn, re) => assert.throws(fn, (e) => re.test(e.message), 'mutant not caught: ' + re);
@@ -35,4 +36,6 @@ const other = { scripts: { ...pkg.scripts, build: pkg.scripts.build.replace('tsc
 fails(() => check(other, { 'ci.yml': ci }), /build uses tsc -p tsconfig\.scripts\.json but typecheck uses tsconfig\.json/);
 fails(() => check(pkg, { 'ci.yml': ci.replace(/run: npm run build\s*$/gm, 'run: echo skipped') }), /ci\.yml still runs npm run build/);
 fails(() => check(pkg, { 'ci.yml': ci.replace(/( *)- if: (.*)\n( *)run: npm run build/, '$1- run: npm run typecheck\n$1- if: $2\n$3run: npm run build') }), /ci\.yml runs typecheck and build/);
+fails(() => check(pkg, { 'release.yml': rel.replace(/run: npm run build\s*$/m, 'run: npm run typecheck') }), /release\.yml still runs npm run build/);
+fails(() => check(pkg, { 'release.yml': rel.replace(/( *)- run: npm run build\s*$/m, '$1- run: npm run typecheck\n$1- run: npm run build') }), /release\.yml runs typecheck and build/);
 console.log('ci typecheck: ok');

@@ -30,7 +30,7 @@ const line = (head: string): string => {
 };
 const DEFS = ['const homeMask=', 'const helperMask=', 'const deskMask=', 'const SHORT=', 'const RED=', 'const STX=', 'const SAFE=',
   'const safeExcerpt=', 'let announceT=', 'const ANN_REQUEST=', 'const ANN_UNCHECKED=', 'function annHome(', 'function annPart(', 'function annMask(',
-  'function announce(', 'function requestRaw(', 'function requestText('].map(line).join('\n');
+  'function announce(', 'function joinQuestionParts(', 'function requestRaw(', 'function requestText('].map(line).join('\n');
 const UNCHECKED = 'A line was not read out: Durbar could not check it for secrets.';
 
 type Page = { say(text: unknown, prio?: number): string | null; queue(text: unknown, prio?: number): void; fire(): string | null; unchecked: string;
