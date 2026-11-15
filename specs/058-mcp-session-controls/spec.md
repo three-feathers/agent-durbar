@@ -2360,6 +2360,12 @@ logging, permissions): an **Opus** review on PR 1 (this spec), PR 2 (the bump an
 setting, the adapter, masking: auth and logging); a Sonnet review is enough for PR 4 (Settings words and layout) and PR 5 (the test build
 tag); the plan and tasks say the same.
 
+**Merge gate** (review of #1669, Paco, 2026-11-15: prose alone did not hold it). PR 1 (#1669, spec only) may merge on its own. PR 2 (#1675),
+PR 3 (#1681) and PR 4 (#1688) carry the `needs-owner-approval` label, which `scripts/pr-gate.sh` refuses, until **all** of these are done:
+T220's Ask-first half recorded (or the owner accepts that gap in writing), **Q26** answered, **T221** (the owner's test of the T219 build)
+recorded and the owner's word to merge. Then they merge **in order** #1675, #1681, #1688, back to back, each after its own gate; #1675 never
+merges alone (FR-244). Only an owner removes the label. Each PR body says the same.
+
 **Input.** Owner (Vikram), Telegram DM, **2026-11-13 05:12 UTC** (quoted in issue #1667): "create an experimental release where you add a setting to
 select client id to use (call it, app mode and have visual studio code, copilot cli and custom app where user entered custom client id). I will
 test vs code and copilot cli mode and tell you if it works ok including this system broker which should solve my constant MCP auth issues."
@@ -2397,8 +2403,8 @@ facts below that this delta relies on, unless tagged otherwise):
   'copilot-cli' | 'custom', clientId?: string }`; `clientId` only with `custom`. **Missing = `vscode`** (the effective mode, not written to the
   file): Visual Studio Code's public app id is passed as `entra.clientId`, so on SDK 1.0.32 Copilot's Entra MCP sign-in works as it does
   today: today's releases run SDK 1.0.24, whose runtime carries that same id by itself (`read:` the byte grep above) and does not show the
-  #1084 text. **`off`** (chosen explicitly) passes no `entra` client option: the #1084 runtime error text on a failed Entra sign-in and the
-  existing CLI steps (`mcpSignInSteps`, FR-068: `/mcp auth <name>`, then Restart session). Owner decision Q27 (b), Vikram, Telegram DM,
+  #1084 text. **`off`** (chosen explicitly) passes no `entra` client option: the #1084 runtime error text on a failed Entra sign-in and FR-246's
+  calm note, with no CLI command (a Copilot row shows no `/mcp auth` steps since FR-246, 2026-11-14). Owner decision Q27 (b), Vikram, Telegram DM,
   **2026-11-13 06:22:20 UTC**: "Ok to have vs code mode as default to keep compatibility to how it worked earlier and not silently break all like SDK release did". `parseSettings` keeps the value only when it passes FR-235; anything else (wrong type,
   unknown mode, a `custom` without a valid id, an id on another mode, extra keys) reads as the **default** (`vscode`): a malformed file cannot
   make Durbar send any id but Visual Studio Code's public one, and cannot silently turn the sign-in off. It is written through the existing path: one `settings:setCopilotSignInApp` handler made
@@ -2478,8 +2484,8 @@ facts below that this delta relies on, unless tagged otherwise):
   - **Visual Studio Code's app** (default): "Experimental. Uses Visual Studio Code's Microsoft Entra app ID, as Copilot did before version
     1.0.26. Durbar is not Visual Studio Code. Your organization or Microsoft may refuse this, and sign-ins show as Visual Studio Code in your
     organization's logs."
-  - **Off**: "Agent Durbar does not set an app. Copilot's sign-in to Microsoft Entra MCP servers may fail; then use `/mcp auth <name>` in the
-    Copilot CLI."
+  - **Off**: "Agent Durbar does not set an app. Copilot's sign-in to Microsoft Entra MCP servers may fail; then switch the server off for
+    the session if you do not need it." (FR-246: no CLI command in a Copilot row; review of #1669, Paco, 2026-11-15)
   - **The default's notice, shown once** (constitution VIII: another app's identity by default is said, not hidden): while the setting has
     never been saved, the row shows above the choices, not blocking anything: "Experimental: Copilot now signs in to Microsoft Entra MCP
     servers with Visual Studio Code's app ID by default, as it did before. Sign-ins show as Visual Studio Code in your organization's logs.
@@ -2500,13 +2506,13 @@ facts below that this delta relies on, unless tagged otherwise):
   `AADSTS65002` or `AADSTS50011` (whole words, any case) shows, in the row and on the failed call: with a sign-in app set, "Microsoft refused
   the sign-in app chosen in Settings > MCP servers (<label>): <reason>. Choose another app or Off." where <reason> is "this server does not
   accept that app" (the first two) or "the app does not list this computer's sign-in address" (50011); with Off, "Microsoft refused Copilot's
-  sign-in app for this server." plus the existing CLI steps. One pure check in `src/shared/mcpcall.ts` beside `classifyMcpCall`, which stays
+  sign-in app for this server. Switch it off for this session if you do not need it." (FR-246's note: no CLI command). One pure check in `src/shared/mcpcall.ts` beside `classifyMcpCall`, which stays
   as it is (these codes are not `auth`: signing in again with the same app does not fix them; AADSTS65001, consent, stays `auth`). **Order:**
   the row and the failed call's line run the refusal check **first**, before they use `classifyMcpCall`'s answer, because `classifyMcpCall`
   returns `auth` for a bare "unauthorized" (`unauthorized_client` included) and for `mcpAuth === true` before reading the codes
   (`src/shared/mcpcall.ts`). The #1084 text with Off is unchanged. `test:` each code, case, inside a longer masked text, and a near miss
   (`AADSTS650020`); "AADSTS65002 ... unauthorized_client" and a refusal text with `mcpAuth: true` both show the refusal words, not the sign-in
-  words; the Off variant's words and the "with a sign-in app set" variant's words; `auth` and `policy` texts unchanged. **Mutants:** 65002 read
+  words; the Off variant's words (no `/mcp` and no `copilot` command in them) and the "with a sign-in app set" variant's words; `auth` and `policy` texts unchanged. **Mutants:** 65002 read
   as `auth`; the check dropped (the plain failure text shows); the order swapped (the auth words win); the Off and set variants swapped.
 - **FR-241** **Platforms** (constitution VI). **`[KNOWN GAP]` Linux:** runtime 1.0.32 says Entra accounts are supported "only on Windows and
   macOS in this beta"; most likely the setting, **the default included**, has no effect and sign-in falls back to the browser OAuth flow
@@ -2526,7 +2532,10 @@ facts below that this delta relies on, unless tagged otherwise):
 - **FR-243** **Bump prerequisite: Ask first and Read-only keep asking for shell** (constitution III). Runtime 1.0.30/1.0.31 notes: "Read-only
   shell commands no longer ask for permission", "`enableScriptSafety` is deprecated and ignored", "Assisted Autopilot no longer asks a human"
   (`read:` bot-written release notes, data). Durbar never sets `enableScriptSafety` (`read:` grep). The guard, on **create and resume** of every
-  Copilot session (the runtime says these settings are "startup-only, not persisted, must be re-supplied on resume"): `managedSettings:
+  Copilot session, the throw-away ones included (the one-shot `oneShotConfig` behind `generateText` and the plan read, and the prompt-free
+  rename resume `renameResumeConfig`, which reopens a stored session in its real folder and so also gets `excludedTools: ['builtin:*', 'mcp:*',
+  'custom:*']` beside `availableTools: []`; review of #1675, Paco, 2026-11-15) (the runtime says these settings are "startup-only, not
+  persisted, must be re-supplied on resume"): `managedSettings:
   { permissions: { ask: ['Shell(*)'], disableAssistedPermissionsMode: true } }` (placement as the probe read the 1.0.32 types; PR 2 checks it
   against the installed types) and `permissionMode: 'manual'`, so shell requests still reach
   Durbar's `onPermissionRequest` broker (Read-only denies, Ask first asks, Allow all approves as today; spec 087's OS sandbox floor still
@@ -2535,7 +2544,9 @@ facts below that this delta relies on, unless tagged otherwise):
   free probes and few-prompt real checks without asking, report after): in Read-only and Ask first, one prompt asking for `ls` must reach the
   broker (denied, or a pending card). If the probe shows the guard does not hold, the bump stops and the owner decides. `test:` fake client:
   each key (`permissions.ask`, `disableAssistedPermissionsMode`, `permissionMode`) on create, on resume and on `refreshAuth`'s re-resume
-  (which builds its config from `live.resumeConfig()`, a separate path). **Mutants:** the guard only on create; `permissionMode` left out;
+  (which builds its config from `live.resumeConfig()`, a separate path); the one-shot config and the rename resume config (the guard, and
+  `excludedTools` on the rename resume). **Mutants:** the guard only on create; the guard dropped from `oneShotConfig`; the guard or
+  `excludedTools` dropped from `renameResumeConfig`; `permissionMode` left out;
   `disableAssistedPermissionsMode` dropped; the guard missing on the `refreshAuth` re-resume.
 - **FR-244** **Bump prerequisite: dependencies and the hold.** The bump PR (PR 2) moves `@github/copilot-sdk` from 1.0.24 to 1.0.32 (exact pin)
   and lifts the Dependabot `ignore` above 1.0.24 (`.github/dependabot.yml`, #1084) in the same PR: with Visual Studio Code's app as the default
@@ -2560,7 +2571,7 @@ facts below that this delta relies on, unless tagged otherwise):
   means: this test build, and the setting labelled experimental; there is no other release kind. **What the owner tests** on his managed Mac,
   each with his own Entra MCP servers (`real:`, T221): (1) the default, untouched (Visual Studio Code's app) and the once-shown notice: Sign
   in through the system broker, no browser if the broker answers, servers connect, and the hourly expiry renews (FR-218) without a new
-  sign-in; (2) Off on 1.0.32 shows the #1084 failure text and steps; (3) Copilot CLI's app only if Q25 puts it in the build; (4) Custom app, if he has a tenant app; (5) a change reconnects and keeps
+  sign-in; (2) Off on 1.0.32 shows the #1084 failure text and FR-246's note (no CLI command); (3) Copilot CLI's app only if Q25 puts it in the build; (4) Custom app, if he has a tenant app; (5) a change reconnects and keeps
   live chats; (6) the debug log shows no GUID. Results are recorded in this spec as `real:` with the date and build.
 
 #### Build record: PR 2, the SDK bump (T216, 2026-11-13)
@@ -2590,7 +2601,12 @@ facts below that this delta relies on, unless tagged otherwise):
 - Built for FR-243: `[IMPLEMENTED]` `copilotShellGuard()` (`src/adapters/copilot.ts`), spread into the one session config used for create, resume and
   the FR-158 re-resume; the field names are those of the installed SDK 1.0.32 types (`SessionConfigBase.managedSettings`,
   `ManagedSettingsPermissions.ask` / `disableAssistedPermissionsMode`, `permissionMode`), and the SDK sends both on `session.create` and
-  `session.resume` (`read:` `client.js`). Not in the tool-free one-shot or rename configs (no tools, every request rejected). `test:
+  `session.resume` (`read:` `client.js`). Review of #1675 (Paco, 2026-11-15): also in the throw-away configs, `oneShotConfig` (plan read,
+  `generateText`) and `renameResumeConfig`, which reopens a stored session in its real folder and now also has `excludedTools: ['builtin:*',
+  'mcp:*', 'custom:*']` (a runtime-approved read-only shell command never reaches their reject-all broker, so the empty tool list was the only
+  lock). `test: copilotoneshot`, `test: renameadapters` (the config and the fake's resumed config). Mutants: guard dropped from `oneShotConfig`
+  ("spec 058 FR-243: the shell guard on the one-shot session too"), from `renameResumeConfig` ("spec 058 FR-243: the shell guard on the rename
+  resume"), `excludedTools` dropped there ("spec 058 FR-243: the rename resume excludes every tool source as a second lock"). `test:
   copilot-model` (create, resume by id, `resumeSessionId`), `test: authcheck` (refreshAuth re-resume). Mutants: resume without the guard
   ("spec 058 FR-243 guard on resume (session id)"), `permissionMode` left out ("spec 058 FR-243 guard on create"), the reconnect without it
   ("spec 058 FR-243 guard on the refreshAuth re-resume"), `disableAssistedPermissionsMode` dropped ("spec 058 FR-243 guard on create"; on
