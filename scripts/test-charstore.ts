@@ -144,14 +144,22 @@ try {
     assert.ok(warns.every((w) => !/[\\/]|my-/.test(w)), 'no path or id in a warning: ' + warns[0]);
     for (const b of bads) assert.ok(!store.frames(b).ok && !store.has(b), `${b}: not served`);
     // links
+    // the link points at an outside copy of a GOOD character folder (its record names this id), so only the folder check can refuse it (review of #956)
     const linkId = 'my-0000000000aa';
-    if (linkOk(outside, path.join(root, linkId))) {
+    const outsideChar = path.join(outside, 'char');
+    fs.cpSync(path.join(root, good.id), outsideChar, { recursive: true });
+    fs.writeFileSync(path.join(outsideChar, 'character.json'), JSON.stringify({ ...JSON.parse(fs.readFileSync(path.join(root, good.id, 'character.json'), 'utf8')), id: linkId }));
+    const outsideBefore = tree(outsideChar).map((f) => [f, fs.statSync(path.join(outsideChar, f)).isFile() ? fs.readFileSync(path.join(outsideChar, f)).toString('hex') : 'dir']);
+    if (linkOk(outsideChar, path.join(root, linkId))) {
       assert.ok(!store.has(linkId), 'a link named like an id is not a character');
+      assert.ok(!store.frames(linkId).ok, 'its frames are not read through it');
+      assert.ok(!store.rename(linkId, 'x').ok, 'it cannot be renamed through');
       assert.ok(!store.delete(linkId).ok, 'and cannot be deleted through');
-      assert.ok(!store.rename(linkId, 'x').ok);
-      assert.ok(fs.existsSync(path.join(outside, 'keep.txt')), 'what it points at is untouched');
+      assert.ok(!store.list().some((e) => e.id === linkId), 'and is not listed');
+      assert.deepStrictEqual(tree(outsideChar).map((f) => [f, fs.statSync(path.join(outsideChar, f)).isFile() ? fs.readFileSync(path.join(outsideChar, f)).toString('hex') : 'dir']), outsideBefore, 'what it points at is untouched');
       fs.rmSync(path.join(root, linkId));
     }
+    fs.rmSync(outsideChar, { recursive: true, force: true });
     const fileLink = copyOf('my-0000000000ab', (d) => { fs.rmSync(path.join(d, 'working.webp')); });
     if (linkOk(path.join(root, good.id, 'working.webp'), path.join(root, fileLink, 'working.webp'))) assert.ok(!store.has(fileLink) && !store.frames(fileLink).ok, 'a frame that is a link is refused');
     fs.rmSync(path.join(root, fileLink), { recursive: true, force: true });
@@ -163,6 +171,27 @@ try {
     // a good record over a broken picture is refused at the read, not handed to the window
     const broken = copyOf('my-0000000000ad', (d) => { fs.writeFileSync(path.join(d, 'waiting.webp'), 'not a picture'); });
     assert.ok(store.has(broken) && !store.frames(broken).ok, 'the bytes are checked again');
+    // the lstat check before the open is the only guard on Windows (no O_NOFOLLOW): an lstat that reports a link must refuse the file even when the open would succeed (review of #956)
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const realFs = require('fs') as { lstatSync: typeof fs.lstatSync };
+    const lstat = realFs.lstatSync;
+    const linkJson = path.join(root, good.id, 'character.json');
+    realFs.lstatSync = ((p: fs.PathLike, ...rest: unknown[]) => {
+      const st = (lstat as (...a: unknown[]) => fs.Stats)(p, ...rest);
+      if (path.resolve(String(p)) !== path.resolve(linkJson)) return st;
+      return Object.assign(Object.create(Object.getPrototypeOf(st)), st, { isFile: () => false, isSymbolicLink: () => true });
+    }) as typeof fs.lstatSync;
+    let seenAsLink: boolean;
+    try { seenAsLink = store.has(good.id); } finally { realFs.lstatSync = lstat; }
+    assert.strictEqual(seenAsLink, false, 'a record lstat reports as a link is refused before it is opened');
+    realFs.lstatSync = ((p: fs.PathLike, ...rest: unknown[]) => {
+      const st = (lstat as (...a: unknown[]) => fs.Stats)(p, ...rest);
+      return path.resolve(String(p)) === path.resolve(linkJson) ? Object.assign(Object.create(Object.getPrototypeOf(st)), st, { ino: 1n }) : st;
+    }) as typeof fs.lstatSync;
+    let otherFile: boolean;
+    try { otherFile = store.has(good.id); } finally { realFs.lstatSync = lstat; }
+    assert.strictEqual(otherFile, false, 'the opened record must be the one lstat saw (device and inode)');
+    assert.ok(store.has(good.id), 'and the same record is read when lstat says it is a file');
   }
   // --- a root that is a link is not used ---
   {

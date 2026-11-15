@@ -257,6 +257,27 @@ async function main(): Promise<void> {
       }
       for (const f of server.current.imageOutside) fs.rmSync(f, { force: true });
       noTemps('symlink'); }
+    // the lstat before the open is the only link guard on Windows (no O_NOFOLLOW), and the opened file must be the one lstat saw: an lstat that says "link", or names
+    // another file, refuses the sheet even though the open would read it (review of #956)
+    mode('sheet');
+    { // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const realFs = require('fs') as { lstatSync: typeof fs.lstatSync };
+      const lstat = realFs.lstatSync;
+      const lie = (change: Record<string, unknown>): void => {
+        realFs.lstatSync = ((p: fs.PathLike, ...rest: unknown[]) => {
+          const st = (lstat as (...a: unknown[]) => fs.Stats)(p, ...rest);
+          return path.basename(String(p)) === SHEET_NAME ? Object.assign(Object.create(Object.getPrototypeOf(st)), st, change) : st;
+        }) as typeof fs.lstatSync;
+      };
+      for (const [why, change] of [['lstat reports a link', { isFile: () => false, isSymbolicLink: () => true }], ['lstat saw another file', { ino: 1n }]] as const) {
+        lie(change);
+        let r: Rec;
+        try { r = await call('character:generate', DESC, 'codex'); } finally { realFs.lstatSync = lstat; }
+        assert.ok(r.ok === false && r.error === 'No picture came back. Try again.', `${why}: the sheet is refused: ok ${String(r.ok)}, error ${String(r.error)}`);
+        noTemps(why);
+      }
+      assert.strictEqual((await call('character:generate', DESC, 'codex')).ok, true, 'and the same sheet is read when lstat tells the truth');
+    }
 
     // --- the encoder's refusals and failures ---
     mode('sheet');

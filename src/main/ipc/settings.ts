@@ -63,7 +63,6 @@ export function register(deps: SettingsIpcDeps): void {
     const store = settingsStore();
     return store ? store.setCharacters(v) : { ok: false, characters: 'theme' };
   });
-  /* spec 096 FR-060: Settings > Characters > Motion, a real boolean only */
   ipcHandle('settings:setPlace', (_e, server: unknown, place: unknown) => settingsStore()?.setPlace(server, place) ?? { ok: false });
   ipcHandle('settings:addPlace', (_e, name: unknown, icon: unknown) => settingsStore()?.addPlace(name, icon) ?? { ok: false, error: 'unknown', customPlaces: [], placeMap: {} });
   ipcHandle('settings:updatePlace', (_e, id: unknown, patch: unknown) => settingsStore()?.updatePlace(id, patch) ?? { ok: false, error: 'unknown', customPlaces: [], placeMap: {} });

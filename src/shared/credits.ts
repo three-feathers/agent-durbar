@@ -92,7 +92,6 @@ export interface AppSettings {
   characters?: Exclude<CharacterChoice, 'theme'>;
   /** Spec 096 FR-033: folder key to character id. Omitted when empty. */
   characterPins?: Record<string, string>;
-  /** Spec 096 FR-060: Settings > Characters > Motion. On by default: only `false` is kept. */
   /** OS notifications when an agent needs you (spec 052 FR-059). On by default: only `false` is kept. */
   notifyNeedsMe?: false;
   /** Spec 099 S1: the Autopilot turn limit last used (a whole number, 1 to 1000). */

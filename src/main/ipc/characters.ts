@@ -17,6 +17,7 @@ import { CHARACTER_IDEAS, SHEET_NAME, buildCharacterPrompt, cleanDescription } f
 import { DEFAULT_STYLE_ID } from '../../shared/charstyle';
 import { MAX_CHARACTERS, cleanCharacterName, pinDecision } from '../../shared/charrules';
 import type { EncoderResult, FaceSet, FrameSet } from '../../shared/charrules';
+import { readCapped } from '../../shared/cappedread';
 import { MAX_IMAGE_BYTES, checkImage } from '../../shared/imagecheck';
 import { maskHomePaths, redact, redactMarkdown } from '../../shared/redact';
 import { encodeSheet } from '../charencoder';
@@ -80,30 +81,22 @@ export function sheetFolderOf(file: unknown, tmpRoot: string = os.tmpdir()): str
 }
 
 type SheetRead = { ok: true; bytes: Uint8Array } | { ok: false; error: string };
-/** FR-020: the expected file only: `lstat` of a regular file (no link), at most 20 MB, read once into memory. */
+/**
+ * FR-020: the expected file only: `lstat` of a regular file (no link), at most 20 MB, then the shared capped, no-follow, one-link read (`readCapped`, FR-031) of
+ * that same file (device and inode compared as bigints, issue #1491), read once into memory.
+ */
 function readSheet(file: string): SheetRead {
-  let fd: number | undefined;
-  try {
-    const st = fs.lstatSync(file);
-    if (!st.isFile()) return { ok: false, error: NO_PICTURE };
-    if (st.size > MAX_IMAGE_BYTES) return { ok: false, error: 'The picture is too big.' };
-    const { O_RDONLY, O_NOFOLLOW, O_NONBLOCK } = fs.constants;
-    fd = fs.openSync(file, O_RDONLY | (O_NOFOLLOW ?? 0) | (O_NONBLOCK ?? 0));
-    const now = fs.fstatSync(fd);
-    if (!now.isFile() || now.ino !== st.ino || now.size > MAX_IMAGE_BYTES) return { ok: false, error: NO_PICTURE };
-    const bytes = Buffer.alloc(now.size);
-    let got = 0;
-    while (got < bytes.length) {
-      const n = fs.readSync(fd, bytes, got, bytes.length - got, got);
-      if (n <= 0) return { ok: false, error: NO_PICTURE };
-      got += n;
-    }
-    return { ok: true, bytes };
-  } catch {
-    return { ok: false, error: NO_PICTURE };
-  } finally {
-    if (fd !== undefined) try { fs.closeSync(fd); } catch { /* closed */ }
-  }
+  const TOO_BIG = { ok: false, error: 'The picture is too big.' } as const;
+  let st: fs.BigIntStats;
+  try { st = fs.lstatSync(file, { bigint: true }); } catch { return { ok: false, error: NO_PICTURE }; }
+  if (!st.isFile()) return { ok: false, error: NO_PICTURE };
+  if (st.size > BigInt(MAX_IMAGE_BYTES)) return TOO_BIG;
+  const r = readCapped(fs, fs.constants, file, MAX_IMAGE_BYTES, (_now: fs.Stats, fd: number) => {
+    const id = fs.fstatSync(fd, { bigint: true });
+    return id.ino !== st.ino || id.dev !== st.dev ? 'replaced' : undefined;
+  });
+  if (r.ok) return { ok: true, bytes: r.buf };
+  return r.code === 'too-big' ? TOO_BIG : { ok: false, error: NO_PICTURE };
 }
 
 /** The forms an echo of the text can take: as it is, and JSON-escaped once or twice (as a log or an error wrapping another error carries it; the same idea as `maskHomePaths`). */

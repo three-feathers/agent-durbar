@@ -13,6 +13,7 @@ import * as path from 'path';
 import { CHARACTER_ID_RE, MAX_CHARACTERS, cleanCharacterName, isStoredFace } from '../shared/charrules';
 import type { FaceSet, FrameSet } from '../shared/charrules';
 import { MAX_FRAME_BYTES, checkFrames } from '../shared/webpcheck';
+import { readCapped } from '../shared/cappedread';
 
 export interface CharacterEntry {
   id: string;
@@ -46,29 +47,19 @@ const MAX_SUFFIX = 99;
 const hex = (n: number): string => randomBytes(n).toString('hex');
 const lstatOf = (p: string): fs.Stats | null => { try { return fs.lstatSync(p); } catch { return null; } };
 
-/** FR-030: a regular file, never a link, up to `cap` bytes. Checked before and after the open, so a link or a FIFO is not followed or waited on. */
+/**
+ * FR-030: a regular file, never a link, up to `cap` bytes. `lstat` first (a link or a FIFO is never opened; on Windows, with no `O_NOFOLLOW`, this is the guard), then
+ * the shared capped, no-follow, one-link read (`readCapped`, FR-031), and the opened file must be the one `lstat` saw: device and inode compared as bigints (issue #1491).
+ */
 function readRegular(file: string, cap: number): Buffer | null {
-  const st = lstatOf(file);
-  if (!st || !st.isFile() || st.size > cap) return null;
-  const { O_RDONLY, O_NOFOLLOW, O_NONBLOCK } = fs.constants;
-  let fd: number | undefined;
-  try {
-    fd = fs.openSync(file, O_RDONLY | (O_NOFOLLOW ?? 0) | (O_NONBLOCK ?? 0));
-    const now = fs.fstatSync(fd);
-    if (!now.isFile() || now.size > cap || now.ino !== st.ino) return null;
-    const buf = Buffer.alloc(now.size);
-    let got = 0;
-    while (got < buf.length) {
-      const n = fs.readSync(fd, buf, got, buf.length - got, got);
-      if (n <= 0) return null;
-      got += n;
-    }
-    return buf;
-  } catch {
-    return null;
-  } finally {
-    if (fd !== undefined) try { fs.closeSync(fd); } catch { /* closed */ }
-  }
+  let st: fs.BigIntStats;
+  try { st = fs.lstatSync(file, { bigint: true }); } catch { return null; }
+  if (!st.isFile() || st.size > BigInt(cap)) return null;
+  const r = readCapped(fs, fs.constants, file, cap, (_now: fs.Stats, fd: number) => {
+    const id = fs.fstatSync(fd, { bigint: true });
+    return id.ino !== st.ino || id.dev !== st.dev ? 'replaced' : undefined;
+  });
+  return r.ok ? r.buf : null;
 }
 
 /** A folder name from a character name: lower-case letters, digits and dashes; never empty, a Windows device name, or a path. */

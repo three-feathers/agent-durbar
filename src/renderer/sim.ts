@@ -502,7 +502,6 @@ function simConvSearchApi(qs: URLSearchParams, scope: () => SimConvSession[]): P
   };
 }
 
-/** Spec 005 FR-026: a simulated diff (removed lines, then added lines) with its counts. */
 /* simcharname:begin (spec 096 FR-031, the same rule as `cleanCharacterName` in src/shared/charrules.ts; `test:charipc` compares them) */
 function simCharacterName(raw: unknown): { ok: true; name: string } | { ok: false; error: string } {
   if (typeof raw !== 'string' || raw.length > 160) return { ok: false, error: 'Use 1 to 40 characters.' };
@@ -649,6 +648,7 @@ function simCharactersApi(qs: URLSearchParams, openFolders: () => string[]): Pic
   };
 }
 
+/** Spec 005 FR-026: a simulated diff (removed lines, then added lines) with its counts. */
 function simDiffOf(oldL: string[], newL: string[], at: number): { diff: string; added: number; removed: number } {
   const head = `@@ -${oldL.length ? at : 0},${oldL.length} +${newL.length ? at : 0},${newL.length} @@`;
   return { diff: [head, ...oldL.map((l) => '-' + l), ...newL.map((l) => '+' + l)].join('\n'), added: newL.length, removed: oldL.length };
