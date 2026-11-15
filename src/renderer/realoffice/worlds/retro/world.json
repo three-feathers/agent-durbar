@@ -186,6 +186,7 @@
   "wall": "wall-night.webp"
  },
  "pixelArt": true,
+ "storeys": true,
  "wall": "wall.webp",
  "wallSize": [
   720,

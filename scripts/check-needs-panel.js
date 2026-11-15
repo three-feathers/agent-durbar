@@ -19,8 +19,16 @@ const path = require('path');
 const { helpers, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.OUT || require('os').tmpdir();
 
+/* Windows CI (issue #1668): three drivers share one desktop and a neighbour can take the OS focus mid-driver. A `focus()` on an element of an unfocused page fires no
+   `focusin`, so the panel never saw "the person moved" (DOOR_NOACT stayed set) and A answered nothing. The driver tests no OS blur, so it runs under the focus emulation
+   for its whole run (as check-auto-follow and check-edit-popups do), released in a finally. The app is as specified. */
 module.exports = async (ctx) => {
   const H = helpers(ctx);
+  await H.focusPage({ emulate: 'first' });
+  try { await run(ctx, H); } finally { await H.releaseFocus(); }
+};
+
+async function run(ctx, H) {
   const { js, until } = H;
   const emit = (e) => js(`window.__durbarSimUi.emit(${jsLiteral(Object.assign({ timestamp: Date.now() }, e))})`);
   const READY = { flat: 'fit', real: `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'` };
@@ -537,7 +545,7 @@ module.exports = async (ctx) => {
           await key('a', [], { char: 'always' });
           const got = await until(`window.__perm.length===1`, 3000);
           const seen = JSON.stringify(await js('window.__perm.slice()'));
-          assert.ok(got, at + ': ' + what + ' ' + seen);
+          assert.ok(got, at + ': ' + what + ' ' + seen + ' ' + JSON.stringify(await js(`({focus:document.hasFocus(),ae:document.activeElement&&document.activeElement.className})`)));
           assert.deepStrictEqual(await js('window.__perm.slice()'), [`dm${n}y-` + w + ':true'], `${at}: and it is that row's own request (${n})`);
           await ctx.sleep(1000);
         };
@@ -712,4 +720,4 @@ module.exports = async (ctx) => {
     }
   }
   console.log('check-needs-panel passed');
-};
+}
