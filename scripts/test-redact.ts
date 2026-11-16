@@ -2248,7 +2248,9 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   assert.strictEqual(red('x ' + GH.slice(0, 16) + '\n> ' + GH.slice(16) + ' y'), 'x [redacted]\n> [redacted] y', '#1613 round 2: the quote mark between two pieces stays');
   // item 8: each guard pinned
   assert.strictEqual(red(GH.slice(0, 16) + '\u2028' + GH.slice(16)), '[redacted]\u2028[redacted]', '#1613 a line separator inside a token stays in the output');
-  for (const keep of ['ghp_' + B.slice(0, 12) + '&#38;' + B.slice(12, 36), 'ghp_' + B.slice(0, 12) + '&amp;' + B.slice(12, 36), 'sgp_CrossValidation_ResultsForThe_Model\nsbp_Final2']) assert.strictEqual(red(keep), keep, `#1613 a guard keeps it readable: ${JSON.stringify(keep)}`);
+  // spec 012 FR-185: the GitHub head before the entity is a cut token now and is hidden; the guard still keeps the entity and the rest as written
+  for (const ent of ['&#38;', '&amp;']) assert.strictEqual(red('ghp_' + B.slice(0, 12) + ent + B.slice(12, 36)), '[redacted]' + ent + B.slice(12, 36), `#1613 a guard keeps the entity and the rest as written: ${ent}`);
+  for (const keep of ['sgp_CrossValidation_ResultsForThe_Model\nsbp_Final2']) assert.strictEqual(red(keep), keep, `#1613 a guard keeps it readable: ${JSON.stringify(keep)}`);
   _breakCallsForTest();
   red(Array.from({ length: 200 }, (_, i) => 'Some words on line ' + i + ' and more words\nanother line of words here').join('\n'));
   red(Array.from({ length: 200 }, (_, i) => 'ab' + (i % 10) + '\ncd' + (i % 7)).join(' '));
@@ -2413,10 +2415,12 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   assert.ok(redact(`echo ghp_${B36.slice(0, 10)}${BS}\n${B36.slice(10)}\nnext line`, {}).endsWith('\nnext line'), '#1543 line structure: the next line stays');
   // what stays as written: no token in any reading
   for (const t of [`C:${BS}Users${BS}me${BS}x5fdir${BS}u0041pp`, `make all${BS}\ninstall`, 'use `code` and `more` here', 'a^b^c and 2^32', `printf '%s${BS}n' hello${BS}x20world`, `grep -E '^ghp_[A-Za-z0-9]{36}$' f`,
-    `echo $'line${BS}tone${BS}x41'`, `cd C:${BS} && dir`, `x${BS}x3ghp_${B36}`, `x${BS}u003ghp_${B36}`, 'echo 2^\n32 and 2^\r\n64', 'Write-Host "`u{2764} ok"', `printf 'a${BS}x3d${BS}x20b'`]) {
+    `echo $'line${BS}tone${BS}x41'`, `cd C:${BS} && dir`, 'echo 2^\n32 and 2^\r\n64', 'Write-Host "`u{2764} ok"', `printf 'a${BS}x3d${BS}x20b'`]) {
     assert.strictEqual(redact(t, {}), t, `#1543 no token: redact unchanged: ${JSON.stringify(t)}`);
     assert.strictEqual(maskSecretCommand(t, {}), withoutShell(() => maskSecretCommand(t, {})), `#1543 no token: maskSecretCommand as with the shell mode off: ${JSON.stringify(t)}`);
   }
+  // spec 012 FR-185 (issue #1329): a whole token after a one-digit `\x` or a short `\u` is hidden now (a GitHub token glued to a digit)
+  for (const t of [`x${BS}x3ghp_${B36}`, `x${BS}u003ghp_${B36}`]) assert.ok(!redact(t, {}).includes(B36.slice(0, 8)), `#1329 a short code before a whole token: hidden: ${JSON.stringify(t)}`);
   // a run the shell readings hide can take a word another rule needs (`curl`): both readings count (redact's union, maskLabel's keep)
   {
     const t = `${VAL.slice(0, 7)}${BS}122${VAL.slice(8)}${BS}curl -u bob:${PW} h ${BS}> x`;
@@ -2617,6 +2621,65 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   assertLinearShape('#1543 redact one long run of escapes', (x) => { redact(x, env); }, (k) => `a${BS}x41\`b^c${BS}u0041${BS}\n`.repeat(Math.ceil(k / 20)).slice(0, k), 400_000);
   assertLinearShape('#1543 redact many caret continuations and PowerShell codes', (x) => { redact(x, env); }, (k) => `ab^\ncd\`u{5f}ef `.repeat(Math.ceil(k / 15)).slice(0, k), 400_000);
   assertLinearShape('#1543 maskSecretCommand many escaped headers', (x) => { _uncappedForTest.maskSecretCommand(x, env); }, (k) => `-H X-Api-Key${BS}:${BS} v `.repeat(Math.ceil(k / 20)).slice(0, k), 400_000);
+}
+
+// spec 012 FR-185 (issue #1329, T167): more spellings of a home folder, and GitHub token forms the held shape left readable (a body cut short, letters from
+// another script in the prefix or body, a prefix glued to a word before it). Every value here is invented and built in code from pieces.
+{
+  const B36 = 'R1t2Y3u4I5o6P7a8S9d0F1g2H3j4K5l6Z7x8';
+  const B82 = (B36 + B36 + B36).slice(0, 82);
+  const ST = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string; excerpt(t: string, r: (s: string) => string): string; maskLabel(t: string, k: string, m: Record<string, (s: string) => string>): string };
+  const LA = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'liveact.js')) as { permText(t: string, k: string, m: Record<string, (s: string) => string>): { text: string }; phrase(o: { kind: string; tool: string; label: string }, m: Record<string, (s: string) => string>): string };
+  const m = { redact: (t: string) => redact(t, {}), cmd: (t: string) => maskSecretCommand(t, {}), url: (t: string) => maskSecretUrl(t, {}) };
+  const shows = (out: string, secrets: string[]): string | undefined => {
+    for (const b of secrets) for (let i = 0; i + 8 <= b.length; i++) if (out.includes(b.slice(i, i + 8))) return b.slice(i, i + 8);
+    return undefined;
+  };
+  const surfaces = (t: string): Array<[string, string]> => [['redact', redact(t, {})], ['maskTokenShapes', maskTokenShapes(t, '[redacted]')], ['maskSecretCommand', maskSecretCommand(t, {})], ['maskSecretArgs', maskSecretArgs(['run', t], {}).join(' ')],
+    ['maskRaw', ST.maskRaw(t, m.redact)], ['excerpt', ST.excerpt(t, m.redact)], ['maskLabel run', ST.maskLabel(t, 'run', m)], ['maskLabel other', ST.maskLabel(t, 'other', m)],
+    ['permText shell', LA.permText('run ' + t, 'shell', m).text], ['permText other', LA.permText(t, 'other', m).text], ['phrase', LA.phrase({ kind: 'run', tool: 'Bash', label: t }, m)]];
+  const gh = (p: string): string => 'gh' + p + '_';
+  // [label, text, the secrets that must not show]; each is shown in clear on main at 7a5f9777e
+  const FORMS: Array<[string, string, string[]]> = [
+    ['cut: a short body and an ellipsis', 'echo ' + gh('p') + B36.slice(0, 18) + '\u2026 done', [B36.slice(0, 18)]],
+    ['cut: a short body and three dots', 'echo ' + gh('o') + B36.slice(0, 12) + '... done', [B36.slice(0, 12)]],
+    ['cut: a short body at the end', 'echo ' + gh('s') + B36.slice(0, 10), [B36.slice(0, 10)]],
+    ['cut: a short fine-grained body', 'echo github' + '_pat_' + B82.slice(0, 14) + '\u2026', [B82.slice(0, 14)]],
+    ['lookalike prefix: Cyrillic', 'echo gh\u0440_' + B36, [B36]],
+    ['lookalike prefix: full-width', 'echo \uff47\uff48\uff50\uff3f' + B36, [B36]],
+    ['a letter of another script inside the body', 'echo ' + gh('p') + B36.slice(0, 10) + '\u0430' + B36.slice(10), [B36.slice(0, 10), B36.slice(10)]],
+    ['glued after a word', 'ssh ax' + gh('p') + B36, [B36]],
+    ['glued after a letter of another script and a word', 'ssh \u0435x' + gh('u') + B36, [B36]],
+    ['glued after a digit', 'id9' + gh('r') + B36, [B36]],
+    ['glued fine-grained', 'xx' + 'github' + '_pat_' + B82.slice(0, 22) + '_' + B82.slice(22, 81), [B82.slice(0, 22), B82.slice(22, 81)]],
+  ];
+  for (const [what, t, secrets] of FORMS) {
+    for (const [surface, out] of surfaces(t)) assert.strictEqual(shows(out, secrets), undefined, `#1329 ${what}: ${surface} shows no part: ${JSON.stringify(t)} gave ${JSON.stringify(out)}`);
+    assert.strictEqual(maskTokenShapesUnguarded(t, '[redacted]'), maskTokenShapes(t, '[redacted]'), `#1329 ${what}: the marker guard changes nothing`);
+  }
+  // exact outputs: the word before a glued token and the text after a cut one stay
+  assert.strictEqual(redact('ssh ax' + gh('p') + B36 + ' now', {}), 'ssh ax[redacted] now', '#1329 glued: the word before stays');
+  assert.strictEqual(redact('see ' + gh('p') + B36.slice(0, 18) + '\u2026 then', {}), 'see [redacted]\u2026 then', '#1329 cut: the ellipsis and the rest stay');
+  // near misses that stay: a lower-case body (a word), a bare prefix, a snake_case word ending in the prefix letters, a glued body under 20
+  for (const keep of ['ghp_short', 'ghs_count', 'the ghp_ prefix', 'ghp_... and ghp_', 'weighs_V2 ok', 'the highs_andlowsofthemarketcycle', 'laughs_total_count']) {
+    assert.strictEqual(redact(keep, {}), keep, `#1329 near miss stays: ${keep}`);
+  }
+  // home folders: the user name becomes `~`, the rest stays
+  const H: Array<[string, string, string]> = [
+    ['~name', '~alicez/x', '~/x'],
+    ['~name with a backslash', 'cd ~alicez\\proj', 'cd ~\\proj'],
+    ['drive lowercase', 'c:\\users\\aliceq\\x', '~\\x'],
+    ['drive upper case', 'C:/USERS/aliceq/x', '~/x'],
+    ['percent-encoded Users', 'open?p=%2FUsers%2Falicen%2Fx', 'open?p=~%2Fx'],
+    ['percent-encoded home, lower hex', '%2fhome%2falicen%2fx', '~%2fx'],
+    ['percent-encoded drive', 'C%3A%5CUsers%5Calicen%5Cx', '~%5Cx'],
+    ['percent-encoded twice', '%252Fhome%252Falicen%252Fx', '~%252Fx'],
+  ];
+  for (const [what, t, want] of H) assert.strictEqual(maskHomePaths(t, []), want, `#1329 home ${what}`);
+  for (const keep of ['~5/10', '~text~ and ~~gone~~', 'see ~/.bashrc', 'cd ~/x', 'a~b/c', 'GET /api/users/42', '%2Fusr%2Flocal%2Fbin', 'q=%2Fhomes%2Fx']) assert.strictEqual(maskHomePaths(keep, []), keep, `#1329 home near miss stays: ${keep}`);
+  // cost: linear on dense prefixes and dense encoded separators (FR-183's rule)
+  assertLinearShape('#1329 redact many lookalike prefixes', (x) => { redact(x, {}); }, (k) => ('gh\u0440_a\uff47\uff48p_' + B36.slice(0, 3) + ' ').repeat(Math.ceil(k / 16)).slice(0, k), 400_000);
+  assertLinearShape('#1329 maskHomePaths many encoded separators', (x) => { maskHomePaths(x, []); }, (k) => '%2Fhome%2Fa%25%2'.repeat(Math.ceil(k / 16)).slice(0, k), 400_000);
 }
 
 console.log('redact: all checks passed');
