@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Worker } from 'worker_threads';
-import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, maskNoteText, maskOutgoing, maskSplitTokens, _breakCallsForTest, keepShownBy, _unionMasksForTest, withoutSplit, _splitWorkForTest, redact, shQuote, splitCommand } from '../src/shared/redact';
+import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, maskNoteText, maskOutgoing, maskSplitTokens, _breakCallsForTest, keepShownBy, _unionMasksForTest, withoutSplit, _splitWorkForTest, redact, redactMarkdown, MARKDOWN_WORK, shQuote, splitCommand } from '../src/shared/redact';
 
 import { assertLinearShape, cpuMs } from './redact-growth-lib';
 import './safetext-shared'; // the desk's maskRaw (src/renderer/safetext.js) reads the compiled redact.ts, for the FR-181 differential below
@@ -2267,6 +2267,35 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   assertLinearShape('#1725 the desk excerpt of many [x](', (x) => { ST.excerpt(x, red); }, (k) => '[x]('.repeat(Math.ceil(k / 4)).slice(0, k), 320_000);
   assertLinearShape('#1725 the desk mask of many [', (x) => { ST.maskRaw(x, red); }, (k) => '['.repeat(k), 80_000);
   assertLinearShape('#1613 redact many entities and marks', (x) => { redact(x, {}); }, (k) => 'a&#8203;b\u0301c&zwj;'.repeat(Math.ceil(k / 15)).slice(0, k), 400_000);
+}
+
+// spec 012 FR-183 (issue 1593): the shared redactMarkdown (maskSlashText's second pass) has the window's work budget; under it, exactly main's output
+{
+  // main's body at 7ce319809, unchanged (redact itself is not changed by FR-183)
+  const MK = '[redacted]';
+  const mainMarkdown = (u: string, k: string): string => {
+    let m = redact(k);
+    const seen = new Set<string>();
+    const found: string[] = [];
+    for (const r of u.match(/[A-Za-z0-9_\-.+/=:@%]{12,}/g) ?? []) { if (seen.has(r)) continue; seen.add(r); if (redact(r) !== r) found.push(r); }
+    found.sort((a, b) => b.length - a.length);
+    for (const r of found) m = m.replace(new RegExp(r.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&') + '[A-Za-z0-9_-]*', 'g'), () => MK);
+    return m;
+  };
+  const marks = (u: string): string => u.replace(/[*`~[\]]/g, '');
+  const pwRun = (k: number, f: (i: number) => string = (i) => 'password=' + String(i).padStart(14, 'K') + ' '): string => { let t = '*'; for (let i = 0; t.length < k; i++) t += f(i); return t.slice(0, k); };
+  assert.strictEqual(MARKDOWN_WORK, 2 ** 26, '#1593 redactMarkdown: the budget is 2^26');
+  assert.strictEqual((require(path.join(__dirname, '..', '..', 'src', 'renderer', 'safetext.js')) as { BOTH_WORK: number }).BOTH_WORK, MARKDOWN_WORK, '#1593 redactMarkdown: the same budget as the window');
+  assertLinearShape('#1593 redactMarkdown of many distinct secrets after a mark', (x) => void redactMarkdown(x, marks(x)), (k) => pwRun(k), 400_000);
+  const over = pwRun(200_000);
+  assert.strictEqual(redactMarkdown(over, marks(over)), MK, '#1593 redactMarkdown over the budget: the whole text is one mask');
+  const G = 'gh' + 'p_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
+  let seed = 1593;
+  const rnd = (): number => { seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const parts = [G, 'x**' + G + '**', G.slice(0, 20) + '*' + G.slice(20), 'password=Hx9Kq2Lm7Np4Rs', '*', '`', '~~', '[', ']', ' ', 'word', 'snake_case_name_here', '\n'];
+  const texts: string[] = [pwRun(16_000), pwRun(40_000)];
+  for (let i = 0; i < 1500; i++) { let t = ''; const n = 1 + Math.floor(rnd() * 16); for (let j = 0; j < n; j++) t += parts[Math.floor(rnd() * parts.length)]; texts.push(t); }
+  for (const t of texts) assert.strictEqual(redactMarkdown(t, marks(t)), mainMarkdown(t, marks(t)), `#1593 redactMarkdown as on main under the budget: ${JSON.stringify(t.slice(0, 50))}`);
 }
 
 console.log('redact: all checks passed');

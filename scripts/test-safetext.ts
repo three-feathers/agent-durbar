@@ -222,8 +222,8 @@ eq(T.ready, true, 'redact: ready');
 {
   const red = (x: string): string => redact(x, {});
   const opens = (k: number): string => '[redacted:'.repeat(Math.ceil(k / 10)).slice(0, k) + ']a\\b';
-  assertLinearShape('#1593 maskRaw of many [redacted: openings', (x) => void S.maskRaw(x, red), opens, 160_000);
-  assertLinearShape('#1593 excerpt of many [redacted: openings', (x) => void S.excerpt(x, red, 140), opens, 160_000);
+  assertLinearShape('#1593 maskRaw of many [redacted: openings', (x) => void S.maskRaw(x, red), opens, 400_000); // 25,000 and 400,000: both over the window, one path
+  assertLinearShape('#1593 excerpt of many [redacted: openings', (x) => void S.excerpt(x, red, 140), opens, 400_000);
   const pwRun = (k: number, f: (i: number) => string = (i) => 'password=' + String(i).padStart(14, 'K') + ' '): string => { let t = '*'; for (let i = 0; t.length < k; i++) t += f(i); return t.slice(0, k); };
   assertLinearShape('#1593 maskRaw of many distinct secrets after a mark', (x) => void S.maskRaw(x, red), (k) => pwRun(k), 400_000);
   assertLinearShape('#1593 excerpt of many distinct secrets after a mark', (x) => void S.excerpt(x, red, 140), (k) => pwRun(k), 400_000);
@@ -234,9 +234,18 @@ eq(T.ready, true, 'redact: ready');
   eq(S.excerpt(over, red, 140), '', '#1593 over the budget: the excerpt gives nothing');
   eq(T.mask(over), '', '#1593 over the budget: the wrapper mask gives nothing');
   eq(T.excerpt(over, 140), 'Finished.', '#1593 over the budget: the wrapper excerpt gives its fallback word');
-  const hid = pwRun(60_000, (i) => 'pass​word=' + String(i).padStart(14, 'K') + ' ');
+  const hid = pwRun(60_000, (i) => 'pass\u200bword=' + String(i).padStart(14, 'K') + ' ');
   eq(S.excerpt(hid, red, 140), '', '#1593 over the budget with a hidden character in each name: the excerpt gives nothing');
   eq(S.maskRaw(hid, red), '', '#1593 over the budget with a hidden character in each name: maskRaw gives nothing');
+  // the boundary, with an injected mask: 8,192 runs it changes x an output of 8,192 characters is exactly the budget (runs); one more character is over it (nothing)
+  {
+    const runs = Array.from({ length: 8192 }, (_, i) => 'q' + String(i).padStart(11, '0'));
+    const text = '*' + runs.join(' ');
+    const inj = (len: number) => (t: string): string => (/^q\d{11}$/.test(t) ? '[x]' : t.length > 1000 ? 'a'.repeat(len) : t);
+    eq((S as unknown as { BOTH_WORK: number }).BOTH_WORK, 8192 * 8192, '#1593 the budget is 8,192 x 8,192');
+    eq(S.maskRaw(text, inj(8192)), 'a'.repeat(8192), '#1593 exactly at the budget: the pass runs');
+    eq(S.maskRaw(text, inj(8193)), '', '#1593 one output character over the budget: nothing');
+  }
 
   // the differential: byte-identical output to main's copy under the budget
   const ROOT_ = path.join(__dirname, '..', '..');
@@ -252,7 +261,7 @@ eq(T.ready, true, 'redact: ready');
   const pick = <X,>(xs: readonly X[]): X => xs[Math.floor(rnd() * xs.length)];
   const z = 'gh' + 'p_' + 'Z9y8X7w6V5u4T3s2R1q0P9o8N7m6L5k4J3i2';
   const toks = [ghp, pat, sk, z, 'password=Hx9Kq2Lm7Np4Rs', 'API_KEY=Hx9Kq2Lm7Np4Rs', 'Authorization: Bearer ' + z.slice(4), 'https://u:Hx9Kq2Lm7Np4Rs@h.example/x', 'mysql -pHx9Kq2Lm7Np4Rs'];
-  const marks = ['*', '**', '`', '~~', '[', ']', '(', ')', '![', '](u)', '\\', '\\_', '_', '[redacted:', '[redacted]', '<!-- -->', '​', '\n', '\r\n', '```', '# ', '> ', '- ', '[x](', ']a\\b'];
+  const marks = ['*', '**', '`', '~~', '[', ']', '(', ')', '![', '](u)', '\\', '\\_', '_', '[redacted:', '[redacted]', '<!-- -->', '\u200b', '\n', '\r\n', '```', '# ', '> ', '- ', '[x](', ']a\\b'];
   const words = ['', ' ', 'x', 'word', 'Done.', 'my_branch', 'see ', 'a.b/c', '12345678901234', 'snake_case_name_here'];
   const piece = (): string => {
     const r = rnd();
@@ -264,8 +273,12 @@ eq(T.ready, true, 'redact: ready');
   const cases = new Set<string>();
   while (cases.size < 2000) { let t = ''; const k = 1 + Math.floor(rnd() * 24); for (let i = 0; i < k; i++) t += piece(); cases.add(t); }
   // adversarial shapes under the budget, and the issue's own
+  // about 2,800 distinct runs of 14 characters that the mask leaves alone, and a secret every 500th: the budget counts only the runs the mask changes
+  const manyPlain = pwRun(40_000, (i) => (i % 500 === 7 ? 'password=Hx9Kq2Lm7Np4Rs' + i + ' ' : 'plainword' + String(i).padStart(5, '0') + ' '));
+  ok(S.maskRaw(manyPlain, red) !== '' && !S.maskRaw(manyPlain, red).includes('Hx9Kq2Lm7Np4Rs'), '#1593 many runs the mask leaves alone: masked, not failed closed');
   const shapes = [opens(1_000), opens(16_000), opens(40_000), pwRun(10_000), pwRun(16_384), pwRun(30_000), '['.repeat(20_000), '[x]('.repeat(5_000), '\\['.repeat(10_000),
-    pwRun(20_000, (i) => 'x*gh' + 'p_' + String(i).padStart(36, 'Q') + '*.'), pwRun(40_000, (i) => 'gh' + 'p_' + String(i).padStart(36, 'Q') + ' '), pwRun(16_000, (i) => 'pass​word=' + String(i).padStart(14, 'K') + ' ')];
+    pwRun(20_000, (i) => 'x*gh' + 'p_' + String(i).padStart(36, 'Q') + '*.'), pwRun(40_000, (i) => 'gh' + 'p_' + String(i).padStart(36, 'Q') + ' '), pwRun(16_000, (i) => 'pass\u200bword=' + String(i).padStart(14, 'K') + ' '),
+    pwRun(40_000), manyPlain]; // near the budget (about 5.5e7); many runs the mask leaves alone and a few secrets
   let same = 0;
   for (const t of [...cases, ...shapes]) {
     const where = JSON.stringify(t.slice(0, 60));
@@ -273,6 +286,7 @@ eq(T.ready, true, 'redact: ready');
     assert.strictEqual(S.excerpt(t, red, 140), R0.excerpt(t, red, 140), `#1593 differential: excerpt as on main: ${where}`);
     assert.strictEqual(S.excerpt(t, red, undefined, true), R0.excerpt(t, red, undefined, true), `#1593 differential: excerpt with the code word as on main: ${where}`);
     assert.strictEqual(T.mask(t), RT.mask(t), `#1593 differential: the wrapper mask as on main: ${where}`);
+    assert.strictEqual(T.excerpt(t, 140), RT.excerpt(t, 140), `#1593 differential: the wrapper excerpt as on main: ${where}`);
     same++;
   }
   ok(same >= 2000 + shapes.length, `#1593 differential: ${same} texts, byte-identical`);

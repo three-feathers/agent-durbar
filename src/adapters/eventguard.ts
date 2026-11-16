@@ -1,5 +1,6 @@
 import { ALLOWED_BY_KEYS_MAX } from './types';
 import { isObj } from '../shared/guards';
+import { TOOL_NAME_MAX } from './history';
 import { cleanSandboxState } from '../shared/sandbox';
 import { isAutopilotEnd, isSpendUnit, MAX_LIMIT, validLimit, validRunId } from './autopilot';
 /**
@@ -22,8 +23,8 @@ export const validSignInEnd = (v: unknown): v is (typeof SIGN_IN_ENDS)[number] =
 
 /** Spec 003 FR-110: longest permission `requestId` (a tool call id); the window keeps it as a map key. */
 export const REQUEST_ID_MAX = 256;
-/** Spec 012 FR-183: longest toolCall `tool` (a tool name); a longer one is refused here, before main's stores or the window read it (the window shows `tool` above it too). */
-export const TOOL_NAME_MAX = 256;
+/** Spec 012 FR-183: longest toolCall `tool` (a tool name, `TOOL_NAME_MAX` of history.ts); a longer one is refused here, before main's stores or the window read it (the window shows `tool` above it too). */
+export { TOOL_NAME_MAX };
 
 /** Spec 003 FR-102: the optional `allowedBy` of a permission (display only): a known kind and string fields, else the event is refused. */
 function allowedByProblems(a: unknown, where: string): string[] {

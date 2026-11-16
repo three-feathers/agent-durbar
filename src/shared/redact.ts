@@ -717,6 +717,8 @@ export function redact(text: unknown, env?: Env): string {
  * (`x**ghp_...**` -> `xghp_...`, which no shape matches) or join a late-split token's tail (`ghp_<20>**K1l2...`). Anything either pass
  * finds is masked; neither pass's output simply wins. The window's DurbarSafeText (`src/renderer/safetext.js`, `both`) does the same.
  */
+/** Spec 012 FR-183: the work budget of `redactMarkdown`'s second pass (runs the mask changes x output length, a proxy for the scan work), equal to the window's `BOTH_WORK`. */
+export const MARKDOWN_WORK = 1 << 26;
 export function redactMarkdown(u: string, k: string, env?: Env): string {
   let m = redact(k, env);
   const seen = new Set<string>();
@@ -727,6 +729,7 @@ export function redactMarkdown(u: string, k: string, env?: Env): string {
     if (redact(r, env) !== r) found.push(r);
   }
   found.sort((a, b) => b.length - a.length);
+  if (found.length * m.length > MARKDOWN_WORK) return MASK; // spec 012 FR-183: over the budget, fail closed (the whole text is one mask)
   for (const r of found) m = m.replace(new RegExp(r.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&') + '[A-Za-z0-9_-]*', 'g'), () => MASK);
   return m;
 }
