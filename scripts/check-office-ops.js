@@ -161,14 +161,14 @@ module.exports = async (ctx) => {
       const css = `@keyframes ops-mutant{from{transform:translateX(0)}to{transform:translateX(9px)}}.ops-mutant{position:fixed;left:0;top:0;width:4px;height:4px;animation:ops-mutant 1s ${fn} infinite}`;
       await js(`(()=>{const s=document.createElement('style');s.textContent=${jsLiteral(css)};document.head.append(s);const d=document.createElement('div');d.className='ops-mutant';document.body.append(d);})()`);
     }
-    const rate = await js(`(()=>{const known=new Set(${JSON.stringify(UNSTEPPED_KNOWN)});const per=(e)=>{const m=/^steps\\(\\s*(\\d+)\\s*(?:,\\s*([a-z-]+)\\s*)?\\)$/.exec(e);if(m)return Number(m[1]);if(e==='step-start'||e==='step-end')return 1;return Infinity;};
+    const rate = await js(`(()=>{const known=new Set(${jsLiteral(UNSTEPPED_KNOWN)});const per=(e)=>{const m=/^steps\\(\\s*(\\d+)\\s*(?:,\\s*([a-z-]+)\\s*)?\\)$/.exec(e);if(m)return Number(m[1]);if(e==='step-start'||e==='step-end')return 1;return Infinity;};
       const list=[],skipped={};for(const a of document.getAnimations()){if(a.playState!=='running'||!a.effect||a.effect.getComputedTiming().iterations!==Infinity)continue;
         const kf=a.effect.getKeyframes(),dur=a.effect.getComputedTiming().duration;let steps=0;
         for(let i=0;i<kf.length-1;i++)steps+=per(kf[i].easing);
         const name=a.animationName||'unnamed';if(known.has(name)){skipped[name]=(skipped[name]||0)+1;continue;}
         const t=a.effect.target;list.push({name,svg:!!(t&&t.closest&&t.closest('svg')),rate:steps/(dur/1000)});}
       list.sort((x,y)=>y.rate-x.rate);const fin=list.filter(x=>Number.isFinite(x.rate));
-      return {count:list.length,svg:list.filter(x=>x.svg).length,max:fin.length?fin[0].rate:0,maxName:fin.length?fin[0].name:'',skipped,over:list.filter(x=>!(x.rate<=${MAX_CHANGES})).slice(0,5)};})()`);
+      return {count:list.length,svg:list.filter(x=>x.svg).length,max:fin.length?fin[0].rate:0,maxName:fin.length?fin[0].name:'',skipped,over:list.filter(x=>!(x.rate<=${jsLiteral(MAX_CHANGES)})).slice(0,5)};})()`);
     console.log('[ops]', n, 'agents', size + ':', rate.count, 'stepped infinite animations (', rate.svg, 'in SVG ), the fastest', rate.maxName, rate.max.toFixed(2), 'changes a second (limit', MAX_CHANGES + '); known continuous, not counted:', JSON.stringify(rate.skipped));
     assert.ok(rate.count > 0 && rate.over.length === 0, `${n} agents ${size}: every infinite animation steps at most ${MAX_CHANGES} changes a second (only ${UNSTEPPED_KNOWN.join(' and ')} may be continuous); over: ${rate.over.map((x) => `${x.name} ${x.rate}`).join(', ') || 'none (no animation was running)'}`);
     };
